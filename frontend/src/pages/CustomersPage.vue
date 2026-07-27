@@ -38,10 +38,11 @@
         <el-table-column
           v-if="auth.can('masterdata:customer:write')"
           :label="t('common.actions')"
-          width="110"
+          width="150"
           fixed="right"
         >
           <template #default="{ row }">
+            <el-button link type="primary" @click="openEdit(row)">{{ t('common.edit') }}</el-button>
             <el-button
               v-if="row.status === 'ACTIVE'"
               link
@@ -68,10 +69,20 @@
       />
     </el-card>
 
-    <el-dialog v-model="dialogOpen" :title="t('customers.create')" width="560px">
-      <el-form :model="form" label-width="110px">
+    <el-dialog
+      v-model="dialogOpen"
+      :title="editingId ? t('customers.edit') : t('customers.create')"
+      width="560px"
+    >
+      <el-form :model="form" label-width="110px" v-loading="loadingDetail">
         <el-form-item :label="t('customers.code')">
-          <el-input v-model="form.code" :placeholder="t('customers.codeAuto')" />
+          <!-- The code is the customer's business identity: documents and
+               statements quote it, so it is fixed once issued. -->
+          <el-input
+            v-model="form.code"
+            :disabled="!!editingId"
+            :placeholder="t('customers.codeAuto')"
+          />
         </el-form-item>
         <el-form-item :label="t('customers.name')" required>
           <el-input v-model="form.name" />
@@ -92,6 +103,12 @@
           <el-select v-model="form.paymentTerm" style="width: 200px" clearable>
             <el-option v-for="o in paymentOptions" :key="o.code" :value="o.code" :label="o.label" />
           </el-select>
+        </el-form-item>
+        <el-form-item :label="t('customers.address')">
+          <el-input v-model="form.address" type="textarea" :rows="2" />
+        </el-form-item>
+        <el-form-item :label="t('customers.remark')">
+          <el-input v-model="form.remark" type="textarea" :rows="2" />
         </el-form-item>
         <el-divider content-position="left">
           {{ t('customers.contact') }}
@@ -139,23 +156,39 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
+import { nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { del, get, post } from '../api'
-import { COUNTRY_NAMES, DIAL_CODES, dialCodeOf } from '../constants'
+import { del, get, post, put } from '../api'
+import { COUNTRY_NAMES, DIAL_CODES, dialCodeOf, splitPhone } from '../constants'
 import { useAuthStore } from '../stores/auth'
 
+interface Contact {
+  name: string
+  title: string
+  email: string
+  phone: string
+  isPrimary: boolean
+}
 interface Customer {
   id: string
   code: string
   name: string
   country: string
+  address: string
   currency: string
   paymentTerm: string
+  remark: string
   status: string
+  contacts: Contact[]
 }
 interface OptionItem { code: string; label: string }
+
+const EMPTY_FORM = {
+  code: '', name: '', country: '', currency: 'USD', paymentTerm: '',
+  address: '', remark: '',
+  contactName: '', contactDial: '', contactPhone: '', contactEmail: '',
+}
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -169,17 +202,23 @@ const showInactive = ref(false)
 const loading = ref(false)
 const dialogOpen = ref(false)
 const saving = ref(false)
-const form = reactive({
-  code: '', name: '', country: '', currency: 'USD', paymentTerm: '',
-  contactName: '', contactDial: '', contactPhone: '', contactEmail: '',
-})
+const loadingDetail = ref(false)
+// null = the dialog is creating; an id = it is editing that customer.
+const editingId = ref<string | null>(null)
+// An update replaces the whole contact list, so contacts the dialog does not
+// show (secondary ones added through the API) are carried over untouched.
+const otherContacts = ref<Contact[]>([])
+const form = reactive({ ...EMPTY_FORM })
 
 // Picking a country pre-fills the matching calling code. A code the user chose
 // themselves is never overwritten — only an empty one, or one that still
-// matches the previously selected country.
+// matches the previously selected country. Loading an existing customer is not
+// a choice, so it must not rewrite a phone the record already has.
+const hydrating = ref(false)
 watch(
   () => form.country,
   (country, previous) => {
+    if (hydrating.value) return
     const next = dialCodeOf(country)
     if (next && (!form.contactDial || form.contactDial === dialCodeOf(previous ?? ''))) {
       form.contactDial = next
@@ -205,11 +244,43 @@ function openCreate() {
   // The code is left blank on purpose: masterdata issues it when the customer
   // is actually saved, so opening and abandoning this dialog costs no number.
   // Typing one here still wins, for companies with their own conventions.
-  Object.assign(form, {
-    code: '', name: '', country: '', currency: 'USD', paymentTerm: '',
-    contactName: '', contactDial: '', contactPhone: '', contactEmail: '',
-  })
+  editingId.value = null
+  otherContacts.value = []
+  Object.assign(form, EMPTY_FORM)
   dialogOpen.value = true
+}
+
+async function openEdit(row: Customer) {
+  editingId.value = row.id
+  otherContacts.value = []
+  Object.assign(form, EMPTY_FORM)
+  dialogOpen.value = true
+  loadingDetail.value = true
+  try {
+    // The list row carries no contacts, address or remark - fetch the detail.
+    const { customer } = await get<{ customer: Customer }>(`/customers/${row.id}`)
+    const [primary, ...rest] = [...customer.contacts].sort(
+      (a, b) => Number(b.isPrimary) - Number(a.isPrimary),
+    )
+    otherContacts.value = rest
+    const phone = splitPhone(primary?.phone ?? '')
+    hydrating.value = true
+    Object.assign(form, {
+      code: customer.code, name: customer.name, country: customer.country,
+      currency: customer.currency, paymentTerm: customer.paymentTerm,
+      address: customer.address, remark: customer.remark,
+      contactName: primary?.name ?? '',
+      contactDial: phone.dial, contactPhone: phone.number,
+      contactEmail: primary?.email ?? '',
+    })
+    await nextTick()
+    hydrating.value = false
+  } catch {
+    hydrating.value = false
+    dialogOpen.value = false // the interceptor already surfaced the reason
+  } finally {
+    loadingDetail.value = false
+  }
 }
 
 async function save() {
@@ -221,15 +292,23 @@ async function save() {
   // The calling code is stored together with the number so the phone stays
   // dialable from anywhere; a bare code with no number is not a phone.
   const phone = form.contactPhone ? `${form.contactDial} ${form.contactPhone}`.trim() : ''
+  const primary = form.contactName
+    ? [{ name: form.contactName, phone, email: form.contactEmail, isPrimary: true }]
+    : []
+  const body = {
+    name: form.name, country: form.country, address: form.address,
+    currency: form.currency, paymentTerm: form.paymentTerm, remark: form.remark,
+    contacts: [...primary, ...otherContacts.value],
+  }
   try {
-    await post('/customers', {
-      code: form.code, name: form.name, country: form.country,
-      currency: form.currency, paymentTerm: form.paymentTerm,
-      contacts: form.contactName
-        ? [{ name: form.contactName, phone, email: form.contactEmail, isPrimary: true }]
-        : [],
-    })
-    ElMessage.success(t('customers.created'))
+    if (editingId.value) {
+      await put(`/customers/${editingId.value}`, body)
+      ElMessage.success(t('customers.updated'))
+    } else {
+      // Code only travels on create; it is immutable afterwards.
+      await post('/customers', { ...body, code: form.code })
+      ElMessage.success(t('customers.created'))
+    }
     dialogOpen.value = false
     load()
   } finally {

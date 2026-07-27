@@ -72,7 +72,7 @@ frontend/src/
 | 页面 | 路由 | 权限 | 接口 |
 |---|---|---|---|
 | 登录 | /login | - | POST /auth/login |
-| 客户管理 | /customers | masterdata:customer:read(写按钮 :write) | /customers CRUD、/options |
+| 客户管理 | /customers | masterdata:customer:read(写按钮 :write) | /customers 增改查、停用/启用、/options |
 | 汇率中心 | /fx | fx:rate:read | /fx/rates、/fx/anomalies(只读,汇率仅来自 API 抓取) |
 
 ### 阶段 1 收尾(approval 服务落地后)

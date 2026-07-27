@@ -72,3 +72,14 @@ export const DIAL_CODES: readonly DialCode[] = (() => {
 export function dialCodeOf(country: string): string {
   return COUNTRIES.find((c) => c.name === country)?.dial ?? ''
 }
+
+// Phones are stored as one string ("+49 211 5566 7788"). Editing needs the
+// two halves back: the longest matching code wins so +972 is not read as +97.
+export function splitPhone(phone: string): { dial: string; number: string } {
+  const match = [...DIAL_CODES]
+    .map((d) => d.dial)
+    .sort((a, b) => b.length - a.length)
+    .find((dial) => phone.startsWith(dial))
+  if (!match) return { dial: '', number: phone }
+  return { dial: match, number: phone.slice(match.length).trim() }
+}
