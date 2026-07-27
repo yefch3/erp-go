@@ -248,6 +248,22 @@ export: 出货计划 status = PENDING_STOCK
 - 每张业务表带 `created_at / created_by / updated_at / updated_by`
 - 逻辑删除只用于可恢复场景；主数据用 `status` 停用，账目类**不允许删除**
 - **跨服务引用只存 ID，不建外键**；服务内部正常建外键
+- **本位币为 USD**（业务确认）：所有 `base_amount` 均为折 USD 金额；`fx_base_currency` 默认 `'USD'`；采购、船期费用等 CNY 单据经各自汇率快照折 USD 进入报表与汇兑损益
+- 附件类列（`file_path` / `bank_slip_path` / `voucher_path`）统一存**对象存储 key**（`bucket/object-key`），不存本地路径；存储后端走 S3 兼容接口（本地 MinIO，云端换 S3/OSS 只改 endpoint 配置）
+
+### 多租户约定（预留）
+
+按「预留多租户」设计（业务确认）：当前单租户运行（`tenant_id = 1`），但结构从第一天支持多租户，避免事后为每张表补列、改唯一键的灾难性改造。
+
+- 每张业务表带 `tenant_id BIGINT NOT NULL DEFAULT 1`
+- **所有业务唯一键必须包含 tenant_id**：`UNIQUE (tenant_id, quote_no)` 而非 `UNIQUE (quote_no)`；取号表主键为 `(tenant_id, biz_type, period_key)`
+- 复合索引以 `tenant_id` 开头
+- JWT 携带 `tenant_id`，gateway 写入 gRPC metadata `x-tenant-id`，服务端拦截器注入 context，所有查询强制带租户过滤
+- Kafka 事件 payload 携带 `tenant_id`
+- 阶段 0 的 CI 加迁移检查脚本：扫描所有 `CREATE TABLE`，缺 `tenant_id` 直接失败
+- 阶段 8 可选启用 PostgreSQL Row Level Security 作为第二道防线
+
+> 为可读性，第 5 节的建表 SQL **省略了 `tenant_id` 列及其索引**；实际迁移文件必须包含，由上述 CI 检查强制。
 
 ### 5.1 iam（身份与权限）
 
@@ -329,7 +345,7 @@ CREATE TABLE role_data_scopes (
     role_id     BIGINT      NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
     module      VARCHAR(50) NOT NULL,          -- export / procurement / ...
     scope_type  VARCHAR(32) NOT NULL CHECK (scope_type IN ('SELF','DEPT','DEPT_AND_SUB','ALL','CUSTOM')),
-    custom_dept_ids BIGINT[],
+    custom_dept_ids BIGINT[],                      -- CUSTOM 为预留枚举，暂不实现其逻辑与 UI（业务确认）
     UNIQUE (role_id, module)
 );
 ```
@@ -599,13 +615,15 @@ CREATE TABLE fx_anomalies (
 ```
 
 > **不变量**：汇率快照**不存在这张表里**。每张业务单据自带 `fx_rate / fx_rate_at / fx_source` 三列，是值对象内嵌。这样「实时汇率变化后，历史合同、采购单和收汇记录不能跟着改变」在结构上就成立了 —— 单据根本没有指向汇率表的引用。
+>
+> **汇率源**（业务确认）：免费 API（frankfurter.app，欧央行数据，工作日每日更新）+ `fx_manual_overrides` 手工录入兜底。本位币 USD，核心币对 USD/CNY、EUR/USD。手工价与 API 价偏差超过阈值时写入 `fx_anomalies` 并发预警事件。
 
 ### 5.5 approval（审批流）
 
 ```sql
 CREATE TABLE approval_definitions (
     id         BIGSERIAL PRIMARY KEY,
-    biz_type   VARCHAR(50)  NOT NULL,             -- CONTRACT / PURCHASE_ORDER / STOCK_ADJUST / PAYMENT
+    biz_type   VARCHAR(50)  NOT NULL,             -- CONTRACT / PURCHASE_ORDER / STOCK_ADJUST / PAYMENT / LC_AMENDMENT
     name       VARCHAR(100) NOT NULL,
     version    INT          NOT NULL DEFAULT 1,
     condition  JSONB,                             -- 生效条件，如 {"amount_gte": 100000}
@@ -789,7 +807,9 @@ CREATE TABLE contract_items (
 );
 ```
 
-> **不变量**：`contract_versions` 状态为 `APPROVED` 后禁止 UPDATE，由数据库触发器强制。变更走「新建版本 → 重新审批 → 旧版本置 SUPERSEDED」。
+> **不变量**：`contract_versions` 状态为 `APPROVED` 后禁止 UPDATE，由数据库触发器强制。变更走「新建版本 → 重新审批 → **客户重新签署**（合同状态回退 `PENDING_SIGN`）→ 新版本生效、旧版本置 SUPERSEDED」。
+>
+> **重签期间的存量业务**（业务确认）：已确认的出货计划与已锁定库存**继续执行，不冻结**。新版本生效时系统逐条校验，若新版本数量小于某明细已累计计划/已出库数量，标记冲突并生成风险预警，由人工处理（调整计划或再次变更合同）——系统不自动取消任何计划。
 
 #### 5.6.3 出货计划
 
@@ -867,7 +887,9 @@ CREATE TABLE lc_amendments (
     content       TEXT         NOT NULL,
     amended_at    DATE         NOT NULL,
     file_path     VARCHAR(500),
-    accepted      BOOLEAN      NOT NULL DEFAULT false,
+    -- 不符点改单需独立审批（业务确认）：approval biz_type = LC_AMENDMENT
+    status        VARCHAR(32)  NOT NULL DEFAULT 'PENDING_APPROVAL'
+                  CHECK (status IN ('PENDING_APPROVAL','APPROVED','REJECTED','ACCEPTED')),
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
     UNIQUE (lc_id, amendment_no)
 );
@@ -906,11 +928,26 @@ CREATE INDEX documents_plan_idx ON documents (shipment_plan_id, status);
 #### 5.6.6 退税
 
 ```sql
+-- 按月汇总申报（业务确认）：一个申报批次归集当月多笔出口退税
+CREATE TABLE tax_refund_declarations (
+    id          BIGSERIAL PRIMARY KEY,
+    declare_no  VARCHAR(50)   NOT NULL UNIQUE,
+    period      CHAR(7)       NOT NULL,            -- 2026-07
+    total_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+    status      VARCHAR(32)   NOT NULL DEFAULT 'PREPARING'
+                CHECK (status IN ('PREPARING','DECLARED','REVIEWING','COMPLETED')),
+    declared_at DATE,
+    created_at  TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    created_by  BIGINT        NOT NULL,
+    UNIQUE (period)
+);
+
 CREATE TABLE tax_refunds (
     id                 BIGSERIAL PRIMARY KEY,
     refund_no          VARCHAR(50)   NOT NULL UNIQUE,
     contract_id        BIGINT        NOT NULL REFERENCES contracts(id),
     shipment_plan_id   BIGINT REFERENCES shipment_plans(id),
+    declaration_id     BIGINT REFERENCES tax_refund_declarations(id),   -- 归属的月度申报批次
     customs_doc_no     VARCHAR(100),
     export_amount      NUMERIC(18,2) NOT NULL,
     currency           VARCHAR(3)    NOT NULL,
@@ -1100,6 +1137,8 @@ CREATE TABLE purchase_payments (
 ```
 
 ### 5.8 inventory（仓储管理）
+
+> **单仓库实施**（业务确认）：schema 保留 `warehouse_id`（多仓的结构成本为零），应用层固定使用默认仓库；`stock_transfers` 调拨表结构保留，其 UI 与逻辑推迟到多仓需求出现时实现。届时只加功能，不改表。
 
 ```sql
 CREATE TABLE warehouses (
@@ -1668,6 +1707,7 @@ erp-go/
 │   ├── grpcx/                      拦截器：认证、日志、追踪、错误映射
 │   ├── pgx/                        连接池、事务助手
 │   ├── apierr/                     统一业务错误码
+│   ├── blobstore/                  S3 兼容对象存储封装（本地 MinIO，云端 S3/OSS）
 │   └── idempotency/
 ├── deploy/
 │   ├── docker-compose.yml
@@ -1774,12 +1814,14 @@ const (
     ContractCancelled        ContractStatus = "CANCELLED"
 )
 
+// 变更版本审批通过后，合同回到 PENDING_SIGN 等客户重新签署（业务确认），
+// 因此 EFFECTIVE / EXECUTING 均可回退到 PENDING_SIGN。
 var contractTransitions = map[ContractStatus][]ContractStatus{
     ContractDraft:           {ContractPendingApproval, ContractCancelled},
     ContractPendingApproval: {ContractPendingSign, ContractDraft, ContractCancelled},
     ContractPendingSign:     {ContractEffective, ContractCancelled},
-    ContractEffective:       {ContractExecuting, ContractCancelled},
-    ContractExecuting:       {ContractCompleted},
+    ContractEffective:       {ContractExecuting, ContractPendingSign, ContractCancelled},
+    ContractExecuting:       {ContractPendingSign, ContractCompleted},
     ContractCompleted:       {},
     ContractCancelled:       {},
 }
@@ -2027,7 +2069,20 @@ services:
     image: redis:7-alpine
     ports: ["6379:6379"]
 
-volumes: { pgdata: , kafkadata: }
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: erp
+      MINIO_ROOT_PASSWORD: erp_dev_password
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [miniodata:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      retries: 6
+
+volumes: { pgdata: , kafkadata: , miniodata: }
 ```
 
 `init-databases.sh` 为每个服务建库和独立账号：
@@ -2121,9 +2176,9 @@ ENTRYPOINT ["/app"]
 - [ ] 初始化 `go.work`，各服务独立 module
 - [ ] `buf` 配置，proto lint 与生成流水线跑通
 - [ ] `pkg/` 基础库：`money`、`pgx`、`grpcx`、`apierr`、`outbox`、`kafkax`
-- [ ] `deploy/docker-compose.infra.yml`，一条命令起 PostgreSQL + Kafka + Redis
+- [ ] `deploy/docker-compose.infra.yml`，一条命令起 PostgreSQL + Kafka + Redis + MinIO
 - [ ] Makefile：`make proto` / `make migrate` / `make up` / `make test`
-- [ ] CI：lint + `go test ./...` + proto breaking change 检查
+- [ ] CI：lint + `go test ./...` + proto breaking change 检查 + 迁移文件 `tenant_id` 检查
 
 **验收**：`make up` 后基础设施健康；`make proto` 生成物无差异。
 
@@ -2238,13 +2293,24 @@ ENTRYPOINT ["/app"]
 - 旧前端 Vue 3 页面（尤其销售订单）交互设计可参考，但接口按本文档重新定义
 - 旧系统 93 个迁移脚本已转为合法 PostgreSQL，但其中 31 处引用不存在的表，**设计未闭环，不建议参考**
 
-## 附录 B：需要确认的业务问题
+## 附录 B：已确认的业务决策
 
-以下问题需求文档未明确，实现到对应阶段前需确认：
+以下决策已由业务方确认，正文相应位置均已落实：
 
-1. **本位币是什么**？收汇、采购、费用都要折本币计算汇兑损益，需要一个全局本位币（推测 CNY）
-2. **合同变更是否需要客户重新签署**？影响状态机是否回到 PENDING_SIGN
-3. **出货计划能否跨仓库**？当前设计为单仓库，跨仓库需先调拨
-4. **退税申报周期**：按批次还是按月汇总申报
-5. **信用证不符点处理流程**：是否需要独立的改单审批
-6. **数据范围的「自定义部门」**：是否需要支持跨部门的项目组授权
+| # | 问题 | 决策 | 落点 |
+|---|---|---|---|
+| 1 | 本位币 | **USD** | 公共约定；所有 `base_amount` 折 USD |
+| 2 | 合同变更是否重新签署 | **需要**，状态回退 `PENDING_SIGN` | 合同状态机（7.3）；5.6.2 不变量 |
+| 3 | 出货计划是否跨仓库 | **先单仓库**，schema 预留多仓 | 5.8 说明 |
+| 4 | 退税申报周期 | **按月**汇总申报 | `tax_refund_declarations`（5.6.6） |
+| 5 | 信用证不符点改单 | **需要独立审批** | `lc_amendments.status`；biz_type `LC_AMENDMENT` |
+| 6 | 数据范围自定义部门 | 枚举预留，**暂不实现** | `role_data_scopes` 注释 |
+| 7 | 部署形态 | **预留多租户**（当前单租户运行） | 公共约定「多租户约定」 |
+| 8 | 附件存储 | **MinIO（S3 兼容）**，云端换 S3/OSS 只改配置 | 公共约定；8.1 infra compose |
+| 9 | 汇率源 | **免费 API（frankfurter.app）+ 手工兜底** | 5.4 说明 |
+| 10 | 变更重签期间存量业务 | **继续执行，冲突预警**，不自动取消 | 5.6.2 不变量 |
+
+尚未决策、但不阻塞开发的事项：
+
+- **云厂商**（阿里云 / AWS / 其他）：只影响阶段 8 的部署清单，届时确认
+- **审批通知渠道**：站内「我的待办」已满足文档要求；邮件 / 企业微信提醒作为后续增强，事件总线已具备接入点
