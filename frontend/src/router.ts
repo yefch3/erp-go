@@ -10,6 +10,7 @@ export const router = createRouter({
       children: [
         { path: '', redirect: '/customers' },
         { path: 'customers', component: () => import('./pages/CustomersPage.vue') },
+        { path: 'fx', component: () => import('./pages/FxPage.vue') },
       ],
     },
   ],
