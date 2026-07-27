@@ -247,3 +247,17 @@ func (h *Handler) ListNumberRules(ctx context.Context, _ *mdv1.ListNumberRulesRe
 	}
 	return &mdv1.ListNumberRulesResponse{Rules: out}, nil
 }
+
+func (h *Handler) ActivateCustomer(ctx context.Context, req *mdv1.ActivateCustomerRequest) (*mdv1.ActivateCustomerResponse, error) {
+	if err := h.svc.ActivateCustomer(ctx, grpcx.TenantID(ctx), req.GetId(), operatorID(ctx)); err != nil {
+		return nil, err
+	}
+	return &mdv1.ActivateCustomerResponse{}, nil
+}
+
+func (h *Handler) ActivateSupplier(ctx context.Context, req *mdv1.ActivateSupplierRequest) (*mdv1.ActivateSupplierResponse, error) {
+	if err := h.svc.ActivateSupplier(ctx, grpcx.TenantID(ctx), req.GetId(), operatorID(ctx)); err != nil {
+		return nil, err
+	}
+	return &mdv1.ActivateSupplierResponse{}, nil
+}

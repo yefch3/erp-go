@@ -47,6 +47,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}", s.getCustomer)
 		r.With(s.perm("masterdata:customer:write")).Put("/api/customers/{id}", s.updateCustomer)
 		r.With(s.perm("masterdata:customer:write")).Delete("/api/customers/{id}", s.deactivateCustomer)
+		r.With(s.perm("masterdata:customer:write")).Post("/api/customers/{id}/activate", s.activateCustomer)
 		r.With(s.perm("masterdata:supplier:read")).Get("/api/suppliers", s.listSuppliers)
 		r.With(s.perm("masterdata:supplier:write")).Post("/api/suppliers", s.createSupplier)
 		// Option dictionaries feed every form's dropdowns; login is enough.

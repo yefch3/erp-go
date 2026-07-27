@@ -11,6 +11,44 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const activateCustomer = `-- name: ActivateCustomer :execrows
+UPDATE customers SET status = 'ACTIVE', updated_by = $3, updated_at = now()
+WHERE tenant_id = $1 AND id = $2 AND status = 'INACTIVE'
+`
+
+type ActivateCustomerParams struct {
+	TenantID  int64
+	ID        int64
+	UpdatedBy int64
+}
+
+func (q *Queries) ActivateCustomer(ctx context.Context, arg ActivateCustomerParams) (int64, error) {
+	result, err := q.db.Exec(ctx, activateCustomer, arg.TenantID, arg.ID, arg.UpdatedBy)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const activateSupplier = `-- name: ActivateSupplier :execrows
+UPDATE suppliers SET status = 'ACTIVE', updated_by = $3, updated_at = now()
+WHERE tenant_id = $1 AND id = $2 AND status = 'INACTIVE'
+`
+
+type ActivateSupplierParams struct {
+	TenantID  int64
+	ID        int64
+	UpdatedBy int64
+}
+
+func (q *Queries) ActivateSupplier(ctx context.Context, arg ActivateSupplierParams) (int64, error) {
+	result, err := q.db.Exec(ctx, activateSupplier, arg.TenantID, arg.ID, arg.UpdatedBy)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const addCustomerContact = `-- name: AddCustomerContact :exec
 INSERT INTO customer_contacts (tenant_id, customer_id, name, title, email, phone, is_primary, sort_order)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)

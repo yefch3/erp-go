@@ -12,6 +12,9 @@ service CustomerService {
   rpc ListCustomers(ListCustomersRequest) returns (ListCustomersResponse);
   rpc UpdateCustomer(UpdateCustomerRequest) returns (UpdateCustomerResponse);
   rpc DeactivateCustomer(DeactivateCustomerRequest) returns (DeactivateCustomerResponse);
+  // Reactivate a previously deactivated customer: master data lifecycle is
+  // reversible (delete is what stays forbidden).
+  rpc ActivateCustomer(ActivateCustomerRequest) returns (ActivateCustomerResponse);
 }
 
 // SupplierService owns supplier master data, referenced by procurement.
@@ -21,6 +24,7 @@ service SupplierService {
   rpc ListSuppliers(ListSuppliersRequest) returns (ListSuppliersResponse);
   rpc UpdateSupplier(UpdateSupplierRequest) returns (UpdateSupplierResponse);
   rpc DeactivateSupplier(DeactivateSupplierRequest) returns (DeactivateSupplierResponse);
+  rpc ActivateSupplier(ActivateSupplierRequest) returns (ActivateSupplierResponse);
 }
 
 // OptionService serves dropdown dictionaries (payment methods, trade terms,
@@ -118,6 +122,12 @@ message DeactivateCustomerRequest {
 
 message DeactivateCustomerResponse {}
 
+message ActivateCustomerRequest {
+  int64 id = 1;
+}
+
+message ActivateCustomerResponse {}
+
 message Supplier {
   int64 id = 1;
   string code = 2;
@@ -188,6 +198,12 @@ message DeactivateSupplierRequest {
 }
 
 message DeactivateSupplierResponse {}
+
+message ActivateSupplierRequest {
+  int64 id = 1;
+}
+
+message ActivateSupplierResponse {}
 
 message OptionItem {
   int64 id = 1;

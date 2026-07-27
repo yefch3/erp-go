@@ -24,6 +24,7 @@ const (
 	CustomerService_ListCustomers_FullMethodName      = "/erp.masterdata.v1.CustomerService/ListCustomers"
 	CustomerService_UpdateCustomer_FullMethodName     = "/erp.masterdata.v1.CustomerService/UpdateCustomer"
 	CustomerService_DeactivateCustomer_FullMethodName = "/erp.masterdata.v1.CustomerService/DeactivateCustomer"
+	CustomerService_ActivateCustomer_FullMethodName   = "/erp.masterdata.v1.CustomerService/ActivateCustomer"
 )
 
 // CustomerServiceClient is the client API for CustomerService service.
@@ -38,6 +39,9 @@ type CustomerServiceClient interface {
 	ListCustomers(ctx context.Context, in *ListCustomersRequest, opts ...grpc.CallOption) (*ListCustomersResponse, error)
 	UpdateCustomer(ctx context.Context, in *UpdateCustomerRequest, opts ...grpc.CallOption) (*UpdateCustomerResponse, error)
 	DeactivateCustomer(ctx context.Context, in *DeactivateCustomerRequest, opts ...grpc.CallOption) (*DeactivateCustomerResponse, error)
+	// Reactivate a previously deactivated customer: master data lifecycle is
+	// reversible (delete is what stays forbidden).
+	ActivateCustomer(ctx context.Context, in *ActivateCustomerRequest, opts ...grpc.CallOption) (*ActivateCustomerResponse, error)
 }
 
 type customerServiceClient struct {
@@ -98,6 +102,16 @@ func (c *customerServiceClient) DeactivateCustomer(ctx context.Context, in *Deac
 	return out, nil
 }
 
+func (c *customerServiceClient) ActivateCustomer(ctx context.Context, in *ActivateCustomerRequest, opts ...grpc.CallOption) (*ActivateCustomerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ActivateCustomerResponse)
+	err := c.cc.Invoke(ctx, CustomerService_ActivateCustomer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CustomerServiceServer is the server API for CustomerService service.
 // All implementations must embed UnimplementedCustomerServiceServer
 // for forward compatibility.
@@ -110,6 +124,9 @@ type CustomerServiceServer interface {
 	ListCustomers(context.Context, *ListCustomersRequest) (*ListCustomersResponse, error)
 	UpdateCustomer(context.Context, *UpdateCustomerRequest) (*UpdateCustomerResponse, error)
 	DeactivateCustomer(context.Context, *DeactivateCustomerRequest) (*DeactivateCustomerResponse, error)
+	// Reactivate a previously deactivated customer: master data lifecycle is
+	// reversible (delete is what stays forbidden).
+	ActivateCustomer(context.Context, *ActivateCustomerRequest) (*ActivateCustomerResponse, error)
 	mustEmbedUnimplementedCustomerServiceServer()
 }
 
@@ -134,6 +151,9 @@ func (UnimplementedCustomerServiceServer) UpdateCustomer(context.Context, *Updat
 }
 func (UnimplementedCustomerServiceServer) DeactivateCustomer(context.Context, *DeactivateCustomerRequest) (*DeactivateCustomerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeactivateCustomer not implemented")
+}
+func (UnimplementedCustomerServiceServer) ActivateCustomer(context.Context, *ActivateCustomerRequest) (*ActivateCustomerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ActivateCustomer not implemented")
 }
 func (UnimplementedCustomerServiceServer) mustEmbedUnimplementedCustomerServiceServer() {}
 func (UnimplementedCustomerServiceServer) testEmbeddedByValue()                         {}
@@ -246,6 +266,24 @@ func _CustomerService_DeactivateCustomer_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CustomerService_ActivateCustomer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ActivateCustomerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).ActivateCustomer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_ActivateCustomer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).ActivateCustomer(ctx, req.(*ActivateCustomerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CustomerService_ServiceDesc is the grpc.ServiceDesc for CustomerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -273,6 +311,10 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "DeactivateCustomer",
 			Handler:    _CustomerService_DeactivateCustomer_Handler,
 		},
+		{
+			MethodName: "ActivateCustomer",
+			Handler:    _CustomerService_ActivateCustomer_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "erp/masterdata/v1/masterdata.proto",
@@ -284,6 +326,7 @@ const (
 	SupplierService_ListSuppliers_FullMethodName      = "/erp.masterdata.v1.SupplierService/ListSuppliers"
 	SupplierService_UpdateSupplier_FullMethodName     = "/erp.masterdata.v1.SupplierService/UpdateSupplier"
 	SupplierService_DeactivateSupplier_FullMethodName = "/erp.masterdata.v1.SupplierService/DeactivateSupplier"
+	SupplierService_ActivateSupplier_FullMethodName   = "/erp.masterdata.v1.SupplierService/ActivateSupplier"
 )
 
 // SupplierServiceClient is the client API for SupplierService service.
@@ -297,6 +340,7 @@ type SupplierServiceClient interface {
 	ListSuppliers(ctx context.Context, in *ListSuppliersRequest, opts ...grpc.CallOption) (*ListSuppliersResponse, error)
 	UpdateSupplier(ctx context.Context, in *UpdateSupplierRequest, opts ...grpc.CallOption) (*UpdateSupplierResponse, error)
 	DeactivateSupplier(ctx context.Context, in *DeactivateSupplierRequest, opts ...grpc.CallOption) (*DeactivateSupplierResponse, error)
+	ActivateSupplier(ctx context.Context, in *ActivateSupplierRequest, opts ...grpc.CallOption) (*ActivateSupplierResponse, error)
 }
 
 type supplierServiceClient struct {
@@ -357,6 +401,16 @@ func (c *supplierServiceClient) DeactivateSupplier(ctx context.Context, in *Deac
 	return out, nil
 }
 
+func (c *supplierServiceClient) ActivateSupplier(ctx context.Context, in *ActivateSupplierRequest, opts ...grpc.CallOption) (*ActivateSupplierResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ActivateSupplierResponse)
+	err := c.cc.Invoke(ctx, SupplierService_ActivateSupplier_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SupplierServiceServer is the server API for SupplierService service.
 // All implementations must embed UnimplementedSupplierServiceServer
 // for forward compatibility.
@@ -368,6 +422,7 @@ type SupplierServiceServer interface {
 	ListSuppliers(context.Context, *ListSuppliersRequest) (*ListSuppliersResponse, error)
 	UpdateSupplier(context.Context, *UpdateSupplierRequest) (*UpdateSupplierResponse, error)
 	DeactivateSupplier(context.Context, *DeactivateSupplierRequest) (*DeactivateSupplierResponse, error)
+	ActivateSupplier(context.Context, *ActivateSupplierRequest) (*ActivateSupplierResponse, error)
 	mustEmbedUnimplementedSupplierServiceServer()
 }
 
@@ -392,6 +447,9 @@ func (UnimplementedSupplierServiceServer) UpdateSupplier(context.Context, *Updat
 }
 func (UnimplementedSupplierServiceServer) DeactivateSupplier(context.Context, *DeactivateSupplierRequest) (*DeactivateSupplierResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeactivateSupplier not implemented")
+}
+func (UnimplementedSupplierServiceServer) ActivateSupplier(context.Context, *ActivateSupplierRequest) (*ActivateSupplierResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ActivateSupplier not implemented")
 }
 func (UnimplementedSupplierServiceServer) mustEmbedUnimplementedSupplierServiceServer() {}
 func (UnimplementedSupplierServiceServer) testEmbeddedByValue()                         {}
@@ -504,6 +562,24 @@ func _SupplierService_DeactivateSupplier_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SupplierService_ActivateSupplier_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ActivateSupplierRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).ActivateSupplier(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_ActivateSupplier_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).ActivateSupplier(ctx, req.(*ActivateSupplierRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SupplierService_ServiceDesc is the grpc.ServiceDesc for SupplierService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -530,6 +606,10 @@ var SupplierService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeactivateSupplier",
 			Handler:    _SupplierService_DeactivateSupplier_Handler,
+		},
+		{
+			MethodName: "ActivateSupplier",
+			Handler:    _SupplierService_ActivateSupplier_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

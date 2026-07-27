@@ -18,6 +18,7 @@
           @clear="load"
         />
         <el-button @click="load">{{ t('common.query') }}</el-button>
+        <el-checkbox v-model="showInactive" @change="load">{{ t('customers.showInactive') }}</el-checkbox>
       </div>
 
       <el-table :data="customers" v-loading="loading">
@@ -46,6 +47,12 @@
               type="danger"
               @click="deactivate(row)"
             >{{ t('common.deactivate') }}</el-button>
+            <el-button
+              v-else
+              link
+              type="primary"
+              @click="activate(row)"
+            >{{ t('common.activate') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -69,7 +76,9 @@
           <el-input v-model="form.name" />
         </el-form-item>
         <el-form-item :label="t('customers.country')">
-          <el-input v-model="form.country" />
+          <el-select v-model="form.country" filterable allow-create clearable style="width: 220px">
+            <el-option v-for="c in COUNTRIES" :key="c" :value="c" :label="c" />
+          </el-select>
         </el-form-item>
         <el-form-item :label="t('customers.currency')">
           <el-select v-model="form.currency" style="width: 140px">
@@ -84,8 +93,9 @@
           </el-select>
         </el-form-item>
         <el-form-item :label="t('customers.contact')">
-          <el-input v-model="form.contactName" :placeholder="t('customers.contactName')" style="width: 160px" />
-          <el-input v-model="form.contactEmail" :placeholder="t('customers.contactEmail')" style="width: 210px; margin-left: 8px" />
+          <el-input v-model="form.contactName" :placeholder="t('customers.contactName')" style="width: 130px" />
+          <el-input v-model="form.contactPhone" :placeholder="t('customers.contactPhone')" style="width: 140px; margin-left: 8px" />
+          <el-input v-model="form.contactEmail" :placeholder="t('customers.contactEmail')" style="width: 170px; margin-left: 8px" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -101,6 +111,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { del, get, post } from '../api'
+import { COUNTRIES } from '../constants'
 import { useAuthStore } from '../stores/auth'
 
 interface Customer {
@@ -122,12 +133,13 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = 10
 const keyword = ref('')
+const showInactive = ref(false)
 const loading = ref(false)
 const dialogOpen = ref(false)
 const saving = ref(false)
 const form = reactive({
   code: '', name: '', country: '', currency: 'USD', paymentTerm: '',
-  contactName: '', contactEmail: '',
+  contactName: '', contactPhone: '', contactEmail: '',
 })
 
 async function load() {
@@ -135,6 +147,7 @@ async function load() {
   try {
     const data = await get<{ customers: Customer[]; meta: { total: string } }>('/customers', {
       page: page.value, page_size: pageSize, keyword: keyword.value,
+      status: showInactive.value ? 'ALL' : '',
     })
     customers.value = data.customers
     total.value = Number(data.meta.total)
@@ -143,9 +156,16 @@ async function load() {
   }
 }
 
-function openCreate() {
-  Object.assign(form, { code: '', name: '', country: '', currency: 'USD', paymentTerm: '', contactName: '', contactEmail: '' })
+async function openCreate() {
+  Object.assign(form, { code: '', name: '', country: '', currency: 'USD', paymentTerm: '', contactName: '', contactPhone: '', contactEmail: '' })
   dialogOpen.value = true
+  // Pre-fill the code from the numbering service; the field stays editable
+  // for companies with their own conventions.
+  try {
+    form.code = (await post<{ number: string }>('/numbering/next', { bizType: 'CUSTOMER' })).number
+  } catch {
+    // Numbering unavailable: leave the field empty for manual entry.
+  }
 }
 
 async function save() {
@@ -159,7 +179,7 @@ async function save() {
       code: form.code, name: form.name, country: form.country,
       currency: form.currency, paymentTerm: form.paymentTerm,
       contacts: form.contactName
-        ? [{ name: form.contactName, email: form.contactEmail, isPrimary: true }]
+        ? [{ name: form.contactName, phone: form.contactPhone, email: form.contactEmail, isPrimary: true }]
         : [],
     })
     ElMessage.success(t('customers.created'))
@@ -177,6 +197,12 @@ async function deactivate(row: Customer) {
   )
   await del(`/customers/${row.id}`)
   ElMessage.success(t('customers.deactivated'))
+  load()
+}
+
+async function activate(row: Customer) {
+  await post(`/customers/${row.id}/activate`)
+  ElMessage.success(t('customers.activated'))
   load()
 }
 

@@ -94,3 +94,11 @@ VALUES ($1, $2, $3, 1)
 ON CONFLICT (tenant_id, biz_type, period_key)
 DO UPDATE SET next_seq = number_sequences.next_seq + 1
 RETURNING next_seq;
+
+-- name: ActivateCustomer :execrows
+UPDATE customers SET status = 'ACTIVE', updated_by = $3, updated_at = now()
+WHERE tenant_id = $1 AND id = $2 AND status = 'INACTIVE';
+
+-- name: ActivateSupplier :execrows
+UPDATE suppliers SET status = 'ACTIVE', updated_by = $3, updated_at = now()
+WHERE tenant_id = $1 AND id = $2 AND status = 'INACTIVE';

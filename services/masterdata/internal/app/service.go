@@ -283,3 +283,25 @@ func translateUnique(err error, code, msg string) error {
 	}
 	return err
 }
+
+func (s *Service) ActivateCustomer(ctx context.Context, tenantID, id, operatorID int64) error {
+	n, err := s.q.ActivateCustomer(ctx, store.ActivateCustomerParams{TenantID: tenantID, ID: id, UpdatedBy: operatorID})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return apierr.NotFound("MD_CUSTOMER_NOT_FOUND", "客户不存在或已是启用状态")
+	}
+	return nil
+}
+
+func (s *Service) ActivateSupplier(ctx context.Context, tenantID, id, operatorID int64) error {
+	n, err := s.q.ActivateSupplier(ctx, store.ActivateSupplierParams{TenantID: tenantID, ID: id, UpdatedBy: operatorID})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return apierr.NotFound("MD_SUPPLIER_NOT_FOUND", "供应商不存在或已是启用状态")
+	}
+	return nil
+}
