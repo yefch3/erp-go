@@ -587,6 +587,44 @@ func (q *Queries) ListPermissions(ctx context.Context) ([]Permission, error) {
 	return items, nil
 }
 
+const listRoleMembers = `-- name: ListRoleMembers :many
+SELECT e.id AS employee_id, e.name
+FROM employee_roles er
+JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
+WHERE er.tenant_id = $1 AND er.role_id = $2 AND e.status = 'ACTIVE'
+ORDER BY e.id
+`
+
+type ListRoleMembersParams struct {
+	TenantID int64
+	RoleID   int64
+}
+
+type ListRoleMembersRow struct {
+	EmployeeID int64
+	Name       string
+}
+
+func (q *Queries) ListRoleMembers(ctx context.Context, arg ListRoleMembersParams) ([]ListRoleMembersRow, error) {
+	rows, err := q.db.Query(ctx, listRoleMembers, arg.TenantID, arg.RoleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRoleMembersRow
+	for rows.Next() {
+		var i ListRoleMembersRow
+		if err := rows.Scan(&i.EmployeeID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRolePermissionCodes = `-- name: ListRolePermissionCodes :many
 SELECT p.code
 FROM role_permissions rp

@@ -684,6 +684,12 @@ CREATE INDEX approval_tasks_todo_idx ON approval_tasks (assignee_id, status) WHE
 
 > 审批引擎不知道「合同」是什么，业务服务不知道审批有几级。业务服务调 `Submit`，订阅 `ApprovalApproved` 事件推进自己的状态机。「我的待办」直接查 `approval_tasks`，无需单独建表。
 
+**实现补充（2026-07-27）**：
+- 实例状态增加 `RETURNED`：退回和驳回一样是终态，业务服务收到 `ApprovalReturned` 后应允许单据重新编辑并再次提交（新实例）。
+- `approval_instances` 上有 `WHERE status='RUNNING'` 的唯一索引：同一单据同时只能有一个在途审批，重复提交返回 `AP_ALREADY_RUNNING`。
+- 节点审批人 `ROLE` 类型在**提交/进入节点时**调 iam 的 `ListRoleMembers` 落成具体任务；该 gRPC 调用发生在事务之外（数据库事务里不等待其他服务）。
+- 决策事件通过 outbox 与状态变更同事务写入，relay 发到 `erp.approval.task.v1`。
+
 ### 5.6 export（出口业务）
 
 这是最大的服务。表按子域分组。
@@ -2192,7 +2198,7 @@ ENTRYPOINT ["/app"]
 - [ ] `iam`：员工、部门、角色、权限、数据范围、登录签发 JWT
 - [ ] `masterdata`：客户、供应商、业务选项、编码规则（含并发安全的取号）
 - [ ] `fx`：汇率抓取任务、历史存储、`GetLatestRate`、异常检测
-- [ ] `approval`：审批定义、提交、审批、我的待办、发 `ApprovalApproved` 事件
+- [x] `approval`：审批定义、提交、审批、我的待办、发 `ApprovalApproved` 事件（2026-07-27 完成）
 - [ ] `gateway`：JWT 校验、路由到上述服务、统一错误响应
 
 **验收**：能登录拿到 token；能配一条合同审批流；能取到实时汇率；取号在并发 100 请求下无重复。

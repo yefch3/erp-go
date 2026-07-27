@@ -50,6 +50,23 @@ services:
     networks: [infra]
     restart: unless-stopped
 
+  approval:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args: { SERVICE: approval }
+    image: erp-go/approval:dev
+    environment:
+      DB_DSN: postgres://erp_approval:erp_approval_pw@postgres:5432/erp_approval?sslmode=disable
+      GRPC_PORT: "9005"
+      IAM_ADDR: iam:9001
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "9005:9005"
+    networks: [infra]
+    depends_on: [iam]
+    restart: unless-stopped
+
   gateway:
     build:
       context: ..
@@ -60,12 +77,13 @@ services:
       IAM_ADDR: iam:9001
       MASTERDATA_ADDR: masterdata:9002
       FX_ADDR: fx:9003
+      APPROVAL_ADDR: approval:9005
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       HTTP_PORT: "8080"
     ports:
       - "8080:8080"
     networks: [infra]
-    depends_on: [iam, masterdata, fx]
+    depends_on: [iam, masterdata, fx, approval]
     restart: unless-stopped
 
 networks:

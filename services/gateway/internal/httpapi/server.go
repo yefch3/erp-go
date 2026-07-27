@@ -17,6 +17,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	apv1 "github.com/sgao19/erp-go/gen/go/erp/approval/v1"
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
@@ -33,6 +34,7 @@ type Server struct {
 	Options    mdv1.OptionServiceClient
 	Numbering  mdv1.NumberingServiceClient
 	Fx         fxv1.FxServiceClient
+	Approval   apv1.ApprovalServiceClient
 	JWTSecret  string
 	Log        *slog.Logger
 }
@@ -53,6 +55,12 @@ func (s *Server) Router() http.Handler {
 		// Option dictionaries feed every form's dropdowns; login is enough.
 		r.Get("/api/options", s.listOptions)
 		r.Post("/api/numbering/next", s.nextNumber)
+		// Approval todos are personal: the service filters by the caller's
+		// employee id, so the permission only gates "may act on approvals".
+		r.With(s.perm("approval:task:act")).Get("/api/approvals/todos", s.myTodos)
+		r.With(s.perm("approval:task:act")).Post("/api/approvals/tasks/{id}/act", s.actOnTask)
+		r.With(s.perm("approval:task:act")).Get("/api/approvals/instances", s.listApprovalInstances)
+		r.With(s.perm("approval:task:act")).Get("/api/approvals/instances/{id}", s.getApprovalInstance)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/latest", s.fxLatest)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/rates", s.fxRates)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/anomalies", s.fxAnomalies)
@@ -171,6 +179,32 @@ func (s *Server) writeGRPCError(w http.ResponseWriter, err error) {
 // decodeBody parses a JSON request body directly into the gRPC request
 // message, so REST and gRPC share one schema definition (the proto).
 func (s *Server) decodeBody(w http.ResponseWriter, r *http.Request, msg proto.Message) bool {
+	body, ok := s.readBody(w, r)
+	if !ok {
+		return false
+	}
+	if err := protojson.Unmarshal(body, msg); err != nil {
+		s.writeError(w, http.StatusBadRequest, "GATEWAY_BAD_JSON", "请求体不是合法的 JSON："+err.Error())
+		return false
+	}
+	return true
+}
+
+// decodeJSON is for the few endpoints whose REST body is not a proto message,
+// e.g. an enum expressed as a plain word.
+func (s *Server) decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
+	body, ok := s.readBody(w, r)
+	if !ok {
+		return false
+	}
+	if err := json.Unmarshal(body, target); err != nil {
+		s.writeError(w, http.StatusBadRequest, "GATEWAY_BAD_JSON", "请求体不是合法的 JSON："+err.Error())
+		return false
+	}
+	return true
+}
+
+func (s *Server) readBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	body := make([]byte, 0, 4096)
 	buf := make([]byte, 4096)
 	for {
@@ -181,12 +215,8 @@ func (s *Server) decodeBody(w http.ResponseWriter, r *http.Request, msg proto.Me
 		}
 		if len(body) > 1<<20 {
 			s.writeError(w, http.StatusRequestEntityTooLarge, "GATEWAY_BODY_TOO_LARGE", "请求体过大")
-			return false
+			return nil, false
 		}
 	}
-	if err := protojson.Unmarshal(body, msg); err != nil {
-		s.writeError(w, http.StatusBadRequest, "GATEWAY_BAD_JSON", "请求体不是合法的 JSON："+err.Error())
-		return false
-	}
-	return true
+	return body, true
 }

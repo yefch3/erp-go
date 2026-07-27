@@ -31,6 +31,7 @@ frontend/src/
     ├── LoginPage.vue
     ├── Shell.vue        侧边栏 + 顶栏布局,业务页面都是它的子路由
     ├── CustomersPage.vue
+    ├── TodosPage.vue
     └── FxPage.vue
 ```
 
@@ -73,13 +74,13 @@ frontend/src/
 |---|---|---|---|
 | 登录 | /login | - | POST /auth/login |
 | 客户管理 | /customers | masterdata:customer:read(写按钮 :write) | /customers 增改查、停用/启用、/options |
+| 我的待办 | /todos | approval:task:act | /approvals/todos、/approvals/tasks/{id}/act |
 | 汇率中心 | /fx | fx:rate:read | /fx/rates、/fx/anomalies(只读,汇率仅来自 API 抓取) |
 
-### 阶段 1 收尾(approval 服务落地后)
+### 阶段 1 收尾
 
 | 页面 | 路由 | 权限 | 说明 |
 |---|---|---|---|
-| 我的待办 | /todos | approval:task:act | 待我审批的任务列表,同意/驳回/退回 + 意见;来自 approval.MyTasks |
 | 供应商管理 | /suppliers | masterdata:supplier:read/write | 复制客户页模式,后端接口已就绪,随时可做 |
 | 员工与角色 | /settings/employees、/settings/roles | iam:employee:*、iam:role:* | 员工 CRUD+开账号、角色授权矩阵;后端接口已就绪 |
 

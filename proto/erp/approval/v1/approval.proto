@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package erp.approval.v1;
+
+import "erp/common/v1/pagination.proto";
+
+// ApprovalService is deliberately ignorant of what it approves. Business
+// services hand it a biz_type, an id and a display summary; it hands back
+// events. It never calls a business service, and no business service reads
+// its tables.
+service ApprovalService {
+  // Submit starts a flow for one business document. Called by the owning
+  // business service inside its own transaction boundary.
+  rpc Submit(SubmitRequest) returns (SubmitResponse);
+  // Act records one approver's decision and advances the flow.
+  rpc Act(ActRequest) returns (ActResponse);
+  // MyTodos lists the pending tasks assigned to one employee.
+  rpc MyTodos(MyTodosRequest) returns (MyTodosResponse);
+  // ListInstances returns the approval history of a business document.
+  rpc ListInstances(ListInstancesRequest) returns (ListInstancesResponse);
+  // GetInstance returns one instance with its full task timeline.
+  rpc GetInstance(GetInstanceRequest) returns (GetInstanceResponse);
+}
+
+// Action is what an approver did with a task.
+enum Action {
+  ACTION_UNSPECIFIED = 0;
+  ACTION_APPROVE = 1;
+  ACTION_REJECT = 2;
+  // Send back to the submitter for revision; the instance ends and the
+  // business service is expected to let the document be edited and resubmitted.
+  ACTION_RETURN = 3;
+}
+
+message Instance {
+  int64 id = 1;
+  string biz_type = 2;
+  int64 biz_id = 3;
+  string biz_no = 4;
+  // Free-form JSON summary shown in todo lists so they never call back into
+  // the business service, e.g. {"customer":"Acme","amount":"120000.00 USD"}.
+  string biz_summary = 5;
+  int64 submitter_id = 6;
+  string submitter_name = 7;
+  string status = 8;
+  int32 current_seq = 9;
+  string submitted_at = 10;
+  string finished_at = 11;
+}
+
+message Task {
+  int64 id = 1;
+  int64 instance_id = 2;
+  int32 node_seq = 3;
+  string node_name = 4;
+  int64 assignee_id = 5;
+  string status = 6;
+  string comment = 7;
+  string acted_at = 8;
+  string created_at = 9;
+}
+
+// TodoItem is one pending task joined with the document it belongs to.
+message TodoItem {
+  Task task = 1;
+  Instance instance = 2;
+}
+
+message SubmitRequest {
+  string biz_type = 1;
+  int64 biz_id = 2;
+  string biz_no = 3;
+  string biz_summary = 4;
+  int64 submitter_id = 5;
+  string submitter_name = 6;
+}
+
+message SubmitResponse {
+  Instance instance = 1;
+  // The tasks created for the first node.
+  repeated Task tasks = 2;
+}
+
+message ActRequest {
+  int64 task_id = 1;
+  Action action = 2;
+  string comment = 3;
+}
+
+message ActResponse {
+  Instance instance = 1;
+  // Tasks created by this decision (the next node), empty when the flow ended.
+  repeated Task next_tasks = 2;
+}
+
+message MyTodosRequest {
+  erp.common.v1.PageRequest page = 1;
+  // Optional filter, e.g. "CONTRACT".
+  string biz_type = 2;
+}
+
+message MyTodosResponse {
+  repeated TodoItem todos = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message ListInstancesRequest {
+  string biz_type = 1;
+  int64 biz_id = 2;
+}
+
+message ListInstancesResponse {
+  repeated Instance instances = 1;
+}
+
+message GetInstanceRequest {
+  int64 id = 1;
+}
+
+message GetInstanceResponse {
+  Instance instance = 1;
+  repeated Task tasks = 2;
+}

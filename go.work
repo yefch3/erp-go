@@ -3,6 +3,7 @@ go 1.25.0
 use (
 	./gen
 	./pkg
+	./services/approval
 	./services/iam
 	./services/fx
 	./services/gateway

@@ -181,6 +181,18 @@ func (h *Handler) ListEmployeePermissions(ctx context.Context, req *iamv1.ListEm
 	return &iamv1.ListEmployeePermissionsResponse{PermissionCodes: codes}, nil
 }
 
+func (h *Handler) ListRoleMembers(ctx context.Context, req *iamv1.ListRoleMembersRequest) (*iamv1.ListRoleMembersResponse, error) {
+	rows, err := h.svc.ListRoleMembers(ctx, grpcx.TenantID(ctx), req.GetRoleId())
+	if err != nil {
+		return nil, err
+	}
+	members := make([]*iamv1.RoleMember, 0, len(rows))
+	for _, r := range rows {
+		members = append(members, &iamv1.RoleMember{EmployeeId: r.EmployeeID, Name: r.Name})
+	}
+	return &iamv1.ListRoleMembersResponse{Members: members}, nil
+}
+
 // ---------------------------------------------------------------- mapping
 
 func departmentToProto(d store.Department) *iamv1.Department {

@@ -314,6 +314,12 @@ func (s *Service) ListEmployeePermissions(ctx context.Context, tenantID, employe
 		store.ListEmployeePermissionCodesParams{TenantID: tenantID, EmployeeID: employeeID})
 }
 
+// ListRoleMembers powers approval nodes that name a role instead of a person.
+// Deactivated employees are left out: they cannot act on a task anyway.
+func (s *Service) ListRoleMembers(ctx context.Context, tenantID, roleID int64) ([]store.ListRoleMembersRow, error) {
+	return s.q.ListRoleMembers(ctx, store.ListRoleMembersParams{TenantID: tenantID, RoleID: roleID})
+}
+
 // translateUnique turns a unique-violation into the given business error and
 // passes everything else through untouched.
 func translateUnique(err error, code, msg string) error {

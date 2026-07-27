@@ -43,6 +43,15 @@ down: ## Stop local infrastructure (volumes preserved)
 nuke: ## Stop local infrastructure AND delete its volumes
 	docker compose -f deploy/docker-compose.infra.yml down -v
 
+.PHONY: topics
+topics: ## Create the Kafka topics (producers refuse to auto-create them)
+	@for t in erp.approval.task.v1; do \
+		echo "==> topic $$t"; \
+		docker compose -f deploy/docker-compose.infra.yml exec -T kafka \
+			kafka-topics --bootstrap-server localhost:9092 \
+			--create --if-not-exists --topic "$$t" --partitions 3 --replication-factor 1; \
+	done
+
 .PHONY: migrate
 migrate: ## Run goose migrations for every service that has them
 	@found=0; \

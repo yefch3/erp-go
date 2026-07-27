@@ -8,6 +8,7 @@ type Config struct {
 	IAMAddr        string
 	MasterdataAddr string
 	FxAddr         string
+	ApprovalAddr   string
 	JWTSecret      string
 }
 
@@ -17,6 +18,7 @@ func Load() Config {
 		IAMAddr:        env("IAM_ADDR", "localhost:9001"),
 		MasterdataAddr: env("MASTERDATA_ADDR", "localhost:9002"),
 		FxAddr:         env("FX_ADDR", "localhost:9003"),
+		ApprovalAddr:   env("APPROVAL_ADDR", "localhost:9005"),
 		// Must match iam's JWT_SECRET or every token fails validation.
 		JWTSecret: env("JWT_SECRET", "dev-secret-change-in-production"),
 	}

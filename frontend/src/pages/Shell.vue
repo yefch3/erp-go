@@ -6,6 +6,9 @@
         <span class="txt">{{ t('login.title') }}</span>
       </div>
       <el-menu :default-active="route.path" router class="side-menu">
+        <el-menu-item v-if="auth.can('approval:task:act')" index="/todos">
+          {{ t('menu.todos') }}
+        </el-menu-item>
         <el-menu-item v-if="auth.can('masterdata:customer:read')" index="/customers">
           {{ t('menu.customers') }}
         </el-menu-item>

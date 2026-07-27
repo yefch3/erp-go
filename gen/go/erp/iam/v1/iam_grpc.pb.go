@@ -428,6 +428,7 @@ const (
 	AccessService_ListPermissions_FullMethodName         = "/erp.iam.v1.AccessService/ListPermissions"
 	AccessService_CheckPermission_FullMethodName         = "/erp.iam.v1.AccessService/CheckPermission"
 	AccessService_ListEmployeePermissions_FullMethodName = "/erp.iam.v1.AccessService/ListEmployeePermissions"
+	AccessService_ListRoleMembers_FullMethodName         = "/erp.iam.v1.AccessService/ListRoleMembers"
 )
 
 // AccessServiceClient is the client API for AccessService service.
@@ -448,6 +449,10 @@ type AccessServiceClient interface {
 	// ListEmployeePermissions returns every permission code an employee holds,
 	// used by the gateway to render menus and by the frontend to hide actions.
 	ListEmployeePermissions(ctx context.Context, in *ListEmployeePermissionsRequest, opts ...grpc.CallOption) (*ListEmployeePermissionsResponse, error)
+	// ListRoleMembers returns the active employees holding a role. The approval
+	// engine calls it when a flow node names a role rather than a person, to
+	// turn that node into concrete tasks.
+	ListRoleMembers(ctx context.Context, in *ListRoleMembersRequest, opts ...grpc.CallOption) (*ListRoleMembersResponse, error)
 }
 
 type accessServiceClient struct {
@@ -528,6 +533,16 @@ func (c *accessServiceClient) ListEmployeePermissions(ctx context.Context, in *L
 	return out, nil
 }
 
+func (c *accessServiceClient) ListRoleMembers(ctx context.Context, in *ListRoleMembersRequest, opts ...grpc.CallOption) (*ListRoleMembersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRoleMembersResponse)
+	err := c.cc.Invoke(ctx, AccessService_ListRoleMembers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AccessServiceServer is the server API for AccessService service.
 // All implementations must embed UnimplementedAccessServiceServer
 // for forward compatibility.
@@ -546,6 +561,10 @@ type AccessServiceServer interface {
 	// ListEmployeePermissions returns every permission code an employee holds,
 	// used by the gateway to render menus and by the frontend to hide actions.
 	ListEmployeePermissions(context.Context, *ListEmployeePermissionsRequest) (*ListEmployeePermissionsResponse, error)
+	// ListRoleMembers returns the active employees holding a role. The approval
+	// engine calls it when a flow node names a role rather than a person, to
+	// turn that node into concrete tasks.
+	ListRoleMembers(context.Context, *ListRoleMembersRequest) (*ListRoleMembersResponse, error)
 	mustEmbedUnimplementedAccessServiceServer()
 }
 
@@ -576,6 +595,9 @@ func (UnimplementedAccessServiceServer) CheckPermission(context.Context, *CheckP
 }
 func (UnimplementedAccessServiceServer) ListEmployeePermissions(context.Context, *ListEmployeePermissionsRequest) (*ListEmployeePermissionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListEmployeePermissions not implemented")
+}
+func (UnimplementedAccessServiceServer) ListRoleMembers(context.Context, *ListRoleMembersRequest) (*ListRoleMembersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListRoleMembers not implemented")
 }
 func (UnimplementedAccessServiceServer) mustEmbedUnimplementedAccessServiceServer() {}
 func (UnimplementedAccessServiceServer) testEmbeddedByValue()                       {}
@@ -724,6 +746,24 @@ func _AccessService_ListEmployeePermissions_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AccessService_ListRoleMembers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRoleMembersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccessServiceServer).ListRoleMembers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccessService_ListRoleMembers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccessServiceServer).ListRoleMembers(ctx, req.(*ListRoleMembersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AccessService_ServiceDesc is the grpc.ServiceDesc for AccessService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -758,6 +798,10 @@ var AccessService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListEmployeePermissions",
 			Handler:    _AccessService_ListEmployeePermissions_Handler,
+		},
+		{
+			MethodName: "ListRoleMembers",
+			Handler:    _AccessService_ListRoleMembers_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

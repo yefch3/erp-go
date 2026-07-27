@@ -33,6 +33,10 @@ service AccessService {
   // ListEmployeePermissions returns every permission code an employee holds,
   // used by the gateway to render menus and by the frontend to hide actions.
   rpc ListEmployeePermissions(ListEmployeePermissionsRequest) returns (ListEmployeePermissionsResponse);
+  // ListRoleMembers returns the active employees holding a role. The approval
+  // engine calls it when a flow node names a role rather than a person, to
+  // turn that node into concrete tasks.
+  rpc ListRoleMembers(ListRoleMembersRequest) returns (ListRoleMembersResponse);
 }
 
 message LoginRequest {
@@ -193,4 +197,17 @@ message ListEmployeePermissionsRequest {
 
 message ListEmployeePermissionsResponse {
   repeated string permission_codes = 1;
+}
+
+message ListRoleMembersRequest {
+  int64 role_id = 1;
+}
+
+message RoleMember {
+  int64 employee_id = 1;
+  string name = 2;
+}
+
+message ListRoleMembersResponse {
+  repeated RoleMember members = 1;
 }

@@ -9,6 +9,7 @@ export const router = createRouter({
       component: () => import('./pages/Shell.vue'),
       children: [
         { path: '', redirect: '/customers' },
+        { path: 'todos', component: () => import('./pages/TodosPage.vue') },
         { path: 'customers', component: () => import('./pages/CustomersPage.vue') },
         { path: 'fx', component: () => import('./pages/FxPage.vue') },
       ],
