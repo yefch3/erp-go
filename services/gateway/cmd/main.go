@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
+	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/services/gateway/internal/config"
@@ -50,9 +51,16 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer mdConn.Close()
+	fxConn, err := dial(cfg.FxAddr)
+	if err != nil {
+		return err
+	}
+	defer fxConn.Close()
 
 	srv := &httpapi.Server{
 		IAM:       iamv1.NewAuthServiceClient(iamConn),
+		Access:    iamv1.NewAccessServiceClient(iamConn),
+		Fx:        fxv1.NewFxServiceClient(fxConn),
 		Customers: mdv1.NewCustomerServiceClient(mdConn),
 		Suppliers: mdv1.NewSupplierServiceClient(mdConn),
 		Options:   mdv1.NewOptionServiceClient(mdConn),

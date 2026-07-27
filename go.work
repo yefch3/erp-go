@@ -4,6 +4,7 @@ use (
 	./gen
 	./pkg
 	./services/iam
+	./services/fx
 	./services/gateway
 	./services/masterdata
 )

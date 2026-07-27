@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
+	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/authtoken"
@@ -26,10 +27,12 @@ import (
 
 type Server struct {
 	IAM        iamv1.AuthServiceClient
+	Access     iamv1.AccessServiceClient
 	Customers  mdv1.CustomerServiceClient
 	Suppliers  mdv1.SupplierServiceClient
 	Options    mdv1.OptionServiceClient
 	Numbering  mdv1.NumberingServiceClient
+	Fx         fxv1.FxServiceClient
 	JWTSecret  string
 	Log        *slog.Logger
 }
@@ -39,17 +42,48 @@ func (s *Server) Router() http.Handler {
 	r.Post("/api/auth/login", s.login)
 	r.Group(func(r chi.Router) {
 		r.Use(s.auth)
-		r.Get("/api/customers", s.listCustomers)
-		r.Post("/api/customers", s.createCustomer)
-		r.Get("/api/customers/{id}", s.getCustomer)
-		r.Put("/api/customers/{id}", s.updateCustomer)
-		r.Delete("/api/customers/{id}", s.deactivateCustomer)
-		r.Get("/api/suppliers", s.listSuppliers)
-		r.Post("/api/suppliers", s.createSupplier)
+		r.With(s.perm("masterdata:customer:read")).Get("/api/customers", s.listCustomers)
+		r.With(s.perm("masterdata:customer:write")).Post("/api/customers", s.createCustomer)
+		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}", s.getCustomer)
+		r.With(s.perm("masterdata:customer:write")).Put("/api/customers/{id}", s.updateCustomer)
+		r.With(s.perm("masterdata:customer:write")).Delete("/api/customers/{id}", s.deactivateCustomer)
+		r.With(s.perm("masterdata:supplier:read")).Get("/api/suppliers", s.listSuppliers)
+		r.With(s.perm("masterdata:supplier:write")).Post("/api/suppliers", s.createSupplier)
+		// Option dictionaries feed every form's dropdowns; login is enough.
 		r.Get("/api/options", s.listOptions)
 		r.Post("/api/numbering/next", s.nextNumber)
+		r.With(s.perm("fx:rate:read")).Get("/api/fx/latest", s.fxLatest)
+		r.With(s.perm("fx:rate:read")).Get("/api/fx/rates", s.fxRates)
+		r.With(s.perm("fx:rate:write")).Post("/api/fx/manual", s.fxSetManual)
+		r.With(s.perm("fx:rate:read")).Get("/api/fx/anomalies", s.fxAnomalies)
 	})
 	return r
+}
+
+// perm enforces a permission code server-side by asking iam. The frontend
+// hides controls for UX; this is the actual security boundary.
+func (s *Server) perm(code string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			op, ok := grpcx.OperatorFromContext(r.Context())
+			if !ok || op.EmployeeID == 0 {
+				s.writeError(w, http.StatusUnauthorized, "AUTH_TOKEN_MISSING", "缺少登录凭证")
+				return
+			}
+			resp, err := s.Access.CheckPermission(r.Context(), &iamv1.CheckPermissionRequest{
+				EmployeeId: op.EmployeeID, PermissionCode: code,
+			})
+			if err != nil {
+				s.writeGRPCError(w, err)
+				return
+			}
+			if !resp.GetAllowed() {
+				s.writeError(w, http.StatusForbidden, "AUTH_PERMISSION_DENIED", "没有执行此操作的权限")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // ---------------------------------------------------------------- middleware
