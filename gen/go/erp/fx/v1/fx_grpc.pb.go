@@ -21,7 +21,6 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	FxService_GetLatestRate_FullMethodName = "/erp.fx.v1.FxService/GetLatestRate"
 	FxService_ListRates_FullMethodName     = "/erp.fx.v1.FxService/ListRates"
-	FxService_SetManualRate_FullMethodName = "/erp.fx.v1.FxService/SetManualRate"
 	FxService_ListAnomalies_FullMethodName = "/erp.fx.v1.FxService/ListAnomalies"
 )
 
@@ -29,9 +28,11 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// FxService is the platform exchange-rate provider. Rates are global market
-// facts (deliberately tenant-free); every document freezes its own snapshot
-// at business time, so nothing here can retroactively change a document.
+// FxService is the platform exchange-rate provider. Rates come exclusively
+// from the API feed (business decision 2026-07-27: manual entry removed);
+// anomaly detection now runs on fetch, comparing against the previous rate.
+// Rates are global market facts (deliberately tenant-free); every document
+// freezes its own snapshot at business time.
 //
 // Rate semantics: units_per_usd is "how many units of the quote currency one
 // USD buys" (1 USD = 7.24 CNY); usd_per_unit is the inverse used when
@@ -39,10 +40,6 @@ const (
 type FxServiceClient interface {
 	GetLatestRate(ctx context.Context, in *GetLatestRateRequest, opts ...grpc.CallOption) (*GetLatestRateResponse, error)
 	ListRates(ctx context.Context, in *ListRatesRequest, opts ...grpc.CallOption) (*ListRatesResponse, error)
-	// SetManualRate records a manual quote (the fallback when the API source
-	// is stale or missing). Deviating more than the threshold from the last
-	// known rate flags an anomaly but still accepts the value.
-	SetManualRate(ctx context.Context, in *SetManualRateRequest, opts ...grpc.CallOption) (*SetManualRateResponse, error)
 	ListAnomalies(ctx context.Context, in *ListAnomaliesRequest, opts ...grpc.CallOption) (*ListAnomaliesResponse, error)
 }
 
@@ -74,16 +71,6 @@ func (c *fxServiceClient) ListRates(ctx context.Context, in *ListRatesRequest, o
 	return out, nil
 }
 
-func (c *fxServiceClient) SetManualRate(ctx context.Context, in *SetManualRateRequest, opts ...grpc.CallOption) (*SetManualRateResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SetManualRateResponse)
-	err := c.cc.Invoke(ctx, FxService_SetManualRate_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *fxServiceClient) ListAnomalies(ctx context.Context, in *ListAnomaliesRequest, opts ...grpc.CallOption) (*ListAnomaliesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListAnomaliesResponse)
@@ -98,9 +85,11 @@ func (c *fxServiceClient) ListAnomalies(ctx context.Context, in *ListAnomaliesRe
 // All implementations must embed UnimplementedFxServiceServer
 // for forward compatibility.
 //
-// FxService is the platform exchange-rate provider. Rates are global market
-// facts (deliberately tenant-free); every document freezes its own snapshot
-// at business time, so nothing here can retroactively change a document.
+// FxService is the platform exchange-rate provider. Rates come exclusively
+// from the API feed (business decision 2026-07-27: manual entry removed);
+// anomaly detection now runs on fetch, comparing against the previous rate.
+// Rates are global market facts (deliberately tenant-free); every document
+// freezes its own snapshot at business time.
 //
 // Rate semantics: units_per_usd is "how many units of the quote currency one
 // USD buys" (1 USD = 7.24 CNY); usd_per_unit is the inverse used when
@@ -108,10 +97,6 @@ func (c *fxServiceClient) ListAnomalies(ctx context.Context, in *ListAnomaliesRe
 type FxServiceServer interface {
 	GetLatestRate(context.Context, *GetLatestRateRequest) (*GetLatestRateResponse, error)
 	ListRates(context.Context, *ListRatesRequest) (*ListRatesResponse, error)
-	// SetManualRate records a manual quote (the fallback when the API source
-	// is stale or missing). Deviating more than the threshold from the last
-	// known rate flags an anomaly but still accepts the value.
-	SetManualRate(context.Context, *SetManualRateRequest) (*SetManualRateResponse, error)
 	ListAnomalies(context.Context, *ListAnomaliesRequest) (*ListAnomaliesResponse, error)
 	mustEmbedUnimplementedFxServiceServer()
 }
@@ -128,9 +113,6 @@ func (UnimplementedFxServiceServer) GetLatestRate(context.Context, *GetLatestRat
 }
 func (UnimplementedFxServiceServer) ListRates(context.Context, *ListRatesRequest) (*ListRatesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListRates not implemented")
-}
-func (UnimplementedFxServiceServer) SetManualRate(context.Context, *SetManualRateRequest) (*SetManualRateResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SetManualRate not implemented")
 }
 func (UnimplementedFxServiceServer) ListAnomalies(context.Context, *ListAnomaliesRequest) (*ListAnomaliesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListAnomalies not implemented")
@@ -192,24 +174,6 @@ func _FxService_ListRates_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
-func _FxService_SetManualRate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SetManualRateRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(FxServiceServer).SetManualRate(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: FxService_SetManualRate_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(FxServiceServer).SetManualRate(ctx, req.(*SetManualRateRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _FxService_ListAnomalies_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListAnomaliesRequest)
 	if err := dec(in); err != nil {
@@ -242,10 +206,6 @@ var FxService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListRates",
 			Handler:    _FxService_ListRates_Handler,
-		},
-		{
-			MethodName: "SetManualRate",
-			Handler:    _FxService_SetManualRate_Handler,
 		},
 		{
 			MethodName: "ListAnomalies",

@@ -2,9 +2,11 @@ syntax = "proto3";
 
 package erp.fx.v1;
 
-// FxService is the platform exchange-rate provider. Rates are global market
-// facts (deliberately tenant-free); every document freezes its own snapshot
-// at business time, so nothing here can retroactively change a document.
+// FxService is the platform exchange-rate provider. Rates come exclusively
+// from the API feed (business decision 2026-07-27: manual entry removed);
+// anomaly detection now runs on fetch, comparing against the previous rate.
+// Rates are global market facts (deliberately tenant-free); every document
+// freezes its own snapshot at business time.
 //
 // Rate semantics: units_per_usd is "how many units of the quote currency one
 // USD buys" (1 USD = 7.24 CNY); usd_per_unit is the inverse used when
@@ -12,10 +14,6 @@ package erp.fx.v1;
 service FxService {
   rpc GetLatestRate(GetLatestRateRequest) returns (GetLatestRateResponse);
   rpc ListRates(ListRatesRequest) returns (ListRatesResponse);
-  // SetManualRate records a manual quote (the fallback when the API source
-  // is stale or missing). Deviating more than the threshold from the last
-  // known rate flags an anomaly but still accepts the value.
-  rpc SetManualRate(SetManualRateRequest) returns (SetManualRateResponse);
   rpc ListAnomalies(ListAnomaliesRequest) returns (ListAnomaliesResponse);
 }
 
@@ -45,19 +43,6 @@ message ListRatesRequest {
 
 message ListRatesResponse {
   repeated Rate rates = 1;
-}
-
-message SetManualRateRequest {
-  string quote_currency = 1;
-  string units_per_usd = 2;
-  string note = 3;
-}
-
-message SetManualRateResponse {
-  Rate rate = 1;
-  bool anomaly = 2;
-  // Deviation from the previous known rate, percent, e.g. "3.1500".
-  string deviation_pct = 3;
 }
 
 message Anomaly {

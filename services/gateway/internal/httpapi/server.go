@@ -54,7 +54,6 @@ func (s *Server) Router() http.Handler {
 		r.Post("/api/numbering/next", s.nextNumber)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/latest", s.fxLatest)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/rates", s.fxRates)
-		r.With(s.perm("fx:rate:write")).Post("/api/fx/manual", s.fxSetManual)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/anomalies", s.fxAnomalies)
 	})
 	return r

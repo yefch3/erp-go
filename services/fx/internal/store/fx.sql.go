@@ -41,7 +41,7 @@ const latestRate = `-- name: LatestRate :one
 SELECT quote_currency, rate::text AS rate, rate_date, source, fetched_at
 FROM fx_rates
 WHERE quote_currency = $1
-ORDER BY rate_date DESC, (source = 'MANUAL') DESC, fetched_at DESC
+ORDER BY rate_date DESC, fetched_at DESC
 LIMIT 1
 `
 
@@ -53,8 +53,6 @@ type LatestRateRow struct {
 	FetchedAt     pgtype.Timestamptz
 }
 
-// Newest rate wins; on the same date a MANUAL entry beats the API feed
-// (manual entry exists precisely to correct or fill in the feed).
 func (q *Queries) LatestRate(ctx context.Context, quoteCurrency string) (LatestRateRow, error) {
 	row := q.db.QueryRow(ctx, latestRate, quoteCurrency)
 	var i LatestRateRow

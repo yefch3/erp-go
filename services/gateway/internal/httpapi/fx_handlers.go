@@ -31,18 +31,6 @@ func (s *Server) fxRates(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
-func (s *Server) fxSetManual(w http.ResponseWriter, r *http.Request) {
-	req := &fxv1.SetManualRateRequest{}
-	if !s.decodeBody(w, r, req) {
-		return
-	}
-	resp, err := s.Fx.SetManualRate(r.Context(), req)
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
-	s.writeProto(w, resp)
-}
 
 func (s *Server) fxAnomalies(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Fx.ListAnomalies(r.Context(), &fxv1.ListAnomaliesRequest{})

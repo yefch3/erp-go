@@ -1,5 +1,5 @@
-// Package app implements the fx use cases: serving latest/historical rates,
-// accepting manual quotes with anomaly detection, and ingesting the API feed.
+// Package app implements the fx use cases: serving latest/historical rates
+// and ingesting the API feed, flagging anomalous jumps between fetches.
 package app
 
 import (
@@ -17,9 +17,9 @@ import (
 	"github.com/sgao19/erp-go/services/fx/internal/store"
 )
 
-// AnomalyThresholdPct flags manual or fetched rates deviating more than this
-// from the previous known rate. The rate is still accepted - the flag exists
-// so a human reviews it, not to block business.
+// AnomalyThresholdPct flags fetched rates deviating more than this from the
+// previous known rate. The rate is still stored - the flag exists so a human
+// reviews it, not to block business.
 const AnomalyThresholdPct = 2.0
 
 type Rate struct {
@@ -81,44 +81,6 @@ func (s *Service) ListRates(ctx context.Context, quote string, days int32) ([]Ra
 	return out, nil
 }
 
-// SetManual records a finance-entered rate for today. Returns the stored
-// rate plus whether it deviated anomalously from the previous known rate.
-func (s *Service) SetManual(ctx context.Context, quote, unitsPerUSD string, operatorID int64, note string) (Rate, bool, decimal.Decimal, error) {
-	if err := validCurrency(quote); err != nil {
-		return Rate{}, false, decimal.Zero, err
-	}
-	newRate, err := decimal.NewFromString(unitsPerUSD)
-	if err != nil || newRate.LessThanOrEqual(decimal.Zero) {
-		return Rate{}, false, decimal.Zero, apierr.Invalid("FX_RATE_INVALID", "汇率必须是正数")
-	}
-
-	anomaly, deviation := false, decimal.Zero
-	if prev, err := s.q.LatestRate(ctx, quote); err == nil {
-		prevRate, perr := decimal.NewFromString(prev.Rate)
-		if perr == nil && !prevRate.IsZero() {
-			deviation = newRate.Sub(prevRate).Abs().Div(prevRate).Mul(decimal.NewFromInt(100)).Round(4)
-			if deviation.GreaterThan(decimal.NewFromFloat(AnomalyThresholdPct)) {
-				anomaly = true
-				if err := s.q.InsertAnomaly(ctx, store.InsertAnomalyParams{
-					QuoteCurrency: quote, NewRate: newRate.String(), PrevRate: prevRate.String(),
-					DeviationPct: deviation.String(), Source: "MANUAL", Note: note,
-				}); err != nil {
-					return Rate{}, false, decimal.Zero, err
-				}
-			}
-		}
-	}
-
-	today := pgtype.Date{Time: time.Now(), Valid: true}
-	if err := s.q.UpsertRate(ctx, store.UpsertRateParams{
-		QuoteCurrency: quote, Rate: newRate.String(), RateDate: today,
-		Source: "MANUAL", CreatedBy: operatorID, Note: note,
-	}); err != nil {
-		return Rate{}, false, decimal.Zero, err
-	}
-	stored, err := s.GetLatest(ctx, quote)
-	return stored, anomaly, deviation, err
-}
 
 type AnomalyRow = store.ListAnomaliesRow
 

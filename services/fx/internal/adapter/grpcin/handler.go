@@ -6,7 +6,6 @@ import (
 	"time"
 
 	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
-	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/services/fx/internal/app"
 )
 
@@ -49,17 +48,6 @@ func (h *Handler) ListRates(ctx context.Context, req *fxv1.ListRatesRequest) (*f
 	return &fxv1.ListRatesResponse{Rates: out}, nil
 }
 
-func (h *Handler) SetManualRate(ctx context.Context, req *fxv1.SetManualRateRequest) (*fxv1.SetManualRateResponse, error) {
-	op, _ := grpcx.OperatorFromContext(ctx)
-	stored, anomaly, deviation, err := h.svc.SetManual(ctx,
-		req.GetQuoteCurrency(), req.GetUnitsPerUsd(), op.EmployeeID, req.GetNote())
-	if err != nil {
-		return nil, err
-	}
-	return &fxv1.SetManualRateResponse{
-		Rate: rateToProto(stored), Anomaly: anomaly, DeviationPct: deviation.String(),
-	}, nil
-}
 
 func (h *Handler) ListAnomalies(ctx context.Context, _ *fxv1.ListAnomaliesRequest) (*fxv1.ListAnomaliesResponse, error) {
 	rows, err := h.svc.ListAnomalies(ctx)
