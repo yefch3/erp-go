@@ -14,11 +14,11 @@ import (
 // employee holding every permission, and its login account. It is a no-op
 // once any user exists, so it runs unconditionally at startup.
 func (s *Service) EnsureAdmin(ctx context.Context, tenantID int64, initialPassword string) error {
-	n, err := s.q.CountUsers(ctx, tenantID)
+	exists, err := s.q.HasAnyUser(ctx, tenantID)
 	if err != nil {
-		return fmt.Errorf("bootstrap: count users: %w", err)
+		return fmt.Errorf("bootstrap: probe users: %w", err)
 	}
-	if n > 0 {
+	if exists {
 		return nil
 	}
 

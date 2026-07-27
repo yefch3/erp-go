@@ -112,8 +112,9 @@ SELECT EXISTS (
     WHERE er.tenant_id = $1 AND er.employee_id = $2 AND p.code = $3
 ) AS allowed;
 
--- name: CountUsers :one
-SELECT count(*) FROM users WHERE tenant_id = $1;
+-- name: HasAnyUser :one
+-- EXISTS stops at the first row: O(1) regardless of table size, unlike count(*).
+SELECT EXISTS (SELECT 1 FROM users WHERE tenant_id = $1) AS has_users;
 
 -- name: SetDepartmentPath :exec
 UPDATE departments SET path = $3, level = $4 WHERE tenant_id = $1 AND id = $2;

@@ -43,17 +43,6 @@ func (q *Queries) AddRolePermission(ctx context.Context, arg AddRolePermissionPa
 	return err
 }
 
-const countUsers = `-- name: CountUsers :one
-SELECT count(*) FROM users WHERE tenant_id = $1
-`
-
-func (q *Queries) CountUsers(ctx context.Context, tenantID int64) (int64, error) {
-	row := q.db.QueryRow(ctx, countUsers, tenantID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createDepartment = `-- name: CreateDepartment :one
 INSERT INTO departments (tenant_id, code, name, parent_id, path, level)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -380,6 +369,18 @@ func (q *Queries) GetUserByUsername(ctx context.Context, arg GetUserByUsernamePa
 		&i.EmployeeStatus,
 	)
 	return i, err
+}
+
+const hasAnyUser = `-- name: HasAnyUser :one
+SELECT EXISTS (SELECT 1 FROM users WHERE tenant_id = $1) AS has_users
+`
+
+// EXISTS stops at the first row: O(1) regardless of table size, unlike count(*).
+func (q *Queries) HasAnyUser(ctx context.Context, tenantID int64) (bool, error) {
+	row := q.db.QueryRow(ctx, hasAnyUser, tenantID)
+	var has_users bool
+	err := row.Scan(&has_users)
+	return has_users, err
 }
 
 const listDepartments = `-- name: ListDepartments :many
