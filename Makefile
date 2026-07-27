@@ -89,3 +89,11 @@ sqlc: ## Regenerate sqlc stores for every service that has one
 		echo "==> sqlc $$(dirname $$cfg)"; \
 		(cd "$$(dirname $$cfg)" && go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate) || exit 1; \
 	done
+
+.PHONY: services-up
+services-up: ## Build and start every app service in its own container
+	docker compose -f deploy/docker-compose.services.yml up -d --build
+
+.PHONY: services-down
+services-down: ## Stop app service containers
+	docker compose -f deploy/docker-compose.services.yml down

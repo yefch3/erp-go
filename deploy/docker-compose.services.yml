@@ -1,0 +1,42 @@
+# Application services, one container each, joined onto the infra network
+# (deploy/docker-compose.infra.yml must be up first, and migrations applied:
+# make up && make migrate && make services-up).
+#
+# In-network DSNs use postgres:5432 (the container port); host ports below
+# are for grpcurl/frontend access from the Mac.
+name: erp-go-services
+
+services:
+  iam:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args: { SERVICE: iam }
+    image: erp-go/iam:dev
+    environment:
+      DB_DSN: postgres://erp_iam:erp_iam_pw@postgres:5432/erp_iam?sslmode=disable
+      GRPC_PORT: "9001"
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+    ports:
+      - "9001:9001"
+    networks: [infra]
+    restart: unless-stopped
+
+  masterdata:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args: { SERVICE: masterdata }
+    image: erp-go/masterdata:dev
+    environment:
+      DB_DSN: postgres://erp_masterdata:erp_masterdata_pw@postgres:5432/erp_masterdata?sslmode=disable
+      GRPC_PORT: "9002"
+    ports:
+      - "9002:9002"
+    networks: [infra]
+    restart: unless-stopped
+
+networks:
+  infra:
+    external: true
+    name: erp-go-infra_default

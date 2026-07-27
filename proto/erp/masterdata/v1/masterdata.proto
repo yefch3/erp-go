@@ -1,0 +1,245 @@
+syntax = "proto3";
+
+package erp.masterdata.v1;
+
+import "erp/common/v1/pagination.proto";
+
+// CustomerService owns customer master data. Quotation/contract/receivable
+// reference customers by id and never copy-maintain them.
+service CustomerService {
+  rpc CreateCustomer(CreateCustomerRequest) returns (CreateCustomerResponse);
+  rpc GetCustomer(GetCustomerRequest) returns (GetCustomerResponse);
+  rpc ListCustomers(ListCustomersRequest) returns (ListCustomersResponse);
+  rpc UpdateCustomer(UpdateCustomerRequest) returns (UpdateCustomerResponse);
+  rpc DeactivateCustomer(DeactivateCustomerRequest) returns (DeactivateCustomerResponse);
+}
+
+// SupplierService owns supplier master data, referenced by procurement.
+service SupplierService {
+  rpc CreateSupplier(CreateSupplierRequest) returns (CreateSupplierResponse);
+  rpc GetSupplier(GetSupplierRequest) returns (GetSupplierResponse);
+  rpc ListSuppliers(ListSuppliersRequest) returns (ListSuppliersResponse);
+  rpc UpdateSupplier(UpdateSupplierRequest) returns (UpdateSupplierResponse);
+  rpc DeactivateSupplier(DeactivateSupplierRequest) returns (DeactivateSupplierResponse);
+}
+
+// OptionService serves dropdown dictionaries (payment methods, trade terms,
+// exception reasons ...) so business modules never hardcode them.
+service OptionService {
+  rpc ListOptions(ListOptionsRequest) returns (ListOptionsResponse);
+  rpc CreateOption(CreateOptionRequest) returns (CreateOptionResponse);
+}
+
+// NumberingService issues document numbers (QT-20260727-0001). Concurrent
+// callers always receive distinct numbers; gaps are acceptable, duplicates
+// are not.
+service NumberingService {
+  rpc NextNumber(NextNumberRequest) returns (NextNumberResponse);
+  rpc ListNumberRules(ListNumberRulesRequest) returns (ListNumberRulesResponse);
+}
+
+message Contact {
+  string name = 1;
+  string title = 2;
+  string email = 3;
+  string phone = 4;
+  bool is_primary = 5;
+}
+
+message Customer {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  string country = 4;
+  string address = 5;
+  // Default settlement currency for this customer, ISO 4217.
+  string currency = 6;
+  // Default payment term option code, e.g. "TT" / "LC".
+  string payment_term = 7;
+  string remark = 8;
+  string status = 9;
+  repeated Contact contacts = 10;
+}
+
+message CreateCustomerRequest {
+  string code = 1;
+  string name = 2;
+  string country = 3;
+  string address = 4;
+  string currency = 5;
+  string payment_term = 6;
+  string remark = 7;
+  repeated Contact contacts = 8;
+}
+
+message CreateCustomerResponse {
+  Customer customer = 1;
+}
+
+message GetCustomerRequest {
+  int64 id = 1;
+}
+
+message GetCustomerResponse {
+  Customer customer = 1;
+}
+
+message ListCustomersRequest {
+  erp.common.v1.PageRequest page = 1;
+  string keyword = 2;
+  // Empty means ACTIVE only; "ALL" includes deactivated.
+  string status = 3;
+}
+
+message ListCustomersResponse {
+  repeated Customer customers = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message UpdateCustomerRequest {
+  int64 id = 1;
+  string name = 2;
+  string country = 3;
+  string address = 4;
+  string currency = 5;
+  string payment_term = 6;
+  string remark = 7;
+  // Full replacement of the contact list.
+  repeated Contact contacts = 8;
+}
+
+message UpdateCustomerResponse {
+  Customer customer = 1;
+}
+
+message DeactivateCustomerRequest {
+  int64 id = 1;
+}
+
+message DeactivateCustomerResponse {}
+
+message Supplier {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  string country = 4;
+  string address = 5;
+  string currency = 6;
+  string contact_name = 7;
+  string contact_phone = 8;
+  string contact_email = 9;
+  string remark = 10;
+  string status = 11;
+}
+
+message CreateSupplierRequest {
+  string code = 1;
+  string name = 2;
+  string country = 3;
+  string address = 4;
+  string currency = 5;
+  string contact_name = 6;
+  string contact_phone = 7;
+  string contact_email = 8;
+  string remark = 9;
+}
+
+message CreateSupplierResponse {
+  Supplier supplier = 1;
+}
+
+message GetSupplierRequest {
+  int64 id = 1;
+}
+
+message GetSupplierResponse {
+  Supplier supplier = 1;
+}
+
+message ListSuppliersRequest {
+  erp.common.v1.PageRequest page = 1;
+  string keyword = 2;
+  string status = 3;
+}
+
+message ListSuppliersResponse {
+  repeated Supplier suppliers = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message UpdateSupplierRequest {
+  int64 id = 1;
+  string name = 2;
+  string country = 3;
+  string address = 4;
+  string currency = 5;
+  string contact_name = 6;
+  string contact_phone = 7;
+  string contact_email = 8;
+  string remark = 9;
+}
+
+message UpdateSupplierResponse {
+  Supplier supplier = 1;
+}
+
+message DeactivateSupplierRequest {
+  int64 id = 1;
+}
+
+message DeactivateSupplierResponse {}
+
+message OptionItem {
+  int64 id = 1;
+  // Dictionary the item belongs to: PAYMENT_METHOD / TRADE_TERM / ...
+  string category = 2;
+  string code = 3;
+  string label = 4;
+  int32 sort_order = 5;
+  string status = 6;
+}
+
+message ListOptionsRequest {
+  // Empty returns every category.
+  string category = 1;
+}
+
+message ListOptionsResponse {
+  repeated OptionItem options = 1;
+}
+
+message CreateOptionRequest {
+  string category = 1;
+  string code = 2;
+  string label = 3;
+  int32 sort_order = 4;
+}
+
+message CreateOptionResponse {
+  OptionItem option = 1;
+}
+
+message NextNumberRequest {
+  // Business document type: QUOTATION / CONTRACT / PURCHASE_ORDER / ...
+  string biz_type = 1;
+}
+
+message NextNumberResponse {
+  // Formatted document number, e.g. "QT-20260727-0001".
+  string number = 1;
+}
+
+message NumberRule {
+  int64 id = 1;
+  string biz_type = 2;
+  string prefix = 3;
+  // NONE / DAILY / MONTHLY / YEARLY sequence reset period.
+  string period = 4;
+  int32 seq_len = 5;
+}
+
+message ListNumberRulesRequest {}
+
+message ListNumberRulesResponse {
+  repeated NumberRule rules = 1;
+}
