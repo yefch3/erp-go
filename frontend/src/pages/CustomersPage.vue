@@ -24,7 +24,8 @@
       <el-table :data="customers" v-loading="loading">
         <el-table-column prop="code" :label="t('customers.code')" width="130" />
         <el-table-column prop="name" :label="t('customers.name')" min-width="200" />
-        <el-table-column prop="country" :label="t('customers.country')" width="120" />
+        <!-- Wide enough for spelled-out names such as United Arab Emirates. -->
+        <el-table-column prop="country" :label="t('customers.country')" width="180" />
         <el-table-column prop="currency" :label="t('customers.currency')" width="90" />
         <el-table-column prop="paymentTerm" :label="t('customers.paymentTerm')" width="110" />
         <el-table-column :label="t('common.status')" width="100">
@@ -70,14 +71,14 @@
     <el-dialog v-model="dialogOpen" :title="t('customers.create')" width="560px">
       <el-form :model="form" label-width="110px">
         <el-form-item :label="t('customers.code')" required>
-          <el-input v-model="form.code" placeholder="CUST-002" />
+          <el-input v-model="form.code" placeholder="CU-0001" />
         </el-form-item>
         <el-form-item :label="t('customers.name')" required>
           <el-input v-model="form.name" />
         </el-form-item>
         <el-form-item :label="t('customers.country')">
           <el-select v-model="form.country" filterable allow-create clearable style="width: 220px">
-            <el-option v-for="c in COUNTRIES" :key="c" :value="c" :label="c" />
+            <el-option v-for="c in COUNTRY_NAMES" :key="c" :value="c" :label="c" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('customers.currency')">
@@ -92,10 +93,41 @@
             <el-option v-for="o in paymentOptions" :key="o.code" :value="o.code" :label="o.label" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('customers.contact')">
-          <el-input v-model="form.contactName" :placeholder="t('customers.contactName')" style="width: 130px" />
-          <el-input v-model="form.contactPhone" :placeholder="t('customers.contactPhone')" style="width: 140px; margin-left: 8px" />
-          <el-input v-model="form.contactEmail" :placeholder="t('customers.contactEmail')" style="width: 170px; margin-left: 8px" />
+        <el-divider content-position="left">
+          {{ t('customers.contact') }}
+          <span class="hint">{{ t('customers.contactOptional') }}</span>
+        </el-divider>
+        <el-form-item :label="t('customers.contactName')">
+          <el-input v-model="form.contactName" style="width: 220px" placeholder="Hans Weber" />
+        </el-form-item>
+        <el-form-item :label="t('customers.contactPhone')">
+          <el-select
+            v-model="form.contactDial"
+            class="dial-select"
+            filterable
+            clearable
+            :placeholder="t('customers.dialCode')"
+          >
+            <!-- Options carry both the code and the country names so typing
+                 either one finds the entry; the closed field shows only the
+                 code, which is all that fits next to the number. -->
+            <template #label="{ value }">{{ value }}</template>
+            <el-option
+              v-for="d in DIAL_CODES"
+              :key="d.dial"
+              :value="d.dial"
+              :label="`${d.dial} ${d.countries}`"
+            >
+              <span class="dial-row">
+                <span>{{ d.dial }}</span>
+                <span class="dial-country">{{ d.countries }}</span>
+              </span>
+            </el-option>
+          </el-select>
+          <el-input v-model="form.contactPhone" class="phone-input" placeholder="138 0013 8000" />
+        </el-form-item>
+        <el-form-item :label="t('customers.contactEmail')">
+          <el-input v-model="form.contactEmail" style="width: 300px" placeholder="name@example.com" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -107,11 +139,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { del, get, post } from '../api'
-import { COUNTRIES } from '../constants'
+import { COUNTRY_NAMES, DIAL_CODES, dialCodeOf } from '../constants'
 import { useAuthStore } from '../stores/auth'
 
 interface Customer {
@@ -139,8 +171,21 @@ const dialogOpen = ref(false)
 const saving = ref(false)
 const form = reactive({
   code: '', name: '', country: '', currency: 'USD', paymentTerm: '',
-  contactName: '', contactPhone: '', contactEmail: '',
+  contactName: '', contactDial: '', contactPhone: '', contactEmail: '',
 })
+
+// Picking a country pre-fills the matching calling code. A code the user chose
+// themselves is never overwritten — only an empty one, or one that still
+// matches the previously selected country.
+watch(
+  () => form.country,
+  (country, previous) => {
+    const next = dialCodeOf(country)
+    if (next && (!form.contactDial || form.contactDial === dialCodeOf(previous ?? ''))) {
+      form.contactDial = next
+    }
+  },
+)
 
 async function load() {
   loading.value = true
@@ -157,7 +202,10 @@ async function load() {
 }
 
 async function openCreate() {
-  Object.assign(form, { code: '', name: '', country: '', currency: 'USD', paymentTerm: '', contactName: '', contactPhone: '', contactEmail: '' })
+  Object.assign(form, {
+    code: '', name: '', country: '', currency: 'USD', paymentTerm: '',
+    contactName: '', contactDial: '', contactPhone: '', contactEmail: '',
+  })
   dialogOpen.value = true
   // Pre-fill the code from the numbering service; the field stays editable
   // for companies with their own conventions.
@@ -174,12 +222,15 @@ async function save() {
     return
   }
   saving.value = true
+  // The calling code is stored together with the number so the phone stays
+  // dialable from anywhere; a bare code with no number is not a phone.
+  const phone = form.contactPhone ? `${form.contactDial} ${form.contactPhone}`.trim() : ''
   try {
     await post('/customers', {
       code: form.code, name: form.name, country: form.country,
       currency: form.currency, paymentTerm: form.paymentTerm,
       contacts: form.contactName
-        ? [{ name: form.contactName, phone: form.contactPhone, email: form.contactEmail, isPrimary: true }]
+        ? [{ name: form.contactName, phone, email: form.contactEmail, isPrimary: true }]
         : [],
     })
     ElMessage.success(t('customers.created'))
@@ -234,5 +285,27 @@ onMounted(async () => {
 .pager {
   margin-top: 14px;
   justify-content: flex-end;
+}
+.hint {
+  margin-left: 8px;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.dial-select {
+  width: 118px;
+}
+.phone-input {
+  width: 200px;
+  margin-left: 8px;
+}
+.dial-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+.dial-country {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>
