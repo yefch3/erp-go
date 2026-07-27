@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package erp.common.v1;
+
+// Operator identifies who performs a write operation. Every mutating RPC
+// carries one; interceptors also propagate the same data via gRPC metadata
+// (x-tenant-id / x-employee-id / x-employee-name / x-trace-id) so read-only
+// calls stay lean.
+message Operator {
+  int64 tenant_id = 1;
+  int64 employee_id = 2;
+  string employee_name = 3;
+  string ip = 4;
+  string trace_id = 5;
+}

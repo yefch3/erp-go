@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # buf breaking needs main
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: |
+            pkg/go.sum
+            gen/go.sum
+
+      - name: Regenerate protos and fail on drift
+        run: |
+          make proto
+          git diff --exit-code gen/ proto/
+
+      - name: Breaking change check
+        if: github.event_name == 'pull_request'
+        run: make proto-breaking
+
+      - name: tenant_id convention check
+        run: make check-tenant
+
+      - name: Tests
+        run: make test
+
+      - name: Lint
+        run: make lint

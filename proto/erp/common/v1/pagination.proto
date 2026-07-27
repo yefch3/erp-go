@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package erp.common.v1;
+
+// PageRequest is the uniform pagination input for every List/Query method.
+message PageRequest {
+  // 1-based page number. 0 is treated as 1.
+  int32 page = 1;
+  // Items per page. 0 falls back to the server default (20); capped at 200.
+  int32 page_size = 2;
+}
+
+// PageMeta is returned alongside the items of every paginated response.
+message PageMeta {
+  int64 total = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+}

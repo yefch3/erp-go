@@ -1,0 +1,20 @@
+# Binaries and tool cache
+/bin/
+*.exe
+*.test
+
+# Go
+/vendor/
+coverage.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Local env
+.env
+.env.local
+
+# OS
+.DS_Store
