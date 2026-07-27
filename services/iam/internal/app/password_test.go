@@ -3,7 +3,6 @@ package app
 import (
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestPasswordRoundTrip(t *testing.T) {
@@ -38,19 +37,3 @@ func TestVerifyRejectsMalformed(t *testing.T) {
 	}
 }
 
-func TestTokenRoundTrip(t *testing.T) {
-	tok, err := IssueToken("secret", time.Hour, 1, 42, "张三")
-	if err != nil {
-		t.Fatal(err)
-	}
-	claims, err := ParseToken("secret", tok)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if claims.TenantID != 1 || claims.Subject != "42" || claims.EmployeeName != "张三" {
-		t.Fatalf("claims mismatch: %+v", claims)
-	}
-	if _, err := ParseToken("other-secret", tok); err == nil {
-		t.Fatal("token verified with wrong secret")
-	}
-}

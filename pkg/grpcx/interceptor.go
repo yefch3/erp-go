@@ -3,6 +3,7 @@ package grpcx
 import (
 	"context"
 	"log/slog"
+	"net/url"
 	"runtime/debug"
 	"strconv"
 	"time"
@@ -42,7 +43,7 @@ func unaryOperator() grpc.UnaryServerInterceptor {
 		op := Operator{
 			TenantID:   firstInt(md, mdTenantID),
 			EmployeeID: firstInt(md, mdEmployeeID),
-			Name:       first(md, mdEmployeeName),
+			Name:       decodeHeader(first(md, mdEmployeeName)),
 			IP:         first(md, mdIP),
 			TraceID:    first(md, mdTraceID),
 		}
@@ -116,7 +117,7 @@ func UnaryClientPropagator() grpc.UnaryClientInterceptor {
 			ctx = metadata.AppendToOutgoingContext(ctx,
 				mdTenantID, strconv.FormatInt(op.TenantID, 10),
 				mdEmployeeID, strconv.FormatInt(op.EmployeeID, 10),
-				mdEmployeeName, op.Name,
+				mdEmployeeName, url.QueryEscape(op.Name),
 				mdTraceID, op.TraceID,
 			)
 		}
@@ -134,4 +135,14 @@ func first(md metadata.MD, key string) string {
 func firstInt(md metadata.MD, key string) int64 {
 	n, _ := strconv.ParseInt(first(md, key), 10, 64)
 	return n
+}
+
+// decodeHeader reverses the percent-encoding the client propagator applies:
+// gRPC metadata values must be printable ASCII, so non-ASCII operator names
+// (员工姓名) travel URL-encoded.
+func decodeHeader(v string) string {
+	if decoded, err := url.QueryUnescape(v); err == nil {
+		return decoded
+	}
+	return v
 }

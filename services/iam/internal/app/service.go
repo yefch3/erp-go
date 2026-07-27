@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/authtoken"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/iam/internal/store"
 )
@@ -64,7 +65,7 @@ func (s *Service) Login(ctx context.Context, tenantID int64, username, password 
 		return nil, fmt.Errorf("login: record success: %w", err)
 	}
 
-	token, err := IssueToken(s.jwtSecret, s.jwtTTL, tenantID, u.EmployeeID, u.EmployeeName)
+	token, err := authtoken.Issue(s.jwtSecret, s.jwtTTL, tenantID, u.EmployeeID, u.EmployeeName)
 	if err != nil {
 		return nil, fmt.Errorf("login: issue token: %w", err)
 	}

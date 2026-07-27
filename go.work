@@ -4,5 +4,6 @@ use (
 	./gen
 	./pkg
 	./services/iam
+	./services/gateway
 	./services/masterdata
 )
