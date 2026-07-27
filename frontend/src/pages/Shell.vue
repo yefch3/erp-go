@@ -3,26 +3,31 @@
     <el-aside width="220px" class="side">
       <div class="side-brand">
         <span class="mark">ERP</span>
-        <span class="txt">出口管理</span>
+        <span class="txt">{{ t('login.title') }}</span>
       </div>
       <el-menu :default-active="route.path" router class="side-menu">
-        <el-menu-item index="/customers">客户管理</el-menu-item>
-        <el-menu-item index="/suppliers" disabled>供应商（待开发）</el-menu-item>
-        <el-menu-item index="/quotations" disabled>报价单（待开发）</el-menu-item>
-        <el-menu-item index="/contracts" disabled>出口合同（待开发）</el-menu-item>
+        <el-menu-item v-if="auth.can('masterdata:customer:read')" index="/customers">
+          {{ t('menu.customers') }}
+        </el-menu-item>
+        <el-menu-item index="/suppliers" disabled>{{ t('menu.suppliers') }}{{ t('menu.todo') }}</el-menu-item>
+        <el-menu-item index="/quotations" disabled>{{ t('menu.quotations') }}{{ t('menu.todo') }}</el-menu-item>
+        <el-menu-item index="/contracts" disabled>{{ t('menu.contracts') }}{{ t('menu.todo') }}</el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
       <el-header class="topbar">
         <span />
-        <el-dropdown @command="onCommand">
-          <span class="user">{{ auth.employeeName || '未登录' }}</span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="logout">退出登录</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+        <div class="topbar-right">
+          <LangSwitcher />
+          <el-dropdown @command="onCommand">
+            <span class="user">{{ auth.employeeName || '—' }}</span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="logout">{{ t('common.logout') }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
       </el-header>
       <el-main>
         <router-view />
@@ -33,8 +38,11 @@
 
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/auth'
+import LangSwitcher from '../components/LangSwitcher.vue'
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
@@ -71,7 +79,7 @@ function onCommand(cmd: string) {
   letter-spacing: 1px;
 }
 .side-brand .txt {
-  font-size: 15px;
+  font-size: 14px;
 }
 .side-menu {
   background: transparent;
@@ -86,6 +94,11 @@ function onCommand(cmd: string) {
   justify-content: space-between;
   background: #fff;
   border-bottom: 1px solid #e5e7eb;
+}
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 18px;
 }
 .user {
   cursor: pointer;

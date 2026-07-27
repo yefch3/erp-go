@@ -1,20 +1,21 @@
 <template>
   <div class="login-wrap">
+    <div class="lang-corner"><LangSwitcher light /></div>
     <div class="login-brand">
       <div class="brand-mark">ERP</div>
-      <h1>出口业务管理系统</h1>
-      <p>报价 · 合同 · 采购 · 仓储 · 船期 · 收汇</p>
+      <h1>{{ t('login.title') }}</h1>
+      <p>{{ t('login.subtitle') }}</p>
     </div>
     <el-card class="login-card" shadow="never">
       <el-form :model="form" label-position="top" @keyup.enter="submit">
-        <el-form-item label="用户名">
+        <el-form-item :label="t('login.username')">
           <el-input v-model="form.username" placeholder="admin" autofocus />
         </el-form-item>
-        <el-form-item label="密码">
+        <el-form-item :label="t('login.password')">
           <el-input v-model="form.password" type="password" show-password placeholder="••••••••" />
         </el-form-item>
         <el-button type="primary" class="login-btn" :loading="loading" @click="submit">
-          登录
+          {{ t('login.submit') }}
         </el-button>
       </el-form>
     </el-card>
@@ -24,8 +25,11 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/auth'
+import LangSwitcher from '../components/LangSwitcher.vue'
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const router = useRouter()
 const loading = ref(false)
@@ -52,6 +56,12 @@ async function submit() {
   justify-content: center;
   gap: 28px;
   background: #0f172a;
+  position: relative;
+}
+.lang-corner {
+  position: absolute;
+  top: 20px;
+  right: 28px;
 }
 .login-brand {
   text-align: center;

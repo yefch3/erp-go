@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
+import { i18n } from './i18n'
 import { router } from './router'
 
 // 后端统一信封：{ success, data } 或 { success:false, code, message }
@@ -22,7 +23,7 @@ http.interceptors.response.use(
   (resp) => {
     const env = resp.data as Envelope<unknown>
     if (!env.success) {
-      ElMessage.error(env.message || '请求失败')
+      ElMessage.error(env.message || i18n.global.t('common.requestFailed'))
       return Promise.reject(env)
     }
     return resp
@@ -33,7 +34,7 @@ http.interceptors.response.use(
       localStorage.removeItem('token')
       router.push('/login')
     }
-    ElMessage.error(env?.message || err.message || '网络错误')
+    ElMessage.error(env?.message || err.message || i18n.global.t('common.networkError'))
     return Promise.reject(env ?? err)
   },
 )
