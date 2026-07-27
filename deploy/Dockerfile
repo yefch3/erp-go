@@ -1,7 +1,7 @@
 # One multi-stage Dockerfile for every Go service.
 # Build context is the REPOSITORY ROOT; select the service with --build-arg.
 ARG SERVICE
-FROM golang:1.24-alpine AS build
+FROM golang:1.26-alpine AS build
 ARG SERVICE
 WORKDIR /src
 COPY go.work go.work.sum* ./

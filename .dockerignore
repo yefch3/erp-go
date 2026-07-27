@@ -1,0 +1,6 @@
+.git/
+bin/
+docs/
+.github/
+.vscode/
+**/*_test.go
