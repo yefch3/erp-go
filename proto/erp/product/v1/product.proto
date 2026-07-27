@@ -1,0 +1,305 @@
+syntax = "proto3";
+
+package erp.product.v1;
+
+import "erp/common/v1/pagination.proto";
+
+// CatalogService owns the product master data every downstream document
+// quotes: quotations, contracts, purchase orders and stock all reference a
+// product by id and copy the display fields they need at the time.
+service CatalogService {
+  rpc ListCategories(ListCategoriesRequest) returns (ListCategoriesResponse);
+  rpc CreateCategory(CreateCategoryRequest) returns (CreateCategoryResponse);
+  rpc UpdateCategory(UpdateCategoryRequest) returns (UpdateCategoryResponse);
+  rpc DeactivateCategory(DeactivateCategoryRequest) returns (DeactivateCategoryResponse);
+  rpc ListUoms(ListUomsRequest) returns (ListUomsResponse);
+  rpc CreateUom(CreateUomRequest) returns (CreateUomResponse);
+
+  rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
+  rpc GetProduct(GetProductRequest) returns (GetProductResponse);
+  rpc CreateProduct(CreateProductRequest) returns (CreateProductResponse);
+  rpc UpdateProduct(UpdateProductRequest) returns (UpdateProductResponse);
+  // No Delete on purpose: a product referenced by a contract, purchase order
+  // or stock movement can only be deactivated.
+  rpc DeactivateProduct(DeactivateProductRequest) returns (DeactivateProductResponse);
+  rpc ActivateProduct(ActivateProductRequest) returns (ActivateProductResponse);
+
+  rpc ListSkus(ListSkusRequest) returns (ListSkusResponse);
+  rpc CreateSku(CreateSkuRequest) returns (CreateSkuResponse);
+  rpc DeactivateSku(DeactivateSkuRequest) returns (DeactivateSkuResponse);
+}
+
+// AttachmentService keeps files out of the database: the browser uploads
+// straight to object storage with a presigned URL, and only the key is
+// stored here.
+service AttachmentService {
+  // PresignUpload returns a short-lived URL the browser PUTs the file to.
+  rpc PresignUpload(PresignUploadRequest) returns (PresignUploadResponse);
+  // Register records the uploaded object once the PUT succeeded.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc ListAttachments(ListAttachmentsRequest) returns (ListAttachmentsResponse);
+  rpc Remove(RemoveRequest) returns (RemoveResponse);
+}
+
+message Category {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  int64 parent_id = 4;
+  string path = 5;
+  int32 level = 6;
+  int32 sort_order = 7;
+  string status = 8;
+}
+
+message Uom {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  string uom_type = 4;
+}
+
+message Product {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  string name_en = 4;
+  int64 category_id = 5;
+  string category_name = 6;
+  string product_type = 7;
+  string brand = 8;
+  int64 base_uom_id = 9;
+  string base_uom_code = 10;
+  // Decimal strings, never floats.
+  string reference_price = 11;
+  string reference_currency = 12;
+  string hs_code = 13;
+  string tax_rate = 14;
+  string export_rebate_rate = 15;
+  string description = 16;
+  string status = 17;
+}
+
+message Sku {
+  int64 id = 1;
+  int64 product_id = 2;
+  string code = 3;
+  string spec = 4;
+  // JSON object of variant attributes, e.g. {"color":"red"}.
+  string attributes = 5;
+  string status = 6;
+}
+
+message Attachment {
+  int64 id = 1;
+  int64 product_id = 2;
+  string file_name = 3;
+  string file_key = 4;
+  int64 file_size = 5;
+  string content_type = 6;
+  string uploaded_at = 7;
+  // Short-lived download URL, generated per response and never stored.
+  string download_url = 8;
+}
+
+message ListCategoriesRequest {
+  // "" returns every category, otherwise ACTIVE / INACTIVE.
+  string status = 1;
+}
+
+message ListCategoriesResponse {
+  repeated Category categories = 1;
+}
+
+message CreateCategoryRequest {
+  string code = 1;
+  string name = 2;
+  int64 parent_id = 3;
+  int32 sort_order = 4;
+}
+
+message CreateCategoryResponse {
+  Category category = 1;
+}
+
+message UpdateCategoryRequest {
+  int64 id = 1;
+  string name = 2;
+  int32 sort_order = 3;
+}
+
+message UpdateCategoryResponse {
+  Category category = 1;
+}
+
+message DeactivateCategoryRequest {
+  int64 id = 1;
+}
+
+message DeactivateCategoryResponse {
+  bool deactivated = 1;
+}
+
+message ListUomsRequest {}
+
+message ListUomsResponse {
+  repeated Uom uoms = 1;
+}
+
+message CreateUomRequest {
+  string code = 1;
+  string name = 2;
+  string uom_type = 3;
+}
+
+message CreateUomResponse {
+  Uom uom = 1;
+}
+
+message ListProductsRequest {
+  erp.common.v1.PageRequest page = 1;
+  string keyword = 2;
+  int64 category_id = 3;
+  // "" means ACTIVE only; "ALL" includes deactivated ones.
+  string status = 4;
+}
+
+message ListProductsResponse {
+  repeated Product products = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message GetProductRequest {
+  int64 id = 1;
+}
+
+message GetProductResponse {
+  Product product = 1;
+  repeated Sku skus = 2;
+  repeated Attachment attachments = 3;
+}
+
+message CreateProductRequest {
+  // Empty means "issue one": master data codes are system-issued at save time.
+  string code = 1;
+  string name = 2;
+  string name_en = 3;
+  int64 category_id = 4;
+  string product_type = 5;
+  string brand = 6;
+  int64 base_uom_id = 7;
+  string reference_price = 8;
+  string reference_currency = 9;
+  string hs_code = 10;
+  string tax_rate = 11;
+  string export_rebate_rate = 12;
+  string description = 13;
+}
+
+message CreateProductResponse {
+  Product product = 1;
+}
+
+message UpdateProductRequest {
+  int64 id = 1;
+  string name = 2;
+  string name_en = 3;
+  int64 category_id = 4;
+  string product_type = 5;
+  string brand = 6;
+  int64 base_uom_id = 7;
+  string reference_price = 8;
+  string reference_currency = 9;
+  string hs_code = 10;
+  string tax_rate = 11;
+  string export_rebate_rate = 12;
+  string description = 13;
+}
+
+message UpdateProductResponse {
+  Product product = 1;
+}
+
+message DeactivateProductRequest {
+  int64 id = 1;
+}
+
+message DeactivateProductResponse {
+  bool deactivated = 1;
+}
+
+message ActivateProductRequest {
+  int64 id = 1;
+}
+
+message ActivateProductResponse {
+  bool activated = 1;
+}
+
+message ListSkusRequest {
+  int64 product_id = 1;
+}
+
+message ListSkusResponse {
+  repeated Sku skus = 1;
+}
+
+message CreateSkuRequest {
+  int64 product_id = 1;
+  string code = 2;
+  string spec = 3;
+  string attributes = 4;
+}
+
+message CreateSkuResponse {
+  Sku sku = 1;
+}
+
+message DeactivateSkuRequest {
+  int64 id = 1;
+}
+
+message DeactivateSkuResponse {
+  bool deactivated = 1;
+}
+
+message PresignUploadRequest {
+  int64 product_id = 1;
+  string file_name = 2;
+  string content_type = 3;
+}
+
+message PresignUploadResponse {
+  // The key the client must send back to Register after uploading.
+  string file_key = 1;
+  string upload_url = 2;
+  int32 expires_in_seconds = 3;
+}
+
+message RegisterRequest {
+  int64 product_id = 1;
+  string file_key = 2;
+  string file_name = 3;
+  int64 file_size = 4;
+  string content_type = 5;
+}
+
+message RegisterResponse {
+  Attachment attachment = 1;
+}
+
+message ListAttachmentsRequest {
+  int64 product_id = 1;
+}
+
+message ListAttachmentsResponse {
+  repeated Attachment attachments = 1;
+}
+
+message RemoveRequest {
+  int64 id = 1;
+}
+
+message RemoveResponse {
+  bool removed = 1;
+}

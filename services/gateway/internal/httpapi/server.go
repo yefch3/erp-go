@@ -18,25 +18,28 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	apv1 "github.com/sgao19/erp-go/gen/go/erp/approval/v1"
-	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
+	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
+	pdv1 "github.com/sgao19/erp-go/gen/go/erp/product/v1"
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/authtoken"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 )
 
 type Server struct {
-	IAM        iamv1.AuthServiceClient
-	Access     iamv1.AccessServiceClient
-	Customers  mdv1.CustomerServiceClient
-	Suppliers  mdv1.SupplierServiceClient
-	Options    mdv1.OptionServiceClient
-	Numbering  mdv1.NumberingServiceClient
-	Fx         fxv1.FxServiceClient
-	Approval   apv1.ApprovalServiceClient
-	JWTSecret  string
-	Log        *slog.Logger
+	IAM         iamv1.AuthServiceClient
+	Access      iamv1.AccessServiceClient
+	Customers   mdv1.CustomerServiceClient
+	Suppliers   mdv1.SupplierServiceClient
+	Options     mdv1.OptionServiceClient
+	Numbering   mdv1.NumberingServiceClient
+	Fx          fxv1.FxServiceClient
+	Approval    apv1.ApprovalServiceClient
+	Catalog     pdv1.CatalogServiceClient
+	Attachments pdv1.AttachmentServiceClient
+	JWTSecret   string
+	Log         *slog.Logger
 }
 
 func (s *Server) Router() http.Handler {
@@ -55,6 +58,27 @@ func (s *Server) Router() http.Handler {
 		// Option dictionaries feed every form's dropdowns; login is enough.
 		r.Get("/api/options", s.listOptions)
 		r.Post("/api/numbering/next", s.nextNumber)
+		// Product catalog. Categories and units are reference data every
+		// product form needs, so reading them only requires product:read.
+		r.With(s.perm("product:product:read")).Get("/api/product-categories", s.listCategories)
+		r.With(s.perm("product:product:write")).Post("/api/product-categories", s.createCategory)
+		r.With(s.perm("product:product:write")).Put("/api/product-categories/{id}", s.updateCategory)
+		r.With(s.perm("product:product:write")).Delete("/api/product-categories/{id}", s.deactivateCategory)
+		r.With(s.perm("product:product:read")).Get("/api/uoms", s.listUoms)
+		r.With(s.perm("product:product:write")).Post("/api/uoms", s.createUom)
+		r.With(s.perm("product:product:read")).Get("/api/products", s.listProducts)
+		r.With(s.perm("product:product:read")).Get("/api/products/{id}", s.getProduct)
+		r.With(s.perm("product:product:write")).Post("/api/products", s.createProduct)
+		r.With(s.perm("product:product:write")).Put("/api/products/{id}", s.updateProduct)
+		r.With(s.perm("product:product:write")).Delete("/api/products/{id}", s.deactivateProduct)
+		r.With(s.perm("product:product:write")).Post("/api/products/{id}/activate", s.activateProduct)
+		r.With(s.perm("product:product:read")).Get("/api/products/{id}/skus", s.listSkus)
+		r.With(s.perm("product:product:write")).Post("/api/products/{id}/skus", s.createSku)
+		r.With(s.perm("product:product:write")).Delete("/api/skus/{id}", s.deactivateSku)
+		r.With(s.perm("product:product:read")).Get("/api/products/{id}/attachments", s.listAttachments)
+		r.With(s.perm("product:product:write")).Post("/api/products/{id}/attachments/presign", s.presignUpload)
+		r.With(s.perm("product:product:write")).Post("/api/products/{id}/attachments", s.registerAttachment)
+		r.With(s.perm("product:product:write")).Delete("/api/attachments/{id}", s.removeAttachment)
 		// Approval todos are personal: the service filters by the caller's
 		// employee id, so the permission only gates "may act on approvals".
 		r.With(s.perm("approval:task:act")).Get("/api/approvals/todos", s.myTodos)

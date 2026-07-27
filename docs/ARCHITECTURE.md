@@ -568,6 +568,13 @@ CREATE TABLE product_attachments (
 
 > **不变量**：产品服务的 gRPC 接口**不提供 Delete**，只有 `DeactivateProduct`。文档：「产品被合同、采购或库存引用后不能直接删除，只能停用。」
 
+**实现补充（2026-07-27）**：
+- 产品编码由 masterdata 取号服务签发（`PRODUCT` 规则，前缀 `P`，5 位），与客户/供应商同源；留空提交即自动生成。
+- 参考价、税率、退税率在 SQL 里以 `::text` 出入，Go 侧全程是十进制字符串，不经过 float64。
+- 分类下还有产品时拒绝停用（`PD_CATEGORY_IN_USE`），保证产品永远能解析到可见分类。
+- 预签名 URL 的**签名覆盖 Host**，所以服务端持有两个对象存储客户端：容器内用 `minio:9000` 读写，签发给浏览器的 URL 用 `MINIO_PUBLIC_ENDPOINT`（本地 `localhost:19000`）签名；region 固定写死，避免签名时反查 bucket 位置。
+- 注册附件时校验 object key 前缀必须属于该产品（`PD_FILE_KEY_MISMATCH`），否则客户端可把别处的对象挂到自己名下。
+
 ### 5.4 fx（汇率中心）
 
 ```sql
@@ -2205,7 +2212,9 @@ ENTRYPOINT ["/app"]
 
 ### 阶段 2：主数据（约 3 天）
 
-- [ ] `product`：分类、产品、SKU、单位换算、包装、条码、附件
+- [x] `product`：分类、产品、SKU、单位、附件（2026-07-27 完成）
+  - 已推迟：单位换算 `uom_conversions`、包装 `packagings`、条码 `product_barcodes` —— 阶段 4 的库存与船期才会用到，届时增量迁移补上
+  - 附件走**预签名直传**：服务端签发 URL，浏览器直接 PUT 到对象存储，文件字节不经过网关；库里只存 object key
 - [ ] 明确不提供 Delete，只有 Deactivate
 - [ ] 前端：产品管理、客户管理、供应商管理页面
 

@@ -50,6 +50,29 @@ services:
     networks: [infra]
     restart: unless-stopped
 
+  product:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args: { SERVICE: product }
+    image: erp-go/product:dev
+    environment:
+      DB_DSN: postgres://erp_product:erp_product_pw@postgres:5432/erp_product?sslmode=disable
+      GRPC_PORT: "9004"
+      MASTERDATA_ADDR: masterdata:9002
+      MINIO_ENDPOINT: minio:9000
+      # Presigned URLs are handed to browsers, which reach MinIO on the host
+      # port - and SigV4 signs the host, so it must be signed for this one.
+      MINIO_PUBLIC_ENDPOINT: localhost:19000
+      MINIO_ACCESS_KEY: erp
+      MINIO_SECRET_KEY: erp_dev_password
+      MINIO_BUCKET: erp-files
+    ports:
+      - "9004:9004"
+    networks: [infra]
+    depends_on: [masterdata]
+    restart: unless-stopped
+
   approval:
     build:
       context: ..
@@ -78,12 +101,13 @@ services:
       MASTERDATA_ADDR: masterdata:9002
       FX_ADDR: fx:9003
       APPROVAL_ADDR: approval:9005
+      PRODUCT_ADDR: product:9004
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       HTTP_PORT: "8080"
     ports:
       - "8080:8080"
     networks: [infra]
-    depends_on: [iam, masterdata, fx, approval]
+    depends_on: [iam, masterdata, fx, approval, product]
     restart: unless-stopped
 
 networks:

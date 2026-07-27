@@ -12,6 +12,9 @@
         <el-menu-item v-if="auth.can('masterdata:customer:read')" index="/customers">
           {{ t('menu.customers') }}
         </el-menu-item>
+        <el-menu-item v-if="auth.can('product:product:read')" index="/products">
+          {{ t('menu.products') }}
+        </el-menu-item>
         <el-menu-item v-if="auth.can('fx:rate:read')" index="/fx">{{ t('menu.fx') }}</el-menu-item>
         <el-menu-item index="/suppliers" disabled>{{ t('menu.suppliers') }}{{ t('menu.todo') }}</el-menu-item>
         <el-menu-item index="/quotations" disabled>{{ t('menu.quotations') }}{{ t('menu.todo') }}</el-menu-item>

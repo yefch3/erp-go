@@ -14,9 +14,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	apv1 "github.com/sgao19/erp-go/gen/go/erp/approval/v1"
-	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
+	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
+	pdv1 "github.com/sgao19/erp-go/gen/go/erp/product/v1"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/services/gateway/internal/config"
 	"github.com/sgao19/erp-go/services/gateway/internal/httpapi"
@@ -62,18 +63,25 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer apConn.Close()
+	pdConn, err := dial(cfg.ProductAddr)
+	if err != nil {
+		return err
+	}
+	defer pdConn.Close()
 
 	srv := &httpapi.Server{
-		IAM:       iamv1.NewAuthServiceClient(iamConn),
-		Access:    iamv1.NewAccessServiceClient(iamConn),
-		Fx:        fxv1.NewFxServiceClient(fxConn),
-		Customers: mdv1.NewCustomerServiceClient(mdConn),
-		Suppliers: mdv1.NewSupplierServiceClient(mdConn),
-		Options:   mdv1.NewOptionServiceClient(mdConn),
-		Numbering: mdv1.NewNumberingServiceClient(mdConn),
-		Approval:  apv1.NewApprovalServiceClient(apConn),
-		JWTSecret: cfg.JWTSecret,
-		Log:       log,
+		IAM:         iamv1.NewAuthServiceClient(iamConn),
+		Access:      iamv1.NewAccessServiceClient(iamConn),
+		Fx:          fxv1.NewFxServiceClient(fxConn),
+		Customers:   mdv1.NewCustomerServiceClient(mdConn),
+		Suppliers:   mdv1.NewSupplierServiceClient(mdConn),
+		Options:     mdv1.NewOptionServiceClient(mdConn),
+		Numbering:   mdv1.NewNumberingServiceClient(mdConn),
+		Approval:    apv1.NewApprovalServiceClient(apConn),
+		Catalog:     pdv1.NewCatalogServiceClient(pdConn),
+		Attachments: pdv1.NewAttachmentServiceClient(pdConn),
+		JWTSecret:   cfg.JWTSecret,
+		Log:         log,
 	}
 
 	httpSrv := &http.Server{

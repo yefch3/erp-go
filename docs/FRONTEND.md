@@ -32,6 +32,7 @@ frontend/src/
     ├── Shell.vue        侧边栏 + 顶栏布局,业务页面都是它的子路由
     ├── CustomersPage.vue
     ├── TodosPage.vue
+    ├── ProductsPage.vue
     └── FxPage.vue
 ```
 
@@ -75,6 +76,7 @@ frontend/src/
 | 登录 | /login | - | POST /auth/login |
 | 客户管理 | /customers | masterdata:customer:read(写按钮 :write) | /customers 增改查、停用/启用、/options |
 | 我的待办 | /todos | approval:task:act | /approvals/todos、/approvals/tasks/{id}/act |
+| 产品管理 | /products | product:product:read(写按钮 :write) | /products 增改查、/product-categories、/uoms、SKU、附件预签名上传 |
 | 汇率中心 | /fx | fx:rate:read | /fx/rates、/fx/anomalies(只读,汇率仅来自 API 抓取) |
 
 ### 阶段 1 收尾
@@ -83,13 +85,6 @@ frontend/src/
 |---|---|---|---|
 | 供应商管理 | /suppliers | masterdata:supplier:read/write | 复制客户页模式,后端接口已就绪,随时可做 |
 | 员工与角色 | /settings/employees、/settings/roles | iam:employee:*、iam:role:* | 员工 CRUD+开账号、角色授权矩阵;后端接口已就绪 |
-
-### 阶段 2(product 服务)
-
-| 页面 | 路由 | 权限 | 说明 |
-|---|---|---|---|
-| 产品列表 | /products | product:product:read | 列表+搜索+分类筛选 |
-| 产品详情/编辑 | /products/:id | product:product:write | 基础信息、SKU 子表、单位换算、包装、附件(走 MinIO 预签名) |
 
 ### 阶段 3(export 服务,核心业务)
 
@@ -140,6 +135,6 @@ frontend/src/
 ## 6. 待补的横向能力(排期在阶段 3 前)
 
 - **修改密码**:后端 iam 尚无接口,admin 初始密码目前改不掉,上线前必须补
-- **附件上传组件**:封装 MinIO 预签名直传(阶段 2 产品附件首次用到)
+- ~~附件上传组件~~:已在产品页落地(预签名 → 浏览器直传 → 回写 key),后续页面照抄这三步
 - **数字输入组件**:金额/数量输入,前端只做格式校验,精确计算交后端
 - **表格导出**:批量导出需求文档有提及,统一做成组合式函数
