@@ -36,10 +36,7 @@ type CustomerInput struct {
 	OperatorID                                                  int64
 }
 
-func (in CustomerInput) validate(requireCode bool) error {
-	if requireCode && in.Code == "" {
-		return apierr.Invalid("MD_CUSTOMER_CODE_REQUIRED", "客户编码必填")
-	}
+func (in CustomerInput) validate() error {
 	if in.Name == "" {
 		return apierr.Invalid("MD_CUSTOMER_NAME_REQUIRED", "客户名称必填")
 	}
@@ -55,7 +52,7 @@ func (in CustomerInput) validate(requireCode bool) error {
 }
 
 func (s *Service) CreateCustomer(ctx context.Context, tenantID int64, in CustomerInput) (store.Customer, []store.CustomerContact, error) {
-	if err := in.validate(true); err != nil {
+	if err := in.validate(); err != nil {
 		return store.Customer{}, nil, err
 	}
 	if in.Currency == "" {
@@ -64,8 +61,19 @@ func (s *Service) CreateCustomer(ctx context.Context, tenantID int64, in Custome
 	var out store.Customer
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		// An empty code means "let the system issue one". Drawing it here,
+		// inside the insert's transaction, is what keeps the sequence tight:
+		// abandoning the form costs nothing because no call was made, and a
+		// rejected insert rolls the sequence back with it.
+		code := in.Code
+		if code == "" {
+			var err error
+			if code, err = s.nextNumber(ctx, q, tenantID, "CUSTOMER"); err != nil {
+				return err
+			}
+		}
 		c, err := q.CreateCustomer(ctx, store.CreateCustomerParams{
-			TenantID: tenantID, Code: in.Code, Name: in.Name, Country: in.Country,
+			TenantID: tenantID, Code: code, Name: in.Name, Country: in.Country,
 			Address: in.Address, Currency: in.Currency, PaymentTerm: in.PaymentTerm,
 			Remark: in.Remark, CreatedBy: in.OperatorID,
 		})
@@ -111,7 +119,7 @@ func (s *Service) ListCustomers(ctx context.Context, tenantID int64, keyword, st
 }
 
 func (s *Service) UpdateCustomer(ctx context.Context, tenantID, id int64, in CustomerInput) (store.Customer, []store.CustomerContact, error) {
-	if err := in.validate(false); err != nil {
+	if err := in.validate(); err != nil {
 		return store.Customer{}, nil, err
 	}
 	var out store.Customer
@@ -173,22 +181,37 @@ type SupplierInput struct {
 }
 
 func (s *Service) CreateSupplier(ctx context.Context, tenantID int64, in SupplierInput) (store.Supplier, error) {
-	if in.Code == "" || in.Name == "" {
-		return store.Supplier{}, apierr.Invalid("MD_SUPPLIER_FIELDS_REQUIRED", "供应商编码和名称必填")
+	if in.Name == "" {
+		return store.Supplier{}, apierr.Invalid("MD_SUPPLIER_FIELDS_REQUIRED", "供应商名称必填")
 	}
 	if in.Currency == "" {
 		in.Currency = "CNY"
 	}
-	sp, err := s.q.CreateSupplier(ctx, store.CreateSupplierParams{
-		TenantID: tenantID, Code: in.Code, Name: in.Name, Country: in.Country,
-		Address: in.Address, Currency: in.Currency, ContactName: in.ContactName,
-		ContactPhone: in.ContactPhone, ContactEmail: in.ContactEmail,
-		Remark: in.Remark, CreatedBy: in.OperatorID,
+	var out store.Supplier
+	// Same deal as customers: an empty code is issued here so an abandoned
+	// form never burns a number. See CreateCustomer.
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		code := in.Code
+		if code == "" {
+			var err error
+			if code, err = s.nextNumber(ctx, q, tenantID, "SUPPLIER"); err != nil {
+				return err
+			}
+		}
+		sp, err := q.CreateSupplier(ctx, store.CreateSupplierParams{
+			TenantID: tenantID, Code: code, Name: in.Name, Country: in.Country,
+			Address: in.Address, Currency: in.Currency, ContactName: in.ContactName,
+			ContactPhone: in.ContactPhone, ContactEmail: in.ContactEmail,
+			Remark: in.Remark, CreatedBy: in.OperatorID,
+		})
+		if err != nil {
+			return translateUnique(err, "MD_SUPPLIER_CODE_TAKEN", "供应商编码已存在")
+		}
+		out = sp
+		return nil
 	})
-	if err != nil {
-		return store.Supplier{}, translateUnique(err, "MD_SUPPLIER_CODE_TAKEN", "供应商编码已存在")
-	}
-	return sp, nil
+	return out, err
 }
 
 func (s *Service) GetSupplier(ctx context.Context, tenantID, id int64) (store.Supplier, error) {

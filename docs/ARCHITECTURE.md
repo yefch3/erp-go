@@ -462,6 +462,11 @@ CREATE TABLE number_sequences (
 -- 分配：INSERT ... ON CONFLICT DO UPDATE SET current_no = number_sequences.current_no + 1 RETURNING current_no
 ```
 
+**取号时机**：单据在**保存时**由服务端取号（编码留空即视为「请系统生成」），
+取号与插入在同一个事务里完成。这样打开表单又取消不会消耗号码，插入失败时
+序号随事务一起回滚。行锁只在这个短事务内持有，不影响并发正确性——重号仍然
+不可能，断号仍然允许（跨事务的并发失败场景）。前端**不再预先调用取号接口**。
+
 ### 5.3 product（产品主数据）
 
 ```sql

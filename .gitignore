@@ -18,3 +18,7 @@ coverage.out
 
 # OS
 .DS_Store
+
+# Frontend build output (produced by `npm run build`, never edited by hand)
+/frontend/dist/
+/frontend/node_modules/

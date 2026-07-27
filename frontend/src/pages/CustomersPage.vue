@@ -70,8 +70,8 @@
 
     <el-dialog v-model="dialogOpen" :title="t('customers.create')" width="560px">
       <el-form :model="form" label-width="110px">
-        <el-form-item :label="t('customers.code')" required>
-          <el-input v-model="form.code" placeholder="CU-0001" />
+        <el-form-item :label="t('customers.code')">
+          <el-input v-model="form.code" :placeholder="t('customers.codeAuto')" />
         </el-form-item>
         <el-form-item :label="t('customers.name')" required>
           <el-input v-model="form.name" />
@@ -201,23 +201,19 @@ async function load() {
   }
 }
 
-async function openCreate() {
+function openCreate() {
+  // The code is left blank on purpose: masterdata issues it when the customer
+  // is actually saved, so opening and abandoning this dialog costs no number.
+  // Typing one here still wins, for companies with their own conventions.
   Object.assign(form, {
     code: '', name: '', country: '', currency: 'USD', paymentTerm: '',
     contactName: '', contactDial: '', contactPhone: '', contactEmail: '',
   })
   dialogOpen.value = true
-  // Pre-fill the code from the numbering service; the field stays editable
-  // for companies with their own conventions.
-  try {
-    form.code = (await post<{ number: string }>('/numbering/next', { bizType: 'CUSTOMER' })).number
-  } catch {
-    // Numbering unavailable: leave the field empty for manual entry.
-  }
 }
 
 async function save() {
-  if (!form.code || !form.name) {
+  if (!form.name) {
     ElMessage.warning(t('customers.required'))
     return
   }

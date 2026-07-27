@@ -17,11 +17,19 @@ import (
 // number_sequences: concurrent callers serialize on the row lock. Numbers
 // may have gaps (a caller whose transaction later fails keeps its number
 // consumed) - that is intentional; uniqueness matters, gaplessness does not.
+//
+// Callers that create a record in the same breath should use nextNumber with
+// their own transaction instead: the sequence bump then rolls back with a
+// failed insert, so a rejected create leaves no hole.
 func (s *Service) NextNumber(ctx context.Context, tenantID int64, bizType string) (string, error) {
+	return s.nextNumber(ctx, s.q, tenantID, bizType)
+}
+
+func (s *Service) nextNumber(ctx context.Context, q *store.Queries, tenantID int64, bizType string) (string, error) {
 	if bizType == "" {
 		return "", apierr.Invalid("MD_BIZ_TYPE_REQUIRED", "单据类型必填")
 	}
-	rule, err := s.q.GetNumberRule(ctx, store.GetNumberRuleParams{TenantID: tenantID, BizType: bizType})
+	rule, err := q.GetNumberRule(ctx, store.GetNumberRuleParams{TenantID: tenantID, BizType: bizType})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", apierr.NotFound("MD_NUMBER_RULE_NOT_FOUND", "该单据类型未配置编码规则").
@@ -31,7 +39,7 @@ func (s *Service) NextNumber(ctx context.Context, tenantID int64, bizType string
 	}
 
 	periodKey := periodKeyFor(rule.Period, time.Now())
-	seq, err := s.q.NextSeq(ctx, store.NextSeqParams{
+	seq, err := q.NextSeq(ctx, store.NextSeqParams{
 		TenantID: tenantID, BizType: bizType, PeriodKey: periodKey,
 	})
 	if err != nil {
