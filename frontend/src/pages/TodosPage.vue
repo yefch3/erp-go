@@ -6,6 +6,14 @@
     </div>
 
     <el-card shadow="never">
+      <el-radio-group v-model="scope" class="tabs" @change="() => { page = 1; load() }">
+        <el-radio-button value="">{{ t('todos.tabPending') }}</el-radio-button>
+        <el-radio-button value="APPROVED">{{ t('todos.tabApproved') }}</el-radio-button>
+        <el-radio-button value="REJECTED">{{ t('todos.tabRejected') }}</el-radio-button>
+        <el-radio-button value="RETURNED">{{ t('todos.tabReturned') }}</el-radio-button>
+        <el-radio-button value="HANDLED">{{ t('todos.tabHandled') }}</el-radio-button>
+      </el-radio-group>
+
       <el-table :data="todos" v-loading="loading">
         <el-table-column :label="t('todos.bizType')" width="110">
           <template #default="{ row }">
@@ -25,20 +33,45 @@
         <el-table-column :label="t('todos.node')" width="110">
           <template #default="{ row }">{{ row.task.nodeName }}</template>
         </el-table-column>
-        <el-table-column :label="t('todos.submitter')" width="80">
-          <template #default="{ row }">{{ row.instance.submitterName }}</template>
-        </el-table-column>
-        <el-table-column :label="t('todos.submittedAt')" width="130">
-          <template #default="{ row }">{{ formatTime(row.instance.submittedAt) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('common.actions')" width="190" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="success" @click="open(row, 'APPROVE')">{{ t('todos.approve') }}</el-button>
-            <el-button link type="danger" @click="open(row, 'REJECT')">{{ t('todos.reject') }}</el-button>
-            <el-button link type="warning" @click="open(row, 'RETURN')">{{ t('todos.return') }}</el-button>
-          </template>
-        </el-table-column>
-        <template #empty>{{ t('todos.empty') }}</template>
+        <!-- Pending rows care who sent it and when; handled rows care what I
+             decided and what became of the document, so the two tabs show
+             different tails rather than one table too wide for either. -->
+        <template v-if="pending">
+          <el-table-column :label="t('todos.submitter')" width="80">
+            <template #default="{ row }">{{ row.instance.submitterName }}</template>
+          </el-table-column>
+          <el-table-column :label="t('todos.submittedAt')" width="130">
+            <template #default="{ row }">{{ formatTime(row.instance.submittedAt) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('common.actions')" width="190" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="success" @click="open(row, 'APPROVE')">{{ t('todos.approve') }}</el-button>
+              <el-button link type="danger" @click="open(row, 'REJECT')">{{ t('todos.reject') }}</el-button>
+              <el-button link type="warning" @click="open(row, 'RETURN')">{{ t('todos.return') }}</el-button>
+            </template>
+          </el-table-column>
+        </template>
+        <template v-else>
+          <el-table-column :label="t('todos.myDecision')" min-width="200">
+            <template #default="{ row }">
+              <el-tag size="small" :type="taskTagType(row.task.status)">
+                {{ taskStatusLabel(row.task.status) }}
+              </el-tag>
+              <span v-if="row.task.comment" class="comment">{{ row.task.comment }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('todos.actedAt')" width="130">
+            <template #default="{ row }">{{ formatTime(row.task.actedAt) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('todos.docResult')" width="110" fixed="right">
+            <template #default="{ row }">
+              <el-tag size="small" effect="plain" :type="instanceTagType(row.instance.status)">
+                {{ instanceStatusLabel(row.instance.status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </template>
+        <template #empty>{{ pending ? t('todos.empty') : t('todos.emptyHandled') }}</template>
       </el-table>
 
       <el-pagination
@@ -92,6 +125,9 @@ interface Todo { task: Task; instance: Instance }
 type ActionCode = 'APPROVE' | 'REJECT' | 'RETURN'
 
 const { t } = useI18n()
+// '' = pending queue; the other values are past decisions of mine.
+const scope = ref('')
+const pending = computed(() => scope.value === '')
 const todos = ref<Todo[]>([])
 const total = ref(0)
 const page = ref(1)
@@ -111,7 +147,7 @@ async function load() {
   loading.value = true
   try {
     const data = await get<{ todos: Todo[]; meta: { total: string } }>('/approvals/todos', {
-      page: page.value, page_size: pageSize,
+      page: page.value, page_size: pageSize, status: scope.value,
     })
     todos.value = data.todos ?? []
     total.value = Number(data.meta.total)
@@ -158,10 +194,33 @@ function parseSummary(raw: string): Record<string, string> {
   }
 }
 
-function bizTypeLabel(code: string): string {
-  const key = `todos.biz.${code}`
+// A task can be APPROVED while the document later got rejected downstream,
+// so both statuses are shown and neither is derived from the other.
+function taskStatusLabel(code: string): string {
+  return labelOr(`todos.task.${code}`, code)
+}
+
+function instanceStatusLabel(code: string): string {
+  return labelOr(`todos.doc.${code}`, code)
+}
+
+function taskTagType(code: string): 'success' | 'danger' | 'warning' | 'info' {
+  return { APPROVED: 'success', REJECTED: 'danger', RETURNED: 'warning' }[code] as
+    'success' | 'danger' | 'warning' | undefined ?? 'info'
+}
+
+function instanceTagType(code: string): 'success' | 'danger' | 'warning' | 'info' {
+  return { APPROVED: 'success', REJECTED: 'danger', RETURNED: 'warning' }[code] as
+    'success' | 'danger' | 'warning' | undefined ?? 'info'
+}
+
+function labelOr(key: string, fallback: string): string {
   const label = t(key)
-  return label === key ? code : label
+  return label === key ? fallback : label
+}
+
+function bizTypeLabel(code: string): string {
+  return labelOr(`todos.biz.${code}`, code)
 }
 
 function formatTime(iso: string): string {
@@ -183,12 +242,19 @@ onMounted(load)
   font-weight: 500;
   margin: 0;
 }
+.tabs {
+  margin-bottom: 14px;
+}
 .pager {
   margin-top: 14px;
   justify-content: flex-end;
 }
 .sum + .sum {
   margin-left: 16px;
+}
+.comment {
+  margin-left: 10px;
+  color: var(--el-text-color-regular);
 }
 .sum-k {
   margin-right: 6px;

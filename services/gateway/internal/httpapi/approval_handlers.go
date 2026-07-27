@@ -13,6 +13,9 @@ func (s *Server) myTodos(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Approval.MyTodos(r.Context(), &apv1.MyTodosRequest{
 		Page:    pageFromQuery(r),
 		BizType: r.URL.Query().Get("biz_type"),
+		// "" is the pending queue; HANDLED / APPROVED / REJECTED / RETURNED
+		// are the "what did I decide" tabs.
+		Status: r.URL.Query().Get("status"),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)

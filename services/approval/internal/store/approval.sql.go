@@ -442,7 +442,7 @@ func (q *Queries) ListInstancesByBiz(ctx context.Context, arg ListInstancesByBiz
 	return items, nil
 }
 
-const listMyTodos = `-- name: ListMyTodos :many
+const listMyTasks = `-- name: ListMyTasks :many
 SELECT
     t.id, t.instance_id, t.node_seq, t.node_name, t.assignee_id, t.status,
     t.comment, t.acted_at, t.created_at,
@@ -451,23 +451,28 @@ SELECT
     count(*) OVER () AS total
 FROM approval_tasks t
 JOIN approval_instances i ON i.id = t.instance_id AND i.tenant_id = t.tenant_id
-WHERE t.tenant_id = $1
-  AND t.assignee_id = $2
-  AND t.status = 'PENDING'
-  AND ($3::text = '' OR i.biz_type = $3)
-ORDER BY t.created_at DESC
-LIMIT $4 OFFSET $5
+WHERE t.tenant_id = $1::bigint
+  AND t.assignee_id = $2::bigint
+  AND ($3::text = '' OR i.biz_type = $3::text)
+  AND CASE
+        WHEN $4::text = ''        THEN t.status = 'PENDING'
+        WHEN $4::text = 'HANDLED' THEN t.status <> 'PENDING'
+        ELSE t.status = $4::text
+      END
+ORDER BY coalesce(t.acted_at, t.created_at) DESC
+LIMIT $6::int OFFSET $5::int
 `
 
-type ListMyTodosParams struct {
+type ListMyTasksParams struct {
 	TenantID   int64
 	AssigneeID int64
-	Column3    string
-	Limit      int32
-	Offset     int32
+	BizType    string
+	Status     string
+	RowOffset  int32
+	RowLimit   int32
 }
 
-type ListMyTodosRow struct {
+type ListMyTasksRow struct {
 	ID             int64
 	InstanceID     int64
 	NodeSeq        int32
@@ -489,21 +494,25 @@ type ListMyTodosRow struct {
 	Total          int64
 }
 
-func (q *Queries) ListMyTodos(ctx context.Context, arg ListMyTodosParams) ([]ListMyTodosRow, error) {
-	rows, err := q.db.Query(ctx, listMyTodos,
+// One query serves every tab of "my approvals": the pending queue by
+// default, everything already handled, or one exact decision.
+// Pending rows have no acted_at, so newest-first works for both tabs.
+func (q *Queries) ListMyTasks(ctx context.Context, arg ListMyTasksParams) ([]ListMyTasksRow, error) {
+	rows, err := q.db.Query(ctx, listMyTasks,
 		arg.TenantID,
 		arg.AssigneeID,
-		arg.Column3,
-		arg.Limit,
-		arg.Offset,
+		arg.BizType,
+		arg.Status,
+		arg.RowOffset,
+		arg.RowLimit,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListMyTodosRow
+	var items []ListMyTasksRow
 	for rows.Next() {
-		var i ListMyTodosRow
+		var i ListMyTasksRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.InstanceID,

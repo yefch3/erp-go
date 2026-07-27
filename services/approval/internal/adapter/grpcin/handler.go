@@ -60,7 +60,8 @@ func (h *Handler) MyTodos(ctx context.Context, req *apv1.MyTodosRequest) (*apv1.
 		return nil, err
 	}
 	page, size := req.GetPage().GetPage(), req.GetPage().GetPageSize()
-	rows, total, err := h.svc.MyTodos(ctx, grpcx.TenantID(ctx), actor, req.GetBizType(), page, size)
+	rows, total, err := h.svc.MyTasks(ctx, grpcx.TenantID(ctx), actor,
+		req.GetBizType(), req.GetStatus(), page, size)
 	if err != nil {
 		return nil, err
 	}

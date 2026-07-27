@@ -97,6 +97,10 @@ message MyTodosRequest {
   erp.common.v1.PageRequest page = 1;
   // Optional filter, e.g. "CONTRACT".
   string biz_type = 2;
+  // Which of my tasks to list: "" (default) means the pending queue,
+  // "HANDLED" everything I already acted on, or one exact task status
+  // ("APPROVED" / "REJECTED" / "RETURNED") to see just those decisions.
+  string status = 3;
 }
 
 message MyTodosResponse {

@@ -13,13 +13,25 @@ import (
 
 func instanceKey(id int64) string { return strconv.FormatInt(id, 10) }
 
-// MyTodos returns the pending tasks of one employee. The caller passes its
+// Task statuses a caller may filter on, plus the HANDLED shorthand for
+// "everything I already acted on".
+var taskScopes = map[string]bool{
+	"": true, "HANDLED": true, statusApproved: true, statusRejected: true,
+	statusReturned: true, "CANCELLED": true, taskSkipped: true,
+}
+
+// MyTasks returns one employee's approval tasks: the pending queue by
+// default, or a past decision when a status is given. The caller passes its
 // own employee id: nobody can list somebody else's queue.
-func (s *Service) MyTodos(ctx context.Context, tenantID, assigneeID int64, bizType string, page, size int32) ([]store.ListMyTodosRow, int64, error) {
+func (s *Service) MyTasks(ctx context.Context, tenantID, assigneeID int64, bizType, status string, page, size int32) ([]store.ListMyTasksRow, int64, error) {
+	if !taskScopes[status] {
+		return nil, 0, apierr.Invalid("AP_STATUS_INVALID", "不支持的任务状态筛选").
+			WithMeta("status", status)
+	}
 	page, size = normalizePage(page, size)
-	rows, err := s.q.ListMyTodos(ctx, store.ListMyTodosParams{
-		TenantID: tenantID, AssigneeID: assigneeID, Column3: bizType,
-		Limit: size, Offset: (page - 1) * size,
+	rows, err := s.q.ListMyTasks(ctx, store.ListMyTasksParams{
+		TenantID: tenantID, AssigneeID: assigneeID, BizType: bizType, Status: status,
+		RowLimit: size, RowOffset: (page - 1) * size,
 	})
 	if err != nil {
 		return nil, 0, err

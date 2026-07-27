@@ -71,7 +71,9 @@ SELECT * FROM approval_tasks
 WHERE tenant_id = $1 AND instance_id = $2
 ORDER BY node_seq, id;
 
--- name: ListMyTodos :many
+-- name: ListMyTasks :many
+-- One query serves every tab of "my approvals": the pending queue by
+-- default, everything already handled, or one exact decision.
 SELECT
     t.id, t.instance_id, t.node_seq, t.node_name, t.assignee_id, t.status,
     t.comment, t.acted_at, t.created_at,
@@ -80,9 +82,14 @@ SELECT
     count(*) OVER () AS total
 FROM approval_tasks t
 JOIN approval_instances i ON i.id = t.instance_id AND i.tenant_id = t.tenant_id
-WHERE t.tenant_id = $1
-  AND t.assignee_id = $2
-  AND t.status = 'PENDING'
-  AND ($3::text = '' OR i.biz_type = $3)
-ORDER BY t.created_at DESC
-LIMIT $4 OFFSET $5;
+WHERE t.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND t.assignee_id = sqlc.arg(assignee_id)::bigint
+  AND (sqlc.arg(biz_type)::text = '' OR i.biz_type = sqlc.arg(biz_type)::text)
+  AND CASE
+        WHEN sqlc.arg(status)::text = ''        THEN t.status = 'PENDING'
+        WHEN sqlc.arg(status)::text = 'HANDLED' THEN t.status <> 'PENDING'
+        ELSE t.status = sqlc.arg(status)::text
+      END
+-- Pending rows have no acted_at, so newest-first works for both tabs.
+ORDER BY coalesce(t.acted_at, t.created_at) DESC
+LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
