@@ -81,3 +81,11 @@ check-tenant: ## Verify every migration table carries tenant_id
 .PHONY: ci
 ci: proto check-tenant test ## What CI runs; proto regeneration must be a no-op
 	git diff --exit-code gen/ || (echo "gen/ is stale: run 'make proto' and commit" && exit 1)
+
+.PHONY: sqlc
+sqlc: ## Regenerate sqlc stores for every service that has one
+	@for cfg in services/*/db/sqlc.yaml; do \
+		[ -f "$$cfg" ] || continue; \
+		echo "==> sqlc $$(dirname $$cfg)"; \
+		(cd "$$(dirname $$cfg)" && go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate) || exit 1; \
+	done

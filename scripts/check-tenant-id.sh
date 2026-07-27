@@ -4,8 +4,8 @@
 # tenant-free are listed in EXEMPT.
 set -eu
 
-EXEMPT="outbox_events processed_events goose_db_version schema_migrations
-fx_rates fx_rate_latest fx_manual_overrides fx_anomalies uoms"
+# Single line: BSD awk rejects -v values containing newlines.
+EXEMPT="outbox_events processed_events goose_db_version schema_migrations fx_rates fx_rate_latest fx_manual_overrides fx_anomalies uoms permissions"
 
 fail=0
 for f in $(find services -path '*/db/migrations/*.sql' 2>/dev/null | sort); do

@@ -1,0 +1,196 @@
+syntax = "proto3";
+
+package erp.iam.v1;
+
+import "erp/common/v1/pagination.proto";
+
+// AuthService issues JWTs. The gateway is its only caller.
+service AuthService {
+  rpc Login(LoginRequest) returns (LoginResponse);
+}
+
+// DirectoryService owns departments and employees.
+service DirectoryService {
+  rpc CreateDepartment(CreateDepartmentRequest) returns (CreateDepartmentResponse);
+  rpc ListDepartments(ListDepartmentsRequest) returns (ListDepartmentsResponse);
+  rpc CreateEmployee(CreateEmployeeRequest) returns (CreateEmployeeResponse);
+  rpc GetEmployee(GetEmployeeRequest) returns (GetEmployeeResponse);
+  rpc ListEmployees(ListEmployeesRequest) returns (ListEmployeesResponse);
+  rpc DeactivateEmployee(DeactivateEmployeeRequest) returns (DeactivateEmployeeResponse);
+}
+
+// AccessService owns roles, permissions and the permission check other
+// services and the gateway rely on.
+service AccessService {
+  rpc CreateRole(CreateRoleRequest) returns (CreateRoleResponse);
+  rpc ListRoles(ListRolesRequest) returns (ListRolesResponse);
+  rpc GrantRolePermissions(GrantRolePermissionsRequest) returns (GrantRolePermissionsResponse);
+  rpc AssignEmployeeRoles(AssignEmployeeRolesRequest) returns (AssignEmployeeRolesResponse);
+  rpc ListPermissions(ListPermissionsRequest) returns (ListPermissionsResponse);
+  // CheckPermission answers "may employee X do Y", used by the gateway on
+  // every mutating request.
+  rpc CheckPermission(CheckPermissionRequest) returns (CheckPermissionResponse);
+  // ListEmployeePermissions returns every permission code an employee holds,
+  // used by the gateway to render menus and by the frontend to hide actions.
+  rpc ListEmployeePermissions(ListEmployeePermissionsRequest) returns (ListEmployeePermissionsResponse);
+}
+
+message LoginRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  string access_token = 1;
+  int64 expires_in_seconds = 2;
+  Employee employee = 3;
+  repeated string permission_codes = 4;
+}
+
+message Department {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  int64 parent_id = 4;
+  string status = 5;
+}
+
+message CreateDepartmentRequest {
+  string code = 1;
+  string name = 2;
+  int64 parent_id = 3;
+}
+
+message CreateDepartmentResponse {
+  Department department = 1;
+}
+
+message ListDepartmentsRequest {}
+
+message ListDepartmentsResponse {
+  repeated Department departments = 1;
+}
+
+message Employee {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  int64 department_id = 4;
+  string department_name = 5;
+  string position = 6;
+  string email = 7;
+  string phone = 8;
+  string status = 9;
+  repeated int64 role_ids = 10;
+}
+
+message CreateEmployeeRequest {
+  string code = 1;
+  string name = 2;
+  int64 department_id = 3;
+  string position = 4;
+  string email = 5;
+  string phone = 6;
+  // Optional login account created alongside the employee.
+  string username = 7;
+  string initial_password = 8;
+}
+
+message CreateEmployeeResponse {
+  Employee employee = 1;
+}
+
+message GetEmployeeResponse {
+  Employee employee = 1;
+}
+
+message GetEmployeeRequest {
+  int64 id = 1;
+}
+
+message ListEmployeesRequest {
+  erp.common.v1.PageRequest page = 1;
+  int64 department_id = 2;
+  string keyword = 3;
+}
+
+message ListEmployeesResponse {
+  repeated Employee employees = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message DeactivateEmployeeRequest {
+  int64 id = 1;
+}
+
+message DeactivateEmployeeResponse {}
+
+message Role {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  string description = 4;
+  repeated string permission_codes = 5;
+}
+
+message CreateRoleRequest {
+  string code = 1;
+  string name = 2;
+  string description = 3;
+}
+
+message CreateRoleResponse {
+  Role role = 1;
+}
+
+message ListRolesRequest {}
+
+message ListRolesResponse {
+  repeated Role roles = 1;
+}
+
+message GrantRolePermissionsResponse {}
+
+message GrantRolePermissionsRequest {
+  int64 role_id = 1;
+  // Full replacement: the role ends up with exactly these codes.
+  repeated string permission_codes = 2;
+}
+
+message AssignEmployeeRolesResponse {}
+
+message AssignEmployeeRolesRequest {
+  int64 employee_id = 1;
+  // Full replacement of the employee's role set.
+  repeated int64 role_ids = 2;
+}
+
+message Permission {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  string module = 4;
+}
+
+message ListPermissionsRequest {}
+
+message ListPermissionsResponse {
+  repeated Permission permissions = 1;
+}
+
+message CheckPermissionRequest {
+  int64 employee_id = 1;
+  string permission_code = 2;
+}
+
+message CheckPermissionResponse {
+  bool allowed = 1;
+}
+
+message ListEmployeePermissionsRequest {
+  int64 employee_id = 1;
+}
+
+message ListEmployeePermissionsResponse {
+  repeated string permission_codes = 1;
+}
