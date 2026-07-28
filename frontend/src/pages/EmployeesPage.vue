@@ -26,6 +26,9 @@
         <el-table-column prop="name" :label="t('employees.name')" width="120" />
         <el-table-column prop="departmentName" :label="t('employees.department')" width="110" />
         <el-table-column prop="position" :label="t('employees.position')" width="120" />
+        <el-table-column :label="t('employees.manager')" width="100">
+          <template #default="{ row }"><span class="sub">{{ row.managerName || '—' }}</span></template>
+        </el-table-column>
         <el-table-column :label="t('employees.account')" min-width="140">
           <template #default="{ row }">
             <span v-if="row.username">{{ row.username }}</span>
@@ -80,6 +83,13 @@
           </el-form-item>
           <el-form-item :label="t('employees.position')">
             <el-input v-model="form.position" />
+          </el-form-item>
+          <el-form-item :label="t('employees.manager')">
+            <el-select v-model="form.managerId" clearable filterable style="width: 100%"
+                       :placeholder="t('employees.managerNone')">
+              <el-option v-for="e in employees" :key="e.id" :value="e.id" :label="`${e.code} · ${e.name}`" />
+            </el-select>
+            <div class="hint">{{ t('employees.managerHint') }}</div>
           </el-form-item>
           <el-form-item :label="t('employees.email')">
             <el-input v-model="form.email" />
@@ -157,11 +167,13 @@ interface Employee {
   status: string
   username: string
   roleIds: string[]
+  managerId: string
+  managerName: string
 }
 
 const EMPTY_FORM = {
   code: '', name: '', departmentId: '', position: '', email: '', phone: '',
-  username: '', initialPassword: '',
+  username: '', initialPassword: '', managerId: '',
 }
 
 const { t } = useI18n()
@@ -230,6 +242,7 @@ async function save() {
     await post('/employees', {
       code: form.code, name: form.name, departmentId: form.departmentId,
       position: form.position, email: form.email, phone: form.phone,
+      managerId: form.managerId || '0',
       username: form.username, initialPassword: form.initialPassword,
     })
     ElMessage.success(t('employees.created'))

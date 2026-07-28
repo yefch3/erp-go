@@ -41,6 +41,21 @@
               </el-checkbox>
             </el-checkbox-group>
           </div>
+          <!-- Permissions say which features a role may use; the scope says
+               whose records those features operate on. -->
+          <div class="module">
+            <div class="module-name">{{ t('roles.dataScope') }}</div>
+            <div class="scope-row">
+              <span class="scope-label">{{ t('roles.scopeExport') }}</span>
+              <el-select v-model="scopeExport" :disabled="!canWrite" style="width: 220px">
+                <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
+              </el-select>
+              <el-button v-if="canWrite" :loading="savingScope" @click="saveScope">
+                {{ t('roles.saveScope') }}
+              </el-button>
+            </div>
+            <p class="footnote">{{ t('roles.scopeHint') }}</p>
+          </div>
           <p class="footnote">{{ t('roles.serverEnforced') }}</p>
         </div>
         <div v-else class="matrix empty">{{ t('roles.pickRole') }}</div>
@@ -88,6 +103,12 @@ const checked = ref<string[]>([])
 const loading = ref(false)
 const saving = ref(false)
 const createOpen = ref(false)
+// Absence of a row means SELF, so the picker shows SELF for an unconfigured
+// role rather than a blank that hides which way it will actually behave.
+const SCOPE_TYPES = ['SELF', 'DEPT', 'DEPT_AND_SUB', 'ALL']
+const scopes = ref<Record<string, string>>({})
+const scopeExport = ref('SELF')
+const savingScope = ref(false)
 const form = reactive({ code: '', name: '', description: '' })
 
 const grouped = computed(() => {
@@ -113,6 +134,26 @@ async function load() {
 function select(role: Role) {
   selected.value = role
   checked.value = [...role.permissionCodes]
+  scopeExport.value = scopes.value[`${role.id}:export`] ?? 'SELF'
+}
+
+async function loadScopes() {
+  const data = await get<{ scopes: { roleId: string; module: string; scopeType: string }[] }>('/data-scopes')
+  scopes.value = Object.fromEntries((data.scopes ?? []).map((s) => [`${s.roleId}:${s.module}`, s.scopeType]))
+  if (selected.value) scopeExport.value = scopes.value[`${selected.value.id}:export`] ?? 'SELF'
+}
+
+async function saveScope() {
+  savingScope.value = true
+  try {
+    await put(`/roles/${selected.value!.id}/data-scope`, {
+      scope: { module: 'export', scopeType: scopeExport.value },
+    })
+    ElMessage.success(t('roles.scopeSaved'))
+    await loadScopes()
+  } finally {
+    savingScope.value = false
+  }
 }
 
 async function createRole() {
@@ -154,10 +195,22 @@ function moduleLabel(module: string): string {
 onMounted(async () => {
   permissions.value = (await get<{ permissions: Permission[] }>('/permissions')).permissions ?? []
   await load()
+  await loadScopes()
 })
 </script>
 
 <style scoped>
+.scope-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.scope-label {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+  min-width: 72px;
+}
+
 .page-head {
   display: flex;
   align-items: center;

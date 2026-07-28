@@ -18,6 +18,9 @@
         <el-menu-item v-if="auth.can('export:quotation:read')" index="/quotations">
           {{ t('menu.quotations') }}
         </el-menu-item>
+        <el-menu-item v-if="auth.can('export:contract:read')" index="/contracts">
+          {{ t('menu.contracts') }}
+        </el-menu-item>
         <el-menu-item v-if="auth.can('fx:rate:read')" index="/fx">{{ t('menu.fx') }}</el-menu-item>
         <el-menu-item v-if="auth.can('iam:employee:read')" index="/settings/employees">
           {{ t('menu.employees') }}
@@ -25,8 +28,10 @@
         <el-menu-item v-if="auth.can('iam:role:read')" index="/settings/roles">
           {{ t('menu.roles') }}
         </el-menu-item>
+        <el-menu-item v-if="auth.can('approval:flow:read')" index="/settings/approvals">
+          {{ t('menu.approvalFlows') }}
+        </el-menu-item>
         <el-menu-item index="/suppliers" disabled>{{ t('menu.suppliers') }}{{ t('menu.todo') }}</el-menu-item>
-        <el-menu-item index="/contracts" disabled>{{ t('menu.contracts') }}{{ t('menu.todo') }}</el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
@@ -72,13 +77,14 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { post } from '../api'
 import { useAuthStore } from '../stores/auth'
 import LangSwitcher from '../components/LangSwitcher.vue'
+import { startLive, stopLive } from '../live'
 
 const passwordOpen = ref(false)
 const saving = ref(false)
@@ -89,8 +95,14 @@ const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 
+// One stream for the whole session, opened once the user is inside the shell
+// and closed when they leave it.
+onMounted(startLive)
+onUnmounted(stopLive)
+
 function onCommand(cmd: string) {
   if (cmd === 'logout') {
+    stopLive()
     auth.logout()
     router.push('/login')
   }

@@ -21,12 +21,24 @@
           </template>
         </el-table-column>
         <el-table-column :label="t('todos.bizNo')" width="150">
-          <template #default="{ row }">{{ row.instance.bizNo }}</template>
+          <template #default="{ row }">
+            <!-- An approver should be able to read the document before
+                 deciding on it. It doubles as a check that the document is
+                 still there: a dead link is visible, a missing row is not. -->
+            <router-link
+              v-if="docLink(row.instance)"
+              :to="docLink(row.instance)!"
+              class="doc-link"
+            >
+              {{ row.instance.bizNo }}
+            </router-link>
+            <span v-else>{{ row.instance.bizNo }}</span>
+          </template>
         </el-table-column>
         <el-table-column :label="t('todos.summary')" min-width="170">
           <template #default="{ row }">
             <span v-for="(v, k) in parseSummary(row.instance.bizSummary)" :key="k" class="sum">
-              <span class="sum-k">{{ k }}</span>{{ v }}
+              <span class="sum-k">{{ summaryLabel(k) }}</span>{{ v }}
             </span>
           </template>
         </el-table-column>
@@ -105,10 +117,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post } from '../api'
+import { onLive } from '../live'
 
 interface Task { id: string; nodeSeq: number; nodeName: string; status: string }
 interface Instance {
@@ -182,6 +195,24 @@ async function submit() {
   }
 }
 
+// Where each document type lives. Types absent from the map render as plain
+// text rather than a broken link, which is what happens until their page
+// exists.
+const DOC_ROUTES: Record<string, string> = { CONTRACT: '/contracts' }
+
+function docLink(instance: Instance): { path: string; query: { id: string } } | null {
+  const path = DOC_ROUTES[instance.bizType]
+  return path ? { path, query: { id: instance.bizId } } : null
+}
+
+// Keys a business service is likely to send get a readable label; anything
+// else falls through as-is, so a new document type still renders.
+function summaryLabel(key: string | number): string {
+  const path = `todos.summaryKeys.${key}`
+  const label = t(path)
+  return label === path ? String(key) : label
+}
+
 // The summary is whatever the business service denormalized at submit time,
 // so it is rendered generically rather than assuming known keys.
 function parseSummary(raw: string): Record<string, string> {
@@ -228,6 +259,15 @@ function formatTime(iso: string): string {
 }
 
 onMounted(load)
+
+// A colleague acting on a shared task, or a new one arriving, changes this
+// list without the user doing anything. The hint only says "it moved"; the
+// list is re-fetched through the normal API so permissions are re-checked and
+// there is one code path for loading data instead of two.
+const stopListening = onLive((event) => {
+  if (event.type === 'todo.changed') load()
+})
+onUnmounted(stopListening)
 </script>
 
 <style scoped>
@@ -260,6 +300,13 @@ onMounted(load)
   margin-right: 6px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.doc-link {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+.doc-link:hover {
+  text-decoration: underline;
 }
 .target {
   margin: 0 0 12px;
