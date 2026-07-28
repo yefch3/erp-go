@@ -35,7 +35,9 @@ frontend/src/
     ├── ProductsPage.vue
     ├── EmployeesPage.vue
     ├── RolesPage.vue
+    ├── ApprovalFlowsPage.vue
     ├── QuotationsPage.vue
+    ├── ContractsPage.vue
     └── FxPage.vue
 ```
 
@@ -67,6 +69,31 @@ frontend/src/
    国家存英文全称(跨语言稳定),电话按 `"+49 211 5566 7788"` 存成一个字段;
    国家选好后自动带出区号,用户改过的区号不再被覆盖。
    区号下拉收起时只显示号码(`#label` 插槽),展开时显示"区号 + 国家"便于搜索。
+10. **不要把注定失败的选项摆给用户**:如果某个候选项一提交必然被后端拒绝
+    (例如已生成过合同的报价单、已停用的产品),就在**后端加过滤参数**把它筛掉,
+    而不是靠错误提示补救。参见 `/quotations?without_contract=true`。
+11. **状态机按钮按状态出**:操作区不要长期摆着 disabled 的按钮,
+    当前状态不允许的动作直接不渲染。合同详情页的提交/签署/变更/作废就是这样,
+    审批中的合同一个按钮都不显示。
+12. **待办要能点进原单**:审批列表的单据编号是链接
+    (`DOC_ROUTES` 把 `bizType` 映射到路由,未映射的类型渲染成纯文本)。
+    这不只是方便——审批引擎不认识业务类型,列表里没法校验单据还在不在,
+    **一条点开报「不存在」的链接,比一条静默无效的记录显眼得多**。
+13. **抽屉/弹窗要等数据到手再开**。先 `open = true` 再 await,请求失败时在同一帧关掉,
+    Element Plus 的过渡会卡在 `leave-active` 上,留下一个空白遮罩盖住整页。
+    正确顺序:取数据 → 成功才 `open = true`。
+14. **深链接用 query 而不是新路由**:`/contracts?id=4` 打开对应合同的抽屉,
+    列表仍在背后。`watch(route.query.id, ..., {immediate:true})` 负责进入,
+    抽屉关闭时 `router.replace` 把 query 抹掉,免得刷新又弹出来。
+15. **实时推送用 `src/live.ts`,不要用 `EventSource`**。
+    `EventSource` 设不了 Authorization 头,唯一的绕法是把 JWT 塞进 query string,
+    那样它会进访问日志、代理日志和浏览器历史。改用 `fetch` + `ReadableStream`
+    读 SSE 流,token 留在请求头里。
+    连接在 `Shell.vue` 挂载时打开、卸载和登出时关闭,整个会话共用一条。
+    页面用 `onLive(handler)` 订阅,记得在 `onUnmounted` 里退订。
+    **推送只是提示,收到后照常调接口重新读**——不要直接拿推送里的数据渲染,
+    否则权限校验和加载逻辑就有了两条会互相矛盾的路径。
+    断线自动重连,退避到最长 60 秒;连不上时页面退化成手动刷新,功能不受影响。
 
 ## 4. 页面清单
 
@@ -81,8 +108,10 @@ frontend/src/
 | 我的待办 | /todos | approval:task:act | /approvals/todos、/approvals/tasks/{id}/act |
 | 产品管理 | /products | product:product:read(写按钮 :write) | /products 增改查、/product-categories、/uoms、SKU、附件预签名上传 |
 | 员工管理 | /settings/employees | iam:employee:read(写按钮 :write，分配角色 iam:role:write) | /employees、/departments、开账号、重置密码、分配角色 |
-| 角色权限 | /settings/roles | iam:role:read(写按钮 :write) | /roles、/permissions、授权矩阵 |
+| 角色权限 | /settings/roles | iam:role:read(写按钮 :write) | /roles、/permissions、授权矩阵 + 数据范围(/data-scopes) |
+| 审批流配置 | /settings/approvals | approval:flow:read(写按钮 :write) | /approval-flows 增删节点、保存为新版本、版本历史 |
 | 报价单 | /quotations | export:quotation:read(写按钮 :write) | /quotations 增改查、发送、客户答复 |
+| 出口合同 | /contracts | export:contract:read(写按钮 :write) | 列表 + 抽屉式详情:条款、明细、汇率快照、版本历史、提交审批/签署/变更/作废 |
 | 汇率中心 | /fx | fx:rate:read | /fx/rates、/fx/anomalies(只读,汇率仅来自 API 抓取) |
 
 ### 阶段 1 收尾
@@ -95,9 +124,11 @@ frontend/src/
 
 | 页面 | 路由 | 权限(新增码) | 说明 |
 |---|---|---|---|
-| 报价单→合同 | /quotations | export:quotation:* | 已接受的报价一键生成合同草稿(待合同落地) |
-| 合同列表 | /contracts | export:contract:read | 状态筛选(草稿/审批中/待签署/生效/执行中/完成) |
-| 合同详情 | /contracts/:id | export:contract:* | **本系统最复杂页面**:基础信息、明细、汇率快照展示、版本历史、状态机操作按钮(提交审批/签署/变更)、执行进度标签页 |
+| ~~报价单→合同~~ | /contracts | export:contract:write | ✅ 已完成。入口放在合同页的「由报价生成」,下拉只列**尚无存活合同**的已接受报价(`without_contract=true`) |
+| ~~合同列表~~ | /contracts | export:contract:read | ✅ 已完成 |
+| ~~合同详情~~ | /contracts(抽屉) | export:contract:* | ✅ 已完成。做成**抽屉而非独立路由**:合同和列表几乎总是一起看,弹出比跳走再回来少一次加载。执行进度标签页待阶段 5 出货计划落地后再补 |
+| ~~合同文件~~ | /contracts(抽屉内) | export:contract:* | ✅ 已完成。三步直传(presign → PUT 对象存储 → register),按「我方拟稿/客户签回/其他附件」分类,每份文件标注归属版本 |
+| 合同在线签署落地页 | /public/contracts/sign/:token | 无(免登录) | 阶段 6。客户从邮件点进来看合同 PDF 并确认;失效链接一律同一句中性提示 |
 | 出货计划 | /shipments | export:shipment:* | 合同拆批次、锁库存申请、累计数量校验提示 |
 | 信用证 | /lcs | export:lc:* | L/C 台账、期限提醒、不符点改单(独立审批) |
 | 单证制作 | /documents | export:doc:* | 按出货批次的单证清单、版本、审核状态 |

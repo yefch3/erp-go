@@ -45,7 +45,7 @@ nuke: ## Stop local infrastructure AND delete its volumes
 
 .PHONY: topics
 topics: ## Create the Kafka topics (producers refuse to auto-create them)
-	@for t in erp.approval.task.v1; do \
+	@for t in erp.approval.task.v1 erp.export.contract.v1; do \
 		echo "==> topic $$t"; \
 		docker compose -f deploy/docker-compose.infra.yml exec -T kafka \
 			kafka-topics --bootstrap-server localhost:9092 \

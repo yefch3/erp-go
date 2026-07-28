@@ -84,6 +84,7 @@ services:
       GRPC_PORT: "9005"
       IAM_ADDR: iam:9001
       KAFKA_BROKERS: kafka:9092
+      REDIS_ADDR: redis:6379
     ports:
       - "9005:9005"
     networks: [infra]
@@ -104,10 +105,19 @@ services:
       EXPORT_ADDR: export:9006
       FX_ADDR: fx:9003
       APPROVAL_ADDR: approval:9005
+      IAM_ADDR: iam:9001
+      KAFKA_BROKERS: kafka:9092
+      MINIO_ENDPOINT: minio:9000
+      # Browsers reach MinIO on the host port, and SigV4 signs the host, so
+      # presigned URLs must be signed for this one.
+      MINIO_PUBLIC_ENDPOINT: localhost:19000
+      MINIO_ACCESS_KEY: erp
+      MINIO_SECRET_KEY: erp_dev_password
+      MINIO_BUCKET: erp-files
     ports:
       - "9006:9006"
     networks: [infra]
-    depends_on: [masterdata, product, fx]
+    depends_on: [masterdata, product, fx, approval, iam]
     restart: unless-stopped
 
   gateway:
@@ -123,6 +133,7 @@ services:
       APPROVAL_ADDR: approval:9005
       PRODUCT_ADDR: product:9004
       EXPORT_ADDR: export:9006
+      REDIS_ADDR: redis:6379
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       HTTP_PORT: "8080"
     ports:
