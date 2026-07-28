@@ -1,0 +1,244 @@
+<template>
+  <div>
+    <div class="page-head">
+      <h2>{{ t('roles.title') }}</h2>
+      <el-button v-if="canWrite" type="primary" @click="createOpen = true">{{ t('roles.create') }}</el-button>
+    </div>
+
+    <el-card shadow="never" v-loading="loading">
+      <div class="layout">
+        <div class="role-column">
+          <div
+            v-for="r in roles"
+            :key="r.id"
+            class="role-item"
+            :class="{ active: r.id === selected?.id }"
+            @click="select(r)"
+          >
+            <div class="role-name">{{ r.name }}</div>
+            <div class="role-code">{{ r.code }} · {{ r.permissionCodes.length }} {{ t('roles.permissionCount') }}</div>
+          </div>
+        </div>
+
+        <div class="matrix" v-if="selected">
+          <div class="matrix-head">
+            <div>
+              <span class="matrix-title">{{ selected.name }}</span>
+              <span class="hint">{{ selected.description || t('roles.noDescription') }}</span>
+            </div>
+            <el-button v-if="canWrite" type="primary" :loading="saving" @click="saveGrants">
+              {{ t('roles.saveGrants') }}
+            </el-button>
+          </div>
+          <!-- Grouped by module because that is how people think about it:
+               "can this role touch customers", not "code #7". -->
+          <div v-for="(items, module) in grouped" :key="module" class="module">
+            <div class="module-name">{{ moduleLabel(module) }}</div>
+            <el-checkbox-group v-model="checked" :disabled="!canWrite" class="perm-list">
+              <el-checkbox v-for="p in items" :key="p.code" :value="p.code">
+                {{ p.name }}
+                <span class="perm-code">{{ p.code }}</span>
+              </el-checkbox>
+            </el-checkbox-group>
+          </div>
+          <p class="footnote">{{ t('roles.serverEnforced') }}</p>
+        </div>
+        <div v-else class="matrix empty">{{ t('roles.pickRole') }}</div>
+      </div>
+    </el-card>
+
+    <el-dialog v-model="createOpen" :title="t('roles.create')" width="440px">
+      <el-form :model="form" label-width="100px">
+        <el-form-item :label="t('roles.code')" required>
+          <el-input v-model="form.code" placeholder="SALES_MANAGER" />
+        </el-form-item>
+        <el-form-item :label="t('roles.name')" required>
+          <el-input v-model="form.name" placeholder="销售主管" />
+        </el-form-item>
+        <el-form-item :label="t('roles.description')">
+          <el-input v-model="form.description" type="textarea" :rows="2" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="createRole">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
+import { get, post, put } from '../api'
+import { useAuthStore } from '../stores/auth'
+
+interface Role { id: string; code: string; name: string; description: string; permissionCodes: string[] }
+interface Permission { id: string; code: string; name: string; module: string }
+
+const { t } = useI18n()
+const auth = useAuthStore()
+const canWrite = auth.can('iam:role:write')
+
+const roles = ref<Role[]>([])
+const permissions = ref<Permission[]>([])
+const selected = ref<Role | null>(null)
+const checked = ref<string[]>([])
+const loading = ref(false)
+const saving = ref(false)
+const createOpen = ref(false)
+const form = reactive({ code: '', name: '', description: '' })
+
+const grouped = computed(() => {
+  const out: Record<string, Permission[]> = {}
+  for (const p of permissions.value) {
+    (out[p.module] ??= []).push(p)
+  }
+  return out
+})
+
+async function load() {
+  loading.value = true
+  try {
+    roles.value = (await get<{ roles: Role[] }>('/roles')).roles ?? []
+    const keep = selected.value?.id
+    selected.value = roles.value.find((r) => r.id === keep) ?? roles.value[0] ?? null
+    checked.value = [...(selected.value?.permissionCodes ?? [])]
+  } finally {
+    loading.value = false
+  }
+}
+
+function select(role: Role) {
+  selected.value = role
+  checked.value = [...role.permissionCodes]
+}
+
+async function createRole() {
+  if (!form.code || !form.name) {
+    ElMessage.warning(t('roles.required'))
+    return
+  }
+  saving.value = true
+  try {
+    await post('/roles', { code: form.code, name: form.name, description: form.description })
+    ElMessage.success(t('roles.created'))
+    createOpen.value = false
+    Object.assign(form, { code: '', name: '', description: '' })
+    await load()
+  } finally {
+    saving.value = false
+  }
+}
+
+async function saveGrants() {
+  saving.value = true
+  try {
+    // The backend replaces the whole set, so what is checked here is exactly
+    // what the role ends up with.
+    await put(`/roles/${selected.value?.id}/permissions`, { permissionCodes: checked.value })
+    ElMessage.success(t('roles.grantsSaved'))
+    await load()
+  } finally {
+    saving.value = false
+  }
+}
+
+function moduleLabel(module: string): string {
+  const key = `roles.modules.${module}`
+  const label = t(key)
+  return label === key ? module : label
+}
+
+onMounted(async () => {
+  permissions.value = (await get<{ permissions: Permission[] }>('/permissions')).permissions ?? []
+  await load()
+})
+</script>
+
+<style scoped>
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.page-head h2 {
+  font-size: 18px;
+  font-weight: 500;
+  margin: 0;
+}
+.layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 20px;
+  min-height: 320px;
+}
+.role-column {
+  border-right: 1px solid var(--el-border-color-lighter);
+  padding-right: 12px;
+}
+.role-item {
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.role-item:hover {
+  background: var(--el-fill-color-light);
+}
+.role-item.active {
+  background: var(--el-color-primary-light-9);
+}
+.role-name {
+  font-size: 14px;
+}
+.role-code {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.matrix-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.matrix-title {
+  font-size: 15px;
+  font-weight: 500;
+}
+.matrix.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--el-text-color-secondary);
+}
+.module {
+  margin-bottom: 14px;
+}
+.module-name {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 4px;
+}
+.perm-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 16px;
+}
+.perm-code {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+}
+.hint {
+  margin-left: 10px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.footnote {
+  margin: 18px 0 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+</style>

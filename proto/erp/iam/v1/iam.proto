@@ -17,6 +17,15 @@ service DirectoryService {
   rpc GetEmployee(GetEmployeeRequest) returns (GetEmployeeResponse);
   rpc ListEmployees(ListEmployeesRequest) returns (ListEmployeesResponse);
   rpc DeactivateEmployee(DeactivateEmployeeRequest) returns (DeactivateEmployeeResponse);
+  // OpenAccount gives an existing employee a login; employees created
+  // without one are the normal case (not everyone uses the system).
+  rpc OpenAccount(OpenAccountRequest) returns (OpenAccountResponse);
+  // ResetPassword is the administrator path: no old password, but it needs
+  // iam:employee:write, which the gateway enforces.
+  rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse);
+  // ChangePassword is the self-service path: the caller's own account,
+  // proven with the current password.
+  rpc ChangePassword(ChangePasswordRequest) returns (ChangePasswordResponse);
 }
 
 // AccessService owns roles, permissions and the permission check other
@@ -86,6 +95,8 @@ message Employee {
   string phone = 8;
   string status = 9;
   repeated int64 role_ids = 10;
+  // Empty when the employee has no login account, which is normal.
+  string username = 11;
 }
 
 message CreateEmployeeRequest {
@@ -197,6 +208,34 @@ message ListEmployeePermissionsRequest {
 
 message ListEmployeePermissionsResponse {
   repeated string permission_codes = 1;
+}
+
+message OpenAccountRequest {
+  int64 employee_id = 1;
+  string username = 2;
+  string initial_password = 3;
+}
+
+message OpenAccountResponse {
+  string username = 1;
+}
+
+message ResetPasswordRequest {
+  int64 employee_id = 1;
+  string new_password = 2;
+}
+
+message ResetPasswordResponse {
+  bool reset = 1;
+}
+
+message ChangePasswordRequest {
+  string old_password = 1;
+  string new_password = 2;
+}
+
+message ChangePasswordResponse {
+  bool changed = 1;
 }
 
 message ListRoleMembersRequest {

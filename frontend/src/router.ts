@@ -13,6 +13,8 @@ export const router = createRouter({
         { path: 'customers', component: () => import('./pages/CustomersPage.vue') },
         { path: 'products', component: () => import('./pages/ProductsPage.vue') },
         { path: 'fx', component: () => import('./pages/FxPage.vue') },
+        { path: 'settings/employees', component: () => import('./pages/EmployeesPage.vue') },
+        { path: 'settings/roles', component: () => import('./pages/RolesPage.vue') },
       ],
     },
   ],

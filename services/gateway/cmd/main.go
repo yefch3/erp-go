@@ -71,6 +71,7 @@ func run(log *slog.Logger) error {
 
 	srv := &httpapi.Server{
 		IAM:         iamv1.NewAuthServiceClient(iamConn),
+		Directory:   iamv1.NewDirectoryServiceClient(iamConn),
 		Access:      iamv1.NewAccessServiceClient(iamConn),
 		Fx:          fxv1.NewFxServiceClient(fxConn),
 		Customers:   mdv1.NewCustomerServiceClient(mdConn),

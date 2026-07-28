@@ -131,6 +131,9 @@ const (
 	DirectoryService_GetEmployee_FullMethodName        = "/erp.iam.v1.DirectoryService/GetEmployee"
 	DirectoryService_ListEmployees_FullMethodName      = "/erp.iam.v1.DirectoryService/ListEmployees"
 	DirectoryService_DeactivateEmployee_FullMethodName = "/erp.iam.v1.DirectoryService/DeactivateEmployee"
+	DirectoryService_OpenAccount_FullMethodName        = "/erp.iam.v1.DirectoryService/OpenAccount"
+	DirectoryService_ResetPassword_FullMethodName      = "/erp.iam.v1.DirectoryService/ResetPassword"
+	DirectoryService_ChangePassword_FullMethodName     = "/erp.iam.v1.DirectoryService/ChangePassword"
 )
 
 // DirectoryServiceClient is the client API for DirectoryService service.
@@ -145,6 +148,15 @@ type DirectoryServiceClient interface {
 	GetEmployee(ctx context.Context, in *GetEmployeeRequest, opts ...grpc.CallOption) (*GetEmployeeResponse, error)
 	ListEmployees(ctx context.Context, in *ListEmployeesRequest, opts ...grpc.CallOption) (*ListEmployeesResponse, error)
 	DeactivateEmployee(ctx context.Context, in *DeactivateEmployeeRequest, opts ...grpc.CallOption) (*DeactivateEmployeeResponse, error)
+	// OpenAccount gives an existing employee a login; employees created
+	// without one are the normal case (not everyone uses the system).
+	OpenAccount(ctx context.Context, in *OpenAccountRequest, opts ...grpc.CallOption) (*OpenAccountResponse, error)
+	// ResetPassword is the administrator path: no old password, but it needs
+	// iam:employee:write, which the gateway enforces.
+	ResetPassword(ctx context.Context, in *ResetPasswordRequest, opts ...grpc.CallOption) (*ResetPasswordResponse, error)
+	// ChangePassword is the self-service path: the caller's own account,
+	// proven with the current password.
+	ChangePassword(ctx context.Context, in *ChangePasswordRequest, opts ...grpc.CallOption) (*ChangePasswordResponse, error)
 }
 
 type directoryServiceClient struct {
@@ -215,6 +227,36 @@ func (c *directoryServiceClient) DeactivateEmployee(ctx context.Context, in *Dea
 	return out, nil
 }
 
+func (c *directoryServiceClient) OpenAccount(ctx context.Context, in *OpenAccountRequest, opts ...grpc.CallOption) (*OpenAccountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OpenAccountResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_OpenAccount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *directoryServiceClient) ResetPassword(ctx context.Context, in *ResetPasswordRequest, opts ...grpc.CallOption) (*ResetPasswordResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResetPasswordResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_ResetPassword_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *directoryServiceClient) ChangePassword(ctx context.Context, in *ChangePasswordRequest, opts ...grpc.CallOption) (*ChangePasswordResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ChangePasswordResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_ChangePassword_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DirectoryServiceServer is the server API for DirectoryService service.
 // All implementations must embed UnimplementedDirectoryServiceServer
 // for forward compatibility.
@@ -227,6 +269,15 @@ type DirectoryServiceServer interface {
 	GetEmployee(context.Context, *GetEmployeeRequest) (*GetEmployeeResponse, error)
 	ListEmployees(context.Context, *ListEmployeesRequest) (*ListEmployeesResponse, error)
 	DeactivateEmployee(context.Context, *DeactivateEmployeeRequest) (*DeactivateEmployeeResponse, error)
+	// OpenAccount gives an existing employee a login; employees created
+	// without one are the normal case (not everyone uses the system).
+	OpenAccount(context.Context, *OpenAccountRequest) (*OpenAccountResponse, error)
+	// ResetPassword is the administrator path: no old password, but it needs
+	// iam:employee:write, which the gateway enforces.
+	ResetPassword(context.Context, *ResetPasswordRequest) (*ResetPasswordResponse, error)
+	// ChangePassword is the self-service path: the caller's own account,
+	// proven with the current password.
+	ChangePassword(context.Context, *ChangePasswordRequest) (*ChangePasswordResponse, error)
 	mustEmbedUnimplementedDirectoryServiceServer()
 }
 
@@ -254,6 +305,15 @@ func (UnimplementedDirectoryServiceServer) ListEmployees(context.Context, *ListE
 }
 func (UnimplementedDirectoryServiceServer) DeactivateEmployee(context.Context, *DeactivateEmployeeRequest) (*DeactivateEmployeeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeactivateEmployee not implemented")
+}
+func (UnimplementedDirectoryServiceServer) OpenAccount(context.Context, *OpenAccountRequest) (*OpenAccountResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method OpenAccount not implemented")
+}
+func (UnimplementedDirectoryServiceServer) ResetPassword(context.Context, *ResetPasswordRequest) (*ResetPasswordResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResetPassword not implemented")
+}
+func (UnimplementedDirectoryServiceServer) ChangePassword(context.Context, *ChangePasswordRequest) (*ChangePasswordResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ChangePassword not implemented")
 }
 func (UnimplementedDirectoryServiceServer) mustEmbedUnimplementedDirectoryServiceServer() {}
 func (UnimplementedDirectoryServiceServer) testEmbeddedByValue()                          {}
@@ -384,6 +444,60 @@ func _DirectoryService_DeactivateEmployee_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DirectoryService_OpenAccount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(OpenAccountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).OpenAccount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_OpenAccount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).OpenAccount(ctx, req.(*OpenAccountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DirectoryService_ResetPassword_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResetPasswordRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).ResetPassword(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_ResetPassword_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).ResetPassword(ctx, req.(*ResetPasswordRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DirectoryService_ChangePassword_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ChangePasswordRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).ChangePassword(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_ChangePassword_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).ChangePassword(ctx, req.(*ChangePasswordRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DirectoryService_ServiceDesc is the grpc.ServiceDesc for DirectoryService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -414,6 +528,18 @@ var DirectoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeactivateEmployee",
 			Handler:    _DirectoryService_DeactivateEmployee_Handler,
+		},
+		{
+			MethodName: "OpenAccount",
+			Handler:    _DirectoryService_OpenAccount_Handler,
+		},
+		{
+			MethodName: "ResetPassword",
+			Handler:    _DirectoryService_ResetPassword_Handler,
+		},
+		{
+			MethodName: "ChangePassword",
+			Handler:    _DirectoryService_ChangePassword_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

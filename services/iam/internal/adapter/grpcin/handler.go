@@ -5,8 +5,9 @@ package grpcin
 import (
 	"context"
 
-	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
+	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
+	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/services/iam/internal/app"
 	"github.com/sgao19/erp-go/services/iam/internal/store"
@@ -67,7 +68,11 @@ func (h *Handler) CreateEmployee(ctx context.Context, req *iamv1.CreateEmployeeR
 	if err != nil {
 		return nil, err
 	}
-	return &iamv1.CreateEmployeeResponse{Employee: employeeRowToProto(emp, nil)}, nil
+	// Echo the account back so the caller sees what it just created; the row
+	// itself carries no username.
+	out := employeeRowToProto(emp, nil)
+	out.Username = req.GetUsername()
+	return &iamv1.CreateEmployeeResponse{Employee: out}, nil
 }
 
 func (h *Handler) GetEmployee(ctx context.Context, req *iamv1.GetEmployeeRequest) (*iamv1.GetEmployeeResponse, error) {
@@ -85,12 +90,18 @@ func (h *Handler) ListEmployees(ctx context.Context, req *iamv1.ListEmployeesReq
 	if err != nil {
 		return nil, err
 	}
+	// One lookup for the whole page instead of a query per row.
+	accounts, err := h.svc.ListAccounts(ctx, grpcx.TenantID(ctx))
+	if err != nil {
+		return nil, err
+	}
 	out := make([]*iamv1.Employee, len(rows))
 	for i, r := range rows {
 		out[i] = &iamv1.Employee{
 			Id: r.ID, Code: r.Code, Name: r.Name,
 			DepartmentId: r.DepartmentID, DepartmentName: r.DepartmentName,
 			Position: r.Position, Email: r.Email, Phone: r.Phone, Status: r.Status,
+			Username: accounts[r.ID],
 		}
 	}
 	if page < 1 {
@@ -191,6 +202,36 @@ func (h *Handler) ListRoleMembers(ctx context.Context, req *iamv1.ListRoleMember
 		members = append(members, &iamv1.RoleMember{EmployeeId: r.EmployeeID, Name: r.Name})
 	}
 	return &iamv1.ListRoleMembersResponse{Members: members}, nil
+}
+
+func (h *Handler) OpenAccount(ctx context.Context, req *iamv1.OpenAccountRequest) (*iamv1.OpenAccountResponse, error) {
+	username, err := h.svc.OpenAccount(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(),
+		req.GetUsername(), req.GetInitialPassword())
+	if err != nil {
+		return nil, err
+	}
+	return &iamv1.OpenAccountResponse{Username: username}, nil
+}
+
+func (h *Handler) ResetPassword(ctx context.Context, req *iamv1.ResetPasswordRequest) (*iamv1.ResetPasswordResponse, error) {
+	if err := h.svc.ResetPassword(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(), req.GetNewPassword()); err != nil {
+		return nil, err
+	}
+	return &iamv1.ResetPasswordResponse{Reset_: true}, nil
+}
+
+func (h *Handler) ChangePassword(ctx context.Context, req *iamv1.ChangePasswordRequest) (*iamv1.ChangePasswordResponse, error) {
+	// The account changed is always the caller's own, taken from the verified
+	// token rather than the request body.
+	op, ok := grpcx.OperatorFromContext(ctx)
+	if !ok || op.EmployeeID == 0 {
+		return nil, apierr.Unauthorized("IAM_ACTOR_REQUIRED", "缺少操作人身份")
+	}
+	if err := h.svc.ChangePassword(ctx, grpcx.TenantID(ctx), op.EmployeeID,
+		req.GetOldPassword(), req.GetNewPassword()); err != nil {
+		return nil, err
+	}
+	return &iamv1.ChangePasswordResponse{Changed: true}, nil
 }
 
 // ---------------------------------------------------------------- mapping

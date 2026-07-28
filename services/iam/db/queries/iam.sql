@@ -125,3 +125,16 @@ FROM employee_roles er
 JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
 WHERE er.tenant_id = $1 AND er.role_id = $2 AND e.status = 'ACTIVE'
 ORDER BY e.id;
+
+-- name: GetUserByEmployee :one
+SELECT id, username, password_hash, status FROM users
+WHERE tenant_id = $1 AND employee_id = $2;
+
+-- name: UpdatePassword :execrows
+UPDATE users SET password_hash = $3, failed_count = 0, updated_at = now()
+WHERE tenant_id = $1 AND employee_id = $2;
+
+-- name: ListEmployeeAccounts :many
+-- Which employees can log in, for the employee list; a company usually has
+-- more employees than accounts.
+SELECT employee_id, username FROM users WHERE tenant_id = $1;

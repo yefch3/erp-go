@@ -29,6 +29,7 @@ import (
 
 type Server struct {
 	IAM         iamv1.AuthServiceClient
+	Directory   iamv1.DirectoryServiceClient
 	Access      iamv1.AccessServiceClient
 	Customers   mdv1.CustomerServiceClient
 	Suppliers   mdv1.SupplierServiceClient
@@ -44,6 +45,9 @@ type Server struct {
 
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
+	// Without this a handler panic drops the connection, which reaches the
+	// user as "network error" instead of a readable failure.
+	r.Use(s.recoverPanics)
 	r.Post("/api/auth/login", s.login)
 	r.Group(func(r chi.Router) {
 		r.Use(s.auth)
@@ -58,6 +62,26 @@ func (s *Server) Router() http.Handler {
 		// Option dictionaries feed every form's dropdowns; login is enough.
 		r.Get("/api/options", s.listOptions)
 		r.Post("/api/numbering/next", s.nextNumber)
+		// Organisation and access control. Reading the directory is what every
+		// picker needs; changing it is administrator work.
+		r.With(s.perm("iam:employee:read")).Get("/api/departments", s.listDepartments)
+		r.With(s.perm("iam:employee:write")).Post("/api/departments", s.createDepartment)
+		r.With(s.perm("iam:employee:read")).Get("/api/employees", s.listEmployees)
+		r.With(s.perm("iam:employee:read")).Get("/api/employees/{id}", s.getEmployee)
+		r.With(s.perm("iam:employee:write")).Post("/api/employees", s.createEmployee)
+		r.With(s.perm("iam:employee:write")).Delete("/api/employees/{id}", s.deactivateEmployee)
+		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/account", s.openAccount)
+		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/password", s.resetPassword)
+		r.With(s.perm("iam:role:write")).Post("/api/employees/{id}/roles", s.assignRoles)
+		r.With(s.perm("iam:role:read")).Get("/api/roles", s.listRoles)
+		r.With(s.perm("iam:role:write")).Post("/api/roles", s.createRole)
+		r.With(s.perm("iam:role:write")).Put("/api/roles/{id}/permissions", s.grantRolePermissions)
+		r.With(s.perm("iam:role:read")).Get("/api/roles/{id}/members", s.listRoleMembers)
+		r.With(s.perm("iam:role:read")).Get("/api/permissions", s.listPermissions)
+		// Own identity and own password: being logged in is the only
+		// requirement, since neither can touch anybody else's account.
+		r.Get("/api/me/permissions", s.me)
+		r.Post("/api/me/password", s.changeOwnPassword)
 		// Product catalog. Categories and units are reference data every
 		// product form needs, so reading them only requires product:read.
 		r.With(s.perm("product:product:read")).Get("/api/product-categories", s.listCategories)
@@ -119,6 +143,18 @@ func (s *Server) perm(code string) func(http.Handler) http.Handler {
 }
 
 // ---------------------------------------------------------------- middleware
+
+func (s *Server) recoverPanics(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if v := recover(); v != nil {
+				s.Log.Error("panic in handler", "path", r.URL.Path, "panic", v)
+				s.writeError(w, http.StatusInternalServerError, "GATEWAY_PANIC", "服务内部错误")
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
 
 // auth validates the Bearer token and turns its claims into the operator
 // context; the gRPC client interceptor then forwards them as metadata so

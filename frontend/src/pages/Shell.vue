@@ -16,6 +16,12 @@
           {{ t('menu.products') }}
         </el-menu-item>
         <el-menu-item v-if="auth.can('fx:rate:read')" index="/fx">{{ t('menu.fx') }}</el-menu-item>
+        <el-menu-item v-if="auth.can('iam:employee:read')" index="/settings/employees">
+          {{ t('menu.employees') }}
+        </el-menu-item>
+        <el-menu-item v-if="auth.can('iam:role:read')" index="/settings/roles">
+          {{ t('menu.roles') }}
+        </el-menu-item>
         <el-menu-item index="/suppliers" disabled>{{ t('menu.suppliers') }}{{ t('menu.todo') }}</el-menu-item>
         <el-menu-item index="/quotations" disabled>{{ t('menu.quotations') }}{{ t('menu.todo') }}</el-menu-item>
         <el-menu-item index="/contracts" disabled>{{ t('menu.contracts') }}{{ t('menu.todo') }}</el-menu-item>
@@ -30,6 +36,7 @@
             <span class="user">{{ auth.employeeName || '—' }}</span>
             <template #dropdown>
               <el-dropdown-menu>
+                <el-dropdown-item command="password">{{ t('password.title') }}</el-dropdown-item>
                 <el-dropdown-item command="logout">{{ t('common.logout') }}</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -40,14 +47,40 @@
         <router-view />
       </el-main>
     </el-container>
+
+    <el-dialog v-model="passwordOpen" :title="t('password.title')" width="420px">
+      <el-form label-width="110px">
+        <el-form-item :label="t('password.current')">
+          <el-input v-model="pw.oldPassword" type="password" show-password autocomplete="current-password" />
+        </el-form-item>
+        <el-form-item :label="t('password.new')">
+          <el-input v-model="pw.newPassword" type="password" show-password autocomplete="new-password" />
+        </el-form-item>
+        <el-form-item :label="t('password.confirm')">
+          <el-input v-model="pw.confirm" type="password" show-password autocomplete="new-password" />
+        </el-form-item>
+      </el-form>
+      <p class="pw-hint">{{ t('password.hint') }}</p>
+      <template #footer>
+        <el-button @click="passwordOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="changePassword">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
   </el-container>
 </template>
 
 <script setup lang="ts">
+import { reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { post } from '../api'
 import { useAuthStore } from '../stores/auth'
 import LangSwitcher from '../components/LangSwitcher.vue'
+
+const passwordOpen = ref(false)
+const saving = ref(false)
+const pw = reactive({ oldPassword: '', newPassword: '', confirm: '' })
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -59,10 +92,38 @@ function onCommand(cmd: string) {
     auth.logout()
     router.push('/login')
   }
+  if (cmd === 'password') {
+    passwordOpen.value = true
+  }
+}
+
+async function changePassword() {
+  if (!pw.oldPassword || !pw.newPassword) {
+    ElMessage.warning(t('password.required'))
+    return
+  }
+  if (pw.newPassword !== pw.confirm) {
+    ElMessage.warning(t('password.mismatch'))
+    return
+  }
+  saving.value = true
+  try {
+    await post('/me/password', { oldPassword: pw.oldPassword, newPassword: pw.newPassword })
+    ElMessage.success(t('password.changed'))
+    passwordOpen.value = false
+    Object.assign(pw, { oldPassword: '', newPassword: '', confirm: '' })
+  } finally {
+    saving.value = false
+  }
 }
 </script>
 
 <style scoped>
+.pw-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
 .shell {
   min-height: 100vh;
 }

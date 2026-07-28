@@ -325,6 +325,35 @@ func (q *Queries) GetPermissionIDsByCodes(ctx context.Context, dollar_1 []string
 	return items, nil
 }
 
+const getUserByEmployee = `-- name: GetUserByEmployee :one
+SELECT id, username, password_hash, status FROM users
+WHERE tenant_id = $1 AND employee_id = $2
+`
+
+type GetUserByEmployeeParams struct {
+	TenantID   int64
+	EmployeeID int64
+}
+
+type GetUserByEmployeeRow struct {
+	ID           int64
+	Username     string
+	PasswordHash string
+	Status       string
+}
+
+func (q *Queries) GetUserByEmployee(ctx context.Context, arg GetUserByEmployeeParams) (GetUserByEmployeeRow, error) {
+	row := q.db.QueryRow(ctx, getUserByEmployee, arg.TenantID, arg.EmployeeID)
+	var i GetUserByEmployeeRow
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.PasswordHash,
+		&i.Status,
+	)
+	return i, err
+}
+
 const getUserByUsername = `-- name: GetUserByUsername :one
 SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
        e.name AS employee_name, e.code AS employee_code, e.department_id, e.status AS employee_status
@@ -409,6 +438,37 @@ func (q *Queries) ListDepartments(ctx context.Context, tenantID int64) ([]Depart
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEmployeeAccounts = `-- name: ListEmployeeAccounts :many
+SELECT employee_id, username FROM users WHERE tenant_id = $1
+`
+
+type ListEmployeeAccountsRow struct {
+	EmployeeID int64
+	Username   string
+}
+
+// Which employees can log in, for the employee list; a company usually has
+// more employees than accounts.
+func (q *Queries) ListEmployeeAccounts(ctx context.Context, tenantID int64) ([]ListEmployeeAccountsRow, error) {
+	rows, err := q.db.Query(ctx, listEmployeeAccounts, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEmployeeAccountsRow
+	for rows.Next() {
+		var i ListEmployeeAccountsRow
+		if err := rows.Scan(&i.EmployeeID, &i.Username); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -767,4 +827,23 @@ func (q *Queries) SetDepartmentPath(ctx context.Context, arg SetDepartmentPathPa
 		arg.Level,
 	)
 	return err
+}
+
+const updatePassword = `-- name: UpdatePassword :execrows
+UPDATE users SET password_hash = $3, failed_count = 0, updated_at = now()
+WHERE tenant_id = $1 AND employee_id = $2
+`
+
+type UpdatePasswordParams struct {
+	TenantID     int64
+	EmployeeID   int64
+	PasswordHash string
+}
+
+func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updatePassword, arg.TenantID, arg.EmployeeID, arg.PasswordHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

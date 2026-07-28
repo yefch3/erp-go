@@ -33,6 +33,8 @@ frontend/src/
     ├── CustomersPage.vue
     ├── TodosPage.vue
     ├── ProductsPage.vue
+    ├── EmployeesPage.vue
+    ├── RolesPage.vue
     └── FxPage.vue
 ```
 
@@ -77,14 +79,15 @@ frontend/src/
 | 客户管理 | /customers | masterdata:customer:read(写按钮 :write) | /customers 增改查、停用/启用、/options |
 | 我的待办 | /todos | approval:task:act | /approvals/todos、/approvals/tasks/{id}/act |
 | 产品管理 | /products | product:product:read(写按钮 :write) | /products 增改查、/product-categories、/uoms、SKU、附件预签名上传 |
+| 员工管理 | /settings/employees | iam:employee:read(写按钮 :write，分配角色 iam:role:write) | /employees、/departments、开账号、重置密码、分配角色 |
+| 角色权限 | /settings/roles | iam:role:read(写按钮 :write) | /roles、/permissions、授权矩阵 |
 | 汇率中心 | /fx | fx:rate:read | /fx/rates、/fx/anomalies(只读,汇率仅来自 API 抓取) |
 
 ### 阶段 1 收尾
 
 | 页面 | 路由 | 权限 | 说明 |
 |---|---|---|---|
-| 供应商管理 | /suppliers | masterdata:supplier:read/write | 复制客户页模式,后端接口已就绪,随时可做 |
-| 员工与角色 | /settings/employees、/settings/roles | iam:employee:*、iam:role:* | 员工 CRUD+开账号、角色授权矩阵;后端接口已就绪 |
+| 供应商管理 | /suppliers | masterdata:supplier:read/write | 复制客户页模式;gRPC 6 个方法齐全,网关还只暴露了列表和新建两条路由 |
 
 ### 阶段 3(export 服务,核心业务)
 
@@ -134,7 +137,7 @@ frontend/src/
 
 ## 6. 待补的横向能力(排期在阶段 3 前)
 
-- **修改密码**:后端 iam 尚无接口,admin 初始密码目前改不掉,上线前必须补
+- ~~修改密码~~:已完成(顶栏用户菜单;另有管理员重置密码与开通账号)
 - ~~附件上传组件~~:已在产品页落地(预签名 → 浏览器直传 → 回写 key),后续页面照抄这三步
 - **数字输入组件**:金额/数量输入,前端只做格式校验,精确计算交后端
 - **表格导出**:批量导出需求文档有提及,统一做成组合式函数
