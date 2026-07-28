@@ -28,20 +28,44 @@ SELECT * FROM departments WHERE tenant_id = $1 AND id = $2;
 SELECT * FROM departments WHERE tenant_id = $1 ORDER BY path, sort_order, id;
 
 -- name: CreateEmployee :one
-INSERT INTO employees (tenant_id, code, name, department_id, position, email, phone)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO employees (tenant_id, code, name, department_id, position, email, phone, manager_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, nullif(sqlc.arg(manager_id)::bigint, 0))
 RETURNING *;
 
+-- name: SetEmployeeManager :execrows
+UPDATE employees SET manager_id = nullif(sqlc.arg(manager_id)::bigint, 0), updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: ManagerAtLevel :many
+-- Walks the reporting line upwards: level 1 is the direct manager, level 2
+-- their manager, and so on. Returns at most one row, and none once the chain
+-- runs out - the person at the top reports to nobody, and a flow that climbs
+-- past them simply has no one left to ask.
+WITH RECURSIVE chain AS (
+    SELECT e.id, e.manager_id, 0 AS lvl
+    FROM employees e
+    WHERE e.tenant_id = $1 AND e.id = $2
+    UNION ALL
+    SELECT m.id, m.manager_id, c.lvl + 1
+    FROM chain c
+    JOIN employees m ON m.id = c.manager_id AND m.status = 'ACTIVE'
+    WHERE c.lvl < sqlc.arg(levels)::int
+)
+SELECT id FROM chain WHERE lvl = sqlc.arg(levels)::int;
+
 -- name: GetEmployee :one
-SELECT e.*, d.name AS department_name
+SELECT e.*, d.name AS department_name, coalesce(m.name, '')::text AS manager_name
 FROM employees e
 JOIN departments d ON d.id = e.department_id
+LEFT JOIN employees m ON m.id = e.manager_id
 WHERE e.tenant_id = $1 AND e.id = $2;
 
 -- name: ListEmployees :many
-SELECT e.*, d.name AS department_name, count(*) OVER () AS total
+SELECT e.*, d.name AS department_name, coalesce(m.name, '')::text AS manager_name,
+       count(*) OVER () AS total
 FROM employees e
 JOIN departments d ON d.id = e.department_id
+LEFT JOIN employees m ON m.id = e.manager_id
 WHERE e.tenant_id = $1
   AND ($2::bigint = 0 OR e.department_id = $2)
   AND ($3::text = '' OR e.name ILIKE '%' || $3 || '%' OR e.code ILIKE '%' || $3 || '%')
@@ -157,3 +181,50 @@ JOIN employee_roles er ON er.employee_id = e.id AND er.tenant_id = e.tenant_id
 JOIN role_permissions rp ON rp.role_id = er.role_id AND rp.tenant_id = er.tenant_id
 JOIN permissions p ON p.id = rp.permission_id
 WHERE e.tenant_id = $1 AND e.status = 'ACTIVE' AND e.id <> $2 AND p.code = $3;
+
+-- name: WidestDataScope :one
+-- Someone with several roles gets the widest of them: adding a role must
+-- never take visibility away. Ordered by how much each scope reveals.
+SELECT s.scope_type, s.custom_dept_ids
+FROM role_data_scopes s
+JOIN employee_roles er ON er.role_id = s.role_id AND er.tenant_id = s.tenant_id
+WHERE s.tenant_id = $1 AND er.employee_id = $2 AND s.module = $3
+ORDER BY CASE s.scope_type
+           WHEN 'ALL' THEN 4
+           WHEN 'CUSTOM' THEN 3
+           WHEN 'DEPT_AND_SUB' THEN 2
+           WHEN 'DEPT' THEN 1
+           ELSE 0
+         END DESC
+LIMIT 1;
+
+-- name: EmployeesInMyDept :many
+SELECT peer.id
+FROM employees me
+JOIN employees peer ON peer.department_id = me.department_id AND peer.tenant_id = me.tenant_id
+WHERE me.tenant_id = $1 AND me.id = $2 AND peer.status = 'ACTIVE';
+
+-- name: EmployeesInMyDeptTree :many
+-- The department path is materialised ("/1/4/"), so a subtree is a prefix
+-- match rather than a recursive walk.
+SELECT peer.id
+FROM employees me
+JOIN departments mine ON mine.id = me.department_id
+JOIN departments sub ON sub.tenant_id = mine.tenant_id
+                     AND (sub.id = mine.id OR sub.path LIKE mine.path || mine.id || '/%')
+JOIN employees peer ON peer.department_id = sub.id AND peer.tenant_id = me.tenant_id
+WHERE me.tenant_id = $1 AND me.id = $2 AND peer.status = 'ACTIVE';
+
+-- name: EmployeesInDepts :many
+SELECT id FROM employees
+WHERE tenant_id = $1 AND department_id = ANY(sqlc.arg(dept_ids)::bigint[]) AND status = 'ACTIVE';
+
+-- name: SetRoleDataScope :exec
+INSERT INTO role_data_scopes (tenant_id, role_id, module, scope_type, custom_dept_ids)
+VALUES ($1, $2, $3, sqlc.arg(scope_type)::text, sqlc.arg(custom_dept_ids)::bigint[])
+ON CONFLICT (tenant_id, role_id, module)
+DO UPDATE SET scope_type = excluded.scope_type, custom_dept_ids = excluded.custom_dept_ids;
+
+-- name: ListRoleDataScopes :many
+SELECT role_id, module, scope_type, custom_dept_ids
+FROM role_data_scopes WHERE tenant_id = $1 ORDER BY role_id, module;

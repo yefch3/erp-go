@@ -29,6 +29,13 @@ service DirectoryService {
   // ChangePassword is the self-service path: the caller's own account,
   // proven with the current password.
   rpc ChangePassword(ChangePasswordRequest) returns (ChangePasswordResponse);
+  // ListManagers returns an employee's direct manager, for approval flows
+  // whose node says "whoever the submitter reports to" rather than naming a
+  // role. A list because the caller wants assignees either way, and someone
+  // at the top of the tree simply has none.
+  rpc ListManagers(ListManagersRequest) returns (ListManagersResponse);
+  // SetManager changes who someone reports to.
+  rpc SetManager(SetManagerRequest) returns (SetManagerResponse);
 }
 
 // AccessService owns roles, permissions and the permission check other
@@ -49,6 +56,38 @@ service AccessService {
   // engine calls it when a flow node names a role rather than a person, to
   // turn that node into concrete tasks.
   rpc ListRoleMembers(ListRoleMembersRequest) returns (ListRoleMembersResponse);
+  // VisibleEmployees answers "whose documents may this person see" for one
+  // module, from the data scope attached to their roles. Business services
+  // ask it instead of inventing their own idea of who owns what.
+  rpc VisibleEmployees(VisibleEmployeesRequest) returns (VisibleEmployeesResponse);
+  // ListDataScopes returns every role's data scope, for the admin screen.
+  rpc ListDataScopes(ListDataScopesRequest) returns (ListDataScopesResponse);
+  // SetDataScope changes one role's scope for one module.
+  rpc SetDataScope(SetDataScopeRequest) returns (SetDataScopeResponse);
+}
+
+// DataScope says how much of a module's documents a role may see.
+message DataScope {
+  int64 role_id = 1;
+  string module = 2;
+  // SELF / DEPT / DEPT_AND_SUB / ALL / CUSTOM
+  string scope_type = 3;
+  // Only meaningful for CUSTOM.
+  repeated int64 department_ids = 4;
+}
+
+message ListDataScopesRequest {}
+
+message ListDataScopesResponse {
+  repeated DataScope scopes = 1;
+}
+
+message SetDataScopeRequest {
+  DataScope scope = 1;
+}
+
+message SetDataScopeResponse {
+  bool saved = 1;
 }
 
 message LoginRequest {
@@ -100,6 +139,9 @@ message Employee {
   repeated int64 role_ids = 10;
   // Empty when the employee has no login account, which is normal.
   string username = 11;
+  // Who this person reports to. Zero at the top of the tree.
+  int64 manager_id = 12;
+  string manager_name = 13;
 }
 
 message CreateEmployeeRequest {
@@ -112,6 +154,7 @@ message CreateEmployeeRequest {
   // Optional login account created alongside the employee.
   string username = 7;
   string initial_password = 8;
+  int64 manager_id = 9;
 }
 
 message CreateEmployeeResponse {
@@ -251,6 +294,41 @@ message ChangePasswordResponse {
 
 message ListRoleMembersRequest {
   int64 role_id = 1;
+}
+
+message ListManagersRequest {
+  int64 employee_id = 1;
+  // How far up the reporting line: 1 is the direct manager, 2 theirs, and so
+  // on. Zero means 1. Empty response once the chain runs out.
+  int32 levels = 2;
+}
+
+message ListManagersResponse {
+  repeated int64 employee_ids = 1;
+}
+
+message SetManagerRequest {
+  int64 employee_id = 1;
+  // Zero clears it.
+  int64 manager_id = 2;
+}
+
+message SetManagerResponse {
+  bool changed = 1;
+}
+
+message VisibleEmployeesRequest {
+  int64 employee_id = 1;
+  // "export", "procurement", ... matching role_data_scopes.module.
+  string module = 2;
+}
+
+message VisibleEmployeesResponse {
+  // When true the caller sees everything and employee_ids is meaningless.
+  bool all = 1;
+  repeated int64 employee_ids = 2;
+  // SELF / DEPT / DEPT_AND_SUB / ALL / CUSTOM, for display and for logs.
+  string scope_type = 3;
 }
 
 message RoleMember {

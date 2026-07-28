@@ -64,6 +64,7 @@ func (h *Handler) CreateEmployee(ctx context.Context, req *iamv1.CreateEmployeeR
 		Code: req.GetCode(), Name: req.GetName(), DepartmentID: req.GetDepartmentId(),
 		Position: req.GetPosition(), Email: req.GetEmail(), Phone: req.GetPhone(),
 		Username: req.GetUsername(), InitialPassword: req.GetInitialPassword(),
+		ManagerID: req.GetManagerId(),
 	})
 	if err != nil {
 		return nil, err
@@ -101,7 +102,8 @@ func (h *Handler) ListEmployees(ctx context.Context, req *iamv1.ListEmployeesReq
 			Id: r.ID, Code: r.Code, Name: r.Name,
 			DepartmentId: r.DepartmentID, DepartmentName: r.DepartmentName,
 			Position: r.Position, Email: r.Email, Phone: r.Phone, Status: r.Status,
-			Username: accounts[r.ID],
+			Username:  accounts[r.ID],
+			ManagerId: deref(r.ManagerID), ManagerName: r.ManagerName,
 		}
 	}
 	if page < 1 {
@@ -257,6 +259,62 @@ func employeeRowToProto(e store.GetEmployeeRow, roleIDs []int64) *iamv1.Employee
 		Id: e.ID, Code: e.Code, Name: e.Name,
 		DepartmentId: e.DepartmentID, DepartmentName: e.DepartmentName,
 		Position: e.Position, Email: e.Email, Phone: e.Phone, Status: e.Status,
-		RoleIds: roleIDs,
+		RoleIds: roleIDs, ManagerId: deref(e.ManagerID), ManagerName: e.ManagerName,
 	}
+}
+
+func deref(v *int64) int64 {
+	if v == nil {
+		return 0
+	}
+	return *v
+}
+
+func (h *Handler) ListManagers(ctx context.Context, req *iamv1.ListManagersRequest) (*iamv1.ListManagersResponse, error) {
+	ids, err := h.svc.ManagersOf(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(), req.GetLevels())
+	if err != nil {
+		return nil, err
+	}
+	return &iamv1.ListManagersResponse{EmployeeIds: ids}, nil
+}
+
+func (h *Handler) SetManager(ctx context.Context, req *iamv1.SetManagerRequest) (*iamv1.SetManagerResponse, error) {
+	if err := h.svc.SetManager(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(), req.GetManagerId()); err != nil {
+		return nil, err
+	}
+	return &iamv1.SetManagerResponse{Changed: true}, nil
+}
+
+func (h *Handler) VisibleEmployees(ctx context.Context, req *iamv1.VisibleEmployeesRequest) (*iamv1.VisibleEmployeesResponse, error) {
+	v, err := h.svc.VisibleEmployees(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(), req.GetModule())
+	if err != nil {
+		return nil, err
+	}
+	return &iamv1.VisibleEmployeesResponse{
+		All: v.All, EmployeeIds: v.EmployeeIDs, ScopeType: v.ScopeType,
+	}, nil
+}
+
+func (h *Handler) ListDataScopes(ctx context.Context, _ *iamv1.ListDataScopesRequest) (*iamv1.ListDataScopesResponse, error) {
+	rows, err := h.svc.ListDataScopes(ctx, grpcx.TenantID(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*iamv1.DataScope, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, &iamv1.DataScope{
+			RoleId: r.RoleID, Module: r.Module, ScopeType: r.ScopeType,
+			DepartmentIds: r.CustomDeptIds,
+		})
+	}
+	return &iamv1.ListDataScopesResponse{Scopes: out}, nil
+}
+
+func (h *Handler) SetDataScope(ctx context.Context, req *iamv1.SetDataScopeRequest) (*iamv1.SetDataScopeResponse, error) {
+	sc := req.GetScope()
+	if err := h.svc.SetDataScope(ctx, grpcx.TenantID(ctx), sc.GetRoleId(),
+		sc.GetModule(), sc.GetScopeType(), sc.GetDepartmentIds()); err != nil {
+		return nil, err
+	}
+	return &iamv1.SetDataScopeResponse{Saved: true}, nil
 }

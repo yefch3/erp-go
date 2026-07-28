@@ -135,6 +135,8 @@ type CreateEmployeeInput struct {
 	Code, Name, Position, Email, Phone string
 	DepartmentID                       int64
 	Username, InitialPassword          string // optional login account
+	// Who they report to; approval nodes can target it.
+	ManagerID int64
 }
 
 func (s *Service) CreateEmployee(ctx context.Context, tenantID int64, in CreateEmployeeInput) (store.GetEmployeeRow, error) {
@@ -156,6 +158,7 @@ func (s *Service) CreateEmployee(ctx context.Context, tenantID int64, in CreateE
 		emp, err := q.CreateEmployee(ctx, store.CreateEmployeeParams{
 			TenantID: tenantID, Code: in.Code, Name: in.Name, DepartmentID: in.DepartmentID,
 			Position: in.Position, Email: in.Email, Phone: in.Phone,
+			ManagerID: in.ManagerID,
 		})
 		if err != nil {
 			return translateUnique(err, "IAM_EMP_CODE_TAKEN", "工号已存在")

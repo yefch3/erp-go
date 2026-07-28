@@ -135,6 +135,8 @@ const (
 	DirectoryService_OpenAccount_FullMethodName        = "/erp.iam.v1.DirectoryService/OpenAccount"
 	DirectoryService_ResetPassword_FullMethodName      = "/erp.iam.v1.DirectoryService/ResetPassword"
 	DirectoryService_ChangePassword_FullMethodName     = "/erp.iam.v1.DirectoryService/ChangePassword"
+	DirectoryService_ListManagers_FullMethodName       = "/erp.iam.v1.DirectoryService/ListManagers"
+	DirectoryService_SetManager_FullMethodName         = "/erp.iam.v1.DirectoryService/SetManager"
 )
 
 // DirectoryServiceClient is the client API for DirectoryService service.
@@ -161,6 +163,13 @@ type DirectoryServiceClient interface {
 	// ChangePassword is the self-service path: the caller's own account,
 	// proven with the current password.
 	ChangePassword(ctx context.Context, in *ChangePasswordRequest, opts ...grpc.CallOption) (*ChangePasswordResponse, error)
+	// ListManagers returns an employee's direct manager, for approval flows
+	// whose node says "whoever the submitter reports to" rather than naming a
+	// role. A list because the caller wants assignees either way, and someone
+	// at the top of the tree simply has none.
+	ListManagers(ctx context.Context, in *ListManagersRequest, opts ...grpc.CallOption) (*ListManagersResponse, error)
+	// SetManager changes who someone reports to.
+	SetManager(ctx context.Context, in *SetManagerRequest, opts ...grpc.CallOption) (*SetManagerResponse, error)
 }
 
 type directoryServiceClient struct {
@@ -271,6 +280,26 @@ func (c *directoryServiceClient) ChangePassword(ctx context.Context, in *ChangeP
 	return out, nil
 }
 
+func (c *directoryServiceClient) ListManagers(ctx context.Context, in *ListManagersRequest, opts ...grpc.CallOption) (*ListManagersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListManagersResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_ListManagers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *directoryServiceClient) SetManager(ctx context.Context, in *SetManagerRequest, opts ...grpc.CallOption) (*SetManagerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetManagerResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_SetManager_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DirectoryServiceServer is the server API for DirectoryService service.
 // All implementations must embed UnimplementedDirectoryServiceServer
 // for forward compatibility.
@@ -295,6 +324,13 @@ type DirectoryServiceServer interface {
 	// ChangePassword is the self-service path: the caller's own account,
 	// proven with the current password.
 	ChangePassword(context.Context, *ChangePasswordRequest) (*ChangePasswordResponse, error)
+	// ListManagers returns an employee's direct manager, for approval flows
+	// whose node says "whoever the submitter reports to" rather than naming a
+	// role. A list because the caller wants assignees either way, and someone
+	// at the top of the tree simply has none.
+	ListManagers(context.Context, *ListManagersRequest) (*ListManagersResponse, error)
+	// SetManager changes who someone reports to.
+	SetManager(context.Context, *SetManagerRequest) (*SetManagerResponse, error)
 	mustEmbedUnimplementedDirectoryServiceServer()
 }
 
@@ -334,6 +370,12 @@ func (UnimplementedDirectoryServiceServer) ResetPassword(context.Context, *Reset
 }
 func (UnimplementedDirectoryServiceServer) ChangePassword(context.Context, *ChangePasswordRequest) (*ChangePasswordResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ChangePassword not implemented")
+}
+func (UnimplementedDirectoryServiceServer) ListManagers(context.Context, *ListManagersRequest) (*ListManagersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListManagers not implemented")
+}
+func (UnimplementedDirectoryServiceServer) SetManager(context.Context, *SetManagerRequest) (*SetManagerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetManager not implemented")
 }
 func (UnimplementedDirectoryServiceServer) mustEmbedUnimplementedDirectoryServiceServer() {}
 func (UnimplementedDirectoryServiceServer) testEmbeddedByValue()                          {}
@@ -536,6 +578,42 @@ func _DirectoryService_ChangePassword_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DirectoryService_ListManagers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListManagersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).ListManagers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_ListManagers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).ListManagers(ctx, req.(*ListManagersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DirectoryService_SetManager_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetManagerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).SetManager(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_SetManager_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).SetManager(ctx, req.(*SetManagerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DirectoryService_ServiceDesc is the grpc.ServiceDesc for DirectoryService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -583,6 +661,14 @@ var DirectoryService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "ChangePassword",
 			Handler:    _DirectoryService_ChangePassword_Handler,
 		},
+		{
+			MethodName: "ListManagers",
+			Handler:    _DirectoryService_ListManagers_Handler,
+		},
+		{
+			MethodName: "SetManager",
+			Handler:    _DirectoryService_SetManager_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "erp/iam/v1/iam.proto",
@@ -597,6 +683,9 @@ const (
 	AccessService_CheckPermission_FullMethodName         = "/erp.iam.v1.AccessService/CheckPermission"
 	AccessService_ListEmployeePermissions_FullMethodName = "/erp.iam.v1.AccessService/ListEmployeePermissions"
 	AccessService_ListRoleMembers_FullMethodName         = "/erp.iam.v1.AccessService/ListRoleMembers"
+	AccessService_VisibleEmployees_FullMethodName        = "/erp.iam.v1.AccessService/VisibleEmployees"
+	AccessService_ListDataScopes_FullMethodName          = "/erp.iam.v1.AccessService/ListDataScopes"
+	AccessService_SetDataScope_FullMethodName            = "/erp.iam.v1.AccessService/SetDataScope"
 )
 
 // AccessServiceClient is the client API for AccessService service.
@@ -621,6 +710,14 @@ type AccessServiceClient interface {
 	// engine calls it when a flow node names a role rather than a person, to
 	// turn that node into concrete tasks.
 	ListRoleMembers(ctx context.Context, in *ListRoleMembersRequest, opts ...grpc.CallOption) (*ListRoleMembersResponse, error)
+	// VisibleEmployees answers "whose documents may this person see" for one
+	// module, from the data scope attached to their roles. Business services
+	// ask it instead of inventing their own idea of who owns what.
+	VisibleEmployees(ctx context.Context, in *VisibleEmployeesRequest, opts ...grpc.CallOption) (*VisibleEmployeesResponse, error)
+	// ListDataScopes returns every role's data scope, for the admin screen.
+	ListDataScopes(ctx context.Context, in *ListDataScopesRequest, opts ...grpc.CallOption) (*ListDataScopesResponse, error)
+	// SetDataScope changes one role's scope for one module.
+	SetDataScope(ctx context.Context, in *SetDataScopeRequest, opts ...grpc.CallOption) (*SetDataScopeResponse, error)
 }
 
 type accessServiceClient struct {
@@ -711,6 +808,36 @@ func (c *accessServiceClient) ListRoleMembers(ctx context.Context, in *ListRoleM
 	return out, nil
 }
 
+func (c *accessServiceClient) VisibleEmployees(ctx context.Context, in *VisibleEmployeesRequest, opts ...grpc.CallOption) (*VisibleEmployeesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VisibleEmployeesResponse)
+	err := c.cc.Invoke(ctx, AccessService_VisibleEmployees_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *accessServiceClient) ListDataScopes(ctx context.Context, in *ListDataScopesRequest, opts ...grpc.CallOption) (*ListDataScopesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDataScopesResponse)
+	err := c.cc.Invoke(ctx, AccessService_ListDataScopes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *accessServiceClient) SetDataScope(ctx context.Context, in *SetDataScopeRequest, opts ...grpc.CallOption) (*SetDataScopeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetDataScopeResponse)
+	err := c.cc.Invoke(ctx, AccessService_SetDataScope_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AccessServiceServer is the server API for AccessService service.
 // All implementations must embed UnimplementedAccessServiceServer
 // for forward compatibility.
@@ -733,6 +860,14 @@ type AccessServiceServer interface {
 	// engine calls it when a flow node names a role rather than a person, to
 	// turn that node into concrete tasks.
 	ListRoleMembers(context.Context, *ListRoleMembersRequest) (*ListRoleMembersResponse, error)
+	// VisibleEmployees answers "whose documents may this person see" for one
+	// module, from the data scope attached to their roles. Business services
+	// ask it instead of inventing their own idea of who owns what.
+	VisibleEmployees(context.Context, *VisibleEmployeesRequest) (*VisibleEmployeesResponse, error)
+	// ListDataScopes returns every role's data scope, for the admin screen.
+	ListDataScopes(context.Context, *ListDataScopesRequest) (*ListDataScopesResponse, error)
+	// SetDataScope changes one role's scope for one module.
+	SetDataScope(context.Context, *SetDataScopeRequest) (*SetDataScopeResponse, error)
 	mustEmbedUnimplementedAccessServiceServer()
 }
 
@@ -766,6 +901,15 @@ func (UnimplementedAccessServiceServer) ListEmployeePermissions(context.Context,
 }
 func (UnimplementedAccessServiceServer) ListRoleMembers(context.Context, *ListRoleMembersRequest) (*ListRoleMembersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListRoleMembers not implemented")
+}
+func (UnimplementedAccessServiceServer) VisibleEmployees(context.Context, *VisibleEmployeesRequest) (*VisibleEmployeesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VisibleEmployees not implemented")
+}
+func (UnimplementedAccessServiceServer) ListDataScopes(context.Context, *ListDataScopesRequest) (*ListDataScopesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListDataScopes not implemented")
+}
+func (UnimplementedAccessServiceServer) SetDataScope(context.Context, *SetDataScopeRequest) (*SetDataScopeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetDataScope not implemented")
 }
 func (UnimplementedAccessServiceServer) mustEmbedUnimplementedAccessServiceServer() {}
 func (UnimplementedAccessServiceServer) testEmbeddedByValue()                       {}
@@ -932,6 +1076,60 @@ func _AccessService_ListRoleMembers_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AccessService_VisibleEmployees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VisibleEmployeesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccessServiceServer).VisibleEmployees(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccessService_VisibleEmployees_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccessServiceServer).VisibleEmployees(ctx, req.(*VisibleEmployeesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AccessService_ListDataScopes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDataScopesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccessServiceServer).ListDataScopes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccessService_ListDataScopes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccessServiceServer).ListDataScopes(ctx, req.(*ListDataScopesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AccessService_SetDataScope_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetDataScopeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccessServiceServer).SetDataScope(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccessService_SetDataScope_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccessServiceServer).SetDataScope(ctx, req.(*SetDataScopeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AccessService_ServiceDesc is the grpc.ServiceDesc for AccessService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -970,6 +1168,18 @@ var AccessService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListRoleMembers",
 			Handler:    _AccessService_ListRoleMembers_Handler,
+		},
+		{
+			MethodName: "VisibleEmployees",
+			Handler:    _AccessService_VisibleEmployees_Handler,
+		},
+		{
+			MethodName: "ListDataScopes",
+			Handler:    _AccessService_ListDataScopes_Handler,
+		},
+		{
+			MethodName: "SetDataScope",
+			Handler:    _AccessService_SetDataScope_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -34,6 +34,7 @@ type Employee struct {
 	Status       string
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
+	ManagerID    *int64
 }
 
 type EmployeeRole struct {
