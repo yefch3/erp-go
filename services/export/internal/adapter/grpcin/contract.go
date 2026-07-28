@@ -240,3 +240,37 @@ func fileToProto(v app.FileView) *exv1.ContractFile {
 		DownloadUrl: v.DownloadURL,
 	}
 }
+
+// ---------------------------------------------------------------- ownership
+
+func (h *ContractHandler) TransferOwnership(ctx context.Context, req *exv1.TransferOwnershipRequest) (*exv1.TransferOwnershipResponse, error) {
+	rows, err := h.svc.TransferOwnership(ctx, grpcx.TenantID(ctx), req.GetBizType(),
+		req.GetBizId(), req.GetToEmployeeId(), req.GetReason(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.TransferOwnershipResponse{Transfers: transfersToProto(rows)}, nil
+}
+
+func (h *ContractHandler) ListOwnershipTransfers(ctx context.Context, req *exv1.ListOwnershipTransfersRequest) (*exv1.ListOwnershipTransfersResponse, error) {
+	rows, err := h.svc.ListOwnershipTransfers(ctx, grpcx.TenantID(ctx),
+		req.GetBizType(), req.GetBizId(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.ListOwnershipTransfersResponse{Transfers: transfersToProto(rows)}, nil
+}
+
+func transfersToProto(rows []store.ListOwnershipTransfersRow) []*exv1.OwnershipTransfer {
+	out := make([]*exv1.OwnershipTransfer, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, &exv1.OwnershipTransfer{
+			Id: r.ID, BizType: r.BizType, BizId: r.BizID, BizNo: r.BizNo,
+			FromEmployeeId: r.FromEmployeeID, FromEmployee: r.FromEmployee,
+			ToEmployeeId: r.ToEmployeeID, ToEmployee: r.ToEmployee,
+			Reason: r.Reason, TransferredBy: r.TransferredBy,
+			TransferredByName: r.TransferredByName, TransferredAt: ts(r.TransferredAt),
+		})
+	}
+	return out
+}

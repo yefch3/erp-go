@@ -149,3 +149,30 @@ func (s *Server) removeContractFile(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
+
+// ---------------------------------------------------------------- ownership
+
+func (s *Server) transferOwnership(w http.ResponseWriter, r *http.Request) {
+	req := &exv1.TransferOwnershipRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Contracts.TransferOwnership(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) listOwnershipTransfers(w http.ResponseWriter, r *http.Request) {
+	bizID, _ := strconv.ParseInt(r.URL.Query().Get("biz_id"), 10, 64)
+	resp, err := s.Contracts.ListOwnershipTransfers(r.Context(), &exv1.ListOwnershipTransfersRequest{
+		BizType: r.URL.Query().Get("biz_type"), BizId: bizID,
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}

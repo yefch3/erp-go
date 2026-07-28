@@ -151,6 +151,13 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/files/presign", s.presignContractFile)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/files", s.registerContractFile)
 		r.With(s.perm("export:contract:write")).Delete("/api/contract-files/{id}", s.removeContractFile)
+		// Handing a deal to somebody else is a supervisor's act, so it gets its
+		// own permission rather than riding on :write — the people who may edit
+		// their own documents are exactly the people who may not reassign them.
+		r.With(s.perm("export:ownership:transfer")).Post("/api/ownership/transfer", s.transferOwnership)
+		// Reading the handover history is scoped like reading the document, so
+		// the contract's own permission is the right gate.
+		r.With(s.perm("export:contract:read")).Get("/api/ownership/transfers", s.listOwnershipTransfers)
 		// Approval todos are personal: the service filters by the caller's
 		// employee id, so the permission only gates "may act on approvals".
 		r.With(s.perm("approval:task:act")).Get("/api/approvals/todos", s.myTodos)

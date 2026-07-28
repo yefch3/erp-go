@@ -107,3 +107,11 @@ SELECT
 FROM quotation_items
 WHERE tenant_id = $1 AND quotation_id = $2
 ORDER BY line_no;
+
+-- name: SetQuotationOwner :execrows
+UPDATE quotations SET
+    sales_employee_id = sqlc.arg(owner_id),
+    sales_employee    = sqlc.arg(owner_name),
+    updated_by        = sqlc.arg(updated_by),
+    updated_at        = now()
+WHERE tenant_id = $1 AND id = sqlc.arg(id);

@@ -205,6 +205,22 @@ export default {
     rejected: 'Marked as rejected',
     statuses: { DRAFT: 'Draft', SENT: 'Sent', ACCEPTED: 'Accepted', REJECTED: 'Rejected', EXPIRED: 'Expired', CANCELLED: 'Cancelled' },
   },
+  ownership: {
+    transfer: 'Transfer owner',
+    confirm: 'Transfer',
+    warning:
+      'The quotation moves with the contract. They are one to one, and a contract separated from its quotation cannot be written again after a cancellation.',
+    moving: 'Documents',
+    currentOwner: 'Current owner',
+    to: 'Transfer to',
+    from: 'From',
+    by: 'Performed by',
+    at: 'When',
+    reason: 'Reason',
+    done: 'Transferred {count} document(s)',
+    history: 'Ownership history',
+    historyHint: 'Every handover is recorded, so a commission dispute has something to read',
+  },
   contracts: {
     title: 'Export contracts',
     generate: 'From quotation',

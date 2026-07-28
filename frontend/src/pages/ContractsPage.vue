@@ -107,7 +107,11 @@
             </span>
             <span v-if="isInForce" class="in-force">{{ t('contracts.inForce') }}</span>
           </div>
-          <div v-if="canWrite" class="detail-actions">
+          <div class="detail-actions">
+            <el-button v-if="canTransfer" size="small" plain @click="openTransfer">
+              {{ t('ownership.transfer') }}
+            </el-button>
+            <template v-if="canWrite">
             <el-button v-if="editable" size="small" @click="openTerms">{{ t('contracts.editDraft') }}</el-button>
             <el-button v-if="editable" size="small" type="primary" @click="submit(detail.contract)">
               {{ t('contracts.submit') }}
@@ -119,6 +123,7 @@
             <el-button v-if="cancellable" size="small" type="danger" plain @click="cancel(detail.contract)">
               {{ t('contracts.cancel') }}
             </el-button>
+            </template>
           </div>
         </div>
 
@@ -139,6 +144,7 @@
             <span :class="{ missing: !detail.version.deliveryDate }">{{ detail.version.deliveryDate || t('contracts.notSet') }}</span>
           </el-descriptions-item>
           <el-descriptions-item :label="t('contracts.fromQuote')">{{ detail.contract.quoteNo || '—' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('contracts.owner')">{{ detail.contract.salesEmployee || '—' }}</el-descriptions-item>
           <el-descriptions-item :label="t('contracts.terms')" :span="2">
             <div class="terms">{{ detail.version.terms || '—' }}</div>
           </el-descriptions-item>
@@ -264,6 +270,30 @@
           </el-table-column>
           <template #empty>{{ t('contracts.noFiles') }}</template>
         </el-table>
+
+        <template v-if="transfers.length">
+          <el-divider content-position="left">
+            {{ t('ownership.history') }}
+            <span class="hint">{{ t('ownership.historyHint') }}</span>
+          </el-divider>
+          <el-table :data="transfers" size="small">
+            <el-table-column :label="t('ownership.at')" width="130">
+              <template #default="{ row }">{{ formatTime(row.transferredAt) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('ownership.from')" width="100">
+              <template #default="{ row }">{{ row.fromEmployee }}</template>
+            </el-table-column>
+            <el-table-column :label="t('ownership.to')" width="100">
+              <template #default="{ row }">{{ row.toEmployee }}</template>
+            </el-table-column>
+            <el-table-column :label="t('ownership.by')" width="110">
+              <template #default="{ row }">{{ row.transferredByName }}</template>
+            </el-table-column>
+            <el-table-column :label="t('ownership.reason')" min-width="180">
+              <template #default="{ row }"><span class="sub">{{ row.reason || '—' }}</span></template>
+            </el-table-column>
+          </el-table>
+        </template>
 
         <el-divider content-position="left">
           {{ t('contracts.versions') }}
@@ -429,6 +459,43 @@
         <el-button type="primary" :loading="saving" @click="saveChange">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- Hand the deal over. The dialog names both documents on purpose: the
+         quotation moves with the contract, and the person doing it should
+         see that before they confirm rather than discover it afterwards. -->
+    <el-dialog v-model="transferOpen" :title="t('ownership.transfer')" width="520">
+      <el-alert type="warning" :closable="false" show-icon class="transfer-note">
+        {{ t('ownership.warning') }}
+      </el-alert>
+      <el-form label-width="110px" class="transfer-form">
+        <el-form-item :label="t('ownership.moving')">
+          <div>
+            <div>{{ detail?.contract.contractNo }}</div>
+            <div v-if="detail?.contract.quoteNo" class="sub">{{ detail.contract.quoteNo }}</div>
+          </div>
+        </el-form-item>
+        <el-form-item :label="t('ownership.currentOwner')">
+          {{ detail?.contract.salesEmployee || '—' }}
+        </el-form-item>
+        <el-form-item :label="t('ownership.to')">
+          <el-select v-model="transferForm.toEmployeeId" filterable style="width: 100%">
+            <el-option
+              v-for="e in transferTargets"
+              :key="e.id"
+              :value="e.id"
+              :label="e.name"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('ownership.reason')">
+          <el-input v-model="transferForm.reason" type="textarea" :rows="2" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="transferOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="saveTransfer">{{ t('ownership.confirm') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -514,6 +581,16 @@ interface ContractFile {
   uploaderName: string
   downloadUrl: string
 }
+interface Transfer {
+  id: string
+  bizType: string
+  bizNo: string
+  fromEmployee: string
+  toEmployee: string
+  reason: string
+  transferredByName: string
+  transferredAt: string
+}
 interface Quote { id: string; quoteNo: string; customerName: string; currency: string; totalAmount: string }
 interface Product { id: string; code: string; name: string }
 interface OptionItem { code: string; label: string }
@@ -558,6 +635,19 @@ const changeForm = reactive({ reason: '', deliveryDate: '', items: [] as ChangeL
 const approvals = ref<ApprovalRound[]>([])
 const employees = ref<Record<string, string>>({})
 const canSeeApproval = auth.can('approval:instance:read')
+const canTransfer = auth.can('export:ownership:transfer')
+const transfers = ref<Transfer[]>([])
+const transferOpen = ref(false)
+const transferForm = reactive({ toEmployeeId: '', reason: '' })
+const staff = ref<{ id: string; name: string; status: string }[]>([])
+// Never offer the person who already holds it, and never offer somebody who
+// has left: both are refused by the service, and an option that always
+// errors is worse than no option.
+const transferTargets = computed(() =>
+  staff.value.filter(
+    (e) => e.status === 'ACTIVE' && e.id !== detail.value?.contract.salesEmployeeId,
+  ),
+)
 const files = ref<ContractFile[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
 const uploadKind = ref('SIGNED')
@@ -608,7 +698,7 @@ async function openDetail(id: string, versionId?: string) {
   try {
     detail.value = await get<Detail>(`/contracts/${id}`, versionId ? { version_id: versionId } : undefined)
     detailOpen.value = true
-    await Promise.all([loadFiles(id), loadApprovals(id)])
+    await Promise.all([loadFiles(id), loadApprovals(id), loadTransfers(id)])
   } catch {
     // The interceptor has already told the user why.
     detail.value = null
@@ -744,6 +834,49 @@ function instanceTagType(status: string): 'success' | 'danger' | 'warning' | 'in
 // knowing anyone's name. The directory fills them in here.
 function employeeName(id: string): string {
   return employees.value[id] ?? `#${id}`
+}
+
+// ---------------------------------------------------------------- ownership
+
+async function loadTransfers(contractId: string) {
+  transfers.value =
+    (await get<{ transfers: Transfer[] }>('/ownership/transfers', {
+      biz_type: 'CONTRACT',
+      biz_id: contractId,
+    })).transfers ?? []
+}
+
+async function openTransfer() {
+  transferForm.toEmployeeId = ''
+  transferForm.reason = ''
+  if (!staff.value.length) {
+    staff.value =
+      (await get<{ employees: { id: string; name: string; status: string }[] }>('/employees', {
+        page_size: 200,
+      })).employees ?? []
+  }
+  transferOpen.value = true
+}
+
+async function saveTransfer() {
+  if (!detail.value) return
+  saving.value = true
+  try {
+    const resp = await post<{ transfers: Transfer[] }>('/ownership/transfer', {
+      biz_type: 'CONTRACT',
+      biz_id: detail.value.contract.id,
+      to_employee_id: transferForm.toEmployeeId,
+      reason: transferForm.reason,
+    })
+    ElMessage.success(t('ownership.done', { count: resp.transfers?.length ?? 0 }))
+    transferOpen.value = false
+    // The contract may now be outside the caller's own scope, so re-reading
+    // it can legitimately fail; the list is what has to stay truthful.
+    await load()
+    await openDetail(detail.value.contract.id)
+  } finally {
+    saving.value = false
+  }
 }
 
 // ---------------------------------------------------------------- files

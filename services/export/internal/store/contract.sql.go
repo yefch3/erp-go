@@ -814,6 +814,105 @@ func (q *Queries) ListContracts(ctx context.Context, arg ListContractsParams) ([
 	return items, nil
 }
 
+const listOwnershipTransfers = `-- name: ListOwnershipTransfers :many
+SELECT
+    id, biz_type, biz_id, biz_no,
+    from_employee_id, from_employee, to_employee_id, to_employee,
+    reason, transferred_by, transferred_by_name, transferred_at
+FROM ownership_transfers
+WHERE tenant_id = $1 AND biz_type = $2 AND biz_id = $3
+ORDER BY transferred_at DESC, id DESC
+`
+
+type ListOwnershipTransfersParams struct {
+	TenantID int64
+	BizType  string
+	BizID    int64
+}
+
+type ListOwnershipTransfersRow struct {
+	ID                int64
+	BizType           string
+	BizID             int64
+	BizNo             string
+	FromEmployeeID    int64
+	FromEmployee      string
+	ToEmployeeID      int64
+	ToEmployee        string
+	Reason            string
+	TransferredBy     int64
+	TransferredByName string
+	TransferredAt     pgtype.Timestamptz
+}
+
+func (q *Queries) ListOwnershipTransfers(ctx context.Context, arg ListOwnershipTransfersParams) ([]ListOwnershipTransfersRow, error) {
+	rows, err := q.db.Query(ctx, listOwnershipTransfers, arg.TenantID, arg.BizType, arg.BizID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOwnershipTransfersRow
+	for rows.Next() {
+		var i ListOwnershipTransfersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.BizType,
+			&i.BizID,
+			&i.BizNo,
+			&i.FromEmployeeID,
+			&i.FromEmployee,
+			&i.ToEmployeeID,
+			&i.ToEmployee,
+			&i.Reason,
+			&i.TransferredBy,
+			&i.TransferredByName,
+			&i.TransferredAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const liveContractForQuotation = `-- name: LiveContractForQuotation :one
+SELECT id, contract_no, status, sales_employee_id, sales_employee
+FROM contracts
+WHERE tenant_id = $1 AND quotation_id = $2 AND status <> 'CANCELLED'
+`
+
+type LiveContractForQuotationParams struct {
+	TenantID    int64
+	QuotationID *int64
+}
+
+type LiveContractForQuotationRow struct {
+	ID              int64
+	ContractNo      string
+	Status          string
+	SalesEmployeeID int64
+	SalesEmployee   string
+}
+
+// The one contract a quotation may still have; cancelled ones are excluded by
+// the same rule as the unique index, because a cancelled contract does not
+// block a new one.
+func (q *Queries) LiveContractForQuotation(ctx context.Context, arg LiveContractForQuotationParams) (LiveContractForQuotationRow, error) {
+	row := q.db.QueryRow(ctx, liveContractForQuotation, arg.TenantID, arg.QuotationID)
+	var i LiveContractForQuotationRow
+	err := row.Scan(
+		&i.ID,
+		&i.ContractNo,
+		&i.Status,
+		&i.SalesEmployeeID,
+		&i.SalesEmployee,
+	)
+	return i, err
+}
+
 const lockContract = `-- name: LockContract :one
 SELECT id, status, coalesce(current_version_id, 0)::bigint AS current_version_id
 FROM contracts
@@ -863,6 +962,83 @@ func (q *Queries) MarkContractPendingApproval(ctx context.Context, arg MarkContr
 	return status_before_approval, err
 }
 
+const recordOwnershipTransfer = `-- name: RecordOwnershipTransfer :one
+INSERT INTO ownership_transfers (
+    tenant_id, biz_type, biz_id, biz_no,
+    from_employee_id, from_employee, to_employee_id, to_employee,
+    reason, transferred_by, transferred_by_name
+) VALUES ($1, $2, $3, $4,
+          $5, $6,
+          $7, $8,
+          $9, $10, $11)
+RETURNING id, biz_type, biz_id, biz_no,
+          from_employee_id, from_employee, to_employee_id, to_employee,
+          reason, transferred_by, transferred_by_name, transferred_at
+`
+
+type RecordOwnershipTransferParams struct {
+	TenantID          int64
+	BizType           string
+	BizID             int64
+	BizNo             string
+	FromEmployeeID    int64
+	FromEmployee      string
+	ToEmployeeID      int64
+	ToEmployee        string
+	Reason            string
+	TransferredBy     int64
+	TransferredByName string
+}
+
+type RecordOwnershipTransferRow struct {
+	ID                int64
+	BizType           string
+	BizID             int64
+	BizNo             string
+	FromEmployeeID    int64
+	FromEmployee      string
+	ToEmployeeID      int64
+	ToEmployee        string
+	Reason            string
+	TransferredBy     int64
+	TransferredByName string
+	TransferredAt     pgtype.Timestamptz
+}
+
+// Returns the same shape as ListOwnershipTransfers so a caller can report
+// exactly what it moved without reading the log back.
+func (q *Queries) RecordOwnershipTransfer(ctx context.Context, arg RecordOwnershipTransferParams) (RecordOwnershipTransferRow, error) {
+	row := q.db.QueryRow(ctx, recordOwnershipTransfer,
+		arg.TenantID,
+		arg.BizType,
+		arg.BizID,
+		arg.BizNo,
+		arg.FromEmployeeID,
+		arg.FromEmployee,
+		arg.ToEmployeeID,
+		arg.ToEmployee,
+		arg.Reason,
+		arg.TransferredBy,
+		arg.TransferredByName,
+	)
+	var i RecordOwnershipTransferRow
+	err := row.Scan(
+		&i.ID,
+		&i.BizType,
+		&i.BizID,
+		&i.BizNo,
+		&i.FromEmployeeID,
+		&i.FromEmployee,
+		&i.ToEmployeeID,
+		&i.ToEmployee,
+		&i.Reason,
+		&i.TransferredBy,
+		&i.TransferredByName,
+		&i.TransferredAt,
+	)
+	return i, err
+}
+
 const setContractCurrentVersion = `-- name: SetContractCurrentVersion :exec
 UPDATE contracts SET
     current_version_id = $1::bigint,
@@ -885,6 +1061,37 @@ func (q *Queries) SetContractCurrentVersion(ctx context.Context, arg SetContract
 		arg.ID,
 	)
 	return err
+}
+
+const setContractOwner = `-- name: SetContractOwner :execrows
+UPDATE contracts SET
+    sales_employee_id = $2,
+    sales_employee    = $3,
+    updated_by        = $4,
+    updated_at        = now()
+WHERE tenant_id = $1 AND id = $5
+`
+
+type SetContractOwnerParams struct {
+	TenantID  int64
+	OwnerID   int64
+	OwnerName string
+	UpdatedBy int64
+	ID        int64
+}
+
+func (q *Queries) SetContractOwner(ctx context.Context, arg SetContractOwnerParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setContractOwner,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.OwnerName,
+		arg.UpdatedBy,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setContractStatus = `-- name: SetContractStatus :one

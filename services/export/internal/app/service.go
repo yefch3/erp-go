@@ -127,6 +127,38 @@ type Approvals interface {
 	Submit(ctx context.Context, in ApprovalSubmission) (int64, error)
 }
 
+// Directory looks up one employee. Export snapshots the name onto documents
+// it owns, so it needs to read a name once — it does not keep a copy of the
+// organisation chart.
+type Directory interface {
+	Get(ctx context.Context, employeeID int64) (Employee, error)
+}
+
+// Employee is the slice of a person export cares about: what to write on a
+// document, and whether they are still around to receive one.
+type Employee struct {
+	ID     int64
+	Name   string
+	Status string
+}
+
+// Deps are the outside services export talks to. A struct rather than a
+// parameter list: these are all interfaces of the same shape, and a
+// positional call of ten of them is one transposition away from silently
+// wiring products into the rates port.
+type Deps struct {
+	Customers   Customers
+	Products    Products
+	Rates       Rates
+	Numbering   Numbering
+	Approvals   Approvals
+	Files       Files
+	Scopes      Scopes
+	Involvement Involvement
+	Directory   Directory
+	Seller      Seller
+}
+
 type Service struct {
 	pool      *pgxpool.Pool
 	q         *store.Queries
@@ -138,14 +170,17 @@ type Service struct {
 	files     Files
 	scopes    Scopes
 	involved  Involvement
+	directory Directory
 	seller    Seller
 }
 
-func New(pool *pgxpool.Pool, c Customers, p Products, r Rates, n Numbering, a Approvals, f Files, sc Scopes, inv Involvement, seller Seller) *Service {
+func New(pool *pgxpool.Pool, d Deps) *Service {
 	return &Service{
 		pool: pool, q: store.New(pool),
-		customers: c, products: p, rates: r, number: n,
-		approvals: a, files: f, scopes: sc, involved: inv, seller: seller,
+		customers: d.Customers, products: d.Products, rates: d.Rates,
+		number: d.Numbering, approvals: d.Approvals, files: d.Files,
+		scopes: d.Scopes, involved: d.Involvement, directory: d.Directory,
+		seller: d.Seller,
 	}
 }
 

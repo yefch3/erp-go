@@ -32,6 +32,53 @@ service ContractService {
   rpc RegisterContractFile(RegisterContractFileRequest) returns (RegisterContractFileResponse);
   rpc ListContractFiles(ListContractFilesRequest) returns (ListContractFilesResponse);
   rpc RemoveContractFile(RemoveContractFileRequest) returns (RemoveContractFileResponse);
+  // Hand a deal to somebody else. The unit is the quotation and the contract
+  // made from it together, never one of the two: they are 1:1, and a contract
+  // separated from its quotation cannot be regenerated after a cancellation.
+  rpc TransferOwnership(TransferOwnershipRequest) returns (TransferOwnershipResponse);
+  rpc ListOwnershipTransfers(ListOwnershipTransfersRequest) returns (ListOwnershipTransfersResponse);
+}
+
+// OwnershipTransfer is one document changing hands.
+message OwnershipTransfer {
+  int64 id = 1;
+  string biz_type = 2;
+  int64 biz_id = 3;
+  string biz_no = 4;
+  int64 from_employee_id = 5;
+  string from_employee = 6;
+  int64 to_employee_id = 7;
+  string to_employee = 8;
+  string reason = 9;
+  // Who performed the handover, which is a different person from who received
+  // it: transfers are done by a supervisor, not by either party.
+  int64 transferred_by = 10;
+  string transferred_by_name = 11;
+  string transferred_at = 12;
+}
+
+message TransferOwnershipRequest {
+  // Either end of the chain may be named; the other one is found and moved
+  // with it.
+  string biz_type = 1;
+  int64 biz_id = 2;
+  int64 to_employee_id = 3;
+  string reason = 4;
+}
+
+message TransferOwnershipResponse {
+  // One entry per document actually moved: two for a quotation that has a
+  // live contract, one otherwise.
+  repeated OwnershipTransfer transfers = 1;
+}
+
+message ListOwnershipTransfersRequest {
+  string biz_type = 1;
+  int64 biz_id = 2;
+}
+
+message ListOwnershipTransfersResponse {
+  repeated OwnershipTransfer transfers = 1;
 }
 
 // ContractFile is one document attached to a contract version.

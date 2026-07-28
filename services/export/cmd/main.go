@@ -96,17 +96,18 @@ func run(log *slog.Logger) error {
 	// being asked to approve".
 	approvals := grpcout.NewApprovals(apConn)
 
-	svc := app.New(pool,
-		grpcout.NewCustomers(mdConn),
-		grpcout.NewProducts(pdConn),
-		grpcout.NewRates(fxConn),
-		grpcout.NewNumbering(mdConn),
-		approvals,
-		grpcout.NewFiles(files),
-		grpcout.NewScopes(iamConn),
-		approvals,
-		app.Seller{Name: cfg.SellerName, Address: cfg.SellerAddress},
-	)
+	svc := app.New(pool, app.Deps{
+		Customers:   grpcout.NewCustomers(mdConn),
+		Products:    grpcout.NewProducts(pdConn),
+		Rates:       grpcout.NewRates(fxConn),
+		Numbering:   grpcout.NewNumbering(mdConn),
+		Approvals:   approvals,
+		Involvement: approvals,
+		Files:       grpcout.NewFiles(files),
+		Scopes:      grpcout.NewScopes(iamConn),
+		Directory:   grpcout.NewDirectory(iamConn),
+		Seller:      app.Seller{Name: cfg.SellerName, Address: cfg.SellerAddress},
+	})
 
 	// Outbound: committed outbox rows become Kafka messages. Business code
 	// never touches the producer.

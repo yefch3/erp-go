@@ -31,6 +31,8 @@ const (
 	ContractService_RegisterContractFile_FullMethodName        = "/erp.export.v1.ContractService/RegisterContractFile"
 	ContractService_ListContractFiles_FullMethodName           = "/erp.export.v1.ContractService/ListContractFiles"
 	ContractService_RemoveContractFile_FullMethodName          = "/erp.export.v1.ContractService/RemoveContractFile"
+	ContractService_TransferOwnership_FullMethodName           = "/erp.export.v1.ContractService/TransferOwnership"
+	ContractService_ListOwnershipTransfers_FullMethodName      = "/erp.export.v1.ContractService/ListOwnershipTransfers"
 )
 
 // ContractServiceClient is the client API for ContractService service.
@@ -62,6 +64,11 @@ type ContractServiceClient interface {
 	RegisterContractFile(ctx context.Context, in *RegisterContractFileRequest, opts ...grpc.CallOption) (*RegisterContractFileResponse, error)
 	ListContractFiles(ctx context.Context, in *ListContractFilesRequest, opts ...grpc.CallOption) (*ListContractFilesResponse, error)
 	RemoveContractFile(ctx context.Context, in *RemoveContractFileRequest, opts ...grpc.CallOption) (*RemoveContractFileResponse, error)
+	// Hand a deal to somebody else. The unit is the quotation and the contract
+	// made from it together, never one of the two: they are 1:1, and a contract
+	// separated from its quotation cannot be regenerated after a cancellation.
+	TransferOwnership(ctx context.Context, in *TransferOwnershipRequest, opts ...grpc.CallOption) (*TransferOwnershipResponse, error)
+	ListOwnershipTransfers(ctx context.Context, in *ListOwnershipTransfersRequest, opts ...grpc.CallOption) (*ListOwnershipTransfersResponse, error)
 }
 
 type contractServiceClient struct {
@@ -192,6 +199,26 @@ func (c *contractServiceClient) RemoveContractFile(ctx context.Context, in *Remo
 	return out, nil
 }
 
+func (c *contractServiceClient) TransferOwnership(ctx context.Context, in *TransferOwnershipRequest, opts ...grpc.CallOption) (*TransferOwnershipResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TransferOwnershipResponse)
+	err := c.cc.Invoke(ctx, ContractService_TransferOwnership_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *contractServiceClient) ListOwnershipTransfers(ctx context.Context, in *ListOwnershipTransfersRequest, opts ...grpc.CallOption) (*ListOwnershipTransfersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListOwnershipTransfersResponse)
+	err := c.cc.Invoke(ctx, ContractService_ListOwnershipTransfers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ContractServiceServer is the server API for ContractService service.
 // All implementations must embed UnimplementedContractServiceServer
 // for forward compatibility.
@@ -221,6 +248,11 @@ type ContractServiceServer interface {
 	RegisterContractFile(context.Context, *RegisterContractFileRequest) (*RegisterContractFileResponse, error)
 	ListContractFiles(context.Context, *ListContractFilesRequest) (*ListContractFilesResponse, error)
 	RemoveContractFile(context.Context, *RemoveContractFileRequest) (*RemoveContractFileResponse, error)
+	// Hand a deal to somebody else. The unit is the quotation and the contract
+	// made from it together, never one of the two: they are 1:1, and a contract
+	// separated from its quotation cannot be regenerated after a cancellation.
+	TransferOwnership(context.Context, *TransferOwnershipRequest) (*TransferOwnershipResponse, error)
+	ListOwnershipTransfers(context.Context, *ListOwnershipTransfersRequest) (*ListOwnershipTransfersResponse, error)
 	mustEmbedUnimplementedContractServiceServer()
 }
 
@@ -266,6 +298,12 @@ func (UnimplementedContractServiceServer) ListContractFiles(context.Context, *Li
 }
 func (UnimplementedContractServiceServer) RemoveContractFile(context.Context, *RemoveContractFileRequest) (*RemoveContractFileResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemoveContractFile not implemented")
+}
+func (UnimplementedContractServiceServer) TransferOwnership(context.Context, *TransferOwnershipRequest) (*TransferOwnershipResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TransferOwnership not implemented")
+}
+func (UnimplementedContractServiceServer) ListOwnershipTransfers(context.Context, *ListOwnershipTransfersRequest) (*ListOwnershipTransfersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListOwnershipTransfers not implemented")
 }
 func (UnimplementedContractServiceServer) mustEmbedUnimplementedContractServiceServer() {}
 func (UnimplementedContractServiceServer) testEmbeddedByValue()                         {}
@@ -504,6 +542,42 @@ func _ContractService_RemoveContractFile_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ContractService_TransferOwnership_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TransferOwnershipRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ContractServiceServer).TransferOwnership(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ContractService_TransferOwnership_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ContractServiceServer).TransferOwnership(ctx, req.(*TransferOwnershipRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ContractService_ListOwnershipTransfers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListOwnershipTransfersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ContractServiceServer).ListOwnershipTransfers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ContractService_ListOwnershipTransfers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ContractServiceServer).ListOwnershipTransfers(ctx, req.(*ListOwnershipTransfersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ContractService_ServiceDesc is the grpc.ServiceDesc for ContractService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -558,6 +632,14 @@ var ContractService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveContractFile",
 			Handler:    _ContractService_RemoveContractFile_Handler,
+		},
+		{
+			MethodName: "TransferOwnership",
+			Handler:    _ContractService_TransferOwnership_Handler,
+		},
+		{
+			MethodName: "ListOwnershipTransfers",
+			Handler:    _ContractService_ListOwnershipTransfers_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

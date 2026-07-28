@@ -106,6 +106,22 @@ type OutboxEvent struct {
 	LastError     *string
 }
 
+type OwnershipTransfer struct {
+	ID                int64
+	TenantID          int64
+	BizType           string
+	BizID             int64
+	BizNo             string
+	FromEmployeeID    int64
+	FromEmployee      string
+	ToEmployeeID      int64
+	ToEmployee        string
+	Reason            string
+	TransferredBy     int64
+	TransferredByName string
+	TransferredAt     pgtype.Timestamptz
+}
+
 type ProcessedEvent struct {
 	EventID       string
 	ConsumerGroup string

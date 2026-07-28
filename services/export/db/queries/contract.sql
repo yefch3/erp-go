@@ -270,3 +270,43 @@ WHERE a.tenant_id = $1 AND a.id = $2;
 
 -- name: DeleteContractAttachment :execrows
 DELETE FROM contract_attachments WHERE tenant_id = $1 AND id = $2;
+
+-- name: SetContractOwner :execrows
+UPDATE contracts SET
+    sales_employee_id = sqlc.arg(owner_id),
+    sales_employee    = sqlc.arg(owner_name),
+    updated_by        = sqlc.arg(updated_by),
+    updated_at        = now()
+WHERE tenant_id = $1 AND id = sqlc.arg(id);
+
+-- name: LiveContractForQuotation :one
+-- The one contract a quotation may still have; cancelled ones are excluded by
+-- the same rule as the unique index, because a cancelled contract does not
+-- block a new one.
+SELECT id, contract_no, status, sales_employee_id, sales_employee
+FROM contracts
+WHERE tenant_id = $1 AND quotation_id = sqlc.arg(quotation_id) AND status <> 'CANCELLED';
+
+-- name: RecordOwnershipTransfer :one
+-- Returns the same shape as ListOwnershipTransfers so a caller can report
+-- exactly what it moved without reading the log back.
+INSERT INTO ownership_transfers (
+    tenant_id, biz_type, biz_id, biz_no,
+    from_employee_id, from_employee, to_employee_id, to_employee,
+    reason, transferred_by, transferred_by_name
+) VALUES ($1, sqlc.arg(biz_type), sqlc.arg(biz_id), sqlc.arg(biz_no),
+          sqlc.arg(from_employee_id), sqlc.arg(from_employee),
+          sqlc.arg(to_employee_id), sqlc.arg(to_employee),
+          sqlc.arg(reason), sqlc.arg(transferred_by), sqlc.arg(transferred_by_name))
+RETURNING id, biz_type, biz_id, biz_no,
+          from_employee_id, from_employee, to_employee_id, to_employee,
+          reason, transferred_by, transferred_by_name, transferred_at;
+
+-- name: ListOwnershipTransfers :many
+SELECT
+    id, biz_type, biz_id, biz_no,
+    from_employee_id, from_employee, to_employee_id, to_employee,
+    reason, transferred_by, transferred_by_name, transferred_at
+FROM ownership_transfers
+WHERE tenant_id = $1 AND biz_type = sqlc.arg(biz_type) AND biz_id = sqlc.arg(biz_id)
+ORDER BY transferred_at DESC, id DESC;

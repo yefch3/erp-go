@@ -404,6 +404,37 @@ func (q *Queries) ListQuotations(ctx context.Context, arg ListQuotationsParams) 
 	return items, nil
 }
 
+const setQuotationOwner = `-- name: SetQuotationOwner :execrows
+UPDATE quotations SET
+    sales_employee_id = $2,
+    sales_employee    = $3,
+    updated_by        = $4,
+    updated_at        = now()
+WHERE tenant_id = $1 AND id = $5
+`
+
+type SetQuotationOwnerParams struct {
+	TenantID  int64
+	OwnerID   int64
+	OwnerName string
+	UpdatedBy int64
+	ID        int64
+}
+
+func (q *Queries) SetQuotationOwner(ctx context.Context, arg SetQuotationOwnerParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setQuotationOwner,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.OwnerName,
+		arg.UpdatedBy,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const setQuotationStatus = `-- name: SetQuotationStatus :one
 UPDATE quotations SET
     status = $4::text,

@@ -205,6 +205,22 @@ export default {
     rejected: 'Marcada como rechazada',
     statuses: { DRAFT: 'Borrador', SENT: 'Enviada', ACCEPTED: 'Aceptada', REJECTED: 'Rechazada', EXPIRED: 'Vencida', CANCELLED: 'Cancelada' },
   },
+  ownership: {
+    transfer: 'Transferir responsable',
+    confirm: 'Transferir',
+    warning:
+      'La cotización se transfiere junto con el contrato. Son uno a uno, y un contrato separado de su cotización no puede rehacerse tras una anulación.',
+    moving: 'Documentos',
+    currentOwner: 'Responsable actual',
+    to: 'Transferir a',
+    from: 'Responsable anterior',
+    by: 'Realizado por',
+    at: 'Fecha',
+    reason: 'Motivo',
+    done: '{count} documento(s) transferido(s)',
+    history: 'Historial de responsables',
+    historyHint: 'Cada traspaso queda registrado, para poder resolver disputas de comisiones',
+  },
   contracts: {
     title: 'Contratos de exportación',
     generate: 'Desde cotización',
