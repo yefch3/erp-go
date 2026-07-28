@@ -117,6 +117,8 @@ export default {
     passwordReset: '密码已重置',
     markLeft: '标记离职',
     markedLeft: '已标记离职',
+    reinstate: '恢复在职',
+    reinstated: '已恢复在职',
     required: '工号、姓名、部门必填',
     created: '员工已创建',
     confirmTitle: '离职确认',

@@ -219,13 +219,55 @@ func (s *Service) ListEmployees(ctx context.Context, tenantID int64, departmentI
 	return rows, total, nil
 }
 
-func (s *Service) DeactivateEmployee(ctx context.Context, tenantID, id int64) error {
+// adminPermission is the capability that must never disappear: whoever holds
+// it is the only one who can bring anybody (including themselves) back.
+const adminPermission = "iam:employee:write"
+
+// DeactivateEmployee marks someone as having left. Two refusals keep the
+// system reachable, because login rejects inactive employees and only an
+// administrator can reinstate them:
+//   - you cannot mark yourself as left (one click would lock you out), and
+//   - you cannot remove the last person who can administer employees.
+func (s *Service) DeactivateEmployee(ctx context.Context, tenantID, id, actorID int64) error {
+	if id == actorID {
+		return apierr.Invalid("IAM_CANNOT_LEAVE_SELF", "不能把自己标记为离职，请让其他管理员操作")
+	}
+	others, err := s.q.CountOtherHoldersOf(ctx, store.CountOtherHoldersOfParams{
+		TenantID: tenantID, ID: id, Code: adminPermission,
+	})
+	if err != nil {
+		return err
+	}
+	if others == 0 {
+		holds, err := s.q.EmployeeHasPermission(ctx, store.EmployeeHasPermissionParams{
+			TenantID: tenantID, EmployeeID: id, Code: adminPermission,
+		})
+		if err != nil {
+			return err
+		}
+		if holds {
+			return apierr.Conflict("IAM_LAST_ADMIN", "这是最后一个可以管理员工的账号，停用后将无人能恢复")
+		}
+	}
 	n, err := s.q.DeactivateEmployee(ctx, store.DeactivateEmployeeParams{TenantID: tenantID, ID: id})
 	if err != nil {
 		return err
 	}
 	if n == 0 {
-		return apierr.NotFound("IAM_EMP_NOT_FOUND", "员工不存在或已停用")
+		return apierr.NotFound("IAM_EMP_NOT_FOUND", "员工不存在或已离职")
+	}
+	return nil
+}
+
+// ActivateEmployee reinstates someone: their account logs in again with the
+// password it had.
+func (s *Service) ActivateEmployee(ctx context.Context, tenantID, id int64) error {
+	n, err := s.q.ActivateEmployee(ctx, store.ActivateEmployeeParams{TenantID: tenantID, ID: id})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return apierr.NotFound("IAM_EMP_NOT_FOUND", "员工不存在或已在职")
 	}
 	return nil
 }

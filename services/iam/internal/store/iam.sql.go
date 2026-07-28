@@ -11,6 +11,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const activateEmployee = `-- name: ActivateEmployee :execrows
+UPDATE employees SET status = 'ACTIVE', updated_at = now()
+WHERE tenant_id = $1 AND id = $2 AND status = 'INACTIVE'
+`
+
+type ActivateEmployeeParams struct {
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) ActivateEmployee(ctx context.Context, arg ActivateEmployeeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, activateEmployee, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const addEmployeeRole = `-- name: AddEmployeeRole :exec
 INSERT INTO employee_roles (tenant_id, employee_id, role_id)
 VALUES ($1, $2, $3) ON CONFLICT DO NOTHING
@@ -41,6 +59,29 @@ type AddRolePermissionParams struct {
 func (q *Queries) AddRolePermission(ctx context.Context, arg AddRolePermissionParams) error {
 	_, err := q.db.Exec(ctx, addRolePermission, arg.TenantID, arg.RoleID, arg.PermissionID)
 	return err
+}
+
+const countOtherHoldersOf = `-- name: CountOtherHoldersOf :one
+SELECT count(DISTINCT e.id) FROM employees e
+JOIN employee_roles er ON er.employee_id = e.id AND er.tenant_id = e.tenant_id
+JOIN role_permissions rp ON rp.role_id = er.role_id AND rp.tenant_id = er.tenant_id
+JOIN permissions p ON p.id = rp.permission_id
+WHERE e.tenant_id = $1 AND e.status = 'ACTIVE' AND e.id <> $2 AND p.code = $3
+`
+
+type CountOtherHoldersOfParams struct {
+	TenantID int64
+	ID       int64
+	Code     string
+}
+
+// How many *other* active employees still hold a permission. Used to refuse
+// the deactivation that would leave nobody able to administer the system.
+func (q *Queries) CountOtherHoldersOf(ctx context.Context, arg CountOtherHoldersOfParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countOtherHoldersOf, arg.TenantID, arg.ID, arg.Code)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const createDepartment = `-- name: CreateDepartment :one
@@ -207,9 +248,11 @@ const employeeHasPermission = `-- name: EmployeeHasPermission :one
 SELECT EXISTS (
     SELECT 1
     FROM employee_roles er
+    JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
     JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
     JOIN permissions p ON p.id = rp.permission_id
     WHERE er.tenant_id = $1 AND er.employee_id = $2 AND p.code = $3
+      AND e.status = 'ACTIVE'
 ) AS allowed
 `
 
@@ -219,6 +262,9 @@ type EmployeeHasPermissionParams struct {
 	Code       string
 }
 
+// The employee join is not decoration: without it a token issued before
+// someone left keeps working until it expires. Every guarded request runs
+// through here, so this is where "left the company" takes effect.
 func (q *Queries) EmployeeHasPermission(ctx context.Context, arg EmployeeHasPermissionParams) (bool, error) {
 	row := q.db.QueryRow(ctx, employeeHasPermission, arg.TenantID, arg.EmployeeID, arg.Code)
 	var allowed bool
@@ -482,9 +528,10 @@ func (q *Queries) ListEmployeeAccounts(ctx context.Context, tenantID int64) ([]L
 const listEmployeePermissionCodes = `-- name: ListEmployeePermissionCodes :many
 SELECT DISTINCT p.code
 FROM employee_roles er
+JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
 JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
 JOIN permissions p ON p.id = rp.permission_id
-WHERE er.tenant_id = $1 AND er.employee_id = $2
+WHERE er.tenant_id = $1 AND er.employee_id = $2 AND e.status = 'ACTIVE'
 ORDER BY p.code
 `
 

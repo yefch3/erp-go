@@ -131,6 +131,7 @@ const (
 	DirectoryService_GetEmployee_FullMethodName        = "/erp.iam.v1.DirectoryService/GetEmployee"
 	DirectoryService_ListEmployees_FullMethodName      = "/erp.iam.v1.DirectoryService/ListEmployees"
 	DirectoryService_DeactivateEmployee_FullMethodName = "/erp.iam.v1.DirectoryService/DeactivateEmployee"
+	DirectoryService_ActivateEmployee_FullMethodName   = "/erp.iam.v1.DirectoryService/ActivateEmployee"
 	DirectoryService_OpenAccount_FullMethodName        = "/erp.iam.v1.DirectoryService/OpenAccount"
 	DirectoryService_ResetPassword_FullMethodName      = "/erp.iam.v1.DirectoryService/ResetPassword"
 	DirectoryService_ChangePassword_FullMethodName     = "/erp.iam.v1.DirectoryService/ChangePassword"
@@ -148,6 +149,9 @@ type DirectoryServiceClient interface {
 	GetEmployee(ctx context.Context, in *GetEmployeeRequest, opts ...grpc.CallOption) (*GetEmployeeResponse, error)
 	ListEmployees(ctx context.Context, in *ListEmployeesRequest, opts ...grpc.CallOption) (*ListEmployeesResponse, error)
 	DeactivateEmployee(ctx context.Context, in *DeactivateEmployeeRequest, opts ...grpc.CallOption) (*DeactivateEmployeeResponse, error)
+	// ActivateEmployee reinstates someone marked as left - people come
+	// back, and a mistaken departure must be undoable from the UI.
+	ActivateEmployee(ctx context.Context, in *ActivateEmployeeRequest, opts ...grpc.CallOption) (*ActivateEmployeeResponse, error)
 	// OpenAccount gives an existing employee a login; employees created
 	// without one are the normal case (not everyone uses the system).
 	OpenAccount(ctx context.Context, in *OpenAccountRequest, opts ...grpc.CallOption) (*OpenAccountResponse, error)
@@ -227,6 +231,16 @@ func (c *directoryServiceClient) DeactivateEmployee(ctx context.Context, in *Dea
 	return out, nil
 }
 
+func (c *directoryServiceClient) ActivateEmployee(ctx context.Context, in *ActivateEmployeeRequest, opts ...grpc.CallOption) (*ActivateEmployeeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ActivateEmployeeResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_ActivateEmployee_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *directoryServiceClient) OpenAccount(ctx context.Context, in *OpenAccountRequest, opts ...grpc.CallOption) (*OpenAccountResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(OpenAccountResponse)
@@ -269,6 +283,9 @@ type DirectoryServiceServer interface {
 	GetEmployee(context.Context, *GetEmployeeRequest) (*GetEmployeeResponse, error)
 	ListEmployees(context.Context, *ListEmployeesRequest) (*ListEmployeesResponse, error)
 	DeactivateEmployee(context.Context, *DeactivateEmployeeRequest) (*DeactivateEmployeeResponse, error)
+	// ActivateEmployee reinstates someone marked as left - people come
+	// back, and a mistaken departure must be undoable from the UI.
+	ActivateEmployee(context.Context, *ActivateEmployeeRequest) (*ActivateEmployeeResponse, error)
 	// OpenAccount gives an existing employee a login; employees created
 	// without one are the normal case (not everyone uses the system).
 	OpenAccount(context.Context, *OpenAccountRequest) (*OpenAccountResponse, error)
@@ -305,6 +322,9 @@ func (UnimplementedDirectoryServiceServer) ListEmployees(context.Context, *ListE
 }
 func (UnimplementedDirectoryServiceServer) DeactivateEmployee(context.Context, *DeactivateEmployeeRequest) (*DeactivateEmployeeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeactivateEmployee not implemented")
+}
+func (UnimplementedDirectoryServiceServer) ActivateEmployee(context.Context, *ActivateEmployeeRequest) (*ActivateEmployeeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ActivateEmployee not implemented")
 }
 func (UnimplementedDirectoryServiceServer) OpenAccount(context.Context, *OpenAccountRequest) (*OpenAccountResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method OpenAccount not implemented")
@@ -444,6 +464,24 @@ func _DirectoryService_DeactivateEmployee_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DirectoryService_ActivateEmployee_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ActivateEmployeeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).ActivateEmployee(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_ActivateEmployee_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).ActivateEmployee(ctx, req.(*ActivateEmployeeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DirectoryService_OpenAccount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(OpenAccountRequest)
 	if err := dec(in); err != nil {
@@ -528,6 +566,10 @@ var DirectoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeactivateEmployee",
 			Handler:    _DirectoryService_DeactivateEmployee_Handler,
+		},
+		{
+			MethodName: "ActivateEmployee",
+			Handler:    _DirectoryService_ActivateEmployee_Handler,
 		},
 		{
 			MethodName: "OpenAccount",

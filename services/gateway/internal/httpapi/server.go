@@ -70,6 +70,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("iam:employee:read")).Get("/api/employees/{id}", s.getEmployee)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees", s.createEmployee)
 		r.With(s.perm("iam:employee:write")).Delete("/api/employees/{id}", s.deactivateEmployee)
+		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/activate", s.activateEmployee)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/account", s.openAccount)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/password", s.resetPassword)
 		r.With(s.perm("iam:role:write")).Post("/api/employees/{id}/roles", s.assignRoles)

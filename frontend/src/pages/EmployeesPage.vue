@@ -47,6 +47,9 @@
             <el-button v-if="row.status === 'ACTIVE'" link type="danger" @click="deactivate(row)">
               {{ t('employees.markLeft') }}
             </el-button>
+            <el-button v-else link type="primary" @click="reinstate(row)">
+              {{ t('employees.reinstate') }}
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -299,6 +302,12 @@ async function deactivate(row: Employee) {
   await ElMessageBox.confirm(t('employees.confirmLeave', { name: row.name }), t('employees.confirmTitle'))
   await del(`/employees/${row.id}`)
   ElMessage.success(t('employees.markedLeft'))
+  load()
+}
+
+async function reinstate(row: Employee) {
+  await post(`/employees/${row.id}/activate`)
+  ElMessage.success(t('employees.reinstated'))
   load()
 }
 

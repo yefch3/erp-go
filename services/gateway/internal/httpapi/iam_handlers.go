@@ -77,6 +77,15 @@ func (s *Server) deactivateEmployee(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) activateEmployee(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Directory.ActivateEmployee(r.Context(), &iamv1.ActivateEmployeeRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) openAccount(w http.ResponseWriter, r *http.Request) {
 	req := &iamv1.OpenAccountRequest{}
 	if !s.decodeBody(w, r, req) {

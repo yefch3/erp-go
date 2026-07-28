@@ -117,6 +117,8 @@ export default {
     passwordReset: 'Contraseña restablecida',
     markLeft: 'Marcar baja',
     markedLeft: 'Marcado como baja',
+    reinstate: 'Reincorporar',
+    reinstated: 'Reincorporado',
     required: 'N.º de empleado, nombre y departamento son obligatorios',
     created: 'Empleado creado',
     confirmTitle: 'Confirmar baja',

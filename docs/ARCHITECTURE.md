@@ -2291,6 +2291,7 @@ ENTRYPOINT ["/app"]
 | 2 | 报价单不能扣库存、不能创建采购单 | 2.1 | `export` 报价用例不调用 inventory/procurement 写接口 |
 | 3 | 合同审批或生效后关键字段不能改，只能创建变更版本 | 2.2 | `contract_versions` 触发器拒绝对 APPROVED 版本 UPDATE |
 | 4 | 用户只能看到分配给本人或本人角色的审批任务 | 2.3 | `approval_tasks.assignee_id` 过滤 + 数据范围 |
+| 4b | 离职员工立即失去访问权，且系统不会失去管理员 | iam | 权限查询联 `employees.status='ACTIVE'`（已签发的 token 随之失效）；不能停用自己，也不能停用最后一个持 `iam:employee:write` 的人；停用可撤销（`ActivateEmployee`） |
 | 5 | 合同执行进度不重复保存采购、库存或船期明细 | 2.4 | `contract_progress` 只存汇总数值与状态，无明细表 |
 | 6 | 累计出货量不能超过合同数量 | 2.5 | 确认时对 `contract_items` 加 `FOR UPDATE` 行锁后校验 |
 | 7 | 仅 L/C 付款方式才允许创建信用证 | 2.6 | `CreateLC` 用例校验合同 payment_method |

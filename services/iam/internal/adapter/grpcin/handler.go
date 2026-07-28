@@ -117,10 +117,18 @@ func (h *Handler) ListEmployees(ctx context.Context, req *iamv1.ListEmployeesReq
 }
 
 func (h *Handler) DeactivateEmployee(ctx context.Context, req *iamv1.DeactivateEmployeeRequest) (*iamv1.DeactivateEmployeeResponse, error) {
-	if err := h.svc.DeactivateEmployee(ctx, grpcx.TenantID(ctx), req.GetId()); err != nil {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	if err := h.svc.DeactivateEmployee(ctx, grpcx.TenantID(ctx), req.GetId(), op.EmployeeID); err != nil {
 		return nil, err
 	}
 	return &iamv1.DeactivateEmployeeResponse{}, nil
+}
+
+func (h *Handler) ActivateEmployee(ctx context.Context, req *iamv1.ActivateEmployeeRequest) (*iamv1.ActivateEmployeeResponse, error) {
+	if err := h.svc.ActivateEmployee(ctx, grpcx.TenantID(ctx), req.GetId()); err != nil {
+		return nil, err
+	}
+	return &iamv1.ActivateEmployeeResponse{Activated: true}, nil
 }
 
 // ---------------------------------------------------------------- access

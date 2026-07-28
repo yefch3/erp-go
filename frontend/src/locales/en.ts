@@ -117,6 +117,8 @@ export default {
     passwordReset: 'Password reset',
     markLeft: 'Mark as left',
     markedLeft: 'Marked as left',
+    reinstate: 'Reinstate',
+    reinstated: 'Reinstated',
     required: 'Employee no., name and department are required',
     created: 'Employee created',
     confirmTitle: 'Confirm departure',

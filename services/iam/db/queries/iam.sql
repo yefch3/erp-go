@@ -98,18 +98,24 @@ SELECT role_id FROM employee_roles WHERE tenant_id = $1 AND employee_id = $2 ORD
 -- name: ListEmployeePermissionCodes :many
 SELECT DISTINCT p.code
 FROM employee_roles er
+JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
 JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
 JOIN permissions p ON p.id = rp.permission_id
-WHERE er.tenant_id = $1 AND er.employee_id = $2
+WHERE er.tenant_id = $1 AND er.employee_id = $2 AND e.status = 'ACTIVE'
 ORDER BY p.code;
 
 -- name: EmployeeHasPermission :one
+-- The employee join is not decoration: without it a token issued before
+-- someone left keeps working until it expires. Every guarded request runs
+-- through here, so this is where "left the company" takes effect.
 SELECT EXISTS (
     SELECT 1
     FROM employee_roles er
+    JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
     JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
     JOIN permissions p ON p.id = rp.permission_id
     WHERE er.tenant_id = $1 AND er.employee_id = $2 AND p.code = $3
+      AND e.status = 'ACTIVE'
 ) AS allowed;
 
 -- name: HasAnyUser :one
@@ -138,3 +144,16 @@ WHERE tenant_id = $1 AND employee_id = $2;
 -- Which employees can log in, for the employee list; a company usually has
 -- more employees than accounts.
 SELECT employee_id, username FROM users WHERE tenant_id = $1;
+
+-- name: ActivateEmployee :execrows
+UPDATE employees SET status = 'ACTIVE', updated_at = now()
+WHERE tenant_id = $1 AND id = $2 AND status = 'INACTIVE';
+
+-- name: CountOtherHoldersOf :one
+-- How many *other* active employees still hold a permission. Used to refuse
+-- the deactivation that would leave nobody able to administer the system.
+SELECT count(DISTINCT e.id) FROM employees e
+JOIN employee_roles er ON er.employee_id = e.id AND er.tenant_id = e.tenant_id
+JOIN role_permissions rp ON rp.role_id = er.role_id AND rp.tenant_id = er.tenant_id
+JOIN permissions p ON p.id = rp.permission_id
+WHERE e.tenant_id = $1 AND e.status = 'ACTIVE' AND e.id <> $2 AND p.code = $3;
