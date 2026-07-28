@@ -36,8 +36,8 @@ func (c *Customers) Get(ctx context.Context, id int64) (app.Customer, error) {
 		})
 	}
 	return app.Customer{
-		ID: cu.GetId(), Name: cu.GetName(), Currency: cu.GetCurrency(),
-		Status: cu.GetStatus(), Contacts: contacts,
+		ID: cu.GetId(), Name: cu.GetName(), Address: cu.GetAddress(),
+		Currency: cu.GetCurrency(), Status: cu.GetStatus(), Contacts: contacts,
 	}, nil
 }
 
@@ -55,7 +55,8 @@ func (p *Products) Get(ctx context.Context, id int64) (app.Product, error) {
 	pr := resp.GetProduct()
 	return app.Product{
 		ID: pr.GetId(), Code: pr.GetCode(), Name: pr.GetName(),
-		UomID: pr.GetBaseUomId(), UomCode: pr.GetBaseUomCode(), Status: pr.GetStatus(),
+		UomID: pr.GetBaseUomId(), UomCode: pr.GetBaseUomCode(),
+		HsCode: pr.GetHsCode(), Status: pr.GetStatus(),
 	}, nil
 }
 

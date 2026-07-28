@@ -22,8 +22,10 @@ type Handler struct {
 func New(svc *app.Service) *Handler { return &Handler{svc: svc} }
 
 func (h *Handler) ListQuotations(ctx context.Context, req *exv1.ListQuotationsRequest) (*exv1.ListQuotationsResponse, error) {
-	rows, total, err := h.svc.ListQuotations(ctx, grpcx.TenantID(ctx), req.GetKeyword(),
-		req.GetCustomerId(), req.GetStatus(), req.GetPage().GetPage(), req.GetPage().GetPageSize())
+	rows, total, err := h.svc.ListQuotations(ctx, grpcx.TenantID(ctx), app.QuotationFilter{
+		Keyword: req.GetKeyword(), CustomerID: req.GetCustomerId(), Status: req.GetStatus(),
+		WithoutContract: req.GetWithoutContract(),
+	}, req.GetPage().GetPage(), req.GetPage().GetPageSize(), operator(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +42,7 @@ func (h *Handler) ListQuotations(ctx context.Context, req *exv1.ListQuotationsRe
 }
 
 func (h *Handler) GetQuotation(ctx context.Context, req *exv1.GetQuotationRequest) (*exv1.GetQuotationResponse, error) {
-	q, items, err := h.svc.GetQuotation(ctx, grpcx.TenantID(ctx), req.GetId())
+	q, items, err := h.svc.GetQuotationFor(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx))
 	if err != nil {
 		return nil, err
 	}

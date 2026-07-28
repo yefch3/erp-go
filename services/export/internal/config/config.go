@@ -1,7 +1,10 @@
 // Package config reads the service configuration from the environment.
 package config
 
-import "os"
+import (
+	"os"
+	"strings"
+)
 
 type Config struct {
 	DSN            string
@@ -10,16 +13,51 @@ type Config struct {
 	ProductAddr    string
 	FxAddr         string
 	ApprovalAddr   string
+	IAMAddr        string
+	KafkaBrokers   []string
+	// Topic approval decisions arrive on, and the group export reads it as.
+	ApprovalTopic string
+	ConsumerGroup string
+	// Topic this service's own events are published to.
+	ContractTopic string
+	// Object storage for contract paperwork. PublicEndpoint is where the
+	// browser reaches it: SigV4 signs the host, so a presigned URL must be
+	// signed for that address and not for the in-cluster one.
+	MinioEndpoint       string
+	MinioPublicEndpoint string
+	MinioAccessKey      string
+	MinioSecretKey      string
+	MinioBucket         string
+	MinioRegion         string
+	MinioUseSSL         bool
+	// Our own side of every contract. Configuration for now; it becomes
+	// master data once there is more than one selling entity.
+	SellerName    string
+	SellerAddress string
 }
 
 func Load() Config {
 	return Config{
-		DSN:            env("DB_DSN", "postgres://erp_export:erp_export_pw@localhost:5433/erp_export?sslmode=disable"),
-		GRPCPort:       env("GRPC_PORT", "9006"),
-		MasterdataAddr: env("MASTERDATA_ADDR", "localhost:9002"),
-		ProductAddr:    env("PRODUCT_ADDR", "localhost:9004"),
-		FxAddr:         env("FX_ADDR", "localhost:9003"),
-		ApprovalAddr:   env("APPROVAL_ADDR", "localhost:9005"),
+		DSN:                 env("DB_DSN", "postgres://erp_export:erp_export_pw@localhost:5433/erp_export?sslmode=disable"),
+		GRPCPort:            env("GRPC_PORT", "9006"),
+		MasterdataAddr:      env("MASTERDATA_ADDR", "localhost:9002"),
+		ProductAddr:         env("PRODUCT_ADDR", "localhost:9004"),
+		FxAddr:              env("FX_ADDR", "localhost:9003"),
+		ApprovalAddr:        env("APPROVAL_ADDR", "localhost:9005"),
+		IAMAddr:             env("IAM_ADDR", "localhost:9001"),
+		KafkaBrokers:        strings.Split(env("KAFKA_BROKERS", "localhost:19092"), ","),
+		ApprovalTopic:       env("APPROVAL_TOPIC", "erp.approval.task.v1"),
+		ConsumerGroup:       env("CONSUMER_GROUP", "export.approval.v1"),
+		ContractTopic:       env("CONTRACT_TOPIC", "erp.export.contract.v1"),
+		MinioEndpoint:       env("MINIO_ENDPOINT", "localhost:19000"),
+		MinioPublicEndpoint: env("MINIO_PUBLIC_ENDPOINT", ""),
+		MinioAccessKey:      env("MINIO_ACCESS_KEY", "erp"),
+		MinioSecretKey:      env("MINIO_SECRET_KEY", "erp_dev_password"),
+		MinioBucket:         env("MINIO_BUCKET", "erp-files"),
+		MinioRegion:         env("MINIO_REGION", "us-east-1"),
+		MinioUseSSL:         env("MINIO_USE_SSL", "") == "true",
+		SellerName:          env("SELLER_NAME", "宁波诺德进出口有限公司"),
+		SellerAddress:       env("SELLER_ADDRESS", "浙江省宁波市鄞州区天童南路 999 号"),
 	}
 }
 

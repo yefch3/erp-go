@@ -1,0 +1,280 @@
+syntax = "proto3";
+
+package erp.export.v1;
+
+import "erp/common/v1/pagination.proto";
+// FxSnapshot and ItemInput are shared with quotations: a contract inherits
+// the offer's rate and is priced from the same line shape.
+import "erp/export/v1/quotation.proto";
+
+// ContractService owns sales contracts. A contract is a shell plus a stack of
+// immutable versions: once a version is approved and signed, changing the
+// terms means adding a version, never editing the one in force.
+service ContractService {
+  rpc ListContracts(ListContractsRequest) returns (ListContractsResponse);
+  rpc GetContract(GetContractRequest) returns (GetContractResponse);
+  // Turn an accepted quotation into a draft contract, inheriting its prices
+  // and its exchange-rate snapshot.
+  rpc CreateContractFromQuotation(CreateContractFromQuotationRequest) returns (CreateContractFromQuotationResponse);
+  // Edit the draft version in place. Refused once the version is submitted.
+  rpc UpdateContract(UpdateContractRequest) returns (UpdateContractResponse);
+  // Hand the current draft version to the approval engine.
+  rpc SubmitContract(SubmitContractRequest) returns (SubmitContractResponse);
+  // Open a new version of a contract already in force. Requires a reason.
+  rpc ChangeContract(ChangeContractRequest) returns (ChangeContractResponse);
+  // Record the customer's signature; this is what makes a version effective.
+  rpc SignContract(SignContractRequest) returns (SignContractResponse);
+  rpc CancelContract(CancelContractRequest) returns (CancelContractResponse);
+  // Files: the drafted PDF and the copy the customer signed and sent back.
+  // Uploads go straight to object storage; the service only signs the URL
+  // and records what landed.
+  rpc PresignContractFile(PresignContractFileRequest) returns (PresignContractFileResponse);
+  rpc RegisterContractFile(RegisterContractFileRequest) returns (RegisterContractFileResponse);
+  rpc ListContractFiles(ListContractFilesRequest) returns (ListContractFilesResponse);
+  rpc RemoveContractFile(RemoveContractFileRequest) returns (RemoveContractFileResponse);
+}
+
+// ContractFile is one document attached to a contract version.
+message ContractFile {
+  int64 id = 1;
+  int64 contract_id = 2;
+  // Which version this paper belongs to. A change means a new version and a
+  // fresh signature, so a signed scan is meaningless without it.
+  int64 contract_version_id = 3;
+  int32 version_no = 4;
+  // DRAFT (what we sent), SIGNED (what came back), OTHER.
+  string kind = 5;
+  string file_name = 6;
+  string content_type = 7;
+  int64 size_bytes = 8;
+  string uploaded_at = 9;
+  string uploader_name = 10;
+  // Short-lived link; absent when storage could not be reached.
+  string download_url = 11;
+}
+
+message PresignContractFileRequest {
+  int64 contract_id = 1;
+  string file_name = 2;
+  string content_type = 3;
+}
+
+message PresignContractFileResponse {
+  // Opaque handle to hand back to RegisterContractFile.
+  string file_key = 1;
+  // PUT the bytes here, then register.
+  string upload_url = 2;
+  int32 expires_in_seconds = 3;
+}
+
+message RegisterContractFileRequest {
+  int64 contract_id = 1;
+  string file_key = 2;
+  string file_name = 3;
+  string content_type = 4;
+  int64 size_bytes = 5;
+  string kind = 6;
+  // Defaults to the newest version when zero.
+  int64 contract_version_id = 7;
+}
+
+message RegisterContractFileResponse {
+  ContractFile file = 1;
+}
+
+message ListContractFilesRequest {
+  int64 contract_id = 1;
+}
+
+message ListContractFilesResponse {
+  repeated ContractFile files = 1;
+}
+
+message RemoveContractFileRequest {
+  int64 id = 1;
+}
+
+message RemoveContractFileResponse {
+  bool removed = 1;
+}
+
+message ContractItem {
+  int64 id = 1;
+  int32 line_no = 2;
+  int64 product_id = 3;
+  int64 sku_id = 4;
+  // Copied when the version was written, so a later product rename cannot
+  // alter what the contract says was sold.
+  string product_code = 5;
+  string product_name = 6;
+  string spec = 7;
+  string qty = 8;
+  int64 uom_id = 9;
+  string uom_code = 10;
+  string unit_price = 11;
+  string amount = 12;
+  string hs_code = 13;
+  string remark = 14;
+}
+
+// ContractVersion is one immutable set of terms.
+message ContractVersion {
+  int64 id = 1;
+  int64 contract_id = 2;
+  int32 version_no = 3;
+  string buyer_name = 4;
+  string buyer_address = 5;
+  string seller_name = 6;
+  string seller_address = 7;
+  string currency = 8;
+  string incoterm = 9;
+  string port_of_loading = 10;
+  string port_of_discharge = 11;
+  string payment_method = 12;
+  string delivery_date = 13;
+  string terms = 14;
+  string total_amount = 15;
+  // total_amount converted at the inherited snapshot rate.
+  string base_amount = 16;
+  FxSnapshot fx = 17;
+  // Required from version 2 onwards.
+  string change_reason = 18;
+  // DRAFT / PENDING_APPROVAL / APPROVED / SUPERSEDED
+  string status = 19;
+  string created_at = 20;
+}
+
+message Contract {
+  int64 id = 1;
+  string contract_no = 2;
+  int64 quotation_id = 3;
+  string quote_no = 4;
+  int64 customer_id = 5;
+  string customer_name = 6;
+  // The version currently in force. Zero until the first signature, and it
+  // does not move while a change version is being drafted and approved.
+  int64 current_version_id = 7;
+  // DRAFT / PENDING_APPROVAL / PENDING_SIGN / EFFECTIVE / EXECUTING /
+  // COMPLETED / CANCELLED
+  string status = 8;
+  int64 sales_employee_id = 9;
+  string sales_employee = 10;
+  string signed_at = 11;
+  string effective_at = 12;
+  string completed_at = 13;
+  string created_at = 14;
+  // Denormalized from the newest version so lists need one round trip.
+  string currency = 15;
+  string total_amount = 16;
+  string base_amount = 17;
+  int32 version_no = 18;
+}
+
+// ContractTerms is the editable part of a version. Prices and lines come from
+// the quotation and are not part of it: changing an amount is a change
+// version, not an edit.
+message ContractTerms {
+  string buyer_name = 1;
+  string buyer_address = 2;
+  string seller_name = 3;
+  string seller_address = 4;
+  string incoterm = 5;
+  string port_of_loading = 6;
+  string port_of_discharge = 7;
+  string payment_method = 8;
+  string delivery_date = 9;
+  string terms = 10;
+}
+
+message ListContractsRequest {
+  erp.common.v1.PageRequest page = 1;
+  string keyword = 2;
+  int64 customer_id = 3;
+  string status = 4;
+}
+
+message ListContractsResponse {
+  repeated Contract contracts = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message GetContractRequest {
+  int64 id = 1;
+  // Which version to return; the newest one when zero.
+  int64 version_id = 2;
+}
+
+message GetContractResponse {
+  Contract contract = 1;
+  ContractVersion version = 2;
+  repeated ContractItem items = 3;
+  // Every version, newest first, so the UI can show the change history
+  // without a second call.
+  repeated ContractVersion versions = 4;
+}
+
+message CreateContractFromQuotationRequest {
+  int64 quotation_id = 1;
+  ContractTerms terms = 2;
+}
+
+message CreateContractFromQuotationResponse {
+  Contract contract = 1;
+  ContractVersion version = 2;
+  repeated ContractItem items = 3;
+}
+
+message UpdateContractRequest {
+  int64 id = 1;
+  ContractTerms terms = 2;
+  // Replaces the draft's lines. Empty leaves them alone, so a caller editing
+  // only the terms need not send them back. A rejected contract is fixed
+  // through here: the lines are usually what the approver objected to.
+  repeated ItemInput items = 3;
+}
+
+message UpdateContractResponse {
+  Contract contract = 1;
+  ContractVersion version = 2;
+}
+
+message SubmitContractRequest {
+  int64 id = 1;
+}
+
+message SubmitContractResponse {
+  string status = 1;
+  // The approval instance this created, for linking to the approval history.
+  int64 approval_instance_id = 2;
+}
+
+message ChangeContractRequest {
+  int64 id = 1;
+  ContractTerms terms = 2;
+  // Mandatory: a change without a stated reason is not auditable.
+  string change_reason = 3;
+  // The new lines. Empty keeps the current version's lines unchanged.
+  repeated ItemInput items = 4;
+}
+
+message ChangeContractResponse {
+  Contract contract = 1;
+  ContractVersion version = 2;
+  repeated ContractItem items = 3;
+}
+
+message SignContractRequest {
+  int64 id = 1;
+}
+
+message SignContractResponse {
+  string status = 1;
+}
+
+message CancelContractRequest {
+  int64 id = 1;
+}
+
+message CancelContractResponse {
+  string status = 1;
+}
