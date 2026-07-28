@@ -28,7 +28,7 @@ func (h *Handler) Submit(ctx context.Context, req *apv1.SubmitRequest) (*apv1.Su
 	inst, tasks, err := h.svc.Submit(ctx, grpcx.TenantID(ctx), app.SubmitInput{
 		BizType: req.GetBizType(), BizID: req.GetBizId(), BizNo: req.GetBizNo(),
 		BizSummary: req.GetBizSummary(), SubmitterID: req.GetSubmitterId(),
-		SubmitterName: req.GetSubmitterName(),
+		SubmitterName: req.GetSubmitterName(), Amount: req.GetAmount(),
 	})
 	if err != nil {
 		return nil, err
@@ -155,4 +155,94 @@ func tasksToProto(tasks []store.ApprovalTask) []*apv1.Task {
 		})
 	}
 	return out
+}
+
+// ---------------------------------------------------------------- flows
+
+func (h *Handler) ListDefinitions(ctx context.Context, req *apv1.ListDefinitionsRequest) (*apv1.ListDefinitionsResponse, error) {
+	rows, err := h.svc.ListDefinitions(ctx, grpcx.TenantID(ctx), req.GetBizType())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*apv1.Definition, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, &apv1.Definition{
+			Id: r.ID, BizType: r.BizType, Name: r.Name, Version: r.Version,
+			Status: r.Status, CreatedAt: ts(r.CreatedAt),
+			NodeCount: r.NodeCount, RunningCount: r.RunningCount,
+			MinAmount: r.MinAmount, CreatedBy: r.CreatedBy,
+		})
+	}
+	return &apv1.ListDefinitionsResponse{Definitions: out}, nil
+}
+
+func (h *Handler) GetDefinition(ctx context.Context, req *apv1.GetDefinitionRequest) (*apv1.GetDefinitionResponse, error) {
+	def, nodes, err := h.svc.GetDefinition(ctx, grpcx.TenantID(ctx), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &apv1.GetDefinitionResponse{
+		Definition: &apv1.Definition{
+			Id: def.ID, BizType: def.BizType, Name: def.Name, Version: def.Version,
+			Status: def.Status, CreatedAt: ts(def.CreatedAt), NodeCount: int32(len(nodes)),
+			MinAmount: def.MinAmount, CreatedBy: def.CreatedBy,
+		},
+		Nodes: nodesToProto(nodes),
+	}, nil
+}
+
+func (h *Handler) SaveDefinition(ctx context.Context, req *apv1.SaveDefinitionRequest) (*apv1.SaveDefinitionResponse, error) {
+	in := make([]app.NodeInput, 0, len(req.GetNodes()))
+	for _, n := range req.GetNodes() {
+		in = append(in, app.NodeInput{
+			Name: n.GetName(), ApproverType: n.GetApproverType(),
+			ApproverRef: n.GetApproverRef(), ApproveMode: n.GetApproveMode(),
+		})
+	}
+	op, _ := grpcx.OperatorFromContext(ctx)
+	def, nodes, err := h.svc.SaveDefinition(ctx, grpcx.TenantID(ctx), req.GetBizType(),
+		req.GetName(), req.GetMinAmount(), in, op.EmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	return &apv1.SaveDefinitionResponse{
+		Definition: &apv1.Definition{
+			Id: def.ID, BizType: def.BizType, Name: def.Name, Version: def.Version,
+			Status: def.Status, CreatedAt: ts(def.CreatedAt), NodeCount: int32(len(nodes)),
+			MinAmount: def.MinAmount, CreatedBy: def.CreatedBy,
+		},
+		Nodes: nodesToProto(nodes),
+	}, nil
+}
+
+func (h *Handler) DeleteBand(ctx context.Context, req *apv1.DeleteBandRequest) (*apv1.DeleteBandResponse, error) {
+	removed, err := h.svc.DeleteBand(ctx, grpcx.TenantID(ctx), req.GetBizType(), req.GetMinAmount())
+	if err != nil {
+		return nil, err
+	}
+	return &apv1.DeleteBandResponse{Removed: removed}, nil
+}
+
+func nodesToProto(nodes []store.ApprovalNode) []*apv1.Node {
+	out := make([]*apv1.Node, 0, len(nodes))
+	for _, n := range nodes {
+		out = append(out, &apv1.Node{
+			Seq: n.Seq, Name: n.Name, ApproverType: n.ApproverType,
+			ApproverRef: n.ApproverRef, ApproveMode: n.ApproveMode,
+		})
+	}
+	return out
+}
+
+func (h *Handler) MyInvolvedDocuments(ctx context.Context, req *apv1.MyInvolvedDocumentsRequest) (*apv1.MyInvolvedDocumentsResponse, error) {
+	employeeID := req.GetEmployeeId()
+	if employeeID == 0 {
+		op, _ := grpcx.OperatorFromContext(ctx)
+		employeeID = op.EmployeeID
+	}
+	ids, err := h.svc.MyInvolvedDocuments(ctx, grpcx.TenantID(ctx), employeeID, req.GetBizType())
+	if err != nil {
+		return nil, err
+	}
+	return &apv1.MyInvolvedDocumentsResponse{BizIds: ids}, nil
 }

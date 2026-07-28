@@ -78,3 +78,13 @@ func normalizePage(page, size int32) (int32, int32) {
 	}
 	return page, size
 }
+
+// MyInvolvedDocuments lists the documents this person has been asked to act
+// on, whatever became of the task. Business services union it with their own
+// visibility rules: an approver who cannot open the document they are asked
+// to approve has been handed an impossible job.
+func (s *Service) MyInvolvedDocuments(ctx context.Context, tenantID, employeeID int64, bizType string) ([]int64, error) {
+	return s.q.MyInvolvedBizIds(ctx, store.MyInvolvedBizIdsParams{
+		TenantID: tenantID, AssigneeID: employeeID, BizType: bizType,
+	})
+}

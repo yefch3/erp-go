@@ -16,6 +16,7 @@ import (
 	apv1 "github.com/sgao19/erp-go/gen/go/erp/approval/v1"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/pkg/kafkax"
+	"github.com/sgao19/erp-go/pkg/livefeed"
 	"github.com/sgao19/erp-go/pkg/outbox"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/approval/internal/adapter/grpcin"
@@ -51,7 +52,12 @@ func run(log *slog.Logger) error {
 	}
 	defer iamConn.Close()
 
-	svc := app.New(pool, grpcout.NewIAM(iamConn))
+	// Live hints to whoever has a page open. Separate from Kafka on purpose:
+	// see pkg/livefeed.
+	live := livefeed.NewPublisher(cfg.RedisAddr, log)
+	defer live.Close()
+
+	svc := app.New(pool, grpcout.NewIAM(iamConn), live)
 
 	// The relay is what turns committed outbox rows into Kafka messages;
 	// business code never touches the producer.

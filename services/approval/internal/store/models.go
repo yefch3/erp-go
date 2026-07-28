@@ -16,6 +16,8 @@ type ApprovalDefinition struct {
 	Version   int32
 	Status    string
 	CreatedAt pgtype.Timestamptz
+	MinAmount pgtype.Numeric
+	CreatedBy int64
 }
 
 type ApprovalInstance struct {
@@ -32,6 +34,7 @@ type ApprovalInstance struct {
 	CurrentSeq    int32
 	SubmittedAt   pgtype.Timestamptz
 	FinishedAt    pgtype.Timestamptz
+	Amount        pgtype.Numeric
 }
 
 type ApprovalNode struct {

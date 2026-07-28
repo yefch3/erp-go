@@ -20,6 +20,104 @@ service ApprovalService {
   rpc ListInstances(ListInstancesRequest) returns (ListInstancesResponse);
   // GetInstance returns one instance with its full task timeline.
   rpc GetInstance(GetInstanceRequest) returns (GetInstanceResponse);
+  // ListDefinitions returns every flow version, active and retired.
+  rpc ListDefinitions(ListDefinitionsRequest) returns (ListDefinitionsResponse);
+  // GetDefinition returns one flow with its nodes.
+  rpc GetDefinition(GetDefinitionRequest) returns (GetDefinitionResponse);
+  // SaveDefinition never edits a flow in place: it writes a NEW version and
+  // retires the previous one. Instances already running quote their own
+  // definition id, so they finish under the rules they started with.
+  rpc SaveDefinition(SaveDefinitionRequest) returns (SaveDefinitionResponse);
+  // DeleteBand retires every version of one amount band. The base band
+  // cannot be removed: some flow has to match an amount of zero.
+  rpc DeleteBand(DeleteBandRequest) returns (DeleteBandResponse);
+  // MyInvolvedDocuments lists the documents the caller has been asked to act
+  // on. Business services union it with their own visibility rules, because
+  // being asked to approve something must imply being allowed to read it.
+  rpc MyInvolvedDocuments(MyInvolvedDocumentsRequest) returns (MyInvolvedDocumentsResponse);
+}
+
+message MyInvolvedDocumentsRequest {
+  string biz_type = 1;
+  // Whose involvement to look up. Zero means the caller.
+  int64 employee_id = 2;
+}
+
+message MyInvolvedDocumentsResponse {
+  repeated int64 biz_ids = 1;
+}
+
+// Node is one step in a flow.
+message Node {
+  int32 seq = 1;
+  string name = 2;
+  // ROLE, EMPLOYEE or MANAGER.
+  string approver_type = 3;
+  // Role id, employee id, or - for MANAGER - how far up the reporting line
+  // (1 is the submitter's own manager).
+  int64 approver_ref = 4;
+  // ANY: one approver is enough. ALL: everyone at this step must approve.
+  string approve_mode = 5;
+}
+
+message Definition {
+  int64 id = 1;
+  string biz_type = 2;
+  string name = 3;
+  int32 version = 4;
+  string status = 5;
+  string created_at = 6;
+  int32 node_count = 7;
+  // Lower bound of the amount band this flow covers, inclusive. The band
+  // reaches up to the next band's floor; 0 is the base band and always
+  // exists. Decimal string, base currency.
+  string min_amount = 9;
+  // Who saved this version. Editing a flow can route a document to its own
+  // author, so it is not an action to leave anonymous.
+  int64 created_by = 10;
+  // How many instances are still running under this version; a retired one
+  // with a non-zero count is why old versions are never deleted.
+  int32 running_count = 8;
+}
+
+message ListDefinitionsRequest {
+  // Optional filter; empty returns every business type.
+  string biz_type = 1;
+}
+
+message ListDefinitionsResponse {
+  repeated Definition definitions = 1;
+}
+
+message GetDefinitionRequest {
+  int64 id = 1;
+}
+
+message GetDefinitionResponse {
+  Definition definition = 1;
+  repeated Node nodes = 2;
+}
+
+message SaveDefinitionRequest {
+  string biz_type = 1;
+  string name = 2;
+  repeated Node nodes = 3;
+  // Which band this saves. Empty or "0" is the base band.
+  string min_amount = 4;
+}
+
+message DeleteBandRequest {
+  string biz_type = 1;
+  string min_amount = 2;
+}
+
+message DeleteBandResponse {
+  bool removed = 1;
+}
+
+message SaveDefinitionResponse {
+  Definition definition = 1;
+  repeated Node nodes = 2;
 }
 
 // Action is what an approver did with a task.
@@ -46,6 +144,8 @@ message Instance {
   int32 current_seq = 9;
   string submitted_at = 10;
   string finished_at = 11;
+  // The amount this instance was routed by, for explaining the route taken.
+  string amount = 12;
 }
 
 message Task {
@@ -73,6 +173,11 @@ message SubmitRequest {
   string biz_summary = 4;
   int64 submitter_id = 5;
   string submitter_name = 6;
+  // What the flow is chosen by, as a decimal string. The business service
+  // normalises it - for contracts that means the base currency, since
+  // comparing 100,000 JPY against a threshold meant for USD is meaningless.
+  // The engine never interprets it beyond comparing it against band floors.
+  string amount = 7;
 }
 
 message SubmitResponse {

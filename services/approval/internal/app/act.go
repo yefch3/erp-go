@@ -54,23 +54,26 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 	var nextNode *store.ApprovalNode
 	var nextAssignees []int64
 	if action == ActionApprove {
-		n, err := s.q.GetNode(ctx, store.GetNodeParams{
-			TenantID: tenantID, DefinitionID: inst.DefinitionID, Seq: task.NodeSeq + 1,
+		nodes, err := s.q.ListNodes(ctx, store.ListNodesParams{
+			TenantID: tenantID, DefinitionID: inst.DefinitionID,
 		})
-		switch {
-		case err == nil:
-			nextNode = &n
-			if nextAssignees, err = s.assigneesFor(ctx, n); err != nil {
-				return store.ApprovalInstance{}, nil, err
-			}
-		case errors.Is(err, pgx.ErrNoRows): // last node: approving finishes the flow
-		default:
+		if err != nil {
+			return store.ApprovalInstance{}, nil, err
+		}
+		// Skip past any later node with nobody to assign - a reporting line
+		// that ran out, typically. A nil result means this decision finishes
+		// the flow.
+		at := indexOfSeq(nodes, task.NodeSeq)
+		if nextNode, nextAssignees, err = s.firstStaffedNode(ctx, nodes, at+1, inst.SubmitterID); err != nil {
 			return store.ApprovalInstance{}, nil, err
 		}
 	}
 
 	var out store.ApprovalInstance
 	var created []store.ApprovalTask
+	// Whose queue this decision disturbs: colleagues whose parallel task is
+	// now moot, the next approver, and the submitter when it all ends.
+	var stale []int64
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		locked, err := q.GetInstanceForUpdate(ctx, store.GetInstanceForUpdateParams{TenantID: tenantID, ID: inst.ID})
@@ -98,7 +101,10 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 			if action == ActionReturn {
 				result = statusReturned
 			}
-			return s.finish(ctx, q, tx, tenantID, locked, result, actorID, comment, &out)
+			cancelled, err := s.finish(ctx, q, tx, tenantID, locked, result, actorID, comment, &out)
+			stale = append(stale, cancelled...)
+			stale = append(stale, locked.SubmitterID)
+			return err
 		}
 
 		// ALL mode waits for every assignee at this node; ANY closes the rest.
@@ -118,14 +124,23 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 			if pending > 0 {
 				return nil // still waiting on colleagues; instance unchanged
 			}
-		} else if err := q.CloseSiblingTasks(ctx, store.CloseSiblingTasksParams{
-			TenantID: tenantID, InstanceID: locked.ID, NodeSeq: acted.NodeSeq, Status: taskSkipped,
-		}); err != nil {
-			return err
+		} else {
+			// ANY mode: this decision speaks for the node, so the colleagues
+			// still holding it need to know it is no longer theirs to make.
+			skipped, err := q.CloseSiblingTasks(ctx, store.CloseSiblingTasksParams{
+				TenantID: tenantID, InstanceID: locked.ID, NodeSeq: acted.NodeSeq, Status: taskSkipped,
+			})
+			if err != nil {
+				return err
+			}
+			stale = append(stale, skipped...)
 		}
 
 		if nextNode == nil {
-			return s.finish(ctx, q, tx, tenantID, locked, statusApproved, actorID, comment, &out)
+			cancelled, err := s.finish(ctx, q, tx, tenantID, locked, statusApproved, actorID, comment, &out)
+			stale = append(stale, cancelled...)
+			stale = append(stale, locked.SubmitterID)
+			return err
 		}
 		// Guard against the definition being edited between the two reads.
 		fresh, err := q.GetNode(ctx, store.GetNodeParams{
@@ -145,22 +160,38 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 	if err != nil {
 		return store.ApprovalInstance{}, nil, err
 	}
+	// After the commit, never inside it: a hint about a change that rolled
+	// back would send browsers to read something that never happened.
+	s.nudge(ctx, tenantID, append(stale, assigneesOf(created)...), subjectOf(inst))
 	return out, created, nil
 }
 
+// indexOfSeq locates a node by its seq; -1 when the definition changed under
+// us, which the guard further down turns into a retryable conflict.
+func indexOfSeq(nodes []store.ApprovalNode, seq int32) int {
+	for i, n := range nodes {
+		if n.Seq == seq {
+			return i
+		}
+	}
+	return -1
+}
+
 // finish closes the instance, cancels what is still pending and appends the
-// decision event in the same transaction.
-func (s *Service) finish(ctx context.Context, q *store.Queries, tx pgx.Tx, tenantID int64, inst store.ApprovalInstance, result string, actorID int64, comment string, out *store.ApprovalInstance) error {
-	if err := q.CancelInstanceTasks(ctx, store.CancelInstanceTasksParams{
+// decision event in the same transaction. It reports whose pending tasks it
+// cancelled so they can be told.
+func (s *Service) finish(ctx context.Context, q *store.Queries, tx pgx.Tx, tenantID int64, inst store.ApprovalInstance, result string, actorID int64, comment string, out *store.ApprovalInstance) ([]int64, error) {
+	cancelled, err := q.CancelInstanceTasks(ctx, store.CancelInstanceTasksParams{
 		TenantID: tenantID, InstanceID: inst.ID,
-	}); err != nil {
-		return err
+	})
+	if err != nil {
+		return nil, err
 	}
 	finished, err := q.FinishInstance(ctx, store.FinishInstanceParams{
 		TenantID: tenantID, ID: inst.ID, Status: result,
 	})
 	if err != nil {
-		return err
+		return cancelled, err
 	}
 	*out = finished
 
@@ -169,9 +200,9 @@ func (s *Service) finish(ctx context.Context, q *store.Queries, tx pgx.Tx, tenan
 		Result: result, ActedBy: actorID, Comment: comment, Summary: inst.BizSummary,
 	})
 	if err != nil {
-		return err
+		return cancelled, err
 	}
-	return outbox.Append(ctx, tx, outbox.Event{
+	return cancelled, outbox.Append(ctx, tx, outbox.Event{
 		TenantID: tenantID, AggregateType: "approval",
 		AggregateID: instanceKey(inst.ID), EventType: eventTypeFor(result),
 		Payload: payload,

@@ -19,11 +19,16 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ApprovalService_Submit_FullMethodName        = "/erp.approval.v1.ApprovalService/Submit"
-	ApprovalService_Act_FullMethodName           = "/erp.approval.v1.ApprovalService/Act"
-	ApprovalService_MyTodos_FullMethodName       = "/erp.approval.v1.ApprovalService/MyTodos"
-	ApprovalService_ListInstances_FullMethodName = "/erp.approval.v1.ApprovalService/ListInstances"
-	ApprovalService_GetInstance_FullMethodName   = "/erp.approval.v1.ApprovalService/GetInstance"
+	ApprovalService_Submit_FullMethodName              = "/erp.approval.v1.ApprovalService/Submit"
+	ApprovalService_Act_FullMethodName                 = "/erp.approval.v1.ApprovalService/Act"
+	ApprovalService_MyTodos_FullMethodName             = "/erp.approval.v1.ApprovalService/MyTodos"
+	ApprovalService_ListInstances_FullMethodName       = "/erp.approval.v1.ApprovalService/ListInstances"
+	ApprovalService_GetInstance_FullMethodName         = "/erp.approval.v1.ApprovalService/GetInstance"
+	ApprovalService_ListDefinitions_FullMethodName     = "/erp.approval.v1.ApprovalService/ListDefinitions"
+	ApprovalService_GetDefinition_FullMethodName       = "/erp.approval.v1.ApprovalService/GetDefinition"
+	ApprovalService_SaveDefinition_FullMethodName      = "/erp.approval.v1.ApprovalService/SaveDefinition"
+	ApprovalService_DeleteBand_FullMethodName          = "/erp.approval.v1.ApprovalService/DeleteBand"
+	ApprovalService_MyInvolvedDocuments_FullMethodName = "/erp.approval.v1.ApprovalService/MyInvolvedDocuments"
 )
 
 // ApprovalServiceClient is the client API for ApprovalService service.
@@ -46,6 +51,21 @@ type ApprovalServiceClient interface {
 	ListInstances(ctx context.Context, in *ListInstancesRequest, opts ...grpc.CallOption) (*ListInstancesResponse, error)
 	// GetInstance returns one instance with its full task timeline.
 	GetInstance(ctx context.Context, in *GetInstanceRequest, opts ...grpc.CallOption) (*GetInstanceResponse, error)
+	// ListDefinitions returns every flow version, active and retired.
+	ListDefinitions(ctx context.Context, in *ListDefinitionsRequest, opts ...grpc.CallOption) (*ListDefinitionsResponse, error)
+	// GetDefinition returns one flow with its nodes.
+	GetDefinition(ctx context.Context, in *GetDefinitionRequest, opts ...grpc.CallOption) (*GetDefinitionResponse, error)
+	// SaveDefinition never edits a flow in place: it writes a NEW version and
+	// retires the previous one. Instances already running quote their own
+	// definition id, so they finish under the rules they started with.
+	SaveDefinition(ctx context.Context, in *SaveDefinitionRequest, opts ...grpc.CallOption) (*SaveDefinitionResponse, error)
+	// DeleteBand retires every version of one amount band. The base band
+	// cannot be removed: some flow has to match an amount of zero.
+	DeleteBand(ctx context.Context, in *DeleteBandRequest, opts ...grpc.CallOption) (*DeleteBandResponse, error)
+	// MyInvolvedDocuments lists the documents the caller has been asked to act
+	// on. Business services union it with their own visibility rules, because
+	// being asked to approve something must imply being allowed to read it.
+	MyInvolvedDocuments(ctx context.Context, in *MyInvolvedDocumentsRequest, opts ...grpc.CallOption) (*MyInvolvedDocumentsResponse, error)
 }
 
 type approvalServiceClient struct {
@@ -106,6 +126,56 @@ func (c *approvalServiceClient) GetInstance(ctx context.Context, in *GetInstance
 	return out, nil
 }
 
+func (c *approvalServiceClient) ListDefinitions(ctx context.Context, in *ListDefinitionsRequest, opts ...grpc.CallOption) (*ListDefinitionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDefinitionsResponse)
+	err := c.cc.Invoke(ctx, ApprovalService_ListDefinitions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *approvalServiceClient) GetDefinition(ctx context.Context, in *GetDefinitionRequest, opts ...grpc.CallOption) (*GetDefinitionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetDefinitionResponse)
+	err := c.cc.Invoke(ctx, ApprovalService_GetDefinition_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *approvalServiceClient) SaveDefinition(ctx context.Context, in *SaveDefinitionRequest, opts ...grpc.CallOption) (*SaveDefinitionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveDefinitionResponse)
+	err := c.cc.Invoke(ctx, ApprovalService_SaveDefinition_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *approvalServiceClient) DeleteBand(ctx context.Context, in *DeleteBandRequest, opts ...grpc.CallOption) (*DeleteBandResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteBandResponse)
+	err := c.cc.Invoke(ctx, ApprovalService_DeleteBand_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *approvalServiceClient) MyInvolvedDocuments(ctx context.Context, in *MyInvolvedDocumentsRequest, opts ...grpc.CallOption) (*MyInvolvedDocumentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MyInvolvedDocumentsResponse)
+	err := c.cc.Invoke(ctx, ApprovalService_MyInvolvedDocuments_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ApprovalServiceServer is the server API for ApprovalService service.
 // All implementations must embed UnimplementedApprovalServiceServer
 // for forward compatibility.
@@ -126,6 +196,21 @@ type ApprovalServiceServer interface {
 	ListInstances(context.Context, *ListInstancesRequest) (*ListInstancesResponse, error)
 	// GetInstance returns one instance with its full task timeline.
 	GetInstance(context.Context, *GetInstanceRequest) (*GetInstanceResponse, error)
+	// ListDefinitions returns every flow version, active and retired.
+	ListDefinitions(context.Context, *ListDefinitionsRequest) (*ListDefinitionsResponse, error)
+	// GetDefinition returns one flow with its nodes.
+	GetDefinition(context.Context, *GetDefinitionRequest) (*GetDefinitionResponse, error)
+	// SaveDefinition never edits a flow in place: it writes a NEW version and
+	// retires the previous one. Instances already running quote their own
+	// definition id, so they finish under the rules they started with.
+	SaveDefinition(context.Context, *SaveDefinitionRequest) (*SaveDefinitionResponse, error)
+	// DeleteBand retires every version of one amount band. The base band
+	// cannot be removed: some flow has to match an amount of zero.
+	DeleteBand(context.Context, *DeleteBandRequest) (*DeleteBandResponse, error)
+	// MyInvolvedDocuments lists the documents the caller has been asked to act
+	// on. Business services union it with their own visibility rules, because
+	// being asked to approve something must imply being allowed to read it.
+	MyInvolvedDocuments(context.Context, *MyInvolvedDocumentsRequest) (*MyInvolvedDocumentsResponse, error)
 	mustEmbedUnimplementedApprovalServiceServer()
 }
 
@@ -150,6 +235,21 @@ func (UnimplementedApprovalServiceServer) ListInstances(context.Context, *ListIn
 }
 func (UnimplementedApprovalServiceServer) GetInstance(context.Context, *GetInstanceRequest) (*GetInstanceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetInstance not implemented")
+}
+func (UnimplementedApprovalServiceServer) ListDefinitions(context.Context, *ListDefinitionsRequest) (*ListDefinitionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListDefinitions not implemented")
+}
+func (UnimplementedApprovalServiceServer) GetDefinition(context.Context, *GetDefinitionRequest) (*GetDefinitionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetDefinition not implemented")
+}
+func (UnimplementedApprovalServiceServer) SaveDefinition(context.Context, *SaveDefinitionRequest) (*SaveDefinitionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveDefinition not implemented")
+}
+func (UnimplementedApprovalServiceServer) DeleteBand(context.Context, *DeleteBandRequest) (*DeleteBandResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteBand not implemented")
+}
+func (UnimplementedApprovalServiceServer) MyInvolvedDocuments(context.Context, *MyInvolvedDocumentsRequest) (*MyInvolvedDocumentsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MyInvolvedDocuments not implemented")
 }
 func (UnimplementedApprovalServiceServer) mustEmbedUnimplementedApprovalServiceServer() {}
 func (UnimplementedApprovalServiceServer) testEmbeddedByValue()                         {}
@@ -262,6 +362,96 @@ func _ApprovalService_GetInstance_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ApprovalService_ListDefinitions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDefinitionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApprovalServiceServer).ListDefinitions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApprovalService_ListDefinitions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApprovalServiceServer).ListDefinitions(ctx, req.(*ListDefinitionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ApprovalService_GetDefinition_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDefinitionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApprovalServiceServer).GetDefinition(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApprovalService_GetDefinition_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApprovalServiceServer).GetDefinition(ctx, req.(*GetDefinitionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ApprovalService_SaveDefinition_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveDefinitionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApprovalServiceServer).SaveDefinition(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApprovalService_SaveDefinition_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApprovalServiceServer).SaveDefinition(ctx, req.(*SaveDefinitionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ApprovalService_DeleteBand_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteBandRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApprovalServiceServer).DeleteBand(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApprovalService_DeleteBand_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApprovalServiceServer).DeleteBand(ctx, req.(*DeleteBandRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ApprovalService_MyInvolvedDocuments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MyInvolvedDocumentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApprovalServiceServer).MyInvolvedDocuments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApprovalService_MyInvolvedDocuments_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApprovalServiceServer).MyInvolvedDocuments(ctx, req.(*MyInvolvedDocumentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ApprovalService_ServiceDesc is the grpc.ServiceDesc for ApprovalService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -288,6 +478,26 @@ var ApprovalService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetInstance",
 			Handler:    _ApprovalService_GetInstance_Handler,
+		},
+		{
+			MethodName: "ListDefinitions",
+			Handler:    _ApprovalService_ListDefinitions_Handler,
+		},
+		{
+			MethodName: "GetDefinition",
+			Handler:    _ApprovalService_GetDefinition_Handler,
+		},
+		{
+			MethodName: "SaveDefinition",
+			Handler:    _ApprovalService_SaveDefinition_Handler,
+		},
+		{
+			MethodName: "DeleteBand",
+			Handler:    _ApprovalService_DeleteBand_Handler,
+		},
+		{
+			MethodName: "MyInvolvedDocuments",
+			Handler:    _ApprovalService_MyInvolvedDocuments_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

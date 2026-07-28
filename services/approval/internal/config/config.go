@@ -13,6 +13,8 @@ type Config struct {
 	KafkaBrokers []string
 	// Topic every approval decision is published to.
 	DecisionTopic string
+	// Redis, for the live UI feed. Not the event bus; see pkg/livefeed.
+	RedisAddr string
 }
 
 func Load() Config {
@@ -22,6 +24,7 @@ func Load() Config {
 		IAMAddr:       env("IAM_ADDR", "localhost:9001"),
 		KafkaBrokers:  strings.Split(env("KAFKA_BROKERS", "localhost:19092"), ","),
 		DecisionTopic: env("APPROVAL_TOPIC", "erp.approval.task.v1"),
+		RedisAddr:     env("REDIS_ADDR", "localhost:6380"),
 	}
 }
 

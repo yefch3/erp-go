@@ -48,19 +48,24 @@ func (q *Queries) ActOnTask(ctx context.Context, arg ActOnTaskParams) (ApprovalT
 }
 
 const activeDefinitionFor = `-- name: ActiveDefinitionFor :one
-SELECT id, tenant_id, biz_type, name, version, status, created_at FROM approval_definitions
+SELECT id, tenant_id, biz_type, name, version, status, created_at, min_amount, created_by FROM approval_definitions
 WHERE tenant_id = $1 AND biz_type = $2 AND status = 'ACTIVE'
-ORDER BY version DESC
+  AND min_amount <= $3::text::numeric
+ORDER BY min_amount DESC, version DESC
 LIMIT 1
 `
 
 type ActiveDefinitionForParams struct {
 	TenantID int64
 	BizType  string
+	Amount   string
 }
 
+// The highest band floor at or below the amount. Because bands are defined by
+// their floor and the base band is 0, exactly one row always matches: gaps and
+// overlaps are not expressible.
 func (q *Queries) ActiveDefinitionFor(ctx context.Context, arg ActiveDefinitionForParams) (ApprovalDefinition, error) {
-	row := q.db.QueryRow(ctx, activeDefinitionFor, arg.TenantID, arg.BizType)
+	row := q.db.QueryRow(ctx, activeDefinitionFor, arg.TenantID, arg.BizType, arg.Amount)
 	var i ApprovalDefinition
 	err := row.Scan(
 		&i.ID,
@@ -70,6 +75,8 @@ func (q *Queries) ActiveDefinitionFor(ctx context.Context, arg ActiveDefinitionF
 		&i.Version,
 		&i.Status,
 		&i.CreatedAt,
+		&i.MinAmount,
+		&i.CreatedBy,
 	)
 	return i, err
 }
@@ -77,7 +84,7 @@ func (q *Queries) ActiveDefinitionFor(ctx context.Context, arg ActiveDefinitionF
 const advanceInstance = `-- name: AdvanceInstance :one
 UPDATE approval_instances SET current_seq = $3
 WHERE tenant_id = $1 AND id = $2
-RETURNING id, tenant_id, definition_id, biz_type, biz_id, biz_no, biz_summary, submitter_id, submitter_name, status, current_seq, submitted_at, finished_at
+RETURNING id, tenant_id, definition_id, biz_type, biz_id, biz_no, biz_summary, submitter_id, submitter_name, status, current_seq, submitted_at, finished_at, amount
 `
 
 type AdvanceInstanceParams struct {
@@ -103,13 +110,15 @@ func (q *Queries) AdvanceInstance(ctx context.Context, arg AdvanceInstanceParams
 		&i.CurrentSeq,
 		&i.SubmittedAt,
 		&i.FinishedAt,
+		&i.Amount,
 	)
 	return i, err
 }
 
-const cancelInstanceTasks = `-- name: CancelInstanceTasks :exec
+const cancelInstanceTasks = `-- name: CancelInstanceTasks :many
 UPDATE approval_tasks SET status = 'CANCELLED', acted_at = now()
 WHERE tenant_id = $1 AND instance_id = $2 AND status = 'PENDING'
+RETURNING assignee_id
 `
 
 type CancelInstanceTasksParams struct {
@@ -117,14 +126,30 @@ type CancelInstanceTasksParams struct {
 	InstanceID int64
 }
 
-func (q *Queries) CancelInstanceTasks(ctx context.Context, arg CancelInstanceTasksParams) error {
-	_, err := q.db.Exec(ctx, cancelInstanceTasks, arg.TenantID, arg.InstanceID)
-	return err
+func (q *Queries) CancelInstanceTasks(ctx context.Context, arg CancelInstanceTasksParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, cancelInstanceTasks, arg.TenantID, arg.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var assignee_id int64
+		if err := rows.Scan(&assignee_id); err != nil {
+			return nil, err
+		}
+		items = append(items, assignee_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
-const closeSiblingTasks = `-- name: CloseSiblingTasks :exec
+const closeSiblingTasks = `-- name: CloseSiblingTasks :many
 UPDATE approval_tasks SET status = $4, acted_at = now()
 WHERE tenant_id = $1 AND instance_id = $2 AND node_seq = $3 AND status = 'PENDING'
+RETURNING assignee_id
 `
 
 type CloseSiblingTasksParams struct {
@@ -134,14 +159,31 @@ type CloseSiblingTasksParams struct {
 	Status     string
 }
 
-func (q *Queries) CloseSiblingTasks(ctx context.Context, arg CloseSiblingTasksParams) error {
-	_, err := q.db.Exec(ctx, closeSiblingTasks,
+// Returns whose queue just changed, so they can be told rather than left
+// staring at a task somebody else already handled.
+func (q *Queries) CloseSiblingTasks(ctx context.Context, arg CloseSiblingTasksParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, closeSiblingTasks,
 		arg.TenantID,
 		arg.InstanceID,
 		arg.NodeSeq,
 		arg.Status,
 	)
-	return err
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var assignee_id int64
+		if err := rows.Scan(&assignee_id); err != nil {
+			return nil, err
+		}
+		items = append(items, assignee_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const countPendingAtNode = `-- name: CountPendingAtNode :one
@@ -162,12 +204,69 @@ func (q *Queries) CountPendingAtNode(ctx context.Context, arg CountPendingAtNode
 	return count, err
 }
 
+const createDefinition = `-- name: CreateDefinition :one
+INSERT INTO approval_definitions (
+    tenant_id, biz_type, name, version, status, min_amount, created_by
+) VALUES (
+    $1, $2, $3, $4::int, 'ACTIVE',
+    $5::text::numeric, $6::bigint
+)
+RETURNING id, tenant_id, biz_type, name, version, status, created_at,
+          min_amount::text AS min_amount, created_by
+`
+
+type CreateDefinitionParams struct {
+	TenantID  int64
+	BizType   string
+	Name      string
+	Version   int32
+	MinAmount string
+	CreatedBy int64
+}
+
+type CreateDefinitionRow struct {
+	ID        int64
+	TenantID  int64
+	BizType   string
+	Name      string
+	Version   int32
+	Status    string
+	CreatedAt pgtype.Timestamptz
+	MinAmount string
+	CreatedBy int64
+}
+
+func (q *Queries) CreateDefinition(ctx context.Context, arg CreateDefinitionParams) (CreateDefinitionRow, error) {
+	row := q.db.QueryRow(ctx, createDefinition,
+		arg.TenantID,
+		arg.BizType,
+		arg.Name,
+		arg.Version,
+		arg.MinAmount,
+		arg.CreatedBy,
+	)
+	var i CreateDefinitionRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.BizType,
+		&i.Name,
+		&i.Version,
+		&i.Status,
+		&i.CreatedAt,
+		&i.MinAmount,
+		&i.CreatedBy,
+	)
+	return i, err
+}
+
 const createInstance = `-- name: CreateInstance :one
 INSERT INTO approval_instances (
     tenant_id, definition_id, biz_type, biz_id, biz_no, biz_summary,
-    submitter_id, submitter_name
-) VALUES ($1, $2, $3, $4, $5, $8::jsonb, $6, $7)
-RETURNING id, tenant_id, definition_id, biz_type, biz_id, biz_no, biz_summary, submitter_id, submitter_name, status, current_seq, submitted_at, finished_at
+    submitter_id, submitter_name, amount
+) VALUES ($1, $2, $3, $4, $5, $8::jsonb, $6, $7,
+    $9::text::numeric)
+RETURNING id, tenant_id, definition_id, biz_type, biz_id, biz_no, biz_summary, submitter_id, submitter_name, status, current_seq, submitted_at, finished_at, amount
 `
 
 type CreateInstanceParams struct {
@@ -179,6 +278,7 @@ type CreateInstanceParams struct {
 	SubmitterID   int64
 	SubmitterName string
 	BizSummary    []byte
+	Amount        string
 }
 
 func (q *Queries) CreateInstance(ctx context.Context, arg CreateInstanceParams) (ApprovalInstance, error) {
@@ -191,6 +291,7 @@ func (q *Queries) CreateInstance(ctx context.Context, arg CreateInstanceParams) 
 		arg.SubmitterID,
 		arg.SubmitterName,
 		arg.BizSummary,
+		arg.Amount,
 	)
 	var i ApprovalInstance
 	err := row.Scan(
@@ -207,6 +308,47 @@ func (q *Queries) CreateInstance(ctx context.Context, arg CreateInstanceParams) 
 		&i.CurrentSeq,
 		&i.SubmittedAt,
 		&i.FinishedAt,
+		&i.Amount,
+	)
+	return i, err
+}
+
+const createNode = `-- name: CreateNode :one
+INSERT INTO approval_nodes (tenant_id, definition_id, seq, name, approver_type, approver_ref, approve_mode)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, tenant_id, definition_id, seq, name, approver_type, approver_ref, approve_mode
+`
+
+type CreateNodeParams struct {
+	TenantID     int64
+	DefinitionID int64
+	Seq          int32
+	Name         string
+	ApproverType string
+	ApproverRef  int64
+	ApproveMode  string
+}
+
+func (q *Queries) CreateNode(ctx context.Context, arg CreateNodeParams) (ApprovalNode, error) {
+	row := q.db.QueryRow(ctx, createNode,
+		arg.TenantID,
+		arg.DefinitionID,
+		arg.Seq,
+		arg.Name,
+		arg.ApproverType,
+		arg.ApproverRef,
+		arg.ApproveMode,
+	)
+	var i ApprovalNode
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.DefinitionID,
+		&i.Seq,
+		&i.Name,
+		&i.ApproverType,
+		&i.ApproverRef,
+		&i.ApproveMode,
 	)
 	return i, err
 }
@@ -249,10 +391,59 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Approva
 	return i, err
 }
 
+const deactivateOtherDefinitions = `-- name: DeactivateOtherDefinitions :exec
+UPDATE approval_definitions SET status = 'INACTIVE'
+WHERE tenant_id = $1 AND biz_type = $2
+  AND min_amount = $3::text::numeric
+  AND id <> $4::bigint AND status = 'ACTIVE'
+`
+
+type DeactivateOtherDefinitionsParams struct {
+	TenantID  int64
+	BizType   string
+	MinAmount string
+	KeepID    int64
+}
+
+// One active version per BAND; the previous one is retired rather than deleted
+// so instances that quote it still resolve. Other bands are left alone.
+func (q *Queries) DeactivateOtherDefinitions(ctx context.Context, arg DeactivateOtherDefinitionsParams) error {
+	_, err := q.db.Exec(ctx, deactivateOtherDefinitions,
+		arg.TenantID,
+		arg.BizType,
+		arg.MinAmount,
+		arg.KeepID,
+	)
+	return err
+}
+
+const deleteBand = `-- name: DeleteBand :execrows
+UPDATE approval_definitions SET status = 'INACTIVE'
+WHERE tenant_id = $1 AND biz_type = $2
+  AND min_amount = $3::text::numeric
+  AND min_amount > 0 AND status = 'ACTIVE'
+`
+
+type DeleteBandParams struct {
+	TenantID  int64
+	BizType   string
+	MinAmount string
+}
+
+// Retires every version of one band. The floor-0 band is never removable:
+// something has to match an amount of zero.
+func (q *Queries) DeleteBand(ctx context.Context, arg DeleteBandParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteBand, arg.TenantID, arg.BizType, arg.MinAmount)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const finishInstance = `-- name: FinishInstance :one
 UPDATE approval_instances SET status = $3, finished_at = now()
 WHERE tenant_id = $1 AND id = $2
-RETURNING id, tenant_id, definition_id, biz_type, biz_id, biz_no, biz_summary, submitter_id, submitter_name, status, current_seq, submitted_at, finished_at
+RETURNING id, tenant_id, definition_id, biz_type, biz_id, biz_no, biz_summary, submitter_id, submitter_name, status, current_seq, submitted_at, finished_at, amount
 `
 
 type FinishInstanceParams struct {
@@ -278,12 +469,53 @@ func (q *Queries) FinishInstance(ctx context.Context, arg FinishInstanceParams) 
 		&i.CurrentSeq,
 		&i.SubmittedAt,
 		&i.FinishedAt,
+		&i.Amount,
+	)
+	return i, err
+}
+
+const getDefinition = `-- name: GetDefinition :one
+SELECT id, tenant_id, biz_type, name, version, status, created_at,
+    min_amount::text AS min_amount, created_by
+FROM approval_definitions WHERE tenant_id = $1 AND id = $2
+`
+
+type GetDefinitionParams struct {
+	TenantID int64
+	ID       int64
+}
+
+type GetDefinitionRow struct {
+	ID        int64
+	TenantID  int64
+	BizType   string
+	Name      string
+	Version   int32
+	Status    string
+	CreatedAt pgtype.Timestamptz
+	MinAmount string
+	CreatedBy int64
+}
+
+func (q *Queries) GetDefinition(ctx context.Context, arg GetDefinitionParams) (GetDefinitionRow, error) {
+	row := q.db.QueryRow(ctx, getDefinition, arg.TenantID, arg.ID)
+	var i GetDefinitionRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.BizType,
+		&i.Name,
+		&i.Version,
+		&i.Status,
+		&i.CreatedAt,
+		&i.MinAmount,
+		&i.CreatedBy,
 	)
 	return i, err
 }
 
 const getInstance = `-- name: GetInstance :one
-SELECT id, tenant_id, definition_id, biz_type, biz_id, biz_no, biz_summary, submitter_id, submitter_name, status, current_seq, submitted_at, finished_at FROM approval_instances WHERE tenant_id = $1 AND id = $2
+SELECT id, tenant_id, definition_id, biz_type, biz_id, biz_no, biz_summary, submitter_id, submitter_name, status, current_seq, submitted_at, finished_at, amount FROM approval_instances WHERE tenant_id = $1 AND id = $2
 `
 
 type GetInstanceParams struct {
@@ -308,12 +540,13 @@ func (q *Queries) GetInstance(ctx context.Context, arg GetInstanceParams) (Appro
 		&i.CurrentSeq,
 		&i.SubmittedAt,
 		&i.FinishedAt,
+		&i.Amount,
 	)
 	return i, err
 }
 
 const getInstanceForUpdate = `-- name: GetInstanceForUpdate :one
-SELECT id, tenant_id, definition_id, biz_type, biz_id, biz_no, biz_summary, submitter_id, submitter_name, status, current_seq, submitted_at, finished_at FROM approval_instances WHERE tenant_id = $1 AND id = $2 FOR UPDATE
+SELECT id, tenant_id, definition_id, biz_type, biz_id, biz_no, biz_summary, submitter_id, submitter_name, status, current_seq, submitted_at, finished_at, amount FROM approval_instances WHERE tenant_id = $1 AND id = $2 FOR UPDATE
 `
 
 type GetInstanceForUpdateParams struct {
@@ -338,6 +571,7 @@ func (q *Queries) GetInstanceForUpdate(ctx context.Context, arg GetInstanceForUp
 		&i.CurrentSeq,
 		&i.SubmittedAt,
 		&i.FinishedAt,
+		&i.Amount,
 	)
 	return i, err
 }
@@ -396,8 +630,66 @@ func (q *Queries) GetTaskForUpdate(ctx context.Context, arg GetTaskForUpdatePara
 	return i, err
 }
 
+const listDefinitions = `-- name: ListDefinitions :many
+SELECT d.id, d.biz_type, d.name, d.version, d.status, d.created_at,
+       d.min_amount::text AS min_amount, d.created_by,
+       (SELECT count(*) FROM approval_nodes n
+        WHERE n.definition_id = d.id AND n.tenant_id = d.tenant_id)::int AS node_count,
+       (SELECT count(*) FROM approval_instances i
+        WHERE i.definition_id = d.id AND i.status = 'RUNNING')::int AS running_count
+FROM approval_definitions d
+WHERE d.tenant_id = $1
+ORDER BY d.biz_type, d.version DESC
+`
+
+type ListDefinitionsRow struct {
+	ID           int64
+	BizType      string
+	Name         string
+	Version      int32
+	Status       string
+	CreatedAt    pgtype.Timestamptz
+	MinAmount    string
+	CreatedBy    int64
+	NodeCount    int32
+	RunningCount int32
+}
+
+// Every version ever, newest first per business type. Old ones are kept
+// because running instances still point at them.
+func (q *Queries) ListDefinitions(ctx context.Context, tenantID int64) ([]ListDefinitionsRow, error) {
+	rows, err := q.db.Query(ctx, listDefinitions, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDefinitionsRow
+	for rows.Next() {
+		var i ListDefinitionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.BizType,
+			&i.Name,
+			&i.Version,
+			&i.Status,
+			&i.CreatedAt,
+			&i.MinAmount,
+			&i.CreatedBy,
+			&i.NodeCount,
+			&i.RunningCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listInstancesByBiz = `-- name: ListInstancesByBiz :many
-SELECT id, tenant_id, definition_id, biz_type, biz_id, biz_no, biz_summary, submitter_id, submitter_name, status, current_seq, submitted_at, finished_at FROM approval_instances
+SELECT id, tenant_id, definition_id, biz_type, biz_id, biz_no, biz_summary, submitter_id, submitter_name, status, current_seq, submitted_at, finished_at, amount FROM approval_instances
 WHERE tenant_id = $1 AND biz_type = $2 AND biz_id = $3
 ORDER BY submitted_at DESC
 `
@@ -431,6 +723,7 @@ func (q *Queries) ListInstancesByBiz(ctx context.Context, arg ListInstancesByBiz
 			&i.CurrentSeq,
 			&i.SubmittedAt,
 			&i.FinishedAt,
+			&i.Amount,
 		); err != nil {
 			return nil, err
 		}
@@ -624,4 +917,63 @@ func (q *Queries) ListTasksByInstance(ctx context.Context, arg ListTasksByInstan
 		return nil, err
 	}
 	return items, nil
+}
+
+const myInvolvedBizIds = `-- name: MyInvolvedBizIds :many
+SELECT DISTINCT i.biz_id
+FROM approval_tasks t
+JOIN approval_instances i ON i.id = t.instance_id AND i.tenant_id = t.tenant_id
+WHERE t.tenant_id = $1 AND t.assignee_id = $2
+  AND ($3::text = '' OR i.biz_type = $3::text)
+`
+
+type MyInvolvedBizIdsParams struct {
+	TenantID   int64
+	AssigneeID int64
+	BizType    string
+}
+
+// Documents this person has been asked to act on, whatever became of the
+// task. Business services union this with their own visibility rules: being
+// asked to approve something has to imply being allowed to read it.
+func (q *Queries) MyInvolvedBizIds(ctx context.Context, arg MyInvolvedBizIdsParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, myInvolvedBizIds, arg.TenantID, arg.AssigneeID, arg.BizType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var biz_id int64
+		if err := rows.Scan(&biz_id); err != nil {
+			return nil, err
+		}
+		items = append(items, biz_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const nextDefinitionVersion = `-- name: NextDefinitionVersion :one
+SELECT coalesce(max(version), 0)::int + 1
+FROM approval_definitions
+WHERE tenant_id = $1 AND biz_type = $2
+  AND min_amount = $3::text::numeric
+`
+
+type NextDefinitionVersionParams struct {
+	TenantID  int64
+	BizType   string
+	MinAmount string
+}
+
+// Versions count per band, so editing the large-contract flow does not bump
+// the version number of the small-contract one.
+func (q *Queries) NextDefinitionVersion(ctx context.Context, arg NextDefinitionVersionParams) (int32, error) {
+	row := q.db.QueryRow(ctx, nextDefinitionVersion, arg.TenantID, arg.BizType, arg.MinAmount)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
 }
