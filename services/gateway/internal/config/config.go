@@ -11,7 +11,9 @@ type Config struct {
 	ApprovalAddr   string
 	ProductAddr    string
 	ExportAddr     string
-	JWTSecret      string
+	// Redis carries the live UI feed; see pkg/livefeed.
+	RedisAddr string
+	JWTSecret string
 }
 
 func Load() Config {
@@ -23,6 +25,7 @@ func Load() Config {
 		ApprovalAddr:   env("APPROVAL_ADDR", "localhost:9005"),
 		ProductAddr:    env("PRODUCT_ADDR", "localhost:9004"),
 		ExportAddr:     env("EXPORT_ADDR", "localhost:9006"),
+		RedisAddr:      env("REDIS_ADDR", "localhost:6380"),
 		// Must match iam's JWT_SECRET or every token fails validation.
 		JWTSecret: env("JWT_SECRET", "dev-secret-change-in-production"),
 	}

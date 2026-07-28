@@ -212,3 +212,21 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
+
+func (s *Server) setManager(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ManagerID string `json:"managerId"`
+	}
+	if !s.decodeJSON(w, r, &body) {
+		return
+	}
+	managerID, _ := strconv.ParseInt(body.ManagerID, 10, 64)
+	resp, err := s.Directory.SetManager(r.Context(), &iamv1.SetManagerRequest{
+		EmployeeId: idFromPath(r), ManagerId: managerID,
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}

@@ -26,6 +26,7 @@ import (
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/authtoken"
 	"github.com/sgao19/erp-go/pkg/grpcx"
+	"github.com/sgao19/erp-go/pkg/livefeed"
 )
 
 type Server struct {
@@ -41,6 +42,8 @@ type Server struct {
 	Catalog     pdv1.CatalogServiceClient
 	Attachments pdv1.AttachmentServiceClient
 	Quotations  exv1.QuotationServiceClient
+	Contracts   exv1.ContractServiceClient
+	Live        *livefeed.Subscriber
 	JWTSecret   string
 	Log         *slog.Logger
 }
@@ -76,14 +79,31 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/account", s.openAccount)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/password", s.resetPassword)
 		r.With(s.perm("iam:role:write")).Post("/api/employees/{id}/roles", s.assignRoles)
+		// The reporting line is org-chart maintenance, not access control,
+		// so it sits with the rest of employee editing.
+		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/manager", s.setManager)
 		r.With(s.perm("iam:role:read")).Get("/api/roles", s.listRoles)
 		r.With(s.perm("iam:role:write")).Post("/api/roles", s.createRole)
 		r.With(s.perm("iam:role:write")).Put("/api/roles/{id}/permissions", s.grantRolePermissions)
 		r.With(s.perm("iam:role:read")).Get("/api/roles/{id}/members", s.listRoleMembers)
 		r.With(s.perm("iam:role:read")).Get("/api/permissions", s.listPermissions)
+		// Data scope: which documents a role may see, as opposed to which
+		// features it may use. Same administrator, different question.
+		r.With(s.perm("iam:role:read")).Get("/api/data-scopes", s.listDataScopes)
+		r.With(s.perm("iam:role:write")).Put("/api/roles/{id}/data-scope", s.setDataScope)
+		// Approval flow design. Saving always writes a new version, so this
+		// is a write on the flow rather than on any running approval.
+		r.With(s.perm("approval:flow:read")).Get("/api/approval-flows", s.listFlows)
+		r.With(s.perm("approval:flow:read")).Get("/api/approval-flows/{id}", s.getFlow)
+		r.With(s.perm("approval:flow:write")).Post("/api/approval-flows", s.saveFlow)
+		r.With(s.perm("approval:flow:write")).Delete("/api/approval-flows/band", s.deleteFlowBand)
 		// Own identity and own password: being logged in is the only
 		// requirement, since neither can touch anybody else's account.
 		r.Get("/api/me/permissions", s.me)
+		// The live feed carries only "go and re-read X" hints, so being
+		// logged in is the whole requirement; every actual read still goes
+		// through its own permission-checked route.
+		r.Get("/api/events", s.streamEvents)
 		r.Post("/api/me/password", s.changeOwnPassword)
 		// Product catalog. Categories and units are reference data every
 		// product form needs, so reading them only requires product:read.
@@ -115,12 +135,31 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("export:quotation:write")).Post("/api/quotations/{id}/send", s.sendQuotation)
 		r.With(s.perm("export:quotation:write")).Post("/api/quotations/{id}/respond", s.respondQuotation)
 		r.With(s.perm("export:quotation:write")).Post("/api/quotations/{id}/cancel", s.cancelQuotation)
+		// Contracts. Signing is what makes a version binding, so it sits
+		// behind the write permission like every other state change.
+		r.With(s.perm("export:contract:read")).Get("/api/contracts", s.listContracts)
+		r.With(s.perm("export:contract:read")).Get("/api/contracts/{id}", s.getContract)
+		r.With(s.perm("export:contract:write")).Post("/api/contracts", s.createContract)
+		r.With(s.perm("export:contract:write")).Put("/api/contracts/{id}", s.updateContract)
+		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/submit", s.submitContract)
+		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/change", s.changeContract)
+		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/sign", s.signContract)
+		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/cancel", s.cancelContract)
+		// Contract paperwork. The bytes never pass through here: the browser
+		// uploads straight to object storage with a signed URL.
+		r.With(s.perm("export:contract:read")).Get("/api/contracts/{id}/files", s.listContractFiles)
+		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/files/presign", s.presignContractFile)
+		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/files", s.registerContractFile)
+		r.With(s.perm("export:contract:write")).Delete("/api/contract-files/{id}", s.removeContractFile)
 		// Approval todos are personal: the service filters by the caller's
 		// employee id, so the permission only gates "may act on approvals".
 		r.With(s.perm("approval:task:act")).Get("/api/approvals/todos", s.myTodos)
 		r.With(s.perm("approval:task:act")).Post("/api/approvals/tasks/{id}/act", s.actOnTask)
-		r.With(s.perm("approval:task:act")).Get("/api/approvals/instances", s.listApprovalInstances)
-		r.With(s.perm("approval:task:act")).Get("/api/approvals/instances/{id}", s.getApprovalInstance)
+		// Reading where a document stands is not acting on it: the salesperson
+		// who submitted a contract needs to see it is waiting on the sales
+		// manager without any power to approve anything.
+		r.With(s.perm("approval:instance:read")).Get("/api/approvals/instances", s.listApprovalInstances)
+		r.With(s.perm("approval:instance:read")).Get("/api/approvals/instances/{id}", s.getApprovalInstance)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/latest", s.fxLatest)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/rates", s.fxRates)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/anomalies", s.fxAnomalies)

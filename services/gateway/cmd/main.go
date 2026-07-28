@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -20,6 +21,7 @@ import (
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	pdv1 "github.com/sgao19/erp-go/gen/go/erp/product/v1"
 	"github.com/sgao19/erp-go/pkg/grpcx"
+	"github.com/sgao19/erp-go/pkg/livefeed"
 	"github.com/sgao19/erp-go/services/gateway/internal/config"
 	"github.com/sgao19/erp-go/services/gateway/internal/httpapi"
 )
@@ -75,6 +77,15 @@ func run(log *slog.Logger) error {
 	}
 	defer exConn.Close()
 
+	// The live feed is a hint channel, not the event bus, but a gateway that
+	// silently serves a stream nobody ever publishes into is worse than one
+	// that refuses to start.
+	live := livefeed.NewSubscriber(cfg.RedisAddr)
+	defer live.Close()
+	if err := live.Ping(ctx); err != nil {
+		return fmt.Errorf("gateway: redis at %s: %w", cfg.RedisAddr, err)
+	}
+
 	srv := &httpapi.Server{
 		IAM:         iamv1.NewAuthServiceClient(iamConn),
 		Directory:   iamv1.NewDirectoryServiceClient(iamConn),
@@ -88,6 +99,8 @@ func run(log *slog.Logger) error {
 		Catalog:     pdv1.NewCatalogServiceClient(pdConn),
 		Attachments: pdv1.NewAttachmentServiceClient(pdConn),
 		Quotations:  exv1.NewQuotationServiceClient(exConn),
+		Contracts:   exv1.NewContractServiceClient(exConn),
+		Live:        live,
 		JWTSecret:   cfg.JWTSecret,
 		Log:         log,
 	}
