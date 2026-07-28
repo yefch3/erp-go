@@ -8,6 +8,90 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Contract struct {
+	ID                   int64
+	TenantID             int64
+	ContractNo           string
+	QuotationID          *int64
+	QuoteNo              string
+	CustomerID           int64
+	CustomerName         string
+	CurrentVersionID     *int64
+	Status               string
+	StatusBeforeApproval string
+	SalesEmployeeID      int64
+	SalesEmployee        string
+	SignedAt             pgtype.Timestamptz
+	EffectiveAt          pgtype.Timestamptz
+	CompletedAt          pgtype.Timestamptz
+	CreatedAt            pgtype.Timestamptz
+	CreatedBy            int64
+	UpdatedAt            pgtype.Timestamptz
+	UpdatedBy            int64
+}
+
+type ContractAttachment struct {
+	ID                int64
+	TenantID          int64
+	ContractID        int64
+	ContractVersionID *int64
+	Kind              string
+	FileName          string
+	FileKey           string
+	ContentType       string
+	SizeBytes         int64
+	UploadedAt        pgtype.Timestamptz
+	UploadedBy        int64
+	UploaderName      string
+}
+
+type ContractItem struct {
+	ID                int64
+	TenantID          int64
+	ContractVersionID int64
+	LineNo            int32
+	ProductID         int64
+	SkuID             *int64
+	ProductCode       string
+	ProductName       string
+	Spec              string
+	Qty               pgtype.Numeric
+	UomID             int64
+	UomCode           string
+	UnitPrice         pgtype.Numeric
+	Amount            pgtype.Numeric
+	HsCode            string
+	Remark            string
+}
+
+type ContractVersion struct {
+	ID              int64
+	TenantID        int64
+	ContractID      int64
+	VersionNo       int32
+	BuyerName       string
+	BuyerAddress    string
+	SellerName      string
+	SellerAddress   string
+	Currency        string
+	Incoterm        string
+	PortOfLoading   string
+	PortOfDischarge string
+	PaymentMethod   string
+	DeliveryDate    pgtype.Date
+	Terms           string
+	TotalAmount     pgtype.Numeric
+	BaseAmount      pgtype.Numeric
+	FxRate          pgtype.Numeric
+	FxRateAt        pgtype.Timestamptz
+	FxSource        string
+	FxBaseCurrency  string
+	ChangeReason    string
+	Status          string
+	CreatedAt       pgtype.Timestamptz
+	CreatedBy       int64
+}
+
 type OutboxEvent struct {
 	ID            int64
 	TenantID      int64

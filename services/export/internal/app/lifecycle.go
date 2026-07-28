@@ -34,6 +34,10 @@ func (s *Service) setStatus(ctx context.Context, tenantID, id, operatorID int64,
 	if err != nil {
 		return "", err
 	}
+	if err := s.mayWrite(ctx, Operator{ID: operatorID}, current.SalesEmployeeID,
+		"EX_QUOTE_NOT_OWNER", "只能操作自己负责的报价单"); err != nil {
+		return "", err
+	}
 	if current.Status == to {
 		// Repeating a transition is a double click, not an error worth
 		// failing the user's action over.

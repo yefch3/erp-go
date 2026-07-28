@@ -90,6 +90,9 @@ message ListQuotationsRequest {
   string keyword = 2;
   int64 customer_id = 3;
   string status = 4;
+  // Hide quotations that already have a contract; used by the picker that
+  // generates one.
+  bool without_contract = 5;
 }
 
 message ListQuotationsResponse {

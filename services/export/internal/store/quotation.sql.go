@@ -307,28 +307,41 @@ func (q *Queries) ListQuotationItems(ctx context.Context, arg ListQuotationItems
 
 const listQuotations = `-- name: ListQuotations :many
 SELECT
-    id, quote_no, customer_id, customer_name, currency,
-    total_amount::text AS total_amount, base_amount::text AS base_amount,
-    status, sales_employee, coalesce(valid_until::text, '')::text AS valid_until,
-    created_at, count(*) OVER () AS total
-FROM quotations
-WHERE tenant_id = $1
-  AND ($2::text = '' OR status = $2::text)
-  AND ($3::bigint = 0 OR customer_id = $3::bigint)
-  AND ($4::text = ''
-       OR quote_no ILIKE '%' || $4::text || '%'
-       OR customer_name ILIKE '%' || $4::text || '%')
-ORDER BY id DESC
-LIMIT $6::int OFFSET $5::int
+    q.id, q.quote_no, q.customer_id, q.customer_name, q.currency,
+    q.total_amount::text AS total_amount, q.base_amount::text AS base_amount,
+    q.status, q.sales_employee, coalesce(q.valid_until::text, '')::text AS valid_until,
+    q.created_at, count(*) OVER () AS total
+FROM quotations q
+WHERE q.tenant_id = $1::bigint
+  -- Same data scope as contracts; see iam.VisibleEmployees.
+  AND ($2::bool
+       OR q.sales_employee_id = ANY($3::bigint[]))
+  AND ($4::text = '' OR q.status = $4::text)
+  AND ($5::bigint = 0 OR q.customer_id = $5::bigint)
+  AND ($6::text = ''
+       OR q.quote_no ILIKE '%' || $6::text || '%'
+       OR q.customer_name ILIKE '%' || $6::text || '%')
+  -- For the "generate a contract" picker: offering an offer that already has
+  -- a contract would only produce a guaranteed error.
+  AND ($7::bool = false
+       OR NOT EXISTS (SELECT 1 FROM contracts c
+                      WHERE c.tenant_id = q.tenant_id
+                        AND c.quotation_id = q.id
+                        AND c.status <> 'CANCELLED'))
+ORDER BY q.id DESC
+LIMIT $9::int OFFSET $8::int
 `
 
 type ListQuotationsParams struct {
-	TenantID   int64
-	Status     string
-	CustomerID int64
-	Keyword    string
-	RowOffset  int32
-	RowLimit   int32
+	TenantID        int64
+	VisibleAll      bool
+	VisibleIds      []int64
+	Status          string
+	CustomerID      int64
+	Keyword         string
+	WithoutContract bool
+	RowOffset       int32
+	RowLimit        int32
 }
 
 type ListQuotationsRow struct {
@@ -346,12 +359,17 @@ type ListQuotationsRow struct {
 	Total         int64
 }
 
+// Aliased because the correlated subquery below brings a second table into
+// scope, and an unqualified tenant_id would then be ambiguous.
 func (q *Queries) ListQuotations(ctx context.Context, arg ListQuotationsParams) ([]ListQuotationsRow, error) {
 	rows, err := q.db.Query(ctx, listQuotations,
 		arg.TenantID,
+		arg.VisibleAll,
+		arg.VisibleIds,
 		arg.Status,
 		arg.CustomerID,
 		arg.Keyword,
+		arg.WithoutContract,
 		arg.RowOffset,
 		arg.RowLimit,
 	)

@@ -1,5 +1,3 @@
-// Package app holds the export use cases. The first of them is the
-// quotation: what was offered, at which price, under which exchange rate.
 package app
 
 import (
@@ -9,32 +7,12 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/export/internal/store"
 )
-
-// Customer is the slice of a customer this service needs. Export never reads
-// masterdata's tables; it asks, and copies what it must display later.
-type Customer struct {
-	ID       int64
-	Name     string
-	Currency string
-	Status   string
-	Contacts []Contact
-}
-
-// Contact is one person at the customer; the quotation records which of them
-// it is addressed to, and where it would be sent.
-type Contact struct {
-	ID        int64
-	Name      string
-	Email     string
-	IsPrimary bool
-}
 
 // pickContact returns the addressee: the one asked for, or the primary when
 // none was chosen. Choosing a contact who works for a different customer is
@@ -57,53 +35,6 @@ func pickContact(customer Customer, contactID int64) (Contact, error) {
 		return customer.Contacts[0], nil
 	}
 	return Contact{}, nil
-}
-
-// Product is likewise the slice of a product a quotation line copies.
-type Product struct {
-	ID      int64
-	Code    string
-	Name    string
-	UomID   int64
-	UomCode string
-	Status  string
-}
-
-// Rate is one exchange-rate reading, taken once per document.
-type Rate struct {
-	Rate   decimal.Decimal
-	At     time.Time
-	Source string
-	Base   string
-}
-
-type Customers interface {
-	Get(ctx context.Context, id int64) (Customer, error)
-}
-
-type Products interface {
-	Get(ctx context.Context, id int64) (Product, error)
-}
-
-type Rates interface {
-	Latest(ctx context.Context, currency string) (Rate, error)
-}
-
-type Numbering interface {
-	Next(ctx context.Context, bizType string) (string, error)
-}
-
-type Service struct {
-	pool      *pgxpool.Pool
-	q         *store.Queries
-	customers Customers
-	products  Products
-	rates     Rates
-	number    Numbering
-}
-
-func New(pool *pgxpool.Pool, c Customers, p Products, r Rates, n Numbering) *Service {
-	return &Service{pool: pool, q: store.New(pool), customers: c, products: p, rates: r, number: n}
 }
 
 type ItemInput struct {
@@ -242,6 +173,10 @@ func (s *Service) UpdateQuotation(ctx context.Context, tenantID, id int64, in Qu
 	if err != nil {
 		return store.GetQuotationRow{}, nil, err
 	}
+	if err := s.mayWrite(ctx, Operator{ID: in.OperatorID, Name: in.OperatorName},
+		current.SalesEmployeeID, "EX_QUOTE_NOT_OWNER", "只能修改自己负责的报价单"); err != nil {
+		return store.GetQuotationRow{}, nil, err
+	}
 	if current.Status != "DRAFT" {
 		return store.GetQuotationRow{}, nil, apierr.Conflict("EX_NOT_DRAFT", "只有草稿可以修改，已发送的报价请新建一版")
 	}
@@ -320,23 +255,30 @@ func tsFrom(t time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: t, Valid: true}
 }
 
-func orDefault(v, def string) string {
-	if v == "" {
-		return def
-	}
-	return v
-}
-
-func itoa(n int) string {
-	return decimal.NewFromInt(int64(n)).String()
-}
-
 func translateUnique(err error, code, msg string) error {
-	var pgErr interface{ SQLState() string }
-	if errors.As(err, &pgErr) && pgErr.SQLState() == "23505" {
+	if isUniqueViolation(err) {
 		return apierr.Conflict(code, msg)
 	}
 	return err
+}
+
+// GetQuotationFor is GetQuotation with the caller's data scope applied; the
+// unscoped one stays for internal reads such as generating a contract.
+func (s *Service) GetQuotationFor(ctx context.Context, tenantID, id int64, op Operator) (store.GetQuotationRow, []store.ListQuotationItemsRow, error) {
+	q, items, err := s.GetQuotation(ctx, tenantID, id)
+	if err != nil {
+		return q, items, err
+	}
+	visible, err := s.visibleTo(ctx, op)
+	if err != nil {
+		return store.GetQuotationRow{}, nil, err
+	}
+	if !allowedOwner(visible, q.SalesEmployeeID) {
+		// "Not found" rather than "forbidden": confirming a document exists
+		// is itself information.
+		return store.GetQuotationRow{}, nil, apierr.NotFound("EX_QUOTE_NOT_FOUND", "报价单不存在")
+	}
+	return q, items, nil
 }
 
 func (s *Service) GetQuotation(ctx context.Context, tenantID, id int64) (store.GetQuotationRow, []store.ListQuotationItemsRow, error) {
@@ -351,10 +293,25 @@ func (s *Service) GetQuotation(ctx context.Context, tenantID, id int64) (store.G
 	return q, items, err
 }
 
-func (s *Service) ListQuotations(ctx context.Context, tenantID int64, keyword string, customerID int64, status string, page, size int32) ([]store.ListQuotationsRow, int64, error) {
+// QuotationFilter is the set of narrowing options a quotation list accepts.
+type QuotationFilter struct {
+	Keyword    string
+	CustomerID int64
+	Status     string
+	// WithoutContract hides offers that have already been written up.
+	WithoutContract bool
+}
+
+func (s *Service) ListQuotations(ctx context.Context, tenantID int64, f QuotationFilter, page, size int32, op Operator) ([]store.ListQuotationsRow, int64, error) {
 	page, size = normalizePage(page, size)
+	visible, err := s.visibleTo(ctx, op)
+	if err != nil {
+		return nil, 0, err
+	}
 	rows, err := s.q.ListQuotations(ctx, store.ListQuotationsParams{
-		TenantID: tenantID, Keyword: keyword, CustomerID: customerID, Status: status,
+		TenantID: tenantID, Keyword: f.Keyword, CustomerID: f.CustomerID, Status: f.Status,
+		WithoutContract: f.WithoutContract,
+		VisibleAll:      visible.All, VisibleIds: visible.EmployeeIDs,
 		RowLimit: size, RowOffset: (page - 1) * size,
 	})
 	if err != nil {
@@ -365,17 +322,4 @@ func (s *Service) ListQuotations(ctx context.Context, tenantID int64, keyword st
 		total = rows[0].Total
 	}
 	return rows, total, nil
-}
-
-func normalizePage(page, size int32) (int32, int32) {
-	if page < 1 {
-		page = 1
-	}
-	if size < 1 {
-		size = 20
-	}
-	if size > 200 {
-		size = 200
-	}
-	return page, size
 }
