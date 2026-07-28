@@ -74,6 +74,16 @@
               <el-option v-for="c in customers" :key="c.id" :value="c.id" :label="`${c.code} · ${c.name}`" />
             </el-select>
           </el-form-item>
+          <el-form-item :label="t('quotations.contact')">
+            <el-select v-model="form.contactId" clearable style="width: 100%" :placeholder="t('quotations.contactAuto')">
+              <el-option
+                v-for="c in contacts"
+                :key="c.id"
+                :value="c.id"
+                :label="c.email ? `${c.name} · ${c.email}` : c.name"
+              />
+            </el-select>
+          </el-form-item>
           <el-form-item :label="t('quotations.currency')" required>
             <el-select v-model="form.currency" style="width: 100%">
               <el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c" />
@@ -143,6 +153,10 @@
           </div>
         </div>
 
+        <div v-if="detail?.contactEmail" class="snapshot">
+          {{ t('quotations.addressedTo') }}: {{ detail.contactName }} &lt;{{ detail.contactEmail }}&gt;
+          <span class="hint">{{ t('quotations.sendManual') }}</span>
+        </div>
         <div v-if="detail" class="snapshot">
           {{ t('quotations.fxSnapshot') }}:
           1 {{ detail.fx.baseCurrency }} = {{ detail.fx.rate }} {{ detail.currency }}
@@ -159,13 +173,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post, put } from '../api'
 import { useAuthStore } from '../stores/auth'
 
 interface Customer { id: string; code: string; name: string }
+interface Contact { id: string; name: string; email: string; isPrimary: boolean }
 interface Product { id: string; code: string; name: string }
 interface OptionItem { code: string; label: string }
 interface Fx { rate: string; rateAt: string; source: string; baseCurrency: string }
@@ -174,6 +189,9 @@ interface Quotation {
   quoteNo: string
   customerId: string
   customerName: string
+  contactId: string
+  contactName: string
+  contactEmail: string
   currency: string
   incoterm: string
   portOfLoading: string
@@ -198,7 +216,7 @@ const STATUSES = ['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'CANCELLED
 const CURRENCIES = ['USD', 'EUR', 'CNY', 'GBP', 'JPY', 'HKD']
 const INCOTERMS = ['FOB', 'CIF', 'CFR', 'EXW', 'DDP']
 const EMPTY_FORM = {
-  customerId: '', currency: 'USD', incoterm: 'FOB', paymentMethod: '',
+  customerId: '', contactId: '', currency: 'USD', incoterm: 'FOB', paymentMethod: '',
   portOfLoading: '', portOfDischarge: '', validUntil: '', remark: '',
   items: [] as Item[],
 }
@@ -212,6 +230,7 @@ const customers = ref<Customer[]>([])
 const products = ref<Product[]>([])
 const paymentOptions = ref<OptionItem[]>([])
 const detail = ref<Quotation | null>(null)
+const contacts = ref<Contact[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = 10
@@ -246,6 +265,18 @@ const previewTotal = computed(() =>
     }, 0)
     .toFixed(2),
 )
+
+// The addressee list belongs to the chosen customer, so it is fetched with it.
+watch(() => form.customerId, async (id) => {
+  contacts.value = []
+  if (!id) return
+  const data = await get<{ customer: { contacts: { name: string; email: string; isPrimary: boolean }[] } }>(`/customers/${id}`)
+  // masterdata returns contacts positionally; the same 1-based handle the
+  // export service uses.
+  contacts.value = (data.customer.contacts ?? []).map((c, i) => ({
+    id: String(i + 1), name: c.name, email: c.email, isPrimary: c.isPrimary,
+  }))
+})
 
 async function load() {
   loading.value = true
@@ -282,7 +313,8 @@ async function openEdit(row: Quotation) {
     const data = await get<{ quotation: Quotation; items: any[] }>(`/quotations/${row.id}`)
     detail.value = data.quotation
     Object.assign(form, {
-      customerId: data.quotation.customerId, currency: data.quotation.currency,
+      customerId: data.quotation.customerId, contactId: data.quotation.contactId || '',
+      currency: data.quotation.currency,
       incoterm: data.quotation.incoterm, paymentMethod: data.quotation.paymentMethod,
       portOfLoading: data.quotation.portOfLoading, portOfDischarge: data.quotation.portOfDischarge,
       validUntil: data.quotation.validUntil, remark: data.quotation.remark,
@@ -308,7 +340,7 @@ async function save() {
   }
   saving.value = true
   const body = {
-    customerId: form.customerId, currency: form.currency, incoterm: form.incoterm,
+    customerId: form.customerId, contactId: form.contactId || '0', currency: form.currency, incoterm: form.incoterm,
     portOfLoading: form.portOfLoading, portOfDischarge: form.portOfDischarge,
     paymentMethod: form.paymentMethod, validUntil: form.validUntil, remark: form.remark,
     items: form.items.map((i) => ({

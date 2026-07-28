@@ -62,17 +62,20 @@ func (q *Queries) AddQuotationItem(ctx context.Context, arg AddQuotationItemPara
 const createQuotation = `-- name: CreateQuotation :one
 
 INSERT INTO quotations (
-    tenant_id, quote_no, customer_id, customer_name, currency, incoterm,
+    tenant_id, quote_no, customer_id, customer_name,
+    contact_id, contact_name, contact_email, currency, incoterm,
     port_of_loading, port_of_discharge, payment_method, valid_until,
     fx_rate, fx_rate_at, fx_source, fx_base_currency,
     total_amount, base_amount, remark, sales_employee_id, sales_employee,
     created_by, updated_by
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9,
-    nullif($16::text, '')::date,
-    $17::text::numeric, $18::timestamptz,
+    $1, $2, $3, $4,
+    nullif($16::bigint, 0), $17::text, $18::text,
+    $5, $6, $7, $8, $9,
+    nullif($19::text, '')::date,
+    $20::text::numeric, $21::timestamptz,
     $10, $11,
-    $19::text::numeric, $20::text::numeric,
+    $22::text::numeric, $23::text::numeric,
     $12, $13, $14, $15, $15
 )
 RETURNING id
@@ -94,6 +97,9 @@ type CreateQuotationParams struct {
 	SalesEmployeeID int64
 	SalesEmployee   string
 	CreatedBy       int64
+	ContactID       int64
+	ContactName     string
+	ContactEmail    string
 	ValidUntil      string
 	FxRate          string
 	FxRateAt        pgtype.Timestamptz
@@ -120,6 +126,9 @@ func (q *Queries) CreateQuotation(ctx context.Context, arg CreateQuotationParams
 		arg.SalesEmployeeID,
 		arg.SalesEmployee,
 		arg.CreatedBy,
+		arg.ContactID,
+		arg.ContactName,
+		arg.ContactEmail,
 		arg.ValidUntil,
 		arg.FxRate,
 		arg.FxRateAt,
@@ -147,7 +156,9 @@ func (q *Queries) DeleteQuotationItems(ctx context.Context, arg DeleteQuotationI
 
 const getQuotation = `-- name: GetQuotation :one
 SELECT
-    id, tenant_id, quote_no, customer_id, customer_name, currency, incoterm,
+    id, tenant_id, quote_no, customer_id, customer_name,
+    coalesce(contact_id, 0)::bigint AS contact_id, contact_name, contact_email,
+    currency, incoterm,
     port_of_loading, port_of_discharge, payment_method,
     coalesce(valid_until::text, '')::text AS valid_until,
     fx_rate::text AS fx_rate, fx_rate_at, fx_source, fx_base_currency,
@@ -168,6 +179,9 @@ type GetQuotationRow struct {
 	QuoteNo         string
 	CustomerID      int64
 	CustomerName    string
+	ContactID       int64
+	ContactName     string
+	ContactEmail    string
 	Currency        string
 	Incoterm        string
 	PortOfLoading   string
@@ -198,6 +212,9 @@ func (q *Queries) GetQuotation(ctx context.Context, arg GetQuotationParams) (Get
 		&i.QuoteNo,
 		&i.CustomerID,
 		&i.CustomerName,
+		&i.ContactID,
+		&i.ContactName,
+		&i.ContactEmail,
 		&i.Currency,
 		&i.Incoterm,
 		&i.PortOfLoading,
@@ -401,11 +418,15 @@ func (q *Queries) SetQuotationStatus(ctx context.Context, arg SetQuotationStatus
 
 const updateQuotationHeader = `-- name: UpdateQuotationHeader :execrows
 UPDATE quotations SET
-    customer_id = $3, customer_name = $4, currency = $5, incoterm = $6,
+    customer_id = $3, customer_name = $4,
+    contact_id = nullif($12::bigint, 0),
+    contact_name = $13::text,
+    contact_email = $14::text,
+    currency = $5, incoterm = $6,
     port_of_loading = $7, port_of_discharge = $8, payment_method = $9,
-    valid_until = nullif($12::text, '')::date,
-    total_amount = $13::text::numeric,
-    base_amount = $14::text::numeric,
+    valid_until = nullif($15::text, '')::date,
+    total_amount = $16::text::numeric,
+    base_amount = $17::text::numeric,
     remark = $10, updated_at = now(), updated_by = $11
 WHERE tenant_id = $1 AND id = $2 AND status = 'DRAFT'
 `
@@ -422,6 +443,9 @@ type UpdateQuotationHeaderParams struct {
 	PaymentMethod   string
 	Remark          string
 	UpdatedBy       int64
+	ContactID       int64
+	ContactName     string
+	ContactEmail    string
 	ValidUntil      string
 	TotalAmount     string
 	BaseAmount      string
@@ -440,6 +464,9 @@ func (q *Queries) UpdateQuotationHeader(ctx context.Context, arg UpdateQuotation
 		arg.PaymentMethod,
 		arg.Remark,
 		arg.UpdatedBy,
+		arg.ContactID,
+		arg.ContactName,
+		arg.ContactEmail,
 		arg.ValidUntil,
 		arg.TotalAmount,
 		arg.BaseAmount,

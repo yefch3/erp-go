@@ -56,6 +56,9 @@ type Quotation struct {
 	CreatedBy       int64
 	UpdatedAt       pgtype.Timestamptz
 	UpdatedBy       int64
+	ContactID       *int64
+	ContactName     string
+	ContactEmail    string
 }
 
 type QuotationItem struct {

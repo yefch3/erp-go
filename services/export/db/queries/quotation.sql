@@ -3,13 +3,16 @@
 
 -- name: CreateQuotation :one
 INSERT INTO quotations (
-    tenant_id, quote_no, customer_id, customer_name, currency, incoterm,
+    tenant_id, quote_no, customer_id, customer_name,
+    contact_id, contact_name, contact_email, currency, incoterm,
     port_of_loading, port_of_discharge, payment_method, valid_until,
     fx_rate, fx_rate_at, fx_source, fx_base_currency,
     total_amount, base_amount, remark, sales_employee_id, sales_employee,
     created_by, updated_by
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9,
+    $1, $2, $3, $4,
+    nullif(sqlc.arg(contact_id)::bigint, 0), sqlc.arg(contact_name)::text, sqlc.arg(contact_email)::text,
+    $5, $6, $7, $8, $9,
     nullif(sqlc.arg(valid_until)::text, '')::date,
     sqlc.arg(fx_rate)::text::numeric, sqlc.arg(fx_rate_at)::timestamptz,
     $10, $11,
@@ -20,7 +23,11 @@ RETURNING id;
 
 -- name: UpdateQuotationHeader :execrows
 UPDATE quotations SET
-    customer_id = $3, customer_name = $4, currency = $5, incoterm = $6,
+    customer_id = $3, customer_name = $4,
+    contact_id = nullif(sqlc.arg(contact_id)::bigint, 0),
+    contact_name = sqlc.arg(contact_name)::text,
+    contact_email = sqlc.arg(contact_email)::text,
+    currency = $5, incoterm = $6,
     port_of_loading = $7, port_of_discharge = $8, payment_method = $9,
     valid_until = nullif(sqlc.arg(valid_until)::text, '')::date,
     total_amount = sqlc.arg(total_amount)::text::numeric,
@@ -30,7 +37,9 @@ WHERE tenant_id = $1 AND id = $2 AND status = 'DRAFT';
 
 -- name: GetQuotation :one
 SELECT
-    id, tenant_id, quote_no, customer_id, customer_name, currency, incoterm,
+    id, tenant_id, quote_no, customer_id, customer_name,
+    coalesce(contact_id, 0)::bigint AS contact_id, contact_name, contact_email,
+    currency, incoterm,
     port_of_loading, port_of_discharge, payment_method,
     coalesce(valid_until::text, '')::text AS valid_until,
     fx_rate::text AS fx_rate, fx_rate_at, fx_source, fx_base_currency,

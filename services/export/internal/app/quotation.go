@@ -24,6 +24,39 @@ type Customer struct {
 	Name     string
 	Currency string
 	Status   string
+	Contacts []Contact
+}
+
+// Contact is one person at the customer; the quotation records which of them
+// it is addressed to, and where it would be sent.
+type Contact struct {
+	ID        int64
+	Name      string
+	Email     string
+	IsPrimary bool
+}
+
+// pickContact returns the addressee: the one asked for, or the primary when
+// none was chosen. Choosing a contact who works for a different customer is
+// refused rather than silently ignored.
+func pickContact(customer Customer, contactID int64) (Contact, error) {
+	if contactID != 0 {
+		for _, c := range customer.Contacts {
+			if c.ID == contactID {
+				return c, nil
+			}
+		}
+		return Contact{}, apierr.Invalid("EX_CONTACT_NOT_FOUND", "所选联系人不属于该客户")
+	}
+	for _, c := range customer.Contacts {
+		if c.IsPrimary {
+			return c, nil
+		}
+	}
+	if len(customer.Contacts) > 0 {
+		return customer.Contacts[0], nil
+	}
+	return Contact{}, nil
 }
 
 // Product is likewise the slice of a product a quotation line copies.
@@ -83,6 +116,7 @@ type ItemInput struct {
 
 type QuotationInput struct {
 	CustomerID                     int64
+	ContactID                      int64
 	Currency, Incoterm             string
 	PortOfLoading, PortOfDischarge string
 	PaymentMethod, ValidUntil      string
@@ -157,6 +191,10 @@ func (s *Service) CreateQuotation(ctx context.Context, tenantID int64, in Quotat
 	if err != nil {
 		return store.GetQuotationRow{}, nil, err
 	}
+	contact, err := pickContact(customer, in.ContactID)
+	if err != nil {
+		return store.GetQuotationRow{}, nil, err
+	}
 	// The rate is read once, here, and stored with the document. Everything
 	// downstream reads the stored copy, never the live rate.
 	rate, err := s.rates.Latest(ctx, in.Currency)
@@ -174,7 +212,9 @@ func (s *Service) CreateQuotation(ctx context.Context, tenantID int64, in Quotat
 		var err error
 		id, err = q.CreateQuotation(ctx, store.CreateQuotationParams{
 			TenantID: tenantID, QuoteNo: quoteNo, CustomerID: customer.ID,
-			CustomerName: customer.Name, Currency: in.Currency, Incoterm: orDefault(in.Incoterm, "FOB"),
+			CustomerName: customer.Name,
+			ContactID:    contact.ID, ContactName: contact.Name, ContactEmail: contact.Email,
+			Currency: in.Currency, Incoterm: orDefault(in.Incoterm, "FOB"),
 			PortOfLoading: in.PortOfLoading, PortOfDischarge: in.PortOfDischarge,
 			PaymentMethod: in.PaymentMethod, ValidUntil: in.ValidUntil,
 			FxRate: rate.Rate.String(), FxRateAt: tsFrom(rate.At),
@@ -209,6 +249,10 @@ func (s *Service) UpdateQuotation(ctx context.Context, tenantID, id int64, in Qu
 	if err != nil {
 		return store.GetQuotationRow{}, nil, err
 	}
+	contact, err := pickContact(customer, in.ContactID)
+	if err != nil {
+		return store.GetQuotationRow{}, nil, err
+	}
 	rate := Rate{Source: current.FxSource, Base: current.FxBaseCurrency}
 	if rate.Rate, err = decimal.NewFromString(current.FxRate); err != nil {
 		return store.GetQuotationRow{}, nil, err
@@ -218,6 +262,7 @@ func (s *Service) UpdateQuotation(ctx context.Context, tenantID, id int64, in Qu
 		q := s.q.WithTx(tx)
 		rows, err := q.UpdateQuotationHeader(ctx, store.UpdateQuotationHeaderParams{
 			TenantID: tenantID, ID: id, CustomerID: customer.ID, CustomerName: customer.Name,
+			ContactID: contact.ID, ContactName: contact.Name, ContactEmail: contact.Email,
 			Currency: orDefault(in.Currency, current.Currency), Incoterm: orDefault(in.Incoterm, "FOB"),
 			PortOfLoading: in.PortOfLoading, PortOfDischarge: in.PortOfDischarge,
 			PaymentMethod: in.PaymentMethod, ValidUntil: in.ValidUntil,

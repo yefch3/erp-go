@@ -50,6 +50,11 @@ message Quotation {
   string quote_no = 2;
   int64 customer_id = 3;
   string customer_name = 4;
+  // Who at the customer this offer is addressed to; the address is kept
+  // next to the id so it survives the contact being replaced.
+  int64 contact_id = 21;
+  string contact_name = 22;
+  string contact_email = 23;
   string currency = 5;
   string incoterm = 6;
   string port_of_loading = 7;
@@ -103,6 +108,7 @@ message GetQuotationResponse {
 
 message CreateQuotationRequest {
   int64 customer_id = 1;
+  int64 contact_id = 10;
   string currency = 2;
   string incoterm = 3;
   string port_of_loading = 4;
@@ -121,6 +127,7 @@ message CreateQuotationResponse {
 message UpdateQuotationRequest {
   int64 id = 1;
   int64 customer_id = 2;
+  int64 contact_id = 11;
   string currency = 3;
   string incoterm = 4;
   string port_of_loading = 5;

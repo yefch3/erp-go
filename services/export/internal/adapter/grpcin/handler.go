@@ -50,7 +50,8 @@ func (h *Handler) GetQuotation(ctx context.Context, req *exv1.GetQuotationReques
 func (h *Handler) CreateQuotation(ctx context.Context, req *exv1.CreateQuotationRequest) (*exv1.CreateQuotationResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
 	q, items, err := h.svc.CreateQuotation(ctx, grpcx.TenantID(ctx), app.QuotationInput{
-		CustomerID: req.GetCustomerId(), Currency: req.GetCurrency(), Incoterm: req.GetIncoterm(),
+		CustomerID: req.GetCustomerId(), ContactID: req.GetContactId(),
+		Currency: req.GetCurrency(), Incoterm: req.GetIncoterm(),
 		PortOfLoading: req.GetPortOfLoading(), PortOfDischarge: req.GetPortOfDischarge(),
 		PaymentMethod: req.GetPaymentMethod(), ValidUntil: req.GetValidUntil(),
 		Remark: req.GetRemark(), Items: itemsFromProto(req.GetItems()),
@@ -65,7 +66,8 @@ func (h *Handler) CreateQuotation(ctx context.Context, req *exv1.CreateQuotation
 func (h *Handler) UpdateQuotation(ctx context.Context, req *exv1.UpdateQuotationRequest) (*exv1.UpdateQuotationResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
 	q, items, err := h.svc.UpdateQuotation(ctx, grpcx.TenantID(ctx), req.GetId(), app.QuotationInput{
-		CustomerID: req.GetCustomerId(), Currency: req.GetCurrency(), Incoterm: req.GetIncoterm(),
+		CustomerID: req.GetCustomerId(), ContactID: req.GetContactId(),
+		Currency: req.GetCurrency(), Incoterm: req.GetIncoterm(),
 		PortOfLoading: req.GetPortOfLoading(), PortOfDischarge: req.GetPortOfDischarge(),
 		PaymentMethod: req.GetPaymentMethod(), ValidUntil: req.GetValidUntil(),
 		Remark: req.GetRemark(), Items: itemsFromProto(req.GetItems()),
@@ -127,6 +129,7 @@ func itemsFromProto(in []*exv1.ItemInput) []app.ItemInput {
 func quotationToProto(q store.GetQuotationRow) *exv1.Quotation {
 	return &exv1.Quotation{
 		Id: q.ID, QuoteNo: q.QuoteNo, CustomerId: q.CustomerID, CustomerName: q.CustomerName,
+		ContactId: q.ContactID, ContactName: q.ContactName, ContactEmail: q.ContactEmail,
 		Currency: q.Currency, Incoterm: q.Incoterm, PortOfLoading: q.PortOfLoading,
 		PortOfDischarge: q.PortOfDischarge, PaymentMethod: q.PaymentMethod,
 		ValidUntil: q.ValidUntil,

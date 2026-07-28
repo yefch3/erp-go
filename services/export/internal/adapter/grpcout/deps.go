@@ -27,7 +27,18 @@ func (c *Customers) Get(ctx context.Context, id int64) (app.Customer, error) {
 		return app.Customer{}, err
 	}
 	cu := resp.GetCustomer()
-	return app.Customer{ID: cu.GetId(), Name: cu.GetName(), Currency: cu.GetCurrency(), Status: cu.GetStatus()}, nil
+	contacts := make([]app.Contact, 0, len(cu.GetContacts()))
+	for i, c := range cu.GetContacts() {
+		// masterdata returns contacts without ids on the customer message, so
+		// position is the stable handle within one customer's list.
+		contacts = append(contacts, app.Contact{
+			ID: int64(i + 1), Name: c.GetName(), Email: c.GetEmail(), IsPrimary: c.GetIsPrimary(),
+		})
+	}
+	return app.Customer{
+		ID: cu.GetId(), Name: cu.GetName(), Currency: cu.GetCurrency(),
+		Status: cu.GetStatus(), Contacts: contacts,
+	}, nil
 }
 
 type Products struct{ client pdv1.CatalogServiceClient }
