@@ -5,6 +5,7 @@ use (
 	./pkg
 	./services/approval
 	./services/iam
+	./services/export
 	./services/fx
 	./services/gateway
 	./services/masterdata

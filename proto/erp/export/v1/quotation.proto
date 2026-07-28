@@ -1,0 +1,163 @@
+syntax = "proto3";
+
+package erp.export.v1;
+
+import "erp/common/v1/pagination.proto";
+
+// QuotationService owns quotations: what was offered to a customer, at which
+// prices, under which exchange rate. Once sent, a quotation is a promise, so
+// the rate it used is frozen into the document rather than looked up again.
+service QuotationService {
+  rpc ListQuotations(ListQuotationsRequest) returns (ListQuotationsResponse);
+  rpc GetQuotation(GetQuotationRequest) returns (GetQuotationResponse);
+  rpc CreateQuotation(CreateQuotationRequest) returns (CreateQuotationResponse);
+  // Only a draft can be edited; a sent quotation is superseded by a new one.
+  rpc UpdateQuotation(UpdateQuotationRequest) returns (UpdateQuotationResponse);
+  rpc SendQuotation(SendQuotationRequest) returns (SendQuotationResponse);
+  // Record what the customer answered.
+  rpc RespondQuotation(RespondQuotationRequest) returns (RespondQuotationResponse);
+  rpc CancelQuotation(CancelQuotationRequest) returns (CancelQuotationResponse);
+}
+
+// FxSnapshot is the rate as it stood when the document was created. It is
+// embedded, never a reference: later rate moves must not rewrite history.
+message FxSnapshot {
+  string rate = 1;          // units of the document currency per base
+  string rate_at = 2;       // RFC 3339
+  string source = 3;        // FRANKFURTER
+  string base_currency = 4; // USD
+}
+
+message QuotationItem {
+  int64 id = 1;
+  int32 line_no = 2;
+  int64 product_id = 3;
+  int64 sku_id = 4;
+  // Copied at quoting time so a later product rename cannot alter history.
+  string product_code = 5;
+  string product_name = 6;
+  string spec = 7;
+  string qty = 8;
+  int64 uom_id = 9;
+  string uom_code = 10;
+  string unit_price = 11;
+  string amount = 12;
+  string remark = 13;
+}
+
+message Quotation {
+  int64 id = 1;
+  string quote_no = 2;
+  int64 customer_id = 3;
+  string customer_name = 4;
+  string currency = 5;
+  string incoterm = 6;
+  string port_of_loading = 7;
+  string port_of_discharge = 8;
+  string payment_method = 9;
+  string valid_until = 10;
+  FxSnapshot fx = 11;
+  string total_amount = 12;
+  // total_amount converted at the snapshot rate.
+  string base_amount = 13;
+  string remark = 14;
+  string status = 15;
+  int64 sales_employee_id = 16;
+  string sales_employee = 17;
+  string sent_at = 18;
+  string responded_at = 19;
+  string created_at = 20;
+}
+
+// ItemInput is one line the caller wants quoted. Only the product, quantity
+// and price come from the client; names and units are resolved server-side.
+message ItemInput {
+  int64 product_id = 1;
+  int64 sku_id = 2;
+  string spec = 3;
+  string qty = 4;
+  string unit_price = 5;
+  string remark = 6;
+}
+
+message ListQuotationsRequest {
+  erp.common.v1.PageRequest page = 1;
+  string keyword = 2;
+  int64 customer_id = 3;
+  string status = 4;
+}
+
+message ListQuotationsResponse {
+  repeated Quotation quotations = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message GetQuotationRequest {
+  int64 id = 1;
+}
+
+message GetQuotationResponse {
+  Quotation quotation = 1;
+  repeated QuotationItem items = 2;
+}
+
+message CreateQuotationRequest {
+  int64 customer_id = 1;
+  string currency = 2;
+  string incoterm = 3;
+  string port_of_loading = 4;
+  string port_of_discharge = 5;
+  string payment_method = 6;
+  string valid_until = 7;
+  string remark = 8;
+  repeated ItemInput items = 9;
+}
+
+message CreateQuotationResponse {
+  Quotation quotation = 1;
+  repeated QuotationItem items = 2;
+}
+
+message UpdateQuotationRequest {
+  int64 id = 1;
+  int64 customer_id = 2;
+  string currency = 3;
+  string incoterm = 4;
+  string port_of_loading = 5;
+  string port_of_discharge = 6;
+  string payment_method = 7;
+  string valid_until = 8;
+  string remark = 9;
+  repeated ItemInput items = 10;
+}
+
+message UpdateQuotationResponse {
+  Quotation quotation = 1;
+  repeated QuotationItem items = 2;
+}
+
+message SendQuotationRequest {
+  int64 id = 1;
+}
+
+message SendQuotationResponse {
+  string status = 1;
+}
+
+message RespondQuotationRequest {
+  int64 id = 1;
+  // ACCEPTED or REJECTED.
+  string status = 2;
+}
+
+message RespondQuotationResponse {
+  string status = 1;
+}
+
+message CancelQuotationRequest {
+  int64 id = 1;
+}
+
+message CancelQuotationResponse {
+  string status = 1;
+}

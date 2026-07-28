@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	apv1 "github.com/sgao19/erp-go/gen/go/erp/approval/v1"
+	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
 	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
@@ -39,6 +40,7 @@ type Server struct {
 	Approval    apv1.ApprovalServiceClient
 	Catalog     pdv1.CatalogServiceClient
 	Attachments pdv1.AttachmentServiceClient
+	Quotations  exv1.QuotationServiceClient
 	JWTSecret   string
 	Log         *slog.Logger
 }
@@ -104,6 +106,15 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("product:product:write")).Post("/api/products/{id}/attachments/presign", s.presignUpload)
 		r.With(s.perm("product:product:write")).Post("/api/products/{id}/attachments", s.registerAttachment)
 		r.With(s.perm("product:product:write")).Delete("/api/attachments/{id}", s.removeAttachment)
+		// Quotations. Sending and recording the customer's answer are writes:
+		// they change what the company has promised.
+		r.With(s.perm("export:quotation:read")).Get("/api/quotations", s.listQuotations)
+		r.With(s.perm("export:quotation:read")).Get("/api/quotations/{id}", s.getQuotation)
+		r.With(s.perm("export:quotation:write")).Post("/api/quotations", s.createQuotation)
+		r.With(s.perm("export:quotation:write")).Put("/api/quotations/{id}", s.updateQuotation)
+		r.With(s.perm("export:quotation:write")).Post("/api/quotations/{id}/send", s.sendQuotation)
+		r.With(s.perm("export:quotation:write")).Post("/api/quotations/{id}/respond", s.respondQuotation)
+		r.With(s.perm("export:quotation:write")).Post("/api/quotations/{id}/cancel", s.cancelQuotation)
 		// Approval todos are personal: the service filters by the caller's
 		// employee id, so the permission only gates "may act on approvals".
 		r.With(s.perm("approval:task:act")).Get("/api/approvals/todos", s.myTodos)

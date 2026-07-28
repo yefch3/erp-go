@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	apv1 "github.com/sgao19/erp-go/gen/go/erp/approval/v1"
+	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
 	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
@@ -68,6 +69,11 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer pdConn.Close()
+	exConn, err := dial(cfg.ExportAddr)
+	if err != nil {
+		return err
+	}
+	defer exConn.Close()
 
 	srv := &httpapi.Server{
 		IAM:         iamv1.NewAuthServiceClient(iamConn),
@@ -81,6 +87,7 @@ func run(log *slog.Logger) error {
 		Approval:    apv1.NewApprovalServiceClient(apConn),
 		Catalog:     pdv1.NewCatalogServiceClient(pdConn),
 		Attachments: pdv1.NewAttachmentServiceClient(pdConn),
+		Quotations:  exv1.NewQuotationServiceClient(exConn),
 		JWTSecret:   cfg.JWTSecret,
 		Log:         log,
 	}

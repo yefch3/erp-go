@@ -35,6 +35,7 @@ frontend/src/
     ├── ProductsPage.vue
     ├── EmployeesPage.vue
     ├── RolesPage.vue
+    ├── QuotationsPage.vue
     └── FxPage.vue
 ```
 
@@ -81,6 +82,7 @@ frontend/src/
 | 产品管理 | /products | product:product:read(写按钮 :write) | /products 增改查、/product-categories、/uoms、SKU、附件预签名上传 |
 | 员工管理 | /settings/employees | iam:employee:read(写按钮 :write，分配角色 iam:role:write) | /employees、/departments、开账号、重置密码、分配角色 |
 | 角色权限 | /settings/roles | iam:role:read(写按钮 :write) | /roles、/permissions、授权矩阵 |
+| 报价单 | /quotations | export:quotation:read(写按钮 :write) | /quotations 增改查、发送、客户答复 |
 | 汇率中心 | /fx | fx:rate:read | /fx/rates、/fx/anomalies(只读,汇率仅来自 API 抓取) |
 
 ### 阶段 1 收尾
@@ -93,7 +95,7 @@ frontend/src/
 
 | 页面 | 路由 | 权限(新增码) | 说明 |
 |---|---|---|---|
-| 报价单列表/编辑 | /quotations | export:quotation:* | 客户+产品明细+实时汇率换算;“接受”后一键生成合同草稿 |
+| 报价单→合同 | /quotations | export:quotation:* | 已接受的报价一键生成合同草稿(待合同落地) |
 | 合同列表 | /contracts | export:contract:read | 状态筛选(草稿/审批中/待签署/生效/执行中/完成) |
 | 合同详情 | /contracts/:id | export:contract:* | **本系统最复杂页面**:基础信息、明细、汇率快照展示、版本历史、状态机操作按钮(提交审批/签署/变更)、执行进度标签页 |
 | 出货计划 | /shipments | export:shipment:* | 合同拆批次、锁库存申请、累计数量校验提示 |

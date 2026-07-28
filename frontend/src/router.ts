@@ -12,6 +12,7 @@ export const router = createRouter({
         { path: 'todos', component: () => import('./pages/TodosPage.vue') },
         { path: 'customers', component: () => import('./pages/CustomersPage.vue') },
         { path: 'products', component: () => import('./pages/ProductsPage.vue') },
+        { path: 'quotations', component: () => import('./pages/QuotationsPage.vue') },
         { path: 'fx', component: () => import('./pages/FxPage.vue') },
         { path: 'settings/employees', component: () => import('./pages/EmployeesPage.vue') },
         { path: 'settings/roles', component: () => import('./pages/RolesPage.vue') },
