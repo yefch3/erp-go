@@ -104,6 +104,17 @@ func ToStatus(err error) error {
 	return st.Err()
 }
 
+// CodeFromError extracts the business code from an error that has not
+// crossed a gRPC boundary, e.g. inside an event consumer calling its own
+// application service. Returns "" for anything that is not a business error.
+func CodeFromError(err error) string {
+	var e *Error
+	if errors.As(err, &e) {
+		return e.Code
+	}
+	return ""
+}
+
 // CodeFromStatus extracts the business code from a gRPC error on the
 // caller side. Returns "" when the error carries no ErrorInfo detail.
 func CodeFromStatus(err error) string {

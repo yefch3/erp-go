@@ -4,10 +4,10 @@ use (
 	./gen
 	./pkg
 	./services/approval
-	./services/iam
 	./services/export
 	./services/fx
 	./services/gateway
+	./services/iam
 	./services/masterdata
 	./services/product
 )

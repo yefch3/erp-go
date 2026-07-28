@@ -31,7 +31,7 @@ func ServerInterceptors(log *slog.Logger) grpc.ServerOption {
 		unaryRecovery(log),
 		unaryOperator(),
 		unaryLog(log),
-		unaryError(),
+		unaryError(log),
 	)
 }
 
@@ -56,8 +56,8 @@ func unaryOperator() grpc.UnaryServerInterceptor {
 
 // unaryError maps domain errors (apierr.Error) onto gRPC statuses with a
 // stable business code, so clients never match on message strings.
-func unaryError() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo,
+func unaryError(log *slog.Logger) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler) (any, error) {
 		resp, err := handler(ctx, req)
 		if err == nil {
@@ -66,6 +66,11 @@ func unaryError() grpc.UnaryServerInterceptor {
 		if _, ok := status.FromError(err); ok && apierr.CodeFromStatus(err) != "" {
 			return nil, err // already a mapped status
 		}
+		// Anything that is not a business error becomes a bare "internal
+		// error" for the caller, on purpose: internals must not leak. But it
+		// has to be readable on OUR side, or an outage is undiagnosable —
+		// log the cause here, where it still exists.
+		log.ErrorContext(ctx, "unhandled error", "method", info.FullMethod, "err", err.Error())
 		return nil, apierr.ToStatus(err)
 	}
 }
