@@ -41,9 +41,11 @@
         <el-table-column :label="t('common.actions')" width="190" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">
-              {{ row.status === 'DRAFT' && canWrite ? t('common.edit') : t('quotations.view') }}
+              {{ row.status === 'DRAFT' && canWrite && auth.owns(row.salesEmployeeId) ? t('common.edit') : t('quotations.view') }}
             </el-button>
-            <template v-if="canWrite">
+            <!-- Ownership, not just the permission code: a wide data scope is
+                 for watching other people's work, not doing it. -->
+            <template v-if="canWrite && auth.owns(row.salesEmployeeId)">
               <el-button v-if="row.status === 'DRAFT'" link type="primary" @click="act(row, 'send')">
                 {{ t('quotations.send') }}
               </el-button>
@@ -187,6 +189,7 @@ interface Fx { rate: string; rateAt: string; source: string; baseCurrency: strin
 interface Quotation {
   id: string
   quoteNo: string
+  salesEmployeeId: string
   customerId: string
   customerName: string
   contactId: string
@@ -306,7 +309,8 @@ function openCreate() {
 
 async function openEdit(row: Quotation) {
   editingId.value = row.id
-  readOnly.value = row.status !== 'DRAFT' || !canWrite
+  // Somebody else's quotation opens read-only however wide the scope is.
+  readOnly.value = row.status !== 'DRAFT' || !canWrite || !auth.owns(row.salesEmployeeId)
   dialogOpen.value = true
   loadingDetail.value = true
   try {

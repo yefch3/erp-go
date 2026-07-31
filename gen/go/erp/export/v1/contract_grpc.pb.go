@@ -22,6 +22,7 @@ const (
 	ContractService_ListContracts_FullMethodName               = "/erp.export.v1.ContractService/ListContracts"
 	ContractService_GetContract_FullMethodName                 = "/erp.export.v1.ContractService/GetContract"
 	ContractService_CreateContractFromQuotation_FullMethodName = "/erp.export.v1.ContractService/CreateContractFromQuotation"
+	ContractService_CreateContract_FullMethodName              = "/erp.export.v1.ContractService/CreateContract"
 	ContractService_UpdateContract_FullMethodName              = "/erp.export.v1.ContractService/UpdateContract"
 	ContractService_SubmitContract_FullMethodName              = "/erp.export.v1.ContractService/SubmitContract"
 	ContractService_ChangeContract_FullMethodName              = "/erp.export.v1.ContractService/ChangeContract"
@@ -48,6 +49,10 @@ type ContractServiceClient interface {
 	// Turn an accepted quotation into a draft contract, inheriting its prices
 	// and its exchange-rate snapshot.
 	CreateContractFromQuotation(ctx context.Context, in *CreateContractFromQuotationRequest, opts ...grpc.CallOption) (*CreateContractFromQuotationResponse, error)
+	// Write up a contract that never was a quotation - negotiated by email, the
+	// signed paper uploaded as an attachment. Lines are still required: nothing
+	// downstream can read a PDF.
+	CreateContract(ctx context.Context, in *CreateContractRequest, opts ...grpc.CallOption) (*CreateContractResponse, error)
 	// Edit the draft version in place. Refused once the version is submitted.
 	UpdateContract(ctx context.Context, in *UpdateContractRequest, opts ...grpc.CallOption) (*UpdateContractResponse, error)
 	// Hand the current draft version to the approval engine.
@@ -103,6 +108,16 @@ func (c *contractServiceClient) CreateContractFromQuotation(ctx context.Context,
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateContractFromQuotationResponse)
 	err := c.cc.Invoke(ctx, ContractService_CreateContractFromQuotation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *contractServiceClient) CreateContract(ctx context.Context, in *CreateContractRequest, opts ...grpc.CallOption) (*CreateContractResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateContractResponse)
+	err := c.cc.Invoke(ctx, ContractService_CreateContract_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -232,6 +247,10 @@ type ContractServiceServer interface {
 	// Turn an accepted quotation into a draft contract, inheriting its prices
 	// and its exchange-rate snapshot.
 	CreateContractFromQuotation(context.Context, *CreateContractFromQuotationRequest) (*CreateContractFromQuotationResponse, error)
+	// Write up a contract that never was a quotation - negotiated by email, the
+	// signed paper uploaded as an attachment. Lines are still required: nothing
+	// downstream can read a PDF.
+	CreateContract(context.Context, *CreateContractRequest) (*CreateContractResponse, error)
 	// Edit the draft version in place. Refused once the version is submitted.
 	UpdateContract(context.Context, *UpdateContractRequest) (*UpdateContractResponse, error)
 	// Hand the current draft version to the approval engine.
@@ -271,6 +290,9 @@ func (UnimplementedContractServiceServer) GetContract(context.Context, *GetContr
 }
 func (UnimplementedContractServiceServer) CreateContractFromQuotation(context.Context, *CreateContractFromQuotationRequest) (*CreateContractFromQuotationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateContractFromQuotation not implemented")
+}
+func (UnimplementedContractServiceServer) CreateContract(context.Context, *CreateContractRequest) (*CreateContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateContract not implemented")
 }
 func (UnimplementedContractServiceServer) UpdateContract(context.Context, *UpdateContractRequest) (*UpdateContractResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateContract not implemented")
@@ -376,6 +398,24 @@ func _ContractService_CreateContractFromQuotation_Handler(srv interface{}, ctx c
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ContractServiceServer).CreateContractFromQuotation(ctx, req.(*CreateContractFromQuotationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ContractService_CreateContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateContractRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ContractServiceServer).CreateContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ContractService_CreateContract_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ContractServiceServer).CreateContract(ctx, req.(*CreateContractRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -596,6 +636,10 @@ var ContractService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateContractFromQuotation",
 			Handler:    _ContractService_CreateContractFromQuotation_Handler,
+		},
+		{
+			MethodName: "CreateContract",
+			Handler:    _ContractService_CreateContract_Handler,
 		},
 		{
 			MethodName: "UpdateContract",

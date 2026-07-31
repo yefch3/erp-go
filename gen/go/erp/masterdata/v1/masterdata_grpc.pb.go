@@ -19,12 +19,13 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CustomerService_CreateCustomer_FullMethodName     = "/erp.masterdata.v1.CustomerService/CreateCustomer"
-	CustomerService_GetCustomer_FullMethodName        = "/erp.masterdata.v1.CustomerService/GetCustomer"
-	CustomerService_ListCustomers_FullMethodName      = "/erp.masterdata.v1.CustomerService/ListCustomers"
-	CustomerService_UpdateCustomer_FullMethodName     = "/erp.masterdata.v1.CustomerService/UpdateCustomer"
-	CustomerService_DeactivateCustomer_FullMethodName = "/erp.masterdata.v1.CustomerService/DeactivateCustomer"
-	CustomerService_ActivateCustomer_FullMethodName   = "/erp.masterdata.v1.CustomerService/ActivateCustomer"
+	CustomerService_CreateCustomer_FullMethodName      = "/erp.masterdata.v1.CustomerService/CreateCustomer"
+	CustomerService_GetCustomer_FullMethodName         = "/erp.masterdata.v1.CustomerService/GetCustomer"
+	CustomerService_ListCustomers_FullMethodName       = "/erp.masterdata.v1.CustomerService/ListCustomers"
+	CustomerService_UpdateCustomer_FullMethodName      = "/erp.masterdata.v1.CustomerService/UpdateCustomer"
+	CustomerService_DeactivateCustomer_FullMethodName  = "/erp.masterdata.v1.CustomerService/DeactivateCustomer"
+	CustomerService_ActivateCustomer_FullMethodName    = "/erp.masterdata.v1.CustomerService/ActivateCustomer"
+	CustomerService_ListMailingContacts_FullMethodName = "/erp.masterdata.v1.CustomerService/ListMailingContacts"
 )
 
 // CustomerServiceClient is the client API for CustomerService service.
@@ -42,6 +43,11 @@ type CustomerServiceClient interface {
 	// Reactivate a previously deactivated customer: master data lifecycle is
 	// reversible (delete is what stays forbidden).
 	ActivateCustomer(ctx context.Context, in *ActivateCustomerRequest, opts ...grpc.CallOption) (*ActivateCustomerResponse, error)
+	// The address book, flattened: every contact that has an email, with the
+	// customer it belongs to. One call rather than a customer list followed by
+	// a lookup per customer, because the mail composer needs all of them at
+	// once and an N+1 there is a page that visibly stalls.
+	ListMailingContacts(ctx context.Context, in *ListMailingContactsRequest, opts ...grpc.CallOption) (*ListMailingContactsResponse, error)
 }
 
 type customerServiceClient struct {
@@ -112,6 +118,16 @@ func (c *customerServiceClient) ActivateCustomer(ctx context.Context, in *Activa
 	return out, nil
 }
 
+func (c *customerServiceClient) ListMailingContacts(ctx context.Context, in *ListMailingContactsRequest, opts ...grpc.CallOption) (*ListMailingContactsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMailingContactsResponse)
+	err := c.cc.Invoke(ctx, CustomerService_ListMailingContacts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CustomerServiceServer is the server API for CustomerService service.
 // All implementations must embed UnimplementedCustomerServiceServer
 // for forward compatibility.
@@ -127,6 +143,11 @@ type CustomerServiceServer interface {
 	// Reactivate a previously deactivated customer: master data lifecycle is
 	// reversible (delete is what stays forbidden).
 	ActivateCustomer(context.Context, *ActivateCustomerRequest) (*ActivateCustomerResponse, error)
+	// The address book, flattened: every contact that has an email, with the
+	// customer it belongs to. One call rather than a customer list followed by
+	// a lookup per customer, because the mail composer needs all of them at
+	// once and an N+1 there is a page that visibly stalls.
+	ListMailingContacts(context.Context, *ListMailingContactsRequest) (*ListMailingContactsResponse, error)
 	mustEmbedUnimplementedCustomerServiceServer()
 }
 
@@ -154,6 +175,9 @@ func (UnimplementedCustomerServiceServer) DeactivateCustomer(context.Context, *D
 }
 func (UnimplementedCustomerServiceServer) ActivateCustomer(context.Context, *ActivateCustomerRequest) (*ActivateCustomerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ActivateCustomer not implemented")
+}
+func (UnimplementedCustomerServiceServer) ListMailingContacts(context.Context, *ListMailingContactsRequest) (*ListMailingContactsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListMailingContacts not implemented")
 }
 func (UnimplementedCustomerServiceServer) mustEmbedUnimplementedCustomerServiceServer() {}
 func (UnimplementedCustomerServiceServer) testEmbeddedByValue()                         {}
@@ -284,6 +308,24 @@ func _CustomerService_ActivateCustomer_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CustomerService_ListMailingContacts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMailingContactsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).ListMailingContacts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_ListMailingContacts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).ListMailingContacts(ctx, req.(*ListMailingContactsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CustomerService_ServiceDesc is the grpc.ServiceDesc for CustomerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -314,6 +356,10 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ActivateCustomer",
 			Handler:    _CustomerService_ActivateCustomer_Handler,
+		},
+		{
+			MethodName: "ListMailingContacts",
+			Handler:    _CustomerService_ListMailingContacts_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

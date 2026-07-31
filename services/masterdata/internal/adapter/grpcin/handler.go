@@ -261,3 +261,19 @@ func (h *Handler) ActivateSupplier(ctx context.Context, req *mdv1.ActivateSuppli
 	}
 	return &mdv1.ActivateSupplierResponse{}, nil
 }
+
+func (h *Handler) ListMailingContacts(ctx context.Context, req *mdv1.ListMailingContactsRequest) (*mdv1.ListMailingContactsResponse, error) {
+	rows, err := h.svc.ListMailingContacts(ctx, grpcx.TenantID(ctx), req.GetKeyword(), req.GetCustomerIds())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mdv1.MailingContact, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, &mdv1.MailingContact{
+			ContactId: r.ContactID, Name: r.Name, Title: r.Title, Email: r.Email,
+			IsPrimary: r.IsPrimary, CustomerId: r.CustomerID,
+			CustomerName: r.CustomerName, Country: r.Country,
+		})
+	}
+	return &mdv1.ListMailingContactsResponse{Contacts: out}, nil
+}

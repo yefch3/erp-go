@@ -27,14 +27,14 @@ SELECT
     id, tenant_id, contract_no, coalesce(quotation_id, 0)::bigint AS quotation_id, quote_no,
     customer_id, customer_name, coalesce(current_version_id, 0)::bigint AS current_version_id,
     status, status_before_approval, sales_employee_id, sales_employee,
-    signed_at, effective_at, completed_at, created_at
+    signature_source, signed_at, effective_at, completed_at, created_at
 FROM contracts
 WHERE tenant_id = $1 AND id = $2;
 
 -- name: ListContracts :many
 SELECT
     c.id, c.contract_no, c.quote_no, c.customer_id, c.customer_name, c.status,
-    c.sales_employee, c.signed_at, c.effective_at, c.created_at,
+    c.sales_employee_id, c.sales_employee, c.signed_at, c.effective_at, c.created_at,
     coalesce(v.currency, '')::text AS currency,
     coalesce(v.total_amount, 0)::text AS total_amount,
     coalesce(v.base_amount, 0)::text AS base_amount,
@@ -230,7 +230,7 @@ ORDER BY line_no;
 -- name: CreateContractAttachment :one
 INSERT INTO contract_attachments (
     tenant_id, contract_id, contract_version_id, kind, file_name, file_key,
-    content_type, size_bytes, uploaded_by, uploader_name
+    content_type, size_bytes, uploaded_by, uploader_name, source
 ) VALUES (
     sqlc.arg(tenant_id)::bigint,
     sqlc.arg(contract_id)::bigint,
@@ -241,7 +241,8 @@ INSERT INTO contract_attachments (
     sqlc.arg(content_type)::text,
     sqlc.arg(size_bytes)::bigint,
     sqlc.arg(uploaded_by)::bigint,
-    sqlc.arg(uploader_name)::text
+    sqlc.arg(uploader_name)::text,
+    sqlc.arg(source)::text
 )
 RETURNING id;
 
@@ -250,7 +251,7 @@ SELECT
     a.id, a.contract_id,
     coalesce(a.contract_version_id, 0)::bigint AS contract_version_id,
     coalesce(v.version_no, 0)::int AS version_no,
-    a.kind, a.file_name, a.file_key, a.content_type, a.size_bytes,
+    a.kind, a.source, a.file_name, a.file_key, a.content_type, a.size_bytes,
     a.uploaded_at, a.uploaded_by, a.uploader_name
 FROM contract_attachments a
 LEFT JOIN contract_versions v ON v.id = a.contract_version_id
@@ -262,7 +263,7 @@ SELECT
     a.id, a.contract_id,
     coalesce(a.contract_version_id, 0)::bigint AS contract_version_id,
     coalesce(v.version_no, 0)::int AS version_no,
-    a.kind, a.file_name, a.file_key, a.content_type, a.size_bytes,
+    a.kind, a.source, a.file_name, a.file_key, a.content_type, a.size_bytes,
     a.uploaded_at, a.uploaded_by, a.uploader_name
 FROM contract_attachments a
 LEFT JOIN contract_versions v ON v.id = a.contract_version_id
@@ -310,3 +311,75 @@ SELECT
 FROM ownership_transfers
 WHERE tenant_id = $1 AND biz_type = sqlc.arg(biz_type) AND biz_id = sqlc.arg(biz_id)
 ORDER BY transferred_at DESC, id DESC;
+
+-- name: CountSignedAttachments :one
+-- Evidence that a specific version came back countersigned. Scoped to the
+-- version on purpose: a scan of v1 says nothing about the v2 that replaced it.
+SELECT count(*) FROM contract_attachments
+WHERE tenant_id = $1 AND contract_version_id = sqlc.arg(contract_version_id)
+  AND kind = 'SIGNED';
+
+-- name: MarkContractSigned :exec
+UPDATE contracts SET
+    signature_source = sqlc.arg(signature_source)::text,
+    updated_by       = sqlc.arg(updated_by),
+    updated_at       = now()
+WHERE tenant_id = $1 AND id = sqlc.arg(id);
+
+-- name: RecordShipment :execrows
+-- Goods left the warehouse against a contract line. Conflicts are dropped
+-- silently: a redelivered outbound event is the normal case, not an error.
+INSERT INTO contract_shipments (
+    tenant_id, contract_id, contract_item_id, product_id, sku_id, outbound_no, qty
+) VALUES (
+    sqlc.arg(tenant_id)::bigint,
+    sqlc.arg(contract_id)::bigint,
+    sqlc.arg(contract_item_id)::bigint,
+    sqlc.arg(product_id)::bigint,
+    sqlc.arg(sku_id)::bigint,
+    sqlc.arg(outbound_no)::text,
+    sqlc.arg(qty)::text::numeric
+)
+ON CONFLICT (tenant_id, outbound_no, contract_item_id) DO NOTHING;
+
+-- name: ShipmentProgressOf :many
+-- How much of each product on a contract has shipped.
+--
+-- Grouped by product rather than by contract line, and that is deliberate. A
+-- contract change rewrites the lines with new ids, so shipments made against
+-- the old version would show as zero on the new one — the goods physically
+-- left and the page would say nothing had. The customer bought a product; a
+-- version changes the terms, not what is in the crate.
+--
+-- remaining_qty can go negative, and that is the most useful thing this query
+-- produces: it means the contract was reduced after goods had already
+-- shipped. No automatic rule gets that right, so it is surfaced rather than
+-- clamped to zero and quietly forgotten.
+SELECT
+    min(i.line_no)::int         AS line_no,
+    i.product_id,
+    coalesce(i.sku_id, 0)::bigint AS sku_id,
+    max(i.product_code)::text   AS product_code,
+    max(i.product_name)::text   AS product_name,
+    max(i.uom_code)::text       AS uom_code,
+    sum(i.qty)::text            AS qty,
+    coalesce(max(sh.shipped), 0)::text AS shipped_qty,
+    (sum(i.qty) - coalesce(max(sh.shipped), 0))::text AS remaining_qty
+FROM contract_items i
+LEFT JOIN (
+    SELECT product_id, coalesce(sku_id, 0) AS sku_id, sum(qty) AS shipped
+    FROM contract_shipments
+    WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+      AND contract_id = sqlc.arg(contract_id)::bigint
+    GROUP BY product_id, coalesce(sku_id, 0)
+) sh ON sh.product_id = i.product_id AND sh.sku_id = coalesce(i.sku_id, 0)
+WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND i.contract_version_id = sqlc.arg(contract_version_id)::bigint
+GROUP BY i.product_id, coalesce(i.sku_id, 0)
+ORDER BY min(i.line_no);
+
+-- name: ShipmentsOfContract :many
+SELECT outbound_no, contract_item_id, qty::text AS qty, shipped_at
+FROM contract_shipments
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND contract_id = sqlc.arg(contract_id)::bigint
+ORDER BY shipped_at DESC, id DESC;

@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/livefeed"
 	"github.com/sgao19/erp-go/pkg/outbox"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/approval/internal/store"
@@ -72,7 +73,8 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 	var out store.ApprovalInstance
 	var created []store.ApprovalTask
 	// Whose queue this decision disturbs: colleagues whose parallel task is
-	// now moot, the next approver, and the submitter when it all ends.
+	// now moot, and the next approver. The submitter is told separately —
+	// their queue did not change, their document did.
 	var stale []int64
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
@@ -103,7 +105,6 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 			}
 			cancelled, err := s.finish(ctx, q, tx, tenantID, locked, result, actorID, comment, &out)
 			stale = append(stale, cancelled...)
-			stale = append(stale, locked.SubmitterID)
 			return err
 		}
 
@@ -139,7 +140,6 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 		if nextNode == nil {
 			cancelled, err := s.finish(ctx, q, tx, tenantID, locked, statusApproved, actorID, comment, &out)
 			stale = append(stale, cancelled...)
-			stale = append(stale, locked.SubmitterID)
 			return err
 		}
 		// Guard against the definition being edited between the two reads.
@@ -162,7 +162,12 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 	}
 	// After the commit, never inside it: a hint about a change that rolled
 	// back would send browsers to read something that never happened.
-	s.nudge(ctx, tenantID, append(stale, assigneesOf(created)...), subjectOf(inst))
+	s.nudge(ctx, tenantID, append(stale, assigneesOf(created)...), livefeed.TodoChanged, subjectOf(inst))
+	// The submitter is told on EVERY decision, not only the one that ends the
+	// flow. They are the person watching hardest, and until now a contract
+	// could move from the first approver to the second while their page still
+	// showed it sitting at the first — visible only by reloading by hand.
+	s.nudge(ctx, tenantID, []int64{inst.SubmitterID}, livefeed.DocChanged, subjectOf(inst))
 	return out, created, nil
 }
 

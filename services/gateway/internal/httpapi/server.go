@@ -21,7 +21,10 @@ import (
 	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
 	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
+	ivv1 "github.com/sgao19/erp-go/gen/go/erp/inventory/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
+	ntv1 "github.com/sgao19/erp-go/gen/go/erp/notification/v1"
+	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	pdv1 "github.com/sgao19/erp-go/gen/go/erp/product/v1"
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/authtoken"
@@ -30,22 +33,29 @@ import (
 )
 
 type Server struct {
-	IAM         iamv1.AuthServiceClient
-	Directory   iamv1.DirectoryServiceClient
-	Access      iamv1.AccessServiceClient
-	Customers   mdv1.CustomerServiceClient
-	Suppliers   mdv1.SupplierServiceClient
-	Options     mdv1.OptionServiceClient
-	Numbering   mdv1.NumberingServiceClient
-	Fx          fxv1.FxServiceClient
-	Approval    apv1.ApprovalServiceClient
-	Catalog     pdv1.CatalogServiceClient
-	Attachments pdv1.AttachmentServiceClient
-	Quotations  exv1.QuotationServiceClient
-	Contracts   exv1.ContractServiceClient
-	Live        *livefeed.Subscriber
-	JWTSecret   string
-	Log         *slog.Logger
+	IAM          iamv1.AuthServiceClient
+	Directory    iamv1.DirectoryServiceClient
+	Access       iamv1.AccessServiceClient
+	Customers    mdv1.CustomerServiceClient
+	Suppliers    mdv1.SupplierServiceClient
+	Options      mdv1.OptionServiceClient
+	Numbering    mdv1.NumberingServiceClient
+	Fx           fxv1.FxServiceClient
+	Approval     apv1.ApprovalServiceClient
+	Catalog      pdv1.CatalogServiceClient
+	Attachments  pdv1.AttachmentServiceClient
+	Attributes   pdv1.AttributeServiceClient
+	Quotations   exv1.QuotationServiceClient
+	Contracts    exv1.ContractServiceClient
+	Shipments    exv1.ShipmentServiceClient
+	Receipts     exv1.ReceiptServiceClient
+	Requirements prv1.RequirementServiceClient
+	Orders       prv1.PurchaseOrderServiceClient
+	Stocks       ivv1.StockServiceClient
+	Emails       ntv1.EmailServiceClient
+	Live         *livefeed.Subscriber
+	JWTSecret    string
+	Log          *slog.Logger
 }
 
 func (s *Server) Router() http.Handler {
@@ -54,6 +64,9 @@ func (s *Server) Router() http.Handler {
 	// user as "network error" instead of a readable failure.
 	r.Use(s.recoverPanics)
 	r.Post("/api/auth/login", s.login)
+	// Images embedded in sent mail. Public by necessity: the fetcher is the
+	// recipient's mail client, which has no session. See serveMailImage.
+	r.Get("/api/public/mail-images/{token}", s.serveMailImage)
 	r.Group(func(r chi.Router) {
 		r.Use(s.auth)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers", s.listCustomers)
@@ -140,6 +153,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("export:contract:read")).Get("/api/contracts", s.listContracts)
 		r.With(s.perm("export:contract:read")).Get("/api/contracts/{id}", s.getContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts", s.createContract)
+		r.With(s.perm("export:contract:write")).Post("/api/contracts/direct", s.createDirectContract)
 		r.With(s.perm("export:contract:write")).Put("/api/contracts/{id}", s.updateContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/submit", s.submitContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/change", s.changeContract)
@@ -151,9 +165,95 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/files/presign", s.presignContractFile)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/files", s.registerContractFile)
 		r.With(s.perm("export:contract:write")).Delete("/api/contract-files/{id}", s.removeContractFile)
+		// Shipping documents. A separate permission from contracts: the
+		// forwarder desk types bills of lading and must not be able to alter a
+		// price, while sales must see where the goods are without being able
+		// to declare a boat sailed.
+		r.With(s.perm("export:shipment:read")).Get("/api/shipments", s.listShipments)
+		r.With(s.perm("export:shipment:read")).Get("/api/shipments/{id}", s.getShipment)
+		r.With(s.perm("export:shipment:write")).Post("/api/shipments", s.createShipment)
+		r.With(s.perm("export:shipment:write")).Put("/api/shipments/{id}", s.updateShipment)
+		// Confirming the sailing is what moves goods in every contract's
+		// progress view, so it is a write even though it changes no numbers
+		// the user typed.
+		r.With(s.perm("export:shipment:write")).Post("/api/shipments/{id}/confirm", s.confirmSailing)
+		r.With(s.perm("export:shipment:write")).Post("/api/shipments/{id}/arrive", s.markShipmentArrived)
+		r.With(s.perm("export:shipment:write")).Post("/api/shipments/{id}/cancel", s.cancelShipment)
+		// Which boats one contract's goods are on. Gated on reading shipments,
+		// not contracts: it is shipping information reached from the other end.
+		r.With(s.perm("export:shipment:read")).Get("/api/contracts/{id}/vessels", s.listContractVessels)
+		// Collection. Its own permission because it is finance work: the
+		// person who reconciles bank lines is not the person who sells, and
+		// neither should be able to do the other's job by accident.
+		r.With(s.perm("export:receipt:read")).Get("/api/bank-accounts", s.listBankAccounts)
+		r.With(s.perm("export:receipt:write")).Post("/api/bank-accounts", s.createBankAccount)
+		r.With(s.perm("export:receipt:read")).Get("/api/bank-transactions", s.listTransactions)
+		r.With(s.perm("export:receipt:read")).Get("/api/bank-transactions/{id}", s.getTransaction)
+		r.With(s.perm("export:receipt:write")).Post("/api/bank-transactions", s.recordTransaction)
+		r.With(s.perm("export:receipt:write")).Post("/api/bank-transactions/{id}/allocate", s.allocateReceipt)
+		r.With(s.perm("export:receipt:write")).Post("/api/bank-transactions/{id}/irrelevant", s.markTransactionIrrelevant)
+		r.With(s.perm("export:receipt:write")).Post("/api/bank-transactions/{id}/reopen", s.reopenTransaction)
+		// Reversal, not deletion: there is no DELETE route here on purpose.
+		r.With(s.perm("export:receipt:write")).Post("/api/receipt-allocations/{id}/reverse", s.reverseAllocation)
+		r.With(s.perm("export:receipt:read")).Get("/api/open-receivables", s.listOpenReceivables)
+		// Attribute templates. Defining what a category's spec looks like is
+		// catalogue maintenance, so it rides on the product write permission
+		// rather than inventing a third one for the same job.
+		r.With(s.perm("product:product:read")).Get("/api/categories/{id}/attributes", s.resolveAttributes)
+		r.With(s.perm("product:product:read")).Get("/api/categories/{id}/attribute-template", s.getAttributeTemplate)
+		r.With(s.perm("product:product:write")).Put("/api/categories/{id}/attribute-template", s.saveAttributeTemplate)
+		r.With(s.perm("product:product:write")).Put("/api/products/{id}/attributes", s.setProductAttributes)
+		r.With(s.perm("product:product:write")).Put("/api/skus/{id}/attributes", s.setSkuAttributes)
+		// Candidate recall. A read of the catalogue, so it is gated as one —
+		// it will later be called by the request-sheet parser as well as by
+		// somebody typing in the product picker.
+		r.With(s.perm("product:product:read")).Get("/api/product-recall", s.recallCandidates)
+		// How much of one contract has been collected. Gated on reading
+		// contracts rather than receipts: this is the salesperson's view of
+		// their own deal, not the finance queue.
+		r.With(s.perm("export:contract:read")).Get("/api/contracts/{id}/receipts", s.getContractReceipts)
 		// Handing a deal to somebody else is a supervisor's act, so it gets its
 		// own permission rather than riding on :write — the people who may edit
 		// their own documents are exactly the people who may not reassign them.
+		// Purchase requirements. They are never created through the API: they
+		// arrive from contracts that took effect, over Kafka. A buyer reads
+		// them and closes the ones the business will not act on.
+		// Stock. Reading it is what every sourcing decision starts from, so it
+		// sits with the rest of the operational reads.
+		r.With(s.perm("inventory:stock:read")).Get("/api/warehouses", s.listWarehouses)
+		r.With(s.perm("inventory:stock:read")).Get("/api/stocks", s.listStocks)
+		r.With(s.perm("inventory:stock:read")).Get("/api/stock-ledger", s.listStockLedger)
+		r.With(s.perm("inventory:stock:write")).Post("/api/stocks/receive", s.receiveStock)
+		// Outbound. Reading what is shippable is a stock read; taking goods
+		// off the shelf is a stock write, and the same permission covers both
+		// directions of movement.
+		r.With(s.perm("inventory:stock:read")).Get("/api/shippable", s.listShippable)
+		r.With(s.perm("inventory:stock:read")).Get("/api/shippable/{id}/lines", s.listShippableLines)
+		r.With(s.perm("inventory:stock:read")).Get("/api/outbounds", s.listOutbounds)
+		r.With(s.perm("inventory:stock:read")).Get("/api/outbounds/{id}/items", s.listOutboundItems)
+		r.With(s.perm("inventory:stock:write")).Post("/api/outbounds", s.createOutbound)
+		r.With(s.perm("inventory:stock:write")).Post("/api/outbounds/{id}/confirm", s.confirmOutbound)
+		r.With(s.perm("inventory:stock:write")).Post("/api/outbounds/{id}/cancel", s.cancelOutbound)
+		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements", s.listRequirements)
+		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements/{id}", s.getRequirement)
+		r.With(s.perm("procurement:requirement:write")).Post("/api/requirements", s.createRequirement)
+		r.With(s.perm("procurement:requirement:write")).Post("/api/requirements/{id}/cancel", s.cancelRequirement)
+		r.With(s.perm("procurement:requirement:write")).Post("/api/requirements/{id}/reopen", s.reopenRequirement)
+		// Which orders cover a requirement. Reading orders, so it rides on the
+		// order permission: somebody who may not see purchasing commitments
+		// should not see them through this door either.
+		r.With(s.perm("procurement:order:read")).Get("/api/requirements/{id}/orders", s.listRequirementOrders)
+		// Purchase orders. A separate permission from requirements on purpose:
+		// reading what has to be bought and committing company money to a
+		// supplier are different jobs, and often different people.
+		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders", s.listOrders)
+		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}", s.getOrder)
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders", s.createOrder)
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/submit", s.submitOrder)
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/cancel", s.cancelOrder)
+		// Receiving is warehouse work, so it rides on the stock permission
+		// rather than the buyer's.
+		r.With(s.perm("inventory:stock:write")).Post("/api/purchase-orders/{id}/receive", s.receiveOrder)
 		r.With(s.perm("export:ownership:transfer")).Post("/api/ownership/transfer", s.transferOwnership)
 		// Reading the handover history is scoped like reading the document, so
 		// the contract's own permission is the right gate.
@@ -167,6 +267,50 @@ func (s *Server) Router() http.Handler {
 		// manager without any power to approve anything.
 		r.With(s.perm("approval:instance:read")).Get("/api/approvals/instances", s.listApprovalInstances)
 		r.With(s.perm("approval:instance:read")).Get("/api/approvals/instances/{id}", s.getApprovalInstance)
+		// Correspondence. Reading is scoped by the notification data scope —
+		// the permission only says "may open the mail module at all", the
+		// scope decides whose mail comes back.
+		// The address book the composer picks from. Gated on sending: it is
+		// only ever used to choose who a mail goes to.
+		r.With(s.perm("notification:email:write")).Get("/api/mailing-contacts", s.listMailingContacts)
+		// The supervisor's employee picker. Scoped by the same notification
+		// data scope, so it lists exactly whose mail the caller may open.
+		r.With(s.perm("notification:email:read")).Get("/api/email-senders", s.listMailSenders)
+		r.With(s.perm("notification:email:read")).Get("/api/email-campaigns", s.listCampaigns)
+		r.With(s.perm("notification:email:read")).Get("/api/email-campaigns/{id}", s.getCampaign)
+		r.With(s.perm("notification:email:read")).Get("/api/email-messages", s.listEmailMessages)
+		r.With(s.perm("notification:email:read")).Get("/api/email-messages/{id}", s.getEmailMessage)
+		// Previewing renders against a real contact but sends nothing, so it
+		// is gated with sending rather than reading: only somebody who could
+		// send this mail has any business rendering it.
+		r.With(s.perm("notification:email:write")).Post("/api/email-campaigns/preview", s.previewCampaign)
+		r.With(s.perm("notification:email:write")).Post("/api/email-campaigns", s.createCampaign)
+		r.With(s.perm("notification:email:write")).Post("/api/email-messages/{id}/requeue", s.requeueEmailMessage)
+		r.With(s.perm("notification:email:write")).Post("/api/email-messages/{id}/abandon", s.abandonEmailMessage)
+		// Drafts ride on the send permission: a draft only exists to become a
+		// send, and every route is scoped to the caller inside the service.
+		r.With(s.perm("notification:email:write")).Post("/api/email-drafts", s.saveDraft)
+		r.With(s.perm("notification:email:write")).Get("/api/email-drafts", s.listDrafts)
+		r.With(s.perm("notification:email:write")).Get("/api/email-drafts/{id}", s.getDraft)
+		r.With(s.perm("notification:email:write")).Delete("/api/email-drafts/{id}", s.deleteDraft)
+		r.With(s.perm("notification:email:write")).Post("/api/email-drafts/{id}/send", s.sendDraft)
+		r.With(s.perm("notification:email:read")).Get("/api/email-signatures", s.listSignatures)
+		r.With(s.perm("notification:email:write")).Post("/api/email-signatures", s.createSignature)
+		r.With(s.perm("notification:email:write")).Delete("/api/email-signatures/{id}", s.deleteSignature)
+		// The suppression list is shared by everybody's sends, so maintaining
+		// it is administrative work rather than part of composing a mail.
+		// Attachments and inline images. Uploading is part of composing, so
+		// both ride on the send permission rather than a separate one.
+		r.With(s.perm("notification:email:write")).Post("/api/email-attachments/presign", s.presignMailAttachment)
+		r.With(s.perm("notification:email:write")).Post("/api/email-attachments", s.registerMailAttachment)
+		r.With(s.perm("notification:email:read")).Get("/api/email-attachments", s.listMailAttachments)
+		r.With(s.perm("notification:email:write")).Post("/api/email-images/presign", s.presignMailImage)
+		r.With(s.perm("notification:email:write")).Post("/api/email-images", s.registerMailImage)
+		r.With(s.perm("notification:email:read")).Get("/api/email-images", s.listMailImages)
+		r.With(s.perm("notification:email:write")).Delete("/api/email-images/{id}", s.withdrawMailImage)
+		r.With(s.perm("notification:email:read")).Get("/api/email-suppressions", s.listSuppressions)
+		r.With(s.perm("notification:suppression:write")).Post("/api/email-suppressions", s.addSuppression)
+		r.With(s.perm("notification:suppression:write")).Delete("/api/email-suppressions", s.removeSuppression)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/latest", s.fxLatest)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/rates", s.fxRates)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/anomalies", s.fxAnomalies)
@@ -253,6 +397,9 @@ type envelope struct {
 	Data    json.RawMessage `json:"data,omitempty"`
 	Code    string          `json:"code,omitempty"`
 	Message string          `json:"message,omitempty"`
+	// Structured context from apierr: ids, limits, shortfalls. The message is
+	// what a person reads; this is what the page can act on.
+	Meta map[string]string `json:"meta,omitempty"`
 }
 
 var pj = protojson.MarshalOptions{EmitUnpopulated: true}
@@ -268,9 +415,13 @@ func (s *Server) writeProto(w http.ResponseWriter, msg proto.Message) {
 }
 
 func (s *Server) writeError(w http.ResponseWriter, httpStatus int, code, msg string) {
+	s.writeErrorMeta(w, httpStatus, code, msg, nil)
+}
+
+func (s *Server) writeErrorMeta(w http.ResponseWriter, httpStatus int, code, msg string, meta map[string]string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(httpStatus)
-	_ = json.NewEncoder(w).Encode(envelope{Success: false, Code: code, Message: msg})
+	_ = json.NewEncoder(w).Encode(envelope{Success: false, Code: code, Message: msg, Meta: meta})
 }
 
 // writeGRPCError maps a gRPC failure onto HTTP, keeping the stable business
@@ -291,7 +442,7 @@ func (s *Server) writeGRPCError(w http.ResponseWriter, err error) {
 	if bizCode == "" {
 		bizCode = "INTERNAL"
 	}
-	s.writeError(w, httpCode, bizCode, st.Message())
+	s.writeErrorMeta(w, httpCode, bizCode, st.Message(), apierr.MetaFromStatus(err))
 }
 
 // decodeBody parses a JSON request body directly into the gRPC request

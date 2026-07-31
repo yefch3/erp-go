@@ -478,6 +478,84 @@ func (q *Queries) ListCustomers(ctx context.Context, arg ListCustomersParams) ([
 	return items, nil
 }
 
+const listMailingContacts = `-- name: ListMailingContacts :many
+SELECT
+    cc.id           AS contact_id,
+    cc.name,
+    cc.title,
+    cc.email,
+    cc.is_primary,
+    c.id            AS customer_id,
+    c.name          AS customer_name,
+    c.country
+FROM customer_contacts cc
+JOIN customers c ON c.id = cc.customer_id AND c.tenant_id = cc.tenant_id
+WHERE cc.tenant_id = $1
+  AND c.status = 'ACTIVE'
+  AND cc.email <> ''
+  AND (
+      $2::text = ''
+      OR cc.name  ILIKE '%' || $2::text || '%'
+      OR cc.email ILIKE '%' || $2::text || '%'
+      OR c.name   ILIKE '%' || $2::text || '%'
+  )
+  AND (
+      cardinality($3::bigint[]) = 0
+      OR c.id = ANY($3::bigint[])
+  )
+ORDER BY c.name, cc.is_primary DESC, cc.sort_order, cc.id
+LIMIT 500
+`
+
+type ListMailingContactsParams struct {
+	TenantID    int64
+	Keyword     string
+	CustomerIds []int64
+}
+
+type ListMailingContactsRow struct {
+	ContactID    int64
+	Name         string
+	Title        string
+	Email        string
+	IsPrimary    bool
+	CustomerID   int64
+	CustomerName string
+	Country      string
+}
+
+// The address book for the mail composer. Contacts without an email are left
+// out rather than returned greyed: a picker row you cannot pick is noise.
+// Deactivated customers are excluded for the same reason.
+func (q *Queries) ListMailingContacts(ctx context.Context, arg ListMailingContactsParams) ([]ListMailingContactsRow, error) {
+	rows, err := q.db.Query(ctx, listMailingContacts, arg.TenantID, arg.Keyword, arg.CustomerIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMailingContactsRow
+	for rows.Next() {
+		var i ListMailingContactsRow
+		if err := rows.Scan(
+			&i.ContactID,
+			&i.Name,
+			&i.Title,
+			&i.Email,
+			&i.IsPrimary,
+			&i.CustomerID,
+			&i.CustomerName,
+			&i.Country,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listNumberRules = `-- name: ListNumberRules :many
 SELECT id, tenant_id, biz_type, prefix, period, seq_len FROM number_rules WHERE tenant_id = $1 ORDER BY biz_type
 `

@@ -129,3 +129,19 @@ func CodeFromStatus(err error) string {
 	}
 	return ""
 }
+
+// MetaFromStatus pulls the structured context back out of a gRPC error. The
+// gateway needs it because the numbers a caller has to act on — how many are
+// missing, which product — live here rather than in the message.
+func MetaFromStatus(err error) map[string]string {
+	st, ok := status.FromError(err)
+	if !ok {
+		return nil
+	}
+	for _, d := range st.Details() {
+		if info, ok := d.(*errdetails.ErrorInfo); ok {
+			return info.Metadata
+		}
+	}
+	return nil
+}

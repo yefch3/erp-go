@@ -8,6 +8,40 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type BankAccount struct {
+	ID          int64
+	TenantID    int64
+	AccountNo   string
+	AccountName string
+	BankName    string
+	Currency    string
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+}
+
+type BankTransaction struct {
+	ID                  int64
+	TenantID            int64
+	AccountID           int64
+	BankRef             string
+	Direction           string
+	Amount              pgtype.Numeric
+	Currency            string
+	ValueDate           pgtype.Date
+	Counterparty        string
+	CounterpartyAccount string
+	RemittanceInfo      string
+	Source              string
+	TrustedRef          string
+	Disposition         string
+	IrrelevantType      string
+	Note                string
+	RecordedBy          int64
+	RecordedByName      string
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+}
+
 type Contract struct {
 	ID                   int64
 	TenantID             int64
@@ -28,6 +62,7 @@ type Contract struct {
 	CreatedBy            int64
 	UpdatedAt            pgtype.Timestamptz
 	UpdatedBy            int64
+	SignatureSource      string
 }
 
 type ContractAttachment struct {
@@ -43,6 +78,7 @@ type ContractAttachment struct {
 	UploadedAt        pgtype.Timestamptz
 	UploadedBy        int64
 	UploaderName      string
+	Source            string
 }
 
 type ContractItem struct {
@@ -62,6 +98,18 @@ type ContractItem struct {
 	Amount            pgtype.Numeric
 	HsCode            string
 	Remark            string
+}
+
+type ContractShipment struct {
+	ID             int64
+	TenantID       int64
+	ContractID     int64
+	ContractItemID int64
+	ProductID      int64
+	SkuID          int64
+	OutboundNo     string
+	Qty            pgtype.Numeric
+	ShippedAt      pgtype.Timestamptz
 }
 
 type ContractVersion struct {
@@ -177,4 +225,60 @@ type QuotationItem struct {
 	UnitPrice   pgtype.Numeric
 	Amount      pgtype.Numeric
 	Remark      string
+}
+
+type ReceiptAllocation struct {
+	ID              int64
+	TenantID        int64
+	TransactionID   int64
+	ContractID      int64
+	ContractNo      string
+	CustomerName    string
+	Amount          pgtype.Numeric
+	FeeAmount       pgtype.Numeric
+	Currency        string
+	ReversalOf      *int64
+	ReverseReason   string
+	AllocatedBy     int64
+	AllocatedByName string
+	AllocatedAt     pgtype.Timestamptz
+}
+
+type Shipment struct {
+	ID              int64
+	TenantID        int64
+	ShipmentNo      string
+	VesselName      string
+	VoyageNo        string
+	BlNo            string
+	ContainerNo     string
+	PortOfDischarge string
+	Etd             pgtype.Date
+	Eta             pgtype.Date
+	Status          string
+	Remark          string
+	CreatedBy       int64
+	CreatedByName   string
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	ShippedAt       pgtype.Timestamptz
+	ArrivedAt       pgtype.Timestamptz
+}
+
+type ShipmentItem struct {
+	ID             int64
+	TenantID       int64
+	ShipmentID     int64
+	LineNo         int32
+	ContractID     int64
+	ContractNo     string
+	CustomerName   string
+	ContractItemID int64
+	ProductID      int64
+	SkuID          int64
+	ProductCode    string
+	ProductName    string
+	Spec           string
+	Qty            pgtype.Numeric
+	UomCode        string
 }

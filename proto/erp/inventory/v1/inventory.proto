@@ -1,0 +1,286 @@
+syntax = "proto3";
+
+package erp.inventory.v1;
+
+import "erp/common/v1/pagination.proto";
+
+option go_package = "github.com/sgao19/erp-go/gen/go/erp/inventory/v1;inventoryv1";
+
+// StockService owns what is physically in the warehouses and who has a claim
+// on it. Nothing else in the system may compute availability: the numbers
+// here are the only ones that count.
+service StockService {
+  rpc ListWarehouses(ListWarehousesRequest) returns (ListWarehousesResponse);
+  rpc ListStocks(ListStocksRequest) returns (ListStocksResponse);
+  rpc ListLedger(ListLedgerRequest) returns (ListLedgerResponse);
+  // Receive goods. Manual for now; purchase receipts will call it later.
+  rpc ReceiveStock(ReceiveStockRequest) returns (ReceiveStockResponse);
+
+  // Contracts with goods still owed, and what each of their lines can ship.
+  rpc ListShippable(ListShippableRequest) returns (ListShippableResponse);
+  rpc ListShippableLines(ListShippableLinesRequest) returns (ListShippableLinesResponse);
+
+  // Outbound. Creating the list locks the goods; confirming ships them.
+  rpc CreateOutbound(CreateOutboundRequest) returns (CreateOutboundResponse);
+  rpc ConfirmOutbound(ConfirmOutboundRequest) returns (ConfirmOutboundResponse);
+  rpc CancelOutbound(CancelOutboundRequest) returns (CancelOutboundResponse);
+  rpc ListOutbounds(ListOutboundsRequest) returns (ListOutboundsResponse);
+  rpc ListOutboundItems(ListOutboundItemsRequest) returns (ListOutboundItemsResponse);
+}
+
+message Warehouse {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  string wh_type = 4;
+  string address = 5;
+  string status = 6;
+}
+
+message ListWarehousesRequest {
+  bool include_inactive = 1;
+}
+
+message ListWarehousesResponse {
+  repeated Warehouse warehouses = 1;
+}
+
+// Stock is one SKU in one warehouse. The four claim columns are separate
+// because they mean different things and are released differently.
+message Stock {
+  int64 id = 1;
+  int64 warehouse_id = 2;
+  string warehouse_code = 3;
+  string warehouse_name = 4;
+  int64 product_id = 5;
+  int64 sku_id = 6;
+  string product_code = 7;
+  string product_name = 8;
+  string uom_code = 9;
+  string on_hand_qty = 10;
+  // Sold on an effective contract, not yet picked.
+  string reserved_qty = 11;
+  // Committed to a confirmed shipment plan.
+  string locked_qty = 12;
+  // Quarantined, failed inspection, being counted.
+  string frozen_qty = 13;
+  // on_hand - reserved - locked - frozen. The only number that answers
+  // "can I promise this to somebody".
+  string available_qty = 14;
+  string updated_at = 15;
+  // Moving weighted average, and the pool it is averaged from. One currency
+  // per row: averaging two currencies together produces a number that means
+  // nothing.
+  string avg_cost = 16;
+  string total_cost = 17;
+  string cost_currency = 18;
+}
+
+message ListStocksRequest {
+  erp.common.v1.PageRequest page = 1;
+  int64 warehouse_id = 2;
+  string keyword = 3;
+  bool in_stock_only = 4;
+}
+
+message ListStocksResponse {
+  repeated Stock stocks = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+// LedgerEntry is one movement. Append-only: the stock table says what is
+// there now, this says how it got there.
+message LedgerEntry {
+  int64 id = 1;
+  int64 warehouse_id = 2;
+  int64 sku_id = 3;
+  string product_code = 4;
+  string product_name = 5;
+  string movement = 6;
+  string qty = 7;
+  string ref_type = 8;
+  int64 ref_id = 9;
+  string ref_no = 10;
+  string on_hand_after = 11;
+  string available_after = 12;
+  string remark = 13;
+  string occurred_at = 14;
+  // What this movement was worth. Only inbound and outbound move value; a
+  // reservation changes who may have the goods, not what they cost.
+  string unit_cost = 15;
+  string amount = 16;
+  string avg_cost_after = 17;
+  string cost_currency = 18;
+}
+
+message ListLedgerRequest {
+  erp.common.v1.PageRequest page = 1;
+  int64 sku_id = 2;
+  string movement = 3;
+}
+
+message ListLedgerResponse {
+  repeated LedgerEntry entries = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message ReceiveStockLine {
+  int64 product_id = 1;
+  int64 sku_id = 2;
+  string product_code = 3;
+  string product_name = 4;
+  int64 uom_id = 5;
+  string uom_code = 6;
+  string qty = 7;
+  // What a unit cost. Left empty the receipt is booked at the average the row
+  // already carries, so a stock correction cannot drag the valuation down.
+  string unit_cost = 8;
+}
+
+message ReceiveStockRequest {
+  int64 warehouse_id = 1;
+  repeated ReceiveStockLine lines = 2;
+  string remark = 3;
+}
+
+message ReceiveStockResponse {
+  repeated Stock stocks = 1;
+}
+
+// ShippableContract is a contract with goods still owed, summed over its
+// lines. ready_qty is what could go on a picking list right now.
+message ShippableContract {
+  int64 contract_id = 1;
+  string contract_no = 2;
+  string customer_name = 3;
+  string delivery_date = 4;
+  int64 line_count = 5;
+  string demand_qty = 6;
+  string ready_qty = 7;
+  // Sold but not covered by stock. Until this is zero the contract cannot
+  // ship in full, and it is the number procurement is working against.
+  string shortage_qty = 8;
+  string locked_qty = 9;
+  string shipped_qty = 10;
+}
+
+message ListShippableRequest {
+  erp.common.v1.PageRequest page = 1;
+  string keyword = 2;
+}
+
+message ListShippableResponse {
+  repeated ShippableContract contracts = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+// ShippableLine is one contract line seen from the warehouse floor.
+message ShippableLine {
+  int64 reservation_id = 1;
+  int64 contract_item_id = 2;
+  int64 product_id = 3;
+  int64 sku_id = 4;
+  string product_code = 5;
+  string product_name = 6;
+  string uom_code = 7;
+  // What was sold.
+  string demand_qty = 8;
+  // What stock is holding for it.
+  string reserved_qty = 9;
+  // Of that, already on an open picking list.
+  string locked_qty = 10;
+  string shipped_qty = 11;
+  // demand - reserved: what has to be bought before this line can ship whole.
+  string shortage_qty = 12;
+  // reserved - locked - shipped: the only quantity an outbound may draw on.
+  string ready_qty = 13;
+  // Free stock of the same item, which a top-up could still claim.
+  string available_qty = 14;
+  string status = 15;
+}
+
+message ListShippableLinesRequest {
+  int64 contract_id = 1;
+}
+
+message ListShippableLinesResponse {
+  repeated ShippableLine lines = 1;
+}
+
+message OutboundLine {
+  int64 contract_item_id = 1;
+  string qty = 2;
+}
+
+message CreateOutboundRequest {
+  int64 contract_id = 1;
+  string outbound_type = 2;
+  string remark = 3;
+  repeated OutboundLine lines = 4;
+}
+
+message CreateOutboundResponse {
+  int64 id = 1;
+  string outbound_no = 2;
+  string status = 3;
+}
+
+message ConfirmOutboundRequest {
+  int64 id = 1;
+}
+
+message ConfirmOutboundResponse {}
+
+message CancelOutboundRequest {
+  int64 id = 1;
+  string reason = 2;
+}
+
+message CancelOutboundResponse {}
+
+message Outbound {
+  int64 id = 1;
+  string outbound_no = 2;
+  string outbound_type = 3;
+  int64 contract_id = 4;
+  string contract_no = 5;
+  string customer_name = 6;
+  string status = 7;
+  string operator_name = 8;
+  string remark = 9;
+  string cancelled_reason = 10;
+  int64 item_count = 11;
+  string total_qty = 12;
+  string confirmed_at = 13;
+  string created_at = 14;
+}
+
+message ListOutboundsRequest {
+  erp.common.v1.PageRequest page = 1;
+  string status = 2;
+  string keyword = 3;
+}
+
+message ListOutboundsResponse {
+  repeated Outbound outbounds = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message OutboundItem {
+  int64 id = 1;
+  int64 contract_item_id = 2;
+  int64 product_id = 3;
+  int64 sku_id = 4;
+  string product_code = 5;
+  string product_name = 6;
+  string uom_code = 7;
+  string qty = 8;
+}
+
+message ListOutboundItemsRequest {
+  int64 outbound_id = 1;
+}
+
+message ListOutboundItemsResponse {
+  repeated OutboundItem items = 1;
+}

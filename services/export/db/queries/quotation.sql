@@ -52,7 +52,7 @@ WHERE tenant_id = $1 AND id = $2;
 SELECT
     q.id, q.quote_no, q.customer_id, q.customer_name, q.currency,
     q.total_amount::text AS total_amount, q.base_amount::text AS base_amount,
-    q.status, q.sales_employee, coalesce(q.valid_until::text, '')::text AS valid_until,
+    q.status, q.sales_employee_id, q.sales_employee, coalesce(q.valid_until::text, '')::text AS valid_until,
     q.created_at, count(*) OVER () AS total
 -- Aliased because the correlated subquery below brings a second table into
 -- scope, and an unqualified tenant_id would then be ambiguous.

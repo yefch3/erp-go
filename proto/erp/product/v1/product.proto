@@ -78,6 +78,10 @@ message Product {
   string export_rebate_rate = 15;
   string description = 16;
   string status = 17;
+  // JSON object of the attributes every variant shares, e.g. the grade and
+  // process of a steel coil. Which keys are legal comes from the category's
+  // attribute template.
+  string attributes = 18;
 }
 
 message Sku {

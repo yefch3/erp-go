@@ -31,7 +31,6 @@ func (s *Server) fxRates(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
-
 func (s *Server) fxAnomalies(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Fx.ListAnomalies(r.Context(), &fxv1.ListAnomaliesRequest{})
 	if err != nil {

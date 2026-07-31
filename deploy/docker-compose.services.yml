@@ -107,6 +107,9 @@ services:
       APPROVAL_ADDR: approval:9005
       IAM_ADDR: iam:9001
       KAFKA_BROKERS: kafka:9092
+      STOCK_TOPIC: erp.inventory.stock.v1
+      STOCK_CONSUMER_GROUP: export.stock.v1
+      REDIS_ADDR: redis:6379
       MINIO_ENDPOINT: minio:9000
       # Browsers reach MinIO on the host port, and SigV4 signs the host, so
       # presigned URLs must be signed for this one.
@@ -118,6 +121,82 @@ services:
       - "9006:9006"
     networks: [infra]
     depends_on: [masterdata, product, fx, approval, iam]
+    restart: unless-stopped
+
+  inventory:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args: { SERVICE: inventory }
+    image: erp-go/inventory:dev
+    environment:
+      DB_DSN: postgres://erp_inventory:erp_inventory_pw@postgres:5432/erp_inventory?sslmode=disable
+      GRPC_PORT: "9008"
+      MASTERDATA_ADDR: masterdata:9002
+      KAFKA_BROKERS: kafka:9092
+      CONTRACT_TOPIC: erp.export.contract.v1
+      STOCK_TOPIC: erp.inventory.stock.v1
+      CONSUMER_GROUP: inventory.contract.v1
+      PURCHASE_TOPIC: erp.procurement.purchase.v1
+      PURCHASE_CONSUMER_GROUP: inventory.purchase.v1
+    ports:
+      - "9008:9008"
+    networks: [infra]
+    depends_on: [export, masterdata]
+    restart: unless-stopped
+
+  procurement:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args: { SERVICE: procurement }
+    image: erp-go/procurement:dev
+    environment:
+      DB_DSN: postgres://erp_procurement:erp_procurement_pw@postgres:5432/erp_procurement?sslmode=disable
+      GRPC_PORT: "9007"
+      MASTERDATA_ADDR: masterdata:9002
+      APPROVAL_ADDR: approval:9005
+      KAFKA_BROKERS: kafka:9092
+      STOCK_TOPIC: erp.inventory.stock.v1
+      CONSUMER_GROUP: procurement.stock.v1
+      APPROVAL_TOPIC: erp.approval.task.v1
+      APPROVAL_CONSUMER_GROUP: procurement.approval.v1
+      PURCHASE_TOPIC: erp.procurement.purchase.v1
+      REDIS_ADDR: redis:6379
+    ports:
+      - "9007:9007"
+    networks: [infra]
+    depends_on: [inventory, masterdata, approval]
+    restart: unless-stopped
+
+  notification:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args: { SERVICE: notification }
+    image: erp-go/notification:dev
+    environment:
+      DB_DSN: postgres://erp_notification:erp_notification_pw@postgres:5432/erp_notification?sslmode=disable
+      GRPC_PORT: "9010"
+      MASTERDATA_ADDR: masterdata:9002
+      IAM_ADDR: iam:9001
+      # "dev" records what would have been sent instead of sending it. There
+      # is no real provider configured yet; see docs/ARCHITECTURE.md 5.12.
+      MINIO_ENDPOINT: minio:9000
+      # Browsers reach MinIO on the host port, and SigV4 signs the host, so
+      # presigned URLs must be signed for this one.
+      MINIO_PUBLIC_ENDPOINT: localhost:19000
+      MINIO_ACCESS_KEY: erp
+      MINIO_SECRET_KEY: erp_dev_password
+      MINIO_BUCKET: erp-files
+      MAIL_PROVIDER: ${MAIL_PROVIDER:-dev}
+      MAIL_BATCH_SIZE: "20"
+      MAIL_SEND_DELAY: 100ms
+      MAIL_DECISION_WINDOW: 10m
+    ports:
+      - "9010:9010"
+    networks: [infra]
+    depends_on: [masterdata, iam]
     restart: unless-stopped
 
   gateway:
@@ -133,13 +212,16 @@ services:
       APPROVAL_ADDR: approval:9005
       PRODUCT_ADDR: product:9004
       EXPORT_ADDR: export:9006
+      PROCUREMENT_ADDR: procurement:9007
+      INVENTORY_ADDR: inventory:9008
+      NOTIFICATION_ADDR: notification:9010
       REDIS_ADDR: redis:6379
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       HTTP_PORT: "8080"
     ports:
       - "8080:8080"
     networks: [infra]
-    depends_on: [iam, masterdata, fx, approval, product, export]
+    depends_on: [iam, masterdata, fx, approval, product, export, notification]
     restart: unless-stopped
 
 networks:

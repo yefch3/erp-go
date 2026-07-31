@@ -16,6 +16,10 @@ service ContractService {
   // Turn an accepted quotation into a draft contract, inheriting its prices
   // and its exchange-rate snapshot.
   rpc CreateContractFromQuotation(CreateContractFromQuotationRequest) returns (CreateContractFromQuotationResponse);
+  // Write up a contract that never was a quotation - negotiated by email, the
+  // signed paper uploaded as an attachment. Lines are still required: nothing
+  // downstream can read a PDF.
+  rpc CreateContract(CreateContractRequest) returns (CreateContractResponse);
   // Edit the draft version in place. Refused once the version is submitted.
   rpc UpdateContract(UpdateContractRequest) returns (UpdateContractResponse);
   // Hand the current draft version to the approval engine.
@@ -98,6 +102,10 @@ message ContractFile {
   string uploader_name = 10;
   // Short-lived link; absent when storage could not be reached.
   string download_url = 11;
+  // Where the file came from: MANUAL (a person uploaded it) or PLATFORM (an
+  // e-signature provider posted it). A SIGNED file means very different
+  // things under the two, so the interface must show them differently.
+  string source = 12;
 }
 
 message PresignContractFileRequest {
@@ -215,6 +223,9 @@ message Contract {
   string total_amount = 16;
   string base_amount = 17;
   int32 version_no = 18;
+  // How the signature was established: MANUAL or PLATFORM. Empty until
+  // signed.
+  string signature_source = 19;
 }
 
 // ContractTerms is the editable part of a version. Prices and lines come from
@@ -258,6 +269,25 @@ message GetContractResponse {
   // Every version, newest first, so the UI can show the change history
   // without a second call.
   repeated ContractVersion versions = 4;
+  // How much of each line has physically shipped. Not part of the contract
+  // itself - an approved version is frozen because it records what was
+  // agreed, and what has left the warehouse since is a different fact.
+  repeated ShipmentProgress shipments = 5;
+}
+
+// Progress for one product on a contract, summed across its lines. Grouped
+// by product rather than by line so a contract change - which rewrites the
+// lines with new ids - does not make already-shipped goods disappear.
+message ShipmentProgress {
+  int64 product_id = 1;
+  int32 line_no = 2;
+  int64 sku_id = 9;
+  string product_code = 3;
+  string product_name = 4;
+  string uom_code = 5;
+  string qty = 6;
+  string shipped_qty = 7;
+  string remaining_qty = 8;
 }
 
 message CreateContractFromQuotationRequest {
@@ -266,6 +296,19 @@ message CreateContractFromQuotationRequest {
 }
 
 message CreateContractFromQuotationResponse {
+  Contract contract = 1;
+  ContractVersion version = 2;
+  repeated ContractItem items = 3;
+}
+
+message CreateContractRequest {
+  int64 customer_id = 1;
+  string currency = 2;
+  ContractTerms terms = 3;
+  repeated ItemInput items = 4;
+}
+
+message CreateContractResponse {
   Contract contract = 1;
   ContractVersion version = 2;
   repeated ContractItem items = 3;

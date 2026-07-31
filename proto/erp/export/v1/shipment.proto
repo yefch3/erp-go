@@ -1,0 +1,182 @@
+syntax = "proto3";
+
+package erp.export.v1;
+
+import "erp/common/v1/pagination.proto";
+
+// ShipmentService owns the shipping document: what went on which boat.
+//
+// Goods travel from the supplier straight to the vessel, so this is entered by
+// hand rather than derived from a warehouse outbound. A shipment carries lines
+// rather than a single contract, because one container routinely holds several
+// contracts' goods - consolidating is the normal case, not the exception.
+service ShipmentService {
+  rpc ListShipments(ListShipmentsRequest) returns (ListShipmentsResponse);
+  rpc GetShipment(GetShipmentRequest) returns (GetShipmentResponse);
+  rpc CreateShipment(CreateShipmentRequest) returns (CreateShipmentResponse);
+  // Replaces a draft's header and cargo wholesale. Refused once it has sailed.
+  rpc UpdateShipment(UpdateShipmentRequest) returns (UpdateShipmentResponse);
+  // The moment the goods count as gone: this is what feeds every contract's
+  // shipping progress, and where over-shipment is refused.
+  rpc ConfirmSailing(ConfirmSailingRequest) returns (ConfirmSailingResponse);
+  rpc MarkArrived(MarkArrivedRequest) returns (MarkArrivedResponse);
+  // Void a booking. A sailed one has its goods taken back out of the progress
+  // ledger; the document itself stays, marked cancelled.
+  rpc CancelShipment(CancelShipmentRequest) returns (CancelShipmentResponse);
+  // Which boats a contract's goods are on, for the sales side.
+  rpc ListContractVessels(ListContractVesselsRequest) returns (ListContractVesselsResponse);
+}
+
+// Shipment is the header: everything about the voyage.
+message Shipment {
+  int64 id = 1;
+  string shipment_no = 2;
+  string vessel_name = 3;
+  string voyage_no = 4;
+  string bl_no = 5;
+  // Free text. One booking often covers several boxes and the forwarder sends
+  // them as one line; splitting them into a repeated field would invent
+  // structure the paperwork does not have.
+  string container_no = 6;
+  string port_of_discharge = 7;
+  // ISO dates, empty when the carrier has not confirmed them yet.
+  string etd = 8;
+  string eta = 9;
+  string status = 10;
+  string remark = 11;
+  string created_by_name = 12;
+  string created_at = 13;
+  string shipped_at = 14;
+  string arrived_at = 15;
+  // List-only summaries of the cargo, so the table needs no second call.
+  int32 line_count = 16;
+  int32 contract_count = 17;
+  string contract_nos = 18;
+}
+
+// ShipmentItem is one contract line loaded onto this voyage.
+message ShipmentItem {
+  int64 id = 1;
+  int32 line_no = 2;
+  int64 contract_id = 3;
+  string contract_no = 4;
+  string customer_name = 5;
+  int64 contract_item_id = 6;
+  int64 product_id = 7;
+  int64 sku_id = 8;
+  string product_code = 9;
+  string product_name = 10;
+  string spec = 11;
+  string qty = 12;
+  string uom_code = 13;
+}
+
+// ShipmentInput is a booking as typed in.
+message ShipmentInput {
+  string vessel_name = 1;
+  string voyage_no = 2;
+  string bl_no = 3;
+  string container_no = 4;
+  string port_of_discharge = 5;
+  string etd = 6;
+  string eta = 7;
+  string remark = 8;
+  repeated ShipmentLineInput items = 9;
+}
+
+message ShipmentLineInput {
+  int64 contract_id = 1;
+  int64 contract_item_id = 2;
+  string qty = 3;
+}
+
+// Vessel is one boat carrying part of a contract, from the contract's side.
+message Vessel {
+  int64 shipment_id = 1;
+  string shipment_no = 2;
+  string vessel_name = 3;
+  string voyage_no = 4;
+  string bl_no = 5;
+  string container_no = 6;
+  string port_of_discharge = 7;
+  string etd = 8;
+  string eta = 9;
+  string status = 10;
+  string qty = 11;
+}
+
+message ListShipmentsRequest {
+  erp.common.v1.PageRequest page = 1;
+  string status = 2;
+  // Matches shipment number, vessel, bill of lading or container.
+  string keyword = 3;
+  int64 contract_id = 4;
+}
+
+message ListShipmentsResponse {
+  repeated Shipment shipments = 1;
+  int64 total = 2;
+}
+
+message GetShipmentRequest {
+  int64 id = 1;
+}
+
+message GetShipmentResponse {
+  Shipment shipment = 1;
+  repeated ShipmentItem items = 2;
+}
+
+message CreateShipmentRequest {
+  ShipmentInput shipment = 1;
+}
+
+message CreateShipmentResponse {
+  Shipment shipment = 1;
+  repeated ShipmentItem items = 2;
+}
+
+message UpdateShipmentRequest {
+  int64 id = 1;
+  ShipmentInput shipment = 2;
+}
+
+message UpdateShipmentResponse {
+  Shipment shipment = 1;
+  repeated ShipmentItem items = 2;
+}
+
+message ConfirmSailingRequest {
+  int64 id = 1;
+}
+
+message ConfirmSailingResponse {
+  Shipment shipment = 1;
+  repeated ShipmentItem items = 2;
+}
+
+message MarkArrivedRequest {
+  int64 id = 1;
+}
+
+message MarkArrivedResponse {
+  Shipment shipment = 1;
+  repeated ShipmentItem items = 2;
+}
+
+message CancelShipmentRequest {
+  int64 id = 1;
+}
+
+message CancelShipmentResponse {
+  Shipment shipment = 1;
+  repeated ShipmentItem items = 2;
+}
+
+message ListContractVesselsRequest {
+  int64 contract_id = 1;
+}
+
+message ListContractVesselsResponse {
+  repeated Vessel vessels = 1;
+}

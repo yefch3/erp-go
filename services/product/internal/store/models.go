@@ -8,6 +8,31 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AttributeDef struct {
+	ID            int64
+	TenantID      int64
+	TemplateID    int64
+	Key           string
+	Label         string
+	DataType      string
+	Unit          string
+	EnumValues    []byte
+	MatchStrategy string
+	TolerancePct  pgtype.Numeric
+	Level         string
+	IsMatchable   bool
+	IsRequired    bool
+	SortOrder     int32
+}
+
+type AttributeTemplate struct {
+	ID         int64
+	TenantID   int64
+	CategoryID int64
+	Name       string
+	CreatedAt  pgtype.Timestamptz
+}
+
 type Product struct {
 	ID                int64
 	TenantID          int64
@@ -29,6 +54,7 @@ type Product struct {
 	CreatedBy         int64
 	UpdatedAt         pgtype.Timestamptz
 	UpdatedBy         int64
+	Attributes        []byte
 }
 
 type ProductAttachment struct {
@@ -56,14 +82,15 @@ type ProductCategory struct {
 }
 
 type Sku struct {
-	ID         int64
-	TenantID   int64
-	ProductID  int64
-	Code       string
-	Spec       string
-	Attributes []byte
-	Status     string
-	CreatedAt  pgtype.Timestamptz
+	ID            int64
+	TenantID      int64
+	ProductID     int64
+	Code          string
+	Spec          string
+	Attributes    []byte
+	Status        string
+	CreatedAt     pgtype.Timestamptz
+	AttrSignature string
 }
 
 type Uom struct {

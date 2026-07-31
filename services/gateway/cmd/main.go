@@ -18,7 +18,10 @@ import (
 	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
 	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
+	ivv1 "github.com/sgao19/erp-go/gen/go/erp/inventory/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
+	ntv1 "github.com/sgao19/erp-go/gen/go/erp/notification/v1"
+	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	pdv1 "github.com/sgao19/erp-go/gen/go/erp/product/v1"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/pkg/livefeed"
@@ -76,6 +79,21 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer exConn.Close()
+	prConn, err := dial(cfg.ProcurementAddr)
+	if err != nil {
+		return err
+	}
+	defer prConn.Close()
+	ivConn, err := dial(cfg.InventoryAddr)
+	if err != nil {
+		return err
+	}
+	defer ivConn.Close()
+	ntConn, err := dial(cfg.NotificationAddr)
+	if err != nil {
+		return err
+	}
+	defer ntConn.Close()
 
 	// The live feed is a hint channel, not the event bus, but a gateway that
 	// silently serves a stream nobody ever publishes into is worse than one
@@ -87,22 +105,29 @@ func run(log *slog.Logger) error {
 	}
 
 	srv := &httpapi.Server{
-		IAM:         iamv1.NewAuthServiceClient(iamConn),
-		Directory:   iamv1.NewDirectoryServiceClient(iamConn),
-		Access:      iamv1.NewAccessServiceClient(iamConn),
-		Fx:          fxv1.NewFxServiceClient(fxConn),
-		Customers:   mdv1.NewCustomerServiceClient(mdConn),
-		Suppliers:   mdv1.NewSupplierServiceClient(mdConn),
-		Options:     mdv1.NewOptionServiceClient(mdConn),
-		Numbering:   mdv1.NewNumberingServiceClient(mdConn),
-		Approval:    apv1.NewApprovalServiceClient(apConn),
-		Catalog:     pdv1.NewCatalogServiceClient(pdConn),
-		Attachments: pdv1.NewAttachmentServiceClient(pdConn),
-		Quotations:  exv1.NewQuotationServiceClient(exConn),
-		Contracts:   exv1.NewContractServiceClient(exConn),
-		Live:        live,
-		JWTSecret:   cfg.JWTSecret,
-		Log:         log,
+		IAM:          iamv1.NewAuthServiceClient(iamConn),
+		Directory:    iamv1.NewDirectoryServiceClient(iamConn),
+		Access:       iamv1.NewAccessServiceClient(iamConn),
+		Fx:           fxv1.NewFxServiceClient(fxConn),
+		Customers:    mdv1.NewCustomerServiceClient(mdConn),
+		Suppliers:    mdv1.NewSupplierServiceClient(mdConn),
+		Options:      mdv1.NewOptionServiceClient(mdConn),
+		Numbering:    mdv1.NewNumberingServiceClient(mdConn),
+		Approval:     apv1.NewApprovalServiceClient(apConn),
+		Catalog:      pdv1.NewCatalogServiceClient(pdConn),
+		Attachments:  pdv1.NewAttachmentServiceClient(pdConn),
+		Attributes:   pdv1.NewAttributeServiceClient(pdConn),
+		Quotations:   exv1.NewQuotationServiceClient(exConn),
+		Contracts:    exv1.NewContractServiceClient(exConn),
+		Shipments:    exv1.NewShipmentServiceClient(exConn),
+		Receipts:     exv1.NewReceiptServiceClient(exConn),
+		Requirements: prv1.NewRequirementServiceClient(prConn),
+		Orders:       prv1.NewPurchaseOrderServiceClient(prConn),
+		Stocks:       ivv1.NewStockServiceClient(ivConn),
+		Emails:       ntv1.NewEmailServiceClient(ntConn),
+		Live:         live,
+		JWTSecret:    cfg.JWTSecret,
+		Log:          log,
 	}
 
 	httpSrv := &http.Server{

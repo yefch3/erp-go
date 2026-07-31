@@ -173,6 +173,24 @@ func (s *Service) SignContract(ctx context.Context, tenantID, id int64, op Opera
 	if view.Version.Status != "APPROVED" {
 		return "", apierr.Conflict("EX_VERSION_NOT_APPROVED", "该版本尚未通过审批")
 	}
+	// Confirming a signature by hand has to be backed by the thing being
+	// confirmed. Without this the button is an unsupported assertion: a
+	// contract in force, downstream purchasing and shipping already moving,
+	// and nothing on file showing the customer ever agreed.
+	//
+	// Scoped to this version, because a scan of v1 says nothing about the v2
+	// that replaced it.
+	signed, err := s.q.CountSignedAttachments(ctx, store.CountSignedAttachmentsParams{
+		TenantID: tenantID, ContractVersionID: &view.Version.ID,
+	})
+	if err != nil {
+		return "", err
+	}
+	if signed == 0 {
+		return "", apierr.Invalid("EX_SIGNED_COPY_REQUIRED",
+			"请先上传客户签署件（文件类型选「客户签回」），再确认签署").
+			WithMeta("version_no", strconv.Itoa(int(view.Version.VersionNo)))
+	}
 	payload, err := json.Marshal(effectiveEvent(view))
 	if err != nil {
 		return "", err
@@ -200,6 +218,14 @@ func (s *Service) SignContract(ctx context.Context, tenantID, id int64, op Opera
 		}
 		if _, err := q.SetContractStatus(ctx, store.SetContractStatusParams{
 			TenantID: tenantID, ID: id, NewStatus: "EFFECTIVE", UpdatedBy: op.ID,
+		}); err != nil {
+			return err
+		}
+		// How the signature was established, recorded on the contract rather
+		// than inferred later from whatever files happen to be attached.
+		// This path is always MANUAL; the webhook will set PLATFORM itself.
+		if err := q.MarkContractSigned(ctx, store.MarkContractSignedParams{
+			TenantID: tenantID, ID: id, SignatureSource: SourceManual, UpdatedBy: op.ID,
 		}); err != nil {
 			return err
 		}

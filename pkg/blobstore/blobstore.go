@@ -129,3 +129,16 @@ func (s *Store) Remove(ctx context.Context, key string) error {
 	}
 	return nil
 }
+
+// Stat reports what is actually in the bucket under a key.
+//
+// Needed whenever an upload went straight to storage through a presigned URL:
+// the size the client reports afterwards is a claim, not a fact, so any cap
+// enforced on it is advisory. Reading the object's real size closes that.
+func (s *Store) Stat(ctx context.Context, key string) (int64, string, error) {
+	info, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	if err != nil {
+		return 0, "", fmt.Errorf("blobstore: stat %s: %w", key, err)
+	}
+	return info.Size, info.ContentType, nil
+}

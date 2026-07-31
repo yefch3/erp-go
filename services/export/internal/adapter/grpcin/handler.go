@@ -34,8 +34,9 @@ func (h *Handler) ListQuotations(ctx context.Context, req *exv1.ListQuotationsRe
 		out = append(out, &exv1.Quotation{
 			Id: r.ID, QuoteNo: r.QuoteNo, CustomerId: r.CustomerID, CustomerName: r.CustomerName,
 			Currency: r.Currency, TotalAmount: r.TotalAmount, BaseAmount: r.BaseAmount,
-			Status: r.Status, SalesEmployee: r.SalesEmployee, ValidUntil: r.ValidUntil,
-			CreatedAt: ts(r.CreatedAt),
+			Status: r.Status, SalesEmployeeId: r.SalesEmployeeID, SalesEmployee: r.SalesEmployee,
+			ValidUntil: r.ValidUntil,
+			CreatedAt:  ts(r.CreatedAt),
 		})
 	}
 	return &exv1.ListQuotationsResponse{Quotations: out, Meta: &commonv1.PageMeta{Total: total}}, nil

@@ -44,15 +44,21 @@ func New(pool *pgxpool.Pool, dir Directory, live Live) *Service {
 	return &Service{pool: pool, q: store.New(pool), dir: dir, live: live}
 }
 
-// nudge tells a set of employees their approval queue moved. Always called
-// after the transaction commits: a hint about a change that got rolled back
-// would send the browser to read something that never happened.
-func (s *Service) nudge(ctx context.Context, tenantID int64, employeeIDs []int64, subject string) {
+// nudge tells a set of employees that something they are looking at moved.
+//
+// The event type matters: an approver's QUEUE changed, while the submitter's
+// DOCUMENT changed. They are different pages watching for different things,
+// and collapsing both into one type would make the submitter's contract page
+// reload every time an unrelated task landed in their todo list.
+//
+// Always called after the transaction commits: a hint about a change that got
+// rolled back would send the browser to read something that never happened.
+func (s *Service) nudge(ctx context.Context, tenantID int64, employeeIDs []int64, eventType, subject string) {
 	if s.live == nil || len(employeeIDs) == 0 {
 		return
 	}
 	s.live.ToEmployees(ctx, tenantID, employeeIDs, livefeed.Event{
-		Type: livefeed.TodoChanged, Subject: subject,
+		Type: eventType, Subject: subject,
 	})
 }
 
@@ -171,7 +177,7 @@ func (s *Service) Submit(ctx context.Context, tenantID int64, in SubmitInput) (s
 	if err != nil {
 		return store.ApprovalInstance{}, nil, err
 	}
-	s.nudge(ctx, tenantID, assigneesOf(tasks), subjectOf(inst))
+	s.nudge(ctx, tenantID, assigneesOf(tasks), livefeed.TodoChanged, subjectOf(inst))
 	return inst, tasks, nil
 }
 

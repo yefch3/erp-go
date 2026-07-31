@@ -95,7 +95,7 @@
             <el-input v-model="form.nameEn" placeholder="Used on export documents" />
           </el-form-item>
           <el-form-item :label="t('products.category')" required>
-            <el-select v-model="form.categoryId" filterable style="width: 100%">
+            <el-select v-model="form.categoryId" filterable style="width: 100%" @change="loadAttrDefs">
               <el-option v-for="c in categories" :key="c.id" :value="c.id" :label="c.name" />
             </el-select>
           </el-form-item>
@@ -146,6 +146,20 @@
         <!-- SKUs and files need an id, so they appear once the product exists. -->
         <template v-if="editingId">
           <el-divider content-position="left">
+            {{ t('attrs.productAttrs') }}
+            <span class="hint">{{ t('attrs.productAttrsHint') }}</span>
+          </el-divider>
+          <AttributeValueForm
+            :defs="attrDefs"
+            level="PRODUCT"
+            :values="productAttrs"
+            @update:values="(v) => (productAttrs = v)"
+          />
+          <div v-if="attrDefs.some((d) => d.level === 'PRODUCT')" class="sub-add">
+            <el-button size="small" @click="saveProductAttrs">{{ t('attrs.saveAttrs') }}</el-button>
+          </div>
+
+          <el-divider content-position="left">
             {{ t('products.skus') }}
             <span class="hint">{{ t('products.skusHint') }}</span>
           </el-divider>
@@ -155,8 +169,9 @@
             <el-table-column :label="t('common.status')" width="80">
               <template #default="{ row }">{{ row.status === 'ACTIVE' ? t('common.active') : t('common.inactive') }}</template>
             </el-table-column>
-            <el-table-column width="70">
+            <el-table-column width="140">
               <template #default="{ row }">
+                <el-button link type="primary" @click="openSkuAttrs(row)">{{ t('attrs.attrs') }}</el-button>
                 <el-button v-if="row.status === 'ACTIVE'" link type="danger" @click="removeSku(row)">
                   {{ t('common.deactivate') }}
                 </el-button>
@@ -214,8 +229,9 @@
       <el-table :data="categories" size="small">
         <el-table-column prop="code" :label="t('products.categoryCode')" width="140" />
         <el-table-column prop="name" :label="t('products.categoryName')" min-width="160" />
-        <el-table-column width="80">
+        <el-table-column width="160">
           <template #default="{ row }">
+            <el-button link type="primary" @click="openTemplate(row)">{{ t('attrs.template') }}</el-button>
             <el-button link type="danger" @click="removeCategory(row)">{{ t('common.deactivate') }}</el-button>
           </template>
         </el-table-column>
@@ -226,6 +242,29 @@
         <el-button @click="addCategory">{{ t('products.addCategory') }}</el-button>
       </div>
     </el-dialog>
+
+    <AttributeTemplateEditor
+      v-model:open="templateOpen"
+      :category-id="templateCategory.id"
+      :category-name="templateCategory.name"
+      @saved="() => loadAttrDefs(form.categoryId)"
+    />
+
+    <el-dialog v-model="skuAttrOpen" :title="t('attrs.skuAttrs')" width="620px">
+      <el-form-item :label="t('products.skuSpec')" label-width="70px">
+        <el-input v-model="skuAttrSpec" />
+      </el-form-item>
+      <AttributeValueForm
+        :defs="attrDefs"
+        level="SKU"
+        :values="skuAttrValues"
+        @update:values="(v) => (skuAttrValues = v)"
+      />
+      <template #footer>
+        <el-button @click="skuAttrOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveSkuAttrs">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -235,6 +274,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { del, get, post, put } from '../api'
 import { useAuthStore } from '../stores/auth'
+import AttributeTemplateEditor from '../components/AttributeTemplateEditor.vue'
+import AttributeValueForm from '../components/AttributeValueForm.vue'
 
 interface Category { id: string; code: string; name: string; status: string }
 interface Uom { id: string; code: string; name: string }
@@ -257,7 +298,16 @@ interface Product {
   description: string
   status: string
 }
-interface Sku { id: string; code: string; spec: string; status: string }
+interface Sku { id: string; code: string; spec: string; status: string; attributes?: string }
+interface AttrDef {
+  key: string
+  label: string
+  dataType: string
+  unit: string
+  enumValues?: string[]
+  level: string
+  isRequired: boolean
+}
 interface Attachment {
   id: string
   fileName: string
@@ -299,6 +349,17 @@ const form = reactive({ ...EMPTY_FORM })
 const newSku = reactive({ code: '', spec: '' })
 const newCategory = reactive({ code: '', name: '' })
 
+// Attribute template of the product's category, resolved along the ancestry.
+// Reloaded whenever the category changes, because the form is generated from it.
+const attrDefs = ref<AttrDef[]>([])
+const productAttrs = ref<Record<string, unknown>>({})
+const templateOpen = ref(false)
+const templateCategory = reactive({ id: '', name: '' })
+const skuAttrOpen = ref(false)
+const skuAttrEditing = ref<Sku | null>(null)
+const skuAttrValues = ref<Record<string, unknown>>({})
+const skuAttrSpec = ref('')
+
 async function load() {
   loading.value = true
   try {
@@ -326,6 +387,8 @@ function openCreate() {
   editingId.value = null
   skus.value = []
   attachments.value = []
+  attrDefs.value = []
+  productAttrs.value = {}
   Object.assign(form, EMPTY_FORM)
   dialogOpen.value = true
 }
@@ -347,11 +410,78 @@ async function openEdit(row: Product) {
     })
     skus.value = data.skus ?? []
     attachments.value = data.attachments ?? []
+    productAttrs.value = parseAttrs((data.product as unknown as { attributes?: string }).attributes)
+    await loadAttrDefs(data.product.categoryId)
   } catch {
     dialogOpen.value = false
   } finally {
     loadingDetail.value = false
   }
+}
+
+// The form is generated from the template, so it has to be refetched
+// whenever the category changes — a product moved from steel to textiles
+// gets a different set of fields.
+// Attributes cross the wire as a JSON string, so every read has to decode.
+// A malformed value yields an empty form rather than breaking the dialog.
+function parseAttrs(raw?: string): Record<string, unknown> {
+  if (!raw) return {}
+  try {
+    const v = JSON.parse(raw)
+    return v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
+  } catch {
+    return {}
+  }
+}
+
+async function loadAttrDefs(catId: string) {
+  if (!catId) {
+    attrDefs.value = []
+    return
+  }
+  try {
+    attrDefs.value = (await get<{ defs: AttrDef[] }>(`/categories/${catId}/attributes`)).defs ?? []
+  } catch {
+    attrDefs.value = []
+  }
+}
+
+function openTemplate(row: Category) {
+  templateCategory.id = row.id
+  templateCategory.name = row.name
+  templateOpen.value = true
+}
+
+// Attributes are saved separately from the product itself: they are validated
+// against the template and can fail on their own, and a rejected attribute
+// should not roll back a perfectly good name change.
+async function saveProductAttrs() {
+  if (!editingId.value) return
+  await put(`/products/${editingId.value}/attributes`, {
+    attributes_json: JSON.stringify(productAttrs.value),
+  })
+  ElMessage.success(t('attrs.saved'))
+}
+
+async function openSkuAttrs(row: Sku) {
+  skuAttrEditing.value = row
+  skuAttrSpec.value = row.spec
+  const detail = await get<{ skus: Sku[] }>(`/products/${editingId.value}`)
+  const fresh = (detail.skus ?? []).find((s) => s.id === row.id)
+  skuAttrValues.value = parseAttrs(fresh?.attributes)
+  skuAttrOpen.value = true
+}
+
+async function saveSkuAttrs() {
+  if (!skuAttrEditing.value) return
+  await put(`/skus/${skuAttrEditing.value.id}/attributes`, {
+    attributes_json: JSON.stringify(skuAttrValues.value),
+    spec: skuAttrSpec.value,
+  })
+  ElMessage.success(t('attrs.saved'))
+  skuAttrOpen.value = false
+  const detail = await get<{ skus: Sku[] }>(`/products/${editingId.value}`)
+  skus.value = detail.skus ?? []
 }
 
 async function save() {

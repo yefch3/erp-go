@@ -15,6 +15,11 @@ service CustomerService {
   // Reactivate a previously deactivated customer: master data lifecycle is
   // reversible (delete is what stays forbidden).
   rpc ActivateCustomer(ActivateCustomerRequest) returns (ActivateCustomerResponse);
+  // The address book, flattened: every contact that has an email, with the
+  // customer it belongs to. One call rather than a customer list followed by
+  // a lookup per customer, because the mail composer needs all of them at
+  // once and an N+1 there is a page that visibly stalls.
+  rpc ListMailingContacts(ListMailingContactsRequest) returns (ListMailingContactsResponse);
 }
 
 // SupplierService owns supplier master data, referenced by procurement.
@@ -98,6 +103,29 @@ message ListCustomersRequest {
 message ListCustomersResponse {
   repeated Customer customers = 1;
   erp.common.v1.PageMeta meta = 2;
+}
+
+// MailingContact is one addressable person, denormalised with their company.
+message MailingContact {
+  int64 contact_id = 1;
+  string name = 2;
+  string title = 3;
+  string email = 4;
+  bool is_primary = 5;
+  int64 customer_id = 6;
+  string customer_name = 7;
+  string country = 8;
+}
+
+message ListMailingContactsRequest {
+  // Matches contact name, email, or customer name.
+  string keyword = 1;
+  // Contacts of these customers only. Empty means every active customer.
+  repeated int64 customer_ids = 2;
+}
+
+message ListMailingContactsResponse {
+  repeated MailingContact contacts = 1;
 }
 
 message UpdateCustomerRequest {

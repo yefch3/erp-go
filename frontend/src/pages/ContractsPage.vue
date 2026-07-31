@@ -2,7 +2,12 @@
   <div>
     <div class="page-head">
       <h2>{{ t('contracts.title') }}</h2>
-      <el-button v-if="canWrite" type="primary" @click="openGenerate">{{ t('contracts.generate') }}</el-button>
+      <span class="grow" />
+      <!-- Most deals here are negotiated by email and come back as a signed
+           PDF, so writing one up directly is the primary action; generating
+           from a quotation is the secondary one. -->
+      <el-button v-if="canWrite" type="primary" @click="openDirect">{{ t('contracts.createDirect') }}</el-button>
+      <el-button v-if="canWrite" @click="openGenerate">{{ t('contracts.generate') }}</el-button>
     </div>
 
     <el-card shadow="never">
@@ -44,11 +49,13 @@
         <el-table-column :label="t('common.actions')" width="200" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row.id)">{{ t('contracts.detail') }}</el-button>
-            <template v-if="canWrite">
-              <el-button v-if="row.status === 'PENDING_SIGN'" link type="success" @click="sign(row)">
-                {{ t('contracts.sign') }}
-              </el-button>
-              <el-button v-else-if="row.status === 'DRAFT'" link type="primary" @click="submit(row)">
+            <!-- Gated on ownership, not just on the permission code. The list
+                 also carries documents this person only approves, and offering
+                 them an action the server will refuse is a lie in the UI. -->
+            <template v-if="canWrite && auth.owns(row.salesEmployeeId)">
+              <!-- No sign shortcut here on purpose: signing requires the
+                   countersigned copy, and that is only visible in the drawer. -->
+              <el-button v-if="row.status === 'DRAFT'" link type="primary" @click="submit(row)">
                 {{ t('contracts.submit') }}
               </el-button>
             </template>
@@ -67,6 +74,104 @@
     </el-card>
 
     <!-- Generate from an accepted quotation -->
+    <el-dialog v-model="directOpen" :title="t('contracts.createDirect')" width="860px">
+      <el-alert :title="t('contracts.directHint')" type="info" :closable="false" show-icon class="alert" />
+      <el-form label-width="110px" class="head-form">
+        <el-form-item :label="t('contracts.customer')" required>
+          <el-select
+            v-model="directForm.customerId"
+            filterable
+            clearable
+            style="width: 320px"
+            :placeholder="t('contracts.pickCustomer')"
+          >
+            <el-option
+              v-for="c in customers"
+              :key="c.id"
+              :value="Number(c.id)"
+              :label="`${c.code} · ${c.name}`"
+            />
+          </el-select>
+          <el-select v-model="directForm.currency" style="width: 110px; margin-left: 12px">
+            <el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('contracts.deliveryDate')">
+          <el-date-picker v-model="directForm.deliveryDate" type="date" value-format="YYYY-MM-DD" style="width: 200px" />
+          <el-input
+            v-model="directForm.incoterm"
+            style="width: 110px; margin-left: 12px"
+            :placeholder="t('contracts.incoterm')"
+          />
+          <el-input
+            v-model="directForm.paymentMethod"
+            style="width: 130px; margin-left: 12px"
+            :placeholder="t('contracts.payment')"
+          />
+        </el-form-item>
+        <el-form-item :label="t('contracts.ports')">
+          <el-input v-model="directForm.portOfLoading" style="width: 190px" :placeholder="t('contracts.pol')" />
+          <el-input v-model="directForm.portOfDischarge" style="width: 190px; margin-left: 12px" :placeholder="t('contracts.pod')" />
+        </el-form-item>
+        <el-form-item :label="t('contracts.terms')">
+          <el-input v-model="directForm.terms" type="textarea" :rows="2" />
+        </el-form-item>
+      </el-form>
+
+      <div class="side-title">
+        {{ t('contracts.lines') }}
+        <span class="hint">{{ t('contracts.linesHint') }}</span>
+        <el-button link type="primary" @click="addDirectLine">{{ t('contracts.addLine') }}</el-button>
+      </div>
+      <el-table :data="directForm.items" size="small">
+        <el-table-column :label="t('contracts.product')" min-width="230">
+          <template #default="{ row }">
+            <el-select
+              v-model="row.productId"
+              filterable
+              clearable
+              style="width: 100%"
+              :placeholder="t('contracts.pickProduct')"
+            >
+              <el-option
+                v-for="p in products"
+                :key="p.id"
+                :value="Number(p.id)"
+                :label="`${p.code} · ${p.name}`"
+              />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('contracts.qty')" width="120">
+          <template #default="{ row }"><el-input v-model="row.qty" size="small" /></template>
+        </el-table-column>
+        <el-table-column :label="t('contracts.unitPrice')" width="120">
+          <template #default="{ row }"><el-input v-model="row.unitPrice" size="small" /></template>
+        </el-table-column>
+        <el-table-column :label="t('contracts.amount')" width="120" align="right">
+          <template #default="{ row }">
+            <span class="num">{{ lineAmount(row) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column width="60">
+          <template #default="{ $index }">
+            <el-button link type="danger" @click="directForm.items.splice($index, 1)">
+              {{ common('delete') }}
+            </el-button>
+          </template>
+        </el-table-column>
+        <template #empty>{{ t('contracts.noLines') }}</template>
+      </el-table>
+      <div class="total-row">
+        {{ t('contracts.total') }}<span class="num money">{{ directTotal }} {{ directForm.currency }}</span>
+      </div>
+
+      <template #footer>
+        <el-button @click="directOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="createDirect">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="generateOpen" :title="t('contracts.generate')" width="620px">
       <el-alert :title="t('contracts.generateHint')" type="info" :closable="false" show-icon class="alert" />
       <el-form label-width="110px">
@@ -111,19 +216,29 @@
             <el-button v-if="canTransfer" size="small" plain @click="openTransfer">
               {{ t('ownership.transfer') }}
             </el-button>
-            <template v-if="canWrite">
+            <template v-if="canWrite && isMine">
             <el-button v-if="editable" size="small" @click="openTerms">{{ t('contracts.editDraft') }}</el-button>
             <el-button v-if="editable" size="small" type="primary" @click="submit(detail.contract)">
               {{ t('contracts.submit') }}
             </el-button>
-            <el-button v-if="detail.contract.status === 'PENDING_SIGN'" size="small" type="success" @click="sign(detail.contract)">
-              {{ t('contracts.sign') }}
-            </el-button>
+            <el-tooltip
+              v-if="detail.contract.status === 'PENDING_SIGN'"
+              :disabled="hasSignedCopy"
+              :content="t('contracts.signNeedsCopy')"
+              placement="bottom"
+            >
+              <span>
+                <el-button size="small" type="success" :disabled="!hasSignedCopy" @click="sign(detail.contract)">
+                  {{ t('contracts.sign') }}
+                </el-button>
+              </span>
+            </el-tooltip>
             <el-button v-if="changeable" size="small" @click="openChange">{{ t('contracts.change') }}</el-button>
             <el-button v-if="cancellable" size="small" type="danger" plain @click="cancel(detail.contract)">
               {{ t('contracts.cancel') }}
             </el-button>
             </template>
+            <span v-else-if="canWrite" class="not-mine">{{ t('contracts.notOwner') }}</span>
           </div>
         </div>
 
@@ -145,6 +260,11 @@
           </el-descriptions-item>
           <el-descriptions-item :label="t('contracts.fromQuote')">{{ detail.contract.quoteNo || '—' }}</el-descriptions-item>
           <el-descriptions-item :label="t('contracts.owner')">{{ detail.contract.salesEmployee || '—' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.contract.signatureSource" :label="t('contracts.signedVia')">
+            <el-tag size="small" :type="detail.contract.signatureSource === 'PLATFORM' ? 'success' : 'warning'" effect="plain">
+              {{ t(`contracts.fileSources.${detail.contract.signatureSource}`) }}
+            </el-tag>
+          </el-descriptions-item>
           <el-descriptions-item :label="t('contracts.terms')" :span="2">
             <div class="terms">{{ detail.version.terms || '—' }}</div>
           </el-descriptions-item>
@@ -184,7 +304,13 @@
           {{ t('contracts.fxSnapshot') }}:
           1 {{ detail.version.fx.baseCurrency }} = {{ detail.version.fx.rate }} {{ detail.version.currency }}
           · {{ detail.version.fx.source }} · {{ formatTime(detail.version.fx.rateAt) }}
-          <span class="hint">{{ t('contracts.fxInherited') }}</span>
+          <!-- A directly written contract took today's rate; only one that
+               grew out of a quotation inherited it. Saying "inherited from
+               the quotation" on a contract that never had one is the kind of
+               small lie that makes people stop trusting the rest. -->
+          <span class="hint">
+            {{ detail?.contract.quoteNo ? t('contracts.fxInherited') : t('contracts.fxSnapshot') }}
+          </span>
         </div>
 
         <template v-if="canSeeApproval && approvals.length">
@@ -238,10 +364,21 @@
           <span class="hint">{{ t('contracts.uploadHint', { version: detail.version.versionNo }) }}</span>
         </div>
         <el-table :data="files" size="small">
-          <el-table-column :label="t('contracts.fileKind')" width="100">
+          <el-table-column :label="t('contracts.fileKind')" width="170">
             <template #default="{ row }">
               <el-tag size="small" :type="row.kind === 'SIGNED' ? 'success' : 'info'" effect="plain">
                 {{ t(`contracts.fileKinds.${row.kind}`) }}
+              </el-tag>
+              <!-- A scan somebody uploaded and an envelope the platform sent
+                   back are not equal evidence, so they never look equal. -->
+              <el-tag
+                v-if="row.kind === 'SIGNED'"
+                size="small"
+                class="src-tag"
+                :type="row.source === 'PLATFORM' ? 'success' : 'warning'"
+                effect="dark"
+              >
+                {{ t(`contracts.fileSources.${row.source || 'MANUAL'}`) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -291,6 +428,119 @@
             </el-table-column>
             <el-table-column :label="t('ownership.reason')" min-width="180">
               <template #default="{ row }"><span class="sub">{{ row.reason || '—' }}</span></template>
+            </el-table-column>
+          </el-table>
+        </template>
+
+        <!-- What has physically left the warehouse. Kept beside the contract
+             rather than inside it: an approved version is frozen because it
+             records what was agreed, and shipping keeps moving afterwards. -->
+        <template v-if="detail.shipments?.length">
+          <el-divider content-position="left">
+            {{ t('contracts.shipping') }}
+            <span class="hint">{{ t('contracts.shippingHint') }}</span>
+          </el-divider>
+          <el-alert v-if="overShipped" type="warning" :closable="false" show-icon class="alert">
+            {{ t('contracts.overShipped') }}
+          </el-alert>
+          <el-table :data="detail.shipments" size="small">
+            <el-table-column :label="t('contracts.product')" min-width="200">
+              <template #default="{ row }">{{ row.productName }}</template>
+            </el-table-column>
+            <el-table-column :label="t('contracts.sold')" width="120" align="right">
+              <template #default="{ row }"><span class="num">{{ trimQty(row.qty) }}</span></template>
+            </el-table-column>
+            <el-table-column :label="t('contracts.shipped')" width="120" align="right">
+              <template #default="{ row }">
+                <span class="num" :class="{ dim: Number(row.shippedQty) === 0 }">
+                  {{ trimQty(row.shippedQty) }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('contracts.toShip')" width="140" align="right">
+              <template #default="{ row }">
+                <span class="num" :class="remainClass(row.remainingQty)">
+                  {{ trimQty(row.remainingQty) }}
+                </span>
+                <div v-if="Number(row.remainingQty) < 0" class="sub over">
+                  {{ t('contracts.overShippedBy', { n: trimQty(String(-Number(row.remainingQty))) }) }}
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+        </template>
+
+        <!-- Which boat the goods are on. "Where is my customer's order" is the
+             most-asked question on an export desk, and the answer lives on a
+             different document, so it is fetched and shown here rather than
+             leaving sales to ring the forwarder. -->
+        <template v-if="vessels.length">
+          <el-divider content-position="left">{{ t('contracts.vessels') }}</el-divider>
+          <el-table :data="vessels" size="small">
+            <el-table-column :label="t('contracts.vessel')" min-width="190">
+              <template #default="{ row }">
+                <div>{{ row.vesselName || '—' }}</div>
+                <div class="sub">{{ row.shipmentNo }}{{ row.voyageNo ? ` · ${row.voyageNo}` : '' }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('contracts.blNo')" min-width="150">
+              <template #default="{ row }">
+                <div>{{ row.blNo || '—' }}</div>
+                <div class="sub">{{ row.portOfDischarge }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('contracts.schedule')" width="180">
+              <template #default="{ row }">{{ row.etd || '—' }} → {{ row.eta || '—' }}</template>
+            </el-table-column>
+            <el-table-column :label="t('contracts.shipped')" width="110" align="right">
+              <template #default="{ row }"><span class="num">{{ trimQty(row.qty) }}</span></template>
+            </el-table-column>
+            <el-table-column :label="t('common.status')" width="100">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain" :type="row.status === 'ARRIVED' ? 'success' : 'warning'">
+                  {{ t(`shipments.statuses.${row.status}`) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+        </template>
+
+        <!-- Collection. The salesperson's question is not "did finance file
+             it" but "has my customer paid", so the answer belongs on the
+             contract, not only in the finance queue. -->
+        <template v-if="receiptProgress">
+          <el-divider content-position="left">{{ t('contracts.receipts') }}</el-divider>
+          <div class="recv">
+            <span>{{ t('contracts.contracted') }} <b class="num">{{ receiptProgress.totalAmount }}</b></span>
+            <span>{{ t('contracts.received') }} <b class="num">{{ receiptProgress.receivedAmount }}</b></span>
+            <span>
+              {{ t('contracts.stillOwed') }}
+              <b class="num" :class="Number(receiptProgress.openAmount) > 0 ? 'over' : ''">
+                {{ receiptProgress.openAmount }}
+              </b>
+            </span>
+            <span class="sub">{{ receiptProgress.currency }}</span>
+          </div>
+          <el-table v-if="receipts.length" :data="receipts" size="small">
+            <el-table-column :label="t('contracts.paidOn')" width="110">
+              <template #default="{ row }">{{ row.valueDate }}</template>
+            </el-table-column>
+            <el-table-column :label="t('contracts.bankRef')" min-width="150">
+              <template #default="{ row }">
+                <div>{{ row.bankRef }}</div>
+                <div class="sub">{{ row.counterparty }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('contracts.paidAmount')" width="120" align="right">
+              <template #default="{ row }">
+                <span class="num" :class="Number(row.amount) < 0 ? 'over' : ''">{{ row.amount }}</span>
+                <div v-if="Number(row.feeAmount) !== 0" class="sub">
+                  {{ t('contracts.plusFee', { n: row.feeAmount }) }}
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('contracts.paidBy')" width="90">
+              <template #default="{ row }"><span class="sub">{{ row.allocatedByName }}</span></template>
             </el-table-column>
           </el-table>
         </template>
@@ -371,7 +621,13 @@
       <el-table :data="termsForm.items" size="small">
         <el-table-column :label="t('contracts.product')" min-width="220">
           <template #default="{ row }">
-            <el-select v-model="row.productId" filterable style="width: 100%">
+            <el-select
+              v-model="row.productId"
+              filterable
+              clearable
+              style="width: 100%"
+              :placeholder="t('contracts.pickProduct')"
+            >
               <el-option v-for="p in products" :key="p.id" :value="p.id" :label="`${p.code} · ${p.name}`" />
             </el-select>
           </template>
@@ -429,7 +685,13 @@
       <el-table :data="changeForm.items" size="small">
         <el-table-column :label="t('contracts.product')" min-width="220">
           <template #default="{ row }">
-            <el-select v-model="row.productId" filterable style="width: 100%">
+            <el-select
+              v-model="row.productId"
+              filterable
+              clearable
+              style="width: 100%"
+              :placeholder="t('contracts.pickProduct')"
+            >
               <el-option v-for="p in products" :key="p.id" :value="p.id" :label="`${p.code} · ${p.name}`" />
             </el-select>
           </template>
@@ -500,11 +762,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { del, get, post, put } from '../api'
+import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 
 interface Fx { rate: string; rateAt: string; source: string; baseCurrency: string }
@@ -519,6 +782,8 @@ interface Contract {
   totalAmount: string
   versionNo: number
   salesEmployee: string
+  salesEmployeeId: string
+  signatureSource: string
 }
 interface Version {
   id: string
@@ -553,7 +818,47 @@ interface Item {
   amount: string
   hsCode: string
 }
-interface Detail { contract: Contract; version: Version; items: Item[]; versions: VersionRow[] }
+interface ReceiptProgress {
+  currency: string
+  totalAmount: string
+  receivedAmount: string
+  openAmount: string
+}
+interface ContractReceipt {
+  allocationId: string
+  bankRef: string
+  valueDate: string
+  counterparty: string
+  amount: string
+  feeAmount: string
+  allocatedByName: string
+}
+interface Vessel {
+  shipmentNo: string
+  vesselName: string
+  voyageNo: string
+  blNo: string
+  portOfDischarge: string
+  etd: string
+  eta: string
+  status: string
+  qty: string
+}
+interface Shipment {
+  productId: string
+  productName: string
+  uomCode: string
+  qty: string
+  shippedQty: string
+  remainingQty: string
+}
+interface Detail {
+  contract: Contract
+  version: Version
+  items: Item[]
+  versions: VersionRow[]
+  shipments: Shipment[]
+}
 interface ApprovalTask {
   id: string
   nodeSeq: number
@@ -580,6 +885,7 @@ interface ContractFile {
   uploadedAt: string
   uploaderName: string
   downloadUrl: string
+  source: string
 }
 interface Transfer {
   id: string
@@ -612,6 +918,28 @@ const acceptedQuotes = ref<Quote[]>([])
 const products = ref<Product[]>([])
 const paymentOptions = ref<OptionItem[]>([])
 const detail = ref<Detail | null>(null)
+
+// Shipping more than the contract now says was sold means the contract was
+// reduced after goods had already left. No rule gets that right on its own,
+// so it is shown rather than clamped to zero and forgotten.
+const overShipped = computed(() =>
+  (detail.value?.shipments ?? []).some((s) => Number(s.remainingQty) < 0),
+)
+
+function remainClass(v: string): string {
+  const n = Number(v)
+  if (n < 0) return 'over'
+  if (n === 0) return 'done'
+  return ''
+}
+
+// Quantities arrive as exact decimals; "1500.0000 PCS" reads worse than
+// "1500 PCS" and means the same thing.
+function trimQty(v: string): string {
+  if (!v) return '0'
+  if (!v.includes('.')) return v
+  return v.replace(/0+$/, '').replace(/\.$/, '')
+}
 const total = ref(0)
 const page = ref(1)
 const pageSize = 10
@@ -622,6 +950,89 @@ const loadingDetail = ref(false)
 const saving = ref(false)
 const detailOpen = ref(false)
 const generateOpen = ref(false)
+const directOpen = ref(false)
+const customers = ref<{ id: string; code: string; name: string }[]>([])
+const CURRENCIES = ['USD', 'EUR', 'CNY', 'JPY', 'GBP']
+
+// productId is undefined rather than 0 while unset: el-select shows its
+// placeholder for undefined, but renders a literal "0" for zero.
+interface DirectLine { productId?: number; qty: string; unitPrice: string }
+const directForm = reactive({
+  customerId: undefined as number | undefined,
+  currency: 'USD',
+  deliveryDate: '',
+  incoterm: 'FOB',
+  paymentMethod: '',
+  portOfLoading: '',
+  portOfDischarge: '',
+  terms: '',
+  items: [] as DirectLine[],
+})
+
+// Recomputed as the user types. The server prices it again and is the
+// authority; this is so nobody signs off a total they have not seen.
+const directTotal = computed(() =>
+  directForm.items.reduce((sum, r) => sum + Number(lineAmount(r)), 0).toFixed(2),
+)
+
+function addDirectLine() {
+  directForm.items.push({ productId: undefined, qty: '', unitPrice: '' })
+}
+
+async function openDirect() {
+  Object.assign(directForm, {
+    customerId: undefined, currency: 'USD', deliveryDate: '', incoterm: 'FOB',
+    paymentMethod: '', portOfLoading: '', portOfDischarge: '', terms: '', items: [],
+  })
+  addDirectLine()
+  if (!customers.value.length) {
+    customers.value = (await get<{ customers: typeof customers.value }>('/customers', { page_size: 200 })).customers ?? []
+  }
+  if (!products.value.length) {
+    products.value = (await get<{ products: Product[] }>('/products', { page_size: 200 })).products ?? []
+  }
+  directOpen.value = true
+}
+
+async function createDirect() {
+  const items = directForm.items.filter((r) => r.productId && Number(r.qty) > 0)
+  if (!directForm.customerId) {
+    ElMessage.warning(t('contracts.customerRequired'))
+    return
+  }
+  if (!items.length) {
+    ElMessage.warning(t('contracts.linesRequired'))
+    return
+  }
+  saving.value = true
+  try {
+    const data = await post<Detail>('/contracts/direct', {
+      customerId: directForm.customerId!,
+      currency: directForm.currency,
+      terms: {
+        incoterm: directForm.incoterm,
+        paymentMethod: directForm.paymentMethod,
+        portOfLoading: directForm.portOfLoading,
+        portOfDischarge: directForm.portOfDischarge,
+        deliveryDate: directForm.deliveryDate,
+        terms: directForm.terms,
+      },
+      items: items.map((r) => ({
+        productId: r.productId,
+        qty: r.qty,
+        unitPrice: r.unitPrice || '0',
+      })),
+    })
+    ElMessage.success(t('contracts.created'))
+    directOpen.value = false
+    load()
+    // Straight into the drawer, because the next thing to do is attach the
+    // signed contract pages.
+    openDetail(data.contract.id)
+  } finally {
+    saving.value = false
+  }
+}
 const termsOpen = ref(false)
 const changeOpen = ref(false)
 
@@ -636,7 +1047,13 @@ const approvals = ref<ApprovalRound[]>([])
 const employees = ref<Record<string, string>>({})
 const canSeeApproval = auth.can('approval:instance:read')
 const canTransfer = auth.can('export:ownership:transfer')
+// Being able to open a contract and being able to change it are different
+// questions: approvers and supervisors read documents they do not own.
+const isMine = computed(() => auth.owns(detail.value?.contract.salesEmployeeId ?? ''))
 const transfers = ref<Transfer[]>([])
+const vessels = ref<Vessel[]>([])
+const receipts = ref<ContractReceipt[]>([])
+const receiptProgress = ref<ReceiptProgress | null>(null)
 const transferOpen = ref(false)
 const transferForm = reactive({ toEmployeeId: '', reason: '' })
 const staff = ref<{ id: string; name: string; status: string }[]>([])
@@ -649,6 +1066,12 @@ const transferTargets = computed(() =>
   ),
 )
 const files = ref<ContractFile[]>([])
+// Signing by hand asserts the customer agreed; this is the thing being
+// asserted. Scoped to the version on screen, because a scan of v1 is not
+// evidence for the v2 that replaced it.
+const hasSignedCopy = computed(() =>
+  files.value.some((f) => f.kind === 'SIGNED' && f.versionNo === detail.value?.version.versionNo),
+)
 const fileInput = ref<HTMLInputElement | null>(null)
 const uploadKind = ref('SIGNED')
 const uploading = ref(false)
@@ -698,7 +1121,7 @@ async function openDetail(id: string, versionId?: string) {
   try {
     detail.value = await get<Detail>(`/contracts/${id}`, versionId ? { version_id: versionId } : undefined)
     detailOpen.value = true
-    await Promise.all([loadFiles(id), loadApprovals(id), loadTransfers(id)])
+    await Promise.all([loadFiles(id), loadApprovals(id), loadTransfers(id), loadVessels(id), loadReceipts(id)])
   } catch {
     // The interceptor has already told the user why.
     detail.value = null
@@ -838,6 +1261,34 @@ function employeeName(id: string): string {
 
 // ---------------------------------------------------------------- ownership
 
+// Reading shipments is its own permission. Somebody who lacks it should
+// still get the rest of the drawer rather than an empty one, so a refusal
+// here is swallowed and the section simply does not appear.
+// Reading collection is gated on the contract permission, but the finance
+// data can still be absent for a contract with no version; a failure here
+// hides the section rather than breaking the drawer.
+async function loadReceipts(contractId: string) {
+  try {
+    const d = await get<{ progress: ReceiptProgress; receipts: ContractReceipt[] }>(
+      `/contracts/${contractId}/receipts`,
+    )
+    receiptProgress.value = d.progress?.currency ? d.progress : null
+    receipts.value = d.receipts ?? []
+  } catch {
+    receiptProgress.value = null
+    receipts.value = []
+  }
+}
+
+async function loadVessels(contractId: string) {
+  try {
+    vessels.value =
+      (await get<{ vessels: Vessel[] }>(`/contracts/${contractId}/vessels`)).vessels ?? []
+  } catch {
+    vessels.value = []
+  }
+}
+
 async function loadTransfers(contractId: string) {
   transfers.value =
     (await get<{ transfers: Transfer[] }>('/ownership/transfers', {
@@ -944,7 +1395,9 @@ function toLines(items: Item[]): ChangeLine[] {
 
 // Preview only. The server recomputes every amount and its numbers are the
 // ones stored; this just keeps the editor oriented while typing.
-function lineAmount(row: ChangeLine): string {
+// Used by both the change form and the direct-creation form: neither cares
+// about anything but the two numbers.
+function lineAmount(row: { qty: string; unitPrice: string }): string {
   const qty = Number(row.qty)
   const price = Number(row.unitPrice)
   if (!Number.isFinite(qty) || !Number.isFinite(price)) return '—'
@@ -1036,9 +1489,43 @@ onMounted(async () => {
     employees.value = Object.fromEntries((staff.employees ?? []).map((e) => [e.id, e.name]))
   }
 })
+
+// An approver acted on something this person submitted. Only doc.changed is
+// watched: todo.changed means their own approval queue moved, which this page
+// says nothing about, and reloading on it would be noise.
+//
+// The re-read goes through the normal API rather than trusting the event's
+// contents, so the data scope is applied exactly as it is everywhere else.
+const stopListening = onLive((event) => {
+  if (event.type !== 'doc.changed') return
+  load()
+  // Leave the drawer alone while a form is open over it: swapping the values
+  // underneath somebody who is halfway through editing is worse than making
+  // them close the dialog to see the update.
+  const editing = termsOpen.value || changeOpen.value || transferOpen.value
+  const current = detail.value?.contract.id
+  if (detailOpen.value && current && !editing && event.subject === `CONTRACT:${current}`) {
+    openDetail(current)
+  }
+})
+onUnmounted(stopListening)
 </script>
 
 <style scoped>
+.recv {
+  display: flex;
+  gap: 22px;
+  align-items: baseline;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.not-mine {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.src-tag {
+  margin-left: 6px;
+}
 .approval-round {
   margin-bottom: 18px;
 }
@@ -1148,5 +1635,44 @@ onMounted(async () => {
 }
 .items-foot {
   margin-top: 10px;
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+.num.dim {
+  color: var(--el-text-color-placeholder);
+}
+.num.done {
+  color: var(--el-color-success);
+}
+.num.over,
+.sub.over {
+  color: var(--el-color-danger);
+  font-weight: 600;
+}
+.grow {
+  flex: 1;
+}
+.head-form {
+  margin-bottom: 4px;
+}
+.side-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 14px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-regular);
+}
+.total-row {
+  margin-top: 10px;
+  text-align: right;
+  font-size: 13px;
+}
+.total-row .money {
+  margin-left: 8px;
+  font-size: 16px;
+  font-weight: 600;
 }
 </style>

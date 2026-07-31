@@ -21,6 +21,27 @@
         <el-menu-item v-if="auth.can('export:contract:read')" index="/contracts">
           {{ t('menu.contracts') }}
         </el-menu-item>
+        <el-menu-item v-if="auth.can('export:shipment:read')" index="/shipments">
+          {{ t('menu.shipments') }}
+        </el-menu-item>
+        <el-menu-item v-if="auth.can('export:receipt:read')" index="/receipts">
+          {{ t('menu.receipts') }}
+        </el-menu-item>
+        <el-menu-item v-if="auth.can('inventory:stock:read')" index="/stocks">
+          {{ t('menu.stocks') }}
+        </el-menu-item>
+        <el-menu-item v-if="auth.can('inventory:stock:read')" index="/outbounds">
+          {{ t('menu.outbounds') }}
+        </el-menu-item>
+        <el-menu-item v-if="auth.can('procurement:requirement:read')" index="/requirements">
+          {{ t('menu.requirements') }}
+        </el-menu-item>
+        <el-menu-item v-if="auth.can('procurement:order:read')" index="/purchase-orders">
+          {{ t('menu.purchaseOrders') }}
+        </el-menu-item>
+        <el-menu-item v-if="auth.can('notification:email:read')" index="/emails">
+          {{ t('menu.emails') }}
+        </el-menu-item>
         <el-menu-item v-if="auth.can('fx:rate:read')" index="/fx">{{ t('menu.fx') }}</el-menu-item>
         <el-menu-item v-if="auth.can('iam:employee:read')" index="/settings/employees">
           {{ t('menu.employees') }}
@@ -30,6 +51,9 @@
         </el-menu-item>
         <el-menu-item v-if="auth.can('approval:flow:read')" index="/settings/approvals">
           {{ t('menu.approvalFlows') }}
+        </el-menu-item>
+        <el-menu-item v-if="auth.can('notification:email:write')" index="/settings/signatures">
+          {{ t('menu.signatures') }}
         </el-menu-item>
         <el-menu-item index="/suppliers" disabled>{{ t('menu.suppliers') }}{{ t('menu.todo') }}</el-menu-item>
       </el-menu>

@@ -17,6 +17,7 @@ import (
 type Handler struct {
 	pdv1.UnimplementedCatalogServiceServer
 	pdv1.UnimplementedAttachmentServiceServer
+	pdv1.UnimplementedAttributeServiceServer
 	svc *app.Service
 }
 
@@ -261,6 +262,7 @@ func productToProto(p store.GetProductRow) *pdv1.Product {
 		ReferencePrice: p.ReferencePrice, ReferenceCurrency: p.ReferenceCurrency,
 		HsCode: p.HsCode, TaxRate: p.TaxRate, ExportRebateRate: p.ExportRebateRate,
 		Description: p.Description, Status: p.Status,
+		Attributes: string(p.Attributes),
 	}
 }
 

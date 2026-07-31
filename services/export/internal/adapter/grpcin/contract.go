@@ -31,7 +31,8 @@ func (h *ContractHandler) ListContracts(ctx context.Context, req *exv1.ListContr
 		out = append(out, &exv1.Contract{
 			Id: r.ID, ContractNo: r.ContractNo, QuoteNo: r.QuoteNo,
 			CustomerId: r.CustomerID, CustomerName: r.CustomerName, Status: r.Status,
-			SalesEmployee: r.SalesEmployee, SignedAt: ts(r.SignedAt), EffectiveAt: ts(r.EffectiveAt),
+			SalesEmployeeId: r.SalesEmployeeID, SalesEmployee: r.SalesEmployee,
+			SignedAt: ts(r.SignedAt), EffectiveAt: ts(r.EffectiveAt),
 			CreatedAt: ts(r.CreatedAt), Currency: r.Currency,
 			TotalAmount: r.TotalAmount, BaseAmount: r.BaseAmount, VersionNo: r.VersionNo,
 		})
@@ -44,9 +45,25 @@ func (h *ContractHandler) GetContract(ctx context.Context, req *exv1.GetContract
 	if err != nil {
 		return nil, err
 	}
+	// Shipment progress is looked up separately: it lives beside the contract
+	// rather than inside it, because an approved version is frozen and what
+	// has shipped since keeps moving.
+	progress, err := h.svc.ShipmentProgress(ctx, grpcx.TenantID(ctx), view.Contract.ID, view.Version.ID)
+	if err != nil {
+		return nil, err
+	}
+	shipments := make([]*exv1.ShipmentProgress, 0, len(progress))
+	for _, p := range progress {
+		shipments = append(shipments, &exv1.ShipmentProgress{
+			LineNo: p.LineNo, ProductId: p.ProductID, SkuId: p.SkuID,
+			ProductCode: p.ProductCode, ProductName: p.ProductName, UomCode: p.UomCode,
+			Qty: p.Qty, ShippedQty: p.ShippedQty, RemainingQty: p.RemainingQty,
+		})
+	}
 	return &exv1.GetContractResponse{
 		Contract: contractToProto(view), Version: versionToProto(view.Version),
 		Items: contractItemsToProto(view.Items), Versions: versionListToProto(view.Versions),
+		Shipments: shipments,
 	}, nil
 }
 
@@ -57,6 +74,20 @@ func (h *ContractHandler) CreateContractFromQuotation(ctx context.Context, req *
 		return nil, err
 	}
 	return &exv1.CreateContractFromQuotationResponse{
+		Contract: contractToProto(view), Version: versionToProto(view.Version),
+		Items: contractItemsToProto(view.Items),
+	}, nil
+}
+
+func (h *ContractHandler) CreateContract(ctx context.Context, req *exv1.CreateContractRequest) (*exv1.CreateContractResponse, error) {
+	view, err := h.svc.CreateContract(ctx, grpcx.TenantID(ctx), app.DirectContractInput{
+		CustomerID: req.GetCustomerId(), Currency: req.GetCurrency(),
+		Terms: termsFromProto(req.GetTerms()), Items: itemsFromProto(req.GetItems()),
+	}, operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.CreateContractResponse{
 		Contract: contractToProto(view), Version: versionToProto(view.Version),
 		Items: contractItemsToProto(view.Items),
 	}, nil
@@ -134,7 +165,8 @@ func contractToProto(view app.ContractView) *exv1.Contract {
 		CustomerId: c.CustomerID, CustomerName: c.CustomerName,
 		CurrentVersionId: c.CurrentVersionID, Status: c.Status,
 		SalesEmployeeId: c.SalesEmployeeID, SalesEmployee: c.SalesEmployee,
-		SignedAt: ts(c.SignedAt), EffectiveAt: ts(c.EffectiveAt), CompletedAt: ts(c.CompletedAt),
+		SignatureSource: c.SignatureSource,
+		SignedAt:        ts(c.SignedAt), EffectiveAt: ts(c.EffectiveAt), CompletedAt: ts(c.CompletedAt),
 		CreatedAt: ts(c.CreatedAt),
 		Currency:  view.Version.Currency, TotalAmount: view.Version.TotalAmount,
 		BaseAmount: view.Version.BaseAmount, VersionNo: view.Version.VersionNo,
@@ -237,7 +269,7 @@ func fileToProto(v app.FileView) *exv1.ContractFile {
 		VersionNo: r.VersionNo, Kind: r.Kind, FileName: r.FileName,
 		ContentType: r.ContentType, SizeBytes: r.SizeBytes,
 		UploadedAt: ts(r.UploadedAt), UploaderName: r.UploaderName,
-		DownloadUrl: v.DownloadURL,
+		DownloadUrl: v.DownloadURL, Source: r.Source,
 	}
 }
 

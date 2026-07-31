@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package erp.product.v1;
+
+// AttributeService owns the spec vocabulary: what fields a category's
+// products have, and how each one is compared when matching a customer's
+// request line against the catalogue.
+//
+// The definitions are data, not code. Adding an industry - steel, textiles,
+// chemicals - is inserting rows; the recall engine reads the template and
+// builds its query, so every industry runs the same code path.
+service AttributeService {
+  // Resolved along the category's ancestry: a child may add fields or
+  // tighten a tolerance without restating the parent's.
+  rpc ResolveAttributes(ResolveAttributesRequest) returns (ResolveAttributesResponse);
+  // Only what this category declares itself, for the editor.
+  rpc GetTemplate(GetTemplateRequest) returns (GetTemplateResponse);
+  rpc SaveTemplate(SaveTemplateRequest) returns (SaveTemplateResponse);
+  rpc SetProductAttributes(SetProductAttributesRequest) returns (SetProductAttributesResponse);
+  rpc SetSkuAttributes(SetSkuAttributesRequest) returns (SetSkuAttributesResponse);
+  // Candidates for one request line. Recall beats precision by design: a
+  // missed candidate costs a wrong quotation, an extra one costs a glance.
+  rpc RecallCandidates(RecallCandidatesRequest) returns (RecallCandidatesResponse);
+}
+
+// AttributeDef is one field of a category's spec.
+message AttributeDef {
+  string key = 1;
+  string label = 2;
+  // DIMENSION / NUMBER / ENUM / TEXT / RANGE
+  string data_type = 3;
+  string unit = 4;
+  repeated string enum_values = 5;
+  // EXACT / TOLERANCE / SYNONYM / FUZZY / OVERLAP
+  string match_strategy = 6;
+  string tolerance_pct = 7;
+  // PRODUCT when every variant shares it, SKU when it tells them apart.
+  string level = 8;
+  bool is_matchable = 9;
+  bool is_required = 10;
+  int32 sort_order = 11;
+  // Which ancestor contributed this one, so the editor can show inherited
+  // fields as read-only.
+  int64 from_category_id = 12;
+}
+
+// Candidate is one product or SKU that might be what was asked for.
+message Candidate {
+  int64 product_id = 1;
+  int64 sku_id = 2;
+  string product_code = 3;
+  string product_name = 4;
+  string sku_code = 5;
+  string spec = 6;
+  // Product and SKU attributes merged into the full spec.
+  string attributes_json = 7;
+  string score = 8;
+  // ATTR / FULLTEXT - which pass returned it.
+  string recall_source = 9;
+  string reason = 10;
+}
+
+message ResolveAttributesRequest {
+  int64 category_id = 1;
+}
+
+message ResolveAttributesResponse {
+  repeated AttributeDef defs = 1;
+}
+
+message GetTemplateRequest {
+  int64 category_id = 1;
+}
+
+message GetTemplateResponse {
+  string name = 1;
+  // Declared by this category only; inherited ones are not included.
+  repeated AttributeDef defs = 2;
+}
+
+message SaveTemplateRequest {
+  int64 category_id = 1;
+  string name = 2;
+  // Replaces this category's own definitions wholesale.
+  repeated AttributeDef defs = 3;
+}
+
+message SaveTemplateResponse {
+  repeated AttributeDef defs = 1;
+}
+
+message SetProductAttributesRequest {
+  int64 product_id = 1;
+  // JSON object of key to value. Values keep their JSON type, so a dimension
+  // stays a number rather than becoming a string.
+  string attributes_json = 2;
+}
+
+message SetProductAttributesResponse {
+  string attributes_json = 1;
+}
+
+message SetSkuAttributesRequest {
+  int64 sku_id = 1;
+  string attributes_json = 2;
+  // Optional human-readable spec; empty leaves the existing one alone.
+  string spec = 3;
+}
+
+message SetSkuAttributesResponse {
+  string attributes_json = 1;
+  string attr_signature = 2;
+}
+
+message RecallCandidatesRequest {
+  int64 category_id = 1;
+  // Parsed attribute values from the request line.
+  string attributes_json = 2;
+  // The raw line, for the text pass.
+  string keyword = 3;
+  int32 limit = 4;
+}
+
+message RecallCandidatesResponse {
+  repeated Candidate candidates = 1;
+}

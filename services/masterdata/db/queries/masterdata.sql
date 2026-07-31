@@ -102,3 +102,34 @@ WHERE tenant_id = $1 AND id = $2 AND status = 'INACTIVE';
 -- name: ActivateSupplier :execrows
 UPDATE suppliers SET status = 'ACTIVE', updated_by = $3, updated_at = now()
 WHERE tenant_id = $1 AND id = $2 AND status = 'INACTIVE';
+
+-- name: ListMailingContacts :many
+-- The address book for the mail composer. Contacts without an email are left
+-- out rather than returned greyed: a picker row you cannot pick is noise.
+-- Deactivated customers are excluded for the same reason.
+SELECT
+    cc.id           AS contact_id,
+    cc.name,
+    cc.title,
+    cc.email,
+    cc.is_primary,
+    c.id            AS customer_id,
+    c.name          AS customer_name,
+    c.country
+FROM customer_contacts cc
+JOIN customers c ON c.id = cc.customer_id AND c.tenant_id = cc.tenant_id
+WHERE cc.tenant_id = $1
+  AND c.status = 'ACTIVE'
+  AND cc.email <> ''
+  AND (
+      sqlc.arg(keyword)::text = ''
+      OR cc.name  ILIKE '%' || sqlc.arg(keyword)::text || '%'
+      OR cc.email ILIKE '%' || sqlc.arg(keyword)::text || '%'
+      OR c.name   ILIKE '%' || sqlc.arg(keyword)::text || '%'
+  )
+  AND (
+      cardinality(sqlc.arg(customer_ids)::bigint[]) = 0
+      OR c.id = ANY(sqlc.arg(customer_ids)::bigint[])
+  )
+ORDER BY c.name, cc.is_primary DESC, cc.sort_order, cc.id
+LIMIT 500;

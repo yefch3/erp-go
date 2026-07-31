@@ -10,6 +10,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/livefeed"
 	"github.com/sgao19/erp-go/services/export/internal/store"
 )
 
@@ -154,6 +155,8 @@ type Deps struct {
 	Approvals   Approvals
 	Files       Files
 	Scopes      Scopes
+	// Optional: without it the pages still work, they just need a refresh.
+	Live *livefeed.Publisher
 	Involvement Involvement
 	Directory   Directory
 	Seller      Seller
@@ -169,6 +172,7 @@ type Service struct {
 	approvals Approvals
 	files     Files
 	scopes    Scopes
+	live      *livefeed.Publisher
 	involved  Involvement
 	directory Directory
 	seller    Seller
@@ -179,7 +183,7 @@ func New(pool *pgxpool.Pool, d Deps) *Service {
 		pool: pool, q: store.New(pool),
 		customers: d.Customers, products: d.Products, rates: d.Rates,
 		number: d.Numbering, approvals: d.Approvals, files: d.Files,
-		scopes: d.Scopes, involved: d.Involvement, directory: d.Directory,
+		scopes: d.Scopes, involved: d.Involvement, directory: d.Directory, live: d.Live,
 		seller: d.Seller,
 	}
 }

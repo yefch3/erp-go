@@ -66,6 +66,7 @@ func run(log *slog.Logger) error {
 	h := grpcin.New(svc)
 	pdv1.RegisterCatalogServiceServer(srv, h)
 	pdv1.RegisterAttachmentServiceServer(srv, h)
+	pdv1.RegisterAttributeServiceServer(srv, h)
 	reflection.Register(srv)
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)

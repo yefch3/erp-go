@@ -1,0 +1,265 @@
+syntax = "proto3";
+
+package erp.export.v1;
+
+import "erp/common/v1/pagination.proto";
+
+// ReceiptService owns collection: what the bank says arrived, and which
+// contracts we decided it paid for.
+//
+// Those are two different kinds of statement and they live in two tables. A
+// bank line is fact and is never edited; an allocation is judgement and is
+// revised by writing its opposite, never by deleting it.
+service ReceiptService {
+  rpc ListBankAccounts(ListBankAccountsRequest) returns (ListBankAccountsResponse);
+  rpc CreateBankAccount(CreateBankAccountRequest) returns (CreateBankAccountResponse);
+  // The reconciliation queue.
+  rpc ListTransactions(ListTransactionsRequest) returns (ListTransactionsResponse);
+  rpc GetTransaction(GetTransactionRequest) returns (GetTransactionResponse);
+  rpc RecordTransaction(RecordTransactionRequest) returns (RecordTransactionResponse);
+  // Decide which contracts a bank line paid for. One line can be split
+  // across several contracts; one contract can be paid by several lines.
+  rpc AllocateReceipt(AllocateReceiptRequest) returns (AllocateReceiptResponse);
+  // Undo an allocation by writing its opposite. Requires a reason.
+  rpc ReverseAllocation(ReverseAllocationRequest) returns (ReverseAllocationResponse);
+  // File a line that has nothing to do with receivables - a tax refund, bank
+  // interest, a transfer between our own accounts.
+  rpc MarkIrrelevant(MarkIrrelevantRequest) returns (MarkIrrelevantResponse);
+  rpc ReopenTransaction(ReopenTransactionRequest) returns (ReopenTransactionResponse);
+  // Candidates for the allocation picker: contracts still owed money.
+  rpc ListOpenReceivables(ListOpenReceivablesRequest) returns (ListOpenReceivablesResponse);
+  // The other half: one contract collected in instalments.
+  rpc GetContractReceipts(GetContractReceiptsRequest) returns (GetContractReceiptsResponse);
+}
+
+// BankAccount is one of our own accounts. Kept so a transfer between two of
+// them is not mistaken for a customer payment.
+message BankAccount {
+  int64 id = 1;
+  string account_no = 2;
+  string account_name = 3;
+  string bank_name = 4;
+  string currency = 5;
+  string status = 6;
+}
+
+// BankTransaction is one line off a statement.
+message BankTransaction {
+  int64 id = 1;
+  int64 account_id = 2;
+  string account_name = 3;
+  string bank_ref = 4;
+  string direction = 5;
+  string amount = 6;
+  string currency = 7;
+  string value_date = 8;
+  string counterparty = 9;
+  string counterparty_account = 10;
+  string remittance_info = 11;
+  string source = 12;
+  // A reference we issued ourselves, as opposed to something the customer
+  // typed. Only this one could ever settle a line automatically.
+  string trusted_ref = 13;
+  string disposition = 14;
+  string irrelevant_type = 15;
+  string note = 16;
+  string recorded_by_name = 17;
+  string created_at = 18;
+  string allocated_amount = 19;
+  string unallocated_amount = 20;
+  string fee_amount = 21;
+}
+
+// ReceiptAllocation is one contract's share of a bank line. A reversal row
+// carries a negative amount and points at the row it undoes.
+message ReceiptAllocation {
+  int64 id = 1;
+  int64 contract_id = 2;
+  string contract_no = 3;
+  string customer_name = 4;
+  string amount = 5;
+  // The gap we absorb - intermediary bank charges. Does not come out of the
+  // bank line; it only closes the contract.
+  string fee_amount = 6;
+  string currency = 7;
+  int64 reversal_of = 8;
+  string reverse_reason = 9;
+  string allocated_by_name = 10;
+  string allocated_at = 11;
+}
+
+// ContractSuggestion is a contract whose number appeared in the remittance
+// line. A hint for the operator, never an action.
+message ContractSuggestion {
+  int64 contract_id = 1;
+  string contract_no = 2;
+  string customer_name = 3;
+  string currency = 4;
+  string open_amount = 5;
+}
+
+// OpenReceivable is a contract still owed money.
+message OpenReceivable {
+  int64 contract_id = 1;
+  string contract_no = 2;
+  int64 customer_id = 3;
+  string customer_name = 4;
+  string currency = 5;
+  string total_amount = 6;
+  string received_amount = 7;
+  string open_amount = 8;
+}
+
+// ReceiptProgress is one contract's collection position.
+message ReceiptProgress {
+  int64 contract_id = 1;
+  string contract_no = 2;
+  string customer_name = 3;
+  string currency = 4;
+  string total_amount = 5;
+  string received_amount = 6;
+  string open_amount = 7;
+}
+
+// ContractReceipt is one payment seen from the contract's side.
+message ContractReceipt {
+  int64 allocation_id = 1;
+  int64 transaction_id = 2;
+  string bank_ref = 3;
+  string value_date = 4;
+  string counterparty = 5;
+  string source = 6;
+  string amount = 7;
+  string fee_amount = 8;
+  string currency = 9;
+  int64 reversal_of = 10;
+  string allocated_by_name = 11;
+}
+
+message TransactionInput {
+  int64 account_id = 1;
+  string bank_ref = 2;
+  string direction = 3;
+  string amount = 4;
+  string currency = 5;
+  string value_date = 6;
+  string counterparty = 7;
+  string counterparty_account = 8;
+  string remittance_info = 9;
+  string source = 10;
+  string trusted_ref = 11;
+  string note = 12;
+}
+
+message AllocationInput {
+  int64 contract_id = 1;
+  string amount = 2;
+  string fee_amount = 3;
+}
+
+message ListBankAccountsRequest {}
+
+message ListBankAccountsResponse {
+  repeated BankAccount accounts = 1;
+}
+
+message CreateBankAccountRequest {
+  string account_no = 1;
+  string account_name = 2;
+  string bank_name = 3;
+  string currency = 4;
+}
+
+message CreateBankAccountResponse {
+  int64 id = 1;
+}
+
+message ListTransactionsRequest {
+  erp.common.v1.PageRequest page = 1;
+  string disposition = 2;
+  string direction = 3;
+  // Matches bank reference, counterparty or remittance line.
+  string keyword = 4;
+}
+
+message ListTransactionsResponse {
+  repeated BankTransaction transactions = 1;
+  int64 total = 2;
+}
+
+message GetTransactionRequest {
+  int64 id = 1;
+}
+
+message GetTransactionResponse {
+  BankTransaction transaction = 1;
+  repeated ReceiptAllocation allocations = 2;
+  repeated ContractSuggestion suggestions = 3;
+}
+
+message RecordTransactionRequest {
+  TransactionInput transaction = 1;
+}
+
+message RecordTransactionResponse {
+  BankTransaction transaction = 1;
+}
+
+message AllocateReceiptRequest {
+  int64 transaction_id = 1;
+  repeated AllocationInput allocations = 2;
+}
+
+message AllocateReceiptResponse {
+  BankTransaction transaction = 1;
+  repeated ReceiptAllocation allocations = 2;
+}
+
+message ReverseAllocationRequest {
+  int64 allocation_id = 1;
+  // Mandatory: a reversal with no stated reason is not auditable.
+  string reason = 2;
+}
+
+message ReverseAllocationResponse {
+  BankTransaction transaction = 1;
+  repeated ReceiptAllocation allocations = 2;
+}
+
+message MarkIrrelevantRequest {
+  int64 transaction_id = 1;
+  string irrelevant_type = 2;
+  string note = 3;
+}
+
+message MarkIrrelevantResponse {
+  BankTransaction transaction = 1;
+}
+
+message ReopenTransactionRequest {
+  int64 transaction_id = 1;
+}
+
+message ReopenTransactionResponse {
+  BankTransaction transaction = 1;
+}
+
+message ListOpenReceivablesRequest {
+  // Only the same currency can be settled, so the picker filters by it.
+  string currency = 1;
+  int64 customer_id = 2;
+  string keyword = 3;
+}
+
+message ListOpenReceivablesResponse {
+  repeated OpenReceivable receivables = 1;
+}
+
+message GetContractReceiptsRequest {
+  int64 contract_id = 1;
+}
+
+message GetContractReceiptsResponse {
+  ReceiptProgress progress = 1;
+  repeated ContractReceipt receipts = 2;
+}

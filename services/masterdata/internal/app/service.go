@@ -328,3 +328,15 @@ func (s *Service) ActivateSupplier(ctx context.Context, tenantID, id, operatorID
 	}
 	return nil
 }
+
+// ListMailingContacts is the address book the mail composer picks from.
+// Unpaginated on purpose: the composer needs to search and multi-select
+// across the whole book, and the query caps itself at 500 rows.
+func (s *Service) ListMailingContacts(ctx context.Context, tenantID int64, keyword string, customerIDs []int64) ([]store.ListMailingContactsRow, error) {
+	if customerIDs == nil {
+		customerIDs = []int64{}
+	}
+	return s.q.ListMailingContacts(ctx, store.ListMailingContactsParams{
+		TenantID: tenantID, Keyword: keyword, CustomerIds: customerIDs,
+	})
+}

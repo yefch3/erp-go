@@ -1,0 +1,286 @@
+syntax = "proto3";
+
+package erp.procurement.v1;
+
+import "erp/common/v1/pagination.proto";
+
+option go_package = "github.com/sgao19/erp-go/gen/go/erp/procurement/v1;procurementv1";
+
+// RequirementService exposes what has to be bought.
+//
+// Requirements are not created through this API: they arrive from contracts
+// that took effect, over Kafka. A buyer reads them, and closes the ones the
+// business decides not to act on.
+service RequirementService {
+  rpc ListRequirements(ListRequirementsRequest) returns (ListRequirementsResponse);
+  // Raise one by hand: restocking, a long-lead item, a deal with a supplier.
+  // Purchasing is not only the tail end of a sale, and a company that can
+  // only buy what it has already sold cannot keep stock at all.
+  rpc CreateRequirement(CreateRequirementRequest) returns (CreateRequirementResponse);
+  rpc GetRequirement(GetRequirementRequest) returns (GetRequirementResponse);
+  // Close a requirement the business will not buy against - stock on hand,
+  // or a customer order that fell through outside the contract.
+  rpc CancelRequirement(CancelRequirementRequest) returns (CancelRequirementResponse);
+  // Put a wrongly closed one back on the list.
+  rpc ReopenRequirement(ReopenRequirementRequest) returns (ReopenRequirementResponse);
+  // Which purchase orders are covering it. An outstanding line that is
+  // already on order needs waiting on, not buying again.
+  rpc ListRequirementOrders(ListRequirementOrdersRequest) returns (ListRequirementOrdersResponse);
+}
+
+message ReopenRequirementRequest {
+  int64 id = 1;
+}
+
+message ReopenRequirementResponse {
+  string status = 1;
+}
+
+// CoveringOrder is one purchase order line raised against a requirement.
+message CoveringOrder {
+  int64 po_id = 1;
+  string po_no = 2;
+  string supplier_name = 3;
+  string status = 4;
+  string currency = 5;
+  string expected_date = 6;
+  string qty = 7;
+  string unit_price = 8;
+  string received_qty = 9;
+  string created_at = 10;
+}
+
+message ListRequirementOrdersRequest {
+  int64 id = 1;
+}
+
+message ListRequirementOrdersResponse {
+  repeated CoveringOrder orders = 1;
+}
+
+// Requirement is one contract line that needs sourcing.
+message Requirement {
+  int64 id = 1;
+  // Ids into export's contracts. No foreign key exists; procurement keeps a
+  // snapshot and never reads export's tables.
+  int64 contract_id = 2;
+  string contract_no = 3;
+  int64 contract_version_id = 4;
+  int32 version_no = 5;
+  int64 contract_item_id = 6;
+  string customer_name = 7;
+
+  int64 product_id = 8;
+  int64 sku_id = 9;
+  string product_code = 10;
+  string product_name = 11;
+  string spec = 12;
+  int64 uom_id = 13;
+  string uom_code = 14;
+
+  string required_qty = 15;
+  string ordered_qty = 16;
+  string required_date = 17;
+
+  // CONTRACT / STOCK_ALERT / MANUAL
+  string source = 18;
+  // PENDING / PARTIALLY_ORDERED / ORDERED / RECEIVED / SUPERSEDED / CANCELLED
+  string status = 19;
+  // Why it was retired; empty while it is still live.
+  string closed_reason = 20;
+  string created_at = 21;
+  // How much has physically turned up. The only thing that can close a
+  // manually raised requirement: it has no contract behind it, so no amount
+  // of stock arriving for somebody else ever satisfies it.
+  string received_qty = 22;
+}
+
+message ListRequirementsRequest {
+  erp.common.v1.PageRequest page = 1;
+  string status = 2;
+  int64 contract_id = 3;
+  string keyword = 4;
+}
+
+message ListRequirementsResponse {
+  repeated Requirement requirements = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message CreateRequirementRequest {
+  int64 product_id = 1;
+  int64 sku_id = 2;
+  string product_code = 3;
+  string product_name = 4;
+  string spec = 5;
+  int64 uom_id = 6;
+  string uom_code = 7;
+  string required_qty = 8;
+  string required_date = 9;
+  string remark = 10;
+}
+
+message CreateRequirementResponse {
+  Requirement requirement = 1;
+}
+
+message GetRequirementRequest {
+  int64 id = 1;
+}
+
+message GetRequirementResponse {
+  Requirement requirement = 1;
+}
+
+message CancelRequirementRequest {
+  int64 id = 1;
+  string reason = 2;
+}
+
+message CancelRequirementResponse {
+  string status = 1;
+}
+
+// PurchaseOrderService turns requirements into orders placed with suppliers.
+//
+// Consolidation is the point: three contracts each short 500 become one order
+// for 1500, which is the only way a buyer gets a better price. So an order
+// references requirements, and a requirement may span several orders.
+service PurchaseOrderService {
+  rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);
+  rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
+  rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
+  // Spending money needs a signature. The approval engine routes on the
+  // order total, so a large order can require more of them.
+  rpc SubmitOrder(SubmitOrderRequest) returns (SubmitOrderResponse);
+  rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);
+  // Goods arriving. Stock is increased by inventory, not here.
+  rpc ReceiveOrder(ReceiveOrderRequest) returns (ReceiveOrderResponse);
+}
+
+message PurchaseOrder {
+  int64 id = 1;
+  string po_no = 2;
+  int64 supplier_id = 3;
+  string supplier_code = 4;
+  string supplier_name = 5;
+  string currency = 6;
+  string total_amount = 7;
+  string expected_date = 8;
+  // DRAFT / PENDING_APPROVAL / REJECTED / ORDERED /
+  // PARTIALLY_RECEIVED / RECEIVED / CANCELLED
+  string status = 9;
+  string buyer_name = 10;
+  string remark = 11;
+  string reject_reason = 12;
+  string cancel_reason = 13;
+  int64 item_count = 14;
+  string total_qty = 15;
+  string received_qty = 16;
+  string created_at = 17;
+  int64 approval_instance_id = 18;
+}
+
+message PurchaseOrderItem {
+  int64 id = 1;
+  int64 requirement_id = 2;
+  int64 product_id = 3;
+  int64 sku_id = 4;
+  string product_code = 5;
+  string product_name = 6;
+  string spec = 7;
+  string uom_code = 8;
+  string qty = 9;
+  string unit_price = 10;
+  string amount = 11;
+  string received_qty = 12;
+  // Where this line came from, so a buyer can see what it is funding.
+  string contract_no = 13;
+  string customer_name = 14;
+  string source = 15;
+}
+
+message PurchaseReceipt {
+  int64 id = 1;
+  string receipt_no = 2;
+  int64 warehouse_id = 3;
+  string operator_name = 4;
+  string remark = 5;
+  string total_qty = 6;
+  string received_at = 7;
+}
+
+message ListOrdersRequest {
+  erp.common.v1.PageRequest page = 1;
+  string status = 2;
+  string keyword = 3;
+}
+
+message ListOrdersResponse {
+  repeated PurchaseOrder orders = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message GetOrderRequest {
+  int64 id = 1;
+}
+
+message GetOrderResponse {
+  PurchaseOrder order = 1;
+  repeated PurchaseOrderItem items = 2;
+  repeated PurchaseReceipt receipts = 3;
+}
+
+message CreateOrderLine {
+  int64 requirement_id = 1;
+  string qty = 2;
+  string unit_price = 3;
+}
+
+message CreateOrderRequest {
+  int64 supplier_id = 1;
+  string supplier_code = 2;
+  string supplier_name = 3;
+  string currency = 4;
+  string expected_date = 5;
+  string remark = 6;
+  repeated CreateOrderLine lines = 7;
+}
+
+message CreateOrderResponse {
+  int64 id = 1;
+  string po_no = 2;
+  string status = 3;
+}
+
+message SubmitOrderRequest {
+  int64 id = 1;
+}
+
+message SubmitOrderResponse {
+  string status = 1;
+  int64 approval_instance_id = 2;
+}
+
+message CancelOrderRequest {
+  int64 id = 1;
+  string reason = 2;
+}
+
+message CancelOrderResponse {}
+
+message ReceiveOrderLine {
+  int64 po_item_id = 1;
+  string qty = 2;
+}
+
+message ReceiveOrderRequest {
+  int64 id = 1;
+  int64 warehouse_id = 2;
+  string remark = 3;
+  repeated ReceiveOrderLine lines = 4;
+}
+
+message ReceiveOrderResponse {
+  string receipt_no = 1;
+}

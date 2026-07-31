@@ -47,6 +47,23 @@ func (s *Server) createContract(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// createDirectContract writes up a contract with no quotation behind it. A
+// separate route rather than a branch inside createContract: the two carry
+// different bodies, and one endpoint that silently means two things is the
+// kind of thing that gets called wrongly at three in the morning.
+func (s *Server) createDirectContract(w http.ResponseWriter, r *http.Request) {
+	req := &exv1.CreateContractRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Contracts.CreateContract(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) updateContract(w http.ResponseWriter, r *http.Request) {
 	req := &exv1.UpdateContractRequest{}
 	if !s.decodeBody(w, r, req) {

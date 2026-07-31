@@ -309,7 +309,7 @@ const listQuotations = `-- name: ListQuotations :many
 SELECT
     q.id, q.quote_no, q.customer_id, q.customer_name, q.currency,
     q.total_amount::text AS total_amount, q.base_amount::text AS base_amount,
-    q.status, q.sales_employee, coalesce(q.valid_until::text, '')::text AS valid_until,
+    q.status, q.sales_employee_id, q.sales_employee, coalesce(q.valid_until::text, '')::text AS valid_until,
     q.created_at, count(*) OVER () AS total
 FROM quotations q
 WHERE q.tenant_id = $1::bigint
@@ -345,18 +345,19 @@ type ListQuotationsParams struct {
 }
 
 type ListQuotationsRow struct {
-	ID            int64
-	QuoteNo       string
-	CustomerID    int64
-	CustomerName  string
-	Currency      string
-	TotalAmount   string
-	BaseAmount    string
-	Status        string
-	SalesEmployee string
-	ValidUntil    string
-	CreatedAt     pgtype.Timestamptz
-	Total         int64
+	ID              int64
+	QuoteNo         string
+	CustomerID      int64
+	CustomerName    string
+	Currency        string
+	TotalAmount     string
+	BaseAmount      string
+	Status          string
+	SalesEmployeeID int64
+	SalesEmployee   string
+	ValidUntil      string
+	CreatedAt       pgtype.Timestamptz
+	Total           int64
 }
 
 // Aliased because the correlated subquery below brings a second table into
@@ -389,6 +390,7 @@ func (q *Queries) ListQuotations(ctx context.Context, arg ListQuotationsParams) 
 			&i.TotalAmount,
 			&i.BaseAmount,
 			&i.Status,
+			&i.SalesEmployeeID,
 			&i.SalesEmployee,
 			&i.ValidUntil,
 			&i.CreatedAt,

@@ -20,6 +20,12 @@ type Config struct {
 	ConsumerGroup string
 	// Topic this service's own events are published to.
 	ContractTopic string
+	// Inventory's topic, read for outbound events so a contract knows what
+	// has shipped against it.
+	StockTopic         string
+	StockConsumerGroup string
+	// Live hints to open pages.
+	RedisAddr string
 	// Object storage for contract paperwork. PublicEndpoint is where the
 	// browser reaches it: SigV4 signs the host, so a presigned URL must be
 	// signed for that address and not for the in-cluster one.
@@ -49,6 +55,9 @@ func Load() Config {
 		ApprovalTopic:       env("APPROVAL_TOPIC", "erp.approval.task.v1"),
 		ConsumerGroup:       env("CONSUMER_GROUP", "export.approval.v1"),
 		ContractTopic:       env("CONTRACT_TOPIC", "erp.export.contract.v1"),
+		StockTopic:          env("STOCK_TOPIC", "erp.inventory.stock.v1"),
+		StockConsumerGroup:  env("STOCK_CONSUMER_GROUP", "export.stock.v1"),
+		RedisAddr:           env("REDIS_ADDR", "localhost:6379"),
 		MinioEndpoint:       env("MINIO_ENDPOINT", "localhost:19000"),
 		MinioPublicEndpoint: env("MINIO_PUBLIC_ENDPOINT", ""),
 		MinioAccessKey:      env("MINIO_ACCESS_KEY", "erp"),

@@ -8,6 +8,9 @@ use (
 	./services/fx
 	./services/gateway
 	./services/iam
+	./services/inventory
 	./services/masterdata
+	./services/notification
+	./services/procurement
 	./services/product
 )

@@ -18,6 +18,7 @@ import (
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/pkg/idempotency"
 	"github.com/sgao19/erp-go/pkg/kafkax"
+	"github.com/sgao19/erp-go/pkg/livefeed"
 	"github.com/sgao19/erp-go/pkg/outbox"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/export/internal/adapter/grpcin"
@@ -94,6 +95,9 @@ func run(log *slog.Logger) error {
 
 	// One client, two roles: it submits documents and it answers "what am I
 	// being asked to approve".
+	live := livefeed.NewPublisher(cfg.RedisAddr, log)
+	defer live.Close()
+
 	approvals := grpcout.NewApprovals(apConn)
 
 	svc := app.New(pool, app.Deps{
@@ -105,6 +109,7 @@ func run(log *slog.Logger) error {
 		Involvement: approvals,
 		Files:       grpcout.NewFiles(files),
 		Scopes:      grpcout.NewScopes(iamConn),
+		Live:        live,
 		Directory:   grpcout.NewDirectory(iamConn),
 		Seller:      app.Seller{Name: cfg.SellerName, Address: cfg.SellerAddress},
 	})
@@ -130,9 +135,21 @@ func run(log *slog.Logger) error {
 		}
 	}()
 
+	// Inbound: what the warehouse shipped. Its own consumer group, so it
+	// cannot swallow the approval consumer's events or be swallowed by them.
+	shipments := kafkax.NewConsumer(cfg.KafkaBrokers, cfg.StockConsumerGroup, cfg.StockTopic,
+		idempotency.New(pool, cfg.StockConsumerGroup), kafkain.StockEvents(svc, log), log)
+	go func() {
+		if err := shipments.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Error("stock consumer stopped", "err", err)
+		}
+	}()
+
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
 	exv1.RegisterQuotationServiceServer(srv, grpcin.New(svc))
 	exv1.RegisterContractServiceServer(srv, grpcin.NewContracts(svc))
+	exv1.RegisterShipmentServiceServer(srv, grpcin.NewShipments(svc))
+	exv1.RegisterReceiptServiceServer(srv, grpcin.NewReceipts(svc))
 	reflection.Register(srv)
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)

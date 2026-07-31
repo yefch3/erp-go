@@ -192,7 +192,7 @@ interface Role { id: string; name: string }
 interface Employee { id: string; code: string; name: string }
 
 // Document types that have a flow. Extend as services gain approvals.
-const BIZ_TYPES = ['CONTRACT']
+const BIZ_TYPES = ['CONTRACT', 'PURCHASE_ORDER']
 const APPROVER_TYPES = ['MANAGER', 'ROLE', 'EMPLOYEE']
 const APPROVE_MODES = ['ANY', 'ALL']
 

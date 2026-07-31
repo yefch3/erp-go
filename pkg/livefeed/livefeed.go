@@ -39,10 +39,26 @@ const (
 	TodoChanged = "todo.changed"
 	// DocChanged: a document this employee submitted has moved on.
 	DocChanged = "doc.changed"
+	// RequirementChanged: the purchase requirement list moved — stock covered
+	// a shortage, an order was raised, goods arrived. Addressed to the whole
+	// tenant rather than a person: a requirement belongs to the purchasing
+	// function, and there is no "owner" to send it to.
+	RequirementChanged = "requirement.changed"
 )
 
 func channel(tenantID, employeeID int64) string {
 	return fmt.Sprintf("erp.live.t%d.e%d", tenantID, employeeID)
+}
+
+// broadcastChannel carries changes to shared functional data — purchasing,
+// stock, shipping — that no single employee owns.
+//
+// Everyone hears it, which is fine because the payload says only "go and
+// re-read": the re-read goes through the normal permission-checked API, so
+// somebody without the permission learns nothing they could not already ask
+// for. Sending the change itself over this channel would not be safe.
+func broadcastChannel(tenantID int64) string {
+	return fmt.Sprintf("erp.live.t%d.all", tenantID)
 }
 
 // Publisher is held by services that cause changes.
@@ -89,6 +105,24 @@ func (p *Publisher) ToEmployees(ctx context.Context, tenantID int64, employeeIDs
 	}
 }
 
+// ToTenant delivers one event to everybody in a tenant who has a page open.
+// Same rules as ToEmployees: after the commit, never inside it, and a failure
+// is logged rather than propagated.
+func (p *Publisher) ToTenant(ctx context.Context, tenantID int64, e Event) {
+	if e.At.IsZero() {
+		e.At = time.Now().UTC()
+	}
+	body, err := json.Marshal(e)
+	if err != nil {
+		p.log.Warn("livefeed: marshal failed", "err", err)
+		return
+	}
+	if err := p.rdb.Publish(ctx, broadcastChannel(tenantID), body).Err(); err != nil {
+		p.log.Warn("livefeed: broadcast failed",
+			"tenant", tenantID, "type", e.Type, "err", err)
+	}
+}
+
 // Subscriber is held by the gateway, which is the only thing browsers talk to.
 type Subscriber struct {
 	rdb *redis.Client
@@ -108,7 +142,9 @@ func (s *Subscriber) Ping(ctx context.Context) error { return s.rdb.Ping(ctx).Er
 // channel closes when ctx is cancelled, which is what happens when the browser
 // disconnects.
 func (s *Subscriber) Listen(ctx context.Context, tenantID, employeeID int64) <-chan Event {
-	sub := s.rdb.Subscribe(ctx, channel(tenantID, employeeID))
+	// Both channels on one subscription: what is addressed to this person, and
+	// what changed in the shared functional data everybody works from.
+	sub := s.rdb.Subscribe(ctx, channel(tenantID, employeeID), broadcastChannel(tenantID))
 	out := make(chan Event)
 
 	// The context passed to Subscribe only covers the initial call: go-redis

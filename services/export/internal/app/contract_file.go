@@ -32,6 +32,17 @@ type FileView struct {
 // out, SIGNED is what came back with a signature on it.
 var fileKinds = map[string]bool{"DRAFT": true, "SIGNED": true, "OTHER": true}
 
+// File sources. A person uploading a scan and an e-signature platform posting
+// a completed envelope both produce a SIGNED file, but they are not equally
+// good evidence, so the two are recorded apart and shown apart.
+const (
+	// SourceManual is what every authenticated upload is, without exception.
+	SourceManual = "MANUAL"
+	// SourcePlatform is reserved for the e-signature webhook. Nothing on the
+	// REST path may set it - see RegisterContractFile.
+	SourcePlatform = "PLATFORM"
+)
+
 // PresignContractFile hands back a key and a URL to PUT the bytes to. Nothing
 // is recorded yet: an upload that never finishes leaves no row, only an
 // orphaned object a later sweep can collect.
@@ -103,6 +114,11 @@ func (s *Service) RegisterContractFile(ctx context.Context, tenantID, contractID
 		Kind: kind, FileName: in.FileName, FileKey: in.Key,
 		ContentType: in.ContentType, SizeBytes: in.Size,
 		UploadedBy: op.ID, UploaderName: op.Name,
+		// Hardcoded, never read from the request. An employee holding a scan
+		// and an e-signature platform posting a completed envelope must stay
+		// distinguishable, and a field the client can set is not a
+		// distinction - it is a suggestion.
+		Source: SourceManual,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -165,6 +181,13 @@ func (s *Service) RemoveContractFile(ctx context.Context, tenantID, id int64, op
 	}
 	if err := s.mustOwnContract(ctx, op, view); err != nil {
 		return false, err
+	}
+	// The countersigned copy is why the contract is in force. Letting it be
+	// deleted afterwards would leave an effective contract with nothing behind
+	// it, which is exactly the state the upload requirement exists to prevent.
+	if att.Kind == "SIGNED" && view.Contract.CurrentVersionID != 0 {
+		return false, apierr.Conflict("EX_SIGNED_COPY_LOCKED",
+			"合同已生效，签署件是生效依据，不能删除")
 	}
 	rows, err := s.q.DeleteContractAttachment(ctx,
 		store.DeleteContractAttachmentParams{TenantID: tenantID, ID: id})

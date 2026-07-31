@@ -185,17 +185,18 @@ func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (i
 }
 
 const createSku = `-- name: CreateSku :one
-INSERT INTO skus (tenant_id, product_id, code, spec, attributes)
-VALUES ($1, $2, $3, $4, $5::jsonb)
-RETURNING id, tenant_id, product_id, code, spec, attributes, status, created_at
+INSERT INTO skus (tenant_id, product_id, code, spec, attributes, attr_signature)
+VALUES ($1, $2, $3, $4, $5::jsonb, $6::text)
+RETURNING id, tenant_id, product_id, code, spec, attributes, status, created_at, attr_signature
 `
 
 type CreateSkuParams struct {
-	TenantID   int64
-	ProductID  int64
-	Code       string
-	Spec       string
-	Attributes []byte
+	TenantID      int64
+	ProductID     int64
+	Code          string
+	Spec          string
+	Attributes    []byte
+	AttrSignature string
 }
 
 func (q *Queries) CreateSku(ctx context.Context, arg CreateSkuParams) (Sku, error) {
@@ -205,6 +206,7 @@ func (q *Queries) CreateSku(ctx context.Context, arg CreateSkuParams) (Sku, erro
 		arg.Code,
 		arg.Spec,
 		arg.Attributes,
+		arg.AttrSignature,
 	)
 	var i Sku
 	err := row.Scan(
@@ -216,6 +218,7 @@ func (q *Queries) CreateSku(ctx context.Context, arg CreateSkuParams) (Sku, erro
 		&i.Attributes,
 		&i.Status,
 		&i.CreatedAt,
+		&i.AttrSignature,
 	)
 	return i, err
 }
@@ -378,9 +381,15 @@ func (q *Queries) GetCategory(ctx context.Context, arg GetCategoryParams) (Produ
 const getProduct = `-- name: GetProduct :one
 SELECT
     p.id, p.tenant_id, p.code, p.name, p.name_en, p.category_id, p.product_type,
-    p.brand, p.base_uom_id, p.reference_price::text AS reference_price,
-    p.reference_currency, p.hs_code, p.tax_rate::text AS tax_rate,
-    p.export_rebate_rate::text AS export_rebate_rate, p.description, p.status,
+    p.brand, p.base_uom_id,
+    -- coalesce, not a bare cast: NULL::text is still NULL, and sqlc infers a
+    -- non-nullable string from the cast alone. A product saved without a
+    -- reference price then breaks every read of it.
+    coalesce(p.reference_price::text, '')::text     AS reference_price,
+    p.reference_currency, p.hs_code,
+    coalesce(p.tax_rate::text, '')::text            AS tax_rate,
+    coalesce(p.export_rebate_rate::text, '')::text  AS export_rebate_rate,
+    p.description, p.status, p.attributes,
     c.name AS category_name, u.code AS base_uom_code
 FROM products p
 JOIN product_categories c ON c.id = p.category_id AND c.tenant_id = p.tenant_id
@@ -410,6 +419,7 @@ type GetProductRow struct {
 	ExportRebateRate  string
 	Description       string
 	Status            string
+	Attributes        []byte
 	CategoryName      string
 	BaseUomCode       string
 }
@@ -434,6 +444,7 @@ func (q *Queries) GetProduct(ctx context.Context, arg GetProductParams) (GetProd
 		&i.ExportRebateRate,
 		&i.Description,
 		&i.Status,
+		&i.Attributes,
 		&i.CategoryName,
 		&i.BaseUomCode,
 	)
@@ -528,9 +539,15 @@ func (q *Queries) ListCategories(ctx context.Context, arg ListCategoriesParams) 
 const listProducts = `-- name: ListProducts :many
 SELECT
     p.id, p.tenant_id, p.code, p.name, p.name_en, p.category_id, p.product_type,
-    p.brand, p.base_uom_id, p.reference_price::text AS reference_price,
-    p.reference_currency, p.hs_code, p.tax_rate::text AS tax_rate,
-    p.export_rebate_rate::text AS export_rebate_rate, p.description, p.status,
+    p.brand, p.base_uom_id,
+    -- coalesce, not a bare cast: NULL::text is still NULL, and sqlc infers a
+    -- non-nullable string from the cast alone. A product saved without a
+    -- reference price then breaks every read of it.
+    coalesce(p.reference_price::text, '')::text     AS reference_price,
+    p.reference_currency, p.hs_code,
+    coalesce(p.tax_rate::text, '')::text            AS tax_rate,
+    coalesce(p.export_rebate_rate::text, '')::text  AS export_rebate_rate,
+    p.description, p.status, p.attributes,
     c.name AS category_name, u.code AS base_uom_code,
     count(*) OVER () AS total
 FROM products p
@@ -573,6 +590,7 @@ type ListProductsRow struct {
 	ExportRebateRate  string
 	Description       string
 	Status            string
+	Attributes        []byte
 	CategoryName      string
 	BaseUomCode       string
 	Total             int64
@@ -611,6 +629,7 @@ func (q *Queries) ListProducts(ctx context.Context, arg ListProductsParams) ([]L
 			&i.ExportRebateRate,
 			&i.Description,
 			&i.Status,
+			&i.Attributes,
 			&i.CategoryName,
 			&i.BaseUomCode,
 			&i.Total,
@@ -626,7 +645,7 @@ func (q *Queries) ListProducts(ctx context.Context, arg ListProductsParams) ([]L
 }
 
 const listSkus = `-- name: ListSkus :many
-SELECT id, tenant_id, product_id, code, spec, attributes, status, created_at FROM skus WHERE tenant_id = $1 AND product_id = $2 ORDER BY id
+SELECT id, tenant_id, product_id, code, spec, attributes, status, created_at, attr_signature FROM skus WHERE tenant_id = $1 AND product_id = $2 ORDER BY id
 `
 
 type ListSkusParams struct {
@@ -652,6 +671,7 @@ func (q *Queries) ListSkus(ctx context.Context, arg ListSkusParams) ([]Sku, erro
 			&i.Attributes,
 			&i.Status,
 			&i.CreatedAt,
+			&i.AttrSignature,
 		); err != nil {
 			return nil, err
 		}

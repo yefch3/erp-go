@@ -73,6 +73,26 @@ func (q *Queries) AddContractItem(ctx context.Context, arg AddContractItemParams
 	return err
 }
 
+const countSignedAttachments = `-- name: CountSignedAttachments :one
+SELECT count(*) FROM contract_attachments
+WHERE tenant_id = $1 AND contract_version_id = $2
+  AND kind = 'SIGNED'
+`
+
+type CountSignedAttachmentsParams struct {
+	TenantID          int64
+	ContractVersionID *int64
+}
+
+// Evidence that a specific version came back countersigned. Scoped to the
+// version on purpose: a scan of v1 says nothing about the v2 that replaced it.
+func (q *Queries) CountSignedAttachments(ctx context.Context, arg CountSignedAttachmentsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countSignedAttachments, arg.TenantID, arg.ContractVersionID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createContract = `-- name: CreateContract :one
 
 INSERT INTO contracts (
@@ -130,7 +150,7 @@ func (q *Queries) CreateContract(ctx context.Context, arg CreateContractParams) 
 const createContractAttachment = `-- name: CreateContractAttachment :one
 INSERT INTO contract_attachments (
     tenant_id, contract_id, contract_version_id, kind, file_name, file_key,
-    content_type, size_bytes, uploaded_by, uploader_name
+    content_type, size_bytes, uploaded_by, uploader_name, source
 ) VALUES (
     $1::bigint,
     $2::bigint,
@@ -141,7 +161,8 @@ INSERT INTO contract_attachments (
     $7::text,
     $8::bigint,
     $9::bigint,
-    $10::text
+    $10::text,
+    $11::text
 )
 RETURNING id
 `
@@ -157,6 +178,7 @@ type CreateContractAttachmentParams struct {
 	SizeBytes         int64
 	UploadedBy        int64
 	UploaderName      string
+	Source            string
 }
 
 func (q *Queries) CreateContractAttachment(ctx context.Context, arg CreateContractAttachmentParams) (int64, error) {
@@ -171,6 +193,7 @@ func (q *Queries) CreateContractAttachment(ctx context.Context, arg CreateContra
 		arg.SizeBytes,
 		arg.UploadedBy,
 		arg.UploaderName,
+		arg.Source,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -302,7 +325,7 @@ SELECT
     id, tenant_id, contract_no, coalesce(quotation_id, 0)::bigint AS quotation_id, quote_no,
     customer_id, customer_name, coalesce(current_version_id, 0)::bigint AS current_version_id,
     status, status_before_approval, sales_employee_id, sales_employee,
-    signed_at, effective_at, completed_at, created_at
+    signature_source, signed_at, effective_at, completed_at, created_at
 FROM contracts
 WHERE tenant_id = $1 AND id = $2
 `
@@ -325,6 +348,7 @@ type GetContractRow struct {
 	StatusBeforeApproval string
 	SalesEmployeeID      int64
 	SalesEmployee        string
+	SignatureSource      string
 	SignedAt             pgtype.Timestamptz
 	EffectiveAt          pgtype.Timestamptz
 	CompletedAt          pgtype.Timestamptz
@@ -347,6 +371,7 @@ func (q *Queries) GetContract(ctx context.Context, arg GetContractParams) (GetCo
 		&i.StatusBeforeApproval,
 		&i.SalesEmployeeID,
 		&i.SalesEmployee,
+		&i.SignatureSource,
 		&i.SignedAt,
 		&i.EffectiveAt,
 		&i.CompletedAt,
@@ -360,7 +385,7 @@ SELECT
     a.id, a.contract_id,
     coalesce(a.contract_version_id, 0)::bigint AS contract_version_id,
     coalesce(v.version_no, 0)::int AS version_no,
-    a.kind, a.file_name, a.file_key, a.content_type, a.size_bytes,
+    a.kind, a.source, a.file_name, a.file_key, a.content_type, a.size_bytes,
     a.uploaded_at, a.uploaded_by, a.uploader_name
 FROM contract_attachments a
 LEFT JOIN contract_versions v ON v.id = a.contract_version_id
@@ -378,6 +403,7 @@ type GetContractAttachmentRow struct {
 	ContractVersionID int64
 	VersionNo         int32
 	Kind              string
+	Source            string
 	FileName          string
 	FileKey           string
 	ContentType       string
@@ -396,6 +422,7 @@ func (q *Queries) GetContractAttachment(ctx context.Context, arg GetContractAtta
 		&i.ContractVersionID,
 		&i.VersionNo,
 		&i.Kind,
+		&i.Source,
 		&i.FileName,
 		&i.FileKey,
 		&i.ContentType,
@@ -509,7 +536,7 @@ SELECT
     a.id, a.contract_id,
     coalesce(a.contract_version_id, 0)::bigint AS contract_version_id,
     coalesce(v.version_no, 0)::int AS version_no,
-    a.kind, a.file_name, a.file_key, a.content_type, a.size_bytes,
+    a.kind, a.source, a.file_name, a.file_key, a.content_type, a.size_bytes,
     a.uploaded_at, a.uploaded_by, a.uploader_name
 FROM contract_attachments a
 LEFT JOIN contract_versions v ON v.id = a.contract_version_id
@@ -528,6 +555,7 @@ type ListContractAttachmentsRow struct {
 	ContractVersionID int64
 	VersionNo         int32
 	Kind              string
+	Source            string
 	FileName          string
 	FileKey           string
 	ContentType       string
@@ -552,6 +580,7 @@ func (q *Queries) ListContractAttachments(ctx context.Context, arg ListContractA
 			&i.ContractVersionID,
 			&i.VersionNo,
 			&i.Kind,
+			&i.Source,
 			&i.FileName,
 			&i.FileKey,
 			&i.ContentType,
@@ -704,7 +733,7 @@ func (q *Queries) ListContractVersions(ctx context.Context, arg ListContractVers
 const listContracts = `-- name: ListContracts :many
 SELECT
     c.id, c.contract_no, c.quote_no, c.customer_id, c.customer_name, c.status,
-    c.sales_employee, c.signed_at, c.effective_at, c.created_at,
+    c.sales_employee_id, c.sales_employee, c.signed_at, c.effective_at, c.created_at,
     coalesce(v.currency, '')::text AS currency,
     coalesce(v.total_amount, 0)::text AS total_amount,
     coalesce(v.base_amount, 0)::text AS base_amount,
@@ -749,21 +778,22 @@ type ListContractsParams struct {
 }
 
 type ListContractsRow struct {
-	ID            int64
-	ContractNo    string
-	QuoteNo       string
-	CustomerID    int64
-	CustomerName  string
-	Status        string
-	SalesEmployee string
-	SignedAt      pgtype.Timestamptz
-	EffectiveAt   pgtype.Timestamptz
-	CreatedAt     pgtype.Timestamptz
-	Currency      string
-	TotalAmount   string
-	BaseAmount    string
-	VersionNo     int32
-	Total         int64
+	ID              int64
+	ContractNo      string
+	QuoteNo         string
+	CustomerID      int64
+	CustomerName    string
+	Status          string
+	SalesEmployeeID int64
+	SalesEmployee   string
+	SignedAt        pgtype.Timestamptz
+	EffectiveAt     pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+	Currency        string
+	TotalAmount     string
+	BaseAmount      string
+	VersionNo       int32
+	Total           int64
 }
 
 // The newest version, not the in-force one: a list must still show a contract
@@ -794,6 +824,7 @@ func (q *Queries) ListContracts(ctx context.Context, arg ListContractsParams) ([
 			&i.CustomerID,
 			&i.CustomerName,
 			&i.Status,
+			&i.SalesEmployeeID,
 			&i.SalesEmployee,
 			&i.SignedAt,
 			&i.EffectiveAt,
@@ -962,6 +993,31 @@ func (q *Queries) MarkContractPendingApproval(ctx context.Context, arg MarkContr
 	return status_before_approval, err
 }
 
+const markContractSigned = `-- name: MarkContractSigned :exec
+UPDATE contracts SET
+    signature_source = $2::text,
+    updated_by       = $3,
+    updated_at       = now()
+WHERE tenant_id = $1 AND id = $4
+`
+
+type MarkContractSignedParams struct {
+	TenantID        int64
+	SignatureSource string
+	UpdatedBy       int64
+	ID              int64
+}
+
+func (q *Queries) MarkContractSigned(ctx context.Context, arg MarkContractSignedParams) error {
+	_, err := q.db.Exec(ctx, markContractSigned,
+		arg.TenantID,
+		arg.SignatureSource,
+		arg.UpdatedBy,
+		arg.ID,
+	)
+	return err
+}
+
 const recordOwnershipTransfer = `-- name: RecordOwnershipTransfer :one
 INSERT INTO ownership_transfers (
     tenant_id, biz_type, biz_id, biz_no,
@@ -1037,6 +1093,49 @@ func (q *Queries) RecordOwnershipTransfer(ctx context.Context, arg RecordOwnersh
 		&i.TransferredAt,
 	)
 	return i, err
+}
+
+const recordShipment = `-- name: RecordShipment :execrows
+INSERT INTO contract_shipments (
+    tenant_id, contract_id, contract_item_id, product_id, sku_id, outbound_no, qty
+) VALUES (
+    $1::bigint,
+    $2::bigint,
+    $3::bigint,
+    $4::bigint,
+    $5::bigint,
+    $6::text,
+    $7::text::numeric
+)
+ON CONFLICT (tenant_id, outbound_no, contract_item_id) DO NOTHING
+`
+
+type RecordShipmentParams struct {
+	TenantID       int64
+	ContractID     int64
+	ContractItemID int64
+	ProductID      int64
+	SkuID          int64
+	OutboundNo     string
+	Qty            string
+}
+
+// Goods left the warehouse against a contract line. Conflicts are dropped
+// silently: a redelivered outbound event is the normal case, not an error.
+func (q *Queries) RecordShipment(ctx context.Context, arg RecordShipmentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, recordShipment,
+		arg.TenantID,
+		arg.ContractID,
+		arg.ContractItemID,
+		arg.ProductID,
+		arg.SkuID,
+		arg.OutboundNo,
+		arg.Qty,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setContractCurrentVersion = `-- name: SetContractCurrentVersion :exec
@@ -1143,6 +1242,135 @@ type SetContractVersionStatusParams struct {
 func (q *Queries) SetContractVersionStatus(ctx context.Context, arg SetContractVersionStatusParams) error {
 	_, err := q.db.Exec(ctx, setContractVersionStatus, arg.NewStatus, arg.TenantID, arg.ID)
 	return err
+}
+
+const shipmentProgressOf = `-- name: ShipmentProgressOf :many
+SELECT
+    min(i.line_no)::int         AS line_no,
+    i.product_id,
+    coalesce(i.sku_id, 0)::bigint AS sku_id,
+    max(i.product_code)::text   AS product_code,
+    max(i.product_name)::text   AS product_name,
+    max(i.uom_code)::text       AS uom_code,
+    sum(i.qty)::text            AS qty,
+    coalesce(max(sh.shipped), 0)::text AS shipped_qty,
+    (sum(i.qty) - coalesce(max(sh.shipped), 0))::text AS remaining_qty
+FROM contract_items i
+LEFT JOIN (
+    SELECT product_id, coalesce(sku_id, 0) AS sku_id, sum(qty) AS shipped
+    FROM contract_shipments
+    WHERE tenant_id = $1::bigint
+      AND contract_id = $2::bigint
+    GROUP BY product_id, coalesce(sku_id, 0)
+) sh ON sh.product_id = i.product_id AND sh.sku_id = coalesce(i.sku_id, 0)
+WHERE i.tenant_id = $1::bigint
+  AND i.contract_version_id = $3::bigint
+GROUP BY i.product_id, coalesce(i.sku_id, 0)
+ORDER BY min(i.line_no)
+`
+
+type ShipmentProgressOfParams struct {
+	TenantID          int64
+	ContractID        int64
+	ContractVersionID int64
+}
+
+type ShipmentProgressOfRow struct {
+	LineNo       int32
+	ProductID    int64
+	SkuID        int64
+	ProductCode  string
+	ProductName  string
+	UomCode      string
+	Qty          string
+	ShippedQty   string
+	RemainingQty string
+}
+
+// How much of each product on a contract has shipped.
+//
+// Grouped by product rather than by contract line, and that is deliberate. A
+// contract change rewrites the lines with new ids, so shipments made against
+// the old version would show as zero on the new one — the goods physically
+// left and the page would say nothing had. The customer bought a product; a
+// version changes the terms, not what is in the crate.
+//
+// remaining_qty can go negative, and that is the most useful thing this query
+// produces: it means the contract was reduced after goods had already
+// shipped. No automatic rule gets that right, so it is surfaced rather than
+// clamped to zero and quietly forgotten.
+func (q *Queries) ShipmentProgressOf(ctx context.Context, arg ShipmentProgressOfParams) ([]ShipmentProgressOfRow, error) {
+	rows, err := q.db.Query(ctx, shipmentProgressOf, arg.TenantID, arg.ContractID, arg.ContractVersionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ShipmentProgressOfRow
+	for rows.Next() {
+		var i ShipmentProgressOfRow
+		if err := rows.Scan(
+			&i.LineNo,
+			&i.ProductID,
+			&i.SkuID,
+			&i.ProductCode,
+			&i.ProductName,
+			&i.UomCode,
+			&i.Qty,
+			&i.ShippedQty,
+			&i.RemainingQty,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const shipmentsOfContract = `-- name: ShipmentsOfContract :many
+SELECT outbound_no, contract_item_id, qty::text AS qty, shipped_at
+FROM contract_shipments
+WHERE tenant_id = $1::bigint AND contract_id = $2::bigint
+ORDER BY shipped_at DESC, id DESC
+`
+
+type ShipmentsOfContractParams struct {
+	TenantID   int64
+	ContractID int64
+}
+
+type ShipmentsOfContractRow struct {
+	OutboundNo     string
+	ContractItemID int64
+	Qty            string
+	ShippedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) ShipmentsOfContract(ctx context.Context, arg ShipmentsOfContractParams) ([]ShipmentsOfContractRow, error) {
+	rows, err := q.db.Query(ctx, shipmentsOfContract, arg.TenantID, arg.ContractID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ShipmentsOfContractRow
+	for rows.Next() {
+		var i ShipmentsOfContractRow
+		if err := rows.Scan(
+			&i.OutboundNo,
+			&i.ContractItemID,
+			&i.Qty,
+			&i.ShippedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const supersedeOtherVersions = `-- name: SupersedeOtherVersions :exec
