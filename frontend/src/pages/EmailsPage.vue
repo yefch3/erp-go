@@ -87,7 +87,10 @@
             <el-button v-if="folder === 'trash'" size="small" plain @click="markOpened({ deleted: false })">
               {{ t('emails.restore') }}
             </el-button>
-            <el-button v-else size="small" type="danger" plain @click="markOpened({ deleted: true })">
+            <el-button v-if="folder === 'trash'" size="small" type="danger" plain @click="purgeOpened">
+              {{ t('emails.purge') }}
+            </el-button>
+            <el-button v-if="folder !== 'trash'" size="small" type="danger" plain @click="markOpened({ deleted: true })">
               {{ t('emails.toTrash') }}
             </el-button>
           </template>
@@ -1058,6 +1061,21 @@ async function markOpened(flags: Record<string, boolean>) {
   pushState({ mail: '' })
   load()
   refreshUnread()
+}
+
+// Permanent deletion, trash only. The confirm spells out the asymmetry that
+// makes this safe to offer: the ERP copy dies, the mail host's original does
+// not — the sync is one-way and nothing in the ERP can reach the real mailbox.
+async function purgeOpened() {
+  if (!openedInbound.value) return
+  await ElMessageBox.confirm(t('emails.purgeHint'), t('emails.purge'), {
+    type: 'warning',
+    confirmButtonText: t('emails.purge'),
+  })
+  await del(`/inbound-mails/${openedInbound.value.id}`)
+  ElMessage.success(t('emails.purged'))
+  pushState({ mail: '' })
+  load()
 }
 
 // Reply and forward open the composer over the detail page — cancelling it

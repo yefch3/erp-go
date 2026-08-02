@@ -194,6 +194,60 @@ func (s *Service) MarkInbound(ctx context.Context, tenantID, ownerID, id int64, 
 	})
 }
 
+// PurgeInbound permanently deletes one mail from the caller's trash: the
+// database record and its copies in object storage (raw MIME, extracted
+// attachments). Only ERP-side data — the mail host's original is untouched,
+// because the sync is one-way and nothing here talks to the host at all.
+//
+// The objects go first, the row last. The row is the retry handle: if an
+// object removal fails halfway, the mail stays in the trash and a second
+// attempt covers whatever remains (removals are idempotent). Deleting the
+// row first would leave orphaned objects with nothing pointing at them.
+func (s *Service) PurgeInbound(ctx context.Context, tenantID, ownerID, id int64) error {
+	row, err := s.q.GetInboundForPurge(ctx, store.GetInboundForPurgeParams{
+		TenantID: tenantID, OwnerID: ownerID, ID: id,
+	})
+	if err != nil {
+		// Covers "not yours" and "not in the trash" alike: neither is the
+		// caller's to distinguish.
+		return errNotFound()
+	}
+
+	if s.files != nil {
+		atts, err := s.q.ListInboundAttachments(ctx, store.ListInboundAttachmentsParams{
+			TenantID: tenantID, InboundID: id,
+		})
+		if err != nil {
+			return err
+		}
+		keys := make([]string, 0, len(atts)+1)
+		for _, a := range atts {
+			if a.FileKey != "" {
+				keys = append(keys, a.FileKey)
+			}
+		}
+		if row.RawKey != "" {
+			keys = append(keys, row.RawKey)
+		}
+		for _, key := range keys {
+			if err := s.files.Remove(ctx, key); err != nil {
+				return apierr.Internal("NT_PURGE_STORAGE", "对象存储删除失败，请重试")
+			}
+		}
+	}
+
+	n, err := s.q.PurgeInbound(ctx, store.PurgeInboundParams{
+		TenantID: tenantID, OwnerID: ownerID, ID: id,
+	})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return errNotFound()
+	}
+	return nil
+}
+
 // SyncNow pulls the caller's mailbox immediately and reports what arrived.
 func (s *Service) SyncNow(ctx context.Context, tenantID, employeeID int64) (int, error) {
 	if s.mailbox == nil {

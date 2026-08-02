@@ -654,6 +654,14 @@ func (h *Handler) MarkInbound(ctx context.Context, req *ntv1.MarkInboundRequest)
 	return &ntv1.MarkInboundResponse{Ok: true}, nil
 }
 
+func (h *Handler) PurgeInbound(ctx context.Context, req *ntv1.PurgeInboundRequest) (*ntv1.PurgeInboundResponse, error) {
+	op := operator(ctx)
+	if err := h.svc.PurgeInbound(ctx, grpcx.TenantID(ctx), op.ID, req.GetId()); err != nil {
+		return nil, err
+	}
+	return &ntv1.PurgeInboundResponse{Ok: true}, nil
+}
+
 func (h *Handler) SyncMailbox(ctx context.Context, _ *ntv1.SyncMailboxRequest) (*ntv1.SyncMailboxResponse, error) {
 	op := operator(ctx)
 	n, err := h.svc.SyncNow(ctx, grpcx.TenantID(ctx), op.ID)

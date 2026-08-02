@@ -338,6 +338,9 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/inbound-mails", s.listInbound)
 		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/inbound-mails/{id}", s.getInbound)
 		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/mark", s.markInbound)
+		// Permanent deletion out of the trash. ERP-side copies only; the mail
+		// host's original is beyond this API's reach by design.
+		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Delete("/api/inbound-mails/{id}", s.purgeInbound)
 		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/mail-threads", s.getMailThread)
 		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Post("/api/mailbox/sync", s.syncMailbox)
 		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/mailbox-sent", s.listMailboxSent)
