@@ -168,6 +168,8 @@ message MarkInboundRequest {
   optional bool starred = 3;
   optional bool archived = 4;
   optional bool deleted = 5;
+  // Rescue from the junk view: the mail shows in the inbox from now on.
+  optional bool not_junk = 6;
 }
 
 message MarkInboundResponse {

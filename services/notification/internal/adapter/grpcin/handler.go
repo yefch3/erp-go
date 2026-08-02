@@ -626,7 +626,7 @@ func (h *Handler) GetInbound(ctx context.Context, req *ntv1.GetInboundRequest) (
 func (h *Handler) MarkInbound(ctx context.Context, req *ntv1.MarkInboundRequest) (*ntv1.MarkInboundResponse, error) {
 	op := operator(ctx)
 	err := h.svc.MarkInbound(ctx, grpcx.TenantID(ctx), op.ID, req.GetId(),
-		req.Read, req.Starred, req.Archived, req.Deleted)
+		req.Read, req.Starred, req.Archived, req.Deleted, req.NotJunk)
 	if err != nil {
 		return nil, err
 	}

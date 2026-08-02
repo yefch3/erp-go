@@ -110,6 +110,7 @@ type EmailInbound struct {
 	IsStarred      bool
 	ArchivedAt     pgtype.Timestamptz
 	DeletedAt      pgtype.Timestamptz
+	NotJunk        bool
 }
 
 type EmailInboundAttachment struct {

@@ -340,6 +340,15 @@
               ↪ {{ t('emails.forward') }}
             </el-button>
           </template>
+          <el-button
+            v-if="folder === 'junk'"
+            size="small"
+            type="warning"
+            plain
+            @click="markOpened({ notJunk: true })"
+          >
+            {{ t('emails.notJunk') }}
+          </el-button>
           <template v-if="isInboundView && folder !== 'junk'">
             <el-button v-if="folder !== 'trash'" size="small" plain @click="markOpened({ read: false })">
               {{ t('emails.markUnread') }}

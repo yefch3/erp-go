@@ -61,7 +61,10 @@ const countInbound = `-- name: CountInbound :one
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
-  AND folder = CASE WHEN $3::text = 'JUNK' THEN 'JUNK' ELSE 'INBOX' END
+  AND CASE WHEN $3::text = 'JUNK'
+        THEN folder = 'JUNK' AND NOT not_junk
+        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
+      END
   AND NOT is_bounce
   AND CASE $3::text
         WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
@@ -150,7 +153,7 @@ const countUnread = `-- name: CountUnread :one
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
-  AND folder = 'INBOX'
+  AND (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
   AND NOT is_bounce AND NOT is_read
   AND archived_at IS NULL AND deleted_at IS NULL
 `
@@ -625,7 +628,10 @@ SELECT id, from_email, from_name, subject, snippet, thread_key,
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
-  AND folder = CASE WHEN $3::text = 'JUNK' THEN 'JUNK' ELSE 'INBOX' END
+  AND CASE WHEN $3::text = 'JUNK'
+        THEN folder = 'JUNK' AND NOT not_junk
+        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
+      END
   AND NOT is_bounce
   AND CASE $3::text
         WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
@@ -1130,22 +1136,24 @@ const setInboundFlags = `-- name: SetInboundFlags :exec
 UPDATE email_inbound
 SET is_read    = coalesce($1::boolean, is_read),
     is_starred = coalesce($2::boolean, is_starred),
+    not_junk   = coalesce($3::boolean, not_junk),
     archived_at = CASE
-        WHEN $3::boolean IS NULL THEN archived_at
-        WHEN $3::boolean THEN coalesce(archived_at, now())
+        WHEN $4::boolean IS NULL THEN archived_at
+        WHEN $4::boolean THEN coalesce(archived_at, now())
         ELSE NULL END,
     deleted_at = CASE
-        WHEN $4::boolean IS NULL THEN deleted_at
-        WHEN $4::boolean THEN coalesce(deleted_at, now())
+        WHEN $5::boolean IS NULL THEN deleted_at
+        WHEN $5::boolean THEN coalesce(deleted_at, now())
         ELSE NULL END
-WHERE tenant_id = $5::bigint
-  AND owner_id = $6::bigint
-  AND id = $7::bigint
+WHERE tenant_id = $6::bigint
+  AND owner_id = $7::bigint
+  AND id = $8::bigint
 `
 
 type SetInboundFlagsParams struct {
 	Read     *bool
 	Starred  *bool
+	NotJunk  *bool
 	Archived *bool
 	Deleted  *bool
 	TenantID int64
@@ -1160,6 +1168,7 @@ func (q *Queries) SetInboundFlags(ctx context.Context, arg SetInboundFlagsParams
 	_, err := q.db.Exec(ctx, setInboundFlags,
 		arg.Read,
 		arg.Starred,
+		arg.NotJunk,
 		arg.Archived,
 		arg.Deleted,
 		arg.TenantID,

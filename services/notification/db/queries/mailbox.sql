@@ -209,7 +209,10 @@ SELECT id, from_email, from_name, subject, snippet, thread_key,
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
-  AND folder = CASE WHEN sqlc.arg(view)::text = 'JUNK' THEN 'JUNK' ELSE 'INBOX' END
+  AND CASE WHEN sqlc.arg(view)::text = 'JUNK'
+        THEN folder = 'JUNK' AND NOT not_junk
+        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
+      END
   AND NOT is_bounce
   AND CASE sqlc.arg(view)::text
         WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
@@ -229,7 +232,10 @@ LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
-  AND folder = CASE WHEN sqlc.arg(view)::text = 'JUNK' THEN 'JUNK' ELSE 'INBOX' END
+  AND CASE WHEN sqlc.arg(view)::text = 'JUNK'
+        THEN folder = 'JUNK' AND NOT not_junk
+        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
+      END
   AND NOT is_bounce
   AND CASE sqlc.arg(view)::text
         WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
@@ -250,6 +256,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 UPDATE email_inbound
 SET is_read    = coalesce(sqlc.narg(read)::boolean, is_read),
     is_starred = coalesce(sqlc.narg(starred)::boolean, is_starred),
+    not_junk   = coalesce(sqlc.narg(not_junk)::boolean, not_junk),
     archived_at = CASE
         WHEN sqlc.narg(archived)::boolean IS NULL THEN archived_at
         WHEN sqlc.narg(archived)::boolean THEN coalesce(archived_at, now())
@@ -296,7 +303,7 @@ ORDER BY id;
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
-  AND folder = 'INBOX'
+  AND (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
   AND NOT is_bounce AND NOT is_read
   AND archived_at IS NULL AND deleted_at IS NULL;
 

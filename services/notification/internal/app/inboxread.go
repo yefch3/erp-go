@@ -139,10 +139,11 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 // one-way, so no housekeeping bug can ever damage the real mailbox. A nil
 // flag leaves that flag alone. Owner-scoped in the query: marking a mail
 // that is not the caller's is a silent no-op, not information.
-func (s *Service) MarkInbound(ctx context.Context, tenantID, ownerID, id int64, read, starred, archived, deleted *bool) error {
+func (s *Service) MarkInbound(ctx context.Context, tenantID, ownerID, id int64, read, starred, archived, deleted, notJunk *bool) error {
 	return s.q.SetInboundFlags(ctx, store.SetInboundFlagsParams{
 		TenantID: tenantID, OwnerID: ownerID, ID: id,
 		Read: read, Starred: starred, Archived: archived, Deleted: deleted,
+		NotJunk: notJunk,
 	})
 }
 
