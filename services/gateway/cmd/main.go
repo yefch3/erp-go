@@ -20,7 +20,7 @@ import (
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	ivv1 "github.com/sgao19/erp-go/gen/go/erp/inventory/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
-	ntv1 "github.com/sgao19/erp-go/gen/go/erp/notification/v1"
+	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	pdv1 "github.com/sgao19/erp-go/gen/go/erp/product/v1"
 	"github.com/sgao19/erp-go/pkg/grpcx"
@@ -89,7 +89,7 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer ivConn.Close()
-	ntConn, err := dial(cfg.NotificationAddr)
+	ntConn, err := dial(cfg.MailAddr)
 	if err != nil {
 		return err
 	}
@@ -143,7 +143,7 @@ func run(log *slog.Logger) error {
 		Requirements:     prv1.NewRequirementServiceClient(prConn),
 		Orders:           prv1.NewPurchaseOrderServiceClient(prConn),
 		Stocks:           ivv1.NewStockServiceClient(ivConn),
-		Emails:           ntv1.NewEmailServiceClient(ntConn),
+		Emails:           mailv1.NewEmailServiceClient(ntConn),
 		Unlock:           unlock,
 		GoogleClientID:   os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
 		OAuthRedirectURL: oauthRedirect,

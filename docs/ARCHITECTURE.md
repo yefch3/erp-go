@@ -3115,7 +3115,7 @@ CREATE INDEX operation_logs_operator_idx ON operation_logs (operator_id, occurre
 
 > **不变量**：`GRANT INSERT, SELECT ON operation_logs TO erp_audit;` 不给 UPDATE / DELETE。文档：「不允许编辑或删除」。分区表便于按月归档。
 
-### 5.12 notification（通知与邮件）
+### 5.12 mail（邮件）
 
 阶段 6 落地。它承载三件已确认的需求：报价单发送到客户邮箱（§5.6.1）、
 账号邀请链接（见「账号开通与初始密码」）、审批到达提醒——以及下面这一整块
@@ -3190,14 +3190,14 @@ API 直接返回 `MessageId` 可立刻落库供 webhook 关联；能带自定义
 
 ```
 ① 触发（跨服务）——沿用已有的 outbox 模式
-   export 发出报价单 → outbox → Kafka → notification 消费 → 插 1 行
-   iam 建员工        → outbox → Kafka → notification 消费 → 插 1 行
+   export 发出报价单 → outbox → Kafka → mail 消费 → 插 1 行
+   iam 建员工        → outbox → Kafka → mail 消费 → 插 1 行
 
 ② 逐封投递（服务内部）——数据库就是队列
    email_messages N 行 ──worker 轮询 FOR UPDATE SKIP LOCKED──▶ 服务商
 ```
 
-群发**连 ① 都不需要**：用户在群发页点发送，请求直接进 notification，
+群发**连 ① 都不需要**：用户在群发页点发送，请求直接进 mail，
 插 N 行 `email_messages`，worker 自己发完，全程不过 Kafka。
 
 **为什么逐封投递不放 Kafka：**
@@ -3410,7 +3410,7 @@ QUEUED  →  SENDING  →  ACCEPTED        服务商明确收下（拿到 provid
 
 #### 5.12.6 需求 4：上级能看见下属的邮件
 
-复用现有的 `role_data_scopes`，新增 `notification` 模块：
+复用现有的 `role_data_scopes`，新增 `mail` 模块：
 
 | 范围 | 能看到 |
 |---|---|
@@ -3424,7 +3424,7 @@ QUEUED  →  SENDING  →  ACCEPTED        服务商明确收下（拿到 provid
    要全覆盖就得托管邮箱（IMAP 抓取），那是另一个量级的工程，
    而且会把员工的全部邮件——包括私人的——拉进系统，范围要重新界定后再谈。
 2. **查看要记审计。** 谁在什么时候看了谁的邮件，写 `operation_logs`
-   （`module='notification'`, `action='VIEW'`）。这不是防上级，是出事时能说清楚。
+   （`module='mail'`, `action='VIEW'`）。这不是防上级，是出事时能说清楚。
 
 #### 5.12.7 需求 5：已读检测——能做，但它不是事实
 
@@ -4422,7 +4422,7 @@ ENTRYPOINT ["/app"]
 - [ ] 一人一封发送（禁 Cc/Bcc），变量渲染 + 发送前预览
 - [ ] 签名模板：公司级 + 个人级，支持变量
 - [ ] 打开 / 点击追踪 + 代理预取识别，退信 webhook 回写
-- [ ] `notification` 数据范围（SELF / DEPT / ALL）+ 查看审计
+- [ ] `mail` 数据范围（SELF / DEPT / ALL）+ 查看审计
 - [ ] 退订黑名单（租户级），事务性邮件与营销邮件分队列
 - [ ] 地址可达性：录入时 MX 检查；退信 webhook 回写 `customer_contacts.email_status`；
       `INVALID` 跳过并提示更新（§5.12.9）
@@ -4525,7 +4525,7 @@ ENTRYPOINT ["/app"]
 
 **10.1 服务与投递**
 
-- [x] `notification` 服务（端口 9010）、`erp_notification` 库、五张表
+- [x] `mail` 服务（端口 9010）、`erp_mail` 库、五张表
 - [x] 渲染引擎：`{{ }}` 定界，取不到值**报出来而不留空**；中文名不切姓氏（11 个单测）
 - [x] 一人一封落库 → worker `FOR UPDATE SKIP LOCKED` 认领 → 逐封调用
 - [x] 认领时先提交 `SENDING` 再调服务商（不变量 17b）

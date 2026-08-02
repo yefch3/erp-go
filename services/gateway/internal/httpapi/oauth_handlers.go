@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"time"
 
-	ntv1 "github.com/sgao19/erp-go/gen/go/erp/notification/v1"
+	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 )
 
@@ -112,7 +112,7 @@ func (s *Server) googleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		TenantID: tenantID, EmployeeID: employeeID,
 		IP: r.RemoteAddr, TraceID: newTraceID(),
 	})
-	resp, err := s.Emails.CompleteGoogleOAuth(ctx, &ntv1.CompleteGoogleOAuthRequest{
+	resp, err := s.Emails.CompleteGoogleOAuth(ctx, &mailv1.CompleteGoogleOAuthRequest{
 		Code: code, RedirectUri: s.OAuthRedirectURL,
 	})
 	if err != nil {
