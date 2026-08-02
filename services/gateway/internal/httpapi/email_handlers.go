@@ -12,12 +12,12 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
-	ntv1 "github.com/sgao19/erp-go/gen/go/erp/notification/v1"
+	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
 )
 
 func (s *Server) listCampaigns(w http.ResponseWriter, r *http.Request) {
 	senderID, _ := strconv.ParseInt(r.URL.Query().Get("sender_id"), 10, 64)
-	resp, err := s.Emails.ListCampaigns(r.Context(), &ntv1.ListCampaignsRequest{
+	resp, err := s.Emails.ListCampaigns(r.Context(), &mailv1.ListCampaignsRequest{
 		Page:     pageFromQuery(r),
 		Keyword:  r.URL.Query().Get("keyword"),
 		SenderId: senderID,
@@ -30,7 +30,7 @@ func (s *Server) listCampaigns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getCampaign(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.GetCampaign(r.Context(), &ntv1.GetCampaignRequest{Id: idFromPath(r)})
+	resp, err := s.Emails.GetCampaign(r.Context(), &mailv1.GetCampaignRequest{Id: idFromPath(r)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -39,7 +39,7 @@ func (s *Server) getCampaign(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) previewCampaign(w http.ResponseWriter, r *http.Request) {
-	req := &ntv1.PreviewCampaignRequest{}
+	req := &mailv1.PreviewCampaignRequest{}
 	if !s.decodeBody(w, r, req) {
 		return
 	}
@@ -52,7 +52,7 @@ func (s *Server) previewCampaign(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createCampaign(w http.ResponseWriter, r *http.Request) {
-	req := &ntv1.CreateCampaignRequest{}
+	req := &mailv1.CreateCampaignRequest{}
 	if !s.decodeBody(w, r, req) {
 		return
 	}
@@ -68,7 +68,7 @@ func (s *Server) listEmailMessages(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	campaignID, _ := strconv.ParseInt(q.Get("campaign_id"), 10, 64)
 	senderID, _ := strconv.ParseInt(q.Get("sender_id"), 10, 64)
-	resp, err := s.Emails.ListMessages(r.Context(), &ntv1.ListMessagesRequest{
+	resp, err := s.Emails.ListMessages(r.Context(), &mailv1.ListMessagesRequest{
 		Page:          pageFromQuery(r),
 		CampaignId:    campaignID,
 		SenderId:      senderID,
@@ -84,7 +84,7 @@ func (s *Server) listEmailMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getEmailMessage(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.GetMessage(r.Context(), &ntv1.GetMessageRequest{Id: idFromPath(r)})
+	resp, err := s.Emails.GetMessage(r.Context(), &mailv1.GetMessageRequest{Id: idFromPath(r)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -93,7 +93,7 @@ func (s *Server) getEmailMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) requeueEmailMessage(w http.ResponseWriter, r *http.Request) {
-	req := &ntv1.RequeueMessageRequest{}
+	req := &mailv1.RequeueMessageRequest{}
 	if !s.decodeBody(w, r, req) {
 		return
 	}
@@ -107,7 +107,7 @@ func (s *Server) requeueEmailMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) abandonEmailMessage(w http.ResponseWriter, r *http.Request) {
-	req := &ntv1.AbandonMessageRequest{}
+	req := &mailv1.AbandonMessageRequest{}
 	if !s.decodeBody(w, r, req) {
 		return
 	}
@@ -121,7 +121,7 @@ func (s *Server) abandonEmailMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listSignatures(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.ListSignatures(r.Context(), &ntv1.ListSignaturesRequest{})
+	resp, err := s.Emails.ListSignatures(r.Context(), &mailv1.ListSignaturesRequest{})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -130,7 +130,7 @@ func (s *Server) listSignatures(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createSignature(w http.ResponseWriter, r *http.Request) {
-	req := &ntv1.CreateSignatureRequest{}
+	req := &mailv1.CreateSignatureRequest{}
 	if !s.decodeBody(w, r, req) {
 		return
 	}
@@ -143,7 +143,7 @@ func (s *Server) createSignature(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteSignature(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.DeleteSignature(r.Context(), &ntv1.DeleteSignatureRequest{Id: idFromPath(r)})
+	resp, err := s.Emails.DeleteSignature(r.Context(), &mailv1.DeleteSignatureRequest{Id: idFromPath(r)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -152,7 +152,7 @@ func (s *Server) deleteSignature(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listSuppressions(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.ListSuppressions(r.Context(), &ntv1.ListSuppressionsRequest{
+	resp, err := s.Emails.ListSuppressions(r.Context(), &mailv1.ListSuppressionsRequest{
 		Keyword: r.URL.Query().Get("keyword"),
 	})
 	if err != nil {
@@ -163,7 +163,7 @@ func (s *Server) listSuppressions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) addSuppression(w http.ResponseWriter, r *http.Request) {
-	req := &ntv1.AddSuppressionRequest{}
+	req := &mailv1.AddSuppressionRequest{}
 	if !s.decodeBody(w, r, req) {
 		return
 	}
@@ -178,7 +178,7 @@ func (s *Server) addSuppression(w http.ResponseWriter, r *http.Request) {
 // removeSuppression takes the address in the query string rather than the
 // path: an email address contains characters that a path segment mangles.
 func (s *Server) removeSuppression(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.RemoveSuppression(r.Context(), &ntv1.RemoveSuppressionRequest{
+	resp, err := s.Emails.RemoveSuppression(r.Context(), &mailv1.RemoveSuppressionRequest{
 		Email: r.URL.Query().Get("email"),
 	})
 	if err != nil {
@@ -211,7 +211,7 @@ func (s *Server) listMailingContacts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) presignMailAttachment(w http.ResponseWriter, r *http.Request) {
-	req := &ntv1.PresignAttachmentRequest{}
+	req := &mailv1.PresignAttachmentRequest{}
 	if !s.decodeBody(w, r, req) {
 		return
 	}
@@ -224,7 +224,7 @@ func (s *Server) presignMailAttachment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) registerMailAttachment(w http.ResponseWriter, r *http.Request) {
-	req := &ntv1.RegisterAttachmentRequest{}
+	req := &mailv1.RegisterAttachmentRequest{}
 	if !s.decodeBody(w, r, req) {
 		return
 	}
@@ -238,7 +238,7 @@ func (s *Server) registerMailAttachment(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) listMailAttachments(w http.ResponseWriter, r *http.Request) {
 	campaignID, _ := strconv.ParseInt(r.URL.Query().Get("campaign_id"), 10, 64)
-	resp, err := s.Emails.ListAttachments(r.Context(), &ntv1.ListAttachmentsRequest{
+	resp, err := s.Emails.ListAttachments(r.Context(), &mailv1.ListAttachmentsRequest{
 		CampaignId: campaignID,
 	})
 	if err != nil {
@@ -249,7 +249,7 @@ func (s *Server) listMailAttachments(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) presignMailImage(w http.ResponseWriter, r *http.Request) {
-	req := &ntv1.PresignImageRequest{}
+	req := &mailv1.PresignImageRequest{}
 	if !s.decodeBody(w, r, req) {
 		return
 	}
@@ -262,7 +262,7 @@ func (s *Server) presignMailImage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) registerMailImage(w http.ResponseWriter, r *http.Request) {
-	req := &ntv1.RegisterImageRequest{}
+	req := &mailv1.RegisterImageRequest{}
 	if !s.decodeBody(w, r, req) {
 		return
 	}
@@ -275,7 +275,7 @@ func (s *Server) registerMailImage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listMailImages(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.ListImages(r.Context(), &ntv1.ListImagesRequest{})
+	resp, err := s.Emails.ListImages(r.Context(), &mailv1.ListImagesRequest{})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -284,7 +284,7 @@ func (s *Server) listMailImages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) withdrawMailImage(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.WithdrawImage(r.Context(), &ntv1.WithdrawImageRequest{Id: idFromPath(r)})
+	resp, err := s.Emails.WithdrawImage(r.Context(), &mailv1.WithdrawImageRequest{Id: idFromPath(r)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -303,7 +303,7 @@ func (s *Server) withdrawMailImage(w http.ResponseWriter, r *http.Request) {
 // else here: read-only, no listing, no enumeration, and a not-found for any
 // token that is unknown or withdrawn.
 func (s *Server) serveMailImage(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.FetchImage(r.Context(), &ntv1.FetchImageRequest{
+	resp, err := s.Emails.FetchImage(r.Context(), &mailv1.FetchImageRequest{
 		Token: chi.URLParam(r, "token"),
 	})
 	if err != nil {
@@ -329,7 +329,7 @@ func (s *Server) serveMailImage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listMailSenders(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.ListSenders(r.Context(), &ntv1.ListSendersRequest{})
+	resp, err := s.Emails.ListSenders(r.Context(), &mailv1.ListSendersRequest{})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -340,7 +340,7 @@ func (s *Server) listMailSenders(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------- drafts
 
 func (s *Server) saveDraft(w http.ResponseWriter, r *http.Request) {
-	req := &ntv1.SaveDraftRequest{}
+	req := &mailv1.SaveDraftRequest{}
 	if !s.decodeBody(w, r, req) {
 		return
 	}
@@ -353,7 +353,7 @@ func (s *Server) saveDraft(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listDrafts(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.ListDrafts(r.Context(), &ntv1.ListDraftsRequest{})
+	resp, err := s.Emails.ListDrafts(r.Context(), &mailv1.ListDraftsRequest{})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -362,7 +362,7 @@ func (s *Server) listDrafts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getDraft(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.GetDraft(r.Context(), &ntv1.GetDraftRequest{Id: idFromPath(r)})
+	resp, err := s.Emails.GetDraft(r.Context(), &mailv1.GetDraftRequest{Id: idFromPath(r)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -371,7 +371,7 @@ func (s *Server) getDraft(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteDraft(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.DeleteDraft(r.Context(), &ntv1.DeleteDraftRequest{Id: idFromPath(r)})
+	resp, err := s.Emails.DeleteDraft(r.Context(), &mailv1.DeleteDraftRequest{Id: idFromPath(r)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -380,7 +380,7 @@ func (s *Server) deleteDraft(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sendDraft(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.SendDraft(r.Context(), &ntv1.SendDraftRequest{Id: idFromPath(r)})
+	resp, err := s.Emails.SendDraft(r.Context(), &mailv1.SendDraftRequest{Id: idFromPath(r)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -389,7 +389,7 @@ func (s *Server) sendDraft(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getMailHost(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.GetMailHost(r.Context(), &ntv1.GetMailHostRequest{})
+	resp, err := s.Emails.GetMailHost(r.Context(), &mailv1.GetMailHostRequest{})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -398,7 +398,7 @@ func (s *Server) getMailHost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) saveMailHost(w http.ResponseWriter, r *http.Request) {
-	req := &ntv1.SaveMailHostRequest{}
+	req := &mailv1.SaveMailHostRequest{}
 	if !s.decodeBody(w, r, req) {
 		return
 	}
@@ -411,7 +411,7 @@ func (s *Server) saveMailHost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getMyMailAccount(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.GetMyMailAccount(r.Context(), &ntv1.GetMyMailAccountRequest{})
+	resp, err := s.Emails.GetMyMailAccount(r.Context(), &mailv1.GetMyMailAccountRequest{})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -440,7 +440,7 @@ func (s *Server) serveOpenPixel(w http.ResponseWriter, r *http.Request) {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			_, _ = s.Emails.RecordOpen(ctx, &ntv1.RecordOpenRequest{
+			_, _ = s.Emails.RecordOpen(ctx, &mailv1.RecordOpenRequest{
 				MessageKey: key,
 				UserAgent:  r.Header.Get("User-Agent"),
 				Ip:         clientIP(r),
@@ -477,7 +477,7 @@ func clientIP(r *http.Request) string {
 }
 
 func (s *Server) listInbound(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.ListInbound(r.Context(), &ntv1.ListInboundRequest{
+	resp, err := s.Emails.ListInbound(r.Context(), &mailv1.ListInboundRequest{
 		Page:    pageFromQuery(r),
 		Keyword: r.URL.Query().Get("keyword"),
 		View:    r.URL.Query().Get("view"),
@@ -491,7 +491,7 @@ func (s *Server) listInbound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getMailThread(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.GetMailThread(r.Context(), &ntv1.GetMailThreadRequest{
+	resp, err := s.Emails.GetMailThread(r.Context(), &mailv1.GetMailThreadRequest{
 		ThreadKey: r.URL.Query().Get("key"),
 	})
 	if err != nil {
@@ -502,7 +502,7 @@ func (s *Server) getMailThread(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) markInbound(w http.ResponseWriter, r *http.Request) {
-	req := &ntv1.MarkInboundRequest{}
+	req := &mailv1.MarkInboundRequest{}
 	if !s.decodeBody(w, r, req) {
 		return
 	}
@@ -518,7 +518,7 @@ func (s *Server) markInbound(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) purgeInbound(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	resp, err := s.Emails.PurgeInbound(r.Context(), &ntv1.PurgeInboundRequest{
+	resp, err := s.Emails.PurgeInbound(r.Context(), &mailv1.PurgeInboundRequest{
 		Id: id, WholeThread: r.URL.Query().Get("whole_thread") == "true",
 	})
 	if err != nil {
@@ -530,7 +530,7 @@ func (s *Server) purgeInbound(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getInbound(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	resp, err := s.Emails.GetInbound(r.Context(), &ntv1.GetInboundRequest{Id: id})
+	resp, err := s.Emails.GetInbound(r.Context(), &mailv1.GetInboundRequest{Id: id})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -539,7 +539,7 @@ func (s *Server) getInbound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) syncMailbox(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.SyncMailbox(r.Context(), &ntv1.SyncMailboxRequest{})
+	resp, err := s.Emails.SyncMailbox(r.Context(), &mailv1.SyncMailboxRequest{})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -548,7 +548,7 @@ func (s *Server) syncMailbox(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listMailboxSent(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.ListMailboxSent(r.Context(), &ntv1.ListMailboxSentRequest{
+	resp, err := s.Emails.ListMailboxSent(r.Context(), &mailv1.ListMailboxSentRequest{
 		Page:    pageFromQuery(r),
 		Keyword: r.URL.Query().Get("keyword"),
 	})

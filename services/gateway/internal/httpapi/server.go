@@ -23,7 +23,7 @@ import (
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	ivv1 "github.com/sgao19/erp-go/gen/go/erp/inventory/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
-	ntv1 "github.com/sgao19/erp-go/gen/go/erp/notification/v1"
+	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	pdv1 "github.com/sgao19/erp-go/gen/go/erp/product/v1"
 	"github.com/sgao19/erp-go/pkg/apierr"
@@ -52,7 +52,7 @@ type Server struct {
 	Requirements prv1.RequirementServiceClient
 	Orders       prv1.PurchaseOrderServiceClient
 	Stocks       ivv1.StockServiceClient
-	Emails       ntv1.EmailServiceClient
+	Emails       mailv1.EmailServiceClient
 	// Unlock holds mailbox-verification tokens. Nil fails closed: every mail
 	// route answers MAIL_LOCKED until a store exists.
 	Unlock *UnlockStore
@@ -286,48 +286,48 @@ func (s *Server) Router() http.Handler {
 		// scope decides whose mail comes back.
 		// The address book the composer picks from. Gated on sending: it is
 		// only ever used to choose who a mail goes to.
-		r.With(s.perm("notification:email:write")).Get("/api/mailing-contacts", s.listMailingContacts)
+		r.With(s.perm("mail:email:write")).Get("/api/mailing-contacts", s.listMailingContacts)
 		// The supervisor's employee picker. Scoped by the same notification
 		// data scope, so it lists exactly whose mail the caller may open.
-		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/email-senders", s.listMailSenders)
-		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/email-campaigns", s.listCampaigns)
-		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/email-campaigns/{id}", s.getCampaign)
-		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/email-messages", s.listEmailMessages)
-		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/email-messages/{id}", s.getEmailMessage)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/email-senders", s.listMailSenders)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/email-campaigns", s.listCampaigns)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/email-campaigns/{id}", s.getCampaign)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/email-messages", s.listEmailMessages)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/email-messages/{id}", s.getEmailMessage)
 		// Previewing renders against a real contact but sends nothing, so it
 		// is gated with sending rather than reading: only somebody who could
 		// send this mail has any business rendering it.
-		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Post("/api/email-campaigns/preview", s.previewCampaign)
-		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Post("/api/email-campaigns", s.createCampaign)
-		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Post("/api/email-messages/{id}/requeue", s.requeueEmailMessage)
-		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Post("/api/email-messages/{id}/abandon", s.abandonEmailMessage)
+		r.With(s.perm("mail:email:write"), s.requireMailUnlock).Post("/api/email-campaigns/preview", s.previewCampaign)
+		r.With(s.perm("mail:email:write"), s.requireMailUnlock).Post("/api/email-campaigns", s.createCampaign)
+		r.With(s.perm("mail:email:write"), s.requireMailUnlock).Post("/api/email-messages/{id}/requeue", s.requeueEmailMessage)
+		r.With(s.perm("mail:email:write"), s.requireMailUnlock).Post("/api/email-messages/{id}/abandon", s.abandonEmailMessage)
 		// Drafts ride on the send permission: a draft only exists to become a
 		// send, and every route is scoped to the caller inside the service.
-		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Post("/api/email-drafts", s.saveDraft)
-		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Get("/api/email-drafts", s.listDrafts)
-		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Get("/api/email-drafts/{id}", s.getDraft)
-		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Delete("/api/email-drafts/{id}", s.deleteDraft)
-		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Post("/api/email-drafts/{id}/send", s.sendDraft)
-		r.With(s.perm("notification:email:read")).Get("/api/email-signatures", s.listSignatures)
-		r.With(s.perm("notification:email:write")).Post("/api/email-signatures", s.createSignature)
-		r.With(s.perm("notification:email:write")).Delete("/api/email-signatures/{id}", s.deleteSignature)
+		r.With(s.perm("mail:email:write"), s.requireMailUnlock).Post("/api/email-drafts", s.saveDraft)
+		r.With(s.perm("mail:email:write"), s.requireMailUnlock).Get("/api/email-drafts", s.listDrafts)
+		r.With(s.perm("mail:email:write"), s.requireMailUnlock).Get("/api/email-drafts/{id}", s.getDraft)
+		r.With(s.perm("mail:email:write"), s.requireMailUnlock).Delete("/api/email-drafts/{id}", s.deleteDraft)
+		r.With(s.perm("mail:email:write"), s.requireMailUnlock).Post("/api/email-drafts/{id}/send", s.sendDraft)
+		r.With(s.perm("mail:email:read")).Get("/api/email-signatures", s.listSignatures)
+		r.With(s.perm("mail:email:write")).Post("/api/email-signatures", s.createSignature)
+		r.With(s.perm("mail:email:write")).Delete("/api/email-signatures/{id}", s.deleteSignature)
 		// The suppression list is shared by everybody's sends, so maintaining
 		// it is administrative work rather than part of composing a mail.
 		// Attachments and inline images. Uploading is part of composing, so
 		// both ride on the send permission rather than a separate one.
-		r.With(s.perm("notification:email:write")).Post("/api/email-attachments/presign", s.presignMailAttachment)
-		r.With(s.perm("notification:email:write")).Post("/api/email-attachments", s.registerMailAttachment)
-		r.With(s.perm("notification:email:read")).Get("/api/email-attachments", s.listMailAttachments)
-		r.With(s.perm("notification:email:write")).Post("/api/email-images/presign", s.presignMailImage)
-		r.With(s.perm("notification:email:write")).Post("/api/email-images", s.registerMailImage)
-		r.With(s.perm("notification:email:read")).Get("/api/email-images", s.listMailImages)
-		r.With(s.perm("notification:email:write")).Delete("/api/email-images/{id}", s.withdrawMailImage)
-		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/email-suppressions", s.listSuppressions)
-		r.With(s.perm("notification:suppression:write")).Post("/api/email-suppressions", s.addSuppression)
-		r.With(s.perm("notification:suppression:write")).Delete("/api/email-suppressions", s.removeSuppression)
+		r.With(s.perm("mail:email:write")).Post("/api/email-attachments/presign", s.presignMailAttachment)
+		r.With(s.perm("mail:email:write")).Post("/api/email-attachments", s.registerMailAttachment)
+		r.With(s.perm("mail:email:read")).Get("/api/email-attachments", s.listMailAttachments)
+		r.With(s.perm("mail:email:write")).Post("/api/email-images/presign", s.presignMailImage)
+		r.With(s.perm("mail:email:write")).Post("/api/email-images", s.registerMailImage)
+		r.With(s.perm("mail:email:read")).Get("/api/email-images", s.listMailImages)
+		r.With(s.perm("mail:email:write")).Delete("/api/email-images/{id}", s.withdrawMailImage)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/email-suppressions", s.listSuppressions)
+		r.With(s.perm("mail:suppression:write")).Post("/api/email-suppressions", s.addSuppression)
+		r.With(s.perm("mail:suppression:write")).Delete("/api/email-suppressions", s.removeSuppression)
 		// The mail host is one setting for the whole company, so it sits
 		// behind the administrative permission.
-		r.With(s.perm("notification:email:read")).Get("/api/mail-host", s.getMailHost)
+		r.With(s.perm("mail:email:read")).Get("/api/mail-host", s.getMailHost)
 		r.With(s.perm("iam:role:write")).Put("/api/mail-host", s.saveMailHost)
 		// Your own mailbox. Only :read is required to write it, because the
 		// thing being written is your own credential — gating it behind an
@@ -335,24 +335,24 @@ func (s *Server) Router() http.Handler {
 		// involved in every employee entering their own authorisation code.
 		// The caller's own inbox. Own mail only by construction — the
 		// handler resolves the owner from the token, never from the request.
-		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/inbound-mails", s.listInbound)
-		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/inbound-mails/{id}", s.getInbound)
-		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/mark", s.markInbound)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/inbound-mails", s.listInbound)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/inbound-mails/{id}", s.getInbound)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/mark", s.markInbound)
 		// Permanent deletion out of the trash. ERP-side copies only; the mail
 		// host's original is beyond this API's reach by design.
-		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Delete("/api/inbound-mails/{id}", s.purgeInbound)
-		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/mail-threads", s.getMailThread)
-		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Post("/api/mailbox/sync", s.syncMailbox)
-		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/mailbox-sent", s.listMailboxSent)
-		r.With(s.perm("notification:email:read")).Post("/api/mailbox/verify", s.verifyMailbox)
-		r.With(s.perm("notification:email:read")).Get("/api/oauth/google/start", s.startGoogleOAuth)
-		r.With(s.perm("notification:email:read")).Get("/api/mailbox/lock-status", s.mailLockStatus)
-		r.With(s.perm("notification:email:read")).Post("/api/mailbox/lock", s.lockMailbox)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Delete("/api/inbound-mails/{id}", s.purgeInbound)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-threads", s.getMailThread)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/mailbox/sync", s.syncMailbox)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mailbox-sent", s.listMailboxSent)
+		r.With(s.perm("mail:email:read")).Post("/api/mailbox/verify", s.verifyMailbox)
+		r.With(s.perm("mail:email:read")).Get("/api/oauth/google/start", s.startGoogleOAuth)
+		r.With(s.perm("mail:email:read")).Get("/api/mailbox/lock-status", s.mailLockStatus)
+		r.With(s.perm("mail:email:read")).Post("/api/mailbox/lock", s.lockMailbox)
 		// Read-only on purpose: there is no API that stores a mailbox
 		// credential directly. The only way in is /api/mailbox/verify with an
 		// address — a live login at the mail host that stores the pair only
 		// after it succeeded.
-		r.With(s.perm("notification:email:read")).Get("/api/my-mail-account", s.getMyMailAccount)
+		r.With(s.perm("mail:email:read")).Get("/api/my-mail-account", s.getMyMailAccount)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/latest", s.fxLatest)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/rates", s.fxRates)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/anomalies", s.fxAnomalies)

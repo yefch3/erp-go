@@ -11,7 +11,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	ntv1 "github.com/sgao19/erp-go/gen/go/erp/notification/v1"
+	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 )
 
@@ -119,7 +119,7 @@ func (s *Server) verifyMailbox(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, "GATEWAY_BAD_JSON", "请求体不是合法的 JSON")
 		return
 	}
-	resp, err := s.Emails.VerifyMailAccess(r.Context(), &ntv1.VerifyMailAccessRequest{
+	resp, err := s.Emails.VerifyMailAccess(r.Context(), &mailv1.VerifyMailAccessRequest{
 		Secret: body.Secret, Email: body.Email,
 	})
 	if err != nil {

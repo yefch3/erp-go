@@ -169,14 +169,14 @@ services:
     depends_on: [inventory, masterdata, approval]
     restart: unless-stopped
 
-  notification:
+  mail:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-      args: { SERVICE: notification }
-    image: erp-go/notification:dev
+      args: { SERVICE: mail }
+    image: erp-go/mail:dev
     environment:
-      DB_DSN: postgres://erp_notification:erp_notification_pw@postgres:5432/erp_notification?sslmode=disable
+      DB_DSN: postgres://erp_mail:erp_mail_pw@postgres:5432/erp_mail?sslmode=disable
       GRPC_PORT: "9010"
       MASTERDATA_ADDR: masterdata:9002
       IAM_ADDR: iam:9001
@@ -228,7 +228,7 @@ services:
       EXPORT_ADDR: export:9006
       PROCUREMENT_ADDR: procurement:9007
       INVENTORY_ADDR: inventory:9008
-      NOTIFICATION_ADDR: notification:9010
+      MAIL_ADDR: mail:9010
       REDIS_ADDR: redis:6379
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       MAIL_OAUTH_REDIRECT_URL: ${MAIL_OAUTH_REDIRECT_URL:-http://localhost:8080/api/oauth/google/callback}
@@ -238,7 +238,7 @@ services:
     ports:
       - "8080:8080"
     networks: [infra]
-    depends_on: [iam, masterdata, fx, approval, product, export, notification]
+    depends_on: [iam, masterdata, fx, approval, product, export, mail]
     restart: unless-stopped
 
 networks:

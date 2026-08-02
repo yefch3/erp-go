@@ -3,7 +3,7 @@
 # impossible by construction, which is what enforces data ownership.
 set -e
 
-for svc in iam masterdata product fx approval export procurement inventory notification shipping reporting audit; do
+for svc in iam masterdata product fx approval export procurement inventory mail shipping reporting audit; do
   psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres <<SQL
     CREATE DATABASE erp_${svc};
     CREATE USER erp_${svc} WITH PASSWORD 'erp_${svc}_pw';

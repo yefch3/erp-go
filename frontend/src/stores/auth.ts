@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { post } from '../api'
+import { get, post } from '../api'
 
 interface Employee {
   id: string
@@ -41,6 +41,23 @@ export const useAuthStore = defineStore('auth', {
       localStorage.setItem('employeeId', data.employee.id)
       localStorage.setItem('employeeName', data.employee.name)
       localStorage.setItem('permissions', JSON.stringify(data.permissionCodes))
+    },
+    // Permission codes are cached in localStorage so the first paint is not
+    // gated on a round trip, but a cache that only refills at login goes
+    // stale the moment an administrator changes a role — or the moment codes
+    // are renamed, as mail:* were. Refreshing on boot means a permission
+    // change takes effect on the next page load instead of the next login.
+    // Failure is silent on purpose: the cached list still works, and the API
+    // is the real gate either way.
+    async refreshPermissions() {
+      if (!this.token) return
+      try {
+        const data = await get<{ permissionCodes: string[] }>('/me/permissions')
+        this.permissions = data.permissionCodes ?? []
+        localStorage.setItem('permissions', JSON.stringify(this.permissions))
+      } catch {
+        /* keep what we have; every API call is still checked server-side */
+      }
     },
     logout() {
       this.$reset()

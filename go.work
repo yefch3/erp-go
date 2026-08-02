@@ -9,8 +9,8 @@ use (
 	./services/gateway
 	./services/iam
 	./services/inventory
+	./services/mail
 	./services/masterdata
-	./services/notification
 	./services/procurement
 	./services/product
 )

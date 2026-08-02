@@ -13,7 +13,7 @@ type Config struct {
 	ExportAddr       string
 	ProcurementAddr  string
 	InventoryAddr    string
-	NotificationAddr string
+	MailAddr string
 	// Redis carries the live UI feed; see pkg/livefeed.
 	RedisAddr string
 	JWTSecret string
@@ -30,7 +30,7 @@ func Load() Config {
 		ExportAddr:       env("EXPORT_ADDR", "localhost:9006"),
 		ProcurementAddr:  env("PROCUREMENT_ADDR", "localhost:9007"),
 		InventoryAddr:    env("INVENTORY_ADDR", "localhost:9008"),
-		NotificationAddr: env("NOTIFICATION_ADDR", "localhost:9010"),
+		MailAddr: env("MAIL_ADDR", "localhost:9010"),
 		RedisAddr:        env("REDIS_ADDR", "localhost:6380"),
 		// Must match iam's JWT_SECRET or every token fails validation.
 		JWTSecret: env("JWT_SECRET", "dev-secret-change-in-production"),

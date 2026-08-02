@@ -608,8 +608,8 @@ interface Suppression {
 const { t } = useI18n()
 const common = (k: string) => t(`common.${k}`)
 const auth = useAuthStore()
-const canWrite = computed(() => auth.can('notification:email:write'))
-const canSuppress = computed(() => auth.can('notification:suppression:write'))
+const canWrite = computed(() => auth.can('mail:email:write'))
+const canSuppress = computed(() => auth.can('mail:suppression:write'))
 const isAdmin = computed(() => auth.can('iam:role:write'))
 
 const folders = [
