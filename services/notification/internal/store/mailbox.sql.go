@@ -958,7 +958,8 @@ SELECT 'OUT' AS direction, m.id, m.subject, m.body, m.body_format,
        coalesce(m.sent_at, m.queued_at) AS at
 FROM email_messages m
 WHERE m.tenant_id = $1::bigint
-  AND m.thread_key = $2::text
+  AND m.sender_id = $2::bigint
+  AND m.thread_key = $3::text
 UNION ALL
 SELECT 'IN' AS direction, i.id, i.subject,
        CASE WHEN i.body_html <> '' THEN i.body_html ELSE i.body_text END AS body,
@@ -967,13 +968,15 @@ SELECT 'IN' AS direction, i.id, i.subject,
        coalesce(i.sent_at, i.received_at) AS at
 FROM email_inbound i
 WHERE i.tenant_id = $1::bigint
-  AND i.thread_key = $2::text
+  AND i.owner_id = $2::bigint
+  AND i.thread_key = $3::text
   AND NOT i.is_bounce
 ORDER BY at
 `
 
 type ListThreadParams struct {
 	TenantID  int64
+	OwnerID   int64
 	ThreadKey string
 }
 
@@ -990,9 +993,10 @@ type ListThreadRow struct {
 
 // Both sides of one conversation, in the order they happened. Sent and
 // received come from different tables, so the union is what makes a thread
-// read as a dialogue instead of two separate lists.
+// read as a dialogue instead of two separate lists. Owner-scoped on both
+// legs: a thread key is guessable, whose mail it opens must not be.
 func (q *Queries) ListThread(ctx context.Context, arg ListThreadParams) ([]ListThreadRow, error) {
-	rows, err := q.db.Query(ctx, listThread, arg.TenantID, arg.ThreadKey)
+	rows, err := q.db.Query(ctx, listThread, arg.TenantID, arg.OwnerID, arg.ThreadKey)
 	if err != nil {
 		return nil, err
 	}

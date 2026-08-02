@@ -359,9 +359,36 @@
           </template>
         </div>
         <el-divider />
-        <!-- Sanitised server-side before it got here; see GetInbound. -->
-        <div v-if="openedInbound.bodyHtml" class="in-html" v-html="openedInbound.bodyHtml" />
-        <pre v-else class="in-text">{{ openedInbound.bodyText }}</pre>
+        <!-- The whole exchange when there is one, the single mail otherwise.
+             All HTML here was sanitised server-side; see GetInbound and
+             GetMailThread. -->
+        <template v-if="threadItems.length > 1">
+          <div class="thread-count">{{ t('emails.threadCount', { n: threadItems.length }) }}</div>
+          <div
+            v-for="it in threadItems"
+            :key="it.direction + it.id"
+            class="thread-item"
+            :class="{ out: it.direction === 'OUT' }"
+          >
+            <button type="button" class="thread-head" @click="toggleThreadItem(it)">
+              <el-tag size="small" :type="it.direction === 'OUT' ? 'info' : 'success'" effect="plain">
+                {{ it.direction === 'OUT' ? t('emails.threadOut') : t('emails.threadIn') }}
+              </el-tag>
+              <span class="strong">{{ it.who || it.counterparty }}</span>
+              <span class="sub ellipsis">{{ it.counterparty }}</span>
+              <span class="grow" />
+              <span class="sub">{{ shortTime(it.at) }}</span>
+            </button>
+            <div v-show="isThreadOpen(it)" class="thread-body">
+              <div v-if="it.bodyFormat === 'HTML'" class="in-html" v-html="it.body" />
+              <pre v-else class="in-text">{{ it.body }}</pre>
+            </div>
+          </div>
+        </template>
+        <template v-else>
+          <div v-if="openedInbound.bodyHtml" class="in-html" v-html="openedInbound.bodyHtml" />
+          <pre v-else class="in-text">{{ openedInbound.bodyText }}</pre>
+        </template>
         <template v-if="openedInbound.attachments?.length">
           <el-divider />
           <h4 class="side-title">{{ t('emails.attachments') }}</h4>
@@ -633,7 +660,7 @@ onMounted(async () => {
       try {
         const resp = await http.post('/mailbox/verify', { secret: '' })
         const data = resp.data.data as { token: string }
-        sessionStorage.setItem('mailUnlock', data.token)
+        localStorage.setItem('mailUnlock', data.token)
         locked.value = false
         init()
         return
@@ -669,7 +696,7 @@ async function lockMailbox() {
   } finally {
     // Locked locally regardless: a failed revoke call must not leave the
     // screen open while the person walks away believing it is shut.
-    sessionStorage.removeItem('mailUnlock')
+    localStorage.removeItem('mailUnlock')
     locked.value = true
   }
 }
@@ -679,6 +706,12 @@ function init() {
   refreshAttentionCount()
   loadDraftCount()
   refreshUnread()
+  // Ask once, from the mailbox itself — this is the page whose news the
+  // desktop notification carries, so the browser's prompt makes sense here.
+  // Shell.vue does the actual notifying, and only when the person is away.
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission()
+  }
 }
 
 // New mail is pushed over the same SSE stream the rest of the app uses: the
@@ -819,6 +852,51 @@ async function openInbound(row: InboundMail) {
     row.isRead = true
     unreadCount.value = Math.max(0, unreadCount.value - 1)
   }
+  // The conversation around it, fetched after the mail itself is already on
+  // screen. Only a real exchange (more than this one message) switches the
+  // drawer into thread mode; the opened mail arrives expanded, history
+  // collapsed to one line each.
+  threadItems.value = []
+  expandedThread.value = new Set()
+  if (d.mail.threadKey) {
+    try {
+      const tr = await get<{ items: ThreadItem[] }>('/mail-threads', { key: d.mail.threadKey })
+      if ((tr.items ?? []).length > 1) {
+        threadItems.value = tr.items
+        expandedThread.value = new Set([`IN:${d.mail.id}`])
+      }
+    } catch {
+      /* the single-mail view already covers the failure */
+    }
+  }
+}
+
+interface ThreadItem {
+  direction: string
+  id: string
+  subject: string
+  body: string
+  bodyFormat: string
+  counterparty: string
+  who: string
+  at: string
+}
+const threadItems = ref<ThreadItem[]>([])
+const expandedThread = ref<Set<string>>(new Set())
+
+function isThreadOpen(it: ThreadItem) {
+  return expandedThread.value.has(`${it.direction}:${it.id}`)
+}
+
+function toggleThreadItem(it: ThreadItem) {
+  const k = `${it.direction}:${it.id}`
+  const next = new Set(expandedThread.value)
+  if (next.has(k)) {
+    next.delete(k)
+  } else {
+    next.add(k)
+  }
+  expandedThread.value = next
 }
 
 function inboundRowClass({ row }: { row: InboundMail }) {
@@ -1190,6 +1268,38 @@ async function doUnsuppress(row: Suppression) {
 }
 .junk-note {
   margin-bottom: 12px;
+}
+.thread-count {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.thread-item {
+  margin-bottom: 6px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.thread-item.out {
+  background: var(--el-fill-color-lighter);
+}
+.thread-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+}
+.thread-head:hover {
+  background: var(--el-fill-color-light);
+}
+.thread-body {
+  padding: 4px 12px 12px;
 }
 .star {
   font-size: 15px;

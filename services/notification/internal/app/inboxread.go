@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
@@ -131,6 +132,52 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 		}
 	}
 	return v, nil
+}
+
+// ThreadItem is one turn of a conversation, either direction.
+type ThreadItem struct {
+	Direction    string
+	ID           int64
+	Subject      string
+	Body         string
+	BodyFormat   string
+	Counterparty string
+	Who          string
+	At           time.Time
+}
+
+// GetMailThread returns one conversation, oldest first, both directions.
+//
+// Inbound HTML is sanitised on the way out, same as GetInbound: these bodies
+// came from the wild and are about to be rendered inside our page. Outbound
+// bodies were sanitised when they were composed.
+func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID int64, threadKey string) ([]ThreadItem, error) {
+	if strings.TrimSpace(threadKey) == "" {
+		return nil, apierr.Invalid("NT_THREAD_KEY_REQUIRED", "缺少会话标识")
+	}
+	rows, err := s.q.ListThread(ctx, store.ListThreadParams{
+		TenantID: tenantID, OwnerID: ownerID, ThreadKey: threadKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ThreadItem, 0, len(rows))
+	for _, r := range rows {
+		body := r.Body
+		if r.Direction == "IN" && r.BodyFormat == "HTML" {
+			body = SanitizeHTML(body)
+		}
+		v := ThreadItem{
+			Direction: r.Direction, ID: r.ID, Subject: r.Subject,
+			Body: body, BodyFormat: r.BodyFormat,
+			Counterparty: r.Counterparty, Who: r.Who,
+		}
+		if r.At.Valid {
+			v.At = r.At.Time
+		}
+		out = append(out, v)
+	}
+	return out, nil
 }
 
 // MarkInbound is inbox housekeeping: read/unread, star, archive, trash.

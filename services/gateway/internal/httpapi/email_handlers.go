@@ -489,6 +489,17 @@ func (s *Server) listInbound(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) getMailThread(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.GetMailThread(r.Context(), &ntv1.GetMailThreadRequest{
+		ThreadKey: r.URL.Query().Get("key"),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) markInbound(w http.ResponseWriter, r *http.Request) {
 	req := &ntv1.MarkInboundRequest{}
 	if !s.decodeBody(w, r, req) {

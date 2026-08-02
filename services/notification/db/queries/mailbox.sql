@@ -335,12 +335,14 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- name: ListThread :many
 -- Both sides of one conversation, in the order they happened. Sent and
 -- received come from different tables, so the union is what makes a thread
--- read as a dialogue instead of two separate lists.
+-- read as a dialogue instead of two separate lists. Owner-scoped on both
+-- legs: a thread key is guessable, whose mail it opens must not be.
 SELECT 'OUT' AS direction, m.id, m.subject, m.body, m.body_format,
        m.to_email AS counterparty, m.sender_name AS who,
        coalesce(m.sent_at, m.queued_at) AS at
 FROM email_messages m
 WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND m.sender_id = sqlc.arg(owner_id)::bigint
   AND m.thread_key = sqlc.arg(thread_key)::text
 UNION ALL
 SELECT 'IN' AS direction, i.id, i.subject,
@@ -350,6 +352,7 @@ SELECT 'IN' AS direction, i.id, i.subject,
        coalesce(i.sent_at, i.received_at) AS at
 FROM email_inbound i
 WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND i.owner_id = sqlc.arg(owner_id)::bigint
   AND i.thread_key = sqlc.arg(thread_key)::text
   AND NOT i.is_bounce
 ORDER BY at;

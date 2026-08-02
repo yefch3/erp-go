@@ -100,6 +100,9 @@ service EmailService {
   // a provider verdict, the other is a document somebody sent us.
   rpc ListInbound(ListInboundRequest) returns (ListInboundResponse);
   rpc GetInbound(GetInboundRequest) returns (GetInboundResponse);
+  // One conversation, both directions, oldest first. Owner-scoped: the
+  // caller sees only their own half of the world.
+  rpc GetMailThread(GetMailThreadRequest) returns (GetMailThreadResponse);
   // Inbox housekeeping: read/unread, star, archive, trash. ERP-side state
   // only — never written back to the mail host.
   rpc MarkInbound(MarkInboundRequest) returns (MarkInboundResponse);
@@ -155,6 +158,27 @@ message ListInboundResponse {
 
 message GetInboundRequest {
   int64 id = 1;
+}
+
+message GetMailThreadRequest {
+  string thread_key = 1;
+}
+
+// ThreadItem is one turn of a conversation, either direction.
+message ThreadItem {
+  // OUT = we sent it, IN = it arrived.
+  string direction = 1;
+  int64 id = 2;
+  string subject = 3;
+  string body = 4;
+  string body_format = 5;
+  string counterparty = 6;
+  string who = 7;
+  string at = 8;
+}
+
+message GetMailThreadResponse {
+  repeated ThreadItem items = 1;
 }
 
 message GetInboundResponse {

@@ -16,9 +16,11 @@ export const http = axios.create({ baseURL: '/api', timeout: 15000 })
 http.interceptors.request.use((cfg) => {
   const token = localStorage.getItem('token')
   if (token) cfg.headers.Authorization = `Bearer ${token}`
-  // The mailbox unlock proof. sessionStorage on purpose: closing the browser
-  // locks the mailbox again, which is the behaviour a lock should have.
-  const unlock = sessionStorage.getItem('mailUnlock')
+  // The mailbox unlock proof. localStorage, same as the ERP login itself:
+  // the real boundaries are the server-side 12-hour expiry and 退出邮箱,
+  // which revokes the token immediately. Dying with the tab only meant
+  // retyping a password every morning without adding a boundary.
+  const unlock = localStorage.getItem('mailUnlock')
   if (unlock) cfg.headers['X-Mail-Unlock'] = unlock
   return cfg
 })
@@ -42,7 +44,7 @@ http.interceptors.response.use(
     // every mail request failing quietly. Dropping it makes the gate
     // reappear on the next visit to the mailbox.
     if (env?.code === 'MAIL_LOCKED') {
-      sessionStorage.removeItem('mailUnlock')
+      localStorage.removeItem('mailUnlock')
     }
     ElMessage.error(env?.message || err.message || i18n.global.t('common.networkError'))
     return Promise.reject(env ?? err)
