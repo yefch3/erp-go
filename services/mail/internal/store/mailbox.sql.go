@@ -1380,6 +1380,47 @@ func (q *Queries) MarkSyncFailed(ctx context.Context, arg MarkSyncFailedParams) 
 	return err
 }
 
+const markViewRead = `-- name: MarkViewRead :execrows
+UPDATE email_inbound
+SET is_read = TRUE
+WHERE tenant_id = $1::bigint
+  AND owner_id = $2::bigint
+  AND NOT is_read
+  AND CASE WHEN $3::text = 'JUNK'
+        THEN folder = 'JUNK' AND NOT not_junk
+        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
+      END
+  AND NOT is_bounce
+  AND CASE $3::text
+        WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
+        WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
+        WHEN 'TRASH'   THEN deleted_at IS NOT NULL
+        WHEN 'JUNK'    THEN deleted_at IS NULL
+        ELSE archived_at IS NULL AND deleted_at IS NULL
+      END
+`
+
+type MarkViewReadParams struct {
+	TenantID int64
+	OwnerID  int64
+	View     string
+}
+
+// Marks everything the current view shows as read, and nothing else.
+//
+// Scoped by the same filters as the list because that is what the button
+// promises: "全部已读" in the junk view must not touch the inbox, and it must
+// never reach into the archive or the trash from either. Read state is
+// ERP-side only — the mail host is not told, same as every other bit of
+// housekeeping here.
+func (q *Queries) MarkViewRead(ctx context.Context, arg MarkViewReadParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markViewRead, arg.TenantID, arg.OwnerID, arg.View)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const pruneSendCounters = `-- name: PruneSendCounters :exec
 DELETE FROM mail_send_counters
 WHERE window_at < now() - interval '7 days'

@@ -528,6 +528,17 @@ func (s *Server) purgeInbound(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) markViewRead(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.MarkViewRead(r.Context(), &mailv1.MarkViewReadRequest{
+		View: r.URL.Query().Get("view"),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) getInbound(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	resp, err := s.Emails.GetInbound(r.Context(), &mailv1.GetInboundRequest{Id: id})

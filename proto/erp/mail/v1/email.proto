@@ -111,6 +111,9 @@ service EmailService {
   // host's original is untouched — the sync is one-way, so this can never
   // reach into the real mailbox.
   rpc PurgeInbound(PurgeInboundRequest) returns (PurgeInboundResponse);
+  // Marks everything one view shows as read. Scoped to that view, never the
+  // whole mailbox, and ERP-side only like the rest of the housekeeping.
+  rpc MarkViewRead(MarkViewReadRequest) returns (MarkViewReadResponse);
   // Mail this mailbox sent — through any client, over whatever history the
   // backfill has reached. ERP sends live in ListMessages with per-recipient
   // status; these are plain copies from the host's own Sent folder.
@@ -218,6 +221,15 @@ message MarkInboundRequest {
 
 message MarkInboundResponse {
   bool ok = 1;
+}
+
+message MarkViewReadRequest {
+  // Same vocabulary as ListInbound: empty/INBOX, STARRED, ARCHIVE, TRASH, JUNK.
+  string view = 1;
+}
+
+message MarkViewReadResponse {
+  int32 marked = 1;
 }
 
 message PurgeInboundRequest {

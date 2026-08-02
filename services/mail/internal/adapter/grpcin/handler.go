@@ -664,6 +664,15 @@ func (h *Handler) PurgeInbound(ctx context.Context, req *mailv1.PurgeInboundRequ
 	return &mailv1.PurgeInboundResponse{Ok: true}, nil
 }
 
+func (h *Handler) MarkViewRead(ctx context.Context, req *mailv1.MarkViewReadRequest) (*mailv1.MarkViewReadResponse, error) {
+	op := operator(ctx)
+	n, err := h.svc.MarkViewRead(ctx, grpcx.TenantID(ctx), op.ID, req.GetView())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.MarkViewReadResponse{Marked: int32(n)}, nil
+}
+
 func (h *Handler) SyncMailbox(ctx context.Context, _ *mailv1.SyncMailboxRequest) (*mailv1.SyncMailboxResponse, error) {
 	op := operator(ctx)
 	n, err := h.svc.SyncNow(ctx, grpcx.TenantID(ctx), op.ID)
