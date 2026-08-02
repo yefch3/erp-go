@@ -195,7 +195,7 @@ async function skipUnbound() {
 async function verify(code: string, addr = '') {
   const resp = await http.post('/mailbox/verify', { secret: code, email: addr })
   const data = resp.data.data as { token: string }
-  sessionStorage.setItem('mailUnlock', data.token)
+  localStorage.setItem('mailUnlock', data.token)
   secret.value = ''
   emit('unlocked')
 }

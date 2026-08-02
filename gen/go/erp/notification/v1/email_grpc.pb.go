@@ -55,6 +55,7 @@ const (
 	EmailService_CompleteGoogleOAuth_FullMethodName = "/erp.notification.v1.EmailService/CompleteGoogleOAuth"
 	EmailService_ListInbound_FullMethodName         = "/erp.notification.v1.EmailService/ListInbound"
 	EmailService_GetInbound_FullMethodName          = "/erp.notification.v1.EmailService/GetInbound"
+	EmailService_GetMailThread_FullMethodName       = "/erp.notification.v1.EmailService/GetMailThread"
 	EmailService_MarkInbound_FullMethodName         = "/erp.notification.v1.EmailService/MarkInbound"
 	EmailService_ListMailboxSent_FullMethodName     = "/erp.notification.v1.EmailService/ListMailboxSent"
 	EmailService_SyncMailbox_FullMethodName         = "/erp.notification.v1.EmailService/SyncMailbox"
@@ -148,6 +149,9 @@ type EmailServiceClient interface {
 	// a provider verdict, the other is a document somebody sent us.
 	ListInbound(ctx context.Context, in *ListInboundRequest, opts ...grpc.CallOption) (*ListInboundResponse, error)
 	GetInbound(ctx context.Context, in *GetInboundRequest, opts ...grpc.CallOption) (*GetInboundResponse, error)
+	// One conversation, both directions, oldest first. Owner-scoped: the
+	// caller sees only their own half of the world.
+	GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error)
 	// Inbox housekeeping: read/unread, star, archive, trash. ERP-side state
 	// only — never written back to the mail host.
 	MarkInbound(ctx context.Context, in *MarkInboundRequest, opts ...grpc.CallOption) (*MarkInboundResponse, error)
@@ -528,6 +532,16 @@ func (c *emailServiceClient) GetInbound(ctx context.Context, in *GetInboundReque
 	return out, nil
 }
 
+func (c *emailServiceClient) GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetMailThreadResponse)
+	err := c.cc.Invoke(ctx, EmailService_GetMailThread_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) MarkInbound(ctx context.Context, in *MarkInboundRequest, opts ...grpc.CallOption) (*MarkInboundResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(MarkInboundResponse)
@@ -646,6 +660,9 @@ type EmailServiceServer interface {
 	// a provider verdict, the other is a document somebody sent us.
 	ListInbound(context.Context, *ListInboundRequest) (*ListInboundResponse, error)
 	GetInbound(context.Context, *GetInboundRequest) (*GetInboundResponse, error)
+	// One conversation, both directions, oldest first. Owner-scoped: the
+	// caller sees only their own half of the world.
+	GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error)
 	// Inbox housekeeping: read/unread, star, archive, trash. ERP-side state
 	// only — never written back to the mail host.
 	MarkInbound(context.Context, *MarkInboundRequest) (*MarkInboundResponse, error)
@@ -773,6 +790,9 @@ func (UnimplementedEmailServiceServer) ListInbound(context.Context, *ListInbound
 }
 func (UnimplementedEmailServiceServer) GetInbound(context.Context, *GetInboundRequest) (*GetInboundResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetInbound not implemented")
+}
+func (UnimplementedEmailServiceServer) GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMailThread not implemented")
 }
 func (UnimplementedEmailServiceServer) MarkInbound(context.Context, *MarkInboundRequest) (*MarkInboundResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MarkInbound not implemented")
@@ -1452,6 +1472,24 @@ func _EmailService_GetInbound_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_GetMailThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMailThreadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).GetMailThread(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_GetMailThread_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).GetMailThread(ctx, req.(*GetMailThreadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_MarkInbound_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(MarkInboundRequest)
 	if err := dec(in); err != nil {
@@ -1656,6 +1694,10 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetInbound",
 			Handler:    _EmailService_GetInbound_Handler,
+		},
+		{
+			MethodName: "GetMailThread",
+			Handler:    _EmailService_GetMailThread_Handler,
 		},
 		{
 			MethodName: "MarkInbound",

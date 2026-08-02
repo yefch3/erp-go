@@ -623,6 +623,27 @@ func (h *Handler) GetInbound(ctx context.Context, req *ntv1.GetInboundRequest) (
 	return &ntv1.GetInboundResponse{Mail: inboundToProto(v)}, nil
 }
 
+func (h *Handler) GetMailThread(ctx context.Context, req *ntv1.GetMailThreadRequest) (*ntv1.GetMailThreadResponse, error) {
+	op := operator(ctx)
+	items, err := h.svc.GetMailThread(ctx, grpcx.TenantID(ctx), op.ID, req.GetThreadKey())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*ntv1.ThreadItem, 0, len(items))
+	for _, v := range items {
+		it := &ntv1.ThreadItem{
+			Direction: v.Direction, Id: v.ID, Subject: v.Subject,
+			Body: v.Body, BodyFormat: v.BodyFormat,
+			Counterparty: v.Counterparty, Who: v.Who,
+		}
+		if !v.At.IsZero() {
+			it.At = v.At.Format(time.RFC3339)
+		}
+		out = append(out, it)
+	}
+	return &ntv1.GetMailThreadResponse{Items: out}, nil
+}
+
 func (h *Handler) MarkInbound(ctx context.Context, req *ntv1.MarkInboundRequest) (*ntv1.MarkInboundResponse, error) {
 	op := operator(ctx)
 	err := h.svc.MarkInbound(ctx, grpcx.TenantID(ctx), op.ID, req.GetId(),

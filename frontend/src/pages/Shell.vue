@@ -113,7 +113,7 @@ import { useI18n } from 'vue-i18n'
 import { post } from '../api'
 import { useAuthStore } from '../stores/auth'
 import LangSwitcher from '../components/LangSwitcher.vue'
-import { startLive, stopLive } from '../live'
+import { onLive, startLive, stopLive } from '../live'
 
 const passwordOpen = ref(false)
 const saving = ref(false)
@@ -128,6 +128,29 @@ const router = useRouter()
 // and closed when they leave it.
 onMounted(startLive)
 onUnmounted(stopLive)
+
+// Desktop notification for new mail — but only when the person is NOT
+// looking at the mailbox: on another ERP page, another window, or another
+// app. Somebody watching the inbox already sees the list refresh itself,
+// and ringing a bell at them is noise. Permission is requested from the
+// mailbox page, never demanded here.
+onUnmounted(
+  onLive((e) => {
+    if (e.type !== 'mail.inbound') return
+    if (!('Notification' in window) || Notification.permission !== 'granted') return
+    if (!document.hidden && route.path === '/emails') return
+    const n = new Notification(t('emails.notifTitle'), {
+      body: t('emails.notifBody'),
+      // One collapsed notification however many mails arrive in a burst.
+      tag: 'erp-new-mail',
+    })
+    n.onclick = () => {
+      window.focus()
+      router.push('/emails')
+      n.close()
+    }
+  }),
+)
 
 function onCommand(cmd: string) {
   if (cmd === 'logout') {
