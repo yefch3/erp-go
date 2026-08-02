@@ -124,13 +124,11 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID int64, keyw
 	return page, nil
 }
 
-// sortTime mirrors the query's coalesce(sent_at, received_at). The cursor has
-// to name the same instant the ORDER BY used, or a page boundary would land
-// in the wrong place.
+// sortTime mirrors the query's ORDER BY, which is received_at — when the mail
+// host says it arrived. The cursor has to name the same instant the ordering
+// used, or a page boundary lands in the wrong place, so these two move
+// together or not at all.
 func sortTime(v InboundView) time.Time {
-	if !v.SentAt.IsZero() {
-		return v.SentAt
-	}
 	return v.ReceivedAt
 }
 

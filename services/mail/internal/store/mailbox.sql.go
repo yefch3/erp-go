@@ -588,7 +588,7 @@ INSERT INTO email_inbound (
     tenant_id, account_id, owner_id, folder, imap_uid,
     message_id, in_reply_to, references_ids, thread_key, reply_to_id,
     from_email, from_name, to_email, subject, body_html, body_text, snippet,
-    raw_key, raw_size, is_bounce, has_attachments, is_read, sent_at
+    raw_key, raw_size, is_bounce, has_attachments, is_read, sent_at, received_at
 ) VALUES (
     $1::bigint, $2::bigint, $3::bigint,
     $4::text, $5::bigint,
@@ -599,7 +599,11 @@ INSERT INTO email_inbound (
     $17::text, $18::text, $19::bigint,
     $20::boolean, $21::boolean,
     $22::boolean,
-    $23::timestamptz
+    $23::timestamptz,
+    -- When the mail host says it arrived, not when we happened to fetch it.
+    -- Stamping now() here made 收到时间 mean "last time this row was written",
+    -- so a resync rewrote every timestamp in the mailbox to the same minute.
+    coalesce($24::timestamptz, now())
 )
 ON CONFLICT (tenant_id, account_id, folder, imap_uid) DO NOTHING
 RETURNING id
@@ -629,6 +633,7 @@ type InsertInboundParams struct {
 	HasAttachments bool
 	IsRead         bool
 	SentAt         pgtype.Timestamptz
+	ReceivedAt     pgtype.Timestamptz
 }
 
 // ON CONFLICT DO NOTHING plus a returned id of 0 is how a repeated fetch of
@@ -658,6 +663,7 @@ func (q *Queries) InsertInbound(ctx context.Context, arg InsertInboundParams) (i
 		arg.HasAttachments,
 		arg.IsRead,
 		arg.SentAt,
+		arg.ReceivedAt,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -839,7 +845,7 @@ WITH visible AS (
     SELECT id, from_email, from_name, subject, snippet, thread_key,
            is_read, is_starred, has_attachments, received_at, sent_at,
            coalesce(nullif(thread_key, ''), 'm:' || id::text) AS group_key,
-           coalesce(sent_at, received_at) AS at
+           received_at AS at
     FROM email_inbound
     WHERE tenant_id = $4::bigint
       AND owner_id = $5::bigint

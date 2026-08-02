@@ -306,6 +306,10 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 	if sentAt.IsZero() {
 		sentAt = m.InternalDate
 	}
+	// When the host says it arrived. Its own clock, not ours and not the
+	// sender's: the Date header is written by whoever sent the mail and can
+	// be wrong by accident or on purpose, while INTERNALDATE is the one
+	// timestamp the mailbox itself stands behind.
 
 	// The raw MIME goes to object storage before the row exists: a row that
 	// promises a raw_key which was never written is worse than no row.
@@ -349,6 +353,9 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 		IsBounce: parsed.IsBounce, HasAttachments: len(parsed.Attachments) > 0,
 		IsRead: m.Seen,
 		SentAt: pgtype.Timestamptz{Time: sentAt, Valid: !sentAt.IsZero()},
+		ReceivedAt: pgtype.Timestamptz{
+			Time: m.InternalDate, Valid: !m.InternalDate.IsZero(),
+		},
 	})
 	if err != nil {
 		// ON CONFLICT DO NOTHING returns no row at all, which sqlc surfaces as

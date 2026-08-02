@@ -168,7 +168,7 @@ INSERT INTO email_inbound (
     tenant_id, account_id, owner_id, folder, imap_uid,
     message_id, in_reply_to, references_ids, thread_key, reply_to_id,
     from_email, from_name, to_email, subject, body_html, body_text, snippet,
-    raw_key, raw_size, is_bounce, has_attachments, is_read, sent_at
+    raw_key, raw_size, is_bounce, has_attachments, is_read, sent_at, received_at
 ) VALUES (
     sqlc.arg(tenant_id)::bigint, sqlc.arg(account_id)::bigint, sqlc.arg(owner_id)::bigint,
     sqlc.arg(folder)::text, sqlc.arg(imap_uid)::bigint,
@@ -179,7 +179,11 @@ INSERT INTO email_inbound (
     sqlc.arg(snippet)::text, sqlc.arg(raw_key)::text, sqlc.arg(raw_size)::bigint,
     sqlc.arg(is_bounce)::boolean, sqlc.arg(has_attachments)::boolean,
     sqlc.arg(is_read)::boolean,
-    sqlc.narg(sent_at)::timestamptz
+    sqlc.narg(sent_at)::timestamptz,
+    -- When the mail host says it arrived, not when we happened to fetch it.
+    -- Stamping now() here made 收到时间 mean "last time this row was written",
+    -- so a resync rewrote every timestamp in the mailbox to the same minute.
+    coalesce(sqlc.narg(received_at)::timestamptz, now())
 )
 ON CONFLICT (tenant_id, account_id, folder, imap_uid) DO NOTHING
 RETURNING id;
@@ -265,7 +269,7 @@ WITH visible AS (
     SELECT id, from_email, from_name, subject, snippet, thread_key,
            is_read, is_starred, has_attachments, received_at, sent_at,
            coalesce(nullif(thread_key, ''), 'm:' || id::text) AS group_key,
-           coalesce(sent_at, received_at) AS at
+           received_at AS at
     FROM email_inbound
     WHERE tenant_id = sqlc.arg(tenant_id)::bigint
       AND owner_id = sqlc.arg(owner_id)::bigint
