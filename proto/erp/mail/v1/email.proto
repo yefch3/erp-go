@@ -810,6 +810,13 @@ message Draft {
   repeated PendingAttachment attachments = 8;
   string updated_at = 9;
   int32 recipient_count = 10;
+  // How this compose goes out, who is copied, and what it answers. Saved
+  // with the draft so reopening one restores the message rather than its
+  // words alone.
+  string send_mode = 11;
+  repeated Recipient cc = 12;
+  int64 reply_to_inbound_id = 13;
+  int64 forward_inbound_id = 14;
 }
 
 message SaveDraftRequest {
@@ -822,6 +829,13 @@ message SaveDraftRequest {
   string kind = 6;
   repeated Recipient recipients = 7;
   repeated PendingAttachment attachments = 8;
+  // How this compose goes out, who is copied, and what it answers. Saved
+  // with the draft so reopening one restores the message rather than its
+  // words alone.
+  string send_mode = 9;
+  repeated Recipient cc = 10;
+  int64 reply_to_inbound_id = 11;
+  int64 forward_inbound_id = 12;
 }
 
 message SaveDraftResponse {

@@ -531,7 +531,8 @@ func (q *Queries) GetCampaign(ctx context.Context, arg GetCampaignParams) (GetCa
 
 const getDraft = `-- name: GetDraft :one
 SELECT id, subject, body, body_format, signature_id, kind,
-       recipients, attachments, updated_at
+       recipients, attachments, updated_at,
+       send_mode, cc, reply_to_inbound_id, forward_inbound_id
 FROM email_drafts
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
@@ -545,15 +546,19 @@ type GetDraftParams struct {
 }
 
 type GetDraftRow struct {
-	ID          int64
-	Subject     string
-	Body        string
-	BodyFormat  string
-	SignatureID int64
-	Kind        string
-	Recipients  []byte
-	Attachments []byte
-	UpdatedAt   pgtype.Timestamptz
+	ID               int64
+	Subject          string
+	Body             string
+	BodyFormat       string
+	SignatureID      int64
+	Kind             string
+	Recipients       []byte
+	Attachments      []byte
+	UpdatedAt        pgtype.Timestamptz
+	SendMode         string
+	Cc               []byte
+	ReplyToInboundID int64
+	ForwardInboundID int64
 }
 
 func (q *Queries) GetDraft(ctx context.Context, arg GetDraftParams) (GetDraftRow, error) {
@@ -569,6 +574,10 @@ func (q *Queries) GetDraft(ctx context.Context, arg GetDraftParams) (GetDraftRow
 		&i.Recipients,
 		&i.Attachments,
 		&i.UpdatedAt,
+		&i.SendMode,
+		&i.Cc,
+		&i.ReplyToInboundID,
+		&i.ForwardInboundID,
 	)
 	return i, err
 }
@@ -1611,7 +1620,8 @@ const saveDraft = `-- name: SaveDraft :one
 
 INSERT INTO email_drafts (
     id, tenant_id, owner_id, subject, body, body_format,
-    signature_id, kind, recipients, attachments
+    signature_id, kind, recipients, attachments,
+    send_mode, cc, reply_to_inbound_id, forward_inbound_id
 ) VALUES (
     coalesce(nullif($1::bigint, 0), nextval('email_drafts_id_seq')),
     $2::bigint,
@@ -1622,7 +1632,11 @@ INSERT INTO email_drafts (
     $7::bigint,
     $8::text,
     $9::jsonb,
-    $10::jsonb
+    $10::jsonb,
+    $11::text,
+    $12::jsonb,
+    $13::bigint,
+    $14::bigint
 )
 ON CONFLICT (id) DO UPDATE SET
     subject = excluded.subject,
@@ -1632,6 +1646,10 @@ ON CONFLICT (id) DO UPDATE SET
     kind = excluded.kind,
     recipients = excluded.recipients,
     attachments = excluded.attachments,
+    send_mode = excluded.send_mode,
+    cc = excluded.cc,
+    reply_to_inbound_id = excluded.reply_to_inbound_id,
+    forward_inbound_id = excluded.forward_inbound_id,
     updated_at = now()
 WHERE email_drafts.tenant_id = $2::bigint
   AND email_drafts.owner_id = $3::bigint
@@ -1639,16 +1657,20 @@ RETURNING id
 `
 
 type SaveDraftParams struct {
-	ID          int64
-	TenantID    int64
-	OwnerID     int64
-	Subject     string
-	Body        string
-	BodyFormat  string
-	SignatureID int64
-	Kind        string
-	Recipients  []byte
-	Attachments []byte
+	ID               int64
+	TenantID         int64
+	OwnerID          int64
+	Subject          string
+	Body             string
+	BodyFormat       string
+	SignatureID      int64
+	Kind             string
+	Recipients       []byte
+	Attachments      []byte
+	SendMode         string
+	Cc               []byte
+	ReplyToInboundID int64
+	ForwardInboundID int64
 }
 
 // ------------------------------------------------------------------ drafts
@@ -1668,6 +1690,10 @@ func (q *Queries) SaveDraft(ctx context.Context, arg SaveDraftParams) (int64, er
 		arg.Kind,
 		arg.Recipients,
 		arg.Attachments,
+		arg.SendMode,
+		arg.Cc,
+		arg.ReplyToInboundID,
+		arg.ForwardInboundID,
 	)
 	var id int64
 	err := row.Scan(&id)
