@@ -140,6 +140,19 @@ func (s *Service) RecordFailure(ctx context.Context, tenantID, accountID int64, 
 	}
 }
 
+// clearFailure wipes a recorded problem once the mailbox works again.
+//
+// Only touches last_error, never verified_at: whether the credential was ever
+// verified is a different fact from whether the last sync went through, and
+// conflating them would let a working poll masquerade as a fresh sign-in.
+func (s *Service) clearFailure(ctx context.Context, tenantID, accountID int64) {
+	if err := s.q.MarkMailAccountFailed(ctx, store.MarkMailAccountFailedParams{
+		TenantID: tenantID, ID: accountID, LastError: "",
+	}); err != nil {
+		s.log.Warn("could not clear mailbox failure", "account", accountID, "err", err)
+	}
+}
+
 // SaveMailAccount stores one employee's own mailbox settings.
 //
 // senderID is always the caller: there is deliberately no parameter for whose

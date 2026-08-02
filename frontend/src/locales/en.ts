@@ -892,6 +892,8 @@ export default {
     markAllRead: 'Mark all read',
     markAllReadHint: 'Mark every unread mail in {f} as read. ERP-side only — your mail provider is not affected. Continue?',
     markedAllRead: '{n} marked as read',
+    syncBroken: 'This mailbox is not receiving: {e}. The list shows the last successful sync.',
+    reauth: 'Sign in again',
     reply: 'Reply',
     forward: 'Forward',
     forwardCarries: 'The original message’s attachments travel along with this mail.',

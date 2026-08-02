@@ -38,6 +38,24 @@
     </aside>
 
     <section class="pane">
+      <!-- The mailbox saying it is not receiving. Without this, a revoked
+           authorisation fails every poll in silence while the page goes on
+           showing the last successful sync as though it were current. -->
+      <el-alert
+        v-if="syncError"
+        type="error"
+        :closable="false"
+        show-icon
+        class="sync-error"
+      >
+        <div class="sync-error-body">
+          <span>{{ t('emails.syncBroken', { e: syncError }) }}</span>
+          <el-button size="small" type="primary" plain @click="reauth">
+            {{ t('emails.reauth') }}
+          </el-button>
+        </div>
+      </el-alert>
+
       <!-- ------------------------------------------------- reading a mail -->
       <!-- A page, not a drawer: the mail's id lives in the URL, so a refresh
            reopens the same mail and the browser's back button returns to the
@@ -670,6 +688,8 @@ const unreadCount = ref(0)
 const nextCursor = ref('')
 const syncing = ref(false)
 const markingAll = ref(false)
+// What the server last said went wrong with this mailbox, empty when healthy.
+const syncError = ref('')
 // The mail being read full-page. Set from the URL, never directly: opening a
 // mail is a navigation, so refresh reopens it and back returns to the list.
 const openedInbound = ref<InboundMail | null>(null)
@@ -869,6 +889,11 @@ async function lockMailbox() {
 function init() {
   applied = null
   applyRoute()
+  checkSyncHealth()
+  // Opening the mailbox pulls once rather than waiting up to two minutes for
+  // the next poll. Somebody who just told a customer "resend it" opens this
+  // page to look, and "already up to date" is the answer they need it to be.
+  syncOnOpen()
   refreshAttentionCount()
   loadDraftCount()
   refreshUnread()
@@ -1205,13 +1230,64 @@ async function markAllRead() {
   }
 }
 
+// Reads the account's recorded health. The credential can be dead while the
+// unlock token is still valid — one is "may this browser see the mailbox",
+// the other is "does the mailbox still answer" — so the gate letting somebody
+// in says nothing about whether mail is still arriving.
+async function checkSyncHealth() {
+  try {
+    const d = await get<{ account: { lastError: string } }>('/my-mail-account')
+    syncError.value = d.account?.lastError ?? ''
+  } catch {
+    /* the banner is a courtesy; its absence must not break the page */
+  }
+}
+
+// A quiet pull on open: no spinner, no toast. A failure shows up as the
+// banner, which is where a persistent problem belongs — not in a toast that
+// disappears before it is read.
+async function syncOnOpen() {
+  try {
+    const d = await post<{ fetched: number; detail: string }>('/mailbox/sync')
+    if (d.detail) {
+      syncError.value = d.detail
+      return
+    }
+    syncError.value = ''
+    if ((d.fetched ?? 0) > 0 && !openedInbound.value) load()
+  } catch {
+    /* the poller keeps trying; checkSyncHealth reports what it finds */
+  }
+}
+
+// The one repair that fits in a button: sign in to the mailbox again. For an
+// OAuth account this is the Google round trip; for a password account the
+// gate is the place to retype the code, so this locks and shows it.
+async function reauth() {
+  try {
+    const d = await get<{ account: { authKind: string } }>('/my-mail-account')
+    if (d.account?.authKind === 'OAUTH') {
+      // Full-page departure, same as the gate: popups get blocked, and
+      // Google's page is where the person should see themselves go.
+      const r = await get<{ url: string }>('/oauth/google/start')
+      window.location.href = r.url
+      return
+    }
+  } catch {
+    /* fall through to the gate, which can handle either kind */
+  }
+  await lockMailbox()
+}
+
 async function syncNow() {
   syncing.value = true
   try {
     const d = await post<{ fetched: number; detail: string }>('/mailbox/sync')
     if (d.detail) {
+      syncError.value = d.detail
       ElMessage({ type: 'error', message: d.detail, duration: 0, showClose: true })
     } else {
+      syncError.value = ''
       ElMessage.success(t('emails.syncDone', { n: d.fetched ?? 0 }))
       reload()
     }
@@ -1551,6 +1627,14 @@ async function doUnsuppress(row: Suppression) {
 }
 .junk-note {
   margin-bottom: 12px;
+}
+.sync-error {
+  margin-bottom: 14px;
+}
+.sync-error-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 .thread-count {
   margin-bottom: 8px;

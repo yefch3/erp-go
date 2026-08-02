@@ -892,6 +892,8 @@ export default {
     markAllRead: 'Marcar todo como leído',
     markAllReadHint: 'Marcar como leídos todos los correos no leídos de {f}. Solo en el ERP; su proveedor de correo no se ve afectado. ¿Continuar?',
     markedAllRead: '{n} marcados como leídos',
+    syncBroken: 'Este buzón no está recibiendo: {e}. La lista muestra la última sincronización correcta.',
+    reauth: 'Volver a iniciar sesión',
     reply: 'Responder',
     forward: 'Reenviar',
     forwardCarries: 'Los adjuntos del mensaje original se reenvían junto con este correo.',
