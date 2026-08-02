@@ -372,3 +372,94 @@ func (f *IMAP) WaitForNews(ctx context.Context, acct app.MailAccount, folder str
 		}
 	}
 }
+
+// SetFlags publishes a flag change to the host, by UID.
+//
+// The whole batch shares one connection and one SELECT: a mailbox marked all
+// read is one round trip, not one per message.
+//
+// SELECT is read-write here, unlike every other call in this adapter — this
+// is the one place the ERP is allowed to change something in the real
+// mailbox, and it changes exactly the flag it was asked to.
+func (f *IMAP) SetFlags(ctx context.Context, acct app.MailAccount, folder string, uids []uint32, flag string, add bool) error {
+	if len(uids) == 0 {
+		return nil
+	}
+	c, err := f.dial(acct)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = c.Logout() }()
+
+	if err := f.login(c, acct); err != nil {
+		return err
+	}
+	if _, err := c.Select(folder, false); err != nil {
+		return fmt.Errorf("打开 %s 失败：%w", folder, err)
+	}
+
+	set := new(imap.SeqSet)
+	for _, u := range uids {
+		set.AddNum(u)
+	}
+	op := imap.FlagsOp(imap.AddFlags)
+	if !add {
+		op = imap.RemoveFlags
+	}
+	// SILENT: we do not want the untagged FETCH responses back, and asking
+	// for them on a large batch is a lot of traffic for something nobody
+	// reads. The reconcile pass is what confirms the result.
+	item := imap.FormatFlagsOp(op, true)
+	if err := c.UidStore(set, item, []interface{}{flag}, nil); err != nil {
+		return fmt.Errorf("写回标记失败：%w", err)
+	}
+	return nil
+}
+
+// FetchFlags reads back what the host currently believes about a set of
+// messages. This is the other half of two-way sync: without it the ERP would
+// publish its own changes and never learn about anybody else's.
+func (f *IMAP) FetchFlags(ctx context.Context, acct app.MailAccount, folder string, uids []uint32) (map[uint32]app.MessageFlags, error) {
+	out := make(map[uint32]app.MessageFlags, len(uids))
+	if len(uids) == 0 {
+		return out, nil
+	}
+	c, err := f.dial(acct)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = c.Logout() }()
+
+	if err := f.login(c, acct); err != nil {
+		return nil, err
+	}
+	if _, err := c.Select(folder, true); err != nil {
+		return nil, fmt.Errorf("打开 %s 失败：%w", folder, err)
+	}
+
+	set := new(imap.SeqSet)
+	for _, u := range uids {
+		set.AddNum(u)
+	}
+	ch := make(chan *imap.Message, 64)
+	done := make(chan error, 1)
+	go func() {
+		done <- c.UidFetch(set, []imap.FetchItem{imap.FetchUid, imap.FetchFlags}, ch)
+	}()
+	for m := range ch {
+		var fl app.MessageFlags
+		for _, name := range m.Flags {
+			switch name {
+			case imap.SeenFlag:
+				fl.Seen = true
+			case imap.FlaggedFlag:
+				fl.Flagged = true
+			}
+		}
+		out[m.Uid] = fl
+	}
+	if err := <-done; err != nil {
+		return nil, fmt.Errorf("读取标记失败：%w", err)
+	}
+	return out, nil
+}

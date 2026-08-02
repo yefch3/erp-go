@@ -346,7 +346,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
        OR from_email ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR from_name ILIKE '%' || sqlc.arg(keyword)::text || '%');
 
--- name: MarkViewRead :execrows
+-- name: MarkViewRead :many
 -- Marks everything the current view shows as read, and nothing else.
 --
 -- Scoped by the same filters as the list because that is what the button
@@ -370,9 +370,10 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
         WHEN 'TRASH'   THEN deleted_at IS NOT NULL
         WHEN 'JUNK'    THEN deleted_at IS NULL
         ELSE archived_at IS NULL AND deleted_at IS NULL
-      END;
+      END
+RETURNING account_id, folder, imap_uid;
 
--- name: SetThreadFlags :exec
+-- name: SetThreadFlags :many
 -- Housekeeping applied to a whole conversation. Archiving from a page that
 -- shows the entire exchange has to move the entire exchange; otherwise the
 -- thread stays in the inbox one message lighter, which reads as a bug.
@@ -393,9 +394,10 @@ SET is_read    = coalesce(sqlc.narg(read)::boolean, is_read),
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND thread_key = sqlc.arg(thread_key)::text
-  AND thread_key <> '';
+  AND thread_key <> ''
+RETURNING account_id, folder, imap_uid, is_read;
 
--- name: SetInboundFlags :exec
+-- name: SetInboundFlags :many
 -- One statement for all four flags; an absent argument leaves that flag
 -- alone. Owner-scoped in the WHERE, so marking somebody else's mail is a
 -- no-op rather than a decision.
@@ -413,7 +415,8 @@ SET is_read    = coalesce(sqlc.narg(read)::boolean, is_read),
         ELSE NULL END
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
-  AND id = sqlc.arg(id)::bigint;
+  AND id = sqlc.arg(id)::bigint
+RETURNING account_id, folder, imap_uid, is_read;
 
 -- name: GetInbound :one
 SELECT id, account_id, owner_id, message_id, thread_key, reply_to_id,
@@ -430,11 +433,13 @@ SELECT id, owner_id, message_id, references_ids, thread_key
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
--- name: MarkInboundRead :exec
+-- name: MarkInboundRead :many
 UPDATE email_inbound SET is_read = TRUE
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
-  AND id = sqlc.arg(id)::bigint;
+  AND id = sqlc.arg(id)::bigint
+  AND NOT is_read
+RETURNING account_id, folder, imap_uid;
 
 -- name: ListInboundAttachments :many
 SELECT id, file_name, content_type, file_size, file_key
@@ -600,3 +605,70 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND id = sqlc.arg(id)::bigint
   AND deleted_at IS NOT NULL;
+
+-- name: EnqueueFlagOp :exec
+-- The intent to publish one flag change. Conflicting intents collapse: the
+-- newest wins, because that is the state the person last chose.
+INSERT INTO mail_flag_ops (tenant_id, account_id, employee_id, folder, imap_uid, op)
+VALUES (
+    sqlc.arg(tenant_id)::bigint, sqlc.arg(account_id)::bigint,
+    sqlc.arg(employee_id)::bigint,
+    sqlc.arg(folder)::text, sqlc.arg(imap_uid)::bigint, sqlc.arg(op)::text
+)
+ON CONFLICT (tenant_id, account_id, folder, imap_uid) DO UPDATE SET
+    op = excluded.op,
+    attempts = 0,
+    last_error = '',
+    next_try_at = now();
+
+-- name: ClaimFlagOps :many
+-- Due work, oldest first, locked so two workers cannot publish the same
+-- change twice. SKIP LOCKED rather than waiting: another worker holding a row
+-- means it is already being handled.
+SELECT id, account_id, employee_id, folder, imap_uid, op, attempts
+FROM mail_flag_ops
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND next_try_at <= now()
+ORDER BY next_try_at
+LIMIT sqlc.arg(row_limit)::int
+FOR UPDATE SKIP LOCKED;
+
+-- name: DeleteFlagOp :exec
+DELETE FROM mail_flag_ops WHERE id = sqlc.arg(id)::bigint;
+
+-- name: FailFlagOp :exec
+-- Backs off so a mailbox that is refusing connections is retried at a
+-- widening interval rather than hammered every cycle.
+UPDATE mail_flag_ops
+SET attempts = attempts + 1,
+    last_error = sqlc.arg(last_error)::text,
+    next_try_at = now() + (least(attempts + 1, 6) * interval '2 minutes')
+WHERE id = sqlc.arg(id)::bigint;
+
+-- name: CountPendingFlagOps :one
+SELECT count(*)::bigint FROM mail_flag_ops
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint;
+
+-- name: ListRecentUIDs :many
+-- The newest slice of one folder, for reconciling flags against the host.
+-- Bounded: re-reading a whole mailbox every cycle would cost more than the
+-- disagreement it is looking for.
+SELECT imap_uid, is_read
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder = sqlc.arg(folder)::text
+ORDER BY imap_uid DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: SetInboundReadByUID :exec
+-- Server state winning over ours, for one message. Used only by the
+-- reconcile pass, and only once the write-back queue is empty for this
+-- account — otherwise it would overwrite a local change still on its way up.
+UPDATE email_inbound
+SET is_read = sqlc.arg(is_read)::boolean
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder = sqlc.arg(folder)::text
+  AND imap_uid = sqlc.arg(imap_uid)::bigint;
