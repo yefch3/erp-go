@@ -515,6 +515,16 @@ func (s *Server) markInbound(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) purgeInbound(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	resp, err := s.Emails.PurgeInbound(r.Context(), &ntv1.PurgeInboundRequest{Id: id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) getInbound(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	resp, err := s.Emails.GetInbound(r.Context(), &ntv1.GetInboundRequest{Id: id})

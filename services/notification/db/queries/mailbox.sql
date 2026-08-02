@@ -421,3 +421,22 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND account_id = sqlc.arg(account_
 -- name: DeleteSyncStateForAccount :exec
 DELETE FROM mail_sync_state
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND account_id = sqlc.arg(account_id)::bigint;
+
+-- name: GetInboundForPurge :one
+-- Only a mail already in the trash qualifies: permanent deletion is a second
+-- step after a soft delete, never a first action on a live mail.
+SELECT id, raw_key
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND owner_id = sqlc.arg(owner_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+  AND deleted_at IS NOT NULL;
+
+-- name: PurgeInbound :execrows
+-- The attachment rows go with the mail via ON DELETE CASCADE; their object
+-- storage copies are removed by the caller before this runs.
+DELETE FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND owner_id = sqlc.arg(owner_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+  AND deleted_at IS NOT NULL;

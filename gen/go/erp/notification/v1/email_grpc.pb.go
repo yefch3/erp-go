@@ -57,6 +57,7 @@ const (
 	EmailService_GetInbound_FullMethodName          = "/erp.notification.v1.EmailService/GetInbound"
 	EmailService_GetMailThread_FullMethodName       = "/erp.notification.v1.EmailService/GetMailThread"
 	EmailService_MarkInbound_FullMethodName         = "/erp.notification.v1.EmailService/MarkInbound"
+	EmailService_PurgeInbound_FullMethodName        = "/erp.notification.v1.EmailService/PurgeInbound"
 	EmailService_ListMailboxSent_FullMethodName     = "/erp.notification.v1.EmailService/ListMailboxSent"
 	EmailService_SyncMailbox_FullMethodName         = "/erp.notification.v1.EmailService/SyncMailbox"
 )
@@ -155,6 +156,11 @@ type EmailServiceClient interface {
 	// Inbox housekeeping: read/unread, star, archive, trash. ERP-side state
 	// only — never written back to the mail host.
 	MarkInbound(ctx context.Context, in *MarkInboundRequest, opts ...grpc.CallOption) (*MarkInboundResponse, error)
+	// Permanent deletion, from the trash only: removes the ERP-side record,
+	// the raw MIME and the attachment copies in object storage. The mail
+	// host's original is untouched — the sync is one-way, so this can never
+	// reach into the real mailbox.
+	PurgeInbound(ctx context.Context, in *PurgeInboundRequest, opts ...grpc.CallOption) (*PurgeInboundResponse, error)
 	// Mail this mailbox sent — through any client, over whatever history the
 	// backfill has reached. ERP sends live in ListMessages with per-recipient
 	// status; these are plain copies from the host's own Sent folder.
@@ -552,6 +558,16 @@ func (c *emailServiceClient) MarkInbound(ctx context.Context, in *MarkInboundReq
 	return out, nil
 }
 
+func (c *emailServiceClient) PurgeInbound(ctx context.Context, in *PurgeInboundRequest, opts ...grpc.CallOption) (*PurgeInboundResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PurgeInboundResponse)
+	err := c.cc.Invoke(ctx, EmailService_PurgeInbound_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) ListMailboxSent(ctx context.Context, in *ListMailboxSentRequest, opts ...grpc.CallOption) (*ListMailboxSentResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListMailboxSentResponse)
@@ -666,6 +682,11 @@ type EmailServiceServer interface {
 	// Inbox housekeeping: read/unread, star, archive, trash. ERP-side state
 	// only — never written back to the mail host.
 	MarkInbound(context.Context, *MarkInboundRequest) (*MarkInboundResponse, error)
+	// Permanent deletion, from the trash only: removes the ERP-side record,
+	// the raw MIME and the attachment copies in object storage. The mail
+	// host's original is untouched — the sync is one-way, so this can never
+	// reach into the real mailbox.
+	PurgeInbound(context.Context, *PurgeInboundRequest) (*PurgeInboundResponse, error)
 	// Mail this mailbox sent — through any client, over whatever history the
 	// backfill has reached. ERP sends live in ListMessages with per-recipient
 	// status; these are plain copies from the host's own Sent folder.
@@ -796,6 +817,9 @@ func (UnimplementedEmailServiceServer) GetMailThread(context.Context, *GetMailTh
 }
 func (UnimplementedEmailServiceServer) MarkInbound(context.Context, *MarkInboundRequest) (*MarkInboundResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MarkInbound not implemented")
+}
+func (UnimplementedEmailServiceServer) PurgeInbound(context.Context, *PurgeInboundRequest) (*PurgeInboundResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PurgeInbound not implemented")
 }
 func (UnimplementedEmailServiceServer) ListMailboxSent(context.Context, *ListMailboxSentRequest) (*ListMailboxSentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListMailboxSent not implemented")
@@ -1508,6 +1532,24 @@ func _EmailService_MarkInbound_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_PurgeInbound_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PurgeInboundRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).PurgeInbound(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_PurgeInbound_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).PurgeInbound(ctx, req.(*PurgeInboundRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_ListMailboxSent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListMailboxSentRequest)
 	if err := dec(in); err != nil {
@@ -1702,6 +1744,10 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MarkInbound",
 			Handler:    _EmailService_MarkInbound_Handler,
+		},
+		{
+			MethodName: "PurgeInbound",
+			Handler:    _EmailService_PurgeInbound_Handler,
 		},
 		{
 			MethodName: "ListMailboxSent",

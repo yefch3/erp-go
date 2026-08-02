@@ -356,6 +356,35 @@ func (q *Queries) GetInboundForCompose(ctx context.Context, arg GetInboundForCom
 	return i, err
 }
 
+const getInboundForPurge = `-- name: GetInboundForPurge :one
+SELECT id, raw_key
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND owner_id = $2::bigint
+  AND id = $3::bigint
+  AND deleted_at IS NOT NULL
+`
+
+type GetInboundForPurgeParams struct {
+	TenantID int64
+	OwnerID  int64
+	ID       int64
+}
+
+type GetInboundForPurgeRow struct {
+	ID     int64
+	RawKey string
+}
+
+// Only a mail already in the trash qualifies: permanent deletion is a second
+// step after a soft delete, never a first action on a live mail.
+func (q *Queries) GetInboundForPurge(ctx context.Context, arg GetInboundForPurgeParams) (GetInboundForPurgeRow, error) {
+	row := q.db.QueryRow(ctx, getInboundForPurge, arg.TenantID, arg.OwnerID, arg.ID)
+	var i GetInboundForPurgeRow
+	err := row.Scan(&i.ID, &i.RawKey)
+	return i, err
+}
+
 const getMailAccountSecret = `-- name: GetMailAccountSecret :one
 SELECT id, email, username, auth_kind, secret_enc, oauth_refresh_enc, key_version, is_active
 FROM mail_accounts
@@ -1134,6 +1163,30 @@ WHERE window_at < now() - interval '7 days'
 func (q *Queries) PruneSendCounters(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, pruneSendCounters)
 	return err
+}
+
+const purgeInbound = `-- name: PurgeInbound :execrows
+DELETE FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND owner_id = $2::bigint
+  AND id = $3::bigint
+  AND deleted_at IS NOT NULL
+`
+
+type PurgeInboundParams struct {
+	TenantID int64
+	OwnerID  int64
+	ID       int64
+}
+
+// The attachment rows go with the mail via ON DELETE CASCADE; their object
+// storage copies are removed by the caller before this runs.
+func (q *Queries) PurgeInbound(ctx context.Context, arg PurgeInboundParams) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeInbound, arg.TenantID, arg.OwnerID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setInboundFlags = `-- name: SetInboundFlags :exec
