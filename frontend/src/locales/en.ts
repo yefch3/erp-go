@@ -881,6 +881,7 @@ export default {
     allRecipients: 'all recipients',
     wrote: 'wrote:',
     showQuoted: 'Show quoted text',
+    hideQuoted: 'Hide quoted text',
     backToList: 'Back',
     purge: 'Delete forever',
     purgeHint: 'This permanently deletes the ERP copy — the record, the original message file and the attachment copies. It cannot be undone. The original at your mail provider (Gmail/263) is not affected. Continue?',

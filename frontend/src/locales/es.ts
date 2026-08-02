@@ -881,6 +881,7 @@ export default {
     allRecipients: 'todos los destinatarios',
     wrote: 'escribió:',
     showQuoted: 'Mostrar texto citado',
+    hideQuoted: 'Ocultar texto citado',
     backToList: 'Volver',
     purge: 'Eliminar definitivamente',
     purgeHint: 'Se eliminará de forma permanente la copia del ERP: el registro, el archivo original del mensaje y las copias de los adjuntos. No se puede deshacer. El original en su proveedor de correo (Gmail/263) no se ve afectado. ¿Continuar?',
