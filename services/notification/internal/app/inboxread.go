@@ -26,6 +26,9 @@ type InboundView struct {
 	BodyHTML       string
 	BodyText       string
 	Attachments    []Attachment
+	// How many messages the list row stands for. 1 for a lone message; the
+	// list collapses a conversation into one row and shows this count.
+	ThreadCount int32
 }
 
 // ListInbound is the caller's own inbox.
@@ -42,14 +45,17 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID int64, keyw
 	default:
 		view = "INBOX"
 	}
-	rows, err := s.q.ListInbound(ctx, store.ListInboundParams{
+	// One row per conversation, not per message: the newest message speaks
+	// for the thread and carries a count. Opening it shows the whole
+	// exchange, which the reading page has done since the conversation view.
+	rows, err := s.q.ListInboundThreads(ctx, store.ListInboundThreadsParams{
 		TenantID: tenantID, OwnerID: ownerID, Keyword: keyword, View: view,
 		RowLimit: size, RowOffset: (page - 1) * size,
 	})
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	total, err := s.q.CountInbound(ctx, store.CountInboundParams{
+	total, err := s.q.CountInboundThreads(ctx, store.CountInboundThreadsParams{
 		TenantID: tenantID, OwnerID: ownerID, Keyword: keyword, View: view,
 	})
 	if err != nil {
@@ -68,6 +74,7 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID int64, keyw
 			ID: r.ID, FromEmail: r.FromEmail, FromName: r.FromName,
 			Subject: r.Subject, Snippet: r.Snippet, ThreadKey: r.ThreadKey,
 			IsRead: r.IsRead, IsStarred: r.IsStarred, HasAttachments: r.HasAttachments,
+			ThreadCount: r.ThreadCount,
 		}
 		if r.ReceivedAt.Valid {
 			v.ReceivedAt = r.ReceivedAt.Time
@@ -186,7 +193,25 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID int64, th
 // one-way, so no housekeeping bug can ever damage the real mailbox. A nil
 // flag leaves that flag alone. Owner-scoped in the query: marking a mail
 // that is not the caller's is a silent no-op, not information.
-func (s *Service) MarkInbound(ctx context.Context, tenantID, ownerID, id int64, read, starred, archived, deleted, notJunk *bool) error {
+//
+// wholeThread applies the change to every message of the conversation. The
+// list shows one row per conversation, so archiving from there has to move
+// the conversation; moving only its newest message would leave the row in
+// place, one message lighter.
+func (s *Service) MarkInbound(ctx context.Context, tenantID, ownerID, id int64, read, starred, archived, deleted, notJunk *bool, wholeThread bool) error {
+	if wholeThread {
+		row, err := s.q.GetInbound(ctx, store.GetInboundParams{TenantID: tenantID, ID: id})
+		// A loose message has no thread key to spread across, and somebody
+		// else's mail is not ours to look up — both fall through to marking
+		// the single row, which is owner-scoped in its own right.
+		if err == nil && row.OwnerID == ownerID && row.ThreadKey != "" {
+			return s.q.SetThreadFlags(ctx, store.SetThreadFlagsParams{
+				TenantID: tenantID, OwnerID: ownerID, ThreadKey: row.ThreadKey,
+				Read: read, Starred: starred, Archived: archived, Deleted: deleted,
+				NotJunk: notJunk,
+			})
+		}
+	}
 	return s.q.SetInboundFlags(ctx, store.SetInboundFlagsParams{
 		TenantID: tenantID, OwnerID: ownerID, ID: id,
 		Read: read, Starred: starred, Archived: archived, Deleted: deleted,
@@ -194,16 +219,15 @@ func (s *Service) MarkInbound(ctx context.Context, tenantID, ownerID, id int64, 
 	})
 }
 
-// PurgeInbound permanently deletes one mail from the caller's trash: the
-// database record and its copies in object storage (raw MIME, extracted
+// PurgeInbound permanently deletes mail from the caller's trash: the database
+// records and their copies in object storage (raw MIME, extracted
 // attachments). Only ERP-side data — the mail host's original is untouched,
 // because the sync is one-way and nothing here talks to the host at all.
 //
-// The objects go first, the row last. The row is the retry handle: if an
-// object removal fails halfway, the mail stays in the trash and a second
-// attempt covers whatever remains (removals are idempotent). Deleting the
-// row first would leave orphaned objects with nothing pointing at them.
-func (s *Service) PurgeInbound(ctx context.Context, tenantID, ownerID, id int64) error {
+// wholeThread deletes every trashed message of the conversation, matching
+// what the trash list shows: one row per conversation. A live message of the
+// same thread is never swept up — only what is already in the trash.
+func (s *Service) PurgeInbound(ctx context.Context, tenantID, ownerID, id int64, wholeThread bool) error {
 	row, err := s.q.GetInboundForPurge(ctx, store.GetInboundForPurgeParams{
 		TenantID: tenantID, OwnerID: ownerID, ID: id,
 	})
@@ -213,6 +237,42 @@ func (s *Service) PurgeInbound(ctx context.Context, tenantID, ownerID, id int64)
 		return errNotFound()
 	}
 
+	type target struct {
+		id     int64
+		rawKey string
+	}
+	targets := []target{{id: row.ID, rawKey: row.RawKey}}
+	if wholeThread {
+		full, err := s.q.GetInbound(ctx, store.GetInboundParams{TenantID: tenantID, ID: id})
+		if err == nil && full.OwnerID == ownerID && full.ThreadKey != "" {
+			rows, err := s.q.ListThreadForPurge(ctx, store.ListThreadForPurgeParams{
+				TenantID: tenantID, OwnerID: ownerID, ThreadKey: full.ThreadKey,
+			})
+			if err != nil {
+				return err
+			}
+			targets = targets[:0]
+			for _, r := range rows {
+				targets = append(targets, target{id: r.ID, rawKey: r.RawKey})
+			}
+		}
+	}
+
+	for _, tg := range targets {
+		if err := s.purgeOne(ctx, tenantID, ownerID, tg.id, tg.rawKey); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// purgeOne removes one message's objects and then its row.
+//
+// Objects first, row last. The row is the retry handle: if an object removal
+// fails halfway the mail stays in the trash and a second attempt covers
+// whatever remains (removals are idempotent). Deleting the row first would
+// leave orphaned objects with nothing pointing at them.
+func (s *Service) purgeOne(ctx context.Context, tenantID, ownerID, id int64, rawKey string) error {
 	if s.files != nil {
 		atts, err := s.q.ListInboundAttachments(ctx, store.ListInboundAttachmentsParams{
 			TenantID: tenantID, InboundID: id,
@@ -226,8 +286,8 @@ func (s *Service) PurgeInbound(ctx context.Context, tenantID, ownerID, id int64)
 				keys = append(keys, a.FileKey)
 			}
 		}
-		if row.RawKey != "" {
-			keys = append(keys, row.RawKey)
+		if rawKey != "" {
+			keys = append(keys, rawKey)
 		}
 		for _, key := range keys {
 			if err := s.files.Remove(ctx, key); err != nil {

@@ -249,6 +249,112 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
        OR from_email ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR from_name ILIKE '%' || sqlc.arg(keyword)::text || '%');
 
+-- name: ListInboundThreads :many
+-- The same slice of the mailbox as ListInbound, but one row per conversation
+-- instead of one row per message — Gmail's list, where "客户回了三次" is one
+-- line with a (3) rather than three lines to scan past.
+--
+-- Grouping happens inside the filtered set, which is what makes a thread
+-- appear in exactly the views it belongs to: archive one conversation and it
+-- leaves the inbox list whole, rather than the archived message vanishing and
+-- its siblings staying behind.
+--
+-- A message with no thread key is its own conversation ('m:<id>'), so mail
+-- that never got a reply is not silently merged with other loose mail.
+WITH visible AS (
+    SELECT id, from_email, from_name, subject, snippet, thread_key,
+           is_read, is_starred, has_attachments, received_at, sent_at,
+           coalesce(nullif(thread_key, ''), 'm:' || id::text) AS group_key,
+           coalesce(sent_at, received_at) AS at
+    FROM email_inbound
+    WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+      AND owner_id = sqlc.arg(owner_id)::bigint
+      AND CASE WHEN sqlc.arg(view)::text = 'JUNK'
+            THEN folder = 'JUNK' AND NOT not_junk
+            ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
+          END
+      AND NOT is_bounce
+      AND CASE sqlc.arg(view)::text
+            WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
+            WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
+            WHEN 'TRASH'   THEN deleted_at IS NOT NULL
+            WHEN 'JUNK'    THEN deleted_at IS NULL
+            ELSE archived_at IS NULL AND deleted_at IS NULL
+          END
+      AND (sqlc.arg(keyword)::text = ''
+           OR subject ILIKE '%' || sqlc.arg(keyword)::text || '%'
+           OR from_email ILIKE '%' || sqlc.arg(keyword)::text || '%'
+           OR from_name ILIKE '%' || sqlc.arg(keyword)::text || '%')
+), ranked AS (
+    SELECT visible.*,
+           row_number() OVER (PARTITION BY group_key ORDER BY at DESC, id DESC) AS rn,
+           count(*)          OVER (PARTITION BY group_key) AS thread_count,
+           bool_or(NOT is_read)      OVER (PARTITION BY group_key) AS any_unread,
+           bool_or(is_starred)       OVER (PARTITION BY group_key) AS any_starred,
+           bool_or(has_attachments)  OVER (PARTITION BY group_key) AS any_attachment
+    FROM visible
+)
+-- The row stands for the whole conversation: the newest message supplies the
+-- text and the time, the flags are the conversation's own. Unread if ANY
+-- message is unread — a thread with an unanswered question in it must not
+-- look handled because the last line happened to be read.
+SELECT id, from_email, from_name, subject, snippet, thread_key,
+       (NOT any_unread)::boolean   AS is_read,
+       any_starred::boolean        AS is_starred,
+       any_attachment::boolean     AS has_attachments,
+       received_at, sent_at,
+       thread_count::int           AS thread_count
+FROM ranked
+WHERE rn = 1
+ORDER BY at DESC, id DESC
+LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
+
+-- name: CountInboundThreads :one
+-- Conversations, not messages: the pager has to count what the list shows.
+SELECT count(DISTINCT coalesce(nullif(thread_key, ''), 'm:' || id::text))::bigint
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND owner_id = sqlc.arg(owner_id)::bigint
+  AND CASE WHEN sqlc.arg(view)::text = 'JUNK'
+        THEN folder = 'JUNK' AND NOT not_junk
+        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
+      END
+  AND NOT is_bounce
+  AND CASE sqlc.arg(view)::text
+        WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
+        WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
+        WHEN 'TRASH'   THEN deleted_at IS NOT NULL
+        WHEN 'JUNK'    THEN deleted_at IS NULL
+        ELSE archived_at IS NULL AND deleted_at IS NULL
+      END
+  AND (sqlc.arg(keyword)::text = ''
+       OR subject ILIKE '%' || sqlc.arg(keyword)::text || '%'
+       OR from_email ILIKE '%' || sqlc.arg(keyword)::text || '%'
+       OR from_name ILIKE '%' || sqlc.arg(keyword)::text || '%');
+
+-- name: SetThreadFlags :exec
+-- Housekeeping applied to a whole conversation. Archiving from a page that
+-- shows the entire exchange has to move the entire exchange; otherwise the
+-- thread stays in the inbox one message lighter, which reads as a bug.
+-- Owner-scoped: thread keys are guessable, so this must never reach further
+-- than the caller's own mail.
+UPDATE email_inbound
+SET is_read    = coalesce(sqlc.narg(read)::boolean, is_read),
+    is_starred = coalesce(sqlc.narg(starred)::boolean, is_starred),
+    not_junk   = coalesce(sqlc.narg(not_junk)::boolean, not_junk),
+    archived_at = CASE
+        WHEN sqlc.narg(archived)::boolean IS NULL THEN archived_at
+        WHEN sqlc.narg(archived)::boolean THEN coalesce(archived_at, now())
+        ELSE NULL END,
+    deleted_at = CASE
+        WHEN sqlc.narg(deleted)::boolean IS NULL THEN deleted_at
+        WHEN sqlc.narg(deleted)::boolean THEN coalesce(deleted_at, now())
+        ELSE NULL END
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND owner_id = sqlc.arg(owner_id)::bigint
+  AND thread_key = sqlc.arg(thread_key)::text
+  AND thread_key <> '';
+
 -- name: SetInboundFlags :exec
 -- One statement for all four flags; an absent argument leaves that flag
 -- alone. Owner-scoped in the WHERE, so marking somebody else's mail is a
@@ -431,6 +537,20 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND id = sqlc.arg(id)::bigint
   AND deleted_at IS NOT NULL;
+
+-- name: ListThreadForPurge :many
+-- Every trashed message of one conversation. Permanent deletion follows the
+-- same conversation semantics as the rest of the list: the trash row stands
+-- for the exchange, so confirming deletes the exchange. Only trashed rows —
+-- a live message of the same thread is not swept up by this.
+SELECT id, raw_key
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND owner_id = sqlc.arg(owner_id)::bigint
+  AND thread_key = sqlc.arg(thread_key)::text
+  AND thread_key <> ''
+  AND deleted_at IS NOT NULL
+ORDER BY id;
 
 -- name: PurgeInbound :execrows
 -- The attachment rows go with the mail via ON DELETE CASCADE; their object

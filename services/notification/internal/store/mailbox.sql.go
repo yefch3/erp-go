@@ -98,6 +98,49 @@ func (q *Queries) CountInbound(ctx context.Context, arg CountInboundParams) (int
 	return column_1, err
 }
 
+const countInboundThreads = `-- name: CountInboundThreads :one
+SELECT count(DISTINCT coalesce(nullif(thread_key, ''), 'm:' || id::text))::bigint
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND owner_id = $2::bigint
+  AND CASE WHEN $3::text = 'JUNK'
+        THEN folder = 'JUNK' AND NOT not_junk
+        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
+      END
+  AND NOT is_bounce
+  AND CASE $3::text
+        WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
+        WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
+        WHEN 'TRASH'   THEN deleted_at IS NOT NULL
+        WHEN 'JUNK'    THEN deleted_at IS NULL
+        ELSE archived_at IS NULL AND deleted_at IS NULL
+      END
+  AND ($4::text = ''
+       OR subject ILIKE '%' || $4::text || '%'
+       OR from_email ILIKE '%' || $4::text || '%'
+       OR from_name ILIKE '%' || $4::text || '%')
+`
+
+type CountInboundThreadsParams struct {
+	TenantID int64
+	OwnerID  int64
+	View     string
+	Keyword  string
+}
+
+// Conversations, not messages: the pager has to count what the list shows.
+func (q *Queries) CountInboundThreads(ctx context.Context, arg CountInboundThreadsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countInboundThreads,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.View,
+		arg.Keyword,
+	)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countMailboxSent = `-- name: CountMailboxSent :one
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = $1::bigint
@@ -791,6 +834,131 @@ func (q *Queries) ListInboundAttachments(ctx context.Context, arg ListInboundAtt
 	return items, nil
 }
 
+const listInboundThreads = `-- name: ListInboundThreads :many
+WITH visible AS (
+    SELECT id, from_email, from_name, subject, snippet, thread_key,
+           is_read, is_starred, has_attachments, received_at, sent_at,
+           coalesce(nullif(thread_key, ''), 'm:' || id::text) AS group_key,
+           coalesce(sent_at, received_at) AS at
+    FROM email_inbound
+    WHERE tenant_id = $3::bigint
+      AND owner_id = $4::bigint
+      AND CASE WHEN $5::text = 'JUNK'
+            THEN folder = 'JUNK' AND NOT not_junk
+            ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
+          END
+      AND NOT is_bounce
+      AND CASE $5::text
+            WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
+            WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
+            WHEN 'TRASH'   THEN deleted_at IS NOT NULL
+            WHEN 'JUNK'    THEN deleted_at IS NULL
+            ELSE archived_at IS NULL AND deleted_at IS NULL
+          END
+      AND ($6::text = ''
+           OR subject ILIKE '%' || $6::text || '%'
+           OR from_email ILIKE '%' || $6::text || '%'
+           OR from_name ILIKE '%' || $6::text || '%')
+), ranked AS (
+    SELECT visible.id, visible.from_email, visible.from_name, visible.subject, visible.snippet, visible.thread_key, visible.is_read, visible.is_starred, visible.has_attachments, visible.received_at, visible.sent_at, visible.group_key, visible.at,
+           row_number() OVER (PARTITION BY group_key ORDER BY at DESC, id DESC) AS rn,
+           count(*)          OVER (PARTITION BY group_key) AS thread_count,
+           bool_or(NOT is_read)      OVER (PARTITION BY group_key) AS any_unread,
+           bool_or(is_starred)       OVER (PARTITION BY group_key) AS any_starred,
+           bool_or(has_attachments)  OVER (PARTITION BY group_key) AS any_attachment
+    FROM visible
+)
+SELECT id, from_email, from_name, subject, snippet, thread_key,
+       (NOT any_unread)::boolean   AS is_read,
+       any_starred::boolean        AS is_starred,
+       any_attachment::boolean     AS has_attachments,
+       received_at, sent_at,
+       thread_count::int           AS thread_count
+FROM ranked
+WHERE rn = 1
+ORDER BY at DESC, id DESC
+LIMIT $2::int OFFSET $1::int
+`
+
+type ListInboundThreadsParams struct {
+	RowOffset int32
+	RowLimit  int32
+	TenantID  int64
+	OwnerID   int64
+	View      string
+	Keyword   string
+}
+
+type ListInboundThreadsRow struct {
+	ID             int64
+	FromEmail      string
+	FromName       string
+	Subject        string
+	Snippet        string
+	ThreadKey      string
+	IsRead         bool
+	IsStarred      bool
+	HasAttachments bool
+	ReceivedAt     pgtype.Timestamptz
+	SentAt         pgtype.Timestamptz
+	ThreadCount    int32
+}
+
+// The same slice of the mailbox as ListInbound, but one row per conversation
+// instead of one row per message — Gmail's list, where "客户回了三次" is one
+// line with a (3) rather than three lines to scan past.
+//
+// Grouping happens inside the filtered set, which is what makes a thread
+// appear in exactly the views it belongs to: archive one conversation and it
+// leaves the inbox list whole, rather than the archived message vanishing and
+// its siblings staying behind.
+//
+// A message with no thread key is its own conversation ('m:<id>'), so mail
+// that never got a reply is not silently merged with other loose mail.
+// The row stands for the whole conversation: the newest message supplies the
+// text and the time, the flags are the conversation's own. Unread if ANY
+// message is unread — a thread with an unanswered question in it must not
+// look handled because the last line happened to be read.
+func (q *Queries) ListInboundThreads(ctx context.Context, arg ListInboundThreadsParams) ([]ListInboundThreadsRow, error) {
+	rows, err := q.db.Query(ctx, listInboundThreads,
+		arg.RowOffset,
+		arg.RowLimit,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.View,
+		arg.Keyword,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInboundThreadsRow
+	for rows.Next() {
+		var i ListInboundThreadsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FromEmail,
+			&i.FromName,
+			&i.Subject,
+			&i.Snippet,
+			&i.ThreadKey,
+			&i.IsRead,
+			&i.IsStarred,
+			&i.HasAttachments,
+			&i.ReceivedAt,
+			&i.SentAt,
+			&i.ThreadCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMailboxSent = `-- name: ListMailboxSent :many
 SELECT id, from_email, from_name, to_email, subject, snippet, thread_key,
        has_attachments, received_at, sent_at
@@ -1059,6 +1227,52 @@ func (q *Queries) ListThread(ctx context.Context, arg ListThreadParams) ([]ListT
 	return items, nil
 }
 
+const listThreadForPurge = `-- name: ListThreadForPurge :many
+SELECT id, raw_key
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND owner_id = $2::bigint
+  AND thread_key = $3::text
+  AND thread_key <> ''
+  AND deleted_at IS NOT NULL
+ORDER BY id
+`
+
+type ListThreadForPurgeParams struct {
+	TenantID  int64
+	OwnerID   int64
+	ThreadKey string
+}
+
+type ListThreadForPurgeRow struct {
+	ID     int64
+	RawKey string
+}
+
+// Every trashed message of one conversation. Permanent deletion follows the
+// same conversation semantics as the rest of the list: the trash row stands
+// for the exchange, so confirming deletes the exchange. Only trashed rows —
+// a live message of the same thread is not swept up by this.
+func (q *Queries) ListThreadForPurge(ctx context.Context, arg ListThreadForPurgeParams) ([]ListThreadForPurgeRow, error) {
+	rows, err := q.db.Query(ctx, listThreadForPurge, arg.TenantID, arg.OwnerID, arg.ThreadKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListThreadForPurgeRow
+	for rows.Next() {
+		var i ListThreadForPurgeRow
+		if err := rows.Scan(&i.ID, &i.RawKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markInboundRead = `-- name: MarkInboundRead :exec
 UPDATE email_inbound SET is_read = TRUE
 WHERE tenant_id = $1::bigint
@@ -1316,6 +1530,55 @@ func (q *Queries) SetMailAccountSecret(ctx context.Context, arg SetMailAccountSe
 		arg.KeyVersion,
 		arg.TenantID,
 		arg.ID,
+	)
+	return err
+}
+
+const setThreadFlags = `-- name: SetThreadFlags :exec
+UPDATE email_inbound
+SET is_read    = coalesce($1::boolean, is_read),
+    is_starred = coalesce($2::boolean, is_starred),
+    not_junk   = coalesce($3::boolean, not_junk),
+    archived_at = CASE
+        WHEN $4::boolean IS NULL THEN archived_at
+        WHEN $4::boolean THEN coalesce(archived_at, now())
+        ELSE NULL END,
+    deleted_at = CASE
+        WHEN $5::boolean IS NULL THEN deleted_at
+        WHEN $5::boolean THEN coalesce(deleted_at, now())
+        ELSE NULL END
+WHERE tenant_id = $6::bigint
+  AND owner_id = $7::bigint
+  AND thread_key = $8::text
+  AND thread_key <> ''
+`
+
+type SetThreadFlagsParams struct {
+	Read      *bool
+	Starred   *bool
+	NotJunk   *bool
+	Archived  *bool
+	Deleted   *bool
+	TenantID  int64
+	OwnerID   int64
+	ThreadKey string
+}
+
+// Housekeeping applied to a whole conversation. Archiving from a page that
+// shows the entire exchange has to move the entire exchange; otherwise the
+// thread stays in the inbox one message lighter, which reads as a bug.
+// Owner-scoped: thread keys are guessable, so this must never reach further
+// than the caller's own mail.
+func (q *Queries) SetThreadFlags(ctx context.Context, arg SetThreadFlagsParams) error {
+	_, err := q.db.Exec(ctx, setThreadFlags,
+		arg.Read,
+		arg.Starred,
+		arg.NotJunk,
+		arg.Archived,
+		arg.Deleted,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.ThreadKey,
 	)
 	return err
 }

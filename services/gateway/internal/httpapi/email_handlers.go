@@ -517,7 +517,9 @@ func (s *Server) markInbound(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) purgeInbound(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	resp, err := s.Emails.PurgeInbound(r.Context(), &ntv1.PurgeInboundRequest{Id: id})
+	resp, err := s.Emails.PurgeInbound(r.Context(), &ntv1.PurgeInboundRequest{
+		Id: id, WholeThread: r.URL.Query().Get("whole_thread") == "true",
+	})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
