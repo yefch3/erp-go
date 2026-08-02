@@ -61,12 +61,13 @@ const countInbound = `-- name: CountInbound :one
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
-  AND folder = 'INBOX'
+  AND folder = CASE WHEN $3::text = 'JUNK' THEN 'JUNK' ELSE 'INBOX' END
   AND NOT is_bounce
   AND CASE $3::text
         WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
         WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
         WHEN 'TRASH'   THEN deleted_at IS NOT NULL
+        WHEN 'JUNK'    THEN deleted_at IS NULL
         ELSE archived_at IS NULL AND deleted_at IS NULL
       END
   AND ($4::text = ''
@@ -624,12 +625,13 @@ SELECT id, from_email, from_name, subject, snippet, thread_key,
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
-  AND folder = 'INBOX'
+  AND folder = CASE WHEN $3::text = 'JUNK' THEN 'JUNK' ELSE 'INBOX' END
   AND NOT is_bounce
   AND CASE $3::text
         WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
         WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
         WHEN 'TRASH'   THEN deleted_at IS NOT NULL
+        WHEN 'JUNK'    THEN deleted_at IS NULL
         ELSE archived_at IS NULL AND deleted_at IS NULL
       END
   AND ($4::text = ''

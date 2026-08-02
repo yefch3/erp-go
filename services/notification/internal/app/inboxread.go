@@ -37,7 +37,7 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID int64, keyw
 	// An unknown view falls back to the inbox proper rather than erroring:
 	// the worst a bad parameter can do is show the default slice.
 	switch view {
-	case "STARRED", "ARCHIVE", "TRASH":
+	case "STARRED", "ARCHIVE", "TRASH", "JUNK":
 	default:
 		view = "INBOX"
 	}

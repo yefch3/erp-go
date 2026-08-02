@@ -60,8 +60,19 @@
         </el-button>
       </div>
 
-      <!-- ------------------------------- inbox / starred / archive / trash -->
+      <!-- ------------------------ inbox / starred / archive / junk / trash -->
       <template v-if="isInboundView">
+        <!-- Spam is the host's verdict, shown read-only as a safety net: the
+             mis-flagged customer inquiry is the one mail worth finding here. -->
+        <el-alert
+          v-if="folder === 'junk'"
+          type="info"
+          :closable="false"
+          show-icon
+          class="junk-note"
+        >
+          {{ t('emails.junkNote') }}
+        </el-alert>
         <el-table
           :data="inbound"
           v-loading="loading"
@@ -69,7 +80,7 @@
           :row-class-name="inboundRowClass"
           @row-click="openInbound"
         >
-          <el-table-column width="44">
+          <el-table-column v-if="folder !== 'junk'" width="44">
             <template #default="{ row }">
               <span
                 class="star"
@@ -329,7 +340,7 @@
               ↪ {{ t('emails.forward') }}
             </el-button>
           </template>
-          <template v-if="isInboundView">
+          <template v-if="isInboundView && folder !== 'junk'">
             <el-button v-if="folder !== 'trash'" size="small" plain @click="markOpened({ read: false })">
               {{ t('emails.markUnread') }}
             </el-button>
@@ -544,6 +555,7 @@ const folders = [
   { key: 'sent' },
   { key: 'attention' },
   { key: 'archive' },
+  { key: 'junk' },
   { key: 'trash' },
   { key: 'suppressions' },
 ]
@@ -555,6 +567,7 @@ const INBOUND_VIEWS: Record<string, string> = {
   inbox: 'INBOX',
   starred: 'STARRED',
   archive: 'ARCHIVE',
+  junk: 'JUNK',
   trash: 'TRASH',
 }
 const isInboundView = computed(() => folder.value in INBOUND_VIEWS)
@@ -1174,6 +1187,9 @@ async function doUnsuppress(row: Suppression) {
 }
 .in-actions {
   margin-top: 10px;
+}
+.junk-note {
+  margin-bottom: 12px;
 }
 .star {
   font-size: 15px;

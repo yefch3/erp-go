@@ -41,6 +41,8 @@ type Mailbox interface {
 	FetchBelow(ctx context.Context, acct MailAccount, folder string, belowUID uint32, limit uint32) (FetchResult, error)
 	// SentFolder names the folder the host keeps sent mail in.
 	SentFolder(ctx context.Context, acct MailAccount) (string, error)
+	// JunkFolder names the folder the host files spam into.
+	JunkFolder(ctx context.Context, acct MailAccount) (string, error)
 	// VerifyLogin authenticates and disconnects: it proves the credentials
 	// work today, and nothing else.
 	VerifyLogin(ctx context.Context, acct MailAccount) error
@@ -152,10 +154,24 @@ func (s *Service) SyncMailbox(ctx context.Context, cfg SyncConfig, employeeID in
 
 	// Sent history rides along on the same pass. A failure here is logged and
 	// does not fail the sync: the inbox is what somebody is waiting on.
-	if actual, err := s.sentFolderOf(ctx, acct); err != nil {
+	if actual, err := s.specialFolderOf(ctx, acct, "sent"); err != nil {
 		s.log.Warn("could not locate the sent folder", "account", acct.AccountID, "err", err)
 	} else if _, err := s.syncFolder(ctx, cfg, acct, "SENT", actual); err != nil {
 		s.log.Warn("sent-folder sync failed", "account", acct.AccountID, "err", err)
+	}
+
+	// The junk folder too — read-only safety net for the false positive: the
+	// customer inquiry the host wrongly filed as spam would otherwise be
+	// invisible to somebody using this as their only client. Shallower
+	// history than the inbox: old spam is the least valuable mail there is.
+	jcfg := cfg
+	if jcfg.HistoryCap > 100 {
+		jcfg.HistoryCap = 100
+	}
+	if actual, err := s.specialFolderOf(ctx, acct, "junk"); err != nil {
+		s.log.Warn("could not locate the junk folder", "account", acct.AccountID, "err", err)
+	} else if _, err := s.syncFolder(ctx, jcfg, acct, "JUNK", actual); err != nil {
+		s.log.Warn("junk-folder sync failed", "account", acct.AccountID, "err", err)
 	}
 
 	// The ping goes out only after everything is committed, and only to the
@@ -248,17 +264,25 @@ func (s *Service) syncFolder(ctx context.Context, cfg SyncConfig, acct MailAccou
 	return stored, nil
 }
 
-// sentFolderOf resolves and remembers where this account keeps sent mail.
-// Cached because the answer never changes and finding it costs a dial.
-func (s *Service) sentFolderOf(ctx context.Context, acct MailAccount) (string, error) {
-	if v, ok := s.sentFolders.Load(acct.AccountID); ok {
+// specialFolderOf resolves and remembers where this account keeps a special
+// folder ("sent" or "junk"). Cached because the answer never changes and
+// finding it costs a dial.
+func (s *Service) specialFolderOf(ctx context.Context, acct MailAccount, kind string) (string, error) {
+	key := fmt.Sprintf("%s:%d", kind, acct.AccountID)
+	if v, ok := s.sentFolders.Load(key); ok {
 		return v.(string), nil
 	}
-	name, err := s.mailbox.SentFolder(ctx, acct)
+	var name string
+	var err error
+	if kind == "junk" {
+		name, err = s.mailbox.JunkFolder(ctx, acct)
+	} else {
+		name, err = s.mailbox.SentFolder(ctx, acct)
+	}
 	if err != nil {
 		return "", err
 	}
-	s.sentFolders.Store(acct.AccountID, name)
+	s.sentFolders.Store(key, name)
 	return name, nil
 }
 
@@ -344,7 +368,9 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 		}
 	}
 
-	if parsed.IsBounce {
+	// Bounce side effects only from the inbox. A bounce-shaped message the
+	// host itself filed as spam must not be allowed to suppress an address.
+	if parsed.IsBounce && folder == "INBOX" {
 		s.applyBounce(ctx, tenantID, m.Raw, parsed)
 	}
 	return nil

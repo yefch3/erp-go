@@ -85,7 +85,8 @@ func (s *Service) CompleteGoogleOAuth(ctx context.Context, tenantID, employeeID 
 			"employee", employeeID, "was", prev.Email, "now", email)
 		_ = s.q.DeleteInboundForAccount(ctx, store.DeleteInboundForAccountParams{TenantID: tenantID, AccountID: id})
 		_ = s.q.DeleteSyncStateForAccount(ctx, store.DeleteSyncStateForAccountParams{TenantID: tenantID, AccountID: id})
-		s.sentFolders.Delete(id)
+		s.sentFolders.Delete(fmt.Sprintf("sent:%d", id))
+		s.sentFolders.Delete(fmt.Sprintf("junk:%d", id))
 	}
 
 	blob, err := s.secrets.Seal([]byte(tok.RefreshToken), OAuthAAD(tenantID, id))

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/sgao19/erp-go/services/notification/internal/store"
@@ -166,7 +167,8 @@ func (s *Service) SaveMailAccount(ctx context.Context, tenantID, employeeID int6
 			"employee", employeeID, "was", prev.Email, "now", email)
 		_ = s.q.DeleteInboundForAccount(ctx, store.DeleteInboundForAccountParams{TenantID: tenantID, AccountID: id})
 		_ = s.q.DeleteSyncStateForAccount(ctx, store.DeleteSyncStateForAccountParams{TenantID: tenantID, AccountID: id})
-		s.sentFolders.Delete(id)
+		s.sentFolders.Delete(fmt.Sprintf("sent:%d", id))
+		s.sentFolders.Delete(fmt.Sprintf("junk:%d", id))
 	}
 	// An empty secret means "leave the stored one alone" — so that changing
 	// a username does not require retyping the code, and so the settings form

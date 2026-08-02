@@ -209,12 +209,13 @@ SELECT id, from_email, from_name, subject, snippet, thread_key,
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
-  AND folder = 'INBOX'
+  AND folder = CASE WHEN sqlc.arg(view)::text = 'JUNK' THEN 'JUNK' ELSE 'INBOX' END
   AND NOT is_bounce
   AND CASE sqlc.arg(view)::text
         WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
         WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
         WHEN 'TRASH'   THEN deleted_at IS NOT NULL
+        WHEN 'JUNK'    THEN deleted_at IS NULL
         ELSE archived_at IS NULL AND deleted_at IS NULL
       END
   AND (sqlc.arg(keyword)::text = ''
@@ -228,12 +229,13 @@ LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
-  AND folder = 'INBOX'
+  AND folder = CASE WHEN sqlc.arg(view)::text = 'JUNK' THEN 'JUNK' ELSE 'INBOX' END
   AND NOT is_bounce
   AND CASE sqlc.arg(view)::text
         WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
         WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
         WHEN 'TRASH'   THEN deleted_at IS NOT NULL
+        WHEN 'JUNK'    THEN deleted_at IS NULL
         ELSE archived_at IS NULL AND deleted_at IS NULL
       END
   AND (sqlc.arg(keyword)::text = ''

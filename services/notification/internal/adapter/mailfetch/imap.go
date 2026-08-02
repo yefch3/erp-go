@@ -149,12 +149,26 @@ func (f *IMAP) FetchBelow(ctx context.Context, acct app.MailAccount, folder stri
 }
 
 // SentFolder finds where the host keeps sent mail.
-//
-// RFC 6154 gives folders a \Sent attribute and Gmail advertises it; other
-// hosts predate the RFC and only have well-known names. Both are tried, in
-// that order, because the attribute is authoritative and the names are
-// guesses.
 func (f *IMAP) SentFolder(ctx context.Context, acct app.MailAccount) (string, error) {
+	return f.specialFolder(acct, imap.SentAttr,
+		[]string{"[Gmail]/Sent Mail", "Sent Items", "Sent Messages", "Sent", "已发送"},
+		"找不到已发送文件夹")
+}
+
+// JunkFolder finds where the host keeps what it judged to be spam.
+func (f *IMAP) JunkFolder(ctx context.Context, acct app.MailAccount) (string, error) {
+	return f.specialFolder(acct, imap.JunkAttr,
+		[]string{"[Gmail]/Spam", "Junk", "Junk E-mail", "Junk Email", "Spam", "垃圾邮件", "垃圾箱"},
+		"找不到垃圾邮件文件夹")
+}
+
+// specialFolder locates a host's special-use folder.
+//
+// RFC 6154 gives folders attributes like \Sent and \Junk, and Gmail
+// advertises them; other hosts predate the RFC and only have well-known
+// names. Both are tried, in that order, because the attribute is
+// authoritative and the names are guesses.
+func (f *IMAP) specialFolder(acct app.MailAccount, attr string, guesses []string, missing string) (string, error) {
 	c, err := f.dial(acct)
 	if err != nil {
 		return "", err
@@ -172,7 +186,7 @@ func (f *IMAP) SentFolder(ctx context.Context, acct app.MailAccount) (string, er
 	for b := range boxes {
 		names[b.Name] = true
 		for _, a := range b.Attributes {
-			if a == imap.SentAttr {
+			if a == attr {
 				byAttr = b.Name
 			}
 		}
@@ -183,12 +197,12 @@ func (f *IMAP) SentFolder(ctx context.Context, acct app.MailAccount) (string, er
 	if byAttr != "" {
 		return byAttr, nil
 	}
-	for _, guess := range []string{"[Gmail]/Sent Mail", "Sent Items", "Sent Messages", "Sent", "已发送"} {
+	for _, guess := range guesses {
 		if names[guess] {
 			return guess, nil
 		}
 	}
-	return "", fmt.Errorf("找不到已发送文件夹")
+	return "", fmt.Errorf("%s", missing)
 }
 
 // fetchUIDs downloads exactly these messages over an already-selected mailbox.

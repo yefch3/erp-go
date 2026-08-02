@@ -163,7 +163,8 @@ type Service struct {
 	// Access tokens by account id. They live an hour; caching them keeps the
 	// sender and the sync from asking Google once per message.
 	tokenCache sync.Map
-	// Where each account's sent folder lives; found once, never changes.
+	// Where each account's special folders live, keyed "sent:<id>" and
+	// "junk:<id>"; found once, never changes.
 	sentFolders sync.Map
 	log         *slog.Logger
 }
