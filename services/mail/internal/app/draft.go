@@ -25,19 +25,30 @@ type DraftInput struct {
 	Kind        string
 	Recipients  []Recipient
 	Attachments []PendingAttachment
+	// The rest of what a compose is: how it goes out, who is copied, and
+	// what it answers. Without these a saved reply reopened as a plain new
+	// mail — same words, different message.
+	SendMode         string
+	CC               []Recipient
+	ReplyToInboundID int64
+	ForwardInboundID int64
 }
 
 // DraftView is one saved draft, restored into the composer.
 type DraftView struct {
-	ID          int64
-	Subject     string
-	Body        string
-	Format      string
-	SignatureID int64
-	Kind        string
-	Recipients  []Recipient
-	Attachments []PendingAttachment
-	UpdatedAt   string
+	ID               int64
+	Subject          string
+	Body             string
+	Format           string
+	SignatureID      int64
+	Kind             string
+	Recipients       []Recipient
+	Attachments      []PendingAttachment
+	UpdatedAt        string
+	SendMode         string
+	CC               []Recipient
+	ReplyToInboundID int64
+	ForwardInboundID int64
 }
 
 // SaveDraft creates or updates. Both directions are the same call because the
@@ -60,6 +71,21 @@ func (s *Service) SaveDraft(ctx context.Context, tenantID int64, in DraftInput, 
 	if err != nil {
 		return 0, err
 	}
+	// A CC without merged mode would be a promise the send cannot keep:
+	// separate mode gives each recipient their own copy, and there is no
+	// shared header for a CC to appear in.
+	mode := in.SendMode
+	if mode != "MERGED" {
+		mode = "SEPARATE"
+	}
+	ccList := in.CC
+	if mode != "MERGED" {
+		ccList = nil
+	}
+	cc, err := json.Marshal(orEmpty(ccList))
+	if err != nil {
+		return 0, err
+	}
 	files, err := json.Marshal(orEmptyFiles(in.Attachments))
 	if err != nil {
 		return 0, err
@@ -69,6 +95,9 @@ func (s *Service) SaveDraft(ctx context.Context, tenantID int64, in DraftInput, 
 		Subject: in.Subject, Body: body, BodyFormat: format,
 		SignatureID: in.SignatureID, Kind: kind,
 		Recipients: recipients, Attachments: files,
+		SendMode: mode, Cc: cc,
+		ReplyToInboundID: in.ReplyToInboundID,
+		ForwardInboundID: in.ForwardInboundID,
 	})
 	if err == pgx.ErrNoRows {
 		// The upsert's WHERE refused it: the id exists but belongs to
@@ -98,7 +127,9 @@ func (s *Service) GetDraft(ctx context.Context, tenantID, id int64, op Operator)
 	}
 	out := DraftView{
 		ID: d.ID, Subject: d.Subject, Body: d.Body, Format: d.BodyFormat,
-		SignatureID: d.SignatureID, Kind: d.Kind,
+		SignatureID: d.SignatureID, Kind: d.Kind, SendMode: d.SendMode,
+		ReplyToInboundID: d.ReplyToInboundID,
+		ForwardInboundID: d.ForwardInboundID,
 	}
 	if d.UpdatedAt.Valid {
 		out.UpdatedAt = d.UpdatedAt.Time.Format("2006-01-02T15:04:05Z07:00")
@@ -108,6 +139,7 @@ func (s *Service) GetDraft(ctx context.Context, tenantID, id int64, op Operator)
 	// failing to open the draft at all.
 	_ = json.Unmarshal(d.Recipients, &out.Recipients)
 	_ = json.Unmarshal(d.Attachments, &out.Attachments)
+	_ = json.Unmarshal(d.Cc, &out.CC)
 	return out, nil
 }
 
@@ -136,10 +168,15 @@ func (s *Service) SendDraft(ctx context.Context, tenantID, id int64, op Operator
 	if err != nil {
 		return CampaignResult{}, err
 	}
+	// Sending a draft has to mean sending what the draft says, threading and
+	// all — otherwise saving a reply quietly downgrades it on the way out.
 	res, err := s.CreateCampaign(ctx, tenantID, CampaignInput{
 		Subject: d.Subject, Body: d.Body, Format: d.Format,
 		SignatureID: d.SignatureID, Kind: d.Kind,
 		Recipients: d.Recipients, Attachments: d.Attachments,
+		SendMode: d.SendMode, CC: d.CC,
+		ReplyToInboundID: d.ReplyToInboundID,
+		ForwardInboundID: d.ForwardInboundID,
 	}, op)
 	if err != nil {
 		return CampaignResult{}, err

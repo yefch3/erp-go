@@ -438,7 +438,11 @@ async function openDraft(id: string) {
   form.body = draft.body ?? ''
   form.format = draft.bodyFormat || 'HTML'
   form.signatureId = draft.signatureId ?? '0'
+  form.sendMode = draft.sendMode === 'MERGED' ? 'MERGED' : 'SEPARATE'
   selected.value = draft.recipients ?? []
+  ccSelected.value = draft.cc ?? []
+  replyCtx.replyToInboundId = draft.replyToInboundId ?? '0'
+  replyCtx.forwardInboundId = draft.forwardInboundId ?? '0'
   attachments.value = (draft.attachments ?? []).map((a: any) => ({
     fileName: a.fileName,
     fileKey: a.fileKey,
@@ -512,22 +516,46 @@ function openForward(mail: QuotedMail) {
 
 defineExpose({ openDraft, openReply, openForward })
 
+// Contacts arrive from the address book with more on them than the wire
+// message declares, and protojson refuses unknown fields outright. Every path
+// that leaves this component shapes its recipients through here.
+function asProto(r: Recipient) {
+  return {
+    contactId: r.contactId,
+    name: r.name,
+    email: r.email,
+    customerId: r.customerId,
+    customerName: r.customerName,
+  }
+}
+
+// Everything the composer holds, in one place. Saving used to send the words
+// and drop the rest - send mode, CC, what the mail was answering - so a saved
+// reply came back as a plain new mail with the same text.
+function draftPayload() {
+  return {
+    id: draftId.value,
+    subject: form.subject,
+    body: fullBody(),
+    bodyFormat: form.format,
+    signatureId: form.signatureId,
+    kind: 'MARKETING',
+    sendMode: form.sendMode,
+    cc: form.sendMode === 'MERGED' ? ccSelected.value.map(asProto) : [],
+    replyToInboundId: replyCtx.replyToInboundId,
+    forwardInboundId: replyCtx.forwardInboundId,
+    recipients: selected.value.map(asProto),
+    attachments: attachments.value.map((a) => ({
+      fileName: a.fileName,
+      fileKey: a.fileKey,
+    })),
+  }
+}
+
 async function saveDraft() {
   savingDraft.value = true
   try {
-    const r = await post<{ id: string }>('/email-drafts', {
-      id: draftId.value,
-      subject: form.subject,
-      body: fullBody(),
-      bodyFormat: form.format,
-      signatureId: form.signatureId,
-      kind: 'MARKETING',
-      recipients: selected.value,
-      attachments: attachments.value.map((a) => ({
-        fileName: a.fileName,
-        fileKey: a.fileKey,
-      })),
-    })
+    const r = await post<{ id: string }>('/email-drafts', draftPayload())
     draftId.value = r.id
     ElMessage.success(t('emails.draftSaved'))
     emit('saved')
@@ -750,19 +778,7 @@ async function doSendInner() {
     // removed once the mail is queued — otherwise every sent draft would
     // linger in the folder as a duplicate of something already gone out.
     if (draftId.value !== '0') {
-      await post('/email-drafts', {
-        id: draftId.value,
-        subject: form.subject,
-        body: fullBody(),
-        bodyFormat: form.format,
-        signatureId: form.signatureId,
-        kind: 'MARKETING',
-        recipients: selected.value,
-        attachments: attachments.value.map((a) => ({
-          fileName: a.fileName,
-          fileKey: a.fileKey,
-        })),
-      })
+      await post('/email-drafts', draftPayload())
       const wrapped = await post<{ result: CreateResult }>(
         `/email-drafts/${draftId.value}/send`,
       )
@@ -771,13 +787,6 @@ async function doSendInner() {
       close(false)
       return
     }
-    const asProto = (r: Recipient) => ({
-      contactId: r.contactId,
-      name: r.name,
-      email: r.email,
-      customerId: r.customerId,
-      customerName: r.customerName,
-    })
     const res = await post<CreateResult>('/email-campaigns', {
       subject: form.subject,
       body: fullBody(),

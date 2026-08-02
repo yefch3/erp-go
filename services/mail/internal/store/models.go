@@ -41,18 +41,22 @@ type EmailCampaign struct {
 }
 
 type EmailDraft struct {
-	ID          int64
-	TenantID    int64
-	OwnerID     int64
-	Subject     string
-	Body        string
-	BodyFormat  string
-	SignatureID int64
-	Kind        string
-	Recipients  []byte
-	Attachments []byte
-	CreatedAt   pgtype.Timestamptz
-	UpdatedAt   pgtype.Timestamptz
+	ID               int64
+	TenantID         int64
+	OwnerID          int64
+	Subject          string
+	Body             string
+	BodyFormat       string
+	SignatureID      int64
+	Kind             string
+	Recipients       []byte
+	Attachments      []byte
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	SendMode         string
+	Cc               []byte
+	ReplyToInboundID int64
+	ForwardInboundID int64
 }
 
 type EmailEvent struct {

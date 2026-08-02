@@ -445,9 +445,13 @@ func (h *Handler) SaveDraft(ctx context.Context, req *mailv1.SaveDraftRequest) (
 	id, err := h.svc.SaveDraft(ctx, grpcx.TenantID(ctx), app.DraftInput{
 		ID: req.GetId(), Subject: req.GetSubject(), Body: req.GetBody(),
 		Format: req.GetBodyFormat(), SignatureID: req.GetSignatureId(),
-		Kind:        req.GetKind(),
-		Recipients:  recipientsFromProto(req.GetRecipients()),
-		Attachments: pendingFromProto(req.GetAttachments()),
+		Kind:             req.GetKind(),
+		Recipients:       recipientsFromProto(req.GetRecipients()),
+		Attachments:      pendingFromProto(req.GetAttachments()),
+		SendMode:         req.GetSendMode(),
+		CC:               recipientsFromProto(req.GetCc()),
+		ReplyToInboundID: req.GetReplyToInboundId(),
+		ForwardInboundID: req.GetForwardInboundId(),
 	}, operator(ctx))
 	if err != nil {
 		return nil, err
@@ -478,8 +482,12 @@ func (h *Handler) GetDraft(ctx context.Context, req *mailv1.GetDraftRequest) (*m
 	return &mailv1.GetDraftResponse{Draft: &mailv1.Draft{
 		Id: d.ID, Subject: d.Subject, Body: d.Body, BodyFormat: d.Format,
 		SignatureId: d.SignatureID, Kind: d.Kind, UpdatedAt: d.UpdatedAt,
-		Recipients:  recipientsToProto(d.Recipients),
-		Attachments: pendingToProto(d.Attachments),
+		Recipients:       recipientsToProto(d.Recipients),
+		Attachments:      pendingToProto(d.Attachments),
+		SendMode:         d.SendMode,
+		Cc:               recipientsToProto(d.CC),
+		ReplyToInboundId: d.ReplyToInboundID,
+		ForwardInboundId: d.ForwardInboundID,
 	}}, nil
 }
 
