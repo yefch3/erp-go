@@ -114,6 +114,7 @@
               v-show="quoteOpen"
               ref="quoteBox"
               class="quote-box"
+              :class="{ plain: form.format === 'TEXT' }"
               contenteditable="true"
               @input="onQuoteInput"
             />
@@ -334,15 +335,25 @@ function fullBody() {
 
 // The quote is written into the box once, when it opens, and read back on
 // edit. Binding it reactively instead would rewrite the DOM under the cursor.
-watch(quoteOpen, (open) => {
+watch([quoteOpen, () => form.format], ([open]) => {
   if (!open) return
-  nextTick(() => {
-    if (quoteBox.value) quoteBox.value.innerHTML = quoted.value
-  })
+  nextTick(() => fillQuoteBox())
 })
 
+function fillQuoteBox() {
+  const el = quoteBox.value
+  if (!el) return
+  if (form.format === 'TEXT') {
+    el.textContent = quoted.value
+  } else {
+    el.innerHTML = quoted.value
+  }
+}
+
 function onQuoteInput() {
-  if (quoteBox.value) quoted.value = quoteBox.value.innerHTML
+  const el = quoteBox.value
+  if (!el) return
+  quoted.value = form.format === 'TEXT' ? el.innerText : el.innerHTML
 }
 
 // The rich editor leaves markup behind even when the box looks empty, so an
@@ -578,23 +589,55 @@ function insertVariable(name: string) {
   })
 }
 
-// Switching format does not attempt to convert: silently rewriting somebody's
-// markup into text (or the reverse) loses work in a way that is hard to undo.
-// Starting clean is blunter but honest.
+// Switching format clears what somebody wrote, because silently rewriting
+// their markup into text (or the reverse) loses work in a way that is hard to
+// undo. Starting clean is blunter but honest.
+//
+// The quoted original is not their writing, though, and it used to go with
+// it: switching format made the ··· vanish along with the mail being replied
+// to. Converting it costs nothing — nobody typed it, so nothing of theirs is
+// mangled — and losing the original is far worse than losing its formatting.
 function onFormatChange() {
-  if (form.body.trim() !== '') {
-    ElMessageBox.confirm(t('emails.formatSwitchHint'), t('emails.formatSwitch'), {
-      type: 'warning',
-    })
-      .then(() => {
-        form.body = ''
-        quoted.value = ''
-        quoteOpen.value = false
-      })
-      .catch(() => {
-        form.format = form.format === 'HTML' ? 'TEXT' : 'HTML'
-      })
+  const to = form.format
+  if (form.body.trim() === '') {
+    convertQuote(to)
+    return
   }
+  ElMessageBox.confirm(t('emails.formatSwitchHint'), t('emails.formatSwitch'), {
+    type: 'warning',
+  })
+    .then(() => {
+      form.body = ''
+      convertQuote(to)
+    })
+    .catch(() => {
+      form.format = to === 'HTML' ? 'TEXT' : 'HTML'
+    })
+}
+
+// Rewrites the quote into the format now in force. HTML → text keeps the
+// words and drops the tags; text → HTML re-wraps them in a blockquote. The
+// round trip loses the original's markup, which is the same bargain the body
+// makes, but the quote itself always survives.
+function convertQuote(to: string) {
+  if (!quoted.value) return
+  if (to === 'TEXT') {
+    const text = quoted.value
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(p|div|blockquote|tr|li|h[1-6])>/gi, '\n')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+    // Prefixed the way every plain-text client quotes, so the recipient sees
+    // a quote rather than an unmarked wall of somebody else's words.
+    quoted.value = '\n\n' + text.split('\n').map((l) => `> ${l}`).join('\n')
+    return
+  }
+  quoted.value = `<blockquote>${escapeText(quoted.value.replace(/^> ?/gm, '').trim())}</blockquote>`
 }
 
 function insertVariableRich(name: string) {
@@ -937,6 +980,10 @@ async function onBeforeClose(done: () => void) {
 }
 .quote-box :deep(img) {
   max-width: 100%;
+}
+.quote-box.plain {
+  white-space: pre-wrap;
+  font-family: inherit;
 }
 .preview-html {
   margin-top: 10px;
