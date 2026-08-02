@@ -880,6 +880,8 @@ export default {
     ccLabel: 'CC',
     allRecipients: 'all recipients',
     wrote: 'wrote:',
+    showQuoted: 'Show quoted text',
+    backToList: 'Back',
     reply: 'Reply',
     forward: 'Forward',
     forwardCarries: 'The original message’s attachments travel along with this mail.',

@@ -94,6 +94,16 @@
             :rows="9"
             :placeholder="t('emails.bodyPlaceholder')"
           />
+          <!-- The quoted original, folded behind Gmail's ··· trimmer. It is
+               part of the outgoing mail either way; expanding just moves it
+               into the editor so it can be trimmed by hand. -->
+          <button
+            v-if="quoted"
+            type="button"
+            class="quote-trim"
+            :title="t('emails.showQuoted')"
+            @click="expandQuote"
+          >···</button>
         </div>
       </el-form-item>
 
@@ -292,10 +302,30 @@ const bodyInput = ref()
 // it again does not claim work is about to be lost when it is not.
 let baseline = ''
 
+// A reply's quoted original, kept out of the editor and folded behind the
+// ··· trimmer. Always part of what is sent; see fullBody.
+const quoted = ref('')
+
+// What actually goes out: the typed text plus the collapsed quote. Every
+// consumer of the body — preview, send, draft — reads this, never form.body,
+// so folding the quote can never silently drop it from the mail.
+function fullBody() {
+  return quoted.value ? form.body + quoted.value : form.body
+}
+
+// Expanding makes the quote ordinary editable content, exactly what Gmail's
+// trimmer does. One-way: collapsed again would mean guessing where the typed
+// text ends and the quote begins.
+function expandQuote() {
+  form.body = form.body + quoted.value
+  quoted.value = ''
+}
+
 // The rich editor leaves markup behind even when the box looks empty, so an
-// emptiness test has to read the text rather than the tags.
+// emptiness test has to read the text rather than the tags. Reads the full
+// body: dirty-tracking must not change when the quote expands into the editor.
 function plainBody() {
-  return form.body.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
+  return fullBody().replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
 }
 
 function signature() {
@@ -408,7 +438,7 @@ function quotedBlock(mail: QuotedMail) {
   const inner = mail.bodyHtml || `<p>${escapeText(mail.bodyText || '')}</p>`
   const who = escapeText(mail.fromName || mail.fromEmail)
   return (
-    `<p><br></p><p>${who} &lt;${escapeText(mail.fromEmail)}&gt; ${escapeText(t('emails.wrote'))}</p>` +
+    `<p>${who} &lt;${escapeText(mail.fromEmail)}&gt; ${escapeText(t('emails.wrote'))}</p>` +
     `<blockquote>${inner}</blockquote>`
   )
 }
@@ -419,26 +449,29 @@ function prefixSubject(subject: string, tag: string) {
 }
 
 // Prefills a reply: the sender becomes the recipient, the subject gains Re:,
-// the original is quoted, and the server threads it via replyToInboundId.
-// markClean afterwards — the prefill is machine work, losing it costs nothing.
+// the original is quoted (collapsed, Gmail-style), and the server threads it
+// via replyToInboundId. markClean afterwards — the prefill is machine work,
+// losing it costs nothing.
 function openReply(mail: QuotedMail) {
   reset()
   replyCtx.replyToInboundId = mail.id
   selected.value = [{ name: mail.fromName || '', email: mail.fromEmail }]
   form.subject = prefixSubject(mail.subject || '', 'Re:')
   form.format = 'HTML'
-  form.body = quotedBlock(mail)
+  form.body = '<p><br></p>'
+  quoted.value = quotedBlock(mail)
   markClean()
 }
 
 // Prefills a forward: no recipient yet, subject gains Fwd:, the original is
-// quoted and its attachments travel along server-side.
+// quoted (collapsed) and its attachments travel along server-side.
 function openForward(mail: QuotedMail) {
   reset()
   replyCtx.forwardInboundId = mail.id
   form.subject = prefixSubject(mail.subject || '', 'Fwd:')
   form.format = 'HTML'
-  form.body = quotedBlock(mail)
+  form.body = '<p><br></p>'
+  quoted.value = quotedBlock(mail)
   markClean()
 }
 
@@ -450,7 +483,7 @@ async function saveDraft() {
     const r = await post<{ id: string }>('/email-drafts', {
       id: draftId.value,
       subject: form.subject,
-      body: form.body,
+      body: fullBody(),
       bodyFormat: form.format,
       signatureId: form.signatureId,
       kind: 'MARKETING',
@@ -473,6 +506,7 @@ function reset() {
   draftId.value = '0'
   form.subject = ''
   form.body = ''
+  quoted.value = ''
   form.format = 'HTML'
   form.signatureId = '0'
   form.sendMode = 'SEPARATE'
@@ -529,6 +563,7 @@ function onFormatChange() {
     })
       .then(() => {
         form.body = ''
+        quoted.value = ''
       })
       .catch(() => {
         form.format = form.format === 'HTML' ? 'TEXT' : 'HTML'
@@ -586,7 +621,7 @@ async function doPreview() {
   try {
     preview.value = await post<Preview>('/email-campaigns/preview', {
       subject: form.subject,
-      body: form.body,
+      body: fullBody(),
       bodyFormat: form.format,
       signatureId: form.signatureId,
       recipient: {
@@ -649,7 +684,7 @@ async function doSendInner() {
       await post('/email-drafts', {
         id: draftId.value,
         subject: form.subject,
-        body: form.body,
+        body: fullBody(),
         bodyFormat: form.format,
         signatureId: form.signatureId,
         kind: 'MARKETING',
@@ -676,7 +711,7 @@ async function doSendInner() {
     })
     const res = await post<CreateResult>('/email-campaigns', {
       subject: form.subject,
-      body: form.body,
+      body: fullBody(),
       bodyFormat: form.format,
       signatureId: form.signatureId,
       kind: 'MARKETING',
@@ -835,6 +870,22 @@ async function onBeforeClose(done: () => void) {
   margin-top: 6px;
   font-size: 12px;
   color: var(--el-color-warning);
+}
+.quote-trim {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 0 10px;
+  line-height: 16px;
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color);
+  border: 1px solid var(--el-border-color);
+  border-radius: 9px;
+  cursor: pointer;
+}
+.quote-trim:hover {
+  background: var(--el-fill-color-dark);
 }
 .preview-html {
   margin-top: 10px;

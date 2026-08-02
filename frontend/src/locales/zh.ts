@@ -875,6 +875,8 @@ export default {
     ccLabel: '抄送',
     allRecipients: '全部收件人',
     wrote: '写道：',
+    showQuoted: '展开引用内容',
+    backToList: '返回',
     reply: '回复',
     forward: '转发',
     forwardCarries: '原邮件的附件会随这封信一并转发。',

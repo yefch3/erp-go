@@ -38,6 +38,103 @@
     </aside>
 
     <section class="pane">
+      <!-- ------------------------------------------------- reading a mail -->
+      <!-- A page, not a drawer: the mail's id lives in the URL, so a refresh
+           reopens the same mail and the browser's back button returns to the
+           list, at the page it was on. -->
+      <template v-if="openedInbound">
+        <div class="detail-top">
+          <el-button link class="back-btn" @click="backToList">
+            ← {{ t('emails.backToList') }}
+          </el-button>
+        </div>
+        <h2 class="in-subject">{{ openedInbound.subject || t('emails.noSubject') }}</h2>
+        <div class="in-meta">
+          <span class="strong">{{ openedInbound.fromName || openedInbound.fromEmail }}</span>
+          <span class="sub">&lt;{{ openedInbound.fromEmail }}&gt;</span>
+          <span class="grow" />
+          <span class="sub">{{ shortTime(openedInbound.sentAt || openedInbound.receivedAt) }}</span>
+        </div>
+        <div class="in-meta sub">{{ t('emails.inboundTo', { to: openedInbound.toEmail }) }}</div>
+        <div class="in-actions">
+          <template v-if="canWrite">
+            <el-button size="small" type="primary" plain @click="replyToInbound">
+              ↩ {{ t('emails.reply') }}
+            </el-button>
+            <el-button size="small" plain @click="forwardInbound">
+              ↪ {{ t('emails.forward') }}
+            </el-button>
+          </template>
+          <el-button
+            v-if="folder === 'junk'"
+            size="small"
+            type="warning"
+            plain
+            @click="markOpened({ notJunk: true })"
+          >
+            {{ t('emails.notJunk') }}
+          </el-button>
+          <template v-if="isInboundView && folder !== 'junk'">
+            <el-button v-if="folder !== 'trash'" size="small" plain @click="markOpened({ read: false })">
+              {{ t('emails.markUnread') }}
+            </el-button>
+            <el-button v-if="folder === 'archive'" size="small" plain @click="markOpened({ archived: false })">
+              {{ t('emails.unarchive') }}
+            </el-button>
+            <el-button v-else-if="folder !== 'trash'" size="small" plain @click="markOpened({ archived: true })">
+              {{ t('emails.archive') }}
+            </el-button>
+            <el-button v-if="folder === 'trash'" size="small" plain @click="markOpened({ deleted: false })">
+              {{ t('emails.restore') }}
+            </el-button>
+            <el-button v-else size="small" type="danger" plain @click="markOpened({ deleted: true })">
+              {{ t('emails.toTrash') }}
+            </el-button>
+          </template>
+        </div>
+        <el-divider />
+        <!-- The whole exchange when there is one, the single mail otherwise.
+             All HTML here was sanitised server-side; see GetInbound and
+             GetMailThread. -->
+        <template v-if="threadItems.length > 1">
+          <div class="thread-count">{{ t('emails.threadCount', { n: threadItems.length }) }}</div>
+          <div
+            v-for="it in threadItems"
+            :key="it.direction + it.id"
+            class="thread-item"
+            :class="{ out: it.direction === 'OUT' }"
+          >
+            <button type="button" class="thread-head" @click="toggleThreadItem(it)">
+              <el-tag size="small" :type="it.direction === 'OUT' ? 'info' : 'success'" effect="plain">
+                {{ it.direction === 'OUT' ? t('emails.threadOut') : t('emails.threadIn') }}
+              </el-tag>
+              <span class="strong">{{ it.who || it.counterparty }}</span>
+              <span class="sub ellipsis">{{ it.counterparty }}</span>
+              <span class="grow" />
+              <span class="sub">{{ shortTime(it.at) }}</span>
+            </button>
+            <div v-show="isThreadOpen(it)" class="thread-body">
+              <div v-if="it.bodyFormat === 'HTML'" class="in-html" v-html="it.body" />
+              <pre v-else class="in-text">{{ it.body }}</pre>
+            </div>
+          </div>
+        </template>
+        <template v-else>
+          <div v-if="openedInbound.bodyHtml" class="in-html" v-html="openedInbound.bodyHtml" />
+          <pre v-else class="in-text">{{ openedInbound.bodyText }}</pre>
+        </template>
+        <template v-if="openedInbound.attachments?.length">
+          <el-divider />
+          <h4 class="side-title">{{ t('emails.attachments') }}</h4>
+          <div class="chips">
+            <el-tag v-for="a in openedInbound.attachments" :key="a.id" type="info">
+              {{ a.fileName }} · {{ humanSize(Number(a.fileSize)) }}
+            </el-tag>
+          </div>
+        </template>
+      </template>
+
+      <template v-else>
       <div class="pane-head">
         <h2>{{ t(`emails.folders.${folder}`) }}</h2>
         <span class="grow" />
@@ -152,7 +249,7 @@
 
       <!-- ----------------------------------------------------------- sent -->
       <template v-else-if="folder === 'sent'">
-      <el-radio-group v-model="sentView" size="small" class="sent-toggle" @change="reload">
+      <el-radio-group v-model="sentView" size="small" class="sent-toggle" @change="onSentViewChange">
         <el-radio-button value="erp">{{ t('emails.sentViaErp') }}</el-radio-button>
         <el-radio-button value="mailbox">{{ t('emails.sentViaMailbox') }}</el-radio-button>
       </el-radio-group>
@@ -308,8 +405,9 @@
         :total="total"
         layout="total, prev, pager, next"
         class="pager"
-        @current-change="load"
+        @current-change="onPageChange"
       />
+      </template>
     </section>
 
     <EmailComposer ref="composer" v-model="composing" @sent="onSent" @saved="onDraftSaved" />
@@ -317,99 +415,6 @@
     <!-- Reading a sent mail: the message itself, then who it went to. That
          ordering is the point — the mail is the thing, the recipient list is
          the detail underneath it. -->
-    <!-- Received mail gets its own reader: MailReader narrates a delivery
-         attempt (status, retries, events), none of which a message somebody
-         sent US has. Showing that chrome around a customer's mail would be
-         confusing at best. -->
-    <el-drawer v-model="inboundOpen" size="58%" :with-header="false">
-      <div v-if="openedInbound" class="drawer-body">
-        <h3 class="in-subject">{{ openedInbound.subject || t('emails.noSubject') }}</h3>
-        <div class="in-meta">
-          <span class="strong">{{ openedInbound.fromName || openedInbound.fromEmail }}</span>
-          <span class="sub">&lt;{{ openedInbound.fromEmail }}&gt;</span>
-          <span class="grow" />
-          <span class="sub">{{ shortTime(openedInbound.sentAt || openedInbound.receivedAt) }}</span>
-        </div>
-        <div class="in-meta sub">{{ t('emails.inboundTo', { to: openedInbound.toEmail }) }}</div>
-        <div class="in-actions">
-          <template v-if="canWrite">
-            <el-button size="small" type="primary" plain @click="replyToInbound">
-              ↩ {{ t('emails.reply') }}
-            </el-button>
-            <el-button size="small" plain @click="forwardInbound">
-              ↪ {{ t('emails.forward') }}
-            </el-button>
-          </template>
-          <el-button
-            v-if="folder === 'junk'"
-            size="small"
-            type="warning"
-            plain
-            @click="markOpened({ notJunk: true })"
-          >
-            {{ t('emails.notJunk') }}
-          </el-button>
-          <template v-if="isInboundView && folder !== 'junk'">
-            <el-button v-if="folder !== 'trash'" size="small" plain @click="markOpened({ read: false })">
-              {{ t('emails.markUnread') }}
-            </el-button>
-            <el-button v-if="folder === 'archive'" size="small" plain @click="markOpened({ archived: false })">
-              {{ t('emails.unarchive') }}
-            </el-button>
-            <el-button v-else-if="folder !== 'trash'" size="small" plain @click="markOpened({ archived: true })">
-              {{ t('emails.archive') }}
-            </el-button>
-            <el-button v-if="folder === 'trash'" size="small" plain @click="markOpened({ deleted: false })">
-              {{ t('emails.restore') }}
-            </el-button>
-            <el-button v-else size="small" type="danger" plain @click="markOpened({ deleted: true })">
-              {{ t('emails.toTrash') }}
-            </el-button>
-          </template>
-        </div>
-        <el-divider />
-        <!-- The whole exchange when there is one, the single mail otherwise.
-             All HTML here was sanitised server-side; see GetInbound and
-             GetMailThread. -->
-        <template v-if="threadItems.length > 1">
-          <div class="thread-count">{{ t('emails.threadCount', { n: threadItems.length }) }}</div>
-          <div
-            v-for="it in threadItems"
-            :key="it.direction + it.id"
-            class="thread-item"
-            :class="{ out: it.direction === 'OUT' }"
-          >
-            <button type="button" class="thread-head" @click="toggleThreadItem(it)">
-              <el-tag size="small" :type="it.direction === 'OUT' ? 'info' : 'success'" effect="plain">
-                {{ it.direction === 'OUT' ? t('emails.threadOut') : t('emails.threadIn') }}
-              </el-tag>
-              <span class="strong">{{ it.who || it.counterparty }}</span>
-              <span class="sub ellipsis">{{ it.counterparty }}</span>
-              <span class="grow" />
-              <span class="sub">{{ shortTime(it.at) }}</span>
-            </button>
-            <div v-show="isThreadOpen(it)" class="thread-body">
-              <div v-if="it.bodyFormat === 'HTML'" class="in-html" v-html="it.body" />
-              <pre v-else class="in-text">{{ it.body }}</pre>
-            </div>
-          </div>
-        </template>
-        <template v-else>
-          <div v-if="openedInbound.bodyHtml" class="in-html" v-html="openedInbound.bodyHtml" />
-          <pre v-else class="in-text">{{ openedInbound.bodyText }}</pre>
-        </template>
-        <template v-if="openedInbound.attachments?.length">
-          <el-divider />
-          <h4 class="side-title">{{ t('emails.attachments') }}</h4>
-          <div class="chips">
-            <el-tag v-for="a in openedInbound.attachments" :key="a.id" type="info">
-              {{ a.fileName }} · {{ humanSize(Number(a.fileSize)) }}
-            </el-tag>
-          </div>
-        </template>
-      </div>
-    </el-drawer>
-
     <el-drawer v-model="readerOpen" size="58%" :with-header="false">
       <div class="drawer-body">
         <MailReader :mail="openMail" />
@@ -507,7 +512,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter, type LocationQuery } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { del, get, http, post } from '../api'
@@ -634,8 +640,96 @@ const sentView = ref<'erp' | 'mailbox'>('erp')
 const mailboxSent = ref<InboundMail[]>([])
 const unreadCount = ref(0)
 const syncing = ref(false)
-const inboundOpen = ref(false)
+// The mail being read full-page. Set from the URL, never directly: opening a
+// mail is a navigation, so refresh reopens it and back returns to the list.
 const openedInbound = ref<InboundMail | null>(null)
+
+// ---------------------------------------------------------------- URL state
+// The address bar is the source of truth for where the person is: folder,
+// page, search, sent-list toggle and the opened mail all live in the query.
+// Every click routes through pushState; the route watcher is the only thing
+// that loads data. That single direction is what makes refresh keep the
+// position and the browser's back button behave.
+const route = useRoute()
+const router = useRouter()
+
+interface UrlState {
+  folder: string
+  page: number
+  q: string
+  sent: 'erp' | 'mailbox'
+  mail: string
+}
+
+// What the screen currently shows. null until the first applyRoute, so the
+// initial navigation always loads.
+let applied: UrlState | null = null
+
+const FOLDER_KEYS = new Set(['inbox', 'starred', 'drafts', 'sent', 'attention', 'archive', 'junk', 'trash', 'suppressions'])
+
+function parseQuery(q: LocationQuery): UrlState {
+  const one = (v: unknown) => (Array.isArray(v) ? String(v[0] ?? '') : v == null ? '' : String(v))
+  const f = one(q.folder)
+  const p = Number(one(q.page))
+  return {
+    folder: FOLDER_KEYS.has(f) ? f : 'inbox',
+    page: Number.isInteger(p) && p > 1 ? p : 1,
+    q: one(q.q),
+    sent: one(q.sent) === 'mailbox' ? 'mailbox' : 'erp',
+    mail: /^\d+$/.test(one(q.mail)) ? one(q.mail) : '',
+  }
+}
+
+// Defaults stay out of the address bar: /emails, not /emails?folder=inbox&page=1.
+function toQuery(s: UrlState): Record<string, string> {
+  const query: Record<string, string> = {}
+  if (s.folder !== 'inbox') query.folder = s.folder
+  if (s.page > 1) query.page = String(s.page)
+  if (s.q) query.q = s.q
+  if (s.folder === 'sent' && s.sent !== 'erp') query.sent = s.sent
+  if (s.mail) query.mail = s.mail
+  return query
+}
+
+function pushState(over: Partial<UrlState>) {
+  const cur = applied ?? parseQuery(route.query)
+  const next = { ...cur, ...over }
+  // Navigating to where we already are is a plain refresh, not a navigation:
+  // pushing an identical route would be silently dropped by the router.
+  if (applied && JSON.stringify(toQuery(next)) === JSON.stringify(toQuery(cur))) {
+    load()
+    return
+  }
+  router.push({ query: toQuery(next) })
+}
+
+// The one place the URL turns into screen state. Loads only what changed:
+// arriving on a mail link fetches both the list underneath and the mail, but
+// closing the mail afterwards refetches neither.
+function applyRoute() {
+  if (locked.value !== false) return
+  if (route.path !== '/emails') return
+  const s = parseQuery(route.query)
+  const prev = applied
+  applied = s
+  folder.value = s.folder
+  page.value = s.page
+  keyword.value = s.q
+  sentView.value = s.sent
+  if (!prev || prev.folder !== s.folder || prev.page !== s.page || prev.q !== s.q || prev.sent !== s.sent) {
+    load()
+  }
+  if (!prev || prev.mail !== s.mail) {
+    if (s.mail) {
+      openDetail(s.mail)
+    } else {
+      openedInbound.value = null
+      threadItems.value = []
+    }
+  }
+}
+
+watch(() => route.query, applyRoute)
 
 const readerOpen = ref(false)
 const openMail = ref<Mail | null>(null)
@@ -663,7 +757,9 @@ onMounted(async () => {
   if (oauthResult) {
     const boundEmail = q.get('email') ?? ''
     const reason = q.get('reason') ?? ''
-    history.replaceState(null, '', location.pathname)
+    // Through the router, not history.replaceState: the router must agree the
+    // query is empty or the URL-state watcher would keep seeing oauth params.
+    await router.replace({ query: {} })
     if (oauthResult === 'ok') {
       ElMessage.success(t('mailbox.googleOk', { email: boundEmail }))
       try {
@@ -711,7 +807,8 @@ async function lockMailbox() {
 }
 
 function init() {
-  load()
+  applied = null
+  applyRoute()
   refreshAttentionCount()
   loadDraftCount()
   refreshUnread()
@@ -730,7 +827,9 @@ function init() {
 onUnmounted(
   onLive((e) => {
     if (e.type !== 'mail.inbound') return
-    if (folder.value === 'inbox') {
+    // Not while reading a mail: yanking the list from under the detail page
+    // would be invisible, and the unread badge covers the news.
+    if (folder.value === 'inbox' && !openedInbound.value) {
       load()
     } else {
       refreshUnread()
@@ -785,14 +884,26 @@ async function dropDraft(row: Draft) {
 }
 
 function switchFolder(key: string) {
-  folder.value = key
+  // Clear the box too, or clicking the current folder with an unsearched
+  // keyword sitting in it would silently search for it.
   keyword.value = ''
-  reload()
+  pushState({ folder: key, page: 1, q: '', mail: '' })
 }
 
 function reload() {
-  page.value = 1
-  load()
+  pushState({ page: 1, q: keyword.value, mail: '' })
+}
+
+function onSentViewChange() {
+  pushState({ sent: sentView.value, page: 1, mail: '' })
+}
+
+function onPageChange(p: number) {
+  pushState({ page: p })
+}
+
+function backToList() {
+  pushState({ mail: '' })
 }
 
 async function load() {
@@ -851,32 +962,46 @@ async function load() {
   }
 }
 
-// Opening marks it read server-side, so the row and the badge both update
-// from what the server actually stored rather than optimistically.
-async function openInbound(row: InboundMail) {
-  const d = await get<{ mail: InboundMail }>(`/inbound-mails/${row.id}`)
-  openedInbound.value = d.mail
-  inboundOpen.value = true
-  if (!row.isRead) {
-    row.isRead = true
-    unreadCount.value = Math.max(0, unreadCount.value - 1)
+// A row click is a navigation; the route watcher does the fetching.
+function openInbound(row: InboundMail) {
+  pushState({ mail: row.id })
+}
+
+// Fetches the mail named in the URL. Opening marks it read server-side; the
+// row (when the list is loaded) and the badge follow.
+async function openDetail(id: string) {
+  try {
+    const d = await get<{ mail: InboundMail }>(`/inbound-mails/${id}`)
+    openedInbound.value = d.mail
+    const row = inbound.value.find((r) => r.id === id)
+    if (row && !row.isRead) {
+      row.isRead = true
+      unreadCount.value = Math.max(0, unreadCount.value - 1)
+    }
+    loadThread(d.mail)
+  } catch {
+    // A dead link — deleted mail, somebody else's id — falls back to the
+    // list rather than a blank page.
+    pushState({ mail: '' })
   }
-  // The conversation around it, fetched after the mail itself is already on
-  // screen. Only a real exchange (more than this one message) switches the
-  // drawer into thread mode; the opened mail arrives expanded, history
-  // collapsed to one line each.
+}
+
+// The conversation around it, fetched after the mail itself is already on
+// screen. Only a real exchange (more than this one message) switches the
+// page into thread mode; the opened mail arrives expanded, history
+// collapsed to one line each.
+async function loadThread(mail: InboundMail) {
   threadItems.value = []
   expandedThread.value = new Set()
-  if (d.mail.threadKey) {
-    try {
-      const tr = await get<{ items: ThreadItem[] }>('/mail-threads', { key: d.mail.threadKey })
-      if ((tr.items ?? []).length > 1) {
-        threadItems.value = tr.items
-        expandedThread.value = new Set([`IN:${d.mail.id}`])
-      }
-    } catch {
-      /* the single-mail view already covers the failure */
+  if (!mail.threadKey) return
+  try {
+    const tr = await get<{ items: ThreadItem[] }>('/mail-threads', { key: mail.threadKey })
+    if ((tr.items ?? []).length > 1) {
+      threadItems.value = tr.items
+      expandedThread.value = new Set([`IN:${mail.id}`])
     }
+  } catch {
+    /* the single-mail view already covers the failure */
   }
 }
 
@@ -925,35 +1050,32 @@ async function toggleStar(row: InboundMail) {
   if (folder.value === 'starred' && !row.isStarred) load()
 }
 
-// The reader-drawer actions: mark unread, archive/unarchive, trash/restore.
-// Each closes the drawer and reloads — the row just left this view.
+// The detail-page actions: mark unread, archive/unarchive, trash/restore.
+// Each navigates back to the list and reloads — the mail just left this view.
 async function markOpened(flags: Record<string, boolean>) {
   if (!openedInbound.value) return
   await post(`/inbound-mails/${openedInbound.value.id}/mark`, flags)
-  inboundOpen.value = false
+  pushState({ mail: '' })
   load()
   refreshUnread()
 }
 
-// Reply and forward hand the opened mail to the composer, which prefills
+// Reply and forward open the composer over the detail page — cancelling it
+// lands back on the mail, not on the list. The composer prefills
 // recipient/subject/quote; the server does the threading (reply) and carries
 // the original's attachments (forward).
 async function replyToInbound() {
   if (!openedInbound.value) return
-  const mail = openedInbound.value
-  inboundOpen.value = false
   composing.value = true
   await nextTick()
-  composer.value?.openReply(mail)
+  composer.value?.openReply(openedInbound.value)
 }
 
 async function forwardInbound() {
   if (!openedInbound.value) return
-  const mail = openedInbound.value
-  inboundOpen.value = false
   composing.value = true
   await nextTick()
-  composer.value?.openForward(mail)
+  composer.value?.openForward(openedInbound.value)
 }
 
 async function syncNow() {
@@ -990,10 +1112,16 @@ async function refreshAttentionCount() {
 }
 
 function onSent() {
-  folder.value = 'sent'
-  reload()
   refreshAttentionCount()
   loadDraftCount()
+  // A mail sent from inside another mail stays there, Gmail-style: the reply
+  // appears in the conversation underneath. A fresh compose goes to the sent
+  // folder to watch the delivery.
+  if (openedInbound.value) {
+    loadThread(openedInbound.value)
+    return
+  }
+  pushState({ folder: 'sent', page: 1, q: '', sent: 'erp', mail: '' })
 }
 
 // "Hans Weber, Mike Chen and 3 others" — how a mailbox summarises a send
@@ -1263,9 +1391,17 @@ async function doUnsuppress(row: Suppression) {
 :deep(.unread-row) {
   font-weight: 500;
 }
+.detail-top {
+  margin-bottom: 8px;
+}
+.back-btn {
+  padding-left: 0;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
 .in-subject {
   margin: 0 0 10px;
-  font-size: 18px;
+  font-size: 20px;
 }
 .in-meta {
   display: flex;
