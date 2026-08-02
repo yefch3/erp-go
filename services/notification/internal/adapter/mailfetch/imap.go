@@ -48,7 +48,7 @@ func (f *IMAP) Fetch(ctx context.Context, acct app.MailAccount, folder string, s
 	if err != nil {
 		return out, err
 	}
-	defer c.Logout()
+	defer func() { _ = c.Logout() }()
 
 	if err := f.login(c, acct); err != nil {
 		return out, err
@@ -117,7 +117,7 @@ func (f *IMAP) FetchBelow(ctx context.Context, acct app.MailAccount, folder stri
 	if err != nil {
 		return out, err
 	}
-	defer c.Logout()
+	defer func() { _ = c.Logout() }()
 
 	if err := f.login(c, acct); err != nil {
 		return out, err
@@ -173,7 +173,7 @@ func (f *IMAP) specialFolder(acct app.MailAccount, attr string, guesses []string
 	if err != nil {
 		return "", err
 	}
-	defer c.Logout()
+	defer func() { _ = c.Logout() }()
 	if err := f.login(c, acct); err != nil {
 		return "", err
 	}
@@ -256,7 +256,7 @@ func (f *IMAP) VerifyLogin(ctx context.Context, acct app.MailAccount) error {
 	if err != nil {
 		return err
 	}
-	defer c.Logout()
+	defer func() { _ = c.Logout() }()
 	return f.login(c, acct)
 }
 
@@ -321,7 +321,7 @@ func (f *IMAP) WaitForNews(ctx context.Context, acct app.MailAccount, folder str
 	if err != nil {
 		return false, err
 	}
-	defer c.Logout()
+	defer func() { _ = c.Logout() }()
 	// The command timeout must not apply here: an idle connection is
 	// legitimately silent for long stretches, and a 90-second read deadline
 	// would kill every quiet wait. The IDLE restart below is what keeps the
