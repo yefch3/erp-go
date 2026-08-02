@@ -69,6 +69,212 @@ service EmailService {
   rpc ListSuppressions(ListSuppressionsRequest) returns (ListSuppressionsResponse);
   rpc AddSuppression(AddSuppressionRequest) returns (AddSuppressionResponse);
   rpc RemoveSuppression(RemoveSuppressionRequest) returns (RemoveSuppressionResponse);
+
+  // How this company reaches its mail host — the values off the provider's
+  // admin console. Administrative: one setting for everybody.
+  rpc GetMailHost(GetMailHostRequest) returns (GetMailHostResponse);
+  rpc SaveMailHost(SaveMailHostRequest) returns (SaveMailHostResponse);
+
+  // The caller's own mailbox. There is deliberately no employee_id on any of
+  // these: nobody sets somebody else's authorisation code, administrators
+  // included, because the only way to hold one is to have been given it by
+  // the person it belongs to.
+  rpc GetMyMailAccount(GetMyMailAccountRequest) returns (GetMyMailAccountResponse);
+
+  // Records that a tracking pixel was fetched. Called by the gateway on
+  // behalf of a recipient's mail client, which has no session.
+  rpc RecordOpen(RecordOpenRequest) returns (RecordOpenResponse);
+
+  // Proves the caller controls their mailbox by logging in to the mail host
+  // with the code they typed, live. An ERP session alone must not open the
+  // mailbox: this is what stands between a walked-away-from workstation and
+  // somebody's correspondence.
+  rpc VerifyMailAccess(VerifyMailAccessRequest) returns (VerifyMailAccessResponse);
+
+  // Turns a Google authorisation code into a bound mailbox. The person
+  // signed in on Google's own page; their password never existed here.
+  rpc CompleteGoogleOAuth(CompleteGoogleOAuthRequest) returns (CompleteGoogleOAuthResponse);
+
+  // Mail that arrived. A separate surface from the sent side because the two
+  // have almost nothing in common: one is a delivery attempt with retries and
+  // a provider verdict, the other is a document somebody sent us.
+  rpc ListInbound(ListInboundRequest) returns (ListInboundResponse);
+  rpc GetInbound(GetInboundRequest) returns (GetInboundResponse);
+  // Inbox housekeeping: read/unread, star, archive, trash. ERP-side state
+  // only — never written back to the mail host.
+  rpc MarkInbound(MarkInboundRequest) returns (MarkInboundResponse);
+  // Mail this mailbox sent — through any client, over whatever history the
+  // backfill has reached. ERP sends live in ListMessages with per-recipient
+  // status; these are plain copies from the host's own Sent folder.
+  rpc ListMailboxSent(ListMailboxSentRequest) returns (ListMailboxSentResponse);
+  // Pull now rather than waiting for the next poll. A mail host offers no
+  // webhook, so this is the "refresh" a person reaches for.
+  rpc SyncMailbox(SyncMailboxRequest) returns (SyncMailboxResponse);
+}
+
+// InboundMail is one received message as a list shows it.
+message InboundMail {
+  int64 id = 1;
+  string from_email = 2;
+  string from_name = 3;
+  string subject = 4;
+  string snippet = 5;
+  string thread_key = 6;
+  bool is_read = 7;
+  bool has_attachments = 8;
+  string received_at = 9;
+  string sent_at = 10;
+  // Only on the single read.
+  string body_html = 11;
+  string body_text = 12;
+  string to_email = 13;
+  repeated InboundAttachment attachments = 14;
+  bool is_starred = 15;
+}
+
+message InboundAttachment {
+  int64 id = 1;
+  string file_name = 2;
+  string content_type = 3;
+  int64 file_size = 4;
+}
+
+message ListInboundRequest {
+  erp.common.v1.PageRequest page = 1;
+  string keyword = 2;
+  // Which slice of the mailbox: empty/INBOX (not archived, not trashed),
+  // STARRED, ARCHIVE, or TRASH.
+  string view = 3;
+}
+
+message ListInboundResponse {
+  repeated InboundMail mails = 1;
+  erp.common.v1.PageMeta meta = 2;
+  int32 unread_count = 3;
+}
+
+message GetInboundRequest {
+  int64 id = 1;
+}
+
+message GetInboundResponse {
+  InboundMail mail = 1;
+}
+
+// Absent fields leave that flag alone; only what the caller sets changes.
+message MarkInboundRequest {
+  int64 id = 1;
+  optional bool read = 2;
+  optional bool starred = 3;
+  optional bool archived = 4;
+  optional bool deleted = 5;
+}
+
+message MarkInboundResponse {
+  bool ok = 1;
+}
+
+message ListMailboxSentRequest {
+  erp.common.v1.PageRequest page = 1;
+  string keyword = 2;
+}
+
+message ListMailboxSentResponse {
+  repeated InboundMail mails = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message SyncMailboxRequest {}
+
+message SyncMailboxResponse {
+  int32 fetched = 1;
+  string detail = 2;
+}
+
+message RecordOpenRequest {
+  string message_key = 1;
+  string user_agent = 2;
+  string ip = 3;
+}
+
+message RecordOpenResponse {
+  bool ok = 1;
+}
+
+message VerifyMailAccessRequest {
+  // The authorisation code, typed now — never read from storage. Verifying
+  // the stored one would prove the system knows it, not that the person does.
+  string secret = 1;
+  // The address typed on the sign-in form. When set, this is a password
+  // sign-in that is also the binding: the pair is verified by a live login
+  // FIRST, and only success is allowed to touch storage — a mistyped code
+  // must never overwrite a working credential or destroy a Google binding.
+  // Empty means "verify what is already bound" (the Google path).
+  string email = 2;
+}
+
+message VerifyMailAccessResponse {
+  bool ok = 1;
+  string detail = 2;
+}
+
+message CompleteGoogleOAuthRequest {
+  string code = 1;
+  // Must byte-match the redirect_uri the auth URL carried, or Google
+  // refuses the exchange.
+  string redirect_uri = 2;
+}
+
+message CompleteGoogleOAuthResponse {
+  // The address Google says this grant belongs to.
+  string email = 1;
+}
+
+// MailHost carries no credentials, which is why it can be read back freely.
+message MailHost {
+  string domain = 1;
+  string smtp_host = 2;
+  int32 smtp_port = 3;
+  // SSL, STARTTLS or NONE.
+  string smtp_security = 4;
+  string imap_host = 5;
+  int32 imap_port = 6;
+  string imap_security = 7;
+  int32 hourly_quota = 8;
+  int32 daily_quota = 9;
+}
+
+message GetMailHostRequest {}
+
+message GetMailHostResponse {
+  MailHost host = 1;
+}
+
+message SaveMailHostRequest {
+  MailHost host = 1;
+}
+
+message SaveMailHostResponse {
+  bool ok = 1;
+}
+
+// MailAccount never carries the secret in either direction on a read. The
+// settings page shows whether one is stored, not what it is.
+message MailAccount {
+  string email = 1;
+  string username = 2;
+  bool has_secret = 3;
+  string verified_at = 4;
+  string last_error = 5;
+  bool is_active = 6;
+  // PASSWORD or OAUTH — decides which unlock the gate offers.
+  string auth_kind = 7;
+}
+
+message GetMyMailAccountRequest {}
+
+message GetMyMailAccountResponse {
+  MailAccount account = 1;
 }
 
 // Campaign is one bulk send, summarised. The counts are derived from the
@@ -316,6 +522,18 @@ message CreateCampaignRequest {
   // outcome cannot be determined.
   string kind = 4;
   repeated Recipient recipients = 5;
+  // SEPARATE (default): one personalised copy per recipient, invisible to
+  // each other. MERGED: one shared mail - everybody on the To and CC lists
+  // sees everybody else, and the whole cast goes out in one transaction.
+  string send_mode = 8;
+  // Carbon copies. Meaningful only for MERGED sends.
+  repeated Recipient cc = 9;
+  // Set when this send answers a mail in the caller's inbox: threading
+  // headers and the thread key are taken from that message.
+  int64 reply_to_inbound_id = 10;
+  // Set when forwarding a mail from the caller's inbox: the original's
+  // attachments travel along.
+  int64 forward_inbound_id = 11;
 }
 
 message CreateCampaignResponse {

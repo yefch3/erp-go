@@ -43,6 +43,11 @@
           {{ t('menu.emails') }}
         </el-menu-item>
         <el-menu-item v-if="auth.can('fx:rate:read')" index="/fx">{{ t('menu.fx') }}</el-menu-item>
+        <!-- Only rendered for somebody whose scope reaches past themselves;
+             the server enforces it regardless. -->
+        <el-menu-item v-if="auth.can('notification:email:read')" index="/team-mail">
+          {{ t('menu.teamMail') }}
+        </el-menu-item>
         <el-menu-item v-if="auth.can('iam:employee:read')" index="/settings/employees">
           {{ t('menu.employees') }}
         </el-menu-item>

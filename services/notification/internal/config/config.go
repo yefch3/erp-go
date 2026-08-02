@@ -26,9 +26,38 @@ type Config struct {
 	MinioBucket         string
 	MinioUseSSL         bool
 
+	// Base64 of a 32-byte key encrypting stored mailbox credentials. There is
+	// no default and there must never be one: a built-in fallback produces a
+	// system that looks encrypted and is not.
+	CredKey        string
+	CredKeyVersion int
+
 	BatchSize      int32
 	SendDelay      time.Duration
 	DecisionWindow time.Duration
+	// How long one SMTP conversation may take end to end. Mail hosts are
+	// slower than APIs, and a greylisting server can sit on a connection for
+	// a while before answering.
+	SendTimeout time.Duration
+
+	// Inbound polling. The interval is the honest latency of having no
+	// webhook: a customer's reply appears within one cycle, not instantly.
+	SyncInterval time.Duration
+	SyncTimeout  time.Duration
+	SyncBatch    int
+	// Messages of history to hold per folder; the backfill stops here.
+	SyncHistory int
+	// Redis, for pushing "new mail" hints to open browser tabs.
+	RedisAddr string
+	// Google OAuth application credentials. The secret identifies our app to
+	// Google, never a user to anything.
+	GoogleClientID     string
+	GoogleClientSecret string
+
+	// Where a recipient's mail client can reach the gateway. Empty disables
+	// open tracking: a pixel pointing at localhost would tell the recipient's
+	// client to fetch from their own machine, which is worse than no pixel.
+	PublicBaseURL string
 }
 
 func Load() Config {
@@ -47,9 +76,21 @@ func Load() Config {
 		MinioBucket:         env("MINIO_BUCKET", "erp-files"),
 		MinioUseSSL:         os.Getenv("MINIO_USE_SSL") == "true",
 
-		BatchSize:      int32(envInt("MAIL_BATCH_SIZE", 20)),
-		SendDelay:      envDuration("MAIL_SEND_DELAY", 100*time.Millisecond),
-		DecisionWindow: envDuration("MAIL_DECISION_WINDOW", 10*time.Minute),
+		CredKey:        os.Getenv("MAIL_CRED_KEY"),
+		CredKeyVersion: envInt("MAIL_CRED_KEY_VERSION", 1),
+
+		BatchSize:          int32(envInt("MAIL_BATCH_SIZE", 20)),
+		SendDelay:          envDuration("MAIL_SEND_DELAY", 100*time.Millisecond),
+		DecisionWindow:     envDuration("MAIL_DECISION_WINDOW", 10*time.Minute),
+		SendTimeout:        envDuration("MAIL_SEND_TIMEOUT", 45*time.Second),
+		SyncInterval:       envDuration("MAIL_SYNC_INTERVAL", 2*time.Minute),
+		SyncTimeout:        envDuration("MAIL_SYNC_TIMEOUT", 90*time.Second),
+		SyncBatch:          envInt("MAIL_SYNC_BATCH", 50),
+		SyncHistory:        envInt("MAIL_SYNC_HISTORY", 500),
+		RedisAddr:          os.Getenv("REDIS_ADDR"),
+		GoogleClientID:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
+		GoogleClientSecret: os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
+		PublicBaseURL:      os.Getenv("MAIL_PUBLIC_BASE_URL"),
 	}
 }
 

@@ -16,6 +16,10 @@ export const http = axios.create({ baseURL: '/api', timeout: 15000 })
 http.interceptors.request.use((cfg) => {
   const token = localStorage.getItem('token')
   if (token) cfg.headers.Authorization = `Bearer ${token}`
+  // The mailbox unlock proof. sessionStorage on purpose: closing the browser
+  // locks the mailbox again, which is the behaviour a lock should have.
+  const unlock = sessionStorage.getItem('mailUnlock')
+  if (unlock) cfg.headers['X-Mail-Unlock'] = unlock
   return cfg
 })
 
@@ -33,6 +37,12 @@ http.interceptors.response.use(
     if (err.response?.status === 401) {
       localStorage.removeItem('token')
       router.push('/login')
+    }
+    // The unlock expired server-side; holding the dead token would keep
+    // every mail request failing quietly. Dropping it makes the gate
+    // reappear on the next visit to the mailbox.
+    if (env?.code === 'MAIL_LOCKED') {
+      sessionStorage.removeItem('mailUnlock')
     }
     ElMessage.error(env?.message || err.message || i18n.global.t('common.networkError'))
     return Promise.reject(env ?? err)

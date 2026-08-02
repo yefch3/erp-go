@@ -4,19 +4,50 @@
     :title="t('emails.compose')"
     width="1000px"
     top="4vh"
+    :close-on-click-modal="false"
+    :before-close="onBeforeClose"
     @update:model-value="close"
   >
-    <!-- Stated once, plainly, where the person sending can see it. The
-         one-message-per-recipient guarantee is invisible in the UI otherwise,
-         and the whole reason this feature exists is that people have been
-         burned by BCC lists leaking. -->
-    <el-alert type="info" :closable="false" class="privacy" show-icon>
-      {{ t('emails.privacyNote') }}
+    <!-- Stated once, plainly, where the person sending can see it: which of
+         the two promises this send makes. Separate = nobody sees anybody
+         else; merged = everybody sees everybody, on purpose. -->
+    <el-alert
+      :type="form.sendMode === 'MERGED' ? 'warning' : 'info'"
+      :closable="false"
+      class="privacy"
+      show-icon
+    >
+      {{ form.sendMode === 'MERGED' ? t('emails.privacyNoteMerged') : t('emails.privacyNote') }}
+    </el-alert>
+    <el-alert
+      v-if="replyCtx.forwardInboundId !== '0'"
+      type="info"
+      :closable="false"
+      class="privacy"
+      show-icon
+    >
+      {{ t('emails.forwardCarries') }}
     </el-alert>
 
     <el-form label-width="88px" class="compose-form">
+      <el-form-item :label="t('emails.sendModeLabel')">
+        <div class="body-box">
+          <el-radio-group v-model="form.sendMode">
+            <el-radio value="SEPARATE">{{ t('emails.modeSeparate') }}</el-radio>
+            <el-radio value="MERGED">{{ t('emails.modeMerged') }}</el-radio>
+          </el-radio-group>
+          <div class="var-hint">
+            {{ form.sendMode === 'MERGED' ? t('emails.modeMergedHint') : t('emails.modeSeparateHint') }}
+          </div>
+        </div>
+      </el-form-item>
+
       <el-form-item :label="t('emails.recipients')">
         <RecipientField v-model="selected" />
+      </el-form-item>
+
+      <el-form-item v-if="form.sendMode === 'MERGED'" :label="t('emails.ccLabel')">
+        <RecipientField v-model="ccSelected" />
       </el-form-item>
 
       <el-form-item :label="t('emails.subject')">
@@ -31,7 +62,10 @@
               <el-radio-button value="TEXT">{{ t('emails.plain') }}</el-radio-button>
             </el-radio-group>
             <span class="grow" />
-            <template v-if="form.format === 'TEXT'">
+            <span v-if="form.sendMode === 'MERGED'" class="var-hint">
+              {{ t('emails.mergedNoVars') }}
+            </span>
+            <template v-if="form.format === 'TEXT' && form.sendMode !== 'MERGED'">
               <span class="var-hint">{{ t('emails.insertVariable') }}</span>
               <el-button
                 v-for="v in VARIABLES"
@@ -104,9 +138,10 @@
       </el-form-item>
     </el-form>
 
-    <!-- Preview is not optional decoration. An unresolved variable is only
-         obvious when somebody sees the gap where the name should be, so the
-         send button stays disabled until one has been rendered. -->
+    <!-- Preview is not optional decoration: an unresolved variable is only
+         obvious when somebody sees the gap where the name should be. Send
+         runs it automatically when it has not been run by hand, and an
+         unclean result blocks the send with this panel open. -->
     <el-card v-if="preview" shadow="never" class="preview">
       <div class="preview-head">
         <strong>{{ t('emails.previewFor', { n: previewName }) }}</strong>
@@ -132,17 +167,12 @@
       </el-alert>
     </el-card>
 
-    <el-dialog v-model="variablePickerOpen" :title="t('emails.insertVariable')" width="420px" append-to-body>
-      <div class="var-list">
-        <el-button v-for="v in VARIABLES" :key="v" @click="insertVariableRich(v)">
-          {{ t(`emails.vars.${v}`) }}
-        </el-button>
-      </div>
-    </el-dialog>
-
     <template #footer>
       <span class="foot">
-        <el-button @click="close">{{ common('cancel') }}</el-button>
+        <!-- Called with explicit parens: bare @click hands the handler a
+             MouseEvent, which is how this button once emitted a truthy value
+             and told the parent to stay open. -->
+        <el-button @click="requestClose()">{{ common('cancel') }}</el-button>
         <el-button :loading="savingDraft" @click="saveDraft">
           {{ t('emails.saveDraft') }}
         </el-button>
@@ -151,7 +181,7 @@
         </el-button>
         <el-button
           type="primary"
-          :disabled="!canSend"
+          :disabled="!canPreview"
           :loading="sending"
           @click="doSend"
         >
@@ -160,6 +190,14 @@
       </span>
     </template>
   </el-dialog>
+
+    <el-dialog v-model="variablePickerOpen" :title="t('emails.insertVariable')" width="420px" append-to-body>
+      <div class="var-list">
+        <el-button v-for="v in VARIABLES" :key="v" @click="insertVariableRich(v)">
+          {{ t(`emails.vars.${v}`) }}
+        </el-button>
+      </div>
+    </el-dialog>
 </template>
 
 <script setup lang="ts">
@@ -220,8 +258,22 @@ const emit = defineEmits<{ 'update:modelValue': [boolean]; sent: []; saved: [] }
 const { t } = useI18n()
 const common = (k: string) => t(`common.${k}`)
 
-const form = reactive({ subject: '', body: '', signatureId: '0', format: 'HTML' })
+const form = reactive({
+  subject: '',
+  body: '',
+  signatureId: '0',
+  format: 'HTML',
+  // SEPARATE: one copy per recipient, invisible to each other. MERGED: one
+  // shared mail where To and CC are open — the mode for writing to the three
+  // people at one customer, not for campaigns.
+  sendMode: 'SEPARATE',
+})
 const attachments = ref<PendingFile[]>([])
+const ccSelected = ref<Recipient[]>([])
+// Set when this compose answers or forwards a mail from the inbox. '0' means
+// a fresh mail. The server takes threading headers (reply) or the original's
+// attachments (forward) from the referenced message.
+const replyCtx = reactive({ replyToInboundId: '0', forwardInboundId: '0' })
 const variablePickerOpen = ref(false)
 const savingDraft = ref(false)
 // Set once a draft has been saved or opened, so later saves update that row
@@ -234,15 +286,54 @@ const previewing = ref(false)
 const sending = ref(false)
 const bodyInput = ref()
 
+// The content as it stood the last time walking away cost nothing: a fresh
+// compose, a draft just loaded, or a draft just saved. Cancel compares against
+// this rather than against emptiness, so reopening a saved draft and closing
+// it again does not claim work is about to be lost when it is not.
+let baseline = ''
+
+// The rich editor leaves markup behind even when the box looks empty, so an
+// emptiness test has to read the text rather than the tags.
+function plainBody() {
+  return form.body.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
+}
+
+function signature() {
+  return JSON.stringify([
+    form.subject.trim(),
+    plainBody(),
+    form.format,
+    form.signatureId,
+    form.sendMode,
+    selected.value.map((r) => r.email).sort(),
+    ccSelected.value.map((r) => r.email).sort(),
+    attachments.value.map((a) => a.fileKey).sort(),
+    replyCtx.replyToInboundId,
+    replyCtx.forwardInboundId,
+  ])
+}
+
+function hasContent() {
+  return (
+    form.subject.trim() !== '' ||
+    plainBody() !== '' ||
+    selected.value.length > 0 ||
+    attachments.value.length > 0
+  )
+}
+
+function markClean() {
+  baseline = signature()
+}
+
+const isDirty = () => signature() !== baseline
+
 const canPreview = computed(
   () => selected.value.length > 0 && form.subject.trim() !== '' && form.body.trim() !== '',
 )
-// Sending needs a preview to have been rendered first, and that preview to
-// have resolved cleanly. Sending "Dear {{contact_name}}," is not recoverable.
-const canSend = computed(
-  () => canPreview.value && preview.value !== null && preview.value.missingVariables.length === 0,
+const previewName = computed(() =>
+  form.sendMode === 'MERGED' ? t('emails.allRecipients') : (selected.value[0]?.name ?? ''),
 )
-const previewName = computed(() => selected.value[0]?.name ?? '')
 
 // Any edit invalidates the preview: a stale one would vouch for text that is
 // no longer what would be sent.
@@ -259,7 +350,7 @@ const egressWarning = computed(() => {
 })
 
 watch(
-  () => [form.subject, form.body, form.signatureId, form.format, selected.value.length, attachments.value.length],
+  () => [form.subject, form.body, form.signatureId, form.format, form.sendMode, selected.value.length, ccSelected.value.length, attachments.value.length],
   () => {
     preview.value = null
   },
@@ -269,9 +360,6 @@ watch(
   () => props.modelValue,
   (open) => {
     if (!open) return
-    // A draft being opened sets its own state right after this fires, so
-    // only a fresh compose starts from blank.
-    if (draftId.value === '0') reset()
     loadSignatures()
   },
 )
@@ -292,8 +380,69 @@ async function openDraft(id: string) {
     size: 0,
   }))
   preview.value = null
+  // Everything on screen is already stored, so closing now loses nothing.
+  markClean()
 }
-defineExpose({ openDraft })
+// What reply and forward need from the mail being answered.
+interface QuotedMail {
+  id: string
+  fromEmail: string
+  fromName?: string
+  subject?: string
+  bodyHtml?: string
+  bodyText?: string
+}
+
+function escapeText(s: string) {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>')
+}
+
+// The original message, quoted the way every client quotes: attribution line,
+// then the body in a blockquote. The HTML came sanitised from the server; the
+// text fallback is escaped here before it becomes markup.
+function quotedBlock(mail: QuotedMail) {
+  const inner = mail.bodyHtml || `<p>${escapeText(mail.bodyText || '')}</p>`
+  const who = escapeText(mail.fromName || mail.fromEmail)
+  return (
+    `<p><br></p><p>${who} &lt;${escapeText(mail.fromEmail)}&gt; ${escapeText(t('emails.wrote'))}</p>` +
+    `<blockquote>${inner}</blockquote>`
+  )
+}
+
+function prefixSubject(subject: string, tag: string) {
+  const s = (subject || '').trim()
+  return s.toLowerCase().startsWith(tag.toLowerCase()) ? s : `${tag} ${s}`
+}
+
+// Prefills a reply: the sender becomes the recipient, the subject gains Re:,
+// the original is quoted, and the server threads it via replyToInboundId.
+// markClean afterwards — the prefill is machine work, losing it costs nothing.
+function openReply(mail: QuotedMail) {
+  reset()
+  replyCtx.replyToInboundId = mail.id
+  selected.value = [{ name: mail.fromName || '', email: mail.fromEmail }]
+  form.subject = prefixSubject(mail.subject || '', 'Re:')
+  form.format = 'HTML'
+  form.body = quotedBlock(mail)
+  markClean()
+}
+
+// Prefills a forward: no recipient yet, subject gains Fwd:, the original is
+// quoted and its attachments travel along server-side.
+function openForward(mail: QuotedMail) {
+  reset()
+  replyCtx.forwardInboundId = mail.id
+  form.subject = prefixSubject(mail.subject || '', 'Fwd:')
+  form.format = 'HTML'
+  form.body = quotedBlock(mail)
+  markClean()
+}
+
+defineExpose({ openDraft, openReply, openForward })
 
 async function saveDraft() {
   savingDraft.value = true
@@ -326,9 +475,14 @@ function reset() {
   form.body = ''
   form.format = 'HTML'
   form.signatureId = '0'
+  form.sendMode = 'SEPARATE'
   attachments.value = []
   selected.value = []
+  ccSelected.value = []
+  replyCtx.replyToInboundId = '0'
+  replyCtx.forwardInboundId = '0'
   preview.value = null
+  markClean()
 }
 
 async function loadSignatures() {
@@ -336,6 +490,10 @@ async function loadSignatures() {
   signatures.value = d.signatures ?? []
   const def = signatures.value.find((s) => s.isDefault)
   if (def) form.signatureId = def.id
+  // Applying the tenant default is the app's doing, not the user's, so it must
+  // not register as unsaved work. Guarded because this resolves asynchronously
+  // and must never overwrite a baseline once somebody has started writing.
+  if (!hasContent()) markClean()
 }
 
 // Inserts at the cursor rather than appending, so a variable can be dropped
@@ -380,6 +538,12 @@ function onFormatChange() {
 
 function insertVariableRich(name: string) {
   variablePickerOpen.value = false
+  if (form.sendMode === 'MERGED') {
+    // One shared body cannot carry a per-recipient value; better refused at
+    // the button than bounced by the server at send time.
+    ElMessage.warning(t('emails.mergedNoVars'))
+    return
+  }
   document.execCommand('insertText', false, `{{${name}}}`)
 }
 
@@ -411,7 +575,13 @@ async function uploadAttachment(file: File) {
 }
 
 async function doPreview() {
-  const r = selected.value[0]
+  // Merged mode previews against nobody: whatever fails to resolve is
+  // exactly the set of per-recipient variables, which one shared body
+  // cannot carry — surfacing them here is what blocks the send.
+  const r =
+    form.sendMode === 'MERGED'
+      ? { contactId: '0', name: '', email: '', customerId: '0', customerName: '' }
+      : selected.value[0]
   previewing.value = true
   try {
     preview.value = await post<Preview>('/email-campaigns/preview', {
@@ -432,9 +602,41 @@ async function doPreview() {
   }
 }
 
+// Guards the whole click-to-confirm stretch, not just the network call:
+// without it a double click stacks two confirm dialogs, and confirming both
+// sends the mail twice.
+let sendFlowBusy = false
+
 async function doSend() {
+  if (sendFlowBusy) return
+  sendFlowBusy = true
+  try {
+    await doSendInner()
+  } catch {
+    /* the person cancelled the confirm — not an error */
+  } finally {
+    sendFlowBusy = false
+  }
+}
+
+async function doSendInner() {
+  // The preview-before-send rule stands — "Dear {{contact_name}}," is not
+  // recoverable — but the machine can run the preview itself. Only a preview
+  // that fails to resolve stops the send, and then the panel says why.
+  if (!preview.value) {
+    await doPreview()
+    if (!preview.value) return
+  }
+  if (preview.value.missingVariables?.length) {
+    ElMessage.warning(t('emails.missingVars', { v: preview.value.missingVariables.join('、') }))
+    return
+  }
+  const headCount =
+    selected.value.length + (form.sendMode === 'MERGED' ? ccSelected.value.length : 0)
   await ElMessageBox.confirm(
-    t('emails.confirmSend', { n: selected.value.length }),
+    form.sendMode === 'MERGED'
+      ? t('emails.confirmSendMerged', { n: headCount })
+      : t('emails.confirmSend', { n: headCount }),
     t('emails.confirmSendTitle'),
     { type: 'warning' },
   )
@@ -465,23 +667,28 @@ async function doSend() {
       close(false)
       return
     }
+    const asProto = (r: Recipient) => ({
+      contactId: r.contactId,
+      name: r.name,
+      email: r.email,
+      customerId: r.customerId,
+      customerName: r.customerName,
+    })
     const res = await post<CreateResult>('/email-campaigns', {
       subject: form.subject,
       body: form.body,
       bodyFormat: form.format,
       signatureId: form.signatureId,
       kind: 'MARKETING',
+      sendMode: form.sendMode,
+      cc: form.sendMode === 'MERGED' ? ccSelected.value.map(asProto) : [],
+      replyToInboundId: replyCtx.replyToInboundId,
+      forwardInboundId: replyCtx.forwardInboundId,
       attachments: attachments.value.map((a) => ({
         fileName: a.fileName,
         fileKey: a.fileKey,
       })),
-      recipients: selected.value.map((r) => ({
-        contactId: r.contactId,
-        name: r.name,
-        email: r.email,
-        customerId: r.customerId,
-        customerName: r.customerName,
-      })),
+      recipients: selected.value.map(asProto),
     })
     reportResult(res)
     emit('sent')
@@ -509,8 +716,50 @@ function reportResult(res: CreateResult) {
   })
 }
 
+// Every way out of the composer funnels through here — the footer button, the
+// X, and Escape — so the guard cannot be walked around.
+//
+// Wired to :before-close rather than @close. The close event fires while the
+// dialog is already closing, and emitting from inside it wedges the dialog
+// half-open; before-close is the hook designed to run first and decide.
+// Closing resets. Two bugs lived here: the cancel button was wired as
+// `@click="close"`, so Vue handed it the MouseEvent — a truthy value — and
+// the composer emitted "stay open" instead of closing. And state was only
+// reset when opening, so cancelling a draft left draftId set: the next fresh
+// compose skipped its reset, opened showing the previous draft, and sending
+// it would have deleted that draft.
 function close(v: boolean) {
+  if (!v) reset()
   emit('update:modelValue', v)
+}
+
+// Cancelling bins whatever is in the composer. Ask first — but only when there
+// is something to lose, because confirming an untouched form is pure friction.
+async function confirmDiscard() {
+  if (!isDirty()) return true
+  try {
+    await ElMessageBox.confirm(t('emails.discardHint'), t('emails.discardTitle'), {
+      confirmButtonText: t('emails.discard'),
+      cancelButtonText: t('emails.keepEditing'),
+      type: 'warning',
+    })
+    return true
+  } catch {
+    // Rejects on "keep editing" and on dismissing the confirm itself.
+    return false
+  }
+}
+
+async function requestClose() {
+  if (await confirmDiscard()) close(false)
+}
+
+// Element Plus routes the ✕, Escape and modal clicks through before-close, but
+// not the parent setting the prop false. Guarding here therefore catches every
+// way the user can dismiss the dialog while leaving the programmatic exits —
+// sending, saving a draft — free to close unconditionally.
+async function onBeforeClose(done: () => void) {
+  if (await confirmDiscard()) done()
 }
 </script>
 

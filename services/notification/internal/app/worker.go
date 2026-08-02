@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/sgao19/erp-go/services/notification/internal/store"
@@ -20,7 +21,11 @@ var backoff = []time.Duration{
 
 // WorkerConfig tunes the drain loop.
 type WorkerConfig struct {
-	TenantID int64
+	// Where a recipient's mail client can reach us. Empty disables open
+	// tracking entirely, which is the right default: a pixel pointing at
+	// localhost tells the recipient's client to fetch from their own machine.
+	PublicBaseURL string
+	TenantID      int64
 	// How often to look for work.
 	Interval time.Duration
 	// How many to claim per pass. This is the rate limit: providers cap
@@ -163,17 +168,71 @@ func (s *Service) attachmentsOf(ctx context.Context, tenantID, campaignID int64,
 }
 
 func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMessagesRow, files []Attachment) {
-	res := s.provider.Send(ctx, Outbound{
+	// Pace against the mailbox's own quota before dialling. A host that
+	// refuses us for exceeding a limit does lasting damage to the mailbox's
+	// standing; waiting an hour costs nothing but an hour, so the check
+	// happens here rather than being discovered from a 4xx.
+	if wait, reason := s.overQuota(ctx, cfg.TenantID, m.SenderID); wait > 0 {
+		// Deliberately not counted as an attempt against the backoff budget:
+		// being paced is not a delivery failure, and letting it burn retries
+		// would push a perfectly good message into the attention queue just
+		// for being sent on a busy afternoon.
+		if err := s.q.MarkRetryable(ctx, store.MarkRetryableParams{
+			TenantID: cfg.TenantID, ID: m.ID, LastError: reason,
+			BackoffSeconds: int32(wait.Seconds()),
+		}); err != nil {
+			s.log.Error("could not defer a quota-blocked message", "id", m.ID, "err", err)
+		}
+		return
+	}
+
+	// The open pixel goes in here rather than at compose time, so what is
+	// stored is what the person wrote and what goes out is what the person
+	// wrote plus one image. A draft reopened later is not polluted by it.
+	body := m.Body
+	if m.BodyFormat == "HTML" {
+		body = InjectOpenPixel(body, cfg.PublicBaseURL, m.MessageKey)
+	}
+
+	out := Outbound{
 		MessageKey:  m.MessageKey,
+		TenantID:    cfg.TenantID,
+		SenderID:    m.SenderID,
 		FromName:    m.SenderName,
 		ToEmail:     m.ToEmail,
 		ToName:      m.ToName,
 		Subject:     m.Subject,
-		Body:        m.Body,
+		Body:        body,
 		BodyText:    m.BodyText,
 		Format:      m.BodyFormat,
 		Attachments: files,
-	})
+		InReplyTo:   m.InReplyTo,
+		References:  m.ReferencesIds,
+	}
+	// A merged message carries its whole cast openly: the To/Cc headers show
+	// everybody and the one transaction covers them all.
+	var recips []store.ListMessageRecipientsRow
+	if m.SendMode == "MERGED" {
+		var err error
+		recips, err = s.q.ListMessageRecipients(ctx, store.ListMessageRecipientsParams{
+			TenantID: cfg.TenantID, MessageID: m.ID,
+		})
+		if err != nil || len(recips) == 0 {
+			s.terminal(ctx, cfg, m.ID, "NEEDS_ATTENTION", "recipient list unreadable",
+				"合并邮件读不到收件人名单，请重试或联系管理员")
+			return
+		}
+		for _, r := range recips {
+			na := NamedAddress{Name: r.Name, Email: r.Email}
+			if r.Kind == "CC" {
+				out.CCList = append(out.CCList, na)
+			} else {
+				out.ToList = append(out.ToList, na)
+			}
+		}
+	}
+
+	res := s.provider.Send(ctx, out)
 
 	switch res.Outcome {
 	case Accepted:
@@ -187,6 +246,8 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 			TenantID: cfg.TenantID, MessageID: m.ID, Kind: "SENT",
 			Detail: res.ProviderID,
 		})
+		s.recordRecipientResults(ctx, cfg, m.ID, recips, res.Rejected)
+		s.countSend(ctx, cfg.TenantID, m.SenderID)
 
 	case Retryable:
 		if int(m.AttemptCount) >= len(backoff) {
@@ -241,6 +302,39 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 		}
 		s.terminal(ctx, cfg, m.ID, "SEND_UNKNOWN", res.Err,
 			"发送超时，无法确定是否已发出——请人工确认后决定重发或放弃")
+	}
+}
+
+// recordRecipientResults writes the per-RCPT verdicts of a merged send. The
+// transaction as a whole was accepted; anyone in rejected got nothing while
+// the others got the mail, which is exactly the fact worth keeping.
+func (s *Service) recordRecipientResults(ctx context.Context, cfg WorkerConfig, msgID int64, recips []store.ListMessageRecipientsRow, rejected []RecipientReject) {
+	if len(recips) == 0 {
+		return
+	}
+	rejectedBy := make(map[string]string, len(rejected))
+	for _, r := range rejected {
+		rejectedBy[strings.ToLower(r.Email)] = r.Detail
+	}
+	for _, r := range recips {
+		status, detail := "ACCEPTED", ""
+		if d, hit := rejectedBy[strings.ToLower(r.Email)]; hit {
+			status, detail = "REJECTED", d
+		}
+		if err := s.q.MarkRecipientResult(ctx, store.MarkRecipientResultParams{
+			TenantID: cfg.TenantID, ID: r.ID, Status: status, Detail: detail,
+		}); err != nil {
+			s.log.Error("could not record recipient result", "recipient", r.ID, "err", err)
+		}
+	}
+	if len(rejected) > 0 {
+		s.log.Warn("merged send partially rejected", "message", msgID, "rejected", len(rejected))
+		for _, r := range rejected {
+			_ = s.q.AppendEvent(ctx, store.AppendEventParams{
+				TenantID: cfg.TenantID, MessageID: msgID, Kind: "BOUNCE",
+				Detail: r.Email + ": " + r.Detail,
+			})
+		}
 	}
 }
 

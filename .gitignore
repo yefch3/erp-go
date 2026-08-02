@@ -23,3 +23,6 @@ coverage.out
 # Frontend build output (produced by `npm run build`, never edited by hand)
 /frontend/dist/
 /frontend/node_modules/
+
+# Requirements and planning documents — local working material, never pushed
+/docs/requirements/

@@ -21,11 +21,16 @@ export const router = createRouter({
         { path: 'requirements', component: () => import('./pages/RequirementsPage.vue') },
         { path: 'purchase-orders', component: () => import('./pages/PurchaseOrdersPage.vue') },
         { path: 'emails', component: () => import('./pages/EmailsPage.vue') },
+        { path: 'team-mail', component: () => import('./pages/TeamMailPage.vue') },
         { path: 'fx', component: () => import('./pages/FxPage.vue') },
         { path: 'settings/employees', component: () => import('./pages/EmployeesPage.vue') },
         { path: 'settings/roles', component: () => import('./pages/RolesPage.vue') },
         { path: 'settings/approvals', component: () => import('./pages/ApprovalFlowsPage.vue') },
         { path: 'settings/signatures', component: () => import('./pages/EmailSignaturesPage.vue') },
+        // The old /settings/mailbox page merged into /emails: the sign-in
+        // gate is the account surface now. Kept as a redirect so old
+        // bookmarks and the OAuth-era links still land somewhere sensible.
+        { path: 'settings/mailbox', redirect: '/emails' },
       ],
     },
   ],

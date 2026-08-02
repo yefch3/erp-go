@@ -19,34 +19,45 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	EmailService_ListCampaigns_FullMethodName      = "/erp.notification.v1.EmailService/ListCampaigns"
-	EmailService_GetCampaign_FullMethodName        = "/erp.notification.v1.EmailService/GetCampaign"
-	EmailService_PreviewCampaign_FullMethodName    = "/erp.notification.v1.EmailService/PreviewCampaign"
-	EmailService_CreateCampaign_FullMethodName     = "/erp.notification.v1.EmailService/CreateCampaign"
-	EmailService_ListMessages_FullMethodName       = "/erp.notification.v1.EmailService/ListMessages"
-	EmailService_GetMessage_FullMethodName         = "/erp.notification.v1.EmailService/GetMessage"
-	EmailService_RequeueMessage_FullMethodName     = "/erp.notification.v1.EmailService/RequeueMessage"
-	EmailService_AbandonMessage_FullMethodName     = "/erp.notification.v1.EmailService/AbandonMessage"
-	EmailService_SaveDraft_FullMethodName          = "/erp.notification.v1.EmailService/SaveDraft"
-	EmailService_ListDrafts_FullMethodName         = "/erp.notification.v1.EmailService/ListDrafts"
-	EmailService_GetDraft_FullMethodName           = "/erp.notification.v1.EmailService/GetDraft"
-	EmailService_DeleteDraft_FullMethodName        = "/erp.notification.v1.EmailService/DeleteDraft"
-	EmailService_SendDraft_FullMethodName          = "/erp.notification.v1.EmailService/SendDraft"
-	EmailService_ListSignatures_FullMethodName     = "/erp.notification.v1.EmailService/ListSignatures"
-	EmailService_CreateSignature_FullMethodName    = "/erp.notification.v1.EmailService/CreateSignature"
-	EmailService_DeleteSignature_FullMethodName    = "/erp.notification.v1.EmailService/DeleteSignature"
-	EmailService_PresignAttachment_FullMethodName  = "/erp.notification.v1.EmailService/PresignAttachment"
-	EmailService_RegisterAttachment_FullMethodName = "/erp.notification.v1.EmailService/RegisterAttachment"
-	EmailService_ListAttachments_FullMethodName    = "/erp.notification.v1.EmailService/ListAttachments"
-	EmailService_PresignImage_FullMethodName       = "/erp.notification.v1.EmailService/PresignImage"
-	EmailService_RegisterImage_FullMethodName      = "/erp.notification.v1.EmailService/RegisterImage"
-	EmailService_FetchImage_FullMethodName         = "/erp.notification.v1.EmailService/FetchImage"
-	EmailService_ListImages_FullMethodName         = "/erp.notification.v1.EmailService/ListImages"
-	EmailService_WithdrawImage_FullMethodName      = "/erp.notification.v1.EmailService/WithdrawImage"
-	EmailService_ListSenders_FullMethodName        = "/erp.notification.v1.EmailService/ListSenders"
-	EmailService_ListSuppressions_FullMethodName   = "/erp.notification.v1.EmailService/ListSuppressions"
-	EmailService_AddSuppression_FullMethodName     = "/erp.notification.v1.EmailService/AddSuppression"
-	EmailService_RemoveSuppression_FullMethodName  = "/erp.notification.v1.EmailService/RemoveSuppression"
+	EmailService_ListCampaigns_FullMethodName       = "/erp.notification.v1.EmailService/ListCampaigns"
+	EmailService_GetCampaign_FullMethodName         = "/erp.notification.v1.EmailService/GetCampaign"
+	EmailService_PreviewCampaign_FullMethodName     = "/erp.notification.v1.EmailService/PreviewCampaign"
+	EmailService_CreateCampaign_FullMethodName      = "/erp.notification.v1.EmailService/CreateCampaign"
+	EmailService_ListMessages_FullMethodName        = "/erp.notification.v1.EmailService/ListMessages"
+	EmailService_GetMessage_FullMethodName          = "/erp.notification.v1.EmailService/GetMessage"
+	EmailService_RequeueMessage_FullMethodName      = "/erp.notification.v1.EmailService/RequeueMessage"
+	EmailService_AbandonMessage_FullMethodName      = "/erp.notification.v1.EmailService/AbandonMessage"
+	EmailService_SaveDraft_FullMethodName           = "/erp.notification.v1.EmailService/SaveDraft"
+	EmailService_ListDrafts_FullMethodName          = "/erp.notification.v1.EmailService/ListDrafts"
+	EmailService_GetDraft_FullMethodName            = "/erp.notification.v1.EmailService/GetDraft"
+	EmailService_DeleteDraft_FullMethodName         = "/erp.notification.v1.EmailService/DeleteDraft"
+	EmailService_SendDraft_FullMethodName           = "/erp.notification.v1.EmailService/SendDraft"
+	EmailService_ListSignatures_FullMethodName      = "/erp.notification.v1.EmailService/ListSignatures"
+	EmailService_CreateSignature_FullMethodName     = "/erp.notification.v1.EmailService/CreateSignature"
+	EmailService_DeleteSignature_FullMethodName     = "/erp.notification.v1.EmailService/DeleteSignature"
+	EmailService_PresignAttachment_FullMethodName   = "/erp.notification.v1.EmailService/PresignAttachment"
+	EmailService_RegisterAttachment_FullMethodName  = "/erp.notification.v1.EmailService/RegisterAttachment"
+	EmailService_ListAttachments_FullMethodName     = "/erp.notification.v1.EmailService/ListAttachments"
+	EmailService_PresignImage_FullMethodName        = "/erp.notification.v1.EmailService/PresignImage"
+	EmailService_RegisterImage_FullMethodName       = "/erp.notification.v1.EmailService/RegisterImage"
+	EmailService_FetchImage_FullMethodName          = "/erp.notification.v1.EmailService/FetchImage"
+	EmailService_ListImages_FullMethodName          = "/erp.notification.v1.EmailService/ListImages"
+	EmailService_WithdrawImage_FullMethodName       = "/erp.notification.v1.EmailService/WithdrawImage"
+	EmailService_ListSenders_FullMethodName         = "/erp.notification.v1.EmailService/ListSenders"
+	EmailService_ListSuppressions_FullMethodName    = "/erp.notification.v1.EmailService/ListSuppressions"
+	EmailService_AddSuppression_FullMethodName      = "/erp.notification.v1.EmailService/AddSuppression"
+	EmailService_RemoveSuppression_FullMethodName   = "/erp.notification.v1.EmailService/RemoveSuppression"
+	EmailService_GetMailHost_FullMethodName         = "/erp.notification.v1.EmailService/GetMailHost"
+	EmailService_SaveMailHost_FullMethodName        = "/erp.notification.v1.EmailService/SaveMailHost"
+	EmailService_GetMyMailAccount_FullMethodName    = "/erp.notification.v1.EmailService/GetMyMailAccount"
+	EmailService_RecordOpen_FullMethodName          = "/erp.notification.v1.EmailService/RecordOpen"
+	EmailService_VerifyMailAccess_FullMethodName    = "/erp.notification.v1.EmailService/VerifyMailAccess"
+	EmailService_CompleteGoogleOAuth_FullMethodName = "/erp.notification.v1.EmailService/CompleteGoogleOAuth"
+	EmailService_ListInbound_FullMethodName         = "/erp.notification.v1.EmailService/ListInbound"
+	EmailService_GetInbound_FullMethodName          = "/erp.notification.v1.EmailService/GetInbound"
+	EmailService_MarkInbound_FullMethodName         = "/erp.notification.v1.EmailService/MarkInbound"
+	EmailService_ListMailboxSent_FullMethodName     = "/erp.notification.v1.EmailService/ListMailboxSent"
+	EmailService_SyncMailbox_FullMethodName         = "/erp.notification.v1.EmailService/SyncMailbox"
 )
 
 // EmailServiceClient is the client API for EmailService service.
@@ -112,6 +123,41 @@ type EmailServiceClient interface {
 	ListSuppressions(ctx context.Context, in *ListSuppressionsRequest, opts ...grpc.CallOption) (*ListSuppressionsResponse, error)
 	AddSuppression(ctx context.Context, in *AddSuppressionRequest, opts ...grpc.CallOption) (*AddSuppressionResponse, error)
 	RemoveSuppression(ctx context.Context, in *RemoveSuppressionRequest, opts ...grpc.CallOption) (*RemoveSuppressionResponse, error)
+	// How this company reaches its mail host — the values off the provider's
+	// admin console. Administrative: one setting for everybody.
+	GetMailHost(ctx context.Context, in *GetMailHostRequest, opts ...grpc.CallOption) (*GetMailHostResponse, error)
+	SaveMailHost(ctx context.Context, in *SaveMailHostRequest, opts ...grpc.CallOption) (*SaveMailHostResponse, error)
+	// The caller's own mailbox. There is deliberately no employee_id on any of
+	// these: nobody sets somebody else's authorisation code, administrators
+	// included, because the only way to hold one is to have been given it by
+	// the person it belongs to.
+	GetMyMailAccount(ctx context.Context, in *GetMyMailAccountRequest, opts ...grpc.CallOption) (*GetMyMailAccountResponse, error)
+	// Records that a tracking pixel was fetched. Called by the gateway on
+	// behalf of a recipient's mail client, which has no session.
+	RecordOpen(ctx context.Context, in *RecordOpenRequest, opts ...grpc.CallOption) (*RecordOpenResponse, error)
+	// Proves the caller controls their mailbox by logging in to the mail host
+	// with the code they typed, live. An ERP session alone must not open the
+	// mailbox: this is what stands between a walked-away-from workstation and
+	// somebody's correspondence.
+	VerifyMailAccess(ctx context.Context, in *VerifyMailAccessRequest, opts ...grpc.CallOption) (*VerifyMailAccessResponse, error)
+	// Turns a Google authorisation code into a bound mailbox. The person
+	// signed in on Google's own page; their password never existed here.
+	CompleteGoogleOAuth(ctx context.Context, in *CompleteGoogleOAuthRequest, opts ...grpc.CallOption) (*CompleteGoogleOAuthResponse, error)
+	// Mail that arrived. A separate surface from the sent side because the two
+	// have almost nothing in common: one is a delivery attempt with retries and
+	// a provider verdict, the other is a document somebody sent us.
+	ListInbound(ctx context.Context, in *ListInboundRequest, opts ...grpc.CallOption) (*ListInboundResponse, error)
+	GetInbound(ctx context.Context, in *GetInboundRequest, opts ...grpc.CallOption) (*GetInboundResponse, error)
+	// Inbox housekeeping: read/unread, star, archive, trash. ERP-side state
+	// only — never written back to the mail host.
+	MarkInbound(ctx context.Context, in *MarkInboundRequest, opts ...grpc.CallOption) (*MarkInboundResponse, error)
+	// Mail this mailbox sent — through any client, over whatever history the
+	// backfill has reached. ERP sends live in ListMessages with per-recipient
+	// status; these are plain copies from the host's own Sent folder.
+	ListMailboxSent(ctx context.Context, in *ListMailboxSentRequest, opts ...grpc.CallOption) (*ListMailboxSentResponse, error)
+	// Pull now rather than waiting for the next poll. A mail host offers no
+	// webhook, so this is the "refresh" a person reaches for.
+	SyncMailbox(ctx context.Context, in *SyncMailboxRequest, opts ...grpc.CallOption) (*SyncMailboxResponse, error)
 }
 
 type emailServiceClient struct {
@@ -402,6 +448,116 @@ func (c *emailServiceClient) RemoveSuppression(ctx context.Context, in *RemoveSu
 	return out, nil
 }
 
+func (c *emailServiceClient) GetMailHost(ctx context.Context, in *GetMailHostRequest, opts ...grpc.CallOption) (*GetMailHostResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetMailHostResponse)
+	err := c.cc.Invoke(ctx, EmailService_GetMailHost_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) SaveMailHost(ctx context.Context, in *SaveMailHostRequest, opts ...grpc.CallOption) (*SaveMailHostResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveMailHostResponse)
+	err := c.cc.Invoke(ctx, EmailService_SaveMailHost_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) GetMyMailAccount(ctx context.Context, in *GetMyMailAccountRequest, opts ...grpc.CallOption) (*GetMyMailAccountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetMyMailAccountResponse)
+	err := c.cc.Invoke(ctx, EmailService_GetMyMailAccount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) RecordOpen(ctx context.Context, in *RecordOpenRequest, opts ...grpc.CallOption) (*RecordOpenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecordOpenResponse)
+	err := c.cc.Invoke(ctx, EmailService_RecordOpen_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) VerifyMailAccess(ctx context.Context, in *VerifyMailAccessRequest, opts ...grpc.CallOption) (*VerifyMailAccessResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyMailAccessResponse)
+	err := c.cc.Invoke(ctx, EmailService_VerifyMailAccess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) CompleteGoogleOAuth(ctx context.Context, in *CompleteGoogleOAuthRequest, opts ...grpc.CallOption) (*CompleteGoogleOAuthResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CompleteGoogleOAuthResponse)
+	err := c.cc.Invoke(ctx, EmailService_CompleteGoogleOAuth_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) ListInbound(ctx context.Context, in *ListInboundRequest, opts ...grpc.CallOption) (*ListInboundResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListInboundResponse)
+	err := c.cc.Invoke(ctx, EmailService_ListInbound_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) GetInbound(ctx context.Context, in *GetInboundRequest, opts ...grpc.CallOption) (*GetInboundResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetInboundResponse)
+	err := c.cc.Invoke(ctx, EmailService_GetInbound_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) MarkInbound(ctx context.Context, in *MarkInboundRequest, opts ...grpc.CallOption) (*MarkInboundResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MarkInboundResponse)
+	err := c.cc.Invoke(ctx, EmailService_MarkInbound_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) ListMailboxSent(ctx context.Context, in *ListMailboxSentRequest, opts ...grpc.CallOption) (*ListMailboxSentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMailboxSentResponse)
+	err := c.cc.Invoke(ctx, EmailService_ListMailboxSent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) SyncMailbox(ctx context.Context, in *SyncMailboxRequest, opts ...grpc.CallOption) (*SyncMailboxResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SyncMailboxResponse)
+	err := c.cc.Invoke(ctx, EmailService_SyncMailbox_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // EmailServiceServer is the server API for EmailService service.
 // All implementations must embed UnimplementedEmailServiceServer
 // for forward compatibility.
@@ -465,6 +621,41 @@ type EmailServiceServer interface {
 	ListSuppressions(context.Context, *ListSuppressionsRequest) (*ListSuppressionsResponse, error)
 	AddSuppression(context.Context, *AddSuppressionRequest) (*AddSuppressionResponse, error)
 	RemoveSuppression(context.Context, *RemoveSuppressionRequest) (*RemoveSuppressionResponse, error)
+	// How this company reaches its mail host — the values off the provider's
+	// admin console. Administrative: one setting for everybody.
+	GetMailHost(context.Context, *GetMailHostRequest) (*GetMailHostResponse, error)
+	SaveMailHost(context.Context, *SaveMailHostRequest) (*SaveMailHostResponse, error)
+	// The caller's own mailbox. There is deliberately no employee_id on any of
+	// these: nobody sets somebody else's authorisation code, administrators
+	// included, because the only way to hold one is to have been given it by
+	// the person it belongs to.
+	GetMyMailAccount(context.Context, *GetMyMailAccountRequest) (*GetMyMailAccountResponse, error)
+	// Records that a tracking pixel was fetched. Called by the gateway on
+	// behalf of a recipient's mail client, which has no session.
+	RecordOpen(context.Context, *RecordOpenRequest) (*RecordOpenResponse, error)
+	// Proves the caller controls their mailbox by logging in to the mail host
+	// with the code they typed, live. An ERP session alone must not open the
+	// mailbox: this is what stands between a walked-away-from workstation and
+	// somebody's correspondence.
+	VerifyMailAccess(context.Context, *VerifyMailAccessRequest) (*VerifyMailAccessResponse, error)
+	// Turns a Google authorisation code into a bound mailbox. The person
+	// signed in on Google's own page; their password never existed here.
+	CompleteGoogleOAuth(context.Context, *CompleteGoogleOAuthRequest) (*CompleteGoogleOAuthResponse, error)
+	// Mail that arrived. A separate surface from the sent side because the two
+	// have almost nothing in common: one is a delivery attempt with retries and
+	// a provider verdict, the other is a document somebody sent us.
+	ListInbound(context.Context, *ListInboundRequest) (*ListInboundResponse, error)
+	GetInbound(context.Context, *GetInboundRequest) (*GetInboundResponse, error)
+	// Inbox housekeeping: read/unread, star, archive, trash. ERP-side state
+	// only — never written back to the mail host.
+	MarkInbound(context.Context, *MarkInboundRequest) (*MarkInboundResponse, error)
+	// Mail this mailbox sent — through any client, over whatever history the
+	// backfill has reached. ERP sends live in ListMessages with per-recipient
+	// status; these are plain copies from the host's own Sent folder.
+	ListMailboxSent(context.Context, *ListMailboxSentRequest) (*ListMailboxSentResponse, error)
+	// Pull now rather than waiting for the next poll. A mail host offers no
+	// webhook, so this is the "refresh" a person reaches for.
+	SyncMailbox(context.Context, *SyncMailboxRequest) (*SyncMailboxResponse, error)
 	mustEmbedUnimplementedEmailServiceServer()
 }
 
@@ -558,6 +749,39 @@ func (UnimplementedEmailServiceServer) AddSuppression(context.Context, *AddSuppr
 }
 func (UnimplementedEmailServiceServer) RemoveSuppression(context.Context, *RemoveSuppressionRequest) (*RemoveSuppressionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemoveSuppression not implemented")
+}
+func (UnimplementedEmailServiceServer) GetMailHost(context.Context, *GetMailHostRequest) (*GetMailHostResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMailHost not implemented")
+}
+func (UnimplementedEmailServiceServer) SaveMailHost(context.Context, *SaveMailHostRequest) (*SaveMailHostResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveMailHost not implemented")
+}
+func (UnimplementedEmailServiceServer) GetMyMailAccount(context.Context, *GetMyMailAccountRequest) (*GetMyMailAccountResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMyMailAccount not implemented")
+}
+func (UnimplementedEmailServiceServer) RecordOpen(context.Context, *RecordOpenRequest) (*RecordOpenResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RecordOpen not implemented")
+}
+func (UnimplementedEmailServiceServer) VerifyMailAccess(context.Context, *VerifyMailAccessRequest) (*VerifyMailAccessResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VerifyMailAccess not implemented")
+}
+func (UnimplementedEmailServiceServer) CompleteGoogleOAuth(context.Context, *CompleteGoogleOAuthRequest) (*CompleteGoogleOAuthResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CompleteGoogleOAuth not implemented")
+}
+func (UnimplementedEmailServiceServer) ListInbound(context.Context, *ListInboundRequest) (*ListInboundResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListInbound not implemented")
+}
+func (UnimplementedEmailServiceServer) GetInbound(context.Context, *GetInboundRequest) (*GetInboundResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetInbound not implemented")
+}
+func (UnimplementedEmailServiceServer) MarkInbound(context.Context, *MarkInboundRequest) (*MarkInboundResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MarkInbound not implemented")
+}
+func (UnimplementedEmailServiceServer) ListMailboxSent(context.Context, *ListMailboxSentRequest) (*ListMailboxSentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListMailboxSent not implemented")
+}
+func (UnimplementedEmailServiceServer) SyncMailbox(context.Context, *SyncMailboxRequest) (*SyncMailboxResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SyncMailbox not implemented")
 }
 func (UnimplementedEmailServiceServer) mustEmbedUnimplementedEmailServiceServer() {}
 func (UnimplementedEmailServiceServer) testEmbeddedByValue()                      {}
@@ -1084,6 +1308,204 @@ func _EmailService_RemoveSuppression_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_GetMailHost_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMailHostRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).GetMailHost(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_GetMailHost_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).GetMailHost(ctx, req.(*GetMailHostRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_SaveMailHost_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveMailHostRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).SaveMailHost(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_SaveMailHost_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).SaveMailHost(ctx, req.(*SaveMailHostRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_GetMyMailAccount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMyMailAccountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).GetMyMailAccount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_GetMyMailAccount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).GetMyMailAccount(ctx, req.(*GetMyMailAccountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_RecordOpen_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordOpenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).RecordOpen(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_RecordOpen_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).RecordOpen(ctx, req.(*RecordOpenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_VerifyMailAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VerifyMailAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).VerifyMailAccess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_VerifyMailAccess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).VerifyMailAccess(ctx, req.(*VerifyMailAccessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_CompleteGoogleOAuth_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompleteGoogleOAuthRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).CompleteGoogleOAuth(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_CompleteGoogleOAuth_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).CompleteGoogleOAuth(ctx, req.(*CompleteGoogleOAuthRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_ListInbound_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListInboundRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).ListInbound(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_ListInbound_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).ListInbound(ctx, req.(*ListInboundRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_GetInbound_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetInboundRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).GetInbound(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_GetInbound_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).GetInbound(ctx, req.(*GetInboundRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_MarkInbound_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkInboundRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).MarkInbound(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_MarkInbound_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).MarkInbound(ctx, req.(*MarkInboundRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_ListMailboxSent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMailboxSentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).ListMailboxSent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_ListMailboxSent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).ListMailboxSent(ctx, req.(*ListMailboxSentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_SyncMailbox_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SyncMailboxRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).SyncMailbox(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_SyncMailbox_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).SyncMailbox(ctx, req.(*SyncMailboxRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // EmailService_ServiceDesc is the grpc.ServiceDesc for EmailService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1202,6 +1624,50 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveSuppression",
 			Handler:    _EmailService_RemoveSuppression_Handler,
+		},
+		{
+			MethodName: "GetMailHost",
+			Handler:    _EmailService_GetMailHost_Handler,
+		},
+		{
+			MethodName: "SaveMailHost",
+			Handler:    _EmailService_SaveMailHost_Handler,
+		},
+		{
+			MethodName: "GetMyMailAccount",
+			Handler:    _EmailService_GetMyMailAccount_Handler,
+		},
+		{
+			MethodName: "RecordOpen",
+			Handler:    _EmailService_RecordOpen_Handler,
+		},
+		{
+			MethodName: "VerifyMailAccess",
+			Handler:    _EmailService_VerifyMailAccess_Handler,
+		},
+		{
+			MethodName: "CompleteGoogleOAuth",
+			Handler:    _EmailService_CompleteGoogleOAuth_Handler,
+		},
+		{
+			MethodName: "ListInbound",
+			Handler:    _EmailService_ListInbound_Handler,
+		},
+		{
+			MethodName: "GetInbound",
+			Handler:    _EmailService_GetInbound_Handler,
+		},
+		{
+			MethodName: "MarkInbound",
+			Handler:    _EmailService_MarkInbound_Handler,
+		},
+		{
+			MethodName: "ListMailboxSent",
+			Handler:    _EmailService_ListMailboxSent_Handler,
+		},
+		{
+			MethodName: "SyncMailbox",
+			Handler:    _EmailService_SyncMailbox_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

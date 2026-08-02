@@ -1,5 +1,6 @@
 <template>
-  <div class="mailbox">
+  <MailboxGate v-if="locked === true" @unlocked="onUnlocked" @host-settings="hostOpen = true" />
+  <div v-else-if="locked === false" class="mailbox">
     <!-- A folder rail, not tabs. The distinction matters: folders say "your
          mail lives in these places", tabs said "here are three reports". -->
     <aside class="rail">
@@ -16,20 +17,24 @@
       >
         <span class="fname">{{ t(`emails.folders.${f.key}`) }}</span>
         <el-badge v-if="f.key === 'attention' && attentionCount > 0" :value="attentionCount" />
+        <el-badge v-else-if="f.key === 'inbox' && unreadCount > 0" :value="unreadCount" />
         <span v-else-if="f.key === 'drafts' && drafts.length" class="cnt">{{ drafts.length }}</span>
       </button>
 
-      <div v-if="senders.length > 1" class="rail-scope">
-        <div class="rail-label">{{ t('emails.viewing') }}</div>
-        <el-select v-model="senderFilter" clearable size="small" :placeholder="t('emails.allSenders')" @change="reload">
-          <el-option
-            v-for="s in senders"
-            :key="s.employeeId"
-            :label="`${s.name}（${s.messageCount}）`"
-            :value="s.employeeId"
-          />
-        </el-select>
-      </div>
+      <!-- No colleague picker here. This page is "my mail" and stays that
+           way; reading somebody else's is a separate, read-only surface. A
+           filter here also let a supervisor requeue or abandon a colleague's
+           message, which is the salesperson's call, not theirs. -->
+
+      <span class="rail-grow" />
+      <!-- Locks the mailbox, not the ERP: the token dies server-side, so the
+           next visitor to this workstation faces the gate again. -->
+      <el-button link class="rail-lock" @click="lockMailbox">
+        🔒 {{ t('mailGate.signOut') }}
+      </el-button>
+      <el-button v-if="isAdmin" link class="rail-lock rail-host" @click="hostOpen = true">
+        ⚙️ {{ t('mailGate.hostSettings') }}
+      </el-button>
     </aside>
 
     <section class="pane">
@@ -37,7 +42,6 @@
         <h2>{{ t(`emails.folders.${folder}`) }}</h2>
         <span class="grow" />
         <el-input
-          v-if="folder !== 'inbox'"
           v-model="keyword"
           :placeholder="t(`emails.search.${searchKey}`)"
           clearable
@@ -45,21 +49,65 @@
           @keyup.enter="reload"
           @clear="reload"
         />
-        <el-button v-if="folder !== 'inbox'" @click="reload">{{ common('query') }}</el-button>
+        <el-button @click="reload">{{ common('query') }}</el-button>
+        <!-- The mailbox is polled every couple of minutes; this is for the
+             person who just told a customer "resend it" and is waiting. -->
+        <el-button v-if="folder === 'inbox'" :loading="syncing" @click="syncNow">
+          {{ t('emails.syncNow') }}
+        </el-button>
         <el-button v-if="folder === 'suppressions' && canSuppress" @click="openSuppress">
           {{ t('emails.addSuppression') }}
         </el-button>
       </div>
 
-      <!-- ---------------------------------------------------------- inbox -->
-      <!-- Present and honest. Faking an empty inbox would suggest customers
-           simply have not replied; saying the channel is not connected says
-           what is actually true. -->
-      <el-card v-if="folder === 'inbox'" shadow="never" class="notyet">
-        <el-empty :description="t('emails.inboxNotConnected')">
-          <div class="notyet-text">{{ t('emails.inboxExplain') }}</div>
-        </el-empty>
-      </el-card>
+      <!-- ------------------------------- inbox / starred / archive / trash -->
+      <template v-if="isInboundView">
+        <el-table
+          :data="inbound"
+          v-loading="loading"
+          class="clickable"
+          :row-class-name="inboundRowClass"
+          @row-click="openInbound"
+        >
+          <el-table-column width="44">
+            <template #default="{ row }">
+              <span
+                class="star"
+                :class="{ on: row.isStarred }"
+                :title="t(row.isStarred ? 'emails.unstar' : 'emails.star')"
+                @click.stop="toggleStar(row)"
+              >{{ row.isStarred ? '★' : '☆' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('emails.from')" min-width="200">
+            <template #default="{ row }">
+              <div class="strong ellipsis">
+                <span v-if="!row.isRead" class="unread-dot" />
+                {{ row.fromName || row.fromEmail }}
+              </div>
+              <div class="sub ellipsis">{{ row.fromEmail }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('emails.subject')" min-width="320">
+            <template #default="{ row }">
+              <div class="ellipsis" :class="{ strong: !row.isRead }" :title="row.subject">
+                {{ row.subject || t('emails.noSubject') }}
+                <span v-if="row.hasAttachments" class="clip">📎</span>
+              </div>
+              <div class="sub ellipsis">{{ row.snippet }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('emails.receivedAt')" width="150">
+            <template #default="{ row }">
+              <span class="sub">{{ shortTime(row.receivedAt) }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty
+          v-if="!loading && inbound.length === 0"
+          :description="t(folder === 'inbox' ? 'emails.emptyInbox' : 'emails.emptyFolder')"
+        />
+      </template>
 
       <!-- --------------------------------------------------------- drafts -->
       <template v-else-if="folder === 'drafts'">
@@ -92,8 +140,44 @@
       </template>
 
       <!-- ----------------------------------------------------------- sent -->
+      <template v-else-if="folder === 'sent'">
+      <el-radio-group v-model="sentView" size="small" class="sent-toggle" @change="reload">
+        <el-radio-button value="erp">{{ t('emails.sentViaErp') }}</el-radio-button>
+        <el-radio-button value="mailbox">{{ t('emails.sentViaMailbox') }}</el-radio-button>
+      </el-radio-group>
+
+      <!-- The mailbox's own Sent folder: every client, the whole synced
+           history, no delivery status because the host records none. -->
       <el-table
-        v-else-if="folder === 'sent'"
+        v-if="sentView === 'mailbox'"
+        :data="mailboxSent"
+        v-loading="loading"
+        class="clickable"
+        @row-click="openInbound"
+      >
+        <el-table-column :label="t('emails.recipient')" min-width="200">
+          <template #default="{ row }">
+            <div class="strong ellipsis">{{ row.toEmail || '—' }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('emails.subject')" min-width="320">
+          <template #default="{ row }">
+            <div class="ellipsis" :title="row.subject">
+              {{ row.subject || t('emails.noSubject') }}
+              <span v-if="row.hasAttachments" class="clip">📎</span>
+            </div>
+            <div class="sub ellipsis">{{ row.snippet }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('emails.sentAt')" width="150">
+          <template #default="{ row }">
+            <span class="sub">{{ shortTime(row.sentAt || row.receivedAt) }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-table
+        v-else
         :data="campaigns"
         v-loading="loading"
         class="clickable"
@@ -136,6 +220,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </template>
 
       <!-- ------------------------------------------------------ attention -->
       <el-table
@@ -206,7 +291,7 @@
       </el-table>
 
       <el-pagination
-        v-if="folder === 'sent' || folder === 'attention'"
+        v-if="folder === 'sent' || folder === 'attention' || isInboundView"
         v-model:current-page="page"
         :page-size="pageSize"
         :total="total"
@@ -221,6 +306,63 @@
     <!-- Reading a sent mail: the message itself, then who it went to. That
          ordering is the point — the mail is the thing, the recipient list is
          the detail underneath it. -->
+    <!-- Received mail gets its own reader: MailReader narrates a delivery
+         attempt (status, retries, events), none of which a message somebody
+         sent US has. Showing that chrome around a customer's mail would be
+         confusing at best. -->
+    <el-drawer v-model="inboundOpen" size="58%" :with-header="false">
+      <div v-if="openedInbound" class="drawer-body">
+        <h3 class="in-subject">{{ openedInbound.subject || t('emails.noSubject') }}</h3>
+        <div class="in-meta">
+          <span class="strong">{{ openedInbound.fromName || openedInbound.fromEmail }}</span>
+          <span class="sub">&lt;{{ openedInbound.fromEmail }}&gt;</span>
+          <span class="grow" />
+          <span class="sub">{{ shortTime(openedInbound.sentAt || openedInbound.receivedAt) }}</span>
+        </div>
+        <div class="in-meta sub">{{ t('emails.inboundTo', { to: openedInbound.toEmail }) }}</div>
+        <div class="in-actions">
+          <template v-if="canWrite">
+            <el-button size="small" type="primary" plain @click="replyToInbound">
+              ↩ {{ t('emails.reply') }}
+            </el-button>
+            <el-button size="small" plain @click="forwardInbound">
+              ↪ {{ t('emails.forward') }}
+            </el-button>
+          </template>
+          <template v-if="isInboundView">
+            <el-button v-if="folder !== 'trash'" size="small" plain @click="markOpened({ read: false })">
+              {{ t('emails.markUnread') }}
+            </el-button>
+            <el-button v-if="folder === 'archive'" size="small" plain @click="markOpened({ archived: false })">
+              {{ t('emails.unarchive') }}
+            </el-button>
+            <el-button v-else-if="folder !== 'trash'" size="small" plain @click="markOpened({ archived: true })">
+              {{ t('emails.archive') }}
+            </el-button>
+            <el-button v-if="folder === 'trash'" size="small" plain @click="markOpened({ deleted: false })">
+              {{ t('emails.restore') }}
+            </el-button>
+            <el-button v-else size="small" type="danger" plain @click="markOpened({ deleted: true })">
+              {{ t('emails.toTrash') }}
+            </el-button>
+          </template>
+        </div>
+        <el-divider />
+        <!-- Sanitised server-side before it got here; see GetInbound. -->
+        <div v-if="openedInbound.bodyHtml" class="in-html" v-html="openedInbound.bodyHtml" />
+        <pre v-else class="in-text">{{ openedInbound.bodyText }}</pre>
+        <template v-if="openedInbound.attachments?.length">
+          <el-divider />
+          <h4 class="side-title">{{ t('emails.attachments') }}</h4>
+          <div class="chips">
+            <el-tag v-for="a in openedInbound.attachments" :key="a.id" type="info">
+              {{ a.fileName }} · {{ humanSize(Number(a.fileSize)) }}
+            </el-tag>
+          </div>
+        </template>
+      </div>
+    </el-drawer>
+
     <el-drawer v-model="readerOpen" size="58%" :with-header="false">
       <div class="drawer-body">
         <MailReader :mail="openMail" />
@@ -240,6 +382,22 @@
                 <el-tag size="small" :type="statusType(row.status)" effect="plain">
                   {{ t(`emails.statuses.${row.status}`) }}
                 </el-tag>
+              </template>
+            </el-table-column>
+            <!-- "可能已打开", never "已读". The pixel over-reports for Apple
+                 Mail (it pre-fetches images unopened) and under-reports for
+                 Outlook (it blocks them when genuinely read). A vague label
+                 that is honest beats a precise one that is wrong. -->
+            <el-table-column :label="t('emails.openedCol')" width="120">
+              <template #default="{ row }">
+                <el-tooltip
+                  v-if="row.openedAt"
+                  :content="t('emails.openedHint', { at: shortTime(row.openedAt) })"
+                  placement="top"
+                >
+                  <span class="opened">{{ t('emails.maybeOpened') }}</span>
+                </el-tooltip>
+                <span v-else class="sub">—</span>
               </template>
             </el-table-column>
             <el-table-column :label="common('actions')" width="80">
@@ -296,16 +454,22 @@
       </template>
     </el-dialog>
   </div>
+  <!-- Outside the locked/unlocked branches: an administrator may need the
+       host settings before anybody can sign in at all. -->
+  <MailHostDialog v-model="hostOpen" />
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { del, get, post } from '../api'
+import { del, get, http, post } from '../api'
+import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import EmailComposer from '../components/EmailComposer.vue'
 import MailReader, { type Mail } from '../components/MailReader.vue'
+import MailboxGate from '../components/MailboxGate.vue'
+import MailHostDialog from '../components/MailHostDialog.vue'
 
 interface Campaign {
   id: string
@@ -320,6 +484,7 @@ interface Campaign {
   pendingCount: number
 }
 interface Message {
+  openedAt?: string
   id: string
   campaignId: string
   senderName: string
@@ -339,12 +504,24 @@ interface Draft {
   recipientCount: number
   updatedAt: string
 }
-interface Sender {
-  employeeId: string
-  name: string
-  messageCount: number
-  failedCount: number
+interface InboundMail {
+  id: string
+  fromEmail: string
+  fromName: string
+  toEmail: string
+  subject: string
+  snippet: string
+  threadKey: string
+  isRead: boolean
+  isStarred: boolean
+  hasAttachments: boolean
+  receivedAt: string
+  sentAt: string
+  bodyHtml?: string
+  bodyText?: string
+  attachments?: { id: string; fileName: string; contentType: string; fileSize: string }[]
 }
+
 interface Suppression {
   id: string
   email: string
@@ -358,18 +535,34 @@ const common = (k: string) => t(`common.${k}`)
 const auth = useAuthStore()
 const canWrite = computed(() => auth.can('notification:email:write'))
 const canSuppress = computed(() => auth.can('notification:suppression:write'))
+const isAdmin = computed(() => auth.can('iam:role:write'))
 
 const folders = [
   { key: 'inbox' },
+  { key: 'starred' },
   { key: 'drafts' },
   { key: 'sent' },
   { key: 'attention' },
+  { key: 'archive' },
+  { key: 'trash' },
   { key: 'suppressions' },
 ]
-// Sent is the landing folder, not Inbox: until the inbound channel exists,
-// opening on an empty Inbox every time would be a daily lie.
-const folder = ref('sent')
-const searchKey = computed(() => (folder.value === 'sent' ? 'campaigns' : folder.value))
+// The inbox is the landing folder now that mail actually arrives in it.
+const folder = ref('inbox')
+// The four slices of the same mailbox: what differs is only the filter the
+// server applies, so they share one table, one search box and one pager.
+const INBOUND_VIEWS: Record<string, string> = {
+  inbox: 'INBOX',
+  starred: 'STARRED',
+  archive: 'ARCHIVE',
+  trash: 'TRASH',
+}
+const isInboundView = computed(() => folder.value in INBOUND_VIEWS)
+const searchKey = computed(() => {
+  if (folder.value === 'sent') return 'campaigns'
+  if (isInboundView.value) return 'inbox'
+  return folder.value
+})
 
 const keyword = ref('')
 const page = ref(1)
@@ -379,13 +572,21 @@ const loading = ref(false)
 const campaigns = ref<Campaign[]>([])
 const messages = ref<Message[]>([])
 const suppressions = ref<Suppression[]>([])
-const senders = ref<Sender[]>([])
-const senderFilter = ref('')
 const attentionCount = ref(0)
 const composing = ref(false)
 const composer = ref()
 const drafts = ref<Draft[]>([])
 const acting = ref(false)
+
+const inbound = ref<InboundMail[]>([])
+// Which sent list is showing: what the ERP sent (with delivery status and
+// open tracking) or the mailbox's own Sent folder (plain history, any client).
+const sentView = ref<'erp' | 'mailbox'>('erp')
+const mailboxSent = ref<InboundMail[]>([])
+const unreadCount = ref(0)
+const syncing = ref(false)
+const inboundOpen = ref(false)
+const openedInbound = ref<InboundMail | null>(null)
 
 const readerOpen = ref(false)
 const openMail = ref<Mail | null>(null)
@@ -399,12 +600,99 @@ const newEmail = ref('')
 const suppressOpen = ref(false)
 const suppressForm = reactive({ email: '', reason: 'UNSUBSCRIBE', detail: '' })
 
-onMounted(() => {
+// null = still asking; the page renders nothing rather than flashing the
+// gate at somebody who is already unlocked.
+const locked = ref<boolean | null>(null)
+const hostOpen = ref(false)
+
+onMounted(async () => {
+  // Back from Google's login page. On success the fresh grant is verified
+  // right away, so binding and entering the mailbox is one motion instead of
+  // a redirect followed by a second button.
+  const q = new URLSearchParams(location.search)
+  const oauthResult = q.get('oauth')
+  if (oauthResult) {
+    const boundEmail = q.get('email') ?? ''
+    const reason = q.get('reason') ?? ''
+    history.replaceState(null, '', location.pathname)
+    if (oauthResult === 'ok') {
+      ElMessage.success(t('mailbox.googleOk', { email: boundEmail }))
+      try {
+        const resp = await http.post('/mailbox/verify', { secret: '' })
+        const data = resp.data.data as { token: string }
+        sessionStorage.setItem('mailUnlock', data.token)
+        locked.value = false
+        init()
+        return
+      } catch {
+        /* fall through: the gate appears and says why in place */
+      }
+    } else {
+      ElMessage({
+        type: 'error',
+        message: t('mailbox.googleErr', { reason }),
+        duration: 0,
+        showClose: true,
+      })
+    }
+  }
+  try {
+    const d = await get<{ unlocked: boolean }>('/mailbox/lock-status')
+    locked.value = !d.unlocked
+  } catch {
+    locked.value = true
+  }
+  if (locked.value === false) init()
+})
+
+function onUnlocked() {
+  locked.value = false
+  init()
+}
+
+async function lockMailbox() {
+  try {
+    await post('/mailbox/lock')
+  } finally {
+    // Locked locally regardless: a failed revoke call must not leave the
+    // screen open while the person walks away believing it is shut.
+    sessionStorage.removeItem('mailUnlock')
+    locked.value = true
+  }
+}
+
+function init() {
   load()
   refreshAttentionCount()
-  loadSenders()
   loadDraftCount()
-})
+  refreshUnread()
+}
+
+// New mail is pushed over the same SSE stream the rest of the app uses: the
+// IMAP sync stores it, publishes a hint, and every open tab of the owner's
+// hears it here. The re-fetch goes through the normal API, so this is only
+// ever "go and look", never data.
+onUnmounted(
+  onLive((e) => {
+    if (e.type !== 'mail.inbound') return
+    if (folder.value === 'inbox') {
+      load()
+    } else {
+      refreshUnread()
+    }
+  }),
+)
+
+// The rail badge has to be current whichever folder is open, so it has its
+// own cheap fetch rather than riding on the inbox list load.
+async function refreshUnread() {
+  try {
+    const d = await get<{ unreadCount: number }>('/inbound-mails', { page: 1, page_size: 1 })
+    unreadCount.value = Number(d.unreadCount ?? 0)
+  } catch {
+    /* the badge going stale is not worth an error toast */
+  }
+}
 
 // The rail shows a count, so it has to be current whichever folder is open.
 async function loadDraftCount() {
@@ -453,18 +741,37 @@ function reload() {
 }
 
 async function load() {
-  if (folder.value === 'inbox') return
   loading.value = true
   try {
-    if (folder.value === 'drafts') {
+    if (isInboundView.value) {
+      const d = await get<{ mails: InboundMail[]; meta: { total: string }; unreadCount: number }>(
+        '/inbound-mails',
+        {
+          page: page.value,
+          page_size: pageSize,
+          keyword: keyword.value,
+          view: INBOUND_VIEWS[folder.value],
+        },
+      )
+      inbound.value = d.mails ?? []
+      total.value = Number(d.meta?.total ?? 0)
+      unreadCount.value = Number(d.unreadCount ?? 0)
+    } else if (folder.value === 'drafts') {
       const d = await get<{ drafts: Draft[] }>('/email-drafts')
       drafts.value = d.drafts ?? []
+    } else if (folder.value === 'sent' && sentView.value === 'mailbox') {
+      const d = await get<{ mails: InboundMail[]; meta: { total: string } }>('/mailbox-sent', {
+        page: page.value,
+        page_size: pageSize,
+        keyword: keyword.value,
+      })
+      mailboxSent.value = d.mails ?? []
+      total.value = Number(d.meta?.total ?? 0)
     } else if (folder.value === 'sent') {
       const d = await get<{ campaigns: Campaign[]; meta: { total: string } }>('/email-campaigns', {
         page: page.value,
         page_size: pageSize,
         keyword: keyword.value,
-        sender_id: senderFilter.value || undefined,
       })
       campaigns.value = d.campaigns ?? []
       total.value = Number(d.meta?.total ?? 0)
@@ -474,7 +781,6 @@ async function load() {
         page_size: pageSize,
         keyword: keyword.value,
         attention_only: true,
-        sender_id: senderFilter.value || undefined,
       })
       messages.value = d.messages ?? []
       total.value = Number(d.meta?.total ?? 0)
@@ -490,6 +796,88 @@ async function load() {
   }
 }
 
+// Opening marks it read server-side, so the row and the badge both update
+// from what the server actually stored rather than optimistically.
+async function openInbound(row: InboundMail) {
+  const d = await get<{ mail: InboundMail }>(`/inbound-mails/${row.id}`)
+  openedInbound.value = d.mail
+  inboundOpen.value = true
+  if (!row.isRead) {
+    row.isRead = true
+    unreadCount.value = Math.max(0, unreadCount.value - 1)
+  }
+}
+
+function inboundRowClass({ row }: { row: InboundMail }) {
+  return row.isRead ? '' : 'unread-row'
+}
+
+// Housekeeping calls. All of them are ERP-side state only — nothing is ever
+// written back to the mail host, so none of these can touch the real mailbox.
+async function toggleStar(row: InboundMail) {
+  // Optimistic: a star that waits for the network feels broken.
+  row.isStarred = !row.isStarred
+  try {
+    await post(`/inbound-mails/${row.id}/mark`, { starred: row.isStarred })
+  } catch {
+    row.isStarred = !row.isStarred
+  }
+  if (folder.value === 'starred' && !row.isStarred) load()
+}
+
+// The reader-drawer actions: mark unread, archive/unarchive, trash/restore.
+// Each closes the drawer and reloads — the row just left this view.
+async function markOpened(flags: Record<string, boolean>) {
+  if (!openedInbound.value) return
+  await post(`/inbound-mails/${openedInbound.value.id}/mark`, flags)
+  inboundOpen.value = false
+  load()
+  refreshUnread()
+}
+
+// Reply and forward hand the opened mail to the composer, which prefills
+// recipient/subject/quote; the server does the threading (reply) and carries
+// the original's attachments (forward).
+async function replyToInbound() {
+  if (!openedInbound.value) return
+  const mail = openedInbound.value
+  inboundOpen.value = false
+  composing.value = true
+  await nextTick()
+  composer.value?.openReply(mail)
+}
+
+async function forwardInbound() {
+  if (!openedInbound.value) return
+  const mail = openedInbound.value
+  inboundOpen.value = false
+  composing.value = true
+  await nextTick()
+  composer.value?.openForward(mail)
+}
+
+async function syncNow() {
+  syncing.value = true
+  try {
+    const d = await post<{ fetched: number; detail: string }>('/mailbox/sync')
+    if (d.detail) {
+      ElMessage({ type: 'error', message: d.detail, duration: 0, showClose: true })
+    } else {
+      ElMessage.success(t('emails.syncDone', { n: d.fetched ?? 0 }))
+      reload()
+    }
+  } finally {
+    syncing.value = false
+  }
+}
+
+function humanSize(bytes: number) {
+  if (!bytes) return '0 B'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
 // The badge is what tells somebody there is work waiting, so it refreshes
 // independently of whichever folder happens to be open.
 async function refreshAttentionCount() {
@@ -499,15 +887,6 @@ async function refreshAttentionCount() {
     attention_only: true,
   })
   attentionCount.value = Number(d.meta?.total ?? 0)
-}
-
-async function loadSenders() {
-  try {
-    const d = await get<{ senders: Sender[] }>('/email-senders')
-    senders.value = d.senders ?? []
-  } catch {
-    senders.value = []
-  }
 }
 
 function onSent() {
@@ -765,5 +1144,82 @@ async function doUnsuppress(row: Suppression) {
 .pager {
   margin-top: 14px;
   justify-content: flex-end;
+}
+
+.unread-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--el-color-primary);
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.clip {
+  margin-left: 4px;
+  color: var(--el-text-color-secondary);
+  vertical-align: middle;
+}
+:deep(.unread-row) {
+  font-weight: 500;
+}
+.in-subject {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+.in-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.in-actions {
+  margin-top: 10px;
+}
+.star {
+  font-size: 15px;
+  color: var(--el-text-color-placeholder);
+  cursor: pointer;
+}
+.star.on {
+  color: var(--el-color-warning);
+}
+.star:hover {
+  color: var(--el-color-warning);
+}
+.in-html {
+  line-height: 1.6;
+  word-break: break-word;
+}
+.in-html :deep(img) {
+  max-width: 100%;
+}
+.in-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  margin: 0;
+}
+
+.opened {
+  color: var(--el-color-success);
+  font-size: 12px;
+  cursor: default;
+}
+
+.sent-toggle {
+  margin-bottom: 12px;
+}
+
+.rail-grow {
+  flex: 1;
+}
+.rail-lock {
+  margin-top: 14px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.rail-host {
+  display: block;
+  margin: 6px 0 0;
 }
 </style>

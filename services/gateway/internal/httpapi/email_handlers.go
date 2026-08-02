@@ -1,8 +1,13 @@
 package httpapi
 
 import (
+	"context"
+	"encoding/base64"
+	"net"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -376,6 +381,153 @@ func (s *Server) deleteDraft(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) sendDraft(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Emails.SendDraft(r.Context(), &ntv1.SendDraftRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getMailHost(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.GetMailHost(r.Context(), &ntv1.GetMailHostRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) saveMailHost(w http.ResponseWriter, r *http.Request) {
+	req := &ntv1.SaveMailHostRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Emails.SaveMailHost(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getMyMailAccount(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.GetMyMailAccount(r.Context(), &ntv1.GetMyMailAccountRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// The request body carries no employee id, and neither does the RPC: whose
+// mailbox this is comes from the token alone.
+// serveOpenPixel answers a recipient's mail client.
+//
+// It always returns the same 1x1 image, whatever happens: a valid key, an
+// unknown one, a service that is down. Anything else would turn this route
+// into an oracle for which message keys exist.
+//
+// What the resulting number means is worth remembering wherever it is shown.
+// Apple Mail pre-fetches remote images without the recipient opening anything,
+// and Outlook blocks them even when the recipient does, so this over-reports
+// and under-reports at the same time.
+func (s *Server) serveOpenPixel(w http.ResponseWriter, r *http.Request) {
+	key := chi.URLParam(r, "key")
+	if key != "" {
+		// Fire and forget: the image must go out at the same speed whether or
+		// not the write succeeds, and a recipient must never wait on our
+		// database to see their mail render.
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, _ = s.Emails.RecordOpen(ctx, &ntv1.RecordOpenRequest{
+				MessageKey: key,
+				UserAgent:  r.Header.Get("User-Agent"),
+				Ip:         clientIP(r),
+			})
+		}()
+	}
+	w.Header().Set("Content-Type", "image/gif")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// Must not be cached: a cached pixel would report the first open and then
+	// go silent, which is the opposite of what it is for.
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	w.Header().Set("Pragma", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(openPixel)
+}
+
+// A 1x1 transparent GIF. GIF rather than PNG because a few older clients
+// still refuse to render a 1x1 PNG, and being fetched is the entire point.
+var openPixel, _ = base64.StdEncoding.DecodeString(
+	"R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
+
+func clientIP(r *http.Request) string {
+	if v := r.Header.Get("X-Forwarded-For"); v != "" {
+		if i := strings.Index(v, ","); i > 0 {
+			return strings.TrimSpace(v[:i])
+		}
+		return strings.TrimSpace(v)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+func (s *Server) listInbound(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.ListInbound(r.Context(), &ntv1.ListInboundRequest{
+		Page:    pageFromQuery(r),
+		Keyword: r.URL.Query().Get("keyword"),
+		View:    r.URL.Query().Get("view"),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) markInbound(w http.ResponseWriter, r *http.Request) {
+	req := &ntv1.MarkInboundRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	// The id comes from the URL, whatever the body claims.
+	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	resp, err := s.Emails.MarkInbound(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getInbound(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	resp, err := s.Emails.GetInbound(r.Context(), &ntv1.GetInboundRequest{Id: id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) syncMailbox(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.SyncMailbox(r.Context(), &ntv1.SyncMailboxRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) listMailboxSent(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.ListMailboxSent(r.Context(), &ntv1.ListMailboxSentRequest{
+		Page:    pageFromQuery(r),
+		Keyword: r.URL.Query().Get("keyword"),
+	})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

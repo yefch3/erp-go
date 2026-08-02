@@ -44,6 +44,10 @@ const (
 	// tenant rather than a person: a requirement belongs to the purchasing
 	// function, and there is no "owner" to send it to.
 	RequirementChanged = "requirement.changed"
+	// MailInbound: new mail landed in this employee's inbox. Addressed to the
+	// mailbox owner alone — an inbox is personal, and a tenant-wide ping would
+	// make every open mailbox page refetch for mail none of them can see.
+	MailInbound = "mail.inbound"
 )
 
 func channel(tenantID, employeeID int64) string {

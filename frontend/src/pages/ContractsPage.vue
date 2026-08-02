@@ -309,7 +309,7 @@
                the quotation" on a contract that never had one is the kind of
                small lie that makes people stop trusting the rest. -->
           <span class="hint">
-            {{ detail?.contract.quoteNo ? t('contracts.fxInherited') : t('contracts.fxSnapshot') }}
+            {{ detail?.contract.quoteNo ? t('contracts.fxInherited') : t('contracts.fxFixedOnCreate') }}
           </span>
         </div>
 

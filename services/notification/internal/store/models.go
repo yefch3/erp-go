@@ -81,6 +81,48 @@ type EmailImage struct {
 	UploadedAt  pgtype.Timestamptz
 }
 
+type EmailInbound struct {
+	ID             int64
+	TenantID       int64
+	AccountID      int64
+	OwnerID        int64
+	Folder         string
+	ImapUid        int64
+	MessageID      string
+	InReplyTo      string
+	ReferencesIds  string
+	ThreadKey      string
+	ReplyToID      *int64
+	FromEmail      string
+	FromName       string
+	ToEmail        string
+	Subject        string
+	BodyHtml       string
+	BodyText       string
+	Snippet        string
+	RawKey         string
+	RawSize        int64
+	IsBounce       bool
+	IsRead         bool
+	HasAttachments bool
+	SentAt         pgtype.Timestamptz
+	ReceivedAt     pgtype.Timestamptz
+	IsStarred      bool
+	ArchivedAt     pgtype.Timestamptz
+	DeletedAt      pgtype.Timestamptz
+}
+
+type EmailInboundAttachment struct {
+	ID          int64
+	TenantID    int64
+	InboundID   int64
+	FileName    string
+	ContentType string
+	FileSize    int64
+	FileKey     string
+	CreatedAt   pgtype.Timestamptz
+}
+
 type EmailMessage struct {
 	ID              int64
 	TenantID        int64
@@ -109,6 +151,23 @@ type EmailMessage struct {
 	ClickedAt       pgtype.Timestamptz
 	BodyFormat      string
 	BodyText        string
+	ThreadKey       string
+	SendMode        string
+	InReplyTo       string
+	ReferencesIds   string
+}
+
+type EmailMessageRecipient struct {
+	ID         int64
+	TenantID   int64
+	MessageID  int64
+	Kind       string
+	Email      string
+	Name       string
+	CustomerID int64
+	Status     string
+	Detail     string
+	CreatedAt  pgtype.Timestamptz
 }
 
 type EmailSignature struct {
@@ -130,4 +189,53 @@ type EmailSuppression struct {
 	Reason    string
 	Detail    string
 	CreatedAt pgtype.Timestamptz
+}
+
+type MailAccount struct {
+	ID              int64
+	TenantID        int64
+	EmployeeID      int64
+	Email           string
+	Username        string
+	SecretEnc       []byte
+	KeyVersion      int32
+	VerifiedAt      pgtype.Timestamptz
+	LastError       string
+	IsActive        bool
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	AuthKind        string
+	OauthRefreshEnc []byte
+}
+
+type MailHost struct {
+	TenantID     int64
+	Domain       string
+	SmtpHost     string
+	SmtpPort     int32
+	SmtpSecurity string
+	ImapHost     string
+	ImapPort     int32
+	ImapSecurity string
+	HourlyQuota  int32
+	DailyQuota   int32
+	UpdatedAt    pgtype.Timestamptz
+}
+
+type MailSendCounter struct {
+	TenantID  int64
+	AccountID int64
+	WindowAt  pgtype.Timestamptz
+	SentCount int32
+}
+
+type MailSyncState struct {
+	TenantID     int64
+	AccountID    int64
+	Folder       string
+	UidValidity  int64
+	LastUid      int64
+	LastSyncedAt pgtype.Timestamptz
+	LastError    string
+	LowUid       int64
 }

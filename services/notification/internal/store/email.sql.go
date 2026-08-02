@@ -116,6 +116,38 @@ func (q *Queries) AddImage(ctx context.Context, arg AddImageParams) (int64, erro
 	return id, err
 }
 
+const addMessageRecipient = `-- name: AddMessageRecipient :exec
+INSERT INTO email_message_recipients (tenant_id, message_id, kind, email, name, customer_id)
+VALUES (
+    $1::bigint, $2::bigint,
+    $3::text, $4::text, $5::text,
+    $6::bigint
+)
+`
+
+type AddMessageRecipientParams struct {
+	TenantID   int64
+	MessageID  int64
+	Kind       string
+	Email      string
+	Name       string
+	CustomerID int64
+}
+
+// One person on a merged mail. Inserted in the same transaction as the
+// message, so the worker can never claim a merged send with half its list.
+func (q *Queries) AddMessageRecipient(ctx context.Context, arg AddMessageRecipientParams) error {
+	_, err := q.db.Exec(ctx, addMessageRecipient,
+		arg.TenantID,
+		arg.MessageID,
+		arg.Kind,
+		arg.Email,
+		arg.Name,
+		arg.CustomerID,
+	)
+	return err
+}
+
 const addSuppression = `-- name: AddSuppression :exec
 INSERT INTO email_suppressions (tenant_id, email, reason, detail)
 VALUES (
@@ -199,8 +231,9 @@ SET status = 'SENDING', attempt_count = m.attempt_count + 1
 FROM due
 WHERE m.id = due.id
 RETURNING m.id, m.message_key::text AS message_key, m.kind, m.to_email, m.to_name,
-          m.sender_name, m.subject, m.body, m.body_text, m.body_format,
-          coalesce(m.campaign_id, 0)::bigint AS campaign_id, m.attempt_count
+          m.sender_id, m.sender_name, m.subject, m.body, m.body_text, m.body_format,
+          coalesce(m.campaign_id, 0)::bigint AS campaign_id, m.attempt_count,
+          m.send_mode, m.in_reply_to, m.references_ids
 `
 
 type ClaimMessagesParams struct {
@@ -209,18 +242,22 @@ type ClaimMessagesParams struct {
 }
 
 type ClaimMessagesRow struct {
-	ID           int64
-	MessageKey   string
-	Kind         string
-	ToEmail      string
-	ToName       string
-	SenderName   string
-	Subject      string
-	Body         string
-	BodyText     string
-	BodyFormat   string
-	CampaignID   int64
-	AttemptCount int32
+	ID            int64
+	MessageKey    string
+	Kind          string
+	ToEmail       string
+	ToName        string
+	SenderID      int64
+	SenderName    string
+	Subject       string
+	Body          string
+	BodyText      string
+	BodyFormat    string
+	CampaignID    int64
+	AttemptCount  int32
+	SendMode      string
+	InReplyTo     string
+	ReferencesIds string
 }
 
 // The worker's claim. SKIP LOCKED lets several workers drain the same queue
@@ -243,6 +280,7 @@ func (q *Queries) ClaimMessages(ctx context.Context, arg ClaimMessagesParams) ([
 			&i.Kind,
 			&i.ToEmail,
 			&i.ToName,
+			&i.SenderID,
 			&i.SenderName,
 			&i.Subject,
 			&i.Body,
@@ -250,6 +288,9 @@ func (q *Queries) ClaimMessages(ctx context.Context, arg ClaimMessagesParams) ([
 			&i.BodyFormat,
 			&i.CampaignID,
 			&i.AttemptCount,
+			&i.SendMode,
+			&i.InReplyTo,
+			&i.ReferencesIds,
 		); err != nil {
 			return nil, err
 		}
@@ -972,6 +1013,55 @@ func (q *Queries) ListImages(ctx context.Context, tenantID int64) ([]ListImagesR
 	return items, nil
 }
 
+const listMessageRecipients = `-- name: ListMessageRecipients :many
+SELECT id, kind, email, name, status, detail
+FROM email_message_recipients
+WHERE tenant_id = $1::bigint
+  AND message_id = $2::bigint
+ORDER BY id
+`
+
+type ListMessageRecipientsParams struct {
+	TenantID  int64
+	MessageID int64
+}
+
+type ListMessageRecipientsRow struct {
+	ID     int64
+	Kind   string
+	Email  string
+	Name   string
+	Status string
+	Detail string
+}
+
+func (q *Queries) ListMessageRecipients(ctx context.Context, arg ListMessageRecipientsParams) ([]ListMessageRecipientsRow, error) {
+	rows, err := q.db.Query(ctx, listMessageRecipients, arg.TenantID, arg.MessageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMessageRecipientsRow
+	for rows.Next() {
+		var i ListMessageRecipientsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.Email,
+			&i.Name,
+			&i.Status,
+			&i.Detail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMessages = `-- name: ListMessages :many
 SELECT
     id, coalesce(campaign_id, 0)::bigint AS campaign_id, kind,
@@ -1264,6 +1354,29 @@ func (q *Queries) MarkAccepted(ctx context.Context, arg MarkAcceptedParams) erro
 	return err
 }
 
+const markRecipientResult = `-- name: MarkRecipientResult :exec
+UPDATE email_message_recipients
+SET status = $1::text, detail = $2::text
+WHERE tenant_id = $3::bigint AND id = $4::bigint
+`
+
+type MarkRecipientResultParams struct {
+	Status   string
+	Detail   string
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) MarkRecipientResult(ctx context.Context, arg MarkRecipientResultParams) error {
+	_, err := q.db.Exec(ctx, markRecipientResult,
+		arg.Status,
+		arg.Detail,
+		arg.TenantID,
+		arg.ID,
+	)
+	return err
+}
+
 const markRetryable = `-- name: MarkRetryable :exec
 UPDATE email_messages
 SET status = 'QUEUED', last_error = $1::text,
@@ -1321,7 +1434,8 @@ const queueMessage = `-- name: QueueMessage :one
 INSERT INTO email_messages (
     tenant_id, campaign_id, message_key, kind, sender_id, sender_name,
     to_email, to_name, customer_id, customer_name, contact_id,
-    subject, body, body_text, body_format, status, attention_reason
+    subject, body, body_text, body_format, status, attention_reason,
+    send_mode, thread_key, in_reply_to, references_ids
 ) VALUES (
     $1::bigint,
     nullif($2::bigint, 0),
@@ -1339,7 +1453,11 @@ INSERT INTO email_messages (
     $14::text,
     $15::text,
     $16::text,
-    $17::text
+    $17::text,
+    $18::text,
+    coalesce(nullif($19::text, ''), $3::text),
+    $20::text,
+    $21::text
 )
 RETURNING id
 `
@@ -1362,8 +1480,14 @@ type QueueMessageParams struct {
 	BodyFormat      string
 	Status          string
 	AttentionReason string
+	SendMode        string
+	ThreadKey       string
+	InReplyTo       string
+	ReferencesIds   string
 }
 
+// thread_key falls back to the message's own key: a fresh mail is the root
+// of whatever conversation follows, a reply passes the thread it belongs to.
 func (q *Queries) QueueMessage(ctx context.Context, arg QueueMessageParams) (int64, error) {
 	row := q.db.QueryRow(ctx, queueMessage,
 		arg.TenantID,
@@ -1383,6 +1507,10 @@ func (q *Queries) QueueMessage(ctx context.Context, arg QueueMessageParams) (int
 		arg.BodyFormat,
 		arg.Status,
 		arg.AttentionReason,
+		arg.SendMode,
+		arg.ThreadKey,
+		arg.InReplyTo,
+		arg.ReferencesIds,
 	)
 	var id int64
 	err := row.Scan(&id)

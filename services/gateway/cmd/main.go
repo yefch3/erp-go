@@ -104,30 +104,53 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("gateway: redis at %s: %w", cfg.RedisAddr, err)
 	}
 
+	// Mailbox unlock tokens. Twelve hours by default: verify once in the
+	// morning, locked again by the next working day.
+	unlockTTL := 12 * time.Hour
+	if v := os.Getenv("MAIL_UNLOCK_TTL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			unlockTTL = d
+		}
+	}
+	unlock := httpapi.NewUnlockStore(cfg.RedisAddr, unlockTTL)
+
+	frontendBase := os.Getenv("FRONTEND_BASE_URL")
+	if frontendBase == "" {
+		frontendBase = "http://localhost:5173"
+	}
+	oauthRedirect := os.Getenv("MAIL_OAUTH_REDIRECT_URL")
+	if oauthRedirect == "" {
+		oauthRedirect = "http://localhost:8080/api/oauth/google/callback"
+	}
+
 	srv := &httpapi.Server{
-		IAM:          iamv1.NewAuthServiceClient(iamConn),
-		Directory:    iamv1.NewDirectoryServiceClient(iamConn),
-		Access:       iamv1.NewAccessServiceClient(iamConn),
-		Fx:           fxv1.NewFxServiceClient(fxConn),
-		Customers:    mdv1.NewCustomerServiceClient(mdConn),
-		Suppliers:    mdv1.NewSupplierServiceClient(mdConn),
-		Options:      mdv1.NewOptionServiceClient(mdConn),
-		Numbering:    mdv1.NewNumberingServiceClient(mdConn),
-		Approval:     apv1.NewApprovalServiceClient(apConn),
-		Catalog:      pdv1.NewCatalogServiceClient(pdConn),
-		Attachments:  pdv1.NewAttachmentServiceClient(pdConn),
-		Attributes:   pdv1.NewAttributeServiceClient(pdConn),
-		Quotations:   exv1.NewQuotationServiceClient(exConn),
-		Contracts:    exv1.NewContractServiceClient(exConn),
-		Shipments:    exv1.NewShipmentServiceClient(exConn),
-		Receipts:     exv1.NewReceiptServiceClient(exConn),
-		Requirements: prv1.NewRequirementServiceClient(prConn),
-		Orders:       prv1.NewPurchaseOrderServiceClient(prConn),
-		Stocks:       ivv1.NewStockServiceClient(ivConn),
-		Emails:       ntv1.NewEmailServiceClient(ntConn),
-		Live:         live,
-		JWTSecret:    cfg.JWTSecret,
-		Log:          log,
+		IAM:              iamv1.NewAuthServiceClient(iamConn),
+		Directory:        iamv1.NewDirectoryServiceClient(iamConn),
+		Access:           iamv1.NewAccessServiceClient(iamConn),
+		Fx:               fxv1.NewFxServiceClient(fxConn),
+		Customers:        mdv1.NewCustomerServiceClient(mdConn),
+		Suppliers:        mdv1.NewSupplierServiceClient(mdConn),
+		Options:          mdv1.NewOptionServiceClient(mdConn),
+		Numbering:        mdv1.NewNumberingServiceClient(mdConn),
+		Approval:         apv1.NewApprovalServiceClient(apConn),
+		Catalog:          pdv1.NewCatalogServiceClient(pdConn),
+		Attachments:      pdv1.NewAttachmentServiceClient(pdConn),
+		Attributes:       pdv1.NewAttributeServiceClient(pdConn),
+		Quotations:       exv1.NewQuotationServiceClient(exConn),
+		Contracts:        exv1.NewContractServiceClient(exConn),
+		Shipments:        exv1.NewShipmentServiceClient(exConn),
+		Receipts:         exv1.NewReceiptServiceClient(exConn),
+		Requirements:     prv1.NewRequirementServiceClient(prConn),
+		Orders:           prv1.NewPurchaseOrderServiceClient(prConn),
+		Stocks:           ivv1.NewStockServiceClient(ivConn),
+		Emails:           ntv1.NewEmailServiceClient(ntConn),
+		Unlock:           unlock,
+		GoogleClientID:   os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
+		OAuthRedirectURL: oauthRedirect,
+		FrontendBaseURL:  frontendBase,
+		Live:             live,
+		JWTSecret:        cfg.JWTSecret,
+		Log:              log,
 	}
 
 	httpSrv := &http.Server{

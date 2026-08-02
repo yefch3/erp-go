@@ -101,3 +101,8 @@ func (f *Files) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 func (f *Files) Remove(ctx context.Context, key string) error {
 	return f.store.Remove(ctx, key)
 }
+
+func (f *Files) Put(ctx context.Context, key string, r io.Reader, size int64, contentType string) error {
+	_, err := f.store.Put(ctx, key, r, size, contentType)
+	return err
+}

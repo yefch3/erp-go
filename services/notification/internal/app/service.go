@@ -7,10 +7,12 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/livefeed"
 	"github.com/sgao19/erp-go/services/notification/internal/store"
 )
 
@@ -68,15 +70,23 @@ type SendResult struct {
 	Outcome    Outcome
 	ProviderID string
 	Err        string
+	// Recipients the host refused individually while accepting the
+	// transaction as a whole. Only ever set for merged sends.
+	Rejected []RecipientReject
 }
 
 // Outbound is one rendered message on its way out.
 type Outbound struct {
 	MessageKey string
-	FromName   string
-	ToEmail    string
-	ToName     string
-	Subject    string
+	// Who this is being sent as. Everybody sends through their own mailbox,
+	// so the adapter has to authenticate as this person rather than as one
+	// shared account — these two fields are what it resolves credentials by.
+	TenantID int64
+	SenderID int64
+	FromName string
+	ToEmail  string
+	ToName   string
+	Subject  string
 	// Body is the HTML when Format is HTML, otherwise the whole message.
 	Body string
 	// BodyText is the plain-text alternative, set only for HTML mail. Both
@@ -87,11 +97,37 @@ type Outbound struct {
 	// Files travelling with this message. The same set for every recipient
 	// of a send, which is why they are fetched once per campaign.
 	Attachments []Attachment
+	// A merged send: when ToList is non-empty it replaces ToEmail/ToName
+	// entirely — the To header carries the whole list, everybody sees each
+	// other, and the envelope covers every entry plus CCList. Both stay
+	// empty for the normal one-recipient send, which keeps the isolation
+	// guarantee the comment on Provider describes.
+	ToList []NamedAddress
+	CCList []NamedAddress
+	// Reply threading: the Message-ID being answered and the chain above
+	// it. Empty for a fresh mail.
+	InReplyTo  string
+	References string
+}
+
+// NamedAddress is one person on a mail header.
+type NamedAddress struct {
+	Name  string
+	Email string
+}
+
+// RecipientReject is one RCPT TO the host refused inside an otherwise
+// accepted merged transaction — the mail went to the others, not to them.
+type RecipientReject struct {
+	Email  string
+	Detail string
 }
 
 // Provider is the sending service. One message per call by construction —
-// there is no recipient list in this interface, which is what makes
-// "recipients never see each other" impossible to get wrong later.
+// for a SEPARATE send there is no recipient list in this call, which is what
+// makes "recipients never see each other" impossible to get wrong later. A
+// MERGED send passes its list openly in ToList/CCList, because being seen
+// together is that mode's declared meaning.
 type Provider interface {
 	Send(ctx context.Context, m Outbound) SendResult
 	Name() string
@@ -103,6 +139,13 @@ type Deps struct {
 	Scopes    Scopes
 	Provider  Provider
 	Files     Files
+	// Secrets decrypts stored mailbox credentials. Nil in tests and in any
+	// deployment that has not been given a key; every path that needs it
+	// checks and fails loudly rather than proceeding without encryption.
+	Secrets *SecretBox
+	// Live pushes "go and re-read" hints to open browser tabs. Nil disables
+	// pushing; the page still refreshes on the next manual or timed load.
+	Live *livefeed.Publisher
 }
 
 type Service struct {
@@ -113,16 +156,33 @@ type Service struct {
 	scopes    Scopes
 	provider  Provider
 	files     Files
-	log       *slog.Logger
+	mailbox   Mailbox
+	secrets   *SecretBox
+	live      *livefeed.Publisher
+	oauth     OAuthConfig
+	// Access tokens by account id. They live an hour; caching them keeps the
+	// sender and the sync from asking Google once per message.
+	tokenCache sync.Map
+	// Where each account's sent folder lives; found once, never changes.
+	sentFolders sync.Map
+	log         *slog.Logger
 }
 
 func New(pool *pgxpool.Pool, d Deps, log *slog.Logger) *Service {
 	return &Service{
 		pool: pool, q: store.New(pool),
 		number: d.Numbering, directory: d.Directory, scopes: d.Scopes,
-		provider: d.Provider, files: d.Files, log: log,
+		provider: d.Provider, files: d.Files, secrets: d.Secrets, live: d.Live, log: log,
 	}
 }
+
+// UseProvider installs the sending adapter after construction.
+//
+// The SMTP adapter needs the service to resolve each employee's credentials,
+// and the service needs an adapter to send — so one of the two has to be
+// wired in a second step. Doing it explicitly here beats a lazy indirection
+// that hides the cycle.
+func (s *Service) UseProvider(p Provider) { s.provider = p }
 
 // scopeModule is the key notification is scoped under; it must match
 // role_data_scopes.module in iam.

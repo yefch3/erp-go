@@ -125,11 +125,18 @@ func (h *Handler) CreateCampaign(ctx context.Context, req *ntv1.CreateCampaignRe
 	for _, r := range req.GetRecipients() {
 		recipients = append(recipients, recipientFromProto(r))
 	}
+	cc := make([]app.Recipient, 0, len(req.GetCc()))
+	for _, r := range req.GetCc() {
+		cc = append(cc, recipientFromProto(r))
+	}
 	res, err := h.svc.CreateCampaign(ctx, grpcx.TenantID(ctx), app.CampaignInput{
 		Subject: req.GetSubject(), Body: req.GetBody(),
 		SignatureID: req.GetSignatureId(), Kind: req.GetKind(),
 		Format: req.GetBodyFormat(), Recipients: recipients,
-		Attachments: pendingFromProto(req.GetAttachments()),
+		SendMode: req.GetSendMode(), CC: cc,
+		ReplyToInboundID: req.GetReplyToInboundId(),
+		ForwardInboundID: req.GetForwardInboundId(),
+		Attachments:      pendingFromProto(req.GetAttachments()),
 	}, operator(ctx))
 	if err != nil {
 		return nil, err
@@ -521,4 +528,149 @@ func pendingToProto(in []app.PendingAttachment) []*ntv1.PendingAttachment {
 		out = append(out, &ntv1.PendingAttachment{FileName: f.FileName, FileKey: f.FileKey})
 	}
 	return out
+}
+
+func (h *Handler) GetMailHost(ctx context.Context, _ *ntv1.GetMailHostRequest) (*ntv1.GetMailHostResponse, error) {
+	s, err := h.svc.GetMailHost(ctx, grpcx.TenantID(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &ntv1.GetMailHostResponse{Host: &ntv1.MailHost{
+		Domain: s.Domain, SmtpHost: s.SMTPHost, SmtpPort: s.SMTPPort,
+		SmtpSecurity: s.SMTPSecurity, ImapHost: s.IMAPHost, ImapPort: s.IMAPPort,
+		ImapSecurity: s.IMAPSecurity, HourlyQuota: s.HourlyQuota, DailyQuota: s.DailyQuota,
+	}}, nil
+}
+
+func (h *Handler) SaveMailHost(ctx context.Context, req *ntv1.SaveMailHostRequest) (*ntv1.SaveMailHostResponse, error) {
+	in := req.GetHost()
+	err := h.svc.SaveMailHost(ctx, grpcx.TenantID(ctx), app.MailHostSettings{
+		Domain: in.GetDomain(), SMTPHost: in.GetSmtpHost(), SMTPPort: in.GetSmtpPort(),
+		SMTPSecurity: in.GetSmtpSecurity(), IMAPHost: in.GetImapHost(), IMAPPort: in.GetImapPort(),
+		IMAPSecurity: in.GetImapSecurity(), HourlyQuota: in.GetHourlyQuota(), DailyQuota: in.GetDailyQuota(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &ntv1.SaveMailHostResponse{Ok: true}, nil
+}
+
+func (h *Handler) GetMyMailAccount(ctx context.Context, _ *ntv1.GetMyMailAccountRequest) (*ntv1.GetMyMailAccountResponse, error) {
+	op := operator(ctx)
+	v, err := h.svc.GetMyMailAccount(ctx, grpcx.TenantID(ctx), op.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &ntv1.GetMyMailAccountResponse{Account: &ntv1.MailAccount{
+		Email: v.Email, Username: v.Username, HasSecret: v.HasSecret,
+		VerifiedAt: v.VerifiedAt, LastError: v.LastError, IsActive: v.IsActive,
+		AuthKind: v.AuthKind,
+	}}, nil
+}
+
+func (h *Handler) RecordOpen(ctx context.Context, req *ntv1.RecordOpenRequest) (*ntv1.RecordOpenResponse, error) {
+	// Never reports whether the key was real. The gateway serves the same
+	// image either way, so telling it apart here would only create a way to
+	// probe which sends exist.
+	h.svc.RecordOpen(ctx, req.GetMessageKey(), req.GetUserAgent(), req.GetIp())
+	return &ntv1.RecordOpenResponse{Ok: true}, nil
+}
+
+func inboundToProto(v app.InboundView) *ntv1.InboundMail {
+	m := &ntv1.InboundMail{
+		Id: v.ID, FromEmail: v.FromEmail, FromName: v.FromName,
+		Subject: v.Subject, Snippet: v.Snippet, ThreadKey: v.ThreadKey,
+		IsRead: v.IsRead, IsStarred: v.IsStarred, HasAttachments: v.HasAttachments,
+		BodyHtml: v.BodyHTML, BodyText: v.BodyText, ToEmail: v.ToEmail,
+	}
+	if !v.ReceivedAt.IsZero() {
+		m.ReceivedAt = v.ReceivedAt.Format(time.RFC3339)
+	}
+	if !v.SentAt.IsZero() {
+		m.SentAt = v.SentAt.Format(time.RFC3339)
+	}
+	for _, a := range v.Attachments {
+		m.Attachments = append(m.Attachments, &ntv1.InboundAttachment{
+			Id: a.ID, FileName: a.FileName, ContentType: a.ContentType, FileSize: a.FileSize,
+		})
+	}
+	return m
+}
+
+func (h *Handler) ListInbound(ctx context.Context, req *ntv1.ListInboundRequest) (*ntv1.ListInboundResponse, error) {
+	op := operator(ctx)
+	rows, total, unread, err := h.svc.ListInbound(ctx, grpcx.TenantID(ctx), op.ID,
+		req.GetKeyword(), req.GetView(), req.GetPage().GetPage(), req.GetPage().GetPageSize())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*ntv1.InboundMail, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, inboundToProto(r))
+	}
+	return &ntv1.ListInboundResponse{
+		Mails: out, UnreadCount: unread,
+		Meta: &commonv1.PageMeta{Total: total},
+	}, nil
+}
+
+func (h *Handler) GetInbound(ctx context.Context, req *ntv1.GetInboundRequest) (*ntv1.GetInboundResponse, error) {
+	op := operator(ctx)
+	v, err := h.svc.GetInbound(ctx, grpcx.TenantID(ctx), op.ID, req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &ntv1.GetInboundResponse{Mail: inboundToProto(v)}, nil
+}
+
+func (h *Handler) MarkInbound(ctx context.Context, req *ntv1.MarkInboundRequest) (*ntv1.MarkInboundResponse, error) {
+	op := operator(ctx)
+	err := h.svc.MarkInbound(ctx, grpcx.TenantID(ctx), op.ID, req.GetId(),
+		req.Read, req.Starred, req.Archived, req.Deleted)
+	if err != nil {
+		return nil, err
+	}
+	return &ntv1.MarkInboundResponse{Ok: true}, nil
+}
+
+func (h *Handler) SyncMailbox(ctx context.Context, _ *ntv1.SyncMailboxRequest) (*ntv1.SyncMailboxResponse, error) {
+	op := operator(ctx)
+	n, err := h.svc.SyncNow(ctx, grpcx.TenantID(ctx), op.ID)
+	if err != nil {
+		return &ntv1.SyncMailboxResponse{Fetched: 0, Detail: err.Error()}, nil
+	}
+	return &ntv1.SyncMailboxResponse{Fetched: int32(n)}, nil
+}
+
+func (h *Handler) ListMailboxSent(ctx context.Context, req *ntv1.ListMailboxSentRequest) (*ntv1.ListMailboxSentResponse, error) {
+	op := operator(ctx)
+	rows, total, err := h.svc.ListMailboxSent(ctx, grpcx.TenantID(ctx), op.ID,
+		req.GetKeyword(), req.GetPage().GetPage(), req.GetPage().GetPageSize())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*ntv1.InboundMail, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, inboundToProto(r))
+	}
+	return &ntv1.ListMailboxSentResponse{Mails: out, Meta: &commonv1.PageMeta{Total: total}}, nil
+}
+
+func (h *Handler) VerifyMailAccess(ctx context.Context, req *ntv1.VerifyMailAccessRequest) (*ntv1.VerifyMailAccessResponse, error) {
+	op := operator(ctx)
+	detail, err := h.svc.VerifyMailSecret(ctx, grpcx.TenantID(ctx), op.ID, req.GetEmail(), req.GetSecret())
+	if err != nil {
+		return &ntv1.VerifyMailAccessResponse{Ok: false, Detail: err.Error()}, nil
+	}
+	return &ntv1.VerifyMailAccessResponse{Ok: true, Detail: detail}, nil
+}
+
+func (h *Handler) CompleteGoogleOAuth(ctx context.Context, req *ntv1.CompleteGoogleOAuthRequest) (*ntv1.CompleteGoogleOAuthResponse, error) {
+	op := operator(ctx)
+	email, err := h.svc.CompleteGoogleOAuth(ctx, grpcx.TenantID(ctx), op.ID,
+		req.GetCode(), req.GetRedirectUri())
+	if err != nil {
+		return nil, err
+	}
+	return &ntv1.CompleteGoogleOAuthResponse{Email: email}, nil
 }

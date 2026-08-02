@@ -129,10 +129,13 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint
   );
 
 -- name: QueueMessage :one
+-- thread_key falls back to the message's own key: a fresh mail is the root
+-- of whatever conversation follows, a reply passes the thread it belongs to.
 INSERT INTO email_messages (
     tenant_id, campaign_id, message_key, kind, sender_id, sender_name,
     to_email, to_name, customer_id, customer_name, contact_id,
-    subject, body, body_text, body_format, status, attention_reason
+    subject, body, body_text, body_format, status, attention_reason,
+    send_mode, thread_key, in_reply_to, references_ids
 ) VALUES (
     sqlc.arg(tenant_id)::bigint,
     nullif(sqlc.arg(campaign_id)::bigint, 0),
@@ -150,9 +153,35 @@ INSERT INTO email_messages (
     sqlc.arg(body_text)::text,
     sqlc.arg(body_format)::text,
     sqlc.arg(status)::text,
-    sqlc.arg(attention_reason)::text
+    sqlc.arg(attention_reason)::text,
+    sqlc.arg(send_mode)::text,
+    coalesce(nullif(sqlc.arg(thread_key)::text, ''), sqlc.arg(message_key)::text),
+    sqlc.arg(in_reply_to)::text,
+    sqlc.arg(references_ids)::text
 )
 RETURNING id;
+
+-- name: AddMessageRecipient :exec
+-- One person on a merged mail. Inserted in the same transaction as the
+-- message, so the worker can never claim a merged send with half its list.
+INSERT INTO email_message_recipients (tenant_id, message_id, kind, email, name, customer_id)
+VALUES (
+    sqlc.arg(tenant_id)::bigint, sqlc.arg(message_id)::bigint,
+    sqlc.arg(kind)::text, sqlc.arg(email)::text, sqlc.arg(name)::text,
+    sqlc.arg(customer_id)::bigint
+);
+
+-- name: ListMessageRecipients :many
+SELECT id, kind, email, name, status, detail
+FROM email_message_recipients
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND message_id = sqlc.arg(message_id)::bigint
+ORDER BY id;
+
+-- name: MarkRecipientResult :exec
+UPDATE email_message_recipients
+SET status = sqlc.arg(status)::text, detail = sqlc.arg(detail)::text
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: ClaimMessages :many
 -- The worker's claim. SKIP LOCKED lets several workers drain the same queue
@@ -174,8 +203,9 @@ SET status = 'SENDING', attempt_count = m.attempt_count + 1
 FROM due
 WHERE m.id = due.id
 RETURNING m.id, m.message_key::text AS message_key, m.kind, m.to_email, m.to_name,
-          m.sender_name, m.subject, m.body, m.body_text, m.body_format,
-          coalesce(m.campaign_id, 0)::bigint AS campaign_id, m.attempt_count;
+          m.sender_id, m.sender_name, m.subject, m.body, m.body_text, m.body_format,
+          coalesce(m.campaign_id, 0)::bigint AS campaign_id, m.attempt_count,
+          m.send_mode, m.in_reply_to, m.references_ids;
 
 -- name: MarkAccepted :exec
 UPDATE email_messages

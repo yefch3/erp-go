@@ -30,6 +30,11 @@ type Files interface {
 	Stat(ctx context.Context, key string) (int64, string, error)
 	Get(ctx context.Context, key string) (io.ReadCloser, error)
 	Remove(ctx context.Context, key string) error
+	// Put writes bytes we already hold. The outbound path never needs this —
+	// browsers upload straight to storage with a presigned URL — but incoming
+	// mail arrives through us, so its raw MIME and attachments are ours to
+	// store.
+	Put(ctx context.Context, key string, r io.Reader, size int64, contentType string) error
 }
 
 // Attachment is one file travelling with a send.

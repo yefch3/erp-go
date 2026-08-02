@@ -53,9 +53,17 @@ type Server struct {
 	Orders       prv1.PurchaseOrderServiceClient
 	Stocks       ivv1.StockServiceClient
 	Emails       ntv1.EmailServiceClient
-	Live         *livefeed.Subscriber
-	JWTSecret    string
-	Log          *slog.Logger
+	// Unlock holds mailbox-verification tokens. Nil fails closed: every mail
+	// route answers MAIL_LOCKED until a store exists.
+	Unlock *UnlockStore
+	// Google OAuth. The client id is public by design; the secret lives only
+	// in the notification service, which does the token exchange.
+	GoogleClientID   string
+	OAuthRedirectURL string
+	FrontendBaseURL  string
+	Live             *livefeed.Subscriber
+	JWTSecret        string
+	Log              *slog.Logger
 }
 
 func (s *Server) Router() http.Handler {
@@ -67,6 +75,12 @@ func (s *Server) Router() http.Handler {
 	// Images embedded in sent mail. Public by necessity: the fetcher is the
 	// recipient's mail client, which has no session. See serveMailImage.
 	r.Get("/api/public/mail-images/{token}", s.serveMailImage)
+	// The open-tracking pixel. Also login-free, and also deliberately
+	// indistinguishable between a real key and a made-up one.
+	r.Get("/api/public/mail-open/{key}", s.serveOpenPixel)
+	// Google sends the browser back here after its own login page. State is
+	// the authentication; see googleOAuthCallback.
+	r.Get("/api/oauth/google/callback", s.googleOAuthCallback)
 	r.Group(func(r chi.Router) {
 		r.Use(s.auth)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers", s.listCustomers)
@@ -275,25 +289,25 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("notification:email:write")).Get("/api/mailing-contacts", s.listMailingContacts)
 		// The supervisor's employee picker. Scoped by the same notification
 		// data scope, so it lists exactly whose mail the caller may open.
-		r.With(s.perm("notification:email:read")).Get("/api/email-senders", s.listMailSenders)
-		r.With(s.perm("notification:email:read")).Get("/api/email-campaigns", s.listCampaigns)
-		r.With(s.perm("notification:email:read")).Get("/api/email-campaigns/{id}", s.getCampaign)
-		r.With(s.perm("notification:email:read")).Get("/api/email-messages", s.listEmailMessages)
-		r.With(s.perm("notification:email:read")).Get("/api/email-messages/{id}", s.getEmailMessage)
+		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/email-senders", s.listMailSenders)
+		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/email-campaigns", s.listCampaigns)
+		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/email-campaigns/{id}", s.getCampaign)
+		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/email-messages", s.listEmailMessages)
+		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/email-messages/{id}", s.getEmailMessage)
 		// Previewing renders against a real contact but sends nothing, so it
 		// is gated with sending rather than reading: only somebody who could
 		// send this mail has any business rendering it.
-		r.With(s.perm("notification:email:write")).Post("/api/email-campaigns/preview", s.previewCampaign)
-		r.With(s.perm("notification:email:write")).Post("/api/email-campaigns", s.createCampaign)
-		r.With(s.perm("notification:email:write")).Post("/api/email-messages/{id}/requeue", s.requeueEmailMessage)
-		r.With(s.perm("notification:email:write")).Post("/api/email-messages/{id}/abandon", s.abandonEmailMessage)
+		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Post("/api/email-campaigns/preview", s.previewCampaign)
+		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Post("/api/email-campaigns", s.createCampaign)
+		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Post("/api/email-messages/{id}/requeue", s.requeueEmailMessage)
+		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Post("/api/email-messages/{id}/abandon", s.abandonEmailMessage)
 		// Drafts ride on the send permission: a draft only exists to become a
 		// send, and every route is scoped to the caller inside the service.
-		r.With(s.perm("notification:email:write")).Post("/api/email-drafts", s.saveDraft)
-		r.With(s.perm("notification:email:write")).Get("/api/email-drafts", s.listDrafts)
-		r.With(s.perm("notification:email:write")).Get("/api/email-drafts/{id}", s.getDraft)
-		r.With(s.perm("notification:email:write")).Delete("/api/email-drafts/{id}", s.deleteDraft)
-		r.With(s.perm("notification:email:write")).Post("/api/email-drafts/{id}/send", s.sendDraft)
+		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Post("/api/email-drafts", s.saveDraft)
+		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Get("/api/email-drafts", s.listDrafts)
+		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Get("/api/email-drafts/{id}", s.getDraft)
+		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Delete("/api/email-drafts/{id}", s.deleteDraft)
+		r.With(s.perm("notification:email:write"), s.requireMailUnlock).Post("/api/email-drafts/{id}/send", s.sendDraft)
 		r.With(s.perm("notification:email:read")).Get("/api/email-signatures", s.listSignatures)
 		r.With(s.perm("notification:email:write")).Post("/api/email-signatures", s.createSignature)
 		r.With(s.perm("notification:email:write")).Delete("/api/email-signatures/{id}", s.deleteSignature)
@@ -308,9 +322,33 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("notification:email:write")).Post("/api/email-images", s.registerMailImage)
 		r.With(s.perm("notification:email:read")).Get("/api/email-images", s.listMailImages)
 		r.With(s.perm("notification:email:write")).Delete("/api/email-images/{id}", s.withdrawMailImage)
-		r.With(s.perm("notification:email:read")).Get("/api/email-suppressions", s.listSuppressions)
+		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/email-suppressions", s.listSuppressions)
 		r.With(s.perm("notification:suppression:write")).Post("/api/email-suppressions", s.addSuppression)
 		r.With(s.perm("notification:suppression:write")).Delete("/api/email-suppressions", s.removeSuppression)
+		// The mail host is one setting for the whole company, so it sits
+		// behind the administrative permission.
+		r.With(s.perm("notification:email:read")).Get("/api/mail-host", s.getMailHost)
+		r.With(s.perm("iam:role:write")).Put("/api/mail-host", s.saveMailHost)
+		// Your own mailbox. Only :read is required to write it, because the
+		// thing being written is your own credential — gating it behind an
+		// administrative permission would mean an administrator has to be
+		// involved in every employee entering their own authorisation code.
+		// The caller's own inbox. Own mail only by construction — the
+		// handler resolves the owner from the token, never from the request.
+		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/inbound-mails", s.listInbound)
+		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/inbound-mails/{id}", s.getInbound)
+		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/mark", s.markInbound)
+		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Post("/api/mailbox/sync", s.syncMailbox)
+		r.With(s.perm("notification:email:read"), s.requireMailUnlock).Get("/api/mailbox-sent", s.listMailboxSent)
+		r.With(s.perm("notification:email:read")).Post("/api/mailbox/verify", s.verifyMailbox)
+		r.With(s.perm("notification:email:read")).Get("/api/oauth/google/start", s.startGoogleOAuth)
+		r.With(s.perm("notification:email:read")).Get("/api/mailbox/lock-status", s.mailLockStatus)
+		r.With(s.perm("notification:email:read")).Post("/api/mailbox/lock", s.lockMailbox)
+		// Read-only on purpose: there is no API that stores a mailbox
+		// credential directly. The only way in is /api/mailbox/verify with an
+		// address — a live login at the mail host that stores the pair only
+		// after it succeeded.
+		r.With(s.perm("notification:email:read")).Get("/api/my-mail-account", s.getMyMailAccount)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/latest", s.fxLatest)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/rates", s.fxRates)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/anomalies", s.fxAnomalies)
@@ -382,6 +420,12 @@ func (s *Server) auth(next http.Handler) http.Handler {
 		})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// grpcMessage extracts the readable message from a gRPC error for surfaces
+// that cannot render a JSON envelope, like a redirect query parameter.
+func grpcMessage(err error) string {
+	return status.Convert(err).Message()
 }
 
 func newTraceID() string {

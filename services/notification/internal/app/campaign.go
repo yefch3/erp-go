@@ -26,6 +26,21 @@ type CampaignInput struct {
 	// outcome cannot be determined. See §5.12.3.1.
 	Kind       string
 	Recipients []Recipient
+	// SEPARATE (default): one personalised copy per recipient, invisible to
+	// each other. MERGED: one shared mail, everybody on the To and CC lists
+	// sees everybody else — the mode for "one letter to the three people at
+	// this customer", not for campaigns.
+	SendMode string
+	// Carbon copies. Meaningful only for MERGED — a CC on a per-recipient
+	// send would mean the same person receiving N copies.
+	CC []Recipient
+	// Set when this send answers a mail in the caller's inbox: the threading
+	// headers and thread key are taken from that message, so both sides'
+	// clients stack the answer under the question.
+	ReplyToInboundID int64
+	// Set when forwarding a mail from the caller's inbox: the original's
+	// attachments travel along with the new message.
+	ForwardInboundID int64
 	// Files already in storage, registered inside the same transaction that
 	// creates the send so no message can go out before its attachment row.
 	Attachments []PendingAttachment
@@ -76,6 +91,17 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID int64, in Campaig
 	if kind != "TRANSACTIONAL" {
 		kind = "MARKETING"
 	}
+	mode := strings.ToUpper(strings.TrimSpace(in.SendMode))
+	if mode != "MERGED" {
+		mode = "SEPARATE"
+	}
+
+	// Reply and forward both borrow from a mail in the caller's own inbox;
+	// resolving it here also proves it IS the caller's.
+	thread, err := s.composeContext(ctx, tenantID, &in, op)
+	if err != nil {
+		return CampaignResult{}, err
+	}
 
 	sender, err := s.senderOf(ctx, op)
 	if err != nil {
@@ -87,8 +113,13 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID int64, in Campaig
 	}
 
 	// One round trip for the whole list rather than a lookup per recipient.
-	emails := make([]string, 0, len(in.Recipients))
+	// CC addresses are checked too: a suppression honoured on the To line and
+	// ignored on the CC line is not honoured at all.
+	emails := make([]string, 0, len(in.Recipients)+len(in.CC))
 	for _, r := range in.Recipients {
+		emails = append(emails, strings.ToLower(strings.TrimSpace(r.Email)))
+	}
+	for _, r := range in.CC {
 		emails = append(emails, strings.ToLower(strings.TrimSpace(r.Email)))
 	}
 	blocked, err := s.q.SuppressedAmong(ctx, store.SuppressedAmongParams{
@@ -100,6 +131,10 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID int64, in Campaig
 	suppressed := make(map[string]string, len(blocked))
 	for _, b := range blocked {
 		suppressed[b.Email] = b.Reason
+	}
+
+	if mode == "MERGED" {
+		return s.createMerged(ctx, tenantID, in, kind, sender, body, textBody, format, thread, suppressed)
 	}
 
 	result := CampaignResult{}
@@ -187,6 +222,9 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID int64, in Campaig
 				Subject:   subject, Body: rendered, BodyText: renderedText,
 				BodyFormat: format,
 				Status:     status, AttentionReason: attention,
+				SendMode:   "SEPARATE",
+				ThreadKey:  thread.ThreadKey,
+				InReplyTo:  thread.InReplyTo, ReferencesIds: thread.References,
 			}); err != nil {
 				return err
 			}
@@ -344,4 +382,226 @@ func orDefault(v, def string) string {
 type Operator struct {
 	ID   int64
 	Name string
+}
+
+// mergedRecipientCap bounds one shared To/Cc header. Fifty names is already a
+// committee; past that the person wanted a campaign and picked the wrong mode.
+const mergedRecipientCap = 50
+
+// asMsgID restores the angle brackets a Message-ID header requires; parsed
+// ids are stored without them.
+func asMsgID(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if !strings.HasPrefix(s, "<") {
+		s = "<" + s
+	}
+	if !strings.HasSuffix(s, ">") {
+		s += ">"
+	}
+	return s
+}
+
+// composeThread is what a reply carries from the mail it answers.
+type composeThread struct {
+	ThreadKey  string
+	InReplyTo  string
+	References string
+}
+
+// composeContext resolves the reply/forward source, proving on the way that
+// it sits in the caller's own inbox — quoting or re-shipping somebody else's
+// mail through a send would otherwise be a data-scope hole.
+func (s *Service) composeContext(ctx context.Context, tenantID int64, in *CampaignInput, op Operator) (composeThread, error) {
+	var t composeThread
+	if in.ReplyToInboundID > 0 {
+		row, err := s.q.GetInboundForCompose(ctx, store.GetInboundForComposeParams{
+			TenantID: tenantID, ID: in.ReplyToInboundID,
+		})
+		if err != nil {
+			return t, apierr.NotFound("NT_INBOUND_NOT_FOUND", "要回复的邮件不存在")
+		}
+		if row.OwnerID != op.ID {
+			return t, apierr.Permission("NT_NOT_YOUR_MAIL", "只能回复自己邮箱里的邮件")
+		}
+		t.ThreadKey = row.ThreadKey
+		// Stored parsed (no angle brackets); the headers require them, and a
+		// bracketless In-Reply-To silently breaks threading in strict clients.
+		t.InReplyTo = asMsgID(row.MessageID)
+		// The chain grows by one: everything the original referenced, then the
+		// original itself. This is what lets the customer's client thread our
+		// answer even when intermediate mails never passed through us.
+		refs := make([]string, 0, 8)
+		for _, r := range strings.Fields(row.ReferencesIds) {
+			refs = append(refs, asMsgID(r))
+		}
+		if id := asMsgID(row.MessageID); id != "" {
+			refs = append(refs, id)
+		}
+		t.References = strings.Join(refs, " ")
+	}
+	if in.ForwardInboundID > 0 {
+		row, err := s.q.GetInboundForCompose(ctx, store.GetInboundForComposeParams{
+			TenantID: tenantID, ID: in.ForwardInboundID,
+		})
+		if err != nil {
+			return t, apierr.NotFound("NT_INBOUND_NOT_FOUND", "要转发的邮件不存在")
+		}
+		if row.OwnerID != op.ID {
+			return t, apierr.Permission("NT_NOT_YOUR_MAIL", "只能转发自己邮箱里的邮件")
+		}
+		// A forward starts a new conversation with a new party, so it takes
+		// the original's files but not its thread.
+		atts, err := s.q.ListInboundAttachments(ctx, store.ListInboundAttachmentsParams{
+			TenantID: tenantID, InboundID: row.ID,
+		})
+		if err != nil {
+			return t, err
+		}
+		for _, a := range atts {
+			if a.FileKey == "" {
+				continue
+			}
+			in.Attachments = append(in.Attachments, PendingAttachment{
+				FileName: a.FileName, FileKey: a.FileKey,
+			})
+		}
+	}
+	return t, nil
+}
+
+// createMerged queues ONE message whose recipients see each other.
+//
+// The isolation promises of the per-recipient path do not apply — being seen
+// together is this mode's declared meaning — but two of its rules survive:
+// suppressed addresses still never enter a send, and nothing goes out with a
+// variable that cannot resolve. A variable that depends on the recipient
+// cannot resolve when there are many recipients and one body, so it is
+// refused rather than rendered against an arbitrary person.
+func (s *Service) createMerged(
+	ctx context.Context, tenantID int64, in CampaignInput, kind string,
+	sender Sender, body, textBody, format string, thread composeThread,
+	suppressed map[string]string,
+) (CampaignResult, error) {
+	result := CampaignResult{}
+	keep := func(list []Recipient) []Recipient {
+		out := make([]Recipient, 0, len(list))
+		for _, r := range list {
+			addr := strings.ToLower(strings.TrimSpace(r.Email))
+			if addr == "" {
+				result.Suppressed = append(result.Suppressed, SkippedRecipient{
+					Name: r.Name, Reason: "NO_ADDRESS",
+				})
+				continue
+			}
+			if reason, hit := suppressed[addr]; hit {
+				result.Suppressed = append(result.Suppressed, SkippedRecipient{
+					Email: addr, Name: r.Name, Reason: reason,
+				})
+				continue
+			}
+			r.Email = addr
+			out = append(out, r)
+		}
+		return out
+	}
+	tos := keep(in.Recipients)
+	ccs := keep(in.CC)
+	if len(tos) == 0 {
+		return CampaignResult{}, apierr.Invalid("NT_RECIPIENTS_REQUIRED",
+			"收件人都被跳过了，没有可发送的地址")
+	}
+	if len(tos)+len(ccs) > mergedRecipientCap {
+		return CampaignResult{}, apierr.Invalid("NT_TOO_MANY_MERGED",
+			"合并发送最多 50 个收件人（含抄送）；更多人请改用分别发送")
+	}
+
+	// Rendered once against nobody: what fails to resolve is exactly the set
+	// of per-recipient variables, which one shared body cannot carry. Sender
+	// variables (my_name, my_title …) resolve normally.
+	subject, missSubject := Render(in.Subject, Recipient{}, sender)
+	rendered, missBody := RenderAs(body, Recipient{}, sender, format)
+	if missing := dedupe(append(missSubject, missBody...)); len(missing) > 0 {
+		return CampaignResult{}, apierr.Invalid("NT_MERGED_VARS",
+			"合并发送对所有人是同一封信，不能使用按收件人变化的变量："+strings.Join(missing, "、"))
+	}
+	renderedText := ""
+	if format == FormatHTML {
+		renderedText, _ = RenderAs(textBody, Recipient{}, sender, FormatText)
+	}
+
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		no, err := s.number.Next(ctx, BizTypeCampaign)
+		if err != nil {
+			return err
+		}
+		campaignID, err := q.CreateCampaign(ctx, store.CreateCampaignParams{
+			TenantID: tenantID, CampaignNo: no,
+			SubjectTpl: in.Subject, BodyTpl: body, BodyTextTpl: textBody,
+			BodyFormat: format, SignatureID: in.SignatureID,
+			Kind: kind, SenderID: sender.ID, SenderName: sender.Name,
+			SenderEmail: sender.Email,
+		})
+		if err != nil {
+			return err
+		}
+		result.CampaignID = campaignID
+		result.CampaignNo = no
+
+		for _, f := range in.Attachments {
+			if _, err := s.registerAttachmentTx(ctx, q, tenantID, campaignID, f, Operator{ID: sender.ID, Name: sender.Name}); err != nil {
+				return err
+			}
+		}
+
+		key, err := newMessageKey()
+		if err != nil {
+			return err
+		}
+		msgID, err := q.QueueMessage(ctx, store.QueueMessageParams{
+			TenantID: tenantID, CampaignID: campaignID, MessageKey: key,
+			Kind: kind, SenderID: sender.ID, SenderName: sender.Name,
+			// The first To recipient stands for the message in list views;
+			// the full cast lives in the recipients table.
+			ToEmail: tos[0].Email, ToName: tos[0].Name,
+			CustomerID: tos[0].CustomerID, CustomerName: tos[0].CustomerName,
+			ContactID: tos[0].ContactID,
+			Subject:   subject, Body: rendered, BodyText: renderedText,
+			BodyFormat: format, Status: "QUEUED",
+			SendMode:  "MERGED",
+			ThreadKey: thread.ThreadKey,
+			InReplyTo: thread.InReplyTo, ReferencesIds: thread.References,
+		})
+		if err != nil {
+			return err
+		}
+		add := func(list []Recipient, rkind string) error {
+			for _, r := range list {
+				if err := q.AddMessageRecipient(ctx, store.AddMessageRecipientParams{
+					TenantID: tenantID, MessageID: msgID, Kind: rkind,
+					Email: r.Email, Name: r.Name, CustomerID: r.CustomerID,
+				}); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		if err := add(tos, "TO"); err != nil {
+			return err
+		}
+		if err := add(ccs, "CC"); err != nil {
+			return err
+		}
+		result.Queued = 1
+		return nil
+	})
+	if err != nil {
+		return CampaignResult{}, err
+	}
+	s.log.Info("merged mail queued", "campaign_no", result.CampaignNo,
+		"to", len(tos), "cc", len(ccs), "suppressed", len(result.Suppressed))
+	return result, nil
 }

@@ -104,9 +104,34 @@ UPDATE suppliers SET status = 'ACTIVE', updated_by = $3, updated_at = now()
 WHERE tenant_id = $1 AND id = $2 AND status = 'INACTIVE';
 
 -- name: ListMailingContacts :many
--- The address book for the mail composer. Contacts without an email are left
--- out rather than returned greyed: a picker row you cannot pick is noise.
--- Deactivated customers are excluded for the same reason.
+-- The address book for the mail composer.
+--
+-- The OR is split into a UNION on purpose. Written as one predicate the three
+-- ILIKE conditions span two tables, and Postgres cannot use an index for an
+-- OR that crosses a join — it has to join first and filter every pair, which
+-- is a sequential scan however many trigram indexes exist. Each UNION branch
+-- touches one table, so each can use its own index.
+--
+-- Contacts without an email are left out rather than returned greyed: a
+-- picker row you cannot pick is noise. Deactivated customers likewise.
+WITH hits AS (
+    -- Matches on the person: uses the contact trigram indexes.
+    SELECT cc.id
+    FROM customer_contacts cc
+    WHERE cc.tenant_id = sqlc.arg(tenant_id)::bigint
+      AND cc.email <> ''
+      AND (cc.name ILIKE '%' || sqlc.arg(keyword)::text || '%'
+           OR cc.email ILIKE '%' || sqlc.arg(keyword)::text || '%')
+    UNION
+    -- Matches on the company: uses the customer trigram index, then joins.
+    SELECT cc.id
+    FROM customers c
+    JOIN customer_contacts cc
+      ON cc.customer_id = c.id AND cc.tenant_id = c.tenant_id
+    WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
+      AND cc.email <> ''
+      AND c.name ILIKE '%' || sqlc.arg(keyword)::text || '%'
+)
 SELECT
     cc.id           AS contact_id,
     cc.name,
@@ -118,15 +143,11 @@ SELECT
     c.country
 FROM customer_contacts cc
 JOIN customers c ON c.id = cc.customer_id AND c.tenant_id = cc.tenant_id
-WHERE cc.tenant_id = $1
+WHERE cc.tenant_id = sqlc.arg(tenant_id)::bigint
   AND c.status = 'ACTIVE'
   AND cc.email <> ''
-  AND (
-      sqlc.arg(keyword)::text = ''
-      OR cc.name  ILIKE '%' || sqlc.arg(keyword)::text || '%'
-      OR cc.email ILIKE '%' || sqlc.arg(keyword)::text || '%'
-      OR c.name   ILIKE '%' || sqlc.arg(keyword)::text || '%'
-  )
+  -- An empty keyword lists the book; anything else must have matched above.
+  AND (sqlc.arg(keyword)::text = '' OR cc.id IN (SELECT id FROM hits))
   AND (
       cardinality(sqlc.arg(customer_ids)::bigint[]) = 0
       OR c.id = ANY(sqlc.arg(customer_ids)::bigint[])

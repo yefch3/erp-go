@@ -190,9 +190,23 @@ services:
       MINIO_SECRET_KEY: erp_dev_password
       MINIO_BUCKET: erp-files
       MAIL_PROVIDER: ${MAIL_PROVIDER:-dev}
+      # Encrypts stored mailbox credentials. Deliberately has no default:
+      # a fallback here would produce a system that looks encrypted and is
+      # not. Set it in deploy/.env, which is gitignored.
+      MAIL_CRED_KEY: ${MAIL_CRED_KEY:-}
       MAIL_BATCH_SIZE: "20"
       MAIL_SEND_DELAY: 100ms
       MAIL_DECISION_WINDOW: 10m
+      MAIL_SEND_TIMEOUT: 45s
+      # Must be an address the recipient's mail client can actually reach.
+      # Left empty in local development, which disables the pixel rather than
+      # emitting one that points at the recipient's own machine.
+      MAIL_PUBLIC_BASE_URL: ${MAIL_PUBLIC_BASE_URL:-}
+      # For pushing "new mail" hints to open browser tabs over the live feed.
+      REDIS_ADDR: redis:6379
+      # Google OAuth application credentials, from deploy/.env (gitignored).
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
     ports:
       - "9010:9010"
     networks: [infra]
@@ -216,6 +230,9 @@ services:
       INVENTORY_ADDR: inventory:9008
       NOTIFICATION_ADDR: notification:9010
       REDIS_ADDR: redis:6379
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      MAIL_OAUTH_REDIRECT_URL: ${MAIL_OAUTH_REDIRECT_URL:-http://localhost:8080/api/oauth/google/callback}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       HTTP_PORT: "8080"
     ports:
