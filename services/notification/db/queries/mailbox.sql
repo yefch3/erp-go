@@ -298,6 +298,12 @@ WITH visible AS (
 -- text and the time, the flags are the conversation's own. Unread if ANY
 -- message is unread — a thread with an unanswered question in it must not
 -- look handled because the last line happened to be read.
+--
+-- Keyset, not OFFSET: the page starts strictly after the last row of the
+-- previous one, so mail arriving mid-read cannot push a conversation across
+-- the page boundary and make it appear twice or not at all, and page 50
+-- costs the same as page 2. The price is that there is no jumping to page N
+-- — the same trade Gmail makes with its 上一页 / 下一页.
 SELECT id, from_email, from_name, subject, snippet, thread_key,
        (NOT any_unread)::boolean   AS is_read,
        any_starred::boolean        AS is_starred,
@@ -306,8 +312,12 @@ SELECT id, from_email, from_name, subject, snippet, thread_key,
        thread_count::int           AS thread_count
 FROM ranked
 WHERE rn = 1
+  -- Row comparison, so ties on the timestamp fall back to the id and no two
+  -- conversations can ever occupy the same cursor position.
+  AND (sqlc.narg(cursor_at)::timestamptz IS NULL
+       OR (at, id) < (sqlc.narg(cursor_at)::timestamptz, sqlc.arg(cursor_id)::bigint))
 ORDER BY at DESC, id DESC
-LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
+LIMIT sqlc.arg(row_limit)::int;
 
 -- name: CountInboundThreads :one
 -- Conversations, not messages: the pager has to count what the list shows.

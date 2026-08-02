@@ -600,18 +600,18 @@ func inboundToProto(v app.InboundView) *ntv1.InboundMail {
 
 func (h *Handler) ListInbound(ctx context.Context, req *ntv1.ListInboundRequest) (*ntv1.ListInboundResponse, error) {
 	op := operator(ctx)
-	rows, total, unread, err := h.svc.ListInbound(ctx, grpcx.TenantID(ctx), op.ID,
-		req.GetKeyword(), req.GetView(), req.GetPage().GetPage(), req.GetPage().GetPageSize())
+	p, err := h.svc.ListInbound(ctx, grpcx.TenantID(ctx), op.ID,
+		req.GetKeyword(), req.GetView(), req.GetCursor(), req.GetPage().GetPageSize())
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*ntv1.InboundMail, 0, len(rows))
-	for _, r := range rows {
+	out := make([]*ntv1.InboundMail, 0, len(p.Mails))
+	for _, r := range p.Mails {
 		out = append(out, inboundToProto(r))
 	}
 	return &ntv1.ListInboundResponse{
-		Mails: out, UnreadCount: unread,
-		Meta: &commonv1.PageMeta{Total: total},
+		Mails: out, UnreadCount: p.Unread, NextCursor: p.NextCursor,
+		Meta: &commonv1.PageMeta{Total: p.Total},
 	}, nil
 }
 

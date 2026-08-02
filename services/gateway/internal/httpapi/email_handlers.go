@@ -481,6 +481,7 @@ func (s *Server) listInbound(w http.ResponseWriter, r *http.Request) {
 		Page:    pageFromQuery(r),
 		Keyword: r.URL.Query().Get("keyword"),
 		View:    r.URL.Query().Get("view"),
+		Cursor:  r.URL.Query().Get("cursor"),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
