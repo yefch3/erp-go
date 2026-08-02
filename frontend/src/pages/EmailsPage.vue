@@ -155,6 +155,11 @@
         <el-button v-if="folder === 'inbox'" :loading="syncing" @click="syncNow">
           {{ t('emails.syncNow') }}
         </el-button>
+        <!-- Clears the unread marks of this view only — the button sits above
+             this list, so it does what this list shows. -->
+        <el-button v-if="isInboundView" :loading="markingAll" @click="markAllRead">
+          {{ t('emails.markAllRead') }}
+        </el-button>
         <el-button v-if="folder === 'suppressions' && canSuppress" @click="openSuppress">
           {{ t('emails.addSuppression') }}
         </el-button>
@@ -664,6 +669,7 @@ const unreadCount = ref(0)
 // Where the next inbound page starts; empty means this is the last one.
 const nextCursor = ref('')
 const syncing = ref(false)
+const markingAll = ref(false)
 // The mail being read full-page. Set from the URL, never directly: opening a
 // mail is a navigation, so refresh reopens it and back returns to the list.
 const openedInbound = ref<InboundMail | null>(null)
@@ -1176,6 +1182,27 @@ async function forwardInbound() {
   composing.value = true
   await nextTick()
   composer.value?.openForward(openedInbound.value)
+}
+
+// Marks the current view read. Asked about first: unread is a to-do list, and
+// clearing it wholesale cannot be undone mail by mail afterwards.
+async function markAllRead() {
+  await ElMessageBox.confirm(
+    t('emails.markAllReadHint', { f: t(`emails.folders.${folder.value}`) }),
+    t('emails.markAllRead'),
+    { type: 'warning' },
+  )
+  markingAll.value = true
+  try {
+    const d = await post<{ marked: number }>(
+      `/inbound-mails/mark-view-read?view=${INBOUND_VIEWS[folder.value]}`,
+    )
+    ElMessage.success(t('emails.markedAllRead', { n: d.marked ?? 0 }))
+    load()
+    refreshUnread()
+  } finally {
+    markingAll.value = false
+  }
 }
 
 async function syncNow() {

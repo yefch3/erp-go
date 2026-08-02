@@ -301,6 +301,23 @@ func (s *Service) MarkInbound(ctx context.Context, tenantID, ownerID, id int64, 
 	})
 }
 
+// MarkViewRead marks everything in one view read and reports how many rows
+// changed.
+//
+// Deliberately scoped to the view rather than the whole mailbox: the button
+// sits above a list, and it should do what the list shows. Marking the junk
+// view read must not silently clear the inbox.
+func (s *Service) MarkViewRead(ctx context.Context, tenantID, ownerID int64, view string) (int64, error) {
+	switch view {
+	case "STARRED", "ARCHIVE", "TRASH", "JUNK":
+	default:
+		view = "INBOX"
+	}
+	return s.q.MarkViewRead(ctx, store.MarkViewReadParams{
+		TenantID: tenantID, OwnerID: ownerID, View: view,
+	})
+}
+
 // PurgeInbound permanently deletes mail from the caller's trash: the database
 // records and their copies in object storage (raw MIME, extracted
 // attachments). Only ERP-side data — the mail host's original is untouched,

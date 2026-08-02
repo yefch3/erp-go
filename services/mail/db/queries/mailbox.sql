@@ -342,6 +342,32 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
        OR from_email ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR from_name ILIKE '%' || sqlc.arg(keyword)::text || '%');
 
+-- name: MarkViewRead :execrows
+-- Marks everything the current view shows as read, and nothing else.
+--
+-- Scoped by the same filters as the list because that is what the button
+-- promises: "全部已读" in the junk view must not touch the inbox, and it must
+-- never reach into the archive or the trash from either. Read state is
+-- ERP-side only — the mail host is not told, same as every other bit of
+-- housekeeping here.
+UPDATE email_inbound
+SET is_read = TRUE
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND owner_id = sqlc.arg(owner_id)::bigint
+  AND NOT is_read
+  AND CASE WHEN sqlc.arg(view)::text = 'JUNK'
+        THEN folder = 'JUNK' AND NOT not_junk
+        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
+      END
+  AND NOT is_bounce
+  AND CASE sqlc.arg(view)::text
+        WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
+        WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
+        WHEN 'TRASH'   THEN deleted_at IS NOT NULL
+        WHEN 'JUNK'    THEN deleted_at IS NULL
+        ELSE archived_at IS NULL AND deleted_at IS NULL
+      END;
+
 -- name: SetThreadFlags :exec
 -- Housekeeping applied to a whole conversation. Archiving from a page that
 -- shows the entire exchange has to move the entire exchange; otherwise the
