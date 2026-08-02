@@ -213,6 +213,20 @@ type MailAccount struct {
 	OauthRefreshEnc []byte
 }
 
+type MailFlagOp struct {
+	ID         int64
+	TenantID   int64
+	AccountID  int64
+	EmployeeID int64
+	Folder     string
+	ImapUid    int64
+	Op         string
+	Attempts   int32
+	LastError  string
+	NextTryAt  pgtype.Timestamptz
+	CreatedAt  pgtype.Timestamptz
+}
+
 type MailHost struct {
 	TenantID     int64
 	Domain       string

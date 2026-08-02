@@ -46,6 +46,18 @@ type Mailbox interface {
 	// VerifyLogin authenticates and disconnects: it proves the credentials
 	// work today, and nothing else.
 	VerifyLogin(ctx context.Context, acct MailAccount) error
+	// SetFlags publishes a flag change to the host. The one call in this
+	// interface that writes to the real mailbox.
+	SetFlags(ctx context.Context, acct MailAccount, folder string, uids []uint32, flag string, add bool) error
+	// FetchFlags reads back what the host believes, so somebody else's
+	// changes reach the ERP too.
+	FetchFlags(ctx context.Context, acct MailAccount, folder string, uids []uint32) (map[uint32]MessageFlags, error)
+}
+
+// MessageFlags is the host's view of one message.
+type MessageFlags struct {
+	Seen    bool
+	Flagged bool
 }
 
 // UseMailbox installs the inbound adapter. Same two-step wiring as the
@@ -181,6 +193,14 @@ func (s *Service) SyncMailbox(ctx context.Context, cfg SyncConfig, employeeID in
 		s.log.Warn("could not locate the junk folder", "account", acct.AccountID, "err", err)
 	} else if _, err := s.syncFolder(ctx, jcfg, acct, "JUNK", actual); err != nil {
 		s.log.Warn("junk-folder sync failed", "account", acct.AccountID, "err", err)
+	}
+
+	// The host's own read state, taken back over the newest slice of the
+	// inbox. This is the half of two-way sync that carries somebody else's
+	// Gmail session into the ERP; it no-ops while local changes are still
+	// queued, so it can never overwrite one on its way up.
+	if err := s.ReconcileFlags(ctx, cfg.TenantID, acct, "INBOX", "INBOX"); err != nil {
+		s.log.Warn("could not reconcile read state", "account", acct.AccountID, "err", err)
 	}
 
 	// The ping goes out only after everything is committed, and only to the

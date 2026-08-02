@@ -124,6 +124,10 @@ func run(log *slog.Logger) error {
 		// are what make new mail arrive in seconds instead of minutes.
 		go svc.RunInboundSync(ctx, syncCfg)
 		go svc.RunIdleWatchers(ctx, syncCfg)
+		// The other direction: housekeeping done here reaches the real
+		// mailbox. Its own loop rather than a step inside the poller, so a
+		// slow fetch never delays publishing a click.
+		go svc.RunFlagWriteback(ctx, syncCfg)
 	}
 
 	// The worker runs in-process. The database is the queue, so a second

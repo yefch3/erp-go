@@ -36,6 +36,62 @@ func (q *Queries) BumpSendCounter(ctx context.Context, arg BumpSendCounterParams
 	return sent_count, err
 }
 
+const claimFlagOps = `-- name: ClaimFlagOps :many
+SELECT id, account_id, employee_id, folder, imap_uid, op, attempts
+FROM mail_flag_ops
+WHERE tenant_id = $1::bigint
+  AND next_try_at <= now()
+ORDER BY next_try_at
+LIMIT $2::int
+FOR UPDATE SKIP LOCKED
+`
+
+type ClaimFlagOpsParams struct {
+	TenantID int64
+	RowLimit int32
+}
+
+type ClaimFlagOpsRow struct {
+	ID         int64
+	AccountID  int64
+	EmployeeID int64
+	Folder     string
+	ImapUid    int64
+	Op         string
+	Attempts   int32
+}
+
+// Due work, oldest first, locked so two workers cannot publish the same
+// change twice. SKIP LOCKED rather than waiting: another worker holding a row
+// means it is already being handled.
+func (q *Queries) ClaimFlagOps(ctx context.Context, arg ClaimFlagOpsParams) ([]ClaimFlagOpsRow, error) {
+	rows, err := q.db.Query(ctx, claimFlagOps, arg.TenantID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ClaimFlagOpsRow
+	for rows.Next() {
+		var i ClaimFlagOpsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.EmployeeID,
+			&i.Folder,
+			&i.ImapUid,
+			&i.Op,
+			&i.Attempts,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countFolder = `-- name: CountFolder :one
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = $1::bigint
@@ -164,6 +220,24 @@ func (q *Queries) CountMailboxSent(ctx context.Context, arg CountMailboxSentPara
 	return column_1, err
 }
 
+const countPendingFlagOps = `-- name: CountPendingFlagOps :one
+SELECT count(*)::bigint FROM mail_flag_ops
+WHERE tenant_id = $1::bigint
+  AND account_id = $2::bigint
+`
+
+type CountPendingFlagOpsParams struct {
+	TenantID  int64
+	AccountID int64
+}
+
+func (q *Queries) CountPendingFlagOps(ctx context.Context, arg CountPendingFlagOpsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPendingFlagOps, arg.TenantID, arg.AccountID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countSentInWindow = `-- name: CountSentInWindow :one
 SELECT
     coalesce(sum(sent_count) FILTER (WHERE window_at >= date_trunc('hour', now())), 0)::int AS this_hour,
@@ -215,6 +289,15 @@ func (q *Queries) CountUnread(ctx context.Context, arg CountUnreadParams) (int64
 	return column_1, err
 }
 
+const deleteFlagOp = `-- name: DeleteFlagOp :exec
+DELETE FROM mail_flag_ops WHERE id = $1::bigint
+`
+
+func (q *Queries) DeleteFlagOp(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteFlagOp, id)
+	return err
+}
+
 const deleteInboundForAccount = `-- name: DeleteInboundForAccount :exec
 DELETE FROM email_inbound
 WHERE tenant_id = $1::bigint AND account_id = $2::bigint
@@ -244,6 +327,63 @@ type DeleteSyncStateForAccountParams struct {
 
 func (q *Queries) DeleteSyncStateForAccount(ctx context.Context, arg DeleteSyncStateForAccountParams) error {
 	_, err := q.db.Exec(ctx, deleteSyncStateForAccount, arg.TenantID, arg.AccountID)
+	return err
+}
+
+const enqueueFlagOp = `-- name: EnqueueFlagOp :exec
+INSERT INTO mail_flag_ops (tenant_id, account_id, employee_id, folder, imap_uid, op)
+VALUES (
+    $1::bigint, $2::bigint,
+    $3::bigint,
+    $4::text, $5::bigint, $6::text
+)
+ON CONFLICT (tenant_id, account_id, folder, imap_uid) DO UPDATE SET
+    op = excluded.op,
+    attempts = 0,
+    last_error = '',
+    next_try_at = now()
+`
+
+type EnqueueFlagOpParams struct {
+	TenantID   int64
+	AccountID  int64
+	EmployeeID int64
+	Folder     string
+	ImapUid    int64
+	Op         string
+}
+
+// The intent to publish one flag change. Conflicting intents collapse: the
+// newest wins, because that is the state the person last chose.
+func (q *Queries) EnqueueFlagOp(ctx context.Context, arg EnqueueFlagOpParams) error {
+	_, err := q.db.Exec(ctx, enqueueFlagOp,
+		arg.TenantID,
+		arg.AccountID,
+		arg.EmployeeID,
+		arg.Folder,
+		arg.ImapUid,
+		arg.Op,
+	)
+	return err
+}
+
+const failFlagOp = `-- name: FailFlagOp :exec
+UPDATE mail_flag_ops
+SET attempts = attempts + 1,
+    last_error = $1::text,
+    next_try_at = now() + (least(attempts + 1, 6) * interval '2 minutes')
+WHERE id = $2::bigint
+`
+
+type FailFlagOpParams struct {
+	LastError string
+	ID        int64
+}
+
+// Backs off so a mailbox that is refusing connections is retried at a
+// widening interval rather than hammered every cycle.
+func (q *Queries) FailFlagOp(ctx context.Context, arg FailFlagOpParams) error {
+	_, err := q.db.Exec(ctx, failFlagOp, arg.LastError, arg.ID)
 	return err
 }
 
@@ -1052,6 +1192,56 @@ func (q *Queries) ListMailboxSent(ctx context.Context, arg ListMailboxSentParams
 	return items, nil
 }
 
+const listRecentUIDs = `-- name: ListRecentUIDs :many
+SELECT imap_uid, is_read
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND account_id = $2::bigint
+  AND folder = $3::text
+ORDER BY imap_uid DESC
+LIMIT $4::int
+`
+
+type ListRecentUIDsParams struct {
+	TenantID  int64
+	AccountID int64
+	Folder    string
+	RowLimit  int32
+}
+
+type ListRecentUIDsRow struct {
+	ImapUid int64
+	IsRead  bool
+}
+
+// The newest slice of one folder, for reconciling flags against the host.
+// Bounded: re-reading a whole mailbox every cycle would cost more than the
+// disagreement it is looking for.
+func (q *Queries) ListRecentUIDs(ctx context.Context, arg ListRecentUIDsParams) ([]ListRecentUIDsRow, error) {
+	rows, err := q.db.Query(ctx, listRecentUIDs,
+		arg.TenantID,
+		arg.AccountID,
+		arg.Folder,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRecentUIDsRow
+	for rows.Next() {
+		var i ListRecentUIDsRow
+		if err := rows.Scan(&i.ImapUid, &i.IsRead); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSentWithEngagement = `-- name: ListSentWithEngagement :many
 SELECT m.id, m.message_key::text AS message_key, m.subject, m.to_email, m.to_name,
        m.status, m.thread_key, m.sent_at, m.queued_at, m.opened_at,
@@ -1291,11 +1481,13 @@ func (q *Queries) ListThreadForPurge(ctx context.Context, arg ListThreadForPurge
 	return items, nil
 }
 
-const markInboundRead = `-- name: MarkInboundRead :exec
+const markInboundRead = `-- name: MarkInboundRead :many
 UPDATE email_inbound SET is_read = TRUE
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
   AND id = $3::bigint
+  AND NOT is_read
+RETURNING account_id, folder, imap_uid
 `
 
 type MarkInboundReadParams struct {
@@ -1304,9 +1496,30 @@ type MarkInboundReadParams struct {
 	ID       int64
 }
 
-func (q *Queries) MarkInboundRead(ctx context.Context, arg MarkInboundReadParams) error {
-	_, err := q.db.Exec(ctx, markInboundRead, arg.TenantID, arg.OwnerID, arg.ID)
-	return err
+type MarkInboundReadRow struct {
+	AccountID int64
+	Folder    string
+	ImapUid   int64
+}
+
+func (q *Queries) MarkInboundRead(ctx context.Context, arg MarkInboundReadParams) ([]MarkInboundReadRow, error) {
+	rows, err := q.db.Query(ctx, markInboundRead, arg.TenantID, arg.OwnerID, arg.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MarkInboundReadRow
+	for rows.Next() {
+		var i MarkInboundReadRow
+		if err := rows.Scan(&i.AccountID, &i.Folder, &i.ImapUid); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const markMailAccountFailed = `-- name: MarkMailAccountFailed :exec
@@ -1386,7 +1599,7 @@ func (q *Queries) MarkSyncFailed(ctx context.Context, arg MarkSyncFailedParams) 
 	return err
 }
 
-const markViewRead = `-- name: MarkViewRead :execrows
+const markViewRead = `-- name: MarkViewRead :many
 UPDATE email_inbound
 SET is_read = TRUE
 WHERE tenant_id = $1::bigint
@@ -1404,12 +1617,19 @@ WHERE tenant_id = $1::bigint
         WHEN 'JUNK'    THEN deleted_at IS NULL
         ELSE archived_at IS NULL AND deleted_at IS NULL
       END
+RETURNING account_id, folder, imap_uid
 `
 
 type MarkViewReadParams struct {
 	TenantID int64
 	OwnerID  int64
 	View     string
+}
+
+type MarkViewReadRow struct {
+	AccountID int64
+	Folder    string
+	ImapUid   int64
 }
 
 // Marks everything the current view shows as read, and nothing else.
@@ -1419,12 +1639,24 @@ type MarkViewReadParams struct {
 // never reach into the archive or the trash from either. Read state is
 // ERP-side only — the mail host is not told, same as every other bit of
 // housekeeping here.
-func (q *Queries) MarkViewRead(ctx context.Context, arg MarkViewReadParams) (int64, error) {
-	result, err := q.db.Exec(ctx, markViewRead, arg.TenantID, arg.OwnerID, arg.View)
+func (q *Queries) MarkViewRead(ctx context.Context, arg MarkViewReadParams) ([]MarkViewReadRow, error) {
+	rows, err := q.db.Query(ctx, markViewRead, arg.TenantID, arg.OwnerID, arg.View)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected(), nil
+	defer rows.Close()
+	var items []MarkViewReadRow
+	for rows.Next() {
+		var i MarkViewReadRow
+		if err := rows.Scan(&i.AccountID, &i.Folder, &i.ImapUid); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const pruneSendCounters = `-- name: PruneSendCounters :exec
@@ -1462,7 +1694,7 @@ func (q *Queries) PurgeInbound(ctx context.Context, arg PurgeInboundParams) (int
 	return result.RowsAffected(), nil
 }
 
-const setInboundFlags = `-- name: SetInboundFlags :exec
+const setInboundFlags = `-- name: SetInboundFlags :many
 UPDATE email_inbound
 SET is_read    = coalesce($1::boolean, is_read),
     is_starred = coalesce($2::boolean, is_starred),
@@ -1478,6 +1710,7 @@ SET is_read    = coalesce($1::boolean, is_read),
 WHERE tenant_id = $6::bigint
   AND owner_id = $7::bigint
   AND id = $8::bigint
+RETURNING account_id, folder, imap_uid, is_read
 `
 
 type SetInboundFlagsParams struct {
@@ -1491,11 +1724,18 @@ type SetInboundFlagsParams struct {
 	ID       int64
 }
 
+type SetInboundFlagsRow struct {
+	AccountID int64
+	Folder    string
+	ImapUid   int64
+	IsRead    bool
+}
+
 // One statement for all four flags; an absent argument leaves that flag
 // alone. Owner-scoped in the WHERE, so marking somebody else's mail is a
 // no-op rather than a decision.
-func (q *Queries) SetInboundFlags(ctx context.Context, arg SetInboundFlagsParams) error {
-	_, err := q.db.Exec(ctx, setInboundFlags,
+func (q *Queries) SetInboundFlags(ctx context.Context, arg SetInboundFlagsParams) ([]SetInboundFlagsRow, error) {
+	rows, err := q.db.Query(ctx, setInboundFlags,
 		arg.Read,
 		arg.Starred,
 		arg.NotJunk,
@@ -1504,6 +1744,57 @@ func (q *Queries) SetInboundFlags(ctx context.Context, arg SetInboundFlagsParams
 		arg.TenantID,
 		arg.OwnerID,
 		arg.ID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SetInboundFlagsRow
+	for rows.Next() {
+		var i SetInboundFlagsRow
+		if err := rows.Scan(
+			&i.AccountID,
+			&i.Folder,
+			&i.ImapUid,
+			&i.IsRead,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setInboundReadByUID = `-- name: SetInboundReadByUID :exec
+UPDATE email_inbound
+SET is_read = $1::boolean
+WHERE tenant_id = $2::bigint
+  AND account_id = $3::bigint
+  AND folder = $4::text
+  AND imap_uid = $5::bigint
+`
+
+type SetInboundReadByUIDParams struct {
+	IsRead    bool
+	TenantID  int64
+	AccountID int64
+	Folder    string
+	ImapUid   int64
+}
+
+// Server state winning over ours, for one message. Used only by the
+// reconcile pass, and only once the write-back queue is empty for this
+// account — otherwise it would overwrite a local change still on its way up.
+func (q *Queries) SetInboundReadByUID(ctx context.Context, arg SetInboundReadByUIDParams) error {
+	_, err := q.db.Exec(ctx, setInboundReadByUID,
+		arg.IsRead,
+		arg.TenantID,
+		arg.AccountID,
+		arg.Folder,
+		arg.ImapUid,
 	)
 	return err
 }
@@ -1593,7 +1884,7 @@ func (q *Queries) SetMailAccountSecret(ctx context.Context, arg SetMailAccountSe
 	return err
 }
 
-const setThreadFlags = `-- name: SetThreadFlags :exec
+const setThreadFlags = `-- name: SetThreadFlags :many
 UPDATE email_inbound
 SET is_read    = coalesce($1::boolean, is_read),
     is_starred = coalesce($2::boolean, is_starred),
@@ -1610,6 +1901,7 @@ WHERE tenant_id = $6::bigint
   AND owner_id = $7::bigint
   AND thread_key = $8::text
   AND thread_key <> ''
+RETURNING account_id, folder, imap_uid, is_read
 `
 
 type SetThreadFlagsParams struct {
@@ -1623,13 +1915,20 @@ type SetThreadFlagsParams struct {
 	ThreadKey string
 }
 
+type SetThreadFlagsRow struct {
+	AccountID int64
+	Folder    string
+	ImapUid   int64
+	IsRead    bool
+}
+
 // Housekeeping applied to a whole conversation. Archiving from a page that
 // shows the entire exchange has to move the entire exchange; otherwise the
 // thread stays in the inbox one message lighter, which reads as a bug.
 // Owner-scoped: thread keys are guessable, so this must never reach further
 // than the caller's own mail.
-func (q *Queries) SetThreadFlags(ctx context.Context, arg SetThreadFlagsParams) error {
-	_, err := q.db.Exec(ctx, setThreadFlags,
+func (q *Queries) SetThreadFlags(ctx context.Context, arg SetThreadFlagsParams) ([]SetThreadFlagsRow, error) {
+	rows, err := q.db.Query(ctx, setThreadFlags,
 		arg.Read,
 		arg.Starred,
 		arg.NotJunk,
@@ -1639,7 +1938,27 @@ func (q *Queries) SetThreadFlags(ctx context.Context, arg SetThreadFlagsParams) 
 		arg.OwnerID,
 		arg.ThreadKey,
 	)
-	return err
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SetThreadFlagsRow
+	for rows.Next() {
+		var i SetThreadFlagsRow
+		if err := rows.Scan(
+			&i.AccountID,
+			&i.Folder,
+			&i.ImapUid,
+			&i.IsRead,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const upsertMailAccountShell = `-- name: UpsertMailAccountShell :one

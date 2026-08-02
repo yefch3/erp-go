@@ -184,10 +184,16 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 	}
 
 	if !row.IsRead {
-		if err := s.q.MarkInboundRead(ctx, store.MarkInboundReadParams{
+		touched, err := s.q.MarkInboundRead(ctx, store.MarkInboundReadParams{
 			TenantID: tenantID, OwnerID: ownerID, ID: id,
-		}); err != nil {
+		})
+		if err != nil {
 			s.log.Warn("could not mark a mail read", "id", id, "err", err)
+		}
+		// Opening a mail here marks it read in the real mailbox too, which is
+		// what anybody who also uses Gmail expects: they read it once.
+		for _, t := range touched {
+			s.queueFlagWrite(ctx, tenantID, t.AccountID, ownerID, t.Folder, t.ImapUid, true)
 		}
 	}
 
@@ -285,18 +291,39 @@ func (s *Service) MarkInbound(ctx context.Context, tenantID, ownerID, id int64, 
 		// else's mail is not ours to look up — both fall through to marking
 		// the single row, which is owner-scoped in its own right.
 		if err == nil && row.OwnerID == ownerID && row.ThreadKey != "" {
-			return s.q.SetThreadFlags(ctx, store.SetThreadFlagsParams{
+			touched, err := s.q.SetThreadFlags(ctx, store.SetThreadFlagsParams{
 				TenantID: tenantID, OwnerID: ownerID, ThreadKey: row.ThreadKey,
 				Read: read, Starred: starred, Archived: archived, Deleted: deleted,
 				NotJunk: notJunk,
 			})
+			if err != nil {
+				return err
+			}
+			if read != nil {
+				for _, t := range touched {
+					s.queueFlagWrite(ctx, tenantID, t.AccountID, ownerID, t.Folder, t.ImapUid, t.IsRead)
+				}
+			}
+			return nil
 		}
 	}
-	return s.q.SetInboundFlags(ctx, store.SetInboundFlagsParams{
+	touched, err := s.q.SetInboundFlags(ctx, store.SetInboundFlagsParams{
 		TenantID: tenantID, OwnerID: ownerID, ID: id,
 		Read: read, Starred: starred, Archived: archived, Deleted: deleted,
 		NotJunk: notJunk,
 	})
+	if err != nil {
+		return err
+	}
+	// Read state belongs to the mailbox, not to the ERP's copy of it, so it
+	// goes up to the host. The other flags are ours alone for now: archive
+	// and trash mean something different here than any IMAP folder does.
+	if read != nil {
+		for _, t := range touched {
+			s.queueFlagWrite(ctx, tenantID, t.AccountID, ownerID, t.Folder, t.ImapUid, t.IsRead)
+		}
+	}
+	return nil
 }
 
 // MarkViewRead marks everything in one view read and reports how many rows
@@ -311,9 +338,16 @@ func (s *Service) MarkViewRead(ctx context.Context, tenantID, ownerID int64, vie
 	default:
 		view = "INBOX"
 	}
-	return s.q.MarkViewRead(ctx, store.MarkViewReadParams{
+	touched, err := s.q.MarkViewRead(ctx, store.MarkViewReadParams{
 		TenantID: tenantID, OwnerID: ownerID, View: view,
 	})
+	if err != nil {
+		return 0, err
+	}
+	for _, t := range touched {
+		s.queueFlagWrite(ctx, tenantID, t.AccountID, ownerID, t.Folder, t.ImapUid, true)
+	}
+	return int64(len(touched)), nil
 }
 
 // PurgeInbound permanently deletes mail from the caller's trash: the database
