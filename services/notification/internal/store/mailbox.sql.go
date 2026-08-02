@@ -841,24 +841,24 @@ WITH visible AS (
            coalesce(nullif(thread_key, ''), 'm:' || id::text) AS group_key,
            coalesce(sent_at, received_at) AS at
     FROM email_inbound
-    WHERE tenant_id = $3::bigint
-      AND owner_id = $4::bigint
-      AND CASE WHEN $5::text = 'JUNK'
+    WHERE tenant_id = $4::bigint
+      AND owner_id = $5::bigint
+      AND CASE WHEN $6::text = 'JUNK'
             THEN folder = 'JUNK' AND NOT not_junk
             ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
           END
       AND NOT is_bounce
-      AND CASE $5::text
+      AND CASE $6::text
             WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
             WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
             WHEN 'TRASH'   THEN deleted_at IS NOT NULL
             WHEN 'JUNK'    THEN deleted_at IS NULL
             ELSE archived_at IS NULL AND deleted_at IS NULL
           END
-      AND ($6::text = ''
-           OR subject ILIKE '%' || $6::text || '%'
-           OR from_email ILIKE '%' || $6::text || '%'
-           OR from_name ILIKE '%' || $6::text || '%')
+      AND ($7::text = ''
+           OR subject ILIKE '%' || $7::text || '%'
+           OR from_email ILIKE '%' || $7::text || '%'
+           OR from_name ILIKE '%' || $7::text || '%')
 ), ranked AS (
     SELECT visible.id, visible.from_email, visible.from_name, visible.subject, visible.snippet, visible.thread_key, visible.is_read, visible.is_starred, visible.has_attachments, visible.received_at, visible.sent_at, visible.group_key, visible.at,
            row_number() OVER (PARTITION BY group_key ORDER BY at DESC, id DESC) AS rn,
@@ -876,17 +876,22 @@ SELECT id, from_email, from_name, subject, snippet, thread_key,
        thread_count::int           AS thread_count
 FROM ranked
 WHERE rn = 1
+  -- Row comparison, so ties on the timestamp fall back to the id and no two
+  -- conversations can ever occupy the same cursor position.
+  AND ($1::timestamptz IS NULL
+       OR (at, id) < ($1::timestamptz, $2::bigint))
 ORDER BY at DESC, id DESC
-LIMIT $2::int OFFSET $1::int
+LIMIT $3::int
 `
 
 type ListInboundThreadsParams struct {
-	RowOffset int32
-	RowLimit  int32
-	TenantID  int64
-	OwnerID   int64
-	View      string
-	Keyword   string
+	CursorAt pgtype.Timestamptz
+	CursorID int64
+	RowLimit int32
+	TenantID int64
+	OwnerID  int64
+	View     string
+	Keyword  string
 }
 
 type ListInboundThreadsRow struct {
@@ -919,9 +924,16 @@ type ListInboundThreadsRow struct {
 // text and the time, the flags are the conversation's own. Unread if ANY
 // message is unread — a thread with an unanswered question in it must not
 // look handled because the last line happened to be read.
+//
+// Keyset, not OFFSET: the page starts strictly after the last row of the
+// previous one, so mail arriving mid-read cannot push a conversation across
+// the page boundary and make it appear twice or not at all, and page 50
+// costs the same as page 2. The price is that there is no jumping to page N
+// — the same trade Gmail makes with its 上一页 / 下一页.
 func (q *Queries) ListInboundThreads(ctx context.Context, arg ListInboundThreadsParams) ([]ListInboundThreadsRow, error) {
 	rows, err := q.db.Query(ctx, listInboundThreads,
-		arg.RowOffset,
+		arg.CursorAt,
+		arg.CursorID,
 		arg.RowLimit,
 		arg.TenantID,
 		arg.OwnerID,

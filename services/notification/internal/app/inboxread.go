@@ -2,8 +2,12 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/services/notification/internal/store"
@@ -31,13 +35,30 @@ type InboundView struct {
 	ThreadCount int32
 }
 
-// ListInbound is the caller's own inbox.
+// InboundPage is one screenful of conversations plus the counts and the
+// cursor that reaches the next one.
+type InboundPage struct {
+	Mails  []InboundView
+	Total  int64
+	Unread int32
+	// Empty when this is the last page. Opaque to the caller: it encodes the
+	// sort position of the final row, not an offset.
+	NextCursor string
+}
+
+// ListInbound is the caller's own inbox, one page at a time.
 //
 // ownerID is always the caller. There is deliberately no way to pass another
 // person's id here: the supervisor view reads through its own scoped surface,
 // and this one answers only "my mail".
-func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID int64, keyword, view string, page, size int32) ([]InboundView, int64, int32, error) {
-	page, size = normalizePage(page, size)
+//
+// Paging is keyset: cursor names the last row of the previous page and the
+// next one starts strictly after it. An empty cursor is the first page. Mail
+// arriving while somebody reads therefore cannot shift the boundary and make
+// a conversation show up twice or slip past unseen, which is exactly what
+// OFFSET does on a list that grows at the top.
+func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID int64, keyword, view, cursor string, size int32) (InboundPage, error) {
+	_, size = normalizePage(1, size)
 	// An unknown view falls back to the inbox proper rather than erroring:
 	// the worst a bad parameter can do is show the default slice.
 	switch view {
@@ -45,21 +66,29 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID int64, keyw
 	default:
 		view = "INBOX"
 	}
+
+	at, id, err := decodeCursor(cursor)
+	if err != nil {
+		return InboundPage{}, err
+	}
+
 	// One row per conversation, not per message: the newest message speaks
 	// for the thread and carries a count. Opening it shows the whole
 	// exchange, which the reading page has done since the conversation view.
 	rows, err := s.q.ListInboundThreads(ctx, store.ListInboundThreadsParams{
 		TenantID: tenantID, OwnerID: ownerID, Keyword: keyword, View: view,
-		RowLimit: size, RowOffset: (page - 1) * size,
+		CursorAt: at, CursorID: id, RowLimit: size,
 	})
 	if err != nil {
-		return nil, 0, 0, err
+		return InboundPage{}, err
 	}
+	// Still counted: the person wants to know how much mail is in here, and
+	// keyset paging only replaces how pages are reached, not what they show.
 	total, err := s.q.CountInboundThreads(ctx, store.CountInboundThreadsParams{
 		TenantID: tenantID, OwnerID: ownerID, Keyword: keyword, View: view,
 	})
 	if err != nil {
-		return nil, 0, 0, err
+		return InboundPage{}, err
 	}
 	unread, err := s.q.CountUnread(ctx, store.CountUnreadParams{
 		TenantID: tenantID, OwnerID: ownerID,
@@ -84,7 +113,60 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID int64, keyw
 		}
 		out = append(out, v)
 	}
-	return out, total, int32(unread), nil
+
+	page := InboundPage{Mails: out, Total: total, Unread: int32(unread)}
+	// A short page is the end of the list. A full one might be, and offering
+	// a next page that turns out empty is a smaller sin than hiding mail.
+	if int32(len(out)) == size && size > 0 {
+		last := out[len(out)-1]
+		page.NextCursor = encodeCursor(sortTime(last), last.ID)
+	}
+	return page, nil
+}
+
+// sortTime mirrors the query's coalesce(sent_at, received_at). The cursor has
+// to name the same instant the ORDER BY used, or a page boundary would land
+// in the wrong place.
+func sortTime(v InboundView) time.Time {
+	if !v.SentAt.IsZero() {
+		return v.SentAt
+	}
+	return v.ReceivedAt
+}
+
+// The cursor is a position, not a page number: the sort key of the last row
+// shown. Encoded so it reads as an opaque token — nothing downstream should
+// be tempted to do arithmetic on it.
+func encodeCursor(at time.Time, id int64) string {
+	return base64.RawURLEncoding.EncodeToString(
+		[]byte(strconv.FormatInt(at.UTC().UnixMicro(), 10) + ":" + strconv.FormatInt(id, 10)))
+}
+
+func decodeCursor(cursor string) (pgtype.Timestamptz, int64, error) {
+	if cursor == "" {
+		return pgtype.Timestamptz{}, 0, nil
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return pgtype.Timestamptz{}, 0, errBadCursor()
+	}
+	micros, idPart, ok := strings.Cut(string(raw), ":")
+	if !ok {
+		return pgtype.Timestamptz{}, 0, errBadCursor()
+	}
+	us, err := strconv.ParseInt(micros, 10, 64)
+	if err != nil {
+		return pgtype.Timestamptz{}, 0, errBadCursor()
+	}
+	id, err := strconv.ParseInt(idPart, 10, 64)
+	if err != nil {
+		return pgtype.Timestamptz{}, 0, errBadCursor()
+	}
+	return pgtype.Timestamptz{Time: time.UnixMicro(us).UTC(), Valid: true}, id, nil
+}
+
+func errBadCursor() error {
+	return apierr.Invalid("NT_BAD_CURSOR", "翻页位置无效，请回到第一页")
 }
 
 // GetInbound opens one message, marking it read as a side effect.

@@ -406,8 +406,20 @@
         </el-table-column>
       </el-table>
 
+      <!-- Cursor paging: 上一页 / 下一页 only, no page numbers. A jump to
+           page 40 has no meaning when pages are positions in a list that
+           grows at the top — Gmail's pager for the same reason. -->
+      <div v-if="isInboundView && (total > 0 || cursorStack.length)" class="pager keyset">
+        <span class="sub">{{ t('emails.totalMails', { n: total }) }}</span>
+        <el-button size="small" :disabled="!cursorStack.length" @click="prevPage">
+          {{ t('emails.prevPage') }}
+        </el-button>
+        <el-button size="small" :disabled="!nextCursor" @click="nextPage">
+          {{ t('emails.nextPage') }}
+        </el-button>
+      </div>
       <el-pagination
-        v-if="folder === 'sent' || folder === 'attention' || isInboundView"
+        v-else-if="folder === 'sent' || folder === 'attention'"
         v-model:current-page="page"
         :page-size="pageSize"
         :total="total"
@@ -649,6 +661,8 @@ const inbound = ref<InboundMail[]>([])
 const sentView = ref<'erp' | 'mailbox'>('erp')
 const mailboxSent = ref<InboundMail[]>([])
 const unreadCount = ref(0)
+// Where the next inbound page starts; empty means this is the last one.
+const nextCursor = ref('')
 const syncing = ref(false)
 // The mail being read full-page. Set from the URL, never directly: opening a
 // mail is a navigation, so refresh reopens it and back returns to the list.
@@ -669,6 +683,9 @@ interface UrlState {
   q: string
   sent: 'erp' | 'mailbox'
   mail: string
+  // Where an inbound list page starts. Opaque server token; empty is the
+  // first page. Offset paging (page) still drives sent/attention.
+  cursor: string
 }
 
 // What the screen currently shows. null until the first applyRoute, so the
@@ -687,6 +704,7 @@ function parseQuery(q: LocationQuery): UrlState {
     q: one(q.q),
     sent: one(q.sent) === 'mailbox' ? 'mailbox' : 'erp',
     mail: /^\d+$/.test(one(q.mail)) ? one(q.mail) : '',
+    cursor: one(q.c),
   }
 }
 
@@ -698,19 +716,37 @@ function toQuery(s: UrlState): Record<string, string> {
   if (s.q) query.q = s.q
   if (s.folder === 'sent' && s.sent !== 'erp') query.sent = s.sent
   if (s.mail) query.mail = s.mail
+  if (s.cursor) query.c = s.cursor
   return query
 }
 
-function pushState(over: Partial<UrlState>) {
+// The cursors of the pages walked through to reach this one, newest last.
+// Keyset paging knows how to go forward, not back, so 上一页 replays the
+// cursor it came from. Kept in history state rather than a component ref so
+// it survives a refresh and so back/forward each restore the stack as it
+// stood on that entry.
+const cursorStack = ref<string[]>([])
+
+function stackFromHistory(): string[] {
+  const st = (history.state as { mailStack?: unknown } | null)?.mailStack
+  return Array.isArray(st) ? (st as string[]) : []
+}
+
+function pushState(over: Partial<UrlState>, stack?: string[]) {
   const cur = applied ?? parseQuery(route.query)
   const next = { ...cur, ...over }
+  // A page number and a cursor are two answers to the same question; setting
+  // one has to clear the other or a stale cursor would survive a search.
+  if (over.cursor === undefined && (over.folder !== undefined || over.q !== undefined || over.sent !== undefined || over.page !== undefined)) {
+    next.cursor = ''
+  }
   // Navigating to where we already are is a plain refresh, not a navigation:
   // pushing an identical route would be silently dropped by the router.
   if (applied && JSON.stringify(toQuery(next)) === JSON.stringify(toQuery(cur))) {
     load()
     return
   }
-  router.push({ query: toQuery(next) })
+  router.push({ query: toQuery(next), state: { mailStack: stack ?? [] } })
 }
 
 // The one place the URL turns into screen state. Loads only what changed:
@@ -722,11 +758,19 @@ function applyRoute() {
   const s = parseQuery(route.query)
   const prev = applied
   applied = s
+  cursorStack.value = stackFromHistory()
   folder.value = s.folder
   page.value = s.page
   keyword.value = s.q
   sentView.value = s.sent
-  if (!prev || prev.folder !== s.folder || prev.page !== s.page || prev.q !== s.q || prev.sent !== s.sent) {
+  if (
+    !prev ||
+    prev.folder !== s.folder ||
+    prev.page !== s.page ||
+    prev.q !== s.q ||
+    prev.sent !== s.sent ||
+    prev.cursor !== s.cursor
+  ) {
     load()
   }
   if (!prev || prev.mail !== s.mail) {
@@ -912,6 +956,20 @@ function onPageChange(p: number) {
   pushState({ page: p })
 }
 
+// Inbound lists page by cursor: forward hands back the token the server
+// returned, back replays the one this page was reached with. Both are
+// navigations, so the address bar and the browser's own buttons stay honest.
+function nextPage() {
+  if (!nextCursor.value) return
+  pushState({ cursor: nextCursor.value, mail: '' }, [...cursorStack.value, applied?.cursor ?? ''])
+}
+
+function prevPage() {
+  const stack = cursorStack.value
+  if (!stack.length) return
+  pushState({ cursor: stack[stack.length - 1], mail: '' }, stack.slice(0, -1))
+}
+
 function backToList() {
   pushState({ mail: '' })
 }
@@ -920,18 +978,21 @@ async function load() {
   loading.value = true
   try {
     if (isInboundView.value) {
-      const d = await get<{ mails: InboundMail[]; meta: { total: string }; unreadCount: number }>(
-        '/inbound-mails',
-        {
-          page: page.value,
-          page_size: pageSize,
-          keyword: keyword.value,
-          view: INBOUND_VIEWS[folder.value],
-        },
-      )
+      const d = await get<{
+        mails: InboundMail[]
+        meta: { total: string }
+        unreadCount: number
+        nextCursor: string
+      }>('/inbound-mails', {
+        page_size: pageSize,
+        keyword: keyword.value,
+        view: INBOUND_VIEWS[folder.value],
+        cursor: applied?.cursor ?? '',
+      })
       inbound.value = d.mails ?? []
       total.value = Number(d.meta?.total ?? 0)
       unreadCount.value = Number(d.unreadCount ?? 0)
+      nextCursor.value = d.nextCursor ?? ''
     } else if (folder.value === 'drafts') {
       const d = await get<{ drafts: Draft[] }>('/email-drafts')
       drafts.value = d.drafts ?? []
@@ -1411,6 +1472,11 @@ async function doUnsuppress(row: Suppression) {
 .pager {
   margin-top: 14px;
   justify-content: flex-end;
+}
+.pager.keyset {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .unread-dot {

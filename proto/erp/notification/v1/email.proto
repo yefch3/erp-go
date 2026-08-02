@@ -151,17 +151,25 @@ message InboundAttachment {
 }
 
 message ListInboundRequest {
+  // Only page_size is read. Pages are reached by cursor, not by number.
   erp.common.v1.PageRequest page = 1;
   string keyword = 2;
   // Which slice of the mailbox: empty/INBOX (not archived, not trashed),
   // STARRED, ARCHIVE, or TRASH.
   string view = 3;
+  // Where the previous page ended; empty for the first page. Opaque: it
+  // encodes a sort position, so a list that grows at the top cannot shift
+  // the boundary underneath somebody who is reading.
+  string cursor = 4;
 }
 
 message ListInboundResponse {
   repeated InboundMail mails = 1;
+  // Carries the total only; page numbers are meaningless under keyset paging.
   erp.common.v1.PageMeta meta = 2;
   int32 unread_count = 3;
+  // Feed back as cursor to get the next page. Empty means this was the last.
+  string next_cursor = 4;
 }
 
 message GetInboundRequest {
