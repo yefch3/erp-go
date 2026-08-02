@@ -876,6 +876,7 @@ export default {
     allRecipients: '全部收件人',
     wrote: '写道：',
     showQuoted: '展开引用内容',
+    hideQuoted: '收起引用内容',
     backToList: '返回',
     purge: '彻底删除',
     purgeHint: '将永久删除这封邮件在 ERP 中的记录、原始邮件文件和附件副本，无法恢复。邮箱服务商（Gmail/263）中的原件不受影响。确定吗？',

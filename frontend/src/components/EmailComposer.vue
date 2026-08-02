@@ -94,16 +94,30 @@
             :rows="9"
             :placeholder="t('emails.bodyPlaceholder')"
           />
-          <!-- The quoted original, folded behind Gmail's ··· trimmer. It is
-               part of the outgoing mail either way; expanding just moves it
-               into the editor so it can be trimmed by hand. -->
-          <button
-            v-if="quoted"
-            type="button"
-            class="quote-trim"
-            :title="t('emails.showQuoted')"
-            @click="expandQuote"
-          >···</button>
+          <!-- The quoted original, folded behind Gmail's ··· trimmer. It
+               lives in its own region rather than inside the editor, which
+               is what makes the fold reversible: the boundary between what
+               you wrote and what you are quoting never has to be guessed.
+               Part of the outgoing mail either way, open or shut. -->
+          <template v-if="quoted">
+            <button
+              type="button"
+              class="quote-trim"
+              :class="{ on: quoteOpen }"
+              :title="t(quoteOpen ? 'emails.hideQuoted' : 'emails.showQuoted')"
+              @click="quoteOpen = !quoteOpen"
+            >···</button>
+            <!-- Editable while open, so the quote can be trimmed by hand.
+                 Deliberately not v-html-bound: re-rendering on every
+                 keystroke would drop the caret back to the start. -->
+            <div
+              v-show="quoteOpen"
+              ref="quoteBox"
+              class="quote-box"
+              contenteditable="true"
+              @input="onQuoteInput"
+            />
+          </template>
         </div>
       </el-form-item>
 
@@ -302,23 +316,33 @@ const bodyInput = ref()
 // it again does not claim work is about to be lost when it is not.
 let baseline = ''
 
-// A reply's quoted original, kept out of the editor and folded behind the
-// ··· trimmer. Always part of what is sent; see fullBody.
+// A reply's quoted original. Held apart from the editor for the whole life of
+// the compose — that separation is the feature: because the two are never
+// merged, the trimmer can fold as well as unfold, and nothing has to guess
+// where your text ends and the quote begins. Always part of what is sent;
+// see fullBody.
 const quoted = ref('')
+const quoteOpen = ref(false)
+const quoteBox = ref<HTMLElement>()
 
-// What actually goes out: the typed text plus the collapsed quote. Every
+// What actually goes out: the typed text plus the quote, open or shut. Every
 // consumer of the body — preview, send, draft — reads this, never form.body,
 // so folding the quote can never silently drop it from the mail.
 function fullBody() {
   return quoted.value ? form.body + quoted.value : form.body
 }
 
-// Expanding makes the quote ordinary editable content, exactly what Gmail's
-// trimmer does. One-way: collapsed again would mean guessing where the typed
-// text ends and the quote begins.
-function expandQuote() {
-  form.body = form.body + quoted.value
-  quoted.value = ''
+// The quote is written into the box once, when it opens, and read back on
+// edit. Binding it reactively instead would rewrite the DOM under the cursor.
+watch(quoteOpen, (open) => {
+  if (!open) return
+  nextTick(() => {
+    if (quoteBox.value) quoteBox.value.innerHTML = quoted.value
+  })
+})
+
+function onQuoteInput() {
+  if (quoteBox.value) quoted.value = quoteBox.value.innerHTML
 }
 
 // The rich editor leaves markup behind even when the box looks empty, so an
@@ -507,6 +531,7 @@ function reset() {
   form.subject = ''
   form.body = ''
   quoted.value = ''
+  quoteOpen.value = false
   form.format = 'HTML'
   form.signatureId = '0'
   form.sendMode = 'SEPARATE'
@@ -564,6 +589,7 @@ function onFormatChange() {
       .then(() => {
         form.body = ''
         quoted.value = ''
+        quoteOpen.value = false
       })
       .catch(() => {
         form.format = form.format === 'HTML' ? 'TEXT' : 'HTML'
@@ -886,6 +912,31 @@ async function onBeforeClose(done: () => void) {
 }
 .quote-trim:hover {
   background: var(--el-fill-color-dark);
+}
+.quote-trim.on {
+  border-color: var(--el-color-primary);
+  color: var(--el-color-primary);
+}
+.quote-box {
+  margin-top: 8px;
+  padding: 8px 12px;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  background: var(--el-fill-color-lighter);
+  font-size: 13px;
+  line-height: 1.6;
+  outline: none;
+}
+.quote-box :deep(blockquote) {
+  margin: 0 0 0 8px;
+  padding-left: 10px;
+  border-left: 2px solid var(--el-border-color);
+  color: var(--el-text-color-regular);
+}
+.quote-box :deep(img) {
+  max-width: 100%;
 }
 .preview-html {
   margin-top: 10px;
