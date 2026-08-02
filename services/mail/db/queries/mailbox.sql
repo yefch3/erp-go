@@ -395,7 +395,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND thread_key = sqlc.arg(thread_key)::text
   AND thread_key <> ''
-RETURNING account_id, folder, imap_uid, is_read;
+RETURNING account_id, folder, imap_uid, is_read, is_starred;
 
 -- name: SetInboundFlags :many
 -- One statement for all four flags; an absent argument leaves that flag
@@ -416,7 +416,7 @@ SET is_read    = coalesce(sqlc.narg(read)::boolean, is_read),
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND id = sqlc.arg(id)::bigint
-RETURNING account_id, folder, imap_uid, is_read;
+RETURNING account_id, folder, imap_uid, is_read, is_starred;
 
 -- name: GetInbound :one
 SELECT id, account_id, owner_id, message_id, thread_key, reply_to_id,
@@ -609,13 +609,14 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- name: EnqueueFlagOp :exec
 -- The intent to publish one flag change. Conflicting intents collapse: the
 -- newest wins, because that is the state the person last chose.
-INSERT INTO mail_flag_ops (tenant_id, account_id, employee_id, folder, imap_uid, op)
+INSERT INTO mail_flag_ops (tenant_id, account_id, employee_id, folder, imap_uid, flag, op)
 VALUES (
     sqlc.arg(tenant_id)::bigint, sqlc.arg(account_id)::bigint,
     sqlc.arg(employee_id)::bigint,
-    sqlc.arg(folder)::text, sqlc.arg(imap_uid)::bigint, sqlc.arg(op)::text
+    sqlc.arg(folder)::text, sqlc.arg(imap_uid)::bigint,
+    sqlc.arg(flag)::text, sqlc.arg(op)::text
 )
-ON CONFLICT (tenant_id, account_id, folder, imap_uid) DO UPDATE SET
+ON CONFLICT (tenant_id, account_id, folder, imap_uid, flag) DO UPDATE SET
     op = excluded.op,
     attempts = 0,
     last_error = '',
@@ -625,7 +626,7 @@ ON CONFLICT (tenant_id, account_id, folder, imap_uid) DO UPDATE SET
 -- Due work, oldest first, locked so two workers cannot publish the same
 -- change twice. SKIP LOCKED rather than waiting: another worker holding a row
 -- means it is already being handled.
-SELECT id, account_id, employee_id, folder, imap_uid, op, attempts
+SELECT id, account_id, employee_id, folder, imap_uid, flag, op, attempts
 FROM mail_flag_ops
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND next_try_at <= now()
@@ -654,13 +655,23 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- The newest slice of one folder, for reconciling flags against the host.
 -- Bounded: re-reading a whole mailbox every cycle would cost more than the
 -- disagreement it is looking for.
-SELECT imap_uid, is_read
+SELECT imap_uid, is_read, is_starred
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND account_id = sqlc.arg(account_id)::bigint
   AND folder = sqlc.arg(folder)::text
 ORDER BY imap_uid DESC
 LIMIT sqlc.arg(row_limit)::int;
+
+-- name: SetInboundStarredByUID :exec
+-- The host's star, taken as truth. Same rules as the read state: only after
+-- the queue for this account is empty.
+UPDATE email_inbound
+SET is_starred = sqlc.arg(is_starred)::boolean
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder = sqlc.arg(folder)::text
+  AND imap_uid = sqlc.arg(imap_uid)::bigint;
 
 -- name: SetInboundReadByUID :exec
 -- Server state winning over ours, for one message. Used only by the
