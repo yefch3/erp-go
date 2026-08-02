@@ -23,8 +23,14 @@ import (
 // local change still waiting to go up.
 
 const (
-	opSeen   = "SEEN"
-	opUnseen = "UNSEEN"
+	// What is being published, and which way. Kept apart because the two
+	// flags are independent: a mail can be read and starred, and a pending
+	// change to one must never displace a pending change to the other.
+	flagSeen    = "SEEN"
+	flagFlagged = "FLAGGED"
+
+	opAdd    = "ADD"
+	opRemove = "REMOVE"
 
 	// How many messages the reconcile pass re-reads per folder. Enough to
 	// cover a browsing session in another client, small enough that the cost
@@ -38,14 +44,14 @@ const (
 // the person sees. A failure to queue means the mailbox stays as it was on
 // the host until something touches that mail again — worth a log line, not
 // worth failing the click they just made.
-func (s *Service) queueFlagWrite(ctx context.Context, tenantID, accountID, employeeID int64, folder string, uid int64, read bool) {
-	op := opUnseen
-	if read {
-		op = opSeen
+func (s *Service) queueFlagWrite(ctx context.Context, tenantID, accountID, employeeID int64, folder string, uid int64, flag string, on bool) {
+	op := opRemove
+	if on {
+		op = opAdd
 	}
 	if err := s.q.EnqueueFlagOp(ctx, store.EnqueueFlagOpParams{
 		TenantID: tenantID, AccountID: accountID, EmployeeID: employeeID,
-		Folder: folder, ImapUid: uid, Op: op,
+		Folder: folder, ImapUid: uid, Flag: flag, Op: op,
 	}); err != nil {
 		s.log.Warn("could not queue a flag write-back",
 			"account", accountID, "uid", uid, "err", err)
@@ -101,11 +107,15 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 		accountID  int64
 		employeeID int64
 		folder     string
+		flag       string
 		op         string
 	}
 	batches := map[batchKey][]store.ClaimFlagOpsRow{}
 	for _, o := range ops {
-		k := batchKey{accountID: o.AccountID, employeeID: o.EmployeeID, folder: o.Folder, op: o.Op}
+		k := batchKey{
+			accountID: o.AccountID, employeeID: o.EmployeeID,
+			folder: o.Folder, flag: o.Flag, op: o.Op,
+		}
 		batches[k] = append(batches[k], o)
 	}
 
@@ -129,9 +139,14 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 		for _, r := range rows {
 			uids = append(uids, uint32(r.ImapUid))
 		}
-		if err := s.mailbox.SetFlags(ctx, acct, actual, uids, `\Seen`, k.op == opSeen); err != nil {
+		imapFlag := `\Seen`
+		if k.flag == flagFlagged {
+			imapFlag = `\Flagged`
+		}
+		if err := s.mailbox.SetFlags(ctx, acct, actual, uids, imapFlag, k.op == opAdd); err != nil {
 			s.log.Warn("flag write-back failed",
-				"account", k.accountID, "folder", actual, "n", len(uids), "err", err)
+				"account", k.accountID, "folder", actual, "flag", k.flag,
+				"n", len(uids), "err", err)
 			s.failOps(ctx, rows, err)
 			continue
 		}
@@ -141,7 +156,8 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 			}
 		}
 		s.log.Info("flags published to the mail host",
-			"account", k.accountID, "folder", actual, "op", k.op, "n", len(uids))
+			"account", k.accountID, "folder", actual,
+			"flag", k.flag, "op", k.op, "n", len(uids))
 	}
 }
 
@@ -197,20 +213,32 @@ func (s *Service) ReconcileFlags(ctx context.Context, tenantID int64, acct MailA
 		// A UID the host no longer returns was deleted elsewhere. Left alone
 		// here: removing rows is deletion, and deletion is its own step with
 		// its own rules, not a side effect of reading flags.
-		if !ok || fl.Seen == r.IsRead {
+		if !ok {
 			continue
 		}
-		if err := s.q.SetInboundReadByUID(ctx, store.SetInboundReadByUIDParams{
-			TenantID: tenantID, AccountID: acct.AccountID, Folder: folder,
-			ImapUid: r.ImapUid, IsRead: fl.Seen,
-		}); err != nil {
-			s.log.Warn("could not apply the host's read state", "uid", r.ImapUid, "err", err)
-			continue
+		if fl.Seen != r.IsRead {
+			if err := s.q.SetInboundReadByUID(ctx, store.SetInboundReadByUIDParams{
+				TenantID: tenantID, AccountID: acct.AccountID, Folder: folder,
+				ImapUid: r.ImapUid, IsRead: fl.Seen,
+			}); err != nil {
+				s.log.Warn("could not apply the host's read state", "uid", r.ImapUid, "err", err)
+				continue
+			}
+			changed++
 		}
-		changed++
+		if fl.Flagged != r.IsStarred {
+			if err := s.q.SetInboundStarredByUID(ctx, store.SetInboundStarredByUIDParams{
+				TenantID: tenantID, AccountID: acct.AccountID, Folder: folder,
+				ImapUid: r.ImapUid, IsStarred: fl.Flagged,
+			}); err != nil {
+				s.log.Warn("could not apply the host's star", "uid", r.ImapUid, "err", err)
+				continue
+			}
+			changed++
+		}
 	}
 	if changed > 0 {
-		s.log.Info("read state taken from the mail host",
+		s.log.Info("flags taken from the mail host",
 			"account", acct.AccountID, "folder", folder, "changed", changed)
 	}
 	return nil

@@ -37,7 +37,7 @@ func (q *Queries) BumpSendCounter(ctx context.Context, arg BumpSendCounterParams
 }
 
 const claimFlagOps = `-- name: ClaimFlagOps :many
-SELECT id, account_id, employee_id, folder, imap_uid, op, attempts
+SELECT id, account_id, employee_id, folder, imap_uid, flag, op, attempts
 FROM mail_flag_ops
 WHERE tenant_id = $1::bigint
   AND next_try_at <= now()
@@ -57,6 +57,7 @@ type ClaimFlagOpsRow struct {
 	EmployeeID int64
 	Folder     string
 	ImapUid    int64
+	Flag       string
 	Op         string
 	Attempts   int32
 }
@@ -79,6 +80,7 @@ func (q *Queries) ClaimFlagOps(ctx context.Context, arg ClaimFlagOpsParams) ([]C
 			&i.EmployeeID,
 			&i.Folder,
 			&i.ImapUid,
+			&i.Flag,
 			&i.Op,
 			&i.Attempts,
 		); err != nil {
@@ -331,13 +333,14 @@ func (q *Queries) DeleteSyncStateForAccount(ctx context.Context, arg DeleteSyncS
 }
 
 const enqueueFlagOp = `-- name: EnqueueFlagOp :exec
-INSERT INTO mail_flag_ops (tenant_id, account_id, employee_id, folder, imap_uid, op)
+INSERT INTO mail_flag_ops (tenant_id, account_id, employee_id, folder, imap_uid, flag, op)
 VALUES (
     $1::bigint, $2::bigint,
     $3::bigint,
-    $4::text, $5::bigint, $6::text
+    $4::text, $5::bigint,
+    $6::text, $7::text
 )
-ON CONFLICT (tenant_id, account_id, folder, imap_uid) DO UPDATE SET
+ON CONFLICT (tenant_id, account_id, folder, imap_uid, flag) DO UPDATE SET
     op = excluded.op,
     attempts = 0,
     last_error = '',
@@ -350,6 +353,7 @@ type EnqueueFlagOpParams struct {
 	EmployeeID int64
 	Folder     string
 	ImapUid    int64
+	Flag       string
 	Op         string
 }
 
@@ -362,6 +366,7 @@ func (q *Queries) EnqueueFlagOp(ctx context.Context, arg EnqueueFlagOpParams) er
 		arg.EmployeeID,
 		arg.Folder,
 		arg.ImapUid,
+		arg.Flag,
 		arg.Op,
 	)
 	return err
@@ -1193,7 +1198,7 @@ func (q *Queries) ListMailboxSent(ctx context.Context, arg ListMailboxSentParams
 }
 
 const listRecentUIDs = `-- name: ListRecentUIDs :many
-SELECT imap_uid, is_read
+SELECT imap_uid, is_read, is_starred
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND account_id = $2::bigint
@@ -1210,8 +1215,9 @@ type ListRecentUIDsParams struct {
 }
 
 type ListRecentUIDsRow struct {
-	ImapUid int64
-	IsRead  bool
+	ImapUid   int64
+	IsRead    bool
+	IsStarred bool
 }
 
 // The newest slice of one folder, for reconciling flags against the host.
@@ -1231,7 +1237,7 @@ func (q *Queries) ListRecentUIDs(ctx context.Context, arg ListRecentUIDsParams) 
 	var items []ListRecentUIDsRow
 	for rows.Next() {
 		var i ListRecentUIDsRow
-		if err := rows.Scan(&i.ImapUid, &i.IsRead); err != nil {
+		if err := rows.Scan(&i.ImapUid, &i.IsRead, &i.IsStarred); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1710,7 +1716,7 @@ SET is_read    = coalesce($1::boolean, is_read),
 WHERE tenant_id = $6::bigint
   AND owner_id = $7::bigint
   AND id = $8::bigint
-RETURNING account_id, folder, imap_uid, is_read
+RETURNING account_id, folder, imap_uid, is_read, is_starred
 `
 
 type SetInboundFlagsParams struct {
@@ -1729,6 +1735,7 @@ type SetInboundFlagsRow struct {
 	Folder    string
 	ImapUid   int64
 	IsRead    bool
+	IsStarred bool
 }
 
 // One statement for all four flags; an absent argument leaves that flag
@@ -1757,6 +1764,7 @@ func (q *Queries) SetInboundFlags(ctx context.Context, arg SetInboundFlagsParams
 			&i.Folder,
 			&i.ImapUid,
 			&i.IsRead,
+			&i.IsStarred,
 		); err != nil {
 			return nil, err
 		}
@@ -1791,6 +1799,36 @@ type SetInboundReadByUIDParams struct {
 func (q *Queries) SetInboundReadByUID(ctx context.Context, arg SetInboundReadByUIDParams) error {
 	_, err := q.db.Exec(ctx, setInboundReadByUID,
 		arg.IsRead,
+		arg.TenantID,
+		arg.AccountID,
+		arg.Folder,
+		arg.ImapUid,
+	)
+	return err
+}
+
+const setInboundStarredByUID = `-- name: SetInboundStarredByUID :exec
+UPDATE email_inbound
+SET is_starred = $1::boolean
+WHERE tenant_id = $2::bigint
+  AND account_id = $3::bigint
+  AND folder = $4::text
+  AND imap_uid = $5::bigint
+`
+
+type SetInboundStarredByUIDParams struct {
+	IsStarred bool
+	TenantID  int64
+	AccountID int64
+	Folder    string
+	ImapUid   int64
+}
+
+// The host's star, taken as truth. Same rules as the read state: only after
+// the queue for this account is empty.
+func (q *Queries) SetInboundStarredByUID(ctx context.Context, arg SetInboundStarredByUIDParams) error {
+	_, err := q.db.Exec(ctx, setInboundStarredByUID,
+		arg.IsStarred,
 		arg.TenantID,
 		arg.AccountID,
 		arg.Folder,
@@ -1901,7 +1939,7 @@ WHERE tenant_id = $6::bigint
   AND owner_id = $7::bigint
   AND thread_key = $8::text
   AND thread_key <> ''
-RETURNING account_id, folder, imap_uid, is_read
+RETURNING account_id, folder, imap_uid, is_read, is_starred
 `
 
 type SetThreadFlagsParams struct {
@@ -1920,6 +1958,7 @@ type SetThreadFlagsRow struct {
 	Folder    string
 	ImapUid   int64
 	IsRead    bool
+	IsStarred bool
 }
 
 // Housekeeping applied to a whole conversation. Archiving from a page that
@@ -1950,6 +1989,7 @@ func (q *Queries) SetThreadFlags(ctx context.Context, arg SetThreadFlagsParams) 
 			&i.Folder,
 			&i.ImapUid,
 			&i.IsRead,
+			&i.IsStarred,
 		); err != nil {
 			return nil, err
 		}

@@ -193,7 +193,7 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 		// Opening a mail here marks it read in the real mailbox too, which is
 		// what anybody who also uses Gmail expects: they read it once.
 		for _, t := range touched {
-			s.queueFlagWrite(ctx, tenantID, t.AccountID, ownerID, t.Folder, t.ImapUid, true)
+			s.queueFlagWrite(ctx, tenantID, t.AccountID, ownerID, t.Folder, t.ImapUid, flagSeen, true)
 		}
 	}
 
@@ -299,11 +299,7 @@ func (s *Service) MarkInbound(ctx context.Context, tenantID, ownerID, id int64, 
 			if err != nil {
 				return err
 			}
-			if read != nil {
-				for _, t := range touched {
-					s.queueFlagWrite(ctx, tenantID, t.AccountID, ownerID, t.Folder, t.ImapUid, t.IsRead)
-				}
-			}
+			publishFlags(ctx, s, tenantID, ownerID, touchedThread(touched), read != nil, starred != nil)
 			return nil
 		}
 	}
@@ -315,15 +311,57 @@ func (s *Service) MarkInbound(ctx context.Context, tenantID, ownerID, id int64, 
 	if err != nil {
 		return err
 	}
-	// Read state belongs to the mailbox, not to the ERP's copy of it, so it
-	// goes up to the host. The other flags are ours alone for now: archive
-	// and trash mean something different here than any IMAP folder does.
-	if read != nil {
-		for _, t := range touched {
-			s.queueFlagWrite(ctx, tenantID, t.AccountID, ownerID, t.Folder, t.ImapUid, t.IsRead)
+	// Read state and the star belong to the mailbox, not to the ERP's copy of
+	// it, so both go up to the host. Archive and trash stay local for now:
+	// they mean something different here than any IMAP folder does.
+	publishFlags(ctx, s, tenantID, ownerID, touchedSingle(touched), read != nil, starred != nil)
+	return nil
+}
+
+// touchedRow is what a flag update reports back about one message.
+type touchedRow struct {
+	accountID int64
+	folder    string
+	uid       int64
+	read      bool
+	starred   bool
+}
+
+func touchedSingle(rows []store.SetInboundFlagsRow) []touchedRow {
+	out := make([]touchedRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, touchedRow{
+			accountID: r.AccountID, folder: r.Folder, uid: r.ImapUid,
+			read: r.IsRead, starred: r.IsStarred,
+		})
+	}
+	return out
+}
+
+func touchedThread(rows []store.SetThreadFlagsRow) []touchedRow {
+	out := make([]touchedRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, touchedRow{
+			accountID: r.AccountID, folder: r.Folder, uid: r.ImapUid,
+			read: r.IsRead, starred: r.IsStarred,
+		})
+	}
+	return out
+}
+
+// publishFlags queues only the flags this call actually set. Queueing the
+// others would publish their current value as though it were a fresh
+// decision, and on a mail somebody had just changed in Gmail that would undo
+// them.
+func publishFlags(ctx context.Context, s *Service, tenantID, ownerID int64, rows []touchedRow, didRead, didStar bool) {
+	for _, r := range rows {
+		if didRead {
+			s.queueFlagWrite(ctx, tenantID, r.accountID, ownerID, r.folder, r.uid, flagSeen, r.read)
+		}
+		if didStar {
+			s.queueFlagWrite(ctx, tenantID, r.accountID, ownerID, r.folder, r.uid, flagFlagged, r.starred)
 		}
 	}
-	return nil
 }
 
 // MarkViewRead marks everything in one view read and reports how many rows
@@ -345,7 +383,7 @@ func (s *Service) MarkViewRead(ctx context.Context, tenantID, ownerID int64, vie
 		return 0, err
 	}
 	for _, t := range touched {
-		s.queueFlagWrite(ctx, tenantID, t.AccountID, ownerID, t.Folder, t.ImapUid, true)
+		s.queueFlagWrite(ctx, tenantID, t.AccountID, ownerID, t.Folder, t.ImapUid, flagSeen, true)
 	}
 	return int64(len(touched)), nil
 }

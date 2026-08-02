@@ -225,6 +225,7 @@ type MailFlagOp struct {
 	LastError  string
 	NextTryAt  pgtype.Timestamptz
 	CreatedAt  pgtype.Timestamptz
+	Flag       string
 }
 
 type MailHost struct {
