@@ -63,7 +63,7 @@
         <el-menu-item index="/suppliers" disabled>{{ t('menu.suppliers') }}{{ t('menu.todo') }}</el-menu-item>
       </el-menu>
     </el-aside>
-    <el-container>
+    <el-container class="pane-col">
       <el-header class="topbar">
         <span />
         <div class="topbar-right">
@@ -79,7 +79,7 @@
           </el-dropdown>
         </div>
       </el-header>
-      <el-main>
+      <el-main class="content">
         <router-view />
       </el-main>
     </el-container>
@@ -190,12 +190,35 @@ async function changePassword() {
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
+/* The shell is exactly the viewport, and the content column is the only
+   thing that scrolls. It used to be the document: el-main asked for
+   overflow:auto but nothing capped its height, so it grew with its content
+   and the page scrolled instead — taking the navigation and the mail folder
+   rail off the top of the screen with it, and breaking every position:sticky
+   inside, since sticky resolves against a scroller that never scrolled. */
 .shell {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 .side {
   background: #0f172a;
   color: #cbd5e1;
+  /* A long menu on a short screen scrolls here rather than pushing the
+     window taller. overflow-y auto, not scroll: no phantom scrollbar. */
+  height: 100%;
+  overflow-y: auto;
+}
+.pane-col {
+  /* min-height:0 is what lets a flex child shrink below its content and
+     hand the overflow to el-main. Without it the column stays as tall as
+     the page and the scrollbar reappears on the window. */
+  min-width: 0;
+  min-height: 0;
+}
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 .side-brand {
   display: flex;
