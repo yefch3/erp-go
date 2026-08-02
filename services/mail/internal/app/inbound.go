@@ -149,8 +149,17 @@ func (s *Service) SyncMailbox(ctx context.Context, cfg SyncConfig, employeeID in
 			TenantID: cfg.TenantID, AccountID: acct.AccountID, Folder: "INBOX",
 			LastError: err.Error(),
 		})
+		// Also onto the account, which is what the mailbox page reads. A
+		// revoked authorisation used to fail here every two minutes for as
+		// long as it took somebody to notice, while the page went on showing
+		// the last successful sync as though it were current. Silence is the
+		// bug: the mailbox has to be able to say it is not receiving.
+		s.RecordFailure(ctx, cfg.TenantID, acct.AccountID, err.Error())
 		return 0, err
 	}
+	// Cleared on the way back up, so a recovered mailbox stops complaining
+	// without anybody having to sign in again.
+	s.clearFailure(ctx, cfg.TenantID, acct.AccountID)
 
 	// Sent history rides along on the same pass. A failure here is logged and
 	// does not fail the sync: the inbox is what somebody is waiting on.
