@@ -582,6 +582,7 @@ func inboundToProto(v app.InboundView) *ntv1.InboundMail {
 		Subject: v.Subject, Snippet: v.Snippet, ThreadKey: v.ThreadKey,
 		IsRead: v.IsRead, IsStarred: v.IsStarred, HasAttachments: v.HasAttachments,
 		BodyHtml: v.BodyHTML, BodyText: v.BodyText, ToEmail: v.ToEmail,
+		ThreadCount: v.ThreadCount,
 	}
 	if !v.ReceivedAt.IsZero() {
 		m.ReceivedAt = v.ReceivedAt.Format(time.RFC3339)
@@ -647,7 +648,8 @@ func (h *Handler) GetMailThread(ctx context.Context, req *ntv1.GetMailThreadRequ
 func (h *Handler) MarkInbound(ctx context.Context, req *ntv1.MarkInboundRequest) (*ntv1.MarkInboundResponse, error) {
 	op := operator(ctx)
 	err := h.svc.MarkInbound(ctx, grpcx.TenantID(ctx), op.ID, req.GetId(),
-		req.Read, req.Starred, req.Archived, req.Deleted, req.NotJunk)
+		req.Read, req.Starred, req.Archived, req.Deleted, req.NotJunk,
+		req.GetWholeThread())
 	if err != nil {
 		return nil, err
 	}
@@ -656,7 +658,7 @@ func (h *Handler) MarkInbound(ctx context.Context, req *ntv1.MarkInboundRequest)
 
 func (h *Handler) PurgeInbound(ctx context.Context, req *ntv1.PurgeInboundRequest) (*ntv1.PurgeInboundResponse, error) {
 	op := operator(ctx)
-	if err := h.svc.PurgeInbound(ctx, grpcx.TenantID(ctx), op.ID, req.GetId()); err != nil {
+	if err := h.svc.PurgeInbound(ctx, grpcx.TenantID(ctx), op.ID, req.GetId(), req.GetWholeThread()); err != nil {
 		return nil, err
 	}
 	return &ntv1.PurgeInboundResponse{Ok: true}, nil

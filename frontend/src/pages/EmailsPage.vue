@@ -195,6 +195,11 @@
               <div class="strong ellipsis">
                 <span v-if="!row.isRead" class="unread-dot" />
                 {{ row.fromName || row.fromEmail }}
+                <!-- One row per conversation: this is how many messages it
+                     holds. Opening the row shows the whole exchange. -->
+                <span v-if="Number(row.threadCount) > 1" class="tcount">
+                  {{ row.threadCount }}
+                </span>
               </div>
               <div class="sub ellipsis">{{ row.fromEmail }}</div>
             </template>
@@ -571,6 +576,8 @@ interface InboundMail {
   isRead: boolean
   isStarred: boolean
   hasAttachments: boolean
+  // Messages in this conversation; the list shows one row per conversation.
+  threadCount?: number
   receivedAt: string
   sentAt: string
   bodyHtml?: string
@@ -1046,7 +1053,13 @@ async function toggleStar(row: InboundMail) {
   // Optimistic: a star that waits for the network feels broken.
   row.isStarred = !row.isStarred
   try {
-    await post(`/inbound-mails/${row.id}/mark`, { starred: row.isStarred })
+    // Whole conversation, like every other action on a list row: the row's
+    // star reads as "starred if any message is", so unstarring has to clear
+    // them all or the star would come straight back on the next load.
+    await post(`/inbound-mails/${row.id}/mark`, {
+      starred: row.isStarred,
+      wholeThread: true,
+    })
   } catch {
     row.isStarred = !row.isStarred
   }
@@ -1055,9 +1068,16 @@ async function toggleStar(row: InboundMail) {
 
 // The detail-page actions: mark unread, archive/unarchive, trash/restore.
 // Each navigates back to the list and reloads — the mail just left this view.
+//
+// Applied to the whole conversation, because that is what this page shows and
+// what the list row stands for: archiving here has to move the exchange, not
+// leave it in the inbox one message lighter.
 async function markOpened(flags: Record<string, boolean>) {
   if (!openedInbound.value) return
-  await post(`/inbound-mails/${openedInbound.value.id}/mark`, flags)
+  await post(`/inbound-mails/${openedInbound.value.id}/mark`, {
+    ...flags,
+    wholeThread: true,
+  })
   pushState({ mail: '' })
   load()
   refreshUnread()
@@ -1072,7 +1092,8 @@ async function purgeOpened() {
     type: 'warning',
     confirmButtonText: t('emails.purge'),
   })
-  await del(`/inbound-mails/${openedInbound.value.id}`)
+  // Whole conversation, matching the trash list's one-row-per-conversation.
+  await del(`/inbound-mails/${openedInbound.value.id}?whole_thread=true`)
   ElMessage.success(t('emails.purged'))
   pushState({ mail: '' })
   load()
@@ -1405,6 +1426,12 @@ async function doUnsuppress(row: Suppression) {
   margin-left: 4px;
   color: var(--el-text-color-secondary);
   vertical-align: middle;
+}
+.tcount {
+  margin-left: 5px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
 }
 :deep(.unread-row) {
   font-weight: 500;

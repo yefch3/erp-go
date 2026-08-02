@@ -138,6 +138,9 @@ message InboundMail {
   string to_email = 13;
   repeated InboundAttachment attachments = 14;
   bool is_starred = 15;
+  // How many messages this list row stands for. The list collapses a
+  // conversation into one row; 1 means a lone message.
+  int32 thread_count = 16;
 }
 
 message InboundAttachment {
@@ -199,6 +202,10 @@ message MarkInboundRequest {
   optional bool deleted = 5;
   // Rescue from the junk view: the mail shows in the inbox from now on.
   optional bool not_junk = 6;
+  // Apply to every message of the conversation. The list shows one row per
+  // conversation, so archiving from a page that displays the whole exchange
+  // has to move the whole exchange.
+  bool whole_thread = 7;
 }
 
 message MarkInboundResponse {
@@ -207,6 +214,9 @@ message MarkInboundResponse {
 
 message PurgeInboundRequest {
   int64 id = 1;
+  // Delete every trashed message of the conversation — what the trash list
+  // shows as one row. A live message of the same thread is never touched.
+  bool whole_thread = 2;
 }
 
 message PurgeInboundResponse {
