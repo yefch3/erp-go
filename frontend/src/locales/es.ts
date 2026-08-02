@@ -880,6 +880,8 @@ export default {
     ccLabel: 'CC',
     allRecipients: 'todos los destinatarios',
     wrote: 'escribió:',
+    showQuoted: 'Mostrar texto citado',
+    backToList: 'Volver',
     reply: 'Responder',
     forward: 'Reenviar',
     forwardCarries: 'Los adjuntos del mensaje original se reenvían junto con este correo.',
