@@ -571,7 +571,7 @@ func (q *Queries) GetCampaign(ctx context.Context, arg GetCampaignParams) (GetCa
 const getDraft = `-- name: GetDraft :one
 SELECT id, subject, body, body_format, signature_id, kind,
        recipients, attachments, updated_at,
-       send_mode, cc, reply_to_inbound_id, forward_inbound_id
+       send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id
 FROM email_drafts
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
@@ -596,6 +596,7 @@ type GetDraftRow struct {
 	UpdatedAt        pgtype.Timestamptz
 	SendMode         string
 	Cc               []byte
+	Bcc              []byte
 	ReplyToInboundID int64
 	ForwardInboundID int64
 }
@@ -615,6 +616,7 @@ func (q *Queries) GetDraft(ctx context.Context, arg GetDraftParams) (GetDraftRow
 		&i.UpdatedAt,
 		&i.SendMode,
 		&i.Cc,
+		&i.Bcc,
 		&i.ReplyToInboundID,
 		&i.ForwardInboundID,
 	)
@@ -1876,7 +1878,7 @@ const saveDraft = `-- name: SaveDraft :one
 INSERT INTO email_drafts (
     id, tenant_id, owner_id, subject, body, body_format,
     signature_id, kind, recipients, attachments,
-    send_mode, cc, reply_to_inbound_id, forward_inbound_id
+    send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id
 ) VALUES (
     coalesce(nullif($1::bigint, 0), nextval('email_drafts_id_seq')),
     $2::bigint,
@@ -1890,8 +1892,9 @@ INSERT INTO email_drafts (
     $10::jsonb,
     $11::text,
     $12::jsonb,
-    $13::bigint,
-    $14::bigint
+    $13::jsonb,
+    $14::bigint,
+    $15::bigint
 )
 ON CONFLICT (id) DO UPDATE SET
     subject = excluded.subject,
@@ -1901,6 +1904,7 @@ ON CONFLICT (id) DO UPDATE SET
     kind = excluded.kind,
     recipients = excluded.recipients,
     attachments = excluded.attachments,
+    bcc = excluded.bcc,
     send_mode = excluded.send_mode,
     cc = excluded.cc,
     reply_to_inbound_id = excluded.reply_to_inbound_id,
@@ -1924,6 +1928,7 @@ type SaveDraftParams struct {
 	Attachments      []byte
 	SendMode         string
 	Cc               []byte
+	Bcc              []byte
 	ReplyToInboundID int64
 	ForwardInboundID int64
 }
@@ -1947,6 +1952,7 @@ func (q *Queries) SaveDraft(ctx context.Context, arg SaveDraftParams) (int64, er
 		arg.Attachments,
 		arg.SendMode,
 		arg.Cc,
+		arg.Bcc,
 		arg.ReplyToInboundID,
 		arg.ForwardInboundID,
 	)

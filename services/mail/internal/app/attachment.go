@@ -29,6 +29,10 @@ type Files interface {
 	// file under: object keys are random, so without it a customer's quotation
 	// downloads as a hex string with an extension.
 	PresignGet(ctx context.Context, key, saveAs string) (string, error)
+	// PresignGetInline is the same read asking the browser to render rather
+	// than save. Only ever called with a content type this service has decided
+	// is safe to display.
+	PresignGetInline(ctx context.Context, key, contentType string) (string, error)
 	// Stat reads what is actually stored. The size a client reports after
 	// uploading is a claim; without this the caps would be advisory only.
 	Stat(ctx context.Context, key string) (int64, string, error)
@@ -53,6 +57,30 @@ type Attachment struct {
 	// the attachment either way, because "there was a file called this" is
 	// still true and worth knowing.
 	DownloadURL string
+	// Set only for the handful of types worth looking at without leaving the
+	// page, and safe to render from the storage origin. Empty otherwise, which
+	// is how the UI knows not to offer a preview it cannot honour.
+	PreviewURL string
+}
+
+// previewable decides what may be rendered inline.
+//
+// An allowlist, not a blocklist. The interesting types are images and PDFs —
+// what somebody actually wants to glance at before deciding — and everything
+// else is a download. text/html is deliberately absent: rendering a sender's
+// markup, even on another origin, is running their code for no benefit, since
+// nobody previews an .html attachment on purpose.
+func previewable(contentType string) string {
+	ct := strings.ToLower(strings.TrimSpace(contentType))
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = strings.TrimSpace(ct[:i])
+	}
+	switch ct {
+	case "application/pdf",
+		"image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp":
+		return ct
+	}
+	return ""
 }
 
 // signDownloads fills in the download URL for each attachment.
@@ -74,6 +102,17 @@ func (s *Service) signDownloads(ctx context.Context, atts []Attachment) []Attach
 			continue
 		}
 		atts[i].DownloadURL = url
+
+		// A preview is a nicety; failing to sign one must not cost the file
+		// its download link, so it is attempted separately and last.
+		if ct := previewable(a.ContentType); ct != "" {
+			if pv, err := s.files.PresignGetInline(ctx, a.FileKey, ct); err == nil {
+				atts[i].PreviewURL = pv
+			} else {
+				s.log.Warn("could not sign an attachment preview",
+					"file", a.FileName, "err", err)
+			}
+		}
 	}
 	return atts
 }

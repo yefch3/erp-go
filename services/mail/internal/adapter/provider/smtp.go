@@ -95,6 +95,13 @@ func (s *SMTP) Send(ctx context.Context, m app.Outbound) app.SendResult {
 		for _, a := range m.CCList {
 			rcpts = append(rcpts, a.Email)
 		}
+		// The envelope is the only place a blind copy exists. buildMessage
+		// deliberately writes no Bcc header, so this loop is what actually
+		// delivers to them — drop it and the address silently receives
+		// nothing while the composer reports a successful send.
+		for _, a := range m.BCCList {
+			rcpts = append(rcpts, a.Email)
+		}
 	}
 
 	res := s.dialAndSend(ctx, acct, rcpts, raw)

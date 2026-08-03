@@ -165,21 +165,39 @@
                signed, time-limited URL straight to storage, so the bytes never
                pass through the gateway. -->
           <div class="files">
-            <a
+            <div
               v-for="a in openedInbound.attachments"
               :key="a.id"
               class="file"
               :class="{ dead: !a.downloadUrl }"
-              :href="a.downloadUrl || undefined"
-              :download="a.fileName"
               :title="fileHint(a)"
-              target="_blank"
-              rel="noopener"
             >
               <el-icon><Paperclip /></el-icon>
               <span class="fname ellipsis">{{ a.fileName }}</span>
               <span class="sub">{{ humanSize(Number(a.fileSize)) }}</span>
-            </a>
+              <!-- Look and take are separate acts, so they get separate
+                   buttons. A preview only appears for what can honestly be
+                   shown; for a .pptx or a .zip the download is the whole
+                   interaction. -->
+              <button
+                v-if="a.previewUrl"
+                type="button"
+                class="fbtn"
+                :title="t('emails.previewFile')"
+                @click="openPreview(a)"
+              >
+                <el-icon><View /></el-icon>
+              </button>
+              <a
+                v-if="a.downloadUrl"
+                class="fbtn"
+                :href="a.downloadUrl"
+                :download="a.fileName"
+                :title="t('emails.downloadFile', { f: a.fileName })"
+              >
+                <el-icon><Download /></el-icon>
+              </a>
+            </div>
           </div>
         </template>
       </template>
@@ -621,6 +639,40 @@
   <!-- Outside the locked/unlocked branches: an administrator may need the
        host settings before anybody can sign in at all. -->
   <MailHostDialog v-model="hostOpen" />
+
+  <!-- Preview. Rendered from the storage origin rather than ours, so the file
+       cannot reach this page's session even if it tries — and only images and
+       PDFs are ever given a preview URL in the first place. -->
+  <el-dialog
+    v-model="previewOpen"
+    :title="previewing?.fileName"
+    width="min(1000px, 92vw)"
+    top="4vh"
+    append-to-body
+  >
+    <img
+      v-if="previewing && isImage(previewing)"
+      :src="previewing.previewUrl"
+      :alt="previewing.fileName"
+      class="preview-img"
+    />
+    <iframe
+      v-else-if="previewing"
+      :src="previewing.previewUrl"
+      class="preview-frame"
+      :title="previewing.fileName"
+    />
+    <template #footer>
+      <a
+        v-if="previewing?.downloadUrl"
+        class="el-button el-button--primary"
+        :href="previewing.downloadUrl"
+        :download="previewing.fileName"
+      >
+        {{ t('emails.download') }}
+      </a>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
@@ -639,7 +691,9 @@ import MailList from '../components/MailList.vue'
 import {
   Box,
   CircleClose,
+  Download,
   Paperclip,
+  View,
   Clock,
   Delete,
   EditPen,
@@ -721,6 +775,8 @@ interface InboundMail {
     // Whether a copy was kept at all. Without it, a link missing because
     // something is broken looks exactly like a file that never existed.
     stored?: boolean
+    // Present only for what can be shown inline: images and PDF.
+    previewUrl?: string
   }[]
 }
 
@@ -1587,6 +1643,20 @@ function shortTime(v: string) {
 // A stable colour per correspondent, so the same customer looks the same every
 // time. Hue only — saturation and lightness are fixed, which is what keeps a
 // wall of avatars from turning into confetti.
+type MailFile = NonNullable<InboundMail['attachments']>[number]
+
+const previewOpen = ref(false)
+const previewing = ref<MailFile | null>(null)
+
+function openPreview(a: MailFile) {
+  previewing.value = a
+  previewOpen.value = true
+}
+
+function isImage(a: MailFile) {
+  return (a.contentType || '').toLowerCase().startsWith('image/')
+}
+
 // Why an attachment cannot be downloaded, said accurately.
 //
 // These two were one message once, and it told somebody their 8 MB deck had
@@ -2045,6 +2115,46 @@ async function doUnsuppress(row: Suppression) {
 }
 .file .fname {
   min-width: 0;
+}
+/* The card is a label now; the two acts on it are the targets. */
+.file {
+  cursor: default;
+}
+.fbtn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background var(--mail-fast) var(--mail-ease),
+    color var(--mail-fast) var(--mail-ease);
+}
+.fbtn:hover {
+  background: var(--el-fill-color);
+  color: var(--el-color-primary);
+}
+.fbtn:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 1px;
+}
+
+.preview-img {
+  display: block;
+  max-width: 100%;
+  max-height: 72vh;
+  margin: 0 auto;
+}
+.preview-frame {
+  display: block;
+  width: 100%;
+  height: 72vh;
+  border: 1px solid var(--mail-divider);
+  border-radius: var(--mail-radius);
 }
 
 .in-html {

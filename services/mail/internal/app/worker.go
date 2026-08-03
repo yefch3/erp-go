@@ -209,8 +209,8 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 		InReplyTo:   m.InReplyTo,
 		References:  m.ReferencesIds,
 	}
-	// A merged message carries its whole cast openly: the To/Cc headers show
-	// everybody and the one transaction covers them all.
+	// A merged message carries its cast openly on To/Cc, and its blind copies
+	// only in the envelope. One transaction covers all three.
 	var recips []store.ListMessageRecipientsRow
 	if m.SendMode == "MERGED" {
 		var err error
@@ -224,9 +224,12 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 		}
 		for _, r := range recips {
 			na := NamedAddress{Name: r.Name, Email: r.Email}
-			if r.Kind == "CC" {
+			switch r.Kind {
+			case "CC":
 				out.CCList = append(out.CCList, na)
-			} else {
+			case "BCC":
+				out.BCCList = append(out.BCCList, na)
+			default:
 				out.ToList = append(out.ToList, na)
 			}
 		}

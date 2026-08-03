@@ -287,3 +287,31 @@ func TestNoLineExceedsTheSmtpLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildMessageNeverWritesABccHeader(t *testing.T) {
+	// The whole meaning of a blind copy is that the other recipients cannot
+	// see it. A Bcc header in the delivered bytes would tell all of them, so
+	// this asserts the absence of something rather than the presence — which
+	// is exactly the kind of property a later edit removes without noticing.
+	raw, _, err := buildMessage(app.Outbound{
+		MessageKey: "k", Subject: "Q3 offer", Body: "hello", Format: "TEXT",
+		ToList:  []app.NamedAddress{{Name: "Hans", Email: "hans@acme.de"}},
+		CCList:  []app.NamedAddress{{Name: "Mike", Email: "mike@pacific.com"}},
+		BCCList: []app.NamedAddress{{Name: "Boss", Email: "boss@ourcompany.cn"}},
+	}, "me@ourcompany.cn", "ourcompany.cn", nil, time.Now())
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	got := string(raw)
+	if strings.Contains(strings.ToLower(got), "bcc:") {
+		t.Error("a Bcc header reached the delivered message")
+	}
+	if strings.Contains(got, "boss@ourcompany.cn") {
+		t.Error("the blind address appears in the message bytes; it belongs only in the envelope")
+	}
+	// The visible cast must still be visible, or the test would pass on a
+	// build that dropped every header.
+	if !strings.Contains(got, "hans@acme.de") || !strings.Contains(got, "mike@pacific.com") {
+		t.Error("To/Cc lost their recipients")
+	}
+}

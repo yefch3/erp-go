@@ -176,6 +176,10 @@ message InboundAttachment {
   // false means the bytes were never stored and never will be; true with an
   // empty URL means something is wrong right now and retrying may work.
   bool stored = 6;
+  // Set only for types worth glancing at without leaving the page and safe to
+  // render from the storage origin: images and PDF. Empty means "download it
+  // to look at it", which is the honest answer for everything else.
+  string preview_url = 7;
 }
 
 message ListInboundRequest {
@@ -509,6 +513,7 @@ message EmailAttachment {
   string content_type = 4;
   string uploaded_at = 5;
   string download_url = 6;
+  string preview_url = 7;
 }
 
 // EmailImage is a picture embedded in an HTML body or signature. Served by a
@@ -636,6 +641,9 @@ message CreateCampaignRequest {
   string send_mode = 8;
   // Carbon copies. Meaningful only for MERGED sends.
   repeated Recipient cc = 9;
+  // Blind copies. Same mode restriction; these reach the envelope and never
+  // a header, so nobody on To or Cc learns they were included.
+  repeated Recipient bcc = 13;
   // Set when this send answers a mail in the caller's inbox: threading
   // headers and the thread key are taken from that message.
   int64 reply_to_inbound_id = 10;
@@ -861,6 +869,7 @@ message Draft {
   repeated Recipient cc = 12;
   int64 reply_to_inbound_id = 13;
   int64 forward_inbound_id = 14;
+  repeated Recipient bcc = 15;
 }
 
 message SaveDraftRequest {
@@ -880,6 +889,7 @@ message SaveDraftRequest {
   repeated Recipient cc = 10;
   int64 reply_to_inbound_id = 11;
   int64 forward_inbound_id = 12;
+  repeated Recipient bcc = 13;
 }
 
 message SaveDraftResponse {
