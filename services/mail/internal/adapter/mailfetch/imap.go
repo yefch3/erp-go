@@ -620,3 +620,52 @@ func asAngled(id string) string {
 	}
 	return "<" + id + ">"
 }
+
+// RecentMessageIDs reads the Message-IDs of the newest messages in a folder.
+//
+// Used to work out where mail went when it stops appearing in the inbox: one
+// pass over the trash and one over the archive answers that for every missing
+// message at once, rather than a search per message.
+func (f *IMAP) RecentMessageIDs(ctx context.Context, acct app.MailAccount, folder string, limit uint32) (map[string]bool, error) {
+	out := map[string]bool{}
+	if folder == "" || limit == 0 {
+		return out, nil
+	}
+	c, err := f.dial(acct)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = c.Logout() }()
+	if err := f.login(c, acct); err != nil {
+		return nil, err
+	}
+	mbox, err := c.Select(folder, true)
+	if err != nil {
+		return nil, fmt.Errorf("打开 %s 失败：%w", folder, err)
+	}
+	if mbox.Messages == 0 {
+		return out, nil
+	}
+
+	// The newest `limit` by sequence number. Envelopes only — the bodies are
+	// not wanted and on All Mail would be the whole mailbox.
+	from := uint32(1)
+	if mbox.Messages > limit {
+		from = mbox.Messages - limit + 1
+	}
+	seq := new(imap.SeqSet)
+	seq.AddRange(from, mbox.Messages)
+
+	ch := make(chan *imap.Message, 64)
+	done := make(chan error, 1)
+	go func() { done <- c.Fetch(seq, []imap.FetchItem{imap.FetchEnvelope}, ch) }()
+	for m := range ch {
+		if m.Envelope != nil && m.Envelope.MessageId != "" {
+			out[strings.Trim(m.Envelope.MessageId, "<>")] = true
+		}
+	}
+	if err := <-done; err != nil {
+		return nil, fmt.Errorf("读取 %s 的信件标识失败：%w", folder, err)
+	}
+	return out, nil
+}

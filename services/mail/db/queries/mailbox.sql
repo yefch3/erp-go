@@ -719,3 +719,33 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND account_id = sqlc.arg(account_id)::bigint
   AND folder = sqlc.arg(old_folder)::text
   AND imap_uid = sqlc.arg(old_uid)::bigint;
+
+-- name: ListRecentForReconcile :many
+-- The newest slice of one folder with everything the reconcile pass needs to
+-- decide what happened to each message.
+SELECT id, imap_uid, message_id, is_read, is_starred, archived_at, deleted_at
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder = sqlc.arg(folder)::text
+ORDER BY imap_uid DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: MirrorHostDelete :exec
+-- Somebody deleted this mail elsewhere. Mirrored as a soft delete, never a
+-- hard one: our copy may be the only one left, and the ERP trash gives thirty
+-- days to notice a mistake. The sweeper finishes the job afterwards.
+UPDATE email_inbound
+SET deleted_at = coalesce(deleted_at, now())
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder = sqlc.arg(folder)::text
+  AND imap_uid = sqlc.arg(imap_uid)::bigint;
+
+-- name: MirrorHostArchive :exec
+UPDATE email_inbound
+SET archived_at = coalesce(archived_at, now())
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder = sqlc.arg(folder)::text
+  AND imap_uid = sqlc.arg(imap_uid)::bigint;

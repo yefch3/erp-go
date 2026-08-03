@@ -63,6 +63,9 @@ type Mailbox interface {
 	// FetchFlags reads back what the host believes, so somebody else's
 	// changes reach the ERP too.
 	FetchFlags(ctx context.Context, acct MailAccount, folder string, uids []uint32) (map[uint32]MessageFlags, error)
+	// RecentMessageIDs names the newest messages of a folder, for working out
+	// where mail went once it stops appearing in the inbox.
+	RecentMessageIDs(ctx context.Context, acct MailAccount, folder string, limit uint32) (map[string]bool, error)
 }
 
 // MessageFlags is the host's view of one message.
@@ -210,8 +213,16 @@ func (s *Service) SyncMailbox(ctx context.Context, cfg SyncConfig, employeeID in
 	// inbox. This is the half of two-way sync that carries somebody else's
 	// Gmail session into the ERP; it no-ops while local changes are still
 	// queued, so it can never overwrite one on its way up.
-	if err := s.ReconcileFlags(ctx, cfg.TenantID, acct, "INBOX", "INBOX"); err != nil {
-		s.log.Warn("could not reconcile read state", "account", acct.AccountID, "err", err)
+	if err := s.ReconcileFlags(ctx, cfg.TenantID, acct, "INBOX", "INBOX", true); err != nil {
+		s.log.Warn("could not reconcile the inbox", "account", acct.AccountID, "err", err)
+	}
+	// The junk folder gets its flags reconciled too, but not its departures:
+	// mail leaves spam mostly because somebody rescued it, and calling that a
+	// deletion would bin the message they just saved.
+	if actual, err := s.specialFolderOf(ctx, acct, "junk"); err == nil {
+		if err := s.ReconcileFlags(ctx, cfg.TenantID, acct, "JUNK", actual, false); err != nil {
+			s.log.Warn("could not reconcile the junk folder", "account", acct.AccountID, "err", err)
+		}
 	}
 
 	// The ping goes out only after everything is committed, and only to the
