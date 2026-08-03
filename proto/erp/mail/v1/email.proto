@@ -39,6 +39,15 @@ service EmailService {
   // draft only disappears once the mail is queued.
   rpc SendDraft(SendDraftRequest) returns (SendDraftResponse);
 
+  // Timed delivery. A scheduled send is already queued - the hold is a column
+  // the worker respects - so these three are about the window before it goes:
+  // what is waiting, let one go early, and stop one that has not gone.
+  rpc ListScheduled(ListScheduledRequest) returns (ListScheduledResponse);
+  rpc SendScheduledNow(SendScheduledNowRequest) returns (SendScheduledNowResponse);
+  // Cancelling returns the mail to the drafts folder rather than binning it:
+  // somebody who calls a send back usually means to change it, not lose it.
+  rpc CancelScheduled(CancelScheduledRequest) returns (CancelScheduledResponse);
+
   rpc ListSignatures(ListSignaturesRequest) returns (ListSignaturesResponse);
   rpc CreateSignature(CreateSignatureRequest) returns (CreateSignatureResponse);
   rpc DeleteSignature(DeleteSignatureRequest) returns (DeleteSignatureResponse);
@@ -612,6 +621,11 @@ message CreateCampaignRequest {
   // Set when forwarding a mail from the caller's inbox: the original's
   // attachments travel along.
   int64 forward_inbound_id = 11;
+  // RFC 3339, absolute. Empty means send now. An instant rather than a local
+  // time and a zone: the composer resolves "9am in the customer's morning"
+  // once, where the customer's zone is known, and what reaches the queue is
+  // the moment itself - which no daylight-saving change can move.
+  string scheduled_at = 12;
 }
 
 message CreateCampaignResponse {
@@ -875,8 +889,52 @@ message DeleteDraftResponse {
 
 message SendDraftRequest {
   int64 id = 1;
+  // RFC 3339. Empty means send now.
+  string scheduled_at = 2;
 }
 
 message SendDraftResponse {
   CreateCampaignResponse result = 1;
+}
+
+// One send waiting for its moment. A campaign, not a message: a campaign is
+// what somebody scheduled, so it is what they cancel.
+message ScheduledSend {
+  int64 campaign_id = 1;
+  string campaign_no = 2;
+  string subject = 3;
+  // How many recipients are still waiting.
+  int32 pending_count = 4;
+  // The first few names, as the sent list shows them.
+  string to_names = 5;
+  string scheduled_at = 6;
+  string send_mode = 7;
+  string body_format = 8;
+}
+
+message ListScheduledRequest {
+  erp.common.v1.PageRequest page = 1;
+}
+
+message ListScheduledResponse {
+  repeated ScheduledSend sends = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message SendScheduledNowRequest {
+  int64 campaign_id = 1;
+}
+
+message SendScheduledNowResponse {
+  int32 released = 1;
+}
+
+message CancelScheduledRequest {
+  int64 campaign_id = 1;
+}
+
+message CancelScheduledResponse {
+  int32 cancelled = 1;
+  // Where the mail went so the caller can offer to open it.
+  int64 draft_id = 2;
 }

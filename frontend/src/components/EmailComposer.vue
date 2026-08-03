@@ -204,15 +204,92 @@
         <el-button :disabled="!canPreview" :loading="previewing" @click="doPreview">
           {{ t('emails.preview') }}
         </el-button>
-        <el-button
-          type="primary"
-          :disabled="!canPreview"
-          :loading="sending"
-          @click="doSend"
-        >
-          {{ t('emails.send', { n: selected.length }) }}
-        </el-button>
+        <!-- Send and schedule sit together because they are one decision made
+             twice a day: the same mail, now or at a better hour. Splitting
+             them into separate places would hide the second behind a menu
+             nobody opens. -->
+        <el-button-group>
+          <el-button
+            type="primary"
+            :disabled="!canPreview"
+            :loading="sending"
+            @click="doSend"
+          >
+            {{ t('emails.send', { n: selected.length }) }}
+          </el-button>
+          <el-button
+            type="primary"
+            :disabled="!canPreview || sending"
+            :title="t('emails.scheduleSend')"
+            @click="openSchedule"
+          >
+            <el-icon><Clock /></el-icon>
+          </el-button>
+        </el-button-group>
       </span>
+    </template>
+  </el-dialog>
+
+  <!-- Scheduling asks two questions, and the second one is the point: a
+       time without a zone is ambiguous the moment the customer is not in
+       yours. Both the chosen moment and its local reading are shown back. -->
+  <el-dialog
+    v-model="scheduleOpen"
+    :title="t('emails.scheduleTitle')"
+    width="520px"
+    append-to-body
+  >
+    <el-form label-width="96px">
+      <el-form-item :label="t('emails.scheduleQuick')">
+        <el-space wrap>
+          <el-button
+            v-for="p in quickPicks"
+            :key="p.key"
+            size="small"
+            plain
+            @click="applyQuick(p)"
+          >
+            {{ p.label }}
+          </el-button>
+        </el-space>
+      </el-form-item>
+      <el-form-item :label="t('emails.scheduleZone')">
+        <el-select v-model="scheduleZone" filterable style="width: 100%">
+          <el-option
+            v-for="z in zones"
+            :key="z.value"
+            :value="z.value"
+            :label="z.label"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item :label="t('emails.scheduleWhen')">
+        <el-date-picker
+          v-model="scheduleLocal"
+          type="datetime"
+          format="YYYY-MM-DD HH:mm"
+          value-format="YYYY-MM-DD HH:mm"
+          :placeholder="t('emails.scheduleWhen')"
+          style="width: 100%"
+        />
+      </el-form-item>
+      <el-alert v-if="scheduleError" type="error" :closable="false" show-icon>
+        {{ scheduleError }}
+      </el-alert>
+      <el-alert v-else-if="schedulePreview" type="info" :closable="false" show-icon>
+        {{ schedulePreview }}
+      </el-alert>
+    </el-form>
+    <template #footer>
+      <el-button @click="scheduleOpen = false">{{ common('cancel') }}</el-button>
+      <el-button
+        type="primary"
+        :disabled="!scheduleAt || !!scheduleError"
+        :loading="sending"
+        @click="doSchedule"
+      >
+        {{ t('emails.scheduleConfirm') }}
+      </el-button>
     </template>
   </el-dialog>
 
@@ -228,10 +305,19 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Clock } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { get, post } from '../api'
 import MailEditor from './MailEditor.vue'
 import RecipientField, { type Recipient } from './RecipientField.vue'
+import {
+  daysToWeekday,
+  localZone,
+  offsetLabel,
+  wallAt,
+  wallClockIn,
+  zonedToInstant,
+} from '../lib/zonedtime'
 
 interface Signature {
   id: string
@@ -280,7 +366,7 @@ const VARIABLES = [
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; sent: []; saved: [] }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const common = (k: string) => t(`common.${k}`)
 
 const form = reactive({
@@ -580,6 +666,8 @@ function reset() {
   replyCtx.replyToInboundId = '0'
   replyCtx.forwardInboundId = '0'
   preview.value = null
+  scheduleLocal.value = ''
+  scheduleOpen.value = false
   markClean()
 }
 
@@ -734,6 +822,99 @@ async function doPreview() {
   }
 }
 
+// ------------------------------------------------------------ scheduling
+//
+// The zone is the point of this dialog. "Nine in the morning" is a promise
+// about the customer's morning, not ours, and the two are eight hours and a
+// daylight-saving rule apart — so the person picks the zone they are thinking
+// in and sees, before committing, what that means on their own clock.
+
+const scheduleOpen = ref(false)
+const scheduleZone = ref(localZone())
+const scheduleLocal = ref('')
+
+const zones = computed(() => {
+  const mine = localZone()
+  const list = [
+    mine,
+    'Asia/Shanghai',
+    'Asia/Tokyo',
+    'Asia/Dubai',
+    'Europe/London',
+    'Europe/Madrid',
+    'Europe/Berlin',
+    'America/New_York',
+    'America/Chicago',
+    'America/Los_Angeles',
+    'America/Sao_Paulo',
+    'America/Mexico_City',
+    'Australia/Sydney',
+  ].filter((z, i, all) => all.indexOf(z) === i)
+  return list.map((z) => ({
+    value: z,
+    label: `${z} (${offsetLabel(z)})${z === mine ? ' · ' + t('emails.scheduleHere') : ''}`,
+  }))
+})
+
+// Presets in the chosen zone, not ours: "tomorrow morning" means the
+// customer's tomorrow, which is the whole reason the zone was picked.
+const quickPicks = computed(() => {
+  const nowThere = wallClockIn(new Date(), scheduleZone.value)
+  return [
+    { key: 'tonight', label: t('emails.quickTonight'), wall: wallAt(nowThere, 0, 18) },
+    { key: 'tomorrow', label: t('emails.quickTomorrow'), wall: wallAt(nowThere, 1, 8) },
+    {
+      key: 'monday',
+      label: t('emails.quickMonday'),
+      wall: wallAt(nowThere, daysToWeekday(nowThere, 1), 8),
+    },
+  ]
+})
+
+const scheduleAt = computed(() => {
+  if (!scheduleLocal.value) return ''
+  const at = zonedToInstant(scheduleLocal.value, scheduleZone.value)
+  return at ? at.toISOString() : ''
+})
+
+const scheduleError = computed(() => {
+  if (!scheduleAt.value) return ''
+  return new Date(scheduleAt.value).getTime() <= Date.now() ? t('emails.schedulePast') : ''
+})
+
+// What the chosen moment reads as here. Stated even when the zone is our own —
+// the sentence is the confirmation, and a preview that vanishes for local
+// sends would make the local case the untrustworthy one.
+const schedulePreview = computed(() => {
+  if (!scheduleAt.value) return ''
+  return t('emails.scheduleReads', { when: readableLocal(new Date(scheduleAt.value)) })
+})
+
+function readableLocal(at: Date) {
+  return new Intl.DateTimeFormat(locale.value, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(at)
+}
+
+function applyQuick(p: { wall: string }) {
+  scheduleLocal.value = p.wall
+}
+
+function openSchedule() {
+  if (!scheduleLocal.value) {
+    applyQuick(quickPicks.value[1])
+  }
+  scheduleOpen.value = true
+}
+
+async function doSchedule() {
+  if (!scheduleAt.value || scheduleError.value) return
+  if (!(await readyToSend())) return
+  scheduleOpen.value = false
+  await submitSend(scheduleAt.value)
+}
+
 // Guards the whole click-to-confirm stretch, not just the network call:
 // without it a double click stacks two confirm dialogs, and confirming both
 // sends the mail twice.
@@ -752,17 +933,7 @@ async function doSend() {
 }
 
 async function doSendInner() {
-  // The preview-before-send rule stands — "Dear {{contact_name}}," is not
-  // recoverable — but the machine can run the preview itself. Only a preview
-  // that fails to resolve stops the send, and then the panel says why.
-  if (!preview.value) {
-    await doPreview()
-    if (!preview.value) return
-  }
-  if (preview.value.missingVariables?.length) {
-    ElMessage.warning(t('emails.missingVars', { v: preview.value.missingVariables.join('、') }))
-    return
-  }
+  if (!(await readyToSend())) return
   const headCount =
     selected.value.length + (form.sendMode === 'MERGED' ? ccSelected.value.length : 0)
   await ElMessageBox.confirm(
@@ -772,6 +943,32 @@ async function doSendInner() {
     t('emails.confirmSendTitle'),
     { type: 'warning' },
   )
+  await submitSend('')
+}
+
+// The preview-before-send rule stands — "Dear {{contact_name}}," is not
+// recoverable — but the machine can run the preview itself. Only a preview
+// that fails to resolve stops the send, and then the panel says why.
+//
+// A scheduled send needs this every bit as much as an immediate one: the mail
+// goes out unattended, so nobody will be watching when the gap where the name
+// should be reaches the customer.
+async function readyToSend() {
+  if (!preview.value) {
+    await doPreview()
+    if (!preview.value) return false
+  }
+  if (preview.value.missingVariables?.length) {
+    ElMessage.warning(t('emails.missingVars', { v: preview.value.missingVariables.join('、') }))
+    return false
+  }
+  return true
+}
+
+// One path for both buttons: an empty `at` means now. Sending and scheduling
+// differ by a timestamp and nothing else — the queue holds every mail either
+// way, and only the moment it becomes due changes.
+async function submitSend(at: string) {
   sending.value = true
   try {
     // A draft that is being sent goes through its own endpoint so the row is
@@ -780,9 +977,9 @@ async function doSendInner() {
     if (draftId.value !== '0') {
       await post('/email-drafts', draftPayload())
       const wrapped = await post<{ result: CreateResult }>(
-        `/email-drafts/${draftId.value}/send`,
+        `/email-drafts/${draftId.value}/send${at ? `?scheduled_at=${encodeURIComponent(at)}` : ''}`,
       )
-      reportResult(wrapped.result)
+      reportResult(wrapped.result, at)
       emit('sent')
       close(false)
       return
@@ -797,13 +994,14 @@ async function doSendInner() {
       cc: form.sendMode === 'MERGED' ? ccSelected.value.map(asProto) : [],
       replyToInboundId: replyCtx.replyToInboundId,
       forwardInboundId: replyCtx.forwardInboundId,
+      scheduledAt: at,
       attachments: attachments.value.map((a) => ({
         fileName: a.fileName,
         fileKey: a.fileKey,
       })),
       recipients: selected.value.map(asProto),
     })
-    reportResult(res)
+    reportResult(res, at)
     emit('sent')
     close(false)
   } finally {
@@ -813,9 +1011,15 @@ async function doSendInner() {
 
 // A caller who asked for 40 and got 37 queued is told which three did not go
 // and why, rather than being left to notice the number later.
-function reportResult(res: CreateResult) {
+function reportResult(res: CreateResult, at = '') {
   const skipped = (res.suppressed?.length ?? 0) + (res.needsReview?.length ?? 0)
   if (skipped === 0) {
+    if (at) {
+      ElMessage.success(
+        t('emails.scheduledAll', { n: res.queued, when: readableLocal(new Date(at)) }),
+      )
+      return
+    }
     ElMessage.success(t('emails.queuedAll', { no: res.campaignNo, n: res.queued }))
     return
   }

@@ -9,6 +9,7 @@ import (
 
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
+	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/services/mail/internal/app"
 	"github.com/sgao19/erp-go/services/mail/internal/store"
@@ -129,6 +130,10 @@ func (h *Handler) CreateCampaign(ctx context.Context, req *mailv1.CreateCampaign
 	for _, r := range req.GetCc() {
 		cc = append(cc, recipientFromProto(r))
 	}
+	at, err := scheduleAt(req.GetScheduledAt())
+	if err != nil {
+		return nil, err
+	}
 	res, err := h.svc.CreateCampaign(ctx, grpcx.TenantID(ctx), app.CampaignInput{
 		Subject: req.GetSubject(), Body: req.GetBody(),
 		SignatureID: req.GetSignatureId(), Kind: req.GetKind(),
@@ -137,6 +142,7 @@ func (h *Handler) CreateCampaign(ctx context.Context, req *mailv1.CreateCampaign
 		ReplyToInboundID: req.GetReplyToInboundId(),
 		ForwardInboundID: req.GetForwardInboundId(),
 		Attachments:      pendingFromProto(req.GetAttachments()),
+		ScheduledAt:      at,
 	}, operator(ctx))
 	if err != nil {
 		return nil, err
@@ -499,7 +505,11 @@ func (h *Handler) DeleteDraft(ctx context.Context, req *mailv1.DeleteDraftReques
 }
 
 func (h *Handler) SendDraft(ctx context.Context, req *mailv1.SendDraftRequest) (*mailv1.SendDraftResponse, error) {
-	res, err := h.svc.SendDraft(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx))
+	at, err := scheduleAt(req.GetScheduledAt())
+	if err != nil {
+		return nil, err
+	}
+	res, err := h.svc.SendDraft(ctx, grpcx.TenantID(ctx), req.GetId(), at, operator(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -509,6 +519,59 @@ func (h *Handler) SendDraft(ctx context.Context, req *mailv1.SendDraftRequest) (
 		Suppressed:  skippedToProto(res.Suppressed),
 		NeedsReview: skippedToProto(res.NeedsReview),
 	}}, nil
+}
+
+// scheduleAt parses the requested delivery moment. Empty means now.
+func scheduleAt(v string) (time.Time, error) {
+	if v == "" {
+		return time.Time{}, nil
+	}
+	at, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return time.Time{}, apierr.Invalid("NT_SCHEDULE_BAD", "定时发送时间格式不正确")
+	}
+	return at, nil
+}
+
+func (h *Handler) ListScheduled(ctx context.Context, req *mailv1.ListScheduledRequest) (*mailv1.ListScheduledResponse, error) {
+	pg, size := page(req.GetPage())
+	if pg < 1 {
+		pg = 1
+	}
+	if size < 1 {
+		size = 20
+	}
+	sends, total, err := h.svc.ListScheduled(ctx, grpcx.TenantID(ctx), operator(ctx), size, (pg-1)*size)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mailv1.ScheduledSend, 0, len(sends))
+	for _, s := range sends {
+		out = append(out, &mailv1.ScheduledSend{
+			CampaignId: s.CampaignID, CampaignNo: s.CampaignNo,
+			Subject: s.Subject, PendingCount: s.PendingCount,
+			ToNames:     s.ToNames,
+			ScheduledAt: s.ScheduledAt.Format(time.RFC3339),
+			SendMode:    s.SendMode, BodyFormat: s.BodyFormat,
+		})
+	}
+	return &mailv1.ListScheduledResponse{Sends: out, Meta: meta(total, req.GetPage())}, nil
+}
+
+func (h *Handler) SendScheduledNow(ctx context.Context, req *mailv1.SendScheduledNowRequest) (*mailv1.SendScheduledNowResponse, error) {
+	n, err := h.svc.SendScheduledNow(ctx, grpcx.TenantID(ctx), req.GetCampaignId(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.SendScheduledNowResponse{Released: int32(n)}, nil
+}
+
+func (h *Handler) CancelScheduled(ctx context.Context, req *mailv1.CancelScheduledRequest) (*mailv1.CancelScheduledResponse, error) {
+	n, draft, err := h.svc.CancelScheduled(ctx, grpcx.TenantID(ctx), req.GetCampaignId(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.CancelScheduledResponse{Cancelled: int32(n), DraftId: draft}, nil
 }
 
 func recipientsFromProto(in []*mailv1.Recipient) []app.Recipient {

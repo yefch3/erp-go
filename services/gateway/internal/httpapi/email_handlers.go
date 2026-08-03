@@ -380,7 +380,43 @@ func (s *Server) deleteDraft(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sendDraft(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.SendDraft(r.Context(), &mailv1.SendDraftRequest{Id: idFromPath(r)})
+	resp, err := s.Emails.SendDraft(r.Context(), &mailv1.SendDraftRequest{
+		Id: idFromPath(r), ScheduledAt: r.URL.Query().Get("scheduled_at"),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// The 已定时 folder: what is booked, and the two things anyone does about it.
+func (s *Server) listScheduled(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.ListScheduled(r.Context(), &mailv1.ListScheduledRequest{
+		Page: pageFromQuery(r),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) sendScheduledNow(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.SendScheduledNow(r.Context(), &mailv1.SendScheduledNowRequest{
+		CampaignId: idFromPath(r),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) cancelScheduled(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.CancelScheduled(r.Context(), &mailv1.CancelScheduledRequest{
+		CampaignId: idFromPath(r),
+	})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
