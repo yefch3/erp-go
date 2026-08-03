@@ -275,9 +275,9 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID int64, th
 
 // MarkInbound is inbox housekeeping: read/unread, star, archive, trash.
 //
-// ERP-side state only, never written back to the mail host — the sync stays
-// one-way, so no housekeeping bug can ever damage the real mailbox. A nil
-// flag leaves that flag alone. Owner-scoped in the query: marking a mail
+// Applied here first and queued for the host second: what the person sees has
+// to change the moment they click, and the mailbox catches up within seconds.
+// A nil flag leaves that flag alone. Owner-scoped in the query: marking a mail
 // that is not the caller's is a silent no-op, not information.
 //
 // wholeThread applies the change to every message of the conversation. The
@@ -423,8 +423,9 @@ func (s *Service) MarkViewRead(ctx context.Context, tenantID, ownerID int64, vie
 
 // PurgeInbound permanently deletes mail from the caller's trash: the database
 // records and their copies in object storage (raw MIME, extracted
-// attachments). Only ERP-side data — the mail host's original is untouched,
-// because the sync is one-way and nothing here talks to the host at all.
+// attachments), and the host's copy with them: "彻底删除" that leaves the mail
+// sitting in Gmail would not be one. The host deletion is queued before the
+// row goes, because the row is where the Message-ID that finds it lives.
 //
 // wholeThread deletes every trashed message of the conversation, matching
 // what the trash list shows: one row per conversation. A live message of the
