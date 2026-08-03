@@ -939,6 +939,8 @@ export default {
     star: 'Star',
     unstar: 'Unstar',
     markUnread: 'Mark unread',
+    markRead: 'Mark read',
+    unreadOne: 'Unread',
     archive: 'Archive',
     unarchive: 'Move to inbox',
     toTrash: 'Delete',

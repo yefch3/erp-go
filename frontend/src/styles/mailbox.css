@@ -1,0 +1,54 @@
+/* The mailbox surface, as one system.
+ *
+ * Gmail's structure and rhythm, this product's colour. Every value a mail
+ * screen needs lives here rather than being retyped per component: the list,
+ * the folder rail and the reading page have to agree on row height, hover
+ * weight and radius, or the density reads as accidental instead of chosen.
+ *
+ * Global on purpose — scoped styles cannot share tokens across components,
+ * and the list is its own component precisely so the page stays readable.
+ */
+
+:root {
+  /* Rhythm. One row height drives the whole list: the rail's folders match it
+     so the two columns line up rather than nearly lining up. */
+  --mail-row-h: 40px;
+  --mail-row-pad: 0 14px;
+  --mail-gutter: 16px;
+
+  /* Surfaces. Read mail sits on a tint and unread on white — the contrast
+     between the two IS the unread signal at a glance, before any bold text
+     is read. Gmail does the same thing and it is why its inbox scans in one
+     pass. */
+  --mail-surface: var(--el-bg-color);
+  --mail-read-bg: var(--el-color-primary-light-9);
+  --mail-hover-shadow: 0 1px 2px rgb(60 64 67 / 0.3), 0 1px 3px 1px rgb(60 64 67 / 0.15);
+  --mail-divider: var(--el-border-color-lighter);
+
+  /* Typography. Two steps only: the line you read and the line you skim. */
+  --mail-text: 14px;
+  --mail-sub: 13px;
+  --mail-meta: 12px;
+  --mail-who-w: 184px;
+  /* Wide enough for the date, and for the three round action buttons that
+     take its place on hover without the row twitching. */
+  --mail-when-w: 108px;
+
+  /* Shape. The rail's capsule and the list's rounded ends are the same idea
+     applied at two scales. */
+  --mail-radius: 8px;
+  --mail-pill: 0 16px 16px 0;
+
+  /* Motion. Short enough to feel like the cursor caused it. */
+  --mail-fast: 120ms;
+  --mail-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Anybody who has asked their system to stop moving things gets stillness,
+   including the hover lift — the shadow still appears, it just does not
+   animate in. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --mail-fast: 1ms;
+  }
+}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -540,14 +541,33 @@ func (s *Service) putRaw(ctx context.Context, key string, data []byte) error {
 	return s.files.Put(ctx, key, bytes.NewReader(data), int64(len(data)), "message/rfc822")
 }
 
+// snippetOf is the one line of the mail the list shows beside the subject.
+//
+// The text part is preferred but not trusted: plenty of senders put markup in
+// text/plain, and one that does would put "<!doctype html><html xmlns=..." in
+// front of the person instead of the first sentence. Anything that looks like
+// markup goes through the HTML path, which strips <style> and <script> bodies
+// rather than just their tags — a mail's stylesheet is otherwise the first
+// thing in the snippet and the longest.
 func snippetOf(p ParsedMail) string {
 	text := p.BodyText
-	if strings.TrimSpace(text) == "" {
-		text = HTMLToText(p.BodyHTML)
+	if strings.TrimSpace(text) == "" || looksLikeMarkup(text) {
+		html := p.BodyHTML
+		if strings.TrimSpace(html) == "" {
+			html = text
+		}
+		text = HTMLToText(html)
 	}
 	text = strings.Join(strings.Fields(text), " ")
 	return truncate(text, 280)
 }
+
+// markupHead spots the openings that mean "this is a document, not a
+// sentence". Deliberately anchored near the start: a plain-text mail that
+// happens to mention <b> further down is still plain text.
+var markupHead = regexp.MustCompile(`(?is)^\s*(<!doctype|<html|<head|<body|<table|<div|<style|<meta)`)
+
+func looksLikeMarkup(s string) bool { return markupHead.MatchString(s) }
 
 func truncate(s string, n int) string {
 	r := []rune(s)

@@ -15,6 +15,7 @@
         type="button"
         @click="switchFolder(f.key)"
       >
+        <el-icon class="ficon"><component :is="f.icon" /></el-icon>
         <span class="fname">{{ t(`emails.folders.${f.key}`) }}</span>
         <el-badge v-if="f.key === 'attention' && attentionCount > 0" :value="attentionCount" />
         <el-badge v-else-if="f.key === 'inbox' && unreadCount > 0" :value="unreadCount" />
@@ -67,13 +68,25 @@
           </el-button>
         </div>
         <h2 class="in-subject">{{ openedInbound.subject || t('emails.noSubject') }}</h2>
-        <div class="in-meta">
-          <span class="strong">{{ openedInbound.fromName || openedInbound.fromEmail }}</span>
-          <span class="sub">&lt;{{ openedInbound.fromEmail }}&gt;</span>
+        <!-- Who wrote it, as a person rather than a field: the avatar gives
+             the eye somewhere to land before it starts reading, which is the
+             whole reason every mail client has one. -->
+        <div class="in-from">
+          <span class="avatar" :style="avatarStyle(openedInbound.fromEmail)" aria-hidden="true">
+            {{ initialOf(openedInbound.fromName || openedInbound.fromEmail) }}
+          </span>
+          <div class="in-who">
+            <div class="in-meta">
+              <span class="strong">{{ openedInbound.fromName || openedInbound.fromEmail }}</span>
+              <span class="sub">&lt;{{ openedInbound.fromEmail }}&gt;</span>
+            </div>
+            <div class="sub">{{ t('emails.inboundTo', { to: openedInbound.toEmail }) }}</div>
+          </div>
           <span class="grow" />
-          <span class="sub">{{ shortTime(openedInbound.sentAt || openedInbound.receivedAt) }}</span>
+          <span class="sub in-when">
+            {{ shortTime(openedInbound.sentAt || openedInbound.receivedAt) }}
+          </span>
         </div>
-        <div class="in-meta sub">{{ t('emails.inboundTo', { to: openedInbound.toEmail }) }}</div>
         <div class="in-actions">
           <template v-if="canWrite">
             <el-button size="small" type="primary" plain @click="replyToInbound">
@@ -233,52 +246,15 @@
         >
           {{ t('emails.junkNote') }} {{ t('emails.junkNoteRescue') }}
         </el-alert>
-        <el-table
-          :data="inbound"
-          v-loading="loading"
-          class="clickable"
-          :row-class-name="inboundRowClass"
-          @row-click="openInbound"
-        >
-          <el-table-column v-if="folder !== 'junk'" width="44">
-            <template #default="{ row }">
-              <span
-                class="star"
-                :class="{ on: row.isStarred }"
-                :title="t(row.isStarred ? 'emails.unstar' : 'emails.star')"
-                @click.stop="toggleStar(row)"
-              >{{ row.isStarred ? '★' : '☆' }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('emails.from')" min-width="200">
-            <template #default="{ row }">
-              <div class="strong ellipsis">
-                <span v-if="!row.isRead" class="unread-dot" />
-                {{ row.fromName || row.fromEmail }}
-                <!-- One row per conversation: this is how many messages it
-                     holds. Opening the row shows the whole exchange. -->
-                <span v-if="Number(row.threadCount) > 1" class="tcount">
-                  {{ row.threadCount }}
-                </span>
-              </div>
-              <div class="sub ellipsis">{{ row.fromEmail }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('emails.subject')" min-width="320">
-            <template #default="{ row }">
-              <div class="ellipsis" :class="{ strong: !row.isRead }" :title="row.subject">
-                {{ row.subject || t('emails.noSubject') }}
-                <span v-if="row.hasAttachments" class="clip">📎</span>
-              </div>
-              <div class="sub ellipsis">{{ row.snippet }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('emails.receivedAt')" width="150">
-            <template #default="{ row }">
-              <span class="sub">{{ shortTime(row.receivedAt) }}</span>
-            </template>
-          </el-table-column>
-        </el-table>
+        <MailList
+          :mails="inbound"
+          :folder="folder"
+          :loading="loading"
+          @open="openInbound"
+          @star="toggleStar"
+          @mark="markRow"
+          @purge="purgeRow"
+        />
         <el-empty
           v-if="!loading && inbound.length === 0"
           :description="t(folder === 'inbox' ? 'emails.emptyInbox' : 'emails.emptyFolder')"
@@ -643,6 +619,22 @@ import EmailComposer from '../components/EmailComposer.vue'
 import MailReader, { type Mail } from '../components/MailReader.vue'
 import MailboxGate from '../components/MailboxGate.vue'
 import MailHostDialog from '../components/MailHostDialog.vue'
+import MailList from '../components/MailList.vue'
+import {
+  Box,
+  CircleClose,
+  Clock,
+  Delete,
+  EditPen,
+  Message,
+  Promotion,
+  Star,
+  Warning,
+  WarningFilled,
+} from '@element-plus/icons-vue'
+// Shared mail-surface tokens. Global rather than scoped: the list is its own
+// component, and the two have to agree on density or it reads as accidental.
+import '../styles/mailbox.css'
 
 interface Campaign {
   id: string
@@ -720,17 +712,20 @@ const canWrite = computed(() => auth.can('mail:email:write'))
 const canSuppress = computed(() => auth.can('mail:suppression:write'))
 const isAdmin = computed(() => auth.can('iam:role:write'))
 
+// An icon per folder. Text alone made the rail a list of similar-length words
+// that had to be read; the icon is what the eye actually navigates by once the
+// positions are learned.
 const folders = [
-  { key: 'inbox' },
-  { key: 'starred' },
-  { key: 'drafts' },
-  { key: 'scheduled' },
-  { key: 'sent' },
-  { key: 'attention' },
-  { key: 'archive' },
-  { key: 'junk' },
-  { key: 'trash' },
-  { key: 'suppressions' },
+  { key: 'inbox', icon: Message },
+  { key: 'starred', icon: Star },
+  { key: 'drafts', icon: EditPen },
+  { key: 'scheduled', icon: Clock },
+  { key: 'sent', icon: Promotion },
+  { key: 'attention', icon: WarningFilled },
+  { key: 'archive', icon: Box },
+  { key: 'junk', icon: Warning },
+  { key: 'trash', icon: Delete },
+  { key: 'suppressions', icon: CircleClose },
 ]
 // The inbox is the landing folder now that mail actually arrives in it.
 const folder = ref('inbox')
@@ -1283,12 +1278,33 @@ function toggleThreadItem(it: ThreadItem) {
   expandedThread.value = next
 }
 
-function inboundRowClass({ row }: { row: InboundMail }) {
-  return row.isRead ? '' : 'unread-row'
+// Housekeeping straight from a list row, without opening the mail. Each of
+// these also reaches the mail host within seconds; see the write-back queue.
+//
+// Read/unread updates the row in place — the list must not jump out from
+// under the cursor for a change that only alters how the row looks. Anything
+// that moves the mail to another folder reloads, because the row is leaving.
+async function markRow(row: InboundMail, flags: Record<string, boolean>) {
+  await post(`/inbound-mails/${row.id}/mark`, { ...flags, wholeThread: true })
+  if ('read' in flags) {
+    row.isRead = flags.read
+    refreshUnread()
+    return
+  }
+  load()
+  refreshUnread()
 }
 
-// Housekeeping calls. All of them are ERP-side state only — nothing is ever
-// written back to the mail host, so none of these can touch the real mailbox.
+async function purgeRow(row: InboundMail) {
+  await ElMessageBox.confirm(t('emails.purgeHint'), t('emails.purge'), {
+    type: 'warning',
+    confirmButtonText: t('emails.purge'),
+  })
+  await del(`/inbound-mails/${row.id}?whole_thread=true`)
+  ElMessage.success(t('emails.purged'))
+  load()
+}
+
 async function toggleStar(row: InboundMail) {
   // Optimistic: a star that waits for the network feels broken.
   row.isStarred = !row.isStarred
@@ -1323,9 +1339,9 @@ async function markOpened(flags: Record<string, boolean>) {
   refreshUnread()
 }
 
-// Permanent deletion, trash only. The confirm spells out the asymmetry that
-// makes this safe to offer: the ERP copy dies, the mail host's original does
-// not — the sync is one-way and nothing in the ERP can reach the real mailbox.
+// Permanent deletion, trash only, and permanent on both sides: the ERP copy
+// and the mail host's original go together. The confirm says so, because this
+// is the one action nobody can check afterwards.
 async function purgeOpened() {
   if (!openedInbound.value) return
   await ElMessageBox.confirm(t('emails.purgeHint'), t('emails.purge'), {
@@ -1541,6 +1557,19 @@ function shortTime(v: string) {
   return v.replace('T', ' ').replace('Z', '').slice(0, 16)
 }
 
+// A stable colour per correspondent, so the same customer looks the same every
+// time. Hue only — saturation and lightness are fixed, which is what keeps a
+// wall of avatars from turning into confetti.
+function avatarStyle(email: string) {
+  let h = 0
+  for (const ch of email || '') h = (h * 31 + ch.charCodeAt(0)) % 360
+  return { background: `hsl(${h} 55% 42%)` }
+}
+
+function initialOf(name: string) {
+  return (name || '?').trim().charAt(0).toUpperCase()
+}
+
 // A bulk send has N copies of one mail. Opening it shows the mail — read from
 // the first recipient's copy, which is the only place the rendered text
 // exists — and lists the recipients underneath.
@@ -1651,17 +1680,39 @@ async function doUnsuppress(row: Suppression) {
 .folder {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   width: 100%;
-  padding: 9px 12px;
+  height: var(--mail-row-h);
+  padding: 0 12px;
   margin-bottom: 2px;
   background: none;
   border: none;
-  border-radius: 0 16px 16px 0;
-  font-size: 14px;
+  /* The capsule, cut flat against the rail's edge — the shape says "this
+     column continues off-screen" rather than "here is a floating chip". */
+  border-radius: var(--mail-pill);
+  font-size: var(--mail-text);
   color: var(--el-text-color-regular);
   cursor: pointer;
   text-align: left;
+  transition: background var(--mail-fast) var(--mail-ease);
+}
+.folder .fname {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ficon {
+  flex: none;
+  font-size: 16px;
+  color: var(--el-text-color-secondary);
+}
+.folder.on .ficon {
+  color: inherit;
+}
+.folder:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
 }
 .folder:hover {
   background: var(--el-fill-color-light);
@@ -1683,6 +1734,17 @@ async function doUnsuppress(row: Suppression) {
 .pane {
   flex: 1;
   min-width: 0;
+  /* The list responds to the width IT has, not the window's: the app shell's
+     nav and this page's rail both take a fixed slice first, so a viewport
+     query would be answering a different question.
+
+     On .pane rather than on .mailbox because inline-size containment stops an
+     element contributing its content's width to its ancestors — put it on the
+     page root and the shell's main column, which sizes to content, collapses
+     to its padding. A flex item with min-width:0 already has a definite width
+     from layout, so containing it costs nothing. */
+  container-type: inline-size;
+  container-name: mailbox;
 }
 .pane-head {
   display: flex;
@@ -1802,16 +1864,51 @@ async function doUnsuppress(row: Suppression) {
   color: var(--el-text-color-secondary);
 }
 .in-subject {
-  margin: 0 0 10px;
-  font-size: 20px;
+  margin: 0 0 14px;
+  /* The one thing on the page that should be read first, sized to say so. */
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+.in-from {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 500;
+  user-select: none;
+}
+.in-who {
+  min-width: 0;
 }
 .in-meta {
   display: flex;
   align-items: baseline;
   gap: 8px;
 }
+.in-when {
+  white-space: nowrap;
+}
 .in-actions {
-  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.thread-item {
+  transition: box-shadow var(--mail-fast) var(--mail-ease);
+}
+.thread-item:hover {
+  box-shadow: var(--mail-hover-shadow);
 }
 .junk-note {
   margin-bottom: 12px;
@@ -1832,7 +1929,7 @@ async function doUnsuppress(row: Suppression) {
 .thread-item {
   margin-bottom: 6px;
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
+  border-radius: var(--mail-radius);
   overflow: hidden;
 }
 .thread-item.out {
@@ -1870,9 +1967,19 @@ async function doUnsuppress(row: Suppression) {
 .in-html {
   line-height: 1.6;
   word-break: break-word;
+  /* Mail from the wild is laid out with fixed-width tables. Squeezing one
+     into the pane crushes a cell down to a single letter per line — a column
+     of "S t a t u s" reading downwards. Let it be as wide as it was written
+     and scroll, which is what every mail client does. */
+  overflow-x: auto;
 }
 .in-html :deep(img) {
   max-width: 100%;
+}
+/* The exception to the scroll rule: an image is safe to shrink, a table is
+   not, and this keeps a 2000px hero from forcing the scrollbar on its own. */
+.in-html :deep(table) {
+  max-width: none;
 }
 .in-text {
   white-space: pre-wrap;
