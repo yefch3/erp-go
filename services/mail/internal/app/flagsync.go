@@ -111,12 +111,38 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 		op         string
 	}
 	batches := map[batchKey][]store.ClaimFlagOpsRow{}
+	var moves []store.ClaimFlagOpsRow
 	for _, o := range ops {
+		// A flag change is the same command whoever it is for, so those batch.
+		// A move has to locate its message first, so each stands alone.
+		if o.Flag != flagSeen && o.Flag != flagFlagged {
+			moves = append(moves, o)
+			continue
+		}
 		k := batchKey{
 			accountID: o.AccountID, employeeID: o.EmployeeID,
 			folder: o.Folder, flag: o.Flag, op: o.Op,
 		}
 		batches[k] = append(batches[k], o)
+	}
+
+	for _, row := range moves {
+		acct, err := s.ForSender(ctx, cfg.TenantID, row.EmployeeID)
+		if err != nil {
+			s.failOps(ctx, []store.ClaimFlagOpsRow{row}, err)
+			continue
+		}
+		if err := s.publishMove(ctx, acct, row); err != nil {
+			s.log.Warn("folder move failed", "account", row.AccountID,
+				"flag", row.Flag, "op", row.Op, "uid", row.ImapUid, "err", err)
+			s.failOps(ctx, []store.ClaimFlagOpsRow{row}, err)
+			continue
+		}
+		if err := s.q.DeleteFlagOp(ctx, row.ID); err != nil {
+			s.log.Warn("could not clear a published move", "id", row.ID, "err", err)
+		}
+		s.log.Info("mail moved on the host", "account", row.AccountID,
+			"flag", row.Flag, "op", row.Op, "uid", row.ImapUid)
 	}
 
 	for k, rows := range batches {
@@ -242,4 +268,112 @@ func (s *Service) ReconcileFlags(ctx context.Context, tenantID int64, acct MailA
 			"account", acct.AccountID, "folder", folder, "changed", changed)
 	}
 	return nil
+}
+
+// Folder-level publishing: deletion, restore, archiving and permanent
+// deletion. Unlike a flag, these move a message — and a move changes its UID,
+// so anything that has to find the message afterwards searches by Message-ID.
+const (
+	flagTrash   = "TRASH"
+	flagArchive = "ARCHIVE"
+	flagPurge   = "PURGE"
+)
+
+// queueFolderMove records the intent to move one message on the host.
+func (s *Service) queueFolderMove(ctx context.Context, tenantID, accountID, employeeID int64, folder string, uid int64, messageID, flag string, on bool) {
+	op := opRemove
+	if on {
+		op = opAdd
+	}
+	if err := s.q.EnqueueFlagOp(ctx, store.EnqueueFlagOpParams{
+		TenantID: tenantID, AccountID: accountID, EmployeeID: employeeID,
+		Folder: folder, ImapUid: uid, Flag: flag, Op: op, MessageID: messageID,
+	}); err != nil {
+		s.log.Warn("could not queue a folder move",
+			"account", accountID, "uid", uid, "flag", flag, "err", err)
+	}
+}
+
+// publishMove carries out one folder-level change against the host.
+//
+// Each op is handled on its own rather than batched: a move needs the
+// message located first, and the searches differ per message.
+func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.ClaimFlagOpsRow) error {
+	switch row.Flag {
+	case flagTrash:
+		trash, err := s.mailbox.TrashFolder(ctx, acct)
+		if err != nil {
+			return err
+		}
+		if row.Op == opAdd {
+			// Straight out of the folder it is still sitting in.
+			return s.mailbox.MoveMessages(ctx, acct, row.Folder, []uint32{uint32(row.ImapUid)}, trash)
+		}
+		// Restoring: it left the source folder when it was deleted, so it has
+		// to be found in the trash by Message-ID before it can come back.
+		return s.moveBack(ctx, acct, trash, row.Folder, row.MessageID)
+
+	case flagArchive:
+		archive, err := s.mailbox.ArchiveFolder(ctx, acct)
+		if err != nil {
+			return err
+		}
+		if archive == "" {
+			// This host has no archive — 263 and most plain IMAP servers.
+			// The ERP keeps its own archive view and the mailbox is left
+			// exactly as it was, which is better than inventing a folder in
+			// somebody's mailbox to satisfy our own vocabulary.
+			s.log.Info("host has no archive folder; archiving stays ERP-side",
+				"account", acct.AccountID)
+			return nil
+		}
+		if row.Op == opAdd {
+			return s.mailbox.MoveMessages(ctx, acct, row.Folder, []uint32{uint32(row.ImapUid)}, archive)
+		}
+		return s.moveBack(ctx, acct, archive, row.Folder, row.MessageID)
+
+	case flagPurge:
+		// Deleted mail is in the trash by now, and that is where it has to be
+		// destroyed. If it is not there — already purged, or emptied by hand
+		// in Gmail — there is nothing left to do and nothing to report.
+		trash, err := s.mailbox.TrashFolder(ctx, acct)
+		if err != nil {
+			return err
+		}
+		uid, ok, err := s.mailbox.FindUIDByMessageID(ctx, acct, trash, row.MessageID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			// Worth saying out loud rather than passing silently: permanent
+			// deletion is the one operation nobody can check afterwards, so
+			// "there was nothing there" and "it is gone now" should not look
+			// the same in the log.
+			s.log.Info("nothing left to purge on the host",
+				"account", acct.AccountID, "message_id", row.MessageID)
+			return nil
+		}
+		if err := s.mailbox.PurgeMessages(ctx, acct, trash, []uint32{uid}); err != nil {
+			return err
+		}
+		s.log.Info("purged from the host for good",
+			"account", acct.AccountID, "folder", trash, "uid", uid)
+		return nil
+	}
+	return nil
+}
+
+// moveBack returns a message from where it was filed to where it came from.
+func (s *Service) moveBack(ctx context.Context, acct MailAccount, from, to, messageID string) error {
+	uid, ok, err := s.mailbox.FindUIDByMessageID(ctx, acct, from, messageID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		// Not where we filed it: somebody moved or deleted it in another
+		// client. Their action is the newer one; ours has nothing left to
+		// act on.
+		return nil
+	}
+	return s.mailbox.MoveMessages(ctx, acct, from, []uint32{uid}, to)
 }

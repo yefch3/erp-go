@@ -222,9 +222,9 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID int64, in Campaig
 				Subject:   subject, Body: rendered, BodyText: renderedText,
 				BodyFormat: format,
 				Status:     status, AttentionReason: attention,
-				SendMode:   "SEPARATE",
-				ThreadKey:  thread.ThreadKey,
-				InReplyTo:  thread.InReplyTo, ReferencesIds: thread.References,
+				SendMode:  "SEPARATE",
+				ThreadKey: thread.ThreadKey,
+				InReplyTo: thread.InReplyTo, ReferencesIds: thread.References,
 			}); err != nil {
 				return err
 			}
