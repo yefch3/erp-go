@@ -62,8 +62,12 @@ type Mailbox interface {
 	// PurgeMessages deletes mail from the host for good.
 	PurgeMessages(ctx context.Context, acct MailAccount, folder string, uids []uint32) error
 	// FetchFlags reads back what the host believes, so somebody else's
-	// changes reach the ERP too.
+	// changes reach the ERP too. Bounded by the UIDs it is given.
 	FetchFlags(ctx context.Context, acct MailAccount, folder string, uids []uint32) (map[uint32]MessageFlags, error)
+	// SearchFlagged names every starred message in a folder, at any age.
+	// FetchFlags cannot: it only answers about the UIDs handed to it, which
+	// in practice is the newest few hundred.
+	SearchFlagged(ctx context.Context, acct MailAccount, folder string) ([]uint32, error)
 	// RecentMessageIDs names the newest messages of a folder, for working out
 	// where mail went once it stops appearing in the inbox.
 	RecentMessageIDs(ctx context.Context, acct MailAccount, folder string, limit uint32) (map[string]bool, error)

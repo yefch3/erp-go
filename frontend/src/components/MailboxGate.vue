@@ -80,7 +80,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { get, http } from '../api'
+import { get, http, mailHostRequest } from '../api'
 import { useAuthStore } from '../stores/auth'
 
 const emit = defineEmits<{ unlocked: []; hostSettings: [] }>()
@@ -193,7 +193,10 @@ async function skipUnbound() {
 // Raw client rather than the helper: a wrong code is an expected answer here,
 // to be shown in place instead of as a floating toast.
 async function verify(code: string, addr = '') {
-  const resp = await http.post('/mailbox/verify', { secret: code, email: addr })
+  // Verifying is a live IMAP login against the person's own mail host, which
+  // is nothing like a database call: the default client timeout would give up
+  // on a slow but perfectly good sign-in.
+  const resp = await http.post('/mailbox/verify', { secret: code, email: addr }, mailHostRequest)
   const data = resp.data.data as { token: string }
   localStorage.setItem('mailUnlock', data.token)
   secret.value = ''

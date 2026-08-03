@@ -10,15 +10,28 @@
       class="row"
       :class="{ unread: !m.isRead }"
     >
-      <button
+      <!-- el-tooltip rather than a title attribute. The browser's own tooltip
+           takes about a second to appear, which is far too slow for a row of
+           unlabelled icons: by the time it arrives the cursor has usually
+           moved on, so the icons read as unexplained. show-after 0 puts the
+           name under the cursor the moment it lands, which is what Gmail
+           does and the only reason its icon-only toolbar is usable. -->
+      <el-tooltip
         v-if="folder !== 'junk'"
-        type="button"
-        class="star"
-        :class="{ on: m.isStarred }"
-        :title="t(m.isStarred ? 'emails.unstar' : 'emails.star')"
-        :aria-pressed="m.isStarred"
-        @click.stop="emit('star', m)"
-      >{{ m.isStarred ? '★' : '☆' }}</button>
+        :content="t(m.isStarred ? 'emails.unstar' : 'emails.star')"
+        placement="top"
+        :show-after="0"
+        :hide-after="0"
+      >
+        <button
+          type="button"
+          class="star"
+          :class="{ on: m.isStarred }"
+          :aria-label="t(m.isStarred ? 'emails.unstar' : 'emails.star')"
+          :aria-pressed="m.isStarred"
+          @click.stop="emit('star', m)"
+        >{{ m.isStarred ? '★' : '☆' }}</button>
+      </el-tooltip>
 
       <!-- The row's own hit area. A button rather than a link because opening
            a mail is a state change in this app, not a document to fetch; the
@@ -44,9 +57,15 @@
         </span>
       </div>
 
-      <el-icon v-if="m.hasAttachments" class="clip" :title="t('emails.attachments')">
-        <Paperclip />
-      </el-icon>
+      <el-tooltip
+        v-if="m.hasAttachments"
+        :content="t('emails.attachments')"
+        placement="top"
+        :show-after="0"
+        :hide-after="0"
+      >
+        <el-icon class="clip"><Paperclip /></el-icon>
+      </el-tooltip>
 
       <!-- Time and actions share one cell: the actions appear where the date
            was, so the row does not reflow under the cursor and the next row
@@ -54,17 +73,23 @@
       <div class="tail">
         <time class="when" :datetime="m.receivedAt">{{ shortTime(m.receivedAt) }}</time>
         <div class="acts">
-          <button
+          <el-tooltip
             v-for="a in actionsFor(m)"
             :key="a.key"
-            type="button"
-            class="act"
-            :title="a.label"
-            :aria-label="a.label"
-            @click.stop="a.run(m)"
+            :content="a.label"
+            placement="top"
+            :show-after="0"
+            :hide-after="0"
           >
-            <el-icon><component :is="a.icon" /></el-icon>
-          </button>
+            <button
+              type="button"
+              class="act"
+              :aria-label="a.label"
+              @click.stop="a.run(m)"
+            >
+              <el-icon><component :is="a.icon" /></el-icon>
+            </button>
+          </el-tooltip>
         </div>
       </div>
     </li>
