@@ -192,19 +192,15 @@ function shortTime(v: string) {
   height: var(--mail-row-h);
   padding: var(--mail-row-pad);
   border-bottom: 1px solid var(--mail-divider);
-  /* Read mail recedes; unread stays on white. The tint does the work that
-     bold text alone cannot do at a glance. */
-  background: var(--mail-read-bg);
+  background: var(--mail-surface);
   cursor: pointer;
   position: relative;
   transition: box-shadow var(--mail-fast) var(--mail-ease);
 }
-.row.unread {
-  background: var(--mail-surface);
-}
 .row:hover {
-  /* Lifted rather than tinted: a hover colour would collide with the
-     read/unread tint that carries meaning here. */
+  /* Lifted, and only lifted. With every row white the hover could now be a
+     tint instead, but the shadow says "this one is under the cursor" without
+     spending a colour — and colour is what the unread state is saving. */
   box-shadow: var(--mail-hover-shadow);
   z-index: 1;
   border-bottom-color: transparent;
@@ -216,7 +212,10 @@ function shortTime(v: string) {
 
 .star {
   flex: none;
+  display: grid;
+  place-items: center;
   width: 24px;
+  height: 100%;
   padding: 0;
   background: none;
   border: none;
@@ -235,7 +234,10 @@ function shortTime(v: string) {
 
 .body {
   display: flex;
-  align-items: baseline;
+  /* Centred, not baseline-aligned. On a baseline the text sits against the
+     top of a fixed-height row and every line in the list reads as if it had
+     slipped upwards — which is exactly how it looked. */
+  align-items: center;
   gap: 12px;
   flex: 1;
   min-width: 0;
@@ -259,6 +261,9 @@ function shortTime(v: string) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* A line box of its own, so the sender and the subject sit on the same
+     centre line rather than each finding its own. */
+  line-height: var(--mail-row-h);
   font-size: var(--mail-text);
   color: var(--el-text-color-regular);
 }
@@ -282,6 +287,7 @@ function shortTime(v: string) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: var(--mail-row-h);
   font-size: var(--mail-text);
   color: var(--el-text-color-secondary);
 }

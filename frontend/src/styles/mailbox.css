@@ -16,12 +16,15 @@
   --mail-row-pad: 0 14px;
   --mail-gutter: 16px;
 
-  /* Surfaces. Read mail sits on a tint and unread on white — the contrast
-     between the two IS the unread signal at a glance, before any bold text
-     is read. Gmail does the same thing and it is why its inbox scans in one
-     pass. */
+  /* Surfaces. Every row is white; bold is what says unread.
+     An earlier version tinted read mail, on the theory that the contrast
+     between two backgrounds reads faster than weight. Held against the real
+     thing it just looked blue: Gmail's list is white top to bottom, and the
+     tint was fighting the one signal that actually carries — the bold. */
   --mail-surface: var(--el-bg-color);
-  --mail-read-bg: var(--el-color-primary-light-9);
+  /* A grey you can actually see. The lighter fill is a hair off white and
+     reads as nothing at all under a cursor. */
+  --mail-hover: var(--el-fill-color-darker);
   --mail-hover-shadow: 0 1px 2px rgb(60 64 67 / 0.3), 0 1px 3px 1px rgb(60 64 67 / 0.15);
   --mail-divider: var(--el-border-color-lighter);
 
