@@ -1272,6 +1272,68 @@ func (q *Queries) ListMailboxSent(ctx context.Context, arg ListMailboxSentParams
 	return items, nil
 }
 
+const listRecentForReconcile = `-- name: ListRecentForReconcile :many
+SELECT id, imap_uid, message_id, is_read, is_starred, archived_at, deleted_at
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND account_id = $2::bigint
+  AND folder = $3::text
+ORDER BY imap_uid DESC
+LIMIT $4::int
+`
+
+type ListRecentForReconcileParams struct {
+	TenantID  int64
+	AccountID int64
+	Folder    string
+	RowLimit  int32
+}
+
+type ListRecentForReconcileRow struct {
+	ID         int64
+	ImapUid    int64
+	MessageID  string
+	IsRead     bool
+	IsStarred  bool
+	ArchivedAt pgtype.Timestamptz
+	DeletedAt  pgtype.Timestamptz
+}
+
+// The newest slice of one folder with everything the reconcile pass needs to
+// decide what happened to each message.
+func (q *Queries) ListRecentForReconcile(ctx context.Context, arg ListRecentForReconcileParams) ([]ListRecentForReconcileRow, error) {
+	rows, err := q.db.Query(ctx, listRecentForReconcile,
+		arg.TenantID,
+		arg.AccountID,
+		arg.Folder,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRecentForReconcileRow
+	for rows.Next() {
+		var i ListRecentForReconcileRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ImapUid,
+			&i.MessageID,
+			&i.IsRead,
+			&i.IsStarred,
+			&i.ArchivedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRecentUIDs = `-- name: ListRecentUIDs :many
 SELECT imap_uid, is_read, is_starred
 FROM email_inbound
@@ -1800,6 +1862,61 @@ func (q *Queries) MarkViewRead(ctx context.Context, arg MarkViewReadParams) ([]M
 		return nil, err
 	}
 	return items, nil
+}
+
+const mirrorHostArchive = `-- name: MirrorHostArchive :exec
+UPDATE email_inbound
+SET archived_at = coalesce(archived_at, now())
+WHERE tenant_id = $1::bigint
+  AND account_id = $2::bigint
+  AND folder = $3::text
+  AND imap_uid = $4::bigint
+`
+
+type MirrorHostArchiveParams struct {
+	TenantID  int64
+	AccountID int64
+	Folder    string
+	ImapUid   int64
+}
+
+func (q *Queries) MirrorHostArchive(ctx context.Context, arg MirrorHostArchiveParams) error {
+	_, err := q.db.Exec(ctx, mirrorHostArchive,
+		arg.TenantID,
+		arg.AccountID,
+		arg.Folder,
+		arg.ImapUid,
+	)
+	return err
+}
+
+const mirrorHostDelete = `-- name: MirrorHostDelete :exec
+UPDATE email_inbound
+SET deleted_at = coalesce(deleted_at, now())
+WHERE tenant_id = $1::bigint
+  AND account_id = $2::bigint
+  AND folder = $3::text
+  AND imap_uid = $4::bigint
+`
+
+type MirrorHostDeleteParams struct {
+	TenantID  int64
+	AccountID int64
+	Folder    string
+	ImapUid   int64
+}
+
+// Somebody deleted this mail elsewhere. Mirrored as a soft delete, never a
+// hard one: our copy may be the only one left, and the ERP trash gives thirty
+// days to notice a mistake. The sweeper finishes the job afterwards.
+func (q *Queries) MirrorHostDelete(ctx context.Context, arg MirrorHostDeleteParams) error {
+	_, err := q.db.Exec(ctx, mirrorHostDelete,
+		arg.TenantID,
+		arg.AccountID,
+		arg.Folder,
+		arg.ImapUid,
+	)
+	return err
 }
 
 const pruneSendCounters = `-- name: PruneSendCounters :exec

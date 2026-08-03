@@ -36,6 +36,11 @@ const (
 	// cover a browsing session in another client, small enough that the cost
 	// stays flat as the mailbox grows.
 	reconcileWindow = 200
+
+	// How deep to look in the trash and the archive when working out where a
+	// message went. Deeper than the reconcile window on purpose: several
+	// messages can leave the inbox for the same folder at once.
+	departureScan = 400
 )
 
 // queueFlagWrite records the intent to publish one message's read state.
@@ -203,7 +208,13 @@ func (s *Service) failOps(ctx context.Context, rows []store.ClaimFlagOpsRow, cau
 // Refuses to run while anything is queued for that account: the queue holds
 // changes the host has not seen yet, so the host's answer is stale by
 // definition until it drains.
-func (s *Service) ReconcileFlags(ctx context.Context, tenantID int64, acct MailAccount, folder, actual string) error {
+// followDepartures says whether a message that left this folder should be
+// chased down. True for the inbox, where leaving means deleted or archived.
+// False for the junk folder, where the usual reason a message leaves is that
+// somebody called it "not spam" in Gmail and it went to the inbox — reading
+// that as a deletion would throw away exactly the mail the person just
+// rescued.
+func (s *Service) ReconcileFlags(ctx context.Context, tenantID int64, acct MailAccount, folder, actual string, followDepartures bool) error {
 	pending, err := s.q.CountPendingFlagOps(ctx, store.CountPendingFlagOpsParams{
 		TenantID: tenantID, AccountID: acct.AccountID,
 	})
@@ -214,7 +225,7 @@ func (s *Service) ReconcileFlags(ctx context.Context, tenantID int64, acct MailA
 		return nil
 	}
 
-	rows, err := s.q.ListRecentUIDs(ctx, store.ListRecentUIDsParams{
+	rows, err := s.q.ListRecentForReconcile(ctx, store.ListRecentForReconcileParams{
 		TenantID: tenantID, AccountID: acct.AccountID, Folder: folder,
 		RowLimit: reconcileWindow,
 	})
@@ -234,12 +245,14 @@ func (s *Service) ReconcileFlags(ctx context.Context, tenantID int64, acct MailA
 		return err
 	}
 	changed := 0
+	var missing []store.ListRecentForReconcileRow
 	for _, r := range rows {
 		fl, ok := live[uint32(r.ImapUid)]
-		// A UID the host no longer returns was deleted elsewhere. Left alone
-		// here: removing rows is deletion, and deletion is its own step with
-		// its own rules, not a side effect of reading flags.
+		// A UID the host stopped returning means the message left this folder:
+		// deleted, archived, or filed somewhere by a rule. Which one it was
+		// takes looking, so they are collected and answered together below.
 		if !ok {
+			missing = append(missing, r)
 			continue
 		}
 		if fl.Seen != r.IsRead {
@@ -267,7 +280,102 @@ func (s *Service) ReconcileFlags(ctx context.Context, tenantID int64, acct MailA
 		s.log.Info("flags taken from the mail host",
 			"account", acct.AccountID, "folder", folder, "changed", changed)
 	}
+	if followDepartures && len(missing) > 0 {
+		s.mirrorDepartures(ctx, tenantID, acct, folder, missing)
+	}
 	return nil
+}
+
+// mirrorDepartures works out what happened to mail that is no longer in the
+// folder we last saw it in, and makes the ERP agree.
+//
+// Two folder scans answer it for the whole batch: a message now in the host's
+// trash was deleted, one in the archive was archived, and one in neither is
+// gone for good — deleted somewhere and already expunged, or filed into a
+// folder the ERP does not track.
+//
+// All three land as ERP-side state written directly, never through the
+// marking path: that would queue a write-back and ask the host to redo what
+// the host just did. And a departure is mirrored as a *soft* delete even when
+// the message is gone from the host entirely — our copy may be the only one
+// left, the trash gives thirty days to notice a mistake, and the sweeper
+// finishes the job afterwards.
+func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct MailAccount, folder string, missing []store.ListRecentForReconcileRow) {
+	trash, err := s.specialFolderOf(ctx, acct, "trash")
+	if err != nil {
+		s.log.Warn("could not locate the trash while reconciling", "err", err)
+		return
+	}
+	inTrash, err := s.mailbox.RecentMessageIDs(ctx, acct, trash, departureScan)
+	if err != nil {
+		s.log.Warn("could not read the host's trash while reconciling", "err", err)
+		return
+	}
+	// The archive is optional: a host without one simply never archives.
+	inArchive := map[string]bool{}
+	if archive, err := s.specialFolderOf(ctx, acct, "archive"); err == nil && archive != "" {
+		if ids, err := s.mailbox.RecentMessageIDs(ctx, acct, archive, departureScan); err == nil {
+			inArchive = ids
+		} else {
+			s.log.Warn("could not read the host's archive while reconciling", "err", err)
+		}
+	}
+
+	deleted, archived, vanished := 0, 0, 0
+	for _, r := range missing {
+		switch {
+		case r.MessageID != "" && inTrash[r.MessageID]:
+			if r.DeletedAt.Valid {
+				continue
+			}
+			if err := s.q.MirrorHostDelete(ctx, store.MirrorHostDeleteParams{
+				TenantID: tenantID, AccountID: acct.AccountID,
+				Folder: folder, ImapUid: r.ImapUid,
+			}); err != nil {
+				s.log.Warn("could not mirror a deletion", "uid", r.ImapUid, "err", err)
+				continue
+			}
+			deleted++
+
+		case r.MessageID != "" && inArchive[r.MessageID]:
+			if r.ArchivedAt.Valid {
+				continue
+			}
+			if err := s.q.MirrorHostArchive(ctx, store.MirrorHostArchiveParams{
+				TenantID: tenantID, AccountID: acct.AccountID,
+				Folder: folder, ImapUid: r.ImapUid,
+			}); err != nil {
+				s.log.Warn("could not mirror an archive", "uid", r.ImapUid, "err", err)
+				continue
+			}
+			archived++
+
+		default:
+			// Nowhere we can see: expunged elsewhere, or filed into a folder
+			// this ERP does not track. Treated as a deletion, softly, and
+			// counted apart from the ones actually found in the trash —
+			// somebody asking "why is my mail in the bin?" deserves to be
+			// able to tell a confirmed deletion from an inference.
+			if r.DeletedAt.Valid {
+				continue
+			}
+			if err := s.q.MirrorHostDelete(ctx, store.MirrorHostDeleteParams{
+				TenantID: tenantID, AccountID: acct.AccountID,
+				Folder: folder, ImapUid: r.ImapUid,
+			}); err != nil {
+				s.log.Warn("could not mirror a disappearance", "uid", r.ImapUid, "err", err)
+				continue
+			}
+			s.log.Info("mail is no longer anywhere the host will show us",
+				"account", acct.AccountID, "uid", r.ImapUid, "message_id", r.MessageID)
+			vanished++
+		}
+	}
+	if deleted > 0 || archived > 0 || vanished > 0 {
+		s.log.Info("mail followed from the host",
+			"account", acct.AccountID, "folder", folder,
+			"in_trash", deleted, "archived", archived, "vanished", vanished)
+	}
 }
 
 // Folder-level publishing: deletion, restore, archiving and permanent
