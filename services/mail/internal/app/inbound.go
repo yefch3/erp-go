@@ -314,9 +314,17 @@ func (s *Service) specialFolderOf(ctx context.Context, acct MailAccount, kind st
 	}
 	var name string
 	var err error
-	if kind == "junk" {
+	switch kind {
+	case "junk":
 		name, err = s.mailbox.JunkFolder(ctx, acct)
-	} else {
+	case "trash":
+		name, err = s.mailbox.TrashFolder(ctx, acct)
+	case "archive":
+		// May legitimately be empty: not every host has an archive. Cached
+		// either way, so a host without one is not asked again every time
+		// somebody archives something.
+		name, err = s.mailbox.ArchiveFolder(ctx, acct)
+	default:
 		name, err = s.mailbox.SentFolder(ctx, acct)
 	}
 	if err != nil {

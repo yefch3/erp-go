@@ -395,7 +395,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND thread_key = sqlc.arg(thread_key)::text
   AND thread_key <> ''
-RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archived_at, deleted_at;
+RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archived_at, deleted_at, not_junk;
 
 -- name: SetInboundFlags :many
 -- One statement for all four flags; an absent argument leaves that flag
@@ -416,7 +416,7 @@ SET is_read    = coalesce(sqlc.narg(read)::boolean, is_read),
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND id = sqlc.arg(id)::bigint
-RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archived_at, deleted_at;
+RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archived_at, deleted_at, not_junk;
 
 -- name: GetInbound :one
 SELECT id, account_id, owner_id, message_id, thread_key, reply_to_id,
@@ -627,7 +627,7 @@ ON CONFLICT (tenant_id, account_id, folder, imap_uid, flag) DO UPDATE SET
 -- Due work, oldest first, locked so two workers cannot publish the same
 -- change twice. SKIP LOCKED rather than waiting: another worker holding a row
 -- means it is already being handled.
-SELECT id, account_id, employee_id, folder, imap_uid, flag, op, message_id, attempts
+SELECT id, tenant_id, account_id, employee_id, folder, imap_uid, flag, op, message_id, attempts
 FROM mail_flag_ops
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND next_try_at <= now()
@@ -684,3 +684,38 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND account_id = sqlc.arg(account_id)::bigint
   AND folder = sqlc.arg(folder)::text
   AND imap_uid = sqlc.arg(imap_uid)::bigint;
+
+-- name: ListTrashForPurge :many
+-- Everything in one person's trash, for emptying it in one go.
+SELECT id, raw_key, account_id, folder, imap_uid, message_id
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND owner_id = sqlc.arg(owner_id)::bigint
+  AND deleted_at IS NOT NULL
+ORDER BY id;
+
+-- name: ListExpiredTrash :many
+-- Trash old enough to clear out by itself. Tenant-wide and owner-agnostic
+-- because the sweeper runs for everybody at once; the owner comes back on
+-- each row so the delete stays owner-scoped like every other one.
+SELECT id, owner_id, raw_key, account_id, folder, imap_uid, message_id
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND deleted_at IS NOT NULL
+  AND deleted_at < sqlc.arg(cutoff)::timestamptz
+ORDER BY id
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: RepointInbound :exec
+-- Follows a message the ERP itself moved on the host: same mail, new folder,
+-- new UID. Without this the row would still name a UID that belongs to
+-- nothing, and the next sync would fetch the message again as though it were
+-- newly arrived — one mail, two rows.
+UPDATE email_inbound
+SET folder = sqlc.arg(new_folder)::text,
+    imap_uid = sqlc.arg(new_uid)::bigint,
+    not_junk = FALSE
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder = sqlc.arg(old_folder)::text
+  AND imap_uid = sqlc.arg(old_uid)::bigint;

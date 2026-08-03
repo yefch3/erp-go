@@ -59,6 +59,7 @@ const (
 	EmailService_MarkInbound_FullMethodName         = "/erp.mail.v1.EmailService/MarkInbound"
 	EmailService_PurgeInbound_FullMethodName        = "/erp.mail.v1.EmailService/PurgeInbound"
 	EmailService_MarkViewRead_FullMethodName        = "/erp.mail.v1.EmailService/MarkViewRead"
+	EmailService_EmptyTrash_FullMethodName          = "/erp.mail.v1.EmailService/EmptyTrash"
 	EmailService_ListMailboxSent_FullMethodName     = "/erp.mail.v1.EmailService/ListMailboxSent"
 	EmailService_SyncMailbox_FullMethodName         = "/erp.mail.v1.EmailService/SyncMailbox"
 )
@@ -165,6 +166,9 @@ type EmailServiceClient interface {
 	// Marks everything one view shows as read. Scoped to that view, never the
 	// whole mailbox, and ERP-side only like the rest of the housekeeping.
 	MarkViewRead(ctx context.Context, in *MarkViewReadRequest, opts ...grpc.CallOption) (*MarkViewReadResponse, error)
+	// Permanent deletion of everything in the trash at once. Trash also clears
+	// itself after thirty days; this is the same thing done deliberately.
+	EmptyTrash(ctx context.Context, in *EmptyTrashRequest, opts ...grpc.CallOption) (*EmptyTrashResponse, error)
 	// Mail this mailbox sent — through any client, over whatever history the
 	// backfill has reached. ERP sends live in ListMessages with per-recipient
 	// status; these are plain copies from the host's own Sent folder.
@@ -582,6 +586,16 @@ func (c *emailServiceClient) MarkViewRead(ctx context.Context, in *MarkViewReadR
 	return out, nil
 }
 
+func (c *emailServiceClient) EmptyTrash(ctx context.Context, in *EmptyTrashRequest, opts ...grpc.CallOption) (*EmptyTrashResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmptyTrashResponse)
+	err := c.cc.Invoke(ctx, EmailService_EmptyTrash_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) ListMailboxSent(ctx context.Context, in *ListMailboxSentRequest, opts ...grpc.CallOption) (*ListMailboxSentResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListMailboxSentResponse)
@@ -704,6 +718,9 @@ type EmailServiceServer interface {
 	// Marks everything one view shows as read. Scoped to that view, never the
 	// whole mailbox, and ERP-side only like the rest of the housekeeping.
 	MarkViewRead(context.Context, *MarkViewReadRequest) (*MarkViewReadResponse, error)
+	// Permanent deletion of everything in the trash at once. Trash also clears
+	// itself after thirty days; this is the same thing done deliberately.
+	EmptyTrash(context.Context, *EmptyTrashRequest) (*EmptyTrashResponse, error)
 	// Mail this mailbox sent — through any client, over whatever history the
 	// backfill has reached. ERP sends live in ListMessages with per-recipient
 	// status; these are plain copies from the host's own Sent folder.
@@ -840,6 +857,9 @@ func (UnimplementedEmailServiceServer) PurgeInbound(context.Context, *PurgeInbou
 }
 func (UnimplementedEmailServiceServer) MarkViewRead(context.Context, *MarkViewReadRequest) (*MarkViewReadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MarkViewRead not implemented")
+}
+func (UnimplementedEmailServiceServer) EmptyTrash(context.Context, *EmptyTrashRequest) (*EmptyTrashResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method EmptyTrash not implemented")
 }
 func (UnimplementedEmailServiceServer) ListMailboxSent(context.Context, *ListMailboxSentRequest) (*ListMailboxSentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListMailboxSent not implemented")
@@ -1588,6 +1608,24 @@ func _EmailService_MarkViewRead_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_EmptyTrash_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EmptyTrashRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).EmptyTrash(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_EmptyTrash_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).EmptyTrash(ctx, req.(*EmptyTrashRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_ListMailboxSent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListMailboxSentRequest)
 	if err := dec(in); err != nil {
@@ -1790,6 +1828,10 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MarkViewRead",
 			Handler:    _EmailService_MarkViewRead_Handler,
+		},
+		{
+			MethodName: "EmptyTrash",
+			Handler:    _EmailService_EmptyTrash_Handler,
 		},
 		{
 			MethodName: "ListMailboxSent",

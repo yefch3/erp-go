@@ -277,6 +277,10 @@ const (
 	flagTrash   = "TRASH"
 	flagArchive = "ARCHIVE"
 	flagPurge   = "PURGE"
+	// Rescuing a mail the host called spam. A move like any other, but worth
+	// its own name: it is also the one action that teaches the provider's
+	// filter it got this sender wrong, which is half the point of doing it.
+	flagNotJunk = "NOTJUNK"
 )
 
 // queueFolderMove records the intent to move one message on the host.
@@ -301,7 +305,7 @@ func (s *Service) queueFolderMove(ctx context.Context, tenantID, accountID, empl
 func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.ClaimFlagOpsRow) error {
 	switch row.Flag {
 	case flagTrash:
-		trash, err := s.mailbox.TrashFolder(ctx, acct)
+		trash, err := s.specialFolderOf(ctx, acct, "trash")
 		if err != nil {
 			return err
 		}
@@ -314,7 +318,7 @@ func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.C
 		return s.moveBack(ctx, acct, trash, row.Folder, row.MessageID)
 
 	case flagArchive:
-		archive, err := s.mailbox.ArchiveFolder(ctx, acct)
+		archive, err := s.specialFolderOf(ctx, acct, "archive")
 		if err != nil {
 			return err
 		}
@@ -332,11 +336,25 @@ func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.C
 		}
 		return s.moveBack(ctx, acct, archive, row.Folder, row.MessageID)
 
+	case flagNotJunk:
+		junk, err := s.specialFolderOf(ctx, acct, "junk")
+		if err != nil {
+			return err
+		}
+		if err := s.mailbox.MoveMessages(ctx, acct, junk, []uint32{uint32(row.ImapUid)}, "INBOX"); err != nil {
+			return err
+		}
+		// The message now lives in the inbox under a new UID. Following it is
+		// not optional here: leave the row pointing at the old spam UID and
+		// the next sync sees an unknown message in the inbox and files it a
+		// second time.
+		return s.repoint(ctx, acct, row, "INBOX")
+
 	case flagPurge:
 		// Deleted mail is in the trash by now, and that is where it has to be
 		// destroyed. If it is not there — already purged, or emptied by hand
 		// in Gmail — there is nothing left to do and nothing to report.
-		trash, err := s.mailbox.TrashFolder(ctx, acct)
+		trash, err := s.specialFolderOf(ctx, acct, "trash")
 		if err != nil {
 			return err
 		}
@@ -359,6 +377,27 @@ func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.C
 		s.log.Info("purged from the host for good",
 			"account", acct.AccountID, "folder", trash, "uid", uid)
 		return nil
+	}
+	return nil
+}
+
+// repoint updates our record of where a message lives after we moved it.
+//
+// Best effort: a failure here costs a duplicate row on the next sync, not the
+// move itself, and the move has already happened.
+func (s *Service) repoint(ctx context.Context, acct MailAccount, row store.ClaimFlagOpsRow, newFolder string) error {
+	uid, ok, err := s.mailbox.FindUIDByMessageID(ctx, acct, newFolder, row.MessageID)
+	if err != nil || !ok {
+		s.log.Warn("moved a mail but could not find its new UID",
+			"account", acct.AccountID, "to", newFolder, "err", err)
+		return nil
+	}
+	if err := s.q.RepointInbound(ctx, store.RepointInboundParams{
+		TenantID: row.TenantID, AccountID: row.AccountID,
+		OldFolder: row.Folder, OldUid: row.ImapUid,
+		NewFolder: newFolder, NewUid: int64(uid),
+	}); err != nil {
+		s.log.Warn("could not repoint a moved mail", "id", row.ID, "err", err)
 	}
 	return nil
 }

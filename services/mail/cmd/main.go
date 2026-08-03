@@ -128,6 +128,9 @@ func run(log *slog.Logger) error {
 		// mailbox. Its own loop rather than a step inside the poller, so a
 		// slow fetch never delays publishing a click.
 		go svc.RunFlagWriteback(ctx, syncCfg)
+		// Trash that clears itself, so "deleted" eventually means deleted
+		// without anybody having to remember to empty it.
+		go svc.RunTrashSweeper(ctx, syncCfg)
 	}
 
 	// The worker runs in-process. The database is the queue, so a second
