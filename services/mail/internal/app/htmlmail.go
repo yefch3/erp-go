@@ -1,6 +1,7 @@
 package app
 
 import (
+	"html"
 	"regexp"
 	"strings"
 
@@ -126,20 +127,28 @@ func HTMLToText(h string) string {
 	return strings.TrimSpace(s)
 }
 
-// unescapeEntities covers the handful the sanitiser and the editor emit.
-// html.UnescapeString would also do numeric entities, but pulling in the
-// package for five replacements is not worth the import.
-var entities = strings.NewReplacer(
-	"&nbsp;", " ",
-	"&amp;", "&",
-	"&lt;", "<",
-	"&gt;", ">",
-	"&quot;", `"`,
-	"&#39;", "'",
-	"&#160;", " ",
-)
+// unescapeEntities decodes the whole HTML entity set, not a chosen few.
+//
+// A handful was enough while this only had to handle markup our own editor
+// produced. It now also renders mail written by anybody on the internet, where
+// &#847; and &hellip; turn up constantly, and a half-decoded snippet reads as
+// a broken product rather than as somebody else's odd markup. html is stdlib,
+// so the import costs nothing but the line.
+//
+// Then the invisibles go. Decoding is not the end of the job: &nbsp; becomes a
+// real U+00A0, and bulk senders sprinkle zero-width joiners and combining
+// marks through their subject lines to dodge filters. In text they are either
+// invisible or, worse, a space that does not behave like one.
+func unescapeEntities(s string) string { return invisibleRunes.Replace(html.UnescapeString(s)) }
 
-func unescapeEntities(s string) string { return entities.Replace(s) }
+var invisibleRunes = strings.NewReplacer(
+	"\u00a0", " ", // non-breaking space — a space, and should wrap like one
+	"\u034f", "", // combining grapheme joiner
+	"\u200b", "", // zero-width space
+	"\u200c", "", // zero-width non-joiner
+	"\u200d", "", // zero-width joiner
+	"\ufeff", "", // byte-order mark, seen mid-string in forwarded mail
+)
 
 // ---------------------------------------------------------------- escaping
 

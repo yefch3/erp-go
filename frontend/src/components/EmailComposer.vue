@@ -1081,11 +1081,31 @@ async function onBeforeClose(done: () => void) {
 </script>
 
 <style scoped>
+/* The composer follows the same rhythm as the list it opens over. Element's
+   default form spacing is built for settings pages, where every row is a
+   separate decision; a compose window is one continuous act and reads better
+   tightened up. */
 .privacy {
-  margin-bottom: 14px;
+  margin-bottom: 12px;
+  border-radius: var(--mail-radius);
 }
 .compose-form {
   margin-bottom: 4px;
+}
+.compose-form :deep(.el-form-item) {
+  margin-bottom: 14px;
+}
+.compose-form :deep(.el-form-item__label) {
+  font-size: var(--mail-sub);
+  color: var(--el-text-color-secondary);
+}
+/* The footer is a bar, not a row of equals: send is the act, the rest are
+   ways out of it. */
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
 }
 .recip-box,
 .body-box {

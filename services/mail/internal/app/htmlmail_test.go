@@ -138,3 +138,35 @@ func TestNormalizeFormatDefaultsToText(t *testing.T) {
 		t.Error("unknown format should fall back to TEXT, not HTML")
 	}
 }
+
+func TestHTMLToTextDropsInvisibleRunes(t *testing.T) {
+	// What bulk senders sprinkle through subject lines to dodge filters. In
+	// text they are invisible, so leaving them in means an invisible character
+	// sitting in the middle of a word nobody can see or search for.
+	got := HTMLToText(`<p>Con&#847;grats&#8203; Fangchen&hellip;</p>`)
+	if got != "Congrats Fangchen…" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestSnippetPrefersTextButNotWhenItIsMarkup(t *testing.T) {
+	// A sender whose text/plain part is really a whole HTML document. Trusting
+	// it put "<!doctype html>..." in front of the person in the mail list.
+	got := snippetOf(ParsedMail{
+		BodyText: "<!doctype html><html><head><style>.a{color:red}</style></head>" +
+			"<body><p>Quote for 500 units</p></body></html>",
+		BodyHTML: "<p>Quote for 500 units</p>",
+	})
+	if got != "Quote for 500 units" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestSnippetKeepsOrdinaryText(t *testing.T) {
+	// The common case must not be touched by the markup detour: a plain mail
+	// that mentions a tag later on is still plain.
+	got := snippetOf(ParsedMail{BodyText: "Hi — is the <b> tag allowed in your template?"})
+	if got != "Hi — is the <b> tag allowed in your template?" {
+		t.Fatalf("got %q", got)
+	}
+}

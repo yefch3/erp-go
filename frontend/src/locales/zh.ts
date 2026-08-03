@@ -934,6 +934,8 @@ export default {
     star: '加星标',
     unstar: '取消星标',
     markUnread: '标为未读',
+    markRead: '标为已读',
+    unreadOne: '未读',
     archive: '归档',
     unarchive: '移回收件箱',
     toTrash: '删除',

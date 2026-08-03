@@ -939,6 +939,8 @@ export default {
     star: 'Destacar',
     unstar: 'Quitar estrella',
     markUnread: 'Marcar como no leído',
+    markRead: 'Marcar como leído',
+    unreadOne: 'No leído',
     archive: 'Archivar',
     unarchive: 'Mover a entrada',
     toTrash: 'Eliminar',
