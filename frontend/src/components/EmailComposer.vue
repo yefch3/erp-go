@@ -50,6 +50,16 @@
         <RecipientField v-model="ccSelected" />
       </el-form-item>
 
+      <!-- Blind copies. Only in merged mode, like CC: in separate mode every
+           recipient already gets their own copy, so a blind list would just
+           mean one person receiving the mail N times. -->
+      <el-form-item v-if="form.sendMode === 'MERGED'" :label="t('emails.bccLabel')">
+        <div class="body-box">
+          <RecipientField v-model="bccSelected" />
+          <div class="var-hint">{{ t('emails.bccHint') }}</div>
+        </div>
+      </el-form-item>
+
       <el-form-item :label="t('emails.subject')">
         <el-input v-model="form.subject" :placeholder="t('emails.subjectPlaceholder')" />
       </el-form-item>
@@ -381,6 +391,7 @@ const form = reactive({
 })
 const attachments = ref<PendingFile[]>([])
 const ccSelected = ref<Recipient[]>([])
+const bccSelected = ref<Recipient[]>([])
 // Set when this compose answers or forwards a mail from the inbox. '0' means
 // a fresh mail. The server takes threading headers (reply) or the original's
 // attachments (forward) from the referenced message.
@@ -527,6 +538,7 @@ async function openDraft(id: string) {
   form.sendMode = draft.sendMode === 'MERGED' ? 'MERGED' : 'SEPARATE'
   selected.value = draft.recipients ?? []
   ccSelected.value = draft.cc ?? []
+  bccSelected.value = draft.bcc ?? []
   replyCtx.replyToInboundId = draft.replyToInboundId ?? '0'
   replyCtx.forwardInboundId = draft.forwardInboundId ?? '0'
   attachments.value = (draft.attachments ?? []).map((a: any) => ({
@@ -628,6 +640,7 @@ function draftPayload() {
     kind: 'MARKETING',
     sendMode: form.sendMode,
     cc: form.sendMode === 'MERGED' ? ccSelected.value.map(asProto) : [],
+    bcc: form.sendMode === 'MERGED' ? bccSelected.value.map(asProto) : [],
     replyToInboundId: replyCtx.replyToInboundId,
     forwardInboundId: replyCtx.forwardInboundId,
     recipients: selected.value.map(asProto),
@@ -663,6 +676,7 @@ function reset() {
   attachments.value = []
   selected.value = []
   ccSelected.value = []
+  bccSelected.value = []
   replyCtx.replyToInboundId = '0'
   replyCtx.forwardInboundId = '0'
   preview.value = null
@@ -935,7 +949,8 @@ async function doSend() {
 async function doSendInner() {
   if (!(await readyToSend())) return
   const headCount =
-    selected.value.length + (form.sendMode === 'MERGED' ? ccSelected.value.length : 0)
+    selected.value.length +
+    (form.sendMode === 'MERGED' ? ccSelected.value.length + bccSelected.value.length : 0)
   await ElMessageBox.confirm(
     form.sendMode === 'MERGED'
       ? t('emails.confirmSendMerged', { n: headCount })
@@ -992,6 +1007,7 @@ async function submitSend(at: string) {
       kind: 'MARKETING',
       sendMode: form.sendMode,
       cc: form.sendMode === 'MERGED' ? ccSelected.value.map(asProto) : [],
+      bcc: form.sendMode === 'MERGED' ? bccSelected.value.map(asProto) : [],
       replyToInboundId: replyCtx.replyToInboundId,
       forwardInboundId: replyCtx.forwardInboundId,
       scheduledAt: at,

@@ -36,6 +36,10 @@ type CampaignInput struct {
 	// Carbon copies. Meaningful only for MERGED — a CC on a per-recipient
 	// send would mean the same person receiving N copies.
 	CC []Recipient
+	// Blind copies. Same mode restriction, and one extra property that is the
+	// whole point: these addresses reach the envelope and never a header, so
+	// nobody on To or Cc learns they were included.
+	BCC []Recipient
 	// Set when this send answers a mail in the caller's inbox: the threading
 	// headers and thread key are taken from that message, so both sides'
 	// clients stack the answer under the question.
@@ -122,14 +126,14 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID int64, in Campaig
 	}
 
 	// One round trip for the whole list rather than a lookup per recipient.
-	// CC addresses are checked too: a suppression honoured on the To line and
-	// ignored on the CC line is not honoured at all.
-	emails := make([]string, 0, len(in.Recipients)+len(in.CC))
-	for _, r := range in.Recipients {
-		emails = append(emails, strings.ToLower(strings.TrimSpace(r.Email)))
-	}
-	for _, r := range in.CC {
-		emails = append(emails, strings.ToLower(strings.TrimSpace(r.Email)))
+	// CC and BCC are checked too: a suppression honoured on the To line and
+	// ignored on the other two is not honoured at all — least of all on BCC,
+	// where nobody would see the address that got written to.
+	emails := make([]string, 0, len(in.Recipients)+len(in.CC)+len(in.BCC))
+	for _, list := range [][]Recipient{in.Recipients, in.CC, in.BCC} {
+		for _, r := range list {
+			emails = append(emails, strings.ToLower(strings.TrimSpace(r.Email)))
+		}
 	}
 	blocked, err := s.q.SuppressedAmong(ctx, store.SuppressedAmongParams{
 		TenantID: tenantID, Emails: emails,
@@ -520,13 +524,14 @@ func (s *Service) createMerged(
 	}
 	tos := keep(in.Recipients)
 	ccs := keep(in.CC)
+	bccs := keep(in.BCC)
 	if len(tos) == 0 {
 		return CampaignResult{}, apierr.Invalid("NT_RECIPIENTS_REQUIRED",
 			"收件人都被跳过了，没有可发送的地址")
 	}
-	if len(tos)+len(ccs) > mergedRecipientCap {
+	if len(tos)+len(ccs)+len(bccs) > mergedRecipientCap {
 		return CampaignResult{}, apierr.Invalid("NT_TOO_MANY_MERGED",
-			"合并发送最多 50 个收件人（含抄送）；更多人请改用分别发送")
+			"合并发送最多 50 个收件人（含抄送、密送）；更多人请改用分别发送")
 	}
 
 	// Rendered once against nobody: what fails to resolve is exactly the set
@@ -608,6 +613,9 @@ func (s *Service) createMerged(
 		if err := add(ccs, "CC"); err != nil {
 			return err
 		}
+		if err := add(bccs, "BCC"); err != nil {
+			return err
+		}
 		result.Queued = 1
 		return nil
 	})
@@ -615,6 +623,7 @@ func (s *Service) createMerged(
 		return CampaignResult{}, err
 	}
 	s.log.Info("merged mail queued", "campaign_no", result.CampaignNo,
-		"to", len(tos), "cc", len(ccs), "suppressed", len(result.Suppressed))
+		"to", len(tos), "cc", len(ccs), "bcc", len(bccs),
+		"suppressed", len(result.Suppressed))
 	return result, nil
 }

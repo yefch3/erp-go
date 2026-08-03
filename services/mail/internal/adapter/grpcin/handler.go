@@ -102,6 +102,7 @@ func signedAttachmentsToProto(in []app.Attachment) []*mailv1.EmailAttachment {
 		out = append(out, &mailv1.EmailAttachment{
 			Id: a.ID, FileName: a.FileName, FileSize: a.FileSize,
 			ContentType: a.ContentType, DownloadUrl: a.DownloadURL,
+			PreviewUrl: a.PreviewURL,
 		})
 	}
 	return out
@@ -138,7 +139,7 @@ func (h *Handler) CreateCampaign(ctx context.Context, req *mailv1.CreateCampaign
 		Subject: req.GetSubject(), Body: req.GetBody(),
 		SignatureID: req.GetSignatureId(), Kind: req.GetKind(),
 		Format: req.GetBodyFormat(), Recipients: recipients,
-		SendMode: req.GetSendMode(), CC: cc,
+		SendMode: req.GetSendMode(), CC: cc, BCC: recipientsFromProto(req.GetBcc()),
 		ReplyToInboundID: req.GetReplyToInboundId(),
 		ForwardInboundID: req.GetForwardInboundId(),
 		Attachments:      pendingFromProto(req.GetAttachments()),
@@ -456,6 +457,7 @@ func (h *Handler) SaveDraft(ctx context.Context, req *mailv1.SaveDraftRequest) (
 		Attachments:      pendingFromProto(req.GetAttachments()),
 		SendMode:         req.GetSendMode(),
 		CC:               recipientsFromProto(req.GetCc()),
+		BCC:              recipientsFromProto(req.GetBcc()),
 		ReplyToInboundID: req.GetReplyToInboundId(),
 		ForwardInboundID: req.GetForwardInboundId(),
 	}, operator(ctx))
@@ -492,6 +494,7 @@ func (h *Handler) GetDraft(ctx context.Context, req *mailv1.GetDraftRequest) (*m
 		Attachments:      pendingToProto(d.Attachments),
 		SendMode:         d.SendMode,
 		Cc:               recipientsToProto(d.CC),
+		Bcc:              recipientsToProto(d.BCC),
 		ReplyToInboundId: d.ReplyToInboundID,
 		ForwardInboundId: d.ForwardInboundID,
 	}}, nil
@@ -665,7 +668,7 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 		m.Attachments = append(m.Attachments, &mailv1.InboundAttachment{
 			Id: a.ID, FileName: a.FileName, ContentType: a.ContentType,
 			FileSize: a.FileSize, DownloadUrl: a.DownloadURL,
-			Stored: a.FileKey != "",
+			PreviewUrl: a.PreviewURL, Stored: a.FileKey != "",
 		})
 	}
 	return m

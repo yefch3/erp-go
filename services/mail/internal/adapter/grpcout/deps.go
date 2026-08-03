@@ -102,6 +102,14 @@ func (f *Files) PresignGet(ctx context.Context, key, saveAs string) (string, err
 	return u.String(), nil
 }
 
+func (f *Files) PresignGetInline(ctx context.Context, key, contentType string) (string, error) {
+	u, err := f.store.PresignedGetInline(ctx, key, contentType, f.getExpiry)
+	if err != nil {
+		return "", err
+	}
+	return u.String(), nil
+}
+
 func (f *Files) Stat(ctx context.Context, key string) (int64, string, error) {
 	return f.store.Stat(ctx, key)
 }

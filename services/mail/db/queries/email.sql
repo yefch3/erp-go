@@ -444,7 +444,7 @@ ORDER BY max(queued_at) DESC;
 INSERT INTO email_drafts (
     id, tenant_id, owner_id, subject, body, body_format,
     signature_id, kind, recipients, attachments,
-    send_mode, cc, reply_to_inbound_id, forward_inbound_id
+    send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id
 ) VALUES (
     coalesce(nullif(sqlc.arg(id)::bigint, 0), nextval('email_drafts_id_seq')),
     sqlc.arg(tenant_id)::bigint,
@@ -458,6 +458,7 @@ INSERT INTO email_drafts (
     sqlc.arg(attachments)::jsonb,
     sqlc.arg(send_mode)::text,
     sqlc.arg(cc)::jsonb,
+    sqlc.arg(bcc)::jsonb,
     sqlc.arg(reply_to_inbound_id)::bigint,
     sqlc.arg(forward_inbound_id)::bigint
 )
@@ -469,6 +470,7 @@ ON CONFLICT (id) DO UPDATE SET
     kind = excluded.kind,
     recipients = excluded.recipients,
     attachments = excluded.attachments,
+    bcc = excluded.bcc,
     send_mode = excluded.send_mode,
     cc = excluded.cc,
     reply_to_inbound_id = excluded.reply_to_inbound_id,
@@ -494,7 +496,7 @@ LIMIT 200;
 -- name: GetDraft :one
 SELECT id, subject, body, body_format, signature_id, kind,
        recipients, attachments, updated_at,
-       send_mode, cc, reply_to_inbound_id, forward_inbound_id
+       send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id
 FROM email_drafts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint

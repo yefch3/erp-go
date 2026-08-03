@@ -59,6 +59,7 @@ type EmailDraft struct {
 	Cc               []byte
 	ReplyToInboundID int64
 	ForwardInboundID int64
+	Bcc              []byte
 }
 
 type EmailEvent struct {

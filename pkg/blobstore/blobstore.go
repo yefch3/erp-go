@@ -154,6 +154,27 @@ func asciiFallback(s string) string {
 	return b.String()
 }
 
+// PresignedGetInline is the preview counterpart: the same signed read, asking
+// the browser to render the object rather than save it.
+//
+// The content type is pinned by the caller instead of trusting what the store
+// happens to have recorded. An object whose stored type says text/html would
+// otherwise render as a page on the storage origin, and "preview this
+// attachment" would become "run this sender's markup" — hence callers pass
+// only types they have decided are safe to display.
+func (s *Store) PresignedGetInline(ctx context.Context, key, contentType string, expiry time.Duration) (*url.URL, error) {
+	params := url.Values{}
+	params.Set("response-content-disposition", "inline")
+	if contentType != "" {
+		params.Set("response-content-type", contentType)
+	}
+	u, err := s.presign.PresignedGetObject(ctx, s.bucket, key, expiry, params)
+	if err != nil {
+		return nil, fmt.Errorf("blobstore: presign inline %s: %w", key, err)
+	}
+	return u, nil
+}
+
 // PresignedPut is the upload counterpart: the browser PUTs the bytes to this
 // URL directly, so a 50 MB scan never occupies gateway memory or bandwidth.
 // The caller decides the key, which is what it later stores in its own table.

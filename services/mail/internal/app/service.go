@@ -104,6 +104,12 @@ type Outbound struct {
 	// guarantee the comment on Provider describes.
 	ToList []NamedAddress
 	CCList []NamedAddress
+	// Blind copies. The one list that must reach the envelope and never the
+	// headers: a Bcc header in the delivered message would tell every other
+	// recipient exactly who was copied in secret, which is the opposite of
+	// what the field means. Kept separate from CCList so the two can never be
+	// confused by a later edit.
+	BCCList []NamedAddress
 	// Reply threading: the Message-ID being answered and the chain above
 	// it. Empty for a fresh mail.
 	InReplyTo  string

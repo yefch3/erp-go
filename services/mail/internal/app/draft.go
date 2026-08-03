@@ -31,6 +31,7 @@ type DraftInput struct {
 	// mail — same words, different message.
 	SendMode         string
 	CC               []Recipient
+	BCC              []Recipient
 	ReplyToInboundID int64
 	ForwardInboundID int64
 }
@@ -48,6 +49,7 @@ type DraftView struct {
 	UpdatedAt        string
 	SendMode         string
 	CC               []Recipient
+	BCC              []Recipient
 	ReplyToInboundID int64
 	ForwardInboundID int64
 }
@@ -79,11 +81,15 @@ func (s *Service) SaveDraft(ctx context.Context, tenantID int64, in DraftInput, 
 	if mode != "MERGED" {
 		mode = "SEPARATE"
 	}
-	ccList := in.CC
+	ccList, bccList := in.CC, in.BCC
 	if mode != "MERGED" {
-		ccList = nil
+		ccList, bccList = nil, nil
 	}
 	cc, err := json.Marshal(orEmpty(ccList))
+	if err != nil {
+		return 0, err
+	}
+	bcc, err := json.Marshal(orEmpty(bccList))
 	if err != nil {
 		return 0, err
 	}
@@ -96,7 +102,7 @@ func (s *Service) SaveDraft(ctx context.Context, tenantID int64, in DraftInput, 
 		Subject: in.Subject, Body: body, BodyFormat: format,
 		SignatureID: in.SignatureID, Kind: kind,
 		Recipients: recipients, Attachments: files,
-		SendMode: mode, Cc: cc,
+		SendMode: mode, Cc: cc, Bcc: bcc,
 		ReplyToInboundID: in.ReplyToInboundID,
 		ForwardInboundID: in.ForwardInboundID,
 	})
@@ -141,6 +147,7 @@ func (s *Service) GetDraft(ctx context.Context, tenantID, id int64, op Operator)
 	_ = json.Unmarshal(d.Recipients, &out.Recipients)
 	_ = json.Unmarshal(d.Attachments, &out.Attachments)
 	_ = json.Unmarshal(d.Cc, &out.CC)
+	_ = json.Unmarshal(d.Bcc, &out.BCC)
 	return out, nil
 }
 
@@ -175,7 +182,7 @@ func (s *Service) SendDraft(ctx context.Context, tenantID, id int64, at time.Tim
 		Subject: d.Subject, Body: d.Body, Format: d.Format,
 		SignatureID: d.SignatureID, Kind: d.Kind,
 		Recipients: d.Recipients, Attachments: d.Attachments,
-		SendMode: d.SendMode, CC: d.CC,
+		SendMode: d.SendMode, CC: d.CC, BCC: d.BCC,
 		ReplyToInboundID: d.ReplyToInboundID,
 		ForwardInboundID: d.ForwardInboundID,
 		ScheduledAt:      at,
