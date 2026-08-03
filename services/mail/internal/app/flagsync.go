@@ -96,6 +96,14 @@ const flagWritebackInterval = 20 * time.Second
 // Grouped by account, folder and operation so a hundred mails marked read in
 // one click become one connection and one STORE, rather than a hundred of
 // each.
+//
+// Order matters, and it is flags first. A flag is one STORE on a connection
+// that is going to be opened anyway; a move has to find its message before it
+// can move it. Running the moves first meant that emptying the trash — which
+// queues one op per mail — put every subsequent star and read-mark behind
+// several minutes of folder work. The person who starred a mail and then
+// looked at Gmail saw nothing there, and concluded, reasonably, that the
+// write-back was broken.
 func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 	ops, err := s.q.ClaimFlagOps(ctx, store.ClaimFlagOpsParams{
 		TenantID: cfg.TenantID, RowLimit: 500,
@@ -116,38 +124,27 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 		op         string
 	}
 	batches := map[batchKey][]store.ClaimFlagOpsRow{}
+	// Purges are separated from the other moves because they are the only
+	// kind that arrives in bulk — 清空回收站 queues one per mail — and the only
+	// kind that can be answered for the whole batch at once.
+	purges := map[int64][]store.ClaimFlagOpsRow{}
+	employeeOf := map[int64]int64{}
 	var moves []store.ClaimFlagOpsRow
 	for _, o := range ops {
+		switch {
 		// A flag change is the same command whoever it is for, so those batch.
-		// A move has to locate its message first, so each stands alone.
-		if o.Flag != flagSeen && o.Flag != flagFlagged {
+		case o.Flag == flagSeen || o.Flag == flagFlagged:
+			k := batchKey{
+				accountID: o.AccountID, employeeID: o.EmployeeID,
+				folder: o.Folder, flag: o.Flag, op: o.Op,
+			}
+			batches[k] = append(batches[k], o)
+		case o.Flag == flagPurge:
+			purges[o.AccountID] = append(purges[o.AccountID], o)
+			employeeOf[o.AccountID] = o.EmployeeID
+		default:
 			moves = append(moves, o)
-			continue
 		}
-		k := batchKey{
-			accountID: o.AccountID, employeeID: o.EmployeeID,
-			folder: o.Folder, flag: o.Flag, op: o.Op,
-		}
-		batches[k] = append(batches[k], o)
-	}
-
-	for _, row := range moves {
-		acct, err := s.ForSender(ctx, cfg.TenantID, row.EmployeeID)
-		if err != nil {
-			s.failOps(ctx, []store.ClaimFlagOpsRow{row}, err)
-			continue
-		}
-		if err := s.publishMove(ctx, acct, row); err != nil {
-			s.log.Warn("folder move failed", "account", row.AccountID,
-				"flag", row.Flag, "op", row.Op, "uid", row.ImapUid, "err", err)
-			s.failOps(ctx, []store.ClaimFlagOpsRow{row}, err)
-			continue
-		}
-		if err := s.q.DeleteFlagOp(ctx, row.ID); err != nil {
-			s.log.Warn("could not clear a published move", "id", row.ID, "err", err)
-		}
-		s.log.Info("mail moved on the host", "account", row.AccountID,
-			"flag", row.Flag, "op", row.Op, "uid", row.ImapUid)
 	}
 
 	for k, rows := range batches {
@@ -186,6 +183,110 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 		s.log.Info("flags published to the mail host",
 			"account", k.accountID, "folder", actual,
 			"flag", k.flag, "op", k.op, "n", len(uids))
+	}
+
+	for accountID, rows := range purges {
+		acct, err := s.ForSender(ctx, cfg.TenantID, employeeOf[accountID])
+		if err != nil {
+			s.failOps(ctx, rows, err)
+			continue
+		}
+		s.publishPurges(ctx, acct, rows)
+	}
+
+	for _, row := range moves {
+		acct, err := s.ForSender(ctx, cfg.TenantID, row.EmployeeID)
+		if err != nil {
+			s.failOps(ctx, []store.ClaimFlagOpsRow{row}, err)
+			continue
+		}
+		if err := s.publishMove(ctx, acct, row); err != nil {
+			s.log.Warn("folder move failed", "account", row.AccountID,
+				"flag", row.Flag, "op", row.Op, "uid", row.ImapUid, "err", err)
+			s.failOps(ctx, []store.ClaimFlagOpsRow{row}, err)
+			continue
+		}
+		if err := s.q.DeleteFlagOp(ctx, row.ID); err != nil {
+			s.log.Warn("could not clear a published move", "id", row.ID, "err", err)
+		}
+		s.log.Info("mail moved on the host", "account", row.AccountID,
+			"flag", row.Flag, "op", row.Op, "uid", row.ImapUid)
+	}
+}
+
+// publishPurges destroys a whole batch of mail on the host over two
+// connections instead of two per message.
+//
+// Permanent deletion is the one operation that reliably arrives in bulk, and
+// it was also the most expensive: locating a message by Message-ID opened a
+// connection, and expunging it opened another. Emptying a trash of forty
+// mails therefore meant eighty separate dial-authenticate-logout cycles
+// against Gmail, in a burst. Gmail answers a burst like that by refusing —
+// "Invalid credentials", or by dropping the connection mid-command — and a
+// refused connection is then retried on a widening backoff, which is how a
+// single click turned into minutes of nothing appearing to happen.
+//
+// One search connection for the whole batch, one expunge for the whole batch.
+func (s *Service) publishPurges(ctx context.Context, acct MailAccount, rows []store.ClaimFlagOpsRow) {
+	trash, err := s.specialFolderOf(ctx, acct, "trash")
+	if err != nil {
+		s.failOps(ctx, rows, err)
+		return
+	}
+	ids := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r.MessageID != "" {
+			ids = append(ids, r.MessageID)
+		}
+	}
+	found, err := s.mailbox.FindUIDsByMessageIDs(ctx, acct, trash, ids)
+	if err != nil {
+		s.failOps(ctx, rows, err)
+		return
+	}
+
+	uids := make([]uint32, 0, len(rows))
+	var inTrash, elsewhere []store.ClaimFlagOpsRow
+	for _, r := range rows {
+		uid, ok := found[r.MessageID]
+		if !ok {
+			// Not in the trash. Usually somebody got there first, but it can
+			// also mean the move that should have put it there never ran —
+			// see publishMove, which knows how to look. Rare, so it keeps the
+			// slow one-at-a-time path rather than complicating this one.
+			elsewhere = append(elsewhere, r)
+			continue
+		}
+		uids = append(uids, uid)
+		inTrash = append(inTrash, r)
+	}
+
+	if len(uids) > 0 {
+		if err := s.mailbox.PurgeMessages(ctx, acct, trash, uids); err != nil {
+			s.log.Warn("batch purge failed", "account", acct.AccountID,
+				"n", len(uids), "err", err)
+			s.failOps(ctx, inTrash, err)
+		} else {
+			for _, r := range inTrash {
+				if err := s.q.DeleteFlagOp(ctx, r.ID); err != nil {
+					s.log.Warn("could not clear a published purge", "id", r.ID, "err", err)
+				}
+			}
+			s.log.Info("purged from the host for good",
+				"account", acct.AccountID, "folder", trash, "n", len(uids))
+		}
+	}
+
+	for _, r := range elsewhere {
+		if err := s.publishMove(ctx, acct, r); err != nil {
+			s.log.Warn("folder move failed", "account", r.AccountID,
+				"flag", r.Flag, "op", r.Op, "uid", r.ImapUid, "err", err)
+			s.failOps(ctx, []store.ClaimFlagOpsRow{r}, err)
+			continue
+		}
+		if err := s.q.DeleteFlagOp(ctx, r.ID); err != nil {
+			s.log.Warn("could not clear a published move", "id", r.ID, "err", err)
+		}
 	}
 }
 
