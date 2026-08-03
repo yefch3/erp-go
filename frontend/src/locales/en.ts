@@ -890,7 +890,7 @@ export default {
     prevPage: 'Previous',
     nextPage: 'Next',
     markAllRead: 'Mark all read',
-    markAllReadHint: 'Mark every unread mail in {f} as read. ERP-side only — your mail provider is not affected. Continue?',
+    markAllReadHint: 'Mark every unread mail in {f} as read. Your mail provider is marked read too, exactly as if you had done it there. Continue?',
     markedAllRead: '{n} marked as read',
     emptyTrash: 'Empty trash',
     emptyTrashHint: 'Permanently delete all {n} mails in the trash, including the copies at your mail provider. This cannot be undone. Continue?',

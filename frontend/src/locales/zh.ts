@@ -885,7 +885,7 @@ export default {
     prevPage: '上一页',
     nextPage: '下一页',
     markAllRead: '全部已读',
-    markAllReadHint: '将「{f}」中所有未读邮件标为已读，只改 ERP 内的状态，不影响邮箱服务商。确定吗？',
+    markAllReadHint: '将「{f}」中所有未读邮件标为已读。邮箱服务商那边也会同步标为已读，和你在 Gmail 里点一样。确定吗？',
     markedAllRead: '已标记 {n} 封为已读',
     emptyTrash: '清空回收站',
     emptyTrashHint: '将永久删除回收站中的 {n} 封邮件，同时删除邮箱服务商中的对应邮件，无法恢复。确定吗？',

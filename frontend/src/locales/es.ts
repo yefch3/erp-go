@@ -890,7 +890,7 @@ export default {
     prevPage: 'Anterior',
     nextPage: 'Siguiente',
     markAllRead: 'Marcar todo como leído',
-    markAllReadHint: 'Marcar como leídos todos los correos no leídos de {f}. Solo en el ERP; su proveedor de correo no se ve afectado. ¿Continuar?',
+    markAllReadHint: 'Marcar como leídos todos los correos no leídos de {f}. También se marcan como leídos en tu proveedor de correo, igual que si lo hicieras allí. ¿Continuar?',
     markedAllRead: '{n} marcados como leídos',
     emptyTrash: 'Vaciar papelera',
     emptyTrashHint: 'Se eliminarán definitivamente los {n} correos de la papelera, incluidas las copias en su proveedor de correo. No se puede deshacer. ¿Continuar?',
