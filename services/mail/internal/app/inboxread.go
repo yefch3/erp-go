@@ -301,7 +301,7 @@ func (s *Service) MarkInbound(ctx context.Context, tenantID, ownerID, id int64, 
 			}
 			rows := touchedThread(touched)
 			publishFlags(ctx, s, tenantID, ownerID, rows, read != nil, starred != nil)
-			publishMoves(ctx, s, tenantID, ownerID, rows, archived != nil, deleted != nil)
+			publishMoves(ctx, s, tenantID, ownerID, rows, archived != nil, deleted != nil, notJunk != nil)
 			return nil
 		}
 	}
@@ -318,7 +318,7 @@ func (s *Service) MarkInbound(ctx context.Context, tenantID, ownerID, id int64, 
 	// simply keeps its mail where it is — see publishMove.
 	rows := touchedSingle(touched)
 	publishFlags(ctx, s, tenantID, ownerID, rows, read != nil, starred != nil)
-	publishMoves(ctx, s, tenantID, ownerID, rows, archived != nil, deleted != nil)
+	publishMoves(ctx, s, tenantID, ownerID, rows, archived != nil, deleted != nil, notJunk != nil)
 	return nil
 }
 
@@ -332,6 +332,7 @@ type touchedRow struct {
 	starred   bool
 	archived  bool
 	deleted   bool
+	notJunk   bool
 }
 
 func touchedSingle(rows []store.SetInboundFlagsRow) []touchedRow {
@@ -341,6 +342,7 @@ func touchedSingle(rows []store.SetInboundFlagsRow) []touchedRow {
 			accountID: r.AccountID, folder: r.Folder, uid: r.ImapUid,
 			messageID: r.MessageID, read: r.IsRead, starred: r.IsStarred,
 			archived: r.ArchivedAt.Valid, deleted: r.DeletedAt.Valid,
+			notJunk: r.NotJunk,
 		})
 	}
 	return out
@@ -353,6 +355,7 @@ func touchedThread(rows []store.SetThreadFlagsRow) []touchedRow {
 			accountID: r.AccountID, folder: r.Folder, uid: r.ImapUid,
 			messageID: r.MessageID, read: r.IsRead, starred: r.IsStarred,
 			archived: r.ArchivedAt.Valid, deleted: r.DeletedAt.Valid,
+			notJunk: r.NotJunk,
 		})
 	}
 	return out
@@ -373,16 +376,23 @@ func publishFlags(ctx context.Context, s *Service, tenantID, ownerID int64, rows
 	}
 }
 
-// publishMoves carries deletion and archiving up to the host. Separate from
-// the flags because these move the message rather than label it, and because
-// only the ones this call actually decided should travel.
-func publishMoves(ctx context.Context, s *Service, tenantID, ownerID int64, rows []touchedRow, didArchive, didDelete bool) {
+// publishMoves carries deletion, archiving and junk rescue up to the host.
+// Separate from the flags because these move the message rather than label
+// it, and because only the ones this call actually decided should travel.
+func publishMoves(ctx context.Context, s *Service, tenantID, ownerID int64, rows []touchedRow, didArchive, didDelete, didNotJunk bool) {
 	for _, r := range rows {
 		if didDelete {
 			s.queueFolderMove(ctx, tenantID, r.accountID, ownerID, r.folder, r.uid, r.messageID, flagTrash, r.deleted)
 		}
 		if didArchive {
 			s.queueFolderMove(ctx, tenantID, r.accountID, ownerID, r.folder, r.uid, r.messageID, flagArchive, r.archived)
+		}
+		// Only in one direction. "This is not spam" moves the mail back to the
+		// inbox and tells the provider's filter it misjudged the sender;
+		// undoing that would mean asking the host to call it spam again, which
+		// is not something this screen offers or should.
+		if didNotJunk && r.notJunk && r.folder == "JUNK" {
+			s.queueFolderMove(ctx, tenantID, r.accountID, ownerID, r.folder, r.uid, r.messageID, flagNotJunk, true)
 		}
 	}
 }
@@ -559,4 +569,87 @@ func (s *Service) ListMailboxSent(ctx context.Context, tenantID, ownerID int64, 
 		out = append(out, v)
 	}
 	return out, total, nil
+}
+
+// Trash keeps itself. Thirty days matches what Gmail and Outlook do, and the
+// number matters less than the promise: deleted mail is recoverable for a
+// while and then it is not, without anybody having to remember to tidy up.
+const (
+	trashRetention    = 30 * 24 * time.Hour
+	trashSweepEvery   = 6 * time.Hour
+	trashSweepPerPass = 200
+)
+
+// EmptyTrash purges everything in one person's trash.
+//
+// The same permanent deletion as one mail at a time, applied to the lot: ERP
+// row, stored MIME and attachments, and the copy on the mail host. Reports
+// how many went so the caller can say something truthful afterwards.
+func (s *Service) EmptyTrash(ctx context.Context, tenantID, ownerID int64) (int, error) {
+	rows, err := s.q.ListTrashForPurge(ctx, store.ListTrashForPurgeParams{
+		TenantID: tenantID, OwnerID: ownerID,
+	})
+	if err != nil {
+		return 0, err
+	}
+	done := 0
+	for _, r := range rows {
+		s.queueFolderMove(ctx, tenantID, r.AccountID, ownerID, r.Folder, r.ImapUid, r.MessageID, flagPurge, true)
+		if err := s.purgeOne(ctx, tenantID, ownerID, r.ID, r.RawKey); err != nil {
+			// One stubborn object must not strand the rest of the trash. The
+			// row stays, so the next attempt picks it up again.
+			s.log.Warn("could not purge one mail while emptying the trash",
+				"id", r.ID, "err", err)
+			continue
+		}
+		done++
+	}
+	return done, nil
+}
+
+// RunTrashSweeper clears out trash that has sat long enough.
+//
+// Runs on a slow tick — this is housekeeping, not a deadline. Each pass is
+// bounded so a mailbox with years of deleted mail cannot monopolise the
+// service on the first run after an upgrade.
+func (s *Service) RunTrashSweeper(ctx context.Context, cfg SyncConfig) {
+	cfg = cfg.withDefaults()
+	s.log.Info("trash sweeper started", "keep", trashRetention, "every", trashSweepEvery)
+
+	t := time.NewTicker(trashSweepEvery)
+	defer t.Stop()
+	for {
+		s.sweepTrashOnce(ctx, cfg.TenantID)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+func (s *Service) sweepTrashOnce(ctx context.Context, tenantID int64) {
+	cutoff := time.Now().Add(-trashRetention)
+	rows, err := s.q.ListExpiredTrash(ctx, store.ListExpiredTrashParams{
+		TenantID: tenantID,
+		Cutoff:   pgtype.Timestamptz{Time: cutoff, Valid: true},
+		RowLimit: trashSweepPerPass,
+	})
+	if err != nil {
+		s.log.Error("could not list expired trash", "err", err)
+		return
+	}
+	if len(rows) == 0 {
+		return
+	}
+	done := 0
+	for _, r := range rows {
+		s.queueFolderMove(ctx, tenantID, r.AccountID, r.OwnerID, r.Folder, r.ImapUid, r.MessageID, flagPurge, true)
+		if err := s.purgeOne(ctx, tenantID, r.OwnerID, r.ID, r.RawKey); err != nil {
+			s.log.Warn("could not sweep one trashed mail", "id", r.ID, "err", err)
+			continue
+		}
+		done++
+	}
+	s.log.Info("trash swept", "deleted", done, "older_than", trashRetention)
 }

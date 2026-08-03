@@ -681,6 +681,15 @@ func (h *Handler) MarkViewRead(ctx context.Context, req *mailv1.MarkViewReadRequ
 	return &mailv1.MarkViewReadResponse{Marked: int32(n)}, nil
 }
 
+func (h *Handler) EmptyTrash(ctx context.Context, _ *mailv1.EmptyTrashRequest) (*mailv1.EmptyTrashResponse, error) {
+	op := operator(ctx)
+	n, err := h.svc.EmptyTrash(ctx, grpcx.TenantID(ctx), op.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.EmptyTrashResponse{Deleted: int32(n)}, nil
+}
+
 func (h *Handler) SyncMailbox(ctx context.Context, _ *mailv1.SyncMailboxRequest) (*mailv1.SyncMailboxResponse, error) {
 	op := operator(ctx)
 	n, err := h.svc.SyncNow(ctx, grpcx.TenantID(ctx), op.ID)

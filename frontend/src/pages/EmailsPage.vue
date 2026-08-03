@@ -178,6 +178,15 @@
         <el-button v-if="isInboundView" :loading="markingAll" @click="markAllRead">
           {{ t('emails.markAllRead') }}
         </el-button>
+        <el-button
+          v-if="folder === 'trash' && total > 0"
+          type="danger"
+          plain
+          :loading="emptying"
+          @click="emptyTrash"
+        >
+          {{ t('emails.emptyTrash') }}
+        </el-button>
         <el-button v-if="folder === 'suppressions' && canSuppress" @click="openSuppress">
           {{ t('emails.addSuppression') }}
         </el-button>
@@ -188,13 +197,22 @@
         <!-- Spam is the host's verdict, shown read-only as a safety net: the
              mis-flagged customer inquiry is the one mail worth finding here. -->
         <el-alert
+          v-if="folder === 'trash'"
+          type="info"
+          :closable="false"
+          show-icon
+          class="junk-note"
+        >
+          {{ t('emails.trashRetention') }}
+        </el-alert>
+        <el-alert
           v-if="folder === 'junk'"
           type="info"
           :closable="false"
           show-icon
           class="junk-note"
         >
-          {{ t('emails.junkNote') }}
+          {{ t('emails.junkNote') }} {{ t('emails.junkNoteRescue') }}
         </el-alert>
         <el-table
           :data="inbound"
@@ -688,6 +706,7 @@ const unreadCount = ref(0)
 const nextCursor = ref('')
 const syncing = ref(false)
 const markingAll = ref(false)
+const emptying = ref(false)
 // What the server last said went wrong with this mailbox, empty when healthy.
 const syncError = ref('')
 // The mail being read full-page. Set from the URL, never directly: opening a
@@ -1207,6 +1226,26 @@ async function forwardInbound() {
   composing.value = true
   await nextTick()
   composer.value?.openForward(openedInbound.value)
+}
+
+// Empties the trash in one go: every mail in it, permanently, including the
+// copies on the mail host. Says the number out loud in the confirm — "12
+// 封" is a different decision from "2 封", and the button cannot know which
+// one somebody thinks they are making.
+async function emptyTrash() {
+  await ElMessageBox.confirm(
+    t('emails.emptyTrashHint', { n: total.value }),
+    t('emails.emptyTrash'),
+    { type: 'warning', confirmButtonText: t('emails.emptyTrash') },
+  )
+  emptying.value = true
+  try {
+    const d = await post<{ deleted: number }>('/inbound-mails/empty-trash')
+    ElMessage.success(t('emails.emptied', { n: d.deleted ?? 0 }))
+    load()
+  } finally {
+    emptying.value = false
+  }
 }
 
 // Marks the current view read. Asked about first: unread is a to-do list, and

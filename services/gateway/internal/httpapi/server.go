@@ -342,6 +342,7 @@ func (s *Server) Router() http.Handler {
 		// host's original is beyond this API's reach by design.
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Delete("/api/inbound-mails/{id}", s.purgeInbound)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/mark-view-read", s.markViewRead)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/empty-trash", s.emptyTrash)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-threads", s.getMailThread)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/mailbox/sync", s.syncMailbox)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mailbox-sent", s.listMailboxSent)

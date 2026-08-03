@@ -37,7 +37,7 @@ func (q *Queries) BumpSendCounter(ctx context.Context, arg BumpSendCounterParams
 }
 
 const claimFlagOps = `-- name: ClaimFlagOps :many
-SELECT id, account_id, employee_id, folder, imap_uid, flag, op, message_id, attempts
+SELECT id, tenant_id, account_id, employee_id, folder, imap_uid, flag, op, message_id, attempts
 FROM mail_flag_ops
 WHERE tenant_id = $1::bigint
   AND next_try_at <= now()
@@ -53,6 +53,7 @@ type ClaimFlagOpsParams struct {
 
 type ClaimFlagOpsRow struct {
 	ID         int64
+	TenantID   int64
 	AccountID  int64
 	EmployeeID int64
 	Folder     string
@@ -77,6 +78,7 @@ func (q *Queries) ClaimFlagOps(ctx context.Context, arg ClaimFlagOpsParams) ([]C
 		var i ClaimFlagOpsRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.AccountID,
 			&i.EmployeeID,
 			&i.Folder,
@@ -861,6 +863,63 @@ func (q *Queries) InsertInboundAttachment(ctx context.Context, arg InsertInbound
 	return err
 }
 
+const listExpiredTrash = `-- name: ListExpiredTrash :many
+SELECT id, owner_id, raw_key, account_id, folder, imap_uid, message_id
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND deleted_at IS NOT NULL
+  AND deleted_at < $2::timestamptz
+ORDER BY id
+LIMIT $3::int
+`
+
+type ListExpiredTrashParams struct {
+	TenantID int64
+	Cutoff   pgtype.Timestamptz
+	RowLimit int32
+}
+
+type ListExpiredTrashRow struct {
+	ID        int64
+	OwnerID   int64
+	RawKey    string
+	AccountID int64
+	Folder    string
+	ImapUid   int64
+	MessageID string
+}
+
+// Trash old enough to clear out by itself. Tenant-wide and owner-agnostic
+// because the sweeper runs for everybody at once; the owner comes back on
+// each row so the delete stays owner-scoped like every other one.
+func (q *Queries) ListExpiredTrash(ctx context.Context, arg ListExpiredTrashParams) ([]ListExpiredTrashRow, error) {
+	rows, err := q.db.Query(ctx, listExpiredTrash, arg.TenantID, arg.Cutoff, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListExpiredTrashRow
+	for rows.Next() {
+		var i ListExpiredTrashRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.RawKey,
+			&i.AccountID,
+			&i.Folder,
+			&i.ImapUid,
+			&i.MessageID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listInbound = `-- name: ListInbound :many
 SELECT id, from_email, from_name, subject, snippet, thread_key,
        is_read, is_starred, has_attachments, received_at, sent_at
@@ -1514,6 +1573,57 @@ func (q *Queries) ListThreadForPurge(ctx context.Context, arg ListThreadForPurge
 	return items, nil
 }
 
+const listTrashForPurge = `-- name: ListTrashForPurge :many
+SELECT id, raw_key, account_id, folder, imap_uid, message_id
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND owner_id = $2::bigint
+  AND deleted_at IS NOT NULL
+ORDER BY id
+`
+
+type ListTrashForPurgeParams struct {
+	TenantID int64
+	OwnerID  int64
+}
+
+type ListTrashForPurgeRow struct {
+	ID        int64
+	RawKey    string
+	AccountID int64
+	Folder    string
+	ImapUid   int64
+	MessageID string
+}
+
+// Everything in one person's trash, for emptying it in one go.
+func (q *Queries) ListTrashForPurge(ctx context.Context, arg ListTrashForPurgeParams) ([]ListTrashForPurgeRow, error) {
+	rows, err := q.db.Query(ctx, listTrashForPurge, arg.TenantID, arg.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTrashForPurgeRow
+	for rows.Next() {
+		var i ListTrashForPurgeRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RawKey,
+			&i.AccountID,
+			&i.Folder,
+			&i.ImapUid,
+			&i.MessageID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markInboundRead = `-- name: MarkInboundRead :many
 UPDATE email_inbound SET is_read = TRUE
 WHERE tenant_id = $1::bigint
@@ -1727,6 +1837,42 @@ func (q *Queries) PurgeInbound(ctx context.Context, arg PurgeInboundParams) (int
 	return result.RowsAffected(), nil
 }
 
+const repointInbound = `-- name: RepointInbound :exec
+UPDATE email_inbound
+SET folder = $1::text,
+    imap_uid = $2::bigint,
+    not_junk = FALSE
+WHERE tenant_id = $3::bigint
+  AND account_id = $4::bigint
+  AND folder = $5::text
+  AND imap_uid = $6::bigint
+`
+
+type RepointInboundParams struct {
+	NewFolder string
+	NewUid    int64
+	TenantID  int64
+	AccountID int64
+	OldFolder string
+	OldUid    int64
+}
+
+// Follows a message the ERP itself moved on the host: same mail, new folder,
+// new UID. Without this the row would still name a UID that belongs to
+// nothing, and the next sync would fetch the message again as though it were
+// newly arrived — one mail, two rows.
+func (q *Queries) RepointInbound(ctx context.Context, arg RepointInboundParams) error {
+	_, err := q.db.Exec(ctx, repointInbound,
+		arg.NewFolder,
+		arg.NewUid,
+		arg.TenantID,
+		arg.AccountID,
+		arg.OldFolder,
+		arg.OldUid,
+	)
+	return err
+}
+
 const setInboundFlags = `-- name: SetInboundFlags :many
 UPDATE email_inbound
 SET is_read    = coalesce($1::boolean, is_read),
@@ -1743,7 +1889,7 @@ SET is_read    = coalesce($1::boolean, is_read),
 WHERE tenant_id = $6::bigint
   AND owner_id = $7::bigint
   AND id = $8::bigint
-RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archived_at, deleted_at
+RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archived_at, deleted_at, not_junk
 `
 
 type SetInboundFlagsParams struct {
@@ -1766,6 +1912,7 @@ type SetInboundFlagsRow struct {
 	MessageID  string
 	ArchivedAt pgtype.Timestamptz
 	DeletedAt  pgtype.Timestamptz
+	NotJunk    bool
 }
 
 // One statement for all four flags; an absent argument leaves that flag
@@ -1798,6 +1945,7 @@ func (q *Queries) SetInboundFlags(ctx context.Context, arg SetInboundFlagsParams
 			&i.MessageID,
 			&i.ArchivedAt,
 			&i.DeletedAt,
+			&i.NotJunk,
 		); err != nil {
 			return nil, err
 		}
@@ -1972,7 +2120,7 @@ WHERE tenant_id = $6::bigint
   AND owner_id = $7::bigint
   AND thread_key = $8::text
   AND thread_key <> ''
-RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archived_at, deleted_at
+RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archived_at, deleted_at, not_junk
 `
 
 type SetThreadFlagsParams struct {
@@ -1995,6 +2143,7 @@ type SetThreadFlagsRow struct {
 	MessageID  string
 	ArchivedAt pgtype.Timestamptz
 	DeletedAt  pgtype.Timestamptz
+	NotJunk    bool
 }
 
 // Housekeeping applied to a whole conversation. Archiving from a page that
@@ -2029,6 +2178,7 @@ func (q *Queries) SetThreadFlags(ctx context.Context, arg SetThreadFlagsParams) 
 			&i.MessageID,
 			&i.ArchivedAt,
 			&i.DeletedAt,
+			&i.NotJunk,
 		); err != nil {
 			return nil, err
 		}

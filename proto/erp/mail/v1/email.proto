@@ -114,6 +114,9 @@ service EmailService {
   // Marks everything one view shows as read. Scoped to that view, never the
   // whole mailbox, and ERP-side only like the rest of the housekeeping.
   rpc MarkViewRead(MarkViewReadRequest) returns (MarkViewReadResponse);
+  // Permanent deletion of everything in the trash at once. Trash also clears
+  // itself after thirty days; this is the same thing done deliberately.
+  rpc EmptyTrash(EmptyTrashRequest) returns (EmptyTrashResponse);
   // Mail this mailbox sent — through any client, over whatever history the
   // backfill has reached. ERP sends live in ListMessages with per-recipient
   // status; these are plain copies from the host's own Sent folder.
@@ -230,6 +233,12 @@ message MarkViewReadRequest {
 
 message MarkViewReadResponse {
   int32 marked = 1;
+}
+
+message EmptyTrashRequest {}
+
+message EmptyTrashResponse {
+  int32 deleted = 1;
 }
 
 message PurgeInboundRequest {
