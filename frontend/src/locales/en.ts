@@ -942,6 +942,7 @@ export default {
     markRead: 'Mark read',
     downloadFile: 'Download {f}',
     fileGone: 'No copy of this attachment was kept, so it cannot be downloaded',
+    fileUnavailable: 'The download link could not be issued just now — refresh and try again',
     unreadOne: 'Unread',
     archive: 'Archive',
     unarchive: 'Move to inbox',

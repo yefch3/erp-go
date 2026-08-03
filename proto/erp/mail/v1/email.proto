@@ -171,6 +171,11 @@ message InboundAttachment {
   // file was never stored or storage is unreachable - the attachment is still
   // listed, because "there was a file called this" is worth knowing.
   string download_url = 5;
+  // Whether a copy was actually kept. Separates the two reasons a download
+  // URL can be missing, which look identical to the reader and are not:
+  // false means the bytes were never stored and never will be; true with an
+  // empty URL means something is wrong right now and retrying may work.
+  bool stored = 6;
 }
 
 message ListInboundRequest {

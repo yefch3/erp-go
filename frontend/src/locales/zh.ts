@@ -937,6 +937,7 @@ export default {
     markRead: '标为已读',
     downloadFile: '下载 {f}',
     fileGone: '这个附件没有留存副本，无法下载',
+    fileUnavailable: '暂时取不到下载链接，请刷新页面重试',
     unreadOne: '未读',
     archive: '归档',
     unarchive: '移回收件箱',
