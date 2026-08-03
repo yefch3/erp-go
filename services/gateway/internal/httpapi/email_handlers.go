@@ -584,6 +584,15 @@ func (s *Server) emptyTrash(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) emptyJunk(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.EmptyJunk(r.Context(), &mailv1.EmptyJunkRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) getInbound(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	resp, err := s.Emails.GetInbound(r.Context(), &mailv1.GetInboundRequest{Id: id})
