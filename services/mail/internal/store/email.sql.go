@@ -216,12 +216,44 @@ func (q *Queries) AppendEvent(ctx context.Context, arg AppendEventParams) error 
 	return err
 }
 
+const cancelScheduled = `-- name: CancelScheduled :execrows
+UPDATE email_messages
+SET status = 'CANCELLED', scheduled_at = NULL
+WHERE tenant_id = $1::bigint
+  AND campaign_id = $2::bigint
+  AND status = 'QUEUED'
+  AND scheduled_at IS NOT NULL
+`
+
+type CancelScheduledParams struct {
+	TenantID   int64
+	CampaignID int64
+}
+
+// Stops what has not gone yet, and says how much that was.
+//
+// The status test is the race: the worker claims by setting SENDING inside a
+// locked transaction, so either this UPDATE gets there first and the message
+// never goes out, or it waits, sees SENDING and matches nothing. Zero rows
+// means it is already on its way — which the caller has to be told, not left
+// to assume the cancel worked.
+func (q *Queries) CancelScheduled(ctx context.Context, arg CancelScheduledParams) (int64, error) {
+	result, err := q.db.Exec(ctx, cancelScheduled, arg.TenantID, arg.CampaignID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const claimMessages = `-- name: ClaimMessages :many
 WITH due AS (
     SELECT id FROM email_messages
     WHERE tenant_id = $1::bigint
       AND status = 'QUEUED'
       AND (next_retry_at IS NULL OR next_retry_at <= now())
+      -- Held back until the person asked for it to go. Separate from the
+      -- retry clock above: one is "not yet", the other is "not again yet".
+      AND (scheduled_at IS NULL OR scheduled_at <= now())
     ORDER BY id
     LIMIT $2::int
     FOR UPDATE SKIP LOCKED
@@ -327,7 +359,8 @@ func (q *Queries) ClearDefaultSignature(ctx context.Context, arg ClearDefaultSig
 const createCampaign = `-- name: CreateCampaign :one
 INSERT INTO email_campaigns (
     tenant_id, campaign_no, subject_tpl, body_tpl, body_text_tpl, body_format,
-    signature_id, kind, sender_id, sender_name, sender_email
+    signature_id, kind, sender_id, sender_name, sender_email,
+    scheduled_at, reply_to_inbound_id
 ) VALUES (
     $1::bigint,
     $2::text,
@@ -339,23 +372,27 @@ INSERT INTO email_campaigns (
     $8::text,
     $9::bigint,
     $10::text,
-    $11::text
+    $11::text,
+    $12::timestamptz,
+    $13::bigint
 )
 RETURNING id
 `
 
 type CreateCampaignParams struct {
-	TenantID    int64
-	CampaignNo  string
-	SubjectTpl  string
-	BodyTpl     string
-	BodyTextTpl string
-	BodyFormat  string
-	SignatureID int64
-	Kind        string
-	SenderID    int64
-	SenderName  string
-	SenderEmail string
+	TenantID         int64
+	CampaignNo       string
+	SubjectTpl       string
+	BodyTpl          string
+	BodyTextTpl      string
+	BodyFormat       string
+	SignatureID      int64
+	Kind             string
+	SenderID         int64
+	SenderName       string
+	SenderEmail      string
+	ScheduledAt      pgtype.Timestamptz
+	ReplyToInboundID int64
 }
 
 func (q *Queries) CreateCampaign(ctx context.Context, arg CreateCampaignParams) (int64, error) {
@@ -371,6 +408,8 @@ func (q *Queries) CreateCampaign(ctx context.Context, arg CreateCampaignParams) 
 		arg.SenderID,
 		arg.SenderName,
 		arg.SenderEmail,
+		arg.ScheduledAt,
+		arg.ReplyToInboundID,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -652,6 +691,48 @@ func (q *Queries) GetMessage(ctx context.Context, arg GetMessageParams) (GetMess
 		&i.DeliveredAt,
 		&i.OpenedAt,
 		&i.ClickedAt,
+	)
+	return i, err
+}
+
+const getScheduledCampaign = `-- name: GetScheduledCampaign :one
+SELECT c.id, c.subject_tpl, c.body_tpl, c.body_format, c.kind, c.sender_id,
+       c.reply_to_inbound_id, c.scheduled_at
+FROM email_campaigns c
+WHERE c.tenant_id = $1::bigint AND c.id = $2::bigint
+`
+
+type GetScheduledCampaignParams struct {
+	TenantID int64
+	ID       int64
+}
+
+type GetScheduledCampaignRow struct {
+	ID               int64
+	SubjectTpl       string
+	BodyTpl          string
+	BodyFormat       string
+	Kind             string
+	SenderID         int64
+	ReplyToInboundID int64
+	ScheduledAt      pgtype.Timestamptz
+}
+
+// Everything needed to prove ownership and to rebuild the compose window.
+// body_tpl, not the rendered message: the template is what a person can edit
+// again, with its variables still in it.
+func (q *Queries) GetScheduledCampaign(ctx context.Context, arg GetScheduledCampaignParams) (GetScheduledCampaignRow, error) {
+	row := q.db.QueryRow(ctx, getScheduledCampaign, arg.TenantID, arg.ID)
+	var i GetScheduledCampaignRow
+	err := row.Scan(
+		&i.ID,
+		&i.SubjectTpl,
+		&i.BodyTpl,
+		&i.BodyFormat,
+		&i.Kind,
+		&i.SenderID,
+		&i.ReplyToInboundID,
+		&i.ScheduledAt,
 	)
 	return i, err
 }
@@ -1184,6 +1265,154 @@ func (q *Queries) ListMessages(ctx context.Context, arg ListMessagesParams) ([]L
 	return items, nil
 }
 
+const listScheduled = `-- name: ListScheduled :many
+SELECT
+    c.id, c.campaign_no, c.subject_tpl, c.body_format, c.kind,
+    m.pending::int      AS pending_count,
+    m.due_at            AS scheduled_at,
+    m.send_mode,
+    coalesce(m.to_names, '')::text AS to_names,
+    count(*) OVER () AS total
+FROM email_campaigns c
+JOIN (
+    SELECT campaign_id,
+        count(*)                          AS pending,
+        min(scheduled_at)::timestamptz    AS due_at,
+        min(send_mode)::text              AS send_mode,
+        string_agg(coalesce(nullif(to_name, ''), to_email), ', '
+                   ORDER BY id)      AS to_names
+    FROM email_messages
+    WHERE tenant_id = $1::bigint
+      AND status = 'QUEUED'
+      AND scheduled_at IS NOT NULL
+      AND scheduled_at > now()
+    GROUP BY campaign_id
+) m ON m.campaign_id = c.id
+WHERE c.tenant_id = $1::bigint
+  -- Own sends only. Unlike the sent list this carries no data scope: a
+  -- scheduled mail is still the sender's to change, and nobody else's.
+  AND c.sender_id = $2::bigint
+ORDER BY m.due_at, c.id
+LIMIT $4::int OFFSET $3::int
+`
+
+type ListScheduledParams struct {
+	TenantID  int64
+	SenderID  int64
+	RowOffset int32
+	RowLimit  int32
+}
+
+type ListScheduledRow struct {
+	ID           int64
+	CampaignNo   string
+	SubjectTpl   string
+	BodyFormat   string
+	Kind         string
+	PendingCount int32
+	ScheduledAt  pgtype.Timestamptz
+	SendMode     string
+	ToNames      string
+	Total        int64
+}
+
+// The 已定时 folder: one row per send, not per recipient.
+//
+// A campaign is what somebody scheduled, so it is what they cancel — and a
+// 40-recipient send appearing as 40 pending rows would make "cancel this" an
+// ambiguous instruction. Only sends with something still waiting appear:
+// cancelling every message empties the campaign out of this list without
+// needing a second status to keep in step.
+func (q *Queries) ListScheduled(ctx context.Context, arg ListScheduledParams) ([]ListScheduledRow, error) {
+	rows, err := q.db.Query(ctx, listScheduled,
+		arg.TenantID,
+		arg.SenderID,
+		arg.RowOffset,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListScheduledRow
+	for rows.Next() {
+		var i ListScheduledRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CampaignNo,
+			&i.SubjectTpl,
+			&i.BodyFormat,
+			&i.Kind,
+			&i.PendingCount,
+			&i.ScheduledAt,
+			&i.SendMode,
+			&i.ToNames,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listScheduledRecipients = `-- name: ListScheduledRecipients :many
+SELECT id, to_email, to_name, customer_id, customer_name, contact_id, send_mode
+FROM email_messages
+WHERE tenant_id = $1::bigint
+  AND campaign_id = $2::bigint
+ORDER BY id
+`
+
+type ListScheduledRecipientsParams struct {
+	TenantID   int64
+	CampaignID int64
+}
+
+type ListScheduledRecipientsRow struct {
+	ID           int64
+	ToEmail      string
+	ToName       string
+	CustomerID   int64
+	CustomerName string
+	ContactID    int64
+	SendMode     string
+}
+
+// Who a scheduled send was going to, from the message rows themselves. For a
+// merged send there is one message and the cast lives in the recipients
+// table, so that side is read separately.
+func (q *Queries) ListScheduledRecipients(ctx context.Context, arg ListScheduledRecipientsParams) ([]ListScheduledRecipientsRow, error) {
+	rows, err := q.db.Query(ctx, listScheduledRecipients, arg.TenantID, arg.CampaignID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListScheduledRecipientsRow
+	for rows.Next() {
+		var i ListScheduledRecipientsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ToEmail,
+			&i.ToName,
+			&i.CustomerID,
+			&i.CustomerName,
+			&i.ContactID,
+			&i.SendMode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSendersWithCounts = `-- name: ListSendersWithCounts :many
 SELECT
     sender_id,
@@ -1444,7 +1673,7 @@ INSERT INTO email_messages (
     tenant_id, campaign_id, message_key, kind, sender_id, sender_name,
     to_email, to_name, customer_id, customer_name, contact_id,
     subject, body, body_text, body_format, status, attention_reason,
-    send_mode, thread_key, in_reply_to, references_ids
+    send_mode, thread_key, in_reply_to, references_ids, scheduled_at
 ) VALUES (
     $1::bigint,
     nullif($2::bigint, 0),
@@ -1466,7 +1695,8 @@ INSERT INTO email_messages (
     $18::text,
     coalesce(nullif($19::text, ''), $3::text),
     $20::text,
-    $21::text
+    $21::text,
+    $22::timestamptz
 )
 RETURNING id
 `
@@ -1493,6 +1723,7 @@ type QueueMessageParams struct {
 	ThreadKey       string
 	InReplyTo       string
 	ReferencesIds   string
+	ScheduledAt     pgtype.Timestamptz
 }
 
 // thread_key falls back to the message's own key: a fresh mail is the root
@@ -1520,10 +1751,34 @@ func (q *Queries) QueueMessage(ctx context.Context, arg QueueMessageParams) (int
 		arg.ThreadKey,
 		arg.InReplyTo,
 		arg.ReferencesIds,
+		arg.ScheduledAt,
 	)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const releaseScheduled = `-- name: ReleaseScheduled :execrows
+UPDATE email_messages
+SET scheduled_at = NULL
+WHERE tenant_id = $1::bigint
+  AND campaign_id = $2::bigint
+  AND status = 'QUEUED'
+  AND scheduled_at IS NOT NULL
+`
+
+type ReleaseScheduledParams struct {
+	TenantID   int64
+	CampaignID int64
+}
+
+// "Send it now": drop the hold and let the next drain pass claim it.
+func (q *Queries) ReleaseScheduled(ctx context.Context, arg ReleaseScheduledParams) (int64, error) {
+	result, err := q.db.Exec(ctx, releaseScheduled, arg.TenantID, arg.CampaignID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const removeSuppression = `-- name: RemoveSuppression :execrows

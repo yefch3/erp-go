@@ -308,6 +308,13 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:write"), s.requireMailUnlock).Get("/api/email-drafts/{id}", s.getDraft)
 		r.With(s.perm("mail:email:write"), s.requireMailUnlock).Delete("/api/email-drafts/{id}", s.deleteDraft)
 		r.With(s.perm("mail:email:write"), s.requireMailUnlock).Post("/api/email-drafts/{id}/send", s.sendDraft)
+
+		// Timed delivery. Read sits behind the write permission, not the read
+		// one: a scheduled send is nobody's correspondence yet, and the list
+		// only ever shows the caller's own.
+		r.With(s.perm("mail:email:write"), s.requireMailUnlock).Get("/api/email-scheduled", s.listScheduled)
+		r.With(s.perm("mail:email:write"), s.requireMailUnlock).Post("/api/email-scheduled/{id}/send-now", s.sendScheduledNow)
+		r.With(s.perm("mail:email:write"), s.requireMailUnlock).Post("/api/email-scheduled/{id}/cancel", s.cancelScheduled)
 		r.With(s.perm("mail:email:read")).Get("/api/email-signatures", s.listSignatures)
 		r.With(s.perm("mail:email:write")).Post("/api/email-signatures", s.createSignature)
 		r.With(s.perm("mail:email:write")).Delete("/api/email-signatures/{id}", s.deleteSignature)

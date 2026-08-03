@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/pgdb"
@@ -44,6 +46,9 @@ type CampaignInput struct {
 	// Files already in storage, registered inside the same transaction that
 	// creates the send so no message can go out before its attachment row.
 	Attachments []PendingAttachment
+	// When to deliver. Zero means now. An absolute instant, resolved by the
+	// composer from whatever zone the person was thinking in.
+	ScheduledAt time.Time
 }
 
 // PendingAttachment names a file the browser has already pushed to storage.
@@ -95,6 +100,10 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID int64, in Campaig
 	if mode != "MERGED" {
 		mode = "SEPARATE"
 	}
+	due, err := validSchedule(in.ScheduledAt)
+	if err != nil {
+		return CampaignResult{}, err
+	}
 
 	// Reply and forward both borrow from a mail in the caller's own inbox;
 	// resolving it here also proves it IS the caller's.
@@ -134,7 +143,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID int64, in Campaig
 	}
 
 	if mode == "MERGED" {
-		return s.createMerged(ctx, tenantID, in, kind, sender, body, textBody, format, thread, suppressed)
+		return s.createMerged(ctx, tenantID, in, kind, sender, body, textBody, format, thread, suppressed, due)
 	}
 
 	result := CampaignResult{}
@@ -150,6 +159,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID int64, in Campaig
 			BodyFormat: format, SignatureID: in.SignatureID,
 			Kind: kind, SenderID: sender.ID, SenderName: sender.Name,
 			SenderEmail: sender.Email,
+			ScheduledAt: due, ReplyToInboundID: in.ReplyToInboundID,
 		})
 		if err != nil {
 			return err
@@ -225,6 +235,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID int64, in Campaig
 				SendMode:  "SEPARATE",
 				ThreadKey: thread.ThreadKey,
 				InReplyTo: thread.InReplyTo, ReferencesIds: thread.References,
+				ScheduledAt: due,
 			}); err != nil {
 				return err
 			}
@@ -483,7 +494,7 @@ func (s *Service) composeContext(ctx context.Context, tenantID int64, in *Campai
 func (s *Service) createMerged(
 	ctx context.Context, tenantID int64, in CampaignInput, kind string,
 	sender Sender, body, textBody, format string, thread composeThread,
-	suppressed map[string]string,
+	suppressed map[string]string, due pgtype.Timestamptz,
 ) (CampaignResult, error) {
 	result := CampaignResult{}
 	keep := func(list []Recipient) []Recipient {
@@ -544,6 +555,7 @@ func (s *Service) createMerged(
 			BodyFormat: format, SignatureID: in.SignatureID,
 			Kind: kind, SenderID: sender.ID, SenderName: sender.Name,
 			SenderEmail: sender.Email,
+			ScheduledAt: due, ReplyToInboundID: in.ReplyToInboundID,
 		})
 		if err != nil {
 			return err
@@ -574,6 +586,7 @@ func (s *Service) createMerged(
 			SendMode:  "MERGED",
 			ThreadKey: thread.ThreadKey,
 			InReplyTo: thread.InReplyTo, ReferencesIds: thread.References,
+			ScheduledAt: due,
 		})
 		if err != nil {
 			return err

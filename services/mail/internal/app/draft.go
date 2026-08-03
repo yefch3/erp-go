@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -163,7 +164,7 @@ func (s *Service) DeleteDraft(ctx context.Context, tenantID, id int64, op Operat
 // draft is only deleted afterwards: if the send fails validation the draft
 // is still there, which is the difference between a rejected send and a lost
 // morning's work.
-func (s *Service) SendDraft(ctx context.Context, tenantID, id int64, op Operator) (CampaignResult, error) {
+func (s *Service) SendDraft(ctx context.Context, tenantID, id int64, at time.Time, op Operator) (CampaignResult, error) {
 	d, err := s.GetDraft(ctx, tenantID, id, op)
 	if err != nil {
 		return CampaignResult{}, err
@@ -177,6 +178,7 @@ func (s *Service) SendDraft(ctx context.Context, tenantID, id int64, op Operator
 		SendMode: d.SendMode, CC: d.CC,
 		ReplyToInboundID: d.ReplyToInboundID,
 		ForwardInboundID: d.ForwardInboundID,
+		ScheduledAt:      at,
 	}, op)
 	if err != nil {
 		return CampaignResult{}, err

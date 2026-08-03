@@ -42,7 +42,8 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 -- name: CreateCampaign :one
 INSERT INTO email_campaigns (
     tenant_id, campaign_no, subject_tpl, body_tpl, body_text_tpl, body_format,
-    signature_id, kind, sender_id, sender_name, sender_email
+    signature_id, kind, sender_id, sender_name, sender_email,
+    scheduled_at, reply_to_inbound_id
 ) VALUES (
     sqlc.arg(tenant_id)::bigint,
     sqlc.arg(campaign_no)::text,
@@ -54,7 +55,9 @@ INSERT INTO email_campaigns (
     sqlc.arg(kind)::text,
     sqlc.arg(sender_id)::bigint,
     sqlc.arg(sender_name)::text,
-    sqlc.arg(sender_email)::text
+    sqlc.arg(sender_email)::text,
+    sqlc.narg(scheduled_at)::timestamptz,
+    sqlc.arg(reply_to_inbound_id)::bigint
 )
 RETURNING id;
 
@@ -135,7 +138,7 @@ INSERT INTO email_messages (
     tenant_id, campaign_id, message_key, kind, sender_id, sender_name,
     to_email, to_name, customer_id, customer_name, contact_id,
     subject, body, body_text, body_format, status, attention_reason,
-    send_mode, thread_key, in_reply_to, references_ids
+    send_mode, thread_key, in_reply_to, references_ids, scheduled_at
 ) VALUES (
     sqlc.arg(tenant_id)::bigint,
     nullif(sqlc.arg(campaign_id)::bigint, 0),
@@ -157,7 +160,8 @@ INSERT INTO email_messages (
     sqlc.arg(send_mode)::text,
     coalesce(nullif(sqlc.arg(thread_key)::text, ''), sqlc.arg(message_key)::text),
     sqlc.arg(in_reply_to)::text,
-    sqlc.arg(references_ids)::text
+    sqlc.arg(references_ids)::text,
+    sqlc.narg(scheduled_at)::timestamptz
 )
 RETURNING id;
 
@@ -194,6 +198,9 @@ WITH due AS (
     WHERE tenant_id = sqlc.arg(tenant_id)::bigint
       AND status = 'QUEUED'
       AND (next_retry_at IS NULL OR next_retry_at <= now())
+      -- Held back until the person asked for it to go. Separate from the
+      -- retry clock above: one is "not yet", the other is "not again yet".
+      AND (scheduled_at IS NULL OR scheduled_at <= now())
     ORDER BY id
     LIMIT sqlc.arg(row_limit)::int
     FOR UPDATE SKIP LOCKED
@@ -498,3 +505,83 @@ DELETE FROM email_drafts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND id = sqlc.arg(id)::bigint;
+
+-- name: ListScheduled :many
+-- The 已定时 folder: one row per send, not per recipient.
+--
+-- A campaign is what somebody scheduled, so it is what they cancel — and a
+-- 40-recipient send appearing as 40 pending rows would make "cancel this" an
+-- ambiguous instruction. Only sends with something still waiting appear:
+-- cancelling every message empties the campaign out of this list without
+-- needing a second status to keep in step.
+SELECT
+    c.id, c.campaign_no, c.subject_tpl, c.body_format, c.kind,
+    m.pending::int      AS pending_count,
+    m.due_at            AS scheduled_at,
+    m.send_mode,
+    coalesce(m.to_names, '')::text AS to_names,
+    count(*) OVER () AS total
+FROM email_campaigns c
+JOIN (
+    SELECT campaign_id,
+        count(*)                          AS pending,
+        min(scheduled_at)::timestamptz    AS due_at,
+        min(send_mode)::text              AS send_mode,
+        string_agg(coalesce(nullif(to_name, ''), to_email), ', '
+                   ORDER BY id)      AS to_names
+    FROM email_messages
+    WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+      AND status = 'QUEUED'
+      AND scheduled_at IS NOT NULL
+      AND scheduled_at > now()
+    GROUP BY campaign_id
+) m ON m.campaign_id = c.id
+WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
+  -- Own sends only. Unlike the sent list this carries no data scope: a
+  -- scheduled mail is still the sender's to change, and nobody else's.
+  AND c.sender_id = sqlc.arg(sender_id)::bigint
+ORDER BY m.due_at, c.id
+LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
+
+-- name: CancelScheduled :execrows
+-- Stops what has not gone yet, and says how much that was.
+--
+-- The status test is the race: the worker claims by setting SENDING inside a
+-- locked transaction, so either this UPDATE gets there first and the message
+-- never goes out, or it waits, sees SENDING and matches nothing. Zero rows
+-- means it is already on its way — which the caller has to be told, not left
+-- to assume the cancel worked.
+UPDATE email_messages
+SET status = 'CANCELLED', scheduled_at = NULL
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND campaign_id = sqlc.arg(campaign_id)::bigint
+  AND status = 'QUEUED'
+  AND scheduled_at IS NOT NULL;
+
+-- name: ReleaseScheduled :execrows
+-- "Send it now": drop the hold and let the next drain pass claim it.
+UPDATE email_messages
+SET scheduled_at = NULL
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND campaign_id = sqlc.arg(campaign_id)::bigint
+  AND status = 'QUEUED'
+  AND scheduled_at IS NOT NULL;
+
+-- name: GetScheduledCampaign :one
+-- Everything needed to prove ownership and to rebuild the compose window.
+-- body_tpl, not the rendered message: the template is what a person can edit
+-- again, with its variables still in it.
+SELECT c.id, c.subject_tpl, c.body_tpl, c.body_format, c.kind, c.sender_id,
+       c.reply_to_inbound_id, c.scheduled_at
+FROM email_campaigns c
+WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint AND c.id = sqlc.arg(id)::bigint;
+
+-- name: ListScheduledRecipients :many
+-- Who a scheduled send was going to, from the message rows themselves. For a
+-- merged send there is one message and the cast lives in the recipients
+-- table, so that side is read separately.
+SELECT id, to_email, to_name, customer_id, customer_name, contact_id, send_mode
+FROM email_messages
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND campaign_id = sqlc.arg(campaign_id)::bigint
+ORDER BY id;

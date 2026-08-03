@@ -23,21 +23,23 @@ type EmailAttachment struct {
 }
 
 type EmailCampaign struct {
-	ID          int64
-	TenantID    int64
-	CampaignNo  string
-	SubjectTpl  string
-	BodyTpl     string
-	SignatureID *int64
-	Kind        string
-	SenderID    int64
-	SenderName  string
-	SenderEmail string
-	Status      string
-	CreatedAt   pgtype.Timestamptz
-	FinishedAt  pgtype.Timestamptz
-	BodyFormat  string
-	BodyTextTpl string
+	ID               int64
+	TenantID         int64
+	CampaignNo       string
+	SubjectTpl       string
+	BodyTpl          string
+	SignatureID      *int64
+	Kind             string
+	SenderID         int64
+	SenderName       string
+	SenderEmail      string
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	FinishedAt       pgtype.Timestamptz
+	BodyFormat       string
+	BodyTextTpl      string
+	ScheduledAt      pgtype.Timestamptz
+	ReplyToInboundID int64
 }
 
 type EmailDraft struct {
@@ -160,6 +162,7 @@ type EmailMessage struct {
 	SendMode        string
 	InReplyTo       string
 	ReferencesIds   string
+	ScheduledAt     pgtype.Timestamptz
 }
 
 type EmailMessageRecipient struct {

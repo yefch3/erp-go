@@ -32,6 +32,9 @@ const (
 	EmailService_GetDraft_FullMethodName            = "/erp.mail.v1.EmailService/GetDraft"
 	EmailService_DeleteDraft_FullMethodName         = "/erp.mail.v1.EmailService/DeleteDraft"
 	EmailService_SendDraft_FullMethodName           = "/erp.mail.v1.EmailService/SendDraft"
+	EmailService_ListScheduled_FullMethodName       = "/erp.mail.v1.EmailService/ListScheduled"
+	EmailService_SendScheduledNow_FullMethodName    = "/erp.mail.v1.EmailService/SendScheduledNow"
+	EmailService_CancelScheduled_FullMethodName     = "/erp.mail.v1.EmailService/CancelScheduled"
 	EmailService_ListSignatures_FullMethodName      = "/erp.mail.v1.EmailService/ListSignatures"
 	EmailService_CreateSignature_FullMethodName     = "/erp.mail.v1.EmailService/CreateSignature"
 	EmailService_DeleteSignature_FullMethodName     = "/erp.mail.v1.EmailService/DeleteSignature"
@@ -100,6 +103,14 @@ type EmailServiceClient interface {
 	// Promote a draft into a real send. Runs the ordinary create path, so the
 	// draft only disappears once the mail is queued.
 	SendDraft(ctx context.Context, in *SendDraftRequest, opts ...grpc.CallOption) (*SendDraftResponse, error)
+	// Timed delivery. A scheduled send is already queued - the hold is a column
+	// the worker respects - so these three are about the window before it goes:
+	// what is waiting, let one go early, and stop one that has not gone.
+	ListScheduled(ctx context.Context, in *ListScheduledRequest, opts ...grpc.CallOption) (*ListScheduledResponse, error)
+	SendScheduledNow(ctx context.Context, in *SendScheduledNowRequest, opts ...grpc.CallOption) (*SendScheduledNowResponse, error)
+	// Cancelling returns the mail to the drafts folder rather than binning it:
+	// somebody who calls a send back usually means to change it, not lose it.
+	CancelScheduled(ctx context.Context, in *CancelScheduledRequest, opts ...grpc.CallOption) (*CancelScheduledResponse, error)
 	ListSignatures(ctx context.Context, in *ListSignaturesRequest, opts ...grpc.CallOption) (*ListSignaturesResponse, error)
 	CreateSignature(ctx context.Context, in *CreateSignatureRequest, opts ...grpc.CallOption) (*CreateSignatureResponse, error)
 	DeleteSignature(ctx context.Context, in *DeleteSignatureRequest, opts ...grpc.CallOption) (*DeleteSignatureResponse, error)
@@ -310,6 +321,36 @@ func (c *emailServiceClient) SendDraft(ctx context.Context, in *SendDraftRequest
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SendDraftResponse)
 	err := c.cc.Invoke(ctx, EmailService_SendDraft_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) ListScheduled(ctx context.Context, in *ListScheduledRequest, opts ...grpc.CallOption) (*ListScheduledResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListScheduledResponse)
+	err := c.cc.Invoke(ctx, EmailService_ListScheduled_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) SendScheduledNow(ctx context.Context, in *SendScheduledNowRequest, opts ...grpc.CallOption) (*SendScheduledNowResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SendScheduledNowResponse)
+	err := c.cc.Invoke(ctx, EmailService_SendScheduledNow_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) CancelScheduled(ctx context.Context, in *CancelScheduledRequest, opts ...grpc.CallOption) (*CancelScheduledResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelScheduledResponse)
+	err := c.cc.Invoke(ctx, EmailService_CancelScheduled_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -652,6 +693,14 @@ type EmailServiceServer interface {
 	// Promote a draft into a real send. Runs the ordinary create path, so the
 	// draft only disappears once the mail is queued.
 	SendDraft(context.Context, *SendDraftRequest) (*SendDraftResponse, error)
+	// Timed delivery. A scheduled send is already queued - the hold is a column
+	// the worker respects - so these three are about the window before it goes:
+	// what is waiting, let one go early, and stop one that has not gone.
+	ListScheduled(context.Context, *ListScheduledRequest) (*ListScheduledResponse, error)
+	SendScheduledNow(context.Context, *SendScheduledNowRequest) (*SendScheduledNowResponse, error)
+	// Cancelling returns the mail to the drafts folder rather than binning it:
+	// somebody who calls a send back usually means to change it, not lose it.
+	CancelScheduled(context.Context, *CancelScheduledRequest) (*CancelScheduledResponse, error)
 	ListSignatures(context.Context, *ListSignaturesRequest) (*ListSignaturesResponse, error)
 	CreateSignature(context.Context, *CreateSignatureRequest) (*CreateSignatureResponse, error)
 	DeleteSignature(context.Context, *DeleteSignatureRequest) (*DeleteSignatureResponse, error)
@@ -776,6 +825,15 @@ func (UnimplementedEmailServiceServer) DeleteDraft(context.Context, *DeleteDraft
 }
 func (UnimplementedEmailServiceServer) SendDraft(context.Context, *SendDraftRequest) (*SendDraftResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendDraft not implemented")
+}
+func (UnimplementedEmailServiceServer) ListScheduled(context.Context, *ListScheduledRequest) (*ListScheduledResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListScheduled not implemented")
+}
+func (UnimplementedEmailServiceServer) SendScheduledNow(context.Context, *SendScheduledNowRequest) (*SendScheduledNowResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SendScheduledNow not implemented")
+}
+func (UnimplementedEmailServiceServer) CancelScheduled(context.Context, *CancelScheduledRequest) (*CancelScheduledResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CancelScheduled not implemented")
 }
 func (UnimplementedEmailServiceServer) ListSignatures(context.Context, *ListSignaturesRequest) (*ListSignaturesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListSignatures not implemented")
@@ -1118,6 +1176,60 @@ func _EmailService_SendDraft_Handler(srv interface{}, ctx context.Context, dec f
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(EmailServiceServer).SendDraft(ctx, req.(*SendDraftRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_ListScheduled_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListScheduledRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).ListScheduled(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_ListScheduled_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).ListScheduled(ctx, req.(*ListScheduledRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_SendScheduledNow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SendScheduledNowRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).SendScheduledNow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_SendScheduledNow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).SendScheduledNow(ctx, req.(*SendScheduledNowRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_CancelScheduled_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelScheduledRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).CancelScheduled(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_CancelScheduled_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).CancelScheduled(ctx, req.(*CancelScheduledRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1720,6 +1832,18 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SendDraft",
 			Handler:    _EmailService_SendDraft_Handler,
+		},
+		{
+			MethodName: "ListScheduled",
+			Handler:    _EmailService_ListScheduled_Handler,
+		},
+		{
+			MethodName: "SendScheduledNow",
+			Handler:    _EmailService_SendScheduledNow_Handler,
+		},
+		{
+			MethodName: "CancelScheduled",
+			Handler:    _EmailService_CancelScheduled_Handler,
 		},
 		{
 			MethodName: "ListSignatures",

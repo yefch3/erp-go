@@ -159,15 +159,20 @@
       <div class="pane-head">
         <h2>{{ t(`emails.folders.${folder}`) }}</h2>
         <span class="grow" />
-        <el-input
-          v-model="keyword"
-          :placeholder="t(`emails.search.${searchKey}`)"
-          clearable
-          style="width: 260px"
-          @keyup.enter="reload"
-          @clear="reload"
-        />
-        <el-button @click="reload">{{ common('query') }}</el-button>
+        <!-- Not every folder is searchable. The scheduled list is short by
+             nature and the query behind it takes no keyword; a box that
+             silently ignores what is typed into it is worse than none. -->
+        <template v-if="folder !== 'scheduled'">
+          <el-input
+            v-model="keyword"
+            :placeholder="t(`emails.search.${searchKey}`)"
+            clearable
+            style="width: 260px"
+            @keyup.enter="reload"
+            @clear="reload"
+          />
+          <el-button @click="reload">{{ common('query') }}</el-button>
+        </template>
         <!-- The mailbox is polled every couple of minutes; this is for the
              person who just told a customer "resend it" and is waiting. -->
         <el-button v-if="folder === 'inbox'" :loading="syncing" @click="syncNow">
@@ -294,6 +299,46 @@
         </el-table-column>
       </el-table>
       <el-empty v-if="!loading && drafts.length === 0" :description="t('emails.noDrafts')" />
+      </template>
+
+      <!-- ------------------------------------------------------ scheduled -->
+      <template v-else-if="folder === 'scheduled'">
+      <el-alert type="info" :closable="false" show-icon class="hint">
+        {{ t('emails.scheduledHint') }}
+      </el-alert>
+      <el-table :data="scheduled" v-loading="loading">
+        <el-table-column :label="t('emails.subject')" min-width="280">
+          <template #default="{ row }">
+            <div class="strong ellipsis">{{ row.subject || t('emails.noSubject') }}</div>
+            <div class="sub ellipsis">{{ row.toNames }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('emails.scheduledRecipients')" width="100">
+          <template #default="{ row }">
+            <span class="sub">{{ row.pendingCount }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('emails.scheduledWhen')" width="220">
+          <template #default="{ row }">
+            <div>{{ localTime(row.scheduledAt) }}</div>
+            <div class="sub">{{ untilText(row.scheduledAt) }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column :label="common('actions')" width="190">
+          <template #default="{ row }">
+            <el-button link type="primary" @click.stop="sendScheduledNow(row)">
+              {{ t('emails.sendNow') }}
+            </el-button>
+            <el-button link type="danger" @click.stop="cancelScheduled(row)">
+              {{ t('emails.cancelSchedule') }}
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty
+        v-if="!loading && scheduled.length === 0"
+        :description="t('emails.scheduledEmpty')"
+      />
       </template>
 
       <!-- ----------------------------------------------------------- sent -->
@@ -618,6 +663,14 @@ interface Draft {
   recipientCount: number
   updatedAt: string
 }
+interface Scheduled {
+  campaignId: string
+  campaignNo: string
+  subject: string
+  pendingCount: number
+  toNames: string
+  scheduledAt: string
+}
 interface InboundMail {
   id: string
   fromEmail: string
@@ -646,7 +699,7 @@ interface Suppression {
   createdAt: string
 }
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const common = (k: string) => t(`common.${k}`)
 const auth = useAuthStore()
 const canWrite = computed(() => auth.can('mail:email:write'))
@@ -657,6 +710,7 @@ const folders = [
   { key: 'inbox' },
   { key: 'starred' },
   { key: 'drafts' },
+  { key: 'scheduled' },
   { key: 'sent' },
   { key: 'attention' },
   { key: 'archive' },
@@ -694,6 +748,7 @@ const attentionCount = ref(0)
 const composing = ref(false)
 const composer = ref()
 const drafts = ref<Draft[]>([])
+const scheduled = ref<Scheduled[]>([])
 const acting = ref(false)
 
 const inbound = ref<InboundMail[]>([])
@@ -737,7 +792,10 @@ interface UrlState {
 // initial navigation always loads.
 let applied: UrlState | null = null
 
-const FOLDER_KEYS = new Set(['inbox', 'starred', 'drafts', 'sent', 'attention', 'archive', 'junk', 'trash', 'suppressions'])
+// Every folder the address bar will accept. A key missing from here does not
+// fail loudly — the URL simply falls back to the inbox, and the folder looks
+// like it does not work.
+const FOLDER_KEYS = new Set(['inbox', 'starred', 'drafts', 'scheduled', 'sent', 'attention', 'archive', 'junk', 'trash', 'suppressions'])
 
 function parseQuery(q: LocationQuery): UrlState {
   const one = (v: unknown) => (Array.isArray(v) ? String(v[0] ?? '') : v == null ? '' : String(v))
@@ -987,6 +1045,51 @@ async function dropDraft(row: Draft) {
   loadDraftCount()
 }
 
+// A scheduled send is still the sender's to change. Both actions race the
+// worker on purpose — it may have claimed the mail a second ago — so the
+// server's answer, not the button, decides what the person is told.
+async function sendScheduledNow(row: Scheduled) {
+  const d = await post<{ released: number }>(`/email-scheduled/${row.campaignId}/send-now`)
+  ElMessage.success(t('emails.sendNowDone', { n: d.released }))
+  load()
+}
+
+async function cancelScheduled(row: Scheduled) {
+  await ElMessageBox.confirm(
+    t('emails.cancelScheduleAsk'),
+    t('emails.cancelSchedule'),
+    { type: 'warning' },
+  )
+  await post(`/email-scheduled/${row.campaignId}/cancel`)
+  ElMessage.success(t('emails.cancelScheduleDone'))
+  load()
+  loadDraftCount()
+}
+
+// The scheduled time, on the reader's own clock. shortTime slices the string
+// and would show UTC, which is the one reading nobody scheduled by.
+function localTime(v: string) {
+  if (!v) return ''
+  const at = new Date(v)
+  if (Number.isNaN(at.getTime())) return shortTime(v)
+  return new Intl.DateTimeFormat(locale.value, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(at)
+}
+
+// "in 3 days", "3天后" — the unit the gap deserves, in the reader's language.
+function untilText(v: string) {
+  const at = new Date(v).getTime()
+  if (Number.isNaN(at)) return ''
+  const rtf = new Intl.RelativeTimeFormat(locale.value, { numeric: 'auto' })
+  const mins = Math.round((at - Date.now()) / 60000)
+  if (Math.abs(mins) < 60) return rtf.format(mins, 'minute')
+  const hours = Math.round(mins / 60)
+  if (Math.abs(hours) < 24) return rtf.format(hours, 'hour')
+  return rtf.format(Math.round(hours / 24), 'day')
+}
+
 function switchFolder(key: string) {
   // Clear the box too, or clicking the current folder with an unsearched
   // keyword sitting in it would silently search for it.
@@ -1046,6 +1149,13 @@ async function load() {
     } else if (folder.value === 'drafts') {
       const d = await get<{ drafts: Draft[] }>('/email-drafts')
       drafts.value = d.drafts ?? []
+    } else if (folder.value === 'scheduled') {
+      const d = await get<{ sends: Scheduled[]; meta: { total: string } }>('/email-scheduled', {
+        page: page.value,
+        page_size: pageSize,
+      })
+      scheduled.value = d.sends ?? []
+      total.value = Number(d.meta?.total ?? 0)
     } else if (folder.value === 'sent' && sentView.value === 'mailbox') {
       const d = await get<{ mails: InboundMail[]; meta: { total: string } }>('/mailbox-sent', {
         page: page.value,
