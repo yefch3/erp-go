@@ -351,9 +351,9 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 --
 -- Scoped by the same filters as the list because that is what the button
 -- promises: "全部已读" in the junk view must not touch the inbox, and it must
--- never reach into the archive or the trash from either. Read state is
--- ERP-side only — the mail host is not told, same as every other bit of
--- housekeeping here.
+-- never reach into the archive or the trash from either. Every row it changes
+-- comes back so the caller can tell the mail host too: reading a mailbox in
+-- the ERP has to leave it read in Gmail, one button or one message at a time.
 UPDATE email_inbound
 SET is_read = TRUE
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint

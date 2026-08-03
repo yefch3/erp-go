@@ -27,7 +27,10 @@ proto: $(BIN)/protoc-gen-go $(BIN)/protoc-gen-go-grpc ## Lint protos and regener
 
 .PHONY: proto-breaking
 proto-breaking: ## Check protos against main for breaking changes
-	$(BUF) breaking --against '.git#branch=main'
+	# origin/main, not main: on a pull_request the runner checks out the merge
+	# ref and has no local main branch, so this step failed on every PR it was
+	# meant to guard.
+	$(BUF) breaking --against '.git#ref=origin/main'
 
 # ---------------------------------------------------------------- infra
 

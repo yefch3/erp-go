@@ -158,13 +158,10 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 		}
 		// The host's own name for the folder, resolved now rather than when
 		// the change was queued: it is provider-specific and can change.
-		actual := k.folder
-		if k.folder != "INBOX" {
-			actual, err = s.specialFolderOf(ctx, acct, "junk")
-			if err != nil {
-				s.failOps(ctx, rows, err)
-				continue
-			}
+		actual, err := s.hostFolder(ctx, acct, k.folder)
+		if err != nil {
+			s.failOps(ctx, rows, err)
+			continue
 		}
 		uids := make([]uint32, 0, len(rows))
 		for _, r := range rows {
@@ -411,6 +408,12 @@ func (s *Service) queueFolderMove(ctx context.Context, tenantID, accountID, empl
 // Each op is handled on its own rather than batched: a move needs the
 // message located first, and the searches differ per message.
 func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.ClaimFlagOpsRow) error {
+	// Where the message sits on the host, under the host's own name for it.
+	home, err := s.hostFolder(ctx, acct, row.Folder)
+	if err != nil {
+		return err
+	}
+
 	switch row.Flag {
 	case flagTrash:
 		trash, err := s.specialFolderOf(ctx, acct, "trash")
@@ -419,11 +422,11 @@ func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.C
 		}
 		if row.Op == opAdd {
 			// Straight out of the folder it is still sitting in.
-			return s.mailbox.MoveMessages(ctx, acct, row.Folder, []uint32{uint32(row.ImapUid)}, trash)
+			return s.mailbox.MoveMessages(ctx, acct, home, []uint32{uint32(row.ImapUid)}, trash)
 		}
 		// Restoring: it left the source folder when it was deleted, so it has
 		// to be found in the trash by Message-ID before it can come back.
-		return s.moveBack(ctx, acct, trash, row.Folder, row.MessageID)
+		return s.moveBack(ctx, acct, trash, home, row.MessageID)
 
 	case flagArchive:
 		archive, err := s.specialFolderOf(ctx, acct, "archive")
@@ -440,9 +443,9 @@ func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.C
 			return nil
 		}
 		if row.Op == opAdd {
-			return s.mailbox.MoveMessages(ctx, acct, row.Folder, []uint32{uint32(row.ImapUid)}, archive)
+			return s.mailbox.MoveMessages(ctx, acct, home, []uint32{uint32(row.ImapUid)}, archive)
 		}
-		return s.moveBack(ctx, acct, archive, row.Folder, row.MessageID)
+		return s.moveBack(ctx, acct, archive, home, row.MessageID)
 
 	case flagNotJunk:
 		junk, err := s.specialFolderOf(ctx, acct, "junk")
@@ -460,8 +463,7 @@ func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.C
 
 	case flagPurge:
 		// Deleted mail is in the trash by now, and that is where it has to be
-		// destroyed. If it is not there — already purged, or emptied by hand
-		// in Gmail — there is nothing left to do and nothing to report.
+		// destroyed.
 		trash, err := s.specialFolderOf(ctx, acct, "trash")
 		if err != nil {
 			return err
@@ -471,13 +473,26 @@ func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.C
 			return err
 		}
 		if !ok {
-			// Worth saying out loud rather than passing silently: permanent
-			// deletion is the one operation nobody can check afterwards, so
-			// "there was nothing there" and "it is gone now" should not look
-			// the same in the log.
-			s.log.Info("nothing left to purge on the host",
-				"account", acct.AccountID, "message_id", row.MessageID)
-			return nil
+			// Not in the trash. Usually that means somebody got there first —
+			// emptied it by hand, or the provider aged it out — and there is
+			// nothing left to do. But it can also mean the move that should
+			// have put it there never happened, leaving the original sitting
+			// in the folder it was deleted from. Saying "permanently deleted"
+			// while a copy stays in the person's inbox is the one outcome this
+			// operation must not produce, so look there before giving up.
+			uid, ok, err = s.purgeStranded(ctx, acct, home, trash, row.MessageID)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				// Worth saying out loud rather than passing silently:
+				// permanent deletion is the one operation nobody can check
+				// afterwards, so "there was nothing there" and "it is gone
+				// now" should not look the same in the log.
+				s.log.Info("nothing left to purge on the host",
+					"account", acct.AccountID, "message_id", row.MessageID)
+				return nil
+			}
 		}
 		if err := s.mailbox.PurgeMessages(ctx, acct, trash, []uint32{uid}); err != nil {
 			return err
@@ -487,6 +502,52 @@ func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.C
 		return nil
 	}
 	return nil
+}
+
+// hostFolder translates our name for a folder into the host's own.
+//
+// Ours is a fixed vocabulary — INBOX, JUNK, SENT — while every provider spells
+// the last two differently ([Gmail]/Spam, 垃圾邮件, Junk E-mail). Sending our
+// name to the host works only for the inbox, and fails silently enough to be
+// missed: the folder simply cannot be selected and the write-back retries for
+// ever.
+func (s *Service) hostFolder(ctx context.Context, acct MailAccount, folder string) (string, error) {
+	switch folder {
+	case "", "INBOX":
+		return "INBOX", nil
+	case "JUNK":
+		return s.specialFolderOf(ctx, acct, "junk")
+	case "SENT":
+		return s.specialFolderOf(ctx, acct, "sent")
+	default:
+		return folder, nil
+	}
+}
+
+// purgeStranded routes a mail that never reached the host's trash through it,
+// so that permanent deletion can finish the job, and reports the UID it landed
+// under.
+//
+// Deleting straight out of the source folder would not do: on Gmail an expunge
+// from a label only removes the label, so the mail would quietly survive in All
+// Mail. It goes to the trash first, like any other deletion, and is destroyed
+// from there.
+func (s *Service) purgeStranded(ctx context.Context, acct MailAccount, home, trash, messageID string) (uint32, bool, error) {
+	if home == "" || home == trash {
+		return 0, false, nil
+	}
+	uid, ok, err := s.mailbox.FindUIDByMessageID(ctx, acct, home, messageID)
+	if err != nil || !ok {
+		return 0, false, err
+	}
+	s.log.Info("mail marked for permanent deletion never reached the host trash; moving it there first",
+		"account", acct.AccountID, "folder", home, "uid", uid)
+	if err := s.mailbox.MoveMessages(ctx, acct, home, []uint32{uid}, trash); err != nil {
+		return 0, false, err
+	}
+	// A move assigns a new UID in the destination, so the old one is no use
+	// here: find it again where it now lives.
+	return s.mailbox.FindUIDByMessageID(ctx, acct, trash, messageID)
 }
 
 // repoint updates our record of where a message lives after we moved it.
