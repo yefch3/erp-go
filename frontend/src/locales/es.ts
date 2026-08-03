@@ -942,6 +942,7 @@ export default {
     markRead: 'Marcar como leído',
     downloadFile: 'Descargar {f}',
     fileGone: 'No se guardó copia de este adjunto, no se puede descargar',
+    fileUnavailable: 'No se pudo generar el enlace ahora mismo — recarga e inténtalo de nuevo',
     unreadOne: 'No leído',
     archive: 'Archivar',
     unarchive: 'Mover a entrada',

@@ -665,6 +665,7 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 		m.Attachments = append(m.Attachments, &mailv1.InboundAttachment{
 			Id: a.ID, FileName: a.FileName, ContentType: a.ContentType,
 			FileSize: a.FileSize, DownloadUrl: a.DownloadURL,
+			Stored: a.FileKey != "",
 		})
 	}
 	return m

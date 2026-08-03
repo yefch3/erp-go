@@ -172,7 +172,7 @@
               :class="{ dead: !a.downloadUrl }"
               :href="a.downloadUrl || undefined"
               :download="a.fileName"
-              :title="a.downloadUrl ? t('emails.downloadFile', { f: a.fileName }) : t('emails.fileGone')"
+              :title="fileHint(a)"
               target="_blank"
               rel="noopener"
             >
@@ -718,6 +718,9 @@ interface InboundMail {
     fileSize: string
     // Signed and short-lived; empty when the bytes were never stored.
     downloadUrl?: string
+    // Whether a copy was kept at all. Without it, a link missing because
+    // something is broken looks exactly like a file that never existed.
+    stored?: boolean
   }[]
 }
 
@@ -1584,6 +1587,16 @@ function shortTime(v: string) {
 // A stable colour per correspondent, so the same customer looks the same every
 // time. Hue only — saturation and lightness are fixed, which is what keeps a
 // wall of avatars from turning into confetti.
+// Why an attachment cannot be downloaded, said accurately.
+//
+// These two were one message once, and it told somebody their 8 MB deck had
+// no copy kept when the file was fine and a stale service was dropping the
+// field. A message that confident about somebody's data has to be earned.
+function fileHint(a: { fileName: string; downloadUrl?: string; stored?: boolean }) {
+  if (a.downloadUrl) return t('emails.downloadFile', { f: a.fileName })
+  return a.stored ? t('emails.fileUnavailable') : t('emails.fileGone')
+}
+
 function avatarStyle(email: string) {
   let h = 0
   for (const ch of email || '') h = (h * 31 + ch.charCodeAt(0)) % 360
