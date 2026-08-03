@@ -167,16 +167,16 @@ type EmailServiceClient interface {
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error)
-	// Inbox housekeeping: read/unread, star, archive, trash. ERP-side state
-	// only — never written back to the mail host.
+	// Inbox housekeeping: read/unread, star, archive, trash. Applied here
+	// first and carried to the mail host within seconds by the write-back
+	// queue, so the two views agree.
 	MarkInbound(ctx context.Context, in *MarkInboundRequest, opts ...grpc.CallOption) (*MarkInboundResponse, error)
 	// Permanent deletion, from the trash only: removes the ERP-side record,
-	// the raw MIME and the attachment copies in object storage. The mail
-	// host's original is untouched — the sync is one-way, so this can never
-	// reach into the real mailbox.
+	// the raw MIME and the attachment copies in object storage, and the mail
+	// host's own copy with them. Irreversible on both sides, deliberately.
 	PurgeInbound(ctx context.Context, in *PurgeInboundRequest, opts ...grpc.CallOption) (*PurgeInboundResponse, error)
-	// Marks everything one view shows as read. Scoped to that view, never the
-	// whole mailbox, and ERP-side only like the rest of the housekeeping.
+	// Marks everything one view shows as read. Scoped to that view and never
+	// the whole mailbox; the host is told too, like every other flag change.
 	MarkViewRead(ctx context.Context, in *MarkViewReadRequest, opts ...grpc.CallOption) (*MarkViewReadResponse, error)
 	// Permanent deletion of everything in the trash at once. Trash also clears
 	// itself after thirty days; this is the same thing done deliberately.
@@ -771,16 +771,16 @@ type EmailServiceServer interface {
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error)
-	// Inbox housekeeping: read/unread, star, archive, trash. ERP-side state
-	// only — never written back to the mail host.
+	// Inbox housekeeping: read/unread, star, archive, trash. Applied here
+	// first and carried to the mail host within seconds by the write-back
+	// queue, so the two views agree.
 	MarkInbound(context.Context, *MarkInboundRequest) (*MarkInboundResponse, error)
 	// Permanent deletion, from the trash only: removes the ERP-side record,
-	// the raw MIME and the attachment copies in object storage. The mail
-	// host's original is untouched — the sync is one-way, so this can never
-	// reach into the real mailbox.
+	// the raw MIME and the attachment copies in object storage, and the mail
+	// host's own copy with them. Irreversible on both sides, deliberately.
 	PurgeInbound(context.Context, *PurgeInboundRequest) (*PurgeInboundResponse, error)
-	// Marks everything one view shows as read. Scoped to that view, never the
-	// whole mailbox, and ERP-side only like the rest of the housekeeping.
+	// Marks everything one view shows as read. Scoped to that view and never
+	// the whole mailbox; the host is told too, like every other flag change.
 	MarkViewRead(context.Context, *MarkViewReadRequest) (*MarkViewReadResponse, error)
 	// Permanent deletion of everything in the trash at once. Trash also clears
 	// itself after thirty days; this is the same thing done deliberately.

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -110,6 +111,47 @@ func (s *Store) PresignedGet(ctx context.Context, key string, expiry time.Durati
 		return nil, fmt.Errorf("blobstore: presign %s: %w", key, err)
 	}
 	return u, nil
+}
+
+// PresignedGetAs is PresignedGet with the name the file should be saved under.
+//
+// Object keys are random by design — "mail-attachments/1/9f3c….pptx" — so a
+// plain download URL saves the customer's quotation as a hex string. The name
+// travels as a response-content-disposition override, which the store signs
+// along with everything else: the browser cannot be told to rename it, and a
+// tampered name invalidates the signature.
+func (s *Store) PresignedGetAs(ctx context.Context, key, saveAs string, expiry time.Duration) (*url.URL, error) {
+	params := url.Values{}
+	if saveAs != "" {
+		// RFC 6266: the ASCII form for old clients, filename* for everything
+		// written after 2011 — without the latter a Chinese file name arrives
+		// as mojibake or gets dropped.
+		params.Set("response-content-disposition",
+			`attachment; filename="`+asciiFallback(saveAs)+`"; filename*=UTF-8''`+url.PathEscape(saveAs))
+	}
+	u, err := s.presign.PresignedGetObject(ctx, s.bucket, key, expiry, params)
+	if err != nil {
+		return nil, fmt.Errorf("blobstore: presign %s: %w", key, err)
+	}
+	return u, nil
+}
+
+// asciiFallback keeps the quoted filename parameter legal for clients that
+// only read that one. Anything outside printable ASCII, plus the quote and
+// backslash that would end the parameter early, becomes an underscore.
+func asciiFallback(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r < 0x20 || r > 0x7e || r == '"' || r == '\\' {
+			b.WriteByte('_')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	if b.Len() == 0 {
+		return "download"
+	}
+	return b.String()
 }
 
 // PresignedPut is the upload counterpart: the browser PUTs the bytes to this

@@ -940,6 +940,8 @@ export default {
     unstar: 'Quitar estrella',
     markUnread: 'Marcar como no leído',
     markRead: 'Marcar como leído',
+    downloadFile: 'Descargar {f}',
+    fileGone: 'No se guardó copia de este adjunto, no se puede descargar',
     unreadOne: 'No leído',
     archive: 'Archivar',
     unarchive: 'Mover a entrada',

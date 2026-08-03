@@ -112,16 +112,16 @@ service EmailService {
   // One conversation, both directions, oldest first. Owner-scoped: the
   // caller sees only their own half of the world.
   rpc GetMailThread(GetMailThreadRequest) returns (GetMailThreadResponse);
-  // Inbox housekeeping: read/unread, star, archive, trash. ERP-side state
-  // only — never written back to the mail host.
+  // Inbox housekeeping: read/unread, star, archive, trash. Applied here
+  // first and carried to the mail host within seconds by the write-back
+  // queue, so the two views agree.
   rpc MarkInbound(MarkInboundRequest) returns (MarkInboundResponse);
   // Permanent deletion, from the trash only: removes the ERP-side record,
-  // the raw MIME and the attachment copies in object storage. The mail
-  // host's original is untouched — the sync is one-way, so this can never
-  // reach into the real mailbox.
+  // the raw MIME and the attachment copies in object storage, and the mail
+  // host's own copy with them. Irreversible on both sides, deliberately.
   rpc PurgeInbound(PurgeInboundRequest) returns (PurgeInboundResponse);
-  // Marks everything one view shows as read. Scoped to that view, never the
-  // whole mailbox, and ERP-side only like the rest of the housekeeping.
+  // Marks everything one view shows as read. Scoped to that view and never
+  // the whole mailbox; the host is told too, like every other flag change.
   rpc MarkViewRead(MarkViewReadRequest) returns (MarkViewReadResponse);
   // Permanent deletion of everything in the trash at once. Trash also clears
   // itself after thirty days; this is the same thing done deliberately.
@@ -167,6 +167,10 @@ message InboundAttachment {
   string file_name = 2;
   string content_type = 3;
   int64 file_size = 4;
+  // Signed, time-limited, and carrying the original file name. Empty when the
+  // file was never stored or storage is unreachable - the attachment is still
+  // listed, because "there was a file called this" is worth knowing.
+  string download_url = 5;
 }
 
 message ListInboundRequest {
@@ -499,6 +503,7 @@ message EmailAttachment {
   int64 file_size = 3;
   string content_type = 4;
   string uploaded_at = 5;
+  string download_url = 6;
 }
 
 // EmailImage is a picture embedded in an HTML body or signature. Served by a

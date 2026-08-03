@@ -76,10 +76,11 @@ func (s *Scopes) VisibleEmployees(ctx context.Context, employeeID int64, module 
 type Files struct {
 	store     *blobstore.Store
 	putExpiry time.Duration
+	getExpiry time.Duration
 }
 
 func NewFiles(store *blobstore.Store) *Files {
-	return &Files{store: store, putExpiry: 10 * time.Minute}
+	return &Files{store: store, putExpiry: 10 * time.Minute, getExpiry: time.Hour}
 }
 
 func (f *Files) PresignPut(ctx context.Context, key string) (string, int32, error) {
@@ -88,6 +89,17 @@ func (f *Files) PresignPut(ctx context.Context, key string) (string, int32, erro
 		return "", 0, err
 	}
 	return u.String(), int32(f.putExpiry.Seconds()), nil
+}
+
+// Download URLs live longer than upload ones: somebody opening a mail may
+// leave the tab and come back to the attachment, and re-reading the mail to
+// mint a fresh link would be the only alternative.
+func (f *Files) PresignGet(ctx context.Context, key, saveAs string) (string, error) {
+	u, err := f.store.PresignedGetAs(ctx, key, saveAs, f.getExpiry)
+	if err != nil {
+		return "", err
+	}
+	return u.String(), nil
 }
 
 func (f *Files) Stat(ctx context.Context, key string) (int64, string, error) {

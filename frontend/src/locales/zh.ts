@@ -935,6 +935,8 @@ export default {
     unstar: '取消星标',
     markUnread: '标为未读',
     markRead: '标为已读',
+    downloadFile: '下载 {f}',
+    fileGone: '这个附件没有留存副本，无法下载',
     unreadOne: '未读',
     archive: '归档',
     unarchive: '移回收件箱',
