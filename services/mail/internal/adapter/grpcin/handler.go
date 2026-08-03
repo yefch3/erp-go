@@ -96,17 +96,6 @@ func (h *Handler) GetCampaign(ctx context.Context, req *mailv1.GetCampaignReques
 	}}, nil
 }
 
-func attachmentsToProto(in []store.ListAttachmentsRow) []*mailv1.EmailAttachment {
-	out := make([]*mailv1.EmailAttachment, 0, len(in))
-	for _, a := range in {
-		out = append(out, &mailv1.EmailAttachment{
-			Id: a.ID, FileName: a.FileName, FileSize: a.FileSize,
-			ContentType: a.ContentType, UploadedAt: ts(a.UploadedAt),
-		})
-	}
-	return out
-}
-
 func signedAttachmentsToProto(in []app.Attachment) []*mailv1.EmailAttachment {
 	out := make([]*mailv1.EmailAttachment, 0, len(in))
 	for _, a := range in {
