@@ -1714,13 +1714,21 @@ async function doUnsuppress(row: Suppression) {
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
 }
+/* Grey under the cursor — a plain "you are pointing at this", distinct from
+   the blue capsule that means "you are here". Two different statements should
+   not be made in the same colour. */
 .folder:hover {
-  background: var(--el-fill-color-light);
+  background: var(--mail-hover);
 }
 .folder.on {
   background: var(--el-color-primary-light-9);
   color: var(--el-color-primary);
   font-weight: 600;
+}
+/* The current folder keeps its own colour when pointed at: greying it would
+   read as if the selection had been lost. */
+.folder.on:hover {
+  background: var(--el-color-primary-light-8);
 }
 .rail-scope {
   margin-top: 22px;
