@@ -179,9 +179,23 @@
           {{ t('emails.syncNow') }}
         </el-button>
         <!-- Clears the unread marks of this view only — the button sits above
-             this list, so it does what this list shows. -->
-        <el-button v-if="isInboundView" :loading="markingAll" @click="markAllRead">
+             this list, so it does what this list shows.
+             Not in junk or the trash: nobody reads their spam folder to the
+             end, and what those two need is a way to be rid of it. -->
+        <el-button v-if="canMarkAllRead" :loading="markingAll" @click="markAllRead">
           {{ t('emails.markAllRead') }}
+        </el-button>
+        <!-- Junk out in one click — into the trash, not oblivion. The mail
+             worth finding in a spam folder is the customer enquiry the filter
+             got wrong, and that is noticed the next day. -->
+        <el-button
+          v-if="folder === 'junk' && total > 0"
+          type="danger"
+          plain
+          :loading="emptying"
+          @click="emptyJunk"
+        >
+          {{ t('emails.emptyJunk') }}
         </el-button>
         <el-button
           v-if="folder === 'trash' && total > 0"
@@ -730,6 +744,11 @@ const INBOUND_VIEWS: Record<string, string> = {
   trash: 'TRASH',
 }
 const isInboundView = computed(() => folder.value in INBOUND_VIEWS)
+// Junk and the trash get a delete-everything button instead: marking a spam
+// folder read is housekeeping nobody wants, and in the trash it is meaningless.
+const canMarkAllRead = computed(
+  () => isInboundView.value && folder.value !== 'junk' && folder.value !== 'trash',
+)
 const searchKey = computed(() => {
   if (folder.value === 'sent') return 'campaigns'
   if (isInboundView.value) return 'inbox'
@@ -1353,6 +1372,26 @@ async function emptyTrash() {
     const d = await post<{ deleted: number }>('/inbound-mails/empty-trash')
     ElMessage.success(t('emails.emptied', { n: d.deleted ?? 0 }))
     load()
+  } finally {
+    emptying.value = false
+  }
+}
+
+// Clears the junk folder into the trash. Same confirm shape as emptying the
+// trash — the number is in the question, because "3 封" and "300 封" are not
+// the same decision — but the outcome is recoverable, and the wording says so.
+async function emptyJunk() {
+  await ElMessageBox.confirm(
+    t('emails.emptyJunkHint', { n: total.value }),
+    t('emails.emptyJunk'),
+    { type: 'warning', confirmButtonText: t('emails.emptyJunk') },
+  )
+  emptying.value = true
+  try {
+    const d = await post<{ deleted: number }>('/inbound-mails/empty-junk')
+    ElMessage.success(t('emails.junkEmptied', { n: d.deleted ?? 0 }))
+    load()
+    refreshUnread()
   } finally {
     emptying.value = false
   }

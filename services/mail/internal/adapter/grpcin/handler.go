@@ -753,6 +753,15 @@ func (h *Handler) EmptyTrash(ctx context.Context, _ *mailv1.EmptyTrashRequest) (
 	return &mailv1.EmptyTrashResponse{Deleted: int32(n)}, nil
 }
 
+func (h *Handler) EmptyJunk(ctx context.Context, _ *mailv1.EmptyJunkRequest) (*mailv1.EmptyJunkResponse, error) {
+	op := operator(ctx)
+	n, err := h.svc.EmptyJunk(ctx, grpcx.TenantID(ctx), op.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.EmptyJunkResponse{Deleted: int32(n)}, nil
+}
+
 func (h *Handler) SyncMailbox(ctx context.Context, _ *mailv1.SyncMailboxRequest) (*mailv1.SyncMailboxResponse, error) {
 	op := operator(ctx)
 	n, err := h.svc.SyncNow(ctx, grpcx.TenantID(ctx), op.ID)

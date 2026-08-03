@@ -426,7 +426,14 @@ func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.C
 		}
 		// Restoring: it left the source folder when it was deleted, so it has
 		// to be found in the trash by Message-ID before it can come back.
-		return s.moveBack(ctx, acct, trash, home, row.MessageID)
+		if err := s.moveBack(ctx, acct, trash, home, row.MessageID); err != nil {
+			return err
+		}
+		// It is back where it belongs, under a new UID. Following it is not
+		// optional: the row still points at the number the mail had before it
+		// was deleted, and the next sync would see an unknown message in the
+		// folder and file the restored mail a second time.
+		return s.repoint(ctx, acct, row, home, row.Folder)
 
 	case flagArchive:
 		archive, err := s.specialFolderOf(ctx, acct, "archive")
@@ -445,7 +452,10 @@ func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.C
 		if row.Op == opAdd {
 			return s.mailbox.MoveMessages(ctx, acct, home, []uint32{uint32(row.ImapUid)}, archive)
 		}
-		return s.moveBack(ctx, acct, archive, home, row.MessageID)
+		if err := s.moveBack(ctx, acct, archive, home, row.MessageID); err != nil {
+			return err
+		}
+		return s.repoint(ctx, acct, row, home, row.Folder)
 
 	case flagNotJunk:
 		junk, err := s.specialFolderOf(ctx, acct, "junk")
@@ -459,7 +469,7 @@ func (s *Service) publishMove(ctx context.Context, acct MailAccount, row store.C
 		// not optional here: leave the row pointing at the old spam UID and
 		// the next sync sees an unknown message in the inbox and files it a
 		// second time.
-		return s.repoint(ctx, acct, row, "INBOX")
+		return s.repoint(ctx, acct, row, "INBOX", "INBOX")
 
 	case flagPurge:
 		// Deleted mail is in the trash by now, and that is where it has to be
@@ -552,19 +562,24 @@ func (s *Service) purgeStranded(ctx context.Context, acct MailAccount, home, tra
 
 // repoint updates our record of where a message lives after we moved it.
 //
+// Two folder names because the two vocabularies differ: hostFolder is where to
+// look for the message ([Gmail]/Spam), erpFolder is what to write on the row
+// (JUNK). Passing one for both is how a row ends up filed under a folder name
+// no query will ever match.
+//
 // Best effort: a failure here costs a duplicate row on the next sync, not the
 // move itself, and the move has already happened.
-func (s *Service) repoint(ctx context.Context, acct MailAccount, row store.ClaimFlagOpsRow, newFolder string) error {
-	uid, ok, err := s.mailbox.FindUIDByMessageID(ctx, acct, newFolder, row.MessageID)
+func (s *Service) repoint(ctx context.Context, acct MailAccount, row store.ClaimFlagOpsRow, hostFolder, erpFolder string) error {
+	uid, ok, err := s.mailbox.FindUIDByMessageID(ctx, acct, hostFolder, row.MessageID)
 	if err != nil || !ok {
 		s.log.Warn("moved a mail but could not find its new UID",
-			"account", acct.AccountID, "to", newFolder, "err", err)
+			"account", acct.AccountID, "to", hostFolder, "err", err)
 		return nil
 	}
 	if err := s.q.RepointInbound(ctx, store.RepointInboundParams{
 		TenantID: row.TenantID, AccountID: row.AccountID,
 		OldFolder: row.Folder, OldUid: row.ImapUid,
-		NewFolder: newFolder, NewUid: int64(uid),
+		NewFolder: erpFolder, NewUid: int64(uid),
 	}); err != nil {
 		s.log.Warn("could not repoint a moved mail", "id", row.ID, "err", err)
 	}

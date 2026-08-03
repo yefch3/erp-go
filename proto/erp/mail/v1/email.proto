@@ -126,6 +126,10 @@ service EmailService {
   // Permanent deletion of everything in the trash at once. Trash also clears
   // itself after thirty days; this is the same thing done deliberately.
   rpc EmptyTrash(EmptyTrashRequest) returns (EmptyTrashResponse);
+  // Clears the junk view into the trash. Not permanent deletion: the mail
+  // worth finding in a spam folder is the enquiry the filter got wrong, and
+  // that is noticed a day later, not now.
+  rpc EmptyJunk(EmptyJunkRequest) returns (EmptyJunkResponse);
   // Mail this mailbox sent — through any client, over whatever history the
   // backfill has reached. ERP sends live in ListMessages with per-recipient
   // status; these are plain copies from the host's own Sent folder.
@@ -247,6 +251,13 @@ message MarkViewReadResponse {
 message EmptyTrashRequest {}
 
 message EmptyTrashResponse {
+  int32 deleted = 1;
+}
+
+message EmptyJunkRequest {}
+
+message EmptyJunkResponse {
+  // How many went to the trash.
   int32 deleted = 1;
 }
 

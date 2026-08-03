@@ -749,3 +749,19 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND account_id = sqlc.arg(account_id)::bigint
   AND folder = sqlc.arg(folder)::text
   AND imap_uid = sqlc.arg(imap_uid)::bigint;
+
+-- name: TrashJunkView :many
+-- Empties the junk view into the trash in one go.
+--
+-- Scoped exactly like the junk list: a mail somebody has already rescued with
+-- 「这不是垃圾」 is not junk any more and must not be swept up with the rest.
+-- Every touched row comes back so the deletion can be carried to the host too,
+-- the same as deleting one by hand.
+UPDATE email_inbound
+SET deleted_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND owner_id = sqlc.arg(owner_id)::bigint
+  AND folder = 'JUNK'
+  AND NOT not_junk
+  AND deleted_at IS NULL
+RETURNING id, account_id, folder, imap_uid, message_id;

@@ -2307,6 +2307,62 @@ func (q *Queries) SetThreadFlags(ctx context.Context, arg SetThreadFlagsParams) 
 	return items, nil
 }
 
+const trashJunkView = `-- name: TrashJunkView :many
+UPDATE email_inbound
+SET deleted_at = now()
+WHERE tenant_id = $1::bigint
+  AND owner_id = $2::bigint
+  AND folder = 'JUNK'
+  AND NOT not_junk
+  AND deleted_at IS NULL
+RETURNING id, account_id, folder, imap_uid, message_id
+`
+
+type TrashJunkViewParams struct {
+	TenantID int64
+	OwnerID  int64
+}
+
+type TrashJunkViewRow struct {
+	ID        int64
+	AccountID int64
+	Folder    string
+	ImapUid   int64
+	MessageID string
+}
+
+// Empties the junk view into the trash in one go.
+//
+// Scoped exactly like the junk list: a mail somebody has already rescued with
+// 「这不是垃圾」 is not junk any more and must not be swept up with the rest.
+// Every touched row comes back so the deletion can be carried to the host too,
+// the same as deleting one by hand.
+func (q *Queries) TrashJunkView(ctx context.Context, arg TrashJunkViewParams) ([]TrashJunkViewRow, error) {
+	rows, err := q.db.Query(ctx, trashJunkView, arg.TenantID, arg.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TrashJunkViewRow
+	for rows.Next() {
+		var i TrashJunkViewRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.Folder,
+			&i.ImapUid,
+			&i.MessageID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertMailAccountShell = `-- name: UpsertMailAccountShell :one
 INSERT INTO mail_accounts (
     tenant_id, employee_id, email, username, secret_enc, key_version, updated_at

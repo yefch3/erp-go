@@ -581,6 +581,34 @@ const (
 	trashSweepPerPass = 200
 )
 
+// EmptyJunk moves everything in the junk view to the trash.
+//
+// Deliberately the trash and not oblivion. Gmail's "delete all spam now" is
+// permanent, but the mail worth finding in a spam folder is the customer
+// enquiry the filter got wrong, and that mistake is usually noticed a day
+// later. Thirty days in the trash is the difference between losing the order
+// and recovering it; anybody who really wants it gone empties the trash.
+//
+// Mails already rescued with 「这不是垃圾」 are left alone: they stopped being
+// junk the moment somebody said so.
+func (s *Service) EmptyJunk(ctx context.Context, tenantID, ownerID int64) (int, error) {
+	rows, err := s.q.TrashJunkView(ctx, store.TrashJunkViewParams{
+		TenantID: tenantID, OwnerID: ownerID,
+	})
+	if err != nil {
+		return 0, err
+	}
+	// Carried to the host as well, exactly like deleting one by hand — a spam
+	// folder emptied here and still full in Gmail would be a chore done twice.
+	for _, r := range rows {
+		s.queueFolderMove(ctx, tenantID, r.AccountID, ownerID, r.Folder, r.ImapUid, r.MessageID, flagTrash, true)
+	}
+	if len(rows) > 0 {
+		s.log.Info("junk emptied into the trash", "owner", ownerID, "count", len(rows))
+	}
+	return len(rows), nil
+}
+
 // EmptyTrash purges everything in one person's trash.
 //
 // The same permanent deletion as one mail at a time, applied to the lot: ERP
