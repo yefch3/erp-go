@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -162,6 +163,34 @@ func (f *IMAP) JunkFolder(ctx context.Context, acct app.MailAccount) (string, er
 		"找不到垃圾邮件文件夹")
 }
 
+// TrashFolder finds where the host keeps deleted mail. Every provider has
+// one — deletion has to put things somewhere before they are purged.
+func (f *IMAP) TrashFolder(ctx context.Context, acct app.MailAccount) (string, error) {
+	return f.specialFolder(acct, imap.TrashAttr,
+		[]string{"[Gmail]/Trash", "[Gmail]/&XfJT2ZZ8-", "Trash", "Deleted Items",
+			"Deleted Messages", "已删除邮件", "已删除", "废件箱"},
+		"找不到回收站文件夹")
+}
+
+// ArchiveFolder finds where archived mail goes, and returns "" when the host
+// has no such place.
+//
+// Not every provider has the concept. Gmail does — archiving there means
+// taking a message out of the inbox while it stays in All Mail, which is
+// exactly the \All folder. A plain IMAP host like 263 has no archive at all,
+// and inventing one by creating a folder in somebody's mailbox is not this
+// program's decision to make. An empty name is the honest answer: the caller
+// keeps the archive on the ERP side.
+func (f *IMAP) ArchiveFolder(ctx context.Context, acct app.MailAccount) (string, error) {
+	name, err := f.specialFolderOrEmpty(acct, imap.ArchiveAttr,
+		[]string{"Archive", "Archives", "归档"})
+	if err != nil || name != "" {
+		return name, err
+	}
+	// Gmail's archive is "not in the inbox but still in All Mail".
+	return f.specialFolderOrEmpty(acct, imap.AllAttr, []string{"[Gmail]/All Mail"})
+}
+
 // specialFolder locates a host's special-use folder.
 //
 // RFC 6154 gives folders attributes like \Sent and \Junk, and Gmail
@@ -203,6 +232,21 @@ func (f *IMAP) specialFolder(acct app.MailAccount, attr string, guesses []string
 		}
 	}
 	return "", fmt.Errorf("%s", missing)
+}
+
+// specialFolderOrEmpty is specialFolder for a folder that may legitimately
+// not exist. A missing folder comes back as "" with no error; a failure to
+// ask still comes back as an error, so "this host has none" and "we could
+// not reach the host" never get confused for one another.
+func (f *IMAP) specialFolderOrEmpty(acct app.MailAccount, attr string, guesses []string) (string, error) {
+	name, err := f.specialFolder(acct, attr, guesses, "")
+	if err != nil && name == "" && err.Error() == "" {
+		return "", nil
+	}
+	if err != nil && err.Error() == "" {
+		return "", nil
+	}
+	return name, err
 }
 
 // fetchUIDs downloads exactly these messages over an already-selected mailbox.
@@ -462,4 +506,117 @@ func (f *IMAP) FetchFlags(ctx context.Context, acct app.MailAccount, folder stri
 		return nil, fmt.Errorf("读取标记失败：%w", err)
 	}
 	return out, nil
+}
+
+// MoveMessages moves mail between folders on the host.
+//
+// go-imap falls back to COPY + \Deleted + EXPUNGE when the server has no MOVE
+// extension, so this works on a plain IMAP host as well as on Gmail.
+//
+// The UIDs change in the destination and the host does not reliably say what
+// they became, which is why nothing here tries to track them: anything that
+// needs to find a moved message afterwards looks it up by Message-ID.
+func (f *IMAP) MoveMessages(ctx context.Context, acct app.MailAccount, from string, uids []uint32, to string) error {
+	if len(uids) == 0 || to == "" {
+		return nil
+	}
+	c, err := f.dial(acct)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = c.Logout() }()
+	if err := f.login(c, acct); err != nil {
+		return err
+	}
+	if _, err := c.Select(from, false); err != nil {
+		return fmt.Errorf("打开 %s 失败：%w", from, err)
+	}
+	set := new(imap.SeqSet)
+	for _, u := range uids {
+		set.AddNum(u)
+	}
+	if err := c.UidMove(set, to); err != nil {
+		return fmt.Errorf("移动到 %s 失败：%w", to, err)
+	}
+	return nil
+}
+
+// FindUIDByMessageID locates one message in a folder by its Message-ID.
+//
+// The way to follow a message that has moved. A UID means nothing outside the
+// folder it came from, but the Message-ID is the sender's own identifier and
+// travels with the message wherever the host files it.
+func (f *IMAP) FindUIDByMessageID(ctx context.Context, acct app.MailAccount, folder, messageID string) (uint32, bool, error) {
+	if messageID == "" || folder == "" {
+		return 0, false, nil
+	}
+	c, err := f.dial(acct)
+	if err != nil {
+		return 0, false, err
+	}
+	defer func() { _ = c.Logout() }()
+	if err := f.login(c, acct); err != nil {
+		return 0, false, err
+	}
+	if _, err := c.Select(folder, true); err != nil {
+		return 0, false, fmt.Errorf("打开 %s 失败：%w", folder, err)
+	}
+
+	crit := imap.NewSearchCriteria()
+	// Angle brackets restored: they are part of the header value, and a
+	// server matching literally will not find the message without them.
+	crit.Header.Add("Message-Id", asAngled(messageID))
+	uids, err := c.UidSearch(crit)
+	if err != nil {
+		return 0, false, fmt.Errorf("在 %s 中查找失败：%w", folder, err)
+	}
+	if len(uids) == 0 {
+		return 0, false, nil
+	}
+	// Newest match: a message can legitimately appear twice in a folder
+	// after a failed move was retried.
+	return uids[len(uids)-1], true, nil
+}
+
+// PurgeMessages deletes mail from the host for good.
+//
+// \Deleted then EXPUNGE, which is IMAP's only permanent deletion. There is no
+// undo on the other side of this call — the safety net is that the ERP only
+// ever asks for it about mail already sitting in its own trash, after the
+// person confirmed.
+func (f *IMAP) PurgeMessages(ctx context.Context, acct app.MailAccount, folder string, uids []uint32) error {
+	if len(uids) == 0 {
+		return nil
+	}
+	c, err := f.dial(acct)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = c.Logout() }()
+	if err := f.login(c, acct); err != nil {
+		return err
+	}
+	if _, err := c.Select(folder, false); err != nil {
+		return fmt.Errorf("打开 %s 失败：%w", folder, err)
+	}
+	set := new(imap.SeqSet)
+	for _, u := range uids {
+		set.AddNum(u)
+	}
+	item := imap.FormatFlagsOp(imap.FlagsOp(imap.AddFlags), true)
+	if err := c.UidStore(set, item, []interface{}{imap.DeletedFlag}, nil); err != nil {
+		return fmt.Errorf("标记删除失败：%w", err)
+	}
+	if err := c.Expunge(nil); err != nil {
+		return fmt.Errorf("清除失败：%w", err)
+	}
+	return nil
+}
+
+// asAngled restores the angle brackets stripped when the id was parsed.
+func asAngled(id string) string {
+	if id == "" || strings.HasPrefix(id, "<") {
+		return id
+	}
+	return "<" + id + ">"
 }

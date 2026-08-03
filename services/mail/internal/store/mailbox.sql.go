@@ -37,7 +37,7 @@ func (q *Queries) BumpSendCounter(ctx context.Context, arg BumpSendCounterParams
 }
 
 const claimFlagOps = `-- name: ClaimFlagOps :many
-SELECT id, account_id, employee_id, folder, imap_uid, flag, op, attempts
+SELECT id, account_id, employee_id, folder, imap_uid, flag, op, message_id, attempts
 FROM mail_flag_ops
 WHERE tenant_id = $1::bigint
   AND next_try_at <= now()
@@ -59,6 +59,7 @@ type ClaimFlagOpsRow struct {
 	ImapUid    int64
 	Flag       string
 	Op         string
+	MessageID  string
 	Attempts   int32
 }
 
@@ -82,6 +83,7 @@ func (q *Queries) ClaimFlagOps(ctx context.Context, arg ClaimFlagOpsParams) ([]C
 			&i.ImapUid,
 			&i.Flag,
 			&i.Op,
+			&i.MessageID,
 			&i.Attempts,
 		); err != nil {
 			return nil, err
@@ -333,15 +335,16 @@ func (q *Queries) DeleteSyncStateForAccount(ctx context.Context, arg DeleteSyncS
 }
 
 const enqueueFlagOp = `-- name: EnqueueFlagOp :exec
-INSERT INTO mail_flag_ops (tenant_id, account_id, employee_id, folder, imap_uid, flag, op)
+INSERT INTO mail_flag_ops (tenant_id, account_id, employee_id, folder, imap_uid, flag, op, message_id)
 VALUES (
     $1::bigint, $2::bigint,
     $3::bigint,
     $4::text, $5::bigint,
-    $6::text, $7::text
+    $6::text, $7::text, $8::text
 )
 ON CONFLICT (tenant_id, account_id, folder, imap_uid, flag) DO UPDATE SET
     op = excluded.op,
+    message_id = excluded.message_id,
     attempts = 0,
     last_error = '',
     next_try_at = now()
@@ -355,6 +358,7 @@ type EnqueueFlagOpParams struct {
 	ImapUid    int64
 	Flag       string
 	Op         string
+	MessageID  string
 }
 
 // The intent to publish one flag change. Conflicting intents collapse: the
@@ -368,6 +372,7 @@ func (q *Queries) EnqueueFlagOp(ctx context.Context, arg EnqueueFlagOpParams) er
 		arg.ImapUid,
 		arg.Flag,
 		arg.Op,
+		arg.MessageID,
 	)
 	return err
 }
@@ -545,7 +550,7 @@ func (q *Queries) GetInboundForCompose(ctx context.Context, arg GetInboundForCom
 }
 
 const getInboundForPurge = `-- name: GetInboundForPurge :one
-SELECT id, raw_key
+SELECT id, raw_key, account_id, folder, imap_uid, message_id
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
@@ -560,8 +565,12 @@ type GetInboundForPurgeParams struct {
 }
 
 type GetInboundForPurgeRow struct {
-	ID     int64
-	RawKey string
+	ID        int64
+	RawKey    string
+	AccountID int64
+	Folder    string
+	ImapUid   int64
+	MessageID string
 }
 
 // Only a mail already in the trash qualifies: permanent deletion is a second
@@ -569,7 +578,14 @@ type GetInboundForPurgeRow struct {
 func (q *Queries) GetInboundForPurge(ctx context.Context, arg GetInboundForPurgeParams) (GetInboundForPurgeRow, error) {
 	row := q.db.QueryRow(ctx, getInboundForPurge, arg.TenantID, arg.OwnerID, arg.ID)
 	var i GetInboundForPurgeRow
-	err := row.Scan(&i.ID, &i.RawKey)
+	err := row.Scan(
+		&i.ID,
+		&i.RawKey,
+		&i.AccountID,
+		&i.Folder,
+		&i.ImapUid,
+		&i.MessageID,
+	)
 	return i, err
 }
 
@@ -1442,7 +1458,7 @@ func (q *Queries) ListThread(ctx context.Context, arg ListThreadParams) ([]ListT
 }
 
 const listThreadForPurge = `-- name: ListThreadForPurge :many
-SELECT id, raw_key
+SELECT id, raw_key, account_id, folder, imap_uid, message_id
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
@@ -1459,8 +1475,12 @@ type ListThreadForPurgeParams struct {
 }
 
 type ListThreadForPurgeRow struct {
-	ID     int64
-	RawKey string
+	ID        int64
+	RawKey    string
+	AccountID int64
+	Folder    string
+	ImapUid   int64
+	MessageID string
 }
 
 // Every trashed message of one conversation. Permanent deletion follows the
@@ -1476,7 +1496,14 @@ func (q *Queries) ListThreadForPurge(ctx context.Context, arg ListThreadForPurge
 	var items []ListThreadForPurgeRow
 	for rows.Next() {
 		var i ListThreadForPurgeRow
-		if err := rows.Scan(&i.ID, &i.RawKey); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.RawKey,
+			&i.AccountID,
+			&i.Folder,
+			&i.ImapUid,
+			&i.MessageID,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1716,7 +1743,7 @@ SET is_read    = coalesce($1::boolean, is_read),
 WHERE tenant_id = $6::bigint
   AND owner_id = $7::bigint
   AND id = $8::bigint
-RETURNING account_id, folder, imap_uid, is_read, is_starred
+RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archived_at, deleted_at
 `
 
 type SetInboundFlagsParams struct {
@@ -1731,11 +1758,14 @@ type SetInboundFlagsParams struct {
 }
 
 type SetInboundFlagsRow struct {
-	AccountID int64
-	Folder    string
-	ImapUid   int64
-	IsRead    bool
-	IsStarred bool
+	AccountID  int64
+	Folder     string
+	ImapUid    int64
+	IsRead     bool
+	IsStarred  bool
+	MessageID  string
+	ArchivedAt pgtype.Timestamptz
+	DeletedAt  pgtype.Timestamptz
 }
 
 // One statement for all four flags; an absent argument leaves that flag
@@ -1765,6 +1795,9 @@ func (q *Queries) SetInboundFlags(ctx context.Context, arg SetInboundFlagsParams
 			&i.ImapUid,
 			&i.IsRead,
 			&i.IsStarred,
+			&i.MessageID,
+			&i.ArchivedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1939,7 +1972,7 @@ WHERE tenant_id = $6::bigint
   AND owner_id = $7::bigint
   AND thread_key = $8::text
   AND thread_key <> ''
-RETURNING account_id, folder, imap_uid, is_read, is_starred
+RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archived_at, deleted_at
 `
 
 type SetThreadFlagsParams struct {
@@ -1954,11 +1987,14 @@ type SetThreadFlagsParams struct {
 }
 
 type SetThreadFlagsRow struct {
-	AccountID int64
-	Folder    string
-	ImapUid   int64
-	IsRead    bool
-	IsStarred bool
+	AccountID  int64
+	Folder     string
+	ImapUid    int64
+	IsRead     bool
+	IsStarred  bool
+	MessageID  string
+	ArchivedAt pgtype.Timestamptz
+	DeletedAt  pgtype.Timestamptz
 }
 
 // Housekeeping applied to a whole conversation. Archiving from a page that
@@ -1990,6 +2026,9 @@ func (q *Queries) SetThreadFlags(ctx context.Context, arg SetThreadFlagsParams) 
 			&i.ImapUid,
 			&i.IsRead,
 			&i.IsStarred,
+			&i.MessageID,
+			&i.ArchivedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}

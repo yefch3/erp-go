@@ -299,7 +299,9 @@ func (s *Service) MarkInbound(ctx context.Context, tenantID, ownerID, id int64, 
 			if err != nil {
 				return err
 			}
-			publishFlags(ctx, s, tenantID, ownerID, touchedThread(touched), read != nil, starred != nil)
+			rows := touchedThread(touched)
+			publishFlags(ctx, s, tenantID, ownerID, rows, read != nil, starred != nil)
+			publishMoves(ctx, s, tenantID, ownerID, rows, archived != nil, deleted != nil)
 			return nil
 		}
 	}
@@ -311,20 +313,25 @@ func (s *Service) MarkInbound(ctx context.Context, tenantID, ownerID, id int64, 
 	if err != nil {
 		return err
 	}
-	// Read state and the star belong to the mailbox, not to the ERP's copy of
-	// it, so both go up to the host. Archive and trash stay local for now:
-	// they mean something different here than any IMAP folder does.
-	publishFlags(ctx, s, tenantID, ownerID, touchedSingle(touched), read != nil, starred != nil)
+	// All four go up to the host now. Read and star are flags; archive and
+	// trash are moves between folders, and a host without an archive folder
+	// simply keeps its mail where it is — see publishMove.
+	rows := touchedSingle(touched)
+	publishFlags(ctx, s, tenantID, ownerID, rows, read != nil, starred != nil)
+	publishMoves(ctx, s, tenantID, ownerID, rows, archived != nil, deleted != nil)
 	return nil
 }
 
-// touchedRow is what a flag update reports back about one message.
+// touchedRow is what a housekeeping update reports back about one message.
 type touchedRow struct {
 	accountID int64
 	folder    string
 	uid       int64
+	messageID string
 	read      bool
 	starred   bool
+	archived  bool
+	deleted   bool
 }
 
 func touchedSingle(rows []store.SetInboundFlagsRow) []touchedRow {
@@ -332,7 +339,8 @@ func touchedSingle(rows []store.SetInboundFlagsRow) []touchedRow {
 	for _, r := range rows {
 		out = append(out, touchedRow{
 			accountID: r.AccountID, folder: r.Folder, uid: r.ImapUid,
-			read: r.IsRead, starred: r.IsStarred,
+			messageID: r.MessageID, read: r.IsRead, starred: r.IsStarred,
+			archived: r.ArchivedAt.Valid, deleted: r.DeletedAt.Valid,
 		})
 	}
 	return out
@@ -343,7 +351,8 @@ func touchedThread(rows []store.SetThreadFlagsRow) []touchedRow {
 	for _, r := range rows {
 		out = append(out, touchedRow{
 			accountID: r.AccountID, folder: r.Folder, uid: r.ImapUid,
-			read: r.IsRead, starred: r.IsStarred,
+			messageID: r.MessageID, read: r.IsRead, starred: r.IsStarred,
+			archived: r.ArchivedAt.Valid, deleted: r.DeletedAt.Valid,
 		})
 	}
 	return out
@@ -360,6 +369,20 @@ func publishFlags(ctx context.Context, s *Service, tenantID, ownerID int64, rows
 		}
 		if didStar {
 			s.queueFlagWrite(ctx, tenantID, r.accountID, ownerID, r.folder, r.uid, flagFlagged, r.starred)
+		}
+	}
+}
+
+// publishMoves carries deletion and archiving up to the host. Separate from
+// the flags because these move the message rather than label it, and because
+// only the ones this call actually decided should travel.
+func publishMoves(ctx context.Context, s *Service, tenantID, ownerID int64, rows []touchedRow, didArchive, didDelete bool) {
+	for _, r := range rows {
+		if didDelete {
+			s.queueFolderMove(ctx, tenantID, r.accountID, ownerID, r.folder, r.uid, r.messageID, flagTrash, r.deleted)
+		}
+		if didArchive {
+			s.queueFolderMove(ctx, tenantID, r.accountID, ownerID, r.folder, r.uid, r.messageID, flagArchive, r.archived)
 		}
 	}
 }
@@ -407,10 +430,17 @@ func (s *Service) PurgeInbound(ctx context.Context, tenantID, ownerID, id int64,
 	}
 
 	type target struct {
-		id     int64
-		rawKey string
+		id        int64
+		rawKey    string
+		accountID int64
+		folder    string
+		uid       int64
+		messageID string
 	}
-	targets := []target{{id: row.ID, rawKey: row.RawKey}}
+	targets := []target{{
+		id: row.ID, rawKey: row.RawKey, accountID: row.AccountID,
+		folder: row.Folder, uid: row.ImapUid, messageID: row.MessageID,
+	}}
 	if wholeThread {
 		full, err := s.q.GetInbound(ctx, store.GetInboundParams{TenantID: tenantID, ID: id})
 		if err == nil && full.OwnerID == ownerID && full.ThreadKey != "" {
@@ -422,12 +452,20 @@ func (s *Service) PurgeInbound(ctx context.Context, tenantID, ownerID, id int64,
 			}
 			targets = targets[:0]
 			for _, r := range rows {
-				targets = append(targets, target{id: r.ID, rawKey: r.RawKey})
+				targets = append(targets, target{
+					id: r.ID, rawKey: r.RawKey, accountID: r.AccountID,
+					folder: r.Folder, uid: r.ImapUid, messageID: r.MessageID,
+				})
 			}
 		}
 	}
 
 	for _, tg := range targets {
+		// Queued before the row goes: the queue row needs the Message-ID, and
+		// after the delete there is nowhere left to read it from. Ordered this
+		// way, the worst case is an op for a mail the ERP has already
+		// forgotten — which still deletes the right message on the host.
+		s.queueFolderMove(ctx, tenantID, tg.accountID, ownerID, tg.folder, tg.uid, tg.messageID, flagPurge, true)
 		if err := s.purgeOne(ctx, tenantID, ownerID, tg.id, tg.rawKey); err != nil {
 			return err
 		}

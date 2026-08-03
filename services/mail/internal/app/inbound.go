@@ -46,9 +46,20 @@ type Mailbox interface {
 	// VerifyLogin authenticates and disconnects: it proves the credentials
 	// work today, and nothing else.
 	VerifyLogin(ctx context.Context, acct MailAccount) error
-	// SetFlags publishes a flag change to the host. The one call in this
-	// interface that writes to the real mailbox.
+	// SetFlags publishes a flag change to the host.
 	SetFlags(ctx context.Context, acct MailAccount, folder string, uids []uint32, flag string, add bool) error
+	// TrashFolder names the folder deleted mail goes to.
+	TrashFolder(ctx context.Context, acct MailAccount) (string, error)
+	// ArchiveFolder names where archived mail goes, or "" when this host has
+	// no such place — a plain IMAP server has no archive concept at all.
+	ArchiveFolder(ctx context.Context, acct MailAccount) (string, error)
+	// MoveMessages moves mail between folders on the host.
+	MoveMessages(ctx context.Context, acct MailAccount, from string, uids []uint32, to string) error
+	// FindUIDByMessageID follows a message that has moved: its UID changed,
+	// its Message-ID did not.
+	FindUIDByMessageID(ctx context.Context, acct MailAccount, folder, messageID string) (uint32, bool, error)
+	// PurgeMessages deletes mail from the host for good.
+	PurgeMessages(ctx context.Context, acct MailAccount, folder string, uids []uint32) error
 	// FetchFlags reads back what the host believes, so somebody else's
 	// changes reach the ERP too.
 	FetchFlags(ctx context.Context, acct MailAccount, folder string, uids []uint32) (map[uint32]MessageFlags, error)
