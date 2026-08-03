@@ -82,26 +82,26 @@ func (h *Handler) GetCampaign(ctx context.Context, req *mailv1.GetCampaignReques
 	if err != nil {
 		return nil, err
 	}
-	files, err := h.svc.ListAttachments(ctx, grpcx.TenantID(ctx), c.ID)
+	files, err := h.svc.SignedAttachments(ctx, grpcx.TenantID(ctx), c.ID)
 	if err != nil {
 		return nil, err
 	}
 	return &mailv1.GetCampaignResponse{Campaign: &mailv1.CampaignDetail{
 		Id: c.ID, CampaignNo: c.CampaignNo, SubjectTpl: c.SubjectTpl, BodyTpl: c.BodyTpl,
 		BodyTextTpl: c.BodyTextTpl, BodyFormat: c.BodyFormat,
-		Attachments: attachmentsToProto(files),
+		Attachments: signedAttachmentsToProto(files),
 		SignatureId: c.SignatureID, Kind: c.Kind, SenderId: c.SenderID,
 		SenderName: c.SenderName, SenderEmail: c.SenderEmail, Status: c.Status,
 		CreatedAt: ts(c.CreatedAt), FinishedAt: ts(c.FinishedAt),
 	}}, nil
 }
 
-func attachmentsToProto(in []store.ListAttachmentsRow) []*mailv1.EmailAttachment {
+func signedAttachmentsToProto(in []app.Attachment) []*mailv1.EmailAttachment {
 	out := make([]*mailv1.EmailAttachment, 0, len(in))
 	for _, a := range in {
 		out = append(out, &mailv1.EmailAttachment{
 			Id: a.ID, FileName: a.FileName, FileSize: a.FileSize,
-			ContentType: a.ContentType, UploadedAt: ts(a.UploadedAt),
+			ContentType: a.ContentType, DownloadUrl: a.DownloadURL,
 		})
 	}
 	return out
@@ -220,9 +220,9 @@ func (h *Handler) GetMessage(ctx context.Context, req *mailv1.GetMessageRequest)
 	m := v.Message
 	// The files are the campaign's, so a message that was not part of one
 	// simply has none.
-	var files []store.ListAttachmentsRow
+	var files []app.Attachment
 	if m.CampaignID != 0 {
-		if files, err = h.svc.ListAttachments(ctx, grpcx.TenantID(ctx), m.CampaignID); err != nil {
+		if files, err = h.svc.SignedAttachments(ctx, grpcx.TenantID(ctx), m.CampaignID); err != nil {
 			return nil, err
 		}
 	}
@@ -232,7 +232,7 @@ func (h *Handler) GetMessage(ctx context.Context, req *mailv1.GetMessageRequest)
 		ToEmail: m.ToEmail, ToName: m.ToName, CustomerName: m.CustomerName,
 		ContactId: m.ContactID, Subject: m.Subject, Body: m.Body,
 		BodyText: m.BodyText, BodyFormat: m.BodyFormat,
-		Attachments: attachmentsToProto(files),
+		Attachments: signedAttachmentsToProto(files),
 		Status:      m.Status, AttemptCount: m.AttemptCount, ProviderId: m.ProviderID,
 		LastError: m.LastError, AttentionReason: m.AttentionReason,
 		QueuedAt: ts(m.QueuedAt), SentAt: ts(m.SentAt),
@@ -341,7 +341,7 @@ func (h *Handler) RemoveSuppression(ctx context.Context, req *mailv1.RemoveSuppr
 // ------------------------------------------------------ attachments & images
 
 func (h *Handler) ListAttachments(ctx context.Context, req *mailv1.ListAttachmentsRequest) (*mailv1.ListAttachmentsResponse, error) {
-	rows, err := h.svc.ListAttachments(ctx, grpcx.TenantID(ctx), req.GetCampaignId())
+	rows, err := h.svc.SignedAttachments(ctx, grpcx.TenantID(ctx), req.GetCampaignId())
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +350,7 @@ func (h *Handler) ListAttachments(ctx context.Context, req *mailv1.ListAttachmen
 		total += a.FileSize
 	}
 	return &mailv1.ListAttachmentsResponse{
-		Attachments: attachmentsToProto(rows), TotalBytes: total,
+		Attachments: signedAttachmentsToProto(rows), TotalBytes: total,
 	}, nil
 }
 
@@ -663,7 +663,8 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 	}
 	for _, a := range v.Attachments {
 		m.Attachments = append(m.Attachments, &mailv1.InboundAttachment{
-			Id: a.ID, FileName: a.FileName, ContentType: a.ContentType, FileSize: a.FileSize,
+			Id: a.ID, FileName: a.FileName, ContentType: a.ContentType,
+			FileSize: a.FileSize, DownloadUrl: a.DownloadURL,
 		})
 	}
 	return m

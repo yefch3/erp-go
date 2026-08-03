@@ -223,6 +223,9 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 				FileSize: a.FileSize, FileKey: a.FileKey,
 			})
 		}
+		// Signed here rather than at ingest: a URL minted when the mail
+		// arrived would have expired long before anybody opened it.
+		v.Attachments = s.signDownloads(ctx, v.Attachments)
 	}
 	return v, nil
 }

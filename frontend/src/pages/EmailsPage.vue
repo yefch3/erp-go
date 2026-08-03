@@ -160,10 +160,26 @@
         <template v-if="openedInbound.attachments?.length">
           <el-divider />
           <h4 class="side-title">{{ t('emails.attachments') }}</h4>
-          <div class="chips">
-            <el-tag v-for="a in openedInbound.attachments" :key="a.id" type="info">
-              {{ a.fileName }} · {{ humanSize(Number(a.fileSize)) }}
-            </el-tag>
+          <!-- Links, not labels. Until now these were plain tags: the file was
+               listed, stored, and impossible to get back out. The href is a
+               signed, time-limited URL straight to storage, so the bytes never
+               pass through the gateway. -->
+          <div class="files">
+            <a
+              v-for="a in openedInbound.attachments"
+              :key="a.id"
+              class="file"
+              :class="{ dead: !a.downloadUrl }"
+              :href="a.downloadUrl || undefined"
+              :download="a.fileName"
+              :title="a.downloadUrl ? t('emails.downloadFile', { f: a.fileName }) : t('emails.fileGone')"
+              target="_blank"
+              rel="noopener"
+            >
+              <el-icon><Paperclip /></el-icon>
+              <span class="fname ellipsis">{{ a.fileName }}</span>
+              <span class="sub">{{ humanSize(Number(a.fileSize)) }}</span>
+            </a>
           </div>
         </template>
       </template>
@@ -623,6 +639,7 @@ import MailList from '../components/MailList.vue'
 import {
   Box,
   CircleClose,
+  Paperclip,
   Clock,
   Delete,
   EditPen,
@@ -694,7 +711,14 @@ interface InboundMail {
   sentAt: string
   bodyHtml?: string
   bodyText?: string
-  attachments?: { id: string; fileName: string; contentType: string; fileSize: string }[]
+  attachments?: {
+    id: string
+    fileName: string
+    contentType: string
+    fileSize: string
+    // Signed and short-lived; empty when the bytes were never stored.
+    downloadUrl?: string
+  }[]
 }
 
 interface Suppression {
@@ -1972,6 +1996,44 @@ async function doUnsuppress(row: Suppression) {
 .star:hover {
   color: var(--el-color-warning);
 }
+/* An attachment reads as a thing you can pick up: a bordered card with the
+   file's name and weight, not a coloured word. */
+.files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.file {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 320px;
+  padding: 6px 12px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--mail-radius);
+  color: var(--el-text-color-regular);
+  text-decoration: none;
+  transition: background var(--mail-fast) var(--mail-ease),
+    border-color var(--mail-fast) var(--mail-ease);
+}
+.file:hover {
+  background: var(--mail-hover);
+  border-color: var(--el-color-primary);
+}
+.file:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+/* A file whose bytes are gone still gets a row — "there was a file called
+   this" is worth knowing — but it must not look clickable. */
+.file.dead {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.file .fname {
+  min-width: 0;
+}
+
 .in-html {
   line-height: 1.6;
   word-break: break-word;

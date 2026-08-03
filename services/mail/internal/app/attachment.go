@@ -25,6 +25,10 @@ const (
 // through a presigned URL, so they never occupy the gateway.
 type Files interface {
 	PresignPut(ctx context.Context, key string) (string, int32, error)
+	// PresignGet is the read side, with the name the browser should save the
+	// file under: object keys are random, so without it a customer's quotation
+	// downloads as a hex string with an extension.
+	PresignGet(ctx context.Context, key, saveAs string) (string, error)
 	// Stat reads what is actually stored. The size a client reports after
 	// uploading is a claim; without this the caps would be advisory only.
 	Stat(ctx context.Context, key string) (int64, string, error)
@@ -44,6 +48,34 @@ type Attachment struct {
 	FileKey     string
 	FileSize    int64
 	ContentType string
+	// Short-lived, signed, and carrying the original file name. Empty when
+	// storage is unreachable or the file was never stored — the caller shows
+	// the attachment either way, because "there was a file called this" is
+	// still true and worth knowing.
+	DownloadURL string
+}
+
+// signDownloads fills in the download URL for each attachment.
+//
+// Best effort per file: one unreachable object must not cost the caller the
+// whole list, so a failure leaves that URL empty and the rest usable.
+func (s *Service) signDownloads(ctx context.Context, atts []Attachment) []Attachment {
+	if s.files == nil {
+		return atts
+	}
+	for i, a := range atts {
+		if a.FileKey == "" {
+			continue
+		}
+		url, err := s.files.PresignGet(ctx, a.FileKey, a.FileName)
+		if err != nil {
+			s.log.Warn("could not sign an attachment download",
+				"file", a.FileName, "err", err)
+			continue
+		}
+		atts[i].DownloadURL = url
+	}
+	return atts
 }
 
 // PresignAttachment issues a short-lived upload URL for a file to be sent
@@ -142,6 +174,24 @@ func (s *Service) ListAttachments(ctx context.Context, tenantID, campaignID int6
 	return s.q.ListAttachments(ctx, store.ListAttachmentsParams{
 		TenantID: tenantID, CampaignID: campaignID,
 	})
+}
+
+// SignedAttachments is ListAttachments with download URLs, for the sent-mail
+// view: a file somebody attached last week is exactly the file they come back
+// looking for.
+func (s *Service) SignedAttachments(ctx context.Context, tenantID, campaignID int64) ([]Attachment, error) {
+	rows, err := s.ListAttachments(ctx, tenantID, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Attachment, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Attachment{
+			ID: r.ID, FileName: r.FileName, FileKey: r.FileKey,
+			FileSize: r.FileSize, ContentType: r.ContentType,
+		})
+	}
+	return s.signDownloads(ctx, out), nil
 }
 
 // ---------------------------------------------------------------- images

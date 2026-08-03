@@ -940,6 +940,8 @@ export default {
     unstar: 'Unstar',
     markUnread: 'Mark unread',
     markRead: 'Mark read',
+    downloadFile: 'Download {f}',
+    fileGone: 'No copy of this attachment was kept, so it cannot be downloaded',
     unreadOne: 'Unread',
     archive: 'Archive',
     unarchive: 'Move to inbox',
