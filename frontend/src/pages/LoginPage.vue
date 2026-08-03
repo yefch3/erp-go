@@ -24,7 +24,7 @@
 
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/auth'
 import LangSwitcher from '../components/LangSwitcher.vue'
@@ -32,15 +32,25 @@ import LangSwitcher from '../components/LangSwitcher.vue'
 const { t } = useI18n()
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const form = reactive({ username: '', password: '' })
+
+// Back to the page the session died on, when there is one. A relative path
+// only: ?redirect= comes from the address bar, and following an absolute URL
+// out of it would make this form an open redirect.
+function landing() {
+  const to = route.query.redirect
+  if (typeof to !== 'string' || !to.startsWith('/') || to.startsWith('//')) return '/'
+  return to
+}
 
 async function submit() {
   if (!form.username || !form.password) return
   loading.value = true
   try {
     await auth.login(form.username, form.password)
-    router.push('/')
+    router.push(landing())
   } finally {
     loading.value = false
   }

@@ -208,13 +208,24 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- The view decides which slice of the mailbox this is: the inbox proper
 -- (not archived, not trashed), starred (wherever it lives, except trash),
 -- the archive, or the trash.
+--
+-- Every view but the trash is scoped to the inbox — junk is its own place and
+-- only rejoins the mailbox once somebody rescues it. The trash is the one
+-- exception, and has to be: mail deleted out of the junk folder is still
+-- deleted mail. Scoping the trash the same way as the rest left it invisible
+-- — soft-deleted in the database, absent from every screen, and plainly
+-- sitting in the host's own trash, which reads as the ERP having lost it.
+-- Emptying the trash purged those rows regardless, so the count above the
+-- list and the number the button deleted disagreed.
 SELECT id, from_email, from_name, subject, snippet, thread_key,
        is_read, is_starred, has_attachments, received_at, sent_at
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
-  AND CASE WHEN sqlc.arg(view)::text = 'JUNK'
-        THEN folder = 'JUNK' AND NOT not_junk
+  AND CASE sqlc.arg(view)::text
+        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
+        -- The trash holds mail deleted from anywhere, junk included.
+        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
         ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
       END
   AND NOT is_bounce
@@ -236,8 +247,10 @@ LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
-  AND CASE WHEN sqlc.arg(view)::text = 'JUNK'
-        THEN folder = 'JUNK' AND NOT not_junk
+  AND CASE sqlc.arg(view)::text
+        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
+        -- The trash holds mail deleted from anywhere, junk included.
+        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
         ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
       END
   AND NOT is_bounce
@@ -273,8 +286,10 @@ WITH visible AS (
     FROM email_inbound
     WHERE tenant_id = sqlc.arg(tenant_id)::bigint
       AND owner_id = sqlc.arg(owner_id)::bigint
-      AND CASE WHEN sqlc.arg(view)::text = 'JUNK'
-            THEN folder = 'JUNK' AND NOT not_junk
+      AND CASE sqlc.arg(view)::text
+            WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
+            -- The trash holds mail deleted from anywhere, junk included.
+            WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
             ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
           END
       AND NOT is_bounce
@@ -329,8 +344,10 @@ SELECT count(DISTINCT coalesce(nullif(thread_key, ''), 'm:' || id::text))::bigin
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
-  AND CASE WHEN sqlc.arg(view)::text = 'JUNK'
-        THEN folder = 'JUNK' AND NOT not_junk
+  AND CASE sqlc.arg(view)::text
+        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
+        -- The trash holds mail deleted from anywhere, junk included.
+        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
         ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
       END
   AND NOT is_bounce
@@ -359,8 +376,10 @@ SET is_read = TRUE
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND NOT is_read
-  AND CASE WHEN sqlc.arg(view)::text = 'JUNK'
-        THEN folder = 'JUNK' AND NOT not_junk
+  AND CASE sqlc.arg(view)::text
+        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
+        -- The trash holds mail deleted from anywhere, junk included.
+        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
         ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
       END
   AND NOT is_bounce
@@ -664,15 +683,10 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 ORDER BY imap_uid DESC
 LIMIT sqlc.arg(row_limit)::int;
 
--- name: SetInboundStarredByUID :exec
--- The host's star, taken as truth. Same rules as the read state: only after
--- the queue for this account is empty.
-UPDATE email_inbound
-SET is_starred = sqlc.arg(is_starred)::boolean
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint
-  AND account_id = sqlc.arg(account_id)::bigint
-  AND folder = sqlc.arg(folder)::text
-  AND imap_uid = sqlc.arg(imap_uid)::bigint;
+-- Stars used to be taken one UID at a time here, alongside the read state.
+-- SyncStarredFromHost replaced that: the host can name every starred message
+-- in a folder in one search, so there is nothing left for a per-message
+-- version to do.
 
 -- name: SetInboundReadByUID :exec
 -- Server state winning over ours, for one message. Used only by the
@@ -730,6 +744,32 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND folder = sqlc.arg(folder)::text
 ORDER BY imap_uid DESC
 LIMIT sqlc.arg(row_limit)::int;
+
+-- name: SyncStarredFromHost :execrows
+-- Makes the ERP's stars agree with the host's, over the whole folder at once.
+--
+-- Stars used to ride along with the read-state reconcile, which fetches flags
+-- for the newest 200 UIDs. That window is a few days of a busy mailbox, so a
+-- star put on anything older in Gmail simply never arrived — the symptom was
+-- a mailbox full of stars showing exactly one in the ERP.
+--
+-- A single UID SEARCH FLAGGED answers the question for the entire folder in
+-- one round trip, which is why this can be a plain assignment rather than a
+-- per-message comparison: starred is "in the set the host just named".
+--
+-- Rescued junk is left alone. Those rows still carry their old JUNK folder and
+-- UID while the message itself has moved to the host's inbox, so the search
+-- would not name them and this would quietly unstar them.
+--
+-- The final predicate keeps the update to rows that actually change, so a
+-- mailbox with no star activity costs nothing every two minutes.
+UPDATE email_inbound
+SET is_starred = (imap_uid = ANY(sqlc.arg(starred_uids)::bigint[]))
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder = sqlc.arg(folder)::text
+  AND NOT not_junk
+  AND is_starred <> (imap_uid = ANY(sqlc.arg(starred_uids)::bigint[]));
 
 -- name: MirrorHostDelete :exec
 -- Somebody deleted this mail elsewhere. Mirrored as a soft delete, never a

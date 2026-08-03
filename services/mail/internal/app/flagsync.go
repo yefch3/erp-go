@@ -222,6 +222,13 @@ func (s *Service) ReconcileFlags(ctx context.Context, tenantID int64, acct MailA
 		return nil
 	}
 
+	// Stars first, and over the whole folder rather than the window below.
+	// A failure here must not cost the read-state pass, which is the more
+	// consequential of the two.
+	if err := s.reconcileStars(ctx, tenantID, acct, folder, actual); err != nil {
+		s.log.Warn("could not take the host's stars", "folder", folder, "err", err)
+	}
+
 	rows, err := s.q.ListRecentForReconcile(ctx, store.ListRecentForReconcileParams{
 		TenantID: tenantID, AccountID: acct.AccountID, Folder: folder,
 		RowLimit: reconcileWindow,
@@ -262,16 +269,9 @@ func (s *Service) ReconcileFlags(ctx context.Context, tenantID int64, acct MailA
 			}
 			changed++
 		}
-		if fl.Flagged != r.IsStarred {
-			if err := s.q.SetInboundStarredByUID(ctx, store.SetInboundStarredByUIDParams{
-				TenantID: tenantID, AccountID: acct.AccountID, Folder: folder,
-				ImapUid: r.ImapUid, IsStarred: fl.Flagged,
-			}); err != nil {
-				s.log.Warn("could not apply the host's star", "uid", r.ImapUid, "err", err)
-				continue
-			}
-			changed++
-		}
+		// Stars are not compared here. reconcileStars has already settled them
+		// for the whole folder; repeating the check against the values read
+		// before that ran would only rewrite rows it just fixed.
 	}
 	if changed > 0 {
 		s.log.Info("flags taken from the mail host",
@@ -279,6 +279,44 @@ func (s *Service) ReconcileFlags(ctx context.Context, tenantID int64, acct MailA
 	}
 	if followDepartures && len(missing) > 0 {
 		s.mirrorDepartures(ctx, tenantID, acct, folder, missing)
+	}
+	return nil
+}
+
+// reconcileStars makes the ERP's stars match the host's across a whole folder.
+//
+// Separate from the read-state pass because the two have different natural
+// shapes. Read state has to be asked message by message — it changes on almost
+// everything and there is no cheap way to ask "which of these are unread"
+// except to fetch their flags. Stars are rare and the server can name them
+// all: one SEARCH, one UPDATE, no window.
+//
+// That window was the bug. Riding along with the 200-UID flag fetch meant the
+// ERP only ever learned about stars on the last few days of mail, so a mailbox
+// with a dozen starred threads showed one.
+func (s *Service) reconcileStars(ctx context.Context, tenantID int64, acct MailAccount, folder, actual string) error {
+	uids, err := s.mailbox.SearchFlagged(ctx, acct, actual)
+	if err != nil {
+		return err
+	}
+	// An empty result is a real answer — "nothing is starred any more" — and
+	// has to be applied, or unstarring the last one in Gmail would never
+	// reach here. ANY('{}') is false for every row, which is exactly right.
+	starred := make([]int64, 0, len(uids))
+	for _, u := range uids {
+		starred = append(starred, int64(u))
+	}
+	n, err := s.q.SyncStarredFromHost(ctx, store.SyncStarredFromHostParams{
+		TenantID: tenantID, AccountID: acct.AccountID, Folder: folder,
+		StarredUids: starred,
+	})
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		s.log.Info("stars taken from the mail host",
+			"account", acct.AccountID, "folder", folder,
+			"starred_on_host", len(starred), "changed", n)
 	}
 	return nil
 }

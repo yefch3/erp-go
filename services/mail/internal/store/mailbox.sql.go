@@ -123,8 +123,10 @@ const countInbound = `-- name: CountInbound :one
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
-  AND CASE WHEN $3::text = 'JUNK'
-        THEN folder = 'JUNK' AND NOT not_junk
+  AND CASE $3::text
+        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
+        -- The trash holds mail deleted from anywhere, junk included.
+        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
         ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
       END
   AND NOT is_bounce
@@ -165,8 +167,10 @@ SELECT count(DISTINCT coalesce(nullif(thread_key, ''), 'm:' || id::text))::bigin
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
-  AND CASE WHEN $3::text = 'JUNK'
-        THEN folder = 'JUNK' AND NOT not_junk
+  AND CASE $3::text
+        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
+        -- The trash holds mail deleted from anywhere, junk included.
+        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
         ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
       END
   AND NOT is_bounce
@@ -926,8 +930,10 @@ SELECT id, from_email, from_name, subject, snippet, thread_key,
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
-  AND CASE WHEN $3::text = 'JUNK'
-        THEN folder = 'JUNK' AND NOT not_junk
+  AND CASE $3::text
+        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
+        -- The trash holds mail deleted from anywhere, junk included.
+        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
         ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
       END
   AND NOT is_bounce
@@ -974,6 +980,15 @@ type ListInboundRow struct {
 // The view decides which slice of the mailbox this is: the inbox proper
 // (not archived, not trashed), starred (wherever it lives, except trash),
 // the archive, or the trash.
+//
+// Every view but the trash is scoped to the inbox — junk is its own place and
+// only rejoins the mailbox once somebody rescues it. The trash is the one
+// exception, and has to be: mail deleted out of the junk folder is still
+// deleted mail. Scoping the trash the same way as the rest left it invisible
+// — soft-deleted in the database, absent from every screen, and plainly
+// sitting in the host's own trash, which reads as the ERP having lost it.
+// Emptying the trash purged those rows regardless, so the count above the
+// list and the number the button deleted disagreed.
 func (q *Queries) ListInbound(ctx context.Context, arg ListInboundParams) ([]ListInboundRow, error) {
 	rows, err := q.db.Query(ctx, listInbound,
 		arg.TenantID,
@@ -1069,8 +1084,10 @@ WITH visible AS (
     FROM email_inbound
     WHERE tenant_id = $4::bigint
       AND owner_id = $5::bigint
-      AND CASE WHEN $6::text = 'JUNK'
-            THEN folder = 'JUNK' AND NOT not_junk
+      AND CASE $6::text
+            WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
+            -- The trash holds mail deleted from anywhere, junk included.
+            WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
             ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
           END
       AND NOT is_bounce
@@ -1810,8 +1827,10 @@ SET is_read = TRUE
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
   AND NOT is_read
-  AND CASE WHEN $3::text = 'JUNK'
-        THEN folder = 'JUNK' AND NOT not_junk
+  AND CASE $3::text
+        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
+        -- The trash holds mail deleted from anywhere, junk included.
+        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
         ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
       END
   AND NOT is_bounce
@@ -2075,6 +2094,7 @@ func (q *Queries) SetInboundFlags(ctx context.Context, arg SetInboundFlagsParams
 }
 
 const setInboundReadByUID = `-- name: SetInboundReadByUID :exec
+
 UPDATE email_inbound
 SET is_read = $1::boolean
 WHERE tenant_id = $2::bigint
@@ -2091,42 +2111,16 @@ type SetInboundReadByUIDParams struct {
 	ImapUid   int64
 }
 
+// Stars used to be taken one UID at a time here, alongside the read state.
+// SyncStarredFromHost replaced that: the host can name every starred message
+// in a folder in one search, so there is nothing left for a per-message
+// version to do.
 // Server state winning over ours, for one message. Used only by the
 // reconcile pass, and only once the write-back queue is empty for this
 // account — otherwise it would overwrite a local change still on its way up.
 func (q *Queries) SetInboundReadByUID(ctx context.Context, arg SetInboundReadByUIDParams) error {
 	_, err := q.db.Exec(ctx, setInboundReadByUID,
 		arg.IsRead,
-		arg.TenantID,
-		arg.AccountID,
-		arg.Folder,
-		arg.ImapUid,
-	)
-	return err
-}
-
-const setInboundStarredByUID = `-- name: SetInboundStarredByUID :exec
-UPDATE email_inbound
-SET is_starred = $1::boolean
-WHERE tenant_id = $2::bigint
-  AND account_id = $3::bigint
-  AND folder = $4::text
-  AND imap_uid = $5::bigint
-`
-
-type SetInboundStarredByUIDParams struct {
-	IsStarred bool
-	TenantID  int64
-	AccountID int64
-	Folder    string
-	ImapUid   int64
-}
-
-// The host's star, taken as truth. Same rules as the read state: only after
-// the queue for this account is empty.
-func (q *Queries) SetInboundStarredByUID(ctx context.Context, arg SetInboundStarredByUIDParams) error {
-	_, err := q.db.Exec(ctx, setInboundStarredByUID,
-		arg.IsStarred,
 		arg.TenantID,
 		arg.AccountID,
 		arg.Folder,
@@ -2305,6 +2299,53 @@ func (q *Queries) SetThreadFlags(ctx context.Context, arg SetThreadFlagsParams) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const syncStarredFromHost = `-- name: SyncStarredFromHost :execrows
+UPDATE email_inbound
+SET is_starred = (imap_uid = ANY($1::bigint[]))
+WHERE tenant_id = $2::bigint
+  AND account_id = $3::bigint
+  AND folder = $4::text
+  AND NOT not_junk
+  AND is_starred <> (imap_uid = ANY($1::bigint[]))
+`
+
+type SyncStarredFromHostParams struct {
+	StarredUids []int64
+	TenantID    int64
+	AccountID   int64
+	Folder      string
+}
+
+// Makes the ERP's stars agree with the host's, over the whole folder at once.
+//
+// Stars used to ride along with the read-state reconcile, which fetches flags
+// for the newest 200 UIDs. That window is a few days of a busy mailbox, so a
+// star put on anything older in Gmail simply never arrived — the symptom was
+// a mailbox full of stars showing exactly one in the ERP.
+//
+// A single UID SEARCH FLAGGED answers the question for the entire folder in
+// one round trip, which is why this can be a plain assignment rather than a
+// per-message comparison: starred is "in the set the host just named".
+//
+// Rescued junk is left alone. Those rows still carry their old JUNK folder and
+// UID while the message itself has moved to the host's inbox, so the search
+// would not name them and this would quietly unstar them.
+//
+// The final predicate keeps the update to rows that actually change, so a
+// mailbox with no star activity costs nothing every two minutes.
+func (q *Queries) SyncStarredFromHost(ctx context.Context, arg SyncStarredFromHostParams) (int64, error) {
+	result, err := q.db.Exec(ctx, syncStarredFromHost,
+		arg.StarredUids,
+		arg.TenantID,
+		arg.AccountID,
+		arg.Folder,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const trashJunkView = `-- name: TrashJunkView :many

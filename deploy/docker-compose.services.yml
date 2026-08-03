@@ -198,6 +198,13 @@ services:
       MAIL_SEND_DELAY: 100ms
       MAIL_DECISION_WINDOW: 10m
       MAIL_SEND_TIMEOUT: 45s
+      # How far back the backfill walks, per folder. The code's default of 500
+      # is about three weeks of this mailbox, and a star or a reply on anything
+      # older has no row here to attach to — a mail the ERP never fetched
+      # cannot appear in it, however the host labels it. Raised deliberately:
+      # the backfill costs one batch per sync pass until it gets there, and
+      # storage after that.
+      MAIL_SYNC_HISTORY: "2000"
       # Must be an address the recipient's mail client can actually reach.
       # Left empty in local development, which disables the pixel rather than
       # emitting one that points at the recipient's own machine.

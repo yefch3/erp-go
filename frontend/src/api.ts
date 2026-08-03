@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { type AxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
 import { i18n } from './i18n'
 import { router } from './router'
@@ -12,6 +12,15 @@ export interface Envelope<T> {
 }
 
 export const http = axios.create({ baseURL: '/api', timeout: 15000 })
+
+// Anything that talks to the mail host needs its own budget. Fifteen seconds
+// is a sensible ceiling for a database query and far too short for an IMAP
+// round trip: opening a folder, searching it and fetching new mail is normal
+// work that regularly runs past it, and the service itself is allowed 90
+// seconds (MAIL_SYNC_TIMEOUT). Giving up first produced "timeout of 15000ms
+// exceeded" on a sync that was going perfectly well — and, worse, went on
+// finishing on the server after the browser had called it failed.
+export const mailHostRequest: AxiosRequestConfig = { timeout: 120000 }
 
 http.interceptors.request.use((cfg) => {
   const token = localStorage.getItem('token')
@@ -37,28 +46,60 @@ http.interceptors.response.use(
   (err) => {
     const env = err.response?.data as Envelope<unknown> | undefined
     if (err.response?.status === 401) {
-      localStorage.removeItem('token')
-      router.push('/login')
+      expired()
+      return Promise.reject(env ?? err)
     }
     // The unlock expired server-side; holding the dead token would keep
-    // every mail request failing quietly. Dropping it makes the gate
-    // reappear on the next visit to the mailbox.
+    // every mail request failing quietly. Dropping it and saying so lets the
+    // mailbox put its sign-in gate back up in place of the list, which is the
+    // screen that can actually do something about it.
     if (env?.code === 'MAIL_LOCKED') {
       localStorage.removeItem('mailUnlock')
+      window.dispatchEvent(new CustomEvent('mail-locked'))
+      return Promise.reject(env ?? err)
     }
     ElMessage.error(env?.message || err.message || i18n.global.t('common.networkError'))
     return Promise.reject(env ?? err)
   },
 )
 
+// The session is over: go to the login page instead of announcing it.
+//
+// A toast reading "登录凭证无效或已过期" on top of a page that can no longer
+// load anything is a notification about a problem the reader cannot act on
+// where they are standing. The login form is both the message and the remedy,
+// so it is what they get; where they were is remembered so signing back in
+// returns them there rather than to the home page.
+//
+// Guarded because an expiry usually arrives as a burst — every request the
+// page had in flight fails at once, and each one would otherwise try to
+// navigate.
+let redirecting = false
+function expired() {
+  localStorage.removeItem('token')
+  localStorage.removeItem('mailUnlock')
+  if (redirecting || location.pathname === '/login') return
+  redirecting = true
+  // The address bar, not router.currentRoute. An expiry is usually detected by
+  // a request the page fired as it loaded, and at that moment the router may
+  // still be resolving its first navigation and reporting "/" — which would
+  // lose the very page the person was opening. The URL is already correct.
+  const from = location.pathname + location.search
+  router
+    .push({ path: '/login', query: from === '/' ? {} : { redirect: from } })
+    .finally(() => {
+      redirecting = false
+    })
+}
+
 // 便捷方法：直接取信封里的 data
-export async function get<T>(url: string, params?: object): Promise<T> {
-  const resp = await http.get<Envelope<T>>(url, { params })
+export async function get<T>(url: string, params?: object, cfg?: AxiosRequestConfig): Promise<T> {
+  const resp = await http.get<Envelope<T>>(url, { ...cfg, params })
   return resp.data.data as T
 }
 
-export async function post<T>(url: string, body?: object): Promise<T> {
-  const resp = await http.post<Envelope<T>>(url, body)
+export async function post<T>(url: string, body?: object, cfg?: AxiosRequestConfig): Promise<T> {
+  const resp = await http.post<Envelope<T>>(url, body, cfg)
   return resp.data.data as T
 }
 

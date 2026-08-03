@@ -578,6 +578,39 @@ func (f *IMAP) FindUIDByMessageID(ctx context.Context, acct app.MailAccount, fol
 	return uids[len(uids)-1], true, nil
 }
 
+// SearchFlagged names every starred message in a folder, however old.
+//
+// The counterpart to FetchFlags, which can only answer about UIDs it is handed
+// and so only ever sees the newest slice of a mailbox. SEARCH runs on the
+// server over the whole folder and returns just the UIDs, so "which mail is
+// starred" costs one round trip whether the folder holds fifty messages or
+// fifty thousand — and a star put on a two-month-old thread in Gmail is found
+// as readily as one put on this morning's.
+func (f *IMAP) SearchFlagged(ctx context.Context, acct app.MailAccount, folder string) ([]uint32, error) {
+	if folder == "" {
+		return nil, nil
+	}
+	c, err := f.dial(acct)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = c.Logout() }()
+	if err := f.login(c, acct); err != nil {
+		return nil, err
+	}
+	if _, err := c.Select(folder, true); err != nil {
+		return nil, fmt.Errorf("打开 %s 失败：%w", folder, err)
+	}
+
+	crit := imap.NewSearchCriteria()
+	crit.WithFlags = []string{imap.FlaggedFlag}
+	uids, err := c.UidSearch(crit)
+	if err != nil {
+		return nil, fmt.Errorf("在 %s 中查找星标失败：%w", folder, err)
+	}
+	return uids, nil
+}
+
 // PurgeMessages deletes mail from the host for good.
 //
 // \Deleted then EXPUNGE, which is IMAP's only permanent deletion. There is no

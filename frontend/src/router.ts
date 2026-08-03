@@ -38,6 +38,11 @@ export const router = createRouter({
 
 router.beforeEach((to) => {
   const loggedIn = localStorage.getItem('token') !== null
-  if (!loggedIn && to.path !== '/login') return '/login'
+  // Where they were trying to go travels with them, so opening a bookmarked
+  // mail on a dead session lands on that mail after signing in rather than on
+  // the home page with the reason forgotten.
+  if (!loggedIn && to.path !== '/login') {
+    return { path: '/login', query: to.fullPath === '/' ? {} : { redirect: to.fullPath } }
+  }
   if (loggedIn && to.path === '/login') return '/'
 })

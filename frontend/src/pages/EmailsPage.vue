@@ -179,24 +179,28 @@
                    buttons. A preview only appears for what can honestly be
                    shown; for a .pptx or a .zip the download is the whole
                    interaction. -->
-              <button
+              <el-tooltip
                 v-if="a.previewUrl"
-                type="button"
-                class="fbtn"
-                :title="t('emails.previewFile')"
-                @click="openPreview(a)"
+                :content="t('emails.previewFile')"
+                placement="top"
+                :show-after="0"
+                :hide-after="0"
               >
-                <el-icon><View /></el-icon>
-              </button>
-              <a
+                <button type="button" class="fbtn" @click="openPreview(a)">
+                  <el-icon><View /></el-icon>
+                </button>
+              </el-tooltip>
+              <el-tooltip
                 v-if="a.downloadUrl"
-                class="fbtn"
-                :href="a.downloadUrl"
-                :download="a.fileName"
-                :title="t('emails.downloadFile', { f: a.fileName })"
+                :content="t('emails.downloadFile', { f: a.fileName })"
+                placement="top"
+                :show-after="0"
+                :hide-after="0"
               >
-                <el-icon><Download /></el-icon>
-              </a>
+                <a class="fbtn" :href="a.downloadUrl" :download="a.fileName">
+                  <el-icon><Download /></el-icon>
+                </a>
+              </el-tooltip>
             </div>
           </div>
         </template>
@@ -680,7 +684,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { useRoute, useRouter, type LocationQuery } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { del, get, http, post } from '../api'
+import { del, get, http, mailHostRequest, post } from '../api'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import EmailComposer from '../components/EmailComposer.vue'
@@ -1017,7 +1021,7 @@ onMounted(async () => {
     if (oauthResult === 'ok') {
       ElMessage.success(t('mailbox.googleOk', { email: boundEmail }))
       try {
-        const resp = await http.post('/mailbox/verify', { secret: '' })
+        const resp = await http.post('/mailbox/verify', { secret: '' }, mailHostRequest)
         const data = resp.data.data as { token: string }
         localStorage.setItem('mailUnlock', data.token)
         locked.value = false
@@ -1048,6 +1052,18 @@ function onUnlocked() {
   locked.value = false
   init()
 }
+
+// The unlock expires after twelve hours, and it expires wherever the person
+// happens to be — usually mid-list, with a request already in flight. The
+// interceptor drops the dead token and says so here; this puts the sign-in
+// gate back in place of the mailbox. Before, the page stayed as it was and
+// announced the problem in a toast, which left somebody looking at a list they
+// could no longer do anything with.
+function onMailLocked() {
+  locked.value = true
+}
+window.addEventListener('mail-locked', onMailLocked)
+onUnmounted(() => window.removeEventListener('mail-locked', onMailLocked))
 
 async function lockMailbox() {
   try {
@@ -1456,10 +1472,14 @@ async function forwardInbound() {
   composer.value?.openForward(openedInbound.value)
 }
 
-// Empties the trash in one go: every mail in it, permanently, including the
-// copies on the mail host. Says the number out loud in the confirm — "12
-// 封" is a different decision from "2 封", and the button cannot know which
-// one somebody thinks they are making.
+// Empties the trash in one go: every mail in it, permanently. Says the number
+// out loud in the confirm — "12 封" is a different decision from "2 封", and
+// the button cannot know which one somebody thinks they are making.
+//
+// The confirm asks about the mail, not about the plumbing. That deletion also
+// reaches the mail host is true and is what anybody would expect of a mailbox;
+// spelling it out turned a yes-or-no question into a paragraph about how the
+// system is built.
 async function emptyTrash() {
   await ElMessageBox.confirm(
     t('emails.emptyTrashHint', { n: total.value }),
@@ -1468,8 +1488,8 @@ async function emptyTrash() {
   )
   emptying.value = true
   try {
-    const d = await post<{ deleted: number }>('/inbound-mails/empty-trash')
-    ElMessage.success(t('emails.emptied', { n: d.deleted ?? 0 }))
+    await post<{ deleted: number }>('/inbound-mails/empty-trash', undefined, mailHostRequest)
+    // No toast. The trash emptying in front of them is the confirmation.
     load()
   } finally {
     emptying.value = false
@@ -1487,8 +1507,7 @@ async function emptyJunk() {
   )
   emptying.value = true
   try {
-    const d = await post<{ deleted: number }>('/inbound-mails/empty-junk')
-    ElMessage.success(t('emails.junkEmptied', { n: d.deleted ?? 0 }))
+    await post<{ deleted: number }>('/inbound-mails/empty-junk', undefined, mailHostRequest)
     load()
     refreshUnread()
   } finally {
@@ -1496,14 +1515,14 @@ async function emptyJunk() {
   }
 }
 
-// Marks the current view read. Asked about first: unread is a to-do list, and
-// clearing it wholesale cannot be undone mail by mail afterwards.
+// Marks the current view read, immediately.
+//
+// No confirm. This asked one until now, on the reasoning that unread is a
+// to-do list — but a confirm is for a decision that cannot be walked back, and
+// this one can: every mail is still there, and any of them can be marked
+// unread again. Standing between somebody and a button they press daily is a
+// worse cost than the mistake it prevents.
 async function markAllRead() {
-  await ElMessageBox.confirm(
-    t('emails.markAllReadHint', { f: t(`emails.folders.${folder.value}`) }),
-    t('emails.markAllRead'),
-    { type: 'warning' },
-  )
   markingAll.value = true
   try {
     const d = await post<{ marked: number }>(
@@ -1535,7 +1554,11 @@ async function checkSyncHealth() {
 // disappears before it is read.
 async function syncOnOpen() {
   try {
-    const d = await post<{ fetched: number; detail: string }>('/mailbox/sync')
+    const d = await post<{ fetched: number; detail: string }>(
+      '/mailbox/sync',
+      undefined,
+      mailHostRequest,
+    )
     if (d.detail) {
       syncError.value = d.detail
       return
@@ -1566,18 +1589,37 @@ async function reauth() {
   await lockMailbox()
 }
 
+// Fetching mail is background work, even when a person asked for it.
+//
+// The button used to end by navigating: back to page one of the list, with the
+// open mail closed. Since a sync can take the better part of a minute, that
+// regularly landed on somebody who had clicked 立即收信 and then started
+// reading — and threw them out of the mail mid-sentence. Nothing here moves
+// the page any more. New mail appears in the list underneath and in the badge;
+// the person decides when to look at it.
+//
+// No success toast either: the arriving mail is the news, and a green bar
+// saying "收到 0 封新邮件" is a notification about nothing.
 async function syncNow() {
   syncing.value = true
   try {
-    const d = await post<{ fetched: number; detail: string }>('/mailbox/sync')
+    const d = await post<{ fetched: number; detail: string }>(
+      '/mailbox/sync',
+      undefined,
+      mailHostRequest,
+    )
     if (d.detail) {
       syncError.value = d.detail
       ElMessage({ type: 'error', message: d.detail, duration: 0, showClose: true })
-    } else {
-      syncError.value = ''
-      ElMessage.success(t('emails.syncDone', { n: d.fetched ?? 0 }))
-      reload()
+      return
     }
+    syncError.value = ''
+    // The list refreshes in place, under the mail if one is open — and that
+    // mail's own thread with it, so a reply that just arrived joins the
+    // conversation being read rather than waiting for a reopen.
+    load()
+    if (openedInbound.value) loadThread(openedInbound.value)
+    refreshUnread()
   } finally {
     syncing.value = false
   }
