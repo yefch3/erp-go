@@ -515,6 +515,9 @@ message MessageDetail {
   // make. Read from the stored body, so it is the truth about this message
   // rather than about today's configuration.
   bool tracking_enabled = 27;
+  // The mailbox it left from. A reading page that names the recipient but not
+  // the sender is a mail with half a header.
+  string sender_email = 28;
 }
 
 // DeliveryEvent is one thing that happened to a message, appended and never

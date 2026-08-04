@@ -252,14 +252,29 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND queued_at < now() - (sqlc.arg(window_seconds)::int || ' seconds')::interval;
 
 -- name: GetMessage :one
+-- The sender's address comes off the bound mailbox, not off the campaign.
+--
+-- campaigns.sender_email looks like the right column and is not: it is copied
+-- from the employee's HR record (employees.email), which is a profile field
+-- and carries no guarantee of being the mailbox anybody sends from. The two
+-- agree today and there is nothing keeping them that way — changing the
+-- binding does not touch the HR record, and vice versa. Naming an address the
+-- mail never left from is worse than naming none, so this reads the binding:
+-- mail_accounts.email is literally what buildMessage puts in the From header.
+--
+-- Reads today's binding, so a mailbox rebound since the send would show the
+-- new address. The alternative is stamping it on every message row; not worth
+-- it until somebody actually rebinds mid-history.
 SELECT
-    id, coalesce(campaign_id, 0)::bigint AS campaign_id, message_key::text AS message_key, kind,
-    sender_id, sender_name, to_email, to_name, customer_name, contact_id,
-    subject, body, body_text, body_format, status, attempt_count, provider_id, last_error,
-    attention_reason, queued_at, sent_at, delivered_at, opened_at, clicked_at,
-    tracked
-FROM email_messages
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+    m.id, coalesce(m.campaign_id, 0)::bigint AS campaign_id, m.message_key::text AS message_key, m.kind,
+    m.sender_id, m.sender_name, coalesce(a.email, '')::text AS sender_email,
+    m.to_email, m.to_name, m.customer_name, m.contact_id,
+    m.subject, m.body, m.body_text, m.body_format, m.status, m.attempt_count, m.provider_id, m.last_error,
+    m.attention_reason, m.queued_at, m.sent_at, m.delivered_at, m.opened_at, m.clicked_at,
+    m.tracked
+FROM email_messages m
+LEFT JOIN mail_accounts a ON a.employee_id = m.sender_id AND a.tenant_id = m.tenant_id
+WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint AND m.id = sqlc.arg(id)::bigint;
 
 -- name: ListMessages :many
 SELECT

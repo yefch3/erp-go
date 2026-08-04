@@ -229,7 +229,7 @@ func (h *Handler) GetMessage(ctx context.Context, req *mailv1.GetMessageRequest)
 	}
 	return &mailv1.GetMessageResponse{Message: &mailv1.MessageDetail{
 		Id: m.ID, CampaignId: m.CampaignID, MessageKey: m.MessageKey, Kind: m.Kind,
-		SenderId: m.SenderID, SenderName: m.SenderName,
+		SenderId: m.SenderID, SenderName: m.SenderName, SenderEmail: m.SenderEmail,
 		ToEmail: m.ToEmail, ToName: m.ToName, CustomerName: m.CustomerName,
 		ContactId: m.ContactID, Subject: m.Subject, Body: m.Body,
 		BodyText: m.BodyText, BodyFormat: m.BodyFormat,
