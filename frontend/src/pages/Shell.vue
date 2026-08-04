@@ -24,6 +24,9 @@
         <el-menu-item v-if="auth.can('export:shipment:read')" index="/shipments">
           {{ t('menu.shipments') }}
         </el-menu-item>
+        <el-menu-item v-if="auth.can('shipping:schedule:read')" index="/shipping">
+          {{ t('menu.shipping') }}
+        </el-menu-item>
         <el-menu-item v-if="auth.can('export:receipt:read')" index="/receipts">
           {{ t('menu.receipts') }}
         </el-menu-item>

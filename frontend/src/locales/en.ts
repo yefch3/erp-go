@@ -17,6 +17,7 @@ export default {
     quotations: 'Quotations',
     contracts: 'Export contracts',
     shipments: 'Shipments',
+    shipping: 'Shipping schedules',
     receipts: 'Reconciliation',
     stocks: 'Stock',
     outbounds: 'Outbound',
@@ -27,6 +28,13 @@ export default {
     signatures: 'Signatures',
     teamMail: 'Team mail',
     todo: ' (coming soon)',
+  },
+  shipping: {
+    title: 'Shipping schedules',
+    foundationReady: 'Shipping module foundation is ready',
+    description: 'Only the D0 foundation is included. Lists, editing, documents and arrival reminders belong to later stages.',
+    schemaVersion: 'Database schema version',
+    unavailable: 'Shipping service is unavailable',
   },
   common: {
     detail: 'Detail',

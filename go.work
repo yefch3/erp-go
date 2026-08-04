@@ -13,4 +13,5 @@ use (
 	./services/masterdata
 	./services/procurement
 	./services/product
+	./services/shipping
 )

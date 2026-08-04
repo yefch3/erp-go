@@ -17,6 +17,7 @@ export default {
     quotations: 'Cotizaciones',
     contracts: 'Contratos de exportación',
     shipments: 'Embarques',
+    shipping: 'Calendario marítimo',
     receipts: 'Conciliación',
     stocks: 'Inventario',
     outbounds: 'Salidas',
@@ -27,6 +28,13 @@ export default {
     signatures: 'Firmas',
     teamMail: 'Correo del equipo',
     todo: ' (próximamente)',
+  },
+  shipping: {
+    title: 'Calendario marítimo',
+    foundationReady: 'La estructura base del módulo está lista',
+    description: 'Esta entrega solo incluye la base D0. Las listas, la edición, los documentos y los avisos llegarán en fases posteriores.',
+    schemaVersion: 'Versión del esquema de base de datos',
+    unavailable: 'El servicio de calendario marítimo no está disponible',
   },
   common: {
     detail: 'Detalle',
