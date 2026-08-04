@@ -19,6 +19,10 @@
     >
       {{ form.sendMode === 'MERGED' ? t('emails.privacyNoteMerged') : t('emails.privacyNote') }}
     </el-alert>
+    <!-- Two different promises, so two different sentences. A forward that
+         carries the original's files and one that carries the original itself
+         look identical in this composer — same empty body, same Fwd: subject
+         — and the only place the difference can be stated is here. -->
     <el-alert
       v-if="replyCtx.forwardInboundId !== '0'"
       type="info"
@@ -26,7 +30,11 @@
       class="privacy"
       show-icon
     >
-      {{ t('emails.forwardCarries') }}
+      {{
+        replyCtx.forwardAsAttachment
+          ? t('emails.forwardCarriesEml')
+          : t('emails.forwardCarries')
+      }}
     </el-alert>
 
     <el-form label-width="88px" class="compose-form">
@@ -395,7 +403,11 @@ const bccSelected = ref<Recipient[]>([])
 // Set when this compose answers or forwards a mail from the inbox. '0' means
 // a fresh mail. The server takes threading headers (reply) or the original's
 // attachments (forward) from the referenced message.
-const replyCtx = reactive({ replyToInboundId: '0', forwardInboundId: '0' })
+const replyCtx = reactive({
+  replyToInboundId: '0',
+  forwardInboundId: '0',
+  forwardAsAttachment: false,
+})
 const variablePickerOpen = ref(false)
 const savingDraft = ref(false)
 // Set once a draft has been saved or opened, so later saves update that row
@@ -472,6 +484,7 @@ function signature() {
     attachments.value.map((a) => a.fileKey).sort(),
     replyCtx.replyToInboundId,
     replyCtx.forwardInboundId,
+    replyCtx.forwardAsAttachment,
   ])
 }
 
@@ -541,6 +554,7 @@ async function openDraft(id: string) {
   bccSelected.value = draft.bcc ?? []
   replyCtx.replyToInboundId = draft.replyToInboundId ?? '0'
   replyCtx.forwardInboundId = draft.forwardInboundId ?? '0'
+  replyCtx.forwardAsAttachment = draft.forwardAsAttachment ?? false
   attachments.value = (draft.attachments ?? []).map((a: any) => ({
     fileName: a.fileName,
     fileKey: a.fileKey,
@@ -612,7 +626,21 @@ function openForward(mail: QuotedMail) {
   markClean()
 }
 
-defineExpose({ openDraft, openReply, openForward })
+// The same forward, sent as the original message rather than as a quote of
+// it. Deliberately no quoted block: the point is that the recipient opens the
+// real thing, and pasting our rendering above it invites them to read that
+// instead — which is the version whose headers cannot be trusted.
+function openForwardAsAttachment(mail: QuotedMail) {
+  reset()
+  replyCtx.forwardInboundId = mail.id
+  replyCtx.forwardAsAttachment = true
+  form.subject = prefixSubject(mail.subject || '', 'Fwd:')
+  form.format = 'HTML'
+  form.body = '<p><br></p>'
+  markClean()
+}
+
+defineExpose({ openDraft, openReply, openForward, openForwardAsAttachment })
 
 // Contacts arrive from the address book with more on them than the wire
 // message declares, and protojson refuses unknown fields outright. Every path
@@ -643,6 +671,7 @@ function draftPayload() {
     bcc: form.sendMode === 'MERGED' ? bccSelected.value.map(asProto) : [],
     replyToInboundId: replyCtx.replyToInboundId,
     forwardInboundId: replyCtx.forwardInboundId,
+    forwardAsAttachment: replyCtx.forwardAsAttachment,
     recipients: selected.value.map(asProto),
     attachments: attachments.value.map((a) => ({
       fileName: a.fileName,
@@ -679,6 +708,7 @@ function reset() {
   bccSelected.value = []
   replyCtx.replyToInboundId = '0'
   replyCtx.forwardInboundId = '0'
+  replyCtx.forwardAsAttachment = false
   preview.value = null
   scheduleLocal.value = ''
   scheduleOpen.value = false
@@ -1010,6 +1040,7 @@ async function submitSend(at: string) {
       bcc: form.sendMode === 'MERGED' ? bccSelected.value.map(asProto) : [],
       replyToInboundId: replyCtx.replyToInboundId,
       forwardInboundId: replyCtx.forwardInboundId,
+      forwardAsAttachment: replyCtx.forwardAsAttachment,
       scheduledAt: at,
       attachments: attachments.value.map((a) => ({
         fileName: a.fileName,

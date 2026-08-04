@@ -562,7 +562,7 @@ func (q *Queries) GetInbound(ctx context.Context, arg GetInboundParams) (GetInbo
 }
 
 const getInboundForCompose = `-- name: GetInboundForCompose :one
-SELECT id, owner_id, message_id, references_ids, thread_key
+SELECT id, owner_id, message_id, references_ids, thread_key, raw_key, subject
 FROM email_inbound
 WHERE tenant_id = $1::bigint AND id = $2::bigint
 `
@@ -578,11 +578,19 @@ type GetInboundForComposeRow struct {
 	MessageID     string
 	ReferencesIds string
 	ThreadKey     string
+	RawKey        string
+	Subject       string
 }
 
 // The reply/forward context: the owner (for the caller check), the
 // Message-ID being answered, the chain above it, and the thread this
 // conversation lives in.
+//
+// raw_key and subject are here for forward-as-attachment: the original goes
+// out as the stored .eml, named after what the sender called it. raw_key is
+// empty for anything whose MIME never reached object storage, and that has to
+// be refused rather than silently downgraded to a quoted forward — somebody
+// forwarding a mail as evidence needs to know they did not.
 func (q *Queries) GetInboundForCompose(ctx context.Context, arg GetInboundForComposeParams) (GetInboundForComposeRow, error) {
 	row := q.db.QueryRow(ctx, getInboundForCompose, arg.TenantID, arg.ID)
 	var i GetInboundForComposeRow
@@ -592,6 +600,8 @@ func (q *Queries) GetInboundForCompose(ctx context.Context, arg GetInboundForCom
 		&i.MessageID,
 		&i.ReferencesIds,
 		&i.ThreadKey,
+		&i.RawKey,
+		&i.Subject,
 	)
 	return i, err
 }

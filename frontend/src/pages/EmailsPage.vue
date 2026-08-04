@@ -92,9 +92,23 @@
             <el-button size="small" type="primary" plain @click="replyToInbound">
               ↩ {{ t('emails.reply') }}
             </el-button>
-            <el-button size="small" plain @click="forwardInbound">
+            <!-- A split button rather than a third one in the row: forwarding
+                 as an attachment is the same intent taken further, not a
+                 separate errand, and it is rare enough that giving it equal
+                 width would misstate how often it is wanted. -->
+            <el-dropdown size="small" split-button @click="forwardInbound">
               ↪ {{ t('emails.forward') }}
-            </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item
+                    :disabled="!openedInbound.hasRaw"
+                    @click="forwardInboundAsAttachment"
+                  >
+                    {{ t('emails.forwardAsAttachment') }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
           <el-button
             v-if="folder === 'junk'"
@@ -686,6 +700,9 @@ interface InboundMail {
   isRead: boolean
   isStarred: boolean
   hasAttachments: boolean
+  // Whether the original MIME is still archived. Only set on the detail read;
+  // absent in list rows, which is why 作为附件转发 lives on the open mail.
+  hasRaw?: boolean
   // Messages in this conversation; the list shows one row per conversation.
   threadCount?: number
   receivedAt: string
@@ -1493,6 +1510,17 @@ async function forwardInbound() {
   composing.value = true
   await nextTick()
   composer.value?.openForward(openedInbound.value)
+}
+
+// Forwards the original message itself, as a .eml file, instead of our
+// rendering of it. Guarded on hasRaw as well as disabling the menu item: the
+// server refuses without the archived MIME, and a disabled control is a hint,
+// not an enforcement.
+async function forwardInboundAsAttachment() {
+  if (!openedInbound.value?.hasRaw) return
+  composing.value = true
+  await nextTick()
+  composer.value?.openForwardAsAttachment(openedInbound.value)
 }
 
 // Empties the trash in one go: every mail in it, permanently. Says the number

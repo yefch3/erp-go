@@ -11,8 +11,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
+	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 )
 
 func (s *Server) listCampaigns(w http.ResponseWriter, r *http.Request) {

@@ -453,7 +453,13 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 -- The reply/forward context: the owner (for the caller check), the
 -- Message-ID being answered, the chain above it, and the thread this
 -- conversation lives in.
-SELECT id, owner_id, message_id, references_ids, thread_key
+--
+-- raw_key and subject are here for forward-as-attachment: the original goes
+-- out as the stored .eml, named after what the sender called it. raw_key is
+-- empty for anything whose MIME never reached object storage, and that has to
+-- be refused rather than silently downgraded to a quoted forward — somebody
+-- forwarding a mail as evidence needs to know they did not.
+SELECT id, owner_id, message_id, references_ids, thread_key, raw_key, subject
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 

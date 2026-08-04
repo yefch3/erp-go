@@ -315,3 +315,57 @@ func TestBuildMessageNeverWritesABccHeader(t *testing.T) {
 		t.Error("To/Cc lost their recipients")
 	}
 }
+
+// A forwarded original is attached as message/rfc822, which is what makes a
+// recipient's client offer to open it as a message rather than hand them an
+// opaque blob to save. The whole reason to forward as an attachment is that
+// the original's own headers survive, and they only survive if the part is
+// typed as a message.
+//
+// The bytes are base64, which RFC 2046 §5.2.1 reads as disallowed for
+// message/* — it permits only 7bit, 8bit and binary. Base64 is chosen anyway,
+// deliberately: archived MIME is arbitrary bytes that may carry lines past
+// the 998-octet SMTP limit or 8-bit content the next hop will not take, and
+// inlining it risks a mangled message rather than a rejected one. It is also
+// what Gmail and Outlook emit for the same feature, so receivers handle it.
+func TestForwardedOriginalIsAttachedAsAMessage(t *testing.T) {
+	original := "From: customer@example.com\r\n" +
+		"Subject: Original\r\n" +
+		"Message-ID: <abc@example.com>\r\n\r\n" +
+		"the words the customer actually wrote\r\n"
+
+	m := app.Outbound{
+		MessageKey: "k-eml", ToEmail: "colleague@example.com", Subject: "Fwd: Original",
+		Body: "<p>see attached</p>", BodyText: "see attached", Format: "HTML",
+	}
+	files := []fileBlob{{
+		FileName: "Original.eml", ContentType: "message/rfc822", Data: []byte(original),
+	}}
+	raw, _, err := buildMessage(m, "lina@sunrise.com", "sunrise.com", files, fixedTime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := parse(t, raw)
+
+	got := leaves(t, msg.Header.Get("Content-Type"), msg.Body)
+	body, ok := got["message/rfc822"]
+	if !ok {
+		t.Fatalf("the original was not attached as message/rfc822; parts present: %v", keysOf(got))
+	}
+	// Byte for byte: a forward that re-encoded the original would defeat the
+	// point, since the headers are what somebody forwards it for.
+	if body != original {
+		t.Fatalf("the original did not survive intact:\n got %q\nwant %q", body, original)
+	}
+	if !strings.Contains(body, "Message-ID: <abc@example.com>") {
+		t.Error("the original's Message-ID is missing, so the copy cannot be traced to the mail it claims to be")
+	}
+}
+
+func keysOf(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}

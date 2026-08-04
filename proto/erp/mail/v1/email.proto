@@ -177,6 +177,10 @@ message InboundMail {
   // When the tracking pixel was first fetched, if it ever was. Deliberately
   // not called "read": see MessageDetail.tracking_enabled.
   string opened_at = 20;
+  // Whether the original MIME is still archived, and so whether this mail can
+  // be forwarded as a .eml attachment. The screen greys the action out rather
+  // than letting somebody compose a forward the send path will refuse.
+  bool has_raw = 21;
 }
 
 message InboundAttachment {
@@ -684,6 +688,11 @@ message CreateCampaignRequest {
   // Set when forwarding a mail from the caller's inbox: the original's
   // attachments travel along.
   int64 forward_inbound_id = 11;
+  // Forward the original as a .eml attachment instead of quoting it inline.
+  // The recipient gets the message itself — every header, every part, exactly
+  // as it arrived — which is what makes a forward usable as evidence rather
+  // than as a retelling. Requires forward_inbound_id.
+  bool forward_as_attachment = 14;
   // RFC 3339, absolute. Empty means send now. An instant rather than a local
   // time and a zone: the composer resolves "9am in the customer's morning"
   // once, where the customer's zone is known, and what reaches the queue is
@@ -907,6 +916,7 @@ message Draft {
   int64 reply_to_inbound_id = 13;
   int64 forward_inbound_id = 14;
   repeated Recipient bcc = 15;
+  bool forward_as_attachment = 16;
 }
 
 message SaveDraftRequest {
@@ -927,6 +937,7 @@ message SaveDraftRequest {
   int64 reply_to_inbound_id = 11;
   int64 forward_inbound_id = 12;
   repeated Recipient bcc = 13;
+  bool forward_as_attachment = 14;
 }
 
 message SaveDraftResponse {
