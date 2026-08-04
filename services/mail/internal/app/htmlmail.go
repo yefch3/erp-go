@@ -70,7 +70,51 @@ func buildMailPolicy() *bluemonday.Policy {
 }
 
 // SanitizeHTML strips anything outside the mail whitelist.
-func SanitizeHTML(s string) string { return mailPolicy.Sanitize(s) }
+func SanitizeHTML(s string) string { return mailPolicy.Sanitize(repairURLWhitespace(s)) }
+
+// urlAttr finds the value of a src or href, in either quote style.
+var urlAttr = regexp.MustCompile(`(?is)\b(src|href)\s*=\s*("([^"]*)"|'([^']*)')`)
+
+// asciiWhitespaceInURL is what browsers refuse to leave in a URL.
+var asciiWhitespaceInURL = regexp.MustCompile(`[ \t\r\n\f]`)
+
+// repairURLWhitespace percent-encodes spaces and drops tabs and newlines
+// inside src and href values, the way a browser does before fetching.
+//
+// The policy sets RequireParseableURLs, which is what keeps javascript: out
+// and must stay on. Its cost is that net/url rejects a raw space, and
+// bluemonday's response to a URL it cannot parse is to drop the attribute —
+// silently. The element survives with no src, so the image renders as a
+// broken icon and its alt text, which reads as "our mail client is broken".
+// Nine mails in this mailbox carried such an image and forty-one such a link,
+// all from senders who merged a value into a URL without encoding it
+// (…&pet_name_string=your pet). Every browser and mail client tolerates that.
+//
+// Repairing before the policy runs rather than relaxing the policy: encoding
+// a space cannot introduce a scheme, an event handler or a script, so this
+// only ever narrows what reaches the sanitiser. Tabs and newlines are removed
+// rather than encoded because that is what the URL standard says to do with
+// them, and because mail HTML is full of line-wrapped attributes — encoding
+// those would corrupt links that currently work.
+func repairURLWhitespace(s string) string {
+	if !strings.Contains(s, "=") {
+		return s
+	}
+	return urlAttr.ReplaceAllStringFunc(s, func(m string) string {
+		g := urlAttr.FindStringSubmatch(m)
+		quoted := g[3] + g[4] // exactly one of the two groups matched
+		if !asciiWhitespaceInURL.MatchString(quoted) {
+			return m
+		}
+		fixed := strings.NewReplacer("\t", "", "\r", "", "\n", "", "\f", "").Replace(quoted)
+		fixed = strings.ReplaceAll(fixed, " ", "%20")
+		q := `"`
+		if g[4] != "" || strings.HasPrefix(g[2], "'") {
+			q = `'`
+		}
+		return g[1] + "=" + q + fixed + q
+	})
+}
 
 // normalizeFormat coerces an arbitrary caller-supplied value.
 func normalizeFormat(f string) string {
