@@ -59,6 +59,10 @@ type Mailbox interface {
 	// FindUIDByMessageID follows a message that has moved: its UID changed,
 	// its Message-ID did not.
 	FindUIDByMessageID(ctx context.Context, acct MailAccount, folder, messageID string) (uint32, bool, error)
+	// FindUIDsByMessageIDs answers the same question for many messages over
+	// one connection. Emptying a trash asks it once per mail, and a fresh
+	// authenticated connection each time is what a host reads as abuse.
+	FindUIDsByMessageIDs(ctx context.Context, acct MailAccount, folder string, messageIDs []string) (map[string]uint32, error)
 	// PurgeMessages deletes mail from the host for good.
 	PurgeMessages(ctx context.Context, acct MailAccount, folder string, uids []uint32) error
 	// FetchFlags reads back what the host believes, so somebody else's

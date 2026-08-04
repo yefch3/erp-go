@@ -578,6 +578,59 @@ func (f *IMAP) FindUIDByMessageID(ctx context.Context, acct app.MailAccount, fol
 	return uids[len(uids)-1], true, nil
 }
 
+// FindUIDsByMessageIDs locates many messages in one folder over a single
+// connection.
+//
+// The searches still happen one per message — IMAP has no "find any of these
+// Message-IDs" — but the expensive part was never the search. It was the
+// dial, the TLS handshake and the authentication, repeated once per message
+// and rejected by the host once a burst got long enough. Those happen once
+// here.
+func (f *IMAP) FindUIDsByMessageIDs(ctx context.Context, acct app.MailAccount, folder string, messageIDs []string) (map[string]uint32, error) {
+	out := make(map[string]uint32, len(messageIDs))
+	if folder == "" || len(messageIDs) == 0 {
+		return out, nil
+	}
+	c, err := f.dial(acct)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = c.Logout() }()
+	if err := f.login(c, acct); err != nil {
+		return nil, err
+	}
+	if _, err := c.Select(folder, true); err != nil {
+		return nil, fmt.Errorf("打开 %s 失败：%w", folder, err)
+	}
+
+	for _, id := range messageIDs {
+		if id == "" {
+			continue
+		}
+		// The context is checked between messages rather than inside the
+		// library call: a batch can be long, and a shutdown should not have to
+		// wait for the whole trash.
+		if err := ctx.Err(); err != nil {
+			return out, err
+		}
+		crit := imap.NewSearchCriteria()
+		crit.Header.Add("Message-Id", asAngled(id))
+		uids, err := c.UidSearch(crit)
+		if err != nil {
+			// One unanswerable search must not cost the rest of the batch. The
+			// caller treats a missing id as "not here", which then takes the
+			// careful one-at-a-time path.
+			return out, fmt.Errorf("在 %s 中查找失败：%w", folder, err)
+		}
+		if len(uids) > 0 {
+			// Newest match: a message can legitimately appear twice after a
+			// failed move was retried.
+			out[id] = uids[len(uids)-1]
+		}
+	}
+	return out, nil
+}
+
 // SearchFlagged names every starred message in a folder, however old.
 //
 // The counterpart to FetchFlags, which can only answer about UIDs it is handed

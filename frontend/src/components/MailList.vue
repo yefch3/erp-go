@@ -8,8 +8,19 @@
       v-for="m in mails"
       :key="m.id"
       class="row"
-      :class="{ unread: !m.isRead }"
+      :class="{ unread: !m.isRead, picked: isPicked(m) }"
     >
+      <!-- The box comes before the star because it is the outer decision:
+           "this one" precedes anything you might then do to it. Its own hit
+           area, kept off the row's, so ticking a box never opens a mail. -->
+      <el-checkbox
+        class="pick"
+        :model-value="isPicked(m)"
+        :aria-label="t('emails.selectOne')"
+        @click.stop
+        @change="togglePick(m)"
+      />
+
       <!-- el-tooltip rather than a title attribute. The browser's own tooltip
            takes about a second to appear, which is far too slow for a row of
            unlabelled icons: by the time it arrives the cursor has usually
@@ -126,6 +137,10 @@ const props = defineProps<{
   mails: MailRow[]
   folder: string
   loading?: boolean
+  // The ids currently ticked. Owned by the page, not by this list: the page is
+  // what acts on a selection, and it also has to survive this component being
+  // re-rendered by a reload.
+  selected?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -133,9 +148,19 @@ const emit = defineEmits<{
   star: [MailRow]
   mark: [MailRow, Record<string, boolean>]
   purge: [MailRow]
+  'update:selected': [string[]]
 }>()
 
 const { t } = useI18n()
+
+function isPicked(m: MailRow) {
+  return (props.selected ?? []).includes(m.id)
+}
+
+function togglePick(m: MailRow) {
+  const cur = props.selected ?? []
+  emit('update:selected', isPicked(m) ? cur.filter((id) => id !== m.id) : [...cur, m.id])
+}
 
 // The three or four things worth doing to a mail without opening it, chosen
 // per folder: "archive" means nothing in the archive, and offering "delete" in
@@ -233,6 +258,21 @@ function shortTime(v: string) {
 .row:focus-within {
   box-shadow: var(--mail-hover-shadow);
   z-index: 1;
+}
+/* A ticked row is tinted, because the selection has to stay legible after the
+   cursor has moved on to the toolbar — which is exactly when it matters. */
+.row.picked {
+  background: var(--el-color-primary-light-9);
+}
+
+.pick {
+  flex: none;
+  margin-right: 2px;
+  height: 100%;
+}
+/* Element Plus reserves room for a label this checkbox does not have. */
+.pick :deep(.el-checkbox__label) {
+  display: none;
 }
 
 .star {

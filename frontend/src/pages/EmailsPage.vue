@@ -208,6 +208,73 @@
 
       <template v-else>
       <div class="pane-head">
+        <!-- Select-all lives in the toolbar, not in a list header: this list
+             has no header row, and the toolbar is where the actions are that
+             a selection is for. Indeterminate when only some are ticked,
+             which is the state that tells you a click will clear rather than
+             extend. -->
+        <el-checkbox
+          v-if="isInboundView && inbound.length > 0"
+          class="pick-all"
+          :model-value="allPicked"
+          :indeterminate="somePicked"
+          :aria-label="t('emails.selectAll')"
+          @change="toggleAllPicked"
+        />
+        <!-- With a selection open, the toolbar is about the selection. Gmail
+             does the same, and for the same reason: 搜索 and 立即收信 are not
+             what somebody who has just ticked six mails is looking for, and
+             leaving them there buries the buttons that are. -->
+        <template v-if="pickedRows.length">
+          <span class="picked-n">{{ t('emails.pickedN', { n: pickedRows.length }) }}</span>
+          <span class="grow" />
+          <el-button v-if="folder !== 'trash'" size="small" @click="bulkMark({ read: true })">
+            {{ t('emails.markRead') }}
+          </el-button>
+          <el-button v-if="folder !== 'trash'" size="small" @click="bulkMark({ read: false })">
+            {{ t('emails.markUnread') }}
+          </el-button>
+          <el-button v-if="folder === 'junk'" size="small" @click="bulkMark({ notJunk: true })">
+            {{ t('emails.notJunk') }}
+          </el-button>
+          <el-button
+            v-if="folder === 'inbox' || folder === 'starred'"
+            size="small"
+            @click="bulkMark({ archived: true })"
+          >
+            {{ t('emails.archive') }}
+          </el-button>
+          <el-button v-if="folder === 'archive'" size="small" @click="bulkMark({ archived: false })">
+            {{ t('emails.unarchive') }}
+          </el-button>
+          <el-button v-if="folder === 'trash'" size="small" @click="bulkMark({ deleted: false })">
+            {{ t('emails.restore') }}
+          </el-button>
+          <el-button
+            v-if="folder === 'trash'"
+            size="small"
+            type="danger"
+            plain
+            :loading="bulkBusy"
+            @click="bulkPurge"
+          >
+            {{ t('emails.purge') }}
+          </el-button>
+          <el-button
+            v-else
+            size="small"
+            type="danger"
+            plain
+            :loading="bulkBusy"
+            @click="bulkMark({ deleted: true })"
+          >
+            {{ t('emails.toTrash') }}
+          </el-button>
+          <el-button size="small" link @click="picked = []">
+            {{ t('emails.clearSelection') }}
+          </el-button>
+        </template>
+        <template v-else>
         <h2>{{ t(`emails.folders.${folder}`) }}</h2>
         <span class="grow" />
         <!-- Not every folder is searchable. The scheduled list is short by
@@ -260,6 +327,7 @@
         <el-button v-if="folder === 'suppressions' && canSuppress" @click="openSuppress">
           {{ t('emails.addSuppression') }}
         </el-button>
+        </template>
       </div>
 
       <!-- ------------------------ inbox / starred / archive / junk / trash -->
@@ -285,6 +353,7 @@
           {{ t('emails.junkNote') }} {{ t('emails.junkNoteRescue') }}
         </el-alert>
         <MailList
+          v-model:selected="picked"
           :mails="inbound"
           :folder="folder"
           :loading="loading"
@@ -1383,6 +1452,82 @@ function toggleThreadItem(it: ThreadItem) {
 // Read/unread updates the row in place — the list must not jump out from
 // under the cursor for a change that only alters how the row looks. Anything
 // that moves the mail to another folder reloads, because the row is leaving.
+// ------------------------------------------------------------ selection ---
+// The ids ticked in the list. Held here rather than in MailList because the
+// toolbar acts on them and a reload re-renders the list.
+const picked = ref<string[]>([])
+const bulkBusy = ref(false)
+
+// Only rows still on screen count. A selection that survived a folder change
+// or a page turn would act on mail the person can no longer see.
+const pickedRows = computed(() => inbound.value.filter((m) => picked.value.includes(m.id)))
+const allPicked = computed(
+  () => inbound.value.length > 0 && pickedRows.value.length === inbound.value.length,
+)
+const somePicked = computed(
+  () => pickedRows.value.length > 0 && pickedRows.value.length < inbound.value.length,
+)
+
+function toggleAllPicked() {
+  // Partial counts as "on" for this purpose: with some ticked, the obvious
+  // meaning of clicking the box is "never mind", not "and the rest too".
+  picked.value = allPicked.value || somePicked.value ? [] : inbound.value.map((m) => m.id)
+}
+
+// A new list means a new set of things to choose from.
+watch([folder, () => inbound.value], () => {
+  if (picked.value.length) picked.value = []
+})
+
+// Applies one change to everything ticked.
+//
+// One request per mail, deliberately: the server coalesces them where it
+// counts — every queued flag change for the same account and folder leaves as
+// a single IMAP STORE — so a batch endpoint would save round trips to our own
+// gateway and nothing at the mail host. Sent a few at a time so twenty
+// selected mails do not open twenty connections at once.
+async function bulkMark(flags: Record<string, boolean>) {
+  const rows = pickedRows.value
+  if (!rows.length) return
+  bulkBusy.value = true
+  try {
+    await inChunks(rows, (row) =>
+      post(`/inbound-mails/${row.id}/mark`, { ...flags, wholeThread: true }),
+    )
+    picked.value = []
+    load()
+    refreshUnread()
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
+async function bulkPurge() {
+  const rows = pickedRows.value
+  if (!rows.length) return
+  await ElMessageBox.confirm(
+    t('emails.purgeManyHint', { n: rows.length }),
+    t('emails.purge'),
+    { type: 'warning', confirmButtonText: t('emails.purge') },
+  )
+  bulkBusy.value = true
+  try {
+    await inChunks(rows, (row) => del(`/inbound-mails/${row.id}?whole_thread=true`))
+    picked.value = []
+    load()
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
+const bulkConcurrency = 4
+
+async function inChunks<T>(rows: T[], run: (row: T) => Promise<unknown>) {
+  for (let i = 0; i < rows.length; i += bulkConcurrency) {
+    await Promise.all(rows.slice(i, i + bulkConcurrency).map(run))
+  }
+}
+
 async function markRow(row: InboundMail, flags: Record<string, boolean>) {
   await post(`/inbound-mails/${row.id}/mark`, { ...flags, wholeThread: true })
   if ('read' in flags) {
@@ -1912,6 +2057,20 @@ async function doUnsuppress(row: Suppression) {
 .pane-head h2 {
   margin: 0;
   font-size: 19px;
+}
+/* The select-all box aligns with the per-row boxes below it, so the column
+   reads as a column rather than as a stray control above a list. */
+.pick-all {
+  margin-right: -2px;
+  height: 32px;
+}
+.pick-all :deep(.el-checkbox__label) {
+  display: none;
+}
+.picked-n {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--el-color-primary);
 }
 .grow {
   flex: 1;
