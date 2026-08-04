@@ -160,6 +160,23 @@ message InboundMail {
   // How many messages this list row stands for. The list collapses a
   // conversation into one row; 1 means a lone message.
   int32 thread_count = 16;
+
+  // ---- Sent folder only. -------------------------------------------------
+  // A sent mail is recorded in two places that cannot be matched to each
+  // other — Gmail rewrites the Message-ID on the way out — so the Sent list
+  // merges both and each row says which one it is.
+  //
+  // "ERP" means the ERP sent it and is tracking delivery: id is an
+  // EmailMessage and status/opened_at are filled in. "HOST" means it came
+  // from the mail host's own Sent folder, sent by some other client: id is an
+  // InboundMail, and the host records nothing about what happened next.
+  string kind = 17;
+  string to_name = 18;
+  // Delivery status of an ERP send. Empty for a host copy.
+  string status = 19;
+  // When the tracking pixel was first fetched, if it ever was. Deliberately
+  // not called "read": see MessageDetail.tracking_enabled.
+  string opened_at = 20;
 }
 
 message InboundAttachment {
@@ -488,6 +505,16 @@ message MessageDetail {
   string opened_at = 21;
   string clicked_at = 22;
   repeated DeliveryEvent events = 23;
+  // Whether this particular mail actually carried a tracking pixel.
+  //
+  // Without it, an empty opened_at has two very different meanings that look
+  // identical: "we watched and saw nothing" and "we never looked". The pixel
+  // is only injected into HTML bodies and only when the service has a
+  // publicly reachable address configured, so plenty of real sends carry
+  // none, and reporting those as "not opened" would be a claim we cannot
+  // make. Read from the stored body, so it is the truth about this message
+  // rather than about today's configuration.
+  bool tracking_enabled = 27;
 }
 
 // DeliveryEvent is one thing that happened to a message, appended and never

@@ -239,6 +239,7 @@ func (h *Handler) GetMessage(ctx context.Context, req *mailv1.GetMessageRequest)
 		QueuedAt: ts(m.QueuedAt), SentAt: ts(m.SentAt),
 		DeliveredAt: ts(m.DeliveredAt), OpenedAt: ts(m.OpenedAt),
 		ClickedAt: ts(m.ClickedAt), Events: eventsToProto(v.Events),
+		TrackingEnabled: v.TrackingEnabled,
 	}}, nil
 }
 
@@ -657,6 +658,12 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 		IsRead: v.IsRead, IsStarred: v.IsStarred, HasAttachments: v.HasAttachments,
 		BodyHtml: v.BodyHTML, BodyText: v.BodyText, ToEmail: v.ToEmail,
 		ThreadCount: v.ThreadCount,
+		Kind:        v.Kind,
+		ToName:      v.ToName,
+		Status:      v.Status,
+	}
+	if !v.OpenedAt.IsZero() {
+		m.OpenedAt = v.OpenedAt.Format(time.RFC3339)
 	}
 	if !v.ReceivedAt.IsZero() {
 		m.ReceivedAt = v.ReceivedAt.Format(time.RFC3339)

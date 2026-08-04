@@ -164,6 +164,7 @@ type EmailMessage struct {
 	InReplyTo       string
 	ReferencesIds   string
 	ScheduledAt     pgtype.Timestamptz
+	Tracked         bool
 }
 
 type EmailMessageRecipient struct {

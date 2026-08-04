@@ -628,7 +628,8 @@ SELECT
     id, coalesce(campaign_id, 0)::bigint AS campaign_id, message_key::text AS message_key, kind,
     sender_id, sender_name, to_email, to_name, customer_name, contact_id,
     subject, body, body_text, body_format, status, attempt_count, provider_id, last_error,
-    attention_reason, queued_at, sent_at, delivered_at, opened_at, clicked_at
+    attention_reason, queued_at, sent_at, delivered_at, opened_at, clicked_at,
+    tracked
 FROM email_messages
 WHERE tenant_id = $1::bigint AND id = $2::bigint
 `
@@ -663,6 +664,7 @@ type GetMessageRow struct {
 	DeliveredAt     pgtype.Timestamptz
 	OpenedAt        pgtype.Timestamptz
 	ClickedAt       pgtype.Timestamptz
+	Tracked         bool
 }
 
 func (q *Queries) GetMessage(ctx context.Context, arg GetMessageParams) (GetMessageRow, error) {
@@ -693,6 +695,7 @@ func (q *Queries) GetMessage(ctx context.Context, arg GetMessageParams) (GetMess
 		&i.DeliveredAt,
 		&i.OpenedAt,
 		&i.ClickedAt,
+		&i.Tracked,
 	)
 	return i, err
 }
@@ -1579,18 +1582,29 @@ func (q *Queries) ListSuppressions(ctx context.Context, arg ListSuppressionsPara
 const markAccepted = `-- name: MarkAccepted :exec
 UPDATE email_messages
 SET status = 'ACCEPTED', provider_id = $1::text,
-    sent_at = now(), last_error = ''
-WHERE tenant_id = $2::bigint AND id = $3::bigint
+    sent_at = now(), last_error = '',
+    tracked = $2::boolean
+WHERE tenant_id = $3::bigint AND id = $4::bigint
 `
 
 type MarkAcceptedParams struct {
 	ProviderID string
+	Tracked    bool
 	TenantID   int64
 	ID         int64
 }
 
+// tracked is written here rather than guessed later: whether a pixel went out
+// is decided at this moment, by this message's format and the address the
+// service had at the time, and neither can be recovered from the row
+// afterwards. See migration 00019.
 func (q *Queries) MarkAccepted(ctx context.Context, arg MarkAcceptedParams) error {
-	_, err := q.db.Exec(ctx, markAccepted, arg.ProviderID, arg.TenantID, arg.ID)
+	_, err := q.db.Exec(ctx, markAccepted,
+		arg.ProviderID,
+		arg.Tracked,
+		arg.TenantID,
+		arg.ID,
+	)
 	return err
 }
 
