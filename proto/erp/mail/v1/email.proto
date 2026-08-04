@@ -706,12 +706,15 @@ message ListMessagesRequest {
   // The single filter the failure queue needs.
   bool attention_only = 4;
   string keyword = 5;
-  int64 sender_id = 6;
+  int64 sender_id = 6;  // Where the previous page ended. Keyset, like every other mailbox list.
+  string cursor = 7;
+
 }
 
 message ListMessagesResponse {
   repeated EmailMessage messages = 1;
-  erp.common.v1.PageMeta meta = 2;
+  erp.common.v1.PageMeta meta = 2;  string next_cursor = 3;
+
 }
 
 message GetMessageRequest {
@@ -978,12 +981,15 @@ message ScheduledSend {
 }
 
 message ListScheduledRequest {
-  erp.common.v1.PageRequest page = 1;
+  erp.common.v1.PageRequest page = 1;  // Where the previous page ended. Keyset, like every other mailbox list.
+  string cursor = 2;
+
 }
 
 message ListScheduledResponse {
   repeated ScheduledSend sends = 1;
-  erp.common.v1.PageMeta meta = 2;
+  erp.common.v1.PageMeta meta = 2;  string next_cursor = 3;
+
 }
 
 message SendScheduledNowRequest {

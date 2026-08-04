@@ -301,8 +301,13 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
        OR to_email ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR to_name  ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR subject  ILIKE '%' || sqlc.arg(keyword)::text || '%')
+  -- Keyset. The order is by id alone, so the cursor is one: the id of the
+  -- last row shown. 0 is the first page. Offset used to do this, and on a
+  -- list that grows at the top it meant a message arriving mid-read could
+  -- push a row across the boundary and show it twice, or hide it.
+  AND (sqlc.arg(cursor_id)::bigint = 0 OR id < sqlc.arg(cursor_id)::bigint)
 ORDER BY id DESC
-LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
+LIMIT sqlc.arg(row_limit)::int;
 
 -- name: RequeueMessage :execrows
 -- Putting a failed message back in the queue by hand, optionally at a
@@ -563,8 +568,12 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   -- Own sends only. Unlike the sent list this carries no data scope: a
   -- scheduled mail is still the sender's to change, and nobody else's.
   AND c.sender_id = sqlc.arg(sender_id)::bigint
+  -- Keyset, ascending: this list is ordered by when each send is due, so it
+  -- reads soonest-first and the cursor walks forward rather than back.
+  AND (sqlc.narg(cursor_at)::timestamptz IS NULL
+       OR (m.due_at, c.id) > (sqlc.narg(cursor_at)::timestamptz, sqlc.arg(cursor_id)::bigint))
 ORDER BY m.due_at, c.id
-LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
+LIMIT sqlc.arg(row_limit)::int;
 
 -- name: CancelScheduled :execrows
 -- Stops what has not gone yet, and says how much that was.

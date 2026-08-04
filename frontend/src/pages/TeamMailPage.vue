@@ -131,7 +131,11 @@
                talk to the salesperson, not silently resend on their behalf. -->
         </el-table>
 
+        <!-- The campaign list still numbers its pages; the message list pages
+             by cursor, because it grows at the top and a page number there
+             names a different row each time somebody sends. -->
         <el-pagination
+          v-if="view === 'sent'"
           v-model:current-page="page"
           :page-size="pageSize"
           :total="total"
@@ -139,6 +143,15 @@
           class="pager"
           @current-change="load"
         />
+        <div v-else-if="total > 0 || msgStack.length" class="pager keyset">
+          <span class="sub">{{ t('emails.totalMails', { n: total }) }}</span>
+          <el-button size="small" :disabled="!msgStack.length" @click="prevMessages">
+            {{ t('emails.prevPage') }}
+          </el-button>
+          <el-button size="small" :disabled="!msgCursor" @click="nextMessages">
+            {{ t('emails.nextPage') }}
+          </el-button>
+        </div>
       </el-card>
     </template>
 
@@ -212,6 +225,11 @@ const chosen = ref<Sender | null>(null)
 const view = ref('sent')
 const keyword = ref('')
 const page = ref(1)
+// The message list is keyset: msgCursor is where the next page starts, and
+// msgStack remembers the cursors walked through so 上一页 can replay one.
+const msgCursor = ref('')
+const msgStack = ref<string[]>([])
+const msgAt = ref('')
 const pageSize = 20
 const total = ref(0)
 const loading = ref(false)
@@ -259,6 +277,24 @@ function choose(row: Sender) {
 
 function reload() {
   page.value = 1
+  msgAt.value = ''
+  msgStack.value = []
+  load()
+}
+
+// Forward remembers where this page started so 上一页 can replay it; there is
+// no way to page backwards through a keyset list except by retracing.
+function nextMessages() {
+  if (!msgCursor.value) return
+  msgStack.value = [...msgStack.value, msgAt.value]
+  msgAt.value = msgCursor.value
+  load()
+}
+
+function prevMessages() {
+  if (!msgStack.value.length) return
+  msgAt.value = msgStack.value[msgStack.value.length - 1]
+  msgStack.value = msgStack.value.slice(0, -1)
   load()
 }
 
@@ -276,15 +312,20 @@ async function load() {
       campaigns.value = d.campaigns ?? []
       total.value = Number(d.meta?.total ?? 0)
     } else {
-      const d = await get<{ messages: Message[]; meta: { total: string } }>('/email-messages', {
-        page: page.value,
+      const d = await get<{
+        messages: Message[]
+        meta: { total: string }
+        nextCursor: string
+      }>('/email-messages', {
         page_size: pageSize,
         keyword: keyword.value,
         attention_only: true,
         sender_id: chosen.value.employeeId,
+        cursor: msgAt.value,
       })
       messages.value = d.messages ?? []
       total.value = Number(d.meta?.total ?? 0)
+      msgCursor.value = d.nextCursor ?? ''
     }
   } finally {
     loading.value = false
@@ -405,5 +446,12 @@ function shortTime(v: string) {
 .pager {
   margin-top: 14px;
   justify-content: flex-end;
+}
+/* The keyset pager is our own markup, not el-pagination's, so it needs the
+   layout el-pagination brought with it. */
+.pager.keyset {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 </style>

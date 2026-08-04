@@ -557,15 +557,6 @@
           {{ t('emails.nextPage') }}
         </el-button>
       </div>
-      <el-pagination
-        v-else-if="folder === 'attention'"
-        v-model:current-page="page"
-        :page-size="pageSize"
-        :total="total"
-        layout="total, prev, pager, next"
-        class="pager"
-        @current-change="onPageChange"
-      />
       </template>
     </section>
 
@@ -760,7 +751,9 @@ const INBOUND_VIEWS: Record<string, string> = {
 const isInboundView = computed(() => folder.value in INBOUND_VIEWS)
 // Every mailbox folder pages by cursor. A page number is meaningless on a
 // list that grows at the top, and 已发送 grows at the top like the rest.
-const isKeysetView = computed(() => isInboundView.value || folder.value === 'sent')
+const isKeysetView = computed(
+  () => isInboundView.value || folder.value === 'sent' || folder.value === 'attention' || folder.value === 'scheduled',
+)
 // Junk and the trash get a delete-everything button instead: marking a spam
 // folder read is housekeeping nobody wants, and in the trash it is meaningless.
 const canMarkAllRead = computed(
@@ -1169,10 +1162,6 @@ function reload() {
   pushState({ page: 1, q: keyword.value, mail: '' })
 }
 
-function onPageChange(p: number) {
-  pushState({ page: p })
-}
-
 // Inbound lists page by cursor: forward hands back the token the server
 // returned, back replays the one this page was reached with. Both are
 // navigations, so the address bar and the browser's own buttons stay honest.
@@ -1214,12 +1203,17 @@ async function load() {
       const d = await get<{ drafts: Draft[] }>('/email-drafts')
       drafts.value = d.drafts ?? []
     } else if (folder.value === 'scheduled') {
-      const d = await get<{ sends: Scheduled[]; meta: { total: string } }>('/email-scheduled', {
-        page: page.value,
+      const d = await get<{
+        sends: Scheduled[]
+        meta: { total: string }
+        nextCursor: string
+      }>('/email-scheduled', {
         page_size: pageSize,
+        cursor: applied?.cursor ?? '',
       })
       scheduled.value = d.sends ?? []
       total.value = Number(d.meta?.total ?? 0)
+      nextCursor.value = d.nextCursor ?? ''
     } else if (folder.value === 'sent') {
       const d = await get<{
         mails: SentMail[]
@@ -1234,14 +1228,19 @@ async function load() {
       total.value = Number(d.meta?.total ?? 0)
       nextCursor.value = d.nextCursor ?? ''
     } else if (folder.value === 'attention') {
-      const d = await get<{ messages: Message[]; meta: { total: string } }>('/email-messages', {
-        page: page.value,
+      const d = await get<{
+        messages: Message[]
+        meta: { total: string }
+        nextCursor: string
+      }>('/email-messages', {
         page_size: pageSize,
         keyword: keyword.value,
         attention_only: true,
+        cursor: applied?.cursor ?? '',
       })
       messages.value = d.messages ?? []
       total.value = Number(d.meta?.total ?? 0)
+      nextCursor.value = d.nextCursor ?? ''
       attentionCount.value = total.value
     } else {
       const d = await get<{ suppressions: Suppression[] }>('/email-suppressions', {

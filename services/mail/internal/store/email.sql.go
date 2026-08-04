@@ -1199,8 +1199,13 @@ WHERE tenant_id = $1::bigint
        OR to_email ILIKE '%' || $8::text || '%'
        OR to_name  ILIKE '%' || $8::text || '%'
        OR subject  ILIKE '%' || $8::text || '%')
+  -- Keyset. The order is by id alone, so the cursor is one: the id of the
+  -- last row shown. 0 is the first page. Offset used to do this, and on a
+  -- list that grows at the top it meant a message arriving mid-read could
+  -- push a row across the boundary and show it twice, or hide it.
+  AND ($9::bigint = 0 OR id < $9::bigint)
 ORDER BY id DESC
-LIMIT $10::int OFFSET $9::int
+LIMIT $10::int
 `
 
 type ListMessagesParams struct {
@@ -1212,7 +1217,7 @@ type ListMessagesParams struct {
 	Status        string
 	AttentionOnly bool
 	Keyword       string
-	RowOffset     int32
+	CursorID      int64
 	RowLimit      int32
 }
 
@@ -1247,7 +1252,7 @@ func (q *Queries) ListMessages(ctx context.Context, arg ListMessagesParams) ([]L
 		arg.Status,
 		arg.AttentionOnly,
 		arg.Keyword,
-		arg.RowOffset,
+		arg.CursorID,
 		arg.RowLimit,
 	)
 	if err != nil {
@@ -1314,15 +1319,20 @@ WHERE c.tenant_id = $1::bigint
   -- Own sends only. Unlike the sent list this carries no data scope: a
   -- scheduled mail is still the sender's to change, and nobody else's.
   AND c.sender_id = $2::bigint
+  -- Keyset, ascending: this list is ordered by when each send is due, so it
+  -- reads soonest-first and the cursor walks forward rather than back.
+  AND ($3::timestamptz IS NULL
+       OR (m.due_at, c.id) > ($3::timestamptz, $4::bigint))
 ORDER BY m.due_at, c.id
-LIMIT $4::int OFFSET $3::int
+LIMIT $5::int
 `
 
 type ListScheduledParams struct {
-	TenantID  int64
-	SenderID  int64
-	RowOffset int32
-	RowLimit  int32
+	TenantID int64
+	SenderID int64
+	CursorAt pgtype.Timestamptz
+	CursorID int64
+	RowLimit int32
 }
 
 type ListScheduledRow struct {
@@ -1349,7 +1359,8 @@ func (q *Queries) ListScheduled(ctx context.Context, arg ListScheduledParams) ([
 	rows, err := q.db.Query(ctx, listScheduled,
 		arg.TenantID,
 		arg.SenderID,
-		arg.RowOffset,
+		arg.CursorAt,
+		arg.CursorID,
 		arg.RowLimit,
 	)
 	if err != nil {
