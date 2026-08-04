@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package erp.shipping.v1;
+
+option go_package = "github.com/sgao19/erp-go/gen/go/erp/shipping/v1;shippingv1";
+
+// ShippingService is intentionally minimal in D0. Business reads and writes
+// are added in D1; this method proves that the service, database and gateway
+// route are wired together without exposing unfinished functionality.
+service ShippingService {
+  rpc GetModuleStatus(GetModuleStatusRequest) returns (GetModuleStatusResponse);
+}
+
+message GetModuleStatusRequest {}
+
+message GetModuleStatusResponse {
+  string module = 1;
+  string status = 2;
+  int32 schema_version = 3;
+}

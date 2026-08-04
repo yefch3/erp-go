@@ -169,6 +169,20 @@ services:
     depends_on: [inventory, masterdata, approval]
     restart: unless-stopped
 
+  shipping:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args: { SERVICE: shipping }
+    image: erp-go/shipping:dev
+    environment:
+      DB_DSN: postgres://erp_shipping:erp_shipping_pw@postgres:5432/erp_shipping?sslmode=disable
+      GRPC_PORT: "9009"
+    ports:
+      - "9009:9009"
+    networks: [infra]
+    restart: unless-stopped
+
   mail:
     build:
       context: ..
@@ -235,6 +249,7 @@ services:
       EXPORT_ADDR: export:9006
       PROCUREMENT_ADDR: procurement:9007
       INVENTORY_ADDR: inventory:9008
+      SHIPPING_ADDR: shipping:9009
       MAIL_ADDR: mail:9010
       REDIS_ADDR: redis:6379
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
@@ -245,7 +260,7 @@ services:
     ports:
       - "8080:8080"
     networks: [infra]
-    depends_on: [iam, masterdata, fx, approval, product, export, mail]
+    depends_on: [iam, masterdata, fx, approval, product, export, shipping, mail]
     restart: unless-stopped
 
   # The one door that may face outwards, and it is a very narrow one.

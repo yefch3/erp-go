@@ -22,10 +22,11 @@ import (
 	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	ivv1 "github.com/sgao19/erp-go/gen/go/erp/inventory/v1"
-	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
+	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	pdv1 "github.com/sgao19/erp-go/gen/go/erp/product/v1"
+	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/authtoken"
 	"github.com/sgao19/erp-go/pkg/grpcx"
@@ -52,6 +53,7 @@ type Server struct {
 	Requirements prv1.RequirementServiceClient
 	Orders       prv1.PurchaseOrderServiceClient
 	Stocks       ivv1.StockServiceClient
+	Shipping     shippingv1.ShippingServiceClient
 	Emails       mailv1.EmailServiceClient
 	// Unlock holds mailbox-verification tokens. Nil fails closed: every mail
 	// route answers MAIL_LOCKED until a store exists.
@@ -196,6 +198,9 @@ func (s *Server) Router() http.Handler {
 		// Which boats one contract's goods are on. Gated on reading shipments,
 		// not contracts: it is shipping information reached from the other end.
 		r.With(s.perm("export:shipment:read")).Get("/api/contracts/{id}/vessels", s.listContractVessels)
+		// D0 readiness endpoint for the independent shipping domain. Schedule
+		// list and command routes deliberately begin in D1.
+		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/status", s.getShippingStatus)
 		// Collection. Its own permission because it is finance work: the
 		// person who reconciles bank lines is not the person who sells, and
 		// neither should be able to do the other's job by accident.

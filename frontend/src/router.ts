@@ -15,6 +15,7 @@ export const router = createRouter({
         { path: 'quotations', component: () => import('./pages/QuotationsPage.vue') },
         { path: 'contracts', component: () => import('./pages/ContractsPage.vue') },
         { path: 'shipments', component: () => import('./pages/ShipmentsPage.vue') },
+        { path: 'shipping', component: () => import('./pages/ShippingPage.vue') },
         { path: 'receipts', component: () => import('./pages/ReceiptsPage.vue') },
         { path: 'stocks', component: () => import('./pages/StocksPage.vue') },
         { path: 'outbounds', component: () => import('./pages/OutboundsPage.vue') },

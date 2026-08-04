@@ -19,10 +19,11 @@ import (
 	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	ivv1 "github.com/sgao19/erp-go/gen/go/erp/inventory/v1"
-	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
+	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	pdv1 "github.com/sgao19/erp-go/gen/go/erp/product/v1"
+	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/pkg/livefeed"
 	"github.com/sgao19/erp-go/services/gateway/internal/config"
@@ -89,6 +90,11 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer ivConn.Close()
+	shippingConn, err := dial(cfg.ShippingAddr)
+	if err != nil {
+		return err
+	}
+	defer shippingConn.Close()
 	ntConn, err := dial(cfg.MailAddr)
 	if err != nil {
 		return err
@@ -143,6 +149,7 @@ func run(log *slog.Logger) error {
 		Requirements:     prv1.NewRequirementServiceClient(prConn),
 		Orders:           prv1.NewPurchaseOrderServiceClient(prConn),
 		Stocks:           ivv1.NewStockServiceClient(ivConn),
+		Shipping:         shippingv1.NewShippingServiceClient(shippingConn),
 		Emails:           mailv1.NewEmailServiceClient(ntConn),
 		Unlock:           unlock,
 		GoogleClientID:   os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),

@@ -17,6 +17,7 @@ export default {
     quotations: '报价单',
     contracts: '出口合同',
     shipments: '出运单',
+    shipping: '船期管理',
     receipts: '收款对账',
     stocks: '库存管理',
     outbounds: '出库管理',
@@ -27,6 +28,13 @@ export default {
     signatures: '签名模板',
     teamMail: '员工邮件',
     todo: '（待开发）',
+  },
+  shipping: {
+    title: '船期管理',
+    foundationReady: '船期模块基础结构已就绪',
+    description: '当前仅完成 D0 基础结构。船期列表、新增、编辑、单证和到港提醒将在后续阶段开发。',
+    schemaVersion: '数据库结构版本',
+    unavailable: '船期服务暂时不可用',
   },
   common: {
     detail: '详情',
