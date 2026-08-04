@@ -882,6 +882,7 @@ export default {
     showQuoted: '展开引用内容',
     hideQuoted: '收起引用内容',
     backToList: '返回',
+    backToSend: '返回这次发送',
     purge: '彻底删除',
     purgeHint: '这封邮件将被永久删除，无法恢复。确定吗？',
     purgeManyHint: '选中的 {n} 封邮件将被永久删除，无法恢复。确定吗？',

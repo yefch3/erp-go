@@ -206,6 +206,69 @@
         </template>
       </template>
 
+      <!-- ------------------------------------------- reading a sent mail -->
+      <!-- The same page treatment as an inbound mail, and for the same
+           reasons. A sent mail used to open in a drawer over the list: no
+           address of its own, so no refresh, no back button, no link to send
+           a colleague — and a narrower column to read the same mail in. -->
+      <template v-else-if="outboundOpen">
+        <div class="detail-top">
+          <el-button link class="back-btn" @click="backFromOutbound">
+            ← {{ insideSend ? t('emails.backToSend') : t('emails.backToList') }}
+          </el-button>
+        </div>
+        <!-- MailReader renders nothing without a mail, so without this the
+             page would be a lone back button until the fetch lands. -->
+        <div v-loading="readerLoading" class="reader-slot">
+          <MailReader :mail="openMail" />
+        </div>
+        <!-- Who it went to, underneath. That ordering is the point: the mail
+             is the thing, the recipient list is the detail below it. -->
+        <template v-if="openedCampaign && recipients.length && !insideSend">
+          <h4 class="side-title">
+            {{ t('emails.recipientsOfSend', { n: recipients.length }) }}
+          </h4>
+          <el-table :data="recipients" size="small" v-loading="recipientsLoading">
+            <el-table-column :label="t('emails.recipient')" min-width="180">
+              <template #default="{ row }">
+                <div>{{ row.toName || '—' }}</div>
+                <div class="sub">{{ row.toEmail }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column :label="common('status')" width="130">
+              <template #default="{ row }">
+                <el-tag size="small" :type="statusType(row.status)" effect="plain">
+                  {{ t(`emails.statuses.${row.status}`) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <!-- "可能已打开", never "已读". The pixel over-reports for Apple
+                 Mail (it pre-fetches images unopened) and under-reports for
+                 Outlook (it blocks them when genuinely read). A vague label
+                 that is honest beats a precise one that is wrong. -->
+            <el-table-column :label="t('emails.openedCol')" width="120">
+              <template #default="{ row }">
+                <el-tooltip
+                  v-if="row.openedAt"
+                  :content="t('emails.openedHint', { at: shortTime(row.openedAt) })"
+                  placement="top"
+                >
+                  <span class="opened">{{ t('emails.maybeOpened') }}</span>
+                </el-tooltip>
+                <span v-else class="sub">—</span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="common('actions')" width="80">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openMessage(row)">
+                  {{ t('emails.openOne') }}
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </template>
+      </template>
+
       <template v-else>
       <div class="pane-head">
         <!-- Select-all lives in the toolbar, not in a list header: this list
@@ -615,58 +678,6 @@
 
     <EmailComposer ref="composer" v-model="composing" @sent="onSent" @saved="onDraftSaved" />
 
-    <!-- Reading a sent mail: the message itself, then who it went to. That
-         ordering is the point — the mail is the thing, the recipient list is
-         the detail underneath it. -->
-    <el-drawer v-model="readerOpen" size="58%" :with-header="false">
-      <div class="drawer-body">
-        <MailReader :mail="openMail" />
-        <template v-if="folder === 'sent' && recipients.length">
-          <h4 class="side-title">
-            {{ t('emails.recipientsOfSend', { n: recipients.length }) }}
-          </h4>
-          <el-table :data="recipients" size="small" v-loading="recipientsLoading">
-            <el-table-column :label="t('emails.recipient')" min-width="180">
-              <template #default="{ row }">
-                <div>{{ row.toName || '—' }}</div>
-                <div class="sub">{{ row.toEmail }}</div>
-              </template>
-            </el-table-column>
-            <el-table-column :label="common('status')" width="130">
-              <template #default="{ row }">
-                <el-tag size="small" :type="statusType(row.status)" effect="plain">
-                  {{ t(`emails.statuses.${row.status}`) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <!-- "可能已打开", never "已读". The pixel over-reports for Apple
-                 Mail (it pre-fetches images unopened) and under-reports for
-                 Outlook (it blocks them when genuinely read). A vague label
-                 that is honest beats a precise one that is wrong. -->
-            <el-table-column :label="t('emails.openedCol')" width="120">
-              <template #default="{ row }">
-                <el-tooltip
-                  v-if="row.openedAt"
-                  :content="t('emails.openedHint', { at: shortTime(row.openedAt) })"
-                  placement="top"
-                >
-                  <span class="opened">{{ t('emails.maybeOpened') }}</span>
-                </el-tooltip>
-                <span v-else class="sub">—</span>
-              </template>
-            </el-table-column>
-            <el-table-column :label="common('actions')" width="80">
-              <template #default="{ row }">
-                <el-button link type="primary" @click="openMessage(row)">
-                  {{ t('emails.openOne') }}
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </template>
-      </div>
-    </el-drawer>
-
     <el-dialog v-model="requeueOpen" :title="t('emails.requeueTitle')" width="480px">
       <p class="hint">{{ t('emails.requeueHint') }}</p>
       <el-form label-width="90px">
@@ -953,6 +964,12 @@ interface UrlState {
   q: string
   sent: 'erp' | 'mailbox'
   mail: string
+  // The outbound side of the same idea. A send has two levels — the campaign
+  // (what went out) and one recipient's copy of it (what that person got) —
+  // so they get a key each, and msg wins when both are set: opening one
+  // recipient from a campaign's list should not lose the campaign behind it.
+  campaign: string
+  msg: string
   // Where an inbound list page starts. Opaque server token; empty is the
   // first page. Offset paging (page) still drives sent/attention.
   cursor: string
@@ -977,6 +994,8 @@ function parseQuery(q: LocationQuery): UrlState {
     q: one(q.q),
     sent: one(q.sent) === 'mailbox' ? 'mailbox' : 'erp',
     mail: /^\d+$/.test(one(q.mail)) ? one(q.mail) : '',
+    campaign: /^\d+$/.test(one(q.cid)) ? one(q.cid) : '',
+    msg: /^\d+$/.test(one(q.msg)) ? one(q.msg) : '',
     cursor: one(q.c),
   }
 }
@@ -989,6 +1008,8 @@ function toQuery(s: UrlState): Record<string, string> {
   if (s.q) query.q = s.q
   if (s.folder === 'sent' && s.sent !== 'erp') query.sent = s.sent
   if (s.mail) query.mail = s.mail
+  if (s.campaign) query.cid = s.campaign
+  if (s.msg) query.msg = s.msg
   if (s.cursor) query.c = s.cursor
   return query
 }
@@ -1012,6 +1033,14 @@ function pushState(over: Partial<UrlState>, stack?: string[]) {
   // one has to clear the other or a stale cursor would survive a search.
   if (over.cursor === undefined && (over.folder !== undefined || over.q !== undefined || over.sent !== undefined || over.page !== undefined)) {
     next.cursor = ''
+  }
+  // "Back to the list" is one intent however it is spelled, and inbound and
+  // outbound details occupy the same slot on screen. Clearing them together
+  // here beats remembering to name all three at every call site — the kind of
+  // thing that works until somebody adds a fourth.
+  if (over.mail === '') {
+    next.campaign = ''
+    next.msg = ''
   }
   // Navigating to where we already are is a plain refresh, not a navigation:
   // pushing an identical route would be silently dropped by the router.
@@ -1054,14 +1083,49 @@ function applyRoute() {
       threadItems.value = []
     }
   }
+  // The outbound pair, on the same terms as the inbound one: the URL says
+  // what is open, and this is the only place that acts on it.
+  if (!prev || prev.campaign !== s.campaign) {
+    if (s.campaign) {
+      loadCampaign(s.campaign)
+    } else {
+      openedCampaign.value = ''
+      recipients.value = []
+    }
+  }
+  if (!prev || prev.msg !== s.msg) {
+    if (s.msg) {
+      loadMessage(s.msg)
+    } else if (s.campaign) {
+      // Coming back to a send from one recipient's copy. The send borrows the
+      // first recipient's body, and opening a different one replaced it, so
+      // the send has to be rebuilt rather than simply revealed.
+      loadCampaign(s.campaign)
+    } else {
+      openMail.value = null
+    }
+  }
 }
 
 watch(() => route.query, applyRoute)
 
-const readerOpen = ref(false)
+// The outbound detail page. openMail is one recipient's copy — the only place
+// a rendered body exists — and openedCampaign is the send it belongs to, when
+// it came from one.
 const openMail = ref<Mail | null>(null)
+const openedCampaign = ref('')
 const recipients = ref<Message[]>([])
 const recipientsLoading = ref(false)
+const readerLoading = ref(false)
+// Something outbound is on screen, so the list and its toolbar step aside.
+const outboundOpen = computed(() => !!(openedCampaign.value || openMail.value))
+// Reading one recipient's copy from inside a send. Read off the URL rather
+// than the refs because both levels set openMail — the campaign borrows the
+// first recipient's copy for its body — so the refs cannot tell them apart.
+const insideSend = computed(() => {
+  const s = parseQuery(route.query)
+  return !!(s.msg && s.campaign)
+})
 
 const requeueOpen = ref(false)
 const requeueRow = ref<Message | null>(null)
@@ -1884,31 +1948,59 @@ function initialOf(name: string) {
 // A bulk send has N copies of one mail. Opening it shows the mail — read from
 // the first recipient's copy, which is the only place the rendered text
 // exists — and lists the recipients underneath.
-async function openCampaign(row: Campaign) {
-  readerOpen.value = true
-  openMail.value = null
+//
+// A click is a navigation; the route watcher does the fetching. Same as the
+// inbox: a sent mail is a thing you can link to, refresh on, and back out of.
+function openCampaign(row: Campaign) {
+  pushState({ campaign: row.id, msg: '' })
+}
+
+function openMessage(row: Message) {
+  pushState({ msg: row.id })
+}
+
+// Back out one level, not all the way. Reading one recipient's copy inside a
+// campaign returns to the campaign; from the attention list, where there is
+// no campaign underneath, it returns to the list.
+function backFromOutbound() {
+  if (insideSend.value) {
+    pushState({ msg: '' })
+    return
+  }
+  pushState({ mail: '' })
+}
+
+async function loadCampaign(id: string) {
+  openedCampaign.value = id
   recipients.value = []
   recipientsLoading.value = true
+  readerLoading.value = true
   try {
     const d = await get<{ messages: Message[] }>('/email-messages', {
-      campaign_id: row.id,
+      campaign_id: id,
       page_size: 200,
     })
     recipients.value = d.messages ?? []
-    if (recipients.value.length) {
+    // The campaign has no rendered body of its own — every recipient's copy
+    // is merged separately — so the first one stands for it.
+    if (recipients.value.length && !applied?.msg) {
       const full = await get<{ message: Mail }>(`/email-messages/${recipients.value[0].id}`)
       openMail.value = full.message
     }
   } finally {
     recipientsLoading.value = false
+    readerLoading.value = false
   }
 }
 
-async function openMessage(row: Message) {
-  const d = await get<{ message: Mail }>(`/email-messages/${row.id}`)
-  openMail.value = d.message
-  if (folder.value !== 'sent') recipients.value = []
-  readerOpen.value = true
+async function loadMessage(id: string) {
+  readerLoading.value = true
+  try {
+    const d = await get<{ message: Mail }>(`/email-messages/${id}`)
+    openMail.value = d.message
+  } finally {
+    readerLoading.value = false
+  }
 }
 
 function openRequeue(row: Message) {
@@ -2137,8 +2229,10 @@ async function doUnsuppress(row: Suppression) {
   line-height: 1.7;
   color: var(--el-text-color-secondary);
 }
-.drawer-body {
-  padding: 4px 6px;
+/* Enough height for the spinner to have somewhere to sit while the mail
+   is on its way. */
+.reader-slot {
+  min-height: 120px;
 }
 .side-title {
   margin: 26px 0 10px;

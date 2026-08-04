@@ -887,6 +887,7 @@ export default {
     showQuoted: 'Mostrar texto citado',
     hideQuoted: 'Ocultar texto citado',
     backToList: 'Volver',
+    backToSend: 'Volver al envío',
     purge: 'Eliminar definitivamente',
     purgeHint: 'Este correo se eliminará de forma permanente y no se podrá recuperar. ¿Continuar?',
     purgeManyHint: 'Los {n} correos seleccionados se eliminarán de forma permanente y no se podrán recuperar. ¿Continuar?',
