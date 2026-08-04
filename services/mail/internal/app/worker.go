@@ -247,7 +247,7 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 	case Accepted:
 		if err := s.q.MarkAccepted(ctx, store.MarkAcceptedParams{
 			TenantID: cfg.TenantID, ID: m.ID, ProviderID: res.ProviderID,
-			Tracked: tracked,
+			Tracked: tracked, FromEmail: res.FromEmail,
 		}); err != nil {
 			s.log.Error("could not record acceptance", "id", m.ID, "err", err)
 			return

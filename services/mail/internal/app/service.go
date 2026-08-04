@@ -69,7 +69,13 @@ const (
 type SendResult struct {
 	Outcome    Outcome
 	ProviderID string
-	Err        string
+	// FromEmail is the address this message actually left from — whatever the
+	// adapter put in the From header, reported back rather than inferred.
+	// Only the adapter knows it: it resolves the sender's mailbox at the
+	// moment of sending, and that binding can change afterwards. Set on
+	// Accepted; empty otherwise, because nothing left.
+	FromEmail string
+	Err       string
 	// Recipients the host refused individually while accepting the
 	// transaction as a whole. Only ever set for merged sends.
 	Rejected []RecipientReject

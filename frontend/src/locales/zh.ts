@@ -1197,6 +1197,8 @@ export default {
     noTracking: '未开启追踪',
     noTrackingHint: '这封信没有带追踪像素——纯文本邮件无法承载图片，或者发送时系统还没有配置公网地址（MAIL_PUBLIC_BASE_URL）。所以这里不是「没读」，而是「没看」。',
     to: '发给',
+    fromUnrecorded: '发件地址未记录',
+    fromUnrecordedHint: '这封信发出时，系统还没有把发件地址写进记录里。之前这里显示的是该员工当前绑定的邮箱——如果中途换过绑定，那个地址就是错的。所以现在宁可留空，也不猜。',
     attachments: '{n} 个附件',
   },
   recipients: {
