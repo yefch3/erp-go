@@ -219,10 +219,16 @@ RETURNING m.id, m.message_key::text AS message_key, m.kind, m.to_email, m.to_nam
 -- is decided at this moment, by this message's format and the address the
 -- service had at the time, and neither can be recovered from the row
 -- afterwards. See migration 00019.
+--
+-- from_email is here for the same reason and is the stronger case: the
+-- address is knowable only now, while the adapter still holds the binding it
+-- authenticated with. Rebinding the mailbox later does not make this mail
+-- have left from somewhere else. See migration 00021.
 UPDATE email_messages
 SET status = 'ACCEPTED', provider_id = sqlc.arg(provider_id)::text,
     sent_at = now(), last_error = '',
-    tracked = sqlc.arg(tracked)::boolean
+    tracked = sqlc.arg(tracked)::boolean,
+    from_email = sqlc.arg(from_email)::text
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: MarkRetryable :exec
@@ -252,28 +258,28 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND queued_at < now() - (sqlc.arg(window_seconds)::int || ' seconds')::interval;
 
 -- name: GetMessage :one
--- The sender's address comes off the bound mailbox, not off the campaign.
+-- The sender's address is the one stamped on the row at send time.
 --
--- campaigns.sender_email looks like the right column and is not: it is copied
--- from the employee's HR record (employees.email), which is a profile field
--- and carries no guarantee of being the mailbox anybody sends from. The two
--- agree today and there is nothing keeping them that way — changing the
--- binding does not touch the HR record, and vice versa. Naming an address the
--- mail never left from is worse than naming none, so this reads the binding:
--- mail_accounts.email is literally what buildMessage puts in the From header.
+-- Two nearby columns look like the right answer and are not. campaigns
+-- .sender_email is copied from the employee's HR record, a profile field that
+-- carries no guarantee of being the mailbox anybody sends from. And joining
+-- mail_accounts on employee_id — which this query used to do — answers a
+-- different question than the one asked: not "where did this leave from" but
+-- "where would it leave from if sent now". Those agree until somebody rebinds
+-- their mailbox, and then every message in history silently changes sender.
 --
--- Reads today's binding, so a mailbox rebound since the send would show the
--- new address. The alternative is stamping it on every message row; not worth
--- it until somebody actually rebinds mid-history.
+-- So it reads email_messages.from_email, written by MarkAccepted from the
+-- binding the adapter authenticated with. Empty for anything sent before
+-- migration 00021, which the screen renders as "未记录" rather than filling in
+-- from a guess.
 SELECT
     m.id, coalesce(m.campaign_id, 0)::bigint AS campaign_id, m.message_key::text AS message_key, m.kind,
-    m.sender_id, m.sender_name, coalesce(a.email, '')::text AS sender_email,
+    m.sender_id, m.sender_name, m.from_email::text AS sender_email,
     m.to_email, m.to_name, m.customer_name, m.contact_id,
     m.subject, m.body, m.body_text, m.body_format, m.status, m.attempt_count, m.provider_id, m.last_error,
     m.attention_reason, m.queued_at, m.sent_at, m.delivered_at, m.opened_at, m.clicked_at,
     m.tracked
 FROM email_messages m
-LEFT JOIN mail_accounts a ON a.employee_id = m.sender_id AND a.tenant_id = m.tenant_id
 WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint AND m.id = sqlc.arg(id)::bigint;
 
 -- name: ListMessages :many

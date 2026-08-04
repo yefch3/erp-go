@@ -1202,6 +1202,8 @@ export default {
     noTracking: 'Tracking off',
     noTrackingHint: 'This mail carried no tracking pixel — a plain-text mail cannot hold an image, or the service had no publicly reachable address (MAIL_PUBLIC_BASE_URL) when it was sent. So this is "not watched", not "not read".',
     to: 'to',
+    fromUnrecorded: 'sender address not recorded',
+    fromUnrecordedHint: 'This mail was sent before the service stamped the sending address onto the record. What used to be shown here was the mailbox the employee is bound to now — which is the wrong address if the binding has changed since. Left blank rather than guessed.',
     attachments: '{n} attachment(s)',
   },
   recipients: {
