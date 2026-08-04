@@ -2,20 +2,22 @@
   <div v-if="mail" class="reader">
     <h3 class="subject">{{ mail.subject }}</h3>
 
+    <!-- Both addresses, the way every mail client shows a mail: who it came
+         from and who it went to, each with the address under the name. The
+         page used to name the sender without their address, which reads as
+         half a header — you cannot tell which mailbox it left from. -->
     <div class="head">
       <div class="avatar">{{ initial(mail.senderName) }}</div>
       <div class="head-text">
         <div class="line1">
           <span class="from">{{ mail.senderName }}</span>
+          <span v-if="mail.senderEmail" class="dim mono">&lt;{{ mail.senderEmail }}&gt;</span>
+          <span class="dim">{{ stamp }}</span>
+        </div>
+        <div class="line2">
           <span class="dim">{{ t('reader.to') }}</span>
           <span class="to">{{ mail.toName || mail.toEmail }}</span>
           <span class="dim mono">&lt;{{ mail.toEmail }}&gt;</span>
-        </div>
-        <div class="line2">
-          <el-tag size="small" :type="statusType(mail.status)" effect="plain">
-            {{ t(`emails.statuses.${mail.status}`) }}
-          </el-tag>
-          <span class="dim">{{ stamp }}</span>
           <span v-if="mail.customerName" class="dim">· {{ mail.customerName }}</span>
         </div>
       </div>
@@ -29,6 +31,9 @@
          recipient. Claiming the second as the first would be the system
          inventing a fact about a customer. -->
     <div class="readback">
+      <el-tag size="small" :type="statusType(mail.status)" effect="plain">
+        {{ t(`emails.statuses.${mail.status}`) }}
+      </el-tag>
       <span class="rb-label">{{ t('reader.openedLabel') }}</span>
       <el-tooltip
         v-if="mail.openedAt"
@@ -70,15 +75,6 @@
     <div v-if="mail.bodyFormat === 'HTML'" class="body html" v-html="mail.body" />
     <pre v-else class="body text">{{ mail.body }}</pre>
 
-    <!-- The text alternative is folded away: it is what a reader with images
-         off actually got, so it is worth being able to check, but it is not
-         what you came to read. -->
-    <el-collapse v-if="mail.bodyFormat === 'HTML' && mail.bodyText" class="alt">
-      <el-collapse-item :title="t('emails.textAlternative')" name="alt">
-        <pre class="body text">{{ mail.bodyText }}</pre>
-      </el-collapse-item>
-    </el-collapse>
-
     <div v-if="mail.attachments?.length" class="files">
       <div class="side-title">
         {{ t('reader.attachments', { n: mail.attachments.length }) }}
@@ -90,22 +86,6 @@
       </div>
     </div>
 
-    <h4 class="side-title">{{ t('emails.history') }}</h4>
-    <el-timeline v-if="mail.events?.length">
-      <el-timeline-item
-        v-for="e in mail.events"
-        :key="e.id"
-        :timestamp="shortTime(e.occurredAt)"
-        :type="e.kind === 'BOUNCE' || e.kind === 'COMPLAINT' ? 'danger' : 'primary'"
-      >
-        <span>{{ t(`emails.events.${e.kind}`, e.kind) }}</span>
-        <el-tag v-if="e.isProxy" size="small" effect="plain" class="tagm">
-          {{ t('emails.viaProxy') }}
-        </el-tag>
-        <div v-if="e.detail" class="dim mono">{{ e.detail }}</div>
-      </el-timeline-item>
-    </el-timeline>
-    <el-empty v-else :description="t('emails.noEvents')" :image-size="50" />
   </div>
 </template>
 
@@ -119,16 +99,10 @@ interface Attachment {
   fileSize: string
   contentType: string
 }
-interface Event {
-  id: string
-  kind: string
-  occurredAt: string
-  isProxy: boolean
-  detail: string
-}
 export interface Mail {
   id: string
   senderName: string
+  senderEmail: string
   toEmail: string
   toName: string
   customerName: string
@@ -147,7 +121,6 @@ export interface Mail {
   // and only the first is a statement about the recipient.
   trackingEnabled: boolean
   attachments: Attachment[]
-  events: Event[]
 }
 
 const props = defineProps<{ mail: Mail | null }>()
@@ -282,9 +255,6 @@ function humanSize(bytes: number) {
 .body.html :deep(a) {
   color: var(--el-color-primary);
 }
-.alt {
-  margin-top: 18px;
-}
 .files {
   margin-top: 20px;
   padding-top: 14px;
@@ -303,8 +273,5 @@ function humanSize(bytes: number) {
 }
 h4.side-title {
   margin-top: 22px;
-}
-.tagm {
-  margin-left: 6px;
 }
 </style>
