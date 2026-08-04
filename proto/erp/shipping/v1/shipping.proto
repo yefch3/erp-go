@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package erp.shipping.v1;
 
+import "erp/common/v1/pagination.proto";
+
 option go_package = "github.com/sgao19/erp-go/gen/go/erp/shipping/v1;shippingv1";
 
 // ShippingService is intentionally minimal in D0. Business reads and writes
@@ -9,6 +11,12 @@ option go_package = "github.com/sgao19/erp-go/gen/go/erp/shipping/v1;shippingv1"
 // route are wired together without exposing unfinished functionality.
 service ShippingService {
   rpc GetModuleStatus(GetModuleStatusRequest) returns (GetModuleStatusResponse);
+  rpc ListSchedules(ListSchedulesRequest) returns (ListSchedulesResponse);
+  rpc GetSchedule(GetScheduleRequest) returns (GetScheduleResponse);
+  rpc CreateSchedule(CreateScheduleRequest) returns (CreateScheduleResponse);
+  rpc UpdateSchedule(UpdateScheduleRequest) returns (UpdateScheduleResponse);
+  rpc UpdateScheduleStatus(UpdateScheduleStatusRequest) returns (UpdateScheduleStatusResponse);
+  rpc CancelSchedule(CancelScheduleRequest) returns (CancelScheduleResponse);
 }
 
 message GetModuleStatusRequest {}
@@ -18,3 +26,85 @@ message GetModuleStatusResponse {
   string status = 2;
   int32 schema_version = 3;
 }
+
+message Schedule {
+  int64 id = 1;
+  string schedule_no = 2;
+  int64 contract_id = 3;
+  string contract_no = 4;
+  int64 customer_id = 5;
+  string customer_name = 6;
+  string carrier_forwarder = 7;
+  string vessel_name = 8;
+  string voyage_no = 9;
+  string port_of_loading = 10;
+  string port_of_discharge = 11;
+  string etd = 12;
+  string atd = 13;
+  string eta = 14;
+  string ata = 15;
+  int64 responsible_employee_id = 16;
+  string responsible_name = 17;
+  string status = 18;
+  string remark = 19;
+  int64 created_by = 20;
+  string created_by_name = 21;
+  string created_at = 22;
+  int64 updated_by = 23;
+  string updated_by_name = 24;
+  string updated_at = 25;
+}
+
+message ScheduleInput {
+  int64 contract_id = 1;
+  string contract_no = 2;
+  int64 customer_id = 3;
+  string customer_name = 4;
+  string carrier_forwarder = 5;
+  string vessel_name = 6;
+  string voyage_no = 7;
+  string port_of_loading = 8;
+  string port_of_discharge = 9;
+  string etd = 10;
+  string atd = 11;
+  string eta = 12;
+  string ata = 13;
+  int64 responsible_employee_id = 14;
+  string responsible_name = 15;
+  string remark = 16;
+}
+
+message ScheduleChange {
+  int64 id = 1;
+  string change_type = 2;
+  string field_name = 3;
+  string old_value = 4;
+  string new_value = 5;
+  string reason = 6;
+  int64 operator_id = 7;
+  string operator_name = 8;
+  string created_at = 9;
+}
+
+message ListSchedulesRequest {
+  string keyword = 1;
+  string status = 2;
+  string port_of_loading = 3;
+  string port_of_discharge = 4;
+  string etd_from = 5;
+  string etd_to = 6;
+  string eta_from = 7;
+  string eta_to = 8;
+  erp.common.v1.PageRequest page = 9;
+}
+message ListSchedulesResponse { repeated Schedule schedules = 1; erp.common.v1.PageMeta meta = 2; }
+message GetScheduleRequest { int64 id = 1; }
+message GetScheduleResponse { Schedule schedule = 1; repeated ScheduleChange changes = 2; }
+message CreateScheduleRequest { ScheduleInput schedule = 1; bool confirm_duplicate = 2; }
+message CreateScheduleResponse { Schedule schedule = 1; }
+message UpdateScheduleRequest { int64 id = 1; ScheduleInput schedule = 2; string date_change_reason = 3; bool confirm_duplicate = 4; }
+message UpdateScheduleResponse { Schedule schedule = 1; }
+message UpdateScheduleStatusRequest { int64 id = 1; string status = 2; string reason = 3; }
+message UpdateScheduleStatusResponse { Schedule schedule = 1; }
+message CancelScheduleRequest { int64 id = 1; string reason = 2; }
+message CancelScheduleResponse { Schedule schedule = 1; }
