@@ -490,22 +490,23 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 
 -- The Sent folder, from both places a sent mail is recorded.
 --
--- There are two, and they cannot be reconciled. The ERP writes its own record
--- with per-recipient delivery status and open tracking; the host keeps a copy
--- in its Sent folder. Joining them by Message-ID looks obvious and does not
--- work: Gmail rewrites the header on the way out, so the id the ERP wrote
--- (<uuid@gmail.com>) is not the id that comes back (CAANWAZy…@mail.gmail.com).
--- Verified on live data — 18 ERP sends, 0 matches.
+-- There are two, and they are already de-duplicated — at ingest, not here.
+-- The ERP writes its own record with per-recipient delivery status and open
+-- tracking; the host keeps a copy in its Sent folder, and ingest drops that
+-- copy when the Message-ID carries a message_key the ERP recognises (see the
+-- SENT branch in inbound.go). So an ERP send exists once, as the ERP record.
 --
--- Showing one source loses mail either way. The ERP's list misses anything
--- sent from the mail app directly; the host's Sent folder misses whatever it
--- has not echoed back yet, which for a mail sent a minute ago is all of it.
--- So both, merged by time.
+-- An earlier version of this comment claimed the two could not be joined
+-- because Gmail rewrites the Message-ID. That was wrong: the comparison
+-- behind it put <uuid@domain> against uuid@domain, and the copies that would
+-- have matched are precisely the ones ingest never stores.
 --
--- Duplicates are removed on recipient + subject + within ten minutes, and
--- deliberately only then: a near-miss shows the mail twice, which is a
--- confusing list. A greedy match would hide a mail somebody sent, which is
--- worse than a confusing list.
+-- Both sources are still needed. The ERP's records miss anything composed in
+-- the mail app directly; the host's Sent folder holds exactly those. The
+-- recipient + subject + ten-minute rule below is therefore a belt-and-braces
+-- guard for hosts that do not preserve the header, not the primary mechanism,
+-- and it stays loose on purpose: a near-miss shows the mail twice, which is a
+-- confusing list, while a greedy match hides a mail somebody sent.
 --
 -- kind tells the caller which record a row is, because they open different
 -- pages — the ERP one knows about delivery, the host one has the raw message.
