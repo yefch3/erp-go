@@ -887,6 +887,7 @@ export default {
     showQuoted: 'Show quoted text',
     hideQuoted: 'Hide quoted text',
     backToList: 'Back',
+    backToSend: 'Back to the send',
     purge: 'Delete forever',
     purgeHint: 'This mail will be deleted permanently and cannot be recovered. Continue?',
     purgeManyHint: 'The {n} selected mails will be deleted permanently and cannot be recovered. Continue?',
