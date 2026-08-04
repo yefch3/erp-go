@@ -1694,6 +1694,23 @@ async function checkSyncHealth() {
   }
 }
 
+// The banner has to be able to go away on its own.
+//
+// It used to be read once, on mount. So a problem that had since been fixed —
+// by signing in again, by the host coming back, by the poller simply
+// succeeding — kept shouting until somebody reloaded the page, and a mailbox
+// that was working looked broken. This is a mailbox: it is left open all day,
+// which is exactly the window in which both the breaking and the mending
+// happen.
+//
+// One cheap read a minute, and only while the page is actually being looked
+// at — a backgrounded tab has nobody to inform.
+const healthEvery = 60_000
+const healthTimer = window.setInterval(() => {
+  if (locked.value === false && document.visibilityState === 'visible') checkSyncHealth()
+}, healthEvery)
+onUnmounted(() => window.clearInterval(healthTimer))
+
 // A quiet pull on open: no spinner, no toast. A failure shows up as the
 // banner, which is where a persistent problem belongs — not in a toast that
 // disappears before it is read.
