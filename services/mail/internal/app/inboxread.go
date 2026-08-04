@@ -34,11 +34,10 @@ type InboundView struct {
 	// list collapses a conversation into one row and shows this count.
 	ThreadCount int32
 
-	// Sent folder only. A sent mail exists in two records that cannot be
-	// matched — the host rewrites the Message-ID — so the list merges both and
-	// says which one each row is. "ERP" means we sent it and are tracking
-	// delivery; "HOST" means it came from the host's Sent folder and nothing
-	// is known about what happened after it left.
+	// Sent folder only. "HOST" is a real message in the host's Sent folder —
+	// every mailbox action works on it. "ERP" is a delivery record the host
+	// never kept a copy of, shown after a grace period so a mail that was
+	// genuinely sent is never missing; it has no message to act on.
 	Kind     string
 	ToName   string
 	Status   string
@@ -551,38 +550,44 @@ func errNotFound() error {
 	return apierr.NotFound("NT_MESSAGE_NOT_FOUND", "邮件记录不存在")
 }
 
-// ListMailboxSent is everything this person has sent, from both records of it.
+// ListMailboxSent is the Sent folder, and it is a folder: every row is a real
+// message the host is holding, so starring, archiving and deleting work here
+// the same way they do in the inbox. See ListSentUnified for why the ERP's own
+// delivery record is joined on rather than listed.
 //
-// There is no single Sent folder to read. The ERP keeps its own record of what
-// it sent, with per-recipient delivery status and open tracking; the mail host
-// keeps a copy of whatever left through it, including mail composed in some
-// other client. The two cannot be matched to each other — the host rewrites
-// the Message-ID on the way out — so this merges them by time instead, and
-// each row says which record it came from. See ListSentUnified for why.
-func (s *Service) ListMailboxSent(ctx context.Context, tenantID, ownerID int64, keyword string, page, size int32) ([]InboundView, int64, error) {
-	page, size = normalizePage(page, size)
+// Keyset like every other mailbox list. The cursor carries the kind as well as
+// the time and id, because the two halves of the query number their rows in
+// different tables and (at, id) alone is not a unique position.
+func (s *Service) ListMailboxSent(ctx context.Context, tenantID, ownerID int64, keyword, cursor string, size int32) (InboundPage, error) {
+	_, size = normalizePage(1, size)
+	at, kind, id, err := decodeSentCursor(cursor)
+	if err != nil {
+		return InboundPage{}, err
+	}
 	rows, err := s.q.ListSentUnified(ctx, store.ListSentUnifiedParams{
 		TenantID: tenantID, OwnerID: ownerID, Keyword: keyword,
-		RowLimit: size, RowOffset: (page - 1) * size,
+		CursorAt: at, CursorKind: kind, CursorID: id, RowLimit: size,
 	})
 	if err != nil {
-		return nil, 0, err
+		return InboundPage{}, err
 	}
 	total, err := s.q.CountSentUnified(ctx, store.CountSentUnifiedParams{
 		TenantID: tenantID, OwnerID: ownerID, Keyword: keyword,
 	})
 	if err != nil {
-		return nil, 0, err
+		return InboundPage{}, err
 	}
 	out := make([]InboundView, 0, len(rows))
 	for _, r := range rows {
 		v := InboundView{
 			ID: r.ID, Kind: r.Kind, ToEmail: r.ToEmail, ToName: r.ToName,
 			Subject: r.Subject, Snippet: r.Snippet, Status: r.Status,
+			ThreadKey: r.ThreadKey, IsStarred: r.IsStarred,
+			// Sent mail is mail you wrote; there is nothing to have not read.
 			IsRead: true, HasAttachments: r.HasAttachments,
 		}
-		// One timestamp, carried in both fields: the list sorts and displays
-		// on "when it went out", and the two records name that differently.
+		// One timestamp in both fields: the list sorts and displays on "when it
+		// went out", and the two halves name that differently.
 		if r.At.Valid {
 			v.SentAt = r.At.Time
 			v.ReceivedAt = r.At.Time
@@ -592,7 +597,46 @@ func (s *Service) ListMailboxSent(ctx context.Context, tenantID, ownerID int64, 
 		}
 		out = append(out, v)
 	}
-	return out, total, nil
+	page := InboundPage{Mails: out, Total: total}
+	if int32(len(out)) == size && size > 0 {
+		last := out[len(out)-1]
+		page.NextCursor = encodeSentCursor(last.SentAt, last.Kind, last.ID)
+	}
+	return page, nil
+}
+
+// The Sent cursor is (time, kind, id) — the sort key of the last row shown.
+// Opaque on purpose: nothing downstream should do arithmetic on it.
+func encodeSentCursor(at time.Time, kind string, id int64) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(
+		strconv.FormatInt(at.UTC().UnixMicro(), 10) + ":" + kind + ":" + strconv.FormatInt(id, 10)))
+}
+
+func decodeSentCursor(cursor string) (pgtype.Timestamptz, string, int64, error) {
+	if cursor == "" {
+		return pgtype.Timestamptz{}, "", 0, nil
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return pgtype.Timestamptz{}, "", 0, errBadCursor()
+	}
+	micros, rest, ok := strings.Cut(string(raw), ":")
+	if !ok {
+		return pgtype.Timestamptz{}, "", 0, errBadCursor()
+	}
+	kind, idPart, ok := strings.Cut(rest, ":")
+	if !ok {
+		return pgtype.Timestamptz{}, "", 0, errBadCursor()
+	}
+	us, err := strconv.ParseInt(micros, 10, 64)
+	if err != nil {
+		return pgtype.Timestamptz{}, "", 0, errBadCursor()
+	}
+	id, err := strconv.ParseInt(idPart, 10, 64)
+	if err != nil {
+		return pgtype.Timestamptz{}, "", 0, errBadCursor()
+	}
+	return pgtype.Timestamptz{Time: time.UnixMicro(us).UTC(), Valid: true}, kind, id, nil
 }
 
 // Trash keeps itself. Thirty days matches what Gmail and Outlook do, and the

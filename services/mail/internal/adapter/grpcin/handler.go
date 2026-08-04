@@ -785,16 +785,19 @@ func (h *Handler) SyncMailbox(ctx context.Context, _ *mailv1.SyncMailboxRequest)
 
 func (h *Handler) ListMailboxSent(ctx context.Context, req *mailv1.ListMailboxSentRequest) (*mailv1.ListMailboxSentResponse, error) {
 	op := operator(ctx)
-	rows, total, err := h.svc.ListMailboxSent(ctx, grpcx.TenantID(ctx), op.ID,
-		req.GetKeyword(), req.GetPage().GetPage(), req.GetPage().GetPageSize())
+	page, err := h.svc.ListMailboxSent(ctx, grpcx.TenantID(ctx), op.ID,
+		req.GetKeyword(), req.GetCursor(), req.GetPage().GetPageSize())
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*mailv1.InboundMail, 0, len(rows))
-	for _, r := range rows {
+	out := make([]*mailv1.InboundMail, 0, len(page.Mails))
+	for _, r := range page.Mails {
 		out = append(out, inboundToProto(r))
 	}
-	return &mailv1.ListMailboxSentResponse{Mails: out, Meta: &commonv1.PageMeta{Total: total}}, nil
+	return &mailv1.ListMailboxSentResponse{
+		Mails: out, Meta: &commonv1.PageMeta{Total: page.Total},
+		NextCursor: page.NextCursor,
+	}, nil
 }
 
 func (h *Handler) VerifyMailAccess(ctx context.Context, req *mailv1.VerifyMailAccessRequest) (*mailv1.VerifyMailAccessResponse, error) {

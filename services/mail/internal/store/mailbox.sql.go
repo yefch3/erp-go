@@ -254,30 +254,27 @@ func (q *Queries) CountSentInWindow(ctx context.Context, arg CountSentInWindowPa
 }
 
 const countSentUnified = `-- name: CountSentUnified :one
-WITH erp AS (
-    SELECT m.to_email, m.subject, coalesce(m.sent_at, m.queued_at) AS at
-    FROM email_messages m
-    WHERE m.tenant_id = $2::bigint
-      AND m.sender_id = $3::bigint
-      AND m.sent_at IS NOT NULL
-), host AS (
-    SELECT i.to_email, i.subject
+WITH host AS (
+    SELECT i.subject, i.to_email
     FROM email_inbound i
     WHERE i.tenant_id = $2::bigint
       AND i.owner_id = $3::bigint
       AND i.folder = 'SENT'
+      AND i.deleted_at IS NULL
+      AND i.archived_at IS NULL
+), orphan AS (
+    SELECT m.subject, m.to_email
+    FROM email_messages m
+    WHERE m.tenant_id = $2::bigint
+      AND m.sender_id = $3::bigint
+      AND m.sent_at IS NOT NULL
+      AND m.sent_at < now() - interval '10 minutes'
       AND NOT EXISTS (
-          SELECT 1 FROM erp e
-          WHERE lower(e.to_email) = lower(i.to_email)
-            AND e.subject = i.subject
-            AND abs(extract(epoch FROM (e.at - coalesce(i.sent_at, i.received_at)))) < 600
+          SELECT 1 FROM email_inbound i
+          WHERE i.tenant_id = m.tenant_id AND i.sent_message_id = m.id
       )
 )
-SELECT count(*)::bigint FROM (
-    SELECT to_email, subject FROM erp
-    UNION ALL
-    SELECT to_email, subject FROM host
-) u
+SELECT count(*)::bigint FROM (SELECT subject, to_email FROM host UNION ALL SELECT subject, to_email FROM orphan) u
 WHERE ($1::text = ''
        OR subject ILIKE '%' || $1::text || '%'
        OR to_email ILIKE '%' || $1::text || '%')
@@ -289,9 +286,9 @@ type CountSentUnifiedParams struct {
 	OwnerID  int64
 }
 
-// The same set, counted. Repeats the CTEs rather than sharing them because
-// the pager has to agree with the list, and a count that skipped the dedup
-// would promise pages that are not there.
+// Repeats the shape rather than sharing it, because the pager has to agree
+// with the list: a count that skipped the grace period would promise rows
+// that are not there.
 func (q *Queries) CountSentUnified(ctx context.Context, arg CountSentUnifiedParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countSentUnified, arg.Keyword, arg.TenantID, arg.OwnerID)
 	var column_1 int64
@@ -778,7 +775,8 @@ INSERT INTO email_inbound (
     tenant_id, account_id, owner_id, folder, imap_uid,
     message_id, in_reply_to, references_ids, thread_key, reply_to_id,
     from_email, from_name, to_email, subject, body_html, body_text, snippet,
-    raw_key, raw_size, is_bounce, has_attachments, is_read, sent_at, received_at
+    raw_key, raw_size, is_bounce, has_attachments, is_read, sent_at, received_at,
+    sent_message_id
 ) VALUES (
     $1::bigint, $2::bigint, $3::bigint,
     $4::text, $5::bigint,
@@ -793,7 +791,11 @@ INSERT INTO email_inbound (
     -- When the mail host says it arrived, not when we happened to fetch it.
     -- Stamping now() here made 收到时间 mean "last time this row was written",
     -- so a resync rewrote every timestamp in the mailbox to the same minute.
-    coalesce($24::timestamptz, now())
+    coalesce($24::timestamptz, now()),
+    -- Non-zero when this is the host's copy of something the ERP sent. The
+    -- copy used to be discarded on that basis; keeping it is what gives a
+    -- sent mail a message to star, archive or delete.
+    $25::bigint
 )
 ON CONFLICT (tenant_id, account_id, folder, imap_uid) DO NOTHING
 RETURNING id
@@ -824,6 +826,7 @@ type InsertInboundParams struct {
 	IsRead         bool
 	SentAt         pgtype.Timestamptz
 	ReceivedAt     pgtype.Timestamptz
+	SentMessageID  int64
 }
 
 // ON CONFLICT DO NOTHING plus a returned id of 0 is how a repeated fetch of
@@ -854,6 +857,7 @@ func (q *Queries) InsertInbound(ctx context.Context, arg InsertInboundParams) (i
 		arg.IsRead,
 		arg.SentAt,
 		arg.ReceivedAt,
+		arg.SentMessageID,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -1353,58 +1357,66 @@ func (q *Queries) ListRecentUIDs(ctx context.Context, arg ListRecentUIDsParams) 
 const listSentUnified = `-- name: ListSentUnified :many
 
 
-WITH erp AS (
-    SELECT m.id, m.to_email, m.to_name, m.subject,
-           left(coalesce(nullif(m.body_text, ''), CASE WHEN m.body_format = 'HTML' THEN '' ELSE m.body END), 200) AS snippet,
-           coalesce(m.sent_at, m.queued_at) AS at,
-           m.status,
-           m.opened_at,
-           EXISTS (
-               SELECT 1 FROM email_attachments a
-               WHERE a.tenant_id = m.tenant_id AND a.campaign_id = m.campaign_id
-           ) AS has_attachments
-    FROM email_messages m
-    WHERE m.tenant_id = $4::bigint
-      AND m.sender_id = $5::bigint
-      -- Sent means sent. A queued or failed one is not in anybody's Sent
-      -- folder yet, and the needs-attention view is where those belong.
-      AND m.sent_at IS NOT NULL
-), host AS (
-    SELECT i.id, i.to_email, '' AS to_name, i.subject, i.snippet,
+WITH host AS (
+    SELECT 'HOST'::text AS kind, i.id, i.to_email, coalesce(m.to_name, '') AS to_name,
+           i.subject, i.snippet,
            coalesce(i.sent_at, i.received_at) AS at,
-           '' AS status,
-           NULL::timestamptz AS opened_at,
-           i.has_attachments
+           coalesce(m.status, '') AS status,
+           m.opened_at,
+           coalesce(m.tracked, FALSE) AS tracked,
+           i.has_attachments, i.is_starred, i.thread_key
     FROM email_inbound i
-    WHERE i.tenant_id = $4::bigint
-      AND i.owner_id = $5::bigint
+    LEFT JOIN email_messages m
+           ON m.id = i.sent_message_id AND m.tenant_id = i.tenant_id
+    WHERE i.tenant_id = $6::bigint
+      AND i.owner_id = $7::bigint
       AND i.folder = 'SENT'
+      AND i.deleted_at IS NULL
+      AND i.archived_at IS NULL
+), orphan AS (
+    SELECT 'ERP'::text AS kind, m.id, m.to_email, m.to_name, m.subject,
+           left(coalesce(nullif(m.body_text, ''), CASE WHEN m.body_format = 'HTML' THEN '' ELSE m.body END), 200) AS snippet,
+           m.sent_at AS at,
+           m.status, m.opened_at, m.tracked,
+           EXISTS (SELECT 1 FROM email_attachments a
+                   WHERE a.tenant_id = m.tenant_id AND a.campaign_id = m.campaign_id) AS has_attachments,
+           FALSE AS is_starred,
+           '' AS thread_key
+    FROM email_messages m
+    WHERE m.tenant_id = $6::bigint
+      AND m.sender_id = $7::bigint
+      AND m.sent_at IS NOT NULL
+      AND m.sent_at < now() - interval '10 minutes'
       AND NOT EXISTS (
-          SELECT 1 FROM erp e
-          WHERE lower(e.to_email) = lower(i.to_email)
-            AND e.subject = i.subject
-            AND abs(extract(epoch FROM (e.at - coalesce(i.sent_at, i.received_at)))) < 600
+          SELECT 1 FROM email_inbound i
+          WHERE i.tenant_id = m.tenant_id AND i.sent_message_id = m.id
       )
 )
-SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at, has_attachments
-FROM (
-    SELECT 'ERP'::text AS kind, id, to_email, to_name, subject, snippet, at, status, opened_at, has_attachments FROM erp
-    UNION ALL
-    SELECT 'HOST'::text AS kind, id, to_email, to_name, subject, snippet, at, status, opened_at, has_attachments FROM host
-) u
+SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at,
+       tracked, has_attachments, is_starred, thread_key
+FROM (SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at, tracked, has_attachments, is_starred, thread_key FROM host UNION ALL SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at, tracked, has_attachments, is_starred, thread_key FROM orphan) u
 WHERE ($1::text = ''
        OR subject ILIKE '%' || $1::text || '%'
        OR to_email ILIKE '%' || $1::text || '%')
-ORDER BY at DESC
-LIMIT $3::int OFFSET $2::int
+  -- Keyset, like every other mailbox list. kind joins the sort key because
+  -- the two halves number their rows independently, so (at, id) alone is not
+  -- a unique position.
+  AND ($2::timestamptz IS NULL
+       OR (at, kind, id) < ($2::timestamptz,
+                            $3::text,
+                            $4::bigint))
+ORDER BY at DESC, kind DESC, id DESC
+LIMIT $5::int
 `
 
 type ListSentUnifiedParams struct {
-	Keyword   string
-	RowOffset int32
-	RowLimit  int32
-	TenantID  int64
-	OwnerID   int64
+	Keyword    string
+	CursorAt   pgtype.Timestamptz
+	CursorKind string
+	CursorID   int64
+	RowLimit   int32
+	TenantID   int64
+	OwnerID    int64
 }
 
 type ListSentUnifiedRow struct {
@@ -1417,38 +1429,41 @@ type ListSentUnifiedRow struct {
 	At             pgtype.Timestamptz
 	Status         string
 	OpenedAt       pgtype.Timestamptz
+	Tracked        bool
 	HasAttachments bool
+	IsStarred      bool
+	ThreadKey      string
 }
 
 // The host's Sent folder alone used to be the answer here. It is not: see
 // ListSentUnified, which merges it with the ERP's own record of what it
 // sent, because each on its own leaves mail out.
-// The Sent folder, from both places a sent mail is recorded.
+// The Sent folder.
 //
-// There are two, and they are already de-duplicated — at ingest, not here.
-// The ERP writes its own record with per-recipient delivery status and open
-// tracking; the host keeps a copy in its Sent folder, and ingest drops that
-// copy when the Message-ID carries a message_key the ERP recognises (see the
-// SENT branch in inbound.go). So an ERP send exists once, as the ERP record.
+// Every row is a real message in the host's Sent folder, which is what makes
+// starring, archiving and deleting work here exactly as they do in the inbox:
+// there is a message, in a folder, with a UID to write back to. The ERP's
+// delivery record is joined on for the two things only it knows — per-
+// recipient status, and whether the tracking pixel was ever fetched.
 //
-// An earlier version of this comment claimed the two could not be joined
-// because Gmail rewrites the Message-ID. That was wrong: the comparison
-// behind it put <uuid@domain> against uuid@domain, and the copies that would
-// have matched are precisely the ones ingest never stores.
+// They are matched by sent_message_id, stamped at ingest from the message_key
+// the ERP wrote into the Message-ID. Exact, not a guess: an earlier version
+// of this matched on recipient + subject + a ten-minute window, which was
+// only ever needed because the copy was being thrown away.
 //
-// Both sources are still needed. The ERP's records miss anything composed in
-// the mail app directly; the host's Sent folder holds exactly those. The
-// recipient + subject + ten-minute rule below is therefore a belt-and-braces
-// guard for hosts that do not preserve the header, not the primary mechanism,
-// and it stays loose on purpose: a near-miss shows the mail twice, which is a
-// confusing list, while a greedy match hides a mail somebody sent.
-//
-// kind tells the caller which record a row is, because they open different
-// pages — the ERP one knows about delivery, the host one has the raw message.
+// The second half is the safety net. A host is not obliged to keep a copy of
+// what it relayed — Gmail does, 263 is unverified — and a mail that was sent,
+// accepted and delivered must never be missing from 已发送 because of that.
+// So an accepted send with no copy still appears, but only after a grace
+// period: within it, the copy is simply on its way and showing a second,
+// weaker row for the same mail would be noise. In normal operation nobody
+// ever sees one of these.
 func (q *Queries) ListSentUnified(ctx context.Context, arg ListSentUnifiedParams) ([]ListSentUnifiedRow, error) {
 	rows, err := q.db.Query(ctx, listSentUnified,
 		arg.Keyword,
-		arg.RowOffset,
+		arg.CursorAt,
+		arg.CursorKind,
+		arg.CursorID,
 		arg.RowLimit,
 		arg.TenantID,
 		arg.OwnerID,
@@ -1470,7 +1485,10 @@ func (q *Queries) ListSentUnified(ctx context.Context, arg ListSentUnifiedParams
 			&i.At,
 			&i.Status,
 			&i.OpenedAt,
+			&i.Tracked,
 			&i.HasAttachments,
+			&i.IsStarred,
+			&i.ThreadKey,
 		); err != nil {
 			return nil, err
 		}

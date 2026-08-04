@@ -383,16 +383,25 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 		rawKey = ""
 	}
 
-	// The host saves a copy of everything sent over SMTP into the sent
-	// folder — including what the ERP itself sent. Those already exist as
-	// campaign messages with per-recipient status; storing the copy would
-	// show every ERP send twice.
+	// The host saves a copy of everything sent over SMTP into its sent folder,
+	// including what the ERP itself sent. That copy used to be recognised here
+	// and thrown away, on the grounds that the ERP already had a delivery
+	// record for it and keeping both would list the mail twice.
+	//
+	// It is kept now, and the delivery record is linked to it instead. The
+	// duplicate was never the real problem — the real problem was that a
+	// delivery record is not a message: it has no folder and no UID, so it
+	// could not be starred, archived or deleted. Keeping the copy is what
+	// makes 已发送 behave like a mailbox instead of a report. The list joins
+	// the record back on for what only it knows: status, and whether the
+	// tracking pixel was fetched.
+	var sentMessageID int64
 	if folder == "SENT" {
 		if key := messageKeyFromID(parsed.MessageID); key != "" {
-			if _, err := s.q.FindMessageByKey(ctx, store.FindMessageByKeyParams{
+			if m, err := s.q.FindMessageByKey(ctx, store.FindMessageByKeyParams{
 				TenantID: tenantID, MessageKey: key,
 			}); err == nil {
-				return nil
+				sentMessageID = m.ID
 			}
 		}
 	}
@@ -400,7 +409,8 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 	threadKey, replyTo := s.resolveThread(ctx, tenantID, parsed)
 
 	id, err := s.q.InsertInbound(ctx, store.InsertInboundParams{
-		TenantID: tenantID, AccountID: acct.AccountID, OwnerID: acct.EmployeeID,
+		SentMessageID: sentMessageID,
+		TenantID:      tenantID, AccountID: acct.AccountID, OwnerID: acct.EmployeeID,
 		Folder: folder, ImapUid: int64(m.UID),
 		MessageID: parsed.MessageID, InReplyTo: parsed.InReplyTo,
 		ReferencesIds: strings.Join(parsed.References, " "),

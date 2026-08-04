@@ -118,6 +118,7 @@ type EmailInbound struct {
 	ArchivedAt     pgtype.Timestamptz
 	DeletedAt      pgtype.Timestamptz
 	NotJunk        bool
+	SentMessageID  int64
 }
 
 type EmailInboundAttachment struct {

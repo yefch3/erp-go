@@ -168,7 +168,8 @@ INSERT INTO email_inbound (
     tenant_id, account_id, owner_id, folder, imap_uid,
     message_id, in_reply_to, references_ids, thread_key, reply_to_id,
     from_email, from_name, to_email, subject, body_html, body_text, snippet,
-    raw_key, raw_size, is_bounce, has_attachments, is_read, sent_at, received_at
+    raw_key, raw_size, is_bounce, has_attachments, is_read, sent_at, received_at,
+    sent_message_id
 ) VALUES (
     sqlc.arg(tenant_id)::bigint, sqlc.arg(account_id)::bigint, sqlc.arg(owner_id)::bigint,
     sqlc.arg(folder)::text, sqlc.arg(imap_uid)::bigint,
@@ -183,7 +184,11 @@ INSERT INTO email_inbound (
     -- When the mail host says it arrived, not when we happened to fetch it.
     -- Stamping now() here made 收到时间 mean "last time this row was written",
     -- so a resync rewrote every timestamp in the mailbox to the same minute.
-    coalesce(sqlc.narg(received_at)::timestamptz, now())
+    coalesce(sqlc.narg(received_at)::timestamptz, now()),
+    -- Non-zero when this is the host's copy of something the ERP sent. The
+    -- copy used to be discarded on that basis; keeping it is what gives a
+    -- sent mail a message to star, archive or delete.
+    sqlc.arg(sent_message_id)::bigint
 )
 ON CONFLICT (tenant_id, account_id, folder, imap_uid) DO NOTHING
 RETURNING id;
@@ -488,103 +493,104 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- ListSentUnified, which merges it with the ERP's own record of what it
 -- sent, because each on its own leaves mail out.
 
--- The Sent folder, from both places a sent mail is recorded.
+-- The Sent folder.
 --
--- There are two, and they are already de-duplicated — at ingest, not here.
--- The ERP writes its own record with per-recipient delivery status and open
--- tracking; the host keeps a copy in its Sent folder, and ingest drops that
--- copy when the Message-ID carries a message_key the ERP recognises (see the
--- SENT branch in inbound.go). So an ERP send exists once, as the ERP record.
+-- Every row is a real message in the host's Sent folder, which is what makes
+-- starring, archiving and deleting work here exactly as they do in the inbox:
+-- there is a message, in a folder, with a UID to write back to. The ERP's
+-- delivery record is joined on for the two things only it knows — per-
+-- recipient status, and whether the tracking pixel was ever fetched.
 --
--- An earlier version of this comment claimed the two could not be joined
--- because Gmail rewrites the Message-ID. That was wrong: the comparison
--- behind it put <uuid@domain> against uuid@domain, and the copies that would
--- have matched are precisely the ones ingest never stores.
+-- They are matched by sent_message_id, stamped at ingest from the message_key
+-- the ERP wrote into the Message-ID. Exact, not a guess: an earlier version
+-- of this matched on recipient + subject + a ten-minute window, which was
+-- only ever needed because the copy was being thrown away.
 --
--- Both sources are still needed. The ERP's records miss anything composed in
--- the mail app directly; the host's Sent folder holds exactly those. The
--- recipient + subject + ten-minute rule below is therefore a belt-and-braces
--- guard for hosts that do not preserve the header, not the primary mechanism,
--- and it stays loose on purpose: a near-miss shows the mail twice, which is a
--- confusing list, while a greedy match hides a mail somebody sent.
---
--- kind tells the caller which record a row is, because they open different
--- pages — the ERP one knows about delivery, the host one has the raw message.
+-- The second half is the safety net. A host is not obliged to keep a copy of
+-- what it relayed — Gmail does, 263 is unverified — and a mail that was sent,
+-- accepted and delivered must never be missing from 已发送 because of that.
+-- So an accepted send with no copy still appears, but only after a grace
+-- period: within it, the copy is simply on its way and showing a second,
+-- weaker row for the same mail would be noise. In normal operation nobody
+-- ever sees one of these.
 
 -- name: ListSentUnified :many
-WITH erp AS (
-    SELECT m.id, m.to_email, m.to_name, m.subject,
-           left(coalesce(nullif(m.body_text, ''), CASE WHEN m.body_format = 'HTML' THEN '' ELSE m.body END), 200) AS snippet,
-           coalesce(m.sent_at, m.queued_at) AS at,
-           m.status,
-           m.opened_at,
-           EXISTS (
-               SELECT 1 FROM email_attachments a
-               WHERE a.tenant_id = m.tenant_id AND a.campaign_id = m.campaign_id
-           ) AS has_attachments
-    FROM email_messages m
-    WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint
-      AND m.sender_id = sqlc.arg(owner_id)::bigint
-      -- Sent means sent. A queued or failed one is not in anybody's Sent
-      -- folder yet, and the needs-attention view is where those belong.
-      AND m.sent_at IS NOT NULL
-), host AS (
-    SELECT i.id, i.to_email, '' AS to_name, i.subject, i.snippet,
+WITH host AS (
+    SELECT 'HOST'::text AS kind, i.id, i.to_email, coalesce(m.to_name, '') AS to_name,
+           i.subject, i.snippet,
            coalesce(i.sent_at, i.received_at) AS at,
-           '' AS status,
-           NULL::timestamptz AS opened_at,
-           i.has_attachments
+           coalesce(m.status, '') AS status,
+           m.opened_at,
+           coalesce(m.tracked, FALSE) AS tracked,
+           i.has_attachments, i.is_starred, i.thread_key
     FROM email_inbound i
+    LEFT JOIN email_messages m
+           ON m.id = i.sent_message_id AND m.tenant_id = i.tenant_id
     WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
       AND i.owner_id = sqlc.arg(owner_id)::bigint
       AND i.folder = 'SENT'
+      AND i.deleted_at IS NULL
+      AND i.archived_at IS NULL
+), orphan AS (
+    SELECT 'ERP'::text AS kind, m.id, m.to_email, m.to_name, m.subject,
+           left(coalesce(nullif(m.body_text, ''), CASE WHEN m.body_format = 'HTML' THEN '' ELSE m.body END), 200) AS snippet,
+           m.sent_at AS at,
+           m.status, m.opened_at, m.tracked,
+           EXISTS (SELECT 1 FROM email_attachments a
+                   WHERE a.tenant_id = m.tenant_id AND a.campaign_id = m.campaign_id) AS has_attachments,
+           FALSE AS is_starred,
+           '' AS thread_key
+    FROM email_messages m
+    WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint
+      AND m.sender_id = sqlc.arg(owner_id)::bigint
+      AND m.sent_at IS NOT NULL
+      AND m.sent_at < now() - interval '10 minutes'
       AND NOT EXISTS (
-          SELECT 1 FROM erp e
-          WHERE lower(e.to_email) = lower(i.to_email)
-            AND e.subject = i.subject
-            AND abs(extract(epoch FROM (e.at - coalesce(i.sent_at, i.received_at)))) < 600
+          SELECT 1 FROM email_inbound i
+          WHERE i.tenant_id = m.tenant_id AND i.sent_message_id = m.id
       )
 )
-SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at, has_attachments
-FROM (
-    SELECT 'ERP'::text AS kind, * FROM erp
-    UNION ALL
-    SELECT 'HOST'::text AS kind, * FROM host
-) u
+SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at,
+       tracked, has_attachments, is_starred, thread_key
+FROM (SELECT * FROM host UNION ALL SELECT * FROM orphan) u
 WHERE (sqlc.arg(keyword)::text = ''
        OR subject ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR to_email ILIKE '%' || sqlc.arg(keyword)::text || '%')
-ORDER BY at DESC
-LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
+  -- Keyset, like every other mailbox list. kind joins the sort key because
+  -- the two halves number their rows independently, so (at, id) alone is not
+  -- a unique position.
+  AND (sqlc.narg(cursor_at)::timestamptz IS NULL
+       OR (at, kind, id) < (sqlc.narg(cursor_at)::timestamptz,
+                            sqlc.arg(cursor_kind)::text,
+                            sqlc.arg(cursor_id)::bigint))
+ORDER BY at DESC, kind DESC, id DESC
+LIMIT sqlc.arg(row_limit)::int;
 
 -- name: CountSentUnified :one
--- The same set, counted. Repeats the CTEs rather than sharing them because
--- the pager has to agree with the list, and a count that skipped the dedup
--- would promise pages that are not there.
-WITH erp AS (
-    SELECT m.to_email, m.subject, coalesce(m.sent_at, m.queued_at) AS at
-    FROM email_messages m
-    WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint
-      AND m.sender_id = sqlc.arg(owner_id)::bigint
-      AND m.sent_at IS NOT NULL
-), host AS (
-    SELECT i.to_email, i.subject
+-- Repeats the shape rather than sharing it, because the pager has to agree
+-- with the list: a count that skipped the grace period would promise rows
+-- that are not there.
+WITH host AS (
+    SELECT i.subject, i.to_email
     FROM email_inbound i
     WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
       AND i.owner_id = sqlc.arg(owner_id)::bigint
       AND i.folder = 'SENT'
+      AND i.deleted_at IS NULL
+      AND i.archived_at IS NULL
+), orphan AS (
+    SELECT m.subject, m.to_email
+    FROM email_messages m
+    WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint
+      AND m.sender_id = sqlc.arg(owner_id)::bigint
+      AND m.sent_at IS NOT NULL
+      AND m.sent_at < now() - interval '10 minutes'
       AND NOT EXISTS (
-          SELECT 1 FROM erp e
-          WHERE lower(e.to_email) = lower(i.to_email)
-            AND e.subject = i.subject
-            AND abs(extract(epoch FROM (e.at - coalesce(i.sent_at, i.received_at)))) < 600
+          SELECT 1 FROM email_inbound i
+          WHERE i.tenant_id = m.tenant_id AND i.sent_message_id = m.id
       )
 )
-SELECT count(*)::bigint FROM (
-    SELECT to_email, subject FROM erp
-    UNION ALL
-    SELECT to_email, subject FROM host
-) u
+SELECT count(*)::bigint FROM (SELECT * FROM host UNION ALL SELECT * FROM orphan) u
 WHERE (sqlc.arg(keyword)::text = ''
        OR subject ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR to_email ILIKE '%' || sqlc.arg(keyword)::text || '%');

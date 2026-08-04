@@ -27,8 +27,10 @@
            moved on, so the icons read as unexplained. show-after 0 puts the
            name under the cursor the moment it lands, which is what Gmail
            does and the only reason its icon-only toolbar is usable. -->
+      <!-- No star on a delivery record: there is no message on the host to
+           write the flag to. See actionsFor. -->
       <el-tooltip
-        v-if="folder !== 'junk'"
+        v-if="folder !== 'junk' && !isRecordOnly(m)"
         :content="t(m.isStarred ? 'emails.unstar' : 'emails.star')"
         placement="top"
         :show-after="0"
@@ -44,6 +46,8 @@
         >{{ m.isStarred ? '★' : '☆' }}</button>
       </el-tooltip>
 
+      <span v-else-if="folder !== 'junk'" class="star-gap" aria-hidden="true" />
+
       <!-- The row's own hit area. A button rather than a link because opening
            a mail is a state change in this app, not a document to fetch; the
            action buttons then sit outside it, which a link could not do
@@ -58,7 +62,9 @@
         @keydown.space.prevent="emit('open', m)"
       >
         <span class="who">
-          {{ m.fromName || m.fromEmail }}
+          <!-- A sent mail is about who it went to; a received one about who
+               it came from. Same column, different question. -->
+          {{ folder === 'sent' ? (m.toName || m.toEmail) : (m.fromName || m.fromEmail) }}
           <!-- One row per conversation; this is how many messages it holds. -->
           <span v-if="Number(m.threadCount) > 1" class="tcount">{{ m.threadCount }}</span>
         </span>
@@ -131,6 +137,11 @@ export interface MailRow {
   isStarred: boolean
   hasAttachments: boolean
   threadCount?: number | string
+  // Sent folder only: 'HOST' is a real message, 'ERP' a delivery record whose
+  // copy the host never kept.
+  kind?: string
+  toName?: string
+  toEmail?: string
 }
 
 const props = defineProps<{
@@ -153,6 +164,10 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
+function isRecordOnly(m: MailRow) {
+  return m.kind === 'ERP'
+}
+
 function isPicked(m: MailRow) {
   return (props.selected ?? []).includes(m.id)
 }
@@ -173,7 +188,16 @@ function actionsFor(m: MailRow) {
     label: t(m.isRead ? 'emails.markUnread' : 'emails.markRead'),
     run: mark({ read: !m.isRead }),
   }
+  // A row the host kept no copy of is a delivery record, not a message: no
+  // folder, no UID, nothing for archive or delete to act on. Better an honest
+  // gap than buttons that fail.
+  if (isRecordOnly(m)) return []
   switch (props.folder) {
+    case 'sent':
+      return [
+        { key: 'archive', icon: Box, label: t('emails.archive'), run: mark({ archived: true }) },
+        { key: 'trash', icon: Delete, label: t('emails.toTrash'), run: mark({ deleted: true }) },
+      ]
     case 'trash':
       return [
         { key: 'restore', icon: RefreshLeft, label: t('emails.restore'), run: mark({ deleted: false }) },
@@ -295,6 +319,11 @@ function shortTime(v: string) {
 }
 .star.on {
   color: var(--el-color-warning);
+}
+
+.star-gap {
+  flex: none;
+  width: 24px;
 }
 
 .body {
