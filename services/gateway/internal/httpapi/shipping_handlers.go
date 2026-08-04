@@ -91,3 +91,54 @@ func (s *Server) cancelShippingSchedule(w http.ResponseWriter, r *http.Request) 
 	}
 	s.writeProto(w, resp)
 }
+
+func (s *Server) getShippingStatistics(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.GetShippingStatistics(r.Context(), &shippingv1.GetShippingStatisticsRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) addShippingRouteNode(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.AddRouteNodeRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Shipping.AddRouteNode(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) reorderShippingRoute(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.ReorderRouteRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Shipping.ReorderRoute(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) updateShippingProgress(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.UpdateProgressRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Shipping.UpdateProgress(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}

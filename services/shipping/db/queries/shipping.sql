@@ -2,12 +2,12 @@
 INSERT INTO shipping_schedules (
     tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name,
     carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge,
-    etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark,
+    etd, atd, eta, original_eta, ata, responsible_employee_id, responsible_name, status, remark,
     created_by, created_by_name, updated_by, updated_by_name
 ) VALUES (
     $1,
     'SCH-' || to_char(CURRENT_DATE, 'YYYYMMDD') || '-' || lpad(nextval('shipping_schedule_no_seq')::text, 6, '0'),
-    $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+    $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13, $14, $15, $16,
     'PLANNED', $17, $18, $19, $18, $19
 )
 RETURNING *;
@@ -84,3 +84,139 @@ INSERT INTO shipping_schedule_changes (
 SELECT * FROM shipping_schedule_changes
 WHERE tenant_id = $1 AND schedule_id = $2
 ORDER BY created_at DESC, id DESC;
+
+-- name: ListRouteNodes :many
+SELECT * FROM shipping_route_nodes
+WHERE tenant_id = $1 AND schedule_id = $2 AND is_active
+ORDER BY sequence_no, id;
+
+-- name: GetRouteNodeForUpdate :one
+SELECT * FROM shipping_route_nodes
+WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3 AND is_active
+FOR UPDATE;
+
+-- name: InsertRouteNode :one
+INSERT INTO shipping_route_nodes (
+    tenant_id, schedule_id, sequence_no, node_type, port_code, port_name, timezone,
+    original_eta_at, latest_eta_at, original_etd_at, latest_etd_at, remark,
+    created_by, created_by_name, updated_by, updated_by_name
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9,$9,$10,$11,$12,$11,$12)
+RETURNING *;
+
+-- name: SetRouteNodeSequence :exec
+UPDATE shipping_route_nodes SET sequence_no = $4, updated_at = now()
+WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3 AND is_active;
+
+-- name: SetRouteNodeArrival :one
+UPDATE shipping_route_nodes SET
+    actual_arrival_at = $4, node_status = 'ARRIVED',
+    updated_by = $5, updated_by_name = $6, updated_at = now()
+WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3 AND is_active
+RETURNING *;
+
+-- name: SetRouteNodeDeparture :one
+UPDATE shipping_route_nodes SET
+    actual_departure_at = $4, node_status = 'DEPARTED',
+    updated_by = $5, updated_by_name = $6, updated_at = now()
+WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3 AND is_active
+RETURNING *;
+
+-- name: SetRouteNodeApproaching :one
+UPDATE shipping_route_nodes SET
+    node_status = 'APPROACHING', updated_by = $4, updated_by_name = $5, updated_at = now()
+WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3 AND is_active
+RETURNING *;
+
+-- name: SetRouteNodeSkipped :one
+UPDATE shipping_route_nodes SET
+    node_status = 'SKIPPED', updated_by = $4, updated_by_name = $5, updated_at = now()
+WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3 AND is_active
+RETURNING *;
+
+-- name: SetDestinationETA :one
+UPDATE shipping_route_nodes SET
+    latest_eta_at = $4, updated_by = $5, updated_by_name = $6, updated_at = now()
+WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3
+  AND is_active AND node_type = 'DESTINATION'
+RETURNING *;
+
+-- name: UpdateScheduleProgress :one
+UPDATE shipping_schedules SET
+    current_route_node_id = $3, current_progress = $4,
+    latest_progress_at = now(), updated_by = $5, updated_by_name = $6, updated_at = now()
+WHERE tenant_id = $1 AND id = $2
+RETURNING *;
+
+-- name: SetScheduleATD :one
+UPDATE shipping_schedules SET
+    atd = $3, updated_by = $4, updated_by_name = $5, updated_at = now()
+WHERE tenant_id = $1 AND id = $2
+RETURNING *;
+
+-- name: SetScheduleATA :one
+UPDATE shipping_schedules SET
+    ata = $3,
+    delay_days = GREATEST(0, $3 - original_eta),
+    updated_by = $4, updated_by_name = $5, updated_at = now()
+WHERE tenant_id = $1 AND id = $2
+RETURNING *;
+
+-- name: UpdateScheduleETA :one
+UPDATE shipping_schedules SET
+    eta = $3,
+    eta_revision = eta_revision + 1,
+    delay_days = GREATEST(0, $3 - original_eta),
+    updated_by = $4, updated_by_name = $5, updated_at = now()
+WHERE tenant_id = $1 AND id = $2
+RETURNING *;
+
+-- name: BumpRouteVersion :one
+UPDATE shipping_schedules s SET
+    route_version = s.route_version + 1,
+    has_temporary_call = EXISTS (
+      SELECT 1 FROM shipping_route_nodes n
+      WHERE n.tenant_id = s.tenant_id
+        AND n.schedule_id = s.id
+        AND n.is_active AND n.node_type = 'TEMPORARY'
+    ),
+    updated_by = $3, updated_by_name = $4, updated_at = now()
+WHERE s.tenant_id = $1 AND s.id = $2
+RETURNING route_version;
+
+-- name: AddDelayEvent :one
+INSERT INTO shipping_delay_events (
+    tenant_id, schedule_id, impact_type, affected_node_id, from_node_id, to_node_id,
+    reason_code, reason, note, old_eta, new_eta, change_days, cumulative_delay_days,
+    operator_id, operator_name
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+RETURNING *;
+
+-- name: ListDelayEvents :many
+SELECT * FROM shipping_delay_events
+WHERE tenant_id = $1 AND schedule_id = $2
+ORDER BY created_at DESC, id DESC;
+
+-- name: CancelPendingReminders :exec
+UPDATE shipping_arrival_reminders SET status = 'CANCELLED', updated_at = now()
+WHERE tenant_id = $1 AND schedule_id = $2 AND status = 'PENDING';
+
+-- name: CreateArrivalReminder :exec
+INSERT INTO shipping_arrival_reminders (
+    tenant_id, schedule_id, destination_node_id, recipient_employee_id,
+    eta_revision, target_eta, due_at
+) VALUES ($1,$2,$3,$4,$5,$6,($6::date - 7)::timestamp AT TIME ZONE 'UTC')
+ON CONFLICT DO NOTHING;
+
+-- name: ListArrivalReminders :many
+SELECT * FROM shipping_arrival_reminders
+WHERE tenant_id = $1 AND schedule_id = $2
+ORDER BY eta_revision DESC, id DESC;
+
+-- name: ShippingStatistics :one
+SELECT
+  count(*) FILTER (WHERE status IN ('SAILED','IN_TRANSIT','DELAYED'))::bigint AS in_transit,
+  count(*) FILTER (WHERE status NOT IN ('ARRIVED','COMPLETED','CANCELLED') AND eta BETWEEN CURRENT_DATE AND CURRENT_DATE + 7)::bigint AS arriving_within_7_days,
+  count(*) FILTER (WHERE delay_days > 0 AND status <> 'CANCELLED')::bigint AS delayed,
+  count(*) FILTER (WHERE has_temporary_call AND status <> 'CANCELLED')::bigint AS temporary_call
+FROM shipping_schedules
+WHERE tenant_id = $1;

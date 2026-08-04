@@ -13,6 +13,7 @@ export interface ShippingSchedule {
   etd: string
   atd: string
   eta: string
+  originalEta: string
   ata: string
   responsibleEmployeeId: string
   responsibleName: string
@@ -24,6 +25,52 @@ export interface ShippingSchedule {
   updatedBy: string
   updatedByName: string
   updatedAt: string
+  etaRevision: number
+  routeVersion: number
+  delayDays: number
+  hasTemporaryCall: boolean
+  currentProgress: string
+}
+
+export interface ShippingRouteNode {
+  id: string
+  sequenceNo: number
+  nodeType: 'ORIGIN'|'TRANSIT'|'TEMPORARY'|'DESTINATION'
+  portCode: string
+  portName: string
+  timezone: string
+  originalEtaAt: string
+  latestEtaAt: string
+  actualArrivalAt: string
+  originalEtdAt: string
+  latestEtdAt: string
+  actualDepartureAt: string
+  nodeStatus: string
+  remark: string
+}
+
+export interface ShippingDelayEvent {
+  id: string
+  impactType: string
+  affectedNodeId: string
+  fromNodeId: string
+  toNodeId: string
+  reasonCode: string
+  reason: string
+  note: string
+  oldEta: string
+  newEta: string
+  changeDays: number
+  cumulativeDelayDays: number
+  operatorName: string
+  createdAt: string
+}
+
+export interface ShippingStatistics {
+  inTransit: string
+  arrivingWithin7Days: string
+  delayed: string
+  temporaryCall: string
 }
 
 export interface ScheduleChange {

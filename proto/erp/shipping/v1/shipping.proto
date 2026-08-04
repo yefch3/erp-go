@@ -6,9 +6,8 @@ import "erp/common/v1/pagination.proto";
 
 option go_package = "github.com/sgao19/erp-go/gen/go/erp/shipping/v1;shippingv1";
 
-// ShippingService is intentionally minimal in D0. Business reads and writes
-// are added in D1; this method proves that the service, database and gateway
-// route are wired together without exposing unfinished functionality.
+// ShippingService owns schedule lifecycle, ordered port routes, progress,
+// repeated delay events and ETA-versioned arrival reminders.
 service ShippingService {
   rpc GetModuleStatus(GetModuleStatusRequest) returns (GetModuleStatusResponse);
   rpc ListSchedules(ListSchedulesRequest) returns (ListSchedulesResponse);
@@ -17,6 +16,10 @@ service ShippingService {
   rpc UpdateSchedule(UpdateScheduleRequest) returns (UpdateScheduleResponse);
   rpc UpdateScheduleStatus(UpdateScheduleStatusRequest) returns (UpdateScheduleStatusResponse);
   rpc CancelSchedule(CancelScheduleRequest) returns (CancelScheduleResponse);
+  rpc GetShippingStatistics(GetShippingStatisticsRequest) returns (GetShippingStatisticsResponse);
+  rpc AddRouteNode(AddRouteNodeRequest) returns (AddRouteNodeResponse);
+  rpc ReorderRoute(ReorderRouteRequest) returns (ReorderRouteResponse);
+  rpc UpdateProgress(UpdateProgressRequest) returns (UpdateProgressResponse);
 }
 
 message GetModuleStatusRequest {}
@@ -53,6 +56,57 @@ message Schedule {
   int64 updated_by = 23;
   string updated_by_name = 24;
   string updated_at = 25;
+  string original_eta = 26;
+  int32 eta_revision = 27;
+  int32 route_version = 28;
+  int32 delay_days = 29;
+  bool has_temporary_call = 30;
+  string current_progress = 31;
+}
+
+message RouteNode {
+  int64 id = 1;
+  int32 sequence_no = 2;
+  string node_type = 3;
+  string port_code = 4;
+  string port_name = 5;
+  string timezone = 6;
+  string original_eta_at = 7;
+  string latest_eta_at = 8;
+  string actual_arrival_at = 9;
+  string original_etd_at = 10;
+  string latest_etd_at = 11;
+  string actual_departure_at = 12;
+  string node_status = 13;
+  string remark = 14;
+}
+
+message DelayEvent {
+  int64 id = 1;
+  string impact_type = 2;
+  int64 affected_node_id = 3;
+  int64 from_node_id = 4;
+  int64 to_node_id = 5;
+  string reason_code = 6;
+  string reason = 7;
+  string note = 8;
+  string old_eta = 9;
+  string new_eta = 10;
+  int32 change_days = 11;
+  int32 cumulative_delay_days = 12;
+  string status = 13;
+  int64 operator_id = 14;
+  string operator_name = 15;
+  string created_at = 16;
+}
+
+message ArrivalReminder {
+  int64 id = 1;
+  int32 eta_revision = 2;
+  string target_eta = 3;
+  string due_at = 4;
+  string status = 5;
+  string sent_at = 6;
 }
 
 message ScheduleInput {
@@ -99,7 +153,13 @@ message ListSchedulesRequest {
 }
 message ListSchedulesResponse { repeated Schedule schedules = 1; erp.common.v1.PageMeta meta = 2; }
 message GetScheduleRequest { int64 id = 1; }
-message GetScheduleResponse { Schedule schedule = 1; repeated ScheduleChange changes = 2; }
+message GetScheduleResponse {
+  Schedule schedule = 1;
+  repeated ScheduleChange changes = 2;
+  repeated RouteNode route_nodes = 3;
+  repeated DelayEvent delay_events = 4;
+  repeated ArrivalReminder reminders = 5;
+}
 message CreateScheduleRequest { ScheduleInput schedule = 1; bool confirm_duplicate = 2; }
 message CreateScheduleResponse { Schedule schedule = 1; }
 message UpdateScheduleRequest { int64 id = 1; ScheduleInput schedule = 2; string date_change_reason = 3; bool confirm_duplicate = 4; }
@@ -108,3 +168,55 @@ message UpdateScheduleStatusRequest { int64 id = 1; string status = 2; string re
 message UpdateScheduleStatusResponse { Schedule schedule = 1; }
 message CancelScheduleRequest { int64 id = 1; string reason = 2; }
 message CancelScheduleResponse { Schedule schedule = 1; }
+
+message GetShippingStatisticsRequest {}
+message GetShippingStatisticsResponse {
+  int64 in_transit = 1;
+  int64 arriving_within_7_days = 2;
+  int64 delayed = 3;
+  int64 temporary_call = 4;
+}
+
+message AddRouteNodeRequest {
+  int64 id = 1;
+  string node_type = 2;
+  string port_code = 3;
+  string port_name = 4;
+  string timezone = 5;
+  int64 insert_after_node_id = 6;
+  string latest_eta_at = 7;
+  string latest_etd_at = 8;
+  string reason = 9;
+  string remark = 10;
+  int32 route_version = 11;
+}
+message AddRouteNodeResponse { repeated RouteNode route_nodes = 1; int32 route_version = 2; }
+
+message ReorderRouteRequest {
+  int64 id = 1;
+  repeated int64 node_ids = 2;
+  string reason = 3;
+  int32 route_version = 4;
+}
+message ReorderRouteResponse { repeated RouteNode route_nodes = 1; int32 route_version = 2; }
+
+message UpdateProgressRequest {
+  int64 id = 1;
+  int64 route_node_id = 2;
+  string action = 3;
+  string actual_time = 4;
+  string latest_eta = 5;
+  string reason_code = 6;
+  string reason = 7;
+  string impact_type = 8;
+  int64 affected_node_id = 9;
+  int64 from_node_id = 10;
+  int64 to_node_id = 11;
+  string note = 12;
+  int32 route_version = 13;
+}
+message UpdateProgressResponse {
+  Schedule schedule = 1;
+  repeated RouteNode route_nodes = 2;
+  repeated DelayEvent delay_events = 3;
+}

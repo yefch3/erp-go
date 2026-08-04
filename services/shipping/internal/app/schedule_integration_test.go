@@ -23,10 +23,7 @@ func TestScheduleLifecycle(t *testing.T) {
 	}
 	defer pool.Close()
 	tenantID := time.Now().UnixNano()/1000 + 900000000
-	defer func() {
-		_, _ = pool.Exec(ctx, "DELETE FROM shipping_schedule_changes WHERE tenant_id=$1", tenantID)
-		_, _ = pool.Exec(ctx, "DELETE FROM shipping_schedules WHERE tenant_id=$1", tenantID)
-	}()
+	defer cleanupShippingTenant(ctx, pool, tenantID)
 	svc := New(pool)
 	op := Operator{ID: 101, Name: "D1 Test"}
 
@@ -97,5 +94,85 @@ func TestScheduleLifecycle(t *testing.T) {
 	got, changes, err := svc.GetSchedule(ctx, tenantID, created.ID)
 	if err != nil || got.Status != "SAILED" || len(changes) != 3 {
 		t.Fatalf("detail=%+v changes=%d err=%v", got, len(changes), err)
+	}
+}
+
+func cleanupShippingTenant(ctx context.Context, pool *pgxpool.Pool, tenantID int64) {
+	_, _ = pool.Exec(ctx, "DELETE FROM shipping_arrival_reminders WHERE tenant_id=$1", tenantID)
+	_, _ = pool.Exec(ctx, "DELETE FROM shipping_delay_events WHERE tenant_id=$1", tenantID)
+	_, _ = pool.Exec(ctx, "DELETE FROM shipping_schedule_changes WHERE tenant_id=$1", tenantID)
+	_, _ = pool.Exec(ctx, "UPDATE shipping_schedules SET current_route_node_id=NULL WHERE tenant_id=$1", tenantID)
+	_, _ = pool.Exec(ctx, "DELETE FROM shipping_route_nodes WHERE tenant_id=$1", tenantID)
+	_, _ = pool.Exec(ctx, "DELETE FROM shipping_schedules WHERE tenant_id=$1", tenantID)
+}
+
+func TestRouteAndRepeatedDelays(t *testing.T) {
+	dsn := os.Getenv("SHIPPING_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set SHIPPING_TEST_DSN to a migrated PostgreSQL database")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenantID := time.Now().UnixNano()/1000 + 910000000
+	defer cleanupShippingTenant(ctx, pool, tenantID)
+	svc := New(pool)
+	op := Operator{ID: 202, Name: "Route Test"}
+	created, err := svc.CreateSchedule(ctx, tenantID, validInput(), op, false)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	details, err := svc.GetScheduleDetails(ctx, tenantID, created.ID)
+	if err != nil || len(details.Route) != 2 || len(details.Reminders) != 1 {
+		t.Fatalf("initial details route=%d reminders=%d err=%v", len(details.Route), len(details.Reminders), err)
+	}
+	nodes, version, err := svc.AddRouteNode(ctx, tenantID, created.ID, RouteNodeInput{
+		NodeType: "TEMPORARY", PortName: "Port Klang", InsertAfterNodeID: details.Route[0].ID,
+		LatestETAAt: "2026-08-22T08:00:00+08:00", LatestETDAt: "2026-08-23T18:00:00+08:00",
+		Reason: "临时补给", RouteVersion: created.RouteVersion,
+	}, op)
+	if err != nil || len(nodes) != 3 || version != created.RouteVersion+1 {
+		t.Fatalf("add node nodes=%d version=%d err=%v", len(nodes), version, err)
+	}
+	if nodes[1].NodeType != "TEMPORARY" {
+		t.Fatalf("middle node=%+v", nodes[1])
+	}
+	nodes, version, err = svc.AddRouteNode(ctx, tenantID, created.ID, RouteNodeInput{NodeType: "TRANSIT", PortName: "Busan", InsertAfterNodeID: nodes[1].ID, Reason: "增加中转港", RouteVersion: version}, op)
+	if err != nil || len(nodes) != 4 {
+		t.Fatalf("add transit nodes=%d err=%v", len(nodes), err)
+	}
+	nodes, version, err = svc.ReorderRoute(ctx, tenantID, created.ID, []int64{nodes[0].ID, nodes[2].ID, nodes[1].ID, nodes[3].ID}, "调整中转顺序", version, op)
+	if err != nil || nodes[1].PortName != "Busan" || version != created.RouteVersion+3 {
+		t.Fatalf("reorder nodes=%+v version=%d err=%v", nodes, version, err)
+	}
+	_, _, _, err = svc.UpdateProgress(ctx, tenantID, created.ID, ProgressInput{RouteNodeID: nodes[3].ID, Action: "UPDATE_ETA", LatestETA: "2026-09-08", ReasonCode: "WEATHER", Reason: "天气延误", ImpactType: "LEG", FromNodeID: nodes[0].ID, ToNodeID: nodes[3].ID, RouteVersion: version}, op)
+	if err != nil {
+		t.Fatalf("first delay: %v", err)
+	}
+	out, _, delays, err := svc.UpdateProgress(ctx, tenantID, created.ID, ProgressInput{RouteNodeID: nodes[3].ID, Action: "UPDATE_ETA", LatestETA: "2026-09-10", ReasonCode: "PORT_CONGESTION", Reason: "港口拥堵", ImpactType: "PORT", AffectedNodeID: nodes[3].ID, RouteVersion: version}, op)
+	if err != nil {
+		t.Fatalf("second delay: %v", err)
+	}
+	if len(delays) != 2 || delays[0].ChangeDays != 2 || out.DelayDays != 5 || out.EtaRevision != 3 {
+		t.Fatalf("delays=%+v schedule=%+v", delays, out)
+	}
+	details, err = svc.GetScheduleDetails(ctx, tenantID, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, cancelled := 0, 0
+	for _, r := range details.Reminders {
+		if r.Status == "PENDING" {
+			pending++
+		}
+		if r.Status == "CANCELLED" {
+			cancelled++
+		}
+	}
+	if pending != 1 || cancelled != 2 {
+		t.Fatalf("reminders pending=%d cancelled=%d all=%+v", pending, cancelled, details.Reminders)
 	}
 }

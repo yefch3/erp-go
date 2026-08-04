@@ -12,12 +12,12 @@
         </el-form-item></el-col>
         <el-col :span="12"><el-form-item :label="t('shipping.vessel')" prop="vesselName"><el-input v-model="form.vesselName" /></el-form-item></el-col>
         <el-col :span="12"><el-form-item :label="t('shipping.voyage')" prop="voyageNo"><el-input v-model="form.voyageNo" /></el-form-item></el-col>
-        <el-col :span="12"><el-form-item :label="t('shipping.loadingPort')" prop="portOfLoading"><el-input v-model="form.portOfLoading" /></el-form-item></el-col>
-        <el-col :span="12"><el-form-item :label="t('shipping.dischargePort')" prop="portOfDischarge"><el-input v-model="form.portOfDischarge" /></el-form-item></el-col>
-        <el-col :span="12"><el-form-item label="ETD" prop="etd"><el-date-picker v-model="form.etd" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
-        <el-col :span="12"><el-form-item label="ATD"><el-date-picker v-model="form.atd" type="date" value-format="YYYY-MM-DD" clearable style="width:100%" /></el-form-item></el-col>
-        <el-col :span="12"><el-form-item label="ETA" prop="eta"><el-date-picker v-model="form.eta" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
-        <el-col :span="12"><el-form-item label="ATA"><el-date-picker v-model="form.ata" type="date" value-format="YYYY-MM-DD" clearable style="width:100%" /></el-form-item></el-col>
+        <el-col v-if="!schedule" :span="12"><el-form-item :label="t('shipping.loadingPort')" prop="portOfLoading"><el-input v-model="form.portOfLoading" /></el-form-item></el-col>
+        <el-col v-if="!schedule" :span="12"><el-form-item :label="t('shipping.dischargePort')" prop="portOfDischarge"><el-input v-model="form.portOfDischarge" /></el-form-item></el-col>
+        <el-col v-if="!schedule" :span="12"><el-form-item label="ETD" prop="etd"><el-date-picker v-model="form.etd" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
+        <el-col v-if="!schedule" :span="12"><el-form-item label="ATD"><el-date-picker v-model="form.atd" type="date" value-format="YYYY-MM-DD" clearable style="width:100%" /></el-form-item></el-col>
+        <el-col v-if="!schedule" :span="12"><el-form-item label="ETA" prop="eta"><el-date-picker v-model="form.eta" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
+        <el-col v-if="!schedule" :span="12"><el-form-item label="ATA"><el-date-picker v-model="form.ata" type="date" value-format="YYYY-MM-DD" clearable style="width:100%" /></el-form-item></el-col>
         <el-col v-if="datesChanged" :span="24"><el-form-item :label="t('shipping.dateReason')" prop="dateChangeReason"><el-input v-model="form.dateChangeReason" type="textarea" :rows="2" /></el-form-item></el-col>
         <el-col :span="24"><el-form-item :label="t('shipping.remark')"><el-input v-model="form.remark" type="textarea" :rows="2" /></el-form-item></el-col>
       </el-row>

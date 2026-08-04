@@ -17,7 +17,7 @@ import (
 	"github.com/sgao19/erp-go/services/shipping/internal/store"
 )
 
-const SchemaVersion int32 = 2
+const SchemaVersion int32 = 3
 
 type databasePinger interface{ Ping(context.Context) error }
 
@@ -153,7 +153,20 @@ func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in Schedul
 		return store.ShippingSchedule{}, err
 	}
 	p.TenantID, p.CreatedBy, p.CreatedByName = tenantID, op.ID, op.Name
-	return s.q.CreateSchedule(ctx, p)
+	var out store.ShippingSchedule
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		out, err = q.CreateSchedule(ctx, p)
+		if err != nil {
+			return err
+		}
+		if err = createInitialRoute(ctx, q, out, op); err != nil {
+			return err
+		}
+		out, err = q.GetSchedule(ctx, store.GetScheduleParams{TenantID: tenantID, ID: out.ID})
+		return err
+	})
+	return out, err
 }
 
 func (s *Service) GetSchedule(ctx context.Context, tenantID, id int64) (store.ShippingSchedule, []store.ShippingScheduleChange, error) {
@@ -267,10 +280,56 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 		if err != nil {
 			return err
 		}
+		if dateText(current.Eta) != dateText(p.Eta) {
+			out, err = q.UpdateScheduleETA(ctx, store.UpdateScheduleETAParams{
+				TenantID: tenantID, ID: id, Eta: p.Eta, UpdatedBy: op.ID, UpdatedByName: op.Name,
+			})
+			if err != nil {
+				return err
+			}
+			nodes, err := q.ListRouteNodes(ctx, store.ListRouteNodesParams{TenantID: tenantID, ScheduleID: id})
+			if err != nil {
+				return err
+			}
+			var destinationID int64
+			for _, node := range nodes {
+				if node.NodeType == "DESTINATION" {
+					destinationID = node.ID
+					break
+				}
+			}
+			if destinationID == 0 {
+				return apierr.Conflict("SHIPPING_DESTINATION_MISSING", "船期缺少目的港节点")
+			}
+			if _, err = q.SetDestinationETA(ctx, store.SetDestinationETAParams{TenantID: tenantID, ScheduleID: id, ID: destinationID, LatestEtaAt: dateTimestamp(p.Eta), UpdatedBy: op.ID, UpdatedByName: op.Name}); err != nil {
+				return err
+			}
+			changeDays := int32(p.Eta.Time.Sub(current.Eta.Time).Hours() / 24)
+			if _, err = q.AddDelayEvent(ctx, store.AddDelayEventParams{
+				TenantID: tenantID, ScheduleID: id, ImpactType: "SCHEDULE", ReasonCode: "OTHER",
+				Reason: strings.TrimSpace(reason), OldEta: current.Eta, NewEta: p.Eta,
+				ChangeDays: changeDays, CumulativeDelayDays: out.DelayDays,
+				OperatorID: op.ID, OperatorName: op.Name,
+			}); err != nil {
+				return err
+			}
+			if err = q.CancelPendingReminders(ctx, store.CancelPendingRemindersParams{TenantID: tenantID, ScheduleID: id}); err != nil {
+				return err
+			}
+			if err = q.CreateArrivalReminder(ctx, store.CreateArrivalReminderParams{TenantID: tenantID, ScheduleID: id, DestinationNodeID: destinationID, RecipientEmployeeID: out.ResponsibleEmployeeID, EtaRevision: out.EtaRevision, TargetEta: out.Eta}); err != nil {
+				return err
+			}
+		}
 		if err = addChange(ctx, q, tenantID, id, "DATE", "ETD", dateText(current.Etd), dateText(p.Etd), strings.TrimSpace(reason), op); err != nil {
 			return err
 		}
-		return addChange(ctx, q, tenantID, id, "DATE", "ETA", dateText(current.Eta), dateText(p.Eta), strings.TrimSpace(reason), op)
+		if err = addChange(ctx, q, tenantID, id, "ETA", "latest_eta", dateText(current.Eta), dateText(p.Eta), strings.TrimSpace(reason), op); err != nil {
+			return err
+		}
+		if err = addChange(ctx, q, tenantID, id, "VESSEL_VOYAGE", "vessel_name", current.VesselName, p.VesselName, "基础信息修改", op); err != nil {
+			return err
+		}
+		return addChange(ctx, q, tenantID, id, "VESSEL_VOYAGE", "voyage_no", current.VoyageNo, p.VoyageNo, "基础信息修改", op)
 	})
 	return out, err
 }
