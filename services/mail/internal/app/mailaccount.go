@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/sgao19/erp-go/services/mail/internal/store"
 )
 
@@ -69,8 +71,16 @@ func (s *Service) ForSender(ctx context.Context, tenantID, senderID int64) (Mail
 		return MailAccount{}, ErrNoKey
 	}
 	host, err := s.q.GetMailHost(ctx, tenantID)
-	if err != nil {
+	// Only an absent row means "not configured". Any other error is the
+	// database failing, and reporting that as a missing setting sends
+	// somebody to a dialog that is already filled in correctly — which is
+	// exactly what a dropped connection during a restart used to do. What
+	// broke has to be what gets said.
+	if err == pgx.ErrNoRows {
 		return MailAccount{}, ErrMailHostNotConfigured
+	}
+	if err != nil {
+		return MailAccount{}, fmt.Errorf("读取发件服务器配置失败：%w", err)
 	}
 	if host.SmtpHost == "" {
 		return MailAccount{}, ErrMailHostNotConfigured
@@ -79,8 +89,11 @@ func (s *Service) ForSender(ctx context.Context, tenantID, senderID int64) (Mail
 	row, err := s.q.GetMailAccountSecret(ctx, store.GetMailAccountSecretParams{
 		TenantID: tenantID, EmployeeID: senderID,
 	})
-	if err != nil {
+	if err == pgx.ErrNoRows {
 		return MailAccount{}, ErrNoMailAccount
+	}
+	if err != nil {
+		return MailAccount{}, fmt.Errorf("读取邮箱账号失败：%w", err)
 	}
 	if !row.IsActive {
 		return MailAccount{}, errors.New("这个邮箱已被停用")
@@ -238,7 +251,10 @@ func (s *Service) VerifyMailSecret(ctx context.Context, tenantID, employeeID int
 		return "邮件通道未启用，已保存账号", nil
 	}
 	host, err := s.q.GetMailHost(ctx, tenantID)
-	if err != nil || host.ImapHost == "" {
+	if err != nil && err != pgx.ErrNoRows {
+		return "", fmt.Errorf("读取收件服务器配置失败：%w", err)
+	}
+	if err == pgx.ErrNoRows || host.ImapHost == "" {
 		return "", ErrMailHostNotConfigured
 	}
 
@@ -283,7 +299,10 @@ func (s *Service) verifyBound(ctx context.Context, tenantID, employeeID int64, r
 	}
 
 	host, err := s.q.GetMailHost(ctx, tenantID)
-	if err != nil || host.ImapHost == "" {
+	if err != nil && err != pgx.ErrNoRows {
+		return "", fmt.Errorf("读取收件服务器配置失败：%w", err)
+	}
+	if err == pgx.ErrNoRows || host.ImapHost == "" {
 		return "", ErrMailHostNotConfigured
 	}
 	// An OAuth binding has no code to type: the person proved themselves on
