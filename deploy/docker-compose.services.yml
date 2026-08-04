@@ -248,6 +248,27 @@ services:
     depends_on: [iam, masterdata, fx, approval, product, export, mail]
     restart: unless-stopped
 
+  # The one door that may face outwards, and it is a very narrow one.
+  #
+  # An open-tracking pixel has to be fetchable by a stranger's mail client, so
+  # MAIL_PUBLIC_BASE_URL has to name an address that resolves from the
+  # internet. Pointing a tunnel at the gateway would be the quick way and it
+  # publishes the entire API to get one 42-byte GIF out. This forwards exactly
+  # /api/public/mail-open/<uuid> and 404s the rest; a tunnel points here.
+  #
+  # Bound to 127.0.0.1 so starting it changes nothing on its own — it is
+  # reachable from this machine only until something is deliberately put in
+  # front of it.
+  pixel-proxy:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./pixel-proxy.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "127.0.0.1:8081:8081"
+    networks: [infra]
+    depends_on: [gateway]
+    restart: unless-stopped
+
 networks:
   infra:
     external: true
