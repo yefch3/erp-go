@@ -33,6 +33,16 @@ type InboundView struct {
 	// How many messages the list row stands for. 1 for a lone message; the
 	// list collapses a conversation into one row and shows this count.
 	ThreadCount int32
+
+	// Sent folder only. A sent mail exists in two records that cannot be
+	// matched — the host rewrites the Message-ID — so the list merges both and
+	// says which one each row is. "ERP" means we sent it and are tracking
+	// delivery; "HOST" means it came from the host's Sent folder and nothing
+	// is known about what happened after it left.
+	Kind     string
+	ToName   string
+	Status   string
+	OpenedAt time.Time
 }
 
 // InboundPage is one screenful of conversations plus the counts and the
@@ -541,17 +551,24 @@ func errNotFound() error {
 	return apierr.NotFound("NT_MESSAGE_NOT_FOUND", "邮件记录不存在")
 }
 
-// ListMailboxSent is the caller's own sent history, as the mail host holds it.
+// ListMailboxSent is everything this person has sent, from both records of it.
+//
+// There is no single Sent folder to read. The ERP keeps its own record of what
+// it sent, with per-recipient delivery status and open tracking; the mail host
+// keeps a copy of whatever left through it, including mail composed in some
+// other client. The two cannot be matched to each other — the host rewrites
+// the Message-ID on the way out — so this merges them by time instead, and
+// each row says which record it came from. See ListSentUnified for why.
 func (s *Service) ListMailboxSent(ctx context.Context, tenantID, ownerID int64, keyword string, page, size int32) ([]InboundView, int64, error) {
 	page, size = normalizePage(page, size)
-	rows, err := s.q.ListMailboxSent(ctx, store.ListMailboxSentParams{
+	rows, err := s.q.ListSentUnified(ctx, store.ListSentUnifiedParams{
 		TenantID: tenantID, OwnerID: ownerID, Keyword: keyword,
 		RowLimit: size, RowOffset: (page - 1) * size,
 	})
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := s.q.CountMailboxSent(ctx, store.CountMailboxSentParams{
+	total, err := s.q.CountSentUnified(ctx, store.CountSentUnifiedParams{
 		TenantID: tenantID, OwnerID: ownerID, Keyword: keyword,
 	})
 	if err != nil {
@@ -560,15 +577,18 @@ func (s *Service) ListMailboxSent(ctx context.Context, tenantID, ownerID int64, 
 	out := make([]InboundView, 0, len(rows))
 	for _, r := range rows {
 		v := InboundView{
-			ID: r.ID, FromEmail: r.FromEmail, FromName: r.FromName,
-			ToEmail: r.ToEmail, Subject: r.Subject, Snippet: r.Snippet,
-			ThreadKey: r.ThreadKey, IsRead: true, HasAttachments: r.HasAttachments,
+			ID: r.ID, Kind: r.Kind, ToEmail: r.ToEmail, ToName: r.ToName,
+			Subject: r.Subject, Snippet: r.Snippet, Status: r.Status,
+			IsRead: true, HasAttachments: r.HasAttachments,
 		}
-		if r.ReceivedAt.Valid {
-			v.ReceivedAt = r.ReceivedAt.Time
+		// One timestamp, carried in both fields: the list sorts and displays
+		// on "when it went out", and the two records name that differently.
+		if r.At.Valid {
+			v.SentAt = r.At.Time
+			v.ReceivedAt = r.At.Time
 		}
-		if r.SentAt.Valid {
-			v.SentAt = r.SentAt.Time
+		if r.OpenedAt.Valid {
+			v.OpenedAt = r.OpenedAt.Time
 		}
 		out = append(out, v)
 	}

@@ -110,6 +110,10 @@ func (s *Service) ListMessages(ctx context.Context, tenantID int64, qy MessageQu
 type MessageView struct {
 	Message store.GetMessageRow
 	Events  []store.ListEventsOfMessageRow
+	// Whether this mail actually carried an open-tracking pixel. Without it,
+	// "never opened" and "never watched" are the same empty field, and only
+	// one of them is a statement about the recipient.
+	TrackingEnabled bool
 }
 
 func (s *Service) GetMessage(ctx context.Context, tenantID, id int64, op Operator) (MessageView, error) {
@@ -131,7 +135,11 @@ func (s *Service) GetMessage(ctx context.Context, tenantID, id int64, op Operato
 	if err != nil {
 		return MessageView{}, err
 	}
-	return MessageView{Message: m, Events: events}, nil
+	// Read from the row, not sniffed from the body. The pixel is injected at
+	// send time into a copy — so that what is stored stays what the person
+	// wrote — which means the stored body never contains it and looking there
+	// would report every mail as untracked.
+	return MessageView{Message: m, Events: events, TrackingEnabled: m.Tracked}, nil
 }
 
 // Requeue puts a failed message back, optionally at a corrected address.

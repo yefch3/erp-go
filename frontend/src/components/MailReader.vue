@@ -21,6 +21,36 @@
       </div>
     </div>
 
+    <!-- 对方是否已读.
+         Placed above the body because it is what somebody opens a sent mail
+         to find out, and stated in three states rather than two. "Not opened"
+         and "we were not watching" look identical in the data — both are an
+         empty timestamp — and only the first says anything about the
+         recipient. Claiming the second as the first would be the system
+         inventing a fact about a customer. -->
+    <div class="readback">
+      <span class="rb-label">{{ t('reader.openedLabel') }}</span>
+      <el-tooltip
+        v-if="mail.openedAt"
+        :content="t('emails.openedHint', { at: shortTime(mail.openedAt) })"
+        placement="top"
+        :show-after="0"
+      >
+        <span class="rb-yes">{{ t('emails.maybeOpened') }} · {{ shortTime(mail.openedAt) }}</span>
+      </el-tooltip>
+      <el-tooltip
+        v-else-if="mail.trackingEnabled"
+        :content="t('reader.noOpenHint')"
+        placement="top"
+        :show-after="0"
+      >
+        <span class="rb-no">{{ t('emails.noOpenYet') }}</span>
+      </el-tooltip>
+      <el-tooltip v-else :content="t('reader.noTrackingHint')" placement="top" :show-after="0">
+        <span class="rb-off">{{ t('reader.noTracking') }}</span>
+      </el-tooltip>
+    </div>
+
     <!-- Anything that needs a person is said here, above the mail, because
          somebody opening a stuck message came to find out why. -->
     <el-alert
@@ -111,6 +141,11 @@ export interface Mail {
   lastError: string
   queuedAt: string
   sentAt: string
+  openedAt: string
+  // Whether this mail actually carried a tracking pixel. Without it, an empty
+  // openedAt means either "watched and nothing happened" or "never watched",
+  // and only the first is a statement about the recipient.
+  trackingEnabled: boolean
   attachments: Attachment[]
   events: Event[]
 }
@@ -197,6 +232,30 @@ function humanSize(bytes: number) {
 }
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+/* A single quiet line, not a card. This is a weak signal and the styling
+   should not lend it more weight than it has earned. */
+.readback {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 14px 0 4px;
+  font-size: 13px;
+}
+.rb-label {
+  color: var(--el-text-color-secondary);
+}
+.rb-yes {
+  color: var(--el-color-success);
+  font-weight: 500;
+  border-bottom: 1px dashed currentColor;
+  cursor: help;
+}
+.rb-no,
+.rb-off {
+  color: var(--el-text-color-secondary);
+  border-bottom: 1px dashed var(--el-border-color);
+  cursor: help;
 }
 .attn {
   margin: 14px 0 0;

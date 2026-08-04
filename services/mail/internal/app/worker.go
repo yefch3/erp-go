@@ -190,8 +190,14 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 	// stored is what the person wrote and what goes out is what the person
 	// wrote plus one image. A draft reopened later is not polluted by it.
 	body := m.Body
+	tracked := false
 	if m.BodyFormat == "HTML" {
 		body = InjectOpenPixel(body, cfg.PublicBaseURL, m.MessageKey)
+		// Whether a pixel actually went in, rather than whether we asked for
+		// one: a plain-text mail or a service with no public address gets none,
+		// and the screen has to be able to tell "nobody opened it" from "nobody
+		// was watching".
+		tracked = body != m.Body
 	}
 
 	out := Outbound{
@@ -241,6 +247,7 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 	case Accepted:
 		if err := s.q.MarkAccepted(ctx, store.MarkAcceptedParams{
 			TenantID: cfg.TenantID, ID: m.ID, ProviderID: res.ProviderID,
+			Tracked: tracked,
 		}); err != nil {
 			s.log.Error("could not record acceptance", "id", m.ID, "err", err)
 			return

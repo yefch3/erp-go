@@ -215,9 +215,14 @@ RETURNING m.id, m.message_key::text AS message_key, m.kind, m.to_email, m.to_nam
           m.send_mode, m.in_reply_to, m.references_ids;
 
 -- name: MarkAccepted :exec
+-- tracked is written here rather than guessed later: whether a pixel went out
+-- is decided at this moment, by this message's format and the address the
+-- service had at the time, and neither can be recovered from the row
+-- afterwards. See migration 00019.
 UPDATE email_messages
 SET status = 'ACCEPTED', provider_id = sqlc.arg(provider_id)::text,
-    sent_at = now(), last_error = ''
+    sent_at = now(), last_error = '',
+    tracked = sqlc.arg(tracked)::boolean
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: MarkRetryable :exec
@@ -251,7 +256,8 @@ SELECT
     id, coalesce(campaign_id, 0)::bigint AS campaign_id, message_key::text AS message_key, kind,
     sender_id, sender_name, to_email, to_name, customer_name, contact_id,
     subject, body, body_text, body_format, status, attempt_count, provider_id, last_error,
-    attention_reason, queued_at, sent_at, delivered_at, opened_at, clicked_at
+    attention_reason, queued_at, sent_at, delivered_at, opened_at, clicked_at,
+    tracked
 FROM email_messages
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 

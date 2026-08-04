@@ -207,29 +207,6 @@ func (q *Queries) CountInboundThreads(ctx context.Context, arg CountInboundThrea
 	return column_1, err
 }
 
-const countMailboxSent = `-- name: CountMailboxSent :one
-SELECT count(*)::bigint FROM email_inbound
-WHERE tenant_id = $1::bigint
-  AND owner_id = $2::bigint
-  AND folder = 'SENT'
-  AND ($3::text = ''
-       OR subject ILIKE '%' || $3::text || '%'
-       OR to_email ILIKE '%' || $3::text || '%')
-`
-
-type CountMailboxSentParams struct {
-	TenantID int64
-	OwnerID  int64
-	Keyword  string
-}
-
-func (q *Queries) CountMailboxSent(ctx context.Context, arg CountMailboxSentParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countMailboxSent, arg.TenantID, arg.OwnerID, arg.Keyword)
-	var column_1 int64
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
 const countPendingFlagOps = `-- name: CountPendingFlagOps :one
 SELECT count(*)::bigint FROM mail_flag_ops
 WHERE tenant_id = $1::bigint
@@ -274,6 +251,52 @@ func (q *Queries) CountSentInWindow(ctx context.Context, arg CountSentInWindowPa
 	var i CountSentInWindowRow
 	err := row.Scan(&i.ThisHour, &i.Last24h)
 	return i, err
+}
+
+const countSentUnified = `-- name: CountSentUnified :one
+WITH erp AS (
+    SELECT m.to_email, m.subject, coalesce(m.sent_at, m.queued_at) AS at
+    FROM email_messages m
+    WHERE m.tenant_id = $2::bigint
+      AND m.sender_id = $3::bigint
+      AND m.sent_at IS NOT NULL
+), host AS (
+    SELECT i.to_email, i.subject
+    FROM email_inbound i
+    WHERE i.tenant_id = $2::bigint
+      AND i.owner_id = $3::bigint
+      AND i.folder = 'SENT'
+      AND NOT EXISTS (
+          SELECT 1 FROM erp e
+          WHERE lower(e.to_email) = lower(i.to_email)
+            AND e.subject = i.subject
+            AND abs(extract(epoch FROM (e.at - coalesce(i.sent_at, i.received_at)))) < 600
+      )
+)
+SELECT count(*)::bigint FROM (
+    SELECT to_email, subject FROM erp
+    UNION ALL
+    SELECT to_email, subject FROM host
+) u
+WHERE ($1::text = ''
+       OR subject ILIKE '%' || $1::text || '%'
+       OR to_email ILIKE '%' || $1::text || '%')
+`
+
+type CountSentUnifiedParams struct {
+	Keyword  string
+	TenantID int64
+	OwnerID  int64
+}
+
+// The same set, counted. Repeats the CTEs rather than sharing them because
+// the pager has to agree with the list, and a count that skipped the dedup
+// would promise pages that are not there.
+func (q *Queries) CountSentUnified(ctx context.Context, arg CountSentUnifiedParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countSentUnified, arg.Keyword, arg.TenantID, arg.OwnerID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const countUnread = `-- name: CountUnread :one
@@ -1214,81 +1237,6 @@ func (q *Queries) ListInboundThreads(ctx context.Context, arg ListInboundThreads
 	return items, nil
 }
 
-const listMailboxSent = `-- name: ListMailboxSent :many
-SELECT id, from_email, from_name, to_email, subject, snippet, thread_key,
-       has_attachments, received_at, sent_at
-FROM email_inbound
-WHERE tenant_id = $1::bigint
-  AND owner_id = $2::bigint
-  AND folder = 'SENT'
-  AND ($3::text = ''
-       OR subject ILIKE '%' || $3::text || '%'
-       OR to_email ILIKE '%' || $3::text || '%')
-ORDER BY coalesce(sent_at, received_at) DESC
-LIMIT $5::int OFFSET $4::int
-`
-
-type ListMailboxSentParams struct {
-	TenantID  int64
-	OwnerID   int64
-	Keyword   string
-	RowOffset int32
-	RowLimit  int32
-}
-
-type ListMailboxSentRow struct {
-	ID             int64
-	FromEmail      string
-	FromName       string
-	ToEmail        string
-	Subject        string
-	Snippet        string
-	ThreadKey      string
-	HasAttachments bool
-	ReceivedAt     pgtype.Timestamptz
-	SentAt         pgtype.Timestamptz
-}
-
-// Mail sent from the mailbox itself — through any client, over the whole
-// history the backfill has reached. ERP sends live in email_messages with
-// per-recipient status; these are plain copies from the host's Sent folder.
-func (q *Queries) ListMailboxSent(ctx context.Context, arg ListMailboxSentParams) ([]ListMailboxSentRow, error) {
-	rows, err := q.db.Query(ctx, listMailboxSent,
-		arg.TenantID,
-		arg.OwnerID,
-		arg.Keyword,
-		arg.RowOffset,
-		arg.RowLimit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListMailboxSentRow
-	for rows.Next() {
-		var i ListMailboxSentRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.FromEmail,
-			&i.FromName,
-			&i.ToEmail,
-			&i.Subject,
-			&i.Snippet,
-			&i.ThreadKey,
-			&i.HasAttachments,
-			&i.ReceivedAt,
-			&i.SentAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listRecentForReconcile = `-- name: ListRecentForReconcile :many
 SELECT id, imap_uid, message_id, is_read, is_starred, archived_at, deleted_at
 FROM email_inbound
@@ -1392,6 +1340,137 @@ func (q *Queries) ListRecentUIDs(ctx context.Context, arg ListRecentUIDsParams) 
 	for rows.Next() {
 		var i ListRecentUIDsRow
 		if err := rows.Scan(&i.ImapUid, &i.IsRead, &i.IsStarred); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSentUnified = `-- name: ListSentUnified :many
+
+
+WITH erp AS (
+    SELECT m.id, m.to_email, m.to_name, m.subject,
+           left(coalesce(nullif(m.body_text, ''), CASE WHEN m.body_format = 'HTML' THEN '' ELSE m.body END), 200) AS snippet,
+           coalesce(m.sent_at, m.queued_at) AS at,
+           m.status,
+           m.opened_at,
+           EXISTS (
+               SELECT 1 FROM email_attachments a
+               WHERE a.tenant_id = m.tenant_id AND a.campaign_id = m.campaign_id
+           ) AS has_attachments
+    FROM email_messages m
+    WHERE m.tenant_id = $4::bigint
+      AND m.sender_id = $5::bigint
+      -- Sent means sent. A queued or failed one is not in anybody's Sent
+      -- folder yet, and the needs-attention view is where those belong.
+      AND m.sent_at IS NOT NULL
+), host AS (
+    SELECT i.id, i.to_email, '' AS to_name, i.subject, i.snippet,
+           coalesce(i.sent_at, i.received_at) AS at,
+           '' AS status,
+           NULL::timestamptz AS opened_at,
+           i.has_attachments
+    FROM email_inbound i
+    WHERE i.tenant_id = $4::bigint
+      AND i.owner_id = $5::bigint
+      AND i.folder = 'SENT'
+      AND NOT EXISTS (
+          SELECT 1 FROM erp e
+          WHERE lower(e.to_email) = lower(i.to_email)
+            AND e.subject = i.subject
+            AND abs(extract(epoch FROM (e.at - coalesce(i.sent_at, i.received_at)))) < 600
+      )
+)
+SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at, has_attachments
+FROM (
+    SELECT 'ERP'::text AS kind, id, to_email, to_name, subject, snippet, at, status, opened_at, has_attachments FROM erp
+    UNION ALL
+    SELECT 'HOST'::text AS kind, id, to_email, to_name, subject, snippet, at, status, opened_at, has_attachments FROM host
+) u
+WHERE ($1::text = ''
+       OR subject ILIKE '%' || $1::text || '%'
+       OR to_email ILIKE '%' || $1::text || '%')
+ORDER BY at DESC
+LIMIT $3::int OFFSET $2::int
+`
+
+type ListSentUnifiedParams struct {
+	Keyword   string
+	RowOffset int32
+	RowLimit  int32
+	TenantID  int64
+	OwnerID   int64
+}
+
+type ListSentUnifiedRow struct {
+	Kind           string
+	ID             int64
+	ToEmail        string
+	ToName         string
+	Subject        string
+	Snippet        string
+	At             pgtype.Timestamptz
+	Status         string
+	OpenedAt       pgtype.Timestamptz
+	HasAttachments bool
+}
+
+// The host's Sent folder alone used to be the answer here. It is not: see
+// ListSentUnified, which merges it with the ERP's own record of what it
+// sent, because each on its own leaves mail out.
+// The Sent folder, from both places a sent mail is recorded.
+//
+// There are two, and they cannot be reconciled. The ERP writes its own record
+// with per-recipient delivery status and open tracking; the host keeps a copy
+// in its Sent folder. Joining them by Message-ID looks obvious and does not
+// work: Gmail rewrites the header on the way out, so the id the ERP wrote
+// (<uuid@gmail.com>) is not the id that comes back (CAANWAZy…@mail.gmail.com).
+// Verified on live data — 18 ERP sends, 0 matches.
+//
+// Showing one source loses mail either way. The ERP's list misses anything
+// sent from the mail app directly; the host's Sent folder misses whatever it
+// has not echoed back yet, which for a mail sent a minute ago is all of it.
+// So both, merged by time.
+//
+// Duplicates are removed on recipient + subject + within ten minutes, and
+// deliberately only then: a near-miss shows the mail twice, which is a
+// confusing list. A greedy match would hide a mail somebody sent, which is
+// worse than a confusing list.
+//
+// kind tells the caller which record a row is, because they open different
+// pages — the ERP one knows about delivery, the host one has the raw message.
+func (q *Queries) ListSentUnified(ctx context.Context, arg ListSentUnifiedParams) ([]ListSentUnifiedRow, error) {
+	rows, err := q.db.Query(ctx, listSentUnified,
+		arg.Keyword,
+		arg.RowOffset,
+		arg.RowLimit,
+		arg.TenantID,
+		arg.OwnerID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSentUnifiedRow
+	for rows.Next() {
+		var i ListSentUnifiedRow
+		if err := rows.Scan(
+			&i.Kind,
+			&i.ID,
+			&i.ToEmail,
+			&i.ToName,
+			&i.Subject,
+			&i.Snippet,
+			&i.At,
+			&i.Status,
+			&i.OpenedAt,
+			&i.HasAttachments,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
