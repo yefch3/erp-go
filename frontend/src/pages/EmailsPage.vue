@@ -457,60 +457,24 @@
       </template>
 
       <!-- ----------------------------------------------------------- sent -->
-      <!-- One list, not two. A sent mail is recorded twice — the ERP keeps
-           its own copy with delivery status, the host keeps one in its Sent
-           folder — and the two cannot be matched, because the host rewrites
-           the Message-ID on the way out. Showing them as two tabs made the
-           person do the merging: each tab was missing mail the other had, and
-           neither was "已发送". The server merges them by time now; a row
-           says which record it is only through what it can tell you. -->
+      <!-- The same list component as every other folder, because it is the
+           same thing: messages. Since the host's copy of an ERP send is kept
+           rather than discarded, a sent mail has a folder and a UID like any
+           other, so star, archive and delete work here without a special
+           case. The exception is a send the host kept no copy of — that is a
+           delivery record, and MailList gives it no star and no actions
+           rather than buttons that would fail. -->
       <template v-else-if="folder === 'sent'">
-      <el-table
-        :data="mailboxSent"
-        v-loading="loading"
-        class="clickable"
-        @row-click="openSentRow"
-      >
-        <el-table-column :label="t('emails.recipient')" min-width="200">
-          <template #default="{ row }">
-            <div class="strong ellipsis">{{ row.toName || row.toEmail || '—' }}</div>
-            <div v-if="row.toName" class="sub ellipsis">{{ row.toEmail }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('emails.subject')" min-width="300">
-          <template #default="{ row }">
-            <div class="ellipsis" :title="row.subject">
-              {{ row.subject || t('emails.noSubject') }}
-              <span v-if="row.hasAttachments" class="clip">📎</span>
-            </div>
-            <div class="sub ellipsis">{{ row.snippet }}</div>
-          </template>
-        </el-table-column>
-        <!-- The ERP extension: whether the other side appears to have opened
-             it. Only a mail the ERP sent can carry the pixel that answers
-             this, so a mail composed elsewhere shows nothing rather than a
-             confident "未读" it has no basis for. -->
-        <el-table-column :label="t('emails.openedCol')" width="130">
-          <template #default="{ row }">
-            <el-tooltip
-              v-if="row.openedAt"
-              :content="t('emails.openedHint', { at: shortTime(row.openedAt) })"
-              placement="top"
-              :show-after="0"
-            >
-              <span class="opened">{{ t('emails.maybeOpened') }}</span>
-            </el-tooltip>
-            <span v-else-if="row.kind === 'ERP'" class="sub">{{ t('emails.noOpenYet') }}</span>
-            <span v-else class="sub">—</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('emails.sentAt')" width="150">
-          <template #default="{ row }">
-            <span class="sub">{{ shortTime(row.sentAt || row.receivedAt) }}</span>
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-empty v-if="!loading && mailboxSent.length === 0" :description="t('emails.emptyFolder')" />
+        <MailList
+          v-model:selected="picked"
+          :mails="mailboxSent"
+          folder="sent"
+          :loading="loading"
+          @open="openSentRow"
+          @star="toggleStar"
+          @mark="markRow"
+        />
+        <el-empty v-if="!loading && mailboxSent.length === 0" :description="t('emails.emptyFolder')" />
       </template>
 
       <!-- ------------------------------------------------------ attention -->
@@ -584,7 +548,7 @@
       <!-- Cursor paging: 上一页 / 下一页 only, no page numbers. A jump to
            page 40 has no meaning when pages are positions in a list that
            grows at the top — Gmail's pager for the same reason. -->
-      <div v-if="isInboundView && (total > 0 || cursorStack.length)" class="pager keyset">
+      <div v-if="isKeysetView && (total > 0 || cursorStack.length)" class="pager keyset">
         <span class="sub">{{ t('emails.totalMails', { n: total }) }}</span>
         <el-button size="small" :disabled="!cursorStack.length" @click="prevPage">
           {{ t('emails.prevPage') }}
@@ -594,7 +558,7 @@
         </el-button>
       </div>
       <el-pagination
-        v-else-if="folder === 'sent' || folder === 'attention'"
+        v-else-if="folder === 'attention'"
         v-model:current-page="page"
         :page-size="pageSize"
         :total="total"
@@ -794,6 +758,9 @@ const INBOUND_VIEWS: Record<string, string> = {
   trash: 'TRASH',
 }
 const isInboundView = computed(() => folder.value in INBOUND_VIEWS)
+// Every mailbox folder pages by cursor. A page number is meaningless on a
+// list that grows at the top, and 已发送 grows at the top like the rest.
+const isKeysetView = computed(() => isInboundView.value || folder.value === 'sent')
 // Junk and the trash get a delete-everything button instead: marking a spam
 // folder read is housekeeping nobody wants, and in the trash it is meaningless.
 const canMarkAllRead = computed(
@@ -1254,13 +1221,18 @@ async function load() {
       scheduled.value = d.sends ?? []
       total.value = Number(d.meta?.total ?? 0)
     } else if (folder.value === 'sent') {
-      const d = await get<{ mails: SentMail[]; meta: { total: string } }>('/mailbox-sent', {
-        page: page.value,
+      const d = await get<{
+        mails: SentMail[]
+        meta: { total: string }
+        nextCursor: string
+      }>('/mailbox-sent', {
         page_size: pageSize,
         keyword: keyword.value,
+        cursor: applied?.cursor ?? '',
       })
       mailboxSent.value = d.mails ?? []
       total.value = Number(d.meta?.total ?? 0)
+      nextCursor.value = d.nextCursor ?? ''
     } else if (folder.value === 'attention') {
       const d = await get<{ messages: Message[]; meta: { total: string } }>('/email-messages', {
         page: page.value,
@@ -1715,6 +1687,11 @@ async function refreshAttentionCount() {
 function onSent() {
   refreshAttentionCount()
   loadDraftCount()
+  // Pull straight away rather than waiting for the two-minute poll. The mail
+  // becomes a real message in 已发送 only once the host's copy is fetched, and
+  // until then it is a delivery record with no star and no actions. Asking now
+  // turns that gap from minutes into a second or two.
+  syncOnOpen()
   // A mail sent from inside another mail stays there, Gmail-style: the reply
   // appears in the conversation underneath. A fresh compose goes to the sent
   // folder to watch the delivery.

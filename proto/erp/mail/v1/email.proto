@@ -303,13 +303,17 @@ message PurgeInboundResponse {
 }
 
 message ListMailboxSentRequest {
+  // Only page_size is read. Pages are reached by cursor, like every other
+  // mailbox list — a page number means nothing on a list that grows at the top.
   erp.common.v1.PageRequest page = 1;
   string keyword = 2;
+  string cursor = 3;
 }
 
 message ListMailboxSentResponse {
   repeated InboundMail mails = 1;
   erp.common.v1.PageMeta meta = 2;
+  string next_cursor = 3;
 }
 
 message SyncMailboxRequest {}
