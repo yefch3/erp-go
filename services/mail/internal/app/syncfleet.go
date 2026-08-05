@@ -27,6 +27,9 @@ import (
 // same mailbox twice at once.
 type syncFleet struct {
 	sem chan struct{}
+	// Which mailboxes are failing, how long they wait, and how much of the
+	// fleet they may hold. See syncbackoff.go.
+	health *syncHealth
 
 	mu       sync.Mutex
 	inFlight map[int64]*syncCall
@@ -46,6 +49,7 @@ func newSyncFleet(concurrency int) *syncFleet {
 	}
 	return &syncFleet{
 		sem:      make(chan struct{}, concurrency),
+		health:   newSyncHealth(concurrency),
 		inFlight: map[int64]*syncCall{},
 	}
 }

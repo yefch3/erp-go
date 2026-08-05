@@ -15,6 +15,8 @@ import (
 // tests pin the two properties that replace that: a bounded number of
 // mailboxes in flight, and never the same mailbox twice at once.
 
+var errSync = errors.New("host said no")
+
 func TestFleetRunsMailboxesTogetherButNotAllAtOnce(t *testing.T) {
 	const workers, mailboxes = 4, 40
 	f := newSyncFleet(workers)
@@ -146,4 +148,78 @@ func TestFleetDoesNotStrandAWaiterWhoseCallerGaveUp(t *testing.T) {
 		t.Fatal("a cancelled caller blocked on somebody else's sync")
 	}
 	close(release)
+}
+
+// The question a bounded fleet does not answer on its own: what if every
+// worker is held by a mailbox that is stuck?
+//
+// It is not hypothetical. Failure is sticky in a way success is not — a
+// healthy mailbox finishes in a fraction of a second and hands its worker
+// back, while a broken one holds it for the whole timeout and is queued again
+// two minutes later. Left alone, the fleet silts up with the mailboxes that
+// cannot use it.
+
+func TestBrokenMailboxesStopAskingSoOften(t *testing.T) {
+	h := newSyncHealth(8)
+	now := time.Date(2026, 8, 5, 9, 0, 0, 0, time.UTC)
+
+	// A mailbox nobody has heard of is always due.
+	if due, failing := h.dueAt(1, now); !due || failing {
+		t.Fatalf("an unknown mailbox: due=%v failing=%v, want true/false", due, failing)
+	}
+
+	// First failure still retries promptly: most failures are a blip and the
+	// mail behind them is somebody's work.
+	h.record(1, now, errSync)
+	if due, failing := h.dueAt(1, now); !due || !failing {
+		t.Errorf("after one failure: due=%v failing=%v, want a prompt retry that counts as failing", due, failing)
+	}
+
+	// Keeping at it earns longer and longer waits.
+	h.record(1, now, errSync)
+	if due, _ := h.dueAt(1, now.Add(time.Minute)); due {
+		t.Error("a mailbox that failed twice was retried a minute later; an expired authorisation does not unexpire itself")
+	}
+	if due, _ := h.dueAt(1, now.Add(3*time.Minute)); !due {
+		t.Error("the second-failure wait outlasted its own backoff step")
+	}
+
+	// And a mailbox that recovers is forgiven completely rather than left on
+	// probation for its past.
+	h.record(1, now, nil)
+	if due, failing := h.dueAt(1, now); !due || failing {
+		t.Errorf("after recovering: due=%v failing=%v, want treated as healthy again", due, failing)
+	}
+}
+
+func TestBrokenMailboxesCannotFillTheFleet(t *testing.T) {
+	const workers = 8
+	h := newSyncHealth(workers)
+
+	// Every failing mailbox coming due at the same moment is the case backoff
+	// makes unlikely and cannot make impossible. Only the reserved share may
+	// be held, so somebody whose mailbox works is never queued behind a crowd
+	// of mailboxes that do not.
+	held := 0
+	var releases []func()
+	for i := 0; i < workers*3; i++ {
+		if release, ok := h.holdSick(); ok {
+			held++
+			releases = append(releases, release)
+		}
+	}
+	want := workers / failingShare
+	if held != want {
+		t.Fatalf("%d failing mailboxes got into the fleet at once, the reserved share is %d\n"+
+			"the rest of the fleet must stay available to mail that is arriving normally", held, want)
+	}
+	if held >= workers {
+		t.Fatal("failing mailboxes could fill every worker")
+	}
+
+	// Slots come back, or a transient outage would lock them out for ever.
+	releases[0]()
+	if _, ok := h.holdSick(); !ok {
+		t.Error("a released slot was not reusable")
+	}
 }
