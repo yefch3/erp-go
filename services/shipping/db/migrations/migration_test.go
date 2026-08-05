@@ -32,17 +32,20 @@ func TestUpDownUp(t *testing.T) {
 	}
 	assertTable(t, db, "shipping_schedules", true)
 	assertTable(t, db, "outbox_events", true)
+	assertTable(t, db, "shipping_schedule_changes", true)
 
 	if err := goose.DownTo(db, ".", 0); err != nil {
 		t.Fatalf("down: %v", err)
 	}
 	assertTable(t, db, "shipping_schedules", false)
 	assertTable(t, db, "outbox_events", false)
+	assertTable(t, db, "shipping_schedule_changes", false)
 
 	if err := goose.Up(db, "."); err != nil {
 		t.Fatalf("second up: %v", err)
 	}
 	assertTable(t, db, "shipping_schedules", true)
+	assertTable(t, db, "shipping_schedule_changes", true)
 }
 
 func assertTable(t *testing.T, db *sql.DB, name string, want bool) {

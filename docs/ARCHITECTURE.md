@@ -2886,6 +2886,8 @@ CREATE TABLE stock_thresholds (
 
 ### 5.9 shipping（船期管理）
 
+> **当前落地边界（2026-08-04）**：下面的 `voyages`、集装箱、运输节点、费用和异常中心是早期完整物流平台草案，暂不作为当前实现依据。当前核心版以 `docs/船期管理需求清单.md` 为准：shipping 服务使用 `shipping_schedules` 保存员工手工维护的船期，以 `shipping_schedule_changes` 保存 ETD/ETA 和状态变更；合同与单证、到港提醒及数据范围按 D2～D4 分批增量实现，不提前引入集装箱、费用或外部船期同步。
+
 ```sql
 CREATE TABLE voyages (
     id           BIGSERIAL PRIMARY KEY,
