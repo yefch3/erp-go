@@ -474,7 +474,7 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 		}
 	}
 
-	threadKey, replyTo := s.resolveThread(ctx, tenantID, parsed)
+	threadKey, replyTo, owner := s.resolveThread(ctx, tenantID, parsed)
 
 	id, err := s.q.InsertInbound(ctx, store.InsertInboundParams{
 		SentMessageID: sentMessageID,
@@ -488,7 +488,12 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 		BodyHtml: parsed.BodyHTML, BodyText: parsed.BodyText,
 		Snippet: snippetOf(parsed), SearchText: searchTextOf(parsed.Subject, parsed.FromName, parsed.FromEmail,
 			parsed.ToEmail, parsed.BodyText, parsed.BodyHTML),
-		RawKey: rawKey, RawSize: int64(len(m.Raw)),
+		// Which customer this belongs to, inherited from the message it
+		// answers. Zero when it answers nothing of ours, which is the
+		// ordinary case.
+		CustomerID: owner.CustomerID, ContactID: owner.ContactID,
+		CustomerName: owner.CustomerName,
+		RawKey:       rawKey, RawSize: int64(len(m.Raw)),
 		IsBounce: parsed.IsBounce, HasAttachments: len(parsed.Attachments) > 0,
 		IsRead: m.Seen,
 		SentAt: pgtype.Timestamptz{Time: sentAt, Valid: !sentAt.IsZero()},
@@ -537,7 +542,18 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 // In-Reply-To or References that we recognise identifies the exact send being
 // answered. That is what puts a customer's reply underneath the quotation it
 // concerns rather than loose in a list.
-func (s *Service) resolveThread(ctx context.Context, tenantID int64, p ParsedMail) (string, *int64) {
+// mailOwner is which customer a received message belongs to, if any.
+//
+// Zero is the ordinary answer, not a failure: most of what arrives in a
+// mailbox is not from a customer. Nothing here invents a customer for an
+// unknown sender.
+type mailOwner struct {
+	CustomerID   int64
+	ContactID    int64
+	CustomerName string
+}
+
+func (s *Service) resolveThread(ctx context.Context, tenantID int64, p ParsedMail) (string, *int64, mailOwner) {
 	candidates := append([]string{p.InReplyTo}, p.References...)
 	for _, id := range candidates {
 		key := messageKeyFromID(id)
@@ -555,18 +571,29 @@ func (s *Service) resolveThread(ctx context.Context, tenantID int64, p ParsedMai
 		if thread == "" {
 			thread = row.MessageKey
 		}
-		return thread, &msgID
+		// The reply inherits the customer of the message it answers. This is
+		// the whole first layer of linking mail to business records, and it
+		// is stronger than matching the sender's address: it works when the
+		// customer replies from a phone, from a colleague's account, or from
+		// an address nobody has ever entered into the contact list, because
+		// what identifies the conversation is the mail's own In-Reply-To
+		// rather than anything about who sent it.
+		return thread, &msgID, mailOwner{
+			CustomerID:   row.CustomerID,
+			ContactID:    row.ContactID,
+			CustomerName: row.CustomerName,
+		}
 	}
 	// Not ours. Keep the sender's own chain together: the root of References
 	// is the start of their conversation, and failing that the message is the
 	// start of its own.
 	if len(p.References) > 0 {
-		return truncate(p.References[0], 64), nil
+		return truncate(p.References[0], 64), nil, mailOwner{}
 	}
 	if p.InReplyTo != "" {
-		return truncate(p.InReplyTo, 64), nil
+		return truncate(p.InReplyTo, 64), nil, mailOwner{}
 	}
-	return truncate(p.MessageID, 64), nil
+	return truncate(p.MessageID, 64), nil, mailOwner{}
 }
 
 // messageKeyFromID extracts our own key out of a Message-ID we issued.
