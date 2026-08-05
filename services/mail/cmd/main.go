@@ -114,7 +114,11 @@ func run(log *slog.Logger) error {
 	// seen — but polling a dev provider would just be a connection error
 	// every two minutes.
 	if cfg.Provider == "smtp" {
-		svc.UseMailbox(mailfetch.NewIMAP(cfg.SyncTimeout, log))
+		imap := mailfetch.NewIMAP(cfg.SyncTimeout, log)
+		svc.UseMailbox(imap)
+		// Connections are kept between commands now, so something has to close
+		// the ones nobody is using. Without this the pool only grows.
+		go imap.Run(ctx)
 		syncCfg := app.SyncConfig{
 			Interval:   cfg.SyncInterval,
 			BatchSize:  uint32(cfg.SyncBatch),
