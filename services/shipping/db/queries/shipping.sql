@@ -57,6 +57,27 @@ ORDER BY
   updated_at DESC
 LIMIT sqlc.arg(row_limit) OFFSET sqlc.arg(row_offset);
 
+-- name: CountSchedules :one
+SELECT count(*)
+FROM shipping_schedules
+WHERE tenant_id = sqlc.arg(tenant_id)
+  AND (
+    sqlc.arg(keyword)::text = ''
+    OR schedule_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
+    OR contract_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
+    OR customer_name ILIKE '%' || sqlc.arg(keyword)::text || '%'
+    OR vessel_name ILIKE '%' || sqlc.arg(keyword)::text || '%'
+    OR voyage_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
+    OR responsible_name ILIKE '%' || sqlc.arg(keyword)::text || '%'
+  )
+  AND (sqlc.arg(status)::text = '' OR status = sqlc.arg(status)::text)
+  AND (sqlc.arg(port_of_loading)::text = '' OR port_of_loading = sqlc.arg(port_of_loading)::text)
+  AND (sqlc.arg(port_of_discharge)::text = '' OR port_of_discharge = sqlc.arg(port_of_discharge)::text)
+  AND (sqlc.narg(etd_from)::date IS NULL OR etd >= sqlc.narg(etd_from)::date)
+  AND (sqlc.narg(etd_to)::date IS NULL OR etd <= sqlc.narg(etd_to)::date)
+  AND (sqlc.narg(eta_from)::date IS NULL OR eta >= sqlc.narg(eta_from)::date)
+  AND (sqlc.narg(eta_to)::date IS NULL OR eta <= sqlc.narg(eta_to)::date);
+
 -- name: UpdateSchedule :one
 UPDATE shipping_schedules SET
     contract_id = $3, contract_no = $4, customer_id = $5, customer_name = $6,

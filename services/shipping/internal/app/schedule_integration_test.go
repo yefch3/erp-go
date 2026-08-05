@@ -62,6 +62,10 @@ func TestScheduleLifecycle(t *testing.T) {
 	if rows[0].ID != second.ID {
 		t.Fatalf("default sort returned id=%d, want most recently updated id=%d", rows[0].ID, second.ID)
 	}
+	rows, total, _, _, err = svc.ListSchedules(ctx, tenantID, ListFilter{Keyword: "CON-D1", Page: 99, PageSize: 1})
+	if err != nil || len(rows) != 0 || total != 2 {
+		t.Fatalf("empty page rows=%d total=%d err=%v", len(rows), total, err)
+	}
 
 	changed := input
 	changed.ETD = "2026-08-11"

@@ -80,6 +80,7 @@ function body(confirmDuplicate=false){
 async function submit(confirmDuplicate=false){
   return props.schedule?put<{schedule:ShippingSchedule}>(`/shipping/schedules/${props.schedule.id}`,body(confirmDuplicate)):post<{schedule:ShippingSchedule}>('/shipping/schedules',body(confirmDuplicate))
 }
+function isDialogDismissed(error:unknown){return error==='cancel'||error==='close'}
 async function save(){
   if(!await formRef.value?.validate().catch(()=>false))return
   if(form.eta<form.etd){ElMessage.warning(t('shipping.etaBeforeEtd'));return}
@@ -89,7 +90,7 @@ async function save(){
     try{result=await submit(false)}catch(error){
       const env=error as Envelope<unknown>
       if(env?.code!=='SHIPPING_POSSIBLE_DUPLICATE')throw error
-      await ElMessageBox.confirm(t('shipping.duplicateConfirm'),t('shipping.duplicateTitle'),{type:'warning'})
+      try{await ElMessageBox.confirm(t('shipping.duplicateConfirm'),t('shipping.duplicateTitle'),{type:'warning'})}catch(action){if(isDialogDismissed(action))return;throw action}
       result=await submit(true)
     }
     ElMessage.success(props.schedule?t('shipping.updated'):t('shipping.created'))

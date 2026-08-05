@@ -209,6 +209,15 @@ func (s *Service) ListSchedules(ctx context.Context, tenantID int64, f ListFilte
 	var total int64
 	if len(rows) > 0 {
 		total = rows[0].Total
+	} else {
+		total, err = s.q.CountSchedules(ctx, store.CountSchedulesParams{
+			TenantID: tenantID, Keyword: strings.TrimSpace(f.Keyword), Status: f.Status,
+			PortOfLoading: strings.TrimSpace(f.PortOfLoading), PortOfDischarge: strings.TrimSpace(f.PortOfDischarge),
+			EtdFrom: etdFrom, EtdTo: etdTo, EtaFrom: etaFrom, EtaTo: etaTo,
+		})
+		if err != nil {
+			return nil, 0, f.Page, f.PageSize, err
+		}
 	}
 	return rows, total, f.Page, f.PageSize, nil
 }
