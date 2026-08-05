@@ -121,6 +121,9 @@ type EmailInbound struct {
 	NotJunk        bool
 	SentMessageID  int64
 	SearchText     string
+	CustomerID     int64
+	ContactID      int64
+	CustomerName   string
 }
 
 type EmailInboundAttachment struct {

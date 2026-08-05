@@ -471,7 +471,8 @@ func (q *Queries) FailFlagOp(ctx context.Context, arg FailFlagOpParams) error {
 }
 
 const findMessageByKey = `-- name: FindMessageByKey :one
-SELECT id, message_key::text AS message_key, thread_key, to_email, campaign_id, sender_id
+SELECT id, message_key::text AS message_key, thread_key, to_email, campaign_id, sender_id,
+       customer_id, contact_id, customer_name
 FROM email_messages
 WHERE tenant_id = $1::bigint
   AND message_key::text = $2::text
@@ -483,14 +484,20 @@ type FindMessageByKeyParams struct {
 }
 
 type FindMessageByKeyRow struct {
-	ID         int64
-	MessageKey string
-	ThreadKey  string
-	ToEmail    string
-	CampaignID *int64
-	SenderID   int64
+	ID           int64
+	MessageKey   string
+	ThreadKey    string
+	ToEmail      string
+	CampaignID   *int64
+	SenderID     int64
+	CustomerID   int64
+	ContactID    int64
+	CustomerName string
 }
 
+// customer_id and friends come back too: a reply inherits the customer of the
+// message it answers, which is how received mail gets a customer at all
+// without guessing at the sender's address. See migration 00026.
 func (q *Queries) FindMessageByKey(ctx context.Context, arg FindMessageByKeyParams) (FindMessageByKeyRow, error) {
 	row := q.db.QueryRow(ctx, findMessageByKey, arg.TenantID, arg.MessageKey)
 	var i FindMessageByKeyRow
@@ -501,6 +508,9 @@ func (q *Queries) FindMessageByKey(ctx context.Context, arg FindMessageByKeyPara
 		&i.ToEmail,
 		&i.CampaignID,
 		&i.SenderID,
+		&i.CustomerID,
+		&i.ContactID,
+		&i.CustomerName,
 	)
 	return i, err
 }
@@ -833,7 +843,8 @@ INSERT INTO email_inbound (
     message_id, in_reply_to, references_ids, thread_key, reply_to_id,
     from_email, from_name, to_email, subject, body_html, body_text, snippet,
     raw_key, raw_size, is_bounce, has_attachments, is_read, sent_at, received_at,
-    sent_message_id, search_text
+    sent_message_id, search_text,
+    customer_id, contact_id, customer_name
 ) VALUES (
     $1::bigint, $2::bigint, $3::bigint,
     $4::text, $5::bigint,
@@ -856,7 +867,11 @@ INSERT INTO email_inbound (
     -- The body as plain text. Derived once here rather than at query time:
     -- body_text is empty for HTML-only senders, and body_html cannot be
     -- searched without matching class names and base64. See migration 00023.
-    $26::text
+    $26::text,
+    -- Non-zero when this mail answers something we sent to a customer.
+    $27::bigint,
+    $28::bigint,
+    $29::text
 )
 ON CONFLICT (tenant_id, account_id, folder, imap_uid) DO NOTHING
 RETURNING id
@@ -889,6 +904,9 @@ type InsertInboundParams struct {
 	ReceivedAt     pgtype.Timestamptz
 	SentMessageID  int64
 	SearchText     string
+	CustomerID     int64
+	ContactID      int64
+	CustomerName   string
 }
 
 // ON CONFLICT DO NOTHING plus a returned id of 0 is how a repeated fetch of
@@ -921,6 +939,9 @@ func (q *Queries) InsertInbound(ctx context.Context, arg InsertInboundParams) (i
 		arg.ReceivedAt,
 		arg.SentMessageID,
 		arg.SearchText,
+		arg.CustomerID,
+		arg.ContactID,
+		arg.CustomerName,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -955,6 +976,77 @@ func (q *Queries) InsertInboundAttachment(ctx context.Context, arg InsertInbound
 		arg.FileKey,
 	)
 	return err
+}
+
+const listCustomerMail = `-- name: ListCustomerMail :many
+WITH ours AS (
+    SELECT 'OUT'::text AS direction, m.id, m.subject,
+           left(coalesce(nullif(m.body_text, ''), ''), 200) AS snippet,
+           m.to_email AS counterparty, m.sent_at AS at
+    FROM email_messages m
+    WHERE m.tenant_id = $2::bigint
+      AND m.customer_id = $3::bigint
+      AND m.sent_at IS NOT NULL
+), theirs AS (
+    SELECT 'IN'::text AS direction, i.id, i.subject, i.snippet,
+           i.from_email AS counterparty, i.received_at AS at
+    FROM email_inbound i
+    WHERE i.tenant_id = $2::bigint
+      AND i.customer_id = $3::bigint
+      AND i.deleted_at IS NULL
+)
+SELECT direction, id, subject, snippet, counterparty, at
+FROM (SELECT direction, id, subject, snippet, counterparty, at FROM ours UNION ALL SELECT direction, id, subject, snippet, counterparty, at FROM theirs) conversation
+ORDER BY at DESC, id DESC
+LIMIT $1::int
+`
+
+type ListCustomerMailParams struct {
+	RowLimit   int32
+	TenantID   int64
+	CustomerID int64
+}
+
+type ListCustomerMailRow struct {
+	Direction    string
+	ID           int64
+	Subject      string
+	Snippet      string
+	Counterparty string
+	At           pgtype.Timestamptz
+}
+
+// Everything said to and by one customer, newest first.
+//
+// The question the whole link exists to answer. Both directions in one list:
+// what we sent lives in email_messages, what came back in email_inbound, and
+// a person asking "what have we said to ACME" means both halves — a list of
+// only our own side would read as if the customer never answered.
+func (q *Queries) ListCustomerMail(ctx context.Context, arg ListCustomerMailParams) ([]ListCustomerMailRow, error) {
+	rows, err := q.db.Query(ctx, listCustomerMail, arg.RowLimit, arg.TenantID, arg.CustomerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCustomerMailRow
+	for rows.Next() {
+		var i ListCustomerMailRow
+		if err := rows.Scan(
+			&i.Direction,
+			&i.ID,
+			&i.Subject,
+			&i.Snippet,
+			&i.Counterparty,
+			&i.At,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listExpiredTrash = `-- name: ListExpiredTrash :many

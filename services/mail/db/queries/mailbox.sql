@@ -169,7 +169,8 @@ INSERT INTO email_inbound (
     message_id, in_reply_to, references_ids, thread_key, reply_to_id,
     from_email, from_name, to_email, subject, body_html, body_text, snippet,
     raw_key, raw_size, is_bounce, has_attachments, is_read, sent_at, received_at,
-    sent_message_id, search_text
+    sent_message_id, search_text,
+    customer_id, contact_id, customer_name
 ) VALUES (
     sqlc.arg(tenant_id)::bigint, sqlc.arg(account_id)::bigint, sqlc.arg(owner_id)::bigint,
     sqlc.arg(folder)::text, sqlc.arg(imap_uid)::bigint,
@@ -192,7 +193,11 @@ INSERT INTO email_inbound (
     -- The body as plain text. Derived once here rather than at query time:
     -- body_text is empty for HTML-only senders, and body_html cannot be
     -- searched without matching class names and base64. See migration 00023.
-    sqlc.arg(search_text)::text
+    sqlc.arg(search_text)::text,
+    -- Non-zero when this mail answers something we sent to a customer.
+    sqlc.arg(customer_id)::bigint,
+    sqlc.arg(contact_id)::bigint,
+    sqlc.arg(customer_name)::text
 )
 ON CONFLICT (tenant_id, account_id, folder, imap_uid) DO NOTHING
 RETURNING id;
@@ -206,7 +211,11 @@ INSERT INTO email_inbound_attachments (
 );
 
 -- name: FindMessageByKey :one
-SELECT id, message_key::text AS message_key, thread_key, to_email, campaign_id, sender_id
+-- customer_id and friends come back too: a reply inherits the customer of the
+-- message it answers, which is how received mail gets a customer at all
+-- without guessing at the sender's address. See migration 00026.
+SELECT id, message_key::text AS message_key, thread_key, to_email, campaign_id, sender_id,
+       customer_id, contact_id, customer_name
 FROM email_messages
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND message_key::text = sqlc.arg(message_key)::text;
@@ -1026,3 +1035,32 @@ LIMIT sqlc.arg(row_limit)::int;
 UPDATE email_inbound
 SET search_text = sqlc.arg(search_text)::text
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- Everything said to and by one customer, newest first.
+--
+-- The question the whole link exists to answer. Both directions in one list:
+-- what we sent lives in email_messages, what came back in email_inbound, and
+-- a person asking "what have we said to ACME" means both halves — a list of
+-- only our own side would read as if the customer never answered.
+--
+-- name: ListCustomerMail :many
+WITH ours AS (
+    SELECT 'OUT'::text AS direction, m.id, m.subject,
+           left(coalesce(nullif(m.body_text, ''), ''), 200) AS snippet,
+           m.to_email AS counterparty, m.sent_at AS at
+    FROM email_messages m
+    WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint
+      AND m.customer_id = sqlc.arg(customer_id)::bigint
+      AND m.sent_at IS NOT NULL
+), theirs AS (
+    SELECT 'IN'::text AS direction, i.id, i.subject, i.snippet,
+           i.from_email AS counterparty, i.received_at AS at
+    FROM email_inbound i
+    WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
+      AND i.customer_id = sqlc.arg(customer_id)::bigint
+      AND i.deleted_at IS NULL
+)
+SELECT direction, id, subject, snippet, counterparty, at
+FROM (SELECT * FROM ours UNION ALL SELECT * FROM theirs) conversation
+ORDER BY at DESC, id DESC
+LIMIT sqlc.arg(row_limit)::int;
