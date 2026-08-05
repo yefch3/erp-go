@@ -977,6 +977,7 @@ export default {
     from: 'From',
     receivedAt: 'Received',
     emptyInbox: 'The inbox is empty',
+    searchEmpty: 'No mail contains “{q}”. Search looks at the subject, the sender and the body, but not junk or trash.',
     syncNow: 'Check mail now',
     openedCol: 'Opened?',
     maybeOpened: 'Possibly opened',

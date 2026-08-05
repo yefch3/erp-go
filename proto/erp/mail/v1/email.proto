@@ -108,6 +108,8 @@ service EmailService {
   // have almost nothing in common: one is a delivery attempt with retries and
   // a provider verdict, the other is a document somebody sent us.
   rpc ListInbound(ListInboundRequest) returns (ListInboundResponse);
+  // Search across every folder, rather than inside the one being viewed.
+  rpc SearchMail(SearchMailRequest) returns (SearchMailResponse);
   rpc GetInbound(GetInboundRequest) returns (GetInboundResponse);
   // One conversation, both directions, oldest first. Owner-scoped: the
   // caller sees only their own half of the world.
@@ -214,6 +216,30 @@ message ListInboundRequest {
   // encodes a sort position, so a list that grows at the top cannot shift
   // the boundary underneath somebody who is reading.
   string cursor = 4;
+}
+
+// One message found by a search. It carries the folder because the search
+// crossed folders — a result that does not say where it was found leaves the
+// person to open it to find out.
+message SearchHit {
+  InboundMail mail = 1;
+  string folder = 2;
+  // The text around the hit, not the opening of the mail. They differ exactly
+  // when the search was worth doing: a match in the fourth paragraph does not
+  // appear in a snippet of the first.
+  string match_snippet = 3;
+}
+
+message SearchMailRequest {
+  string keyword = 1;
+  string cursor = 2;
+  erp.common.v1.PageRequest page = 3;
+}
+
+message SearchMailResponse {
+  repeated SearchHit hits = 1;
+  erp.common.v1.PageMeta meta = 2;
+  string next_cursor = 3;
 }
 
 message ListInboundResponse {
