@@ -982,6 +982,7 @@ export default {
     from: '发件人',
     receivedAt: '收到时间',
     emptyInbox: '收件箱是空的',
+    searchEmpty: '没有找到包含「{q}」的邮件。搜索会看主题、发件人和正文，但不含垃圾邮件和回收站。',
     syncNow: '立即收信',
     openedCol: '对方已读',
     maybeOpened: '可能已打开',

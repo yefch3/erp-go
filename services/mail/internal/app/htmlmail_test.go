@@ -237,3 +237,75 @@ script:alert(1)">`,
 		}
 	}
 }
+
+// The body is indexed for search now, so a character that is invisible in the
+// rendered mail is not merely untidy in the derived text — it splits a phrase
+// and makes the mail unfindable by words the reader can plainly see.
+//
+// Both paths matter. HTMLToText strips these on its way through, so a
+// text/plain body was the only kind that kept them, and text/plain is exactly
+// what a plain-text sender provides.
+func TestSearchTextDropsCharactersThatAreNotWords(t *testing.T) {
+	cases := []struct {
+		name       string
+		text, html string
+		want       string
+	}{
+		{
+			name: "soft hyphens used as padding, from HTML",
+			html: "<p>Shop our online­pharmacy­­­ today</p>",
+			want: "Shop our onlinepharmacy today",
+		},
+		{
+			name: "a zero-width joiner inside a plain-text phrase",
+			text: "your order‍ number is 42",
+			want: "your order number is 42",
+		},
+		{
+			name: "a word joiner in a plain-text body",
+			text: "invoice⁠ attached",
+			want: "invoice attached",
+		},
+		{
+			name: "a non-breaking space is a space, not nothing",
+			text: "quote attached",
+			want: "quote attached",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := searchTextOf("", "", "", "", c.text, c.html); got != c.want {
+				t.Errorf("searchTextOf = %q, want %q\n"+
+					"an invisible character left in here makes this mail unfindable by its own words",
+					got, c.want)
+			}
+		})
+	}
+}
+
+// The subject and the addresses are in the same column as the body, and are
+// there for the index rather than for tidiness: a predicate spread across
+// five columns with OR cannot use a trigram index, so folding them in is what
+// turns a 100 ms scan into a 1.6 ms lookup. A test, because "and also put the
+// header in" is exactly the line a later refactor drops as redundant — the
+// query would still return the right rows, only slowly, and nothing would say
+// so.
+func TestSearchTextCarriesTheHeaderSoOneIndexCanServeTheQuery(t *testing.T) {
+	got := searchTextOf(
+		"Q3 报价单", "Lina Chen", "lina@sunrise.com", "buyer@acme.com",
+		"the numbers are attached", "")
+
+	for _, want := range []string{
+		"Q3 报价单", "Lina Chen", "lina@sunrise.com", "buyer@acme.com",
+		"the numbers are attached",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("searchTextOf dropped %q, so one ILIKE cannot answer for it\ngot: %q", want, got)
+		}
+	}
+	// Header first: a hit on the subject should produce a match snippet that
+	// opens with the subject rather than a fragment from nowhere.
+	if !strings.HasPrefix(got, "Q3 报价单") {
+		t.Errorf("the header is not first, so a subject hit yields a snippet with no context\ngot: %q", got)
+	}
+}

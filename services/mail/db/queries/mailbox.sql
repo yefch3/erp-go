@@ -169,7 +169,7 @@ INSERT INTO email_inbound (
     message_id, in_reply_to, references_ids, thread_key, reply_to_id,
     from_email, from_name, to_email, subject, body_html, body_text, snippet,
     raw_key, raw_size, is_bounce, has_attachments, is_read, sent_at, received_at,
-    sent_message_id
+    sent_message_id, search_text
 ) VALUES (
     sqlc.arg(tenant_id)::bigint, sqlc.arg(account_id)::bigint, sqlc.arg(owner_id)::bigint,
     sqlc.arg(folder)::text, sqlc.arg(imap_uid)::bigint,
@@ -188,7 +188,11 @@ INSERT INTO email_inbound (
     -- Non-zero when this is the host's copy of something the ERP sent. The
     -- copy used to be discarded on that basis; keeping it is what gives a
     -- sent mail a message to star, archive or delete.
-    sqlc.arg(sent_message_id)::bigint
+    sqlc.arg(sent_message_id)::bigint,
+    -- The body as plain text. Derived once here rather than at query time:
+    -- body_text is empty for HTML-only senders, and body_html cannot be
+    -- searched without matching class names and base64. See migration 00023.
+    sqlc.arg(search_text)::text
 )
 ON CONFLICT (tenant_id, account_id, folder, imap_uid) DO NOTHING
 RETURNING id;
@@ -939,3 +943,86 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND NOT not_junk
   AND deleted_at IS NULL
 RETURNING id, account_id, folder, imap_uid, message_id;
+
+-- Search, across folders.
+--
+-- Every other list here answers "what is in this folder". This one answers
+-- "where is that mail", which is a different question: somebody who remembers
+-- a phrase does not remember whether they filed it, and making them guess the
+-- folder before they can look is making them do the search themselves.
+--
+-- Junk and trash are left out, the way Gmail leaves them out. Both are full
+-- of things the person already decided against, and a search that surfaces
+-- them puts rejected mail beside wanted mail with no way to tell which is
+-- which. A mail rescued from junk (not_junk) is a decision the other way and
+-- is included.
+--
+-- name: SearchMail :many
+WITH hits AS (
+    SELECT id, folder, thread_key, from_email, from_name, to_email, subject,
+           snippet, search_text, is_read, is_starred, has_attachments,
+           received_at, sent_at
+    FROM email_inbound
+    WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+      AND owner_id = sqlc.arg(owner_id)::bigint
+      AND deleted_at IS NULL
+      AND (folder <> 'JUNK' OR not_junk)
+      -- One column, not five ORed together. The subject and the addresses
+      -- are folded into search_text at ingest precisely so this can be a
+      -- single predicate: an OR across columns cannot use the trigram index
+      -- and the planner falls back to a scan — 100 ms against 1.6 ms,
+      -- measured on this mailbox.
+      AND search_text ILIKE '%' || sqlc.arg(keyword)::text || '%'
+      AND (sqlc.narg(cursor_at)::timestamptz IS NULL
+           OR (received_at, id) < (sqlc.narg(cursor_at)::timestamptz,
+                                   sqlc.arg(cursor_id)::bigint))
+    ORDER BY received_at DESC, id DESC
+    LIMIT sqlc.arg(row_limit)::int
+)
+-- The match window is cut here, after LIMIT, so lowering a whole mail body to
+-- find the offset happens for the fifty rows on screen and not for every row
+-- the scan touched.
+SELECT id, folder, thread_key, from_email, from_name, to_email, subject,
+       is_read, is_starred, has_attachments, received_at, sent_at,
+       CASE
+           WHEN position(lower(sqlc.arg(keyword)::text) in lower(search_text)) > 0
+           THEN substring(search_text
+                    -- A little before the hit, so the phrase has context on
+                    -- both sides instead of starting mid-word at the match.
+                    from greatest(1, position(lower(sqlc.arg(keyword)::text) in lower(search_text)) - 40)
+                    for 200)
+           -- The hit was in the subject or an address, which the row already
+           -- shows. Falling back to the opening line is more use than an
+           -- empty space where a quotation would go.
+           ELSE snippet
+       END::text AS match_snippet
+FROM hits
+ORDER BY received_at DESC, id DESC;
+
+-- name: CountSearchMail :one
+-- Repeats the predicate rather than sharing it: the count and the list have
+-- to agree, and a count that searched a different set would promise rows that
+-- are not there.
+SELECT count(*)::bigint
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND owner_id = sqlc.arg(owner_id)::bigint
+  AND deleted_at IS NULL
+  AND (folder <> 'JUNK' OR not_junk)
+  AND search_text ILIKE '%' || sqlc.arg(keyword)::text || '%';
+
+-- name: ListInboundNeedingSearchText :many
+-- Rows stored before the column existed. Bounded per call so the backfill
+-- runs in batches instead of loading every body at once.
+SELECT id, subject, from_name, from_email, to_email, body_text, body_html
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND search_text = ''
+  AND (body_text <> '' OR body_html <> '')
+ORDER BY id DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: SetSearchText :exec
+UPDATE email_inbound
+SET search_text = sqlc.arg(search_text)::text
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;

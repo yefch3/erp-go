@@ -225,6 +225,32 @@ func (q *Queries) CountPendingFlagOps(ctx context.Context, arg CountPendingFlagO
 	return column_1, err
 }
 
+const countSearchMail = `-- name: CountSearchMail :one
+SELECT count(*)::bigint
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND owner_id = $2::bigint
+  AND deleted_at IS NULL
+  AND (folder <> 'JUNK' OR not_junk)
+  AND search_text ILIKE '%' || $3::text || '%'
+`
+
+type CountSearchMailParams struct {
+	TenantID int64
+	OwnerID  int64
+	Keyword  string
+}
+
+// Repeats the predicate rather than sharing it: the count and the list have
+// to agree, and a count that searched a different set would promise rows that
+// are not there.
+func (q *Queries) CountSearchMail(ctx context.Context, arg CountSearchMailParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countSearchMail, arg.TenantID, arg.OwnerID, arg.Keyword)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countSentInWindow = `-- name: CountSentInWindow :one
 SELECT
     coalesce(sum(sent_count) FILTER (WHERE window_at >= date_trunc('hour', now())), 0)::int AS this_hour,
@@ -807,7 +833,7 @@ INSERT INTO email_inbound (
     message_id, in_reply_to, references_ids, thread_key, reply_to_id,
     from_email, from_name, to_email, subject, body_html, body_text, snippet,
     raw_key, raw_size, is_bounce, has_attachments, is_read, sent_at, received_at,
-    sent_message_id
+    sent_message_id, search_text
 ) VALUES (
     $1::bigint, $2::bigint, $3::bigint,
     $4::text, $5::bigint,
@@ -826,7 +852,11 @@ INSERT INTO email_inbound (
     -- Non-zero when this is the host's copy of something the ERP sent. The
     -- copy used to be discarded on that basis; keeping it is what gives a
     -- sent mail a message to star, archive or delete.
-    $25::bigint
+    $25::bigint,
+    -- The body as plain text. Derived once here rather than at query time:
+    -- body_text is empty for HTML-only senders, and body_html cannot be
+    -- searched without matching class names and base64. See migration 00023.
+    $26::text
 )
 ON CONFLICT (tenant_id, account_id, folder, imap_uid) DO NOTHING
 RETURNING id
@@ -858,6 +888,7 @@ type InsertInboundParams struct {
 	SentAt         pgtype.Timestamptz
 	ReceivedAt     pgtype.Timestamptz
 	SentMessageID  int64
+	SearchText     string
 }
 
 // ON CONFLICT DO NOTHING plus a returned id of 0 is how a repeated fetch of
@@ -889,6 +920,7 @@ func (q *Queries) InsertInbound(ctx context.Context, arg InsertInboundParams) (i
 		arg.SentAt,
 		arg.ReceivedAt,
 		arg.SentMessageID,
+		arg.SearchText,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -1122,6 +1154,61 @@ func (q *Queries) ListInboundAttachments(ctx context.Context, arg ListInboundAtt
 			&i.ContentType,
 			&i.FileSize,
 			&i.FileKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInboundNeedingSearchText = `-- name: ListInboundNeedingSearchText :many
+SELECT id, subject, from_name, from_email, to_email, body_text, body_html
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND search_text = ''
+  AND (body_text <> '' OR body_html <> '')
+ORDER BY id DESC
+LIMIT $2::int
+`
+
+type ListInboundNeedingSearchTextParams struct {
+	TenantID int64
+	RowLimit int32
+}
+
+type ListInboundNeedingSearchTextRow struct {
+	ID        int64
+	Subject   string
+	FromName  string
+	FromEmail string
+	ToEmail   string
+	BodyText  string
+	BodyHtml  string
+}
+
+// Rows stored before the column existed. Bounded per call so the backfill
+// runs in batches instead of loading every body at once.
+func (q *Queries) ListInboundNeedingSearchText(ctx context.Context, arg ListInboundNeedingSearchTextParams) ([]ListInboundNeedingSearchTextRow, error) {
+	rows, err := q.db.Query(ctx, listInboundNeedingSearchText, arg.TenantID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInboundNeedingSearchTextRow
+	for rows.Next() {
+		var i ListInboundNeedingSearchTextRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Subject,
+			&i.FromName,
+			&i.FromEmail,
+			&i.ToEmail,
+			&i.BodyText,
+			&i.BodyHtml,
 		); err != nil {
 			return nil, err
 		}
@@ -2159,6 +2246,128 @@ func (q *Queries) RepointInbound(ctx context.Context, arg RepointInboundParams) 
 	return err
 }
 
+const searchMail = `-- name: SearchMail :many
+WITH hits AS (
+    SELECT id, folder, thread_key, from_email, from_name, to_email, subject,
+           snippet, search_text, is_read, is_starred, has_attachments,
+           received_at, sent_at
+    FROM email_inbound
+    WHERE tenant_id = $2::bigint
+      AND owner_id = $3::bigint
+      AND deleted_at IS NULL
+      AND (folder <> 'JUNK' OR not_junk)
+      -- One column, not five ORed together. The subject and the addresses
+      -- are folded into search_text at ingest precisely so this can be a
+      -- single predicate: an OR across columns cannot use the trigram index
+      -- and the planner falls back to a scan — 100 ms against 1.6 ms,
+      -- measured on this mailbox.
+      AND search_text ILIKE '%' || $1::text || '%'
+      AND ($4::timestamptz IS NULL
+           OR (received_at, id) < ($4::timestamptz,
+                                   $5::bigint))
+    ORDER BY received_at DESC, id DESC
+    LIMIT $6::int
+)
+SELECT id, folder, thread_key, from_email, from_name, to_email, subject,
+       is_read, is_starred, has_attachments, received_at, sent_at,
+       CASE
+           WHEN position(lower($1::text) in lower(search_text)) > 0
+           THEN substring(search_text
+                    -- A little before the hit, so the phrase has context on
+                    -- both sides instead of starting mid-word at the match.
+                    from greatest(1, position(lower($1::text) in lower(search_text)) - 40)
+                    for 200)
+           -- The hit was in the subject or an address, which the row already
+           -- shows. Falling back to the opening line is more use than an
+           -- empty space where a quotation would go.
+           ELSE snippet
+       END::text AS match_snippet
+FROM hits
+ORDER BY received_at DESC, id DESC
+`
+
+type SearchMailParams struct {
+	Keyword  string
+	TenantID int64
+	OwnerID  int64
+	CursorAt pgtype.Timestamptz
+	CursorID int64
+	RowLimit int32
+}
+
+type SearchMailRow struct {
+	ID             int64
+	Folder         string
+	ThreadKey      string
+	FromEmail      string
+	FromName       string
+	ToEmail        string
+	Subject        string
+	IsRead         bool
+	IsStarred      bool
+	HasAttachments bool
+	ReceivedAt     pgtype.Timestamptz
+	SentAt         pgtype.Timestamptz
+	MatchSnippet   string
+}
+
+// Search, across folders.
+//
+// Every other list here answers "what is in this folder". This one answers
+// "where is that mail", which is a different question: somebody who remembers
+// a phrase does not remember whether they filed it, and making them guess the
+// folder before they can look is making them do the search themselves.
+//
+// Junk and trash are left out, the way Gmail leaves them out. Both are full
+// of things the person already decided against, and a search that surfaces
+// them puts rejected mail beside wanted mail with no way to tell which is
+// which. A mail rescued from junk (not_junk) is a decision the other way and
+// is included.
+//
+// The match window is cut here, after LIMIT, so lowering a whole mail body to
+// find the offset happens for the fifty rows on screen and not for every row
+// the scan touched.
+func (q *Queries) SearchMail(ctx context.Context, arg SearchMailParams) ([]SearchMailRow, error) {
+	rows, err := q.db.Query(ctx, searchMail,
+		arg.Keyword,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.CursorAt,
+		arg.CursorID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchMailRow
+	for rows.Next() {
+		var i SearchMailRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Folder,
+			&i.ThreadKey,
+			&i.FromEmail,
+			&i.FromName,
+			&i.ToEmail,
+			&i.Subject,
+			&i.IsRead,
+			&i.IsStarred,
+			&i.HasAttachments,
+			&i.ReceivedAt,
+			&i.SentAt,
+			&i.MatchSnippet,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setInboundFlags = `-- name: SetInboundFlags :many
 UPDATE email_inbound
 SET is_read    = coalesce($1::boolean, is_read),
@@ -2361,6 +2570,23 @@ func (q *Queries) SetMailAccountSecret(ctx context.Context, arg SetMailAccountSe
 		arg.TenantID,
 		arg.ID,
 	)
+	return err
+}
+
+const setSearchText = `-- name: SetSearchText :exec
+UPDATE email_inbound
+SET search_text = $1::text
+WHERE tenant_id = $2::bigint AND id = $3::bigint
+`
+
+type SetSearchTextParams struct {
+	SearchText string
+	TenantID   int64
+	ID         int64
+}
+
+func (q *Queries) SetSearchText(ctx context.Context, arg SetSearchTextParams) error {
+	_, err := q.db.Exec(ctx, setSearchText, arg.SearchText, arg.TenantID, arg.ID)
 	return err
 }
 

@@ -389,6 +389,7 @@
           :mails="inbound"
           :folder="folder"
           :loading="loading"
+          :highlight="isSearching ? keyword : ''"
           @open="openInbound"
           @star="toggleStar"
           @mark="markRow"
@@ -396,7 +397,11 @@
         />
         <el-empty
           v-if="!loading && inbound.length === 0"
-          :description="t(folder === 'inbox' ? 'emails.emptyInbox' : 'emails.emptyFolder')"
+          :description="
+            isSearching
+              ? t('emails.searchEmpty', { q: keyword })
+              : t(folder === 'inbox' ? 'emails.emptyInbox' : 'emails.emptyFolder')
+          "
         />
       </template>
 
@@ -703,6 +708,8 @@ interface InboundMail {
   // Whether the original MIME is still archived. Only set on the detail read;
   // absent in list rows, which is why 作为附件转发 lives on the open mail.
   hasRaw?: boolean
+  // Set only on search results: which folder the hit was found in.
+  matchFolder?: string
   // Messages in this conversation; the list shows one row per conversation.
   threadCount?: number
   receivedAt: string
@@ -783,6 +790,14 @@ const searchKey = computed(() => {
 })
 
 const keyword = ref('')
+
+// Two characters, matching the server's floor. One character matches most of
+// the mailbox, which is not a result set — it is the mailbox with extra steps.
+// Counted in characters rather than bytes, because one Chinese character is a
+// word's worth of meaning.
+const isSearching = computed(
+  () => isInboundView.value && [...keyword.value.trim()].length >= 2,
+)
 const page = ref(1)
 const pageSize = 20
 const total = ref(0)
@@ -1200,7 +1215,33 @@ function backToList() {
 async function load() {
   loading.value = true
   try {
-    if (isInboundView.value) {
+    if (isSearching.value) {
+      // A search crosses folders, so it is a different request with a
+      // different shape — not the folder list with a parameter. Gmail works
+      // the same way, and for the same reason: somebody who remembers a
+      // phrase does not remember where they filed it.
+      const d = await get<{
+        hits: { mail: InboundMail; folder: string; matchSnippet: string }[]
+        meta: { total: string }
+        nextCursor: string
+      }>('/mail-search', {
+        page_size: pageSize,
+        keyword: keyword.value,
+        cursor: applied?.cursor ?? '',
+      })
+      inbound.value = (d.hits ?? []).map((h) => ({
+        ...h.mail,
+        // The text around the hit replaces the opening line: showing the
+        // first sentence of a mail that matched on its fourth paragraph
+        // makes the result look like a mistake.
+        snippet: h.matchSnippet,
+        matchFolder: h.folder,
+      }))
+      total.value = Number(d.meta?.total ?? 0)
+      nextCursor.value = d.nextCursor ?? ''
+      // unreadCount is deliberately left alone: it counts the mailbox, and a
+      // search is not a mailbox.
+    } else if (isInboundView.value) {
       const d = await get<{
         mails: InboundMail[]
         meta: { total: string }

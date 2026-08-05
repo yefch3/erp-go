@@ -61,6 +61,7 @@
         @keydown.enter.prevent="emit('open', m)"
         @keydown.space.prevent="emit('open', m)"
       >
+        <span v-if="m.matchFolder" class="in-folder">{{ folderLabel(m.matchFolder) }}</span>
         <span class="who">
           <!-- A sent mail is about who it went to; a received one about who
                it came from. Same column, different question. -->
@@ -69,8 +70,23 @@
           <span v-if="Number(m.threadCount) > 1" class="tcount">{{ m.threadCount }}</span>
         </span>
         <span class="line">
-          <span class="subj">{{ m.subject || t('emails.noSubject') }}</span>
-          <span v-if="m.snippet" class="snip">— {{ m.snippet }}</span>
+          <!-- Split into text runs and rendered as elements rather than
+               through v-html: the matched string is whatever somebody typed
+               into a search box, and the snippet is text from a stranger's
+               mail. Neither may become markup. -->
+          <span class="subj">
+            <template v-for="(part, i) in split(m.subject || t('emails.noSubject'))" :key="i">
+              <mark v-if="part.hit">{{ part.text }}</mark>
+              <template v-else>{{ part.text }}</template>
+            </template>
+          </span>
+          <span v-if="m.snippet" class="snip">
+            —
+            <template v-for="(part, i) in split(m.snippet)" :key="i">
+              <mark v-if="part.hit">{{ part.text }}</mark>
+              <template v-else>{{ part.text }}</template>
+            </template>
+          </span>
         </span>
       </div>
 
@@ -142,12 +158,18 @@ export interface MailRow {
   kind?: string
   toName?: string
   toEmail?: string
+  // Search results only. The search crossed folders, so a result that does not
+  // say where it was found leaves the person to open it to find out.
+  matchFolder?: string
 }
 
 const props = defineProps<{
   mails: MailRow[]
   folder: string
   loading?: boolean
+  // What was searched for, so the rows can point at the words that matched.
+  // Empty when this is a folder listing rather than a result set.
+  highlight?: string
   // The ids currently ticked. Owned by the page, not by this list: the page is
   // what acts on a selection, and it also has to survive this component being
   // re-rendered by a reload.
@@ -180,6 +202,44 @@ function togglePick(m: MailRow) {
 // The three or four things worth doing to a mail without opening it, chosen
 // per folder: "archive" means nothing in the archive, and offering "delete" in
 // the trash would be a lie about what the button does.
+// Cuts a string into alternating plain and matched runs, so the template can
+// render the matched ones as <mark> elements instead of interpolating markup.
+//
+// Case-insensitive, and it searches for the string itself rather than building
+// a RegExp from it — a query containing "(" or "*" would otherwise either
+// throw or quietly mean something else. This is the same matching the server
+// did with ILIKE, so what is underlined is what was actually found.
+function split(text: string): { text: string; hit: boolean }[] {
+  const needle = (props.highlight ?? '').trim()
+  if (!needle || !text) return [{ text, hit: false }]
+  const hay = text.toLowerCase()
+  const find = needle.toLowerCase()
+  const out: { text: string; hit: boolean }[] = []
+  let from = 0
+  for (;;) {
+    const at = hay.indexOf(find, from)
+    if (at < 0) break
+    if (at > from) out.push({ text: text.slice(from, at), hit: false })
+    out.push({ text: text.slice(at, at + find.length), hit: true })
+    from = at + find.length
+  }
+  if (from < text.length) out.push({ text: text.slice(from), hit: false })
+  return out
+}
+
+// Where a search result was found. Named in the person's language rather than
+// shown as the stored folder key.
+function folderLabel(folder: string) {
+  switch (folder) {
+    case 'SENT':
+      return t('emails.folders.sent')
+    case 'JUNK':
+      return t('emails.folders.junk')
+    default:
+      return t('emails.folders.inbox')
+  }
+}
+
 function actionsFor(m: MailRow) {
   const mark = (flags: Record<string, boolean>) => () => emit('mark', m, flags)
   const readToggle = {
@@ -482,5 +542,30 @@ function shortTime(v: string) {
   .who {
     display: none;
   }
+}
+
+
+/* The matched words. A background wash rather than a colour change, so a hit
+   is visible in a row that is already bold for being unread. */
+.snip mark,
+.subj mark {
+  background: var(--el-color-warning-light-7);
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+}
+/* Where this result was found. Quiet — it is context for the row, not the
+   point of it, and every row in a result set carries one. */
+.in-folder {
+  flex: none;
+  align-self: center;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 0 6px;
+  margin-right: 8px;
+  border-radius: 9px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color);
+  white-space: nowrap;
 }
 </style>

@@ -32,6 +32,12 @@ type recorder struct {
 	messages  *mailv1.ListMessagesRequest
 	scheduled *mailv1.ListScheduledRequest
 	inbound   *mailv1.ListInboundRequest
+	search    *mailv1.SearchMailRequest
+}
+
+func (r *recorder) SearchMail(_ context.Context, in *mailv1.SearchMailRequest, _ ...grpc.CallOption) (*mailv1.SearchMailResponse, error) {
+	r.search = in
+	return &mailv1.SearchMailResponse{}, nil
 }
 
 func (r *recorder) ListMailboxSent(_ context.Context, in *mailv1.ListMailboxSentRequest, _ ...grpc.CallOption) (*mailv1.ListMailboxSentResponse, error) {
@@ -86,6 +92,14 @@ func TestEveryMailboxListForwardsItsCursor(t *testing.T) {
 				s.listScheduled(w, httptest.NewRequest("GET", url, nil))
 			},
 			got: func(r *recorder) string { return r.scheduled.GetCursor() },
+		},
+		{
+			name: "搜索",
+			path: "/api/mail-search?keyword=x&cursor=" + want,
+			call: func(s *Server, w *httptest.ResponseRecorder, url string) {
+				s.searchMail(w, httptest.NewRequest("GET", url, nil))
+			},
+			got: func(r *recorder) string { return r.search.GetCursor() },
 		},
 		{
 			name: "收件箱",

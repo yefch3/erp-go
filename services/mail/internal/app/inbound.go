@@ -418,7 +418,9 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 		FromEmail: parsed.FromEmail, FromName: parsed.FromName,
 		ToEmail: parsed.ToEmail, Subject: parsed.Subject,
 		BodyHtml: parsed.BodyHTML, BodyText: parsed.BodyText,
-		Snippet: snippetOf(parsed), RawKey: rawKey, RawSize: int64(len(m.Raw)),
+		Snippet: snippetOf(parsed), SearchText: searchTextOf(parsed.Subject, parsed.FromName, parsed.FromEmail,
+			parsed.ToEmail, parsed.BodyText, parsed.BodyHTML),
+		RawKey: rawKey, RawSize: int64(len(m.Raw)),
 		IsBounce: parsed.IsBounce, HasAttachments: len(parsed.Attachments) > 0,
 		IsRead: m.Seen,
 		SentAt: pgtype.Timestamptz{Time: sentAt, Valid: !sentAt.IsZero()},
@@ -578,6 +580,43 @@ func snippetOf(p ParsedMail) string {
 	}
 	text = strings.Join(strings.Fields(text), " ")
 	return truncate(text, 280)
+}
+
+// searchTextOf is everything the mail says, as plain text, for the search
+// index. The snippet's logic without the 280-character truncation — the same
+// choice of source and the same HTML path, because a mail found by its
+// opening line and lost by its third paragraph would be worse than either.
+//
+// The order matters. text/plain is preferred, but only if it is really plain:
+// plenty of senders put a whole HTML document in it, and indexing that would
+// mean a query for "content" matching class="content" and every mail with an
+// embedded image matching half the base64 alphabet.
+func searchTextOf(subject, fromName, fromEmail, toEmail, bodyText, bodyHTML string) string {
+	text := bodyText
+	if strings.TrimSpace(text) == "" || looksLikeMarkup(text) {
+		html := bodyHTML
+		if strings.TrimSpace(html) == "" {
+			html = text
+		}
+		text = HTMLToText(html)
+	}
+	// Both paths, not just the HTML one. HTMLToText strips these on its way
+	// through, so a text/plain body was the only kind that kept them — and a
+	// zero-width joiner sitting inside a phrase makes that phrase unfindable
+	// by anybody who types it.
+	// The subject and the addresses live in here too, ahead of the body.
+	//
+	// Not for tidiness — for the index. A predicate spread across five columns
+	// with OR cannot use the trigram index, and the planner falls back to a
+	// sequential scan: measured on this mailbox, 100 ms across five columns
+	// against 1.6 ms against this one. Folding the header in is what turns
+	// the index from decoration into the thing that answers the query.
+	//
+	// The order puts the header first so a hit on a subject yields a match
+	// snippet that opens with the subject, which reads as an explanation of
+	// why the row matched rather than as a fragment from nowhere.
+	head := strings.Join([]string{subject, fromName, fromEmail, toEmail}, " ")
+	return strings.Join(strings.Fields(StripInvisible(head+" "+text)), " ")
 }
 
 // markupHead spots the openings that mean "this is a document, not a

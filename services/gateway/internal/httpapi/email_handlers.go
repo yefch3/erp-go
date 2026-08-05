@@ -626,3 +626,24 @@ func (s *Server) listMailboxSent(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
+
+// searchMail crosses folders, so unlike the list handlers it has no view.
+//
+// Every parameter it needs comes off the query string, which is the shape
+// that has now twice gone wrong here — ?cursor= was added to the proto, the
+// service and the browser and never read out of the URL, so every page
+// returned the first. cursor_test.go covers the list handlers; this one is
+// in it too.
+func (s *Server) searchMail(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	resp, err := s.Emails.SearchMail(r.Context(), &mailv1.SearchMailRequest{
+		Keyword: q.Get("keyword"),
+		Cursor:  q.Get("cursor"),
+		Page:    pageFromQuery(r),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
