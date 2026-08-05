@@ -28,6 +28,7 @@ const (
 	ShippingService_CancelSchedule_FullMethodName        = "/erp.shipping.v1.ShippingService/CancelSchedule"
 	ShippingService_GetShippingStatistics_FullMethodName = "/erp.shipping.v1.ShippingService/GetShippingStatistics"
 	ShippingService_AddRouteNode_FullMethodName          = "/erp.shipping.v1.ShippingService/AddRouteNode"
+	ShippingService_RemoveRouteNode_FullMethodName       = "/erp.shipping.v1.ShippingService/RemoveRouteNode"
 	ShippingService_ReorderRoute_FullMethodName          = "/erp.shipping.v1.ShippingService/ReorderRoute"
 	ShippingService_UpdateProgress_FullMethodName        = "/erp.shipping.v1.ShippingService/UpdateProgress"
 )
@@ -48,6 +49,7 @@ type ShippingServiceClient interface {
 	CancelSchedule(ctx context.Context, in *CancelScheduleRequest, opts ...grpc.CallOption) (*CancelScheduleResponse, error)
 	GetShippingStatistics(ctx context.Context, in *GetShippingStatisticsRequest, opts ...grpc.CallOption) (*GetShippingStatisticsResponse, error)
 	AddRouteNode(ctx context.Context, in *AddRouteNodeRequest, opts ...grpc.CallOption) (*AddRouteNodeResponse, error)
+	RemoveRouteNode(ctx context.Context, in *RemoveRouteNodeRequest, opts ...grpc.CallOption) (*RemoveRouteNodeResponse, error)
 	ReorderRoute(ctx context.Context, in *ReorderRouteRequest, opts ...grpc.CallOption) (*ReorderRouteResponse, error)
 	UpdateProgress(ctx context.Context, in *UpdateProgressRequest, opts ...grpc.CallOption) (*UpdateProgressResponse, error)
 }
@@ -150,6 +152,16 @@ func (c *shippingServiceClient) AddRouteNode(ctx context.Context, in *AddRouteNo
 	return out, nil
 }
 
+func (c *shippingServiceClient) RemoveRouteNode(ctx context.Context, in *RemoveRouteNodeRequest, opts ...grpc.CallOption) (*RemoveRouteNodeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveRouteNodeResponse)
+	err := c.cc.Invoke(ctx, ShippingService_RemoveRouteNode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *shippingServiceClient) ReorderRoute(ctx context.Context, in *ReorderRouteRequest, opts ...grpc.CallOption) (*ReorderRouteResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReorderRouteResponse)
@@ -186,6 +198,7 @@ type ShippingServiceServer interface {
 	CancelSchedule(context.Context, *CancelScheduleRequest) (*CancelScheduleResponse, error)
 	GetShippingStatistics(context.Context, *GetShippingStatisticsRequest) (*GetShippingStatisticsResponse, error)
 	AddRouteNode(context.Context, *AddRouteNodeRequest) (*AddRouteNodeResponse, error)
+	RemoveRouteNode(context.Context, *RemoveRouteNodeRequest) (*RemoveRouteNodeResponse, error)
 	ReorderRoute(context.Context, *ReorderRouteRequest) (*ReorderRouteResponse, error)
 	UpdateProgress(context.Context, *UpdateProgressRequest) (*UpdateProgressResponse, error)
 	mustEmbedUnimplementedShippingServiceServer()
@@ -224,6 +237,9 @@ func (UnimplementedShippingServiceServer) GetShippingStatistics(context.Context,
 }
 func (UnimplementedShippingServiceServer) AddRouteNode(context.Context, *AddRouteNodeRequest) (*AddRouteNodeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddRouteNode not implemented")
+}
+func (UnimplementedShippingServiceServer) RemoveRouteNode(context.Context, *RemoveRouteNodeRequest) (*RemoveRouteNodeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveRouteNode not implemented")
 }
 func (UnimplementedShippingServiceServer) ReorderRoute(context.Context, *ReorderRouteRequest) (*ReorderRouteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReorderRoute not implemented")
@@ -414,6 +430,24 @@ func _ShippingService_AddRouteNode_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ShippingService_RemoveRouteNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveRouteNodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).RemoveRouteNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_RemoveRouteNode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).RemoveRouteNode(ctx, req.(*RemoveRouteNodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ShippingService_ReorderRoute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ReorderRouteRequest)
 	if err := dec(in); err != nil {
@@ -492,6 +526,10 @@ var ShippingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AddRouteNode",
 			Handler:    _ShippingService_AddRouteNode_Handler,
+		},
+		{
+			MethodName: "RemoveRouteNode",
+			Handler:    _ShippingService_RemoveRouteNode_Handler,
 		},
 		{
 			MethodName: "ReorderRoute",

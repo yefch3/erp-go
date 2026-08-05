@@ -3,12 +3,12 @@ INSERT INTO shipping_schedules (
     tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name,
     carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge,
     etd, atd, eta, original_eta, ata, responsible_employee_id, responsible_name, status, remark,
-    created_by, created_by_name, updated_by, updated_by_name
+    created_by, created_by_name, updated_by, updated_by_name, carrier_id
 ) VALUES (
     $1,
     'SCH-' || to_char(CURRENT_DATE, 'YYYYMMDD') || '-' || lpad(nextval('shipping_schedule_no_seq')::text, 6, '0'),
     $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13, $14, $15, $16,
-    'PLANNED', $17, $18, $19, $18, $19
+    'PLANNED', $17, $18, $19, $18, $19, $20
 )
 RETURNING *;
 
@@ -44,7 +44,12 @@ WHERE tenant_id = sqlc.arg(tenant_id)
     OR voyage_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
     OR responsible_name ILIKE '%' || sqlc.arg(keyword)::text || '%'
   )
-  AND (sqlc.arg(status)::text = '' OR status = sqlc.arg(status)::text)
+  AND (
+    sqlc.arg(status)::text = ''
+    OR (sqlc.arg(status)::text = 'ACTIVE' AND status NOT IN ('COMPLETED','CANCELLED'))
+    OR (sqlc.arg(status)::text = 'ARCHIVED' AND status IN ('COMPLETED','CANCELLED'))
+    OR status = sqlc.arg(status)::text
+  )
   AND (sqlc.arg(port_of_loading)::text = '' OR port_of_loading = sqlc.arg(port_of_loading)::text)
   AND (sqlc.arg(port_of_discharge)::text = '' OR port_of_discharge = sqlc.arg(port_of_discharge)::text)
   AND (sqlc.narg(etd_from)::date IS NULL OR etd >= sqlc.narg(etd_from)::date)
@@ -70,7 +75,12 @@ WHERE tenant_id = sqlc.arg(tenant_id)
     OR voyage_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
     OR responsible_name ILIKE '%' || sqlc.arg(keyword)::text || '%'
   )
-  AND (sqlc.arg(status)::text = '' OR status = sqlc.arg(status)::text)
+  AND (
+    sqlc.arg(status)::text = ''
+    OR (sqlc.arg(status)::text = 'ACTIVE' AND status NOT IN ('COMPLETED','CANCELLED'))
+    OR (sqlc.arg(status)::text = 'ARCHIVED' AND status IN ('COMPLETED','CANCELLED'))
+    OR status = sqlc.arg(status)::text
+  )
   AND (sqlc.arg(port_of_loading)::text = '' OR port_of_loading = sqlc.arg(port_of_loading)::text)
   AND (sqlc.arg(port_of_discharge)::text = '' OR port_of_discharge = sqlc.arg(port_of_discharge)::text)
   AND (sqlc.narg(etd_from)::date IS NULL OR etd >= sqlc.narg(etd_from)::date)
@@ -85,7 +95,8 @@ UPDATE shipping_schedules SET
     port_of_loading = $10, port_of_discharge = $11,
     etd = $12, atd = $13, eta = $14, ata = $15,
     responsible_employee_id = $16, responsible_name = $17, remark = $18,
-    updated_by = $19, updated_by_name = $20, updated_at = now()
+    updated_by = $19, updated_by_name = $20, updated_at = now(),
+    carrier_id = $21
 WHERE tenant_id = $1 AND id = $2 AND status NOT IN ('COMPLETED','CANCELLED')
 RETURNING *;
 
@@ -128,6 +139,11 @@ RETURNING *;
 UPDATE shipping_route_nodes SET sequence_no = $4, updated_at = now()
 WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3 AND is_active;
 
+-- name: DeactivateRouteNode :exec
+UPDATE shipping_route_nodes SET
+    is_active = FALSE, updated_by = $4, updated_by_name = $5, updated_at = now()
+WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3 AND is_active;
+
 -- name: SetRouteNodeArrival :one
 UPDATE shipping_route_nodes SET
     actual_arrival_at = $4, node_status = 'ARRIVED',
@@ -154,6 +170,33 @@ UPDATE shipping_route_nodes SET
 WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3 AND is_active
 RETURNING *;
 
+-- name: ResetOtherApproachingRouteNodes :exec
+UPDATE shipping_route_nodes SET
+    node_status = CASE
+      WHEN actual_departure_at IS NOT NULL THEN 'DEPARTED'
+      WHEN actual_arrival_at IS NOT NULL THEN 'ARRIVED'
+      ELSE 'PLANNED'
+    END,
+    updated_at = now()
+WHERE tenant_id = $1 AND schedule_id = $2 AND id <> $3
+  AND is_active AND node_status = 'APPROACHING';
+
+-- name: UpdateRouteNodeTimes :one
+UPDATE shipping_route_nodes SET
+    latest_eta_at = $4,
+    latest_etd_at = $5,
+    actual_arrival_at = $6,
+    actual_departure_at = $7,
+    node_status = CASE
+      WHEN $7::timestamptz IS NOT NULL THEN 'DEPARTED'
+      WHEN $6::timestamptz IS NOT NULL THEN 'ARRIVED'
+      WHEN node_status IN ('ARRIVED','DEPARTED') THEN 'PLANNED'
+      ELSE node_status
+    END,
+    updated_by = $8, updated_by_name = $9, updated_at = now()
+WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3 AND is_active
+RETURNING *;
+
 -- name: SetDestinationETA :one
 UPDATE shipping_route_nodes SET
     latest_eta_at = $4, updated_by = $5, updated_by_name = $6, updated_at = now()
@@ -174,11 +217,32 @@ UPDATE shipping_schedules SET
 WHERE tenant_id = $1 AND id = $2
 RETURNING *;
 
+-- name: SetScheduleATDNullable :one
+UPDATE shipping_schedules SET
+    atd = sqlc.narg(atd)::date,
+    updated_by = sqlc.arg(updated_by), updated_by_name = sqlc.arg(updated_by_name), updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id) AND id = sqlc.arg(id)
+RETURNING *;
+
 -- name: SetScheduleATA :one
 UPDATE shipping_schedules SET
     ata = $3,
     delay_days = GREATEST(0, $3 - original_eta),
     updated_by = $4, updated_by_name = $5, updated_at = now()
+WHERE tenant_id = $1 AND id = $2
+RETURNING *;
+
+-- name: SetScheduleATANullable :one
+UPDATE shipping_schedules SET
+    ata = sqlc.narg(ata)::date,
+    delay_days = GREATEST(0, COALESCE(sqlc.narg(ata)::date, eta) - original_eta),
+    updated_by = sqlc.arg(updated_by), updated_by_name = sqlc.arg(updated_by_name), updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id) AND id = sqlc.arg(id)
+RETURNING *;
+
+-- name: SetScheduleETD :one
+UPDATE shipping_schedules SET
+    etd = $3, updated_by = $4, updated_by_name = $5, updated_at = now()
 WHERE tenant_id = $1 AND id = $2
 RETURNING *;
 

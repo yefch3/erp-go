@@ -176,7 +176,12 @@ WHERE tenant_id = $1
     OR voyage_no ILIKE '%' || $2::text || '%'
     OR responsible_name ILIKE '%' || $2::text || '%'
   )
-  AND ($3::text = '' OR status = $3::text)
+  AND (
+    $3::text = ''
+    OR ($3::text = 'ACTIVE' AND status NOT IN ('COMPLETED','CANCELLED'))
+    OR ($3::text = 'ARCHIVED' AND status IN ('COMPLETED','CANCELLED'))
+    OR status = $3::text
+  )
   AND ($4::text = '' OR port_of_loading = $4::text)
   AND ($5::text = '' OR port_of_discharge = $5::text)
   AND ($6::date IS NULL OR etd >= $6::date)
@@ -248,14 +253,14 @@ INSERT INTO shipping_schedules (
     tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name,
     carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge,
     etd, atd, eta, original_eta, ata, responsible_employee_id, responsible_name, status, remark,
-    created_by, created_by_name, updated_by, updated_by_name
+    created_by, created_by_name, updated_by, updated_by_name, carrier_id
 ) VALUES (
     $1,
     'SCH-' || to_char(CURRENT_DATE, 'YYYYMMDD') || '-' || lpad(nextval('shipping_schedule_no_seq')::text, 6, '0'),
     $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13, $14, $15, $16,
-    'PLANNED', $17, $18, $19, $18, $19
+    'PLANNED', $17, $18, $19, $18, $19, $20
 )
-RETURNING id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id
+RETURNING id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id, carrier_id
 `
 
 type CreateScheduleParams struct {
@@ -278,6 +283,7 @@ type CreateScheduleParams struct {
 	Remark                string
 	CreatedBy             int64
 	CreatedByName         string
+	CarrierID             *int64
 }
 
 func (q *Queries) CreateSchedule(ctx context.Context, arg CreateScheduleParams) (ShippingSchedule, error) {
@@ -301,6 +307,7 @@ func (q *Queries) CreateSchedule(ctx context.Context, arg CreateScheduleParams) 
 		arg.Remark,
 		arg.CreatedBy,
 		arg.CreatedByName,
+		arg.CarrierID,
 	)
 	var i ShippingSchedule
 	err := row.Scan(
@@ -338,8 +345,34 @@ func (q *Queries) CreateSchedule(ctx context.Context, arg CreateScheduleParams) 
 		&i.CurrentProgress,
 		&i.LatestProgressAt,
 		&i.CurrentRouteNodeID,
+		&i.CarrierID,
 	)
 	return i, err
+}
+
+const deactivateRouteNode = `-- name: DeactivateRouteNode :exec
+UPDATE shipping_route_nodes SET
+    is_active = FALSE, updated_by = $4, updated_by_name = $5, updated_at = now()
+WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3 AND is_active
+`
+
+type DeactivateRouteNodeParams struct {
+	TenantID      int64
+	ScheduleID    int64
+	ID            int64
+	UpdatedBy     int64
+	UpdatedByName string
+}
+
+func (q *Queries) DeactivateRouteNode(ctx context.Context, arg DeactivateRouteNodeParams) error {
+	_, err := q.db.Exec(ctx, deactivateRouteNode,
+		arg.TenantID,
+		arg.ScheduleID,
+		arg.ID,
+		arg.UpdatedBy,
+		arg.UpdatedByName,
+	)
+	return err
 }
 
 const findPossibleDuplicates = `-- name: FindPossibleDuplicates :many
@@ -441,7 +474,7 @@ func (q *Queries) GetRouteNodeForUpdate(ctx context.Context, arg GetRouteNodeFor
 }
 
 const getSchedule = `-- name: GetSchedule :one
-SELECT id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id FROM shipping_schedules WHERE tenant_id = $1 AND id = $2
+SELECT id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id, carrier_id FROM shipping_schedules WHERE tenant_id = $1 AND id = $2
 `
 
 type GetScheduleParams struct {
@@ -487,12 +520,13 @@ func (q *Queries) GetSchedule(ctx context.Context, arg GetScheduleParams) (Shipp
 		&i.CurrentProgress,
 		&i.LatestProgressAt,
 		&i.CurrentRouteNodeID,
+		&i.CarrierID,
 	)
 	return i, err
 }
 
 const getScheduleForUpdate = `-- name: GetScheduleForUpdate :one
-SELECT id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id FROM shipping_schedules WHERE tenant_id = $1 AND id = $2 FOR UPDATE
+SELECT id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id, carrier_id FROM shipping_schedules WHERE tenant_id = $1 AND id = $2 FOR UPDATE
 `
 
 type GetScheduleForUpdateParams struct {
@@ -538,6 +572,7 @@ func (q *Queries) GetScheduleForUpdate(ctx context.Context, arg GetScheduleForUp
 		&i.CurrentProgress,
 		&i.LatestProgressAt,
 		&i.CurrentRouteNodeID,
+		&i.CarrierID,
 	)
 	return i, err
 }
@@ -810,7 +845,7 @@ func (q *Queries) ListScheduleChanges(ctx context.Context, arg ListScheduleChang
 }
 
 const listSchedules = `-- name: ListSchedules :many
-SELECT id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id, count(*) OVER () AS total
+SELECT id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id, carrier_id, count(*) OVER () AS total
 FROM shipping_schedules
 WHERE tenant_id = $1
   AND (
@@ -822,7 +857,12 @@ WHERE tenant_id = $1
     OR voyage_no ILIKE '%' || $2::text || '%'
     OR responsible_name ILIKE '%' || $2::text || '%'
   )
-  AND ($3::text = '' OR status = $3::text)
+  AND (
+    $3::text = ''
+    OR ($3::text = 'ACTIVE' AND status NOT IN ('COMPLETED','CANCELLED'))
+    OR ($3::text = 'ARCHIVED' AND status IN ('COMPLETED','CANCELLED'))
+    OR status = $3::text
+  )
   AND ($4::text = '' OR port_of_loading = $4::text)
   AND ($5::text = '' OR port_of_discharge = $5::text)
   AND ($6::date IS NULL OR etd >= $6::date)
@@ -885,6 +925,7 @@ type ListSchedulesRow struct {
 	CurrentProgress       string
 	LatestProgressAt      pgtype.Timestamptz
 	CurrentRouteNodeID    *int64
+	CarrierID             *int64
 	Total                 int64
 }
 
@@ -944,6 +985,7 @@ func (q *Queries) ListSchedules(ctx context.Context, arg ListSchedulesParams) ([
 			&i.CurrentProgress,
 			&i.LatestProgressAt,
 			&i.CurrentRouteNodeID,
+			&i.CarrierID,
 			&i.Total,
 		); err != nil {
 			return nil, err
@@ -954,6 +996,29 @@ func (q *Queries) ListSchedules(ctx context.Context, arg ListSchedulesParams) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const resetOtherApproachingRouteNodes = `-- name: ResetOtherApproachingRouteNodes :exec
+UPDATE shipping_route_nodes SET
+    node_status = CASE
+      WHEN actual_departure_at IS NOT NULL THEN 'DEPARTED'
+      WHEN actual_arrival_at IS NOT NULL THEN 'ARRIVED'
+      ELSE 'PLANNED'
+    END,
+    updated_at = now()
+WHERE tenant_id = $1 AND schedule_id = $2 AND id <> $3
+  AND is_active AND node_status = 'APPROACHING'
+`
+
+type ResetOtherApproachingRouteNodesParams struct {
+	TenantID   int64
+	ScheduleID int64
+	ID         int64
+}
+
+func (q *Queries) ResetOtherApproachingRouteNodes(ctx context.Context, arg ResetOtherApproachingRouteNodesParams) error {
+	_, err := q.db.Exec(ctx, resetOtherApproachingRouteNodes, arg.TenantID, arg.ScheduleID, arg.ID)
+	return err
 }
 
 const setDestinationETA = `-- name: SetDestinationETA :one
@@ -1253,7 +1318,7 @@ UPDATE shipping_schedules SET
     delay_days = GREATEST(0, $3 - original_eta),
     updated_by = $4, updated_by_name = $5, updated_at = now()
 WHERE tenant_id = $1 AND id = $2
-RETURNING id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id
+RETURNING id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id, carrier_id
 `
 
 type SetScheduleATAParams struct {
@@ -1308,6 +1373,73 @@ func (q *Queries) SetScheduleATA(ctx context.Context, arg SetScheduleATAParams) 
 		&i.CurrentProgress,
 		&i.LatestProgressAt,
 		&i.CurrentRouteNodeID,
+		&i.CarrierID,
+	)
+	return i, err
+}
+
+const setScheduleATANullable = `-- name: SetScheduleATANullable :one
+UPDATE shipping_schedules SET
+    ata = $1::date,
+    delay_days = GREATEST(0, COALESCE($1::date, eta) - original_eta),
+    updated_by = $2, updated_by_name = $3, updated_at = now()
+WHERE tenant_id = $4 AND id = $5
+RETURNING id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id, carrier_id
+`
+
+type SetScheduleATANullableParams struct {
+	Ata           pgtype.Date
+	UpdatedBy     int64
+	UpdatedByName string
+	TenantID      int64
+	ID            int64
+}
+
+func (q *Queries) SetScheduleATANullable(ctx context.Context, arg SetScheduleATANullableParams) (ShippingSchedule, error) {
+	row := q.db.QueryRow(ctx, setScheduleATANullable,
+		arg.Ata,
+		arg.UpdatedBy,
+		arg.UpdatedByName,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i ShippingSchedule
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ScheduleNo,
+		&i.ContractID,
+		&i.ContractNo,
+		&i.CustomerID,
+		&i.CustomerName,
+		&i.CarrierForwarder,
+		&i.VesselName,
+		&i.VoyageNo,
+		&i.PortOfLoading,
+		&i.PortOfDischarge,
+		&i.Etd,
+		&i.Atd,
+		&i.Eta,
+		&i.Ata,
+		&i.ResponsibleEmployeeID,
+		&i.ResponsibleName,
+		&i.Status,
+		&i.Remark,
+		&i.CreatedBy,
+		&i.CreatedByName,
+		&i.CreatedAt,
+		&i.UpdatedBy,
+		&i.UpdatedByName,
+		&i.UpdatedAt,
+		&i.OriginalEta,
+		&i.EtaRevision,
+		&i.RouteVersion,
+		&i.DelayDays,
+		&i.HasTemporaryCall,
+		&i.CurrentProgress,
+		&i.LatestProgressAt,
+		&i.CurrentRouteNodeID,
+		&i.CarrierID,
 	)
 	return i, err
 }
@@ -1316,7 +1448,7 @@ const setScheduleATD = `-- name: SetScheduleATD :one
 UPDATE shipping_schedules SET
     atd = $3, updated_by = $4, updated_by_name = $5, updated_at = now()
 WHERE tenant_id = $1 AND id = $2
-RETURNING id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id
+RETURNING id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id, carrier_id
 `
 
 type SetScheduleATDParams struct {
@@ -1371,94 +1503,96 @@ func (q *Queries) SetScheduleATD(ctx context.Context, arg SetScheduleATDParams) 
 		&i.CurrentProgress,
 		&i.LatestProgressAt,
 		&i.CurrentRouteNodeID,
+		&i.CarrierID,
 	)
 	return i, err
 }
 
-const shippingStatistics = `-- name: ShippingStatistics :one
-SELECT
-  count(*) FILTER (WHERE status IN ('SAILED','IN_TRANSIT','DELAYED'))::bigint AS in_transit,
-  count(*) FILTER (WHERE status NOT IN ('ARRIVED','COMPLETED','CANCELLED') AND eta BETWEEN CURRENT_DATE AND CURRENT_DATE + 7)::bigint AS arriving_within_7_days,
-  count(*) FILTER (WHERE delay_days > 0 AND status <> 'CANCELLED')::bigint AS delayed,
-  count(*) FILTER (WHERE has_temporary_call AND status <> 'CANCELLED')::bigint AS temporary_call
-FROM shipping_schedules
-WHERE tenant_id = $1
-`
-
-type ShippingStatisticsRow struct {
-	InTransit           int64
-	ArrivingWithin7Days int64
-	Delayed             int64
-	TemporaryCall       int64
-}
-
-func (q *Queries) ShippingStatistics(ctx context.Context, tenantID int64) (ShippingStatisticsRow, error) {
-	row := q.db.QueryRow(ctx, shippingStatistics, tenantID)
-	var i ShippingStatisticsRow
-	err := row.Scan(
-		&i.InTransit,
-		&i.ArrivingWithin7Days,
-		&i.Delayed,
-		&i.TemporaryCall,
-	)
-	return i, err
-}
-
-const updateSchedule = `-- name: UpdateSchedule :one
+const setScheduleATDNullable = `-- name: SetScheduleATDNullable :one
 UPDATE shipping_schedules SET
-    contract_id = $3, contract_no = $4, customer_id = $5, customer_name = $6,
-    carrier_forwarder = $7, vessel_name = $8, voyage_no = $9,
-    port_of_loading = $10, port_of_discharge = $11,
-    etd = $12, atd = $13, eta = $14, ata = $15,
-    responsible_employee_id = $16, responsible_name = $17, remark = $18,
-    updated_by = $19, updated_by_name = $20, updated_at = now()
-WHERE tenant_id = $1 AND id = $2 AND status NOT IN ('COMPLETED','CANCELLED')
-RETURNING id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id
+    atd = $1::date,
+    updated_by = $2, updated_by_name = $3, updated_at = now()
+WHERE tenant_id = $4 AND id = $5
+RETURNING id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id, carrier_id
 `
 
-type UpdateScheduleParams struct {
-	TenantID              int64
-	ID                    int64
-	ContractID            *int64
-	ContractNo            string
-	CustomerID            *int64
-	CustomerName          string
-	CarrierForwarder      string
-	VesselName            string
-	VoyageNo              string
-	PortOfLoading         string
-	PortOfDischarge       string
-	Etd                   pgtype.Date
-	Atd                   pgtype.Date
-	Eta                   pgtype.Date
-	Ata                   pgtype.Date
-	ResponsibleEmployeeID int64
-	ResponsibleName       string
-	Remark                string
-	UpdatedBy             int64
-	UpdatedByName         string
+type SetScheduleATDNullableParams struct {
+	Atd           pgtype.Date
+	UpdatedBy     int64
+	UpdatedByName string
+	TenantID      int64
+	ID            int64
 }
 
-func (q *Queries) UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) (ShippingSchedule, error) {
-	row := q.db.QueryRow(ctx, updateSchedule,
+func (q *Queries) SetScheduleATDNullable(ctx context.Context, arg SetScheduleATDNullableParams) (ShippingSchedule, error) {
+	row := q.db.QueryRow(ctx, setScheduleATDNullable,
+		arg.Atd,
+		arg.UpdatedBy,
+		arg.UpdatedByName,
 		arg.TenantID,
 		arg.ID,
-		arg.ContractID,
-		arg.ContractNo,
-		arg.CustomerID,
-		arg.CustomerName,
-		arg.CarrierForwarder,
-		arg.VesselName,
-		arg.VoyageNo,
-		arg.PortOfLoading,
-		arg.PortOfDischarge,
+	)
+	var i ShippingSchedule
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ScheduleNo,
+		&i.ContractID,
+		&i.ContractNo,
+		&i.CustomerID,
+		&i.CustomerName,
+		&i.CarrierForwarder,
+		&i.VesselName,
+		&i.VoyageNo,
+		&i.PortOfLoading,
+		&i.PortOfDischarge,
+		&i.Etd,
+		&i.Atd,
+		&i.Eta,
+		&i.Ata,
+		&i.ResponsibleEmployeeID,
+		&i.ResponsibleName,
+		&i.Status,
+		&i.Remark,
+		&i.CreatedBy,
+		&i.CreatedByName,
+		&i.CreatedAt,
+		&i.UpdatedBy,
+		&i.UpdatedByName,
+		&i.UpdatedAt,
+		&i.OriginalEta,
+		&i.EtaRevision,
+		&i.RouteVersion,
+		&i.DelayDays,
+		&i.HasTemporaryCall,
+		&i.CurrentProgress,
+		&i.LatestProgressAt,
+		&i.CurrentRouteNodeID,
+		&i.CarrierID,
+	)
+	return i, err
+}
+
+const setScheduleETD = `-- name: SetScheduleETD :one
+UPDATE shipping_schedules SET
+    etd = $3, updated_by = $4, updated_by_name = $5, updated_at = now()
+WHERE tenant_id = $1 AND id = $2
+RETURNING id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id, carrier_id
+`
+
+type SetScheduleETDParams struct {
+	TenantID      int64
+	ID            int64
+	Etd           pgtype.Date
+	UpdatedBy     int64
+	UpdatedByName string
+}
+
+func (q *Queries) SetScheduleETD(ctx context.Context, arg SetScheduleETDParams) (ShippingSchedule, error) {
+	row := q.db.QueryRow(ctx, setScheduleETD,
+		arg.TenantID,
+		arg.ID,
 		arg.Etd,
-		arg.Atd,
-		arg.Eta,
-		arg.Ata,
-		arg.ResponsibleEmployeeID,
-		arg.ResponsibleName,
-		arg.Remark,
 		arg.UpdatedBy,
 		arg.UpdatedByName,
 	)
@@ -1498,6 +1632,208 @@ func (q *Queries) UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) 
 		&i.CurrentProgress,
 		&i.LatestProgressAt,
 		&i.CurrentRouteNodeID,
+		&i.CarrierID,
+	)
+	return i, err
+}
+
+const shippingStatistics = `-- name: ShippingStatistics :one
+SELECT
+  count(*) FILTER (WHERE status IN ('SAILED','IN_TRANSIT','DELAYED'))::bigint AS in_transit,
+  count(*) FILTER (WHERE status NOT IN ('ARRIVED','COMPLETED','CANCELLED') AND eta BETWEEN CURRENT_DATE AND CURRENT_DATE + 7)::bigint AS arriving_within_7_days,
+  count(*) FILTER (WHERE delay_days > 0 AND status <> 'CANCELLED')::bigint AS delayed,
+  count(*) FILTER (WHERE has_temporary_call AND status <> 'CANCELLED')::bigint AS temporary_call
+FROM shipping_schedules
+WHERE tenant_id = $1
+`
+
+type ShippingStatisticsRow struct {
+	InTransit           int64
+	ArrivingWithin7Days int64
+	Delayed             int64
+	TemporaryCall       int64
+}
+
+func (q *Queries) ShippingStatistics(ctx context.Context, tenantID int64) (ShippingStatisticsRow, error) {
+	row := q.db.QueryRow(ctx, shippingStatistics, tenantID)
+	var i ShippingStatisticsRow
+	err := row.Scan(
+		&i.InTransit,
+		&i.ArrivingWithin7Days,
+		&i.Delayed,
+		&i.TemporaryCall,
+	)
+	return i, err
+}
+
+const updateRouteNodeTimes = `-- name: UpdateRouteNodeTimes :one
+UPDATE shipping_route_nodes SET
+    latest_eta_at = $4,
+    latest_etd_at = $5,
+    actual_arrival_at = $6,
+    actual_departure_at = $7,
+    node_status = CASE
+      WHEN $7::timestamptz IS NOT NULL THEN 'DEPARTED'
+      WHEN $6::timestamptz IS NOT NULL THEN 'ARRIVED'
+      WHEN node_status IN ('ARRIVED','DEPARTED') THEN 'PLANNED'
+      ELSE node_status
+    END,
+    updated_by = $8, updated_by_name = $9, updated_at = now()
+WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3 AND is_active
+RETURNING id, tenant_id, schedule_id, sequence_no, node_type, port_code, port_name, timezone, original_eta_at, latest_eta_at, actual_arrival_at, original_etd_at, latest_etd_at, actual_departure_at, node_status, is_active, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at
+`
+
+type UpdateRouteNodeTimesParams struct {
+	TenantID          int64
+	ScheduleID        int64
+	ID                int64
+	LatestEtaAt       pgtype.Timestamptz
+	LatestEtdAt       pgtype.Timestamptz
+	ActualArrivalAt   pgtype.Timestamptz
+	ActualDepartureAt pgtype.Timestamptz
+	UpdatedBy         int64
+	UpdatedByName     string
+}
+
+func (q *Queries) UpdateRouteNodeTimes(ctx context.Context, arg UpdateRouteNodeTimesParams) (ShippingRouteNode, error) {
+	row := q.db.QueryRow(ctx, updateRouteNodeTimes,
+		arg.TenantID,
+		arg.ScheduleID,
+		arg.ID,
+		arg.LatestEtaAt,
+		arg.LatestEtdAt,
+		arg.ActualArrivalAt,
+		arg.ActualDepartureAt,
+		arg.UpdatedBy,
+		arg.UpdatedByName,
+	)
+	var i ShippingRouteNode
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ScheduleID,
+		&i.SequenceNo,
+		&i.NodeType,
+		&i.PortCode,
+		&i.PortName,
+		&i.Timezone,
+		&i.OriginalEtaAt,
+		&i.LatestEtaAt,
+		&i.ActualArrivalAt,
+		&i.OriginalEtdAt,
+		&i.LatestEtdAt,
+		&i.ActualDepartureAt,
+		&i.NodeStatus,
+		&i.IsActive,
+		&i.Remark,
+		&i.CreatedBy,
+		&i.CreatedByName,
+		&i.CreatedAt,
+		&i.UpdatedBy,
+		&i.UpdatedByName,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateSchedule = `-- name: UpdateSchedule :one
+UPDATE shipping_schedules SET
+    contract_id = $3, contract_no = $4, customer_id = $5, customer_name = $6,
+    carrier_forwarder = $7, vessel_name = $8, voyage_no = $9,
+    port_of_loading = $10, port_of_discharge = $11,
+    etd = $12, atd = $13, eta = $14, ata = $15,
+    responsible_employee_id = $16, responsible_name = $17, remark = $18,
+    updated_by = $19, updated_by_name = $20, updated_at = now(),
+    carrier_id = $21
+WHERE tenant_id = $1 AND id = $2 AND status NOT IN ('COMPLETED','CANCELLED')
+RETURNING id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id, carrier_id
+`
+
+type UpdateScheduleParams struct {
+	TenantID              int64
+	ID                    int64
+	ContractID            *int64
+	ContractNo            string
+	CustomerID            *int64
+	CustomerName          string
+	CarrierForwarder      string
+	VesselName            string
+	VoyageNo              string
+	PortOfLoading         string
+	PortOfDischarge       string
+	Etd                   pgtype.Date
+	Atd                   pgtype.Date
+	Eta                   pgtype.Date
+	Ata                   pgtype.Date
+	ResponsibleEmployeeID int64
+	ResponsibleName       string
+	Remark                string
+	UpdatedBy             int64
+	UpdatedByName         string
+	CarrierID             *int64
+}
+
+func (q *Queries) UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) (ShippingSchedule, error) {
+	row := q.db.QueryRow(ctx, updateSchedule,
+		arg.TenantID,
+		arg.ID,
+		arg.ContractID,
+		arg.ContractNo,
+		arg.CustomerID,
+		arg.CustomerName,
+		arg.CarrierForwarder,
+		arg.VesselName,
+		arg.VoyageNo,
+		arg.PortOfLoading,
+		arg.PortOfDischarge,
+		arg.Etd,
+		arg.Atd,
+		arg.Eta,
+		arg.Ata,
+		arg.ResponsibleEmployeeID,
+		arg.ResponsibleName,
+		arg.Remark,
+		arg.UpdatedBy,
+		arg.UpdatedByName,
+		arg.CarrierID,
+	)
+	var i ShippingSchedule
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ScheduleNo,
+		&i.ContractID,
+		&i.ContractNo,
+		&i.CustomerID,
+		&i.CustomerName,
+		&i.CarrierForwarder,
+		&i.VesselName,
+		&i.VoyageNo,
+		&i.PortOfLoading,
+		&i.PortOfDischarge,
+		&i.Etd,
+		&i.Atd,
+		&i.Eta,
+		&i.Ata,
+		&i.ResponsibleEmployeeID,
+		&i.ResponsibleName,
+		&i.Status,
+		&i.Remark,
+		&i.CreatedBy,
+		&i.CreatedByName,
+		&i.CreatedAt,
+		&i.UpdatedBy,
+		&i.UpdatedByName,
+		&i.UpdatedAt,
+		&i.OriginalEta,
+		&i.EtaRevision,
+		&i.RouteVersion,
+		&i.DelayDays,
+		&i.HasTemporaryCall,
+		&i.CurrentProgress,
+		&i.LatestProgressAt,
+		&i.CurrentRouteNodeID,
+		&i.CarrierID,
 	)
 	return i, err
 }
@@ -1509,7 +1845,7 @@ UPDATE shipping_schedules SET
     delay_days = GREATEST(0, $3 - original_eta),
     updated_by = $4, updated_by_name = $5, updated_at = now()
 WHERE tenant_id = $1 AND id = $2
-RETURNING id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id
+RETURNING id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id, carrier_id
 `
 
 type UpdateScheduleETAParams struct {
@@ -1564,6 +1900,7 @@ func (q *Queries) UpdateScheduleETA(ctx context.Context, arg UpdateScheduleETAPa
 		&i.CurrentProgress,
 		&i.LatestProgressAt,
 		&i.CurrentRouteNodeID,
+		&i.CarrierID,
 	)
 	return i, err
 }
@@ -1573,7 +1910,7 @@ UPDATE shipping_schedules SET
     current_route_node_id = $3, current_progress = $4,
     latest_progress_at = now(), updated_by = $5, updated_by_name = $6, updated_at = now()
 WHERE tenant_id = $1 AND id = $2
-RETURNING id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id
+RETURNING id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id, carrier_id
 `
 
 type UpdateScheduleProgressParams struct {
@@ -1630,6 +1967,7 @@ func (q *Queries) UpdateScheduleProgress(ctx context.Context, arg UpdateSchedule
 		&i.CurrentProgress,
 		&i.LatestProgressAt,
 		&i.CurrentRouteNodeID,
+		&i.CarrierID,
 	)
 	return i, err
 }
@@ -1638,7 +1976,7 @@ const updateScheduleStatus = `-- name: UpdateScheduleStatus :one
 UPDATE shipping_schedules SET
     status = $3, updated_by = $4, updated_by_name = $5, updated_at = now()
 WHERE tenant_id = $1 AND id = $2
-RETURNING id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id
+RETURNING id, tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name, carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge, etd, atd, eta, ata, responsible_employee_id, responsible_name, status, remark, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at, original_eta, eta_revision, route_version, delay_days, has_temporary_call, current_progress, latest_progress_at, current_route_node_id, carrier_id
 `
 
 type UpdateScheduleStatusParams struct {
@@ -1693,6 +2031,7 @@ func (q *Queries) UpdateScheduleStatus(ctx context.Context, arg UpdateScheduleSt
 		&i.CurrentProgress,
 		&i.LatestProgressAt,
 		&i.CurrentRouteNodeID,
+		&i.CarrierID,
 	)
 	return i, err
 }

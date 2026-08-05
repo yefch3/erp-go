@@ -7,7 +7,12 @@
     <el-card shadow="never">
       <div class="filters">
         <el-input v-model="filter.keyword" clearable :placeholder="t('shipping.searchPlaceholder')" @keyup.enter="search" @clear="search" />
-        <el-select v-model="filter.status" clearable :placeholder="t('shipping.allStatuses')"><el-option v-for="s in SHIPPING_STATUSES" :key="s" :value="s" :label="t(`shipping.statuses.${s}`)" /></el-select>
+        <el-select v-model="filter.status" :placeholder="t('shipping.allStatuses')">
+          <el-option value="ACTIVE" label="进行中" />
+          <el-option value="ARCHIVED" label="历史记录（已完成/已取消）" />
+          <el-option value="" label="全部状态" />
+          <el-option v-for="s in SHIPPING_STATUSES" :key="s" :value="s" :label="t(`shipping.statuses.${s}`)" />
+        </el-select>
         <el-input v-model="filter.portOfLoading" clearable :placeholder="t('shipping.loadingPort')" />
         <el-input v-model="filter.portOfDischarge" clearable :placeholder="t('shipping.dischargePort')" />
         <el-button @click="more=!more">{{ t('shipping.dateFilters') }}</el-button><el-button type="primary" @click="search">{{ t('common.query') }}</el-button>
@@ -35,10 +40,10 @@
 import { computed,onMounted,reactive,ref,watch } from 'vue';import { useI18n } from 'vue-i18n';import { useRouter } from 'vue-router'
 import { get } from '../api';import ShippingScheduleDialog from '../components/ShippingScheduleDialog.vue';import { SHIPPING_STATUSES,statusTag,type ShippingSchedule,type ShippingStatistics } from '../shipping';import { useAuthStore } from '../stores/auth'
 const {t}=useI18n();const router=useRouter();const auth=useAuthStore();const rows=ref<ShippingSchedule[]>([]);const loading=ref(false);const total=ref(0);const page=ref(1);const pageSize=ref(20);const more=ref(false);const dialogOpen=ref(false);const editing=ref<ShippingSchedule>()
-const filter=reactive({keyword:'',status:'',portOfLoading:'',portOfDischarge:'',etdRange:[] as string[],etaRange:[] as string[]})
+const filter=reactive({keyword:'',status:'ACTIVE',portOfLoading:'',portOfDischarge:'',etdRange:[] as string[],etaRange:[] as string[]})
 const stats=ref<ShippingStatistics>({inTransit:'0',arrivingWithin7Days:'0',delayed:'0',temporaryCall:'0'});const statItems=computed(()=>[{label:'运输中',value:stats.value.inTransit},{label:'7天内到港',value:stats.value.arrivingWithin7Days},{label:'已延误',value:stats.value.delayed},{label:'临时挂港',value:stats.value.temporaryCall}])
 watch(dialogOpen,v=>{if(!v)editing.value=undefined})
 async function load(){loading.value=true;try{const [data,summary]=await Promise.all([get<{schedules:ShippingSchedule[];meta:{total:string}}>('/shipping/schedules',{page:page.value,page_size:pageSize.value,keyword:filter.keyword,status:filter.status,port_of_loading:filter.portOfLoading,port_of_discharge:filter.portOfDischarge,etd_from:filter.etdRange?.[0]??'',etd_to:filter.etdRange?.[1]??'',eta_from:filter.etaRange?.[0]??'',eta_to:filter.etaRange?.[1]??''}),get<ShippingStatistics>('/shipping/statistics')]);rows.value=data.schedules;total.value=Number(data.meta.total);stats.value=summary}finally{loading.value=false}}
 function search(){page.value=1;load()}function changePage(v:number){page.value=v;load()}function changeSize(v:number){pageSize.value=v;page.value=1;load()}function detail(row:ShippingSchedule){router.push(`/shipping/${row.id}`)}function saved(){load()}onMounted(load)
 </script>
-<style scoped>.page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}.page-head h2{margin:0}.stats{margin-bottom:14px}.stat-label{color:var(--el-text-color-secondary);font-size:13px}.stat-value{font-size:26px;font-weight:600;margin-top:6px}.filters,.date-filters{display:flex;gap:10px;margin-bottom:14px;align-items:center}.filters .el-input{width:190px}.filters .el-select{width:150px}.pager{margin-top:14px;justify-content:flex-end}.change-tag{margin-right:5px}</style>
+<style scoped>.page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}.page-head h2{margin:0}.stats{margin-bottom:14px}.stat-label{color:var(--el-text-color-secondary);font-size:13px}.stat-value{font-size:26px;font-weight:600;margin-top:6px}.filters,.date-filters{display:flex;gap:10px;margin-bottom:14px;align-items:center}.filters .el-input{width:190px}.filters .el-select{width:220px}.pager{margin-top:14px;justify-content:flex-end}.change-tag{margin-right:5px}</style>

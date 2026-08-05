@@ -5,6 +5,7 @@ export interface ShippingSchedule {
   contractNo: string
   customerId: string
   customerName: string
+  carrierId: string
   carrierForwarder: string
   vesselName: string
   voyageNo: string

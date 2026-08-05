@@ -108,7 +108,7 @@ export async function put<T>(url: string, body?: object): Promise<T> {
   return resp.data.data as T
 }
 
-export async function del<T>(url: string): Promise<T> {
-  const resp = await http.delete<Envelope<T>>(url)
+export async function del<T>(url: string, body?: object): Promise<T> {
+  const resp = await http.delete<Envelope<T>>(url, { data: body })
   return resp.data.data as T
 }

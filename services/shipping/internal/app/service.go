@@ -17,7 +17,7 @@ import (
 	"github.com/sgao19/erp-go/services/shipping/internal/store"
 )
 
-const SchemaVersion int32 = 3
+const SchemaVersion int32 = 4
 
 type databasePinger interface{ Ping(context.Context) error }
 
@@ -45,7 +45,7 @@ type Operator struct {
 }
 
 type ScheduleInput struct {
-	ContractID, CustomerID                               int64
+	ContractID, CustomerID, CarrierID                    int64
 	ContractNo, CustomerName, CarrierForwarder           string
 	VesselName, VoyageNo, PortOfLoading, PortOfDischarge string
 	ETD, ATD, ETA, ATA                                   string
@@ -96,27 +96,22 @@ func validateInput(in ScheduleInput) (store.CreateScheduleParams, error) {
 	if eta.Time.Before(etd.Time) {
 		return store.CreateScheduleParams{}, apierr.Invalid("SHIPPING_ETA_BEFORE_ETD", "ETA 不能早于 ETD")
 	}
-	atd, err := parseDate(in.ATD, "ATD", false)
-	if err != nil {
-		return store.CreateScheduleParams{}, err
-	}
-	ata, err := parseDate(in.ATA, "ATA", false)
-	if err != nil {
-		return store.CreateScheduleParams{}, err
-	}
-	var contractID, customerID *int64
+	var contractID, customerID, carrierID *int64
 	if in.ContractID > 0 {
 		contractID = &in.ContractID
 	}
 	if in.CustomerID > 0 {
 		customerID = &in.CustomerID
 	}
+	if in.CarrierID > 0 {
+		carrierID = &in.CarrierID
+	}
 	return store.CreateScheduleParams{
 		ContractID: contractID, ContractNo: strings.TrimSpace(in.ContractNo),
 		CustomerID: customerID, CustomerName: strings.TrimSpace(in.CustomerName),
-		CarrierForwarder: strings.TrimSpace(in.CarrierForwarder), VesselName: in.VesselName,
+		CarrierID: carrierID, CarrierForwarder: strings.TrimSpace(in.CarrierForwarder), VesselName: in.VesselName,
 		VoyageNo: in.VoyageNo, PortOfLoading: in.PortOfLoading,
-		PortOfDischarge: in.PortOfDischarge, Etd: etd, Atd: atd, Eta: eta, Ata: ata,
+		PortOfDischarge: in.PortOfDischarge, Etd: etd, Eta: eta,
 		ResponsibleEmployeeID: in.ResponsibleEmployeeID, ResponsibleName: in.ResponsibleName,
 		Remark: strings.TrimSpace(in.Remark),
 	}, nil
@@ -182,6 +177,7 @@ func (s *Service) GetSchedule(ctx context.Context, tenantID, id int64) (store.Sh
 }
 
 func (s *Service) ListSchedules(ctx context.Context, tenantID int64, f ListFilter) ([]store.ListSchedulesRow, int64, int32, int32, error) {
+	f.Status = strings.ToUpper(strings.TrimSpace(f.Status))
 	if f.Page < 1 {
 		f.Page = 1
 	}
@@ -191,7 +187,7 @@ func (s *Service) ListSchedules(ctx context.Context, tenantID int64, f ListFilte
 	if f.PageSize > 200 {
 		f.PageSize = 200
 	}
-	if f.Status != "" && !validStatus(f.Status) {
+	if f.Status != "" && f.Status != "ACTIVE" && f.Status != "ARCHIVED" && !validStatus(f.Status) {
 		return nil, 0, f.Page, f.PageSize, apierr.Invalid("SHIPPING_STATUS_INVALID", "船期状态无效")
 	}
 	etdFrom, err := parseDate(f.ETDFrom, "ETD 起始日期", false)
@@ -274,13 +270,16 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 		if current.Status == "COMPLETED" || current.Status == "CANCELLED" {
 			return apierr.Conflict("SHIPPING_FINAL_STATE", "已完成或已取消的船期不能编辑")
 		}
+		// Actual departure/arrival belong to progress tracking. A basic edit
+		// must preserve them instead of accepting or clearing those timestamps.
+		p.Atd, p.Ata = current.Atd, current.Ata
 		dateChanged := dateText(current.Etd) != dateText(p.Etd) || dateText(current.Eta) != dateText(p.Eta)
 		if dateChanged && strings.TrimSpace(reason) == "" {
 			return apierr.Invalid("SHIPPING_DATE_REASON_REQUIRED", "修改 ETD 或 ETA 时必须填写原因")
 		}
 		out, err = q.UpdateSchedule(ctx, store.UpdateScheduleParams{
 			TenantID: tenantID, ID: id, ContractID: p.ContractID, ContractNo: p.ContractNo,
-			CustomerID: p.CustomerID, CustomerName: p.CustomerName, CarrierForwarder: p.CarrierForwarder,
+			CustomerID: p.CustomerID, CustomerName: p.CustomerName, CarrierID: p.CarrierID, CarrierForwarder: p.CarrierForwarder,
 			VesselName: p.VesselName, VoyageNo: p.VoyageNo, PortOfLoading: p.PortOfLoading,
 			PortOfDischarge: p.PortOfDischarge, Etd: p.Etd, Atd: p.Atd, Eta: p.Eta, Ata: p.Ata,
 			ResponsibleEmployeeID: p.ResponsibleEmployeeID, ResponsibleName: p.ResponsibleName,

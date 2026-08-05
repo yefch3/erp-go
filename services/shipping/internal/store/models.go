@@ -121,6 +121,7 @@ type ShippingSchedule struct {
 	CurrentProgress       string
 	LatestProgressAt      pgtype.Timestamptz
 	CurrentRouteNodeID    *int64
+	CarrierID             *int64
 }
 
 type ShippingScheduleChange struct {

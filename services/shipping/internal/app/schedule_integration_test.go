@@ -87,6 +87,14 @@ func TestScheduleLifecycle(t *testing.T) {
 	if err != nil || cancelled.Status != "CANCELLED" {
 		t.Fatalf("cancel=%+v err=%v", cancelled, err)
 	}
+	rows, total, _, _, err = svc.ListSchedules(ctx, tenantID, ListFilter{Status: "ACTIVE", Page: 1, PageSize: 20})
+	if err != nil || len(rows) != 1 || total != 1 || rows[0].ID != created.ID {
+		t.Fatalf("active filter rows=%d total=%d err=%v", len(rows), total, err)
+	}
+	rows, total, _, _, err = svc.ListSchedules(ctx, tenantID, ListFilter{Status: "ARCHIVED", Page: 1, PageSize: 20})
+	if err != nil || len(rows) != 1 || total != 1 || rows[0].ID != second.ID {
+		t.Fatalf("archive filter rows=%d total=%d err=%v", len(rows), total, err)
+	}
 	if _, err = svc.UpdateSchedule(ctx, tenantID, second.ID, input, "", op, true); errorCode(err) != "SHIPPING_FINAL_STATE" {
 		t.Fatalf("edit cancelled code=%q err=%v", errorCode(err), err)
 	}
@@ -162,6 +170,39 @@ func TestRouteAndRepeatedDelays(t *testing.T) {
 	}
 	if len(delays) != 2 || delays[0].ChangeDays != 2 || out.DelayDays != 5 || out.EtaRevision != 3 {
 		t.Fatalf("delays=%+v schedule=%+v", delays, out)
+	}
+	// A wrong arrival can be corrected without deleting audit history. Clearing
+	// the actual time rolls the node and automatically derived schedule status
+	// back to their prior state.
+	out, correctedNodes, _, err := svc.UpdateProgress(ctx, tenantID, created.ID, ProgressInput{
+		RouteNodeID: nodes[1].ID, Action: "UPDATE_TIMES", ActualArrivalAt: "2026-08-24T10:00:00+08:00",
+		Reason: "更正中转港实际到港", RouteVersion: version,
+	}, op)
+	if err != nil || correctedNodes[1].NodeStatus != "ARRIVED" || out.Status != "IN_TRANSIT" {
+		t.Fatalf("correct arrival schedule=%+v node=%+v err=%v", out, correctedNodes[1], err)
+	}
+	if _, _, err = svc.RemoveRouteNode(ctx, tenantID, created.ID, nodes[1].ID, "误删已有进度港口", version, op); errorCode(err) != "SHIPPING_ROUTE_NODE_HAS_PROGRESS" {
+		t.Fatalf("remove progressed node code=%q err=%v", errorCode(err), err)
+	}
+	out, correctedNodes, _, err = svc.UpdateProgress(ctx, tenantID, created.ID, ProgressInput{
+		RouteNodeID: nodes[1].ID, Action: "UPDATE_TIMES", Reason: "撤销误录到港", RouteVersion: version,
+	}, op)
+	if err != nil || correctedNodes[1].NodeStatus != "PLANNED" || out.Status != "PLANNED" {
+		t.Fatalf("undo arrival schedule=%+v node=%+v err=%v", out, correctedNodes[1], err)
+	}
+	withUnused, addedVersion, err := svc.AddRouteNode(ctx, tenantID, created.ID, RouteNodeInput{
+		NodeType: "TRANSIT", PortName: "Unused Port", InsertAfterNodeID: correctedNodes[2].ID,
+		Reason: "测试误加港口", RouteVersion: version,
+	}, op)
+	if err != nil || len(withUnused) != 5 {
+		t.Fatalf("add removable node nodes=%d err=%v", len(withUnused), err)
+	}
+	removed, removedVersion, err := svc.RemoveRouteNode(ctx, tenantID, created.ID, withUnused[3].ID, "撤销误加港口", addedVersion, op)
+	if err != nil || len(removed) != 4 || removedVersion != addedVersion+1 {
+		t.Fatalf("remove node nodes=%d version=%d err=%v", len(removed), removedVersion, err)
+	}
+	if _, _, err = svc.RemoveRouteNode(ctx, tenantID, created.ID, removed[0].ID, "尝试移除起运港", removedVersion, op); errorCode(err) != "SHIPPING_ROUTE_TERMINAL_REMOVE_FORBIDDEN" {
+		t.Fatalf("remove origin code=%q err=%v", errorCode(err), err)
 	}
 	details, err = svc.GetScheduleDetails(ctx, tenantID, created.ID)
 	if err != nil {

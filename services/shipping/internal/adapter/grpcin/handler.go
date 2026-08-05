@@ -23,12 +23,15 @@ func operator(ctx context.Context) app.Operator {
 }
 
 func scheduleToProto(s store.ShippingSchedule) *shippingv1.Schedule {
-	contractID, customerID := int64(0), int64(0)
+	contractID, customerID, carrierID := int64(0), int64(0), int64(0)
 	if s.ContractID != nil {
 		contractID = *s.ContractID
 	}
 	if s.CustomerID != nil {
 		customerID = *s.CustomerID
+	}
+	if s.CarrierID != nil {
+		carrierID = *s.CarrierID
 	}
 	etd, atd, eta, ata := "", "", "", ""
 	if s.Etd.Valid {
@@ -52,7 +55,7 @@ func scheduleToProto(s store.ShippingSchedule) *shippingv1.Schedule {
 	}
 	return &shippingv1.Schedule{
 		Id: s.ID, ScheduleNo: s.ScheduleNo, ContractId: contractID, ContractNo: s.ContractNo,
-		CustomerId: customerID, CustomerName: s.CustomerName, CarrierForwarder: s.CarrierForwarder,
+		CustomerId: customerID, CustomerName: s.CustomerName, CarrierId: carrierID, CarrierForwarder: s.CarrierForwarder,
 		VesselName: s.VesselName, VoyageNo: s.VoyageNo, PortOfLoading: s.PortOfLoading,
 		PortOfDischarge: s.PortOfDischarge, Etd: etd, Atd: atd, Eta: eta, Ata: ata,
 		ResponsibleEmployeeId: s.ResponsibleEmployeeID, ResponsibleName: s.ResponsibleName,
@@ -118,7 +121,7 @@ func delaysToProto(delays []store.ShippingDelayEvent) []*shippingv1.DelayEvent {
 
 func inputFromProto(in *shippingv1.ScheduleInput) app.ScheduleInput {
 	return app.ScheduleInput{
-		ContractID: in.GetContractId(), ContractNo: in.GetContractNo(), CustomerID: in.GetCustomerId(),
+		ContractID: in.GetContractId(), ContractNo: in.GetContractNo(), CustomerID: in.GetCustomerId(), CarrierID: in.GetCarrierId(),
 		CustomerName: in.GetCustomerName(), CarrierForwarder: in.GetCarrierForwarder(),
 		VesselName: in.GetVesselName(), VoyageNo: in.GetVoyageNo(), PortOfLoading: in.GetPortOfLoading(),
 		PortOfDischarge: in.GetPortOfDischarge(), ETD: in.GetEtd(), ATD: in.GetAtd(), ETA: in.GetEta(), ATA: in.GetAta(),
@@ -129,7 +132,7 @@ func inputFromProto(in *shippingv1.ScheduleInput) app.ScheduleInput {
 func listRowToProto(r store.ListSchedulesRow) *shippingv1.Schedule {
 	return scheduleToProto(store.ShippingSchedule{
 		ID: r.ID, TenantID: r.TenantID, ScheduleNo: r.ScheduleNo, ContractID: r.ContractID, ContractNo: r.ContractNo,
-		CustomerID: r.CustomerID, CustomerName: r.CustomerName, CarrierForwarder: r.CarrierForwarder,
+		CustomerID: r.CustomerID, CustomerName: r.CustomerName, CarrierID: r.CarrierID, CarrierForwarder: r.CarrierForwarder,
 		VesselName: r.VesselName, VoyageNo: r.VoyageNo, PortOfLoading: r.PortOfLoading, PortOfDischarge: r.PortOfDischarge,
 		Etd: r.Etd, Atd: r.Atd, Eta: r.Eta, Ata: r.Ata, ResponsibleEmployeeID: r.ResponsibleEmployeeID,
 		ResponsibleName: r.ResponsibleName, Status: r.Status, Remark: r.Remark, CreatedBy: r.CreatedBy,
@@ -204,6 +207,14 @@ func (h *Handler) AddRouteNode(ctx context.Context, req *shippingv1.AddRouteNode
 	return &shippingv1.AddRouteNodeResponse{RouteNodes: routeNodesToProto(nodes), RouteVersion: version}, nil
 }
 
+func (h *Handler) RemoveRouteNode(ctx context.Context, req *shippingv1.RemoveRouteNodeRequest) (*shippingv1.RemoveRouteNodeResponse, error) {
+	nodes, version, err := h.svc.RemoveRouteNode(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetRouteNodeId(), req.GetReason(), req.GetRouteVersion(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.RemoveRouteNodeResponse{RouteNodes: routeNodesToProto(nodes), RouteVersion: version}, nil
+}
+
 func (h *Handler) ReorderRoute(ctx context.Context, req *shippingv1.ReorderRouteRequest) (*shippingv1.ReorderRouteResponse, error) {
 	nodes, version, err := h.svc.ReorderRoute(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetNodeIds(), req.GetReason(), req.GetRouteVersion(), operator(ctx))
 	if err != nil {
@@ -213,7 +224,12 @@ func (h *Handler) ReorderRoute(ctx context.Context, req *shippingv1.ReorderRoute
 }
 
 func (h *Handler) UpdateProgress(ctx context.Context, req *shippingv1.UpdateProgressRequest) (*shippingv1.UpdateProgressResponse, error) {
-	s, nodes, delays, err := h.svc.UpdateProgress(ctx, grpcx.TenantID(ctx), req.GetId(), app.ProgressInput{RouteNodeID: req.GetRouteNodeId(), Action: req.GetAction(), ActualTime: req.GetActualTime(), LatestETA: req.GetLatestEta(), ReasonCode: req.GetReasonCode(), Reason: req.GetReason(), ImpactType: req.GetImpactType(), AffectedNodeID: req.GetAffectedNodeId(), FromNodeID: req.GetFromNodeId(), ToNodeID: req.GetToNodeId(), Note: req.GetNote(), RouteVersion: req.GetRouteVersion()}, operator(ctx))
+	s, nodes, delays, err := h.svc.UpdateProgress(ctx, grpcx.TenantID(ctx), req.GetId(), app.ProgressInput{
+		RouteNodeID: req.GetRouteNodeId(), Action: req.GetAction(), ActualTime: req.GetActualTime(), LatestETA: req.GetLatestEta(),
+		ReasonCode: req.GetReasonCode(), Reason: req.GetReason(), ImpactType: req.GetImpactType(), AffectedNodeID: req.GetAffectedNodeId(),
+		FromNodeID: req.GetFromNodeId(), ToNodeID: req.GetToNodeId(), Note: req.GetNote(), RouteVersion: req.GetRouteVersion(),
+		LatestETAAt: req.GetLatestEtaAt(), LatestETDAt: req.GetLatestEtdAt(), ActualArrivalAt: req.GetActualArrivalAt(), ActualDepartureAt: req.GetActualDepartureAt(),
+	}, operator(ctx))
 	if err != nil {
 		return nil, err
 	}

@@ -2,9 +2,35 @@ package httpapi
 
 import (
 	"net/http"
+	"strconv"
 
+	"github.com/go-chi/chi/v5"
+	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
 )
+
+// resolveShippingMasterdata makes the selected ids authoritative while the
+// copied names remain immutable snapshots on the shipping record.
+func (s *Server) resolveShippingMasterdata(r *http.Request, in *shippingv1.ScheduleInput) error {
+	if in == nil {
+		return nil
+	}
+	if in.GetCustomerId() > 0 {
+		resp, err := s.Customers.GetCustomer(r.Context(), &mdv1.GetCustomerRequest{Id: in.GetCustomerId()})
+		if err != nil {
+			return err
+		}
+		in.CustomerName = resp.GetCustomer().GetName()
+	}
+	if in.GetCarrierId() > 0 {
+		resp, err := s.Suppliers.GetSupplier(r.Context(), &mdv1.GetSupplierRequest{Id: in.GetCarrierId()})
+		if err != nil {
+			return err
+		}
+		in.CarrierForwarder = resp.GetSupplier().GetName()
+	}
+	return nil
+}
 
 func (s *Server) getShippingStatus(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Shipping.GetModuleStatus(r.Context(), &shippingv1.GetModuleStatusRequest{})
@@ -42,6 +68,10 @@ func (s *Server) createShippingSchedule(w http.ResponseWriter, r *http.Request) 
 	if !s.decodeBody(w, r, req) {
 		return
 	}
+	if err := s.resolveShippingMasterdata(r, req.GetSchedule()); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
 	resp, err := s.Shipping.CreateSchedule(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -53,6 +83,10 @@ func (s *Server) createShippingSchedule(w http.ResponseWriter, r *http.Request) 
 func (s *Server) updateShippingSchedule(w http.ResponseWriter, r *http.Request) {
 	req := &shippingv1.UpdateScheduleRequest{}
 	if !s.decodeBody(w, r, req) {
+		return
+	}
+	if err := s.resolveShippingMasterdata(r, req.GetSchedule()); err != nil {
+		s.writeGRPCError(w, err)
 		return
 	}
 	req.Id = idFromPath(r)
@@ -108,6 +142,21 @@ func (s *Server) addShippingRouteNode(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Id = idFromPath(r)
 	resp, err := s.Shipping.AddRouteNode(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) removeShippingRouteNode(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.RemoveRouteNodeRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	req.RouteNodeId, _ = strconv.ParseInt(chi.URLParam(r, "nodeID"), 10, 64)
+	resp, err := s.Shipping.RemoveRouteNode(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
