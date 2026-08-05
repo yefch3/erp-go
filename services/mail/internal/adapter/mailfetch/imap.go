@@ -27,15 +27,24 @@ import (
 type IMAP struct {
 	log     *slog.Logger
 	timeout time.Duration
+	// Separate from timeout. Establishing a TCP connection and waiting for a
+	// command's answer are different kinds of wait: a host that is simply not
+	// answering should be given up on in seconds, while a FETCH of a hundred
+	// messages legitimately takes longer. One number for both meant a dead
+	// mailbox held a worker for a command's worth of patience.
+	dialTimeout time.Duration
 	// Connections, kept between commands. See pool.go for why.
 	pool *connPool
 }
 
-func NewIMAP(timeout time.Duration, log *slog.Logger) *IMAP {
+func NewIMAP(timeout, dialTimeout time.Duration, log *slog.Logger) *IMAP {
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
-	return &IMAP{log: log, timeout: timeout, pool: newConnPool()}
+	if dialTimeout <= 0 || dialTimeout > timeout {
+		dialTimeout = 10 * time.Second
+	}
+	return &IMAP{log: log, timeout: timeout, dialTimeout: dialTimeout, pool: newConnPool()}
 }
 
 // Fetch returns messages with a UID above sinceUID, newest last.
@@ -324,7 +333,7 @@ func (f *IMAP) dial(acct app.MailAccount) (*client.Client, error) {
 	// The dialler carries the timeout. client.Timeout only applies once a
 	// connection exists, so without this a host that accepts the TCP
 	// connection and then says nothing hangs the sync for ever.
-	d := &net.Dialer{Timeout: f.timeout}
+	d := &net.Dialer{Timeout: f.dialTimeout}
 
 	var c *client.Client
 	var err error

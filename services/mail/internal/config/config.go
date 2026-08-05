@@ -45,6 +45,14 @@ type Config struct {
 	SyncInterval time.Duration
 	SyncTimeout  time.Duration
 	SyncBatch    int
+	// How many mailboxes may be syncing at once. The scarce resource is not
+	// our CPU — a goroutine waiting on a socket costs nothing — but the mail
+	// host's patience and its connection allowances.
+	SyncConcurrency int
+	// Establishing a TCP connection is a different kind of wait from running
+	// a command, and giving them one number means the sync waits a command's
+	// worth of patience for a host that is simply not answering.
+	DialTimeout time.Duration
 	// Messages of history to hold per folder; the backfill stops here.
 	SyncHistory int
 	// Redis, for pushing "new mail" hints to open browser tabs.
@@ -86,6 +94,8 @@ func Load() Config {
 		SyncInterval:       envDuration("MAIL_SYNC_INTERVAL", 2*time.Minute),
 		SyncTimeout:        envDuration("MAIL_SYNC_TIMEOUT", 90*time.Second),
 		SyncBatch:          envInt("MAIL_SYNC_BATCH", 50),
+		SyncConcurrency:    envInt("MAIL_SYNC_CONCURRENCY", 8),
+		DialTimeout:        envDuration("MAIL_DIAL_TIMEOUT", 10*time.Second),
 		SyncHistory:        envInt("MAIL_SYNC_HISTORY", 500),
 		RedisAddr:          os.Getenv("REDIS_ADDR"),
 		GoogleClientID:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),

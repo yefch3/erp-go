@@ -99,6 +99,8 @@ type SyncConfig struct {
 	// How much history to hold per folder. The backfill walks the past one
 	// batch per pass until this many messages are stored; 0 means the default.
 	HistoryCap int64
+	// How many mailboxes may sync at once. See syncfleet.go.
+	Concurrency int
 }
 
 func (c SyncConfig) withDefaults() SyncConfig {
@@ -116,6 +118,9 @@ func (c SyncConfig) withDefaults() SyncConfig {
 	}
 	if c.HistoryCap <= 0 {
 		c.HistoryCap = 500
+	}
+	if c.Concurrency <= 0 {
+		c.Concurrency = 8
 	}
 	return c
 }
@@ -152,20 +157,44 @@ func (s *Service) syncAllMailboxes(ctx context.Context, cfg SyncConfig) {
 		s.log.Error("could not list mailboxes to sync", "err", err)
 		return
 	}
+	// Fanned out rather than walked. Sequentially, one mailbox that hangs
+	// holds up every mailbox behind it — and a mailbox whose host accepts the
+	// connection and then says nothing holds them up for the whole dial
+	// timeout, every cycle, for as long as nobody fixes it. The fleet bounds
+	// how many run at once, so a stuck mailbox costs one worker.
+	var wg sync.WaitGroup
 	for _, a := range accounts {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
-		// One mailbox failing must not stop the rest: a single employee's
-		// expired authorisation code should not stop the whole company
-		// receiving mail.
-		if n, err := s.SyncMailbox(ctx, cfg, a.EmployeeID); err != nil {
-			s.log.Warn("mailbox sync failed", "employee", a.EmployeeID, "err", err)
-		} else if n > 0 {
-			s.log.Info("mailbox synced", "employee", a.EmployeeID, "new", n)
-		}
+		wg.Add(1)
+		go func(employeeID int64) {
+			defer wg.Done()
+			// One mailbox failing must not stop the rest: a single employee's
+			// expired authorisation code should not stop the whole company
+			// receiving mail.
+			if n, err := s.SyncMailboxIfDue(ctx, cfg, employeeID); err != nil {
+				s.log.Warn("mailbox sync failed", "employee", employeeID, "err", err)
+			} else if n > 0 {
+				s.log.Info("mailbox synced", "employee", employeeID, "new", n)
+			}
+		}(a.EmployeeID)
+	}
+	// Waited on, so one pass finishes before the next tick starts it again.
+	// Without this a slow cycle would overlap the next and the mailboxes at
+	// the end of the list would be synced by two passes at once.
+	wg.Wait()
+
+	// Backing off makes failure quiet, and quiet failure is what this service
+	// has been bitten by before: a mailbox that stops receiving while the page
+	// goes on showing the last successful sync. The count is said out loud
+	// once per pass so "mail is not arriving" is visible in the log rather
+	// than only in the absence of anything.
+	if n := s.fleet(cfg.Concurrency).health.failingCount(); n > 0 {
+		s.log.Warn("mailboxes are failing and being retried less often",
+			"failing", n, "of", len(accounts))
 	}
 }
 
@@ -173,6 +202,45 @@ func (s *Service) syncAllMailboxes(ctx context.Context, cfg SyncConfig) {
 // and returns how many new INBOX messages it stored.
 func (s *Service) SyncMailbox(ctx context.Context, cfg SyncConfig, employeeID int64) (int, error) {
 	cfg = cfg.withDefaults()
+	// Everything that syncs a mailbox comes through here — the poller, the
+	// idle watcher and a person clicking 立即收信 — so this is where the
+	// fleet's two rules apply: a bounded number at once, and never the same
+	// mailbox twice over.
+	return s.fleet(cfg.Concurrency).do(ctx, employeeID, func() (int, error) {
+		return s.syncMailboxNow(ctx, cfg, employeeID)
+	})
+}
+
+// SyncMailboxIfDue is the poller's entry point: it skips a mailbox that failed
+// recently rather than spending a worker rediscovering the same failure.
+//
+// The distinction from SyncMailbox matters. A person clicking 立即收信 has
+// asked, and gets an attempt whatever the mailbox's history — they may well be
+// clicking *because* they just fixed it. The poller has not been asked by
+// anybody, so it is the one that should hold back.
+func (s *Service) SyncMailboxIfDue(ctx context.Context, cfg SyncConfig, employeeID int64) (int, error) {
+	cfg = cfg.withDefaults()
+	f := s.fleet(cfg.Concurrency)
+	due, failing := f.health.dueAt(employeeID, time.Now())
+	if !due {
+		return 0, nil
+	}
+	if failing {
+		// Known-bad mailboxes share a small reserved part of the fleet, so a
+		// wave of them coming due at once cannot fill it and leave working
+		// mailboxes queueing behind mailboxes that do not work.
+		release, ok := f.health.holdSick()
+		if !ok {
+			return 0, nil
+		}
+		defer release()
+	}
+	n, err := s.SyncMailbox(ctx, cfg, employeeID)
+	f.health.record(employeeID, time.Now(), err)
+	return n, err
+}
+
+func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, employeeID int64) (int, error) {
 	acct, err := s.ForSender(ctx, cfg.TenantID, employeeID)
 	if err != nil {
 		return 0, err
