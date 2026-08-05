@@ -161,6 +161,11 @@ type Deps struct {
 }
 
 type Service struct {
+	// One bounded fleet for every mailbox sync in the process. See
+	// syncfleet.go; built on first use because its size comes from SyncConfig.
+	fleetOnce sync.Once
+	syncFleet *syncFleet
+
 	pool      *pgxpool.Pool
 	q         *store.Queries
 	number    Numbering
