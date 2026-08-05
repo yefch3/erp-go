@@ -924,6 +924,9 @@ export default {
     reply: '回复',
     forward: '转发',
     forwardCarries: '原邮件的附件会随这封信一并转发。',
+    forwardAsAttachment: '作为附件转发',
+    forwardCarriesEml: '原邮件将以 .eml 附件的形式原样转发——完整的信头和全部内容，收件人打开的是原信本身，而不是我们的转述。原信自带的附件已经在里面，不再单独随行。',
+    forwardNoRaw: '这封邮件的原始内容没有留档，无法作为附件转发。',
     mergedNoVars: '合并发送对所有人是同一封信，不能使用按收件人变化的变量',
     confirmSendMerged: '将以一封信发送给 {n} 位收件人（含抄送），名单互相可见。确认发送？',
     rich: '富文本',
@@ -1207,6 +1210,8 @@ export default {
     noTracking: '未开启追踪',
     noTrackingHint: '这封信没有带追踪像素——纯文本邮件无法承载图片，或者发送时系统还没有配置公网地址（MAIL_PUBLIC_BASE_URL）。所以这里不是「没读」，而是「没看」。',
     to: '发给',
+    fromUnrecorded: '发件地址未记录',
+    fromUnrecordedHint: '这封信发出时，系统还没有把发件地址写进记录里。之前这里显示的是该员工当前绑定的邮箱——如果中途换过绑定，那个地址就是错的。所以现在宁可留空，也不猜。',
     attachments: '{n} 个附件',
   },
   recipients: {

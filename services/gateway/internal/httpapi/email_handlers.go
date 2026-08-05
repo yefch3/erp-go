@@ -11,8 +11,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
+	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 )
 
 func (s *Server) listCampaigns(w http.ResponseWriter, r *http.Request) {
@@ -75,6 +75,7 @@ func (s *Server) listEmailMessages(w http.ResponseWriter, r *http.Request) {
 		Status:        q.Get("status"),
 		AttentionOnly: q.Get("attention_only") == "true",
 		Keyword:       q.Get("keyword"),
+		Cursor:        q.Get("cursor"),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -393,7 +394,8 @@ func (s *Server) sendDraft(w http.ResponseWriter, r *http.Request) {
 // The 已定时 folder: what is booked, and the two things anyone does about it.
 func (s *Server) listScheduled(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Emails.ListScheduled(r.Context(), &mailv1.ListScheduledRequest{
-		Page: pageFromQuery(r),
+		Page:   pageFromQuery(r),
+		Cursor: r.URL.Query().Get("cursor"),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -616,6 +618,7 @@ func (s *Server) listMailboxSent(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Emails.ListMailboxSent(r.Context(), &mailv1.ListMailboxSentRequest{
 		Page:    pageFromQuery(r),
 		Keyword: r.URL.Query().Get("keyword"),
+		Cursor:  r.URL.Query().Get("cursor"),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)

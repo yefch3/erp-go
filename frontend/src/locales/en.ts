@@ -929,6 +929,9 @@ export default {
     reply: 'Reply',
     forward: 'Forward',
     forwardCarries: 'The original message’s attachments travel along with this mail.',
+    forwardAsAttachment: 'Forward as attachment',
+    forwardCarriesEml: 'The original goes out untouched as a .eml attachment — every header, every part. The recipient opens the message itself rather than our retelling of it. Its own attachments are already inside, so they are not sent again separately.',
+    forwardNoRaw: 'The original content of this mail was not archived, so it cannot be forwarded as an attachment.',
     mergedNoVars: 'A merged send is one shared message; per-recipient variables cannot be used',
     confirmSendMerged: 'One shared mail will go to {n} people (CC included), with the list visible to all. Send?',
     rich: 'Rich text',
@@ -1212,6 +1215,8 @@ export default {
     noTracking: 'Tracking off',
     noTrackingHint: 'This mail carried no tracking pixel — a plain-text mail cannot hold an image, or the service had no publicly reachable address (MAIL_PUBLIC_BASE_URL) when it was sent. So this is "not watched", not "not read".',
     to: 'to',
+    fromUnrecorded: 'sender address not recorded',
+    fromUnrecordedHint: 'This mail was sent before the service stamped the sending address onto the record. What used to be shown here was the mailbox the employee is bound to now — which is the wrong address if the binding has changed since. Left blank rather than guessed.',
     attachments: '{n} attachment(s)',
   },
   recipients: {

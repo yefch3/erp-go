@@ -571,7 +571,8 @@ func (q *Queries) GetCampaign(ctx context.Context, arg GetCampaignParams) (GetCa
 const getDraft = `-- name: GetDraft :one
 SELECT id, subject, body, body_format, signature_id, kind,
        recipients, attachments, updated_at,
-       send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id
+       send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id,
+       forward_as_attachment
 FROM email_drafts
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
@@ -585,20 +586,21 @@ type GetDraftParams struct {
 }
 
 type GetDraftRow struct {
-	ID               int64
-	Subject          string
-	Body             string
-	BodyFormat       string
-	SignatureID      int64
-	Kind             string
-	Recipients       []byte
-	Attachments      []byte
-	UpdatedAt        pgtype.Timestamptz
-	SendMode         string
-	Cc               []byte
-	Bcc              []byte
-	ReplyToInboundID int64
-	ForwardInboundID int64
+	ID                  int64
+	Subject             string
+	Body                string
+	BodyFormat          string
+	SignatureID         int64
+	Kind                string
+	Recipients          []byte
+	Attachments         []byte
+	UpdatedAt           pgtype.Timestamptz
+	SendMode            string
+	Cc                  []byte
+	Bcc                 []byte
+	ReplyToInboundID    int64
+	ForwardInboundID    int64
+	ForwardAsAttachment bool
 }
 
 func (q *Queries) GetDraft(ctx context.Context, arg GetDraftParams) (GetDraftRow, error) {
@@ -619,6 +621,7 @@ func (q *Queries) GetDraft(ctx context.Context, arg GetDraftParams) (GetDraftRow
 		&i.Bcc,
 		&i.ReplyToInboundID,
 		&i.ForwardInboundID,
+		&i.ForwardAsAttachment,
 	)
 	return i, err
 }
@@ -626,13 +629,12 @@ func (q *Queries) GetDraft(ctx context.Context, arg GetDraftParams) (GetDraftRow
 const getMessage = `-- name: GetMessage :one
 SELECT
     m.id, coalesce(m.campaign_id, 0)::bigint AS campaign_id, m.message_key::text AS message_key, m.kind,
-    m.sender_id, m.sender_name, coalesce(a.email, '')::text AS sender_email,
+    m.sender_id, m.sender_name, m.from_email::text AS sender_email,
     m.to_email, m.to_name, m.customer_name, m.contact_id,
     m.subject, m.body, m.body_text, m.body_format, m.status, m.attempt_count, m.provider_id, m.last_error,
     m.attention_reason, m.queued_at, m.sent_at, m.delivered_at, m.opened_at, m.clicked_at,
     m.tracked
 FROM email_messages m
-LEFT JOIN mail_accounts a ON a.employee_id = m.sender_id AND a.tenant_id = m.tenant_id
 WHERE m.tenant_id = $1::bigint AND m.id = $2::bigint
 `
 
@@ -670,19 +672,20 @@ type GetMessageRow struct {
 	Tracked         bool
 }
 
-// The sender's address comes off the bound mailbox, not off the campaign.
+// The sender's address is the one stamped on the row at send time.
 //
-// campaigns.sender_email looks like the right column and is not: it is copied
-// from the employee's HR record (employees.email), which is a profile field
-// and carries no guarantee of being the mailbox anybody sends from. The two
-// agree today and there is nothing keeping them that way — changing the
-// binding does not touch the HR record, and vice versa. Naming an address the
-// mail never left from is worse than naming none, so this reads the binding:
-// mail_accounts.email is literally what buildMessage puts in the From header.
+// Two nearby columns look like the right answer and are not. campaigns
+// .sender_email is copied from the employee's HR record, a profile field that
+// carries no guarantee of being the mailbox anybody sends from. And joining
+// mail_accounts on employee_id — which this query used to do — answers a
+// different question than the one asked: not "where did this leave from" but
+// "where would it leave from if sent now". Those agree until somebody rebinds
+// their mailbox, and then every message in history silently changes sender.
 //
-// Reads today's binding, so a mailbox rebound since the send would show the
-// new address. The alternative is stamping it on every message row; not worth
-// it until somebody actually rebinds mid-history.
+// So it reads email_messages.from_email, written by MarkAccepted from the
+// binding the adapter authenticated with. Empty for anything sent before
+// migration 00021, which the screen renders as "未记录" rather than filling in
+// from a guess.
 func (q *Queries) GetMessage(ctx context.Context, arg GetMessageParams) (GetMessageRow, error) {
 	row := q.db.QueryRow(ctx, getMessage, arg.TenantID, arg.ID)
 	var i GetMessageRow
@@ -1199,8 +1202,13 @@ WHERE tenant_id = $1::bigint
        OR to_email ILIKE '%' || $8::text || '%'
        OR to_name  ILIKE '%' || $8::text || '%'
        OR subject  ILIKE '%' || $8::text || '%')
+  -- Keyset. The order is by id alone, so the cursor is one: the id of the
+  -- last row shown. 0 is the first page. Offset used to do this, and on a
+  -- list that grows at the top it meant a message arriving mid-read could
+  -- push a row across the boundary and show it twice, or hide it.
+  AND ($9::bigint = 0 OR id < $9::bigint)
 ORDER BY id DESC
-LIMIT $10::int OFFSET $9::int
+LIMIT $10::int
 `
 
 type ListMessagesParams struct {
@@ -1212,7 +1220,7 @@ type ListMessagesParams struct {
 	Status        string
 	AttentionOnly bool
 	Keyword       string
-	RowOffset     int32
+	CursorID      int64
 	RowLimit      int32
 }
 
@@ -1247,7 +1255,7 @@ func (q *Queries) ListMessages(ctx context.Context, arg ListMessagesParams) ([]L
 		arg.Status,
 		arg.AttentionOnly,
 		arg.Keyword,
-		arg.RowOffset,
+		arg.CursorID,
 		arg.RowLimit,
 	)
 	if err != nil {
@@ -1314,15 +1322,20 @@ WHERE c.tenant_id = $1::bigint
   -- Own sends only. Unlike the sent list this carries no data scope: a
   -- scheduled mail is still the sender's to change, and nobody else's.
   AND c.sender_id = $2::bigint
+  -- Keyset, ascending: this list is ordered by when each send is due, so it
+  -- reads soonest-first and the cursor walks forward rather than back.
+  AND ($3::timestamptz IS NULL
+       OR (m.due_at, c.id) > ($3::timestamptz, $4::bigint))
 ORDER BY m.due_at, c.id
-LIMIT $4::int OFFSET $3::int
+LIMIT $5::int
 `
 
 type ListScheduledParams struct {
-	TenantID  int64
-	SenderID  int64
-	RowOffset int32
-	RowLimit  int32
+	TenantID int64
+	SenderID int64
+	CursorAt pgtype.Timestamptz
+	CursorID int64
+	RowLimit int32
 }
 
 type ListScheduledRow struct {
@@ -1349,7 +1362,8 @@ func (q *Queries) ListScheduled(ctx context.Context, arg ListScheduledParams) ([
 	rows, err := q.db.Query(ctx, listScheduled,
 		arg.TenantID,
 		arg.SenderID,
-		arg.RowOffset,
+		arg.CursorAt,
+		arg.CursorID,
 		arg.RowLimit,
 	)
 	if err != nil {
@@ -1600,13 +1614,15 @@ const markAccepted = `-- name: MarkAccepted :exec
 UPDATE email_messages
 SET status = 'ACCEPTED', provider_id = $1::text,
     sent_at = now(), last_error = '',
-    tracked = $2::boolean
-WHERE tenant_id = $3::bigint AND id = $4::bigint
+    tracked = $2::boolean,
+    from_email = $3::text
+WHERE tenant_id = $4::bigint AND id = $5::bigint
 `
 
 type MarkAcceptedParams struct {
 	ProviderID string
 	Tracked    bool
+	FromEmail  string
 	TenantID   int64
 	ID         int64
 }
@@ -1615,10 +1631,16 @@ type MarkAcceptedParams struct {
 // is decided at this moment, by this message's format and the address the
 // service had at the time, and neither can be recovered from the row
 // afterwards. See migration 00019.
+//
+// from_email is here for the same reason and is the stronger case: the
+// address is knowable only now, while the adapter still holds the binding it
+// authenticated with. Rebinding the mailbox later does not make this mail
+// have left from somewhere else. See migration 00021.
 func (q *Queries) MarkAccepted(ctx context.Context, arg MarkAcceptedParams) error {
 	_, err := q.db.Exec(ctx, markAccepted,
 		arg.ProviderID,
 		arg.Tracked,
+		arg.FromEmail,
 		arg.TenantID,
 		arg.ID,
 	)
@@ -1909,7 +1931,8 @@ const saveDraft = `-- name: SaveDraft :one
 INSERT INTO email_drafts (
     id, tenant_id, owner_id, subject, body, body_format,
     signature_id, kind, recipients, attachments,
-    send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id
+    send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id,
+    forward_as_attachment
 ) VALUES (
     coalesce(nullif($1::bigint, 0), nextval('email_drafts_id_seq')),
     $2::bigint,
@@ -1925,7 +1948,8 @@ INSERT INTO email_drafts (
     $12::jsonb,
     $13::jsonb,
     $14::bigint,
-    $15::bigint
+    $15::bigint,
+    $16::boolean
 )
 ON CONFLICT (id) DO UPDATE SET
     subject = excluded.subject,
@@ -1940,6 +1964,7 @@ ON CONFLICT (id) DO UPDATE SET
     cc = excluded.cc,
     reply_to_inbound_id = excluded.reply_to_inbound_id,
     forward_inbound_id = excluded.forward_inbound_id,
+    forward_as_attachment = excluded.forward_as_attachment,
     updated_at = now()
 WHERE email_drafts.tenant_id = $2::bigint
   AND email_drafts.owner_id = $3::bigint
@@ -1947,21 +1972,22 @@ RETURNING id
 `
 
 type SaveDraftParams struct {
-	ID               int64
-	TenantID         int64
-	OwnerID          int64
-	Subject          string
-	Body             string
-	BodyFormat       string
-	SignatureID      int64
-	Kind             string
-	Recipients       []byte
-	Attachments      []byte
-	SendMode         string
-	Cc               []byte
-	Bcc              []byte
-	ReplyToInboundID int64
-	ForwardInboundID int64
+	ID                  int64
+	TenantID            int64
+	OwnerID             int64
+	Subject             string
+	Body                string
+	BodyFormat          string
+	SignatureID         int64
+	Kind                string
+	Recipients          []byte
+	Attachments         []byte
+	SendMode            string
+	Cc                  []byte
+	Bcc                 []byte
+	ReplyToInboundID    int64
+	ForwardInboundID    int64
+	ForwardAsAttachment bool
 }
 
 // ------------------------------------------------------------------ drafts
@@ -1986,6 +2012,7 @@ func (q *Queries) SaveDraft(ctx context.Context, arg SaveDraftParams) (int64, er
 		arg.Bcc,
 		arg.ReplyToInboundID,
 		arg.ForwardInboundID,
+		arg.ForwardAsAttachment,
 	)
 	var id int64
 	err := row.Scan(&id)

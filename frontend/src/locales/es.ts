@@ -929,6 +929,9 @@ export default {
     reply: 'Responder',
     forward: 'Reenviar',
     forwardCarries: 'Los adjuntos del mensaje original se reenvían junto con este correo.',
+    forwardAsAttachment: 'Reenviar como adjunto',
+    forwardCarriesEml: 'El original se envía intacto como adjunto .eml: todas las cabeceras y todas las partes. El destinatario abre el mensaje en sí, no nuestra versión de él. Sus propios adjuntos ya van dentro, así que no se envían otra vez por separado.',
+    forwardNoRaw: 'El contenido original de este correo no se archivó, así que no se puede reenviar como adjunto.',
     mergedNoVars: 'Un envío combinado es un único mensaje compartido; no admite variables por destinatario',
     confirmSendMerged: 'Se enviará un solo correo a {n} personas (CC incluido), con la lista visible para todos. ¿Enviar?',
     rich: 'Texto enriquecido',
@@ -1212,6 +1215,8 @@ export default {
     noTracking: 'Sin seguimiento',
     noTrackingHint: 'Este correo no llevaba píxel de seguimiento: un mensaje de texto plano no puede contenerlo, o el servicio no tenía una dirección pública (MAIL_PUBLIC_BASE_URL) al enviarlo. Así que no es «no leído», es «no observado».',
     to: 'para',
+    fromUnrecorded: 'dirección de envío no registrada',
+    fromUnrecordedHint: 'Este correo se envió antes de que el servicio guardara la dirección de envío en el registro. Antes aquí se mostraba el buzón al que la persona está vinculada ahora, que es la dirección equivocada si el vínculo cambió después. Se deja en blanco en lugar de adivinar.',
     attachments: '{n} adjunto(s)',
   },
   recipients: {

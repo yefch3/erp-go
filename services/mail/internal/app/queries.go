@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -76,7 +78,10 @@ type MessageQuery struct {
 	Keyword    string
 	// The single filter the failure page needs.
 	AttentionOnly bool
-	Page, Size    int32
+	// Where the previous page ended: the id of its last row, 0 for the first.
+	// Keyset rather than a page number, like every other mailbox list.
+	Cursor string
+	Size   int32
 }
 
 // ListMessages is what both the campaign detail and the failure queue read.
@@ -84,26 +89,55 @@ type MessageQuery struct {
 // The data scope applies here too: a supervisor with DEPT sees their team's
 // correspondence, everybody else sees their own. Reading somebody else's mail
 // is a real act, so it is gated like one.
-func (s *Service) ListMessages(ctx context.Context, tenantID int64, qy MessageQuery, op Operator) ([]store.ListMessagesRow, int64, error) {
+func (s *Service) ListMessages(ctx context.Context, tenantID int64, qy MessageQuery, op Operator) ([]store.ListMessagesRow, int64, string, error) {
 	visible, err := s.visibleTo(ctx, op.ID)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
-	page, size := normalizePage(qy.Page, qy.Size)
+	_, size := normalizePage(1, qy.Size)
+	cursorID, err := decodeIDCursor(qy.Cursor)
+	if err != nil {
+		return nil, 0, "", err
+	}
 	rows, err := s.q.ListMessages(ctx, store.ListMessagesParams{
 		TenantID: tenantID, VisibleAll: visible.All, VisibleIds: visible.EmployeeIDs,
 		CampaignID: qy.CampaignID, SenderID: qy.SenderID,
 		Status: qy.Status, AttentionOnly: qy.AttentionOnly,
-		Keyword: qy.Keyword, RowLimit: size, RowOffset: (page - 1) * size,
+		Keyword: qy.Keyword, RowLimit: size, CursorID: cursorID,
 	})
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 	var total int64
 	if len(rows) > 0 {
 		total = rows[0].Total
 	}
-	return rows, total, nil
+	next := ""
+	if int32(len(rows)) == size && size > 0 {
+		next = encodeIDCursor(rows[len(rows)-1].ID)
+	}
+	return rows, total, next, nil
+}
+
+// A cursor over a list ordered by id alone. Encoded rather than passed as a
+// bare number so it reads as a position, not as something to do arithmetic on.
+func encodeIDCursor(id int64) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(id, 10)))
+}
+
+func decodeIDCursor(cursor string) (int64, error) {
+	if cursor == "" {
+		return 0, nil
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return 0, errBadCursor()
+	}
+	id, err := strconv.ParseInt(string(raw), 10, 64)
+	if err != nil {
+		return 0, errBadCursor()
+	}
+	return id, nil
 }
 
 // MessageView is one recipient's mail with its delivery history.

@@ -107,6 +107,12 @@ func (s *SMTP) Send(ctx context.Context, m app.Outbound) app.SendResult {
 	res := s.dialAndSend(ctx, acct, rcpts, raw)
 	if res.Outcome == app.Accepted {
 		res.ProviderID = messageID
+		// The same acct.Email that went into the From header a few lines up.
+		// Reported rather than looked up again later: by the time anybody
+		// reads this message back, the sender may be bound to a different
+		// mailbox, and then the lookup answers about a mailbox this mail
+		// never touched.
+		res.FromEmail = acct.Email
 	}
 	if res.Outcome != app.Accepted && res.authProblem {
 		s.accounts.RecordFailure(ctx, m.TenantID, acct.AccountID, res.Err)

@@ -170,3 +170,70 @@ func TestSnippetKeepsOrdinaryText(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// A URL with a raw space used to lose its whole attribute. The policy sets
+// RequireParseableURLs — correctly, it is what keeps javascript: out — and
+// bluemonday's answer to a URL net/url will not parse is to drop the
+// attribute without a word. An <img> with no src renders as a broken icon and
+// its alt text, which reads to the person as "this mail client is broken".
+//
+// Senders merge values into URLs without encoding them all the time
+// (…&pet_name_string=your pet). Browsers and every other mail client cope.
+func TestSenderURLsWithWhitespaceKeepWorking(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "a space becomes %20, as a browser would send it",
+			in:   `<img src="https://img.example.com/a.png?name=your pet" alt="x">`,
+			want: "https://img.example.com/a.png?name=your%20pet",
+		},
+		{
+			// Exactly what `new URL()` does: the newline is removed, the
+			// indent's spaces are encoded. Verified against Node's WHATWG URL
+			// parser rather than reasoned about — the goal is to fetch the
+			// same bytes the recipient's browser would, whatever that is.
+			name: "a line-wrapped href follows the URL standard, not intuition",
+			in:   "<a href=\"https://example.com/very/long/\n  path?a=1\">link</a>",
+			want: "https://example.com/very/long/%20%20path?a=1",
+		},
+		{
+			name: "a tab is removed rather than encoded",
+			in:   `<img src="https://img.example.com/a	b.png" alt="x">`,
+			want: "https://img.example.com/ab.png",
+		},
+		{
+			name: "single quotes are handled too",
+			in:   `<img src='https://img.example.com/b.png?q=a b' alt="x">`,
+			want: "https://img.example.com/b.png?q=a%20b",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out := SanitizeHTML(c.in)
+			if !strings.Contains(out, c.want) {
+				t.Errorf("the URL did not survive sanitising\n got: %s\nwant it to contain: %s", out, c.want)
+			}
+		})
+	}
+}
+
+// Repairing whitespace must not become a way to smuggle a scheme past the
+// policy. "java script:" is not a scheme a browser honours, and must not
+// become one here just because the space was encoded.
+func TestWhitespaceRepairCannotSmuggleAScheme(t *testing.T) {
+	for _, in := range []string{
+		`<a href="java script:alert(1)">x</a>`,
+		`<a href="java&#9;script:alert(1)">x</a>`,
+		`<img src="java
+script:alert(1)">`,
+		`<a href=" javascript:alert(1)">x</a>`,
+	} {
+		out := SanitizeHTML(in)
+		if strings.Contains(strings.ToLower(out), "javascript:") {
+			t.Errorf("a script URL survived sanitising:\n in: %q\nout: %q", in, out)
+		}
+	}
+}

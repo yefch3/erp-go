@@ -273,6 +273,27 @@ WITH host AS (
           SELECT 1 FROM email_inbound i
           WHERE i.tenant_id = m.tenant_id AND i.sent_message_id = m.id
       )
+      -- …and only if it left from the mailbox being read. Rebinding a mailbox
+      -- deletes its synced messages but not the ERP's delivery records, so
+      -- without this every send from a previous binding reappears here as an
+      -- orphan — permanently, since its copy was in a mailbox nobody is
+      -- signed in to any more.
+      AND EXISTS (
+          SELECT 1 FROM mail_accounts b
+          WHERE b.tenant_id = m.tenant_id AND b.employee_id = m.sender_id
+            AND CASE WHEN m.from_email <> ''
+                     -- Stamped at send time: compare the address itself.
+                     THEN lower(m.from_email) = lower(b.email)
+                     -- Sent before migration 00021, so the address was never
+                     -- recorded. The Message-ID still is, and its domain was
+                     -- built from the sending address — evidence, not a guess.
+                     -- It cannot separate two mailboxes at one domain, which
+                     -- is the residual cost of not having stamped it earlier
+                     -- and is why the column now exists.
+                     ELSE rtrim(split_part(m.provider_id, '@', 2), '>')
+                          = split_part(b.email, '@', 2)
+                END
+      )
 )
 SELECT count(*)::bigint FROM (SELECT subject, to_email FROM host UNION ALL SELECT subject, to_email FROM orphan) u
 WHERE ($1::text = ''
@@ -541,7 +562,7 @@ func (q *Queries) GetInbound(ctx context.Context, arg GetInboundParams) (GetInbo
 }
 
 const getInboundForCompose = `-- name: GetInboundForCompose :one
-SELECT id, owner_id, message_id, references_ids, thread_key
+SELECT id, owner_id, message_id, references_ids, thread_key, raw_key, subject
 FROM email_inbound
 WHERE tenant_id = $1::bigint AND id = $2::bigint
 `
@@ -557,11 +578,19 @@ type GetInboundForComposeRow struct {
 	MessageID     string
 	ReferencesIds string
 	ThreadKey     string
+	RawKey        string
+	Subject       string
 }
 
 // The reply/forward context: the owner (for the caller check), the
 // Message-ID being answered, the chain above it, and the thread this
 // conversation lives in.
+//
+// raw_key and subject are here for forward-as-attachment: the original goes
+// out as the stored .eml, named after what the sender called it. raw_key is
+// empty for anything whose MIME never reached object storage, and that has to
+// be refused rather than silently downgraded to a quoted forward — somebody
+// forwarding a mail as evidence needs to know they did not.
 func (q *Queries) GetInboundForCompose(ctx context.Context, arg GetInboundForComposeParams) (GetInboundForComposeRow, error) {
 	row := q.db.QueryRow(ctx, getInboundForCompose, arg.TenantID, arg.ID)
 	var i GetInboundForComposeRow
@@ -571,6 +600,8 @@ func (q *Queries) GetInboundForCompose(ctx context.Context, arg GetInboundForCom
 		&i.MessageID,
 		&i.ReferencesIds,
 		&i.ThreadKey,
+		&i.RawKey,
+		&i.Subject,
 	)
 	return i, err
 }
@@ -1390,6 +1421,27 @@ WITH host AS (
       AND NOT EXISTS (
           SELECT 1 FROM email_inbound i
           WHERE i.tenant_id = m.tenant_id AND i.sent_message_id = m.id
+      )
+      -- …and only if it left from the mailbox being read. Rebinding a mailbox
+      -- deletes its synced messages but not the ERP's delivery records, so
+      -- without this every send from a previous binding reappears here as an
+      -- orphan — permanently, since its copy was in a mailbox nobody is
+      -- signed in to any more.
+      AND EXISTS (
+          SELECT 1 FROM mail_accounts b
+          WHERE b.tenant_id = m.tenant_id AND b.employee_id = m.sender_id
+            AND CASE WHEN m.from_email <> ''
+                     -- Stamped at send time: compare the address itself.
+                     THEN lower(m.from_email) = lower(b.email)
+                     -- Sent before migration 00021, so the address was never
+                     -- recorded. The Message-ID still is, and its domain was
+                     -- built from the sending address — evidence, not a guess.
+                     -- It cannot separate two mailboxes at one domain, which
+                     -- is the residual cost of not having stamped it earlier
+                     -- and is why the column now exists.
+                     ELSE rtrim(split_part(m.provider_id, '@', 2), '>')
+                          = split_part(b.email, '@', 2)
+                END
       )
 )
 SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at,

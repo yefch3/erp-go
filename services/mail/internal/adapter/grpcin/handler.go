@@ -140,10 +140,11 @@ func (h *Handler) CreateCampaign(ctx context.Context, req *mailv1.CreateCampaign
 		SignatureID: req.GetSignatureId(), Kind: req.GetKind(),
 		Format: req.GetBodyFormat(), Recipients: recipients,
 		SendMode: req.GetSendMode(), CC: cc, BCC: recipientsFromProto(req.GetBcc()),
-		ReplyToInboundID: req.GetReplyToInboundId(),
-		ForwardInboundID: req.GetForwardInboundId(),
-		Attachments:      pendingFromProto(req.GetAttachments()),
-		ScheduledAt:      at,
+		ReplyToInboundID:    req.GetReplyToInboundId(),
+		ForwardInboundID:    req.GetForwardInboundId(),
+		ForwardAsAttachment: req.GetForwardAsAttachment(),
+		Attachments:         pendingFromProto(req.GetAttachments()),
+		ScheduledAt:         at,
 	}, operator(ctx))
 	if err != nil {
 		return nil, err
@@ -188,12 +189,12 @@ func skippedToProto(in []app.SkippedRecipient) []*mailv1.SkippedRecipient {
 // ---------------------------------------------------------------- messages
 
 func (h *Handler) ListMessages(ctx context.Context, req *mailv1.ListMessagesRequest) (*mailv1.ListMessagesResponse, error) {
-	pg, size := page(req.GetPage())
-	rows, total, err := h.svc.ListMessages(ctx, grpcx.TenantID(ctx), app.MessageQuery{
+	_, size := page(req.GetPage())
+	rows, total, next, err := h.svc.ListMessages(ctx, grpcx.TenantID(ctx), app.MessageQuery{
 		CampaignID: req.GetCampaignId(), SenderID: req.GetSenderId(),
 		Status:        req.GetStatus(),
 		AttentionOnly: req.GetAttentionOnly(), Keyword: req.GetKeyword(),
-		Page: pg, Size: size,
+		Cursor: req.GetCursor(), Size: size,
 	}, operator(ctx))
 	if err != nil {
 		return nil, err
@@ -210,7 +211,9 @@ func (h *Handler) ListMessages(ctx context.Context, req *mailv1.ListMessagesRequ
 			DeliveredAt: ts(r.DeliveredAt), OpenedAt: ts(r.OpenedAt),
 		})
 	}
-	return &mailv1.ListMessagesResponse{Messages: out, Meta: meta(total, req.GetPage())}, nil
+	return &mailv1.ListMessagesResponse{
+		Messages: out, Meta: meta(total, req.GetPage()), NextCursor: next,
+	}, nil
 }
 
 func (h *Handler) GetMessage(ctx context.Context, req *mailv1.GetMessageRequest) (*mailv1.GetMessageResponse, error) {
@@ -453,14 +456,15 @@ func (h *Handler) SaveDraft(ctx context.Context, req *mailv1.SaveDraftRequest) (
 	id, err := h.svc.SaveDraft(ctx, grpcx.TenantID(ctx), app.DraftInput{
 		ID: req.GetId(), Subject: req.GetSubject(), Body: req.GetBody(),
 		Format: req.GetBodyFormat(), SignatureID: req.GetSignatureId(),
-		Kind:             req.GetKind(),
-		Recipients:       recipientsFromProto(req.GetRecipients()),
-		Attachments:      pendingFromProto(req.GetAttachments()),
-		SendMode:         req.GetSendMode(),
-		CC:               recipientsFromProto(req.GetCc()),
-		BCC:              recipientsFromProto(req.GetBcc()),
-		ReplyToInboundID: req.GetReplyToInboundId(),
-		ForwardInboundID: req.GetForwardInboundId(),
+		Kind:                req.GetKind(),
+		Recipients:          recipientsFromProto(req.GetRecipients()),
+		Attachments:         pendingFromProto(req.GetAttachments()),
+		SendMode:            req.GetSendMode(),
+		CC:                  recipientsFromProto(req.GetCc()),
+		BCC:                 recipientsFromProto(req.GetBcc()),
+		ReplyToInboundID:    req.GetReplyToInboundId(),
+		ForwardInboundID:    req.GetForwardInboundId(),
+		ForwardAsAttachment: req.GetForwardAsAttachment(),
 	}, operator(ctx))
 	if err != nil {
 		return nil, err
@@ -491,13 +495,14 @@ func (h *Handler) GetDraft(ctx context.Context, req *mailv1.GetDraftRequest) (*m
 	return &mailv1.GetDraftResponse{Draft: &mailv1.Draft{
 		Id: d.ID, Subject: d.Subject, Body: d.Body, BodyFormat: d.Format,
 		SignatureId: d.SignatureID, Kind: d.Kind, UpdatedAt: d.UpdatedAt,
-		Recipients:       recipientsToProto(d.Recipients),
-		Attachments:      pendingToProto(d.Attachments),
-		SendMode:         d.SendMode,
-		Cc:               recipientsToProto(d.CC),
-		Bcc:              recipientsToProto(d.BCC),
-		ReplyToInboundId: d.ReplyToInboundID,
-		ForwardInboundId: d.ForwardInboundID,
+		Recipients:          recipientsToProto(d.Recipients),
+		Attachments:         pendingToProto(d.Attachments),
+		SendMode:            d.SendMode,
+		Cc:                  recipientsToProto(d.CC),
+		Bcc:                 recipientsToProto(d.BCC),
+		ReplyToInboundId:    d.ReplyToInboundID,
+		ForwardInboundId:    d.ForwardInboundID,
+		ForwardAsAttachment: d.ForwardAsAttachment,
 	}}, nil
 }
 
@@ -538,14 +543,12 @@ func scheduleAt(v string) (time.Time, error) {
 }
 
 func (h *Handler) ListScheduled(ctx context.Context, req *mailv1.ListScheduledRequest) (*mailv1.ListScheduledResponse, error) {
-	pg, size := page(req.GetPage())
-	if pg < 1 {
-		pg = 1
-	}
+	// Only the size is read; pages are reached by cursor.
+	_, size := page(req.GetPage())
 	if size < 1 {
 		size = 20
 	}
-	sends, total, err := h.svc.ListScheduled(ctx, grpcx.TenantID(ctx), operator(ctx), size, (pg-1)*size)
+	sends, total, next, err := h.svc.ListScheduled(ctx, grpcx.TenantID(ctx), operator(ctx), size, req.GetCursor())
 	if err != nil {
 		return nil, err
 	}
@@ -559,7 +562,9 @@ func (h *Handler) ListScheduled(ctx context.Context, req *mailv1.ListScheduledRe
 			SendMode:    s.SendMode, BodyFormat: s.BodyFormat,
 		})
 	}
-	return &mailv1.ListScheduledResponse{Sends: out, Meta: meta(total, req.GetPage())}, nil
+	return &mailv1.ListScheduledResponse{
+		Sends: out, Meta: meta(total, req.GetPage()), NextCursor: next,
+	}, nil
 }
 
 func (h *Handler) SendScheduledNow(ctx context.Context, req *mailv1.SendScheduledNowRequest) (*mailv1.SendScheduledNowResponse, error) {
@@ -661,6 +666,7 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 		Kind:        v.Kind,
 		ToName:      v.ToName,
 		Status:      v.Status,
+		HasRaw:      v.HasRaw,
 	}
 	if !v.OpenedAt.IsZero() {
 		m.OpenedAt = v.OpenedAt.Format(time.RFC3339)
