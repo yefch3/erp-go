@@ -27,13 +27,15 @@ import (
 type IMAP struct {
 	log     *slog.Logger
 	timeout time.Duration
+	// Connections, kept between commands. See pool.go for why.
+	pool *connPool
 }
 
 func NewIMAP(timeout time.Duration, log *slog.Logger) *IMAP {
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
-	return &IMAP{log: log, timeout: timeout}
+	return &IMAP{log: log, timeout: timeout, pool: newConnPool()}
 }
 
 // Fetch returns messages with a UID above sinceUID, newest last.
@@ -42,18 +44,15 @@ func NewIMAP(timeout time.Duration, log *slog.Logger) *IMAP {
 // it differs, every UID the caller holds refers to a different message or to
 // nothing, and the only safe response is to resynchronise from zero. Silently
 // carrying on is how a mailbox restore turns into permanently missed mail.
-func (f *IMAP) Fetch(ctx context.Context, acct app.MailAccount, folder string, sinceUID uint32, limit uint32) (app.FetchResult, error) {
-	var out app.FetchResult
+func (f *IMAP) Fetch(ctx context.Context, acct app.MailAccount, folder string, sinceUID uint32, limit uint32) (out app.FetchResult, err error) {
 
-	c, err := f.dial(acct)
+	c, err := f.borrow(acct)
 	if err != nil {
 		return out, err
 	}
-	defer func() { _ = c.Logout() }()
-
-	if err := f.login(c, acct); err != nil {
-		return out, err
-	}
+	// Released rather than logged out: the next command on this
+	// mailbox reuses it. A failed command discards it instead.
+	defer func() { f.release(acct, c, err) }()
 
 	mbox, err := c.Select(folder, true) // read-only: syncing must not mark mail seen
 	if err != nil {
@@ -108,21 +107,19 @@ func (f *IMAP) Fetch(ctx context.Context, acct app.MailAccount, folder string, s
 // below `belowUID`. This is the backfill's engine — each pass reaches a
 // little further into the past, newest first, so the history a person
 // actually scrolls to arrives before the history nobody looks at.
-func (f *IMAP) FetchBelow(ctx context.Context, acct app.MailAccount, folder string, belowUID uint32, limit uint32) (app.FetchResult, error) {
-	var out app.FetchResult
+func (f *IMAP) FetchBelow(ctx context.Context, acct app.MailAccount, folder string, belowUID uint32, limit uint32) (out app.FetchResult, err error) {
 	if belowUID <= 1 {
 		return out, nil
 	}
 
-	c, err := f.dial(acct)
+	c, err := f.borrow(acct)
 	if err != nil {
 		return out, err
 	}
-	defer func() { _ = c.Logout() }()
+	// Released rather than logged out: the next command on this
+	// mailbox reuses it. A failed command discards it instead.
+	defer func() { f.release(acct, c, err) }()
 
-	if err := f.login(c, acct); err != nil {
-		return out, err
-	}
 	mbox, err := c.Select(folder, true)
 	if err != nil {
 		return out, fmt.Errorf("打开 %s 失败：%w", folder, err)
@@ -197,15 +194,14 @@ func (f *IMAP) ArchiveFolder(ctx context.Context, acct app.MailAccount) (string,
 // advertises them; other hosts predate the RFC and only have well-known
 // names. Both are tried, in that order, because the attribute is
 // authoritative and the names are guesses.
-func (f *IMAP) specialFolder(acct app.MailAccount, attr string, guesses []string, missing string) (string, error) {
-	c, err := f.dial(acct)
+func (f *IMAP) specialFolder(acct app.MailAccount, attr string, guesses []string, missing string) (_ string, err error) {
+	c, err := f.borrow(acct)
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = c.Logout() }()
-	if err := f.login(c, acct); err != nil {
-		return "", err
-	}
+	// Released rather than logged out: the next command on this
+	// mailbox reuses it. A failed command discards it instead.
+	defer func() { f.release(acct, c, err) }()
 
 	boxes := make(chan *imap.MailboxInfo, 32)
 	done := make(chan error, 1)
@@ -425,19 +421,18 @@ func (f *IMAP) WaitForNews(ctx context.Context, acct app.MailAccount, folder str
 // SELECT is read-write here, unlike every other call in this adapter — this
 // is the one place the ERP is allowed to change something in the real
 // mailbox, and it changes exactly the flag it was asked to.
-func (f *IMAP) SetFlags(ctx context.Context, acct app.MailAccount, folder string, uids []uint32, flag string, add bool) error {
+func (f *IMAP) SetFlags(ctx context.Context, acct app.MailAccount, folder string, uids []uint32, flag string, add bool) (err error) {
 	if len(uids) == 0 {
 		return nil
 	}
-	c, err := f.dial(acct)
+	c, err := f.borrow(acct)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = c.Logout() }()
+	// Released rather than logged out: the next command on this
+	// mailbox reuses it. A failed command discards it instead.
+	defer func() { f.release(acct, c, err) }()
 
-	if err := f.login(c, acct); err != nil {
-		return err
-	}
 	if _, err := c.Select(folder, false); err != nil {
 		return fmt.Errorf("打开 %s 失败：%w", folder, err)
 	}
@@ -463,20 +458,19 @@ func (f *IMAP) SetFlags(ctx context.Context, acct app.MailAccount, folder string
 // FetchFlags reads back what the host currently believes about a set of
 // messages. This is the other half of two-way sync: without it the ERP would
 // publish its own changes and never learn about anybody else's.
-func (f *IMAP) FetchFlags(ctx context.Context, acct app.MailAccount, folder string, uids []uint32) (map[uint32]app.MessageFlags, error) {
+func (f *IMAP) FetchFlags(ctx context.Context, acct app.MailAccount, folder string, uids []uint32) (_ map[uint32]app.MessageFlags, err error) {
 	out := make(map[uint32]app.MessageFlags, len(uids))
 	if len(uids) == 0 {
 		return out, nil
 	}
-	c, err := f.dial(acct)
+	c, err := f.borrow(acct)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = c.Logout() }()
+	// Released rather than logged out: the next command on this
+	// mailbox reuses it. A failed command discards it instead.
+	defer func() { f.release(acct, c, err) }()
 
-	if err := f.login(c, acct); err != nil {
-		return nil, err
-	}
 	if _, err := c.Select(folder, true); err != nil {
 		return nil, fmt.Errorf("打开 %s 失败：%w", folder, err)
 	}
@@ -516,18 +510,17 @@ func (f *IMAP) FetchFlags(ctx context.Context, acct app.MailAccount, folder stri
 // The UIDs change in the destination and the host does not reliably say what
 // they became, which is why nothing here tries to track them: anything that
 // needs to find a moved message afterwards looks it up by Message-ID.
-func (f *IMAP) MoveMessages(ctx context.Context, acct app.MailAccount, from string, uids []uint32, to string) error {
+func (f *IMAP) MoveMessages(ctx context.Context, acct app.MailAccount, from string, uids []uint32, to string) (err error) {
 	if len(uids) == 0 || to == "" {
 		return nil
 	}
-	c, err := f.dial(acct)
+	c, err := f.borrow(acct)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = c.Logout() }()
-	if err := f.login(c, acct); err != nil {
-		return err
-	}
+	// Released rather than logged out: the next command on this
+	// mailbox reuses it. A failed command discards it instead.
+	defer func() { f.release(acct, c, err) }()
 	if _, err := c.Select(from, false); err != nil {
 		return fmt.Errorf("打开 %s 失败：%w", from, err)
 	}
@@ -546,18 +539,17 @@ func (f *IMAP) MoveMessages(ctx context.Context, acct app.MailAccount, from stri
 // The way to follow a message that has moved. A UID means nothing outside the
 // folder it came from, but the Message-ID is the sender's own identifier and
 // travels with the message wherever the host files it.
-func (f *IMAP) FindUIDByMessageID(ctx context.Context, acct app.MailAccount, folder, messageID string) (uint32, bool, error) {
+func (f *IMAP) FindUIDByMessageID(ctx context.Context, acct app.MailAccount, folder, messageID string) (_ uint32, _ bool, err error) {
 	if messageID == "" || folder == "" {
 		return 0, false, nil
 	}
-	c, err := f.dial(acct)
+	c, err := f.borrow(acct)
 	if err != nil {
 		return 0, false, err
 	}
-	defer func() { _ = c.Logout() }()
-	if err := f.login(c, acct); err != nil {
-		return 0, false, err
-	}
+	// Released rather than logged out: the next command on this
+	// mailbox reuses it. A failed command discards it instead.
+	defer func() { f.release(acct, c, err) }()
 	if _, err := c.Select(folder, true); err != nil {
 		return 0, false, fmt.Errorf("打开 %s 失败：%w", folder, err)
 	}
@@ -586,19 +578,18 @@ func (f *IMAP) FindUIDByMessageID(ctx context.Context, acct app.MailAccount, fol
 // dial, the TLS handshake and the authentication, repeated once per message
 // and rejected by the host once a burst got long enough. Those happen once
 // here.
-func (f *IMAP) FindUIDsByMessageIDs(ctx context.Context, acct app.MailAccount, folder string, messageIDs []string) (map[string]uint32, error) {
+func (f *IMAP) FindUIDsByMessageIDs(ctx context.Context, acct app.MailAccount, folder string, messageIDs []string) (_ map[string]uint32, err error) {
 	out := make(map[string]uint32, len(messageIDs))
 	if folder == "" || len(messageIDs) == 0 {
 		return out, nil
 	}
-	c, err := f.dial(acct)
+	c, err := f.borrow(acct)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = c.Logout() }()
-	if err := f.login(c, acct); err != nil {
-		return nil, err
-	}
+	// Released rather than logged out: the next command on this
+	// mailbox reuses it. A failed command discards it instead.
+	defer func() { f.release(acct, c, err) }()
 	if _, err := c.Select(folder, true); err != nil {
 		return nil, fmt.Errorf("打开 %s 失败：%w", folder, err)
 	}
@@ -639,18 +630,17 @@ func (f *IMAP) FindUIDsByMessageIDs(ctx context.Context, acct app.MailAccount, f
 // starred" costs one round trip whether the folder holds fifty messages or
 // fifty thousand — and a star put on a two-month-old thread in Gmail is found
 // as readily as one put on this morning's.
-func (f *IMAP) SearchFlagged(ctx context.Context, acct app.MailAccount, folder string) ([]uint32, error) {
+func (f *IMAP) SearchFlagged(ctx context.Context, acct app.MailAccount, folder string) (_ []uint32, err error) {
 	if folder == "" {
 		return nil, nil
 	}
-	c, err := f.dial(acct)
+	c, err := f.borrow(acct)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = c.Logout() }()
-	if err := f.login(c, acct); err != nil {
-		return nil, err
-	}
+	// Released rather than logged out: the next command on this
+	// mailbox reuses it. A failed command discards it instead.
+	defer func() { f.release(acct, c, err) }()
 	if _, err := c.Select(folder, true); err != nil {
 		return nil, fmt.Errorf("打开 %s 失败：%w", folder, err)
 	}
@@ -670,18 +660,17 @@ func (f *IMAP) SearchFlagged(ctx context.Context, acct app.MailAccount, folder s
 // undo on the other side of this call — the safety net is that the ERP only
 // ever asks for it about mail already sitting in its own trash, after the
 // person confirmed.
-func (f *IMAP) PurgeMessages(ctx context.Context, acct app.MailAccount, folder string, uids []uint32) error {
+func (f *IMAP) PurgeMessages(ctx context.Context, acct app.MailAccount, folder string, uids []uint32) (err error) {
 	if len(uids) == 0 {
 		return nil
 	}
-	c, err := f.dial(acct)
+	c, err := f.borrow(acct)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = c.Logout() }()
-	if err := f.login(c, acct); err != nil {
-		return err
-	}
+	// Released rather than logged out: the next command on this
+	// mailbox reuses it. A failed command discards it instead.
+	defer func() { f.release(acct, c, err) }()
 	if _, err := c.Select(folder, false); err != nil {
 		return fmt.Errorf("打开 %s 失败：%w", folder, err)
 	}
@@ -712,19 +701,18 @@ func asAngled(id string) string {
 // Used to work out where mail went when it stops appearing in the inbox: one
 // pass over the trash and one over the archive answers that for every missing
 // message at once, rather than a search per message.
-func (f *IMAP) RecentMessageIDs(ctx context.Context, acct app.MailAccount, folder string, limit uint32) (map[string]bool, error) {
+func (f *IMAP) RecentMessageIDs(ctx context.Context, acct app.MailAccount, folder string, limit uint32) (_ map[string]bool, err error) {
 	out := map[string]bool{}
 	if folder == "" || limit == 0 {
 		return out, nil
 	}
-	c, err := f.dial(acct)
+	c, err := f.borrow(acct)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = c.Logout() }()
-	if err := f.login(c, acct); err != nil {
-		return nil, err
-	}
+	// Released rather than logged out: the next command on this
+	// mailbox reuses it. A failed command discards it instead.
+	defer func() { f.release(acct, c, err) }()
 	mbox, err := c.Select(folder, true)
 	if err != nil {
 		return nil, fmt.Errorf("打开 %s 失败：%w", folder, err)
