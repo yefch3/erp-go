@@ -34,6 +34,10 @@ type DraftInput struct {
 	BCC              []Recipient
 	ReplyToInboundID int64
 	ForwardInboundID int64
+	// How the forward goes out, not just what it forwards. A draft that
+	// forgot this would reopen as a quoted forward — the words survive and
+	// the message changes.
+	ForwardAsAttachment bool
 }
 
 // DraftView is one saved draft, restored into the composer.
@@ -52,6 +56,10 @@ type DraftView struct {
 	BCC              []Recipient
 	ReplyToInboundID int64
 	ForwardInboundID int64
+	// How the forward goes out, not just what it forwards. A draft that
+	// forgot this would reopen as a quoted forward — the words survive and
+	// the message changes.
+	ForwardAsAttachment bool
 }
 
 // SaveDraft creates or updates. Both directions are the same call because the
@@ -103,8 +111,9 @@ func (s *Service) SaveDraft(ctx context.Context, tenantID int64, in DraftInput, 
 		SignatureID: in.SignatureID, Kind: kind,
 		Recipients: recipients, Attachments: files,
 		SendMode: mode, Cc: cc, Bcc: bcc,
-		ReplyToInboundID: in.ReplyToInboundID,
-		ForwardInboundID: in.ForwardInboundID,
+		ReplyToInboundID:    in.ReplyToInboundID,
+		ForwardInboundID:    in.ForwardInboundID,
+		ForwardAsAttachment: in.ForwardAsAttachment,
 	})
 	if err == pgx.ErrNoRows {
 		// The upsert's WHERE refused it: the id exists but belongs to
@@ -135,8 +144,9 @@ func (s *Service) GetDraft(ctx context.Context, tenantID, id int64, op Operator)
 	out := DraftView{
 		ID: d.ID, Subject: d.Subject, Body: d.Body, Format: d.BodyFormat,
 		SignatureID: d.SignatureID, Kind: d.Kind, SendMode: d.SendMode,
-		ReplyToInboundID: d.ReplyToInboundID,
-		ForwardInboundID: d.ForwardInboundID,
+		ReplyToInboundID:    d.ReplyToInboundID,
+		ForwardInboundID:    d.ForwardInboundID,
+		ForwardAsAttachment: d.ForwardAsAttachment,
 	}
 	if d.UpdatedAt.Valid {
 		out.UpdatedAt = d.UpdatedAt.Time.Format("2006-01-02T15:04:05Z07:00")

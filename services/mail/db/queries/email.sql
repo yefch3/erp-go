@@ -219,10 +219,16 @@ RETURNING m.id, m.message_key::text AS message_key, m.kind, m.to_email, m.to_nam
 -- is decided at this moment, by this message's format and the address the
 -- service had at the time, and neither can be recovered from the row
 -- afterwards. See migration 00019.
+--
+-- from_email is here for the same reason and is the stronger case: the
+-- address is knowable only now, while the adapter still holds the binding it
+-- authenticated with. Rebinding the mailbox later does not make this mail
+-- have left from somewhere else. See migration 00021.
 UPDATE email_messages
 SET status = 'ACCEPTED', provider_id = sqlc.arg(provider_id)::text,
     sent_at = now(), last_error = '',
-    tracked = sqlc.arg(tracked)::boolean
+    tracked = sqlc.arg(tracked)::boolean,
+    from_email = sqlc.arg(from_email)::text
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: MarkRetryable :exec
@@ -252,28 +258,28 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND queued_at < now() - (sqlc.arg(window_seconds)::int || ' seconds')::interval;
 
 -- name: GetMessage :one
--- The sender's address comes off the bound mailbox, not off the campaign.
+-- The sender's address is the one stamped on the row at send time.
 --
--- campaigns.sender_email looks like the right column and is not: it is copied
--- from the employee's HR record (employees.email), which is a profile field
--- and carries no guarantee of being the mailbox anybody sends from. The two
--- agree today and there is nothing keeping them that way — changing the
--- binding does not touch the HR record, and vice versa. Naming an address the
--- mail never left from is worse than naming none, so this reads the binding:
--- mail_accounts.email is literally what buildMessage puts in the From header.
+-- Two nearby columns look like the right answer and are not. campaigns
+-- .sender_email is copied from the employee's HR record, a profile field that
+-- carries no guarantee of being the mailbox anybody sends from. And joining
+-- mail_accounts on employee_id — which this query used to do — answers a
+-- different question than the one asked: not "where did this leave from" but
+-- "where would it leave from if sent now". Those agree until somebody rebinds
+-- their mailbox, and then every message in history silently changes sender.
 --
--- Reads today's binding, so a mailbox rebound since the send would show the
--- new address. The alternative is stamping it on every message row; not worth
--- it until somebody actually rebinds mid-history.
+-- So it reads email_messages.from_email, written by MarkAccepted from the
+-- binding the adapter authenticated with. Empty for anything sent before
+-- migration 00021, which the screen renders as "未记录" rather than filling in
+-- from a guess.
 SELECT
     m.id, coalesce(m.campaign_id, 0)::bigint AS campaign_id, m.message_key::text AS message_key, m.kind,
-    m.sender_id, m.sender_name, coalesce(a.email, '')::text AS sender_email,
+    m.sender_id, m.sender_name, m.from_email::text AS sender_email,
     m.to_email, m.to_name, m.customer_name, m.contact_id,
     m.subject, m.body, m.body_text, m.body_format, m.status, m.attempt_count, m.provider_id, m.last_error,
     m.attention_reason, m.queued_at, m.sent_at, m.delivered_at, m.opened_at, m.clicked_at,
     m.tracked
 FROM email_messages m
-LEFT JOIN mail_accounts a ON a.employee_id = m.sender_id AND a.tenant_id = m.tenant_id
 WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint AND m.id = sqlc.arg(id)::bigint;
 
 -- name: ListMessages :many
@@ -301,8 +307,13 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
        OR to_email ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR to_name  ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR subject  ILIKE '%' || sqlc.arg(keyword)::text || '%')
+  -- Keyset. The order is by id alone, so the cursor is one: the id of the
+  -- last row shown. 0 is the first page. Offset used to do this, and on a
+  -- list that grows at the top it meant a message arriving mid-read could
+  -- push a row across the boundary and show it twice, or hide it.
+  AND (sqlc.arg(cursor_id)::bigint = 0 OR id < sqlc.arg(cursor_id)::bigint)
 ORDER BY id DESC
-LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
+LIMIT sqlc.arg(row_limit)::int;
 
 -- name: RequeueMessage :execrows
 -- Putting a failed message back in the queue by hand, optionally at a
@@ -465,7 +476,8 @@ ORDER BY max(queued_at) DESC;
 INSERT INTO email_drafts (
     id, tenant_id, owner_id, subject, body, body_format,
     signature_id, kind, recipients, attachments,
-    send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id
+    send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id,
+    forward_as_attachment
 ) VALUES (
     coalesce(nullif(sqlc.arg(id)::bigint, 0), nextval('email_drafts_id_seq')),
     sqlc.arg(tenant_id)::bigint,
@@ -481,7 +493,8 @@ INSERT INTO email_drafts (
     sqlc.arg(cc)::jsonb,
     sqlc.arg(bcc)::jsonb,
     sqlc.arg(reply_to_inbound_id)::bigint,
-    sqlc.arg(forward_inbound_id)::bigint
+    sqlc.arg(forward_inbound_id)::bigint,
+    sqlc.arg(forward_as_attachment)::boolean
 )
 ON CONFLICT (id) DO UPDATE SET
     subject = excluded.subject,
@@ -496,6 +509,7 @@ ON CONFLICT (id) DO UPDATE SET
     cc = excluded.cc,
     reply_to_inbound_id = excluded.reply_to_inbound_id,
     forward_inbound_id = excluded.forward_inbound_id,
+    forward_as_attachment = excluded.forward_as_attachment,
     updated_at = now()
 -- The owner check is in the WHERE, not just the parameters: without it an
 -- upsert with somebody else's id would silently overwrite their draft.
@@ -517,7 +531,8 @@ LIMIT 200;
 -- name: GetDraft :one
 SELECT id, subject, body, body_format, signature_id, kind,
        recipients, attachments, updated_at,
-       send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id
+       send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id,
+       forward_as_attachment
 FROM email_drafts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
@@ -563,8 +578,12 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   -- Own sends only. Unlike the sent list this carries no data scope: a
   -- scheduled mail is still the sender's to change, and nobody else's.
   AND c.sender_id = sqlc.arg(sender_id)::bigint
+  -- Keyset, ascending: this list is ordered by when each send is due, so it
+  -- reads soonest-first and the cursor walks forward rather than back.
+  AND (sqlc.narg(cursor_at)::timestamptz IS NULL
+       OR (m.due_at, c.id) > (sqlc.narg(cursor_at)::timestamptz, sqlc.arg(cursor_id)::bigint))
 ORDER BY m.due_at, c.id
-LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
+LIMIT sqlc.arg(row_limit)::int;
 
 -- name: CancelScheduled :execrows
 -- Stops what has not gone yet, and says how much that was.

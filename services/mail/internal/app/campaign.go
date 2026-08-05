@@ -47,6 +47,13 @@ type CampaignInput struct {
 	// Set when forwarding a mail from the caller's inbox: the original's
 	// attachments travel along with the new message.
 	ForwardInboundID int64
+	// Forward the original as a .eml attachment rather than quoting it into
+	// the body. What the recipient receives is then the message itself —
+	// every header, every part, byte for byte as it arrived — instead of our
+	// rendering of it. That difference is the whole point: a quoted forward
+	// is a retelling, and a retelling cannot be used to prove where a mail
+	// came from.
+	ForwardAsAttachment bool
 	// Files already in storage, registered inside the same transaction that
 	// creates the send so no message can go out before its attachment row.
 	Attachments []PendingAttachment
@@ -59,6 +66,55 @@ type CampaignInput struct {
 type PendingAttachment struct {
 	FileName string `json:"fileName"`
 	FileKey  string `json:"fileKey"`
+	// serverDerived marks a key this package produced itself, from a row
+	// whose owner was already checked — not one a caller sent us.
+	//
+	// Unexported on purpose. It is the difference between "the browser says
+	// this object is mine" and "we looked up the object on a message we
+	// proved belongs to this person", and no amount of JSON, protobuf or
+	// gateway translation can set it, because nothing outside this package
+	// can name the field. The guard in registerAttachmentTx is what keeps
+	// one employee from attaching another's file by pasting its key; this
+	// flag is how the trusted path gets past that guard without widening it
+	// into a prefix anybody could imitate.
+	serverDerived bool
+}
+
+// fromInbox names a file this package resolved off a message the caller was
+// already proven to own.
+func fromInbox(fileName, fileKey string) PendingAttachment {
+	return PendingAttachment{FileName: fileName, FileKey: fileKey, serverDerived: true}
+}
+
+// allowedFor reports whether this object may be attached to a send by this
+// tenant. It is the whole trust boundary for attachment keys.
+//
+// A key the client sent us has to sit under the prefix PresignAttachment
+// hands out, or anybody could attach anybody's file by pasting its key. A key
+// this package resolved itself does not, because it was read off a row whose
+// owner was checked first — and it could not pass the prefix test anyway,
+// since received mail is stored under mail/inbound/<tenant>/<account>/.
+//
+// The prefix is deliberately not widened to admit mail/inbound/: that path is
+// keyed by account, so a caller able to name it could name a colleague's
+// account and attach their mail's files.
+func (f PendingAttachment) allowedFor(tenantID int64) bool {
+	if f.serverDerived {
+		return true
+	}
+	return strings.HasPrefix(f.FileKey, "mail-attachments/"+itoa(int(tenantID))+"/")
+}
+
+// emlFileName is what a forwarded original is called in the recipient's
+// client. The subject, because that is what the person forwarding it was
+// looking at; a fallback rather than a bare ".eml", because a file whose whole
+// name is an extension reads as a broken attachment.
+func emlFileName(subject string) string {
+	name := safeName(strings.TrimSpace(subject))
+	if name == "" {
+		name = "forwarded-message"
+	}
+	return name + ".eml"
 }
 
 // CampaignResult reports what was queued and, just as importantly, what was
@@ -469,6 +525,17 @@ func (s *Service) composeContext(ctx context.Context, tenantID int64, in *Campai
 		}
 		// A forward starts a new conversation with a new party, so it takes
 		// the original's files but not its thread.
+		if in.ForwardAsAttachment {
+			// One file instead of many: the whole original message, headers
+			// and all. Its own attachments are inside it, so adding them
+			// separately would ship every file twice.
+			if row.RawKey == "" {
+				return t, apierr.Invalid("NT_RAW_NOT_KEPT",
+					"这封邮件的原始内容没有留档，无法作为附件转发")
+			}
+			in.Attachments = append(in.Attachments, fromInbox(emlFileName(row.Subject), row.RawKey))
+			return t, nil
+		}
 		atts, err := s.q.ListInboundAttachments(ctx, store.ListInboundAttachmentsParams{
 			TenantID: tenantID, InboundID: row.ID,
 		})
@@ -479,9 +546,7 @@ func (s *Service) composeContext(ctx context.Context, tenantID int64, in *Campai
 			if a.FileKey == "" {
 				continue
 			}
-			in.Attachments = append(in.Attachments, PendingAttachment{
-				FileName: a.FileName, FileKey: a.FileKey,
-			})
+			in.Attachments = append(in.Attachments, fromInbox(a.FileName, a.FileKey))
 		}
 	}
 	return t, nil

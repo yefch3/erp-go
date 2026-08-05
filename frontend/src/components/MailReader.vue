@@ -12,6 +12,14 @@
         <div class="line1">
           <span class="from">{{ mail.senderName }}</span>
           <span v-if="mail.senderEmail" class="dim mono">&lt;{{ mail.senderEmail }}&gt;</span>
+          <!-- Sent before the address was stamped on the row, so it is not
+               known. Said out loud rather than left blank: a missing address
+               on a sent mail looks like a rendering fault, and the previous
+               behaviour here — resolving it from today's mailbox binding —
+               filled the gap with a confident wrong answer. -->
+          <el-tooltip v-else :content="t('reader.fromUnrecordedHint')" placement="top">
+            <span class="dim unrecorded">{{ t('reader.fromUnrecorded') }}</span>
+          </el-tooltip>
           <span class="dim">{{ stamp }}</span>
         </div>
         <div class="line2">
@@ -205,6 +213,12 @@ function humanSize(bytes: number) {
 }
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+/* Italic, not red: an address nobody wrote down is a gap in the record, not
+   a fault the reader has to act on. */
+.unrecorded {
+  font-style: italic;
+  cursor: help;
 }
 /* A single quiet line, not a card. This is a weak signal and the styling
    should not lend it more weight than it has earned. */

@@ -92,9 +92,23 @@
             <el-button size="small" type="primary" plain @click="replyToInbound">
               ↩ {{ t('emails.reply') }}
             </el-button>
-            <el-button size="small" plain @click="forwardInbound">
+            <!-- A split button rather than a third one in the row: forwarding
+                 as an attachment is the same intent taken further, not a
+                 separate errand, and it is rare enough that giving it equal
+                 width would misstate how often it is wanted. -->
+            <el-dropdown size="small" split-button @click="forwardInbound">
               ↪ {{ t('emails.forward') }}
-            </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item
+                    :disabled="!openedInbound.hasRaw"
+                    @click="forwardInboundAsAttachment"
+                  >
+                    {{ t('emails.forwardAsAttachment') }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
           <el-button
             v-if="folder === 'junk'"
@@ -557,15 +571,6 @@
           {{ t('emails.nextPage') }}
         </el-button>
       </div>
-      <el-pagination
-        v-else-if="folder === 'attention'"
-        v-model:current-page="page"
-        :page-size="pageSize"
-        :total="total"
-        layout="total, prev, pager, next"
-        class="pager"
-        @current-change="onPageChange"
-      />
       </template>
     </section>
 
@@ -695,6 +700,9 @@ interface InboundMail {
   isRead: boolean
   isStarred: boolean
   hasAttachments: boolean
+  // Whether the original MIME is still archived. Only set on the detail read;
+  // absent in list rows, which is why 作为附件转发 lives on the open mail.
+  hasRaw?: boolean
   // Messages in this conversation; the list shows one row per conversation.
   threadCount?: number
   receivedAt: string
@@ -760,7 +768,9 @@ const INBOUND_VIEWS: Record<string, string> = {
 const isInboundView = computed(() => folder.value in INBOUND_VIEWS)
 // Every mailbox folder pages by cursor. A page number is meaningless on a
 // list that grows at the top, and 已发送 grows at the top like the rest.
-const isKeysetView = computed(() => isInboundView.value || folder.value === 'sent')
+const isKeysetView = computed(
+  () => isInboundView.value || folder.value === 'sent' || folder.value === 'attention' || folder.value === 'scheduled',
+)
 // Junk and the trash get a delete-everything button instead: marking a spam
 // folder read is housekeeping nobody wants, and in the trash it is meaningless.
 const canMarkAllRead = computed(
@@ -1169,10 +1179,6 @@ function reload() {
   pushState({ page: 1, q: keyword.value, mail: '' })
 }
 
-function onPageChange(p: number) {
-  pushState({ page: p })
-}
-
 // Inbound lists page by cursor: forward hands back the token the server
 // returned, back replays the one this page was reached with. Both are
 // navigations, so the address bar and the browser's own buttons stay honest.
@@ -1214,12 +1220,17 @@ async function load() {
       const d = await get<{ drafts: Draft[] }>('/email-drafts')
       drafts.value = d.drafts ?? []
     } else if (folder.value === 'scheduled') {
-      const d = await get<{ sends: Scheduled[]; meta: { total: string } }>('/email-scheduled', {
-        page: page.value,
+      const d = await get<{
+        sends: Scheduled[]
+        meta: { total: string }
+        nextCursor: string
+      }>('/email-scheduled', {
         page_size: pageSize,
+        cursor: applied?.cursor ?? '',
       })
       scheduled.value = d.sends ?? []
       total.value = Number(d.meta?.total ?? 0)
+      nextCursor.value = d.nextCursor ?? ''
     } else if (folder.value === 'sent') {
       const d = await get<{
         mails: SentMail[]
@@ -1234,14 +1245,19 @@ async function load() {
       total.value = Number(d.meta?.total ?? 0)
       nextCursor.value = d.nextCursor ?? ''
     } else if (folder.value === 'attention') {
-      const d = await get<{ messages: Message[]; meta: { total: string } }>('/email-messages', {
-        page: page.value,
+      const d = await get<{
+        messages: Message[]
+        meta: { total: string }
+        nextCursor: string
+      }>('/email-messages', {
         page_size: pageSize,
         keyword: keyword.value,
         attention_only: true,
+        cursor: applied?.cursor ?? '',
       })
       messages.value = d.messages ?? []
       total.value = Number(d.meta?.total ?? 0)
+      nextCursor.value = d.nextCursor ?? ''
       attentionCount.value = total.value
     } else {
       const d = await get<{ suppressions: Suppression[] }>('/email-suppressions', {
@@ -1494,6 +1510,17 @@ async function forwardInbound() {
   composing.value = true
   await nextTick()
   composer.value?.openForward(openedInbound.value)
+}
+
+// Forwards the original message itself, as a .eml file, instead of our
+// rendering of it. Guarded on hasRaw as well as disabling the menu item: the
+// server refuses without the archived MIME, and a disabled control is a hint,
+// not an enforcement.
+async function forwardInboundAsAttachment() {
+  if (!openedInbound.value?.hasRaw) return
+  composing.value = true
+  await nextTick()
+  composer.value?.openForwardAsAttachment(openedInbound.value)
 }
 
 // Empties the trash in one go: every mail in it, permanently. Says the number

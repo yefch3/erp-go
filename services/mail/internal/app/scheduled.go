@@ -51,15 +51,20 @@ type ScheduledSend struct {
 }
 
 // ListScheduled reports what the caller has booked and not yet sent.
-func (s *Service) ListScheduled(ctx context.Context, tenantID int64, op Operator, limit, offset int32) ([]ScheduledSend, int64, error) {
+func (s *Service) ListScheduled(ctx context.Context, tenantID int64, op Operator, limit int32, cursor string) ([]ScheduledSend, int64, string, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
+	at, id, err := decodeCursor(cursor)
+	if err != nil {
+		return nil, 0, "", err
+	}
 	rows, err := s.q.ListScheduled(ctx, store.ListScheduledParams{
-		TenantID: tenantID, SenderID: op.ID, RowLimit: limit, RowOffset: offset,
+		TenantID: tenantID, SenderID: op.ID, RowLimit: limit,
+		CursorAt: at, CursorID: id,
 	})
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 	out := make([]ScheduledSend, 0, len(rows))
 	var total int64
@@ -75,7 +80,12 @@ func (s *Service) ListScheduled(ctx context.Context, tenantID int64, op Operator
 		}
 		out = append(out, v)
 	}
-	return out, total, nil
+	next := ""
+	if int32(len(out)) == limit && limit > 0 {
+		last := out[len(out)-1]
+		next = encodeCursor(last.ScheduledAt, last.CampaignID)
+	}
+	return out, total, next, nil
 }
 
 // SendScheduledNow drops the hold so the next drain pass picks the send up.

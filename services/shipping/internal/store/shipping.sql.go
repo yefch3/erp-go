@@ -163,6 +163,57 @@ func (q *Queries) CancelPendingReminders(ctx context.Context, arg CancelPendingR
 	return err
 }
 
+const countSchedules = `-- name: CountSchedules :one
+SELECT count(*)
+FROM shipping_schedules
+WHERE tenant_id = $1
+  AND (
+    $2::text = ''
+    OR schedule_no ILIKE '%' || $2::text || '%'
+    OR contract_no ILIKE '%' || $2::text || '%'
+    OR customer_name ILIKE '%' || $2::text || '%'
+    OR vessel_name ILIKE '%' || $2::text || '%'
+    OR voyage_no ILIKE '%' || $2::text || '%'
+    OR responsible_name ILIKE '%' || $2::text || '%'
+  )
+  AND ($3::text = '' OR status = $3::text)
+  AND ($4::text = '' OR port_of_loading = $4::text)
+  AND ($5::text = '' OR port_of_discharge = $5::text)
+  AND ($6::date IS NULL OR etd >= $6::date)
+  AND ($7::date IS NULL OR etd <= $7::date)
+  AND ($8::date IS NULL OR eta >= $8::date)
+  AND ($9::date IS NULL OR eta <= $9::date)
+`
+
+type CountSchedulesParams struct {
+	TenantID        int64
+	Keyword         string
+	Status          string
+	PortOfLoading   string
+	PortOfDischarge string
+	EtdFrom         pgtype.Date
+	EtdTo           pgtype.Date
+	EtaFrom         pgtype.Date
+	EtaTo           pgtype.Date
+}
+
+func (q *Queries) CountSchedules(ctx context.Context, arg CountSchedulesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countSchedules,
+		arg.TenantID,
+		arg.Keyword,
+		arg.Status,
+		arg.PortOfLoading,
+		arg.PortOfDischarge,
+		arg.EtdFrom,
+		arg.EtdTo,
+		arg.EtaFrom,
+		arg.EtaTo,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createArrivalReminder = `-- name: CreateArrivalReminder :exec
 INSERT INTO shipping_arrival_reminders (
     tenant_id, schedule_id, destination_node_id, recipient_employee_id,

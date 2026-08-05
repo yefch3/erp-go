@@ -42,6 +42,12 @@ type InboundView struct {
 	ToName   string
 	Status   string
 	OpenedAt time.Time
+
+	// Whether the original MIME is still in object storage, which is what
+	// forward-as-attachment sends. The send path refuses without it anyway;
+	// this is so the screen can grey the action out instead of letting
+	// somebody write a whole mail and then be told it cannot go.
+	HasRaw bool
 }
 
 // InboundPage is one screenful of conversations plus the counts and the
@@ -210,6 +216,7 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 		ID: row.ID, FromEmail: row.FromEmail, FromName: row.FromName,
 		ToEmail: row.ToEmail, Subject: row.Subject, ThreadKey: row.ThreadKey,
 		IsRead: true, HasAttachments: row.HasAttachments,
+		HasRaw: row.RawKey != "",
 		// Sanitised on the way out, not just on the way in: this HTML came
 		// from the wild, and it is about to be rendered inside our page.
 		BodyHTML: SanitizeHTML(row.BodyHtml),

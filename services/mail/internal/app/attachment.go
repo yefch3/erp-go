@@ -165,10 +165,7 @@ func (s *Service) registerAttachmentTx(
 	if s.files == nil {
 		return Attachment{}, apierr.Invalid("NT_STORAGE_UNAVAILABLE", "文件存储未配置")
 	}
-	if !strings.HasPrefix(fileKey, "mail-attachments/"+itoa(int(tenantID))+"/") {
-		// The key came from the client, which received it from PresignAttachment.
-		// Refusing anything outside this tenant's own prefix stops a caller
-		// registering somebody else's object as their attachment.
+	if !f.allowedFor(tenantID) {
 		return Attachment{}, apierr.Invalid("NT_FILE_KEY_INVALID", "文件标识无效")
 	}
 	size, contentType, err := s.files.Stat(ctx, fileKey)
@@ -178,8 +175,18 @@ func (s *Service) registerAttachmentTx(
 	if size <= 0 {
 		return Attachment{}, apierr.Invalid("NT_FILE_EMPTY", "文件为空")
 	}
+	// Rejecting an upload deletes it, because an object no row points at is an
+	// orphan nobody can reach. A forward's file is the opposite case: it is
+	// the inbox's copy, this send merely refers to it, and deleting it here
+	// would destroy the received mail's attachment because the forward of it
+	// was too big to send.
+	discard := func() {
+		if !f.serverDerived {
+			_ = s.files.Remove(ctx, fileKey)
+		}
+	}
 	if size > MaxAttachmentBytes {
-		_ = s.files.Remove(ctx, fileKey)
+		discard()
 		return Attachment{}, apierr.Invalid("NT_FILE_TOO_LARGE", "单个附件不能超过 10 MB")
 	}
 	used, err := q.SumAttachmentSize(ctx, store.SumAttachmentSizeParams{
@@ -189,7 +196,7 @@ func (s *Service) registerAttachmentTx(
 		return Attachment{}, err
 	}
 	if used+size > MaxCampaignBytes {
-		_ = s.files.Remove(ctx, fileKey)
+		discard()
 		return Attachment{}, apierr.Invalid("NT_ATTACHMENTS_TOO_LARGE",
 			"这封邮件的附件总大小超过 20 MB，多数邮件服务器会拒收")
 	}
@@ -200,9 +207,7 @@ func (s *Service) registerAttachmentTx(
 		UploadedBy: op.ID,
 	})
 	if err != nil {
-		// The object is stored but nothing indexes it; leaving it would be an
-		// orphan nobody can find, since the row is the only way back to the key.
-		_ = s.files.Remove(ctx, fileKey)
+		discard()
 		return Attachment{}, err
 	}
 	return Attachment{ID: id, FileName: fileName, FileKey: fileKey,
