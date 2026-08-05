@@ -987,6 +987,7 @@ export default {
     from: 'De',
     receivedAt: 'Recibido',
     emptyInbox: 'La bandeja está vacía',
+    searchEmpty: 'Ningún correo contiene «{q}». La búsqueda mira el asunto, el remitente y el cuerpo, pero no el correo no deseado ni la papelera.',
     syncNow: 'Recibir ahora',
     openedCol: '¿Abierto?',
     maybeOpened: 'Posiblemente abierto',

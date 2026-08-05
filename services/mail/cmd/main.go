@@ -131,6 +131,10 @@ func run(log *slog.Logger) error {
 		// Trash that clears itself, so "deleted" eventually means deleted
 		// without anybody having to remember to empty it.
 		go svc.RunTrashSweeper(ctx, syncCfg)
+		// Mail stored before search_text existed has none. Derived here with
+		// the same function ingest uses rather than by a regexp in the
+		// migration, so old and new mail are searched by the same text.
+		go svc.BackfillSearchText(ctx, syncCfg)
 	}
 
 	// The worker runs in-process. The database is the queue, so a second

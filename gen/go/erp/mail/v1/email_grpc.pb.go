@@ -57,6 +57,7 @@ const (
 	EmailService_VerifyMailAccess_FullMethodName    = "/erp.mail.v1.EmailService/VerifyMailAccess"
 	EmailService_CompleteGoogleOAuth_FullMethodName = "/erp.mail.v1.EmailService/CompleteGoogleOAuth"
 	EmailService_ListInbound_FullMethodName         = "/erp.mail.v1.EmailService/ListInbound"
+	EmailService_SearchMail_FullMethodName          = "/erp.mail.v1.EmailService/SearchMail"
 	EmailService_GetInbound_FullMethodName          = "/erp.mail.v1.EmailService/GetInbound"
 	EmailService_GetMailThread_FullMethodName       = "/erp.mail.v1.EmailService/GetMailThread"
 	EmailService_MarkInbound_FullMethodName         = "/erp.mail.v1.EmailService/MarkInbound"
@@ -163,6 +164,8 @@ type EmailServiceClient interface {
 	// have almost nothing in common: one is a delivery attempt with retries and
 	// a provider verdict, the other is a document somebody sent us.
 	ListInbound(ctx context.Context, in *ListInboundRequest, opts ...grpc.CallOption) (*ListInboundResponse, error)
+	// Search across every folder, rather than inside the one being viewed.
+	SearchMail(ctx context.Context, in *SearchMailRequest, opts ...grpc.CallOption) (*SearchMailResponse, error)
 	GetInbound(ctx context.Context, in *GetInboundRequest, opts ...grpc.CallOption) (*GetInboundResponse, error)
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
@@ -582,6 +585,16 @@ func (c *emailServiceClient) ListInbound(ctx context.Context, in *ListInboundReq
 	return out, nil
 }
 
+func (c *emailServiceClient) SearchMail(ctx context.Context, in *SearchMailRequest, opts ...grpc.CallOption) (*SearchMailResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SearchMailResponse)
+	err := c.cc.Invoke(ctx, EmailService_SearchMail_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) GetInbound(ctx context.Context, in *GetInboundRequest, opts ...grpc.CallOption) (*GetInboundResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetInboundResponse)
@@ -767,6 +780,8 @@ type EmailServiceServer interface {
 	// have almost nothing in common: one is a delivery attempt with retries and
 	// a provider verdict, the other is a document somebody sent us.
 	ListInbound(context.Context, *ListInboundRequest) (*ListInboundResponse, error)
+	// Search across every folder, rather than inside the one being viewed.
+	SearchMail(context.Context, *SearchMailRequest) (*SearchMailResponse, error)
 	GetInbound(context.Context, *GetInboundRequest) (*GetInboundResponse, error)
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
@@ -919,6 +934,9 @@ func (UnimplementedEmailServiceServer) CompleteGoogleOAuth(context.Context, *Com
 }
 func (UnimplementedEmailServiceServer) ListInbound(context.Context, *ListInboundRequest) (*ListInboundResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListInbound not implemented")
+}
+func (UnimplementedEmailServiceServer) SearchMail(context.Context, *SearchMailRequest) (*SearchMailResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SearchMail not implemented")
 }
 func (UnimplementedEmailServiceServer) GetInbound(context.Context, *GetInboundRequest) (*GetInboundResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetInbound not implemented")
@@ -1652,6 +1670,24 @@ func _EmailService_ListInbound_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_SearchMail_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchMailRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).SearchMail(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_SearchMail_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).SearchMail(ctx, req.(*SearchMailRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_GetInbound_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetInboundRequest)
 	if err := dec(in); err != nil {
@@ -1972,6 +2008,10 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListInbound",
 			Handler:    _EmailService_ListInbound_Handler,
+		},
+		{
+			MethodName: "SearchMail",
+			Handler:    _EmailService_SearchMail_Handler,
 		},
 		{
 			MethodName: "GetInbound",

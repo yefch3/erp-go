@@ -704,6 +704,27 @@ func (h *Handler) ListInbound(ctx context.Context, req *mailv1.ListInboundReques
 	}, nil
 }
 
+func (h *Handler) SearchMail(ctx context.Context, req *mailv1.SearchMailRequest) (*mailv1.SearchMailResponse, error) {
+	op := operator(ctx)
+	p, err := h.svc.SearchMail(ctx, grpcx.TenantID(ctx), op.ID,
+		req.GetKeyword(), req.GetCursor(), req.GetPage().GetPageSize())
+	if err != nil {
+		return nil, err
+	}
+	hits := make([]*mailv1.SearchHit, 0, len(p.Hits))
+	for _, h := range p.Hits {
+		hits = append(hits, &mailv1.SearchHit{
+			Mail:         inboundToProto(h.InboundView),
+			Folder:       h.Folder,
+			MatchSnippet: h.MatchSnippet,
+		})
+	}
+	return &mailv1.SearchMailResponse{
+		Hits: hits, NextCursor: p.NextCursor,
+		Meta: &commonv1.PageMeta{Total: p.Total},
+	}, nil
+}
+
 func (h *Handler) GetInbound(ctx context.Context, req *mailv1.GetInboundRequest) (*mailv1.GetInboundResponse, error) {
 	op := operator(ctx)
 	v, err := h.svc.GetInbound(ctx, grpcx.TenantID(ctx), op.ID, req.GetId())

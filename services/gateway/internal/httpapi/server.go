@@ -352,6 +352,10 @@ func (s *Server) Router() http.Handler {
 		// The caller's own inbox. Own mail only by construction — the
 		// handler resolves the owner from the token, never from the request.
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/inbound-mails", s.listInbound)
+		// Search sits beside the list rather than inside it: it crosses
+		// folders, so it answers a different question and returns a
+		// different shape.
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-search", s.searchMail)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/inbound-mails/{id}", s.getInbound)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/mark", s.markInbound)
 		// Permanent deletion out of the trash. ERP-side copies only; the mail
