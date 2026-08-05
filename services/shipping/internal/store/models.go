@@ -22,6 +22,70 @@ type OutboxEvent struct {
 	LastError     *string
 }
 
+type ShippingArrivalReminder struct {
+	ID                  int64
+	TenantID            int64
+	ScheduleID          int64
+	DestinationNodeID   int64
+	RecipientEmployeeID int64
+	ReminderType        string
+	EtaRevision         int32
+	TargetEta           pgtype.Date
+	DueAt               pgtype.Timestamptz
+	Status              string
+	SentAt              pgtype.Timestamptz
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+}
+
+type ShippingDelayEvent struct {
+	ID                  int64
+	TenantID            int64
+	ScheduleID          int64
+	ImpactType          string
+	AffectedNodeID      *int64
+	FromNodeID          *int64
+	ToNodeID            *int64
+	ReasonCode          string
+	Reason              string
+	Note                string
+	OldEta              pgtype.Date
+	NewEta              pgtype.Date
+	ChangeDays          int32
+	CumulativeDelayDays int32
+	Status              string
+	OperatorID          int64
+	OperatorName        string
+	CreatedAt           pgtype.Timestamptz
+	ResolvedAt          pgtype.Timestamptz
+}
+
+type ShippingRouteNode struct {
+	ID                int64
+	TenantID          int64
+	ScheduleID        int64
+	SequenceNo        int32
+	NodeType          string
+	PortCode          string
+	PortName          string
+	Timezone          string
+	OriginalEtaAt     pgtype.Timestamptz
+	LatestEtaAt       pgtype.Timestamptz
+	ActualArrivalAt   pgtype.Timestamptz
+	OriginalEtdAt     pgtype.Timestamptz
+	LatestEtdAt       pgtype.Timestamptz
+	ActualDepartureAt pgtype.Timestamptz
+	NodeStatus        string
+	IsActive          bool
+	Remark            string
+	CreatedBy         int64
+	CreatedByName     string
+	CreatedAt         pgtype.Timestamptz
+	UpdatedBy         int64
+	UpdatedByName     string
+	UpdatedAt         pgtype.Timestamptz
+}
+
 type ShippingSchedule struct {
 	ID                    int64
 	TenantID              int64
@@ -49,6 +113,15 @@ type ShippingSchedule struct {
 	UpdatedBy             int64
 	UpdatedByName         string
 	UpdatedAt             pgtype.Timestamptz
+	OriginalEta           pgtype.Date
+	EtaRevision           int32
+	RouteVersion          int32
+	DelayDays             int32
+	HasTemporaryCall      bool
+	CurrentProgress       string
+	LatestProgressAt      pgtype.Timestamptz
+	CurrentRouteNodeID    *int64
+	CarrierID             *int64
 }
 
 type ShippingScheduleChange struct {
@@ -63,4 +136,9 @@ type ShippingScheduleChange struct {
 	OperatorID   int64
 	OperatorName string
 	CreatedAt    pgtype.Timestamptz
+	EntityType   string
+	EntityID     *int64
+	OldValueJson []byte
+	NewValueJson []byte
+	RouteVersion *int32
 }

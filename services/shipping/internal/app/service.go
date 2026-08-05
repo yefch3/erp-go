@@ -17,7 +17,7 @@ import (
 	"github.com/sgao19/erp-go/services/shipping/internal/store"
 )
 
-const SchemaVersion int32 = 2
+const SchemaVersion int32 = 4
 
 type databasePinger interface{ Ping(context.Context) error }
 
@@ -45,7 +45,7 @@ type Operator struct {
 }
 
 type ScheduleInput struct {
-	ContractID, CustomerID                               int64
+	ContractID, CustomerID, CarrierID                    int64
 	ContractNo, CustomerName, CarrierForwarder           string
 	VesselName, VoyageNo, PortOfLoading, PortOfDischarge string
 	ETD, ATD, ETA, ATA                                   string
@@ -96,27 +96,22 @@ func validateInput(in ScheduleInput) (store.CreateScheduleParams, error) {
 	if eta.Time.Before(etd.Time) {
 		return store.CreateScheduleParams{}, apierr.Invalid("SHIPPING_ETA_BEFORE_ETD", "ETA 不能早于 ETD")
 	}
-	atd, err := parseDate(in.ATD, "ATD", false)
-	if err != nil {
-		return store.CreateScheduleParams{}, err
-	}
-	ata, err := parseDate(in.ATA, "ATA", false)
-	if err != nil {
-		return store.CreateScheduleParams{}, err
-	}
-	var contractID, customerID *int64
+	var contractID, customerID, carrierID *int64
 	if in.ContractID > 0 {
 		contractID = &in.ContractID
 	}
 	if in.CustomerID > 0 {
 		customerID = &in.CustomerID
 	}
+	if in.CarrierID > 0 {
+		carrierID = &in.CarrierID
+	}
 	return store.CreateScheduleParams{
 		ContractID: contractID, ContractNo: strings.TrimSpace(in.ContractNo),
 		CustomerID: customerID, CustomerName: strings.TrimSpace(in.CustomerName),
-		CarrierForwarder: strings.TrimSpace(in.CarrierForwarder), VesselName: in.VesselName,
+		CarrierID: carrierID, CarrierForwarder: strings.TrimSpace(in.CarrierForwarder), VesselName: in.VesselName,
 		VoyageNo: in.VoyageNo, PortOfLoading: in.PortOfLoading,
-		PortOfDischarge: in.PortOfDischarge, Etd: etd, Atd: atd, Eta: eta, Ata: ata,
+		PortOfDischarge: in.PortOfDischarge, Etd: etd, Eta: eta,
 		ResponsibleEmployeeID: in.ResponsibleEmployeeID, ResponsibleName: in.ResponsibleName,
 		Remark: strings.TrimSpace(in.Remark),
 	}, nil
@@ -153,7 +148,20 @@ func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in Schedul
 		return store.ShippingSchedule{}, err
 	}
 	p.TenantID, p.CreatedBy, p.CreatedByName = tenantID, op.ID, op.Name
-	return s.q.CreateSchedule(ctx, p)
+	var out store.ShippingSchedule
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		out, err = q.CreateSchedule(ctx, p)
+		if err != nil {
+			return err
+		}
+		if err = createInitialRoute(ctx, q, out, op); err != nil {
+			return err
+		}
+		out, err = q.GetSchedule(ctx, store.GetScheduleParams{TenantID: tenantID, ID: out.ID})
+		return err
+	})
+	return out, err
 }
 
 func (s *Service) GetSchedule(ctx context.Context, tenantID, id int64) (store.ShippingSchedule, []store.ShippingScheduleChange, error) {
@@ -169,6 +177,7 @@ func (s *Service) GetSchedule(ctx context.Context, tenantID, id int64) (store.Sh
 }
 
 func (s *Service) ListSchedules(ctx context.Context, tenantID int64, f ListFilter) ([]store.ListSchedulesRow, int64, int32, int32, error) {
+	f.Status = strings.ToUpper(strings.TrimSpace(f.Status))
 	if f.Page < 1 {
 		f.Page = 1
 	}
@@ -178,7 +187,7 @@ func (s *Service) ListSchedules(ctx context.Context, tenantID int64, f ListFilte
 	if f.PageSize > 200 {
 		f.PageSize = 200
 	}
-	if f.Status != "" && !validStatus(f.Status) {
+	if f.Status != "" && f.Status != "ACTIVE" && f.Status != "ARCHIVED" && !validStatus(f.Status) {
 		return nil, 0, f.Page, f.PageSize, apierr.Invalid("SHIPPING_STATUS_INVALID", "船期状态无效")
 	}
 	etdFrom, err := parseDate(f.ETDFrom, "ETD 起始日期", false)
@@ -261,13 +270,16 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 		if current.Status == "COMPLETED" || current.Status == "CANCELLED" {
 			return apierr.Conflict("SHIPPING_FINAL_STATE", "已完成或已取消的船期不能编辑")
 		}
+		// Actual departure/arrival belong to progress tracking. A basic edit
+		// must preserve them instead of accepting or clearing those timestamps.
+		p.Atd, p.Ata = current.Atd, current.Ata
 		dateChanged := dateText(current.Etd) != dateText(p.Etd) || dateText(current.Eta) != dateText(p.Eta)
 		if dateChanged && strings.TrimSpace(reason) == "" {
 			return apierr.Invalid("SHIPPING_DATE_REASON_REQUIRED", "修改 ETD 或 ETA 时必须填写原因")
 		}
 		out, err = q.UpdateSchedule(ctx, store.UpdateScheduleParams{
 			TenantID: tenantID, ID: id, ContractID: p.ContractID, ContractNo: p.ContractNo,
-			CustomerID: p.CustomerID, CustomerName: p.CustomerName, CarrierForwarder: p.CarrierForwarder,
+			CustomerID: p.CustomerID, CustomerName: p.CustomerName, CarrierID: p.CarrierID, CarrierForwarder: p.CarrierForwarder,
 			VesselName: p.VesselName, VoyageNo: p.VoyageNo, PortOfLoading: p.PortOfLoading,
 			PortOfDischarge: p.PortOfDischarge, Etd: p.Etd, Atd: p.Atd, Eta: p.Eta, Ata: p.Ata,
 			ResponsibleEmployeeID: p.ResponsibleEmployeeID, ResponsibleName: p.ResponsibleName,
@@ -276,10 +288,56 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 		if err != nil {
 			return err
 		}
+		if dateText(current.Eta) != dateText(p.Eta) {
+			out, err = q.UpdateScheduleETA(ctx, store.UpdateScheduleETAParams{
+				TenantID: tenantID, ID: id, Eta: p.Eta, UpdatedBy: op.ID, UpdatedByName: op.Name,
+			})
+			if err != nil {
+				return err
+			}
+			nodes, err := q.ListRouteNodes(ctx, store.ListRouteNodesParams{TenantID: tenantID, ScheduleID: id})
+			if err != nil {
+				return err
+			}
+			var destinationID int64
+			for _, node := range nodes {
+				if node.NodeType == "DESTINATION" {
+					destinationID = node.ID
+					break
+				}
+			}
+			if destinationID == 0 {
+				return apierr.Conflict("SHIPPING_DESTINATION_MISSING", "船期缺少目的港节点")
+			}
+			if _, err = q.SetDestinationETA(ctx, store.SetDestinationETAParams{TenantID: tenantID, ScheduleID: id, ID: destinationID, LatestEtaAt: dateTimestamp(p.Eta), UpdatedBy: op.ID, UpdatedByName: op.Name}); err != nil {
+				return err
+			}
+			changeDays := int32(p.Eta.Time.Sub(current.Eta.Time).Hours() / 24)
+			if _, err = q.AddDelayEvent(ctx, store.AddDelayEventParams{
+				TenantID: tenantID, ScheduleID: id, ImpactType: "SCHEDULE", ReasonCode: "OTHER",
+				Reason: strings.TrimSpace(reason), OldEta: current.Eta, NewEta: p.Eta,
+				ChangeDays: changeDays, CumulativeDelayDays: out.DelayDays,
+				OperatorID: op.ID, OperatorName: op.Name,
+			}); err != nil {
+				return err
+			}
+			if err = q.CancelPendingReminders(ctx, store.CancelPendingRemindersParams{TenantID: tenantID, ScheduleID: id}); err != nil {
+				return err
+			}
+			if err = q.CreateArrivalReminder(ctx, store.CreateArrivalReminderParams{TenantID: tenantID, ScheduleID: id, DestinationNodeID: destinationID, RecipientEmployeeID: out.ResponsibleEmployeeID, EtaRevision: out.EtaRevision, TargetEta: out.Eta}); err != nil {
+				return err
+			}
+		}
 		if err = addChange(ctx, q, tenantID, id, "DATE", "ETD", dateText(current.Etd), dateText(p.Etd), strings.TrimSpace(reason), op); err != nil {
 			return err
 		}
-		return addChange(ctx, q, tenantID, id, "DATE", "ETA", dateText(current.Eta), dateText(p.Eta), strings.TrimSpace(reason), op)
+		if err = addChange(ctx, q, tenantID, id, "ETA", "latest_eta", dateText(current.Eta), dateText(p.Eta), strings.TrimSpace(reason), op); err != nil {
+			return err
+		}
+		if err = addChange(ctx, q, tenantID, id, "VESSEL_VOYAGE", "vessel_name", current.VesselName, p.VesselName, "基础信息修改", op); err != nil {
+			return err
+		}
+		return addChange(ctx, q, tenantID, id, "VESSEL_VOYAGE", "voyage_no", current.VoyageNo, p.VoyageNo, "基础信息修改", op)
 	})
 	return out, err
 }

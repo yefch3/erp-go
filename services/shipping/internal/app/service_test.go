@@ -60,6 +60,20 @@ func TestValidateScheduleInput(t *testing.T) {
 	if _, err := validateInput(invalid); errorCode(err) != "SHIPPING_DATE_INVALID" {
 		t.Fatalf("invalid date code = %q, err=%v", errorCode(err), err)
 	}
+
+	linked := validInput()
+	linked.CustomerID, linked.CarrierID = 41, 52
+	linked.ATD, linked.ATA = "2026-08-11", "2026-09-04"
+	params, err := validateInput(linked)
+	if err != nil {
+		t.Fatalf("linked input: %v", err)
+	}
+	if params.CustomerID == nil || *params.CustomerID != 41 || params.CarrierID == nil || *params.CarrierID != 52 {
+		t.Fatalf("masterdata links were not retained: customer=%v carrier=%v", params.CustomerID, params.CarrierID)
+	}
+	if params.Atd.Valid || params.Ata.Valid {
+		t.Fatal("ATD/ATA must be recorded through progress tracking, not schedule creation")
+	}
 }
 
 func TestStatusTransitions(t *testing.T) {
