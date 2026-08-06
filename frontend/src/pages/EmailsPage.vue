@@ -1921,14 +1921,27 @@ async function doUnsuppress(row: Suppression) {
 </script>
 
 <style scoped>
+/* Two surfaces, not one page. The folder rail keeps the white — it is part of
+   the application, the same way the navigation is — and the reading side gets
+   its own ground, so the seam between them is a change of colour rather than
+   an 18px gap you have to look for.
+
+   align-items: stretch so the two colours run the full height of whichever is
+   taller; without it the ground stopped at the bottom of the mail and the page
+   went pale again underneath it. */
 .mailbox {
   display: flex;
   gap: 18px;
-  align-items: flex-start;
+  align-items: stretch;
+  min-height: 100%;
+  background: var(--el-bg-color);
 }
 .rail {
   flex: none;
   width: 178px;
+  /* Back to its own height, which stretch had just taken away — a sticky
+     element as tall as its container has nowhere to stick to. */
+  align-self: flex-start;
   position: sticky;
   top: 12px;
 }
@@ -2001,6 +2014,15 @@ async function doUnsuppress(row: Suppression) {
 .pane {
   flex: 1;
   min-width: 0;
+  /* One ground for everything on this side — the list, the reading page, and
+     the mail's own frame, which is given this same colour. What sits on it
+     paints its own white: the list rows, and whatever card the sender drew.
+     That is the desk, and they are the paper.
+     The padding is what lets the ground show around them; it also narrows the
+     container below, which is correct — the list should respond to the width
+     it can actually use. */
+  background: var(--mail-ground);
+  padding: 14px 16px;
   /* The list responds to the width IT has, not the window's: the app shell's
      nav and this page's rail both take a fixed slice first, so a viewport
      query would be answering a different question.

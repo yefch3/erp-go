@@ -22,6 +22,14 @@
      thing it just looked blue: Gmail's list is white top to bottom, and the
      tint was fighting the one signal that actually carries — the bold. */
   --mail-surface: var(--el-bg-color);
+  /* The ground the reading pane and the mail inside it both stand on, so the
+     two read as one surface instead of a grey patch inside a white page.
+     Against the white the folder rail sits on, this is the boundary between
+     "where your mail lives" and "the mail you are reading".
+     Also inlined as a literal in MailBody.vue's srcdoc — the mail renders in
+     its own document, which cannot see these variables — and read back from
+     here at runtime so the two can never drift apart. */
+  --mail-ground: #f1f3f4;
   /* A grey you can actually see. The lighter fill is a hair off white and
      reads as nothing at all under a cursor. */
   --mail-hover: var(--el-fill-color-darker);

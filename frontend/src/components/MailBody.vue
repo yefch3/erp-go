@@ -17,6 +17,7 @@
   <iframe
     ref="frame"
     class="mail-frame"
+    :class="{ ready }"
     :srcdoc="doc"
     :style="{ height: height + 'px' }"
     sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
@@ -38,6 +39,28 @@ const frame = ref<HTMLIFrameElement | null>(null)
 // height. Small enough not to leave a gap under a one-line mail, big enough
 // that the common case does not visibly grow.
 const height = ref(320)
+
+// The frame is laid out but not painted until it has been measured once.
+//
+// Without this you saw the bug: for the moment between the frame appearing and
+// the first measurement landing, the mail was rendered into a 320px window it
+// did not fit, so it wore an internal scrollbar and a hard bottom edge — the
+// boxed look this whole component exists to get rid of — and then snapped open.
+// One frame of the old bug on the way to the new behaviour is worse than a
+// blank moment, because the eye reads it as breakage rather than as loading.
+//
+// visibility, not display:none: a hidden-by-display frame is not laid out, and
+// an unlaid-out document has no scrollHeight to measure. This has to be the
+// kind of hidden that still does the work.
+const ready = ref(false)
+
+// The mail's ground colour, read from the stylesheet rather than repeated
+// here. The frame is a separate document and cannot resolve our CSS variables,
+// so the value must be inlined into its srcdoc — but it can be inlined from
+// the one place that defines it, which is what stops the pane and the mail
+// inside it from drifting to two slightly different greys.
+const ground =
+  getComputedStyle(document.documentElement).getPropertyValue('--mail-ground').trim() || '#f1f3f4'
 
 // allow-same-origin, and deliberately never allow-scripts.
 //
@@ -62,18 +85,16 @@ const doc = computed(() => {
   return `<!doctype html><html><head><meta charset="utf-8">
 <base target="_blank">
 <style>
-  /* The ground the mail sits on, and the reason it reads as a mail rather
-     than as loose content on our page. Almost every mail paints its own
-     background on a table or a wrapper narrower than the window, so what
-     shows around it is this — the same relationship Gmail has between its
-     grey page and the white letter on top of it. On our side the mail bled
-     into the page and its edges disappeared.
+  /* The ground the mail sits on, continuous with the reading pane around the
+     frame, so a mail that paints its own white card reads as a letter lying on
+     a desk and a mail that paints nothing simply shares the desk. Before this
+     the mail bled into a white page and its edges disappeared.
 
      Declared here in the head, so a sender who sets their own body background
-     still wins: their stylesheet comes later in the document. A literal
-     rather than our theme token because the frame is a separate document and
-     cannot see the application's CSS variables. */
-  html,body{margin:0;padding:0;background:#f1f3f4;}
+     still wins: their stylesheet comes later in the document. This is where
+     the grey in the Capital One mail comes from in Gmail, incidentally —
+     Gmail's own reading pane is white, and the mail paints that grey itself. */
+  html,body{margin:0;padding:0;background:${ground};}
   /* The mail's own width, not ours. Images are capped so a 2000px banner
      cannot force a horizontal scrollbar, which is the one piece of styling
      worth imposing. */
@@ -96,7 +117,13 @@ function measure() {
   let ticks = 0
   poll = window.setInterval(() => {
     read()
-    if (++ticks > 12) window.clearInterval(poll)
+    if (++ticks > 12) {
+      window.clearInterval(poll)
+      // Whatever happened, the mail becomes visible. A measurement that never
+      // succeeded would otherwise leave the frame hidden for good, and an
+      // invisible mail is a far worse failure than a badly sized one.
+      ready.value = true
+    }
   }, 250)
 }
 
@@ -111,15 +138,24 @@ function read() {
     const d = el.contentDocument
     if (!d?.body) return
     const h = Math.max(d.body.scrollHeight, d.documentElement?.scrollHeight ?? 0)
-    if (h > 0) height.value = h + 8
+    if (h > 0) {
+      height.value = h + 8
+      ready.value = true
+    }
   } catch {
     // Cross-origin refusal. Rather than clip the mail, give it room and let
     // the frame scroll internally — worse to read, but nothing is hidden.
     height.value = 800
+    ready.value = true
   }
 }
 
-watch(() => props.html, () => { height.value = 320 })
+// A new mail in the same component: hide again and re-measure, or the frame
+// would show the incoming mail at the outgoing one's height.
+watch(() => props.html, () => {
+  height.value = 320
+  ready.value = false
+})
 onBeforeUnmount(() => window.clearInterval(poll))
 </script>
 
@@ -128,9 +164,14 @@ onBeforeUnmount(() => window.clearInterval(poll))
   display: block;
   width: 100%;
   border: 0;
-  /* No card and no border: the separation comes from the ground inside the
-     frame, not from a box around it. Matched here so there is no white flash
-     between the frame appearing and its document painting. */
-  background: #f1f3f4;
+  /* No card and no border: the separation comes from the ground the mail
+     shares with the pane, not from a box drawn around it. Set on the element
+     too, so the frame's own rectangle is already the right colour before its
+     document has painted anything. */
+  background: var(--mail-ground);
+  visibility: hidden;
+}
+.mail-frame.ready {
+  visibility: visible;
 }
 </style>
