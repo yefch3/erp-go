@@ -301,6 +301,25 @@ func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, employeeID
 			s.log.Warn("could not reconcile the junk folder", "account", acct.AccountID, "err", err)
 		}
 	}
+	// And the sent folder, departures included. This was the one remaining
+	// half of the two-way sync: deleting a sent mail in the ERP already moved
+	// the host's copy to its trash, but deleting it in Gmail reached nothing,
+	// so the ERP went on listing a message the mailbox no longer had.
+	//
+	// Departures are followed here, unlike in the junk folder, because there
+	// is only one way out of a sent folder. Gmail applies the Sent label at
+	// send time and no ordinary action removes it — archiving a conversation
+	// drops the Inbox label, not this one — and on a host where Sent is a real
+	// folder a message leaves it only by being moved or deleted. So a UID that
+	// stops being returned here means somebody deleted it, which is exactly
+	// what should be mirrored. The mirror is a soft delete either way, so an
+	// inference that turns out wrong costs a trip to the recycle bin rather
+	// than the message.
+	if actual, err := s.specialFolderOf(ctx, acct, "sent"); err == nil {
+		if err := s.ReconcileFlags(ctx, cfg.TenantID, acct, "SENT", actual, true); err != nil {
+			s.log.Warn("could not reconcile the sent folder", "account", acct.AccountID, "err", err)
+		}
+	}
 
 	// The ping goes out only after everything is committed, and only to the
 	// mailbox owner: an inbox is personal.
