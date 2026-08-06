@@ -16,25 +16,34 @@
   --mail-row-pad: 0 14px;
   --mail-gutter: 16px;
 
-  /* Surfaces. Every row is white; bold is what says unread.
-     An earlier version tinted read mail, on the theory that the contrast
-     between two backgrounds reads faster than weight. Held against the real
-     thing it just looked blue: Gmail's list is white top to bottom, and the
-     tint was fighting the one signal that actually carries — the bold. */
-  --mail-surface: var(--el-bg-color);
-  /* The ground the reading pane and the mail inside it both stand on, so the
-     two read as one surface instead of a grey patch inside a white page.
-     Against the white the folder rail sits on, this is the boundary between
-     "where your mail lives" and "the mail you are reading".
-     Also inlined as a literal in MailBody.vue's srcdoc — the mail renders in
-     its own document, which cannot see these variables — and read back from
+  /* Surfaces.
+     One ground for the whole reading side: the pane, the list and its rows,
+     and the mail's own frame. Against the white the folder rail sits on, it
+     is the boundary between "where your mail lives" and "what you are
+     reading" — and within it nothing is drawn twice, so the list is a surface
+     rather than a stack of white strips laid on grey.
+     Inlined as a literal in MailBody.vue's srcdoc too — the mail renders in
+     its own document, which cannot see these variables — but read back from
      here at runtime so the two can never drift apart. */
   --mail-ground: #f1f3f4;
-  /* A grey you can actually see. The lighter fill is a hair off white and
-     reads as nothing at all under a cursor. */
+  /* Rows take the ground. They used to be white, which was right when the
+     page around them was white too: the list was the only surface, so it was
+     the one that had to be lit. Now that it sits on the ground it belongs to
+     it, and what separates one mail from the next is the rule between them
+     and the weight of the type — never a second colour. Bold still says
+     unread, and it says it alone. */
+  --mail-surface: var(--mail-ground);
+  /* Which leaves the rules and the hover to carry the structure the row's own
+     colour used to, so both step up. The divider moves off the near-invisible
+     lighter border, which was pitched against white and disappears on grey.
+     And the row under the cursor turns white as it lifts, instead of only
+     casting a shadow onto a field its own colour — the same paper-on-a-desk
+     the reading pane is now built on. Its own token: --mail-hover is the grey
+     the folder rail uses, and the rail is white, so the two cannot share. */
+  --mail-row-hover: var(--el-bg-color);
   --mail-hover: var(--el-fill-color-darker);
   --mail-hover-shadow: 0 1px 2px rgb(60 64 67 / 0.3), 0 1px 3px 1px rgb(60 64 67 / 0.15);
-  --mail-divider: var(--el-border-color-lighter);
+  --mail-divider: var(--el-border-color-light);
 
   /* Typography. Two steps only: the line you read and the line you skim. */
   --mail-text: 14px;
