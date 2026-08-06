@@ -62,7 +62,18 @@ const doc = computed(() => {
   return `<!doctype html><html><head><meta charset="utf-8">
 <base target="_blank">
 <style>
-  html,body{margin:0;padding:0;}
+  /* The ground the mail sits on, and the reason it reads as a mail rather
+     than as loose content on our page. Almost every mail paints its own
+     background on a table or a wrapper narrower than the window, so what
+     shows around it is this — the same relationship Gmail has between its
+     grey page and the white letter on top of it. On our side the mail bled
+     into the page and its edges disappeared.
+
+     Declared here in the head, so a sender who sets their own body background
+     still wins: their stylesheet comes later in the document. A literal
+     rather than our theme token because the frame is a separate document and
+     cannot see the application's CSS variables. */
+  html,body{margin:0;padding:0;background:#f1f3f4;}
   /* The mail's own width, not ours. Images are capped so a 2000px banner
      cannot force a horizontal scrollbar, which is the one piece of styling
      worth imposing. */
@@ -117,10 +128,9 @@ onBeforeUnmount(() => window.clearInterval(poll))
   display: block;
   width: 100%;
   border: 0;
-  /* No card, no border. The mail brings its own background — most do — and
-     wrapping it in one of ours puts a frame around a picture that already has
-     one. What separates the sender's content from our chrome is the rule
-     above the body, the same way Gmail does it. */
-  background: transparent;
+  /* No card and no border: the separation comes from the ground inside the
+     frame, not from a box around it. Matched here so there is no white flash
+     between the frame appearing and its document painting. */
+  background: #f1f3f4;
 }
 </style>
