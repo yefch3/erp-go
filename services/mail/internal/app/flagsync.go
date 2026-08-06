@@ -306,13 +306,12 @@ func (s *Service) failOps(ctx context.Context, rows []store.ClaimFlagOpsRow, cau
 // Refuses to run while anything is queued for that account: the queue holds
 // changes the host has not seen yet, so the host's answer is stale by
 // definition until it drains.
-// followDepartures says whether a message that left this folder should be
-// chased down. True for the inbox, where leaving means deleted or archived.
-// False for the junk folder, where the usual reason a message leaves is that
-// somebody called it "not spam" in Gmail and it went to the inbox — reading
-// that as a deletion would throw away exactly the mail the person just
-// rescued.
-func (s *Service) ReconcileFlags(ctx context.Context, tenantID int64, acct MailAccount, folder, actual string, followDepartures bool) error {
+//
+// rescue names a folder where finding a departed message means nothing
+// happened to it. Only the junk folder needs one, and it needs one badly: mail
+// usually leaves spam because somebody called it "not spam" in Gmail, and it
+// lands in the inbox. Empty for folders with no such destination.
+func (s *Service) ReconcileFlags(ctx context.Context, tenantID int64, acct MailAccount, folder, actual, rescue string) error {
 	pending, err := s.q.CountPendingFlagOps(ctx, store.CountPendingFlagOpsParams{
 		TenantID: tenantID, AccountID: acct.AccountID,
 	})
@@ -378,8 +377,8 @@ func (s *Service) ReconcileFlags(ctx context.Context, tenantID int64, acct MailA
 		s.log.Info("flags taken from the mail host",
 			"account", acct.AccountID, "folder", folder, "changed", changed)
 	}
-	if followDepartures && len(missing) > 0 {
-		s.mirrorDepartures(ctx, tenantID, acct, folder, missing)
+	if len(missing) > 0 {
+		s.mirrorDepartures(ctx, tenantID, acct, folder, rescue, missing)
 	}
 	return nil
 }
@@ -425,18 +424,42 @@ func (s *Service) reconcileStars(ctx context.Context, tenantID int64, acct MailA
 // mirrorDepartures works out what happened to mail that is no longer in the
 // folder we last saw it in, and makes the ERP agree.
 //
-// Two folder scans answer it for the whole batch: a message now in the host's
-// trash was deleted, one in the archive was archived, and one in neither is
-// gone for good — deleted somewhere and already expunged, or filed into a
-// folder the ERP does not track.
+// Folder scans answer it for the whole batch: a message now in the host's
+// trash was deleted, one in the archive was archived, one in the caller's
+// rescue folder was never deleted at all, and one in none of them is gone for
+// good — deleted somewhere and already expunged, or filed into a folder the
+// ERP does not track.
 //
-// All three land as ERP-side state written directly, never through the
+// The rescue folder is what lets the junk folder take part at all. Departures
+// there used to be ignored outright, on the grounds that mail leaves spam
+// mostly because somebody rescued it and calling that a deletion would bin the
+// message they just saved. True, but too blunt: it also meant that deleting a
+// spam in Gmail reached nothing, so the ERP went on listing junk the mailbox
+// no longer had — and Gmail purges spam by itself after thirty days, so the
+// ERP's junk folder filled up with mail that had not existed for a month.
+// Looking in the inbox separates the two cases instead of giving up on both.
+//
+// All of it lands as ERP-side state written directly, never through the
 // marking path: that would queue a write-back and ask the host to redo what
 // the host just did. And a departure is mirrored as a *soft* delete even when
 // the message is gone from the host entirely — our copy may be the only one
 // left, the trash gives thirty days to notice a mistake, and the sweeper
 // finishes the job afterwards.
-func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct MailAccount, folder string, missing []store.ListRecentForReconcileRow) {
+func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct MailAccount, folder, rescue string, missing []store.ListRecentForReconcileRow) {
+	// Asked for first, and fatal when it fails. Without this answer a rescue
+	// is indistinguishable from a deletion, and of the two mistakes available
+	// the one to avoid is binning mail somebody just saved.
+	rescued := map[string]bool{}
+	if rescue != "" {
+		ids, err := s.mailbox.RecentMessageIDs(ctx, acct, rescue, departureScan)
+		if err != nil {
+			s.log.Warn("could not read the rescue folder while reconciling",
+				"folder", folder, "rescue", rescue, "err", err)
+			return
+		}
+		rescued = ids
+	}
+
 	trash, err := s.specialFolderOf(ctx, acct, "trash")
 	if err != nil {
 		s.log.Warn("could not locate the trash while reconciling", "err", err)
@@ -457,9 +480,16 @@ func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct Mai
 		}
 	}
 
-	deleted, archived, vanished := 0, 0, 0
+	deleted, archived, vanished, saved := 0, 0, 0, 0
 	for _, r := range missing {
 		switch {
+		// Checked before the trash, because it is the case that must never be
+		// misread. Somebody clicked "not spam" and the mail is in the inbox
+		// now; the inbox sync files it under its new UID, and anything this
+		// pass did to the junk row would undo the rescue.
+		case r.MessageID != "" && rescued[r.MessageID]:
+			saved++
+
 		case r.MessageID != "" && inTrash[r.MessageID]:
 			if r.DeletedAt.Valid {
 				continue
@@ -507,10 +537,11 @@ func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct Mai
 			vanished++
 		}
 	}
-	if deleted > 0 || archived > 0 || vanished > 0 {
+	if deleted > 0 || archived > 0 || vanished > 0 || saved > 0 {
 		s.log.Info("mail followed from the host",
 			"account", acct.AccountID, "folder", folder,
-			"in_trash", deleted, "archived", archived, "vanished", vanished)
+			"in_trash", deleted, "archived", archived, "vanished", vanished,
+			"rescued", saved)
 	}
 }
 
