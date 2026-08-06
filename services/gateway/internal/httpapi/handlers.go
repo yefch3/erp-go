@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -18,12 +19,47 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, req) {
 		return
 	}
+	// Metered by the username the caller typed, which is the only identity
+	// there is before anybody has proved anything. That it may name no account
+	// at all is fine and in fact required: counting attempts on names that do
+	// not exist is what keeps a locked-out response from being a way to ask
+	// "does this person work here".
+	name := req.GetUsername()
+	if wait, blocked := s.Throttle.Blocked(r.Context(), throttleLogin, name); blocked {
+		s.writeTooManyAttempts(w, wait)
+		return
+	}
 	resp, err := s.IAM.Login(r.Context(), req)
 	if err != nil {
+		// Every failure counts, not only a wrong password. A caller cannot
+		// tell our outage from their mistake, and neither can we tell their
+		// probing from either — so the budget is spent on anything that is
+		// not a login.
+		if wait, spent := s.Throttle.Failed(r.Context(), throttleLogin, name); spent {
+			s.writeTooManyAttempts(w, wait)
+			return
+		}
 		s.writeGRPCError(w, err)
 		return
 	}
+	s.Throttle.Passed(r.Context(), throttleLogin, name)
 	s.writeProto(w, resp)
+}
+
+// writeTooManyAttempts is the one answer given to a caller who has run out of
+// attempts, whichever route they ran out on.
+//
+// Retry-After so a well-behaved client can wait rather than poll, and a
+// message that says only "later" — naming the account, the count or the reason
+// would turn the lockout itself into a way to learn things.
+func (s *Server) writeTooManyAttempts(w http.ResponseWriter, wait time.Duration) {
+	secs := int(wait.Seconds())
+	if secs < 1 {
+		secs = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(secs))
+	s.writeError(w, http.StatusTooManyRequests, "GATEWAY_TOO_MANY_ATTEMPTS",
+		"尝试次数过多，请稍后再试")
 }
 
 // ---------------------------------------------------------------- customers

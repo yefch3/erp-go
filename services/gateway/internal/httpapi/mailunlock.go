@@ -119,20 +119,42 @@ func (s *Server) verifyMailbox(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, "GATEWAY_BAD_JSON", "请求体不是合法的 JSON")
 		return
 	}
+	// Metered by the employee, who is already authenticated here — a better
+	// identity than the login route gets, and the right one: the budget being
+	// spent is this person's, and the cost of overspending it is that the mail
+	// host blocks the address the whole company sends from.
+	op, _ := grpcx.OperatorFromContext(r.Context())
+	who := fmt.Sprintf("t%d.e%d", op.TenantID, op.EmployeeID)
+	if wait, blocked := s.Throttle.Blocked(r.Context(), throttleMailVerify, who); blocked {
+		s.writeTooManyAttempts(w, wait)
+		return
+	}
+
 	resp, err := s.Emails.VerifyMailAccess(r.Context(), &mailv1.VerifyMailAccessRequest{
 		Secret: body.Secret, Email: body.Email,
 	})
 	if err != nil {
+		if wait, spent := s.Throttle.Failed(r.Context(), throttleMailVerify, who); spent {
+			s.writeTooManyAttempts(w, wait)
+			return
+		}
 		s.writeGRPCError(w, err)
 		return
 	}
 	if !resp.GetOk() {
+		// A rejection by the mail host is the case this budget exists for: it
+		// means our server just spent one bad login against Gmail or 263 on
+		// this caller's behalf.
+		if wait, spent := s.Throttle.Failed(r.Context(), throttleMailVerify, who); spent {
+			s.writeTooManyAttempts(w, wait)
+			return
+		}
 		// The mail host's own words: "wrong code" from Gmail beats any
 		// paraphrase we could write.
 		s.writeError(w, http.StatusForbidden, "MAIL_VERIFY_FAILED", resp.GetDetail())
 		return
 	}
-	op, _ := grpcx.OperatorFromContext(r.Context())
+	s.Throttle.Passed(r.Context(), throttleMailVerify, who)
 	token, expires, err := s.Unlock.Grant(r.Context(), op.TenantID, op.EmployeeID)
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, "MAIL_UNLOCK_STORE", "无法保存验证状态，请重试")
