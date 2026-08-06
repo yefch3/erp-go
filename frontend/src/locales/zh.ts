@@ -1206,6 +1206,7 @@ export default {
     imageWarning: '注意：大多数邮箱默认不显示图片。请确保去掉图片后正文依然读得通，并给图片写好替代文字。',
   },
   reader: {
+    bodyFrame: '邮件正文',
     openedLabel: '对方是否已读：',
     noOpenHint: '这封信带了追踪像素，但至今没有被加载过。可能是对方没打开，也可能是对方的邮件客户端屏蔽了图片（Outlook 默认就屏蔽）。客户回信才是确凿的已读。',
     noTracking: '未开启追踪',

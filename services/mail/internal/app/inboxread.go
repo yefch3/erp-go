@@ -219,7 +219,9 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 		HasRaw: row.RawKey != "",
 		// Sanitised on the way out, not just on the way in: this HTML came
 		// from the wild, and it is about to be rendered inside our page.
-		BodyHTML: SanitizeHTML(row.BodyHtml),
+		// Read with the wider reader policy: this goes into a sandboxed
+		// frame, where a sender's stylesheet cannot reach our page.
+		BodyHTML: SanitizeForReading(row.BodyHtml),
 		BodyText: row.BodyText,
 	}
 	if row.ReceivedAt.Valid {
@@ -277,7 +279,7 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID int64, th
 	for _, r := range rows {
 		body := r.Body
 		if r.Direction == "IN" && r.BodyFormat == "HTML" {
-			body = SanitizeHTML(body)
+			body = SanitizeForReading(body)
 		}
 		v := ThreadItem{
 			Direction: r.Direction, ID: r.ID, Subject: r.Subject,

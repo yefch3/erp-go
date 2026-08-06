@@ -1211,6 +1211,7 @@ export default {
     imageWarning: 'Note: most mail clients block images by default. Make sure the message still reads without them, and give every image alt text.',
   },
   reader: {
+    bodyFrame: 'Message body',
     openedLabel: 'Opened by recipient:',
     noOpenHint: 'This mail carried a tracking pixel and it has never been loaded. The recipient may not have opened it, or their client may block remote images (Outlook does by default). A reply is the only conclusive evidence.',
     noTracking: 'Tracking off',
