@@ -1211,6 +1211,7 @@ export default {
     imageWarning: 'Nota: la mayoría de los clientes de correo bloquean las imágenes. Asegúrese de que el mensaje se entienda sin ellas y ponga texto alternativo.',
   },
   reader: {
+    bodyFrame: 'Cuerpo del mensaje',
     openedLabel: '¿Lo abrió el destinatario?:',
     noOpenHint: 'Este correo llevaba un píxel de seguimiento y nunca se ha cargado. Puede que no lo haya abierto, o que su cliente bloquee las imágenes remotas (Outlook lo hace por defecto). Solo una respuesta es prueba concluyente.',
     noTracking: 'Sin seguimiento',

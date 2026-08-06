@@ -90,8 +90,12 @@ lint: ## golangci-lint over every module
 check-tenant: ## Verify every migration table carries tenant_id
 	sh scripts/check-tenant-id.sh
 
+.PHONY: check-mail-sandbox
+check-mail-sandbox: ## Verify received mail is only rendered inside the sandbox
+	sh scripts/check-mail-sandbox.sh
+
 .PHONY: ci
-ci: proto check-tenant test ## What CI runs; proto regeneration must be a no-op
+ci: proto check-tenant check-mail-sandbox test ## What CI runs; proto regeneration must be a no-op
 	git diff --exit-code gen/ || (echo "gen/ is stale: run 'make proto' and commit" && exit 1)
 
 .PHONY: sqlc

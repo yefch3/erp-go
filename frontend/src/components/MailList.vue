@@ -329,17 +329,24 @@ function shortTime(v: string) {
   background: var(--mail-surface);
   cursor: pointer;
   position: relative;
-  transition: box-shadow var(--mail-fast) var(--mail-ease);
+  transition: box-shadow var(--mail-fast) var(--mail-ease),
+    background var(--mail-fast) var(--mail-ease);
 }
 .row:hover {
-  /* Lifted, and only lifted. With every row white the hover could now be a
-     tint instead, but the shadow says "this one is under the cursor" without
-     spending a colour — and colour is what the unread state is saving. */
+  /* Picked up off the ground: white and lifted together. The shadow alone was
+     enough while the rows were white and the page around them was too — there
+     was a colour to cast onto. Now the row is the same grey as everything
+     under it, and a shadow on a field its own colour barely registers, so the
+     lift gets the white it is lifting to. Still not a tint: white is the
+     absence of the ground, which leaves colour free to mean the one thing it
+     means in this list — a ticked row. */
+  background: var(--mail-row-hover);
   box-shadow: var(--mail-hover-shadow);
   z-index: 1;
   border-bottom-color: transparent;
 }
 .row:focus-within {
+  background: var(--mail-row-hover);
   box-shadow: var(--mail-hover-shadow);
   z-index: 1;
 }
