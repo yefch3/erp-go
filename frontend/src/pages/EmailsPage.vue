@@ -2014,13 +2014,13 @@ async function doUnsuppress(row: Suppression) {
 .pane {
   flex: 1;
   min-width: 0;
-  /* One ground for everything on this side — the list, the reading page, and
-     the mail's own frame, which is given this same colour. What sits on it
-     paints its own white: the list rows, and whatever card the sender drew.
-     That is the desk, and they are the paper.
-     The padding is what lets the ground show around them; it also narrows the
-     container below, which is correct — the list should respond to the width
-     it can actually use. */
+  /* One ground for everything on this side — the list, the four folders that
+     are tables, the reading page, and the mail's own frame, which is given
+     this same colour. The only white left on it is white that means
+     something: a row under the cursor, and whatever card a sender drew.
+     The padding keeps the content off the edge; it also narrows the container
+     below, which is correct — the list should respond to the width it can
+     actually use. */
   background: var(--mail-ground);
   padding: 14px 16px;
   /* The list responds to the width IT has, not the window's: the app shell's
@@ -2034,6 +2034,23 @@ async function doUnsuppress(row: Suppression) {
      from layout, so containing it costs nothing. */
   container-type: inline-size;
   container-name: mailbox;
+}
+/* 草稿箱, 已定时, 待处理 and 拒收名单 are tables rather than mail lists, and
+   Element Plus paints a table white. Left alone they would put back exactly
+   the white slab the mail list just stopped being, and a folder would change
+   colour depending on which one you clicked.
+   Set through the component's own variables rather than by overriding its
+   selectors: the library is telling us where its colours come from, and every
+   background it paints — table, row, header cell, hover — reads one of these
+   four. Nothing is left to a rule of ours that a version bump could stop
+   matching. The hover is the list's hover, so a row under the cursor means
+   the same thing in every folder. */
+.pane :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: transparent;
+  --el-table-row-hover-bg-color: var(--mail-row-hover);
+  --el-table-border-color: var(--mail-divider);
 }
 .pane-head {
   display: flex;
