@@ -210,6 +210,12 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("shipping:route:write")).Delete("/api/shipping/schedules/{id}/route/nodes/{nodeID}", s.removeShippingRouteNode)
 		r.With(s.perm("shipping:route:write")).Put("/api/shipping/schedules/{id}/route/order", s.reorderShippingRoute)
 		r.With(s.perm("shipping:progress:write")).Post("/api/shipping/schedules/{id}/progress", s.updateShippingProgress)
+		r.With(s.perm("shipping:document:view")).Get("/api/shipping/schedules/{id}/documents", s.listShippingDocuments)
+		r.With(s.perm("shipping:document:upload")).Post("/api/shipping/schedules/{id}/documents/presign", s.presignShippingDocument)
+		r.With(s.perm("shipping:document:upload")).Post("/api/shipping/schedules/{id}/documents", s.registerShippingDocument)
+		r.With(s.perm("shipping:document:view")).Post("/api/shipping/schedules/{id}/documents/{documentID}/preview", s.previewShippingDocument)
+		r.With(s.perm("shipping:document:download")).Post("/api/shipping/schedules/{id}/documents/{documentID}/download", s.downloadShippingDocument)
+		r.With(s.perm("shipping:document:invalidate")).Post("/api/shipping/schedules/{id}/documents/{documentID}/invalidate", s.invalidateShippingDocument)
 		// Collection. Its own permission because it is finance work: the
 		// person who reconciles bank lines is not the person who sells, and
 		// neither should be able to do the other's job by accident.

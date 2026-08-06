@@ -350,6 +350,70 @@ func (q *Queries) CreateSchedule(ctx context.Context, arg CreateScheduleParams) 
 	return i, err
 }
 
+const createShippingDocument = `-- name: CreateShippingDocument :one
+INSERT INTO shipping_documents (
+    tenant_id, schedule_id, document_group_key, category, version,
+    file_name, file_key, file_size, content_type, remark,
+    uploaded_by, uploaded_by_name
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+RETURNING id, tenant_id, schedule_id, document_group_key, category, version, file_name, file_key, file_size, content_type, remark, status, uploaded_by, uploaded_by_name, uploaded_at, voided_by, voided_by_name, voided_at, void_reason
+`
+
+type CreateShippingDocumentParams struct {
+	TenantID         int64
+	ScheduleID       int64
+	DocumentGroupKey string
+	Category         string
+	Version          int32
+	FileName         string
+	FileKey          string
+	FileSize         int64
+	ContentType      string
+	Remark           string
+	UploadedBy       int64
+	UploadedByName   string
+}
+
+func (q *Queries) CreateShippingDocument(ctx context.Context, arg CreateShippingDocumentParams) (ShippingDocument, error) {
+	row := q.db.QueryRow(ctx, createShippingDocument,
+		arg.TenantID,
+		arg.ScheduleID,
+		arg.DocumentGroupKey,
+		arg.Category,
+		arg.Version,
+		arg.FileName,
+		arg.FileKey,
+		arg.FileSize,
+		arg.ContentType,
+		arg.Remark,
+		arg.UploadedBy,
+		arg.UploadedByName,
+	)
+	var i ShippingDocument
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ScheduleID,
+		&i.DocumentGroupKey,
+		&i.Category,
+		&i.Version,
+		&i.FileName,
+		&i.FileKey,
+		&i.FileSize,
+		&i.ContentType,
+		&i.Remark,
+		&i.Status,
+		&i.UploadedBy,
+		&i.UploadedByName,
+		&i.UploadedAt,
+		&i.VoidedBy,
+		&i.VoidedByName,
+		&i.VoidedAt,
+		&i.VoidReason,
+	)
+	return i, err
+}
+
 const deactivateRouteNode = `-- name: DeactivateRouteNode :exec
 UPDATE shipping_route_nodes SET
     is_active = FALSE, updated_by = $4, updated_by_name = $5, updated_at = now()
@@ -577,6 +641,83 @@ func (q *Queries) GetScheduleForUpdate(ctx context.Context, arg GetScheduleForUp
 	return i, err
 }
 
+const getShippingDocument = `-- name: GetShippingDocument :one
+SELECT id, tenant_id, schedule_id, document_group_key, category, version, file_name, file_key, file_size, content_type, remark, status, uploaded_by, uploaded_by_name, uploaded_at, voided_by, voided_by_name, voided_at, void_reason FROM shipping_documents
+WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3
+`
+
+type GetShippingDocumentParams struct {
+	TenantID   int64
+	ScheduleID int64
+	ID         int64
+}
+
+func (q *Queries) GetShippingDocument(ctx context.Context, arg GetShippingDocumentParams) (ShippingDocument, error) {
+	row := q.db.QueryRow(ctx, getShippingDocument, arg.TenantID, arg.ScheduleID, arg.ID)
+	var i ShippingDocument
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ScheduleID,
+		&i.DocumentGroupKey,
+		&i.Category,
+		&i.Version,
+		&i.FileName,
+		&i.FileKey,
+		&i.FileSize,
+		&i.ContentType,
+		&i.Remark,
+		&i.Status,
+		&i.UploadedBy,
+		&i.UploadedByName,
+		&i.UploadedAt,
+		&i.VoidedBy,
+		&i.VoidedByName,
+		&i.VoidedAt,
+		&i.VoidReason,
+	)
+	return i, err
+}
+
+const getShippingDocumentForUpdate = `-- name: GetShippingDocumentForUpdate :one
+SELECT id, tenant_id, schedule_id, document_group_key, category, version, file_name, file_key, file_size, content_type, remark, status, uploaded_by, uploaded_by_name, uploaded_at, voided_by, voided_by_name, voided_at, void_reason FROM shipping_documents
+WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3
+FOR UPDATE
+`
+
+type GetShippingDocumentForUpdateParams struct {
+	TenantID   int64
+	ScheduleID int64
+	ID         int64
+}
+
+func (q *Queries) GetShippingDocumentForUpdate(ctx context.Context, arg GetShippingDocumentForUpdateParams) (ShippingDocument, error) {
+	row := q.db.QueryRow(ctx, getShippingDocumentForUpdate, arg.TenantID, arg.ScheduleID, arg.ID)
+	var i ShippingDocument
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ScheduleID,
+		&i.DocumentGroupKey,
+		&i.Category,
+		&i.Version,
+		&i.FileName,
+		&i.FileKey,
+		&i.FileSize,
+		&i.ContentType,
+		&i.Remark,
+		&i.Status,
+		&i.UploadedBy,
+		&i.UploadedByName,
+		&i.UploadedAt,
+		&i.VoidedBy,
+		&i.VoidedByName,
+		&i.VoidedAt,
+		&i.VoidReason,
+	)
+	return i, err
+}
+
 const insertRouteNode = `-- name: InsertRouteNode :one
 INSERT INTO shipping_route_nodes (
     tenant_id, schedule_id, sequence_no, node_type, port_code, port_name, timezone,
@@ -641,6 +782,60 @@ func (q *Queries) InsertRouteNode(ctx context.Context, arg InsertRouteNodeParams
 		&i.UpdatedBy,
 		&i.UpdatedByName,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const invalidateShippingDocument = `-- name: InvalidateShippingDocument :one
+UPDATE shipping_documents SET
+    status = 'VOIDED',
+    voided_by = $4,
+    voided_by_name = $5,
+    voided_at = now(),
+    void_reason = $6
+WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3 AND status = 'ACTIVE'
+RETURNING id, tenant_id, schedule_id, document_group_key, category, version, file_name, file_key, file_size, content_type, remark, status, uploaded_by, uploaded_by_name, uploaded_at, voided_by, voided_by_name, voided_at, void_reason
+`
+
+type InvalidateShippingDocumentParams struct {
+	TenantID     int64
+	ScheduleID   int64
+	ID           int64
+	VoidedBy     *int64
+	VoidedByName *string
+	VoidReason   *string
+}
+
+func (q *Queries) InvalidateShippingDocument(ctx context.Context, arg InvalidateShippingDocumentParams) (ShippingDocument, error) {
+	row := q.db.QueryRow(ctx, invalidateShippingDocument,
+		arg.TenantID,
+		arg.ScheduleID,
+		arg.ID,
+		arg.VoidedBy,
+		arg.VoidedByName,
+		arg.VoidReason,
+	)
+	var i ShippingDocument
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ScheduleID,
+		&i.DocumentGroupKey,
+		&i.Category,
+		&i.Version,
+		&i.FileName,
+		&i.FileKey,
+		&i.FileSize,
+		&i.ContentType,
+		&i.Remark,
+		&i.Status,
+		&i.UploadedBy,
+		&i.UploadedByName,
+		&i.UploadedAt,
+		&i.VoidedBy,
+		&i.VoidedByName,
+		&i.VoidedAt,
+		&i.VoidReason,
 	)
 	return i, err
 }
@@ -996,6 +1191,76 @@ func (q *Queries) ListSchedules(ctx context.Context, arg ListSchedulesParams) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const listShippingDocuments = `-- name: ListShippingDocuments :many
+SELECT id, tenant_id, schedule_id, document_group_key, category, version, file_name, file_key, file_size, content_type, remark, status, uploaded_by, uploaded_by_name, uploaded_at, voided_by, voided_by_name, voided_at, void_reason FROM shipping_documents
+WHERE tenant_id = $1 AND schedule_id = $2
+ORDER BY uploaded_at DESC, id DESC
+`
+
+type ListShippingDocumentsParams struct {
+	TenantID   int64
+	ScheduleID int64
+}
+
+func (q *Queries) ListShippingDocuments(ctx context.Context, arg ListShippingDocumentsParams) ([]ShippingDocument, error) {
+	rows, err := q.db.Query(ctx, listShippingDocuments, arg.TenantID, arg.ScheduleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ShippingDocument
+	for rows.Next() {
+		var i ShippingDocument
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ScheduleID,
+			&i.DocumentGroupKey,
+			&i.Category,
+			&i.Version,
+			&i.FileName,
+			&i.FileKey,
+			&i.FileSize,
+			&i.ContentType,
+			&i.Remark,
+			&i.Status,
+			&i.UploadedBy,
+			&i.UploadedByName,
+			&i.UploadedAt,
+			&i.VoidedBy,
+			&i.VoidedByName,
+			&i.VoidedAt,
+			&i.VoidReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const nextShippingDocumentVersion = `-- name: NextShippingDocumentVersion :one
+SELECT (COALESCE(MAX(version), 0) + 1)::int
+FROM shipping_documents
+WHERE tenant_id = $1 AND schedule_id = $2 AND document_group_key = $3
+`
+
+type NextShippingDocumentVersionParams struct {
+	TenantID         int64
+	ScheduleID       int64
+	DocumentGroupKey string
+}
+
+func (q *Queries) NextShippingDocumentVersion(ctx context.Context, arg NextShippingDocumentVersionParams) (int32, error) {
+	row := q.db.QueryRow(ctx, nextShippingDocumentVersion, arg.TenantID, arg.ScheduleID, arg.DocumentGroupKey)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const resetOtherApproachingRouteNodes = `-- name: ResetOtherApproachingRouteNodes :exec

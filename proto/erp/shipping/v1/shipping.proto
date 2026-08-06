@@ -21,6 +21,11 @@ service ShippingService {
   rpc RemoveRouteNode(RemoveRouteNodeRequest) returns (RemoveRouteNodeResponse);
   rpc ReorderRoute(ReorderRouteRequest) returns (ReorderRouteResponse);
   rpc UpdateProgress(UpdateProgressRequest) returns (UpdateProgressResponse);
+  rpc PresignDocumentUpload(PresignDocumentUploadRequest) returns (PresignDocumentUploadResponse);
+  rpc RegisterDocument(RegisterDocumentRequest) returns (RegisterDocumentResponse);
+  rpc ListDocuments(ListDocumentsRequest) returns (ListDocumentsResponse);
+  rpc GetDocumentAccess(GetDocumentAccessRequest) returns (GetDocumentAccessResponse);
+  rpc InvalidateDocument(InvalidateDocumentRequest) returns (InvalidateDocumentResponse);
 }
 
 message GetModuleStatusRequest {}
@@ -240,3 +245,63 @@ message UpdateProgressResponse {
   repeated RouteNode route_nodes = 2;
   repeated DelayEvent delay_events = 3;
 }
+
+message ShippingDocument {
+  int64 id = 1;
+  int64 schedule_id = 2;
+  string document_group_key = 3;
+  string category = 4;
+  int32 version = 5;
+  string file_name = 6;
+  int64 file_size = 7;
+  string content_type = 8;
+  string remark = 9;
+  string status = 10;
+  int64 uploaded_by = 11;
+  string uploaded_by_name = 12;
+  string uploaded_at = 13;
+  int64 voided_by = 14;
+  string voided_by_name = 15;
+  string voided_at = 16;
+  string void_reason = 17;
+}
+
+message PresignDocumentUploadRequest {
+  int64 schedule_id = 1;
+  string file_name = 2;
+}
+message PresignDocumentUploadResponse {
+  string file_key = 1;
+  string upload_url = 2;
+  int32 expires_in_seconds = 3;
+}
+
+message RegisterDocumentRequest {
+  int64 schedule_id = 1;
+  string file_key = 2;
+  string file_name = 3;
+  string category = 4;
+  string remark = 5;
+  int64 replaces_document_id = 6;
+}
+message RegisterDocumentResponse { ShippingDocument document = 1; }
+
+message ListDocumentsRequest { int64 schedule_id = 1; }
+message ListDocumentsResponse { repeated ShippingDocument documents = 1; }
+
+message GetDocumentAccessRequest {
+  int64 schedule_id = 1;
+  int64 document_id = 2;
+  string mode = 3;
+}
+message GetDocumentAccessResponse {
+  string url = 1;
+  int32 expires_in_seconds = 2;
+}
+
+message InvalidateDocumentRequest {
+  int64 schedule_id = 1;
+  int64 document_id = 2;
+  string reason = 3;
+}
+message InvalidateDocumentResponse { ShippingDocument document = 1; }

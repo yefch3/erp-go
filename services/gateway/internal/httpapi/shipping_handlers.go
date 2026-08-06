@@ -191,3 +191,79 @@ func (s *Server) updateShippingProgress(w http.ResponseWriter, r *http.Request) 
 	}
 	s.writeProto(w, resp)
 }
+
+func shippingDocumentID(r *http.Request) int64 {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "documentID"), 10, 64)
+	return id
+}
+
+func (s *Server) listShippingDocuments(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.ListDocuments(r.Context(), &shippingv1.ListDocumentsRequest{ScheduleId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) presignShippingDocument(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.PresignDocumentUploadRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.ScheduleId = idFromPath(r)
+	resp, err := s.Shipping.PresignDocumentUpload(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) registerShippingDocument(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.RegisterDocumentRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.ScheduleId = idFromPath(r)
+	resp, err := s.Shipping.RegisterDocument(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) shippingDocumentAccess(w http.ResponseWriter, r *http.Request, mode string) {
+	resp, err := s.Shipping.GetDocumentAccess(r.Context(), &shippingv1.GetDocumentAccessRequest{
+		ScheduleId: idFromPath(r), DocumentId: shippingDocumentID(r), Mode: mode,
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) previewShippingDocument(w http.ResponseWriter, r *http.Request) {
+	s.shippingDocumentAccess(w, r, "PREVIEW")
+}
+
+func (s *Server) downloadShippingDocument(w http.ResponseWriter, r *http.Request) {
+	s.shippingDocumentAccess(w, r, "DOWNLOAD")
+}
+
+func (s *Server) invalidateShippingDocument(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.InvalidateDocumentRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.ScheduleId = idFromPath(r)
+	req.DocumentId = shippingDocumentID(r)
+	resp, err := s.Shipping.InvalidateDocument(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}

@@ -119,6 +119,36 @@ func delaysToProto(delays []store.ShippingDelayEvent) []*shippingv1.DelayEvent {
 	return out
 }
 
+func documentToProto(d store.ShippingDocument) *shippingv1.ShippingDocument {
+	var voidedBy int64
+	var voidedByName, voidReason string
+	if d.VoidedBy != nil {
+		voidedBy = *d.VoidedBy
+	}
+	if d.VoidedByName != nil {
+		voidedByName = *d.VoidedByName
+	}
+	if d.VoidReason != nil {
+		voidReason = *d.VoidReason
+	}
+	return &shippingv1.ShippingDocument{
+		Id: d.ID, ScheduleId: d.ScheduleID, DocumentGroupKey: d.DocumentGroupKey,
+		Category: d.Category, Version: d.Version, FileName: d.FileName,
+		FileSize: d.FileSize, ContentType: d.ContentType, Remark: d.Remark,
+		Status: d.Status, UploadedBy: d.UploadedBy, UploadedByName: d.UploadedByName,
+		UploadedAt: timeValue(d.UploadedAt), VoidedBy: voidedBy,
+		VoidedByName: voidedByName, VoidedAt: timeValue(d.VoidedAt), VoidReason: voidReason,
+	}
+}
+
+func documentsToProto(rows []store.ShippingDocument) []*shippingv1.ShippingDocument {
+	out := make([]*shippingv1.ShippingDocument, len(rows))
+	for i, row := range rows {
+		out[i] = documentToProto(row)
+	}
+	return out
+}
+
 func inputFromProto(in *shippingv1.ScheduleInput) app.ScheduleInput {
 	return app.ScheduleInput{
 		ContractID: in.GetContractId(), ContractNo: in.GetContractNo(), CustomerID: in.GetCustomerId(), CarrierID: in.GetCarrierId(),
@@ -234,6 +264,46 @@ func (h *Handler) UpdateProgress(ctx context.Context, req *shippingv1.UpdateProg
 		return nil, err
 	}
 	return &shippingv1.UpdateProgressResponse{Schedule: scheduleToProto(s), RouteNodes: routeNodesToProto(nodes), DelayEvents: delaysToProto(delays)}, nil
+}
+
+func (h *Handler) PresignDocumentUpload(ctx context.Context, req *shippingv1.PresignDocumentUploadRequest) (*shippingv1.PresignDocumentUploadResponse, error) {
+	key, url, expires, err := h.svc.PresignDocumentUpload(ctx, grpcx.TenantID(ctx), req.GetScheduleId(), req.GetFileName())
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.PresignDocumentUploadResponse{FileKey: key, UploadUrl: url, ExpiresInSeconds: expires}, nil
+}
+
+func (h *Handler) RegisterDocument(ctx context.Context, req *shippingv1.RegisterDocumentRequest) (*shippingv1.RegisterDocumentResponse, error) {
+	doc, err := h.svc.RegisterDocument(ctx, grpcx.TenantID(ctx), req.GetScheduleId(), req.GetFileKey(), req.GetFileName(), req.GetCategory(), req.GetRemark(), req.GetReplacesDocumentId(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.RegisterDocumentResponse{Document: documentToProto(doc)}, nil
+}
+
+func (h *Handler) ListDocuments(ctx context.Context, req *shippingv1.ListDocumentsRequest) (*shippingv1.ListDocumentsResponse, error) {
+	rows, err := h.svc.ListDocuments(ctx, grpcx.TenantID(ctx), req.GetScheduleId())
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.ListDocumentsResponse{Documents: documentsToProto(rows)}, nil
+}
+
+func (h *Handler) GetDocumentAccess(ctx context.Context, req *shippingv1.GetDocumentAccessRequest) (*shippingv1.GetDocumentAccessResponse, error) {
+	url, err := h.svc.DocumentAccess(ctx, grpcx.TenantID(ctx), req.GetScheduleId(), req.GetDocumentId(), req.GetMode(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.GetDocumentAccessResponse{Url: url, ExpiresInSeconds: 120}, nil
+}
+
+func (h *Handler) InvalidateDocument(ctx context.Context, req *shippingv1.InvalidateDocumentRequest) (*shippingv1.InvalidateDocumentResponse, error) {
+	doc, err := h.svc.InvalidateDocument(ctx, grpcx.TenantID(ctx), req.GetScheduleId(), req.GetDocumentId(), req.GetReason(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.InvalidateDocumentResponse{Document: documentToProto(doc)}, nil
 }
 
 func (h *Handler) CreateSchedule(ctx context.Context, req *shippingv1.CreateScheduleRequest) (*shippingv1.CreateScheduleResponse, error) {

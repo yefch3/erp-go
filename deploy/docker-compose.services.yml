@@ -178,6 +178,11 @@ services:
     environment:
       DB_DSN: postgres://erp_shipping:erp_shipping_pw@postgres:5432/erp_shipping?sslmode=disable
       GRPC_PORT: "9009"
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: localhost:19000
+      MINIO_ACCESS_KEY: erp
+      MINIO_SECRET_KEY: erp_dev_password
+      MINIO_BUCKET: erp-files
     ports:
       - "9009:9009"
     networks: [infra]

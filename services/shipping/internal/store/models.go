@@ -60,6 +60,28 @@ type ShippingDelayEvent struct {
 	ResolvedAt          pgtype.Timestamptz
 }
 
+type ShippingDocument struct {
+	ID               int64
+	TenantID         int64
+	ScheduleID       int64
+	DocumentGroupKey string
+	Category         string
+	Version          int32
+	FileName         string
+	FileKey          string
+	FileSize         int64
+	ContentType      string
+	Remark           string
+	Status           string
+	UploadedBy       int64
+	UploadedByName   string
+	UploadedAt       pgtype.Timestamptz
+	VoidedBy         *int64
+	VoidedByName     *string
+	VoidedAt         pgtype.Timestamptz
+	VoidReason       *string
+}
+
 type ShippingRouteNode struct {
 	ID                int64
 	TenantID          int64
