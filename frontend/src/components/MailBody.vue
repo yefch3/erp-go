@@ -19,9 +19,9 @@
     class="mail-frame"
     :srcdoc="doc"
     :style="{ height: height + 'px' }"
-    sandbox="allow-popups allow-popups-to-escape-sandbox"
+    sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
     referrerpolicy="no-referrer"
-    :title="t('reader.bodyFrame')"
+    :aria-label="t('reader.bodyFrame')"
     @load="measure"
   />
 </template>
@@ -39,16 +39,21 @@ const frame = ref<HTMLIFrameElement | null>(null)
 // that the common case does not visibly grow.
 const height = ref(320)
 
-// No allow-scripts, and no allow-same-origin.
+// allow-same-origin, and deliberately never allow-scripts.
 //
-// Together those two make the frame's origin opaque, so nothing inside can
-// reach our cookies, our DOM or our session even if the sanitiser one day
-// misses something. It also means no script of ours can run inside to report
-// the content height, which is the usual way this is done — so the height is
-// measured from out here instead, which is possible only because srcdoc
-// content without allow-same-origin is still same-origin *to the parent* for
-// document access in every engine we target. Where it is not, the fallback
-// below keeps the mail readable rather than clipped.
+// The isolation that matters here is CSS, and that comes from the frame
+// itself rather than from the origin: two documents never share styles,
+// whatever their origins. What allow-same-origin grants is script access —
+// and no script can run, because allow-scripts is absent. The pairing that is
+// genuinely dangerous is allow-same-origin *with* allow-scripts, where the
+// frame can reach up and remove its own sandbox attribute; without scripts
+// there is nothing to do the reaching.
+//
+// It was left off at first, on the assumption that the parent could still
+// read contentDocument for the height. It cannot: without allow-same-origin
+// the document is opaque to us, every measurement threw, and the frame sat at
+// its fallback height with the mail scrolling inside a box — which is exactly
+// what a mail client should never look like.
 //
 // allow-popups is there so a link still opens; without it a sandboxed frame
 // swallows target=_blank silently, and a customer's link doing nothing is
@@ -85,6 +90,10 @@ function measure() {
 }
 
 function read() {
+  // No overflow:hidden inside the frame, deliberately. The frame is sized to
+  // its content so no scrollbar appears anyway, and hiding the overflow would
+  // mean that a measurement which went wrong silently clips the mail instead
+  // of leaving it reachable. Wrong-but-scrollable beats wrong-but-hidden.
   const el = frame.value
   if (!el) return
   try {
@@ -108,11 +117,10 @@ onBeforeUnmount(() => window.clearInterval(poll))
   display: block;
   width: 100%;
   border: 0;
-  /* The frame is the mail's surface. A hairline and a white ground are what
-     separate the sender's content from our chrome — without them a mail with
-     no background of its own bleeds into the page and the reader cannot tell
-     where our UI stops and a stranger's begins. */
-  background: #fff;
-  border-radius: 6px;
+  /* No card, no border. The mail brings its own background — most do — and
+     wrapping it in one of ours puts a frame around a picture that already has
+     one. What separates the sender's content from our chrome is the rule
+     above the body, the same way Gmail does it. */
+  background: transparent;
 }
 </style>
