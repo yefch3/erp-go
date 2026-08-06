@@ -441,10 +441,14 @@ func (s *Service) reconcileStars(ctx context.Context, tenantID int64, acct MailA
 //
 // All of it lands as ERP-side state written directly, never through the
 // marking path: that would queue a write-back and ask the host to redo what
-// the host just did. And a departure is mirrored as a *soft* delete even when
-// the message is gone from the host entirely — our copy may be the only one
-// left, the trash gives thirty days to notice a mistake, and the sweeper
-// finishes the job afterwards.
+// the host just did.
+//
+// A first departure is always mirrored as a *soft* delete, so a wrong guess
+// costs a trip to the recycle bin rather than the mail. The second one is not:
+// a message already in our bin that the host cannot produce any more has been
+// destroyed there, and the mirror is strict, so it is destroyed here — objects
+// and row. That step alone refuses to act on the folder scans and demands a
+// targeted search first; see the branch for why.
 func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct MailAccount, folder, rescue string, missing []store.ListRecentForReconcileRow) {
 	// Asked for first, and fatal when it fails. Without this answer a rescue
 	// is indistinguishable from a deletion, and of the two mistakes available
@@ -480,7 +484,7 @@ func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct Mai
 		}
 	}
 
-	deleted, archived, vanished, saved := 0, 0, 0, 0
+	deleted, archived, vanished, saved, purged := 0, 0, 0, 0, 0
 	for _, r := range missing {
 		switch {
 		// Checked before the trash, because it is the case that must never be
@@ -517,14 +521,44 @@ func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct Mai
 			archived++
 
 		default:
-			// Nowhere we can see: expunged elsewhere, or filed into a folder
-			// this ERP does not track. Treated as a deletion, softly, and
-			// counted apart from the ones actually found in the trash —
-			// somebody asking "why is my mail in the bin?" deserves to be
-			// able to tell a confirmed deletion from an inference.
+			// Already in our recycle bin, and now not even in the host's. The
+			// host destroyed it — somebody emptied the trash, or the provider
+			// aged it out — and a strict mirror destroys our copy too.
+			//
+			// This is the only outcome here that cannot be undone, so it is
+			// the only one that refuses to run on the scan above. That scan
+			// reads the newest departureScan messages of the trash, and a
+			// mailbox whose bin is fuller than that would show perfectly
+			// ordinary mail as "gone". A targeted SEARCH for this one
+			// Message-ID answers the actual question instead of a proxy for
+			// it. Two things therefore hold the trigger: no Message-ID means
+			// no way to ask, and an error means no answer — neither is a yes.
 			if r.DeletedAt.Valid {
+				if r.MessageID == "" {
+					continue
+				}
+				_, stillBinned, err := s.mailbox.FindUIDByMessageID(ctx, acct, trash, r.MessageID)
+				if err != nil {
+					s.log.Warn("could not confirm a host purge, so leaving the mail alone",
+						"account", acct.AccountID, "message_id", r.MessageID, "err", err)
+					continue
+				}
+				if stillBinned {
+					continue
+				}
+				if err := s.purgeOne(ctx, tenantID, r.OwnerID, r.ID, r.RawKey); err != nil {
+					s.log.Warn("could not mirror a host purge", "id", r.ID, "err", err)
+					continue
+				}
+				purged++
 				continue
 			}
+			// Not deleted yet, and nowhere we can see: expunged elsewhere, or
+			// filed into a folder this ERP does not track. Treated as a
+			// deletion, softly, and counted apart from the ones actually found
+			// in the trash — somebody asking "why is my mail in the bin?"
+			// deserves to be able to tell a confirmed deletion from an
+			// inference.
 			if err := s.q.MirrorHostDelete(ctx, store.MirrorHostDeleteParams{
 				TenantID: tenantID, AccountID: acct.AccountID,
 				Folder: folder, ImapUid: r.ImapUid,
@@ -537,11 +571,11 @@ func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct Mai
 			vanished++
 		}
 	}
-	if deleted > 0 || archived > 0 || vanished > 0 || saved > 0 {
+	if deleted > 0 || archived > 0 || vanished > 0 || saved > 0 || purged > 0 {
 		s.log.Info("mail followed from the host",
 			"account", acct.AccountID, "folder", folder,
 			"in_trash", deleted, "archived", archived, "vanished", vanished,
-			"rescued", saved)
+			"rescued", saved, "purged", purged)
 	}
 }
 
