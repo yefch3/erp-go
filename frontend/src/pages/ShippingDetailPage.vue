@@ -11,7 +11,7 @@
       <el-divider content-position="left">延误记录</el-divider>
       <el-table :data="delayEvents" size="small"><el-table-column prop="createdAt" label="时间" width="170"><template #default="{row}">{{formatTime(row.createdAt)}}</template></el-table-column><el-table-column label="ETA变化" width="190"><template #default="{row}">{{row.oldEta}} → {{row.newEta}}</template></el-table-column><el-table-column label="本次变化" width="100"><template #default="{row}"><span :class="row.changeDays>0?'danger-text':'success-text'">{{row.changeDays>0?'+':''}}{{row.changeDays}}天</span></template></el-table-column><el-table-column label="累计" width="100"><template #default="{row}">+{{row.cumulativeDelayDays}}天</template></el-table-column><el-table-column prop="reason" label="原因"/><el-table-column prop="operatorName" label="操作人" width="110"/></el-table>
     </el-tab-pane>
-    <el-tab-pane label="单证附件"><el-empty :description="t('shipping.documentsD2')" /></el-tab-pane>
+    <el-tab-pane label="单证附件"><ShippingDocumentsPanel v-if="schedule" :schedule-id="schedule.id" @changed="load" /></el-tab-pane>
     <el-tab-pane label="变更记录"><el-timeline v-if="changes.length"><el-timeline-item v-for="change in changes" :key="change.id" :timestamp="formatTime(change.createdAt)" placement="top"><strong>{{change.operatorName}} · {{change.changeType}}</strong><div>{{change.fieldName}}：{{change.oldValue||'—'}} → {{change.newValue||'—'}}</div><div class="reason">{{change.reason}}</div></el-timeline-item></el-timeline><el-empty v-else :description="t('shipping.noChanges')" /></el-tab-pane>
   </el-tabs></el-card>
   <ShippingScheduleDialog v-if="schedule" v-model="editOpen" :schedule="schedule" @saved="load" />
@@ -29,6 +29,7 @@ import ShippingScheduleDialog from '../components/ShippingScheduleDialog.vue'
 import ShippingRouteNodeDialog from '../components/ShippingRouteNodeDialog.vue'
 import ShippingProgressDialog from '../components/ShippingProgressDialog.vue'
 import ShippingRouteNodeTimeDialog from '../components/ShippingRouteNodeTimeDialog.vue'
+import ShippingDocumentsPanel from '../components/ShippingDocumentsPanel.vue'
 import { statusTag, type ScheduleChange, type ShippingSchedule, type ShippingRouteNode, type ShippingDelayEvent } from '../shipping'
 import { useAuthStore } from '../stores/auth'
 

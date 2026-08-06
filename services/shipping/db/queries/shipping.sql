@@ -305,3 +305,40 @@ SELECT
   count(*) FILTER (WHERE has_temporary_call AND status <> 'CANCELLED')::bigint AS temporary_call
 FROM shipping_schedules
 WHERE tenant_id = $1;
+
+-- name: CreateShippingDocument :one
+INSERT INTO shipping_documents (
+    tenant_id, schedule_id, document_group_key, category, version,
+    file_name, file_key, file_size, content_type, remark,
+    uploaded_by, uploaded_by_name
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+RETURNING *;
+
+-- name: GetShippingDocument :one
+SELECT * FROM shipping_documents
+WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3;
+
+-- name: GetShippingDocumentForUpdate :one
+SELECT * FROM shipping_documents
+WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3
+FOR UPDATE;
+
+-- name: NextShippingDocumentVersion :one
+SELECT (COALESCE(MAX(version), 0) + 1)::int
+FROM shipping_documents
+WHERE tenant_id = $1 AND schedule_id = $2 AND document_group_key = $3;
+
+-- name: ListShippingDocuments :many
+SELECT * FROM shipping_documents
+WHERE tenant_id = $1 AND schedule_id = $2
+ORDER BY uploaded_at DESC, id DESC;
+
+-- name: InvalidateShippingDocument :one
+UPDATE shipping_documents SET
+    status = 'VOIDED',
+    voided_by = $4,
+    voided_by_name = $5,
+    voided_at = now(),
+    void_reason = $6
+WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3 AND status = 'ACTIVE'
+RETURNING *;

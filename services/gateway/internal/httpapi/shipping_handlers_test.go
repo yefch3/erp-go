@@ -82,3 +82,17 @@ func TestShippingListRouteRequiresAuthentication(t *testing.T) {
 		t.Fatalf("status = %d, want 401", recorder.Code)
 	}
 }
+
+func TestShippingDocumentRoutesRequireAuthentication(t *testing.T) {
+	s := &Server{JWTSecret: "test-secret"}
+	for _, tc := range []struct{ method, target string }{
+		{http.MethodGet, "/api/shipping/schedules/1/documents"},
+		{http.MethodPost, "/api/shipping/schedules/1/documents/2/download"},
+	} {
+		recorder := httptest.NewRecorder()
+		s.Router().ServeHTTP(recorder, httptest.NewRequest(tc.method, tc.target, nil))
+		if recorder.Code != http.StatusUnauthorized {
+			t.Fatalf("%s status=%d, want 401", tc.target, recorder.Code)
+		}
+	}
+}

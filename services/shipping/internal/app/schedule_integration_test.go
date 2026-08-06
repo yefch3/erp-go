@@ -110,6 +110,7 @@ func TestScheduleLifecycle(t *testing.T) {
 }
 
 func cleanupShippingTenant(ctx context.Context, pool *pgxpool.Pool, tenantID int64) {
+	_, _ = pool.Exec(ctx, "DELETE FROM shipping_documents WHERE tenant_id=$1", tenantID)
 	_, _ = pool.Exec(ctx, "DELETE FROM shipping_arrival_reminders WHERE tenant_id=$1", tenantID)
 	_, _ = pool.Exec(ctx, "DELETE FROM shipping_delay_events WHERE tenant_id=$1", tenantID)
 	_, _ = pool.Exec(ctx, "DELETE FROM shipping_schedule_changes WHERE tenant_id=$1", tenantID)

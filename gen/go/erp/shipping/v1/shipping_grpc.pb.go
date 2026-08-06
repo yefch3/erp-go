@@ -31,6 +31,11 @@ const (
 	ShippingService_RemoveRouteNode_FullMethodName       = "/erp.shipping.v1.ShippingService/RemoveRouteNode"
 	ShippingService_ReorderRoute_FullMethodName          = "/erp.shipping.v1.ShippingService/ReorderRoute"
 	ShippingService_UpdateProgress_FullMethodName        = "/erp.shipping.v1.ShippingService/UpdateProgress"
+	ShippingService_PresignDocumentUpload_FullMethodName = "/erp.shipping.v1.ShippingService/PresignDocumentUpload"
+	ShippingService_RegisterDocument_FullMethodName      = "/erp.shipping.v1.ShippingService/RegisterDocument"
+	ShippingService_ListDocuments_FullMethodName         = "/erp.shipping.v1.ShippingService/ListDocuments"
+	ShippingService_GetDocumentAccess_FullMethodName     = "/erp.shipping.v1.ShippingService/GetDocumentAccess"
+	ShippingService_InvalidateDocument_FullMethodName    = "/erp.shipping.v1.ShippingService/InvalidateDocument"
 )
 
 // ShippingServiceClient is the client API for ShippingService service.
@@ -52,6 +57,11 @@ type ShippingServiceClient interface {
 	RemoveRouteNode(ctx context.Context, in *RemoveRouteNodeRequest, opts ...grpc.CallOption) (*RemoveRouteNodeResponse, error)
 	ReorderRoute(ctx context.Context, in *ReorderRouteRequest, opts ...grpc.CallOption) (*ReorderRouteResponse, error)
 	UpdateProgress(ctx context.Context, in *UpdateProgressRequest, opts ...grpc.CallOption) (*UpdateProgressResponse, error)
+	PresignDocumentUpload(ctx context.Context, in *PresignDocumentUploadRequest, opts ...grpc.CallOption) (*PresignDocumentUploadResponse, error)
+	RegisterDocument(ctx context.Context, in *RegisterDocumentRequest, opts ...grpc.CallOption) (*RegisterDocumentResponse, error)
+	ListDocuments(ctx context.Context, in *ListDocumentsRequest, opts ...grpc.CallOption) (*ListDocumentsResponse, error)
+	GetDocumentAccess(ctx context.Context, in *GetDocumentAccessRequest, opts ...grpc.CallOption) (*GetDocumentAccessResponse, error)
+	InvalidateDocument(ctx context.Context, in *InvalidateDocumentRequest, opts ...grpc.CallOption) (*InvalidateDocumentResponse, error)
 }
 
 type shippingServiceClient struct {
@@ -182,6 +192,56 @@ func (c *shippingServiceClient) UpdateProgress(ctx context.Context, in *UpdatePr
 	return out, nil
 }
 
+func (c *shippingServiceClient) PresignDocumentUpload(ctx context.Context, in *PresignDocumentUploadRequest, opts ...grpc.CallOption) (*PresignDocumentUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PresignDocumentUploadResponse)
+	err := c.cc.Invoke(ctx, ShippingService_PresignDocumentUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) RegisterDocument(ctx context.Context, in *RegisterDocumentRequest, opts ...grpc.CallOption) (*RegisterDocumentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RegisterDocumentResponse)
+	err := c.cc.Invoke(ctx, ShippingService_RegisterDocument_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) ListDocuments(ctx context.Context, in *ListDocumentsRequest, opts ...grpc.CallOption) (*ListDocumentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDocumentsResponse)
+	err := c.cc.Invoke(ctx, ShippingService_ListDocuments_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) GetDocumentAccess(ctx context.Context, in *GetDocumentAccessRequest, opts ...grpc.CallOption) (*GetDocumentAccessResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetDocumentAccessResponse)
+	err := c.cc.Invoke(ctx, ShippingService_GetDocumentAccess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) InvalidateDocument(ctx context.Context, in *InvalidateDocumentRequest, opts ...grpc.CallOption) (*InvalidateDocumentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InvalidateDocumentResponse)
+	err := c.cc.Invoke(ctx, ShippingService_InvalidateDocument_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ShippingServiceServer is the server API for ShippingService service.
 // All implementations must embed UnimplementedShippingServiceServer
 // for forward compatibility.
@@ -201,6 +261,11 @@ type ShippingServiceServer interface {
 	RemoveRouteNode(context.Context, *RemoveRouteNodeRequest) (*RemoveRouteNodeResponse, error)
 	ReorderRoute(context.Context, *ReorderRouteRequest) (*ReorderRouteResponse, error)
 	UpdateProgress(context.Context, *UpdateProgressRequest) (*UpdateProgressResponse, error)
+	PresignDocumentUpload(context.Context, *PresignDocumentUploadRequest) (*PresignDocumentUploadResponse, error)
+	RegisterDocument(context.Context, *RegisterDocumentRequest) (*RegisterDocumentResponse, error)
+	ListDocuments(context.Context, *ListDocumentsRequest) (*ListDocumentsResponse, error)
+	GetDocumentAccess(context.Context, *GetDocumentAccessRequest) (*GetDocumentAccessResponse, error)
+	InvalidateDocument(context.Context, *InvalidateDocumentRequest) (*InvalidateDocumentResponse, error)
 	mustEmbedUnimplementedShippingServiceServer()
 }
 
@@ -246,6 +311,21 @@ func (UnimplementedShippingServiceServer) ReorderRoute(context.Context, *Reorder
 }
 func (UnimplementedShippingServiceServer) UpdateProgress(context.Context, *UpdateProgressRequest) (*UpdateProgressResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateProgress not implemented")
+}
+func (UnimplementedShippingServiceServer) PresignDocumentUpload(context.Context, *PresignDocumentUploadRequest) (*PresignDocumentUploadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PresignDocumentUpload not implemented")
+}
+func (UnimplementedShippingServiceServer) RegisterDocument(context.Context, *RegisterDocumentRequest) (*RegisterDocumentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RegisterDocument not implemented")
+}
+func (UnimplementedShippingServiceServer) ListDocuments(context.Context, *ListDocumentsRequest) (*ListDocumentsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListDocuments not implemented")
+}
+func (UnimplementedShippingServiceServer) GetDocumentAccess(context.Context, *GetDocumentAccessRequest) (*GetDocumentAccessResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetDocumentAccess not implemented")
+}
+func (UnimplementedShippingServiceServer) InvalidateDocument(context.Context, *InvalidateDocumentRequest) (*InvalidateDocumentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InvalidateDocument not implemented")
 }
 func (UnimplementedShippingServiceServer) mustEmbedUnimplementedShippingServiceServer() {}
 func (UnimplementedShippingServiceServer) testEmbeddedByValue()                         {}
@@ -484,6 +564,96 @@ func _ShippingService_UpdateProgress_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ShippingService_PresignDocumentUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PresignDocumentUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).PresignDocumentUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_PresignDocumentUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).PresignDocumentUpload(ctx, req.(*PresignDocumentUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_RegisterDocument_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegisterDocumentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).RegisterDocument(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_RegisterDocument_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).RegisterDocument(ctx, req.(*RegisterDocumentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_ListDocuments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDocumentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).ListDocuments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_ListDocuments_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).ListDocuments(ctx, req.(*ListDocumentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_GetDocumentAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDocumentAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).GetDocumentAccess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_GetDocumentAccess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).GetDocumentAccess(ctx, req.(*GetDocumentAccessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_InvalidateDocument_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InvalidateDocumentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).InvalidateDocument(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_InvalidateDocument_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).InvalidateDocument(ctx, req.(*InvalidateDocumentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ShippingService_ServiceDesc is the grpc.ServiceDesc for ShippingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -538,6 +708,26 @@ var ShippingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateProgress",
 			Handler:    _ShippingService_UpdateProgress_Handler,
+		},
+		{
+			MethodName: "PresignDocumentUpload",
+			Handler:    _ShippingService_PresignDocumentUpload_Handler,
+		},
+		{
+			MethodName: "RegisterDocument",
+			Handler:    _ShippingService_RegisterDocument_Handler,
+		},
+		{
+			MethodName: "ListDocuments",
+			Handler:    _ShippingService_ListDocuments_Handler,
+		},
+		{
+			MethodName: "GetDocumentAccess",
+			Handler:    _ShippingService_GetDocumentAccess_Handler,
+		},
+		{
+			MethodName: "InvalidateDocument",
+			Handler:    _ShippingService_InvalidateDocument_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

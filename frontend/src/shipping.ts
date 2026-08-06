@@ -86,6 +86,26 @@ export interface ScheduleChange {
   createdAt: string
 }
 
+export interface ShippingDocument {
+  id: string
+  scheduleId: string
+  documentGroupKey: string
+  category: string
+  version: number
+  fileName: string
+  fileSize: string
+  contentType: string
+  remark: string
+  status: 'ACTIVE' | 'VOIDED'
+  uploadedBy: string
+  uploadedByName: string
+  uploadedAt: string
+  voidedBy: string
+  voidedByName: string
+  voidedAt: string
+  voidReason: string
+}
+
 export const SHIPPING_STATUSES = [
   'PLANNED', 'SAILED', 'IN_TRANSIT', 'ARRIVED', 'COMPLETED', 'DELAYED', 'CANCELLED',
 ] as const

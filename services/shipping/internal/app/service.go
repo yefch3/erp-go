@@ -17,22 +17,26 @@ import (
 	"github.com/sgao19/erp-go/services/shipping/internal/store"
 )
 
-const SchemaVersion int32 = 4
+const SchemaVersion int32 = 5
 
 type databasePinger interface{ Ping(context.Context) error }
 
 type Service struct {
-	db   databasePinger
-	pool *pgxpool.Pool
-	q    *store.Queries
+	db    databasePinger
+	pool  *pgxpool.Pool
+	q     *store.Queries
+	files Files
 }
 
 // New accepts the small pinger interface so the readiness check remains easy
 // to unit test. Schedule commands require the production pgx pool.
-func New(db databasePinger) *Service {
+func New(db databasePinger, fileStores ...Files) *Service {
 	s := &Service{db: db}
 	if pool, ok := db.(*pgxpool.Pool); ok {
 		s.pool, s.q = pool, store.New(pool)
+	}
+	if len(fileStores) > 0 {
+		s.files = fileStores[0]
 	}
 	return s
 }
