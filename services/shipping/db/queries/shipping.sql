@@ -283,19 +283,101 @@ ORDER BY created_at DESC, id DESC;
 
 -- name: CancelPendingReminders :exec
 UPDATE shipping_arrival_reminders SET status = 'CANCELLED', updated_at = now()
-WHERE tenant_id = $1 AND schedule_id = $2 AND status = 'PENDING';
+WHERE tenant_id = $1 AND schedule_id = $2 AND status IN ('PENDING','FAILED','PROCESSING');
 
 -- name: CreateArrivalReminder :exec
 INSERT INTO shipping_arrival_reminders (
     tenant_id, schedule_id, destination_node_id, recipient_employee_id,
-    eta_revision, target_eta, due_at
-) VALUES ($1,$2,$3,$4,$5,$6,($6::date - 7)::timestamp AT TIME ZONE 'UTC')
+    reminder_type, eta_revision, target_eta, due_at
+) VALUES ($1,$2,$3,$4,'ARRIVAL_' || sqlc.arg(lead_days)::int || 'D',$5,$6,($6::date - sqlc.arg(lead_days)::int)::timestamp AT TIME ZONE 'UTC')
+ON CONFLICT (tenant_id, schedule_id, destination_node_id, recipient_employee_id, reminder_type, eta_revision)
+DO UPDATE SET target_eta = EXCLUDED.target_eta, due_at = EXCLUDED.due_at,
+    status = 'PENDING', sent_at = NULL, read_at = NULL, attempt_count = 0,
+    last_error = '', next_retry_at = NULL, updated_at = now()
+WHERE shipping_arrival_reminders.status <> 'SENT';
+
+-- name: ListArrivalReminderRules :many
+SELECT lead_days FROM shipping_arrival_reminder_rules
+WHERE tenant_id = $1 AND schedule_id = $2
+ORDER BY lead_days DESC;
+
+-- name: DeleteArrivalReminderRules :exec
+DELETE FROM shipping_arrival_reminder_rules
+WHERE tenant_id = $1 AND schedule_id = $2;
+
+-- name: CreateArrivalReminderRule :exec
+INSERT INTO shipping_arrival_reminder_rules (
+    tenant_id, schedule_id, lead_days, created_by, created_by_name
+) VALUES ($1,$2,$3,$4,$5)
 ON CONFLICT DO NOTHING;
 
 -- name: ListArrivalReminders :many
 SELECT * FROM shipping_arrival_reminders
 WHERE tenant_id = $1 AND schedule_id = $2
 ORDER BY eta_revision DESC, id DESC;
+
+-- name: ListDueArrivalReminderIDs :many
+SELECT r.id
+FROM shipping_arrival_reminders r
+JOIN shipping_schedules s
+  ON s.tenant_id = r.tenant_id AND s.id = r.schedule_id
+WHERE r.status IN ('PENDING','FAILED')
+  AND COALESCE(r.next_retry_at, r.due_at) <= now()
+  AND s.status NOT IN ('ARRIVED','COMPLETED','CANCELLED')
+ORDER BY COALESCE(r.next_retry_at, r.due_at), r.id
+LIMIT $1;
+
+-- name: GetDueArrivalReminderForUpdate :one
+SELECT r.*, s.schedule_no, s.contract_no, s.customer_name, s.vessel_name,
+       s.voyage_no, s.port_of_discharge, s.status AS schedule_status
+FROM shipping_arrival_reminders r
+JOIN shipping_schedules s
+  ON s.tenant_id = r.tenant_id AND s.id = r.schedule_id
+WHERE r.id = $1
+  AND r.status IN ('PENDING','FAILED')
+  AND COALESCE(r.next_retry_at, r.due_at) <= now()
+  AND s.status NOT IN ('ARRIVED','COMPLETED','CANCELLED')
+FOR UPDATE OF r;
+
+-- name: MarkArrivalReminderSent :one
+UPDATE shipping_arrival_reminders
+SET status = 'SENT', title = $2, content = $3, detail_url = $4,
+    sent_at = now(), attempt_count = attempt_count + 1,
+    last_error = '', next_retry_at = NULL, updated_at = now()
+WHERE id = $1
+RETURNING *;
+
+-- name: MarkArrivalReminderFailed :exec
+UPDATE shipping_arrival_reminders
+SET status = 'FAILED', attempt_count = attempt_count + 1,
+    last_error = $2, next_retry_at = $3, updated_at = now()
+WHERE id = $1;
+
+-- name: CancelIneligibleArrivalReminders :exec
+UPDATE shipping_arrival_reminders r
+SET status = 'CANCELLED', updated_at = now()
+FROM shipping_schedules s
+WHERE s.tenant_id = r.tenant_id AND s.id = r.schedule_id
+  AND r.status IN ('PENDING','FAILED','PROCESSING')
+  AND s.status IN ('ARRIVED','COMPLETED','CANCELLED');
+
+-- name: ListEmployeeArrivalNotifications :many
+SELECT * FROM shipping_arrival_reminders
+WHERE tenant_id = $1 AND recipient_employee_id = $2 AND status = 'SENT'
+  AND (NOT sqlc.arg(unread_only)::boolean OR read_at IS NULL)
+ORDER BY sent_at DESC, id DESC
+LIMIT 50;
+
+-- name: CountUnreadEmployeeArrivalNotifications :one
+SELECT count(*)::bigint FROM shipping_arrival_reminders
+WHERE tenant_id = $1 AND recipient_employee_id = $2
+  AND status = 'SENT' AND read_at IS NULL;
+
+-- name: MarkEmployeeArrivalReminderRead :one
+UPDATE shipping_arrival_reminders
+SET read_at = COALESCE(read_at, now()), updated_at = now()
+WHERE tenant_id = $1 AND recipient_employee_id = $2 AND id = $3 AND status = 'SENT'
+RETURNING *;
 
 -- name: ShippingStatistics :one
 SELECT

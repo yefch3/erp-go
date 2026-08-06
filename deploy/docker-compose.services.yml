@@ -67,6 +67,9 @@ services:
       MINIO_ACCESS_KEY: erp
       MINIO_SECRET_KEY: erp_dev_password
       MINIO_BUCKET: erp-files
+      REDIS_ADDR: redis:6379
+      SHIPPING_REMINDER_INTERVAL: 24h
+      SHIPPING_REMINDER_BATCH_SIZE: "100"
     ports:
       - "9004:9004"
     networks: [infra]

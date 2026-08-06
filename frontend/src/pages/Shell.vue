@@ -70,6 +70,7 @@
       <el-header class="topbar">
         <span />
         <div class="topbar-right">
+          <ShippingArrivalNotifications v-if="auth.can('shipping:schedule:read')" />
           <LangSwitcher />
           <el-dropdown @command="onCommand">
             <span class="user">{{ auth.employeeName || '—' }}</span>
@@ -116,6 +117,7 @@ import { useI18n } from 'vue-i18n'
 import { post } from '../api'
 import { useAuthStore } from '../stores/auth'
 import LangSwitcher from '../components/LangSwitcher.vue'
+import ShippingArrivalNotifications from '../components/ShippingArrivalNotifications.vue'
 import { onLive, startLive, stopLive } from '../live'
 
 const passwordOpen = ref(false)

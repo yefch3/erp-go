@@ -36,6 +36,9 @@ func TestUpDownUp(t *testing.T) {
 	assertTable(t, db, "shipping_route_nodes", true)
 	assertTable(t, db, "shipping_delay_events", true)
 	assertTable(t, db, "shipping_arrival_reminders", true)
+	assertTable(t, db, "shipping_arrival_reminder_rules", true)
+	assertColumn(t, db, "shipping_arrival_reminders", "read_at", true)
+	assertColumn(t, db, "shipping_arrival_reminders", "next_retry_at", true)
 	assertTable(t, db, "shipping_documents", true)
 
 	if err := goose.DownTo(db, ".", 0); err != nil {
@@ -47,6 +50,7 @@ func TestUpDownUp(t *testing.T) {
 	assertTable(t, db, "shipping_route_nodes", false)
 	assertTable(t, db, "shipping_delay_events", false)
 	assertTable(t, db, "shipping_arrival_reminders", false)
+	assertTable(t, db, "shipping_arrival_reminder_rules", false)
 	assertTable(t, db, "shipping_documents", false)
 
 	if err := goose.Up(db, "."); err != nil {
@@ -56,6 +60,24 @@ func TestUpDownUp(t *testing.T) {
 	assertTable(t, db, "shipping_schedule_changes", true)
 	assertTable(t, db, "shipping_route_nodes", true)
 	assertTable(t, db, "shipping_documents", true)
+	assertColumn(t, db, "shipping_arrival_reminders", "read_at", true)
+	assertTable(t, db, "shipping_arrival_reminder_rules", true)
+}
+
+func assertColumn(t *testing.T, db *sql.DB, table, column string, want bool) {
+	t.Helper()
+	var exists bool
+	err := db.QueryRowContext(context.Background(), `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
+		)`, table, column).Scan(&exists)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists != want {
+		t.Fatalf("column %s.%s exists = %v, want %v", table, column, exists, want)
+	}
 }
 
 func assertTable(t *testing.T, db *sql.DB, name string, want bool) {

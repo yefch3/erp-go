@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -17,21 +18,24 @@ import (
 	"github.com/sgao19/erp-go/services/shipping/internal/store"
 )
 
-const SchemaVersion int32 = 5
+const SchemaVersion int32 = 7
 
 type databasePinger interface{ Ping(context.Context) error }
 
 type Service struct {
-	db    databasePinger
-	pool  *pgxpool.Pool
-	q     *store.Queries
-	files Files
+	db               databasePinger
+	pool             *pgxpool.Pool
+	q                *store.Queries
+	files            Files
+	log              *slog.Logger
+	reminderNotifier ReminderNotifier
+	reminderWake     chan struct{}
 }
 
 // New accepts the small pinger interface so the readiness check remains easy
 // to unit test. Schedule commands require the production pgx pool.
 func New(db databasePinger, fileStores ...Files) *Service {
-	s := &Service{db: db}
+	s := &Service{db: db, log: slog.Default(), reminderWake: make(chan struct{}, 1)}
 	if pool, ok := db.(*pgxpool.Pool); ok {
 		s.pool, s.q = pool, store.New(pool)
 	}
@@ -39,6 +43,12 @@ func New(db databasePinger, fileStores ...Files) *Service {
 		s.files = fileStores[0]
 	}
 	return s
+}
+
+func (s *Service) UseLogger(log *slog.Logger) {
+	if log != nil {
+		s.log = log
+	}
 }
 
 func (s *Service) ModuleStatus(ctx context.Context) error { return s.db.Ping(ctx) }
@@ -165,6 +175,9 @@ func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in Schedul
 		out, err = q.GetSchedule(ctx, store.GetScheduleParams{TenantID: tenantID, ID: out.ID})
 		return err
 	})
+	if err == nil {
+		s.wakeReminderWorker()
+	}
 	return out, err
 }
 
@@ -278,6 +291,7 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 		// must preserve them instead of accepting or clearing those timestamps.
 		p.Atd, p.Ata = current.Atd, current.Ata
 		dateChanged := dateText(current.Etd) != dateText(p.Etd) || dateText(current.Eta) != dateText(p.Eta)
+		reminderOwnerChanged := current.ResponsibleEmployeeID != p.ResponsibleEmployeeID
 		if dateChanged && strings.TrimSpace(reason) == "" {
 			return apierr.Invalid("SHIPPING_DATE_REASON_REQUIRED", "修改 ETD 或 ETA 时必须填写原因")
 		}
@@ -328,7 +342,29 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 			if err = q.CancelPendingReminders(ctx, store.CancelPendingRemindersParams{TenantID: tenantID, ScheduleID: id}); err != nil {
 				return err
 			}
-			if err = q.CreateArrivalReminder(ctx, store.CreateArrivalReminderParams{TenantID: tenantID, ScheduleID: id, DestinationNodeID: destinationID, RecipientEmployeeID: out.ResponsibleEmployeeID, EtaRevision: out.EtaRevision, TargetEta: out.Eta}); err != nil {
+			if err = createConfiguredArrivalReminders(ctx, q, tenantID, id, destinationID, out.ResponsibleEmployeeID, out.EtaRevision, out.Eta); err != nil {
+				return err
+			}
+		}
+		if reminderOwnerChanged && dateText(current.Eta) == dateText(p.Eta) {
+			nodes, listErr := q.ListRouteNodes(ctx, store.ListRouteNodesParams{TenantID: tenantID, ScheduleID: id})
+			if listErr != nil {
+				return listErr
+			}
+			var destinationID int64
+			for _, node := range nodes {
+				if node.NodeType == "DESTINATION" {
+					destinationID = node.ID
+					break
+				}
+			}
+			if destinationID == 0 {
+				return apierr.Conflict("SHIPPING_DESTINATION_MISSING", "船期缺少目的港节点")
+			}
+			if err = q.CancelPendingReminders(ctx, store.CancelPendingRemindersParams{TenantID: tenantID, ScheduleID: id}); err != nil {
+				return err
+			}
+			if err = createConfiguredArrivalReminders(ctx, q, tenantID, id, destinationID, out.ResponsibleEmployeeID, out.EtaRevision, out.Eta); err != nil {
 				return err
 			}
 		}
@@ -343,6 +379,9 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 		}
 		return addChange(ctx, q, tenantID, id, "VESSEL_VOYAGE", "voyage_no", current.VoyageNo, p.VoyageNo, "基础信息修改", op)
 	})
+	if err == nil {
+		s.wakeReminderWorker()
+	}
 	return out, err
 }
 
@@ -389,6 +428,11 @@ func (s *Service) changeStatus(ctx context.Context, tenantID, id int64, next, re
 		out, err = q.UpdateScheduleStatus(ctx, store.UpdateScheduleStatusParams{TenantID: tenantID, ID: id, Status: next, UpdatedBy: op.ID, UpdatedByName: op.Name})
 		if err != nil {
 			return err
+		}
+		if next == "ARRIVED" || next == "COMPLETED" || next == "CANCELLED" {
+			if err = q.CancelPendingReminders(ctx, store.CancelPendingRemindersParams{TenantID: tenantID, ScheduleID: id}); err != nil {
+				return err
+			}
 		}
 		return addChange(ctx, q, tenantID, id, kind, "status", current.Status, next, strings.TrimSpace(reason), op)
 	})

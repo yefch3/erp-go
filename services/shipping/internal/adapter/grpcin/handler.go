@@ -119,6 +119,24 @@ func delaysToProto(delays []store.ShippingDelayEvent) []*shippingv1.DelayEvent {
 	return out
 }
 
+func reminderToProto(r store.ShippingArrivalReminder) *shippingv1.ArrivalReminder {
+	return &shippingv1.ArrivalReminder{
+		Id: r.ID, ScheduleId: r.ScheduleID, EtaRevision: r.EtaRevision,
+		TargetEta: dateValue(r.TargetEta), DueAt: timeValue(r.DueAt), Status: r.Status,
+		SentAt: timeValue(r.SentAt), Title: r.Title, Content: r.Content,
+		DetailUrl: r.DetailUrl, ReadAt: timeValue(r.ReadAt), AttemptCount: r.AttemptCount,
+		LastError: r.LastError,
+	}
+}
+
+func remindersToProto(rows []store.ShippingArrivalReminder) []*shippingv1.ArrivalReminder {
+	out := make([]*shippingv1.ArrivalReminder, len(rows))
+	for i, row := range rows {
+		out[i] = reminderToProto(row)
+	}
+	return out
+}
+
 func documentToProto(d store.ShippingDocument) *shippingv1.ShippingDocument {
 	var voidedBy int64
 	var voidedByName, voidReason string
@@ -214,11 +232,42 @@ func (h *Handler) GetSchedule(ctx context.Context, req *shippingv1.GetScheduleRe
 		}
 		out[i] = &shippingv1.ScheduleChange{Id: c.ID, ChangeType: c.ChangeType, FieldName: c.FieldName, OldValue: c.OldValue, NewValue: c.NewValue, Reason: c.Reason, OperatorId: c.OperatorID, OperatorName: c.OperatorName, CreatedAt: created}
 	}
-	reminders := make([]*shippingv1.ArrivalReminder, len(details.Reminders))
-	for i, r := range details.Reminders {
-		reminders[i] = &shippingv1.ArrivalReminder{Id: r.ID, EtaRevision: r.EtaRevision, TargetEta: dateValue(r.TargetEta), DueAt: timeValue(r.DueAt), Status: r.Status, SentAt: timeValue(r.SentAt)}
-	}
+	reminders := remindersToProto(details.Reminders)
 	return &shippingv1.GetScheduleResponse{Schedule: scheduleToProto(details.Schedule), Changes: out, RouteNodes: routeNodesToProto(details.Route), DelayEvents: delaysToProto(details.Delays), Reminders: reminders}, nil
+}
+
+func (h *Handler) ListArrivalNotifications(ctx context.Context, req *shippingv1.ListArrivalNotificationsRequest) (*shippingv1.ListArrivalNotificationsResponse, error) {
+	op := operator(ctx)
+	page, err := h.svc.ListArrivalNotifications(ctx, grpcx.TenantID(ctx), op.ID, req.GetUnreadOnly())
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.ListArrivalNotificationsResponse{Reminders: remindersToProto(page.Reminders), UnreadCount: page.UnreadCount}, nil
+}
+
+func (h *Handler) MarkArrivalReminderRead(ctx context.Context, req *shippingv1.MarkArrivalReminderReadRequest) (*shippingv1.MarkArrivalReminderReadResponse, error) {
+	op := operator(ctx)
+	row, err := h.svc.MarkArrivalReminderRead(ctx, grpcx.TenantID(ctx), op.ID, req.GetReminderId())
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.MarkArrivalReminderReadResponse{Reminder: reminderToProto(row)}, nil
+}
+
+func (h *Handler) GetArrivalReminderRules(ctx context.Context, req *shippingv1.GetArrivalReminderRulesRequest) (*shippingv1.GetArrivalReminderRulesResponse, error) {
+	days, err := h.svc.GetArrivalReminderRules(ctx, grpcx.TenantID(ctx), req.GetScheduleId())
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.GetArrivalReminderRulesResponse{LeadDays: days}, nil
+}
+
+func (h *Handler) UpdateArrivalReminderRules(ctx context.Context, req *shippingv1.UpdateArrivalReminderRulesRequest) (*shippingv1.UpdateArrivalReminderRulesResponse, error) {
+	days, err := h.svc.UpdateArrivalReminderRules(ctx, grpcx.TenantID(ctx), req.GetScheduleId(), req.GetLeadDays(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.UpdateArrivalReminderRulesResponse{LeadDays: days}, nil
 }
 
 func (h *Handler) GetShippingStatistics(ctx context.Context, _ *shippingv1.GetShippingStatisticsRequest) (*shippingv1.GetShippingStatisticsResponse, error) {

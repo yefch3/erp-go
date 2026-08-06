@@ -48,6 +48,9 @@ const (
 	// mailbox owner alone — an inbox is personal, and a tenant-wide ping would
 	// make every open mailbox page refetch for mail none of them can see.
 	MailInbound = "mail.inbound"
+	// ShippingArrivalReminder: an ETA reminder was persisted for the addressed
+	// employee. The browser re-reads the permission-checked reminder API.
+	ShippingArrivalReminder = "shipping.arrival_reminder"
 )
 
 func channel(tenantID, employeeID int64) string {

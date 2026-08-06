@@ -32,6 +32,10 @@ func (shippingClientStub) CreateSchedule(context.Context, *shippingv1.CreateSche
 	return &shippingv1.CreateScheduleResponse{Schedule: &shippingv1.Schedule{Id: 9, ScheduleNo: "SCH-TEST-0001"}}, nil
 }
 
+func (shippingClientStub) ListArrivalNotifications(context.Context, *shippingv1.ListArrivalNotificationsRequest, ...grpc.CallOption) (*shippingv1.ListArrivalNotificationsResponse, error) {
+	return &shippingv1.ListArrivalNotificationsResponse{Reminders: []*shippingv1.ArrivalReminder{{Id: 7, Title: "船期将在 7 天内到港"}}, UnreadCount: 1}, nil
+}
+
 func TestGetShippingStatus(t *testing.T) {
 	s := &Server{Shipping: shippingClientStub{}}
 	recorder := httptest.NewRecorder()
@@ -64,6 +68,15 @@ func TestCreateShippingSchedule(t *testing.T) {
 	}
 }
 
+func TestListShippingArrivalNotifications(t *testing.T) {
+	s := &Server{Shipping: shippingClientStub{}}
+	recorder := httptest.NewRecorder()
+	s.listShippingArrivalNotifications(recorder, httptest.NewRequest(http.MethodGet, "/api/shipping/reminders", nil))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"title":"船期将在 7 天内到港"`) || !strings.Contains(recorder.Body.String(), `"unreadCount":"1"`) {
+		t.Fatalf("unexpected reminder response: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestShippingRouteRequiresAuthentication(t *testing.T) {
 	s := &Server{JWTSecret: "test-secret"}
 	recorder := httptest.NewRecorder()
@@ -88,6 +101,8 @@ func TestShippingDocumentRoutesRequireAuthentication(t *testing.T) {
 	for _, tc := range []struct{ method, target string }{
 		{http.MethodGet, "/api/shipping/schedules/1/documents"},
 		{http.MethodPost, "/api/shipping/schedules/1/documents/2/download"},
+		{http.MethodGet, "/api/shipping/reminders"},
+		{http.MethodPost, "/api/shipping/reminders/7/read"},
 	} {
 		recorder := httptest.NewRecorder()
 		s.Router().ServeHTTP(recorder, httptest.NewRequest(tc.method, tc.target, nil))

@@ -145,9 +145,14 @@ func createInitialRoute(ctx context.Context, q *store.Queries, s store.ShippingS
 	if err != nil {
 		return err
 	}
+	if err = q.CreateArrivalReminderRule(ctx, store.CreateArrivalReminderRuleParams{
+		TenantID: s.TenantID, ScheduleID: s.ID, LeadDays: 7, CreatedBy: op.ID, CreatedByName: op.Name,
+	}); err != nil {
+		return err
+	}
 	return q.CreateArrivalReminder(ctx, store.CreateArrivalReminderParams{
 		TenantID: s.TenantID, ScheduleID: s.ID, DestinationNodeID: destination.ID,
-		RecipientEmployeeID: s.ResponsibleEmployeeID, EtaRevision: s.EtaRevision, TargetEta: s.Eta,
+		RecipientEmployeeID: s.ResponsibleEmployeeID, EtaRevision: s.EtaRevision, TargetEta: s.Eta, LeadDays: 7,
 	})
 }
 
@@ -577,7 +582,7 @@ func (s *Service) updateNodeTimes(ctx context.Context, q *store.Queries, current
 			if err = q.CancelPendingReminders(ctx, store.CancelPendingRemindersParams{TenantID: current.TenantID, ScheduleID: current.ID}); err != nil {
 				return store.ShippingSchedule{}, err
 			}
-			if err = q.CreateArrivalReminder(ctx, store.CreateArrivalReminderParams{TenantID: current.TenantID, ScheduleID: current.ID, DestinationNodeID: node.ID, RecipientEmployeeID: out.ResponsibleEmployeeID, EtaRevision: out.EtaRevision, TargetEta: out.Eta}); err != nil {
+			if err = createConfiguredArrivalReminders(ctx, q, current.TenantID, current.ID, node.ID, out.ResponsibleEmployeeID, out.EtaRevision, out.Eta); err != nil {
 				return store.ShippingSchedule{}, err
 			}
 		}
@@ -599,6 +604,11 @@ func (s *Service) updateNodeTimes(ctx context.Context, q *store.Queries, current
 		}
 		if err = addChange(ctx, q, current.TenantID, current.ID, "STATUS", "status", current.Status, status, "根据港口时间更正自动更新", op); err != nil {
 			return store.ShippingSchedule{}, err
+		}
+		if status == "ARRIVED" {
+			if err = q.CancelPendingReminders(ctx, store.CancelPendingRemindersParams{TenantID: current.TenantID, ScheduleID: current.ID}); err != nil {
+				return store.ShippingSchedule{}, err
+			}
 		}
 	}
 	return out, nil
@@ -741,7 +751,7 @@ func (s *Service) UpdateProgress(ctx context.Context, tenantID, id int64, in Pro
 			if err = q.CancelPendingReminders(ctx, store.CancelPendingRemindersParams{TenantID: tenantID, ScheduleID: id}); err != nil {
 				return err
 			}
-			if err = q.CreateArrivalReminder(ctx, store.CreateArrivalReminderParams{TenantID: tenantID, ScheduleID: id, DestinationNodeID: node.ID, RecipientEmployeeID: out.ResponsibleEmployeeID, EtaRevision: out.EtaRevision, TargetEta: out.Eta}); err != nil {
+			if err = createConfiguredArrivalReminders(ctx, q, tenantID, id, node.ID, out.ResponsibleEmployeeID, out.EtaRevision, out.Eta); err != nil {
 				return err
 			}
 			if err = addChange(ctx, q, tenantID, id, "ETA", "latest_eta", dateText(oldETA), dateText(newETA), in.Reason, op); err != nil {
@@ -780,6 +790,11 @@ func (s *Service) UpdateProgress(ctx context.Context, tenantID, id int64, in Pro
 				if err = addChange(ctx, q, tenantID, id, "STATUS", "status", current.Status, nextStatus, "根据港口进度自动更新", op); err != nil {
 					return err
 				}
+				if nextStatus == "ARRIVED" {
+					if err = q.CancelPendingReminders(ctx, store.CancelPendingRemindersParams{TenantID: tenantID, ScheduleID: id}); err != nil {
+						return err
+					}
+				}
 			}
 			if err = addChange(ctx, q, tenantID, id, "PROGRESS", node.PortName, oldStatus, in.Action, in.Reason, op); err != nil {
 				return err
@@ -790,6 +805,7 @@ func (s *Service) UpdateProgress(ctx context.Context, tenantID, id int64, in Pro
 	if err != nil {
 		return store.ShippingSchedule{}, nil, nil, err
 	}
+	s.wakeReminderWorker()
 	route, err := s.q.ListRouteNodes(ctx, store.ListRouteNodesParams{TenantID: tenantID, ScheduleID: id})
 	if err != nil {
 		return store.ShippingSchedule{}, nil, nil, err

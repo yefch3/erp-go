@@ -36,6 +36,23 @@ type ShippingArrivalReminder struct {
 	SentAt              pgtype.Timestamptz
 	CreatedAt           pgtype.Timestamptz
 	UpdatedAt           pgtype.Timestamptz
+	Title               string
+	Content             string
+	DetailUrl           string
+	ReadAt              pgtype.Timestamptz
+	AttemptCount        int32
+	LastError           string
+	NextRetryAt         pgtype.Timestamptz
+}
+
+type ShippingArrivalReminderRule struct {
+	ID            int64
+	TenantID      int64
+	ScheduleID    int64
+	LeadDays      int32
+	CreatedBy     int64
+	CreatedByName string
+	CreatedAt     pgtype.Timestamptz
 }
 
 type ShippingDelayEvent struct {
