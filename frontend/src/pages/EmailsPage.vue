@@ -162,13 +162,13 @@
               <span class="sub">{{ shortTime(it.at) }}</span>
             </button>
             <div v-show="isThreadOpen(it)" class="thread-body">
-              <div v-if="it.bodyFormat === 'HTML'" class="in-html" v-html="it.body" />
+              <MailBody v-if="it.bodyFormat === 'HTML'" :html="it.body" />
               <pre v-else class="in-text">{{ it.body }}</pre>
             </div>
           </div>
         </template>
         <template v-else>
-          <div v-if="openedInbound.bodyHtml" class="in-html" v-html="openedInbound.bodyHtml" />
+          <MailBody v-if="openedInbound.bodyHtml" :html="openedInbound.bodyHtml" />
           <pre v-else class="in-text">{{ openedInbound.bodyText }}</pre>
         </template>
         <template v-if="openedInbound.attachments?.length">
@@ -675,6 +675,11 @@ import MailReader, { type Mail } from '../components/MailReader.vue'
 import MailboxGate from '../components/MailboxGate.vue'
 import MailHostDialog from '../components/MailHostDialog.vue'
 import MailList from '../components/MailList.vue'
+// Received mail renders inside a sandboxed frame. It carries the sender's own
+// stylesheet now, and a stylesheet injected into this page would be a stranger
+// styling the ERP — which is exactly what happened when these two sites were
+// left on v-html.
+import MailBody from '../components/MailBody.vue'
 import {
   Box,
   CircleClose,

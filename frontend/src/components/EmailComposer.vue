@@ -193,7 +193,11 @@
       <div class="preview-subject">{{ preview.subject }}</div>
       <!-- Sanitised server-side before it was stored, and again before it was
            returned here; this is the same markup the recipient will get. -->
-      <div v-if="preview.bodyFormat === 'HTML'" class="preview-html" v-html="preview.body" />
+      <!-- The preview is what the recipient will see, so it is rendered the
+           way a received mail is: in its own frame. Rendered here instead,
+           our page's typography and link colour cascade into it and the
+           preview quietly lies about what is being sent. -->
+      <MailBody v-if="preview.bodyFormat === 'HTML'" :html="preview.body" />
       <pre v-else class="preview-body">{{ preview.body }}</pre>
       <div v-if="preview.bodyFormat === 'HTML' && preview.bodyText" class="alt">
         <div class="alt-head">{{ t('emails.textAlternative') }}</div>
@@ -325,6 +329,7 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Clock } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import MailBody from './MailBody.vue'
 import { get, post } from '../api'
 import MailEditor from './MailEditor.vue'
 import RecipientField, { type Recipient } from './RecipientField.vue'
