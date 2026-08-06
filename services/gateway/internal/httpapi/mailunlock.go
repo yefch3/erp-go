@@ -134,10 +134,9 @@ func (s *Server) verifyMailbox(w http.ResponseWriter, r *http.Request) {
 		Secret: body.Secret, Email: body.Email,
 	})
 	if err != nil {
-		if wait, spent := s.Throttle.Failed(r.Context(), throttleMailVerify, who); spent {
-			s.writeTooManyAttempts(w, wait)
-			return
-		}
+		// Not charged. This is the mail service or the network failing, not
+		// the caller guessing — and nothing was spent against the mail host,
+		// which is the resource this budget protects.
 		s.writeGRPCError(w, err)
 		return
 	}

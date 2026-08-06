@@ -31,13 +31,16 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := s.IAM.Login(r.Context(), req)
 	if err != nil {
-		// Every failure counts, not only a wrong password. A caller cannot
-		// tell our outage from their mistake, and neither can we tell their
-		// probing from either — so the budget is spent on anything that is
-		// not a login.
-		if wait, spent := s.Throttle.Failed(r.Context(), throttleLogin, name); spent {
-			s.writeTooManyAttempts(w, wait)
-			return
+		// Only a rejected credential counts. When iam is down every login in
+		// the company fails, and charging those to the people trying would
+		// mean an outage ends with everybody locked out for a quarter of an
+		// hour on top of it — the recovery is worse than the fault. The
+		// status code tells the two apart, so there is no reason to guess.
+		if isRejectedCredential(err) {
+			if wait, spent := s.Throttle.Failed(r.Context(), throttleLogin, name); spent {
+				s.writeTooManyAttempts(w, wait)
+				return
+			}
 		}
 		s.writeGRPCError(w, err)
 		return

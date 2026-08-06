@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Failure throttling for the two routes where an unlimited number of guesses
@@ -45,6 +47,21 @@ const (
 	mailVerifyMaxFailures = 5
 	mailVerifyWindow      = 15 * time.Minute
 )
+
+// isRejectedCredential separates "you got it wrong" from "we are broken".
+//
+// Only the first belongs in a failure budget. Every other error — iam
+// unreachable, a deadline, a panic downstream — is our fault, and charging it
+// to the person at the keyboard means an outage is followed by a company that
+// cannot log in for fifteen minutes because of the outage.
+func isRejectedCredential(err error) bool {
+	switch status.Code(err) {
+	case codes.Unauthenticated, codes.PermissionDenied:
+		return true
+	default:
+		return false
+	}
+}
 
 // failureCounter is the throttle's storage. An interface because the decisions
 // worth testing are about counts and windows, and standing up a Redis to

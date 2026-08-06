@@ -5,6 +5,9 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // fakeCounter is the storage the throttle would otherwise get from Redis. The
@@ -212,4 +215,28 @@ func contains(haystack, needle string) bool {
 		}
 	}
 	return false
+}
+
+// An outage must not be charged to the people it happens to. Without this, iam
+// going down for five minutes ends with everybody in the company locked out
+// for fifteen more — a recovery worse than the fault.
+func TestOnlyARejectedCredentialCountsAgainstTheBudget(t *testing.T) {
+	rejected := []codes.Code{codes.Unauthenticated, codes.PermissionDenied}
+	ours := []codes.Code{
+		codes.Unavailable, codes.DeadlineExceeded, codes.Internal,
+		codes.ResourceExhausted, codes.Unknown, codes.Canceled,
+	}
+	for _, c := range rejected {
+		if !isRejectedCredential(status.Error(c, "")) {
+			t.Errorf("%v should count: it is the caller getting it wrong", c)
+		}
+	}
+	for _, c := range ours {
+		if isRejectedCredential(status.Error(c, "")) {
+			t.Errorf("%v should not count: it is us being broken", c)
+		}
+	}
+	if isRejectedCredential(nil) {
+		t.Error("a successful call counted as a failure")
+	}
 }
