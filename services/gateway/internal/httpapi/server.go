@@ -119,6 +119,13 @@ func (s *Server) Router() http.Handler {
 		// Sending the invitation is employee administration, so it carries the
 		// same permission as creating the row it invites.
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/invite", s.inviteEmployee)
+		// The same act for a selection, with one report at the end. A separate
+		// route rather than a list-shaped body on the one above, because the
+		// answer has a different shape: per-person outcomes, not a status code.
+		r.With(s.perm("iam:employee:write")).Post("/api/employees/invite-batch", s.inviteBatch)
+		// Bringing a whole company in. dry_run in the body makes it a preview;
+		// same route because it is the same validation either way.
+		r.With(s.perm("iam:employee:write")).Post("/api/employees/import", s.importEmployees)
 		r.With(s.perm("iam:role:write")).Post("/api/employees/{id}/roles", s.assignRoles)
 		// The reporting line is org-chart maintenance, not access control,
 		// so it sits with the rest of employee editing.
@@ -534,6 +541,10 @@ func (s *Server) writeGRPCError(w http.ResponseWriter, err error) {
 		codes.FailedPrecondition: http.StatusConflict,
 		codes.PermissionDenied:   http.StatusForbidden,
 		codes.Unauthenticated:    http.StatusUnauthorized,
+		// "later", not "no". Without this a service saying somebody has run
+		// out of attempts reaches the browser as a 500, and the page shows an
+		// internal error instead of the wait it was told to report.
+		codes.ResourceExhausted: http.StatusTooManyRequests,
 	}[st.Code()]
 	if httpCode == 0 {
 		httpCode = http.StatusInternalServerError

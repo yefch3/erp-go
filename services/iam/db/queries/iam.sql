@@ -13,6 +13,7 @@ WHERE d.domain = lower(sqlc.arg(domain)::text);
 -- along because login has to refuse an account whose mailbox was never proved
 -- to exist, and doing it in the same round trip keeps that check free.
 SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
+       u.locked_until,
        e.name AS employee_name, e.code AS employee_code, e.department_id,
        e.status AS employee_status, e.email_verified_at
 FROM users u
@@ -29,15 +30,29 @@ JOIN employees e ON e.id = u.employee_id
 WHERE u.tenant_id = $1 AND u.username = $2;
 
 -- name: RecordLoginSuccess :exec
-UPDATE users SET failed_count = 0, last_login_at = now(), updated_at = now() WHERE id = $1;
+-- Clears the deadline as well as the counter. Somebody who was locked at
+-- 09:00 and signs in at 09:20 has demonstrated the thing the lock was waiting
+-- to find out; leaving the timestamp behind would let a stale value refuse
+-- their next attempt.
+UPDATE users
+SET failed_count = 0, locked_until = NULL, last_login_at = now(), updated_at = now()
+WHERE id = $1;
 
 -- name: RecordLoginFailure :one
+-- Sets a deadline instead of a permanent state, and only ever pushes it
+-- forward from now — so the fifth wrong password locks for fifteen minutes
+-- and the sixth does not extend that to thirty. Without the greatest(), an
+-- attacker who keeps guessing keeps renewing the lock they put on somebody
+-- else, which is the punishment landing on the wrong person.
 UPDATE users
 SET failed_count = failed_count + 1,
-    status = CASE WHEN failed_count + 1 >= 5 THEN 'LOCKED' ELSE status END,
+    locked_until = CASE
+        WHEN failed_count + 1 >= 5 THEN greatest(locked_until, now() + interval '15 minutes')
+        ELSE locked_until
+    END,
     updated_at = now()
 WHERE id = $1
-RETURNING failed_count, status;
+RETURNING failed_count, locked_until;
 
 -- name: CreateDepartment :one
 INSERT INTO departments (tenant_id, code, name, parent_id, path, level)
@@ -184,7 +199,12 @@ SELECT id, username, password_hash, status FROM users
 WHERE tenant_id = $1 AND employee_id = $2;
 
 -- name: UpdatePassword :execrows
-UPDATE users SET password_hash = $3, failed_count = 0, updated_at = now()
+-- Unlocks, which it did not before. It reset failed_count and left the lock
+-- untouched, so an administrator clicking 重置密码 on a locked account got a
+-- success message and changed nothing that person could feel. A new password
+-- is a stronger statement than a fifteen-minute wait; it has to clear it.
+UPDATE users
+SET password_hash = $3, failed_count = 0, locked_until = NULL, updated_at = now()
 WHERE tenant_id = $1 AND employee_id = $2;
 
 -- name: ListEmployeeAccounts :many
@@ -329,6 +349,7 @@ ON CONFLICT (employee_id) DO UPDATE
 SET password_hash = EXCLUDED.password_hash,
     status        = 'ACTIVE',
     failed_count  = 0,
+    locked_until  = NULL,
     updated_at    = now();
 
 -- name: IsTenantDomain :one
@@ -349,3 +370,26 @@ SELECT EXISTS (
 SELECT employee_id, expires_at
 FROM employee_invitations
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND used_at IS NULL;
+
+-- name: ListEmployeeIdentity :many
+-- Every code and address already taken in this company, for the import to
+-- check a whole pasted block against in one round trip rather than a query
+-- per row. A company has hundreds of employees, not millions; the cost of
+-- reading them all is far below the cost of an N+1 on a screen somebody is
+-- watching while their 200-row paste validates.
+SELECT id, code, lower(email)::text AS email
+FROM employees
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint;
+
+-- name: ListTenantDomains :many
+-- The mail domains this company owns. The import refuses an address outside
+-- them, because one can never be activated — the link would go to a mailbox
+-- the company cannot read — and importing it only defers that discovery to
+-- the day somebody wonders why forty people never got invited.
+SELECT domain FROM tenant_domains
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+ORDER BY domain;
+
+-- name: GetEmployeeByCode :one
+SELECT id, name FROM employees
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND code = sqlc.arg(code)::text;

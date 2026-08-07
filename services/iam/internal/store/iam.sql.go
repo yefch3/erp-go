@@ -573,6 +573,28 @@ func (q *Queries) GetEmployee(ctx context.Context, arg GetEmployeeParams) (GetEm
 	return i, err
 }
 
+const getEmployeeByCode = `-- name: GetEmployeeByCode :one
+SELECT id, name FROM employees
+WHERE tenant_id = $1::bigint AND code = $2::text
+`
+
+type GetEmployeeByCodeParams struct {
+	TenantID int64
+	Code     string
+}
+
+type GetEmployeeByCodeRow struct {
+	ID   int64
+	Name string
+}
+
+func (q *Queries) GetEmployeeByCode(ctx context.Context, arg GetEmployeeByCodeParams) (GetEmployeeByCodeRow, error) {
+	row := q.db.QueryRow(ctx, getEmployeeByCode, arg.TenantID, arg.Code)
+	var i GetEmployeeByCodeRow
+	err := row.Scan(&i.ID, &i.Name)
+	return i, err
+}
+
 const getInvitationByToken = `-- name: GetInvitationByToken :one
 SELECT i.id, i.tenant_id, i.employee_id, i.email, i.expires_at, i.used_at,
        e.name AS employee_name, e.status AS employee_status,
@@ -671,6 +693,7 @@ func (q *Queries) GetTenantByDomain(ctx context.Context, domain string) (GetTena
 
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
+       u.locked_until,
        e.name AS employee_name, e.code AS employee_code, e.department_id,
        e.status AS employee_status, e.email_verified_at
 FROM users u
@@ -693,6 +716,7 @@ type GetUserByEmailRow struct {
 	PasswordHash    string
 	Status          string
 	FailedCount     int32
+	LockedUntil     pgtype.Timestamptz
 	EmployeeName    string
 	EmployeeCode    string
 	DepartmentID    int64
@@ -715,6 +739,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, arg GetUserByEmailParams) 
 		&i.PasswordHash,
 		&i.Status,
 		&i.FailedCount,
+		&i.LockedUntil,
 		&i.EmployeeName,
 		&i.EmployeeCode,
 		&i.DepartmentID,
@@ -902,6 +927,43 @@ func (q *Queries) ListEmployeeAccounts(ctx context.Context, tenantID int64) ([]L
 	for rows.Next() {
 		var i ListEmployeeAccountsRow
 		if err := rows.Scan(&i.EmployeeID, &i.Username); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEmployeeIdentity = `-- name: ListEmployeeIdentity :many
+SELECT id, code, lower(email)::text AS email
+FROM employees
+WHERE tenant_id = $1::bigint
+`
+
+type ListEmployeeIdentityRow struct {
+	ID    int64
+	Code  string
+	Email string
+}
+
+// Every code and address already taken in this company, for the import to
+// check a whole pasted block against in one round trip rather than a query
+// per row. A company has hundreds of employees, not millions; the cost of
+// reading them all is far below the cost of an N+1 on a screen somebody is
+// watching while their 200-row paste validates.
+func (q *Queries) ListEmployeeIdentity(ctx context.Context, tenantID int64) ([]ListEmployeeIdentityRow, error) {
+	rows, err := q.db.Query(ctx, listEmployeeIdentity, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEmployeeIdentityRow
+	for rows.Next() {
+		var i ListEmployeeIdentityRow
+		if err := rows.Scan(&i.ID, &i.Code, &i.Email); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1264,6 +1326,36 @@ func (q *Queries) ListRoles(ctx context.Context, tenantID int64) ([]Role, error)
 	return items, nil
 }
 
+const listTenantDomains = `-- name: ListTenantDomains :many
+SELECT domain FROM tenant_domains
+WHERE tenant_id = $1::bigint
+ORDER BY domain
+`
+
+// The mail domains this company owns. The import refuses an address outside
+// them, because one can never be activated — the link would go to a mailbox
+// the company cannot read — and importing it only defers that discovery to
+// the day somebody wonders why forty people never got invited.
+func (q *Queries) ListTenantDomains(ctx context.Context, tenantID int64) ([]string, error) {
+	rows, err := q.db.Query(ctx, listTenantDomains, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var domain string
+		if err := rows.Scan(&domain); err != nil {
+			return nil, err
+		}
+		items = append(items, domain)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const managerAtLevel = `-- name: ManagerAtLevel :many
 WITH RECURSIVE chain AS (
     SELECT e.id, e.manager_id, 0 AS lvl
@@ -1311,28 +1403,42 @@ func (q *Queries) ManagerAtLevel(ctx context.Context, arg ManagerAtLevelParams) 
 const recordLoginFailure = `-- name: RecordLoginFailure :one
 UPDATE users
 SET failed_count = failed_count + 1,
-    status = CASE WHEN failed_count + 1 >= 5 THEN 'LOCKED' ELSE status END,
+    locked_until = CASE
+        WHEN failed_count + 1 >= 5 THEN greatest(locked_until, now() + interval '15 minutes')
+        ELSE locked_until
+    END,
     updated_at = now()
 WHERE id = $1
-RETURNING failed_count, status
+RETURNING failed_count, locked_until
 `
 
 type RecordLoginFailureRow struct {
 	FailedCount int32
-	Status      string
+	LockedUntil pgtype.Timestamptz
 }
 
+// Sets a deadline instead of a permanent state, and only ever pushes it
+// forward from now — so the fifth wrong password locks for fifteen minutes
+// and the sixth does not extend that to thirty. Without the greatest(), an
+// attacker who keeps guessing keeps renewing the lock they put on somebody
+// else, which is the punishment landing on the wrong person.
 func (q *Queries) RecordLoginFailure(ctx context.Context, id int64) (RecordLoginFailureRow, error) {
 	row := q.db.QueryRow(ctx, recordLoginFailure, id)
 	var i RecordLoginFailureRow
-	err := row.Scan(&i.FailedCount, &i.Status)
+	err := row.Scan(&i.FailedCount, &i.LockedUntil)
 	return i, err
 }
 
 const recordLoginSuccess = `-- name: RecordLoginSuccess :exec
-UPDATE users SET failed_count = 0, last_login_at = now(), updated_at = now() WHERE id = $1
+UPDATE users
+SET failed_count = 0, locked_until = NULL, last_login_at = now(), updated_at = now()
+WHERE id = $1
 `
 
+// Clears the deadline as well as the counter. Somebody who was locked at
+// 09:00 and signs in at 09:20 has demonstrated the thing the lock was waiting
+// to find out; leaving the timestamp behind would let a stale value refuse
+// their next attempt.
 func (q *Queries) RecordLoginSuccess(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, recordLoginSuccess, id)
 	return err
@@ -1450,7 +1556,8 @@ func (q *Queries) SetRoleDataScope(ctx context.Context, arg SetRoleDataScopePara
 }
 
 const updatePassword = `-- name: UpdatePassword :execrows
-UPDATE users SET password_hash = $3, failed_count = 0, updated_at = now()
+UPDATE users
+SET password_hash = $3, failed_count = 0, locked_until = NULL, updated_at = now()
 WHERE tenant_id = $1 AND employee_id = $2
 `
 
@@ -1460,6 +1567,10 @@ type UpdatePasswordParams struct {
 	PasswordHash string
 }
 
+// Unlocks, which it did not before. It reset failed_count and left the lock
+// untouched, so an administrator clicking 重置密码 on a locked account got a
+// success message and changed nothing that person could feel. A new password
+// is a stronger statement than a fifteen-minute wait; it has to clear it.
 func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updatePassword, arg.TenantID, arg.EmployeeID, arg.PasswordHash)
 	if err != nil {
@@ -1480,6 +1591,7 @@ ON CONFLICT (employee_id) DO UPDATE
 SET password_hash = EXCLUDED.password_hash,
     status        = 'ACTIVE',
     failed_count  = 0,
+    locked_until  = NULL,
     updated_at    = now()
 `
 

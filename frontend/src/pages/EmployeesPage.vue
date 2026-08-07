@@ -2,7 +2,16 @@
   <div>
     <div class="page-head">
       <h2>{{ t('employees.title') }}</h2>
-      <el-button v-if="canWrite" type="primary" @click="openCreate">{{ t('employees.create') }}</el-button>
+      <div class="head-actions">
+        <!-- Acts on the selection, so it is stated with a count rather than
+             leaving somebody to guess how many mails they are about to send
+             from their own mailbox. -->
+        <el-button v-if="canWrite && invitable.length" @click="inviteSelected">
+          {{ t('employees.inviteSelected', { n: invitable.length }) }}
+        </el-button>
+        <el-button v-if="canWrite" @click="importOpen = true">{{ t('employees.import') }}</el-button>
+        <el-button v-if="canWrite" type="primary" @click="openCreate">{{ t('employees.create') }}</el-button>
+      </div>
     </div>
 
     <el-card shadow="never">
@@ -21,40 +30,59 @@
         <el-button @click="reload">{{ t('common.query') }}</el-button>
       </div>
 
-      <el-table :data="employees" v-loading="loading">
+      <el-table
+        ref="table"
+        :data="employees"
+        v-loading="loading"
+        :row-key="(row: Employee) => row.id"
+        @selection-change="onSelect"
+      >
+        <!-- Only rows an invitation could actually go to are selectable.
+             Offering a checkbox that then reports "已激活" is a slower way of
+             saying what the 激活状态 column already says. -->
+        <el-table-column
+          v-if="canWrite"
+          type="selection"
+          width="40"
+          :selectable="(row: Employee) => canInvite(row)"
+        />
         <el-table-column prop="code" :label="t('employees.code')" width="100" />
-        <el-table-column prop="name" :label="t('employees.name')" width="120" />
-        <el-table-column prop="departmentName" :label="t('employees.department')" width="110" />
-        <el-table-column prop="position" :label="t('employees.position')" width="120" />
-        <el-table-column :label="t('employees.manager')" width="100">
-          <template #default="{ row }"><span class="sub">{{ row.managerName || '—' }}</span></template>
-        </el-table-column>
-        <el-table-column :label="t('employees.account')" min-width="140">
+        <el-table-column prop="name" :label="t('employees.name')" width="110" />
+        <!-- The address and whether it has been proved, in one column and
+             early rather than pushed off the right edge behind the fixed
+             actions. During a migration this is the only question anybody is
+             asking, and 未邀请 / 待激活 are stuck for opposite reasons with
+             opposite fixes. The address sits beside the state because
+             checking them is the same glance. -->
+        <el-table-column :label="t('employees.activation')" min-width="230">
           <template #default="{ row }">
-            <span v-if="row.username">{{ row.username }}</span>
-            <span v-else class="sub">{{ t('employees.noAccount') }}</span>
+            <div class="cell-stack">
+              <el-tag v-if="row.emailVerified" type="success" size="small">
+                {{ t('employees.activated') }}
+              </el-tag>
+              <el-tag v-else-if="Number(row.inviteExpiresAt)" type="warning" size="small">
+                {{ t('employees.awaitingActivation') }}
+              </el-tag>
+              <el-tag v-else type="info" size="small">{{ t('employees.notInvited') }}</el-tag>
+              <span class="sub">{{ row.email || t('employees.noMailbox') }}</span>
+            </div>
           </template>
         </el-table-column>
-        <!-- Three states, and the middle one is the point. During a migration
-             the useful question is not "is everyone in" but "who is stuck and
-             where", and 未邀请 and 待激活 are stuck for opposite reasons. -->
-        <el-table-column :label="t('employees.activation')" width="130">
-          <template #default="{ row }">
-            <el-tag v-if="row.emailVerified" type="success" size="small">
-              {{ t('employees.activated') }}
-            </el-tag>
-            <el-tag v-else-if="Number(row.inviteExpiresAt)" type="warning" size="small">
-              {{ t('employees.awaitingActivation') }}
-            </el-tag>
-            <span v-else class="sub">{{ t('employees.notInvited') }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('common.status')" width="90">
+        <!-- Whether they still work here, kept left of the fixed actions
+             column. The table is wider than the window and scrolls; what gets
+             pushed under the fixed column has to be the columns nobody makes a
+             decision from, which is 岗位 and 直属上级, not this. -->
+        <el-table-column :label="t('common.status')" width="80">
           <template #default="{ row }">
             <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'" size="small">
               {{ row.status === 'ACTIVE' ? t('employees.onDuty') : t('employees.left') }}
             </el-tag>
           </template>
+        </el-table-column>
+        <el-table-column prop="departmentName" :label="t('employees.department')" width="100" />
+        <el-table-column prop="position" :label="t('employees.position')" width="100" />
+        <el-table-column :label="t('employees.manager')" width="90">
+          <template #default="{ row }"><span class="sub">{{ row.managerName || '—' }}</span></template>
         </el-table-column>
         <el-table-column v-if="canWrite" :label="t('common.actions')" width="330" fixed="right">
           <template #default="{ row }">
@@ -63,7 +91,7 @@
                  mail would be a password reset wearing an invitation's
                  clothes, and 重置密码 beside it already says what it does. -->
             <el-button
-              v-if="!row.emailVerified && row.status === 'ACTIVE'"
+              v-if="canInvite(row)"
               link
               type="primary"
               :loading="inviting === row.id"
@@ -92,6 +120,23 @@
         @current-change="(p: number) => { page = p; load() }"
       />
     </el-card>
+
+    <ImportEmployeesDialog v-model:open="importOpen" @imported="reload" />
+
+    <!-- What actually happened, per person. A batch of eighty is exactly the
+         case where "已发送" as a single toast is useless: the useful answer is
+         which three did not go and why. -->
+    <el-dialog v-model="batchOpen" :title="t('employees.batchResult')" width="620px">
+      <div class="summary">{{ t('employees.batchSummary', { sent: batchSent, failed: batchFailed.length }) }}</div>
+      <el-table v-if="batchFailed.length" :data="batchFailed" max-height="360" size="small">
+        <el-table-column prop="name" :label="t('employees.name')" width="120" />
+        <el-table-column prop="email" :label="t('employees.email')" width="200" />
+        <el-table-column prop="reason" :label="t('employees.batchReason')" min-width="220" />
+      </el-table>
+      <template #footer>
+        <el-button type="primary" @click="batchOpen = false">{{ t('common.close') }}</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="createOpen" :title="t('employees.create')" width="600px">
       <el-form :model="form" label-width="110px">
@@ -174,10 +219,11 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, type ElTable } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { del, get, post } from '../api'
 import { useAuthStore } from '../stores/auth'
+import ImportEmployeesDialog from '../components/ImportEmployeesDialog.vue'
 
 interface Department { id: string; name: string }
 interface Role { id: string; code: string; name: string }
@@ -228,6 +274,24 @@ const saving = ref(false)
 // them.
 const inviting = ref('')
 const createOpen = ref(false)
+const importOpen = ref(false)
+const table = ref<InstanceType<typeof ElTable>>()
+const selected = ref<Employee[]>([])
+const batchOpen = ref(false)
+const batchSent = ref(0)
+const batchFailed = ref<{ name: string; email: string; reason: string }[]>([])
+
+// Who an invitation could actually reach: still employed, and not already in.
+// Used both for the row button and for which rows may be ticked, so the two
+// can never disagree about who is invitable.
+function canInvite(row: Employee): boolean {
+  return !row.emailVerified && row.status === 'ACTIVE'
+}
+const invitable = computed(() => selected.value.filter(canInvite))
+
+function onSelect(rows: Employee[]) {
+  selected.value = rows
+}
 const rolesOpen = ref(false)
 const passwordOpen = ref(false)
 const accountMode = ref(false)
@@ -367,6 +431,28 @@ async function invite(row: Employee) {
   }
 }
 
+// Batch invitation. Confirmed with the count and the sending address spelled
+// out, because this puts N messages into N inboxes from the operator's own
+// mailbox — an action with a visible outside, and one nobody can take back.
+async function inviteSelected() {
+  const targets = invitable.value
+  await ElMessageBox.confirm(
+    t('employees.confirmInviteMany', { n: targets.length }),
+    t('employees.inviteSelected', { n: targets.length }),
+  )
+  const d = await post<{
+    sent: number
+    results: { name: string; email: string; sent: boolean; reason: string }[]
+  }>('/employees/invite-batch', { employeeIds: targets.map((e) => e.id) })
+  batchSent.value = Number(d.sent ?? 0)
+  batchFailed.value = (d.results ?? []).filter((r) => !r.sent)
+  // The dialog opens either way. "全部发送成功" is worth seeing after eighty
+  // sends, and it is the only confirmation that the count was what was meant.
+  batchOpen.value = true
+  table.value?.clearSelection()
+  load()
+}
+
 async function deactivate(row: Employee) {
   await ElMessageBox.confirm(t('employees.confirmLeave', { name: row.name }), t('employees.confirmTitle'))
   await del(`/employees/${row.id}`)
@@ -418,6 +504,22 @@ onMounted(async () => {
 .sub {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.cell-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  line-height: 1.4;
+}
+.head-actions {
+  display: flex;
+  gap: 10px;
+}
+.summary {
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
 }
 .hint {
   margin-left: 8px;
