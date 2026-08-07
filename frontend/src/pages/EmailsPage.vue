@@ -1004,16 +1004,22 @@ onMounted(async () => {
     // query is empty or the URL-state watcher would keep seeing oauth params.
     await router.replace({ query: {} })
     if (oauthResult === 'ok') {
-      ElMessage.success(t('mailbox.googleOk', { email: boundEmail }))
       try {
         const resp = await http.post('/mailbox/verify', { secret: '' }, mailHostRequest)
         const data = resp.data.data as { token: string }
         localStorage.setItem('mailUnlock', data.token)
+        // Said only once the person is actually through. Announcing the
+        // binding first meant a green "已绑定" could sit above a red failure,
+        // both true and together unreadable — the mailbox was bound and the
+        // gate was still shut.
+        ElMessage.success(t('mailbox.googleOk', { email: boundEmail }))
         locked.value = false
         init()
         return
       } catch {
-        /* fall through: the gate appears and says why in place */
+        // Loud on purpose: the interceptor has already said what went wrong,
+        // and the gate coming back with no reason was the other half of the
+        // confusion.
       }
     } else {
       ElMessage({

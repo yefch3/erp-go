@@ -228,6 +228,24 @@ func (s *Service) SaveMailAccount(ctx context.Context, tenantID, employeeID int6
 // nil error means there is nothing to verify — no mailbox bound, or no live
 // mail channel — and the gate should open rather than lock somebody out of a
 // page that holds nothing of theirs.
+// hostRejected marks an error as the mail host's answer rather than ours.
+//
+// The two look identical to a caller — both are just a failed verification —
+// but only one of them spent a real login against Gmail or 263, and only that
+// one should cost the person an attempt. Everything this service decides on
+// its own (no address, no host configured, an undecryptable stored code)
+// never reached the host at all.
+type hostRejected struct{ err error }
+
+func (e hostRejected) Error() string { return e.err.Error() }
+func (e hostRejected) Unwrap() error { return e.err }
+
+// FromMailHost reports whether the host is what refused.
+func FromMailHost(err error) bool {
+	var t hostRejected
+	return errors.As(err, &t)
+}
+
 func (s *Service) VerifyMailSecret(ctx context.Context, tenantID, employeeID int64, email, secret string) (string, error) {
 	row, err := s.q.GetMyMailAccount(ctx, store.GetMyMailAccountParams{
 		TenantID: tenantID, EmployeeID: employeeID,
@@ -283,7 +301,7 @@ func (s *Service) VerifyMailSecret(ctx context.Context, tenantID, employeeID int
 		IMAPPort:     int(host.ImapPort),
 		IMAPSecurity: host.ImapSecurity,
 	}); err != nil {
-		return "", err
+		return "", hostRejected{err}
 	}
 
 	// Proven live — only now may it become the stored binding.
@@ -333,7 +351,7 @@ func (s *Service) verifyBound(ctx context.Context, tenantID, employeeID int64, r
 		IMAPPort:     int(host.ImapPort),
 		IMAPSecurity: host.ImapSecurity,
 	}); err != nil {
-		return "", err
+		return "", hostRejected{err}
 	}
 	s.markVerified(ctx, tenantID, employeeID)
 	return "", nil

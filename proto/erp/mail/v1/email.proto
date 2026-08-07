@@ -378,6 +378,14 @@ message VerifyMailAccessRequest {
 message VerifyMailAccessResponse {
   bool ok = 1;
   string detail = 2;
+  // Whether the mail host is the one that said no.
+  //
+  // Every failure arrives here as ok=false, but they are not the same kind of
+  // thing: a wrong authorisation code cost us one bad login against Gmail or
+  // 263, while "收件服务器未配置" or a decryption failure never left this
+  // process. Only the first should spend the caller's attempt budget, whose
+  // whole purpose is protecting our address's standing with the host.
+  bool host_rejected = 3;
 }
 
 message CompleteGoogleOAuthRequest {
