@@ -80,7 +80,11 @@
     <!-- The body as the recipient received it. Sanitised server-side on the
          way in, so this is the same markup that was sent - rendering it any
          other way would show a wall of tags instead of the mail. -->
-    <div v-if="mail.bodyFormat === 'HTML'" class="body html" v-html="mail.body" />
+    <!-- Rendered in a sandboxed frame rather than injected here. The sender's
+         stylesheet is kept — it is most of how a mail looks like itself — and
+         keeping it is only safe because it cannot reach out of that frame.
+         See MailBody.vue. -->
+    <MailBody v-if="mail.bodyFormat === 'HTML'" class="body" :html="mail.body" />
     <pre v-else class="body text">{{ mail.body }}</pre>
 
     <div v-if="mail.attachments?.length" class="files">
@@ -100,6 +104,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import MailBody from './MailBody.vue'
 
 interface Attachment {
   id: string
@@ -260,15 +265,10 @@ function humanSize(bytes: number) {
   white-space: pre-wrap;
   font-family: inherit;
 }
-.body.html :deep(img) {
-  max-width: 100%;
-}
-.body.html :deep(table) {
-  max-width: 100%;
-}
-.body.html :deep(a) {
-  color: var(--el-color-primary);
-}
+/* The HTML body's own styling now lives inside the frame. What used to be
+   here — a 14px font and an ERP-blue link colour — cascaded into every
+   received mail, shrinking a sender's display type and repainting their brand
+   colour with ours. A link colour is a sender's asset, not our theme. */
 .files {
   margin-top: 20px;
   padding-top: 14px;

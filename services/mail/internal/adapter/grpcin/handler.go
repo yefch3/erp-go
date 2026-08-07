@@ -831,7 +831,12 @@ func (h *Handler) VerifyMailAccess(ctx context.Context, req *mailv1.VerifyMailAc
 	op := operator(ctx)
 	detail, err := h.svc.VerifyMailSecret(ctx, grpcx.TenantID(ctx), op.ID, req.GetEmail(), req.GetSecret())
 	if err != nil {
-		return &mailv1.VerifyMailAccessResponse{Ok: false, Detail: err.Error()}, nil
+		// HostRejected separates "your code is wrong" from "we could not even
+		// try". Only the first cost a real login against the mail host, and
+		// only the first should cost the caller an attempt.
+		return &mailv1.VerifyMailAccessResponse{
+			Ok: false, Detail: err.Error(), HostRejected: app.FromMailHost(err),
+		}, nil
 	}
 	return &mailv1.VerifyMailAccessResponse{Ok: true, Detail: detail}, nil
 }
@@ -839,7 +844,7 @@ func (h *Handler) VerifyMailAccess(ctx context.Context, req *mailv1.VerifyMailAc
 func (h *Handler) CompleteGoogleOAuth(ctx context.Context, req *mailv1.CompleteGoogleOAuthRequest) (*mailv1.CompleteGoogleOAuthResponse, error) {
 	op := operator(ctx)
 	email, err := h.svc.CompleteGoogleOAuth(ctx, grpcx.TenantID(ctx), op.ID,
-		req.GetCode(), req.GetRedirectUri())
+		req.GetCode(), req.GetRedirectUri(), req.GetExpectEmail())
 	if err != nil {
 		return nil, err
 	}

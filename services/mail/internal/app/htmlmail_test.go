@@ -309,3 +309,56 @@ func TestSearchTextCarriesTheHeaderSoOneIndexCanServeTheQuery(t *testing.T) {
 		t.Errorf("the header is not first, so a subject hit yields a snippet with no context\ngot: %q", got)
 	}
 }
+
+// What a received mail keeps when it is shown back, and what it never keeps.
+//
+// The reader policy is wider than the sending one in exactly two ways — the
+// sender's stylesheet and their class names — because those two are most of
+// how a modern mail looks like itself. It is only safe to be wider because
+// the result is rendered inside a sandboxed frame; these tests hold both
+// halves of that bargain.
+func TestReaderKeepsTheSendersStylesheet(t *testing.T) {
+	in := `<html><head><style>.hero{font-size:48px;color:#111}</style></head>
+	       <body><h2 class="hero">Time to make a move</h2></body></html>`
+
+	read := SanitizeForReading(in)
+	if !strings.Contains(read, ".hero{font-size:48px") {
+		t.Errorf("the stylesheet was dropped, so the mail renders at browser defaults\ngot: %s", read)
+	}
+	if !strings.Contains(read, `class="hero"`) {
+		t.Errorf("the class was dropped, so the rule has nothing to apply to\ngot: %s", read)
+	}
+
+	// And the sending policy must stay narrow: outgoing mail is rendered by
+	// clients we do not control, where a stylesheet is unreliable and inline
+	// style is the only thing that travels.
+	if strings.Contains(SanitizeHTML(in), "<style") {
+		t.Error("the sending policy kept a stylesheet; it must not")
+	}
+}
+
+func TestReaderStillRefusesWhatTheFrameCannotContain(t *testing.T) {
+	cases := []struct {
+		name, in, mustNotContain string
+	}{
+		{"script element", `<div><script>alert(1)</script></div>`, "<script"},
+		{"script inside the stylesheet", `<style>x{}</style><script>a()</script>`, "<script"},
+		{"event handler", `<div onclick="alert(1)">x</div>`, "onclick"},
+		{"javascript url", `<a href="javascript:alert(1)">x</a>`, "javascript:"},
+		{"iframe of their own", `<iframe src="https://evil.example"></iframe>`, "<iframe"},
+		// Not script, but a stylesheet fetched from wherever the sender likes
+		// is a beacon that outlives the image blocker.
+		{"remote stylesheet", `<style>@import url(https://evil.example/x.css);</style>`, "@import"},
+		{"IE expression", `<style>a{width:expression(alert(1))}</style>`, "expression("},
+		// A stylesheet that closes its own tag would become markup again.
+		{"tag-closing inside CSS", `<style>a{}</style><style>b{}</style></style><img src=x onerror=alert(1)>`, "onerror"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out := strings.ToLower(SanitizeForReading(c.in))
+			if strings.Contains(out, strings.ToLower(c.mustNotContain)) {
+				t.Errorf("%q survived into a mail we render\ngot: %s", c.mustNotContain, out)
+			}
+		})
+	}
+}

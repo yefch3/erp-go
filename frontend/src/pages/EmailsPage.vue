@@ -162,13 +162,13 @@
               <span class="sub">{{ shortTime(it.at) }}</span>
             </button>
             <div v-show="isThreadOpen(it)" class="thread-body">
-              <div v-if="it.bodyFormat === 'HTML'" class="in-html" v-html="it.body" />
+              <MailBody v-if="it.bodyFormat === 'HTML'" :html="it.body" />
               <pre v-else class="in-text">{{ it.body }}</pre>
             </div>
           </div>
         </template>
         <template v-else>
-          <div v-if="openedInbound.bodyHtml" class="in-html" v-html="openedInbound.bodyHtml" />
+          <MailBody v-if="openedInbound.bodyHtml" :html="openedInbound.bodyHtml" />
           <pre v-else class="in-text">{{ openedInbound.bodyText }}</pre>
         </template>
         <template v-if="openedInbound.attachments?.length">
@@ -675,6 +675,11 @@ import MailReader, { type Mail } from '../components/MailReader.vue'
 import MailboxGate from '../components/MailboxGate.vue'
 import MailHostDialog from '../components/MailHostDialog.vue'
 import MailList from '../components/MailList.vue'
+// Received mail renders inside a sandboxed frame. It carries the sender's own
+// stylesheet now, and a stylesheet injected into this page would be a stranger
+// styling the ERP — which is exactly what happened when these two sites were
+// left on v-html.
+import MailBody from '../components/MailBody.vue'
 import {
   Box,
   CircleClose,
@@ -999,16 +1004,22 @@ onMounted(async () => {
     // query is empty or the URL-state watcher would keep seeing oauth params.
     await router.replace({ query: {} })
     if (oauthResult === 'ok') {
-      ElMessage.success(t('mailbox.googleOk', { email: boundEmail }))
       try {
         const resp = await http.post('/mailbox/verify', { secret: '' }, mailHostRequest)
         const data = resp.data.data as { token: string }
         localStorage.setItem('mailUnlock', data.token)
+        // Said only once the person is actually through. Announcing the
+        // binding first meant a green "已绑定" could sit above a red failure,
+        // both true and together unreadable — the mailbox was bound and the
+        // gate was still shut.
+        ElMessage.success(t('mailbox.googleOk', { email: boundEmail }))
         locked.value = false
         init()
         return
       } catch {
-        /* fall through: the gate appears and says why in place */
+        // Loud on purpose: the interceptor has already said what went wrong,
+        // and the gate coming back with no reason was the other half of the
+        // confusion.
       }
     } else {
       ElMessage({
@@ -1916,14 +1927,27 @@ async function doUnsuppress(row: Suppression) {
 </script>
 
 <style scoped>
+/* Two surfaces, not one page. The folder rail keeps the white — it is part of
+   the application, the same way the navigation is — and the reading side gets
+   its own ground, so the seam between them is a change of colour rather than
+   an 18px gap you have to look for.
+
+   align-items: stretch so the two colours run the full height of whichever is
+   taller; without it the ground stopped at the bottom of the mail and the page
+   went pale again underneath it. */
 .mailbox {
   display: flex;
   gap: 18px;
-  align-items: flex-start;
+  align-items: stretch;
+  min-height: 100%;
+  background: var(--el-bg-color);
 }
 .rail {
   flex: none;
   width: 178px;
+  /* Back to its own height, which stretch had just taken away — a sticky
+     element as tall as its container has nowhere to stick to. */
+  align-self: flex-start;
   position: sticky;
   top: 12px;
 }
@@ -1996,6 +2020,15 @@ async function doUnsuppress(row: Suppression) {
 .pane {
   flex: 1;
   min-width: 0;
+  /* One ground for everything on this side — the list, the four folders that
+     are tables, the reading page, and the mail's own frame, which is given
+     this same colour. The only white left on it is white that means
+     something: a row under the cursor, and whatever card a sender drew.
+     The padding keeps the content off the edge; it also narrows the container
+     below, which is correct — the list should respond to the width it can
+     actually use. */
+  background: var(--mail-ground);
+  padding: 14px 16px;
   /* The list responds to the width IT has, not the window's: the app shell's
      nav and this page's rail both take a fixed slice first, so a viewport
      query would be answering a different question.
@@ -2007,6 +2040,23 @@ async function doUnsuppress(row: Suppression) {
      from layout, so containing it costs nothing. */
   container-type: inline-size;
   container-name: mailbox;
+}
+/* 草稿箱, 已定时, 待处理 and 拒收名单 are tables rather than mail lists, and
+   Element Plus paints a table white. Left alone they would put back exactly
+   the white slab the mail list just stopped being, and a folder would change
+   colour depending on which one you clicked.
+   Set through the component's own variables rather than by overriding its
+   selectors: the library is telling us where its colours come from, and every
+   background it paints — table, row, header cell, hover — reads one of these
+   four. Nothing is left to a rule of ours that a version bump could stop
+   matching. The hover is the list's hover, so a row under the cursor means
+   the same thing in every folder. */
+.pane :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: transparent;
+  --el-table-row-hover-bg-color: var(--mail-row-hover);
+  --el-table-border-color: var(--mail-divider);
 }
 .pane-head {
   display: flex;

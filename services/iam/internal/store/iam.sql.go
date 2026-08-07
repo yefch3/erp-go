@@ -61,6 +61,41 @@ func (q *Queries) AddRolePermission(ctx context.Context, arg AddRolePermissionPa
 	return err
 }
 
+const addTenantDomain = `-- name: AddTenantDomain :exec
+INSERT INTO tenant_domains (domain, tenant_id)
+VALUES (lower($1::text), $2::bigint)
+ON CONFLICT (domain) DO NOTHING
+`
+
+type AddTenantDomainParams struct {
+	Domain   string
+	TenantID int64
+}
+
+// Lower-cased on the way in so the login lookup, which lower-cases what it was
+// given, can be a plain primary-key hit.
+func (q *Queries) AddTenantDomain(ctx context.Context, arg AddTenantDomainParams) error {
+	_, err := q.db.Exec(ctx, addTenantDomain, arg.Domain, arg.TenantID)
+	return err
+}
+
+const consumeInvitation = `-- name: ConsumeInvitation :execrows
+UPDATE employee_invitations
+SET used_at = now()
+WHERE id = $1::bigint AND used_at IS NULL
+`
+
+// The WHERE clause is the concurrency control: two requests arriving with the
+// same token race here, and exactly one updates a row. Checking "is it unused"
+// in Go and then updating would let both through.
+func (q *Queries) ConsumeInvitation(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, consumeInvitation, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countOtherHoldersOf = `-- name: CountOtherHoldersOf :one
 SELECT count(DISTINCT e.id) FROM employees e
 JOIN employee_roles er ON er.employee_id = e.id AND er.tenant_id = e.tenant_id
@@ -128,7 +163,7 @@ func (q *Queries) CreateDepartment(ctx context.Context, arg CreateDepartmentPara
 const createEmployee = `-- name: CreateEmployee :one
 INSERT INTO employees (tenant_id, code, name, department_id, position, email, phone, manager_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8::bigint, 0))
-RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id
+RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at
 `
 
 type CreateEmployeeParams struct {
@@ -167,7 +202,49 @@ func (q *Queries) CreateEmployee(ctx context.Context, arg CreateEmployeeParams) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ManagerID,
+		&i.EmailVerifiedAt,
 	)
+	return i, err
+}
+
+const createInvitation = `-- name: CreateInvitation :one
+INSERT INTO employee_invitations (tenant_id, employee_id, email, token_hash, expires_at, invited_by)
+VALUES (
+    $1::bigint,
+    $2::bigint,
+    lower($3::text),
+    $4,
+    $5,
+    $6::bigint
+)
+RETURNING id, expires_at
+`
+
+type CreateInvitationParams struct {
+	TenantID   int64
+	EmployeeID int64
+	Email      string
+	TokenHash  []byte
+	ExpiresAt  pgtype.Timestamptz
+	InvitedBy  int64
+}
+
+type CreateInvitationRow struct {
+	ID        int64
+	ExpiresAt pgtype.Timestamptz
+}
+
+func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationParams) (CreateInvitationRow, error) {
+	row := q.db.QueryRow(ctx, createInvitation,
+		arg.TenantID,
+		arg.EmployeeID,
+		arg.Email,
+		arg.TokenHash,
+		arg.ExpiresAt,
+		arg.InvitedBy,
+	)
+	var i CreateInvitationRow
+	err := row.Scan(&i.ID, &i.ExpiresAt)
 	return i, err
 }
 
@@ -201,6 +278,24 @@ func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (Role, e
 		&i.Status,
 		&i.CreatedAt,
 	)
+	return i, err
+}
+
+const createTenant = `-- name: CreateTenant :one
+INSERT INTO tenants (name) VALUES ($1::text)
+RETURNING id, name, status
+`
+
+type CreateTenantRow struct {
+	ID     int64
+	Name   string
+	Status string
+}
+
+func (q *Queries) CreateTenant(ctx context.Context, name string) (CreateTenantRow, error) {
+	row := q.db.QueryRow(ctx, createTenant, name)
+	var i CreateTenantRow
+	err := row.Scan(&i.ID, &i.Name, &i.Status)
 	return i, err
 }
 
@@ -241,6 +336,28 @@ type DeactivateEmployeeParams struct {
 
 func (q *Queries) DeactivateEmployee(ctx context.Context, arg DeactivateEmployeeParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deactivateEmployee, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteLiveInvitations = `-- name: DeleteLiveInvitations :execrows
+DELETE FROM employee_invitations
+WHERE tenant_id = $1::bigint
+  AND employee_id = $2::bigint
+  AND used_at IS NULL
+`
+
+type DeleteLiveInvitationsParams struct {
+	TenantID   int64
+	EmployeeID int64
+}
+
+// Kills whatever link this employee already holds, so re-inviting replaces
+// rather than accumulates. See the partial unique index for why.
+func (q *Queries) DeleteLiveInvitations(ctx context.Context, arg DeleteLiveInvitationsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteLiveInvitations, arg.TenantID, arg.EmployeeID)
 	if err != nil {
 		return 0, err
 	}
@@ -403,7 +520,7 @@ func (q *Queries) GetDepartment(ctx context.Context, arg GetDepartmentParams) (D
 }
 
 const getEmployee = `-- name: GetEmployee :one
-SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, d.name AS department_name, coalesce(m.name, '')::text AS manager_name
+SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, d.name AS department_name, coalesce(m.name, '')::text AS manager_name
 FROM employees e
 JOIN departments d ON d.id = e.department_id
 LEFT JOIN employees m ON m.id = e.manager_id
@@ -416,20 +533,21 @@ type GetEmployeeParams struct {
 }
 
 type GetEmployeeRow struct {
-	ID             int64
-	TenantID       int64
-	Code           string
-	Name           string
-	DepartmentID   int64
-	Position       string
-	Email          string
-	Phone          string
-	Status         string
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
-	ManagerID      *int64
-	DepartmentName string
-	ManagerName    string
+	ID              int64
+	TenantID        int64
+	Code            string
+	Name            string
+	DepartmentID    int64
+	Position        string
+	Email           string
+	Phone           string
+	Status          string
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	ManagerID       *int64
+	EmailVerifiedAt pgtype.Timestamptz
+	DepartmentName  string
+	ManagerName     string
 }
 
 func (q *Queries) GetEmployee(ctx context.Context, arg GetEmployeeParams) (GetEmployeeRow, error) {
@@ -448,8 +566,58 @@ func (q *Queries) GetEmployee(ctx context.Context, arg GetEmployeeParams) (GetEm
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ManagerID,
+		&i.EmailVerifiedAt,
 		&i.DepartmentName,
 		&i.ManagerName,
+	)
+	return i, err
+}
+
+const getInvitationByToken = `-- name: GetInvitationByToken :one
+SELECT i.id, i.tenant_id, i.employee_id, i.email, i.expires_at, i.used_at,
+       e.name AS employee_name, e.status AS employee_status,
+       e.email AS current_email, e.email_verified_at,
+       t.status AS tenant_status
+FROM employee_invitations i
+JOIN employees e ON e.id = i.employee_id AND e.tenant_id = i.tenant_id
+JOIN tenants t ON t.id = i.tenant_id
+WHERE i.token_hash = $1
+`
+
+type GetInvitationByTokenRow struct {
+	ID              int64
+	TenantID        int64
+	EmployeeID      int64
+	Email           string
+	ExpiresAt       pgtype.Timestamptz
+	UsedAt          pgtype.Timestamptz
+	EmployeeName    string
+	EmployeeStatus  string
+	CurrentEmail    string
+	EmailVerifiedAt pgtype.Timestamptz
+	TenantStatus    string
+}
+
+// Everything activation needs in one round trip, including the employee's
+// current address so the service can refuse a link whose target was edited
+// after it was sent. Deliberately returns expired and used rows too: the page
+// has to tell somebody *why* their link does not work, and "expired" and
+// "already used" are different things to say.
+func (q *Queries) GetInvitationByToken(ctx context.Context, tokenHash []byte) (GetInvitationByTokenRow, error) {
+	row := q.db.QueryRow(ctx, getInvitationByToken, tokenHash)
+	var i GetInvitationByTokenRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.EmployeeID,
+		&i.Email,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.EmployeeName,
+		&i.EmployeeStatus,
+		&i.CurrentEmail,
+		&i.EmailVerifiedAt,
+		&i.TenantStatus,
 	)
 	return i, err
 }
@@ -476,6 +644,84 @@ func (q *Queries) GetPermissionIDsByCodes(ctx context.Context, dollar_1 []string
 		return nil, err
 	}
 	return items, nil
+}
+
+const getTenantByDomain = `-- name: GetTenantByDomain :one
+SELECT d.tenant_id, t.name AS tenant_name, t.status AS tenant_status
+FROM tenant_domains d
+JOIN tenants t ON t.id = d.tenant_id
+WHERE d.domain = lower($1::text)
+`
+
+type GetTenantByDomainRow struct {
+	TenantID     int64
+	TenantName   string
+	TenantStatus string
+}
+
+// The login page has no idea which company somebody belongs to; the domain of
+// the address they type is what says so. A primary-key hit, because this runs
+// on every login attempt including every failed one.
+func (q *Queries) GetTenantByDomain(ctx context.Context, domain string) (GetTenantByDomainRow, error) {
+	row := q.db.QueryRow(ctx, getTenantByDomain, domain)
+	var i GetTenantByDomainRow
+	err := row.Scan(&i.TenantID, &i.TenantName, &i.TenantStatus)
+	return i, err
+}
+
+const getUserByEmail = `-- name: GetUserByEmail :one
+SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
+       e.name AS employee_name, e.code AS employee_code, e.department_id,
+       e.status AS employee_status, e.email_verified_at
+FROM users u
+JOIN employees e ON e.id = u.employee_id
+WHERE u.tenant_id = $1::bigint
+  AND e.email <> ''
+  AND lower(e.email) = lower($2::text)
+`
+
+type GetUserByEmailParams struct {
+	TenantID int64
+	Email    string
+}
+
+type GetUserByEmailRow struct {
+	ID              int64
+	TenantID        int64
+	EmployeeID      int64
+	Username        string
+	PasswordHash    string
+	Status          string
+	FailedCount     int32
+	EmployeeName    string
+	EmployeeCode    string
+	DepartmentID    int64
+	EmployeeStatus  string
+	EmailVerifiedAt pgtype.Timestamptz
+}
+
+// lower() on both sides: an address is case-insensitive in practice, and
+// "Alice@" must not be a second account from "alice@". email_verified_at rides
+// along because login has to refuse an account whose mailbox was never proved
+// to exist, and doing it in the same round trip keeps that check free.
+func (q *Queries) GetUserByEmail(ctx context.Context, arg GetUserByEmailParams) (GetUserByEmailRow, error) {
+	row := q.db.QueryRow(ctx, getUserByEmail, arg.TenantID, arg.Email)
+	var i GetUserByEmailRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.EmployeeID,
+		&i.Username,
+		&i.PasswordHash,
+		&i.Status,
+		&i.FailedCount,
+		&i.EmployeeName,
+		&i.EmployeeCode,
+		&i.DepartmentID,
+		&i.EmployeeStatus,
+		&i.EmailVerifiedAt,
+	)
+	return i, err
 }
 
 const getUserByEmployee = `-- name: GetUserByEmployee :one
@@ -553,6 +799,17 @@ func (q *Queries) GetUserByUsername(ctx context.Context, arg GetUserByUsernamePa
 	return i, err
 }
 
+const hasAnyTenant = `-- name: HasAnyTenant :one
+SELECT EXISTS (SELECT 1 FROM tenants)
+`
+
+func (q *Queries) HasAnyTenant(ctx context.Context) (bool, error) {
+	row := q.db.QueryRow(ctx, hasAnyTenant)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const hasAnyUser = `-- name: HasAnyUser :one
 SELECT EXISTS (SELECT 1 FROM users WHERE tenant_id = $1) AS has_users
 `
@@ -563,6 +820,29 @@ func (q *Queries) HasAnyUser(ctx context.Context, tenantID int64) (bool, error) 
 	var has_users bool
 	err := row.Scan(&has_users)
 	return has_users, err
+}
+
+const isTenantDomain = `-- name: IsTenantDomain :one
+SELECT EXISTS (
+    SELECT 1 FROM tenant_domains
+    WHERE domain = lower($1::text)
+      AND tenant_id = $2::bigint
+) AS owned
+`
+
+type IsTenantDomainParams struct {
+	Domain   string
+	TenantID int64
+}
+
+// Whether an address belongs to this company. Invitations are refused for
+// anything else: an address on a domain the company does not own could not be
+// read by the company, so a link sent there proves nothing about employment.
+func (q *Queries) IsTenantDomain(ctx context.Context, arg IsTenantDomainParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isTenantDomain, arg.Domain, arg.TenantID)
+	var owned bool
+	err := row.Scan(&owned)
+	return owned, err
 }
 
 const listDepartments = `-- name: ListDepartments :many
@@ -697,7 +977,7 @@ func (q *Queries) ListEmployeeRoleIDs(ctx context.Context, arg ListEmployeeRoleI
 }
 
 const listEmployees = `-- name: ListEmployees :many
-SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, d.name AS department_name, coalesce(m.name, '')::text AS manager_name,
+SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, d.name AS department_name, coalesce(m.name, '')::text AS manager_name,
        count(*) OVER () AS total
 FROM employees e
 JOIN departments d ON d.id = e.department_id
@@ -718,21 +998,22 @@ type ListEmployeesParams struct {
 }
 
 type ListEmployeesRow struct {
-	ID             int64
-	TenantID       int64
-	Code           string
-	Name           string
-	DepartmentID   int64
-	Position       string
-	Email          string
-	Phone          string
-	Status         string
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
-	ManagerID      *int64
-	DepartmentName string
-	ManagerName    string
-	Total          int64
+	ID              int64
+	TenantID        int64
+	Code            string
+	Name            string
+	DepartmentID    int64
+	Position        string
+	Email           string
+	Phone           string
+	Status          string
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	ManagerID       *int64
+	EmailVerifiedAt pgtype.Timestamptz
+	DepartmentName  string
+	ManagerName     string
+	Total           int64
 }
 
 func (q *Queries) ListEmployees(ctx context.Context, arg ListEmployeesParams) ([]ListEmployeesRow, error) {
@@ -763,10 +1044,46 @@ func (q *Queries) ListEmployees(ctx context.Context, arg ListEmployeesParams) ([
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ManagerID,
+			&i.EmailVerifiedAt,
 			&i.DepartmentName,
 			&i.ManagerName,
 			&i.Total,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLiveInvitations = `-- name: ListLiveInvitations :many
+SELECT employee_id, expires_at
+FROM employee_invitations
+WHERE tenant_id = $1::bigint AND used_at IS NULL
+`
+
+type ListLiveInvitationsRow struct {
+	EmployeeID int64
+	ExpiresAt  pgtype.Timestamptz
+}
+
+// Powers the employee list's status column: who is waiting on a link, and
+// until when. One query for the whole page rather than one per row, the same
+// shape as ListEmployeeAccounts beside it — the alternative is an N+1 on a
+// screen whose entire job during a migration is to be scanned.
+func (q *Queries) ListLiveInvitations(ctx context.Context, tenantID int64) ([]ListLiveInvitationsRow, error) {
+	rows, err := q.db.Query(ctx, listLiveInvitations, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLiveInvitationsRow
+	for rows.Next() {
+		var i ListLiveInvitationsRow
+		if err := rows.Scan(&i.EmployeeID, &i.ExpiresAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1070,6 +1387,23 @@ func (q *Queries) SetDepartmentPath(ctx context.Context, arg SetDepartmentPathPa
 	return err
 }
 
+const setEmployeeEmailVerified = `-- name: SetEmployeeEmailVerified :exec
+UPDATE employees
+SET email = $1::text, email_verified_at = now(), updated_at = now()
+WHERE tenant_id = $2::bigint AND id = $3::bigint
+`
+
+type SetEmployeeEmailVerifiedParams struct {
+	Email    string
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) SetEmployeeEmailVerified(ctx context.Context, arg SetEmployeeEmailVerifiedParams) error {
+	_, err := q.db.Exec(ctx, setEmployeeEmailVerified, arg.Email, arg.TenantID, arg.ID)
+	return err
+}
+
 const setEmployeeManager = `-- name: SetEmployeeManager :execrows
 UPDATE employees SET manager_id = nullif($1::bigint, 0), updated_at = now()
 WHERE tenant_id = $2::bigint AND id = $3::bigint
@@ -1132,6 +1466,41 @@ func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) 
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const upsertUserPassword = `-- name: UpsertUserPassword :exec
+INSERT INTO users (tenant_id, employee_id, username, password_hash)
+VALUES (
+    $1::bigint,
+    $2::bigint,
+    $3::text,
+    $4::text
+)
+ON CONFLICT (employee_id) DO UPDATE
+SET password_hash = EXCLUDED.password_hash,
+    status        = 'ACTIVE',
+    failed_count  = 0,
+    updated_at    = now()
+`
+
+type UpsertUserPasswordParams struct {
+	TenantID     int64
+	EmployeeID   int64
+	Username     string
+	PasswordHash string
+}
+
+// Activation is the same operation whether or not an account already exists —
+// an employee imported with a login gets their password replaced, one imported
+// without gets a row. employee_id is UNIQUE, so the conflict target is exact.
+func (q *Queries) UpsertUserPassword(ctx context.Context, arg UpsertUserPasswordParams) error {
+	_, err := q.db.Exec(ctx, upsertUserPassword,
+		arg.TenantID,
+		arg.EmployeeID,
+		arg.Username,
+		arg.PasswordHash,
+	)
+	return err
 }
 
 const widestDataScope = `-- name: WidestDataScope :one

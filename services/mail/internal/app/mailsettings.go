@@ -105,11 +105,18 @@ func (s *Service) GetMyMailAccount(ctx context.Context, tenantID, employeeID int
 	// because GetMyMailAccount deliberately does not touch the secret column
 	// at all — keeping that query incapable of returning it is worth one
 	// extra round trip on a settings page.
+	//
+	// Both columns, because a credential lives in one or the other and never
+	// both: a password account fills secret_enc, a Google account fills
+	// oauth_refresh_enc and leaves secret_enc empty. Looking only at the first
+	// answers "no credential" for every Google-signed-in employee in the
+	// company — which reads as "you have not set up your mailbox" to somebody
+	// whose mailbox is working.
 	has := false
 	if sec, err := s.q.GetMailAccountSecret(ctx, store.GetMailAccountSecretParams{
 		TenantID: tenantID, EmployeeID: employeeID,
 	}); err == nil {
-		has = len(sec.SecretEnc) > 0
+		has = len(sec.SecretEnc) > 0 || len(sec.OauthRefreshEnc) > 0
 	}
 
 	v := MailAccountView{

@@ -1452,7 +1452,7 @@ func (q *Queries) ListInboundThreads(ctx context.Context, arg ListInboundThreads
 }
 
 const listRecentForReconcile = `-- name: ListRecentForReconcile :many
-SELECT id, imap_uid, message_id, is_read, is_starred, archived_at, deleted_at
+SELECT id, owner_id, imap_uid, message_id, raw_key, is_read, is_starred, archived_at, deleted_at
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND account_id = $2::bigint
@@ -1470,8 +1470,10 @@ type ListRecentForReconcileParams struct {
 
 type ListRecentForReconcileRow struct {
 	ID         int64
+	OwnerID    int64
 	ImapUid    int64
 	MessageID  string
+	RawKey     string
 	IsRead     bool
 	IsStarred  bool
 	ArchivedAt pgtype.Timestamptz
@@ -1480,6 +1482,10 @@ type ListRecentForReconcileRow struct {
 
 // The newest slice of one folder with everything the reconcile pass needs to
 // decide what happened to each message.
+//
+// owner_id and raw_key are here for the one outcome that destroys something:
+// a message already in our recycle bin that the host has now purged is purged
+// here too, and that means removing its objects before its row.
 func (q *Queries) ListRecentForReconcile(ctx context.Context, arg ListRecentForReconcileParams) ([]ListRecentForReconcileRow, error) {
 	rows, err := q.db.Query(ctx, listRecentForReconcile,
 		arg.TenantID,
@@ -1496,8 +1502,10 @@ func (q *Queries) ListRecentForReconcile(ctx context.Context, arg ListRecentForR
 		var i ListRecentForReconcileRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.OwnerID,
 			&i.ImapUid,
 			&i.MessageID,
+			&i.RawKey,
 			&i.IsRead,
 			&i.IsStarred,
 			&i.ArchivedAt,

@@ -15,6 +15,13 @@ import (
 type Claims struct {
 	TenantID     int64  `json:"tid"`
 	EmployeeName string `json:"name"`
+	// The company address this person logged in with.
+	//
+	// Carried so the mailbox they bind can be taken from their identity
+	// rather than from a form field. A field would be a field somebody can
+	// change, and the one thing the gate must not allow is binding a mailbox
+	// that is not the one they signed in as.
+	Email string `json:"eml"`
 	jwt.RegisteredClaims
 }
 
@@ -24,11 +31,12 @@ func (c *Claims) EmployeeID() int64 {
 	return id
 }
 
-func Issue(secret string, ttl time.Duration, tenantID, employeeID int64, name string) (string, error) {
+func Issue(secret string, ttl time.Duration, tenantID, employeeID int64, name, email string) (string, error) {
 	now := time.Now()
 	claims := Claims{
 		TenantID:     tenantID,
 		EmployeeName: name,
+		Email:        email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   strconv.FormatInt(employeeID, 10),
 			IssuedAt:  jwt.NewNumericDate(now),

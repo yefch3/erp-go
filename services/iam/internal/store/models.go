@@ -23,18 +23,31 @@ type Department struct {
 }
 
 type Employee struct {
-	ID           int64
-	TenantID     int64
-	Code         string
-	Name         string
-	DepartmentID int64
-	Position     string
-	Email        string
-	Phone        string
-	Status       string
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
-	ManagerID    *int64
+	ID              int64
+	TenantID        int64
+	Code            string
+	Name            string
+	DepartmentID    int64
+	Position        string
+	Email           string
+	Phone           string
+	Status          string
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	ManagerID       *int64
+	EmailVerifiedAt pgtype.Timestamptz
+}
+
+type EmployeeInvitation struct {
+	ID         int64
+	TenantID   int64
+	EmployeeID int64
+	Email      string
+	TokenHash  []byte
+	ExpiresAt  pgtype.Timestamptz
+	UsedAt     pgtype.Timestamptz
+	InvitedBy  int64
+	CreatedAt  pgtype.Timestamptz
 }
 
 type EmployeeRole struct {
@@ -74,6 +87,20 @@ type RolePermission struct {
 	TenantID     int64
 	RoleID       int64
 	PermissionID int64
+}
+
+type Tenant struct {
+	ID        int64
+	Name      string
+	Status    string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type TenantDomain struct {
+	Domain    string
+	TenantID  int64
+	CreatedAt pgtype.Timestamptz
 }
 
 type User struct {

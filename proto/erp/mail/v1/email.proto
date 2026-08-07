@@ -378,6 +378,14 @@ message VerifyMailAccessRequest {
 message VerifyMailAccessResponse {
   bool ok = 1;
   string detail = 2;
+  // Whether the mail host is the one that said no.
+  //
+  // Every failure arrives here as ok=false, but they are not the same kind of
+  // thing: a wrong authorisation code cost us one bad login against Gmail or
+  // 263, while "收件服务器未配置" or a decryption failure never left this
+  // process. Only the first should spend the caller's attempt budget, whose
+  // whole purpose is protecting our address's standing with the host.
+  bool host_rejected = 3;
 }
 
 message CompleteGoogleOAuthRequest {
@@ -385,6 +393,14 @@ message CompleteGoogleOAuthRequest {
   // Must byte-match the redirect_uri the auth URL carried, or Google
   // refuses the exchange.
   string redirect_uri = 2;
+  // The address this person signed in to the ERP with. The grant is refused
+  // unless Google says it belongs to this same address.
+  //
+  // The password door already takes the address from the session rather than
+  // from the caller. Without this the Google door was the way around that:
+  // authorise any Google account at Google's own page and it would be bound,
+  // whoever you signed in as.
+  string expect_email = 3;
 }
 
 message CompleteGoogleOAuthResponse {

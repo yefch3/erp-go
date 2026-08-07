@@ -111,28 +111,73 @@ func (s *Server) requireMailUnlock(next http.Handler) http.Handler {
 // mailbox bound. With an email in the body this is also the binding: the
 // service stores the pair only after the login succeeded.
 func (s *Server) verifyMailbox(w http.ResponseWriter, r *http.Request) {
+	// Only the secret. The address is not a field here and must never become
+	// one again: it comes from the token, which means the mailbox somebody
+	// binds is necessarily the one they signed in as.
+	//
+	// It used to be in the body, and that allowed the thing this whole design
+	// exists to prevent — signing in as alice@thecompany.com and binding a
+	// personal mailbox. Everything downstream then disagreed: the ERP said one
+	// person sent the mail and the customer saw another address, and mail the
+	// company does not control started flowing through it. Validating the
+	// field would have worked too; removing it is better, because a field that
+	// does not exist cannot be got wrong later.
 	var body struct {
 		Secret string `json:"secret"`
-		Email  string `json:"email"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
 		s.writeError(w, http.StatusBadRequest, "GATEWAY_BAD_JSON", "请求体不是合法的 JSON")
 		return
 	}
+	// Metered by the employee, who is already authenticated here — a better
+	// identity than the login route gets, and the right one: the budget being
+	// spent is this person's, and the cost of overspending it is that the mail
+	// host blocks the address the whole company sends from.
+	op, _ := grpcx.OperatorFromContext(r.Context())
+	if op.Email == "" {
+		// An employee row with no address. They cannot bind anything until
+		// somebody gives them one, and saying so is better than letting them
+		// type an address that would then be ignored.
+		s.writeError(w, http.StatusForbidden, "MAIL_NO_WORK_ADDRESS",
+			"你的账号还没有公司邮箱地址，请联系管理员")
+		return
+	}
+	who := fmt.Sprintf("t%d.e%d", op.TenantID, op.EmployeeID)
+	if wait, blocked := s.Throttle.Blocked(r.Context(), throttleMailVerify, who); blocked {
+		s.writeTooManyAttempts(w, wait)
+		return
+	}
+
 	resp, err := s.Emails.VerifyMailAccess(r.Context(), &mailv1.VerifyMailAccessRequest{
-		Secret: body.Secret, Email: body.Email,
+		Secret: body.Secret, Email: op.Email,
 	})
 	if err != nil {
+		// Not charged. This is the mail service or the network failing, not
+		// the caller guessing — and nothing was spent against the mail host,
+		// which is the resource this budget protects.
 		s.writeGRPCError(w, err)
 		return
 	}
 	if !resp.GetOk() {
+		// Charged only when the mail host is what refused, because that is the
+		// only failure that spent anything: one bad login against Gmail or 263
+		// on this caller's behalf. Everything the service decides on its own —
+		// no host configured, an undecryptable stored code, a missing address —
+		// never left our network, and billing it to the person meant an
+		// internal fault answered their next five attempts with 429 instead of
+		// the real reason.
+		if resp.GetHostRejected() {
+			if wait, spent := s.Throttle.Failed(r.Context(), throttleMailVerify, who); spent {
+				s.writeTooManyAttempts(w, wait)
+				return
+			}
+		}
 		// The mail host's own words: "wrong code" from Gmail beats any
 		// paraphrase we could write.
 		s.writeError(w, http.StatusForbidden, "MAIL_VERIFY_FAILED", resp.GetDetail())
 		return
 	}
-	op, _ := grpcx.OperatorFromContext(r.Context())
+	s.Throttle.Passed(r.Context(), throttleMailVerify, who)
 	token, expires, err := s.Unlock.Grant(r.Context(), op.TenantID, op.EmployeeID)
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, "MAIL_UNLOCK_STORE", "无法保存验证状态，请重试")

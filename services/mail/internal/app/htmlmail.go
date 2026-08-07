@@ -221,3 +221,95 @@ var htmlEscaper = strings.NewReplacer(
 )
 
 func escapeForHTML(s string) string { return htmlEscaper.Replace(s) }
+
+// readerPolicy is what a received mail may keep when it is shown back.
+//
+// Wider than mailPolicy in exactly two ways — <style> blocks survive, and so
+// do class attributes — and narrower in none. Everything dangerous is still
+// gone: no script, no event handlers, no javascript: URLs, no iframes, no
+// objects.
+//
+// Those two additions are most of how a modern mail looks like itself. A
+// marketing mail is built as a stylesheet plus a scaffold of divs carrying
+// class names; strip the stylesheet and the class names dangle, the headings
+// fall back to browser defaults, and what arrives on screen is a flat
+// approximation that reads as though our client is broken. One mail measured
+// here carried ten <style> blocks and seventy-nine class attributes, and its
+// display heading — 48px in Gmail — rendered at the browser's default because
+// its size lived in a rule we had thrown away.
+//
+// The policy that removed them justified itself by saying Gmail strips <style>
+// too. Gmail does not; the same mail renders in Gmail with its own typography,
+// which is what made the difference visible in the first place.
+//
+// The reason it was ever unsafe is real, though, and is why this is a separate
+// policy rather than a widening of the original: the body is injected into our
+// own page, so a sender's stylesheet is a stranger writing CSS for our
+// application. `body { display: none }` hides the ERP. `position: fixed` puts
+// their content over our toolbar, which is a phishing surface. A selector can
+// name .el-button and restyle a framework component.
+//
+// So this output is only ever rendered inside a sandboxed iframe, where the
+// sender's CSS cannot reach beyond the document it came in. Sanitising and
+// isolating are doing different jobs here and neither replaces the other: the
+// sandbox is what makes <style> safe to keep, and the sanitiser is what keeps
+// script out even if the sandbox is misconfigured one day.
+var readerPolicy = buildReaderPolicy()
+
+func buildReaderPolicy() *bluemonday.Policy {
+	p := buildMailPolicy()
+	// The stylesheet itself. bluemonday validates the declarations inside.
+	p.AllowElements("style")
+	p.AllowAttrs("class", "id").Globally()
+	// Layout elements real mail uses that the composer never emits, so they
+	// are not in the sending whitelist: senders build with these constantly
+	// and dropping them collapses the scaffold the CSS is written against.
+	p.AllowElements("center", "font", "tbody", "colgroup", "col")
+	p.AllowAttrs("bgcolor", "background", "align", "valign").Globally()
+	return p
+}
+
+// styleBlock captures a stylesheet and its contents.
+var styleBlock = regexp.MustCompile(`(?is)<style[^>]*>(.*?)</style>`)
+
+// cssDanger is what is taken out of a kept stylesheet.
+//
+// A short list, because the frame is doing the containing. @import fetches a
+// stylesheet from wherever the sender likes, which is a tracking beacon that
+// outlives the image blocker; expression() is IE's way of putting script in a
+// declaration and has no business anywhere. Everything else — position, z-index,
+// display — is confined to the frame's own document and can be left alone.
+var cssDanger = regexp.MustCompile(`(?is)@import\b[^;]*;?|expression\s*\(|javascript\s*:`)
+
+// SanitizeForReading prepares a received mail for display in the reader's
+// sandboxed frame. Never use it for anything rendered into our own document.
+//
+// The stylesheet is lifted out before the policy runs and put back after,
+// because bluemonday does not keep it: AllowElements("style") permits the tag
+// and the library still discards its contents, by design — it exists for
+// user-generated HTML, where a stylesheet is the attack rather than the
+// content. Measured on a real marketing mail, the policy alone kept 0 of 10
+// stylesheets.
+//
+// Lifting it out would be reckless on its own. It is only defensible because
+// the result is rendered inside a sandboxed frame: there the sender's CSS
+// governs their own document and nothing else, so `body { display: none }`
+// hides their mail rather than our application, and `position: fixed` cannot
+// place anything over our toolbar.
+func SanitizeForReading(s string) string {
+	s = repairURLWhitespace(s)
+
+	var css strings.Builder
+	for _, m := range styleBlock.FindAllStringSubmatch(s, -1) {
+		css.WriteString(cssDanger.ReplaceAllString(m[1], ""))
+		css.WriteString("\n")
+	}
+	body := readerPolicy.Sanitize(s)
+	if css.Len() == 0 {
+		return body
+	}
+	// Ahead of the body so the mail's own rules are in effect before its
+	// markup, and escaped so a stylesheet cannot close its own tag and become
+	// markup again.
+	return "<style>" + strings.ReplaceAll(css.String(), "</", "<\\/") + "</style>" + body
+}

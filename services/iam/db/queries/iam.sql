@@ -1,3 +1,26 @@
+-- name: GetTenantByDomain :one
+-- The login page has no idea which company somebody belongs to; the domain of
+-- the address they type is what says so. A primary-key hit, because this runs
+-- on every login attempt including every failed one.
+SELECT d.tenant_id, t.name AS tenant_name, t.status AS tenant_status
+FROM tenant_domains d
+JOIN tenants t ON t.id = d.tenant_id
+WHERE d.domain = lower(sqlc.arg(domain)::text);
+
+-- name: GetUserByEmail :one
+-- lower() on both sides: an address is case-insensitive in practice, and
+-- "Alice@" must not be a second account from "alice@". email_verified_at rides
+-- along because login has to refuse an account whose mailbox was never proved
+-- to exist, and doing it in the same round trip keeps that check free.
+SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
+       e.name AS employee_name, e.code AS employee_code, e.department_id,
+       e.status AS employee_status, e.email_verified_at
+FROM users u
+JOIN employees e ON e.id = u.employee_id
+WHERE u.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND e.email <> ''
+  AND lower(e.email) = lower(sqlc.arg(email)::text);
+
 -- name: GetUserByUsername :one
 SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
        e.name AS employee_name, e.code AS employee_code, e.department_id, e.status AS employee_status
@@ -228,3 +251,101 @@ DO UPDATE SET scope_type = excluded.scope_type, custom_dept_ids = excluded.custo
 -- name: ListRoleDataScopes :many
 SELECT role_id, module, scope_type, custom_dept_ids
 FROM role_data_scopes WHERE tenant_id = $1 ORDER BY role_id, module;
+
+-- name: CreateTenant :one
+INSERT INTO tenants (name) VALUES (sqlc.arg(name)::text)
+RETURNING id, name, status;
+
+-- name: AddTenantDomain :exec
+-- Lower-cased on the way in so the login lookup, which lower-cases what it was
+-- given, can be a plain primary-key hit.
+INSERT INTO tenant_domains (domain, tenant_id)
+VALUES (lower(sqlc.arg(domain)::text), sqlc.arg(tenant_id)::bigint)
+ON CONFLICT (domain) DO NOTHING;
+
+-- name: HasAnyTenant :one
+SELECT EXISTS (SELECT 1 FROM tenants);
+
+-- name: SetEmployeeEmailVerified :exec
+UPDATE employees
+SET email = sqlc.arg(email)::text, email_verified_at = now(), updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: DeleteLiveInvitations :execrows
+-- Kills whatever link this employee already holds, so re-inviting replaces
+-- rather than accumulates. See the partial unique index for why.
+DELETE FROM employee_invitations
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND employee_id = sqlc.arg(employee_id)::bigint
+  AND used_at IS NULL;
+
+-- name: CreateInvitation :one
+INSERT INTO employee_invitations (tenant_id, employee_id, email, token_hash, expires_at, invited_by)
+VALUES (
+    sqlc.arg(tenant_id)::bigint,
+    sqlc.arg(employee_id)::bigint,
+    lower(sqlc.arg(email)::text),
+    sqlc.arg(token_hash),
+    sqlc.arg(expires_at),
+    sqlc.arg(invited_by)::bigint
+)
+RETURNING id, expires_at;
+
+-- name: GetInvitationByToken :one
+-- Everything activation needs in one round trip, including the employee's
+-- current address so the service can refuse a link whose target was edited
+-- after it was sent. Deliberately returns expired and used rows too: the page
+-- has to tell somebody *why* their link does not work, and "expired" and
+-- "already used" are different things to say.
+SELECT i.id, i.tenant_id, i.employee_id, i.email, i.expires_at, i.used_at,
+       e.name AS employee_name, e.status AS employee_status,
+       e.email AS current_email, e.email_verified_at,
+       t.status AS tenant_status
+FROM employee_invitations i
+JOIN employees e ON e.id = i.employee_id AND e.tenant_id = i.tenant_id
+JOIN tenants t ON t.id = i.tenant_id
+WHERE i.token_hash = sqlc.arg(token_hash);
+
+-- name: ConsumeInvitation :execrows
+-- The WHERE clause is the concurrency control: two requests arriving with the
+-- same token race here, and exactly one updates a row. Checking "is it unused"
+-- in Go and then updating would let both through.
+UPDATE employee_invitations
+SET used_at = now()
+WHERE id = sqlc.arg(id)::bigint AND used_at IS NULL;
+
+-- name: UpsertUserPassword :exec
+-- Activation is the same operation whether or not an account already exists —
+-- an employee imported with a login gets their password replaced, one imported
+-- without gets a row. employee_id is UNIQUE, so the conflict target is exact.
+INSERT INTO users (tenant_id, employee_id, username, password_hash)
+VALUES (
+    sqlc.arg(tenant_id)::bigint,
+    sqlc.arg(employee_id)::bigint,
+    sqlc.arg(username)::text,
+    sqlc.arg(password_hash)::text
+)
+ON CONFLICT (employee_id) DO UPDATE
+SET password_hash = EXCLUDED.password_hash,
+    status        = 'ACTIVE',
+    failed_count  = 0,
+    updated_at    = now();
+
+-- name: IsTenantDomain :one
+-- Whether an address belongs to this company. Invitations are refused for
+-- anything else: an address on a domain the company does not own could not be
+-- read by the company, so a link sent there proves nothing about employment.
+SELECT EXISTS (
+    SELECT 1 FROM tenant_domains
+    WHERE domain = lower(sqlc.arg(domain)::text)
+      AND tenant_id = sqlc.arg(tenant_id)::bigint
+) AS owned;
+
+-- name: ListLiveInvitations :many
+-- Powers the employee list's status column: who is waiting on a link, and
+-- until when. One query for the whole page rather than one per row, the same
+-- shape as ListEmployeeAccounts beside it — the alternative is an N+1 on a
+-- screen whose entire job during a migration is to be scanned.
+SELECT employee_id, expires_at
+FROM employee_invitations
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND used_at IS NULL;

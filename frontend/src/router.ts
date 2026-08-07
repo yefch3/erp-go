@@ -4,6 +4,9 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', component: () => import('./pages/LoginPage.vue') },
+    // Reached from a mail, by somebody who has no account yet — having one is
+    // what they are here to arrange. Outside the shell and outside the guard.
+    { path: '/activate', component: () => import('./pages/ActivatePage.vue') },
     {
       path: '/',
       component: () => import('./pages/Shell.vue'),
@@ -40,6 +43,9 @@ export const router = createRouter({
 
 router.beforeEach((to) => {
   const loggedIn = localStorage.getItem('token') !== null
+  // Activation is the one page whose whole audience is logged out and has to
+  // stay that way: sending them to /login would hide the only link they hold.
+  if (to.path === '/activate') return true
   // Where they were trying to go travels with them, so opening a bookmarked
   // mail on a dead session lands on that mail after signing in rather than on
   // the home page with the reason forgotten.

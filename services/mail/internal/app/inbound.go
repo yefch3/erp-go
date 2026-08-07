@@ -290,15 +290,36 @@ func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, employeeID
 	// inbox. This is the half of two-way sync that carries somebody else's
 	// Gmail session into the ERP; it no-ops while local changes are still
 	// queued, so it can never overwrite one on its way up.
-	if err := s.ReconcileFlags(ctx, cfg.TenantID, acct, "INBOX", "INBOX", true); err != nil {
+	if err := s.ReconcileFlags(ctx, cfg.TenantID, acct, "INBOX", "INBOX", ""); err != nil {
 		s.log.Warn("could not reconcile the inbox", "account", acct.AccountID, "err", err)
 	}
-	// The junk folder gets its flags reconciled too, but not its departures:
-	// mail leaves spam mostly because somebody rescued it, and calling that a
-	// deletion would bin the message they just saved.
+	// The junk folder, with the inbox named as its rescue: mail leaves spam
+	// either because somebody deleted it or because somebody called it "not
+	// spam", and only the second lands in the inbox. Departures here used to
+	// be ignored altogether to protect the rescue, which also meant deleting a
+	// spam in Gmail reached nothing at all.
 	if actual, err := s.specialFolderOf(ctx, acct, "junk"); err == nil {
-		if err := s.ReconcileFlags(ctx, cfg.TenantID, acct, "JUNK", actual, false); err != nil {
+		if err := s.ReconcileFlags(ctx, cfg.TenantID, acct, "JUNK", actual, "INBOX"); err != nil {
 			s.log.Warn("could not reconcile the junk folder", "account", acct.AccountID, "err", err)
+		}
+	}
+	// And the sent folder, departures included. This was the one remaining
+	// half of the two-way sync: deleting a sent mail in the ERP already moved
+	// the host's copy to its trash, but deleting it in Gmail reached nothing,
+	// so the ERP went on listing a message the mailbox no longer had.
+	//
+	// No rescue folder, unlike the junk folder, because there is only one way
+	// out of a sent folder. Gmail applies the Sent label at send time and no
+	// ordinary action removes it — archiving a conversation drops the Inbox
+	// label, not this one — and on a host where Sent is a real folder a
+	// message leaves it only by being moved or deleted. So a UID that stops
+	// being returned here means somebody deleted it, which is exactly what
+	// should be mirrored. The mirror is a soft delete either way, so an
+	// inference that turns out wrong costs a trip to the recycle bin rather
+	// than the message.
+	if actual, err := s.specialFolderOf(ctx, acct, "sent"); err == nil {
+		if err := s.ReconcileFlags(ctx, cfg.TenantID, acct, "SENT", actual, ""); err != nil {
+			s.log.Warn("could not reconcile the sent folder", "account", acct.AccountID, "err", err)
 		}
 	}
 

@@ -19,7 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AuthService_Login_FullMethodName = "/erp.iam.v1.AuthService/Login"
+	AuthService_Login_FullMethodName           = "/erp.iam.v1.AuthService/Login"
+	AuthService_PeekInvitation_FullMethodName  = "/erp.iam.v1.AuthService/PeekInvitation"
+	AuthService_ActivateAccount_FullMethodName = "/erp.iam.v1.AuthService/ActivateAccount"
 )
 
 // AuthServiceClient is the client API for AuthService service.
@@ -27,8 +29,18 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // AuthService issues JWTs. The gateway is its only caller.
+//
+// Every RPC here is reachable without a session, because each one is a step
+// on the way to having one. That is what makes them the two routes worth
+// rate limiting and the two worth being most careful about what they reveal.
 type AuthServiceClient interface {
 	Login(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (*LoginResponse, error)
+	// PeekInvitation reads an activation link without redeeming it, so the page
+	// can say the link expired before asking for a password rather than after.
+	PeekInvitation(ctx context.Context, in *PeekInvitationRequest, opts ...grpc.CallOption) (*PeekInvitationResponse, error)
+	// ActivateAccount redeems the link: it sets the password the person chose
+	// and records that their company mailbox was proved to be theirs.
+	ActivateAccount(ctx context.Context, in *ActivateAccountRequest, opts ...grpc.CallOption) (*ActivateAccountResponse, error)
 }
 
 type authServiceClient struct {
@@ -49,13 +61,43 @@ func (c *authServiceClient) Login(ctx context.Context, in *LoginRequest, opts ..
 	return out, nil
 }
 
+func (c *authServiceClient) PeekInvitation(ctx context.Context, in *PeekInvitationRequest, opts ...grpc.CallOption) (*PeekInvitationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PeekInvitationResponse)
+	err := c.cc.Invoke(ctx, AuthService_PeekInvitation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authServiceClient) ActivateAccount(ctx context.Context, in *ActivateAccountRequest, opts ...grpc.CallOption) (*ActivateAccountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ActivateAccountResponse)
+	err := c.cc.Invoke(ctx, AuthService_ActivateAccount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuthServiceServer is the server API for AuthService service.
 // All implementations must embed UnimplementedAuthServiceServer
 // for forward compatibility.
 //
 // AuthService issues JWTs. The gateway is its only caller.
+//
+// Every RPC here is reachable without a session, because each one is a step
+// on the way to having one. That is what makes them the two routes worth
+// rate limiting and the two worth being most careful about what they reveal.
 type AuthServiceServer interface {
 	Login(context.Context, *LoginRequest) (*LoginResponse, error)
+	// PeekInvitation reads an activation link without redeeming it, so the page
+	// can say the link expired before asking for a password rather than after.
+	PeekInvitation(context.Context, *PeekInvitationRequest) (*PeekInvitationResponse, error)
+	// ActivateAccount redeems the link: it sets the password the person chose
+	// and records that their company mailbox was proved to be theirs.
+	ActivateAccount(context.Context, *ActivateAccountRequest) (*ActivateAccountResponse, error)
 	mustEmbedUnimplementedAuthServiceServer()
 }
 
@@ -68,6 +110,12 @@ type UnimplementedAuthServiceServer struct{}
 
 func (UnimplementedAuthServiceServer) Login(context.Context, *LoginRequest) (*LoginResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Login not implemented")
+}
+func (UnimplementedAuthServiceServer) PeekInvitation(context.Context, *PeekInvitationRequest) (*PeekInvitationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PeekInvitation not implemented")
+}
+func (UnimplementedAuthServiceServer) ActivateAccount(context.Context, *ActivateAccountRequest) (*ActivateAccountResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ActivateAccount not implemented")
 }
 func (UnimplementedAuthServiceServer) mustEmbedUnimplementedAuthServiceServer() {}
 func (UnimplementedAuthServiceServer) testEmbeddedByValue()                     {}
@@ -108,6 +156,42 @@ func _AuthService_Login_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthService_PeekInvitation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PeekInvitationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).PeekInvitation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_PeekInvitation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).PeekInvitation(ctx, req.(*PeekInvitationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthService_ActivateAccount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ActivateAccountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).ActivateAccount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_ActivateAccount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).ActivateAccount(ctx, req.(*ActivateAccountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AuthService_ServiceDesc is the grpc.ServiceDesc for AuthService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -118,6 +202,14 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Login",
 			Handler:    _AuthService_Login_Handler,
+		},
+		{
+			MethodName: "PeekInvitation",
+			Handler:    _AuthService_PeekInvitation_Handler,
+		},
+		{
+			MethodName: "ActivateAccount",
+			Handler:    _AuthService_ActivateAccount_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -137,6 +229,7 @@ const (
 	DirectoryService_ChangePassword_FullMethodName     = "/erp.iam.v1.DirectoryService/ChangePassword"
 	DirectoryService_ListManagers_FullMethodName       = "/erp.iam.v1.DirectoryService/ListManagers"
 	DirectoryService_SetManager_FullMethodName         = "/erp.iam.v1.DirectoryService/SetManager"
+	DirectoryService_InviteEmployee_FullMethodName     = "/erp.iam.v1.DirectoryService/InviteEmployee"
 )
 
 // DirectoryServiceClient is the client API for DirectoryService service.
@@ -170,6 +263,12 @@ type DirectoryServiceClient interface {
 	ListManagers(ctx context.Context, in *ListManagersRequest, opts ...grpc.CallOption) (*ListManagersResponse, error)
 	// SetManager changes who someone reports to.
 	SetManager(ctx context.Context, in *SetManagerRequest, opts ...grpc.CallOption) (*SetManagerResponse, error)
+	// InviteEmployee mints a one-time activation link. It does not send it:
+	// every mail this system emits leaves through some employee's own bound
+	// mailbox, and iam has no mail client — the mail service already depends on
+	// iam, so the reverse edge would close a cycle. The gateway, which holds
+	// both, does the sending.
+	InviteEmployee(ctx context.Context, in *InviteEmployeeRequest, opts ...grpc.CallOption) (*InviteEmployeeResponse, error)
 }
 
 type directoryServiceClient struct {
@@ -300,6 +399,16 @@ func (c *directoryServiceClient) SetManager(ctx context.Context, in *SetManagerR
 	return out, nil
 }
 
+func (c *directoryServiceClient) InviteEmployee(ctx context.Context, in *InviteEmployeeRequest, opts ...grpc.CallOption) (*InviteEmployeeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InviteEmployeeResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_InviteEmployee_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DirectoryServiceServer is the server API for DirectoryService service.
 // All implementations must embed UnimplementedDirectoryServiceServer
 // for forward compatibility.
@@ -331,6 +440,12 @@ type DirectoryServiceServer interface {
 	ListManagers(context.Context, *ListManagersRequest) (*ListManagersResponse, error)
 	// SetManager changes who someone reports to.
 	SetManager(context.Context, *SetManagerRequest) (*SetManagerResponse, error)
+	// InviteEmployee mints a one-time activation link. It does not send it:
+	// every mail this system emits leaves through some employee's own bound
+	// mailbox, and iam has no mail client — the mail service already depends on
+	// iam, so the reverse edge would close a cycle. The gateway, which holds
+	// both, does the sending.
+	InviteEmployee(context.Context, *InviteEmployeeRequest) (*InviteEmployeeResponse, error)
 	mustEmbedUnimplementedDirectoryServiceServer()
 }
 
@@ -376,6 +491,9 @@ func (UnimplementedDirectoryServiceServer) ListManagers(context.Context, *ListMa
 }
 func (UnimplementedDirectoryServiceServer) SetManager(context.Context, *SetManagerRequest) (*SetManagerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetManager not implemented")
+}
+func (UnimplementedDirectoryServiceServer) InviteEmployee(context.Context, *InviteEmployeeRequest) (*InviteEmployeeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InviteEmployee not implemented")
 }
 func (UnimplementedDirectoryServiceServer) mustEmbedUnimplementedDirectoryServiceServer() {}
 func (UnimplementedDirectoryServiceServer) testEmbeddedByValue()                          {}
@@ -614,6 +732,24 @@ func _DirectoryService_SetManager_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DirectoryService_InviteEmployee_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InviteEmployeeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).InviteEmployee(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_InviteEmployee_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).InviteEmployee(ctx, req.(*InviteEmployeeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DirectoryService_ServiceDesc is the grpc.ServiceDesc for DirectoryService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -668,6 +804,10 @@ var DirectoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetManager",
 			Handler:    _DirectoryService_SetManager_Handler,
+		},
+		{
+			MethodName: "InviteEmployee",
+			Handler:    _DirectoryService_InviteEmployee_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -36,4 +36,3 @@ func TestVerifyRejectsMalformed(t *testing.T) {
 		}
 	}
 }
-

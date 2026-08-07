@@ -13,6 +13,11 @@ type Config struct {
 	JWTSecret            string
 	JWTTTL               time.Duration
 	AdminInitialPassword string
+	// The first tenant, seeded on an empty database. The domains are what the
+	// login page routes on, so getting them right matters more than the name.
+	CompanyName        string
+	CompanyMailDomains string
+	AdminEmail         string
 }
 
 func Load() Config {
@@ -23,6 +28,11 @@ func Load() Config {
 		JWTTTL:    envDuration("JWT_TTL", 24*time.Hour),
 		// Used only to bootstrap the very first account on an empty database.
 		AdminInitialPassword: env("ADMIN_INITIAL_PASSWORD", "admin123"),
+		CompanyName:          env("COMPANY_NAME", "Demo Company"),
+		// Comma-separated: a Chinese exporter commonly holds both
+		// example.com and example.com.cn, and both must reach one tenant.
+		CompanyMailDomains: env("COMPANY_MAIL_DOMAINS", "example.com"),
+		AdminEmail:         env("ADMIN_EMAIL", "admin@example.com"),
 	}
 }
 

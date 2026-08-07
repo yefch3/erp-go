@@ -884,7 +884,11 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- name: ListRecentForReconcile :many
 -- The newest slice of one folder with everything the reconcile pass needs to
 -- decide what happened to each message.
-SELECT id, imap_uid, message_id, is_read, is_starred, archived_at, deleted_at
+--
+-- owner_id and raw_key are here for the one outcome that destroys something:
+-- a message already in our recycle bin that the host has now purged is purged
+-- here too, and that means removing its objects before its row.
+SELECT id, owner_id, imap_uid, message_id, raw_key, is_read, is_starred, archived_at, deleted_at
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND account_id = sqlc.arg(account_id)::bigint

@@ -8,8 +8,10 @@
     </div>
     <el-card class="login-card" shadow="never">
       <el-form :model="form" label-position="top" @keyup.enter="submit">
-        <el-form-item :label="t('login.username')">
-          <el-input v-model="form.username" placeholder="admin" autofocus />
+        <el-form-item :label="t('login.email')">
+          <!-- The domain of this address selects the company, so there is no
+               company field and none should be added. -->
+          <el-input v-model="form.email" type="email" placeholder="you@yourcompany.com" autofocus />
         </el-form-item>
         <el-form-item :label="t('login.password')">
           <el-input v-model="form.password" type="password" show-password placeholder="••••••••" />
@@ -34,7 +36,14 @@ const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 const loading = ref(false)
-const form = reactive({ username: '', password: '' })
+// Prefilled when arriving straight from activation, which is the one moment
+// somebody has just learned that their email is now their login name and has
+// no reason to know it yet. Harmless from any other source: an address in a
+// query string is not a credential, and a wrong one just fails to log in.
+const form = reactive({
+  email: typeof route.query.email === 'string' ? route.query.email : '',
+  password: '',
+})
 
 // Back to the page the session died on, when there is one. A relative path
 // only: ?redirect= comes from the address bar, and following an absolute URL
@@ -46,10 +55,10 @@ function landing() {
 }
 
 async function submit() {
-  if (!form.username || !form.password) return
+  if (!form.email || !form.password) return
   loading.value = true
   try {
-    await auth.login(form.username, form.password)
+    await auth.login(form.email, form.password)
     router.push(landing())
   } finally {
     loading.value = false
