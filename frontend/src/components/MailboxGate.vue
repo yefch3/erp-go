@@ -35,17 +35,12 @@
 
       <el-divider class="gate-or">{{ t('mailGate.or') }}</el-divider>
 
-      <!-- The traditional door: address plus whatever the host accepts in the
-           password slot — the account password or a client authorisation code.
-           One field serves both; the mail host decides which it honours. -->
-      <el-input
-        v-model="email"
-        type="email"
-        autocomplete="email"
-        class="gate-field"
-        :placeholder="t('mailGate.emailLabel')"
-        @keyup.enter="emailSignIn"
-      />
+      <!-- The traditional door. There is no address field, and that is the
+           point: the mailbox somebody binds is the one they signed in as, so
+           the address comes from their session and is shown rather than asked
+           for. Only the secret is typed — whatever the host honours in the
+           password slot, the account password or a client authorisation code. -->
+      <div class="gate-whoami">{{ signedInAs }}</div>
       <el-input
         v-model="secret"
         type="password"
@@ -92,7 +87,12 @@ const auth = useAuthStore()
 const canEditHost = auth.can('iam:role:write')
 
 const account = reactive({ email: '', username: '', authKind: '' })
-const email = ref('')
+// What the gate will bind: the address this person signed in with. Shown, not
+// asked for — there is no field to disagree with, and the server ignores any
+// address a caller sends anyway.
+const signedInAs = computed(() =>
+  auth.employeeEmail ? t('mailGate.willBind', { email: auth.employeeEmail }) : '',
+)
 const secret = ref('')
 const googleBusy = ref(false)
 const emailBusy = ref(false)
@@ -110,7 +110,6 @@ onMounted(async () => {
     account.email = d.account?.email ?? ''
     account.username = d.account?.username ?? ''
     account.authKind = d.account?.authKind ?? ''
-    email.value = account.email
   } catch {
     /* the gate still works without the label */
   }
@@ -159,11 +158,6 @@ async function verifyOAuth() {
 // different address rebinds (the server clears the old mailbox's synced
 // mail); a rotated app password heals itself on the next successful sign-in.
 async function emailSignIn() {
-  const addr = email.value.trim()
-  if (!addr) {
-    error.value = t('mailbox.addressRequired')
-    return
-  }
   if (!secret.value) {
     error.value = t('mailGate.codeRequired')
     return
@@ -171,7 +165,7 @@ async function emailSignIn() {
   emailBusy.value = true
   error.value = ''
   try {
-    await verify(secret.value, addr)
+    await verify(secret.value)
   } catch (e: unknown) {
     error.value = (e as { message?: string })?.message || t('mailGate.failed')
   } finally {
@@ -192,11 +186,11 @@ async function skipUnbound() {
 
 // Raw client rather than the helper: a wrong code is an expected answer here,
 // to be shown in place instead of as a floating toast.
-async function verify(code: string, addr = '') {
+async function verify(code: string) {
   // Verifying is a live IMAP login against the person's own mail host, which
   // is nothing like a database call: the default client timeout would give up
   // on a slow but perfectly good sign-in.
-  const resp = await http.post('/mailbox/verify', { secret: code, email: addr }, mailHostRequest)
+  const resp = await http.post('/mailbox/verify', { secret: code }, mailHostRequest)
   const data = resp.data.data as { token: string }
   localStorage.setItem('mailUnlock', data.token)
   secret.value = ''
@@ -205,6 +199,14 @@ async function verify(code: string, addr = '') {
 </script>
 
 <style scoped>
+.gate-whoami {
+  /* Reads as a statement of fact, not a field: this is the mailbox that will
+     be bound, and there is nothing here to change. */
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  text-align: center;
+}
 .gate {
   display: flex;
   justify-content: center;

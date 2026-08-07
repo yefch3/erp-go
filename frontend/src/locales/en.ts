@@ -2,7 +2,7 @@ export default {
   login: {
     title: 'Export Business Management',
     subtitle: 'Quotation · Contract · Procurement · Warehouse · Shipping · Receivables',
-    username: 'Username',
+    email: 'Company email',
     password: 'Password',
     submit: 'Sign in',
   },
@@ -1131,6 +1131,7 @@ export default {
     unsuppressed: 'Removed',
   },
   mailGate: {
+    willBind: 'Will bind: {email}',
     title: 'Sign in to your mailbox',
     explain:
       "Mail is protected by the mailbox's own sign-in. Use either door below — the system verifies it against the mail host for real, and the first successful sign-in is what binds the mailbox.",

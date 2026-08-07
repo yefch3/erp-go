@@ -91,7 +91,9 @@ message SetDataScopeResponse {
 }
 
 message LoginRequest {
-  string username = 1;
+  // The company address. Its domain selects the tenant, so no separate
+  // company field is needed and none should be added.
+  string email = 1;
   string password = 2;
 }
 

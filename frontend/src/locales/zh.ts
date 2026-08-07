@@ -2,7 +2,7 @@ export default {
   login: {
     title: '出口业务管理系统',
     subtitle: '报价 · 合同 · 采购 · 仓储 · 船期 · 收汇',
-    username: '用户名',
+    email: '公司邮箱',
     password: '密码',
     submit: '登录',
   },
@@ -1126,6 +1126,7 @@ export default {
     unsuppressed: '已移出名单',
   },
   mailGate: {
+    willBind: '将绑定：{email}',
     title: '登录邮箱',
     explain:
       '邮件内容受邮箱本身的登录保护。用下面任意一种方式登录你的邮箱，系统会去邮件服务器实际验证一次，通过才进入；首次登录成功即完成绑定。',

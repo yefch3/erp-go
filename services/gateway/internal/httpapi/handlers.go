@@ -19,12 +19,13 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, req) {
 		return
 	}
-	// Metered by the username the caller typed, which is the only identity
+	// Metered by the address the caller typed, which is the only identity
 	// there is before anybody has proved anything. That it may name no account
-	// at all is fine and in fact required: counting attempts on names that do
-	// not exist is what keeps a locked-out response from being a way to ask
-	// "does this person work here".
-	name := req.GetUsername()
+	// at all is fine and in fact required: counting attempts on addresses that
+	// do not exist is what keeps a locked-out response from being a way to ask
+	// "does this person work here" — and company addresses are guessable, so
+	// that matters more here than it did under usernames.
+	name := req.GetEmail()
 	if wait, blocked := s.Throttle.Blocked(r.Context(), throttleLogin, name); blocked {
 		s.writeTooManyAttempts(w, wait)
 		return

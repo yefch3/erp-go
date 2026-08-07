@@ -60,3 +60,36 @@ func VerifyPassword(stored, password string) bool {
 	got := argon2.IDKey([]byte(password), salt, t, mem, p, uint32(len(want)))
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
+
+// burnPasswordTime spends what a real password check costs, for the paths that
+// never reach one.
+//
+// Without it this login leaks who works here. An unknown address returns after
+// a missed index lookup — under a millisecond — while a known one runs argon2id
+// over 64 MiB first. That gap is not subtle; it is two orders of magnitude, and
+// it turns "is there an account at this address" into a question anybody can
+// ask by timing the answer. Which matters more here than it did under
+// usernames, because company addresses are guessable: 名字@公司域名.
+//
+// The decoy is hashed once at startup from bytes nobody has, so the comparison
+// always fails and always costs the same as the real thing.
+var decoyHash = func() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		// Keeping a fixed fallback rather than failing: a process that will
+		// not start is worse than a decoy an attacker cannot reach anyway.
+		b = []byte("iam-decoy-fallback")
+	}
+	h, err := HashPassword(base64.RawStdEncoding.EncodeToString(b))
+	if err != nil {
+		return ""
+	}
+	return h
+}()
+
+func burnPasswordTime() {
+	if decoyHash == "" {
+		return
+	}
+	_ = VerifyPassword(decoyHash, "not-the-password")
+}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -33,8 +34,11 @@ func New(pool *pgxpool.Pool, jwtSecret string, jwtTTL time.Duration, log *slog.L
 // ---------------------------------------------------------------- auth
 
 var (
-	errBadCredentials = apierr.Unauthorized("IAM_BAD_CREDENTIALS", "用户名或密码错误")
+	errBadCredentials = apierr.Unauthorized("IAM_BAD_CREDENTIALS", "邮箱或密码错误")
 	errAccountLocked  = apierr.Unauthorized("IAM_ACCOUNT_LOCKED", "账号已锁定，请联系管理员")
+	// Told apart from a bad password on purpose. Trying harder cannot fix it;
+	// what the person needs is the invitation mail, so the message says so.
+	errNotActivated = apierr.Unauthorized("IAM_NOT_ACTIVATED", "账号尚未激活，请查收邀请邮件")
 )
 
 type LoginResult struct {
@@ -44,13 +48,58 @@ type LoginResult struct {
 	PermissionCodes  []string
 }
 
-func (s *Service) Login(ctx context.Context, tenantID int64, username, password string) (*LoginResult, error) {
-	u, err := s.q.GetUserByUsername(ctx, store.GetUserByUsernameParams{TenantID: tenantID, Username: username})
+// Login takes the company address somebody typed, not a username.
+//
+// The address does two jobs. Its domain says which company this is, so there
+// is no "choose your company" dropdown and no tenant to pass in — a login page
+// serving twenty companies is the same page. And the address itself is the
+// account, which is only meaningful because it had to be proved: an employee
+// row carries email_verified_at only if somebody opened a one-time link sent
+// to that mailbox. A person the company never gave a mailbox has no way to
+// reach that state.
+//
+// Nothing here talks to the mail host. That question was asked once, at
+// activation, and its answer is the timestamp. Asking it again on every login
+// would tie the ERP's availability to 263's, and could not be done anyway:
+// the password typed here is ours, not the mailbox's.
+func (s *Service) Login(ctx context.Context, email, password string) (*LoginResult, error) {
+	addr := strings.ToLower(strings.TrimSpace(email))
+	at := strings.LastIndex(addr, "@")
+	if at < 1 || at == len(addr)-1 {
+		burnPasswordTime()
+		return nil, errBadCredentials
+	}
+	ten, err := s.q.GetTenantByDomain(ctx, addr[at+1:])
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			// A domain we do not serve. Same answer and same cost as a wrong
+			// password, or this route reports which companies are customers.
+			burnPasswordTime()
+			return nil, errBadCredentials
+		}
+		return nil, fmt.Errorf("login: resolve tenant: %w", err)
+	}
+	if ten.TenantStatus != "ACTIVE" {
+		return nil, errAccountLocked
+	}
+	tenantID := ten.TenantID
+
+	u, err := s.q.GetUserByEmail(ctx, store.GetUserByEmailParams{TenantID: tenantID, Email: addr})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Deliberately identical to a wrong password, in wording and in
+			// time. Addresses here are guessable — 名字@公司域名 — so a login
+			// page that answered differently would be a staff directory.
+			burnPasswordTime()
 			return nil, errBadCredentials
 		}
 		return nil, fmt.Errorf("login: %w", err)
+	}
+	if !u.EmailVerifiedAt.Valid {
+		// Imported but never activated. Named rather than folded into "wrong
+		// password": the person cannot fix this by trying harder, and the
+		// thing they need is the invitation mail.
+		return nil, errNotActivated
 	}
 	if u.Status == "LOCKED" || u.Status == "DISABLED" || u.EmployeeStatus != "ACTIVE" {
 		return nil, errAccountLocked
@@ -65,7 +114,7 @@ func (s *Service) Login(ctx context.Context, tenantID int64, username, password 
 		return nil, fmt.Errorf("login: record success: %w", err)
 	}
 
-	token, err := authtoken.Issue(s.jwtSecret, s.jwtTTL, tenantID, u.EmployeeID, u.EmployeeName)
+	token, err := authtoken.Issue(s.jwtSecret, s.jwtTTL, tenantID, u.EmployeeID, u.EmployeeName, addr)
 	if err != nil {
 		return nil, fmt.Errorf("login: issue token: %w", err)
 	}

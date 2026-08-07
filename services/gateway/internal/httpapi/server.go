@@ -457,6 +457,7 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			TenantID:   claims.TenantID,
 			EmployeeID: claims.EmployeeID(),
 			Name:       claims.EmployeeName,
+			Email:      claims.Email,
 			IP:         r.RemoteAddr,
 			TraceID:    newTraceID(),
 		})
