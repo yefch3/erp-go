@@ -330,6 +330,30 @@ func (h *Handler) InviteEmployee(ctx context.Context, req *iamv1.InviteEmployeeR
 	}, nil
 }
 
+func (h *Handler) ImportEmployees(ctx context.Context, req *iamv1.ImportEmployeesRequest) (*iamv1.ImportEmployeesResponse, error) {
+	rows := make([]app.ImportRow, len(req.GetRows()))
+	for i, r := range req.GetRows() {
+		rows[i] = app.ImportRow{
+			Code: r.GetCode(), Name: r.GetName(), Department: r.GetDepartment(),
+			Position: r.GetPosition(), Email: r.GetEmail(), Phone: r.GetPhone(),
+			ManagerCode: r.GetManagerCode(),
+		}
+	}
+	res, err := h.svc.ImportEmployees(ctx, grpcx.TenantID(ctx), rows, req.GetDryRun())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*iamv1.ImportRowVerdict, len(res.Verdicts))
+	for i, v := range res.Verdicts {
+		out[i] = &iamv1.ImportRowVerdict{
+			Line: v.Line, Code: v.Code, Name: v.Name, Ok: v.OK, Reason: v.Reason,
+		}
+	}
+	return &iamv1.ImportEmployeesResponse{
+		Verdicts: out, Ready: res.Ready, Blocked: res.Blocked, Imported: res.Imported,
+	}, nil
+}
+
 func (h *Handler) SetManager(ctx context.Context, req *iamv1.SetManagerRequest) (*iamv1.SetManagerResponse, error) {
 	if err := h.svc.SetManager(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(), req.GetManagerId()); err != nil {
 		return nil, err

@@ -573,6 +573,28 @@ func (q *Queries) GetEmployee(ctx context.Context, arg GetEmployeeParams) (GetEm
 	return i, err
 }
 
+const getEmployeeByCode = `-- name: GetEmployeeByCode :one
+SELECT id, name FROM employees
+WHERE tenant_id = $1::bigint AND code = $2::text
+`
+
+type GetEmployeeByCodeParams struct {
+	TenantID int64
+	Code     string
+}
+
+type GetEmployeeByCodeRow struct {
+	ID   int64
+	Name string
+}
+
+func (q *Queries) GetEmployeeByCode(ctx context.Context, arg GetEmployeeByCodeParams) (GetEmployeeByCodeRow, error) {
+	row := q.db.QueryRow(ctx, getEmployeeByCode, arg.TenantID, arg.Code)
+	var i GetEmployeeByCodeRow
+	err := row.Scan(&i.ID, &i.Name)
+	return i, err
+}
+
 const getInvitationByToken = `-- name: GetInvitationByToken :one
 SELECT i.id, i.tenant_id, i.employee_id, i.email, i.expires_at, i.used_at,
        e.name AS employee_name, e.status AS employee_status,
@@ -905,6 +927,43 @@ func (q *Queries) ListEmployeeAccounts(ctx context.Context, tenantID int64) ([]L
 	for rows.Next() {
 		var i ListEmployeeAccountsRow
 		if err := rows.Scan(&i.EmployeeID, &i.Username); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEmployeeIdentity = `-- name: ListEmployeeIdentity :many
+SELECT id, code, lower(email)::text AS email
+FROM employees
+WHERE tenant_id = $1::bigint
+`
+
+type ListEmployeeIdentityRow struct {
+	ID    int64
+	Code  string
+	Email string
+}
+
+// Every code and address already taken in this company, for the import to
+// check a whole pasted block against in one round trip rather than a query
+// per row. A company has hundreds of employees, not millions; the cost of
+// reading them all is far below the cost of an N+1 on a screen somebody is
+// watching while their 200-row paste validates.
+func (q *Queries) ListEmployeeIdentity(ctx context.Context, tenantID int64) ([]ListEmployeeIdentityRow, error) {
+	rows, err := q.db.Query(ctx, listEmployeeIdentity, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEmployeeIdentityRow
+	for rows.Next() {
+		var i ListEmployeeIdentityRow
+		if err := rows.Scan(&i.ID, &i.Code, &i.Email); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1260,6 +1319,36 @@ func (q *Queries) ListRoles(ctx context.Context, tenantID int64) ([]Role, error)
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTenantDomains = `-- name: ListTenantDomains :many
+SELECT domain FROM tenant_domains
+WHERE tenant_id = $1::bigint
+ORDER BY domain
+`
+
+// The mail domains this company owns. The import refuses an address outside
+// them, because one can never be activated — the link would go to a mailbox
+// the company cannot read — and importing it only defers that discovery to
+// the day somebody wonders why forty people never got invited.
+func (q *Queries) ListTenantDomains(ctx context.Context, tenantID int64) ([]string, error) {
+	rows, err := q.db.Query(ctx, listTenantDomains, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var domain string
+		if err := rows.Scan(&domain); err != nil {
+			return nil, err
+		}
+		items = append(items, domain)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

@@ -230,6 +230,7 @@ const (
 	DirectoryService_ListManagers_FullMethodName       = "/erp.iam.v1.DirectoryService/ListManagers"
 	DirectoryService_SetManager_FullMethodName         = "/erp.iam.v1.DirectoryService/SetManager"
 	DirectoryService_InviteEmployee_FullMethodName     = "/erp.iam.v1.DirectoryService/InviteEmployee"
+	DirectoryService_ImportEmployees_FullMethodName    = "/erp.iam.v1.DirectoryService/ImportEmployees"
 )
 
 // DirectoryServiceClient is the client API for DirectoryService service.
@@ -269,6 +270,11 @@ type DirectoryServiceClient interface {
 	// iam, so the reverse edge would close a cycle. The gateway, which holds
 	// both, does the sending.
 	InviteEmployee(ctx context.Context, in *InviteEmployeeRequest, opts ...grpc.CallOption) (*InviteEmployeeResponse, error)
+	// ImportEmployees takes a whole pasted block. dry_run makes it a preview:
+	// same validation, nothing written. The two share one code path on purpose
+	// — a preview computed by a second, simpler validator eventually lies, and
+	// it lies at the moment somebody has already decided to trust it.
+	ImportEmployees(ctx context.Context, in *ImportEmployeesRequest, opts ...grpc.CallOption) (*ImportEmployeesResponse, error)
 }
 
 type directoryServiceClient struct {
@@ -409,6 +415,16 @@ func (c *directoryServiceClient) InviteEmployee(ctx context.Context, in *InviteE
 	return out, nil
 }
 
+func (c *directoryServiceClient) ImportEmployees(ctx context.Context, in *ImportEmployeesRequest, opts ...grpc.CallOption) (*ImportEmployeesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ImportEmployeesResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_ImportEmployees_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DirectoryServiceServer is the server API for DirectoryService service.
 // All implementations must embed UnimplementedDirectoryServiceServer
 // for forward compatibility.
@@ -446,6 +462,11 @@ type DirectoryServiceServer interface {
 	// iam, so the reverse edge would close a cycle. The gateway, which holds
 	// both, does the sending.
 	InviteEmployee(context.Context, *InviteEmployeeRequest) (*InviteEmployeeResponse, error)
+	// ImportEmployees takes a whole pasted block. dry_run makes it a preview:
+	// same validation, nothing written. The two share one code path on purpose
+	// — a preview computed by a second, simpler validator eventually lies, and
+	// it lies at the moment somebody has already decided to trust it.
+	ImportEmployees(context.Context, *ImportEmployeesRequest) (*ImportEmployeesResponse, error)
 	mustEmbedUnimplementedDirectoryServiceServer()
 }
 
@@ -494,6 +515,9 @@ func (UnimplementedDirectoryServiceServer) SetManager(context.Context, *SetManag
 }
 func (UnimplementedDirectoryServiceServer) InviteEmployee(context.Context, *InviteEmployeeRequest) (*InviteEmployeeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method InviteEmployee not implemented")
+}
+func (UnimplementedDirectoryServiceServer) ImportEmployees(context.Context, *ImportEmployeesRequest) (*ImportEmployeesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ImportEmployees not implemented")
 }
 func (UnimplementedDirectoryServiceServer) mustEmbedUnimplementedDirectoryServiceServer() {}
 func (UnimplementedDirectoryServiceServer) testEmbeddedByValue()                          {}
@@ -750,6 +774,24 @@ func _DirectoryService_InviteEmployee_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DirectoryService_ImportEmployees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ImportEmployeesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).ImportEmployees(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_ImportEmployees_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).ImportEmployees(ctx, req.(*ImportEmployeesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DirectoryService_ServiceDesc is the grpc.ServiceDesc for DirectoryService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -808,6 +850,10 @@ var DirectoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "InviteEmployee",
 			Handler:    _DirectoryService_InviteEmployee_Handler,
+		},
+		{
+			MethodName: "ImportEmployees",
+			Handler:    _DirectoryService_ImportEmployees_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
