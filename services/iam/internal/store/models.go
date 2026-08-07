@@ -114,4 +114,5 @@ type User struct {
 	LastLoginAt  pgtype.Timestamptz
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
+	LockedUntil  pgtype.Timestamptz
 }

@@ -529,6 +529,10 @@ func (s *Server) writeGRPCError(w http.ResponseWriter, err error) {
 		codes.FailedPrecondition: http.StatusConflict,
 		codes.PermissionDenied:   http.StatusForbidden,
 		codes.Unauthenticated:    http.StatusUnauthorized,
+		// "later", not "no". Without this a service saying somebody has run
+		// out of attempts reaches the browser as a 500, and the page shows an
+		// internal error instead of the wait it was told to report.
+		codes.ResourceExhausted: http.StatusTooManyRequests,
 	}[st.Code()]
 	if httpCode == 0 {
 		httpCode = http.StatusInternalServerError

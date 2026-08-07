@@ -23,6 +23,13 @@ const (
 	KindPermission               // authenticated but not allowed -> PermissionDenied / 403
 	KindUnauthorized             // not authenticated          -> Unauthenticated / 401
 	KindInternal                 // everything else            -> Internal / 500
+	// KindThrottled is "you, later" rather than "you, no". It is separate from
+	// KindUnauthorized because the two mean opposite things to a caller: one
+	// says the credential was judged and rejected, the other says it was never
+	// looked at. Anything counting failed credentials — and the gateway does —
+	// must not count this, or being told to wait spends the very budget the
+	// waiting is meant to restore.
+	KindThrottled // too many attempts -> ResourceExhausted / 429
 )
 
 // Error is a business error with a stable machine-readable code such as
@@ -76,6 +83,7 @@ func Conflict(code, msg string) *Error     { return New(KindConflict, code, msg)
 func Permission(code, msg string) *Error   { return New(KindPermission, code, msg) }
 func Unauthorized(code, msg string) *Error { return New(KindUnauthorized, code, msg) }
 func Internal(code, msg string) *Error     { return New(KindInternal, code, msg) }
+func Throttled(code, msg string) *Error    { return New(KindThrottled, code, msg) }
 
 var kindToGRPC = map[Kind]codes.Code{
 	KindInvalid:      codes.InvalidArgument,
@@ -84,6 +92,7 @@ var kindToGRPC = map[Kind]codes.Code{
 	KindPermission:   codes.PermissionDenied,
 	KindUnauthorized: codes.Unauthenticated,
 	KindInternal:     codes.Internal,
+	KindThrottled:    codes.ResourceExhausted,
 }
 
 // ToStatus converts any error into a gRPC status. Unknown errors become
