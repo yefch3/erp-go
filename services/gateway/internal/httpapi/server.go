@@ -67,9 +67,14 @@ type Server struct {
 	GoogleClientID   string
 	OAuthRedirectURL string
 	FrontendBaseURL  string
-	Live             *livefeed.Subscriber
-	JWTSecret        string
-	Log              *slog.Logger
+	// TrustProxyHeaders says a reverse proxy sits in front and overwrites
+	// X-Forwarded-For. Off by default: the header is caller-supplied, and
+	// trusting it without such a proxy lets anybody spray from a different
+	// fake address on every request. See clientAddr.
+	TrustProxyHeaders bool
+	Live              *livefeed.Subscriber
+	JWTSecret         string
+	Log               *slog.Logger
 }
 
 func (s *Server) Router() http.Handler {

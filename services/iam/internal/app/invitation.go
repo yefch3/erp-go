@@ -207,7 +207,9 @@ func (s *Service) ActivateAccount(ctx context.Context, token, password string) (
 	if err != nil {
 		return "", err
 	}
-	if err := checkPasswordStrength(password); err != nil {
+	// Judged against who this is: the activation page shows the address, so
+	// building a password out of it is exactly the tempting thing to do.
+	if err := checkPasswordStrength(password, inv.Email, inv.EmployeeName); err != nil {
 		return "", err
 	}
 	// Hashing happens here and not a line earlier. This route is

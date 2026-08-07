@@ -99,6 +99,16 @@ func (s *Service) EnsureAdmin(ctx context.Context, tenantID int64, seed SeedTena
 			return err
 		}
 
+		// Warned about rather than refused. This account is seeded from the
+		// deployment's environment before anybody can log in to fix it, so a
+		// hard refusal here is a service that will not start — and the
+		// operator standing up the system is the one person who cannot be
+		// told about it through the system. A loud line in the startup log is
+		// the channel that actually reaches them.
+		if err := checkPasswordStrength(seed.InitialPassword, adminEmail, seed.CompanyName); err != nil {
+			s.log.Warn("the seeded administrator password does not meet the policy every other account must",
+				"admin", adminEmail, "reason", err.Error())
+		}
 		hash, err := HashPassword(seed.InitialPassword)
 		if err != nil {
 			return err
