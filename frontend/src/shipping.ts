@@ -106,6 +106,22 @@ export interface ShippingDocument {
   voidReason: string
 }
 
+export interface ShippingArrivalReminder {
+  id: string
+  scheduleId: string
+  etaRevision: number
+  targetEta: string
+  dueAt: string
+  status: string
+  sentAt: string
+  title: string
+  content: string
+  detailUrl: string
+  readAt: string
+  attemptCount: number
+  lastError: string
+}
+
 export const SHIPPING_STATUSES = [
   'PLANNED', 'SAILED', 'IN_TRANSIT', 'ARRIVED', 'COMPLETED', 'DELAYED', 'CANCELLED',
 ] as const

@@ -26,6 +26,11 @@ service ShippingService {
   rpc ListDocuments(ListDocumentsRequest) returns (ListDocumentsResponse);
   rpc GetDocumentAccess(GetDocumentAccessRequest) returns (GetDocumentAccessResponse);
   rpc InvalidateDocument(InvalidateDocumentRequest) returns (InvalidateDocumentResponse);
+  rpc ListArrivalNotifications(ListArrivalNotificationsRequest) returns (ListArrivalNotificationsResponse);
+  rpc MarkArrivalReminderRead(MarkArrivalReminderReadRequest) returns (MarkArrivalReminderReadResponse);
+  rpc CleanupExpiredArrivalReminders(CleanupExpiredArrivalRemindersRequest) returns (CleanupExpiredArrivalRemindersResponse);
+  rpc GetArrivalReminderRules(GetArrivalReminderRulesRequest) returns (GetArrivalReminderRulesResponse);
+  rpc UpdateArrivalReminderRules(UpdateArrivalReminderRulesRequest) returns (UpdateArrivalReminderRulesResponse);
 }
 
 message GetModuleStatusRequest {}
@@ -116,6 +121,13 @@ message ArrivalReminder {
   string due_at = 4;
   string status = 5;
   string sent_at = 6;
+  int64 schedule_id = 7;
+  string title = 8;
+  string content = 9;
+  string detail_url = 10;
+  string read_at = 11;
+  int32 attempt_count = 12;
+  string last_error = 13;
 }
 
 message ScheduleInput {
@@ -305,3 +317,21 @@ message InvalidateDocumentRequest {
   string reason = 3;
 }
 message InvalidateDocumentResponse { ShippingDocument document = 1; }
+
+message ListArrivalNotificationsRequest { bool unread_only = 1; }
+message ListArrivalNotificationsResponse {
+  repeated ArrivalReminder reminders = 1;
+  int64 unread_count = 2;
+}
+message MarkArrivalReminderReadRequest { int64 reminder_id = 1; }
+message MarkArrivalReminderReadResponse { ArrivalReminder reminder = 1; }
+message CleanupExpiredArrivalRemindersRequest {}
+message CleanupExpiredArrivalRemindersResponse { int64 deleted_count = 1; }
+
+message GetArrivalReminderRulesRequest { int64 schedule_id = 1; }
+message GetArrivalReminderRulesResponse { repeated int32 lead_days = 1; }
+message UpdateArrivalReminderRulesRequest {
+  int64 schedule_id = 1;
+  repeated int32 lead_days = 2;
+}
+message UpdateArrivalReminderRulesResponse { repeated int32 lead_days = 1; }

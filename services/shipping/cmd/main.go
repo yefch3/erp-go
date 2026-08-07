@@ -14,6 +14,7 @@ import (
 	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
 	"github.com/sgao19/erp-go/pkg/blobstore"
 	"github.com/sgao19/erp-go/pkg/grpcx"
+	"github.com/sgao19/erp-go/pkg/livefeed"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/shipping/internal/adapter/grpcin"
 	"github.com/sgao19/erp-go/services/shipping/internal/adapter/grpcout"
@@ -49,8 +50,17 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	svc := app.New(pool, grpcout.NewFiles(files))
+	svc.UseLogger(log)
+	if cfg.RedisAddr != "" {
+		publisher := livefeed.NewPublisher(cfg.RedisAddr, log)
+		defer publisher.Close()
+		svc.UseReminderNotifier(grpcout.NewReminderNotifier(publisher))
+	}
+	go svc.RunArrivalReminderWorker(ctx, cfg.ReminderInterval, cfg.ReminderBatchSize)
+
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
-	shippingv1.RegisterShippingServiceServer(srv, grpcin.New(app.New(pool, grpcout.NewFiles(files))))
+	shippingv1.RegisterShippingServiceServer(srv, grpcin.New(svc))
 	reflection.Register(srv)
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)

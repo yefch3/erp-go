@@ -24,7 +24,11 @@
         <el-menu-item v-if="auth.can('export:shipment:read')" index="/shipments">
           {{ t('menu.shipments') }}
         </el-menu-item>
-        <el-menu-item v-if="auth.can('shipping:schedule:read')" index="/shipping">
+        <el-menu-item
+          v-if="auth.can('shipping:schedule:read')"
+          index="/shipping"
+          @click="pullShippingReminders"
+        >
           {{ t('menu.shipping') }}
         </el-menu-item>
         <el-menu-item v-if="auth.can('export:receipt:read')" index="/receipts">
@@ -70,6 +74,10 @@
       <el-header class="topbar">
         <span />
         <div class="topbar-right">
+          <ShippingArrivalNotifications
+            v-if="auth.can('shipping:schedule:read') && route.path.startsWith('/shipping')"
+            ref="shippingNotifications"
+          />
           <LangSwitcher />
           <el-dropdown @command="onCommand">
             <span class="user">{{ auth.employeeName || '—' }}</span>
@@ -116,6 +124,7 @@ import { useI18n } from 'vue-i18n'
 import { post } from '../api'
 import { useAuthStore } from '../stores/auth'
 import LangSwitcher from '../components/LangSwitcher.vue'
+import ShippingArrivalNotifications from '../components/ShippingArrivalNotifications.vue'
 import { onLive, startLive, stopLive } from '../live'
 
 const passwordOpen = ref(false)
@@ -126,6 +135,12 @@ const { t } = useI18n()
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
+const shippingNotifications = ref<InstanceType<typeof ShippingArrivalNotifications> | null>(null)
+
+// 即使用户已经位于船期页面，再次点击菜单也会主动拉取并展示未读提醒。
+function pullShippingReminders() {
+  shippingNotifications.value?.refreshAndPopup()
+}
 
 // One stream for the whole session, opened once the user is inside the shell
 // and closed when they leave it.

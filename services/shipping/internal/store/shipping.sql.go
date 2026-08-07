@@ -148,9 +148,23 @@ func (q *Queries) BumpRouteVersion(ctx context.Context, arg BumpRouteVersionPara
 	return route_version, err
 }
 
+const cancelIneligibleArrivalReminders = `-- name: CancelIneligibleArrivalReminders :exec
+UPDATE shipping_arrival_reminders r
+SET status = 'CANCELLED', updated_at = now()
+FROM shipping_schedules s
+WHERE s.tenant_id = r.tenant_id AND s.id = r.schedule_id
+  AND r.status IN ('PENDING','FAILED','PROCESSING')
+  AND s.status IN ('ARRIVED','COMPLETED','CANCELLED')
+`
+
+func (q *Queries) CancelIneligibleArrivalReminders(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, cancelIneligibleArrivalReminders)
+	return err
+}
+
 const cancelPendingReminders = `-- name: CancelPendingReminders :exec
 UPDATE shipping_arrival_reminders SET status = 'CANCELLED', updated_at = now()
-WHERE tenant_id = $1 AND schedule_id = $2 AND status = 'PENDING'
+WHERE tenant_id = $1 AND schedule_id = $2 AND status IN ('PENDING','FAILED','PROCESSING')
 `
 
 type CancelPendingRemindersParams struct {
@@ -219,12 +233,34 @@ func (q *Queries) CountSchedules(ctx context.Context, arg CountSchedulesParams) 
 	return count, err
 }
 
+const countUnreadEmployeeArrivalNotifications = `-- name: CountUnreadEmployeeArrivalNotifications :one
+SELECT count(*)::bigint FROM shipping_arrival_reminders
+WHERE tenant_id = $1 AND recipient_employee_id = $2
+  AND status = 'SENT' AND read_at IS NULL
+`
+
+type CountUnreadEmployeeArrivalNotificationsParams struct {
+	TenantID            int64
+	RecipientEmployeeID int64
+}
+
+func (q *Queries) CountUnreadEmployeeArrivalNotifications(ctx context.Context, arg CountUnreadEmployeeArrivalNotificationsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUnreadEmployeeArrivalNotifications, arg.TenantID, arg.RecipientEmployeeID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createArrivalReminder = `-- name: CreateArrivalReminder :exec
 INSERT INTO shipping_arrival_reminders (
     tenant_id, schedule_id, destination_node_id, recipient_employee_id,
-    eta_revision, target_eta, due_at
-) VALUES ($1,$2,$3,$4,$5,$6,($6::date - 7)::timestamp AT TIME ZONE 'UTC')
-ON CONFLICT DO NOTHING
+    reminder_type, eta_revision, target_eta, due_at
+) VALUES ($1,$2,$3,$4,'ARRIVAL_' || $7::int || 'D',$5,$6,($6::date - $7::int)::timestamp AT TIME ZONE 'UTC')
+ON CONFLICT (tenant_id, schedule_id, destination_node_id, recipient_employee_id, reminder_type, eta_revision)
+DO UPDATE SET target_eta = EXCLUDED.target_eta, due_at = EXCLUDED.due_at,
+    status = 'PENDING', sent_at = NULL, read_at = NULL, attempt_count = 0,
+    last_error = '', next_retry_at = NULL, updated_at = now()
+WHERE shipping_arrival_reminders.status <> 'SENT'
 `
 
 type CreateArrivalReminderParams struct {
@@ -234,6 +270,7 @@ type CreateArrivalReminderParams struct {
 	RecipientEmployeeID int64
 	EtaRevision         int32
 	TargetEta           pgtype.Date
+	LeadDays            int32
 }
 
 func (q *Queries) CreateArrivalReminder(ctx context.Context, arg CreateArrivalReminderParams) error {
@@ -244,6 +281,33 @@ func (q *Queries) CreateArrivalReminder(ctx context.Context, arg CreateArrivalRe
 		arg.RecipientEmployeeID,
 		arg.EtaRevision,
 		arg.TargetEta,
+		arg.LeadDays,
+	)
+	return err
+}
+
+const createArrivalReminderRule = `-- name: CreateArrivalReminderRule :exec
+INSERT INTO shipping_arrival_reminder_rules (
+    tenant_id, schedule_id, lead_days, created_by, created_by_name
+) VALUES ($1,$2,$3,$4,$5)
+ON CONFLICT DO NOTHING
+`
+
+type CreateArrivalReminderRuleParams struct {
+	TenantID      int64
+	ScheduleID    int64
+	LeadDays      int32
+	CreatedBy     int64
+	CreatedByName string
+}
+
+func (q *Queries) CreateArrivalReminderRule(ctx context.Context, arg CreateArrivalReminderRuleParams) error {
+	_, err := q.db.Exec(ctx, createArrivalReminderRule,
+		arg.TenantID,
+		arg.ScheduleID,
+		arg.LeadDays,
+		arg.CreatedBy,
+		arg.CreatedByName,
 	)
 	return err
 }
@@ -439,6 +503,56 @@ func (q *Queries) DeactivateRouteNode(ctx context.Context, arg DeactivateRouteNo
 	return err
 }
 
+const deleteArrivalReminderRules = `-- name: DeleteArrivalReminderRules :exec
+DELETE FROM shipping_arrival_reminder_rules
+WHERE tenant_id = $1 AND schedule_id = $2
+`
+
+type DeleteArrivalReminderRulesParams struct {
+	TenantID   int64
+	ScheduleID int64
+}
+
+func (q *Queries) DeleteArrivalReminderRules(ctx context.Context, arg DeleteArrivalReminderRulesParams) error {
+	_, err := q.db.Exec(ctx, deleteArrivalReminderRules, arg.TenantID, arg.ScheduleID)
+	return err
+}
+
+const deleteExpiredEmployeeArrivalReminders = `-- name: DeleteExpiredEmployeeArrivalReminders :many
+DELETE FROM shipping_arrival_reminders r
+USING shipping_schedules s
+WHERE r.tenant_id = $1 AND r.recipient_employee_id = $2
+  AND r.status = 'SENT'
+  AND s.tenant_id = r.tenant_id AND s.id = r.schedule_id
+  AND (r.target_eta < CURRENT_DATE OR s.status IN ('ARRIVED','COMPLETED','CANCELLED'))
+RETURNING r.id
+`
+
+type DeleteExpiredEmployeeArrivalRemindersParams struct {
+	TenantID            int64
+	RecipientEmployeeID int64
+}
+
+func (q *Queries) DeleteExpiredEmployeeArrivalReminders(ctx context.Context, arg DeleteExpiredEmployeeArrivalRemindersParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, deleteExpiredEmployeeArrivalReminders, arg.TenantID, arg.RecipientEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const findPossibleDuplicates = `-- name: FindPossibleDuplicates :many
 SELECT id, schedule_no
 FROM shipping_schedules
@@ -492,6 +606,84 @@ func (q *Queries) FindPossibleDuplicates(ctx context.Context, arg FindPossibleDu
 		return nil, err
 	}
 	return items, nil
+}
+
+const getDueArrivalReminderForUpdate = `-- name: GetDueArrivalReminderForUpdate :one
+SELECT r.id, r.tenant_id, r.schedule_id, r.destination_node_id, r.recipient_employee_id, r.reminder_type, r.eta_revision, r.target_eta, r.due_at, r.status, r.sent_at, r.created_at, r.updated_at, r.title, r.content, r.detail_url, r.read_at, r.attempt_count, r.last_error, r.next_retry_at, s.schedule_no, s.contract_no, s.customer_name, s.vessel_name,
+       s.voyage_no, s.port_of_discharge, s.status AS schedule_status
+FROM shipping_arrival_reminders r
+JOIN shipping_schedules s
+  ON s.tenant_id = r.tenant_id AND s.id = r.schedule_id
+WHERE r.id = $1
+  AND r.status IN ('PENDING','FAILED')
+  AND COALESCE(r.next_retry_at, r.due_at) <= now()
+  AND s.status NOT IN ('ARRIVED','COMPLETED','CANCELLED')
+FOR UPDATE OF r
+`
+
+type GetDueArrivalReminderForUpdateRow struct {
+	ID                  int64
+	TenantID            int64
+	ScheduleID          int64
+	DestinationNodeID   int64
+	RecipientEmployeeID int64
+	ReminderType        string
+	EtaRevision         int32
+	TargetEta           pgtype.Date
+	DueAt               pgtype.Timestamptz
+	Status              string
+	SentAt              pgtype.Timestamptz
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+	Title               string
+	Content             string
+	DetailUrl           string
+	ReadAt              pgtype.Timestamptz
+	AttemptCount        int32
+	LastError           string
+	NextRetryAt         pgtype.Timestamptz
+	ScheduleNo          string
+	ContractNo          string
+	CustomerName        string
+	VesselName          string
+	VoyageNo            string
+	PortOfDischarge     string
+	ScheduleStatus      string
+}
+
+func (q *Queries) GetDueArrivalReminderForUpdate(ctx context.Context, id int64) (GetDueArrivalReminderForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getDueArrivalReminderForUpdate, id)
+	var i GetDueArrivalReminderForUpdateRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ScheduleID,
+		&i.DestinationNodeID,
+		&i.RecipientEmployeeID,
+		&i.ReminderType,
+		&i.EtaRevision,
+		&i.TargetEta,
+		&i.DueAt,
+		&i.Status,
+		&i.SentAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Title,
+		&i.Content,
+		&i.DetailUrl,
+		&i.ReadAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.NextRetryAt,
+		&i.ScheduleNo,
+		&i.ContractNo,
+		&i.CustomerName,
+		&i.VesselName,
+		&i.VoyageNo,
+		&i.PortOfDischarge,
+		&i.ScheduleStatus,
+	)
+	return i, err
 }
 
 const getRouteNodeForUpdate = `-- name: GetRouteNodeForUpdate :one
@@ -840,8 +1032,39 @@ func (q *Queries) InvalidateShippingDocument(ctx context.Context, arg Invalidate
 	return i, err
 }
 
+const listArrivalReminderRules = `-- name: ListArrivalReminderRules :many
+SELECT lead_days FROM shipping_arrival_reminder_rules
+WHERE tenant_id = $1 AND schedule_id = $2
+ORDER BY lead_days DESC
+`
+
+type ListArrivalReminderRulesParams struct {
+	TenantID   int64
+	ScheduleID int64
+}
+
+func (q *Queries) ListArrivalReminderRules(ctx context.Context, arg ListArrivalReminderRulesParams) ([]int32, error) {
+	rows, err := q.db.Query(ctx, listArrivalReminderRules, arg.TenantID, arg.ScheduleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int32
+	for rows.Next() {
+		var lead_days int32
+		if err := rows.Scan(&lead_days); err != nil {
+			return nil, err
+		}
+		items = append(items, lead_days)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listArrivalReminders = `-- name: ListArrivalReminders :many
-SELECT id, tenant_id, schedule_id, destination_node_id, recipient_employee_id, reminder_type, eta_revision, target_eta, due_at, status, sent_at, created_at, updated_at FROM shipping_arrival_reminders
+SELECT id, tenant_id, schedule_id, destination_node_id, recipient_employee_id, reminder_type, eta_revision, target_eta, due_at, status, sent_at, created_at, updated_at, title, content, detail_url, read_at, attempt_count, last_error, next_retry_at FROM shipping_arrival_reminders
 WHERE tenant_id = $1 AND schedule_id = $2
 ORDER BY eta_revision DESC, id DESC
 `
@@ -874,6 +1097,13 @@ func (q *Queries) ListArrivalReminders(ctx context.Context, arg ListArrivalRemin
 			&i.SentAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Title,
+			&i.Content,
+			&i.DetailUrl,
+			&i.ReadAt,
+			&i.AttemptCount,
+			&i.LastError,
+			&i.NextRetryAt,
 		); err != nil {
 			return nil, err
 		}
@@ -925,6 +1155,93 @@ func (q *Queries) ListDelayEvents(ctx context.Context, arg ListDelayEventsParams
 			&i.OperatorName,
 			&i.CreatedAt,
 			&i.ResolvedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDueArrivalReminderIDs = `-- name: ListDueArrivalReminderIDs :many
+SELECT r.id
+FROM shipping_arrival_reminders r
+JOIN shipping_schedules s
+  ON s.tenant_id = r.tenant_id AND s.id = r.schedule_id
+WHERE r.status IN ('PENDING','FAILED')
+  AND COALESCE(r.next_retry_at, r.due_at) <= now()
+  AND s.status NOT IN ('ARRIVED','COMPLETED','CANCELLED')
+ORDER BY COALESCE(r.next_retry_at, r.due_at), r.id
+LIMIT $1
+`
+
+func (q *Queries) ListDueArrivalReminderIDs(ctx context.Context, limit int32) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listDueArrivalReminderIDs, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEmployeeArrivalNotifications = `-- name: ListEmployeeArrivalNotifications :many
+SELECT id, tenant_id, schedule_id, destination_node_id, recipient_employee_id, reminder_type, eta_revision, target_eta, due_at, status, sent_at, created_at, updated_at, title, content, detail_url, read_at, attempt_count, last_error, next_retry_at FROM shipping_arrival_reminders
+WHERE tenant_id = $1 AND recipient_employee_id = $2 AND status = 'SENT'
+  AND (NOT $3::boolean OR read_at IS NULL)
+ORDER BY sent_at DESC, id DESC
+LIMIT 50
+`
+
+type ListEmployeeArrivalNotificationsParams struct {
+	TenantID            int64
+	RecipientEmployeeID int64
+	UnreadOnly          bool
+}
+
+func (q *Queries) ListEmployeeArrivalNotifications(ctx context.Context, arg ListEmployeeArrivalNotificationsParams) ([]ShippingArrivalReminder, error) {
+	rows, err := q.db.Query(ctx, listEmployeeArrivalNotifications, arg.TenantID, arg.RecipientEmployeeID, arg.UnreadOnly)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ShippingArrivalReminder
+	for rows.Next() {
+		var i ShippingArrivalReminder
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ScheduleID,
+			&i.DestinationNodeID,
+			&i.RecipientEmployeeID,
+			&i.ReminderType,
+			&i.EtaRevision,
+			&i.TargetEta,
+			&i.DueAt,
+			&i.Status,
+			&i.SentAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Title,
+			&i.Content,
+			&i.DetailUrl,
+			&i.ReadAt,
+			&i.AttemptCount,
+			&i.LastError,
+			&i.NextRetryAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1242,6 +1559,114 @@ func (q *Queries) ListShippingDocuments(ctx context.Context, arg ListShippingDoc
 		return nil, err
 	}
 	return items, nil
+}
+
+const markArrivalReminderFailed = `-- name: MarkArrivalReminderFailed :exec
+UPDATE shipping_arrival_reminders
+SET status = 'FAILED', attempt_count = attempt_count + 1,
+    last_error = $2, next_retry_at = $3, updated_at = now()
+WHERE id = $1
+`
+
+type MarkArrivalReminderFailedParams struct {
+	ID          int64
+	LastError   string
+	NextRetryAt pgtype.Timestamptz
+}
+
+func (q *Queries) MarkArrivalReminderFailed(ctx context.Context, arg MarkArrivalReminderFailedParams) error {
+	_, err := q.db.Exec(ctx, markArrivalReminderFailed, arg.ID, arg.LastError, arg.NextRetryAt)
+	return err
+}
+
+const markArrivalReminderSent = `-- name: MarkArrivalReminderSent :one
+UPDATE shipping_arrival_reminders
+SET status = 'SENT', title = $2, content = $3, detail_url = $4,
+    sent_at = now(), attempt_count = attempt_count + 1,
+    last_error = '', next_retry_at = NULL, updated_at = now()
+WHERE id = $1
+RETURNING id, tenant_id, schedule_id, destination_node_id, recipient_employee_id, reminder_type, eta_revision, target_eta, due_at, status, sent_at, created_at, updated_at, title, content, detail_url, read_at, attempt_count, last_error, next_retry_at
+`
+
+type MarkArrivalReminderSentParams struct {
+	ID        int64
+	Title     string
+	Content   string
+	DetailUrl string
+}
+
+func (q *Queries) MarkArrivalReminderSent(ctx context.Context, arg MarkArrivalReminderSentParams) (ShippingArrivalReminder, error) {
+	row := q.db.QueryRow(ctx, markArrivalReminderSent,
+		arg.ID,
+		arg.Title,
+		arg.Content,
+		arg.DetailUrl,
+	)
+	var i ShippingArrivalReminder
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ScheduleID,
+		&i.DestinationNodeID,
+		&i.RecipientEmployeeID,
+		&i.ReminderType,
+		&i.EtaRevision,
+		&i.TargetEta,
+		&i.DueAt,
+		&i.Status,
+		&i.SentAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Title,
+		&i.Content,
+		&i.DetailUrl,
+		&i.ReadAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.NextRetryAt,
+	)
+	return i, err
+}
+
+const markEmployeeArrivalReminderRead = `-- name: MarkEmployeeArrivalReminderRead :one
+UPDATE shipping_arrival_reminders
+SET read_at = COALESCE(read_at, now()), updated_at = now()
+WHERE tenant_id = $1 AND recipient_employee_id = $2 AND id = $3 AND status = 'SENT'
+RETURNING id, tenant_id, schedule_id, destination_node_id, recipient_employee_id, reminder_type, eta_revision, target_eta, due_at, status, sent_at, created_at, updated_at, title, content, detail_url, read_at, attempt_count, last_error, next_retry_at
+`
+
+type MarkEmployeeArrivalReminderReadParams struct {
+	TenantID            int64
+	RecipientEmployeeID int64
+	ID                  int64
+}
+
+func (q *Queries) MarkEmployeeArrivalReminderRead(ctx context.Context, arg MarkEmployeeArrivalReminderReadParams) (ShippingArrivalReminder, error) {
+	row := q.db.QueryRow(ctx, markEmployeeArrivalReminderRead, arg.TenantID, arg.RecipientEmployeeID, arg.ID)
+	var i ShippingArrivalReminder
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ScheduleID,
+		&i.DestinationNodeID,
+		&i.RecipientEmployeeID,
+		&i.ReminderType,
+		&i.EtaRevision,
+		&i.TargetEta,
+		&i.DueAt,
+		&i.Status,
+		&i.SentAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Title,
+		&i.Content,
+		&i.DetailUrl,
+		&i.ReadAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.NextRetryAt,
+	)
+	return i, err
 }
 
 const nextShippingDocumentVersion = `-- name: NextShippingDocumentVersion :one

@@ -135,6 +135,65 @@ func (s *Server) getShippingStatistics(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func shippingReminderID(r *http.Request) int64 {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "reminderID"), 10, 64)
+	return id
+}
+
+func (s *Server) listShippingArrivalNotifications(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.ListArrivalNotifications(r.Context(), &shippingv1.ListArrivalNotificationsRequest{
+		UnreadOnly: r.URL.Query().Get("unread_only") == "true",
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) markShippingArrivalReminderRead(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.MarkArrivalReminderRead(r.Context(), &shippingv1.MarkArrivalReminderReadRequest{
+		ReminderId: shippingReminderID(r),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) cleanupExpiredShippingArrivalReminders(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.CleanupExpiredArrivalReminders(r.Context(), &shippingv1.CleanupExpiredArrivalRemindersRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getShippingArrivalReminderRules(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.GetArrivalReminderRules(r.Context(), &shippingv1.GetArrivalReminderRulesRequest{ScheduleId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) updateShippingArrivalReminderRules(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.UpdateArrivalReminderRulesRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.ScheduleId = idFromPath(r)
+	resp, err := s.Shipping.UpdateArrivalReminderRules(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) addShippingRouteNode(w http.ResponseWriter, r *http.Request) {
 	req := &shippingv1.AddRouteNodeRequest{}
 	if !s.decodeBody(w, r, req) {
