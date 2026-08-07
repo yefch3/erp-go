@@ -3,6 +3,8 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -238,5 +240,36 @@ func TestOnlyARejectedCredentialCountsAgainstTheBudget(t *testing.T) {
 	}
 	if isRejectedCredential(nil) {
 		t.Error("a successful call counted as a failure")
+	}
+}
+
+// The mailbox somebody binds is the one they signed in as. This is a test
+// about a *field*, because that is where the rule lives: the verify handler
+// reads the address from the token, and the request body has no address in it
+// to disagree with. Anybody adding one back should have to delete this.
+func TestTheVerifyRequestCarriesNoAddress(t *testing.T) {
+	src, err := os.ReadFile("mailunlock.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src)
+	start := strings.Index(body, "func (s *Server) verifyMailbox")
+	if start < 0 {
+		t.Fatal("verifyMailbox is gone; this test needs rewriting")
+	}
+	end := strings.Index(body[start:], "\nfunc ")
+	fn := body[start : start+end]
+
+	if strings.Contains(fn, `json:"email"`) {
+		t.Error("the verify body has an email field again — signing in as one " +
+			"address and binding another is exactly what this must not allow")
+	}
+	if !strings.Contains(fn, "Email: op.Email") {
+		t.Error("the bound address no longer comes from the session; it must " +
+			"be the address the person logged in with, not one they supplied")
+	}
+	if !strings.Contains(fn, `op.Email == ""`) {
+		t.Error("an employee with no company address must be refused rather " +
+			"than binding something unchecked")
 	}
 }

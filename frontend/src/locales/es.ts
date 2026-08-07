@@ -1131,6 +1131,7 @@ export default {
     unsuppressed: 'Quitada',
   },
   mailGate: {
+    willBind: 'Se vinculará: {email}',
     title: 'Iniciar sesión en su buzón',
     explain:
       'El correo está protegido por el propio acceso del buzón. Use cualquiera de las dos vías; el sistema lo verifica de verdad contra el servidor de correo, y el primer acceso correcto es lo que vincula el buzón.',

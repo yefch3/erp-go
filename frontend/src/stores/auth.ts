@@ -22,6 +22,9 @@ export const useAuthStore = defineStore('auth', {
     // and the two are deliberately not the same set.
     employeeId: localStorage.getItem('employeeId') ?? '',
     employeeName: localStorage.getItem('employeeName') ?? '',
+    // The address they signed in with. The mailbox gate shows it rather than
+    // asking, because the mailbox somebody binds is the one they signed in as.
+    employeeEmail: localStorage.getItem('employeeEmail') ?? '',
     permissions: JSON.parse(localStorage.getItem('permissions') ?? '[]') as string[],
   }),
   getters: {
@@ -36,10 +39,12 @@ export const useAuthStore = defineStore('auth', {
       this.token = data.accessToken
       this.employeeId = data.employee.id
       this.employeeName = data.employee.name
+      this.employeeEmail = data.employee.email ?? ''
       this.permissions = data.permissionCodes
       localStorage.setItem('token', data.accessToken)
       localStorage.setItem('employeeId', data.employee.id)
       localStorage.setItem('employeeName', data.employee.name)
+      localStorage.setItem('employeeEmail', data.employee.email ?? '')
       localStorage.setItem('permissions', JSON.stringify(data.permissionCodes))
     },
     // Permission codes are cached in localStorage so the first paint is not
@@ -64,6 +69,7 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('token')
       localStorage.removeItem('employeeId')
       localStorage.removeItem('employeeName')
+      localStorage.removeItem('employeeEmail')
       localStorage.removeItem('permissions')
     },
   },

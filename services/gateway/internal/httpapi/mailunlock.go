@@ -111,9 +111,19 @@ func (s *Server) requireMailUnlock(next http.Handler) http.Handler {
 // mailbox bound. With an email in the body this is also the binding: the
 // service stores the pair only after the login succeeded.
 func (s *Server) verifyMailbox(w http.ResponseWriter, r *http.Request) {
+	// Only the secret. The address is not a field here and must never become
+	// one again: it comes from the token, which means the mailbox somebody
+	// binds is necessarily the one they signed in as.
+	//
+	// It used to be in the body, and that allowed the thing this whole design
+	// exists to prevent — signing in as alice@thecompany.com and binding a
+	// personal mailbox. Everything downstream then disagreed: the ERP said one
+	// person sent the mail and the customer saw another address, and mail the
+	// company does not control started flowing through it. Validating the
+	// field would have worked too; removing it is better, because a field that
+	// does not exist cannot be got wrong later.
 	var body struct {
 		Secret string `json:"secret"`
-		Email  string `json:"email"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
 		s.writeError(w, http.StatusBadRequest, "GATEWAY_BAD_JSON", "请求体不是合法的 JSON")
@@ -124,6 +134,14 @@ func (s *Server) verifyMailbox(w http.ResponseWriter, r *http.Request) {
 	// spent is this person's, and the cost of overspending it is that the mail
 	// host blocks the address the whole company sends from.
 	op, _ := grpcx.OperatorFromContext(r.Context())
+	if op.Email == "" {
+		// An employee row with no address. They cannot bind anything until
+		// somebody gives them one, and saying so is better than letting them
+		// type an address that would then be ignored.
+		s.writeError(w, http.StatusForbidden, "MAIL_NO_WORK_ADDRESS",
+			"你的账号还没有公司邮箱地址，请联系管理员")
+		return
+	}
 	who := fmt.Sprintf("t%d.e%d", op.TenantID, op.EmployeeID)
 	if wait, blocked := s.Throttle.Blocked(r.Context(), throttleMailVerify, who); blocked {
 		s.writeTooManyAttempts(w, wait)
@@ -131,7 +149,7 @@ func (s *Server) verifyMailbox(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := s.Emails.VerifyMailAccess(r.Context(), &mailv1.VerifyMailAccessRequest{
-		Secret: body.Secret, Email: body.Email,
+		Secret: body.Secret, Email: op.Email,
 	})
 	if err != nil {
 		// Not charged. This is the mail service or the network failing, not

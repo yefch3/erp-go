@@ -114,7 +114,7 @@ func (s *Service) Login(ctx context.Context, email, password string) (*LoginResu
 		return nil, fmt.Errorf("login: record success: %w", err)
 	}
 
-	token, err := authtoken.Issue(s.jwtSecret, s.jwtTTL, tenantID, u.EmployeeID, u.EmployeeName)
+	token, err := authtoken.Issue(s.jwtSecret, s.jwtTTL, tenantID, u.EmployeeID, u.EmployeeName, addr)
 	if err != nil {
 		return nil, fmt.Errorf("login: issue token: %w", err)
 	}
