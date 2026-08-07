@@ -254,6 +254,15 @@ func (h *Handler) MarkArrivalReminderRead(ctx context.Context, req *shippingv1.M
 	return &shippingv1.MarkArrivalReminderReadResponse{Reminder: reminderToProto(row)}, nil
 }
 
+func (h *Handler) CleanupExpiredArrivalReminders(ctx context.Context, _ *shippingv1.CleanupExpiredArrivalRemindersRequest) (*shippingv1.CleanupExpiredArrivalRemindersResponse, error) {
+	op := operator(ctx)
+	count, err := h.svc.CleanupExpiredArrivalReminders(ctx, grpcx.TenantID(ctx), op.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.CleanupExpiredArrivalRemindersResponse{DeletedCount: count}, nil
+}
+
 func (h *Handler) GetArrivalReminderRules(ctx context.Context, req *shippingv1.GetArrivalReminderRulesRequest) (*shippingv1.GetArrivalReminderRulesResponse, error) {
 	days, err := h.svc.GetArrivalReminderRules(ctx, grpcx.TenantID(ctx), req.GetScheduleId())
 	if err != nil {

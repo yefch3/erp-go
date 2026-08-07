@@ -13,16 +13,41 @@ func TestArrivalReminderTextContainsRequiredScheduleFields(t *testing.T) {
 	row := store.GetDueArrivalReminderForUpdateRow{
 		ScheduleID: 42, ScheduleNo: "SCH-42", ContractNo: "CON-7", CustomerName: "测试客户",
 		VesselName: "海星号", VoyageNo: "V001", PortOfDischarge: "纽约",
+		ReminderType: "ARRIVAL_14D",
 		TargetEta: pgtype.Date{Time: time.Date(2026, 8, 12, 0, 0, 0, 0, time.UTC), Valid: true},
 	}
-	title, content, link := arrivalReminderText(row)
+	title, content, link := arrivalReminderText(row, time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC))
 	for _, want := range []string{"SCH-42", "CON-7", "测试客户", "海星号", "V001", "纽约", "2026-08-12"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("content %q does not contain %q", content, want)
 		}
 	}
-	if title == "" || link != "/shipping/42" {
+	if title != "船期预计 5 天后到港" || link != "/shipping/42" {
 		t.Fatalf("title=%q link=%q", title, link)
+	}
+}
+
+func TestArrivalReminderTextUsesCurrentCountdown(t *testing.T) {
+	now := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		eta       time.Time
+		valid     bool
+		wantTitle string
+	}{
+		{eta: time.Date(2026, 8, 18, 0, 0, 0, 0, time.UTC), valid: true, wantTitle: "船期预计 11 天后到港"},
+		{eta: time.Date(2026, 8, 7, 0, 0, 0, 0, time.UTC), valid: true, wantTitle: "船期预计今天到港"},
+		{eta: time.Date(2026, 8, 5, 0, 0, 0, 0, time.UTC), valid: true, wantTitle: "船期预计已逾期 2 天"},
+		{wantTitle: "船期即将到港"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.wantTitle, func(t *testing.T) {
+			title, _, _ := arrivalReminderText(store.GetDueArrivalReminderForUpdateRow{
+				TargetEta: pgtype.Date{Time: tt.eta, Valid: tt.valid},
+			}, now)
+			if title != tt.wantTitle {
+				t.Fatalf("title=%q，期望=%q", title, tt.wantTitle)
+			}
+		})
 	}
 }
 

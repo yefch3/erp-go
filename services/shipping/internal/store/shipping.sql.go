@@ -518,6 +518,41 @@ func (q *Queries) DeleteArrivalReminderRules(ctx context.Context, arg DeleteArri
 	return err
 }
 
+const deleteExpiredEmployeeArrivalReminders = `-- name: DeleteExpiredEmployeeArrivalReminders :many
+DELETE FROM shipping_arrival_reminders r
+USING shipping_schedules s
+WHERE r.tenant_id = $1 AND r.recipient_employee_id = $2
+  AND r.status = 'SENT'
+  AND s.tenant_id = r.tenant_id AND s.id = r.schedule_id
+  AND (r.target_eta < CURRENT_DATE OR s.status IN ('ARRIVED','COMPLETED','CANCELLED'))
+RETURNING r.id
+`
+
+type DeleteExpiredEmployeeArrivalRemindersParams struct {
+	TenantID            int64
+	RecipientEmployeeID int64
+}
+
+func (q *Queries) DeleteExpiredEmployeeArrivalReminders(ctx context.Context, arg DeleteExpiredEmployeeArrivalRemindersParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, deleteExpiredEmployeeArrivalReminders, arg.TenantID, arg.RecipientEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const findPossibleDuplicates = `-- name: FindPossibleDuplicates :many
 SELECT id, schedule_no
 FROM shipping_schedules

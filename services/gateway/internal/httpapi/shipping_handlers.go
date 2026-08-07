@@ -162,6 +162,15 @@ func (s *Server) markShippingArrivalReminderRead(w http.ResponseWriter, r *http.
 	s.writeProto(w, resp)
 }
 
+func (s *Server) cleanupExpiredShippingArrivalReminders(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.CleanupExpiredArrivalReminders(r.Context(), &shippingv1.CleanupExpiredArrivalRemindersRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) getShippingArrivalReminderRules(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Shipping.GetArrivalReminderRules(r.Context(), &shippingv1.GetArrivalReminderRulesRequest{ScheduleId: idFromPath(r)})
 	if err != nil {

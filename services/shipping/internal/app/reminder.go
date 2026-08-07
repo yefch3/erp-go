@@ -163,14 +163,38 @@ func reminderRetryAt(attempt int32, now time.Time) time.Time {
 	return now.Add(time.Duration(minutes) * time.Minute)
 }
 
-func arrivalReminderText(r store.GetDueArrivalReminderForUpdateRow) (string, string, string) {
+// arrivalReminderLeadDays 从持久化的提醒类型（例如 ARRIVAL_14D）读取提前天数。
+// 无法识别的旧数据使用通用标题，避免再次显示错误的固定天数。
+func arrivalReminderLeadDays(reminderType string) (int32, bool) {
+	value := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(reminderType), "ARRIVAL_"), "D")
+	days, err := strconv.ParseInt(value, 10, 32)
+	if err != nil || days < 0 {
+		return 0, false
+	}
+	return int32(days), true
+}
+
+func arrivalReminderText(r store.GetDueArrivalReminderForUpdateRow, now time.Time) (string, string, string) {
 	value := func(v string) string {
 		if strings.TrimSpace(v) == "" {
 			return "—"
 		}
 		return strings.TrimSpace(v)
 	}
-	title := "船期将在 7 天内到港"
+	title := "船期即将到港"
+	if r.TargetEta.Valid {
+		today := now.UTC().Truncate(24 * time.Hour)
+		eta := r.TargetEta.Time.UTC().Truncate(24 * time.Hour)
+		days := int(eta.Sub(today) / (24 * time.Hour))
+		switch {
+		case days > 0:
+			title = fmt.Sprintf("船期预计 %d 天后到港", days)
+		case days == 0:
+			title = "船期预计今天到港"
+		default:
+			title = fmt.Sprintf("船期预计已逾期 %d 天", -days)
+		}
+	}
 	content := fmt.Sprintf("船期编号：%s；合同编号：%s；客户：%s；船名/航次：%s / %s；目的港：%s；最新 ETA：%s",
 		value(r.ScheduleNo), value(r.ContractNo), value(r.CustomerName), value(r.VesselName),
 		value(r.VoyageNo), value(r.PortOfDischarge), dateText(r.TargetEta))
@@ -201,14 +225,18 @@ func (s *Service) ProcessDueArrivalReminders(ctx context.Context, batchSize int3
 				return getErr
 			}
 			attempt = candidate.AttemptCount
-			title, content, link := arrivalReminderText(candidate)
+			title, content, link := arrivalReminderText(candidate, time.Now().UTC())
 			notification, getErr = q.MarkArrivalReminderSent(ctx, store.MarkArrivalReminderSentParams{
 				ID: id, Title: title, Content: content, DetailUrl: link,
 			})
 			if getErr != nil {
 				return getErr
 			}
-			return addChange(ctx, q, candidate.TenantID, candidate.ScheduleID, "REMINDER", "arrival_7d", "", title,
+			field := "arrival_reminder"
+			if days, ok := arrivalReminderLeadDays(candidate.ReminderType); ok {
+				field = fmt.Sprintf("arrival_%dd", days)
+			}
+			return addChange(ctx, q, candidate.TenantID, candidate.ScheduleID, "REMINDER", field, "", title,
 				"系统按最新 ETA 生成到港提醒", Operator{Name: "系统提醒任务"})
 		})
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -302,4 +330,15 @@ func (s *Service) MarkArrivalReminderRead(ctx context.Context, tenantID, employe
 		return store.ShippingArrivalReminder{}, apierr.NotFound("SHIPPING_REMINDER_NOT_FOUND", "到港提醒不存在")
 	}
 	return row, err
+}
+
+// CleanupExpiredArrivalReminders 删除当前员工已过期或已结束船期的通知，保留船期本身。
+func (s *Service) CleanupExpiredArrivalReminders(ctx context.Context, tenantID, employeeID int64) (int64, error) {
+	if employeeID == 0 {
+		return 0, apierr.Unauthorized("AUTH_TOKEN_MISSING", "缺少登录凭证")
+	}
+	ids, err := s.q.DeleteExpiredEmployeeArrivalReminders(ctx, store.DeleteExpiredEmployeeArrivalRemindersParams{
+		TenantID: tenantID, RecipientEmployeeID: employeeID,
+	})
+	return int64(len(ids)), err
 }

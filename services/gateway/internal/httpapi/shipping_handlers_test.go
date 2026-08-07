@@ -36,6 +36,10 @@ func (shippingClientStub) ListArrivalNotifications(context.Context, *shippingv1.
 	return &shippingv1.ListArrivalNotificationsResponse{Reminders: []*shippingv1.ArrivalReminder{{Id: 7, Title: "船期将在 7 天内到港"}}, UnreadCount: 1}, nil
 }
 
+func (shippingClientStub) CleanupExpiredArrivalReminders(context.Context, *shippingv1.CleanupExpiredArrivalRemindersRequest, ...grpc.CallOption) (*shippingv1.CleanupExpiredArrivalRemindersResponse, error) {
+	return &shippingv1.CleanupExpiredArrivalRemindersResponse{DeletedCount: 2}, nil
+}
+
 func TestGetShippingStatus(t *testing.T) {
 	s := &Server{Shipping: shippingClientStub{}}
 	recorder := httptest.NewRecorder()
@@ -77,6 +81,15 @@ func TestListShippingArrivalNotifications(t *testing.T) {
 	}
 }
 
+func TestCleanupExpiredShippingArrivalReminders(t *testing.T) {
+	s := &Server{Shipping: shippingClientStub{}}
+	recorder := httptest.NewRecorder()
+	s.cleanupExpiredShippingArrivalReminders(recorder, httptest.NewRequest(http.MethodDelete, "/api/shipping/reminders/expired", nil))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"deletedCount":"2"`) {
+		t.Fatalf("unexpected cleanup response: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestShippingRouteRequiresAuthentication(t *testing.T) {
 	s := &Server{JWTSecret: "test-secret"}
 	recorder := httptest.NewRecorder()
@@ -102,6 +115,7 @@ func TestShippingDocumentRoutesRequireAuthentication(t *testing.T) {
 		{http.MethodGet, "/api/shipping/schedules/1/documents"},
 		{http.MethodPost, "/api/shipping/schedules/1/documents/2/download"},
 		{http.MethodGet, "/api/shipping/reminders"},
+		{http.MethodDelete, "/api/shipping/reminders/expired"},
 		{http.MethodPost, "/api/shipping/reminders/7/read"},
 	} {
 		recorder := httptest.NewRecorder()

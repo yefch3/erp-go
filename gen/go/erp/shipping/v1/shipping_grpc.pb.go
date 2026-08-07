@@ -19,27 +19,28 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ShippingService_GetModuleStatus_FullMethodName            = "/erp.shipping.v1.ShippingService/GetModuleStatus"
-	ShippingService_ListSchedules_FullMethodName              = "/erp.shipping.v1.ShippingService/ListSchedules"
-	ShippingService_GetSchedule_FullMethodName                = "/erp.shipping.v1.ShippingService/GetSchedule"
-	ShippingService_CreateSchedule_FullMethodName             = "/erp.shipping.v1.ShippingService/CreateSchedule"
-	ShippingService_UpdateSchedule_FullMethodName             = "/erp.shipping.v1.ShippingService/UpdateSchedule"
-	ShippingService_UpdateScheduleStatus_FullMethodName       = "/erp.shipping.v1.ShippingService/UpdateScheduleStatus"
-	ShippingService_CancelSchedule_FullMethodName             = "/erp.shipping.v1.ShippingService/CancelSchedule"
-	ShippingService_GetShippingStatistics_FullMethodName      = "/erp.shipping.v1.ShippingService/GetShippingStatistics"
-	ShippingService_AddRouteNode_FullMethodName               = "/erp.shipping.v1.ShippingService/AddRouteNode"
-	ShippingService_RemoveRouteNode_FullMethodName            = "/erp.shipping.v1.ShippingService/RemoveRouteNode"
-	ShippingService_ReorderRoute_FullMethodName               = "/erp.shipping.v1.ShippingService/ReorderRoute"
-	ShippingService_UpdateProgress_FullMethodName             = "/erp.shipping.v1.ShippingService/UpdateProgress"
-	ShippingService_PresignDocumentUpload_FullMethodName      = "/erp.shipping.v1.ShippingService/PresignDocumentUpload"
-	ShippingService_RegisterDocument_FullMethodName           = "/erp.shipping.v1.ShippingService/RegisterDocument"
-	ShippingService_ListDocuments_FullMethodName              = "/erp.shipping.v1.ShippingService/ListDocuments"
-	ShippingService_GetDocumentAccess_FullMethodName          = "/erp.shipping.v1.ShippingService/GetDocumentAccess"
-	ShippingService_InvalidateDocument_FullMethodName         = "/erp.shipping.v1.ShippingService/InvalidateDocument"
-	ShippingService_ListArrivalNotifications_FullMethodName   = "/erp.shipping.v1.ShippingService/ListArrivalNotifications"
-	ShippingService_MarkArrivalReminderRead_FullMethodName    = "/erp.shipping.v1.ShippingService/MarkArrivalReminderRead"
-	ShippingService_GetArrivalReminderRules_FullMethodName    = "/erp.shipping.v1.ShippingService/GetArrivalReminderRules"
-	ShippingService_UpdateArrivalReminderRules_FullMethodName = "/erp.shipping.v1.ShippingService/UpdateArrivalReminderRules"
+	ShippingService_GetModuleStatus_FullMethodName                = "/erp.shipping.v1.ShippingService/GetModuleStatus"
+	ShippingService_ListSchedules_FullMethodName                  = "/erp.shipping.v1.ShippingService/ListSchedules"
+	ShippingService_GetSchedule_FullMethodName                    = "/erp.shipping.v1.ShippingService/GetSchedule"
+	ShippingService_CreateSchedule_FullMethodName                 = "/erp.shipping.v1.ShippingService/CreateSchedule"
+	ShippingService_UpdateSchedule_FullMethodName                 = "/erp.shipping.v1.ShippingService/UpdateSchedule"
+	ShippingService_UpdateScheduleStatus_FullMethodName           = "/erp.shipping.v1.ShippingService/UpdateScheduleStatus"
+	ShippingService_CancelSchedule_FullMethodName                 = "/erp.shipping.v1.ShippingService/CancelSchedule"
+	ShippingService_GetShippingStatistics_FullMethodName          = "/erp.shipping.v1.ShippingService/GetShippingStatistics"
+	ShippingService_AddRouteNode_FullMethodName                   = "/erp.shipping.v1.ShippingService/AddRouteNode"
+	ShippingService_RemoveRouteNode_FullMethodName                = "/erp.shipping.v1.ShippingService/RemoveRouteNode"
+	ShippingService_ReorderRoute_FullMethodName                   = "/erp.shipping.v1.ShippingService/ReorderRoute"
+	ShippingService_UpdateProgress_FullMethodName                 = "/erp.shipping.v1.ShippingService/UpdateProgress"
+	ShippingService_PresignDocumentUpload_FullMethodName          = "/erp.shipping.v1.ShippingService/PresignDocumentUpload"
+	ShippingService_RegisterDocument_FullMethodName               = "/erp.shipping.v1.ShippingService/RegisterDocument"
+	ShippingService_ListDocuments_FullMethodName                  = "/erp.shipping.v1.ShippingService/ListDocuments"
+	ShippingService_GetDocumentAccess_FullMethodName              = "/erp.shipping.v1.ShippingService/GetDocumentAccess"
+	ShippingService_InvalidateDocument_FullMethodName             = "/erp.shipping.v1.ShippingService/InvalidateDocument"
+	ShippingService_ListArrivalNotifications_FullMethodName       = "/erp.shipping.v1.ShippingService/ListArrivalNotifications"
+	ShippingService_MarkArrivalReminderRead_FullMethodName        = "/erp.shipping.v1.ShippingService/MarkArrivalReminderRead"
+	ShippingService_CleanupExpiredArrivalReminders_FullMethodName = "/erp.shipping.v1.ShippingService/CleanupExpiredArrivalReminders"
+	ShippingService_GetArrivalReminderRules_FullMethodName        = "/erp.shipping.v1.ShippingService/GetArrivalReminderRules"
+	ShippingService_UpdateArrivalReminderRules_FullMethodName     = "/erp.shipping.v1.ShippingService/UpdateArrivalReminderRules"
 )
 
 // ShippingServiceClient is the client API for ShippingService service.
@@ -68,6 +69,7 @@ type ShippingServiceClient interface {
 	InvalidateDocument(ctx context.Context, in *InvalidateDocumentRequest, opts ...grpc.CallOption) (*InvalidateDocumentResponse, error)
 	ListArrivalNotifications(ctx context.Context, in *ListArrivalNotificationsRequest, opts ...grpc.CallOption) (*ListArrivalNotificationsResponse, error)
 	MarkArrivalReminderRead(ctx context.Context, in *MarkArrivalReminderReadRequest, opts ...grpc.CallOption) (*MarkArrivalReminderReadResponse, error)
+	CleanupExpiredArrivalReminders(ctx context.Context, in *CleanupExpiredArrivalRemindersRequest, opts ...grpc.CallOption) (*CleanupExpiredArrivalRemindersResponse, error)
 	GetArrivalReminderRules(ctx context.Context, in *GetArrivalReminderRulesRequest, opts ...grpc.CallOption) (*GetArrivalReminderRulesResponse, error)
 	UpdateArrivalReminderRules(ctx context.Context, in *UpdateArrivalReminderRulesRequest, opts ...grpc.CallOption) (*UpdateArrivalReminderRulesResponse, error)
 }
@@ -270,6 +272,16 @@ func (c *shippingServiceClient) MarkArrivalReminderRead(ctx context.Context, in 
 	return out, nil
 }
 
+func (c *shippingServiceClient) CleanupExpiredArrivalReminders(ctx context.Context, in *CleanupExpiredArrivalRemindersRequest, opts ...grpc.CallOption) (*CleanupExpiredArrivalRemindersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CleanupExpiredArrivalRemindersResponse)
+	err := c.cc.Invoke(ctx, ShippingService_CleanupExpiredArrivalReminders_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *shippingServiceClient) GetArrivalReminderRules(ctx context.Context, in *GetArrivalReminderRulesRequest, opts ...grpc.CallOption) (*GetArrivalReminderRulesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetArrivalReminderRulesResponse)
@@ -316,6 +328,7 @@ type ShippingServiceServer interface {
 	InvalidateDocument(context.Context, *InvalidateDocumentRequest) (*InvalidateDocumentResponse, error)
 	ListArrivalNotifications(context.Context, *ListArrivalNotificationsRequest) (*ListArrivalNotificationsResponse, error)
 	MarkArrivalReminderRead(context.Context, *MarkArrivalReminderReadRequest) (*MarkArrivalReminderReadResponse, error)
+	CleanupExpiredArrivalReminders(context.Context, *CleanupExpiredArrivalRemindersRequest) (*CleanupExpiredArrivalRemindersResponse, error)
 	GetArrivalReminderRules(context.Context, *GetArrivalReminderRulesRequest) (*GetArrivalReminderRulesResponse, error)
 	UpdateArrivalReminderRules(context.Context, *UpdateArrivalReminderRulesRequest) (*UpdateArrivalReminderRulesResponse, error)
 	mustEmbedUnimplementedShippingServiceServer()
@@ -384,6 +397,9 @@ func (UnimplementedShippingServiceServer) ListArrivalNotifications(context.Conte
 }
 func (UnimplementedShippingServiceServer) MarkArrivalReminderRead(context.Context, *MarkArrivalReminderReadRequest) (*MarkArrivalReminderReadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MarkArrivalReminderRead not implemented")
+}
+func (UnimplementedShippingServiceServer) CleanupExpiredArrivalReminders(context.Context, *CleanupExpiredArrivalRemindersRequest) (*CleanupExpiredArrivalRemindersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CleanupExpiredArrivalReminders not implemented")
 }
 func (UnimplementedShippingServiceServer) GetArrivalReminderRules(context.Context, *GetArrivalReminderRulesRequest) (*GetArrivalReminderRulesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetArrivalReminderRules not implemented")
@@ -754,6 +770,24 @@ func _ShippingService_MarkArrivalReminderRead_Handler(srv interface{}, ctx conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ShippingService_CleanupExpiredArrivalReminders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CleanupExpiredArrivalRemindersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).CleanupExpiredArrivalReminders(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_CleanupExpiredArrivalReminders_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).CleanupExpiredArrivalReminders(ctx, req.(*CleanupExpiredArrivalRemindersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ShippingService_GetArrivalReminderRules_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetArrivalReminderRulesRequest)
 	if err := dec(in); err != nil {
@@ -872,6 +906,10 @@ var ShippingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MarkArrivalReminderRead",
 			Handler:    _ShippingService_MarkArrivalReminderRead_Handler,
+		},
+		{
+			MethodName: "CleanupExpiredArrivalReminders",
+			Handler:    _ShippingService_CleanupExpiredArrivalReminders_Handler,
 		},
 		{
 			MethodName: "GetArrivalReminderRules",

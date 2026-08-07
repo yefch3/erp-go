@@ -28,6 +28,7 @@ service ShippingService {
   rpc InvalidateDocument(InvalidateDocumentRequest) returns (InvalidateDocumentResponse);
   rpc ListArrivalNotifications(ListArrivalNotificationsRequest) returns (ListArrivalNotificationsResponse);
   rpc MarkArrivalReminderRead(MarkArrivalReminderReadRequest) returns (MarkArrivalReminderReadResponse);
+  rpc CleanupExpiredArrivalReminders(CleanupExpiredArrivalRemindersRequest) returns (CleanupExpiredArrivalRemindersResponse);
   rpc GetArrivalReminderRules(GetArrivalReminderRulesRequest) returns (GetArrivalReminderRulesResponse);
   rpc UpdateArrivalReminderRules(UpdateArrivalReminderRulesRequest) returns (UpdateArrivalReminderRulesResponse);
 }
@@ -324,6 +325,8 @@ message ListArrivalNotificationsResponse {
 }
 message MarkArrivalReminderReadRequest { int64 reminder_id = 1; }
 message MarkArrivalReminderReadResponse { ArrivalReminder reminder = 1; }
+message CleanupExpiredArrivalRemindersRequest {}
+message CleanupExpiredArrivalRemindersResponse { int64 deleted_count = 1; }
 
 message GetArrivalReminderRulesRequest { int64 schedule_id = 1; }
 message GetArrivalReminderRulesResponse { repeated int32 lead_days = 1; }

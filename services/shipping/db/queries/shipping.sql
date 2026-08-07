@@ -379,6 +379,15 @@ SET read_at = COALESCE(read_at, now()), updated_at = now()
 WHERE tenant_id = $1 AND recipient_employee_id = $2 AND id = $3 AND status = 'SENT'
 RETURNING *;
 
+-- name: DeleteExpiredEmployeeArrivalReminders :many
+DELETE FROM shipping_arrival_reminders r
+USING shipping_schedules s
+WHERE r.tenant_id = $1 AND r.recipient_employee_id = $2
+  AND r.status = 'SENT'
+  AND s.tenant_id = r.tenant_id AND s.id = r.schedule_id
+  AND (r.target_eta < CURRENT_DATE OR s.status IN ('ARRIVED','COMPLETED','CANCELLED'))
+RETURNING r.id;
+
 -- name: ShippingStatistics :one
 SELECT
   count(*) FILTER (WHERE status IN ('SAILED','IN_TRANSIT','DELAYED'))::bigint AS in_transit,
