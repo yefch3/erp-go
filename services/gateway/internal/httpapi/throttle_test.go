@@ -273,3 +273,20 @@ func TestTheVerifyRequestCarriesNoAddress(t *testing.T) {
 			"than binding something unchecked")
 	}
 }
+
+// A service saying "you have run out of attempts" has to reach the browser as
+// 429 and not 500.
+//
+// The map in writeGRPCError falls through to InternalServerError for anything
+// unlisted, so a code nobody remembered to add turns a precise, actionable
+// message into "服务器错误" — the one answer that tells the person nothing and
+// invites them to retry immediately, which is the opposite of what was said.
+func TestRunningOutOfAttemptsReachesTheBrowserAsTooManyRequests(t *testing.T) {
+	src, err := os.ReadFile("server.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "codes.ResourceExhausted: http.StatusTooManyRequests") {
+		t.Fatal("a throttled service error still surfaces as an internal error")
+	}
+}

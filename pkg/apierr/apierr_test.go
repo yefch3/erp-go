@@ -20,6 +20,7 @@ func TestToStatusMapsKind(t *testing.T) {
 		{KindPermission, codes.PermissionDenied},
 		{KindUnauthorized, codes.Unauthenticated},
 		{KindInternal, codes.Internal},
+		{KindThrottled, codes.ResourceExhausted},
 	}
 	for _, c := range cases {
 		err := ToStatus(New(c.kind, "X_CODE", "boom"))
@@ -46,5 +47,28 @@ func TestUnknownErrorsDoNotLeak(t *testing.T) {
 	}
 	if st.Code() != codes.Internal {
 		t.Fatalf("code = %s, want Internal", st.Code())
+	}
+}
+
+// A kind that maps to Internal is a kind nobody wired up: the caller sees a
+// 500 and a generic message instead of whatever the service actually said.
+// Adding one is easy to do and invisible until somebody hits that path, so
+// this asserts on every kind that exists rather than on a list to remember to
+// update.
+func TestEveryKindHasAMapping(t *testing.T) {
+	for kind := KindInvalid; kind <= KindThrottled; kind++ {
+		if _, ok := kindToGRPC[kind]; !ok {
+			t.Fatalf("kind %d has no gRPC mapping, so it would surface as Internal", kind)
+		}
+	}
+}
+
+// "Later" must not read as "no". The gateway charges a failed-attempt budget
+// on Unauthenticated, so a throttle wearing that code would spend the very
+// budget the waiting exists to restore — and an outage in one service would
+// lock people out of another.
+func TestAThrottleIsNotAnAuthenticationFailure(t *testing.T) {
+	if kindToGRPC[KindThrottled] == kindToGRPC[KindUnauthorized] {
+		t.Fatal("a throttle is indistinguishable from a rejected credential on the wire")
 	}
 }

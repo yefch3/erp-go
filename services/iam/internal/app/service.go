@@ -35,11 +35,28 @@ func New(pool *pgxpool.Pool, jwtSecret string, jwtTTL time.Duration, log *slog.L
 
 var (
 	errBadCredentials = apierr.Unauthorized("IAM_BAD_CREDENTIALS", "邮箱或密码错误")
-	errAccountLocked  = apierr.Unauthorized("IAM_ACCOUNT_LOCKED", "账号已锁定，请联系管理员")
+	// A decision: disabled, or no longer employed here. Waiting does not help,
+	// so the message sends them to somebody who can act.
+	errAccountLocked = apierr.Unauthorized("IAM_ACCOUNT_LOCKED", "账号已停用，请联系管理员")
 	// Told apart from a bad password on purpose. Trying harder cannot fix it;
 	// what the person needs is the invitation mail, so the message says so.
 	errNotActivated = apierr.Unauthorized("IAM_NOT_ACTIVATED", "账号尚未激活，请查收邀请邮件")
 )
+
+// errTooManyAttempts says when, not just no.
+//
+// The number is the whole difference between this and the state it replaces.
+// "账号已锁定，请联系管理员" was true and useless: there was nobody to contact
+// who could do anything, and no amount of waiting helped either. A person who
+// is told to come back in eleven minutes can come back in eleven minutes.
+//
+// Rounded up to the minute because a countdown in seconds invites watching it,
+// and it is not accurate enough to be watched.
+func errTooManyAttempts(wait time.Duration) error {
+	minutes := int(wait/time.Minute) + 1
+	return apierr.Throttled("IAM_TOO_MANY_ATTEMPTS",
+		fmt.Sprintf("密码错误次数过多，请在 %d 分钟后重试", minutes))
+}
 
 type LoginResult struct {
 	Token            string
@@ -101,12 +118,31 @@ func (s *Service) Login(ctx context.Context, email, password string) (*LoginResu
 		// thing they need is the invitation mail.
 		return nil, errNotActivated
 	}
-	if u.Status == "LOCKED" || u.Status == "DISABLED" || u.EmployeeStatus != "ACTIVE" {
+	if u.Status == "DISABLED" || u.EmployeeStatus != "ACTIVE" {
+		// A decision somebody made about this account, which no amount of
+		// waiting changes. Distinct from the lock below, which is a deadline.
+		burnPasswordTime()
 		return nil, errAccountLocked
 	}
+	// Too many recent failures. Refused before the password is checked, which
+	// is what makes it a rate limit rather than a message: verifying first
+	// would let the guessing continue at full speed and reduce the lock to a
+	// different sentence on the same page.
+	//
+	// The cost of that is real and worth stating: whoever can reach this route
+	// can keep a named person out by spending five guesses every fifteen
+	// minutes. What this fixes is the version where five guesses kept them out
+	// forever, with no path back that did not involve a psql prompt. Bounding
+	// the sustained case needs something this layer cannot see — who is
+	// asking — and belongs with the spray detection at the edge.
+	if u.LockedUntil.Valid && time.Now().Before(u.LockedUntil.Time) {
+		burnPasswordTime()
+		return nil, errTooManyAttempts(time.Until(u.LockedUntil.Time))
+	}
 	if !VerifyPassword(u.PasswordHash, password) {
-		if row, ferr := s.q.RecordLoginFailure(ctx, u.ID); ferr == nil && row.Status == "LOCKED" {
-			return nil, errAccountLocked
+		if row, ferr := s.q.RecordLoginFailure(ctx, u.ID); ferr == nil &&
+			row.LockedUntil.Valid && time.Now().Before(row.LockedUntil.Time) {
+			return nil, errTooManyAttempts(time.Until(row.LockedUntil.Time))
 		}
 		return nil, errBadCredentials
 	}
