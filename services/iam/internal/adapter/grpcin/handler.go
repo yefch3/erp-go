@@ -25,7 +25,9 @@ func New(svc *app.Service) *Handler { return &Handler{svc: svc} }
 // ---------------------------------------------------------------- auth
 
 func (h *Handler) Login(ctx context.Context, req *iamv1.LoginRequest) (*iamv1.LoginResponse, error) {
-	res, err := h.svc.Login(ctx, grpcx.TenantID(ctx), req.GetUsername(), req.GetPassword())
+	res, err := // No tenant from the context: the address decides which company
+		// this is. A login page serving twenty of them is the same page.
+		h.svc.Login(ctx, req.GetEmail(), req.GetPassword())
 	if err != nil {
 		return nil, err
 	}

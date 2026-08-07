@@ -2,7 +2,7 @@ export default {
   login: {
     title: 'Export Business Management',
     subtitle: 'Quotation · Contract · Procurement · Warehouse · Shipping · Receivables',
-    username: 'Username',
+    email: 'Company email',
     password: 'Password',
     submit: 'Sign in',
   },

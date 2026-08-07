@@ -31,8 +31,8 @@ export const useAuthStore = defineStore('auth', {
     owns: (s) => (ownerId: string) => ownerId !== '' && ownerId === s.employeeId,
   },
   actions: {
-    async login(username: string, password: string) {
-      const data = await post<LoginData>('/auth/login', { username, password })
+    async login(email: string, password: string) {
+      const data = await post<LoginData>('/auth/login', { email, password })
       this.token = data.accessToken
       this.employeeId = data.employee.id
       this.employeeName = data.employee.name

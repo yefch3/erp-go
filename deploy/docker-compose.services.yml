@@ -17,6 +17,15 @@ services:
       DB_DSN: postgres://erp_iam:erp_iam_pw@postgres:5432/erp_iam?sslmode=disable
       GRPC_PORT: "9001"
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      # The first tenant, seeded only into an empty database.
+      COMPANY_NAME: ${COMPANY_NAME:-AAA Industry Inc}
+      # The domains that route to this company. gmail.com is here for
+      # development: Gmail's +alias addressing turns one real mailbox into as
+      # many distinct employees as a test needs, so the whole invite-activate
+      # flow can be exercised before 263 is ever involved. Drop it in
+      # production — a public mail domain must never route to a tenant.
+      COMPANY_MAIL_DOMAINS: ${COMPANY_MAIL_DOMAINS:-aaaindustryinc.com,gmail.com}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-fangchen1101@gmail.com}
     ports:
       - "9001:9001"
     networks: [infra]

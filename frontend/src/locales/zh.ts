@@ -2,7 +2,7 @@ export default {
   login: {
     title: '出口业务管理系统',
     subtitle: '报价 · 合同 · 采购 · 仓储 · 船期 · 收汇',
-    username: '用户名',
+    email: '公司邮箱',
     password: '密码',
     submit: '登录',
   },

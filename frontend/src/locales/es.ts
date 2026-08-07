@@ -2,7 +2,7 @@ export default {
   login: {
     title: 'Gestión de negocios de exportación',
     subtitle: 'Cotización · Contrato · Compras · Almacén · Embarque · Cobros',
-    username: 'Usuario',
+    email: 'Correo de empresa',
     password: 'Contraseña',
     submit: 'Iniciar sesión',
   },

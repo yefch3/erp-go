@@ -39,7 +39,12 @@ func run(log *slog.Logger) error {
 	defer pool.Close()
 
 	svc := app.New(pool, cfg.JWTSecret, cfg.JWTTTL, log)
-	if err := svc.EnsureAdmin(ctx, 1, cfg.AdminInitialPassword); err != nil {
+	if err := svc.EnsureAdmin(ctx, 1, app.SeedTenant{
+		CompanyName:     cfg.CompanyName,
+		MailDomains:     cfg.CompanyMailDomains,
+		AdminEmail:      cfg.AdminEmail,
+		InitialPassword: cfg.AdminInitialPassword,
+	}); err != nil {
 		return err
 	}
 

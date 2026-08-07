@@ -1,3 +1,26 @@
+-- name: GetTenantByDomain :one
+-- The login page has no idea which company somebody belongs to; the domain of
+-- the address they type is what says so. A primary-key hit, because this runs
+-- on every login attempt including every failed one.
+SELECT d.tenant_id, t.name AS tenant_name, t.status AS tenant_status
+FROM tenant_domains d
+JOIN tenants t ON t.id = d.tenant_id
+WHERE d.domain = lower(sqlc.arg(domain)::text);
+
+-- name: GetUserByEmail :one
+-- lower() on both sides: an address is case-insensitive in practice, and
+-- "Alice@" must not be a second account from "alice@". email_verified_at rides
+-- along because login has to refuse an account whose mailbox was never proved
+-- to exist, and doing it in the same round trip keeps that check free.
+SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
+       e.name AS employee_name, e.code AS employee_code, e.department_id,
+       e.status AS employee_status, e.email_verified_at
+FROM users u
+JOIN employees e ON e.id = u.employee_id
+WHERE u.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND e.email <> ''
+  AND lower(e.email) = lower(sqlc.arg(email)::text);
+
 -- name: GetUserByUsername :one
 SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
        e.name AS employee_name, e.code AS employee_code, e.department_id, e.status AS employee_status
@@ -228,3 +251,22 @@ DO UPDATE SET scope_type = excluded.scope_type, custom_dept_ids = excluded.custo
 -- name: ListRoleDataScopes :many
 SELECT role_id, module, scope_type, custom_dept_ids
 FROM role_data_scopes WHERE tenant_id = $1 ORDER BY role_id, module;
+
+-- name: CreateTenant :one
+INSERT INTO tenants (name) VALUES (sqlc.arg(name)::text)
+RETURNING id, name, status;
+
+-- name: AddTenantDomain :exec
+-- Lower-cased on the way in so the login lookup, which lower-cases what it was
+-- given, can be a plain primary-key hit.
+INSERT INTO tenant_domains (domain, tenant_id)
+VALUES (lower(sqlc.arg(domain)::text), sqlc.arg(tenant_id)::bigint)
+ON CONFLICT (domain) DO NOTHING;
+
+-- name: HasAnyTenant :one
+SELECT EXISTS (SELECT 1 FROM tenants);
+
+-- name: SetEmployeeEmailVerified :exec
+UPDATE employees
+SET email = sqlc.arg(email)::text, email_verified_at = now(), updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
