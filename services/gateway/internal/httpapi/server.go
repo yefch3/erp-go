@@ -58,6 +58,10 @@ type Server struct {
 	// Unlock holds mailbox-verification tokens. Nil fails closed: every mail
 	// route answers MAIL_LOCKED until a store exists.
 	Unlock *UnlockStore
+	// Throttle counts failed logins and failed mailbox verifications. Nil is
+	// allowed and fails open — see FailureThrottle for why this one is the
+	// other way round from Unlock.
+	Throttle *FailureThrottle
 	// Google OAuth. The client id is public by design; the secret lives only
 	// in the notification service, which does the token exchange.
 	GoogleClientID   string

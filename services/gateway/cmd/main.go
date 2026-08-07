@@ -120,6 +120,12 @@ func run(log *slog.Logger) error {
 	}
 	unlock := httpapi.NewUnlockStore(cfg.RedisAddr, unlockTTL)
 
+	// Failed-attempt budgets for login and mailbox verification. Redis rather
+	// than process memory so replicas share one count: three replicas each
+	// keeping their own would be three times the guesses, which is the whole
+	// budget handed back.
+	throttle := httpapi.NewFailureThrottle(cfg.RedisAddr, log)
+
 	frontendBase := os.Getenv("FRONTEND_BASE_URL")
 	if frontendBase == "" {
 		frontendBase = "http://localhost:5173"
@@ -152,6 +158,7 @@ func run(log *slog.Logger) error {
 		Shipping:         shippingv1.NewShippingServiceClient(shippingConn),
 		Emails:           mailv1.NewEmailServiceClient(ntConn),
 		Unlock:           unlock,
+		Throttle:         throttle,
 		GoogleClientID:   os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
 		OAuthRedirectURL: oauthRedirect,
 		FrontendBaseURL:  frontendBase,
