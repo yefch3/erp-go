@@ -380,6 +380,9 @@ func (s *Server) Router() http.Handler {
 		// different shape.
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-search", s.searchMail)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/inbound-mails/{id}", s.getInbound)
+		// Explicit user action only: selected text or one stored attachment is
+		// sent to the configured model and returned as an Excel workbook.
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/excel", s.convertInboundToExcel)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/mark", s.markInbound)
 		// Permanent deletion out of the trash. ERP-side copies only; the mail
 		// host's original is beyond this API's reach by design.
