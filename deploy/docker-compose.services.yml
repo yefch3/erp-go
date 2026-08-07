@@ -277,6 +277,12 @@ services:
       # Left empty in local development, which disables the pixel rather than
       # emitting one that points at the recipient's own machine.
       MAIL_PUBLIC_BASE_URL: ${MAIL_PUBLIC_BASE_URL:-}
+      # User-triggered conversion of selected mail text/attachments to Excel.
+      # The key stays server-side; no request can supply or override it.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-luna}
+      OPENAI_TIMEOUT: ${OPENAI_TIMEOUT:-2m}
       # For pushing "new mail" hints to open browser tabs over the live feed.
       REDIS_ADDR: redis:6379
       # Google OAuth application credentials, from deploy/.env (gitignored).

@@ -151,6 +151,10 @@ type Deps struct {
 	Scopes    Scopes
 	Provider  Provider
 	Files     Files
+	// Tables extracts arbitrary tabular content from selected mail text or an
+	// attachment. Nil keeps the rest of mail fully operational and makes only
+	// the explicit Excel action report that it is not configured.
+	Tables TableExtractor
 	// Secrets decrypts stored mailbox credentials. Nil in tests and in any
 	// deployment that has not been given a key; every path that needs it
 	// checks and fails loudly rather than proceeding without encryption.
@@ -173,6 +177,7 @@ type Service struct {
 	scopes    Scopes
 	provider  Provider
 	files     Files
+	tables    TableExtractor
 	mailbox   Mailbox
 	secrets   *SecretBox
 	live      *livefeed.Publisher
@@ -190,7 +195,8 @@ func New(pool *pgxpool.Pool, d Deps, log *slog.Logger) *Service {
 	return &Service{
 		pool: pool, q: store.New(pool),
 		number: d.Numbering, directory: d.Directory, scopes: d.Scopes,
-		provider: d.Provider, files: d.Files, secrets: d.Secrets, live: d.Live, log: log,
+		provider: d.Provider, files: d.Files, tables: d.Tables,
+		secrets: d.Secrets, live: d.Live, log: log,
 	}
 }
 
@@ -201,6 +207,11 @@ func New(pool *pgxpool.Pool, d Deps, log *slog.Logger) *Service {
 // wired in a second step. Doing it explicitly here beats a lazy indirection
 // that hides the cycle.
 func (s *Service) UseProvider(p Provider) { s.provider = p }
+
+// ExcelAvailable is configuration state, not account data. It is exposed on
+// the existing lightweight mailbox-capability read so the browser can avoid
+// offering an action that can only fail.
+func (s *Service) ExcelAvailable() bool { return s.tables != nil }
 
 // scopeModule is the key mail is scoped under; it must match
 // role_data_scopes.module in iam.

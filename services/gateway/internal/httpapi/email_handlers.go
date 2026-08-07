@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 
 	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
+	"github.com/sgao19/erp-go/pkg/grpcx"
 )
 
 func (s *Server) listCampaigns(w http.ResponseWriter, r *http.Request) {
@@ -669,6 +671,32 @@ func (s *Server) emptyJunk(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getInbound(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	resp, err := s.Emails.GetInbound(r.Context(), &mailv1.GetInboundRequest{Id: id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) convertInboundToExcel(w http.ResponseWriter, r *http.Request) {
+	op, _ := grpcx.OperatorFromContext(r.Context())
+	who := fmt.Sprintf("t%d.e%d", op.TenantID, op.EmployeeID)
+	if wait, limited := s.Throttle.Limited(r.Context(), throttleMailExcel, who); limited {
+		secs := int(wait.Seconds())
+		if secs < 1 {
+			secs = 1
+		}
+		w.Header().Set("Retry-After", strconv.Itoa(secs))
+		s.writeError(w, http.StatusTooManyRequests, "MAIL_EXCEL_RATE_LIMITED", "Excel 转换请求过于频繁，请稍后再试")
+		return
+	}
+	req := &mailv1.ConvertInboundToExcelRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	// URL ownership wins over any body field, as with every other mail action.
+	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	resp, err := s.Emails.ConvertInboundToExcel(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

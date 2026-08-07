@@ -182,15 +182,31 @@
               <span class="sub" :title="zonedStamp(it.at)">{{ shortTime(it.at) }}</span>
             </button>
             <div v-show="isThreadOpen(it)" class="thread-body">
-              <MailBody v-if="it.bodyFormat === 'HTML'" :html="it.body" />
-              <pre v-else class="in-text">{{ it.body }}</pre>
+              <MailBody
+                v-if="it.bodyFormat === 'HTML'"
+                :html="it.body"
+                @selection-context="openTextExcelMenu($event, it.direction === 'IN' ? it.id : '')"
+              />
+              <pre
+                v-else
+                class="in-text"
+                @contextmenu="openPlainTextExcelMenu($event, it.direction === 'IN' ? it.id : '')"
+              >{{ it.body }}</pre>
               <QuotedHistory v-if="it.quoted" :html="it.quoted" />
             </div>
           </div>
         </template>
         <template v-else>
-          <MailBody v-if="openedInbound.bodyHtml" :html="openedInbound.bodyHtml" />
-          <pre v-else class="in-text">{{ openedInbound.bodyText }}</pre>
+          <MailBody
+            v-if="openedInbound.bodyHtml"
+            :html="openedInbound.bodyHtml"
+            @selection-context="openTextExcelMenu($event, openedInbound.id)"
+          />
+          <pre
+            v-else
+            class="in-text"
+            @contextmenu="openPlainTextExcelMenu($event, openedInbound.id)"
+          >{{ openedInbound.bodyText }}</pre>
           <QuotedHistory v-if="openedInbound.quotedHtml" :html="openedInbound.quotedHtml" />
         </template>
         <template v-if="openedInbound.attachments?.length">
@@ -207,6 +223,7 @@
               class="file"
               :class="{ dead: !a.downloadUrl }"
               :title="fileHint(a)"
+              @contextmenu="openAttachmentExcelMenu($event, a)"
             >
               <el-icon><Paperclip /></el-icon>
               <span class="fname ellipsis">{{ a.fileName }}</span>
@@ -649,6 +666,64 @@
        host settings before anybody can sign in at all. -->
   <MailHostDialog v-model="hostOpen" />
 
+  <!-- A native-like context action. It is rendered at the click point rather
+       than permanently adding another button to every attachment and every
+       line of mail. -->
+  <div
+    v-if="excelMenu.open"
+    class="excel-context"
+    :style="{ left: excelMenu.x + 'px', top: excelMenu.y + 'px' }"
+    role="menu"
+  >
+    <button type="button" role="menuitem" @click="convertExcelSelection">
+      {{ t('emails.convertToExcel') }}
+    </button>
+  </div>
+
+  <el-dialog
+    v-model="excelOpen"
+    :title="excelResult?.fileName || t('emails.excelPreview')"
+    width="min(1100px, 94vw)"
+    top="4vh"
+    append-to-body
+  >
+    <div v-loading="excelBusy" class="excel-preview">
+      <el-empty v-if="!excelBusy && !excelResult" :description="t('emails.excelWaiting')" />
+      <template v-else-if="excelResult">
+        <div class="excel-model">{{ t('emails.generatedBy', { model: excelResult.model }) }}</div>
+        <el-tabs v-model="excelSheet">
+          <el-tab-pane
+            v-for="sheet in excelResult.sheets"
+            :key="sheet.name"
+            :label="sheet.name"
+            :name="sheet.name"
+          >
+            <p v-if="sheet.summary" class="sub">{{ sheet.summary }}</p>
+            <p v-if="Number(sheet.totalRows) > sheet.rows.length" class="sub">
+              {{ t('emails.excelPreviewRows', { shown: sheet.rows.length, total: sheet.totalRows }) }}
+            </p>
+            <div class="excel-grid">
+              <table>
+                <thead><tr><th v-for="c in sheet.columns" :key="c">{{ c }}</th></tr></thead>
+                <tbody>
+                  <tr v-for="(row, ri) in sheet.rows" :key="ri">
+                    <td v-for="(cell, ci) in row.cells" :key="ci">{{ cell }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
+      </template>
+    </div>
+    <template #footer>
+      <el-button @click="excelOpen = false">{{ t('emails.close') }}</el-button>
+      <el-button v-if="excelResult" type="primary" @click="downloadExcel">
+        {{ t('emails.downloadExcel') }}
+      </el-button>
+    </template>
+  </el-dialog>
+
   <!-- Preview. Rendered from the storage origin rather than ours, so the file
        cannot reach this page's session even if it tries — and only images and
        PDFs are ever given a preview URL in the first place. -->
@@ -689,7 +764,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { useRoute, useRouter, type LocationQuery } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { del, download, get, http, mailHostRequest, post, saveBlob } from '../api'
+import { del, download, get, http, mailExcelRequest, mailHostRequest, post, saveBlob } from '../api'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
@@ -1747,9 +1822,11 @@ async function markAllRead() {
 // in says nothing about whether mail is still arriving.
 async function checkSyncHealth() {
   try {
-    const d = await get<{ account: { lastError: string } }>('/my-mail-account')
+    const d = await get<{ account: { lastError: string }; excelAvailable: boolean }>('/my-mail-account')
     syncError.value = d.account?.lastError ?? ''
+    excelAvailable.value = d.excelAvailable === true
   } catch {
+    excelAvailable.value = false
     /* the banner is a courtesy; its absence must not break the page */
   }
 }
@@ -1894,6 +1971,114 @@ function statusType(s: string): 'success' | 'warning' | 'danger' | 'info' {
 // time. Hue only — saturation and lightness are fixed, which is what keeps a
 // wall of avatars from turning into confetti.
 type MailFile = NonNullable<InboundMail['attachments']>[number]
+
+interface ExcelSheet {
+  name: string
+  summary: string
+  columns: string[]
+  rows: { cells: string[] }[]
+  totalRows: string
+}
+
+interface ExcelResult {
+  fileName: string
+  fileData: string
+  sheets: ExcelSheet[]
+  model: string
+}
+
+type ExcelSource =
+  | { kind: 'text'; mailId: string; text: string }
+  | { kind: 'attachment'; mailId: string; attachmentId: string }
+
+const excelMenu = reactive({ open: false, x: 0, y: 0, source: null as ExcelSource | null })
+const excelOpen = ref(false)
+const excelBusy = ref(false)
+const excelResult = ref<ExcelResult | null>(null)
+const excelSheet = ref('')
+const excelAvailable = ref(false)
+
+function positionExcelMenu(x: number, y: number, source: ExcelSource) {
+  excelMenu.x = Math.max(8, Math.min(x, window.innerWidth - 210))
+  excelMenu.y = Math.max(8, Math.min(y, window.innerHeight - 54))
+  excelMenu.source = source
+  excelMenu.open = true
+}
+
+function openTextExcelMenu(
+  event: { text: string; x: number; y: number },
+  mailId: string,
+) {
+  if (!excelAvailable.value || !mailId || !event.text.trim()) return
+  positionExcelMenu(event.x, event.y, { kind: 'text', mailId, text: event.text.trim() })
+}
+
+function openPlainTextExcelMenu(event: MouseEvent, mailId: string) {
+  if (!excelAvailable.value || !mailId) return
+  const text = window.getSelection()?.toString().trim() ?? ''
+  if (!text) return
+  event.preventDefault()
+  positionExcelMenu(event.clientX, event.clientY, { kind: 'text', mailId, text })
+}
+
+function openAttachmentExcelMenu(event: MouseEvent, file: MailFile) {
+  if (!excelAvailable.value || !openedInbound.value || !file.stored) return
+  event.preventDefault()
+  positionExcelMenu(event.clientX, event.clientY, {
+    kind: 'attachment', mailId: openedInbound.value.id, attachmentId: file.id,
+  })
+}
+
+function closeExcelMenu() {
+  excelMenu.open = false
+}
+window.addEventListener('click', closeExcelMenu)
+window.addEventListener('blur', closeExcelMenu)
+onUnmounted(() => {
+  window.removeEventListener('click', closeExcelMenu)
+  window.removeEventListener('blur', closeExcelMenu)
+})
+
+async function convertExcelSelection() {
+  const source = excelMenu.source
+  closeExcelMenu()
+  if (!source || excelBusy.value) return
+  excelResult.value = null
+  excelSheet.value = ''
+  excelOpen.value = true
+  excelBusy.value = true
+  try {
+    const body = source.kind === 'text'
+      ? { selectedText: source.text, locale: locale.value }
+      : { attachmentId: source.attachmentId, locale: locale.value }
+    const result = await post<ExcelResult>(
+      `/inbound-mails/${source.mailId}/excel`, body, mailExcelRequest,
+    )
+    excelResult.value = result
+    excelSheet.value = result.sheets[0]?.name ?? ''
+    ElMessage.success(t('emails.excelReady'))
+  } catch {
+    excelOpen.value = false
+  } finally {
+    excelBusy.value = false
+  }
+}
+
+function downloadExcel() {
+  const result = excelResult.value
+  if (!result) return
+  const raw = atob(result.fileData)
+  const bytes = new Uint8Array(raw.length)
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i)
+  const url = URL.createObjectURL(new Blob([bytes], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = result.fileName
+  link.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
 
 const previewOpen = ref(false)
 const previewing = ref<MailFile | null>(null)
@@ -2465,6 +2650,71 @@ async function doUnsuppress(row: Suppression) {
   height: 72vh;
   border: 1px solid var(--mail-divider);
   border-radius: var(--mail-radius);
+}
+
+.excel-context {
+  position: fixed;
+  z-index: 4000;
+  min-width: 190px;
+  padding: 5px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 7px;
+  background: var(--el-bg-color-overlay);
+  box-shadow: var(--el-box-shadow-light);
+}
+.excel-context button {
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--el-text-color-primary);
+  text-align: left;
+  cursor: pointer;
+}
+.excel-context button:hover,
+.excel-context button:focus-visible {
+  background: var(--el-fill-color-light);
+  color: var(--el-color-primary);
+  outline: none;
+}
+.excel-preview {
+  min-height: 180px;
+}
+.excel-model {
+  margin-bottom: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.excel-grid {
+  max-height: 58vh;
+  overflow: auto;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 5px;
+}
+.excel-grid table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.excel-grid th,
+.excel-grid td {
+  max-width: 360px;
+  padding: 7px 10px;
+  border-right: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: left;
+  vertical-align: top;
+}
+.excel-grid th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--el-fill-color-light);
+  font-weight: 600;
 }
 
 .in-html {

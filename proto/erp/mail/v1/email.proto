@@ -113,6 +113,11 @@ service EmailService {
   // Search across every folder, rather than inside the one being viewed.
   rpc SearchMail(SearchMailRequest) returns (SearchMailResponse);
   rpc GetInbound(GetInboundRequest) returns (GetInboundResponse);
+  // Turns either an explicitly selected part of this mail's text or one of
+  // its stored attachments into a real Excel workbook. Exactly one source is
+  // accepted. The source is resolved inside this service so a caller cannot
+  // make the model read another employee's mail or an arbitrary object key.
+  rpc ConvertInboundToExcel(ConvertInboundToExcelRequest) returns (ConvertInboundToExcelResponse);
   // One conversation, both directions, oldest first. Owner-scoped: the
   // caller sees only their own half of the world.
   rpc GetMailThread(GetMailThreadRequest) returns (GetMailThreadResponse);
@@ -523,6 +528,9 @@ message GetMyMailAccountRequest {}
 
 message GetMyMailAccountResponse {
   MailAccount account = 1;
+  // Whether this deployment has a model adapter configured for the explicit
+  // selected-text/attachment to Excel action.
+  bool excel_available = 2;
 }
 
 // Campaign is one bulk send, summarised. The counts are derived from the
@@ -1158,4 +1166,29 @@ message CancelScheduledResponse {
   int32 cancelled = 1;
   // Where the mail went so the caller can offer to open it.
   int64 draft_id = 2;
+}
+
+message ConvertInboundToExcelRequest {
+  int64 id = 1;
+  optional int64 attachment_id = 2;
+  optional string selected_text = 3;
+  // UI locale, used only for generated sheet names and summaries. Source
+  // values keep their original language and spelling.
+  string locale = 4;
+}
+
+message ExcelSheetPreview {
+  string name = 1;
+  string summary = 2;
+  repeated string columns = 3;
+  message Row { repeated string cells = 1; }
+  repeated Row rows = 4;
+  int64 total_rows = 5;
+}
+
+message ConvertInboundToExcelResponse {
+  string file_name = 1;
+  bytes file_data = 2;
+  repeated ExcelSheetPreview sheets = 3;
+  string model = 4;
 }

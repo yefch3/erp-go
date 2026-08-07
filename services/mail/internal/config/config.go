@@ -66,6 +66,13 @@ type Config struct {
 	// open tracking: a pixel pointing at localhost would tell the recipient's
 	// client to fetch from their own machine, which is worse than no pixel.
 	PublicBaseURL string
+
+	// Model-backed, user-triggered conversion of selected mail content. The
+	// key remains in this service; it is never sent to the browser or gateway.
+	OpenAIAPIKey  string
+	OpenAIBaseURL string
+	OpenAIModel   string
+	OpenAITimeout time.Duration
 }
 
 func Load() Config {
@@ -101,6 +108,10 @@ func Load() Config {
 		GoogleClientID:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
 		GoogleClientSecret: os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
 		PublicBaseURL:      os.Getenv("MAIL_PUBLIC_BASE_URL"),
+		OpenAIAPIKey:       os.Getenv("OPENAI_API_KEY"),
+		OpenAIBaseURL:      env("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+		OpenAIModel:        env("OPENAI_MODEL", "gpt-5.6-luna"),
+		OpenAITimeout:      envDuration("OPENAI_TIMEOUT", 2*time.Minute),
 	}
 }
 

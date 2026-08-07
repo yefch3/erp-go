@@ -667,7 +667,7 @@ func (h *Handler) GetMyMailAccount(ctx context.Context, _ *mailv1.GetMyMailAccou
 		Email: v.Email, Username: v.Username, HasSecret: v.HasSecret,
 		VerifiedAt: v.VerifiedAt, LastError: v.LastError, IsActive: v.IsActive,
 		AuthKind: v.AuthKind,
-	}}, nil
+	}, ExcelAvailable: h.svc.ExcelAvailable()}, nil
 }
 
 func (h *Handler) RecordOpen(ctx context.Context, req *mailv1.RecordOpenRequest) (*mailv1.RecordOpenResponse, error) {
@@ -755,6 +755,35 @@ func (h *Handler) GetInbound(ctx context.Context, req *mailv1.GetInboundRequest)
 		return nil, err
 	}
 	return &mailv1.GetInboundResponse{Mail: inboundToProto(v)}, nil
+}
+
+func (h *Handler) ConvertInboundToExcel(ctx context.Context, req *mailv1.ConvertInboundToExcelRequest) (*mailv1.ConvertInboundToExcelResponse, error) {
+	op := operator(ctx)
+	result, err := h.svc.ConvertInboundToExcel(
+		ctx, grpcx.TenantID(ctx), op.ID, req.GetId(),
+		req.AttachmentId, req.SelectedText, req.GetLocale(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	resp := &mailv1.ConvertInboundToExcelResponse{
+		FileName: result.FileName, FileData: result.Data, Model: result.Model,
+	}
+	for _, sheet := range result.Workbook.Sheets {
+		preview := &mailv1.ExcelSheetPreview{
+			Name: sheet.Name, Summary: sheet.Summary, Columns: sheet.Columns,
+			TotalRows: int64(len(sheet.Rows)),
+		}
+		rows := sheet.Rows
+		if len(rows) > 200 {
+			rows = rows[:200]
+		}
+		for _, row := range rows {
+			preview.Rows = append(preview.Rows, &mailv1.ExcelSheetPreview_Row{Cells: row})
+		}
+		resp.Sheets = append(resp.Sheets, preview)
+	}
+	return resp, nil
 }
 
 func (h *Handler) GetMailThread(ctx context.Context, req *mailv1.GetMailThreadRequest) (*mailv1.GetMailThreadResponse, error) {
