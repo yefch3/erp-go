@@ -38,6 +38,18 @@ type Employee struct {
 	EmailVerifiedAt pgtype.Timestamptz
 }
 
+type EmployeeInvitation struct {
+	ID         int64
+	TenantID   int64
+	EmployeeID int64
+	Email      string
+	TokenHash  []byte
+	ExpiresAt  pgtype.Timestamptz
+	UsedAt     pgtype.Timestamptz
+	InvitedBy  int64
+	CreatedAt  pgtype.Timestamptz
+}
+
 type EmployeeRole struct {
 	TenantID   int64
 	EmployeeID int64

@@ -22,6 +22,28 @@ export const http = axios.create({ baseURL: '/api', timeout: 15000 })
 // finishing on the server after the browser had called it failed.
 export const mailHostRequest: AxiosRequestConfig = { timeout: 120000 }
 
+// Opt out of the automatic error toast, for calls whose failure the caller
+// shows in place.
+//
+// Toasting every failure is right for the ordinary case and wrong for the
+// sign-in gate, which catches its own failures and prints them next to the
+// field that produced them. Both fired, so a wrong code was answered twice —
+// and, worse, an error a caller had deliberately swallowed still reached the
+// screen anyway.
+//
+// A config property rather than a header: this is a decision about our own UI
+// and has no business travelling to the server.
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    quiet?: boolean
+  }
+}
+export const quietErrors: AxiosRequestConfig = { quiet: true }
+
+function shouldToast(cfg?: AxiosRequestConfig): boolean {
+  return !cfg?.quiet
+}
+
 http.interceptors.request.use((cfg) => {
   const token = localStorage.getItem('token')
   if (token) cfg.headers.Authorization = `Bearer ${token}`
@@ -38,7 +60,9 @@ http.interceptors.response.use(
   (resp) => {
     const env = resp.data as Envelope<unknown>
     if (!env.success) {
-      ElMessage.error(env.message || i18n.global.t('common.requestFailed'))
+      if (shouldToast(resp.config)) {
+        ElMessage.error(env.message || i18n.global.t('common.requestFailed'))
+      }
       return Promise.reject(env)
     }
     return resp
@@ -58,7 +82,9 @@ http.interceptors.response.use(
       window.dispatchEvent(new CustomEvent('mail-locked'))
       return Promise.reject(env ?? err)
     }
-    ElMessage.error(env?.message || err.message || i18n.global.t('common.networkError'))
+    if (shouldToast(err.config)) {
+      ElMessage.error(env?.message || err.message || i18n.global.t('common.networkError'))
+    }
     return Promise.reject(env ?? err)
   },
 )

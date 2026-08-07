@@ -79,6 +79,23 @@ func (q *Queries) AddTenantDomain(ctx context.Context, arg AddTenantDomainParams
 	return err
 }
 
+const consumeInvitation = `-- name: ConsumeInvitation :execrows
+UPDATE employee_invitations
+SET used_at = now()
+WHERE id = $1::bigint AND used_at IS NULL
+`
+
+// The WHERE clause is the concurrency control: two requests arriving with the
+// same token race here, and exactly one updates a row. Checking "is it unused"
+// in Go and then updating would let both through.
+func (q *Queries) ConsumeInvitation(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, consumeInvitation, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countOtherHoldersOf = `-- name: CountOtherHoldersOf :one
 SELECT count(DISTINCT e.id) FROM employees e
 JOIN employee_roles er ON er.employee_id = e.id AND er.tenant_id = e.tenant_id
@@ -190,6 +207,47 @@ func (q *Queries) CreateEmployee(ctx context.Context, arg CreateEmployeeParams) 
 	return i, err
 }
 
+const createInvitation = `-- name: CreateInvitation :one
+INSERT INTO employee_invitations (tenant_id, employee_id, email, token_hash, expires_at, invited_by)
+VALUES (
+    $1::bigint,
+    $2::bigint,
+    lower($3::text),
+    $4,
+    $5,
+    $6::bigint
+)
+RETURNING id, expires_at
+`
+
+type CreateInvitationParams struct {
+	TenantID   int64
+	EmployeeID int64
+	Email      string
+	TokenHash  []byte
+	ExpiresAt  pgtype.Timestamptz
+	InvitedBy  int64
+}
+
+type CreateInvitationRow struct {
+	ID        int64
+	ExpiresAt pgtype.Timestamptz
+}
+
+func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationParams) (CreateInvitationRow, error) {
+	row := q.db.QueryRow(ctx, createInvitation,
+		arg.TenantID,
+		arg.EmployeeID,
+		arg.Email,
+		arg.TokenHash,
+		arg.ExpiresAt,
+		arg.InvitedBy,
+	)
+	var i CreateInvitationRow
+	err := row.Scan(&i.ID, &i.ExpiresAt)
+	return i, err
+}
+
 const createRole = `-- name: CreateRole :one
 INSERT INTO roles (tenant_id, code, name, description)
 VALUES ($1, $2, $3, $4)
@@ -278,6 +336,28 @@ type DeactivateEmployeeParams struct {
 
 func (q *Queries) DeactivateEmployee(ctx context.Context, arg DeactivateEmployeeParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deactivateEmployee, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteLiveInvitations = `-- name: DeleteLiveInvitations :execrows
+DELETE FROM employee_invitations
+WHERE tenant_id = $1::bigint
+  AND employee_id = $2::bigint
+  AND used_at IS NULL
+`
+
+type DeleteLiveInvitationsParams struct {
+	TenantID   int64
+	EmployeeID int64
+}
+
+// Kills whatever link this employee already holds, so re-inviting replaces
+// rather than accumulates. See the partial unique index for why.
+func (q *Queries) DeleteLiveInvitations(ctx context.Context, arg DeleteLiveInvitationsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteLiveInvitations, arg.TenantID, arg.EmployeeID)
 	if err != nil {
 		return 0, err
 	}
@@ -493,6 +573,55 @@ func (q *Queries) GetEmployee(ctx context.Context, arg GetEmployeeParams) (GetEm
 	return i, err
 }
 
+const getInvitationByToken = `-- name: GetInvitationByToken :one
+SELECT i.id, i.tenant_id, i.employee_id, i.email, i.expires_at, i.used_at,
+       e.name AS employee_name, e.status AS employee_status,
+       e.email AS current_email, e.email_verified_at,
+       t.status AS tenant_status
+FROM employee_invitations i
+JOIN employees e ON e.id = i.employee_id AND e.tenant_id = i.tenant_id
+JOIN tenants t ON t.id = i.tenant_id
+WHERE i.token_hash = $1
+`
+
+type GetInvitationByTokenRow struct {
+	ID              int64
+	TenantID        int64
+	EmployeeID      int64
+	Email           string
+	ExpiresAt       pgtype.Timestamptz
+	UsedAt          pgtype.Timestamptz
+	EmployeeName    string
+	EmployeeStatus  string
+	CurrentEmail    string
+	EmailVerifiedAt pgtype.Timestamptz
+	TenantStatus    string
+}
+
+// Everything activation needs in one round trip, including the employee's
+// current address so the service can refuse a link whose target was edited
+// after it was sent. Deliberately returns expired and used rows too: the page
+// has to tell somebody *why* their link does not work, and "expired" and
+// "already used" are different things to say.
+func (q *Queries) GetInvitationByToken(ctx context.Context, tokenHash []byte) (GetInvitationByTokenRow, error) {
+	row := q.db.QueryRow(ctx, getInvitationByToken, tokenHash)
+	var i GetInvitationByTokenRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.EmployeeID,
+		&i.Email,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.EmployeeName,
+		&i.EmployeeStatus,
+		&i.CurrentEmail,
+		&i.EmailVerifiedAt,
+		&i.TenantStatus,
+	)
+	return i, err
+}
+
 const getPermissionIDsByCodes = `-- name: GetPermissionIDsByCodes :many
 SELECT id FROM permissions WHERE code = ANY($1::text[])
 `
@@ -691,6 +820,29 @@ func (q *Queries) HasAnyUser(ctx context.Context, tenantID int64) (bool, error) 
 	var has_users bool
 	err := row.Scan(&has_users)
 	return has_users, err
+}
+
+const isTenantDomain = `-- name: IsTenantDomain :one
+SELECT EXISTS (
+    SELECT 1 FROM tenant_domains
+    WHERE domain = lower($1::text)
+      AND tenant_id = $2::bigint
+) AS owned
+`
+
+type IsTenantDomainParams struct {
+	Domain   string
+	TenantID int64
+}
+
+// Whether an address belongs to this company. Invitations are refused for
+// anything else: an address on a domain the company does not own could not be
+// read by the company, so a link sent there proves nothing about employment.
+func (q *Queries) IsTenantDomain(ctx context.Context, arg IsTenantDomainParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isTenantDomain, arg.Domain, arg.TenantID)
+	var owned bool
+	err := row.Scan(&owned)
+	return owned, err
 }
 
 const listDepartments = `-- name: ListDepartments :many
@@ -897,6 +1049,41 @@ func (q *Queries) ListEmployees(ctx context.Context, arg ListEmployeesParams) ([
 			&i.ManagerName,
 			&i.Total,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLiveInvitations = `-- name: ListLiveInvitations :many
+SELECT employee_id, expires_at
+FROM employee_invitations
+WHERE tenant_id = $1::bigint AND used_at IS NULL
+`
+
+type ListLiveInvitationsRow struct {
+	EmployeeID int64
+	ExpiresAt  pgtype.Timestamptz
+}
+
+// Powers the employee list's status column: who is waiting on a link, and
+// until when. One query for the whole page rather than one per row, the same
+// shape as ListEmployeeAccounts beside it — the alternative is an N+1 on a
+// screen whose entire job during a migration is to be scanned.
+func (q *Queries) ListLiveInvitations(ctx context.Context, tenantID int64) ([]ListLiveInvitationsRow, error) {
+	rows, err := q.db.Query(ctx, listLiveInvitations, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLiveInvitationsRow
+	for rows.Next() {
+		var i ListLiveInvitationsRow
+		if err := rows.Scan(&i.EmployeeID, &i.ExpiresAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1279,6 +1466,41 @@ func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) 
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const upsertUserPassword = `-- name: UpsertUserPassword :exec
+INSERT INTO users (tenant_id, employee_id, username, password_hash)
+VALUES (
+    $1::bigint,
+    $2::bigint,
+    $3::text,
+    $4::text
+)
+ON CONFLICT (employee_id) DO UPDATE
+SET password_hash = EXCLUDED.password_hash,
+    status        = 'ACTIVE',
+    failed_count  = 0,
+    updated_at    = now()
+`
+
+type UpsertUserPasswordParams struct {
+	TenantID     int64
+	EmployeeID   int64
+	Username     string
+	PasswordHash string
+}
+
+// Activation is the same operation whether or not an account already exists —
+// an employee imported with a login gets their password replaced, one imported
+// without gets a row. employee_id is UNIQUE, so the conflict target is exact.
+func (q *Queries) UpsertUserPassword(ctx context.Context, arg UpsertUserPasswordParams) error {
+	_, err := q.db.Exec(ctx, upsertUserPassword,
+		arg.TenantID,
+		arg.EmployeeID,
+		arg.Username,
+		arg.PasswordHash,
+	)
+	return err
 }
 
 const widestDataScope = `-- name: WidestDataScope :one

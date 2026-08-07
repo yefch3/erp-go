@@ -159,12 +159,18 @@ func (s *Server) verifyMailbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !resp.GetOk() {
-		// A rejection by the mail host is the case this budget exists for: it
-		// means our server just spent one bad login against Gmail or 263 on
-		// this caller's behalf.
-		if wait, spent := s.Throttle.Failed(r.Context(), throttleMailVerify, who); spent {
-			s.writeTooManyAttempts(w, wait)
-			return
+		// Charged only when the mail host is what refused, because that is the
+		// only failure that spent anything: one bad login against Gmail or 263
+		// on this caller's behalf. Everything the service decides on its own —
+		// no host configured, an undecryptable stored code, a missing address —
+		// never left our network, and billing it to the person meant an
+		// internal fault answered their next five attempts with 429 instead of
+		// the real reason.
+		if resp.GetHostRejected() {
+			if wait, spent := s.Throttle.Failed(r.Context(), throttleMailVerify, who); spent {
+				s.writeTooManyAttempts(w, wait)
+				return
+			}
 		}
 		// The mail host's own words: "wrong code" from Gmail beats any
 		// paraphrase we could write.

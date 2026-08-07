@@ -5,8 +5,18 @@ package erp.iam.v1;
 import "erp/common/v1/pagination.proto";
 
 // AuthService issues JWTs. The gateway is its only caller.
+//
+// Every RPC here is reachable without a session, because each one is a step
+// on the way to having one. That is what makes them the two routes worth
+// rate limiting and the two worth being most careful about what they reveal.
 service AuthService {
   rpc Login(LoginRequest) returns (LoginResponse);
+  // PeekInvitation reads an activation link without redeeming it, so the page
+  // can say the link expired before asking for a password rather than after.
+  rpc PeekInvitation(PeekInvitationRequest) returns (PeekInvitationResponse);
+  // ActivateAccount redeems the link: it sets the password the person chose
+  // and records that their company mailbox was proved to be theirs.
+  rpc ActivateAccount(ActivateAccountRequest) returns (ActivateAccountResponse);
 }
 
 // DirectoryService owns departments and employees.
@@ -36,6 +46,12 @@ service DirectoryService {
   rpc ListManagers(ListManagersRequest) returns (ListManagersResponse);
   // SetManager changes who someone reports to.
   rpc SetManager(SetManagerRequest) returns (SetManagerResponse);
+  // InviteEmployee mints a one-time activation link. It does not send it:
+  // every mail this system emits leaves through some employee's own bound
+  // mailbox, and iam has no mail client — the mail service already depends on
+  // iam, so the reverse edge would close a cycle. The gateway, which holds
+  // both, does the sending.
+  rpc InviteEmployee(InviteEmployeeRequest) returns (InviteEmployeeResponse);
 }
 
 // AccessService owns roles, permissions and the permission check other
@@ -104,6 +120,45 @@ message LoginResponse {
   repeated string permission_codes = 4;
 }
 
+message InviteEmployeeRequest {
+  int64 employee_id = 1;
+}
+
+message InviteEmployeeResponse {
+  // The token in the clear, on this response and nowhere else. Storage holds
+  // only its sha256, so this is the one moment it exists in a readable form —
+  // the caller must put it straight into the link and drop it.
+  string token = 1;
+  // Where the mail has to go, and who to. Returned rather than looked up
+  // again by the caller, so the address the link was minted for and the
+  // address it is mailed to cannot disagree.
+  string email = 2;
+  string name = 3;
+  int64 expires_at = 4;
+}
+
+message PeekInvitationRequest {
+  string token = 1;
+}
+
+message PeekInvitationResponse {
+  // Who the link is for, so somebody can see they opened the right one. Not a
+  // secret: whoever holds the token was sent it, at this address.
+  string name = 1;
+  string email = 2;
+}
+
+message ActivateAccountRequest {
+  string token = 1;
+  string password = 2;
+}
+
+message ActivateAccountResponse {
+  // The address that now logs in. Returned so the page can go straight to a
+  // filled-in login form instead of asking somebody to retype what we know.
+  string email = 1;
+}
+
 message Department {
   int64 id = 1;
   string code = 2;
@@ -144,6 +199,15 @@ message Employee {
   // Who this person reports to. Zero at the top of the tree.
   int64 manager_id = 12;
   string manager_name = 13;
+  // Whether the mailbox on this row was ever proved to be theirs, by opening
+  // a link sent to it. The employee list needs it to tell 未激活 from 已激活,
+  // which during a migration is the only question anybody is asking.
+  bool email_verified = 14;
+  // When this person's unopened invitation stops working; 0 means they have
+  // none. Together with email_verified this is the whole status: nothing
+  // pending and unverified means nobody has invited them yet, which is a
+  // different problem from an invitation sitting unread.
+  int64 invite_expires_at = 15;
 }
 
 message CreateEmployeeRequest {

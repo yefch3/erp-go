@@ -228,19 +228,49 @@ func (s *Service) SaveMailAccount(ctx context.Context, tenantID, employeeID int6
 // nil error means there is nothing to verify — no mailbox bound, or no live
 // mail channel — and the gate should open rather than lock somebody out of a
 // page that holds nothing of theirs.
+// hostRejected marks an error as the mail host's answer rather than ours.
+//
+// The two look identical to a caller — both are just a failed verification —
+// but only one of them spent a real login against Gmail or 263, and only that
+// one should cost the person an attempt. Everything this service decides on
+// its own (no address, no host configured, an undecryptable stored code)
+// never reached the host at all.
+type hostRejected struct{ err error }
+
+func (e hostRejected) Error() string { return e.err.Error() }
+func (e hostRejected) Unwrap() error { return e.err }
+
+// FromMailHost reports whether the host is what refused.
+func FromMailHost(err error) bool {
+	var t hostRejected
+	return errors.As(err, &t)
+}
+
 func (s *Service) VerifyMailSecret(ctx context.Context, tenantID, employeeID int64, email, secret string) (string, error) {
 	row, err := s.q.GetMyMailAccount(ctx, store.GetMyMailAccountParams{
 		TenantID: tenantID, EmployeeID: employeeID,
 	})
 	bound := err == nil && row.Email != ""
 
+	// An empty secret means "use what is already stored" — the Google door,
+	// which has no code to type.
+	//
+	// It used to be an empty *address* that meant this, and that broke the
+	// moment the address stopped being something callers supply: the gateway
+	// now always sends the address from the session, so the no-address form
+	// became unreachable and every post-OAuth verification fell through to
+	// the branch below and demanded a password nobody has. Binding worked and
+	// the gate stayed shut — a confusing pair, because the success and the
+	// failure were both true.
+	//
+	// The secret is the better signal anyway. It is the thing the person did
+	// or did not type, and it cannot be overloaded by a change somewhere else.
 	email = strings.TrimSpace(email)
-	if email == "" {
+	if strings.TrimSpace(secret) == "" {
 		return s.verifyBound(ctx, tenantID, employeeID, row, bound)
 	}
-
-	if strings.TrimSpace(secret) == "" {
-		return "", errors.New("请输入邮箱密码或授权码")
+	if email == "" {
+		return "", errors.New("请输入邮箱地址")
 	}
 	if s.mailbox == nil {
 		// No live mail channel (dev provider): nothing to verify against, so
@@ -271,7 +301,7 @@ func (s *Service) VerifyMailSecret(ctx context.Context, tenantID, employeeID int
 		IMAPPort:     int(host.ImapPort),
 		IMAPSecurity: host.ImapSecurity,
 	}); err != nil {
-		return "", err
+		return "", hostRejected{err}
 	}
 
 	// Proven live — only now may it become the stored binding.
@@ -291,11 +321,12 @@ func (s *Service) verifyBound(ctx context.Context, tenantID, employeeID int64, r
 	if s.mailbox == nil {
 		return "邮件通道未启用，无需验证", nil
 	}
-	// A password-bound mailbox has no stored proof worth trusting here; the
-	// sign-in form always sends the address, so reaching this without one is
-	// an API caller doing it wrong.
+	// A password-bound mailbox has no stored proof worth trusting here: a
+	// stored code proves only that it worked once. Reaching this with no
+	// secret typed means somebody pressed the password button with an empty
+	// field, and the answer says so.
 	if row.AuthKind != "OAUTH" {
-		return "", errors.New("请输入邮箱地址和密码/授权码")
+		return "", errors.New("请输入邮箱密码或授权码")
 	}
 
 	host, err := s.q.GetMailHost(ctx, tenantID)
@@ -320,7 +351,7 @@ func (s *Service) verifyBound(ctx context.Context, tenantID, employeeID int64, r
 		IMAPPort:     int(host.ImapPort),
 		IMAPSecurity: host.ImapSecurity,
 	}); err != nil {
-		return "", err
+		return "", hostRejected{err}
 	}
 	s.markVerified(ctx, tenantID, employeeID)
 	return "", nil
