@@ -36,7 +36,14 @@ const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 const loading = ref(false)
-const form = reactive({ email: '', password: '' })
+// Prefilled when arriving straight from activation, which is the one moment
+// somebody has just learned that their email is now their login name and has
+// no reason to know it yet. Harmless from any other source: an address in a
+// query string is not a credential, and a wrong one just fails to log in.
+const form = reactive({
+  email: typeof route.query.email === 'string' ? route.query.email : '',
+  password: '',
+})
 
 // Back to the page the session died on, when there is one. A relative path
 // only: ?redirect= comes from the address bar, and following an absolute URL

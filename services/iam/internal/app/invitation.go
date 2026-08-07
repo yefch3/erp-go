@@ -157,6 +157,24 @@ func (s *Service) InviteEmployee(ctx context.Context, tenantID, employeeID, invi
 	return Invitation{Token: token, Email: addr, Name: emp.Name, ExpiresAt: expires}, nil
 }
 
+// PendingInvitations maps employee id to when their unopened link dies.
+//
+// One query for the whole tenant rather than one per row, matching
+// ListAccounts beside it: the employee list renders both columns and an N+1
+// there would show up on the screen whose entire job during a migration is to
+// be scanned top to bottom.
+func (s *Service) PendingInvitations(ctx context.Context, tenantID int64) (map[int64]time.Time, error) {
+	rows, err := s.q.ListLiveInvitations(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]time.Time, len(rows))
+	for _, r := range rows {
+		out[r.EmployeeID] = r.ExpiresAt.Time
+	}
+	return out, nil
+}
+
 // InvitationTarget is what an activation page may know before anybody has
 // proved anything: who the link is for, so they can see they opened the right
 // one. Nothing here is a secret — whoever holds the token was sent it.

@@ -113,19 +113,30 @@ func (h *Handler) ListEmployees(ctx context.Context, req *iamv1.ListEmployeesReq
 	if err != nil {
 		return nil, err
 	}
-	// One lookup for the whole page instead of a query per row.
+	// One lookup each for the whole page instead of a query per row. Both
+	// columns are read on every render of this screen.
 	accounts, err := h.svc.ListAccounts(ctx, grpcx.TenantID(ctx))
+	if err != nil {
+		return nil, err
+	}
+	pending, err := h.svc.PendingInvitations(ctx, grpcx.TenantID(ctx))
 	if err != nil {
 		return nil, err
 	}
 	out := make([]*iamv1.Employee, len(rows))
 	for i, r := range rows {
+		var inviteExpires int64
+		if due, waiting := pending[r.ID]; waiting {
+			inviteExpires = due.Unix()
+		}
 		out[i] = &iamv1.Employee{
 			Id: r.ID, Code: r.Code, Name: r.Name,
 			DepartmentId: r.DepartmentID, DepartmentName: r.DepartmentName,
 			Position: r.Position, Email: r.Email, Phone: r.Phone, Status: r.Status,
 			Username:  accounts[r.ID],
 			ManagerId: deref(r.ManagerID), ManagerName: r.ManagerName,
+			EmailVerified:   r.EmailVerifiedAt.Valid,
+			InviteExpiresAt: inviteExpires,
 		}
 	}
 	if page < 1 {
@@ -282,6 +293,7 @@ func employeeRowToProto(e store.GetEmployeeRow, roleIDs []int64) *iamv1.Employee
 		DepartmentId: e.DepartmentID, DepartmentName: e.DepartmentName,
 		Position: e.Position, Email: e.Email, Phone: e.Phone, Status: e.Status,
 		RoleIds: roleIDs, ManagerId: deref(e.ManagerID), ManagerName: e.ManagerName,
+		EmailVerified: e.EmailVerifiedAt.Valid,
 	}
 }
 

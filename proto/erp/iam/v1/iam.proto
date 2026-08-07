@@ -199,6 +199,15 @@ message Employee {
   // Who this person reports to. Zero at the top of the tree.
   int64 manager_id = 12;
   string manager_name = 13;
+  // Whether the mailbox on this row was ever proved to be theirs, by opening
+  // a link sent to it. The employee list needs it to tell 未激活 from 已激活,
+  // which during a migration is the only question anybody is asking.
+  bool email_verified = 14;
+  // When this person's unopened invitation stops working; 0 means they have
+  // none. Together with email_verified this is the whole status: nothing
+  // pending and unverified means nobody has invited them yet, which is a
+  // different problem from an invitation sitting unread.
+  int64 invite_expires_at = 15;
 }
 
 message CreateEmployeeRequest {

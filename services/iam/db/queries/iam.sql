@@ -341,11 +341,11 @@ SELECT EXISTS (
       AND tenant_id = sqlc.arg(tenant_id)::bigint
 ) AS owned;
 
--- name: GetLiveInvitation :one
--- Powers the employee list's status column: is this person waiting on a link,
--- and does it still work.
-SELECT id, email, expires_at, created_at, invited_by
+-- name: ListLiveInvitations :many
+-- Powers the employee list's status column: who is waiting on a link, and
+-- until when. One query for the whole page rather than one per row, the same
+-- shape as ListEmployeeAccounts beside it — the alternative is an N+1 on a
+-- screen whose entire job during a migration is to be scanned.
+SELECT employee_id, expires_at
 FROM employee_invitations
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint
-  AND employee_id = sqlc.arg(employee_id)::bigint
-  AND used_at IS NULL;
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND used_at IS NULL;

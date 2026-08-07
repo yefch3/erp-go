@@ -622,42 +622,6 @@ func (q *Queries) GetInvitationByToken(ctx context.Context, tokenHash []byte) (G
 	return i, err
 }
 
-const getLiveInvitation = `-- name: GetLiveInvitation :one
-SELECT id, email, expires_at, created_at, invited_by
-FROM employee_invitations
-WHERE tenant_id = $1::bigint
-  AND employee_id = $2::bigint
-  AND used_at IS NULL
-`
-
-type GetLiveInvitationParams struct {
-	TenantID   int64
-	EmployeeID int64
-}
-
-type GetLiveInvitationRow struct {
-	ID        int64
-	Email     string
-	ExpiresAt pgtype.Timestamptz
-	CreatedAt pgtype.Timestamptz
-	InvitedBy int64
-}
-
-// Powers the employee list's status column: is this person waiting on a link,
-// and does it still work.
-func (q *Queries) GetLiveInvitation(ctx context.Context, arg GetLiveInvitationParams) (GetLiveInvitationRow, error) {
-	row := q.db.QueryRow(ctx, getLiveInvitation, arg.TenantID, arg.EmployeeID)
-	var i GetLiveInvitationRow
-	err := row.Scan(
-		&i.ID,
-		&i.Email,
-		&i.ExpiresAt,
-		&i.CreatedAt,
-		&i.InvitedBy,
-	)
-	return i, err
-}
-
 const getPermissionIDsByCodes = `-- name: GetPermissionIDsByCodes :many
 SELECT id FROM permissions WHERE code = ANY($1::text[])
 `
@@ -1085,6 +1049,41 @@ func (q *Queries) ListEmployees(ctx context.Context, arg ListEmployeesParams) ([
 			&i.ManagerName,
 			&i.Total,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLiveInvitations = `-- name: ListLiveInvitations :many
+SELECT employee_id, expires_at
+FROM employee_invitations
+WHERE tenant_id = $1::bigint AND used_at IS NULL
+`
+
+type ListLiveInvitationsRow struct {
+	EmployeeID int64
+	ExpiresAt  pgtype.Timestamptz
+}
+
+// Powers the employee list's status column: who is waiting on a link, and
+// until when. One query for the whole page rather than one per row, the same
+// shape as ListEmployeeAccounts beside it — the alternative is an N+1 on a
+// screen whose entire job during a migration is to be scanned.
+func (q *Queries) ListLiveInvitations(ctx context.Context, tenantID int64) ([]ListLiveInvitationsRow, error) {
+	rows, err := q.db.Query(ctx, listLiveInvitations, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLiveInvitationsRow
+	for rows.Next() {
+		var i ListLiveInvitationsRow
+		if err := rows.Scan(&i.EmployeeID, &i.ExpiresAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

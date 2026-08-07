@@ -3,6 +3,8 @@ package app
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -48,5 +50,20 @@ func TestOnlyTheMailHostsRefusalIsMarkedAsSuch(t *testing.T) {
 		if FromMailHost(ours) {
 			t.Errorf("%v was billed to the caller, but it never reached the host", ours)
 		}
+	}
+}
+
+// A Google-signed-in mailbox has a credential; it is just in the other column.
+//
+// The invitation route reads this flag to decide whether an administrator can
+// send at all, so getting it wrong here does not misreport a settings page —
+// it refuses every invitation in a company that signed in with Google.
+func TestAGoogleMailboxCountsAsHavingACredential(t *testing.T) {
+	src, err := os.ReadFile("mailsettings.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "len(sec.OauthRefreshEnc) > 0") {
+		t.Fatal("HasSecret ignores the OAuth credential column")
 	}
 }

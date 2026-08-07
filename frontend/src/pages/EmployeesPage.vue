@@ -35,6 +35,20 @@
             <span v-else class="sub">{{ t('employees.noAccount') }}</span>
           </template>
         </el-table-column>
+        <!-- Three states, and the middle one is the point. During a migration
+             the useful question is not "is everyone in" but "who is stuck and
+             where", and 未邀请 and 待激活 are stuck for opposite reasons. -->
+        <el-table-column :label="t('employees.activation')" width="130">
+          <template #default="{ row }">
+            <el-tag v-if="row.emailVerified" type="success" size="small">
+              {{ t('employees.activated') }}
+            </el-tag>
+            <el-tag v-else-if="Number(row.inviteExpiresAt)" type="warning" size="small">
+              {{ t('employees.awaitingActivation') }}
+            </el-tag>
+            <span v-else class="sub">{{ t('employees.notInvited') }}</span>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('common.status')" width="90">
           <template #default="{ row }">
             <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'" size="small">
@@ -42,9 +56,21 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column v-if="canWrite" :label="t('common.actions')" width="270" fixed="right">
+        <el-table-column v-if="canWrite" :label="t('common.actions')" width="330" fixed="right">
           <template #default="{ row }">
             <el-button v-if="canGrant" link type="primary" @click="openRoles(row)">{{ t('employees.roles') }}</el-button>
+            <!-- Only for somebody not yet activated. Once they are, the same
+                 mail would be a password reset wearing an invitation's
+                 clothes, and 重置密码 beside it already says what it does. -->
+            <el-button
+              v-if="!row.emailVerified && row.status === 'ACTIVE'"
+              link
+              type="primary"
+              :loading="inviting === row.id"
+              @click="invite(row)"
+            >
+              {{ Number(row.inviteExpiresAt) ? t('employees.reinvite') : t('employees.invite') }}
+            </el-button>
             <el-button v-if="!row.username" link type="primary" @click="openAccount(row)">{{ t('employees.openAccount') }}</el-button>
             <el-button v-else link type="primary" @click="openReset(row)">{{ t('employees.resetPassword') }}</el-button>
             <el-button v-if="row.status === 'ACTIVE'" link type="danger" @click="deactivate(row)">
@@ -169,6 +195,10 @@ interface Employee {
   roleIds: string[]
   managerId: string
   managerName: string
+  emailVerified: boolean
+  // Unix seconds, as a string: int64 over JSON. 0 or absent means no
+  // invitation is outstanding.
+  inviteExpiresAt: string
 }
 
 const EMPTY_FORM = {
@@ -193,6 +223,10 @@ const keyword = ref('')
 const departmentId = ref('')
 const loading = ref(false)
 const saving = ref(false)
+// Which row's invitation is in flight, not a plain boolean: the spinner
+// belongs on the button that was clicked, and a shared flag would spin all of
+// them.
+const inviting = ref('')
 const createOpen = ref(false)
 const rolesOpen = ref(false)
 const passwordOpen = ref(false)
@@ -308,6 +342,28 @@ async function savePassword() {
     load()
   } finally {
     saving.value = false
+  }
+}
+
+// Sending the invitation. Confirmed first because it puts a mail in somebody
+// else's inbox from this administrator's own address — an action with a
+// visible outside, not a form save.
+async function invite(row: Employee) {
+  const again = Number(row.inviteExpiresAt) > 0
+  await ElMessageBox.confirm(
+    t(again ? 'employees.confirmReinvite' : 'employees.confirmInvite', {
+      name: row.name,
+      email: row.email,
+    }),
+    t(again ? 'employees.reinvite' : 'employees.invite'),
+  )
+  inviting.value = row.id
+  try {
+    await post(`/employees/${row.id}/invite`, {})
+    ElMessage.success(t('employees.invited', { email: row.email }))
+    load()
+  } finally {
+    inviting.value = ''
   }
 }
 
