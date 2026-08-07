@@ -52,6 +52,11 @@ service DirectoryService {
   // iam, so the reverse edge would close a cycle. The gateway, which holds
   // both, does the sending.
   rpc InviteEmployee(InviteEmployeeRequest) returns (InviteEmployeeResponse);
+  // ImportEmployees takes a whole pasted block. dry_run makes it a preview:
+  // same validation, nothing written. The two share one code path on purpose
+  // — a preview computed by a second, simpler validator eventually lies, and
+  // it lies at the moment somebody has already decided to trust it.
+  rpc ImportEmployees(ImportEmployeesRequest) returns (ImportEmployeesResponse);
 }
 
 // AccessService owns roles, permissions and the permission check other
@@ -135,6 +140,50 @@ message InviteEmployeeResponse {
   string email = 2;
   string name = 3;
   int64 expires_at = 4;
+}
+
+// ImportEmployeeRow is one pasted line, untouched. Every field arrives as
+// text because that is what a clipboard holds; making sense of it is the
+// service's job, and doing it there means the preview and the commit cannot
+// disagree about what a row means.
+message ImportEmployeeRow {
+  string code = 1;
+  string name = 2;
+  // Matched against a department's name or its code — a spreadsheet column
+  // headed 部门 holds whichever the person who made it had to hand.
+  string department = 3;
+  string position = 4;
+  string email = 5;
+  string phone = 6;
+  // The manager's 工号, which may appear further down the same block: org
+  // charts are usually written top-down but pasted in whatever order.
+  string manager_code = 7;
+}
+
+message ImportEmployeesRequest {
+  repeated ImportEmployeeRow rows = 1;
+  bool dry_run = 2;
+}
+
+// ImportRowVerdict is what happened, or would happen, to one line. The line
+// number is the pasted one, so a reason can be read beside the row that
+// caused it rather than hunted for.
+message ImportRowVerdict {
+  int32 line = 1;
+  string code = 2;
+  string name = 3;
+  bool ok = 4;
+  string reason = 5;
+}
+
+message ImportEmployeesResponse {
+  repeated ImportRowVerdict verdicts = 1;
+  int32 ready = 2;
+  int32 blocked = 3;
+  // How many rows were actually written. Zero on a preview, and zero on a
+  // real import that found anything wrong — the batch is all-or-nothing,
+  // because a half-applied import leaves nobody able to tell which half.
+  int32 imported = 4;
 }
 
 message PeekInvitationRequest {

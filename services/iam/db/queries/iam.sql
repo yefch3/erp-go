@@ -349,3 +349,26 @@ SELECT EXISTS (
 SELECT employee_id, expires_at
 FROM employee_invitations
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND used_at IS NULL;
+
+-- name: ListEmployeeIdentity :many
+-- Every code and address already taken in this company, for the import to
+-- check a whole pasted block against in one round trip rather than a query
+-- per row. A company has hundreds of employees, not millions; the cost of
+-- reading them all is far below the cost of an N+1 on a screen somebody is
+-- watching while their 200-row paste validates.
+SELECT id, code, lower(email)::text AS email
+FROM employees
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint;
+
+-- name: ListTenantDomains :many
+-- The mail domains this company owns. The import refuses an address outside
+-- them, because one can never be activated — the link would go to a mailbox
+-- the company cannot read — and importing it only defers that discovery to
+-- the day somebody wonders why forty people never got invited.
+SELECT domain FROM tenant_domains
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+ORDER BY domain;
+
+-- name: GetEmployeeByCode :one
+SELECT id, name FROM employees
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND code = sqlc.arg(code)::text;
