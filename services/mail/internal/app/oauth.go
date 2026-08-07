@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/services/mail/internal/store"
 )
 
@@ -41,7 +42,7 @@ type googleTokenResponse struct {
 // The person just proved who they are on Google's own page; what comes back
 // is a refresh token — a standing, revocable grant to act on their mailbox.
 // Their password was typed at Google and never existed here.
-func (s *Service) CompleteGoogleOAuth(ctx context.Context, tenantID, employeeID int64, code, redirectURI string) (string, error) {
+func (s *Service) CompleteGoogleOAuth(ctx context.Context, tenantID, employeeID int64, code, redirectURI, expectEmail string) (string, error) {
 	if s.oauth.ClientID == "" || s.oauth.ClientSecret == "" {
 		return "", errors.New("Google OAuth 未配置（缺少 GOOGLE_OAUTH_CLIENT_ID / SECRET）")
 	}
@@ -67,6 +68,18 @@ func (s *Service) CompleteGoogleOAuth(ctx context.Context, tenantID, employeeID 
 	email := emailFromIDToken(tok.IDToken)
 	if email == "" {
 		return "", errors.New("无法从 Google 的应答中读出邮箱地址")
+	}
+	// The mailbox bound is the one they signed in as, on this door too.
+	//
+	// Checked here rather than at the gateway because by the time the gateway
+	// sees an answer the credential would already be stored — and refusing
+	// after storing is not refusing. Google's account chooser appears on every
+	// sign-in by design, which makes picking the wrong account easy; this is
+	// what makes picking it harmless.
+	if want := strings.ToLower(strings.TrimSpace(expectEmail)); want != "" &&
+		!strings.EqualFold(want, email) {
+		return "", apierr.Invalid("MAIL_OAUTH_WRONG_ACCOUNT",
+			fmt.Sprintf("你在 Google 授权的是 %s，但你登录 ERP 用的是 %s。请用同一个账号授权。", email, want))
 	}
 
 	// Bind. Rebinding to a different address makes every stored message and

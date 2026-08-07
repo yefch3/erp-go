@@ -385,6 +385,14 @@ message CompleteGoogleOAuthRequest {
   // Must byte-match the redirect_uri the auth URL carried, or Google
   // refuses the exchange.
   string redirect_uri = 2;
+  // The address this person signed in to the ERP with. The grant is refused
+  // unless Google says it belongs to this same address.
+  //
+  // The password door already takes the address from the session rather than
+  // from the caller. Without this the Google door was the way around that:
+  // authorise any Google account at Google's own page and it would be bound,
+  // whoever you signed in as.
+  string expect_email = 3;
 }
 
 message CompleteGoogleOAuthResponse {

@@ -1,46 +1,46 @@
 <template>
-  <!-- The mailbox sign-in. An ERP login says who signed in this morning; this
-       asks the person now at the keyboard to prove they own the mailbox — by
-       Google's own login page, or by the mail host's password / app code.
-       Both doors are on screen at once; whichever the mailbox supports works.
-       This is also where a mailbox gets bound in the first place: signing in
-       with an address is what binds it. -->
+  <!-- The mailbox sign-in, and nothing else.
+       
+       There used to be a notion of "binding" here, with a bound state, an
+       "enter" button for it and a separate "switch account" link beside. All
+       of that described bookkeeping rather than anything the person wanted:
+       which address gets used was settled the moment they logged in to the
+       ERP, so there was never a choice to present. What is left is the only
+       question there ever was — are you signed in to your mailbox or not.
+
+       Two doors, because two kinds of mail host exist. Google's own login
+       page, or the password / client authorisation code that 263 and the rest
+       want. Neither asks for an address: it comes from the session. -->
   <div class="gate">
     <el-card shadow="never" class="gate-card">
       <div class="gate-icon">✉️</div>
       <h3 class="gate-title">{{ t('mailGate.title') }}</h3>
       <p class="gate-text">{{ t('mailGate.explain') }}</p>
-      <p v-if="account.email" class="gate-account">
-        {{ t('mailGate.boundAs', { email: account.email }) }}
-        <el-tag v-if="isOAuthBound" size="small" type="success" effect="plain">
-          {{ t('mailGate.googleTag') }}
-        </el-tag>
-      </p>
+      <div class="gate-whoami">{{ signedInAs }}</div>
 
-      <!-- The Google door. For a Google-bound mailbox this verifies the stored
-           grant (nothing to type); otherwise it leaves for Google's login
-           page, where the password is typed and never exists here. -->
-      <button class="google-btn" type="button" :disabled="googleBusy" @click="googleAction">
+      <!-- One Google door, and it always goes to Google.
+           
+           It used to branch: a stored grant was verified silently, and getting
+           to Google's page needed the separate link below. Two controls for
+           what a person experiences as one act, and the silent path could
+           reuse whichever account the browser was signed in to. Now every
+           click is a fresh authorisation with the account chooser shown — so
+           you can always see which mailbox you are opening. -->
+      <button class="google-btn" type="button" :disabled="googleBusy" @click="startOAuth">
         <svg class="g-logo" viewBox="0 0 48 48" width="18" height="18" aria-hidden="true">
           <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
           <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
           <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
           <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
         </svg>
-        <span>{{ isOAuthBound ? t('mailGate.enterGoogle') : t('mailGate.signInGoogle') }}</span>
+        <span>{{ t('mailGate.signInGoogle') }}</span>
       </button>
-      <el-button v-if="isOAuthBound" link type="primary" class="switch-google" @click="startOAuth">
-        {{ t('mailGate.switchGoogle') }}
-      </el-button>
 
       <el-divider class="gate-or">{{ t('mailGate.or') }}</el-divider>
 
-      <!-- The traditional door. There is no address field, and that is the
-           point: the mailbox somebody binds is the one they signed in as, so
-           the address comes from their session and is shown rather than asked
-           for. Only the secret is typed — whatever the host honours in the
-           password slot, the account password or a client authorisation code. -->
-      <div class="gate-whoami">{{ signedInAs }}</div>
+      <!-- The other door: whatever the host honours in the password slot, the
+           account password or a client authorisation code. One field serves
+           both; the host decides which it accepts. -->
       <el-input
         v-model="secret"
         type="password"
@@ -55,9 +55,7 @@
         {{ t('mailGate.signInEmail') }}
       </el-button>
 
-      <p class="gate-hint">
-        {{ isOAuthBound ? t('mailGate.hintOAuth') : t('mailGate.hint') }}
-      </p>
+      <p class="gate-hint">{{ t('mailGate.hint') }}</p>
 
       <div class="gate-foot">
         <el-button v-if="!account.email" link class="foot-link" @click="skipUnbound">
@@ -87,18 +85,18 @@ const auth = useAuthStore()
 const canEditHost = auth.can('iam:role:write')
 
 const account = reactive({ email: '', username: '', authKind: '' })
-// What the gate will bind: the address this person signed in with. Shown, not
-// asked for — there is no field to disagree with, and the server ignores any
-// address a caller sends anyway.
+// Which mailbox this is about. Stated, never asked: the address was settled
+// when they logged in to the ERP, and both doors take it from the session —
+// the password one ignores any address a caller sends, and the Google one
+// refuses a grant for a different account.
 const signedInAs = computed(() =>
-  auth.employeeEmail ? t('mailGate.willBind', { email: auth.employeeEmail }) : '',
+  auth.employeeEmail ? t('mailGate.forMailbox', { email: auth.employeeEmail }) : '',
 )
 const secret = ref('')
 const googleBusy = ref(false)
 const emailBusy = ref(false)
 const error = ref('')
 
-const isOAuthBound = computed(() => account.authKind === 'OAUTH' && !!account.email)
 
 onMounted(async () => {
   // Show whose mailbox is being asked about — typing a code into an
@@ -115,10 +113,6 @@ onMounted(async () => {
   }
 })
 
-function googleAction() {
-  if (isOAuthBound.value) return verifyOAuth()
-  return startOAuth()
-}
 
 // A full-page departure, not a popup: popups get blocked, and Google's page
 // is exactly where the person should see themselves go.
@@ -132,24 +126,6 @@ async function startOAuth() {
   }
 }
 
-// Nothing to type for a Google binding: verifying means proving the stored
-// grant is still alive by authenticating with it. A dead grant — revoked, a
-// password change (Google drops Gmail-scope grants on those), or the 7-day
-// testing-mode expiry — cannot be fixed on this side of the screen, so
-// instead of an error next to a second button, the click itself continues to
-// Google's login page. Valid grant: straight in. Dead grant: sign in again.
-async function verifyOAuth() {
-  googleBusy.value = true
-  error.value = ''
-  try {
-    await verify('')
-  } catch {
-    ElMessage.warning(t('mailGate.reauth'))
-    await startOAuth()
-  } finally {
-    googleBusy.value = false
-  }
-}
 
 // Sign-in with the address and code is also what binds the mailbox. The
 // server verifies the typed pair by a live login FIRST and stores it only on

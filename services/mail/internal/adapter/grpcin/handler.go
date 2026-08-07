@@ -839,7 +839,7 @@ func (h *Handler) VerifyMailAccess(ctx context.Context, req *mailv1.VerifyMailAc
 func (h *Handler) CompleteGoogleOAuth(ctx context.Context, req *mailv1.CompleteGoogleOAuthRequest) (*mailv1.CompleteGoogleOAuthResponse, error) {
 	op := operator(ctx)
 	email, err := h.svc.CompleteGoogleOAuth(ctx, grpcx.TenantID(ctx), op.ID,
-		req.GetCode(), req.GetRedirectUri())
+		req.GetCode(), req.GetRedirectUri(), req.GetExpectEmail())
 	if err != nil {
 		return nil, err
 	}
