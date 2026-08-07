@@ -78,6 +78,11 @@ func (s *Server) Router() http.Handler {
 	// user as "network error" instead of a readable failure.
 	r.Use(s.recoverPanics)
 	r.Post("/api/auth/login", s.login)
+	// Activation. Login-free of necessity: whoever holds the link has no
+	// account yet, and getting one is the point. The token in it is the whole
+	// of their claim — see activateAccount for why that is enough.
+	r.Get("/api/auth/invitation", s.peekInvitation)
+	r.Post("/api/auth/activate", s.activateAccount)
 	// Images embedded in sent mail. Public by necessity: the fetcher is the
 	// recipient's mail client, which has no session. See serveMailImage.
 	r.Get("/api/public/mail-images/{token}", s.serveMailImage)
@@ -111,6 +116,9 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/activate", s.activateEmployee)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/account", s.openAccount)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/password", s.resetPassword)
+		// Sending the invitation is employee administration, so it carries the
+		// same permission as creating the row it invites.
+		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/invite", s.inviteEmployee)
 		r.With(s.perm("iam:role:write")).Post("/api/employees/{id}/roles", s.assignRoles)
 		// The reporting line is org-chart maintenance, not access control,
 		// so it sits with the rest of employee editing.

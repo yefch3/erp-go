@@ -39,6 +39,26 @@ func (h *Handler) Login(ctx context.Context, req *iamv1.LoginRequest) (*iamv1.Lo
 	}, nil
 }
 
+// PeekInvitation and ActivateAccount take no tenant and no operator, and that
+// is the point: the caller has neither yet. The token is the whole of their
+// claim, and it carries which company and which employee inside it.
+
+func (h *Handler) PeekInvitation(ctx context.Context, req *iamv1.PeekInvitationRequest) (*iamv1.PeekInvitationResponse, error) {
+	t, err := h.svc.PeekInvitation(ctx, req.GetToken())
+	if err != nil {
+		return nil, err
+	}
+	return &iamv1.PeekInvitationResponse{Name: t.Name, Email: t.Email}, nil
+}
+
+func (h *Handler) ActivateAccount(ctx context.Context, req *iamv1.ActivateAccountRequest) (*iamv1.ActivateAccountResponse, error) {
+	email, err := h.svc.ActivateAccount(ctx, req.GetToken(), req.GetPassword())
+	if err != nil {
+		return nil, err
+	}
+	return &iamv1.ActivateAccountResponse{Email: email}, nil
+}
+
 // ---------------------------------------------------------------- directory
 
 func (h *Handler) CreateDepartment(ctx context.Context, req *iamv1.CreateDepartmentRequest) (*iamv1.CreateDepartmentResponse, error) {
@@ -278,6 +298,24 @@ func (h *Handler) ListManagers(ctx context.Context, req *iamv1.ListManagersReque
 		return nil, err
 	}
 	return &iamv1.ListManagersResponse{EmployeeIds: ids}, nil
+}
+
+func (h *Handler) InviteEmployee(ctx context.Context, req *iamv1.InviteEmployeeRequest) (*iamv1.InviteEmployeeResponse, error) {
+	// Who invited whom is recorded, so the operator is required rather than
+	// defaulted: an invitation with nobody behind it is not a thing that can
+	// happen — the mail has to leave from somebody's mailbox.
+	op, ok := grpcx.OperatorFromContext(ctx)
+	if !ok || op.EmployeeID == 0 {
+		return nil, apierr.Unauthorized("IAM_ACTOR_REQUIRED", "缺少操作人身份")
+	}
+	inv, err := h.svc.InviteEmployee(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(), op.EmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	return &iamv1.InviteEmployeeResponse{
+		Token: inv.Token, Email: inv.Email, Name: inv.Name,
+		ExpiresAt: inv.ExpiresAt.Unix(),
+	}, nil
 }
 
 func (h *Handler) SetManager(ctx context.Context, req *iamv1.SetManagerRequest) (*iamv1.SetManagerResponse, error) {
