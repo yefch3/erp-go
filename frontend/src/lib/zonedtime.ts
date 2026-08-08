@@ -98,3 +98,75 @@ export function offsetLabel(zone: string, at = new Date()): string {
   const m = abs % 60
   return `UTC${sign}${h}${m ? ':' + String(m).padStart(2, '0') : ''}`
 }
+
+/** `+08:00`, `-04:30` — the offset shaped as the exported document writes it. */
+function offsetSuffix(zone: string, at: Date): string {
+  const mins = Math.round(offsetAt(at, zone) / 60000)
+  const sign = mins < 0 ? '-' : '+'
+  const abs = Math.abs(mins)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
+}
+
+// A server timestamp is an instant, and the string carrying it is UTC. Slicing
+// the first sixteen characters off it reads as a wall clock but is nobody's:
+// it is the customer's mail landing at 08:00 when the office saw it at 16:00.
+// Everything below resolves the instant against the reader's own zone first.
+
+/** The instant a server timestamp names, or null if it does not name one. */
+function instantOf(v: string): Date | null {
+  const at = new Date(v)
+  return Number.isNaN(at.getTime()) ? null : at
+}
+
+/**
+ * `2026-03-01 16:00` on the reader's clock — the default stamp for mail rows,
+ * detail panes and audit tables.
+ *
+ * An unparseable value falls back to its own leading characters rather than
+ * an empty cell, so a malformed timestamp still shows what the server sent.
+ */
+export function shortTime(v: string): string {
+  if (!v) return ''
+  const at = instantOf(v)
+  if (!at) return v.replace('T', ' ').replace('Z', '').slice(0, 16)
+  return wallClockIn(at, localZone())
+}
+
+/**
+ * `2026-03-01 16:00 +08:00` — the same moment, saying which clock it is on.
+ *
+ * Matches the exported conversation's own stamp (exportdoc.go). On screen the
+ * offset is hover detail: the reader is already standing in that zone, so the
+ * cell stays short and the precision waits behind a tooltip.
+ */
+export function zonedStamp(v: string): string {
+  if (!v) return ''
+  const at = instantOf(v)
+  if (!at) return shortTime(v)
+  const zone = localZone()
+  return `${wallClockIn(at, zone)} ${offsetSuffix(zone, at)}`
+}
+
+/**
+ * The date as a mail list wants it: today needs only the hour, this year needs
+ * the day, older mail needs the year. Gmail's rule, and it is the right one —
+ * a column of full timestamps is a column nobody reads.
+ */
+export function listTime(v: string): string {
+  if (!v) return ''
+  const at = instantOf(v)
+  if (!at) return v.slice(0, 16).replace('T', ' ')
+  const now = new Date()
+  const sameDay =
+    at.getFullYear() === now.getFullYear() &&
+    at.getMonth() === now.getMonth() &&
+    at.getDate() === now.getDate()
+  if (sameDay) {
+    return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(at)
+  }
+  if (at.getFullYear() === now.getFullYear()) {
+    return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(at)
+  }
+  return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' }).format(at)
+}

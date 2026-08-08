@@ -32,7 +32,7 @@
         </el-table-column>
         <el-table-column :label="t('teamMail.lastSent')" width="160">
           <template #default="{ row }">
-            <span class="sub">{{ shortTime(row.lastSentAt) }}</span>
+            <span class="sub" :title="zonedStamp(row.lastSentAt)">{{ shortTime(row.lastSentAt) }}</span>
           </template>
         </el-table-column>
       </el-table>
@@ -80,7 +80,7 @@
           <el-table-column :label="t('emails.to')" min-width="200">
             <template #default="{ row }">
               <div class="strong ellipsis" :title="row.toNames">{{ recipientLine(row) }}</div>
-              <div class="sub">{{ shortTime(row.createdAt) }}</div>
+              <div class="sub" :title="zonedStamp(row.createdAt)">{{ shortTime(row.createdAt) }}</div>
             </template>
           </el-table-column>
           <el-table-column :label="t('emails.subject')" min-width="280">
@@ -187,6 +187,7 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { get } from '../api'
+import { shortTime, zonedStamp } from '../lib/zonedtime'
 import MailReader, { type Mail } from '../components/MailReader.vue'
 import MailboxGate from '../components/MailboxGate.vue'
 import { useAuthStore } from '../stores/auth'
@@ -366,11 +367,6 @@ function statusType(s: string): 'success' | 'warning' | 'danger' | 'info' {
   if (s === 'QUEUED' || s === 'SENDING') return 'info'
   if (s === 'HARD_BOUNCED' || s === 'COMPLAINED' || s === 'FAILED') return 'danger'
   return 'warning'
-}
-
-function shortTime(v: string) {
-  if (!v) return ''
-  return v.replace('T', ' ').replace('Z', '').slice(0, 16)
 }
 </script>
 
