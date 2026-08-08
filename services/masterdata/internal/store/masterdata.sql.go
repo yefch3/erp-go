@@ -79,10 +79,162 @@ func (q *Queries) AddCustomerContact(ctx context.Context, arg AddCustomerContact
 	return err
 }
 
+const allContactsInCountry = `-- name: AllContactsInCountry :many
+SELECT
+    cc.id           AS contact_id,
+    cc.name,
+    cc.title,
+    cc.email,
+    cc.is_primary,
+    c.id            AS customer_id,
+    c.name          AS customer_name,
+    c.country,
+    c.country_code
+FROM customers c
+JOIN customer_contacts cc
+    ON cc.customer_id = c.id AND cc.tenant_id = c.tenant_id
+WHERE c.tenant_id = $1::bigint
+  AND c.status = 'ACTIVE'
+  AND c.country_code = $2::text
+  AND cc.email <> ''
+ORDER BY c.name, cc.is_primary DESC, cc.sort_order, cc.id
+`
+
+type AllContactsInCountryParams struct {
+	TenantID    int64
+	CountryCode string
+}
+
+type AllContactsInCountryRow struct {
+	ContactID    int64
+	Name         string
+	Title        string
+	Email        string
+	IsPrimary    bool
+	CustomerID   int64
+	CustomerName string
+	Country      string
+	CountryCode  string
+}
+
+// The same country, everybody at every customer in it.
+//
+// A separate query rather than a flag inside the one above, because DISTINCT
+// ON is what makes that one return a single contact per customer and there is
+// no way to switch it off from a parameter. Two queries that each do one thing
+// beat one that changes shape.
+func (q *Queries) AllContactsInCountry(ctx context.Context, arg AllContactsInCountryParams) ([]AllContactsInCountryRow, error) {
+	rows, err := q.db.Query(ctx, allContactsInCountry, arg.TenantID, arg.CountryCode)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AllContactsInCountryRow
+	for rows.Next() {
+		var i AllContactsInCountryRow
+		if err := rows.Scan(
+			&i.ContactID,
+			&i.Name,
+			&i.Title,
+			&i.Email,
+			&i.IsPrimary,
+			&i.CustomerID,
+			&i.CustomerName,
+			&i.Country,
+			&i.CountryCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const contactsInCountry = `-- name: ContactsInCountry :many
+SELECT DISTINCT ON (c.id)
+    cc.id           AS contact_id,
+    cc.name,
+    cc.title,
+    cc.email,
+    cc.is_primary,
+    c.id            AS customer_id,
+    c.name          AS customer_name,
+    c.country,
+    c.country_code
+FROM customers c
+JOIN customer_contacts cc
+    ON cc.customer_id = c.id AND cc.tenant_id = c.tenant_id
+WHERE c.tenant_id = $1::bigint
+  AND c.status = 'ACTIVE'
+  AND c.country_code = $2::text
+  AND cc.email <> ''
+ORDER BY c.id, cc.is_primary DESC, cc.sort_order, cc.id
+`
+
+type ContactsInCountryParams struct {
+	TenantID    int64
+	CountryCode string
+}
+
+type ContactsInCountryRow struct {
+	ContactID    int64
+	Name         string
+	Title        string
+	Email        string
+	IsPrimary    bool
+	CustomerID   int64
+	CustomerName string
+	Country      string
+	CountryCode  string
+}
+
+// Everybody writable in one country.
+//
+// One person per customer rather than everyone at it. Both are real
+// intentions — a price update goes to the buyer, an invitation to a
+// trade fair goes to whoever might come — so the caller says which, and
+// neither is assumed.
+//
+// "Primary" is a flag somebody has to have set, and often nobody has. So the
+// fallback is the first contact by the same order the address book shows, and
+// DISTINCT ON gives exactly one row per customer either way.
+func (q *Queries) ContactsInCountry(ctx context.Context, arg ContactsInCountryParams) ([]ContactsInCountryRow, error) {
+	rows, err := q.db.Query(ctx, contactsInCountry, arg.TenantID, arg.CountryCode)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ContactsInCountryRow
+	for rows.Next() {
+		var i ContactsInCountryRow
+		if err := rows.Scan(
+			&i.ContactID,
+			&i.Name,
+			&i.Title,
+			&i.Email,
+			&i.IsPrimary,
+			&i.CustomerID,
+			&i.CustomerName,
+			&i.Country,
+			&i.CountryCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createCustomer = `-- name: CreateCustomer :one
-INSERT INTO customers (tenant_id, code, name, country, address, currency, payment_term, remark, created_by, updated_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
-RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by
+INSERT INTO customers (tenant_id, code, name, country, country_code, address, currency, payment_term, remark, created_by, updated_by)
+VALUES ($1, $2, $3, $4, $10::text, $5, $6, $7, $8, $9, $9)
+RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code
 `
 
 type CreateCustomerParams struct {
@@ -95,8 +247,12 @@ type CreateCustomerParams struct {
 	PaymentTerm string
 	Remark      string
 	CreatedBy   int64
+	CountryCode string
 }
 
+// country_code is the one that matters now; country keeps whatever free text
+// a caller still sends, and drains to empty as rows are edited through the
+// dropdown. See migration 00007 for why the code and not the name.
 func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) (Customer, error) {
 	row := q.db.QueryRow(ctx, createCustomer,
 		arg.TenantID,
@@ -108,6 +264,7 @@ func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) 
 		arg.PaymentTerm,
 		arg.Remark,
 		arg.CreatedBy,
+		arg.CountryCode,
 	)
 	var i Customer
 	err := row.Scan(
@@ -125,6 +282,7 @@ func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) 
 		&i.CreatedBy,
 		&i.UpdatedAt,
 		&i.UpdatedBy,
+		&i.CountryCode,
 	)
 	return i, err
 }
@@ -273,7 +431,7 @@ func (q *Queries) DeleteCustomerContacts(ctx context.Context, arg DeleteCustomer
 }
 
 const getCustomer = `-- name: GetCustomer :one
-SELECT id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by FROM customers WHERE tenant_id = $1 AND id = $2
+SELECT id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code FROM customers WHERE tenant_id = $1 AND id = $2
 `
 
 type GetCustomerParams struct {
@@ -299,6 +457,7 @@ func (q *Queries) GetCustomer(ctx context.Context, arg GetCustomerParams) (Custo
 		&i.CreatedBy,
 		&i.UpdatedAt,
 		&i.UpdatedBy,
+		&i.CountryCode,
 	)
 	return i, err
 }
@@ -400,8 +559,71 @@ func (q *Queries) ListCustomerContacts(ctx context.Context, arg ListCustomerCont
 	return items, nil
 }
 
+const listCustomerCountries = `-- name: ListCustomerCountries :many
+SELECT
+    c.country_code,
+    count(DISTINCT c.id)::bigint  AS customer_count,
+    count(cc.id)::bigint          AS contact_count,
+    -- Customers that have anybody writable, which is exactly how many rows
+    -- ContactsInCountry returns. Counting is_primary flags instead would be
+    -- wrong and quietly so: "primary" is a box somebody has to have ticked,
+    -- often nobody has, and that query falls back to the first contact. The
+    -- chip would then promise one recipient and add two.
+    count(DISTINCT c.id) FILTER (WHERE cc.id IS NOT NULL)::bigint AS one_each_count
+FROM customers c
+LEFT JOIN customer_contacts cc
+    ON cc.customer_id = c.id AND cc.tenant_id = c.tenant_id AND cc.email <> ''
+WHERE c.tenant_id = $1::bigint
+  AND c.status = 'ACTIVE'
+GROUP BY c.country_code
+ORDER BY count(DISTINCT c.id) DESC, c.country_code
+`
+
+type ListCustomerCountriesRow struct {
+	CountryCode   string
+	CustomerCount int64
+	ContactCount  int64
+	OneEachCount  int64
+}
+
+// Which countries this company sells to, and how many people could be written
+// to in each.
+//
+// Two counts, not one, because they answer different questions and a picker
+// that shows only the first invites the wrong expectation: "Brazil (12)" reads
+// as twelve emails, and if those twelve companies have nineteen contacts
+// between them the send is half as big again as the person thought.
+//
+// Customers with no code are grouped under ” rather than dropped. They are
+// the ones somebody has to go and fix, and a list that hides them is a list
+// that never gets fixed.
+func (q *Queries) ListCustomerCountries(ctx context.Context, tenantID int64) ([]ListCustomerCountriesRow, error) {
+	rows, err := q.db.Query(ctx, listCustomerCountries, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCustomerCountriesRow
+	for rows.Next() {
+		var i ListCustomerCountriesRow
+		if err := rows.Scan(
+			&i.CountryCode,
+			&i.CustomerCount,
+			&i.ContactCount,
+			&i.OneEachCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCustomers = `-- name: ListCustomers :many
-SELECT id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, count(*) OVER () AS total
+SELECT id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, count(*) OVER () AS total
 FROM customers
 WHERE tenant_id = $1
   AND ($4::text = 'ALL' OR status = 'ACTIVE')
@@ -433,6 +655,7 @@ type ListCustomersRow struct {
 	CreatedBy   int64
 	UpdatedAt   pgtype.Timestamptz
 	UpdatedBy   int64
+	CountryCode string
 	Total       int64
 }
 
@@ -466,6 +689,7 @@ func (q *Queries) ListCustomers(ctx context.Context, arg ListCustomersParams) ([
 			&i.CreatedBy,
 			&i.UpdatedAt,
 			&i.UpdatedBy,
+			&i.CountryCode,
 			&i.Total,
 		); err != nil {
 			return nil, err
@@ -505,7 +729,8 @@ SELECT
     cc.is_primary,
     c.id            AS customer_id,
     c.name          AS customer_name,
-    c.country
+    c.country,
+    c.country_code
 FROM customer_contacts cc
 JOIN customers c ON c.id = cc.customer_id AND c.tenant_id = cc.tenant_id
 WHERE cc.tenant_id = $1::bigint
@@ -536,6 +761,7 @@ type ListMailingContactsRow struct {
 	CustomerID   int64
 	CustomerName string
 	Country      string
+	CountryCode  string
 }
 
 // The address book for the mail composer.
@@ -566,6 +792,7 @@ func (q *Queries) ListMailingContacts(ctx context.Context, arg ListMailingContac
 			&i.CustomerID,
 			&i.CustomerName,
 			&i.Country,
+			&i.CountryCode,
 		); err != nil {
 			return nil, err
 		}
@@ -757,10 +984,11 @@ func (q *Queries) NextSeq(ctx context.Context, arg NextSeqParams) (int64, error)
 
 const updateCustomer = `-- name: UpdateCustomer :one
 UPDATE customers
-SET name = $3, country = $4, address = $5, currency = $6,
+SET name = $3, country = $4, country_code = $10::text,
+    address = $5, currency = $6,
     payment_term = $7, remark = $8, updated_by = $9, updated_at = now()
 WHERE tenant_id = $1 AND id = $2
-RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by
+RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code
 `
 
 type UpdateCustomerParams struct {
@@ -773,6 +1001,7 @@ type UpdateCustomerParams struct {
 	PaymentTerm string
 	Remark      string
 	UpdatedBy   int64
+	CountryCode string
 }
 
 func (q *Queries) UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) (Customer, error) {
@@ -786,6 +1015,7 @@ func (q *Queries) UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) 
 		arg.PaymentTerm,
 		arg.Remark,
 		arg.UpdatedBy,
+		arg.CountryCode,
 	)
 	var i Customer
 	err := row.Scan(
@@ -803,6 +1033,7 @@ func (q *Queries) UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) 
 		&i.CreatedBy,
 		&i.UpdatedAt,
 		&i.UpdatedBy,
+		&i.CountryCode,
 	)
 	return i, err
 }

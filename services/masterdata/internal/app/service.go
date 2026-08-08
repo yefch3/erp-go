@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,8 +33,31 @@ type ContactInput struct {
 
 type CustomerInput struct {
 	Code, Name, Country, Address, Currency, PaymentTerm, Remark string
-	Contacts                                                    []ContactInput
-	OperatorID                                                  int64
+	// CountryCode is ISO 3166-1 alpha-2, and it is what the system groups by.
+	// Country is the free text that came before it and is on its way out —
+	// kept only so a row nobody has re-saved still shows something.
+	CountryCode string
+	Contacts    []ContactInput
+	OperatorID  int64
+}
+
+// normaliseCountry accepts what a caller sends and returns what the column
+// will hold.
+//
+// Upper-cased and length-checked here rather than trusted, because the check
+// constraint in the database would turn a lower-case "br" into a 500 rather
+// than into "BR" — and a two-letter code arriving in the wrong case is a
+// mistake the system can simply fix.
+func normaliseCountry(code string) (string, error) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if code == "" {
+		return "", nil
+	}
+	if len(code) != 2 || code[0] < 'A' || code[0] > 'Z' || code[1] < 'A' || code[1] > 'Z' {
+		return "", apierr.Invalid("MD_COUNTRY_CODE_INVALID",
+			"国家代码必须是两位字母的 ISO 代码，例如 BR、US、CN")
+	}
+	return code, nil
 }
 
 func (in CustomerInput) validate() error {
@@ -72,9 +96,14 @@ func (s *Service) CreateCustomer(ctx context.Context, tenantID int64, in Custome
 				return err
 			}
 		}
+		cc, err := normaliseCountry(in.CountryCode)
+		if err != nil {
+			return err
+		}
 		c, err := q.CreateCustomer(ctx, store.CreateCustomerParams{
 			TenantID: tenantID, Code: code, Name: in.Name, Country: in.Country,
-			Address: in.Address, Currency: in.Currency, PaymentTerm: in.PaymentTerm,
+			CountryCode: cc,
+			Address:     in.Address, Currency: in.Currency, PaymentTerm: in.PaymentTerm,
 			Remark: in.Remark, CreatedBy: in.OperatorID,
 		})
 		if err != nil {
@@ -125,9 +154,14 @@ func (s *Service) UpdateCustomer(ctx context.Context, tenantID, id int64, in Cus
 	var out store.Customer
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		cc, err := normaliseCountry(in.CountryCode)
+		if err != nil {
+			return err
+		}
 		c, err := q.UpdateCustomer(ctx, store.UpdateCustomerParams{
 			TenantID: tenantID, ID: id, Name: in.Name, Country: in.Country,
-			Address: in.Address, Currency: in.Currency, PaymentTerm: in.PaymentTerm,
+			CountryCode: cc,
+			Address:     in.Address, Currency: in.Currency, PaymentTerm: in.PaymentTerm,
 			Remark: in.Remark, UpdatedBy: in.OperatorID,
 		})
 		if err != nil {
@@ -339,4 +373,97 @@ func (s *Service) ListMailingContacts(ctx context.Context, tenantID int64, keywo
 	return s.q.ListMailingContacts(ctx, store.ListMailingContactsParams{
 		TenantID: tenantID, Keyword: keyword, CustomerIds: customerIDs,
 	})
+}
+
+// CountryGroup is one country and how big a send to it would be.
+type CountryGroup struct {
+	Code          string
+	CustomerCount int64
+	ContactCount  int64
+	OneEachCount  int64
+}
+
+// ListCustomerCountries answers "which countries do we sell to, and how many
+// people are in each" for the recipient picker.
+//
+// The name of the country is not here and should not be. It is presentation,
+// it differs per reader, and every browser already ships the translations —
+// so the code travels and the screen decides what to call it.
+func (s *Service) ListCustomerCountries(ctx context.Context, tenantID int64) ([]CountryGroup, error) {
+	rows, err := s.q.ListCustomerCountries(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]CountryGroup, len(rows))
+	for i, r := range rows {
+		out[i] = CountryGroup{
+			Code: strings.TrimSpace(r.CountryCode), CustomerCount: r.CustomerCount,
+			ContactCount: r.ContactCount, OneEachCount: r.OneEachCount,
+		}
+	}
+	return out, nil
+}
+
+// CountryRecipient is one addressable person, the same shape the address book
+// already returns so the picker can treat both sources identically.
+type CountryRecipient struct {
+	ContactID    int64
+	Name         string
+	Title        string
+	Email        string
+	IsPrimary    bool
+	CustomerID   int64
+	CustomerName string
+	Country      string
+	CountryCode  string
+}
+
+// ContactsInCountry returns everybody writable in one country.
+//
+// primaryOnly picks one person per customer instead of everybody at it, and
+// the caller has to say which because both are real intentions: a price
+// update goes to the buyer, an invitation to a trade fair goes to whoever
+// might come. Guessing here would silently multiply or divide the size of
+// somebody's send.
+func (s *Service) ContactsInCountry(ctx context.Context, tenantID int64, code string, primaryOnly bool) ([]CountryRecipient, error) {
+	// Normalised the same way it is on the way in, so "br" from a URL finds
+	// the rows stored as "BR" rather than quietly returning nothing.
+	code, err := normaliseCountry(code)
+	if err != nil {
+		return nil, err
+	}
+	if primaryOnly {
+		rows, err := s.q.ContactsInCountry(ctx, store.ContactsInCountryParams{
+			TenantID: tenantID, CountryCode: code,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]CountryRecipient, len(rows))
+		for i, r := range rows {
+			out[i] = CountryRecipient{
+				ContactID: r.ContactID, Name: r.Name, Title: r.Title, Email: r.Email,
+				IsPrimary: r.IsPrimary, CustomerID: r.CustomerID,
+				CustomerName: r.CustomerName, Country: r.Country,
+				CountryCode: strings.TrimSpace(r.CountryCode),
+			}
+		}
+		return out, nil
+	}
+	rows, err := s.q.AllContactsInCountry(ctx, store.AllContactsInCountryParams{
+		TenantID: tenantID, CountryCode: code,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]CountryRecipient, len(rows))
+	for i, r := range rows {
+		out[i] = CountryRecipient{
+			ContactID: r.ContactID, Name: r.Name, Title: r.Title, Email: r.Email,
+			IsPrimary: r.IsPrimary, CustomerID: r.CustomerID,
+			CustomerName: r.CustomerName, Country: r.Country,
+			CountryCode: strings.TrimSpace(r.CountryCode),
+		}
+	}
+	return out, nil
 }
