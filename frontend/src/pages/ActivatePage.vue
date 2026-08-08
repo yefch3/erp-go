@@ -122,7 +122,10 @@ onMounted(async () => {
 async function submit() {
   // Both checks are repeated on the server; they are here so the answer is
   // instant and so a mistyped confirmation never costs a round trip.
-  if (form.password.length < 8) {
+  // Ten, matching the server. A local check that disagrees with the server
+  // is worse than no local check: it accepts something that is then refused,
+  // which reads as the form being broken.
+  if (form.password.length < 10) {
     error.value = t('activate.tooShort')
     return
   }

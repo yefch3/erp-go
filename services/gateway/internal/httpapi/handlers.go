@@ -19,14 +19,19 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, req) {
 		return
 	}
-	// Metered by the address the caller typed, which is the only identity
-	// there is before anybody has proved anything. That it may name no account
-	// at all is fine and in fact required: counting attempts on addresses that
-	// do not exist is what keeps a locked-out response from being a way to ask
-	// "does this person work here" — and company addresses are guessable, so
-	// that matters more here than it did under usernames.
-	name := req.GetEmail()
-	if wait, blocked := s.Throttle.Blocked(r.Context(), throttleLogin, name); blocked {
+	// Metered by where the request came from, not by the address it names.
+	//
+	// The per-account counter lives in iam, which owns the account; this one
+	// answers the question no per-account counter can — somebody trying a
+	// thousand different addresses once each leaves every account's counter
+	// sitting at one, and nothing ever fires. Metering the source is the only
+	// thing that sees the shape of that.
+	//
+	// It also means a locked-out answer no longer depends on which address was
+	// typed, so this route stopped being a way to ask "does this person work
+	// here" by watching who gets throttled.
+	who := clientAddr(r, s.TrustProxyHeaders)
+	if wait, blocked := s.Throttle.Blocked(r.Context(), throttleLogin, who); blocked {
 		s.writeTooManyAttempts(w, wait)
 		return
 	}
@@ -34,11 +39,15 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Only a rejected credential counts. When iam is down every login in
 		// the company fails, and charging those to the people trying would
-		// mean an outage ends with everybody locked out for a quarter of an
-		// hour on top of it — the recovery is worse than the fault. The
-		// status code tells the two apart, so there is no reason to guess.
+		// mean an outage ends with a whole office locked out on top of it —
+		// the recovery is worse than the fault. The status code tells the two
+		// apart, so there is no reason to guess.
+		//
+		// iam's own "too many attempts" is ResourceExhausted rather than
+		// Unauthenticated precisely so it lands here as not-charged: being
+		// told to wait must not spend the budget that waiting restores.
 		if isRejectedCredential(err) {
-			if wait, spent := s.Throttle.Failed(r.Context(), throttleLogin, name); spent {
+			if wait, spent := s.Throttle.Failed(r.Context(), throttleLogin, who); spent {
 				s.writeTooManyAttempts(w, wait)
 				return
 			}
@@ -46,7 +55,10 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		s.writeGRPCError(w, err)
 		return
 	}
-	s.Throttle.Passed(r.Context(), throttleLogin, name)
+	// Cleared on success, so one person signing in resets the shared office
+	// budget. That is the right trade at this key: a source with real traffic
+	// on it is not the source spraying.
+	s.Throttle.Passed(r.Context(), throttleLogin, who)
 	s.writeProto(w, resp)
 }
 

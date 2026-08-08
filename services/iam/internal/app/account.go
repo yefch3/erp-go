@@ -10,30 +10,23 @@ import (
 	"github.com/sgao19/erp-go/services/iam/internal/store"
 )
 
-// minPasswordLen is a floor, not a policy: complexity rules that force
-// "P@ssw0rd!" produce worse passwords than length alone.
-const minPasswordLen = 8
-
-func checkPasswordStrength(p string) error {
-	if len([]rune(p)) < minPasswordLen {
-		return apierr.Invalid("IAM_PASSWORD_TOO_SHORT", "密码至少 8 位")
-	}
-	return nil
-}
-
 // OpenAccount gives an employee who has none a login. Employees without an
 // account are normal - a warehouse worker may never open the system.
 func (s *Service) OpenAccount(ctx context.Context, tenantID, employeeID int64, username, password string) (string, error) {
 	if username == "" || password == "" {
 		return "", apierr.Invalid("IAM_ACCOUNT_FIELDS_REQUIRED", "用户名和初始密码必填")
 	}
-	if err := checkPasswordStrength(password); err != nil {
-		return "", err
-	}
-	if _, err := s.q.GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: employeeID}); err != nil {
+	emp, err := s.q.GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: employeeID})
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", apierr.NotFound("IAM_EMP_NOT_FOUND", "员工不存在")
 		}
+		return "", err
+	}
+	// The employee is loaded before the password is judged, because who they
+	// are is part of the judgement: a password built out of their own address
+	// or name is the first thing anybody guessing would try.
+	if err := checkPasswordStrength(password, emp.Email, emp.Name, emp.Code, username); err != nil {
 		return "", err
 	}
 	if _, err := s.q.GetUserByEmployee(ctx, store.GetUserByEmployeeParams{TenantID: tenantID, EmployeeID: employeeID}); err == nil {
@@ -56,7 +49,7 @@ func (s *Service) OpenAccount(ctx context.Context, tenantID, employeeID int64, u
 // ResetPassword is the administrator path: it proves nothing about the old
 // password because the administrator does not know it.
 func (s *Service) ResetPassword(ctx context.Context, tenantID, employeeID int64, newPassword string) error {
-	if err := checkPasswordStrength(newPassword); err != nil {
+	if err := s.checkPassword(ctx, tenantID, employeeID, newPassword); err != nil {
 		return err
 	}
 	return s.setPassword(ctx, tenantID, employeeID, newPassword)
@@ -65,7 +58,7 @@ func (s *Service) ResetPassword(ctx context.Context, tenantID, employeeID int64,
 // ChangePassword is the self-service path: the current password is the proof
 // of identity, so a stolen session alone cannot lock the owner out.
 func (s *Service) ChangePassword(ctx context.Context, tenantID, employeeID int64, oldPassword, newPassword string) error {
-	if err := checkPasswordStrength(newPassword); err != nil {
+	if err := s.checkPassword(ctx, tenantID, employeeID, newPassword); err != nil {
 		return err
 	}
 	user, err := s.q.GetUserByEmployee(ctx, store.GetUserByEmployeeParams{TenantID: tenantID, EmployeeID: employeeID})
@@ -79,6 +72,22 @@ func (s *Service) ChangePassword(ctx context.Context, tenantID, employeeID int64
 		return apierr.Unauthorized("IAM_PASSWORD_WRONG", "当前密码不正确")
 	}
 	return s.setPassword(ctx, tenantID, employeeID, newPassword)
+}
+
+// checkPassword judges a password knowing whose it is.
+//
+// The extra read is worth one round trip on an action somebody takes once a
+// year: the address and the name are exactly what a guess is built from, and
+// refusing them is most of what a strength check can usefully do.
+func (s *Service) checkPassword(ctx context.Context, tenantID, employeeID int64, password string) error {
+	emp, err := s.q.GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: employeeID})
+	if err != nil {
+		// Not fatal: a password judged without the identity context is still
+		// judged on length and on the common-password list. Refusing to set a
+		// password because a lookup failed would be the worse trade.
+		return checkPasswordStrength(password)
+	}
+	return checkPasswordStrength(password, emp.Email, emp.Name, emp.Code)
 }
 
 func (s *Service) setPassword(ctx context.Context, tenantID, employeeID int64, password string) error {

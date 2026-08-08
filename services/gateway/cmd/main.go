@@ -162,9 +162,14 @@ func run(log *slog.Logger) error {
 		GoogleClientID:   os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
 		OAuthRedirectURL: oauthRedirect,
 		FrontendBaseURL:  frontendBase,
-		Live:             live,
-		JWTSecret:        cfg.JWTSecret,
-		Log:              log,
+		// Only when a proxy in front actually overwrites X-Forwarded-For.
+		// Off unless said so, because the header is caller-supplied and
+		// trusting it without such a proxy makes the per-source login limit
+		// spoofable — see clientAddr.
+		TrustProxyHeaders: os.Getenv("TRUST_PROXY_HEADERS") == "1",
+		Live:              live,
+		JWTSecret:         cfg.JWTSecret,
+		Log:               log,
 	}
 
 	httpSrv := &http.Server{

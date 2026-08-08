@@ -1404,7 +1404,7 @@ const recordLoginFailure = `-- name: RecordLoginFailure :one
 UPDATE users
 SET failed_count = failed_count + 1,
     locked_until = CASE
-        WHEN failed_count + 1 >= 5 THEN greatest(locked_until, now() + interval '15 minutes')
+        WHEN failed_count + 1 >= 10 THEN greatest(locked_until, now() + interval '60 seconds')
         ELSE locked_until
     END,
     updated_at = now()
@@ -1417,11 +1417,17 @@ type RecordLoginFailureRow struct {
 	LockedUntil pgtype.Timestamptz
 }
 
-// Sets a deadline instead of a permanent state, and only ever pushes it
-// forward from now — so the fifth wrong password locks for fifteen minutes
-// and the sixth does not extend that to thirty. Without the greatest(), an
-// attacker who keeps guessing keeps renewing the lock they put on somebody
-// else, which is the punishment landing on the wrong person.
+// Ten wrong passwords buy sixty seconds, and only ever pushed forward from
+// now — the eleventh does not extend it to two minutes. Without the
+// greatest(), somebody guessing keeps renewing the lock they put on another
+// person, which is the punishment landing on the wrong side.
+//
+// The numbers are ERPNext's, and they are a pair rather than two choices. A
+// short window is what makes this survivable when it is aimed at somebody on
+// purpose: sixty seconds of being shut out, not a quarter of an hour. What
+// pays for it is that ten guesses a minute is only harmless against a
+// password worth having, which is why the strength policy landed in the same
+// change and why neither may be relaxed without the other.
 func (q *Queries) RecordLoginFailure(ctx context.Context, id int64) (RecordLoginFailureRow, error) {
 	row := q.db.QueryRow(ctx, recordLoginFailure, id)
 	var i RecordLoginFailureRow
