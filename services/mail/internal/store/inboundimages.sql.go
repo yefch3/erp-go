@@ -128,7 +128,7 @@ SELECT id, body_html
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND images_cached_at IS NULL
-ORDER BY id
+ORDER BY id DESC
 LIMIT $2::int
 `
 
@@ -143,8 +143,18 @@ type ListInboundNeedingImagesRow struct {
 }
 
 // Caching the pictures a received mail points at.
-// The work queue for the caching pass, oldest first so a mailbox fills in the
-// order it arrived rather than newest-first and then stalling.
+// The work queue for the caching pass. Newest first.
+//
+// It ran oldest-first at first, on the reasoning that a mailbox should fill in
+// the order it arrived. That was wrong twice over, and measurably so: with
+// 1573 of 2625 messages done, the twenty most recent had **none**. A new
+// arrival gets the highest id, so oldest-first puts every incoming mail at the
+// back of a thousand-message queue — the pass spends its afternoon on 2024
+// while the mail somebody is about to open is the last thing it will reach.
+//
+// Newest first fixes both cases with the same ordering: mail that has just
+// arrived is at the head of the queue and is cached within a pass, and the
+// backfill walks history backwards, which is the order people read it in.
 //
 // Only messages with an HTML body can reference a remote picture, but the
 // pass stamps everything it looks at either way — a text-only mail that kept
