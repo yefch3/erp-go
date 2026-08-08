@@ -60,6 +60,8 @@ const (
 	EmailService_SearchMail_FullMethodName          = "/erp.mail.v1.EmailService/SearchMail"
 	EmailService_GetInbound_FullMethodName          = "/erp.mail.v1.EmailService/GetInbound"
 	EmailService_GetMailThread_FullMethodName       = "/erp.mail.v1.EmailService/GetMailThread"
+	EmailService_ExportMailThread_FullMethodName    = "/erp.mail.v1.EmailService/ExportMailThread"
+	EmailService_ListMailExports_FullMethodName     = "/erp.mail.v1.EmailService/ListMailExports"
 	EmailService_MarkInbound_FullMethodName         = "/erp.mail.v1.EmailService/MarkInbound"
 	EmailService_PurgeInbound_FullMethodName        = "/erp.mail.v1.EmailService/PurgeInbound"
 	EmailService_MarkViewRead_FullMethodName        = "/erp.mail.v1.EmailService/MarkViewRead"
@@ -170,6 +172,14 @@ type EmailServiceClient interface {
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error)
+	// One conversation as a document somebody outside the ERP can read: a
+	// transcript, self-contained, nothing fetched when it is opened. Records
+	// the export before returning the bytes — an export that cannot be logged
+	// does not happen, which is the point of having the permission at all.
+	ExportMailThread(ctx context.Context, in *ExportMailThreadRequest, opts ...grpc.CallOption) (*ExportMailThreadResponse, error)
+	// The export log. Scoped like the team mail view: a manager sees their own
+	// team, an administrator sees the company.
+	ListMailExports(ctx context.Context, in *ListMailExportsRequest, opts ...grpc.CallOption) (*ListMailExportsResponse, error)
 	// Inbox housekeeping: read/unread, star, archive, trash. Applied here
 	// first and carried to the mail host within seconds by the write-back
 	// queue, so the two views agree.
@@ -615,6 +625,26 @@ func (c *emailServiceClient) GetMailThread(ctx context.Context, in *GetMailThrea
 	return out, nil
 }
 
+func (c *emailServiceClient) ExportMailThread(ctx context.Context, in *ExportMailThreadRequest, opts ...grpc.CallOption) (*ExportMailThreadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExportMailThreadResponse)
+	err := c.cc.Invoke(ctx, EmailService_ExportMailThread_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) ListMailExports(ctx context.Context, in *ListMailExportsRequest, opts ...grpc.CallOption) (*ListMailExportsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMailExportsResponse)
+	err := c.cc.Invoke(ctx, EmailService_ListMailExports_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) MarkInbound(ctx context.Context, in *MarkInboundRequest, opts ...grpc.CallOption) (*MarkInboundResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(MarkInboundResponse)
@@ -786,6 +816,14 @@ type EmailServiceServer interface {
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error)
+	// One conversation as a document somebody outside the ERP can read: a
+	// transcript, self-contained, nothing fetched when it is opened. Records
+	// the export before returning the bytes — an export that cannot be logged
+	// does not happen, which is the point of having the permission at all.
+	ExportMailThread(context.Context, *ExportMailThreadRequest) (*ExportMailThreadResponse, error)
+	// The export log. Scoped like the team mail view: a manager sees their own
+	// team, an administrator sees the company.
+	ListMailExports(context.Context, *ListMailExportsRequest) (*ListMailExportsResponse, error)
 	// Inbox housekeeping: read/unread, star, archive, trash. Applied here
 	// first and carried to the mail host within seconds by the write-back
 	// queue, so the two views agree.
@@ -943,6 +981,12 @@ func (UnimplementedEmailServiceServer) GetInbound(context.Context, *GetInboundRe
 }
 func (UnimplementedEmailServiceServer) GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMailThread not implemented")
+}
+func (UnimplementedEmailServiceServer) ExportMailThread(context.Context, *ExportMailThreadRequest) (*ExportMailThreadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExportMailThread not implemented")
+}
+func (UnimplementedEmailServiceServer) ListMailExports(context.Context, *ListMailExportsRequest) (*ListMailExportsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListMailExports not implemented")
 }
 func (UnimplementedEmailServiceServer) MarkInbound(context.Context, *MarkInboundRequest) (*MarkInboundResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MarkInbound not implemented")
@@ -1724,6 +1768,42 @@ func _EmailService_GetMailThread_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_ExportMailThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExportMailThreadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).ExportMailThread(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_ExportMailThread_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).ExportMailThread(ctx, req.(*ExportMailThreadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_ListMailExports_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMailExportsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).ListMailExports(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_ListMailExports_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).ListMailExports(ctx, req.(*ListMailExportsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_MarkInbound_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(MarkInboundRequest)
 	if err := dec(in); err != nil {
@@ -2020,6 +2100,14 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMailThread",
 			Handler:    _EmailService_GetMailThread_Handler,
+		},
+		{
+			MethodName: "ExportMailThread",
+			Handler:    _EmailService_ExportMailThread_Handler,
+		},
+		{
+			MethodName: "ListMailExports",
+			Handler:    _EmailService_ListMailExports_Handler,
 		},
 		{
 			MethodName: "MarkInbound",

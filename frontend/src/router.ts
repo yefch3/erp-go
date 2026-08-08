@@ -27,6 +27,7 @@ export const router = createRouter({
         { path: 'purchase-orders', component: () => import('./pages/PurchaseOrdersPage.vue') },
         { path: 'emails', component: () => import('./pages/EmailsPage.vue') },
         { path: 'team-mail', component: () => import('./pages/TeamMailPage.vue') },
+        { path: 'mail/export-log', component: () => import('./pages/MailExportLogPage.vue') },
         { path: 'fx', component: () => import('./pages/FxPage.vue') },
         { path: 'settings/employees', component: () => import('./pages/EmployeesPage.vue') },
         { path: 'settings/roles', component: () => import('./pages/RolesPage.vue') },

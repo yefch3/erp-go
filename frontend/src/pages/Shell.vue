@@ -55,6 +55,11 @@
         <el-menu-item v-if="auth.can('mail:email:read')" index="/team-mail">
           {{ t('menu.teamMail') }}
         </el-menu-item>
+        <!-- Oversight rather than use: who took a conversation out of the
+             system. Its own permission, held by managers and administrators. -->
+        <el-menu-item v-if="auth.can('mail:export:audit')" index="/mail/export-log">
+          {{ t('menu.exportLog') }}
+        </el-menu-item>
         <el-menu-item v-if="auth.can('iam:employee:read')" index="/settings/employees">
           {{ t('menu.employees') }}
         </el-menu-item>

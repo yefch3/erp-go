@@ -43,6 +43,7 @@ export default {
     emails: 'Buzón',
     signatures: 'Firmas',
     teamMail: 'Correo del equipo',
+    exportLog: 'Registro de exportaciones',
     todo: ' (próximamente)',
   },
   shipping: {
@@ -1034,6 +1035,8 @@ export default {
     notifBody: 'Su buzón tiene correo nuevo. Haga clic para abrirlo.',
     junkNote: 'Lo que el proveedor de correo consideró spam. Conviene echar un vistazo de vez en cuando: responda directamente a una consulta mal clasificada, o ábrala y elija No es spam para moverla a la entrada.',
     notJunk: 'No es spam: mover a la entrada',
+    exportPrint: 'Exportar / imprimir',
+    exportSave: 'Descargar archivo (.html)',
     viewing: 'Viendo',
     from: 'De',
     receivedAt: 'Recibido',
@@ -1275,6 +1278,22 @@ export default {
     book: 'Libreta de direcciones',
     addChosen: 'Añadir seleccionados ({n})',
     unknownWarning: '{n} dirección(es) no están en la libreta, no se resuelve el nombre',
+  },
+  exportLog: {
+    title: 'Registro de exportaciones',
+    subtitle: 'Quién se llevó qué conversación fuera del sistema',
+    when: 'Cuándo',
+    who: 'Exportado por',
+    what: 'Conversación',
+    size: 'Tamaño',
+    from: 'Origen',
+    messages: '{n} mensajes',
+    empty: 'Todavía nadie ha exportado una conversación',
+    footnote:
+      'Exportar no se bloquea: quien puede leer un correo ya puede copiarlo. ' +
+      'Aquí queda quién se llevó qué intercambio y cuándo; una exportación que no ' +
+      'se puede registrar no se realiza. La dirección de origen solo es fiable si el ' +
+      'proxy inverso está bien configurado.',
   },
   teamMail: {
     title: 'Correo del equipo',

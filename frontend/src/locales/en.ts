@@ -43,6 +43,7 @@ export default {
     emails: 'Mailbox',
     signatures: 'Signatures',
     teamMail: 'Team mail',
+    exportLog: 'Export log',
     todo: ' (coming soon)',
   },
   shipping: {
@@ -1034,6 +1035,8 @@ export default {
     notifBody: 'Your mailbox has new mail. Click to open.',
     junkNote: 'What the mail host judged to be spam. Worth a glance now and then: reply to a mis-flagged inquiry directly, or open it and choose Not spam to move it to the inbox.',
     notJunk: 'Not spam — move to inbox',
+    exportPrint: 'Export / print',
+    exportSave: 'Download archive (.html)',
     viewing: 'Viewing',
     from: 'From',
     receivedAt: 'Received',
@@ -1275,6 +1278,22 @@ export default {
     book: 'Address book',
     addChosen: 'Add selected ({n})',
     unknownWarning: '{n} address(es) are not in the address book, so no contact name resolves',
+  },
+  exportLog: {
+    title: 'Export log',
+    subtitle: 'Who took which conversation out of the system',
+    when: 'When',
+    who: 'Exported by',
+    what: 'Conversation',
+    size: 'Size',
+    from: 'From',
+    messages: '{n} messages',
+    empty: 'Nobody has exported a conversation yet',
+    footnote:
+      'Exporting is not blocked — anyone who can read a mail can already copy it. ' +
+      'What is recorded here is who took which exchange, and when; an export that ' +
+      'cannot be recorded does not happen. The source address is only as trustworthy ' +
+      'as the reverse-proxy configuration.',
   },
   teamMail: {
     title: 'Team mail',

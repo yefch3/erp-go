@@ -43,6 +43,7 @@ export default {
     emails: '邮箱',
     signatures: '签名模板',
     teamMail: '员工邮件',
+    exportLog: '导出记录',
     todo: '（待开发）',
   },
   shipping: {
@@ -1029,6 +1030,8 @@ export default {
     notifBody: '你的邮箱有新邮件，点击查看。',
     junkNote: '这里是邮件服务商判定的垃圾邮件。偶尔扫一眼：误判的客户来信可以直接回复，或点开后选「这不是垃圾」移回收件箱。',
     notJunk: '这不是垃圾，移回收件箱',
+    exportPrint: '导出／打印',
+    exportSave: '下载存档（.html）',
     viewing: '正在查看',
     from: '发件人',
     receivedAt: '收到时间',
@@ -1270,6 +1273,20 @@ export default {
     book: '通讯录',
     addChosen: '添加所选（{n}）',
     unknownWarning: '{n} 个地址不在通讯录里，取不到联系人姓名',
+  },
+  exportLog: {
+    title: '导出记录',
+    subtitle: '谁把哪段往来带出了系统',
+    when: '时间',
+    who: '导出人',
+    what: '会话',
+    size: '规模',
+    from: '来源地址',
+    messages: '{n} 封',
+    empty: '还没有人导出过会话',
+    footnote:
+      '导出不受阻拦——能看邮件的人本来就能复制粘贴。这里记的是「谁、什么时候、带走了哪一段」，' +
+      '记不上就不放行。来源地址只在反向代理配置正确时可信。',
   },
   teamMail: {
     title: '员工邮件',

@@ -9,6 +9,16 @@ import (
 	"os/signal"
 	"syscall"
 
+	// The zone database, compiled in.
+	//
+	// The service image is distroless: no /usr/share/zoneinfo, no package
+	// manager to add one. Without this, time.LoadLocation("Asia/Shanghai")
+	// fails at runtime and every timestamp in an exported conversation
+	// silently falls back to UTC — a transcript saying a customer replied at
+	// 03:14 when it was a quarter past eleven in the morning. Roughly 450 kB
+	// for a correct clock in a document of record.
+	_ "time/tzdata"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"

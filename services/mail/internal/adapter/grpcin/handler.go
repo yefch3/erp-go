@@ -755,6 +755,41 @@ func (h *Handler) GetMailThread(ctx context.Context, req *mailv1.GetMailThreadRe
 	return &mailv1.GetMailThreadResponse{Items: out}, nil
 }
 
+func (h *Handler) ExportMailThread(ctx context.Context, req *mailv1.ExportMailThreadRequest) (*mailv1.ExportMailThreadResponse, error) {
+	doc, err := h.svc.ExportMailThread(ctx, grpcx.TenantID(ctx), operator(ctx), app.ExportRequest{
+		ThreadKey: req.GetThreadKey(),
+		Zone:      req.GetZone(),
+		Lang:      req.GetLang(),
+		ClientIP:  req.GetClientIp(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.ExportMailThreadResponse{
+		Content:     doc.Content,
+		ContentType: doc.ContentType,
+		FileName:    doc.FileName,
+		TurnCount:   int32(doc.TurnCount),
+	}, nil
+}
+
+func (h *Handler) ListMailExports(ctx context.Context, req *mailv1.ListMailExportsRequest) (*mailv1.ListMailExportsResponse, error) {
+	rows, total, err := h.svc.ListExports(ctx, grpcx.TenantID(ctx), operator(ctx), req.GetPage(), req.GetSize())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mailv1.ExportRecord, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, &mailv1.ExportRecord{
+			Id: r.ID, EmployeeId: r.EmployeeID, EmployeeName: r.EmployeeName,
+			ThreadKey: r.ThreadKey, Subject: r.Subject, Counterparty: r.Counterparty,
+			TurnCount: r.TurnCount, ByteSize: r.ByteSize, Format: r.Format,
+			ClientIp: r.ClientIp, ExportedAt: ts(r.ExportedAt),
+		})
+	}
+	return &mailv1.ListMailExportsResponse{Items: out, Total: total}, nil
+}
+
 func (h *Handler) MarkInbound(ctx context.Context, req *mailv1.MarkInboundRequest) (*mailv1.MarkInboundResponse, error) {
 	op := operator(ctx)
 	err := h.svc.MarkInbound(ctx, grpcx.TenantID(ctx), op.ID, req.GetId(),

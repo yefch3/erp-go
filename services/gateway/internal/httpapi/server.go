@@ -405,6 +405,15 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/empty-trash", s.emptyTrash)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/empty-junk", s.emptyJunk)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-threads", s.getMailThread)
+		// Taking the conversation out of the system. Its own permission, and
+		// still behind the mailbox gate: an export that skipped the gate
+		// would be a way to read mail without passing it.
+		r.With(s.perm("mail:email:export"), s.requireMailUnlock).
+			Get("/api/mail-threads/export", s.exportMailThread)
+		// The record of who did. Not behind the mailbox gate — this is
+		// oversight of the mail module, not use of a mailbox, and the person
+		// reading it may not have one bound.
+		r.With(s.perm("mail:export:audit")).Get("/api/mail-exports", s.listMailExports)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/mailbox/sync", s.syncMailbox)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mailbox-sent", s.listMailboxSent)
 		r.With(s.perm("mail:email:read")).Post("/api/mailbox/verify", s.verifyMailbox)
@@ -483,7 +492,13 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			EmployeeID: claims.EmployeeID(),
 			Name:       claims.EmployeeName,
 			Email:      claims.Email,
-			IP:         r.RemoteAddr,
+			// clientAddr, not RemoteAddr. Behind a reverse proxy RemoteAddr
+			// is the proxy — every request in production logged as coming
+			// from 127.0.0.1, which is the one value that answers no
+			// question anybody asks of an audit trail. clientAddr honours
+			// the forwarding header only when TRUST_PROXY_HEADERS says a
+			// proxy that overwrites it is actually in front.
+			IP: clientAddr(r, s.TrustProxyHeaders),
 			TraceID:    newTraceID(),
 		})
 		next.ServeHTTP(w, r.WithContext(ctx))
