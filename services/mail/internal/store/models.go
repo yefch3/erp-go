@@ -124,6 +124,7 @@ type EmailInbound struct {
 	CustomerID     int64
 	ContactID      int64
 	CustomerName   string
+	ImagesCachedAt pgtype.Timestamptz
 }
 
 type EmailInboundAttachment struct {
@@ -134,6 +135,18 @@ type EmailInboundAttachment struct {
 	ContentType string
 	FileSize    int64
 	FileKey     string
+	CreatedAt   pgtype.Timestamptz
+}
+
+type EmailInboundImage struct {
+	ID          int64
+	TenantID    int64
+	InboundID   int64
+	SourceUrl   string
+	UrlHash     []byte
+	ObjectKey   string
+	ContentType string
+	ByteSize    int64
 	CreatedAt   pgtype.Timestamptz
 }
 
