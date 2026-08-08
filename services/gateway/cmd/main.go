@@ -46,6 +46,10 @@ func dial(addr string) (*grpc.ClientConn, error) {
 }
 
 func run(log *slog.Logger) error {
+	// Read here so a missing key kills the gateway on start with one readable
+	// line. It is only used on outgoing calls, so without this the first
+	// symptom would be a panic in the middle of somebody's first request.
+	_ = grpcx.SigningKey()
 	cfg := config.Load()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
