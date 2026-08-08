@@ -83,7 +83,7 @@
             <div class="sub">{{ t('emails.inboundTo', { to: openedInbound.toEmail }) }}</div>
           </div>
           <span class="grow" />
-          <span class="sub in-when">
+          <span class="sub in-when" :title="zonedStamp(openedInbound.sentAt || openedInbound.receivedAt)">
             {{ shortTime(openedInbound.sentAt || openedInbound.receivedAt) }}
           </span>
         </div>
@@ -179,7 +179,7 @@
               <span class="strong">{{ it.who || it.counterparty }}</span>
               <span class="sub ellipsis">{{ it.counterparty }}</span>
               <span class="grow" />
-              <span class="sub">{{ shortTime(it.at) }}</span>
+              <span class="sub" :title="zonedStamp(it.at)">{{ shortTime(it.at) }}</span>
             </button>
             <div v-show="isThreadOpen(it)" class="thread-body">
               <MailBody v-if="it.bodyFormat === 'HTML'" :html="it.body" />
@@ -441,7 +441,7 @@
         </el-table-column>
         <el-table-column :label="t('emails.savedAt')" width="160">
           <template #default="{ row }">
-            <span class="sub">{{ shortTime(row.updatedAt) }}</span>
+            <span class="sub" :title="zonedStamp(row.updatedAt)">{{ shortTime(row.updatedAt) }}</span>
           </template>
         </el-table-column>
         <el-table-column :label="common('actions')" width="90">
@@ -572,7 +572,7 @@
         <el-table-column :label="t('emails.suppressDetail')" min-width="260">
           <template #default="{ row }">
             <div class="ellipsis" :title="row.detail">{{ row.detail || '—' }}</div>
-            <div class="sub">{{ shortTime(row.createdAt) }}</div>
+            <div class="sub" :title="zonedStamp(row.createdAt)">{{ shortTime(row.createdAt) }}</div>
           </template>
         </el-table-column>
         <el-table-column :label="common('actions')" width="100">
@@ -688,6 +688,7 @@ import { useRoute, useRouter, type LocationQuery } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { del, download, get, http, mailHostRequest, post, saveBlob } from '../api'
+import { shortTime, zonedStamp } from '../lib/zonedtime'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import EmailComposer from '../components/EmailComposer.vue'
@@ -1191,8 +1192,9 @@ async function cancelScheduled(row: Scheduled) {
   loadDraftCount()
 }
 
-// The scheduled time, on the reader's own clock. shortTime slices the string
-// and would show UTC, which is the one reading nobody scheduled by.
+// The scheduled time, spelled out in the reader's language rather than the
+// numeric shape the lists use: a send that has not happened yet is read as a
+// date ("1 Mar 2026, 16:00"), not scanned as a column.
 function localTime(v: string) {
   if (!v) return ''
   const at = new Date(v)
@@ -1881,11 +1883,6 @@ function statusType(s: string): 'success' | 'warning' | 'danger' | 'info' {
   if (s === 'QUEUED' || s === 'SENDING') return 'info'
   if (s === 'HARD_BOUNCED' || s === 'COMPLAINED' || s === 'FAILED') return 'danger'
   return 'warning'
-}
-
-function shortTime(v: string) {
-  if (!v) return ''
-  return v.replace('T', ' ').replace('Z', '').slice(0, 16)
 }
 
 // A stable colour per correspondent, so the same customer looks the same every

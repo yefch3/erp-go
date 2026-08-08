@@ -9,7 +9,7 @@
       <el-table :data="rows" v-loading="loading">
         <el-table-column :label="t('exportLog.when')" width="170">
           <template #default="{ row }">
-            <span class="num">{{ shortTime(row.exportedAt) }}</span>
+            <span class="num" :title="zonedStamp(row.exportedAt)">{{ shortTime(row.exportedAt) }}</span>
           </template>
         </el-table-column>
         <el-table-column :label="t('exportLog.who')" width="130">
@@ -68,6 +68,7 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { get } from '../api'
+import { shortTime, zonedStamp } from '../lib/zonedtime'
 
 interface ExportRecord {
   id: string
@@ -107,16 +108,6 @@ async function reload() {
 function go(p: number) {
   page.value = p
   reload()
-}
-
-// Same shape as every other list in the product, deliberately: a page whose
-// clock disagreed with the mail list next to it would make "he exported it
-// eight hours after she sent it" out of two readings of the same moment.
-// (The shared slice-the-ISO-string helper is duplicated across four pages
-// already; unifying it is its own change.)
-function shortTime(v: string) {
-  if (!v) return ''
-  return v.replace('T', ' ').replace('Z', '').slice(0, 16)
 }
 
 function humanSize(n: number) {

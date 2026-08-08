@@ -20,7 +20,7 @@
           <el-tooltip v-else :content="t('reader.fromUnrecordedHint')" placement="top">
             <span class="dim unrecorded">{{ t('reader.fromUnrecorded') }}</span>
           </el-tooltip>
-          <span class="dim">{{ stamp }}</span>
+          <span class="dim" :title="stampFull">{{ stamp }}</span>
         </div>
         <div class="line2">
           <span class="dim">{{ t('reader.to') }}</span>
@@ -45,7 +45,7 @@
       <span class="rb-label">{{ t('reader.openedLabel') }}</span>
       <el-tooltip
         v-if="mail.openedAt"
-        :content="t('emails.openedHint', { at: shortTime(mail.openedAt) })"
+        :content="t('emails.openedHint', { at: zonedStamp(mail.openedAt) })"
         placement="top"
         :show-after="0"
       >
@@ -104,6 +104,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { shortTime, zonedStamp } from '../lib/zonedtime'
 import MailBody from './MailBody.vue'
 
 interface Attachment {
@@ -139,7 +140,9 @@ export interface Mail {
 const props = defineProps<{ mail: Mail | null }>()
 const { t } = useI18n()
 
-const stamp = computed(() => shortTime(props.mail?.sentAt || props.mail?.queuedAt || ''))
+const sentInstant = computed(() => props.mail?.sentAt || props.mail?.queuedAt || '')
+const stamp = computed(() => shortTime(sentInstant.value))
+const stampFull = computed(() => zonedStamp(sentInstant.value))
 
 function initial(name: string) {
   return (name || '?').trim().charAt(0).toUpperCase()
@@ -150,11 +153,6 @@ function statusType(s: string): 'success' | 'warning' | 'danger' | 'info' {
   if (s === 'QUEUED' || s === 'SENDING') return 'info'
   if (s === 'HARD_BOUNCED' || s === 'COMPLAINED' || s === 'FAILED') return 'danger'
   return 'warning'
-}
-
-function shortTime(v: string) {
-  if (!v) return ''
-  return v.replace('T', ' ').replace('Z', '').slice(0, 16)
 }
 
 function humanSize(bytes: number) {
