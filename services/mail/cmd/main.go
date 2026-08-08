@@ -131,9 +131,10 @@ func run(log *slog.Logger) error {
 		go imap.Run(ctx)
 		syncCfg := app.SyncConfig{
 			Interval:    cfg.SyncInterval,
-			BatchSize:   uint32(cfg.SyncBatch),
-			HistoryCap:  int64(cfg.SyncHistory),
-			Concurrency: cfg.SyncConcurrency,
+			BatchSize:     uint32(cfg.SyncBatch),
+			HistoryCap:    int64(cfg.SyncHistory),
+			Concurrency:   cfg.SyncConcurrency,
+			PublicBaseURL: cfg.PublicBaseURL,
 		}
 		// The poller is the historian and the safety net; the idle watchers
 		// are what make new mail arrive in seconds instead of minutes.
@@ -150,6 +151,13 @@ func run(log *slog.Logger) error {
 		// the same function ingest uses rather than by a regexp in the
 		// migration, so old and new mail are searched by the same text.
 		go svc.BackfillSearchText(ctx, syncCfg)
+		// Received mail's pictures, fetched by us at delivery instead of by
+		// the reader's browser at reading time — so opening a mail stops
+		// being an event the sender observes. Its own loop for the same
+		// reason as the write-back: one slow marketing server must not hold
+		// up mail arriving. Doubles as the backfill for everything already
+		// stored, which has no stamp yet.
+		go svc.RunImageCache(ctx, syncCfg)
 	}
 
 	// The worker runs in-process. The database is the queue, so a second

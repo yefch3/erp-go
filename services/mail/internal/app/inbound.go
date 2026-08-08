@@ -101,6 +101,11 @@ type SyncConfig struct {
 	HistoryCap int64
 	// How many mailboxes may sync at once. See syncfleet.go.
 	Concurrency int
+	// Where a recipient's mail client reaches us — the same address the
+	// tracking pixel is built from. The image cache needs it for one reason
+	// only: to recognise our own pixel when a customer quotes our mail back
+	// at us, and refuse to fetch it. See imagecache.go.
+	PublicBaseURL string
 }
 
 func (c SyncConfig) withDefaults() SyncConfig {

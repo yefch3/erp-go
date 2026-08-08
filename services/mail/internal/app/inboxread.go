@@ -221,7 +221,14 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 		// from the wild, and it is about to be rendered inside our page.
 		// Read with the wider reader policy: this goes into a sandboxed
 		// frame, where a sender's stylesheet cannot reach our page.
-		BodyHTML: SanitizeForReading(row.BodyHtml),
+		//
+		// Then the pictures are swapped for our own copies, so that opening
+		// this mail does not tell the sender it was opened. After sanitising,
+		// deliberately: the substitution matches the addresses as the reader
+		// will see them, and a signed storage URL never has to survive the
+		// sanitiser's own URL policy.
+		BodyHTML: s.localiseImages(ctx, SanitizeForReading(row.BodyHtml),
+			s.swapForMessage(ctx, tenantID, id)),
 		BodyText: row.BodyText,
 	}
 	if row.ReceivedAt.Valid {
@@ -275,11 +282,16 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID int64, th
 	if err != nil {
 		return nil, err
 	}
+	// One query for the whole conversation's cached pictures, and one
+	// signature per distinct object. A sixteen-turn thread quoting the same
+	// signature logo throughout would otherwise be sixteen round trips.
+	swaps := s.swapForThread(ctx, tenantID, ownerID, threadKey)
+
 	out := make([]ThreadItem, 0, len(rows))
 	for _, r := range rows {
 		body := r.Body
 		if r.Direction == "IN" && r.BodyFormat == "HTML" {
-			body = SanitizeForReading(body)
+			body = s.localiseImages(ctx, SanitizeForReading(body), swaps[r.ID])
 		}
 		v := ThreadItem{
 			Direction: r.Direction, ID: r.ID, Subject: r.Subject,
@@ -525,6 +537,10 @@ func (s *Service) purgeOne(ctx context.Context, tenantID, ownerID, id int64, raw
 				keys = append(keys, a.FileKey)
 			}
 		}
+		// The pictures we fetched on this mail's behalf. The table row goes
+		// with the message through the cascade; the bytes only go if they are
+		// named here first.
+		keys = append(keys, s.imageKeysFor(ctx, tenantID, id)...)
 		if rawKey != "" {
 			keys = append(keys, rawKey)
 		}
