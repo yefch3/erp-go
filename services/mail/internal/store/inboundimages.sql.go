@@ -83,6 +83,91 @@ func (q *Queries) ListImageKeysForPurge(ctx context.Context, arg ListImageKeysFo
 	return items, nil
 }
 
+const listInboundAttachmentsForRepair = `-- name: ListInboundAttachmentsForRepair :many
+SELECT id, file_name, file_size
+FROM email_inbound_attachments
+WHERE tenant_id = $1::bigint
+  AND inbound_id = $2::bigint
+ORDER BY id
+`
+
+type ListInboundAttachmentsForRepairParams struct {
+	TenantID  int64
+	InboundID int64
+}
+
+type ListInboundAttachmentsForRepairRow struct {
+	ID       int64
+	FileName string
+	FileSize int64
+}
+
+// One message's attachment rows in the order ingest wrote them, which is the
+// order the parser produced them — so re-parsing the same bytes lines up.
+func (q *Queries) ListInboundAttachmentsForRepair(ctx context.Context, arg ListInboundAttachmentsForRepairParams) ([]ListInboundAttachmentsForRepairRow, error) {
+	rows, err := q.db.Query(ctx, listInboundAttachmentsForRepair, arg.TenantID, arg.InboundID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInboundAttachmentsForRepairRow
+	for rows.Next() {
+		var i ListInboundAttachmentsForRepairRow
+		if err := rows.Scan(&i.ID, &i.FileName, &i.FileSize); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInboundEmbedded = `-- name: ListInboundEmbedded :many
+
+SELECT content_id, file_key, content_type
+FROM email_inbound_attachments
+WHERE tenant_id = $1::bigint
+  AND inbound_id = $2::bigint
+  AND content_id <> ''
+  AND file_key <> ''
+`
+
+type ListInboundEmbeddedParams struct {
+	TenantID  int64
+	InboundID int64
+}
+
+type ListInboundEmbeddedRow struct {
+	ContentID   string
+	FileKey     string
+	ContentType string
+}
+
+// ------------------------------------------- pictures carried in the message
+// The parts this message points at from its own body, for the swap that turns
+// every cid: into a signed storage URL.
+func (q *Queries) ListInboundEmbedded(ctx context.Context, arg ListInboundEmbeddedParams) ([]ListInboundEmbeddedRow, error) {
+	rows, err := q.db.Query(ctx, listInboundEmbedded, arg.TenantID, arg.InboundID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInboundEmbeddedRow
+	for rows.Next() {
+		var i ListInboundEmbeddedRow
+		if err := rows.Scan(&i.ContentID, &i.FileKey, &i.ContentType); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listInboundImages = `-- name: ListInboundImages :many
 SELECT source_url, object_key, content_type
 FROM email_inbound_images
@@ -112,6 +197,59 @@ func (q *Queries) ListInboundImages(ctx context.Context, arg ListInboundImagesPa
 	for rows.Next() {
 		var i ListInboundImagesRow
 		if err := rows.Scan(&i.SourceUrl, &i.ObjectKey, &i.ContentType); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInboundNeedingContentIDs = `-- name: ListInboundNeedingContentIDs :many
+SELECT i.id, i.raw_key
+FROM email_inbound i
+WHERE i.tenant_id = $1::bigint
+  AND i.raw_key <> ''
+  AND i.body_html ~ 'src="cid:|src=''cid:'
+  AND NOT EXISTS (
+      SELECT 1 FROM email_inbound_attachments a
+      WHERE a.tenant_id = i.tenant_id AND a.inbound_id = i.id AND a.content_id <> ''
+  )
+ORDER BY i.id DESC
+LIMIT $2::int
+`
+
+type ListInboundNeedingContentIDsParams struct {
+	TenantID int64
+	RowLimit int32
+}
+
+type ListInboundNeedingContentIDsRow struct {
+	ID     int64
+	RawKey string
+}
+
+// Messages whose body points at a part none of their attachments answers to.
+//
+// The work queue for the backfill, and it needs no marker column: a message
+// qualifies exactly while it is still broken, so fixing one removes it from
+// the queue. Bodies written before ingest kept Content-ID are the whole of the
+// backlog, and there is no way for a new message to join it.
+//
+// raw_key is what makes the repair possible at all: the original MIME is
+// still in object storage, which is what it is kept for.
+func (q *Queries) ListInboundNeedingContentIDs(ctx context.Context, arg ListInboundNeedingContentIDsParams) ([]ListInboundNeedingContentIDsRow, error) {
+	rows, err := q.db.Query(ctx, listInboundNeedingContentIDs, arg.TenantID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInboundNeedingContentIDsRow
+	for rows.Next() {
+		var i ListInboundNeedingContentIDsRow
+		if err := rows.Scan(&i.ID, &i.RawKey); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -169,6 +307,56 @@ func (q *Queries) ListInboundNeedingImages(ctx context.Context, arg ListInboundN
 	for rows.Next() {
 		var i ListInboundNeedingImagesRow
 		if err := rows.Scan(&i.ID, &i.BodyHtml); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listThreadEmbedded = `-- name: ListThreadEmbedded :many
+SELECT a.inbound_id, a.content_id, a.file_key, a.content_type
+FROM email_inbound_attachments a
+JOIN email_inbound i ON i.id = a.inbound_id AND i.tenant_id = a.tenant_id
+WHERE a.tenant_id = $1::bigint
+  AND i.owner_id = $2::bigint
+  AND i.thread_key = $3::text
+  AND a.content_id <> ''
+  AND a.file_key <> ''
+`
+
+type ListThreadEmbeddedParams struct {
+	TenantID  int64
+	OwnerID   int64
+	ThreadKey string
+}
+
+type ListThreadEmbeddedRow struct {
+	InboundID   int64
+	ContentID   string
+	FileKey     string
+	ContentType string
+}
+
+// The same across a whole conversation, in one query rather than one per turn.
+func (q *Queries) ListThreadEmbedded(ctx context.Context, arg ListThreadEmbeddedParams) ([]ListThreadEmbeddedRow, error) {
+	rows, err := q.db.Query(ctx, listThreadEmbedded, arg.TenantID, arg.OwnerID, arg.ThreadKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListThreadEmbeddedRow
+	for rows.Next() {
+		var i ListThreadEmbeddedRow
+		if err := rows.Scan(
+			&i.InboundID,
+			&i.ContentID,
+			&i.FileKey,
+			&i.ContentType,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -245,5 +433,22 @@ type MarkImagesCachedParams struct {
 // host holds up the whole queue.
 func (q *Queries) MarkImagesCached(ctx context.Context, arg MarkImagesCachedParams) error {
 	_, err := q.db.Exec(ctx, markImagesCached, arg.TenantID, arg.ID)
+	return err
+}
+
+const setAttachmentContentID = `-- name: SetAttachmentContentID :exec
+UPDATE email_inbound_attachments
+SET content_id = $1::text
+WHERE tenant_id = $2::bigint AND id = $3::bigint
+`
+
+type SetAttachmentContentIDParams struct {
+	ContentID string
+	TenantID  int64
+	ID        int64
+}
+
+func (q *Queries) SetAttachmentContentID(ctx context.Context, arg SetAttachmentContentIDParams) error {
+	_, err := q.db.Exec(ctx, setAttachmentContentID, arg.ContentID, arg.TenantID, arg.ID)
 	return err
 }

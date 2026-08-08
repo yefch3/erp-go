@@ -549,6 +549,9 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 		if err := s.q.InsertInboundAttachment(ctx, store.InsertInboundAttachmentParams{
 			TenantID: tenantID, InboundID: id, FileName: a.FileName,
 			ContentType: a.ContentType, FileSize: int64(len(a.Data)), FileKey: key,
+			// What the body points at when it embeds this part. Empty for an
+			// ordinary attachment, which is most of them.
+			ContentID: a.ContentID,
 		}); err != nil {
 			s.log.Warn("could not record an incoming attachment", "file", a.FileName, "err", err)
 		}

@@ -40,6 +40,14 @@ type ParsedAttachment struct {
 	FileName    string
 	ContentType string
 	Data        []byte
+	// Content-ID, angle brackets stripped. Set only when the message gave the
+	// part a name of its own to be pointed at by — which in practice means a
+	// picture the body embeds, a signature logo above all.
+	//
+	// It was discarded until now, and that is why an embedded logo rendered as
+	// a broken image: the bytes were stored, the body said cid:<this>, and
+	// nothing joined the two. See migration 00031.
+	ContentID string
 }
 
 // ParseMail turns raw RFC 5322 bytes into something storable.
@@ -150,6 +158,7 @@ func collectLeaf(ent *emsg.Entity, out *ParsedMail) {
 			FileName:    decodeHeader(filename),
 			ContentType: ct,
 			Data:        data,
+			ContentID:   contentIDOf(ent.Header.Get("Content-ID")),
 		})
 		return
 	}
@@ -216,6 +225,26 @@ func looksLikeBounce(contentType string, params map[string]string, from, subject
 // 5.x.x means stop writing to it, 4.x.x means the far side was temporarily
 // unable. Suppressing on a 4.x.x would silently blacklist a customer whose
 // mailbox was briefly full.
+// contentIDOf normalises the header into the form a body writes.
+//
+// RFC 2392: the header is <angle-bracketed>, and the src that points at it is
+// "cid:" followed by the same value without the brackets. Clients are sloppy
+// about whitespace and a few omit the brackets entirely, so both are accepted
+// and the bare value is what gets stored — that is the string the lookup will
+// be handed.
+func contentIDOf(raw string) string {
+	v := strings.TrimSpace(raw)
+	v = strings.TrimPrefix(v, "<")
+	v = strings.TrimSuffix(v, ">")
+	// A Content-ID is an addr-spec and cannot legally contain whitespace; one
+	// that does is mangled beyond a guess, and a mangled id that half-matches
+	// would attach the wrong picture.
+	if v == "" || strings.ContainsAny(v, " \t\r\n") {
+		return ""
+	}
+	return v
+}
+
 func readDeliveryStatus(ent *emsg.Entity, out *ParsedMail) {
 	body, err := io.ReadAll(io.LimitReader(ent.Body, 64<<10))
 	if err != nil {
