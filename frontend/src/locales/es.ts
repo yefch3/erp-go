@@ -1283,6 +1283,7 @@ export default {
     scopeHint_primary: 'Un contacto por cliente: el principal, o el primero si no hay ninguno marcado',
     scopeHint_all: 'Todos los contactos de todos los clientes de ese país',
     noCountry: 'Sin país',
+    countryRemoved: 'Se han quitado {n} contactos de {country}',
     countryAdded: 'Añadidos {n} destinatarios de {country}',
     countryAllPresent: 'Todos los de {country} ya están en la lista',
     placeholder: 'Escriba una dirección, o un nombre para buscar en la libreta',

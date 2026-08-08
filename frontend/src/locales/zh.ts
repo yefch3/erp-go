@@ -1278,6 +1278,7 @@ export default {
     scopeHint_primary: '每个客户只加主联系人（没设主联系人就加第一位）',
     scopeHint_all: '该国每个客户的每一位联系人都加进来',
     noCountry: '未设置国家',
+    countryRemoved: '已移除 {country} 的 {n} 位联系人',
     countryAdded: '已添加 {country} 的 {n} 位收件人',
     countryAllPresent: '{country} 的联系人都已经在列表里了',
     placeholder: '输入邮箱地址，或输入姓名/公司搜索通讯录',

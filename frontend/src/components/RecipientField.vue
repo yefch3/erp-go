@@ -71,14 +71,25 @@
           <span class="strip-hint">{{ t(`recipients.scopeHint_${countryScope}`) }}</span>
         </div>
         <div class="chips">
+          <!-- A toggle, not a fire-and-forget button. Clicking Brazil and then
+               wondering whether it worked — or whether you clicked it twice —
+               is the state this replaces: the chip now says whether that
+               country is on the list, and clicking it again takes them off.
+               aria-pressed rather than a colour alone, because "which ones did
+               I pick" must not be a question only a sighted user can answer. -->
           <el-button
             v-for="g in countries"
             :key="g.code || 'none'"
             size="small"
+            class="chip"
+            :class="{ on: isCountryOn(g) }"
+            :type="isCountryOn(g) ? 'primary' : ''"
+            :aria-pressed="isCountryOn(g)"
             :loading="addingCountry === (g.code || 'none')"
-            :disabled="countAdded(g) === 0"
-            @click="addCountry(g)"
+            :disabled="countAdded(g) === 0 && !isCountryOn(g)"
+            @click="toggleCountry(g)"
           >
+            <span v-if="isCountryOn(g)" class="tick" aria-hidden="true">✓</span>
             {{ g.code ? countryName(g.code, locale) : t('recipients.noCountry') }}
             <span class="chip-n">{{ countAdded(g) }}</span>
           </el-button>
@@ -300,18 +311,47 @@ async function loadCountries() {
 //
 // Goes through the same merge as the address book below, so picking Brazil and
 // then ticking a Brazilian contact by hand does not send them two copies.
-async function addCountry(g: CountryGroup) {
-  addingCountry.value = g.code || 'none'
+// Who a country's chip put on the list, remembered so the same click can take
+// them off again. Keyed by country, filled the first time that chip is used.
+const countryMembers = new Map<string, string[]>()
+
+function chipKey(g: CountryGroup) {
+  return g.code || 'none'
+}
+
+// A chip is on when everybody it stands for is currently on the list.
+//
+// Derived rather than stored. A flag would drift the moment somebody removed
+// one of the tokens by hand: the chip would still look selected while the
+// person it named was no longer being written to. Deriving it means the chip
+// answers the only question worth asking — "is this whole country on the
+// list" — and answers it correctly however the list got that way.
+function isCountryOn(g: CountryGroup): boolean {
+  const members = countryMembers.get(chipKey(g))
+  if (!members || members.length === 0) return false
+  const picked = new Set(props.modelValue.map((r) => r.email))
+  return members.every((email) => picked.has(email))
+}
+
+async function toggleCountry(g: CountryGroup) {
+  const where = g.code ? countryName(g.code, locale.value) : t('recipients.noCountry')
+  if (isCountryOn(g)) {
+    removeCountry(g, where)
+    return
+  }
+  addingCountry.value = chipKey(g)
   try {
     const d = await get<{ contacts: Recipient[] }>('/mailing-contacts/by-country', {
       code: g.code,
       scope: countryScope.value,
     })
-    const added = mergeIn(d.contacts ?? [])
-    const where = g.code ? countryName(g.code, locale.value) : t('recipients.noCountry')
+    const contacts = d.contacts ?? []
+    countryMembers.set(chipKey(g), contacts.map((c) => c.email))
+    const added = mergeIn(contacts)
     if (added === 0) {
-      // Everybody in that country was already on the list. Said out loud,
-      // because a button that appears to do nothing reads as broken.
+      // Everybody was already on the list — by hand, or through another
+      // route. The chip is now lit, which is the honest answer, and saying so
+      // stops a click that changed nothing reading as a broken button.
       ElMessage.info(t('recipients.countryAllPresent', { country: where }))
       return
     }
@@ -320,6 +360,30 @@ async function addCountry(g: CountryGroup) {
     addingCountry.value = ''
   }
 }
+
+// Turning a country off means nobody from it is on the list — including
+// anybody added by hand before the chip was pressed.
+//
+// The alternative is to remember which addresses this chip added and remove
+// only those, which sounds more careful and is worse: the chip would go dark
+// while two people from Brazil stayed on the list, and "Brazil is off" would
+// be false. A chip that lies about the list it controls is not worth having.
+function removeCountry(g: CountryGroup, where: string) {
+  const members = new Set(countryMembers.get(chipKey(g)) ?? [])
+  if (members.size === 0) return
+  const kept = props.modelValue.filter((r) => !members.has(r.email))
+  const removed = props.modelValue.length - kept.length
+  emit('update:modelValue', kept)
+  if (removed > 0) {
+    ElMessage.info(t('recipients.countryRemoved', { n: removed, country: where }))
+  }
+}
+
+// Switching between "every contact" and "one each" changes who a chip stands
+// for, so what it remembers is no longer true. Cleared rather than refetched:
+// the lists on screen are still whatever was picked, and silently swapping
+// them under the person would be worse than making them press again.
+watch(countryScope, () => countryMembers.clear())
 
 function onBookSelection(rows: Recipient[]) {
   bookChosen.value = rows
@@ -428,6 +492,16 @@ function addFromBook() {
   background: var(--el-color-primary-light-8);
   color: var(--el-color-primary);
   font-size: 11px;
+}
+/* On a lit chip the count sits on a filled background, so the light tint it
+   uses when the chip is plain would disappear into it. */
+.chip.on .chip-n {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+.tick {
+  margin-right: 3px;
+  font-weight: 700;
 }
 .book-bar {
   display: flex;
