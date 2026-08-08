@@ -189,6 +189,45 @@ func (s *Server) removeSuppression(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// listCustomerCountries and contactsInCountry are the address book grouped
+// the way an exporter actually thinks about it.
+//
+// Both sit with the mail handlers rather than the customer ones for the same
+// reason listMailingContacts does: they are shaped by what the composer needs,
+// not by what a customer record is. And they carry the mail write permission,
+// because that is what they are for — reading the customer list is a different
+// question with a different answer.
+func (s *Server) listCustomerCountries(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Customers.ListCustomerCountries(r.Context(), &mdv1.ListCustomerCountriesRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) contactsInCountry(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	resp, err := s.Customers.ContactsInCountry(r.Context(), &mdv1.ContactsInCountryRequest{
+		CountryCode: q.Get("code"),
+		// Defaults to every contact at the customer, and the default is opt-out
+		// rather than opt-in on purpose: in this trade the counterparty is a
+		// company, not a person — the buyer, the shipping clerk and whoever
+		// signs all expect to be on the thread. The expensive mistake is the
+		// quiet one, a price update that never reached the person who decides.
+		//
+		// Written as "== primary" rather than "!= all" so that a caller who
+		// sends nothing, or sends a value nobody anticipated, lands on the
+		// documented default instead of on whichever branch the negation left.
+		PrimaryOnly: q.Get("scope") == "primary",
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 // listMailingContacts is the address book behind the recipient picker. It
 // lives with the mail handlers rather than the customer ones because it is
 // shaped by what the composer needs, not by what a customer record is.

@@ -336,6 +336,10 @@ func (s *Server) Router() http.Handler {
 		// The address book the composer picks from. Gated on sending: it is
 		// only ever used to choose who a mail goes to.
 		r.With(s.perm("mail:email:write")).Get("/api/mailing-contacts", s.listMailingContacts)
+		// The same book grouped by country, and one country's worth of it.
+		// Same permission: this is the composer's picker, not the customer list.
+		r.With(s.perm("mail:email:write")).Get("/api/customer-countries", s.listCustomerCountries)
+		r.With(s.perm("mail:email:write")).Get("/api/mailing-contacts/by-country", s.contactsInCountry)
 		// The supervisor's employee picker. Scoped by the same notification
 		// data scope, so it lists exactly whose mail the caller may open.
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/email-senders", s.listMailSenders)

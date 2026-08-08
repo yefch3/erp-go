@@ -20,6 +20,11 @@ service CustomerService {
   // a lookup per customer, because the mail composer needs all of them at
   // once and an N+1 there is a page that visibly stalls.
   rpc ListMailingContacts(ListMailingContactsRequest) returns (ListMailingContactsResponse);
+  // ListCustomerCountries answers "which countries do we sell to, and how
+  // many people are in each" — the grouping the recipient picker offers.
+  rpc ListCustomerCountries(ListCustomerCountriesRequest) returns (ListCustomerCountriesResponse);
+  // ContactsInCountry returns everybody writable in one of them.
+  rpc ContactsInCountry(ContactsInCountryRequest) returns (ContactsInCountryResponse);
 }
 
 // SupplierService owns supplier master data, referenced by procurement.
@@ -68,6 +73,13 @@ message Customer {
   string remark = 8;
   string status = 9;
   repeated Contact contacts = 10;
+  // ISO 3166-1 alpha-2, upper case, or empty when nobody has said.
+  //
+  // This is what the system groups by. The free-text `country` above is what
+  // came before it and is on its way out: writes send the code, and the name
+  // shown on screen is derived from it by the browser, in whatever language
+  // the reader is using.
+  string country_code = 11;
 }
 
 message CreateCustomerRequest {
@@ -79,6 +91,13 @@ message CreateCustomerRequest {
   string payment_term = 6;
   string remark = 7;
   repeated Contact contacts = 8;
+  // ISO 3166-1 alpha-2, upper case, or empty when nobody has said.
+  //
+  // This is what the system groups by. The free-text `country` above is what
+  // came before it and is on its way out: writes send the code, and the name
+  // shown on screen is derived from it by the browser, in whatever language
+  // the reader is using.
+  string country_code = 9;
 }
 
 message CreateCustomerResponse {
@@ -115,6 +134,45 @@ message MailingContact {
   int64 customer_id = 6;
   string customer_name = 7;
   string country = 8;
+  string country_code = 9;
+}
+
+// CountryGroup is one country and how big a send to it would be.
+//
+// Two counts, not one, because a picker that shows only customers invites the
+// wrong expectation: "Brazil (12)" reads as twelve emails, and if those twelve
+// companies have nineteen contacts between them the send is half as big again
+// as the person thought.
+message CountryGroup {
+  // Empty for customers nobody has assigned a country to. They are shown
+  // rather than dropped: they are the ones somebody has to go and fix, and a
+  // list that hides them is a list that never gets fixed.
+  string code = 1;
+  int64 customer_count = 2;
+  int64 contact_count = 3;
+  // How many messages "one per customer" would send. Not a count of primary
+  // flags: primary is often unset and the query falls back to the first
+  // contact, so counting flags would under-report the size of the send.
+  int64 one_each_count = 4;
+}
+
+message ListCustomerCountriesRequest {}
+
+message ListCustomerCountriesResponse {
+  repeated CountryGroup countries = 1;
+}
+
+message ContactsInCountryRequest {
+  string country_code = 1;
+  // One person per customer instead of everybody at it. The caller has to
+  // say: a price update goes to the buyer, a trade-fair invitation goes to
+  // whoever might come, and guessing would silently multiply or divide the
+  // size of somebody's send.
+  bool primary_only = 2;
+}
+
+message ContactsInCountryResponse {
+  repeated MailingContact contacts = 1;
 }
 
 message ListMailingContactsRequest {
@@ -138,6 +196,8 @@ message UpdateCustomerRequest {
   string remark = 7;
   // Full replacement of the contact list.
   repeated Contact contacts = 8;
+  // ISO 3166-1 alpha-2, upper case, or empty. See Customer.country_code.
+  string country_code = 9;
 }
 
 message UpdateCustomerResponse {
