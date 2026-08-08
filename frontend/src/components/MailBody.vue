@@ -28,7 +28,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onBeforeUnmount } from 'vue'
+import { computed, nextTick, onMounted, ref, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -107,24 +107,44 @@ const doc = computed(() => {
 
 let poll: number | undefined
 
-// Measured after load, then a few more times, because images arrive later and
-// each one changes the height. Polling briefly beats a ResizeObserver here:
-// the observer would have to live inside the frame, and inside the frame is
-// exactly where we have chosen not to run scripts.
+// Measuring starts when the mail arrives, not when the frame finishes loading.
+//
+// That distinction was worth several seconds. The frame stays hidden until it
+// has been measured once, and measuring used to be triggered by the frame's
+// load event — which does not fire until every image in the mail has arrived
+// or given up. A marketing mail carries dozens of images from the sender's own
+// servers; the worst one in a real mailbox here has a hundred and fourteen. So
+// the reading pane sat blank, waiting on somebody else's CDN, while the text
+// had been laid out and ready to read almost immediately.
+//
+// Nothing about the height needs those images. Text lays out first and has a
+// height; each image that lands changes it, and the poll below is already
+// there to follow that. Waiting for all of them before showing anything threw
+// away the whole point of polling.
+//
+// So: reveal on the first measurement that succeeds, keep adjusting for a few
+// seconds as pictures land, and take one last reading at load when the last of
+// them has settled. Polling beats a ResizeObserver here because the observer
+// would have to live inside the frame, and inside the frame is exactly where
+// we have chosen not to run scripts.
 function measure() {
   read()
   window.clearInterval(poll)
   let ticks = 0
   poll = window.setInterval(() => {
     read()
-    if (++ticks > 12) {
+    // A hundred milliseconds, thirty times: three seconds of following the
+    // layout, with the first look soon enough to feel immediate. The old
+    // quarter-second interval was chosen when this only ran after everything
+    // had already loaded and had nothing left to catch.
+    if (++ticks > 30) {
       window.clearInterval(poll)
       // Whatever happened, the mail becomes visible. A measurement that never
       // succeeded would otherwise leave the frame hidden for good, and an
       // invisible mail is a far worse failure than a badly sized one.
       ready.value = true
     }
-  }, 250)
+  }, 100)
 }
 
 function read() {
@@ -150,12 +170,21 @@ function read() {
   }
 }
 
-// A new mail in the same component: hide again and re-measure, or the frame
-// would show the incoming mail at the outgoing one's height.
+// A new mail in the same component: hide again and start measuring straight
+// away, or the frame would show the incoming mail at the outgoing one's height
+// — and would then wait for load to notice.
+//
+// nextTick, because the frame needs its new srcdoc before there is anything to
+// read. The first tick or two may find no document yet; read() returns quietly
+// in that case and the next one catches it.
 watch(() => props.html, () => {
   height.value = 320
   ready.value = false
+  nextTick(measure)
 })
+
+// The first mail is not a change, so the watcher above never fires for it.
+onMounted(measure)
 onBeforeUnmount(() => window.clearInterval(poll))
 </script>
 
