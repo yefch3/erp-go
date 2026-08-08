@@ -1262,6 +1262,8 @@ export default {
   },
   reader: {
     bodyFrame: 'Cuerpo del mensaje',
+    showQuoted: 'Mostrar historial citado',
+    hideQuoted: 'Ocultar historial citado',
     openedLabel: '¿Lo abrió el destinatario?:',
     noOpenHint: 'Este correo llevaba un píxel de seguimiento y nunca se ha cargado. Puede que no lo haya abierto, o que su cliente bloquee las imágenes remotas (Outlook lo hace por defecto). Solo una respuesta es prueba concluyente.',
     noTracking: 'Sin seguimiento',

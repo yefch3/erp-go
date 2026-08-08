@@ -661,7 +661,8 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 		Id: v.ID, FromEmail: v.FromEmail, FromName: v.FromName,
 		Subject: v.Subject, Snippet: v.Snippet, ThreadKey: v.ThreadKey,
 		IsRead: v.IsRead, IsStarred: v.IsStarred, HasAttachments: v.HasAttachments,
-		BodyHtml: v.BodyHTML, BodyText: v.BodyText, ToEmail: v.ToEmail,
+		BodyHtml: v.BodyHTML, QuotedHtml: v.QuotedHTML,
+		BodyText: v.BodyText, ToEmail: v.ToEmail,
 		ThreadCount: v.ThreadCount,
 		Kind:        v.Kind,
 		ToName:      v.ToName,
@@ -744,7 +745,7 @@ func (h *Handler) GetMailThread(ctx context.Context, req *mailv1.GetMailThreadRe
 	for _, v := range items {
 		it := &mailv1.ThreadItem{
 			Direction: v.Direction, Id: v.ID, Subject: v.Subject,
-			Body: v.Body, BodyFormat: v.BodyFormat,
+			Body: v.Body, Quoted: v.Quoted, BodyFormat: v.BodyFormat,
 			Counterparty: v.Counterparty, Who: v.Who,
 		}
 		if !v.At.IsZero() {

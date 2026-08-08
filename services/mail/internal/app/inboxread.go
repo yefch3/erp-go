@@ -29,7 +29,11 @@ type InboundView struct {
 	SentAt         time.Time
 	BodyHTML       string
 	BodyText       string
-	Attachments    []Attachment
+	// The conversation quoted back inside this message, split out so the
+	// reader can fold it. Empty means there was nothing worth folding, which
+	// is the answer for most mail — see SplitQuotedHistory.
+	QuotedHTML  string
+	Attachments []Attachment
 	// How many messages the list row stands for. 1 for a lone message; the
 	// list collapses a conversation into one row and shows this count.
 	ThreadCount int32
@@ -227,10 +231,15 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 		// deliberately: the substitution matches the addresses as the reader
 		// will see them, and a signed storage URL never has to survive the
 		// sanitiser's own URL policy.
-		BodyHTML: s.localiseImages(ctx, SanitizeForReading(row.BodyHtml),
-			s.swapForMessage(ctx, tenantID, id)),
 		BodyText: row.BodyText,
 	}
+	// Sanitise, then localise the pictures, then fold — in that order. The
+	// fold parses the markup, so it has to run on the form the reader will
+	// actually be given; folding first and sanitising afterwards would mean
+	// the sanitiser could move the boundary out from under the split.
+	v.BodyHTML, v.QuotedHTML = SplitQuotedHistory(
+		s.localiseImages(ctx, SanitizeForReading(row.BodyHtml),
+			s.swapForMessage(ctx, tenantID, id)))
 	if row.ReceivedAt.Valid {
 		v.ReceivedAt = row.ReceivedAt.Time
 	}
@@ -261,6 +270,7 @@ type ThreadItem struct {
 	ID           int64
 	Subject      string
 	Body         string
+	Quoted       string
 	BodyFormat   string
 	Counterparty string
 	Who          string
@@ -289,13 +299,17 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID int64, th
 
 	out := make([]ThreadItem, 0, len(rows))
 	for _, r := range rows {
-		body := r.Body
+		body, quoted := r.Body, ""
 		if r.Direction == "IN" && r.BodyFormat == "HTML" {
-			body = s.localiseImages(ctx, SanitizeForReading(body), swaps[r.ID])
+			// The fold matters most here and for the reason this view exists:
+			// turn sixteen of a conversation is turns one to fifteen stacked
+			// up, and the thread already shows those separately.
+			body, quoted = SplitQuotedHistory(
+				s.localiseImages(ctx, SanitizeForReading(body), swaps[r.ID]))
 		}
 		v := ThreadItem{
 			Direction: r.Direction, ID: r.ID, Subject: r.Subject,
-			Body: body, BodyFormat: r.BodyFormat,
+			Body: body, Quoted: quoted, BodyFormat: r.BodyFormat,
 			Counterparty: r.Counterparty, Who: r.Who,
 		}
 		if r.At.Valid {

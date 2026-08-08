@@ -184,12 +184,14 @@
             <div v-show="isThreadOpen(it)" class="thread-body">
               <MailBody v-if="it.bodyFormat === 'HTML'" :html="it.body" />
               <pre v-else class="in-text">{{ it.body }}</pre>
+              <QuotedHistory v-if="it.quoted" :html="it.quoted" />
             </div>
           </div>
         </template>
         <template v-else>
           <MailBody v-if="openedInbound.bodyHtml" :html="openedInbound.bodyHtml" />
           <pre v-else class="in-text">{{ openedInbound.bodyText }}</pre>
+          <QuotedHistory v-if="openedInbound.quotedHtml" :html="openedInbound.quotedHtml" />
         </template>
         <template v-if="openedInbound.attachments?.length">
           <el-divider />
@@ -700,6 +702,7 @@ import MailList from '../components/MailList.vue'
 // styling the ERP — which is exactly what happened when these two sites were
 // left on v-html.
 import MailBody from '../components/MailBody.vue'
+import QuotedHistory from '../components/QuotedHistory.vue'
 import {
   Box,
   CircleClose,
@@ -740,6 +743,7 @@ interface InboundMail {
   receivedAt: string
   sentAt: string
   bodyHtml?: string
+  quotedHtml?: string
   bodyText?: string
   attachments?: {
     id: string
@@ -1391,6 +1395,7 @@ interface ThreadItem {
   id: string
   subject: string
   body: string
+  quoted?: string
   bodyFormat: string
   counterparty: string
   who: string

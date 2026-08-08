@@ -191,6 +191,11 @@ message InboundMail {
   // be forwarded as a .eml attachment. The screen greys the action out rather
   // than letting somebody compose a forward the send path will refuse.
   bool has_raw = 21;
+  // The conversation this message quotes back inside itself, split out so the
+  // reader can fold it behind a button. Empty means there was nothing worth
+  // folding — the answer for most mail. Turn sixteen of a thread is turns one
+  // to fifteen stacked up, and one such message measured 10747 pixels.
+  string quoted_html = 22;
 }
 
 message InboundAttachment {
@@ -278,6 +283,10 @@ message ThreadItem {
   string counterparty = 6;
   string who = 7;
   string at = 8;
+  // The history quoted inside this turn. Folded away by default here above
+  // all: the thread view is already showing those turns separately, so
+  // repeating them inside each one is the same text sixteen times over.
+  string quoted = 9;
 }
 
 message GetMailThreadResponse {

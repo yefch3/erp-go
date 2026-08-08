@@ -1262,6 +1262,8 @@ export default {
   },
   reader: {
     bodyFrame: 'Message body',
+    showQuoted: 'Show quoted history',
+    hideQuoted: 'Hide quoted history',
     openedLabel: 'Opened by recipient:',
     noOpenHint: 'This mail carried a tracking pixel and it has never been loaded. The recipient may not have opened it, or their client may block remote images (Outlook does by default). A reply is the only conclusive evidence.',
     noTracking: 'Tracking off',
