@@ -54,10 +54,18 @@
     <el-dialog v-model="bookOpen" :title="t('recipients.book')" width="760px" append-to-body>
       <!-- Countries first, because "everyone in Brazil" is a different act
            from "find Klaus" and the two should not be typed into the same box.
-           Each chip says how many people it would add, not how many companies:
-           twelve companies with nineteen contacts between them is a nineteen-
-           message send, and the number somebody reads is the number they
-           should be held to. -->
+           Each chip says how many people it stands for, not how many
+           companies: twelve companies with nineteen contacts between them is a
+           nineteen-message send, and the number somebody reads is the number
+           they should be held to.
+
+           A chip filters the table rather than adding straight to the field.
+           It used to add nineteen people on one click and announce it in a
+           toast, which meant the only way to find out who they were was to
+           read nineteen tokens afterwards — and by then it had happened.
+           Now the country's people appear in the list below, already ticked,
+           and nothing is committed until 添加所选. Seeing the names before
+           agreeing to write to them is the whole point. -->
       <div v-if="countries.length" class="country-strip">
         <div class="strip-head">
           <span class="strip-title">{{ t('recipients.byCountry') }}</span>
@@ -70,6 +78,12 @@
           </el-radio-group>
           <span class="strip-hint">{{ t(`recipients.scopeHint_${countryScope}`) }}</span>
         </div>
+        <div v-if="pickedCountries.size" class="strip-foot">
+          {{ t('recipients.countryFilterOn', { n: book.length }) }}
+          <el-button link type="primary" size="small" @click="clearCountryFilter">
+            {{ t('recipients.countryFilterClear') }}
+          </el-button>
+        </div>
         <div class="chips">
           <!-- A toggle, not a fire-and-forget button. Clicking Brazil and then
                wondering whether it worked — or whether you clicked it twice —
@@ -79,13 +93,13 @@
                I pick" must not be a question only a sighted user can answer. -->
           <el-button
             v-for="g in countries"
-            :key="g.code || 'none'"
+            :key="chipKey(g)"
             size="small"
             class="chip"
             :class="{ on: isCountryOn(g) }"
             :type="isCountryOn(g) ? 'primary' : ''"
             :aria-pressed="isCountryOn(g)"
-            :loading="addingCountry === (g.code || 'none')"
+            :loading="addingCountry === chipKey(g)"
             :disabled="countAdded(g) === 0 && !isCountryOn(g)"
             @click="toggleCountry(g)"
           >
@@ -102,17 +116,23 @@
           :placeholder="t('emails.searchContacts')"
           clearable
           style="width: 260px"
-          @keyup.enter="loadBook"
-          @clear="loadBook"
+          @keyup.enter="searchFromBar"
+          @clear="searchFromBar"
         />
-        <el-button @click="loadBook">{{ common('query') }}</el-button>
+        <el-button @click="searchFromBar">{{ common('query') }}</el-button>
         <el-button link type="primary" @click="selectAllInBook">
           {{ t('emails.selectAll') }}
         </el-button>
       </div>
+      <!-- row-key, because the rows are now replaced under the table whenever a
+           country filter changes. Without it el-table tracks rows by position:
+           filtering five contacts down to three left Diego rendering Ana's
+           "primary" tag, because he had landed on the row she used to occupy.
+           An address is unique in this list and is the natural identity. -->
       <el-table
         ref="bookTable"
         :data="book"
+        row-key="email"
         height="320"
         size="small"
         v-loading="loadingBook"
@@ -146,9 +166,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
 import { get } from '../api'
 import { countryName } from '../lib/countries'
 
@@ -286,14 +305,56 @@ function clearAll() {
 async function loadBook() {
   loadingBook.value = true
   try {
-    const d = await get<{ contacts: Recipient[] }>('/mailing-contacts', {
-      keyword: bookKeyword.value,
-    })
-    book.value = d.contacts ?? []
+    book.value = pickedCountries.value.size ? await countryContacts() : await searchContacts()
     book.value.forEach((c) => known.set(c.email, c))
+    // Everything a country filter brought in starts ticked, so "everyone in
+    // Brazil" is still one decision — but a visible one, with names attached
+    // and an untick next to each. Rows the person is already writing to are
+    // ticked too: leaving them clear would read as "these will be dropped".
+    await nextTick()
+    const already = new Set(props.modelValue.map((r) => r.email))
+    book.value.forEach((c) => {
+      if (pickedCountries.value.size || already.has(c.email)) {
+        bookTable.value?.toggleRowSelection(c, true)
+      }
+    })
   } finally {
     loadingBook.value = false
   }
+}
+
+// The two ways of finding somebody, kept apart. Searching is for "find Klaus";
+// the chips are for "everyone in Brazil". Mixing them would need a rule for
+// what a keyword means inside a country filter, and every answer to that is a
+// surprise to somebody.
+async function searchContacts(): Promise<Recipient[]> {
+  const d = await get<{ contacts: Recipient[] }>('/mailing-contacts', {
+    keyword: bookKeyword.value,
+  })
+  return d.contacts ?? []
+}
+
+// One request per selected country, merged and de-duplicated. A contact
+// belongs to one customer and a customer to one country, so overlap is not
+// expected — the de-duplication is here because "not expected" is not the same
+// as "cannot happen", and a doubled row would be ticked twice and sent twice.
+async function countryContacts(): Promise<Recipient[]> {
+  const lists = await Promise.all(
+    [...pickedCountries.value].map((key) =>
+      get<{ contacts: Recipient[] }>('/mailing-contacts/by-country', {
+        code: key === 'none' ? '' : key,
+        scope: countryScope.value,
+      }).then((d) => d.contacts ?? []),
+    ),
+  )
+  const seen = new Set<string>()
+  const out: Recipient[] = []
+  lists.flat().forEach((c) => {
+    if (seen.has(c.email)) return
+    seen.add(c.email)
+    out.push(c)
+  })
+  return out
 }
 
 watch(bookOpen, (open) => {
@@ -307,83 +368,60 @@ async function loadCountries() {
   countries.value = d.countries ?? []
 }
 
-// Adds a whole country to the recipient list in one click.
+// A country chip filters the list below; it does not send anybody anything.
 //
-// Goes through the same merge as the address book below, so picking Brazil and
-// then ticking a Brazilian contact by hand does not send them two copies.
-// Who a country's chip put on the list, remembered so the same click can take
-// them off again. Keyed by country, filled the first time that chip is used.
-const countryMembers = new Map<string, string[]>()
+// Selecting one puts that country's people in the table, already ticked, and
+// nothing leaves the dialog until 添加所选. The earlier version added them to
+// the field on the spot and said so in a toast — which is the wrong shape for
+// a decision this size: nineteen people arrived as nineteen tokens and the
+// only way to check who they were was to read them all back afterwards.
+const pickedCountries = ref<Set<string>>(new Set())
 
 function chipKey(g: CountryGroup) {
   return g.code || 'none'
 }
 
-// A chip is on when everybody it stands for is currently on the list.
-//
-// Derived rather than stored. A flag would drift the moment somebody removed
-// one of the tokens by hand: the chip would still look selected while the
-// person it named was no longer being written to. Deriving it means the chip
-// answers the only question worth asking — "is this whole country on the
-// list" — and answers it correctly however the list got that way.
 function isCountryOn(g: CountryGroup): boolean {
-  const members = countryMembers.get(chipKey(g))
-  if (!members || members.length === 0) return false
-  const picked = new Set(props.modelValue.map((r) => r.email))
-  return members.every((email) => picked.has(email))
+  return pickedCountries.value.has(chipKey(g))
 }
 
 async function toggleCountry(g: CountryGroup) {
-  const where = g.code ? countryName(g.code, locale.value) : t('recipients.noCountry')
-  if (isCountryOn(g)) {
-    removeCountry(g, where)
-    return
+  const key = chipKey(g)
+  const next = new Set(pickedCountries.value)
+  if (next.has(key)) {
+    next.delete(key)
+  } else {
+    next.add(key)
   }
-  addingCountry.value = chipKey(g)
+  pickedCountries.value = next
+  // Deliberately silent. A toast on every press was noise on an action whose
+  // whole result is visible in the table a centimetre below it.
+  addingCountry.value = key
   try {
-    const d = await get<{ contacts: Recipient[] }>('/mailing-contacts/by-country', {
-      code: g.code,
-      scope: countryScope.value,
-    })
-    const contacts = d.contacts ?? []
-    countryMembers.set(chipKey(g), contacts.map((c) => c.email))
-    const added = mergeIn(contacts)
-    if (added === 0) {
-      // Everybody was already on the list — by hand, or through another
-      // route. The chip is now lit, which is the honest answer, and saying so
-      // stops a click that changed nothing reading as a broken button.
-      ElMessage.info(t('recipients.countryAllPresent', { country: where }))
-      return
-    }
-    ElMessage.success(t('recipients.countryAdded', { n: added, country: where }))
+    await loadBook()
   } finally {
     addingCountry.value = ''
   }
 }
 
-// Turning a country off means nobody from it is on the list — including
-// anybody added by hand before the chip was pressed.
-//
-// The alternative is to remember which addresses this chip added and remove
-// only those, which sounds more careful and is worse: the chip would go dark
-// while two people from Brazil stayed on the list, and "Brazil is off" would
-// be false. A chip that lies about the list it controls is not worth having.
-function removeCountry(g: CountryGroup, where: string) {
-  const members = new Set(countryMembers.get(chipKey(g)) ?? [])
-  if (members.size === 0) return
-  const kept = props.modelValue.filter((r) => !members.has(r.email))
-  const removed = props.modelValue.length - kept.length
-  emit('update:modelValue', kept)
-  if (removed > 0) {
-    ElMessage.info(t('recipients.countryRemoved', { n: removed, country: where }))
-  }
+// Searching drops the country filter rather than searching inside it. Both
+// are ways of finding people and holding both at once needs a rule nobody
+// asked for; dropping it is at least visible, because the chips go dark.
+function searchFromBar() {
+  pickedCountries.value = new Set()
+  void loadBook()
 }
 
-// Switching between "every contact" and "one each" changes who a chip stands
-// for, so what it remembers is no longer true. Cleared rather than refetched:
-// the lists on screen are still whatever was picked, and silently swapping
-// them under the person would be worse than making them press again.
-watch(countryScope, () => countryMembers.clear())
+function clearCountryFilter() {
+  pickedCountries.value = new Set()
+  void loadBook()
+}
+
+// Changing what a chip stands for changes who is in the table, so the list is
+// rebuilt. The ticks go with it — they described the old membership.
+watch(countryScope, () => {
+  if (pickedCountries.value.size) void loadBook()
+})
 
 function onBookSelection(rows: Recipient[]) {
   bookChosen.value = rows
@@ -502,6 +540,14 @@ function addFromBook() {
 .tick {
   margin-right: 3px;
   font-weight: 700;
+}
+.strip-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 .book-bar {
   display: flex;
