@@ -225,6 +225,21 @@ type MailAccount struct {
 	OauthRefreshEnc []byte
 }
 
+type MailExportLog struct {
+	ID           int64
+	TenantID     int64
+	EmployeeID   int64
+	EmployeeName string
+	ThreadKey    string
+	Subject      string
+	Counterparty string
+	TurnCount    int32
+	ByteSize     int64
+	Format       string
+	ClientIp     string
+	ExportedAt   pgtype.Timestamptz
+}
+
 type MailFlagOp struct {
 	ID         int64
 	TenantID   int64

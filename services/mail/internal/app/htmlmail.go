@@ -129,9 +129,17 @@ func normalizeFormat(f string) string {
 var (
 	// </li> is absent on purpose: the opening <li> already starts the line,
 	// so closing it too would double-space every list.
-	blockEnd   = regexp.MustCompile(`(?i)</(p|div|tr|h[1-6]|blockquote|pre)\s*>`)
-	brTag      = regexp.MustCompile(`(?i)<br\s*/?>`)
-	listItem   = regexp.MustCompile(`(?i)<li[^>]*>`)
+	blockEnd = regexp.MustCompile(`(?i)</(p|div|tr|h[1-6]|blockquote|pre)\s*>`)
+	// A cell boundary is not nothing. Without this a price row rendered as
+	// "货号A1200USD" — three columns with no gap between them, which is worse
+	// than losing the table, because the numbers run together into a
+	// different number. A tab is the conventional plain-text cell separator
+	// and is what copying a table out of a browser produces; the paste parser
+	// on the other side of this product splits on it for the same reason.
+	// Any trailing tab left before a row break is swept up by trailingWS.
+	cellEnd  = regexp.MustCompile(`(?i)</(td|th)\s*>`)
+	brTag    = regexp.MustCompile(`(?i)<br\s*/?>`)
+	listItem = regexp.MustCompile(`(?i)<li[^>]*>`)
 	anyTag     = regexp.MustCompile(`<[^>]*>`)
 	manyBlanks = regexp.MustCompile(`\n{3,}`)
 	trailingWS = regexp.MustCompile(`[ \t]+\n`)
@@ -162,6 +170,9 @@ func HTMLToText(h string) string {
 	}
 	s = brTag.ReplaceAllString(s, "\n")
 	s = listItem.ReplaceAllString(s, "\n• ")
+	// Cells before rows: </td></tr> has to become "cell<TAB>" then a newline,
+	// not a newline followed by a stray tab at the head of the next row.
+	s = cellEnd.ReplaceAllString(s, "\t")
 	s = blockEnd.ReplaceAllString(s, "\n")
 	s = anyTag.ReplaceAllString(s, "")
 	s = unescapeEntities(s)

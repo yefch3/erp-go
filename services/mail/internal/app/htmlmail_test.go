@@ -84,6 +84,28 @@ func TestHTMLToTextDropsInvisibleContent(t *testing.T) {
 	}
 }
 
+// A price table is the one thing in a trade mail that must not lose its
+// boundaries. Before there was a cell separator this row came out as
+// "SS304-3.0mm1201250USD" — not a table missing its columns, which would be
+// tolerable, but three numbers welded into one, which is a different quote.
+func TestHTMLToTextKeepsTableCellsApart(t *testing.T) {
+	in := `<table><tr><td>SS304-3.0mm</td><td>120</td><td>1250</td><td>USD</td></tr>` +
+		`<tr><td>SS304-3.5mm</td><td>80</td><td>1310</td><td>USD</td></tr></table>`
+	got := HTMLToText(in)
+	for _, want := range []string{
+		"SS304-3.0mm\t120\t1250\tUSD",
+		"SS304-3.5mm\t80\t1310\tUSD",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("row lost its columns:\n%q", got)
+		}
+	}
+	// One line per row, and no tab left dangling at the end of one.
+	if strings.Contains(got, "\t\n") || strings.Contains(got, "USDSS304") {
+		t.Fatalf("rows ran together:\n%q", got)
+	}
+}
+
 func TestHTMLToTextUnescapesEntities(t *testing.T) {
 	got := HTMLToText(`<p>Smith &amp; Sons &lt;Trading&gt;&nbsp;Ltd</p>`)
 	if got != "Smith & Sons <Trading> Ltd" {
