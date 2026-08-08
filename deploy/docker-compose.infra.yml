@@ -9,8 +9,12 @@ services:
       POSTGRES_USER: erp
       POSTGRES_PASSWORD: erp_dev_password
       POSTGRES_DB: postgres
+    # Loopback only. Postgres, Redis, Kafka and MinIO are reached by the
+    # services over the compose network; the published port is for psql from
+    # this machine. 5432 and 6379 are on the first page of every scanner's
+    # list, so a cloud host publishing them on 0.0.0.0 is found the same day.
     ports:
-      - "${PG_PORT:-5433}:5432"
+      - "127.0.0.1:${PG_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
@@ -37,7 +41,7 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
     ports:
-      - "${KAFKA_PORT:-19092}:19092"
+      - "127.0.0.1:${KAFKA_PORT:-19092}:19092"
     volumes:
       - kafkadata:/var/lib/kafka/data
     healthcheck:
@@ -49,7 +53,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "${REDIS_PORT:-6380}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -62,8 +66,8 @@ services:
       MINIO_ROOT_USER: erp
       MINIO_ROOT_PASSWORD: erp_dev_password
     ports:
-      - "${MINIO_PORT:-19000}:9000"
-      - "${MINIO_CONSOLE_PORT:-19001}:9001"
+      - "127.0.0.1:${MINIO_PORT:-19000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-19001}:9001"
     volumes:
       - miniodata:/data
     healthcheck:
