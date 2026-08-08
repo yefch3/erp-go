@@ -237,9 +237,29 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 	// fold parses the markup, so it has to run on the form the reader will
 	// actually be given; folding first and sanitising afterwards would mean
 	// the sanitiser could move the boundary out from under the split.
+	//
+	// The sanitised body is kept as its own value because the attachment list
+	// below has to be filtered against it. After the swap there is no cid:
+	// left in the markup to test — it has all become signed storage URLs —
+	// so asking the finished body which parts it embedded would always answer
+	// "none", and every signature logo would go back to being listed.
+	// Two kinds of picture, and they have to be swapped on opposite sides of
+	// the sanitiser.
+	//
+	// Embedded ones go first, before sanitising. The reader policy allows http
+	// and https and nothing else, so it does not merely reject a cid: src — it
+	// strips the attribute, leaving an <img> with no source at all. That is
+	// what the broken glyph in a signature really was: not a src the browser
+	// could not follow, but no src whatsoever. Swapping first means the
+	// sanitiser sees an ordinary https storage URL and vets it like any other.
+	//
+	// Remote ones go after, because their keys were recorded in the form the
+	// sanitiser produces — it percent-encodes spaces in URLs on the way
+	// through, and matching the raw form would miss those.
+	embedded := s.embeddedSwap(ctx, tenantID, id)
+	sanitised := SanitizeForReading(s.localiseImages(ctx, row.BodyHtml, embedded))
 	v.BodyHTML, v.QuotedHTML = SplitQuotedHistory(
-		s.localiseImages(ctx, SanitizeForReading(row.BodyHtml),
-			s.swapForMessage(ctx, tenantID, id)))
+		s.localiseImages(ctx, sanitised, s.swapForMessage(ctx, tenantID, id)))
 	if row.ReceivedAt.Valid {
 		v.ReceivedAt = row.ReceivedAt.Time
 	}
@@ -254,9 +274,15 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 		for _, a := range atts {
 			v.Attachments = append(v.Attachments, Attachment{
 				ID: a.ID, FileName: a.FileName, ContentType: a.ContentType,
-				FileSize: a.FileSize, FileKey: a.FileKey,
+				FileSize: a.FileSize, FileKey: a.FileKey, ContentID: a.ContentID,
 			})
 		}
+		// Parts the body has already shown inline are not attachments to a
+		// reader, whatever they are to the MIME structure. Tested against the
+		// stored body, which is where the cid: references still live, and
+		// against the swap, so a part we failed to resolve stays in the list
+		// rather than vanishing from both the body and the attachments.
+		v.Attachments = hideEmbedded(v.Attachments, row.BodyHtml, embedded)
 		// Signed here rather than at ingest: a URL minted when the mail
 		// arrived would have expired long before anybody opened it.
 		v.Attachments = s.signDownloads(ctx, v.Attachments)
@@ -296,6 +322,7 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID int64, th
 	// signature per distinct object. A sixteen-turn thread quoting the same
 	// signature logo throughout would otherwise be sixteen round trips.
 	swaps := s.swapForThread(ctx, tenantID, ownerID, threadKey)
+	embedded := s.embeddedSwapForThread(ctx, tenantID, ownerID, threadKey)
 
 	out := make([]ThreadItem, 0, len(rows))
 	for _, r := range rows {
@@ -304,8 +331,11 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID int64, th
 			// The fold matters most here and for the reason this view exists:
 			// turn sixteen of a conversation is turns one to fifteen stacked
 			// up, and the thread already shows those separately.
+			// Embedded before the sanitiser, remote after — see GetInbound.
 			body, quoted = SplitQuotedHistory(
-				s.localiseImages(ctx, SanitizeForReading(body), swaps[r.ID]))
+				s.localiseImages(ctx,
+					SanitizeForReading(s.localiseImages(ctx, body, embedded[r.ID])),
+					swaps[r.ID]))
 		}
 		v := ThreadItem{
 			Direction: r.Direction, ID: r.ID, Subject: r.Subject,

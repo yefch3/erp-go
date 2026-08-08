@@ -950,10 +950,11 @@ func (q *Queries) InsertInbound(ctx context.Context, arg InsertInboundParams) (i
 
 const insertInboundAttachment = `-- name: InsertInboundAttachment :exec
 INSERT INTO email_inbound_attachments (
-    tenant_id, inbound_id, file_name, content_type, file_size, file_key
+    tenant_id, inbound_id, file_name, content_type, file_size, file_key, content_id
 ) VALUES (
     $1::bigint, $2::bigint, $3::text,
-    $4::text, $5::bigint, $6::text
+    $4::text, $5::bigint, $6::text,
+    $7::text
 )
 `
 
@@ -964,6 +965,7 @@ type InsertInboundAttachmentParams struct {
 	ContentType string
 	FileSize    int64
 	FileKey     string
+	ContentID   string
 }
 
 func (q *Queries) InsertInboundAttachment(ctx context.Context, arg InsertInboundAttachmentParams) error {
@@ -974,6 +976,7 @@ func (q *Queries) InsertInboundAttachment(ctx context.Context, arg InsertInbound
 		arg.ContentType,
 		arg.FileSize,
 		arg.FileKey,
+		arg.ContentID,
 	)
 	return err
 }
@@ -1211,7 +1214,7 @@ func (q *Queries) ListInbound(ctx context.Context, arg ListInboundParams) ([]Lis
 }
 
 const listInboundAttachments = `-- name: ListInboundAttachments :many
-SELECT id, file_name, content_type, file_size, file_key
+SELECT id, file_name, content_type, file_size, file_key, content_id
 FROM email_inbound_attachments
 WHERE tenant_id = $1::bigint
   AND inbound_id = $2::bigint
@@ -1229,6 +1232,7 @@ type ListInboundAttachmentsRow struct {
 	ContentType string
 	FileSize    int64
 	FileKey     string
+	ContentID   string
 }
 
 func (q *Queries) ListInboundAttachments(ctx context.Context, arg ListInboundAttachmentsParams) ([]ListInboundAttachmentsRow, error) {
@@ -1246,6 +1250,7 @@ func (q *Queries) ListInboundAttachments(ctx context.Context, arg ListInboundAtt
 			&i.ContentType,
 			&i.FileSize,
 			&i.FileKey,
+			&i.ContentID,
 		); err != nil {
 			return nil, err
 		}

@@ -158,6 +158,10 @@ func run(log *slog.Logger) error {
 		// up mail arriving. Doubles as the backfill for everything already
 		// stored, which has no stamp yet.
 		go svc.RunImageCache(ctx, syncCfg)
+		// Messages stored before ingest kept Content-ID: their embedded
+		// pictures are in storage but nothing joins them to the body that
+		// points at them. Repaired from the archived MIME, once, on start.
+		go svc.RunContentIDBackfill(ctx, syncCfg)
 	}
 
 	// The worker runs in-process. The database is the queue, so a second

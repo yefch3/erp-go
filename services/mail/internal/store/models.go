@@ -136,6 +136,7 @@ type EmailInboundAttachment struct {
 	FileSize    int64
 	FileKey     string
 	CreatedAt   pgtype.Timestamptz
+	ContentID   string
 }
 
 type EmailInboundImage struct {

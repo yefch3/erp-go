@@ -61,6 +61,11 @@ type Attachment struct {
 	// page, and safe to render from the storage origin. Empty otherwise, which
 	// is how the UI knows not to offer a preview it cannot honour.
 	PreviewURL string
+	// The name the body points at when it embeds this part inline. Not sent to
+	// the client: it exists so the reader can drop the parts the body has
+	// already shown, which is how a signature logo stops being listed beside
+	// the signed contract.
+	ContentID string
 }
 
 // previewable decides what may be rendered inline.

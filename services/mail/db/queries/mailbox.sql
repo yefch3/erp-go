@@ -204,10 +204,11 @@ RETURNING id;
 
 -- name: InsertInboundAttachment :exec
 INSERT INTO email_inbound_attachments (
-    tenant_id, inbound_id, file_name, content_type, file_size, file_key
+    tenant_id, inbound_id, file_name, content_type, file_size, file_key, content_id
 ) VALUES (
     sqlc.arg(tenant_id)::bigint, sqlc.arg(inbound_id)::bigint, sqlc.arg(file_name)::text,
-    sqlc.arg(content_type)::text, sqlc.arg(file_size)::bigint, sqlc.arg(file_key)::text
+    sqlc.arg(content_type)::text, sqlc.arg(file_size)::bigint, sqlc.arg(file_key)::text,
+    sqlc.arg(content_id)::text
 );
 
 -- name: FindMessageByKey :one
@@ -485,7 +486,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 RETURNING account_id, folder, imap_uid;
 
 -- name: ListInboundAttachments :many
-SELECT id, file_name, content_type, file_size, file_key
+SELECT id, file_name, content_type, file_size, file_key, content_id
 FROM email_inbound_attachments
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND inbound_id = sqlc.arg(inbound_id)::bigint
