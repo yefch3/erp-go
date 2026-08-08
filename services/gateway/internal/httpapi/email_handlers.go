@@ -189,6 +189,39 @@ func (s *Server) removeSuppression(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// listCustomerCountries and contactsInCountry are the address book grouped
+// the way an exporter actually thinks about it.
+//
+// Both sit with the mail handlers rather than the customer ones for the same
+// reason listMailingContacts does: they are shaped by what the composer needs,
+// not by what a customer record is. And they carry the mail write permission,
+// because that is what they are for — reading the customer list is a different
+// question with a different answer.
+func (s *Server) listCustomerCountries(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Customers.ListCustomerCountries(r.Context(), &mdv1.ListCustomerCountriesRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) contactsInCountry(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	resp, err := s.Customers.ContactsInCountry(r.Context(), &mdv1.ContactsInCountryRequest{
+		CountryCode: q.Get("code"),
+		// Defaults to one per customer, which is the smaller and more
+		// recoverable mistake: sending to a buyer when you meant the whole
+		// company is a follow-up, and the other way round is an apology.
+		PrimaryOnly: q.Get("scope") != "all",
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 // listMailingContacts is the address book behind the recipient picker. It
 // lives with the mail handlers rather than the customer ones because it is
 // shaped by what the composer needs, not by what a customer record is.

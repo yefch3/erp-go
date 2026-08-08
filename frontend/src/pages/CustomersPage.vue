@@ -25,7 +25,18 @@
         <el-table-column prop="code" :label="t('customers.code')" width="130" />
         <el-table-column prop="name" :label="t('customers.name')" min-width="200" />
         <!-- Wide enough for spelled-out names such as United Arab Emirates. -->
-        <el-table-column prop="country" :label="t('customers.country')" width="180" />
+        <el-table-column :label="t('customers.country')" width="180">
+          <template #default="{ row }">
+            <span v-if="row.countryCode">{{ countryName(row.countryCode, locale) }}</span>
+            <!-- A row imported before country codes existed, or one whose free
+                 text matched nothing. Shown rather than blanked, because it is
+                 exactly the row that keeps it out of a country group. -->
+            <span v-else-if="row.country" class="stale-country">
+              {{ row.country }} · {{ t('customers.countryUnmapped') }}
+            </span>
+            <span v-else class="stale-country">{{ t('customers.countryUnset') }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="currency" :label="t('customers.currency')" width="90" />
         <el-table-column prop="paymentTerm" :label="t('customers.paymentTerm')" width="110" />
         <el-table-column :label="t('common.status')" width="100">
@@ -88,8 +99,18 @@
           <el-input v-model="form.name" />
         </el-form-item>
         <el-form-item :label="t('customers.country')">
-          <el-select v-model="form.country" filterable allow-create clearable style="width: 220px">
-            <el-option v-for="c in COUNTRY_NAMES" :key="c" :value="c" :label="c" />
+          <!-- A code, not a name, and no allow-create. Free text is what made
+               Brazil / 巴西 / BR three countries; the whole point of grouping
+               is that it cannot happen again. Names come from the browser, so
+               this list reads in whatever language the user is in. -->
+          <el-select
+            v-model="form.countryCode"
+            filterable
+            clearable
+            :placeholder="t('customers.countryPick')"
+            style="width: 220px"
+          >
+            <el-option v-for="c in countries" :key="c.code" :value="c.code" :label="c.name" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('customers.currency')">
@@ -156,11 +177,12 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { del, get, post, put } from '../api'
-import { COUNTRY_NAMES, DIAL_CODES, dialCodeOf, splitPhone } from '../constants'
+import { DIAL_CODES, dialCodeOfCode, splitPhone } from '../constants'
+import { countryName, countryOptions } from '../lib/countries'
 import { useAuthStore } from '../stores/auth'
 
 interface Contact {
@@ -175,6 +197,7 @@ interface Customer {
   code: string
   name: string
   country: string
+  countryCode: string
   address: string
   currency: string
   paymentTerm: string
@@ -185,12 +208,15 @@ interface Customer {
 interface OptionItem { code: string; label: string }
 
 const EMPTY_FORM = {
-  code: '', name: '', country: '', currency: 'USD', paymentTerm: '',
+  code: '', name: '', country: '', countryCode: '', currency: 'USD', paymentTerm: '',
   address: '', remark: '',
   contactName: '', contactDial: '', contactPhone: '', contactEmail: '',
 }
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
+// Built once per language rather than per render: the list is 249 entries and
+// sorting it by the reader's collation is the expensive part.
+const countries = computed(() => countryOptions(locale.value))
 const auth = useAuthStore()
 const customers = ref<Customer[]>([])
 const paymentOptions = ref<OptionItem[]>([])
@@ -216,11 +242,11 @@ const form = reactive({ ...EMPTY_FORM })
 // a choice, so it must not rewrite a phone the record already has.
 const hydrating = ref(false)
 watch(
-  () => form.country,
-  (country, previous) => {
+  () => form.countryCode,
+  (code, previous) => {
     if (hydrating.value) return
-    const next = dialCodeOf(country)
-    if (next && (!form.contactDial || form.contactDial === dialCodeOf(previous ?? ''))) {
+    const next = dialCodeOfCode(code)
+    if (next && (!form.contactDial || form.contactDial === dialCodeOfCode(previous ?? ''))) {
       form.contactDial = next
     }
   },
@@ -267,6 +293,7 @@ async function openEdit(row: Customer) {
     hydrating.value = true
     Object.assign(form, {
       code: customer.code, name: customer.name, country: customer.country,
+      countryCode: customer.countryCode ?? '',
       currency: customer.currency, paymentTerm: customer.paymentTerm,
       address: customer.address, remark: customer.remark,
       contactName: primary?.name ?? '',
@@ -296,7 +323,8 @@ async function save() {
     ? [{ name: form.contactName, phone, email: form.contactEmail, isPrimary: true }]
     : []
   const body = {
-    name: form.name, country: form.country, address: form.address,
+    name: form.name, country: form.country, countryCode: form.countryCode,
+    address: form.address,
     currency: form.currency, paymentTerm: form.paymentTerm, remark: form.remark,
     contacts: [...primary, ...otherContacts.value],
   }

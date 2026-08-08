@@ -4,6 +4,7 @@ package grpcin
 
 import (
 	"context"
+	"strings"
 
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
@@ -29,9 +30,10 @@ func operatorID(ctx context.Context) int64 {
 
 // ---------------------------------------------------------------- customers
 
-func customerInput(name, country, address, currency, term, remark string, contacts []*mdv1.Contact, opID int64) app.CustomerInput {
+func customerInput(name, country, countryCode, address, currency, term, remark string, contacts []*mdv1.Contact, opID int64) app.CustomerInput {
 	in := app.CustomerInput{
-		Name: name, Country: country, Address: address, Currency: currency,
+		Name: name, Country: country, CountryCode: countryCode,
+		Address: address, Currency: currency,
 		PaymentTerm: term, Remark: remark, OperatorID: opID,
 	}
 	for _, c := range contacts {
@@ -45,7 +47,8 @@ func customerInput(name, country, address, currency, term, remark string, contac
 
 func customerToProto(c store.Customer, contacts []store.CustomerContact) *mdv1.Customer {
 	out := &mdv1.Customer{
-		Id: c.ID, Code: c.Code, Name: c.Name, Country: c.Country, Address: c.Address,
+		Id: c.ID, Code: c.Code, Name: c.Name, Country: c.Country,
+		CountryCode: strings.TrimSpace(c.CountryCode), Address: c.Address,
 		Currency: c.Currency, PaymentTerm: c.PaymentTerm, Remark: c.Remark, Status: c.Status,
 	}
 	for _, ct := range contacts {
@@ -57,7 +60,8 @@ func customerToProto(c store.Customer, contacts []store.CustomerContact) *mdv1.C
 }
 
 func (h *Handler) CreateCustomer(ctx context.Context, req *mdv1.CreateCustomerRequest) (*mdv1.CreateCustomerResponse, error) {
-	in := customerInput(req.GetName(), req.GetCountry(), req.GetAddress(), req.GetCurrency(),
+	in := customerInput(req.GetName(), req.GetCountry(), req.GetCountryCode(),
+		req.GetAddress(), req.GetCurrency(),
 		req.GetPaymentTerm(), req.GetRemark(), req.GetContacts(), operatorID(ctx))
 	in.Code = req.GetCode()
 	c, contacts, err := h.svc.CreateCustomer(ctx, grpcx.TenantID(ctx), in)
@@ -84,7 +88,8 @@ func (h *Handler) ListCustomers(ctx context.Context, req *mdv1.ListCustomersRequ
 	out := make([]*mdv1.Customer, len(rows))
 	for i, r := range rows {
 		out[i] = &mdv1.Customer{
-			Id: r.ID, Code: r.Code, Name: r.Name, Country: r.Country, Address: r.Address,
+			Id: r.ID, Code: r.Code, Name: r.Name, Country: r.Country,
+			CountryCode: strings.TrimSpace(r.CountryCode), Address: r.Address,
 			Currency: r.Currency, PaymentTerm: r.PaymentTerm, Remark: r.Remark, Status: r.Status,
 		}
 	}
@@ -101,7 +106,8 @@ func (h *Handler) ListCustomers(ctx context.Context, req *mdv1.ListCustomersRequ
 }
 
 func (h *Handler) UpdateCustomer(ctx context.Context, req *mdv1.UpdateCustomerRequest) (*mdv1.UpdateCustomerResponse, error) {
-	in := customerInput(req.GetName(), req.GetCountry(), req.GetAddress(), req.GetCurrency(),
+	in := customerInput(req.GetName(), req.GetCountry(), req.GetCountryCode(),
+		req.GetAddress(), req.GetCurrency(),
 		req.GetPaymentTerm(), req.GetRemark(), req.GetContacts(), operatorID(ctx))
 	c, contacts, err := h.svc.UpdateCustomer(ctx, grpcx.TenantID(ctx), req.GetId(), in)
 	if err != nil {
@@ -273,7 +279,40 @@ func (h *Handler) ListMailingContacts(ctx context.Context, req *mdv1.ListMailing
 			ContactId: r.ContactID, Name: r.Name, Title: r.Title, Email: r.Email,
 			IsPrimary: r.IsPrimary, CustomerId: r.CustomerID,
 			CustomerName: r.CustomerName, Country: r.Country,
+			CountryCode: strings.TrimSpace(r.CountryCode),
 		})
 	}
 	return &mdv1.ListMailingContactsResponse{Contacts: out}, nil
+}
+
+func (h *Handler) ListCustomerCountries(ctx context.Context, _ *mdv1.ListCustomerCountriesRequest) (*mdv1.ListCustomerCountriesResponse, error) {
+	groups, err := h.svc.ListCustomerCountries(ctx, grpcx.TenantID(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mdv1.CountryGroup, len(groups))
+	for i, g := range groups {
+		out[i] = &mdv1.CountryGroup{
+			Code: g.Code, CustomerCount: g.CustomerCount,
+			ContactCount: g.ContactCount, OneEachCount: g.OneEachCount,
+		}
+	}
+	return &mdv1.ListCustomerCountriesResponse{Countries: out}, nil
+}
+
+func (h *Handler) ContactsInCountry(ctx context.Context, req *mdv1.ContactsInCountryRequest) (*mdv1.ContactsInCountryResponse, error) {
+	rows, err := h.svc.ContactsInCountry(ctx, grpcx.TenantID(ctx),
+		req.GetCountryCode(), req.GetPrimaryOnly())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mdv1.MailingContact, len(rows))
+	for i, r := range rows {
+		out[i] = &mdv1.MailingContact{
+			ContactId: r.ContactID, Name: r.Name, Title: r.Title, Email: r.Email,
+			IsPrimary: r.IsPrimary, CustomerId: r.CustomerID,
+			CustomerName: r.CustomerName, Country: r.Country, CountryCode: r.CountryCode,
+		}
+	}
+	return &mdv1.ContactsInCountryResponse{Contacts: out}, nil
 }

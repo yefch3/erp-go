@@ -19,13 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CustomerService_CreateCustomer_FullMethodName      = "/erp.masterdata.v1.CustomerService/CreateCustomer"
-	CustomerService_GetCustomer_FullMethodName         = "/erp.masterdata.v1.CustomerService/GetCustomer"
-	CustomerService_ListCustomers_FullMethodName       = "/erp.masterdata.v1.CustomerService/ListCustomers"
-	CustomerService_UpdateCustomer_FullMethodName      = "/erp.masterdata.v1.CustomerService/UpdateCustomer"
-	CustomerService_DeactivateCustomer_FullMethodName  = "/erp.masterdata.v1.CustomerService/DeactivateCustomer"
-	CustomerService_ActivateCustomer_FullMethodName    = "/erp.masterdata.v1.CustomerService/ActivateCustomer"
-	CustomerService_ListMailingContacts_FullMethodName = "/erp.masterdata.v1.CustomerService/ListMailingContacts"
+	CustomerService_CreateCustomer_FullMethodName        = "/erp.masterdata.v1.CustomerService/CreateCustomer"
+	CustomerService_GetCustomer_FullMethodName           = "/erp.masterdata.v1.CustomerService/GetCustomer"
+	CustomerService_ListCustomers_FullMethodName         = "/erp.masterdata.v1.CustomerService/ListCustomers"
+	CustomerService_UpdateCustomer_FullMethodName        = "/erp.masterdata.v1.CustomerService/UpdateCustomer"
+	CustomerService_DeactivateCustomer_FullMethodName    = "/erp.masterdata.v1.CustomerService/DeactivateCustomer"
+	CustomerService_ActivateCustomer_FullMethodName      = "/erp.masterdata.v1.CustomerService/ActivateCustomer"
+	CustomerService_ListMailingContacts_FullMethodName   = "/erp.masterdata.v1.CustomerService/ListMailingContacts"
+	CustomerService_ListCustomerCountries_FullMethodName = "/erp.masterdata.v1.CustomerService/ListCustomerCountries"
+	CustomerService_ContactsInCountry_FullMethodName     = "/erp.masterdata.v1.CustomerService/ContactsInCountry"
 )
 
 // CustomerServiceClient is the client API for CustomerService service.
@@ -48,6 +50,11 @@ type CustomerServiceClient interface {
 	// a lookup per customer, because the mail composer needs all of them at
 	// once and an N+1 there is a page that visibly stalls.
 	ListMailingContacts(ctx context.Context, in *ListMailingContactsRequest, opts ...grpc.CallOption) (*ListMailingContactsResponse, error)
+	// ListCustomerCountries answers "which countries do we sell to, and how
+	// many people are in each" — the grouping the recipient picker offers.
+	ListCustomerCountries(ctx context.Context, in *ListCustomerCountriesRequest, opts ...grpc.CallOption) (*ListCustomerCountriesResponse, error)
+	// ContactsInCountry returns everybody writable in one of them.
+	ContactsInCountry(ctx context.Context, in *ContactsInCountryRequest, opts ...grpc.CallOption) (*ContactsInCountryResponse, error)
 }
 
 type customerServiceClient struct {
@@ -128,6 +135,26 @@ func (c *customerServiceClient) ListMailingContacts(ctx context.Context, in *Lis
 	return out, nil
 }
 
+func (c *customerServiceClient) ListCustomerCountries(ctx context.Context, in *ListCustomerCountriesRequest, opts ...grpc.CallOption) (*ListCustomerCountriesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCustomerCountriesResponse)
+	err := c.cc.Invoke(ctx, CustomerService_ListCustomerCountries_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) ContactsInCountry(ctx context.Context, in *ContactsInCountryRequest, opts ...grpc.CallOption) (*ContactsInCountryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContactsInCountryResponse)
+	err := c.cc.Invoke(ctx, CustomerService_ContactsInCountry_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CustomerServiceServer is the server API for CustomerService service.
 // All implementations must embed UnimplementedCustomerServiceServer
 // for forward compatibility.
@@ -148,6 +175,11 @@ type CustomerServiceServer interface {
 	// a lookup per customer, because the mail composer needs all of them at
 	// once and an N+1 there is a page that visibly stalls.
 	ListMailingContacts(context.Context, *ListMailingContactsRequest) (*ListMailingContactsResponse, error)
+	// ListCustomerCountries answers "which countries do we sell to, and how
+	// many people are in each" — the grouping the recipient picker offers.
+	ListCustomerCountries(context.Context, *ListCustomerCountriesRequest) (*ListCustomerCountriesResponse, error)
+	// ContactsInCountry returns everybody writable in one of them.
+	ContactsInCountry(context.Context, *ContactsInCountryRequest) (*ContactsInCountryResponse, error)
 	mustEmbedUnimplementedCustomerServiceServer()
 }
 
@@ -178,6 +210,12 @@ func (UnimplementedCustomerServiceServer) ActivateCustomer(context.Context, *Act
 }
 func (UnimplementedCustomerServiceServer) ListMailingContacts(context.Context, *ListMailingContactsRequest) (*ListMailingContactsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListMailingContacts not implemented")
+}
+func (UnimplementedCustomerServiceServer) ListCustomerCountries(context.Context, *ListCustomerCountriesRequest) (*ListCustomerCountriesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCustomerCountries not implemented")
+}
+func (UnimplementedCustomerServiceServer) ContactsInCountry(context.Context, *ContactsInCountryRequest) (*ContactsInCountryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ContactsInCountry not implemented")
 }
 func (UnimplementedCustomerServiceServer) mustEmbedUnimplementedCustomerServiceServer() {}
 func (UnimplementedCustomerServiceServer) testEmbeddedByValue()                         {}
@@ -326,6 +364,42 @@ func _CustomerService_ListMailingContacts_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CustomerService_ListCustomerCountries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCustomerCountriesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).ListCustomerCountries(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_ListCustomerCountries_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).ListCustomerCountries(ctx, req.(*ListCustomerCountriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_ContactsInCountry_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContactsInCountryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).ContactsInCountry(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_ContactsInCountry_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).ContactsInCountry(ctx, req.(*ContactsInCountryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CustomerService_ServiceDesc is the grpc.ServiceDesc for CustomerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -360,6 +434,14 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListMailingContacts",
 			Handler:    _CustomerService_ListMailingContacts_Handler,
+		},
+		{
+			MethodName: "ListCustomerCountries",
+			Handler:    _CustomerService_ListCustomerCountries_Handler,
+		},
+		{
+			MethodName: "ContactsInCountry",
+			Handler:    _CustomerService_ContactsInCountry_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -23,6 +23,7 @@ type Customer struct {
 	CreatedBy   int64
 	UpdatedAt   pgtype.Timestamptz
 	UpdatedBy   int64
+	CountryCode string
 }
 
 type CustomerContact struct {
