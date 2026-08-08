@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
@@ -327,7 +328,20 @@ func fetchImages(ctx context.Context, client *http.Client, urls []string) []fetc
 }
 
 func fetchOneImage(ctx context.Context, client *http.Client, u string) (fetchedImage, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	// The address as HTML spells it is not the address HTTP wants. An
+	// attribute value is entity-encoded, so every "&" between query
+	// parameters arrives here as "&amp;" — and fetching that literally asks
+	// the sender's server for a parameter called "amp;d" instead of "d".
+	//
+	// It matters most where it hurts most: a plain picture has no query string
+	// and was unaffected, while a tracking pixel is nothing but query string.
+	// Measured before the fix, 360 stored rows still carried "&amp;" in the
+	// address, and those are only the ones whose server was forgiving enough
+	// to answer anyway; the rest failed silently and stayed uncached.
+	//
+	// Only the request is decoded. What gets stored stays exactly as the body
+	// spells it, because that is the string the read path matches against.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, html.UnescapeString(u), nil)
 	if err != nil {
 		return fetchedImage{}, err
 	}

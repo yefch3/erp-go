@@ -157,8 +157,25 @@ function read() {
   try {
     const d = el.contentDocument
     if (!d?.body) return
-    const h = Math.max(d.body.scrollHeight, d.documentElement?.scrollHeight ?? 0)
+    // The body's own height, and only the body's.
+    //
+    // This used to take Math.max of the body and the documentElement, and
+    // that was a feedback loop with a very specific symptom: the mail crept
+    // downwards while you were reading it. documentElement.scrollHeight is at
+    // least the frame's viewport height, and the frame's height is whatever we
+    // set last time — so every measurement re-read its own previous answer and
+    // added the slop again. Thirty-two ticks at eight pixels is 256px of
+    // drift, which is exactly what was measured on a real mail: content
+    // 6271px, frame 6527px, difference 256.
+    //
+    // documentElement stays as the fallback for the one case it was there
+    // for — a body that reports nothing, which happens when everything in it
+    // is floated or absolutely positioned.
+    const h = d.body.scrollHeight || d.documentElement?.scrollHeight || 0
     if (h > 0) {
+      // Slop so a rounding error cannot produce a scrollbar. Safe to add to
+      // the body's height, which does not include it; adding it to the
+      // documentElement's is what caused the drift above.
       height.value = h + 8
       ready.value = true
     }

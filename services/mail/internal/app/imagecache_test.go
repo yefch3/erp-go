@@ -265,6 +265,37 @@ func TestAServerThatDoesNotReturnAPictureProducesNothing(t *testing.T) {
 	}
 }
 
+// An HTML attribute spells "&" as "&amp;". Asking the sender's server for the
+// literal text means asking for a parameter called "amp;d" instead of "d" —
+// harmless for a plain picture, fatal for a tracking pixel, which is nothing
+// but query string. What gets stored must stay in the HTML's spelling, because
+// that is what the read path matches on; only the request is decoded.
+func TestAnEntityEncodedAddressIsFetchedDecodedAndStoredEncoded(t *testing.T) {
+	var asked string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = r.URL.RequestURI()
+		_, _ = w.Write(onePixelPNG())
+	}))
+	defer srv.Close()
+
+	encoded := srv.URL + "/open.aspx?id=ABC&amp;d=70247&amp;bmt=0"
+	img, err := fetchOneImage(context.Background(), srv.Client(), encoded)
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if strings.Contains(asked, "amp;") {
+		t.Fatalf("the server was asked for %q — the entities were not decoded", asked)
+	}
+	for _, want := range []string{"id=ABC", "d=70247", "bmt=0"} {
+		if !strings.Contains(asked, want) {
+			t.Fatalf("the server was asked for %q, missing %q", asked, want)
+		}
+	}
+	if img.url != encoded {
+		t.Fatalf("stored %q, want the HTML's own spelling %q", img.url, encoded)
+	}
+}
+
 func TestAGenuinePictureIsAccepted(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(onePixelPNG())
