@@ -478,16 +478,22 @@ func (q *Queries) DeleteDraft(ctx context.Context, arg DeleteDraftParams) (int64
 
 const deleteSignature = `-- name: DeleteSignature :execrows
 DELETE FROM email_signatures
-WHERE tenant_id = $1::bigint AND id = $2::bigint
+WHERE tenant_id = $1::bigint
+  AND id = $2::bigint
+  AND (owner_type = 'TENANT' OR owner_id = $3::bigint)
 `
 
 type DeleteSignatureParams struct {
-	TenantID int64
-	ID       int64
+	TenantID   int64
+	ID         int64
+	EmployeeID int64
 }
 
+// Same guard as the update, for the same reason. It was missing: deletion was
+// scoped to the tenant only, so one salesperson could remove another's
+// personal signature.
 func (q *Queries) DeleteSignature(ctx context.Context, arg DeleteSignatureParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteSignature, arg.TenantID, arg.ID)
+	result, err := q.db.Exec(ctx, deleteSignature, arg.TenantID, arg.ID, arg.EmployeeID)
 	if err != nil {
 		return 0, err
 	}
@@ -2076,6 +2082,52 @@ func (q *Queries) SuppressedAmong(ctx context.Context, arg SuppressedAmongParams
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateSignature = `-- name: UpdateSignature :execrows
+UPDATE email_signatures
+SET owner_type  = $1::text,
+    owner_id    = $2::bigint,
+    name        = $3::text,
+    content     = $4::text,
+    body_format = $5::text,
+    is_default  = $6::bool
+WHERE tenant_id = $7::bigint
+  AND id = $8::bigint
+  AND (owner_type = 'TENANT' OR owner_id = $9::bigint)
+`
+
+type UpdateSignatureParams struct {
+	OwnerType  string
+	OwnerID    int64
+	Name       string
+	Content    string
+	BodyFormat string
+	IsDefault  bool
+	TenantID   int64
+	ID         int64
+	EmployeeID int64
+}
+
+// The owner guard is on the WHERE, which sees the row as it was: you may edit
+// the company block or your own, and nobody else's. Without it any colleague
+// holding mail:email:write could rewrite the sign-off you send under.
+func (q *Queries) UpdateSignature(ctx context.Context, arg UpdateSignatureParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateSignature,
+		arg.OwnerType,
+		arg.OwnerID,
+		arg.Name,
+		arg.Content,
+		arg.BodyFormat,
+		arg.IsDefault,
+		arg.TenantID,
+		arg.ID,
+		arg.EmployeeID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const withdrawImage = `-- name: WithdrawImage :execrows

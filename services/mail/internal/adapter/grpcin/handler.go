@@ -304,8 +304,19 @@ func (h *Handler) CreateSignature(ctx context.Context, req *mailv1.CreateSignatu
 	return &mailv1.CreateSignatureResponse{Id: id}, nil
 }
 
+func (h *Handler) UpdateSignature(ctx context.Context, req *mailv1.UpdateSignatureRequest) (*mailv1.UpdateSignatureResponse, error) {
+	if err := h.svc.UpdateSignature(ctx, grpcx.TenantID(ctx), req.GetId(), app.SignatureInput{
+		OwnerType: req.GetOwnerType(), Name: req.GetName(),
+		Content: req.GetContent(), Format: req.GetBodyFormat(),
+		IsDefault: req.GetIsDefault(),
+	}, operator(ctx)); err != nil {
+		return nil, err
+	}
+	return &mailv1.UpdateSignatureResponse{Ok: true}, nil
+}
+
 func (h *Handler) DeleteSignature(ctx context.Context, req *mailv1.DeleteSignatureRequest) (*mailv1.DeleteSignatureResponse, error) {
-	if err := h.svc.DeleteSignature(ctx, grpcx.TenantID(ctx), req.GetId()); err != nil {
+	if err := h.svc.DeleteSignature(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx)); err != nil {
 		return nil, err
 	}
 	return &mailv1.DeleteSignatureResponse{Ok: true}, nil
@@ -419,6 +430,17 @@ func (h *Handler) RegisterImage(ctx context.Context, req *mailv1.RegisterImageRe
 		return nil, err
 	}
 	return &mailv1.RegisterImageResponse{Image: &mailv1.EmailImage{
+		Id: i.ID, Token: i.Token, FileName: i.FileName,
+		FileSize: i.FileSize, ContentType: i.ContentType,
+	}}, nil
+}
+
+func (h *Handler) ImportImage(ctx context.Context, req *mailv1.ImportImageRequest) (*mailv1.ImportImageResponse, error) {
+	i, err := h.svc.ImportImageFromURL(ctx, grpcx.TenantID(ctx), req.GetUrl(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.ImportImageResponse{Image: &mailv1.EmailImage{
 		Id: i.ID, Token: i.Token, FileName: i.FileName,
 		FileSize: i.FileSize, ContentType: i.ContentType,
 	}}, nil

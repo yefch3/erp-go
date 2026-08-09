@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/mail/internal/store"
 )
 
@@ -259,40 +260,117 @@ func (s *Service) ListSignatures(ctx context.Context, tenantID int64, op Operato
 	})
 }
 
-func (s *Service) CreateSignature(ctx context.Context, tenantID int64, in SignatureInput, op Operator) (int64, error) {
+// cleanSignature is the validation and owner resolution both writing paths
+// share, so an edit cannot store something a create would have refused.
+func cleanSignature(in SignatureInput, op Operator) (ownerType string, ownerID int64, content, format string, err error) {
 	if strings.TrimSpace(in.Name) == "" || strings.TrimSpace(in.Content) == "" {
-		return 0, apierr.Invalid("NT_SIGNATURE_FIELDS_REQUIRED", "请填写签名名称和内容")
+		return "", 0, "", "", apierr.Invalid("NT_SIGNATURE_FIELDS_REQUIRED", "请填写签名名称和内容")
 	}
-	ownerType, ownerID := "EMPLOYEE", op.ID
+	ownerType, ownerID = "EMPLOYEE", op.ID
 	if strings.ToUpper(in.OwnerType) == "TENANT" {
 		ownerType, ownerID = "TENANT", 0
 	}
-	if in.IsDefault {
-		// Move the flag before setting the new one: the partial unique index
-		// would otherwise refuse the insert, and a constraint violation reads
-		// far worse than simply switching defaults.
-		if err := s.q.ClearDefaultSignature(ctx, store.ClearDefaultSignatureParams{
-			TenantID: tenantID, OwnerType: ownerType, OwnerID: ownerID,
-		}); err != nil {
-			return 0, err
-		}
-	}
-	format := normalizeFormat(in.Format)
-	content := in.Content
+	format = normalizeFormat(in.Format)
+	content = in.Content
 	if format == FormatHTML {
 		// Same rule as the body: sanitise on the way in, because the stored
 		// value is both sent to customers and rendered back in the UI.
 		content = SanitizeHTML(content)
+		if blankSignature(content) {
+			// A rich editor left alone does not produce an empty string, it
+			// produces "<br>" or an empty paragraph — which passes the check
+			// above and stores a signature that appends nothing to every mail
+			// and looks, in the list, exactly like a working one.
+			return "", 0, "", "", apierr.Invalid("NT_SIGNATURE_FIELDS_REQUIRED", "请填写签名名称和内容")
+		}
 	}
-	return s.q.CreateSignature(ctx, store.CreateSignatureParams{
-		TenantID: tenantID, OwnerType: ownerType, OwnerID: ownerID,
-		Name: in.Name, Content: content, BodyFormat: format,
-		IsDefault: in.IsDefault,
+	return ownerType, ownerID, content, format, nil
+}
+
+func (s *Service) CreateSignature(ctx context.Context, tenantID int64, in SignatureInput, op Operator) (int64, error) {
+	ownerType, ownerID, content, format, err := cleanSignature(in, op)
+	if err != nil {
+		return 0, err
+	}
+	var id int64
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		if in.IsDefault {
+			// Move the flag before setting the new one: the partial unique
+			// index would otherwise refuse the insert, and a constraint
+			// violation reads far worse than simply switching defaults.
+			//
+			// In a transaction with the insert, so a failure here cannot leave
+			// the owner with no default at all — which is what "clear, then
+			// fail" produced when these were two separate statements.
+			if err := q.ClearDefaultSignature(ctx, store.ClearDefaultSignatureParams{
+				TenantID: tenantID, OwnerType: ownerType, OwnerID: ownerID,
+			}); err != nil {
+				return err
+			}
+		}
+		id, err = q.CreateSignature(ctx, store.CreateSignatureParams{
+			TenantID: tenantID, OwnerType: ownerType, OwnerID: ownerID,
+			Name: in.Name, Content: content, BodyFormat: format,
+			IsDefault: in.IsDefault,
+		})
+		return err
+	})
+	return id, err
+}
+
+// UpdateSignature rewrites a block in place.
+//
+// In place, rather than delete-and-recreate: a campaign row points at a
+// signature by id, and recreating would orphan every send that referenced it.
+func (s *Service) UpdateSignature(ctx context.Context, tenantID, id int64, in SignatureInput, op Operator) error {
+	ownerType, ownerID, content, format, err := cleanSignature(in, op)
+	if err != nil {
+		return err
+	}
+	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		if in.IsDefault {
+			if err := q.ClearDefaultSignature(ctx, store.ClearDefaultSignatureParams{
+				TenantID: tenantID, OwnerType: ownerType, OwnerID: ownerID,
+			}); err != nil {
+				return err
+			}
+		}
+		// The owner guard lives in the statement, so a row the caller may not
+		// touch simply matches nothing. Rolling back means an edit refused
+		// this way cannot have cleared somebody else's default on its way out.
+		n, err := q.UpdateSignature(ctx, store.UpdateSignatureParams{
+			TenantID: tenantID, ID: id, EmployeeID: op.ID,
+			OwnerType: ownerType, OwnerID: ownerID,
+			Name: in.Name, Content: content, BodyFormat: format,
+			IsDefault: in.IsDefault,
+		})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return apierr.NotFound("NT_SIGNATURE_NOT_FOUND", "签名不存在")
+		}
+		return nil
 	})
 }
 
-func (s *Service) DeleteSignature(ctx context.Context, tenantID, id int64) error {
-	n, err := s.q.DeleteSignature(ctx, store.DeleteSignatureParams{TenantID: tenantID, ID: id})
+// blankSignature reports markup that renders as nothing.
+//
+// An image alone is not blank: a sign-off that is only the company logo is a
+// perfectly ordinary signature, and judging by text would refuse it.
+func blankSignature(html string) bool {
+	if strings.Contains(strings.ToLower(html), "<img") {
+		return false
+	}
+	return strings.TrimSpace(HTMLToText(html)) == ""
+}
+
+func (s *Service) DeleteSignature(ctx context.Context, tenantID, id int64, op Operator) error {
+	n, err := s.q.DeleteSignature(ctx, store.DeleteSignatureParams{
+		TenantID: tenantID, ID: id, EmployeeID: op.ID,
+	})
 	if err != nil {
 		return err
 	}

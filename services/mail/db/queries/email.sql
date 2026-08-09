@@ -35,9 +35,29 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND is_default;
 
+-- name: UpdateSignature :execrows
+-- The owner guard is on the WHERE, which sees the row as it was: you may edit
+-- the company block or your own, and nobody else's. Without it any colleague
+-- holding mail:email:write could rewrite the sign-off you send under.
+UPDATE email_signatures
+SET owner_type  = sqlc.arg(owner_type)::text,
+    owner_id    = sqlc.arg(owner_id)::bigint,
+    name        = sqlc.arg(name)::text,
+    content     = sqlc.arg(content)::text,
+    body_format = sqlc.arg(body_format)::text,
+    is_default  = sqlc.arg(is_default)::bool
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+  AND (owner_type = 'TENANT' OR owner_id = sqlc.arg(employee_id)::bigint);
+
 -- name: DeleteSignature :execrows
+-- Same guard as the update, for the same reason. It was missing: deletion was
+-- scoped to the tenant only, so one salesperson could remove another's
+-- personal signature.
 DELETE FROM email_signatures
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+  AND (owner_type = 'TENANT' OR owner_id = sqlc.arg(employee_id)::bigint);
 
 -- name: CreateCampaign :one
 INSERT INTO email_campaigns (

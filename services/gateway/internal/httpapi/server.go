@@ -380,6 +380,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:write"), s.requireMailUnlock).Post("/api/email-scheduled/{id}/cancel", s.cancelScheduled)
 		r.With(s.perm("mail:email:read")).Get("/api/email-signatures", s.listSignatures)
 		r.With(s.perm("mail:email:write")).Post("/api/email-signatures", s.createSignature)
+		r.With(s.perm("mail:email:write")).Put("/api/email-signatures/{id}", s.updateSignature)
 		r.With(s.perm("mail:email:write")).Delete("/api/email-signatures/{id}", s.deleteSignature)
 		// The suppression list is shared by everybody's sends, so maintaining
 		// it is administrative work rather than part of composing a mail.
@@ -390,6 +391,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:read")).Get("/api/email-attachments", s.listMailAttachments)
 		r.With(s.perm("mail:email:write")).Post("/api/email-images/presign", s.presignMailImage)
 		r.With(s.perm("mail:email:write")).Post("/api/email-images", s.registerMailImage)
+		r.With(s.perm("mail:email:write")).Post("/api/email-images/from-url", s.importMailImage)
 		r.With(s.perm("mail:email:read")).Get("/api/email-images", s.listMailImages)
 		r.With(s.perm("mail:email:write")).Delete("/api/email-images/{id}", s.withdrawMailImage)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/email-suppressions", s.listSuppressions)

@@ -50,6 +50,7 @@ service EmailService {
 
   rpc ListSignatures(ListSignaturesRequest) returns (ListSignaturesResponse);
   rpc CreateSignature(CreateSignatureRequest) returns (CreateSignatureResponse);
+  rpc UpdateSignature(UpdateSignatureRequest) returns (UpdateSignatureResponse);
   rpc DeleteSignature(DeleteSignatureRequest) returns (DeleteSignatureResponse);
 
   // Files travelling with a send, and pictures embedded inside one.
@@ -63,6 +64,7 @@ service EmailService {
   rpc ListAttachments(ListAttachmentsRequest) returns (ListAttachmentsResponse);
   rpc PresignImage(PresignImageRequest) returns (PresignImageResponse);
   rpc RegisterImage(RegisterImageRequest) returns (RegisterImageResponse);
+  rpc ImportImage(ImportImageRequest) returns (ImportImageResponse);
   // Serves the public, token-addressed image route. Bounded by the 2 MB cap,
   // so one unary response is fine and streaming would be ceremony.
   rpc FetchImage(FetchImageRequest) returns (FetchImageResponse);
@@ -882,6 +884,22 @@ message CreateSignatureResponse {
   int64 id = 1;
 }
 
+// UpdateSignatureRequest carries the whole block, not a patch: the editor
+// always holds the complete value, and a partial update would need a way to
+// say "clear this field" that JSON omission cannot express.
+message UpdateSignatureRequest {
+  int64 id = 1;
+  string owner_type = 2;
+  string name = 3;
+  string content = 4;
+  bool is_default = 5;
+  string body_format = 6;
+}
+
+message UpdateSignatureResponse {
+  bool ok = 1;
+}
+
 message DeleteSignatureRequest {
   int64 id = 1;
 }
@@ -976,6 +994,17 @@ message RegisterImageRequest {
 }
 
 message RegisterImageResponse {
+  EmailImage image = 1;
+}
+
+// ImportImageRequest takes a picture that already lives on somebody's web
+// server. The bytes are copied into our own storage rather than linked: a
+// signature outlives the website it borrowed its logo from.
+message ImportImageRequest {
+  string url = 1;
+}
+
+message ImportImageResponse {
   EmailImage image = 1;
 }
 
