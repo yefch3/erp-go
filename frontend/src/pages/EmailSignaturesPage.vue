@@ -21,7 +21,18 @@
         </el-table-column>
         <el-table-column :label="t('signatures.content')" min-width="380">
           <template #default="{ row }">
-            <pre class="sig-preview">{{ row.content }}</pre>
+            <!-- v-html on an HTML block, and only on an HTML block. The
+                 content was put through the same whitelist the outgoing mail
+                 uses (SanitizeHTML, on every write) — no script, no event
+                 handlers, no javascript: URLs survive it. A TEXT block goes
+                 through <pre>, because rendering it as markup would turn a
+                 sign-off someone typed with angle brackets into markup. -->
+            <div
+              v-if="row.bodyFormat === 'HTML'"
+              class="sig-preview sig-html"
+              v-html="row.content"
+            />
+            <pre v-else class="sig-preview">{{ row.content }}</pre>
           </template>
         </el-table-column>
         <el-table-column :label="t('signatures.default')" width="110">
@@ -70,11 +81,13 @@
                 {{ t(`emails.vars.${v}`) }}
               </el-button>
             </div>
-            <el-input
-              ref="contentInput"
+            <!-- The same editor the composer uses, so a logo gets in here by
+                 the same two routes: upload a file, or paste the address of
+                 one already on the web. A plain textarea could only ever
+                 produce text, which is why signatures had no pictures. -->
+            <MailEditor
+              ref="editor"
               v-model="form.content"
-              type="textarea"
-              :rows="7"
               :placeholder="t('signatures.contentPlaceholder')"
             />
           </div>
@@ -92,9 +105,10 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import MailEditor from '../components/MailEditor.vue'
 import { del, get, post } from '../api'
 
 interface Signature {
@@ -103,6 +117,7 @@ interface Signature {
   ownerId: string
   name: string
   content: string
+  bodyFormat: string
   isDefault: boolean
 }
 
@@ -117,7 +132,7 @@ const rows = ref<Signature[]>([])
 const loading = ref(false)
 const open = ref(false)
 const saving = ref(false)
-const contentInput = ref()
+const editor = ref<InstanceType<typeof MailEditor>>()
 const form = reactive({ name: '', ownerType: 'EMPLOYEE', content: '', isDefault: false })
 
 onMounted(load)
@@ -141,30 +156,17 @@ function openCreate() {
 }
 
 function insertVariable(name: string) {
-  const tag = `{{${name}}}`
-  const el = contentInput.value?.textarea as HTMLTextAreaElement | undefined
-  if (!el) {
-    form.content += tag
-    return
-  }
-  const start = el.selectionStart ?? form.content.length
-  const end = el.selectionEnd ?? start
-  form.content = form.content.slice(0, start) + tag + form.content.slice(end)
-  // nextTick, not requestAnimationFrame: the caret has to be placed after
-  // Vue has written the new value into the DOM. A frame callback can run
-  // first, in which case the range is set on the old text and the later
-  // update drops the caret back to position 0 — so whatever you typed next
-  // landed at the very start of the message.
-  nextTick(() => {
-    el.focus()
-    el.setSelectionRange(start + tag.length, start + tag.length)
-  })
+  editor.value?.insertText(`{{${name}}}`)
 }
 
 async function save() {
   saving.value = true
   try {
-    await post('/email-signatures', { ...form })
+    // HTML unconditionally: the editor cannot produce anything else, and a
+    // block saved as TEXT would have its markup escaped on the way out — the
+    // logo arriving at the customer as the literal text of an <img> tag.
+    // The server sanitises it against the outgoing-mail whitelist regardless.
+    await post('/email-signatures', { ...form, bodyFormat: 'HTML' })
     ElMessage.success(t('signatures.saved'))
     open.value = false
     load()
@@ -212,6 +214,16 @@ async function remove(row: Signature) {
   font-size: 12px;
   line-height: 1.5;
   color: var(--el-text-color-regular);
+}
+.sig-html {
+  white-space: normal;
+}
+/* A row is a summary, not a rendering surface. Without a ceiling a signature
+   carrying a banner sets the height of the whole table. */
+.sig-html :deep(img) {
+  max-width: 200px;
+  max-height: 60px;
+  object-fit: contain;
 }
 .body-box {
   width: 100%;

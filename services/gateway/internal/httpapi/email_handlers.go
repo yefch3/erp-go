@@ -314,6 +314,22 @@ func (s *Server) registerMailImage(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// importMailImage takes an address instead of a file. The mail service is
+// what fetches it — the gateway would be the wrong machine to point at an
+// arbitrary URL, and the guarded fetcher already lives there.
+func (s *Server) importMailImage(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.ImportImageRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Emails.ImportImage(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) listMailImages(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Emails.ListImages(r.Context(), &mailv1.ListImagesRequest{})
 	if err != nil {

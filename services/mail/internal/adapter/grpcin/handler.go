@@ -424,6 +424,17 @@ func (h *Handler) RegisterImage(ctx context.Context, req *mailv1.RegisterImageRe
 	}}, nil
 }
 
+func (h *Handler) ImportImage(ctx context.Context, req *mailv1.ImportImageRequest) (*mailv1.ImportImageResponse, error) {
+	i, err := h.svc.ImportImageFromURL(ctx, grpcx.TenantID(ctx), req.GetUrl(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.ImportImageResponse{Image: &mailv1.EmailImage{
+		Id: i.ID, Token: i.Token, FileName: i.FileName,
+		FileSize: i.FileSize, ContentType: i.ContentType,
+	}}, nil
+}
+
 // FetchImage is reached from the public route, so it carries no tenant and no
 // operator: the token is the whole credential.
 func (h *Handler) FetchImage(ctx context.Context, req *mailv1.FetchImageRequest) (*mailv1.FetchImageResponse, error) {

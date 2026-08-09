@@ -63,6 +63,7 @@ service EmailService {
   rpc ListAttachments(ListAttachmentsRequest) returns (ListAttachmentsResponse);
   rpc PresignImage(PresignImageRequest) returns (PresignImageResponse);
   rpc RegisterImage(RegisterImageRequest) returns (RegisterImageResponse);
+  rpc ImportImage(ImportImageRequest) returns (ImportImageResponse);
   // Serves the public, token-addressed image route. Bounded by the 2 MB cap,
   // so one unary response is fine and streaming would be ceremony.
   rpc FetchImage(FetchImageRequest) returns (FetchImageResponse);
@@ -976,6 +977,17 @@ message RegisterImageRequest {
 }
 
 message RegisterImageResponse {
+  EmailImage image = 1;
+}
+
+// ImportImageRequest takes a picture that already lives on somebody's web
+// server. The bytes are copied into our own storage rather than linked: a
+// signature outlives the website it borrowed its logo from.
+message ImportImageRequest {
+  string url = 1;
+}
+
+message ImportImageResponse {
   EmailImage image = 1;
 }
 

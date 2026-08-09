@@ -380,6 +380,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:read")).Get("/api/email-attachments", s.listMailAttachments)
 		r.With(s.perm("mail:email:write")).Post("/api/email-images/presign", s.presignMailImage)
 		r.With(s.perm("mail:email:write")).Post("/api/email-images", s.registerMailImage)
+		r.With(s.perm("mail:email:write")).Post("/api/email-images/from-url", s.importMailImage)
 		r.With(s.perm("mail:email:read")).Get("/api/email-images", s.listMailImages)
 		r.With(s.perm("mail:email:write")).Delete("/api/email-images/{id}", s.withdrawMailImage)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/email-suppressions", s.listSuppressions)

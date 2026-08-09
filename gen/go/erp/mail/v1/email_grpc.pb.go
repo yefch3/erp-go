@@ -43,6 +43,7 @@ const (
 	EmailService_ListAttachments_FullMethodName     = "/erp.mail.v1.EmailService/ListAttachments"
 	EmailService_PresignImage_FullMethodName        = "/erp.mail.v1.EmailService/PresignImage"
 	EmailService_RegisterImage_FullMethodName       = "/erp.mail.v1.EmailService/RegisterImage"
+	EmailService_ImportImage_FullMethodName         = "/erp.mail.v1.EmailService/ImportImage"
 	EmailService_FetchImage_FullMethodName          = "/erp.mail.v1.EmailService/FetchImage"
 	EmailService_ListImages_FullMethodName          = "/erp.mail.v1.EmailService/ListImages"
 	EmailService_WithdrawImage_FullMethodName       = "/erp.mail.v1.EmailService/WithdrawImage"
@@ -129,6 +130,7 @@ type EmailServiceClient interface {
 	ListAttachments(ctx context.Context, in *ListAttachmentsRequest, opts ...grpc.CallOption) (*ListAttachmentsResponse, error)
 	PresignImage(ctx context.Context, in *PresignImageRequest, opts ...grpc.CallOption) (*PresignImageResponse, error)
 	RegisterImage(ctx context.Context, in *RegisterImageRequest, opts ...grpc.CallOption) (*RegisterImageResponse, error)
+	ImportImage(ctx context.Context, in *ImportImageRequest, opts ...grpc.CallOption) (*ImportImageResponse, error)
 	// Serves the public, token-addressed image route. Bounded by the 2 MB cap,
 	// so one unary response is fine and streaming would be ceremony.
 	FetchImage(ctx context.Context, in *FetchImageRequest, opts ...grpc.CallOption) (*FetchImageResponse, error)
@@ -455,6 +457,16 @@ func (c *emailServiceClient) RegisterImage(ctx context.Context, in *RegisterImag
 	return out, nil
 }
 
+func (c *emailServiceClient) ImportImage(ctx context.Context, in *ImportImageRequest, opts ...grpc.CallOption) (*ImportImageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ImportImageResponse)
+	err := c.cc.Invoke(ctx, EmailService_ImportImage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) FetchImage(ctx context.Context, in *FetchImageRequest, opts ...grpc.CallOption) (*FetchImageResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(FetchImageResponse)
@@ -773,6 +785,7 @@ type EmailServiceServer interface {
 	ListAttachments(context.Context, *ListAttachmentsRequest) (*ListAttachmentsResponse, error)
 	PresignImage(context.Context, *PresignImageRequest) (*PresignImageResponse, error)
 	RegisterImage(context.Context, *RegisterImageRequest) (*RegisterImageResponse, error)
+	ImportImage(context.Context, *ImportImageRequest) (*ImportImageResponse, error)
 	// Serves the public, token-addressed image route. Bounded by the 2 MB cap,
 	// so one unary response is fine and streaming would be ceremony.
 	FetchImage(context.Context, *FetchImageRequest) (*FetchImageResponse, error)
@@ -930,6 +943,9 @@ func (UnimplementedEmailServiceServer) PresignImage(context.Context, *PresignIma
 }
 func (UnimplementedEmailServiceServer) RegisterImage(context.Context, *RegisterImageRequest) (*RegisterImageResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RegisterImage not implemented")
+}
+func (UnimplementedEmailServiceServer) ImportImage(context.Context, *ImportImageRequest) (*ImportImageResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ImportImage not implemented")
 }
 func (UnimplementedEmailServiceServer) FetchImage(context.Context, *FetchImageRequest) (*FetchImageResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FetchImage not implemented")
@@ -1458,6 +1474,24 @@ func _EmailService_RegisterImage_Handler(srv interface{}, ctx context.Context, d
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(EmailServiceServer).RegisterImage(ctx, req.(*RegisterImageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_ImportImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ImportImageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).ImportImage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_ImportImage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).ImportImage(ctx, req.(*ImportImageRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2032,6 +2066,10 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RegisterImage",
 			Handler:    _EmailService_RegisterImage_Handler,
+		},
+		{
+			MethodName: "ImportImage",
+			Handler:    _EmailService_ImportImage_Handler,
 		},
 		{
 			MethodName: "FetchImage",

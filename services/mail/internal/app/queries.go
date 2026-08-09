@@ -283,12 +283,30 @@ func (s *Service) CreateSignature(ctx context.Context, tenantID int64, in Signat
 		// Same rule as the body: sanitise on the way in, because the stored
 		// value is both sent to customers and rendered back in the UI.
 		content = SanitizeHTML(content)
+		if blankSignature(content) {
+			// A rich editor left alone does not produce an empty string, it
+			// produces "<br>" or an empty paragraph — which passes the check
+			// above and stores a signature that appends nothing to every mail
+			// and looks, in the list, exactly like a working one.
+			return 0, apierr.Invalid("NT_SIGNATURE_FIELDS_REQUIRED", "请填写签名名称和内容")
+		}
 	}
 	return s.q.CreateSignature(ctx, store.CreateSignatureParams{
 		TenantID: tenantID, OwnerType: ownerType, OwnerID: ownerID,
 		Name: in.Name, Content: content, BodyFormat: format,
 		IsDefault: in.IsDefault,
 	})
+}
+
+// blankSignature reports markup that renders as nothing.
+//
+// An image alone is not blank: a sign-off that is only the company logo is a
+// perfectly ordinary signature, and judging by text would refuse it.
+func blankSignature(html string) bool {
+	if strings.Contains(strings.ToLower(html), "<img") {
+		return false
+	}
+	return strings.TrimSpace(HTMLToText(html)) == ""
 }
 
 func (s *Service) DeleteSignature(ctx context.Context, tenantID, id int64) error {
