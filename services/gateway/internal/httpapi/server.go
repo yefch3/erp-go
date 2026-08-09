@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"google.golang.org/grpc/codes"
@@ -62,6 +63,10 @@ type Server struct {
 	// allowed and fails open — see FailureThrottle for why this one is the
 	// other way round from Unlock.
 	Throttle *FailureThrottle
+	// Revocations ends one person's sessions without ending everybody's. Nil
+	// disables the check: without it the only way to take a token back is to
+	// rotate JWT_SECRET, which signs out the whole company.
+	Revocations *RevocationStore
 	// Google OAuth. The client id is public by design; the secret lives only
 	// in the notification service, which does the token exchange.
 	GoogleClientID   string
@@ -121,6 +126,11 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/activate", s.activateEmployee)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/account", s.openAccount)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/password", s.resetPassword)
+		// Ends the sessions somebody is already holding. Its own action
+		// because a stolen laptop is not a resignation, and deactivating is
+		// not always what is wanted.
+		r.With(s.perm("iam:employee:write")).
+			Post("/api/employees/{id}/revoke-sessions", s.revokeSessions)
 		// Sending the invitation is employee administration, so it carries the
 		// same permission as creating the row it invites.
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/invite", s.inviteEmployee)
@@ -491,6 +501,16 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			s.writeError(w, http.StatusUnauthorized, "AUTH_TOKEN_INVALID", "登录凭证无效或已过期")
 			return
 		}
+		// Checked after the signature and before anything is done in this
+		// person's name. A valid signature only says the token was minted by
+		// us; it says nothing about whether somebody has since been shown the
+		// door.
+		if s.Revocations != nil && s.Revocations.Revoked(
+			claims.TenantID, claims.EmployeeID(), issuedAt(claims)) {
+			s.writeError(w, http.StatusUnauthorized, "AUTH_SESSION_REVOKED",
+				"登录状态已被管理员终止，请重新登录")
+			return
+		}
 		ctx := grpcx.WithOperator(r.Context(), grpcx.Operator{
 			TenantID:   claims.TenantID,
 			EmployeeID: claims.EmployeeID(),
@@ -513,6 +533,16 @@ func (s *Server) auth(next http.Handler) http.Handler {
 // that cannot render a JSON envelope, like a redirect query parameter.
 func grpcMessage(err error) string {
 	return status.Convert(err).Message()
+}
+
+// issuedAt is the token's own claim about when it was minted, or the zero
+// time when it does not carry one. Zero is treated as "cannot prove it
+// predates the revocation" by RevocationStore.
+func issuedAt(c *authtoken.Claims) time.Time {
+	if c == nil || c.IssuedAt == nil {
+		return time.Time{}
+	}
+	return c.IssuedAt.Time
 }
 
 func newTraceID() string {
