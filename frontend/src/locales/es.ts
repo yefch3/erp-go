@@ -1227,6 +1227,7 @@ export default {
     title: 'Plantillas de firma',
     subtitle: 'Escríbala una vez y luego solo el cuerpo',
     create: 'Nueva firma',
+    edit: 'Editar firma',
     name: 'Nombre',
     namePlaceholder: 'p. ej. Firma predeterminada',
     scope: 'Alcance',

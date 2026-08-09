@@ -50,6 +50,7 @@ service EmailService {
 
   rpc ListSignatures(ListSignaturesRequest) returns (ListSignaturesResponse);
   rpc CreateSignature(CreateSignatureRequest) returns (CreateSignatureResponse);
+  rpc UpdateSignature(UpdateSignatureRequest) returns (UpdateSignatureResponse);
   rpc DeleteSignature(DeleteSignatureRequest) returns (DeleteSignatureResponse);
 
   // Files travelling with a send, and pictures embedded inside one.
@@ -881,6 +882,22 @@ message CreateSignatureRequest {
 
 message CreateSignatureResponse {
   int64 id = 1;
+}
+
+// UpdateSignatureRequest carries the whole block, not a patch: the editor
+// always holds the complete value, and a partial update would need a way to
+// say "clear this field" that JSON omission cannot express.
+message UpdateSignatureRequest {
+  int64 id = 1;
+  string owner_type = 2;
+  string name = 3;
+  string content = 4;
+  bool is_default = 5;
+  string body_format = 6;
+}
+
+message UpdateSignatureResponse {
+  bool ok = 1;
 }
 
 message DeleteSignatureRequest {

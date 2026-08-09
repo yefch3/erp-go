@@ -143,6 +143,22 @@ func (s *Server) createSignature(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) updateSignature(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.UpdateSignatureRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	// The id comes from the path, not the body: two places to say which row
+	// is one place too many, and the path is the one the route matched on.
+	req.Id = idFromPath(r)
+	resp, err := s.Emails.UpdateSignature(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) deleteSignature(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Emails.DeleteSignature(r.Context(), &mailv1.DeleteSignatureRequest{Id: idFromPath(r)})
 	if err != nil {

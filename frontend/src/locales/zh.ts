@@ -1222,6 +1222,7 @@ export default {
     title: '签名模板',
     subtitle: '写好一次，以后只写正文',
     create: '新建签名',
+    edit: '编辑签名',
     name: '名称',
     namePlaceholder: '例如：默认签名',
     scope: '适用范围',

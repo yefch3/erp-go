@@ -43,8 +43,9 @@
             <span v-else class="sub">—</span>
           </template>
         </el-table-column>
-        <el-table-column :label="common('actions')" width="90" fixed="right">
+        <el-table-column :label="common('actions')" width="140" fixed="right">
           <template #default="{ row }">
+            <el-button link type="primary" @click="openEdit(row)">{{ common('edit') }}</el-button>
             <el-button link type="danger" @click="remove(row)">{{ common('delete') }}</el-button>
           </template>
         </el-table-column>
@@ -52,7 +53,14 @@
       <el-empty v-if="!loading && rows.length === 0" :description="t('signatures.empty')" />
     </el-card>
 
-    <el-dialog v-model="open" :title="t('signatures.create')" width="620px">
+    <!-- One dialog for both. The fields are identical, and two dialogs drift:
+         a field added to the create form and forgotten in the edit form is
+         the usual way an editor stops being able to change something. -->
+    <el-dialog
+      v-model="open"
+      :title="editingId ? t('signatures.edit') : t('signatures.create')"
+      width="620px"
+    >
       <el-form label-width="90px">
         <el-form-item :label="t('signatures.name')">
           <el-input v-model="form.name" :placeholder="t('signatures.namePlaceholder')" />
@@ -109,7 +117,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import MailEditor from '../components/MailEditor.vue'
-import { del, get, post } from '../api'
+import { del, get, post, put } from '../api'
 
 interface Signature {
   id: string
@@ -132,6 +140,9 @@ const rows = ref<Signature[]>([])
 const loading = ref(false)
 const open = ref(false)
 const saving = ref(false)
+// Empty means "creating". Holding the id rather than a boolean is what lets
+// save() pick the verb without a second flag to keep in step.
+const editingId = ref('')
 const editor = ref<InstanceType<typeof MailEditor>>()
 const form = reactive({ name: '', ownerType: 'EMPLOYEE', content: '', isDefault: false })
 
@@ -148,11 +159,33 @@ async function load() {
 }
 
 function openCreate() {
+  editingId.value = ''
   form.name = ''
   form.ownerType = 'EMPLOYEE'
   form.content = ''
   form.isDefault = false
   open.value = true
+}
+
+function openEdit(row: Signature) {
+  editingId.value = row.id
+  form.name = row.name
+  form.ownerType = row.ownerType
+  form.content = row.bodyFormat === 'HTML' ? row.content : textToHTML(row.content)
+  form.isDefault = row.isDefault
+  open.value = true
+}
+
+// A signature written before the editor existed is plain text, and the rich
+// editor reads its value as markup. Handing it the raw string would collapse
+// every line break — a two-line sign-off opening as one line, and saving it
+// back that way. So the newlines become <br> and the angle brackets are
+// escaped, which is exactly what the server does when it joins a text
+// signature onto an HTML body.
+function textToHTML(s: string) {
+  const div = document.createElement('div')
+  div.textContent = s
+  return div.innerHTML.replace(/\r?\n/g, '<br>')
 }
 
 function insertVariable(name: string) {
@@ -166,7 +199,16 @@ async function save() {
     // block saved as TEXT would have its markup escaped on the way out — the
     // logo arriving at the customer as the literal text of an <img> tag.
     // The server sanitises it against the outgoing-mail whitelist regardless.
-    await post('/email-signatures', { ...form, bodyFormat: 'HTML' })
+    //
+    // Editing an old TEXT block therefore converts it to HTML. One way, and
+    // deliberate: it renders identically, and leaving it TEXT would mean the
+    // editor could not add the one thing it was opened to add.
+    const body = { ...form, bodyFormat: 'HTML' }
+    if (editingId.value) {
+      await put(`/email-signatures/${editingId.value}`, body)
+    } else {
+      await post('/email-signatures', body)
+    }
     ElMessage.success(t('signatures.saved'))
     open.value = false
     load()

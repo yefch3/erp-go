@@ -1227,6 +1227,7 @@ export default {
     title: 'Signature templates',
     subtitle: 'Write it once, then only write the body',
     create: 'New signature',
+    edit: 'Edit signature',
     name: 'Name',
     namePlaceholder: 'e.g. Default signature',
     scope: 'Scope',
