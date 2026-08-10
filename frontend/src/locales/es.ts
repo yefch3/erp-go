@@ -1059,6 +1059,7 @@ export default {
     recipientsOfSend: 'Los {n} destinatarios de este envío',
     saveDraft: 'Guardar borrador',
     draftSaved: 'Borrador guardado',
+    autosavedAt: 'Borrador guardado {t}',
     draftDropped: 'Borrador eliminado',
     dropDraftHint: '¿Eliminar el borrador «{s}»?',
     noDrafts: 'Sin borradores',

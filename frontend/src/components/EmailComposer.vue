@@ -216,6 +216,14 @@
 
     <template #footer>
       <span class="foot">
+        <!-- Said quietly, but said. Autosaving without telling anybody buys
+             no confidence: people who cannot see it happening keep reaching
+             for 保存草稿 anyway, and the ones who do trust it have only our
+             word for it. -->
+        <span v-if="autosavedAt" class="autosaved">
+          {{ t('emails.autosavedAt', { t: shortClock(autosavedAt) }) }}
+        </span>
+        <span class="foot-grow" />
         <!-- Called with explicit parens: bare @click hands the handler a
              MouseEvent, which is how this button once emitted a truthy value
              and told the parent to stay open. -->
@@ -325,12 +333,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Clock } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import MailBody from './MailBody.vue'
-import { get, post } from '../api'
+import { get, post, quietErrors } from '../api'
 import MailEditor from './MailEditor.vue'
 import RecipientField, { type Recipient } from './RecipientField.vue'
 import {
@@ -415,6 +423,9 @@ const replyCtx = reactive({
 })
 const variablePickerOpen = ref(false)
 const savingDraft = ref(false)
+// When the draft was last written without being asked. Null until the first
+// one, which is also what keeps the line off an untouched composer.
+const autosavedAt = ref<Date | null>(null)
 // Set once a draft has been saved or opened, so later saves update that row
 // rather than leaving a trail of near-identical drafts behind.
 const draftId = ref('0')
@@ -539,10 +550,18 @@ watch(
 watch(
   () => props.modelValue,
   (open) => {
-    if (!open) return
+    if (!open) {
+      // A pending save belongs to the composer that scheduled it. Left
+      // running, it fires against a form that has since been reset and writes
+      // an empty draft over what was there.
+      cancelAutosave()
+      return
+    }
     loadSignatures()
   },
 )
+
+onBeforeUnmount(cancelAutosave)
 
 // Opening the composer with a draft restores everything that was saved.
 async function openDraft(id: string) {
@@ -690,6 +709,7 @@ async function saveDraft() {
   try {
     const r = await post<{ id: string }>('/email-drafts', draftPayload())
     draftId.value = r.id
+    markClean()
     ElMessage.success(t('emails.draftSaved'))
     emit('saved')
     close(false)
@@ -698,7 +718,80 @@ async function saveDraft() {
   }
 }
 
+// ------------------------------------------------------------ autosaving
+//
+// Losing half an hour of writing was possible in three ordinary ways: the
+// browser falls over, the tab is closed by accident, or the session runs out
+// while somebody thinks. Saving only when asked meant all three cost the whole
+// message — and the person who writes the longest, most careful mail is the
+// one most exposed, because they are the one who has not pressed anything yet.
+//
+// Idle-triggered rather than on a fixed clock. Writing produces a save a few
+// seconds after the writer stops, which is when there is something worth
+// keeping; a fixed interval instead saves mid-word and, worse, keeps saving an
+// abandoned composer nobody will return to.
+const AUTOSAVE_IDLE_MS = 3000
+// ...but a fixed ceiling as well, because "after they stop" never arrives for
+// somebody typing steadily for ten minutes, which is exactly the session this
+// exists to protect.
+const AUTOSAVE_MAX_WAIT_MS = 30000
+
+let autosaveTimer: ReturnType<typeof setTimeout> | undefined
+let lastAutosaveAt = 0
+
+function scheduleAutosave() {
+  if (!props.modelValue || !hasContent() || !isDirty()) return
+  clearTimeout(autosaveTimer)
+  const waited = Date.now() - lastAutosaveAt
+  const delay = lastAutosaveAt > 0 && waited >= AUTOSAVE_MAX_WAIT_MS ? 0 : AUTOSAVE_IDLE_MS
+  autosaveTimer = setTimeout(runAutosave, delay)
+}
+
+function cancelAutosave() {
+  clearTimeout(autosaveTimer)
+  autosaveTimer = undefined
+}
+
+async function runAutosave() {
+  // Re-checked rather than trusted from when the timer was set: three seconds
+  // is long enough for the composer to have been closed, sent, or saved by
+  // hand, and any of those makes this write wrong rather than merely wasteful.
+  if (!props.modelValue || sending.value || savingDraft.value) return
+  if (!hasContent() || !isDirty()) return
+
+  const wasNew = draftId.value === '0'
+  try {
+    // quietErrors: a failure here is nobody's fault and nobody's business. The
+    // next edit tries again, and a toast every few seconds while a mailbox is
+    // locked would be a fault of its own.
+    const r = await post<{ id: string }>('/email-drafts', draftPayload(), quietErrors)
+    draftId.value = r.id
+    // Clean, so cancelling now asks no question: the work is in the drafts
+    // folder, and warning about losing something already saved is noise.
+    markClean()
+    lastAutosaveAt = Date.now()
+    autosavedAt.value = new Date()
+    // Only the first one. Later saves change this draft's contents but not
+    // which drafts exist, and telling the list to reload on every pause in
+    // typing would have it flickering all afternoon.
+    if (wasNew) emit('saved')
+  } catch {
+    // Deliberately silent; see above.
+  }
+}
+
+// The same signature dirty-tracking uses, so autosave and "are there unsaved
+// changes?" can never disagree about what counts as a change.
+watch(() => signature(), scheduleAutosave)
+
+function shortClock(d: Date) {
+  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+}
+
 function reset() {
+  cancelAutosave()
+  autosavedAt.value = null
+  lastAutosaveAt = 0
   draftId.value = '0'
   form.subject = ''
   form.body = ''
@@ -1158,6 +1251,14 @@ async function onBeforeClose(done: () => void) {
   align-items: center;
   gap: 8px;
   justify-content: flex-end;
+}
+.foot-grow {
+  flex: 1;
+}
+.autosaved {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
 }
 .recip-box,
 .body-box {
