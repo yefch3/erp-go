@@ -192,12 +192,21 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 	body := m.Body
 	tracked := false
 	if m.BodyFormat == "HTML" {
+		// Before the pixel, so that "did a pixel go in?" below compares like
+		// with like. Rewriting image links is not tracking and must not be
+		// mistaken for it.
+		body = AbsolutiseMailImages(body, cfg.PublicBaseURL)
+		withoutPixel := body
 		body = InjectOpenPixel(body, cfg.PublicBaseURL, m.MessageKey)
 		// Whether a pixel actually went in, rather than whether we asked for
 		// one: a plain-text mail or a service with no public address gets none,
 		// and the screen has to be able to tell "nobody opened it" from "nobody
 		// was watching".
-		tracked = body != m.Body
+		//
+		// Compared against the body as it stood after the link rewrite, not
+		// against the stored one — otherwise a mail that merely had an image
+		// link corrected would report itself as tracked.
+		tracked = body != withoutPixel
 	}
 
 	out := Outbound{
