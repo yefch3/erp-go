@@ -77,9 +77,14 @@ type Server struct {
 	// trusting it without such a proxy lets anybody spray from a different
 	// fake address on every request. See clientAddr.
 	TrustProxyHeaders bool
-	Live              *livefeed.Subscriber
-	JWTSecret         string
-	Log               *slog.Logger
+	Live      *livefeed.Subscriber
+	JWTSecret string
+	// TokenTTL is the life of a renewed token, and must match the one iam
+	// issues with. Because renewal rides on activity, this is in practice how
+	// long somebody may sit idle before being signed out — not how long since
+	// they signed in.
+	TokenTTL time.Duration
+	Log      *slog.Logger
 }
 
 func (s *Server) Router() http.Handler {
@@ -507,12 +512,20 @@ func (s *Server) auth(next http.Handler) http.Handler {
 		// person's name. A valid signature only says the token was minted by
 		// us; it says nothing about whether somebody has since been shown the
 		// door.
+		//
+		// Compared against the sign-in moment, not IssuedAt: renewal moves
+		// IssuedAt forward, and comparing against a number the session can
+		// advance by itself would let it renew past the cutoff.
 		if s.Revocations != nil && s.Revocations.Revoked(
-			claims.TenantID, claims.EmployeeID(), issuedAt(claims)) {
+			claims.TenantID, claims.EmployeeID(), claims.SignedInAt()) {
 			s.writeError(w, http.StatusUnauthorized, "AUTH_SESSION_REVOKED",
 				"登录状态已被管理员终止，请重新登录")
 			return
 		}
+		// Only now — after the signature held and the session survived the
+		// revocation check — is it safe to extend it. Renewing first would
+		// hand a fresh token to a session that was about to be refused.
+		s.renewIfHalfSpent(w, claims)
 		ctx := grpcx.WithOperator(r.Context(), grpcx.Operator{
 			TenantID:   claims.TenantID,
 			EmployeeID: claims.EmployeeID(),
@@ -537,15 +550,44 @@ func grpcMessage(err error) string {
 	return status.Convert(err).Message()
 }
 
-// issuedAt is the token's own claim about when it was minted, or the zero
-// time when it does not carry one. Zero is treated as "cannot prove it
-// predates the revocation" by RevocationStore.
-func issuedAt(c *authtoken.Claims) time.Time {
-	if c == nil || c.IssuedAt == nil {
-		return time.Time{}
+// renewIfHalfSpent puts a fresh token on the response once the current one is
+// past the midpoint of its life.
+//
+// A response header rather than an endpoint the client calls. The browser is
+// already making the request; asking it to make a second one to stay signed in
+// means every client has to remember to, and a background tab that forgets
+// gets signed out while an identical tab beside it does not. Riding on traffic
+// that already exists makes the rule "activity keeps you in" true by
+// construction — and it is the same rule Frappe gets for free by writing a
+// last-seen timestamp on every request.
+//
+// The effect of renewal-on-activity is that JWT_TTL stops being "how long
+// since you signed in" and becomes "how long you may sit idle". Nothing else
+// had to change for that: a session that keeps working keeps being extended,
+// and one that stops simply runs out.
+//
+// Failure is silent on purpose. The request itself succeeded and the caller's
+// current token is still valid for at least half its life; turning a renewal
+// hiccup into a visible error would break a working page over something that
+// will be retried on the very next request.
+func (s *Server) renewIfHalfSpent(w http.ResponseWriter, c *authtoken.Claims) {
+	if !c.HalfSpent(time.Now()) {
+		return
 	}
-	return c.IssuedAt.Time
+	fresh, err := authtoken.Renew(s.JWTSecret, s.TokenTTL, c)
+	if err != nil {
+		s.Log.Warn("could not renew a session token", "employee", c.EmployeeID(), "err", err)
+		return
+	}
+	// Same origin as the page, so no Access-Control-Expose-Headers is needed.
+	// If the API is ever served from another origin, this header has to be
+	// listed there or the browser will hide it and sessions will start
+	// expiring under active use.
+	w.Header().Set(RenewedTokenHeader, fresh)
 }
+
+// RenewedTokenHeader carries a replacement token to the browser.
+const RenewedTokenHeader = "X-Renewed-Token"
 
 func newTraceID() string {
 	b := make([]byte, 8)

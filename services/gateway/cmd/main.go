@@ -181,6 +181,7 @@ func run(log *slog.Logger) error {
 		TrustProxyHeaders: os.Getenv("TRUST_PROXY_HEADERS") == "1",
 		Live:              live,
 		JWTSecret:         cfg.JWTSecret,
+		TokenTTL:          cfg.JWTTTL,
 		Log:               log,
 	}
 
