@@ -191,10 +191,16 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 	// wrote plus one image. A draft reopened later is not polluted by it.
 	body := m.Body
 	tracked := false
+	var inline []InlineImage
 	if m.BodyFormat == "HTML" {
 		// Before the pixel, so that "did a pixel go in?" below compares like
 		// with like. Rewriting image links is not tracking and must not be
 		// mistaken for it.
+		// Inline first: a picture carried by the message needs no address at
+		// all, so whatever this converts is beyond the reach of the public-URL
+		// problem entirely. Whatever it cannot carry falls through to the
+		// rewrite below and goes out as a link, as before.
+		body, inline = s.InlineMailImages(ctx, body)
 		body = AbsolutiseMailImages(body, cfg.PublicBaseURL)
 		withoutPixel := body
 		body = InjectOpenPixel(body, cfg.PublicBaseURL, m.MessageKey)
@@ -210,19 +216,20 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 	}
 
 	out := Outbound{
-		MessageKey:  m.MessageKey,
-		TenantID:    cfg.TenantID,
-		SenderID:    m.SenderID,
-		FromName:    m.SenderName,
-		ToEmail:     m.ToEmail,
-		ToName:      m.ToName,
-		Subject:     m.Subject,
-		Body:        body,
-		BodyText:    m.BodyText,
-		Format:      m.BodyFormat,
-		Attachments: files,
-		InReplyTo:   m.InReplyTo,
-		References:  m.ReferencesIds,
+		MessageKey:   m.MessageKey,
+		TenantID:     cfg.TenantID,
+		SenderID:     m.SenderID,
+		FromName:     m.SenderName,
+		ToEmail:      m.ToEmail,
+		ToName:       m.ToName,
+		Subject:      m.Subject,
+		Body:         body,
+		BodyText:     m.BodyText,
+		Format:       m.BodyFormat,
+		Attachments:  files,
+		InlineImages: inline,
+		InReplyTo:    m.InReplyTo,
+		References:   m.ReferencesIds,
 	}
 	// A merged message carries its cast openly on To/Cc, and its blind copies
 	// only in the envelope. One transaction covers all three.

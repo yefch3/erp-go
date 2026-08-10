@@ -103,6 +103,11 @@ type Outbound struct {
 	// Files travelling with this message. The same set for every recipient
 	// of a send, which is why they are fetched once per campaign.
 	Attachments []Attachment
+	// Pictures the body references by Content-ID rather than by URL. Carried
+	// with their bytes already read, because whether a picture can be carried
+	// is decided where it can be decided safely: one that cannot be read is
+	// left as a link instead of failing the send. See InlineMailImages.
+	InlineImages []InlineImage
 	// A merged send: when ToList is non-empty it replaces ToEmail/ToName
 	// entirely — the To header carries the whole list, everybody sees each
 	// other, and the envelope covers every entry plus CCList. Both stay

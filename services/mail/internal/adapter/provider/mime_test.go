@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"io"
@@ -368,4 +369,146 @@ func keysOf(m map[string]string) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// A signature logo must travel with the message, not be fetched from us
+// afterwards. Remote images are blocked by default in Outlook and Thunderbird
+// and proxied by Gmail, so a linked logo is one nobody reliably sees — and the
+// link only works at all once a publicly reachable address exists.
+func TestInlineImagesTravelInsideTheMessage(t *testing.T) {
+	m := app.Outbound{
+		MessageKey: "k1", Subject: "s", ToEmail: "b@example.com", Format: "HTML",
+		Body:     `<p>hi</p><img src="cid:tok123">`,
+		BodyText: "hi",
+		InlineImages: []app.InlineImage{{
+			ContentID: "tok123", FileName: "image.png",
+			ContentType: "image/png", Data: []byte{1, 2, 3, 4},
+		}},
+	}
+	raw, _, err := buildMessage(m, "a@example.com", "example.com", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(raw)
+
+	if !strings.Contains(got, "multipart/related") {
+		t.Error("no related layer, so the picture is not glued to the body")
+	}
+	if !strings.Contains(got, `type="multipart/alternative"`) {
+		t.Error("related does not name its root part")
+	}
+	// The angle brackets matter: cid:tok123 refers to Content-ID <tok123>.
+	if !strings.Contains(got, "Content-ID: <tok123>") {
+		t.Error("the picture carries no identifier the body can reach")
+	}
+	if !strings.Contains(got, "Content-Disposition: inline") {
+		t.Error("the picture is not marked inline")
+	}
+	// The alternative must survive inside the related wrapper, in that order.
+	rel := strings.Index(got, "multipart/related")
+	alt := strings.Index(got, "multipart/alternative")
+	if rel < 0 || alt < 0 || alt < rel {
+		t.Errorf("the alternative is not nested inside the related part (rel=%d alt=%d)", rel, alt)
+	}
+}
+
+// Nothing inline: the shape must be exactly what it was before, or every mail
+// without a logo pays for a feature it is not using.
+func TestWithoutInlineImagesTheShapeIsUnchanged(t *testing.T) {
+	m := app.Outbound{
+		MessageKey: "k1", Subject: "s", ToEmail: "b@example.com", Format: "HTML",
+		Body: "<p>hi</p>", BodyText: "hi",
+	}
+	raw, _, err := buildMessage(m, "a@example.com", "example.com", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(raw)
+	if strings.Contains(got, "multipart/related") {
+		t.Error("a related layer appeared with nothing to relate")
+	}
+	if !strings.Contains(got, "multipart/alternative") {
+		t.Error("the alternative went missing")
+	}
+}
+
+// Attachments and inline images together: the files wrap everything, and the
+// picture stays glued to the body inside that.
+func TestAttachmentsAndInlineImagesNestCorrectly(t *testing.T) {
+	m := app.Outbound{
+		MessageKey: "k1", Subject: "s", ToEmail: "b@example.com", Format: "HTML",
+		Body: `<img src="cid:tok123">`, BodyText: "hi",
+		InlineImages: []app.InlineImage{{
+			ContentID: "tok123", FileName: "image.png",
+			ContentType: "image/png", Data: []byte{1, 2, 3},
+		}},
+	}
+	files := []fileBlob{{FileName: "quote.pdf", ContentType: "application/pdf", Data: []byte("pdf")}}
+	raw, _, err := buildMessage(m, "a@example.com", "example.com", files, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(raw)
+	mixed := strings.Index(got, "multipart/mixed")
+	rel := strings.Index(got, "multipart/related")
+	alt := strings.Index(got, "multipart/alternative")
+	if mixed < 0 || rel < 0 || alt < 0 {
+		t.Fatalf("a layer is missing (mixed=%d rel=%d alt=%d)", mixed, rel, alt)
+	}
+	if !(mixed < rel && rel < alt) {
+		t.Errorf("wrong nesting order: mixed=%d rel=%d alt=%d", mixed, rel, alt)
+	}
+	if !strings.Contains(got, "quote.pdf") {
+		t.Error("the attachment went missing")
+	}
+	if !strings.Contains(got, "Content-ID: <tok123>") {
+		t.Error("the inline picture went missing")
+	}
+}
+
+// The send side and the receive side have to agree. Building a message with an
+// inline picture and reading it back with our own parser is the only check
+// that covers both at once — a Content-ID we write but cannot find again would
+// pass every structural assertion above and still arrive as an empty box.
+//
+// This is the exact shape that arrived broken from Gmail before the parser was
+// fixed: an image part with no filename, identified only by Content-ID.
+func TestAnInlineImageSurvivesOurOwnRoundTrip(t *testing.T) {
+	png := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3}
+	m := app.Outbound{
+		MessageKey: "k1", Subject: "报价", ToEmail: "b@example.com", Format: "HTML",
+		Body:     `<p>见下图</p><img src="cid:tok123" alt="logo">`,
+		BodyText: "见下图",
+		InlineImages: []app.InlineImage{{
+			ContentID: "tok123", FileName: "image.png",
+			ContentType: "image/png", Data: png,
+		}},
+	}
+	raw, _, err := buildMessage(m, "a@example.com", "example.com", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	parsed, err := app.ParseMail(raw)
+	if err != nil {
+		t.Fatalf("we cannot read back what we just wrote: %v", err)
+	}
+	if len(parsed.Attachments) != 1 {
+		t.Fatalf("the picture did not survive: %d parts", len(parsed.Attachments))
+	}
+	a := parsed.Attachments[0]
+	if a.ContentID != "tok123" {
+		t.Errorf("ContentID came back as %q, so the body's cid: finds nothing", a.ContentID)
+	}
+	if !bytes.Equal(a.Data, png) {
+		t.Errorf("the bytes changed in transit: sent %v, got %v", png, a.Data)
+	}
+	if !strings.Contains(parsed.BodyHTML, "cid:tok123") {
+		t.Errorf("the body lost its reference: %q", parsed.BodyHTML)
+	}
+	// And the text alternative still has to be there — HTML alone is a spam
+	// signal, and the related layer must not have swallowed it.
+	if !strings.Contains(parsed.BodyText, "见下图") {
+		t.Errorf("the plain-text alternative went missing: %q", parsed.BodyText)
+	}
 }
