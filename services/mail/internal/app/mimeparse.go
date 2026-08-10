@@ -145,20 +145,37 @@ func collectLeaf(ent *emsg.Entity, out *ParsedMail) {
 			filename = p["name"]
 		}
 	}
+	contentID := contentIDOf(ent.Header.Get("Content-ID"))
 
-	// An attachment is anything explicitly marked as one, plus anything
-	// carrying a filename: plenty of clients send Content-Disposition:
-	// inline for a real attachment.
-	if disp == "attachment" || (filename != "" && !strings.HasPrefix(ct, "text/")) {
+	// An attachment is anything explicitly marked as one, anything carrying a
+	// filename (plenty of clients send Content-Disposition: inline for a real
+	// attachment), and anything carrying a Content-ID.
+	//
+	// That last clause is not a nicety. An image pasted into Gmail's composer
+	// arrives like this:
+	//
+	//	Content-Type: image/png
+	//	Content-Disposition: inline          <- no filename= parameter
+	//	Content-ID: <ii_19fe9d231d101>
+	//
+	// No filename anywhere, and the disposition is "inline" rather than
+	// "attachment", so a filename-only rule walks straight past it and the
+	// bytes are dropped. The body still says <img src="cid:ii_19fe9d231d101">,
+	// so the reader renders an empty box — which is exactly what a customer
+	// pasting a photo of a damaged carton produced. A part the body points at
+	// by Content-ID is referenced content by definition; whether its sender
+	// bothered to name it is beside the point.
+	if disp == "attachment" || contentID != "" ||
+		(filename != "" && !strings.HasPrefix(ct, "text/")) {
 		data, err := io.ReadAll(io.LimitReader(ent.Body, maxAttachmentBytes))
 		if err != nil {
 			return
 		}
 		out.Attachments = append(out.Attachments, ParsedAttachment{
-			FileName:    decodeHeader(filename),
+			FileName:    attachmentName(decodeHeader(filename), ct, contentID),
 			ContentType: ct,
 			Data:        data,
-			ContentID:   contentIDOf(ent.Header.Get("Content-ID")),
+			ContentID:   contentID,
 		})
 		return
 	}
@@ -179,6 +196,28 @@ func collectLeaf(ent *emsg.Entity, out *ParsedMail) {
 			out.BodyText = string(body)
 		}
 	}
+}
+
+// attachmentName is what the file is called when its sender did not say.
+//
+// A name is needed even for a part nobody will ever click: the download path
+// saves under it, the repair pass in embedded.go matches on (name, size), and
+// an empty string in a list column reads as a broken row. Derived from the
+// content type rather than from the Content-ID, because the identifier is a
+// random token — "ii_19fe9d231d101" tells a person nothing, "image.png" tells
+// them what it is.
+func attachmentName(filename, contentType, contentID string) string {
+	if filename != "" {
+		return filename
+	}
+	if contentID == "" {
+		return "attachment"
+	}
+	base := "image"
+	if !strings.HasPrefix(contentType, "image/") {
+		base = "attachment"
+	}
+	return base + extensionFor(strings.ToLower(contentType))
 }
 
 const (

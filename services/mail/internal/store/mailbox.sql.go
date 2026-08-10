@@ -162,6 +162,26 @@ func (q *Queries) CountInbound(ctx context.Context, arg CountInboundParams) (int
 	return column_1, err
 }
 
+const countInboundAttachmentWithCID = `-- name: CountInboundAttachmentWithCID :one
+SELECT count(*) FROM email_inbound_attachments
+WHERE tenant_id = $1::bigint
+  AND inbound_id = $2::bigint
+  AND content_id = $3::text
+`
+
+type CountInboundAttachmentWithCIDParams struct {
+	TenantID  int64
+	InboundID int64
+	ContentID string
+}
+
+func (q *Queries) CountInboundAttachmentWithCID(ctx context.Context, arg CountInboundAttachmentWithCIDParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countInboundAttachmentWithCID, arg.TenantID, arg.InboundID, arg.ContentID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countInboundThreads = `-- name: CountInboundThreads :one
 SELECT count(DISTINCT coalesce(nullif(thread_key, ''), 'm:' || id::text))::bigint
 FROM email_inbound
@@ -1446,6 +1466,65 @@ func (q *Queries) ListInboundThreads(ctx context.Context, arg ListInboundThreads
 			&i.SentAt,
 			&i.ThreadCount,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInboundWithUnresolvedCID = `-- name: ListInboundWithUnresolvedCID :many
+SELECT i.id, i.raw_key, i.account_id
+FROM email_inbound i
+WHERE i.tenant_id = $1::bigint
+  AND i.raw_key <> ''
+  AND i.body_html LIKE '%cid:%'
+  AND EXISTS (
+      SELECT 1 FROM regexp_matches(i.body_html, 'cid:([^"'']+)', 'g') AS m(cid)
+      WHERE NOT EXISTS (
+          SELECT 1 FROM email_inbound_attachments a
+          WHERE a.inbound_id = i.id AND a.content_id = m.cid[1]
+      )
+  )
+ORDER BY i.id DESC
+LIMIT $2::int
+`
+
+type ListInboundWithUnresolvedCIDParams struct {
+	TenantID int64
+	RowLimit int32
+}
+
+type ListInboundWithUnresolvedCIDRow struct {
+	ID        int64
+	RawKey    string
+	AccountID int64
+}
+
+// Messages whose body points at a part by Content-ID that no stored row
+// satisfies.
+//
+// These are not a curiosity: until 2026-08-10 the parser only kept a part that
+// carried a filename, and an image pasted into Gmail's composer carries none —
+// only a Content-ID. Those parts were read past and dropped, so the body was
+// left citing something that does not exist and the reader drew an empty box.
+//
+// The raw message is required, because recovery means parsing it again; a row
+// whose original was never stored cannot be helped and is left out rather than
+// returned for ever.
+func (q *Queries) ListInboundWithUnresolvedCID(ctx context.Context, arg ListInboundWithUnresolvedCIDParams) ([]ListInboundWithUnresolvedCIDRow, error) {
+	rows, err := q.db.Query(ctx, listInboundWithUnresolvedCID, arg.TenantID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInboundWithUnresolvedCIDRow
+	for rows.Next() {
+		var i ListInboundWithUnresolvedCIDRow
+		if err := rows.Scan(&i.ID, &i.RawKey, &i.AccountID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
