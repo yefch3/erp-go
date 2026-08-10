@@ -1,7 +1,21 @@
 <template>
-  <div>
-    <div class="page-head">
-      <h2>{{ t('signatures.title') }}</h2>
+  <!-- Signatures live inside the mailbox rather than in a settings page of
+       their own. A signature is not a system setting somebody configures once
+       and forgets: it is part of writing mail, and it belongs beside the thing
+       it appears on. The mailbox host settings moved here for the same reason.
+
+       append-to-body because this dialog opens from the mailbox rail, which
+       sits inside a flex layout that would otherwise clip it. -->
+  <el-dialog
+    :model-value="modelValue"
+    :title="t('signatures.title')"
+    width="min(900px, 94vw)"
+    top="5vh"
+    append-to-body
+    @update:model-value="$emit('update:modelValue', $event)"
+    @open="load"
+  >
+    <div class="sig-head">
       <span class="head-note">{{ t('signatures.subtitle') }}</span>
       <span class="grow" />
       <el-button type="primary" @click="openCreate">{{ t('signatures.create') }}</el-button>
@@ -109,11 +123,11 @@
         <el-button type="primary" :loading="saving" @click="save">{{ common('save') }}</el-button>
       </template>
     </el-dialog>
-  </div>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import MailEditor from '../components/MailEditor.vue'
@@ -133,6 +147,9 @@ interface Signature {
 // name belongs in the greeting, not the sign-off.
 const SIGNATURE_VARIABLES = ['my_name', 'my_title', 'my_email', 'my_phone'] as const
 
+defineProps<{ modelValue: boolean }>()
+defineEmits<{ 'update:modelValue': [boolean] }>()
+
 const { t } = useI18n()
 const common = (k: string) => t(`common.${k}`)
 
@@ -145,8 +162,6 @@ const saving = ref(false)
 const editingId = ref('')
 const editor = ref<InstanceType<typeof MailEditor>>()
 const form = reactive({ name: '', ownerType: 'EMPLOYEE', content: '', isDefault: false })
-
-onMounted(load)
 
 async function load() {
   loading.value = true
@@ -228,15 +243,11 @@ async function remove(row: Signature) {
 </script>
 
 <style scoped>
-.page-head {
+.sig-head {
   display: flex;
   align-items: baseline;
   gap: 14px;
-  margin-bottom: 16px;
-}
-.page-head h2 {
-  margin: 0;
-  font-size: 20px;
+  margin-bottom: 12px;
 }
 .grow {
   flex: 1;
