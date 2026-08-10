@@ -18,6 +18,13 @@ services:
       DB_DSN: postgres://erp_iam:erp_iam_pw@postgres:5432/erp_iam?sslmode=disable
       GRPC_PORT: "9001"
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      # Read by iam (which issues) and the gateway (which renews). Both must
+      # see the same value, so it is written from one variable in both places
+      # — a token renewed to a different length than login hands out is the
+      # kind of drift nobody notices until sessions end at odd times.
+      #
+      # Because the gateway renews on activity, this is an IDLE timeout.
+      JWT_TTL: ${JWT_TTL:-12h}
       # The first tenant, seeded only into an empty database.
       COMPANY_NAME: ${COMPANY_NAME:-AAA Industry Inc}
       # The domains that route to this company. gmail.com is here for
@@ -304,6 +311,8 @@ services:
       MAIL_OAUTH_REDIRECT_URL: ${MAIL_OAUTH_REDIRECT_URL:-http://localhost:8080/api/oauth/google/callback}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      # Must match iam's. See the note there.
+      JWT_TTL: ${JWT_TTL:-12h}
       HTTP_PORT: "8080"
     # The one port that answers from elsewhere, because it is the one the
     # browser talks to. In front of a real deployment this belongs behind a

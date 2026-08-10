@@ -56,8 +56,30 @@ http.interceptors.request.use((cfg) => {
   return cfg
 })
 
+// The gateway hands back a replacement token once the current one is half
+// spent. Picking it up here, rather than in any page, is what makes staying
+// signed in a property of using the system at all: every request already goes
+// through this interceptor, so no screen has to remember to renew.
+//
+// Before the blob check, and before the envelope check, because the header
+// arrives on a download and on a business-level failure too. Skipping those
+// would mean the one person who spent the afternoon exporting conversations
+// got signed out for their trouble.
+const RENEWED_TOKEN_HEADER = 'x-renewed-token'
+
+function adoptRenewedToken(resp: { headers?: unknown }) {
+  const headers = resp.headers as Record<string, string> | undefined
+  const fresh = headers?.[RENEWED_TOKEN_HEADER]
+  // Only while a session exists. Without this, a response that arrives just
+  // after 退出登录 would quietly put a working token back.
+  if (fresh && localStorage.getItem('token')) {
+    localStorage.setItem('token', fresh)
+  }
+}
+
 http.interceptors.response.use(
   (resp) => {
+    adoptRenewedToken(resp)
     // A download is not an envelope. Everything else this API returns is
     // { success, data }; an exported conversation is the document itself, and
     // checking .success on a Blob finds undefined and rejects a response that
@@ -73,6 +95,9 @@ http.interceptors.response.use(
     return resp
   },
   async (err) => {
+    // A renewal can ride on a failed request too — a 404 or a validation
+    // error is still proof the person is here and working.
+    if (err.response) adoptRenewedToken(err.response)
     let env = err.response?.data as Envelope<unknown> | undefined
     // A download that failed still failed with an envelope — the server does
     // not know yet that it is about to write bytes. responseType turned it
