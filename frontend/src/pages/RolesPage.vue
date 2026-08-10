@@ -1,5 +1,6 @@
 <template>
   <div>
+    <BasicDataEmployeeNav />
     <div class="page-head">
       <h2>{{ t('roles.title') }}</h2>
       <el-button v-if="canWrite" type="primary" @click="createOpen = true">{{ t('roles.create') }}</el-button>
@@ -88,6 +89,7 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post, put } from '../api'
 import { useAuthStore } from '../stores/auth'
+import BasicDataEmployeeNav from '../components/BasicDataEmployeeNav.vue'
 
 interface Role { id: string; code: string; name: string; description: string; permissionCodes: string[] }
 interface Permission { id: string; code: string; name: string; module: string }

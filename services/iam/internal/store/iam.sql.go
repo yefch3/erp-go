@@ -12,7 +12,7 @@ import (
 )
 
 const activateEmployee = `-- name: ActivateEmployee :execrows
-UPDATE employees SET status = 'ACTIVE', updated_at = now()
+UPDATE employees SET status = 'ACTIVE', leave_date = NULL, version = version + 1, updated_at = now()
 WHERE tenant_id = $1 AND id = $2 AND status = 'INACTIVE'
 `
 
@@ -96,6 +96,82 @@ func (q *Queries) ConsumeInvitation(ctx context.Context, id int64) (int64, error
 	return result.RowsAffected(), nil
 }
 
+const countActiveChildDepartments = `-- name: CountActiveChildDepartments :one
+SELECT count(*) FROM departments
+WHERE tenant_id = $1::bigint
+  AND parent_id = $2::bigint
+  AND status = 'ACTIVE'
+`
+
+type CountActiveChildDepartmentsParams struct {
+	TenantID int64
+	ParentID int64
+}
+
+func (q *Queries) CountActiveChildDepartments(ctx context.Context, arg CountActiveChildDepartmentsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveChildDepartments, arg.TenantID, arg.ParentID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countActiveDirectReports = `-- name: CountActiveDirectReports :one
+SELECT count(*) FROM employees
+WHERE tenant_id = $1::bigint
+  AND manager_id = $2::bigint
+  AND status = 'ACTIVE'
+`
+
+type CountActiveDirectReportsParams struct {
+	TenantID  int64
+	ManagerID int64
+}
+
+func (q *Queries) CountActiveDirectReports(ctx context.Context, arg CountActiveDirectReportsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveDirectReports, arg.TenantID, arg.ManagerID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countActiveEmployeesInDepartment = `-- name: CountActiveEmployeesInDepartment :one
+SELECT count(*) FROM employees
+WHERE tenant_id = $1::bigint
+  AND department_id = $2::bigint
+  AND status = 'ACTIVE'
+`
+
+type CountActiveEmployeesInDepartmentParams struct {
+	TenantID     int64
+	DepartmentID int64
+}
+
+func (q *Queries) CountActiveEmployeesInDepartment(ctx context.Context, arg CountActiveEmployeesInDepartmentParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveEmployeesInDepartment, arg.TenantID, arg.DepartmentID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countDepartmentsLedByEmployee = `-- name: CountDepartmentsLedByEmployee :one
+SELECT count(*) FROM departments
+WHERE tenant_id = $1::bigint
+  AND leader_employee_id = $2::bigint
+  AND status = 'ACTIVE'
+`
+
+type CountDepartmentsLedByEmployeeParams struct {
+	TenantID   int64
+	EmployeeID int64
+}
+
+func (q *Queries) CountDepartmentsLedByEmployee(ctx context.Context, arg CountDepartmentsLedByEmployeeParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countDepartmentsLedByEmployee, arg.TenantID, arg.EmployeeID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countOtherHoldersOf = `-- name: CountOtherHoldersOf :one
 SELECT count(DISTINCT e.id) FROM employees e
 JOIN employee_roles er ON er.employee_id = e.id AND er.tenant_id = e.tenant_id
@@ -122,7 +198,7 @@ func (q *Queries) CountOtherHoldersOf(ctx context.Context, arg CountOtherHolders
 const createDepartment = `-- name: CreateDepartment :one
 INSERT INTO departments (tenant_id, code, name, parent_id, path, level)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, tenant_id, code, name, parent_id, path, level, sort_order, status, created_at, updated_at
+RETURNING id, tenant_id, code, name, parent_id, path, level, sort_order, status, created_at, updated_at, leader_employee_id, version
 `
 
 type CreateDepartmentParams struct {
@@ -156,6 +232,8 @@ func (q *Queries) CreateDepartment(ctx context.Context, arg CreateDepartmentPara
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LeaderEmployeeID,
+		&i.Version,
 	)
 	return i, err
 }
@@ -163,7 +241,7 @@ func (q *Queries) CreateDepartment(ctx context.Context, arg CreateDepartmentPara
 const createEmployee = `-- name: CreateEmployee :one
 INSERT INTO employees (tenant_id, code, name, department_id, position, email, phone, manager_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8::bigint, 0))
-RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at
+RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at, english_name, hire_date, leave_date, remark, version
 `
 
 type CreateEmployeeParams struct {
@@ -203,6 +281,11 @@ func (q *Queries) CreateEmployee(ctx context.Context, arg CreateEmployeeParams) 
 		&i.UpdatedAt,
 		&i.ManagerID,
 		&i.EmailVerifiedAt,
+		&i.EnglishName,
+		&i.HireDate,
+		&i.LeaveDate,
+		&i.Remark,
+		&i.Version,
 	)
 	return i, err
 }
@@ -325,7 +408,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (int64, 
 }
 
 const deactivateEmployee = `-- name: DeactivateEmployee :execrows
-UPDATE employees SET status = 'INACTIVE', updated_at = now()
+UPDATE employees SET status = 'INACTIVE', leave_date = current_date, version = version + 1, updated_at = now()
 WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'
 `
 
@@ -492,7 +575,7 @@ func (q *Queries) EmployeesInMyDeptTree(ctx context.Context, arg EmployeesInMyDe
 }
 
 const getDepartment = `-- name: GetDepartment :one
-SELECT id, tenant_id, code, name, parent_id, path, level, sort_order, status, created_at, updated_at FROM departments WHERE tenant_id = $1 AND id = $2
+SELECT id, tenant_id, code, name, parent_id, path, level, sort_order, status, created_at, updated_at, leader_employee_id, version FROM departments WHERE tenant_id = $1 AND id = $2
 `
 
 type GetDepartmentParams struct {
@@ -515,12 +598,14 @@ func (q *Queries) GetDepartment(ctx context.Context, arg GetDepartmentParams) (D
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LeaderEmployeeID,
+		&i.Version,
 	)
 	return i, err
 }
 
 const getEmployee = `-- name: GetEmployee :one
-SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, d.name AS department_name, coalesce(m.name, '')::text AS manager_name
+SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, e.english_name, e.hire_date, e.leave_date, e.remark, e.version, d.name AS department_name, coalesce(m.name, '')::text AS manager_name
 FROM employees e
 JOIN departments d ON d.id = e.department_id
 LEFT JOIN employees m ON m.id = e.manager_id
@@ -546,6 +631,11 @@ type GetEmployeeRow struct {
 	UpdatedAt       pgtype.Timestamptz
 	ManagerID       *int64
 	EmailVerifiedAt pgtype.Timestamptz
+	EnglishName     string
+	HireDate        pgtype.Date
+	LeaveDate       pgtype.Date
+	Remark          string
+	Version         int32
 	DepartmentName  string
 	ManagerName     string
 }
@@ -567,6 +657,11 @@ func (q *Queries) GetEmployee(ctx context.Context, arg GetEmployeeParams) (GetEm
 		&i.UpdatedAt,
 		&i.ManagerID,
 		&i.EmailVerifiedAt,
+		&i.EnglishName,
+		&i.HireDate,
+		&i.LeaveDate,
+		&i.Remark,
+		&i.Version,
 		&i.DepartmentName,
 		&i.ManagerName,
 	)
@@ -836,6 +931,43 @@ func (q *Queries) HasAnyUser(ctx context.Context, tenantID int64) (bool, error) 
 	return has_users, err
 }
 
+const insertDirectoryChange = `-- name: InsertDirectoryChange :exec
+INSERT INTO directory_change_logs (
+  tenant_id, entity_type, entity_id, action, before_data, after_data, operator_id
+) VALUES (
+  $1::bigint,
+  $2::text,
+  $3::bigint,
+  $4::text,
+  $5::jsonb,
+  $6::jsonb,
+  $7::bigint
+)
+`
+
+type InsertDirectoryChangeParams struct {
+	TenantID   int64
+	EntityType string
+	EntityID   int64
+	Action     string
+	BeforeData []byte
+	AfterData  []byte
+	OperatorID int64
+}
+
+func (q *Queries) InsertDirectoryChange(ctx context.Context, arg InsertDirectoryChangeParams) error {
+	_, err := q.db.Exec(ctx, insertDirectoryChange,
+		arg.TenantID,
+		arg.EntityType,
+		arg.EntityID,
+		arg.Action,
+		arg.BeforeData,
+		arg.AfterData,
+		arg.OperatorID,
+	)
+	return err
+}
+
 const isTenantDomain = `-- name: IsTenantDomain :one
 SELECT EXISTS (
     SELECT 1 FROM tenant_domains
@@ -860,7 +992,7 @@ func (q *Queries) IsTenantDomain(ctx context.Context, arg IsTenantDomainParams) 
 }
 
 const listDepartments = `-- name: ListDepartments :many
-SELECT id, tenant_id, code, name, parent_id, path, level, sort_order, status, created_at, updated_at FROM departments WHERE tenant_id = $1 ORDER BY path, sort_order, id
+SELECT id, tenant_id, code, name, parent_id, path, level, sort_order, status, created_at, updated_at, leader_employee_id, version FROM departments WHERE tenant_id = $1 ORDER BY path, sort_order, id
 `
 
 func (q *Queries) ListDepartments(ctx context.Context, tenantID int64) ([]Department, error) {
@@ -884,6 +1016,53 @@ func (q *Queries) ListDepartments(ctx context.Context, tenantID int64) ([]Depart
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.LeaderEmployeeID,
+			&i.Version,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDirectoryChanges = `-- name: ListDirectoryChanges :many
+SELECT id, tenant_id, entity_type, entity_id, action, before_data, after_data, operator_id, created_at FROM directory_change_logs
+WHERE tenant_id = $1::bigint
+  AND entity_type = $2::text
+  AND entity_id = $3::bigint
+ORDER BY id DESC
+LIMIT 100
+`
+
+type ListDirectoryChangesParams struct {
+	TenantID   int64
+	EntityType string
+	EntityID   int64
+}
+
+func (q *Queries) ListDirectoryChanges(ctx context.Context, arg ListDirectoryChangesParams) ([]DirectoryChangeLog, error) {
+	rows, err := q.db.Query(ctx, listDirectoryChanges, arg.TenantID, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DirectoryChangeLog
+	for rows.Next() {
+		var i DirectoryChangeLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.Action,
+			&i.BeforeData,
+			&i.AfterData,
+			&i.OperatorID,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1028,7 +1207,7 @@ func (q *Queries) ListEmployeeRoleIDs(ctx context.Context, arg ListEmployeeRoleI
 }
 
 const listEmployees = `-- name: ListEmployees :many
-SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, d.name AS department_name, coalesce(m.name, '')::text AS manager_name,
+SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, e.english_name, e.hire_date, e.leave_date, e.remark, e.version, d.name AS department_name, coalesce(m.name, '')::text AS manager_name,
        count(*) OVER () AS total
 FROM employees e
 JOIN departments d ON d.id = e.department_id
@@ -1062,6 +1241,11 @@ type ListEmployeesRow struct {
 	UpdatedAt       pgtype.Timestamptz
 	ManagerID       *int64
 	EmailVerifiedAt pgtype.Timestamptz
+	EnglishName     string
+	HireDate        pgtype.Date
+	LeaveDate       pgtype.Date
+	Remark          string
+	Version         int32
 	DepartmentName  string
 	ManagerName     string
 	Total           int64
@@ -1096,6 +1280,138 @@ func (q *Queries) ListEmployees(ctx context.Context, arg ListEmployeesParams) ([
 			&i.UpdatedAt,
 			&i.ManagerID,
 			&i.EmailVerifiedAt,
+			&i.EnglishName,
+			&i.HireDate,
+			&i.LeaveDate,
+			&i.Remark,
+			&i.Version,
+			&i.DepartmentName,
+			&i.ManagerName,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEmployeesFiltered = `-- name: ListEmployeesFiltered :many
+SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, e.english_name, e.hire_date, e.leave_date, e.remark, e.version, d.name AS department_name, coalesce(m.name, '')::text AS manager_name,
+       count(*) OVER () AS total
+FROM employees e
+JOIN departments d ON d.id = e.department_id AND d.tenant_id = e.tenant_id
+LEFT JOIN employees m ON m.id = e.manager_id AND m.tenant_id = e.tenant_id
+LEFT JOIN users u ON u.employee_id = e.id AND u.tenant_id = e.tenant_id
+WHERE e.tenant_id = $1::bigint
+  AND ($2::bigint = 0 OR e.department_id = $2::bigint)
+  AND ($3::bigint = 0 OR e.manager_id = $3::bigint)
+  AND ($4::bigint = 0 OR EXISTS (
+    SELECT 1 FROM employee_roles er
+    WHERE er.tenant_id = e.tenant_id AND er.employee_id = e.id
+      AND er.role_id = $4::bigint
+  ))
+  AND ($5::text = '' OR e.status = $5::text)
+  AND (
+    $6::text = ''
+    OR ($6::text = 'NONE' AND u.id IS NULL AND NOT EXISTS (
+      SELECT 1 FROM employee_invitations i
+      WHERE i.tenant_id = e.tenant_id AND i.employee_id = e.id AND i.used_at IS NULL
+    ))
+    OR ($6::text = 'PENDING' AND e.email_verified_at IS NULL AND EXISTS (
+      SELECT 1 FROM employee_invitations i
+      WHERE i.tenant_id = e.tenant_id AND i.employee_id = e.id AND i.used_at IS NULL
+    ))
+    OR ($6::text = 'ACTIVE' AND u.status = 'ACTIVE' AND e.email_verified_at IS NOT NULL)
+  )
+  AND (
+    $7::text = ''
+    OR e.name ILIKE '%' || $7::text || '%'
+    OR e.english_name ILIKE '%' || $7::text || '%'
+    OR e.code ILIKE '%' || $7::text || '%'
+    OR e.email ILIKE '%' || $7::text || '%'
+  )
+ORDER BY e.id DESC
+LIMIT $9::int OFFSET $8::int
+`
+
+type ListEmployeesFilteredParams struct {
+	TenantID         int64
+	DepartmentID     int64
+	ManagerID        int64
+	RoleID           int64
+	EmploymentStatus string
+	AccountStatus    string
+	Keyword          string
+	PageOffset       int32
+	PageSize         int32
+}
+
+type ListEmployeesFilteredRow struct {
+	ID              int64
+	TenantID        int64
+	Code            string
+	Name            string
+	DepartmentID    int64
+	Position        string
+	Email           string
+	Phone           string
+	Status          string
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	ManagerID       *int64
+	EmailVerifiedAt pgtype.Timestamptz
+	EnglishName     string
+	HireDate        pgtype.Date
+	LeaveDate       pgtype.Date
+	Remark          string
+	Version         int32
+	DepartmentName  string
+	ManagerName     string
+	Total           int64
+}
+
+func (q *Queries) ListEmployeesFiltered(ctx context.Context, arg ListEmployeesFilteredParams) ([]ListEmployeesFilteredRow, error) {
+	rows, err := q.db.Query(ctx, listEmployeesFiltered,
+		arg.TenantID,
+		arg.DepartmentID,
+		arg.ManagerID,
+		arg.RoleID,
+		arg.EmploymentStatus,
+		arg.AccountStatus,
+		arg.Keyword,
+		arg.PageOffset,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEmployeesFilteredRow
+	for rows.Next() {
+		var i ListEmployeesFilteredRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Code,
+			&i.Name,
+			&i.DepartmentID,
+			&i.Position,
+			&i.Email,
+			&i.Phone,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ManagerID,
+			&i.EmailVerifiedAt,
+			&i.EnglishName,
+			&i.HireDate,
+			&i.LeaveDate,
+			&i.Remark,
+			&i.Version,
 			&i.DepartmentName,
 			&i.ManagerName,
 			&i.Total,
@@ -1389,6 +1705,37 @@ func (q *Queries) ManagerAtLevel(ctx context.Context, arg ManagerAtLevelParams) 
 	return items, nil
 }
 
+const managerCycleExists = `-- name: ManagerCycleExists :one
+WITH RECURSIVE chain AS (
+  SELECT id, manager_id, ARRAY[id]::bigint[] AS visited
+  FROM employees
+  WHERE tenant_id = $2::bigint
+    AND id = $3::bigint
+  UNION ALL
+  SELECT e.id, e.manager_id, c.visited || e.id
+  FROM employees e
+  JOIN chain c ON e.id = c.manager_id
+  WHERE e.tenant_id = $2::bigint
+    AND NOT e.id = ANY(c.visited)
+)
+SELECT EXISTS (
+  SELECT 1 FROM chain WHERE id = $1::bigint
+)
+`
+
+type ManagerCycleExistsParams struct {
+	EmployeeID int64
+	TenantID   int64
+	ManagerID  int64
+}
+
+func (q *Queries) ManagerCycleExists(ctx context.Context, arg ManagerCycleExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, managerCycleExists, arg.EmployeeID, arg.TenantID, arg.ManagerID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const recordLoginFailure = `-- name: RecordLoginFailure :one
 UPDATE users
 SET failed_count = failed_count + 1,
@@ -1488,6 +1835,50 @@ func (q *Queries) SetDepartmentPath(ctx context.Context, arg SetDepartmentPathPa
 	return err
 }
 
+const setDepartmentStatus = `-- name: SetDepartmentStatus :one
+UPDATE departments
+SET status = $1::text,
+    version = version + 1,
+    updated_at = now()
+WHERE tenant_id = $2::bigint
+  AND id = $3::bigint
+  AND version = $4::int
+RETURNING id, tenant_id, code, name, parent_id, path, level, sort_order, status, created_at, updated_at, leader_employee_id, version
+`
+
+type SetDepartmentStatusParams struct {
+	Status          string
+	TenantID        int64
+	ID              int64
+	ExpectedVersion int32
+}
+
+func (q *Queries) SetDepartmentStatus(ctx context.Context, arg SetDepartmentStatusParams) (Department, error) {
+	row := q.db.QueryRow(ctx, setDepartmentStatus,
+		arg.Status,
+		arg.TenantID,
+		arg.ID,
+		arg.ExpectedVersion,
+	)
+	var i Department
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Code,
+		&i.Name,
+		&i.ParentID,
+		&i.Path,
+		&i.Level,
+		&i.SortOrder,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LeaderEmployeeID,
+		&i.Version,
+	)
+	return i, err
+}
+
 const setEmployeeEmailVerified = `-- name: SetEmployeeEmailVerified :exec
 UPDATE employees
 SET email = $1::text, email_verified_at = now(), updated_at = now()
@@ -1548,6 +1939,167 @@ func (q *Queries) SetRoleDataScope(ctx context.Context, arg SetRoleDataScopePara
 		arg.CustomDeptIds,
 	)
 	return err
+}
+
+const updateDepartmentDetails = `-- name: UpdateDepartmentDetails :one
+UPDATE departments
+SET code = $1::text,
+    name = $2::text,
+    parent_id = nullif($3::bigint, 0),
+    sort_order = $4::int,
+    leader_employee_id = nullif($5::bigint, 0),
+    version = version + 1,
+    updated_at = now()
+WHERE tenant_id = $6::bigint
+  AND id = $7::bigint
+  AND version = $8::int
+RETURNING id, tenant_id, code, name, parent_id, path, level, sort_order, status, created_at, updated_at, leader_employee_id, version
+`
+
+type UpdateDepartmentDetailsParams struct {
+	Code             string
+	Name             string
+	ParentID         int64
+	SortOrder        int32
+	LeaderEmployeeID int64
+	TenantID         int64
+	ID               int64
+	ExpectedVersion  int32
+}
+
+func (q *Queries) UpdateDepartmentDetails(ctx context.Context, arg UpdateDepartmentDetailsParams) (Department, error) {
+	row := q.db.QueryRow(ctx, updateDepartmentDetails,
+		arg.Code,
+		arg.Name,
+		arg.ParentID,
+		arg.SortOrder,
+		arg.LeaderEmployeeID,
+		arg.TenantID,
+		arg.ID,
+		arg.ExpectedVersion,
+	)
+	var i Department
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Code,
+		&i.Name,
+		&i.ParentID,
+		&i.Path,
+		&i.Level,
+		&i.SortOrder,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LeaderEmployeeID,
+		&i.Version,
+	)
+	return i, err
+}
+
+const updateDepartmentSubtree = `-- name: UpdateDepartmentSubtree :exec
+UPDATE departments
+SET path = $1::text || substring(path FROM length($2::text) + 1),
+    level = level + $3::int,
+    updated_at = now()
+WHERE tenant_id = $4::bigint
+  AND path LIKE $2::text || '%'
+`
+
+type UpdateDepartmentSubtreeParams struct {
+	NewPath    string
+	OldPath    string
+	LevelDelta int32
+	TenantID   int64
+}
+
+func (q *Queries) UpdateDepartmentSubtree(ctx context.Context, arg UpdateDepartmentSubtreeParams) error {
+	_, err := q.db.Exec(ctx, updateDepartmentSubtree,
+		arg.NewPath,
+		arg.OldPath,
+		arg.LevelDelta,
+		arg.TenantID,
+	)
+	return err
+}
+
+const updateEmployeeDetails = `-- name: UpdateEmployeeDetails :one
+UPDATE employees
+SET code = $1::text,
+    name = $2::text,
+    english_name = $3::text,
+    department_id = $4::bigint,
+    position = $5::text,
+    email = $6::text,
+    phone = $7::text,
+    manager_id = nullif($8::bigint, 0),
+    hire_date = $9::date,
+    leave_date = $10::date,
+    remark = $11::text,
+    version = version + 1,
+    updated_at = now()
+WHERE tenant_id = $12::bigint
+  AND id = $13::bigint
+  AND version = $14::int
+RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at, english_name, hire_date, leave_date, remark, version
+`
+
+type UpdateEmployeeDetailsParams struct {
+	Code            string
+	Name            string
+	EnglishName     string
+	DepartmentID    int64
+	Position        string
+	Email           string
+	Phone           string
+	ManagerID       int64
+	HireDate        pgtype.Date
+	LeaveDate       pgtype.Date
+	Remark          string
+	TenantID        int64
+	ID              int64
+	ExpectedVersion int32
+}
+
+func (q *Queries) UpdateEmployeeDetails(ctx context.Context, arg UpdateEmployeeDetailsParams) (Employee, error) {
+	row := q.db.QueryRow(ctx, updateEmployeeDetails,
+		arg.Code,
+		arg.Name,
+		arg.EnglishName,
+		arg.DepartmentID,
+		arg.Position,
+		arg.Email,
+		arg.Phone,
+		arg.ManagerID,
+		arg.HireDate,
+		arg.LeaveDate,
+		arg.Remark,
+		arg.TenantID,
+		arg.ID,
+		arg.ExpectedVersion,
+	)
+	var i Employee
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Code,
+		&i.Name,
+		&i.DepartmentID,
+		&i.Position,
+		&i.Email,
+		&i.Phone,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ManagerID,
+		&i.EmailVerifiedAt,
+		&i.EnglishName,
+		&i.HireDate,
+		&i.LeaveDate,
+		&i.Remark,
+		&i.Version,
+	)
+	return i, err
 }
 
 const updatePassword = `-- name: UpdatePassword :execrows

@@ -217,20 +217,23 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	DirectoryService_CreateDepartment_FullMethodName   = "/erp.iam.v1.DirectoryService/CreateDepartment"
-	DirectoryService_ListDepartments_FullMethodName    = "/erp.iam.v1.DirectoryService/ListDepartments"
-	DirectoryService_CreateEmployee_FullMethodName     = "/erp.iam.v1.DirectoryService/CreateEmployee"
-	DirectoryService_GetEmployee_FullMethodName        = "/erp.iam.v1.DirectoryService/GetEmployee"
-	DirectoryService_ListEmployees_FullMethodName      = "/erp.iam.v1.DirectoryService/ListEmployees"
-	DirectoryService_DeactivateEmployee_FullMethodName = "/erp.iam.v1.DirectoryService/DeactivateEmployee"
-	DirectoryService_ActivateEmployee_FullMethodName   = "/erp.iam.v1.DirectoryService/ActivateEmployee"
-	DirectoryService_OpenAccount_FullMethodName        = "/erp.iam.v1.DirectoryService/OpenAccount"
-	DirectoryService_ResetPassword_FullMethodName      = "/erp.iam.v1.DirectoryService/ResetPassword"
-	DirectoryService_ChangePassword_FullMethodName     = "/erp.iam.v1.DirectoryService/ChangePassword"
-	DirectoryService_ListManagers_FullMethodName       = "/erp.iam.v1.DirectoryService/ListManagers"
-	DirectoryService_SetManager_FullMethodName         = "/erp.iam.v1.DirectoryService/SetManager"
-	DirectoryService_InviteEmployee_FullMethodName     = "/erp.iam.v1.DirectoryService/InviteEmployee"
-	DirectoryService_ImportEmployees_FullMethodName    = "/erp.iam.v1.DirectoryService/ImportEmployees"
+	DirectoryService_CreateDepartment_FullMethodName     = "/erp.iam.v1.DirectoryService/CreateDepartment"
+	DirectoryService_ListDepartments_FullMethodName      = "/erp.iam.v1.DirectoryService/ListDepartments"
+	DirectoryService_UpdateDepartment_FullMethodName     = "/erp.iam.v1.DirectoryService/UpdateDepartment"
+	DirectoryService_CreateEmployee_FullMethodName       = "/erp.iam.v1.DirectoryService/CreateEmployee"
+	DirectoryService_GetEmployee_FullMethodName          = "/erp.iam.v1.DirectoryService/GetEmployee"
+	DirectoryService_ListEmployees_FullMethodName        = "/erp.iam.v1.DirectoryService/ListEmployees"
+	DirectoryService_UpdateEmployee_FullMethodName       = "/erp.iam.v1.DirectoryService/UpdateEmployee"
+	DirectoryService_DeactivateEmployee_FullMethodName   = "/erp.iam.v1.DirectoryService/DeactivateEmployee"
+	DirectoryService_ActivateEmployee_FullMethodName     = "/erp.iam.v1.DirectoryService/ActivateEmployee"
+	DirectoryService_OpenAccount_FullMethodName          = "/erp.iam.v1.DirectoryService/OpenAccount"
+	DirectoryService_ResetPassword_FullMethodName        = "/erp.iam.v1.DirectoryService/ResetPassword"
+	DirectoryService_ChangePassword_FullMethodName       = "/erp.iam.v1.DirectoryService/ChangePassword"
+	DirectoryService_ListManagers_FullMethodName         = "/erp.iam.v1.DirectoryService/ListManagers"
+	DirectoryService_SetManager_FullMethodName           = "/erp.iam.v1.DirectoryService/SetManager"
+	DirectoryService_InviteEmployee_FullMethodName       = "/erp.iam.v1.DirectoryService/InviteEmployee"
+	DirectoryService_ImportEmployees_FullMethodName      = "/erp.iam.v1.DirectoryService/ImportEmployees"
+	DirectoryService_ListDirectoryChanges_FullMethodName = "/erp.iam.v1.DirectoryService/ListDirectoryChanges"
 )
 
 // DirectoryServiceClient is the client API for DirectoryService service.
@@ -241,9 +244,11 @@ const (
 type DirectoryServiceClient interface {
 	CreateDepartment(ctx context.Context, in *CreateDepartmentRequest, opts ...grpc.CallOption) (*CreateDepartmentResponse, error)
 	ListDepartments(ctx context.Context, in *ListDepartmentsRequest, opts ...grpc.CallOption) (*ListDepartmentsResponse, error)
+	UpdateDepartment(ctx context.Context, in *UpdateDepartmentRequest, opts ...grpc.CallOption) (*UpdateDepartmentResponse, error)
 	CreateEmployee(ctx context.Context, in *CreateEmployeeRequest, opts ...grpc.CallOption) (*CreateEmployeeResponse, error)
 	GetEmployee(ctx context.Context, in *GetEmployeeRequest, opts ...grpc.CallOption) (*GetEmployeeResponse, error)
 	ListEmployees(ctx context.Context, in *ListEmployeesRequest, opts ...grpc.CallOption) (*ListEmployeesResponse, error)
+	UpdateEmployee(ctx context.Context, in *UpdateEmployeeRequest, opts ...grpc.CallOption) (*UpdateEmployeeResponse, error)
 	DeactivateEmployee(ctx context.Context, in *DeactivateEmployeeRequest, opts ...grpc.CallOption) (*DeactivateEmployeeResponse, error)
 	// ActivateEmployee reinstates someone marked as left - people come
 	// back, and a mistaken departure must be undoable from the UI.
@@ -275,6 +280,7 @@ type DirectoryServiceClient interface {
 	// — a preview computed by a second, simpler validator eventually lies, and
 	// it lies at the moment somebody has already decided to trust it.
 	ImportEmployees(ctx context.Context, in *ImportEmployeesRequest, opts ...grpc.CallOption) (*ImportEmployeesResponse, error)
+	ListDirectoryChanges(ctx context.Context, in *ListDirectoryChangesRequest, opts ...grpc.CallOption) (*ListDirectoryChangesResponse, error)
 }
 
 type directoryServiceClient struct {
@@ -305,6 +311,16 @@ func (c *directoryServiceClient) ListDepartments(ctx context.Context, in *ListDe
 	return out, nil
 }
 
+func (c *directoryServiceClient) UpdateDepartment(ctx context.Context, in *UpdateDepartmentRequest, opts ...grpc.CallOption) (*UpdateDepartmentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateDepartmentResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_UpdateDepartment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *directoryServiceClient) CreateEmployee(ctx context.Context, in *CreateEmployeeRequest, opts ...grpc.CallOption) (*CreateEmployeeResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateEmployeeResponse)
@@ -329,6 +345,16 @@ func (c *directoryServiceClient) ListEmployees(ctx context.Context, in *ListEmpl
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListEmployeesResponse)
 	err := c.cc.Invoke(ctx, DirectoryService_ListEmployees_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *directoryServiceClient) UpdateEmployee(ctx context.Context, in *UpdateEmployeeRequest, opts ...grpc.CallOption) (*UpdateEmployeeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateEmployeeResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_UpdateEmployee_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -425,6 +451,16 @@ func (c *directoryServiceClient) ImportEmployees(ctx context.Context, in *Import
 	return out, nil
 }
 
+func (c *directoryServiceClient) ListDirectoryChanges(ctx context.Context, in *ListDirectoryChangesRequest, opts ...grpc.CallOption) (*ListDirectoryChangesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDirectoryChangesResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_ListDirectoryChanges_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DirectoryServiceServer is the server API for DirectoryService service.
 // All implementations must embed UnimplementedDirectoryServiceServer
 // for forward compatibility.
@@ -433,9 +469,11 @@ func (c *directoryServiceClient) ImportEmployees(ctx context.Context, in *Import
 type DirectoryServiceServer interface {
 	CreateDepartment(context.Context, *CreateDepartmentRequest) (*CreateDepartmentResponse, error)
 	ListDepartments(context.Context, *ListDepartmentsRequest) (*ListDepartmentsResponse, error)
+	UpdateDepartment(context.Context, *UpdateDepartmentRequest) (*UpdateDepartmentResponse, error)
 	CreateEmployee(context.Context, *CreateEmployeeRequest) (*CreateEmployeeResponse, error)
 	GetEmployee(context.Context, *GetEmployeeRequest) (*GetEmployeeResponse, error)
 	ListEmployees(context.Context, *ListEmployeesRequest) (*ListEmployeesResponse, error)
+	UpdateEmployee(context.Context, *UpdateEmployeeRequest) (*UpdateEmployeeResponse, error)
 	DeactivateEmployee(context.Context, *DeactivateEmployeeRequest) (*DeactivateEmployeeResponse, error)
 	// ActivateEmployee reinstates someone marked as left - people come
 	// back, and a mistaken departure must be undoable from the UI.
@@ -467,6 +505,7 @@ type DirectoryServiceServer interface {
 	// — a preview computed by a second, simpler validator eventually lies, and
 	// it lies at the moment somebody has already decided to trust it.
 	ImportEmployees(context.Context, *ImportEmployeesRequest) (*ImportEmployeesResponse, error)
+	ListDirectoryChanges(context.Context, *ListDirectoryChangesRequest) (*ListDirectoryChangesResponse, error)
 	mustEmbedUnimplementedDirectoryServiceServer()
 }
 
@@ -483,6 +522,9 @@ func (UnimplementedDirectoryServiceServer) CreateDepartment(context.Context, *Cr
 func (UnimplementedDirectoryServiceServer) ListDepartments(context.Context, *ListDepartmentsRequest) (*ListDepartmentsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListDepartments not implemented")
 }
+func (UnimplementedDirectoryServiceServer) UpdateDepartment(context.Context, *UpdateDepartmentRequest) (*UpdateDepartmentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateDepartment not implemented")
+}
 func (UnimplementedDirectoryServiceServer) CreateEmployee(context.Context, *CreateEmployeeRequest) (*CreateEmployeeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateEmployee not implemented")
 }
@@ -491,6 +533,9 @@ func (UnimplementedDirectoryServiceServer) GetEmployee(context.Context, *GetEmpl
 }
 func (UnimplementedDirectoryServiceServer) ListEmployees(context.Context, *ListEmployeesRequest) (*ListEmployeesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListEmployees not implemented")
+}
+func (UnimplementedDirectoryServiceServer) UpdateEmployee(context.Context, *UpdateEmployeeRequest) (*UpdateEmployeeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateEmployee not implemented")
 }
 func (UnimplementedDirectoryServiceServer) DeactivateEmployee(context.Context, *DeactivateEmployeeRequest) (*DeactivateEmployeeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeactivateEmployee not implemented")
@@ -518,6 +563,9 @@ func (UnimplementedDirectoryServiceServer) InviteEmployee(context.Context, *Invi
 }
 func (UnimplementedDirectoryServiceServer) ImportEmployees(context.Context, *ImportEmployeesRequest) (*ImportEmployeesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ImportEmployees not implemented")
+}
+func (UnimplementedDirectoryServiceServer) ListDirectoryChanges(context.Context, *ListDirectoryChangesRequest) (*ListDirectoryChangesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListDirectoryChanges not implemented")
 }
 func (UnimplementedDirectoryServiceServer) mustEmbedUnimplementedDirectoryServiceServer() {}
 func (UnimplementedDirectoryServiceServer) testEmbeddedByValue()                          {}
@@ -576,6 +624,24 @@ func _DirectoryService_ListDepartments_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DirectoryService_UpdateDepartment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateDepartmentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).UpdateDepartment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_UpdateDepartment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).UpdateDepartment(ctx, req.(*UpdateDepartmentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DirectoryService_CreateEmployee_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateEmployeeRequest)
 	if err := dec(in); err != nil {
@@ -626,6 +692,24 @@ func _DirectoryService_ListEmployees_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DirectoryServiceServer).ListEmployees(ctx, req.(*ListEmployeesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DirectoryService_UpdateEmployee_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateEmployeeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).UpdateEmployee(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_UpdateEmployee_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).UpdateEmployee(ctx, req.(*UpdateEmployeeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -792,6 +876,24 @@ func _DirectoryService_ImportEmployees_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DirectoryService_ListDirectoryChanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDirectoryChangesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).ListDirectoryChanges(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_ListDirectoryChanges_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).ListDirectoryChanges(ctx, req.(*ListDirectoryChangesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DirectoryService_ServiceDesc is the grpc.ServiceDesc for DirectoryService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -808,6 +910,10 @@ var DirectoryService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DirectoryService_ListDepartments_Handler,
 		},
 		{
+			MethodName: "UpdateDepartment",
+			Handler:    _DirectoryService_UpdateDepartment_Handler,
+		},
+		{
 			MethodName: "CreateEmployee",
 			Handler:    _DirectoryService_CreateEmployee_Handler,
 		},
@@ -818,6 +924,10 @@ var DirectoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListEmployees",
 			Handler:    _DirectoryService_ListEmployees_Handler,
+		},
+		{
+			MethodName: "UpdateEmployee",
+			Handler:    _DirectoryService_UpdateEmployee_Handler,
 		},
 		{
 			MethodName: "DeactivateEmployee",
@@ -854,6 +964,10 @@ var DirectoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ImportEmployees",
 			Handler:    _DirectoryService_ImportEmployees_Handler,
+		},
+		{
+			MethodName: "ListDirectoryChanges",
+			Handler:    _DirectoryService_ListDirectoryChanges_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

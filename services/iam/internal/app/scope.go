@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/iam/internal/store"
 )
 
@@ -80,17 +81,50 @@ func (s *Service) ManagersOf(ctx context.Context, tenantID, employeeID int64, le
 	})
 }
 
-// SetManager changes who someone reports to. A cycle would make the approval
-// engine chase its own tail, so the obvious one is refused here; deeper cycles
-// are left to the caller's judgement rather than a recursive walk on every save.
-func (s *Service) SetManager(ctx context.Context, tenantID, employeeID, managerID int64) error {
+// SetManager 修改直属主管，并拒绝本人、离职主管以及任意深度的循环汇报关系。
+func (s *Service) SetManager(ctx context.Context, tenantID, employeeID, managerID, operatorID int64) error {
 	if managerID != 0 && managerID == employeeID {
-		return apierr.Invalid("IAM_MANAGER_SELF", "不能把自己设为自己的上级")
+		return apierr.Invalid("IAM_MANAGER_SELF", "不能把自己设为自己的直属主管")
 	}
-	_, err := s.q.SetEmployeeManager(ctx, store.SetEmployeeManagerParams{
-		TenantID: tenantID, ID: employeeID, ManagerID: managerID,
+	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		current, err := q.GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: employeeID})
+		if err != nil {
+			return apierr.NotFound("IAM_EMP_NOT_FOUND", "员工不存在")
+		}
+		if managerID > 0 {
+			manager, err := q.GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: managerID})
+			if err != nil || manager.Status != "ACTIVE" {
+				return apierr.Invalid("IAM_MANAGER_INVALID", "直属主管必须是在职员工")
+			}
+			cycle, err := q.ManagerCycleExists(ctx, store.ManagerCycleExistsParams{
+				TenantID: tenantID, ManagerID: managerID, EmployeeID: employeeID,
+			})
+			if err != nil {
+				return err
+			}
+			if cycle {
+				return apierr.Invalid("IAM_MANAGER_CYCLE", "直属主管关系不能形成循环")
+			}
+		}
+		n, err := q.SetEmployeeManager(ctx, store.SetEmployeeManagerParams{
+			TenantID: tenantID, ID: employeeID, ManagerID: managerID,
+		})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return apierr.NotFound("IAM_EMP_NOT_FOUND", "员工不存在")
+		}
+		after, err := q.GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: employeeID})
+		if err != nil {
+			return err
+		}
+		return q.InsertDirectoryChange(ctx, store.InsertDirectoryChangeParams{
+			TenantID: tenantID, EntityType: "EMPLOYEE", EntityID: employeeID, Action: "SET_MANAGER",
+			BeforeData: snapshotJSON(current), AfterData: snapshotJSON(after), OperatorID: operatorID,
+		})
 	})
-	return err
 }
 
 // ListDataScopes returns every configured scope, for the administration

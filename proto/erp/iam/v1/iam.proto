@@ -23,9 +23,11 @@ service AuthService {
 service DirectoryService {
   rpc CreateDepartment(CreateDepartmentRequest) returns (CreateDepartmentResponse);
   rpc ListDepartments(ListDepartmentsRequest) returns (ListDepartmentsResponse);
+  rpc UpdateDepartment(UpdateDepartmentRequest) returns (UpdateDepartmentResponse);
   rpc CreateEmployee(CreateEmployeeRequest) returns (CreateEmployeeResponse);
   rpc GetEmployee(GetEmployeeRequest) returns (GetEmployeeResponse);
   rpc ListEmployees(ListEmployeesRequest) returns (ListEmployeesResponse);
+  rpc UpdateEmployee(UpdateEmployeeRequest) returns (UpdateEmployeeResponse);
   rpc DeactivateEmployee(DeactivateEmployeeRequest) returns (DeactivateEmployeeResponse);
   // ActivateEmployee reinstates someone marked as left - people come
   // back, and a mistaken departure must be undoable from the UI.
@@ -57,6 +59,7 @@ service DirectoryService {
   // — a preview computed by a second, simpler validator eventually lies, and
   // it lies at the moment somebody has already decided to trust it.
   rpc ImportEmployees(ImportEmployeesRequest) returns (ImportEmployeesResponse);
+  rpc ListDirectoryChanges(ListDirectoryChangesRequest) returns (ListDirectoryChangesResponse);
 }
 
 // AccessService owns roles, permissions and the permission check other
@@ -214,12 +217,20 @@ message Department {
   string name = 3;
   int64 parent_id = 4;
   string status = 5;
+  string path = 6;
+  int32 level = 7;
+  int32 sort_order = 8;
+  int64 leader_employee_id = 9;
+  string leader_employee_name = 10;
+  int32 version = 11;
 }
 
 message CreateDepartmentRequest {
   string code = 1;
   string name = 2;
   int64 parent_id = 3;
+  int32 sort_order = 4;
+  int64 leader_employee_id = 5;
 }
 
 message CreateDepartmentResponse {
@@ -230,6 +241,21 @@ message ListDepartmentsRequest {}
 
 message ListDepartmentsResponse {
   repeated Department departments = 1;
+}
+
+message UpdateDepartmentRequest {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  int64 parent_id = 4;
+  int32 sort_order = 5;
+  int64 leader_employee_id = 6;
+  string status = 7;
+  int32 expected_version = 8;
+}
+
+message UpdateDepartmentResponse {
+  Department department = 1;
 }
 
 message Employee {
@@ -257,6 +283,11 @@ message Employee {
   // pending and unverified means nobody has invited them yet, which is a
   // different problem from an invitation sitting unread.
   int64 invite_expires_at = 15;
+  string english_name = 16;
+  string hire_date = 17;
+  string leave_date = 18;
+  string remark = 19;
+  int32 version = 20;
 }
 
 message CreateEmployeeRequest {
@@ -270,6 +301,9 @@ message CreateEmployeeRequest {
   string username = 7;
   string initial_password = 8;
   int64 manager_id = 9;
+  string english_name = 10;
+  string hire_date = 11;
+  string remark = 12;
 }
 
 message CreateEmployeeResponse {
@@ -288,11 +322,55 @@ message ListEmployeesRequest {
   erp.common.v1.PageRequest page = 1;
   int64 department_id = 2;
   string keyword = 3;
+  int64 manager_id = 4;
+  int64 role_id = 5;
+  string account_status = 6;
+  string employment_status = 7;
 }
 
 message ListEmployeesResponse {
   repeated Employee employees = 1;
   erp.common.v1.PageMeta meta = 2;
+}
+
+message UpdateEmployeeRequest {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  string english_name = 4;
+  int64 department_id = 5;
+  string position = 6;
+  string email = 7;
+  string phone = 8;
+  int64 manager_id = 9;
+  string hire_date = 10;
+  string leave_date = 11;
+  string remark = 12;
+  int32 expected_version = 13;
+}
+
+message UpdateEmployeeResponse {
+  Employee employee = 1;
+}
+
+message DirectoryChange {
+  int64 id = 1;
+  string entity_type = 2;
+  int64 entity_id = 3;
+  string action = 4;
+  string before_json = 5;
+  string after_json = 6;
+  int64 operator_id = 7;
+  string created_at = 8;
+}
+
+message ListDirectoryChangesRequest {
+  string entity_type = 1;
+  int64 entity_id = 2;
+}
+
+message ListDirectoryChangesResponse {
+  repeated DirectoryChange changes = 1;
 }
 
 message DeactivateEmployeeRequest {

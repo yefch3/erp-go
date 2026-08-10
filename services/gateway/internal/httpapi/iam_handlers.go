@@ -32,13 +32,45 @@ func (s *Server) createDepartment(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) updateDepartment(w http.ResponseWriter, r *http.Request) {
+	req := &iamv1.UpdateDepartmentRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Directory.UpdateDepartment(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) listEmployees(w http.ResponseWriter, r *http.Request) {
 	departmentID, _ := strconv.ParseInt(r.URL.Query().Get("department_id"), 10, 64)
 	resp, err := s.Directory.ListEmployees(r.Context(), &iamv1.ListEmployeesRequest{
-		Page:         pageFromQuery(r),
-		DepartmentId: departmentID,
-		Keyword:      r.URL.Query().Get("keyword"),
+		Page:             pageFromQuery(r),
+		DepartmentId:     departmentID,
+		Keyword:          r.URL.Query().Get("keyword"),
+		ManagerId:        int64FromQuery(r, "manager_id"),
+		RoleId:           int64FromQuery(r, "role_id"),
+		AccountStatus:    r.URL.Query().Get("account_status"),
+		EmploymentStatus: r.URL.Query().Get("employment_status"),
 	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) updateEmployee(w http.ResponseWriter, r *http.Request) {
+	req := &iamv1.UpdateEmployeeRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Directory.UpdateEmployee(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -248,4 +280,28 @@ func (s *Server) setManager(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeProto(w, resp)
+}
+
+func (s *Server) listDepartmentChanges(w http.ResponseWriter, r *http.Request) {
+	s.listDirectoryChanges(w, r, "DEPARTMENT")
+}
+
+func (s *Server) listEmployeeChanges(w http.ResponseWriter, r *http.Request) {
+	s.listDirectoryChanges(w, r, "EMPLOYEE")
+}
+
+func (s *Server) listDirectoryChanges(w http.ResponseWriter, r *http.Request, entityType string) {
+	resp, err := s.Directory.ListDirectoryChanges(r.Context(), &iamv1.ListDirectoryChangesRequest{
+		EntityType: entityType, EntityId: idFromPath(r),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func int64FromQuery(r *http.Request, key string) int64 {
+	value, _ := strconv.ParseInt(r.URL.Query().Get(key), 10, 64)
+	return value
 }

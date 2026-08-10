@@ -4,13 +4,16 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/mail"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
@@ -187,7 +190,16 @@ func (s *Service) Login(ctx context.Context, email, password string) (*LoginResu
 
 // ---------------------------------------------------------------- directory
 
-func (s *Service) CreateDepartment(ctx context.Context, tenantID int64, code, name string, parentID int64) (store.Department, error) {
+type CreateDepartmentInput struct {
+	Code, Name string
+	ParentID   int64
+	SortOrder  int32
+	OperatorID int64
+}
+
+// CreateDepartment 新建部门并在同一事务中建立物化路径和审计记录。
+func (s *Service) CreateDepartment(ctx context.Context, tenantID int64, in CreateDepartmentInput) (store.Department, error) {
+	code, name := strings.TrimSpace(in.Code), strings.TrimSpace(in.Name)
 	if code == "" || name == "" {
 		return store.Department{}, apierr.Invalid("IAM_DEPT_FIELDS_REQUIRED", "部门编码和名称必填")
 	}
@@ -196,15 +208,18 @@ func (s *Service) CreateDepartment(ctx context.Context, tenantID int64, code, na
 		q := s.q.WithTx(tx)
 		parentPath, level := "/", int32(1)
 		var pid *int64
-		if parentID > 0 {
-			parent, err := q.GetDepartment(ctx, store.GetDepartmentParams{TenantID: tenantID, ID: parentID})
+		if in.ParentID > 0 {
+			parent, err := q.GetDepartment(ctx, store.GetDepartmentParams{TenantID: tenantID, ID: in.ParentID})
 			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
 					return apierr.NotFound("IAM_DEPT_PARENT_NOT_FOUND", "上级部门不存在")
 				}
 				return err
 			}
-			parentPath, level, pid = parent.Path, parent.Level+1, &parentID
+			if parent.Status != "ACTIVE" {
+				return apierr.Conflict("IAM_DEPT_PARENT_INACTIVE", "上级部门已停用")
+			}
+			parentPath, level, pid = parent.Path, parent.Level+1, &in.ParentID
 		}
 		dept, err := q.CreateDepartment(ctx, store.CreateDepartmentParams{
 			TenantID: tenantID, Code: code, Name: name, ParentID: pid, Path: parentPath, Level: level,
@@ -220,6 +235,23 @@ func (s *Service) CreateDepartment(ctx context.Context, tenantID int64, code, na
 			return err
 		}
 		dept.Path = path
+		dept.SortOrder = in.SortOrder
+		if in.SortOrder != 0 {
+			dept, err = q.UpdateDepartmentDetails(ctx, store.UpdateDepartmentDetailsParams{
+				Code: code, Name: name, ParentID: in.ParentID, SortOrder: in.SortOrder,
+				TenantID: tenantID, ID: dept.ID, ExpectedVersion: dept.Version,
+			})
+			if err != nil {
+				return err
+			}
+			dept.Path = path
+		}
+		if err := q.InsertDirectoryChange(ctx, store.InsertDirectoryChangeParams{
+			TenantID: tenantID, EntityType: "DEPARTMENT", EntityID: dept.ID, Action: "CREATE",
+			BeforeData: []byte(`{}`), AfterData: snapshotJSON(dept), OperatorID: in.OperatorID,
+		}); err != nil {
+			return err
+		}
 		out = dept
 		return nil
 	})
@@ -230,29 +262,168 @@ func (s *Service) ListDepartments(ctx context.Context, tenantID int64) ([]store.
 	return s.q.ListDepartments(ctx, tenantID)
 }
 
+type UpdateDepartmentInput struct {
+	ID, ParentID, LeaderEmployeeID, OperatorID int64
+	Code, Name, Status                         string
+	SortOrder, ExpectedVersion                 int32
+}
+
+// UpdateDepartment 修改部门资料、移动整棵子树并校验停用条件，任何一步失败都会整体回滚。
+func (s *Service) UpdateDepartment(ctx context.Context, tenantID int64, in UpdateDepartmentInput) (store.Department, error) {
+	code, name := strings.TrimSpace(in.Code), strings.TrimSpace(in.Name)
+	if in.ID == 0 || code == "" || name == "" || in.ExpectedVersion < 1 {
+		return store.Department{}, apierr.Invalid("IAM_DEPT_FIELDS_REQUIRED", "部门、编码、名称和版本必填")
+	}
+	var out store.Department
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		current, err := q.GetDepartment(ctx, store.GetDepartmentParams{TenantID: tenantID, ID: in.ID})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return apierr.NotFound("IAM_DEPT_NOT_FOUND", "部门不存在")
+			}
+			return err
+		}
+		if current.Version != in.ExpectedVersion {
+			return apierr.Conflict("IAM_DEPT_VERSION_CONFLICT", "部门已被其他人修改，请刷新后重试")
+		}
+
+		parentPath, level := "/", int32(1)
+		if in.ParentID > 0 {
+			if in.ParentID == in.ID {
+				return apierr.Invalid("IAM_DEPT_CYCLE", "部门不能成为自己的上级")
+			}
+			parent, err := q.GetDepartment(ctx, store.GetDepartmentParams{TenantID: tenantID, ID: in.ParentID})
+			if err != nil {
+				return apierr.NotFound("IAM_DEPT_PARENT_NOT_FOUND", "上级部门不存在")
+			}
+			if parent.Status != "ACTIVE" {
+				return apierr.Conflict("IAM_DEPT_PARENT_INACTIVE", "上级部门已停用")
+			}
+			if strings.HasPrefix(parent.Path, current.Path) {
+				return apierr.Invalid("IAM_DEPT_CYCLE", "不能把部门移动到自己的下级部门")
+			}
+			parentPath, level = parent.Path, parent.Level+1
+		}
+
+		if in.LeaderEmployeeID > 0 {
+			leader, err := q.GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: in.LeaderEmployeeID})
+			if err != nil || leader.Status != "ACTIVE" {
+				return apierr.Invalid("IAM_DEPT_LEADER_INVALID", "部门负责人必须是在职员工")
+			}
+			if leader.DepartmentID != in.ID {
+				return apierr.Invalid("IAM_DEPT_LEADER_OUTSIDE", "部门负责人必须属于当前部门")
+			}
+		}
+
+		status := in.Status
+		if status == "" {
+			status = current.Status
+		}
+		if status != "ACTIVE" && status != "INACTIVE" {
+			return apierr.Invalid("IAM_DEPT_STATUS_INVALID", "部门状态无效")
+		}
+		if current.Status == "ACTIVE" && status == "INACTIVE" {
+			employees, err := q.CountActiveEmployeesInDepartment(ctx, store.CountActiveEmployeesInDepartmentParams{TenantID: tenantID, DepartmentID: in.ID})
+			if err != nil {
+				return err
+			}
+			children, err := q.CountActiveChildDepartments(ctx, store.CountActiveChildDepartmentsParams{TenantID: tenantID, ParentID: in.ID})
+			if err != nil {
+				return err
+			}
+			if employees > 0 || children > 0 {
+				return apierr.Conflict("IAM_DEPT_IN_USE", "部门仍有在职员工或启用中的下级部门，不能停用")
+			}
+		}
+
+		updated, err := q.UpdateDepartmentDetails(ctx, store.UpdateDepartmentDetailsParams{
+			Code: code, Name: name, ParentID: in.ParentID, SortOrder: in.SortOrder,
+			LeaderEmployeeID: in.LeaderEmployeeID, TenantID: tenantID, ID: in.ID,
+			ExpectedVersion: in.ExpectedVersion,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return apierr.Conflict("IAM_DEPT_VERSION_CONFLICT", "部门已被其他人修改，请刷新后重试")
+			}
+			return translateUnique(err, "IAM_DEPT_CODE_TAKEN", "部门编码已存在")
+		}
+		newPath := fmt.Sprintf("%s%d/", parentPath, in.ID)
+		if newPath != current.Path || level != current.Level {
+			if err := q.UpdateDepartmentSubtree(ctx, store.UpdateDepartmentSubtreeParams{
+				NewPath: newPath, OldPath: current.Path, LevelDelta: level - current.Level, TenantID: tenantID,
+			}); err != nil {
+				return err
+			}
+			updated.Path, updated.Level = newPath, level
+		}
+		if status != current.Status {
+			updated, err = q.SetDepartmentStatus(ctx, store.SetDepartmentStatusParams{
+				Status: status, TenantID: tenantID, ID: in.ID, ExpectedVersion: updated.Version,
+			})
+			if err != nil {
+				return apierr.Conflict("IAM_DEPT_VERSION_CONFLICT", "部门已被其他人修改，请刷新后重试")
+			}
+			updated.Path, updated.Level = newPath, level
+		}
+		if err := q.InsertDirectoryChange(ctx, store.InsertDirectoryChangeParams{
+			TenantID: tenantID, EntityType: "DEPARTMENT", EntityID: in.ID, Action: "UPDATE",
+			BeforeData: snapshotJSON(current), AfterData: snapshotJSON(updated), OperatorID: in.OperatorID,
+		}); err != nil {
+			return err
+		}
+		out = updated
+		return nil
+	})
+	return out, err
+}
+
 type CreateEmployeeInput struct {
-	Code, Name, Position, Email, Phone string
-	DepartmentID                       int64
-	Username, InitialPassword          string // optional login account
+	Code, Name, EnglishName, Position, Email, Phone, HireDate, Remark string
+	DepartmentID                                                      int64
+	Username, InitialPassword                                         string // optional login account
 	// Who they report to; approval nodes can target it.
-	ManagerID int64
+	ManagerID  int64
+	OperatorID int64
 }
 
 func (s *Service) CreateEmployee(ctx context.Context, tenantID int64, in CreateEmployeeInput) (store.GetEmployeeRow, error) {
+	in.Code, in.Name = strings.TrimSpace(in.Code), strings.TrimSpace(in.Name)
+	in.Email = strings.ToLower(strings.TrimSpace(in.Email))
 	if in.Code == "" || in.Name == "" || in.DepartmentID == 0 {
 		return store.GetEmployeeRow{}, apierr.Invalid("IAM_EMP_FIELDS_REQUIRED", "工号、姓名、部门必填")
+	}
+	if err := validateEmployeeEmail(in.Email); err != nil {
+		return store.GetEmployeeRow{}, err
+	}
+	if err := validateEmployeePhone(in.Phone); err != nil {
+		return store.GetEmployeeRow{}, err
+	}
+	hireDate, err := parseOptionalDate(in.HireDate, "入职日期")
+	if err != nil {
+		return store.GetEmployeeRow{}, err
 	}
 	if (in.Username == "") != (in.InitialPassword == "") {
 		return store.GetEmployeeRow{}, apierr.Invalid("IAM_EMP_ACCOUNT_INCOMPLETE", "用户名与初始密码需同时提供")
 	}
 	var id int64
-	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
-		if _, err := q.GetDepartment(ctx, store.GetDepartmentParams{TenantID: tenantID, ID: in.DepartmentID}); err != nil {
+		dept, err := q.GetDepartment(ctx, store.GetDepartmentParams{TenantID: tenantID, ID: in.DepartmentID})
+		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return apierr.NotFound("IAM_DEPT_NOT_FOUND", "部门不存在")
 			}
 			return err
+		}
+		if dept.Status != "ACTIVE" {
+			return apierr.Conflict("IAM_DEPT_INACTIVE", "不能把员工加入已停用部门")
+		}
+		if in.ManagerID > 0 {
+			manager, err := q.GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: in.ManagerID})
+			if err != nil || manager.Status != "ACTIVE" {
+				return apierr.Invalid("IAM_MANAGER_INVALID", "直属主管必须是在职员工")
+			}
 		}
 		emp, err := q.CreateEmployee(ctx, store.CreateEmployeeParams{
 			TenantID: tenantID, Code: in.Code, Name: in.Name, DepartmentID: in.DepartmentID,
@@ -263,6 +434,18 @@ func (s *Service) CreateEmployee(ctx context.Context, tenantID int64, in CreateE
 			return translateUnique(err, "IAM_EMP_CODE_TAKEN", "工号已存在")
 		}
 		id = emp.ID
+		if in.EnglishName != "" || in.HireDate != "" || in.Remark != "" {
+			emp, err = q.UpdateEmployeeDetails(ctx, store.UpdateEmployeeDetailsParams{
+				Code: in.Code, Name: in.Name, EnglishName: strings.TrimSpace(in.EnglishName),
+				DepartmentID: in.DepartmentID, Position: strings.TrimSpace(in.Position),
+				Email: in.Email, Phone: strings.TrimSpace(in.Phone), ManagerID: in.ManagerID,
+				HireDate: hireDate, LeaveDate: pgtype.Date{}, Remark: strings.TrimSpace(in.Remark),
+				TenantID: tenantID, ID: emp.ID, ExpectedVersion: emp.Version,
+			})
+			if err != nil {
+				return err
+			}
+		}
 		if in.Username != "" {
 			hash, err := HashPassword(in.InitialPassword)
 			if err != nil {
@@ -273,6 +456,12 @@ func (s *Service) CreateEmployee(ctx context.Context, tenantID int64, in CreateE
 			}); err != nil {
 				return translateUnique(err, "IAM_USERNAME_TAKEN", "用户名已存在")
 			}
+		}
+		if err := q.InsertDirectoryChange(ctx, store.InsertDirectoryChangeParams{
+			TenantID: tenantID, EntityType: "EMPLOYEE", EntityID: emp.ID, Action: "CREATE",
+			BeforeData: []byte(`{}`), AfterData: snapshotJSON(emp), OperatorID: in.OperatorID,
+		}); err != nil {
+			return err
 		}
 		return nil
 	})
@@ -297,7 +486,15 @@ func (s *Service) GetEmployee(ctx context.Context, tenantID, id int64) (store.Ge
 	return emp, roleIDs, nil
 }
 
-func (s *Service) ListEmployees(ctx context.Context, tenantID int64, departmentID int64, keyword string, page, size int32) ([]store.ListEmployeesRow, int64, error) {
+type ListEmployeesFilter struct {
+	DepartmentID, ManagerID, RoleID          int64
+	Keyword, AccountStatus, EmploymentStatus string
+	Page, Size                               int32
+}
+
+// ListEmployees 使用后端分页和组合筛选，避免把完整员工目录一次加载到浏览器。
+func (s *Service) ListEmployees(ctx context.Context, tenantID int64, filter ListEmployeesFilter) ([]store.ListEmployeesFilteredRow, int64, error) {
+	page, size := filter.Page, filter.Size
 	if page < 1 {
 		page = 1
 	}
@@ -307,9 +504,11 @@ func (s *Service) ListEmployees(ctx context.Context, tenantID int64, departmentI
 	if size > 200 {
 		size = 200
 	}
-	rows, err := s.q.ListEmployees(ctx, store.ListEmployeesParams{
-		TenantID: tenantID, Column2: departmentID, Column3: keyword,
-		Limit: size, Offset: (page - 1) * size,
+	rows, err := s.q.ListEmployeesFiltered(ctx, store.ListEmployeesFilteredParams{
+		TenantID: tenantID, DepartmentID: filter.DepartmentID, ManagerID: filter.ManagerID,
+		RoleID: filter.RoleID, EmploymentStatus: filter.EmploymentStatus,
+		AccountStatus: filter.AccountStatus, Keyword: strings.TrimSpace(filter.Keyword),
+		PageSize: size, PageOffset: (page - 1) * size,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -321,57 +520,241 @@ func (s *Service) ListEmployees(ctx context.Context, tenantID int64, departmentI
 	return rows, total, nil
 }
 
-// adminPermission is the capability that must never disappear: whoever holds
-// it is the only one who can bring anybody (including themselves) back.
-const adminPermission = "iam:employee:write"
+type UpdateEmployeeInput struct {
+	ID, DepartmentID, ManagerID, OperatorID         int64
+	ExpectedVersion                                 int32
+	Code, Name, EnglishName, Position, Email, Phone string
+	HireDate, LeaveDate, Remark                     string
+}
 
-// DeactivateEmployee marks someone as having left. Two refusals keep the
-// system reachable, because login rejects inactive employees and only an
-// administrator can reinstate them:
-//   - you cannot mark yourself as left (one click would lock you out), and
-//   - you cannot remove the last person who can administer employees.
-func (s *Service) DeactivateEmployee(ctx context.Context, tenantID, id, actorID int64) error {
-	if id == actorID {
-		return apierr.Invalid("IAM_CANNOT_LEAVE_SELF", "不能把自己标记为离职，请让其他管理员操作")
+// UpdateEmployee 保存员工资料并在服务端校验部门、主管循环、日期和并发版本。
+func (s *Service) UpdateEmployee(ctx context.Context, tenantID int64, in UpdateEmployeeInput) (store.GetEmployeeRow, error) {
+	in.Code, in.Name = strings.TrimSpace(in.Code), strings.TrimSpace(in.Name)
+	in.Email = strings.ToLower(strings.TrimSpace(in.Email))
+	if in.ID == 0 || in.Code == "" || in.Name == "" || in.DepartmentID == 0 || in.ExpectedVersion < 1 {
+		return store.GetEmployeeRow{}, apierr.Invalid("IAM_EMP_FIELDS_REQUIRED", "员工、工号、姓名、部门和版本必填")
 	}
-	others, err := s.q.CountOtherHoldersOf(ctx, store.CountOtherHoldersOfParams{
-		TenantID: tenantID, ID: id, Code: adminPermission,
-	})
+	if err := validateEmployeeEmail(in.Email); err != nil {
+		return store.GetEmployeeRow{}, err
+	}
+	if err := validateEmployeePhone(in.Phone); err != nil {
+		return store.GetEmployeeRow{}, err
+	}
+	hireDate, err := parseOptionalDate(in.HireDate, "入职日期")
 	if err != nil {
-		return err
+		return store.GetEmployeeRow{}, err
 	}
-	if others == 0 {
-		holds, err := s.q.EmployeeHasPermission(ctx, store.EmployeeHasPermissionParams{
-			TenantID: tenantID, EmployeeID: id, Code: adminPermission,
-		})
+	leaveDate, err := parseOptionalDate(in.LeaveDate, "离职日期")
+	if err != nil {
+		return store.GetEmployeeRow{}, err
+	}
+	var id int64
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		current, err := q.GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: in.ID})
 		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return apierr.NotFound("IAM_EMP_NOT_FOUND", "员工不存在")
+			}
 			return err
 		}
-		if holds {
-			return apierr.Conflict("IAM_LAST_ADMIN", "这是最后一个可以管理员工的账号，停用后将无人能恢复")
+		if current.Version != in.ExpectedVersion {
+			return apierr.Conflict("IAM_EMP_VERSION_CONFLICT", "员工资料已被其他人修改，请刷新后重试")
 		}
-	}
-	n, err := s.q.DeactivateEmployee(ctx, store.DeactivateEmployeeParams{TenantID: tenantID, ID: id})
+		dept, err := q.GetDepartment(ctx, store.GetDepartmentParams{TenantID: tenantID, ID: in.DepartmentID})
+		if err != nil || dept.Status != "ACTIVE" {
+			return apierr.Invalid("IAM_DEPT_INVALID", "员工必须属于启用中的部门")
+		}
+		if in.ManagerID == in.ID {
+			return apierr.Invalid("IAM_MANAGER_SELF", "直属主管不能选择本人")
+		}
+		if in.ManagerID > 0 {
+			manager, err := q.GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: in.ManagerID})
+			if err != nil || manager.Status != "ACTIVE" {
+				return apierr.Invalid("IAM_MANAGER_INVALID", "直属主管必须是在职员工")
+			}
+			cycle, err := q.ManagerCycleExists(ctx, store.ManagerCycleExistsParams{
+				TenantID: tenantID, ManagerID: in.ManagerID, EmployeeID: in.ID,
+			})
+			if err != nil {
+				return err
+			}
+			if cycle {
+				return apierr.Invalid("IAM_MANAGER_CYCLE", "直属主管关系不能形成循环")
+			}
+		}
+		updated, err := q.UpdateEmployeeDetails(ctx, store.UpdateEmployeeDetailsParams{
+			Code: in.Code, Name: in.Name, EnglishName: strings.TrimSpace(in.EnglishName),
+			DepartmentID: in.DepartmentID, Position: strings.TrimSpace(in.Position),
+			Email: in.Email, Phone: strings.TrimSpace(in.Phone), ManagerID: in.ManagerID,
+			HireDate: hireDate, LeaveDate: leaveDate, Remark: strings.TrimSpace(in.Remark),
+			TenantID: tenantID, ID: in.ID, ExpectedVersion: in.ExpectedVersion,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return apierr.Conflict("IAM_EMP_VERSION_CONFLICT", "员工资料已被其他人修改，请刷新后重试")
+			}
+			return translateUnique(err, "IAM_EMP_CODE_TAKEN", "工号已存在")
+		}
+		if err := q.InsertDirectoryChange(ctx, store.InsertDirectoryChangeParams{
+			TenantID: tenantID, EntityType: "EMPLOYEE", EntityID: in.ID, Action: "UPDATE",
+			BeforeData: snapshotJSON(current), AfterData: snapshotJSON(updated), OperatorID: in.OperatorID,
+		}); err != nil {
+			return err
+		}
+		id = in.ID
+		return nil
+	})
 	if err != nil {
-		return err
+		return store.GetEmployeeRow{}, err
 	}
-	if n == 0 {
-		return apierr.NotFound("IAM_EMP_NOT_FOUND", "员工不存在或已离职")
+	return s.q.GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: id})
+}
+
+// ListDirectoryChanges 返回部门或员工最近的变更记录，供详情页审计标签使用。
+func (s *Service) ListDirectoryChanges(ctx context.Context, tenantID int64, entityType string, entityID int64) ([]store.DirectoryChangeLog, error) {
+	entityType = strings.ToUpper(strings.TrimSpace(entityType))
+	if (entityType != "DEPARTMENT" && entityType != "EMPLOYEE") || entityID == 0 {
+		return nil, apierr.Invalid("IAM_DIRECTORY_ENTITY_INVALID", "变更记录对象无效")
+	}
+	return s.q.ListDirectoryChanges(ctx, store.ListDirectoryChangesParams{
+		TenantID: tenantID, EntityType: entityType, EntityID: entityID,
+	})
+}
+
+func validateEmployeeEmail(email string) error {
+	if email == "" {
+		return nil
+	}
+	address, err := mail.ParseAddress(email)
+	if err != nil || !strings.EqualFold(address.Address, email) {
+		return apierr.Invalid("IAM_EMP_EMAIL_INVALID", "员工邮箱格式不正确")
 	}
 	return nil
 }
 
-// ActivateEmployee reinstates someone: their account logs in again with the
-// password it had.
-func (s *Service) ActivateEmployee(ctx context.Context, tenantID, id int64) error {
-	n, err := s.q.ActivateEmployee(ctx, store.ActivateEmployeeParams{TenantID: tenantID, ID: id})
-	if err != nil {
-		return err
+func validateEmployeePhone(phone string) error {
+	phone = strings.TrimSpace(phone)
+	if phone == "" {
+		return nil
 	}
-	if n == 0 {
-		return apierr.NotFound("IAM_EMP_NOT_FOUND", "员工不存在或已在职")
+	if len(phone) < 6 || len(phone) > 30 {
+		return apierr.Invalid("IAM_EMP_PHONE_INVALID", "员工电话长度应为 6 至 30 个字符")
+	}
+	for _, r := range phone {
+		if (r < '0' || r > '9') && !strings.ContainsRune("+()- .", r) {
+			return apierr.Invalid("IAM_EMP_PHONE_INVALID", "员工电话只能包含数字、空格及 +()-.")
+		}
 	}
 	return nil
+}
+
+func parseOptionalDate(value, field string) (pgtype.Date, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return pgtype.Date{}, nil
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return pgtype.Date{}, apierr.Invalid("IAM_EMP_DATE_INVALID", field+"格式必须为 YYYY-MM-DD")
+	}
+	return pgtype.Date{Time: parsed, Valid: true}, nil
+}
+
+func snapshotJSON(value any) []byte {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return []byte(`{}`)
+	}
+	return data
+}
+
+// adminPermission is the capability that must never disappear: whoever holds
+// it is the only one who can bring anybody (including themselves) back.
+const adminPermission = "iam:employee:write"
+
+// DeactivateEmployee 标记员工离职；离职前必须完成直属下级和部门负责人的转交，
+// 同时禁止管理员将自己或最后一名员工管理员停用，避免系统失去管理入口。
+func (s *Service) DeactivateEmployee(ctx context.Context, tenantID, id, actorID int64) error {
+	if id == actorID {
+		return apierr.Invalid("IAM_CANNOT_LEAVE_SELF", "不能把自己标记为离职，请让其他管理员操作")
+	}
+	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		current, err := q.GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: id})
+		if err != nil || current.Status != "ACTIVE" {
+			return apierr.NotFound("IAM_EMP_NOT_FOUND", "员工不存在或已离职")
+		}
+		reports, err := q.CountActiveDirectReports(ctx, store.CountActiveDirectReportsParams{TenantID: tenantID, ManagerID: id})
+		if err != nil {
+			return err
+		}
+		led, err := q.CountDepartmentsLedByEmployee(ctx, store.CountDepartmentsLedByEmployeeParams{TenantID: tenantID, EmployeeID: id})
+		if err != nil {
+			return err
+		}
+		if reports > 0 || led > 0 {
+			return apierr.Conflict("IAM_EMP_TRANSFER_REQUIRED", "员工仍是直属主管或部门负责人，请先完成转交")
+		}
+		others, err := q.CountOtherHoldersOf(ctx, store.CountOtherHoldersOfParams{TenantID: tenantID, ID: id, Code: adminPermission})
+		if err != nil {
+			return err
+		}
+		if others == 0 {
+			holds, err := q.EmployeeHasPermission(ctx, store.EmployeeHasPermissionParams{TenantID: tenantID, EmployeeID: id, Code: adminPermission})
+			if err != nil {
+				return err
+			}
+			if holds {
+				return apierr.Conflict("IAM_LAST_ADMIN", "这是最后一个可以管理员工的账号，停用后将无人能恢复")
+			}
+		}
+		n, err := q.DeactivateEmployee(ctx, store.DeactivateEmployeeParams{TenantID: tenantID, ID: id})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return apierr.NotFound("IAM_EMP_NOT_FOUND", "员工不存在或已离职")
+		}
+		after, err := q.GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: id})
+		if err != nil {
+			return err
+		}
+		return q.InsertDirectoryChange(ctx, store.InsertDirectoryChangeParams{
+			TenantID: tenantID, EntityType: "EMPLOYEE", EntityID: id, Action: "DEACTIVATE",
+			BeforeData: snapshotJSON(current), AfterData: snapshotJSON(after), OperatorID: actorID,
+		})
+	})
+}
+
+// ActivateEmployee 恢复离职员工；只有原所属部门仍在启用时才能复职。
+func (s *Service) ActivateEmployee(ctx context.Context, tenantID, id, actorID int64) error {
+	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		current, err := q.GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: id})
+		if err != nil || current.Status != "INACTIVE" {
+			return apierr.NotFound("IAM_EMP_NOT_FOUND", "员工不存在或已在职")
+		}
+		dept, err := q.GetDepartment(ctx, store.GetDepartmentParams{TenantID: tenantID, ID: current.DepartmentID})
+		if err != nil || dept.Status != "ACTIVE" {
+			return apierr.Conflict("IAM_DEPT_INACTIVE", "员工所属部门已停用，不能复职")
+		}
+		n, err := q.ActivateEmployee(ctx, store.ActivateEmployeeParams{TenantID: tenantID, ID: id})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return apierr.NotFound("IAM_EMP_NOT_FOUND", "员工不存在或已在职")
+		}
+		after, err := q.GetEmployee(ctx, store.GetEmployeeParams{TenantID: tenantID, ID: id})
+		if err != nil {
+			return err
+		}
+		return q.InsertDirectoryChange(ctx, store.InsertDirectoryChangeParams{
+			TenantID: tenantID, EntityType: "EMPLOYEE", EntityID: id, Action: "ACTIVATE",
+			BeforeData: snapshotJSON(current), AfterData: snapshotJSON(after), OperatorID: actorID,
+		})
+	})
 }
 
 // ---------------------------------------------------------------- access
