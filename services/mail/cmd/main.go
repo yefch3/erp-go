@@ -162,6 +162,11 @@ func run(log *slog.Logger) error {
 		// pictures are in storage but nothing joins them to the body that
 		// points at them. Repaired from the archived MIME, once, on start.
 		go svc.RunContentIDBackfill(ctx, syncCfg)
+		// The other half of the same damage: parts ingest never stored at all
+		// because they carried a Content-ID but no filename — which is exactly
+		// how an image pasted into Gmail's composer arrives. The backfill above
+		// cannot help those; it patches rows, and for these there is no row.
+		go svc.RunEmbeddedRecovery(ctx, syncCfg)
 	}
 
 	// The worker runs in-process. The database is the queue, so a second

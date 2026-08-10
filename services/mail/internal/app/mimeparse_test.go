@@ -208,3 +208,86 @@ func TestDeeplyNestedMessageTerminates(t *testing.T) {
 		t.Fatal("parsing a deeply nested message did not terminate")
 	}
 }
+
+// An image pasted into Gmail's composer, byte for byte as Gmail sends it.
+//
+// It carries no filename at all — not in Content-Disposition, not as a
+// Content-Type name parameter — and its disposition is "inline", not
+// "attachment". A rule that looks only for a filename walks straight past it,
+// drops the bytes, and leaves the body pointing at a cid: that resolves to
+// nothing. On screen that is an empty bordered box where the picture was.
+//
+// Taken from a real message in the mailbox (inbound 6919): multipart/related
+// wrapping a multipart/alternative, with the image alongside.
+func TestAPastedGmailImageIsKept(t *testing.T) {
+	// A 1x1 PNG, base64, so the part is a genuine image.
+	const onePixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+	raw := "From: Fangchen <fy2272@columbia.edu>\r\n" +
+		"To: lina@sunrise.com\r\n" +
+		"Subject: test\r\n" +
+		"Message-ID: <gmail-inline@mail.gmail.com>\r\n" +
+		"Date: Mon, 10 Aug 2026 03:58:24 +0000\r\n" +
+		"Content-Type: multipart/related; boundary=\"outer\"\r\n\r\n" +
+		"--outer\r\n" +
+		"Content-Type: multipart/alternative; boundary=\"inner\"\r\n\r\n" +
+		"--inner\r\n" +
+		"Content-Type: text/plain; charset=\"UTF-8\"\r\n\r\n" +
+		"test\r\n" +
+		"--inner\r\n" +
+		"Content-Type: text/html; charset=\"UTF-8\"\r\n\r\n" +
+		"<div>test<img src=\"cid:ii_19fe9d231d101\" width=\"95\" height=\"96\"></div>\r\n" +
+		"--inner--\r\n" +
+		"--outer\r\n" +
+		"Content-Type: image/png\r\n" +
+		"Content-Disposition: inline\r\n" +
+		"Content-Transfer-Encoding: base64\r\n" +
+		"Content-ID: <ii_19fe9d231d101>\r\n\r\n" +
+		onePixel + "\r\n" +
+		"--outer--\r\n"
+
+	got, err := ParseMail([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Attachments) != 1 {
+		t.Fatalf("the pasted image was dropped: %d attachments kept", len(got.Attachments))
+	}
+	a := got.Attachments[0]
+	if a.ContentID != "ii_19fe9d231d101" {
+		t.Errorf("ContentID is %q, so the body's cid: will never find it", a.ContentID)
+	}
+	if len(a.Data) == 0 {
+		t.Error("the part was recognised but its bytes were not read")
+	}
+	if a.ContentType != "image/png" {
+		t.Errorf("ContentType is %q", a.ContentType)
+	}
+	// A name is needed even though the sender gave none: the download path
+	// saves under it and the repair pass matches on it.
+	if a.FileName != "image.png" {
+		t.Errorf("FileName is %q, want a derived one", a.FileName)
+	}
+	// The body must still be the HTML one, not the image.
+	if !strings.Contains(got.BodyHTML, "cid:ii_19fe9d231d101") {
+		t.Errorf("the body lost its reference: %q", got.BodyHTML)
+	}
+}
+
+// A part with neither filename nor Content-ID is still not an attachment —
+// widening the rule must not start collecting body parts as files.
+func TestAPlainBodyPartIsStillNotAnAttachment(t *testing.T) {
+	raw := "From: a@example.com\r\nTo: b@example.com\r\nSubject: s\r\n" +
+		"Date: Mon, 10 Aug 2026 03:58:24 +0000\r\n" +
+		"Content-Type: multipart/alternative; boundary=\"b\"\r\n\r\n" +
+		"--b\r\nContent-Type: text/plain\r\n\r\nhello\r\n" +
+		"--b\r\nContent-Type: text/html\r\n\r\n<p>hello</p>\r\n" +
+		"--b--\r\n"
+	got, err := ParseMail([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Attachments) != 0 {
+		t.Fatalf("a body part was collected as an attachment: %+v", got.Attachments)
+	}
+}
