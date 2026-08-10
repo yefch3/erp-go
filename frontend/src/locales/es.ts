@@ -23,6 +23,8 @@ export default {
     badLink: 'El enlace de activación no es válido o ya no funciona',
   },
   menu: {
+    basicData: 'Datos básicos',
+    ports: 'Puertos y navieras',
     employees: 'Empleados',
     roles: 'Roles',
     products: 'Productos',
@@ -45,6 +47,18 @@ export default {
     teamMail: 'Correo del equipo',
     exportLog: 'Registro de exportaciones',
     todo: ' (próximamente)',
+  },
+  basicData: {
+    employeeList: 'Empleados', departments: 'Departamentos', roles: 'Roles',
+    portsPending: 'Puertos y navieras', suppliersPending: 'Proveedores',
+    laterBatch: 'La entrada está lista; las funciones se desarrollarán en una fase posterior.',
+  },
+  departments: {
+    title: 'Departamentos', create: 'Nuevo departamento', edit: 'Editar departamento', search: 'Buscar nombre o código',
+    code: 'Código', name: 'Nombre', parent: 'Superior', leader: 'Responsable', sortOrder: 'Orden',
+    changes: 'Historial de cambios', operator: 'Operador', noChanges: 'Sin cambios',
+    changeValues: 'Ver antes y después', before: 'Antes', after: 'Después',
+    required: 'El código y el nombre son obligatorios', created: 'Departamento creado', updated: 'Departamento actualizado',
   },
   shipping: {
     title: 'Calendario marítimo',
@@ -153,6 +167,9 @@ export default {
     done: '{n} empleados importados',
   },
   employees: {
+    edit: 'Editar empleado', englishName: 'Nombre inglés', hireDate: 'Fecha de alta', leaveDate: 'Fecha de baja', remark: 'Notas',
+    allManagers: 'Todos los responsables', allRoles: 'Todos los roles', employmentStatus: 'Situación laboral', accountStatus: 'Cuenta',
+    accountUnopened: 'Sin cuenta', changes: 'Historial de cambios', operator: 'Operador', noChanges: 'Sin cambios', updated: 'Empleado actualizado',
     noMailbox: '(sin buzón)',
     title: 'Empleados',
     create: 'Nuevo empleado',

@@ -77,8 +77,8 @@ type Server struct {
 	// trusting it without such a proxy lets anybody spray from a different
 	// fake address on every request. See clientAddr.
 	TrustProxyHeaders bool
-	Live      *livefeed.Subscriber
-	JWTSecret string
+	Live              *livefeed.Subscriber
+	JWTSecret         string
 	// TokenTTL is the life of a renewed token, and must match the one iam
 	// issues with. Because renewal rides on activity, this is in practice how
 	// long somebody may sit idle before being signed out — not how long since
@@ -122,11 +122,15 @@ func (s *Server) Router() http.Handler {
 		r.Post("/api/numbering/next", s.nextNumber)
 		// Organisation and access control. Reading the directory is what every
 		// picker needs; changing it is administrator work.
-		r.With(s.perm("iam:employee:read")).Get("/api/departments", s.listDepartments)
-		r.With(s.perm("iam:employee:write")).Post("/api/departments", s.createDepartment)
+		r.With(s.perm("iam:department:read")).Get("/api/departments", s.listDepartments)
+		r.With(s.perm("iam:department:write")).Post("/api/departments", s.createDepartment)
+		r.With(s.perm("iam:department:write")).Put("/api/departments/{id}", s.updateDepartment)
+		r.With(s.perm("iam:department:read")).Get("/api/departments/{id}/changes", s.listDepartmentChanges)
 		r.With(s.perm("iam:employee:read")).Get("/api/employees", s.listEmployees)
 		r.With(s.perm("iam:employee:read")).Get("/api/employees/{id}", s.getEmployee)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees", s.createEmployee)
+		r.With(s.perm("iam:employee:write")).Put("/api/employees/{id}", s.updateEmployee)
+		r.With(s.perm("iam:employee:read")).Get("/api/employees/{id}/changes", s.listEmployeeChanges)
 		r.With(s.perm("iam:employee:write")).Delete("/api/employees/{id}", s.deactivateEmployee)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/activate", s.activateEmployee)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/account", s.openAccount)
@@ -537,8 +541,8 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			// question anybody asks of an audit trail. clientAddr honours
 			// the forwarding header only when TRUST_PROXY_HEADERS says a
 			// proxy that overwrites it is actually in front.
-			IP: clientAddr(r, s.TrustProxyHeaders),
-			TraceID:    newTraceID(),
+			IP:      clientAddr(r, s.TrustProxyHeaders),
+			TraceID: newTraceID(),
 		})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

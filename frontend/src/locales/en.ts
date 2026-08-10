@@ -23,6 +23,8 @@ export default {
     badLink: 'This activation link is invalid or no longer works',
   },
   menu: {
+    basicData: 'Basic Data',
+    ports: 'Ports & Carriers',
     employees: 'Employees',
     roles: 'Roles',
     products: 'Products',
@@ -45,6 +47,18 @@ export default {
     teamMail: 'Team mail',
     exportLog: 'Export log',
     todo: ' (coming soon)',
+  },
+  basicData: {
+    employeeList: 'Employees', departments: 'Departments', roles: 'Roles',
+    portsPending: 'Ports & Carriers', suppliersPending: 'Suppliers',
+    laterBatch: 'The entry is ready; business features will be added in a later batch.',
+  },
+  departments: {
+    title: 'Departments', create: 'New department', edit: 'Edit department', search: 'Search name or code',
+    code: 'Code', name: 'Name', parent: 'Parent', leader: 'Department leader', sortOrder: 'Sort',
+    changes: 'Change history', operator: 'Operator', noChanges: 'No changes yet',
+    changeValues: 'View before and after', before: 'Before', after: 'After',
+    required: 'Code and name are required', created: 'Department created', updated: 'Department updated',
   },
   shipping: {
     title: 'Shipping schedules',
@@ -153,6 +167,9 @@ export default {
     done: 'Imported {n} employees',
   },
   employees: {
+    edit: 'Edit employee', englishName: 'English name', hireDate: 'Hire date', leaveDate: 'Leave date', remark: 'Remark',
+    allManagers: 'All managers', allRoles: 'All roles', employmentStatus: 'Employment', accountStatus: 'Account',
+    accountUnopened: 'No account', changes: 'Change history', operator: 'Operator', noChanges: 'No changes yet', updated: 'Employee updated',
     noMailbox: '(no mailbox)',
     title: 'Employees',
     create: 'New employee',

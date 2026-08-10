@@ -23,6 +23,8 @@ export default {
     badLink: '激活链接无效或已失效',
   },
   menu: {
+    basicData: '基础数据',
+    ports: '船港信息',
     employees: '员工管理',
     roles: '角色权限',
     products: '产品管理',
@@ -45,6 +47,18 @@ export default {
     teamMail: '员工邮件',
     exportLog: '导出记录',
     todo: '（待开发）',
+  },
+  basicData: {
+    employeeList: '员工列表', departments: '部门管理', roles: '角色权限',
+    portsPending: '船港信息', suppliersPending: '供应商管理',
+    laterBatch: '入口已建立，业务功能将在后续批次开发',
+  },
+  departments: {
+    title: '部门管理', create: '新建部门', edit: '编辑部门', search: '搜索部门名称或编码',
+    code: '部门编码', name: '部门名称', parent: '上级部门', leader: '部门负责人',
+    sortOrder: '排序', changes: '变更记录', operator: '操作人', noChanges: '暂无变更记录',
+    changeValues: '查看修改前后值', before: '修改前', after: '修改后',
+    required: '部门编码和名称必填', created: '部门已创建', updated: '部门已更新',
   },
   shipping: {
     title: '船期管理',
@@ -153,6 +167,9 @@ export default {
     done: '已导入 {n} 人',
   },
   employees: {
+    edit: '编辑员工', englishName: '英文名', hireDate: '入职日期', leaveDate: '离职日期', remark: '备注',
+    allManagers: '全部直属上级', allRoles: '全部角色', employmentStatus: '在职状态', accountStatus: '账号状态',
+    accountUnopened: '无账号', changes: '变更记录', operator: '操作人', noChanges: '暂无变更记录', updated: '员工资料已更新',
     noMailbox: '（无邮箱）',
     title: '员工管理',
     create: '新建员工',

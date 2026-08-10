@@ -9,17 +9,31 @@ import (
 )
 
 type Department struct {
-	ID        int64
-	TenantID  int64
-	Code      string
-	Name      string
-	ParentID  *int64
-	Path      string
-	Level     int32
-	SortOrder int32
-	Status    string
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
+	ID               int64
+	TenantID         int64
+	Code             string
+	Name             string
+	ParentID         *int64
+	Path             string
+	Level            int32
+	SortOrder        int32
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	LeaderEmployeeID *int64
+	Version          int32
+}
+
+type DirectoryChangeLog struct {
+	ID         int64
+	TenantID   int64
+	EntityType string
+	EntityID   int64
+	Action     string
+	BeforeData []byte
+	AfterData  []byte
+	OperatorID int64
+	CreatedAt  pgtype.Timestamptz
 }
 
 type Employee struct {
@@ -36,6 +50,11 @@ type Employee struct {
 	UpdatedAt       pgtype.Timestamptz
 	ManagerID       *int64
 	EmailVerifiedAt pgtype.Timestamptz
+	EnglishName     string
+	HireDate        pgtype.Date
+	LeaveDate       pgtype.Date
+	Remark          string
+	Version         int32
 }
 
 type EmployeeInvitation struct {

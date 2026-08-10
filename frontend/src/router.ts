@@ -11,9 +11,15 @@ export const router = createRouter({
       path: '/',
       component: () => import('./pages/Shell.vue'),
       children: [
-        { path: '', redirect: '/customers' },
+        { path: '', redirect: '/basic/customers' },
         { path: 'todos', component: () => import('./pages/TodosPage.vue') },
-        { path: 'customers', component: () => import('./pages/CustomersPage.vue') },
+        { path: 'customers', redirect: '/basic/customers' },
+        { path: 'basic/customers', component: () => import('./pages/CustomersPage.vue') },
+        { path: 'basic/employees', component: () => import('./pages/EmployeesPage.vue') },
+        { path: 'basic/employees/departments', component: () => import('./pages/DepartmentsPage.vue') },
+        { path: 'basic/employees/roles', component: () => import('./pages/RolesPage.vue') },
+        { path: 'basic/ports', component: () => import('./pages/BasicDataPlaceholderPage.vue'), meta: { titleKey: 'basicData.portsPending' } },
+        { path: 'basic/suppliers', component: () => import('./pages/BasicDataPlaceholderPage.vue'), meta: { titleKey: 'basicData.suppliersPending' } },
         { path: 'products', component: () => import('./pages/ProductsPage.vue') },
         { path: 'quotations', component: () => import('./pages/QuotationsPage.vue') },
         { path: 'contracts', component: () => import('./pages/ContractsPage.vue') },
@@ -29,8 +35,8 @@ export const router = createRouter({
         { path: 'team-mail', component: () => import('./pages/TeamMailPage.vue') },
         { path: 'mail/export-log', component: () => import('./pages/MailExportLogPage.vue') },
         { path: 'fx', component: () => import('./pages/FxPage.vue') },
-        { path: 'settings/employees', component: () => import('./pages/EmployeesPage.vue') },
-        { path: 'settings/roles', component: () => import('./pages/RolesPage.vue') },
+        { path: 'settings/employees', redirect: '/basic/employees' },
+        { path: 'settings/roles', redirect: '/basic/employees/roles' },
         { path: 'settings/approvals', component: () => import('./pages/ApprovalFlowsPage.vue') },
         // Signatures moved into the mailbox itself (the ✍️ entry on its
         // rail), for the same reason the host settings did: they are part of

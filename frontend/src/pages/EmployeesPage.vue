@@ -1,5 +1,6 @@
 <template>
   <div>
+    <BasicDataEmployeeNav />
     <div class="page-head">
       <h2>{{ t('employees.title') }}</h2>
       <div class="head-actions">
@@ -26,6 +27,21 @@
         />
         <el-select v-model="departmentId" :placeholder="t('employees.allDepartments')" clearable style="width: 180px" @change="reload">
           <el-option v-for="d in departments" :key="d.id" :value="d.id" :label="d.name" />
+        </el-select>
+        <el-select v-model="managerId" :placeholder="t('employees.allManagers')" clearable filterable style="width: 160px" @change="reload">
+          <el-option v-for="e in employeeOptions" :key="e.id" :value="e.id" :label="e.name" />
+        </el-select>
+        <el-select v-if="canReadRoles" v-model="roleId" :placeholder="t('employees.allRoles')" clearable style="width: 150px" @change="reload">
+          <el-option v-for="r in roles" :key="r.id" :value="r.id" :label="r.name" />
+        </el-select>
+        <el-select v-model="employmentStatus" :placeholder="t('employees.employmentStatus')" clearable style="width: 140px" @change="reload">
+          <el-option value="ACTIVE" :label="t('employees.onDuty')" />
+          <el-option value="INACTIVE" :label="t('employees.left')" />
+        </el-select>
+        <el-select v-model="accountStatus" :placeholder="t('employees.accountStatus')" clearable style="width: 150px" @change="reload">
+          <el-option value="ACTIVE" :label="t('employees.activated')" />
+          <el-option value="PENDING" :label="t('employees.awaitingActivation')" />
+          <el-option value="NONE" :label="t('employees.accountUnopened')" />
         </el-select>
         <el-button @click="reload">{{ t('common.query') }}</el-button>
       </div>
@@ -56,6 +72,8 @@
              checking them is the same glance. -->
         <el-table-column :label="t('employees.activation')" min-width="230">
           <template #default="{ row }">
+            <el-button link type="primary" @click="openEdit(row)">{{ t('common.edit') }}</el-button>
+            <el-button link @click="openChanges(row)">{{ t('employees.changes') }}</el-button>
             <div class="cell-stack">
               <el-tag v-if="row.emailVerified" type="success" size="small">
                 {{ t('employees.activated') }}
@@ -145,7 +163,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="createOpen" :title="t('employees.create')" width="600px">
+    <el-dialog v-model="createOpen" :title="editing ? t('employees.edit') : t('employees.create')" width="680px">
       <el-form :model="form" label-width="110px">
         <div class="grid">
           <el-form-item :label="t('employees.code')" required>
@@ -154,9 +172,12 @@
           <el-form-item :label="t('employees.name')" required>
             <el-input v-model="form.name" />
           </el-form-item>
+          <el-form-item :label="t('employees.englishName')">
+            <el-input v-model="form.englishName" />
+          </el-form-item>
           <el-form-item :label="t('employees.department')" required>
             <el-select v-model="form.departmentId" style="width: 100%">
-              <el-option v-for="d in departments" :key="d.id" :value="d.id" :label="d.name" />
+              <el-option v-for="d in activeDepartments" :key="d.id" :value="d.id" :label="d.name" />
             </el-select>
           </el-form-item>
           <el-form-item :label="t('employees.position')">
@@ -165,7 +186,7 @@
           <el-form-item :label="t('employees.manager')">
             <el-select v-model="form.managerId" clearable filterable style="width: 100%"
                        :placeholder="t('employees.managerNone')">
-              <el-option v-for="e in employees" :key="e.id" :value="e.id" :label="`${e.code} · ${e.name}`" />
+              <el-option v-for="e in managerCandidates" :key="e.id" :value="e.id" :label="`${e.code} · ${e.name}`" />
             </el-select>
             <div class="hint">{{ t('employees.managerHint') }}</div>
           </el-form-item>
@@ -175,12 +196,21 @@
           <el-form-item :label="t('employees.phone')">
             <el-input v-model="form.phone" />
           </el-form-item>
+          <el-form-item :label="t('employees.hireDate')">
+            <el-date-picker v-model="form.hireDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+          </el-form-item>
+          <el-form-item v-if="editing" :label="t('employees.leaveDate')">
+            <el-date-picker v-model="form.leaveDate" type="date" value-format="YYYY-MM-DD" clearable style="width: 100%" />
+          </el-form-item>
+          <el-form-item :label="t('employees.remark')" class="wide">
+            <el-input v-model="form.remark" type="textarea" :rows="2" />
+          </el-form-item>
         </div>
-        <el-divider content-position="left">
+        <el-divider v-if="!editing" content-position="left">
           {{ t('employees.accountSection') }}
           <span class="hint">{{ t('employees.accountHint') }}</span>
         </el-divider>
-        <div class="grid">
+        <div v-if="!editing" class="grid">
           <el-form-item :label="t('employees.username')">
             <el-input v-model="form.username" autocomplete="off" />
           </el-form-item>
@@ -194,6 +224,21 @@
         <el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
+
+    <el-drawer v-model="changesOpen" :title="t('employees.changes')" size="520px">
+      <el-timeline>
+        <el-timeline-item v-for="item in changes" :key="item.id" :timestamp="formatTime(item.createdAt)">
+          {{ item.action }} · {{ t('employees.operator') }} #{{ item.operatorId }}
+          <el-collapse class="change-values">
+            <el-collapse-item :title="t('departments.changeValues')">
+              <div>{{ t('departments.before') }}</div><pre>{{ prettyJSON(item.beforeJson) }}</pre>
+              <div>{{ t('departments.after') }}</div><pre>{{ prettyJSON(item.afterJson) }}</pre>
+            </el-collapse-item>
+          </el-collapse>
+        </el-timeline-item>
+      </el-timeline>
+      <el-empty v-if="!changes.length" :description="t('employees.noChanges')" />
+    </el-drawer>
 
     <el-dialog v-model="rolesOpen" :title="t('employees.assignRoles')" width="440px">
       <p class="target">{{ current?.name }}</p>
@@ -228,12 +273,15 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type ElTable } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { del, get, post } from '../api'
+import { useRoute, useRouter } from 'vue-router'
+import { del, get, post, put } from '../api'
 import { useAuthStore } from '../stores/auth'
 import ImportEmployeesDialog from '../components/ImportEmployeesDialog.vue'
+import BasicDataEmployeeNav from '../components/BasicDataEmployeeNav.vue'
 
-interface Department { id: string; name: string }
+interface Department { id: string; name: string; status: string }
 interface Role { id: string; code: string; name: string }
+interface Change { id: string; action: string; operatorId: string; createdAt: string; beforeJson: string; afterJson: string }
 interface Employee {
   id: string
   code: string
@@ -252,17 +300,26 @@ interface Employee {
   // Unix seconds, as a string: int64 over JSON. 0 or absent means no
   // invitation is outstanding.
   inviteExpiresAt: string
+  englishName: string
+  hireDate: string
+  leaveDate: string
+  remark: string
+  version: number
 }
 
 const EMPTY_FORM = {
   code: '', name: '', departmentId: '', position: '', email: '', phone: '',
   username: '', initialPassword: '', managerId: '',
+  englishName: '', hireDate: '', leaveDate: '', remark: '', version: 0, id: '',
 }
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 const auth = useAuthStore()
 const canWrite = auth.can('iam:employee:write')
 const canGrant = auth.can('iam:role:write')
+const canReadRoles = auth.can('iam:role:read')
 
 const employees = ref<Employee[]>([])
 const departments = ref<Department[]>([])
@@ -270,10 +327,14 @@ const roles = ref<Role[]>([])
 const selectedRoles = ref<string[]>([])
 const current = ref<Employee | null>(null)
 const total = ref(0)
-const page = ref(1)
+const page = ref(Math.max(1, Number(route.query.page) || 1))
 const pageSize = 10
-const keyword = ref('')
-const departmentId = ref('')
+const keyword = ref(String(route.query.keyword ?? ''))
+const departmentId = ref(String(route.query.department_id ?? ''))
+const managerId = ref(String(route.query.manager_id ?? ''))
+const roleId = ref(String(route.query.role_id ?? ''))
+const employmentStatus = ref(String(route.query.employment_status ?? ''))
+const accountStatus = ref(String(route.query.account_status ?? ''))
 const loading = ref(false)
 const saving = ref(false)
 // Which row's invitation is in flight, not a plain boolean: the spinner
@@ -281,6 +342,9 @@ const saving = ref(false)
 // them.
 const inviting = ref('')
 const createOpen = ref(false)
+const editing = ref(false)
+const changesOpen = ref(false)
+const changes = ref<Change[]>([])
 const importOpen = ref(false)
 const table = ref<InstanceType<typeof ElTable>>()
 const selected = ref<Employee[]>([])
@@ -307,12 +371,24 @@ const accountForm = reactive({ username: '', password: '' })
 const passwordTitle = computed(() =>
   accountMode.value ? t('employees.openAccount') : t('employees.resetPassword'),
 )
+const employeeOptions = ref<Employee[]>([])
+const activeDepartments = computed(() => departments.value.filter((d) => d.status === 'ACTIVE'))
+const managerCandidates = computed(() => employeeOptions.value.filter((e) => e.status === 'ACTIVE' && e.id !== form.id))
 
 async function load() {
   loading.value = true
   try {
+    // 将筛选和页码写入地址，刷新或分享当前页面时仍保持同一组结果。
+    const query = Object.fromEntries(Object.entries({
+      page: page.value > 1 ? String(page.value) : '', keyword: keyword.value,
+      department_id: departmentId.value, manager_id: managerId.value, role_id: roleId.value,
+      employment_status: employmentStatus.value, account_status: accountStatus.value,
+    }).filter(([, value]) => value))
+    router.replace({ query })
     const data = await get<{ employees: Employee[]; meta: { total: string } }>('/employees', {
       page: page.value, page_size: pageSize, keyword: keyword.value, department_id: departmentId.value,
+      manager_id: managerId.value, role_id: roleId.value,
+      employment_status: employmentStatus.value, account_status: accountStatus.value,
     })
     employees.value = data.employees ?? []
     total.value = Number(data.meta.total)
@@ -327,7 +403,20 @@ function reload() {
 }
 
 function openCreate() {
+  editing.value = false
   Object.assign(form, EMPTY_FORM)
+  createOpen.value = true
+}
+
+// 编辑前重新读取详情，确保版本号和直属上级等字段不是列表中的旧数据。
+async function openEdit(row: Employee) {
+  const data = await get<{ employee: Employee }>(`/employees/${row.id}`)
+  const employee = data.employee
+  editing.value = true
+  Object.assign(form, {
+    ...EMPTY_FORM, ...employee,
+    departmentId: employee.departmentId || '', managerId: employee.managerId || '',
+  })
   createOpen.value = true
 }
 
@@ -338,25 +427,37 @@ async function save() {
   }
   // The account is optional but half of it is not: iam rejects a username
   // without a password, so catch it before the round trip.
-  if (!form.username !== !form.initialPassword) {
+  if (!editing.value && (!form.username !== !form.initialPassword)) {
     ElMessage.warning(t('employees.accountIncomplete'))
     return
   }
   saving.value = true
   try {
-    await post('/employees', {
+    const body = {
       code: form.code, name: form.name, departmentId: form.departmentId,
       position: form.position, email: form.email, phone: form.phone,
       managerId: form.managerId || '0',
+      englishName: form.englishName, hireDate: form.hireDate, leaveDate: form.leaveDate,
+      remark: form.remark, expectedVersion: form.version,
       username: form.username, initialPassword: form.initialPassword,
-    })
-    ElMessage.success(t('employees.created'))
+    }
+    if (editing.value) await put(`/employees/${form.id}`, body)
+    else await post('/employees', body)
+    ElMessage.success(t(editing.value ? 'employees.updated' : 'employees.created'))
     createOpen.value = false
     load()
   } finally {
     saving.value = false
   }
 }
+
+async function openChanges(row: Employee) {
+  const data = await get<{ changes: Change[] }>(`/employees/${row.id}/changes`)
+  changes.value = data.changes ?? []
+  changesOpen.value = true
+}
+function formatTime(value: string) { return value ? new Date(value).toLocaleString() : '' }
+function prettyJSON(value: string) { try { return JSON.stringify(JSON.parse(value || '{}'), null, 2) } catch { return value } }
 
 async function openRoles(row: Employee) {
   current.value = row
@@ -487,13 +588,15 @@ async function reinstate(row: Employee) {
 onMounted(async () => {
   load()
   departments.value = (await get<{ departments: Department[] }>('/departments')).departments ?? []
-  if (canGrant) {
+  employeeOptions.value = (await get<{ employees: Employee[] }>('/employees', { page: 1, page_size: 200 })).employees ?? []
+  if (canReadRoles) {
     roles.value = (await get<{ roles: Role[] }>('/roles')).roles ?? []
   }
 })
 </script>
 
 <style scoped>
+.change-values pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
 .page-head {
   display: flex;
   align-items: center;
