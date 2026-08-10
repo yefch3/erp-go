@@ -668,45 +668,18 @@ func (q *Queries) GetPermissionIDsByCodes(ctx context.Context, dollar_1 []string
 	return items, nil
 }
 
-const getTenantByDomain = `-- name: GetTenantByDomain :one
-SELECT d.tenant_id, t.name AS tenant_name, t.status AS tenant_status
-FROM tenant_domains d
-JOIN tenants t ON t.id = d.tenant_id
-WHERE d.domain = lower($1::text)
-`
-
-type GetTenantByDomainRow struct {
-	TenantID     int64
-	TenantName   string
-	TenantStatus string
-}
-
-// The login page has no idea which company somebody belongs to; the domain of
-// the address they type is what says so. A primary-key hit, because this runs
-// on every login attempt including every failed one.
-func (q *Queries) GetTenantByDomain(ctx context.Context, domain string) (GetTenantByDomainRow, error) {
-	row := q.db.QueryRow(ctx, getTenantByDomain, domain)
-	var i GetTenantByDomainRow
-	err := row.Scan(&i.TenantID, &i.TenantName, &i.TenantStatus)
-	return i, err
-}
-
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
        u.locked_until,
        e.name AS employee_name, e.code AS employee_code, e.department_id,
-       e.status AS employee_status, e.email_verified_at
+       e.status AS employee_status, e.email_verified_at,
+       t.status AS tenant_status
 FROM users u
 JOIN employees e ON e.id = u.employee_id
-WHERE u.tenant_id = $1::bigint
-  AND e.email <> ''
-  AND lower(e.email) = lower($2::text)
+JOIN tenants t ON t.id = u.tenant_id
+WHERE e.email <> ''
+  AND lower(e.email) = lower($1::text)
 `
-
-type GetUserByEmailParams struct {
-	TenantID int64
-	Email    string
-}
 
 type GetUserByEmailRow struct {
 	ID              int64
@@ -722,14 +695,29 @@ type GetUserByEmailRow struct {
 	DepartmentID    int64
 	EmployeeStatus  string
 	EmailVerifiedAt pgtype.Timestamptz
+	TenantStatus    string
 }
 
+// The whole of login's lookup, in one round trip and without asking the
+// domain anything.
+//
+// The domain used to name the tenant, which only works while a domain belongs
+// to one company. gmail.com, qq.com and 163.com belong to everybody, and
+// tenant_domains.domain is a PRIMARY KEY — so the second company running on
+// QQ mail could not be onboarded at all. The address itself is now unique
+// system-wide (see 00023), so it identifies the account directly and the
+// account carries its own tenant_id.
+//
+// tenants is joined rather than queried after, because a suspended company
+// has to be refused and a second round trip on every login attempt — including
+// every failed one — is a cost paid for nothing.
+//
 // lower() on both sides: an address is case-insensitive in practice, and
 // "Alice@" must not be a second account from "alice@". email_verified_at rides
 // along because login has to refuse an account whose mailbox was never proved
-// to exist, and doing it in the same round trip keeps that check free.
-func (q *Queries) GetUserByEmail(ctx context.Context, arg GetUserByEmailParams) (GetUserByEmailRow, error) {
-	row := q.db.QueryRow(ctx, getUserByEmail, arg.TenantID, arg.Email)
+// to exist, and doing it here keeps that check free.
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error) {
+	row := q.db.QueryRow(ctx, getUserByEmail, email)
 	var i GetUserByEmailRow
 	err := row.Scan(
 		&i.ID,
@@ -745,6 +733,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, arg GetUserByEmailParams) 
 		&i.DepartmentID,
 		&i.EmployeeStatus,
 		&i.EmailVerifiedAt,
+		&i.TenantStatus,
 	)
 	return i, err
 }

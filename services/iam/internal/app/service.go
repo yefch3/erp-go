@@ -93,22 +93,19 @@ func (s *Service) Login(ctx context.Context, email, password string) (*LoginResu
 		burnPasswordTime()
 		return nil, errBadCredentials
 	}
-	ten, err := s.q.GetTenantByDomain(ctx, addr[at+1:])
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// A domain we do not serve. Same answer and same cost as a wrong
-			// password, or this route reports which companies are customers.
-			burnPasswordTime()
-			return nil, errBadCredentials
-		}
-		return nil, fmt.Errorf("login: resolve tenant: %w", err)
-	}
-	if ten.TenantStatus != "ACTIVE" {
-		return nil, errAccountLocked
-	}
-	tenantID := ten.TenantID
-
-	u, err := s.q.GetUserByEmail(ctx, store.GetUserByEmailParams{TenantID: tenantID, Email: addr})
+	// The address identifies the account outright; the domain is not consulted.
+	//
+	// It used to be: domain names the tenant, then (tenant, address) names the
+	// account. That reads naturally and is wrong for any address on a public
+	// mail service — and not merely "wrong company": tenant_domains.domain is
+	// a PRIMARY KEY, so the first company to register gmail.com owned it and
+	// the second could not be onboarded at all.
+	//
+	// Deciding *whether* an address is a company mailbox is a separate rule
+	// and still enforced, where it belongs: when an employee is imported or
+	// invited (ListTenantDomains, IsTenantDomain). Login does not repeat it —
+	// an address that reached the employees table already passed it.
+	u, err := s.q.GetUserByEmail(ctx, addr)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Deliberately identical to a wrong password, in wording and in
@@ -119,6 +116,10 @@ func (s *Service) Login(ctx context.Context, email, password string) (*LoginResu
 		}
 		return nil, fmt.Errorf("login: %w", err)
 	}
+	if u.TenantStatus != "ACTIVE" {
+		return nil, errAccountLocked
+	}
+	tenantID := u.TenantID
 	if !u.EmailVerifiedAt.Valid {
 		// Imported but never activated. Named rather than folded into "wrong
 		// password": the person cannot fix this by trying harder, and the
