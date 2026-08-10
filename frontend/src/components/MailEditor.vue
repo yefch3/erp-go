@@ -86,6 +86,8 @@
       @input="emitChange"
       @blur="emitChange"
       @paste="onPaste"
+      @drop="onDrop"
+      @dragover.prevent
       @keyup="rememberCaret"
       @mouseup="rememberCaret"
     />
@@ -263,10 +265,54 @@ function cmd(name: string) {
 // the sender restyle it is the honest option; the server would strip most of
 // it anyway, which would look like the editor losing their work.
 function onPaste(e: ClipboardEvent) {
+  // A pasted picture goes through the upload path, not into the text.
+  //
+  // Checked before the plain-text branch, because a screenshot on the
+  // clipboard usually carries a text/plain flavour too (a file path, or
+  // nothing) — taking that first silently swallowed the image and pasted an
+  // empty string. This is the thing people expect from Gmail and the reason
+  // "why can't I just paste it" kept coming up.
+  const file = imageOnClipboard(e.clipboardData)
+  if (file) {
+    e.preventDefault()
+    rememberCaret()
+    void uploadImage(file)
+    return
+  }
   e.preventDefault()
   const text = e.clipboardData?.getData('text/plain') ?? ''
   document.execCommand('insertText', false, text)
   emitChange()
+}
+
+// The first image among the clipboard's items, or null.
+//
+// clipboardData.files is empty for a screenshot taken with the system
+// shortcut on some platforms, so items has to be walked as well.
+function imageOnClipboard(dt: DataTransfer | null): File | null {
+  if (!dt) return null
+  for (const f of Array.from(dt.files ?? [])) {
+    if (f.type.startsWith('image/')) return f
+  }
+  for (const item of Array.from(dt.items ?? [])) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      const f = item.getAsFile()
+      if (f) return f
+    }
+  }
+  return null
+}
+
+// Dropping a picture onto the body does the same thing as pasting one.
+//
+// The default would be to navigate the frame to the file, losing whatever was
+// being written — which is the worst possible response to a dropped file.
+function onDrop(e: DragEvent) {
+  const file = imageOnClipboard(e.dataTransfer)
+  if (!file) return
+  e.preventDefault()
+  rememberCaret()
+  void uploadImage(file)
 }
 
 // execCommand has no reliable font-family or px font-size, so those wrap the
