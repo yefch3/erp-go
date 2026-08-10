@@ -109,11 +109,14 @@ MAIL_PROVIDER=dev   # 默认。记录「本该发什么」而不真发
 **收件箱**还需要服务商的入站通道，界面上已经存在但明确写着未接通 ——
 详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §5.12。
 
-### 邮件内容转 Excel
+### 客户询盘转公司询价 Excel
 
-在收件邮件里选中文字后右键，或在附件卡片上右键，选择「转换为 Excel」。
-服务端会调用 OpenAI Responses API 抽取通用表格，界面先显示工作表预览，再提供
-`.xlsx` 下载。正文/附件只有在用户明确点击时才会发送，API key 始终留在 mail 服务。
+在收件邮件里选中文字后右键，或在附件卡片上右键，选择「生成询价 Excel」。
+服务端调用 OpenAI Responses API 抽取询盘，并强制整理为公司固定列：产品、标准、
+牌号、尺寸、表面、涂层、公差、卷重、卷内径、包装、交期、付款、贸易术语、港口、
+单位、备注、数量、单价、总价。模型只负责提取事实，不能决定列名和公式；单价留空，
+总价由 Excel 公式 `数量 × 单价` 计算。界面先显示预览，再提供 `.xlsx` 下载。
+正文/附件只有在用户明确点击时才会发送，API key 始终留在 mail 服务。
 
 ```sh
 export OPENAI_API_KEY='...'
@@ -122,7 +125,7 @@ export OPENAI_BASE_URL='https://api.openai.com/v1' # 可选
 export OPENAI_TIMEOUT='2m'                         # 可选
 ```
 
-未配置 `OPENAI_API_KEY` 不影响邮箱其他功能，界面也不会显示转换操作。支持常见图片、
+未配置 `OPENAI_API_KEY` 不影响邮箱其他功能，界面也不会显示生成操作。支持常见图片、
 PDF、文本、Word、PowerPoint 和电子表格附件；单个附件沿用邮件模块的 10 MB 上限。
 模型请求使用 `store: false`，生成结果直接返回浏览器，不在数据库或对象存储中留下副本。
 

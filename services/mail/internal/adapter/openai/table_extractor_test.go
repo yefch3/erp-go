@@ -37,11 +37,22 @@ func TestExtractorUsesStructuredResponsesForTextAndRealImageSample(t *testing.T)
 			t.Fatal(err)
 		}
 		requests = append(requests, request)
-		response := `{"model":"gpt-5.6-luna","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"{\"title\":\"Extracted\",\"sheets\":[{\"name\":\"Table\",\"summary\":\"\",\"columns\":[\"Item\",\"Value\"],\"column_types\":[\"string\",\"number\"],\"rows\":[[\"A\",\"1250\"]]}]}"}]}]}`
+		extracted, _ := json.Marshal(app.InquiryExtraction{
+			Title: "Extracted", Summary: "sample", Items: []app.InquiryItem{{
+				Product: "HRC", MaterialStandard: "ASTM A36", Thickness: "1.10",
+				Width: "1200", QuantityUnit: "MT", Quantity: "1250",
+			}},
+		})
+		responseBytes, _ := json.Marshal(map[string]any{
+			"model": "gpt-5.6-luna", "status": "completed",
+			"output": []any{map[string]any{"type": "message", "content": []any{
+				map[string]any{"type": "output_text", "text": string(extracted)},
+			}}},
+		})
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body:       io.NopCloser(bytes.NewBufferString(response)), Request: r,
+			Body:       io.NopCloser(bytes.NewReader(responseBytes)), Request: r,
 		}, nil
 	})}
 
@@ -58,6 +69,12 @@ func TestExtractorUsesStructuredResponsesForTextAndRealImageSample(t *testing.T)
 		if model != "gpt-5.6-luna" || len(book.Sheets) != 1 {
 			t.Fatalf("unexpected result: %#v %s", book, model)
 		}
+		if got := book.Sheets[0].Columns; got[len(got)-3] != "数量" || got[len(got)-2] != "单价" || got[len(got)-1] != "总价" {
+			t.Fatalf("fixed price columns = %v", got[len(got)-3:])
+		}
+		if got := book.Sheets[0].Rows[0][len(book.Sheets[0].Columns)-1]; got != "=S2*T2" {
+			t.Fatalf("total formula = %q", got)
+		}
 	}
 	if len(requests) != 2 {
 		t.Fatalf("requests = %d", len(requests))
@@ -69,6 +86,11 @@ func TestExtractorUsesStructuredResponsesForTextAndRealImageSample(t *testing.T)
 		format := request["text"].(map[string]any)["format"].(map[string]any)
 		if format["type"] != "json_schema" || format["strict"] != true {
 			t.Fatal("structured output not strict")
+		}
+		schema := format["schema"].(map[string]any)
+		items := schema["properties"].(map[string]any)["items"].(map[string]any)
+		if _, ok := items["items"].(map[string]any)["properties"].(map[string]any)["quantity"]; !ok {
+			t.Fatal("fixed inquiry schema has no quantity")
 		}
 	}
 	encoded, _ := json.Marshal(requests[1])

@@ -57,6 +57,73 @@ type WorkbookSheet struct {
 	Rows        [][]string `json:"rows"`
 }
 
+// InquiryExtraction is the only shape the model may return. The company
+// workbook itself is built below, rather than allowing a model to decide its
+// columns, order, formulas, or formatting.
+type InquiryExtraction struct {
+	Title   string        `json:"title"`
+	Summary string        `json:"summary"`
+	Items   []InquiryItem `json:"items"`
+}
+
+type InquiryItem struct {
+	Product            string `json:"product"`
+	MaterialStandard   string `json:"material_standard"`
+	Grade              string `json:"grade"`
+	Thickness          string `json:"thickness"`
+	Width              string `json:"width"`
+	LengthOrForm       string `json:"length_or_form"`
+	SurfaceRequirement string `json:"surface_requirement"`
+	Coating            string `json:"coating"`
+	Tolerance          string `json:"tolerance"`
+	CoilWeight         string `json:"coil_weight"`
+	CoilID             string `json:"coil_id"`
+	Packaging          string `json:"packaging"`
+	Delivery           string `json:"delivery"`
+	PaymentTerms       string `json:"payment_terms"`
+	Incoterm           string `json:"incoterm"`
+	Port               string `json:"port"`
+	QuantityUnit       string `json:"quantity_unit"`
+	Remarks            string `json:"remarks"`
+	Quantity           string `json:"quantity"`
+}
+
+var InquiryColumns = []string{
+	"产品", "材质/标准", "牌号/等级", "厚度", "宽度", "长度/形式",
+	"表面要求", "涂层/镀层", "公差", "卷重", "卷内径", "包装",
+	"交期", "付款条件", "贸易术语", "港口", "单位", "备注",
+	"数量", "单价", "总价",
+}
+
+// NewInquiryWorkbook centralises the internal format. Quantity is the final
+// extracted field. Unit price is intentionally blank for staff/factories to
+// fill, and total is a trusted server-created Excel formula.
+func NewInquiryWorkbook(in InquiryExtraction) Workbook {
+	rows := make([][]string, 0, len(in.Items))
+	for i, item := range in.Items {
+		excelRow := i + 2 // row 1 is the header
+		rows = append(rows, []string{
+			item.Product, item.MaterialStandard, item.Grade, item.Thickness,
+			item.Width, item.LengthOrForm, item.SurfaceRequirement, item.Coating,
+			item.Tolerance, item.CoilWeight, item.CoilID, item.Packaging,
+			item.Delivery, item.PaymentTerms, item.Incoterm, item.Port,
+			item.QuantityUnit, item.Remarks, item.Quantity, "",
+			fmt.Sprintf("=S%d*T%d", excelRow, excelRow),
+		})
+	}
+	types := make([]string, len(InquiryColumns))
+	for i := range types {
+		types[i] = "string"
+	}
+	types[len(types)-3] = "number"
+	types[len(types)-2] = "number"
+	types[len(types)-1] = "formula"
+	return Workbook{Title: in.Title, Sheets: []WorkbookSheet{{
+		Name: "询价明细", Summary: in.Summary,
+		Columns: append([]string(nil), InquiryColumns...), ColumnTypes: types, Rows: rows,
+	}}}
+}
+
 type ExcelResult struct {
 	FileName string
 	Data     []byte
@@ -159,7 +226,7 @@ func (s *Service) ConvertInboundToExcel(
 	}
 	name := safeExcelFileName(book.Title)
 	if name == "" {
-		name = "email-table"
+		name = "客户询价单"
 	}
 	return ExcelResult{FileName: name + ".xlsx", Data: data, Workbook: book, Model: model}, nil
 }
@@ -216,7 +283,7 @@ func validateWorkbook(book *Workbook) error {
 				s.Columns[j] = fmt.Sprintf("Column %d", j+1)
 			}
 			switch s.ColumnTypes[j] {
-			case "string", "number", "boolean", "date":
+			case "string", "number", "boolean", "date", "formula":
 			default:
 				return fmt.Errorf("sheet %q has invalid column type", s.Name)
 			}
@@ -334,7 +401,7 @@ func workbookXML(sheets []WorkbookSheet) string {
 	for i, s := range sheets {
 		fmt.Fprintf(&b, `<sheet name="%s" sheetId="%d" r:id="rId%d"/>`, xmlText(s.Name), i+1, i+1)
 	}
-	b.WriteString(`</sheets></workbook>`)
+	b.WriteString(`</sheets><calcPr calcId="191029" fullCalcOnLoad="1" forceFullCalc="1"/></workbook>`)
 	return b.String()
 }
 
@@ -381,6 +448,12 @@ func writeCell(b *strings.Builder, ref, value, kind string, style int) {
 		styleAttr = fmt.Sprintf(` s="%d"`, style)
 	}
 	switch kind {
+	case "formula":
+		formula := strings.TrimPrefix(value, "=")
+		if formula != "" {
+			fmt.Fprintf(b, `<c r="%s" s="3"><f>%s</f><v>0</v></c>`, ref, xmlText(formula))
+			return
+		}
 	case "number":
 		if n, ok := safeExcelDecimal(value); ok {
 			fmt.Fprintf(b, `<c r="%s"%s><v>%s</v></c>`, ref, styleAttr, n)
@@ -462,4 +535,4 @@ func workbookRelsXML(n int) string {
 
 const rootRelsXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`
 
-const stylesXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="@"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F4E78"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" quotePrefix="1"/></cellXfs></styleSheet>`
+const stylesXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="@"/><numFmt numFmtId="165" formatCode="#,##0.00"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F4E78"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" quotePrefix="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>`

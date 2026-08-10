@@ -67,6 +67,51 @@ func TestBuildXLSXCreatesWorkbookAndNeverTurnsTextIntoFormula(t *testing.T) {
 	}
 }
 
+func TestInquiryWorkbookHasFixedColumnsBlankUnitPriceAndTrustedTotalFormula(t *testing.T) {
+	book := NewInquiryWorkbook(InquiryExtraction{
+		Title: "Customer inquiry", Summary: "HRC 1250 MT",
+		Items: []InquiryItem{{
+			Product: "HRC", MaterialStandard: "ASTM A36 / JIS G 3132 SPHT-1",
+			Thickness: "1.10", Width: "1200", CoilWeight: "10.50 MT max",
+			CoilID: "762 MM", QuantityUnit: "MT", Quantity: "1250",
+		}},
+	})
+	if err := validateWorkbook(&book); err != nil {
+		t.Fatal(err)
+	}
+	sheet := book.Sheets[0]
+	if len(sheet.Columns) != 21 {
+		t.Fatalf("columns = %d", len(sheet.Columns))
+	}
+	if got := sheet.Columns[len(sheet.Columns)-3:]; strings.Join(got, ",") != "数量,单价,总价" {
+		t.Fatalf("last columns = %v", got)
+	}
+	if sheet.Rows[0][19] != "" || sheet.Rows[0][20] != "=S2*T2" {
+		t.Fatalf("price cells = %q, %q", sheet.Rows[0][19], sheet.Rows[0][20])
+	}
+
+	data, err := buildXLSX(book)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var xml string
+	for _, f := range zr.File {
+		if f.Name == "xl/worksheets/sheet1.xml" {
+			r, _ := f.Open()
+			b, _ := io.ReadAll(r)
+			_ = r.Close()
+			xml = string(b)
+		}
+	}
+	if !strings.Contains(xml, `<c r="U2" s="3"><f>S2*T2</f><v>0</v></c>`) {
+		t.Fatalf("trusted total formula missing: %s", xml)
+	}
+}
+
 func TestSafeExcelDecimalHonorsExcelsPrecisionBoundary(t *testing.T) {
 	for _, v := range []string{"0", "-12.50", "999999999999999", "0.12345678901234"} {
 		if got, ok := safeExcelDecimal(v); !ok || got != v {
