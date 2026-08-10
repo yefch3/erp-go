@@ -1054,6 +1054,7 @@ export default {
     recipientsOfSend: '这次群发的 {n} 位收件人',
     saveDraft: '存草稿',
     draftSaved: '草稿已保存',
+    autosavedAt: '已自动保存 {t}',
     draftDropped: '草稿已删除',
     dropDraftHint: '确认删除草稿「{s}」？',
     noDrafts: '草稿箱是空的',

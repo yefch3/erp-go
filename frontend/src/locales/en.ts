@@ -1059,6 +1059,7 @@ export default {
     recipientsOfSend: 'The {n} recipients of this send',
     saveDraft: 'Save draft',
     draftSaved: 'Draft saved',
+    autosavedAt: 'Draft saved {t}',
     draftDropped: 'Draft deleted',
     dropDraftHint: 'Delete the draft “{s}”?',
     noDrafts: 'No drafts',
