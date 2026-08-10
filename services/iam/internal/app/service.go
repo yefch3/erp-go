@@ -48,11 +48,18 @@ var (
 // The number is the whole difference between this and the state it replaces.
 // "账号已锁定，请联系管理员" was true and useless: there was nobody to contact
 // who could do anything, and no amount of waiting helped either. A person who
-// is told to come back in eleven minutes can come back in eleven minutes.
+// is told to come back in forty seconds can come back in forty seconds.
 //
-// Rounded up to the minute because a countdown in seconds invites watching it,
-// and it is not accurate enough to be watched.
+// Seconds while the wait is short enough to sit through, minutes once it is
+// not. A lock measured in seconds and reported as "1 分钟" reads as far worse
+// news than it is, and the whole point of the short window is that this is
+// now an interruption rather than an outage.
 func errTooManyAttempts(wait time.Duration) error {
+	if wait < 90*time.Second {
+		seconds := int(wait/time.Second) + 1
+		return apierr.Throttled("IAM_TOO_MANY_ATTEMPTS",
+			fmt.Sprintf("密码错误次数过多，请在 %d 秒后重试", seconds))
+	}
 	minutes := int(wait/time.Minute) + 1
 	return apierr.Throttled("IAM_TOO_MANY_ATTEMPTS",
 		fmt.Sprintf("密码错误次数过多，请在 %d 分钟后重试", minutes))
@@ -86,22 +93,19 @@ func (s *Service) Login(ctx context.Context, email, password string) (*LoginResu
 		burnPasswordTime()
 		return nil, errBadCredentials
 	}
-	ten, err := s.q.GetTenantByDomain(ctx, addr[at+1:])
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// A domain we do not serve. Same answer and same cost as a wrong
-			// password, or this route reports which companies are customers.
-			burnPasswordTime()
-			return nil, errBadCredentials
-		}
-		return nil, fmt.Errorf("login: resolve tenant: %w", err)
-	}
-	if ten.TenantStatus != "ACTIVE" {
-		return nil, errAccountLocked
-	}
-	tenantID := ten.TenantID
-
-	u, err := s.q.GetUserByEmail(ctx, store.GetUserByEmailParams{TenantID: tenantID, Email: addr})
+	// The address identifies the account outright; the domain is not consulted.
+	//
+	// It used to be: domain names the tenant, then (tenant, address) names the
+	// account. That reads naturally and is wrong for any address on a public
+	// mail service — and not merely "wrong company": tenant_domains.domain is
+	// a PRIMARY KEY, so the first company to register gmail.com owned it and
+	// the second could not be onboarded at all.
+	//
+	// Deciding *whether* an address is a company mailbox is a separate rule
+	// and still enforced, where it belongs: when an employee is imported or
+	// invited (ListTenantDomains, IsTenantDomain). Login does not repeat it —
+	// an address that reached the employees table already passed it.
+	u, err := s.q.GetUserByEmail(ctx, addr)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Deliberately identical to a wrong password, in wording and in
@@ -112,6 +116,10 @@ func (s *Service) Login(ctx context.Context, email, password string) (*LoginResu
 		}
 		return nil, fmt.Errorf("login: %w", err)
 	}
+	if u.TenantStatus != "ACTIVE" {
+		return nil, errAccountLocked
+	}
+	tenantID := u.TenantID
 	if !u.EmailVerifiedAt.Valid {
 		// Imported but never activated. Named rather than folded into "wrong
 		// password": the person cannot fix this by trying harder, and the
@@ -129,12 +137,18 @@ func (s *Service) Login(ctx context.Context, email, password string) (*LoginResu
 	// would let the guessing continue at full speed and reduce the lock to a
 	// different sentence on the same page.
 	//
-	// The cost of that is real and worth stating: whoever can reach this route
-	// can keep a named person out by spending five guesses every fifteen
-	// minutes. What this fixes is the version where five guesses kept them out
-	// forever, with no path back that did not involve a psql prompt. Bounding
-	// the sustained case needs something this layer cannot see — who is
-	// asking — and belongs with the spray detection at the edge.
+	// This is the per-account half of the pair. The other half is per-source
+	// and lives at the gateway, which is the only layer that can see who is
+	// asking — the same split ERPNext makes, and for the same reason: one
+	// counter answers "is this account under attack", the other answers "is
+	// this source attacking".
+	//
+	// A minute, not a quarter of an hour. Somebody who can reach this route
+	// can still keep a named person out by spending ten guesses a minute, and
+	// no per-account counter can ever prevent that — the counter cannot tell
+	// the attacker from the owner. What it can do is decide how much a
+	// successful nuisance costs its victim, and sixty seconds is a different
+	// thing from fifteen minutes.
 	if u.LockedUntil.Valid && time.Now().Before(u.LockedUntil.Time) {
 		burnPasswordTime()
 		return nil, errTooManyAttempts(time.Until(u.LockedUntil.Time))

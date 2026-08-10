@@ -3,6 +3,8 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -136,10 +138,65 @@ func TestMailboxVerifyIsStricterThanLogin(t *testing.T) {
 	// Not a style preference: a verification attempt is a real login to Gmail
 	// or 263 from our IP, so it has to cost more than a guess at our own
 	// password does.
-	if mailVerifyMaxFailures >= loginMaxFailures {
-		t.Fatalf("mailbox verify allows %d failures, login allows %d — the one that "+
+	//
+	// Compared as a rate rather than as a count, because the two counters stopped
+	// being the same shape when login moved to a sixty-second window — twenty
+	// failures a minute and five failures a quarter of an hour are not two
+	// numbers that can be put beside each other.
+	loginPerHour := float64(loginMaxFailures) / loginWindow.Hours()
+	verifyPerHour := float64(mailVerifyMaxFailures) / mailVerifyWindow.Hours()
+	if verifyPerHour >= loginPerHour {
+		t.Fatalf("mailbox verify allows %.0f/hour, login allows %.0f/hour — the one that "+
 			"spends our server's reputation with the mail host must be tighter",
-			mailVerifyMaxFailures, loginMaxFailures)
+			verifyPerHour, loginPerHour)
+	}
+}
+
+// The login limit is keyed on where the request came from, and the only value
+// a caller cannot choose is the socket it arrived on. X-Forwarded-For is a
+// header anybody can send, so honouring it by default would turn a per-source
+// limit into no limit at all: a sprayer puts a new fake address on every
+// request and never spends a budget.
+func TestAForgedForwardedHeaderIsIgnoredByDefault(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
+	r.RemoteAddr = "203.0.113.9:51234"
+	r.Header.Set("X-Forwarded-For", "1.2.3.4")
+	if got := clientAddr(r, false); got != "203.0.113.9" {
+		t.Fatalf("clientAddr trusted a header it was not told to trust: %q", got)
+	}
+}
+
+func TestTheForwardedHeaderIsUsedOnlyWhenADeploymentSaysSo(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
+	r.RemoteAddr = "10.0.0.5:33001"
+	r.Header.Set("X-Forwarded-For", "198.51.100.7, 10.0.0.5")
+	if got := clientAddr(r, true); got != "198.51.100.7" {
+		t.Fatalf("clientAddr took %q, want the leftmost entry", got)
+	}
+}
+
+// The port is different on every connection. Keying on it would give each
+// attempt its own bucket, which is the same as not counting.
+func TestThePortIsNotPartOfTheIdentity(t *testing.T) {
+	first := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
+	first.RemoteAddr = "203.0.113.9:51234"
+	second := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
+	second.RemoteAddr = "203.0.113.9:60999"
+	if clientAddr(first, false) != clientAddr(second, false) {
+		t.Fatal("two connections from one address counted separately")
+	}
+}
+
+// The window is short on purpose, and the reason is worth a test rather than
+// only a comment: it is what makes metering by source safe when a whole office
+// shares one egress address. Lengthen it and twenty mistyped passwords in an
+// afternoon shut out everybody sitting in that room.
+func TestTheSourceWindowStaysShortEnoughToShare(t *testing.T) {
+	if loginWindow > 2*time.Minute {
+		t.Fatalf("the per-source window is %v; a shared office address cannot afford that", loginWindow)
+	}
+	if loginMaxFailures < 20 {
+		t.Fatalf("the per-source budget is %d, which a shared office address would hit by accident", loginMaxFailures)
 	}
 }
 

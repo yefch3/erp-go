@@ -9,6 +9,16 @@ import (
 	"os/signal"
 	"syscall"
 
+	// The zone database, compiled in.
+	//
+	// The service image is distroless: no /usr/share/zoneinfo, no package
+	// manager to add one. Without this, time.LoadLocation("Asia/Shanghai")
+	// fails at runtime and every timestamp in an exported conversation
+	// silently falls back to UTC — a transcript saying a customer replied at
+	// 03:14 when it was a quarter past eleven in the morning. Roughly 450 kB
+	// for a correct clock in a document of record.
+	_ "time/tzdata"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
@@ -121,9 +131,10 @@ func run(log *slog.Logger) error {
 		go imap.Run(ctx)
 		syncCfg := app.SyncConfig{
 			Interval:    cfg.SyncInterval,
-			BatchSize:   uint32(cfg.SyncBatch),
-			HistoryCap:  int64(cfg.SyncHistory),
-			Concurrency: cfg.SyncConcurrency,
+			BatchSize:     uint32(cfg.SyncBatch),
+			HistoryCap:    int64(cfg.SyncHistory),
+			Concurrency:   cfg.SyncConcurrency,
+			PublicBaseURL: cfg.PublicBaseURL,
 		}
 		// The poller is the historian and the safety net; the idle watchers
 		// are what make new mail arrive in seconds instead of minutes.
@@ -140,6 +151,22 @@ func run(log *slog.Logger) error {
 		// the same function ingest uses rather than by a regexp in the
 		// migration, so old and new mail are searched by the same text.
 		go svc.BackfillSearchText(ctx, syncCfg)
+		// Received mail's pictures, fetched by us at delivery instead of by
+		// the reader's browser at reading time — so opening a mail stops
+		// being an event the sender observes. Its own loop for the same
+		// reason as the write-back: one slow marketing server must not hold
+		// up mail arriving. Doubles as the backfill for everything already
+		// stored, which has no stamp yet.
+		go svc.RunImageCache(ctx, syncCfg)
+		// Messages stored before ingest kept Content-ID: their embedded
+		// pictures are in storage but nothing joins them to the body that
+		// points at them. Repaired from the archived MIME, once, on start.
+		go svc.RunContentIDBackfill(ctx, syncCfg)
+		// The other half of the same damage: parts ingest never stored at all
+		// because they carried a Content-ID but no filename — which is exactly
+		// how an image pasted into Gmail's composer arrives. The backfill above
+		// cannot help those; it patches rows, and for these there is no row.
+		go svc.RunEmbeddedRecovery(ctx, syncCfg)
 	}
 
 	// The worker runs in-process. The database is the queue, so a second

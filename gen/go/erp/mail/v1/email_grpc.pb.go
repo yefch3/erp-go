@@ -37,12 +37,14 @@ const (
 	EmailService_CancelScheduled_FullMethodName     = "/erp.mail.v1.EmailService/CancelScheduled"
 	EmailService_ListSignatures_FullMethodName      = "/erp.mail.v1.EmailService/ListSignatures"
 	EmailService_CreateSignature_FullMethodName     = "/erp.mail.v1.EmailService/CreateSignature"
+	EmailService_UpdateSignature_FullMethodName     = "/erp.mail.v1.EmailService/UpdateSignature"
 	EmailService_DeleteSignature_FullMethodName     = "/erp.mail.v1.EmailService/DeleteSignature"
 	EmailService_PresignAttachment_FullMethodName   = "/erp.mail.v1.EmailService/PresignAttachment"
 	EmailService_RegisterAttachment_FullMethodName  = "/erp.mail.v1.EmailService/RegisterAttachment"
 	EmailService_ListAttachments_FullMethodName     = "/erp.mail.v1.EmailService/ListAttachments"
 	EmailService_PresignImage_FullMethodName        = "/erp.mail.v1.EmailService/PresignImage"
 	EmailService_RegisterImage_FullMethodName       = "/erp.mail.v1.EmailService/RegisterImage"
+	EmailService_ImportImage_FullMethodName         = "/erp.mail.v1.EmailService/ImportImage"
 	EmailService_FetchImage_FullMethodName          = "/erp.mail.v1.EmailService/FetchImage"
 	EmailService_ListImages_FullMethodName          = "/erp.mail.v1.EmailService/ListImages"
 	EmailService_WithdrawImage_FullMethodName       = "/erp.mail.v1.EmailService/WithdrawImage"
@@ -60,6 +62,8 @@ const (
 	EmailService_SearchMail_FullMethodName          = "/erp.mail.v1.EmailService/SearchMail"
 	EmailService_GetInbound_FullMethodName          = "/erp.mail.v1.EmailService/GetInbound"
 	EmailService_GetMailThread_FullMethodName       = "/erp.mail.v1.EmailService/GetMailThread"
+	EmailService_ExportMailThread_FullMethodName    = "/erp.mail.v1.EmailService/ExportMailThread"
+	EmailService_ListMailExports_FullMethodName     = "/erp.mail.v1.EmailService/ListMailExports"
 	EmailService_MarkInbound_FullMethodName         = "/erp.mail.v1.EmailService/MarkInbound"
 	EmailService_PurgeInbound_FullMethodName        = "/erp.mail.v1.EmailService/PurgeInbound"
 	EmailService_MarkViewRead_FullMethodName        = "/erp.mail.v1.EmailService/MarkViewRead"
@@ -115,6 +119,7 @@ type EmailServiceClient interface {
 	CancelScheduled(ctx context.Context, in *CancelScheduledRequest, opts ...grpc.CallOption) (*CancelScheduledResponse, error)
 	ListSignatures(ctx context.Context, in *ListSignaturesRequest, opts ...grpc.CallOption) (*ListSignaturesResponse, error)
 	CreateSignature(ctx context.Context, in *CreateSignatureRequest, opts ...grpc.CallOption) (*CreateSignatureResponse, error)
+	UpdateSignature(ctx context.Context, in *UpdateSignatureRequest, opts ...grpc.CallOption) (*UpdateSignatureResponse, error)
 	DeleteSignature(ctx context.Context, in *DeleteSignatureRequest, opts ...grpc.CallOption) (*DeleteSignatureResponse, error)
 	// Files travelling with a send, and pictures embedded inside one.
 	//
@@ -127,6 +132,7 @@ type EmailServiceClient interface {
 	ListAttachments(ctx context.Context, in *ListAttachmentsRequest, opts ...grpc.CallOption) (*ListAttachmentsResponse, error)
 	PresignImage(ctx context.Context, in *PresignImageRequest, opts ...grpc.CallOption) (*PresignImageResponse, error)
 	RegisterImage(ctx context.Context, in *RegisterImageRequest, opts ...grpc.CallOption) (*RegisterImageResponse, error)
+	ImportImage(ctx context.Context, in *ImportImageRequest, opts ...grpc.CallOption) (*ImportImageResponse, error)
 	// Serves the public, token-addressed image route. Bounded by the 2 MB cap,
 	// so one unary response is fine and streaming would be ceremony.
 	FetchImage(ctx context.Context, in *FetchImageRequest, opts ...grpc.CallOption) (*FetchImageResponse, error)
@@ -170,6 +176,14 @@ type EmailServiceClient interface {
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error)
+	// One conversation as a document somebody outside the ERP can read: a
+	// transcript, self-contained, nothing fetched when it is opened. Records
+	// the export before returning the bytes — an export that cannot be logged
+	// does not happen, which is the point of having the permission at all.
+	ExportMailThread(ctx context.Context, in *ExportMailThreadRequest, opts ...grpc.CallOption) (*ExportMailThreadResponse, error)
+	// The export log. Scoped like the team mail view: a manager sees their own
+	// team, an administrator sees the company.
+	ListMailExports(ctx context.Context, in *ListMailExportsRequest, opts ...grpc.CallOption) (*ListMailExportsResponse, error)
 	// Inbox housekeeping: read/unread, star, archive, trash. Applied here
 	// first and carried to the mail host within seconds by the write-back
 	// queue, so the two views agree.
@@ -385,6 +399,16 @@ func (c *emailServiceClient) CreateSignature(ctx context.Context, in *CreateSign
 	return out, nil
 }
 
+func (c *emailServiceClient) UpdateSignature(ctx context.Context, in *UpdateSignatureRequest, opts ...grpc.CallOption) (*UpdateSignatureResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateSignatureResponse)
+	err := c.cc.Invoke(ctx, EmailService_UpdateSignature_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) DeleteSignature(ctx context.Context, in *DeleteSignatureRequest, opts ...grpc.CallOption) (*DeleteSignatureResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeleteSignatureResponse)
@@ -439,6 +463,16 @@ func (c *emailServiceClient) RegisterImage(ctx context.Context, in *RegisterImag
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RegisterImageResponse)
 	err := c.cc.Invoke(ctx, EmailService_RegisterImage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) ImportImage(ctx context.Context, in *ImportImageRequest, opts ...grpc.CallOption) (*ImportImageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ImportImageResponse)
+	err := c.cc.Invoke(ctx, EmailService_ImportImage_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -615,6 +649,26 @@ func (c *emailServiceClient) GetMailThread(ctx context.Context, in *GetMailThrea
 	return out, nil
 }
 
+func (c *emailServiceClient) ExportMailThread(ctx context.Context, in *ExportMailThreadRequest, opts ...grpc.CallOption) (*ExportMailThreadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExportMailThreadResponse)
+	err := c.cc.Invoke(ctx, EmailService_ExportMailThread_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) ListMailExports(ctx context.Context, in *ListMailExportsRequest, opts ...grpc.CallOption) (*ListMailExportsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMailExportsResponse)
+	err := c.cc.Invoke(ctx, EmailService_ListMailExports_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) MarkInbound(ctx context.Context, in *MarkInboundRequest, opts ...grpc.CallOption) (*MarkInboundResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(MarkInboundResponse)
@@ -731,6 +785,7 @@ type EmailServiceServer interface {
 	CancelScheduled(context.Context, *CancelScheduledRequest) (*CancelScheduledResponse, error)
 	ListSignatures(context.Context, *ListSignaturesRequest) (*ListSignaturesResponse, error)
 	CreateSignature(context.Context, *CreateSignatureRequest) (*CreateSignatureResponse, error)
+	UpdateSignature(context.Context, *UpdateSignatureRequest) (*UpdateSignatureResponse, error)
 	DeleteSignature(context.Context, *DeleteSignatureRequest) (*DeleteSignatureResponse, error)
 	// Files travelling with a send, and pictures embedded inside one.
 	//
@@ -743,6 +798,7 @@ type EmailServiceServer interface {
 	ListAttachments(context.Context, *ListAttachmentsRequest) (*ListAttachmentsResponse, error)
 	PresignImage(context.Context, *PresignImageRequest) (*PresignImageResponse, error)
 	RegisterImage(context.Context, *RegisterImageRequest) (*RegisterImageResponse, error)
+	ImportImage(context.Context, *ImportImageRequest) (*ImportImageResponse, error)
 	// Serves the public, token-addressed image route. Bounded by the 2 MB cap,
 	// so one unary response is fine and streaming would be ceremony.
 	FetchImage(context.Context, *FetchImageRequest) (*FetchImageResponse, error)
@@ -786,6 +842,14 @@ type EmailServiceServer interface {
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error)
+	// One conversation as a document somebody outside the ERP can read: a
+	// transcript, self-contained, nothing fetched when it is opened. Records
+	// the export before returning the bytes — an export that cannot be logged
+	// does not happen, which is the point of having the permission at all.
+	ExportMailThread(context.Context, *ExportMailThreadRequest) (*ExportMailThreadResponse, error)
+	// The export log. Scoped like the team mail view: a manager sees their own
+	// team, an administrator sees the company.
+	ListMailExports(context.Context, *ListMailExportsRequest) (*ListMailExportsResponse, error)
 	// Inbox housekeeping: read/unread, star, archive, trash. Applied here
 	// first and carried to the mail host within seconds by the write-back
 	// queue, so the two views agree.
@@ -875,6 +939,9 @@ func (UnimplementedEmailServiceServer) ListSignatures(context.Context, *ListSign
 func (UnimplementedEmailServiceServer) CreateSignature(context.Context, *CreateSignatureRequest) (*CreateSignatureResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateSignature not implemented")
 }
+func (UnimplementedEmailServiceServer) UpdateSignature(context.Context, *UpdateSignatureRequest) (*UpdateSignatureResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateSignature not implemented")
+}
 func (UnimplementedEmailServiceServer) DeleteSignature(context.Context, *DeleteSignatureRequest) (*DeleteSignatureResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteSignature not implemented")
 }
@@ -892,6 +959,9 @@ func (UnimplementedEmailServiceServer) PresignImage(context.Context, *PresignIma
 }
 func (UnimplementedEmailServiceServer) RegisterImage(context.Context, *RegisterImageRequest) (*RegisterImageResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RegisterImage not implemented")
+}
+func (UnimplementedEmailServiceServer) ImportImage(context.Context, *ImportImageRequest) (*ImportImageResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ImportImage not implemented")
 }
 func (UnimplementedEmailServiceServer) FetchImage(context.Context, *FetchImageRequest) (*FetchImageResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FetchImage not implemented")
@@ -943,6 +1013,12 @@ func (UnimplementedEmailServiceServer) GetInbound(context.Context, *GetInboundRe
 }
 func (UnimplementedEmailServiceServer) GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMailThread not implemented")
+}
+func (UnimplementedEmailServiceServer) ExportMailThread(context.Context, *ExportMailThreadRequest) (*ExportMailThreadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExportMailThread not implemented")
+}
+func (UnimplementedEmailServiceServer) ListMailExports(context.Context, *ListMailExportsRequest) (*ListMailExportsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListMailExports not implemented")
 }
 func (UnimplementedEmailServiceServer) MarkInbound(context.Context, *MarkInboundRequest) (*MarkInboundResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MarkInbound not implemented")
@@ -1310,6 +1386,24 @@ func _EmailService_CreateSignature_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_UpdateSignature_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateSignatureRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).UpdateSignature(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_UpdateSignature_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).UpdateSignature(ctx, req.(*UpdateSignatureRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_DeleteSignature_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeleteSignatureRequest)
 	if err := dec(in); err != nil {
@@ -1414,6 +1508,24 @@ func _EmailService_RegisterImage_Handler(srv interface{}, ctx context.Context, d
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(EmailServiceServer).RegisterImage(ctx, req.(*RegisterImageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_ImportImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ImportImageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).ImportImage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_ImportImage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).ImportImage(ctx, req.(*ImportImageRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1724,6 +1836,42 @@ func _EmailService_GetMailThread_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_ExportMailThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExportMailThreadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).ExportMailThread(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_ExportMailThread_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).ExportMailThread(ctx, req.(*ExportMailThreadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_ListMailExports_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMailExportsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).ListMailExports(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_ListMailExports_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).ListMailExports(ctx, req.(*ListMailExportsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_MarkInbound_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(MarkInboundRequest)
 	if err := dec(in); err != nil {
@@ -1930,6 +2078,10 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _EmailService_CreateSignature_Handler,
 		},
 		{
+			MethodName: "UpdateSignature",
+			Handler:    _EmailService_UpdateSignature_Handler,
+		},
+		{
 			MethodName: "DeleteSignature",
 			Handler:    _EmailService_DeleteSignature_Handler,
 		},
@@ -1952,6 +2104,10 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RegisterImage",
 			Handler:    _EmailService_RegisterImage_Handler,
+		},
+		{
+			MethodName: "ImportImage",
+			Handler:    _EmailService_ImportImage_Handler,
 		},
 		{
 			MethodName: "FetchImage",
@@ -2020,6 +2176,14 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMailThread",
 			Handler:    _EmailService_GetMailThread_Handler,
+		},
+		{
+			MethodName: "ExportMailThread",
+			Handler:    _EmailService_ExportMailThread_Handler,
+		},
+		{
+			MethodName: "ListMailExports",
+			Handler:    _EmailService_ListMailExports_Handler,
 		},
 		{
 			MethodName: "MarkInbound",

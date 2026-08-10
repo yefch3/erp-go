@@ -29,7 +29,11 @@ type InboundView struct {
 	SentAt         time.Time
 	BodyHTML       string
 	BodyText       string
-	Attachments    []Attachment
+	// The conversation quoted back inside this message, split out so the
+	// reader can fold it. Empty means there was nothing worth folding, which
+	// is the answer for most mail — see SplitQuotedHistory.
+	QuotedHTML  string
+	Attachments []Attachment
 	// How many messages the list row stands for. 1 for a lone message; the
 	// list collapses a conversation into one row and shows this count.
 	ThreadCount int32
@@ -221,9 +225,41 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 		// from the wild, and it is about to be rendered inside our page.
 		// Read with the wider reader policy: this goes into a sandboxed
 		// frame, where a sender's stylesheet cannot reach our page.
-		BodyHTML: SanitizeForReading(row.BodyHtml),
+		//
+		// Then the pictures are swapped for our own copies, so that opening
+		// this mail does not tell the sender it was opened. After sanitising,
+		// deliberately: the substitution matches the addresses as the reader
+		// will see them, and a signed storage URL never has to survive the
+		// sanitiser's own URL policy.
 		BodyText: row.BodyText,
 	}
+	// Sanitise, then localise the pictures, then fold — in that order. The
+	// fold parses the markup, so it has to run on the form the reader will
+	// actually be given; folding first and sanitising afterwards would mean
+	// the sanitiser could move the boundary out from under the split.
+	//
+	// The sanitised body is kept as its own value because the attachment list
+	// below has to be filtered against it. After the swap there is no cid:
+	// left in the markup to test — it has all become signed storage URLs —
+	// so asking the finished body which parts it embedded would always answer
+	// "none", and every signature logo would go back to being listed.
+	// Two kinds of picture, and they have to be swapped on opposite sides of
+	// the sanitiser.
+	//
+	// Embedded ones go first, before sanitising. The reader policy allows http
+	// and https and nothing else, so it does not merely reject a cid: src — it
+	// strips the attribute, leaving an <img> with no source at all. That is
+	// what the broken glyph in a signature really was: not a src the browser
+	// could not follow, but no src whatsoever. Swapping first means the
+	// sanitiser sees an ordinary https storage URL and vets it like any other.
+	//
+	// Remote ones go after, because their keys were recorded in the form the
+	// sanitiser produces — it percent-encodes spaces in URLs on the way
+	// through, and matching the raw form would miss those.
+	embedded := s.embeddedSwap(ctx, tenantID, id)
+	sanitised := SanitizeForReading(s.localiseImages(ctx, row.BodyHtml, embedded))
+	v.BodyHTML, v.QuotedHTML = SplitQuotedHistory(
+		s.localiseImages(ctx, sanitised, s.swapForMessage(ctx, tenantID, id)))
 	if row.ReceivedAt.Valid {
 		v.ReceivedAt = row.ReceivedAt.Time
 	}
@@ -238,9 +274,15 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 		for _, a := range atts {
 			v.Attachments = append(v.Attachments, Attachment{
 				ID: a.ID, FileName: a.FileName, ContentType: a.ContentType,
-				FileSize: a.FileSize, FileKey: a.FileKey,
+				FileSize: a.FileSize, FileKey: a.FileKey, ContentID: a.ContentID,
 			})
 		}
+		// Parts the body has already shown inline are not attachments to a
+		// reader, whatever they are to the MIME structure. Tested against the
+		// stored body, which is where the cid: references still live, and
+		// against the swap, so a part we failed to resolve stays in the list
+		// rather than vanishing from both the body and the attachments.
+		v.Attachments = hideEmbedded(v.Attachments, row.BodyHtml, embedded)
 		// Signed here rather than at ingest: a URL minted when the mail
 		// arrived would have expired long before anybody opened it.
 		v.Attachments = s.signDownloads(ctx, v.Attachments)
@@ -254,6 +296,7 @@ type ThreadItem struct {
 	ID           int64
 	Subject      string
 	Body         string
+	Quoted       string
 	BodyFormat   string
 	Counterparty string
 	Who          string
@@ -275,15 +318,28 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID int64, th
 	if err != nil {
 		return nil, err
 	}
+	// One query for the whole conversation's cached pictures, and one
+	// signature per distinct object. A sixteen-turn thread quoting the same
+	// signature logo throughout would otherwise be sixteen round trips.
+	swaps := s.swapForThread(ctx, tenantID, ownerID, threadKey)
+	embedded := s.embeddedSwapForThread(ctx, tenantID, ownerID, threadKey)
+
 	out := make([]ThreadItem, 0, len(rows))
 	for _, r := range rows {
-		body := r.Body
+		body, quoted := r.Body, ""
 		if r.Direction == "IN" && r.BodyFormat == "HTML" {
-			body = SanitizeForReading(body)
+			// The fold matters most here and for the reason this view exists:
+			// turn sixteen of a conversation is turns one to fifteen stacked
+			// up, and the thread already shows those separately.
+			// Embedded before the sanitiser, remote after — see GetInbound.
+			body, quoted = SplitQuotedHistory(
+				s.localiseImages(ctx,
+					SanitizeForReading(s.localiseImages(ctx, body, embedded[r.ID])),
+					swaps[r.ID]))
 		}
 		v := ThreadItem{
 			Direction: r.Direction, ID: r.ID, Subject: r.Subject,
-			Body: body, BodyFormat: r.BodyFormat,
+			Body: body, Quoted: quoted, BodyFormat: r.BodyFormat,
 			Counterparty: r.Counterparty, Who: r.Who,
 		}
 		if r.At.Valid {
@@ -525,6 +581,10 @@ func (s *Service) purgeOne(ctx context.Context, tenantID, ownerID, id int64, raw
 				keys = append(keys, a.FileKey)
 			}
 		}
+		// The pictures we fetched on this mail's behalf. The table row goes
+		// with the message through the cascade; the bytes only go if they are
+		// named here first.
+		keys = append(keys, s.imageKeysFor(ctx, tenantID, id)...)
 		if rawKey != "" {
 			keys = append(keys, rawKey)
 		}

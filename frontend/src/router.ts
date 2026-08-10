@@ -27,11 +27,16 @@ export const router = createRouter({
         { path: 'purchase-orders', component: () => import('./pages/PurchaseOrdersPage.vue') },
         { path: 'emails', component: () => import('./pages/EmailsPage.vue') },
         { path: 'team-mail', component: () => import('./pages/TeamMailPage.vue') },
+        { path: 'mail/export-log', component: () => import('./pages/MailExportLogPage.vue') },
         { path: 'fx', component: () => import('./pages/FxPage.vue') },
         { path: 'settings/employees', component: () => import('./pages/EmployeesPage.vue') },
         { path: 'settings/roles', component: () => import('./pages/RolesPage.vue') },
         { path: 'settings/approvals', component: () => import('./pages/ApprovalFlowsPage.vue') },
-        { path: 'settings/signatures', component: () => import('./pages/EmailSignaturesPage.vue') },
+        // Signatures moved into the mailbox itself (the ✍️ entry on its
+        // rail), for the same reason the host settings did: they are part of
+        // writing mail, not a system setting. Kept as a redirect so old
+        // bookmarks and menu links land somewhere sensible.
+        { path: 'settings/signatures', redirect: '/emails' },
         // The old /settings/mailbox page merged into /emails: the sign-in
         // gate is the account surface now. Kept as a redirect so old
         // bookmarks and the OAuth-era links still land somewhere sensible.

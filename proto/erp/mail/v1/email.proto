@@ -50,6 +50,7 @@ service EmailService {
 
   rpc ListSignatures(ListSignaturesRequest) returns (ListSignaturesResponse);
   rpc CreateSignature(CreateSignatureRequest) returns (CreateSignatureResponse);
+  rpc UpdateSignature(UpdateSignatureRequest) returns (UpdateSignatureResponse);
   rpc DeleteSignature(DeleteSignatureRequest) returns (DeleteSignatureResponse);
 
   // Files travelling with a send, and pictures embedded inside one.
@@ -63,6 +64,7 @@ service EmailService {
   rpc ListAttachments(ListAttachmentsRequest) returns (ListAttachmentsResponse);
   rpc PresignImage(PresignImageRequest) returns (PresignImageResponse);
   rpc RegisterImage(RegisterImageRequest) returns (RegisterImageResponse);
+  rpc ImportImage(ImportImageRequest) returns (ImportImageResponse);
   // Serves the public, token-addressed image route. Bounded by the 2 MB cap,
   // so one unary response is fine and streaming would be ceremony.
   rpc FetchImage(FetchImageRequest) returns (FetchImageResponse);
@@ -114,6 +116,14 @@ service EmailService {
   // One conversation, both directions, oldest first. Owner-scoped: the
   // caller sees only their own half of the world.
   rpc GetMailThread(GetMailThreadRequest) returns (GetMailThreadResponse);
+  // One conversation as a document somebody outside the ERP can read: a
+  // transcript, self-contained, nothing fetched when it is opened. Records
+  // the export before returning the bytes — an export that cannot be logged
+  // does not happen, which is the point of having the permission at all.
+  rpc ExportMailThread(ExportMailThreadRequest) returns (ExportMailThreadResponse);
+  // The export log. Scoped like the team mail view: a manager sees their own
+  // team, an administrator sees the company.
+  rpc ListMailExports(ListMailExportsRequest) returns (ListMailExportsResponse);
   // Inbox housekeeping: read/unread, star, archive, trash. Applied here
   // first and carried to the mail host within seconds by the write-back
   // queue, so the two views agree.
@@ -183,6 +193,11 @@ message InboundMail {
   // be forwarded as a .eml attachment. The screen greys the action out rather
   // than letting somebody compose a forward the send path will refuse.
   bool has_raw = 21;
+  // The conversation this message quotes back inside itself, split out so the
+  // reader can fold it behind a button. Empty means there was nothing worth
+  // folding — the answer for most mail. Turn sixteen of a thread is turns one
+  // to fifteen stacked up, and one such message measured 10747 pixels.
+  string quoted_html = 22;
 }
 
 message InboundAttachment {
@@ -270,10 +285,65 @@ message ThreadItem {
   string counterparty = 6;
   string who = 7;
   string at = 8;
+  // The history quoted inside this turn. Folded away by default here above
+  // all: the thread view is already showing those turns separately, so
+  // repeating them inside each one is the same text sixteen times over.
+  string quoted = 9;
 }
 
 message GetMailThreadResponse {
   repeated ThreadItem items = 1;
+}
+
+message ExportMailThreadRequest {
+  string thread_key = 1;
+  // The reader's IANA zone, e.g. "Asia/Shanghai". Every timestamp in the
+  // document is printed in it, with the offset spelled out beside it. Empty
+  // means UTC.
+  string zone = 2;
+  // The language the document's own labels are written in: zh, en or es.
+  // Not the language of the mail, which is whatever the customer wrote.
+  string lang = 3;
+  // Where the request came from, as the gateway resolved it. Recorded in the
+  // export log; never used to decide anything.
+  string client_ip = 4;
+}
+
+message ExportMailThreadResponse {
+  // The whole document. Bounded by the caps in threadexport.go rather than
+  // streamed: a conversation is not a file upload, and the ceiling is a few
+  // megabytes of text.
+  bytes content = 1;
+  string content_type = 2;
+  // What to call it on disk. Already stripped of anything a file name or a
+  // Content-Disposition header may not contain.
+  string file_name = 3;
+  int32 turn_count = 4;
+}
+
+// ExportRecord is one line of the log: a conversation that left the building.
+message ExportRecord {
+  int64 id = 1;
+  int64 employee_id = 2;
+  string employee_name = 3;
+  string thread_key = 4;
+  string subject = 5;
+  string counterparty = 6;
+  int32 turn_count = 7;
+  int64 byte_size = 8;
+  string format = 9;
+  string client_ip = 10;
+  string exported_at = 11;
+}
+
+message ListMailExportsRequest {
+  int32 page = 1;
+  int32 size = 2;
+}
+
+message ListMailExportsResponse {
+  repeated ExportRecord items = 1;
+  int64 total = 2;
 }
 
 message GetInboundResponse {
@@ -814,6 +884,22 @@ message CreateSignatureResponse {
   int64 id = 1;
 }
 
+// UpdateSignatureRequest carries the whole block, not a patch: the editor
+// always holds the complete value, and a partial update would need a way to
+// say "clear this field" that JSON omission cannot express.
+message UpdateSignatureRequest {
+  int64 id = 1;
+  string owner_type = 2;
+  string name = 3;
+  string content = 4;
+  bool is_default = 5;
+  string body_format = 6;
+}
+
+message UpdateSignatureResponse {
+  bool ok = 1;
+}
+
 message DeleteSignatureRequest {
   int64 id = 1;
 }
@@ -908,6 +994,17 @@ message RegisterImageRequest {
 }
 
 message RegisterImageResponse {
+  EmailImage image = 1;
+}
+
+// ImportImageRequest takes a picture that already lives on somebody's web
+// server. The bytes are copied into our own storage rather than linked: a
+// signature outlives the website it borrowed its logo from.
+message ImportImageRequest {
+  string url = 1;
+}
+
+message ImportImageResponse {
   EmailImage image = 1;
 }
 

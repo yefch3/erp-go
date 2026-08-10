@@ -86,6 +86,10 @@
       @input="emitChange"
       @blur="emitChange"
       @paste="onPaste"
+      @drop="onDrop"
+      @dragover.prevent
+      @keyup="rememberCaret"
+      @mouseup="rememberCaret"
     />
 
     <!-- Images are blocked by default in almost every mail client, so this is
@@ -102,6 +106,28 @@
       >
         <div class="drop">{{ t('editor.dropImage') }}</div>
       </el-upload>
+
+      <!-- The other way in: an address. Most company logos are already on the
+           company website, and asking somebody to download a file first only
+           to upload it again is work for no reason. -->
+      <div class="from-url">
+        <div class="side-title">{{ t('editor.fromUrl') }}</div>
+        <div class="url-row">
+          <el-input
+            v-model="imageUrlInput"
+            placeholder="https://…"
+            :disabled="importing"
+            @keyup.enter="importFromUrl"
+          />
+          <el-button type="primary" :loading="importing" @click="importFromUrl">
+            {{ t('editor.fetch') }}
+          </el-button>
+        </div>
+        <!-- Said plainly, because it is the difference between a signature
+             that still works next year and one that does not. -->
+        <div class="url-note">{{ t('editor.fromUrlNote') }}</div>
+      </div>
+
       <div v-if="images.length" class="library">
         <div class="side-title">{{ t('editor.library') }}</div>
         <div class="thumbs">
@@ -162,6 +188,8 @@ const color = ref('')
 const imagePickerOpen = ref(false)
 const images = ref<MailImage[]>([])
 const hasImages = ref(false)
+const imageUrlInput = ref('')
+const importing = ref(false)
 
 onMounted(() => {
   // Inline styles rather than classes: Gmail strips <style> blocks outright,
@@ -188,9 +216,43 @@ function setHTML(v: string) {
 
 function emitChange() {
   if (!area.value) return
+  rememberCaret()
   hasImages.value = !!area.value.querySelector('img')
   emit('update:modelValue', area.value.innerHTML)
 }
+
+// Where the caret was, kept because everything that inserts into this field
+// is a control outside it — a toolbar button, a dialog, a variable chip on the
+// parent page. Clicking any of them moves focus away, and an insert that does
+// not put the selection back lands at the very start of the block.
+let savedRange: Range | null = null
+
+function rememberCaret() {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return
+  const r = sel.getRangeAt(0)
+  if (area.value?.contains(r.commonAncestorContainer)) savedRange = r.cloneRange()
+}
+
+function restoreCaret() {
+  area.value?.focus()
+  if (!savedRange) return
+  const sel = window.getSelection()
+  if (!sel) return
+  sel.removeAllRanges()
+  sel.addRange(savedRange)
+}
+
+// insertText is for the parent: the signature page keeps its variable chips
+// outside the editor, so it needs a way in that does not depend on the field
+// still holding focus.
+function insertText(text: string) {
+  restoreCaret()
+  document.execCommand('insertText', false, text)
+  emitChange()
+}
+
+defineExpose({ insertText })
 
 function cmd(name: string) {
   area.value?.focus()
@@ -203,10 +265,54 @@ function cmd(name: string) {
 // the sender restyle it is the honest option; the server would strip most of
 // it anyway, which would look like the editor losing their work.
 function onPaste(e: ClipboardEvent) {
+  // A pasted picture goes through the upload path, not into the text.
+  //
+  // Checked before the plain-text branch, because a screenshot on the
+  // clipboard usually carries a text/plain flavour too (a file path, or
+  // nothing) — taking that first silently swallowed the image and pasted an
+  // empty string. This is the thing people expect from Gmail and the reason
+  // "why can't I just paste it" kept coming up.
+  const file = imageOnClipboard(e.clipboardData)
+  if (file) {
+    e.preventDefault()
+    rememberCaret()
+    void uploadImage(file)
+    return
+  }
   e.preventDefault()
   const text = e.clipboardData?.getData('text/plain') ?? ''
   document.execCommand('insertText', false, text)
   emitChange()
+}
+
+// The first image among the clipboard's items, or null.
+//
+// clipboardData.files is empty for a screenshot taken with the system
+// shortcut on some platforms, so items has to be walked as well.
+function imageOnClipboard(dt: DataTransfer | null): File | null {
+  if (!dt) return null
+  for (const f of Array.from(dt.files ?? [])) {
+    if (f.type.startsWith('image/')) return f
+  }
+  for (const item of Array.from(dt.items ?? [])) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      const f = item.getAsFile()
+      if (f) return f
+    }
+  }
+  return null
+}
+
+// Dropping a picture onto the body does the same thing as pasting one.
+//
+// The default would be to navigate the frame to the file, losing whatever was
+// being written — which is the worst possible response to a dropped file.
+function onDrop(e: DragEvent) {
+  const file = imageOnClipboard(e.dataTransfer)
+  if (!file) return
+  e.preventDefault()
+  rememberCaret()
+  void uploadImage(file)
 }
 
 // execCommand has no reliable font-family or px font-size, so those wrap the
@@ -292,6 +398,27 @@ async function uploadImage(file: File) {
   return false
 }
 
+// The server fetches the address and keeps a copy, so what gets inserted is
+// our own URL either way. Hotlinking would work today and break the day the
+// other site is redesigned — in every mail sent up to then, silently, because
+// the composer would still show it correctly.
+async function importFromUrl() {
+  const raw = imageUrlInput.value.trim()
+  if (!raw || importing.value) return
+  importing.value = true
+  try {
+    const reg = await post<{ image: MailImage }>('/email-images/from-url', { url: raw })
+    images.value = [reg.image, ...images.value]
+    imageUrlInput.value = ''
+    insertImage(reg.image)
+  } catch {
+    // The server says why — an unreachable host, a file that is not an image,
+    // one over the cap — and the API layer has already shown that sentence.
+  } finally {
+    importing.value = false
+  }
+}
+
 function insertImage(img: MailImage) {
   imagePickerOpen.value = false
   // The absolute URL matters: the recipient's mail client has no page to
@@ -301,7 +428,7 @@ function insertImage(img: MailImage) {
   // see the first time they open the mail.
   const alt = img.fileName.replace(/\.[^.]+$/, '').replace(/"/g, '')
   nextTick(() => {
-    area.value?.focus()
+    restoreCaret()
     document.execCommand(
       'insertHTML',
       false,
@@ -368,6 +495,15 @@ function insertImage(img: MailImage) {
   margin: 14px 0 8px;
   font-size: 13px;
   font-weight: 600;
+}
+.url-row {
+  display: flex;
+  gap: 8px;
+}
+.url-note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 .thumbs {
   display: flex;

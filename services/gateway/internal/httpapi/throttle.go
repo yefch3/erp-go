@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
 	"strings"
 	"time"
 
@@ -14,16 +16,25 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Failure throttling for the two routes where an unlimited number of guesses
-// is the whole attack.
+// Failure throttling for the routes where an unlimited number of guesses is
+// the whole attack.
 //
-// Counted per account, not per IP. A company behind one office router — or one
-// cloud egress address, which is how this will be deployed — shares an IP, so
-// an IP budget spent by one person locks out everybody sitting next to them.
-// The thing being guessed is an account, so that is the thing to meter.
+// Login is metered by source address, and that is a change from how this
+// started. It was per-account, on the reasoning that a company behind one
+// office router shares an IP and an IP budget spent by one person would lock
+// out everybody sitting next to them. That reasoning was right about the
+// danger and wrong about the conclusion: the danger comes from the window
+// being long, not from the key being an address. With a sixty-second window,
+// a whole office has to get twenty passwords wrong in one minute to collide,
+// and the collision costs them a minute.
 //
-// Deliberately only these two. A general request-rate limit is a different
-// mechanism answering a different question, and the routes that need one most
+// So the two counters now split the way ERPNext's do. This one asks "is this
+// source attacking" — which is the only question that can catch somebody
+// working through a thousand different accounts one guess each, where every
+// per-account counter sits at one and nothing ever fires. iam keeps the
+// per-account counter, which asks "is this account under attack".
+//
+// Deliberately not a general request-rate limit. The routes that need one most
 // (the tracking pixel, inline images) cannot be metered by identity at all —
 // they are meant to be fetched by strangers with no session. Those belong
 // upstream, in nginx or a CDN, where per-IP buckets already exist.
@@ -33,11 +44,12 @@ const (
 	throttleLogin      = "login"
 	throttleMailVerify = "mailverify"
 
-	// Ten wrong passwords in a quarter of an hour. Roomy for somebody who
-	// cannot remember which of their two passwords this is, and forty guesses
-	// an hour for somebody working through a list.
-	loginMaxFailures = 10
-	loginWindow      = 15 * time.Minute
+	// Twenty wrong passwords from one address in a minute. Sized for a shared
+	// office egress rather than for one person: twenty people each mistyping
+	// once inside the same minute is not a thing that happens, and somebody
+	// spraying a list passes it in seconds.
+	loginMaxFailures = 20
+	loginWindow      = 60 * time.Second
 
 	// Tighter, because each attempt is a real login to Gmail or 263 with the
 	// address and code the caller supplied. Guessing here does not just cost
@@ -228,4 +240,35 @@ func positiveTTL(d, fallback time.Duration) time.Duration {
 		return d
 	}
 	return fallback
+}
+
+// clientAddr is who is asking, as well as this layer can tell.
+//
+// RemoteAddr by default, because it is the only value the caller cannot
+// choose. X-Forwarded-For is trivially forged — anybody can send one — so
+// reading it unconditionally would turn the per-source limit into a per-header
+// limit, which is no limit at all: a sprayer would put a different fake
+// address on every request and never spend a budget.
+//
+// So it is read only when the deployment says a proxy is in front, and the
+// leftmost entry is taken, which is what a proxy that appends its own view
+// writes. That is correct exactly when the proxy overwrites rather than
+// appends — which nginx's `proxy_set_header X-Forwarded-For $remote_addr`
+// does, and which is the configuration this flag is documenting a dependency
+// on. Turn it on without that and the limit is spoofable again.
+func clientAddr(r *http.Request, trustProxy bool) string {
+	if trustProxy {
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			if first, _, found := strings.Cut(fwd, ","); found {
+				return strings.TrimSpace(first)
+			}
+			return strings.TrimSpace(fwd)
+		}
+	}
+	// The port varies per connection and would give every attempt its own
+	// bucket, so only the host half is the identity.
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }

@@ -20,11 +20,18 @@ import (
 //
 //	text only, no files      -> text/plain
 //	html, no files           -> multipart/alternative
-//	anything with files      -> multipart/mixed wrapping the above
+//	html with inline images  -> multipart/related wrapping the alternative
+//	anything with files      -> multipart/mixed wrapping whichever of the above
 //
-// Inline images are already absolute URLs by the time they reach here (they
-// are served from the public image route), so there is no multipart/related
-// layer and no Content-ID juggling.
+// The related layer exists so a signature logo travels *with* the message
+// instead of being fetched from us afterwards. Remote images are blocked by
+// default in Outlook and Thunderbird and proxied by Gmail, so a linked logo is
+// one nobody reliably sees; an inline part raises no such question, because
+// looking at it tells the sender nothing. It also removes the dependency on a
+// publicly reachable address altogether.
+//
+// The open pixel is deliberately *not* inlined: it works precisely because the
+// recipient has to come and fetch it. It stays an absolute URL.
 func buildMessage(m app.Outbound, fromEmail, domain string, files []fileBlob, now time.Time) ([]byte, string, error) {
 	messageID := fmt.Sprintf("<%s@%s>", m.MessageKey, domain)
 
@@ -85,17 +92,13 @@ func buildMessage(m app.Outbound, fromEmail, domain string, files []fileBlob, no
 		buf.Write(body.Bytes())
 
 	case m.Format == "HTML":
-		var body bytes.Buffer
-		alt := multipart.NewWriter(&body)
-		h("Content-Type", "multipart/alternative; boundary="+alt.Boundary())
+		ct, body, err := buildBodyBlock(m)
+		if err != nil {
+			return nil, "", err
+		}
+		h("Content-Type", ct)
 		buf.WriteString("\r\n")
-		if err := writeAlternative(alt, m); err != nil {
-			return nil, "", err
-		}
-		if err := alt.Close(); err != nil {
-			return nil, "", err
-		}
-		buf.Write(body.Bytes())
+		buf.Write(body)
 
 	default:
 		h("Content-Type", `text/plain; charset="utf-8"`)
@@ -122,21 +125,87 @@ func writeBodyPart(w *multipart.Writer, m app.Outbound) error {
 		return err
 	}
 
-	var inner bytes.Buffer
-	alt := multipart.NewWriter(&inner)
-	if err := writeAlternative(alt, m); err != nil {
+	ct, inner, err := buildBodyBlock(m)
+	if err != nil {
 		return err
+	}
+	p, err := w.CreatePart(textproto.MIMEHeader{"Content-Type": {ct}})
+	if err != nil {
+		return err
+	}
+	_, err = p.Write(inner)
+	return err
+}
+
+// buildBodyBlock renders the body and whatever must stay glued to it, and
+// reports the Content-Type its container has to declare.
+//
+// One function for both callers — the top-level HTML case and the one nested
+// inside a multipart/mixed — because the alternative-versus-related decision
+// is the same decision in both places, and having made it twice is how the two
+// drift apart.
+func buildBodyBlock(m app.Outbound) (string, []byte, error) {
+	var alternative bytes.Buffer
+	alt := multipart.NewWriter(&alternative)
+	if err := writeAlternative(alt, m); err != nil {
+		return "", nil, err
 	}
 	if err := alt.Close(); err != nil {
-		return err
+		return "", nil, err
 	}
+	altType := "multipart/alternative; boundary=" + alt.Boundary()
+	if len(m.InlineImages) == 0 {
+		return altType, alternative.Bytes(), nil
+	}
+
+	// related, with the alternative as its root part: the pictures are not
+	// alternatives to the text, they are pieces of it.
+	var related bytes.Buffer
+	rel := multipart.NewWriter(&related)
+	root, err := rel.CreatePart(textproto.MIMEHeader{"Content-Type": {altType}})
+	if err != nil {
+		return "", nil, err
+	}
+	if _, err := root.Write(alternative.Bytes()); err != nil {
+		return "", nil, err
+	}
+	for _, img := range m.InlineImages {
+		if err := writeInlinePart(rel, img); err != nil {
+			return "", nil, err
+		}
+	}
+	if err := rel.Close(); err != nil {
+		return "", nil, err
+	}
+	// type= names the root part. RFC 2387 asks for it; Gmail omits it and
+	// clients cope either way, but saying which part is the document rather
+	// than leaving a reader to guess costs nothing.
+	return `multipart/related; type="multipart/alternative"; boundary=` + rel.Boundary(),
+		related.Bytes(), nil
+}
+
+// writeInlinePart writes a picture the body refers to by Content-ID.
+//
+// Angle brackets around the identifier are not decoration: RFC 2392 defines
+// cid: as referring to the Content-ID *without* them, and a reader that takes
+// the header literally will not match "cid:abc" against "abc" if the header
+// said "<abc>" — or, worse, will match neither way if they are missing here.
+func writeInlinePart(w *multipart.Writer, img app.InlineImage) error {
+	ct := img.ContentType
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+	disp := mime.FormatMediaType("inline", map[string]string{"filename": img.FileName})
 	p, err := w.CreatePart(textproto.MIMEHeader{
-		"Content-Type": {"multipart/alternative; boundary=" + alt.Boundary()},
+		"Content-Type":              {ct},
+		"Content-Transfer-Encoding": {"base64"},
+		"Content-ID":                {"<" + img.ContentID + ">"},
+		"Content-Disposition":       {disp},
 	})
 	if err != nil {
 		return err
 	}
-	_, err = p.Write(inner.Bytes())
+	_, err = p.Write([]byte(wrapBase64(img.Data)))
 	return err
 }
 

@@ -1,25 +1,31 @@
--- name: GetTenantByDomain :one
--- The login page has no idea which company somebody belongs to; the domain of
--- the address they type is what says so. A primary-key hit, because this runs
--- on every login attempt including every failed one.
-SELECT d.tenant_id, t.name AS tenant_name, t.status AS tenant_status
-FROM tenant_domains d
-JOIN tenants t ON t.id = d.tenant_id
-WHERE d.domain = lower(sqlc.arg(domain)::text);
-
 -- name: GetUserByEmail :one
+-- The whole of login's lookup, in one round trip and without asking the
+-- domain anything.
+--
+-- The domain used to name the tenant, which only works while a domain belongs
+-- to one company. gmail.com, qq.com and 163.com belong to everybody, and
+-- tenant_domains.domain is a PRIMARY KEY — so the second company running on
+-- QQ mail could not be onboarded at all. The address itself is now unique
+-- system-wide (see 00023), so it identifies the account directly and the
+-- account carries its own tenant_id.
+--
+-- tenants is joined rather than queried after, because a suspended company
+-- has to be refused and a second round trip on every login attempt — including
+-- every failed one — is a cost paid for nothing.
+--
 -- lower() on both sides: an address is case-insensitive in practice, and
 -- "Alice@" must not be a second account from "alice@". email_verified_at rides
 -- along because login has to refuse an account whose mailbox was never proved
--- to exist, and doing it in the same round trip keeps that check free.
+-- to exist, and doing it here keeps that check free.
 SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
        u.locked_until,
        e.name AS employee_name, e.code AS employee_code, e.department_id,
-       e.status AS employee_status, e.email_verified_at
+       e.status AS employee_status, e.email_verified_at,
+       t.status AS tenant_status
 FROM users u
 JOIN employees e ON e.id = u.employee_id
-WHERE u.tenant_id = sqlc.arg(tenant_id)::bigint
-  AND e.email <> ''
+JOIN tenants t ON t.id = u.tenant_id
+WHERE e.email <> ''
   AND lower(e.email) = lower(sqlc.arg(email)::text);
 
 -- name: GetUserByUsername :one
@@ -39,15 +45,21 @@ SET failed_count = 0, locked_until = NULL, last_login_at = now(), updated_at = n
 WHERE id = $1;
 
 -- name: RecordLoginFailure :one
--- Sets a deadline instead of a permanent state, and only ever pushes it
--- forward from now — so the fifth wrong password locks for fifteen minutes
--- and the sixth does not extend that to thirty. Without the greatest(), an
--- attacker who keeps guessing keeps renewing the lock they put on somebody
--- else, which is the punishment landing on the wrong person.
+-- Ten wrong passwords buy sixty seconds, and only ever pushed forward from
+-- now — the eleventh does not extend it to two minutes. Without the
+-- greatest(), somebody guessing keeps renewing the lock they put on another
+-- person, which is the punishment landing on the wrong side.
+--
+-- The numbers are ERPNext's, and they are a pair rather than two choices. A
+-- short window is what makes this survivable when it is aimed at somebody on
+-- purpose: sixty seconds of being shut out, not a quarter of an hour. What
+-- pays for it is that ten guesses a minute is only harmless against a
+-- password worth having, which is why the strength policy landed in the same
+-- change and why neither may be relaxed without the other.
 UPDATE users
 SET failed_count = failed_count + 1,
     locked_until = CASE
-        WHEN failed_count + 1 >= 5 THEN greatest(locked_until, now() + interval '15 minutes')
+        WHEN failed_count + 1 >= 10 THEN greatest(locked_until, now() + interval '60 seconds')
         ELSE locked_until
     END,
     updated_at = now()

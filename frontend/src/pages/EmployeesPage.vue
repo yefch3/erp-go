@@ -101,6 +101,13 @@
             </el-button>
             <el-button v-if="!row.username" link type="primary" @click="openAccount(row)">{{ t('employees.openAccount') }}</el-button>
             <el-button v-else link type="primary" @click="openReset(row)">{{ t('employees.resetPassword') }}</el-button>
+            <!-- Ends the sessions this person is holding right now. Its own
+                 action rather than part of 标记离职, because a stolen laptop is
+                 not a resignation — and because somebody who is still employed
+                 sometimes needs signing out of a machine they no longer have. -->
+            <el-button v-if="row.username" link type="warning" @click="revokeSessions(row)">
+              {{ t('employees.revokeSessions') }}
+            </el-button>
             <el-button v-if="row.status === 'ACTIVE'" link type="danger" @click="deactivate(row)">
               {{ t('employees.markLeft') }}
             </el-button>
@@ -458,6 +465,17 @@ async function deactivate(row: Employee) {
   await del(`/employees/${row.id}`)
   ElMessage.success(t('employees.markedLeft'))
   load()
+}
+
+// Confirmed, because it is not undoable and it interrupts somebody: whoever
+// is holding that session is thrown back to the login page mid-task.
+async function revokeSessions(row: Employee) {
+  await ElMessageBox.confirm(
+    t('employees.confirmRevoke', { name: row.name }),
+    t('employees.revokeSessions'),
+  )
+  await post(`/employees/${row.id}/revoke-sessions`)
+  ElMessage.success(t('employees.sessionsRevoked', { name: row.name }))
 }
 
 async function reinstate(row: Employee) {

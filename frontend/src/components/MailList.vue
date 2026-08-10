@@ -104,7 +104,7 @@
            was, so the row does not reflow under the cursor and the next row
            down stays where the eye left it. -->
       <div class="tail">
-        <time class="when" :datetime="m.receivedAt">{{ shortTime(m.receivedAt) }}</time>
+        <time class="when" :datetime="m.receivedAt" :title="zonedStamp(m.receivedAt)">{{ listTime(m.receivedAt) }}</time>
         <div class="acts">
           <el-tooltip
             v-for="a in actionsFor(m)"
@@ -131,6 +131,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { listTime, zonedStamp } from '../lib/zonedtime'
 import {
   Box,
   CircleCheck,
@@ -288,26 +289,6 @@ function actionsFor(m: MailRow) {
 function ariaFor(m: MailRow) {
   const state = m.isRead ? '' : t('emails.unreadOne') + ', '
   return `${state}${m.fromName || m.fromEmail}: ${m.subject || t('emails.noSubject')}`
-}
-
-function shortTime(v: string) {
-  if (!v) return ''
-  const at = new Date(v)
-  if (Number.isNaN(at.getTime())) return v.slice(0, 16).replace('T', ' ')
-  // Gmail's rule, and it is the right one: this year needs a day, older mail
-  // needs a year, and today only needs the hour.
-  const now = new Date()
-  const sameDay =
-    at.getFullYear() === now.getFullYear() &&
-    at.getMonth() === now.getMonth() &&
-    at.getDate() === now.getDate()
-  if (sameDay) {
-    return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(at)
-  }
-  if (at.getFullYear() === now.getFullYear()) {
-    return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(at)
-  }
-  return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' }).format(at)
 }
 </script>
 

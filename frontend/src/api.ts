@@ -56,8 +56,35 @@ http.interceptors.request.use((cfg) => {
   return cfg
 })
 
+// The gateway hands back a replacement token once the current one is half
+// spent. Picking it up here, rather than in any page, is what makes staying
+// signed in a property of using the system at all: every request already goes
+// through this interceptor, so no screen has to remember to renew.
+//
+// Before the blob check, and before the envelope check, because the header
+// arrives on a download and on a business-level failure too. Skipping those
+// would mean the one person who spent the afternoon exporting conversations
+// got signed out for their trouble.
+const RENEWED_TOKEN_HEADER = 'x-renewed-token'
+
+function adoptRenewedToken(resp: { headers?: unknown }) {
+  const headers = resp.headers as Record<string, string> | undefined
+  const fresh = headers?.[RENEWED_TOKEN_HEADER]
+  // Only while a session exists. Without this, a response that arrives just
+  // after 退出登录 would quietly put a working token back.
+  if (fresh && localStorage.getItem('token')) {
+    localStorage.setItem('token', fresh)
+  }
+}
+
 http.interceptors.response.use(
   (resp) => {
+    adoptRenewedToken(resp)
+    // A download is not an envelope. Everything else this API returns is
+    // { success, data }; an exported conversation is the document itself, and
+    // checking .success on a Blob finds undefined and rejects a response that
+    // arrived perfectly.
+    if (resp.config.responseType === 'blob') return resp
     const env = resp.data as Envelope<unknown>
     if (!env.success) {
       if (shouldToast(resp.config)) {
@@ -67,8 +94,23 @@ http.interceptors.response.use(
     }
     return resp
   },
-  (err) => {
-    const env = err.response?.data as Envelope<unknown> | undefined
+  async (err) => {
+    // A renewal can ride on a failed request too — a 404 or a validation
+    // error is still proof the person is here and working.
+    if (err.response) adoptRenewedToken(err.response)
+    let env = err.response?.data as Envelope<unknown> | undefined
+    // A download that failed still failed with an envelope — the server does
+    // not know yet that it is about to write bytes. responseType turned it
+    // into a Blob on the way in, and without reading it back the toast would
+    // say "Request failed with status code 403" where the server had written
+    // 请先验证邮箱授权码.
+    if (env instanceof Blob) {
+      try {
+        env = JSON.parse(await env.text()) as Envelope<unknown>
+      } catch {
+        env = undefined
+      }
+    }
     if (err.response?.status === 401) {
       expired()
       return Promise.reject(env ?? err)
@@ -137,4 +179,61 @@ export async function put<T>(url: string, body?: object): Promise<T> {
 export async function del<T>(url: string, body?: object): Promise<T> {
   const resp = await http.delete<Envelope<T>>(url, { data: body })
   return resp.data.data as T
+}
+
+export interface Downloaded {
+  blob: Blob
+  fileName: string
+  text: () => Promise<string>
+}
+
+/**
+ * A file, fetched rather than linked.
+ *
+ * `<a href download>` would be simpler and cannot be used: the mailbox unlock
+ * travels in a header, and a browser navigation carries no headers of ours.
+ * So the page fetches the bytes and hands them to the user itself.
+ */
+export async function download(url: string, params?: object): Promise<Downloaded> {
+  const resp = await http.get<Blob>(url, { params, responseType: 'blob' })
+  return {
+    blob: resp.data,
+    fileName: fileNameFrom(String(resp.headers['content-disposition'] ?? '')),
+    text: () => resp.data.text(),
+  }
+}
+
+/**
+ * The name the server gave the file.
+ *
+ * RFC 6266 sends it twice — `filename*` percent-encoded as UTF-8 for anything
+ * modern, `filename` in plain ASCII as the fallback. The extended form is the
+ * one that still says 邮件会话 rather than ____, so it is read first.
+ */
+export function fileNameFrom(disposition: string): string {
+  const extended = /filename\*=UTF-8''([^;]+)/i.exec(disposition)
+  if (extended) {
+    try {
+      return decodeURIComponent(extended[1].trim())
+    } catch {
+      /* a malformed encoding falls through to the plain form */
+    }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(disposition)
+  return plain ? plain[1].trim() : ''
+}
+
+/** Hand a fetched file to the user as a download. */
+export function saveBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  // Revoked on the next tick rather than immediately: Safari has not finished
+  // reading the object URL when click() returns, and freeing it there gives a
+  // zero-byte file.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }

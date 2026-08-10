@@ -33,6 +33,16 @@
       <el-button link class="rail-lock" @click="lockMailbox">
         🔒 {{ t('mailGate.signOut') }}
       </el-button>
+      <!-- Beside 退出邮箱 and 邮箱设置 rather than in a settings page of its
+           own: a signature is part of writing mail, not a system setting. -->
+      <el-button
+        v-if="auth.can('mail:email:write')"
+        link
+        class="rail-lock"
+        @click="signaturesOpen = true"
+      >
+        ✍️ {{ t('menu.signatures') }}
+      </el-button>
       <el-button v-if="isAdmin" link class="rail-lock rail-host" @click="hostOpen = true">
         ⚙️ {{ t('mailGate.hostSettings') }}
       </el-button>
@@ -83,7 +93,7 @@
             <div class="sub">{{ t('emails.inboundTo', { to: openedInbound.toEmail }) }}</div>
           </div>
           <span class="grow" />
-          <span class="sub in-when">
+          <span class="sub in-when" :title="zonedStamp(openedInbound.sentAt || openedInbound.receivedAt)">
             {{ shortTime(openedInbound.sentAt || openedInbound.receivedAt) }}
           </span>
         </div>
@@ -110,6 +120,26 @@
               </template>
             </el-dropdown>
           </template>
+          <!-- Taking the exchange out of the system. A split button because
+               there are two errands behind one intent: print it now for the
+               person standing next to you, or save the file to attach to
+               something. Both go through the same audited endpoint. -->
+          <el-dropdown
+            v-if="canExport && openedInbound.threadKey"
+            size="small"
+            split-button
+            :disabled="exporting"
+            @click="printThread"
+          >
+            {{ t('emails.exportPrint') }}
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="saveThread">
+                  {{ t('emails.exportSave') }}
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-button
             v-if="folder === 'junk'"
             size="small"
@@ -159,17 +189,19 @@
               <span class="strong">{{ it.who || it.counterparty }}</span>
               <span class="sub ellipsis">{{ it.counterparty }}</span>
               <span class="grow" />
-              <span class="sub">{{ shortTime(it.at) }}</span>
+              <span class="sub" :title="zonedStamp(it.at)">{{ shortTime(it.at) }}</span>
             </button>
             <div v-show="isThreadOpen(it)" class="thread-body">
               <MailBody v-if="it.bodyFormat === 'HTML'" :html="it.body" />
               <pre v-else class="in-text">{{ it.body }}</pre>
+              <QuotedHistory v-if="it.quoted" :html="it.quoted" />
             </div>
           </div>
         </template>
         <template v-else>
           <MailBody v-if="openedInbound.bodyHtml" :html="openedInbound.bodyHtml" />
           <pre v-else class="in-text">{{ openedInbound.bodyText }}</pre>
+          <QuotedHistory v-if="openedInbound.quotedHtml" :html="openedInbound.quotedHtml" />
         </template>
         <template v-if="openedInbound.attachments?.length">
           <el-divider />
@@ -421,7 +453,7 @@
         </el-table-column>
         <el-table-column :label="t('emails.savedAt')" width="160">
           <template #default="{ row }">
-            <span class="sub">{{ shortTime(row.updatedAt) }}</span>
+            <span class="sub" :title="zonedStamp(row.updatedAt)">{{ shortTime(row.updatedAt) }}</span>
           </template>
         </el-table-column>
         <el-table-column :label="common('actions')" width="90">
@@ -552,7 +584,7 @@
         <el-table-column :label="t('emails.suppressDetail')" min-width="260">
           <template #default="{ row }">
             <div class="ellipsis" :title="row.detail">{{ row.detail || '—' }}</div>
-            <div class="sub">{{ shortTime(row.createdAt) }}</div>
+            <div class="sub" :title="zonedStamp(row.createdAt)">{{ shortTime(row.createdAt) }}</div>
           </template>
         </el-table-column>
         <el-table-column :label="common('actions')" width="100">
@@ -626,6 +658,7 @@
   <!-- Outside the locked/unlocked branches: an administrator may need the
        host settings before anybody can sign in at all. -->
   <MailHostDialog v-model="hostOpen" />
+  <MailSignatureDialog v-model="signaturesOpen" />
 
   <!-- Preview. Rendered from the storage origin rather than ours, so the file
        cannot reach this page's session even if it tries — and only images and
@@ -667,19 +700,22 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { useRoute, useRouter, type LocationQuery } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { del, get, http, mailHostRequest, post } from '../api'
+import { del, download, get, http, mailHostRequest, post, saveBlob } from '../api'
+import { shortTime, zonedStamp } from '../lib/zonedtime'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import EmailComposer from '../components/EmailComposer.vue'
 import MailReader, { type Mail } from '../components/MailReader.vue'
 import MailboxGate from '../components/MailboxGate.vue'
 import MailHostDialog from '../components/MailHostDialog.vue'
+import MailSignatureDialog from '../components/MailSignatureDialog.vue'
 import MailList from '../components/MailList.vue'
 // Received mail renders inside a sandboxed frame. It carries the sender's own
 // stylesheet now, and a stylesheet injected into this page would be a stranger
 // styling the ERP — which is exactly what happened when these two sites were
 // left on v-html.
 import MailBody from '../components/MailBody.vue'
+import QuotedHistory from '../components/QuotedHistory.vue'
 import {
   Box,
   CircleClose,
@@ -720,6 +756,7 @@ interface InboundMail {
   receivedAt: string
   sentAt: string
   bodyHtml?: string
+  quotedHtml?: string
   bodyText?: string
   attachments?: {
     id: string
@@ -750,6 +787,7 @@ const auth = useAuthStore()
 const canWrite = computed(() => auth.can('mail:email:write'))
 const canSuppress = computed(() => auth.can('mail:suppression:write'))
 const isAdmin = computed(() => auth.can('iam:role:write'))
+const canExport = computed(() => auth.can('mail:email:export'))
 
 // An icon per folder. Text alone made the rail a list of similar-length words
 // that had to be read; the icon is what the eye actually navigates by once the
@@ -990,6 +1028,7 @@ const suppressForm = reactive({ email: '', reason: 'UNSUBSCRIBE', detail: '' })
 // gate at somebody who is already unlocked.
 const locked = ref<boolean | null>(null)
 const hostOpen = ref(false)
+const signaturesOpen = ref(false)
 
 onMounted(async () => {
   // Back from Google's login page. On success the fresh grant is verified
@@ -1170,8 +1209,9 @@ async function cancelScheduled(row: Scheduled) {
   loadDraftCount()
 }
 
-// The scheduled time, on the reader's own clock. shortTime slices the string
-// and would show UTC, which is the one reading nobody scheduled by.
+// The scheduled time, spelled out in the reader's language rather than the
+// numeric shape the lists use: a send that has not happened yet is read as a
+// date ("1 Mar 2026, 16:00"), not scanned as a column.
 function localTime(v: string) {
   if (!v) return ''
   const at = new Date(v)
@@ -1370,6 +1410,7 @@ interface ThreadItem {
   id: string
   subject: string
   body: string
+  quoted?: string
   bodyFormat: string
   counterparty: string
   who: string
@@ -1391,6 +1432,80 @@ function toggleThreadItem(it: ThreadItem) {
     next.add(k)
   }
   expandedThread.value = next
+}
+
+// ------------------------------------------------------------------- export
+// Taking the exchange out of the ERP: "send the whole negotiation to the boss
+// / to the customs broker" is a real errand and today it is done by forwarding
+// thirty mails one at a time.
+//
+// The document is built on the server, not here. Three reasons, and the third
+// is the one that decided it: the same bytes have to be what the audit log
+// recorded; the assembly needs both halves of the conversation, and the sent
+// half is not on this page; and the transcript must not carry the sender's
+// HTML, which is a judgement about what leaves the company rather than about
+// how a page looks.
+const exporting = ref(false)
+
+async function fetchTranscript() {
+  const key = openedInbound.value?.threadKey
+  if (!key || exporting.value) return null
+  exporting.value = true
+  try {
+    return await download('/mail-threads/export', {
+      key,
+      // The reader's own clock and language, which only the browser knows.
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      lang: locale.value,
+    })
+  } catch {
+    // Already announced by the interceptor; a second message would say the
+    // same thing twice.
+    return null
+  } finally {
+    exporting.value = false
+  }
+}
+
+async function saveThread() {
+  const file = await fetchTranscript()
+  if (file) saveBlob(file.blob, file.fileName)
+}
+
+async function printThread() {
+  const file = await fetchTranscript()
+  if (file) printDocument(await file.text())
+}
+
+// Printing through a frame of our own rather than a new tab.
+//
+// window.open after an await is what a popup blocker exists to stop, and the
+// failure is silent — the click "does nothing". A frame is always allowed.
+// It also keeps the sender's document out of a top-level page at our origin,
+// which matters less here than it would with the original HTML but costs
+// nothing to keep true.
+function printDocument(html: string) {
+  const frame = document.createElement('iframe')
+  frame.setAttribute('aria-hidden', 'true')
+  // Hidden, but laid out. display:none is not laid out and prints blank.
+  frame.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden;'
+  frame.srcdoc = html
+  frame.onload = () => {
+    const win = frame.contentWindow
+    if (!win) {
+      frame.remove()
+      return
+    }
+    win.focus()
+    win.print()
+    // Removing the frame while the dialog is still open cancels the job in
+    // Safari, so it goes afterwards — with a timer in case a browser never
+    // fires afterprint, which is the case in more of them than it should be.
+    const drop = () => frame.remove()
+    win.addEventListener('afterprint', drop, { once: true })
+    setTimeout(drop, 120_000)
+  }
+  document.body.appendChild(frame)
 }
 
 // Housekeeping straight from a list row, without opening the mail. Each of
@@ -1786,11 +1901,6 @@ function statusType(s: string): 'success' | 'warning' | 'danger' | 'info' {
   if (s === 'QUEUED' || s === 'SENDING') return 'info'
   if (s === 'HARD_BOUNCED' || s === 'COMPLAINED' || s === 'FAILED') return 'danger'
   return 'warning'
-}
-
-function shortTime(v: string) {
-  if (!v) return ''
-  return v.replace('T', ' ').replace('Z', '').slice(0, 16)
 }
 
 // A stable colour per correspondent, so the same customer looks the same every

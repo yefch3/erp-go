@@ -143,6 +143,22 @@ func (s *Server) createSignature(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) updateSignature(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.UpdateSignatureRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	// The id comes from the path, not the body: two places to say which row
+	// is one place too many, and the path is the one the route matched on.
+	req.Id = idFromPath(r)
+	resp, err := s.Emails.UpdateSignature(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) deleteSignature(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Emails.DeleteSignature(r.Context(), &mailv1.DeleteSignatureRequest{Id: idFromPath(r)})
 	if err != nil {
@@ -181,6 +197,45 @@ func (s *Server) addSuppression(w http.ResponseWriter, r *http.Request) {
 func (s *Server) removeSuppression(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Emails.RemoveSuppression(r.Context(), &mailv1.RemoveSuppressionRequest{
 		Email: r.URL.Query().Get("email"),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// listCustomerCountries and contactsInCountry are the address book grouped
+// the way an exporter actually thinks about it.
+//
+// Both sit with the mail handlers rather than the customer ones for the same
+// reason listMailingContacts does: they are shaped by what the composer needs,
+// not by what a customer record is. And they carry the mail write permission,
+// because that is what they are for — reading the customer list is a different
+// question with a different answer.
+func (s *Server) listCustomerCountries(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Customers.ListCustomerCountries(r.Context(), &mdv1.ListCustomerCountriesRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) contactsInCountry(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	resp, err := s.Customers.ContactsInCountry(r.Context(), &mdv1.ContactsInCountryRequest{
+		CountryCode: q.Get("code"),
+		// Defaults to every contact at the customer, and the default is opt-out
+		// rather than opt-in on purpose: in this trade the counterparty is a
+		// company, not a person — the buyer, the shipping clerk and whoever
+		// signs all expect to be on the thread. The expensive mistake is the
+		// quiet one, a price update that never reached the person who decides.
+		//
+		// Written as "== primary" rather than "!= all" so that a caller who
+		// sends nothing, or sends a value nobody anticipated, lands on the
+		// documented default instead of on whichever branch the negation left.
+		PrimaryOnly: q.Get("scope") == "primary",
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -268,6 +323,22 @@ func (s *Server) registerMailImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp, err := s.Emails.RegisterImage(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// importMailImage takes an address instead of a file. The mail service is
+// what fetches it — the gateway would be the wrong machine to point at an
+// arbitrary URL, and the guarded fetcher already lives there.
+func (s *Server) importMailImage(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.ImportImageRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Emails.ImportImage(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

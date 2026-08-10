@@ -101,6 +101,11 @@ type SyncConfig struct {
 	HistoryCap int64
 	// How many mailboxes may sync at once. See syncfleet.go.
 	Concurrency int
+	// Where a recipient's mail client reaches us — the same address the
+	// tracking pixel is built from. The image cache needs it for one reason
+	// only: to recognise our own pixel when a customer quotes our mail back
+	// at us, and refuse to fetch it. See imagecache.go.
+	PublicBaseURL string
 }
 
 func (c SyncConfig) withDefaults() SyncConfig {
@@ -544,6 +549,9 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 		if err := s.q.InsertInboundAttachment(ctx, store.InsertInboundAttachmentParams{
 			TenantID: tenantID, InboundID: id, FileName: a.FileName,
 			ContentType: a.ContentType, FileSize: int64(len(a.Data)), FileKey: key,
+			// What the body points at when it embeds this part. Empty for an
+			// ordinary attachment, which is most of them.
+			ContentID: a.ContentID,
 		}); err != nil {
 			s.log.Warn("could not record an incoming attachment", "file", a.FileName, "err", err)
 		}

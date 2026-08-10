@@ -204,10 +204,11 @@ RETURNING id;
 
 -- name: InsertInboundAttachment :exec
 INSERT INTO email_inbound_attachments (
-    tenant_id, inbound_id, file_name, content_type, file_size, file_key
+    tenant_id, inbound_id, file_name, content_type, file_size, file_key, content_id
 ) VALUES (
     sqlc.arg(tenant_id)::bigint, sqlc.arg(inbound_id)::bigint, sqlc.arg(file_name)::text,
-    sqlc.arg(content_type)::text, sqlc.arg(file_size)::bigint, sqlc.arg(file_key)::text
+    sqlc.arg(content_type)::text, sqlc.arg(file_size)::bigint, sqlc.arg(file_key)::text,
+    sqlc.arg(content_id)::text
 );
 
 -- name: FindMessageByKey :one
@@ -485,7 +486,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 RETURNING account_id, folder, imap_uid;
 
 -- name: ListInboundAttachments :many
-SELECT id, file_name, content_type, file_size, file_key
+SELECT id, file_name, content_type, file_size, file_key, content_id
 FROM email_inbound_attachments
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND inbound_id = sqlc.arg(inbound_id)::bigint
@@ -1068,3 +1069,36 @@ SELECT direction, id, subject, snippet, counterparty, at
 FROM (SELECT * FROM ours UNION ALL SELECT * FROM theirs) conversation
 ORDER BY at DESC, id DESC
 LIMIT sqlc.arg(row_limit)::int;
+
+-- name: ListInboundWithUnresolvedCID :many
+-- Messages whose body points at a part by Content-ID that no stored row
+-- satisfies.
+--
+-- These are not a curiosity: until 2026-08-10 the parser only kept a part that
+-- carried a filename, and an image pasted into Gmail's composer carries none —
+-- only a Content-ID. Those parts were read past and dropped, so the body was
+-- left citing something that does not exist and the reader drew an empty box.
+--
+-- The raw message is required, because recovery means parsing it again; a row
+-- whose original was never stored cannot be helped and is left out rather than
+-- returned for ever.
+SELECT i.id, i.raw_key, i.account_id
+FROM email_inbound i
+WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND i.raw_key <> ''
+  AND i.body_html LIKE '%cid:%'
+  AND EXISTS (
+      SELECT 1 FROM regexp_matches(i.body_html, 'cid:([^"'']+)', 'g') AS m(cid)
+      WHERE NOT EXISTS (
+          SELECT 1 FROM email_inbound_attachments a
+          WHERE a.inbound_id = i.id AND a.content_id = m.cid[1]
+      )
+  )
+ORDER BY i.id DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: CountInboundAttachmentWithCID :one
+SELECT count(*) FROM email_inbound_attachments
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND inbound_id = sqlc.arg(inbound_id)::bigint
+  AND content_id = sqlc.arg(content_id)::text;

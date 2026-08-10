@@ -26,18 +26,29 @@ const (
 
 // ServerInterceptors is the standard chain for every service, in order:
 // recovery (outermost), operator context, request log, error mapping.
+//
+// Reading the signing key here rather than at first request is deliberate: a
+// service missing it dies on start, with one readable line, instead of
+// answering every call with an error nobody can place. See SigningKey.
 func ServerInterceptors(log *slog.Logger) grpc.ServerOption {
+	_ = SigningKey()
 	return grpc.ChainUnaryInterceptor(
 		unaryRecovery(log),
-		unaryOperator(),
+		unaryOperator(log),
 		unaryLog(log),
 		unaryError(log),
 	)
 }
 
-// unaryOperator restores the operator from incoming metadata.
-func unaryOperator() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo,
+// unaryOperator restores the operator from incoming metadata — and refuses
+// the call unless the metadata was signed by something holding our key.
+//
+// The identity used to be taken on trust. x-employee-id: 1 arrived as a plain
+// header and was read straight into this struct, so anything that could reach
+// the port was the administrator of every tenant. The verification below is
+// what makes the claims below it worth anything.
+func unaryOperator(log *slog.Logger) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler) (any, error) {
 		md, _ := metadata.FromIncomingContext(ctx)
 		op := Operator{
@@ -46,6 +57,17 @@ func unaryOperator() grpc.UnaryServerInterceptor {
 			Name:       decodeHeader(first(md, mdEmployeeName)),
 			IP:         first(md, mdIP),
 			TraceID:    first(md, mdTraceID),
+		}
+		// Verified against the claims exactly as they arrived, before the
+		// tenant default below rewrites one of them — the signature covers
+		// what the caller sent, not what we decided to make of it.
+		if err := verify(md, op, info.FullMethod, time.Now()); err != nil {
+			// The reason goes to the log, never to the caller. To them every
+			// rejection looks the same, because "your clock is off" and "your
+			// key is wrong" are useful to somebody probing and to nobody else.
+			log.Warn("refused an unsigned or badly signed call",
+				"method", info.FullMethod, "reason", err.Error())
+			return nil, status.Error(codes.Unauthenticated, "unauthenticated")
 		}
 		if op.TenantID == 0 {
 			op.TenantID = 1
@@ -118,7 +140,14 @@ func unaryRecovery(log *slog.Logger) grpc.UnaryServerInterceptor {
 func UnaryClientPropagator() grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any,
 		cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		if op, ok := OperatorFromContext(ctx); ok {
+		// The operator is optional; the signature is not.
+		//
+		// Background work — mailbox sync, the image cache, the backfills —
+		// calls other services with nobody logged in. Signing only when an
+		// operator is present would have left every one of those paths
+		// unauthenticated, which is precisely the half worth attacking.
+		op, _ := OperatorFromContext(ctx)
+		if op.TenantID != 0 || op.EmployeeID != 0 || op.Name != "" {
 			ctx = metadata.AppendToOutgoingContext(ctx,
 				mdTenantID, strconv.FormatInt(op.TenantID, 10),
 				mdEmployeeID, strconv.FormatInt(op.EmployeeID, 10),
@@ -126,6 +155,11 @@ func UnaryClientPropagator() grpc.UnaryClientInterceptor {
 				mdTraceID, op.TraceID,
 			)
 		}
+		ts := time.Now().Unix()
+		ctx = metadata.AppendToOutgoingContext(ctx,
+			mdTimestamp, strconv.FormatInt(ts, 10),
+			mdSignature, sign(op, ts, method),
+		)
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
 }

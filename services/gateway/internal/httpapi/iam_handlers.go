@@ -69,10 +69,29 @@ func (s *Server) createEmployee(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deactivateEmployee(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Directory.DeactivateEmployee(r.Context(), &iamv1.DeactivateEmployeeRequest{Id: idFromPath(r)})
+	id := idFromPath(r)
+	resp, err := s.Directory.DeactivateEmployee(r.Context(), &iamv1.DeactivateEmployeeRequest{Id: id})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
+	}
+	// Marking somebody as left already stops them signing in again. It did
+	// nothing about the session they are holding right now, so somebody
+	// walked out at noon and kept reading customer correspondence until their
+	// token expired the next morning. Closing the door and clearing the room
+	// are two separate acts and this is where they belong together.
+	//
+	// After the deactivation, not before: revoking first and then failing to
+	// deactivate would sign somebody out who is still employed. Best-effort,
+	// because the deactivation has already happened and reporting it as a
+	// failure would invite an administrator to press it again — the honest
+	// remedy is the 结束登录 button, which is right there.
+	if s.Revocations != nil {
+		op, _ := grpcx.OperatorFromContext(r.Context())
+		if rErr := s.Revocations.Revoke(r.Context(), op.TenantID, id); rErr != nil {
+			s.Log.Error("employee deactivated but their sessions were not revoked",
+				"employee", id, "err", rErr)
+		}
 	}
 	s.writeProto(w, resp)
 }

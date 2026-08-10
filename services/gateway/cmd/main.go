@@ -46,6 +46,10 @@ func dial(addr string) (*grpc.ClientConn, error) {
 }
 
 func run(log *slog.Logger) error {
+	// Read here so a missing key kills the gateway on start with one readable
+	// line. It is only used on outgoing calls, so without this the first
+	// symptom would be a panic in the middle of somebody's first request.
+	_ = grpcx.SigningKey()
 	cfg := config.Load()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -119,6 +123,13 @@ func run(log *slog.Logger) error {
 		}
 	}
 	unlock := httpapi.NewUnlockStore(cfg.RedisAddr, unlockTTL)
+	// Ends one person's sessions without ending everybody's. Reads come from
+	// an in-memory snapshot this loop keeps fresh, so an unreachable Redis
+	// keeps enforcing what was last known rather than signing out the company
+	// or quietly un-revoking somebody. See RevocationStore.
+	revocations := httpapi.NewRevocationStore(cfg.RedisAddr, log)
+	defer revocations.Close()
+	go revocations.Run(ctx)
 
 	// Failed-attempt budgets for login and mailbox verification. Redis rather
 	// than process memory so replicas share one count: three replicas each
@@ -158,13 +169,20 @@ func run(log *slog.Logger) error {
 		Shipping:         shippingv1.NewShippingServiceClient(shippingConn),
 		Emails:           mailv1.NewEmailServiceClient(ntConn),
 		Unlock:           unlock,
+		Revocations:      revocations,
 		Throttle:         throttle,
 		GoogleClientID:   os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
 		OAuthRedirectURL: oauthRedirect,
 		FrontendBaseURL:  frontendBase,
-		Live:             live,
-		JWTSecret:        cfg.JWTSecret,
-		Log:              log,
+		// Only when a proxy in front actually overwrites X-Forwarded-For.
+		// Off unless said so, because the header is caller-supplied and
+		// trusting it without such a proxy makes the per-source login limit
+		// spoofable — see clientAddr.
+		TrustProxyHeaders: os.Getenv("TRUST_PROXY_HEADERS") == "1",
+		Live:              live,
+		JWTSecret:         cfg.JWTSecret,
+		TokenTTL:          cfg.JWTTTL,
+		Log:               log,
 	}
 
 	httpSrv := &http.Server{

@@ -14,9 +14,17 @@ services:
       args: { SERVICE: iam }
     image: erp-go/iam:dev
     environment:
+      INTERNAL_SIGNING_KEY: ${INTERNAL_SIGNING_KEY:?set it in deploy/.env — openssl rand -hex 32}
       DB_DSN: postgres://erp_iam:erp_iam_pw@postgres:5432/erp_iam?sslmode=disable
       GRPC_PORT: "9001"
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      # Read by iam (which issues) and the gateway (which renews). Both must
+      # see the same value, so it is written from one variable in both places
+      # — a token renewed to a different length than login hands out is the
+      # kind of drift nobody notices until sessions end at odd times.
+      #
+      # Because the gateway renews on activity, this is an IDLE timeout.
+      JWT_TTL: ${JWT_TTL:-12h}
       # The first tenant, seeded only into an empty database.
       COMPANY_NAME: ${COMPANY_NAME:-AAA Industry Inc}
       # The domains that route to this company. gmail.com is here for
@@ -26,8 +34,28 @@ services:
       # production — a public mail domain must never route to a tenant.
       COMPANY_MAIL_DOMAINS: ${COMPANY_MAIL_DOMAINS:-aaaindustryinc.com,gmail.com}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-fangchen1101@gmail.com}
+    # Loopback only, like every service below it.
+    #
+    # These ports exist for a developer with grpcurl, and for nothing else: the
+    # services reach each other over the compose network by name, which does
+    # not use published ports at all. Deleting the whole block would work
+    # equally well and would cost a little convenience.
+    #
+    # Bound rather than deleted, and bound rather than firewalled, because of
+    # what these services are. None of them checks a JWT — the gateway does
+    # that once and passes the identity along as metadata, which is the right
+    # split only for as long as nobody else can reach them. Anyone who can
+    # open a socket here is an administrator of every tenant, no password
+    # required.
+    #
+    # A plain "9001:9001" binds 0.0.0.0. On a laptop that means the whole
+    # office wifi; on a cloud host it means the internet, where scanners find
+    # an open 5432 or 9001 within hours. And do not reach for ufw instead:
+    # Docker writes its own iptables rules ahead of ufw's, so a published port
+    # answers even when the firewall says it should not. The bind address is
+    # the control that actually holds.
     ports:
-      - "9001:9001"
+      - "127.0.0.1:9001:9001"
     networks: [infra]
     restart: unless-stopped
 
@@ -38,10 +66,11 @@ services:
       args: { SERVICE: masterdata }
     image: erp-go/masterdata:dev
     environment:
+      INTERNAL_SIGNING_KEY: ${INTERNAL_SIGNING_KEY:?set it in deploy/.env — openssl rand -hex 32}
       DB_DSN: postgres://erp_masterdata:erp_masterdata_pw@postgres:5432/erp_masterdata?sslmode=disable
       GRPC_PORT: "9002"
     ports:
-      - "9002:9002"
+      - "127.0.0.1:9002:9002"
     networks: [infra]
     restart: unless-stopped
 
@@ -52,10 +81,11 @@ services:
       args: { SERVICE: fx }
     image: erp-go/fx:dev
     environment:
+      INTERNAL_SIGNING_KEY: ${INTERNAL_SIGNING_KEY:?set it in deploy/.env — openssl rand -hex 32}
       DB_DSN: postgres://erp_fx:erp_fx_pw@postgres:5432/erp_fx?sslmode=disable
       GRPC_PORT: "9003"
     ports:
-      - "9003:9003"
+      - "127.0.0.1:9003:9003"
     networks: [infra]
     restart: unless-stopped
 
@@ -66,6 +96,7 @@ services:
       args: { SERVICE: product }
     image: erp-go/product:dev
     environment:
+      INTERNAL_SIGNING_KEY: ${INTERNAL_SIGNING_KEY:?set it in deploy/.env — openssl rand -hex 32}
       DB_DSN: postgres://erp_product:erp_product_pw@postgres:5432/erp_product?sslmode=disable
       GRPC_PORT: "9004"
       MASTERDATA_ADDR: masterdata:9002
@@ -80,7 +111,7 @@ services:
       SHIPPING_REMINDER_INTERVAL: 24h
       SHIPPING_REMINDER_BATCH_SIZE: "100"
     ports:
-      - "9004:9004"
+      - "127.0.0.1:9004:9004"
     networks: [infra]
     depends_on: [masterdata]
     restart: unless-stopped
@@ -92,13 +123,14 @@ services:
       args: { SERVICE: approval }
     image: erp-go/approval:dev
     environment:
+      INTERNAL_SIGNING_KEY: ${INTERNAL_SIGNING_KEY:?set it in deploy/.env — openssl rand -hex 32}
       DB_DSN: postgres://erp_approval:erp_approval_pw@postgres:5432/erp_approval?sslmode=disable
       GRPC_PORT: "9005"
       IAM_ADDR: iam:9001
       KAFKA_BROKERS: kafka:9092
       REDIS_ADDR: redis:6379
     ports:
-      - "9005:9005"
+      - "127.0.0.1:9005:9005"
     networks: [infra]
     depends_on: [iam]
     restart: unless-stopped
@@ -110,6 +142,7 @@ services:
       args: { SERVICE: export }
     image: erp-go/export:dev
     environment:
+      INTERNAL_SIGNING_KEY: ${INTERNAL_SIGNING_KEY:?set it in deploy/.env — openssl rand -hex 32}
       DB_DSN: postgres://erp_export:erp_export_pw@postgres:5432/erp_export?sslmode=disable
       GRPC_PORT: "9006"
       MASTERDATA_ADDR: masterdata:9002
@@ -130,7 +163,7 @@ services:
       MINIO_SECRET_KEY: erp_dev_password
       MINIO_BUCKET: erp-files
     ports:
-      - "9006:9006"
+      - "127.0.0.1:9006:9006"
     networks: [infra]
     depends_on: [masterdata, product, fx, approval, iam]
     restart: unless-stopped
@@ -142,6 +175,7 @@ services:
       args: { SERVICE: inventory }
     image: erp-go/inventory:dev
     environment:
+      INTERNAL_SIGNING_KEY: ${INTERNAL_SIGNING_KEY:?set it in deploy/.env — openssl rand -hex 32}
       DB_DSN: postgres://erp_inventory:erp_inventory_pw@postgres:5432/erp_inventory?sslmode=disable
       GRPC_PORT: "9008"
       MASTERDATA_ADDR: masterdata:9002
@@ -152,7 +186,7 @@ services:
       PURCHASE_TOPIC: erp.procurement.purchase.v1
       PURCHASE_CONSUMER_GROUP: inventory.purchase.v1
     ports:
-      - "9008:9008"
+      - "127.0.0.1:9008:9008"
     networks: [infra]
     depends_on: [export, masterdata]
     restart: unless-stopped
@@ -164,6 +198,7 @@ services:
       args: { SERVICE: procurement }
     image: erp-go/procurement:dev
     environment:
+      INTERNAL_SIGNING_KEY: ${INTERNAL_SIGNING_KEY:?set it in deploy/.env — openssl rand -hex 32}
       DB_DSN: postgres://erp_procurement:erp_procurement_pw@postgres:5432/erp_procurement?sslmode=disable
       GRPC_PORT: "9007"
       MASTERDATA_ADDR: masterdata:9002
@@ -176,7 +211,7 @@ services:
       PURCHASE_TOPIC: erp.procurement.purchase.v1
       REDIS_ADDR: redis:6379
     ports:
-      - "9007:9007"
+      - "127.0.0.1:9007:9007"
     networks: [infra]
     depends_on: [inventory, masterdata, approval]
     restart: unless-stopped
@@ -188,6 +223,7 @@ services:
       args: { SERVICE: shipping }
     image: erp-go/shipping:dev
     environment:
+      INTERNAL_SIGNING_KEY: ${INTERNAL_SIGNING_KEY:?set it in deploy/.env — openssl rand -hex 32}
       DB_DSN: postgres://erp_shipping:erp_shipping_pw@postgres:5432/erp_shipping?sslmode=disable
       GRPC_PORT: "9009"
       MINIO_ENDPOINT: minio:9000
@@ -196,7 +232,7 @@ services:
       MINIO_SECRET_KEY: erp_dev_password
       MINIO_BUCKET: erp-files
     ports:
-      - "9009:9009"
+      - "127.0.0.1:9009:9009"
     networks: [infra]
     restart: unless-stopped
 
@@ -207,6 +243,7 @@ services:
       args: { SERVICE: mail }
     image: erp-go/mail:dev
     environment:
+      INTERNAL_SIGNING_KEY: ${INTERNAL_SIGNING_KEY:?set it in deploy/.env — openssl rand -hex 32}
       DB_DSN: postgres://erp_mail:erp_mail_pw@postgres:5432/erp_mail?sslmode=disable
       GRPC_PORT: "9010"
       MASTERDATA_ADDR: masterdata:9002
@@ -246,7 +283,7 @@ services:
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
     ports:
-      - "9010:9010"
+      - "127.0.0.1:9010:9010"
     networks: [infra]
     depends_on: [masterdata, iam]
     restart: unless-stopped
@@ -258,6 +295,7 @@ services:
       args: { SERVICE: gateway }
     image: erp-go/gateway:dev
     environment:
+      INTERNAL_SIGNING_KEY: ${INTERNAL_SIGNING_KEY:?set it in deploy/.env — openssl rand -hex 32}
       IAM_ADDR: iam:9001
       MASTERDATA_ADDR: masterdata:9002
       FX_ADDR: fx:9003
@@ -273,7 +311,13 @@ services:
       MAIL_OAUTH_REDIRECT_URL: ${MAIL_OAUTH_REDIRECT_URL:-http://localhost:8080/api/oauth/google/callback}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      # Must match iam's. See the note there.
+      JWT_TTL: ${JWT_TTL:-12h}
       HTTP_PORT: "8080"
+    # The one port that answers from elsewhere, because it is the one the
+    # browser talks to. In front of a real deployment this belongs behind a
+    # reverse proxy holding 443, with TRUST_PROXY_HEADERS turned on so the
+    # per-source login limit meters the caller rather than the proxy.
     ports:
       - "8080:8080"
     networks: [infra]

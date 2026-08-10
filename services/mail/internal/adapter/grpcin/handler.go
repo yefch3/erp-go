@@ -304,8 +304,19 @@ func (h *Handler) CreateSignature(ctx context.Context, req *mailv1.CreateSignatu
 	return &mailv1.CreateSignatureResponse{Id: id}, nil
 }
 
+func (h *Handler) UpdateSignature(ctx context.Context, req *mailv1.UpdateSignatureRequest) (*mailv1.UpdateSignatureResponse, error) {
+	if err := h.svc.UpdateSignature(ctx, grpcx.TenantID(ctx), req.GetId(), app.SignatureInput{
+		OwnerType: req.GetOwnerType(), Name: req.GetName(),
+		Content: req.GetContent(), Format: req.GetBodyFormat(),
+		IsDefault: req.GetIsDefault(),
+	}, operator(ctx)); err != nil {
+		return nil, err
+	}
+	return &mailv1.UpdateSignatureResponse{Ok: true}, nil
+}
+
 func (h *Handler) DeleteSignature(ctx context.Context, req *mailv1.DeleteSignatureRequest) (*mailv1.DeleteSignatureResponse, error) {
-	if err := h.svc.DeleteSignature(ctx, grpcx.TenantID(ctx), req.GetId()); err != nil {
+	if err := h.svc.DeleteSignature(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx)); err != nil {
 		return nil, err
 	}
 	return &mailv1.DeleteSignatureResponse{Ok: true}, nil
@@ -419,6 +430,17 @@ func (h *Handler) RegisterImage(ctx context.Context, req *mailv1.RegisterImageRe
 		return nil, err
 	}
 	return &mailv1.RegisterImageResponse{Image: &mailv1.EmailImage{
+		Id: i.ID, Token: i.Token, FileName: i.FileName,
+		FileSize: i.FileSize, ContentType: i.ContentType,
+	}}, nil
+}
+
+func (h *Handler) ImportImage(ctx context.Context, req *mailv1.ImportImageRequest) (*mailv1.ImportImageResponse, error) {
+	i, err := h.svc.ImportImageFromURL(ctx, grpcx.TenantID(ctx), req.GetUrl(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.ImportImageResponse{Image: &mailv1.EmailImage{
 		Id: i.ID, Token: i.Token, FileName: i.FileName,
 		FileSize: i.FileSize, ContentType: i.ContentType,
 	}}, nil
@@ -661,7 +683,8 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 		Id: v.ID, FromEmail: v.FromEmail, FromName: v.FromName,
 		Subject: v.Subject, Snippet: v.Snippet, ThreadKey: v.ThreadKey,
 		IsRead: v.IsRead, IsStarred: v.IsStarred, HasAttachments: v.HasAttachments,
-		BodyHtml: v.BodyHTML, BodyText: v.BodyText, ToEmail: v.ToEmail,
+		BodyHtml: v.BodyHTML, QuotedHtml: v.QuotedHTML,
+		BodyText: v.BodyText, ToEmail: v.ToEmail,
 		ThreadCount: v.ThreadCount,
 		Kind:        v.Kind,
 		ToName:      v.ToName,
@@ -744,7 +767,7 @@ func (h *Handler) GetMailThread(ctx context.Context, req *mailv1.GetMailThreadRe
 	for _, v := range items {
 		it := &mailv1.ThreadItem{
 			Direction: v.Direction, Id: v.ID, Subject: v.Subject,
-			Body: v.Body, BodyFormat: v.BodyFormat,
+			Body: v.Body, Quoted: v.Quoted, BodyFormat: v.BodyFormat,
 			Counterparty: v.Counterparty, Who: v.Who,
 		}
 		if !v.At.IsZero() {
@@ -753,6 +776,41 @@ func (h *Handler) GetMailThread(ctx context.Context, req *mailv1.GetMailThreadRe
 		out = append(out, it)
 	}
 	return &mailv1.GetMailThreadResponse{Items: out}, nil
+}
+
+func (h *Handler) ExportMailThread(ctx context.Context, req *mailv1.ExportMailThreadRequest) (*mailv1.ExportMailThreadResponse, error) {
+	doc, err := h.svc.ExportMailThread(ctx, grpcx.TenantID(ctx), operator(ctx), app.ExportRequest{
+		ThreadKey: req.GetThreadKey(),
+		Zone:      req.GetZone(),
+		Lang:      req.GetLang(),
+		ClientIP:  req.GetClientIp(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.ExportMailThreadResponse{
+		Content:     doc.Content,
+		ContentType: doc.ContentType,
+		FileName:    doc.FileName,
+		TurnCount:   int32(doc.TurnCount),
+	}, nil
+}
+
+func (h *Handler) ListMailExports(ctx context.Context, req *mailv1.ListMailExportsRequest) (*mailv1.ListMailExportsResponse, error) {
+	rows, total, err := h.svc.ListExports(ctx, grpcx.TenantID(ctx), operator(ctx), req.GetPage(), req.GetSize())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mailv1.ExportRecord, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, &mailv1.ExportRecord{
+			Id: r.ID, EmployeeId: r.EmployeeID, EmployeeName: r.EmployeeName,
+			ThreadKey: r.ThreadKey, Subject: r.Subject, Counterparty: r.Counterparty,
+			TurnCount: r.TurnCount, ByteSize: r.ByteSize, Format: r.Format,
+			ClientIp: r.ClientIp, ExportedAt: ts(r.ExportedAt),
+		})
+	}
+	return &mailv1.ListMailExportsResponse{Items: out, Total: total}, nil
 }
 
 func (h *Handler) MarkInbound(ctx context.Context, req *mailv1.MarkInboundRequest) (*mailv1.MarkInboundResponse, error) {

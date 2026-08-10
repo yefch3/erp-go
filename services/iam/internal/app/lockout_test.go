@@ -16,20 +16,20 @@ import (
 func TestTheLockoutSaysWhenItEnds(t *testing.T) {
 	for _, wait := range []time.Duration{time.Second, 30 * time.Second, 14 * time.Minute} {
 		msg := errTooManyAttempts(wait).Error()
-		if !strings.Contains(msg, "分钟后重试") {
+		if !strings.Contains(msg, "后重试") {
 			t.Fatalf("wait %v gave %q, which does not tell anybody when to come back", wait, msg)
 		}
 	}
 }
 
-// Rounded up, so the advice is never early. Told "1 分钟" at 90 seconds
+// Rounded up, so the advice is never early. Told "40 秒" at 41 seconds
 // remaining, somebody comes back to the same refusal.
 func TestTheWaitIsRoundedUpNeverDown(t *testing.T) {
 	cases := map[time.Duration]string{
-		1 * time.Second:                 "1 分钟",
-		59 * time.Second:                "1 分钟",
-		61 * time.Second:                "2 分钟",
-		14*time.Minute + 59*time.Second: "15 分钟",
+		1 * time.Second:                       "2 秒",
+		40*time.Second + 500*time.Millisecond: "41 秒",
+		2 * time.Minute:                       "3 分钟",
+		14*time.Minute + 59*time.Second:       "15 分钟",
 	}
 	for wait, want := range cases {
 		if msg := errTooManyAttempts(wait).Error(); !strings.Contains(msg, want) {

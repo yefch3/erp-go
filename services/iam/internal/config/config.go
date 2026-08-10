@@ -25,7 +25,15 @@ func Load() Config {
 		DSN:       env("DB_DSN", "postgres://erp_iam:erp_iam_pw@localhost:5433/erp_iam?sslmode=disable"),
 		GRPCPort:  env("GRPC_PORT", "9001"),
 		JWTSecret: env("JWT_SECRET", "dev-secret-change-in-production"),
-		JWTTTL:    envDuration("JWT_TTL", 24*time.Hour),
+		// Twelve hours, and since the gateway renews on activity this is how
+		// long somebody may sit *idle* — not how long since they signed in.
+		// A working day never hits it; a machine left logged in at a
+		// customer's office does, overnight.
+		//
+		// Twenty-four was the old value and meant something different: the
+		// clock started at login and ran out mid-afternoon whether you were
+		// working or not.
+		JWTTTL: envDuration("JWT_TTL", 12*time.Hour),
 		// Used only to bootstrap the very first account on an empty database.
 		AdminInitialPassword: env("ADMIN_INITIAL_PASSWORD", "admin123"),
 		CompanyName:          env("COMPANY_NAME", "Demo Company"),

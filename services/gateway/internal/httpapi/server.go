@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"google.golang.org/grpc/codes"
@@ -62,14 +63,28 @@ type Server struct {
 	// allowed and fails open — see FailureThrottle for why this one is the
 	// other way round from Unlock.
 	Throttle *FailureThrottle
+	// Revocations ends one person's sessions without ending everybody's. Nil
+	// disables the check: without it the only way to take a token back is to
+	// rotate JWT_SECRET, which signs out the whole company.
+	Revocations *RevocationStore
 	// Google OAuth. The client id is public by design; the secret lives only
 	// in the notification service, which does the token exchange.
 	GoogleClientID   string
 	OAuthRedirectURL string
 	FrontendBaseURL  string
-	Live             *livefeed.Subscriber
-	JWTSecret        string
-	Log              *slog.Logger
+	// TrustProxyHeaders says a reverse proxy sits in front and overwrites
+	// X-Forwarded-For. Off by default: the header is caller-supplied, and
+	// trusting it without such a proxy lets anybody spray from a different
+	// fake address on every request. See clientAddr.
+	TrustProxyHeaders bool
+	Live      *livefeed.Subscriber
+	JWTSecret string
+	// TokenTTL is the life of a renewed token, and must match the one iam
+	// issues with. Because renewal rides on activity, this is in practice how
+	// long somebody may sit idle before being signed out — not how long since
+	// they signed in.
+	TokenTTL time.Duration
+	Log      *slog.Logger
 }
 
 func (s *Server) Router() http.Handler {
@@ -116,6 +131,11 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/activate", s.activateEmployee)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/account", s.openAccount)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/password", s.resetPassword)
+		// Ends the sessions somebody is already holding. Its own action
+		// because a stolen laptop is not a resignation, and deactivating is
+		// not always what is wanted.
+		r.With(s.perm("iam:employee:write")).
+			Post("/api/employees/{id}/revoke-sessions", s.revokeSessions)
 		// Sending the invitation is employee administration, so it carries the
 		// same permission as creating the row it invites.
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/invite", s.inviteEmployee)
@@ -331,6 +351,10 @@ func (s *Server) Router() http.Handler {
 		// The address book the composer picks from. Gated on sending: it is
 		// only ever used to choose who a mail goes to.
 		r.With(s.perm("mail:email:write")).Get("/api/mailing-contacts", s.listMailingContacts)
+		// The same book grouped by country, and one country's worth of it.
+		// Same permission: this is the composer's picker, not the customer list.
+		r.With(s.perm("mail:email:write")).Get("/api/customer-countries", s.listCustomerCountries)
+		r.With(s.perm("mail:email:write")).Get("/api/mailing-contacts/by-country", s.contactsInCountry)
 		// The supervisor's employee picker. Scoped by the same notification
 		// data scope, so it lists exactly whose mail the caller may open.
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/email-senders", s.listMailSenders)
@@ -361,6 +385,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:write"), s.requireMailUnlock).Post("/api/email-scheduled/{id}/cancel", s.cancelScheduled)
 		r.With(s.perm("mail:email:read")).Get("/api/email-signatures", s.listSignatures)
 		r.With(s.perm("mail:email:write")).Post("/api/email-signatures", s.createSignature)
+		r.With(s.perm("mail:email:write")).Put("/api/email-signatures/{id}", s.updateSignature)
 		r.With(s.perm("mail:email:write")).Delete("/api/email-signatures/{id}", s.deleteSignature)
 		// The suppression list is shared by everybody's sends, so maintaining
 		// it is administrative work rather than part of composing a mail.
@@ -371,6 +396,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:read")).Get("/api/email-attachments", s.listMailAttachments)
 		r.With(s.perm("mail:email:write")).Post("/api/email-images/presign", s.presignMailImage)
 		r.With(s.perm("mail:email:write")).Post("/api/email-images", s.registerMailImage)
+		r.With(s.perm("mail:email:write")).Post("/api/email-images/from-url", s.importMailImage)
 		r.With(s.perm("mail:email:read")).Get("/api/email-images", s.listMailImages)
 		r.With(s.perm("mail:email:write")).Delete("/api/email-images/{id}", s.withdrawMailImage)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/email-suppressions", s.listSuppressions)
@@ -400,6 +426,15 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/empty-trash", s.emptyTrash)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/empty-junk", s.emptyJunk)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-threads", s.getMailThread)
+		// Taking the conversation out of the system. Its own permission, and
+		// still behind the mailbox gate: an export that skipped the gate
+		// would be a way to read mail without passing it.
+		r.With(s.perm("mail:email:export"), s.requireMailUnlock).
+			Get("/api/mail-threads/export", s.exportMailThread)
+		// The record of who did. Not behind the mailbox gate — this is
+		// oversight of the mail module, not use of a mailbox, and the person
+		// reading it may not have one bound.
+		r.With(s.perm("mail:export:audit")).Get("/api/mail-exports", s.listMailExports)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/mailbox/sync", s.syncMailbox)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mailbox-sent", s.listMailboxSent)
 		r.With(s.perm("mail:email:read")).Post("/api/mailbox/verify", s.verifyMailbox)
@@ -473,12 +508,36 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			s.writeError(w, http.StatusUnauthorized, "AUTH_TOKEN_INVALID", "登录凭证无效或已过期")
 			return
 		}
+		// Checked after the signature and before anything is done in this
+		// person's name. A valid signature only says the token was minted by
+		// us; it says nothing about whether somebody has since been shown the
+		// door.
+		//
+		// Compared against the sign-in moment, not IssuedAt: renewal moves
+		// IssuedAt forward, and comparing against a number the session can
+		// advance by itself would let it renew past the cutoff.
+		if s.Revocations != nil && s.Revocations.Revoked(
+			claims.TenantID, claims.EmployeeID(), claims.SignedInAt()) {
+			s.writeError(w, http.StatusUnauthorized, "AUTH_SESSION_REVOKED",
+				"登录状态已被管理员终止，请重新登录")
+			return
+		}
+		// Only now — after the signature held and the session survived the
+		// revocation check — is it safe to extend it. Renewing first would
+		// hand a fresh token to a session that was about to be refused.
+		s.renewIfHalfSpent(w, claims)
 		ctx := grpcx.WithOperator(r.Context(), grpcx.Operator{
 			TenantID:   claims.TenantID,
 			EmployeeID: claims.EmployeeID(),
 			Name:       claims.EmployeeName,
 			Email:      claims.Email,
-			IP:         r.RemoteAddr,
+			// clientAddr, not RemoteAddr. Behind a reverse proxy RemoteAddr
+			// is the proxy — every request in production logged as coming
+			// from 127.0.0.1, which is the one value that answers no
+			// question anybody asks of an audit trail. clientAddr honours
+			// the forwarding header only when TRUST_PROXY_HEADERS says a
+			// proxy that overwrites it is actually in front.
+			IP: clientAddr(r, s.TrustProxyHeaders),
 			TraceID:    newTraceID(),
 		})
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -490,6 +549,45 @@ func (s *Server) auth(next http.Handler) http.Handler {
 func grpcMessage(err error) string {
 	return status.Convert(err).Message()
 }
+
+// renewIfHalfSpent puts a fresh token on the response once the current one is
+// past the midpoint of its life.
+//
+// A response header rather than an endpoint the client calls. The browser is
+// already making the request; asking it to make a second one to stay signed in
+// means every client has to remember to, and a background tab that forgets
+// gets signed out while an identical tab beside it does not. Riding on traffic
+// that already exists makes the rule "activity keeps you in" true by
+// construction — and it is the same rule Frappe gets for free by writing a
+// last-seen timestamp on every request.
+//
+// The effect of renewal-on-activity is that JWT_TTL stops being "how long
+// since you signed in" and becomes "how long you may sit idle". Nothing else
+// had to change for that: a session that keeps working keeps being extended,
+// and one that stops simply runs out.
+//
+// Failure is silent on purpose. The request itself succeeded and the caller's
+// current token is still valid for at least half its life; turning a renewal
+// hiccup into a visible error would break a working page over something that
+// will be retried on the very next request.
+func (s *Server) renewIfHalfSpent(w http.ResponseWriter, c *authtoken.Claims) {
+	if !c.HalfSpent(time.Now()) {
+		return
+	}
+	fresh, err := authtoken.Renew(s.JWTSecret, s.TokenTTL, c)
+	if err != nil {
+		s.Log.Warn("could not renew a session token", "employee", c.EmployeeID(), "err", err)
+		return
+	}
+	// Same origin as the page, so no Access-Control-Expose-Headers is needed.
+	// If the API is ever served from another origin, this header has to be
+	// listed there or the browser will hide it and sessions will start
+	// expiring under active use.
+	w.Header().Set(RenewedTokenHeader, fresh)
+}
+
+// RenewedTokenHeader carries a replacement token to the browser.
+const RenewedTokenHeader = "X-Renewed-Token"
 
 func newTraceID() string {
 	b := make([]byte, 8)
