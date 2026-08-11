@@ -10,7 +10,7 @@
       <div class="filters">
         <el-input v-model="keyword" clearable :placeholder="t('departments.search')" style="width: 280px" />
       </div>
-      <el-table v-loading="loading" :data="tree" row-key="id" :default-expand-all="Boolean(keyword)">
+      <el-table ref="departmentTable" v-loading="loading" :data="tree" row-key="id" :default-expand-all="Boolean(keyword)">
         <el-table-column prop="name" :label="t('departments.name')" min-width="220" />
         <el-table-column prop="code" :label="t('departments.code')" width="140" />
         <el-table-column :label="t('departments.leader')" width="160">
@@ -42,7 +42,12 @@
             <el-option v-for="d in availableParents" :key="d.id" :value="d.id" :label="d.name" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('departments.sortOrder')"><el-input-number v-model="form.sortOrder" :min="0" /></el-form-item>
+        <el-form-item :label="t('departments.sortOrder')">
+          <div class="sort-field">
+            <el-input-number v-model="form.sortOrder" :min="0" />
+            <span class="form-hint">{{ t('departments.sortOrderHint') }}</span>
+          </div>
+        </el-form-item>
         <el-form-item v-if="editing" :label="t('departments.leader')">
           <el-select v-model="form.leaderEmployeeId" clearable filterable style="width: 100%">
             <el-option v-for="e in leaderCandidates" :key="e.id" :value="e.id" :label="`${e.code} · ${e.name}`" />
@@ -79,12 +84,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import type { ElTable } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { get, post, put } from '../api'
 import BasicDataEmployeeNav from '../components/BasicDataEmployeeNav.vue'
+import { createDepartmentBody, updateDepartmentBody } from '../lib/iamForms'
 import { useAuthStore } from '../stores/auth'
 
 interface Department { id: string; code: string; name: string; parentId: string; path: string; sortOrder: number; status: string; leaderEmployeeId: string; version: number; children?: Department[] }
@@ -102,6 +109,7 @@ const employees = ref<Employee[]>([])
 const changes = ref<Change[]>([])
 const keyword = ref(String(route.query.keyword ?? ''))
 const loading = ref(false)
+const departmentTable = ref<InstanceType<typeof ElTable>>()
 const saving = ref(false)
 const dialogOpen = ref(false)
 const changesOpen = ref(false)
@@ -164,12 +172,25 @@ async function save() {
   if (!form.code.trim() || !form.name.trim()) { ElMessage.warning(t('departments.required')); return }
   saving.value = true
   try {
-    const body = { code: form.code, name: form.name, parentId: form.parentId || '0', sortOrder: form.sortOrder, leaderEmployeeId: form.leaderEmployeeId || '0', status: form.status, expectedVersion: form.version }
-    if (editing.value) await put(`/departments/${form.id}`, body)
-    else await post('/departments', body)
+    if (editing.value) {
+      await put(`/departments/${form.id}`, updateDepartmentBody(form))
+    } else {
+      const parentID = form.parentId
+      await post('/departments', createDepartmentBody(form))
+      await load()
+      await nextTick()
+      // 新建子部门后展开完整父级路径，让刚保存的数据立即出现在用户眼前。
+      let ancestorID = parentID
+      while (ancestorID && ancestorID !== '0') {
+        const ancestor = departments.value.find((item) => item.id === ancestorID)
+        if (!ancestor) break
+        departmentTable.value?.toggleRowExpansion(ancestor, true)
+        ancestorID = ancestor.parentId
+      }
+    }
     ElMessage.success(t(editing.value ? 'departments.updated' : 'departments.created'))
     dialogOpen.value = false
-    await load()
+    if (editing.value) await load()
   } finally { saving.value = false }
 }
 
@@ -188,4 +209,6 @@ onMounted(load)
 .page-head, .filters { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .page-head h2 { margin: 0; font-size: 18px; font-weight: 500; }
 .change-values pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+.sort-field { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.form-hint { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.4; }
 </style>
