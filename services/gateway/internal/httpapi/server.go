@@ -67,6 +67,10 @@ type Server struct {
 	// disables the check: without it the only way to take a token back is to
 	// rotate JWT_SECRET, which signs out the whole company.
 	Revocations *RevocationStore
+	// Limits bounds what one person or one source can cost: presses of 立即收信,
+	// and hits on the two routes strangers are meant to reach. Nil allows
+	// everything — see RateLimiter for why this one fails open.
+	Limits *RateLimiter
 	// Google OAuth. The client id is public by design; the secret lives only
 	// in the notification service, which does the token exchange.
 	GoogleClientID   string
@@ -100,10 +104,12 @@ func (s *Server) Router() http.Handler {
 	r.Post("/api/auth/activate", s.activateAccount)
 	// Images embedded in sent mail. Public by necessity: the fetcher is the
 	// recipient's mail client, which has no session. See serveMailImage.
-	r.Get("/api/public/mail-images/{token}", s.serveMailImage)
+	r.Get("/api/public/mail-images/{token}",
+		s.limitPublic("img", publicImageBudget, s.serveMailImage))
 	// The open-tracking pixel. Also login-free, and also deliberately
 	// indistinguishable between a real key and a made-up one.
-	r.Get("/api/public/mail-open/{key}", s.serveOpenPixel)
+	r.Get("/api/public/mail-open/{key}",
+		s.limitPublic("pixel", publicPixelBudget, s.serveOpenPixel))
 	// Google sends the browser back here after its own login page. State is
 	// the authentication; see googleOAuthCallback.
 	r.Get("/api/oauth/google/callback", s.googleOAuthCallback)
