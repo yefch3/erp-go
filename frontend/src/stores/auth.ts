@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { get, post } from '../api'
+import { get, post, quietErrors } from '../api'
 
 interface Employee {
   id: string
@@ -35,7 +35,10 @@ export const useAuthStore = defineStore('auth', {
   },
   actions: {
     async login(email: string, password: string) {
-      const data = await post<LoginData>('/auth/login', { email, password })
+      // The login page renders authentication failures beside the form. Keep
+      // the global interceptor quiet so a rejected password is not announced
+      // twice (and so the page can translate the stable error code itself).
+      const data = await post<LoginData>('/auth/login', { email, password }, quietErrors)
       this.token = data.accessToken
       this.employeeId = data.employee.id
       this.employeeName = data.employee.name

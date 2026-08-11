@@ -5,6 +5,11 @@ export default {
     email: 'Company email',
     password: 'Password',
     submit: 'Sign in',
+    invalidCredentials: 'Incorrect email or password',
+    accountLocked: 'This account is disabled. Contact an administrator.',
+    notActivated: 'This account is not activated. Check your invitation email.',
+    tooManyAttempts: 'Too many attempts. Please try again later.',
+    failed: 'Sign-in failed. Please try again later.',
   },
   activate: {
     title: 'Set up your account',

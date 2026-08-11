@@ -5,6 +5,11 @@ export default {
     email: 'Correo de empresa',
     password: 'Contraseña',
     submit: 'Iniciar sesión',
+    invalidCredentials: 'El correo o la contraseña son incorrectos',
+    accountLocked: 'Esta cuenta está desactivada. Contacta con un administrador.',
+    notActivated: 'Esta cuenta no está activada. Revisa el correo de invitación.',
+    tooManyAttempts: 'Demasiados intentos. Inténtalo de nuevo más tarde.',
+    failed: 'No se pudo iniciar sesión. Inténtalo de nuevo más tarde.',
   },
   activate: {
     title: 'Configura tu cuenta',

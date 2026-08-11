@@ -5,6 +5,11 @@ export default {
     email: '公司邮箱',
     password: '密码',
     submit: '登录',
+    invalidCredentials: '邮箱或密码不正确',
+    accountLocked: '账号已停用，请联系管理员',
+    notActivated: '账号尚未激活，请查收邀请邮件',
+    tooManyAttempts: '尝试次数过多，请稍后再试',
+    failed: '登录失败，请稍后再试',
   },
   activate: {
     title: '启用你的账号',
