@@ -745,6 +745,9 @@ export default {
     },
   },
   customers: {
+    countryGroups: 'Countries',
+    allCountries: 'All customers',
+    unclassified: 'Unclassified',
     countryPick: 'Pick a country',
     countryUnmapped: 'unrecognised',
     countryUnset: 'not set',

@@ -9,33 +9,112 @@ import (
 )
 
 type Customer struct {
+	ID               int64
+	TenantID         int64
+	Code             string
+	Name             string
+	Country          string
+	Address          string
+	Currency         string
+	PaymentTerm      string
+	Remark           string
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	CreatedBy        int64
+	UpdatedAt        pgtype.Timestamptz
+	UpdatedBy        int64
+	CountryCode      string
+	ShortName        string
+	EnglishName      string
+	CustomerType     string
+	Industry         string
+	Source           string
+	Tags             []string
+	Website          string
+	PrimaryLanguage  string
+	Timezone         string
+	RegisteredName   string
+	RegistrationNo   string
+	TaxID            string
+	InvoiceTitle     string
+	InvoiceTaxNo     string
+	InvoiceRemark    string
+	PaymentDays      int32
+	CreditLimitMinor int64
+	CreditCurrency   string
+	CreditStatus     string
+	BusinessStatus   string
+}
+
+type CustomerAddress struct {
 	ID          int64
 	TenantID    int64
-	Code        string
-	Name        string
-	Country     string
-	Address     string
-	Currency    string
-	PaymentTerm string
-	Remark      string
+	CustomerID  int64
+	AddressType string
+	CountryCode string
+	State       string
+	City        string
+	PostalCode  string
+	AddressLine string
+	IsDefault   bool
+	SortOrder   int32
 	Status      string
 	CreatedAt   pgtype.Timestamptz
 	CreatedBy   int64
 	UpdatedAt   pgtype.Timestamptz
 	UpdatedBy   int64
-	CountryCode string
+}
+
+type CustomerChangeLog struct {
+	ID           int64
+	TenantID     int64
+	CustomerID   int64
+	Action       string
+	Section      string
+	Summary      string
+	BeforeData   []byte
+	AfterData    []byte
+	OperatorID   int64
+	OperatorName string
+	CreatedAt    pgtype.Timestamptz
 }
 
 type CustomerContact struct {
-	ID         int64
-	TenantID   int64
-	CustomerID int64
-	Name       string
-	Title      string
-	Email      string
-	Phone      string
-	IsPrimary  bool
-	SortOrder  int32
+	ID               int64
+	TenantID         int64
+	CustomerID       int64
+	Name             string
+	Title            string
+	Email            string
+	Phone            string
+	IsPrimary        bool
+	SortOrder        int32
+	Department       string
+	Mobile           string
+	InstantMessaging string
+	Language         string
+	Remark           string
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	CreatedBy        int64
+	UpdatedAt        pgtype.Timestamptz
+	UpdatedBy        int64
+}
+
+type CustomerOwner struct {
+	ID                 int64
+	TenantID           int64
+	CustomerID         int64
+	EmployeeID         int64
+	EmployeeName       string
+	ResponsibilityCode string
+	StartDate          pgtype.Date
+	EndDate            pgtype.Date
+	Status             string
+	CreatedAt          pgtype.Timestamptz
+	CreatedBy          int64
+	UpdatedAt          pgtype.Timestamptz
+	UpdatedBy          int64
 }
 
 type NumberRule struct {

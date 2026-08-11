@@ -15,6 +15,7 @@ export const router = createRouter({
         { path: 'todos', component: () => import('./pages/TodosPage.vue') },
         { path: 'customers', redirect: '/basic/customers' },
         { path: 'basic/customers', component: () => import('./pages/CustomersPage.vue') },
+        { path: 'basic/customers/:id', component: () => import('./pages/CustomerDetailPage.vue') },
         { path: 'basic/employees', component: () => import('./pages/EmployeesPage.vue') },
         { path: 'basic/employees/departments', component: () => import('./pages/DepartmentsPage.vue') },
         { path: 'basic/employees/roles', component: () => import('./pages/RolesPage.vue') },
