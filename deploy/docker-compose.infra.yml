@@ -27,6 +27,12 @@ services:
   kafka:
     image: confluentinc/cp-kafka:7.6.0
     environment:
+      # Kafka's own default is -Xms1G -Xmx1G, and -Xms is claimed at startup
+      # whether or not there is traffic: 1 GB resident to carry a handful of
+      # domain events. A small heap is what Kafka wants anyway - log segments
+      # live in the OS page cache, not on the heap, so memory handed to the
+      # JVM is memory taken away from the thing that actually serves reads.
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093

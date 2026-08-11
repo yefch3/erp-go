@@ -1,6 +1,10 @@
 <template>
   <div>
     <BasicDataEmployeeNav />
+    <el-breadcrumb separator="/" class="breadcrumb">
+      <el-breadcrumb-item>{{ t('menu.basicData') }}</el-breadcrumb-item>
+      <el-breadcrumb-item>{{ t('employees.title') }}</el-breadcrumb-item>
+    </el-breadcrumb>
     <div class="page-head">
       <h2>{{ t('employees.title') }}</h2>
       <div class="head-actions">
@@ -72,7 +76,7 @@
           <template #default="{ row }">
             <div class="employee-info">
               <div class="employee-primary">
-                <span class="employee-name">{{ row.name }}</span>
+                <el-button link class="employee-name" @click="openDetails(row)">{{ row.name }}</el-button>
                 <span class="employee-code">{{ row.code }}</span>
               </div>
               <span class="sub">{{ row.email || t('employees.noMailbox') }}</span>
@@ -111,11 +115,12 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column v-if="canWrite" :label="t('common.actions')" width="160" fixed="right" align="right">
+        <el-table-column :label="t('common.actions')" width="190" fixed="right" align="right">
           <template #default="{ row }">
             <div class="row-actions">
-              <el-button link type="primary" @click="openEdit(row)">{{ t('common.edit') }}</el-button>
-              <el-dropdown trigger="click" @command="(command: string) => handleRowCommand(command, row)">
+              <el-button link type="primary" @click="openDetails(row)">{{ t('employees.viewDetails') }}</el-button>
+              <el-button v-if="canWrite" link type="primary" @click="openEdit(row)">{{ t('common.edit') }}</el-button>
+              <el-dropdown v-if="canWrite" trigger="click" @command="(command: string) => handleRowCommand(command, row)">
                 <el-button link type="primary">{{ t('employees.moreActions') }}<span class="dropdown-arrow">⌄</span></el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -152,10 +157,80 @@
 
     <ImportEmployeesDialog v-model:open="importOpen" @imported="reload" />
 
+    <el-drawer
+      v-model="detailsOpen"
+      :title="t('employees.detailTitle')"
+      :size="detailDrawerSize"
+      class="employee-detail-drawer"
+    >
+      <div v-loading="detailLoading">
+        <div v-if="detailEmployee" class="detail-head">
+          <div>
+            <div class="detail-name">{{ detailEmployee.name }}</div>
+            <div class="sub">{{ detailEmployee.englishName || '—' }} · {{ detailEmployee.code }}</div>
+          </div>
+          <el-tag :type="detailEmployee.status === 'ACTIVE' ? 'success' : 'info'">
+            {{ detailEmployee.status === 'ACTIVE' ? t('employees.onDuty') : t('employees.left') }}
+          </el-tag>
+        </div>
+
+        <el-tabs v-if="detailEmployee" v-model="detailTab" class="detail-tabs">
+          <el-tab-pane :label="t('employees.basicInformation')" name="basic">
+            <el-descriptions :column="detailColumns" border>
+              <el-descriptions-item :label="t('employees.code')">{{ detailEmployee.code }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.name')">{{ detailEmployee.name }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.englishName')">{{ detailEmployee.englishName || '—' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.email')">{{ detailEmployee.email || '—' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.phone')">{{ detailEmployee.phone || '—' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.remark')" :span="detailColumns">{{ detailEmployee.remark || '—' }}</el-descriptions-item>
+            </el-descriptions>
+          </el-tab-pane>
+          <el-tab-pane :label="t('employees.organizationRelationship')" name="organization">
+            <el-descriptions :column="detailColumns" border>
+              <el-descriptions-item :label="t('employees.department')">{{ detailEmployee.departmentName || '—' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.position')">{{ detailEmployee.position || '—' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.manager')">{{ detailEmployee.managerName || '—' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.hireDate')">{{ detailEmployee.hireDate || '—' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.leaveDate')">{{ detailEmployee.leaveDate || '—' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.employmentStatus')">
+                {{ detailEmployee.status === 'ACTIVE' ? t('employees.onDuty') : t('employees.left') }}
+              </el-descriptions-item>
+            </el-descriptions>
+          </el-tab-pane>
+          <el-tab-pane :label="t('employees.accountAndRoles')" name="account">
+            <el-descriptions :column="detailColumns" border>
+              <el-descriptions-item :label="t('employees.username')">{{ detailEmployee.username || t('employees.noAccount') }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.activation')">{{ activationText(detailEmployee) }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.roles')" :span="detailColumns">
+                <el-space wrap>
+                  <el-tag v-for="role in detailRoleNames" :key="role" type="info">{{ role }}</el-tag>
+                  <span v-if="!detailRoleNames.length">—</span>
+                </el-space>
+              </el-descriptions-item>
+            </el-descriptions>
+          </el-tab-pane>
+          <el-tab-pane :label="t('employees.changes')" name="changes">
+            <el-timeline v-if="detailChanges.length">
+              <el-timeline-item v-for="item in detailChanges" :key="item.id" :timestamp="formatTime(item.createdAt)">
+                {{ item.action }} · {{ t('employees.operator') }} #{{ item.operatorId }}
+                <el-collapse class="change-values">
+                  <el-collapse-item :title="t('departments.changeValues')">
+                    <div>{{ t('departments.before') }}</div><pre>{{ prettyJSON(item.beforeJson) }}</pre>
+                    <div>{{ t('departments.after') }}</div><pre>{{ prettyJSON(item.afterJson) }}</pre>
+                  </el-collapse-item>
+                </el-collapse>
+              </el-timeline-item>
+            </el-timeline>
+            <el-empty v-else :description="t('employees.noChanges')" />
+          </el-tab-pane>
+        </el-tabs>
+      </div>
+    </el-drawer>
+
     <!-- What actually happened, per person. A batch of eighty is exactly the
          case where "已发送" as a single toast is useless: the useful answer is
          which three did not go and why. -->
-    <el-dialog v-model="batchOpen" :title="t('employees.batchResult')" width="620px">
+    <el-dialog v-model="batchOpen" :title="t('employees.batchResult')" width="min(620px, calc(100vw - 24px))">
       <div class="summary">{{ t('employees.batchSummary', { sent: batchSent, failed: batchFailed.length }) }}</div>
       <el-table v-if="batchFailed.length" :data="batchFailed" max-height="360" size="small">
         <el-table-column prop="name" :label="t('employees.name')" width="120" />
@@ -167,7 +242,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="createOpen" :title="editing ? t('employees.edit') : t('employees.create')" width="680px">
+    <el-dialog v-model="createOpen" :title="editing ? t('employees.edit') : t('employees.create')" width="min(680px, calc(100vw - 24px))">
       <el-form :model="form" label-width="110px">
         <div class="grid">
           <el-form-item :label="t('employees.code')" required>
@@ -229,7 +304,7 @@
       </template>
     </el-dialog>
 
-    <el-drawer v-model="changesOpen" :title="t('employees.changes')" size="520px">
+    <el-drawer v-model="changesOpen" :title="t('employees.changes')" :size="viewportWidth < 620 ? '100%' : '520px'">
       <el-timeline>
         <el-timeline-item v-for="item in changes" :key="item.id" :timestamp="formatTime(item.createdAt)">
           {{ item.action }} · {{ t('employees.operator') }} #{{ item.operatorId }}
@@ -244,7 +319,7 @@
       <el-empty v-if="!changes.length" :description="t('employees.noChanges')" />
     </el-drawer>
 
-    <el-dialog v-model="rolesOpen" :title="t('employees.assignRoles')" width="440px">
+    <el-dialog v-model="rolesOpen" :title="t('employees.assignRoles')" width="min(440px, calc(100vw - 24px))">
       <p class="target">{{ current?.name }}</p>
       <el-checkbox-group v-model="selectedRoles" class="role-list">
         <el-checkbox v-for="r in roles" :key="r.id" :value="r.id" :label="`${r.name}（${r.code}）`" />
@@ -255,7 +330,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="passwordOpen" :title="passwordTitle" width="420px">
+    <el-dialog v-model="passwordOpen" :title="passwordTitle" width="min(420px, calc(100vw - 24px))">
       <p class="target">{{ current?.name }}</p>
       <el-form label-width="100px">
         <el-form-item v-if="accountMode" :label="t('employees.username')">
@@ -274,7 +349,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type ElTable } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -282,6 +357,7 @@ import { del, get, post, put } from '../api'
 import { useAuthStore } from '../stores/auth'
 import ImportEmployeesDialog from '../components/ImportEmployeesDialog.vue'
 import BasicDataEmployeeNav from '../components/BasicDataEmployeeNav.vue'
+import { createEmployeeBody, updateEmployeeBody, validateEmployeeForm } from '../lib/iamForms'
 
 interface Department { id: string; name: string; status: string }
 interface Role { id: string; code: string; name: string }
@@ -355,6 +431,18 @@ const selected = ref<Employee[]>([])
 const batchOpen = ref(false)
 const batchSent = ref(0)
 const batchFailed = ref<{ name: string; email: string; reason: string }[]>([])
+const detailsOpen = ref(false)
+const detailLoading = ref(false)
+const detailEmployee = ref<Employee | null>(null)
+const detailChanges = ref<Change[]>([])
+const detailTab = ref('basic')
+const viewportWidth = ref(window.innerWidth)
+const detailDrawerSize = computed(() => viewportWidth.value < 720 ? '100%' : '720px')
+const detailColumns = computed(() => viewportWidth.value < 620 ? 1 : 2)
+const detailRoleNames = computed(() => {
+  const ids = new Set(detailEmployee.value?.roleIds ?? [])
+  return roles.value.filter((role) => ids.has(role.id)).map((role) => role.name)
+})
 
 // Who an invitation could actually reach: still employed, and not already in.
 // Used both for the row button and for which rows may be ticked, so the two
@@ -430,6 +518,35 @@ function handleRowCommand(command: string, row: Employee) {
   }
 }
 
+// 员工详情统一展示个人资料、组织关系、账号角色和变更记录，避免把大量字段塞进列表。
+async function openDetails(row: Employee) {
+  detailsOpen.value = true
+  detailLoading.value = true
+  detailTab.value = 'basic'
+  detailEmployee.value = null
+  detailChanges.value = []
+  try {
+    const [employeeData, changeData] = await Promise.all([
+      get<{ employee: Employee }>(`/employees/${row.id}`),
+      get<{ changes: Change[] }>(`/employees/${row.id}/changes`),
+    ])
+    detailEmployee.value = employeeData.employee
+    detailChanges.value = changeData.changes ?? []
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+function activationText(employee: Employee) {
+  if (employee.emailVerified) return t('employees.activated')
+  if (Number(employee.inviteExpiresAt)) return t('employees.awaitingActivation')
+  return employee.username ? t('employees.notInvited') : t('employees.accountUnopened')
+}
+
+function updateViewportWidth() {
+  viewportWidth.value = window.innerWidth
+}
+
 function openCreate() {
   editing.value = false
   Object.assign(form, EMPTY_FORM)
@@ -449,28 +566,18 @@ async function openEdit(row: Employee) {
 }
 
 async function save() {
-  if (!form.code || !form.name || !form.departmentId) {
-    ElMessage.warning(t('employees.required'))
-    return
-  }
-  // The account is optional but half of it is not: iam rejects a username
-  // without a password, so catch it before the round trip.
-  if (!editing.value && (!form.username !== !form.initialPassword)) {
-    ElMessage.warning(t('employees.accountIncomplete'))
+  const validationError = validateEmployeeForm(form, editing.value)
+  if (validationError) {
+    ElMessage.warning(t(`employees.${validationError}`))
     return
   }
   saving.value = true
   try {
-    const body = {
-      code: form.code, name: form.name, departmentId: form.departmentId,
-      position: form.position, email: form.email, phone: form.phone,
-      managerId: form.managerId || '0',
-      englishName: form.englishName, hireDate: form.hireDate, leaveDate: form.leaveDate,
-      remark: form.remark, expectedVersion: form.version,
-      username: form.username, initialPassword: form.initialPassword,
+    if (editing.value) {
+      await put(`/employees/${form.id}`, updateEmployeeBody(form))
+    } else {
+      await post('/employees', createEmployeeBody(form))
     }
-    if (editing.value) await put(`/employees/${form.id}`, body)
-    else await post('/employees', body)
     ElMessage.success(t(editing.value ? 'employees.updated' : 'employees.created'))
     createOpen.value = false
     load()
@@ -614,6 +721,7 @@ async function reinstate(row: Employee) {
 }
 
 onMounted(async () => {
+  window.addEventListener('resize', updateViewportWidth)
   load()
   departments.value = (await get<{ departments: Department[] }>('/departments')).departments ?? []
   employeeOptions.value = (await get<{ employees: Employee[] }>('/employees', { page: 1, page_size: 200 })).employees ?? []
@@ -621,10 +729,15 @@ onMounted(async () => {
     roles.value = (await get<{ roles: Role[] }>('/roles')).roles ?? []
   }
 })
+onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
 </script>
 
 <style scoped>
 .change-values pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+.breadcrumb {
+  margin-bottom: 12px;
+  font-size: 13px;
+}
 .page-head {
   display: flex;
   align-items: center;
@@ -708,8 +821,13 @@ onMounted(async () => {
   gap: 8px;
 }
 .employee-name {
+  padding: 0;
+  height: auto;
   color: var(--el-text-color-primary);
   font-weight: 600;
+}
+.employee-name:hover {
+  color: var(--el-color-primary);
 }
 .employee-code {
   padding: 2px 7px;
@@ -761,12 +879,36 @@ onMounted(async () => {
   flex-direction: column;
   gap: 6px;
 }
+.detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 0 18px;
+}
+.detail-name {
+  margin-bottom: 4px;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.detail-tabs :deep(.el-descriptions__label) {
+  width: 130px;
+}
 @media (max-width: 1300px) {
   .filter-fields {
     grid-template-columns: repeat(3, minmax(150px, 1fr));
   }
 }
 @media (max-width: 900px) {
+  .page-head {
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .head-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
   .filters {
     align-items: stretch;
     flex-direction: column;
@@ -776,6 +918,40 @@ onMounted(async () => {
   }
   .filter-actions {
     justify-content: flex-end;
+  }
+  .employee-table {
+    width: calc(100% - 24px);
+    margin: 12px 12px 0;
+  }
+  .pager {
+    padding: 14px 12px 16px;
+  }
+}
+@media (max-width: 620px) {
+  .page-head {
+    flex-direction: column;
+  }
+  .head-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .filters {
+    padding: 14px 12px;
+  }
+  .filter-fields {
+    grid-template-columns: 1fr;
+  }
+  .filter-actions > :deep(.el-button) {
+    flex: 1;
+  }
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .detail-tabs :deep(.el-tabs__nav-wrap) {
+    overflow-x: auto;
+  }
+  .detail-tabs :deep(.el-descriptions__label) {
+    width: 104px;
   }
 }
 </style>

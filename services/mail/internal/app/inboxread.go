@@ -608,11 +608,16 @@ func (s *Service) purgeOne(ctx context.Context, tenantID, ownerID, id int64, raw
 }
 
 // SyncNow pulls the caller's mailbox immediately and reports what arrived.
+//
+// Interactive: it answers once the inbox is in, and the sent folder, the junk
+// folder and the read-state reconciliation carry on behind it. Somebody who
+// clicks 立即收信 is asking whether the customer has replied, and waiting out
+// five further round trips to be told so is the button feeling broken.
 func (s *Service) SyncNow(ctx context.Context, tenantID, employeeID int64) (int, error) {
 	if s.mailbox == nil {
 		return 0, ErrMailHostNotConfigured
 	}
-	return s.SyncMailbox(ctx, SyncConfig{TenantID: tenantID}, employeeID)
+	return s.SyncMailboxInteractive(ctx, SyncConfig{TenantID: tenantID}, employeeID)
 }
 
 func errNotFound() error {
