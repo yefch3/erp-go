@@ -67,6 +67,10 @@ type Server struct {
 	// disables the check: without it the only way to take a token back is to
 	// rotate JWT_SECRET, which signs out the whole company.
 	Revocations *RevocationStore
+	// Limits bounds what one person or one source can cost: presses of 立即收信,
+	// and hits on the two routes strangers are meant to reach. Nil allows
+	// everything — see RateLimiter for why this one fails open.
+	Limits *RateLimiter
 	// Google OAuth. The client id is public by design; the secret lives only
 	// in the notification service, which does the token exchange.
 	GoogleClientID   string
@@ -77,8 +81,8 @@ type Server struct {
 	// trusting it without such a proxy lets anybody spray from a different
 	// fake address on every request. See clientAddr.
 	TrustProxyHeaders bool
-	Live      *livefeed.Subscriber
-	JWTSecret string
+	Live              *livefeed.Subscriber
+	JWTSecret         string
 	// TokenTTL is the life of a renewed token, and must match the one iam
 	// issues with. Because renewal rides on activity, this is in practice how
 	// long somebody may sit idle before being signed out — not how long since
@@ -100,10 +104,12 @@ func (s *Server) Router() http.Handler {
 	r.Post("/api/auth/activate", s.activateAccount)
 	// Images embedded in sent mail. Public by necessity: the fetcher is the
 	// recipient's mail client, which has no session. See serveMailImage.
-	r.Get("/api/public/mail-images/{token}", s.serveMailImage)
+	r.Get("/api/public/mail-images/{token}",
+		s.limitPublic("img", publicImageBudget, s.serveMailImage))
 	// The open-tracking pixel. Also login-free, and also deliberately
 	// indistinguishable between a real key and a made-up one.
-	r.Get("/api/public/mail-open/{key}", s.serveOpenPixel)
+	r.Get("/api/public/mail-open/{key}",
+		s.limitPublic("pixel", publicPixelBudget, s.serveOpenPixel))
 	// Google sends the browser back here after its own login page. State is
 	// the authentication; see googleOAuthCallback.
 	r.Get("/api/oauth/google/callback", s.googleOAuthCallback)
@@ -537,8 +543,8 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			// question anybody asks of an audit trail. clientAddr honours
 			// the forwarding header only when TRUST_PROXY_HEADERS says a
 			// proxy that overwrites it is actually in front.
-			IP: clientAddr(r, s.TrustProxyHeaders),
-			TraceID:    newTraceID(),
+			IP:      clientAddr(r, s.TrustProxyHeaders),
+			TraceID: newTraceID(),
 		})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

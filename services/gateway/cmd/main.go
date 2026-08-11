@@ -170,6 +170,7 @@ func run(log *slog.Logger) error {
 		Emails:           mailv1.NewEmailServiceClient(ntConn),
 		Unlock:           unlock,
 		Revocations:      revocations,
+		Limits:           httpapi.NewRateLimiter(cfg.RedisAddr, log),
 		Throttle:         throttle,
 		GoogleClientID:   os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
 		OAuthRedirectURL: oauthRedirect,
