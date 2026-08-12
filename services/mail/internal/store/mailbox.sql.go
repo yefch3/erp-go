@@ -320,6 +320,27 @@ func (q *Queries) CountSentUnified(ctx context.Context, arg CountSentUnifiedPara
 	return column_1, err
 }
 
+const countThreadsByView = `-- name: CountThreadsByView :one
+SELECT count(*)::bigint FROM mail_thread_view
+WHERE tenant_id = $1::bigint
+  AND owner_id = $2::bigint
+  AND view = $3::text
+`
+
+type CountThreadsByViewParams struct {
+	TenantID int64
+	OwnerID  int64
+	View     string
+}
+
+// Conversations, not messages: the pager has to count what the list shows.
+func (q *Queries) CountThreadsByView(ctx context.Context, arg CountThreadsByViewParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countThreadsByView, arg.TenantID, arg.OwnerID, arg.View)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countUnread = `-- name: CountUnread :one
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = $1::bigint
@@ -1915,6 +1936,107 @@ func (q *Queries) ListThreadForPurge(ctx context.Context, arg ListThreadForPurge
 			&i.Folder,
 			&i.ImapUid,
 			&i.MessageID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listThreadsByView = `-- name: ListThreadsByView :many
+SELECT m.id, m.from_email, m.from_name, m.subject, m.snippet, m.thread_key,
+       (NOT t.any_unread)::boolean     AS is_read,
+       t.any_starred::boolean          AS is_starred,
+       t.any_attachment::boolean       AS has_attachments,
+       m.received_at, m.sent_at,
+       t.msg_count::int                AS thread_count
+FROM mail_thread_view t
+JOIN email_inbound m ON m.tenant_id = t.tenant_id AND m.id = t.last_id
+WHERE t.tenant_id = $1::bigint
+  AND t.owner_id = $2::bigint
+  AND t.view = $3::text
+  -- Row comparison, so ties on the timestamp fall back to the id and no two
+  -- conversations can ever occupy the same cursor position.
+  AND ($4::timestamptz IS NULL
+       OR (t.last_at, t.last_id) < ($4::timestamptz,
+                                    $5::bigint))
+ORDER BY t.last_at DESC, t.last_id DESC
+LIMIT $6::int
+`
+
+type ListThreadsByViewParams struct {
+	TenantID int64
+	OwnerID  int64
+	View     string
+	CursorAt pgtype.Timestamptz
+	CursorID int64
+	RowLimit int32
+}
+
+type ListThreadsByViewRow struct {
+	ID             int64
+	FromEmail      string
+	FromName       string
+	Subject        string
+	Snippet        string
+	ThreadKey      string
+	IsRead         bool
+	IsStarred      bool
+	HasAttachments bool
+	ReceivedAt     pgtype.Timestamptz
+	SentAt         pgtype.Timestamptz
+	ThreadCount    int32
+}
+
+// The mailbox list, read from the rows it shows.
+//
+// Replaces a CTE that materialised every message the owner could see, sorted
+// it by conversation, ran four window functions over it and took the newest
+// twenty-five off the end. That work was proportional to the whole mailbox on
+// every page load - 70 ms and a disk-spilling sort for a heavy user - because
+// a conversation's count and unread badge are facts about all of its messages
+// and no index can compute them.
+//
+// mail_thread_view holds those facts already, maintained by trigger. See
+// migration 00034.
+//
+// Keyset, not OFFSET: the page starts strictly after the last row of the
+// previous one, so mail arriving mid-read cannot push a conversation across a
+// page boundary and make it appear twice or not at all, and page 50 costs the
+// same as page 2.
+func (q *Queries) ListThreadsByView(ctx context.Context, arg ListThreadsByViewParams) ([]ListThreadsByViewRow, error) {
+	rows, err := q.db.Query(ctx, listThreadsByView,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.View,
+		arg.CursorAt,
+		arg.CursorID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListThreadsByViewRow
+	for rows.Next() {
+		var i ListThreadsByViewRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FromEmail,
+			&i.FromName,
+			&i.Subject,
+			&i.Snippet,
+			&i.ThreadKey,
+			&i.IsRead,
+			&i.IsStarred,
+			&i.HasAttachments,
+			&i.ReceivedAt,
+			&i.SentAt,
+			&i.ThreadCount,
 		); err != nil {
 			return nil, err
 		}

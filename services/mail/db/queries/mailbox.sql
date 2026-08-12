@@ -1037,3 +1037,46 @@ SELECT count(*) FROM email_inbound_attachments
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND inbound_id = sqlc.arg(inbound_id)::bigint
   AND content_id = sqlc.arg(content_id)::text;
+
+-- name: ListThreadsByView :many
+-- The mailbox list, read from the rows it shows.
+--
+-- Replaces a CTE that materialised every message the owner could see, sorted
+-- it by conversation, ran four window functions over it and took the newest
+-- twenty-five off the end. That work was proportional to the whole mailbox on
+-- every page load - 70 ms and a disk-spilling sort for a heavy user - because
+-- a conversation's count and unread badge are facts about all of its messages
+-- and no index can compute them.
+--
+-- mail_thread_view holds those facts already, maintained by trigger. See
+-- migration 00034.
+--
+-- Keyset, not OFFSET: the page starts strictly after the last row of the
+-- previous one, so mail arriving mid-read cannot push a conversation across a
+-- page boundary and make it appear twice or not at all, and page 50 costs the
+-- same as page 2.
+SELECT m.id, m.from_email, m.from_name, m.subject, m.snippet, m.thread_key,
+       (NOT t.any_unread)::boolean     AS is_read,
+       t.any_starred::boolean          AS is_starred,
+       t.any_attachment::boolean       AS has_attachments,
+       m.received_at, m.sent_at,
+       t.msg_count::int                AS thread_count
+FROM mail_thread_view t
+JOIN email_inbound m ON m.tenant_id = t.tenant_id AND m.id = t.last_id
+WHERE t.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND t.owner_id = sqlc.arg(owner_id)::bigint
+  AND t.view = sqlc.arg(view)::text
+  -- Row comparison, so ties on the timestamp fall back to the id and no two
+  -- conversations can ever occupy the same cursor position.
+  AND (sqlc.narg(cursor_at)::timestamptz IS NULL
+       OR (t.last_at, t.last_id) < (sqlc.narg(cursor_at)::timestamptz,
+                                    sqlc.arg(cursor_id)::bigint))
+ORDER BY t.last_at DESC, t.last_id DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: CountThreadsByView :one
+-- Conversations, not messages: the pager has to count what the list shows.
+SELECT count(*)::bigint FROM mail_thread_view
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND owner_id = sqlc.arg(owner_id)::bigint
+  AND view = sqlc.arg(view)::text;
