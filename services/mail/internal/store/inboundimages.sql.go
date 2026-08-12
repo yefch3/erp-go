@@ -9,6 +9,29 @@ import (
 	"context"
 )
 
+const deleteInboundBodyMisfiledAsAttachment = `-- name: DeleteInboundBodyMisfiledAsAttachment :execrows
+DELETE FROM email_inbound_attachments
+WHERE tenant_id = $1::bigint
+  AND inbound_id = $2::bigint
+  AND (content_type LIKE 'text/plain%' OR content_type LIKE 'text/html%')
+`
+
+type DeleteInboundBodyMisfiledAsAttachmentParams struct {
+	TenantID  int64
+	InboundID int64
+}
+
+// The two rows the old rule wrote for a body it mistook for files. Narrow on
+// purpose: text/* only, and only for a message being repaired, so a genuinely
+// attached .txt on some other message is never touched.
+func (q *Queries) DeleteInboundBodyMisfiledAsAttachment(ctx context.Context, arg DeleteInboundBodyMisfiledAsAttachmentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteInboundBodyMisfiledAsAttachment, arg.TenantID, arg.InboundID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertInboundImage = `-- name: InsertInboundImage :exec
 INSERT INTO email_inbound_images (
     tenant_id, inbound_id, source_url, url_hash, object_key, content_type, byte_size
@@ -317,6 +340,55 @@ func (q *Queries) ListInboundNeedingImages(ctx context.Context, arg ListInboundN
 	return items, nil
 }
 
+const listInboundWithNoBody = `-- name: ListInboundWithNoBody :many
+SELECT id, account_id, raw_key
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND body_html = '' AND body_text = '' AND raw_key <> ''
+ORDER BY id
+LIMIT $2::int
+`
+
+type ListInboundWithNoBodyParams struct {
+	TenantID int64
+	RowLimit int32
+}
+
+type ListInboundWithNoBodyRow struct {
+	ID        int64
+	AccountID int64
+	RawKey    string
+}
+
+// Messages that arrived with nothing in them.
+//
+// Until 2026-08-11 any part carrying a Content-ID was filed as an attachment,
+// which is right for a pasted picture and wrong for a body: LinkedIn labels
+// its two alternatives Content-ID: text-body and html-body, so both were taken
+// away and the message was left with no text at all. The original is still in
+// object storage, so the damage is repairable by parsing it again.
+//
+// Self-clearing: a message that gets its body back stops matching.
+func (q *Queries) ListInboundWithNoBody(ctx context.Context, arg ListInboundWithNoBodyParams) ([]ListInboundWithNoBodyRow, error) {
+	rows, err := q.db.Query(ctx, listInboundWithNoBody, arg.TenantID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInboundWithNoBodyRow
+	for rows.Next() {
+		var i ListInboundWithNoBodyRow
+		if err := rows.Scan(&i.ID, &i.AccountID, &i.RawKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listThreadEmbedded = `-- name: ListThreadEmbedded :many
 SELECT a.inbound_id, a.content_id, a.file_key, a.content_type
 FROM email_inbound_attachments a
@@ -434,6 +506,39 @@ type MarkImagesCachedParams struct {
 func (q *Queries) MarkImagesCached(ctx context.Context, arg MarkImagesCachedParams) error {
 	_, err := q.db.Exec(ctx, markImagesCached, arg.TenantID, arg.ID)
 	return err
+}
+
+const restoreInboundBody = `-- name: RestoreInboundBody :execrows
+UPDATE email_inbound
+SET body_html = $1::text,
+    body_text = $2::text,
+    snippet   = $3::varchar,
+    has_attachments = $4::boolean
+WHERE tenant_id = $5::bigint AND id = $6::bigint
+`
+
+type RestoreInboundBodyParams struct {
+	BodyHtml       string
+	BodyText       string
+	Snippet        string
+	HasAttachments bool
+	TenantID       int64
+	ID             int64
+}
+
+func (q *Queries) RestoreInboundBody(ctx context.Context, arg RestoreInboundBodyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, restoreInboundBody,
+		arg.BodyHtml,
+		arg.BodyText,
+		arg.Snippet,
+		arg.HasAttachments,
+		arg.TenantID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setAttachmentContentID = `-- name: SetAttachmentContentID :exec
