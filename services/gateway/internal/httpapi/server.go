@@ -135,6 +135,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("masterdata:customer:write")).Delete("/api/customers/{id}/contacts/{contactId}", s.deactivateCustomerContact)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}/owners", s.listCustomerOwners)
 		r.With(s.perm("masterdata:customer:write")).Post("/api/customers/{id}/owners", s.createCustomerOwner)
+		r.With(s.perm("masterdata:customer:write")).Put("/api/customers/{id}/owners/{ownerId}", s.updateCustomerOwner)
 		r.With(s.perm("masterdata:customer:write")).Delete("/api/customers/{id}/owners/{ownerId}", s.deactivateCustomerOwner)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}/changes", s.listCustomerChanges)
 		r.With(s.perm("masterdata:supplier:read")).Get("/api/suppliers", s.listSuppliers)

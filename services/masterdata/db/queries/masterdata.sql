@@ -148,7 +148,7 @@ WHERE tenant_id = sqlc.arg(tenant_id) AND customer_id = sqlc.arg(customer_id)
 SELECT * FROM customer_owners
 WHERE tenant_id = sqlc.arg(tenant_id) AND customer_id = sqlc.arg(customer_id)
   AND (sqlc.arg(status)::text = 'ALL' OR status = 'ACTIVE')
-ORDER BY status, responsibility_code, id;
+ORDER BY status, is_primary DESC, responsibility_code, id;
 
 -- name: CountActiveCustomerOwners :one
 SELECT count(*) FROM customer_owners
@@ -158,17 +158,42 @@ WHERE tenant_id = sqlc.arg(tenant_id) AND customer_id = sqlc.arg(customer_id)
 -- name: CreateCustomerOwner :one
 INSERT INTO customer_owners (
     tenant_id, customer_id, employee_id, employee_name, responsibility_code,
-    start_date, end_date, created_by, updated_by
+    start_date, end_date, is_primary, created_by, updated_by
 ) VALUES (
     sqlc.arg(tenant_id), sqlc.arg(customer_id), sqlc.arg(employee_id), sqlc.arg(employee_name),
     sqlc.arg(responsibility_code), sqlc.narg(start_date), sqlc.narg(end_date),
-    sqlc.arg(operator_id), sqlc.arg(operator_id)
+    sqlc.arg(is_primary), sqlc.arg(operator_id), sqlc.arg(operator_id)
 )
+RETURNING *;
+
+-- name: GetCustomerOwner :one
+SELECT * FROM customer_owners
+WHERE tenant_id = sqlc.arg(tenant_id) AND customer_id = sqlc.arg(customer_id)
+  AND id = sqlc.arg(id);
+
+-- name: ClearPrimaryCustomerOwners :exec
+UPDATE customer_owners
+SET is_primary = false, updated_by = sqlc.arg(operator_id), updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id) AND customer_id = sqlc.arg(customer_id)
+  AND status = 'ACTIVE' AND is_primary = true
+  AND id <> sqlc.arg(exclude_id);
+
+-- name: UpdateCustomerOwner :one
+UPDATE customer_owners
+SET responsibility_code = sqlc.arg(responsibility_code),
+    start_date = sqlc.narg(start_date),
+    end_date = sqlc.narg(end_date),
+    is_primary = sqlc.arg(is_primary),
+    updated_by = sqlc.arg(operator_id),
+    updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id) AND customer_id = sqlc.arg(customer_id)
+  AND id = sqlc.arg(id) AND status = 'ACTIVE'
 RETURNING *;
 
 -- name: DeactivateCustomerOwner :execrows
 UPDATE customer_owners
-SET status = 'INACTIVE', end_date = COALESCE(sqlc.narg(end_date), end_date, CURRENT_DATE),
+SET status = 'INACTIVE', is_primary = false,
+    end_date = COALESCE(sqlc.narg(end_date), end_date, CURRENT_DATE),
     updated_by = sqlc.arg(operator_id), updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id) AND customer_id = sqlc.arg(customer_id)
   AND id = sqlc.arg(id) AND status = 'ACTIVE';

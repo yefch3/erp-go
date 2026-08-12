@@ -26,6 +26,7 @@ service CustomerService {
   rpc DeactivateCustomerContact(DeactivateCustomerContactRequest) returns (DeactivateCustomerContactResponse);
   rpc ListCustomerOwners(ListCustomerOwnersRequest) returns (ListCustomerOwnersResponse);
   rpc CreateCustomerOwner(CreateCustomerOwnerRequest) returns (CreateCustomerOwnerResponse);
+  rpc UpdateCustomerOwner(UpdateCustomerOwnerRequest) returns (UpdateCustomerOwnerResponse);
   rpc DeactivateCustomerOwner(DeactivateCustomerOwnerRequest) returns (DeactivateCustomerOwnerResponse);
   rpc ListCustomerChanges(ListCustomerChangesRequest) returns (ListCustomerChangesResponse);
   rpc ImportCustomers(ImportCustomersRequest) returns (ImportCustomersResponse);
@@ -442,6 +443,7 @@ message CustomerOwner {
   string start_date = 6;
   string end_date = 7;
   string status = 8;
+  bool is_primary = 9;
 }
 
 message CustomerOwnerInput {
@@ -451,6 +453,7 @@ message CustomerOwnerInput {
   string responsibility_code = 3;
   string start_date = 4;
   string end_date = 5;
+  bool is_primary = 6;
 }
 
 message ListCustomerOwnersRequest {
@@ -466,6 +469,14 @@ message CreateCustomerOwnerRequest {
 }
 
 message CreateCustomerOwnerResponse { CustomerOwner owner = 1; }
+
+message UpdateCustomerOwnerRequest {
+  int64 customer_id = 1;
+  int64 id = 2;
+  CustomerOwnerInput owner = 3;
+}
+
+message UpdateCustomerOwnerResponse { CustomerOwner owner = 1; }
 
 message DeactivateCustomerOwnerRequest {
   int64 customer_id = 1;

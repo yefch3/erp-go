@@ -71,7 +71,8 @@ func ownerToProto(o store.CustomerOwner) *mdv1.CustomerOwner {
 		end = o.EndDate.Time.Format("2006-01-02")
 	}
 	return &mdv1.CustomerOwner{Id: o.ID, CustomerId: o.CustomerID, EmployeeId: o.EmployeeID,
-		EmployeeName: o.EmployeeName, ResponsibilityCode: o.ResponsibilityCode, StartDate: start, EndDate: end, Status: o.Status}
+		EmployeeName: o.EmployeeName, ResponsibilityCode: o.ResponsibilityCode, StartDate: start, EndDate: end,
+		Status: o.Status, IsPrimary: o.IsPrimary}
 }
 
 func (h *Handler) ListCustomerOwners(ctx context.Context, req *mdv1.ListCustomerOwnersRequest) (*mdv1.ListCustomerOwnersResponse, error) {
@@ -93,11 +94,27 @@ func (h *Handler) CreateCustomerOwner(ctx context.Context, req *mdv1.CreateCusto
 	}
 	out, err := h.svc.CreateCustomerOwner(ctx, grpcx.TenantID(ctx), req.GetCustomerId(), app.CustomerOwnerInput{
 		EmployeeID: in.GetEmployeeId(), EmployeeName: in.GetEmployeeName(), ResponsibilityCode: in.GetResponsibilityCode(),
-		StartDate: in.GetStartDate(), EndDate: in.GetEndDate(), OperatorID: operatorID(ctx), OperatorName: operatorName(ctx)})
+		StartDate: in.GetStartDate(), EndDate: in.GetEndDate(), IsPrimary: in.GetIsPrimary(),
+		OperatorID: operatorID(ctx), OperatorName: operatorName(ctx)})
 	if err != nil {
 		return nil, err
 	}
 	return &mdv1.CreateCustomerOwnerResponse{Owner: ownerToProto(out)}, nil
+}
+
+func (h *Handler) UpdateCustomerOwner(ctx context.Context, req *mdv1.UpdateCustomerOwnerRequest) (*mdv1.UpdateCustomerOwnerResponse, error) {
+	in := req.GetOwner()
+	if in == nil {
+		in = &mdv1.CustomerOwnerInput{}
+	}
+	out, err := h.svc.UpdateCustomerOwner(ctx, grpcx.TenantID(ctx), req.GetCustomerId(), req.GetId(), app.CustomerOwnerInput{
+		ResponsibilityCode: in.GetResponsibilityCode(), StartDate: in.GetStartDate(), EndDate: in.GetEndDate(),
+		IsPrimary: in.GetIsPrimary(), OperatorID: operatorID(ctx), OperatorName: operatorName(ctx),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &mdv1.UpdateCustomerOwnerResponse{Owner: ownerToProto(out)}, nil
 }
 
 func (h *Handler) DeactivateCustomerOwner(ctx context.Context, req *mdv1.DeactivateCustomerOwnerRequest) (*mdv1.DeactivateCustomerOwnerResponse, error) {

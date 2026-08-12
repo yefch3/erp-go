@@ -43,8 +43,29 @@ type CustomerOwnerInput struct {
 	EmployeeName       string
 	ResponsibilityCode string
 	StartDate, EndDate string
+	IsPrimary          bool
 	OperatorID         int64
 	OperatorName       string
+}
+
+// normalizeAndValidateOwner 统一校验负责人职责和生效日期，避免新增与编辑使用不同规则。
+func normalizeAndValidateOwner(in *CustomerOwnerInput) (pgtype.Date, pgtype.Date, error) {
+	in.ResponsibilityCode = strings.ToUpper(strings.TrimSpace(in.ResponsibilityCode))
+	if in.ResponsibilityCode == "" {
+		return pgtype.Date{}, pgtype.Date{}, apierr.Invalid("MD_CUSTOMER_OWNER_REQUIRED", "负责人职责必填")
+	}
+	start, err := parseOptionalDate(in.StartDate, "开始日期")
+	if err != nil {
+		return pgtype.Date{}, pgtype.Date{}, err
+	}
+	end, err := parseOptionalDate(in.EndDate, "结束日期")
+	if err != nil {
+		return pgtype.Date{}, pgtype.Date{}, err
+	}
+	if start.Valid && end.Valid && end.Time.Before(start.Time) {
+		return pgtype.Date{}, pgtype.Date{}, apierr.Invalid("MD_OWNER_DATES_INVALID", "结束日期不能早于开始日期")
+	}
+	return start, end, nil
 }
 
 // recordCustomerChange 把同一套审计格式用于基本资料、地址、联系人和负责人，
@@ -223,20 +244,12 @@ func (s *Service) ListCustomerOwners(ctx context.Context, tenantID, customerID i
 }
 
 func (s *Service) CreateCustomerOwner(ctx context.Context, tenantID, customerID int64, in CustomerOwnerInput) (store.CustomerOwner, error) {
-	in.ResponsibilityCode = strings.ToUpper(strings.TrimSpace(in.ResponsibilityCode))
-	if in.EmployeeID == 0 || strings.TrimSpace(in.EmployeeName) == "" || in.ResponsibilityCode == "" {
+	if in.EmployeeID == 0 || strings.TrimSpace(in.EmployeeName) == "" {
 		return store.CustomerOwner{}, apierr.Invalid("MD_CUSTOMER_OWNER_REQUIRED", "负责人、姓名和职责必填")
 	}
-	start, err := parseOptionalDate(in.StartDate, "开始日期")
+	start, end, err := normalizeAndValidateOwner(&in)
 	if err != nil {
 		return store.CustomerOwner{}, err
-	}
-	end, err := parseOptionalDate(in.EndDate, "结束日期")
-	if err != nil {
-		return store.CustomerOwner{}, err
-	}
-	if start.Valid && end.Valid && end.Time.Before(start.Time) {
-		return store.CustomerOwner{}, apierr.Invalid("MD_OWNER_DATES_INVALID", "结束日期不能早于开始日期")
 	}
 	var out store.CustomerOwner
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
@@ -244,13 +257,59 @@ func (s *Service) CreateCustomerOwner(ctx context.Context, tenantID, customerID 
 		if _, err := q.GetCustomer(ctx, store.GetCustomerParams{TenantID: tenantID, ID: customerID}); err != nil {
 			return err
 		}
+		if in.IsPrimary {
+			if err := q.ClearPrimaryCustomerOwners(ctx, store.ClearPrimaryCustomerOwnersParams{
+				TenantID: tenantID, CustomerID: customerID, ExcludeID: 0, OperatorID: in.OperatorID,
+			}); err != nil {
+				return err
+			}
+		}
 		out, err = q.CreateCustomerOwner(ctx, store.CreateCustomerOwnerParams{TenantID: tenantID, CustomerID: customerID,
 			EmployeeID: in.EmployeeID, EmployeeName: strings.TrimSpace(in.EmployeeName), ResponsibilityCode: in.ResponsibilityCode,
-			StartDate: start, EndDate: end, OperatorID: in.OperatorID})
+			StartDate: start, EndDate: end, IsPrimary: in.IsPrimary, OperatorID: in.OperatorID})
 		if err != nil {
 			return translateUnique(err, "MD_CUSTOMER_OWNER_DUPLICATE", "该员工已以相同职责负责此客户")
 		}
 		return recordCustomerChange(ctx, q, tenantID, customerID, "CREATE", "OWNER", "新增负责人："+out.EmployeeName, nil, out, in.OperatorID, in.OperatorName)
+	})
+	return out, err
+}
+
+// UpdateCustomerOwner 修改负责人职责、有效期和主要负责人标记；员工身份本身不在编辑中替换。
+func (s *Service) UpdateCustomerOwner(ctx context.Context, tenantID, customerID, id int64, in CustomerOwnerInput) (store.CustomerOwner, error) {
+	start, end, err := normalizeAndValidateOwner(&in)
+	if err != nil {
+		return store.CustomerOwner{}, err
+	}
+	var out store.CustomerOwner
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		before, err := q.GetCustomerOwner(ctx, store.GetCustomerOwnerParams{TenantID: tenantID, CustomerID: customerID, ID: id})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return apierr.NotFound("MD_CUSTOMER_OWNER_NOT_FOUND", "负责人关系不存在")
+			}
+			return err
+		}
+		if before.Status != "ACTIVE" {
+			return apierr.Conflict("MD_CUSTOMER_OWNER_INACTIVE", "已移除的负责人不能编辑")
+		}
+		if in.IsPrimary {
+			if err := q.ClearPrimaryCustomerOwners(ctx, store.ClearPrimaryCustomerOwnersParams{
+				TenantID: tenantID, CustomerID: customerID, ExcludeID: id, OperatorID: in.OperatorID,
+			}); err != nil {
+				return err
+			}
+		}
+		out, err = q.UpdateCustomerOwner(ctx, store.UpdateCustomerOwnerParams{
+			TenantID: tenantID, CustomerID: customerID, ID: id,
+			ResponsibilityCode: in.ResponsibilityCode, StartDate: start, EndDate: end,
+			IsPrimary: in.IsPrimary, OperatorID: in.OperatorID,
+		})
+		if err != nil {
+			return translateUnique(err, "MD_CUSTOMER_OWNER_DUPLICATE", "该员工已以相同职责负责此客户")
+		}
+		return recordCustomerChange(ctx, q, tenantID, customerID, "UPDATE", "OWNER", "编辑负责人："+out.EmployeeName, before, out, in.OperatorID, in.OperatorName)
 	})
 	return out, err
 }

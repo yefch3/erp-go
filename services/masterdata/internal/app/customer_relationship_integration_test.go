@@ -65,12 +65,41 @@ func TestCustomerRelationshipLifecycle(t *testing.T) {
 		t.Fatal("customer without owner should not become cooperating")
 	}
 
-	owner, err := svc.CreateCustomerOwner(ctx, 1, customer.ID, CustomerOwnerInput{EmployeeID: 77, EmployeeName: "王业务", ResponsibilityCode: "SALES", OperatorID: 9, OperatorName: "测试员"})
+	owner, err := svc.CreateCustomerOwner(ctx, 1, customer.ID, CustomerOwnerInput{EmployeeID: 77, EmployeeName: "王业务", ResponsibilityCode: "SALES", IsPrimary: true, OperatorID: 9, OperatorName: "测试员"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.CreateCustomerOwner(ctx, 1, customer.ID, CustomerOwnerInput{EmployeeID: 77, EmployeeName: "王业务", ResponsibilityCode: "SALES"}); err == nil {
 		t.Fatal("duplicate owner responsibility should be rejected")
+	}
+	secondOwner, err := svc.CreateCustomerOwner(ctx, 1, customer.ID, CustomerOwnerInput{EmployeeID: 88, EmployeeName: "李跟单", ResponsibilityCode: "FOLLOW_UP", OperatorID: 9, OperatorName: "测试员"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.UpdateCustomerOwner(ctx, 1, customer.ID, secondOwner.ID, CustomerOwnerInput{
+		ResponsibilityCode: "FINANCE", StartDate: "2026-08-12", IsPrimary: true,
+		OperatorID: 9, OperatorName: "测试员",
+	}); err != nil {
+		t.Fatalf("update owner and switch primary: %v", err)
+	}
+	owners, err := svc.ListCustomerOwners(ctx, 1, customer.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	primaryCount := 0
+	for _, candidate := range owners {
+		if candidate.IsPrimary {
+			primaryCount++
+			if candidate.ID != secondOwner.ID || candidate.ResponsibilityCode != "FINANCE" {
+				t.Fatalf("unexpected primary owner after update: %#v", candidate)
+			}
+		}
+		if candidate.ID == owner.ID && candidate.IsPrimary {
+			t.Fatal("previous primary owner was not cleared")
+		}
+	}
+	if primaryCount != 1 {
+		t.Fatalf("expected exactly one primary owner, got %d", primaryCount)
 	}
 	if _, err := svc.UpdateCustomerProfile(ctx, 1, customer.ID, CustomerProfileInput{BusinessStatus: "COOPERATING", OperatorID: 9, OperatorName: "测试员"}); err != nil {
 		t.Fatalf("customer with country and owner should become cooperating: %v", err)

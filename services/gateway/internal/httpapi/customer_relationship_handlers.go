@@ -94,6 +94,21 @@ func (s *Server) createCustomerOwner(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
+
+func (s *Server) updateCustomerOwner(w http.ResponseWriter, r *http.Request) {
+	req := &mdv1.UpdateCustomerOwnerRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.CustomerId, req.Id = idFromPath(r), relationID(r, "ownerId")
+	resp, err := s.Customers.UpdateCustomerOwner(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) deactivateCustomerOwner(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Customers.DeactivateCustomerOwner(r.Context(), &mdv1.DeactivateCustomerOwnerRequest{CustomerId: idFromPath(r), Id: relationID(r, "ownerId"), EndDate: r.URL.Query().Get("end_date")})
 	if err != nil {

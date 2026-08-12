@@ -206,6 +206,31 @@ func (q *Queries) ClearPrimaryCustomerContact(ctx context.Context, arg ClearPrim
 	return err
 }
 
+const clearPrimaryCustomerOwners = `-- name: ClearPrimaryCustomerOwners :exec
+UPDATE customer_owners
+SET is_primary = false, updated_by = $1, updated_at = now()
+WHERE tenant_id = $2 AND customer_id = $3
+  AND status = 'ACTIVE' AND is_primary = true
+  AND id <> $4
+`
+
+type ClearPrimaryCustomerOwnersParams struct {
+	OperatorID int64
+	TenantID   int64
+	CustomerID int64
+	ExcludeID  int64
+}
+
+func (q *Queries) ClearPrimaryCustomerOwners(ctx context.Context, arg ClearPrimaryCustomerOwnersParams) error {
+	_, err := q.db.Exec(ctx, clearPrimaryCustomerOwners,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.CustomerID,
+		arg.ExcludeID,
+	)
+	return err
+}
+
 const contactsInCountry = `-- name: ContactsInCountry :many
 SELECT DISTINCT ON (c.id)
     cc.id           AS contact_id,
@@ -605,13 +630,13 @@ func (q *Queries) CreateCustomerContact(ctx context.Context, arg CreateCustomerC
 const createCustomerOwner = `-- name: CreateCustomerOwner :one
 INSERT INTO customer_owners (
     tenant_id, customer_id, employee_id, employee_name, responsibility_code,
-    start_date, end_date, created_by, updated_by
+    start_date, end_date, is_primary, created_by, updated_by
 ) VALUES (
     $1, $2, $3, $4,
     $5, $6, $7,
-    $8, $8
+    $8, $9, $9
 )
-RETURNING id, tenant_id, customer_id, employee_id, employee_name, responsibility_code, start_date, end_date, status, created_at, created_by, updated_at, updated_by
+RETURNING id, tenant_id, customer_id, employee_id, employee_name, responsibility_code, start_date, end_date, status, created_at, created_by, updated_at, updated_by, is_primary
 `
 
 type CreateCustomerOwnerParams struct {
@@ -622,6 +647,7 @@ type CreateCustomerOwnerParams struct {
 	ResponsibilityCode string
 	StartDate          pgtype.Date
 	EndDate            pgtype.Date
+	IsPrimary          bool
 	OperatorID         int64
 }
 
@@ -634,6 +660,7 @@ func (q *Queries) CreateCustomerOwner(ctx context.Context, arg CreateCustomerOwn
 		arg.ResponsibilityCode,
 		arg.StartDate,
 		arg.EndDate,
+		arg.IsPrimary,
 		arg.OperatorID,
 	)
 	var i CustomerOwner
@@ -651,6 +678,7 @@ func (q *Queries) CreateCustomerOwner(ctx context.Context, arg CreateCustomerOwn
 		&i.CreatedBy,
 		&i.UpdatedAt,
 		&i.UpdatedBy,
+		&i.IsPrimary,
 	)
 	return i, err
 }
@@ -895,7 +923,8 @@ func (q *Queries) DeactivateCustomerContact(ctx context.Context, arg DeactivateC
 
 const deactivateCustomerOwner = `-- name: DeactivateCustomerOwner :execrows
 UPDATE customer_owners
-SET status = 'INACTIVE', end_date = COALESCE($1, end_date, CURRENT_DATE),
+SET status = 'INACTIVE', is_primary = false,
+    end_date = COALESCE($1, end_date, CURRENT_DATE),
     updated_by = $2, updated_at = now()
 WHERE tenant_id = $3 AND customer_id = $4
   AND id = $5 AND status = 'ACTIVE'
@@ -1081,6 +1110,40 @@ func (q *Queries) GetCustomerContact(ctx context.Context, arg GetCustomerContact
 		&i.UpdatedBy,
 		&i.EmailPermission,
 		&i.EmailCategories,
+	)
+	return i, err
+}
+
+const getCustomerOwner = `-- name: GetCustomerOwner :one
+SELECT id, tenant_id, customer_id, employee_id, employee_name, responsibility_code, start_date, end_date, status, created_at, created_by, updated_at, updated_by, is_primary FROM customer_owners
+WHERE tenant_id = $1 AND customer_id = $2
+  AND id = $3
+`
+
+type GetCustomerOwnerParams struct {
+	TenantID   int64
+	CustomerID int64
+	ID         int64
+}
+
+func (q *Queries) GetCustomerOwner(ctx context.Context, arg GetCustomerOwnerParams) (CustomerOwner, error) {
+	row := q.db.QueryRow(ctx, getCustomerOwner, arg.TenantID, arg.CustomerID, arg.ID)
+	var i CustomerOwner
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.CustomerID,
+		&i.EmployeeID,
+		&i.EmployeeName,
+		&i.ResponsibilityCode,
+		&i.StartDate,
+		&i.EndDate,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+		&i.IsPrimary,
 	)
 	return i, err
 }
@@ -1474,10 +1537,10 @@ func (q *Queries) ListCustomerCountries(ctx context.Context, arg ListCustomerCou
 }
 
 const listCustomerOwners = `-- name: ListCustomerOwners :many
-SELECT id, tenant_id, customer_id, employee_id, employee_name, responsibility_code, start_date, end_date, status, created_at, created_by, updated_at, updated_by FROM customer_owners
+SELECT id, tenant_id, customer_id, employee_id, employee_name, responsibility_code, start_date, end_date, status, created_at, created_by, updated_at, updated_by, is_primary FROM customer_owners
 WHERE tenant_id = $1 AND customer_id = $2
   AND ($3::text = 'ALL' OR status = 'ACTIVE')
-ORDER BY status, responsibility_code, id
+ORDER BY status, is_primary DESC, responsibility_code, id
 `
 
 type ListCustomerOwnersParams struct {
@@ -1509,6 +1572,7 @@ func (q *Queries) ListCustomerOwners(ctx context.Context, arg ListCustomerOwners
 			&i.CreatedBy,
 			&i.UpdatedAt,
 			&i.UpdatedBy,
+			&i.IsPrimary,
 		); err != nil {
 			return nil, err
 		}
@@ -2180,6 +2244,61 @@ func (q *Queries) UpdateCustomerContact(ctx context.Context, arg UpdateCustomerC
 		&i.UpdatedBy,
 		&i.EmailPermission,
 		&i.EmailCategories,
+	)
+	return i, err
+}
+
+const updateCustomerOwner = `-- name: UpdateCustomerOwner :one
+UPDATE customer_owners
+SET responsibility_code = $1,
+    start_date = $2,
+    end_date = $3,
+    is_primary = $4,
+    updated_by = $5,
+    updated_at = now()
+WHERE tenant_id = $6 AND customer_id = $7
+  AND id = $8 AND status = 'ACTIVE'
+RETURNING id, tenant_id, customer_id, employee_id, employee_name, responsibility_code, start_date, end_date, status, created_at, created_by, updated_at, updated_by, is_primary
+`
+
+type UpdateCustomerOwnerParams struct {
+	ResponsibilityCode string
+	StartDate          pgtype.Date
+	EndDate            pgtype.Date
+	IsPrimary          bool
+	OperatorID         int64
+	TenantID           int64
+	CustomerID         int64
+	ID                 int64
+}
+
+func (q *Queries) UpdateCustomerOwner(ctx context.Context, arg UpdateCustomerOwnerParams) (CustomerOwner, error) {
+	row := q.db.QueryRow(ctx, updateCustomerOwner,
+		arg.ResponsibilityCode,
+		arg.StartDate,
+		arg.EndDate,
+		arg.IsPrimary,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.CustomerID,
+		arg.ID,
+	)
+	var i CustomerOwner
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.CustomerID,
+		&i.EmployeeID,
+		&i.EmployeeName,
+		&i.ResponsibilityCode,
+		&i.StartDate,
+		&i.EndDate,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+		&i.IsPrimary,
 	)
 	return i, err
 }

@@ -36,6 +36,7 @@ const (
 	CustomerService_DeactivateCustomerContact_FullMethodName = "/erp.masterdata.v1.CustomerService/DeactivateCustomerContact"
 	CustomerService_ListCustomerOwners_FullMethodName        = "/erp.masterdata.v1.CustomerService/ListCustomerOwners"
 	CustomerService_CreateCustomerOwner_FullMethodName       = "/erp.masterdata.v1.CustomerService/CreateCustomerOwner"
+	CustomerService_UpdateCustomerOwner_FullMethodName       = "/erp.masterdata.v1.CustomerService/UpdateCustomerOwner"
 	CustomerService_DeactivateCustomerOwner_FullMethodName   = "/erp.masterdata.v1.CustomerService/DeactivateCustomerOwner"
 	CustomerService_ListCustomerChanges_FullMethodName       = "/erp.masterdata.v1.CustomerService/ListCustomerChanges"
 	CustomerService_ImportCustomers_FullMethodName           = "/erp.masterdata.v1.CustomerService/ImportCustomers"
@@ -71,6 +72,7 @@ type CustomerServiceClient interface {
 	DeactivateCustomerContact(ctx context.Context, in *DeactivateCustomerContactRequest, opts ...grpc.CallOption) (*DeactivateCustomerContactResponse, error)
 	ListCustomerOwners(ctx context.Context, in *ListCustomerOwnersRequest, opts ...grpc.CallOption) (*ListCustomerOwnersResponse, error)
 	CreateCustomerOwner(ctx context.Context, in *CreateCustomerOwnerRequest, opts ...grpc.CallOption) (*CreateCustomerOwnerResponse, error)
+	UpdateCustomerOwner(ctx context.Context, in *UpdateCustomerOwnerRequest, opts ...grpc.CallOption) (*UpdateCustomerOwnerResponse, error)
 	DeactivateCustomerOwner(ctx context.Context, in *DeactivateCustomerOwnerRequest, opts ...grpc.CallOption) (*DeactivateCustomerOwnerResponse, error)
 	ListCustomerChanges(ctx context.Context, in *ListCustomerChangesRequest, opts ...grpc.CallOption) (*ListCustomerChangesResponse, error)
 	ImportCustomers(ctx context.Context, in *ImportCustomersRequest, opts ...grpc.CallOption) (*ImportCustomersResponse, error)
@@ -265,6 +267,16 @@ func (c *customerServiceClient) CreateCustomerOwner(ctx context.Context, in *Cre
 	return out, nil
 }
 
+func (c *customerServiceClient) UpdateCustomerOwner(ctx context.Context, in *UpdateCustomerOwnerRequest, opts ...grpc.CallOption) (*UpdateCustomerOwnerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateCustomerOwnerResponse)
+	err := c.cc.Invoke(ctx, CustomerService_UpdateCustomerOwner_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *customerServiceClient) DeactivateCustomerOwner(ctx context.Context, in *DeactivateCustomerOwnerRequest, opts ...grpc.CallOption) (*DeactivateCustomerOwnerResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeactivateCustomerOwnerResponse)
@@ -361,6 +373,7 @@ type CustomerServiceServer interface {
 	DeactivateCustomerContact(context.Context, *DeactivateCustomerContactRequest) (*DeactivateCustomerContactResponse, error)
 	ListCustomerOwners(context.Context, *ListCustomerOwnersRequest) (*ListCustomerOwnersResponse, error)
 	CreateCustomerOwner(context.Context, *CreateCustomerOwnerRequest) (*CreateCustomerOwnerResponse, error)
+	UpdateCustomerOwner(context.Context, *UpdateCustomerOwnerRequest) (*UpdateCustomerOwnerResponse, error)
 	DeactivateCustomerOwner(context.Context, *DeactivateCustomerOwnerRequest) (*DeactivateCustomerOwnerResponse, error)
 	ListCustomerChanges(context.Context, *ListCustomerChangesRequest) (*ListCustomerChangesResponse, error)
 	ImportCustomers(context.Context, *ImportCustomersRequest) (*ImportCustomersResponse, error)
@@ -435,6 +448,9 @@ func (UnimplementedCustomerServiceServer) ListCustomerOwners(context.Context, *L
 }
 func (UnimplementedCustomerServiceServer) CreateCustomerOwner(context.Context, *CreateCustomerOwnerRequest) (*CreateCustomerOwnerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateCustomerOwner not implemented")
+}
+func (UnimplementedCustomerServiceServer) UpdateCustomerOwner(context.Context, *UpdateCustomerOwnerRequest) (*UpdateCustomerOwnerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateCustomerOwner not implemented")
 }
 func (UnimplementedCustomerServiceServer) DeactivateCustomerOwner(context.Context, *DeactivateCustomerOwnerRequest) (*DeactivateCustomerOwnerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeactivateCustomerOwner not implemented")
@@ -784,6 +800,24 @@ func _CustomerService_CreateCustomerOwner_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CustomerService_UpdateCustomerOwner_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateCustomerOwnerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).UpdateCustomerOwner(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_UpdateCustomerOwner_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).UpdateCustomerOwner(ctx, req.(*UpdateCustomerOwnerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CustomerService_DeactivateCustomerOwner_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeactivateCustomerOwnerRequest)
 	if err := dec(in); err != nil {
@@ -984,6 +1018,10 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateCustomerOwner",
 			Handler:    _CustomerService_CreateCustomerOwner_Handler,
+		},
+		{
+			MethodName: "UpdateCustomerOwner",
+			Handler:    _CustomerService_UpdateCustomerOwner_Handler,
 		},
 		{
 			MethodName: "DeactivateCustomerOwner",

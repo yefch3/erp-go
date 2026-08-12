@@ -117,6 +117,7 @@ type CustomerOwner struct {
 	CreatedBy          int64
 	UpdatedAt          pgtype.Timestamptz
 	UpdatedBy          int64
+	IsPrimary          bool
 }
 
 type NumberRule struct {
