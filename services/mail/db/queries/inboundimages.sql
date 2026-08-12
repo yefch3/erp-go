@@ -132,3 +132,37 @@ ORDER BY id;
 UPDATE email_inbound_attachments
 SET content_id = sqlc.arg(content_id)::text
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: ListInboundWithNoBody :many
+-- Messages that arrived with nothing in them.
+--
+-- Until 2026-08-11 any part carrying a Content-ID was filed as an attachment,
+-- which is right for a pasted picture and wrong for a body: LinkedIn labels
+-- its two alternatives Content-ID: text-body and html-body, so both were taken
+-- away and the message was left with no text at all. The original is still in
+-- object storage, so the damage is repairable by parsing it again.
+--
+-- Self-clearing: a message that gets its body back stops matching.
+SELECT id, account_id, raw_key
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND body_html = '' AND body_text = '' AND raw_key <> ''
+ORDER BY id
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: RestoreInboundBody :execrows
+UPDATE email_inbound
+SET body_html = sqlc.arg(body_html)::text,
+    body_text = sqlc.arg(body_text)::text,
+    snippet   = sqlc.arg(snippet)::varchar,
+    has_attachments = sqlc.arg(has_attachments)::boolean
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: DeleteInboundBodyMisfiledAsAttachment :execrows
+-- The two rows the old rule wrote for a body it mistook for files. Narrow on
+-- purpose: text/* only, and only for a message being repaired, so a genuinely
+-- attached .txt on some other message is never touched.
+DELETE FROM email_inbound_attachments
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND inbound_id = sqlc.arg(inbound_id)::bigint
+  AND (content_type LIKE 'text/plain%' OR content_type LIKE 'text/html%');
