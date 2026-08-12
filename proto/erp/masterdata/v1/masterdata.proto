@@ -81,6 +81,10 @@ message Contact {
   string remark = 11;
   string status = 12;
   int32 sort_order = 13;
+  // ALLOWED / OPTED_OUT / INVALID. ALLOWED contacts may be selected for mail.
+  string email_permission = 14;
+  // Empty means every mail category; otherwise only the selected categories.
+  repeated string email_categories = 15;
 }
 
 message Customer {
@@ -208,6 +212,8 @@ message MailingContact {
   string customer_name = 7;
   string country = 8;
   string country_code = 9;
+  string language = 10;
+  repeated string email_categories = 11;
 }
 
 // CountryGroup is one country and how big a send to it would be.
@@ -394,6 +400,8 @@ message CustomerContactInput {
   string remark = 9;
   bool is_primary = 10;
   int32 sort_order = 11;
+  string email_permission = 12;
+  repeated string email_categories = 13;
 }
 
 message ListCustomerContactsRequest {

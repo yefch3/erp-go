@@ -114,12 +114,14 @@ WHERE tenant_id = sqlc.arg(tenant_id) AND customer_id = sqlc.arg(customer_id)
 -- name: CreateCustomerContact :one
 INSERT INTO customer_contacts (
     tenant_id, customer_id, name, department, title, email, phone, mobile,
-    instant_messaging, language, remark, is_primary, sort_order, created_by, updated_by
+    instant_messaging, language, remark, is_primary, sort_order, email_permission,
+    email_categories, created_by, updated_by
 ) VALUES (
     sqlc.arg(tenant_id), sqlc.arg(customer_id), sqlc.arg(name), sqlc.arg(department),
     sqlc.arg(title), sqlc.arg(email), sqlc.arg(phone), sqlc.arg(mobile),
     sqlc.arg(instant_messaging), sqlc.arg(language), sqlc.arg(remark),
-    sqlc.arg(is_primary), sqlc.arg(sort_order), sqlc.arg(operator_id), sqlc.arg(operator_id)
+    sqlc.arg(is_primary), sqlc.arg(sort_order), sqlc.arg(email_permission),
+    sqlc.arg(email_categories), sqlc.arg(operator_id), sqlc.arg(operator_id)
 )
 RETURNING *;
 
@@ -129,7 +131,8 @@ SET name = sqlc.arg(name), department = sqlc.arg(department), title = sqlc.arg(t
     email = sqlc.arg(email), phone = sqlc.arg(phone), mobile = sqlc.arg(mobile),
     instant_messaging = sqlc.arg(instant_messaging), language = sqlc.arg(language),
     remark = sqlc.arg(remark), is_primary = sqlc.arg(is_primary),
-    sort_order = sqlc.arg(sort_order), updated_by = sqlc.arg(operator_id), updated_at = now()
+    sort_order = sqlc.arg(sort_order), email_permission = sqlc.arg(email_permission),
+    email_categories = sqlc.arg(email_categories), updated_by = sqlc.arg(operator_id), updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id) AND customer_id = sqlc.arg(customer_id)
   AND id = sqlc.arg(id) AND status = 'ACTIVE'
 RETURNING *;
@@ -337,6 +340,8 @@ WITH hits AS (
     FROM customer_contacts cc
     WHERE cc.tenant_id = sqlc.arg(tenant_id)::bigint
       AND cc.email <> ''
+      AND cc.status = 'ACTIVE'
+      AND cc.email_permission = 'ALLOWED'
       AND (cc.name ILIKE '%' || sqlc.arg(keyword)::text || '%'
            OR cc.email ILIKE '%' || sqlc.arg(keyword)::text || '%')
     UNION
@@ -347,6 +352,8 @@ WITH hits AS (
       ON cc.customer_id = c.id AND cc.tenant_id = c.tenant_id
     WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
       AND cc.email <> ''
+      AND cc.status = 'ACTIVE'
+      AND cc.email_permission = 'ALLOWED'
       AND c.name ILIKE '%' || sqlc.arg(keyword)::text || '%'
 )
 SELECT
@@ -358,12 +365,16 @@ SELECT
     c.id            AS customer_id,
     c.name          AS customer_name,
     c.country,
-    c.country_code
+    c.country_code,
+    cc.language,
+    cc.email_categories
 FROM customer_contacts cc
 JOIN customers c ON c.id = cc.customer_id AND c.tenant_id = cc.tenant_id
 WHERE cc.tenant_id = sqlc.arg(tenant_id)::bigint
   AND c.status = 'ACTIVE'
   AND cc.email <> ''
+  AND cc.status = 'ACTIVE'
+  AND cc.email_permission = 'ALLOWED'
   -- An empty keyword lists the book; anything else must have matched above.
   AND (sqlc.arg(keyword)::text = '' OR cc.id IN (SELECT id FROM hits))
   AND (
@@ -399,6 +410,7 @@ SELECT
 FROM customers c
 LEFT JOIN customer_contacts cc
     ON cc.customer_id = c.id AND cc.tenant_id = c.tenant_id AND cc.email <> ''
+   AND cc.status = 'ACTIVE' AND cc.email_permission = 'ALLOWED'
 WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND (sqlc.arg(status)::text = 'ALL' OR c.status = 'ACTIVE')
 GROUP BY c.country_code
@@ -424,7 +436,9 @@ SELECT DISTINCT ON (c.id)
     c.id            AS customer_id,
     c.name          AS customer_name,
     c.country,
-    c.country_code
+    c.country_code,
+    cc.language,
+    cc.email_categories
 FROM customers c
 JOIN customer_contacts cc
     ON cc.customer_id = c.id AND cc.tenant_id = c.tenant_id
@@ -432,6 +446,8 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND c.status = 'ACTIVE'
   AND c.country_code = sqlc.arg(country_code)::text
   AND cc.email <> ''
+  AND cc.status = 'ACTIVE'
+  AND cc.email_permission = 'ALLOWED'
 ORDER BY c.id, cc.is_primary DESC, cc.sort_order, cc.id;
 
 -- name: AllContactsInCountry :many
@@ -450,7 +466,9 @@ SELECT
     c.id            AS customer_id,
     c.name          AS customer_name,
     c.country,
-    c.country_code
+    c.country_code,
+    cc.language,
+    cc.email_categories
 FROM customers c
 JOIN customer_contacts cc
     ON cc.customer_id = c.id AND cc.tenant_id = c.tenant_id
@@ -458,4 +476,6 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND c.status = 'ACTIVE'
   AND c.country_code = sqlc.arg(country_code)::text
   AND cc.email <> ''
+  AND cc.status = 'ACTIVE'
+  AND cc.email_permission = 'ALLOWED'
 ORDER BY c.name, cc.is_primary DESC, cc.sort_order, cc.id;

@@ -5,7 +5,10 @@ package app
 import (
 	"context"
 	"errors"
+	"net/mail"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -107,6 +110,14 @@ func (in CustomerInput) validate() error {
 		return apierr.Invalid("MD_CUSTOMER_BUSINESS_STATUS_INVALID", "客户业务状态无效")
 	}
 	for _, c := range in.Contacts {
+		if c.Email != "" {
+			if _, err := mail.ParseAddress(strings.TrimSpace(c.Email)); err != nil {
+				return apierr.Invalid("MD_CONTACT_EMAIL_INVALID", "联系人邮箱格式不正确")
+			}
+		}
+		if c.Phone != "" && !customerPhonePattern.MatchString(strings.TrimSpace(c.Phone)) {
+			return apierr.Invalid("MD_CONTACT_PHONE_INVALID", "联系人电话格式不正确")
+		}
 		if c.Name == "" {
 			return apierr.Invalid("MD_CONTACT_NAME_REQUIRED", "联系人姓名必填")
 		}
@@ -115,6 +126,17 @@ func (in CustomerInput) validate() error {
 }
 
 func (in CustomerProfileInput) validate() error {
+	if website := strings.TrimSpace(in.Website); website != "" {
+		parsed, err := url.ParseRequestURI(website)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return apierr.Invalid("MD_CUSTOMER_WEBSITE_INVALID", "官网必须是以 http:// 或 https:// 开头的完整地址")
+		}
+	}
+	if timezone := strings.TrimSpace(in.Timezone); timezone != "" {
+		if _, err := time.LoadLocation(timezone); err != nil {
+			return apierr.Invalid("MD_CUSTOMER_TIMEZONE_INVALID", "所在时区必须是有效的 IANA 时区，例如 Asia/Shanghai")
+		}
+	}
 	if in.PaymentDays < 0 {
 		return apierr.Invalid("MD_PAYMENT_DAYS_INVALID", "付款账期不能小于 0 天")
 	}
@@ -599,15 +621,17 @@ func (s *Service) ListCustomerCountries(ctx context.Context, tenantID int64, sta
 // CountryRecipient is one addressable person, the same shape the address book
 // already returns so the picker can treat both sources identically.
 type CountryRecipient struct {
-	ContactID    int64
-	Name         string
-	Title        string
-	Email        string
-	IsPrimary    bool
-	CustomerID   int64
-	CustomerName string
-	Country      string
-	CountryCode  string
+	ContactID       int64
+	Name            string
+	Title           string
+	Email           string
+	IsPrimary       bool
+	CustomerID      int64
+	CustomerName    string
+	Country         string
+	CountryCode     string
+	Language        string
+	EmailCategories []string
 }
 
 // ContactsInCountry returns everybody writable in one country.
@@ -637,7 +661,8 @@ func (s *Service) ContactsInCountry(ctx context.Context, tenantID int64, code st
 				ContactID: r.ContactID, Name: r.Name, Title: r.Title, Email: r.Email,
 				IsPrimary: r.IsPrimary, CustomerID: r.CustomerID,
 				CustomerName: r.CustomerName, Country: r.Country,
-				CountryCode: strings.TrimSpace(r.CountryCode),
+				CountryCode: strings.TrimSpace(r.CountryCode), Language: r.Language,
+				EmailCategories: r.EmailCategories,
 			}
 		}
 		return out, nil
@@ -654,7 +679,8 @@ func (s *Service) ContactsInCountry(ctx context.Context, tenantID int64, code st
 			ContactID: r.ContactID, Name: r.Name, Title: r.Title, Email: r.Email,
 			IsPrimary: r.IsPrimary, CustomerID: r.CustomerID,
 			CustomerName: r.CustomerName, Country: r.Country,
-			CountryCode: strings.TrimSpace(r.CountryCode),
+			CountryCode: strings.TrimSpace(r.CountryCode), Language: r.Language,
+			EmailCategories: r.EmailCategories,
 		}
 	}
 	return out, nil

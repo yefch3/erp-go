@@ -99,6 +99,8 @@ type CustomerContact struct {
 	CreatedBy        int64
 	UpdatedAt        pgtype.Timestamptz
 	UpdatedBy        int64
+	EmailPermission  string
+	EmailCategories  []string
 }
 
 type CustomerOwner struct {

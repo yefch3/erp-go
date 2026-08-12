@@ -14,7 +14,8 @@ import (
 func contactToProto(c store.CustomerContact) *mdv1.Contact {
 	return &mdv1.Contact{Id: c.ID, Name: c.Name, Department: c.Department, Title: c.Title,
 		Email: c.Email, Phone: c.Phone, Mobile: c.Mobile, InstantMessaging: c.InstantMessaging,
-		Language: c.Language, Remark: c.Remark, IsPrimary: c.IsPrimary, SortOrder: c.SortOrder, Status: c.Status}
+		Language: c.Language, Remark: c.Remark, IsPrimary: c.IsPrimary, SortOrder: c.SortOrder, Status: c.Status,
+		EmailPermission: c.EmailPermission, EmailCategories: c.EmailCategories}
 }
 
 func contactInput(c *mdv1.CustomerContactInput, ctx context.Context) app.CustomerContactInput {
@@ -24,6 +25,7 @@ func contactInput(c *mdv1.CustomerContactInput, ctx context.Context) app.Custome
 	return app.CustomerContactInput{Name: c.GetName(), Department: c.GetDepartment(), Title: c.GetTitle(),
 		Email: c.GetEmail(), Phone: c.GetPhone(), Mobile: c.GetMobile(), InstantMessaging: c.GetInstantMessaging(),
 		Language: c.GetLanguage(), Remark: c.GetRemark(), IsPrimary: c.GetIsPrimary(), SortOrder: c.GetSortOrder(),
+		EmailPermission: c.GetEmailPermission(), EmailCategories: c.GetEmailCategories(),
 		OperatorID: operatorID(ctx), OperatorName: operatorName(ctx)}
 }
 

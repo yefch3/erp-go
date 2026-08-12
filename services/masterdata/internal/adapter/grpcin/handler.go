@@ -417,7 +417,8 @@ func (h *Handler) ListMailingContacts(ctx context.Context, req *mdv1.ListMailing
 			ContactId: r.ContactID, Name: r.Name, Title: r.Title, Email: r.Email,
 			IsPrimary: r.IsPrimary, CustomerId: r.CustomerID,
 			CustomerName: r.CustomerName, Country: r.Country,
-			CountryCode: strings.TrimSpace(r.CountryCode),
+			CountryCode: strings.TrimSpace(r.CountryCode), Language: r.Language,
+			EmailCategories: r.EmailCategories,
 		})
 	}
 	return &mdv1.ListMailingContactsResponse{Contacts: out}, nil
@@ -450,6 +451,7 @@ func (h *Handler) ContactsInCountry(ctx context.Context, req *mdv1.ContactsInCou
 			ContactId: r.ContactID, Name: r.Name, Title: r.Title, Email: r.Email,
 			IsPrimary: r.IsPrimary, CustomerId: r.CustomerID,
 			CustomerName: r.CustomerName, Country: r.Country, CountryCode: r.CountryCode,
+			Language: r.Language, EmailCategories: r.EmailCategories,
 		}
 	}
 	return &mdv1.ContactsInCountryResponse{Contacts: out}, nil

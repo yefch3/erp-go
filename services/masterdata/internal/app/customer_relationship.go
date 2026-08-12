@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/mail"
+	"regexp"
 	"strings"
 	"time"
 
@@ -21,8 +22,20 @@ type CustomerContactInput struct {
 	InstantMessaging, Language, Remark            string
 	IsPrimary                                     bool
 	SortOrder                                     int32
+	EmailPermission                               string
+	EmailCategories                               []string
 	OperatorID                                    int64
 	OperatorName                                  string
+}
+
+var customerPhonePattern = regexp.MustCompile(`^[0-9+().\-\s]{6,30}$`)
+
+var customerEmailPermissions = map[string]bool{
+	"ALLOWED": true, "OPTED_OUT": true, "INVALID": true,
+}
+
+var customerEmailCategories = map[string]bool{
+	"BUSINESS": true, "QUOTATION": true, "SHIPPING": true, "MARKETING": true,
 }
 
 type CustomerOwnerInput struct {
@@ -52,6 +65,13 @@ func recordCustomerChange(ctx context.Context, q *store.Queries, tenantID, custo
 func (in *CustomerContactInput) normalizeAndValidate() error {
 	in.Name = strings.TrimSpace(in.Name)
 	in.Email = strings.TrimSpace(in.Email)
+	in.Phone = strings.TrimSpace(in.Phone)
+	in.Mobile = strings.TrimSpace(in.Mobile)
+	in.Language = strings.TrimSpace(in.Language)
+	in.EmailPermission = strings.ToUpper(strings.TrimSpace(in.EmailPermission))
+	if in.EmailPermission == "" {
+		in.EmailPermission = "ALLOWED"
+	}
 	if in.Name == "" {
 		return apierr.Invalid("MD_CONTACT_NAME_REQUIRED", "联系人姓名必填")
 	}
@@ -60,6 +80,27 @@ func (in *CustomerContactInput) normalizeAndValidate() error {
 			return apierr.Invalid("MD_CONTACT_EMAIL_INVALID", "联系人邮箱格式不正确")
 		}
 	}
+	for field, value := range map[string]string{"电话": in.Phone, "手机": in.Mobile} {
+		if value != "" && !customerPhonePattern.MatchString(value) {
+			return apierr.Invalid("MD_CONTACT_PHONE_INVALID", field+"格式不正确，只能包含数字、空格和 +()-.")
+		}
+	}
+	if !customerEmailPermissions[in.EmailPermission] {
+		return apierr.Invalid("MD_CONTACT_EMAIL_PERMISSION_INVALID", "邮件接收状态不正确")
+	}
+	seen := make(map[string]bool, len(in.EmailCategories))
+	normalizedCategories := make([]string, 0, len(in.EmailCategories))
+	for _, category := range in.EmailCategories {
+		category = strings.ToUpper(strings.TrimSpace(category))
+		if !customerEmailCategories[category] {
+			return apierr.Invalid("MD_CONTACT_EMAIL_CATEGORY_INVALID", "邮件类型不正确")
+		}
+		if !seen[category] {
+			seen[category] = true
+			normalizedCategories = append(normalizedCategories, category)
+		}
+	}
+	in.EmailCategories = normalizedCategories
 	if in.SortOrder < 0 {
 		return apierr.Invalid("MD_CONTACT_SORT_INVALID", "联系人排序不能小于 0")
 	}
@@ -96,7 +137,8 @@ func (s *Service) CreateCustomerContact(ctx context.Context, tenantID, customerI
 			TenantID: tenantID, CustomerID: customerID, Name: in.Name, Department: in.Department,
 			Title: in.Title, Email: in.Email, Phone: in.Phone, Mobile: in.Mobile,
 			InstantMessaging: in.InstantMessaging, Language: in.Language, Remark: in.Remark,
-			IsPrimary: in.IsPrimary, SortOrder: in.SortOrder, OperatorID: in.OperatorID,
+			IsPrimary: in.IsPrimary, SortOrder: in.SortOrder, EmailPermission: in.EmailPermission,
+			EmailCategories: in.EmailCategories, OperatorID: in.OperatorID,
 		})
 		if err != nil {
 			return err
@@ -126,7 +168,8 @@ func (s *Service) UpdateCustomerContact(ctx context.Context, tenantID, customerI
 			TenantID: tenantID, CustomerID: customerID, ID: id, Name: in.Name,
 			Department: in.Department, Title: in.Title, Email: in.Email, Phone: in.Phone,
 			Mobile: in.Mobile, InstantMessaging: in.InstantMessaging, Language: in.Language,
-			Remark: in.Remark, IsPrimary: in.IsPrimary, SortOrder: in.SortOrder, OperatorID: in.OperatorID,
+			Remark: in.Remark, IsPrimary: in.IsPrimary, SortOrder: in.SortOrder,
+			EmailPermission: in.EmailPermission, EmailCategories: in.EmailCategories, OperatorID: in.OperatorID,
 		})
 		if err != nil {
 			return err

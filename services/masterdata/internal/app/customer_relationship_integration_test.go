@@ -41,11 +41,24 @@ func TestCustomerRelationshipLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := svc.CreateCustomerContact(ctx, 1, customer.ID, CustomerContactInput{
+		Name: "Opted Out", Email: "optedout@example.com", EmailPermission: "OPTED_OUT",
+		OperatorID: 9, OperatorName: "测试员",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mailingContacts, err := svc.ListMailingContacts(ctx, 1, "optedout", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mailingContacts) != 0 {
+		t.Fatalf("opted-out contact leaked into mail picker: %#v", mailingContacts)
+	}
 	contacts, err := svc.ListCustomerContactsDetailed(ctx, 1, customer.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(contacts) != 2 || contacts[0].ID != second.ID || !contacts[0].IsPrimary || contacts[1].ID != first.ID || contacts[1].IsPrimary {
+	if len(contacts) != 3 || contacts[0].ID != second.ID || !contacts[0].IsPrimary || contacts[1].ID != first.ID || contacts[1].IsPrimary {
 		t.Fatalf("primary contact switch failed: %#v", contacts)
 	}
 	if _, err := svc.UpdateCustomerProfile(ctx, 1, customer.ID, CustomerProfileInput{BusinessStatus: "COOPERATING"}); err == nil {
@@ -109,9 +122,26 @@ func TestCustomerImportAllOrNothing(t *testing.T) {
 }
 
 func TestCustomerContactValidation(t *testing.T) {
-	for _, input := range []CustomerContactInput{{}, {Name: "Alice", Email: "not-an-email"}} {
+	for _, input := range []CustomerContactInput{
+		{},
+		{Name: "Alice", Email: "not-an-email"},
+		{Name: "Alice", Phone: "call-me"},
+		{Name: "Alice", EmailPermission: "UNKNOWN"},
+		{Name: "Alice", EmailCategories: []string{"UNKNOWN"}},
+	} {
 		if err := input.normalizeAndValidate(); err == nil {
 			t.Fatalf("expected invalid contact: %#v", input)
 		}
+	}
+
+	valid := CustomerContactInput{
+		Name: " Alice ", Email: "alice@example.com", Phone: "+1 (212) 555-0100",
+		EmailCategories: []string{"shipping", "SHIPPING", "business"},
+	}
+	if err := valid.normalizeAndValidate(); err != nil {
+		t.Fatalf("valid contact: %v", err)
+	}
+	if valid.EmailPermission != "ALLOWED" || len(valid.EmailCategories) != 2 {
+		t.Fatalf("normalized email preferences = %q/%#v", valid.EmailPermission, valid.EmailCategories)
 	}
 }

@@ -27,11 +27,31 @@ func TestCustomerProfileValidation(t *testing.T) {
 		{Name: "A", CreditCurrency: "US"},
 		{Name: "A", CreditStatus: "UNKNOWN"},
 		{Name: "A", BusinessStatus: "UNKNOWN"},
+		{Name: "A", Contacts: []ContactInput{{Name: "Alice", Email: "bad-email"}}},
+		{Name: "A", Contacts: []ContactInput{{Name: "Alice", Phone: "call-me"}}},
 	}
 	for i, in := range tests {
 		if err := in.validate(); err == nil {
 			t.Fatalf("case %d: expected validation error", i)
 		}
+	}
+}
+
+func TestCustomerProfileWebsiteAndTimezoneValidation(t *testing.T) {
+	for _, in := range []CustomerProfileInput{
+		{Website: "example.com", CreditStatus: "NORMAL", BusinessStatus: "PROSPECT"},
+		{Timezone: "Shanghai", CreditStatus: "NORMAL", BusinessStatus: "PROSPECT"},
+	} {
+		if err := in.validate(); err == nil {
+			t.Fatalf("expected invalid profile: %#v", in)
+		}
+	}
+	valid := CustomerProfileInput{
+		Website: "https://example.com", Timezone: "Asia/Shanghai",
+		CreditStatus: "NORMAL", BusinessStatus: "PROSPECT",
+	}
+	if err := valid.validate(); err != nil {
+		t.Fatalf("valid profile: %v", err)
 	}
 }
 

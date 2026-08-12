@@ -211,6 +211,7 @@ import { useRouter } from 'vue-router'
 import { del, get, post, put } from '../api'
 import { DIAL_CODES, dialCodeOfCode, splitPhone } from '../constants'
 import { countryName, countryOptions } from '../lib/countries'
+import { validateCustomerContact } from '../lib/customerForms'
 import { useAuthStore } from '../stores/auth'
 import ImportCustomersDialog from '../components/ImportCustomersDialog.vue'
 
@@ -398,10 +399,17 @@ async function save() {
     ElMessage.warning(t('customers.required'))
     return
   }
-  saving.value = true
   // The calling code is stored together with the number so the phone stays
   // dialable from anywhere; a bare code with no number is not a phone.
   const phone = form.contactPhone ? `${form.contactDial} ${form.contactPhone}`.trim() : ''
+  if (form.contactName) {
+    const error = validateCustomerContact({ name: form.contactName, email: form.contactEmail, phone })
+    if (error) {
+      ElMessage.warning(error === 'emailInvalid' ? '主要联系人邮箱格式不正确' : '主要联系人电话格式不正确')
+      return
+    }
+  }
+  saving.value = true
   const primary = form.contactName
     ? [{ name: form.contactName, phone, email: form.contactEmail, isPrimary: true }]
     : []

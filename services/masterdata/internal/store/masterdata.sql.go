@@ -92,7 +92,9 @@ SELECT
     c.id            AS customer_id,
     c.name          AS customer_name,
     c.country,
-    c.country_code
+    c.country_code,
+    cc.language,
+    cc.email_categories
 FROM customers c
 JOIN customer_contacts cc
     ON cc.customer_id = c.id AND cc.tenant_id = c.tenant_id
@@ -100,6 +102,8 @@ WHERE c.tenant_id = $1::bigint
   AND c.status = 'ACTIVE'
   AND c.country_code = $2::text
   AND cc.email <> ''
+  AND cc.status = 'ACTIVE'
+  AND cc.email_permission = 'ALLOWED'
 ORDER BY c.name, cc.is_primary DESC, cc.sort_order, cc.id
 `
 
@@ -109,15 +113,17 @@ type AllContactsInCountryParams struct {
 }
 
 type AllContactsInCountryRow struct {
-	ContactID    int64
-	Name         string
-	Title        string
-	Email        string
-	IsPrimary    bool
-	CustomerID   int64
-	CustomerName string
-	Country      string
-	CountryCode  string
+	ContactID       int64
+	Name            string
+	Title           string
+	Email           string
+	IsPrimary       bool
+	CustomerID      int64
+	CustomerName    string
+	Country         string
+	CountryCode     string
+	Language        string
+	EmailCategories []string
 }
 
 // The same country, everybody at every customer in it.
@@ -145,6 +151,8 @@ func (q *Queries) AllContactsInCountry(ctx context.Context, arg AllContactsInCou
 			&i.CustomerName,
 			&i.Country,
 			&i.CountryCode,
+			&i.Language,
+			&i.EmailCategories,
 		); err != nil {
 			return nil, err
 		}
@@ -208,7 +216,9 @@ SELECT DISTINCT ON (c.id)
     c.id            AS customer_id,
     c.name          AS customer_name,
     c.country,
-    c.country_code
+    c.country_code,
+    cc.language,
+    cc.email_categories
 FROM customers c
 JOIN customer_contacts cc
     ON cc.customer_id = c.id AND cc.tenant_id = c.tenant_id
@@ -216,6 +226,8 @@ WHERE c.tenant_id = $1::bigint
   AND c.status = 'ACTIVE'
   AND c.country_code = $2::text
   AND cc.email <> ''
+  AND cc.status = 'ACTIVE'
+  AND cc.email_permission = 'ALLOWED'
 ORDER BY c.id, cc.is_primary DESC, cc.sort_order, cc.id
 `
 
@@ -225,15 +237,17 @@ type ContactsInCountryParams struct {
 }
 
 type ContactsInCountryRow struct {
-	ContactID    int64
-	Name         string
-	Title        string
-	Email        string
-	IsPrimary    bool
-	CustomerID   int64
-	CustomerName string
-	Country      string
-	CountryCode  string
+	ContactID       int64
+	Name            string
+	Title           string
+	Email           string
+	IsPrimary       bool
+	CustomerID      int64
+	CustomerName    string
+	Country         string
+	CountryCode     string
+	Language        string
+	EmailCategories []string
 }
 
 // Everybody writable in one country.
@@ -265,6 +279,8 @@ func (q *Queries) ContactsInCountry(ctx context.Context, arg ContactsInCountryPa
 			&i.CustomerName,
 			&i.Country,
 			&i.CountryCode,
+			&i.Language,
+			&i.EmailCategories,
 		); err != nil {
 			return nil, err
 		}
@@ -509,14 +525,16 @@ func (q *Queries) CreateCustomerAddress(ctx context.Context, arg CreateCustomerA
 const createCustomerContact = `-- name: CreateCustomerContact :one
 INSERT INTO customer_contacts (
     tenant_id, customer_id, name, department, title, email, phone, mobile,
-    instant_messaging, language, remark, is_primary, sort_order, created_by, updated_by
+    instant_messaging, language, remark, is_primary, sort_order, email_permission,
+    email_categories, created_by, updated_by
 ) VALUES (
     $1, $2, $3, $4,
     $5, $6, $7, $8,
     $9, $10, $11,
-    $12, $13, $14, $14
+    $12, $13, $14,
+    $15, $16, $16
 )
-RETURNING id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by
+RETURNING id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories
 `
 
 type CreateCustomerContactParams struct {
@@ -533,6 +551,8 @@ type CreateCustomerContactParams struct {
 	Remark           string
 	IsPrimary        bool
 	SortOrder        int32
+	EmailPermission  string
+	EmailCategories  []string
 	OperatorID       int64
 }
 
@@ -551,6 +571,8 @@ func (q *Queries) CreateCustomerContact(ctx context.Context, arg CreateCustomerC
 		arg.Remark,
 		arg.IsPrimary,
 		arg.SortOrder,
+		arg.EmailPermission,
+		arg.EmailCategories,
 		arg.OperatorID,
 	)
 	var i CustomerContact
@@ -574,6 +596,8 @@ func (q *Queries) CreateCustomerContact(ctx context.Context, arg CreateCustomerC
 		&i.CreatedBy,
 		&i.UpdatedAt,
 		&i.UpdatedBy,
+		&i.EmailPermission,
+		&i.EmailCategories,
 	)
 	return i, err
 }
@@ -1021,7 +1045,7 @@ func (q *Queries) GetCustomerAddress(ctx context.Context, arg GetCustomerAddress
 }
 
 const getCustomerContact = `-- name: GetCustomerContact :one
-SELECT id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by FROM customer_contacts
+SELECT id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories FROM customer_contacts
 WHERE tenant_id = $1 AND customer_id = $2
   AND id = $3
 `
@@ -1055,6 +1079,8 @@ func (q *Queries) GetCustomerContact(ctx context.Context, arg GetCustomerContact
 		&i.CreatedBy,
 		&i.UpdatedAt,
 		&i.UpdatedBy,
+		&i.EmailPermission,
+		&i.EmailCategories,
 	)
 	return i, err
 }
@@ -1271,7 +1297,7 @@ func (q *Queries) ListCustomerChangeLogs(ctx context.Context, arg ListCustomerCh
 }
 
 const listCustomerContacts = `-- name: ListCustomerContacts :many
-SELECT id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by FROM customer_contacts
+SELECT id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories FROM customer_contacts
 WHERE tenant_id = $1 AND customer_id = $2
 ORDER BY sort_order, id
 `
@@ -1310,6 +1336,8 @@ func (q *Queries) ListCustomerContacts(ctx context.Context, arg ListCustomerCont
 			&i.CreatedBy,
 			&i.UpdatedAt,
 			&i.UpdatedBy,
+			&i.EmailPermission,
+			&i.EmailCategories,
 		); err != nil {
 			return nil, err
 		}
@@ -1322,7 +1350,7 @@ func (q *Queries) ListCustomerContacts(ctx context.Context, arg ListCustomerCont
 }
 
 const listCustomerContactsDetailed = `-- name: ListCustomerContactsDetailed :many
-SELECT id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by FROM customer_contacts
+SELECT id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories FROM customer_contacts
 WHERE tenant_id = $1 AND customer_id = $2
   AND ($3::text = 'ALL' OR status = 'ACTIVE')
 ORDER BY status, is_primary DESC, sort_order, id
@@ -1363,6 +1391,8 @@ func (q *Queries) ListCustomerContactsDetailed(ctx context.Context, arg ListCust
 			&i.CreatedBy,
 			&i.UpdatedAt,
 			&i.UpdatedBy,
+			&i.EmailPermission,
+			&i.EmailCategories,
 		); err != nil {
 			return nil, err
 		}
@@ -1388,6 +1418,7 @@ SELECT
 FROM customers c
 LEFT JOIN customer_contacts cc
     ON cc.customer_id = c.id AND cc.tenant_id = c.tenant_id AND cc.email <> ''
+   AND cc.status = 'ACTIVE' AND cc.email_permission = 'ALLOWED'
 WHERE c.tenant_id = $1::bigint
   AND ($2::text = 'ALL' OR c.status = 'ACTIVE')
 GROUP BY c.country_code
@@ -1648,6 +1679,8 @@ WITH hits AS (
     FROM customer_contacts cc
     WHERE cc.tenant_id = $1::bigint
       AND cc.email <> ''
+      AND cc.status = 'ACTIVE'
+      AND cc.email_permission = 'ALLOWED'
       AND (cc.name ILIKE '%' || $2::text || '%'
            OR cc.email ILIKE '%' || $2::text || '%')
     UNION
@@ -1658,6 +1691,8 @@ WITH hits AS (
       ON cc.customer_id = c.id AND cc.tenant_id = c.tenant_id
     WHERE c.tenant_id = $1::bigint
       AND cc.email <> ''
+      AND cc.status = 'ACTIVE'
+      AND cc.email_permission = 'ALLOWED'
       AND c.name ILIKE '%' || $2::text || '%'
 )
 SELECT
@@ -1669,12 +1704,16 @@ SELECT
     c.id            AS customer_id,
     c.name          AS customer_name,
     c.country,
-    c.country_code
+    c.country_code,
+    cc.language,
+    cc.email_categories
 FROM customer_contacts cc
 JOIN customers c ON c.id = cc.customer_id AND c.tenant_id = cc.tenant_id
 WHERE cc.tenant_id = $1::bigint
   AND c.status = 'ACTIVE'
   AND cc.email <> ''
+  AND cc.status = 'ACTIVE'
+  AND cc.email_permission = 'ALLOWED'
   -- An empty keyword lists the book; anything else must have matched above.
   AND ($2::text = '' OR cc.id IN (SELECT id FROM hits))
   AND (
@@ -1692,15 +1731,17 @@ type ListMailingContactsParams struct {
 }
 
 type ListMailingContactsRow struct {
-	ContactID    int64
-	Name         string
-	Title        string
-	Email        string
-	IsPrimary    bool
-	CustomerID   int64
-	CustomerName string
-	Country      string
-	CountryCode  string
+	ContactID       int64
+	Name            string
+	Title           string
+	Email           string
+	IsPrimary       bool
+	CustomerID      int64
+	CustomerName    string
+	Country         string
+	CountryCode     string
+	Language        string
+	EmailCategories []string
 }
 
 // The address book for the mail composer.
@@ -1732,6 +1773,8 @@ func (q *Queries) ListMailingContacts(ctx context.Context, arg ListMailingContac
 			&i.CustomerName,
 			&i.Country,
 			&i.CountryCode,
+			&i.Language,
+			&i.EmailCategories,
 		); err != nil {
 			return nil, err
 		}
@@ -2067,10 +2110,11 @@ SET name = $1, department = $2, title = $3,
     email = $4, phone = $5, mobile = $6,
     instant_messaging = $7, language = $8,
     remark = $9, is_primary = $10,
-    sort_order = $11, updated_by = $12, updated_at = now()
-WHERE tenant_id = $13 AND customer_id = $14
-  AND id = $15 AND status = 'ACTIVE'
-RETURNING id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by
+    sort_order = $11, email_permission = $12,
+    email_categories = $13, updated_by = $14, updated_at = now()
+WHERE tenant_id = $15 AND customer_id = $16
+  AND id = $17 AND status = 'ACTIVE'
+RETURNING id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories
 `
 
 type UpdateCustomerContactParams struct {
@@ -2085,6 +2129,8 @@ type UpdateCustomerContactParams struct {
 	Remark           string
 	IsPrimary        bool
 	SortOrder        int32
+	EmailPermission  string
+	EmailCategories  []string
 	OperatorID       int64
 	TenantID         int64
 	CustomerID       int64
@@ -2104,6 +2150,8 @@ func (q *Queries) UpdateCustomerContact(ctx context.Context, arg UpdateCustomerC
 		arg.Remark,
 		arg.IsPrimary,
 		arg.SortOrder,
+		arg.EmailPermission,
+		arg.EmailCategories,
 		arg.OperatorID,
 		arg.TenantID,
 		arg.CustomerID,
@@ -2130,6 +2178,8 @@ func (q *Queries) UpdateCustomerContact(ctx context.Context, arg UpdateCustomerC
 		&i.CreatedBy,
 		&i.UpdatedAt,
 		&i.UpdatedBy,
+		&i.EmailPermission,
+		&i.EmailCategories,
 	)
 	return i, err
 }
