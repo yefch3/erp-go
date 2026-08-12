@@ -165,7 +165,22 @@ func collectLeaf(ent *emsg.Entity, out *ParsedMail) {
 	// pasting a photo of a damaged carton produced. A part the body points at
 	// by Content-ID is referenced content by definition; whether its sender
 	// bothered to name it is beside the point.
-	if disp == "attachment" || contentID != "" ||
+	// Except when the part carrying the identifier is the body itself.
+	// LinkedIn labels its two alternatives Content-ID: text-body and
+	// html-body, and the clause above swallowed both: the message arrived
+	// with no body at all and two files called attachment.img, which is
+	// precisely what the reader showed.
+	//
+	// The clause is about parts the body *points at* by cid:, and a body
+	// cannot point at itself. So a text alternative that nobody dispositioned
+	// as an attachment and that carries no filename of its own is a body,
+	// whatever identifier its sender chose to give it. An .html file someone
+	// genuinely attached still has a filename or an explicit disposition, and
+	// still lands below.
+	selfNamedBody := contentID != "" && filename == "" && disp != "attachment" &&
+		(strings.HasPrefix(ct, "text/html") || strings.HasPrefix(ct, "text/plain"))
+
+	if disp == "attachment" || (contentID != "" && !selfNamedBody) ||
 		(filename != "" && !strings.HasPrefix(ct, "text/")) {
 		data, err := io.ReadAll(io.LimitReader(ent.Body, maxAttachmentBytes))
 		if err != nil {

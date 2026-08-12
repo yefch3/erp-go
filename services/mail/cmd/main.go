@@ -167,6 +167,13 @@ func run(log *slog.Logger) error {
 		// how an image pasted into Gmail's composer arrives. The backfill above
 		// cannot help those; it patches rows, and for these there is no row.
 		go svc.RunEmbeddedRecovery(ctx, syncCfg)
+		// And the third variant of it: not a picture filed wrongly but the
+		// body itself. A part with a Content-ID was always taken for an
+		// attachment, and LinkedIn puts one on its text/plain and text/html
+		// alternatives, so those messages were stored with no text at all.
+		// The poller will not revisit them — it advances a UID watermark —
+		// so the archived MIME is the only way back.
+		go svc.RunEmptyBodyRecovery(ctx, syncCfg)
 	}
 
 	// The worker runs in-process. The database is the queue, so a second
