@@ -19,15 +19,31 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CustomerService_CreateCustomer_FullMethodName        = "/erp.masterdata.v1.CustomerService/CreateCustomer"
-	CustomerService_GetCustomer_FullMethodName           = "/erp.masterdata.v1.CustomerService/GetCustomer"
-	CustomerService_ListCustomers_FullMethodName         = "/erp.masterdata.v1.CustomerService/ListCustomers"
-	CustomerService_UpdateCustomer_FullMethodName        = "/erp.masterdata.v1.CustomerService/UpdateCustomer"
-	CustomerService_DeactivateCustomer_FullMethodName    = "/erp.masterdata.v1.CustomerService/DeactivateCustomer"
-	CustomerService_ActivateCustomer_FullMethodName      = "/erp.masterdata.v1.CustomerService/ActivateCustomer"
-	CustomerService_ListMailingContacts_FullMethodName   = "/erp.masterdata.v1.CustomerService/ListMailingContacts"
-	CustomerService_ListCustomerCountries_FullMethodName = "/erp.masterdata.v1.CustomerService/ListCustomerCountries"
-	CustomerService_ContactsInCountry_FullMethodName     = "/erp.masterdata.v1.CustomerService/ContactsInCountry"
+	CustomerService_CreateCustomer_FullMethodName            = "/erp.masterdata.v1.CustomerService/CreateCustomer"
+	CustomerService_GetCustomer_FullMethodName               = "/erp.masterdata.v1.CustomerService/GetCustomer"
+	CustomerService_ListCustomers_FullMethodName             = "/erp.masterdata.v1.CustomerService/ListCustomers"
+	CustomerService_UpdateCustomer_FullMethodName            = "/erp.masterdata.v1.CustomerService/UpdateCustomer"
+	CustomerService_UpdateCustomerProfile_FullMethodName     = "/erp.masterdata.v1.CustomerService/UpdateCustomerProfile"
+	CustomerService_DeactivateCustomer_FullMethodName        = "/erp.masterdata.v1.CustomerService/DeactivateCustomer"
+	CustomerService_ActivateCustomer_FullMethodName          = "/erp.masterdata.v1.CustomerService/ActivateCustomer"
+	CustomerService_ListCustomerAddresses_FullMethodName     = "/erp.masterdata.v1.CustomerService/ListCustomerAddresses"
+	CustomerService_CreateCustomerAddress_FullMethodName     = "/erp.masterdata.v1.CustomerService/CreateCustomerAddress"
+	CustomerService_UpdateCustomerAddress_FullMethodName     = "/erp.masterdata.v1.CustomerService/UpdateCustomerAddress"
+	CustomerService_DeactivateCustomerAddress_FullMethodName = "/erp.masterdata.v1.CustomerService/DeactivateCustomerAddress"
+	CustomerService_ListCustomerContacts_FullMethodName      = "/erp.masterdata.v1.CustomerService/ListCustomerContacts"
+	CustomerService_CreateCustomerContact_FullMethodName     = "/erp.masterdata.v1.CustomerService/CreateCustomerContact"
+	CustomerService_UpdateCustomerContact_FullMethodName     = "/erp.masterdata.v1.CustomerService/UpdateCustomerContact"
+	CustomerService_DeactivateCustomerContact_FullMethodName = "/erp.masterdata.v1.CustomerService/DeactivateCustomerContact"
+	CustomerService_ListCustomerOwners_FullMethodName        = "/erp.masterdata.v1.CustomerService/ListCustomerOwners"
+	CustomerService_CreateCustomerOwner_FullMethodName       = "/erp.masterdata.v1.CustomerService/CreateCustomerOwner"
+	CustomerService_UpdateCustomerOwner_FullMethodName       = "/erp.masterdata.v1.CustomerService/UpdateCustomerOwner"
+	CustomerService_DeactivateCustomerOwner_FullMethodName   = "/erp.masterdata.v1.CustomerService/DeactivateCustomerOwner"
+	CustomerService_ListCustomerChanges_FullMethodName       = "/erp.masterdata.v1.CustomerService/ListCustomerChanges"
+	CustomerService_ImportCustomers_FullMethodName           = "/erp.masterdata.v1.CustomerService/ImportCustomers"
+	CustomerService_CheckCustomerDuplicates_FullMethodName   = "/erp.masterdata.v1.CustomerService/CheckCustomerDuplicates"
+	CustomerService_ListMailingContacts_FullMethodName       = "/erp.masterdata.v1.CustomerService/ListMailingContacts"
+	CustomerService_ListCustomerCountries_FullMethodName     = "/erp.masterdata.v1.CustomerService/ListCustomerCountries"
+	CustomerService_ContactsInCountry_FullMethodName         = "/erp.masterdata.v1.CustomerService/ContactsInCountry"
 )
 
 // CustomerServiceClient is the client API for CustomerService service.
@@ -41,10 +57,26 @@ type CustomerServiceClient interface {
 	GetCustomer(ctx context.Context, in *GetCustomerRequest, opts ...grpc.CallOption) (*GetCustomerResponse, error)
 	ListCustomers(ctx context.Context, in *ListCustomersRequest, opts ...grpc.CallOption) (*ListCustomersResponse, error)
 	UpdateCustomer(ctx context.Context, in *UpdateCustomerRequest, opts ...grpc.CallOption) (*UpdateCustomerResponse, error)
+	UpdateCustomerProfile(ctx context.Context, in *UpdateCustomerProfileRequest, opts ...grpc.CallOption) (*UpdateCustomerProfileResponse, error)
 	DeactivateCustomer(ctx context.Context, in *DeactivateCustomerRequest, opts ...grpc.CallOption) (*DeactivateCustomerResponse, error)
 	// Reactivate a previously deactivated customer: master data lifecycle is
 	// reversible (delete is what stays forbidden).
 	ActivateCustomer(ctx context.Context, in *ActivateCustomerRequest, opts ...grpc.CallOption) (*ActivateCustomerResponse, error)
+	ListCustomerAddresses(ctx context.Context, in *ListCustomerAddressesRequest, opts ...grpc.CallOption) (*ListCustomerAddressesResponse, error)
+	CreateCustomerAddress(ctx context.Context, in *CreateCustomerAddressRequest, opts ...grpc.CallOption) (*CreateCustomerAddressResponse, error)
+	UpdateCustomerAddress(ctx context.Context, in *UpdateCustomerAddressRequest, opts ...grpc.CallOption) (*UpdateCustomerAddressResponse, error)
+	DeactivateCustomerAddress(ctx context.Context, in *DeactivateCustomerAddressRequest, opts ...grpc.CallOption) (*DeactivateCustomerAddressResponse, error)
+	ListCustomerContacts(ctx context.Context, in *ListCustomerContactsRequest, opts ...grpc.CallOption) (*ListCustomerContactsResponse, error)
+	CreateCustomerContact(ctx context.Context, in *CreateCustomerContactRequest, opts ...grpc.CallOption) (*CreateCustomerContactResponse, error)
+	UpdateCustomerContact(ctx context.Context, in *UpdateCustomerContactRequest, opts ...grpc.CallOption) (*UpdateCustomerContactResponse, error)
+	DeactivateCustomerContact(ctx context.Context, in *DeactivateCustomerContactRequest, opts ...grpc.CallOption) (*DeactivateCustomerContactResponse, error)
+	ListCustomerOwners(ctx context.Context, in *ListCustomerOwnersRequest, opts ...grpc.CallOption) (*ListCustomerOwnersResponse, error)
+	CreateCustomerOwner(ctx context.Context, in *CreateCustomerOwnerRequest, opts ...grpc.CallOption) (*CreateCustomerOwnerResponse, error)
+	UpdateCustomerOwner(ctx context.Context, in *UpdateCustomerOwnerRequest, opts ...grpc.CallOption) (*UpdateCustomerOwnerResponse, error)
+	DeactivateCustomerOwner(ctx context.Context, in *DeactivateCustomerOwnerRequest, opts ...grpc.CallOption) (*DeactivateCustomerOwnerResponse, error)
+	ListCustomerChanges(ctx context.Context, in *ListCustomerChangesRequest, opts ...grpc.CallOption) (*ListCustomerChangesResponse, error)
+	ImportCustomers(ctx context.Context, in *ImportCustomersRequest, opts ...grpc.CallOption) (*ImportCustomersResponse, error)
+	CheckCustomerDuplicates(ctx context.Context, in *CheckCustomerDuplicatesRequest, opts ...grpc.CallOption) (*CheckCustomerDuplicatesResponse, error)
 	// The address book, flattened: every contact that has an email, with the
 	// customer it belongs to. One call rather than a customer list followed by
 	// a lookup per customer, because the mail composer needs all of them at
@@ -105,6 +137,16 @@ func (c *customerServiceClient) UpdateCustomer(ctx context.Context, in *UpdateCu
 	return out, nil
 }
 
+func (c *customerServiceClient) UpdateCustomerProfile(ctx context.Context, in *UpdateCustomerProfileRequest, opts ...grpc.CallOption) (*UpdateCustomerProfileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateCustomerProfileResponse)
+	err := c.cc.Invoke(ctx, CustomerService_UpdateCustomerProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *customerServiceClient) DeactivateCustomer(ctx context.Context, in *DeactivateCustomerRequest, opts ...grpc.CallOption) (*DeactivateCustomerResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeactivateCustomerResponse)
@@ -119,6 +161,156 @@ func (c *customerServiceClient) ActivateCustomer(ctx context.Context, in *Activa
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ActivateCustomerResponse)
 	err := c.cc.Invoke(ctx, CustomerService_ActivateCustomer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) ListCustomerAddresses(ctx context.Context, in *ListCustomerAddressesRequest, opts ...grpc.CallOption) (*ListCustomerAddressesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCustomerAddressesResponse)
+	err := c.cc.Invoke(ctx, CustomerService_ListCustomerAddresses_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) CreateCustomerAddress(ctx context.Context, in *CreateCustomerAddressRequest, opts ...grpc.CallOption) (*CreateCustomerAddressResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateCustomerAddressResponse)
+	err := c.cc.Invoke(ctx, CustomerService_CreateCustomerAddress_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) UpdateCustomerAddress(ctx context.Context, in *UpdateCustomerAddressRequest, opts ...grpc.CallOption) (*UpdateCustomerAddressResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateCustomerAddressResponse)
+	err := c.cc.Invoke(ctx, CustomerService_UpdateCustomerAddress_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) DeactivateCustomerAddress(ctx context.Context, in *DeactivateCustomerAddressRequest, opts ...grpc.CallOption) (*DeactivateCustomerAddressResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeactivateCustomerAddressResponse)
+	err := c.cc.Invoke(ctx, CustomerService_DeactivateCustomerAddress_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) ListCustomerContacts(ctx context.Context, in *ListCustomerContactsRequest, opts ...grpc.CallOption) (*ListCustomerContactsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCustomerContactsResponse)
+	err := c.cc.Invoke(ctx, CustomerService_ListCustomerContacts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) CreateCustomerContact(ctx context.Context, in *CreateCustomerContactRequest, opts ...grpc.CallOption) (*CreateCustomerContactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateCustomerContactResponse)
+	err := c.cc.Invoke(ctx, CustomerService_CreateCustomerContact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) UpdateCustomerContact(ctx context.Context, in *UpdateCustomerContactRequest, opts ...grpc.CallOption) (*UpdateCustomerContactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateCustomerContactResponse)
+	err := c.cc.Invoke(ctx, CustomerService_UpdateCustomerContact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) DeactivateCustomerContact(ctx context.Context, in *DeactivateCustomerContactRequest, opts ...grpc.CallOption) (*DeactivateCustomerContactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeactivateCustomerContactResponse)
+	err := c.cc.Invoke(ctx, CustomerService_DeactivateCustomerContact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) ListCustomerOwners(ctx context.Context, in *ListCustomerOwnersRequest, opts ...grpc.CallOption) (*ListCustomerOwnersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCustomerOwnersResponse)
+	err := c.cc.Invoke(ctx, CustomerService_ListCustomerOwners_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) CreateCustomerOwner(ctx context.Context, in *CreateCustomerOwnerRequest, opts ...grpc.CallOption) (*CreateCustomerOwnerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateCustomerOwnerResponse)
+	err := c.cc.Invoke(ctx, CustomerService_CreateCustomerOwner_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) UpdateCustomerOwner(ctx context.Context, in *UpdateCustomerOwnerRequest, opts ...grpc.CallOption) (*UpdateCustomerOwnerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateCustomerOwnerResponse)
+	err := c.cc.Invoke(ctx, CustomerService_UpdateCustomerOwner_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) DeactivateCustomerOwner(ctx context.Context, in *DeactivateCustomerOwnerRequest, opts ...grpc.CallOption) (*DeactivateCustomerOwnerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeactivateCustomerOwnerResponse)
+	err := c.cc.Invoke(ctx, CustomerService_DeactivateCustomerOwner_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) ListCustomerChanges(ctx context.Context, in *ListCustomerChangesRequest, opts ...grpc.CallOption) (*ListCustomerChangesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCustomerChangesResponse)
+	err := c.cc.Invoke(ctx, CustomerService_ListCustomerChanges_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) ImportCustomers(ctx context.Context, in *ImportCustomersRequest, opts ...grpc.CallOption) (*ImportCustomersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ImportCustomersResponse)
+	err := c.cc.Invoke(ctx, CustomerService_ImportCustomers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) CheckCustomerDuplicates(ctx context.Context, in *CheckCustomerDuplicatesRequest, opts ...grpc.CallOption) (*CheckCustomerDuplicatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckCustomerDuplicatesResponse)
+	err := c.cc.Invoke(ctx, CustomerService_CheckCustomerDuplicates_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -166,10 +358,26 @@ type CustomerServiceServer interface {
 	GetCustomer(context.Context, *GetCustomerRequest) (*GetCustomerResponse, error)
 	ListCustomers(context.Context, *ListCustomersRequest) (*ListCustomersResponse, error)
 	UpdateCustomer(context.Context, *UpdateCustomerRequest) (*UpdateCustomerResponse, error)
+	UpdateCustomerProfile(context.Context, *UpdateCustomerProfileRequest) (*UpdateCustomerProfileResponse, error)
 	DeactivateCustomer(context.Context, *DeactivateCustomerRequest) (*DeactivateCustomerResponse, error)
 	// Reactivate a previously deactivated customer: master data lifecycle is
 	// reversible (delete is what stays forbidden).
 	ActivateCustomer(context.Context, *ActivateCustomerRequest) (*ActivateCustomerResponse, error)
+	ListCustomerAddresses(context.Context, *ListCustomerAddressesRequest) (*ListCustomerAddressesResponse, error)
+	CreateCustomerAddress(context.Context, *CreateCustomerAddressRequest) (*CreateCustomerAddressResponse, error)
+	UpdateCustomerAddress(context.Context, *UpdateCustomerAddressRequest) (*UpdateCustomerAddressResponse, error)
+	DeactivateCustomerAddress(context.Context, *DeactivateCustomerAddressRequest) (*DeactivateCustomerAddressResponse, error)
+	ListCustomerContacts(context.Context, *ListCustomerContactsRequest) (*ListCustomerContactsResponse, error)
+	CreateCustomerContact(context.Context, *CreateCustomerContactRequest) (*CreateCustomerContactResponse, error)
+	UpdateCustomerContact(context.Context, *UpdateCustomerContactRequest) (*UpdateCustomerContactResponse, error)
+	DeactivateCustomerContact(context.Context, *DeactivateCustomerContactRequest) (*DeactivateCustomerContactResponse, error)
+	ListCustomerOwners(context.Context, *ListCustomerOwnersRequest) (*ListCustomerOwnersResponse, error)
+	CreateCustomerOwner(context.Context, *CreateCustomerOwnerRequest) (*CreateCustomerOwnerResponse, error)
+	UpdateCustomerOwner(context.Context, *UpdateCustomerOwnerRequest) (*UpdateCustomerOwnerResponse, error)
+	DeactivateCustomerOwner(context.Context, *DeactivateCustomerOwnerRequest) (*DeactivateCustomerOwnerResponse, error)
+	ListCustomerChanges(context.Context, *ListCustomerChangesRequest) (*ListCustomerChangesResponse, error)
+	ImportCustomers(context.Context, *ImportCustomersRequest) (*ImportCustomersResponse, error)
+	CheckCustomerDuplicates(context.Context, *CheckCustomerDuplicatesRequest) (*CheckCustomerDuplicatesResponse, error)
 	// The address book, flattened: every contact that has an email, with the
 	// customer it belongs to. One call rather than a customer list followed by
 	// a lookup per customer, because the mail composer needs all of them at
@@ -202,11 +410,59 @@ func (UnimplementedCustomerServiceServer) ListCustomers(context.Context, *ListCu
 func (UnimplementedCustomerServiceServer) UpdateCustomer(context.Context, *UpdateCustomerRequest) (*UpdateCustomerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateCustomer not implemented")
 }
+func (UnimplementedCustomerServiceServer) UpdateCustomerProfile(context.Context, *UpdateCustomerProfileRequest) (*UpdateCustomerProfileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateCustomerProfile not implemented")
+}
 func (UnimplementedCustomerServiceServer) DeactivateCustomer(context.Context, *DeactivateCustomerRequest) (*DeactivateCustomerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeactivateCustomer not implemented")
 }
 func (UnimplementedCustomerServiceServer) ActivateCustomer(context.Context, *ActivateCustomerRequest) (*ActivateCustomerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ActivateCustomer not implemented")
+}
+func (UnimplementedCustomerServiceServer) ListCustomerAddresses(context.Context, *ListCustomerAddressesRequest) (*ListCustomerAddressesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCustomerAddresses not implemented")
+}
+func (UnimplementedCustomerServiceServer) CreateCustomerAddress(context.Context, *CreateCustomerAddressRequest) (*CreateCustomerAddressResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateCustomerAddress not implemented")
+}
+func (UnimplementedCustomerServiceServer) UpdateCustomerAddress(context.Context, *UpdateCustomerAddressRequest) (*UpdateCustomerAddressResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateCustomerAddress not implemented")
+}
+func (UnimplementedCustomerServiceServer) DeactivateCustomerAddress(context.Context, *DeactivateCustomerAddressRequest) (*DeactivateCustomerAddressResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeactivateCustomerAddress not implemented")
+}
+func (UnimplementedCustomerServiceServer) ListCustomerContacts(context.Context, *ListCustomerContactsRequest) (*ListCustomerContactsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCustomerContacts not implemented")
+}
+func (UnimplementedCustomerServiceServer) CreateCustomerContact(context.Context, *CreateCustomerContactRequest) (*CreateCustomerContactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateCustomerContact not implemented")
+}
+func (UnimplementedCustomerServiceServer) UpdateCustomerContact(context.Context, *UpdateCustomerContactRequest) (*UpdateCustomerContactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateCustomerContact not implemented")
+}
+func (UnimplementedCustomerServiceServer) DeactivateCustomerContact(context.Context, *DeactivateCustomerContactRequest) (*DeactivateCustomerContactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeactivateCustomerContact not implemented")
+}
+func (UnimplementedCustomerServiceServer) ListCustomerOwners(context.Context, *ListCustomerOwnersRequest) (*ListCustomerOwnersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCustomerOwners not implemented")
+}
+func (UnimplementedCustomerServiceServer) CreateCustomerOwner(context.Context, *CreateCustomerOwnerRequest) (*CreateCustomerOwnerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateCustomerOwner not implemented")
+}
+func (UnimplementedCustomerServiceServer) UpdateCustomerOwner(context.Context, *UpdateCustomerOwnerRequest) (*UpdateCustomerOwnerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateCustomerOwner not implemented")
+}
+func (UnimplementedCustomerServiceServer) DeactivateCustomerOwner(context.Context, *DeactivateCustomerOwnerRequest) (*DeactivateCustomerOwnerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeactivateCustomerOwner not implemented")
+}
+func (UnimplementedCustomerServiceServer) ListCustomerChanges(context.Context, *ListCustomerChangesRequest) (*ListCustomerChangesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCustomerChanges not implemented")
+}
+func (UnimplementedCustomerServiceServer) ImportCustomers(context.Context, *ImportCustomersRequest) (*ImportCustomersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ImportCustomers not implemented")
+}
+func (UnimplementedCustomerServiceServer) CheckCustomerDuplicates(context.Context, *CheckCustomerDuplicatesRequest) (*CheckCustomerDuplicatesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CheckCustomerDuplicates not implemented")
 }
 func (UnimplementedCustomerServiceServer) ListMailingContacts(context.Context, *ListMailingContactsRequest) (*ListMailingContactsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListMailingContacts not implemented")
@@ -310,6 +566,24 @@ func _CustomerService_UpdateCustomer_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CustomerService_UpdateCustomerProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateCustomerProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).UpdateCustomerProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_UpdateCustomerProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).UpdateCustomerProfile(ctx, req.(*UpdateCustomerProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CustomerService_DeactivateCustomer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeactivateCustomerRequest)
 	if err := dec(in); err != nil {
@@ -342,6 +616,276 @@ func _CustomerService_ActivateCustomer_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CustomerServiceServer).ActivateCustomer(ctx, req.(*ActivateCustomerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_ListCustomerAddresses_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCustomerAddressesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).ListCustomerAddresses(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_ListCustomerAddresses_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).ListCustomerAddresses(ctx, req.(*ListCustomerAddressesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_CreateCustomerAddress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateCustomerAddressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).CreateCustomerAddress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_CreateCustomerAddress_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).CreateCustomerAddress(ctx, req.(*CreateCustomerAddressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_UpdateCustomerAddress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateCustomerAddressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).UpdateCustomerAddress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_UpdateCustomerAddress_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).UpdateCustomerAddress(ctx, req.(*UpdateCustomerAddressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_DeactivateCustomerAddress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeactivateCustomerAddressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).DeactivateCustomerAddress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_DeactivateCustomerAddress_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).DeactivateCustomerAddress(ctx, req.(*DeactivateCustomerAddressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_ListCustomerContacts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCustomerContactsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).ListCustomerContacts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_ListCustomerContacts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).ListCustomerContacts(ctx, req.(*ListCustomerContactsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_CreateCustomerContact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateCustomerContactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).CreateCustomerContact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_CreateCustomerContact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).CreateCustomerContact(ctx, req.(*CreateCustomerContactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_UpdateCustomerContact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateCustomerContactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).UpdateCustomerContact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_UpdateCustomerContact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).UpdateCustomerContact(ctx, req.(*UpdateCustomerContactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_DeactivateCustomerContact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeactivateCustomerContactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).DeactivateCustomerContact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_DeactivateCustomerContact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).DeactivateCustomerContact(ctx, req.(*DeactivateCustomerContactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_ListCustomerOwners_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCustomerOwnersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).ListCustomerOwners(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_ListCustomerOwners_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).ListCustomerOwners(ctx, req.(*ListCustomerOwnersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_CreateCustomerOwner_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateCustomerOwnerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).CreateCustomerOwner(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_CreateCustomerOwner_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).CreateCustomerOwner(ctx, req.(*CreateCustomerOwnerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_UpdateCustomerOwner_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateCustomerOwnerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).UpdateCustomerOwner(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_UpdateCustomerOwner_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).UpdateCustomerOwner(ctx, req.(*UpdateCustomerOwnerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_DeactivateCustomerOwner_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeactivateCustomerOwnerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).DeactivateCustomerOwner(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_DeactivateCustomerOwner_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).DeactivateCustomerOwner(ctx, req.(*DeactivateCustomerOwnerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_ListCustomerChanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCustomerChangesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).ListCustomerChanges(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_ListCustomerChanges_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).ListCustomerChanges(ctx, req.(*ListCustomerChangesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_ImportCustomers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ImportCustomersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).ImportCustomers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_ImportCustomers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).ImportCustomers(ctx, req.(*ImportCustomersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_CheckCustomerDuplicates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckCustomerDuplicatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).CheckCustomerDuplicates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_CheckCustomerDuplicates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).CheckCustomerDuplicates(ctx, req.(*CheckCustomerDuplicatesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -424,12 +968,76 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CustomerService_UpdateCustomer_Handler,
 		},
 		{
+			MethodName: "UpdateCustomerProfile",
+			Handler:    _CustomerService_UpdateCustomerProfile_Handler,
+		},
+		{
 			MethodName: "DeactivateCustomer",
 			Handler:    _CustomerService_DeactivateCustomer_Handler,
 		},
 		{
 			MethodName: "ActivateCustomer",
 			Handler:    _CustomerService_ActivateCustomer_Handler,
+		},
+		{
+			MethodName: "ListCustomerAddresses",
+			Handler:    _CustomerService_ListCustomerAddresses_Handler,
+		},
+		{
+			MethodName: "CreateCustomerAddress",
+			Handler:    _CustomerService_CreateCustomerAddress_Handler,
+		},
+		{
+			MethodName: "UpdateCustomerAddress",
+			Handler:    _CustomerService_UpdateCustomerAddress_Handler,
+		},
+		{
+			MethodName: "DeactivateCustomerAddress",
+			Handler:    _CustomerService_DeactivateCustomerAddress_Handler,
+		},
+		{
+			MethodName: "ListCustomerContacts",
+			Handler:    _CustomerService_ListCustomerContacts_Handler,
+		},
+		{
+			MethodName: "CreateCustomerContact",
+			Handler:    _CustomerService_CreateCustomerContact_Handler,
+		},
+		{
+			MethodName: "UpdateCustomerContact",
+			Handler:    _CustomerService_UpdateCustomerContact_Handler,
+		},
+		{
+			MethodName: "DeactivateCustomerContact",
+			Handler:    _CustomerService_DeactivateCustomerContact_Handler,
+		},
+		{
+			MethodName: "ListCustomerOwners",
+			Handler:    _CustomerService_ListCustomerOwners_Handler,
+		},
+		{
+			MethodName: "CreateCustomerOwner",
+			Handler:    _CustomerService_CreateCustomerOwner_Handler,
+		},
+		{
+			MethodName: "UpdateCustomerOwner",
+			Handler:    _CustomerService_UpdateCustomerOwner_Handler,
+		},
+		{
+			MethodName: "DeactivateCustomerOwner",
+			Handler:    _CustomerService_DeactivateCustomerOwner_Handler,
+		},
+		{
+			MethodName: "ListCustomerChanges",
+			Handler:    _CustomerService_ListCustomerChanges_Handler,
+		},
+		{
+			MethodName: "ImportCustomers",
+			Handler:    _CustomerService_ImportCustomers_Handler,
+		},
+		{
+			MethodName: "CheckCustomerDuplicates",
+			Handler:    _CustomerService_CheckCustomerDuplicates_Handler,
 		},
 		{
 			MethodName: "ListMailingContacts",

@@ -1,13 +1,35 @@
 <template>
   <div>
     <div class="page-head">
-      <h2>{{ t('customers.title') }}</h2>
-      <el-button v-if="auth.can('masterdata:customer:write')" type="primary" @click="openCreate">
-        {{ t('customers.create') }}
-      </el-button>
+      <div><h2>{{ t('customers.title') }}</h2><p>按国家管理客户档案、联系人和内部负责人</p></div>
+      <div class="head-actions"><el-button v-if="auth.can('masterdata:customer:write')" @click="importOpen=true">批量导入</el-button><el-button v-if="auth.can('masterdata:customer:write')" type="primary" @click="openCreate">{{ t('customers.create') }}</el-button></div>
     </div>
 
-    <el-card shadow="never">
+    <div class="mobile-country"><el-select v-model="selectedCountry" @change="selectCountry"><el-option label="全部国家" value=""/><el-option v-for="group in displayedCountryGroups" :key="group.code||'none'" :label="group.code ? countryName(group.code, locale) : t('customers.unclassified')" :value="group.code||'__UNCLASSIFIED__'"/></el-select></div>
+    <div class="customer-workspace" :class="{ collapsed: countryCollapsed }">
+      <el-card class="country-panel" shadow="never" v-loading="countryLoading">
+        <div class="country-panel__title"><span v-if="!countryCollapsed">{{ t('customers.countryGroups') }}</span><button type="button" @click="countryCollapsed=!countryCollapsed">{{ countryCollapsed ? '›' : '‹' }}</button></div>
+        <button
+          class="country-item"
+          :class="{ active: selectedCountry === '' }"
+          type="button"
+          @click="selectCountry('')"
+        >
+          <span v-if="!countryCollapsed">{{ t('customers.allCountries') }}</span><span v-else>全</span><strong v-if="!countryCollapsed">{{ countryTotal }}</strong>
+        </button>
+        <button
+          v-for="group in displayedCountryGroups"
+          :key="group.code || '__UNCLASSIFIED__'"
+          class="country-item"
+          :class="{ active: selectedCountry === (group.code || '__UNCLASSIFIED__') }"
+          type="button"
+          @click="selectCountry(group.code || '__UNCLASSIFIED__')"
+        >
+          <span v-if="!countryCollapsed">{{ group.code ? countryName(group.code, locale) : t('customers.unclassified') }}</span><span v-else>{{ group.code || '—' }}</span><strong v-if="!countryCollapsed">{{ Number(group.customerCount) }}</strong>
+        </button>
+      </el-card>
+
+      <el-card class="customer-list" shadow="never">
       <div class="filters">
         <el-input
           v-model="keyword"
@@ -18,12 +40,14 @@
           @clear="load"
         />
         <el-button @click="load">{{ t('common.query') }}</el-button>
-        <el-checkbox v-model="showInactive" @change="load">{{ t('customers.showInactive') }}</el-checkbox>
+        <el-select v-model="customerType" clearable placeholder="客户类型" style="width:140px" @change="changeFilters"><el-option v-for="o in typeOptions" :key="o.code" :label="o.label" :value="o.code" /></el-select>
+        <el-select v-model="businessStatus" clearable placeholder="业务状态" style="width:140px" @change="changeFilters"><el-option label="潜在" value="PROSPECT"/><el-option label="合作中" value="COOPERATING"/><el-option label="暂停合作" value="PAUSED"/><el-option label="已停用" value="INACTIVE"/></el-select>
+        <el-checkbox v-model="showInactive" @change="changeScope">{{ t('customers.showInactive') }}</el-checkbox>
       </div>
 
       <el-table :data="customers" v-loading="loading">
-        <el-table-column prop="code" :label="t('customers.code')" width="130" />
-        <el-table-column prop="name" :label="t('customers.name')" min-width="200" />
+        <el-table-column :label="t('customers.code')" width="145"><template #default="{row}"><el-button link type="primary" @click="openDetail(row)">{{row.code}}</el-button></template></el-table-column>
+        <el-table-column :label="t('customers.name')" min-width="190"><template #default="{row}"><div class="customer-name"><strong>{{row.name}}</strong><small>{{row.shortName||row.englishName}}</small></div></template></el-table-column>
         <!-- Wide enough for spelled-out names such as United Arab Emirates. -->
         <el-table-column :label="t('customers.country')" width="180">
           <template #default="{ row }">
@@ -37,8 +61,9 @@
             <span v-else class="stale-country">{{ t('customers.countryUnset') }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="currency" :label="t('customers.currency')" width="90" />
-        <el-table-column prop="paymentTerm" :label="t('customers.paymentTerm')" width="110" />
+        <el-table-column label="客户类型" width="120"><template #default="{row}">{{ optionLabel(typeOptions,row.customerType) }}</template></el-table-column>
+        <el-table-column label="主要联系人" width="130"><template #default="{row}">{{row.primaryContactName||'—'}}</template></el-table-column>
+        <el-table-column label="负责人" min-width="150"><template #default="{row}"><span v-if="row.owners?.length">{{row.owners.map((o:any)=>o.employeeName).join('、')}}</span><span v-else>—</span></template></el-table-column>
         <el-table-column :label="t('common.status')" width="100">
           <template #default="{ row }">
             <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'" size="small">
@@ -49,11 +74,11 @@
         <el-table-column
           v-if="auth.can('masterdata:customer:write')"
           :label="t('common.actions')"
-          width="150"
+          width="165"
           fixed="right"
         >
           <template #default="{ row }">
-            <el-button link type="primary" @click="openEdit(row)">{{ t('common.edit') }}</el-button>
+            <el-button link type="primary" @click="openDetail(row)">查看资料</el-button>
             <el-button
               v-if="row.status === 'ACTIVE'"
               link
@@ -78,7 +103,8 @@
         :current-page="page"
         @current-change="(p: number) => { page = p; load() }"
       />
-    </el-card>
+      </el-card>
+    </div>
 
     <el-dialog
       v-model="dialogOpen"
@@ -173,6 +199,7 @@
         <el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
+    <ImportCustomersDialog v-model:open="importOpen" @imported="changeScope" />
   </div>
 </template>
 
@@ -180,10 +207,13 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { del, get, post, put } from '../api'
 import { DIAL_CODES, dialCodeOfCode, splitPhone } from '../constants'
 import { countryName, countryOptions } from '../lib/countries'
+import { validateCustomerContact } from '../lib/customerForms'
 import { useAuthStore } from '../stores/auth'
+import ImportCustomersDialog from '../components/ImportCustomersDialog.vue'
 
 interface Contact {
   name: string
@@ -204,8 +234,15 @@ interface Customer {
   remark: string
   status: string
   contacts: Contact[]
+  shortName?: string
+  englishName?: string
+  customerType?: string
+  businessStatus?: string
+  primaryContactName?: string
+  owners?: { employeeName: string }[]
 }
 interface OptionItem { code: string; label: string }
+interface CountryGroup { code: string; customerCount: string }
 
 const EMPTY_FORM = {
   code: '', name: '', country: '', countryCode: '', currency: 'USD', paymentTerm: '',
@@ -214,18 +251,27 @@ const EMPTY_FORM = {
 }
 
 const { t, locale } = useI18n()
+const router = useRouter()
 // Built once per language rather than per render: the list is 249 entries and
 // sorting it by the reader's collation is the expensive part.
 const countries = computed(() => countryOptions(locale.value))
 const auth = useAuthStore()
 const customers = ref<Customer[]>([])
+const countryGroups = ref<CountryGroup[]>([])
 const paymentOptions = ref<OptionItem[]>([])
+const typeOptions = ref<OptionItem[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = 10
 const keyword = ref('')
 const showInactive = ref(false)
 const loading = ref(false)
+const countryLoading = ref(false)
+const selectedCountry = ref('')
+const customerType = ref('')
+const businessStatus = ref('')
+const countryCollapsed = ref(false)
+const importOpen = ref(false)
 const dialogOpen = ref(false)
 const saving = ref(false)
 const loadingDetail = ref(false)
@@ -235,6 +281,14 @@ const editingId = ref<string | null>(null)
 // show (secondary ones added through the API) are carried over untouched.
 const otherContacts = ref<Contact[]>([])
 const form = reactive({ ...EMPTY_FORM })
+const countryTotal = computed(() => countryGroups.value.reduce(
+  (total, group) => total + Number(group.customerCount), 0,
+))
+const displayedCountryGroups = computed(() => [...countryGroups.value].sort((a, b) => {
+  if (!a.code) return 1
+  if (!b.code) return -1
+  return countryName(a.code, locale.value).localeCompare(countryName(b.code, locale.value), locale.value)
+}))
 
 // Picking a country pre-fills the matching calling code. A code the user chose
 // themselves is never overwritten — only an empty one, or one that still
@@ -258,6 +312,9 @@ async function load() {
     const data = await get<{ customers: Customer[]; meta: { total: string } }>('/customers', {
       page: page.value, page_size: pageSize, keyword: keyword.value,
       status: showInactive.value ? 'ALL' : '',
+      country_code: selectedCountry.value,
+      customer_type: customerType.value,
+      business_status: businessStatus.value,
     })
     customers.value = data.customers
     total.value = Number(data.meta.total)
@@ -265,6 +322,33 @@ async function load() {
     loading.value = false
   }
 }
+
+async function loadCountryGroups() {
+  countryLoading.value = true
+  try {
+    const data = await get<{ countries: CountryGroup[] }>('/customers/countries', {
+      status: showInactive.value ? 'ALL' : '',
+    })
+    countryGroups.value = data.countries ?? []
+  } finally {
+    countryLoading.value = false
+  }
+}
+
+function selectCountry(code: string) {
+  if (selectedCountry.value === code) return
+  selectedCountry.value = code
+  page.value = 1
+  load()
+}
+
+function changeScope() {
+  page.value = 1
+  Promise.all([load(), loadCountryGroups()])
+}
+function changeFilters(){page.value=1;load()}
+function openDetail(row:Customer){router.push(`/basic/customers/${row.id}`)}
+function optionLabel(list:OptionItem[],code?:string){return list.find(o=>o.code===code)?.label||code||'—'}
 
 function openCreate() {
   // The code is left blank on purpose: masterdata issues it when the customer
@@ -315,10 +399,17 @@ async function save() {
     ElMessage.warning(t('customers.required'))
     return
   }
-  saving.value = true
   // The calling code is stored together with the number so the phone stays
   // dialable from anywhere; a bare code with no number is not a phone.
   const phone = form.contactPhone ? `${form.contactDial} ${form.contactPhone}`.trim() : ''
+  if (form.contactName) {
+    const error = validateCustomerContact({ name: form.contactName, email: form.contactEmail, phone })
+    if (error) {
+      ElMessage.warning(error === 'emailInvalid' ? '主要联系人邮箱格式不正确' : '主要联系人电话格式不正确')
+      return
+    }
+  }
+  saving.value = true
   const primary = form.contactName
     ? [{ name: form.contactName, phone, email: form.contactEmail, isPrimary: true }]
     : []
@@ -338,7 +429,7 @@ async function save() {
       ElMessage.success(t('customers.created'))
     }
     dialogOpen.value = false
-    load()
+    await Promise.all([load(), loadCountryGroups()])
   } finally {
     saving.value = false
   }
@@ -351,20 +442,21 @@ async function deactivate(row: Customer) {
   )
   await del(`/customers/${row.id}`)
   ElMessage.success(t('customers.deactivated'))
-  load()
+  await Promise.all([load(), loadCountryGroups()])
 }
 
 async function activate(row: Customer) {
   await post(`/customers/${row.id}/activate`)
   ElMessage.success(t('customers.activated'))
-  load()
+  await Promise.all([load(), loadCountryGroups()])
 }
 
 onMounted(async () => {
-  load()
+  await Promise.all([load(), loadCountryGroups()])
   paymentOptions.value = (
     await get<{ options: OptionItem[] }>('/options', { category: 'PAYMENT_METHOD' })
   ).options
+  typeOptions.value = (await get<{ options: OptionItem[] }>('/options', { category: 'CUSTOMER_TYPE' })).options
 })
 </script>
 
@@ -384,6 +476,72 @@ onMounted(async () => {
   display: flex;
   gap: 10px;
   margin-bottom: 14px;
+}
+.page-head p{margin:5px 0 0;color:var(--el-text-color-secondary);font-size:13px}.head-actions{display:flex;gap:10px}
+.customer-workspace {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.customer-workspace.collapsed{grid-template-columns:72px minmax(0,1fr)}
+.country-panel {
+  position: sticky;
+  top: 16px;
+}
+.country-panel :deep(.el-card__body) {
+  padding: 12px;
+}
+.country-panel__title {
+  padding: 4px 10px 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+.country-panel__title{display:flex;align-items:center;justify-content:space-between}.country-panel__title button{border:0;border-radius:6px;background:var(--el-fill-color);cursor:pointer;color:var(--el-text-color-secondary);font-size:20px}
+.country-item {
+  width: 100%;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--el-text-color-regular);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.country-item:hover {
+  background: var(--el-fill-color-light);
+}
+.country-item.active {
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+.country-item strong {
+  min-width: 28px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: inherit;
+  background: var(--el-fill-color);
+  font-size: 12px;
+  text-align: center;
+}
+.customer-list {
+  min-width: 0;
+}
+.customer-name{display:flex;flex-direction:column;gap:3px}.customer-name small{color:var(--el-text-color-secondary)}.mobile-country{display:none;margin-bottom:12px}
+@media (max-width: 900px) {
+  .customer-workspace {
+    grid-template-columns: 1fr;
+  }
+  .country-panel {
+    display:none;
+  }
+  .mobile-country{display:block}.filters{flex-wrap:wrap}
 }
 .pager {
   margin-top: 14px;

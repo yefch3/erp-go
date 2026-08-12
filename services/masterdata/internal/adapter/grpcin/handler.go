@@ -28,6 +28,11 @@ func operatorID(ctx context.Context) int64 {
 	return op.EmployeeID
 }
 
+func operatorName(ctx context.Context) string {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	return op.Name
+}
+
 // ---------------------------------------------------------------- customers
 
 func customerInput(name, country, countryCode, address, currency, term, remark string, contacts []*mdv1.Contact, opID int64) app.CustomerInput {
@@ -45,16 +50,63 @@ func customerInput(name, country, countryCode, address, currency, term, remark s
 	return in
 }
 
-func customerToProto(c store.Customer, contacts []store.CustomerContact) *mdv1.Customer {
+func applyCustomerProfile(in *app.CustomerInput,
+	shortName, englishName, customerType, industry, source string, tags []string,
+	website, primaryLanguage, timezone, registeredName, registrationNo, taxID string,
+	invoiceTitle, invoiceTaxNo, invoiceRemark string, paymentDays int32,
+	creditLimitMinor int64, creditCurrency, creditStatus, businessStatus string,
+) {
+	in.ShortName, in.EnglishName = shortName, englishName
+	in.CustomerType, in.Industry, in.Source, in.Tags = customerType, industry, source, tags
+	in.Website, in.PrimaryLanguage, in.Timezone = website, primaryLanguage, timezone
+	in.RegisteredName, in.RegistrationNo, in.TaxID = registeredName, registrationNo, taxID
+	in.InvoiceTitle, in.InvoiceTaxNo, in.InvoiceRemark = invoiceTitle, invoiceTaxNo, invoiceRemark
+	in.PaymentDays, in.CreditLimitMinor = paymentDays, creditLimitMinor
+	in.CreditCurrency, in.CreditStatus, in.BusinessStatus = creditCurrency, creditStatus, businessStatus
+}
+
+func customerProfileInput(req *mdv1.UpdateCustomerProfileRequest, opID int64) app.CustomerProfileInput {
+	return app.CustomerProfileInput{
+		ShortName: req.GetShortName(), EnglishName: req.GetEnglishName(),
+		CustomerType: req.GetCustomerType(), Industry: req.GetIndustry(), Source: req.GetSource(),
+		Tags: req.GetTags(), Website: req.GetWebsite(), PrimaryLanguage: req.GetPrimaryLanguage(),
+		Timezone: req.GetTimezone(), RegisteredName: req.GetRegisteredName(),
+		RegistrationNo: req.GetRegistrationNo(), TaxID: req.GetTaxId(),
+		InvoiceTitle: req.GetInvoiceTitle(), InvoiceTaxNo: req.GetInvoiceTaxNo(),
+		InvoiceRemark: req.GetInvoiceRemark(), PaymentDays: req.GetPaymentDays(),
+		CreditLimitMinor: req.GetCreditLimitMinor(), CreditCurrency: req.GetCreditCurrency(),
+		CreditStatus: req.GetCreditStatus(), BusinessStatus: req.GetBusinessStatus(), OperatorID: opID,
+	}
+}
+
+func addressToProto(a store.CustomerAddress) *mdv1.CustomerAddress {
+	return &mdv1.CustomerAddress{
+		Id: a.ID, CustomerId: a.CustomerID, AddressType: a.AddressType,
+		CountryCode: strings.TrimSpace(a.CountryCode), State: a.State, City: a.City,
+		PostalCode: a.PostalCode, AddressLine: a.AddressLine, IsDefault: a.IsDefault,
+		SortOrder: a.SortOrder, Status: a.Status,
+	}
+}
+
+func customerToProto(c store.Customer, contacts []store.CustomerContact, addresses []store.CustomerAddress) *mdv1.Customer {
 	out := &mdv1.Customer{
 		Id: c.ID, Code: c.Code, Name: c.Name, Country: c.Country,
 		CountryCode: strings.TrimSpace(c.CountryCode), Address: c.Address,
 		Currency: c.Currency, PaymentTerm: c.PaymentTerm, Remark: c.Remark, Status: c.Status,
+		ShortName: c.ShortName, EnglishName: c.EnglishName, CustomerType: c.CustomerType,
+		Industry: c.Industry, Source: c.Source, Tags: c.Tags, Website: c.Website,
+		PrimaryLanguage: c.PrimaryLanguage, Timezone: c.Timezone,
+		RegisteredName: c.RegisteredName, RegistrationNo: c.RegistrationNo, TaxId: c.TaxID,
+		InvoiceTitle: c.InvoiceTitle, InvoiceTaxNo: c.InvoiceTaxNo,
+		InvoiceRemark: c.InvoiceRemark, PaymentDays: c.PaymentDays,
+		CreditLimitMinor: c.CreditLimitMinor, CreditCurrency: c.CreditCurrency,
+		CreditStatus: c.CreditStatus, BusinessStatus: c.BusinessStatus,
 	}
 	for _, ct := range contacts {
-		out.Contacts = append(out.Contacts, &mdv1.Contact{
-			Name: ct.Name, Title: ct.Title, Email: ct.Email, Phone: ct.Phone, IsPrimary: ct.IsPrimary,
-		})
+		out.Contacts = append(out.Contacts, contactToProto(ct))
+	}
+	for _, address := range addresses {
+		out.Addresses = append(out.Addresses, addressToProto(address))
 	}
 	return out
 }
@@ -63,12 +115,20 @@ func (h *Handler) CreateCustomer(ctx context.Context, req *mdv1.CreateCustomerRe
 	in := customerInput(req.GetName(), req.GetCountry(), req.GetCountryCode(),
 		req.GetAddress(), req.GetCurrency(),
 		req.GetPaymentTerm(), req.GetRemark(), req.GetContacts(), operatorID(ctx))
+	applyCustomerProfile(&in, req.GetShortName(), req.GetEnglishName(), req.GetCustomerType(),
+		req.GetIndustry(), req.GetSource(), req.GetTags(), req.GetWebsite(),
+		req.GetPrimaryLanguage(), req.GetTimezone(), req.GetRegisteredName(),
+		req.GetRegistrationNo(), req.GetTaxId(), req.GetInvoiceTitle(),
+		req.GetInvoiceTaxNo(), req.GetInvoiceRemark(), req.GetPaymentDays(),
+		req.GetCreditLimitMinor(), req.GetCreditCurrency(), req.GetCreditStatus(),
+		req.GetBusinessStatus())
 	in.Code = req.GetCode()
+	in.OperatorName = operatorName(ctx)
 	c, contacts, err := h.svc.CreateCustomer(ctx, grpcx.TenantID(ctx), in)
 	if err != nil {
 		return nil, err
 	}
-	return &mdv1.CreateCustomerResponse{Customer: customerToProto(c, contacts)}, nil
+	return &mdv1.CreateCustomerResponse{Customer: customerToProto(c, contacts, nil)}, nil
 }
 
 func (h *Handler) GetCustomer(ctx context.Context, req *mdv1.GetCustomerRequest) (*mdv1.GetCustomerResponse, error) {
@@ -76,12 +136,17 @@ func (h *Handler) GetCustomer(ctx context.Context, req *mdv1.GetCustomerRequest)
 	if err != nil {
 		return nil, err
 	}
-	return &mdv1.GetCustomerResponse{Customer: customerToProto(c, contacts)}, nil
+	addresses, err := h.svc.ListCustomerAddresses(ctx, grpcx.TenantID(ctx), req.GetId(), "ALL")
+	if err != nil {
+		return nil, err
+	}
+	return &mdv1.GetCustomerResponse{Customer: customerToProto(c, contacts, addresses)}, nil
 }
 
 func (h *Handler) ListCustomers(ctx context.Context, req *mdv1.ListCustomersRequest) (*mdv1.ListCustomersResponse, error) {
 	page, size := req.GetPage().GetPage(), req.GetPage().GetPageSize()
-	rows, total, err := h.svc.ListCustomers(ctx, grpcx.TenantID(ctx), req.GetKeyword(), req.GetStatus(), page, size)
+	rows, total, err := h.svc.ListCustomers(ctx, grpcx.TenantID(ctx), req.GetKeyword(), req.GetStatus(), req.GetCountryCode(),
+		req.GetCustomerType(), req.GetBusinessStatus(), req.GetTag(), req.GetOwnerEmployeeId(), page, size)
 	if err != nil {
 		return nil, err
 	}
@@ -91,6 +156,20 @@ func (h *Handler) ListCustomers(ctx context.Context, req *mdv1.ListCustomersRequ
 			Id: r.ID, Code: r.Code, Name: r.Name, Country: r.Country,
 			CountryCode: strings.TrimSpace(r.CountryCode), Address: r.Address,
 			Currency: r.Currency, PaymentTerm: r.PaymentTerm, Remark: r.Remark, Status: r.Status,
+			ShortName: r.ShortName, EnglishName: r.EnglishName, CustomerType: r.CustomerType,
+			Industry: r.Industry, Source: r.Source, Tags: r.Tags, Website: r.Website,
+			PrimaryLanguage: r.PrimaryLanguage, Timezone: r.Timezone,
+			RegisteredName: r.RegisteredName, RegistrationNo: r.RegistrationNo, TaxId: r.TaxID,
+			InvoiceTitle: r.InvoiceTitle, InvoiceTaxNo: r.InvoiceTaxNo,
+			InvoiceRemark: r.InvoiceRemark, PaymentDays: r.PaymentDays,
+			CreditLimitMinor: r.CreditLimitMinor, CreditCurrency: r.CreditCurrency,
+			CreditStatus: r.CreditStatus, BusinessStatus: r.BusinessStatus,
+			PrimaryContactName: r.PrimaryContactName,
+		}
+		if r.OwnerNames != "" {
+			for _, name := range strings.Split(r.OwnerNames, "、") {
+				out[i].Owners = append(out[i].Owners, &mdv1.CustomerOwner{EmployeeName: name, Status: "ACTIVE"})
+			}
 		}
 	}
 	if page < 1 {
@@ -109,11 +188,23 @@ func (h *Handler) UpdateCustomer(ctx context.Context, req *mdv1.UpdateCustomerRe
 	in := customerInput(req.GetName(), req.GetCountry(), req.GetCountryCode(),
 		req.GetAddress(), req.GetCurrency(),
 		req.GetPaymentTerm(), req.GetRemark(), req.GetContacts(), operatorID(ctx))
+	in.OperatorName = operatorName(ctx)
 	c, contacts, err := h.svc.UpdateCustomer(ctx, grpcx.TenantID(ctx), req.GetId(), in)
 	if err != nil {
 		return nil, err
 	}
-	return &mdv1.UpdateCustomerResponse{Customer: customerToProto(c, contacts)}, nil
+	return &mdv1.UpdateCustomerResponse{Customer: customerToProto(c, contacts, nil)}, nil
+}
+
+// UpdateCustomerProfile 单独更新客户详细资料，避免旧版基础信息表单覆盖新字段。
+func (h *Handler) UpdateCustomerProfile(ctx context.Context, req *mdv1.UpdateCustomerProfileRequest) (*mdv1.UpdateCustomerProfileResponse, error) {
+	in := customerProfileInput(req, operatorID(ctx))
+	in.OperatorName = operatorName(ctx)
+	c, err := h.svc.UpdateCustomerProfile(ctx, grpcx.TenantID(ctx), req.GetId(), in)
+	if err != nil {
+		return nil, err
+	}
+	return &mdv1.UpdateCustomerProfileResponse{Customer: customerToProto(c, nil, nil)}, nil
 }
 
 func (h *Handler) DeactivateCustomer(ctx context.Context, req *mdv1.DeactivateCustomerRequest) (*mdv1.DeactivateCustomerResponse, error) {
@@ -121,6 +212,53 @@ func (h *Handler) DeactivateCustomer(ctx context.Context, req *mdv1.DeactivateCu
 		return nil, err
 	}
 	return &mdv1.DeactivateCustomerResponse{}, nil
+}
+
+func addressInput(in *mdv1.CustomerAddressInput, opID int64) app.CustomerAddressInput {
+	if in == nil {
+		in = &mdv1.CustomerAddressInput{}
+	}
+	return app.CustomerAddressInput{
+		AddressType: in.GetAddressType(), CountryCode: in.GetCountryCode(),
+		State: in.GetState(), City: in.GetCity(), PostalCode: in.GetPostalCode(),
+		AddressLine: in.GetAddressLine(), IsDefault: in.GetIsDefault(),
+		SortOrder: in.GetSortOrder(), OperatorID: opID,
+	}
+}
+
+func (h *Handler) ListCustomerAddresses(ctx context.Context, req *mdv1.ListCustomerAddressesRequest) (*mdv1.ListCustomerAddressesResponse, error) {
+	rows, err := h.svc.ListCustomerAddresses(ctx, grpcx.TenantID(ctx), req.GetCustomerId(), req.GetStatus())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mdv1.CustomerAddress, len(rows))
+	for i, row := range rows {
+		out[i] = addressToProto(row)
+	}
+	return &mdv1.ListCustomerAddressesResponse{Addresses: out}, nil
+}
+
+func (h *Handler) CreateCustomerAddress(ctx context.Context, req *mdv1.CreateCustomerAddressRequest) (*mdv1.CreateCustomerAddressResponse, error) {
+	row, err := h.svc.CreateCustomerAddress(ctx, grpcx.TenantID(ctx), req.GetCustomerId(), addressInput(req.GetAddress(), operatorID(ctx)))
+	if err != nil {
+		return nil, err
+	}
+	return &mdv1.CreateCustomerAddressResponse{Address: addressToProto(row)}, nil
+}
+
+func (h *Handler) UpdateCustomerAddress(ctx context.Context, req *mdv1.UpdateCustomerAddressRequest) (*mdv1.UpdateCustomerAddressResponse, error) {
+	row, err := h.svc.UpdateCustomerAddress(ctx, grpcx.TenantID(ctx), req.GetCustomerId(), req.GetId(), addressInput(req.GetAddress(), operatorID(ctx)))
+	if err != nil {
+		return nil, err
+	}
+	return &mdv1.UpdateCustomerAddressResponse{Address: addressToProto(row)}, nil
+}
+
+func (h *Handler) DeactivateCustomerAddress(ctx context.Context, req *mdv1.DeactivateCustomerAddressRequest) (*mdv1.DeactivateCustomerAddressResponse, error) {
+	if err := h.svc.DeactivateCustomerAddress(ctx, grpcx.TenantID(ctx), req.GetCustomerId(), req.GetId(), operatorID(ctx), operatorName(ctx)); err != nil {
+		return nil, err
+	}
+	return &mdv1.DeactivateCustomerAddressResponse{}, nil
 }
 
 // ---------------------------------------------------------------- suppliers
@@ -279,14 +417,15 @@ func (h *Handler) ListMailingContacts(ctx context.Context, req *mdv1.ListMailing
 			ContactId: r.ContactID, Name: r.Name, Title: r.Title, Email: r.Email,
 			IsPrimary: r.IsPrimary, CustomerId: r.CustomerID,
 			CustomerName: r.CustomerName, Country: r.Country,
-			CountryCode: strings.TrimSpace(r.CountryCode),
+			CountryCode: strings.TrimSpace(r.CountryCode), Language: r.Language,
+			EmailCategories: r.EmailCategories,
 		})
 	}
 	return &mdv1.ListMailingContactsResponse{Contacts: out}, nil
 }
 
-func (h *Handler) ListCustomerCountries(ctx context.Context, _ *mdv1.ListCustomerCountriesRequest) (*mdv1.ListCustomerCountriesResponse, error) {
-	groups, err := h.svc.ListCustomerCountries(ctx, grpcx.TenantID(ctx))
+func (h *Handler) ListCustomerCountries(ctx context.Context, req *mdv1.ListCustomerCountriesRequest) (*mdv1.ListCustomerCountriesResponse, error) {
+	groups, err := h.svc.ListCustomerCountries(ctx, grpcx.TenantID(ctx), req.GetStatus())
 	if err != nil {
 		return nil, err
 	}
@@ -312,6 +451,7 @@ func (h *Handler) ContactsInCountry(ctx context.Context, req *mdv1.ContactsInCou
 			ContactId: r.ContactID, Name: r.Name, Title: r.Title, Email: r.Email,
 			IsPrimary: r.IsPrimary, CustomerId: r.CustomerID,
 			CustomerName: r.CustomerName, Country: r.Country, CountryCode: r.CountryCode,
+			Language: r.Language, EmailCategories: r.EmailCategories,
 		}
 	}
 	return &mdv1.ContactsInCountryResponse{Contacts: out}, nil

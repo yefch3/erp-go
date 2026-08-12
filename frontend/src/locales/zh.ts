@@ -749,6 +749,9 @@ export default {
     },
   },
   customers: {
+    countryGroups: '国家分类',
+    allCountries: '全部客户',
+    unclassified: '未分类',
     countryPick: '选择国家',
     countryUnmapped: '未识别',
     countryUnset: '未设置',

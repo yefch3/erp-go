@@ -12,7 +12,10 @@ import (
 )
 
 const activateCustomer = `-- name: ActivateCustomer :execrows
-UPDATE customers SET status = 'ACTIVE', updated_by = $3, updated_at = now()
+UPDATE customers
+SET status = 'ACTIVE',
+    business_status = CASE WHEN business_status = 'INACTIVE' THEN 'PROSPECT' ELSE business_status END,
+    updated_by = $3, updated_at = now()
 WHERE tenant_id = $1 AND id = $2 AND status = 'INACTIVE'
 `
 
@@ -89,7 +92,9 @@ SELECT
     c.id            AS customer_id,
     c.name          AS customer_name,
     c.country,
-    c.country_code
+    c.country_code,
+    cc.language,
+    cc.email_categories
 FROM customers c
 JOIN customer_contacts cc
     ON cc.customer_id = c.id AND cc.tenant_id = c.tenant_id
@@ -97,6 +102,8 @@ WHERE c.tenant_id = $1::bigint
   AND c.status = 'ACTIVE'
   AND c.country_code = $2::text
   AND cc.email <> ''
+  AND cc.status = 'ACTIVE'
+  AND cc.email_permission = 'ALLOWED'
 ORDER BY c.name, cc.is_primary DESC, cc.sort_order, cc.id
 `
 
@@ -106,15 +113,17 @@ type AllContactsInCountryParams struct {
 }
 
 type AllContactsInCountryRow struct {
-	ContactID    int64
-	Name         string
-	Title        string
-	Email        string
-	IsPrimary    bool
-	CustomerID   int64
-	CustomerName string
-	Country      string
-	CountryCode  string
+	ContactID       int64
+	Name            string
+	Title           string
+	Email           string
+	IsPrimary       bool
+	CustomerID      int64
+	CustomerName    string
+	Country         string
+	CountryCode     string
+	Language        string
+	EmailCategories []string
 }
 
 // The same country, everybody at every customer in it.
@@ -142,6 +151,8 @@ func (q *Queries) AllContactsInCountry(ctx context.Context, arg AllContactsInCou
 			&i.CustomerName,
 			&i.Country,
 			&i.CountryCode,
+			&i.Language,
+			&i.EmailCategories,
 		); err != nil {
 			return nil, err
 		}
@@ -151,6 +162,73 @@ func (q *Queries) AllContactsInCountry(ctx context.Context, arg AllContactsInCou
 		return nil, err
 	}
 	return items, nil
+}
+
+const clearDefaultCustomerAddress = `-- name: ClearDefaultCustomerAddress :exec
+UPDATE customer_addresses
+SET is_default = false, updated_by = $1, updated_at = now()
+WHERE tenant_id = $2 AND customer_id = $3
+  AND address_type = $4 AND status = 'ACTIVE' AND is_default
+`
+
+type ClearDefaultCustomerAddressParams struct {
+	OperatorID  int64
+	TenantID    int64
+	CustomerID  int64
+	AddressType string
+}
+
+func (q *Queries) ClearDefaultCustomerAddress(ctx context.Context, arg ClearDefaultCustomerAddressParams) error {
+	_, err := q.db.Exec(ctx, clearDefaultCustomerAddress,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.CustomerID,
+		arg.AddressType,
+	)
+	return err
+}
+
+const clearPrimaryCustomerContact = `-- name: ClearPrimaryCustomerContact :exec
+UPDATE customer_contacts
+SET is_primary = false, updated_by = $1, updated_at = now()
+WHERE tenant_id = $2 AND customer_id = $3
+  AND status = 'ACTIVE' AND is_primary
+`
+
+type ClearPrimaryCustomerContactParams struct {
+	OperatorID int64
+	TenantID   int64
+	CustomerID int64
+}
+
+func (q *Queries) ClearPrimaryCustomerContact(ctx context.Context, arg ClearPrimaryCustomerContactParams) error {
+	_, err := q.db.Exec(ctx, clearPrimaryCustomerContact, arg.OperatorID, arg.TenantID, arg.CustomerID)
+	return err
+}
+
+const clearPrimaryCustomerOwners = `-- name: ClearPrimaryCustomerOwners :exec
+UPDATE customer_owners
+SET is_primary = false, updated_by = $1, updated_at = now()
+WHERE tenant_id = $2 AND customer_id = $3
+  AND status = 'ACTIVE' AND is_primary = true
+  AND id <> $4
+`
+
+type ClearPrimaryCustomerOwnersParams struct {
+	OperatorID int64
+	TenantID   int64
+	CustomerID int64
+	ExcludeID  int64
+}
+
+func (q *Queries) ClearPrimaryCustomerOwners(ctx context.Context, arg ClearPrimaryCustomerOwnersParams) error {
+	_, err := q.db.Exec(ctx, clearPrimaryCustomerOwners,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.CustomerID,
+		arg.ExcludeID,
+	)
+	return err
 }
 
 const contactsInCountry = `-- name: ContactsInCountry :many
@@ -163,7 +241,9 @@ SELECT DISTINCT ON (c.id)
     c.id            AS customer_id,
     c.name          AS customer_name,
     c.country,
-    c.country_code
+    c.country_code,
+    cc.language,
+    cc.email_categories
 FROM customers c
 JOIN customer_contacts cc
     ON cc.customer_id = c.id AND cc.tenant_id = c.tenant_id
@@ -171,6 +251,8 @@ WHERE c.tenant_id = $1::bigint
   AND c.status = 'ACTIVE'
   AND c.country_code = $2::text
   AND cc.email <> ''
+  AND cc.status = 'ACTIVE'
+  AND cc.email_permission = 'ALLOWED'
 ORDER BY c.id, cc.is_primary DESC, cc.sort_order, cc.id
 `
 
@@ -180,15 +262,17 @@ type ContactsInCountryParams struct {
 }
 
 type ContactsInCountryRow struct {
-	ContactID    int64
-	Name         string
-	Title        string
-	Email        string
-	IsPrimary    bool
-	CustomerID   int64
-	CustomerName string
-	Country      string
-	CountryCode  string
+	ContactID       int64
+	Name            string
+	Title           string
+	Email           string
+	IsPrimary       bool
+	CustomerID      int64
+	CustomerName    string
+	Country         string
+	CountryCode     string
+	Language        string
+	EmailCategories []string
 }
 
 // Everybody writable in one country.
@@ -220,6 +304,8 @@ func (q *Queries) ContactsInCountry(ctx context.Context, arg ContactsInCountryPa
 			&i.CustomerName,
 			&i.Country,
 			&i.CountryCode,
+			&i.Language,
+			&i.EmailCategories,
 		); err != nil {
 			return nil, err
 		}
@@ -231,23 +317,94 @@ func (q *Queries) ContactsInCountry(ctx context.Context, arg ContactsInCountryPa
 	return items, nil
 }
 
+const countActiveCustomerOwners = `-- name: CountActiveCustomerOwners :one
+SELECT count(*) FROM customer_owners
+WHERE tenant_id = $1 AND customer_id = $2
+  AND status = 'ACTIVE'
+`
+
+type CountActiveCustomerOwnersParams struct {
+	TenantID   int64
+	CustomerID int64
+}
+
+func (q *Queries) CountActiveCustomerOwners(ctx context.Context, arg CountActiveCustomerOwnersParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveCustomerOwners, arg.TenantID, arg.CustomerID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countCustomerChangeLogs = `-- name: CountCustomerChangeLogs :one
+SELECT count(*) FROM customer_change_logs
+WHERE tenant_id = $1 AND customer_id = $2
+`
+
+type CountCustomerChangeLogsParams struct {
+	TenantID   int64
+	CustomerID int64
+}
+
+func (q *Queries) CountCustomerChangeLogs(ctx context.Context, arg CountCustomerChangeLogsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countCustomerChangeLogs, arg.TenantID, arg.CustomerID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createCustomer = `-- name: CreateCustomer :one
-INSERT INTO customers (tenant_id, code, name, country, country_code, address, currency, payment_term, remark, created_by, updated_by)
-VALUES ($1, $2, $3, $4, $10::text, $5, $6, $7, $8, $9, $9)
-RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code
+INSERT INTO customers (
+    tenant_id, code, name, country, country_code, address, currency, payment_term, remark,
+    short_name, english_name, customer_type, industry, source, tags, website,
+    primary_language, timezone, registered_name, registration_no, tax_id,
+    invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor,
+    credit_currency, credit_status, business_status, created_by, updated_by
+)
+VALUES (
+    $1, $2, $3, $4,
+    $5::text, $6, $7,
+    $8, $9, $10, $11,
+    $12, $13, $14, $15::text[],
+    $16, $17, $18,
+    $19, $20, $21,
+    $22, $23, $24,
+    $25, $26, $27,
+    $28, $29, $30, $30
+)
+RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor, credit_currency, credit_status, business_status
 `
 
 type CreateCustomerParams struct {
-	TenantID    int64
-	Code        string
-	Name        string
-	Country     string
-	Address     string
-	Currency    string
-	PaymentTerm string
-	Remark      string
-	CreatedBy   int64
-	CountryCode string
+	TenantID         int64
+	Code             string
+	Name             string
+	Country          string
+	CountryCode      string
+	Address          string
+	Currency         string
+	PaymentTerm      string
+	Remark           string
+	ShortName        string
+	EnglishName      string
+	CustomerType     string
+	Industry         string
+	Source           string
+	Tags             []string
+	Website          string
+	PrimaryLanguage  string
+	Timezone         string
+	RegisteredName   string
+	RegistrationNo   string
+	TaxID            string
+	InvoiceTitle     string
+	InvoiceTaxNo     string
+	InvoiceRemark    string
+	PaymentDays      int32
+	CreditLimitMinor int64
+	CreditCurrency   string
+	CreditStatus     string
+	BusinessStatus   string
+	OperatorID       int64
 }
 
 // country_code is the one that matters now; country keeps whatever free text
@@ -259,12 +416,32 @@ func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) 
 		arg.Code,
 		arg.Name,
 		arg.Country,
+		arg.CountryCode,
 		arg.Address,
 		arg.Currency,
 		arg.PaymentTerm,
 		arg.Remark,
-		arg.CreatedBy,
-		arg.CountryCode,
+		arg.ShortName,
+		arg.EnglishName,
+		arg.CustomerType,
+		arg.Industry,
+		arg.Source,
+		arg.Tags,
+		arg.Website,
+		arg.PrimaryLanguage,
+		arg.Timezone,
+		arg.RegisteredName,
+		arg.RegistrationNo,
+		arg.TaxID,
+		arg.InvoiceTitle,
+		arg.InvoiceTaxNo,
+		arg.InvoiceRemark,
+		arg.PaymentDays,
+		arg.CreditLimitMinor,
+		arg.CreditCurrency,
+		arg.CreditStatus,
+		arg.BusinessStatus,
+		arg.OperatorID,
 	)
 	var i Customer
 	err := row.Scan(
@@ -283,6 +460,225 @@ func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) 
 		&i.UpdatedAt,
 		&i.UpdatedBy,
 		&i.CountryCode,
+		&i.ShortName,
+		&i.EnglishName,
+		&i.CustomerType,
+		&i.Industry,
+		&i.Source,
+		&i.Tags,
+		&i.Website,
+		&i.PrimaryLanguage,
+		&i.Timezone,
+		&i.RegisteredName,
+		&i.RegistrationNo,
+		&i.TaxID,
+		&i.InvoiceTitle,
+		&i.InvoiceTaxNo,
+		&i.InvoiceRemark,
+		&i.PaymentDays,
+		&i.CreditLimitMinor,
+		&i.CreditCurrency,
+		&i.CreditStatus,
+		&i.BusinessStatus,
+	)
+	return i, err
+}
+
+const createCustomerAddress = `-- name: CreateCustomerAddress :one
+INSERT INTO customer_addresses (
+    tenant_id, customer_id, address_type, country_code, state, city, postal_code,
+    address_line, is_default, sort_order, created_by, updated_by
+) VALUES (
+    $1, $2, $3,
+    $4, $5, $6, $7,
+    $8, $9, $10,
+    $11, $11
+)
+RETURNING id, tenant_id, customer_id, address_type, country_code, state, city, postal_code, address_line, is_default, sort_order, status, created_at, created_by, updated_at, updated_by
+`
+
+type CreateCustomerAddressParams struct {
+	TenantID    int64
+	CustomerID  int64
+	AddressType string
+	CountryCode string
+	State       string
+	City        string
+	PostalCode  string
+	AddressLine string
+	IsDefault   bool
+	SortOrder   int32
+	OperatorID  int64
+}
+
+func (q *Queries) CreateCustomerAddress(ctx context.Context, arg CreateCustomerAddressParams) (CustomerAddress, error) {
+	row := q.db.QueryRow(ctx, createCustomerAddress,
+		arg.TenantID,
+		arg.CustomerID,
+		arg.AddressType,
+		arg.CountryCode,
+		arg.State,
+		arg.City,
+		arg.PostalCode,
+		arg.AddressLine,
+		arg.IsDefault,
+		arg.SortOrder,
+		arg.OperatorID,
+	)
+	var i CustomerAddress
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.CustomerID,
+		&i.AddressType,
+		&i.CountryCode,
+		&i.State,
+		&i.City,
+		&i.PostalCode,
+		&i.AddressLine,
+		&i.IsDefault,
+		&i.SortOrder,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
+}
+
+const createCustomerContact = `-- name: CreateCustomerContact :one
+INSERT INTO customer_contacts (
+    tenant_id, customer_id, name, department, title, email, phone, mobile,
+    instant_messaging, language, remark, is_primary, sort_order, email_permission,
+    email_categories, created_by, updated_by
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7, $8,
+    $9, $10, $11,
+    $12, $13, $14,
+    $15, $16, $16
+)
+RETURNING id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories
+`
+
+type CreateCustomerContactParams struct {
+	TenantID         int64
+	CustomerID       int64
+	Name             string
+	Department       string
+	Title            string
+	Email            string
+	Phone            string
+	Mobile           string
+	InstantMessaging string
+	Language         string
+	Remark           string
+	IsPrimary        bool
+	SortOrder        int32
+	EmailPermission  string
+	EmailCategories  []string
+	OperatorID       int64
+}
+
+func (q *Queries) CreateCustomerContact(ctx context.Context, arg CreateCustomerContactParams) (CustomerContact, error) {
+	row := q.db.QueryRow(ctx, createCustomerContact,
+		arg.TenantID,
+		arg.CustomerID,
+		arg.Name,
+		arg.Department,
+		arg.Title,
+		arg.Email,
+		arg.Phone,
+		arg.Mobile,
+		arg.InstantMessaging,
+		arg.Language,
+		arg.Remark,
+		arg.IsPrimary,
+		arg.SortOrder,
+		arg.EmailPermission,
+		arg.EmailCategories,
+		arg.OperatorID,
+	)
+	var i CustomerContact
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.CustomerID,
+		&i.Name,
+		&i.Title,
+		&i.Email,
+		&i.Phone,
+		&i.IsPrimary,
+		&i.SortOrder,
+		&i.Department,
+		&i.Mobile,
+		&i.InstantMessaging,
+		&i.Language,
+		&i.Remark,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+		&i.EmailPermission,
+		&i.EmailCategories,
+	)
+	return i, err
+}
+
+const createCustomerOwner = `-- name: CreateCustomerOwner :one
+INSERT INTO customer_owners (
+    tenant_id, customer_id, employee_id, employee_name, responsibility_code,
+    start_date, end_date, is_primary, created_by, updated_by
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7,
+    $8, $9, $9
+)
+RETURNING id, tenant_id, customer_id, employee_id, employee_name, responsibility_code, start_date, end_date, status, created_at, created_by, updated_at, updated_by, is_primary
+`
+
+type CreateCustomerOwnerParams struct {
+	TenantID           int64
+	CustomerID         int64
+	EmployeeID         int64
+	EmployeeName       string
+	ResponsibilityCode string
+	StartDate          pgtype.Date
+	EndDate            pgtype.Date
+	IsPrimary          bool
+	OperatorID         int64
+}
+
+func (q *Queries) CreateCustomerOwner(ctx context.Context, arg CreateCustomerOwnerParams) (CustomerOwner, error) {
+	row := q.db.QueryRow(ctx, createCustomerOwner,
+		arg.TenantID,
+		arg.CustomerID,
+		arg.EmployeeID,
+		arg.EmployeeName,
+		arg.ResponsibilityCode,
+		arg.StartDate,
+		arg.EndDate,
+		arg.IsPrimary,
+		arg.OperatorID,
+	)
+	var i CustomerOwner
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.CustomerID,
+		&i.EmployeeID,
+		&i.EmployeeName,
+		&i.ResponsibilityCode,
+		&i.StartDate,
+		&i.EndDate,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+		&i.IsPrimary,
 	)
 	return i, err
 }
@@ -378,8 +774,80 @@ func (q *Queries) CreateSupplier(ctx context.Context, arg CreateSupplierParams) 
 	return i, err
 }
 
+const customerCodeExists = `-- name: CustomerCodeExists :one
+SELECT EXISTS(
+    SELECT 1 FROM customers WHERE tenant_id = $1 AND code = $2
+)
+`
+
+type CustomerCodeExistsParams struct {
+	TenantID int64
+	Code     string
+}
+
+func (q *Queries) CustomerCodeExists(ctx context.Context, arg CustomerCodeExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, customerCodeExists, arg.TenantID, arg.Code)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const customerDuplicateCandidates = `-- name: CustomerDuplicateCandidates :many
+SELECT id, code, name, tax_id
+FROM customers
+WHERE tenant_id = $1
+  AND (lower(name) = lower($2) OR ($3::text <> '' AND tax_id = $3))
+  AND ($4::bigint = 0 OR id <> $4)
+ORDER BY id
+LIMIT 10
+`
+
+type CustomerDuplicateCandidatesParams struct {
+	TenantID  int64
+	Name      string
+	TaxID     string
+	ExcludeID int64
+}
+
+type CustomerDuplicateCandidatesRow struct {
+	ID    int64
+	Code  string
+	Name  string
+	TaxID string
+}
+
+func (q *Queries) CustomerDuplicateCandidates(ctx context.Context, arg CustomerDuplicateCandidatesParams) ([]CustomerDuplicateCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, customerDuplicateCandidates,
+		arg.TenantID,
+		arg.Name,
+		arg.TaxID,
+		arg.ExcludeID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CustomerDuplicateCandidatesRow
+	for rows.Next() {
+		var i CustomerDuplicateCandidatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Code,
+			&i.Name,
+			&i.TaxID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deactivateCustomer = `-- name: DeactivateCustomer :execrows
-UPDATE customers SET status = 'INACTIVE', updated_by = $3, updated_at = now()
+UPDATE customers SET status = 'INACTIVE', business_status = 'INACTIVE', updated_by = $3, updated_at = now()
 WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'
 `
 
@@ -391,6 +859,93 @@ type DeactivateCustomerParams struct {
 
 func (q *Queries) DeactivateCustomer(ctx context.Context, arg DeactivateCustomerParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deactivateCustomer, arg.TenantID, arg.ID, arg.UpdatedBy)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deactivateCustomerAddress = `-- name: DeactivateCustomerAddress :execrows
+UPDATE customer_addresses
+SET status = 'INACTIVE', is_default = false,
+    updated_by = $1, updated_at = now()
+WHERE tenant_id = $2 AND customer_id = $3
+  AND id = $4 AND status = 'ACTIVE'
+`
+
+type DeactivateCustomerAddressParams struct {
+	OperatorID int64
+	TenantID   int64
+	CustomerID int64
+	ID         int64
+}
+
+func (q *Queries) DeactivateCustomerAddress(ctx context.Context, arg DeactivateCustomerAddressParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deactivateCustomerAddress,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.CustomerID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deactivateCustomerContact = `-- name: DeactivateCustomerContact :execrows
+UPDATE customer_contacts
+SET status = 'INACTIVE', is_primary = false,
+    updated_by = $1, updated_at = now()
+WHERE tenant_id = $2 AND customer_id = $3
+  AND id = $4 AND status = 'ACTIVE'
+`
+
+type DeactivateCustomerContactParams struct {
+	OperatorID int64
+	TenantID   int64
+	CustomerID int64
+	ID         int64
+}
+
+func (q *Queries) DeactivateCustomerContact(ctx context.Context, arg DeactivateCustomerContactParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deactivateCustomerContact,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.CustomerID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deactivateCustomerOwner = `-- name: DeactivateCustomerOwner :execrows
+UPDATE customer_owners
+SET status = 'INACTIVE', is_primary = false,
+    end_date = COALESCE($1, end_date, CURRENT_DATE),
+    updated_by = $2, updated_at = now()
+WHERE tenant_id = $3 AND customer_id = $4
+  AND id = $5 AND status = 'ACTIVE'
+`
+
+type DeactivateCustomerOwnerParams struct {
+	EndDate    pgtype.Date
+	OperatorID int64
+	TenantID   int64
+	CustomerID int64
+	ID         int64
+}
+
+func (q *Queries) DeactivateCustomerOwner(ctx context.Context, arg DeactivateCustomerOwnerParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deactivateCustomerOwner,
+		arg.EndDate,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.CustomerID,
+		arg.ID,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -431,7 +986,7 @@ func (q *Queries) DeleteCustomerContacts(ctx context.Context, arg DeleteCustomer
 }
 
 const getCustomer = `-- name: GetCustomer :one
-SELECT id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code FROM customers WHERE tenant_id = $1 AND id = $2
+SELECT id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor, credit_currency, credit_status, business_status FROM customers WHERE tenant_id = $1 AND id = $2
 `
 
 type GetCustomerParams struct {
@@ -458,6 +1013,137 @@ func (q *Queries) GetCustomer(ctx context.Context, arg GetCustomerParams) (Custo
 		&i.UpdatedAt,
 		&i.UpdatedBy,
 		&i.CountryCode,
+		&i.ShortName,
+		&i.EnglishName,
+		&i.CustomerType,
+		&i.Industry,
+		&i.Source,
+		&i.Tags,
+		&i.Website,
+		&i.PrimaryLanguage,
+		&i.Timezone,
+		&i.RegisteredName,
+		&i.RegistrationNo,
+		&i.TaxID,
+		&i.InvoiceTitle,
+		&i.InvoiceTaxNo,
+		&i.InvoiceRemark,
+		&i.PaymentDays,
+		&i.CreditLimitMinor,
+		&i.CreditCurrency,
+		&i.CreditStatus,
+		&i.BusinessStatus,
+	)
+	return i, err
+}
+
+const getCustomerAddress = `-- name: GetCustomerAddress :one
+SELECT id, tenant_id, customer_id, address_type, country_code, state, city, postal_code, address_line, is_default, sort_order, status, created_at, created_by, updated_at, updated_by FROM customer_addresses
+WHERE tenant_id = $1 AND customer_id = $2
+  AND id = $3
+`
+
+type GetCustomerAddressParams struct {
+	TenantID   int64
+	CustomerID int64
+	ID         int64
+}
+
+func (q *Queries) GetCustomerAddress(ctx context.Context, arg GetCustomerAddressParams) (CustomerAddress, error) {
+	row := q.db.QueryRow(ctx, getCustomerAddress, arg.TenantID, arg.CustomerID, arg.ID)
+	var i CustomerAddress
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.CustomerID,
+		&i.AddressType,
+		&i.CountryCode,
+		&i.State,
+		&i.City,
+		&i.PostalCode,
+		&i.AddressLine,
+		&i.IsDefault,
+		&i.SortOrder,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
+}
+
+const getCustomerContact = `-- name: GetCustomerContact :one
+SELECT id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories FROM customer_contacts
+WHERE tenant_id = $1 AND customer_id = $2
+  AND id = $3
+`
+
+type GetCustomerContactParams struct {
+	TenantID   int64
+	CustomerID int64
+	ID         int64
+}
+
+func (q *Queries) GetCustomerContact(ctx context.Context, arg GetCustomerContactParams) (CustomerContact, error) {
+	row := q.db.QueryRow(ctx, getCustomerContact, arg.TenantID, arg.CustomerID, arg.ID)
+	var i CustomerContact
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.CustomerID,
+		&i.Name,
+		&i.Title,
+		&i.Email,
+		&i.Phone,
+		&i.IsPrimary,
+		&i.SortOrder,
+		&i.Department,
+		&i.Mobile,
+		&i.InstantMessaging,
+		&i.Language,
+		&i.Remark,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+		&i.EmailPermission,
+		&i.EmailCategories,
+	)
+	return i, err
+}
+
+const getCustomerOwner = `-- name: GetCustomerOwner :one
+SELECT id, tenant_id, customer_id, employee_id, employee_name, responsibility_code, start_date, end_date, status, created_at, created_by, updated_at, updated_by, is_primary FROM customer_owners
+WHERE tenant_id = $1 AND customer_id = $2
+  AND id = $3
+`
+
+type GetCustomerOwnerParams struct {
+	TenantID   int64
+	CustomerID int64
+	ID         int64
+}
+
+func (q *Queries) GetCustomerOwner(ctx context.Context, arg GetCustomerOwnerParams) (CustomerOwner, error) {
+	row := q.db.QueryRow(ctx, getCustomerOwner, arg.TenantID, arg.CustomerID, arg.ID)
+	var i CustomerOwner
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.CustomerID,
+		&i.EmployeeID,
+		&i.EmployeeName,
+		&i.ResponsibilityCode,
+		&i.StartDate,
+		&i.EndDate,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+		&i.IsPrimary,
 	)
 	return i, err
 }
@@ -518,8 +1204,163 @@ func (q *Queries) GetSupplier(ctx context.Context, arg GetSupplierParams) (Suppl
 	return i, err
 }
 
+const insertCustomerChangeLog = `-- name: InsertCustomerChangeLog :one
+INSERT INTO customer_change_logs (
+    tenant_id, customer_id, action, section, summary, before_data, after_data,
+    operator_id, operator_name
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $6::jsonb, $7::jsonb,
+    $8, $9
+)
+RETURNING id, tenant_id, customer_id, action, section, summary, before_data, after_data, operator_id, operator_name, created_at
+`
+
+type InsertCustomerChangeLogParams struct {
+	TenantID     int64
+	CustomerID   int64
+	Action       string
+	Section      string
+	Summary      string
+	BeforeData   []byte
+	AfterData    []byte
+	OperatorID   int64
+	OperatorName string
+}
+
+func (q *Queries) InsertCustomerChangeLog(ctx context.Context, arg InsertCustomerChangeLogParams) (CustomerChangeLog, error) {
+	row := q.db.QueryRow(ctx, insertCustomerChangeLog,
+		arg.TenantID,
+		arg.CustomerID,
+		arg.Action,
+		arg.Section,
+		arg.Summary,
+		arg.BeforeData,
+		arg.AfterData,
+		arg.OperatorID,
+		arg.OperatorName,
+	)
+	var i CustomerChangeLog
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.CustomerID,
+		&i.Action,
+		&i.Section,
+		&i.Summary,
+		&i.BeforeData,
+		&i.AfterData,
+		&i.OperatorID,
+		&i.OperatorName,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const listCustomerAddresses = `-- name: ListCustomerAddresses :many
+SELECT id, tenant_id, customer_id, address_type, country_code, state, city, postal_code, address_line, is_default, sort_order, status, created_at, created_by, updated_at, updated_by FROM customer_addresses
+WHERE tenant_id = $1
+  AND customer_id = $2
+  AND ($3::text = 'ALL' OR status = 'ACTIVE')
+ORDER BY address_type, sort_order, id
+`
+
+type ListCustomerAddressesParams struct {
+	TenantID   int64
+	CustomerID int64
+	Status     string
+}
+
+func (q *Queries) ListCustomerAddresses(ctx context.Context, arg ListCustomerAddressesParams) ([]CustomerAddress, error) {
+	rows, err := q.db.Query(ctx, listCustomerAddresses, arg.TenantID, arg.CustomerID, arg.Status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CustomerAddress
+	for rows.Next() {
+		var i CustomerAddress
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.CustomerID,
+			&i.AddressType,
+			&i.CountryCode,
+			&i.State,
+			&i.City,
+			&i.PostalCode,
+			&i.AddressLine,
+			&i.IsDefault,
+			&i.SortOrder,
+			&i.Status,
+			&i.CreatedAt,
+			&i.CreatedBy,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCustomerChangeLogs = `-- name: ListCustomerChangeLogs :many
+SELECT id, tenant_id, customer_id, action, section, summary, before_data, after_data, operator_id, operator_name, created_at FROM customer_change_logs
+WHERE tenant_id = $1 AND customer_id = $2
+ORDER BY created_at DESC, id DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListCustomerChangeLogsParams struct {
+	TenantID    int64
+	CustomerID  int64
+	OffsetCount int32
+	LimitCount  int32
+}
+
+func (q *Queries) ListCustomerChangeLogs(ctx context.Context, arg ListCustomerChangeLogsParams) ([]CustomerChangeLog, error) {
+	rows, err := q.db.Query(ctx, listCustomerChangeLogs,
+		arg.TenantID,
+		arg.CustomerID,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CustomerChangeLog
+	for rows.Next() {
+		var i CustomerChangeLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.CustomerID,
+			&i.Action,
+			&i.Section,
+			&i.Summary,
+			&i.BeforeData,
+			&i.AfterData,
+			&i.OperatorID,
+			&i.OperatorName,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCustomerContacts = `-- name: ListCustomerContacts :many
-SELECT id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order FROM customer_contacts
+SELECT id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories FROM customer_contacts
 WHERE tenant_id = $1 AND customer_id = $2
 ORDER BY sort_order, id
 `
@@ -548,6 +1389,73 @@ func (q *Queries) ListCustomerContacts(ctx context.Context, arg ListCustomerCont
 			&i.Phone,
 			&i.IsPrimary,
 			&i.SortOrder,
+			&i.Department,
+			&i.Mobile,
+			&i.InstantMessaging,
+			&i.Language,
+			&i.Remark,
+			&i.Status,
+			&i.CreatedAt,
+			&i.CreatedBy,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
+			&i.EmailPermission,
+			&i.EmailCategories,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCustomerContactsDetailed = `-- name: ListCustomerContactsDetailed :many
+SELECT id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories FROM customer_contacts
+WHERE tenant_id = $1 AND customer_id = $2
+  AND ($3::text = 'ALL' OR status = 'ACTIVE')
+ORDER BY status, is_primary DESC, sort_order, id
+`
+
+type ListCustomerContactsDetailedParams struct {
+	TenantID   int64
+	CustomerID int64
+	Status     string
+}
+
+func (q *Queries) ListCustomerContactsDetailed(ctx context.Context, arg ListCustomerContactsDetailedParams) ([]CustomerContact, error) {
+	rows, err := q.db.Query(ctx, listCustomerContactsDetailed, arg.TenantID, arg.CustomerID, arg.Status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CustomerContact
+	for rows.Next() {
+		var i CustomerContact
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.CustomerID,
+			&i.Name,
+			&i.Title,
+			&i.Email,
+			&i.Phone,
+			&i.IsPrimary,
+			&i.SortOrder,
+			&i.Department,
+			&i.Mobile,
+			&i.InstantMessaging,
+			&i.Language,
+			&i.Remark,
+			&i.Status,
+			&i.CreatedAt,
+			&i.CreatedBy,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
+			&i.EmailPermission,
+			&i.EmailCategories,
 		); err != nil {
 			return nil, err
 		}
@@ -573,11 +1481,17 @@ SELECT
 FROM customers c
 LEFT JOIN customer_contacts cc
     ON cc.customer_id = c.id AND cc.tenant_id = c.tenant_id AND cc.email <> ''
+   AND cc.status = 'ACTIVE' AND cc.email_permission = 'ALLOWED'
 WHERE c.tenant_id = $1::bigint
-  AND c.status = 'ACTIVE'
+  AND ($2::text = 'ALL' OR c.status = 'ACTIVE')
 GROUP BY c.country_code
 ORDER BY count(DISTINCT c.id) DESC, c.country_code
 `
+
+type ListCustomerCountriesParams struct {
+	TenantID int64
+	Status   string
+}
 
 type ListCustomerCountriesRow struct {
 	CountryCode   string
@@ -597,8 +1511,8 @@ type ListCustomerCountriesRow struct {
 // Customers with no code are grouped under ” rather than dropped. They are
 // the ones somebody has to go and fix, and a list that hides them is a list
 // that never gets fixed.
-func (q *Queries) ListCustomerCountries(ctx context.Context, tenantID int64) ([]ListCustomerCountriesRow, error) {
-	rows, err := q.db.Query(ctx, listCustomerCountries, tenantID)
+func (q *Queries) ListCustomerCountries(ctx context.Context, arg ListCustomerCountriesParams) ([]ListCustomerCountriesRow, error) {
+	rows, err := q.db.Query(ctx, listCustomerCountries, arg.TenantID, arg.Status)
 	if err != nil {
 		return nil, err
 	}
@@ -622,50 +1536,148 @@ func (q *Queries) ListCustomerCountries(ctx context.Context, tenantID int64) ([]
 	return items, nil
 }
 
+const listCustomerOwners = `-- name: ListCustomerOwners :many
+SELECT id, tenant_id, customer_id, employee_id, employee_name, responsibility_code, start_date, end_date, status, created_at, created_by, updated_at, updated_by, is_primary FROM customer_owners
+WHERE tenant_id = $1 AND customer_id = $2
+  AND ($3::text = 'ALL' OR status = 'ACTIVE')
+ORDER BY status, is_primary DESC, responsibility_code, id
+`
+
+type ListCustomerOwnersParams struct {
+	TenantID   int64
+	CustomerID int64
+	Status     string
+}
+
+func (q *Queries) ListCustomerOwners(ctx context.Context, arg ListCustomerOwnersParams) ([]CustomerOwner, error) {
+	rows, err := q.db.Query(ctx, listCustomerOwners, arg.TenantID, arg.CustomerID, arg.Status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CustomerOwner
+	for rows.Next() {
+		var i CustomerOwner
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.CustomerID,
+			&i.EmployeeID,
+			&i.EmployeeName,
+			&i.ResponsibilityCode,
+			&i.StartDate,
+			&i.EndDate,
+			&i.Status,
+			&i.CreatedAt,
+			&i.CreatedBy,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
+			&i.IsPrimary,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCustomers = `-- name: ListCustomers :many
-SELECT id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, count(*) OVER () AS total
-FROM customers
-WHERE tenant_id = $1
-  AND ($4::text = 'ALL' OR status = 'ACTIVE')
-  AND ($5::text = '' OR name ILIKE '%' || $5 || '%' OR code ILIKE '%' || $5 || '%')
-ORDER BY id DESC
-LIMIT $2 OFFSET $3
+SELECT c.id, c.tenant_id, c.code, c.name, c.country, c.address, c.currency, c.payment_term, c.remark, c.status, c.created_at, c.created_by, c.updated_at, c.updated_by, c.country_code, c.short_name, c.english_name, c.customer_type, c.industry, c.source, c.tags, c.website, c.primary_language, c.timezone, c.registered_name, c.registration_no, c.tax_id, c.invoice_title, c.invoice_tax_no, c.invoice_remark, c.payment_days, c.credit_limit_minor, c.credit_currency, c.credit_status, c.business_status,
+  COALESCE((SELECT cc.name FROM customer_contacts cc
+            WHERE cc.tenant_id = c.tenant_id AND cc.customer_id = c.id AND cc.status = 'ACTIVE'
+            ORDER BY cc.is_primary DESC, cc.sort_order, cc.id LIMIT 1), ''::text)::text AS primary_contact_name,
+  COALESCE((SELECT string_agg(co.employee_name, '、' ORDER BY co.id) FROM customer_owners co
+            WHERE co.tenant_id = c.tenant_id AND co.customer_id = c.id AND co.status = 'ACTIVE'), ''::text)::text AS owner_names,
+  count(*) OVER () AS total
+FROM customers c
+WHERE c.tenant_id = $1
+  AND ($2::text = 'ALL' OR c.status = 'ACTIVE')
+  AND (
+      $3::text = ''
+      OR ($3::text = '__UNCLASSIFIED__' AND btrim(c.country_code) = '')
+      OR c.country_code = $3::text
+  )
+  AND ($4::text = '' OR c.customer_type = $4)
+  AND ($5::text = '' OR c.business_status = $5)
+  AND ($6::text = '' OR $6 = ANY(c.tags))
+  AND ($7::bigint = 0 OR EXISTS (
+      SELECT 1 FROM customer_owners co WHERE co.tenant_id = c.tenant_id AND co.customer_id = c.id
+        AND co.employee_id = $7 AND co.status = 'ACTIVE'
+  ))
+  AND ($8::text = '' OR c.name ILIKE '%' || $8 || '%' OR c.code ILIKE '%' || $8 || '%')
+ORDER BY c.id DESC
+LIMIT $10 OFFSET $9
 `
 
 type ListCustomersParams struct {
-	TenantID int64
-	Limit    int32
-	Offset   int32
-	Status   string
-	Keyword  string
+	TenantID        int64
+	Status          string
+	CountryCode     string
+	CustomerType    string
+	BusinessStatus  string
+	Tag             string
+	OwnerEmployeeID int64
+	Keyword         string
+	OffsetCount     int32
+	LimitCount      int32
 }
 
 type ListCustomersRow struct {
-	ID          int64
-	TenantID    int64
-	Code        string
-	Name        string
-	Country     string
-	Address     string
-	Currency    string
-	PaymentTerm string
-	Remark      string
-	Status      string
-	CreatedAt   pgtype.Timestamptz
-	CreatedBy   int64
-	UpdatedAt   pgtype.Timestamptz
-	UpdatedBy   int64
-	CountryCode string
-	Total       int64
+	ID                 int64
+	TenantID           int64
+	Code               string
+	Name               string
+	Country            string
+	Address            string
+	Currency           string
+	PaymentTerm        string
+	Remark             string
+	Status             string
+	CreatedAt          pgtype.Timestamptz
+	CreatedBy          int64
+	UpdatedAt          pgtype.Timestamptz
+	UpdatedBy          int64
+	CountryCode        string
+	ShortName          string
+	EnglishName        string
+	CustomerType       string
+	Industry           string
+	Source             string
+	Tags               []string
+	Website            string
+	PrimaryLanguage    string
+	Timezone           string
+	RegisteredName     string
+	RegistrationNo     string
+	TaxID              string
+	InvoiceTitle       string
+	InvoiceTaxNo       string
+	InvoiceRemark      string
+	PaymentDays        int32
+	CreditLimitMinor   int64
+	CreditCurrency     string
+	CreditStatus       string
+	BusinessStatus     string
+	PrimaryContactName string
+	OwnerNames         string
+	Total              int64
 }
 
 func (q *Queries) ListCustomers(ctx context.Context, arg ListCustomersParams) ([]ListCustomersRow, error) {
 	rows, err := q.db.Query(ctx, listCustomers,
 		arg.TenantID,
-		arg.Limit,
-		arg.Offset,
 		arg.Status,
+		arg.CountryCode,
+		arg.CustomerType,
+		arg.BusinessStatus,
+		arg.Tag,
+		arg.OwnerEmployeeID,
 		arg.Keyword,
+		arg.OffsetCount,
+		arg.LimitCount,
 	)
 	if err != nil {
 		return nil, err
@@ -690,6 +1702,28 @@ func (q *Queries) ListCustomers(ctx context.Context, arg ListCustomersParams) ([
 			&i.UpdatedAt,
 			&i.UpdatedBy,
 			&i.CountryCode,
+			&i.ShortName,
+			&i.EnglishName,
+			&i.CustomerType,
+			&i.Industry,
+			&i.Source,
+			&i.Tags,
+			&i.Website,
+			&i.PrimaryLanguage,
+			&i.Timezone,
+			&i.RegisteredName,
+			&i.RegistrationNo,
+			&i.TaxID,
+			&i.InvoiceTitle,
+			&i.InvoiceTaxNo,
+			&i.InvoiceRemark,
+			&i.PaymentDays,
+			&i.CreditLimitMinor,
+			&i.CreditCurrency,
+			&i.CreditStatus,
+			&i.BusinessStatus,
+			&i.PrimaryContactName,
+			&i.OwnerNames,
 			&i.Total,
 		); err != nil {
 			return nil, err
@@ -709,6 +1743,8 @@ WITH hits AS (
     FROM customer_contacts cc
     WHERE cc.tenant_id = $1::bigint
       AND cc.email <> ''
+      AND cc.status = 'ACTIVE'
+      AND cc.email_permission = 'ALLOWED'
       AND (cc.name ILIKE '%' || $2::text || '%'
            OR cc.email ILIKE '%' || $2::text || '%')
     UNION
@@ -719,6 +1755,8 @@ WITH hits AS (
       ON cc.customer_id = c.id AND cc.tenant_id = c.tenant_id
     WHERE c.tenant_id = $1::bigint
       AND cc.email <> ''
+      AND cc.status = 'ACTIVE'
+      AND cc.email_permission = 'ALLOWED'
       AND c.name ILIKE '%' || $2::text || '%'
 )
 SELECT
@@ -730,12 +1768,16 @@ SELECT
     c.id            AS customer_id,
     c.name          AS customer_name,
     c.country,
-    c.country_code
+    c.country_code,
+    cc.language,
+    cc.email_categories
 FROM customer_contacts cc
 JOIN customers c ON c.id = cc.customer_id AND c.tenant_id = cc.tenant_id
 WHERE cc.tenant_id = $1::bigint
   AND c.status = 'ACTIVE'
   AND cc.email <> ''
+  AND cc.status = 'ACTIVE'
+  AND cc.email_permission = 'ALLOWED'
   -- An empty keyword lists the book; anything else must have matched above.
   AND ($2::text = '' OR cc.id IN (SELECT id FROM hits))
   AND (
@@ -753,15 +1795,17 @@ type ListMailingContactsParams struct {
 }
 
 type ListMailingContactsRow struct {
-	ContactID    int64
-	Name         string
-	Title        string
-	Email        string
-	IsPrimary    bool
-	CustomerID   int64
-	CustomerName string
-	Country      string
-	CountryCode  string
+	ContactID       int64
+	Name            string
+	Title           string
+	Email           string
+	IsPrimary       bool
+	CustomerID      int64
+	CustomerName    string
+	Country         string
+	CountryCode     string
+	Language        string
+	EmailCategories []string
 }
 
 // The address book for the mail composer.
@@ -793,6 +1837,8 @@ func (q *Queries) ListMailingContacts(ctx context.Context, arg ListMailingContac
 			&i.CustomerName,
 			&i.Country,
 			&i.CountryCode,
+			&i.Language,
+			&i.EmailCategories,
 		); err != nil {
 			return nil, err
 		}
@@ -984,38 +2030,39 @@ func (q *Queries) NextSeq(ctx context.Context, arg NextSeqParams) (int64, error)
 
 const updateCustomer = `-- name: UpdateCustomer :one
 UPDATE customers
-SET name = $3, country = $4, country_code = $10::text,
-    address = $5, currency = $6,
-    payment_term = $7, remark = $8, updated_by = $9, updated_at = now()
-WHERE tenant_id = $1 AND id = $2
-RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code
+SET name = $1, country = $2,
+    country_code = $3::text, address = $4,
+    currency = $5, payment_term = $6,
+    remark = $7, updated_by = $8, updated_at = now()
+WHERE tenant_id = $9 AND id = $10
+RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor, credit_currency, credit_status, business_status
 `
 
 type UpdateCustomerParams struct {
-	TenantID    int64
-	ID          int64
 	Name        string
 	Country     string
+	CountryCode string
 	Address     string
 	Currency    string
 	PaymentTerm string
 	Remark      string
-	UpdatedBy   int64
-	CountryCode string
+	OperatorID  int64
+	TenantID    int64
+	ID          int64
 }
 
 func (q *Queries) UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) (Customer, error) {
 	row := q.db.QueryRow(ctx, updateCustomer,
-		arg.TenantID,
-		arg.ID,
 		arg.Name,
 		arg.Country,
+		arg.CountryCode,
 		arg.Address,
 		arg.Currency,
 		arg.PaymentTerm,
 		arg.Remark,
-		arg.UpdatedBy,
-		arg.CountryCode,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.ID,
 	)
 	var i Customer
 	err := row.Scan(
@@ -1034,6 +2081,335 @@ func (q *Queries) UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) 
 		&i.UpdatedAt,
 		&i.UpdatedBy,
 		&i.CountryCode,
+		&i.ShortName,
+		&i.EnglishName,
+		&i.CustomerType,
+		&i.Industry,
+		&i.Source,
+		&i.Tags,
+		&i.Website,
+		&i.PrimaryLanguage,
+		&i.Timezone,
+		&i.RegisteredName,
+		&i.RegistrationNo,
+		&i.TaxID,
+		&i.InvoiceTitle,
+		&i.InvoiceTaxNo,
+		&i.InvoiceRemark,
+		&i.PaymentDays,
+		&i.CreditLimitMinor,
+		&i.CreditCurrency,
+		&i.CreditStatus,
+		&i.BusinessStatus,
+	)
+	return i, err
+}
+
+const updateCustomerAddress = `-- name: UpdateCustomerAddress :one
+UPDATE customer_addresses
+SET address_type = $1, country_code = $2,
+    state = $3, city = $4, postal_code = $5,
+    address_line = $6, is_default = $7,
+    sort_order = $8, updated_by = $9, updated_at = now()
+WHERE tenant_id = $10 AND customer_id = $11
+  AND id = $12 AND status = 'ACTIVE'
+RETURNING id, tenant_id, customer_id, address_type, country_code, state, city, postal_code, address_line, is_default, sort_order, status, created_at, created_by, updated_at, updated_by
+`
+
+type UpdateCustomerAddressParams struct {
+	AddressType string
+	CountryCode string
+	State       string
+	City        string
+	PostalCode  string
+	AddressLine string
+	IsDefault   bool
+	SortOrder   int32
+	OperatorID  int64
+	TenantID    int64
+	CustomerID  int64
+	ID          int64
+}
+
+func (q *Queries) UpdateCustomerAddress(ctx context.Context, arg UpdateCustomerAddressParams) (CustomerAddress, error) {
+	row := q.db.QueryRow(ctx, updateCustomerAddress,
+		arg.AddressType,
+		arg.CountryCode,
+		arg.State,
+		arg.City,
+		arg.PostalCode,
+		arg.AddressLine,
+		arg.IsDefault,
+		arg.SortOrder,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.CustomerID,
+		arg.ID,
+	)
+	var i CustomerAddress
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.CustomerID,
+		&i.AddressType,
+		&i.CountryCode,
+		&i.State,
+		&i.City,
+		&i.PostalCode,
+		&i.AddressLine,
+		&i.IsDefault,
+		&i.SortOrder,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
+}
+
+const updateCustomerContact = `-- name: UpdateCustomerContact :one
+UPDATE customer_contacts
+SET name = $1, department = $2, title = $3,
+    email = $4, phone = $5, mobile = $6,
+    instant_messaging = $7, language = $8,
+    remark = $9, is_primary = $10,
+    sort_order = $11, email_permission = $12,
+    email_categories = $13, updated_by = $14, updated_at = now()
+WHERE tenant_id = $15 AND customer_id = $16
+  AND id = $17 AND status = 'ACTIVE'
+RETURNING id, tenant_id, customer_id, name, title, email, phone, is_primary, sort_order, department, mobile, instant_messaging, language, remark, status, created_at, created_by, updated_at, updated_by, email_permission, email_categories
+`
+
+type UpdateCustomerContactParams struct {
+	Name             string
+	Department       string
+	Title            string
+	Email            string
+	Phone            string
+	Mobile           string
+	InstantMessaging string
+	Language         string
+	Remark           string
+	IsPrimary        bool
+	SortOrder        int32
+	EmailPermission  string
+	EmailCategories  []string
+	OperatorID       int64
+	TenantID         int64
+	CustomerID       int64
+	ID               int64
+}
+
+func (q *Queries) UpdateCustomerContact(ctx context.Context, arg UpdateCustomerContactParams) (CustomerContact, error) {
+	row := q.db.QueryRow(ctx, updateCustomerContact,
+		arg.Name,
+		arg.Department,
+		arg.Title,
+		arg.Email,
+		arg.Phone,
+		arg.Mobile,
+		arg.InstantMessaging,
+		arg.Language,
+		arg.Remark,
+		arg.IsPrimary,
+		arg.SortOrder,
+		arg.EmailPermission,
+		arg.EmailCategories,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.CustomerID,
+		arg.ID,
+	)
+	var i CustomerContact
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.CustomerID,
+		&i.Name,
+		&i.Title,
+		&i.Email,
+		&i.Phone,
+		&i.IsPrimary,
+		&i.SortOrder,
+		&i.Department,
+		&i.Mobile,
+		&i.InstantMessaging,
+		&i.Language,
+		&i.Remark,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+		&i.EmailPermission,
+		&i.EmailCategories,
+	)
+	return i, err
+}
+
+const updateCustomerOwner = `-- name: UpdateCustomerOwner :one
+UPDATE customer_owners
+SET responsibility_code = $1,
+    start_date = $2,
+    end_date = $3,
+    is_primary = $4,
+    updated_by = $5,
+    updated_at = now()
+WHERE tenant_id = $6 AND customer_id = $7
+  AND id = $8 AND status = 'ACTIVE'
+RETURNING id, tenant_id, customer_id, employee_id, employee_name, responsibility_code, start_date, end_date, status, created_at, created_by, updated_at, updated_by, is_primary
+`
+
+type UpdateCustomerOwnerParams struct {
+	ResponsibilityCode string
+	StartDate          pgtype.Date
+	EndDate            pgtype.Date
+	IsPrimary          bool
+	OperatorID         int64
+	TenantID           int64
+	CustomerID         int64
+	ID                 int64
+}
+
+func (q *Queries) UpdateCustomerOwner(ctx context.Context, arg UpdateCustomerOwnerParams) (CustomerOwner, error) {
+	row := q.db.QueryRow(ctx, updateCustomerOwner,
+		arg.ResponsibilityCode,
+		arg.StartDate,
+		arg.EndDate,
+		arg.IsPrimary,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.CustomerID,
+		arg.ID,
+	)
+	var i CustomerOwner
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.CustomerID,
+		&i.EmployeeID,
+		&i.EmployeeName,
+		&i.ResponsibilityCode,
+		&i.StartDate,
+		&i.EndDate,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+		&i.IsPrimary,
+	)
+	return i, err
+}
+
+const updateCustomerProfile = `-- name: UpdateCustomerProfile :one
+UPDATE customers
+SET short_name = $1, english_name = $2,
+    customer_type = $3, industry = $4,
+    source = $5, tags = $6::text[], website = $7,
+    primary_language = $8, timezone = $9,
+    registered_name = $10, registration_no = $11,
+    tax_id = $12, invoice_title = $13,
+    invoice_tax_no = $14, invoice_remark = $15,
+    payment_days = $16, credit_limit_minor = $17,
+    credit_currency = $18, credit_status = $19,
+    business_status = $20, updated_by = $21,
+    updated_at = now()
+WHERE tenant_id = $22 AND id = $23
+RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor, credit_currency, credit_status, business_status
+`
+
+type UpdateCustomerProfileParams struct {
+	ShortName        string
+	EnglishName      string
+	CustomerType     string
+	Industry         string
+	Source           string
+	Tags             []string
+	Website          string
+	PrimaryLanguage  string
+	Timezone         string
+	RegisteredName   string
+	RegistrationNo   string
+	TaxID            string
+	InvoiceTitle     string
+	InvoiceTaxNo     string
+	InvoiceRemark    string
+	PaymentDays      int32
+	CreditLimitMinor int64
+	CreditCurrency   string
+	CreditStatus     string
+	BusinessStatus   string
+	OperatorID       int64
+	TenantID         int64
+	ID               int64
+}
+
+// 详细资料独立更新，避免旧版基础信息表单因未携带新字段而清空已有资料。
+func (q *Queries) UpdateCustomerProfile(ctx context.Context, arg UpdateCustomerProfileParams) (Customer, error) {
+	row := q.db.QueryRow(ctx, updateCustomerProfile,
+		arg.ShortName,
+		arg.EnglishName,
+		arg.CustomerType,
+		arg.Industry,
+		arg.Source,
+		arg.Tags,
+		arg.Website,
+		arg.PrimaryLanguage,
+		arg.Timezone,
+		arg.RegisteredName,
+		arg.RegistrationNo,
+		arg.TaxID,
+		arg.InvoiceTitle,
+		arg.InvoiceTaxNo,
+		arg.InvoiceRemark,
+		arg.PaymentDays,
+		arg.CreditLimitMinor,
+		arg.CreditCurrency,
+		arg.CreditStatus,
+		arg.BusinessStatus,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i Customer
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Code,
+		&i.Name,
+		&i.Country,
+		&i.Address,
+		&i.Currency,
+		&i.PaymentTerm,
+		&i.Remark,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+		&i.CountryCode,
+		&i.ShortName,
+		&i.EnglishName,
+		&i.CustomerType,
+		&i.Industry,
+		&i.Source,
+		&i.Tags,
+		&i.Website,
+		&i.PrimaryLanguage,
+		&i.Timezone,
+		&i.RegisteredName,
+		&i.RegistrationNo,
+		&i.TaxID,
+		&i.InvoiceTitle,
+		&i.InvoiceTaxNo,
+		&i.InvoiceRemark,
+		&i.PaymentDays,
+		&i.CreditLimitMinor,
+		&i.CreditCurrency,
+		&i.CreditStatus,
+		&i.BusinessStatus,
 	)
 	return i, err
 }
