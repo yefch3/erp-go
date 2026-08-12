@@ -9,6 +9,31 @@ import (
 	"context"
 )
 
+const clearInboundRawKey = `-- name: ClearInboundRawKey :execrows
+UPDATE email_inbound SET raw_key = '', raw_size = 0
+WHERE tenant_id = $1::bigint AND id = $2::bigint
+`
+
+type ClearInboundRawKeyParams struct {
+	TenantID int64
+	ID       int64
+}
+
+// Disowns an original that belongs to a different message.
+//
+// Blanked rather than repointed: the object holding this message's MIME was
+// overwritten and is gone. Saying "no original" is safe - every repair pass
+// skips a row without one. Leaving the key would keep offering somebody else's
+// mail as this row's source of truth, which is how a lost message becomes a
+// corrupted one.
+func (q *Queries) ClearInboundRawKey(ctx context.Context, arg ClearInboundRawKeyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, clearInboundRawKey, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteInboundBodyMisfiledAsAttachment = `-- name: DeleteInboundBodyMisfiledAsAttachment :execrows
 DELETE FROM email_inbound_attachments
 WHERE tenant_id = $1::bigint
@@ -70,6 +95,58 @@ func (q *Queries) InsertInboundImage(ctx context.Context, arg InsertInboundImage
 		arg.ByteSize,
 	)
 	return err
+}
+
+const listCollidingRawMessages = `-- name: ListCollidingRawMessages :many
+SELECT id, raw_key, message_id, folder, imap_uid
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND raw_key <> ''
+  AND raw_key IN (
+      SELECT raw_key FROM email_inbound
+      WHERE tenant_id = $1::bigint AND raw_key <> ''
+      GROUP BY raw_key HAVING count(*) > 1)
+ORDER BY raw_key, id
+`
+
+type ListCollidingRawMessagesRow struct {
+	ID        int64
+	RawKey    string
+	MessageID string
+	Folder    string
+	ImapUid   int64
+}
+
+// Rows whose original MIME is shared with another row.
+//
+// The key was tenant/account/uid until 2026-08-12, and a UID is unique within
+// a folder rather than within an account, so INBOX/SENT/JUNK messages with the
+// same UID all wrote to one object and the last one won. Ordered by key so the
+// caller can walk one collision group at a time.
+func (q *Queries) ListCollidingRawMessages(ctx context.Context, tenantID int64) ([]ListCollidingRawMessagesRow, error) {
+	rows, err := q.db.Query(ctx, listCollidingRawMessages, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCollidingRawMessagesRow
+	for rows.Next() {
+		var i ListCollidingRawMessagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RawKey,
+			&i.MessageID,
+			&i.Folder,
+			&i.ImapUid,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listImageKeysForPurge = `-- name: ListImageKeysForPurge :many

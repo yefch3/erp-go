@@ -19,7 +19,12 @@ import (
 
 // RawMessage is one message as the server holds it.
 type RawMessage struct {
-	UID          uint32
+	UID uint32
+	// UIDValidity of the folder this UID was read from. Carried alongside the
+	// UID because a UID means nothing without it: the pair is what identifies
+	// a message, and the host is entitled to renumber everything by changing
+	// the validity.
+	UIDValidity  uint32
 	Raw          []byte
 	InternalDate time.Time
 	// Seen is the host's own read flag. Backfilled history the person read
@@ -446,8 +451,12 @@ func (s *Service) syncFolder(ctx context.Context, cfg SyncConfig, acct MailAccou
 	stored := 0
 	highest := uint32(state.LastUid)
 	lowest := uint32(state.LowUid)
-	ingestBatch := func(msgs []RawMessage) {
+	ingestBatch := func(msgs []RawMessage, validity uint32) {
 		for _, m := range msgs {
+			// Stamped here rather than in the adapter: the validity belongs to
+			// the fetch, not to the message, and every message in one fetch
+			// shares it.
+			m.UIDValidity = validity
 			if err := s.ingest(ctx, cfg.TenantID, acct, logical, m); err != nil {
 				s.log.Warn("could not store a message",
 					"account", acct.AccountID, "folder", logical, "uid", m.UID, "err", err)
@@ -464,7 +473,7 @@ func (s *Service) syncFolder(ctx context.Context, cfg SyncConfig, acct MailAccou
 			}
 		}
 	}
-	ingestBatch(res.Messages)
+	ingestBatch(res.Messages, res.UIDValidity)
 
 	// One batch of history per pass, newest first, until the cap. low_uid==1
 	// marks the bottom: the dial for "is there anything older" is not free.
@@ -480,7 +489,7 @@ func (s *Service) syncFolder(ctx context.Context, cfg SyncConfig, acct MailAccou
 			} else if len(old.Messages) == 0 {
 				lowest = 1 // bottom reached; stop dialling for more
 			} else {
-				ingestBatch(old.Messages)
+				ingestBatch(old.Messages, old.UIDValidity)
 			}
 		}
 	}
@@ -525,6 +534,38 @@ func (s *Service) specialFolderOf(ctx context.Context, acct MailAccount, kind st
 }
 
 // ingest parses one message and files it.
+// rawKeyFor is where one message's original MIME lives.
+//
+// Every component is load-bearing, and the two that were missing cost real
+// messages. The key used to be tenant/account/uid, on the assumption that a
+// UID identifies a message within a mailbox. It does not:
+//
+//   - A UID is unique within a *folder*, not within an account. INBOX 614,
+//     SENT 614 and JUNK 614 are three different messages. With the folder left
+//     out they shared one object, and whichever synced last overwrote the
+//     rest. One mailbox had 88 such collisions across 176 messages - a mail
+//     the person sent on the 1st was overwritten by a spam filed on the 6th,
+//     and the row still pointed at it as though it were the original.
+//
+//   - A UID is only stable while UIDVALIDITY holds. The host is entitled to
+//     renumber everything by changing it, which happens on migrations and
+//     mailbox rebuilds, and the sync already handles that by starting over.
+//     Without the validity in the key, the new numbering writes over the old
+//     generation's objects.
+//
+// The damage is not only lost originals. A wrong original is worse: every
+// repair pass in this service re-parses from here on the premise that the
+// object is the message, so a collision turns "re-read the original and fix
+// the row" into "write somebody else's mail into this row".
+//
+// Folder names are our own logical ones - INBOX, SENT, JUNK - not the host's,
+// so they are safe in a path and stable across providers that spell their
+// sent folder five different ways.
+func rawKeyFor(tenantID, accountID int64, folder string, uidValidity, uid uint32) string {
+	return fmt.Sprintf("mail/inbound/%d/%d/%s/%d/%d.eml",
+		tenantID, accountID, folder, uidValidity, uid)
+}
+
 func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, folder string, m RawMessage) error {
 	parsed, err := ParseMail(m.Raw)
 	if err != nil {
@@ -542,7 +583,7 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 
 	// The raw MIME goes to object storage before the row exists: a row that
 	// promises a raw_key which was never written is worse than no row.
-	rawKey := fmt.Sprintf("mail/inbound/%d/%d/%d.eml", tenantID, acct.AccountID, m.UID)
+	rawKey := rawKeyFor(tenantID, acct.AccountID, folder, m.UIDValidity, m.UID)
 	if s.files != nil {
 		if err := s.putRaw(ctx, rawKey, m.Raw); err != nil {
 			s.log.Warn("could not store raw message, keeping the parsed copy only",
