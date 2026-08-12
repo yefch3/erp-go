@@ -959,6 +959,7 @@ export default {
     previewFile: '预览',
     download: '下载',
     convertToExcel: '生成询价 Excel',
+    excelUnavailable: '尚未配置大模型 API，请联系管理员配置后使用。',
     excelPreview: '询价 Excel 预览',
     excelWaiting: '正在识别产品与询价条件并生成固定格式 Excel…',
     excelReady: '询价 Excel 已生成',

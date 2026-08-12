@@ -964,6 +964,7 @@ export default {
     previewFile: 'Preview',
     download: 'Download',
     convertToExcel: 'Convert to Excel',
+    excelUnavailable: 'The AI model API is not configured. Ask an administrator to configure it.',
     excelPreview: 'Excel preview',
     excelWaiting: 'Reading the table and building Excel…',
     excelReady: 'Excel is ready',

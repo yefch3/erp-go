@@ -675,9 +675,18 @@
     :style="{ left: excelMenu.x + 'px', top: excelMenu.y + 'px' }"
     role="menu"
   >
-    <button type="button" role="menuitem" @click="convertExcelSelection">
+    <button
+      type="button"
+      role="menuitem"
+      :disabled="!excelAvailable"
+      :aria-describedby="!excelAvailable ? 'excel-unavailable-reason' : undefined"
+      @click="convertExcelSelection"
+    >
       {{ t('emails.convertToExcel') }}
     </button>
+    <p v-if="!excelAvailable" id="excel-unavailable-reason" class="excel-context-reason">
+      {{ t('emails.excelUnavailable') }}
+    </p>
   </div>
 
   <el-dialog
@@ -2009,12 +2018,12 @@ function openTextExcelMenu(
   event: { text: string; x: number; y: number },
   mailId: string,
 ) {
-  if (!excelAvailable.value || !mailId || !event.text.trim()) return
+  if (!mailId || !event.text.trim()) return
   positionExcelMenu(event.x, event.y, { kind: 'text', mailId, text: event.text.trim() })
 }
 
 function openPlainTextExcelMenu(event: MouseEvent, mailId: string) {
-  if (!excelAvailable.value || !mailId) return
+  if (!mailId) return
   const text = window.getSelection()?.toString().trim() ?? ''
   if (!text) return
   event.preventDefault()
@@ -2022,7 +2031,7 @@ function openPlainTextExcelMenu(event: MouseEvent, mailId: string) {
 }
 
 function openAttachmentExcelMenu(event: MouseEvent, file: MailFile) {
-  if (!excelAvailable.value || !openedInbound.value || !file.stored) return
+  if (!openedInbound.value || !file.stored) return
   event.preventDefault()
   positionExcelMenu(event.clientX, event.clientY, {
     kind: 'attachment', mailId: openedInbound.value.id, attachmentId: file.id,
@@ -2042,7 +2051,7 @@ onUnmounted(() => {
 async function convertExcelSelection() {
   const source = excelMenu.source
   closeExcelMenu()
-  if (!source || excelBusy.value) return
+  if (!excelAvailable.value || !source || excelBusy.value) return
   excelResult.value = null
   excelSheet.value = ''
   excelOpen.value = true
@@ -2677,6 +2686,22 @@ async function doUnsuppress(row: Suppression) {
   background: var(--el-fill-color-light);
   color: var(--el-color-primary);
   outline: none;
+}
+.excel-context button:disabled {
+  color: var(--el-text-color-disabled);
+  cursor: not-allowed;
+}
+.excel-context button:disabled:hover,
+.excel-context button:disabled:focus-visible {
+  background: transparent;
+  color: var(--el-text-color-disabled);
+}
+.excel-context-reason {
+  max-width: 240px;
+  margin: 3px 8px 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.45;
 }
 .excel-preview {
   min-height: 180px;

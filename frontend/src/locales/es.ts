@@ -964,6 +964,7 @@ export default {
     previewFile: 'Vista previa',
     download: 'Descargar',
     convertToExcel: 'Convertir a Excel',
+    excelUnavailable: 'La API del modelo de IA no está configurada. Pide a un administrador que la configure.',
     excelPreview: 'Vista previa de Excel',
     excelWaiting: 'Leyendo la tabla y creando el Excel…',
     excelReady: 'El Excel está listo',
