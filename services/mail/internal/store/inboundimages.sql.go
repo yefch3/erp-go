@@ -126,7 +126,7 @@ func (q *Queries) ListInboundAttachmentsForRepair(ctx context.Context, arg ListI
 
 const listInboundEmbedded = `-- name: ListInboundEmbedded :many
 
-SELECT content_id, file_key, content_type
+SELECT id, content_id, file_key, content_type
 FROM email_inbound_attachments
 WHERE tenant_id = $1::bigint
   AND inbound_id = $2::bigint
@@ -140,6 +140,7 @@ type ListInboundEmbeddedParams struct {
 }
 
 type ListInboundEmbeddedRow struct {
+	ID          int64
 	ContentID   string
 	FileKey     string
 	ContentType string
@@ -157,7 +158,12 @@ func (q *Queries) ListInboundEmbedded(ctx context.Context, arg ListInboundEmbedd
 	var items []ListInboundEmbeddedRow
 	for rows.Next() {
 		var i ListInboundEmbeddedRow
-		if err := rows.Scan(&i.ContentID, &i.FileKey, &i.ContentType); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.ContentID,
+			&i.FileKey,
+			&i.ContentType,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -318,7 +324,7 @@ func (q *Queries) ListInboundNeedingImages(ctx context.Context, arg ListInboundN
 }
 
 const listThreadEmbedded = `-- name: ListThreadEmbedded :many
-SELECT a.inbound_id, a.content_id, a.file_key, a.content_type
+SELECT a.inbound_id, a.id, a.content_id, a.file_key, a.content_type
 FROM email_inbound_attachments a
 JOIN email_inbound i ON i.id = a.inbound_id AND i.tenant_id = a.tenant_id
 WHERE a.tenant_id = $1::bigint
@@ -336,6 +342,7 @@ type ListThreadEmbeddedParams struct {
 
 type ListThreadEmbeddedRow struct {
 	InboundID   int64
+	ID          int64
 	ContentID   string
 	FileKey     string
 	ContentType string
@@ -353,6 +360,7 @@ func (q *Queries) ListThreadEmbedded(ctx context.Context, arg ListThreadEmbedded
 		var i ListThreadEmbeddedRow
 		if err := rows.Scan(
 			&i.InboundID,
+			&i.ID,
 			&i.ContentID,
 			&i.FileKey,
 			&i.ContentType,

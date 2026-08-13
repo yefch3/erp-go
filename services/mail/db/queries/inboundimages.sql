@@ -79,7 +79,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- name: ListInboundEmbedded :many
 -- The parts this message points at from its own body, for the swap that turns
 -- every cid: into a signed storage URL.
-SELECT content_id, file_key, content_type
+SELECT id, content_id, file_key, content_type
 FROM email_inbound_attachments
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND inbound_id = sqlc.arg(inbound_id)::bigint
@@ -88,7 +88,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 
 -- name: ListThreadEmbedded :many
 -- The same across a whole conversation, in one query rather than one per turn.
-SELECT a.inbound_id, a.content_id, a.file_key, a.content_type
+SELECT a.inbound_id, a.id, a.content_id, a.file_key, a.content_type
 FROM email_inbound_attachments a
 JOIN email_inbound i ON i.id = a.inbound_id AND i.tenant_id = a.tenant_id
 WHERE a.tenant_id = sqlc.arg(tenant_id)::bigint

@@ -2015,11 +2015,19 @@ function positionExcelMenu(x: number, y: number, source: ExcelSource) {
 }
 
 function openTextExcelMenu(
-  event: { text: string; x: number; y: number },
+  event: { text?: string; attachmentId?: string; x: number; y: number },
   mailId: string,
 ) {
-  if (!mailId || !event.text.trim()) return
-  positionExcelMenu(event.x, event.y, { kind: 'text', mailId, text: event.text.trim() })
+  if (!mailId) return
+  if (event.attachmentId) {
+    positionExcelMenu(event.x, event.y, {
+      kind: 'attachment', mailId, attachmentId: event.attachmentId,
+    })
+    return
+  }
+  const text = event.text?.trim() ?? ''
+  if (!text) return
+  positionExcelMenu(event.x, event.y, { kind: 'text', mailId, text })
 }
 
 function openPlainTextExcelMenu(event: MouseEvent, mailId: string) {

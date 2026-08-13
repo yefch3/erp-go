@@ -34,8 +34,10 @@ import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 const props = defineProps<{ html: string }>()
 const emit = defineEmits<{
-  selectionContext: [payload: { text: string; x: number; y: number }]
+  selectionContext: [payload: { text?: string; attachmentId?: string; x: number; y: number }]
 }>()
+
+const embeddedAttachmentFragment = 'erp-mail-attachment='
 
 const frame = ref<HTMLIFrameElement | null>(null)
 // A first guess, replaced the moment the frame reports its real content
@@ -153,7 +155,8 @@ function measure() {
 
 // Context-menu events do not cross an iframe boundary. The parent owns this
 // listener (no script is admitted into the untrusted mail document), reads
-// only the user's current selection, and emits coordinates in the app's
+// the user's current selection or the trusted attachment marker placed on an
+// embedded image by the mail service, and emits coordinates in the app's
 // viewport so the ordinary menu can be rendered outside the frame.
 function bindSelectionMenu() {
   const el = frame.value
@@ -161,12 +164,28 @@ function bindSelectionMenu() {
   if (!el || !d || d.documentElement.dataset.excelMenuBound === '1') return
   d.documentElement.dataset.excelMenuBound = '1'
   d.addEventListener('contextmenu', (event) => {
+    const rect = el.getBoundingClientRect()
+    const point = { x: rect.left + event.clientX, y: rect.top + event.clientY }
+    const target = event.target as { closest?: (selector: string) => Element | null } | null
+    const image = target?.closest?.('img') as HTMLImageElement | null
+    const attachmentId = embeddedAttachmentID(image?.currentSrc || image?.getAttribute('src') || '')
+    if (attachmentId) {
+      event.preventDefault()
+      emit('selectionContext', { attachmentId, ...point })
+      return
+    }
     const text = d.getSelection()?.toString().trim() ?? ''
     if (!text) return
     event.preventDefault()
-    const rect = el.getBoundingClientRect()
-    emit('selectionContext', { text, x: rect.left + event.clientX, y: rect.top + event.clientY })
+    emit('selectionContext', { text, ...point })
   })
+}
+
+function embeddedAttachmentID(src: string) {
+  const hash = src.split('#', 2)[1] || ''
+  if (!hash.startsWith(embeddedAttachmentFragment)) return ''
+  const id = hash.slice(embeddedAttachmentFragment.length)
+  return /^\d+$/.test(id) && id !== '0' ? id : ''
 }
 
 function read() {
