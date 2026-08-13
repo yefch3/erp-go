@@ -1645,3 +1645,339 @@ var NumberingService_ServiceDesc = grpc.ServiceDesc{
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "erp/masterdata/v1/masterdata.proto",
 }
+
+const (
+	PortService_CreatePort_FullMethodName        = "/erp.masterdata.v1.PortService/CreatePort"
+	PortService_GetPort_FullMethodName           = "/erp.masterdata.v1.PortService/GetPort"
+	PortService_ListPorts_FullMethodName         = "/erp.masterdata.v1.PortService/ListPorts"
+	PortService_ListPortCountries_FullMethodName = "/erp.masterdata.v1.PortService/ListPortCountries"
+	PortService_ImportPorts_FullMethodName       = "/erp.masterdata.v1.PortService/ImportPorts"
+	PortService_UpdatePort_FullMethodName        = "/erp.masterdata.v1.PortService/UpdatePort"
+	PortService_SetPortStatus_FullMethodName     = "/erp.masterdata.v1.PortService/SetPortStatus"
+)
+
+// PortServiceClient is the client API for PortService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// PortService owns port master data. Shipping stores the id together with a
+// code/name/timezone snapshot, so later edits never rewrite history.
+type PortServiceClient interface {
+	CreatePort(ctx context.Context, in *CreatePortRequest, opts ...grpc.CallOption) (*CreatePortResponse, error)
+	GetPort(ctx context.Context, in *GetPortRequest, opts ...grpc.CallOption) (*GetPortResponse, error)
+	ListPorts(ctx context.Context, in *ListPortsRequest, opts ...grpc.CallOption) (*ListPortsResponse, error)
+	ListPortCountries(ctx context.Context, in *ListPortCountriesRequest, opts ...grpc.CallOption) (*ListPortCountriesResponse, error)
+	ImportPorts(ctx context.Context, in *ImportPortsRequest, opts ...grpc.CallOption) (*ImportPortsResponse, error)
+	UpdatePort(ctx context.Context, in *UpdatePortRequest, opts ...grpc.CallOption) (*UpdatePortResponse, error)
+	SetPortStatus(ctx context.Context, in *SetPortStatusRequest, opts ...grpc.CallOption) (*SetPortStatusResponse, error)
+}
+
+type portServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewPortServiceClient(cc grpc.ClientConnInterface) PortServiceClient {
+	return &portServiceClient{cc}
+}
+
+func (c *portServiceClient) CreatePort(ctx context.Context, in *CreatePortRequest, opts ...grpc.CallOption) (*CreatePortResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreatePortResponse)
+	err := c.cc.Invoke(ctx, PortService_CreatePort_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *portServiceClient) GetPort(ctx context.Context, in *GetPortRequest, opts ...grpc.CallOption) (*GetPortResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetPortResponse)
+	err := c.cc.Invoke(ctx, PortService_GetPort_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *portServiceClient) ListPorts(ctx context.Context, in *ListPortsRequest, opts ...grpc.CallOption) (*ListPortsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPortsResponse)
+	err := c.cc.Invoke(ctx, PortService_ListPorts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *portServiceClient) ListPortCountries(ctx context.Context, in *ListPortCountriesRequest, opts ...grpc.CallOption) (*ListPortCountriesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPortCountriesResponse)
+	err := c.cc.Invoke(ctx, PortService_ListPortCountries_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *portServiceClient) ImportPorts(ctx context.Context, in *ImportPortsRequest, opts ...grpc.CallOption) (*ImportPortsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ImportPortsResponse)
+	err := c.cc.Invoke(ctx, PortService_ImportPorts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *portServiceClient) UpdatePort(ctx context.Context, in *UpdatePortRequest, opts ...grpc.CallOption) (*UpdatePortResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdatePortResponse)
+	err := c.cc.Invoke(ctx, PortService_UpdatePort_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *portServiceClient) SetPortStatus(ctx context.Context, in *SetPortStatusRequest, opts ...grpc.CallOption) (*SetPortStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetPortStatusResponse)
+	err := c.cc.Invoke(ctx, PortService_SetPortStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// PortServiceServer is the server API for PortService service.
+// All implementations must embed UnimplementedPortServiceServer
+// for forward compatibility.
+//
+// PortService owns port master data. Shipping stores the id together with a
+// code/name/timezone snapshot, so later edits never rewrite history.
+type PortServiceServer interface {
+	CreatePort(context.Context, *CreatePortRequest) (*CreatePortResponse, error)
+	GetPort(context.Context, *GetPortRequest) (*GetPortResponse, error)
+	ListPorts(context.Context, *ListPortsRequest) (*ListPortsResponse, error)
+	ListPortCountries(context.Context, *ListPortCountriesRequest) (*ListPortCountriesResponse, error)
+	ImportPorts(context.Context, *ImportPortsRequest) (*ImportPortsResponse, error)
+	UpdatePort(context.Context, *UpdatePortRequest) (*UpdatePortResponse, error)
+	SetPortStatus(context.Context, *SetPortStatusRequest) (*SetPortStatusResponse, error)
+	mustEmbedUnimplementedPortServiceServer()
+}
+
+// UnimplementedPortServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedPortServiceServer struct{}
+
+func (UnimplementedPortServiceServer) CreatePort(context.Context, *CreatePortRequest) (*CreatePortResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreatePort not implemented")
+}
+func (UnimplementedPortServiceServer) GetPort(context.Context, *GetPortRequest) (*GetPortResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetPort not implemented")
+}
+func (UnimplementedPortServiceServer) ListPorts(context.Context, *ListPortsRequest) (*ListPortsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListPorts not implemented")
+}
+func (UnimplementedPortServiceServer) ListPortCountries(context.Context, *ListPortCountriesRequest) (*ListPortCountriesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListPortCountries not implemented")
+}
+func (UnimplementedPortServiceServer) ImportPorts(context.Context, *ImportPortsRequest) (*ImportPortsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ImportPorts not implemented")
+}
+func (UnimplementedPortServiceServer) UpdatePort(context.Context, *UpdatePortRequest) (*UpdatePortResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdatePort not implemented")
+}
+func (UnimplementedPortServiceServer) SetPortStatus(context.Context, *SetPortStatusRequest) (*SetPortStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetPortStatus not implemented")
+}
+func (UnimplementedPortServiceServer) mustEmbedUnimplementedPortServiceServer() {}
+func (UnimplementedPortServiceServer) testEmbeddedByValue()                     {}
+
+// UnsafePortServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to PortServiceServer will
+// result in compilation errors.
+type UnsafePortServiceServer interface {
+	mustEmbedUnimplementedPortServiceServer()
+}
+
+func RegisterPortServiceServer(s grpc.ServiceRegistrar, srv PortServiceServer) {
+	// If the following call pancis, it indicates UnimplementedPortServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&PortService_ServiceDesc, srv)
+}
+
+func _PortService_CreatePort_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreatePortRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PortServiceServer).CreatePort(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PortService_CreatePort_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PortServiceServer).CreatePort(ctx, req.(*CreatePortRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PortService_GetPort_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPortRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PortServiceServer).GetPort(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PortService_GetPort_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PortServiceServer).GetPort(ctx, req.(*GetPortRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PortService_ListPorts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPortsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PortServiceServer).ListPorts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PortService_ListPorts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PortServiceServer).ListPorts(ctx, req.(*ListPortsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PortService_ListPortCountries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPortCountriesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PortServiceServer).ListPortCountries(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PortService_ListPortCountries_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PortServiceServer).ListPortCountries(ctx, req.(*ListPortCountriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PortService_ImportPorts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ImportPortsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PortServiceServer).ImportPorts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PortService_ImportPorts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PortServiceServer).ImportPorts(ctx, req.(*ImportPortsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PortService_UpdatePort_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdatePortRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PortServiceServer).UpdatePort(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PortService_UpdatePort_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PortServiceServer).UpdatePort(ctx, req.(*UpdatePortRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PortService_SetPortStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetPortStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PortServiceServer).SetPortStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PortService_SetPortStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PortServiceServer).SetPortStatus(ctx, req.(*SetPortStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// PortService_ServiceDesc is the grpc.ServiceDesc for PortService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var PortService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "erp.masterdata.v1.PortService",
+	HandlerType: (*PortServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CreatePort",
+			Handler:    _PortService_CreatePort_Handler,
+		},
+		{
+			MethodName: "GetPort",
+			Handler:    _PortService_GetPort_Handler,
+		},
+		{
+			MethodName: "ListPorts",
+			Handler:    _PortService_ListPorts_Handler,
+		},
+		{
+			MethodName: "ListPortCountries",
+			Handler:    _PortService_ListPortCountries_Handler,
+		},
+		{
+			MethodName: "ImportPorts",
+			Handler:    _PortService_ImportPorts_Handler,
+		},
+		{
+			MethodName: "UpdatePort",
+			Handler:    _PortService_UpdatePort_Handler,
+		},
+		{
+			MethodName: "SetPortStatus",
+			Handler:    _PortService_SetPortStatus_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "erp/masterdata/v1/masterdata.proto",
+}

@@ -153,6 +153,7 @@ func run(log *slog.Logger) error {
 		Fx:               fxv1.NewFxServiceClient(fxConn),
 		Customers:        mdv1.NewCustomerServiceClient(mdConn),
 		Suppliers:        mdv1.NewSupplierServiceClient(mdConn),
+		Ports:            mdv1.NewPortServiceClient(mdConn),
 		Options:          mdv1.NewOptionServiceClient(mdConn),
 		Numbering:        mdv1.NewNumberingServiceClient(mdConn),
 		Approval:         apv1.NewApprovalServiceClient(apConn),

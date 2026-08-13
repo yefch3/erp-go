@@ -88,6 +88,86 @@ message Contact {
   repeated string email_categories = 15;
 }
 
+// PortService owns port master data. Shipping stores the id together with a
+// code/name/timezone snapshot, so later edits never rewrite history.
+service PortService {
+  rpc CreatePort(CreatePortRequest) returns (CreatePortResponse);
+  rpc GetPort(GetPortRequest) returns (GetPortResponse);
+  rpc ListPorts(ListPortsRequest) returns (ListPortsResponse);
+  rpc ListPortCountries(ListPortCountriesRequest) returns (ListPortCountriesResponse);
+  rpc ImportPorts(ImportPortsRequest) returns (ImportPortsResponse);
+  rpc UpdatePort(UpdatePortRequest) returns (UpdatePortResponse);
+  rpc SetPortStatus(SetPortStatusRequest) returns (SetPortStatusResponse);
+}
+
+message Port {
+  int64 id = 1;
+  string unlocode = 2;
+  string name_zh = 3;
+  string name_en = 4;
+  string country_code = 5;
+  string city = 6;
+  string timezone = 7;
+  repeated string aliases = 8;
+  string status = 9;
+  string remark = 10;
+  int32 version = 11;
+  string port_type = 12;
+  string admin_area = 13;
+  double latitude = 14;
+  double longitude = 15;
+  bool has_coordinates = 16;
+  bool is_favorite = 17;
+}
+
+message CreatePortRequest { Port port = 1; }
+message GetPortRequest { int64 id = 1; }
+message UpdatePortRequest { Port port = 1; }
+message SetPortStatusRequest { int64 id = 1; string status = 2; int32 version = 3; }
+message CreatePortResponse { Port port = 1; }
+message GetPortResponse { Port port = 1; }
+message UpdatePortResponse { Port port = 1; }
+message SetPortStatusResponse { Port port = 1; }
+message ListPortsRequest {
+  erp.common.v1.PageRequest page = 1;
+  string keyword = 2;
+  string country_code = 3;
+  string status = 4;
+}
+message ListPortsResponse {
+  repeated Port ports = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+message PortCountryCount { string country_code = 1; int64 port_count = 2; }
+message ListPortCountriesRequest { string status = 1; }
+message ListPortCountriesResponse { repeated PortCountryCount countries = 1; }
+message PortImportRow {
+  int32 row_number = 1;
+  string unlocode = 2;
+  string name_zh = 3;
+  string name_en = 4;
+  string country_code = 5;
+  string city = 6;
+  string timezone = 7;
+  repeated string aliases = 8;
+  string remark = 9;
+  string port_type = 10;
+  string admin_area = 11;
+  double latitude = 12;
+  double longitude = 13;
+  bool has_coordinates = 14;
+  bool is_favorite = 15;
+  bool profile_fields_present = 16;
+}
+message PortImportIssue { int32 row_number = 1; string code = 2; string message = 3; }
+message ImportPortsRequest { repeated PortImportRow rows = 1; bool confirm = 2; }
+message ImportPortsResponse {
+  int32 create_count = 1;
+  int32 update_count = 2;
+  int32 skip_count = 3;
+  repeated PortImportIssue issues = 4;
+}
+
 message Customer {
   int64 id = 1;
   string code = 2;

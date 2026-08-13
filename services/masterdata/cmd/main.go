@@ -43,6 +43,7 @@ func run(log *slog.Logger) error {
 	h := grpcin.New(svc)
 	mdv1.RegisterCustomerServiceServer(srv, h)
 	mdv1.RegisterSupplierServiceServer(srv, h)
+	mdv1.RegisterPortServiceServer(srv, h)
 	mdv1.RegisterOptionServiceServer(srv, h)
 	mdv1.RegisterNumberingServiceServer(srv, h)
 	reflection.Register(srv)

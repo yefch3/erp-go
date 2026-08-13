@@ -1,11 +1,11 @@
 <template>
   <div>
     <div class="page-head">
-      <div><h2>{{ t('customers.title') }}</h2><p>按国家管理客户档案、联系人和内部负责人</p></div>
-      <div class="head-actions"><el-button v-if="auth.can('masterdata:customer:write')" @click="importOpen=true">批量导入</el-button><el-button v-if="auth.can('masterdata:customer:write')" type="primary" @click="openCreate">{{ t('customers.create') }}</el-button></div>
+      <div><h2>{{ t('customers.title') }}</h2><p>{{ t('customers.subtitle') }}</p></div>
+      <div class="head-actions"><el-button v-if="auth.can('masterdata:customer:write')" @click="importOpen=true">{{ t('customers.bulkImport') }}</el-button><el-button v-if="auth.can('masterdata:customer:write')" type="primary" @click="openCreate">{{ t('customers.create') }}</el-button></div>
     </div>
 
-    <div class="mobile-country"><el-select v-model="selectedCountry" @change="selectCountry"><el-option label="全部国家" value=""/><el-option v-for="group in displayedCountryGroups" :key="group.code||'none'" :label="group.code ? countryName(group.code, locale) : t('customers.unclassified')" :value="group.code||'__UNCLASSIFIED__'"/></el-select></div>
+    <div class="mobile-country"><el-select v-model="selectedCountry" @change="selectCountry"><el-option :label="t('customers.allCountries')" value=""/><el-option v-for="group in displayedCountryGroups" :key="group.code||'none'" :label="group.code ? countryName(group.code, locale) : t('customers.unclassified')" :value="group.code||'__UNCLASSIFIED__'"/></el-select></div>
     <div class="customer-workspace" :class="{ collapsed: countryCollapsed }">
       <el-card class="country-panel" shadow="never" v-loading="countryLoading">
         <div class="country-panel__title"><span v-if="!countryCollapsed">{{ t('customers.countryGroups') }}</span><button type="button" @click="countryCollapsed=!countryCollapsed">{{ countryCollapsed ? '›' : '‹' }}</button></div>
@@ -15,7 +15,7 @@
           type="button"
           @click="selectCountry('')"
         >
-          <span v-if="!countryCollapsed">{{ t('customers.allCountries') }}</span><span v-else>全</span><strong v-if="!countryCollapsed">{{ countryTotal }}</strong>
+          <span v-if="!countryCollapsed">{{ t('customers.allCountries') }}</span><span v-else>{{ t('customers.allShort') }}</span><strong v-if="!countryCollapsed">{{ countryTotal }}</strong>
         </button>
         <button
           v-for="group in displayedCountryGroups"
@@ -40,8 +40,8 @@
           @clear="load"
         />
         <el-button @click="load">{{ t('common.query') }}</el-button>
-        <el-select v-model="customerType" clearable placeholder="客户类型" style="width:140px" @change="changeFilters"><el-option v-for="o in typeOptions" :key="o.code" :label="o.label" :value="o.code" /></el-select>
-        <el-select v-model="businessStatus" clearable placeholder="业务状态" style="width:140px" @change="changeFilters"><el-option label="潜在" value="PROSPECT"/><el-option label="合作中" value="COOPERATING"/><el-option label="暂停合作" value="PAUSED"/><el-option label="已停用" value="INACTIVE"/></el-select>
+        <el-select v-model="customerType" clearable :placeholder="t('customers.type')" style="width:140px" @change="changeFilters"><el-option v-for="o in typeOptions" :key="o.code" :label="o.label" :value="o.code" /></el-select>
+        <el-select v-model="businessStatus" clearable :placeholder="t('customers.businessStatus')" style="width:140px" @change="changeFilters"><el-option :label="t('customers.statusProspect')" value="PROSPECT"/><el-option :label="t('customers.statusCooperating')" value="COOPERATING"/><el-option :label="t('customers.statusPaused')" value="PAUSED"/><el-option :label="t('customers.statusInactive')" value="INACTIVE"/></el-select>
         <el-checkbox v-model="showInactive" @change="changeScope">{{ t('customers.showInactive') }}</el-checkbox>
       </div>
 
@@ -61,9 +61,9 @@
             <span v-else class="stale-country">{{ t('customers.countryUnset') }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="客户类型" width="120"><template #default="{row}">{{ optionLabel(typeOptions,row.customerType) }}</template></el-table-column>
-        <el-table-column label="主要联系人" width="130"><template #default="{row}">{{row.primaryContactName||'—'}}</template></el-table-column>
-        <el-table-column label="负责人" min-width="150"><template #default="{row}"><span v-if="row.owners?.length">{{row.owners.map((o:any)=>o.employeeName).join('、')}}</span><span v-else>—</span></template></el-table-column>
+        <el-table-column :label="t('customers.type')" width="120"><template #default="{row}">{{ optionLabel(typeOptions,row.customerType) }}</template></el-table-column>
+        <el-table-column :label="t('customers.primaryContact')" width="130"><template #default="{row}">{{row.primaryContactName||'—'}}</template></el-table-column>
+        <el-table-column :label="t('customers.owners')" min-width="150"><template #default="{row}"><span v-if="row.owners?.length">{{row.owners.map((o:any)=>o.employeeName).join('、')}}</span><span v-else>—</span></template></el-table-column>
         <el-table-column :label="t('common.status')" width="100">
           <template #default="{ row }">
             <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'" size="small">
@@ -78,7 +78,7 @@
           fixed="right"
         >
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDetail(row)">查看资料</el-button>
+            <el-button link type="primary" @click="openDetail(row)">{{ t('customers.viewDetails') }}</el-button>
             <el-button
               v-if="row.status === 'ACTIVE'"
               link
@@ -405,7 +405,7 @@ async function save() {
   if (form.contactName) {
     const error = validateCustomerContact({ name: form.contactName, email: form.contactEmail, phone })
     if (error) {
-      ElMessage.warning(error === 'emailInvalid' ? '主要联系人邮箱格式不正确' : '主要联系人电话格式不正确')
+      ElMessage.warning(t(`customers.${error}`))
       return
     }
   }

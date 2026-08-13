@@ -171,8 +171,8 @@ export async function post<T>(url: string, body?: object, cfg?: AxiosRequestConf
   return resp.data.data as T
 }
 
-export async function put<T>(url: string, body?: object): Promise<T> {
-  const resp = await http.put<Envelope<T>>(url, body)
+export async function put<T>(url: string, body?: object, cfg?: AxiosRequestConfig): Promise<T> {
+  const resp = await http.put<Envelope<T>>(url, body, cfg)
   return resp.data.data as T
 }
 
