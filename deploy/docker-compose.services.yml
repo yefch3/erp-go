@@ -203,6 +203,7 @@ services:
       GRPC_PORT: "9007"
       MASTERDATA_ADDR: masterdata:9002
       APPROVAL_ADDR: approval:9005
+      INVENTORY_ADDR: inventory:9008
       KAFKA_BROKERS: kafka:9092
       STOCK_TOPIC: erp.inventory.stock.v1
       CONSUMER_GROUP: procurement.stock.v1

@@ -22,6 +22,7 @@ type Config struct {
 	// Where to ask for document numbers and approvals.
 	MasterdataAddr string
 	ApprovalAddr   string
+	InventoryAddr  string
 	// Live hints to open pages. Optional: without Redis the pages still work,
 	// they just need a manual refresh.
 	RedisAddr string
@@ -39,6 +40,7 @@ func Load() Config {
 		PurchaseTopic:         env("PURCHASE_TOPIC", "erp.procurement.purchase.v1"),
 		MasterdataAddr:        env("MASTERDATA_ADDR", "localhost:9002"),
 		ApprovalAddr:          env("APPROVAL_ADDR", "localhost:9005"),
+		InventoryAddr:         env("INVENTORY_ADDR", "localhost:9008"),
 		RedisAddr:             env("REDIS_ADDR", "localhost:6379"),
 	}
 }

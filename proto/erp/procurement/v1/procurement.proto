@@ -150,6 +150,10 @@ service PurchaseOrderService {
   rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);
   rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
   rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
+  // Only a draft or a rejected order can be changed. Saving a rejected order
+  // turns it back into a draft so its corrected snapshot is explicit before
+  // it enters a new approval instance.
+  rpc UpdateOrder(UpdateOrderRequest) returns (UpdateOrderResponse);
   // Spending money needs a signature. The approval engine routes on the
   // order total, so a large order can require more of them.
   rpc SubmitOrder(SubmitOrderRequest) returns (SubmitOrderResponse);
@@ -248,6 +252,23 @@ message CreateOrderRequest {
 }
 
 message CreateOrderResponse {
+  int64 id = 1;
+  string po_no = 2;
+  string status = 3;
+}
+
+message UpdateOrderRequest {
+  int64 id = 1;
+  int64 supplier_id = 2;
+  string supplier_code = 3;
+  string supplier_name = 4;
+  string currency = 5;
+  string expected_date = 6;
+  string remark = 7;
+  repeated CreateOrderLine lines = 8;
+}
+
+message UpdateOrderResponse {
   int64 id = 1;
   string po_no = 2;
   string status = 3;

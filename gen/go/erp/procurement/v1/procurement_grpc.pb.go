@@ -342,6 +342,7 @@ const (
 	PurchaseOrderService_ListOrders_FullMethodName   = "/erp.procurement.v1.PurchaseOrderService/ListOrders"
 	PurchaseOrderService_GetOrder_FullMethodName     = "/erp.procurement.v1.PurchaseOrderService/GetOrder"
 	PurchaseOrderService_CreateOrder_FullMethodName  = "/erp.procurement.v1.PurchaseOrderService/CreateOrder"
+	PurchaseOrderService_UpdateOrder_FullMethodName  = "/erp.procurement.v1.PurchaseOrderService/UpdateOrder"
 	PurchaseOrderService_SubmitOrder_FullMethodName  = "/erp.procurement.v1.PurchaseOrderService/SubmitOrder"
 	PurchaseOrderService_CancelOrder_FullMethodName  = "/erp.procurement.v1.PurchaseOrderService/CancelOrder"
 	PurchaseOrderService_ReceiveOrder_FullMethodName = "/erp.procurement.v1.PurchaseOrderService/ReceiveOrder"
@@ -360,6 +361,10 @@ type PurchaseOrderServiceClient interface {
 	ListOrders(ctx context.Context, in *ListOrdersRequest, opts ...grpc.CallOption) (*ListOrdersResponse, error)
 	GetOrder(ctx context.Context, in *GetOrderRequest, opts ...grpc.CallOption) (*GetOrderResponse, error)
 	CreateOrder(ctx context.Context, in *CreateOrderRequest, opts ...grpc.CallOption) (*CreateOrderResponse, error)
+	// Only a draft or a rejected order can be changed. Saving a rejected order
+	// turns it back into a draft so its corrected snapshot is explicit before
+	// it enters a new approval instance.
+	UpdateOrder(ctx context.Context, in *UpdateOrderRequest, opts ...grpc.CallOption) (*UpdateOrderResponse, error)
 	// Spending money needs a signature. The approval engine routes on the
 	// order total, so a large order can require more of them.
 	SubmitOrder(ctx context.Context, in *SubmitOrderRequest, opts ...grpc.CallOption) (*SubmitOrderResponse, error)
@@ -400,6 +405,16 @@ func (c *purchaseOrderServiceClient) CreateOrder(ctx context.Context, in *Create
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateOrderResponse)
 	err := c.cc.Invoke(ctx, PurchaseOrderService_CreateOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) UpdateOrder(ctx context.Context, in *UpdateOrderRequest, opts ...grpc.CallOption) (*UpdateOrderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateOrderResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_UpdateOrder_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -449,6 +464,10 @@ type PurchaseOrderServiceServer interface {
 	ListOrders(context.Context, *ListOrdersRequest) (*ListOrdersResponse, error)
 	GetOrder(context.Context, *GetOrderRequest) (*GetOrderResponse, error)
 	CreateOrder(context.Context, *CreateOrderRequest) (*CreateOrderResponse, error)
+	// Only a draft or a rejected order can be changed. Saving a rejected order
+	// turns it back into a draft so its corrected snapshot is explicit before
+	// it enters a new approval instance.
+	UpdateOrder(context.Context, *UpdateOrderRequest) (*UpdateOrderResponse, error)
 	// Spending money needs a signature. The approval engine routes on the
 	// order total, so a large order can require more of them.
 	SubmitOrder(context.Context, *SubmitOrderRequest) (*SubmitOrderResponse, error)
@@ -473,6 +492,9 @@ func (UnimplementedPurchaseOrderServiceServer) GetOrder(context.Context, *GetOrd
 }
 func (UnimplementedPurchaseOrderServiceServer) CreateOrder(context.Context, *CreateOrderRequest) (*CreateOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateOrder not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) UpdateOrder(context.Context, *UpdateOrderRequest) (*UpdateOrderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateOrder not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) SubmitOrder(context.Context, *SubmitOrderRequest) (*SubmitOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SubmitOrder not implemented")
@@ -558,6 +580,24 @@ func _PurchaseOrderService_CreateOrder_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_UpdateOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateOrderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).UpdateOrder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_UpdateOrder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).UpdateOrder(ctx, req.(*UpdateOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PurchaseOrderService_SubmitOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SubmitOrderRequest)
 	if err := dec(in); err != nil {
@@ -630,6 +670,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateOrder",
 			Handler:    _PurchaseOrderService_CreateOrder_Handler,
+		},
+		{
+			MethodName: "UpdateOrder",
+			Handler:    _PurchaseOrderService_UpdateOrder_Handler,
 		},
 		{
 			MethodName: "SubmitOrder",

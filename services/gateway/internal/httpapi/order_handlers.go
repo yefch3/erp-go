@@ -44,6 +44,20 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) updateOrder(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.UpdateOrderRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	resp, err := s.Orders.UpdateOrder(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) submitOrder(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	resp, err := s.Orders.SubmitOrder(r.Context(), &prv1.SubmitOrderRequest{Id: id})

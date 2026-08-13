@@ -35,6 +35,25 @@ type Approvals interface {
 	Submit(ctx context.Context, in ApprovalSubmission) (int64, error)
 }
 
+// Suppliers resolves the current master-data record before an order snapshot
+// is written. Names and codes sent by a browser are display values, not facts.
+type Suppliers interface {
+	Get(ctx context.Context, id int64) (Supplier, error)
+}
+
+type Supplier struct {
+	ID       int64
+	Code     string
+	Name     string
+	Currency string
+	Status   string
+}
+
+// Warehouses verifies the receiving destination still exists and is active.
+type Warehouses interface {
+	IsActive(ctx context.Context, id int64) (bool, error)
+}
+
 // ApprovalSubmission is one document entering an approval flow.
 type ApprovalSubmission struct {
 	BizType       string
@@ -50,24 +69,29 @@ type ApprovalSubmission struct {
 
 // Deps are the outside services procurement talks to.
 type Deps struct {
-	Numbering Numbering
-	Approvals Approvals
+	Numbering  Numbering
+	Approvals  Approvals
+	Suppliers  Suppliers
+	Warehouses Warehouses
 	// Optional: without it the pages still work, they just need a refresh.
 	Live *livefeed.Publisher
 }
 
 type Service struct {
-	pool      *pgxpool.Pool
-	q         *store.Queries
-	numbering Numbering
-	approvals Approvals
-	live      *livefeed.Publisher
+	pool       *pgxpool.Pool
+	q          *store.Queries
+	numbering  Numbering
+	approvals  Approvals
+	suppliers  Suppliers
+	warehouses Warehouses
+	live       *livefeed.Publisher
 }
 
 func New(pool *pgxpool.Pool, d Deps) *Service {
 	return &Service{
 		pool: pool, q: store.New(pool),
-		numbering: d.Numbering, approvals: d.Approvals, live: d.Live,
+		numbering: d.Numbering, approvals: d.Approvals,
+		suppliers: d.Suppliers, warehouses: d.Warehouses, live: d.Live,
 	}
 }
 

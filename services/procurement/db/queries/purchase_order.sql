@@ -29,7 +29,10 @@ UPDATE purchase_requirements SET
                  THEN 'ORDERED' ELSE 'PARTIALLY_ORDERED'
              END,
     updated_at = now()
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+  AND status IN ('PENDING', 'PARTIALLY_ORDERED')
+  AND ordered_qty + sqlc.arg(qty)::text::numeric <= required_qty
 RETURNING ordered_qty::text AS ordered_qty, status;
 
 -- name: ReleaseRequirementOrdered :exec
@@ -78,6 +81,30 @@ INSERT INTO purchase_orders (
     sqlc.arg(remark)::text
 )
 RETURNING id, po_no, status, created_at;
+
+-- name: UpdatePurchaseOrderDraft :one
+UPDATE purchase_orders SET
+    supplier_id = sqlc.arg(supplier_id)::bigint,
+    supplier_code = sqlc.arg(supplier_code)::text,
+    supplier_name = sqlc.arg(supplier_name)::text,
+    currency = sqlc.arg(currency)::text,
+    total_amount = sqlc.arg(total_amount)::text::numeric,
+    expected_date = nullif(sqlc.arg(expected_date)::text, '')::date,
+    buyer_id = sqlc.arg(buyer_id)::bigint,
+    buyer_name = sqlc.arg(buyer_name)::text,
+    remark = sqlc.arg(remark)::text,
+    status = 'DRAFT',
+    approval_instance_id = NULL,
+    reject_reason = '',
+    updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+  AND status IN ('DRAFT', 'REJECTED')
+RETURNING id, po_no, status, created_at;
+
+-- name: DeletePurchaseOrderItems :exec
+DELETE FROM purchase_order_items
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND po_id = sqlc.arg(po_id)::bigint;
 
 -- name: CreatePurchaseOrderItem :one
 INSERT INTO purchase_order_items (

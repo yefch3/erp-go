@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc"
 
 	apv1 "github.com/sgao19/erp-go/gen/go/erp/approval/v1"
+	inv1 "github.com/sgao19/erp-go/gen/go/erp/inventory/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/services/procurement/internal/app"
@@ -17,6 +18,43 @@ type Numbering struct{ client mdv1.NumberingServiceClient }
 
 func NewNumbering(conn *grpc.ClientConn) *Numbering {
 	return &Numbering{client: mdv1.NewNumberingServiceClient(conn)}
+}
+
+type Suppliers struct{ client mdv1.SupplierServiceClient }
+
+func NewSuppliers(conn *grpc.ClientConn) *Suppliers {
+	return &Suppliers{client: mdv1.NewSupplierServiceClient(conn)}
+}
+
+func (s *Suppliers) Get(ctx context.Context, id int64) (app.Supplier, error) {
+	resp, err := s.client.GetSupplier(ctx, &mdv1.GetSupplierRequest{Id: id})
+	if err != nil {
+		return app.Supplier{}, err
+	}
+	supplier := resp.GetSupplier()
+	return app.Supplier{
+		ID: supplier.GetId(), Code: supplier.GetCode(), Name: supplier.GetName(),
+		Currency: supplier.GetCurrency(), Status: supplier.GetStatus(),
+	}, nil
+}
+
+type Warehouses struct{ client inv1.StockServiceClient }
+
+func NewWarehouses(conn *grpc.ClientConn) *Warehouses {
+	return &Warehouses{client: inv1.NewStockServiceClient(conn)}
+}
+
+func (w *Warehouses) IsActive(ctx context.Context, id int64) (bool, error) {
+	resp, err := w.client.ListWarehouses(ctx, &inv1.ListWarehousesRequest{IncludeInactive: true})
+	if err != nil {
+		return false, err
+	}
+	for _, warehouse := range resp.GetWarehouses() {
+		if warehouse.GetId() == id {
+			return warehouse.GetStatus() == "ACTIVE", nil
+		}
+	}
+	return false, nil
 }
 
 func (n *Numbering) Next(ctx context.Context, bizType string) (string, error) {

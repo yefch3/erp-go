@@ -65,11 +65,18 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer apConn.Close()
+	invConn, err := dial(cfg.InventoryAddr)
+	if err != nil {
+		return err
+	}
+	defer invConn.Close()
 
 	svc := app.New(pool, app.Deps{
-		Numbering: grpcout.NewNumbering(mdConn),
-		Approvals: grpcout.NewApprovals(apConn),
-		Live:      live,
+		Numbering:  grpcout.NewNumbering(mdConn),
+		Approvals:  grpcout.NewApprovals(apConn),
+		Suppliers:  grpcout.NewSuppliers(mdConn),
+		Warehouses: grpcout.NewWarehouses(invConn),
+		Live:       live,
 	})
 
 	// Receipts go out as events: the stock increase and the receipt record

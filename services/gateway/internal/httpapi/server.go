@@ -77,8 +77,8 @@ type Server struct {
 	// trusting it without such a proxy lets anybody spray from a different
 	// fake address on every request. See clientAddr.
 	TrustProxyHeaders bool
-	Live      *livefeed.Subscriber
-	JWTSecret string
+	Live              *livefeed.Subscriber
+	JWTSecret         string
 	// TokenTTL is the life of a renewed token, and must match the one iam
 	// issues with. Because renewal rides on activity, this is in practice how
 	// long somebody may sit idle before being signed out — not how long since
@@ -327,6 +327,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders", s.listOrders)
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}", s.getOrder)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders", s.createOrder)
+		r.With(s.perm("procurement:order:write")).Put("/api/purchase-orders/{id}", s.updateOrder)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/submit", s.submitOrder)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/cancel", s.cancelOrder)
 		// Receiving is warehouse work, so it rides on the stock permission
@@ -540,8 +541,8 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			// question anybody asks of an audit trail. clientAddr honours
 			// the forwarding header only when TRUST_PROXY_HEADERS says a
 			// proxy that overwrites it is actually in front.
-			IP: clientAddr(r, s.TrustProxyHeaders),
-			TraceID:    newTraceID(),
+			IP:      clientAddr(r, s.TrustProxyHeaders),
+			TraceID: newTraceID(),
 		})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
