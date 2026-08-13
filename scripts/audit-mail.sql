@@ -41,6 +41,63 @@ WITH checks AS (
           WHERE body_html = '' AND body_text = '' AND raw_key <> ''),
          '解析丢了正文。原件还在，可以重新解析找回'
 
+  -- The conversation rows the mailbox list is drawn from, checked against the
+  -- messages they summarise. They are maintained by trigger (migration 00034),
+  -- so a mismatch means either a mutation path that slipped past it or a bug
+  -- in the refresh itself - and the symptom would be a wrong (3) on a thread
+  -- or a conversation in the wrong view, which nobody would report as a bug.
+  UNION ALL SELECT 'BLOCK', '会话表与邮件不一致',
+         (SELECT count(*) FROM (
+            (SELECT tenant_id, owner_id, group_key, view, msg_count, last_id,
+                    any_unread, any_starred, any_attachment
+             FROM mail_thread_view
+             EXCEPT
+             SELECT tenant_id, owner_id, group_key, view, count(*)::int,
+                    (array_agg(id ORDER BY at DESC, id DESC))[1],
+                    bool_or(NOT is_read), bool_or(is_starred), bool_or(has_attachments)
+             FROM (
+               SELECT tenant_id, owner_id,
+                      coalesce(nullif(thread_key, ''), 'm:' || id::text) AS group_key,
+                      mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) AS view,
+                      id, received_at AS at, is_read, is_starred, has_attachments
+               FROM email_inbound
+               UNION ALL
+               SELECT tenant_id, owner_id,
+                      coalesce(nullif(thread_key, ''), 'm:' || id::text), 'STARRED',
+                      id, received_at, is_read, is_starred, has_attachments
+               FROM email_inbound
+               WHERE is_starred
+                 AND mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at)
+                     IN ('INBOX', 'ARCHIVE')
+             ) src WHERE view IS NOT NULL
+             GROUP BY tenant_id, owner_id, group_key, view)
+            UNION ALL
+            (SELECT tenant_id, owner_id, group_key, view, count(*)::int,
+                    (array_agg(id ORDER BY at DESC, id DESC))[1],
+                    bool_or(NOT is_read), bool_or(is_starred), bool_or(has_attachments)
+             FROM (
+               SELECT tenant_id, owner_id,
+                      coalesce(nullif(thread_key, ''), 'm:' || id::text) AS group_key,
+                      mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) AS view,
+                      id, received_at AS at, is_read, is_starred, has_attachments
+               FROM email_inbound
+               UNION ALL
+               SELECT tenant_id, owner_id,
+                      coalesce(nullif(thread_key, ''), 'm:' || id::text), 'STARRED',
+                      id, received_at, is_read, is_starred, has_attachments
+               FROM email_inbound
+               WHERE is_starred
+                 AND mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at)
+                     IN ('INBOX', 'ARCHIVE')
+             ) src WHERE view IS NOT NULL
+             GROUP BY tenant_id, owner_id, group_key, view
+             EXCEPT
+             SELECT tenant_id, owner_id, group_key, view, msg_count, last_id,
+                    any_unread, any_starred, any_attachment
+             FROM mail_thread_view)
+          ) d),
+         '列表里的会话数、未读、所属视图可能是错的'
+
   -- Search reads search_text, not the body. A message whose text never made it
   -- into that column is invisible to search while looking perfectly normal in
   -- the list - the worst shape for a customer hunting an old quotation.
