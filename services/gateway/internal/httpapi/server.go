@@ -40,6 +40,7 @@ type Server struct {
 	Access       iamv1.AccessServiceClient
 	Customers    mdv1.CustomerServiceClient
 	Suppliers    mdv1.SupplierServiceClient
+	Ports        mdv1.PortServiceClient
 	Options      mdv1.OptionServiceClient
 	Numbering    mdv1.NumberingServiceClient
 	Fx           fxv1.FxServiceClient
@@ -140,6 +141,13 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}/changes", s.listCustomerChanges)
 		r.With(s.perm("masterdata:supplier:read")).Get("/api/suppliers", s.listSuppliers)
 		r.With(s.perm("masterdata:supplier:write")).Post("/api/suppliers", s.createSupplier)
+		r.With(s.perm("masterdata:port:read")).Get("/api/ports", s.listPorts)
+		r.With(s.perm("masterdata:port:read")).Get("/api/ports/countries", s.listPortCountries)
+		r.With(s.perm("masterdata:port:write")).Post("/api/ports/import", s.importPorts)
+		r.With(s.perm("masterdata:port:write")).Post("/api/ports", s.createPort)
+		r.With(s.perm("masterdata:port:read")).Get("/api/ports/{id}", s.getPort)
+		r.With(s.perm("masterdata:port:write")).Put("/api/ports/{id}", s.updatePort)
+		r.With(s.perm("masterdata:port:write")).Put("/api/ports/{id}/status", s.setPortStatus)
 		// Option dictionaries feed every form's dropdowns; login is enough.
 		r.Get("/api/options", s.listOptions)
 		r.Post("/api/numbering/next", s.nextNumber)

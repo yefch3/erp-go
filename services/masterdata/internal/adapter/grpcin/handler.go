@@ -16,6 +16,7 @@ import (
 type Handler struct {
 	mdv1.UnimplementedCustomerServiceServer
 	mdv1.UnimplementedSupplierServiceServer
+	mdv1.UnimplementedPortServiceServer
 	mdv1.UnimplementedOptionServiceServer
 	mdv1.UnimplementedNumberingServiceServer
 	svc *app.Service

@@ -3,12 +3,14 @@ INSERT INTO shipping_schedules (
     tenant_id, schedule_no, contract_id, contract_no, customer_id, customer_name,
     carrier_forwarder, vessel_name, voyage_no, port_of_loading, port_of_discharge,
     etd, atd, eta, original_eta, ata, responsible_employee_id, responsible_name, status, remark,
-    created_by, created_by_name, updated_by, updated_by_name, carrier_id
+    created_by, created_by_name, updated_by, updated_by_name, carrier_id,
+    loading_port_id, loading_port_code, loading_port_timezone,
+    discharge_port_id, discharge_port_code, discharge_port_timezone
 ) VALUES (
     $1,
     'SCH-' || to_char(CURRENT_DATE, 'YYYYMMDD') || '-' || lpad(nextval('shipping_schedule_no_seq')::text, 6, '0'),
     $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13, $14, $15, $16,
-    'PLANNED', $17, $18, $19, $18, $19, $20
+    'PLANNED', $17, $18, $19, $18, $19, $20, $21, $22, $23, $24, $25, $26
 )
 RETURNING *;
 
@@ -96,7 +98,9 @@ UPDATE shipping_schedules SET
     etd = $12, atd = $13, eta = $14, ata = $15,
     responsible_employee_id = $16, responsible_name = $17, remark = $18,
     updated_by = $19, updated_by_name = $20, updated_at = now(),
-    carrier_id = $21
+    carrier_id = $21,
+    loading_port_id = $22, loading_port_code = $23, loading_port_timezone = $24,
+    discharge_port_id = $25, discharge_port_code = $26, discharge_port_timezone = $27
 WHERE tenant_id = $1 AND id = $2 AND status NOT IN ('COMPLETED','CANCELLED')
 RETURNING *;
 
@@ -129,10 +133,10 @@ FOR UPDATE;
 
 -- name: InsertRouteNode :one
 INSERT INTO shipping_route_nodes (
-    tenant_id, schedule_id, sequence_no, node_type, port_code, port_name, timezone,
+    tenant_id, schedule_id, sequence_no, node_type, port_code, port_name, timezone, port_id,
     original_eta_at, latest_eta_at, original_etd_at, latest_etd_at, remark,
     created_by, created_by_name, updated_by, updated_by_name
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9,$9,$10,$11,$12,$11,$12)
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$10,$10,$11,$12,$13,$12,$13)
 RETURNING *;
 
 -- name: SetRouteNodeSequence :exec

@@ -24,6 +24,7 @@ func operator(ctx context.Context) app.Operator {
 
 func scheduleToProto(s store.ShippingSchedule) *shippingv1.Schedule {
 	contractID, customerID, carrierID := int64(0), int64(0), int64(0)
+	loadingPortID, dischargePortID := int64(0), int64(0)
 	if s.ContractID != nil {
 		contractID = *s.ContractID
 	}
@@ -32,6 +33,12 @@ func scheduleToProto(s store.ShippingSchedule) *shippingv1.Schedule {
 	}
 	if s.CarrierID != nil {
 		carrierID = *s.CarrierID
+	}
+	if s.LoadingPortID != nil {
+		loadingPortID = *s.LoadingPortID
+	}
+	if s.DischargePortID != nil {
+		dischargePortID = *s.DischargePortID
 	}
 	etd, atd, eta, ata := "", "", "", ""
 	if s.Etd.Valid {
@@ -63,6 +70,9 @@ func scheduleToProto(s store.ShippingSchedule) *shippingv1.Schedule {
 		CreatedAt: createdAt, UpdatedBy: s.UpdatedBy, UpdatedByName: s.UpdatedByName, UpdatedAt: updatedAt,
 		OriginalEta: dateValue(s.OriginalEta), EtaRevision: s.EtaRevision, RouteVersion: s.RouteVersion,
 		DelayDays: s.DelayDays, HasTemporaryCall: s.HasTemporaryCall, CurrentProgress: s.CurrentProgress,
+		LoadingPortId: loadingPortID, LoadingPortCode: s.LoadingPortCode,
+		LoadingPortTimezone: s.LoadingPortTimezone, DischargePortId: dischargePortID,
+		DischargePortCode: s.DischargePortCode, DischargePortTimezone: s.DischargePortTimezone,
 	}
 }
 
@@ -80,10 +90,14 @@ func timeValue(v pgtype.Timestamptz) string {
 }
 
 func routeNodeToProto(n store.ShippingRouteNode) *shippingv1.RouteNode {
+	portID := int64(0)
+	if n.PortID != nil {
+		portID = *n.PortID
+	}
 	return &shippingv1.RouteNode{Id: n.ID, SequenceNo: n.SequenceNo, NodeType: n.NodeType, PortCode: n.PortCode,
 		PortName: n.PortName, Timezone: n.Timezone, OriginalEtaAt: timeValue(n.OriginalEtaAt), LatestEtaAt: timeValue(n.LatestEtaAt),
 		ActualArrivalAt: timeValue(n.ActualArrivalAt), OriginalEtdAt: timeValue(n.OriginalEtdAt), LatestEtdAt: timeValue(n.LatestEtdAt),
-		ActualDepartureAt: timeValue(n.ActualDepartureAt), NodeStatus: n.NodeStatus, Remark: n.Remark}
+		ActualDepartureAt: timeValue(n.ActualDepartureAt), NodeStatus: n.NodeStatus, Remark: n.Remark, PortId: portID}
 }
 
 func routeNodesToProto(nodes []store.ShippingRouteNode) []*shippingv1.RouteNode {
@@ -174,6 +188,8 @@ func inputFromProto(in *shippingv1.ScheduleInput) app.ScheduleInput {
 		VesselName: in.GetVesselName(), VoyageNo: in.GetVoyageNo(), PortOfLoading: in.GetPortOfLoading(),
 		PortOfDischarge: in.GetPortOfDischarge(), ETD: in.GetEtd(), ATD: in.GetAtd(), ETA: in.GetEta(), ATA: in.GetAta(),
 		ResponsibleEmployeeID: in.GetResponsibleEmployeeId(), ResponsibleName: in.GetResponsibleName(), Remark: in.GetRemark(),
+		LoadingPortID: in.GetLoadingPortId(), LoadingPortCode: in.GetLoadingPortCode(), LoadingPortTimezone: in.GetLoadingPortTimezone(),
+		DischargePortID: in.GetDischargePortId(), DischargePortCode: in.GetDischargePortCode(), DischargePortTimezone: in.GetDischargePortTimezone(),
 	}
 }
 
@@ -187,6 +203,8 @@ func listRowToProto(r store.ListSchedulesRow) *shippingv1.Schedule {
 		CreatedByName: r.CreatedByName, CreatedAt: r.CreatedAt, UpdatedBy: r.UpdatedBy, UpdatedByName: r.UpdatedByName, UpdatedAt: r.UpdatedAt,
 		OriginalEta: r.OriginalEta, EtaRevision: r.EtaRevision, RouteVersion: r.RouteVersion,
 		DelayDays: r.DelayDays, HasTemporaryCall: r.HasTemporaryCall, CurrentProgress: r.CurrentProgress,
+		LoadingPortID: r.LoadingPortID, LoadingPortCode: r.LoadingPortCode, LoadingPortTimezone: r.LoadingPortTimezone,
+		DischargePortID: r.DischargePortID, DischargePortCode: r.DischargePortCode, DischargePortTimezone: r.DischargePortTimezone,
 	})
 }
 
@@ -288,7 +306,7 @@ func (h *Handler) GetShippingStatistics(ctx context.Context, _ *shippingv1.GetSh
 }
 
 func (h *Handler) AddRouteNode(ctx context.Context, req *shippingv1.AddRouteNodeRequest) (*shippingv1.AddRouteNodeResponse, error) {
-	nodes, version, err := h.svc.AddRouteNode(ctx, grpcx.TenantID(ctx), req.GetId(), app.RouteNodeInput{NodeType: req.GetNodeType(), PortCode: req.GetPortCode(), PortName: req.GetPortName(), Timezone: req.GetTimezone(), InsertAfterNodeID: req.GetInsertAfterNodeId(), LatestETAAt: req.GetLatestEtaAt(), LatestETDAt: req.GetLatestEtdAt(), Reason: req.GetReason(), Remark: req.GetRemark(), RouteVersion: req.GetRouteVersion()}, operator(ctx))
+	nodes, version, err := h.svc.AddRouteNode(ctx, grpcx.TenantID(ctx), req.GetId(), app.RouteNodeInput{PortID: req.GetPortId(), NodeType: req.GetNodeType(), PortCode: req.GetPortCode(), PortName: req.GetPortName(), Timezone: req.GetTimezone(), InsertAfterNodeID: req.GetInsertAfterNodeId(), LatestETAAt: req.GetLatestEtaAt(), LatestETDAt: req.GetLatestEtdAt(), Reason: req.GetReason(), Remark: req.GetRemark(), RouteVersion: req.GetRouteVersion()}, operator(ctx))
 	if err != nil {
 		return nil, err
 	}

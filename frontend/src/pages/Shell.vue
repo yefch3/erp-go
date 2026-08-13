@@ -10,7 +10,7 @@
           {{ t('menu.todos') }}
         </el-menu-item>
         <el-popover
-          v-if="auth.can('iam:employee:read') || auth.can('iam:department:read') || auth.can('masterdata:customer:read') || auth.can('masterdata:supplier:read')"
+          v-if="auth.can('iam:employee:read') || auth.can('iam:department:read') || auth.can('masterdata:customer:read') || auth.can('masterdata:port:read') || auth.can('masterdata:supplier:read')"
           v-model:visible="basicDataOpen"
           placement="right-start"
           :width="200"
@@ -174,7 +174,9 @@ const basicDataItems = computed(() => [
   ...(auth.can('masterdata:customer:read')
     ? [{ path: '/basic/customers', activePrefix: '/basic/customers', label: t('menu.customers'), todo: false }]
     : []),
-  { path: '/basic/ports', activePrefix: '/basic/ports', label: t('menu.ports'), todo: true },
+  ...(auth.can('masterdata:port:read')
+    ? [{ path: '/basic/ports', activePrefix: '/basic/ports', label: t('menu.ports'), todo: false }]
+    : []),
   ...(auth.can('masterdata:supplier:read')
     ? [{ path: '/basic/suppliers', activePrefix: '/basic/suppliers', label: t('menu.suppliers'), todo: false }]
     : []),

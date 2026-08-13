@@ -22,8 +22,8 @@
         </el-form-item></el-col>
         <el-col :span="12"><el-form-item :label="t('shipping.vessel')" prop="vesselName"><el-input v-model="form.vesselName" /></el-form-item></el-col>
         <el-col :span="12"><el-form-item :label="t('shipping.voyage')" prop="voyageNo"><el-input v-model="form.voyageNo" /></el-form-item></el-col>
-        <el-col v-if="!schedule" :span="12"><el-form-item :label="t('shipping.loadingPort')" prop="portOfLoading"><el-input v-model="form.portOfLoading" /></el-form-item></el-col>
-        <el-col v-if="!schedule" :span="12"><el-form-item :label="t('shipping.dischargePort')" prop="portOfDischarge"><el-input v-model="form.portOfDischarge" /></el-form-item></el-col>
+        <el-col v-if="!schedule" :span="12"><el-form-item :label="t('shipping.loadingPort')" prop="loadingPortId"><el-select v-model="form.loadingPortId" filterable style="width:100%" @change="applyPort('loading')"><el-option v-for="port in ports" :key="port.id" :value="port.id" :label="`${port.unlocode} · ${portLabel(port)}`" /></el-select></el-form-item></el-col>
+        <el-col v-if="!schedule" :span="12"><el-form-item :label="t('shipping.dischargePort')" prop="dischargePortId"><el-select v-model="form.dischargePortId" filterable style="width:100%" @change="applyPort('discharge')"><el-option v-for="port in ports" :key="port.id" :value="port.id" :label="`${port.unlocode} · ${portLabel(port)}`" /></el-select></el-form-item></el-col>
         <el-col v-if="!schedule" :span="12"><el-form-item label="ETD" prop="etd"><el-date-picker v-model="form.etd" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
         <el-col v-if="!schedule" :span="12"><el-form-item label="ETA" prop="eta"><el-date-picker v-model="form.eta" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
         <el-col v-if="datesChanged" :span="24"><el-form-item :label="t('shipping.dateReason')" prop="dateChangeReason"><el-input v-model="form.dateChangeReason" type="textarea" :rows="2" /></el-form-item></el-col>
@@ -64,19 +64,21 @@ import type { ShippingSchedule } from '../shipping'
 
 const props = defineProps<{ modelValue:boolean; schedule?:ShippingSchedule }>()
 const emit = defineEmits<{ 'update:modelValue':[value:boolean]; saved:[schedule:ShippingSchedule] }>()
-const { t }=useI18n(); const auth=useAuthStore()
+const { t, locale }=useI18n(); const auth=useAuthStore()
 const formRef=ref<FormInstance>(); const saving=ref(false); const loading=ref(false)
 const newReminderDay=ref(7)
 const employees=ref<{id:string;name:string}[]>([])
 const customers=ref<{id:string;name:string}[]>([])
 const carriers=ref<{id:string;name:string}[]>([])
+interface PortOption {id:string;unlocode:string;nameZh:string;nameEn:string;timezone:string}
+const ports=ref<PortOption[]>([])
 const open=computed({get:()=>props.modelValue,set:(v)=>emit('update:modelValue',v)})
-const empty=()=>({contractNo:'',customerId:'',customerName:'',carrierId:'',carrierForwarder:'',vesselName:'',voyageNo:'',portOfLoading:'',portOfDischarge:'',etd:'',eta:'',responsibleEmployeeId:auth.employeeId,responsibleName:auth.employeeName,remark:'',dateChangeReason:'',reminderDays:[7] as number[]})
+const empty=()=>({contractNo:'',customerId:'',customerName:'',carrierId:'',carrierForwarder:'',vesselName:'',voyageNo:'',portOfLoading:'',portOfDischarge:'',loadingPortId:'',loadingPortCode:'',loadingPortTimezone:'',dischargePortId:'',dischargePortCode:'',dischargePortTimezone:'',etd:'',eta:'',responsibleEmployeeId:auth.employeeId,responsibleName:auth.employeeName,remark:'',dateChangeReason:'',reminderDays:[7] as number[]})
 const form=reactive(empty())
 const datesChanged=computed(()=>!!props.schedule&&(form.etd!==props.schedule.etd||form.eta!==props.schedule.eta))
 const rules:FormRules={
   vesselName:[{required:true,message:t('shipping.required'),trigger:'blur'}],voyageNo:[{required:true,message:t('shipping.required'),trigger:'blur'}],
-  portOfLoading:[{required:true,message:t('shipping.required'),trigger:'blur'}],portOfDischarge:[{required:true,message:t('shipping.required'),trigger:'blur'}],
+  loadingPortId:[{required:true,message:t('shipping.required'),trigger:'change'}],dischargePortId:[{required:true,message:t('shipping.required'),trigger:'change'}],
   etd:[{required:true,message:t('shipping.required'),trigger:'change'}],eta:[{required:true,message:t('shipping.required'),trigger:'change'}],
   responsibleEmployeeId:[{required:true,message:t('shipping.required'),trigger:'change'}],
   dateChangeReason:[{validator:(_:unknown,value:string,done:(error?:Error)=>void)=>datesChanged.value&&!value.trim()?done(new Error(t('shipping.dateReasonRequired'))):done(),trigger:'blur'}],
@@ -88,6 +90,8 @@ watch(()=>props.modelValue,async visible=>{
     contractNo:props.schedule.contractNo,customerId:props.schedule.customerId,customerName:props.schedule.customerName,
     carrierId:props.schedule.carrierId,carrierForwarder:props.schedule.carrierForwarder,
     vesselName:props.schedule.vesselName,voyageNo:props.schedule.voyageNo,portOfLoading:props.schedule.portOfLoading,portOfDischarge:props.schedule.portOfDischarge,
+    loadingPortId:props.schedule.loadingPortId,loadingPortCode:props.schedule.loadingPortCode,loadingPortTimezone:props.schedule.loadingPortTimezone,
+    dischargePortId:props.schedule.dischargePortId,dischargePortCode:props.schedule.dischargePortCode,dischargePortTimezone:props.schedule.dischargePortTimezone,
     etd:props.schedule.etd,eta:props.schedule.eta,responsibleEmployeeId:props.schedule.responsibleEmployeeId,
     responsibleName:props.schedule.responsibleName,remark:props.schedule.remark,dateChangeReason:'',
   }:{})
@@ -100,9 +104,19 @@ watch(()=>props.modelValue,async visible=>{
   if(auth.can('iam:employee:read')) requests.push(get<{employees:{id:string;name:string}[]}>('/employees',{page:1,page_size:200,status:'ACTIVE'}).then(data=>{employees.value=data.employees}))
   if(auth.can('masterdata:customer:read')) requests.push(get<{customers:{id:string;name:string}[]}>('/customers',{page_size:200}).then(data=>{customers.value=data.customers??[]}))
   if(auth.can('masterdata:supplier:read')) requests.push(get<{suppliers:{id:string;name:string}[]}>('/suppliers',{page_size:200}).then(data=>{carriers.value=data.suppliers??[]}))
+  if(auth.can('masterdata:port:read')) requests.push(get<{ports:PortOption[]}>('/ports',{page_size:200,status:'ACTIVE'}).then(data=>{ports.value=data.ports??[]}))
   await Promise.allSettled(requests)
   loading.value=false
 })
+
+function portLabel(port:PortOption){return locale.value==='zh'?(port.nameZh||port.nameEn):(port.nameEn||port.nameZh)}
+function applyPort(kind:'loading'|'discharge'){
+  const id=kind==='loading'?form.loadingPortId:form.dischargePortId
+  const port=ports.value.find(item=>item.id===id)
+  if(!port)return
+  if(kind==='loading')Object.assign(form,{portOfLoading:portLabel(port),loadingPortCode:port.unlocode,loadingPortTimezone:port.timezone})
+  else Object.assign(form,{portOfDischarge:portLabel(port),dischargePortCode:port.unlocode,dischargePortTimezone:port.timezone})
+}
 
 function body(confirmDuplicate=false){
   const employee=employees.value.find(e=>e.id===form.responsibleEmployeeId)
