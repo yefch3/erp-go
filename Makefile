@@ -7,9 +7,27 @@ GOLANGCI_LINT          := v1.62.2
 BIN := $(CURDIR)/bin
 BUF := go run github.com/bufbuild/buf/cmd/buf@$(BUF_VERSION)
 
+# The local compose stack shifts its ports (5433/6380) so it can run next to
+# anything already using 5432/6379; CI uses the standard ports. Every target
+# below reads these two variables, so the same make target does the same
+# thing in both places. ?= yields to values set in the environment.
+PG_PORT    ?= 5433
+REDIS_PORT ?= 6380
+
+# Switches for the DB-backed integration tests. Deliberately NOT part of
+# plain `make test`: once a DSN is set the tests connect for real, and a
+# laptop without the compose stack up would go red instead of skipping.
+# Each service reaches only its own database, under its own account.
+TEST_ENV := \
+	IAM_TEST_DSN='postgres://erp_iam:erp_iam_pw@localhost:$(PG_PORT)/erp_iam?sslmode=disable' \
+	MD_TEST_DSN='postgres://erp_masterdata:erp_masterdata_pw@localhost:$(PG_PORT)/erp_masterdata?sslmode=disable' \
+	MAIL_TEST_DSN='postgres://erp_mail:erp_mail_pw@localhost:$(PG_PORT)/erp_mail?sslmode=disable' \
+	SHIPPING_TEST_DSN='postgres://erp_shipping:erp_shipping_pw@localhost:$(PG_PORT)/erp_shipping?sslmode=disable' \
+	GATEWAY_TEST_REDIS='127.0.0.1:$(REDIS_PORT)'
+
 .PHONY: help
 help: ## Show available targets
-	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
 
 # ---------------------------------------------------------------- proto
 
@@ -24,6 +42,11 @@ proto: $(BIN)/protoc-gen-go $(BIN)/protoc-gen-go-grpc ## Lint protos and regener
 	$(BUF) lint
 	$(BUF) generate
 	cd gen && go mod tidy
+
+.PHONY: proto-check
+proto-check: proto ## Regenerate protos and fail if anything drifted
+	git diff --exit-code gen/ proto/ \
+		|| (echo "gen/ is stale: run 'make proto' and commit" && exit 1)
 
 .PHONY: proto-breaking
 proto-breaking: ## Check protos against main for breaking changes
@@ -64,7 +87,7 @@ migrate: ## Run goose migrations for every service that has them
 		svc=$$(echo "$$dir" | cut -d/ -f2); \
 		echo "==> migrating $$svc"; \
 		go run github.com/pressly/goose/v3/cmd/goose@v3.24.0 -dir "$$dir" postgres \
-			"postgres://erp_$$svc:erp_$${svc}_pw@localhost:$${PG_PORT:-5433}/erp_$$svc?sslmode=disable" up; \
+			"postgres://erp_$$svc:erp_$${svc}_pw@localhost:$(PG_PORT)/erp_$$svc?sslmode=disable" up; \
 	done; \
 	[ "$$found" = 1 ] || echo "no migrations yet"
 
@@ -77,6 +100,10 @@ test: ## Run all Go tests
 		echo "==> go test ./$$mod/..."; \
 		(cd "$$mod" && go test ./...) || exit 1; \
 	done
+
+.PHONY: test-integration
+test-integration: ## All tests including DB-backed ones (needs `make up` + `make migrate` first)
+	@env $(TEST_ENV) $(MAKE) test
 
 .PHONY: lint
 lint: ## golangci-lint over every module
@@ -98,9 +125,18 @@ check-mail-sandbox: ## Verify received mail is only rendered inside the sandbox
 audit-mail: ## Check stored mail against its invariants (needs a running database)
 	sh scripts/audit-mail.sh
 
+# The single definition of what CI checks. The workflow provides the
+# environment (Postgres, Redis, created databases, migrations) and then calls
+# this; it does not list checks of its own. That is deliberate: when this
+# target and the workflow were two separate lists, check-mail-sandbox sat on
+# one and not the other, and a guard that had already caught a real incident
+# ran nowhere. One list cannot disagree with itself.
+#
+# Prerequisites run in the order written, cheapest first, so a stale gen/ or
+# a missed tenant_id fails in seconds, not after the full test suite.
 .PHONY: ci
-ci: proto check-tenant check-mail-sandbox test ## What CI runs; proto regeneration must be a no-op
-	git diff --exit-code gen/ || (echo "gen/ is stale: run 'make proto' and commit" && exit 1)
+ci: proto-check check-tenant check-mail-sandbox test-integration lint ## Everything CI runs (needs `make up` + `make migrate` first)
+	@echo "ci: all checks passed"
 
 .PHONY: sqlc
 sqlc: ## Regenerate sqlc stores for every service that has one
