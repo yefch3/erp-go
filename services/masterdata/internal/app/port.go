@@ -268,7 +268,9 @@ func (s *Service) CreatePort(ctx context.Context, tenantID int64, in PortInput) 
 	if err != nil {
 		return Port{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 	p, err := scanPort(tx.QueryRow(ctx, `INSERT INTO ports (tenant_id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,remark,port_type,admin_area,latitude,longitude,has_coordinates,is_favorite,created_by,created_by_name,updated_by,updated_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$16,$17) RETURNING id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,status,remark,version,port_type,admin_area,latitude,longitude,has_coordinates,is_favorite`, tenantID, in.UNLOCODE, in.NameZH, in.NameEN, in.CountryCode, in.City, in.Timezone, in.Aliases, in.Remark, in.PortType, in.AdminArea, in.Latitude, in.Longitude, in.HasCoordinates, in.IsFavorite, in.OperatorID, in.OperatorName))
 	if err != nil {
 		return Port{}, portUniqueConflict(err)
@@ -295,7 +297,9 @@ func (s *Service) UpdatePort(ctx context.Context, tenantID int64, in PortInput) 
 	if err != nil {
 		return Port{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 	p, err := scanPort(tx.QueryRow(ctx, `UPDATE ports SET name_zh=$3,name_en=$4,country_code=$5,city=$6,timezone=$7,aliases=$8,remark=$9,port_type=$10,admin_area=$11,latitude=$12,longitude=$13,has_coordinates=$14,is_favorite=$15,version=version+1,updated_at=now(),updated_by=$16,updated_by_name=$17 WHERE tenant_id=$1 AND id=$2 AND version=$18 RETURNING id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,status,remark,version,port_type,admin_area,latitude,longitude,has_coordinates,is_favorite`, tenantID, in.ID, in.NameZH, in.NameEN, in.CountryCode, in.City, in.Timezone, in.Aliases, in.Remark, in.PortType, in.AdminArea, in.Latitude, in.Longitude, in.HasCoordinates, in.IsFavorite, in.OperatorID, in.OperatorName, in.Version))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Port{}, apierr.Conflict("MD_PORT_VERSION_CONFLICT", "港口资料已被他人修改，请刷新后重试")
@@ -323,7 +327,9 @@ func (s *Service) SetPortStatus(ctx context.Context, tenantID, id int64, status 
 	if err != nil {
 		return Port{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 	p, err := scanPort(tx.QueryRow(ctx, `UPDATE ports SET status=$3,version=version+1,updated_at=now(),updated_by=$4,updated_by_name=$5 WHERE tenant_id=$1 AND id=$2 AND version=$6 RETURNING id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,status,remark,version,port_type,admin_area,latitude,longitude,has_coordinates,is_favorite`, tenantID, id, status, opID, opName, version))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Port{}, apierr.Conflict("MD_PORT_VERSION_CONFLICT", "港口资料已被他人修改，请刷新后重试")
