@@ -18,7 +18,9 @@ type Port struct {
 	ID                                                    int64
 	UNLOCODE, NameZH, NameEN, CountryCode, City, Timezone string
 	Aliases                                               []string
-	Status, Remark                                        string
+	Status, Remark, PortType, AdminArea                   string
+	Latitude, Longitude                                   float64
+	HasCoordinates, IsFavorite                            bool
 	Version                                               int32
 }
 
@@ -34,7 +36,8 @@ type PortCountryCount struct {
 }
 
 type PortImportRow struct {
-	RowNumber int32
+	RowNumber            int32
+	ProfileFieldsPresent bool
 	PortInput
 }
 
@@ -55,14 +58,35 @@ func validatePortInput(in *PortInput) error {
 	in.CountryCode = strings.ToUpper(strings.TrimSpace(in.CountryCode))
 	in.NameZH, in.NameEN = strings.TrimSpace(in.NameZH), strings.TrimSpace(in.NameEN)
 	in.City, in.Timezone, in.Remark = strings.TrimSpace(in.City), strings.TrimSpace(in.Timezone), strings.TrimSpace(in.Remark)
+	in.AdminArea, in.PortType = strings.TrimSpace(in.AdminArea), strings.ToUpper(strings.TrimSpace(in.PortType))
+	if in.PortType == "" {
+		in.PortType = "SEAPORT"
+	}
 	if len(in.UNLOCODE) != 5 || len(in.CountryCode) != 2 || !strings.HasPrefix(in.UNLOCODE, in.CountryCode) {
 		return apierr.Invalid("MD_PORT_UNLOCODE_INVALID", "UN/LOCODE 必须是国家代码加三位地点代码，例如 CNSHA")
 	}
-	if in.NameZH == "" || in.NameEN == "" {
-		return apierr.Invalid("MD_PORT_NAME_REQUIRED", "港口中文名称和英文名称均为必填项")
+	if in.NameZH == "" && in.NameEN == "" {
+		return apierr.Invalid("MD_PORT_NAME_REQUIRED", "港口中文名称和英文名称至少填写一项")
 	}
 	if _, err := time.LoadLocation(in.Timezone); err != nil {
 		return apierr.Invalid("MD_PORT_TIMEZONE_INVALID", "请输入有效的 IANA 时区，例如 Asia/Shanghai")
+	}
+	// 对已维护时区规则的国家做联动校验；未覆盖国家仍接受合法 IANA 时区，避免阻断全球港口录入。
+	countryTimezones := map[string]map[string]bool{
+		"CN": {"Asia/Shanghai": true}, "HK": {"Asia/Hong_Kong": true}, "TW": {"Asia/Taipei": true},
+		"SG": {"Asia/Singapore": true}, "JP": {"Asia/Tokyo": true}, "KR": {"Asia/Seoul": true},
+		"GB": {"Europe/London": true}, "DE": {"Europe/Berlin": true}, "NL": {"Europe/Amsterdam": true},
+		"BE": {"Europe/Brussels": true}, "FR": {"Europe/Paris": true}, "IT": {"Europe/Rome": true},
+	}
+	if allowed, knownCountry := countryTimezones[in.CountryCode]; knownCountry && !allowed[in.Timezone] {
+		return apierr.Invalid("MD_PORT_COUNTRY_TIMEZONE_MISMATCH", "港口时区与所选国家/地区不匹配")
+	}
+	validTypes := map[string]bool{"SEAPORT": true, "RIVER_PORT": true, "DRY_PORT": true, "AIRPORT": true, "OTHER": true}
+	if !validTypes[in.PortType] {
+		return apierr.Invalid("MD_PORT_TYPE_INVALID", "请选择有效的港口类型")
+	}
+	if in.HasCoordinates && (in.Latitude < -90 || in.Latitude > 90 || in.Longitude < -180 || in.Longitude > 180) {
+		return apierr.Invalid("MD_PORT_COORDINATES_INVALID", "港口经纬度超出有效范围")
 	}
 	seen := map[string]bool{}
 	clean := make([]string, 0, len(in.Aliases))
@@ -79,12 +103,12 @@ func validatePortInput(in *PortInput) error {
 
 func scanPort(row pgx.Row) (Port, error) {
 	var p Port
-	err := row.Scan(&p.ID, &p.UNLOCODE, &p.NameZH, &p.NameEN, &p.CountryCode, &p.City, &p.Timezone, &p.Aliases, &p.Status, &p.Remark, &p.Version)
+	err := row.Scan(&p.ID, &p.UNLOCODE, &p.NameZH, &p.NameEN, &p.CountryCode, &p.City, &p.Timezone, &p.Aliases, &p.Status, &p.Remark, &p.Version, &p.PortType, &p.AdminArea, &p.Latitude, &p.Longitude, &p.HasCoordinates, &p.IsFavorite)
 	return p, err
 }
 
 func (s *Service) GetPort(ctx context.Context, tenantID, id int64) (Port, error) {
-	p, err := scanPort(s.pool.QueryRow(ctx, `SELECT id, unlocode, name_zh, name_en, country_code, city, timezone, aliases, status, remark, version FROM ports WHERE tenant_id=$1 AND id=$2`, tenantID, id))
+	p, err := scanPort(s.pool.QueryRow(ctx, `SELECT id, unlocode, name_zh, name_en, country_code, city, timezone, aliases, status, remark, version, port_type, admin_area, latitude, longitude, has_coordinates, is_favorite FROM ports WHERE tenant_id=$1 AND id=$2`, tenantID, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Port{}, apierr.NotFound("MD_PORT_NOT_FOUND", "港口不存在")
 	}
@@ -105,11 +129,11 @@ func (s *Service) ListPorts(ctx context.Context, tenantID int64, keyword, countr
 	}
 	pattern := "%" + keyword + "%"
 	var total int64
-	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM ports WHERE tenant_id=$1 AND ($2='ALL' OR status=$2) AND ($3='' OR country_code=$3) AND ($4='' OR unlocode ILIKE $5 OR name_zh ILIKE $5 OR name_en ILIKE $5 OR city ILIKE $5 OR array_to_string(aliases,' ') ILIKE $5)`, tenantID, status, countryCode, keyword, pattern).Scan(&total)
+	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM ports WHERE tenant_id=$1 AND ($2='ALL' OR status=$2) AND ($3='' OR country_code=$3) AND ($4='' OR unlocode ILIKE $5 OR name_zh ILIKE $5 OR name_en ILIKE $5 OR city ILIKE $5 OR admin_area ILIKE $5 OR array_to_string(aliases,' ') ILIKE $5)`, tenantID, status, countryCode, keyword, pattern).Scan(&total)
 	if err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT id, unlocode, name_zh, name_en, country_code, city, timezone, aliases, status, remark, version FROM ports WHERE tenant_id=$1 AND ($2='ALL' OR status=$2) AND ($3='' OR country_code=$3) AND ($4='' OR unlocode ILIKE $5 OR name_zh ILIKE $5 OR name_en ILIKE $5 OR city ILIKE $5 OR array_to_string(aliases,' ') ILIKE $5) ORDER BY country_code, unlocode LIMIT $6 OFFSET $7`, tenantID, status, countryCode, keyword, pattern, size, (page-1)*size)
+	rows, err := s.pool.Query(ctx, `SELECT id, unlocode, name_zh, name_en, country_code, city, timezone, aliases, status, remark, version, port_type, admin_area, latitude, longitude, has_coordinates, is_favorite FROM ports WHERE tenant_id=$1 AND ($2='ALL' OR status=$2) AND ($3='' OR country_code=$3) AND ($4='' OR unlocode ILIKE $5 OR name_zh ILIKE $5 OR name_en ILIKE $5 OR city ILIKE $5 OR admin_area ILIKE $5 OR array_to_string(aliases,' ') ILIKE $5) ORDER BY is_favorite DESC, country_code, unlocode LIMIT $6 OFFSET $7`, tenantID, status, countryCode, keyword, pattern, size, (page-1)*size)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -148,7 +172,7 @@ func (s *Service) ListPortCountries(ctx context.Context, tenantID int64, status 
 }
 
 func sameImportedPort(a Port, b PortInput) bool {
-	return a.NameZH == b.NameZH && a.NameEN == b.NameEN && a.CountryCode == b.CountryCode && a.City == b.City && a.Timezone == b.Timezone && a.Remark == b.Remark && strings.Join(a.Aliases, "\x00") == strings.Join(b.Aliases, "\x00")
+	return a.NameZH == b.NameZH && a.NameEN == b.NameEN && a.CountryCode == b.CountryCode && a.City == b.City && a.Timezone == b.Timezone && a.Remark == b.Remark && a.PortType == b.PortType && a.AdminArea == b.AdminArea && a.Latitude == b.Latitude && a.Longitude == b.Longitude && a.HasCoordinates == b.HasCoordinates && a.IsFavorite == b.IsFavorite && strings.Join(a.Aliases, "\x00") == strings.Join(b.Aliases, "\x00")
 }
 
 // ImportPorts 先完整预检，再在一个事务内新增或更新；任一错误行都会阻止整批写入。
@@ -178,13 +202,13 @@ func (s *Service) ImportPorts(ctx context.Context, tenantID int64, rows []PortIm
 	}
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		for _, row := range rows {
-			existing, err := scanPort(tx.QueryRow(ctx, `SELECT id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,status,remark,version FROM ports WHERE tenant_id=$1 AND unlocode=$2 FOR UPDATE`, tenantID, row.UNLOCODE))
+			existing, err := scanPort(tx.QueryRow(ctx, `SELECT id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,status,remark,version,port_type,admin_area,latitude,longitude,has_coordinates,is_favorite FROM ports WHERE tenant_id=$1 AND unlocode=$2 FOR UPDATE`, tenantID, row.UNLOCODE))
 			if errors.Is(err, pgx.ErrNoRows) {
 				result.CreateCount++
 				if !confirm {
 					continue
 				}
-				created, createErr := scanPort(tx.QueryRow(ctx, `INSERT INTO ports (tenant_id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,remark,created_by,created_by_name,updated_by,updated_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$10,$11) RETURNING id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,status,remark,version`, tenantID, row.UNLOCODE, row.NameZH, row.NameEN, row.CountryCode, row.City, row.Timezone, row.Aliases, row.Remark, opID, opName))
+				created, createErr := scanPort(tx.QueryRow(ctx, `INSERT INTO ports (tenant_id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,remark,port_type,admin_area,latitude,longitude,has_coordinates,is_favorite,created_by,created_by_name,updated_by,updated_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$16,$17) RETURNING id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,status,remark,version,port_type,admin_area,latitude,longitude,has_coordinates,is_favorite`, tenantID, row.UNLOCODE, row.NameZH, row.NameEN, row.CountryCode, row.City, row.Timezone, row.Aliases, row.Remark, row.PortType, row.AdminArea, row.Latitude, row.Longitude, row.HasCoordinates, row.IsFavorite, opID, opName))
 				if createErr != nil {
 					return portUniqueConflict(createErr)
 				}
@@ -197,6 +221,12 @@ func (s *Service) ImportPorts(ctx context.Context, tenantID int64, rows []PortIm
 			if err != nil {
 				return err
 			}
+			// 兼容旧版 CSV：模板没有扩展列时，仅更新旧字段，不清空已维护的港口画像。
+			if !row.ProfileFieldsPresent {
+				row.PortType, row.AdminArea = existing.PortType, existing.AdminArea
+				row.Latitude, row.Longitude = existing.Latitude, existing.Longitude
+				row.HasCoordinates, row.IsFavorite = existing.HasCoordinates, existing.IsFavorite
+			}
 			if sameImportedPort(existing, row.PortInput) {
 				result.SkipCount++
 				continue
@@ -205,7 +235,7 @@ func (s *Service) ImportPorts(ctx context.Context, tenantID int64, rows []PortIm
 			if !confirm {
 				continue
 			}
-			updated, updateErr := scanPort(tx.QueryRow(ctx, `UPDATE ports SET name_zh=$3,name_en=$4,country_code=$5,city=$6,timezone=$7,aliases=$8,remark=$9,version=version+1,updated_at=now(),updated_by=$10,updated_by_name=$11 WHERE tenant_id=$1 AND id=$2 RETURNING id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,status,remark,version`, tenantID, existing.ID, row.NameZH, row.NameEN, row.CountryCode, row.City, row.Timezone, row.Aliases, row.Remark, opID, opName))
+			updated, updateErr := scanPort(tx.QueryRow(ctx, `UPDATE ports SET name_zh=$3,name_en=$4,country_code=$5,city=$6,timezone=$7,aliases=$8,remark=$9,port_type=$10,admin_area=$11,latitude=$12,longitude=$13,has_coordinates=$14,is_favorite=$15,version=version+1,updated_at=now(),updated_by=$16,updated_by_name=$17 WHERE tenant_id=$1 AND id=$2 RETURNING id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,status,remark,version,port_type,admin_area,latitude,longitude,has_coordinates,is_favorite`, tenantID, existing.ID, row.NameZH, row.NameEN, row.CountryCode, row.City, row.Timezone, row.Aliases, row.Remark, row.PortType, row.AdminArea, row.Latitude, row.Longitude, row.HasCoordinates, row.IsFavorite, opID, opName))
 			if updateErr != nil {
 				return updateErr
 			}
@@ -239,7 +269,7 @@ func (s *Service) CreatePort(ctx context.Context, tenantID int64, in PortInput) 
 		return Port{}, err
 	}
 	defer tx.Rollback(ctx)
-	p, err := scanPort(tx.QueryRow(ctx, `INSERT INTO ports (tenant_id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,remark,created_by,created_by_name,updated_by,updated_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$10,$11) RETURNING id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,status,remark,version`, tenantID, in.UNLOCODE, in.NameZH, in.NameEN, in.CountryCode, in.City, in.Timezone, in.Aliases, in.Remark, in.OperatorID, in.OperatorName))
+	p, err := scanPort(tx.QueryRow(ctx, `INSERT INTO ports (tenant_id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,remark,port_type,admin_area,latitude,longitude,has_coordinates,is_favorite,created_by,created_by_name,updated_by,updated_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$16,$17) RETURNING id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,status,remark,version,port_type,admin_area,latitude,longitude,has_coordinates,is_favorite`, tenantID, in.UNLOCODE, in.NameZH, in.NameEN, in.CountryCode, in.City, in.Timezone, in.Aliases, in.Remark, in.PortType, in.AdminArea, in.Latitude, in.Longitude, in.HasCoordinates, in.IsFavorite, in.OperatorID, in.OperatorName))
 	if err != nil {
 		return Port{}, portUniqueConflict(err)
 	}
@@ -258,12 +288,15 @@ func (s *Service) UpdatePort(ctx context.Context, tenantID int64, in PortInput) 
 	if err != nil {
 		return Port{}, err
 	}
+	if before.UNLOCODE != in.UNLOCODE {
+		return Port{}, apierr.Conflict("MD_PORT_UNLOCODE_IMMUTABLE", "UN/LOCODE 是港口的标准身份，创建后不能直接修改")
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Port{}, err
 	}
 	defer tx.Rollback(ctx)
-	p, err := scanPort(tx.QueryRow(ctx, `UPDATE ports SET unlocode=$3,name_zh=$4,name_en=$5,country_code=$6,city=$7,timezone=$8,aliases=$9,remark=$10,version=version+1,updated_at=now(),updated_by=$11,updated_by_name=$12 WHERE tenant_id=$1 AND id=$2 AND version=$13 RETURNING id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,status,remark,version`, tenantID, in.ID, in.UNLOCODE, in.NameZH, in.NameEN, in.CountryCode, in.City, in.Timezone, in.Aliases, in.Remark, in.OperatorID, in.OperatorName, in.Version))
+	p, err := scanPort(tx.QueryRow(ctx, `UPDATE ports SET name_zh=$3,name_en=$4,country_code=$5,city=$6,timezone=$7,aliases=$8,remark=$9,port_type=$10,admin_area=$11,latitude=$12,longitude=$13,has_coordinates=$14,is_favorite=$15,version=version+1,updated_at=now(),updated_by=$16,updated_by_name=$17 WHERE tenant_id=$1 AND id=$2 AND version=$18 RETURNING id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,status,remark,version,port_type,admin_area,latitude,longitude,has_coordinates,is_favorite`, tenantID, in.ID, in.NameZH, in.NameEN, in.CountryCode, in.City, in.Timezone, in.Aliases, in.Remark, in.PortType, in.AdminArea, in.Latitude, in.Longitude, in.HasCoordinates, in.IsFavorite, in.OperatorID, in.OperatorName, in.Version))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Port{}, apierr.Conflict("MD_PORT_VERSION_CONFLICT", "港口资料已被他人修改，请刷新后重试")
 	}
@@ -291,7 +324,7 @@ func (s *Service) SetPortStatus(ctx context.Context, tenantID, id int64, status 
 		return Port{}, err
 	}
 	defer tx.Rollback(ctx)
-	p, err := scanPort(tx.QueryRow(ctx, `UPDATE ports SET status=$3,version=version+1,updated_at=now(),updated_by=$4,updated_by_name=$5 WHERE tenant_id=$1 AND id=$2 AND version=$6 RETURNING id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,status,remark,version`, tenantID, id, status, opID, opName, version))
+	p, err := scanPort(tx.QueryRow(ctx, `UPDATE ports SET status=$3,version=version+1,updated_at=now(),updated_by=$4,updated_by_name=$5 WHERE tenant_id=$1 AND id=$2 AND version=$6 RETURNING id,unlocode,name_zh,name_en,country_code,city,timezone,aliases,status,remark,version,port_type,admin_area,latitude,longitude,has_coordinates,is_favorite`, tenantID, id, status, opID, opName, version))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Port{}, apierr.Conflict("MD_PORT_VERSION_CONFLICT", "港口资料已被他人修改，请刷新后重试")
 	}

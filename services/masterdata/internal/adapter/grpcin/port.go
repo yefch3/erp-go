@@ -11,14 +11,14 @@ import (
 )
 
 func portToProto(p app.Port) *mdv1.Port {
-	return &mdv1.Port{Id: p.ID, Unlocode: p.UNLOCODE, NameZh: p.NameZH, NameEn: p.NameEN, CountryCode: p.CountryCode, City: p.City, Timezone: p.Timezone, Aliases: p.Aliases, Status: p.Status, Remark: p.Remark, Version: p.Version}
+	return &mdv1.Port{Id: p.ID, Unlocode: p.UNLOCODE, NameZh: p.NameZH, NameEn: p.NameEN, CountryCode: p.CountryCode, City: p.City, Timezone: p.Timezone, Aliases: p.Aliases, Status: p.Status, Remark: p.Remark, Version: p.Version, PortType: p.PortType, AdminArea: p.AdminArea, Latitude: p.Latitude, Longitude: p.Longitude, HasCoordinates: p.HasCoordinates, IsFavorite: p.IsFavorite}
 }
 
 func portInput(p *mdv1.Port, ctx context.Context) app.PortInput {
 	if p == nil {
 		p = &mdv1.Port{}
 	}
-	return app.PortInput{Port: app.Port{ID: p.GetId(), UNLOCODE: p.GetUnlocode(), NameZH: p.GetNameZh(), NameEN: p.GetNameEn(), CountryCode: p.GetCountryCode(), City: p.GetCity(), Timezone: p.GetTimezone(), Aliases: p.GetAliases(), Status: p.GetStatus(), Remark: p.GetRemark(), Version: p.GetVersion()}, OperatorID: operatorID(ctx), OperatorName: operatorName(ctx)}
+	return app.PortInput{Port: app.Port{ID: p.GetId(), UNLOCODE: p.GetUnlocode(), NameZH: p.GetNameZh(), NameEN: p.GetNameEn(), CountryCode: p.GetCountryCode(), City: p.GetCity(), Timezone: p.GetTimezone(), Aliases: p.GetAliases(), Status: p.GetStatus(), Remark: p.GetRemark(), Version: p.GetVersion(), PortType: p.GetPortType(), AdminArea: p.GetAdminArea(), Latitude: p.GetLatitude(), Longitude: p.GetLongitude(), HasCoordinates: p.GetHasCoordinates(), IsFavorite: p.GetIsFavorite()}, OperatorID: operatorID(ctx), OperatorName: operatorName(ctx)}
 }
 
 func (h *Handler) CreatePort(ctx context.Context, req *mdv1.CreatePortRequest) (*mdv1.CreatePortResponse, error) {
@@ -72,7 +72,7 @@ func (h *Handler) ListPortCountries(ctx context.Context, req *mdv1.ListPortCount
 func (h *Handler) ImportPorts(ctx context.Context, req *mdv1.ImportPortsRequest) (*mdv1.ImportPortsResponse, error) {
 	rows := make([]app.PortImportRow, len(req.GetRows()))
 	for i, row := range req.GetRows() {
-		rows[i] = app.PortImportRow{RowNumber: row.GetRowNumber(), PortInput: app.PortInput{Port: app.Port{UNLOCODE: row.GetUnlocode(), NameZH: row.GetNameZh(), NameEN: row.GetNameEn(), CountryCode: row.GetCountryCode(), City: row.GetCity(), Timezone: row.GetTimezone(), Aliases: row.GetAliases(), Remark: row.GetRemark()}}}
+		rows[i] = app.PortImportRow{RowNumber: row.GetRowNumber(), ProfileFieldsPresent: row.GetProfileFieldsPresent(), PortInput: app.PortInput{Port: app.Port{UNLOCODE: row.GetUnlocode(), NameZH: row.GetNameZh(), NameEN: row.GetNameEn(), CountryCode: row.GetCountryCode(), City: row.GetCity(), Timezone: row.GetTimezone(), Aliases: row.GetAliases(), Remark: row.GetRemark(), PortType: row.GetPortType(), AdminArea: row.GetAdminArea(), Latitude: row.GetLatitude(), Longitude: row.GetLongitude(), HasCoordinates: row.GetHasCoordinates(), IsFavorite: row.GetIsFavorite()}}}
 	}
 	result, err := h.svc.ImportPorts(ctx, grpcx.TenantID(ctx), rows, req.GetConfirm(), operatorID(ctx), operatorName(ctx))
 	if err != nil {

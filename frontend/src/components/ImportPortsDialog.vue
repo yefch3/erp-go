@@ -38,7 +38,7 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { post } from '../api'
 
-interface Row { rowNumber:number; unlocode:string; nameZh:string; nameEn:string; countryCode:string; city:string; timezone:string; aliases:string[]; remark:string }
+interface Row { rowNumber:number; unlocode:string; nameZh:string; nameEn:string; countryCode:string; city:string; timezone:string; aliases:string[]; remark:string; portType:string; adminArea:string; latitude:number; longitude:number; hasCoordinates:boolean; isFavorite:boolean; profileFieldsPresent:boolean }
 interface Result { createCount:number; updateCount:number; skipCount:number; issues:{rowNumber:number;code:string;message:string}[] }
 const props=defineProps<{modelValue:boolean}>();const emit=defineEmits<{ 'update:modelValue':[boolean]; imported:[] }>()
 const {t}=useI18n();const rows=ref<Row[]>([]);const preview=ref<Result>();const checking=ref(false);const saving=ref(false);const fileInput=ref<HTMLInputElement>()
@@ -56,12 +56,14 @@ async function readFile(event:Event){
   const lines=(await file.text()).replace(/^\uFEFF/,'').split(/\r?\n/).filter(line=>line.trim())
   const header=parseCSVLine(lines.shift()??'').map(value=>value.toLowerCase().replace(/[^a-z]/g,''))
   const at=(values:string[],name:string)=>values[header.indexOf(name)]??''
-  rows.value=lines.map((line,index)=>{const values=parseCSVLine(line);return{rowNumber:index+2,unlocode:at(values,'unlocode').toUpperCase(),nameZh:at(values,'namezh'),nameEn:at(values,'nameen'),countryCode:at(values,'countrycode').toUpperCase(),city:at(values,'city'),timezone:at(values,'timezone'),aliases:at(values,'aliases').split('|').map(v=>v.trim()).filter(Boolean),remark:at(values,'remark')}})
+  const asBool=(value:string)=>['1','true','yes','y','是'].includes(value.trim().toLowerCase())
+  const profileFieldsPresent=['porttype','adminarea','latitude','longitude','isfavorite'].some(name=>header.includes(name))
+  rows.value=lines.map((line,index)=>{const values=parseCSVLine(line);const latitudeText=at(values,'latitude');const longitudeText=at(values,'longitude');const hasCoordinates=latitudeText!==''||longitudeText!=='';const latitude=hasCoordinates?Number(latitudeText):0;const longitude=hasCoordinates?Number(longitudeText):0;return{rowNumber:index+2,unlocode:at(values,'unlocode').toUpperCase(),nameZh:at(values,'namezh'),nameEn:at(values,'nameen'),countryCode:at(values,'countrycode').toUpperCase(),city:at(values,'city'),timezone:at(values,'timezone'),aliases:at(values,'aliases').split('|').map(v=>v.trim()).filter(Boolean),remark:at(values,'remark'),portType:at(values,'porttype')||'SEAPORT',adminArea:at(values,'adminarea'),latitude:Number.isFinite(latitude)?latitude:999,longitude:Number.isFinite(longitude)?longitude:999,hasCoordinates,isFavorite:asBool(at(values,'isfavorite')),profileFieldsPresent}})
   if(!header.includes('unlocode')||!header.includes('namezh')||!header.includes('nameen')||!header.includes('countrycode')||!header.includes('timezone')){rows.value=[];ElMessage.error(t('ports.importColumnsInvalid'))}
 }
 async function check(){checking.value=true;try{preview.value=await post<Result>('/ports/import',{rows:rows.value,confirm:false})}finally{checking.value=false}}
 async function commit(){saving.value=true;try{const result=await post<Result>('/ports/import',{rows:rows.value,confirm:true});ElMessage.success(t('ports.imported',{create:result.createCount,update:result.updateCount,skip:result.skipCount}));emit('imported');open.value=false}finally{saving.value=false}}
-function downloadTemplate(){const content='UNLOCODE,NameZH,NameEN,CountryCode,City,Timezone,Aliases,Remark\nCNSHA,上海港,Shanghai,CN,上海,Asia/Shanghai,Port of Shanghai|上海,\n';const url=URL.createObjectURL(new Blob(['\uFEFF'+content],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='port-import-template.csv';a.click();URL.revokeObjectURL(url)}
+function downloadTemplate(){const content='UNLOCODE,NameZH,NameEN,CountryCode,City,Timezone,Aliases,Remark,PortType,AdminArea,Latitude,Longitude,IsFavorite\nCNSHA,上海港,Shanghai,CN,上海,Asia/Shanghai,Port of Shanghai|上海,,SEAPORT,上海市,31.2304,121.4737,true\n';const url=URL.createObjectURL(new Blob(['\uFEFF'+content],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='port-import-template.csv';a.click();URL.revokeObjectURL(url)}
 function reset(){rows.value=[];preview.value=undefined;if(fileInput.value)fileInput.value.value=''}
 </script>
 

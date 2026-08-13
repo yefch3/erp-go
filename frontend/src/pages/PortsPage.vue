@@ -2,17 +2,13 @@
   <div>
     <div class="page-head">
       <div><h2>{{ t('ports.title') }}</h2><p>{{ t('ports.subtitle') }}</p></div>
-      <div v-if="canWrite && activeCategory==='PORT'"><el-button @click="importOpen=true">{{ t('ports.bulkImport') }}</el-button><el-button type="primary" @click="openCreate">{{ t('ports.create') }}</el-button></div>
+      <div v-if="canWrite"><el-button @click="importOpen=true">{{ t('ports.bulkImport') }}</el-button><el-button type="primary" @click="openCreate">{{ t('ports.create') }}</el-button></div>
     </div>
-
-    <div class="mobile-category"><el-select v-model="activeCategory"><el-option :label="t('ports.portCategory')" value="PORT"/><el-option :label="t('ports.vesselCategory')" value="VESSEL"/></el-select></div>
 
     <div class="port-workspace" :class="{collapsed:categoryCollapsed}">
       <el-card class="category-panel" shadow="never">
-        <div class="category-title"><span v-if="!categoryCollapsed">{{ t('ports.categories') }}</span><button type="button" @click="categoryCollapsed=!categoryCollapsed">{{categoryCollapsed?'›':'‹'}}</button></div>
-        <button class="category-item" :class="{active:activeCategory==='PORT'}" type="button" @click="activeCategory='PORT'">{{ categoryCollapsed?t('ports.portShort'):t('ports.portCategory') }}</button>
-        <button class="category-item" :class="{active:activeCategory==='VESSEL'}" type="button" @click="activeCategory='VESSEL'">{{ categoryCollapsed?t('ports.vesselShort'):t('ports.vesselCategory') }}</button>
-        <template v-if="activeCategory==='PORT'">
+        <div class="category-title"><span v-if="!categoryCollapsed">{{ t('ports.portCategory') }}</span><button type="button" @click="categoryCollapsed=!categoryCollapsed">{{categoryCollapsed?'›':'‹'}}</button></div>
+        <div class="category-content">
           <div v-if="!categoryCollapsed" class="category-subtitle">{{ t('ports.countryRegion') }}</div>
           <el-select v-if="!categoryCollapsed" v-model="countryCode" filterable clearable :placeholder="t('ports.allCountries')" @change="reload">
             <el-option v-for="c in countries" :key="c.code" :value="c.code" :label="`${c.name} (${c.code})`" />
@@ -20,10 +16,10 @@
           <button class="country-item" :class="{active:countryCode===''}" type="button" @click="selectCountry('')"><span>{{categoryCollapsed?t('ports.allShort'):t('ports.allCountries')}}</span><strong v-if="!categoryCollapsed">{{countryTotal}}</strong></button>
           <button v-for="item in countryCounts" :key="item.countryCode" class="country-item" :class="{active:countryCode===item.countryCode}" type="button" @click="selectCountry(item.countryCode)"><span>{{categoryCollapsed?item.countryCode:countryName(item.countryCode,locale)}}</span><strong v-if="!categoryCollapsed">{{item.portCount}}</strong></button>
           <div v-if="!categoryCollapsed" class="category-help">{{ t('ports.countryHelp') }}</div>
-        </template>
+        </div>
       </el-card>
 
-      <el-card v-if="activeCategory==='PORT'" class="port-list" shadow="never">
+      <el-card class="port-list" shadow="never">
         <div class="filters">
           <el-input v-model="keyword" clearable :placeholder="t('ports.searchPlaceholder')" @keyup.enter="reload" @clear="reload" />
           <el-select v-model="status" @change="reloadAll"><el-option :label="t('ports.activeOnly')" value="ACTIVE"/><el-option :label="t('ports.allStatuses')" value="ALL"/><el-option :label="t('ports.inactiveOnly')" value="INACTIVE"/></el-select>
@@ -31,26 +27,30 @@
         </div>
         <el-table :data="ports" v-loading="loading">
           <el-table-column prop="unlocode" label="UN/LOCODE" width="130" />
-          <el-table-column :label="t('ports.portName')" min-width="220"><template #default="{row}"><strong>{{ displayPortName(row) }}</strong><div class="secondary">{{ secondaryPortName(row) }}</div></template></el-table-column>
+          <el-table-column :label="t('ports.portName')" min-width="240"><template #default="{row}"><div class="port-name"><button v-if="canWrite" type="button" class="favorite-button" :class="{active:row.isFavorite}" :title="row.isFavorite?t('ports.removeFavorite'):t('ports.addFavorite')" @click.stop="toggleFavorite(row)">{{row.isFavorite?'★':'☆'}}</button><span v-else-if="row.isFavorite" class="favorite">★</span><strong>{{ displayPortName(row) }}</strong><el-tag size="small" effect="plain">{{ portTypeLabel(row.portType) }}</el-tag></div><div class="secondary">{{ secondaryPortName(row) }}</div></template></el-table-column>
           <el-table-column :label="t('ports.country')" width="150"><template #default="{row}">{{ countryName(row.countryCode, locale) }} · {{row.countryCode}}</template></el-table-column>
-          <el-table-column prop="city" :label="t('ports.city')" width="150" />
+          <el-table-column :label="t('ports.location')" width="180"><template #default="{row}">{{row.city||'—'}}<div v-if="row.adminArea" class="secondary">{{row.adminArea}}</div></template></el-table-column>
           <el-table-column prop="timezone" :label="t('ports.timezone')" width="180" />
           <el-table-column :label="t('common.status')" width="90"><template #default="{row}"><el-tag :type="row.status==='ACTIVE'?'success':'info'">{{row.status==='ACTIVE'?t('common.active'):t('common.inactive')}}</el-tag></template></el-table-column>
           <el-table-column v-if="canWrite" :label="t('common.actions')" width="150" fixed="right"><template #default="{row}"><el-button link type="primary" @click="openEdit(row)">{{t('common.edit')}}</el-button><el-button link :type="row.status==='ACTIVE'?'danger':'success'" @click="toggleStatus(row)">{{row.status==='ACTIVE'?t('common.deactivate'):t('common.activate')}}</el-button></template></el-table-column>
         </el-table>
         <el-pagination class="pager" layout="total, prev, pager, next" :total="total" :page-size="pageSize" :current-page="page" @current-change="changePage" />
       </el-card>
-      <el-card v-else class="vessel-placeholder" shadow="never"><el-empty :description="t('ports.vesselDeferred')"/><p>{{ t('ports.vesselBoundary') }}</p></el-card>
     </div>
 
     <el-dialog v-model="dialogOpen" :title="form.id?t('ports.edit'):t('ports.create')" width="640px">
       <el-form label-width="140px">
-        <el-form-item :label="t('ports.countryRegion')" required><el-select v-model="form.countryCode" filterable style="width:100%" @change="syncCountry"><el-option v-for="c in countries" :key="c.code" :value="c.code" :label="`${c.name} (${c.code})`"/></el-select></el-form-item>
-        <el-form-item :label="t('ports.unlocode')" required><el-select v-model="form.unlocode" filterable allow-create default-first-option style="width:100%" :placeholder="t('ports.unlocodePlaceholder')" @change="applyPortCode"><el-option v-for="port in codeOptions" :key="port.code" :value="port.code" :label="`${port.code} — ${port.nameZh} / ${port.nameEn}`"/></el-select><div class="hint">{{ t('ports.unlocodeHelp') }}</div></el-form-item>
-        <el-form-item :label="t('ports.nameZh')" required><el-input v-model="form.nameZh" :placeholder="t('ports.nameZhPlaceholder')" /></el-form-item>
-        <el-form-item :label="t('ports.nameEn')" required><el-input v-model="form.nameEn" :placeholder="t('ports.nameEnPlaceholder')" /></el-form-item>
+        <el-form-item :label="t('ports.countryRegion')" required><el-select v-model="form.countryCode" filterable style="width:100%" :disabled="Boolean(form.id)" @change="syncCountry"><el-option v-for="c in countries" :key="c.code" :value="c.code" :label="`${c.name} (${c.code})`"/></el-select></el-form-item>
+        <el-form-item :label="t('ports.unlocode')" required><el-select v-model="form.unlocode" filterable allow-create default-first-option style="width:100%" :disabled="Boolean(form.id)" :placeholder="t('ports.unlocodePlaceholder')" @change="applyPortCode"><el-option v-for="port in codeOptions" :key="port.code" :value="port.code" :label="`${port.code} — ${port.nameZh} / ${port.nameEn}`"/></el-select><div class="hint">{{ form.id?t('ports.unlocodeImmutable'):t('ports.unlocodeHelp') }}</div></el-form-item>
+        <el-form-item :label="t('ports.portType')" required><el-select v-model="form.portType" style="width:100%"><el-option v-for="type in portTypes" :key="type" :value="type" :label="portTypeLabel(type)"/></el-select></el-form-item>
+        <el-form-item :label="t('ports.nameZh')"><el-input v-model="form.nameZh" :placeholder="t('ports.nameZhPlaceholder')" /></el-form-item>
+        <el-form-item :label="t('ports.nameEn')"><el-input v-model="form.nameEn" :placeholder="t('ports.nameEnPlaceholder')" /><div class="hint">{{t('ports.nameHelp')}}</div></el-form-item>
         <el-form-item :label="t('ports.city')"><el-select v-model="form.city" filterable allow-create default-first-option clearable style="width:100%" :placeholder="t('ports.cityPlaceholder')"><el-option v-for="city in cityOptions" :key="city" :label="city" :value="city"/></el-select></el-form-item>
+        <el-form-item :label="t('ports.adminArea')"><el-input v-model="form.adminArea" :placeholder="t('ports.adminAreaPlaceholder')" /></el-form-item>
         <el-form-item :label="t('ports.timezone')" required><el-select v-model="form.timezone" filterable style="width:100%" :placeholder="t('ports.timezonePlaceholder')"><el-option v-for="zone in timezoneOptions" :key="zone" :label="zone" :value="zone"/></el-select><div class="hint">{{ t('ports.timezoneHelp') }}</div></el-form-item>
+        <el-form-item :label="t('ports.aliases')"><el-select v-model="form.aliases" multiple filterable allow-create default-first-option style="width:100%" :placeholder="t('ports.aliasesPlaceholder')" /></el-form-item>
+        <el-form-item :label="t('ports.coordinates')"><div class="coordinate-row"><el-input-number v-model="form.latitude" :min="-90" :max="90" :precision="6" :placeholder="t('ports.latitude')"/><el-input-number v-model="form.longitude" :min="-180" :max="180" :precision="6" :placeholder="t('ports.longitude')"/></div><div class="hint">{{t('ports.coordinatesHelp')}}</div></el-form-item>
+        <el-form-item :label="t('ports.favorite')"><el-switch v-model="form.isFavorite"/><span class="switch-help">{{t('ports.favoriteHelp')}}</span></el-form-item>
         <el-form-item :label="t('customers.remark')"><el-input v-model="form.remark" type="textarea" :rows="3" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialogOpen=false">{{t('common.cancel')}}</el-button><el-button type="primary" :loading="saving" @click="save">{{t('common.save')}}</el-button></template>
@@ -69,16 +69,16 @@ import { commonPortOptions, defaultPortTimezone, portCityOptions, portTimezoneOp
 import { useAuthStore } from '../stores/auth'
 import ImportPortsDialog from '../components/ImportPortsDialog.vue'
 
-interface Port { id:number; unlocode:string; nameZh:string; nameEn:string; countryCode:string; city:string; timezone:string; aliases:string[]; status:string; remark:string; version:number }
+interface Port { id:number; unlocode:string; nameZh:string; nameEn:string; countryCode:string; city:string; timezone:string; aliases:string[]; status:string; remark:string; version:number; portType:string; adminArea:string; latitude:number|null; longitude:number|null; hasCoordinates:boolean; isFavorite:boolean }
 const auth=useAuthStore(); const {locale,t}=useI18n(); const countries=computed(()=>countryOptions(String(locale.value))); const canWrite=computed(()=>auth.can('masterdata:port:write'))
 const ports=ref<Port[]>([]), total=ref(0), loading=ref(false), saving=ref(false), dialogOpen=ref(false)
 const countryCounts=ref<{countryCode:string;portCount:number}[]>([])
 const countryTotal=computed(()=>countryCounts.value.reduce((sum,item)=>sum+Number(item.portCount),0))
 const importOpen=ref(false)
-const activeCategory=ref<'PORT'|'VESSEL'>('PORT')
 const categoryCollapsed=ref(false)
 const keyword=ref(''), countryCode=ref(''), status=ref('ACTIVE'), page=ref(1), pageSize=20
-const empty=():Port=>({id:0,unlocode:'',nameZh:'',nameEn:'',countryCode:'',city:'',timezone:'',aliases:[],status:'ACTIVE',remark:'',version:0})
+const empty=():Port=>({id:0,unlocode:'',nameZh:'',nameEn:'',countryCode:'',city:'',timezone:'',aliases:[],status:'ACTIVE',remark:'',version:0,portType:'SEAPORT',adminArea:'',latitude:null,longitude:null,hasCoordinates:false,isFavorite:false})
+const portTypes=['SEAPORT','RIVER_PORT','DRY_PORT','AIRPORT','OTHER']
 const form=reactive<Port>(empty())
 const codeOptions=computed(()=>commonPortOptions(form.countryCode))
 const cityOptions=computed(()=>portCityOptions(form.countryCode)); const timezoneOptions=computed(()=>portTimezoneOptions(form.countryCode))
@@ -87,13 +87,14 @@ async function loadCountries(){const data=await get<{countries:{countryCode:stri
 function reload(){page.value=1;load()} function changePage(p:number){page.value=p;load()}
 function reloadAll(){reload();loadCountries()}
 function selectCountry(code:string){countryCode.value=code;reload()}
-function openCreate(){Object.assign(form,empty());dialogOpen.value=true} function openEdit(p:Port){Object.assign(form,p,{aliases:[...(p.aliases??[])]});dialogOpen.value=true}
-function displayPortName(p:Port){return String(locale.value).startsWith('zh')?p.nameZh:p.nameEn}
-function secondaryPortName(p:Port){return String(locale.value).startsWith('zh')?p.nameEn:p.nameZh}
+function openCreate(){Object.assign(form,empty());dialogOpen.value=true} function openEdit(p:Port){Object.assign(form,p,{aliases:[...(p.aliases??[])],latitude:p.hasCoordinates?p.latitude:null,longitude:p.hasCoordinates?p.longitude:null});dialogOpen.value=true}
+function displayPortName(p:Port){return (String(locale.value).startsWith('zh')?p.nameZh:p.nameEn)||p.nameZh||p.nameEn||p.unlocode}
+function secondaryPortName(p:Port){const secondary=String(locale.value).startsWith('zh')?p.nameEn:p.nameZh;return secondary&&secondary!==displayPortName(p)?secondary:''}
+function portTypeLabel(type:string){return t(`ports.types.${type||'SEAPORT'}`)}
 function applyPortCode(value:string){form.unlocode=String(value).toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,5);if(form.unlocode.length>=2)form.countryCode=form.unlocode.slice(0,2);const known=commonPortOptions(form.countryCode).find(p=>p.code===form.unlocode);if(known){if(!form.nameZh)form.nameZh=known.nameZh;if(!form.nameEn)form.nameEn=known.nameEn;if(!form.city)form.city=known.city;if(!form.timezone)form.timezone=known.timezone}}
 function syncCountry(){if(form.unlocode.length>=2)form.unlocode=form.countryCode+form.unlocode.slice(2);if(!form.timezone)form.timezone=defaultPortTimezone(form.countryCode)}
 async function save(){
-  if(!form.countryCode||form.unlocode.length!==5||!form.nameZh||!form.nameEn||!form.timezone){
+  if(!form.countryCode||form.unlocode.length!==5||(!form.nameZh&&!form.nameEn)||!form.timezone||!form.portType){
     ElMessage.warning(t('ports.required'))
     return
   }
@@ -112,7 +113,8 @@ async function save(){
         return
       }
     }
-    const body={port:{...form}}
+    const hasCoordinates=form.latitude!==null&&form.longitude!==null
+    const body={port:{...form,latitude:form.latitude??0,longitude:form.longitude??0,hasCoordinates}}
     form.id?await put(`/ports/${form.id}`,body,quietErrors):await post('/ports',body,quietErrors)
     dialogOpen.value=false
     ElMessage.success(t('ports.saved'))
@@ -138,9 +140,19 @@ async function toggleStatus(p:Port){
     if(env?.code==='MD_PORT_VERSION_CONFLICT')reloadAll()
   }
 }
+async function toggleFavorite(p:Port){
+  try{
+    await put(`/ports/${p.id}`,{port:{...p,isFavorite:!p.isFavorite,latitude:p.latitude??0,longitude:p.longitude??0}},quietErrors)
+    ElMessage.success(t(p.isFavorite?'ports.favoriteRemoved':'ports.favoriteAdded'))
+    reloadAll()
+  }catch(error){
+    const env=error as Envelope<unknown>
+    ElMessage.error(env?.message||t('common.requestFailed'))
+  }
+}
 load();loadCountries()
 </script>
 
 <style scoped>
-.page-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px}.page-head h2{margin:0 0 5px}.page-head p,.secondary,.hint,.category-help,.vessel-placeholder p{color:#8b95a5}.page-head p{margin:0}.port-workspace{display:grid;grid-template-columns:230px minmax(0,1fr);gap:18px}.port-workspace.collapsed{grid-template-columns:72px minmax(0,1fr)}.category-panel{background:linear-gradient(180deg,#f3f8ff,#fff)}.category-title{font-weight:700;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}.category-title button{border:0;border-radius:6px;background:var(--el-fill-color);cursor:pointer;color:var(--el-text-color-secondary);font-size:20px}.category-item,.country-item{display:flex;width:100%;border:0;background:transparent;text-align:left;padding:10px 12px;border-radius:8px;font-size:15px;cursor:pointer;justify-content:space-between}.category-item.active,.country-item.active{background:#e8f2ff;color:#409eff;font-weight:700}.country-item{font-size:13px;margin-top:3px}.country-item strong{background:#eef1f5;border-radius:12px;min-width:30px;text-align:center}.category-subtitle{font-size:13px;font-weight:700;margin:18px 0 8px}.category-help{font-size:12px;line-height:1.7;margin-top:14px}.filters{display:flex;gap:12px;margin-bottom:16px}.filters .el-input{max-width:330px}.filters .el-select{width:140px}.secondary{font-size:12px;margin-top:3px}.pager{justify-content:flex-end;margin-top:16px}.hint{font-size:12px;margin-top:5px}.vessel-placeholder{text-align:center}.mobile-category{display:none;margin-bottom:12px}@media(max-width:850px){.port-workspace{grid-template-columns:1fr}.category-panel{display:none}.mobile-category{display:block}.filters{flex-wrap:wrap}}
+.page-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px}.page-head h2{margin:0 0 5px}.page-head p,.secondary,.hint,.category-help,.vessel-placeholder p{color:#8b95a5}.page-head p{margin:0}.port-workspace{display:grid;grid-template-columns:230px minmax(0,1fr);gap:18px}.port-workspace.collapsed{grid-template-columns:72px minmax(0,1fr)}.category-panel{background:linear-gradient(180deg,#f3f8ff,#fff)}.category-title{font-weight:700;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}.category-title button{border:0;border-radius:6px;background:var(--el-fill-color);cursor:pointer;color:var(--el-text-color-secondary);font-size:20px}.category-item,.country-item{display:flex;width:100%;border:0;background:transparent;text-align:left;padding:10px 12px;border-radius:8px;font-size:15px;cursor:pointer;justify-content:space-between}.category-item.active,.country-item.active{background:#e8f2ff;color:#409eff;font-weight:700}.country-item{font-size:13px;margin-top:3px}.country-item strong{background:#eef1f5;border-radius:12px;min-width:30px;text-align:center}.category-subtitle{font-size:13px;font-weight:700;margin:18px 0 8px}.category-help{font-size:12px;line-height:1.7;margin-top:14px}.filters{display:flex;gap:12px;margin-bottom:16px}.filters .el-input{max-width:330px}.filters .el-select{width:140px}.secondary{font-size:12px;margin-top:3px}.pager{justify-content:flex-end;margin-top:16px}.hint{font-size:12px;margin-top:5px}.vessel-placeholder{text-align:center}.mobile-category{display:none;margin-bottom:12px}.port-name{display:flex;align-items:center;gap:7px}.favorite,.favorite-button.active{color:#f5a623}.favorite{font-size:17px}.favorite-button{border:0;background:transparent;padding:0;cursor:pointer;color:#a8b0bc;font-size:19px;line-height:1}.favorite-button:hover{color:#f5a623}.coordinate-row{display:flex;gap:12px}.switch-help{margin-left:10px;color:#8b95a5;font-size:12px}@media(max-width:850px){.port-workspace{grid-template-columns:1fr}.category-panel{display:none}.mobile-category{display:block}.filters{flex-wrap:wrap}.coordinate-row{flex-wrap:wrap}}
 </style>

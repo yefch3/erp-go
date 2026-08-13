@@ -22,8 +22,8 @@
         </el-form-item></el-col>
         <el-col :span="12"><el-form-item :label="t('shipping.vessel')" prop="vesselName"><el-input v-model="form.vesselName" /></el-form-item></el-col>
         <el-col :span="12"><el-form-item :label="t('shipping.voyage')" prop="voyageNo"><el-input v-model="form.voyageNo" /></el-form-item></el-col>
-        <el-col v-if="!schedule" :span="12"><el-form-item :label="t('shipping.loadingPort')" prop="loadingPortId"><el-select v-model="form.loadingPortId" filterable style="width:100%" @change="applyPort('loading')"><el-option v-for="port in ports" :key="port.id" :value="port.id" :label="`${port.unlocode} · ${portLabel(port)}`" /></el-select></el-form-item></el-col>
-        <el-col v-if="!schedule" :span="12"><el-form-item :label="t('shipping.dischargePort')" prop="dischargePortId"><el-select v-model="form.dischargePortId" filterable style="width:100%" @change="applyPort('discharge')"><el-option v-for="port in ports" :key="port.id" :value="port.id" :label="`${port.unlocode} · ${portLabel(port)}`" /></el-select></el-form-item></el-col>
+        <el-col v-if="!schedule" :span="12"><el-form-item :label="t('shipping.loadingPort')" prop="loadingPortId"><el-select v-model="form.loadingPortId" filterable style="width:100%" @change="applyPort('loading')"><el-option v-for="port in ports" :key="port.id" :value="port.id" :label="portOptionLabel(port)" /></el-select></el-form-item></el-col>
+        <el-col v-if="!schedule" :span="12"><el-form-item :label="t('shipping.dischargePort')" prop="dischargePortId"><el-select v-model="form.dischargePortId" filterable style="width:100%" @change="applyPort('discharge')"><el-option v-for="port in ports" :key="port.id" :value="port.id" :label="portOptionLabel(port)" /></el-select></el-form-item></el-col>
         <el-col v-if="!schedule" :span="12"><el-form-item label="ETD" prop="etd"><el-date-picker v-model="form.etd" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
         <el-col v-if="!schedule" :span="12"><el-form-item label="ETA" prop="eta"><el-date-picker v-model="form.eta" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
         <el-col v-if="datesChanged" :span="24"><el-form-item :label="t('shipping.dateReason')" prop="dateChangeReason"><el-input v-model="form.dateChangeReason" type="textarea" :rows="2" /></el-form-item></el-col>
@@ -70,7 +70,7 @@ const newReminderDay=ref(7)
 const employees=ref<{id:string;name:string}[]>([])
 const customers=ref<{id:string;name:string}[]>([])
 const carriers=ref<{id:string;name:string}[]>([])
-interface PortOption {id:string;unlocode:string;nameZh:string;nameEn:string;timezone:string}
+interface PortOption {id:string;unlocode:string;nameZh:string;nameEn:string;timezone:string;countryCode:string;isFavorite:boolean}
 const ports=ref<PortOption[]>([])
 const open=computed({get:()=>props.modelValue,set:(v)=>emit('update:modelValue',v)})
 const empty=()=>({contractNo:'',customerId:'',customerName:'',carrierId:'',carrierForwarder:'',vesselName:'',voyageNo:'',portOfLoading:'',portOfDischarge:'',loadingPortId:'',loadingPortCode:'',loadingPortTimezone:'',dischargePortId:'',dischargePortCode:'',dischargePortTimezone:'',etd:'',eta:'',responsibleEmployeeId:auth.employeeId,responsibleName:auth.employeeName,remark:'',dateChangeReason:'',reminderDays:[7] as number[]})
@@ -110,6 +110,7 @@ watch(()=>props.modelValue,async visible=>{
 })
 
 function portLabel(port:PortOption){return locale.value==='zh'?(port.nameZh||port.nameEn):(port.nameEn||port.nameZh)}
+function portOptionLabel(port:PortOption){return `${port.isFavorite?'★ ':''}${port.unlocode} · ${portLabel(port)} · ${port.countryCode}`}
 function applyPort(kind:'loading'|'discharge'){
   const id=kind==='loading'?form.loadingPortId:form.dischargePortId
   const port=ports.value.find(item=>item.id===id)

@@ -112,6 +112,12 @@ message Port {
   string status = 9;
   string remark = 10;
   int32 version = 11;
+  string port_type = 12;
+  string admin_area = 13;
+  double latitude = 14;
+  double longitude = 15;
+  bool has_coordinates = 16;
+  bool is_favorite = 17;
 }
 
 message CreatePortRequest { Port port = 1; }
@@ -145,6 +151,13 @@ message PortImportRow {
   string timezone = 7;
   repeated string aliases = 8;
   string remark = 9;
+  string port_type = 10;
+  string admin_area = 11;
+  double latitude = 12;
+  double longitude = 13;
+  bool has_coordinates = 14;
+  bool is_favorite = 15;
+  bool profile_fields_present = 16;
 }
 message PortImportIssue { int32 row_number = 1; string code = 2; string message = 3; }
 message ImportPortsRequest { repeated PortImportRow rows = 1; bool confirm = 2; }

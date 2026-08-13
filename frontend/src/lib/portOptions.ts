@@ -88,7 +88,8 @@ const allTimezones: string[] = (() => {
 
 export function portTimezoneOptions(countryCode: string): string[] {
   const preferred = COUNTRY_TIMEZONES[countryCode] ?? []
-  return [...preferred, ...allTimezones.filter((zone) => !preferred.includes(zone))]
+  // 已知国家只展示该国时区，防止把中国港口误设成美国时区；未覆盖国家仍可从完整 IANA 列表选择。
+  return preferred.length > 0 ? preferred : allTimezones
 }
 
 export function defaultPortTimezone(countryCode: string): string {
