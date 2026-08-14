@@ -9,6 +9,36 @@ import (
 	"context"
 )
 
+const adoptInboundRawKey = `-- name: AdoptInboundRawKey :execrows
+UPDATE email_inbound
+SET raw_key = $1::varchar, raw_size = $2::bigint
+WHERE tenant_id = $3::bigint
+  AND id = $4::bigint
+  AND raw_key = ''
+`
+
+type AdoptInboundRawKeyParams struct {
+	RawKey   string
+	RawSize  int64
+	TenantID int64
+	ID       int64
+}
+
+// Claims a re-fetched original, but only for a row still missing one: a key
+// written by anything else in the meantime is not this pass's to overwrite.
+func (q *Queries) AdoptInboundRawKey(ctx context.Context, arg AdoptInboundRawKeyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, adoptInboundRawKey,
+		arg.RawKey,
+		arg.RawSize,
+		arg.TenantID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const clearInboundRawKey = `-- name: ClearInboundRawKey :execrows
 UPDATE email_inbound SET raw_key = '', raw_size = 0
 WHERE tenant_id = $1::bigint AND id = $2::bigint
@@ -303,6 +333,53 @@ func (q *Queries) ListInboundImages(ctx context.Context, arg ListInboundImagesPa
 	for rows.Next() {
 		var i ListInboundImagesRow
 		if err := rows.Scan(&i.SourceUrl, &i.ObjectKey, &i.ContentType); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInboundMissingRaw = `-- name: ListInboundMissingRaw :many
+SELECT id, owner_id, folder, message_id
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND raw_key = ''
+  AND message_id <> ''
+ORDER BY owner_id, folder, id
+`
+
+type ListInboundMissingRawRow struct {
+	ID        int64
+	OwnerID   int64
+	Folder    string
+	MessageID string
+}
+
+// Rows whose original was lost to the raw-key collision and might still be
+// on the mail host. Only rows carrying a Message-ID qualify: it is the
+// identifier the refetch searches by, and the one proof that what comes back
+// is this message rather than whatever inherited the UID since. The stored
+// imap_uid is deliberately not selected — trusting a UID across generations
+// is the mistake that lost these originals in the first place.
+func (q *Queries) ListInboundMissingRaw(ctx context.Context, tenantID int64) ([]ListInboundMissingRawRow, error) {
+	rows, err := q.db.Query(ctx, listInboundMissingRaw, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInboundMissingRawRow
+	for rows.Next() {
+		var i ListInboundMissingRawRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.Folder,
+			&i.MessageID,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

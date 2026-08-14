@@ -155,6 +155,31 @@ func (f *IMAP) FetchBelow(ctx context.Context, acct app.MailAccount, folder stri
 	return out, err
 }
 
+// FetchByUIDs retrieves specific messages whole. The refetch pass uses it to
+// bring back originals lost to the raw-key collision; the UIDs it is handed
+// come from a Message-ID search a moment earlier, so they are the folder's
+// current numbering rather than whatever generation a stored UID belongs to.
+func (f *IMAP) FetchByUIDs(ctx context.Context, acct app.MailAccount, folder string, uids []uint32) (out app.FetchResult, err error) {
+	if folder == "" || len(uids) == 0 {
+		return out, nil
+	}
+	c, err := f.borrow(acct)
+	if err != nil {
+		return out, err
+	}
+	// Released rather than logged out: the next command on this
+	// mailbox reuses it. A failed command discards it instead.
+	defer func() { f.release(acct, c, err) }()
+
+	mbox, err := c.Select(folder, true) // read-only: repair must not mark mail seen
+	if err != nil {
+		return out, fmt.Errorf("打开 %s 失败：%w", folder, err)
+	}
+	out.UIDValidity = mbox.UidValidity
+	out.Messages, err = f.fetchUIDs(c, uids)
+	return out, err
+}
+
 // SentFolder finds where the host keeps sent mail.
 func (f *IMAP) SentFolder(ctx context.Context, acct app.MailAccount) (string, error) {
 	return f.specialFolder(acct, imap.SentAttr,

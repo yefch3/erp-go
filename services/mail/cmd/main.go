@@ -200,6 +200,11 @@ func run(log *slog.Logger) error {
 			// The poller will not revisit them — it advances a UID watermark —
 			// so the archived MIME is the only way back.
 			svc.RunEmptyBodyRecovery(ctx, syncCfg)
+			// Last, and the only one that talks to the host: originals the
+			// collision destroyed are re-fetched, found by Message-ID. After
+			// the collision repair on purpose — a row must have been disowned
+			// before it is worth going back to the host for its original.
+			svc.RunRawOriginalRefetch(ctx, syncCfg)
 		}()
 	}
 
