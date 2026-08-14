@@ -745,9 +745,63 @@
       >
         {{ t('emails.createSourcingCase') }}
       </el-button>
+      <el-button
+        v-if="excelResult && auth.can('procurement:order:write')"
+        :loading="purchaseImportBusy"
+        @click="previewPurchaseOrderImport"
+      >
+        {{ t('emails.importPurchaseOrder') }}
+      </el-button>
       <el-button v-if="excelResult" type="primary" @click="downloadExcel">
         {{ t('emails.downloadExcel') }}
       </el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="purchaseImportOpen" :title="t('emails.purchaseImportTitle')" width="min(1200px, 94vw)">
+    <el-alert type="info" :closable="false" show-icon class="excel-import-hint">
+      {{ t('emails.purchaseImportHint') }}
+    </el-alert>
+    <el-form label-width="90px" class="purchase-import-form">
+      <el-form-item :label="t('emails.supplier')" required>
+        <el-select v-model="purchaseImportSupplier" filterable style="width: 340px">
+          <el-option
+            v-for="supplier in purchaseImportSuppliers"
+            :key="supplier.id"
+            :value="String(supplier.id)"
+            :label="`${supplier.code} · ${supplier.name}`"
+          />
+        </el-select>
+      </el-form-item>
+    </el-form>
+    <el-table :data="purchaseImportRows" size="small" border max-height="440px">
+      <el-table-column prop="rowNo" label="#" width="55" />
+      <el-table-column prop="product" :label="t('emails.product')" min-width="180" />
+      <el-table-column prop="quantity" :label="t('emails.quantity')" width="110" />
+      <el-table-column prop="unitPrice" :label="t('emails.unitPrice')" width="110" />
+      <el-table-column :label="t('emails.purchaseRequirement')" min-width="330">
+        <template #default="{ row }">
+          <el-select v-model="row.requirementId" clearable :placeholder="row.message || t('emails.chooseRequirement')" style="width: 100%">
+            <el-option
+              v-for="candidate in row.candidates"
+              :key="candidate.requirementId"
+              :value="String(candidate.requirementId)"
+              :label="`${candidate.contractNo || '—'} · ${candidate.productName} · ${candidate.requiredQty} ${candidate.uomCode}`"
+            />
+          </el-select>
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('common.status')" width="130">
+        <template #default="{ row }">
+          <el-tag :type="row.result === 'MATCHED' ? 'success' : row.result === 'MULTIPLE' ? 'warning' : 'danger'" effect="plain">
+            {{ t(`emails.importResults.${row.result}`) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+    </el-table>
+    <template #footer>
+      <el-button @click="purchaseImportOpen = false">{{ t('common.close') }}</el-button>
+      <el-button type="primary" disabled>{{ t('emails.importNextStep') }}</el-button>
     </template>
   </el-dialog>
 
@@ -2030,6 +2084,13 @@ const excelSheet = ref('')
 const excelAvailable = ref(false)
 const creatingSourcingCase = ref(false)
 const convertedExcelSource = ref<ExcelSource | null>(null)
+const purchaseImportOpen = ref(false)
+const purchaseImportBusy = ref(false)
+const purchaseImportSupplier = ref('')
+const purchaseImportSuppliers = ref<{ id: string; code: string; name: string }[]>([])
+interface PurchaseImportCandidate { requirementId: string; contractNo: string; productName: string; productCode: string; spec: string; uomCode: string; requiredQty: string; orderedQty: string; status: string }
+interface PurchaseImportRow { rowNo: number; product: string; quantity: string; unitPrice: string; candidates: PurchaseImportCandidate[]; requirementId: string; result: string; message?: string }
+const purchaseImportRows = ref<PurchaseImportRow[]>([])
 
 function positionExcelMenu(x: number, y: number, source: ExcelSource, disabledReason = '') {
   excelMenu.x = Math.max(8, Math.min(x, window.innerWidth - 210))
@@ -2148,6 +2209,36 @@ async function createSourcingCaseFromExcel() {
     router.push(`/sourcing-cases?case=${response.sourcingCase.id}`)
   } finally {
     creatingSourcingCase.value = false
+  }
+}
+
+async function previewPurchaseOrderImport() {
+  const sheet = excelResult.value?.sheets[0]
+  if (!sheet?.rows.length) return
+  if (Number(sheet.totalRows) > sheet.rows.length) {
+    ElMessage.warning(t('emails.sourcingPreviewIncomplete'))
+    return
+  }
+  const fieldByColumn: Record<string, string> = {
+    '产品': 'product', '材质/标准': 'materialStandard', '牌号/等级': 'grade',
+    '厚度': 'thickness', '宽度': 'width', '单位': 'quantityUnit', '数量': 'quantity', '单价': 'unitPrice',
+  }
+  const rows = sheet.rows.map((row, index) => {
+    const values: Record<string, string> = {}
+    sheet.columns.forEach((column, ci) => { const field = fieldByColumn[column]; if (field) values[field] = row.cells[ci] ?? '' })
+    return { rowNo: index + 2, ...values }
+  })
+  purchaseImportBusy.value = true
+  try {
+    const response = await post<{ rows: PurchaseImportRow[] }>('/purchase-orders/imports/preview', { rows })
+    purchaseImportRows.value = response.rows ?? []
+    if (!purchaseImportSuppliers.value.length) {
+      const suppliers = await get<{ suppliers: { id: string; code: string; name: string }[] }>('/suppliers', { page: 1, page_size: 200, status: 'ACTIVE' })
+      purchaseImportSuppliers.value = suppliers.suppliers ?? []
+    }
+    purchaseImportOpen.value = true
+  } finally {
+    purchaseImportBusy.value = false
   }
 }
 
