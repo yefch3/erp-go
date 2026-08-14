@@ -495,6 +495,12 @@ export default {
     quantity: 'Quantity', decision: 'Review', empty: 'No sourcing cases yet',
     statuses: { REVIEWING: 'Reviewing', SOURCING: 'Sourcing', QUOTES_RECEIVED: 'Quotes received', COSTING: 'Costing', CUSTOMER_QUOTE_CREATED: 'Customer quote created', CANCELLED: 'Cancelled' },
     decisions: { PENDING: 'Pending', CONFIRMED: 'Confirmed', NO_MATCH: 'No match', SKIPPED: 'Skipped' },
+    factoryRfqs: 'Factory RFQs', rfqNo: 'RFQ no.', supplier: 'Supplier', currency: 'Currency', responseDue: 'Response due', lineCount: 'Lines',
+    createFactoryRfq: 'Create factory RFQ', contactEmail: 'Supplier email', supplierRequired: 'Choose a supplier', rfqCreated: 'Factory RFQ created',
+    enterQuote: 'Enter quote', quoteComparison: 'Quote comparison', sourceLine: 'Inquiry line', unitPrice: 'Unit price', amount: 'Amount', delivery: 'Delivery', paymentTerms: 'Payment terms',
+    quotedAt: 'Quoted on', validUntil: 'Valid until', moq: 'MOQ', leadTime: 'Lead time', priceRequired: 'Enter a valid price for every line', quoteSaved: 'Supplier quote saved',
+    rfqStatuses: { DRAFT: 'Draft', SENT: 'Sent', PARTIALLY_QUOTED: 'Partly quoted', QUOTED: 'Quoted', CLOSED: 'Closed', CANCELLED: 'Cancelled' },
+    confirmAllLines: 'Confirm all lines', linesConfirmed: 'Inquiry lines confirmed',
   },
   requirements: {
     order: 'Order',

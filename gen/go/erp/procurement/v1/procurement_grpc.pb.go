@@ -19,9 +19,14 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SourcingService_CreateCase_FullMethodName = "/erp.procurement.v1.SourcingService/CreateCase"
-	SourcingService_ListCases_FullMethodName  = "/erp.procurement.v1.SourcingService/ListCases"
-	SourcingService_GetCase_FullMethodName    = "/erp.procurement.v1.SourcingService/GetCase"
+	SourcingService_CreateCase_FullMethodName                  = "/erp.procurement.v1.SourcingService/CreateCase"
+	SourcingService_ListCases_FullMethodName                   = "/erp.procurement.v1.SourcingService/ListCases"
+	SourcingService_GetCase_FullMethodName                     = "/erp.procurement.v1.SourcingService/GetCase"
+	SourcingService_ConfirmLines_FullMethodName                = "/erp.procurement.v1.SourcingService/ConfirmLines"
+	SourcingService_CreateFactoryRfq_FullMethodName            = "/erp.procurement.v1.SourcingService/CreateFactoryRfq"
+	SourcingService_ListFactoryRfqs_FullMethodName             = "/erp.procurement.v1.SourcingService/ListFactoryRfqs"
+	SourcingService_CreateSupplierQuote_FullMethodName         = "/erp.procurement.v1.SourcingService/CreateSupplierQuote"
+	SourcingService_ListSupplierQuoteComparison_FullMethodName = "/erp.procurement.v1.SourcingService/ListSupplierQuoteComparison"
 )
 
 // SourcingServiceClient is the client API for SourcingService service.
@@ -35,6 +40,11 @@ type SourcingServiceClient interface {
 	CreateCase(ctx context.Context, in *CreateCaseRequest, opts ...grpc.CallOption) (*CreateCaseResponse, error)
 	ListCases(ctx context.Context, in *ListCasesRequest, opts ...grpc.CallOption) (*ListCasesResponse, error)
 	GetCase(ctx context.Context, in *GetCaseRequest, opts ...grpc.CallOption) (*GetCaseResponse, error)
+	ConfirmLines(ctx context.Context, in *ConfirmSourcingLinesRequest, opts ...grpc.CallOption) (*GetCaseResponse, error)
+	CreateFactoryRfq(ctx context.Context, in *CreateFactoryRfqRequest, opts ...grpc.CallOption) (*CreateFactoryRfqResponse, error)
+	ListFactoryRfqs(ctx context.Context, in *ListFactoryRfqsRequest, opts ...grpc.CallOption) (*ListFactoryRfqsResponse, error)
+	CreateSupplierQuote(ctx context.Context, in *CreateSupplierQuoteRequest, opts ...grpc.CallOption) (*CreateSupplierQuoteResponse, error)
+	ListSupplierQuoteComparison(ctx context.Context, in *ListSupplierQuoteComparisonRequest, opts ...grpc.CallOption) (*ListSupplierQuoteComparisonResponse, error)
 }
 
 type sourcingServiceClient struct {
@@ -75,6 +85,56 @@ func (c *sourcingServiceClient) GetCase(ctx context.Context, in *GetCaseRequest,
 	return out, nil
 }
 
+func (c *sourcingServiceClient) ConfirmLines(ctx context.Context, in *ConfirmSourcingLinesRequest, opts ...grpc.CallOption) (*GetCaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCaseResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ConfirmLines_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) CreateFactoryRfq(ctx context.Context, in *CreateFactoryRfqRequest, opts ...grpc.CallOption) (*CreateFactoryRfqResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateFactoryRfqResponse)
+	err := c.cc.Invoke(ctx, SourcingService_CreateFactoryRfq_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ListFactoryRfqs(ctx context.Context, in *ListFactoryRfqsRequest, opts ...grpc.CallOption) (*ListFactoryRfqsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFactoryRfqsResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListFactoryRfqs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) CreateSupplierQuote(ctx context.Context, in *CreateSupplierQuoteRequest, opts ...grpc.CallOption) (*CreateSupplierQuoteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateSupplierQuoteResponse)
+	err := c.cc.Invoke(ctx, SourcingService_CreateSupplierQuote_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ListSupplierQuoteComparison(ctx context.Context, in *ListSupplierQuoteComparisonRequest, opts ...grpc.CallOption) (*ListSupplierQuoteComparisonResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSupplierQuoteComparisonResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListSupplierQuoteComparison_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SourcingServiceServer is the server API for SourcingService service.
 // All implementations must embed UnimplementedSourcingServiceServer
 // for forward compatibility.
@@ -86,6 +146,11 @@ type SourcingServiceServer interface {
 	CreateCase(context.Context, *CreateCaseRequest) (*CreateCaseResponse, error)
 	ListCases(context.Context, *ListCasesRequest) (*ListCasesResponse, error)
 	GetCase(context.Context, *GetCaseRequest) (*GetCaseResponse, error)
+	ConfirmLines(context.Context, *ConfirmSourcingLinesRequest) (*GetCaseResponse, error)
+	CreateFactoryRfq(context.Context, *CreateFactoryRfqRequest) (*CreateFactoryRfqResponse, error)
+	ListFactoryRfqs(context.Context, *ListFactoryRfqsRequest) (*ListFactoryRfqsResponse, error)
+	CreateSupplierQuote(context.Context, *CreateSupplierQuoteRequest) (*CreateSupplierQuoteResponse, error)
+	ListSupplierQuoteComparison(context.Context, *ListSupplierQuoteComparisonRequest) (*ListSupplierQuoteComparisonResponse, error)
 	mustEmbedUnimplementedSourcingServiceServer()
 }
 
@@ -104,6 +169,21 @@ func (UnimplementedSourcingServiceServer) ListCases(context.Context, *ListCasesR
 }
 func (UnimplementedSourcingServiceServer) GetCase(context.Context, *GetCaseRequest) (*GetCaseResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetCase not implemented")
+}
+func (UnimplementedSourcingServiceServer) ConfirmLines(context.Context, *ConfirmSourcingLinesRequest) (*GetCaseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ConfirmLines not implemented")
+}
+func (UnimplementedSourcingServiceServer) CreateFactoryRfq(context.Context, *CreateFactoryRfqRequest) (*CreateFactoryRfqResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateFactoryRfq not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListFactoryRfqs(context.Context, *ListFactoryRfqsRequest) (*ListFactoryRfqsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFactoryRfqs not implemented")
+}
+func (UnimplementedSourcingServiceServer) CreateSupplierQuote(context.Context, *CreateSupplierQuoteRequest) (*CreateSupplierQuoteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateSupplierQuote not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListSupplierQuoteComparison(context.Context, *ListSupplierQuoteComparisonRequest) (*ListSupplierQuoteComparisonResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSupplierQuoteComparison not implemented")
 }
 func (UnimplementedSourcingServiceServer) mustEmbedUnimplementedSourcingServiceServer() {}
 func (UnimplementedSourcingServiceServer) testEmbeddedByValue()                         {}
@@ -180,6 +260,96 @@ func _SourcingService_GetCase_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SourcingService_ConfirmLines_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmSourcingLinesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ConfirmLines(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ConfirmLines_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ConfirmLines(ctx, req.(*ConfirmSourcingLinesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_CreateFactoryRfq_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateFactoryRfqRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).CreateFactoryRfq(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_CreateFactoryRfq_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).CreateFactoryRfq(ctx, req.(*CreateFactoryRfqRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ListFactoryRfqs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFactoryRfqsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListFactoryRfqs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListFactoryRfqs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListFactoryRfqs(ctx, req.(*ListFactoryRfqsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_CreateSupplierQuote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateSupplierQuoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).CreateSupplierQuote(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_CreateSupplierQuote_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).CreateSupplierQuote(ctx, req.(*CreateSupplierQuoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ListSupplierQuoteComparison_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSupplierQuoteComparisonRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListSupplierQuoteComparison(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListSupplierQuoteComparison_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListSupplierQuoteComparison(ctx, req.(*ListSupplierQuoteComparisonRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SourcingService_ServiceDesc is the grpc.ServiceDesc for SourcingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -198,6 +368,26 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetCase",
 			Handler:    _SourcingService_GetCase_Handler,
+		},
+		{
+			MethodName: "ConfirmLines",
+			Handler:    _SourcingService_ConfirmLines_Handler,
+		},
+		{
+			MethodName: "CreateFactoryRfq",
+			Handler:    _SourcingService_CreateFactoryRfq_Handler,
+		},
+		{
+			MethodName: "ListFactoryRfqs",
+			Handler:    _SourcingService_ListFactoryRfqs_Handler,
+		},
+		{
+			MethodName: "CreateSupplierQuote",
+			Handler:    _SourcingService_CreateSupplierQuote_Handler,
+		},
+		{
+			MethodName: "ListSupplierQuoteComparison",
+			Handler:    _SourcingService_ListSupplierQuoteComparison_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

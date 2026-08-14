@@ -13,6 +13,11 @@ service SourcingService {
   rpc CreateCase(CreateCaseRequest) returns (CreateCaseResponse);
   rpc ListCases(ListCasesRequest) returns (ListCasesResponse);
   rpc GetCase(GetCaseRequest) returns (GetCaseResponse);
+  rpc ConfirmLines(ConfirmSourcingLinesRequest) returns (GetCaseResponse);
+  rpc CreateFactoryRfq(CreateFactoryRfqRequest) returns (CreateFactoryRfqResponse);
+  rpc ListFactoryRfqs(ListFactoryRfqsRequest) returns (ListFactoryRfqsResponse);
+  rpc CreateSupplierQuote(CreateSupplierQuoteRequest) returns (CreateSupplierQuoteResponse);
+  rpc ListSupplierQuoteComparison(ListSupplierQuoteComparisonRequest) returns (ListSupplierQuoteComparisonResponse);
 }
 
 message SourcingLineInput {
@@ -92,6 +97,42 @@ message ListCasesResponse {
 
 message GetCaseRequest { int64 id = 1; }
 message GetCaseResponse { SourcingCase sourcing_case = 1; }
+message ConfirmSourcingLinesRequest { int64 case_id = 1; repeated int64 sourcing_line_ids = 2; }
+
+message FactoryRfq {
+  int64 id = 1; int64 case_id = 2; string rfq_no = 3; int64 supplier_id = 4;
+  string supplier_code = 5; string supplier_name = 6; string contact_email = 7;
+  string currency = 8; string response_due_at = 9; string status = 10;
+  int32 line_count = 11; string created_at = 12;
+}
+message CreateFactoryRfqRequest {
+  int64 case_id = 1; int64 supplier_id = 2; string contact_email = 3;
+  string currency = 4; string response_due_at = 5; repeated int64 sourcing_line_ids = 6;
+}
+message CreateFactoryRfqResponse { FactoryRfq factory_rfq = 1; }
+message ListFactoryRfqsRequest { int64 case_id = 1; }
+message ListFactoryRfqsResponse { repeated FactoryRfq factory_rfqs = 1; }
+
+message SupplierQuoteLineInput {
+  int64 sourcing_line_id = 1; string qty = 2; string unit_price = 3;
+  string moq = 4; string lead_time = 5; string remark = 6;
+}
+message CreateSupplierQuoteRequest {
+  int64 factory_rfq_id = 1; string quoted_at = 2; string valid_until = 3;
+  string currency = 4; string payment_terms = 5; string delivery = 6;
+  string remark = 7; string source = 8; repeated SupplierQuoteLineInput lines = 9;
+}
+message CreateSupplierQuoteResponse { int64 id = 1; string supplier_quote_no = 2; }
+message ListSupplierQuoteComparisonRequest { int64 case_id = 1; }
+message SupplierQuoteComparisonLine {
+  int64 quote_id = 1; string supplier_quote_no = 2; int64 factory_rfq_id = 3;
+  int64 supplier_id = 4; string supplier_name = 5; string currency = 6;
+  string quoted_at = 7; string valid_until = 8; string payment_terms = 9;
+  string delivery = 10; string quote_remark = 11; string source = 12;
+  int64 sourcing_line_id = 13; string qty = 14; string unit_price = 15;
+  string amount = 16; string moq = 17; string lead_time = 18; string line_remark = 19;
+}
+message ListSupplierQuoteComparisonResponse { repeated SupplierQuoteComparisonLine lines = 1; }
 
 // RequirementService exposes what has to be bought.
 //

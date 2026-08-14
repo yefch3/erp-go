@@ -61,3 +61,8 @@ SELECT id, case_id, line_no, raw_text, product, material_standard, grade,
 FROM sourcing_lines
 WHERE tenant_id = $1 AND case_id = $2
 ORDER BY line_no;
+
+-- name: ConfirmSourcingLines :execrows
+UPDATE sourcing_lines SET decision='CONFIRMED',updated_at=now()
+WHERE tenant_id=sqlc.arg(tenant_id) AND case_id=sqlc.arg(case_id)
+  AND id = ANY(sqlc.arg(ids)::bigint[]);

@@ -498,6 +498,12 @@ export default {
     quantity: '数量', decision: '复核状态', empty: '暂无采购询价案件',
     statuses: { REVIEWING: '待复核', SOURCING: '工厂询价中', QUOTES_RECEIVED: '已收报价', COSTING: '成本测算中', CUSTOMER_QUOTE_CREATED: '已生成客户报价', CANCELLED: '已取消' },
     decisions: { PENDING: '待复核', CONFIRMED: '已确认', NO_MATCH: '无匹配', SKIPPED: '已跳过' },
+    factoryRfqs: '工厂询价', rfqNo: '询价单号', supplier: '供应商', currency: '币种', responseDue: '回复截止', lineCount: '行数',
+    createFactoryRfq: '建立工厂询价', contactEmail: '供应商邮箱', supplierRequired: '请选择供应商', rfqCreated: '工厂询价已建立',
+    enterQuote: '录入报价', quoteComparison: '报价对比', sourceLine: '询盘行', unitPrice: '单价', amount: '金额', delivery: '交期', paymentTerms: '付款条件',
+    quotedAt: '报价日期', validUntil: '有效期至', moq: '最小起订量', leadTime: '生产周期', priceRequired: '请填写全部明细的有效单价', quoteSaved: '供应商报价已保存',
+    rfqStatuses: { DRAFT: '草稿', SENT: '已发送', PARTIALLY_QUOTED: '部分报价', QUOTED: '已报价', CLOSED: '已关闭', CANCELLED: '已取消' },
+    confirmAllLines: '确认全部明细', linesConfirmed: '询价明细已人工确认',
   },
   requirements: {
     order: '去下单',

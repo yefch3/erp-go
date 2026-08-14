@@ -11,6 +11,26 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const confirmSourcingLines = `-- name: ConfirmSourcingLines :execrows
+UPDATE sourcing_lines SET decision='CONFIRMED',updated_at=now()
+WHERE tenant_id=$1 AND case_id=$2
+  AND id = ANY($3::bigint[])
+`
+
+type ConfirmSourcingLinesParams struct {
+	TenantID int64
+	CaseID   int64
+	Ids      []int64
+}
+
+func (q *Queries) ConfirmSourcingLines(ctx context.Context, arg ConfirmSourcingLinesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, confirmSourcingLines, arg.TenantID, arg.CaseID, arg.Ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createSourcingCase = `-- name: CreateSourcingCase :one
 INSERT INTO sourcing_cases (
     tenant_id, case_no, title, customer_id, customer_name, contact_name,

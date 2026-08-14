@@ -8,6 +8,35 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type FactoryRfq struct {
+	ID            int64
+	TenantID      int64
+	CaseID        int64
+	RfqNo         string
+	SupplierID    int64
+	SupplierCode  string
+	SupplierName  string
+	ContactEmail  string
+	Currency      string
+	ResponseDueAt pgtype.Date
+	Status        string
+	CreatedBy     int64
+	CreatedByName string
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+}
+
+type FactoryRfqLine struct {
+	ID             int64
+	TenantID       int64
+	FactoryRfqID   int64
+	SourcingLineID int64
+	LineNo         int32
+	Qty            pgtype.Numeric
+	UomCode        string
+	SpecSnapshot   string
+}
+
 type OutboxEvent struct {
 	ID            int64
 	TenantID      int64
@@ -164,4 +193,33 @@ type SourcingLine struct {
 	Decision           string
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
+}
+
+type SupplierQuote struct {
+	ID              int64
+	TenantID        int64
+	FactoryRfqID    int64
+	SupplierQuoteNo string
+	QuotedAt        pgtype.Date
+	ValidUntil      pgtype.Date
+	Currency        string
+	PaymentTerms    string
+	Delivery        string
+	Remark          string
+	Source          string
+	CreatedBy       int64
+	CreatedAt       pgtype.Timestamptz
+}
+
+type SupplierQuoteLine struct {
+	ID              int64
+	TenantID        int64
+	SupplierQuoteID int64
+	SourcingLineID  int64
+	Qty             pgtype.Numeric
+	UnitPrice       pgtype.Numeric
+	Amount          pgtype.Numeric
+	Moq             pgtype.Numeric
+	LeadTime        string
+	Remark          string
 }

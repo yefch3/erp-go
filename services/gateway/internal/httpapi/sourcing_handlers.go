@@ -38,3 +38,63 @@ func (s *Server) createSourcingCase(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
+
+func (s *Server) confirmSourcingLines(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.ConfirmSourcingLinesRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.CaseId = idFromPath(r)
+	resp, err := s.Sourcing.ConfirmLines(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) createFactoryRFQ(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.CreateFactoryRfqRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.CaseId = idFromPath(r)
+	resp, err := s.Sourcing.CreateFactoryRfq(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) listFactoryRFQs(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.ListFactoryRfqs(r.Context(), &prv1.ListFactoryRfqsRequest{CaseId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) createSupplierQuote(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.CreateSupplierQuoteRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.FactoryRfqId = idFromPath(r)
+	resp, err := s.Sourcing.CreateSupplierQuote(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) listSupplierQuoteComparison(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.ListSupplierQuoteComparison(r.Context(), &prv1.ListSupplierQuoteComparisonRequest{CaseId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}

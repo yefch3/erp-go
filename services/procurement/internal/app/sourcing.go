@@ -118,3 +118,32 @@ func (s *Service) GetSourcingCase(ctx context.Context, tenantID, id int64) (Sour
 	}
 	return SourcingCaseView{Head: head, Lines: lines}, nil
 }
+
+func (s *Service) ConfirmSourcingLines(ctx context.Context, tenantID, caseID int64, ids []int64) (SourcingCaseView, error) {
+	view, err := s.GetSourcingCase(ctx, tenantID, caseID)
+	if err != nil {
+		return SourcingCaseView{}, err
+	}
+	if len(ids) == 0 {
+		return SourcingCaseView{}, apierr.Invalid("SC_CONFIRM_LINES_REQUIRED", "请选择需要确认的询价明细")
+	}
+	allowed := make(map[int64]bool, len(view.Lines))
+	for _, line := range view.Lines {
+		allowed[line.ID] = true
+	}
+	seen := map[int64]bool{}
+	for _, id := range ids {
+		if !allowed[id] || seen[id] {
+			return SourcingCaseView{}, apierr.Invalid("SC_CONFIRM_LINE_INVALID", "询价明细不属于当前案件")
+		}
+		seen[id] = true
+	}
+	changed, err := s.q.ConfirmSourcingLines(ctx, store.ConfirmSourcingLinesParams{TenantID: tenantID, CaseID: caseID, Ids: ids})
+	if err != nil {
+		return SourcingCaseView{}, err
+	}
+	if changed != int64(len(ids)) {
+		return SourcingCaseView{}, apierr.Conflict("SC_CONFIRM_CHANGED", "询价明细已变化，请刷新后重试")
+	}
+	return s.GetSourcingCase(ctx, tenantID, caseID)
+}

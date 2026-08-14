@@ -498,6 +498,12 @@ export default {
     quantity: 'Cantidad', decision: 'Revisión', empty: 'Aún no hay casos',
     statuses: { REVIEWING: 'En revisión', SOURCING: 'Consultando fábricas', QUOTES_RECEIVED: 'Ofertas recibidas', COSTING: 'Calculando costes', CUSTOMER_QUOTE_CREATED: 'Oferta al cliente creada', CANCELLED: 'Cancelado' },
     decisions: { PENDING: 'Pendiente', CONFIRMED: 'Confirmado', NO_MATCH: 'Sin coincidencia', SKIPPED: 'Omitido' },
+    factoryRfqs: 'Solicitudes a fábricas', rfqNo: 'N.º RFQ', supplier: 'Proveedor', currency: 'Moneda', responseDue: 'Fecha límite', lineCount: 'Líneas',
+    createFactoryRfq: 'Crear solicitud a fábrica', contactEmail: 'Correo del proveedor', supplierRequired: 'Seleccione un proveedor', rfqCreated: 'Solicitud creada',
+    enterQuote: 'Registrar oferta', quoteComparison: 'Comparación de ofertas', sourceLine: 'Línea de consulta', unitPrice: 'Precio unitario', amount: 'Importe', delivery: 'Entrega', paymentTerms: 'Condiciones de pago',
+    quotedAt: 'Fecha de oferta', validUntil: 'Válida hasta', moq: 'Pedido mínimo', leadTime: 'Plazo de producción', priceRequired: 'Indique un precio válido para cada línea', quoteSaved: 'Oferta guardada',
+    rfqStatuses: { DRAFT: 'Borrador', SENT: 'Enviada', PARTIALLY_QUOTED: 'Parcial', QUOTED: 'Cotizada', CLOSED: 'Cerrada', CANCELLED: 'Cancelada' },
+    confirmAllLines: 'Confirmar todas las líneas', linesConfirmed: 'Líneas confirmadas',
   },
   requirements: {
     order: 'Pedir',

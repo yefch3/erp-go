@@ -56,6 +56,65 @@ func (h *SourcingHandler) GetCase(ctx context.Context, req *prv1.GetCaseRequest)
 	return &prv1.GetCaseResponse{SourcingCase: sourcingCaseView(view)}, nil
 }
 
+func (h *SourcingHandler) ConfirmLines(ctx context.Context, req *prv1.ConfirmSourcingLinesRequest) (*prv1.GetCaseResponse, error) {
+	view, err := h.svc.ConfirmSourcingLines(ctx, grpcx.TenantID(ctx), req.GetCaseId(), req.GetSourcingLineIds())
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.GetCaseResponse{SourcingCase: sourcingCaseView(view)}, nil
+}
+
+func (h *SourcingHandler) CreateFactoryRfq(ctx context.Context, req *prv1.CreateFactoryRfqRequest) (*prv1.CreateFactoryRfqResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	row, err := h.svc.CreateFactoryRFQ(ctx, grpcx.TenantID(ctx), app.NewFactoryRFQ{CaseID: req.GetCaseId(), SupplierID: req.GetSupplierId(),
+		ContactEmail: req.GetContactEmail(), Currency: req.GetCurrency(), ResponseDueAt: req.GetResponseDueAt(), SourcingLineIDs: req.GetSourcingLineIds()}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.CreateFactoryRfqResponse{FactoryRfq: factoryRFQ(row)}, nil
+}
+
+func (h *SourcingHandler) ListFactoryRfqs(ctx context.Context, req *prv1.ListFactoryRfqsRequest) (*prv1.ListFactoryRfqsResponse, error) {
+	rows, err := h.svc.ListFactoryRFQs(ctx, grpcx.TenantID(ctx), req.GetCaseId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*prv1.FactoryRfq, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, factoryRFQ(row))
+	}
+	return &prv1.ListFactoryRfqsResponse{FactoryRfqs: out}, nil
+}
+
+func (h *SourcingHandler) CreateSupplierQuote(ctx context.Context, req *prv1.CreateSupplierQuoteRequest) (*prv1.CreateSupplierQuoteResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	lines := make([]app.SupplierQuoteLineInput, 0, len(req.GetLines()))
+	for _, line := range req.GetLines() {
+		lines = append(lines, app.SupplierQuoteLineInput{SourcingLineID: line.GetSourcingLineId(), Qty: line.GetQty(), UnitPrice: line.GetUnitPrice(), MOQ: line.GetMoq(), LeadTime: line.GetLeadTime(), Remark: line.GetRemark()})
+	}
+	row, err := h.svc.CreateSupplierQuote(ctx, grpcx.TenantID(ctx), app.NewSupplierQuote{FactoryRFQID: req.GetFactoryRfqId(), QuotedAt: req.GetQuotedAt(), ValidUntil: req.GetValidUntil(), Currency: req.GetCurrency(), PaymentTerms: req.GetPaymentTerms(), Delivery: req.GetDelivery(), Remark: req.GetRemark(), Source: req.GetSource(), Lines: lines}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.CreateSupplierQuoteResponse{Id: row.ID, SupplierQuoteNo: row.SupplierQuoteNo}, nil
+}
+
+func (h *SourcingHandler) ListSupplierQuoteComparison(ctx context.Context, req *prv1.ListSupplierQuoteComparisonRequest) (*prv1.ListSupplierQuoteComparisonResponse, error) {
+	rows, err := h.svc.ListSupplierQuoteComparison(ctx, grpcx.TenantID(ctx), req.GetCaseId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*prv1.SupplierQuoteComparisonLine, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, &prv1.SupplierQuoteComparisonLine{QuoteId: row.QuoteID, SupplierQuoteNo: row.SupplierQuoteNo, FactoryRfqId: row.FactoryRfqID, SupplierId: row.SupplierID, SupplierName: row.SupplierName, Currency: row.Currency, QuotedAt: row.QuotedAt, ValidUntil: row.ValidUntil, PaymentTerms: row.PaymentTerms, Delivery: row.Delivery, QuoteRemark: row.Remark, Source: row.Source, SourcingLineId: row.SourcingLineID, Qty: row.LQty, UnitPrice: row.LUnitPrice, Amount: row.LAmount, Moq: row.Moq, LeadTime: row.LeadTime, LineRemark: row.LineRemark})
+	}
+	return &prv1.ListSupplierQuoteComparisonResponse{Lines: out}, nil
+}
+
+func factoryRFQ(row store.ListFactoryRFQsRow) *prv1.FactoryRfq {
+	return &prv1.FactoryRfq{Id: row.ID, CaseId: row.CaseID, RfqNo: row.RfqNo, SupplierId: row.SupplierID, SupplierCode: row.SupplierCode, SupplierName: row.SupplierName, ContactEmail: row.ContactEmail, Currency: row.Currency, ResponseDueAt: row.ResponseDueAt, Status: row.Status, LineCount: row.LineCount, CreatedAt: ts(row.CreatedAt)}
+}
+
 func lineInput(in *prv1.SourcingLineInput) app.SourcingLineInput {
 	return app.SourcingLineInput{
 		RawText: in.GetRawText(), Product: in.GetProduct(), MaterialStandard: in.GetMaterialStandard(),
