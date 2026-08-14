@@ -10,13 +10,13 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-// TestUpDownUp runs only when SHIPPING_TEST_DSN names a disposable shipping
-// database. CI and local verification set it explicitly; ordinary unit tests
-// do not risk altering a developer database by guessing a target.
+// TestUpDownUp 只使用独立的迁移测试库。该测试会把数据库完整回滚到版本 0，
+// 不能与船期业务集成测试共用 SHIPPING_TEST_DSN，否则并发执行时会临时拆掉
+// 业务测试正在访问的表或字段。
 func TestUpDownUp(t *testing.T) {
-	dsn := os.Getenv("SHIPPING_TEST_DSN")
+	dsn := os.Getenv("SHIPPING_MIGRATION_TEST_DSN")
 	if dsn == "" {
-		t.Skip("set SHIPPING_TEST_DSN to a disposable PostgreSQL database")
+		t.Skip("set SHIPPING_MIGRATION_TEST_DSN to a disposable PostgreSQL database")
 	}
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {

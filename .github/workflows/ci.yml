@@ -83,7 +83,12 @@ jobs:
           PGPASSWORD: erp_dev_password
           PGHOST: localhost
           PGPORT: "5432"
-        run: sh deploy/init-databases.sh
+        run: |
+          sh deploy/init-databases.sh
+          # 迁移生命周期测试会执行 DownTo(0)，必须使用独立数据库，避免与
+          # 同时运行的船期业务集成测试互相拆表。
+          psql -v ON_ERROR_STOP=1 -d postgres \
+            -c 'CREATE DATABASE erp_shipping_migrations OWNER erp_shipping'
 
       - name: Migrate
         env:
@@ -97,6 +102,7 @@ jobs:
           MD_TEST_DSN: postgres://erp_masterdata:erp_masterdata_pw@localhost:5432/erp_masterdata?sslmode=disable
           MAIL_TEST_DSN: postgres://erp_mail:erp_mail_pw@localhost:5432/erp_mail?sslmode=disable
           SHIPPING_TEST_DSN: postgres://erp_shipping:erp_shipping_pw@localhost:5432/erp_shipping?sslmode=disable
+          SHIPPING_MIGRATION_TEST_DSN: postgres://erp_shipping:erp_shipping_pw@localhost:5432/erp_shipping_migrations?sslmode=disable
           GATEWAY_TEST_REDIS: 127.0.0.1:6379
         run: make test
 
