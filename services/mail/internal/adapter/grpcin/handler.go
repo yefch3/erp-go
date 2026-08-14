@@ -766,6 +766,48 @@ func (h *Handler) ConvertInboundToExcel(ctx context.Context, req *mailv1.Convert
 	if err != nil {
 		return nil, err
 	}
+	return excelResultToProto(result), nil
+}
+
+func (h *Handler) StartInboundExcelConversion(ctx context.Context, req *mailv1.StartInboundExcelConversionRequest) (*mailv1.StartInboundExcelConversionResponse, error) {
+	op := operator(ctx)
+	job, err := h.svc.StartExcelJob(
+		ctx, grpcx.TenantID(ctx), op.ID, req.GetId(),
+		req.AttachmentId, req.SelectedText, req.GetLocale(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.StartInboundExcelConversionResponse{Job: excelJobToProto(job)}, nil
+}
+
+func (h *Handler) GetInboundExcelConversionJob(ctx context.Context, req *mailv1.GetInboundExcelConversionJobRequest) (*mailv1.GetInboundExcelConversionJobResponse, error) {
+	op := operator(ctx)
+	job, err := h.svc.GetExcelJob(ctx, grpcx.TenantID(ctx), op.ID, req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.GetInboundExcelConversionJobResponse{Job: excelJobToProto(job)}, nil
+}
+
+func excelJobToProto(job app.ExcelJob) *mailv1.ExcelConversionJob {
+	out := &mailv1.ExcelConversionJob{
+		Id: job.ID, Status: job.Status, ErrorCode: job.ErrorCode,
+		ErrorMessage: job.ErrorMessage,
+	}
+	if !job.CreatedAt.IsZero() {
+		out.CreatedAt = job.CreatedAt.Format(time.RFC3339)
+	}
+	if !job.CompletedAt.IsZero() {
+		out.CompletedAt = job.CompletedAt.Format(time.RFC3339)
+	}
+	if job.Status == "COMPLETED" {
+		out.Result = excelResultToProto(job.Result)
+	}
+	return out
+}
+
+func excelResultToProto(result app.ExcelResult) *mailv1.ConvertInboundToExcelResponse {
 	resp := &mailv1.ConvertInboundToExcelResponse{
 		FileName: result.FileName, FileData: result.Data, Model: result.Model,
 	}
@@ -783,7 +825,7 @@ func (h *Handler) ConvertInboundToExcel(ctx context.Context, req *mailv1.Convert
 		}
 		resp.Sheets = append(resp.Sheets, preview)
 	}
-	return resp, nil
+	return resp
 }
 
 func (h *Handler) GetMailThread(ctx context.Context, req *mailv1.GetMailThreadRequest) (*mailv1.GetMailThreadResponse, error) {

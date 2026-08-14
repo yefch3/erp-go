@@ -118,6 +118,11 @@ service EmailService {
   // accepted. The source is resolved inside this service so a caller cannot
   // make the model read another employee's mail or an arbitrary object key.
   rpc ConvertInboundToExcel(ConvertInboundToExcelRequest) returns (ConvertInboundToExcelResponse);
+  // The UI uses the durable form: enqueue immediately, then receive a live
+  // completion hint and re-read the owner-scoped job. The synchronous RPC is
+  // retained for internal compatibility and worker execution.
+  rpc StartInboundExcelConversion(StartInboundExcelConversionRequest) returns (StartInboundExcelConversionResponse);
+  rpc GetInboundExcelConversionJob(GetInboundExcelConversionJobRequest) returns (GetInboundExcelConversionJobResponse);
   // One conversation, both directions, oldest first. Owner-scoped: the
   // caller sees only their own half of the world.
   rpc GetMailThread(GetMailThreadRequest) returns (GetMailThreadResponse);
@@ -1192,3 +1197,24 @@ message ConvertInboundToExcelResponse {
   repeated ExcelSheetPreview sheets = 3;
   string model = 4;
 }
+
+message StartInboundExcelConversionRequest {
+  int64 id = 1;
+  optional int64 attachment_id = 2;
+  optional string selected_text = 3;
+  string locale = 4;
+}
+
+message ExcelConversionJob {
+  int64 id = 1;
+  string status = 2;
+  ConvertInboundToExcelResponse result = 3;
+  string error_code = 4;
+  string error_message = 5;
+  string created_at = 6;
+  string completed_at = 7;
+}
+
+message StartInboundExcelConversionResponse { ExcelConversionJob job = 1; }
+message GetInboundExcelConversionJobRequest { int64 id = 1; }
+message GetInboundExcelConversionJobResponse { ExcelConversionJob job = 1; }

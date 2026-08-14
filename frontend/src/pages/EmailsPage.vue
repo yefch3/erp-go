@@ -1266,6 +1266,7 @@ function init() {
   refreshAttentionCount()
   loadDraftCount()
   refreshUnread()
+  resumeExcelJob()
   // Ask once, from the mailbox itself — this is the page whose news the
   // desktop notification carries, so the browser's prompt makes sense here.
   // Shell.vue does the actual notifying, and only when the person is away.
@@ -1280,6 +1281,10 @@ function init() {
 // ever "go and look", never data.
 onUnmounted(
   onLive((e) => {
+    if (e.type === 'mail.excel_job.changed') {
+      void refreshExcelJob(e.subject)
+      return
+    }
     if (e.type !== 'mail.inbound') return
     // Not while reading a mail: yanking the list from under the detail page
     // would be invisible, and the unread badge covers the news.
@@ -2074,6 +2079,14 @@ interface ExcelResult {
   model: string
 }
 
+interface ExcelJob {
+  id: string
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
+  result?: ExcelResult
+  errorCode?: string
+  errorMessage?: string
+}
+
 type ExcelSource =
   | { kind: 'text'; mailId: string; text: string }
   | { kind: 'attachment'; mailId: string; attachmentId: string }
@@ -2084,6 +2097,7 @@ const excelMenu = reactive({
 const excelOpen = ref(false)
 const excelBusy = ref(false)
 const excelResult = ref<ExcelResult | null>(null)
+const excelJobId = ref('')
 const excelSheet = ref('')
 const excelAvailable = ref(false)
 const creatingSourcingCase = ref(false)
@@ -2095,6 +2109,11 @@ const purchaseImportSuppliers = ref<{ id: string; code: string; name: string }[]
 interface PurchaseImportCandidate { requirementId: string; contractNo: string; productName: string; productCode: string; spec: string; uomCode: string; requiredQty: string; orderedQty: string; status: string }
 interface PurchaseImportRow { rowNo: number; product: string; quantity: string; unitPrice: string; candidates: PurchaseImportCandidate[]; requirementId: string; result: string; message?: string }
 const purchaseImportRows = ref<PurchaseImportRow[]>([])
+let excelPollTimer: ReturnType<typeof setTimeout> | null = null
+
+onUnmounted(() => {
+  if (excelPollTimer) window.clearTimeout(excelPollTimer)
+})
 
 function positionExcelMenu(x: number, y: number, source: ExcelSource, disabledReason = '') {
   excelMenu.x = Math.max(8, Math.min(x, window.innerWidth - 210))
@@ -2159,16 +2178,59 @@ async function convertExcelSelection() {
     const body = source.kind === 'text'
       ? { selectedText: source.text, locale: locale.value }
       : { attachmentId: source.attachmentId, locale: locale.value }
-    const result = await post<ExcelResult>(
+    const response = await post<{ job: ExcelJob }>(
       `/inbound-mails/${source.mailId}/excel`, body, mailExcelRequest,
     )
-    excelResult.value = result
-    excelSheet.value = result.sheets[0]?.name ?? ''
-    ElMessage.success(t('emails.excelReady'))
+    excelJobId.value = response.job.id
+    sessionStorage.setItem('mailExcelJobId', response.job.id)
+    ElMessage.info(t('emails.excelQueued'))
+    scheduleExcelJobPoll(300)
   } catch {
     excelOpen.value = false
-  } finally {
     excelBusy.value = false
+  }
+}
+
+function resumeExcelJob() {
+  const id = sessionStorage.getItem('mailExcelJobId') ?? ''
+  if (!id || excelJobId.value === id) return
+  excelJobId.value = id
+  excelResult.value = null
+  excelBusy.value = true
+  excelOpen.value = true
+  scheduleExcelJobPoll(0)
+}
+
+function scheduleExcelJobPoll(delay = 1500) {
+  if (excelPollTimer) window.clearTimeout(excelPollTimer)
+  excelPollTimer = window.setTimeout(() => void refreshExcelJob(), delay)
+}
+
+async function refreshExcelJob(subject = '') {
+  const idFromEvent = subject.startsWith('EXCEL_JOB:') ? subject.slice('EXCEL_JOB:'.length) : ''
+  if (!excelJobId.value || (idFromEvent && idFromEvent !== excelJobId.value)) return
+  try {
+    const response = await get<{ job: ExcelJob }>(`/inbound-excel-jobs/${excelJobId.value}`, undefined, mailExcelRequest)
+    const job = response.job
+    if (job.status === 'PENDING' || job.status === 'PROCESSING') {
+      scheduleExcelJobPoll()
+      return
+    }
+    excelBusy.value = false
+    sessionStorage.removeItem('mailExcelJobId')
+    if (job.status === 'FAILED' || !job.result) {
+      excelOpen.value = false
+      ElMessage.error(job.errorMessage || t('emails.excelFailed'))
+      return
+    }
+    excelResult.value = job.result
+    excelSheet.value = job.result.sheets[0]?.name ?? ''
+    excelOpen.value = true
+    ElMessage.success(t('emails.excelReady'))
+  } catch {
+    // The SSE hint is best effort; keep polling through a brief network or
+    // gateway restart. An expired mailbox unlock is handled globally.
+    if (!locked.value) scheduleExcelJobPoll(3000)
   }
 }
 

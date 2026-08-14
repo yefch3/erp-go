@@ -239,6 +239,28 @@ type MailAccount struct {
 	OauthRefreshEnc []byte
 }
 
+type MailExcelJob struct {
+	ID           int64
+	TenantID     int64
+	OwnerID      int64
+	InboundID    int64
+	AttachmentID *int64
+	SelectedText *string
+	Locale       string
+	Status       string
+	AttemptCount int32
+	FileName     string
+	FileData     []byte
+	WorkbookJson []byte
+	Model        string
+	ErrorCode    string
+	ErrorMessage string
+	CreatedAt    pgtype.Timestamptz
+	StartedAt    pgtype.Timestamptz
+	CompletedAt  pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
 type MailExportLog struct {
 	ID           int64
 	TenantID     int64

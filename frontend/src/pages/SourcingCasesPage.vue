@@ -101,7 +101,12 @@
       <el-form label-width="110px" class="review-form">
         <el-form-item :label="t('sourcing.internalProduct')" required>
           <el-select v-model="reviewForm.productId" filterable style="width:100%" @change="loadReviewSkus">
-            <el-option v-for="p in products" :key="p.id" :value="Number(p.id)" :label="`${p.code} · ${p.name}`" />
+            <el-option-group v-if="candidateProducts.length" :label="t('sourcing.productCandidates')">
+              <el-option v-for="p in candidateProducts" :key="`candidate-${p.id}`" :value="Number(p.id)" :label="`${p.code} · ${p.name}`" />
+            </el-option-group>
+            <el-option-group :label="t('sourcing.allProducts')">
+              <el-option v-for="p in remainingProducts" :key="p.id" :value="Number(p.id)" :label="`${p.code} · ${p.name}`" />
+            </el-option-group>
           </el-select>
         </el-form-item>
         <el-form-item :label="t('sourcing.sku')"><el-select v-model="reviewForm.skuId" clearable style="width:100%"><el-option v-for="sku in reviewSkus" :key="sku.id" :value="Number(sku.id)" :label="`${sku.code} · ${sku.spec || '—'}`" /></el-select></el-form-item>
@@ -150,7 +155,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -172,7 +177,7 @@ interface SourcingCase {
 interface Supplier { id: string; code: string; name: string }
 interface FactoryRFQ { id: string; rfqNo: string; supplierName: string; currency: string; responseDueAt: string; status: string; lineCount: number; sourcingLineIds: string[] }
 interface QuoteComparison { supplierName: string; sourcingLineId: string; qty: string; currency: string; unitPrice: string; amount: string; delivery: string; paymentTerms: string }
-interface Product { id: string; code: string; name: string; baseUomId: string }
+interface Product { id: string; code: string; name: string; nameEn?: string; brand?: string; description?: string; baseUomId: string }
 interface Sku { id: string; code: string; spec: string; status: string }
 
 const { t } = useI18n()
@@ -211,6 +216,35 @@ const reviewFields: { key: keyof ExtractedLine; long?: boolean }[] = [
   { key: 'surfaceRequirement' }, { key: 'coating' }, { key: 'tolerance' }, { key: 'coilWeight' }, { key: 'coilId' }, { key: 'packaging', long: true },
   { key: 'delivery' }, { key: 'paymentTerms', long: true }, { key: 'incoterm' }, { key: 'port' }, { key: 'quantityUnit' }, { key: 'remarks', long: true }, { key: 'quantity' },
 ]
+
+function normalizedTokens(value: string) {
+  return value.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter(token => token.length >= 2)
+}
+
+function productCandidateScore(product: Product) {
+  const source = [reviewForm.extracted.product, reviewForm.extracted.materialStandard, reviewForm.extracted.grade].join(' ').toLocaleLowerCase()
+  const catalog = [product.code, product.name, product.nameEn, product.brand, product.description].filter(Boolean).join(' ').toLocaleLowerCase()
+  if (!source.trim()) return 0
+  let score = 0
+  for (const token of new Set(normalizedTokens(source))) {
+    if (catalog.includes(token)) score += token.length >= 4 ? 3 : 1
+  }
+  for (const token of new Set(normalizedTokens(catalog))) {
+    if (source.includes(token)) score += token.length >= 4 ? 2 : 1
+  }
+  return score
+}
+
+const candidateProducts = computed(() => products.value
+  .map(product => ({ product, score: productCandidateScore(product) }))
+  .filter(item => item.score > 0)
+  .sort((a, b) => b.score - a.score || a.product.code.localeCompare(b.product.code))
+  .slice(0, 5)
+  .map(item => item.product))
+const remainingProducts = computed(() => {
+  const suggested = new Set(candidateProducts.value.map(product => product.id))
+  return products.value.filter(product => !suggested.has(product.id))
+})
 
 async function load() {
   loading.value = true

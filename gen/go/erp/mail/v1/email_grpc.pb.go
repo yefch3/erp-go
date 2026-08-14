@@ -19,59 +19,61 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	EmailService_ListCampaigns_FullMethodName         = "/erp.mail.v1.EmailService/ListCampaigns"
-	EmailService_GetCampaign_FullMethodName           = "/erp.mail.v1.EmailService/GetCampaign"
-	EmailService_PreviewCampaign_FullMethodName       = "/erp.mail.v1.EmailService/PreviewCampaign"
-	EmailService_CreateCampaign_FullMethodName        = "/erp.mail.v1.EmailService/CreateCampaign"
-	EmailService_ListMessages_FullMethodName          = "/erp.mail.v1.EmailService/ListMessages"
-	EmailService_GetMessage_FullMethodName            = "/erp.mail.v1.EmailService/GetMessage"
-	EmailService_RequeueMessage_FullMethodName        = "/erp.mail.v1.EmailService/RequeueMessage"
-	EmailService_AbandonMessage_FullMethodName        = "/erp.mail.v1.EmailService/AbandonMessage"
-	EmailService_SaveDraft_FullMethodName             = "/erp.mail.v1.EmailService/SaveDraft"
-	EmailService_ListDrafts_FullMethodName            = "/erp.mail.v1.EmailService/ListDrafts"
-	EmailService_GetDraft_FullMethodName              = "/erp.mail.v1.EmailService/GetDraft"
-	EmailService_DeleteDraft_FullMethodName           = "/erp.mail.v1.EmailService/DeleteDraft"
-	EmailService_SendDraft_FullMethodName             = "/erp.mail.v1.EmailService/SendDraft"
-	EmailService_ListScheduled_FullMethodName         = "/erp.mail.v1.EmailService/ListScheduled"
-	EmailService_SendScheduledNow_FullMethodName      = "/erp.mail.v1.EmailService/SendScheduledNow"
-	EmailService_CancelScheduled_FullMethodName       = "/erp.mail.v1.EmailService/CancelScheduled"
-	EmailService_ListSignatures_FullMethodName        = "/erp.mail.v1.EmailService/ListSignatures"
-	EmailService_CreateSignature_FullMethodName       = "/erp.mail.v1.EmailService/CreateSignature"
-	EmailService_UpdateSignature_FullMethodName       = "/erp.mail.v1.EmailService/UpdateSignature"
-	EmailService_DeleteSignature_FullMethodName       = "/erp.mail.v1.EmailService/DeleteSignature"
-	EmailService_PresignAttachment_FullMethodName     = "/erp.mail.v1.EmailService/PresignAttachment"
-	EmailService_RegisterAttachment_FullMethodName    = "/erp.mail.v1.EmailService/RegisterAttachment"
-	EmailService_ListAttachments_FullMethodName       = "/erp.mail.v1.EmailService/ListAttachments"
-	EmailService_PresignImage_FullMethodName          = "/erp.mail.v1.EmailService/PresignImage"
-	EmailService_RegisterImage_FullMethodName         = "/erp.mail.v1.EmailService/RegisterImage"
-	EmailService_ImportImage_FullMethodName           = "/erp.mail.v1.EmailService/ImportImage"
-	EmailService_FetchImage_FullMethodName            = "/erp.mail.v1.EmailService/FetchImage"
-	EmailService_ListImages_FullMethodName            = "/erp.mail.v1.EmailService/ListImages"
-	EmailService_WithdrawImage_FullMethodName         = "/erp.mail.v1.EmailService/WithdrawImage"
-	EmailService_ListSenders_FullMethodName           = "/erp.mail.v1.EmailService/ListSenders"
-	EmailService_ListSuppressions_FullMethodName      = "/erp.mail.v1.EmailService/ListSuppressions"
-	EmailService_AddSuppression_FullMethodName        = "/erp.mail.v1.EmailService/AddSuppression"
-	EmailService_RemoveSuppression_FullMethodName     = "/erp.mail.v1.EmailService/RemoveSuppression"
-	EmailService_GetMailHost_FullMethodName           = "/erp.mail.v1.EmailService/GetMailHost"
-	EmailService_SaveMailHost_FullMethodName          = "/erp.mail.v1.EmailService/SaveMailHost"
-	EmailService_GetMyMailAccount_FullMethodName      = "/erp.mail.v1.EmailService/GetMyMailAccount"
-	EmailService_RecordOpen_FullMethodName            = "/erp.mail.v1.EmailService/RecordOpen"
-	EmailService_VerifyMailAccess_FullMethodName      = "/erp.mail.v1.EmailService/VerifyMailAccess"
-	EmailService_CompleteGoogleOAuth_FullMethodName   = "/erp.mail.v1.EmailService/CompleteGoogleOAuth"
-	EmailService_ListInbound_FullMethodName           = "/erp.mail.v1.EmailService/ListInbound"
-	EmailService_SearchMail_FullMethodName            = "/erp.mail.v1.EmailService/SearchMail"
-	EmailService_GetInbound_FullMethodName            = "/erp.mail.v1.EmailService/GetInbound"
-	EmailService_ConvertInboundToExcel_FullMethodName = "/erp.mail.v1.EmailService/ConvertInboundToExcel"
-	EmailService_GetMailThread_FullMethodName         = "/erp.mail.v1.EmailService/GetMailThread"
-	EmailService_ExportMailThread_FullMethodName      = "/erp.mail.v1.EmailService/ExportMailThread"
-	EmailService_ListMailExports_FullMethodName       = "/erp.mail.v1.EmailService/ListMailExports"
-	EmailService_MarkInbound_FullMethodName           = "/erp.mail.v1.EmailService/MarkInbound"
-	EmailService_PurgeInbound_FullMethodName          = "/erp.mail.v1.EmailService/PurgeInbound"
-	EmailService_MarkViewRead_FullMethodName          = "/erp.mail.v1.EmailService/MarkViewRead"
-	EmailService_EmptyTrash_FullMethodName            = "/erp.mail.v1.EmailService/EmptyTrash"
-	EmailService_EmptyJunk_FullMethodName             = "/erp.mail.v1.EmailService/EmptyJunk"
-	EmailService_ListMailboxSent_FullMethodName       = "/erp.mail.v1.EmailService/ListMailboxSent"
-	EmailService_SyncMailbox_FullMethodName           = "/erp.mail.v1.EmailService/SyncMailbox"
+	EmailService_ListCampaigns_FullMethodName                = "/erp.mail.v1.EmailService/ListCampaigns"
+	EmailService_GetCampaign_FullMethodName                  = "/erp.mail.v1.EmailService/GetCampaign"
+	EmailService_PreviewCampaign_FullMethodName              = "/erp.mail.v1.EmailService/PreviewCampaign"
+	EmailService_CreateCampaign_FullMethodName               = "/erp.mail.v1.EmailService/CreateCampaign"
+	EmailService_ListMessages_FullMethodName                 = "/erp.mail.v1.EmailService/ListMessages"
+	EmailService_GetMessage_FullMethodName                   = "/erp.mail.v1.EmailService/GetMessage"
+	EmailService_RequeueMessage_FullMethodName               = "/erp.mail.v1.EmailService/RequeueMessage"
+	EmailService_AbandonMessage_FullMethodName               = "/erp.mail.v1.EmailService/AbandonMessage"
+	EmailService_SaveDraft_FullMethodName                    = "/erp.mail.v1.EmailService/SaveDraft"
+	EmailService_ListDrafts_FullMethodName                   = "/erp.mail.v1.EmailService/ListDrafts"
+	EmailService_GetDraft_FullMethodName                     = "/erp.mail.v1.EmailService/GetDraft"
+	EmailService_DeleteDraft_FullMethodName                  = "/erp.mail.v1.EmailService/DeleteDraft"
+	EmailService_SendDraft_FullMethodName                    = "/erp.mail.v1.EmailService/SendDraft"
+	EmailService_ListScheduled_FullMethodName                = "/erp.mail.v1.EmailService/ListScheduled"
+	EmailService_SendScheduledNow_FullMethodName             = "/erp.mail.v1.EmailService/SendScheduledNow"
+	EmailService_CancelScheduled_FullMethodName              = "/erp.mail.v1.EmailService/CancelScheduled"
+	EmailService_ListSignatures_FullMethodName               = "/erp.mail.v1.EmailService/ListSignatures"
+	EmailService_CreateSignature_FullMethodName              = "/erp.mail.v1.EmailService/CreateSignature"
+	EmailService_UpdateSignature_FullMethodName              = "/erp.mail.v1.EmailService/UpdateSignature"
+	EmailService_DeleteSignature_FullMethodName              = "/erp.mail.v1.EmailService/DeleteSignature"
+	EmailService_PresignAttachment_FullMethodName            = "/erp.mail.v1.EmailService/PresignAttachment"
+	EmailService_RegisterAttachment_FullMethodName           = "/erp.mail.v1.EmailService/RegisterAttachment"
+	EmailService_ListAttachments_FullMethodName              = "/erp.mail.v1.EmailService/ListAttachments"
+	EmailService_PresignImage_FullMethodName                 = "/erp.mail.v1.EmailService/PresignImage"
+	EmailService_RegisterImage_FullMethodName                = "/erp.mail.v1.EmailService/RegisterImage"
+	EmailService_ImportImage_FullMethodName                  = "/erp.mail.v1.EmailService/ImportImage"
+	EmailService_FetchImage_FullMethodName                   = "/erp.mail.v1.EmailService/FetchImage"
+	EmailService_ListImages_FullMethodName                   = "/erp.mail.v1.EmailService/ListImages"
+	EmailService_WithdrawImage_FullMethodName                = "/erp.mail.v1.EmailService/WithdrawImage"
+	EmailService_ListSenders_FullMethodName                  = "/erp.mail.v1.EmailService/ListSenders"
+	EmailService_ListSuppressions_FullMethodName             = "/erp.mail.v1.EmailService/ListSuppressions"
+	EmailService_AddSuppression_FullMethodName               = "/erp.mail.v1.EmailService/AddSuppression"
+	EmailService_RemoveSuppression_FullMethodName            = "/erp.mail.v1.EmailService/RemoveSuppression"
+	EmailService_GetMailHost_FullMethodName                  = "/erp.mail.v1.EmailService/GetMailHost"
+	EmailService_SaveMailHost_FullMethodName                 = "/erp.mail.v1.EmailService/SaveMailHost"
+	EmailService_GetMyMailAccount_FullMethodName             = "/erp.mail.v1.EmailService/GetMyMailAccount"
+	EmailService_RecordOpen_FullMethodName                   = "/erp.mail.v1.EmailService/RecordOpen"
+	EmailService_VerifyMailAccess_FullMethodName             = "/erp.mail.v1.EmailService/VerifyMailAccess"
+	EmailService_CompleteGoogleOAuth_FullMethodName          = "/erp.mail.v1.EmailService/CompleteGoogleOAuth"
+	EmailService_ListInbound_FullMethodName                  = "/erp.mail.v1.EmailService/ListInbound"
+	EmailService_SearchMail_FullMethodName                   = "/erp.mail.v1.EmailService/SearchMail"
+	EmailService_GetInbound_FullMethodName                   = "/erp.mail.v1.EmailService/GetInbound"
+	EmailService_ConvertInboundToExcel_FullMethodName        = "/erp.mail.v1.EmailService/ConvertInboundToExcel"
+	EmailService_StartInboundExcelConversion_FullMethodName  = "/erp.mail.v1.EmailService/StartInboundExcelConversion"
+	EmailService_GetInboundExcelConversionJob_FullMethodName = "/erp.mail.v1.EmailService/GetInboundExcelConversionJob"
+	EmailService_GetMailThread_FullMethodName                = "/erp.mail.v1.EmailService/GetMailThread"
+	EmailService_ExportMailThread_FullMethodName             = "/erp.mail.v1.EmailService/ExportMailThread"
+	EmailService_ListMailExports_FullMethodName              = "/erp.mail.v1.EmailService/ListMailExports"
+	EmailService_MarkInbound_FullMethodName                  = "/erp.mail.v1.EmailService/MarkInbound"
+	EmailService_PurgeInbound_FullMethodName                 = "/erp.mail.v1.EmailService/PurgeInbound"
+	EmailService_MarkViewRead_FullMethodName                 = "/erp.mail.v1.EmailService/MarkViewRead"
+	EmailService_EmptyTrash_FullMethodName                   = "/erp.mail.v1.EmailService/EmptyTrash"
+	EmailService_EmptyJunk_FullMethodName                    = "/erp.mail.v1.EmailService/EmptyJunk"
+	EmailService_ListMailboxSent_FullMethodName              = "/erp.mail.v1.EmailService/ListMailboxSent"
+	EmailService_SyncMailbox_FullMethodName                  = "/erp.mail.v1.EmailService/SyncMailbox"
 )
 
 // EmailServiceClient is the client API for EmailService service.
@@ -179,6 +181,11 @@ type EmailServiceClient interface {
 	// accepted. The source is resolved inside this service so a caller cannot
 	// make the model read another employee's mail or an arbitrary object key.
 	ConvertInboundToExcel(ctx context.Context, in *ConvertInboundToExcelRequest, opts ...grpc.CallOption) (*ConvertInboundToExcelResponse, error)
+	// The UI uses the durable form: enqueue immediately, then receive a live
+	// completion hint and re-read the owner-scoped job. The synchronous RPC is
+	// retained for internal compatibility and worker execution.
+	StartInboundExcelConversion(ctx context.Context, in *StartInboundExcelConversionRequest, opts ...grpc.CallOption) (*StartInboundExcelConversionResponse, error)
+	GetInboundExcelConversionJob(ctx context.Context, in *GetInboundExcelConversionJobRequest, opts ...grpc.CallOption) (*GetInboundExcelConversionJobResponse, error)
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error)
@@ -655,6 +662,26 @@ func (c *emailServiceClient) ConvertInboundToExcel(ctx context.Context, in *Conv
 	return out, nil
 }
 
+func (c *emailServiceClient) StartInboundExcelConversion(ctx context.Context, in *StartInboundExcelConversionRequest, opts ...grpc.CallOption) (*StartInboundExcelConversionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartInboundExcelConversionResponse)
+	err := c.cc.Invoke(ctx, EmailService_StartInboundExcelConversion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) GetInboundExcelConversionJob(ctx context.Context, in *GetInboundExcelConversionJobRequest, opts ...grpc.CallOption) (*GetInboundExcelConversionJobResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetInboundExcelConversionJobResponse)
+	err := c.cc.Invoke(ctx, EmailService_GetInboundExcelConversionJob_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetMailThreadResponse)
@@ -860,6 +887,11 @@ type EmailServiceServer interface {
 	// accepted. The source is resolved inside this service so a caller cannot
 	// make the model read another employee's mail or an arbitrary object key.
 	ConvertInboundToExcel(context.Context, *ConvertInboundToExcelRequest) (*ConvertInboundToExcelResponse, error)
+	// The UI uses the durable form: enqueue immediately, then receive a live
+	// completion hint and re-read the owner-scoped job. The synchronous RPC is
+	// retained for internal compatibility and worker execution.
+	StartInboundExcelConversion(context.Context, *StartInboundExcelConversionRequest) (*StartInboundExcelConversionResponse, error)
+	GetInboundExcelConversionJob(context.Context, *GetInboundExcelConversionJobRequest) (*GetInboundExcelConversionJobResponse, error)
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error)
@@ -1034,6 +1066,12 @@ func (UnimplementedEmailServiceServer) GetInbound(context.Context, *GetInboundRe
 }
 func (UnimplementedEmailServiceServer) ConvertInboundToExcel(context.Context, *ConvertInboundToExcelRequest) (*ConvertInboundToExcelResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ConvertInboundToExcel not implemented")
+}
+func (UnimplementedEmailServiceServer) StartInboundExcelConversion(context.Context, *StartInboundExcelConversionRequest) (*StartInboundExcelConversionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartInboundExcelConversion not implemented")
+}
+func (UnimplementedEmailServiceServer) GetInboundExcelConversionJob(context.Context, *GetInboundExcelConversionJobRequest) (*GetInboundExcelConversionJobResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetInboundExcelConversionJob not implemented")
 }
 func (UnimplementedEmailServiceServer) GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMailThread not implemented")
@@ -1860,6 +1898,42 @@ func _EmailService_ConvertInboundToExcel_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_StartInboundExcelConversion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartInboundExcelConversionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).StartInboundExcelConversion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_StartInboundExcelConversion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).StartInboundExcelConversion(ctx, req.(*StartInboundExcelConversionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_GetInboundExcelConversionJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetInboundExcelConversionJobRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).GetInboundExcelConversionJob(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_GetInboundExcelConversionJob_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).GetInboundExcelConversionJob(ctx, req.(*GetInboundExcelConversionJobRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_GetMailThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetMailThreadRequest)
 	if err := dec(in); err != nil {
@@ -2218,6 +2292,14 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ConvertInboundToExcel",
 			Handler:    _EmailService_ConvertInboundToExcel_Handler,
+		},
+		{
+			MethodName: "StartInboundExcelConversion",
+			Handler:    _EmailService_StartInboundExcelConversion_Handler,
+		},
+		{
+			MethodName: "GetInboundExcelConversionJob",
+			Handler:    _EmailService_GetInboundExcelConversionJob_Handler,
 		},
 		{
 			MethodName: "GetMailThread",

@@ -143,7 +143,7 @@ func run(log *slog.Logger) error {
 		// the ones nobody is using. Without this the pool only grows.
 		go imap.Run(ctx)
 		syncCfg := app.SyncConfig{
-			Interval:    cfg.SyncInterval,
+			Interval:      cfg.SyncInterval,
 			BatchSize:     uint32(cfg.SyncBatch),
 			HistoryCap:    int64(cfg.SyncHistory),
 			Concurrency:   cfg.SyncConcurrency,
@@ -215,6 +215,7 @@ func run(log *slog.Logger) error {
 		SendDelay:      cfg.SendDelay,
 		DecisionWindow: cfg.DecisionWindow,
 	})
+	go svc.RunExcelWorker(ctx)
 
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
 	mailv1.RegisterEmailServiceServer(srv, grpcin.New(svc))

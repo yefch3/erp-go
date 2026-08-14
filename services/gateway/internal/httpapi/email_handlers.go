@@ -690,13 +690,23 @@ func (s *Server) convertInboundToExcel(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusTooManyRequests, "MAIL_EXCEL_RATE_LIMITED", "Excel 转换请求过于频繁，请稍后再试")
 		return
 	}
-	req := &mailv1.ConvertInboundToExcelRequest{}
+	req := &mailv1.StartInboundExcelConversionRequest{}
 	if !s.decodeBody(w, r, req) {
 		return
 	}
 	// URL ownership wins over any body field, as with every other mail action.
 	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	resp, err := s.Emails.ConvertInboundToExcel(r.Context(), req)
+	resp, err := s.Emails.StartInboundExcelConversion(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getInboundExcelJob(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "jobId"), 10, 64)
+	resp, err := s.Emails.GetInboundExcelConversionJob(r.Context(), &mailv1.GetInboundExcelConversionJobRequest{Id: id})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
