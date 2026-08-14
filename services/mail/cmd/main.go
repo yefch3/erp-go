@@ -31,6 +31,7 @@ import (
 	"github.com/sgao19/erp-go/services/mail/internal/adapter/grpcin"
 	"github.com/sgao19/erp-go/services/mail/internal/adapter/grpcout"
 	"github.com/sgao19/erp-go/services/mail/internal/adapter/mailfetch"
+	openaiadapter "github.com/sgao19/erp-go/services/mail/internal/adapter/openai"
 	"github.com/sgao19/erp-go/services/mail/internal/adapter/provider"
 	"github.com/sgao19/erp-go/services/mail/internal/app"
 	"github.com/sgao19/erp-go/services/mail/internal/config"
@@ -98,14 +99,26 @@ func run(log *slog.Logger) error {
 	}
 
 	blobs := grpcout.NewFiles(files)
+	var tables app.TableExtractor
+	if cfg.OpenAIAPIKey != "" {
+		tables = openaiadapter.NewTableExtractor(
+			cfg.OpenAIAPIKey, cfg.OpenAIBaseURL, cfg.OpenAIModel, cfg.OpenAITimeout,
+		)
+	}
 	svc := app.New(pool, app.Deps{
 		Numbering: grpcout.NewNumbering(mdConn),
 		Directory: grpcout.NewDirectory(iamConn),
 		Scopes:    grpcout.NewScopes(iamConn),
 		Files:     blobs,
+		Tables:    tables,
 		Secrets:   secrets,
 		Live:      live,
 	}, log)
+	if cfg.OpenAIAPIKey == "" {
+		log.Warn("OPENAI_API_KEY is not set — mail-to-Excel conversion is unavailable")
+	} else {
+		log.Info("mail-to-Excel conversion is available", "model", cfg.OpenAIModel)
+	}
 
 	// Which provider actually puts mail on the wire is configuration, not
 	// code. SMTP authenticates as the sending employee, so the adapter needs
@@ -130,7 +143,7 @@ func run(log *slog.Logger) error {
 		// the ones nobody is using. Without this the pool only grows.
 		go imap.Run(ctx)
 		syncCfg := app.SyncConfig{
-			Interval:    cfg.SyncInterval,
+			Interval:      cfg.SyncInterval,
 			BatchSize:     uint32(cfg.SyncBatch),
 			HistoryCap:    int64(cfg.SyncHistory),
 			Concurrency:   cfg.SyncConcurrency,
@@ -202,6 +215,7 @@ func run(log *slog.Logger) error {
 		SendDelay:      cfg.SendDelay,
 		DecisionWindow: cfg.DecisionWindow,
 	})
+	go svc.RunExcelWorker(ctx)
 
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
 	mailv1.RegisterEmailServiceServer(srv, grpcin.New(svc))

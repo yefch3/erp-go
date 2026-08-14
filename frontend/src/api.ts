@@ -22,6 +22,11 @@ export const http = axios.create({ baseURL: '/api', timeout: 15000 })
 // finishing on the server after the browser had called it failed.
 export const mailHostRequest: AxiosRequestConfig = { timeout: 120000 }
 
+// The model service itself may use the full two-minute backend deadline.
+// Leave transport time for the gateway and gRPC response instead of having
+// the browser abandon a conversion just before the server can return it.
+export const mailExcelRequest: AxiosRequestConfig = { timeout: 150000 }
+
 // Opt out of the automatic error toast, for calls whose failure the caller
 // shows in place.
 //
@@ -171,8 +176,8 @@ export async function post<T>(url: string, body?: object, cfg?: AxiosRequestConf
   return resp.data.data as T
 }
 
-export async function put<T>(url: string, body?: object): Promise<T> {
-  const resp = await http.put<Envelope<T>>(url, body)
+export async function put<T>(url: string, body?: object, cfg?: AxiosRequestConfig): Promise<T> {
+  const resp = await http.put<Envelope<T>>(url, body, cfg)
   return resp.data.data as T
 }
 

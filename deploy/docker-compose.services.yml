@@ -203,9 +203,11 @@ services:
       GRPC_PORT: "9007"
       MASTERDATA_ADDR: masterdata:9002
       APPROVAL_ADDR: approval:9005
+      INVENTORY_ADDR: inventory:9008
+      FX_ADDR: fx:9003
       KAFKA_BROKERS: kafka:9092
-      STOCK_TOPIC: erp.inventory.stock.v1
-      CONSUMER_GROUP: procurement.stock.v1
+      CONTRACT_TOPIC: erp.export.contract.v1
+      CONSUMER_GROUP: procurement.contract.v1
       APPROVAL_TOPIC: erp.approval.task.v1
       APPROVAL_CONSUMER_GROUP: procurement.approval.v1
       PURCHASE_TOPIC: erp.procurement.purchase.v1
@@ -213,7 +215,7 @@ services:
     ports:
       - "127.0.0.1:9007:9007"
     networks: [infra]
-    depends_on: [inventory, masterdata, approval]
+    depends_on: [inventory, masterdata, approval, fx]
     restart: unless-stopped
 
   shipping:
@@ -277,6 +279,12 @@ services:
       # Left empty in local development, which disables the pixel rather than
       # emitting one that points at the recipient's own machine.
       MAIL_PUBLIC_BASE_URL: ${MAIL_PUBLIC_BASE_URL:-}
+      # User-triggered conversion of selected mail text/attachments to Excel.
+      # The key stays server-side; no request can supply or override it.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-luna}
+      OPENAI_TIMEOUT: ${OPENAI_TIMEOUT:-2m}
       # For pushing "new mail" hints to open browser tabs over the live feed.
       REDIS_ADDR: redis:6379
       # Google OAuth application credentials, from deploy/.env (gitignored).
@@ -310,6 +318,9 @@ services:
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       MAIL_OAUTH_REDIRECT_URL: ${MAIL_OAUTH_REDIRECT_URL:-http://localhost:8080/api/oauth/google/callback}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
+      # Employee owning the procurement shared mailbox. Zero keeps sending
+      # disabled while still allowing RFQ workbook download and quote import.
+      PROCUREMENT_MAIL_SENDER_ID: ${PROCUREMENT_MAIL_SENDER_ID:-0}
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       # Must match iam's. See the note there.
       JWT_TTL: ${JWT_TTL:-12h}

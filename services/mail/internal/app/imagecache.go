@@ -531,7 +531,11 @@ type imageSwap map[string]string
 // practice is nearly everything, because a tracking pixel is a 43-byte file
 // its owner very much wants to serve.
 func (s *Service) localiseImages(ctx context.Context, html string, swap imageSwap) string {
-	if len(swap) == 0 || !strings.Contains(html, "http") {
+	// Do not use an "html contains http" shortcut here. Remote pictures are
+	// http(s), but MIME parts embedded in the message are addressed as cid:;
+	// a CID-only body therefore has no "http" until this function replaces it
+	// with the signed storage URL.
+	if len(swap) == 0 {
 		return html
 	}
 	_ = ctx

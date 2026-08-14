@@ -11,11 +11,19 @@
         <el-form-item :label="t('login.email')">
           <!-- The domain of this address selects the company, so there is no
                company field and none should be added. -->
-          <el-input v-model="form.email" type="email" placeholder="you@yourcompany.com" autofocus />
+          <el-input v-model="form.email" type="email" placeholder="you@yourcompany.com" autofocus @input="errorKey = ''" />
         </el-form-item>
         <el-form-item :label="t('login.password')">
-          <el-input v-model="form.password" type="password" show-password placeholder="••••••••" />
+          <el-input v-model="form.password" type="password" show-password placeholder="••••••••" @input="errorKey = ''" />
         </el-form-item>
+        <el-alert
+          v-if="errorKey"
+          class="login-error"
+          type="error"
+          :title="t(errorKey)"
+          :closable="false"
+          show-icon
+        />
         <el-button type="primary" class="login-btn" :loading="loading" @click="submit">
           {{ t('login.submit') }}
         </el-button>
@@ -36,6 +44,9 @@ const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 const loading = ref(false)
+// Keep the translation key rather than the rendered sentence so an error
+// already on screen follows the language switcher immediately.
+const errorKey = ref('')
 // Prefilled when arriving straight from activation, which is the one moment
 // somebody has just learned that their email is now their login name and has
 // no reason to know it yet. Harmless from any other source: an address in a
@@ -56,10 +67,20 @@ function landing() {
 
 async function submit() {
   if (!form.email || !form.password) return
+  errorKey.value = ''
   loading.value = true
   try {
     await auth.login(form.email, form.password)
     router.push(landing())
+  } catch (e) {
+    const code = (e as { code?: string })?.code
+    const messages: Record<string, string> = {
+      IAM_BAD_CREDENTIALS: 'login.invalidCredentials',
+      IAM_ACCOUNT_LOCKED: 'login.accountLocked',
+      IAM_NOT_ACTIVATED: 'login.notActivated',
+      GATEWAY_TOO_MANY_ATTEMPTS: 'login.tooManyAttempts',
+    }
+    errorKey.value = messages[code ?? ''] ?? 'login.failed'
   } finally {
     loading.value = false
   }
@@ -115,5 +136,8 @@ async function submit() {
 .login-btn {
   width: 100%;
   margin-top: 4px;
+}
+.login-error {
+  margin-bottom: 16px;
 }
 </style>

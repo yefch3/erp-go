@@ -5,12 +5,12 @@
         <span class="mark">ERP</span>
         <span class="txt">{{ t('login.title') }}</span>
       </div>
-      <el-menu :default-active="route.path" router class="side-menu">
+      <el-menu :default-active="menuActive" router class="side-menu">
         <el-menu-item v-if="auth.can('approval:task:act')" index="/todos">
           {{ t('menu.todos') }}
         </el-menu-item>
         <el-popover
-          v-if="auth.can('iam:employee:read') || auth.can('iam:department:read') || auth.can('masterdata:customer:read') || auth.can('masterdata:supplier:read')"
+          v-if="auth.can('iam:employee:read') || auth.can('iam:department:read') || auth.can('masterdata:customer:read') || auth.can('masterdata:port:read') || auth.can('masterdata:supplier:read')"
           v-model:visible="basicDataOpen"
           placement="right-start"
           :width="200"
@@ -73,11 +73,8 @@
         <el-menu-item v-if="auth.can('inventory:stock:read')" index="/outbounds">
           {{ t('menu.outbounds') }}
         </el-menu-item>
-        <el-menu-item v-if="auth.can('procurement:requirement:read')" index="/requirements">
-          {{ t('menu.requirements') }}
-        </el-menu-item>
-        <el-menu-item v-if="auth.can('procurement:order:read')" index="/purchase-orders">
-          {{ t('menu.purchaseOrders') }}
+        <el-menu-item v-if="hasProcurement" index="/procurement">
+          {{ t('menu.procurement') }}
         </el-menu-item>
         <el-menu-item v-if="auth.can('mail:email:read')" index="/emails">
           {{ t('menu.emails') }}
@@ -165,6 +162,16 @@ const route = useRoute()
 const router = useRouter()
 const shippingNotifications = ref<InstanceType<typeof ShippingArrivalNotifications> | null>(null)
 const basicDataOpen = ref(false)
+const hasProcurement = computed(() => [
+  'procurement:sourcing:read',
+  'procurement:requirement:read',
+  'procurement:order:read',
+].some(auth.can))
+const menuActive = computed(() => (
+  ['/procurement', '/requirements', '/sourcing-cases', '/purchase-orders'].includes(route.path)
+    ? '/procurement'
+    : route.path
+))
 
 // 基础数据的子模块集中在右侧浮层中，避免展开后挤压左侧主导航。
 const basicDataItems = computed(() => [
@@ -174,7 +181,9 @@ const basicDataItems = computed(() => [
   ...(auth.can('masterdata:customer:read')
     ? [{ path: '/basic/customers', activePrefix: '/basic/customers', label: t('menu.customers'), todo: false }]
     : []),
-  { path: '/basic/ports', activePrefix: '/basic/ports', label: t('menu.ports'), todo: true },
+  ...(auth.can('masterdata:port:read')
+    ? [{ path: '/basic/ports', activePrefix: '/basic/ports', label: t('menu.ports'), todo: false }]
+    : []),
   ...(auth.can('masterdata:supplier:read')
     ? [{ path: '/basic/suppliers', activePrefix: '/basic/suppliers', label: t('menu.suppliers'), todo: false }]
     : []),

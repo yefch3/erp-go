@@ -108,3 +108,27 @@ MAIL_PROVIDER=dev   # 默认。记录「本该发什么」而不真发
 申请解除沙箱，然后补一个 `provider/ses.go`（约 80 行，接口已留好）。
 **收件箱**还需要服务商的入站通道，界面上已经存在但明确写着未接通 ——
 详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §5.12。
+
+### 客户询盘转公司询价 Excel
+
+在收件邮件里选中文字后右键，或在附件卡片上右键，选择「生成询价 Excel」。
+服务端调用 OpenAI Responses API 抽取询盘，并强制整理为公司固定列：产品、标准、
+牌号、尺寸、表面、涂层、公差、卷重、卷内径、包装、交期、付款、贸易术语、港口、
+单位、备注、数量、单价、总价。模型只负责提取事实，不能决定列名和公式；单价留空，
+总价由 Excel 公式 `数量 × 单价` 计算。界面先显示预览，再提供 `.xlsx` 下载。
+正文/附件只有在用户明确点击时才会发送，API key 始终留在 mail 服务。
+
+```sh
+export OPENAI_API_KEY='...'
+export OPENAI_MODEL='gpt-5.6-luna'                 # 默认
+export OPENAI_BASE_URL='https://api.openai.com/v1' # 可选
+export OPENAI_TIMEOUT='2m'                         # 可选
+```
+
+未配置 `OPENAI_API_KEY` 不影响邮箱其他功能，界面也不会显示生成操作。支持常见图片、
+PDF、文本、Word、PowerPoint 和电子表格附件；单个附件沿用邮件模块的 10 MB 上限。
+模型请求使用 `store: false`，生成结果直接返回浏览器，不在数据库或对象存储中留下副本。
+
+为控制模型费用，每位用户最多在 10 分钟内发起 12 次转换。生成 Excel 时，普通数字会
+保持为可计算的数值；超过 Excel 15 位安全精度的数字会按文本保存，避免订单号、客户编号
+或高精度数据被静默舍入。

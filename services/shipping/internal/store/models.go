@@ -123,6 +123,7 @@ type ShippingRouteNode struct {
 	UpdatedBy         int64
 	UpdatedByName     string
 	UpdatedAt         pgtype.Timestamptz
+	PortID            *int64
 }
 
 type ShippingSchedule struct {
@@ -161,6 +162,12 @@ type ShippingSchedule struct {
 	LatestProgressAt      pgtype.Timestamptz
 	CurrentRouteNodeID    *int64
 	CarrierID             *int64
+	LoadingPortID         *int64
+	LoadingPortCode       string
+	LoadingPortTimezone   string
+	DischargePortID       *int64
+	DischargePortCode     string
+	DischargePortTimezone string
 }
 
 type ShippingScheduleChange struct {

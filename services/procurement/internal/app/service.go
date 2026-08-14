@@ -6,6 +6,7 @@ package app
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -29,10 +30,46 @@ type Numbering interface {
 	Next(ctx context.Context, bizType string) (string, error)
 }
 
+type Rate struct {
+	Rate         decimal.Decimal
+	At           time.Time
+	Source, Base string
+}
+
+type Rates interface {
+	Latest(context.Context, string) (Rate, error)
+}
+
 // Approvals is the approval engine. It never learns what a purchase order is
 // — it routes on a business type and an amount and reports a decision.
 type Approvals interface {
 	Submit(ctx context.Context, in ApprovalSubmission) (int64, error)
+}
+
+// Suppliers resolves the current master-data record before an order snapshot
+// is written. Names and codes sent by a browser are display values, not facts.
+type Suppliers interface {
+	Get(ctx context.Context, id int64) (Supplier, error)
+}
+
+type Supplier struct {
+	ID       int64
+	Code     string
+	Name     string
+	Currency string
+	Status   string
+}
+
+// Warehouses resolves the custody destination selected for a receipt.
+type Warehouses interface {
+	Get(ctx context.Context, id int64) (Warehouse, error)
+}
+
+type Warehouse struct {
+	ID     int64
+	Name   string
+	Type   string
+	Status string
 }
 
 // ApprovalSubmission is one document entering an approval flow.
@@ -50,24 +87,31 @@ type ApprovalSubmission struct {
 
 // Deps are the outside services procurement talks to.
 type Deps struct {
-	Numbering Numbering
-	Approvals Approvals
+	Numbering  Numbering
+	Approvals  Approvals
+	Suppliers  Suppliers
+	Warehouses Warehouses
+	Rates      Rates
 	// Optional: without it the pages still work, they just need a refresh.
 	Live *livefeed.Publisher
 }
 
 type Service struct {
-	pool      *pgxpool.Pool
-	q         *store.Queries
-	numbering Numbering
-	approvals Approvals
-	live      *livefeed.Publisher
+	pool       *pgxpool.Pool
+	q          *store.Queries
+	numbering  Numbering
+	approvals  Approvals
+	suppliers  Suppliers
+	warehouses Warehouses
+	rates      Rates
+	live       *livefeed.Publisher
 }
 
 func New(pool *pgxpool.Pool, d Deps) *Service {
 	return &Service{
 		pool: pool, q: store.New(pool),
-		numbering: d.Numbering, approvals: d.Approvals, live: d.Live,
+		numbering: d.Numbering, approvals: d.Approvals,
+		suppliers: d.Suppliers, warehouses: d.Warehouses, rates: d.Rates, live: d.Live,
 	}
 }
 
@@ -176,12 +220,9 @@ type ManualRequirement struct {
 
 // CreateRequirement raises a requirement with no contract behind it.
 //
-// Stock is deliberately NOT consulted. Contract-driven requirements exist to
-// cover a shortage, so they are netted against what is on hand; this one is a
-// human deciding to buy something — restocking ahead of a season, a long-lead
-// item, a supplier offer worth taking — and second-guessing that with an
-// availability check would refuse exactly the purchases stock levels are
-// supposed to be maintained by.
+// This is an explicit exception independent of a customer contract. Ordinary
+// contract-driven requirements are created automatically for the full sold
+// quantity.
 func (s *Service) CreateRequirement(ctx context.Context, tenantID int64, in ManualRequirement, op Operator) (store.GetRequirementRow, error) {
 	if in.ProductID == 0 {
 		return store.GetRequirementRow{}, apierr.Invalid("PR_PRODUCT_REQUIRED", "请选择产品")

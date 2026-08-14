@@ -76,6 +76,12 @@ message Schedule {
   // Masterdata supplier id used for the selected carrier/forwarder. The name
   // above is retained as a historical snapshot.
   int64 carrier_id = 32;
+  int64 loading_port_id = 33;
+  string loading_port_code = 34;
+  string loading_port_timezone = 35;
+  int64 discharge_port_id = 36;
+  string discharge_port_code = 37;
+  string discharge_port_timezone = 38;
 }
 
 message RouteNode {
@@ -93,6 +99,7 @@ message RouteNode {
   string actual_departure_at = 12;
   string node_status = 13;
   string remark = 14;
+  int64 port_id = 15;
 }
 
 message DelayEvent {
@@ -148,6 +155,12 @@ message ScheduleInput {
   string responsible_name = 15;
   string remark = 16;
   int64 carrier_id = 17;
+  int64 loading_port_id = 18;
+  string loading_port_code = 19;
+  string loading_port_timezone = 20;
+  int64 discharge_port_id = 21;
+  string discharge_port_code = 22;
+  string discharge_port_timezone = 23;
 }
 
 message ScheduleChange {
@@ -211,6 +224,7 @@ message AddRouteNodeRequest {
   string reason = 9;
   string remark = 10;
   int32 route_version = 11;
+  int64 port_id = 12;
 }
 message AddRouteNodeResponse { repeated RouteNode route_nodes = 1; int32 route_version = 2; }
 

@@ -8,7 +8,7 @@ INSERT INTO quotations (
     port_of_loading, port_of_discharge, payment_method, valid_until,
     fx_rate, fx_rate_at, fx_source, fx_base_currency,
     total_amount, base_amount, remark, sales_employee_id, sales_employee,
-    created_by, updated_by
+    created_by, updated_by, source_cost_scenario_id, source_cost_scenario_no, source_sourcing_case_id
 ) VALUES (
     $1, $2, $3, $4,
     nullif(sqlc.arg(contact_id)::bigint, 0), sqlc.arg(contact_name)::text, sqlc.arg(contact_email)::text,
@@ -17,7 +17,9 @@ INSERT INTO quotations (
     sqlc.arg(fx_rate)::text::numeric, sqlc.arg(fx_rate_at)::timestamptz,
     $10, $11,
     sqlc.arg(total_amount)::text::numeric, sqlc.arg(base_amount)::text::numeric,
-    $12, $13, $14, $15, $15
+    $12, $13, $14, $15, $15,
+    nullif(sqlc.arg(source_cost_scenario_id)::bigint, 0), sqlc.arg(source_cost_scenario_no)::text,
+    nullif(sqlc.arg(source_sourcing_case_id)::bigint, 0)
 )
 RETURNING id;
 
@@ -44,7 +46,9 @@ SELECT
     coalesce(valid_until::text, '')::text AS valid_until,
     fx_rate::text AS fx_rate, fx_rate_at, fx_source, fx_base_currency,
     total_amount::text AS total_amount, base_amount::text AS base_amount,
-    remark, status, sales_employee_id, sales_employee, sent_at, responded_at, created_at
+    remark, status, sales_employee_id, sales_employee, sent_at, responded_at, created_at,
+    coalesce(source_cost_scenario_id, 0)::bigint AS source_cost_scenario_id,
+    source_cost_scenario_no, coalesce(source_sourcing_case_id, 0)::bigint AS source_sourcing_case_id
 FROM quotations
 WHERE tenant_id = $1 AND id = $2;
 
@@ -53,7 +57,9 @@ SELECT
     q.id, q.quote_no, q.customer_id, q.customer_name, q.currency,
     q.total_amount::text AS total_amount, q.base_amount::text AS base_amount,
     q.status, q.sales_employee_id, q.sales_employee, coalesce(q.valid_until::text, '')::text AS valid_until,
-    q.created_at, count(*) OVER () AS total
+    q.created_at, coalesce(q.source_cost_scenario_id, 0)::bigint AS source_cost_scenario_id,
+    q.source_cost_scenario_no, coalesce(q.source_sourcing_case_id, 0)::bigint AS source_sourcing_case_id,
+    count(*) OVER () AS total
 -- Aliased because the correlated subquery below brings a second table into
 -- scope, and an unqualified tenant_id would then be ambiguous.
 FROM quotations q
@@ -92,18 +98,21 @@ DELETE FROM quotation_items WHERE tenant_id = $1 AND quotation_id = $2;
 -- name: AddQuotationItem :exec
 INSERT INTO quotation_items (
     tenant_id, quotation_id, line_no, product_id, sku_id, product_code,
-    product_name, spec, qty, uom_id, uom_code, unit_price, amount, remark
+    product_name, spec, qty, uom_id, uom_code, unit_price, amount, remark,
+    source_cost_scenario_line_id
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
     sqlc.arg(qty)::text::numeric, $9, $10,
-    sqlc.arg(unit_price)::text::numeric, sqlc.arg(amount)::text::numeric, $11
+    sqlc.arg(unit_price)::text::numeric, sqlc.arg(amount)::text::numeric, $11,
+    nullif(sqlc.arg(source_cost_scenario_line_id)::bigint, 0)
 );
 
 -- name: ListQuotationItems :many
 SELECT
     id, quotation_id, line_no, product_id, sku_id, product_code, product_name,
     spec, qty::text AS qty, uom_id, uom_code,
-    unit_price::text AS unit_price, amount::text AS amount, remark
+    unit_price::text AS unit_price, amount::text AS amount, remark,
+    coalesce(source_cost_scenario_line_id, 0)::bigint AS source_cost_scenario_line_id
 FROM quotation_items
 WHERE tenant_id = $1 AND quotation_id = $2
 ORDER BY line_no;

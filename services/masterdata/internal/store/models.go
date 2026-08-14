@@ -146,6 +146,45 @@ type OptionItem struct {
 	Status    string
 }
 
+type Port struct {
+	ID             int64
+	TenantID       int64
+	Unlocode       string
+	NameZh         string
+	NameEn         string
+	CountryCode    string
+	City           string
+	Timezone       string
+	Aliases        []string
+	Status         string
+	Remark         string
+	Version        int32
+	CreatedAt      pgtype.Timestamptz
+	CreatedBy      int64
+	CreatedByName  string
+	UpdatedAt      pgtype.Timestamptz
+	UpdatedBy      int64
+	UpdatedByName  string
+	PortType       string
+	AdminArea      string
+	Latitude       float64
+	Longitude      float64
+	HasCoordinates bool
+	IsFavorite     bool
+}
+
+type PortChangeLog struct {
+	ID           int64
+	TenantID     int64
+	PortID       int64
+	Action       string
+	BeforeData   []byte
+	AfterData    []byte
+	OperatorID   int64
+	OperatorName string
+	CreatedAt    pgtype.Timestamptz
+}
+
 type Supplier struct {
 	ID           int64
 	TenantID     int64

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
@@ -95,6 +96,13 @@ func (s *Service) CreateOrder(ctx context.Context, tenantID int64, in CreateOrde
 	if in.SupplierID == 0 {
 		return store.CreatePurchaseOrderRow{}, apierr.Invalid("PO_SUPPLIER_REQUIRED", "请选择供应商")
 	}
+	supplier, err := s.supplierForOrder(ctx, in.SupplierID)
+	if err != nil {
+		return store.CreatePurchaseOrderRow{}, err
+	}
+	// Supplier code/name are immutable document snapshots, but their source is
+	// master data at write time—not display strings supplied by the browser.
+	in.SupplierCode, in.SupplierName = supplier.Code, supplier.Name
 	if len(in.Lines) == 0 {
 		return store.CreatePurchaseOrderRow{}, apierr.Invalid("PO_LINES_REQUIRED", "采购单明细不能为空")
 	}
@@ -126,7 +134,7 @@ func (s *Service) CreateOrder(ctx context.Context, tenantID int64, in CreateOrde
 	}
 
 	var head store.CreatePurchaseOrderRow
-	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		reqs, err := q.RequirementsForOrder(ctx, store.RequirementsForOrderParams{
 			TenantID: tenantID, Ids: ids,
@@ -199,6 +207,149 @@ func (s *Service) CreateOrder(ctx context.Context, tenantID int64, in CreateOrde
 	return head, nil
 }
 
+// UpdateOrder replaces the editable snapshot and all lines in one
+// transaction. Draft lines reserve no demand, so replacement needs no release;
+// the same locked requirement validation used by creation is repeated here.
+func (s *Service) UpdateOrder(
+	ctx context.Context,
+	tenantID, id int64,
+	in CreateOrderInput,
+	op Operator,
+) (store.UpdatePurchaseOrderDraftRow, error) {
+	if in.SupplierID == 0 {
+		return store.UpdatePurchaseOrderDraftRow{}, apierr.Invalid("PO_SUPPLIER_REQUIRED", "请选择供应商")
+	}
+	supplier, err := s.supplierForOrder(ctx, in.SupplierID)
+	if err != nil {
+		return store.UpdatePurchaseOrderDraftRow{}, err
+	}
+	in.SupplierCode, in.SupplierName = supplier.Code, supplier.Name
+	if len(in.Lines) == 0 {
+		return store.UpdatePurchaseOrderDraftRow{}, apierr.Invalid("PO_LINES_REQUIRED", "采购单明细不能为空")
+	}
+	if in.Currency == "" {
+		in.Currency = "CNY"
+	}
+
+	type parsed struct {
+		qty   decimal.Decimal
+		price decimal.Decimal
+	}
+	want := make(map[int64]parsed, len(in.Lines))
+	ids := make([]int64, 0, len(in.Lines))
+	for _, l := range in.Lines {
+		qty, parseErr := decimal.NewFromString(l.Qty)
+		if parseErr != nil || qty.LessThanOrEqual(decimal.Zero) {
+			return store.UpdatePurchaseOrderDraftRow{}, apierr.Invalid("PO_QTY_INVALID", "采购数量必须大于 0")
+		}
+		price, parseErr := decimal.NewFromString(orZero(l.UnitPrice))
+		if parseErr != nil || price.IsNegative() {
+			return store.UpdatePurchaseOrderDraftRow{}, apierr.Invalid("PO_PRICE_INVALID", "单价不能为负数")
+		}
+		if _, duplicated := want[l.RequirementID]; duplicated {
+			return store.UpdatePurchaseOrderDraftRow{}, apierr.Invalid(
+				"PO_LINE_DUPLICATED", "同一采购需求在一张采购单里只能出现一次",
+			)
+		}
+		want[l.RequirementID] = parsed{qty: qty, price: price}
+		ids = append(ids, l.RequirementID)
+	}
+
+	var updated store.UpdatePurchaseOrderDraftRow
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		head, lockErr := q.GetPurchaseOrderForUpdate(ctx, store.GetPurchaseOrderForUpdateParams{
+			TenantID: tenantID, ID: id,
+		})
+		if lockErr == pgx.ErrNoRows {
+			return apierr.NotFound("PO_ORDER_NOT_FOUND", "采购单不存在")
+		}
+		if lockErr != nil {
+			return lockErr
+		}
+		if head.Status != poDraft && head.Status != "REJECTED" {
+			return apierr.Conflict("PO_NOT_EDITABLE", "只有草稿或已驳回的采购单可以编辑").
+				WithMeta("status", head.Status)
+		}
+
+		reqs, reqErr := q.RequirementsForOrder(ctx, store.RequirementsForOrderParams{
+			TenantID: tenantID, Ids: ids,
+		})
+		if reqErr != nil {
+			return reqErr
+		}
+		if len(reqs) != len(ids) {
+			return apierr.Invalid("PO_REQUIREMENT_NOT_FOUND", "有采购需求不存在，请刷新后重试")
+		}
+		total := decimal.Zero
+		for _, requirement := range reqs {
+			line := want[requirement.ID]
+			if requirement.Status != "PENDING" && requirement.Status != "PARTIALLY_ORDERED" {
+				return apierr.Invalid("PO_REQUIREMENT_CLOSED", "「"+requirement.ProductName+"」的采购需求已关闭，不能下单").
+					WithMeta("status", requirement.Status)
+			}
+			open, parseErr := decimal.NewFromString(requirement.OpenQty)
+			if parseErr != nil {
+				return parseErr
+			}
+			if line.qty.GreaterThan(open) {
+				return apierr.Invalid("PO_EXCEEDS_REQUIREMENT", "「"+requirement.ProductName+"」下单数量超过需求未下单部分").
+					WithMeta("requested", line.qty.String()).WithMeta("open", open.String())
+			}
+			total = total.Add(line.qty.Mul(line.price))
+		}
+
+		updated, reqErr = q.UpdatePurchaseOrderDraft(ctx, store.UpdatePurchaseOrderDraftParams{
+			TenantID: tenantID, ID: id, SupplierID: in.SupplierID,
+			SupplierCode: in.SupplierCode, SupplierName: in.SupplierName,
+			Currency: in.Currency, TotalAmount: total.StringFixed(2),
+			ExpectedDate: in.ExpectedDate, BuyerID: op.ID, BuyerName: op.Name,
+			Remark: in.Remark,
+		})
+		if reqErr != nil {
+			return reqErr
+		}
+		if reqErr = q.DeletePurchaseOrderItems(ctx, store.DeletePurchaseOrderItemsParams{
+			TenantID: tenantID, PoID: id,
+		}); reqErr != nil {
+			return reqErr
+		}
+		for _, requirement := range reqs {
+			line := want[requirement.ID]
+			if _, reqErr = q.CreatePurchaseOrderItem(ctx, store.CreatePurchaseOrderItemParams{
+				TenantID: tenantID, PoID: id, RequirementID: requirement.ID,
+				ProductID: requirement.ProductID, SkuID: requirement.SkuID,
+				ProductCode: requirement.ProductCode, ProductName: requirement.ProductName,
+				Spec: requirement.Spec, UomID: requirement.UomID, UomCode: requirement.UomCode,
+				Qty: line.qty.String(), UnitPrice: line.price.String(),
+				Amount: line.qty.Mul(line.price).StringFixed(2),
+			}); reqErr != nil {
+				return reqErr
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return store.UpdatePurchaseOrderDraftRow{}, err
+	}
+	s.nudge(ctx, tenantID)
+	return updated, nil
+}
+
+func (s *Service) supplierForOrder(ctx context.Context, id int64) (Supplier, error) {
+	if s.suppliers == nil {
+		return Supplier{}, apierr.Internal("PO_SUPPLIER_DIRECTORY_UNAVAILABLE", "供应商主数据服务未配置")
+	}
+	supplier, err := s.suppliers.Get(ctx, id)
+	if err != nil {
+		return Supplier{}, err
+	}
+	if supplier.ID == 0 || supplier.Status != "ACTIVE" {
+		return Supplier{}, apierr.Invalid("PO_SUPPLIER_INACTIVE", "供应商不存在或已停用，请重新选择")
+	}
+	return supplier, nil
+}
+
 // SubmitOrder sends the order for approval.
 //
 // The requirement is NOT marked as ordered here. Until somebody has approved
@@ -245,7 +396,11 @@ func (s *Service) SubmitOrder(ctx context.Context, tenantID, id int64, op Operat
 // ApplyApprovalDecision is what the Kafka consumer calls. Approving an order
 // is the moment the company commits to buying, so this is where requirements
 // finally count as ordered.
-func (s *Service) ApplyApprovalDecision(ctx context.Context, tenantID, poID int64, result string) (string, error) {
+func (s *Service) ApplyApprovalDecision(
+	ctx context.Context,
+	tenantID, poID, approvalInstanceID int64,
+	result, comment string,
+) (string, error) {
 	status := ""
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
@@ -257,6 +412,13 @@ func (s *Service) ApplyApprovalDecision(ctx context.Context, tenantID, poID int6
 		}
 		if err != nil {
 			return err
+		}
+		// A rejected order can be submitted again, producing a new approval
+		// instance. A delayed event from the old instance must not decide the new
+		// submission merely because both events name the same purchase order.
+		if head.ApprovalInstanceID != approvalInstanceID {
+			status = head.Status
+			return nil
 		}
 		if head.Status != poPending {
 			// A redelivered decision. The first one already moved it.
@@ -272,7 +434,27 @@ func (s *Service) ApplyApprovalDecision(ctx context.Context, tenantID, poID int6
 
 		if result != "APPROVED" {
 			if err := q.SetPurchaseOrderRejected(ctx, store.SetPurchaseOrderRejectedParams{
-				TenantID: tenantID, ID: poID, Reason: "审批未通过",
+				TenantID: tenantID, ID: poID, Reason: approvalRejectReason(result, comment),
+			}); err != nil {
+				return err
+			}
+			status = "REJECTED"
+			return nil
+		}
+
+		ids := make([]int64, 0, len(items))
+		for _, it := range items {
+			ids = append(ids, it.RequirementID)
+		}
+		reqs, err := q.RequirementsForOrder(ctx, store.RequirementsForOrderParams{
+			TenantID: tenantID, Ids: ids,
+		})
+		if err != nil {
+			return err
+		}
+		if reason := approvalRequirementConflict(reqs, items); reason != "" {
+			if err := q.SetPurchaseOrderRejected(ctx, store.SetPurchaseOrderRejectedParams{
+				TenantID: tenantID, ID: poID, Reason: reason,
 			}); err != nil {
 				return err
 			}
@@ -284,6 +466,9 @@ func (s *Service) ApplyApprovalDecision(ctx context.Context, tenantID, poID int6
 			if _, err := q.AddRequirementOrdered(ctx, store.AddRequirementOrderedParams{
 				TenantID: tenantID, ID: it.RequirementID, Qty: it.Qty,
 			}); err != nil {
+				if err == pgx.ErrNoRows {
+					return apierr.Conflict("PO_REQUIREMENT_CHANGED", "采购需求状态或剩余数量已变化，请重新建立采购单")
+				}
 				return err
 			}
 		}
@@ -300,6 +485,50 @@ func (s *Service) ApplyApprovalDecision(ctx context.Context, tenantID, poID int6
 	}
 	s.nudge(ctx, tenantID)
 	return status, nil
+}
+
+func approvalRejectReason(result, comment string) string {
+	comment = strings.TrimSpace(comment)
+	if comment != "" {
+		return comment
+	}
+	if result == "RETURNED" {
+		return "审批退回"
+	}
+	return "审批未通过"
+}
+
+// approvalRequirementConflict runs after every referenced requirement has
+// been locked. Drafts deliberately do not reserve demand, so this second
+// check is the point that prevents two independently valid drafts from both
+// becoming commitments, and prevents an approval from reviving a requirement
+// retired by a contract change.
+func approvalRequirementConflict(
+	reqs []store.RequirementsForOrderRow,
+	items []store.PurchaseOrderItemsForUpdateRow,
+) string {
+	if len(reqs) != len(items) {
+		return "采购需求已不存在或发生变化，请重新建立采购单"
+	}
+	byID := make(map[int64]store.RequirementsForOrderRow, len(reqs))
+	for _, r := range reqs {
+		byID[r.ID] = r
+	}
+	for _, it := range items {
+		r, ok := byID[it.RequirementID]
+		if !ok || (r.Status != "PENDING" && r.Status != "PARTIALLY_ORDERED") {
+			return "采购需求「" + it.ProductName + "」已经关闭或被其他采购单占用，请重新建立采购单"
+		}
+		open, err := decimal.NewFromString(r.OpenQty)
+		if err != nil {
+			return "采购需求「" + it.ProductName + "」的剩余数量无效，请重新建立采购单"
+		}
+		qty, err := decimal.NewFromString(it.Qty)
+		if err != nil || qty.GreaterThan(open) {
+			return "采购需求「" + it.ProductName + "」的剩余数量不足，请重新建立采购单"
+		}
+	}
+	return ""
 }
 
 // CancelOrder withdraws an order and puts what it claimed back on the buying
@@ -359,24 +588,28 @@ func (s *Service) CancelOrder(ctx context.Context, tenantID, id int64, reason st
 	return nil
 }
 
-// ReceiveOrder records goods arriving against an order.
-//
-// Two things must happen together or not at all: the receipt is written here,
-// and stock goes up in the inventory service. A direct call to inventory
-// cannot promise that — the call could succeed and this transaction still
-// roll back, leaving stock that no paperwork explains. So the increase leaves
-// as an event in the same transaction, and inventory applies it.
-//
-// That indirection buys something else: inventory's own receiving path
-// already hands new goods to the contracts waiting for them and re-announces
-// the shrunken shortage, so a delivery closes the requirements it covers
-// without procurement knowing anything about reservations.
+// ReceiveOrder records finished goods entering a third-party port terminal.
+// The event keeps the terminal custody ledger consistent with this receipt;
+// it is not an own-stock replenishment signal and never changes purchase need.
 func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, warehouseID int64, lines []ReceiptLine, remark string, op Operator) (string, error) {
 	if len(lines) == 0 {
 		return "", apierr.Invalid("PO_RECEIPT_LINES_REQUIRED", "收货明细不能为空")
 	}
 	if warehouseID == 0 {
-		return "", apierr.Invalid("PO_WAREHOUSE_REQUIRED", "请选择收货仓库")
+		return "", apierr.Invalid("PO_WAREHOUSE_REQUIRED", "请选择码头库")
+	}
+	if s.warehouses == nil {
+		return "", apierr.Internal("PO_WAREHOUSE_DIRECTORY_UNAVAILABLE", "码头库目录未配置")
+	}
+	warehouse, err := s.warehouses.Get(ctx, warehouseID)
+	if err != nil {
+		return "", err
+	}
+	if warehouse.ID == 0 || warehouse.Status != "ACTIVE" {
+		return "", apierr.Invalid("PO_WAREHOUSE_INACTIVE", "码头库不存在或已停用，请重新选择")
+	}
+	if warehouse.Type != "PORT_TERMINAL" {
+		return "", apierr.Invalid("PO_PORT_WAREHOUSE_REQUIRED", "采购到货只能登记到码头库")
 	}
 	want := make(map[int64]decimal.Decimal, len(lines))
 	for _, l := range lines {
@@ -388,7 +621,7 @@ func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, wareho
 	}
 
 	receiptNo := ""
-	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		head, err := q.GetPurchaseOrderForUpdate(ctx, store.GetPurchaseOrderForUpdateParams{
 			TenantID: tenantID, ID: poID,

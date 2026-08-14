@@ -17,6 +17,8 @@ service QuotationService {
   // Record what the customer answered.
   rpc RespondQuotation(RespondQuotationRequest) returns (RespondQuotationResponse);
   rpc CancelQuotation(CancelQuotationRequest) returns (CancelQuotationResponse);
+  rpc GetQuotationWorkbook(GetQuotationWorkbookRequest) returns (GetQuotationWorkbookResponse);
+  rpc GetQuotationPdf(GetQuotationPdfRequest) returns (GetQuotationPdfResponse);
 }
 
 // FxSnapshot is the rate as it stood when the document was created. It is
@@ -43,6 +45,7 @@ message QuotationItem {
   string unit_price = 11;
   string amount = 12;
   string remark = 13;
+  int64 source_cost_scenario_line_id = 14;
 }
 
 message Quotation {
@@ -72,6 +75,9 @@ message Quotation {
   string sent_at = 18;
   string responded_at = 19;
   string created_at = 20;
+  int64 source_cost_scenario_id = 24;
+  string source_cost_scenario_no = 25;
+  int64 source_sourcing_case_id = 26;
 }
 
 // ItemInput is one line the caller wants quoted. Only the product, quantity
@@ -83,6 +89,7 @@ message ItemInput {
   string qty = 4;
   string unit_price = 5;
   string remark = 6;
+  int64 source_cost_scenario_line_id = 7;
 }
 
 message ListQuotationsRequest {
@@ -120,6 +127,9 @@ message CreateQuotationRequest {
   string valid_until = 7;
   string remark = 8;
   repeated ItemInput items = 9;
+  int64 source_cost_scenario_id = 11;
+  string source_cost_scenario_no = 12;
+  int64 source_sourcing_case_id = 13;
 }
 
 message CreateQuotationResponse {
@@ -171,3 +181,8 @@ message CancelQuotationRequest {
 message CancelQuotationResponse {
   string status = 1;
 }
+
+message GetQuotationWorkbookRequest { int64 id = 1; }
+message GetQuotationWorkbookResponse { string file_name = 1; bytes file_data = 2; }
+message GetQuotationPdfRequest { int64 id = 1; }
+message GetQuotationPdfResponse { string file_name = 1; bytes file_data = 2; }

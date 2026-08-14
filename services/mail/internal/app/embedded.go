@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,19 @@ import (
 // cidPrefix is what a body writes in front of the identifier.
 const cidPrefix = "cid:"
 
+// embeddedAttachmentFragment connects the picture displayed in the sandboxed
+// reader back to the already owner-scoped attachment row accepted by the
+// Excel conversion endpoint. URL fragments are not sent to object storage,
+// so this metadata neither changes nor invalidates the signed download URL.
+const embeddedAttachmentFragment = "erp-mail-attachment="
+
+func markEmbeddedAttachment(url string, attachmentID int64) string {
+	if url == "" || attachmentID <= 0 {
+		return url
+	}
+	return url + "#" + embeddedAttachmentFragment + strconv.FormatInt(attachmentID, 10)
+}
+
 // embeddedSwap builds the cid: → signed URL entries for one message.
 func (s *Service) embeddedSwap(ctx context.Context, tenantID, inboundID int64) imageSwap {
 	if s.files == nil {
@@ -42,7 +56,7 @@ func (s *Service) embeddedSwap(ctx context.Context, tenantID, inboundID int64) i
 	swap := make(imageSwap, len(rows))
 	for _, r := range rows {
 		if u := s.signImage(ctx, r.FileKey, r.ContentType); u != "" {
-			swap[cidPrefix+r.ContentID] = u
+			swap[cidPrefix+r.ContentID] = markEmbeddedAttachment(u, r.ID)
 		}
 	}
 	return swap
@@ -73,7 +87,7 @@ func (s *Service) embeddedSwapForThread(ctx context.Context, tenantID, ownerID i
 		if out[r.InboundID] == nil {
 			out[r.InboundID] = imageSwap{}
 		}
-		out[r.InboundID][cidPrefix+r.ContentID] = u
+		out[r.InboundID][cidPrefix+r.ContentID] = markEmbeddedAttachment(u, r.ID)
 	}
 	return out
 }

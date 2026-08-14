@@ -10,11 +10,21 @@ import (
 	"google.golang.org/grpc"
 
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
+	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
 )
 
 type shippingClientStub struct {
 	shippingv1.ShippingServiceClient
+}
+
+type shippingPortClientStub struct{ mdv1.PortServiceClient }
+
+func (shippingPortClientStub) GetPort(_ context.Context, req *mdv1.GetPortRequest, _ ...grpc.CallOption) (*mdv1.GetPortResponse, error) {
+	if req.GetId() == 1 {
+		return &mdv1.GetPortResponse{Port: &mdv1.Port{Id: 1, Unlocode: "CNSHA", NameZh: "上海港", NameEn: "Shanghai", Timezone: "Asia/Shanghai", Status: "ACTIVE"}}, nil
+	}
+	return &mdv1.GetPortResponse{Port: &mdv1.Port{Id: 2, Unlocode: "USLAX", NameZh: "洛杉矶港", NameEn: "Los Angeles", Timezone: "America/Los_Angeles", Status: "ACTIVE"}}, nil
 }
 
 func (shippingClientStub) GetModuleStatus(context.Context, *shippingv1.GetModuleStatusRequest, ...grpc.CallOption) (*shippingv1.GetModuleStatusResponse, error) {
@@ -63,9 +73,9 @@ func TestListShippingSchedules(t *testing.T) {
 }
 
 func TestCreateShippingSchedule(t *testing.T) {
-	s := &Server{Shipping: shippingClientStub{}}
+	s := &Server{Shipping: shippingClientStub{}, Ports: shippingPortClientStub{}}
 	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/shipping/schedules", strings.NewReader(`{"schedule":{"vesselName":"Test"}}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/shipping/schedules", strings.NewReader(`{"schedule":{"vesselName":"Test","loadingPortId":"1","dischargePortId":"2"}}`))
 	s.createShippingSchedule(recorder, req)
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"scheduleNo":"SCH-TEST-0001"`) {
 		t.Fatalf("unexpected create response: status=%d body=%s", recorder.Code, recorder.Body.String())

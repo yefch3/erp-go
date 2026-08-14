@@ -18,7 +18,7 @@ import (
 	"github.com/sgao19/erp-go/services/shipping/internal/store"
 )
 
-const SchemaVersion int32 = 7
+const SchemaVersion int32 = 9
 
 type databasePinger interface{ Ping(context.Context) error }
 
@@ -60,8 +60,11 @@ type Operator struct {
 
 type ScheduleInput struct {
 	ContractID, CustomerID, CarrierID                    int64
+	LoadingPortID, DischargePortID                       int64
 	ContractNo, CustomerName, CarrierForwarder           string
 	VesselName, VoyageNo, PortOfLoading, PortOfDischarge string
+	LoadingPortCode, LoadingPortTimezone                 string
+	DischargePortCode, DischargePortTimezone             string
 	ETD, ATD, ETA, ATA                                   string
 	ResponsibleEmployeeID                                int64
 	ResponsibleName, Remark                              string
@@ -120,6 +123,19 @@ func validateInput(in ScheduleInput) (store.CreateScheduleParams, error) {
 	if in.CarrierID > 0 {
 		carrierID = &in.CarrierID
 	}
+	var loadingPortID, dischargePortID *int64
+	if in.LoadingPortID > 0 {
+		loadingPortID = &in.LoadingPortID
+	}
+	if in.DischargePortID > 0 {
+		dischargePortID = &in.DischargePortID
+	}
+	if strings.TrimSpace(in.LoadingPortTimezone) == "" {
+		in.LoadingPortTimezone = "UTC"
+	}
+	if strings.TrimSpace(in.DischargePortTimezone) == "" {
+		in.DischargePortTimezone = "UTC"
+	}
 	return store.CreateScheduleParams{
 		ContractID: contractID, ContractNo: strings.TrimSpace(in.ContractNo),
 		CustomerID: customerID, CustomerName: strings.TrimSpace(in.CustomerName),
@@ -127,7 +143,10 @@ func validateInput(in ScheduleInput) (store.CreateScheduleParams, error) {
 		VoyageNo: in.VoyageNo, PortOfLoading: in.PortOfLoading,
 		PortOfDischarge: in.PortOfDischarge, Etd: etd, Eta: eta,
 		ResponsibleEmployeeID: in.ResponsibleEmployeeID, ResponsibleName: in.ResponsibleName,
-		Remark: strings.TrimSpace(in.Remark),
+		Remark: strings.TrimSpace(in.Remark), LoadingPortID: loadingPortID,
+		LoadingPortCode: strings.TrimSpace(in.LoadingPortCode), LoadingPortTimezone: strings.TrimSpace(in.LoadingPortTimezone),
+		DischargePortID: dischargePortID, DischargePortCode: strings.TrimSpace(in.DischargePortCode),
+		DischargePortTimezone: strings.TrimSpace(in.DischargePortTimezone),
 	}, nil
 }
 
@@ -302,6 +321,9 @@ func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in Sch
 			PortOfDischarge: p.PortOfDischarge, Etd: p.Etd, Atd: p.Atd, Eta: p.Eta, Ata: p.Ata,
 			ResponsibleEmployeeID: p.ResponsibleEmployeeID, ResponsibleName: p.ResponsibleName,
 			Remark: p.Remark, UpdatedBy: op.ID, UpdatedByName: op.Name,
+			LoadingPortID: p.LoadingPortID, LoadingPortCode: p.LoadingPortCode,
+			LoadingPortTimezone: p.LoadingPortTimezone, DischargePortID: p.DischargePortID,
+			DischargePortCode: p.DischargePortCode, DischargePortTimezone: p.DischargePortTimezone,
 		})
 		if err != nil {
 			return err

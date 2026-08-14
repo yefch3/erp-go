@@ -16,6 +16,14 @@ for svc in iam masterdata product fx approval export procurement inventory mail 
 SQL
 done
 
+# 迁移生命周期测试会执行 DownTo(0)，必须使用独立数据库，避免与同时运行的
+# 船期业务集成测试互相拆表。放在这里而不是 CI 的 workflow 里，本地 compose
+# 首次启动也会建出同一个库，make ci 在本地才跑得动这个测试。
+psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres <<SQL
+  CREATE DATABASE erp_shipping_migrations OWNER erp_shipping;
+  REVOKE CONNECT ON DATABASE erp_shipping_migrations FROM PUBLIC;
+SQL
+
 # Dashboards and reports read through a separate account with SELECT only:
 # "报表只能读取正式业务数据" enforced at the database layer.
 psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d erp_reporting <<SQL

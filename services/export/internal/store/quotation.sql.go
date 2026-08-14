@@ -14,29 +14,32 @@ import (
 const addQuotationItem = `-- name: AddQuotationItem :exec
 INSERT INTO quotation_items (
     tenant_id, quotation_id, line_no, product_id, sku_id, product_code,
-    product_name, spec, qty, uom_id, uom_code, unit_price, amount, remark
+    product_name, spec, qty, uom_id, uom_code, unit_price, amount, remark,
+    source_cost_scenario_line_id
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
     $12::text::numeric, $9, $10,
-    $13::text::numeric, $14::text::numeric, $11
+    $13::text::numeric, $14::text::numeric, $11,
+    nullif($15::bigint, 0)
 )
 `
 
 type AddQuotationItemParams struct {
-	TenantID    int64
-	QuotationID int64
-	LineNo      int32
-	ProductID   int64
-	SkuID       *int64
-	ProductCode string
-	ProductName string
-	Spec        string
-	UomID       int64
-	UomCode     string
-	Remark      string
-	Qty         string
-	UnitPrice   string
-	Amount      string
+	TenantID                 int64
+	QuotationID              int64
+	LineNo                   int32
+	ProductID                int64
+	SkuID                    *int64
+	ProductCode              string
+	ProductName              string
+	Spec                     string
+	UomID                    int64
+	UomCode                  string
+	Remark                   string
+	Qty                      string
+	UnitPrice                string
+	Amount                   string
+	SourceCostScenarioLineID int64
 }
 
 func (q *Queries) AddQuotationItem(ctx context.Context, arg AddQuotationItemParams) error {
@@ -55,6 +58,7 @@ func (q *Queries) AddQuotationItem(ctx context.Context, arg AddQuotationItemPara
 		arg.Qty,
 		arg.UnitPrice,
 		arg.Amount,
+		arg.SourceCostScenarioLineID,
 	)
 	return err
 }
@@ -67,7 +71,7 @@ INSERT INTO quotations (
     port_of_loading, port_of_discharge, payment_method, valid_until,
     fx_rate, fx_rate_at, fx_source, fx_base_currency,
     total_amount, base_amount, remark, sales_employee_id, sales_employee,
-    created_by, updated_by
+    created_by, updated_by, source_cost_scenario_id, source_cost_scenario_no, source_sourcing_case_id
 ) VALUES (
     $1, $2, $3, $4,
     nullif($16::bigint, 0), $17::text, $18::text,
@@ -76,35 +80,40 @@ INSERT INTO quotations (
     $20::text::numeric, $21::timestamptz,
     $10, $11,
     $22::text::numeric, $23::text::numeric,
-    $12, $13, $14, $15, $15
+    $12, $13, $14, $15, $15,
+    nullif($24::bigint, 0), $25::text,
+    nullif($26::bigint, 0)
 )
 RETURNING id
 `
 
 type CreateQuotationParams struct {
-	TenantID        int64
-	QuoteNo         string
-	CustomerID      int64
-	CustomerName    string
-	Currency        string
-	Incoterm        string
-	PortOfLoading   string
-	PortOfDischarge string
-	PaymentMethod   string
-	FxSource        string
-	FxBaseCurrency  string
-	Remark          string
-	SalesEmployeeID int64
-	SalesEmployee   string
-	CreatedBy       int64
-	ContactID       int64
-	ContactName     string
-	ContactEmail    string
-	ValidUntil      string
-	FxRate          string
-	FxRateAt        pgtype.Timestamptz
-	TotalAmount     string
-	BaseAmount      string
+	TenantID             int64
+	QuoteNo              string
+	CustomerID           int64
+	CustomerName         string
+	Currency             string
+	Incoterm             string
+	PortOfLoading        string
+	PortOfDischarge      string
+	PaymentMethod        string
+	FxSource             string
+	FxBaseCurrency       string
+	Remark               string
+	SalesEmployeeID      int64
+	SalesEmployee        string
+	CreatedBy            int64
+	ContactID            int64
+	ContactName          string
+	ContactEmail         string
+	ValidUntil           string
+	FxRate               string
+	FxRateAt             pgtype.Timestamptz
+	TotalAmount          string
+	BaseAmount           string
+	SourceCostScenarioID int64
+	SourceCostScenarioNo string
+	SourceSourcingCaseID int64
 }
 
 // Money and rates cross this boundary as text: Go holds decimal strings and
@@ -134,6 +143,9 @@ func (q *Queries) CreateQuotation(ctx context.Context, arg CreateQuotationParams
 		arg.FxRateAt,
 		arg.TotalAmount,
 		arg.BaseAmount,
+		arg.SourceCostScenarioID,
+		arg.SourceCostScenarioNo,
+		arg.SourceSourcingCaseID,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -163,7 +175,9 @@ SELECT
     coalesce(valid_until::text, '')::text AS valid_until,
     fx_rate::text AS fx_rate, fx_rate_at, fx_source, fx_base_currency,
     total_amount::text AS total_amount, base_amount::text AS base_amount,
-    remark, status, sales_employee_id, sales_employee, sent_at, responded_at, created_at
+    remark, status, sales_employee_id, sales_employee, sent_at, responded_at, created_at,
+    coalesce(source_cost_scenario_id, 0)::bigint AS source_cost_scenario_id,
+    source_cost_scenario_no, coalesce(source_sourcing_case_id, 0)::bigint AS source_sourcing_case_id
 FROM quotations
 WHERE tenant_id = $1 AND id = $2
 `
@@ -174,33 +188,36 @@ type GetQuotationParams struct {
 }
 
 type GetQuotationRow struct {
-	ID              int64
-	TenantID        int64
-	QuoteNo         string
-	CustomerID      int64
-	CustomerName    string
-	ContactID       int64
-	ContactName     string
-	ContactEmail    string
-	Currency        string
-	Incoterm        string
-	PortOfLoading   string
-	PortOfDischarge string
-	PaymentMethod   string
-	ValidUntil      string
-	FxRate          string
-	FxRateAt        pgtype.Timestamptz
-	FxSource        string
-	FxBaseCurrency  string
-	TotalAmount     string
-	BaseAmount      string
-	Remark          string
-	Status          string
-	SalesEmployeeID int64
-	SalesEmployee   string
-	SentAt          pgtype.Timestamptz
-	RespondedAt     pgtype.Timestamptz
-	CreatedAt       pgtype.Timestamptz
+	ID                   int64
+	TenantID             int64
+	QuoteNo              string
+	CustomerID           int64
+	CustomerName         string
+	ContactID            int64
+	ContactName          string
+	ContactEmail         string
+	Currency             string
+	Incoterm             string
+	PortOfLoading        string
+	PortOfDischarge      string
+	PaymentMethod        string
+	ValidUntil           string
+	FxRate               string
+	FxRateAt             pgtype.Timestamptz
+	FxSource             string
+	FxBaseCurrency       string
+	TotalAmount          string
+	BaseAmount           string
+	Remark               string
+	Status               string
+	SalesEmployeeID      int64
+	SalesEmployee        string
+	SentAt               pgtype.Timestamptz
+	RespondedAt          pgtype.Timestamptz
+	CreatedAt            pgtype.Timestamptz
+	SourceCostScenarioID int64
+	SourceCostScenarioNo string
+	SourceSourcingCaseID int64
 }
 
 func (q *Queries) GetQuotation(ctx context.Context, arg GetQuotationParams) (GetQuotationRow, error) {
@@ -234,6 +251,9 @@ func (q *Queries) GetQuotation(ctx context.Context, arg GetQuotationParams) (Get
 		&i.SentAt,
 		&i.RespondedAt,
 		&i.CreatedAt,
+		&i.SourceCostScenarioID,
+		&i.SourceCostScenarioNo,
+		&i.SourceSourcingCaseID,
 	)
 	return i, err
 }
@@ -242,7 +262,8 @@ const listQuotationItems = `-- name: ListQuotationItems :many
 SELECT
     id, quotation_id, line_no, product_id, sku_id, product_code, product_name,
     spec, qty::text AS qty, uom_id, uom_code,
-    unit_price::text AS unit_price, amount::text AS amount, remark
+    unit_price::text AS unit_price, amount::text AS amount, remark,
+    coalesce(source_cost_scenario_line_id, 0)::bigint AS source_cost_scenario_line_id
 FROM quotation_items
 WHERE tenant_id = $1 AND quotation_id = $2
 ORDER BY line_no
@@ -254,20 +275,21 @@ type ListQuotationItemsParams struct {
 }
 
 type ListQuotationItemsRow struct {
-	ID          int64
-	QuotationID int64
-	LineNo      int32
-	ProductID   int64
-	SkuID       *int64
-	ProductCode string
-	ProductName string
-	Spec        string
-	Qty         string
-	UomID       int64
-	UomCode     string
-	UnitPrice   string
-	Amount      string
-	Remark      string
+	ID                       int64
+	QuotationID              int64
+	LineNo                   int32
+	ProductID                int64
+	SkuID                    *int64
+	ProductCode              string
+	ProductName              string
+	Spec                     string
+	Qty                      string
+	UomID                    int64
+	UomCode                  string
+	UnitPrice                string
+	Amount                   string
+	Remark                   string
+	SourceCostScenarioLineID int64
 }
 
 func (q *Queries) ListQuotationItems(ctx context.Context, arg ListQuotationItemsParams) ([]ListQuotationItemsRow, error) {
@@ -294,6 +316,7 @@ func (q *Queries) ListQuotationItems(ctx context.Context, arg ListQuotationItems
 			&i.UnitPrice,
 			&i.Amount,
 			&i.Remark,
+			&i.SourceCostScenarioLineID,
 		); err != nil {
 			return nil, err
 		}
@@ -310,7 +333,9 @@ SELECT
     q.id, q.quote_no, q.customer_id, q.customer_name, q.currency,
     q.total_amount::text AS total_amount, q.base_amount::text AS base_amount,
     q.status, q.sales_employee_id, q.sales_employee, coalesce(q.valid_until::text, '')::text AS valid_until,
-    q.created_at, count(*) OVER () AS total
+    q.created_at, coalesce(q.source_cost_scenario_id, 0)::bigint AS source_cost_scenario_id,
+    q.source_cost_scenario_no, coalesce(q.source_sourcing_case_id, 0)::bigint AS source_sourcing_case_id,
+    count(*) OVER () AS total
 FROM quotations q
 WHERE q.tenant_id = $1::bigint
   -- Same data scope as contracts; see iam.VisibleEmployees.
@@ -345,19 +370,22 @@ type ListQuotationsParams struct {
 }
 
 type ListQuotationsRow struct {
-	ID              int64
-	QuoteNo         string
-	CustomerID      int64
-	CustomerName    string
-	Currency        string
-	TotalAmount     string
-	BaseAmount      string
-	Status          string
-	SalesEmployeeID int64
-	SalesEmployee   string
-	ValidUntil      string
-	CreatedAt       pgtype.Timestamptz
-	Total           int64
+	ID                   int64
+	QuoteNo              string
+	CustomerID           int64
+	CustomerName         string
+	Currency             string
+	TotalAmount          string
+	BaseAmount           string
+	Status               string
+	SalesEmployeeID      int64
+	SalesEmployee        string
+	ValidUntil           string
+	CreatedAt            pgtype.Timestamptz
+	SourceCostScenarioID int64
+	SourceCostScenarioNo string
+	SourceSourcingCaseID int64
+	Total                int64
 }
 
 // Aliased because the correlated subquery below brings a second table into
@@ -394,6 +422,9 @@ func (q *Queries) ListQuotations(ctx context.Context, arg ListQuotationsParams) 
 			&i.SalesEmployee,
 			&i.ValidUntil,
 			&i.CreatedAt,
+			&i.SourceCostScenarioID,
+			&i.SourceCostScenarioNo,
+			&i.SourceSourcingCaseID,
 			&i.Total,
 		); err != nil {
 			return nil, err

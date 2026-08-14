@@ -10,13 +10,13 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-// TestUpDownUp runs only when SHIPPING_TEST_DSN names a disposable shipping
-// database. CI and local verification set it explicitly; ordinary unit tests
-// do not risk altering a developer database by guessing a target.
+// TestUpDownUp 只使用独立的迁移测试库。该测试会把数据库完整回滚到版本 0，
+// 不能与船期业务集成测试共用 SHIPPING_TEST_DSN，否则并发执行时会临时拆掉
+// 业务测试正在访问的表或字段。
 func TestUpDownUp(t *testing.T) {
-	dsn := os.Getenv("SHIPPING_TEST_DSN")
+	dsn := os.Getenv("SHIPPING_MIGRATION_TEST_DSN")
 	if dsn == "" {
-		t.Skip("set SHIPPING_TEST_DSN to a disposable PostgreSQL database")
+		t.Skip("set SHIPPING_MIGRATION_TEST_DSN to a disposable PostgreSQL database")
 	}
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -40,6 +40,9 @@ func TestUpDownUp(t *testing.T) {
 	assertColumn(t, db, "shipping_arrival_reminders", "read_at", true)
 	assertColumn(t, db, "shipping_arrival_reminders", "next_retry_at", true)
 	assertTable(t, db, "shipping_documents", true)
+	assertColumn(t, db, "shipping_schedules", "loading_port_id", true)
+	assertColumn(t, db, "shipping_schedules", "discharge_port_timezone", true)
+	assertColumn(t, db, "shipping_route_nodes", "port_id", true)
 
 	if err := goose.DownTo(db, ".", 0); err != nil {
 		t.Fatalf("down: %v", err)
@@ -60,6 +63,8 @@ func TestUpDownUp(t *testing.T) {
 	assertTable(t, db, "shipping_schedule_changes", true)
 	assertTable(t, db, "shipping_route_nodes", true)
 	assertTable(t, db, "shipping_documents", true)
+	assertColumn(t, db, "shipping_schedules", "loading_port_id", true)
+	assertColumn(t, db, "shipping_route_nodes", "port_id", true)
 	assertColumn(t, db, "shipping_arrival_reminders", "read_at", true)
 	assertTable(t, db, "shipping_arrival_reminder_rules", true)
 }

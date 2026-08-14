@@ -57,6 +57,32 @@ func TestEveryPointerInTheBodyIsFound(t *testing.T) {
 
 // ----------------------------------------------------- the substitution
 
+// A mail with only a MIME-embedded picture contains no http address before
+// substitution. It must still be walked: the signed URL is the http address
+// this operation is supposed to introduce.
+func TestCIDOnlyPictureIsSwapped(t *testing.T) {
+	body := `<p>See below.</p><img src="cid:ii_msqupcpc0" alt="image.png">`
+	out := (&Service{}).localiseImages(context.Background(), body,
+		imageSwap{"cid:ii_msqupcpc0": "https://storage/signed-image"})
+	if !strings.Contains(out, `src="https://storage/signed-image"`) {
+		t.Fatalf("the CID-only picture was not swapped:\n%s", out)
+	}
+	if strings.Contains(out, "cid:") {
+		t.Fatalf("a cid: survived the swap:\n%s", out)
+	}
+}
+
+func TestEmbeddedPictureCarriesItsAttachmentIDWithoutChangingTheRequest(t *testing.T) {
+	got := markEmbeddedAttachment("https://storage/signed-image?signature=abc", 7)
+	want := "https://storage/signed-image?signature=abc#erp-mail-attachment=7"
+	if got != want {
+		t.Fatalf("marked URL = %q, want %q", got, want)
+	}
+	if got := markEmbeddedAttachment("https://storage/signed-image", 0); got != "https://storage/signed-image" {
+		t.Fatalf("invalid attachment id changed the URL to %q", got)
+	}
+}
+
 // Both kinds of picture go through one substitution: remote ones keyed by
 // their original address, embedded ones by cid:<identifier>.
 func TestEmbeddedAndRemotePicturesAreSwappedInOnePass(t *testing.T) {

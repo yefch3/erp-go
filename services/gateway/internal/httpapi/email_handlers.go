@@ -678,6 +678,42 @@ func (s *Server) getInbound(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) convertInboundToExcel(w http.ResponseWriter, r *http.Request) {
+	op, _ := grpcx.OperatorFromContext(r.Context())
+	who := fmt.Sprintf("t%d.e%d", op.TenantID, op.EmployeeID)
+	if wait, limited := s.Throttle.Limited(r.Context(), throttleMailExcel, who); limited {
+		secs := int(wait.Seconds())
+		if secs < 1 {
+			secs = 1
+		}
+		w.Header().Set("Retry-After", strconv.Itoa(secs))
+		s.writeError(w, http.StatusTooManyRequests, "MAIL_EXCEL_RATE_LIMITED", "Excel 转换请求过于频繁，请稍后再试")
+		return
+	}
+	req := &mailv1.StartInboundExcelConversionRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	// URL ownership wins over any body field, as with every other mail action.
+	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	resp, err := s.Emails.StartInboundExcelConversion(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getInboundExcelJob(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "jobId"), 10, 64)
+	resp, err := s.Emails.GetInboundExcelConversionJob(r.Context(), &mailv1.GetInboundExcelConversionJobRequest{Id: id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) syncMailbox(w http.ResponseWriter, r *http.Request) {
 	// Paced per person. The sync fleet already collapses simultaneous presses
 	// into one run, but that says nothing about one press a second — and each

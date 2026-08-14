@@ -19,13 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	QuotationService_ListQuotations_FullMethodName   = "/erp.export.v1.QuotationService/ListQuotations"
-	QuotationService_GetQuotation_FullMethodName     = "/erp.export.v1.QuotationService/GetQuotation"
-	QuotationService_CreateQuotation_FullMethodName  = "/erp.export.v1.QuotationService/CreateQuotation"
-	QuotationService_UpdateQuotation_FullMethodName  = "/erp.export.v1.QuotationService/UpdateQuotation"
-	QuotationService_SendQuotation_FullMethodName    = "/erp.export.v1.QuotationService/SendQuotation"
-	QuotationService_RespondQuotation_FullMethodName = "/erp.export.v1.QuotationService/RespondQuotation"
-	QuotationService_CancelQuotation_FullMethodName  = "/erp.export.v1.QuotationService/CancelQuotation"
+	QuotationService_ListQuotations_FullMethodName       = "/erp.export.v1.QuotationService/ListQuotations"
+	QuotationService_GetQuotation_FullMethodName         = "/erp.export.v1.QuotationService/GetQuotation"
+	QuotationService_CreateQuotation_FullMethodName      = "/erp.export.v1.QuotationService/CreateQuotation"
+	QuotationService_UpdateQuotation_FullMethodName      = "/erp.export.v1.QuotationService/UpdateQuotation"
+	QuotationService_SendQuotation_FullMethodName        = "/erp.export.v1.QuotationService/SendQuotation"
+	QuotationService_RespondQuotation_FullMethodName     = "/erp.export.v1.QuotationService/RespondQuotation"
+	QuotationService_CancelQuotation_FullMethodName      = "/erp.export.v1.QuotationService/CancelQuotation"
+	QuotationService_GetQuotationWorkbook_FullMethodName = "/erp.export.v1.QuotationService/GetQuotationWorkbook"
+	QuotationService_GetQuotationPdf_FullMethodName      = "/erp.export.v1.QuotationService/GetQuotationPdf"
 )
 
 // QuotationServiceClient is the client API for QuotationService service.
@@ -45,6 +47,8 @@ type QuotationServiceClient interface {
 	// Record what the customer answered.
 	RespondQuotation(ctx context.Context, in *RespondQuotationRequest, opts ...grpc.CallOption) (*RespondQuotationResponse, error)
 	CancelQuotation(ctx context.Context, in *CancelQuotationRequest, opts ...grpc.CallOption) (*CancelQuotationResponse, error)
+	GetQuotationWorkbook(ctx context.Context, in *GetQuotationWorkbookRequest, opts ...grpc.CallOption) (*GetQuotationWorkbookResponse, error)
+	GetQuotationPdf(ctx context.Context, in *GetQuotationPdfRequest, opts ...grpc.CallOption) (*GetQuotationPdfResponse, error)
 }
 
 type quotationServiceClient struct {
@@ -125,6 +129,26 @@ func (c *quotationServiceClient) CancelQuotation(ctx context.Context, in *Cancel
 	return out, nil
 }
 
+func (c *quotationServiceClient) GetQuotationWorkbook(ctx context.Context, in *GetQuotationWorkbookRequest, opts ...grpc.CallOption) (*GetQuotationWorkbookResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetQuotationWorkbookResponse)
+	err := c.cc.Invoke(ctx, QuotationService_GetQuotationWorkbook_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *quotationServiceClient) GetQuotationPdf(ctx context.Context, in *GetQuotationPdfRequest, opts ...grpc.CallOption) (*GetQuotationPdfResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetQuotationPdfResponse)
+	err := c.cc.Invoke(ctx, QuotationService_GetQuotationPdf_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QuotationServiceServer is the server API for QuotationService service.
 // All implementations must embed UnimplementedQuotationServiceServer
 // for forward compatibility.
@@ -142,6 +166,8 @@ type QuotationServiceServer interface {
 	// Record what the customer answered.
 	RespondQuotation(context.Context, *RespondQuotationRequest) (*RespondQuotationResponse, error)
 	CancelQuotation(context.Context, *CancelQuotationRequest) (*CancelQuotationResponse, error)
+	GetQuotationWorkbook(context.Context, *GetQuotationWorkbookRequest) (*GetQuotationWorkbookResponse, error)
+	GetQuotationPdf(context.Context, *GetQuotationPdfRequest) (*GetQuotationPdfResponse, error)
 	mustEmbedUnimplementedQuotationServiceServer()
 }
 
@@ -172,6 +198,12 @@ func (UnimplementedQuotationServiceServer) RespondQuotation(context.Context, *Re
 }
 func (UnimplementedQuotationServiceServer) CancelQuotation(context.Context, *CancelQuotationRequest) (*CancelQuotationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CancelQuotation not implemented")
+}
+func (UnimplementedQuotationServiceServer) GetQuotationWorkbook(context.Context, *GetQuotationWorkbookRequest) (*GetQuotationWorkbookResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetQuotationWorkbook not implemented")
+}
+func (UnimplementedQuotationServiceServer) GetQuotationPdf(context.Context, *GetQuotationPdfRequest) (*GetQuotationPdfResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetQuotationPdf not implemented")
 }
 func (UnimplementedQuotationServiceServer) mustEmbedUnimplementedQuotationServiceServer() {}
 func (UnimplementedQuotationServiceServer) testEmbeddedByValue()                          {}
@@ -320,6 +352,42 @@ func _QuotationService_CancelQuotation_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _QuotationService_GetQuotationWorkbook_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetQuotationWorkbookRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QuotationServiceServer).GetQuotationWorkbook(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: QuotationService_GetQuotationWorkbook_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QuotationServiceServer).GetQuotationWorkbook(ctx, req.(*GetQuotationWorkbookRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _QuotationService_GetQuotationPdf_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetQuotationPdfRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QuotationServiceServer).GetQuotationPdf(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: QuotationService_GetQuotationPdf_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QuotationServiceServer).GetQuotationPdf(ctx, req.(*GetQuotationPdfRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // QuotationService_ServiceDesc is the grpc.ServiceDesc for QuotationService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -354,6 +422,14 @@ var QuotationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CancelQuotation",
 			Handler:    _QuotationService_CancelQuotation_Handler,
+		},
+		{
+			MethodName: "GetQuotationWorkbook",
+			Handler:    _QuotationService_GetQuotationWorkbook_Handler,
+		},
+		{
+			MethodName: "GetQuotationPdf",
+			Handler:    _QuotationService_GetQuotationPdf_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
