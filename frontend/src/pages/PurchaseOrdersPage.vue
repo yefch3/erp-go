@@ -709,6 +709,19 @@ onMounted(async () => {
     await openCreate(picked)
     router.replace({ path: '/purchase-orders' })
   }
+  const importedOrder = String(route.query.order ?? '')
+  if (importedOrder) {
+    try {
+      const detailResponse = await get<{ order: Order; items: OrderItem[]; receipts: Receipt[] }>(`/purchase-orders/${importedOrder}`)
+      detail.value = detailResponse.order
+      detailItems.value = detailResponse.items ?? []
+      detailReceipts.value = detailResponse.receipts ?? []
+      detailOpen.value = true
+      router.replace({ path: '/purchase-orders' })
+    } catch {
+      // The normal API error toast already explains an invalid or stale id.
+    }
+  }
   const kw = String(route.query.keyword ?? '')
   if (kw) {
     keyword.value = kw

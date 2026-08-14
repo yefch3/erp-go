@@ -2235,7 +2235,10 @@ async function previewPurchaseOrderImport() {
   purchaseImportBusy.value = true
   try {
     const response = await post<{ rows: PurchaseImportRow[] }>('/purchase-orders/imports/preview', { rows })
-    purchaseImportRows.value = response.rows ?? []
+    purchaseImportRows.value = (response.rows ?? []).map((row) => ({
+      ...row,
+      requirementId: row.requirementId || (row.candidates.length === 1 ? String(row.candidates[0].requirementId) : ''),
+    }))
     if (!purchaseImportSuppliers.value.length) {
       const suppliers = await get<{ suppliers: { id: string; code: string; name: string }[] }>('/suppliers', { page: 1, page_size: 200, status: 'ACTIVE' })
       purchaseImportSuppliers.value = suppliers.suppliers ?? []
