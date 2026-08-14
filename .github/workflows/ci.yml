@@ -54,26 +54,12 @@ jobs:
             pkg/go.sum
             gen/go.sum
 
-      - name: Regenerate protos and fail on drift
-        run: |
-          make proto
-          git diff --exit-code gen/ proto/
-
+      # The only PR-specific check: it compares against origin/main, which
+      # exists on a pull_request checkout but is meaningless on a push to
+      # main comparing against itself.
       - name: Breaking change check
         if: github.event_name == 'pull_request'
         run: make proto-breaking
-
-      - name: tenant_id convention check
-        run: make check-tenant
-
-      # Received mail carries the sender's own stylesheet, so it may only be
-      # rendered inside the sandboxed frame MailBody.vue sets up. This guard
-      # was in the Makefile's ci target and not in this file, which is how a
-      # check that already caught a real incident - two missed v-html sites in
-      # EmailsPage, and opening a newsletter washed the application out - was
-      # running nowhere.
-      - name: mail sandbox check
-        run: make check-mail-sandbox
 
       # One database and one owner per service, exactly as deploy does it, so
       # the migrations run against the ownership they were written for.
@@ -83,28 +69,21 @@ jobs:
           PGPASSWORD: erp_dev_password
           PGHOST: localhost
           PGPORT: "5432"
-        run: |
-          sh deploy/init-databases.sh
-          # 迁移生命周期测试会执行 DownTo(0)，必须使用独立数据库，避免与
-          # 同时运行的船期业务集成测试互相拆表。
-          psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" -d postgres \
-            -c 'CREATE DATABASE erp_shipping_migrations OWNER erp_shipping'
+        run: sh deploy/init-databases.sh
 
       - name: Migrate
         env:
           PG_PORT: "5432"
         run: make migrate
 
-      - name: Tests
+      # This file provides the environment; the Makefile's ci target is the
+      # single definition of what gets checked. When this file carried its
+      # own list of steps, that list and `make ci` disagreed - which is how
+      # check-mail-sandbox, a guard that had already caught a real incident,
+      # ended up running nowhere. If a check is worth running here, it goes
+      # in the ci target, where `make ci` on a laptop runs it too.
+      - name: ci
         env:
-          # Each service reaches only its own database, under its own account.
-          IAM_TEST_DSN: postgres://erp_iam:erp_iam_pw@localhost:5432/erp_iam?sslmode=disable
-          MD_TEST_DSN: postgres://erp_masterdata:erp_masterdata_pw@localhost:5432/erp_masterdata?sslmode=disable
-          MAIL_TEST_DSN: postgres://erp_mail:erp_mail_pw@localhost:5432/erp_mail?sslmode=disable
-          SHIPPING_TEST_DSN: postgres://erp_shipping:erp_shipping_pw@localhost:5432/erp_shipping?sslmode=disable
-          SHIPPING_MIGRATION_TEST_DSN: postgres://erp_shipping:erp_shipping_pw@localhost:5432/erp_shipping_migrations?sslmode=disable
-          GATEWAY_TEST_REDIS: 127.0.0.1:6379
-        run: make test
-
-      - name: Lint
-        run: make lint
+          PG_PORT: "5432"
+          REDIS_PORT: "6379"
+        run: make ci
