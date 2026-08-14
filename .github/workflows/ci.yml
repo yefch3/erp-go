@@ -87,7 +87,7 @@ jobs:
           sh deploy/init-databases.sh
           # 迁移生命周期测试会执行 DownTo(0)，必须使用独立数据库，避免与
           # 同时运行的船期业务集成测试互相拆表。
-          psql -v ON_ERROR_STOP=1 -d postgres \
+          psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" -d postgres \
             -c 'CREATE DATABASE erp_shipping_migrations OWNER erp_shipping'
 
       - name: Migrate
