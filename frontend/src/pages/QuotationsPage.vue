@@ -38,11 +38,13 @@
             <el-tag size="small" :type="statusType(row.status)">{{ t(`quotations.statuses.${row.status}`) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="190" fixed="right">
+        <el-table-column :label="t('common.actions')" width="300" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">
-              {{ row.status === 'DRAFT' && canWrite && auth.owns(row.salesEmployeeId) ? t('common.edit') : t('quotations.view') }}
+              {{ row.status === 'DRAFT' && !row.sourceCostScenarioId && canWrite && auth.owns(row.salesEmployeeId) ? t('common.edit') : t('quotations.view') }}
             </el-button>
+            <el-button link type="primary" @click="downloadQuotation(row, 'workbook')">{{ t('quotations.downloadExcel') }}</el-button>
+            <el-button link type="primary" @click="downloadQuotation(row, 'pdf')">{{ t('quotations.downloadPdf') }}</el-button>
             <!-- Ownership, not just the permission code: a wide data scope is
                  for watching other people's work, not doing it. -->
             <template v-if="canWrite && auth.owns(row.salesEmployeeId)">
@@ -165,6 +167,10 @@
           · {{ detail.fx.source }} · {{ formatTime(detail.fx.rateAt) }}
           <span class="hint">{{ t('quotations.fxFrozen') }}</span>
         </div>
+        <div v-if="detail?.sourceCostScenarioNo" class="snapshot">
+          {{ t('quotations.sourceCostScenario') }}: {{ detail.sourceCostScenarioNo }}
+          <span class="hint">{{ t('quotations.sourceLocked') }}</span>
+        </div>
       </el-form>
       <template #footer>
         <el-button @click="dialogOpen = false">{{ readOnly ? t('common.cancel') : t('common.cancel') }}</el-button>
@@ -178,7 +184,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { get, post, put } from '../api'
+import { useRoute } from 'vue-router'
+import { download, get, post, put, saveBlob } from '../api'
 import { useAuthStore } from '../stores/auth'
 
 interface Customer { id: string; code: string; name: string }
@@ -206,6 +213,8 @@ interface Quotation {
   baseAmount: string
   remark: string
   status: string
+  sourceCostScenarioId: string
+  sourceCostScenarioNo: string
 }
 interface Item {
   productId: string
@@ -226,6 +235,7 @@ const EMPTY_FORM = {
 
 const { t } = useI18n()
 const auth = useAuthStore()
+const route = useRoute()
 const canWrite = auth.can('export:quotation:write')
 
 const quotations = ref<Quotation[]>([])
@@ -316,6 +326,7 @@ async function openEdit(row: Quotation) {
   try {
     const data = await get<{ quotation: Quotation; items: any[] }>(`/quotations/${row.id}`)
     detail.value = data.quotation
+    readOnly.value = readOnly.value || !!data.quotation.sourceCostScenarioId
     Object.assign(form, {
       customerId: data.quotation.customerId, contactId: data.quotation.contactId || '',
       currency: data.quotation.currency,
@@ -331,6 +342,11 @@ async function openEdit(row: Quotation) {
   } finally {
     loadingDetail.value = false
   }
+}
+
+async function downloadQuotation(row: Quotation, type: 'workbook' | 'pdf') {
+  const file = await download(`/quotations/${row.id}/${type}`)
+  saveBlob(file.blob, file.fileName || `${row.quoteNo}.${type === 'pdf' ? 'pdf' : 'xlsx'}`)
 }
 
 function addItem() {
@@ -387,10 +403,13 @@ function formatTime(iso: string): string {
 }
 
 onMounted(async () => {
-  load()
+  await load()
   customers.value = (await get<{ customers: Customer[] }>('/customers', { page_size: 200 })).customers ?? []
   products.value = (await get<{ products: Product[] }>('/products', { page_size: 200 })).products ?? []
   paymentOptions.value = (await get<{ options: OptionItem[] }>('/options', { category: 'PAYMENT_METHOD' })).options ?? []
+  const quoteID = String(route.query.quote || '')
+  const row = quotations.value.find(quotation => String(quotation.id) === quoteID)
+  if (row) await openEdit(row)
 })
 </script>
 

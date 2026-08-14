@@ -35,8 +35,10 @@ func (h *Handler) ListQuotations(ctx context.Context, req *exv1.ListQuotationsRe
 			Id: r.ID, QuoteNo: r.QuoteNo, CustomerId: r.CustomerID, CustomerName: r.CustomerName,
 			Currency: r.Currency, TotalAmount: r.TotalAmount, BaseAmount: r.BaseAmount,
 			Status: r.Status, SalesEmployeeId: r.SalesEmployeeID, SalesEmployee: r.SalesEmployee,
-			ValidUntil: r.ValidUntil,
-			CreatedAt:  ts(r.CreatedAt),
+			ValidUntil:           r.ValidUntil,
+			CreatedAt:            ts(r.CreatedAt),
+			SourceCostScenarioId: r.SourceCostScenarioID, SourceCostScenarioNo: r.SourceCostScenarioNo,
+			SourceSourcingCaseId: r.SourceSourcingCaseID,
 		})
 	}
 	return &exv1.ListQuotationsResponse{Quotations: out, Meta: &commonv1.PageMeta{Total: total}}, nil
@@ -59,6 +61,8 @@ func (h *Handler) CreateQuotation(ctx context.Context, req *exv1.CreateQuotation
 		PaymentMethod: req.GetPaymentMethod(), ValidUntil: req.GetValidUntil(),
 		Remark: req.GetRemark(), Items: itemsFromProto(req.GetItems()),
 		OperatorID: op.EmployeeID, OperatorName: op.Name,
+		SourceCostScenarioID: req.GetSourceCostScenarioId(), SourceCostScenarioNo: req.GetSourceCostScenarioNo(),
+		SourceSourcingCaseID: req.GetSourceSourcingCaseId(),
 	})
 	if err != nil {
 		return nil, err
@@ -109,6 +113,22 @@ func (h *Handler) CancelQuotation(ctx context.Context, req *exv1.CancelQuotation
 	return &exv1.CancelQuotationResponse{Status: status}, nil
 }
 
+func (h *Handler) GetQuotationWorkbook(ctx context.Context, req *exv1.GetQuotationWorkbookRequest) (*exv1.GetQuotationWorkbookResponse, error) {
+	name, data, err := h.svc.GetQuotationWorkbook(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.GetQuotationWorkbookResponse{FileName: name, FileData: data}, nil
+}
+
+func (h *Handler) GetQuotationPdf(ctx context.Context, req *exv1.GetQuotationPdfRequest) (*exv1.GetQuotationPdfResponse, error) {
+	name, data, err := h.svc.GetQuotationPDF(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.GetQuotationPdfResponse{FileName: name, FileData: data}, nil
+}
+
 // ---------------------------------------------------------------- mapping
 
 func ts(t pgtype.Timestamptz) string {
@@ -124,6 +144,7 @@ func itemsFromProto(in []*exv1.ItemInput) []app.ItemInput {
 		out = append(out, app.ItemInput{
 			ProductID: i.GetProductId(), SkuID: i.GetSkuId(), Spec: i.GetSpec(),
 			Qty: i.GetQty(), UnitPrice: i.GetUnitPrice(), Remark: i.GetRemark(),
+			SourceCostScenarioLineID: i.GetSourceCostScenarioLineId(),
 		})
 	}
 	return out
@@ -142,6 +163,8 @@ func quotationToProto(q store.GetQuotationRow) *exv1.Quotation {
 		TotalAmount: q.TotalAmount, BaseAmount: q.BaseAmount, Remark: q.Remark,
 		Status: q.Status, SalesEmployeeId: q.SalesEmployeeID, SalesEmployee: q.SalesEmployee,
 		SentAt: ts(q.SentAt), RespondedAt: ts(q.RespondedAt), CreatedAt: ts(q.CreatedAt),
+		SourceCostScenarioId: q.SourceCostScenarioID, SourceCostScenarioNo: q.SourceCostScenarioNo,
+		SourceSourcingCaseId: q.SourceSourcingCaseID,
 	}
 }
 
@@ -157,6 +180,7 @@ func itemsToProto(items []store.ListQuotationItemsRow) []*exv1.QuotationItem {
 			ProductCode: i.ProductCode, ProductName: i.ProductName, Spec: i.Spec,
 			Qty: i.Qty, UomId: i.UomID, UomCode: i.UomCode,
 			UnitPrice: i.UnitPrice, Amount: i.Amount, Remark: i.Remark,
+			SourceCostScenarioLineId: i.SourceCostScenarioLineID,
 		})
 	}
 	return out

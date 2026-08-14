@@ -67,7 +67,7 @@ UPDATE sourcing_cases SET status='SOURCING',updated_at=now()
 WHERE tenant_id=$1 AND id=$2 AND status='REVIEWING';
 
 -- name: ListSupplierQuoteComparison :many
-SELECT q.id AS quote_id,q.supplier_quote_no,q.factory_rfq_id,r.supplier_id,r.supplier_name,q.currency,
+SELECT q.id AS quote_id,l.id AS quote_line_id,q.supplier_quote_no,q.factory_rfq_id,r.supplier_id,r.supplier_name,q.currency,
  coalesce(q.quoted_at::text,'')::text AS quoted_at,coalesce(q.valid_until::text,'')::text AS valid_until,
  q.payment_terms,q.delivery,q.remark,q.source,l.sourcing_line_id,l.qty::text,l.unit_price::text,
  l.amount::text,coalesce(l.moq::text,'')::text AS moq,l.lead_time,l.remark AS line_remark

@@ -98,6 +98,24 @@
         <el-table-column prop="paymentTerms" :label="t('sourcing.paymentTerms')" min-width="180" />
         <el-table-column prop="validUntil" :label="t('sourcing.validUntil')" width="130" />
       </el-table>
+      <div class="section-heading">
+        <h3 class="section-title">{{ t('sourcing.costScenarios') }}</h3>
+        <el-button v-if="canPrice && quoteLines.length" type="primary" plain @click="openCostScenario">{{ t('sourcing.createCostScenario') }}</el-button>
+      </div>
+      <el-table :data="costScenarios" size="small" border @row-click="openCostDetail">
+        <el-table-column prop="scenarioNo" :label="t('sourcing.scenarioNo')" width="180" />
+        <el-table-column prop="currency" :label="t('sourcing.currency')" width="90" />
+        <el-table-column prop="productTotal" :label="t('sourcing.productTotal')" width="130" align="right" />
+        <el-table-column prop="chargeTotal" :label="t('sourcing.chargeTotal')" width="130" align="right" />
+        <el-table-column prop="landedTotal" :label="t('sourcing.landedTotal')" width="130" align="right" />
+        <el-table-column prop="marginTotal" :label="t('sourcing.marginTotal')" width="130" align="right" />
+        <el-table-column prop="customerTotal" :label="t('sourcing.customerTotal')" width="140" align="right" />
+        <el-table-column :label="t('common.status')" width="120"><template #default="{ row }"><el-tag effect="plain">{{ t(`sourcing.costStatuses.${row.status}`) }}</el-tag></template></el-table-column>
+        <el-table-column :label="t('common.actions')" width="220" fixed="right"><template #default="{ row }">
+          <el-button v-if="canApprove && row.status === 'DRAFT'" link type="success" @click.stop="confirmCostScenario(row)">{{ t('sourcing.confirmCost') }}</el-button>
+          <el-button v-if="canApprove && canCreateQuotation && row.status === 'CONFIRMED'" link type="primary" @click.stop="createCustomerQuotation(row)">{{ Number(row.customerQuotationId || 0) > 0 ? t('sourcing.openQuotation') : t('sourcing.createCustomerQuotation') }}</el-button>
+        </template></el-table-column>
+      </el-table>
       <template #footer>
         <el-button @click="detailOpen = false">{{ t('common.close') }}</el-button>
         <el-button v-if="canWrite" type="primary" :disabled="!!detail?.lines.some(line => line.decision === 'PENDING') || !detail?.lines.some(line => line.decision === 'CONFIRMED')" @click="openRFQ">{{ t('sourcing.createFactoryRfq') }}</el-button>
@@ -182,6 +200,58 @@
       </el-form>
       <template #footer><el-button @click="sendOpen=false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="saving" @click="sendRFQ">{{ t('sourcing.sendRfq') }}</el-button></template>
     </el-dialog>
+
+    <el-dialog v-model="costOpen" :title="t('sourcing.createCostScenario')" width="min(1100px, 95vw)" append-to-body>
+      <el-form inline>
+        <el-form-item :label="t('sourcing.currency')"><el-input v-model="costForm.currency" maxlength="3" style="width:90px" /></el-form-item>
+        <el-form-item :label="t('sourcing.allocationBasis')"><el-select v-model="costForm.allocationBasis" style="width:180px"><el-option value="TONS" :label="t('sourcing.allocationTons')" /><el-option value="PRODUCT_AMOUNT" :label="t('sourcing.allocationAmount')" /></el-select></el-form-item>
+        <el-form-item :label="t('sourcing.marginType')"><el-select v-model="costForm.marginType" style="width:180px"><el-option value="PERCENT" :label="t('sourcing.marginPercent')" /><el-option value="FIXED_PER_TON" :label="t('sourcing.marginPerTon')" /></el-select></el-form-item>
+        <el-form-item :label="t('sourcing.marginValue')"><el-input v-model="costForm.marginValue" style="width:120px" /></el-form-item>
+      </el-form>
+      <h4>{{ t('sourcing.selectQuotes') }}</h4>
+      <el-table :data="costSelections" size="small" border>
+        <el-table-column prop="lineNo" :label="t('sourcing.sourceLine')" width="100" />
+        <el-table-column prop="product" :label="t('sourcing.product')" min-width="180" />
+        <el-table-column :label="t('sourcing.selectedQuote')" min-width="430"><template #default="{ row }">
+          <el-select v-model="row.quoteLineId" style="width:100%"><el-option v-for="quote in quotesForLine(row.sourcingLineId)" :key="quote.quoteLineId" :value="quote.quoteLineId" :label="`${quote.supplierName} · ${quote.currency} ${quote.unitPrice} × ${quote.qty}`" /></el-select>
+        </template></el-table-column>
+      </el-table>
+      <div class="section-heading"><h4>{{ t('sourcing.charges') }}</h4><el-button @click="addCharge">{{ t('sourcing.addCharge') }}</el-button></div>
+      <el-table :data="costCharges" size="small" border>
+        <el-table-column :label="t('sourcing.chargeType')" width="190"><template #default="{ row }"><el-select v-model="row.chargeType"><el-option v-for="type in chargeTypes" :key="type" :value="type" :label="t(`sourcing.chargeTypes.${type}`)" /></el-select></template></el-table-column>
+        <el-table-column :label="t('sourcing.chargeBasis')" width="170"><template #default="{ row }"><el-select v-model="row.basis"><el-option v-for="basis in chargeBases" :key="basis" :value="basis" :label="t(`sourcing.chargeBases.${basis}`)" /></el-select></template></el-table-column>
+        <el-table-column :label="t('sourcing.amount')" width="130"><template #default="{ row }"><el-input v-model="row.amount" /></template></el-table-column>
+        <el-table-column :label="t('sourcing.currency')" width="90"><template #default="{ row }"><el-input v-model="row.currency" maxlength="3" /></template></el-table-column>
+        <el-table-column :label="t('sourcing.chargeSource')" min-width="180"><template #default="{ row }"><el-input v-model="row.source" /></template></el-table-column>
+        <el-table-column :label="t('common.actions')" width="90"><template #default="{ $index }"><el-button link type="danger" @click="costCharges.splice($index, 1)">{{ t('common.delete') }}</el-button></template></el-table-column>
+      </el-table>
+      <template #footer><el-button @click="costOpen=false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="saving" @click="createCostScenario">{{ t('common.confirm') }}</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="costDetailOpen" :title="costDetail?.scenarioNo || t('sourcing.costScenarios')" width="min(1100px, 95vw)" append-to-body>
+      <el-descriptions v-if="costDetail" :column="4" border>
+        <el-descriptions-item :label="t('sourcing.productTotal')">{{ costDetail.currency }} {{ costDetail.productTotal }}</el-descriptions-item>
+        <el-descriptions-item :label="t('sourcing.chargeTotal')">{{ costDetail.currency }} {{ costDetail.chargeTotal }}</el-descriptions-item>
+        <el-descriptions-item :label="t('sourcing.marginTotal')">{{ costDetail.currency }} {{ costDetail.marginTotal }}</el-descriptions-item>
+        <el-descriptions-item :label="t('sourcing.customerTotal')">{{ costDetail.currency }} {{ costDetail.customerTotal }}</el-descriptions-item>
+      </el-descriptions>
+      <el-table :data="costDetail?.lines || []" size="small" border class="cost-lines">
+        <el-table-column prop="productName" :label="t('sourcing.product')" min-width="150" />
+        <el-table-column prop="supplierName" :label="t('sourcing.supplier')" min-width="150" />
+        <el-table-column prop="qty" :label="t('sourcing.quantity')" width="100" align="right" />
+        <el-table-column prop="productCost" :label="t('sourcing.productTotal')" width="130" align="right" />
+        <el-table-column prop="allocatedCharge" :label="t('sourcing.allocatedCharge')" width="130" align="right" />
+        <el-table-column prop="landedCost" :label="t('sourcing.landedUnit')" width="130" align="right" />
+        <el-table-column prop="customerUnitPrice" :label="t('sourcing.customerUnit')" width="140" align="right" />
+        <el-table-column prop="customerAmount" :label="t('sourcing.customerTotal')" width="140" align="right" />
+      </el-table>
+    </el-dialog>
+
+    <el-dialog v-model="customerMapOpen" :title="t('sourcing.mapCustomer')" width="520px" append-to-body>
+      <el-alert type="warning" :closable="false" show-icon class="review-hint">{{ t('sourcing.mapCustomerHint') }}</el-alert>
+      <el-select v-model="mappedCustomerId" filterable style="width:100%"><el-option v-for="customer in customers" :key="customer.id" :value="customer.id" :label="`${customer.code} · ${customer.name}`" /></el-select>
+      <template #footer><el-button @click="customerMapOpen=false">{{ t('common.cancel') }}</el-button><el-button type="primary" :disabled="!mappedCustomerId" @click="submitMappedCustomer">{{ t('common.confirm') }}</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
@@ -202,14 +272,18 @@ interface ExtractedLine {
 }
 interface SourcingLine { id: string; lineNo: number; decision: string; productId: string; skuId: string; uomId: string; decidedByName: string; decidedAt: string; extracted: ExtractedLine }
 interface SourcingCase {
-  id: string; caseNo: string; title: string; customerName: string; contactName: string
+  id: string; caseNo: string; title: string; customerId: string; customerName: string; contactName: string
   contactEmail: string; ownerName: string; status: string; createdAt: string; lines: SourcingLine[]
 }
 interface Supplier { id: string; code: string; name: string }
 interface FactoryRFQ { id: string; rfqNo: string; supplierName: string; contactEmail: string; currency: string; responseDueAt: string; status: string; lineCount: number; sourcingLineIds: string[] }
-interface QuoteComparison { supplierName: string; sourcingLineId: string; qty: string; currency: string; unitPrice: string; amount: string; delivery: string; paymentTerms: string; moq: string; leadTime: string; validUntil: string }
+interface QuoteComparison { quoteLineId: string; supplierName: string; sourcingLineId: string; qty: string; currency: string; unitPrice: string; amount: string; delivery: string; paymentTerms: string; moq: string; leadTime: string; validUntil: string }
+interface CostScenarioLine { id: string; sourcingLineId: string; supplierName: string; productName: string; qty: string; productCost: string; allocatedCharge: string; landedCost: string; customerUnitPrice: string; customerAmount: string }
+interface CostCharge { chargeType: string; basis: string; amount: string; currency: string; source: string }
+interface CostScenario { id: string; scenarioNo: string; currency: string; status: string; productTotal: string; chargeTotal: string; landedTotal: string; marginTotal: string; customerTotal: string; customerQuotationId?: string; customerQuoteNo?: string; lines?: CostScenarioLine[] }
 interface Product { id: string; code: string; name: string; nameEn?: string; brand?: string; description?: string; baseUomId: string }
 interface Sku { id: string; code: string; spec: string; status: string }
+interface Customer { id: string; code: string; name: string }
 
 const { t } = useI18n()
 const route = useRoute()
@@ -218,6 +292,8 @@ const auth = useAuthStore()
 const canWrite = auth.can('procurement:sourcing:write')
 const canSend = auth.can('procurement:sourcing:send')
 const canPrice = auth.can('procurement:sourcing:price')
+const canApprove = auth.can('procurement:sourcing:approve')
+const canCreateQuotation = auth.can('export:quotation:write')
 const statuses = ['REVIEWING', 'SOURCING', 'QUOTES_RECEIVED', 'COSTING', 'CUSTOMER_QUOTE_CREATED', 'CANCELLED']
 const rows = ref<SourcingCase[]>([])
 const total = ref(0)
@@ -230,6 +306,19 @@ const detailOpen = ref(false)
 const detail = ref<SourcingCase | null>(null)
 const rfqs = ref<FactoryRFQ[]>([])
 const quoteLines = ref<QuoteComparison[]>([])
+const costScenarios = ref<CostScenario[]>([])
+const costOpen = ref(false)
+const costDetailOpen = ref(false)
+const costDetail = ref<CostScenario | null>(null)
+const customers = ref<Customer[]>([])
+const customerMapOpen = ref(false)
+const mappedCustomerId = ref('')
+const pendingCostScenario = ref<CostScenario | null>(null)
+const costForm = reactive({ currency: 'USD', allocationBasis: 'TONS', marginType: 'PERCENT', marginValue: '8' })
+const costSelections = ref<{ sourcingLineId: string; lineNo: number; product: string; quoteLineId: string }[]>([])
+const costCharges = reactive<CostCharge[]>([])
+const chargeTypes = ['ORIGIN_TERMINAL', 'DESTINATION_TERMINAL', 'OCEAN_FREIGHT', 'INSURANCE', 'DOCUMENT', 'FINANCE', 'OTHER']
+const chargeBases = ['PER_TON', 'PER_CONTAINER', 'PER_SHIPMENT', 'FIXED']
 const suppliers = ref<Supplier[]>([])
 const saving = ref(false)
 const rfqOpen = ref(false)
@@ -309,12 +398,87 @@ async function openCase(row: Pick<SourcingCase, 'id'>) {
 }
 
 async function loadSourcingCommercial(caseID: string) {
-  const [rfqResponse, quoteResponse] = await Promise.all([
+  const [rfqResponse, quoteResponse, costResponse] = await Promise.all([
     get<{ factoryRfqs: FactoryRFQ[] }>(`/sourcing-cases/${caseID}/factory-rfqs`),
     get<{ lines: QuoteComparison[] }>(`/sourcing-cases/${caseID}/supplier-quotes`),
+    get<{ costScenarios: CostScenario[] }>(`/sourcing-cases/${caseID}/cost-scenarios`),
   ])
   rfqs.value = rfqResponse.factoryRfqs ?? []
   quoteLines.value = quoteResponse.lines ?? []
+  costScenarios.value = costResponse.costScenarios ?? []
+}
+
+function quotesForLine(lineID: string) { return quoteLines.value.filter(quote => String(quote.sourcingLineId) === String(lineID)) }
+
+function openCostScenario() {
+  if (!detail.value) return
+  Object.assign(costForm, { currency: 'USD', allocationBasis: 'TONS', marginType: 'PERCENT', marginValue: '8' })
+  costSelections.value = detail.value.lines.filter(line => line.decision === 'CONFIRMED').map(line => ({
+    sourcingLineId: line.id, lineNo: line.lineNo, product: line.extracted.product,
+    quoteLineId: quotesForLine(line.id)[0]?.quoteLineId || '',
+  }))
+  costCharges.splice(0)
+  addCharge()
+  costOpen.value = true
+}
+
+function addCharge() { costCharges.push({ chargeType: 'ORIGIN_TERMINAL', basis: 'PER_TON', amount: '', currency: costForm.currency, source: '' }) }
+
+async function createCostScenario() {
+  if (!detail.value || costSelections.value.some(line => !line.quoteLineId)) { ElMessage.warning(t('sourcing.quoteSelectionRequired')); return }
+  if (costCharges.some(charge => charge.amount === '' || Number(charge.amount) < 0)) { ElMessage.warning(t('sourcing.chargeAmountRequired')); return }
+  saving.value = true
+  try {
+    await post(`/sourcing-cases/${detail.value.id}/cost-scenarios`, {
+      currency: costForm.currency, allocation_basis: costForm.allocationBasis,
+      margin_type: costForm.marginType, margin_value: costForm.marginValue,
+      selections: costSelections.value.map(line => ({ sourcing_line_id: Number(line.sourcingLineId), supplier_quote_line_id: Number(line.quoteLineId) })),
+      charges: costCharges.map(charge => ({ charge_type: charge.chargeType, basis: charge.basis, amount: charge.amount, currency: charge.currency, source: charge.source })),
+    })
+    costOpen.value = false
+    await loadSourcingCommercial(detail.value.id)
+    await load()
+    ElMessage.success(t('sourcing.costCreated'))
+  } finally { saving.value = false }
+}
+
+async function openCostDetail(row: CostScenario) {
+  const response = await get<{ costScenario: CostScenario }>(`/cost-scenarios/${row.id}`)
+  costDetail.value = response.costScenario
+  costDetailOpen.value = true
+}
+
+async function confirmCostScenario(row: CostScenario) {
+  await post(`/cost-scenarios/${row.id}/confirm`)
+  if (detail.value) await loadSourcingCommercial(detail.value.id)
+  ElMessage.success(t('sourcing.costConfirmed'))
+}
+
+async function createCustomerQuotation(row: CostScenario) {
+  if (Number(row.customerQuotationId || 0) > 0) { detailOpen.value = false; await router.push({ path: '/quotations', query: { quote: row.customerQuotationId } }); return }
+  if (!Number(detail.value?.customerId || 0)) {
+    customers.value = (await get<{ customers: Customer[] }>('/customers', { page_size: 200, status: 'ACTIVE' })).customers ?? []
+    pendingCostScenario.value = row; mappedCustomerId.value = ''; customerMapOpen.value = true
+    return
+  }
+  await performCreateCustomerQuotation(row, detail.value!.customerId)
+}
+
+async function submitMappedCustomer() {
+  if (!pendingCostScenario.value || !mappedCustomerId.value) return
+  customerMapOpen.value = false
+  await performCreateCustomerQuotation(pendingCostScenario.value, mappedCustomerId.value)
+}
+
+async function performCreateCustomerQuotation(row: CostScenario, customerID: string) {
+  saving.value = true
+  try {
+    const response = await post<{ quotationId: string; quoteNo: string }>(`/cost-scenarios/${row.id}/create-customer-quotation`, { customer_id: Number(customerID) })
+    if (detail.value) await loadSourcingCommercial(detail.value.id)
+    ElMessage.success(t('sourcing.customerQuotationCreated', { no: response.quoteNo }))
+    detailOpen.value = false
+    await router.push({ path: '/quotations', query: { quote: response.quotationId } })
+  } finally { saving.value = false }
 }
 
 function sourceLineNo(id: string) { return detail.value?.lines.find(line => String(line.id) === String(id))?.lineNo ?? id }
@@ -446,6 +610,9 @@ h1 { margin:0; font-size:24px; } .page-head p { margin:6px 0 0; color:#6b7280; }
 .toolbar .el-input { width:300px; } .toolbar .el-select { width:190px; }
 .pager { margin-top:16px; justify-content:flex-end; } .meta { margin-bottom:16px; }
 .section-title { margin:20px 0 10px; font-size:16px; }
+.section-heading { display:flex; align-items:center; justify-content:space-between; margin-top:18px; }
+.section-heading .section-title, .section-heading h4 { margin:0 0 10px; }
+.cost-lines { margin-top:16px; }
 .review-hint { margin-bottom:16px; }
 .review-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 14px; }
 .review-grid :deep(.el-form-item) { margin-bottom:14px; }

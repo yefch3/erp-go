@@ -146,9 +146,142 @@ func (h *SourcingHandler) ListSupplierQuoteComparison(ctx context.Context, req *
 	}
 	out := make([]*prv1.SupplierQuoteComparisonLine, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, &prv1.SupplierQuoteComparisonLine{QuoteId: row.QuoteID, SupplierQuoteNo: row.SupplierQuoteNo, FactoryRfqId: row.FactoryRfqID, SupplierId: row.SupplierID, SupplierName: row.SupplierName, Currency: row.Currency, QuotedAt: row.QuotedAt, ValidUntil: row.ValidUntil, PaymentTerms: row.PaymentTerms, Delivery: row.Delivery, QuoteRemark: row.Remark, Source: row.Source, SourcingLineId: row.SourcingLineID, Qty: row.LQty, UnitPrice: row.LUnitPrice, Amount: row.LAmount, Moq: row.Moq, LeadTime: row.LeadTime, LineRemark: row.LineRemark})
+		out = append(out, &prv1.SupplierQuoteComparisonLine{QuoteId: row.QuoteID, QuoteLineId: row.QuoteLineID, SupplierQuoteNo: row.SupplierQuoteNo, FactoryRfqId: row.FactoryRfqID, SupplierId: row.SupplierID, SupplierName: row.SupplierName, Currency: row.Currency, QuotedAt: row.QuotedAt, ValidUntil: row.ValidUntil, PaymentTerms: row.PaymentTerms, Delivery: row.Delivery, QuoteRemark: row.Remark, Source: row.Source, SourcingLineId: row.SourcingLineID, Qty: row.LQty, UnitPrice: row.LUnitPrice, Amount: row.LAmount, Moq: row.Moq, LeadTime: row.LeadTime, LineRemark: row.LineRemark})
 	}
 	return &prv1.ListSupplierQuoteComparisonResponse{Lines: out}, nil
+}
+
+func (h *SourcingHandler) CreateCostScenario(ctx context.Context, req *prv1.CreateCostScenarioRequest) (*prv1.CreateCostScenarioResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	in := app.NewCostScenario{
+		CaseID: req.GetCaseId(), Currency: req.GetCurrency(), AllocationBasis: req.GetAllocationBasis(),
+		MarginType: req.GetMarginType(), MarginValue: req.GetMarginValue(),
+	}
+	for _, selection := range req.GetSelections() {
+		in.Selections = append(in.Selections, app.CostSelectionInput{
+			SourcingLineID: selection.GetSourcingLineId(), SupplierQuoteLineID: selection.GetSupplierQuoteLineId(),
+		})
+	}
+	for _, charge := range req.GetCharges() {
+		in.Charges = append(in.Charges, app.CostChargeInput{
+			ChargeType: charge.GetChargeType(), Basis: charge.GetBasis(), Description: charge.GetDescription(),
+			OriginPort: charge.GetOriginPort(), DestinationPort: charge.GetDestinationPort(), ContainerType: charge.GetContainerType(),
+			Amount: charge.GetAmount(), Currency: charge.GetCurrency(), EffectiveAt: charge.GetEffectiveAt(),
+			ValidUntil: charge.GetValidUntil(), Source: charge.GetSource(), Remark: charge.GetRemark(),
+		})
+	}
+	view, err := h.svc.CreateCostScenario(ctx, grpcx.TenantID(ctx), in, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.CreateCostScenarioResponse{CostScenario: costScenarioView(view)}, nil
+}
+
+func (h *SourcingHandler) ListCostScenarios(ctx context.Context, req *prv1.ListCostScenariosRequest) (*prv1.ListCostScenariosResponse, error) {
+	rows, err := h.svc.ListCostScenarios(ctx, grpcx.TenantID(ctx), req.GetCaseId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*prv1.CostScenario, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, costScenarioList(row))
+	}
+	return &prv1.ListCostScenariosResponse{CostScenarios: out}, nil
+}
+
+func (h *SourcingHandler) GetCostScenario(ctx context.Context, req *prv1.GetCostScenarioRequest) (*prv1.GetCostScenarioResponse, error) {
+	view, err := h.svc.GetCostScenario(ctx, grpcx.TenantID(ctx), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.GetCostScenarioResponse{CostScenario: costScenarioView(view)}, nil
+}
+
+func (h *SourcingHandler) ConfirmCostScenario(ctx context.Context, req *prv1.ConfirmCostScenarioRequest) (*prv1.ConfirmCostScenarioResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	view, err := h.svc.ConfirmCostScenario(ctx, grpcx.TenantID(ctx), req.GetId(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.ConfirmCostScenarioResponse{CostScenario: costScenarioView(view)}, nil
+}
+
+func (h *SourcingHandler) PrepareCustomerQuotation(ctx context.Context, req *prv1.PrepareCustomerQuotationRequest) (*prv1.PrepareCustomerQuotationResponse, error) {
+	draft, err := h.svc.PrepareCustomerQuotation(ctx, grpcx.TenantID(ctx), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	out := &prv1.PrepareCustomerQuotationResponse{
+		CostScenarioId: draft.Scenario.ID, CostScenarioNo: draft.Scenario.ScenarioNo,
+		SourcingCaseId: draft.Case.ID, CustomerId: draft.Case.CustomerID, ContactEmail: draft.Case.ContactEmail,
+		Currency: draft.Scenario.Currency, Incoterm: draft.Terms.Incoterm, PortOfDischarge: draft.Terms.Port,
+		PaymentMethod: draft.Terms.PaymentTerms, ExistingQuotationId: draft.Scenario.CustomerQuotationID,
+		ExistingQuoteNo: draft.Scenario.CustomerQuoteNo,
+	}
+	for _, line := range draft.Lines {
+		out.Lines = append(out.Lines, &prv1.CustomerQuotationLine{
+			CostScenarioLineId: line.ID, ProductId: line.ProductID, SkuId: line.SkuID,
+			Spec: line.SpecSnapshot, Qty: line.Qty, UnitPrice: line.CustomerUnitPrice,
+			Remark: line.SupplierName,
+		})
+	}
+	return out, nil
+}
+
+func (h *SourcingHandler) LinkCustomerQuotation(ctx context.Context, req *prv1.LinkCustomerQuotationRequest) (*prv1.LinkCustomerQuotationResponse, error) {
+	if err := h.svc.LinkCustomerQuotation(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetQuotationId(), req.GetQuoteNo()); err != nil {
+		return nil, err
+	}
+	return &prv1.LinkCustomerQuotationResponse{QuotationId: req.GetQuotationId(), QuoteNo: req.GetQuoteNo()}, nil
+}
+
+func costScenarioList(row store.ListCostScenariosRow) *prv1.CostScenario {
+	return &prv1.CostScenario{
+		Id: row.ID, CaseId: row.CaseID, ScenarioNo: row.ScenarioNo, Currency: row.Currency,
+		AllocationBasis: row.AllocationBasis, MarginType: row.MarginType, MarginValue: row.MarginValue,
+		FxRate: row.FxRate, FxRateAt: ts(row.FxRateAt), FxSource: row.FxSource, FxBaseCurrency: row.FxBaseCurrency,
+		ProductTotal: row.ProductTotal, ChargeTotal: row.ChargeTotal, LandedTotal: row.LandedTotal,
+		MarginTotal: row.MarginTotal, CustomerTotal: row.CustomerTotal, Status: row.Status,
+		CustomerQuotationId: row.CustomerQuotationID, CustomerQuoteNo: row.CustomerQuoteNo,
+		CreatedByName: row.CreatedByName, ConfirmedByName: row.ConfirmedByName,
+		ConfirmedAt: ts(row.ConfirmedAt), CreatedAt: ts(row.CreatedAt),
+	}
+}
+
+func costScenarioView(view app.CostScenarioView) *prv1.CostScenario {
+	h := view.Header
+	out := &prv1.CostScenario{
+		Id: h.ID, CaseId: h.CaseID, ScenarioNo: h.ScenarioNo, Currency: h.Currency,
+		AllocationBasis: h.AllocationBasis, MarginType: h.MarginType, MarginValue: h.MarginValue,
+		FxRate: h.FxRate, FxRateAt: ts(h.FxRateAt), FxSource: h.FxSource, FxBaseCurrency: h.FxBaseCurrency,
+		ProductTotal: h.ProductTotal, ChargeTotal: h.ChargeTotal, LandedTotal: h.LandedTotal,
+		MarginTotal: h.MarginTotal, CustomerTotal: h.CustomerTotal, Status: h.Status,
+		CustomerQuotationId: h.CustomerQuotationID, CustomerQuoteNo: h.CustomerQuoteNo,
+		CreatedByName: h.CreatedByName, ConfirmedByName: h.ConfirmedByName,
+		ConfirmedAt: ts(h.ConfirmedAt), CreatedAt: ts(h.CreatedAt),
+	}
+	for _, charge := range view.Charges {
+		out.Charges = append(out.Charges, &prv1.CostCharge{
+			Id: charge.ID, ChargeType: charge.ChargeType, Basis: charge.Basis, Description: charge.Description,
+			OriginPort: charge.OriginPort, DestinationPort: charge.DestinationPort, ContainerType: charge.ContainerType,
+			Amount: charge.Amount, Currency: charge.Currency, ConvertedAmount: charge.ConvertedAmount,
+			SourceFxRate: charge.SourceFxRate, TargetFxRate: charge.TargetFxRate, FxRateAt: ts(charge.FxRateAt),
+			FxSource: charge.FxSource, EffectiveAt: charge.EffectiveAt, ValidUntil: charge.ValidUntil,
+			Source: charge.Source, Remark: charge.Remark,
+		})
+	}
+	for _, line := range view.Lines {
+		out.Lines = append(out.Lines, &prv1.CostScenarioLine{
+			Id: line.ID, SourcingLineId: line.SourcingLineID, SupplierQuoteLineId: line.SupplierQuoteLineID,
+			SupplierName: line.SupplierName, ProductId: line.ProductID, SkuId: line.SkuID,
+			ProductName: line.ProductName, SpecSnapshot: line.SpecSnapshot, Qty: line.Qty, UomCode: line.UomCode,
+			SourceCurrency: line.SourceCurrency, SourceUnitPrice: line.SourceUnitPrice,
+			SourceFxRate: line.SourceFxRate, TargetFxRate: line.TargetFxRate,
+			ProductCost: line.ProductCost, AllocatedCharge: line.AllocatedCharge, LandedCost: line.LandedCost,
+			MarginAmount: line.MarginAmount, CustomerUnitPrice: line.CustomerUnitPrice, CustomerAmount: line.CustomerAmount,
+		})
+	}
+	return out
 }
 
 func factoryRFQ(row store.ListFactoryRFQsRow) *prv1.FactoryRfq {

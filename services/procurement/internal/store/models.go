@@ -8,6 +8,84 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type CostCharge struct {
+	ID              int64
+	TenantID        int64
+	ScenarioID      int64
+	ChargeType      string
+	Basis           string
+	Description     string
+	OriginPort      string
+	DestinationPort string
+	ContainerType   string
+	Amount          pgtype.Numeric
+	Currency        string
+	ConvertedAmount pgtype.Numeric
+	SourceFxRate    pgtype.Numeric
+	TargetFxRate    pgtype.Numeric
+	FxRateAt        pgtype.Timestamptz
+	FxSource        string
+	EffectiveAt     pgtype.Date
+	ValidUntil      pgtype.Date
+	Source          string
+	Remark          string
+}
+
+type CostScenario struct {
+	ID                  int64
+	TenantID            int64
+	CaseID              int64
+	ScenarioNo          string
+	Currency            string
+	AllocationBasis     string
+	MarginType          string
+	MarginValue         pgtype.Numeric
+	FxRate              pgtype.Numeric
+	FxRateAt            pgtype.Timestamptz
+	FxSource            string
+	FxBaseCurrency      string
+	ProductTotal        pgtype.Numeric
+	ChargeTotal         pgtype.Numeric
+	LandedTotal         pgtype.Numeric
+	MarginTotal         pgtype.Numeric
+	CustomerTotal       pgtype.Numeric
+	Status              string
+	CustomerQuotationID *int64
+	CustomerQuoteNo     string
+	CreatedBy           int64
+	CreatedByName       string
+	ConfirmedBy         *int64
+	ConfirmedByName     string
+	ConfirmedAt         pgtype.Timestamptz
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+}
+
+type CostScenarioLine struct {
+	ID                  int64
+	TenantID            int64
+	ScenarioID          int64
+	SourcingLineID      int64
+	SupplierQuoteLineID int64
+	SupplierName        string
+	ProductID           int64
+	SkuID               *int64
+	ProductName         string
+	SpecSnapshot        string
+	Qty                 pgtype.Numeric
+	UomCode             string
+	SourceCurrency      string
+	SourceUnitPrice     pgtype.Numeric
+	SourceFxRate        pgtype.Numeric
+	TargetFxRate        pgtype.Numeric
+	ProductCost         pgtype.Numeric
+	AllocatedCharge     pgtype.Numeric
+	LandedCost          pgtype.Numeric
+	MarginAmount        pgtype.Numeric
+	CustomerUnitPrice   pgtype.Numeric
+	CustomerAmount      pgtype.Numeric
+}
+
 type FactoryRfq struct {
 	ID            int64
 	TenantID      int64

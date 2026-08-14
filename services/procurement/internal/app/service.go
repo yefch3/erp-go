@@ -6,6 +6,7 @@ package app
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,6 +28,16 @@ type Operator struct {
 // system; procurement asks rather than inventing a format of its own.
 type Numbering interface {
 	Next(ctx context.Context, bizType string) (string, error)
+}
+
+type Rate struct {
+	Rate         decimal.Decimal
+	At           time.Time
+	Source, Base string
+}
+
+type Rates interface {
+	Latest(context.Context, string) (Rate, error)
 }
 
 // Approvals is the approval engine. It never learns what a purchase order is
@@ -80,6 +91,7 @@ type Deps struct {
 	Approvals  Approvals
 	Suppliers  Suppliers
 	Warehouses Warehouses
+	Rates      Rates
 	// Optional: without it the pages still work, they just need a refresh.
 	Live *livefeed.Publisher
 }
@@ -91,6 +103,7 @@ type Service struct {
 	approvals  Approvals
 	suppliers  Suppliers
 	warehouses Warehouses
+	rates      Rates
 	live       *livefeed.Publisher
 }
 
@@ -98,7 +111,7 @@ func New(pool *pgxpool.Pool, d Deps) *Service {
 	return &Service{
 		pool: pool, q: store.New(pool),
 		numbering: d.Numbering, approvals: d.Approvals,
-		suppliers: d.Suppliers, warehouses: d.Warehouses, live: d.Live,
+		suppliers: d.Suppliers, warehouses: d.Warehouses, rates: d.Rates, live: d.Live,
 	}
 }
 

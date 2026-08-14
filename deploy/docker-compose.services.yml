@@ -204,6 +204,7 @@ services:
       MASTERDATA_ADDR: masterdata:9002
       APPROVAL_ADDR: approval:9005
       INVENTORY_ADDR: inventory:9008
+      FX_ADDR: fx:9003
       KAFKA_BROKERS: kafka:9092
       CONTRACT_TOPIC: erp.export.contract.v1
       CONSUMER_GROUP: procurement.contract.v1
@@ -214,7 +215,7 @@ services:
     ports:
       - "127.0.0.1:9007:9007"
     networks: [infra]
-    depends_on: [inventory, masterdata, approval]
+    depends_on: [inventory, masterdata, approval, fx]
     restart: unless-stopped
 
   shipping:

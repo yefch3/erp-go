@@ -26,6 +26,21 @@ const (
 // opens in Excel, LibreOffice and Numbers and deliberately contains no macros,
 // external links or formulas.
 func Build(sheetName string, rows [][]string) ([]byte, error) {
+	return BuildWithFormulas(sheetName, rows, nil)
+}
+
+// Formula is a trusted, server-authored spreadsheet formula and its cached
+// numeric result. Callers must never pass formulas supplied by an uploaded
+// workbook or other untrusted input.
+type Formula struct {
+	Expression  string
+	CachedValue string
+}
+
+// BuildWithFormulas creates the same bounded workbook as Build and replaces
+// explicitly addressed cells with trusted formulas. Formula references use
+// Excel notation such as H5.
+func BuildWithFormulas(sheetName string, rows [][]string, formulas map[string]Formula) ([]byte, error) {
 	if len(rows) == 0 || len(rows) > MaxRows {
 		return nil, fmt.Errorf("xlsx rows out of range: %d", len(rows))
 	}
@@ -64,10 +79,22 @@ func Build(sheetName string, rows [][]string) ([]byte, error) {
 	for ri, row := range rows {
 		sheet.WriteString(`<row r="` + strconv.Itoa(ri+1) + `">`)
 		for ci, value := range row {
+			ref := cellRef(ci, ri+1)
+			if formula, ok := formulas[ref]; ok {
+				if strings.TrimSpace(formula.Expression) == "" {
+					return nil, fmt.Errorf("xlsx formula is empty at %s", ref)
+				}
+				sheet.WriteString(`<c r="` + ref + `"><f>`)
+				escape(&sheet, formula.Expression)
+				sheet.WriteString(`</f><v>`)
+				escape(&sheet, formula.CachedValue)
+				sheet.WriteString(`</v></c>`)
+				continue
+			}
 			if value == "" {
 				continue
 			}
-			sheet.WriteString(`<c r="` + cellRef(ci, ri+1) + `" t="inlineStr"`)
+			sheet.WriteString(`<c r="` + ref + `" t="inlineStr"`)
 			if ri == 0 {
 				sheet.WriteString(` s="1"`)
 			}

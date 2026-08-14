@@ -22,6 +22,12 @@ service SourcingService {
   rpc ImportSupplierQuoteWorkbook(ImportSupplierQuoteWorkbookRequest) returns (ImportSupplierQuoteWorkbookResponse);
   rpc MarkFactoryRfqSent(MarkFactoryRfqSentRequest) returns (MarkFactoryRfqSentResponse);
   rpc ListSupplierQuoteComparison(ListSupplierQuoteComparisonRequest) returns (ListSupplierQuoteComparisonResponse);
+  rpc CreateCostScenario(CreateCostScenarioRequest) returns (CreateCostScenarioResponse);
+  rpc ListCostScenarios(ListCostScenariosRequest) returns (ListCostScenariosResponse);
+  rpc GetCostScenario(GetCostScenarioRequest) returns (GetCostScenarioResponse);
+  rpc ConfirmCostScenario(ConfirmCostScenarioRequest) returns (ConfirmCostScenarioResponse);
+  rpc PrepareCustomerQuotation(PrepareCustomerQuotationRequest) returns (PrepareCustomerQuotationResponse);
+  rpc LinkCustomerQuotation(LinkCustomerQuotationRequest) returns (LinkCustomerQuotationResponse);
 }
 
 message SourcingLineInput {
@@ -168,8 +174,70 @@ message SupplierQuoteComparisonLine {
   string delivery = 10; string quote_remark = 11; string source = 12;
   int64 sourcing_line_id = 13; string qty = 14; string unit_price = 15;
   string amount = 16; string moq = 17; string lead_time = 18; string line_remark = 19;
+  int64 quote_line_id = 20;
 }
 message ListSupplierQuoteComparisonResponse { repeated SupplierQuoteComparisonLine lines = 1; }
+
+message CostSelectionInput { int64 sourcing_line_id = 1; int64 supplier_quote_line_id = 2; }
+message CostChargeInput {
+  string charge_type = 1; string basis = 2; string description = 3;
+  string origin_port = 4; string destination_port = 5; string container_type = 6;
+  string amount = 7; string currency = 8; string effective_at = 9;
+  string valid_until = 10; string source = 11; string remark = 12;
+}
+message CostCharge {
+  int64 id = 1; string charge_type = 2; string basis = 3; string description = 4;
+  string origin_port = 5; string destination_port = 6; string container_type = 7;
+  string amount = 8; string currency = 9; string converted_amount = 10;
+  string source_fx_rate = 11; string target_fx_rate = 12; string fx_rate_at = 13;
+  string fx_source = 14; string effective_at = 15; string valid_until = 16;
+  string source = 17; string remark = 18;
+}
+message CostScenarioLine {
+  int64 id = 1; int64 sourcing_line_id = 2; int64 supplier_quote_line_id = 3;
+  string supplier_name = 4; int64 product_id = 5; int64 sku_id = 6;
+  string product_name = 7; string spec_snapshot = 8; string qty = 9; string uom_code = 10;
+  string source_currency = 11; string source_unit_price = 12; string source_fx_rate = 13;
+  string target_fx_rate = 14; string product_cost = 15; string allocated_charge = 16;
+  string landed_cost = 17; string margin_amount = 18; string customer_unit_price = 19;
+  string customer_amount = 20;
+}
+message CostScenario {
+  int64 id = 1; int64 case_id = 2; string scenario_no = 3; string currency = 4;
+  string allocation_basis = 5; string margin_type = 6; string margin_value = 7;
+  string fx_rate = 8; string fx_rate_at = 9; string fx_source = 10; string fx_base_currency = 11;
+  string product_total = 12; string charge_total = 13; string landed_total = 14;
+  string margin_total = 15; string customer_total = 16; string status = 17;
+  int64 customer_quotation_id = 18; string customer_quote_no = 19;
+  string created_by_name = 20; string confirmed_by_name = 21; string confirmed_at = 22; string created_at = 23;
+  repeated CostCharge charges = 24; repeated CostScenarioLine lines = 25;
+}
+message CreateCostScenarioRequest {
+  int64 case_id = 1; string currency = 2; string allocation_basis = 3;
+  string margin_type = 4; string margin_value = 5;
+  repeated CostSelectionInput selections = 6; repeated CostChargeInput charges = 7;
+}
+message CreateCostScenarioResponse { CostScenario cost_scenario = 1; }
+message ListCostScenariosRequest { int64 case_id = 1; }
+message ListCostScenariosResponse { repeated CostScenario cost_scenarios = 1; }
+message GetCostScenarioRequest { int64 id = 1; }
+message GetCostScenarioResponse { CostScenario cost_scenario = 1; }
+message ConfirmCostScenarioRequest { int64 id = 1; }
+message ConfirmCostScenarioResponse { CostScenario cost_scenario = 1; }
+message CustomerQuotationLine {
+  int64 cost_scenario_line_id = 1; int64 product_id = 2; int64 sku_id = 3;
+  string spec = 4; string qty = 5; string unit_price = 6; string remark = 7;
+}
+message PrepareCustomerQuotationRequest { int64 id = 1; }
+message PrepareCustomerQuotationResponse {
+  int64 cost_scenario_id = 1; string cost_scenario_no = 2; int64 sourcing_case_id = 3;
+  int64 customer_id = 4; string contact_email = 5; string currency = 6;
+  string incoterm = 7; string port_of_loading = 8; string port_of_discharge = 9;
+  string payment_method = 10; repeated CustomerQuotationLine lines = 11;
+  int64 existing_quotation_id = 12; string existing_quote_no = 13;
+}
+message LinkCustomerQuotationRequest { int64 id = 1; int64 quotation_id = 2; string quote_no = 3; }
+message LinkCustomerQuotationResponse { int64 quotation_id = 1; string quote_no = 2; }
 
 // RequirementService exposes what has to be bought.
 //

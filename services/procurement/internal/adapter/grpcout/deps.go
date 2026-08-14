@@ -4,15 +4,40 @@ package grpcout
 
 import (
 	"context"
+	"time"
 
 	"google.golang.org/grpc"
 
 	apv1 "github.com/sgao19/erp-go/gen/go/erp/approval/v1"
+	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
 	inv1 "github.com/sgao19/erp-go/gen/go/erp/inventory/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/services/procurement/internal/app"
+	"github.com/shopspring/decimal"
 )
+
+type Rates struct{ client fxv1.FxServiceClient }
+
+func NewRates(conn *grpc.ClientConn) *Rates { return &Rates{client: fxv1.NewFxServiceClient(conn)} }
+func (r *Rates) Latest(ctx context.Context, currency string) (app.Rate, error) {
+	if currency == "USD" {
+		return app.Rate{Rate: decimal.NewFromInt(1), At: time.Now().UTC(), Source: "BASE", Base: "USD"}, nil
+	}
+	resp, err := r.client.GetLatestRate(ctx, &fxv1.GetLatestRateRequest{QuoteCurrency: currency})
+	if err != nil {
+		return app.Rate{}, err
+	}
+	v, err := decimal.NewFromString(resp.GetRate().GetUnitsPerUsd())
+	if err != nil {
+		return app.Rate{}, err
+	}
+	at, err := time.Parse(time.RFC3339, resp.GetRate().GetFetchedAt())
+	if err != nil {
+		at = time.Now().UTC()
+	}
+	return app.Rate{Rate: v, At: at, Source: resp.GetRate().GetSource(), Base: resp.GetRate().GetBaseCurrency()}, nil
+}
 
 type Numbering struct{ client mdv1.NumberingServiceClient }
 

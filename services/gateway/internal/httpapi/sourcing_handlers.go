@@ -2,13 +2,16 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
+	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
 	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	pdv1 "github.com/sgao19/erp-go/gen/go/erp/product/v1"
@@ -213,4 +216,97 @@ func (s *Server) listSupplierQuoteComparison(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	s.writeProto(w, resp)
+}
+
+func (s *Server) listCostScenarios(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.ListCostScenarios(r.Context(), &prv1.ListCostScenariosRequest{CaseId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) createCostScenario(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.CreateCostScenarioRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.CaseId = idFromPath(r)
+	resp, err := s.Sourcing.CreateCostScenario(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getCostScenario(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.GetCostScenario(r.Context(), &prv1.GetCostScenarioRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) confirmCostScenario(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.ConfirmCostScenario(r.Context(), &prv1.ConfirmCostScenarioRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) createCustomerQuotationFromCost(w http.ResponseWriter, r *http.Request) {
+	scenarioID := idFromPath(r)
+	var input struct {
+		CustomerID int64 `json:"customer_id"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&input); err != nil && !errors.Is(err, io.EOF) {
+		s.writeError(w, http.StatusBadRequest, "BAD_JSON", "请求内容无效")
+		return
+	}
+	draft, err := s.Sourcing.PrepareCustomerQuotation(r.Context(), &prv1.PrepareCustomerQuotationRequest{Id: scenarioID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if draft.GetExistingQuotationId() != 0 {
+		s.writeProto(w, &prv1.LinkCustomerQuotationResponse{QuotationId: draft.GetExistingQuotationId(), QuoteNo: draft.GetExistingQuoteNo()})
+		return
+	}
+	items := make([]*exv1.ItemInput, 0, len(draft.GetLines()))
+	for _, line := range draft.GetLines() {
+		items = append(items, &exv1.ItemInput{
+			ProductId: line.GetProductId(), SkuId: line.GetSkuId(), Spec: line.GetSpec(),
+			Qty: line.GetQty(), UnitPrice: line.GetUnitPrice(), Remark: line.GetRemark(),
+			SourceCostScenarioLineId: line.GetCostScenarioLineId(),
+		})
+	}
+	customerID := draft.GetCustomerId()
+	if input.CustomerID != 0 {
+		customerID = input.CustomerID
+	}
+	created, err := s.Quotations.CreateQuotation(r.Context(), &exv1.CreateQuotationRequest{
+		CustomerId: customerID, Currency: draft.GetCurrency(), Incoterm: draft.GetIncoterm(),
+		PortOfLoading: draft.GetPortOfLoading(), PortOfDischarge: draft.GetPortOfDischarge(),
+		PaymentMethod: draft.GetPaymentMethod(), Remark: "Generated from " + draft.GetCostScenarioNo(), Items: items,
+		SourceCostScenarioId: draft.GetCostScenarioId(), SourceCostScenarioNo: draft.GetCostScenarioNo(),
+		SourceSourcingCaseId: draft.GetSourcingCaseId(),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	quotation := created.GetQuotation()
+	linked, err := s.Sourcing.LinkCustomerQuotation(r.Context(), &prv1.LinkCustomerQuotationRequest{
+		Id: scenarioID, QuotationId: quotation.GetId(), QuoteNo: quotation.GetQuoteNo(),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, linked)
 }

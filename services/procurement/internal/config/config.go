@@ -22,6 +22,7 @@ type Config struct {
 	MasterdataAddr string
 	ApprovalAddr   string
 	InventoryAddr  string
+	FxAddr         string
 	// Live hints to open pages. Optional: without Redis the pages still work,
 	// they just need a manual refresh.
 	RedisAddr string
@@ -40,6 +41,7 @@ func Load() Config {
 		MasterdataAddr:        env("MASTERDATA_ADDR", "localhost:9002"),
 		ApprovalAddr:          env("APPROVAL_ADDR", "localhost:9005"),
 		InventoryAddr:         env("INVENTORY_ADDR", "localhost:9008"),
+		FxAddr:                env("FX_ADDR", "localhost:9003"),
 		RedisAddr:             env("REDIS_ADDR", "localhost:6379"),
 	}
 }
