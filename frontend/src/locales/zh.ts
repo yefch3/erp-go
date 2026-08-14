@@ -1064,6 +1064,7 @@ export default {
     purchaseImportHint: '请选择供应商，并逐行确认 Excel 明细对应的待采购需求。当前只做预览，不会创建采购单。',
     supplier: '供应商', product: '产品', quantity: '数量', unitPrice: '单价', purchaseRequirement: '采购需求', chooseRequirement: '请选择采购需求', importNextStep: '下一步（创建草稿）',
     importResults: { MATCHED: '有候选', MULTIPLE: '多个候选', NOT_FOUND: '未找到' },
+    importSupplierRequired: '请选择供应商', importRequirementRequired: '请为每一行选择采购需求并填写有效数量', importCreated: '采购单 {no} 已创建',
     sourcingCaseCreated: '询价案件 {no} 已建立',
     sourcingPreviewIncomplete: '明细超过 200 行，请先下载核对；当前预览不完整，不能直接建案。',
     generatedBy: '由 {model} 生成，请在使用前核对关键数字。',

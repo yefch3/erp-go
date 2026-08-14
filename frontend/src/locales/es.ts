@@ -1069,6 +1069,7 @@ export default {
     purchaseImportHint: 'Seleccione un proveedor y confirme la necesidad pendiente de cada fila. Esta vista previa todavía no crea la orden.',
     supplier: 'Proveedor', product: 'Producto', quantity: 'Cantidad', unitPrice: 'Precio unitario', purchaseRequirement: 'Necesidad de compra', chooseRequirement: 'Seleccione una necesidad', importNextStep: 'Siguiente (crear borrador)',
     importResults: { MATCHED: 'Candidato', MULTIPLE: 'Varios', NOT_FOUND: 'No encontrado' },
+    importSupplierRequired: 'Seleccione un proveedor', importRequirementRequired: 'Seleccione una necesidad e indique una cantidad válida en cada fila', importCreated: 'Orden de compra {no} creada',
     sourcingCaseCreated: 'Caso de compras {no} creado',
     sourcingPreviewIncomplete: 'La vista previa está limitada a 200 filas. Descárguela y revísela antes de crear el caso.',
     generatedBy: 'Generado por {model}. Verifique las cifras importantes antes de usarlo.',

@@ -801,7 +801,11 @@
     </el-table>
     <template #footer>
       <el-button @click="purchaseImportOpen = false">{{ t('common.close') }}</el-button>
-      <el-button type="primary" disabled>{{ t('emails.importNextStep') }}</el-button>
+      <el-button
+        type="primary"
+        :loading="purchaseImportBusy"
+        @click="createPurchaseOrderFromImport"
+      >{{ t('emails.importNextStep') }}</el-button>
     </template>
   </el-dialog>
 
@@ -2237,6 +2241,40 @@ async function previewPurchaseOrderImport() {
       purchaseImportSuppliers.value = suppliers.suppliers ?? []
     }
     purchaseImportOpen.value = true
+  } finally {
+    purchaseImportBusy.value = false
+  }
+}
+
+async function createPurchaseOrderFromImport() {
+  const supplierID = Number(purchaseImportSupplier.value)
+  const lines = purchaseImportRows.value
+    .filter((row) => row.requirementId && Number(row.quantity) > 0)
+    .map((row) => ({
+      requirement_id: Number(row.requirementId),
+      qty: row.quantity,
+      unit_price: row.unitPrice || '0',
+    }))
+  if (!supplierID) {
+    ElMessage.warning(t('emails.importSupplierRequired'))
+    return
+  }
+  if (!lines.length || lines.length !== purchaseImportRows.value.length) {
+    ElMessage.warning(t('emails.importRequirementRequired'))
+    return
+  }
+  purchaseImportBusy.value = true
+  try {
+    const response = await post<{ id: string; poNo: string }>('/purchase-orders', {
+      supplier_id: supplierID,
+      currency: 'CNY',
+      lines,
+      remark: 'Excel 导入',
+    })
+    ElMessage.success(t('emails.importCreated', { no: response.poNo }))
+    purchaseImportOpen.value = false
+    excelOpen.value = false
+    router.push(`/purchase-orders?order=${response.id}`)
   } finally {
     purchaseImportBusy.value = false
   }
