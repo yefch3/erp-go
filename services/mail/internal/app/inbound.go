@@ -45,6 +45,10 @@ type Mailbox interface {
 	Fetch(ctx context.Context, acct MailAccount, folder string, sinceUID uint32, limit uint32) (FetchResult, error)
 	// FetchBelow returns history: the newest `limit` messages below belowUID.
 	FetchBelow(ctx context.Context, acct MailAccount, folder string, belowUID uint32, limit uint32) (FetchResult, error)
+	// FetchByUIDs returns exactly the messages named. The UIDs must be
+	// current-generation — in practice they come from a Message-ID search
+	// moments earlier over the same connection pool.
+	FetchByUIDs(ctx context.Context, acct MailAccount, folder string, uids []uint32) (FetchResult, error)
 	// SentFolder names the folder the host keeps sent mail in.
 	SentFolder(ctx context.Context, acct MailAccount) (string, error)
 	// JunkFolder names the folder the host files spam into.

@@ -194,3 +194,26 @@ ORDER BY raw_key, id;
 -- corrupted one.
 UPDATE email_inbound SET raw_key = '', raw_size = 0
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: ListInboundMissingRaw :many
+-- Rows whose original was lost to the raw-key collision and might still be
+-- on the mail host. Only rows carrying a Message-ID qualify: it is the
+-- identifier the refetch searches by, and the one proof that what comes back
+-- is this message rather than whatever inherited the UID since. The stored
+-- imap_uid is deliberately not selected — trusting a UID across generations
+-- is the mistake that lost these originals in the first place.
+SELECT id, owner_id, folder, message_id
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND raw_key = ''
+  AND message_id <> ''
+ORDER BY owner_id, folder, id;
+
+-- name: AdoptInboundRawKey :execrows
+-- Claims a re-fetched original, but only for a row still missing one: a key
+-- written by anything else in the meantime is not this pass's to overwrite.
+UPDATE email_inbound
+SET raw_key = sqlc.arg(raw_key)::varchar, raw_size = sqlc.arg(raw_size)::bigint
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+  AND raw_key = '';
