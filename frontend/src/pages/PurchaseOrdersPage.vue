@@ -1,5 +1,6 @@
 <template>
   <div>
+    <ProcurementNav />
     <div class="page-head">
       <h2>{{ t('orders.title') }}</h2>
       <span class="head-note">{{ t('orders.subtitle') }}</span>
@@ -281,7 +282,7 @@
       <el-form label-width="80px">
         <el-form-item :label="t('orders.warehouse')" required>
           <el-select v-model="receiveWarehouse" style="width: 220px">
-            <el-option v-for="w in warehouses" :key="w.id" :value="Number(w.id)" :label="w.name" />
+            <el-option v-for="w in portWarehouses" :key="w.id" :value="Number(w.id)" :label="w.name" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -330,6 +331,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { get, post, put } from '../api'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
+import ProcurementNav from '../components/ProcurementNav.vue'
 
 interface Order {
   id: string
@@ -382,14 +384,14 @@ interface Requirement {
   source: string
 }
 interface Supplier { id: string; code: string; name: string }
-interface Warehouse { id: string; code: string; name: string }
+interface Warehouse { id: string; code: string; name: string; whType: string }
 
 const { t } = useI18n()
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const canWrite = auth.can('procurement:order:write')
-const canReceive = auth.can('inventory:stock:write')
+const canReceive = auth.can('procurement:order:write')
 const canManageSupplier = auth.can('masterdata:supplier:write')
 
 const rows = ref<Order[]>([])
@@ -423,6 +425,7 @@ const receiveItems = ref<OrderItem[]>([])
 const receiveQty = reactive<Record<string, string>>({})
 const receiveWarehouse = ref(0)
 const warehouses = ref<Warehouse[]>([])
+const portWarehouses = computed(() => warehouses.value.filter((w) => w.whType === 'PORT_TERMINAL'))
 
 const cancelOpen = ref(false)
 const cancelling = ref<Order | null>(null)
@@ -642,7 +645,7 @@ async function openReceive(row: Order) {
   if (!warehouses.value.length) {
     warehouses.value = (await get<{ warehouses: Warehouse[] }>('/warehouses')).warehouses ?? []
   }
-  receiveWarehouse.value = Number(warehouses.value[0]?.id ?? 0)
+  receiveWarehouse.value = Number(portWarehouses.value[0]?.id ?? 0)
   receiveOpen.value = true
 }
 

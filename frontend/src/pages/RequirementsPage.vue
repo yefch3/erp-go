@@ -1,5 +1,6 @@
 <template>
   <div>
+    <ProcurementNav />
     <div class="page-head">
       <h2>{{ t('requirements.title') }}</h2>
       <span class="head-note">{{ t('requirements.readOnlyHint') }}</span>
@@ -100,8 +101,7 @@
             <el-button v-if="canWrite && row.status === 'PENDING'" link type="danger" @click="openClose(row)">
               {{ t('requirements.close') }}
             </el-button>
-            <!-- A close can be wrong: stock that briefly covered it went
-                 elsewhere, or a contract change was reverted. -->
+            <!-- A close can be wrong or a contract change can be reverted. -->
             <el-button
               v-if="canWrite && canReopen(row)"
               link
@@ -251,6 +251,7 @@ import { useRouter } from 'vue-router'
 import { get, post } from '../api'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
+import ProcurementNav from '../components/ProcurementNav.vue'
 
 interface Requirement {
   id: string
@@ -331,9 +332,7 @@ function reload() {
   load()
 }
 
-// Stock is deliberately not consulted here. Contract-driven requirements are
-// netted against what is on hand; this one is a person deciding to buy, and
-// refusing it because the shelf is full is refusing to restock.
+// This is an exceptional requirement raised independently of a contract.
 async function openCreate() {
   createForm.productId = 0
   createForm.qty = ''
@@ -459,8 +458,8 @@ function isOverdue(row: Requirement): boolean {
   return row.requiredDate < new Date().toISOString().slice(0, 10)
 }
 
-// Requirements move for reasons nobody on this page did: stock arrives and
-// covers a shortage, a contract change retires a line, an order is raised.
+// Requirements move for reasons nobody on this page did: a contract change
+// retires a line or an order is raised.
 // A buyer working from a list that went stale minutes ago orders the wrong
 // things, so the page re-reads rather than waiting for a manual refresh.
 //

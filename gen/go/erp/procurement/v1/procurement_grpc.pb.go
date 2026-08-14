@@ -19,6 +19,192 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	SourcingService_CreateCase_FullMethodName = "/erp.procurement.v1.SourcingService/CreateCase"
+	SourcingService_ListCases_FullMethodName  = "/erp.procurement.v1.SourcingService/ListCases"
+	SourcingService_GetCase_FullMethodName    = "/erp.procurement.v1.SourcingService/GetCase"
+)
+
+// SourcingServiceClient is the client API for SourcingService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// SourcingService owns pre-sale inquiry review. It lives in the procurement
+// bounded context but is deliberately separate from committed requirements
+// and purchase orders.
+type SourcingServiceClient interface {
+	CreateCase(ctx context.Context, in *CreateCaseRequest, opts ...grpc.CallOption) (*CreateCaseResponse, error)
+	ListCases(ctx context.Context, in *ListCasesRequest, opts ...grpc.CallOption) (*ListCasesResponse, error)
+	GetCase(ctx context.Context, in *GetCaseRequest, opts ...grpc.CallOption) (*GetCaseResponse, error)
+}
+
+type sourcingServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewSourcingServiceClient(cc grpc.ClientConnInterface) SourcingServiceClient {
+	return &sourcingServiceClient{cc}
+}
+
+func (c *sourcingServiceClient) CreateCase(ctx context.Context, in *CreateCaseRequest, opts ...grpc.CallOption) (*CreateCaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateCaseResponse)
+	err := c.cc.Invoke(ctx, SourcingService_CreateCase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ListCases(ctx context.Context, in *ListCasesRequest, opts ...grpc.CallOption) (*ListCasesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCasesResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListCases_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) GetCase(ctx context.Context, in *GetCaseRequest, opts ...grpc.CallOption) (*GetCaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCaseResponse)
+	err := c.cc.Invoke(ctx, SourcingService_GetCase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SourcingServiceServer is the server API for SourcingService service.
+// All implementations must embed UnimplementedSourcingServiceServer
+// for forward compatibility.
+//
+// SourcingService owns pre-sale inquiry review. It lives in the procurement
+// bounded context but is deliberately separate from committed requirements
+// and purchase orders.
+type SourcingServiceServer interface {
+	CreateCase(context.Context, *CreateCaseRequest) (*CreateCaseResponse, error)
+	ListCases(context.Context, *ListCasesRequest) (*ListCasesResponse, error)
+	GetCase(context.Context, *GetCaseRequest) (*GetCaseResponse, error)
+	mustEmbedUnimplementedSourcingServiceServer()
+}
+
+// UnimplementedSourcingServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedSourcingServiceServer struct{}
+
+func (UnimplementedSourcingServiceServer) CreateCase(context.Context, *CreateCaseRequest) (*CreateCaseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateCase not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListCases(context.Context, *ListCasesRequest) (*ListCasesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCases not implemented")
+}
+func (UnimplementedSourcingServiceServer) GetCase(context.Context, *GetCaseRequest) (*GetCaseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCase not implemented")
+}
+func (UnimplementedSourcingServiceServer) mustEmbedUnimplementedSourcingServiceServer() {}
+func (UnimplementedSourcingServiceServer) testEmbeddedByValue()                         {}
+
+// UnsafeSourcingServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to SourcingServiceServer will
+// result in compilation errors.
+type UnsafeSourcingServiceServer interface {
+	mustEmbedUnimplementedSourcingServiceServer()
+}
+
+func RegisterSourcingServiceServer(s grpc.ServiceRegistrar, srv SourcingServiceServer) {
+	// If the following call pancis, it indicates UnimplementedSourcingServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&SourcingService_ServiceDesc, srv)
+}
+
+func _SourcingService_CreateCase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateCaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).CreateCase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_CreateCase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).CreateCase(ctx, req.(*CreateCaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ListCases_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCasesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListCases(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListCases_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListCases(ctx, req.(*ListCasesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_GetCase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).GetCase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_GetCase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).GetCase(ctx, req.(*GetCaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// SourcingService_ServiceDesc is the grpc.ServiceDesc for SourcingService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var SourcingService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "erp.procurement.v1.SourcingService",
+	HandlerType: (*SourcingServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CreateCase",
+			Handler:    _SourcingService_CreateCase_Handler,
+		},
+		{
+			MethodName: "ListCases",
+			Handler:    _SourcingService_ListCases_Handler,
+		},
+		{
+			MethodName: "GetCase",
+			Handler:    _SourcingService_GetCase_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "erp/procurement/v1/procurement.proto",
+}
+
+const (
 	RequirementService_ListRequirements_FullMethodName      = "/erp.procurement.v1.RequirementService/ListRequirements"
 	RequirementService_CreateRequirement_FullMethodName     = "/erp.procurement.v1.RequirementService/CreateRequirement"
 	RequirementService_GetRequirement_FullMethodName        = "/erp.procurement.v1.RequirementService/GetRequirement"
@@ -33,18 +219,15 @@ const (
 //
 // RequirementService exposes what has to be bought.
 //
-// Requirements are not created through this API: they arrive from contracts
-// that took effect, over Kafka. A buyer reads them, and closes the ones the
-// business decides not to act on.
+// Contract requirements are not created through this API: an effective
+// contract creates its full purchasing quantity over Kafka. No own-stock
+// balance is netted first.
 type RequirementServiceClient interface {
 	ListRequirements(ctx context.Context, in *ListRequirementsRequest, opts ...grpc.CallOption) (*ListRequirementsResponse, error)
-	// Raise one by hand: restocking, a long-lead item, a deal with a supplier.
-	// Purchasing is not only the tail end of a sale, and a company that can
-	// only buy what it has already sold cannot keep stock at all.
+	// Raise an exceptional requirement by hand, independent of a contract.
 	CreateRequirement(ctx context.Context, in *CreateRequirementRequest, opts ...grpc.CallOption) (*CreateRequirementResponse, error)
 	GetRequirement(ctx context.Context, in *GetRequirementRequest, opts ...grpc.CallOption) (*GetRequirementResponse, error)
-	// Close a requirement the business will not buy against - stock on hand,
-	// or a customer order that fell through outside the contract.
+	// Close a requirement the business will not buy against.
 	CancelRequirement(ctx context.Context, in *CancelRequirementRequest, opts ...grpc.CallOption) (*CancelRequirementResponse, error)
 	// Put a wrongly closed one back on the list.
 	ReopenRequirement(ctx context.Context, in *ReopenRequirementRequest, opts ...grpc.CallOption) (*ReopenRequirementResponse, error)
@@ -127,18 +310,15 @@ func (c *requirementServiceClient) ListRequirementOrders(ctx context.Context, in
 //
 // RequirementService exposes what has to be bought.
 //
-// Requirements are not created through this API: they arrive from contracts
-// that took effect, over Kafka. A buyer reads them, and closes the ones the
-// business decides not to act on.
+// Contract requirements are not created through this API: an effective
+// contract creates its full purchasing quantity over Kafka. No own-stock
+// balance is netted first.
 type RequirementServiceServer interface {
 	ListRequirements(context.Context, *ListRequirementsRequest) (*ListRequirementsResponse, error)
-	// Raise one by hand: restocking, a long-lead item, a deal with a supplier.
-	// Purchasing is not only the tail end of a sale, and a company that can
-	// only buy what it has already sold cannot keep stock at all.
+	// Raise an exceptional requirement by hand, independent of a contract.
 	CreateRequirement(context.Context, *CreateRequirementRequest) (*CreateRequirementResponse, error)
 	GetRequirement(context.Context, *GetRequirementRequest) (*GetRequirementResponse, error)
-	// Close a requirement the business will not buy against - stock on hand,
-	// or a customer order that fell through outside the contract.
+	// Close a requirement the business will not buy against.
 	CancelRequirement(context.Context, *CancelRequirementRequest) (*CancelRequirementResponse, error)
 	// Put a wrongly closed one back on the list.
 	ReopenRequirement(context.Context, *ReopenRequirementRequest) (*ReopenRequirementResponse, error)
@@ -369,7 +549,7 @@ type PurchaseOrderServiceClient interface {
 	// order total, so a large order can require more of them.
 	SubmitOrder(ctx context.Context, in *SubmitOrderRequest, opts ...grpc.CallOption) (*SubmitOrderResponse, error)
 	CancelOrder(ctx context.Context, in *CancelOrderRequest, opts ...grpc.CallOption) (*CancelOrderResponse, error)
-	// Goods arriving. Stock is increased by inventory, not here.
+	// Finished goods arriving into a port-terminal custody location.
 	ReceiveOrder(ctx context.Context, in *ReceiveOrderRequest, opts ...grpc.CallOption) (*ReceiveOrderResponse, error)
 }
 
@@ -472,7 +652,7 @@ type PurchaseOrderServiceServer interface {
 	// order total, so a large order can require more of them.
 	SubmitOrder(context.Context, *SubmitOrderRequest) (*SubmitOrderResponse, error)
 	CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error)
-	// Goods arriving. Stock is increased by inventory, not here.
+	// Finished goods arriving into a port-terminal custody location.
 	ReceiveOrder(context.Context, *ReceiveOrderRequest) (*ReceiveOrderResponse, error)
 	mustEmbedUnimplementedPurchaseOrderServiceServer()
 }

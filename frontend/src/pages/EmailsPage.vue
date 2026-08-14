@@ -689,14 +689,14 @@
     <button
       type="button"
       role="menuitem"
-      :disabled="!excelAvailable"
-      :aria-describedby="!excelAvailable ? 'excel-unavailable-reason' : undefined"
+      :disabled="!excelAvailable || !!excelMenu.disabledReason"
+      :aria-describedby="(!excelAvailable || excelMenu.disabledReason) ? 'excel-unavailable-reason' : undefined"
       @click="convertExcelSelection"
     >
       {{ t('emails.convertToExcel') }}
     </button>
-    <p v-if="!excelAvailable" id="excel-unavailable-reason" class="excel-context-reason">
-      {{ t('emails.excelUnavailable') }}
+    <p v-if="!excelAvailable || excelMenu.disabledReason" id="excel-unavailable-reason" class="excel-context-reason">
+      {{ excelMenu.disabledReason ? t(excelMenu.disabledReason) : t('emails.excelUnavailable') }}
     </p>
   </div>
 
@@ -738,6 +738,13 @@
     </div>
     <template #footer>
       <el-button @click="excelOpen = false">{{ t('emails.close') }}</el-button>
+      <el-button
+        v-if="excelResult && auth.can('procurement:sourcing:write')"
+        :loading="creatingSourcingCase"
+        @click="createSourcingCaseFromExcel"
+      >
+        {{ t('emails.createSourcingCase') }}
+      </el-button>
       <el-button v-if="excelResult" type="primary" @click="downloadExcel">
         {{ t('emails.downloadExcel') }}
       </el-button>
@@ -2013,17 +2020,22 @@ type ExcelSource =
   | { kind: 'text'; mailId: string; text: string }
   | { kind: 'attachment'; mailId: string; attachmentId: string }
 
-const excelMenu = reactive({ open: false, x: 0, y: 0, source: null as ExcelSource | null })
+const excelMenu = reactive({
+  open: false, x: 0, y: 0, source: null as ExcelSource | null, disabledReason: '',
+})
 const excelOpen = ref(false)
 const excelBusy = ref(false)
 const excelResult = ref<ExcelResult | null>(null)
 const excelSheet = ref('')
 const excelAvailable = ref(false)
+const creatingSourcingCase = ref(false)
+const convertedExcelSource = ref<ExcelSource | null>(null)
 
-function positionExcelMenu(x: number, y: number, source: ExcelSource) {
+function positionExcelMenu(x: number, y: number, source: ExcelSource, disabledReason = '') {
   excelMenu.x = Math.max(8, Math.min(x, window.innerWidth - 210))
   excelMenu.y = Math.max(8, Math.min(y, window.innerHeight - 54))
   excelMenu.source = source
+  excelMenu.disabledReason = disabledReason
   excelMenu.open = true
 }
 
@@ -2052,11 +2064,11 @@ function openPlainTextExcelMenu(event: MouseEvent, mailId: string) {
 }
 
 function openAttachmentExcelMenu(event: MouseEvent, file: MailFile) {
-  if (!openedInbound.value || !file.stored) return
+  if (!openedInbound.value) return
   event.preventDefault()
   positionExcelMenu(event.clientX, event.clientY, {
     kind: 'attachment', mailId: openedInbound.value.id, attachmentId: file.id,
-  })
+  }, file.stored ? '' : 'emails.attachmentNotStored')
 }
 
 function closeExcelMenu() {
@@ -2072,8 +2084,9 @@ onUnmounted(() => {
 async function convertExcelSelection() {
   const source = excelMenu.source
   closeExcelMenu()
-  if (!excelAvailable.value || !source || excelBusy.value) return
+  if (!excelAvailable.value || excelMenu.disabledReason || !source || excelBusy.value) return
   excelResult.value = null
+  convertedExcelSource.value = source
   excelSheet.value = ''
   excelOpen.value = true
   excelBusy.value = true
@@ -2091,6 +2104,50 @@ async function convertExcelSelection() {
     excelOpen.value = false
   } finally {
     excelBusy.value = false
+  }
+}
+
+async function createSourcingCaseFromExcel() {
+  const result = excelResult.value
+  const source = convertedExcelSource.value
+  const sheet = result?.sheets[0]
+  if (!result || !source || !sheet?.rows.length) return
+  if (Number(sheet.totalRows) > sheet.rows.length) {
+    ElMessage.warning(t('emails.sourcingPreviewIncomplete'))
+    return
+  }
+  const fieldByColumn: Record<string, string> = {
+    '产品': 'product', '材质/标准': 'materialStandard', '牌号/等级': 'grade',
+    '厚度': 'thickness', '宽度': 'width', '长度/形式': 'lengthOrForm',
+    '表面要求': 'surfaceRequirement', '涂层/镀层': 'coating', '公差': 'tolerance',
+    '卷重': 'coilWeight', '卷内径': 'coilId', '包装': 'packaging', '交期': 'delivery',
+    '付款条件': 'paymentTerms', '贸易术语': 'incoterm', '港口': 'port',
+    '单位': 'quantityUnit', '备注': 'remarks', '数量': 'quantity',
+  }
+  const lines = sheet.rows.map((row) => {
+    const line: Record<string, string> = {}
+    sheet.columns.forEach((column, index) => {
+      const field = fieldByColumn[column]
+      if (field) line[field] = row.cells[index] ?? ''
+    })
+    return line
+  })
+  creatingSourcingCase.value = true
+  try {
+    const response = await post<{ sourcingCase: { id: string; caseNo: string } }>('/sourcing-cases', {
+      title: result.fileName.replace(/\.xlsx$/i, ''),
+      customerName: openedInbound.value?.fromName || '',
+      contactName: openedInbound.value?.fromName || '',
+      contactEmail: openedInbound.value?.fromEmail || '',
+      sourceMailId: source.mailId,
+      sourceAttachmentId: source.kind === 'attachment' ? source.attachmentId : '0',
+      lines,
+    })
+    ElMessage.success(t('emails.sourcingCaseCreated', { no: response.sourcingCase.caseNo }))
+    excelOpen.value = false
+    router.push(`/sourcing-cases?case=${response.sourcingCase.id}`)
+  } finally {
+    creatingSourcingCase.value = false
   }
 }
 

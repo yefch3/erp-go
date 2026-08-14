@@ -17,10 +17,10 @@ func (s supplierDirectoryStub) Get(context.Context, int64) (Supplier, error) {
 	return s.supplier, s.err
 }
 
-type warehouseDirectoryStub struct{ active bool }
+type warehouseDirectoryStub struct{ warehouse Warehouse }
 
-func (w warehouseDirectoryStub) IsActive(context.Context, int64) (bool, error) {
-	return w.active, nil
+func (w warehouseDirectoryStub) Get(context.Context, int64) (Warehouse, error) {
+	return w.warehouse, nil
 }
 
 func TestSupplierForOrderRequiresAnActiveMasterRecord(t *testing.T) {
@@ -45,10 +45,20 @@ func TestSupplierForOrderRequiresAnActiveMasterRecord(t *testing.T) {
 }
 
 func TestReceiveOrderRejectsAnInactiveWarehouseBeforeWriting(t *testing.T) {
-	svc := &Service{warehouses: warehouseDirectoryStub{active: false}}
+	svc := &Service{warehouses: warehouseDirectoryStub{}}
 	_, err := svc.ReceiveOrder(context.Background(), 1, 10, 99, []ReceiptLine{{POItemID: 1, Qty: "1"}}, "", Operator{})
-	if err == nil || !strings.Contains(err.Error(), "仓库") {
+	if err == nil || !strings.Contains(err.Error(), "码头库") {
 		t.Fatalf("expected inactive warehouse error, got %v", err)
+	}
+}
+
+func TestReceiveOrderRejectsANonPortWarehouseBeforeWriting(t *testing.T) {
+	svc := &Service{warehouses: warehouseDirectoryStub{warehouse: Warehouse{
+		ID: 99, Name: "Company warehouse", Type: "NORMAL", Status: "ACTIVE",
+	}}}
+	_, err := svc.ReceiveOrder(context.Background(), 1, 10, 99, []ReceiptLine{{POItemID: 1, Qty: "1"}}, "", Operator{})
+	if err == nil || !strings.Contains(err.Error(), "码头库") {
+		t.Fatalf("expected non-port warehouse error, got %v", err)
 	}
 }
 

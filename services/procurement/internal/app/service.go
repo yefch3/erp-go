@@ -49,9 +49,16 @@ type Supplier struct {
 	Status   string
 }
 
-// Warehouses verifies the receiving destination still exists and is active.
+// Warehouses resolves the custody destination selected for a receipt.
 type Warehouses interface {
-	IsActive(ctx context.Context, id int64) (bool, error)
+	Get(ctx context.Context, id int64) (Warehouse, error)
+}
+
+type Warehouse struct {
+	ID     int64
+	Name   string
+	Type   string
+	Status string
 }
 
 // ApprovalSubmission is one document entering an approval flow.
@@ -200,12 +207,9 @@ type ManualRequirement struct {
 
 // CreateRequirement raises a requirement with no contract behind it.
 //
-// Stock is deliberately NOT consulted. Contract-driven requirements exist to
-// cover a shortage, so they are netted against what is on hand; this one is a
-// human deciding to buy something — restocking ahead of a season, a long-lead
-// item, a supplier offer worth taking — and second-guessing that with an
-// availability check would refuse exactly the purchases stock levels are
-// supposed to be maintained by.
+// This is an explicit exception independent of a customer contract. Ordinary
+// contract-driven requirements are created automatically for the full sold
+// quantity.
 func (s *Service) CreateRequirement(ctx context.Context, tenantID int64, in ManualRequirement, op Operator) (store.GetRequirementRow, error) {
 	if in.ProductID == 0 {
 		return store.GetRequirementRow{}, apierr.Invalid("PR_PRODUCT_REQUIRED", "请选择产品")

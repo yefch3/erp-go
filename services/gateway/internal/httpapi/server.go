@@ -54,6 +54,7 @@ type Server struct {
 	Receipts     exv1.ReceiptServiceClient
 	Requirements prv1.RequirementServiceClient
 	Orders       prv1.PurchaseOrderServiceClient
+	Sourcing     prv1.SourcingServiceClient
 	Stocks       ivv1.StockServiceClient
 	Shipping     shippingv1.ShippingServiceClient
 	Emails       mailv1.EmailServiceClient
@@ -348,6 +349,9 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("inventory:stock:write")).Post("/api/outbounds/{id}/confirm", s.confirmOutbound)
 		r.With(s.perm("inventory:stock:write")).Post("/api/outbounds/{id}/cancel", s.cancelOutbound)
 		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements", s.listRequirements)
+		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases", s.listSourcingCases)
+		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}", s.getSourcingCase)
+		r.With(s.perm("procurement:sourcing:write")).Post("/api/sourcing-cases", s.createSourcingCase)
 		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements/{id}", s.getRequirement)
 		r.With(s.perm("procurement:requirement:write")).Post("/api/requirements", s.createRequirement)
 		r.With(s.perm("procurement:requirement:write")).Post("/api/requirements/{id}/cancel", s.cancelRequirement)
@@ -367,7 +371,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/cancel", s.cancelOrder)
 		// Receiving is warehouse work, so it rides on the stock permission
 		// rather than the buyer's.
-		r.With(s.perm("inventory:stock:write")).Post("/api/purchase-orders/{id}/receive", s.receiveOrder)
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/receive", s.receiveOrder)
 		r.With(s.perm("export:ownership:transfer")).Post("/api/ownership/transfer", s.transferOwnership)
 		// Reading the handover history is scoped like reading the document, so
 		// the contract's own permission is the right gate.
@@ -689,6 +693,14 @@ func (s *Server) writeGRPCError(w http.ResponseWriter, err error) {
 	bizCode := apierr.CodeFromStatus(err)
 	if bizCode == "" {
 		bizCode = "INTERNAL"
+	}
+	// Internal gRPC failures used to vanish after being translated into a
+	// generic HTTP 500, leaving the browser with only Axios' "Request failed"
+	// text and the service logs completely clean. Business refusals are normal
+	// and stay quiet; unexpected failures must leave enough evidence to fix.
+	if httpCode == http.StatusInternalServerError && s.Log != nil {
+		s.Log.Error("upstream gRPC request failed", "grpc_code", st.Code().String(),
+			"business_code", bizCode, "err", st.Message())
 	}
 	s.writeErrorMeta(w, httpCode, bizCode, st.Message(), apierr.MetaFromStatus(err))
 }

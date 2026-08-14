@@ -114,3 +114,54 @@ type PurchaseRequirement struct {
 	UpdatedAt         pgtype.Timestamptz
 	ReceivedQty       pgtype.Numeric
 }
+
+type SourcingCase struct {
+	ID                 int64
+	TenantID           int64
+	CaseNo             string
+	Title              string
+	CustomerID         int64
+	CustomerName       string
+	ContactName        string
+	ContactEmail       string
+	SourceMailID       int64
+	SourceAttachmentID int64
+	Status             string
+	OwnerID            int64
+	OwnerName          string
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}
+
+type SourcingLine struct {
+	ID                 int64
+	TenantID           int64
+	CaseID             int64
+	LineNo             int32
+	RawText            string
+	Product            string
+	MaterialStandard   string
+	Grade              string
+	Thickness          string
+	Width              string
+	LengthOrForm       string
+	SurfaceRequirement string
+	Coating            string
+	Tolerance          string
+	CoilWeight         string
+	CoilID             string
+	Packaging          string
+	Delivery           string
+	PaymentTerms       string
+	Incoterm           string
+	Port               string
+	QuantityUnit       string
+	Remarks            string
+	Quantity           pgtype.Numeric
+	ProductID          int64
+	SkuID              int64
+	UomID              int64
+	Decision           string
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}

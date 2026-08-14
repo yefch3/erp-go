@@ -588,34 +588,28 @@ func (s *Service) CancelOrder(ctx context.Context, tenantID, id int64, reason st
 	return nil
 }
 
-// ReceiveOrder records goods arriving against an order.
-//
-// Two things must happen together or not at all: the receipt is written here,
-// and stock goes up in the inventory service. A direct call to inventory
-// cannot promise that — the call could succeed and this transaction still
-// roll back, leaving stock that no paperwork explains. So the increase leaves
-// as an event in the same transaction, and inventory applies it.
-//
-// That indirection buys something else: inventory's own receiving path
-// already hands new goods to the contracts waiting for them and re-announces
-// the shrunken shortage, so a delivery closes the requirements it covers
-// without procurement knowing anything about reservations.
+// ReceiveOrder records finished goods entering a third-party port terminal.
+// The event keeps the terminal custody ledger consistent with this receipt;
+// it is not an own-stock replenishment signal and never changes purchase need.
 func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, warehouseID int64, lines []ReceiptLine, remark string, op Operator) (string, error) {
 	if len(lines) == 0 {
 		return "", apierr.Invalid("PO_RECEIPT_LINES_REQUIRED", "收货明细不能为空")
 	}
 	if warehouseID == 0 {
-		return "", apierr.Invalid("PO_WAREHOUSE_REQUIRED", "请选择收货仓库")
+		return "", apierr.Invalid("PO_WAREHOUSE_REQUIRED", "请选择码头库")
 	}
 	if s.warehouses == nil {
-		return "", apierr.Internal("PO_WAREHOUSE_DIRECTORY_UNAVAILABLE", "仓库服务未配置")
+		return "", apierr.Internal("PO_WAREHOUSE_DIRECTORY_UNAVAILABLE", "码头库目录未配置")
 	}
-	active, err := s.warehouses.IsActive(ctx, warehouseID)
+	warehouse, err := s.warehouses.Get(ctx, warehouseID)
 	if err != nil {
 		return "", err
 	}
-	if !active {
-		return "", apierr.Invalid("PO_WAREHOUSE_INACTIVE", "收货仓库不存在或已停用，请重新选择")
+	if warehouse.ID == 0 || warehouse.Status != "ACTIVE" {
+		return "", apierr.Invalid("PO_WAREHOUSE_INACTIVE", "码头库不存在或已停用，请重新选择")
+	}
+	if warehouse.Type != "PORT_TERMINAL" {
+		return "", apierr.Invalid("PO_PORT_WAREHOUSE_REQUIRED", "采购到货只能登记到码头库")
 	}
 	want := make(map[int64]decimal.Decimal, len(lines))
 	for _, l := range lines {

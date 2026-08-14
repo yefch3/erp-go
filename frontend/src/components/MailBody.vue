@@ -30,14 +30,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { embeddedAttachmentID } from '../lib/mailExcel'
 
 const { t } = useI18n()
 const props = defineProps<{ html: string }>()
 const emit = defineEmits<{
   selectionContext: [payload: { text?: string; attachmentId?: string; x: number; y: number }]
 }>()
-
-const embeddedAttachmentFragment = 'erp-mail-attachment='
 
 const frame = ref<HTMLIFrameElement | null>(null)
 // A first guess, replaced the moment the frame reports its real content
@@ -179,13 +178,6 @@ function bindSelectionMenu() {
     event.preventDefault()
     emit('selectionContext', { text, ...point })
   })
-}
-
-function embeddedAttachmentID(src: string) {
-  const hash = src.split('#', 2)[1] || ''
-  if (!hash.startsWith(embeddedAttachmentFragment)) return ''
-  const id = hash.slice(embeddedAttachmentFragment.length)
-  return /^\d+$/.test(id) && id !== '0' ? id : ''
 }
 
 function read() {

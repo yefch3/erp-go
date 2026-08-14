@@ -1,5 +1,4 @@
-// Package kafkain holds procurement's event consumers. This service learns
-// what to buy only through here, and everything it needs is in the payload.
+// Package kafkain holds procurement's event consumers.
 package kafkain
 
 import (
@@ -11,32 +10,25 @@ import (
 	"github.com/sgao19/erp-go/services/procurement/internal/app"
 )
 
-// eventStockAllocated is the only event this consumer acts on.
-//
-// Note what it is NOT: ContractEffective. Procurement does not source from
-// contracts, it sources from what stock could not cover. Listening to the
-// contract directly would raise a requirement for goods already in the
-// warehouse, which is the whole reason this indirection exists.
-const eventStockAllocated = "StockAllocated"
+const eventContractEffective = "ContractEffective"
 
-// StockEvents raises purchase requirements for shortages.
-func StockEvents(svc *app.Service, log *slog.Logger) kafkax.Handler {
+// ContractEvents raises the full purchase quantity from an effective customer
+// contract. Inventory allocation is intentionally not consulted.
+func ContractEvents(svc *app.Service, log *slog.Logger) kafkax.Handler {
 	return func(ctx context.Context, e kafkax.Envelope) error {
-		if e.EventType != eventStockAllocated {
+		if e.EventType != eventContractEffective {
 			return nil
 		}
-		var a app.StockAllocated
-		if err := json.Unmarshal(e.Payload, &a); err != nil {
-			// Retrying cannot fix a payload we cannot read; parking the
-			// consumer group on it would stop every later contract too.
-			log.Error("stock event: unreadable payload, skipping",
+		var c app.ContractEffective
+		if err := json.Unmarshal(e.Payload, &c); err != nil {
+			log.Error("contract event: unreadable payload, skipping",
 				"event_id", e.EventID, "err", err)
 			return nil
 		}
-		if a.ContractID == 0 {
-			log.Error("stock event without a contract id, skipping", "event_id", e.EventID)
+		if c.ContractID == 0 {
+			log.Error("contract event without a contract id, skipping", "event_id", e.EventID)
 			return nil
 		}
-		return svc.RequirementsFromShortage(ctx, e.TenantID, a, log)
+		return svc.RequirementsFromContract(ctx, e.TenantID, c, log)
 	}
 }

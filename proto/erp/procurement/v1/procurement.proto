@@ -6,20 +6,104 @@ import "erp/common/v1/pagination.proto";
 
 option go_package = "github.com/sgao19/erp-go/gen/go/erp/procurement/v1;procurementv1";
 
+// SourcingService owns pre-sale inquiry review. It lives in the procurement
+// bounded context but is deliberately separate from committed requirements
+// and purchase orders.
+service SourcingService {
+  rpc CreateCase(CreateCaseRequest) returns (CreateCaseResponse);
+  rpc ListCases(ListCasesRequest) returns (ListCasesResponse);
+  rpc GetCase(GetCaseRequest) returns (GetCaseResponse);
+}
+
+message SourcingLineInput {
+  string raw_text = 1;
+  string product = 2;
+  string material_standard = 3;
+  string grade = 4;
+  string thickness = 5;
+  string width = 6;
+  string length_or_form = 7;
+  string surface_requirement = 8;
+  string coating = 9;
+  string tolerance = 10;
+  string coil_weight = 11;
+  string coil_id = 12;
+  string packaging = 13;
+  string delivery = 14;
+  string payment_terms = 15;
+  string incoterm = 16;
+  string port = 17;
+  string quantity_unit = 18;
+  string remarks = 19;
+  string quantity = 20;
+}
+
+message SourcingLine {
+  int64 id = 1;
+  int32 line_no = 2;
+  SourcingLineInput extracted = 3;
+  int64 product_id = 4;
+  int64 sku_id = 5;
+  int64 uom_id = 6;
+  string decision = 7;
+}
+
+message SourcingCase {
+  int64 id = 1;
+  string case_no = 2;
+  string title = 3;
+  int64 customer_id = 4;
+  string customer_name = 5;
+  string contact_name = 6;
+  string contact_email = 7;
+  int64 source_mail_id = 8;
+  int64 source_attachment_id = 9;
+  string status = 10;
+  int64 owner_id = 11;
+  string owner_name = 12;
+  string created_at = 13;
+  string updated_at = 14;
+  repeated SourcingLine lines = 15;
+}
+
+message CreateCaseRequest {
+  string title = 1;
+  int64 customer_id = 2;
+  string customer_name = 3;
+  string contact_name = 4;
+  string contact_email = 5;
+  int64 source_mail_id = 6;
+  int64 source_attachment_id = 7;
+  repeated SourcingLineInput lines = 8;
+}
+
+message CreateCaseResponse { SourcingCase sourcing_case = 1; }
+
+message ListCasesRequest {
+  erp.common.v1.PageRequest page = 1;
+  string status = 2;
+  string keyword = 3;
+}
+
+message ListCasesResponse {
+  repeated SourcingCase sourcing_cases = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message GetCaseRequest { int64 id = 1; }
+message GetCaseResponse { SourcingCase sourcing_case = 1; }
+
 // RequirementService exposes what has to be bought.
 //
-// Requirements are not created through this API: they arrive from contracts
-// that took effect, over Kafka. A buyer reads them, and closes the ones the
-// business decides not to act on.
+// Contract requirements are not created through this API: an effective
+// contract creates its full purchasing quantity over Kafka. No own-stock
+// balance is netted first.
 service RequirementService {
   rpc ListRequirements(ListRequirementsRequest) returns (ListRequirementsResponse);
-  // Raise one by hand: restocking, a long-lead item, a deal with a supplier.
-  // Purchasing is not only the tail end of a sale, and a company that can
-  // only buy what it has already sold cannot keep stock at all.
+  // Raise an exceptional requirement by hand, independent of a contract.
   rpc CreateRequirement(CreateRequirementRequest) returns (CreateRequirementResponse);
   rpc GetRequirement(GetRequirementRequest) returns (GetRequirementResponse);
-  // Close a requirement the business will not buy against - stock on hand,
-  // or a customer order that fell through outside the contract.
+  // Close a requirement the business will not buy against.
   rpc CancelRequirement(CancelRequirementRequest) returns (CancelRequirementResponse);
   // Put a wrongly closed one back on the list.
   rpc ReopenRequirement(ReopenRequirementRequest) returns (ReopenRequirementResponse);
@@ -158,7 +242,7 @@ service PurchaseOrderService {
   // order total, so a large order can require more of them.
   rpc SubmitOrder(SubmitOrderRequest) returns (SubmitOrderResponse);
   rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);
-  // Goods arriving. Stock is increased by inventory, not here.
+  // Finished goods arriving into a port-terminal custody location.
   rpc ReceiveOrder(ReceiveOrderRequest) returns (ReceiveOrderResponse);
 }
 

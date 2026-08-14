@@ -44,17 +44,18 @@ func NewWarehouses(conn *grpc.ClientConn) *Warehouses {
 	return &Warehouses{client: inv1.NewStockServiceClient(conn)}
 }
 
-func (w *Warehouses) IsActive(ctx context.Context, id int64) (bool, error) {
+func (w *Warehouses) Get(ctx context.Context, id int64) (app.Warehouse, error) {
 	resp, err := w.client.ListWarehouses(ctx, &inv1.ListWarehousesRequest{IncludeInactive: true})
 	if err != nil {
-		return false, err
+		return app.Warehouse{}, err
 	}
 	for _, warehouse := range resp.GetWarehouses() {
 		if warehouse.GetId() == id {
-			return warehouse.GetStatus() == "ACTIVE", nil
+			return app.Warehouse{ID: warehouse.GetId(), Name: warehouse.GetName(),
+				Type: warehouse.GetWhType(), Status: warehouse.GetStatus()}, nil
 		}
 	}
-	return false, nil
+	return app.Warehouse{}, nil
 }
 
 func (n *Numbering) Next(ctx context.Context, bizType string) (string, error) {
