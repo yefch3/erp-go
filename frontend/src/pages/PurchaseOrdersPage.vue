@@ -1,5 +1,6 @@
 <template>
   <div>
+    <ProcurementNav />
     <div class="page-head">
       <h2>{{ t('orders.title') }}</h2>
       <span class="head-note">{{ t('orders.subtitle') }}</span>
@@ -78,6 +79,14 @@
               <el-button
                 v-if="row.status === 'DRAFT' || row.status === 'REJECTED'"
                 link
+                type="primary"
+                @click="openEdit(row)"
+              >
+                {{ common('edit') }}
+              </el-button>
+              <el-button
+                v-if="row.status === 'DRAFT' || row.status === 'REJECTED'"
+                link
                 type="success"
                 @click="submit(row)"
               >
@@ -115,7 +124,7 @@
       />
     </el-card>
 
-    <el-dialog v-model="createOpen" :title="t('orders.create')" width="900px">
+    <el-dialog v-model="createOpen" :title="editing ? t('orders.editFor', { no: editing.poNo }) : t('orders.create')" width="900px">
       <el-alert type="info" :closable="false" show-icon class="alert">
         {{ t('orders.createHint') }}
       </el-alert>
@@ -133,7 +142,7 @@
             <!-- There is no supplier page yet, and a purchase order without a
                  supplier cannot exist. Creating one here beats blocking the
                  whole feature on a screen nobody asked for. -->
-            <el-button link type="primary" @click="supplierOpen = true">
+            <el-button v-if="canManageSupplier" link type="primary" @click="supplierOpen = true">
               {{ t('orders.newSupplier') }}
             </el-button>
           </div>
@@ -273,7 +282,7 @@
       <el-form label-width="80px">
         <el-form-item :label="t('orders.warehouse')" required>
           <el-select v-model="receiveWarehouse" style="width: 220px">
-            <el-option v-for="w in warehouses" :key="w.id" :value="Number(w.id)" :label="w.name" />
+            <el-option v-for="w in portWarehouses" :key="w.id" :value="Number(w.id)" :label="w.name" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -319,14 +328,16 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { get, post } from '../api'
+import { get, post, put } from '../api'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
+import ProcurementNav from '../components/ProcurementNav.vue'
 
 interface Order {
   id: string
   poNo: string
   supplierId: string
+  supplierCode: string
   supplierName: string
   currency: string
   totalAmount: string
@@ -373,14 +384,15 @@ interface Requirement {
   source: string
 }
 interface Supplier { id: string; code: string; name: string }
-interface Warehouse { id: string; code: string; name: string }
+interface Warehouse { id: string; code: string; name: string; whType: string }
 
 const { t } = useI18n()
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const canWrite = auth.can('procurement:order:write')
-const canReceive = auth.can('inventory:stock:write')
+const canReceive = auth.can('procurement:order:write')
+const canManageSupplier = auth.can('masterdata:supplier:write')
 
 const rows = ref<Order[]>([])
 const total = ref(0)
@@ -392,11 +404,12 @@ const loading = ref(false)
 const saving = ref(false)
 
 const createOpen = ref(false)
+const editing = ref<Order | null>(null)
 const pending = ref<Requirement[]>([])
 const suppliers = ref<Supplier[]>([])
 const qtyOf = reactive<Record<string, string>>({})
 const priceOf = reactive<Record<string, string>>({})
-const form = reactive({ supplierId: 0, expectedDate: '', remark: '' })
+const form = reactive({ supplierId: 0, currency: 'CNY', expectedDate: '', remark: '' })
 
 const supplierOpen = ref(false)
 const supplierForm = reactive({ code: '', name: '', country: '' })
@@ -412,6 +425,7 @@ const receiveItems = ref<OrderItem[]>([])
 const receiveQty = reactive<Record<string, string>>({})
 const receiveWarehouse = ref(0)
 const warehouses = ref<Warehouse[]>([])
+const portWarehouses = computed(() => warehouses.value.filter((w) => w.whType === 'PORT_TERMINAL'))
 
 const cancelOpen = ref(false)
 const cancelling = ref<Order | null>(null)
@@ -452,7 +466,9 @@ function openOf(r: Requirement): string {
 }
 
 async function openCreate(preselect?: string[]) {
+	editing.value = null
   form.supplierId = 0
+  form.currency = 'CNY'
   form.expectedDate = ''
   form.remark = ''
   Object.keys(qtyOf).forEach((k) => delete qtyOf[k])
@@ -475,6 +491,35 @@ async function openCreate(preselect?: string[]) {
     pending.value.forEach((r) => {
       if (wanted.has(String(r.id))) qtyOf[r.id] = String(Number(r.requiredQty) - Number(r.orderedQty))
     })
+  }
+  createOpen.value = true
+}
+
+async function openEdit(row: Order) {
+  const [detailData, reqs, partial, sups] = await Promise.all([
+    get<{ order: Order; items: OrderItem[] }>(`/purchase-orders/${row.id}`),
+    get<{ requirements: Requirement[] }>('/requirements', { status: 'PENDING', page_size: 200 }),
+    get<{ requirements: Requirement[] }>('/requirements', { status: 'PARTIALLY_ORDERED', page_size: 200 }),
+    get<{ suppliers: Supplier[] }>('/suppliers', { page_size: 200 }),
+  ])
+  const current = detailData.order
+  if (!['DRAFT', 'REJECTED'].includes(current.status)) {
+    ElMessage.warning(t('orders.notEditable'))
+    await load()
+    return
+  }
+  editing.value = current
+  form.supplierId = Number(current.supplierId)
+  form.currency = current.currency || 'CNY'
+  form.expectedDate = current.expectedDate || ''
+  form.remark = current.remark || ''
+  Object.keys(qtyOf).forEach((key) => delete qtyOf[key])
+  Object.keys(priceOf).forEach((key) => delete priceOf[key])
+  pending.value = [...(reqs.requirements ?? []), ...(partial.requirements ?? [])]
+  suppliers.value = sups.suppliers ?? []
+  for (const item of detailData.items ?? []) {
+    qtyOf[item.requirementId] = item.qty
+    priceOf[item.requirementId] = item.unitPrice
   }
   createOpen.value = true
 }
@@ -520,17 +565,21 @@ async function submitCreate() {
   }
   saving.value = true
   try {
-    const res = await post<{ poNo: string }>('/purchase-orders', {
+    const payload = {
       supplier_id: Number(supplier.id),
-      supplier_code: supplier.code,
-      supplier_name: supplier.name,
-      currency: 'CNY',
+      currency: form.currency,
       expected_date: form.expectedDate,
       remark: form.remark,
       lines,
-    })
-    ElMessage.success(t('orders.created', { no: res.poNo }))
+    }
+    const res = editing.value
+      ? await put<{ poNo: string }>(`/purchase-orders/${editing.value.id}`, payload)
+      : await post<{ poNo: string }>('/purchase-orders', payload)
+    ElMessage.success(editing.value
+      ? t('orders.updated', { no: res.poNo })
+      : t('orders.created', { no: res.poNo }))
     createOpen.value = false
+    editing.value = null
     reload()
   } finally {
     saving.value = false
@@ -596,7 +645,7 @@ async function openReceive(row: Order) {
   if (!warehouses.value.length) {
     warehouses.value = (await get<{ warehouses: Warehouse[] }>('/warehouses')).warehouses ?? []
   }
-  receiveWarehouse.value = Number(warehouses.value[0]?.id ?? 0)
+  receiveWarehouse.value = Number(portWarehouses.value[0]?.id ?? 0)
   receiveOpen.value = true
 }
 
@@ -659,6 +708,19 @@ onMounted(async () => {
   if (picked.length && canWrite) {
     await openCreate(picked)
     router.replace({ path: '/purchase-orders' })
+  }
+  const importedOrder = String(route.query.order ?? '')
+  if (importedOrder) {
+    try {
+      const detailResponse = await get<{ order: Order; items: OrderItem[]; receipts: Receipt[] }>(`/purchase-orders/${importedOrder}`)
+      detail.value = detailResponse.order
+      detailItems.value = detailResponse.items ?? []
+      detailReceipts.value = detailResponse.receipts ?? []
+      detailOpen.value = true
+      router.replace({ path: '/purchase-orders' })
+    } catch {
+      // The normal API error toast already explains an invalid or stale id.
+    }
   }
   const kw = String(route.query.keyword ?? '')
   if (kw) {

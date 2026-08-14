@@ -157,6 +157,15 @@ func (h *Handler) CreateCampaign(ctx context.Context, req *mailv1.CreateCampaign
 	}, nil
 }
 
+func (h *Handler) SendProcurementRfq(ctx context.Context, req *mailv1.SendProcurementRfqRequest) (*mailv1.SendProcurementRfqResponse, error) {
+	res, err := h.svc.SendProcurementRFQ(ctx, grpcx.TenantID(ctx), req.GetSenderEmployeeId(), req.GetRecipientName(),
+		req.GetRecipientEmail(), req.GetSubject(), req.GetBody(), req.GetFileName(), req.GetFileData())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.SendProcurementRfqResponse{CampaignId: res.CampaignID, CampaignNo: res.CampaignNo, Queued: int32(res.Queued)}, nil
+}
+
 func pendingFromProto(in []*mailv1.PendingAttachment) []app.PendingAttachment {
 	out := make([]app.PendingAttachment, 0, len(in))
 	for _, f := range in {
@@ -667,7 +676,7 @@ func (h *Handler) GetMyMailAccount(ctx context.Context, _ *mailv1.GetMyMailAccou
 		Email: v.Email, Username: v.Username, HasSecret: v.HasSecret,
 		VerifiedAt: v.VerifiedAt, LastError: v.LastError, IsActive: v.IsActive,
 		AuthKind: v.AuthKind,
-	}}, nil
+	}, ExcelAvailable: h.svc.ExcelAvailable()}, nil
 }
 
 func (h *Handler) RecordOpen(ctx context.Context, req *mailv1.RecordOpenRequest) (*mailv1.RecordOpenResponse, error) {
@@ -755,6 +764,77 @@ func (h *Handler) GetInbound(ctx context.Context, req *mailv1.GetInboundRequest)
 		return nil, err
 	}
 	return &mailv1.GetInboundResponse{Mail: inboundToProto(v)}, nil
+}
+
+func (h *Handler) ConvertInboundToExcel(ctx context.Context, req *mailv1.ConvertInboundToExcelRequest) (*mailv1.ConvertInboundToExcelResponse, error) {
+	op := operator(ctx)
+	result, err := h.svc.ConvertInboundToExcel(
+		ctx, grpcx.TenantID(ctx), op.ID, req.GetId(),
+		req.AttachmentId, req.SelectedText, req.GetLocale(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return excelResultToProto(result), nil
+}
+
+func (h *Handler) StartInboundExcelConversion(ctx context.Context, req *mailv1.StartInboundExcelConversionRequest) (*mailv1.StartInboundExcelConversionResponse, error) {
+	op := operator(ctx)
+	job, err := h.svc.StartExcelJob(
+		ctx, grpcx.TenantID(ctx), op.ID, req.GetId(),
+		req.AttachmentId, req.SelectedText, req.GetLocale(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.StartInboundExcelConversionResponse{Job: excelJobToProto(job)}, nil
+}
+
+func (h *Handler) GetInboundExcelConversionJob(ctx context.Context, req *mailv1.GetInboundExcelConversionJobRequest) (*mailv1.GetInboundExcelConversionJobResponse, error) {
+	op := operator(ctx)
+	job, err := h.svc.GetExcelJob(ctx, grpcx.TenantID(ctx), op.ID, req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.GetInboundExcelConversionJobResponse{Job: excelJobToProto(job)}, nil
+}
+
+func excelJobToProto(job app.ExcelJob) *mailv1.ExcelConversionJob {
+	out := &mailv1.ExcelConversionJob{
+		Id: job.ID, Status: job.Status, ErrorCode: job.ErrorCode,
+		ErrorMessage: job.ErrorMessage,
+	}
+	if !job.CreatedAt.IsZero() {
+		out.CreatedAt = job.CreatedAt.Format(time.RFC3339)
+	}
+	if !job.CompletedAt.IsZero() {
+		out.CompletedAt = job.CompletedAt.Format(time.RFC3339)
+	}
+	if job.Status == "COMPLETED" {
+		out.Result = excelResultToProto(job.Result)
+	}
+	return out
+}
+
+func excelResultToProto(result app.ExcelResult) *mailv1.ConvertInboundToExcelResponse {
+	resp := &mailv1.ConvertInboundToExcelResponse{
+		FileName: result.FileName, FileData: result.Data, Model: result.Model,
+	}
+	for _, sheet := range result.Workbook.Sheets {
+		preview := &mailv1.ExcelSheetPreview{
+			Name: sheet.Name, Summary: sheet.Summary, Columns: sheet.Columns,
+			TotalRows: int64(len(sheet.Rows)),
+		}
+		rows := sheet.Rows
+		if len(rows) > 200 {
+			rows = rows[:200]
+		}
+		for _, row := range rows {
+			preview.Rows = append(preview.Rows, &mailv1.ExcelSheetPreview_Row{Cells: row})
+		}
+		resp.Sheets = append(resp.Sheets, preview)
+	}
+	return resp
 }
 
 func (h *Handler) GetMailThread(ctx context.Context, req *mailv1.GetMailThreadRequest) (*mailv1.GetMailThreadResponse, error) {

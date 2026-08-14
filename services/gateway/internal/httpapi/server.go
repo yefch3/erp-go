@@ -54,6 +54,7 @@ type Server struct {
 	Receipts     exv1.ReceiptServiceClient
 	Requirements prv1.RequirementServiceClient
 	Orders       prv1.PurchaseOrderServiceClient
+	Sourcing     prv1.SourcingServiceClient
 	Stocks       ivv1.StockServiceClient
 	Shipping     shippingv1.ShippingServiceClient
 	Emails       mailv1.EmailServiceClient
@@ -77,6 +78,9 @@ type Server struct {
 	GoogleClientID   string
 	OAuthRedirectURL string
 	FrontendBaseURL  string
+	// Employee whose configured mailbox is the procurement shared identity.
+	// Zero disables direct RFQ sending while leaving workbook download usable.
+	ProcurementMailSenderID int64
 	// TrustProxyHeaders says a reverse proxy sits in front and overwrites
 	// X-Forwarded-For. Off by default: the header is caller-supplied, and
 	// trusting it without such a proxy lets anybody spray from a different
@@ -233,6 +237,8 @@ func (s *Server) Router() http.Handler {
 		// they change what the company has promised.
 		r.With(s.perm("export:quotation:read")).Get("/api/quotations", s.listQuotations)
 		r.With(s.perm("export:quotation:read")).Get("/api/quotations/{id}", s.getQuotation)
+		r.With(s.perm("export:quotation:read")).Get("/api/quotations/{id}/workbook", s.getQuotationWorkbook)
+		r.With(s.perm("export:quotation:read")).Get("/api/quotations/{id}/pdf", s.getQuotationPDF)
 		r.With(s.perm("export:quotation:write")).Post("/api/quotations", s.createQuotation)
 		r.With(s.perm("export:quotation:write")).Put("/api/quotations/{id}", s.updateQuotation)
 		r.With(s.perm("export:quotation:write")).Post("/api/quotations/{id}/send", s.sendQuotation)
@@ -348,6 +354,23 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("inventory:stock:write")).Post("/api/outbounds/{id}/confirm", s.confirmOutbound)
 		r.With(s.perm("inventory:stock:write")).Post("/api/outbounds/{id}/cancel", s.cancelOutbound)
 		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements", s.listRequirements)
+		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases", s.listSourcingCases)
+		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}", s.getSourcingCase)
+		r.With(s.perm("procurement:sourcing:write")).Post("/api/sourcing-cases", s.createSourcingCase)
+		r.With(s.perm("procurement:sourcing:write")).Post("/api/sourcing-cases/{id}/confirm-lines", s.confirmSourcingLines)
+		r.With(s.perm("procurement:sourcing:write"), s.perm("product:product:read")).Put("/api/sourcing-cases/{id}/lines/{lineId}", s.reviewSourcingLine)
+		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/factory-rfqs", s.listFactoryRFQs)
+		r.With(s.perm("procurement:sourcing:write")).Post("/api/sourcing-cases/{id}/factory-rfqs", s.createFactoryRFQ)
+		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/supplier-quotes", s.listSupplierQuoteComparison)
+		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/cost-scenarios", s.listCostScenarios)
+		r.With(s.perm("procurement:sourcing:price")).Post("/api/sourcing-cases/{id}/cost-scenarios", s.createCostScenario)
+		r.With(s.perm("procurement:sourcing:read")).Get("/api/cost-scenarios/{id}", s.getCostScenario)
+		r.With(s.perm("procurement:sourcing:approve")).Post("/api/cost-scenarios/{id}/confirm", s.confirmCostScenario)
+		r.With(s.perm("procurement:sourcing:approve"), s.perm("export:quotation:write")).Post("/api/cost-scenarios/{id}/create-customer-quotation", s.createCustomerQuotationFromCost)
+		r.With(s.perm("procurement:sourcing:price")).Post("/api/factory-rfqs/{id}/supplier-quotes", s.createSupplierQuote)
+		r.With(s.perm("procurement:sourcing:read")).Get("/api/factory-rfqs/{id}/workbook", s.getFactoryRFQWorkbook)
+		r.With(s.perm("procurement:sourcing:price")).Post("/api/factory-rfqs/{id}/supplier-quotes/import", s.importSupplierQuoteWorkbook)
+		r.With(s.perm("procurement:sourcing:send")).Post("/api/factory-rfqs/{id}/send", s.sendFactoryRFQ)
 		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements/{id}", s.getRequirement)
 		r.With(s.perm("procurement:requirement:write")).Post("/api/requirements", s.createRequirement)
 		r.With(s.perm("procurement:requirement:write")).Post("/api/requirements/{id}/cancel", s.cancelRequirement)
@@ -361,12 +384,14 @@ func (s *Server) Router() http.Handler {
 		// supplier are different jobs, and often different people.
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders", s.listOrders)
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}", s.getOrder)
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/imports/preview", s.previewOrderImport)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders", s.createOrder)
+		r.With(s.perm("procurement:order:write")).Put("/api/purchase-orders/{id}", s.updateOrder)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/submit", s.submitOrder)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/cancel", s.cancelOrder)
 		// Receiving is warehouse work, so it rides on the stock permission
 		// rather than the buyer's.
-		r.With(s.perm("inventory:stock:write")).Post("/api/purchase-orders/{id}/receive", s.receiveOrder)
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/receive", s.receiveOrder)
 		r.With(s.perm("export:ownership:transfer")).Post("/api/ownership/transfer", s.transferOwnership)
 		// Reading the handover history is scoped like reading the document, so
 		// the contract's own permission is the right gate.
@@ -453,6 +478,10 @@ func (s *Server) Router() http.Handler {
 		// different shape.
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-search", s.searchMail)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/inbound-mails/{id}", s.getInbound)
+		// Explicit user action only: selected text or one stored attachment is
+		// sent to the configured model and returned as an Excel workbook.
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/excel", s.convertInboundToExcel)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/inbound-excel-jobs/{jobId}", s.getInboundExcelJob)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/mark", s.markInbound)
 		// Permanent deletion out of the trash. ERP-side copies only; the mail
 		// host's original is beyond this API's reach by design.
@@ -685,6 +714,14 @@ func (s *Server) writeGRPCError(w http.ResponseWriter, err error) {
 	bizCode := apierr.CodeFromStatus(err)
 	if bizCode == "" {
 		bizCode = "INTERNAL"
+	}
+	// Internal gRPC failures used to vanish after being translated into a
+	// generic HTTP 500, leaving the browser with only Axios' "Request failed"
+	// text and the service logs completely clean. Business refusals are normal
+	// and stay quiet; unexpected failures must leave enough evidence to fix.
+	if httpCode == http.StatusInternalServerError && s.Log != nil {
+		s.Log.Error("upstream gRPC request failed", "grpc_code", st.Code().String(),
+			"business_code", bizCode, "err", st.Message())
 	}
 	s.writeErrorMeta(w, httpCode, bizCode, st.Message(), apierr.MetaFromStatus(err))
 }

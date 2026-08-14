@@ -43,6 +43,7 @@ const (
 	// verifications never spend each other's budget.
 	throttleLogin      = "login"
 	throttleMailVerify = "mailverify"
+	throttleMailExcel  = "mailexcel"
 
 	// Twenty wrong passwords from one address in a minute. Sized for a shared
 	// office egress rather than for one person: twenty people each mistyping
@@ -58,6 +59,12 @@ const (
 	// Five is enough for a typo and a retype.
 	mailVerifyMaxFailures = 5
 	mailVerifyWindow      = 15 * time.Minute
+
+	// Model calls are materially more expensive than ordinary reads. Twelve
+	// conversions in ten minutes leaves room for real spreadsheet work while
+	// bounding accidental double-clicks, scripts and denial-of-wallet abuse.
+	mailExcelMaxRequests = 12
+	mailExcelWindow      = 10 * time.Minute
 )
 
 // isRejectedCredential separates "you got it wrong" from "we are broken".
@@ -103,10 +110,14 @@ func NewFailureThrottle(addr string, log *slog.Logger) *FailureThrottle {
 }
 
 func throttleLimit(scope string) (int64, time.Duration) {
-	if scope == throttleMailVerify {
+	switch scope {
+	case throttleMailVerify:
 		return mailVerifyMaxFailures, mailVerifyWindow
+	case throttleMailExcel:
+		return mailExcelMaxRequests, mailExcelWindow
+	default:
+		return loginMaxFailures, loginWindow
 	}
-	return loginMaxFailures, loginWindow
 }
 
 // throttleKey hashes the identity rather than spelling it out.
@@ -177,6 +188,25 @@ func (t *FailureThrottle) Passed(ctx context.Context, scope, id string) {
 	if err := t.c.Clear(ctx, throttleKey(scope, id)); err != nil {
 		t.warn("could not clear a failure count", scope, err)
 	}
+}
+
+// Limited spends one request from a fixed-window budget and reports whether
+// the caller has gone over it. Unlike Failed/Passed, successful requests are
+// not cleared: this meters resource consumption rather than bad credentials.
+func (t *FailureThrottle) Limited(ctx context.Context, scope, id string) (time.Duration, bool) {
+	if t == nil || id == "" {
+		return 0, false
+	}
+	max, window := throttleLimit(scope)
+	n, ttl, err := t.c.Bump(ctx, throttleKey(scope, id), window)
+	if err != nil {
+		t.warn("could not record the request budget, so allowing the request", scope, err)
+		return 0, false
+	}
+	if n <= max {
+		return 0, false
+	}
+	return positiveTTL(ttl, window), true
 }
 
 func (t *FailureThrottle) warn(msg, scope string, err error) {

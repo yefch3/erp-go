@@ -177,54 +177,58 @@ type ProcessedEvent struct {
 }
 
 type Quotation struct {
-	ID              int64
-	TenantID        int64
-	QuoteNo         string
-	CustomerID      int64
-	CustomerName    string
-	Currency        string
-	Incoterm        string
-	PortOfLoading   string
-	PortOfDischarge string
-	PaymentMethod   string
-	ValidUntil      pgtype.Date
-	FxRate          pgtype.Numeric
-	FxRateAt        pgtype.Timestamptz
-	FxSource        string
-	FxBaseCurrency  string
-	TotalAmount     pgtype.Numeric
-	BaseAmount      pgtype.Numeric
-	Remark          string
-	Status          string
-	SalesEmployeeID int64
-	SalesEmployee   string
-	SentAt          pgtype.Timestamptz
-	RespondedAt     pgtype.Timestamptz
-	CreatedAt       pgtype.Timestamptz
-	CreatedBy       int64
-	UpdatedAt       pgtype.Timestamptz
-	UpdatedBy       int64
-	ContactID       *int64
-	ContactName     string
-	ContactEmail    string
+	ID                   int64
+	TenantID             int64
+	QuoteNo              string
+	CustomerID           int64
+	CustomerName         string
+	Currency             string
+	Incoterm             string
+	PortOfLoading        string
+	PortOfDischarge      string
+	PaymentMethod        string
+	ValidUntil           pgtype.Date
+	FxRate               pgtype.Numeric
+	FxRateAt             pgtype.Timestamptz
+	FxSource             string
+	FxBaseCurrency       string
+	TotalAmount          pgtype.Numeric
+	BaseAmount           pgtype.Numeric
+	Remark               string
+	Status               string
+	SalesEmployeeID      int64
+	SalesEmployee        string
+	SentAt               pgtype.Timestamptz
+	RespondedAt          pgtype.Timestamptz
+	CreatedAt            pgtype.Timestamptz
+	CreatedBy            int64
+	UpdatedAt            pgtype.Timestamptz
+	UpdatedBy            int64
+	ContactID            *int64
+	ContactName          string
+	ContactEmail         string
+	SourceCostScenarioID *int64
+	SourceCostScenarioNo string
+	SourceSourcingCaseID *int64
 }
 
 type QuotationItem struct {
-	ID          int64
-	TenantID    int64
-	QuotationID int64
-	LineNo      int32
-	ProductID   int64
-	SkuID       *int64
-	ProductCode string
-	ProductName string
-	Spec        string
-	Qty         pgtype.Numeric
-	UomID       int64
-	UomCode     string
-	UnitPrice   pgtype.Numeric
-	Amount      pgtype.Numeric
-	Remark      string
+	ID                       int64
+	TenantID                 int64
+	QuotationID              int64
+	LineNo                   int32
+	ProductID                int64
+	SkuID                    *int64
+	ProductCode              string
+	ProductName              string
+	Spec                     string
+	Qty                      pgtype.Numeric
+	UomID                    int64
+	UomCode                  string
+	UnitPrice                pgtype.Numeric
+	Amount                   pgtype.Numeric
+	Remark                   string
+	SourceCostScenarioLineID *int64
 }
 
 type ReceiptAllocation struct {

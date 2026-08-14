@@ -36,7 +36,10 @@ UPDATE purchase_requirements SET
                  THEN 'ORDERED' ELSE 'PARTIALLY_ORDERED'
              END,
     updated_at = now()
-WHERE tenant_id = $2::bigint AND id = $3::bigint
+WHERE tenant_id = $2::bigint
+  AND id = $3::bigint
+  AND status IN ('PENDING', 'PARTIALLY_ORDERED')
+  AND ordered_qty + $1::text::numeric <= required_qty
 RETURNING ordered_qty::text AS ordered_qty, status
 `
 
@@ -287,6 +290,21 @@ func (q *Queries) CreatePurchaseReceiptItem(ctx context.Context, arg CreatePurch
 		arg.PoItemID,
 		arg.Qty,
 	)
+	return err
+}
+
+const deletePurchaseOrderItems = `-- name: DeletePurchaseOrderItems :exec
+DELETE FROM purchase_order_items
+WHERE tenant_id = $1::bigint AND po_id = $2::bigint
+`
+
+type DeletePurchaseOrderItemsParams struct {
+	TenantID int64
+	PoID     int64
+}
+
+func (q *Queries) DeletePurchaseOrderItems(ctx context.Context, arg DeletePurchaseOrderItemsParams) error {
+	_, err := q.db.Exec(ctx, deletePurchaseOrderItems, arg.TenantID, arg.PoID)
 	return err
 }
 
@@ -1036,4 +1054,70 @@ type SetPurchaseOrderSubmittedParams struct {
 func (q *Queries) SetPurchaseOrderSubmitted(ctx context.Context, arg SetPurchaseOrderSubmittedParams) error {
 	_, err := q.db.Exec(ctx, setPurchaseOrderSubmitted, arg.InstanceID, arg.TenantID, arg.ID)
 	return err
+}
+
+const updatePurchaseOrderDraft = `-- name: UpdatePurchaseOrderDraft :one
+UPDATE purchase_orders SET
+    supplier_id = $1::bigint,
+    supplier_code = $2::text,
+    supplier_name = $3::text,
+    currency = $4::text,
+    total_amount = $5::text::numeric,
+    expected_date = nullif($6::text, '')::date,
+    buyer_id = $7::bigint,
+    buyer_name = $8::text,
+    remark = $9::text,
+    status = 'DRAFT',
+    approval_instance_id = NULL,
+    reject_reason = '',
+    updated_at = now()
+WHERE tenant_id = $10::bigint
+  AND id = $11::bigint
+  AND status IN ('DRAFT', 'REJECTED')
+RETURNING id, po_no, status, created_at
+`
+
+type UpdatePurchaseOrderDraftParams struct {
+	SupplierID   int64
+	SupplierCode string
+	SupplierName string
+	Currency     string
+	TotalAmount  string
+	ExpectedDate string
+	BuyerID      int64
+	BuyerName    string
+	Remark       string
+	TenantID     int64
+	ID           int64
+}
+
+type UpdatePurchaseOrderDraftRow struct {
+	ID        int64
+	PoNo      string
+	Status    string
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) UpdatePurchaseOrderDraft(ctx context.Context, arg UpdatePurchaseOrderDraftParams) (UpdatePurchaseOrderDraftRow, error) {
+	row := q.db.QueryRow(ctx, updatePurchaseOrderDraft,
+		arg.SupplierID,
+		arg.SupplierCode,
+		arg.SupplierName,
+		arg.Currency,
+		arg.TotalAmount,
+		arg.ExpectedDate,
+		arg.BuyerID,
+		arg.BuyerName,
+		arg.Remark,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i UpdatePurchaseOrderDraftRow
+	err := row.Scan(
+		&i.ID,
+		&i.PoNo,
+		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
 }

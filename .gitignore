@@ -24,5 +24,8 @@ coverage.out
 /frontend/dist/
 /frontend/node_modules/
 
+# Locally rendered spreadsheet/document QA artifacts
+/outputs/
+
 # Requirements and planning documents — local working material, never pushed
 /docs/requirements/

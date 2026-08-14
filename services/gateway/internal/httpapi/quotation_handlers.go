@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 
 	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
@@ -21,6 +22,30 @@ func (s *Server) listQuotations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeProto(w, resp)
+}
+
+func (s *Server) getQuotationWorkbook(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Quotations.GetQuotationWorkbook(r.Context(), &exv1.GetQuotationWorkbookRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(resp.GetFileName()))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(resp.GetFileData())
+}
+
+func (s *Server) getQuotationPDF(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Quotations.GetQuotationPdf(r.Context(), &exv1.GetQuotationPdfRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(resp.GetFileName()))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(resp.GetFileData())
 }
 
 func (s *Server) getQuotation(w http.ResponseWriter, r *http.Request) {

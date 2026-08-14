@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
     "axios": "^1.7.9",
     "element-plus": "^2.9.1",
     "pinia": "^2.3.0",
@@ -20,6 +21,6 @@
     "@vitejs/plugin-vue": "^5.2.1",
     "typescript": "^5.7.2",
     "vite": "^5.4.11",
-    "vitest": "^4.1.10"
+    "vitest": "^2.1.9"
   }
 }

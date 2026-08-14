@@ -105,6 +105,25 @@ func (h *OrderHandler) CreateOrder(ctx context.Context, req *prv1.CreateOrderReq
 	return &prv1.CreateOrderResponse{Id: row.ID, PoNo: row.PoNo, Status: row.Status}, nil
 }
 
+func (h *OrderHandler) UpdateOrder(ctx context.Context, req *prv1.UpdateOrderRequest) (*prv1.UpdateOrderResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	lines := make([]app.OrderLine, 0, len(req.GetLines()))
+	for _, line := range req.GetLines() {
+		lines = append(lines, app.OrderLine{
+			RequirementID: line.GetRequirementId(), Qty: line.GetQty(), UnitPrice: line.GetUnitPrice(),
+		})
+	}
+	row, err := h.svc.UpdateOrder(ctx, grpcx.TenantID(ctx), req.GetId(), app.CreateOrderInput{
+		SupplierID: req.GetSupplierId(), SupplierCode: req.GetSupplierCode(),
+		SupplierName: req.GetSupplierName(), Currency: req.GetCurrency(),
+		ExpectedDate: req.GetExpectedDate(), Remark: req.GetRemark(), Lines: lines,
+	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.UpdateOrderResponse{Id: row.ID, PoNo: row.PoNo, Status: row.Status}, nil
+}
+
 func (h *OrderHandler) SubmitOrder(ctx context.Context, req *prv1.SubmitOrderRequest) (*prv1.SubmitOrderResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
 	status, instanceID, err := h.svc.SubmitOrder(ctx, grpcx.TenantID(ctx), req.GetId(),

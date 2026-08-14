@@ -38,11 +38,11 @@ func pickContact(customer Customer, contactID int64) (Contact, error) {
 }
 
 type ItemInput struct {
-	ProductID, SkuID int64
-	Spec             string
-	Qty              string
-	UnitPrice        string
-	Remark           string
+	ProductID, SkuID, SourceCostScenarioLineID int64
+	Spec                                       string
+	Qty                                        string
+	UnitPrice                                  string
+	Remark                                     string
 }
 
 type QuotationInput struct {
@@ -55,6 +55,9 @@ type QuotationInput struct {
 	Items                          []ItemInput
 	OperatorID                     int64
 	OperatorName                   string
+	SourceCostScenarioID           int64
+	SourceCostScenarioNo           string
+	SourceSourcingCaseID           int64
 }
 
 // priced is one resolved line: client input plus the product facts and the
@@ -152,7 +155,9 @@ func (s *Service) CreateQuotation(ctx context.Context, tenantID int64, in Quotat
 			FxSource: rate.Source, FxBaseCurrency: rate.Base,
 			TotalAmount: total.StringFixed(2), BaseAmount: baseAmount(total, rate).StringFixed(2),
 			Remark: in.Remark, SalesEmployeeID: in.OperatorID, SalesEmployee: in.OperatorName,
-			CreatedBy: in.OperatorID,
+			CreatedBy:            in.OperatorID,
+			SourceCostScenarioID: in.SourceCostScenarioID, SourceCostScenarioNo: in.SourceCostScenarioNo,
+			SourceSourcingCaseID: in.SourceSourcingCaseID,
 		})
 		if err != nil {
 			return translateUnique(err, "EX_QUOTE_NO_TAKEN", "报价单号已存在")
@@ -179,6 +184,9 @@ func (s *Service) UpdateQuotation(ctx context.Context, tenantID, id int64, in Qu
 	}
 	if current.Status != "DRAFT" {
 		return store.GetQuotationRow{}, nil, apierr.Conflict("EX_NOT_DRAFT", "只有草稿可以修改，已发送的报价请新建一版")
+	}
+	if current.SourceCostScenarioID != 0 {
+		return store.GetQuotationRow{}, nil, apierr.Conflict("EX_SOURCED_QUOTE_LOCKED", "成本方案生成的报价不可直接改价，请建立新的成本方案")
 	}
 	customer, lines, total, err := s.resolve(ctx, in)
 	if err != nil {
@@ -235,6 +243,7 @@ func writeItems(ctx context.Context, q *store.Queries, tenantID, quotationID int
 			ProductCode: l.product.Code, ProductName: l.product.Name, Spec: l.in.Spec,
 			Qty: l.qty.String(), UomID: l.product.UomID, UomCode: l.product.UomCode,
 			UnitPrice: l.price.String(), Amount: l.amount.StringFixed(2), Remark: l.in.Remark,
+			SourceCostScenarioLineID: l.in.SourceCostScenarioLineID,
 		}); err != nil {
 			return err
 		}

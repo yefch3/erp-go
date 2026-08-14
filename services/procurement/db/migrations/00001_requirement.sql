@@ -1,6 +1,6 @@
 -- +goose Up
 
--- What has to be bought, derived from contracts that took effect.
+-- What has to be bought: the full quantity of contracts that took effect.
 --
 -- Procurement holds no copy of the contract: it learns about one from a Kafka
 -- event and keeps only the numbers it needs, snapshotted. A later contract

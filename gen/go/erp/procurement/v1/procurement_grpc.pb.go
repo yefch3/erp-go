@@ -19,6 +19,762 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	SourcingService_CreateCase_FullMethodName                  = "/erp.procurement.v1.SourcingService/CreateCase"
+	SourcingService_ListCases_FullMethodName                   = "/erp.procurement.v1.SourcingService/ListCases"
+	SourcingService_GetCase_FullMethodName                     = "/erp.procurement.v1.SourcingService/GetCase"
+	SourcingService_ConfirmLines_FullMethodName                = "/erp.procurement.v1.SourcingService/ConfirmLines"
+	SourcingService_ReviewLine_FullMethodName                  = "/erp.procurement.v1.SourcingService/ReviewLine"
+	SourcingService_CreateFactoryRfq_FullMethodName            = "/erp.procurement.v1.SourcingService/CreateFactoryRfq"
+	SourcingService_ListFactoryRfqs_FullMethodName             = "/erp.procurement.v1.SourcingService/ListFactoryRfqs"
+	SourcingService_CreateSupplierQuote_FullMethodName         = "/erp.procurement.v1.SourcingService/CreateSupplierQuote"
+	SourcingService_GetFactoryRfqWorkbook_FullMethodName       = "/erp.procurement.v1.SourcingService/GetFactoryRfqWorkbook"
+	SourcingService_ImportSupplierQuoteWorkbook_FullMethodName = "/erp.procurement.v1.SourcingService/ImportSupplierQuoteWorkbook"
+	SourcingService_MarkFactoryRfqSent_FullMethodName          = "/erp.procurement.v1.SourcingService/MarkFactoryRfqSent"
+	SourcingService_ListSupplierQuoteComparison_FullMethodName = "/erp.procurement.v1.SourcingService/ListSupplierQuoteComparison"
+	SourcingService_CreateCostScenario_FullMethodName          = "/erp.procurement.v1.SourcingService/CreateCostScenario"
+	SourcingService_ListCostScenarios_FullMethodName           = "/erp.procurement.v1.SourcingService/ListCostScenarios"
+	SourcingService_GetCostScenario_FullMethodName             = "/erp.procurement.v1.SourcingService/GetCostScenario"
+	SourcingService_ConfirmCostScenario_FullMethodName         = "/erp.procurement.v1.SourcingService/ConfirmCostScenario"
+	SourcingService_PrepareCustomerQuotation_FullMethodName    = "/erp.procurement.v1.SourcingService/PrepareCustomerQuotation"
+	SourcingService_LinkCustomerQuotation_FullMethodName       = "/erp.procurement.v1.SourcingService/LinkCustomerQuotation"
+)
+
+// SourcingServiceClient is the client API for SourcingService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// SourcingService owns pre-sale inquiry review. It lives in the procurement
+// bounded context but is deliberately separate from committed requirements
+// and purchase orders.
+type SourcingServiceClient interface {
+	CreateCase(ctx context.Context, in *CreateCaseRequest, opts ...grpc.CallOption) (*CreateCaseResponse, error)
+	ListCases(ctx context.Context, in *ListCasesRequest, opts ...grpc.CallOption) (*ListCasesResponse, error)
+	GetCase(ctx context.Context, in *GetCaseRequest, opts ...grpc.CallOption) (*GetCaseResponse, error)
+	ConfirmLines(ctx context.Context, in *ConfirmLinesRequest, opts ...grpc.CallOption) (*ConfirmLinesResponse, error)
+	ReviewLine(ctx context.Context, in *ReviewLineRequest, opts ...grpc.CallOption) (*ReviewLineResponse, error)
+	CreateFactoryRfq(ctx context.Context, in *CreateFactoryRfqRequest, opts ...grpc.CallOption) (*CreateFactoryRfqResponse, error)
+	ListFactoryRfqs(ctx context.Context, in *ListFactoryRfqsRequest, opts ...grpc.CallOption) (*ListFactoryRfqsResponse, error)
+	CreateSupplierQuote(ctx context.Context, in *CreateSupplierQuoteRequest, opts ...grpc.CallOption) (*CreateSupplierQuoteResponse, error)
+	GetFactoryRfqWorkbook(ctx context.Context, in *GetFactoryRfqWorkbookRequest, opts ...grpc.CallOption) (*GetFactoryRfqWorkbookResponse, error)
+	ImportSupplierQuoteWorkbook(ctx context.Context, in *ImportSupplierQuoteWorkbookRequest, opts ...grpc.CallOption) (*ImportSupplierQuoteWorkbookResponse, error)
+	MarkFactoryRfqSent(ctx context.Context, in *MarkFactoryRfqSentRequest, opts ...grpc.CallOption) (*MarkFactoryRfqSentResponse, error)
+	ListSupplierQuoteComparison(ctx context.Context, in *ListSupplierQuoteComparisonRequest, opts ...grpc.CallOption) (*ListSupplierQuoteComparisonResponse, error)
+	CreateCostScenario(ctx context.Context, in *CreateCostScenarioRequest, opts ...grpc.CallOption) (*CreateCostScenarioResponse, error)
+	ListCostScenarios(ctx context.Context, in *ListCostScenariosRequest, opts ...grpc.CallOption) (*ListCostScenariosResponse, error)
+	GetCostScenario(ctx context.Context, in *GetCostScenarioRequest, opts ...grpc.CallOption) (*GetCostScenarioResponse, error)
+	ConfirmCostScenario(ctx context.Context, in *ConfirmCostScenarioRequest, opts ...grpc.CallOption) (*ConfirmCostScenarioResponse, error)
+	PrepareCustomerQuotation(ctx context.Context, in *PrepareCustomerQuotationRequest, opts ...grpc.CallOption) (*PrepareCustomerQuotationResponse, error)
+	LinkCustomerQuotation(ctx context.Context, in *LinkCustomerQuotationRequest, opts ...grpc.CallOption) (*LinkCustomerQuotationResponse, error)
+}
+
+type sourcingServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewSourcingServiceClient(cc grpc.ClientConnInterface) SourcingServiceClient {
+	return &sourcingServiceClient{cc}
+}
+
+func (c *sourcingServiceClient) CreateCase(ctx context.Context, in *CreateCaseRequest, opts ...grpc.CallOption) (*CreateCaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateCaseResponse)
+	err := c.cc.Invoke(ctx, SourcingService_CreateCase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ListCases(ctx context.Context, in *ListCasesRequest, opts ...grpc.CallOption) (*ListCasesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCasesResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListCases_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) GetCase(ctx context.Context, in *GetCaseRequest, opts ...grpc.CallOption) (*GetCaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCaseResponse)
+	err := c.cc.Invoke(ctx, SourcingService_GetCase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ConfirmLines(ctx context.Context, in *ConfirmLinesRequest, opts ...grpc.CallOption) (*ConfirmLinesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfirmLinesResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ConfirmLines_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ReviewLine(ctx context.Context, in *ReviewLineRequest, opts ...grpc.CallOption) (*ReviewLineResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReviewLineResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ReviewLine_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) CreateFactoryRfq(ctx context.Context, in *CreateFactoryRfqRequest, opts ...grpc.CallOption) (*CreateFactoryRfqResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateFactoryRfqResponse)
+	err := c.cc.Invoke(ctx, SourcingService_CreateFactoryRfq_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ListFactoryRfqs(ctx context.Context, in *ListFactoryRfqsRequest, opts ...grpc.CallOption) (*ListFactoryRfqsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFactoryRfqsResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListFactoryRfqs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) CreateSupplierQuote(ctx context.Context, in *CreateSupplierQuoteRequest, opts ...grpc.CallOption) (*CreateSupplierQuoteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateSupplierQuoteResponse)
+	err := c.cc.Invoke(ctx, SourcingService_CreateSupplierQuote_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) GetFactoryRfqWorkbook(ctx context.Context, in *GetFactoryRfqWorkbookRequest, opts ...grpc.CallOption) (*GetFactoryRfqWorkbookResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetFactoryRfqWorkbookResponse)
+	err := c.cc.Invoke(ctx, SourcingService_GetFactoryRfqWorkbook_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ImportSupplierQuoteWorkbook(ctx context.Context, in *ImportSupplierQuoteWorkbookRequest, opts ...grpc.CallOption) (*ImportSupplierQuoteWorkbookResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ImportSupplierQuoteWorkbookResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ImportSupplierQuoteWorkbook_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) MarkFactoryRfqSent(ctx context.Context, in *MarkFactoryRfqSentRequest, opts ...grpc.CallOption) (*MarkFactoryRfqSentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MarkFactoryRfqSentResponse)
+	err := c.cc.Invoke(ctx, SourcingService_MarkFactoryRfqSent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ListSupplierQuoteComparison(ctx context.Context, in *ListSupplierQuoteComparisonRequest, opts ...grpc.CallOption) (*ListSupplierQuoteComparisonResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSupplierQuoteComparisonResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListSupplierQuoteComparison_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) CreateCostScenario(ctx context.Context, in *CreateCostScenarioRequest, opts ...grpc.CallOption) (*CreateCostScenarioResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateCostScenarioResponse)
+	err := c.cc.Invoke(ctx, SourcingService_CreateCostScenario_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ListCostScenarios(ctx context.Context, in *ListCostScenariosRequest, opts ...grpc.CallOption) (*ListCostScenariosResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCostScenariosResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListCostScenarios_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) GetCostScenario(ctx context.Context, in *GetCostScenarioRequest, opts ...grpc.CallOption) (*GetCostScenarioResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCostScenarioResponse)
+	err := c.cc.Invoke(ctx, SourcingService_GetCostScenario_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ConfirmCostScenario(ctx context.Context, in *ConfirmCostScenarioRequest, opts ...grpc.CallOption) (*ConfirmCostScenarioResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfirmCostScenarioResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ConfirmCostScenario_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) PrepareCustomerQuotation(ctx context.Context, in *PrepareCustomerQuotationRequest, opts ...grpc.CallOption) (*PrepareCustomerQuotationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PrepareCustomerQuotationResponse)
+	err := c.cc.Invoke(ctx, SourcingService_PrepareCustomerQuotation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) LinkCustomerQuotation(ctx context.Context, in *LinkCustomerQuotationRequest, opts ...grpc.CallOption) (*LinkCustomerQuotationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LinkCustomerQuotationResponse)
+	err := c.cc.Invoke(ctx, SourcingService_LinkCustomerQuotation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SourcingServiceServer is the server API for SourcingService service.
+// All implementations must embed UnimplementedSourcingServiceServer
+// for forward compatibility.
+//
+// SourcingService owns pre-sale inquiry review. It lives in the procurement
+// bounded context but is deliberately separate from committed requirements
+// and purchase orders.
+type SourcingServiceServer interface {
+	CreateCase(context.Context, *CreateCaseRequest) (*CreateCaseResponse, error)
+	ListCases(context.Context, *ListCasesRequest) (*ListCasesResponse, error)
+	GetCase(context.Context, *GetCaseRequest) (*GetCaseResponse, error)
+	ConfirmLines(context.Context, *ConfirmLinesRequest) (*ConfirmLinesResponse, error)
+	ReviewLine(context.Context, *ReviewLineRequest) (*ReviewLineResponse, error)
+	CreateFactoryRfq(context.Context, *CreateFactoryRfqRequest) (*CreateFactoryRfqResponse, error)
+	ListFactoryRfqs(context.Context, *ListFactoryRfqsRequest) (*ListFactoryRfqsResponse, error)
+	CreateSupplierQuote(context.Context, *CreateSupplierQuoteRequest) (*CreateSupplierQuoteResponse, error)
+	GetFactoryRfqWorkbook(context.Context, *GetFactoryRfqWorkbookRequest) (*GetFactoryRfqWorkbookResponse, error)
+	ImportSupplierQuoteWorkbook(context.Context, *ImportSupplierQuoteWorkbookRequest) (*ImportSupplierQuoteWorkbookResponse, error)
+	MarkFactoryRfqSent(context.Context, *MarkFactoryRfqSentRequest) (*MarkFactoryRfqSentResponse, error)
+	ListSupplierQuoteComparison(context.Context, *ListSupplierQuoteComparisonRequest) (*ListSupplierQuoteComparisonResponse, error)
+	CreateCostScenario(context.Context, *CreateCostScenarioRequest) (*CreateCostScenarioResponse, error)
+	ListCostScenarios(context.Context, *ListCostScenariosRequest) (*ListCostScenariosResponse, error)
+	GetCostScenario(context.Context, *GetCostScenarioRequest) (*GetCostScenarioResponse, error)
+	ConfirmCostScenario(context.Context, *ConfirmCostScenarioRequest) (*ConfirmCostScenarioResponse, error)
+	PrepareCustomerQuotation(context.Context, *PrepareCustomerQuotationRequest) (*PrepareCustomerQuotationResponse, error)
+	LinkCustomerQuotation(context.Context, *LinkCustomerQuotationRequest) (*LinkCustomerQuotationResponse, error)
+	mustEmbedUnimplementedSourcingServiceServer()
+}
+
+// UnimplementedSourcingServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedSourcingServiceServer struct{}
+
+func (UnimplementedSourcingServiceServer) CreateCase(context.Context, *CreateCaseRequest) (*CreateCaseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateCase not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListCases(context.Context, *ListCasesRequest) (*ListCasesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCases not implemented")
+}
+func (UnimplementedSourcingServiceServer) GetCase(context.Context, *GetCaseRequest) (*GetCaseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCase not implemented")
+}
+func (UnimplementedSourcingServiceServer) ConfirmLines(context.Context, *ConfirmLinesRequest) (*ConfirmLinesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ConfirmLines not implemented")
+}
+func (UnimplementedSourcingServiceServer) ReviewLine(context.Context, *ReviewLineRequest) (*ReviewLineResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReviewLine not implemented")
+}
+func (UnimplementedSourcingServiceServer) CreateFactoryRfq(context.Context, *CreateFactoryRfqRequest) (*CreateFactoryRfqResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateFactoryRfq not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListFactoryRfqs(context.Context, *ListFactoryRfqsRequest) (*ListFactoryRfqsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFactoryRfqs not implemented")
+}
+func (UnimplementedSourcingServiceServer) CreateSupplierQuote(context.Context, *CreateSupplierQuoteRequest) (*CreateSupplierQuoteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateSupplierQuote not implemented")
+}
+func (UnimplementedSourcingServiceServer) GetFactoryRfqWorkbook(context.Context, *GetFactoryRfqWorkbookRequest) (*GetFactoryRfqWorkbookResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetFactoryRfqWorkbook not implemented")
+}
+func (UnimplementedSourcingServiceServer) ImportSupplierQuoteWorkbook(context.Context, *ImportSupplierQuoteWorkbookRequest) (*ImportSupplierQuoteWorkbookResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ImportSupplierQuoteWorkbook not implemented")
+}
+func (UnimplementedSourcingServiceServer) MarkFactoryRfqSent(context.Context, *MarkFactoryRfqSentRequest) (*MarkFactoryRfqSentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MarkFactoryRfqSent not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListSupplierQuoteComparison(context.Context, *ListSupplierQuoteComparisonRequest) (*ListSupplierQuoteComparisonResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSupplierQuoteComparison not implemented")
+}
+func (UnimplementedSourcingServiceServer) CreateCostScenario(context.Context, *CreateCostScenarioRequest) (*CreateCostScenarioResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateCostScenario not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListCostScenarios(context.Context, *ListCostScenariosRequest) (*ListCostScenariosResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCostScenarios not implemented")
+}
+func (UnimplementedSourcingServiceServer) GetCostScenario(context.Context, *GetCostScenarioRequest) (*GetCostScenarioResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCostScenario not implemented")
+}
+func (UnimplementedSourcingServiceServer) ConfirmCostScenario(context.Context, *ConfirmCostScenarioRequest) (*ConfirmCostScenarioResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ConfirmCostScenario not implemented")
+}
+func (UnimplementedSourcingServiceServer) PrepareCustomerQuotation(context.Context, *PrepareCustomerQuotationRequest) (*PrepareCustomerQuotationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PrepareCustomerQuotation not implemented")
+}
+func (UnimplementedSourcingServiceServer) LinkCustomerQuotation(context.Context, *LinkCustomerQuotationRequest) (*LinkCustomerQuotationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LinkCustomerQuotation not implemented")
+}
+func (UnimplementedSourcingServiceServer) mustEmbedUnimplementedSourcingServiceServer() {}
+func (UnimplementedSourcingServiceServer) testEmbeddedByValue()                         {}
+
+// UnsafeSourcingServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to SourcingServiceServer will
+// result in compilation errors.
+type UnsafeSourcingServiceServer interface {
+	mustEmbedUnimplementedSourcingServiceServer()
+}
+
+func RegisterSourcingServiceServer(s grpc.ServiceRegistrar, srv SourcingServiceServer) {
+	// If the following call pancis, it indicates UnimplementedSourcingServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&SourcingService_ServiceDesc, srv)
+}
+
+func _SourcingService_CreateCase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateCaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).CreateCase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_CreateCase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).CreateCase(ctx, req.(*CreateCaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ListCases_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCasesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListCases(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListCases_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListCases(ctx, req.(*ListCasesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_GetCase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).GetCase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_GetCase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).GetCase(ctx, req.(*GetCaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ConfirmLines_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmLinesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ConfirmLines(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ConfirmLines_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ConfirmLines(ctx, req.(*ConfirmLinesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ReviewLine_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReviewLineRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ReviewLine(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ReviewLine_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ReviewLine(ctx, req.(*ReviewLineRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_CreateFactoryRfq_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateFactoryRfqRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).CreateFactoryRfq(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_CreateFactoryRfq_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).CreateFactoryRfq(ctx, req.(*CreateFactoryRfqRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ListFactoryRfqs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFactoryRfqsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListFactoryRfqs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListFactoryRfqs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListFactoryRfqs(ctx, req.(*ListFactoryRfqsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_CreateSupplierQuote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateSupplierQuoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).CreateSupplierQuote(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_CreateSupplierQuote_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).CreateSupplierQuote(ctx, req.(*CreateSupplierQuoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_GetFactoryRfqWorkbook_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetFactoryRfqWorkbookRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).GetFactoryRfqWorkbook(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_GetFactoryRfqWorkbook_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).GetFactoryRfqWorkbook(ctx, req.(*GetFactoryRfqWorkbookRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ImportSupplierQuoteWorkbook_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ImportSupplierQuoteWorkbookRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ImportSupplierQuoteWorkbook(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ImportSupplierQuoteWorkbook_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ImportSupplierQuoteWorkbook(ctx, req.(*ImportSupplierQuoteWorkbookRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_MarkFactoryRfqSent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkFactoryRfqSentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).MarkFactoryRfqSent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_MarkFactoryRfqSent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).MarkFactoryRfqSent(ctx, req.(*MarkFactoryRfqSentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ListSupplierQuoteComparison_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSupplierQuoteComparisonRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListSupplierQuoteComparison(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListSupplierQuoteComparison_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListSupplierQuoteComparison(ctx, req.(*ListSupplierQuoteComparisonRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_CreateCostScenario_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateCostScenarioRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).CreateCostScenario(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_CreateCostScenario_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).CreateCostScenario(ctx, req.(*CreateCostScenarioRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ListCostScenarios_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCostScenariosRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListCostScenarios(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListCostScenarios_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListCostScenarios(ctx, req.(*ListCostScenariosRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_GetCostScenario_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCostScenarioRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).GetCostScenario(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_GetCostScenario_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).GetCostScenario(ctx, req.(*GetCostScenarioRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ConfirmCostScenario_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmCostScenarioRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ConfirmCostScenario(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ConfirmCostScenario_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ConfirmCostScenario(ctx, req.(*ConfirmCostScenarioRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_PrepareCustomerQuotation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareCustomerQuotationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).PrepareCustomerQuotation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_PrepareCustomerQuotation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).PrepareCustomerQuotation(ctx, req.(*PrepareCustomerQuotationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_LinkCustomerQuotation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LinkCustomerQuotationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).LinkCustomerQuotation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_LinkCustomerQuotation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).LinkCustomerQuotation(ctx, req.(*LinkCustomerQuotationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// SourcingService_ServiceDesc is the grpc.ServiceDesc for SourcingService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var SourcingService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "erp.procurement.v1.SourcingService",
+	HandlerType: (*SourcingServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CreateCase",
+			Handler:    _SourcingService_CreateCase_Handler,
+		},
+		{
+			MethodName: "ListCases",
+			Handler:    _SourcingService_ListCases_Handler,
+		},
+		{
+			MethodName: "GetCase",
+			Handler:    _SourcingService_GetCase_Handler,
+		},
+		{
+			MethodName: "ConfirmLines",
+			Handler:    _SourcingService_ConfirmLines_Handler,
+		},
+		{
+			MethodName: "ReviewLine",
+			Handler:    _SourcingService_ReviewLine_Handler,
+		},
+		{
+			MethodName: "CreateFactoryRfq",
+			Handler:    _SourcingService_CreateFactoryRfq_Handler,
+		},
+		{
+			MethodName: "ListFactoryRfqs",
+			Handler:    _SourcingService_ListFactoryRfqs_Handler,
+		},
+		{
+			MethodName: "CreateSupplierQuote",
+			Handler:    _SourcingService_CreateSupplierQuote_Handler,
+		},
+		{
+			MethodName: "GetFactoryRfqWorkbook",
+			Handler:    _SourcingService_GetFactoryRfqWorkbook_Handler,
+		},
+		{
+			MethodName: "ImportSupplierQuoteWorkbook",
+			Handler:    _SourcingService_ImportSupplierQuoteWorkbook_Handler,
+		},
+		{
+			MethodName: "MarkFactoryRfqSent",
+			Handler:    _SourcingService_MarkFactoryRfqSent_Handler,
+		},
+		{
+			MethodName: "ListSupplierQuoteComparison",
+			Handler:    _SourcingService_ListSupplierQuoteComparison_Handler,
+		},
+		{
+			MethodName: "CreateCostScenario",
+			Handler:    _SourcingService_CreateCostScenario_Handler,
+		},
+		{
+			MethodName: "ListCostScenarios",
+			Handler:    _SourcingService_ListCostScenarios_Handler,
+		},
+		{
+			MethodName: "GetCostScenario",
+			Handler:    _SourcingService_GetCostScenario_Handler,
+		},
+		{
+			MethodName: "ConfirmCostScenario",
+			Handler:    _SourcingService_ConfirmCostScenario_Handler,
+		},
+		{
+			MethodName: "PrepareCustomerQuotation",
+			Handler:    _SourcingService_PrepareCustomerQuotation_Handler,
+		},
+		{
+			MethodName: "LinkCustomerQuotation",
+			Handler:    _SourcingService_LinkCustomerQuotation_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "erp/procurement/v1/procurement.proto",
+}
+
+const (
 	RequirementService_ListRequirements_FullMethodName      = "/erp.procurement.v1.RequirementService/ListRequirements"
 	RequirementService_CreateRequirement_FullMethodName     = "/erp.procurement.v1.RequirementService/CreateRequirement"
 	RequirementService_GetRequirement_FullMethodName        = "/erp.procurement.v1.RequirementService/GetRequirement"
@@ -33,18 +789,15 @@ const (
 //
 // RequirementService exposes what has to be bought.
 //
-// Requirements are not created through this API: they arrive from contracts
-// that took effect, over Kafka. A buyer reads them, and closes the ones the
-// business decides not to act on.
+// Contract requirements are not created through this API: an effective
+// contract creates its full purchasing quantity over Kafka. No own-stock
+// balance is netted first.
 type RequirementServiceClient interface {
 	ListRequirements(ctx context.Context, in *ListRequirementsRequest, opts ...grpc.CallOption) (*ListRequirementsResponse, error)
-	// Raise one by hand: restocking, a long-lead item, a deal with a supplier.
-	// Purchasing is not only the tail end of a sale, and a company that can
-	// only buy what it has already sold cannot keep stock at all.
+	// Raise an exceptional requirement by hand, independent of a contract.
 	CreateRequirement(ctx context.Context, in *CreateRequirementRequest, opts ...grpc.CallOption) (*CreateRequirementResponse, error)
 	GetRequirement(ctx context.Context, in *GetRequirementRequest, opts ...grpc.CallOption) (*GetRequirementResponse, error)
-	// Close a requirement the business will not buy against - stock on hand,
-	// or a customer order that fell through outside the contract.
+	// Close a requirement the business will not buy against.
 	CancelRequirement(ctx context.Context, in *CancelRequirementRequest, opts ...grpc.CallOption) (*CancelRequirementResponse, error)
 	// Put a wrongly closed one back on the list.
 	ReopenRequirement(ctx context.Context, in *ReopenRequirementRequest, opts ...grpc.CallOption) (*ReopenRequirementResponse, error)
@@ -127,18 +880,15 @@ func (c *requirementServiceClient) ListRequirementOrders(ctx context.Context, in
 //
 // RequirementService exposes what has to be bought.
 //
-// Requirements are not created through this API: they arrive from contracts
-// that took effect, over Kafka. A buyer reads them, and closes the ones the
-// business decides not to act on.
+// Contract requirements are not created through this API: an effective
+// contract creates its full purchasing quantity over Kafka. No own-stock
+// balance is netted first.
 type RequirementServiceServer interface {
 	ListRequirements(context.Context, *ListRequirementsRequest) (*ListRequirementsResponse, error)
-	// Raise one by hand: restocking, a long-lead item, a deal with a supplier.
-	// Purchasing is not only the tail end of a sale, and a company that can
-	// only buy what it has already sold cannot keep stock at all.
+	// Raise an exceptional requirement by hand, independent of a contract.
 	CreateRequirement(context.Context, *CreateRequirementRequest) (*CreateRequirementResponse, error)
 	GetRequirement(context.Context, *GetRequirementRequest) (*GetRequirementResponse, error)
-	// Close a requirement the business will not buy against - stock on hand,
-	// or a customer order that fell through outside the contract.
+	// Close a requirement the business will not buy against.
 	CancelRequirement(context.Context, *CancelRequirementRequest) (*CancelRequirementResponse, error)
 	// Put a wrongly closed one back on the list.
 	ReopenRequirement(context.Context, *ReopenRequirementRequest) (*ReopenRequirementResponse, error)
@@ -342,6 +1092,7 @@ const (
 	PurchaseOrderService_ListOrders_FullMethodName   = "/erp.procurement.v1.PurchaseOrderService/ListOrders"
 	PurchaseOrderService_GetOrder_FullMethodName     = "/erp.procurement.v1.PurchaseOrderService/GetOrder"
 	PurchaseOrderService_CreateOrder_FullMethodName  = "/erp.procurement.v1.PurchaseOrderService/CreateOrder"
+	PurchaseOrderService_UpdateOrder_FullMethodName  = "/erp.procurement.v1.PurchaseOrderService/UpdateOrder"
 	PurchaseOrderService_SubmitOrder_FullMethodName  = "/erp.procurement.v1.PurchaseOrderService/SubmitOrder"
 	PurchaseOrderService_CancelOrder_FullMethodName  = "/erp.procurement.v1.PurchaseOrderService/CancelOrder"
 	PurchaseOrderService_ReceiveOrder_FullMethodName = "/erp.procurement.v1.PurchaseOrderService/ReceiveOrder"
@@ -360,11 +1111,15 @@ type PurchaseOrderServiceClient interface {
 	ListOrders(ctx context.Context, in *ListOrdersRequest, opts ...grpc.CallOption) (*ListOrdersResponse, error)
 	GetOrder(ctx context.Context, in *GetOrderRequest, opts ...grpc.CallOption) (*GetOrderResponse, error)
 	CreateOrder(ctx context.Context, in *CreateOrderRequest, opts ...grpc.CallOption) (*CreateOrderResponse, error)
+	// Only a draft or a rejected order can be changed. Saving a rejected order
+	// turns it back into a draft so its corrected snapshot is explicit before
+	// it enters a new approval instance.
+	UpdateOrder(ctx context.Context, in *UpdateOrderRequest, opts ...grpc.CallOption) (*UpdateOrderResponse, error)
 	// Spending money needs a signature. The approval engine routes on the
 	// order total, so a large order can require more of them.
 	SubmitOrder(ctx context.Context, in *SubmitOrderRequest, opts ...grpc.CallOption) (*SubmitOrderResponse, error)
 	CancelOrder(ctx context.Context, in *CancelOrderRequest, opts ...grpc.CallOption) (*CancelOrderResponse, error)
-	// Goods arriving. Stock is increased by inventory, not here.
+	// Finished goods arriving into a port-terminal custody location.
 	ReceiveOrder(ctx context.Context, in *ReceiveOrderRequest, opts ...grpc.CallOption) (*ReceiveOrderResponse, error)
 }
 
@@ -400,6 +1155,16 @@ func (c *purchaseOrderServiceClient) CreateOrder(ctx context.Context, in *Create
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateOrderResponse)
 	err := c.cc.Invoke(ctx, PurchaseOrderService_CreateOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) UpdateOrder(ctx context.Context, in *UpdateOrderRequest, opts ...grpc.CallOption) (*UpdateOrderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateOrderResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_UpdateOrder_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -449,11 +1214,15 @@ type PurchaseOrderServiceServer interface {
 	ListOrders(context.Context, *ListOrdersRequest) (*ListOrdersResponse, error)
 	GetOrder(context.Context, *GetOrderRequest) (*GetOrderResponse, error)
 	CreateOrder(context.Context, *CreateOrderRequest) (*CreateOrderResponse, error)
+	// Only a draft or a rejected order can be changed. Saving a rejected order
+	// turns it back into a draft so its corrected snapshot is explicit before
+	// it enters a new approval instance.
+	UpdateOrder(context.Context, *UpdateOrderRequest) (*UpdateOrderResponse, error)
 	// Spending money needs a signature. The approval engine routes on the
 	// order total, so a large order can require more of them.
 	SubmitOrder(context.Context, *SubmitOrderRequest) (*SubmitOrderResponse, error)
 	CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error)
-	// Goods arriving. Stock is increased by inventory, not here.
+	// Finished goods arriving into a port-terminal custody location.
 	ReceiveOrder(context.Context, *ReceiveOrderRequest) (*ReceiveOrderResponse, error)
 	mustEmbedUnimplementedPurchaseOrderServiceServer()
 }
@@ -473,6 +1242,9 @@ func (UnimplementedPurchaseOrderServiceServer) GetOrder(context.Context, *GetOrd
 }
 func (UnimplementedPurchaseOrderServiceServer) CreateOrder(context.Context, *CreateOrderRequest) (*CreateOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateOrder not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) UpdateOrder(context.Context, *UpdateOrderRequest) (*UpdateOrderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateOrder not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) SubmitOrder(context.Context, *SubmitOrderRequest) (*SubmitOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SubmitOrder not implemented")
@@ -558,6 +1330,24 @@ func _PurchaseOrderService_CreateOrder_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_UpdateOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateOrderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).UpdateOrder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_UpdateOrder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).UpdateOrder(ctx, req.(*UpdateOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PurchaseOrderService_SubmitOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SubmitOrderRequest)
 	if err := dec(in); err != nil {
@@ -630,6 +1420,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateOrder",
 			Handler:    _PurchaseOrderService_CreateOrder_Handler,
+		},
+		{
+			MethodName: "UpdateOrder",
+			Handler:    _PurchaseOrderService_UpdateOrder_Handler,
 		},
 		{
 			MethodName: "SubmitOrder",

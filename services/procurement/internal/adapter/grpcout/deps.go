@@ -4,19 +4,83 @@ package grpcout
 
 import (
 	"context"
+	"time"
 
 	"google.golang.org/grpc"
 
 	apv1 "github.com/sgao19/erp-go/gen/go/erp/approval/v1"
+	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
+	inv1 "github.com/sgao19/erp-go/gen/go/erp/inventory/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/services/procurement/internal/app"
+	"github.com/shopspring/decimal"
 )
+
+type Rates struct{ client fxv1.FxServiceClient }
+
+func NewRates(conn *grpc.ClientConn) *Rates { return &Rates{client: fxv1.NewFxServiceClient(conn)} }
+func (r *Rates) Latest(ctx context.Context, currency string) (app.Rate, error) {
+	if currency == "USD" {
+		return app.Rate{Rate: decimal.NewFromInt(1), At: time.Now().UTC(), Source: "BASE", Base: "USD"}, nil
+	}
+	resp, err := r.client.GetLatestRate(ctx, &fxv1.GetLatestRateRequest{QuoteCurrency: currency})
+	if err != nil {
+		return app.Rate{}, err
+	}
+	v, err := decimal.NewFromString(resp.GetRate().GetUnitsPerUsd())
+	if err != nil {
+		return app.Rate{}, err
+	}
+	at, err := time.Parse(time.RFC3339, resp.GetRate().GetFetchedAt())
+	if err != nil {
+		at = time.Now().UTC()
+	}
+	return app.Rate{Rate: v, At: at, Source: resp.GetRate().GetSource(), Base: resp.GetRate().GetBaseCurrency()}, nil
+}
 
 type Numbering struct{ client mdv1.NumberingServiceClient }
 
 func NewNumbering(conn *grpc.ClientConn) *Numbering {
 	return &Numbering{client: mdv1.NewNumberingServiceClient(conn)}
+}
+
+type Suppliers struct{ client mdv1.SupplierServiceClient }
+
+func NewSuppliers(conn *grpc.ClientConn) *Suppliers {
+	return &Suppliers{client: mdv1.NewSupplierServiceClient(conn)}
+}
+
+func (s *Suppliers) Get(ctx context.Context, id int64) (app.Supplier, error) {
+	resp, err := s.client.GetSupplier(ctx, &mdv1.GetSupplierRequest{Id: id})
+	if err != nil {
+		return app.Supplier{}, err
+	}
+	supplier := resp.GetSupplier()
+	return app.Supplier{
+		ID: supplier.GetId(), Code: supplier.GetCode(), Name: supplier.GetName(),
+		Currency: supplier.GetCurrency(), Status: supplier.GetStatus(),
+	}, nil
+}
+
+type Warehouses struct{ client inv1.StockServiceClient }
+
+func NewWarehouses(conn *grpc.ClientConn) *Warehouses {
+	return &Warehouses{client: inv1.NewStockServiceClient(conn)}
+}
+
+func (w *Warehouses) Get(ctx context.Context, id int64) (app.Warehouse, error) {
+	resp, err := w.client.ListWarehouses(ctx, &inv1.ListWarehousesRequest{IncludeInactive: true})
+	if err != nil {
+		return app.Warehouse{}, err
+	}
+	for _, warehouse := range resp.GetWarehouses() {
+		if warehouse.GetId() == id {
+			return app.Warehouse{ID: warehouse.GetId(), Name: warehouse.GetName(),
+				Type: warehouse.GetWhType(), Status: warehouse.GetStatus()}, nil
+		}
+	}
+	return app.Warehouse{}, nil
 }
 
 func (n *Numbering) Next(ctx context.Context, bizType string) (string, error) {

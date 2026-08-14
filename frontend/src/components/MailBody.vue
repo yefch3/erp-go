@@ -30,9 +30,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { embeddedAttachmentID } from '../lib/mailExcel'
 
 const { t } = useI18n()
 const props = defineProps<{ html: string }>()
+const emit = defineEmits<{
+  selectionContext: [payload: { text?: string; attachmentId?: string; x: number; y: number }]
+}>()
 
 const frame = ref<HTMLIFrameElement | null>(null)
 // A first guess, replaced the moment the frame reports its real content
@@ -128,6 +132,7 @@ let poll: number | undefined
 // would have to live inside the frame, and inside the frame is exactly where
 // we have chosen not to run scripts.
 function measure() {
+  bindSelectionMenu()
   read()
   window.clearInterval(poll)
   let ticks = 0
@@ -145,6 +150,34 @@ function measure() {
       ready.value = true
     }
   }, 100)
+}
+
+// Context-menu events do not cross an iframe boundary. The parent owns this
+// listener (no script is admitted into the untrusted mail document), reads
+// the user's current selection or the trusted attachment marker placed on an
+// embedded image by the mail service, and emits coordinates in the app's
+// viewport so the ordinary menu can be rendered outside the frame.
+function bindSelectionMenu() {
+  const el = frame.value
+  const d = el?.contentDocument
+  if (!el || !d || d.documentElement.dataset.excelMenuBound === '1') return
+  d.documentElement.dataset.excelMenuBound = '1'
+  d.addEventListener('contextmenu', (event) => {
+    const rect = el.getBoundingClientRect()
+    const point = { x: rect.left + event.clientX, y: rect.top + event.clientY }
+    const target = event.target as { closest?: (selector: string) => Element | null } | null
+    const image = target?.closest?.('img') as HTMLImageElement | null
+    const attachmentId = embeddedAttachmentID(image?.currentSrc || image?.getAttribute('src') || '')
+    if (attachmentId) {
+      event.preventDefault()
+      emit('selectionContext', { attachmentId, ...point })
+      return
+    }
+    const text = d.getSelection()?.toString().trim() ?? ''
+    if (!text) return
+    event.preventDefault()
+    emit('selectionContext', { text, ...point })
+  })
 }
 
 function read() {

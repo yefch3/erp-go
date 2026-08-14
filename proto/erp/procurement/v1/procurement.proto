@@ -6,20 +6,250 @@ import "erp/common/v1/pagination.proto";
 
 option go_package = "github.com/sgao19/erp-go/gen/go/erp/procurement/v1;procurementv1";
 
+// SourcingService owns pre-sale inquiry review. It lives in the procurement
+// bounded context but is deliberately separate from committed requirements
+// and purchase orders.
+service SourcingService {
+  rpc CreateCase(CreateCaseRequest) returns (CreateCaseResponse);
+  rpc ListCases(ListCasesRequest) returns (ListCasesResponse);
+  rpc GetCase(GetCaseRequest) returns (GetCaseResponse);
+  rpc ConfirmLines(ConfirmLinesRequest) returns (ConfirmLinesResponse);
+  rpc ReviewLine(ReviewLineRequest) returns (ReviewLineResponse);
+  rpc CreateFactoryRfq(CreateFactoryRfqRequest) returns (CreateFactoryRfqResponse);
+  rpc ListFactoryRfqs(ListFactoryRfqsRequest) returns (ListFactoryRfqsResponse);
+  rpc CreateSupplierQuote(CreateSupplierQuoteRequest) returns (CreateSupplierQuoteResponse);
+  rpc GetFactoryRfqWorkbook(GetFactoryRfqWorkbookRequest) returns (GetFactoryRfqWorkbookResponse);
+  rpc ImportSupplierQuoteWorkbook(ImportSupplierQuoteWorkbookRequest) returns (ImportSupplierQuoteWorkbookResponse);
+  rpc MarkFactoryRfqSent(MarkFactoryRfqSentRequest) returns (MarkFactoryRfqSentResponse);
+  rpc ListSupplierQuoteComparison(ListSupplierQuoteComparisonRequest) returns (ListSupplierQuoteComparisonResponse);
+  rpc CreateCostScenario(CreateCostScenarioRequest) returns (CreateCostScenarioResponse);
+  rpc ListCostScenarios(ListCostScenariosRequest) returns (ListCostScenariosResponse);
+  rpc GetCostScenario(GetCostScenarioRequest) returns (GetCostScenarioResponse);
+  rpc ConfirmCostScenario(ConfirmCostScenarioRequest) returns (ConfirmCostScenarioResponse);
+  rpc PrepareCustomerQuotation(PrepareCustomerQuotationRequest) returns (PrepareCustomerQuotationResponse);
+  rpc LinkCustomerQuotation(LinkCustomerQuotationRequest) returns (LinkCustomerQuotationResponse);
+}
+
+message SourcingLineInput {
+  string raw_text = 1;
+  string product = 2;
+  string material_standard = 3;
+  string grade = 4;
+  string thickness = 5;
+  string width = 6;
+  string length_or_form = 7;
+  string surface_requirement = 8;
+  string coating = 9;
+  string tolerance = 10;
+  string coil_weight = 11;
+  string coil_id = 12;
+  string packaging = 13;
+  string delivery = 14;
+  string payment_terms = 15;
+  string incoterm = 16;
+  string port = 17;
+  string quantity_unit = 18;
+  string remarks = 19;
+  string quantity = 20;
+}
+
+message SourcingLine {
+  int64 id = 1;
+  int32 line_no = 2;
+  SourcingLineInput extracted = 3;
+  int64 product_id = 4;
+  int64 sku_id = 5;
+  int64 uom_id = 6;
+  string decision = 7;
+  string decided_by_name = 8;
+  string decided_at = 9;
+}
+
+message SourcingCase {
+  int64 id = 1;
+  string case_no = 2;
+  string title = 3;
+  int64 customer_id = 4;
+  string customer_name = 5;
+  string contact_name = 6;
+  string contact_email = 7;
+  int64 source_mail_id = 8;
+  int64 source_attachment_id = 9;
+  string status = 10;
+  int64 owner_id = 11;
+  string owner_name = 12;
+  string created_at = 13;
+  string updated_at = 14;
+  repeated SourcingLine lines = 15;
+}
+
+message CreateCaseRequest {
+  string title = 1;
+  int64 customer_id = 2;
+  string customer_name = 3;
+  string contact_name = 4;
+  string contact_email = 5;
+  int64 source_mail_id = 6;
+  int64 source_attachment_id = 7;
+  repeated SourcingLineInput lines = 8;
+}
+
+message CreateCaseResponse { SourcingCase sourcing_case = 1; }
+
+message ListCasesRequest {
+  erp.common.v1.PageRequest page = 1;
+  string status = 2;
+  string keyword = 3;
+}
+
+message ListCasesResponse {
+  repeated SourcingCase sourcing_cases = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message GetCaseRequest { int64 id = 1; }
+message GetCaseResponse { SourcingCase sourcing_case = 1; }
+message ConfirmLinesRequest { int64 case_id = 1; repeated int64 sourcing_line_ids = 2; }
+message ConfirmLinesResponse { SourcingCase sourcing_case = 1; }
+message ReviewLineRequest {
+  int64 case_id = 1; int64 line_id = 2; SourcingLineInput extracted = 3;
+  int64 product_id = 4; int64 sku_id = 5; int64 uom_id = 6;
+  string decision = 7;
+}
+message ReviewLineResponse { SourcingCase sourcing_case = 1; }
+
+message FactoryRfq {
+  int64 id = 1; int64 case_id = 2; string rfq_no = 3; int64 supplier_id = 4;
+  string supplier_code = 5; string supplier_name = 6; string contact_email = 7;
+  string currency = 8; string response_due_at = 9; string status = 10;
+  int32 line_count = 11; string created_at = 12; repeated int64 sourcing_line_ids = 13;
+}
+message CreateFactoryRfqRequest {
+  int64 case_id = 1; int64 supplier_id = 2; string contact_email = 3;
+  string currency = 4; string response_due_at = 5; repeated int64 sourcing_line_ids = 6;
+}
+message CreateFactoryRfqResponse { FactoryRfq factory_rfq = 1; }
+message ListFactoryRfqsRequest { int64 case_id = 1; }
+message ListFactoryRfqsResponse { repeated FactoryRfq factory_rfqs = 1; }
+
+message GetFactoryRfqWorkbookRequest { int64 id = 1; }
+message GetFactoryRfqWorkbookResponse {
+  string file_name = 1;
+  bytes file_data = 2;
+  string rfq_no = 3;
+  string supplier_name = 4;
+  string contact_email = 5;
+  string currency = 6;
+  string response_due_at = 7;
+}
+
+message SupplierQuoteLineInput {
+  int64 sourcing_line_id = 1; string qty = 2; string unit_price = 3;
+  string moq = 4; string lead_time = 5; string remark = 6;
+}
+message CreateSupplierQuoteRequest {
+  int64 factory_rfq_id = 1; string quoted_at = 2; string valid_until = 3;
+  string currency = 4; string payment_terms = 5; string delivery = 6;
+  string remark = 7; string source = 8; repeated SupplierQuoteLineInput lines = 9;
+}
+message CreateSupplierQuoteResponse { int64 id = 1; string supplier_quote_no = 2; }
+message ImportSupplierQuoteWorkbookRequest {
+  int64 factory_rfq_id = 1;
+  bytes file_data = 2;
+  string quoted_at = 3;
+  string valid_until = 4;
+  string currency = 5;
+  string payment_terms = 6;
+  string delivery = 7;
+  string remark = 8;
+}
+message ImportSupplierQuoteWorkbookResponse { int64 id = 1; string supplier_quote_no = 2; }
+message MarkFactoryRfqSentRequest { int64 id = 1; }
+message MarkFactoryRfqSentResponse { string status = 1; }
+message ListSupplierQuoteComparisonRequest { int64 case_id = 1; }
+message SupplierQuoteComparisonLine {
+  int64 quote_id = 1; string supplier_quote_no = 2; int64 factory_rfq_id = 3;
+  int64 supplier_id = 4; string supplier_name = 5; string currency = 6;
+  string quoted_at = 7; string valid_until = 8; string payment_terms = 9;
+  string delivery = 10; string quote_remark = 11; string source = 12;
+  int64 sourcing_line_id = 13; string qty = 14; string unit_price = 15;
+  string amount = 16; string moq = 17; string lead_time = 18; string line_remark = 19;
+  int64 quote_line_id = 20;
+}
+message ListSupplierQuoteComparisonResponse { repeated SupplierQuoteComparisonLine lines = 1; }
+
+message CostSelectionInput { int64 sourcing_line_id = 1; int64 supplier_quote_line_id = 2; }
+message CostChargeInput {
+  string charge_type = 1; string basis = 2; string description = 3;
+  string origin_port = 4; string destination_port = 5; string container_type = 6;
+  string amount = 7; string currency = 8; string effective_at = 9;
+  string valid_until = 10; string source = 11; string remark = 12;
+}
+message CostCharge {
+  int64 id = 1; string charge_type = 2; string basis = 3; string description = 4;
+  string origin_port = 5; string destination_port = 6; string container_type = 7;
+  string amount = 8; string currency = 9; string converted_amount = 10;
+  string source_fx_rate = 11; string target_fx_rate = 12; string fx_rate_at = 13;
+  string fx_source = 14; string effective_at = 15; string valid_until = 16;
+  string source = 17; string remark = 18;
+}
+message CostScenarioLine {
+  int64 id = 1; int64 sourcing_line_id = 2; int64 supplier_quote_line_id = 3;
+  string supplier_name = 4; int64 product_id = 5; int64 sku_id = 6;
+  string product_name = 7; string spec_snapshot = 8; string qty = 9; string uom_code = 10;
+  string source_currency = 11; string source_unit_price = 12; string source_fx_rate = 13;
+  string target_fx_rate = 14; string product_cost = 15; string allocated_charge = 16;
+  string landed_cost = 17; string margin_amount = 18; string customer_unit_price = 19;
+  string customer_amount = 20;
+}
+message CostScenario {
+  int64 id = 1; int64 case_id = 2; string scenario_no = 3; string currency = 4;
+  string allocation_basis = 5; string margin_type = 6; string margin_value = 7;
+  string fx_rate = 8; string fx_rate_at = 9; string fx_source = 10; string fx_base_currency = 11;
+  string product_total = 12; string charge_total = 13; string landed_total = 14;
+  string margin_total = 15; string customer_total = 16; string status = 17;
+  int64 customer_quotation_id = 18; string customer_quote_no = 19;
+  string created_by_name = 20; string confirmed_by_name = 21; string confirmed_at = 22; string created_at = 23;
+  repeated CostCharge charges = 24; repeated CostScenarioLine lines = 25;
+}
+message CreateCostScenarioRequest {
+  int64 case_id = 1; string currency = 2; string allocation_basis = 3;
+  string margin_type = 4; string margin_value = 5;
+  repeated CostSelectionInput selections = 6; repeated CostChargeInput charges = 7;
+}
+message CreateCostScenarioResponse { CostScenario cost_scenario = 1; }
+message ListCostScenariosRequest { int64 case_id = 1; }
+message ListCostScenariosResponse { repeated CostScenario cost_scenarios = 1; }
+message GetCostScenarioRequest { int64 id = 1; }
+message GetCostScenarioResponse { CostScenario cost_scenario = 1; }
+message ConfirmCostScenarioRequest { int64 id = 1; }
+message ConfirmCostScenarioResponse { CostScenario cost_scenario = 1; }
+message CustomerQuotationLine {
+  int64 cost_scenario_line_id = 1; int64 product_id = 2; int64 sku_id = 3;
+  string spec = 4; string qty = 5; string unit_price = 6; string remark = 7;
+}
+message PrepareCustomerQuotationRequest { int64 id = 1; }
+message PrepareCustomerQuotationResponse {
+  int64 cost_scenario_id = 1; string cost_scenario_no = 2; int64 sourcing_case_id = 3;
+  int64 customer_id = 4; string contact_email = 5; string currency = 6;
+  string incoterm = 7; string port_of_loading = 8; string port_of_discharge = 9;
+  string payment_method = 10; repeated CustomerQuotationLine lines = 11;
+  int64 existing_quotation_id = 12; string existing_quote_no = 13;
+}
+message LinkCustomerQuotationRequest { int64 id = 1; int64 quotation_id = 2; string quote_no = 3; }
+message LinkCustomerQuotationResponse { int64 quotation_id = 1; string quote_no = 2; }
+
 // RequirementService exposes what has to be bought.
 //
-// Requirements are not created through this API: they arrive from contracts
-// that took effect, over Kafka. A buyer reads them, and closes the ones the
-// business decides not to act on.
+// Contract requirements are not created through this API: an effective
+// contract creates its full purchasing quantity over Kafka. No own-stock
+// balance is netted first.
 service RequirementService {
   rpc ListRequirements(ListRequirementsRequest) returns (ListRequirementsResponse);
-  // Raise one by hand: restocking, a long-lead item, a deal with a supplier.
-  // Purchasing is not only the tail end of a sale, and a company that can
-  // only buy what it has already sold cannot keep stock at all.
+  // Raise an exceptional requirement by hand, independent of a contract.
   rpc CreateRequirement(CreateRequirementRequest) returns (CreateRequirementResponse);
   rpc GetRequirement(GetRequirementRequest) returns (GetRequirementResponse);
-  // Close a requirement the business will not buy against - stock on hand,
-  // or a customer order that fell through outside the contract.
+  // Close a requirement the business will not buy against.
   rpc CancelRequirement(CancelRequirementRequest) returns (CancelRequirementResponse);
   // Put a wrongly closed one back on the list.
   rpc ReopenRequirement(ReopenRequirementRequest) returns (ReopenRequirementResponse);
@@ -150,11 +380,15 @@ service PurchaseOrderService {
   rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);
   rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
   rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
+  // Only a draft or a rejected order can be changed. Saving a rejected order
+  // turns it back into a draft so its corrected snapshot is explicit before
+  // it enters a new approval instance.
+  rpc UpdateOrder(UpdateOrderRequest) returns (UpdateOrderResponse);
   // Spending money needs a signature. The approval engine routes on the
   // order total, so a large order can require more of them.
   rpc SubmitOrder(SubmitOrderRequest) returns (SubmitOrderResponse);
   rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);
-  // Goods arriving. Stock is increased by inventory, not here.
+  // Finished goods arriving into a port-terminal custody location.
   rpc ReceiveOrder(ReceiveOrderRequest) returns (ReceiveOrderResponse);
 }
 
@@ -248,6 +482,23 @@ message CreateOrderRequest {
 }
 
 message CreateOrderResponse {
+  int64 id = 1;
+  string po_no = 2;
+  string status = 3;
+}
+
+message UpdateOrderRequest {
+  int64 id = 1;
+  int64 supplier_id = 2;
+  string supplier_code = 3;
+  string supplier_name = 4;
+  string currency = 5;
+  string expected_date = 6;
+  string remark = 7;
+  repeated CreateOrderLine lines = 8;
+}
+
+message UpdateOrderResponse {
   int64 id = 1;
   string po_no = 2;
   string status = 3;

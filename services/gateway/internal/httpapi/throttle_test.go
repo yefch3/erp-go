@@ -134,6 +134,26 @@ func TestLoginAndMailboxVerifyDoNotSpendEachOthersBudget(t *testing.T) {
 	}
 }
 
+func TestMailExcelHasAFixedRequestBudget(t *testing.T) {
+	th, _ := newTestThrottle()
+	ctx := context.Background()
+	for i := 0; i < mailExcelMaxRequests; i++ {
+		if _, limited := th.Limited(ctx, throttleMailExcel, "t1.e1"); limited {
+			t.Fatalf("request %d was limited inside the budget", i+1)
+		}
+	}
+	wait, limited := th.Limited(ctx, throttleMailExcel, "t1.e1")
+	if !limited {
+		t.Fatal("first request beyond the Excel budget was allowed")
+	}
+	if wait != mailExcelWindow {
+		t.Fatalf("retry-after = %v, want %v", wait, mailExcelWindow)
+	}
+	if _, limited := th.Limited(ctx, throttleMailExcel, "t1.e2"); limited {
+		t.Fatal("one employee spent another employee's Excel budget")
+	}
+}
+
 func TestMailboxVerifyIsStricterThanLogin(t *testing.T) {
 	// Not a style preference: a verification attempt is a real login to Gmail
 	// or 263 from our IP, so it has to cost more than a guess at our own

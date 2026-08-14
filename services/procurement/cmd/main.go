@@ -65,11 +65,24 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer apConn.Close()
+	invConn, err := dial(cfg.InventoryAddr)
+	if err != nil {
+		return err
+	}
+	defer invConn.Close()
+	fxConn, err := dial(cfg.FxAddr)
+	if err != nil {
+		return err
+	}
+	defer fxConn.Close()
 
 	svc := app.New(pool, app.Deps{
-		Numbering: grpcout.NewNumbering(mdConn),
-		Approvals: grpcout.NewApprovals(apConn),
-		Live:      live,
+		Numbering:  grpcout.NewNumbering(mdConn),
+		Approvals:  grpcout.NewApprovals(apConn),
+		Suppliers:  grpcout.NewSuppliers(mdConn),
+		Warehouses: grpcout.NewWarehouses(invConn),
+		Rates:      grpcout.NewRates(fxConn),
+		Live:       live,
 	})
 
 	// Receipts go out as events: the stock increase and the receipt record
@@ -92,19 +105,20 @@ func run(log *slog.Logger) error {
 		}
 	}()
 
-	// Purely a consumer: requirements are not created through the API, they
-	// are what inventory says stock could not cover.
-	shortages := kafkax.NewConsumer(cfg.KafkaBrokers, cfg.ConsumerGroup, cfg.StockTopic,
-		idempotency.New(pool, cfg.ConsumerGroup), kafkain.StockEvents(svc, log), log)
+	// Every effective contract line becomes a full purchase requirement. This
+	// company has no own stock pool to net before ordering from the mill.
+	contracts := kafkax.NewConsumer(cfg.KafkaBrokers, cfg.ConsumerGroup, cfg.ContractTopic,
+		idempotency.New(pool, cfg.ConsumerGroup), kafkain.ContractEvents(svc, log), log)
 	go func() {
-		if err := shortages.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			log.Error("stock consumer stopped", "err", err)
+		if err := contracts.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Error("contract consumer stopped", "err", err)
 		}
 	}()
 
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
 	prv1.RegisterRequirementServiceServer(srv, grpcin.New(svc))
 	prv1.RegisterPurchaseOrderServiceServer(srv, grpcin.NewOrders(svc))
+	prv1.RegisterSourcingServiceServer(srv, grpcin.NewSourcing(svc))
 	reflection.Register(srv)
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
@@ -116,6 +130,6 @@ func run(log *slog.Logger) error {
 		log.Info("shutting down")
 		srv.GracefulStop()
 	}()
-	log.Info("procurement listening", "port", cfg.GRPCPort, "consumes", cfg.StockTopic)
+	log.Info("procurement listening", "port", cfg.GRPCPort, "consumes", cfg.ContractTopic)
 	return srv.Serve(lis)
 }
