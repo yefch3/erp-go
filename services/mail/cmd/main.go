@@ -171,10 +171,36 @@ func run(log *slog.Logger) error {
 		// up mail arriving. Doubles as the backfill for everything already
 		// stored, which has no stamp yet.
 		go svc.RunImageCache(ctx, syncCfg)
-		// Messages stored before ingest kept Content-ID: their embedded
-		// pictures are in storage but nothing joins them to the body that
-		// points at them. Repaired from the archived MIME, once, on start.
-		go svc.RunContentIDBackfill(ctx, syncCfg)
+		// Repairs that re-read the archived MIME, in one goroutine and in this
+		// order. The order is the point: each of them fixes a row by parsing
+		// the object its raw_key names, so all three are only as trustworthy
+		// as the claim that the object is this message. Run concurrently, one
+		// of them could re-parse a shared original before the collision repair
+		// had disowned it, and write a stranger's mail into the row.
+		go func() {
+			// Originals that more than one message claims. The key was
+			// tenant/account/uid, and a UID is unique within a folder rather
+			// than within an account, so INBOX/SENT/JUNK messages sharing a
+			// number shared an object and the last one written won.
+			svc.RunRawKeyCollisionRepair(ctx, syncCfg)
+			// Messages stored before ingest kept Content-ID: their embedded
+			// pictures are in storage but nothing joins them to the body that
+			// points at them.
+			svc.RunContentIDBackfill(ctx, syncCfg)
+			// The other half of the same damage: parts ingest never stored at
+			// all because they carried a Content-ID but no filename — which is
+			// exactly how an image pasted into Gmail's composer arrives. The
+			// backfill above cannot help those; it patches rows, and for these
+			// there is no row.
+			svc.RunEmbeddedRecovery(ctx, syncCfg)
+			// And the third variant: not a picture filed wrongly but the body
+			// itself. A part with a Content-ID was always taken for an
+			// attachment, and LinkedIn puts one on its text/plain and text/html
+			// alternatives, so those messages were stored with no text at all.
+			// The poller will not revisit them — it advances a UID watermark —
+			// so the archived MIME is the only way back.
+			svc.RunEmptyBodyRecovery(ctx, syncCfg)
+		}()
 	}
 
 	// The worker runs in-process. The database is the queue, so a second

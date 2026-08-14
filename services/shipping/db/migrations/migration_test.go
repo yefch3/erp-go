@@ -40,6 +40,9 @@ func TestUpDownUp(t *testing.T) {
 	assertColumn(t, db, "shipping_arrival_reminders", "read_at", true)
 	assertColumn(t, db, "shipping_arrival_reminders", "next_retry_at", true)
 	assertTable(t, db, "shipping_documents", true)
+	assertColumn(t, db, "shipping_schedules", "loading_port_id", true)
+	assertColumn(t, db, "shipping_schedules", "discharge_port_timezone", true)
+	assertColumn(t, db, "shipping_route_nodes", "port_id", true)
 
 	if err := goose.DownTo(db, ".", 0); err != nil {
 		t.Fatalf("down: %v", err)
@@ -60,6 +63,8 @@ func TestUpDownUp(t *testing.T) {
 	assertTable(t, db, "shipping_schedule_changes", true)
 	assertTable(t, db, "shipping_route_nodes", true)
 	assertTable(t, db, "shipping_documents", true)
+	assertColumn(t, db, "shipping_schedules", "loading_port_id", true)
+	assertColumn(t, db, "shipping_route_nodes", "port_id", true)
 	assertColumn(t, db, "shipping_arrival_reminders", "read_at", true)
 	assertTable(t, db, "shipping_arrival_reminder_rules", true)
 }

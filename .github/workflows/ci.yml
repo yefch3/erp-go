@@ -8,6 +8,40 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    # A real PostgreSQL and Redis, because fourteen tests need one and were
+    # therefore never run by anything. They are gated on *_TEST_DSN and
+    # GATEWAY_TEST_REDIS, and with nothing setting those, every one of them
+    # skipped on every commit - login, customer relationships, rate limiting,
+    # shipping schedules. A test that only runs when somebody remembers to
+    # export a variable is a test nobody runs.
+    #
+    # The password is the compose default and is deliberately not a secret:
+    # this database is created, migrated, read and destroyed inside one job.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: erp
+          POSTGRES_PASSWORD: erp_dev_password
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U erp -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,7 +66,38 @@ jobs:
       - name: tenant_id convention check
         run: make check-tenant
 
+      # Received mail carries the sender's own stylesheet, so it may only be
+      # rendered inside the sandboxed frame MailBody.vue sets up. This guard
+      # was in the Makefile's ci target and not in this file, which is how a
+      # check that already caught a real incident - two missed v-html sites in
+      # EmailsPage, and opening a newsletter washed the application out - was
+      # running nowhere.
+      - name: mail sandbox check
+        run: make check-mail-sandbox
+
+      # One database and one owner per service, exactly as deploy does it, so
+      # the migrations run against the ownership they were written for.
+      - name: Create per-service databases
+        env:
+          POSTGRES_USER: erp
+          PGPASSWORD: erp_dev_password
+          PGHOST: localhost
+          PGPORT: "5432"
+        run: sh deploy/init-databases.sh
+
+      - name: Migrate
+        env:
+          PG_PORT: "5432"
+        run: make migrate
+
       - name: Tests
+        env:
+          # Each service reaches only its own database, under its own account.
+          IAM_TEST_DSN: postgres://erp_iam:erp_iam_pw@localhost:5432/erp_iam?sslmode=disable
+          MD_TEST_DSN: postgres://erp_masterdata:erp_masterdata_pw@localhost:5432/erp_masterdata?sslmode=disable
+          MAIL_TEST_DSN: postgres://erp_mail:erp_mail_pw@localhost:5432/erp_mail?sslmode=disable
+          SHIPPING_TEST_DSN: postgres://erp_shipping:erp_shipping_pw@localhost:5432/erp_shipping?sslmode=disable
+          GATEWAY_TEST_REDIS: 127.0.0.1:6379
         run: make test
 
       - name: Lint

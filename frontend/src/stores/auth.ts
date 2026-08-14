@@ -4,6 +4,7 @@ import { get, post, quietErrors } from '../api'
 interface Employee {
   id: string
   name: string
+  email: string
   departmentName: string
 }
 

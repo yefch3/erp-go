@@ -40,6 +40,7 @@ type Server struct {
 	Access       iamv1.AccessServiceClient
 	Customers    mdv1.CustomerServiceClient
 	Suppliers    mdv1.SupplierServiceClient
+	Ports        mdv1.PortServiceClient
 	Options      mdv1.OptionServiceClient
 	Numbering    mdv1.NumberingServiceClient
 	Fx           fxv1.FxServiceClient
@@ -67,6 +68,10 @@ type Server struct {
 	// disables the check: without it the only way to take a token back is to
 	// rotate JWT_SECRET, which signs out the whole company.
 	Revocations *RevocationStore
+	// Limits bounds what one person or one source can cost: presses of 立即收信,
+	// and hits on the two routes strangers are meant to reach. Nil allows
+	// everything — see RateLimiter for why this one fails open.
+	Limits *RateLimiter
 	// Google OAuth. The client id is public by design; the secret lives only
 	// in the notification service, which does the token exchange.
 	GoogleClientID   string
@@ -100,10 +105,12 @@ func (s *Server) Router() http.Handler {
 	r.Post("/api/auth/activate", s.activateAccount)
 	// Images embedded in sent mail. Public by necessity: the fetcher is the
 	// recipient's mail client, which has no session. See serveMailImage.
-	r.Get("/api/public/mail-images/{token}", s.serveMailImage)
+	r.Get("/api/public/mail-images/{token}",
+		s.limitPublic("img", publicImageBudget, s.serveMailImage))
 	// The open-tracking pixel. Also login-free, and also deliberately
 	// indistinguishable between a real key and a made-up one.
-	r.Get("/api/public/mail-open/{key}", s.serveOpenPixel)
+	r.Get("/api/public/mail-open/{key}",
+		s.limitPublic("pixel", publicPixelBudget, s.serveOpenPixel))
 	// Google sends the browser back here after its own login page. State is
 	// the authentication; see googleOAuthCallback.
 	r.Get("/api/oauth/google/callback", s.googleOAuthCallback)
@@ -111,22 +118,50 @@ func (s *Server) Router() http.Handler {
 		r.Use(s.auth)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers", s.listCustomers)
 		r.With(s.perm("masterdata:customer:write")).Post("/api/customers", s.createCustomer)
+		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/countries", s.listCustomerCountryGroups)
+		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/duplicates", s.checkCustomerDuplicates)
+		r.With(s.perm("masterdata:customer:write")).Post("/api/customers/import", s.importCustomers)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}", s.getCustomer)
 		r.With(s.perm("masterdata:customer:write")).Put("/api/customers/{id}", s.updateCustomer)
+		r.With(s.perm("masterdata:customer:write")).Put("/api/customers/{id}/profile", s.updateCustomerProfile)
 		r.With(s.perm("masterdata:customer:write")).Delete("/api/customers/{id}", s.deactivateCustomer)
 		r.With(s.perm("masterdata:customer:write")).Post("/api/customers/{id}/activate", s.activateCustomer)
+		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}/addresses", s.listCustomerAddresses)
+		r.With(s.perm("masterdata:customer:write")).Post("/api/customers/{id}/addresses", s.createCustomerAddress)
+		r.With(s.perm("masterdata:customer:write")).Put("/api/customers/{id}/addresses/{addressId}", s.updateCustomerAddress)
+		r.With(s.perm("masterdata:customer:write")).Delete("/api/customers/{id}/addresses/{addressId}", s.deactivateCustomerAddress)
+		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}/contacts", s.listCustomerContacts)
+		r.With(s.perm("masterdata:customer:write")).Post("/api/customers/{id}/contacts", s.createCustomerContact)
+		r.With(s.perm("masterdata:customer:write")).Put("/api/customers/{id}/contacts/{contactId}", s.updateCustomerContact)
+		r.With(s.perm("masterdata:customer:write")).Delete("/api/customers/{id}/contacts/{contactId}", s.deactivateCustomerContact)
+		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}/owners", s.listCustomerOwners)
+		r.With(s.perm("masterdata:customer:write")).Post("/api/customers/{id}/owners", s.createCustomerOwner)
+		r.With(s.perm("masterdata:customer:write")).Put("/api/customers/{id}/owners/{ownerId}", s.updateCustomerOwner)
+		r.With(s.perm("masterdata:customer:write")).Delete("/api/customers/{id}/owners/{ownerId}", s.deactivateCustomerOwner)
+		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}/changes", s.listCustomerChanges)
 		r.With(s.perm("masterdata:supplier:read")).Get("/api/suppliers", s.listSuppliers)
 		r.With(s.perm("masterdata:supplier:write")).Post("/api/suppliers", s.createSupplier)
+		r.With(s.perm("masterdata:port:read")).Get("/api/ports", s.listPorts)
+		r.With(s.perm("masterdata:port:read")).Get("/api/ports/countries", s.listPortCountries)
+		r.With(s.perm("masterdata:port:write")).Post("/api/ports/import", s.importPorts)
+		r.With(s.perm("masterdata:port:write")).Post("/api/ports", s.createPort)
+		r.With(s.perm("masterdata:port:read")).Get("/api/ports/{id}", s.getPort)
+		r.With(s.perm("masterdata:port:write")).Put("/api/ports/{id}", s.updatePort)
+		r.With(s.perm("masterdata:port:write")).Put("/api/ports/{id}/status", s.setPortStatus)
 		// Option dictionaries feed every form's dropdowns; login is enough.
 		r.Get("/api/options", s.listOptions)
 		r.Post("/api/numbering/next", s.nextNumber)
 		// Organisation and access control. Reading the directory is what every
 		// picker needs; changing it is administrator work.
-		r.With(s.perm("iam:employee:read")).Get("/api/departments", s.listDepartments)
-		r.With(s.perm("iam:employee:write")).Post("/api/departments", s.createDepartment)
+		r.With(s.perm("iam:department:read")).Get("/api/departments", s.listDepartments)
+		r.With(s.perm("iam:department:write")).Post("/api/departments", s.createDepartment)
+		r.With(s.perm("iam:department:write")).Put("/api/departments/{id}", s.updateDepartment)
+		r.With(s.perm("iam:department:read")).Get("/api/departments/{id}/changes", s.listDepartmentChanges)
 		r.With(s.perm("iam:employee:read")).Get("/api/employees", s.listEmployees)
 		r.With(s.perm("iam:employee:read")).Get("/api/employees/{id}", s.getEmployee)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees", s.createEmployee)
+		r.With(s.perm("iam:employee:write")).Put("/api/employees/{id}", s.updateEmployee)
+		r.With(s.perm("iam:employee:read")).Get("/api/employees/{id}/changes", s.listEmployeeChanges)
 		r.With(s.perm("iam:employee:write")).Delete("/api/employees/{id}", s.deactivateEmployee)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/activate", s.activateEmployee)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/account", s.openAccount)

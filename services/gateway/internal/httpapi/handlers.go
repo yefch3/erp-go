@@ -93,9 +93,25 @@ func idFromPath(r *http.Request) int64 {
 
 func (s *Server) listCustomers(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Customers.ListCustomers(r.Context(), &mdv1.ListCustomersRequest{
-		Page:    pageFromQuery(r),
-		Keyword: r.URL.Query().Get("keyword"),
-		Status:  r.URL.Query().Get("status"),
+		Page:            pageFromQuery(r),
+		Keyword:         r.URL.Query().Get("keyword"),
+		Status:          r.URL.Query().Get("status"),
+		CountryCode:     r.URL.Query().Get("country_code"),
+		CustomerType:    r.URL.Query().Get("customer_type"),
+		BusinessStatus:  r.URL.Query().Get("business_status"),
+		Tag:             r.URL.Query().Get("tag"),
+		OwnerEmployeeId: int64FromQuery(r, "owner_employee_id"),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) listCustomerCountryGroups(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Customers.ListCustomerCountries(r.Context(), &mdv1.ListCustomerCountriesRequest{
+		Status: r.URL.Query().Get("status"),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -205,6 +221,76 @@ func (s *Server) nextNumber(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) activateCustomer(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Customers.ActivateCustomer(r.Context(), &mdv1.ActivateCustomerRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) updateCustomerProfile(w http.ResponseWriter, r *http.Request) {
+	req := &mdv1.UpdateCustomerProfileRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Customers.UpdateCustomerProfile(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func addressIDFromPath(r *http.Request) int64 {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "addressId"), 10, 64)
+	return id
+}
+
+func (s *Server) listCustomerAddresses(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Customers.ListCustomerAddresses(r.Context(), &mdv1.ListCustomerAddressesRequest{
+		CustomerId: idFromPath(r), Status: r.URL.Query().Get("status"),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) createCustomerAddress(w http.ResponseWriter, r *http.Request) {
+	req := &mdv1.CreateCustomerAddressRequest{CustomerId: idFromPath(r)}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.CustomerId = idFromPath(r)
+	resp, err := s.Customers.CreateCustomerAddress(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) updateCustomerAddress(w http.ResponseWriter, r *http.Request) {
+	req := &mdv1.UpdateCustomerAddressRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.CustomerId = idFromPath(r)
+	req.Id = addressIDFromPath(r)
+	resp, err := s.Customers.UpdateCustomerAddress(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) deactivateCustomerAddress(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Customers.DeactivateCustomerAddress(r.Context(), &mdv1.DeactivateCustomerAddressRequest{
+		CustomerId: idFromPath(r), Id: addressIDFromPath(r),
+	})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

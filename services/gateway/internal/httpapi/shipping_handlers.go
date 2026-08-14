@@ -3,15 +3,40 @@ package httpapi
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
+	"github.com/sgao19/erp-go/pkg/apierr"
 )
 
-// resolveShippingMasterdata makes the selected ids authoritative while the
-// copied names remain immutable snapshots on the shipping record.
-func (s *Server) resolveShippingMasterdata(r *http.Request, in *shippingv1.ScheduleInput) error {
+// portSnapshotName 生成船期使用的港口名称快照；中文名缺失时回退到英文名。
+func portSnapshotName(port *mdv1.Port) string {
+	if name := strings.TrimSpace(port.GetNameZh()); name != "" {
+		return name
+	}
+	return strings.TrimSpace(port.GetNameEn())
+}
+
+// resolveActivePort 校验新选择的港口仍处于启用状态，并返回权威主数据。
+func (s *Server) resolveActivePort(r *http.Request, id int64) (*mdv1.Port, error) {
+	if id <= 0 {
+		return nil, apierr.Invalid("SHIPPING_PORT_REQUIRED", "请选择有效的港口")
+	}
+	resp, err := s.Ports.GetPort(r.Context(), &mdv1.GetPortRequest{Id: id})
+	if err != nil {
+		return nil, err
+	}
+	port := resp.GetPort()
+	if port.GetStatus() != "ACTIVE" {
+		return nil, apierr.Conflict("SHIPPING_PORT_INACTIVE", "已停用港口不能用于新的船期或路线")
+	}
+	return port, nil
+}
+
+// resolveShippingMasterdata 以主数据 ID 为准，并把当时名称、代码和时区保存为历史快照。
+func (s *Server) resolveShippingMasterdata(r *http.Request, in *shippingv1.ScheduleInput, requirePorts bool) error {
 	if in == nil {
 		return nil
 	}
@@ -28,6 +53,24 @@ func (s *Server) resolveShippingMasterdata(r *http.Request, in *shippingv1.Sched
 			return err
 		}
 		in.CarrierForwarder = resp.GetSupplier().GetName()
+	}
+	if requirePorts || in.GetLoadingPortId() > 0 {
+		loading, err := s.resolveActivePort(r, in.GetLoadingPortId())
+		if err != nil {
+			return err
+		}
+		in.PortOfLoading = portSnapshotName(loading)
+		in.LoadingPortCode = loading.GetUnlocode()
+		in.LoadingPortTimezone = loading.GetTimezone()
+	}
+	if requirePorts || in.GetDischargePortId() > 0 {
+		discharge, err := s.resolveActivePort(r, in.GetDischargePortId())
+		if err != nil {
+			return err
+		}
+		in.PortOfDischarge = portSnapshotName(discharge)
+		in.DischargePortCode = discharge.GetUnlocode()
+		in.DischargePortTimezone = discharge.GetTimezone()
 	}
 	return nil
 }
@@ -68,7 +111,7 @@ func (s *Server) createShippingSchedule(w http.ResponseWriter, r *http.Request) 
 	if !s.decodeBody(w, r, req) {
 		return
 	}
-	if err := s.resolveShippingMasterdata(r, req.GetSchedule()); err != nil {
+	if err := s.resolveShippingMasterdata(r, req.GetSchedule(), true); err != nil {
 		s.writeGRPCError(w, err)
 		return
 	}
@@ -85,7 +128,7 @@ func (s *Server) updateShippingSchedule(w http.ResponseWriter, r *http.Request) 
 	if !s.decodeBody(w, r, req) {
 		return
 	}
-	if err := s.resolveShippingMasterdata(r, req.GetSchedule()); err != nil {
+	if err := s.resolveShippingMasterdata(r, req.GetSchedule(), false); err != nil {
 		s.writeGRPCError(w, err)
 		return
 	}
@@ -200,6 +243,14 @@ func (s *Server) addShippingRouteNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Id = idFromPath(r)
+	port, err := s.resolveActivePort(r, req.GetPortId())
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	req.PortCode = port.GetUnlocode()
+	req.PortName = portSnapshotName(port)
+	req.Timezone = port.GetTimezone()
 	resp, err := s.Shipping.AddRouteNode(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)

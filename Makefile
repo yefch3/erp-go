@@ -94,6 +94,10 @@ check-tenant: ## Verify every migration table carries tenant_id
 check-mail-sandbox: ## Verify received mail is only rendered inside the sandbox
 	sh scripts/check-mail-sandbox.sh
 
+.PHONY: audit-mail
+audit-mail: ## Check stored mail against its invariants (needs a running database)
+	sh scripts/audit-mail.sh
+
 .PHONY: ci
 ci: proto check-tenant check-mail-sandbox test ## What CI runs; proto regeneration must be a no-op
 	git diff --exit-code gen/ || (echo "gen/ is stale: run 'make proto' and commit" && exit 1)

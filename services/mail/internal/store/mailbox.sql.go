@@ -119,47 +119,24 @@ func (q *Queries) CountFolder(ctx context.Context, arg CountFolderParams) (int64
 	return column_1, err
 }
 
-const countInbound = `-- name: CountInbound :one
-SELECT count(*)::bigint FROM email_inbound
+const countInboundAttachmentWithCID = `-- name: CountInboundAttachmentWithCID :one
+SELECT count(*) FROM email_inbound_attachments
 WHERE tenant_id = $1::bigint
-  AND owner_id = $2::bigint
-  AND CASE $3::text
-        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
-        -- The trash holds mail deleted from anywhere, junk included.
-        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
-        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
-      END
-  AND NOT is_bounce
-  AND CASE $3::text
-        WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
-        WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
-        WHEN 'TRASH'   THEN deleted_at IS NOT NULL
-        WHEN 'JUNK'    THEN deleted_at IS NULL
-        ELSE archived_at IS NULL AND deleted_at IS NULL
-      END
-  AND ($4::text = ''
-       OR subject ILIKE '%' || $4::text || '%'
-       OR from_email ILIKE '%' || $4::text || '%'
-       OR from_name ILIKE '%' || $4::text || '%')
+  AND inbound_id = $2::bigint
+  AND content_id = $3::text
 `
 
-type CountInboundParams struct {
-	TenantID int64
-	OwnerID  int64
-	View     string
-	Keyword  string
+type CountInboundAttachmentWithCIDParams struct {
+	TenantID  int64
+	InboundID int64
+	ContentID string
 }
 
-func (q *Queries) CountInbound(ctx context.Context, arg CountInboundParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countInbound,
-		arg.TenantID,
-		arg.OwnerID,
-		arg.View,
-		arg.Keyword,
-	)
-	var column_1 int64
-	err := row.Scan(&column_1)
-	return column_1, err
+func (q *Queries) CountInboundAttachmentWithCID(ctx context.Context, arg CountInboundAttachmentWithCIDParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countInboundAttachmentWithCID, arg.TenantID, arg.InboundID, arg.ContentID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const countInboundThreads = `-- name: CountInboundThreads :one
@@ -338,6 +315,27 @@ type CountSentUnifiedParams struct {
 // that are not there.
 func (q *Queries) CountSentUnified(ctx context.Context, arg CountSentUnifiedParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countSentUnified, arg.Keyword, arg.TenantID, arg.OwnerID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countThreadsByView = `-- name: CountThreadsByView :one
+SELECT count(*)::bigint FROM mail_thread_view
+WHERE tenant_id = $1::bigint
+  AND owner_id = $2::bigint
+  AND view = $3::text
+`
+
+type CountThreadsByViewParams struct {
+	TenantID int64
+	OwnerID  int64
+	View     string
+}
+
+// Conversations, not messages: the pager has to count what the list shows.
+func (q *Queries) CountThreadsByView(ctx context.Context, arg CountThreadsByViewParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countThreadsByView, arg.TenantID, arg.OwnerID, arg.View)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -1109,110 +1107,6 @@ func (q *Queries) ListExpiredTrash(ctx context.Context, arg ListExpiredTrashPara
 	return items, nil
 }
 
-const listInbound = `-- name: ListInbound :many
-SELECT id, from_email, from_name, subject, snippet, thread_key,
-       is_read, is_starred, has_attachments, received_at, sent_at
-FROM email_inbound
-WHERE tenant_id = $1::bigint
-  AND owner_id = $2::bigint
-  AND CASE $3::text
-        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
-        -- The trash holds mail deleted from anywhere, junk included.
-        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
-        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
-      END
-  AND NOT is_bounce
-  AND CASE $3::text
-        WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
-        WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
-        WHEN 'TRASH'   THEN deleted_at IS NOT NULL
-        WHEN 'JUNK'    THEN deleted_at IS NULL
-        ELSE archived_at IS NULL AND deleted_at IS NULL
-      END
-  AND ($4::text = ''
-       OR subject ILIKE '%' || $4::text || '%'
-       OR from_email ILIKE '%' || $4::text || '%'
-       OR from_name ILIKE '%' || $4::text || '%')
-ORDER BY coalesce(sent_at, received_at) DESC
-LIMIT $6::int OFFSET $5::int
-`
-
-type ListInboundParams struct {
-	TenantID  int64
-	OwnerID   int64
-	View      string
-	Keyword   string
-	RowOffset int32
-	RowLimit  int32
-}
-
-type ListInboundRow struct {
-	ID             int64
-	FromEmail      string
-	FromName       string
-	Subject        string
-	Snippet        string
-	ThreadKey      string
-	IsRead         bool
-	IsStarred      bool
-	HasAttachments bool
-	ReceivedAt     pgtype.Timestamptz
-	SentAt         pgtype.Timestamptz
-}
-
-// A bounce is machinery, not correspondence, so it is kept out of the inbox
-// and surfaced through the needs-attention queue instead.
-// The view decides which slice of the mailbox this is: the inbox proper
-// (not archived, not trashed), starred (wherever it lives, except trash),
-// the archive, or the trash.
-//
-// Every view but the trash is scoped to the inbox — junk is its own place and
-// only rejoins the mailbox once somebody rescues it. The trash is the one
-// exception, and has to be: mail deleted out of the junk folder is still
-// deleted mail. Scoping the trash the same way as the rest left it invisible
-// — soft-deleted in the database, absent from every screen, and plainly
-// sitting in the host's own trash, which reads as the ERP having lost it.
-// Emptying the trash purged those rows regardless, so the count above the
-// list and the number the button deleted disagreed.
-func (q *Queries) ListInbound(ctx context.Context, arg ListInboundParams) ([]ListInboundRow, error) {
-	rows, err := q.db.Query(ctx, listInbound,
-		arg.TenantID,
-		arg.OwnerID,
-		arg.View,
-		arg.Keyword,
-		arg.RowOffset,
-		arg.RowLimit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListInboundRow
-	for rows.Next() {
-		var i ListInboundRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.FromEmail,
-			&i.FromName,
-			&i.Subject,
-			&i.Snippet,
-			&i.ThreadKey,
-			&i.IsRead,
-			&i.IsStarred,
-			&i.HasAttachments,
-			&i.ReceivedAt,
-			&i.SentAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listInboundAttachments = `-- name: ListInboundAttachments :many
 SELECT id, file_name, content_type, file_size, file_key, content_id
 FROM email_inbound_attachments
@@ -1446,6 +1340,65 @@ func (q *Queries) ListInboundThreads(ctx context.Context, arg ListInboundThreads
 			&i.SentAt,
 			&i.ThreadCount,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInboundWithUnresolvedCID = `-- name: ListInboundWithUnresolvedCID :many
+SELECT i.id, i.raw_key, i.account_id
+FROM email_inbound i
+WHERE i.tenant_id = $1::bigint
+  AND i.raw_key <> ''
+  AND i.body_html LIKE '%cid:%'
+  AND EXISTS (
+      SELECT 1 FROM regexp_matches(i.body_html, 'cid:([^"'']+)', 'g') AS m(cid)
+      WHERE NOT EXISTS (
+          SELECT 1 FROM email_inbound_attachments a
+          WHERE a.inbound_id = i.id AND a.content_id = m.cid[1]
+      )
+  )
+ORDER BY i.id DESC
+LIMIT $2::int
+`
+
+type ListInboundWithUnresolvedCIDParams struct {
+	TenantID int64
+	RowLimit int32
+}
+
+type ListInboundWithUnresolvedCIDRow struct {
+	ID        int64
+	RawKey    string
+	AccountID int64
+}
+
+// Messages whose body points at a part by Content-ID that no stored row
+// satisfies.
+//
+// These are not a curiosity: until 2026-08-10 the parser only kept a part that
+// carried a filename, and an image pasted into Gmail's composer carries none —
+// only a Content-ID. Those parts were read past and dropped, so the body was
+// left citing something that does not exist and the reader drew an empty box.
+//
+// The raw message is required, because recovery means parsing it again; a row
+// whose original was never stored cannot be helped and is left out rather than
+// returned for ever.
+func (q *Queries) ListInboundWithUnresolvedCID(ctx context.Context, arg ListInboundWithUnresolvedCIDParams) ([]ListInboundWithUnresolvedCIDRow, error) {
+	rows, err := q.db.Query(ctx, listInboundWithUnresolvedCID, arg.TenantID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInboundWithUnresolvedCIDRow
+	for rows.Next() {
+		var i ListInboundWithUnresolvedCIDRow
+		if err := rows.Scan(&i.ID, &i.RawKey, &i.AccountID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1983,6 +1936,107 @@ func (q *Queries) ListThreadForPurge(ctx context.Context, arg ListThreadForPurge
 			&i.Folder,
 			&i.ImapUid,
 			&i.MessageID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listThreadsByView = `-- name: ListThreadsByView :many
+SELECT m.id, m.from_email, m.from_name, m.subject, m.snippet, m.thread_key,
+       (NOT t.any_unread)::boolean     AS is_read,
+       t.any_starred::boolean          AS is_starred,
+       t.any_attachment::boolean       AS has_attachments,
+       m.received_at, m.sent_at,
+       t.msg_count::int                AS thread_count
+FROM mail_thread_view t
+JOIN email_inbound m ON m.tenant_id = t.tenant_id AND m.id = t.last_id
+WHERE t.tenant_id = $1::bigint
+  AND t.owner_id = $2::bigint
+  AND t.view = $3::text
+  -- Row comparison, so ties on the timestamp fall back to the id and no two
+  -- conversations can ever occupy the same cursor position.
+  AND ($4::timestamptz IS NULL
+       OR (t.last_at, t.last_id) < ($4::timestamptz,
+                                    $5::bigint))
+ORDER BY t.last_at DESC, t.last_id DESC
+LIMIT $6::int
+`
+
+type ListThreadsByViewParams struct {
+	TenantID int64
+	OwnerID  int64
+	View     string
+	CursorAt pgtype.Timestamptz
+	CursorID int64
+	RowLimit int32
+}
+
+type ListThreadsByViewRow struct {
+	ID             int64
+	FromEmail      string
+	FromName       string
+	Subject        string
+	Snippet        string
+	ThreadKey      string
+	IsRead         bool
+	IsStarred      bool
+	HasAttachments bool
+	ReceivedAt     pgtype.Timestamptz
+	SentAt         pgtype.Timestamptz
+	ThreadCount    int32
+}
+
+// The mailbox list, read from the rows it shows.
+//
+// Replaces a CTE that materialised every message the owner could see, sorted
+// it by conversation, ran four window functions over it and took the newest
+// twenty-five off the end. That work was proportional to the whole mailbox on
+// every page load - 70 ms and a disk-spilling sort for a heavy user - because
+// a conversation's count and unread badge are facts about all of its messages
+// and no index can compute them.
+//
+// mail_thread_view holds those facts already, maintained by trigger. See
+// migration 00034.
+//
+// Keyset, not OFFSET: the page starts strictly after the last row of the
+// previous one, so mail arriving mid-read cannot push a conversation across a
+// page boundary and make it appear twice or not at all, and page 50 costs the
+// same as page 2.
+func (q *Queries) ListThreadsByView(ctx context.Context, arg ListThreadsByViewParams) ([]ListThreadsByViewRow, error) {
+	rows, err := q.db.Query(ctx, listThreadsByView,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.View,
+		arg.CursorAt,
+		arg.CursorID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListThreadsByViewRow
+	for rows.Next() {
+		var i ListThreadsByViewRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FromEmail,
+			&i.FromName,
+			&i.Subject,
+			&i.Snippet,
+			&i.ThreadKey,
+			&i.IsRead,
+			&i.IsStarred,
+			&i.HasAttachments,
+			&i.ReceivedAt,
+			&i.SentAt,
+			&i.ThreadCount,
 		); err != nil {
 			return nil, err
 		}

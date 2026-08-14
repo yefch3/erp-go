@@ -19,7 +19,12 @@ import (
 
 // RawMessage is one message as the server holds it.
 type RawMessage struct {
-	UID          uint32
+	UID uint32
+	// UIDValidity of the folder this UID was read from. Carried alongside the
+	// UID because a UID means nothing without it: the pair is what identifies
+	// a message, and the host is entitled to renumber everything by changing
+	// the validity.
+	UIDValidity  uint32
 	Raw          []byte
 	InternalDate time.Time
 	// Seen is the host's own read flag. Backfilled history the person read
@@ -212,8 +217,65 @@ func (s *Service) SyncMailbox(ctx context.Context, cfg SyncConfig, employeeID in
 	// fleet's two rules apply: a bounded number at once, and never the same
 	// mailbox twice over.
 	return s.fleet(cfg.Concurrency).do(ctx, employeeID, func() (int, error) {
-		return s.syncMailboxNow(ctx, cfg, employeeID)
+		return s.syncMailboxNow(ctx, cfg, employeeID, nil)
 	})
+}
+
+// inboxTail is how long the rest of an interactive pass may keep running once
+// the caller has been answered. Generous, because it is doing real work that
+// nobody is waiting on; bounded, because a mail host that accepts a connection
+// and then says nothing must not leave a goroutine and a mailbox slot held
+// for ever.
+const inboxTail = 5 * time.Minute
+
+type syncOutcome struct {
+	n   int
+	err error
+}
+
+// SyncMailboxInteractive is 立即收信: the same pass as SyncMailbox, but it
+// answers as soon as the inbox is in and leaves the rest running.
+//
+// A full pass is six folder-level round trips - INBOX, SENT and JUNK synced,
+// then read state reconciled back over all three - and it used to run to the
+// end before the button stopped spinning. Five sixths of that wait is spent on
+// work the person did not ask for: they clicked 立即收信 to see whether the
+// customer had replied, and the reply is in the first sixth.
+//
+// The tail stays inside the fleet call rather than being spawned out of it,
+// which matters: the fleet is what stops the same mailbox being synced twice
+// over, and a tail running outside it would let a second click open a second
+// IMAP session on an account that already has one.
+func (s *Service) SyncMailboxInteractive(ctx context.Context, cfg SyncConfig, employeeID int64) (int, error) {
+	cfg = cfg.withDefaults()
+	inbox := make(chan syncOutcome, 1)
+
+	// Detached from the request: the tail outlives the HTTP call that started
+	// it, and cancelling that call must not abandon a half-finished pass.
+	tail, cancel := context.WithTimeout(context.WithoutCancel(ctx), inboxTail)
+	go func() {
+		defer cancel()
+		n, err := s.fleet(cfg.Concurrency).do(tail, employeeID, func() (int, error) {
+			return s.syncMailboxNow(tail, cfg, employeeID, inbox)
+		})
+		// Nobody signalled: either the inbox leg failed, or the fleet joined
+		// this caller onto a pass that was already running and belongs to
+		// somebody else. Deliver the outcome so the caller is not left
+		// waiting on a channel that will never be written.
+		select {
+		case inbox <- syncOutcome{n, err}:
+		default:
+		}
+	}()
+
+	select {
+	case r := <-inbox:
+		return r.n, r.err
+	case <-ctx.Done():
+		// The person navigated away. The pass carries on regardless - the
+		// mail is worth having whether or not anyone is still watching.
+		return 0, ctx.Err()
+	}
 }
 
 // SyncMailboxIfDue is the poller's entry point: it skips a mailbox that failed
@@ -245,7 +307,22 @@ func (s *Service) SyncMailboxIfDue(ctx context.Context, cfg SyncConfig, employee
 	return n, err
 }
 
-func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, employeeID int64) (int, error) {
+// syncMailboxNow runs a full pass. inboxDone, when non-nil, receives the inbox
+// leg's result the moment it is stored and committed, so an interactive caller
+// can be answered without waiting for the five round trips behind it.
+func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, employeeID int64, inboxDone chan<- syncOutcome) (int, error) {
+	// Buffered by every caller, so this never blocks the pass on a reader
+	// that has already gone away.
+	signal := func(n int, err error) {
+		if inboxDone == nil {
+			return
+		}
+		select {
+		case inboxDone <- syncOutcome{n, err}:
+		default:
+		}
+	}
+
 	acct, err := s.ForSender(ctx, cfg.TenantID, employeeID)
 	if err != nil {
 		return 0, err
@@ -268,6 +345,10 @@ func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, employeeID
 	// Cleared on the way back up, so a recovered mailbox stops complaining
 	// without anybody having to sign in again.
 	s.clearFailure(ctx, cfg.TenantID, acct.AccountID)
+
+	// The inbox is in. Everything below is worth doing and nobody is waiting
+	// on it, so an interactive caller is answered here rather than at the end.
+	signal(newInbox, nil)
 
 	// Sent history rides along on the same pass. A failure here is logged and
 	// does not fail the sync: the inbox is what somebody is waiting on.
@@ -370,8 +451,12 @@ func (s *Service) syncFolder(ctx context.Context, cfg SyncConfig, acct MailAccou
 	stored := 0
 	highest := uint32(state.LastUid)
 	lowest := uint32(state.LowUid)
-	ingestBatch := func(msgs []RawMessage) {
+	ingestBatch := func(msgs []RawMessage, validity uint32) {
 		for _, m := range msgs {
+			// Stamped here rather than in the adapter: the validity belongs to
+			// the fetch, not to the message, and every message in one fetch
+			// shares it.
+			m.UIDValidity = validity
 			if err := s.ingest(ctx, cfg.TenantID, acct, logical, m); err != nil {
 				s.log.Warn("could not store a message",
 					"account", acct.AccountID, "folder", logical, "uid", m.UID, "err", err)
@@ -388,7 +473,7 @@ func (s *Service) syncFolder(ctx context.Context, cfg SyncConfig, acct MailAccou
 			}
 		}
 	}
-	ingestBatch(res.Messages)
+	ingestBatch(res.Messages, res.UIDValidity)
 
 	// One batch of history per pass, newest first, until the cap. low_uid==1
 	// marks the bottom: the dial for "is there anything older" is not free.
@@ -404,7 +489,7 @@ func (s *Service) syncFolder(ctx context.Context, cfg SyncConfig, acct MailAccou
 			} else if len(old.Messages) == 0 {
 				lowest = 1 // bottom reached; stop dialling for more
 			} else {
-				ingestBatch(old.Messages)
+				ingestBatch(old.Messages, old.UIDValidity)
 			}
 		}
 	}
@@ -449,6 +534,38 @@ func (s *Service) specialFolderOf(ctx context.Context, acct MailAccount, kind st
 }
 
 // ingest parses one message and files it.
+// rawKeyFor is where one message's original MIME lives.
+//
+// Every component is load-bearing, and the two that were missing cost real
+// messages. The key used to be tenant/account/uid, on the assumption that a
+// UID identifies a message within a mailbox. It does not:
+//
+//   - A UID is unique within a *folder*, not within an account. INBOX 614,
+//     SENT 614 and JUNK 614 are three different messages. With the folder left
+//     out they shared one object, and whichever synced last overwrote the
+//     rest. One mailbox had 88 such collisions across 176 messages - a mail
+//     the person sent on the 1st was overwritten by a spam filed on the 6th,
+//     and the row still pointed at it as though it were the original.
+//
+//   - A UID is only stable while UIDVALIDITY holds. The host is entitled to
+//     renumber everything by changing it, which happens on migrations and
+//     mailbox rebuilds, and the sync already handles that by starting over.
+//     Without the validity in the key, the new numbering writes over the old
+//     generation's objects.
+//
+// The damage is not only lost originals. A wrong original is worse: every
+// repair pass in this service re-parses from here on the premise that the
+// object is the message, so a collision turns "re-read the original and fix
+// the row" into "write somebody else's mail into this row".
+//
+// Folder names are our own logical ones - INBOX, SENT, JUNK - not the host's,
+// so they are safe in a path and stable across providers that spell their
+// sent folder five different ways.
+func rawKeyFor(tenantID, accountID int64, folder string, uidValidity, uid uint32) string {
+	return fmt.Sprintf("mail/inbound/%d/%d/%s/%d/%d.eml",
+		tenantID, accountID, folder, uidValidity, uid)
+}
+
 func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, folder string, m RawMessage) error {
 	parsed, err := ParseMail(m.Raw)
 	if err != nil {
@@ -466,7 +583,7 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 
 	// The raw MIME goes to object storage before the row exists: a row that
 	// promises a raw_key which was never written is worse than no row.
-	rawKey := fmt.Sprintf("mail/inbound/%d/%d/%d.eml", tenantID, acct.AccountID, m.UID)
+	rawKey := rawKeyFor(tenantID, acct.AccountID, folder, m.UIDValidity, m.UID)
 	if s.files != nil {
 		if err := s.putRaw(ctx, rawKey, m.Raw); err != nil {
 			s.log.Warn("could not store raw message, keeping the parsed copy only",

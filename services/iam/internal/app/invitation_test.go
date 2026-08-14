@@ -18,7 +18,8 @@ func readSource(t *testing.T, name string) string {
 	if err != nil {
 		t.Fatalf("read %s: %v", name, err)
 	}
-	return string(b)
+	// 统一换行符，确保同一份源码在 Windows 和 CI/Linux 上执行相同的结构断言。
+	return strings.ReplaceAll(string(b), "\r\n", "\n")
 }
 
 func between(t *testing.T, src, start, end string) string {

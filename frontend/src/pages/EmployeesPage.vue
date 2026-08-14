@@ -1,5 +1,10 @@
 <template>
   <div>
+    <BasicDataEmployeeNav />
+    <el-breadcrumb separator="/" class="breadcrumb">
+      <el-breadcrumb-item>{{ t('menu.basicData') }}</el-breadcrumb-item>
+      <el-breadcrumb-item>{{ t('employees.title') }}</el-breadcrumb-item>
+    </el-breadcrumb>
     <div class="page-head">
       <h2>{{ t('employees.title') }}</h2>
       <div class="head-actions">
@@ -14,20 +19,39 @@
       </div>
     </div>
 
-    <el-card shadow="never">
+    <el-card shadow="never" class="employee-card">
       <div class="filters">
-        <el-input
-          v-model="keyword"
-          :placeholder="t('employees.searchPlaceholder')"
-          clearable
-          style="width: 240px"
-          @keyup.enter="reload"
-          @clear="reload"
-        />
-        <el-select v-model="departmentId" :placeholder="t('employees.allDepartments')" clearable style="width: 180px" @change="reload">
-          <el-option v-for="d in departments" :key="d.id" :value="d.id" :label="d.name" />
-        </el-select>
-        <el-button @click="reload">{{ t('common.query') }}</el-button>
+        <div class="filter-fields">
+          <el-input
+            v-model="keyword"
+            :placeholder="t('employees.searchPlaceholder')"
+            clearable
+            @keyup.enter="reload"
+            @clear="reload"
+          />
+          <el-select v-model="departmentId" :placeholder="t('employees.allDepartments')" clearable @change="reload">
+            <el-option v-for="d in departments" :key="d.id" :value="d.id" :label="d.name" />
+          </el-select>
+          <el-select v-model="managerId" :placeholder="t('employees.allManagers')" clearable filterable @change="reload">
+            <el-option v-for="e in employeeOptions" :key="e.id" :value="e.id" :label="e.name" />
+          </el-select>
+          <el-select v-if="canReadRoles" v-model="roleId" :placeholder="t('employees.allRoles')" clearable @change="reload">
+            <el-option v-for="r in roles" :key="r.id" :value="r.id" :label="r.name" />
+          </el-select>
+          <el-select v-model="employmentStatus" :placeholder="t('employees.employmentStatus')" clearable @change="reload">
+            <el-option value="ACTIVE" :label="t('employees.onDuty')" />
+            <el-option value="INACTIVE" :label="t('employees.left')" />
+          </el-select>
+          <el-select v-model="accountStatus" :placeholder="t('employees.accountStatus')" clearable @change="reload">
+            <el-option value="ACTIVE" :label="t('employees.activated')" />
+            <el-option value="PENDING" :label="t('employees.awaitingActivation')" />
+            <el-option value="NONE" :label="t('employees.accountUnopened')" />
+          </el-select>
+        </div>
+        <div class="filter-actions">
+          <el-button @click="resetFilters">{{ t('employees.resetFilters') }}</el-button>
+          <el-button type="primary" @click="reload">{{ t('common.query') }}</el-button>
+        </div>
       </div>
 
       <el-table
@@ -35,6 +59,8 @@
         :data="employees"
         v-loading="loading"
         :row-key="(row: Employee) => row.id"
+        class="employee-table"
+        stripe
         @selection-change="onSelect"
       >
         <!-- Only rows an invitation could actually go to are selectable.
@@ -43,20 +69,34 @@
         <el-table-column
           v-if="canWrite"
           type="selection"
-          width="40"
+          width="48"
           :selectable="(row: Employee) => canInvite(row)"
         />
-        <el-table-column prop="code" :label="t('employees.code')" width="100" />
-        <el-table-column prop="name" :label="t('employees.name')" width="110" />
-        <!-- The address and whether it has been proved, in one column and
-             early rather than pushed off the right edge behind the fixed
-             actions. During a migration this is the only question anybody is
-             asking, and 未邀请 / 待激活 are stuck for opposite reasons with
-             opposite fixes. The address sits beside the state because
-             checking them is the same glance. -->
-        <el-table-column :label="t('employees.activation')" min-width="230">
+        <el-table-column :label="t('employees.employeeInfo')" min-width="240">
+          <template #default="{ row }">
+            <div class="employee-info">
+              <div class="employee-primary">
+                <el-button link class="employee-name" @click="openDetails(row)">{{ row.name }}</el-button>
+                <span class="employee-code">{{ row.code }}</span>
+              </div>
+              <span class="sub">{{ row.email || t('employees.noMailbox') }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('employees.organization')" min-width="180">
           <template #default="{ row }">
             <div class="cell-stack">
+              <span>{{ row.departmentName || '—' }}</span>
+              <span class="sub">{{ row.position || t('employees.noPosition') }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('employees.manager')" min-width="130">
+          <template #default="{ row }"><span class="sub">{{ row.managerName || '—' }}</span></template>
+        </el-table-column>
+        <el-table-column :label="t('employees.activation')" min-width="155">
+          <template #default="{ row }">
+            <div class="cell-stack activation-cell">
               <el-tag v-if="row.emailVerified" type="success" size="small">
                 {{ t('employees.activated') }}
               </el-tag>
@@ -64,56 +104,43 @@
                 {{ t('employees.awaitingActivation') }}
               </el-tag>
               <el-tag v-else type="info" size="small">{{ t('employees.notInvited') }}</el-tag>
-              <span class="sub">{{ row.email || t('employees.noMailbox') }}</span>
+              <span class="sub">{{ row.username || t('employees.noAccount') }}</span>
             </div>
           </template>
         </el-table-column>
-        <!-- Whether they still work here, kept left of the fixed actions
-             column. The table is wider than the window and scrolls; what gets
-             pushed under the fixed column has to be the columns nobody makes a
-             decision from, which is 岗位 and 直属上级, not this. -->
-        <el-table-column :label="t('common.status')" width="80">
+        <el-table-column :label="t('common.status')" width="90" align="center">
           <template #default="{ row }">
             <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'" size="small">
               {{ row.status === 'ACTIVE' ? t('employees.onDuty') : t('employees.left') }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="departmentName" :label="t('employees.department')" width="100" />
-        <el-table-column prop="position" :label="t('employees.position')" width="100" />
-        <el-table-column :label="t('employees.manager')" width="90">
-          <template #default="{ row }"><span class="sub">{{ row.managerName || '—' }}</span></template>
-        </el-table-column>
-        <el-table-column v-if="canWrite" :label="t('common.actions')" width="330" fixed="right">
+        <el-table-column :label="t('common.actions')" width="190" fixed="right" align="right">
           <template #default="{ row }">
-            <el-button v-if="canGrant" link type="primary" @click="openRoles(row)">{{ t('employees.roles') }}</el-button>
-            <!-- Only for somebody not yet activated. Once they are, the same
-                 mail would be a password reset wearing an invitation's
-                 clothes, and 重置密码 beside it already says what it does. -->
-            <el-button
-              v-if="canInvite(row)"
-              link
-              type="primary"
-              :loading="inviting === row.id"
-              @click="invite(row)"
-            >
-              {{ Number(row.inviteExpiresAt) ? t('employees.reinvite') : t('employees.invite') }}
-            </el-button>
-            <el-button v-if="!row.username" link type="primary" @click="openAccount(row)">{{ t('employees.openAccount') }}</el-button>
-            <el-button v-else link type="primary" @click="openReset(row)">{{ t('employees.resetPassword') }}</el-button>
-            <!-- Ends the sessions this person is holding right now. Its own
-                 action rather than part of 标记离职, because a stolen laptop is
-                 not a resignation — and because somebody who is still employed
-                 sometimes needs signing out of a machine they no longer have. -->
-            <el-button v-if="row.username" link type="warning" @click="revokeSessions(row)">
-              {{ t('employees.revokeSessions') }}
-            </el-button>
-            <el-button v-if="row.status === 'ACTIVE'" link type="danger" @click="deactivate(row)">
-              {{ t('employees.markLeft') }}
-            </el-button>
-            <el-button v-else link type="primary" @click="reinstate(row)">
-              {{ t('employees.reinstate') }}
-            </el-button>
+            <div class="row-actions">
+              <el-button link type="primary" @click="openDetails(row)">{{ t('employees.viewDetails') }}</el-button>
+              <el-button v-if="canWrite" link type="primary" @click="openEdit(row)">{{ t('common.edit') }}</el-button>
+              <el-dropdown v-if="canWrite" trigger="click" @command="(command: string) => handleRowCommand(command, row)">
+                <el-button link type="primary">{{ t('employees.moreActions') }}<span class="dropdown-arrow">⌄</span></el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="changes">{{ t('employees.changes') }}</el-dropdown-item>
+                    <el-dropdown-item v-if="canGrant" command="roles">{{ t('employees.roles') }}</el-dropdown-item>
+                    <el-dropdown-item v-if="canInvite(row)" command="invite">
+                      {{ Number(row.inviteExpiresAt) ? t('employees.reinvite') : t('employees.invite') }}
+                    </el-dropdown-item>
+                    <el-dropdown-item :command="row.username ? 'resetPassword' : 'openAccount'">
+                      {{ row.username ? t('employees.resetPassword') : t('employees.openAccount') }}
+                    </el-dropdown-item>
+                    <el-dropdown-item v-if="row.username" command="revoke" divided>{{ t('employees.revokeSessions') }}</el-dropdown-item>
+                    <el-dropdown-item v-if="row.status === 'ACTIVE'" command="leave" class="danger-action">
+                      {{ t('employees.markLeft') }}
+                    </el-dropdown-item>
+                    <el-dropdown-item v-else command="reinstate">{{ t('employees.reinstate') }}</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -130,10 +157,80 @@
 
     <ImportEmployeesDialog v-model:open="importOpen" @imported="reload" />
 
+    <el-drawer
+      v-model="detailsOpen"
+      :title="t('employees.detailTitle')"
+      :size="detailDrawerSize"
+      class="employee-detail-drawer"
+    >
+      <div v-loading="detailLoading">
+        <div v-if="detailEmployee" class="detail-head">
+          <div>
+            <div class="detail-name">{{ detailEmployee.name }}</div>
+            <div class="sub">{{ detailEmployee.englishName || '—' }} · {{ detailEmployee.code }}</div>
+          </div>
+          <el-tag :type="detailEmployee.status === 'ACTIVE' ? 'success' : 'info'">
+            {{ detailEmployee.status === 'ACTIVE' ? t('employees.onDuty') : t('employees.left') }}
+          </el-tag>
+        </div>
+
+        <el-tabs v-if="detailEmployee" v-model="detailTab" class="detail-tabs">
+          <el-tab-pane :label="t('employees.basicInformation')" name="basic">
+            <el-descriptions :column="detailColumns" border>
+              <el-descriptions-item :label="t('employees.code')">{{ detailEmployee.code }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.name')">{{ detailEmployee.name }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.englishName')">{{ detailEmployee.englishName || '—' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.email')">{{ detailEmployee.email || '—' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.phone')">{{ detailEmployee.phone || '—' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.remark')" :span="detailColumns">{{ detailEmployee.remark || '—' }}</el-descriptions-item>
+            </el-descriptions>
+          </el-tab-pane>
+          <el-tab-pane :label="t('employees.organizationRelationship')" name="organization">
+            <el-descriptions :column="detailColumns" border>
+              <el-descriptions-item :label="t('employees.department')">{{ detailEmployee.departmentName || '—' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.position')">{{ detailEmployee.position || '—' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.manager')">{{ detailEmployee.managerName || '—' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.hireDate')">{{ detailEmployee.hireDate || '—' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.leaveDate')">{{ detailEmployee.leaveDate || '—' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.employmentStatus')">
+                {{ detailEmployee.status === 'ACTIVE' ? t('employees.onDuty') : t('employees.left') }}
+              </el-descriptions-item>
+            </el-descriptions>
+          </el-tab-pane>
+          <el-tab-pane :label="t('employees.accountAndRoles')" name="account">
+            <el-descriptions :column="detailColumns" border>
+              <el-descriptions-item :label="t('employees.username')">{{ detailEmployee.username || t('employees.noAccount') }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.activation')">{{ activationText(detailEmployee) }}</el-descriptions-item>
+              <el-descriptions-item :label="t('employees.roles')" :span="detailColumns">
+                <el-space wrap>
+                  <el-tag v-for="role in detailRoleNames" :key="role" type="info">{{ role }}</el-tag>
+                  <span v-if="!detailRoleNames.length">—</span>
+                </el-space>
+              </el-descriptions-item>
+            </el-descriptions>
+          </el-tab-pane>
+          <el-tab-pane :label="t('employees.changes')" name="changes">
+            <el-timeline v-if="detailChanges.length">
+              <el-timeline-item v-for="item in detailChanges" :key="item.id" :timestamp="formatTime(item.createdAt)">
+                {{ item.action }} · {{ t('employees.operator') }} #{{ item.operatorId }}
+                <el-collapse class="change-values">
+                  <el-collapse-item :title="t('departments.changeValues')">
+                    <div>{{ t('departments.before') }}</div><pre>{{ prettyJSON(item.beforeJson) }}</pre>
+                    <div>{{ t('departments.after') }}</div><pre>{{ prettyJSON(item.afterJson) }}</pre>
+                  </el-collapse-item>
+                </el-collapse>
+              </el-timeline-item>
+            </el-timeline>
+            <el-empty v-else :description="t('employees.noChanges')" />
+          </el-tab-pane>
+        </el-tabs>
+      </div>
+    </el-drawer>
+
     <!-- What actually happened, per person. A batch of eighty is exactly the
          case where "已发送" as a single toast is useless: the useful answer is
          which three did not go and why. -->
-    <el-dialog v-model="batchOpen" :title="t('employees.batchResult')" width="620px">
+    <el-dialog v-model="batchOpen" :title="t('employees.batchResult')" width="min(620px, calc(100vw - 24px))">
       <div class="summary">{{ t('employees.batchSummary', { sent: batchSent, failed: batchFailed.length }) }}</div>
       <el-table v-if="batchFailed.length" :data="batchFailed" max-height="360" size="small">
         <el-table-column prop="name" :label="t('employees.name')" width="120" />
@@ -145,7 +242,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="createOpen" :title="t('employees.create')" width="600px">
+    <el-dialog v-model="createOpen" :title="editing ? t('employees.edit') : t('employees.create')" width="min(680px, calc(100vw - 24px))">
       <el-form :model="form" label-width="110px">
         <div class="grid">
           <el-form-item :label="t('employees.code')" required>
@@ -154,9 +251,12 @@
           <el-form-item :label="t('employees.name')" required>
             <el-input v-model="form.name" />
           </el-form-item>
+          <el-form-item :label="t('employees.englishName')">
+            <el-input v-model="form.englishName" />
+          </el-form-item>
           <el-form-item :label="t('employees.department')" required>
             <el-select v-model="form.departmentId" style="width: 100%">
-              <el-option v-for="d in departments" :key="d.id" :value="d.id" :label="d.name" />
+              <el-option v-for="d in activeDepartments" :key="d.id" :value="d.id" :label="d.name" />
             </el-select>
           </el-form-item>
           <el-form-item :label="t('employees.position')">
@@ -165,7 +265,7 @@
           <el-form-item :label="t('employees.manager')">
             <el-select v-model="form.managerId" clearable filterable style="width: 100%"
                        :placeholder="t('employees.managerNone')">
-              <el-option v-for="e in employees" :key="e.id" :value="e.id" :label="`${e.code} · ${e.name}`" />
+              <el-option v-for="e in managerCandidates" :key="e.id" :value="e.id" :label="`${e.code} · ${e.name}`" />
             </el-select>
             <div class="hint">{{ t('employees.managerHint') }}</div>
           </el-form-item>
@@ -175,12 +275,21 @@
           <el-form-item :label="t('employees.phone')">
             <el-input v-model="form.phone" />
           </el-form-item>
+          <el-form-item :label="t('employees.hireDate')">
+            <el-date-picker v-model="form.hireDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+          </el-form-item>
+          <el-form-item v-if="editing" :label="t('employees.leaveDate')">
+            <el-date-picker v-model="form.leaveDate" type="date" value-format="YYYY-MM-DD" clearable style="width: 100%" />
+          </el-form-item>
+          <el-form-item :label="t('employees.remark')" class="wide">
+            <el-input v-model="form.remark" type="textarea" :rows="2" />
+          </el-form-item>
         </div>
-        <el-divider content-position="left">
+        <el-divider v-if="!editing" content-position="left">
           {{ t('employees.accountSection') }}
           <span class="hint">{{ t('employees.accountHint') }}</span>
         </el-divider>
-        <div class="grid">
+        <div v-if="!editing" class="grid">
           <el-form-item :label="t('employees.username')">
             <el-input v-model="form.username" autocomplete="off" />
           </el-form-item>
@@ -195,7 +304,22 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="rolesOpen" :title="t('employees.assignRoles')" width="440px">
+    <el-drawer v-model="changesOpen" :title="t('employees.changes')" :size="viewportWidth < 620 ? '100%' : '520px'">
+      <el-timeline>
+        <el-timeline-item v-for="item in changes" :key="item.id" :timestamp="formatTime(item.createdAt)">
+          {{ item.action }} · {{ t('employees.operator') }} #{{ item.operatorId }}
+          <el-collapse class="change-values">
+            <el-collapse-item :title="t('departments.changeValues')">
+              <div>{{ t('departments.before') }}</div><pre>{{ prettyJSON(item.beforeJson) }}</pre>
+              <div>{{ t('departments.after') }}</div><pre>{{ prettyJSON(item.afterJson) }}</pre>
+            </el-collapse-item>
+          </el-collapse>
+        </el-timeline-item>
+      </el-timeline>
+      <el-empty v-if="!changes.length" :description="t('employees.noChanges')" />
+    </el-drawer>
+
+    <el-dialog v-model="rolesOpen" :title="t('employees.assignRoles')" width="min(440px, calc(100vw - 24px))">
       <p class="target">{{ current?.name }}</p>
       <el-checkbox-group v-model="selectedRoles" class="role-list">
         <el-checkbox v-for="r in roles" :key="r.id" :value="r.id" :label="`${r.name}（${r.code}）`" />
@@ -206,7 +330,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="passwordOpen" :title="passwordTitle" width="420px">
+    <el-dialog v-model="passwordOpen" :title="passwordTitle" width="min(420px, calc(100vw - 24px))">
       <p class="target">{{ current?.name }}</p>
       <el-form label-width="100px">
         <el-form-item v-if="accountMode" :label="t('employees.username')">
@@ -225,15 +349,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type ElTable } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { del, get, post } from '../api'
+import { useRoute, useRouter } from 'vue-router'
+import { del, get, post, put } from '../api'
 import { useAuthStore } from '../stores/auth'
 import ImportEmployeesDialog from '../components/ImportEmployeesDialog.vue'
+import BasicDataEmployeeNav from '../components/BasicDataEmployeeNav.vue'
+import { createEmployeeBody, updateEmployeeBody, validateEmployeeForm } from '../lib/iamForms'
 
-interface Department { id: string; name: string }
+interface Department { id: string; name: string; status: string }
 interface Role { id: string; code: string; name: string }
+interface Change { id: string; action: string; operatorId: string; createdAt: string; beforeJson: string; afterJson: string }
 interface Employee {
   id: string
   code: string
@@ -252,17 +380,26 @@ interface Employee {
   // Unix seconds, as a string: int64 over JSON. 0 or absent means no
   // invitation is outstanding.
   inviteExpiresAt: string
+  englishName: string
+  hireDate: string
+  leaveDate: string
+  remark: string
+  version: number
 }
 
 const EMPTY_FORM = {
   code: '', name: '', departmentId: '', position: '', email: '', phone: '',
   username: '', initialPassword: '', managerId: '',
+  englishName: '', hireDate: '', leaveDate: '', remark: '', version: 0, id: '',
 }
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 const auth = useAuthStore()
 const canWrite = auth.can('iam:employee:write')
 const canGrant = auth.can('iam:role:write')
+const canReadRoles = auth.can('iam:role:read')
 
 const employees = ref<Employee[]>([])
 const departments = ref<Department[]>([])
@@ -270,10 +407,14 @@ const roles = ref<Role[]>([])
 const selectedRoles = ref<string[]>([])
 const current = ref<Employee | null>(null)
 const total = ref(0)
-const page = ref(1)
+const page = ref(Math.max(1, Number(route.query.page) || 1))
 const pageSize = 10
-const keyword = ref('')
-const departmentId = ref('')
+const keyword = ref(String(route.query.keyword ?? ''))
+const departmentId = ref(String(route.query.department_id ?? ''))
+const managerId = ref(String(route.query.manager_id ?? ''))
+const roleId = ref(String(route.query.role_id ?? ''))
+const employmentStatus = ref(String(route.query.employment_status ?? ''))
+const accountStatus = ref(String(route.query.account_status ?? ''))
 const loading = ref(false)
 const saving = ref(false)
 // Which row's invitation is in flight, not a plain boolean: the spinner
@@ -281,12 +422,27 @@ const saving = ref(false)
 // them.
 const inviting = ref('')
 const createOpen = ref(false)
+const editing = ref(false)
+const changesOpen = ref(false)
+const changes = ref<Change[]>([])
 const importOpen = ref(false)
 const table = ref<InstanceType<typeof ElTable>>()
 const selected = ref<Employee[]>([])
 const batchOpen = ref(false)
 const batchSent = ref(0)
 const batchFailed = ref<{ name: string; email: string; reason: string }[]>([])
+const detailsOpen = ref(false)
+const detailLoading = ref(false)
+const detailEmployee = ref<Employee | null>(null)
+const detailChanges = ref<Change[]>([])
+const detailTab = ref('basic')
+const viewportWidth = ref(window.innerWidth)
+const detailDrawerSize = computed(() => viewportWidth.value < 720 ? '100%' : '720px')
+const detailColumns = computed(() => viewportWidth.value < 620 ? 1 : 2)
+const detailRoleNames = computed(() => {
+  const ids = new Set(detailEmployee.value?.roleIds ?? [])
+  return roles.value.filter((role) => ids.has(role.id)).map((role) => role.name)
+})
 
 // Who an invitation could actually reach: still employed, and not already in.
 // Used both for the row button and for which rows may be ticked, so the two
@@ -307,12 +463,24 @@ const accountForm = reactive({ username: '', password: '' })
 const passwordTitle = computed(() =>
   accountMode.value ? t('employees.openAccount') : t('employees.resetPassword'),
 )
+const employeeOptions = ref<Employee[]>([])
+const activeDepartments = computed(() => departments.value.filter((d) => d.status === 'ACTIVE'))
+const managerCandidates = computed(() => employeeOptions.value.filter((e) => e.status === 'ACTIVE' && e.id !== form.id))
 
 async function load() {
   loading.value = true
   try {
+    // 将筛选和页码写入地址，刷新或分享当前页面时仍保持同一组结果。
+    const query = Object.fromEntries(Object.entries({
+      page: page.value > 1 ? String(page.value) : '', keyword: keyword.value,
+      department_id: departmentId.value, manager_id: managerId.value, role_id: roleId.value,
+      employment_status: employmentStatus.value, account_status: accountStatus.value,
+    }).filter(([, value]) => value))
+    router.replace({ query })
     const data = await get<{ employees: Employee[]; meta: { total: string } }>('/employees', {
       page: page.value, page_size: pageSize, keyword: keyword.value, department_id: departmentId.value,
+      manager_id: managerId.value, role_id: roleId.value,
+      employment_status: employmentStatus.value, account_status: accountStatus.value,
     })
     employees.value = data.employees ?? []
     total.value = Number(data.meta.total)
@@ -326,37 +494,105 @@ function reload() {
   load()
 }
 
+function resetFilters() {
+  keyword.value = ''
+  departmentId.value = ''
+  managerId.value = ''
+  roleId.value = ''
+  employmentStatus.value = ''
+  accountStatus.value = ''
+  reload()
+}
+
+// 列表只保留最常用的“编辑”，其余操作统一从更多菜单分发，避免操作列过宽。
+function handleRowCommand(command: string, row: Employee) {
+  switch (command) {
+    case 'changes': void openChanges(row); break
+    case 'roles': void openRoles(row); break
+    case 'invite': void invite(row); break
+    case 'openAccount': openAccount(row); break
+    case 'resetPassword': openReset(row); break
+    case 'revoke': void revokeSessions(row); break
+    case 'leave': void deactivate(row); break
+    case 'reinstate': void reinstate(row); break
+  }
+}
+
+// 员工详情统一展示个人资料、组织关系、账号角色和变更记录，避免把大量字段塞进列表。
+async function openDetails(row: Employee) {
+  detailsOpen.value = true
+  detailLoading.value = true
+  detailTab.value = 'basic'
+  detailEmployee.value = null
+  detailChanges.value = []
+  try {
+    const [employeeData, changeData] = await Promise.all([
+      get<{ employee: Employee }>(`/employees/${row.id}`),
+      get<{ changes: Change[] }>(`/employees/${row.id}/changes`),
+    ])
+    detailEmployee.value = employeeData.employee
+    detailChanges.value = changeData.changes ?? []
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+function activationText(employee: Employee) {
+  if (employee.emailVerified) return t('employees.activated')
+  if (Number(employee.inviteExpiresAt)) return t('employees.awaitingActivation')
+  return employee.username ? t('employees.notInvited') : t('employees.accountUnopened')
+}
+
+function updateViewportWidth() {
+  viewportWidth.value = window.innerWidth
+}
+
 function openCreate() {
+  editing.value = false
   Object.assign(form, EMPTY_FORM)
   createOpen.value = true
 }
 
+// 编辑前重新读取详情，确保版本号和直属上级等字段不是列表中的旧数据。
+async function openEdit(row: Employee) {
+  const data = await get<{ employee: Employee }>(`/employees/${row.id}`)
+  const employee = data.employee
+  editing.value = true
+  Object.assign(form, {
+    ...EMPTY_FORM, ...employee,
+    departmentId: employee.departmentId || '', managerId: employee.managerId || '',
+  })
+  createOpen.value = true
+}
+
 async function save() {
-  if (!form.code || !form.name || !form.departmentId) {
-    ElMessage.warning(t('employees.required'))
-    return
-  }
-  // The account is optional but half of it is not: iam rejects a username
-  // without a password, so catch it before the round trip.
-  if (!form.username !== !form.initialPassword) {
-    ElMessage.warning(t('employees.accountIncomplete'))
+  const validationError = validateEmployeeForm(form, editing.value)
+  if (validationError) {
+    ElMessage.warning(t(`employees.${validationError}`))
     return
   }
   saving.value = true
   try {
-    await post('/employees', {
-      code: form.code, name: form.name, departmentId: form.departmentId,
-      position: form.position, email: form.email, phone: form.phone,
-      managerId: form.managerId || '0',
-      username: form.username, initialPassword: form.initialPassword,
-    })
-    ElMessage.success(t('employees.created'))
+    if (editing.value) {
+      await put(`/employees/${form.id}`, updateEmployeeBody(form))
+    } else {
+      await post('/employees', createEmployeeBody(form))
+    }
+    ElMessage.success(t(editing.value ? 'employees.updated' : 'employees.created'))
     createOpen.value = false
     load()
   } finally {
     saving.value = false
   }
 }
+
+async function openChanges(row: Employee) {
+  const data = await get<{ changes: Change[] }>(`/employees/${row.id}/changes`)
+  changes.value = data.changes ?? []
+  changesOpen.value = true
+}
+function formatTime(value: string) { return value ? new Date(value).toLocaleString() : '' }
+function prettyJSON(value: string) { try { return JSON.stringify(JSON.parse(value || '{}'), null, 2) } catch { return value } }
 
 async function openRoles(row: Employee) {
   current.value = row
@@ -485,15 +721,23 @@ async function reinstate(row: Employee) {
 }
 
 onMounted(async () => {
+  window.addEventListener('resize', updateViewportWidth)
   load()
   departments.value = (await get<{ departments: Department[] }>('/departments')).departments ?? []
-  if (canGrant) {
+  employeeOptions.value = (await get<{ employees: Employee[] }>('/employees', { page: 1, page_size: 200 })).employees ?? []
+  if (canReadRoles) {
     roles.value = (await get<{ roles: Role[] }>('/roles')).roles ?? []
   }
 })
+onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
 </script>
 
 <style scoped>
+.change-values pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+.breadcrumb {
+  margin-bottom: 12px;
+  font-size: 13px;
+}
 .page-head {
   display: flex;
   align-items: center;
@@ -501,17 +745,53 @@ onMounted(async () => {
   margin-bottom: 16px;
 }
 .page-head h2 {
-  font-size: 18px;
-  font-weight: 500;
+  font-size: 22px;
+  font-weight: 600;
   margin: 0;
+}
+.employee-card {
+  overflow: hidden;
+}
+.employee-card :deep(.el-card__body) {
+  padding: 0;
 }
 .filters {
   display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.filter-fields {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(5, minmax(135px, 1fr));
   gap: 10px;
-  margin-bottom: 14px;
+}
+.filter-fields :deep(.el-select),
+.filter-fields :deep(.el-input) {
+  width: 100%;
+}
+.filter-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+.employee-table {
+  width: calc(100% - 40px);
+  margin: 16px 20px 0;
+}
+.employee-table :deep(th.el-table__cell) {
+  background: #f8fafc;
+  color: #64748b;
+  font-weight: 600;
+}
+.employee-table :deep(.el-table__row td.el-table__cell) {
+  padding: 15px 0;
 }
 .pager {
-  margin-top: 14px;
+  padding: 16px 20px 18px;
   justify-content: flex-end;
 }
 .grid {
@@ -529,6 +809,51 @@ onMounted(async () => {
   align-items: flex-start;
   gap: 2px;
   line-height: 1.4;
+}
+.employee-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.employee-primary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.employee-name {
+  padding: 0;
+  height: auto;
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
+.employee-name:hover {
+  color: var(--el-color-primary);
+}
+.employee-code {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: #eef4ff;
+  color: var(--el-color-primary);
+  font-size: 12px;
+}
+.activation-cell {
+  gap: 6px;
+}
+.row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+}
+.row-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+.dropdown-arrow {
+  margin-left: 3px;
+  font-size: 14px;
+}
+:global(.danger-action) {
+  color: var(--el-color-danger) !important;
 }
 .head-actions {
   display: flex;
@@ -553,5 +878,80 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 0 18px;
+}
+.detail-name {
+  margin-bottom: 4px;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.detail-tabs :deep(.el-descriptions__label) {
+  width: 130px;
+}
+@media (max-width: 1300px) {
+  .filter-fields {
+    grid-template-columns: repeat(3, minmax(150px, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .page-head {
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .head-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .filters {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .filter-fields {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+  .filter-actions {
+    justify-content: flex-end;
+  }
+  .employee-table {
+    width: calc(100% - 24px);
+    margin: 12px 12px 0;
+  }
+  .pager {
+    padding: 14px 12px 16px;
+  }
+}
+@media (max-width: 620px) {
+  .page-head {
+    flex-direction: column;
+  }
+  .head-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .filters {
+    padding: 14px 12px;
+  }
+  .filter-fields {
+    grid-template-columns: 1fr;
+  }
+  .filter-actions > :deep(.el-button) {
+    flex: 1;
+  }
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .detail-tabs :deep(.el-tabs__nav-wrap) {
+    overflow-x: auto;
+  }
+  .detail-tabs :deep(.el-descriptions__label) {
+    width: 104px;
+  }
 }
 </style>

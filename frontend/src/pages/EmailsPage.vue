@@ -33,6 +33,16 @@
       <el-button link class="rail-lock" @click="lockMailbox">
         🔒 {{ t('mailGate.signOut') }}
       </el-button>
+      <!-- Beside 退出邮箱 and 邮箱设置 rather than in a settings page of its
+           own: a signature is part of writing mail, not a system setting. -->
+      <el-button
+        v-if="auth.can('mail:email:write')"
+        link
+        class="rail-lock"
+        @click="signaturesOpen = true"
+      >
+        ✍️ {{ t('menu.signatures') }}
+      </el-button>
       <el-button v-if="isAdmin" link class="rail-lock rail-host" @click="hostOpen = true">
         ⚙️ {{ t('mailGate.hostSettings') }}
       </el-button>
@@ -665,6 +675,7 @@
   <!-- Outside the locked/unlocked branches: an administrator may need the
        host settings before anybody can sign in at all. -->
   <MailHostDialog v-model="hostOpen" />
+  <MailSignatureDialog v-model="signaturesOpen" />
 
   <!-- A native-like context action. It is rendered at the click point rather
        than permanently adding another button to every attachment and every
@@ -781,6 +792,7 @@ import EmailComposer from '../components/EmailComposer.vue'
 import MailReader, { type Mail } from '../components/MailReader.vue'
 import MailboxGate from '../components/MailboxGate.vue'
 import MailHostDialog from '../components/MailHostDialog.vue'
+import MailSignatureDialog from '../components/MailSignatureDialog.vue'
 import MailList from '../components/MailList.vue'
 // Received mail renders inside a sandboxed frame. It carries the sender's own
 // stylesheet now, and a stylesheet injected into this page would be a stranger
@@ -1100,6 +1112,7 @@ const suppressForm = reactive({ email: '', reason: 'UNSUBSCRIBE', detail: '' })
 // gate at somebody who is already unlocked.
 const locked = ref<boolean | null>(null)
 const hostOpen = ref(false)
+const signaturesOpen = ref(false)
 
 onMounted(async () => {
   // Back from Google's login page. On success the fresh grant is verified

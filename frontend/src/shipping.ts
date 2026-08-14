@@ -11,6 +11,12 @@ export interface ShippingSchedule {
   voyageNo: string
   portOfLoading: string
   portOfDischarge: string
+  loadingPortId: string
+  loadingPortCode: string
+  loadingPortTimezone: string
+  dischargePortId: string
+  dischargePortCode: string
+  dischargePortTimezone: string
   etd: string
   atd: string
   eta: string
@@ -35,6 +41,7 @@ export interface ShippingSchedule {
 
 export interface ShippingRouteNode {
   id: string
+  portId: string
   sequenceNo: number
   nodeType: 'ORIGIN'|'TRANSIT'|'TEMPORARY'|'DESTINATION'
   portCode: string

@@ -10,6 +10,7 @@ require (
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/sgao19/erp-go/gen v0.0.0-00010101000000-000000000000
 	github.com/sgao19/erp-go/pkg v0.0.0
+	golang.org/x/net v0.57.0
 	google.golang.org/grpc v1.82.1
 )
 
@@ -32,7 +33,6 @@ require (
 	github.com/rs/xid v1.6.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
-	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect

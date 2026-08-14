@@ -220,71 +220,6 @@ SELECT id, message_key::text AS message_key, thread_key, to_email, campaign_id, 
 FROM email_messages
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND message_key::text = sqlc.arg(message_key)::text;
-
--- name: ListInbound :many
--- A bounce is machinery, not correspondence, so it is kept out of the inbox
--- and surfaced through the needs-attention queue instead.
--- The view decides which slice of the mailbox this is: the inbox proper
--- (not archived, not trashed), starred (wherever it lives, except trash),
--- the archive, or the trash.
---
--- Every view but the trash is scoped to the inbox — junk is its own place and
--- only rejoins the mailbox once somebody rescues it. The trash is the one
--- exception, and has to be: mail deleted out of the junk folder is still
--- deleted mail. Scoping the trash the same way as the rest left it invisible
--- — soft-deleted in the database, absent from every screen, and plainly
--- sitting in the host's own trash, which reads as the ERP having lost it.
--- Emptying the trash purged those rows regardless, so the count above the
--- list and the number the button deleted disagreed.
-SELECT id, from_email, from_name, subject, snippet, thread_key,
-       is_read, is_starred, has_attachments, received_at, sent_at
-FROM email_inbound
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint
-  AND owner_id = sqlc.arg(owner_id)::bigint
-  AND CASE sqlc.arg(view)::text
-        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
-        -- The trash holds mail deleted from anywhere, junk included.
-        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
-        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
-      END
-  AND NOT is_bounce
-  AND CASE sqlc.arg(view)::text
-        WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
-        WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
-        WHEN 'TRASH'   THEN deleted_at IS NOT NULL
-        WHEN 'JUNK'    THEN deleted_at IS NULL
-        ELSE archived_at IS NULL AND deleted_at IS NULL
-      END
-  AND (sqlc.arg(keyword)::text = ''
-       OR subject ILIKE '%' || sqlc.arg(keyword)::text || '%'
-       OR from_email ILIKE '%' || sqlc.arg(keyword)::text || '%'
-       OR from_name ILIKE '%' || sqlc.arg(keyword)::text || '%')
-ORDER BY coalesce(sent_at, received_at) DESC
-LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
-
--- name: CountInbound :one
-SELECT count(*)::bigint FROM email_inbound
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint
-  AND owner_id = sqlc.arg(owner_id)::bigint
-  AND CASE sqlc.arg(view)::text
-        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
-        -- The trash holds mail deleted from anywhere, junk included.
-        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
-        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
-      END
-  AND NOT is_bounce
-  AND CASE sqlc.arg(view)::text
-        WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
-        WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
-        WHEN 'TRASH'   THEN deleted_at IS NOT NULL
-        WHEN 'JUNK'    THEN deleted_at IS NULL
-        ELSE archived_at IS NULL AND deleted_at IS NULL
-      END
-  AND (sqlc.arg(keyword)::text = ''
-       OR subject ILIKE '%' || sqlc.arg(keyword)::text || '%'
-       OR from_email ILIKE '%' || sqlc.arg(keyword)::text || '%'
-       OR from_name ILIKE '%' || sqlc.arg(keyword)::text || '%');
-
 -- name: ListInboundThreads :many
 -- The same slice of the mailbox as ListInbound, but one row per conversation
 -- instead of one row per message — Gmail's list, where "客户回了三次" is one
@@ -1069,3 +1004,79 @@ SELECT direction, id, subject, snippet, counterparty, at
 FROM (SELECT * FROM ours UNION ALL SELECT * FROM theirs) conversation
 ORDER BY at DESC, id DESC
 LIMIT sqlc.arg(row_limit)::int;
+
+-- name: ListInboundWithUnresolvedCID :many
+-- Messages whose body points at a part by Content-ID that no stored row
+-- satisfies.
+--
+-- These are not a curiosity: until 2026-08-10 the parser only kept a part that
+-- carried a filename, and an image pasted into Gmail's composer carries none —
+-- only a Content-ID. Those parts were read past and dropped, so the body was
+-- left citing something that does not exist and the reader drew an empty box.
+--
+-- The raw message is required, because recovery means parsing it again; a row
+-- whose original was never stored cannot be helped and is left out rather than
+-- returned for ever.
+SELECT i.id, i.raw_key, i.account_id
+FROM email_inbound i
+WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND i.raw_key <> ''
+  AND i.body_html LIKE '%cid:%'
+  AND EXISTS (
+      SELECT 1 FROM regexp_matches(i.body_html, 'cid:([^"'']+)', 'g') AS m(cid)
+      WHERE NOT EXISTS (
+          SELECT 1 FROM email_inbound_attachments a
+          WHERE a.inbound_id = i.id AND a.content_id = m.cid[1]
+      )
+  )
+ORDER BY i.id DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: CountInboundAttachmentWithCID :one
+SELECT count(*) FROM email_inbound_attachments
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND inbound_id = sqlc.arg(inbound_id)::bigint
+  AND content_id = sqlc.arg(content_id)::text;
+
+-- name: ListThreadsByView :many
+-- The mailbox list, read from the rows it shows.
+--
+-- Replaces a CTE that materialised every message the owner could see, sorted
+-- it by conversation, ran four window functions over it and took the newest
+-- twenty-five off the end. That work was proportional to the whole mailbox on
+-- every page load - 70 ms and a disk-spilling sort for a heavy user - because
+-- a conversation's count and unread badge are facts about all of its messages
+-- and no index can compute them.
+--
+-- mail_thread_view holds those facts already, maintained by trigger. See
+-- migration 00034.
+--
+-- Keyset, not OFFSET: the page starts strictly after the last row of the
+-- previous one, so mail arriving mid-read cannot push a conversation across a
+-- page boundary and make it appear twice or not at all, and page 50 costs the
+-- same as page 2.
+SELECT m.id, m.from_email, m.from_name, m.subject, m.snippet, m.thread_key,
+       (NOT t.any_unread)::boolean     AS is_read,
+       t.any_starred::boolean          AS is_starred,
+       t.any_attachment::boolean       AS has_attachments,
+       m.received_at, m.sent_at,
+       t.msg_count::int                AS thread_count
+FROM mail_thread_view t
+JOIN email_inbound m ON m.tenant_id = t.tenant_id AND m.id = t.last_id
+WHERE t.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND t.owner_id = sqlc.arg(owner_id)::bigint
+  AND t.view = sqlc.arg(view)::text
+  -- Row comparison, so ties on the timestamp fall back to the id and no two
+  -- conversations can ever occupy the same cursor position.
+  AND (sqlc.narg(cursor_at)::timestamptz IS NULL
+       OR (t.last_at, t.last_id) < (sqlc.narg(cursor_at)::timestamptz,
+                                    sqlc.arg(cursor_id)::bigint))
+ORDER BY t.last_at DESC, t.last_id DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: CountThreadsByView :one
+-- Conversations, not messages: the pager has to count what the list shows.
+SELECT count(*)::bigint FROM mail_thread_view
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND owner_id = sqlc.arg(owner_id)::bigint
+  AND view = sqlc.arg(view)::text;

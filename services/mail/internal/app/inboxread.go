@@ -65,6 +65,46 @@ type InboundPage struct {
 	NextCursor string
 }
 
+// threadRow is one conversation as the list needs it, from whichever of the
+// two queries produced it. sqlc generates a row type per query and the two are
+// structurally identical, so this is the seam that keeps the mapping below
+// from being written twice and drifting.
+type threadRow struct {
+	ID                          int64
+	FromEmail, FromName         string
+	Subject, Snippet, ThreadKey string
+	IsRead, IsStarred           bool
+	HasAttachments              bool
+	ThreadCount                 int32
+	ReceivedAt, SentAt          pgtype.Timestamptz
+}
+
+func threadRowsFromView(rows []store.ListThreadsByViewRow) []threadRow {
+	out := make([]threadRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, threadRow{
+			ID: r.ID, FromEmail: r.FromEmail, FromName: r.FromName,
+			Subject: r.Subject, Snippet: r.Snippet, ThreadKey: r.ThreadKey,
+			IsRead: r.IsRead, IsStarred: r.IsStarred, HasAttachments: r.HasAttachments,
+			ThreadCount: r.ThreadCount, ReceivedAt: r.ReceivedAt, SentAt: r.SentAt,
+		})
+	}
+	return out
+}
+
+func threadRowsFromSearch(rows []store.ListInboundThreadsRow) []threadRow {
+	out := make([]threadRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, threadRow{
+			ID: r.ID, FromEmail: r.FromEmail, FromName: r.FromName,
+			Subject: r.Subject, Snippet: r.Snippet, ThreadKey: r.ThreadKey,
+			IsRead: r.IsRead, IsStarred: r.IsStarred, HasAttachments: r.HasAttachments,
+			ThreadCount: r.ThreadCount, ReceivedAt: r.ReceivedAt, SentAt: r.SentAt,
+		})
+	}
+	return out
+}
+
 // ListInbound is the caller's own inbox, one page at a time.
 //
 // ownerID is always the caller. There is deliberately no way to pass another
@@ -94,20 +134,46 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID int64, keyw
 	// One row per conversation, not per message: the newest message speaks
 	// for the thread and carries a count. Opening it shows the whole
 	// exchange, which the reading page has done since the conversation view.
-	rows, err := s.q.ListInboundThreads(ctx, store.ListInboundThreadsParams{
-		TenantID: tenantID, OwnerID: ownerID, Keyword: keyword, View: view,
-		CursorAt: at, CursorID: id, RowLimit: size,
-	})
-	if err != nil {
-		return InboundPage{}, err
-	}
-	// Still counted: the person wants to know how much mail is in here, and
-	// keyset paging only replaces how pages are reached, not what they show.
-	total, err := s.q.CountInboundThreads(ctx, store.CountInboundThreadsParams{
-		TenantID: tenantID, OwnerID: ownerID, Keyword: keyword, View: view,
-	})
-	if err != nil {
-		return InboundPage{}, err
+	//
+	// Two paths, and the split is about what can be precomputed. Without a
+	// keyword the answer is a fact about the mailbox, and mail_thread_view
+	// holds it already - the page reads the twenty-five rows it shows. With
+	// one, the set of conversations depends on the search term, so it has to
+	// be worked out per request, which is what the older query does. Search
+	// is rare and its own screen; the plain list is loaded all day.
+	var rows []threadRow
+	var total int64
+	if keyword == "" {
+		fast, err := s.q.ListThreadsByView(ctx, store.ListThreadsByViewParams{
+			TenantID: tenantID, OwnerID: ownerID, View: view,
+			CursorAt: at, CursorID: id, RowLimit: size,
+		})
+		if err != nil {
+			return InboundPage{}, err
+		}
+		rows = threadRowsFromView(fast)
+		if total, err = s.q.CountThreadsByView(ctx, store.CountThreadsByViewParams{
+			TenantID: tenantID, OwnerID: ownerID, View: view,
+		}); err != nil {
+			return InboundPage{}, err
+		}
+	} else {
+		slow, err := s.q.ListInboundThreads(ctx, store.ListInboundThreadsParams{
+			TenantID: tenantID, OwnerID: ownerID, Keyword: keyword, View: view,
+			CursorAt: at, CursorID: id, RowLimit: size,
+		})
+		if err != nil {
+			return InboundPage{}, err
+		}
+		rows = threadRowsFromSearch(slow)
+		// Still counted: the person wants to know how much mail is in here,
+		// and keyset paging only replaces how pages are reached, not what
+		// they show.
+		if total, err = s.q.CountInboundThreads(ctx, store.CountInboundThreadsParams{
+			TenantID: tenantID, OwnerID: ownerID, Keyword: keyword, View: view,
+		}); err != nil {
+			return InboundPage{}, err
+		}
 	}
 	unread, err := s.q.CountUnread(ctx, store.CountUnreadParams{
 		TenantID: tenantID, OwnerID: ownerID,
@@ -608,11 +674,16 @@ func (s *Service) purgeOne(ctx context.Context, tenantID, ownerID, id int64, raw
 }
 
 // SyncNow pulls the caller's mailbox immediately and reports what arrived.
+//
+// Interactive: it answers once the inbox is in, and the sent folder, the junk
+// folder and the read-state reconciliation carry on behind it. Somebody who
+// clicks 立即收信 is asking whether the customer has replied, and waiting out
+// five further round trips to be told so is the button feeling broken.
 func (s *Service) SyncNow(ctx context.Context, tenantID, employeeID int64) (int, error) {
 	if s.mailbox == nil {
 		return 0, ErrMailHostNotConfigured
 	}
-	return s.SyncMailbox(ctx, SyncConfig{TenantID: tenantID}, employeeID)
+	return s.SyncMailboxInteractive(ctx, SyncConfig{TenantID: tenantID}, employeeID)
 }
 
 func errNotFound() error {

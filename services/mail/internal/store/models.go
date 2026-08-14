@@ -301,3 +301,16 @@ type MailSyncState struct {
 	LastError    string
 	LowUid       int64
 }
+
+type MailThreadView struct {
+	TenantID      int64
+	OwnerID       int64
+	GroupKey      string
+	View          string
+	MsgCount      int32
+	LastID        int64
+	LastAt        pgtype.Timestamptz
+	AnyUnread     bool
+	AnyStarred    bool
+	AnyAttachment bool
+}

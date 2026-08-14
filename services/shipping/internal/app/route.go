@@ -25,6 +25,7 @@ type ScheduleDetails struct {
 }
 
 type RouteNodeInput struct {
+	PortID                                 int64
 	NodeType, PortCode, PortName, Timezone string
 	InsertAfterNodeID                      int64
 	LatestETAAt, LatestETDAt               string
@@ -124,7 +125,8 @@ func validateRouteTimeline(nodes []store.ShippingRouteNode, checkEstimates, chec
 func createInitialRoute(ctx context.Context, q *store.Queries, s store.ShippingSchedule, op Operator) error {
 	origin, err := q.InsertRouteNode(ctx, store.InsertRouteNodeParams{
 		TenantID: s.TenantID, ScheduleID: s.ID, SequenceNo: 1, NodeType: "ORIGIN",
-		PortName: s.PortOfLoading, Timezone: "UTC", OriginalEtdAt: dateTimestamp(s.Etd),
+		PortID: s.LoadingPortID, PortCode: s.LoadingPortCode, PortName: s.PortOfLoading,
+		Timezone: s.LoadingPortTimezone, OriginalEtdAt: dateTimestamp(s.Etd),
 		CreatedBy: op.ID, CreatedByName: op.Name,
 	})
 	if err != nil {
@@ -132,7 +134,8 @@ func createInitialRoute(ctx context.Context, q *store.Queries, s store.ShippingS
 	}
 	destination, err := q.InsertRouteNode(ctx, store.InsertRouteNodeParams{
 		TenantID: s.TenantID, ScheduleID: s.ID, SequenceNo: 2, NodeType: "DESTINATION",
-		PortName: s.PortOfDischarge, Timezone: "UTC", OriginalEtaAt: dateTimestamp(s.Eta),
+		PortID: s.DischargePortID, PortCode: s.DischargePortCode, PortName: s.PortOfDischarge,
+		Timezone: s.DischargePortTimezone, OriginalEtaAt: dateTimestamp(s.Eta),
 		CreatedBy: op.ID, CreatedByName: op.Name,
 	})
 	if err != nil {
@@ -236,6 +239,12 @@ func (s *Service) AddRouteNode(ctx context.Context, tenantID, id int64, in Route
 		}
 		newNode, err := q.InsertRouteNode(ctx, store.InsertRouteNodeParams{
 			TenantID: tenantID, ScheduleID: id, SequenceNo: int32(insertAt + 1), NodeType: in.NodeType,
+			PortID: func() *int64 {
+				if in.PortID > 0 {
+					return &in.PortID
+				}
+				return nil
+			}(),
 			PortCode: strings.TrimSpace(in.PortCode), PortName: in.PortName, Timezone: in.Timezone,
 			OriginalEtaAt: eta, OriginalEtdAt: etd, Remark: strings.TrimSpace(in.Remark), CreatedBy: op.ID, CreatedByName: op.Name,
 		})

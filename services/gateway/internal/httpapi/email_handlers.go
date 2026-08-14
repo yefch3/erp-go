@@ -705,6 +705,18 @@ func (s *Server) convertInboundToExcel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) syncMailbox(w http.ResponseWriter, r *http.Request) {
+	// Paced per person. The sync fleet already collapses simultaneous presses
+	// into one run, but that says nothing about one press a second — and each
+	// press that does get through is a real IMAP conversation with somebody
+	// else's server. A stuck auto-refresh needs no malice to saturate a
+	// mailbox's own connection.
+	op, _ := grpcx.OperatorFromContext(r.Context())
+	if wait, ok := s.Limits.AllowSync(r.Context(), op.TenantID, op.EmployeeID); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())))
+		s.writeError(w, http.StatusTooManyRequests, "MAIL_SYNC_TOO_OFTEN",
+			fmt.Sprintf("收信太频繁了，%d 秒后再试", int(wait.Seconds())))
+		return
+	}
 	resp, err := s.Emails.SyncMailbox(r.Context(), &mailv1.SyncMailboxRequest{})
 	if err != nil {
 		s.writeGRPCError(w, err)

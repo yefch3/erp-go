@@ -132,3 +132,65 @@ ORDER BY id;
 UPDATE email_inbound_attachments
 SET content_id = sqlc.arg(content_id)::text
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: ListInboundWithNoBody :many
+-- Messages that arrived with nothing in them.
+--
+-- Until 2026-08-11 any part carrying a Content-ID was filed as an attachment,
+-- which is right for a pasted picture and wrong for a body: LinkedIn labels
+-- its two alternatives Content-ID: text-body and html-body, so both were taken
+-- away and the message was left with no text at all. The original is still in
+-- object storage, so the damage is repairable by parsing it again.
+--
+-- Self-clearing: a message that gets its body back stops matching.
+SELECT id, account_id, raw_key
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND body_html = '' AND body_text = '' AND raw_key <> ''
+ORDER BY id
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: RestoreInboundBody :execrows
+UPDATE email_inbound
+SET body_html = sqlc.arg(body_html)::text,
+    body_text = sqlc.arg(body_text)::text,
+    snippet   = sqlc.arg(snippet)::varchar,
+    has_attachments = sqlc.arg(has_attachments)::boolean
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: DeleteInboundBodyMisfiledAsAttachment :execrows
+-- The two rows the old rule wrote for a body it mistook for files. Narrow on
+-- purpose: text/* only, and only for a message being repaired, so a genuinely
+-- attached .txt on some other message is never touched.
+DELETE FROM email_inbound_attachments
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND inbound_id = sqlc.arg(inbound_id)::bigint
+  AND (content_type LIKE 'text/plain%' OR content_type LIKE 'text/html%');
+
+-- name: ListCollidingRawMessages :many
+-- Rows whose original MIME is shared with another row.
+--
+-- The key was tenant/account/uid until 2026-08-12, and a UID is unique within
+-- a folder rather than within an account, so INBOX/SENT/JUNK messages with the
+-- same UID all wrote to one object and the last one won. Ordered by key so the
+-- caller can walk one collision group at a time.
+SELECT id, raw_key, message_id, folder, imap_uid
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND raw_key <> ''
+  AND raw_key IN (
+      SELECT raw_key FROM email_inbound
+      WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND raw_key <> ''
+      GROUP BY raw_key HAVING count(*) > 1)
+ORDER BY raw_key, id;
+
+-- name: ClearInboundRawKey :execrows
+-- Disowns an original that belongs to a different message.
+--
+-- Blanked rather than repointed: the object holding this message's MIME was
+-- overwritten and is gone. Saying "no original" is safe - every repair pass
+-- skips a row without one. Leaving the key would keep offering somebody else's
+-- mail as this row's source of truth, which is how a lost message becomes a
+-- corrupted one.
+UPDATE email_inbound SET raw_key = '', raw_size = 0
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;

@@ -11,10 +11,26 @@ service CustomerService {
   rpc GetCustomer(GetCustomerRequest) returns (GetCustomerResponse);
   rpc ListCustomers(ListCustomersRequest) returns (ListCustomersResponse);
   rpc UpdateCustomer(UpdateCustomerRequest) returns (UpdateCustomerResponse);
+  rpc UpdateCustomerProfile(UpdateCustomerProfileRequest) returns (UpdateCustomerProfileResponse);
   rpc DeactivateCustomer(DeactivateCustomerRequest) returns (DeactivateCustomerResponse);
   // Reactivate a previously deactivated customer: master data lifecycle is
   // reversible (delete is what stays forbidden).
   rpc ActivateCustomer(ActivateCustomerRequest) returns (ActivateCustomerResponse);
+  rpc ListCustomerAddresses(ListCustomerAddressesRequest) returns (ListCustomerAddressesResponse);
+  rpc CreateCustomerAddress(CreateCustomerAddressRequest) returns (CreateCustomerAddressResponse);
+  rpc UpdateCustomerAddress(UpdateCustomerAddressRequest) returns (UpdateCustomerAddressResponse);
+  rpc DeactivateCustomerAddress(DeactivateCustomerAddressRequest) returns (DeactivateCustomerAddressResponse);
+  rpc ListCustomerContacts(ListCustomerContactsRequest) returns (ListCustomerContactsResponse);
+  rpc CreateCustomerContact(CreateCustomerContactRequest) returns (CreateCustomerContactResponse);
+  rpc UpdateCustomerContact(UpdateCustomerContactRequest) returns (UpdateCustomerContactResponse);
+  rpc DeactivateCustomerContact(DeactivateCustomerContactRequest) returns (DeactivateCustomerContactResponse);
+  rpc ListCustomerOwners(ListCustomerOwnersRequest) returns (ListCustomerOwnersResponse);
+  rpc CreateCustomerOwner(CreateCustomerOwnerRequest) returns (CreateCustomerOwnerResponse);
+  rpc UpdateCustomerOwner(UpdateCustomerOwnerRequest) returns (UpdateCustomerOwnerResponse);
+  rpc DeactivateCustomerOwner(DeactivateCustomerOwnerRequest) returns (DeactivateCustomerOwnerResponse);
+  rpc ListCustomerChanges(ListCustomerChangesRequest) returns (ListCustomerChangesResponse);
+  rpc ImportCustomers(ImportCustomersRequest) returns (ImportCustomersResponse);
+  rpc CheckCustomerDuplicates(CheckCustomerDuplicatesRequest) returns (CheckCustomerDuplicatesResponse);
   // The address book, flattened: every contact that has an email, with the
   // customer it belongs to. One call rather than a customer list followed by
   // a lookup per customer, because the mail composer needs all of them at
@@ -58,6 +74,98 @@ message Contact {
   string email = 3;
   string phone = 4;
   bool is_primary = 5;
+  int64 id = 6;
+  string department = 7;
+  string mobile = 8;
+  string instant_messaging = 9;
+  string language = 10;
+  string remark = 11;
+  string status = 12;
+  int32 sort_order = 13;
+  // ALLOWED / OPTED_OUT / INVALID. ALLOWED contacts may be selected for mail.
+  string email_permission = 14;
+  // Empty means every mail category; otherwise only the selected categories.
+  repeated string email_categories = 15;
+}
+
+// PortService owns port master data. Shipping stores the id together with a
+// code/name/timezone snapshot, so later edits never rewrite history.
+service PortService {
+  rpc CreatePort(CreatePortRequest) returns (CreatePortResponse);
+  rpc GetPort(GetPortRequest) returns (GetPortResponse);
+  rpc ListPorts(ListPortsRequest) returns (ListPortsResponse);
+  rpc ListPortCountries(ListPortCountriesRequest) returns (ListPortCountriesResponse);
+  rpc ImportPorts(ImportPortsRequest) returns (ImportPortsResponse);
+  rpc UpdatePort(UpdatePortRequest) returns (UpdatePortResponse);
+  rpc SetPortStatus(SetPortStatusRequest) returns (SetPortStatusResponse);
+}
+
+message Port {
+  int64 id = 1;
+  string unlocode = 2;
+  string name_zh = 3;
+  string name_en = 4;
+  string country_code = 5;
+  string city = 6;
+  string timezone = 7;
+  repeated string aliases = 8;
+  string status = 9;
+  string remark = 10;
+  int32 version = 11;
+  string port_type = 12;
+  string admin_area = 13;
+  double latitude = 14;
+  double longitude = 15;
+  bool has_coordinates = 16;
+  bool is_favorite = 17;
+}
+
+message CreatePortRequest { Port port = 1; }
+message GetPortRequest { int64 id = 1; }
+message UpdatePortRequest { Port port = 1; }
+message SetPortStatusRequest { int64 id = 1; string status = 2; int32 version = 3; }
+message CreatePortResponse { Port port = 1; }
+message GetPortResponse { Port port = 1; }
+message UpdatePortResponse { Port port = 1; }
+message SetPortStatusResponse { Port port = 1; }
+message ListPortsRequest {
+  erp.common.v1.PageRequest page = 1;
+  string keyword = 2;
+  string country_code = 3;
+  string status = 4;
+}
+message ListPortsResponse {
+  repeated Port ports = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+message PortCountryCount { string country_code = 1; int64 port_count = 2; }
+message ListPortCountriesRequest { string status = 1; }
+message ListPortCountriesResponse { repeated PortCountryCount countries = 1; }
+message PortImportRow {
+  int32 row_number = 1;
+  string unlocode = 2;
+  string name_zh = 3;
+  string name_en = 4;
+  string country_code = 5;
+  string city = 6;
+  string timezone = 7;
+  repeated string aliases = 8;
+  string remark = 9;
+  string port_type = 10;
+  string admin_area = 11;
+  double latitude = 12;
+  double longitude = 13;
+  bool has_coordinates = 14;
+  bool is_favorite = 15;
+  bool profile_fields_present = 16;
+}
+message PortImportIssue { int32 row_number = 1; string code = 2; string message = 3; }
+message ImportPortsRequest { repeated PortImportRow rows = 1; bool confirm = 2; }
+message ImportPortsResponse {
+  int32 create_count = 1;
+  int32 update_count = 2;
+  int32 skip_count = 3;
+  repeated PortImportIssue issues = 4;
 }
 
 message Customer {
@@ -80,6 +188,30 @@ message Customer {
   // shown on screen is derived from it by the browser, in whatever language
   // the reader is using.
   string country_code = 11;
+  string short_name = 12;
+  string english_name = 13;
+  string customer_type = 14;
+  string industry = 15;
+  string source = 16;
+  repeated string tags = 17;
+  string website = 18;
+  string primary_language = 19;
+  string timezone = 20;
+  string registered_name = 21;
+  string registration_no = 22;
+  string tax_id = 23;
+  string invoice_title = 24;
+  string invoice_tax_no = 25;
+  string invoice_remark = 26;
+  int32 payment_days = 27;
+  // Credit limit is stored in the currency's minor unit to avoid floating-point rounding.
+  int64 credit_limit_minor = 28;
+  string credit_currency = 29;
+  string credit_status = 30;
+  string business_status = 31;
+  repeated CustomerAddress addresses = 32;
+  string primary_contact_name = 33;
+  repeated CustomerOwner owners = 34;
 }
 
 message CreateCustomerRequest {
@@ -98,6 +230,26 @@ message CreateCustomerRequest {
   // shown on screen is derived from it by the browser, in whatever language
   // the reader is using.
   string country_code = 9;
+  string short_name = 10;
+  string english_name = 11;
+  string customer_type = 12;
+  string industry = 13;
+  string source = 14;
+  repeated string tags = 15;
+  string website = 16;
+  string primary_language = 17;
+  string timezone = 18;
+  string registered_name = 19;
+  string registration_no = 20;
+  string tax_id = 21;
+  string invoice_title = 22;
+  string invoice_tax_no = 23;
+  string invoice_remark = 24;
+  int32 payment_days = 25;
+  int64 credit_limit_minor = 26;
+  string credit_currency = 27;
+  string credit_status = 28;
+  string business_status = 29;
 }
 
 message CreateCustomerResponse {
@@ -117,6 +269,12 @@ message ListCustomersRequest {
   string keyword = 2;
   // Empty means ACTIVE only; "ALL" includes deactivated.
   string status = 3;
+  // Empty lists every country; __UNCLASSIFIED__ selects customers without a country code.
+  string country_code = 4;
+  string customer_type = 5;
+  string business_status = 6;
+  string tag = 7;
+  int64 owner_employee_id = 8;
 }
 
 message ListCustomersResponse {
@@ -135,6 +293,8 @@ message MailingContact {
   string customer_name = 7;
   string country = 8;
   string country_code = 9;
+  string language = 10;
+  repeated string email_categories = 11;
 }
 
 // CountryGroup is one country and how big a send to it would be.
@@ -156,7 +316,10 @@ message CountryGroup {
   int64 one_each_count = 4;
 }
 
-message ListCustomerCountriesRequest {}
+message ListCustomerCountriesRequest {
+  // Empty means ACTIVE only; "ALL" includes deactivated.
+  string status = 1;
+}
 
 message ListCustomerCountriesResponse {
   repeated CountryGroup countries = 1;
@@ -194,13 +357,42 @@ message UpdateCustomerRequest {
   string currency = 5;
   string payment_term = 6;
   string remark = 7;
-  // Full replacement of the contact list.
+  // Kept for old clients; contacts are maintained through the dedicated contact API.
   repeated Contact contacts = 8;
   // ISO 3166-1 alpha-2, upper case, or empty. See Customer.country_code.
   string country_code = 9;
 }
 
 message UpdateCustomerResponse {
+  Customer customer = 1;
+}
+
+// 客户详细资料使用独立接口更新，旧版基础信息页面不会误清空这些字段。
+message UpdateCustomerProfileRequest {
+  int64 id = 1;
+  string short_name = 2;
+  string english_name = 3;
+  string customer_type = 4;
+  string industry = 5;
+  string source = 6;
+  repeated string tags = 7;
+  string website = 8;
+  string primary_language = 9;
+  string timezone = 10;
+  string registered_name = 11;
+  string registration_no = 12;
+  string tax_id = 13;
+  string invoice_title = 14;
+  string invoice_tax_no = 15;
+  string invoice_remark = 16;
+  int32 payment_days = 17;
+  int64 credit_limit_minor = 18;
+  string credit_currency = 19;
+  string credit_status = 20;
+  string business_status = 21;
+}
+
+message UpdateCustomerProfileResponse {
   Customer customer = 1;
 }
 
@@ -215,6 +407,234 @@ message ActivateCustomerRequest {
 }
 
 message ActivateCustomerResponse {}
+
+message CustomerAddress {
+  int64 id = 1;
+  int64 customer_id = 2;
+  string address_type = 3;
+  string country_code = 4;
+  string state = 5;
+  string city = 6;
+  string postal_code = 7;
+  string address_line = 8;
+  bool is_default = 9;
+  int32 sort_order = 10;
+  string status = 11;
+}
+
+message CustomerAddressInput {
+  string address_type = 1;
+  string country_code = 2;
+  string state = 3;
+  string city = 4;
+  string postal_code = 5;
+  string address_line = 6;
+  bool is_default = 7;
+  int32 sort_order = 8;
+}
+
+message ListCustomerAddressesRequest {
+  int64 customer_id = 1;
+  // Empty lists active records; ALL also includes deactivated addresses.
+  string status = 2;
+}
+
+message ListCustomerAddressesResponse {
+  repeated CustomerAddress addresses = 1;
+}
+
+message CreateCustomerAddressRequest {
+  int64 customer_id = 1;
+  CustomerAddressInput address = 2;
+}
+
+message CreateCustomerAddressResponse {
+  CustomerAddress address = 1;
+}
+
+message UpdateCustomerAddressRequest {
+  int64 customer_id = 1;
+  int64 id = 2;
+  CustomerAddressInput address = 3;
+}
+
+message UpdateCustomerAddressResponse {
+  CustomerAddress address = 1;
+}
+
+message DeactivateCustomerAddressRequest {
+  int64 customer_id = 1;
+  int64 id = 2;
+}
+
+message DeactivateCustomerAddressResponse {}
+
+message CustomerContactInput {
+  string name = 1;
+  string department = 2;
+  string title = 3;
+  string email = 4;
+  string phone = 5;
+  string mobile = 6;
+  string instant_messaging = 7;
+  string language = 8;
+  string remark = 9;
+  bool is_primary = 10;
+  int32 sort_order = 11;
+  string email_permission = 12;
+  repeated string email_categories = 13;
+}
+
+message ListCustomerContactsRequest {
+  int64 customer_id = 1;
+  string status = 2;
+}
+
+message ListCustomerContactsResponse { repeated Contact contacts = 1; }
+
+message CreateCustomerContactRequest {
+  int64 customer_id = 1;
+  CustomerContactInput contact = 2;
+}
+
+message CreateCustomerContactResponse { Contact contact = 1; }
+
+message UpdateCustomerContactRequest {
+  int64 customer_id = 1;
+  int64 id = 2;
+  CustomerContactInput contact = 3;
+}
+
+message UpdateCustomerContactResponse { Contact contact = 1; }
+
+message DeactivateCustomerContactRequest {
+  int64 customer_id = 1;
+  int64 id = 2;
+}
+
+message DeactivateCustomerContactResponse {}
+
+message CustomerOwner {
+  int64 id = 1;
+  int64 customer_id = 2;
+  int64 employee_id = 3;
+  string employee_name = 4;
+  string responsibility_code = 5;
+  string start_date = 6;
+  string end_date = 7;
+  string status = 8;
+  bool is_primary = 9;
+}
+
+message CustomerOwnerInput {
+  int64 employee_id = 1;
+  // Gateway fetches the employee and overwrites this snapshot; callers cannot forge it.
+  string employee_name = 2;
+  string responsibility_code = 3;
+  string start_date = 4;
+  string end_date = 5;
+  bool is_primary = 6;
+}
+
+message ListCustomerOwnersRequest {
+  int64 customer_id = 1;
+  string status = 2;
+}
+
+message ListCustomerOwnersResponse { repeated CustomerOwner owners = 1; }
+
+message CreateCustomerOwnerRequest {
+  int64 customer_id = 1;
+  CustomerOwnerInput owner = 2;
+}
+
+message CreateCustomerOwnerResponse { CustomerOwner owner = 1; }
+
+message UpdateCustomerOwnerRequest {
+  int64 customer_id = 1;
+  int64 id = 2;
+  CustomerOwnerInput owner = 3;
+}
+
+message UpdateCustomerOwnerResponse { CustomerOwner owner = 1; }
+
+message DeactivateCustomerOwnerRequest {
+  int64 customer_id = 1;
+  int64 id = 2;
+  string end_date = 3;
+}
+
+message DeactivateCustomerOwnerResponse {}
+
+message CustomerChange {
+  int64 id = 1;
+  string action = 2;
+  string section = 3;
+  string summary = 4;
+  string before_data = 5;
+  string after_data = 6;
+  int64 operator_id = 7;
+  string operator_name = 8;
+  string created_at = 9;
+}
+
+message ListCustomerChangesRequest {
+  int64 customer_id = 1;
+  erp.common.v1.PageRequest page = 2;
+}
+
+message ListCustomerChangesResponse {
+  repeated CustomerChange changes = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message CustomerImportRow {
+  string code = 1;
+  string name = 2;
+  string country_code = 3;
+  string customer_type = 4;
+  string currency = 5;
+  string payment_term = 6;
+  string contact_name = 7;
+  string contact_email = 8;
+  string contact_phone = 9;
+  string remark = 10;
+}
+
+message ImportCustomersRequest {
+  repeated CustomerImportRow rows = 1;
+  bool dry_run = 2;
+}
+
+message CustomerImportVerdict {
+  int32 line = 1;
+  string code = 2;
+  string name = 3;
+  bool ok = 4;
+  string reason = 5;
+}
+
+message ImportCustomersResponse {
+  repeated CustomerImportVerdict verdicts = 1;
+  int32 ready = 2;
+  int32 blocked = 3;
+  int32 imported = 4;
+}
+
+message CheckCustomerDuplicatesRequest {
+  string name = 1;
+  string tax_id = 2;
+  int64 exclude_id = 3;
+}
+
+message CustomerDuplicate {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  string tax_id = 4;
+}
+
+message CheckCustomerDuplicatesResponse { repeated CustomerDuplicate candidates = 1; }
 
 message Supplier {
   int64 id = 1;

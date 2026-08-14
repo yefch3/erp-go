@@ -7,17 +7,39 @@ package pgdb
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// DefaultMaxConns is the pool ceiling when the DSN does not name one.
+//
+// pgxpool's own default is max(4, NumCPU), which on the two-core hosts this
+// deploys to is four. Four is too few for a service that answers requests and
+// runs background workers out of the same pool: the mail service polls
+// mailboxes on eight workers while employees are reading their inbox, and at
+// four connections the two starve each other - the symptom is not an error
+// but page loads that stall behind a sync.
+//
+// Eight is chosen against the *server's* budget, not this process's appetite.
+// Every service shares one Postgres, whose max_connections is 100, and there
+// are 11 services: 11 x 8 = 88 leaves room for psql and pg_dump. Raising this
+// number means raising max_connections with it, or the eleventh service to
+// need its ninth connection is the one that fails.
+const DefaultMaxConns = 8
+
 // New opens a pool and verifies connectivity before returning it.
 func New(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("pgdb: parse dsn: %w", err)
+	}
+	// Only when the DSN is silent: a deployment that has measured its own
+	// service knows better than this default and must be allowed to say so.
+	if !strings.Contains(dsn, "pool_max_conns") {
+		cfg.MaxConns = DefaultMaxConns
 	}
 	cfg.MaxConnLifetime = 30 * time.Minute
 	cfg.MaxConnIdleTime = 5 * time.Minute

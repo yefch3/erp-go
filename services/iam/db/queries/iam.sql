@@ -77,6 +77,50 @@ SELECT * FROM departments WHERE tenant_id = $1 AND id = $2;
 -- name: ListDepartments :many
 SELECT * FROM departments WHERE tenant_id = $1 ORDER BY path, sort_order, id;
 
+-- name: UpdateDepartmentDetails :one
+UPDATE departments
+SET code = sqlc.arg(code)::text,
+    name = sqlc.arg(name)::text,
+    parent_id = nullif(sqlc.arg(parent_id)::bigint, 0),
+    sort_order = sqlc.arg(sort_order)::int,
+    leader_employee_id = nullif(sqlc.arg(leader_employee_id)::bigint, 0),
+    version = version + 1,
+    updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+  AND version = sqlc.arg(expected_version)::int
+RETURNING *;
+
+-- name: UpdateDepartmentSubtree :exec
+UPDATE departments
+SET path = sqlc.arg(new_path)::text || substring(path FROM length(sqlc.arg(old_path)::text) + 1),
+    level = level + sqlc.arg(level_delta)::int,
+    updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND path LIKE sqlc.arg(old_path)::text || '%';
+
+-- name: SetDepartmentStatus :one
+UPDATE departments
+SET status = sqlc.arg(status)::text,
+    version = version + 1,
+    updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+  AND version = sqlc.arg(expected_version)::int
+RETURNING *;
+
+-- name: CountActiveEmployeesInDepartment :one
+SELECT count(*) FROM employees
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND department_id = sqlc.arg(department_id)::bigint
+  AND status = 'ACTIVE';
+
+-- name: CountActiveChildDepartments :one
+SELECT count(*) FROM departments
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND parent_id = sqlc.arg(parent_id)::bigint
+  AND status = 'ACTIVE';
+
 -- name: CreateEmployee :one
 INSERT INTO employees (tenant_id, code, name, department_id, position, email, phone, manager_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, nullif(sqlc.arg(manager_id)::bigint, 0))
@@ -122,8 +166,116 @@ WHERE e.tenant_id = $1
 ORDER BY e.id DESC
 LIMIT $4 OFFSET $5;
 
+-- name: ListEmployeesFiltered :many
+SELECT e.*, d.name AS department_name, coalesce(m.name, '')::text AS manager_name,
+       count(*) OVER () AS total
+FROM employees e
+JOIN departments d ON d.id = e.department_id AND d.tenant_id = e.tenant_id
+LEFT JOIN employees m ON m.id = e.manager_id AND m.tenant_id = e.tenant_id
+LEFT JOIN users u ON u.employee_id = e.id AND u.tenant_id = e.tenant_id
+WHERE e.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND (sqlc.arg(department_id)::bigint = 0 OR e.department_id = sqlc.arg(department_id)::bigint)
+  AND (sqlc.arg(manager_id)::bigint = 0 OR e.manager_id = sqlc.arg(manager_id)::bigint)
+  AND (sqlc.arg(role_id)::bigint = 0 OR EXISTS (
+    SELECT 1 FROM employee_roles er
+    WHERE er.tenant_id = e.tenant_id AND er.employee_id = e.id
+      AND er.role_id = sqlc.arg(role_id)::bigint
+  ))
+  AND (sqlc.arg(employment_status)::text = '' OR e.status = sqlc.arg(employment_status)::text)
+  AND (
+    sqlc.arg(account_status)::text = ''
+    OR (sqlc.arg(account_status)::text = 'NONE' AND u.id IS NULL AND NOT EXISTS (
+      SELECT 1 FROM employee_invitations i
+      WHERE i.tenant_id = e.tenant_id AND i.employee_id = e.id AND i.used_at IS NULL
+    ))
+    OR (sqlc.arg(account_status)::text = 'PENDING' AND e.email_verified_at IS NULL AND EXISTS (
+      SELECT 1 FROM employee_invitations i
+      WHERE i.tenant_id = e.tenant_id AND i.employee_id = e.id AND i.used_at IS NULL
+    ))
+    OR (sqlc.arg(account_status)::text = 'ACTIVE' AND u.status = 'ACTIVE' AND e.email_verified_at IS NOT NULL)
+  )
+  AND (
+    sqlc.arg(keyword)::text = ''
+    OR e.name ILIKE '%' || sqlc.arg(keyword)::text || '%'
+    OR e.english_name ILIKE '%' || sqlc.arg(keyword)::text || '%'
+    OR e.code ILIKE '%' || sqlc.arg(keyword)::text || '%'
+    OR e.email ILIKE '%' || sqlc.arg(keyword)::text || '%'
+  )
+ORDER BY e.id DESC
+LIMIT sqlc.arg(page_size)::int OFFSET sqlc.arg(page_offset)::int;
+
+-- name: UpdateEmployeeDetails :one
+UPDATE employees
+SET code = sqlc.arg(code)::text,
+    name = sqlc.arg(name)::text,
+    english_name = sqlc.arg(english_name)::text,
+    department_id = sqlc.arg(department_id)::bigint,
+    position = sqlc.arg(position)::text,
+    email = sqlc.arg(email)::text,
+    phone = sqlc.arg(phone)::text,
+    manager_id = nullif(sqlc.arg(manager_id)::bigint, 0),
+    hire_date = sqlc.narg(hire_date)::date,
+    leave_date = sqlc.narg(leave_date)::date,
+    remark = sqlc.arg(remark)::text,
+    version = version + 1,
+    updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+  AND version = sqlc.arg(expected_version)::int
+RETURNING *;
+
+-- name: ManagerCycleExists :one
+WITH RECURSIVE chain AS (
+  SELECT id, manager_id, ARRAY[id]::bigint[] AS visited
+  FROM employees
+  WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+    AND id = sqlc.arg(manager_id)::bigint
+  UNION ALL
+  SELECT e.id, e.manager_id, c.visited || e.id
+  FROM employees e
+  JOIN chain c ON e.id = c.manager_id
+  WHERE e.tenant_id = sqlc.arg(tenant_id)::bigint
+    AND NOT e.id = ANY(c.visited)
+)
+SELECT EXISTS (
+  SELECT 1 FROM chain WHERE id = sqlc.arg(employee_id)::bigint
+);
+
+-- name: CountActiveDirectReports :one
+SELECT count(*) FROM employees
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND manager_id = sqlc.arg(manager_id)::bigint
+  AND status = 'ACTIVE';
+
+-- name: CountDepartmentsLedByEmployee :one
+SELECT count(*) FROM departments
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND leader_employee_id = sqlc.arg(employee_id)::bigint
+  AND status = 'ACTIVE';
+
+-- name: InsertDirectoryChange :exec
+INSERT INTO directory_change_logs (
+  tenant_id, entity_type, entity_id, action, before_data, after_data, operator_id
+) VALUES (
+  sqlc.arg(tenant_id)::bigint,
+  sqlc.arg(entity_type)::text,
+  sqlc.arg(entity_id)::bigint,
+  sqlc.arg(action)::text,
+  sqlc.arg(before_data)::jsonb,
+  sqlc.arg(after_data)::jsonb,
+  sqlc.arg(operator_id)::bigint
+);
+
+-- name: ListDirectoryChanges :many
+SELECT * FROM directory_change_logs
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND entity_type = sqlc.arg(entity_type)::text
+  AND entity_id = sqlc.arg(entity_id)::bigint
+ORDER BY id DESC
+LIMIT 100;
+
 -- name: DeactivateEmployee :execrows
-UPDATE employees SET status = 'INACTIVE', updated_at = now()
+UPDATE employees SET status = 'INACTIVE', leave_date = current_date, version = version + 1, updated_at = now()
 WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE';
 
 -- name: CreateUser :one
@@ -225,7 +377,7 @@ WHERE tenant_id = $1 AND employee_id = $2;
 SELECT employee_id, username FROM users WHERE tenant_id = $1;
 
 -- name: ActivateEmployee :execrows
-UPDATE employees SET status = 'ACTIVE', updated_at = now()
+UPDATE employees SET status = 'ACTIVE', leave_date = NULL, version = version + 1, updated_at = now()
 WHERE tenant_id = $1 AND id = $2 AND status = 'INACTIVE';
 
 -- name: CountOtherHoldersOf :one
