@@ -157,6 +157,15 @@ func (h *Handler) CreateCampaign(ctx context.Context, req *mailv1.CreateCampaign
 	}, nil
 }
 
+func (h *Handler) SendProcurementRfq(ctx context.Context, req *mailv1.SendProcurementRfqRequest) (*mailv1.SendProcurementRfqResponse, error) {
+	res, err := h.svc.SendProcurementRFQ(ctx, grpcx.TenantID(ctx), req.GetSenderEmployeeId(), req.GetRecipientName(),
+		req.GetRecipientEmail(), req.GetSubject(), req.GetBody(), req.GetFileName(), req.GetFileData())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.SendProcurementRfqResponse{CampaignId: res.CampaignID, CampaignNo: res.CampaignNo, Queued: int32(res.Queued)}, nil
+}
+
 func pendingFromProto(in []*mailv1.PendingAttachment) []app.PendingAttachment {
 	out := make([]app.PendingAttachment, 0, len(in))
 	for _, f := range in {

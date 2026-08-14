@@ -78,6 +78,9 @@ type Server struct {
 	GoogleClientID   string
 	OAuthRedirectURL string
 	FrontendBaseURL  string
+	// Employee whose configured mailbox is the procurement shared identity.
+	// Zero disables direct RFQ sending while leaving workbook download usable.
+	ProcurementMailSenderID int64
 	// TrustProxyHeaders says a reverse proxy sits in front and overwrites
 	// X-Forwarded-For. Off by default: the header is caller-supplied, and
 	// trusting it without such a proxy lets anybody spray from a different
@@ -357,7 +360,10 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/factory-rfqs", s.listFactoryRFQs)
 		r.With(s.perm("procurement:sourcing:write")).Post("/api/sourcing-cases/{id}/factory-rfqs", s.createFactoryRFQ)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/supplier-quotes", s.listSupplierQuoteComparison)
-		r.With(s.perm("procurement:sourcing:write")).Post("/api/factory-rfqs/{id}/supplier-quotes", s.createSupplierQuote)
+		r.With(s.perm("procurement:sourcing:price")).Post("/api/factory-rfqs/{id}/supplier-quotes", s.createSupplierQuote)
+		r.With(s.perm("procurement:sourcing:read")).Get("/api/factory-rfqs/{id}/workbook", s.getFactoryRFQWorkbook)
+		r.With(s.perm("procurement:sourcing:price")).Post("/api/factory-rfqs/{id}/supplier-quotes/import", s.importSupplierQuoteWorkbook)
+		r.With(s.perm("procurement:sourcing:send")).Post("/api/factory-rfqs/{id}/send", s.sendFactoryRFQ)
 		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements/{id}", s.getRequirement)
 		r.With(s.perm("procurement:requirement:write")).Post("/api/requirements", s.createRequirement)
 		r.With(s.perm("procurement:requirement:write")).Post("/api/requirements/{id}/cancel", s.cancelRequirement)

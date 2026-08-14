@@ -78,7 +78,12 @@
         <el-table-column prop="responseDueAt" :label="t('sourcing.responseDue')" width="130" />
         <el-table-column prop="lineCount" :label="t('sourcing.lineCount')" width="90" />
         <el-table-column :label="t('common.status')" width="130"><template #default="{ row }">{{ t(`sourcing.rfqStatuses.${row.status}`) }}</template></el-table-column>
-        <el-table-column :label="t('common.actions')" width="130"><template #default="{ row }"><el-button v-if="canWrite" link type="primary" @click.stop="openQuote(row)">{{ t('sourcing.enterQuote') }}</el-button></template></el-table-column>
+        <el-table-column :label="t('common.actions')" width="310"><template #default="{ row }">
+          <el-button link type="primary" @click.stop="downloadRFQ(row)">{{ t('sourcing.downloadRfq') }}</el-button>
+          <el-button v-if="canSend" link type="primary" @click.stop="openSend(row)">{{ t('sourcing.sendRfq') }}</el-button>
+          <el-button v-if="canPrice" link type="primary" @click.stop="openQuote(row)">{{ t('sourcing.enterQuote') }}</el-button>
+          <el-button v-if="canPrice" link type="primary" @click.stop="openImport(row)">{{ t('sourcing.importQuote') }}</el-button>
+        </template></el-table-column>
       </el-table>
       <h3 class="section-title">{{ t('sourcing.quoteComparison') }}</h3>
       <el-table :data="quoteLines" size="small" border>
@@ -87,8 +92,11 @@
         <el-table-column prop="qty" :label="t('sourcing.quantity')" width="110" />
         <el-table-column :label="t('sourcing.unitPrice')" width="150"><template #default="{ row }">{{ row.currency }} {{ row.unitPrice }}</template></el-table-column>
         <el-table-column prop="amount" :label="t('sourcing.amount')" width="140" />
+        <el-table-column prop="moq" :label="t('sourcing.moq')" width="120" />
+        <el-table-column prop="leadTime" :label="t('sourcing.leadTime')" min-width="130" />
         <el-table-column prop="delivery" :label="t('sourcing.delivery')" min-width="150" />
         <el-table-column prop="paymentTerms" :label="t('sourcing.paymentTerms')" min-width="180" />
+        <el-table-column prop="validUntil" :label="t('sourcing.validUntil')" width="130" />
       </el-table>
       <template #footer>
         <el-button @click="detailOpen = false">{{ t('common.close') }}</el-button>
@@ -151,6 +159,29 @@
       </el-table>
       <template #footer><el-button @click="quoteOpen=false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="saving" @click="saveQuote">{{ t('common.save') }}</el-button></template>
     </el-dialog>
+
+    <el-dialog v-model="importOpen" :title="t('sourcing.importQuote')" width="650px" append-to-body>
+      <el-alert type="info" :closable="false" show-icon class="review-hint">{{ t('sourcing.importHint') }}</el-alert>
+      <el-form label-width="110px">
+        <el-form-item :label="t('sourcing.quoteFile')" required><input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" @change="selectQuoteFile" /></el-form-item>
+        <el-form-item :label="t('sourcing.currency')"><el-input v-model="importForm.currency" maxlength="3" /></el-form-item>
+        <el-form-item :label="t('sourcing.quotedAt')"><el-date-picker v-model="importForm.quotedAt" value-format="YYYY-MM-DD" /></el-form-item>
+        <el-form-item :label="t('sourcing.validUntil')"><el-date-picker v-model="importForm.validUntil" value-format="YYYY-MM-DD" /></el-form-item>
+        <el-form-item :label="t('sourcing.delivery')"><el-input v-model="importForm.delivery" /></el-form-item>
+        <el-form-item :label="t('sourcing.paymentTerms')"><el-input v-model="importForm.paymentTerms" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="importOpen=false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="saving" @click="importQuote">{{ t('sourcing.importQuote') }}</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="sendOpen" :title="t('sourcing.sendRfq')" width="650px" append-to-body>
+      <el-alert type="info" :closable="false" show-icon class="review-hint">{{ t('sourcing.sharedSenderHint') }}</el-alert>
+      <el-form label-width="110px">
+        <el-form-item :label="t('sourcing.contactEmail')" required><el-input v-model="sendForm.recipientEmail" /></el-form-item>
+        <el-form-item :label="t('sourcing.mailSubject')" required><el-input v-model="sendForm.subject" /></el-form-item>
+        <el-form-item :label="t('sourcing.mailBody')" required><el-input v-model="sendForm.body" type="textarea" :rows="7" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="sendOpen=false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="saving" @click="sendRFQ">{{ t('sourcing.sendRfq') }}</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
@@ -159,7 +190,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { get, post, put } from '../api'
+import { download, get, post, put, saveBlob } from '../api'
 import { useAuthStore } from '../stores/auth'
 import ProcurementNav from '../components/ProcurementNav.vue'
 
@@ -175,8 +206,8 @@ interface SourcingCase {
   contactEmail: string; ownerName: string; status: string; createdAt: string; lines: SourcingLine[]
 }
 interface Supplier { id: string; code: string; name: string }
-interface FactoryRFQ { id: string; rfqNo: string; supplierName: string; currency: string; responseDueAt: string; status: string; lineCount: number; sourcingLineIds: string[] }
-interface QuoteComparison { supplierName: string; sourcingLineId: string; qty: string; currency: string; unitPrice: string; amount: string; delivery: string; paymentTerms: string }
+interface FactoryRFQ { id: string; rfqNo: string; supplierName: string; contactEmail: string; currency: string; responseDueAt: string; status: string; lineCount: number; sourcingLineIds: string[] }
+interface QuoteComparison { supplierName: string; sourcingLineId: string; qty: string; currency: string; unitPrice: string; amount: string; delivery: string; paymentTerms: string; moq: string; leadTime: string; validUntil: string }
 interface Product { id: string; code: string; name: string; nameEn?: string; brand?: string; description?: string; baseUomId: string }
 interface Sku { id: string; code: string; spec: string; status: string }
 
@@ -185,6 +216,8 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const canWrite = auth.can('procurement:sourcing:write')
+const canSend = auth.can('procurement:sourcing:send')
+const canPrice = auth.can('procurement:sourcing:price')
 const statuses = ['REVIEWING', 'SOURCING', 'QUOTES_RECEIVED', 'COSTING', 'CUSTOMER_QUOTE_CREATED', 'CANCELLED']
 const rows = ref<SourcingCase[]>([])
 const total = ref(0)
@@ -205,6 +238,13 @@ const quoteOpen = ref(false)
 const quotingRFQ = ref<FactoryRFQ | null>(null)
 const quoteForm = reactive({ currency: 'USD', quotedAt: '', validUntil: '', delivery: '', paymentTerms: '' })
 const quoteRows = ref<{ sourcingLineId: string; product: string; qty: string; unitPrice: string; moq: string; leadTime: string }[]>([])
+const importOpen = ref(false)
+const importingRFQ = ref<FactoryRFQ | null>(null)
+const quoteFile = ref<File | null>(null)
+const importForm = reactive({ currency: 'USD', quotedAt: '', validUntil: '', delivery: '', paymentTerms: '' })
+const sendOpen = ref(false)
+const sendingRFQ = ref<FactoryRFQ | null>(null)
+const sendForm = reactive({ recipientEmail: '', subject: '', body: '' })
 const products = ref<Product[]>([])
 const reviewSkus = ref<Sku[]>([])
 const reviewOpen = ref(false)
@@ -336,6 +376,53 @@ async function saveQuote() {
   try {
     await post(`/factory-rfqs/${quotingRFQ.value.id}/supplier-quotes`, { quoted_at: quoteForm.quotedAt, valid_until: quoteForm.validUntil, currency: quoteForm.currency, payment_terms: quoteForm.paymentTerms, delivery: quoteForm.delivery, source: 'MANUAL', lines: quoteRows.value.map(row => ({ sourcing_line_id: Number(row.sourcingLineId), qty: row.qty, unit_price: row.unitPrice, moq: row.moq, lead_time: row.leadTime })) })
     quoteOpen.value = false; if (detail.value) await loadSourcingCommercial(detail.value.id); await load(); ElMessage.success(t('sourcing.quoteSaved'))
+  } finally { saving.value = false }
+}
+
+async function downloadRFQ(row: FactoryRFQ) {
+  const file = await download(`/factory-rfqs/${row.id}/workbook`)
+  saveBlob(file.blob, file.fileName || `${row.rfqNo}-quote.xlsx`)
+}
+
+function openImport(row: FactoryRFQ) {
+  importingRFQ.value = row; quoteFile.value = null
+  Object.assign(importForm, { currency: row.currency || 'USD', quotedAt: '', validUntil: '', delivery: '', paymentTerms: '' })
+  importOpen.value = true
+}
+
+function selectQuoteFile(event: Event) {
+  quoteFile.value = (event.target as HTMLInputElement).files?.[0] ?? null
+}
+
+async function fileBase64(file: File) {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(binary)
+}
+
+async function importQuote() {
+  if (!importingRFQ.value || !quoteFile.value) { ElMessage.warning(t('sourcing.quoteFileRequired')); return }
+  if (quoteFile.value.size > 2 * 1024 * 1024) { ElMessage.warning(t('sourcing.quoteFileTooLarge')); return }
+  saving.value = true
+  try {
+    await post(`/factory-rfqs/${importingRFQ.value.id}/supplier-quotes/import`, { file_data: await fileBase64(quoteFile.value), quoted_at: importForm.quotedAt, valid_until: importForm.validUntil, currency: importForm.currency, payment_terms: importForm.paymentTerms, delivery: importForm.delivery })
+    importOpen.value = false; if (detail.value) await loadSourcingCommercial(detail.value.id); await load(); ElMessage.success(t('sourcing.quoteImported'))
+  } finally { saving.value = false }
+}
+
+function openSend(row: FactoryRFQ) {
+  sendingRFQ.value = row
+  Object.assign(sendForm, { recipientEmail: row.contactEmail || '', subject: `Request for quotation ${row.rfqNo}`, body: `Dear ${row.supplierName},\n\nPlease complete the attached quotation workbook for ${row.rfqNo} and return it without changing RFQ No, Line ID, Quantity or Unit.\n\nThank you.` })
+  sendOpen.value = true
+}
+
+async function sendRFQ() {
+  if (!sendingRFQ.value || !sendForm.recipientEmail || !sendForm.subject || !sendForm.body) { ElMessage.warning(t('sourcing.mailRequired')); return }
+  saving.value = true
+  try {
+    await post(`/factory-rfqs/${sendingRFQ.value.id}/send`, { recipient_email: sendForm.recipientEmail, subject: sendForm.subject, body: sendForm.body })
+    sendOpen.value = false; if (detail.value) await loadSourcingCommercial(detail.value.id); ElMessage.success(t('sourcing.rfqSent'))
   } finally { saving.value = false }
 }
 

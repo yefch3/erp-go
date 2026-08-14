@@ -111,6 +111,34 @@ func (h *SourcingHandler) CreateSupplierQuote(ctx context.Context, req *prv1.Cre
 	return &prv1.CreateSupplierQuoteResponse{Id: row.ID, SupplierQuoteNo: row.SupplierQuoteNo}, nil
 }
 
+func (h *SourcingHandler) GetFactoryRfqWorkbook(ctx context.Context, req *prv1.GetFactoryRfqWorkbookRequest) (*prv1.GetFactoryRfqWorkbookResponse, error) {
+	book, err := h.svc.GetFactoryRFQWorkbook(ctx, grpcx.TenantID(ctx), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.GetFactoryRfqWorkbookResponse{FileName: book.FileName, FileData: book.Data, RfqNo: book.RFQNo,
+		SupplierName: book.SupplierName, ContactEmail: book.ContactEmail, Currency: book.Currency, ResponseDueAt: book.ResponseDueAt}, nil
+}
+
+func (h *SourcingHandler) ImportSupplierQuoteWorkbook(ctx context.Context, req *prv1.ImportSupplierQuoteWorkbookRequest) (*prv1.ImportSupplierQuoteWorkbookResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	row, err := h.svc.ImportSupplierQuoteWorkbook(ctx, grpcx.TenantID(ctx), req.GetFileData(), app.NewSupplierQuote{
+		FactoryRFQID: req.GetFactoryRfqId(), QuotedAt: req.GetQuotedAt(), ValidUntil: req.GetValidUntil(), Currency: req.GetCurrency(),
+		PaymentTerms: req.GetPaymentTerms(), Delivery: req.GetDelivery(), Remark: req.GetRemark(),
+	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.ImportSupplierQuoteWorkbookResponse{Id: row.ID, SupplierQuoteNo: row.SupplierQuoteNo}, nil
+}
+
+func (h *SourcingHandler) MarkFactoryRfqSent(ctx context.Context, req *prv1.MarkFactoryRfqSentRequest) (*prv1.MarkFactoryRfqSentResponse, error) {
+	if err := h.svc.MarkFactoryRFQSent(ctx, grpcx.TenantID(ctx), req.GetId()); err != nil {
+		return nil, err
+	}
+	return &prv1.MarkFactoryRfqSentResponse{Status: "SENT"}, nil
+}
+
 func (h *SourcingHandler) ListSupplierQuoteComparison(ctx context.Context, req *prv1.ListSupplierQuoteComparisonRequest) (*prv1.ListSupplierQuoteComparisonResponse, error) {
 	rows, err := h.svc.ListSupplierQuoteComparison(ctx, grpcx.TenantID(ctx), req.GetCaseId())
 	if err != nil {

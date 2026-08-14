@@ -18,6 +18,9 @@ service SourcingService {
   rpc CreateFactoryRfq(CreateFactoryRfqRequest) returns (CreateFactoryRfqResponse);
   rpc ListFactoryRfqs(ListFactoryRfqsRequest) returns (ListFactoryRfqsResponse);
   rpc CreateSupplierQuote(CreateSupplierQuoteRequest) returns (CreateSupplierQuoteResponse);
+  rpc GetFactoryRfqWorkbook(GetFactoryRfqWorkbookRequest) returns (GetFactoryRfqWorkbookResponse);
+  rpc ImportSupplierQuoteWorkbook(ImportSupplierQuoteWorkbookRequest) returns (ImportSupplierQuoteWorkbookResponse);
+  rpc MarkFactoryRfqSent(MarkFactoryRfqSentRequest) returns (MarkFactoryRfqSentResponse);
   rpc ListSupplierQuoteComparison(ListSupplierQuoteComparisonRequest) returns (ListSupplierQuoteComparisonResponse);
 }
 
@@ -123,6 +126,17 @@ message CreateFactoryRfqResponse { FactoryRfq factory_rfq = 1; }
 message ListFactoryRfqsRequest { int64 case_id = 1; }
 message ListFactoryRfqsResponse { repeated FactoryRfq factory_rfqs = 1; }
 
+message GetFactoryRfqWorkbookRequest { int64 id = 1; }
+message GetFactoryRfqWorkbookResponse {
+  string file_name = 1;
+  bytes file_data = 2;
+  string rfq_no = 3;
+  string supplier_name = 4;
+  string contact_email = 5;
+  string currency = 6;
+  string response_due_at = 7;
+}
+
 message SupplierQuoteLineInput {
   int64 sourcing_line_id = 1; string qty = 2; string unit_price = 3;
   string moq = 4; string lead_time = 5; string remark = 6;
@@ -133,6 +147,19 @@ message CreateSupplierQuoteRequest {
   string remark = 7; string source = 8; repeated SupplierQuoteLineInput lines = 9;
 }
 message CreateSupplierQuoteResponse { int64 id = 1; string supplier_quote_no = 2; }
+message ImportSupplierQuoteWorkbookRequest {
+  int64 factory_rfq_id = 1;
+  bytes file_data = 2;
+  string quoted_at = 3;
+  string valid_until = 4;
+  string currency = 5;
+  string payment_terms = 6;
+  string delivery = 7;
+  string remark = 8;
+}
+message ImportSupplierQuoteWorkbookResponse { int64 id = 1; string supplier_quote_no = 2; }
+message MarkFactoryRfqSentRequest { int64 id = 1; }
+message MarkFactoryRfqSentResponse { string status = 1; }
 message ListSupplierQuoteComparisonRequest { int64 case_id = 1; }
 message SupplierQuoteComparisonLine {
   int64 quote_id = 1; string supplier_quote_no = 2; int64 factory_rfq_id = 3;

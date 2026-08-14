@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -51,6 +52,7 @@ func run(log *slog.Logger) error {
 	// symptom would be a panic in the middle of somebody's first request.
 	_ = grpcx.SigningKey()
 	cfg := config.Load()
+	procurementSenderID, _ := strconv.ParseInt(os.Getenv("PROCUREMENT_MAIL_SENDER_ID"), 10, 64)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -147,36 +149,37 @@ func run(log *slog.Logger) error {
 	}
 
 	srv := &httpapi.Server{
-		IAM:              iamv1.NewAuthServiceClient(iamConn),
-		Directory:        iamv1.NewDirectoryServiceClient(iamConn),
-		Access:           iamv1.NewAccessServiceClient(iamConn),
-		Fx:               fxv1.NewFxServiceClient(fxConn),
-		Customers:        mdv1.NewCustomerServiceClient(mdConn),
-		Suppliers:        mdv1.NewSupplierServiceClient(mdConn),
-		Ports:            mdv1.NewPortServiceClient(mdConn),
-		Options:          mdv1.NewOptionServiceClient(mdConn),
-		Numbering:        mdv1.NewNumberingServiceClient(mdConn),
-		Approval:         apv1.NewApprovalServiceClient(apConn),
-		Catalog:          pdv1.NewCatalogServiceClient(pdConn),
-		Attachments:      pdv1.NewAttachmentServiceClient(pdConn),
-		Attributes:       pdv1.NewAttributeServiceClient(pdConn),
-		Quotations:       exv1.NewQuotationServiceClient(exConn),
-		Contracts:        exv1.NewContractServiceClient(exConn),
-		Shipments:        exv1.NewShipmentServiceClient(exConn),
-		Receipts:         exv1.NewReceiptServiceClient(exConn),
-		Requirements:     prv1.NewRequirementServiceClient(prConn),
-		Orders:           prv1.NewPurchaseOrderServiceClient(prConn),
-		Sourcing:         prv1.NewSourcingServiceClient(prConn),
-		Stocks:           ivv1.NewStockServiceClient(ivConn),
-		Shipping:         shippingv1.NewShippingServiceClient(shippingConn),
-		Emails:           mailv1.NewEmailServiceClient(ntConn),
-		Unlock:           unlock,
-		Revocations:      revocations,
-		Limits:           httpapi.NewRateLimiter(cfg.RedisAddr, log),
-		Throttle:         throttle,
-		GoogleClientID:   os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
-		OAuthRedirectURL: oauthRedirect,
-		FrontendBaseURL:  frontendBase,
+		IAM:                     iamv1.NewAuthServiceClient(iamConn),
+		Directory:               iamv1.NewDirectoryServiceClient(iamConn),
+		Access:                  iamv1.NewAccessServiceClient(iamConn),
+		Fx:                      fxv1.NewFxServiceClient(fxConn),
+		Customers:               mdv1.NewCustomerServiceClient(mdConn),
+		Suppliers:               mdv1.NewSupplierServiceClient(mdConn),
+		Ports:                   mdv1.NewPortServiceClient(mdConn),
+		Options:                 mdv1.NewOptionServiceClient(mdConn),
+		Numbering:               mdv1.NewNumberingServiceClient(mdConn),
+		Approval:                apv1.NewApprovalServiceClient(apConn),
+		Catalog:                 pdv1.NewCatalogServiceClient(pdConn),
+		Attachments:             pdv1.NewAttachmentServiceClient(pdConn),
+		Attributes:              pdv1.NewAttributeServiceClient(pdConn),
+		Quotations:              exv1.NewQuotationServiceClient(exConn),
+		Contracts:               exv1.NewContractServiceClient(exConn),
+		Shipments:               exv1.NewShipmentServiceClient(exConn),
+		Receipts:                exv1.NewReceiptServiceClient(exConn),
+		Requirements:            prv1.NewRequirementServiceClient(prConn),
+		Orders:                  prv1.NewPurchaseOrderServiceClient(prConn),
+		Sourcing:                prv1.NewSourcingServiceClient(prConn),
+		Stocks:                  ivv1.NewStockServiceClient(ivConn),
+		Shipping:                shippingv1.NewShippingServiceClient(shippingConn),
+		Emails:                  mailv1.NewEmailServiceClient(ntConn),
+		Unlock:                  unlock,
+		Revocations:             revocations,
+		Limits:                  httpapi.NewRateLimiter(cfg.RedisAddr, log),
+		Throttle:                throttle,
+		GoogleClientID:          os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
+		OAuthRedirectURL:        oauthRedirect,
+		FrontendBaseURL:         frontendBase,
+		ProcurementMailSenderID: procurementSenderID,
 		// Only when a proxy in front actually overwrites X-Forwarded-For.
 		// Off unless said so, because the header is caller-supplied and
 		// trusting it without such a proxy makes the per-source login limit

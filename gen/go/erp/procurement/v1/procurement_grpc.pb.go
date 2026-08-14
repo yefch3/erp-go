@@ -27,6 +27,9 @@ const (
 	SourcingService_CreateFactoryRfq_FullMethodName            = "/erp.procurement.v1.SourcingService/CreateFactoryRfq"
 	SourcingService_ListFactoryRfqs_FullMethodName             = "/erp.procurement.v1.SourcingService/ListFactoryRfqs"
 	SourcingService_CreateSupplierQuote_FullMethodName         = "/erp.procurement.v1.SourcingService/CreateSupplierQuote"
+	SourcingService_GetFactoryRfqWorkbook_FullMethodName       = "/erp.procurement.v1.SourcingService/GetFactoryRfqWorkbook"
+	SourcingService_ImportSupplierQuoteWorkbook_FullMethodName = "/erp.procurement.v1.SourcingService/ImportSupplierQuoteWorkbook"
+	SourcingService_MarkFactoryRfqSent_FullMethodName          = "/erp.procurement.v1.SourcingService/MarkFactoryRfqSent"
 	SourcingService_ListSupplierQuoteComparison_FullMethodName = "/erp.procurement.v1.SourcingService/ListSupplierQuoteComparison"
 )
 
@@ -46,6 +49,9 @@ type SourcingServiceClient interface {
 	CreateFactoryRfq(ctx context.Context, in *CreateFactoryRfqRequest, opts ...grpc.CallOption) (*CreateFactoryRfqResponse, error)
 	ListFactoryRfqs(ctx context.Context, in *ListFactoryRfqsRequest, opts ...grpc.CallOption) (*ListFactoryRfqsResponse, error)
 	CreateSupplierQuote(ctx context.Context, in *CreateSupplierQuoteRequest, opts ...grpc.CallOption) (*CreateSupplierQuoteResponse, error)
+	GetFactoryRfqWorkbook(ctx context.Context, in *GetFactoryRfqWorkbookRequest, opts ...grpc.CallOption) (*GetFactoryRfqWorkbookResponse, error)
+	ImportSupplierQuoteWorkbook(ctx context.Context, in *ImportSupplierQuoteWorkbookRequest, opts ...grpc.CallOption) (*ImportSupplierQuoteWorkbookResponse, error)
+	MarkFactoryRfqSent(ctx context.Context, in *MarkFactoryRfqSentRequest, opts ...grpc.CallOption) (*MarkFactoryRfqSentResponse, error)
 	ListSupplierQuoteComparison(ctx context.Context, in *ListSupplierQuoteComparisonRequest, opts ...grpc.CallOption) (*ListSupplierQuoteComparisonResponse, error)
 }
 
@@ -137,6 +143,36 @@ func (c *sourcingServiceClient) CreateSupplierQuote(ctx context.Context, in *Cre
 	return out, nil
 }
 
+func (c *sourcingServiceClient) GetFactoryRfqWorkbook(ctx context.Context, in *GetFactoryRfqWorkbookRequest, opts ...grpc.CallOption) (*GetFactoryRfqWorkbookResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetFactoryRfqWorkbookResponse)
+	err := c.cc.Invoke(ctx, SourcingService_GetFactoryRfqWorkbook_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ImportSupplierQuoteWorkbook(ctx context.Context, in *ImportSupplierQuoteWorkbookRequest, opts ...grpc.CallOption) (*ImportSupplierQuoteWorkbookResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ImportSupplierQuoteWorkbookResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ImportSupplierQuoteWorkbook_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) MarkFactoryRfqSent(ctx context.Context, in *MarkFactoryRfqSentRequest, opts ...grpc.CallOption) (*MarkFactoryRfqSentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MarkFactoryRfqSentResponse)
+	err := c.cc.Invoke(ctx, SourcingService_MarkFactoryRfqSent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *sourcingServiceClient) ListSupplierQuoteComparison(ctx context.Context, in *ListSupplierQuoteComparisonRequest, opts ...grpc.CallOption) (*ListSupplierQuoteComparisonResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListSupplierQuoteComparisonResponse)
@@ -163,6 +199,9 @@ type SourcingServiceServer interface {
 	CreateFactoryRfq(context.Context, *CreateFactoryRfqRequest) (*CreateFactoryRfqResponse, error)
 	ListFactoryRfqs(context.Context, *ListFactoryRfqsRequest) (*ListFactoryRfqsResponse, error)
 	CreateSupplierQuote(context.Context, *CreateSupplierQuoteRequest) (*CreateSupplierQuoteResponse, error)
+	GetFactoryRfqWorkbook(context.Context, *GetFactoryRfqWorkbookRequest) (*GetFactoryRfqWorkbookResponse, error)
+	ImportSupplierQuoteWorkbook(context.Context, *ImportSupplierQuoteWorkbookRequest) (*ImportSupplierQuoteWorkbookResponse, error)
+	MarkFactoryRfqSent(context.Context, *MarkFactoryRfqSentRequest) (*MarkFactoryRfqSentResponse, error)
 	ListSupplierQuoteComparison(context.Context, *ListSupplierQuoteComparisonRequest) (*ListSupplierQuoteComparisonResponse, error)
 	mustEmbedUnimplementedSourcingServiceServer()
 }
@@ -197,6 +236,15 @@ func (UnimplementedSourcingServiceServer) ListFactoryRfqs(context.Context, *List
 }
 func (UnimplementedSourcingServiceServer) CreateSupplierQuote(context.Context, *CreateSupplierQuoteRequest) (*CreateSupplierQuoteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateSupplierQuote not implemented")
+}
+func (UnimplementedSourcingServiceServer) GetFactoryRfqWorkbook(context.Context, *GetFactoryRfqWorkbookRequest) (*GetFactoryRfqWorkbookResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetFactoryRfqWorkbook not implemented")
+}
+func (UnimplementedSourcingServiceServer) ImportSupplierQuoteWorkbook(context.Context, *ImportSupplierQuoteWorkbookRequest) (*ImportSupplierQuoteWorkbookResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ImportSupplierQuoteWorkbook not implemented")
+}
+func (UnimplementedSourcingServiceServer) MarkFactoryRfqSent(context.Context, *MarkFactoryRfqSentRequest) (*MarkFactoryRfqSentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MarkFactoryRfqSent not implemented")
 }
 func (UnimplementedSourcingServiceServer) ListSupplierQuoteComparison(context.Context, *ListSupplierQuoteComparisonRequest) (*ListSupplierQuoteComparisonResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListSupplierQuoteComparison not implemented")
@@ -366,6 +414,60 @@ func _SourcingService_CreateSupplierQuote_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SourcingService_GetFactoryRfqWorkbook_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetFactoryRfqWorkbookRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).GetFactoryRfqWorkbook(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_GetFactoryRfqWorkbook_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).GetFactoryRfqWorkbook(ctx, req.(*GetFactoryRfqWorkbookRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ImportSupplierQuoteWorkbook_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ImportSupplierQuoteWorkbookRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ImportSupplierQuoteWorkbook(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ImportSupplierQuoteWorkbook_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ImportSupplierQuoteWorkbook(ctx, req.(*ImportSupplierQuoteWorkbookRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_MarkFactoryRfqSent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkFactoryRfqSentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).MarkFactoryRfqSent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_MarkFactoryRfqSent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).MarkFactoryRfqSent(ctx, req.(*MarkFactoryRfqSentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SourcingService_ListSupplierQuoteComparison_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListSupplierQuoteComparisonRequest)
 	if err := dec(in); err != nil {
@@ -422,6 +524,18 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateSupplierQuote",
 			Handler:    _SourcingService_CreateSupplierQuote_Handler,
+		},
+		{
+			MethodName: "GetFactoryRfqWorkbook",
+			Handler:    _SourcingService_GetFactoryRfqWorkbook_Handler,
+		},
+		{
+			MethodName: "ImportSupplierQuoteWorkbook",
+			Handler:    _SourcingService_ImportSupplierQuoteWorkbook_Handler,
+		},
+		{
+			MethodName: "MarkFactoryRfqSent",
+			Handler:    _SourcingService_MarkFactoryRfqSent_Handler,
 		},
 		{
 			MethodName: "ListSupplierQuoteComparison",

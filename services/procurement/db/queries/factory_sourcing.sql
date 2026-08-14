@@ -32,6 +32,11 @@ SELECT id,case_id,currency,status FROM factory_rfqs WHERE tenant_id=$1 AND id=$2
 SELECT sourcing_line_id,qty::text,uom_code,spec_snapshot FROM factory_rfq_lines
 WHERE tenant_id=$1 AND factory_rfq_id=$2 ORDER BY line_no;
 
+-- name: GetFactoryRFQDocument :one
+SELECT id,rfq_no,supplier_name,contact_email,currency,
+ coalesce(response_due_at::text,'')::text AS response_due_at
+FROM factory_rfqs WHERE tenant_id=$1 AND id=$2;
+
 -- name: CreateSupplierQuote :one
 INSERT INTO supplier_quotes (tenant_id,factory_rfq_id,supplier_quote_no,quoted_at,valid_until,currency,
  payment_terms,delivery,remark,source,created_by)
@@ -49,6 +54,10 @@ VALUES (sqlc.arg(tenant_id),sqlc.arg(supplier_quote_id),sqlc.arg(sourcing_line_i
 
 -- name: MarkFactoryRFQQuoted :exec
 UPDATE factory_rfqs SET status='QUOTED',updated_at=now() WHERE tenant_id=$1 AND id=$2;
+
+-- name: MarkFactoryRFQSent :execrows
+UPDATE factory_rfqs SET status='SENT',updated_at=now()
+WHERE tenant_id=$1 AND id=$2 AND status='DRAFT';
 
 -- name: MarkSourcingCaseQuotesReceived :exec
 UPDATE sourcing_cases SET status='QUOTES_RECEIVED',updated_at=now() WHERE tenant_id=$1 AND id=$2;

@@ -232,6 +232,40 @@ func (q *Queries) FactoryRFQLines(ctx context.Context, arg FactoryRFQLinesParams
 	return items, nil
 }
 
+const getFactoryRFQDocument = `-- name: GetFactoryRFQDocument :one
+SELECT id,rfq_no,supplier_name,contact_email,currency,
+ coalesce(response_due_at::text,'')::text AS response_due_at
+FROM factory_rfqs WHERE tenant_id=$1 AND id=$2
+`
+
+type GetFactoryRFQDocumentParams struct {
+	TenantID int64
+	ID       int64
+}
+
+type GetFactoryRFQDocumentRow struct {
+	ID            int64
+	RfqNo         string
+	SupplierName  string
+	ContactEmail  string
+	Currency      string
+	ResponseDueAt string
+}
+
+func (q *Queries) GetFactoryRFQDocument(ctx context.Context, arg GetFactoryRFQDocumentParams) (GetFactoryRFQDocumentRow, error) {
+	row := q.db.QueryRow(ctx, getFactoryRFQDocument, arg.TenantID, arg.ID)
+	var i GetFactoryRFQDocumentRow
+	err := row.Scan(
+		&i.ID,
+		&i.RfqNo,
+		&i.SupplierName,
+		&i.ContactEmail,
+		&i.Currency,
+		&i.ResponseDueAt,
+	)
+	return i, err
+}
+
 const listFactoryRFQs = `-- name: ListFactoryRFQs :many
 SELECT r.id,r.case_id,r.rfq_no,r.supplier_id,r.supplier_code,r.supplier_name,r.contact_email,
  r.currency,coalesce(r.response_due_at::text,'')::text AS response_due_at,r.status,r.created_at,
@@ -387,6 +421,24 @@ type MarkFactoryRFQQuotedParams struct {
 func (q *Queries) MarkFactoryRFQQuoted(ctx context.Context, arg MarkFactoryRFQQuotedParams) error {
 	_, err := q.db.Exec(ctx, markFactoryRFQQuoted, arg.TenantID, arg.ID)
 	return err
+}
+
+const markFactoryRFQSent = `-- name: MarkFactoryRFQSent :execrows
+UPDATE factory_rfqs SET status='SENT',updated_at=now()
+WHERE tenant_id=$1 AND id=$2 AND status='DRAFT'
+`
+
+type MarkFactoryRFQSentParams struct {
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) MarkFactoryRFQSent(ctx context.Context, arg MarkFactoryRFQSentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markFactoryRFQSent, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const markSourcingCaseQuotesReceived = `-- name: MarkSourcingCaseQuotesReceived :exec

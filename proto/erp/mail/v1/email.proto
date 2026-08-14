@@ -19,6 +19,10 @@ service EmailService {
   // gap where the name should be.
   rpc PreviewCampaign(PreviewCampaignRequest) returns (PreviewCampaignResponse);
   rpc CreateCampaign(CreateCampaignRequest) returns (CreateCampaignResponse);
+  // Sends a factory RFQ through the configured procurement shared mailbox.
+  // The gateway supplies the configured employee id; browsers cannot choose
+  // an arbitrary colleague as sender.
+  rpc SendProcurementRfq(SendProcurementRfqRequest) returns (SendProcurementRfqResponse);
 
   // The per-recipient list. Also the failed-delivery queue, filtered.
   rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
@@ -831,6 +835,22 @@ message CreateCampaignResponse {
   int32 queued = 3;
   repeated SkippedRecipient suppressed = 4;
   repeated SkippedRecipient needs_review = 5;
+}
+
+message SendProcurementRfqRequest {
+  int64 sender_employee_id = 1;
+  string recipient_name = 2;
+  string recipient_email = 3;
+  string subject = 4;
+  string body = 5;
+  string file_name = 6;
+  bytes file_data = 7;
+}
+
+message SendProcurementRfqResponse {
+  int64 campaign_id = 1;
+  string campaign_no = 2;
+  int32 queued = 3;
 }
 
 message ListMessagesRequest {
