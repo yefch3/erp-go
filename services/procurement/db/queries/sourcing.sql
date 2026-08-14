@@ -57,10 +57,25 @@ SELECT id, case_id, line_no, raw_text, product, material_standard, grade,
        thickness, width, length_or_form, surface_requirement, coating, tolerance,
        coil_weight, coil_id, packaging, delivery, payment_terms, incoterm, port,
        quantity_unit, remarks, coalesce(quantity::text, '')::text AS quantity,
-       product_id, sku_id, uom_id, decision
+       product_id, sku_id, uom_id, decision, decided_by, decided_by_name,
+       coalesce(decided_at::text, '')::text AS decided_at
 FROM sourcing_lines
 WHERE tenant_id = $1 AND case_id = $2
 ORDER BY line_no;
+
+-- name: ReviewSourcingLine :execrows
+UPDATE sourcing_lines SET
+ product=sqlc.arg(product),material_standard=sqlc.arg(material_standard),grade=sqlc.arg(grade),
+ thickness=sqlc.arg(thickness),width=sqlc.arg(width),length_or_form=sqlc.arg(length_or_form),
+ surface_requirement=sqlc.arg(surface_requirement),coating=sqlc.arg(coating),tolerance=sqlc.arg(tolerance),
+ coil_weight=sqlc.arg(coil_weight),coil_id=sqlc.arg(coil_id),packaging=sqlc.arg(packaging),
+ delivery=sqlc.arg(delivery),payment_terms=sqlc.arg(payment_terms),incoterm=sqlc.arg(incoterm),
+ port=sqlc.arg(port),quantity_unit=sqlc.arg(quantity_unit),remarks=sqlc.arg(remarks),
+ quantity=nullif(sqlc.arg(quantity)::text,'')::numeric,product_id=sqlc.arg(product_id),
+ sku_id=sqlc.arg(sku_id),uom_id=sqlc.arg(uom_id),decision=sqlc.arg(decision),
+ decided_by=sqlc.arg(decided_by),decided_by_name=sqlc.arg(decided_by_name),
+ decided_at=CASE WHEN sqlc.arg(decision)::varchar='PENDING' THEN NULL ELSE now() END,updated_at=now()
+WHERE tenant_id=sqlc.arg(tenant_id) AND case_id=sqlc.arg(case_id) AND id=sqlc.arg(id);
 
 -- name: ConfirmSourcingLines :execrows
 UPDATE sourcing_lines SET decision='CONFIRMED',updated_at=now()

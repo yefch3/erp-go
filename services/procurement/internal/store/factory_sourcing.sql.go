@@ -235,10 +235,11 @@ func (q *Queries) FactoryRFQLines(ctx context.Context, arg FactoryRFQLinesParams
 const listFactoryRFQs = `-- name: ListFactoryRFQs :many
 SELECT r.id,r.case_id,r.rfq_no,r.supplier_id,r.supplier_code,r.supplier_name,r.contact_email,
  r.currency,coalesce(r.response_due_at::text,'')::text AS response_due_at,r.status,r.created_at,
- count(l.id)::int AS line_count
-FROM factory_rfqs r LEFT JOIN factory_rfq_lines l ON l.factory_rfq_id=r.id AND l.tenant_id=r.tenant_id
+ (SELECT count(*)::int FROM factory_rfq_lines fl WHERE fl.tenant_id=r.tenant_id AND fl.factory_rfq_id=r.id) AS line_count,
+ ARRAY(SELECT fl.sourcing_line_id FROM factory_rfq_lines fl WHERE fl.tenant_id=r.tenant_id AND fl.factory_rfq_id=r.id ORDER BY fl.line_no)::bigint[] AS sourcing_line_ids
+FROM factory_rfqs r
 WHERE r.tenant_id=$1 AND r.case_id=$2
-GROUP BY r.id ORDER BY r.created_at DESC
+ORDER BY r.created_at DESC
 `
 
 type ListFactoryRFQsParams struct {
@@ -247,18 +248,19 @@ type ListFactoryRFQsParams struct {
 }
 
 type ListFactoryRFQsRow struct {
-	ID            int64
-	CaseID        int64
-	RfqNo         string
-	SupplierID    int64
-	SupplierCode  string
-	SupplierName  string
-	ContactEmail  string
-	Currency      string
-	ResponseDueAt string
-	Status        string
-	CreatedAt     pgtype.Timestamptz
-	LineCount     int32
+	ID              int64
+	CaseID          int64
+	RfqNo           string
+	SupplierID      int64
+	SupplierCode    string
+	SupplierName    string
+	ContactEmail    string
+	Currency        string
+	ResponseDueAt   string
+	Status          string
+	CreatedAt       pgtype.Timestamptz
+	LineCount       int32
+	SourcingLineIds []int64
 }
 
 func (q *Queries) ListFactoryRFQs(ctx context.Context, arg ListFactoryRFQsParams) ([]ListFactoryRFQsRow, error) {
@@ -283,6 +285,7 @@ func (q *Queries) ListFactoryRFQs(ctx context.Context, arg ListFactoryRFQsParams
 			&i.Status,
 			&i.CreatedAt,
 			&i.LineCount,
+			&i.SourcingLineIds,
 		); err != nil {
 			return nil, err
 		}
@@ -397,5 +400,20 @@ type MarkSourcingCaseQuotesReceivedParams struct {
 
 func (q *Queries) MarkSourcingCaseQuotesReceived(ctx context.Context, arg MarkSourcingCaseQuotesReceivedParams) error {
 	_, err := q.db.Exec(ctx, markSourcingCaseQuotesReceived, arg.TenantID, arg.ID)
+	return err
+}
+
+const markSourcingCaseSourcing = `-- name: MarkSourcingCaseSourcing :exec
+UPDATE sourcing_cases SET status='SOURCING',updated_at=now()
+WHERE tenant_id=$1 AND id=$2 AND status='REVIEWING'
+`
+
+type MarkSourcingCaseSourcingParams struct {
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) MarkSourcingCaseSourcing(ctx context.Context, arg MarkSourcingCaseSourcingParams) error {
+	_, err := q.db.Exec(ctx, markSourcingCaseSourcing, arg.TenantID, arg.ID)
 	return err
 }

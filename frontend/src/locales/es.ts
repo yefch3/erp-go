@@ -504,6 +504,10 @@ export default {
     quotedAt: 'Fecha de oferta', validUntil: 'Válida hasta', moq: 'Pedido mínimo', leadTime: 'Plazo de producción', priceRequired: 'Indique un precio válido para cada línea', quoteSaved: 'Oferta guardada',
     rfqStatuses: { DRAFT: 'Borrador', SENT: 'Enviada', PARTIALLY_QUOTED: 'Parcial', QUOTED: 'Cotizada', CLOSED: 'Cerrada', CANCELLED: 'Cancelada' },
     confirmAllLines: 'Confirmar todas las líneas', linesConfirmed: 'Líneas confirmadas',
+    internalProduct: 'Producto interno', sku: 'SKU', reviewLine: 'Revisar', reviewLineTitle: 'Revisar línea {n}', reviewHint: 'Verifique los campos del cliente y seleccione el producto interno. La línea debe confirmarse antes de consultar a fábricas.',
+    skipLine: 'Omitir línea', noMatch: 'Marcar sin coincidencia', confirmLine: 'Confirmar línea', productRequired: 'Seleccione un producto interno',
+    reviewSaved: { CONFIRMED: 'Línea confirmada', NO_MATCH: 'Línea marcada sin coincidencia', SKIPPED: 'Línea omitida' },
+    reviewFields: { product: 'Producto del cliente', materialStandard: 'Material / norma', grade: 'Grado', thickness: 'Espesor', width: 'Ancho', lengthOrForm: 'Largo / forma', surfaceRequirement: 'Superficie', coating: 'Recubrimiento', tolerance: 'Tolerancia', coilWeight: 'Peso de bobina', coilId: 'Diámetro interior', packaging: 'Embalaje', delivery: 'Entrega', paymentTerms: 'Condiciones de pago', incoterm: 'Incoterm', port: 'Puerto', quantityUnit: 'Unidad', remarks: 'Observaciones', quantity: 'Cantidad' },
   },
   requirements: {
     order: 'Pedir',

@@ -504,6 +504,10 @@ export default {
     quotedAt: '报价日期', validUntil: '有效期至', moq: '最小起订量', leadTime: '生产周期', priceRequired: '请填写全部明细的有效单价', quoteSaved: '供应商报价已保存',
     rfqStatuses: { DRAFT: '草稿', SENT: '已发送', PARTIALLY_QUOTED: '部分报价', QUOTED: '已报价', CLOSED: '已关闭', CANCELLED: '已取消' },
     confirmAllLines: '确认全部明细', linesConfirmed: '询价明细已人工确认',
+    internalProduct: '内部产品', sku: 'SKU', reviewLine: '复核', reviewLineTitle: '复核第 {n} 行', reviewHint: '请核对客户原始字段，并选择公司内部产品。确认后才能向工厂询价。',
+    skipLine: '跳过此行', noMatch: '标记无匹配', confirmLine: '确认此行', productRequired: '请选择内部产品',
+    reviewSaved: { CONFIRMED: '该行已确认', NO_MATCH: '该行已标记无匹配', SKIPPED: '该行已跳过' },
+    reviewFields: { product: '客户产品', materialStandard: '材质/标准', grade: '牌号/等级', thickness: '厚度', width: '宽度', lengthOrForm: '长度/形式', surfaceRequirement: '表面要求', coating: '涂层/镀层', tolerance: '公差', coilWeight: '卷重', coilId: '卷内径', packaging: '包装', delivery: '交期', paymentTerms: '付款条件', incoterm: '贸易术语', port: '港口', quantityUnit: '单位', remarks: '备注', quantity: '数量' },
   },
   requirements: {
     order: '去下单',

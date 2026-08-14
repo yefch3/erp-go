@@ -19,10 +19,11 @@ WHERE sl.tenant_id=sqlc.arg(tenant_id) AND sl.case_id=sqlc.arg(case_id) AND sl.i
 -- name: ListFactoryRFQs :many
 SELECT r.id,r.case_id,r.rfq_no,r.supplier_id,r.supplier_code,r.supplier_name,r.contact_email,
  r.currency,coalesce(r.response_due_at::text,'')::text AS response_due_at,r.status,r.created_at,
- count(l.id)::int AS line_count
-FROM factory_rfqs r LEFT JOIN factory_rfq_lines l ON l.factory_rfq_id=r.id AND l.tenant_id=r.tenant_id
+ (SELECT count(*)::int FROM factory_rfq_lines fl WHERE fl.tenant_id=r.tenant_id AND fl.factory_rfq_id=r.id) AS line_count,
+ ARRAY(SELECT fl.sourcing_line_id FROM factory_rfq_lines fl WHERE fl.tenant_id=r.tenant_id AND fl.factory_rfq_id=r.id ORDER BY fl.line_no)::bigint[] AS sourcing_line_ids
+FROM factory_rfqs r
 WHERE r.tenant_id=$1 AND r.case_id=$2
-GROUP BY r.id ORDER BY r.created_at DESC;
+ORDER BY r.created_at DESC;
 
 -- name: FactoryRFQForQuote :one
 SELECT id,case_id,currency,status FROM factory_rfqs WHERE tenant_id=$1 AND id=$2 FOR UPDATE;
@@ -51,6 +52,10 @@ UPDATE factory_rfqs SET status='QUOTED',updated_at=now() WHERE tenant_id=$1 AND 
 
 -- name: MarkSourcingCaseQuotesReceived :exec
 UPDATE sourcing_cases SET status='QUOTES_RECEIVED',updated_at=now() WHERE tenant_id=$1 AND id=$2;
+
+-- name: MarkSourcingCaseSourcing :exec
+UPDATE sourcing_cases SET status='SOURCING',updated_at=now()
+WHERE tenant_id=$1 AND id=$2 AND status='REVIEWING';
 
 -- name: ListSupplierQuoteComparison :many
 SELECT q.id AS quote_id,q.supplier_quote_no,q.factory_rfq_id,r.supplier_id,r.supplier_name,q.currency,

@@ -80,7 +80,7 @@ func (s *Service) CreateFactoryRFQ(ctx context.Context, tenantID int64, in NewFa
 				return err
 			}
 		}
-		return nil
+		return q.MarkSourcingCaseSourcing(ctx, store.MarkSourcingCaseSourcingParams{TenantID: tenantID, ID: in.CaseID})
 	})
 	if err != nil {
 		return store.ListFactoryRFQsRow{}, err

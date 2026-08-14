@@ -63,6 +63,12 @@
         <el-table-column :label="t('sourcing.decision')" width="120">
           <template #default="{ row }">{{ t(`sourcing.decisions.${row.decision}`) }}</template>
         </el-table-column>
+        <el-table-column :label="t('sourcing.internalProduct')" min-width="150">
+          <template #default="{ row }">{{ productLabel(row.productId, row.skuId) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('common.actions')" width="100" fixed="right">
+          <template #default="{ row }"><el-button v-if="canWrite" link type="primary" @click.stop="openReview(row)">{{ t('sourcing.reviewLine') }}</el-button></template>
+        </el-table-column>
       </el-table>
       <h3 class="section-title">{{ t('sourcing.factoryRfqs') }}</h3>
       <el-table :data="rfqs" size="small" border>
@@ -86,8 +92,30 @@
       </el-table>
       <template #footer>
         <el-button @click="detailOpen = false">{{ t('common.close') }}</el-button>
-        <el-button v-if="canWrite && detail?.lines.some(line => line.decision !== 'CONFIRMED')" type="success" :loading="saving" @click="confirmAllLines">{{ t('sourcing.confirmAllLines') }}</el-button>
-        <el-button v-if="canWrite" type="primary" :disabled="!!detail?.lines.some(line => line.decision !== 'CONFIRMED')" @click="openRFQ">{{ t('sourcing.createFactoryRfq') }}</el-button>
+        <el-button v-if="canWrite" type="primary" :disabled="!!detail?.lines.some(line => line.decision === 'PENDING') || !detail?.lines.some(line => line.decision === 'CONFIRMED')" @click="openRFQ">{{ t('sourcing.createFactoryRfq') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="reviewOpen" :title="t('sourcing.reviewLineTitle', { n: reviewing?.lineNo || '' })" width="860px" append-to-body>
+      <el-alert type="info" :closable="false" show-icon class="review-hint">{{ t('sourcing.reviewHint') }}</el-alert>
+      <el-form label-width="110px" class="review-form">
+        <el-form-item :label="t('sourcing.internalProduct')" required>
+          <el-select v-model="reviewForm.productId" filterable style="width:100%" @change="loadReviewSkus">
+            <el-option v-for="p in products" :key="p.id" :value="Number(p.id)" :label="`${p.code} · ${p.name}`" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('sourcing.sku')"><el-select v-model="reviewForm.skuId" clearable style="width:100%"><el-option v-for="sku in reviewSkus" :key="sku.id" :value="Number(sku.id)" :label="`${sku.code} · ${sku.spec || '—'}`" /></el-select></el-form-item>
+        <div class="review-grid">
+          <el-form-item v-for="field in reviewFields" :key="field.key" :label="t(`sourcing.reviewFields.${field.key}`)">
+            <el-input v-model="reviewForm.extracted[field.key]" :type="field.long ? 'textarea' : 'text'" :rows="field.long ? 2 : undefined" />
+          </el-form-item>
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="reviewOpen=false">{{ t('common.cancel') }}</el-button>
+        <el-button :loading="saving" @click="saveReview('SKIPPED')">{{ t('sourcing.skipLine') }}</el-button>
+        <el-button type="warning" plain :loading="saving" @click="saveReview('NO_MATCH')">{{ t('sourcing.noMatch') }}</el-button>
+        <el-button type="success" :loading="saving" @click="saveReview('CONFIRMED')">{{ t('sourcing.confirmLine') }}</el-button>
       </template>
     </el-dialog>
 
@@ -126,22 +154,26 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { get, post } from '../api'
+import { get, post, put } from '../api'
 import { useAuthStore } from '../stores/auth'
 import ProcurementNav from '../components/ProcurementNav.vue'
 
 interface ExtractedLine {
   product: string; materialStandard: string; grade: string; thickness: string
-  width: string; lengthOrForm: string; port: string; quantity: string; quantityUnit: string
+  width: string; lengthOrForm: string; surfaceRequirement: string; coating: string; tolerance: string
+  coilWeight: string; coilId: string; packaging: string; delivery: string; paymentTerms: string
+  incoterm: string; port: string; quantityUnit: string; remarks: string; quantity: string
 }
-interface SourcingLine { id: string; lineNo: number; decision: string; extracted: ExtractedLine }
+interface SourcingLine { id: string; lineNo: number; decision: string; productId: string; skuId: string; uomId: string; decidedByName: string; decidedAt: string; extracted: ExtractedLine }
 interface SourcingCase {
   id: string; caseNo: string; title: string; customerName: string; contactName: string
   contactEmail: string; ownerName: string; status: string; createdAt: string; lines: SourcingLine[]
 }
 interface Supplier { id: string; code: string; name: string }
-interface FactoryRFQ { id: string; rfqNo: string; supplierName: string; currency: string; responseDueAt: string; status: string; lineCount: number }
+interface FactoryRFQ { id: string; rfqNo: string; supplierName: string; currency: string; responseDueAt: string; status: string; lineCount: number; sourcingLineIds: string[] }
 interface QuoteComparison { supplierName: string; sourcingLineId: string; qty: string; currency: string; unitPrice: string; amount: string; delivery: string; paymentTerms: string }
+interface Product { id: string; code: string; name: string; baseUomId: string }
+interface Sku { id: string; code: string; spec: string; status: string }
 
 const { t } = useI18n()
 const route = useRoute()
@@ -168,6 +200,17 @@ const quoteOpen = ref(false)
 const quotingRFQ = ref<FactoryRFQ | null>(null)
 const quoteForm = reactive({ currency: 'USD', quotedAt: '', validUntil: '', delivery: '', paymentTerms: '' })
 const quoteRows = ref<{ sourcingLineId: string; product: string; qty: string; unitPrice: string; moq: string; leadTime: string }[]>([])
+const products = ref<Product[]>([])
+const reviewSkus = ref<Sku[]>([])
+const reviewOpen = ref(false)
+const reviewing = ref<SourcingLine | null>(null)
+const blankExtracted = (): ExtractedLine => ({ product: '', materialStandard: '', grade: '', thickness: '', width: '', lengthOrForm: '', surfaceRequirement: '', coating: '', tolerance: '', coilWeight: '', coilId: '', packaging: '', delivery: '', paymentTerms: '', incoterm: '', port: '', quantityUnit: '', remarks: '', quantity: '' })
+const reviewForm = reactive<{ productId: number; skuId: number; extracted: ExtractedLine }>({ productId: 0, skuId: 0, extracted: blankExtracted() })
+const reviewFields: { key: keyof ExtractedLine; long?: boolean }[] = [
+  { key: 'product' }, { key: 'materialStandard' }, { key: 'grade' }, { key: 'thickness' }, { key: 'width' }, { key: 'lengthOrForm' },
+  { key: 'surfaceRequirement' }, { key: 'coating' }, { key: 'tolerance' }, { key: 'coilWeight' }, { key: 'coilId' }, { key: 'packaging', long: true },
+  { key: 'delivery' }, { key: 'paymentTerms', long: true }, { key: 'incoterm' }, { key: 'port' }, { key: 'quantityUnit' }, { key: 'remarks', long: true }, { key: 'quantity' },
+]
 
 async function load() {
   loading.value = true
@@ -183,6 +226,7 @@ async function load() {
 function reload() { page.value = 1; load() }
 
 async function openCase(row: Pick<SourcingCase, 'id'>) {
+  if (!products.value.length) products.value = (await get<{ products: Product[] }>('/products', { page_size: 200, status: 'ACTIVE' })).products ?? []
   const response = await get<{ sourcingCase: SourcingCase }>(`/sourcing-cases/${row.id}`)
   detail.value = response.sourcingCase
   await loadSourcingCommercial(row.id)
@@ -200,14 +244,32 @@ async function loadSourcingCommercial(caseID: string) {
 }
 
 function sourceLineNo(id: string) { return detail.value?.lines.find(line => String(line.id) === String(id))?.lineNo ?? id }
+function productLabel(productID: string, skuID: string) {
+  const product = products.value.find(p => String(p.id) === String(productID))
+  const sku = reviewSkus.value.find(s => String(s.id) === String(skuID))
+  return product ? `${product.code}${sku ? ` / ${sku.code}` : ''}` : '—'
+}
 
-async function confirmAllLines() {
-  if (!detail.value) return
+async function openReview(line: SourcingLine) {
+  if (!products.value.length) products.value = (await get<{ products: Product[] }>('/products', { page_size: 200, status: 'ACTIVE' })).products ?? []
+  reviewing.value = line; reviewForm.productId = Number(line.productId || 0); reviewForm.skuId = Number(line.skuId || 0); reviewForm.extracted = { ...blankExtracted(), ...line.extracted }
+  await loadReviewSkus(true); reviewOpen.value = true
+}
+
+async function loadReviewSkus(preserveSelection = false) {
+  const selectedSkuId = preserveSelection ? reviewForm.skuId : 0
+  reviewForm.skuId = 0; reviewSkus.value = []
+  if (reviewForm.productId) reviewSkus.value = (await get<{ skus: Sku[] }>(`/products/${reviewForm.productId}/skus`)).skus?.filter(s => s.status === 'ACTIVE') ?? []
+  if (selectedSkuId && reviewSkus.value.some(sku => Number(sku.id) === selectedSkuId)) reviewForm.skuId = selectedSkuId
+}
+
+async function saveReview(decision: 'CONFIRMED' | 'NO_MATCH' | 'SKIPPED') {
+  if (!detail.value || !reviewing.value) return
+  if (decision === 'CONFIRMED' && !reviewForm.productId) { ElMessage.warning(t('sourcing.productRequired')); return }
   saving.value = true
   try {
-    const response = await post<{ sourcingCase: SourcingCase }>(`/sourcing-cases/${detail.value.id}/confirm-lines`, { sourcing_line_ids: detail.value.lines.map(line => Number(line.id)) })
-    detail.value = response.sourcingCase
-    ElMessage.success(t('sourcing.linesConfirmed'))
+    const response = await put<{ sourcingCase: SourcingCase }>(`/sourcing-cases/${detail.value.id}/lines/${reviewing.value.id}`, { extracted: reviewForm.extracted, product_id: reviewForm.productId, sku_id: reviewForm.skuId, decision })
+    detail.value = response.sourcingCase; reviewOpen.value = false; ElMessage.success(t(`sourcing.reviewSaved.${decision}`))
   } finally { saving.value = false }
 }
 
@@ -221,7 +283,7 @@ async function createRFQ() {
   if (!detail.value || !rfqForm.supplierId) { ElMessage.warning(t('sourcing.supplierRequired')); return }
   saving.value = true
   try {
-    await post(`/sourcing-cases/${detail.value.id}/factory-rfqs`, { supplier_id: rfqForm.supplierId, contact_email: rfqForm.contactEmail, currency: rfqForm.currency, response_due_at: rfqForm.responseDueAt, sourcing_line_ids: detail.value.lines.map(l => Number(l.id)) })
+    await post(`/sourcing-cases/${detail.value.id}/factory-rfqs`, { supplier_id: rfqForm.supplierId, contact_email: rfqForm.contactEmail, currency: rfqForm.currency, response_due_at: rfqForm.responseDueAt, sourcing_line_ids: detail.value.lines.filter(l => l.decision === 'CONFIRMED').map(l => Number(l.id)) })
     rfqOpen.value = false; await loadSourcingCommercial(detail.value.id); ElMessage.success(t('sourcing.rfqCreated'))
   } finally { saving.value = false }
 }
@@ -229,7 +291,8 @@ async function createRFQ() {
 function openQuote(row: FactoryRFQ) {
   if (!detail.value) return
   quotingRFQ.value = row; quoteForm.currency = row.currency || 'USD'; quoteForm.quotedAt = ''; quoteForm.validUntil = ''; quoteForm.delivery = ''; quoteForm.paymentTerms = ''
-  quoteRows.value = detail.value.lines.map(line => ({ sourcingLineId: line.id, product: line.extracted.product, qty: line.extracted.quantity, unitPrice: '', moq: '', leadTime: '' }))
+  const included = new Set(row.sourcingLineIds.map(String))
+  quoteRows.value = detail.value.lines.filter(line => included.has(String(line.id))).map(line => ({ sourcingLineId: line.id, product: line.extracted.product, qty: line.extracted.quantity, unitPrice: '', moq: '', leadTime: '' }))
   quoteOpen.value = true
 }
 
@@ -262,4 +325,8 @@ h1 { margin:0; font-size:24px; } .page-head p { margin:6px 0 0; color:#6b7280; }
 .toolbar .el-input { width:300px; } .toolbar .el-select { width:190px; }
 .pager { margin-top:16px; justify-content:flex-end; } .meta { margin-bottom:16px; }
 .section-title { margin:20px 0 10px; font-size:16px; }
+.review-hint { margin-bottom:16px; }
+.review-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 14px; }
+.review-grid :deep(.el-form-item) { margin-bottom:14px; }
+@media (max-width:700px) { .review-grid { grid-template-columns:1fr; } }
 </style>

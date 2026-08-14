@@ -129,12 +129,12 @@ func (s *Service) ConfirmSourcingLines(ctx context.Context, tenantID, caseID int
 	}
 	allowed := make(map[int64]bool, len(view.Lines))
 	for _, line := range view.Lines {
-		allowed[line.ID] = true
+		allowed[line.ID] = line.ProductID > 0
 	}
 	seen := map[int64]bool{}
 	for _, id := range ids {
 		if !allowed[id] || seen[id] {
-			return SourcingCaseView{}, apierr.Invalid("SC_CONFIRM_LINE_INVALID", "询价明细不属于当前案件")
+			return SourcingCaseView{}, apierr.Invalid("SC_CONFIRM_PRODUCT_REQUIRED", "请先逐行匹配内部产品")
 		}
 		seen[id] = true
 	}
@@ -146,4 +146,49 @@ func (s *Service) ConfirmSourcingLines(ctx context.Context, tenantID, caseID int
 		return SourcingCaseView{}, apierr.Conflict("SC_CONFIRM_CHANGED", "询价明细已变化，请刷新后重试")
 	}
 	return s.GetSourcingCase(ctx, tenantID, caseID)
+}
+
+type SourcingLineReview struct {
+	CaseID, LineID, ProductID, SkuID, UomID int64
+	Decision                                string
+	Extracted                               SourcingLineInput
+}
+
+func (s *Service) ReviewSourcingLine(ctx context.Context, tenantID int64, in SourcingLineReview, op Operator) (SourcingCaseView, error) {
+	if in.Decision != "CONFIRMED" && in.Decision != "NO_MATCH" && in.Decision != "SKIPPED" && in.Decision != "PENDING" {
+		return SourcingCaseView{}, apierr.Invalid("SC_REVIEW_DECISION_INVALID", "复核结果不合法")
+	}
+	if in.Decision == "CONFIRMED" && (in.ProductID == 0 || in.UomID == 0) {
+		return SourcingCaseView{}, apierr.Invalid("SC_CONFIRM_PRODUCT_REQUIRED", "确认明细前必须匹配内部产品和单位")
+	}
+	if in.Extracted.Quantity != "" {
+		qty, err := decimal.NewFromString(in.Extracted.Quantity)
+		if err != nil || qty.LessThanOrEqual(decimal.Zero) {
+			return SourcingCaseView{}, apierr.Invalid("SC_QUANTITY_INVALID", "询价数量必须是大于 0 的数字")
+		}
+	}
+	if _, err := s.GetSourcingCase(ctx, tenantID, in.CaseID); err != nil {
+		return SourcingCaseView{}, err
+	}
+	if in.Decision != "CONFIRMED" {
+		in.ProductID, in.SkuID, in.UomID = 0, 0, 0
+	}
+	changed, err := s.q.ReviewSourcingLine(ctx, store.ReviewSourcingLineParams{
+		TenantID: tenantID, CaseID: in.CaseID, ID: in.LineID, Product: in.Extracted.Product,
+		MaterialStandard: in.Extracted.MaterialStandard, Grade: in.Extracted.Grade, Thickness: in.Extracted.Thickness,
+		Width: in.Extracted.Width, LengthOrForm: in.Extracted.LengthOrForm, SurfaceRequirement: in.Extracted.SurfaceRequirement,
+		Coating: in.Extracted.Coating, Tolerance: in.Extracted.Tolerance, CoilWeight: in.Extracted.CoilWeight,
+		CoilID: in.Extracted.CoilID, Packaging: in.Extracted.Packaging, Delivery: in.Extracted.Delivery,
+		PaymentTerms: in.Extracted.PaymentTerms, Incoterm: in.Extracted.Incoterm, Port: in.Extracted.Port,
+		QuantityUnit: in.Extracted.QuantityUnit, Remarks: in.Extracted.Remarks, Quantity: in.Extracted.Quantity,
+		ProductID: in.ProductID, SkuID: in.SkuID, UomID: in.UomID, Decision: in.Decision,
+		DecidedBy: op.ID, DecidedByName: op.Name,
+	})
+	if err != nil {
+		return SourcingCaseView{}, err
+	}
+	if changed != 1 {
+		return SourcingCaseView{}, apierr.NotFound("SC_LINE_NOT_FOUND", "询价明细不存在")
+	}
+	return s.GetSourcingCase(ctx, tenantID, in.CaseID)
 }

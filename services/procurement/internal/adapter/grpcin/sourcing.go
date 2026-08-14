@@ -56,12 +56,24 @@ func (h *SourcingHandler) GetCase(ctx context.Context, req *prv1.GetCaseRequest)
 	return &prv1.GetCaseResponse{SourcingCase: sourcingCaseView(view)}, nil
 }
 
-func (h *SourcingHandler) ConfirmLines(ctx context.Context, req *prv1.ConfirmSourcingLinesRequest) (*prv1.GetCaseResponse, error) {
+func (h *SourcingHandler) ConfirmLines(ctx context.Context, req *prv1.ConfirmLinesRequest) (*prv1.ConfirmLinesResponse, error) {
 	view, err := h.svc.ConfirmSourcingLines(ctx, grpcx.TenantID(ctx), req.GetCaseId(), req.GetSourcingLineIds())
 	if err != nil {
 		return nil, err
 	}
-	return &prv1.GetCaseResponse{SourcingCase: sourcingCaseView(view)}, nil
+	return &prv1.ConfirmLinesResponse{SourcingCase: sourcingCaseView(view)}, nil
+}
+
+func (h *SourcingHandler) ReviewLine(ctx context.Context, req *prv1.ReviewLineRequest) (*prv1.ReviewLineResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	view, err := h.svc.ReviewSourcingLine(ctx, grpcx.TenantID(ctx), app.SourcingLineReview{
+		CaseID: req.GetCaseId(), LineID: req.GetLineId(), ProductID: req.GetProductId(), SkuID: req.GetSkuId(),
+		UomID: req.GetUomId(), Decision: req.GetDecision(), Extracted: lineInput(req.GetExtracted()),
+	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.ReviewLineResponse{SourcingCase: sourcingCaseView(view)}, nil
 }
 
 func (h *SourcingHandler) CreateFactoryRfq(ctx context.Context, req *prv1.CreateFactoryRfqRequest) (*prv1.CreateFactoryRfqResponse, error) {
@@ -112,7 +124,7 @@ func (h *SourcingHandler) ListSupplierQuoteComparison(ctx context.Context, req *
 }
 
 func factoryRFQ(row store.ListFactoryRFQsRow) *prv1.FactoryRfq {
-	return &prv1.FactoryRfq{Id: row.ID, CaseId: row.CaseID, RfqNo: row.RfqNo, SupplierId: row.SupplierID, SupplierCode: row.SupplierCode, SupplierName: row.SupplierName, ContactEmail: row.ContactEmail, Currency: row.Currency, ResponseDueAt: row.ResponseDueAt, Status: row.Status, LineCount: row.LineCount, CreatedAt: ts(row.CreatedAt)}
+	return &prv1.FactoryRfq{Id: row.ID, CaseId: row.CaseID, RfqNo: row.RfqNo, SupplierId: row.SupplierID, SupplierCode: row.SupplierCode, SupplierName: row.SupplierName, ContactEmail: row.ContactEmail, Currency: row.Currency, ResponseDueAt: row.ResponseDueAt, Status: row.Status, LineCount: row.LineCount, CreatedAt: ts(row.CreatedAt), SourcingLineIds: row.SourcingLineIds}
 }
 
 func lineInput(in *prv1.SourcingLineInput) app.SourcingLineInput {
@@ -159,6 +171,7 @@ func sourcingCaseList(row store.ListSourcingCasesRow) *prv1.SourcingCase {
 func sourcingLine(row store.ListSourcingLinesRow) *prv1.SourcingLine {
 	return &prv1.SourcingLine{Id: row.ID, LineNo: row.LineNo, Decision: row.Decision,
 		ProductId: row.ProductID, SkuId: row.SkuID, UomId: row.UomID,
+		DecidedByName: row.DecidedByName, DecidedAt: row.DecidedAt,
 		Extracted: &prv1.SourcingLineInput{
 			RawText: row.RawText, Product: row.Product, MaterialStandard: row.MaterialStandard,
 			Grade: row.Grade, Thickness: row.Thickness, Width: row.Width,

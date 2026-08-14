@@ -193,6 +193,9 @@ type SourcingLine struct {
 	Decision           string
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
+	DecidedBy          int64
+	DecidedByName      string
+	DecidedAt          pgtype.Timestamptz
 }
 
 type SupplierQuote struct {

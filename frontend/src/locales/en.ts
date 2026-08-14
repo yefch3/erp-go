@@ -501,6 +501,10 @@ export default {
     quotedAt: 'Quoted on', validUntil: 'Valid until', moq: 'MOQ', leadTime: 'Lead time', priceRequired: 'Enter a valid price for every line', quoteSaved: 'Supplier quote saved',
     rfqStatuses: { DRAFT: 'Draft', SENT: 'Sent', PARTIALLY_QUOTED: 'Partly quoted', QUOTED: 'Quoted', CLOSED: 'Closed', CANCELLED: 'Cancelled' },
     confirmAllLines: 'Confirm all lines', linesConfirmed: 'Inquiry lines confirmed',
+    internalProduct: 'Internal product', sku: 'SKU', reviewLine: 'Review', reviewLineTitle: 'Review line {n}', reviewHint: 'Verify the customer fields and select the internal product. A confirmed line is required before factory sourcing.',
+    skipLine: 'Skip line', noMatch: 'Mark no match', confirmLine: 'Confirm line', productRequired: 'Choose an internal product',
+    reviewSaved: { CONFIRMED: 'Line confirmed', NO_MATCH: 'Line marked as no match', SKIPPED: 'Line skipped' },
+    reviewFields: { product: 'Customer product', materialStandard: 'Material / standard', grade: 'Grade', thickness: 'Thickness', width: 'Width', lengthOrForm: 'Length / form', surfaceRequirement: 'Surface', coating: 'Coating', tolerance: 'Tolerance', coilWeight: 'Coil weight', coilId: 'Coil ID', packaging: 'Packaging', delivery: 'Delivery', paymentTerms: 'Payment terms', incoterm: 'Incoterm', port: 'Port', quantityUnit: 'Unit', remarks: 'Remarks', quantity: 'Quantity' },
   },
   requirements: {
     order: 'Order',

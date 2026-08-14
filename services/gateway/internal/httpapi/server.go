@@ -353,6 +353,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}", s.getSourcingCase)
 		r.With(s.perm("procurement:sourcing:write")).Post("/api/sourcing-cases", s.createSourcingCase)
 		r.With(s.perm("procurement:sourcing:write")).Post("/api/sourcing-cases/{id}/confirm-lines", s.confirmSourcingLines)
+		r.With(s.perm("procurement:sourcing:write"), s.perm("product:product:read")).Put("/api/sourcing-cases/{id}/lines/{lineId}", s.reviewSourcingLine)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/factory-rfqs", s.listFactoryRFQs)
 		r.With(s.perm("procurement:sourcing:write")).Post("/api/sourcing-cases/{id}/factory-rfqs", s.createFactoryRFQ)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/supplier-quotes", s.listSupplierQuoteComparison)

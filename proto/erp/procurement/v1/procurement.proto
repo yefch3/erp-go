@@ -13,7 +13,8 @@ service SourcingService {
   rpc CreateCase(CreateCaseRequest) returns (CreateCaseResponse);
   rpc ListCases(ListCasesRequest) returns (ListCasesResponse);
   rpc GetCase(GetCaseRequest) returns (GetCaseResponse);
-  rpc ConfirmLines(ConfirmSourcingLinesRequest) returns (GetCaseResponse);
+  rpc ConfirmLines(ConfirmLinesRequest) returns (ConfirmLinesResponse);
+  rpc ReviewLine(ReviewLineRequest) returns (ReviewLineResponse);
   rpc CreateFactoryRfq(CreateFactoryRfqRequest) returns (CreateFactoryRfqResponse);
   rpc ListFactoryRfqs(ListFactoryRfqsRequest) returns (ListFactoryRfqsResponse);
   rpc CreateSupplierQuote(CreateSupplierQuoteRequest) returns (CreateSupplierQuoteResponse);
@@ -51,6 +52,8 @@ message SourcingLine {
   int64 sku_id = 5;
   int64 uom_id = 6;
   string decision = 7;
+  string decided_by_name = 8;
+  string decided_at = 9;
 }
 
 message SourcingCase {
@@ -97,13 +100,20 @@ message ListCasesResponse {
 
 message GetCaseRequest { int64 id = 1; }
 message GetCaseResponse { SourcingCase sourcing_case = 1; }
-message ConfirmSourcingLinesRequest { int64 case_id = 1; repeated int64 sourcing_line_ids = 2; }
+message ConfirmLinesRequest { int64 case_id = 1; repeated int64 sourcing_line_ids = 2; }
+message ConfirmLinesResponse { SourcingCase sourcing_case = 1; }
+message ReviewLineRequest {
+  int64 case_id = 1; int64 line_id = 2; SourcingLineInput extracted = 3;
+  int64 product_id = 4; int64 sku_id = 5; int64 uom_id = 6;
+  string decision = 7;
+}
+message ReviewLineResponse { SourcingCase sourcing_case = 1; }
 
 message FactoryRfq {
   int64 id = 1; int64 case_id = 2; string rfq_no = 3; int64 supplier_id = 4;
   string supplier_code = 5; string supplier_name = 6; string contact_email = 7;
   string currency = 8; string response_due_at = 9; string status = 10;
-  int32 line_count = 11; string created_at = 12;
+  int32 line_count = 11; string created_at = 12; repeated int64 sourcing_line_ids = 13;
 }
 message CreateFactoryRfqRequest {
   int64 case_id = 1; int64 supplier_id = 2; string contact_email = 3;

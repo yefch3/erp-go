@@ -297,7 +297,8 @@ SELECT id, case_id, line_no, raw_text, product, material_standard, grade,
        thickness, width, length_or_form, surface_requirement, coating, tolerance,
        coil_weight, coil_id, packaging, delivery, payment_terms, incoterm, port,
        quantity_unit, remarks, coalesce(quantity::text, '')::text AS quantity,
-       product_id, sku_id, uom_id, decision
+       product_id, sku_id, uom_id, decision, decided_by, decided_by_name,
+       coalesce(decided_at::text, '')::text AS decided_at
 FROM sourcing_lines
 WHERE tenant_id = $1 AND case_id = $2
 ORDER BY line_no
@@ -336,6 +337,9 @@ type ListSourcingLinesRow struct {
 	SkuID              int64
 	UomID              int64
 	Decision           string
+	DecidedBy          int64
+	DecidedByName      string
+	DecidedAt          string
 }
 
 func (q *Queries) ListSourcingLines(ctx context.Context, arg ListSourcingLinesParams) ([]ListSourcingLinesRow, error) {
@@ -375,6 +379,9 @@ func (q *Queries) ListSourcingLines(ctx context.Context, arg ListSourcingLinesPa
 			&i.SkuID,
 			&i.UomID,
 			&i.Decision,
+			&i.DecidedBy,
+			&i.DecidedByName,
+			&i.DecidedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -384,4 +391,87 @@ func (q *Queries) ListSourcingLines(ctx context.Context, arg ListSourcingLinesPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const reviewSourcingLine = `-- name: ReviewSourcingLine :execrows
+UPDATE sourcing_lines SET
+ product=$1,material_standard=$2,grade=$3,
+ thickness=$4,width=$5,length_or_form=$6,
+ surface_requirement=$7,coating=$8,tolerance=$9,
+ coil_weight=$10,coil_id=$11,packaging=$12,
+ delivery=$13,payment_terms=$14,incoterm=$15,
+ port=$16,quantity_unit=$17,remarks=$18,
+ quantity=nullif($19::text,'')::numeric,product_id=$20,
+ sku_id=$21,uom_id=$22,decision=$23,
+ decided_by=$24,decided_by_name=$25,
+ decided_at=CASE WHEN $23::varchar='PENDING' THEN NULL ELSE now() END,updated_at=now()
+WHERE tenant_id=$26 AND case_id=$27 AND id=$28
+`
+
+type ReviewSourcingLineParams struct {
+	Product            string
+	MaterialStandard   string
+	Grade              string
+	Thickness          string
+	Width              string
+	LengthOrForm       string
+	SurfaceRequirement string
+	Coating            string
+	Tolerance          string
+	CoilWeight         string
+	CoilID             string
+	Packaging          string
+	Delivery           string
+	PaymentTerms       string
+	Incoterm           string
+	Port               string
+	QuantityUnit       string
+	Remarks            string
+	Quantity           string
+	ProductID          int64
+	SkuID              int64
+	UomID              int64
+	Decision           string
+	DecidedBy          int64
+	DecidedByName      string
+	TenantID           int64
+	CaseID             int64
+	ID                 int64
+}
+
+func (q *Queries) ReviewSourcingLine(ctx context.Context, arg ReviewSourcingLineParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reviewSourcingLine,
+		arg.Product,
+		arg.MaterialStandard,
+		arg.Grade,
+		arg.Thickness,
+		arg.Width,
+		arg.LengthOrForm,
+		arg.SurfaceRequirement,
+		arg.Coating,
+		arg.Tolerance,
+		arg.CoilWeight,
+		arg.CoilID,
+		arg.Packaging,
+		arg.Delivery,
+		arg.PaymentTerms,
+		arg.Incoterm,
+		arg.Port,
+		arg.QuantityUnit,
+		arg.Remarks,
+		arg.Quantity,
+		arg.ProductID,
+		arg.SkuID,
+		arg.UomID,
+		arg.Decision,
+		arg.DecidedBy,
+		arg.DecidedByName,
+		arg.TenantID,
+		arg.CaseID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

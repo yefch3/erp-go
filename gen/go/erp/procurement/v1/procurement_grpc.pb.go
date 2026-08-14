@@ -23,6 +23,7 @@ const (
 	SourcingService_ListCases_FullMethodName                   = "/erp.procurement.v1.SourcingService/ListCases"
 	SourcingService_GetCase_FullMethodName                     = "/erp.procurement.v1.SourcingService/GetCase"
 	SourcingService_ConfirmLines_FullMethodName                = "/erp.procurement.v1.SourcingService/ConfirmLines"
+	SourcingService_ReviewLine_FullMethodName                  = "/erp.procurement.v1.SourcingService/ReviewLine"
 	SourcingService_CreateFactoryRfq_FullMethodName            = "/erp.procurement.v1.SourcingService/CreateFactoryRfq"
 	SourcingService_ListFactoryRfqs_FullMethodName             = "/erp.procurement.v1.SourcingService/ListFactoryRfqs"
 	SourcingService_CreateSupplierQuote_FullMethodName         = "/erp.procurement.v1.SourcingService/CreateSupplierQuote"
@@ -40,7 +41,8 @@ type SourcingServiceClient interface {
 	CreateCase(ctx context.Context, in *CreateCaseRequest, opts ...grpc.CallOption) (*CreateCaseResponse, error)
 	ListCases(ctx context.Context, in *ListCasesRequest, opts ...grpc.CallOption) (*ListCasesResponse, error)
 	GetCase(ctx context.Context, in *GetCaseRequest, opts ...grpc.CallOption) (*GetCaseResponse, error)
-	ConfirmLines(ctx context.Context, in *ConfirmSourcingLinesRequest, opts ...grpc.CallOption) (*GetCaseResponse, error)
+	ConfirmLines(ctx context.Context, in *ConfirmLinesRequest, opts ...grpc.CallOption) (*ConfirmLinesResponse, error)
+	ReviewLine(ctx context.Context, in *ReviewLineRequest, opts ...grpc.CallOption) (*ReviewLineResponse, error)
 	CreateFactoryRfq(ctx context.Context, in *CreateFactoryRfqRequest, opts ...grpc.CallOption) (*CreateFactoryRfqResponse, error)
 	ListFactoryRfqs(ctx context.Context, in *ListFactoryRfqsRequest, opts ...grpc.CallOption) (*ListFactoryRfqsResponse, error)
 	CreateSupplierQuote(ctx context.Context, in *CreateSupplierQuoteRequest, opts ...grpc.CallOption) (*CreateSupplierQuoteResponse, error)
@@ -85,10 +87,20 @@ func (c *sourcingServiceClient) GetCase(ctx context.Context, in *GetCaseRequest,
 	return out, nil
 }
 
-func (c *sourcingServiceClient) ConfirmLines(ctx context.Context, in *ConfirmSourcingLinesRequest, opts ...grpc.CallOption) (*GetCaseResponse, error) {
+func (c *sourcingServiceClient) ConfirmLines(ctx context.Context, in *ConfirmLinesRequest, opts ...grpc.CallOption) (*ConfirmLinesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetCaseResponse)
+	out := new(ConfirmLinesResponse)
 	err := c.cc.Invoke(ctx, SourcingService_ConfirmLines_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ReviewLine(ctx context.Context, in *ReviewLineRequest, opts ...grpc.CallOption) (*ReviewLineResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReviewLineResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ReviewLine_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +158,8 @@ type SourcingServiceServer interface {
 	CreateCase(context.Context, *CreateCaseRequest) (*CreateCaseResponse, error)
 	ListCases(context.Context, *ListCasesRequest) (*ListCasesResponse, error)
 	GetCase(context.Context, *GetCaseRequest) (*GetCaseResponse, error)
-	ConfirmLines(context.Context, *ConfirmSourcingLinesRequest) (*GetCaseResponse, error)
+	ConfirmLines(context.Context, *ConfirmLinesRequest) (*ConfirmLinesResponse, error)
+	ReviewLine(context.Context, *ReviewLineRequest) (*ReviewLineResponse, error)
 	CreateFactoryRfq(context.Context, *CreateFactoryRfqRequest) (*CreateFactoryRfqResponse, error)
 	ListFactoryRfqs(context.Context, *ListFactoryRfqsRequest) (*ListFactoryRfqsResponse, error)
 	CreateSupplierQuote(context.Context, *CreateSupplierQuoteRequest) (*CreateSupplierQuoteResponse, error)
@@ -170,8 +183,11 @@ func (UnimplementedSourcingServiceServer) ListCases(context.Context, *ListCasesR
 func (UnimplementedSourcingServiceServer) GetCase(context.Context, *GetCaseRequest) (*GetCaseResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetCase not implemented")
 }
-func (UnimplementedSourcingServiceServer) ConfirmLines(context.Context, *ConfirmSourcingLinesRequest) (*GetCaseResponse, error) {
+func (UnimplementedSourcingServiceServer) ConfirmLines(context.Context, *ConfirmLinesRequest) (*ConfirmLinesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ConfirmLines not implemented")
+}
+func (UnimplementedSourcingServiceServer) ReviewLine(context.Context, *ReviewLineRequest) (*ReviewLineResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReviewLine not implemented")
 }
 func (UnimplementedSourcingServiceServer) CreateFactoryRfq(context.Context, *CreateFactoryRfqRequest) (*CreateFactoryRfqResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateFactoryRfq not implemented")
@@ -261,7 +277,7 @@ func _SourcingService_GetCase_Handler(srv interface{}, ctx context.Context, dec 
 }
 
 func _SourcingService_ConfirmLines_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ConfirmSourcingLinesRequest)
+	in := new(ConfirmLinesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -273,7 +289,25 @@ func _SourcingService_ConfirmLines_Handler(srv interface{}, ctx context.Context,
 		FullMethod: SourcingService_ConfirmLines_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SourcingServiceServer).ConfirmLines(ctx, req.(*ConfirmSourcingLinesRequest))
+		return srv.(SourcingServiceServer).ConfirmLines(ctx, req.(*ConfirmLinesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ReviewLine_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReviewLineRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ReviewLine(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ReviewLine_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ReviewLine(ctx, req.(*ReviewLineRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -372,6 +406,10 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ConfirmLines",
 			Handler:    _SourcingService_ConfirmLines_Handler,
+		},
+		{
+			MethodName: "ReviewLine",
+			Handler:    _SourcingService_ReviewLine_Handler,
 		},
 		{
 			MethodName: "CreateFactoryRfq",
