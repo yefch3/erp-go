@@ -185,6 +185,7 @@ func run(log *slog.Logger) error {
 		// trusting it without such a proxy makes the per-source login limit
 		// spoofable — see clientAddr.
 		TrustProxyHeaders: os.Getenv("TRUST_PROXY_HEADERS") == "1",
+		CookieSecure:      os.Getenv("COOKIE_SECURE") == "1",
 		Live:              live,
 		JWTSecret:         cfg.JWTSecret,
 		TokenTTL:          cfg.JWTTTL,

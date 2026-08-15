@@ -59,7 +59,26 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	// budget. That is the right trade at this key: a source with real traffic
 	// on it is not the source spraying.
 	s.Throttle.Passed(r.Context(), throttleLogin, who)
+	// The token leaves in the cookie and only in the cookie. It used to ride
+	// in the body too, and the body is exactly what a script that hooked
+	// fetch can read — which would put the theft path back one layer up from
+	// the localStorage it was just removed from.
+	s.setSessionCookies(w, resp.GetAccessToken())
+	resp.AccessToken = ""
 	s.writeProto(w, resp)
+}
+
+// logout clears the browser's cookies. What it guarantees is exactly what
+// deleting the token from localStorage guaranteed before — this browser
+// forgets the session; the token itself runs out on its own clock. Ending a
+// session server-side is /employees/{id}/revoke-sessions, unchanged.
+//
+// Unauthenticated on purpose: signing out with an expired token must work,
+// or the one person who needs the button cannot press it.
+func (s *Server) logout(w http.ResponseWriter, _ *http.Request) {
+	s.clearSessionCookies(w)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write([]byte(`{"success":true}`))
 }
 
 // writeTooManyAttempts is the one answer given to a caller who has run out of

@@ -60,6 +60,7 @@ proxy_pass http://127.0.0.1:8080;
 | 变量 | 为什么 |
 |---|---|
 | `JWT_SECRET` | **最要紧的一条。** 默认值是 `dev-secret-change-in-production`，知道这串字符的人可以伪造任何人的登录态——不需要密码，不经过登录页，所有限速都碰不到他。换成随机值：`openssl rand -base64 48` |
+| `COOKIE_SECURE=1` | 登录态现在住在 httpOnly cookie 里（2026-08-15 起，脚本读不到、偷不走）。这个开关给 cookie 打上「只走 HTTPS」的标记——**nginx 的证书配好就必须开**。不开的话，任何一次误走 http:// 的请求都会把会话 cookie 明文送上网线 |
 | `TRUST_PROXY_HEADERS=1` | 只有在上面那个 nginx 配置到位之后才开。不开的话，登录限速会把**全世界当成同一个来源**（都来自 nginx），20 次错密码锁住所有人；乱开的话，转发头可以伪造，等于没有限速。**导出记录里的「来源地址」也走这条路**——不开就是每一条都写 `127.0.0.1`，等于没记 |
 | `ADMIN_EMAIL` / `COMPANY_MAIL_DOMAINS` | 第一个租户和它的域名 |
 | `ADMIN_INITIAL_PASSWORD` | 默认值是 `admin123`，**低于系统要求所有人达到的门槛**。启动日志里会有一行警告 |
@@ -195,6 +196,7 @@ DSN 没写的时候才填默认值）。但加之前先算总和——超了 100
 - [ ] `nmap` 扫一遍自己的公网 IP，**除了 443 什么都不该开**
 - [ ] `JWT_SECRET` 已换成随机值（会把所有人登出一次，选个不忙的时候）
 - [ ] nginx 覆写了 `X-Forwarded-For`，并且 `TRUST_PROXY_HEADERS=1`
+- [ ] `COOKIE_SECURE=1`（HTTPS 就绪后；见第三节——没有它，会话 cookie 会跟着任何一次 http:// 请求明文出门）
 - [ ] `COMPANY_MAIL_DOMAINS` 里没有公共邮箱域名
 - [ ] 管理员密码不是 `admin123`（看启动日志有没有那行警告）
 - [ ] 库密码和 MinIO 密钥已经不是仓库里那几个
