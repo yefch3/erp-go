@@ -1367,7 +1367,14 @@ export default {
     hourlyQuota: '每小时上限',
     dailyQuota: '每日上限',
     quotaNote: '超出后自动排队等待，不会硬撞服务商限制',
-    presetGmail: '填入 Gmail 参数',
+    presets: '常用服务商：',
+    presetNames: {
+      p263: '263 企业邮',
+      tencent: '腾讯企业邮',
+      ali: '阿里企业邮',
+      netease: '网易企业邮',
+      gmail: 'Gmail',
+    },
     saved: '已保存',
   },
   templates: {

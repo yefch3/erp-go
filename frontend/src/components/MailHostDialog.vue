@@ -10,6 +10,22 @@
     @open="load"
   >
     <p class="hint scope">{{ t('mailbox.hostScope') }}</p>
+    <!-- Nobody should type imap.263.net by hand — the same idea as a desktop
+         mail client's provider list, but for the one person here who ever
+         sees these fields: the administrator. A preset fills the connection
+         values only; the domain and the quotas stay the company's own. -->
+    <div v-if="canEditHost" class="preset-row">
+      <span class="hint">{{ t('mailbox.presets') }}</span>
+      <el-button
+        v-for="p in PRESETS"
+        :key="p.key"
+        size="small"
+        plain
+        @click="applyPreset(p)"
+      >
+        {{ t(`mailbox.presetNames.${p.key}`) }}
+      </el-button>
+    </div>
     <el-form label-width="130px" :disabled="!canEditHost">
       <el-form-item :label="t('mailbox.domain')">
         <el-input v-model="host.domain" placeholder="sunrise.com" />
@@ -46,9 +62,6 @@
     </el-form>
     <div v-if="!canEditHost" class="hint">{{ t('mailbox.hostReadOnly') }}</div>
     <template #footer>
-      <el-button v-if="canEditHost" link type="primary" @click="fillGmail">
-        {{ t('mailbox.presetGmail') }}
-      </el-button>
       <el-button @click="emit('update:modelValue', false)">{{ t('common.cancel') }}</el-button>
       <el-button v-if="canEditHost" type="primary" :loading="saving" @click="save">
         {{ t('common.save') }}
@@ -102,18 +115,22 @@ async function save() {
   }
 }
 
-// Gmail is the fastest way to prove the pipeline before a company mailbox
-// exists. It needs an app password or a Google sign-in, not the account
-// password.
-function fillGmail() {
-  Object.assign(host, {
-    smtpHost: 'smtp.gmail.com',
-    smtpPort: 587,
-    smtpSecurity: 'STARTTLS',
-    imapHost: 'imap.gmail.com',
-    imapPort: 993,
-    imapSecurity: 'SSL',
-  })
+// The values off each provider's own published settings page, verbatim.
+// Every entry a Chinese trading company plausibly lands on, plus Gmail —
+// still the fastest way to prove the pipeline before a company mailbox
+// exists (app password or Google sign-in, never the account password).
+const PRESETS = [
+  { key: 'p263', smtpHost: 'smtp.263.net', smtpPort: 465, smtpSecurity: 'SSL', imapHost: 'imap.263.net', imapPort: 993, imapSecurity: 'SSL' },
+  { key: 'tencent', smtpHost: 'smtp.exmail.qq.com', smtpPort: 465, smtpSecurity: 'SSL', imapHost: 'imap.exmail.qq.com', imapPort: 993, imapSecurity: 'SSL' },
+  { key: 'ali', smtpHost: 'smtp.qiye.aliyun.com', smtpPort: 465, smtpSecurity: 'SSL', imapHost: 'imap.qiye.aliyun.com', imapPort: 993, imapSecurity: 'SSL' },
+  // NetEase enterprise publishes 994 for SMTP over SSL, not the usual 465.
+  { key: 'netease', smtpHost: 'smtp.qiye.163.com', smtpPort: 994, smtpSecurity: 'SSL', imapHost: 'imap.qiye.163.com', imapPort: 993, imapSecurity: 'SSL' },
+  { key: 'gmail', smtpHost: 'smtp.gmail.com', smtpPort: 587, smtpSecurity: 'STARTTLS', imapHost: 'imap.gmail.com', imapPort: 993, imapSecurity: 'SSL' },
+] as const
+
+function applyPreset(p: (typeof PRESETS)[number]) {
+  const { key: _key, ...fields } = p
+  Object.assign(host, fields)
 }
 </script>
 
@@ -127,5 +144,12 @@ function fillGmail() {
 }
 .hint.scope {
   margin: 0 0 12px;
+}
+.preset-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
 }
 </style>
