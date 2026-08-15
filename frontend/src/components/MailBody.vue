@@ -101,9 +101,17 @@ const doc = computed(() => {
   html,body{margin:0;padding:0;background:${ground};}
   /* The mail's own width, not ours. Images are capped so a 2000px banner
      cannot force a horizontal scrollbar, which is the one piece of styling
-     worth imposing. */
+     worth imposing.
+
+     height:auto only for images that state no height of their own. It used
+     to be unconditional, and that broke every spacer: mail layouts stretch a
+     10x10 transparent gif with width="520" height="12" into a divider, and
+     auto threw the author's 12 away and let the square aspect ratio answer
+     instead — 520px of blank, per spacer, a dozen times per newsletter. A
+     stated height is layout, not a suggestion. */
   body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;}
-  img{max-width:100%;height:auto;}
+  img{max-width:100%;}
+  img:not([height]){height:auto;}
   table{max-width:100%;}
 </style>
 </head><body>${props.html}</body></html>`
