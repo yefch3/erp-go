@@ -1369,7 +1369,14 @@ export default {
     hourlyQuota: 'Hourly limit',
     dailyQuota: 'Daily limit',
     quotaNote: 'Over the limit it waits in the queue rather than being refused by the host',
-    presetGmail: 'Fill in Gmail settings',
+    presets: 'Common providers:',
+    presetNames: {
+      p263: '263 Mail',
+      tencent: 'Tencent Exmail',
+      ali: 'Alibaba Mail',
+      netease: 'NetEase Enterprise',
+      gmail: 'Gmail',
+    },
     saved: 'Saved',
   },
   templates: {
