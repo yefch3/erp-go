@@ -337,6 +337,21 @@
       <el-alert v-else-if="schedulePreview" type="info" :closable="false" show-icon>
         {{ schedulePreview }}
       </el-alert>
+      <!-- The undo window lives here because this dialog is where sending's
+           time behaviour is decided — it just also governs the "now" case.
+           Like Gmail: 5 to 30 seconds, never off; the delay is the safety
+           net, and a net you can remove is a net somebody has removed. -->
+      <el-divider />
+      <el-form-item :label="t('emails.undoWindow')">
+        <div class="body-box">
+          <el-radio-group v-model="undoSeconds" size="small">
+            <el-radio-button v-for="s in [5, 10, 20, 30]" :key="s" :value="s">
+              {{ s }}s
+            </el-radio-button>
+          </el-radio-group>
+          <div class="var-hint">{{ t('emails.undoWindowHint', { s: undoSeconds }) }}</div>
+        </div>
+      </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="scheduleOpen = false">{{ common('cancel') }}</el-button>
@@ -414,10 +429,17 @@ interface CreateResult {
 // going, and so how long the 撤回 button lives. Gmail offers 5–30 and
 // defaults to 5; ten fits "read the toast, realise, click" without making
 // every send feel slow. The machinery is C6's: an immediate send IS a
-// scheduled send ten seconds out, and 撤回 IS cancelling it — the server
+// scheduled send a few seconds out, and 撤回 IS cancelling it — the server
 // already restores the draft and already answers the race where the worker
 // got there first.
-const UNDO_SECONDS = 10
+//
+// Per person per browser (localStorage), like the rest of this page's
+// preferences: the window is a reflex-speed setting, and reflexes do not
+// need to sync across devices badly enough to earn a server round trip.
+const UNDO_CHOICES = [5, 10, 20, 30]
+const storedUndo = Number(localStorage.getItem('mail.undoSeconds'))
+const undoSeconds = ref(UNDO_CHOICES.includes(storedUndo) ? storedUndo : 10)
+watch(undoSeconds, (s) => localStorage.setItem('mail.undoSeconds', String(s)))
 
 // The whole substitution vocabulary. It mirrors app.KnownVariables() in the
 // notification service; the two are small and fixed, and the frontend needs
@@ -1230,7 +1252,7 @@ async function submitSend(at: string) {
   // can cancel it from 已定时 at leisure.
   const undoable = at === ''
   if (undoable) {
-    at = new Date(Date.now() + UNDO_SECONDS * 1000).toISOString()
+    at = new Date(Date.now() + undoSeconds.value * 1000).toISOString()
   }
   sending.value = true
   try {
@@ -1282,7 +1304,7 @@ async function submitSend(at: string) {
 function showUndoToast(res: CreateResult) {
   const handle = ElMessage({
     type: 'success',
-    duration: UNDO_SECONDS * 1000,
+    duration: undoSeconds.value * 1000,
     // Inline styles, not classes: the toast mounts at the document body,
     // outside this component's scoped CSS.
     message: () =>

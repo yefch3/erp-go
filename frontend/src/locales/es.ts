@@ -1230,6 +1230,8 @@ export default {
     bodyPlaceholder: 'Escriba el mensaje; use las etiquetas de arriba para insertar variables',
     insertVariable: 'Insertar variable:',
     undoSend: 'Deshacer',
+    undoWindow: 'Ventana de deshacer',
+    undoWindowHint: 'Durante {s} segundos tras enviar, Deshacer puede retener el correo',
     undone: 'Deshecho — restaurado como borrador',
     undoTooLate: 'Ya se envió, demasiado tarde para cancelar',
     applyTemplate: 'Aplicar plantilla',

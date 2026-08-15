@@ -1225,6 +1225,8 @@ export default {
     bodyPlaceholder: '写正文，用上方标签插入变量',
     insertVariable: '插入变量：',
     undoSend: '撤回',
+    undoWindow: '撤回窗口',
+    undoWindowHint: '发送后 {s} 秒内可点「撤回」拦下这封邮件',
     undone: '已撤回，草稿已恢复',
     undoTooLate: '已经发出，来不及取消了',
     applyTemplate: '套用模板',

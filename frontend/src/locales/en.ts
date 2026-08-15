@@ -1227,6 +1227,8 @@ export default {
     bodyPlaceholder: 'Write the message; use the tags above to insert variables',
     insertVariable: 'Insert variable:',
     undoSend: 'Undo',
+    undoWindow: 'Undo window',
+    undoWindowHint: 'For {s} seconds after sending, Undo can pull the mail back',
     undone: 'Undone — restored as a draft',
     undoTooLate: 'Already sent, too late to cancel',
     applyTemplate: 'Apply template',
