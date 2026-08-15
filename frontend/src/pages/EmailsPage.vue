@@ -1,6 +1,6 @@
 <template>
   <MailboxGate v-if="locked === true" @unlocked="onUnlocked" @host-settings="hostOpen = true" />
-  <div v-else-if="locked === false" class="mailbox">
+  <div v-else-if="locked === false" ref="mailboxEl" class="mailbox">
     <!-- A folder rail, not tabs. The distinction matters: folders say "your
          mail lives in these places", tabs said "here are three reports". -->
     <aside class="rail">
@@ -1080,6 +1080,47 @@ function toQuery(s: UrlState): Record<string, string> {
   return query
 }
 
+// Where each folder's list stood when a mail was opened, in pixels of the
+// Shell's scroll column. Coming back from a mail restores it: reading one
+// message must not cost the place somebody had scrolled to — page 3 of the
+// inbox is an afternoon of triage. Keyed by folder (plus the search phrase,
+// which is its own list), so every folder comes back to its own place.
+//
+// Deliberately NOT in the URL: a scroll offset is how a screen stood, not
+// what it showed, and pixels shared in a link would land differently on a
+// different window height anyway.
+const mailboxEl = ref<HTMLElement | null>(null)
+const listScroll = new Map<string, number>()
+
+function scrollKey(s: { folder: string; q: string }): string {
+  return s.q ? `${s.folder}?q=${s.q}` : s.folder
+}
+
+// The column that actually scrolls belongs to the Shell (its el-main), not
+// to this page. Found by walking up rather than by naming its class, so a
+// Shell layout rename cannot silently turn this feature off.
+function listScroller(): HTMLElement | null {
+  for (let p = mailboxEl.value?.parentElement ?? null; p; p = p.parentElement) {
+    const oy = getComputedStyle(p).overflowY
+    if (oy === 'auto' || oy === 'scroll') return p
+  }
+  return null
+}
+
+// Setting scrollTop once is not enough: at Vue's nextTick the table is in
+// the DOM but el-table finishes its own height a frame later, so a restore
+// aimed past the half-built height gets clamped and stays there. Retried
+// across a few frames until it lands (or until the target is simply beyond
+// a shrunken list, where the clamp is the right answer).
+function restoreListScroll(top: number, tries = 8) {
+  const sc = listScroller()
+  if (!sc) return
+  sc.scrollTo({ top })
+  if (tries > 0 && Math.abs(sc.scrollTop - top) > 1) {
+    requestAnimationFrame(() => restoreListScroll(top, tries - 1))
+  }
+}
+
 // The cursors of the pages walked through to reach this one, newest last.
 // Keyset paging knows how to go forward, not back, so 上一页 replays the
 // cursor it came from. Kept in history state rather than a component ref so
@@ -1125,6 +1166,16 @@ function applyRoute() {
   const s = parseQuery(route.query)
   const prev = applied
   applied = s
+  // Reading state, independent of which kind of detail fills the slot —
+  // inbound and outbound clear together (pushState couples them), so the
+  // transition is list↔reading, not per-field.
+  const wasReading = !!(prev && (prev.mail || prev.msg))
+  const nowReading = !!(s.mail || s.msg)
+  if (prev && !wasReading && nowReading) {
+    // The list is still on screen at this instant — the detail swaps in on
+    // a later render — so this is the last honest reading of where it stood.
+    listScroll.set(scrollKey(prev), listScroller()?.scrollTop ?? 0)
+  }
   cursorStack.value = stackFromHistory()
   folder.value = s.folder
   page.value = s.page
@@ -1155,6 +1206,16 @@ function applyRoute() {
     } else {
       openMail.value = null
     }
+  }
+  if (wasReading && !nowReading) {
+    // Back to the list. The rows were never unloaded ("closing the mail
+    // afterwards refetches neither"), so one tick re-renders the list at
+    // full height and the saved offset means the same thing it meant when
+    // it was taken. Without this the scroll lands wherever the browser
+    // clamped it during the swap — which is "the top", by accident, and
+    // page 3 of an afternoon's triage is gone.
+    const top = listScroll.get(scrollKey(s)) ?? 0
+    nextTick(() => restoreListScroll(top))
   }
 }
 
@@ -1527,6 +1588,9 @@ async function openDetail(id: string) {
   try {
     const d = await get<{ mail: InboundMail }>(`/inbound-mails/${id}`)
     openedInbound.value = d.mail
+    // Reading starts at the top by decision, not by the accident of the
+    // browser clamping the list's old offset against a shorter page.
+    nextTick(() => listScroller()?.scrollTo({ top: 0 }))
     const row = inbound.value.find((r) => r.id === id)
     if (row && !row.isRead) {
       row.isRead = true
@@ -2423,6 +2487,7 @@ async function loadMessage(id: string) {
   try {
     const d = await get<{ message: Mail }>(`/email-messages/${id}`)
     openMail.value = d.message
+    nextTick(() => listScroller()?.scrollTo({ top: 0 }))
   } finally {
     readerLoading.value = false
   }
