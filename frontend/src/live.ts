@@ -2,10 +2,11 @@ import { ref } from 'vue'
 
 // One Server-Sent Events stream per browser tab, shared by every page.
 //
-// Not `EventSource`: it cannot set an Authorization header, and the only way
-// around that is putting the JWT in the query string, where it ends up in
-// access logs, proxy logs and browser history. Streaming the response of a
-// normal `fetch` keeps the token in the header where it belongs.
+// Still `fetch` rather than `EventSource`, though the original reason (an
+// Authorization header EventSource cannot set) dissolved when the session
+// moved into an httpOnly cookie that rides on either. fetch keeps the
+// explicit AbortController lifecycle this file is built around, and
+// changing transports to remove a comment is not a trade.
 
 export interface LiveEvent {
   type: string
@@ -43,12 +44,11 @@ export function stopLive(): void {
 async function run(signal: AbortSignal): Promise<void> {
   while (!signal.aborted) {
     try {
-      const token = localStorage.getItem('token')
-      if (!token) return
-      const resp = await fetch('/api/events', {
-        headers: { Authorization: `Bearer ${token}` },
-        signal,
-      })
+      // The signed-in signal, not the credential — the cookie goes with the
+      // request on its own. Bailing out while signed out keeps a logged-out
+      // tab from hammering /api/events into a wall of 401s.
+      if (!localStorage.getItem('employeeName')) return
+      const resp = await fetch('/api/events', { signal })
       if (!resp.ok || !resp.body) throw new Error(`stream failed: ${resp.status}`)
       connected.value = true
       retryDelay = 1000

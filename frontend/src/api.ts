@@ -49,42 +49,43 @@ function shouldToast(cfg?: AxiosRequestConfig): boolean {
   return !cfg?.quiet
 }
 
+// The login token no longer passes through here — it lives in an httpOnly
+// cookie the browser attaches on its own, which is the point: code that
+// cannot see the token cannot leak it, and "code" includes anything a
+// hostile mail might have managed to run.
+//
+// What the page does still owe is the CSRF echo: the erp_csrf cookie is
+// script-readable ON PURPOSE, and repeating its value in a header on every
+// state-changing request is what proves the request was made by this page
+// rather than by some other site borrowing the browser's cookies.
+function cookieValue(name: string): string {
+  const m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'))
+  return m ? decodeURIComponent(m[1]) : ''
+}
+
+const MUTATING = new Set(['post', 'put', 'patch', 'delete'])
+
 http.interceptors.request.use((cfg) => {
-  const token = localStorage.getItem('token')
-  if (token) cfg.headers.Authorization = `Bearer ${token}`
-  // The mailbox unlock proof. localStorage, same as the ERP login itself:
-  // the real boundaries are the server-side 12-hour expiry and 退出邮箱,
-  // which revokes the token immediately. Dying with the tab only meant
-  // retyping a password every morning without adding a boundary.
+  if (MUTATING.has((cfg.method ?? 'get').toLowerCase())) {
+    const csrf = cookieValue('erp_csrf')
+    if (csrf) cfg.headers['X-CSRF-Token'] = csrf
+  }
+  // The mailbox unlock proof. localStorage, same as before: the real
+  // boundaries are the server-side 12-hour expiry and 退出邮箱, which
+  // revokes the token immediately.
   const unlock = localStorage.getItem('mailUnlock')
   if (unlock) cfg.headers['X-Mail-Unlock'] = unlock
   return cfg
 })
 
-// The gateway hands back a replacement token once the current one is half
-// spent. Picking it up here, rather than in any page, is what makes staying
-// signed in a property of using the system at all: every request already goes
-// through this interceptor, so no screen has to remember to renew.
-//
-// Before the blob check, and before the envelope check, because the header
-// arrives on a download and on a business-level failure too. Skipping those
-// would mean the one person who spent the afternoon exporting conversations
-// got signed out for their trouble.
-const RENEWED_TOKEN_HEADER = 'x-renewed-token'
-
-function adoptRenewedToken(resp: { headers?: unknown }) {
-  const headers = resp.headers as Record<string, string> | undefined
-  const fresh = headers?.[RENEWED_TOKEN_HEADER]
-  // Only while a session exists. Without this, a response that arrives just
-  // after 退出登录 would quietly put a working token back.
-  if (fresh && localStorage.getItem('token')) {
-    localStorage.setItem('token', fresh)
-  }
-}
+// Renewal needs nothing from this file any more. The gateway extends a
+// half-spent session with a Set-Cookie on whatever response was already on
+// its way — a channel no script can read, which closed the last place a
+// fresh token used to be visible to page code (the old X-Renewed-Token
+// header was readable by anything that had hooked XMLHttpRequest).
 
 http.interceptors.response.use(
   (resp) => {
-    adoptRenewedToken(resp)
     // A download is not an envelope. Everything else this API returns is
     // { success, data }; an exported conversation is the document itself, and
     // checking .success on a Blob finds undefined and rejects a response that
@@ -100,9 +101,6 @@ http.interceptors.response.use(
     return resp
   },
   async (err) => {
-    // A renewal can ride on a failed request too — a 404 or a validation
-    // error is still proof the person is here and working.
-    if (err.response) adoptRenewedToken(err.response)
     let env = err.response?.data as Envelope<unknown> | undefined
     // A download that failed still failed with an envelope — the server does
     // not know yet that it is about to write bytes. responseType turned it
@@ -149,8 +147,13 @@ http.interceptors.response.use(
 // navigate.
 let redirecting = false
 function expired() {
-  localStorage.removeItem('token')
-  localStorage.removeItem('mailUnlock')
+  // The signed-in signal, not the credential: the credential is an httpOnly
+  // cookie this code cannot touch, already refused server-side. What must go
+  // is everything that makes the router and the pages believe a session
+  // still exists.
+  for (const k of ['employeeId', 'employeeName', 'employeeEmail', 'permissions', 'mailUnlock']) {
+    localStorage.removeItem(k)
+  }
   if (redirecting || location.pathname === '/login') return
   redirecting = true
   // The address bar, not router.currentRoute. An expiry is usually detected by

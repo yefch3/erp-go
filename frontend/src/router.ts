@@ -56,7 +56,11 @@ export const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  const loggedIn = localStorage.getItem('token') !== null
+  // The credential is an httpOnly cookie this code cannot see; what the
+  // guard reads is the signed-in signal login writes and expiry clears. A
+  // stale signal only means one extra round trip — the API answers 401 and
+  // the interceptor routes to /login regardless.
+  const loggedIn = localStorage.getItem('employeeName') !== null
   // Activation is the one page whose whole audience is logged out and has to
   // stay that way: sending them to /login would hide the only link they hold.
   if (to.path === '/activate') return true

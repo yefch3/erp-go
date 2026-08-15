@@ -86,8 +86,13 @@ type Server struct {
 	// trusting it without such a proxy lets anybody spray from a different
 	// fake address on every request. See clientAddr.
 	TrustProxyHeaders bool
-	Live              *livefeed.Subscriber
-	JWTSecret         string
+	// CookieSecure marks the session cookies HTTPS-only. Off for localhost
+	// development; DEPLOY.md requires COOKIE_SECURE=1 wherever nginx
+	// terminates TLS — a Secure-less cookie on a public host would ride any
+	// accidental http:// request in the clear.
+	CookieSecure bool
+	Live         *livefeed.Subscriber
+	JWTSecret    string
 	// TokenTTL is the life of a renewed token, and must match the one iam
 	// issues with. Because renewal rides on activity, this is in practice how
 	// long somebody may sit idle before being signed out — not how long since
@@ -102,6 +107,7 @@ func (s *Server) Router() http.Handler {
 	// user as "network error" instead of a readable failure.
 	r.Use(s.recoverPanics)
 	r.Post("/api/auth/login", s.login)
+	r.Post("/api/auth/logout", s.logout)
 	// Activation. Login-free of necessity: whoever holds the link has no
 	// account yet, and getting one is the point. The token in it is the whole
 	// of their claim — see activateAccount for why that is enough.
@@ -566,8 +572,19 @@ func (s *Server) recoverPanics(next http.Handler) http.Handler {
 // downstream services see who is acting.
 func (s *Server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The header is looked at first and kept working: scripts, tests and
+		// grpcurl-style tooling authenticate this way, and a header a foreign
+		// page cannot set needs no CSRF proof. The browser's own path is the
+		// cookie, which is where the CSRF obligation attaches.
 		raw := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		fromCookie := false
 		if raw == "" || raw == r.Header.Get("Authorization") {
+			raw = ""
+			if c, err := r.Cookie(SessionCookie); err == nil {
+				raw, fromCookie = c.Value, true
+			}
+		}
+		if raw == "" {
 			s.writeError(w, http.StatusUnauthorized, "AUTH_TOKEN_MISSING", "缺少登录凭证")
 			return
 		}
@@ -590,10 +607,24 @@ func (s *Server) auth(next http.Handler) http.Handler {
 				"登录状态已被管理员终止，请重新登录")
 			return
 		}
+		// The CSRF proof, demanded only where the risk exists: a cookie the
+		// browser attaches on its own, carrying a state-changing request. A
+		// GET reads nothing anybody couldn't read by phishing the person
+		// directly, and a header-authenticated caller set that header itself
+		// — no foreign page can.
+		//
+		// After the signature and revocation checks, so this answer is only
+		// ever given about a session that is otherwise alive: a dead token
+		// stays "请重新登录", never "请刷新页面".
+		if fromCookie && mutating(r.Method) && !csrfOK(r) {
+			s.writeError(w, http.StatusForbidden, "AUTH_CSRF_REQUIRED",
+				"请求缺少防伪标记，请刷新页面后重试")
+			return
+		}
 		// Only now — after the signature held and the session survived the
 		// revocation check — is it safe to extend it. Renewing first would
 		// hand a fresh token to a session that was about to be refused.
-		s.renewIfHalfSpent(w, claims)
+		s.renewIfHalfSpent(w, r, claims, fromCookie)
 		ctx := grpcx.WithOperator(r.Context(), grpcx.Operator{
 			TenantID:   claims.TenantID,
 			EmployeeID: claims.EmployeeID(),
@@ -638,13 +669,21 @@ func grpcMessage(err error) string {
 // current token is still valid for at least half its life; turning a renewal
 // hiccup into a visible error would break a working page over something that
 // will be retried on the very next request.
-func (s *Server) renewIfHalfSpent(w http.ResponseWriter, c *authtoken.Claims) {
+func (s *Server) renewIfHalfSpent(w http.ResponseWriter, r *http.Request, c *authtoken.Claims, fromCookie bool) {
 	if !c.HalfSpent(time.Now()) {
 		return
 	}
 	fresh, err := authtoken.Renew(s.JWTSecret, s.TokenTTL, c)
 	if err != nil {
 		s.Log.Warn("could not renew a session token", "employee", c.EmployeeID(), "err", err)
+		return
+	}
+	// A cookie session renews as a cookie: Set-Cookie is the one channel no
+	// script can observe, which is the point — the old design's renewal
+	// header handed a fresh token to anything that had hooked XMLHttpRequest,
+	// making renewal itself the leak that httpOnly storage had just closed.
+	if fromCookie {
+		s.refreshSessionCookies(w, r, fresh)
 		return
 	}
 	// Same origin as the page, so no Access-Control-Expose-Headers is needed.
