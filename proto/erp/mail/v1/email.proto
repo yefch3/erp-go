@@ -57,6 +57,13 @@ service EmailService {
   rpc UpdateSignature(UpdateSignatureRequest) returns (UpdateSignatureResponse);
   rpc DeleteSignature(DeleteSignatureRequest) returns (DeleteSignatureResponse);
 
+  // The template library (C5): reusable phrases with {{variables}} from the
+  // same vocabulary campaigns render with, applied in one click at compose.
+  rpc ListEmailTemplates(ListEmailTemplatesRequest) returns (ListEmailTemplatesResponse);
+  rpc CreateEmailTemplate(CreateEmailTemplateRequest) returns (CreateEmailTemplateResponse);
+  rpc UpdateEmailTemplate(UpdateEmailTemplateRequest) returns (UpdateEmailTemplateResponse);
+  rpc DeleteEmailTemplate(DeleteEmailTemplateRequest) returns (DeleteEmailTemplateResponse);
+
   // Files travelling with a send, and pictures embedded inside one.
   //
   // Bytes go browser-to-bucket through the presigned URL and never occupy
@@ -938,6 +945,66 @@ message DeleteSignatureRequest {
 }
 
 message DeleteSignatureResponse {
+  bool ok = 1;
+}
+
+// EmailTemplate is one reusable phrase block. The body may carry
+// {{variables}}; they resolve against the same vocabulary as a campaign's
+// (contact_name, my_name, ...), substituted in the editor at apply time.
+message EmailTemplate {
+  int64 id = 1;
+  // TENANT (the company phrasebook) or EMPLOYEE (personal).
+  string owner_type = 2;
+  int64 owner_id = 3;
+  string name = 4;
+  // zh / en / es, or "" for language-neutral. A picker filter, not a
+  // grouping key.
+  string lang = 5;
+  string subject = 6;
+  string content = 7;
+  // TEXT or HTML.
+  string body_format = 8;
+}
+
+message ListEmailTemplatesRequest {}
+
+message ListEmailTemplatesResponse {
+  repeated EmailTemplate templates = 1;
+}
+
+message CreateEmailTemplateRequest {
+  string owner_type = 1;
+  string name = 2;
+  string lang = 3;
+  string subject = 4;
+  string content = 5;
+  string body_format = 6;
+}
+
+message CreateEmailTemplateResponse {
+  int64 id = 1;
+}
+
+// Whole block, not a patch, for the same reason UpdateSignatureRequest is.
+message UpdateEmailTemplateRequest {
+  int64 id = 1;
+  string owner_type = 2;
+  string name = 3;
+  string lang = 4;
+  string subject = 5;
+  string content = 6;
+  string body_format = 7;
+}
+
+message UpdateEmailTemplateResponse {
+  bool ok = 1;
+}
+
+message DeleteEmailTemplateRequest {
+  int64 id = 1;
+}
+
+message DeleteEmailTemplateResponse {
   bool ok = 1;
 }
 

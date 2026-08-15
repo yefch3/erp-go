@@ -43,7 +43,15 @@
       >
         ✍️ {{ t('menu.signatures') }}
       </el-button>
-      <el-button v-if="isAdmin" link class="rail-lock rail-host" @click="hostOpen = true">
+      <el-button
+        v-if="auth.can('mail:email:write')"
+        link
+        class="rail-lock"
+        @click="templatesOpen = true"
+      >
+        📋 {{ t('menu.templates') }}
+      </el-button>
+      <el-button v-if="isAdmin" link class="rail-lock" @click="hostOpen = true">
         ⚙️ {{ t('mailGate.hostSettings') }}
       </el-button>
     </aside>
@@ -676,6 +684,7 @@
        host settings before anybody can sign in at all. -->
   <MailHostDialog v-model="hostOpen" />
   <MailSignatureDialog v-model="signaturesOpen" />
+  <MailTemplatesDialog v-model="templatesOpen" />
 
   <!-- A native-like context action. It is rendered at the click point rather
        than permanently adding another button to every attachment and every
@@ -858,6 +867,7 @@ import MailReader, { type Mail } from '../components/MailReader.vue'
 import MailboxGate from '../components/MailboxGate.vue'
 import MailHostDialog from '../components/MailHostDialog.vue'
 import MailSignatureDialog from '../components/MailSignatureDialog.vue'
+import MailTemplatesDialog from '../components/MailTemplatesDialog.vue'
 import MailList from '../components/MailList.vue'
 // Received mail renders inside a sandboxed frame. It carries the sender's own
 // stylesheet now, and a stylesheet injected into this page would be a stranger
@@ -1239,6 +1249,7 @@ const suppressForm = reactive({ email: '', reason: 'UNSUBSCRIBE', detail: '' })
 const locked = ref<boolean | null>(null)
 const hostOpen = ref(false)
 const signaturesOpen = ref(false)
+const templatesOpen = ref(false)
 
 onMounted(async () => {
   // Back from Google's login page. On success the fresh grant is verified
@@ -3114,12 +3125,21 @@ async function doUnsuppress(row: Suppression) {
   flex: 1;
 }
 .rail-lock {
-  margin-top: 14px;
+  /* One function per line. These are inline-flex buttons by default, and
+     four of them packing into whatever rows fit 178px read as clutter. */
+  display: flex;
+  width: fit-content;
+  margin: 8px 0 0;
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
-.rail-host {
-  display: block;
-  margin: 6px 0 0;
+/* Element Plus gives adjacent buttons a left margin — the very thing that
+   staggered these into ragged rows. Stacked rows have no use for it. */
+.rail-lock + .rail-lock {
+  margin-left: 0;
+}
+/* The group keeps its distance from the folder list above it. */
+.rail-grow + .rail-lock {
+  margin-top: 16px;
 }
 </style>

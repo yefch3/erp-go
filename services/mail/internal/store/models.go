@@ -222,6 +222,20 @@ type EmailSuppression struct {
 	CreatedAt pgtype.Timestamptz
 }
 
+type EmailTemplate struct {
+	ID         int64
+	TenantID   int64
+	OwnerType  string
+	OwnerID    int64
+	Name       string
+	Lang       string
+	Subject    string
+	Content    string
+	BodyFormat string
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+}
+
 type MailAccount struct {
 	ID              int64
 	TenantID        int64
