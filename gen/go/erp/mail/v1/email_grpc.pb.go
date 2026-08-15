@@ -40,6 +40,10 @@ const (
 	EmailService_CreateSignature_FullMethodName              = "/erp.mail.v1.EmailService/CreateSignature"
 	EmailService_UpdateSignature_FullMethodName              = "/erp.mail.v1.EmailService/UpdateSignature"
 	EmailService_DeleteSignature_FullMethodName              = "/erp.mail.v1.EmailService/DeleteSignature"
+	EmailService_ListEmailTemplates_FullMethodName           = "/erp.mail.v1.EmailService/ListEmailTemplates"
+	EmailService_CreateEmailTemplate_FullMethodName          = "/erp.mail.v1.EmailService/CreateEmailTemplate"
+	EmailService_UpdateEmailTemplate_FullMethodName          = "/erp.mail.v1.EmailService/UpdateEmailTemplate"
+	EmailService_DeleteEmailTemplate_FullMethodName          = "/erp.mail.v1.EmailService/DeleteEmailTemplate"
 	EmailService_PresignAttachment_FullMethodName            = "/erp.mail.v1.EmailService/PresignAttachment"
 	EmailService_RegisterAttachment_FullMethodName           = "/erp.mail.v1.EmailService/RegisterAttachment"
 	EmailService_ListAttachments_FullMethodName              = "/erp.mail.v1.EmailService/ListAttachments"
@@ -129,6 +133,12 @@ type EmailServiceClient interface {
 	CreateSignature(ctx context.Context, in *CreateSignatureRequest, opts ...grpc.CallOption) (*CreateSignatureResponse, error)
 	UpdateSignature(ctx context.Context, in *UpdateSignatureRequest, opts ...grpc.CallOption) (*UpdateSignatureResponse, error)
 	DeleteSignature(ctx context.Context, in *DeleteSignatureRequest, opts ...grpc.CallOption) (*DeleteSignatureResponse, error)
+	// The template library (C5): reusable phrases with {{variables}} from the
+	// same vocabulary campaigns render with, applied in one click at compose.
+	ListEmailTemplates(ctx context.Context, in *ListEmailTemplatesRequest, opts ...grpc.CallOption) (*ListEmailTemplatesResponse, error)
+	CreateEmailTemplate(ctx context.Context, in *CreateEmailTemplateRequest, opts ...grpc.CallOption) (*CreateEmailTemplateResponse, error)
+	UpdateEmailTemplate(ctx context.Context, in *UpdateEmailTemplateRequest, opts ...grpc.CallOption) (*UpdateEmailTemplateResponse, error)
+	DeleteEmailTemplate(ctx context.Context, in *DeleteEmailTemplateRequest, opts ...grpc.CallOption) (*DeleteEmailTemplateResponse, error)
 	// Files travelling with a send, and pictures embedded inside one.
 	//
 	// Bytes go browser-to-bucket through the presigned URL and never occupy
@@ -441,6 +451,46 @@ func (c *emailServiceClient) DeleteSignature(ctx context.Context, in *DeleteSign
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeleteSignatureResponse)
 	err := c.cc.Invoke(ctx, EmailService_DeleteSignature_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) ListEmailTemplates(ctx context.Context, in *ListEmailTemplatesRequest, opts ...grpc.CallOption) (*ListEmailTemplatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListEmailTemplatesResponse)
+	err := c.cc.Invoke(ctx, EmailService_ListEmailTemplates_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) CreateEmailTemplate(ctx context.Context, in *CreateEmailTemplateRequest, opts ...grpc.CallOption) (*CreateEmailTemplateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateEmailTemplateResponse)
+	err := c.cc.Invoke(ctx, EmailService_CreateEmailTemplate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) UpdateEmailTemplate(ctx context.Context, in *UpdateEmailTemplateRequest, opts ...grpc.CallOption) (*UpdateEmailTemplateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateEmailTemplateResponse)
+	err := c.cc.Invoke(ctx, EmailService_UpdateEmailTemplate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) DeleteEmailTemplate(ctx context.Context, in *DeleteEmailTemplateRequest, opts ...grpc.CallOption) (*DeleteEmailTemplateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteEmailTemplateResponse)
+	err := c.cc.Invoke(ctx, EmailService_DeleteEmailTemplate_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -849,6 +899,12 @@ type EmailServiceServer interface {
 	CreateSignature(context.Context, *CreateSignatureRequest) (*CreateSignatureResponse, error)
 	UpdateSignature(context.Context, *UpdateSignatureRequest) (*UpdateSignatureResponse, error)
 	DeleteSignature(context.Context, *DeleteSignatureRequest) (*DeleteSignatureResponse, error)
+	// The template library (C5): reusable phrases with {{variables}} from the
+	// same vocabulary campaigns render with, applied in one click at compose.
+	ListEmailTemplates(context.Context, *ListEmailTemplatesRequest) (*ListEmailTemplatesResponse, error)
+	CreateEmailTemplate(context.Context, *CreateEmailTemplateRequest) (*CreateEmailTemplateResponse, error)
+	UpdateEmailTemplate(context.Context, *UpdateEmailTemplateRequest) (*UpdateEmailTemplateResponse, error)
+	DeleteEmailTemplate(context.Context, *DeleteEmailTemplateRequest) (*DeleteEmailTemplateResponse, error)
 	// Files travelling with a send, and pictures embedded inside one.
 	//
 	// Bytes go browser-to-bucket through the presigned URL and never occupy
@@ -1019,6 +1075,18 @@ func (UnimplementedEmailServiceServer) UpdateSignature(context.Context, *UpdateS
 }
 func (UnimplementedEmailServiceServer) DeleteSignature(context.Context, *DeleteSignatureRequest) (*DeleteSignatureResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteSignature not implemented")
+}
+func (UnimplementedEmailServiceServer) ListEmailTemplates(context.Context, *ListEmailTemplatesRequest) (*ListEmailTemplatesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListEmailTemplates not implemented")
+}
+func (UnimplementedEmailServiceServer) CreateEmailTemplate(context.Context, *CreateEmailTemplateRequest) (*CreateEmailTemplateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateEmailTemplate not implemented")
+}
+func (UnimplementedEmailServiceServer) UpdateEmailTemplate(context.Context, *UpdateEmailTemplateRequest) (*UpdateEmailTemplateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateEmailTemplate not implemented")
+}
+func (UnimplementedEmailServiceServer) DeleteEmailTemplate(context.Context, *DeleteEmailTemplateRequest) (*DeleteEmailTemplateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteEmailTemplate not implemented")
 }
 func (UnimplementedEmailServiceServer) PresignAttachment(context.Context, *PresignAttachmentRequest) (*PresignAttachmentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PresignAttachment not implemented")
@@ -1520,6 +1588,78 @@ func _EmailService_DeleteSignature_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(EmailServiceServer).DeleteSignature(ctx, req.(*DeleteSignatureRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_ListEmailTemplates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListEmailTemplatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).ListEmailTemplates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_ListEmailTemplates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).ListEmailTemplates(ctx, req.(*ListEmailTemplatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_CreateEmailTemplate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateEmailTemplateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).CreateEmailTemplate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_CreateEmailTemplate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).CreateEmailTemplate(ctx, req.(*CreateEmailTemplateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_UpdateEmailTemplate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateEmailTemplateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).UpdateEmailTemplate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_UpdateEmailTemplate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).UpdateEmailTemplate(ctx, req.(*UpdateEmailTemplateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_DeleteEmailTemplate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteEmailTemplateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).DeleteEmailTemplate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_DeleteEmailTemplate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).DeleteEmailTemplate(ctx, req.(*DeleteEmailTemplateRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2244,6 +2384,22 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteSignature",
 			Handler:    _EmailService_DeleteSignature_Handler,
+		},
+		{
+			MethodName: "ListEmailTemplates",
+			Handler:    _EmailService_ListEmailTemplates_Handler,
+		},
+		{
+			MethodName: "CreateEmailTemplate",
+			Handler:    _EmailService_CreateEmailTemplate_Handler,
+		},
+		{
+			MethodName: "UpdateEmailTemplate",
+			Handler:    _EmailService_UpdateEmailTemplate_Handler,
+		},
+		{
+			MethodName: "DeleteEmailTemplate",
+			Handler:    _EmailService_DeleteEmailTemplate_Handler,
 		},
 		{
 			MethodName: "PresignAttachment",

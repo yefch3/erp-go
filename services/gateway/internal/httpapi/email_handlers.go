@@ -170,6 +170,52 @@ func (s *Server) deleteSignature(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) listEmailTemplates(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.ListEmailTemplates(r.Context(), &mailv1.ListEmailTemplatesRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) createEmailTemplate(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.CreateEmailTemplateRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Emails.CreateEmailTemplate(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) updateEmailTemplate(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.UpdateEmailTemplateRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	// The id comes from the path, not the body — same rule as signatures.
+	req.Id = idFromPath(r)
+	resp, err := s.Emails.UpdateEmailTemplate(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) deleteEmailTemplate(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.DeleteEmailTemplate(r.Context(), &mailv1.DeleteEmailTemplateRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) listSuppressions(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Emails.ListSuppressions(r.Context(), &mailv1.ListSuppressionsRequest{
 		Keyword: r.URL.Query().Get("keyword"),

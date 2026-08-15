@@ -43,6 +43,14 @@
       >
         ✍️ {{ t('menu.signatures') }}
       </el-button>
+      <el-button
+        v-if="auth.can('mail:email:write')"
+        link
+        class="rail-lock"
+        @click="templatesOpen = true"
+      >
+        📋 {{ t('menu.templates') }}
+      </el-button>
       <el-button v-if="isAdmin" link class="rail-lock rail-host" @click="hostOpen = true">
         ⚙️ {{ t('mailGate.hostSettings') }}
       </el-button>
@@ -676,6 +684,7 @@
        host settings before anybody can sign in at all. -->
   <MailHostDialog v-model="hostOpen" />
   <MailSignatureDialog v-model="signaturesOpen" />
+  <MailTemplatesDialog v-model="templatesOpen" />
 
   <!-- A native-like context action. It is rendered at the click point rather
        than permanently adding another button to every attachment and every
@@ -858,6 +867,7 @@ import MailReader, { type Mail } from '../components/MailReader.vue'
 import MailboxGate from '../components/MailboxGate.vue'
 import MailHostDialog from '../components/MailHostDialog.vue'
 import MailSignatureDialog from '../components/MailSignatureDialog.vue'
+import MailTemplatesDialog from '../components/MailTemplatesDialog.vue'
 import MailList from '../components/MailList.vue'
 // Received mail renders inside a sandboxed frame. It carries the sender's own
 // stylesheet now, and a stylesheet injected into this page would be a stranger
@@ -1239,6 +1249,7 @@ const suppressForm = reactive({ email: '', reason: 'UNSUBSCRIBE', detail: '' })
 const locked = ref<boolean | null>(null)
 const hostOpen = ref(false)
 const signaturesOpen = ref(false)
+const templatesOpen = ref(false)
 
 onMounted(async () => {
   // Back from Google's login page. On success the fresh grant is verified

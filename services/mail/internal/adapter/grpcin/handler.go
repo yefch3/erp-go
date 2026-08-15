@@ -331,6 +331,54 @@ func (h *Handler) DeleteSignature(ctx context.Context, req *mailv1.DeleteSignatu
 	return &mailv1.DeleteSignatureResponse{Ok: true}, nil
 }
 
+// ---------------------------------------------------------------- templates
+
+func (h *Handler) ListEmailTemplates(ctx context.Context, _ *mailv1.ListEmailTemplatesRequest) (*mailv1.ListEmailTemplatesResponse, error) {
+	rows, err := h.svc.ListTemplates(ctx, grpcx.TenantID(ctx), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mailv1.EmailTemplate, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, &mailv1.EmailTemplate{
+			Id: r.ID, OwnerType: r.OwnerType, OwnerId: r.OwnerID,
+			Name: r.Name, Lang: r.Lang, Subject: r.Subject,
+			Content: r.Content, BodyFormat: r.BodyFormat,
+		})
+	}
+	return &mailv1.ListEmailTemplatesResponse{Templates: out}, nil
+}
+
+func (h *Handler) CreateEmailTemplate(ctx context.Context, req *mailv1.CreateEmailTemplateRequest) (*mailv1.CreateEmailTemplateResponse, error) {
+	id, err := h.svc.CreateTemplate(ctx, grpcx.TenantID(ctx), app.TemplateInput{
+		OwnerType: req.GetOwnerType(), Name: req.GetName(), Lang: req.GetLang(),
+		Subject: req.GetSubject(), Content: req.GetContent(),
+		Format: req.GetBodyFormat(),
+	}, operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.CreateEmailTemplateResponse{Id: id}, nil
+}
+
+func (h *Handler) UpdateEmailTemplate(ctx context.Context, req *mailv1.UpdateEmailTemplateRequest) (*mailv1.UpdateEmailTemplateResponse, error) {
+	if err := h.svc.UpdateTemplate(ctx, grpcx.TenantID(ctx), req.GetId(), app.TemplateInput{
+		OwnerType: req.GetOwnerType(), Name: req.GetName(), Lang: req.GetLang(),
+		Subject: req.GetSubject(), Content: req.GetContent(),
+		Format: req.GetBodyFormat(),
+	}, operator(ctx)); err != nil {
+		return nil, err
+	}
+	return &mailv1.UpdateEmailTemplateResponse{Ok: true}, nil
+}
+
+func (h *Handler) DeleteEmailTemplate(ctx context.Context, req *mailv1.DeleteEmailTemplateRequest) (*mailv1.DeleteEmailTemplateResponse, error) {
+	if err := h.svc.DeleteTemplate(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx)); err != nil {
+		return nil, err
+	}
+	return &mailv1.DeleteEmailTemplateResponse{Ok: true}, nil
+}
+
 // ---------------------------------------------------------------- suppression
 
 func (h *Handler) ListSuppressions(ctx context.Context, req *mailv1.ListSuppressionsRequest) (*mailv1.ListSuppressionsResponse, error) {

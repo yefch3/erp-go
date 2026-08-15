@@ -447,6 +447,10 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:write")).Post("/api/email-signatures", s.createSignature)
 		r.With(s.perm("mail:email:write")).Put("/api/email-signatures/{id}", s.updateSignature)
 		r.With(s.perm("mail:email:write")).Delete("/api/email-signatures/{id}", s.deleteSignature)
+		r.With(s.perm("mail:email:read")).Get("/api/email-templates", s.listEmailTemplates)
+		r.With(s.perm("mail:email:write")).Post("/api/email-templates", s.createEmailTemplate)
+		r.With(s.perm("mail:email:write")).Put("/api/email-templates/{id}", s.updateEmailTemplate)
+		r.With(s.perm("mail:email:write")).Delete("/api/email-templates/{id}", s.deleteEmailTemplate)
 		// The suppression list is shared by everybody's sends, so maintaining
 		// it is administrative work rather than part of composing a mail.
 		// Attachments and inline images. Uploading is part of composing, so

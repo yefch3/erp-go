@@ -75,6 +75,34 @@
       <el-form-item :label="t('emails.body')">
         <div class="body-box">
           <div class="var-bar">
+            <!-- The template library (C5). Applying one fills the subject
+                 (only when blank — a reply's Re: must survive) and drops the
+                 body in with its {{variables}} intact: they resolve at send
+                 time, per recipient, by the same pass a campaign uses, and
+                 the same guard refuses to send anything left unresolved. -->
+            <el-dropdown
+              trigger="click"
+              @command="applyTemplate"
+              @visible-change="(v: boolean) => v && loadTemplates()"
+            >
+              <el-button size="small" link type="primary">
+                📋 {{ t('emails.applyTemplate') }}
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <template v-if="templates.length">
+                    <el-dropdown-item v-for="tp in templates" :key="tp.id" :command="tp">
+                      {{ tp.name }}
+                      <span class="tpl-item-meta">
+                        {{ tp.ownerType === 'TENANT' ? t('templates.shared') : t('templates.personal') }}
+                        <template v-if="tp.lang"> · {{ t(`templates.langs.${tp.lang}`) }}</template>
+                      </span>
+                    </el-dropdown-item>
+                  </template>
+                  <el-dropdown-item v-else disabled>{{ t('emails.noTemplates') }}</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
             <el-radio-group v-model="form.format" size="small" @change="onFormatChange">
               <el-radio-button value="HTML">{{ t('emails.rich') }}</el-radio-button>
               <el-radio-button value="TEXT">{{ t('emails.plain') }}</el-radio-button>
@@ -393,6 +421,19 @@ const VARIABLES = [
   'my_email',
   'my_phone',
 ] as const
+
+// The template library, loaded the first time the picker opens. A template
+// row is small and the list short; refetching per compose would only add a
+// spinner to a menu.
+interface ComposeTemplate {
+  id: string
+  ownerType: string
+  name: string
+  lang: string
+  subject: string
+  content: string
+  bodyFormat: string
+}
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; sent: []; saved: [] }>()
@@ -826,6 +867,68 @@ async function loadSignatures() {
 
 // Inserts at the cursor rather than appending, so a variable can be dropped
 // into the middle of a sentence that is already written.
+// ---------------------------------------------------------------- templates
+
+const templates = ref<ComposeTemplate[]>([])
+const templatesLoaded = ref(false)
+
+async function loadTemplates() {
+  if (templatesLoaded.value) return
+  const d = await get<{ templates: ComposeTemplate[] }>('/email-templates')
+  templates.value = d.templates ?? []
+  templatesLoaded.value = true
+}
+
+// Same conversions the dialogs use, for the same reasons: a plain-text
+// template handed to the rich editor raw would lose its line breaks, and an
+// HTML template dropped into the textarea would arrive as literal markup.
+function tplTextToHTML(s: string) {
+  const div = document.createElement('div')
+  div.textContent = s
+  return div.innerHTML.replace(/\r?\n/g, '<br>')
+}
+
+function tplHTMLToText(html: string) {
+  // Parsed, not innerHTML-ed into the live document. The content was
+  // sanitised on every write, but the cheap way is also the safe way here.
+  return new DOMParser().parseFromString(html, 'text/html').body.textContent ?? ''
+}
+
+function bodyIsBlank(): boolean {
+  if (form.format === 'HTML') {
+    return tplHTMLToText(form.body).trim() === ''
+  }
+  return form.body.trim() === ''
+}
+
+function applyTemplate(tp: ComposeTemplate) {
+  // The subject fills only when blank: a reply's "Re: ..." is the thread's
+  // identity and must survive a template.
+  if (tp.subject && !form.subject.trim()) {
+    form.subject = tp.subject
+  }
+  let content = tp.content
+  if (form.format === 'HTML' && tp.bodyFormat !== 'HTML') {
+    content = tplTextToHTML(content)
+  } else if (form.format !== 'HTML' && tp.bodyFormat === 'HTML') {
+    content = tplHTMLToText(content)
+  }
+  if (bodyIsBlank()) {
+    form.body = content
+  } else {
+    // Appended, never replacing: half-written prose outranks any template.
+    form.body = form.format === 'HTML' ? `${form.body}<br>${content}` : `${form.body}\n\n${content}`
+  }
+  if (form.sendMode === 'MERGED' && /\{\{\s*[a-z_]/.test(tp.content + tp.subject)) {
+    // Merged mode sends one identical mail to everyone, so per-recipient
+    // variables cannot resolve. The send-time guard would refuse it anyway;
+    // saying it now saves the round trip.
+    ElMessage.warning(t('emails.templateMergedVars'))
+  } else {
+    ElMessage.success(t('emails.templateApplied'))
+  }
+}
+
 function insertVariable(name: string) {
   const tag = `{{${name}}}`
   const el = bodyInput.value?.textarea as HTMLTextAreaElement | undefined
@@ -1276,6 +1379,11 @@ async function onBeforeClose(done: () => void) {
 }
 .count,
 .var-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.tpl-item-meta {
+  margin-left: 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
