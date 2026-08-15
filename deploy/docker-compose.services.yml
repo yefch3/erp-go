@@ -107,9 +107,6 @@ services:
       MINIO_ACCESS_KEY: erp
       MINIO_SECRET_KEY: erp_dev_password
       MINIO_BUCKET: erp-files
-      REDIS_ADDR: redis:6379
-      SHIPPING_REMINDER_INTERVAL: 24h
-      SHIPPING_REMINDER_BATCH_SIZE: "100"
     ports:
       - "127.0.0.1:9004:9004"
     networks: [infra]
@@ -147,7 +144,6 @@ services:
       GRPC_PORT: "9006"
       MASTERDATA_ADDR: masterdata:9002
       PRODUCT_ADDR: product:9004
-      EXPORT_ADDR: export:9006
       FX_ADDR: fx:9003
       APPROVAL_ADDR: approval:9005
       IAM_ADDR: iam:9001
@@ -228,6 +224,9 @@ services:
       INTERNAL_SIGNING_KEY: ${INTERNAL_SIGNING_KEY:?set it in deploy/.env — openssl rand -hex 32}
       DB_DSN: postgres://erp_shipping:erp_shipping_pw@postgres:5432/erp_shipping?sslmode=disable
       GRPC_PORT: "9009"
+      # Empty REDIS_ADDR silently disables the arrival-reminder live push
+      # (services/shipping/cmd/main.go guards on it), so it must be set here.
+      REDIS_ADDR: redis:6379
       MINIO_ENDPOINT: minio:9000
       MINIO_PUBLIC_ENDPOINT: localhost:19000
       MINIO_ACCESS_KEY: erp
