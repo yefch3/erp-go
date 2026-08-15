@@ -361,7 +361,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Clock } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
@@ -403,11 +403,21 @@ interface Skipped {
   reason: string
 }
 interface CreateResult {
+  campaignId: string
   campaignNo: string
   queued: number
   suppressed: Skipped[]
   needsReview: Skipped[]
 }
+
+// C7 撤回缓冲. How long a just-sent mail sits in the queue before really
+// going, and so how long the 撤回 button lives. Gmail offers 5–30 and
+// defaults to 5; ten fits "read the toast, realise, click" without making
+// every send feel slow. The machinery is C6's: an immediate send IS a
+// scheduled send ten seconds out, and 撤回 IS cancelling it — the server
+// already restores the draft and already answers the race where the worker
+// got there first.
+const UNDO_SECONDS = 10
 
 // The whole substitution vocabulary. It mirrors app.KnownVariables() in the
 // notification service; the two are small and fixed, and the frontend needs
@@ -1215,6 +1225,13 @@ async function readyToSend() {
 // differ by a timestamp and nothing else — the queue holds every mail either
 // way, and only the moment it becomes due changes.
 async function submitSend(at: string) {
+  // An immediate send leaves ten seconds from now, not zero seconds: the
+  // undo window. A time the person picked themselves is left alone — they
+  // can cancel it from 已定时 at leisure.
+  const undoable = at === ''
+  if (undoable) {
+    at = new Date(Date.now() + UNDO_SECONDS * 1000).toISOString()
+  }
   sending.value = true
   try {
     // A draft that is being sent goes through its own endpoint so the row is
@@ -1225,7 +1242,7 @@ async function submitSend(at: string) {
       const wrapped = await post<{ result: CreateResult }>(
         `/email-drafts/${draftId.value}/send${at ? `?scheduled_at=${encodeURIComponent(at)}` : ''}`,
       )
-      reportResult(wrapped.result, at)
+      reportResult(wrapped.result, at, undoable)
       emit('sent')
       close(false)
       return
@@ -1249,7 +1266,7 @@ async function submitSend(at: string) {
       })),
       recipients: selected.value.map(asProto),
     })
-    reportResult(res, at)
+    reportResult(res, at, undoable)
     emit('sent')
     close(false)
   } finally {
@@ -1259,9 +1276,62 @@ async function submitSend(at: string) {
 
 // A caller who asked for 40 and got 37 queued is told which three did not go
 // and why, rather than being left to notice the number later.
-function reportResult(res: CreateResult, at = '') {
+// The undo toast. A plain ElMessage whose body carries the 撤回 button, held
+// open exactly as long as the mail is still cancellable — when the toast
+// goes, so did the mail.
+function showUndoToast(res: CreateResult) {
+  const handle = ElMessage({
+    type: 'success',
+    duration: UNDO_SECONDS * 1000,
+    // Inline styles, not classes: the toast mounts at the document body,
+    // outside this component's scoped CSS.
+    message: () =>
+      h('span', { style: 'display:inline-flex;align-items:center;gap:12px' }, [
+        h('span', t('emails.queuedAll', { no: res.campaignNo, n: res.queued })),
+        h(
+          'a',
+          {
+            style: 'color:var(--el-color-primary);font-weight:600;cursor:pointer;white-space:nowrap',
+            onClick: () => {
+              handle.close()
+              undoSend(res.campaignId)
+            },
+          },
+          t('emails.undoSend'),
+        ),
+      ]),
+  })
+}
+
+async function undoSend(campaignId: string) {
+  try {
+    const d = await post<{ cancelled: number; draftId: string }>(
+      `/email-scheduled/${campaignId}/cancel`,
+      {},
+      quietErrors,
+    )
+    // The server has already turned the cancelled send back into a draft;
+    // opening it puts the person exactly where they were before 发送 —
+    // which is the whole promise of the button.
+    ElMessage.success(t('emails.undone'))
+    emit('update:modelValue', true)
+    await nextTick()
+    await openDraft(d.draftId)
+  } catch (e) {
+    // Almost always the race: the worker sent it inside the window. The
+    // server's message says exactly that.
+    const env = e as { message?: string }
+    ElMessage.warning(env.message || t('emails.undoTooLate'))
+  }
+}
+
+function reportResult(res: CreateResult, at = '', undoable = false) {
   const skipped = (res.suppressed?.length ?? 0) + (res.needsReview?.length ?? 0)
   if (skipped === 0) {
+    if (undoable) {
+      showUndoToast(res)
+      return
+    }
     if (at) {
       ElMessage.success(
         t('emails.scheduledAll', { n: res.queued, when: readableLocal(new Date(at)) }),
@@ -1270,6 +1340,12 @@ function reportResult(res: CreateResult, at = '') {
     }
     ElMessage.success(t('emails.queuedAll', { no: res.campaignNo, n: res.queued }))
     return
+  }
+  if (undoable) {
+    // Some recipients were skipped, which the alert below explains — but the
+    // ones that queued are still cancellable, and the alert must not eat the
+    // window silently.
+    showUndoToast(res)
   }
   const lines: string[] = []
   res.suppressed?.forEach((s) =>
