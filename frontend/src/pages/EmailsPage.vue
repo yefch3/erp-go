@@ -51,7 +51,7 @@
       >
         📋 {{ t('menu.templates') }}
       </el-button>
-      <el-button v-if="isAdmin" link class="rail-lock rail-host" @click="hostOpen = true">
+      <el-button v-if="isAdmin" link class="rail-lock" @click="hostOpen = true">
         ⚙️ {{ t('mailGate.hostSettings') }}
       </el-button>
     </aside>
@@ -3125,12 +3125,21 @@ async function doUnsuppress(row: Suppression) {
   flex: 1;
 }
 .rail-lock {
-  margin-top: 14px;
+  /* One function per line. These are inline-flex buttons by default, and
+     four of them packing into whatever rows fit 178px read as clutter. */
+  display: flex;
+  width: fit-content;
+  margin: 8px 0 0;
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
-.rail-host {
-  display: block;
-  margin: 6px 0 0;
+/* Element Plus gives adjacent buttons a left margin — the very thing that
+   staggered these into ragged rows. Stacked rows have no use for it. */
+.rail-lock + .rail-lock {
+  margin-left: 0;
+}
+/* The group keeps its distance from the folder list above it. */
+.rail-grow + .rail-lock {
+  margin-top: 16px;
 }
 </style>
