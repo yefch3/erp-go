@@ -11,7 +11,11 @@ export const router = createRouter({
       path: '/',
       component: () => import('./pages/Shell.vue'),
       children: [
-        { path: '', redirect: '/basic/customers' },
+        // Landing on 我的待办, not on any business module: it is the one page
+        // every employee owns regardless of roles, so a freshly activated
+        // account with no permissions yet arrives somewhere that can greet it
+        // instead of a wall of 没有权限.
+        { path: '', redirect: '/todos' },
         { path: 'todos', component: () => import('./pages/TodosPage.vue') },
         { path: 'customers', redirect: '/basic/customers' },
         { path: 'basic/customers', component: () => import('./pages/CustomersPage.vue') },

@@ -789,6 +789,8 @@ export default {
   },
   todos: {
     title: 'Mis pendientes',
+    noPermission: 'Su cuenta está activa, pero aún no tiene permisos asignados',
+    noPermissionHint: 'Pida a su administrador que le asigne un rol y luego actualice esta página.',
     bizType: 'Documento',
     bizNo: 'Número',
     summary: 'Resumen',

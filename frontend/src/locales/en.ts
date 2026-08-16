@@ -786,6 +786,8 @@ export default {
   },
   todos: {
     title: 'My todos',
+    noPermission: 'Your account is active, but no permissions have been assigned yet',
+    noPermissionHint: 'Ask your administrator to assign you a role, then refresh this page.',
     bizType: 'Document',
     bizNo: 'Number',
     summary: 'Summary',
