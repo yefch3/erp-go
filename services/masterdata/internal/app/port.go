@@ -35,6 +35,33 @@ type PortCountryCount struct {
 	PortCount   int64
 }
 
+type PortChange struct {
+	ID                    int64
+	Action                string
+	BeforeData, AfterData []byte
+	OperatorID            int64
+	OperatorName          string
+	CreatedAt             time.Time
+}
+
+// ListPortChanges 使用与客户、供应商、工厂一致的前后值审计结构。
+func (s *Service) ListPortChanges(ctx context.Context, tenantID, portID int64) ([]PortChange, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id,action,before_data,after_data,operator_id,operator_name,created_at FROM port_change_logs WHERE tenant_id=$1 AND port_id=$2 ORDER BY id DESC`, tenantID, portID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []PortChange{}
+	for rows.Next() {
+		var item PortChange
+		if err := rows.Scan(&item.ID, &item.Action, &item.BeforeData, &item.AfterData, &item.OperatorID, &item.OperatorName, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
 type PortImportRow struct {
 	RowNumber            int32
 	ProfileFieldsPresent bool
@@ -314,7 +341,14 @@ func (s *Service) UpdatePort(ctx context.Context, tenantID int64, in PortInput) 
 	return p, tx.Commit(ctx)
 }
 
-func (s *Service) SetPortStatus(ctx context.Context, tenantID, id int64, status string, version int32, opID int64, opName string) (Port, error) {
+func (s *Service) SetPortStatus(ctx context.Context, tenantID, id int64, status string, version int32, opID int64, opName string, reasons ...string) (Port, error) {
+	reason := ""
+	if len(reasons) > 0 {
+		reason = reasons[0]
+		if strings.TrimSpace(reason) == "" {
+			return Port{}, apierr.Invalid("MD_PORT_LIFECYCLE_REASON_REQUIRED", "变更港口状态时必须填写原因")
+		}
+	}
 	status = strings.ToUpper(strings.TrimSpace(status))
 	if status != "ACTIVE" && status != "INACTIVE" {
 		return Port{}, apierr.Invalid("MD_PORT_STATUS_INVALID", "港口状态无效")
@@ -337,7 +371,9 @@ func (s *Service) SetPortStatus(ctx context.Context, tenantID, id int64, status 
 	if err != nil {
 		return Port{}, err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO port_change_logs (tenant_id,port_id,action,before_data,after_data,operator_id,operator_name) VALUES ($1,$2,$3,$4,$5,$6,$7)`, tenantID, id, status, portJSON(before), portJSON(p), opID, opName)
+	afterData := map[string]any{"port": p, "reason": strings.TrimSpace(reason)}
+	afterJSON, _ := json.Marshal(afterData)
+	_, err = tx.Exec(ctx, `INSERT INTO port_change_logs (tenant_id,port_id,action,before_data,after_data,operator_id,operator_name) VALUES ($1,$2,$3,$4,$5,$6,$7)`, tenantID, id, status, portJSON(before), afterJSON, opID, opName)
 	if err != nil {
 		return Port{}, err
 	}

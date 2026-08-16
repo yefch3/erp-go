@@ -59,7 +59,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { del, get, post } from '../api'
@@ -67,6 +67,8 @@ import SupplierFactoryImportDialog from '../components/SupplierFactoryImportDial
 import { countryName, countryOptions } from '../lib/countries'
 import { businessRoleLabel } from '../lib/masterDataDisplay'
 import { masterDataListQuery, queryPage, queryText } from '../lib/masterDataListQuery'
+import { confirmPossibleDuplicates } from '../lib/masterDataDuplicates'
+import { confirmDeactivation, promptActivationReason } from '../lib/masterDataLifecycle'
 import { useAuthStore } from '../stores/auth'
 
 interface Supplier { id:string;code:string;name:string;nameZh:string;nameEn:string;shortName:string;countryCode:string;businessTypes:string[];ownerNames:string;factoryCount:string;status:string }
@@ -91,8 +93,8 @@ function changePage(v:number){page.value=v;load()}
 function openCreate(){Object.assign(form,empty,{businessTypes:['GENERAL']});dialogOpen.value=true}
 function openDetail(r:Supplier){router.push(`/basic/suppliers/${r.id}`)}
 async function refreshAll(){await Promise.all([load(),loadGroups()])}
-async function toggleStatus(row:Supplier){const deactivating=row.status==='ACTIVE';const message=deactivating?t('suppliers.deactivateCascadeConfirm',{name:displayName(row),count:Number(row.factoryCount||0)}):t('suppliers.activateConfirm',{name:displayName(row)});try{await ElMessageBox.confirm(message,t('suppliers.confirmTitle'),{confirmButtonText:deactivating?t('suppliers.deactivateAndPause'):t('common.activate'),cancelButtonText:t('common.cancel'),type:deactivating?'warning':'info'});if(deactivating)await del(`/suppliers/${row.id}`);else await post(`/suppliers/${row.id}/activate`);ElMessage.success(deactivating?t('suppliers.deactivatedWithFactories'):t('suppliers.activatedFactoriesRemainPaused'));await refreshAll()}catch{/* 取消确认或接口错误已由全局拦截器处理。 */}}
-async function save(){if(!form.nameZh.trim()&&!form.nameEn.trim()){ElMessage.warning(t('suppliers.nameRequired'));return}saving.value=true;try{await post('/suppliers',{...form,name:form.nameZh||form.nameEn,country:form.countryCode});dialogOpen.value=false;ElMessage.success(t('suppliers.saved'));await refreshAll()}catch{/* 接口错误已显示统一提示，保留表单便于修正。 */}finally{saving.value=false}}
+async function toggleStatus(row:Supplier){const deactivating=row.status==='ACTIVE';try{const reason=deactivating?await confirmDeactivation(`/suppliers/${row.id}/deactivation-impact`,displayName(row),t):await promptActivationReason(displayName(row),t);if(deactivating)await del(`/suppliers/${row.id}`,{reason});else await post(`/suppliers/${row.id}/activate`,{reason});ElMessage.success(deactivating?t('suppliers.deactivatedWithFactories'):t('suppliers.activatedFactoriesRemainPaused'));await refreshAll()}catch{/* 用户取消或接口错误时保持当前状态。 */}}
+async function save(){if(!form.nameZh.trim()&&!form.nameEn.trim()){ElMessage.warning(t('suppliers.nameRequired'));return}saving.value=true;try{const duplicates=await get<any>('/suppliers/duplicates',{name:form.nameZh||form.nameEn,tax_id:form.taxId});await confirmPossibleDuplicates(duplicates.candidates||[],t);await post('/suppliers',{...form,name:form.nameZh||form.nameEn,country:form.countryCode});dialogOpen.value=false;ElMessage.success(t('suppliers.saved'));await refreshAll()}catch{/* 取消重复确认或接口错误时保留表单，便于用户复核。 */}finally{saving.value=false}}
 onMounted(async()=>{try{const [,business,payment]=await Promise.all([Promise.all([load(),loadGroups()]),get<any>('/options',{category:'SUPPLIER_BUSINESS_TYPE'}),get<any>('/options',{category:'PAYMENT_METHOD'})]);businessOptions.value=business.options||[];paymentOptions.value=payment.options||[]}catch{/* 各请求已由全局拦截器提示。 */}})
 </script>
 

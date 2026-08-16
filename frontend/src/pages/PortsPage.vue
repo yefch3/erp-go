@@ -32,7 +32,7 @@
           <el-table-column :label="t('ports.location')" width="180"><template #default="{row}">{{row.city||'—'}}<div v-if="row.adminArea" class="secondary">{{row.adminArea}}</div></template></el-table-column>
           <el-table-column prop="timezone" :label="t('ports.timezone')" width="180" />
           <el-table-column :label="t('common.status')" width="90"><template #default="{row}"><el-tag :type="row.status==='ACTIVE'?'success':'info'">{{row.status==='ACTIVE'?t('common.active'):t('common.inactive')}}</el-tag></template></el-table-column>
-          <el-table-column v-if="canWrite" :label="t('common.actions')" width="150" fixed="right"><template #default="{row}"><el-button link type="primary" @click="openEdit(row)">{{t('common.edit')}}</el-button><el-button link :type="row.status==='ACTIVE'?'danger':'success'" @click="toggleStatus(row)">{{row.status==='ACTIVE'?t('common.deactivate'):t('common.activate')}}</el-button></template></el-table-column>
+          <el-table-column :label="t('common.actions')" width="240" fixed="right"><template #default="{row}"><el-button link type="primary" @click="openChanges(row)">{{t('suppliers.changes')}}</el-button><el-button v-if="canWrite" link type="primary" @click="openEdit(row)">{{t('common.edit')}}</el-button><el-button v-if="canWrite" link :type="row.status==='ACTIVE'?'danger':'success'" @click="toggleStatus(row)">{{row.status==='ACTIVE'?t('common.deactivate'):t('common.activate')}}</el-button></template></el-table-column>
         </el-table>
         <el-pagination class="pager" layout="total, prev, pager, next" :total="total" :page-size="pageSize" :current-page="page" @current-change="changePage" />
       </el-card>
@@ -55,23 +55,29 @@
       </el-form>
       <template #footer><el-button @click="dialogOpen=false">{{t('common.cancel')}}</el-button><el-button type="primary" :loading="saving" @click="save">{{t('common.save')}}</el-button></template>
     </el-dialog>
+    <el-dialog v-model="changeOpen" :title="t('suppliers.changes')" width="760px">
+      <el-timeline v-if="changes.length"><el-timeline-item v-for="item in changes" :key="item.id" :timestamp="new Date(item.createdAt).toLocaleString()"><strong>{{item.action}} · {{item.summary}}</strong><p>{{item.operatorName||'—'}}</p><el-collapse><el-collapse-item :title="t('departments.changeValues')"><div class="change-grid"><pre>{{formatChange(item.beforeJson)}}</pre><pre>{{formatChange(item.afterJson)}}</pre></div></el-collapse-item></el-collapse></el-timeline-item></el-timeline>
+      <el-empty v-else :description="t('shipping.noChanges')" />
+    </el-dialog>
     <ImportPortsDialog v-model="importOpen" @imported="reloadAll" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post, put, quietErrors, type Envelope } from '../api'
 import { countryName, countryOptions } from '../lib/countries'
 import { commonPortOptions, defaultPortTimezone, portCityOptions, portTimezoneOptions } from '../lib/portOptions'
 import { useAuthStore } from '../stores/auth'
 import ImportPortsDialog from '../components/ImportPortsDialog.vue'
+import { confirmDeactivation, promptActivationReason } from '../lib/masterDataLifecycle'
 
 interface Port { id:number; unlocode:string; nameZh:string; nameEn:string; countryCode:string; city:string; timezone:string; aliases:string[]; status:string; remark:string; version:number; portType:string; adminArea:string; latitude:number|null; longitude:number|null; hasCoordinates:boolean; isFavorite:boolean }
 const auth=useAuthStore(); const {locale,t}=useI18n(); const countries=computed(()=>countryOptions(String(locale.value))); const canWrite=computed(()=>auth.can('masterdata:port:write'))
 const ports=ref<Port[]>([]), total=ref(0), loading=ref(false), saving=ref(false), dialogOpen=ref(false)
+const changeOpen=ref(false), changes=ref<any[]>([])
 const countryCounts=ref<{countryCode:string;portCount:number}[]>([])
 const countryTotal=computed(()=>countryCounts.value.reduce((sum,item)=>sum+Number(item.portCount),0))
 const importOpen=ref(false)
@@ -129,8 +135,8 @@ async function save(){
 async function toggleStatus(p:Port){
   const next=p.status==='ACTIVE'?'INACTIVE':'ACTIVE'
   try{
-    await ElMessageBox.confirm(t('ports.statusConfirm',{action:next==='ACTIVE'?t('common.activate'):t('common.deactivate'),code:p.unlocode}),t('ports.confirmTitle'))
-    await put(`/ports/${p.id}/status`,{status:next,version:p.version},quietErrors)
+    const reason=next==='INACTIVE'?await confirmDeactivation(`/ports/${p.id}/deactivation-impact`,p.unlocode,t):await promptActivationReason(p.unlocode,t)
+    await put(`/ports/${p.id}/status`,{status:next,version:p.version,reason},quietErrors)
     ElMessage.success(t('ports.statusUpdated'))
     reloadAll()
   }catch(error){
@@ -140,6 +146,8 @@ async function toggleStatus(p:Port){
     if(env?.code==='MD_PORT_VERSION_CONFLICT')reloadAll()
   }
 }
+async function openChanges(p:Port){changes.value=(await get<any>(`/ports/${p.id}/changes`)).changes??[];changeOpen.value=true}
+function formatChange(value:string){try{return JSON.stringify(JSON.parse(value||'{}'),null,2)}catch{return value||'—'}}
 async function toggleFavorite(p:Port){
   try{
     await put(`/ports/${p.id}`,{port:{...p,isFavorite:!p.isFavorite,latitude:p.latitude??0,longitude:p.longitude??0}},quietErrors)
@@ -154,5 +162,6 @@ load();loadCountries()
 </script>
 
 <style scoped>
+.change-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.change-grid pre{margin:0;padding:12px;background:#f6f8fa;border-radius:8px;white-space:pre-wrap;overflow:auto}
 .page-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px}.page-head h2{margin:0 0 5px}.page-head p,.secondary,.hint,.category-help,.vessel-placeholder p{color:#8b95a5}.page-head p{margin:0}.port-workspace{display:grid;grid-template-columns:230px minmax(0,1fr);gap:18px}.port-workspace.collapsed{grid-template-columns:72px minmax(0,1fr)}.category-panel{background:linear-gradient(180deg,#f3f8ff,#fff)}.category-title{font-weight:700;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}.category-title button{border:0;border-radius:6px;background:var(--el-fill-color);cursor:pointer;color:var(--el-text-color-secondary);font-size:20px}.category-item,.country-item{display:flex;width:100%;border:0;background:transparent;text-align:left;padding:10px 12px;border-radius:8px;font-size:15px;cursor:pointer;justify-content:space-between}.category-item.active,.country-item.active{background:#e8f2ff;color:#409eff;font-weight:700}.country-item{font-size:13px;margin-top:3px}.country-item strong{background:#eef1f5;border-radius:12px;min-width:30px;text-align:center}.category-subtitle{font-size:13px;font-weight:700;margin:18px 0 8px}.category-help{font-size:12px;line-height:1.7;margin-top:14px}.filters{display:flex;gap:12px;margin-bottom:16px}.filters .el-input{max-width:330px}.filters .el-select{width:140px}.secondary{font-size:12px;margin-top:3px}.pager{justify-content:flex-end;margin-top:16px}.hint{font-size:12px;margin-top:5px}.vessel-placeholder{text-align:center}.mobile-category{display:none;margin-bottom:12px}.port-name{display:flex;align-items:center;gap:7px}.favorite,.favorite-button.active{color:#f5a623}.favorite{font-size:17px}.favorite-button{border:0;background:transparent;padding:0;cursor:pointer;color:#a8b0bc;font-size:19px;line-height:1}.favorite-button:hover{color:#f5a623}.coordinate-row{display:flex;gap:12px}.switch-help{margin-left:10px;color:#8b95a5;font-size:12px}@media(max-width:850px){.port-workspace{grid-template-columns:1fr}.category-panel{display:none}.mobile-category{display:block}.filters{flex-wrap:wrap}.coordinate-row{flex-wrap:wrap}}
 </style>

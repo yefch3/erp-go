@@ -176,7 +176,12 @@ func (s *Server) updateCustomer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deactivateCustomer(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Customers.DeactivateCustomer(r.Context(), &mdv1.DeactivateCustomerRequest{Id: idFromPath(r)})
+	req := &mdv1.DeactivateCustomerRequest{Id: idFromPath(r), Reason: r.URL.Query().Get("reason")}
+	if r.ContentLength > 0 && !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Customers.DeactivateCustomer(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -239,7 +244,21 @@ func (s *Server) nextNumber(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) activateCustomer(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Customers.ActivateCustomer(r.Context(), &mdv1.ActivateCustomerRequest{Id: idFromPath(r)})
+	req := &mdv1.ActivateCustomerRequest{Id: idFromPath(r), Reason: r.URL.Query().Get("reason")}
+	if r.ContentLength > 0 && !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Customers.ActivateCustomer(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getCustomerDeactivationImpact(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Customers.GetCustomerDeactivationImpact(r.Context(), &mdv1.GetCustomerDeactivationImpactRequest{Id: idFromPath(r)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

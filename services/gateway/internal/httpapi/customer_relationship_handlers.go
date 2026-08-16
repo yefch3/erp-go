@@ -139,7 +139,7 @@ func (s *Server) importCustomers(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 func (s *Server) checkCustomerDuplicates(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Customers.CheckCustomerDuplicates(r.Context(), &mdv1.CheckCustomerDuplicatesRequest{Name: r.URL.Query().Get("name"), TaxId: r.URL.Query().Get("tax_id"), ExcludeId: int64FromQuery(r, "exclude_id")})
+	resp, err := s.Customers.CheckCustomerDuplicates(r.Context(), &mdv1.CheckCustomerDuplicatesRequest{Name: r.URL.Query().Get("name"), TaxId: r.URL.Query().Get("tax_id"), Email: r.URL.Query().Get("email"), ExcludeId: int64FromQuery(r, "exclude_id")})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

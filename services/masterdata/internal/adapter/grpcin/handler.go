@@ -209,7 +209,7 @@ func (h *Handler) UpdateCustomerProfile(ctx context.Context, req *mdv1.UpdateCus
 }
 
 func (h *Handler) DeactivateCustomer(ctx context.Context, req *mdv1.DeactivateCustomerRequest) (*mdv1.DeactivateCustomerResponse, error) {
-	if err := h.svc.DeactivateCustomer(ctx, grpcx.TenantID(ctx), req.GetId(), operatorID(ctx)); err != nil {
+	if err := h.svc.DeactivateCustomer(ctx, grpcx.TenantID(ctx), req.GetId(), operatorID(ctx), operatorName(ctx), req.GetReason()); err != nil {
 		return nil, err
 	}
 	return &mdv1.DeactivateCustomerResponse{}, nil
@@ -348,7 +348,7 @@ func (h *Handler) UpdateSupplier(ctx context.Context, req *mdv1.UpdateSupplierRe
 }
 
 func (h *Handler) DeactivateSupplier(ctx context.Context, req *mdv1.DeactivateSupplierRequest) (*mdv1.DeactivateSupplierResponse, error) {
-	if err := h.svc.DeactivateSupplier(ctx, grpcx.TenantID(ctx), req.GetId(), operatorID(ctx), operatorName(ctx)); err != nil {
+	if err := h.svc.DeactivateSupplier(ctx, grpcx.TenantID(ctx), req.GetId(), operatorID(ctx), operatorName(ctx), req.GetReason()); err != nil {
 		return nil, err
 	}
 	return &mdv1.DeactivateSupplierResponse{}, nil
@@ -408,14 +408,33 @@ func (h *Handler) ListNumberRules(ctx context.Context, _ *mdv1.ListNumberRulesRe
 }
 
 func (h *Handler) ActivateCustomer(ctx context.Context, req *mdv1.ActivateCustomerRequest) (*mdv1.ActivateCustomerResponse, error) {
-	if err := h.svc.ActivateCustomer(ctx, grpcx.TenantID(ctx), req.GetId(), operatorID(ctx)); err != nil {
+	if err := h.svc.ActivateCustomer(ctx, grpcx.TenantID(ctx), req.GetId(), operatorID(ctx), operatorName(ctx), req.GetReason()); err != nil {
 		return nil, err
 	}
 	return &mdv1.ActivateCustomerResponse{}, nil
 }
 
+func impactItems(rows []app.DeactivationImpactItem) ([]*mdv1.DeactivationImpactItem, int64) {
+	out := make([]*mdv1.DeactivationImpactItem, len(rows))
+	var total int64
+	for i, row := range rows {
+		out[i] = &mdv1.DeactivationImpactItem{Code: row.Code, Label: row.Label, Count: row.Count}
+		total += row.Count
+	}
+	return out, total
+}
+
+func (h *Handler) GetCustomerDeactivationImpact(ctx context.Context, req *mdv1.GetCustomerDeactivationImpactRequest) (*mdv1.GetCustomerDeactivationImpactResponse, error) {
+	rows, err := h.svc.DeactivationImpact(ctx, grpcx.TenantID(ctx), "CUSTOMER", req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	items, total := impactItems(rows)
+	return &mdv1.GetCustomerDeactivationImpactResponse{Items: items, Total: total}, nil
+}
+
 func (h *Handler) ActivateSupplier(ctx context.Context, req *mdv1.ActivateSupplierRequest) (*mdv1.ActivateSupplierResponse, error) {
-	if err := h.svc.ActivateSupplier(ctx, grpcx.TenantID(ctx), req.GetId(), operatorID(ctx)); err != nil {
+	if err := h.svc.ActivateSupplier(ctx, grpcx.TenantID(ctx), req.GetId(), operatorID(ctx), operatorName(ctx), req.GetReason()); err != nil {
 		return nil, err
 	}
 	return &mdv1.ActivateSupplierResponse{}, nil

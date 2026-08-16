@@ -31,6 +31,7 @@ service CustomerService {
   rpc ListCustomerChanges(ListCustomerChangesRequest) returns (ListCustomerChangesResponse);
   rpc ImportCustomers(ImportCustomersRequest) returns (ImportCustomersResponse);
   rpc CheckCustomerDuplicates(CheckCustomerDuplicatesRequest) returns (CheckCustomerDuplicatesResponse);
+  rpc GetCustomerDeactivationImpact(GetCustomerDeactivationImpactRequest) returns (GetCustomerDeactivationImpactResponse);
   // The address book, flattened: every contact that has an email, with the
   // customer it belongs to. One call rather than a customer list followed by
   // a lookup per customer, because the mail composer needs all of them at
@@ -62,6 +63,8 @@ service SupplierService {
   rpc DeactivateSupplierOwner(DeactivateSupplierOwnerRequest) returns (DeactivateSupplierOwnerResponse);
   rpc ListSupplierChanges(ListSupplierChangesRequest) returns (ListSupplierChangesResponse);
   rpc ImportSuppliers(ImportSuppliersRequest) returns (ImportSuppliersResponse);
+  rpc CheckSupplierDuplicates(CheckSupplierDuplicatesRequest) returns (CheckSupplierDuplicatesResponse);
+  rpc GetSupplierDeactivationImpact(GetSupplierDeactivationImpactRequest) returns (GetSupplierDeactivationImpactResponse);
   rpc ListFactories(ListFactoriesRequest) returns (ListFactoriesResponse);
   rpc GetFactory(GetFactoryRequest) returns (GetFactoryResponse);
   rpc CreateFactory(CreateFactoryRequest) returns (CreateFactoryResponse);
@@ -83,6 +86,8 @@ service SupplierService {
   rpc DeleteFactoryCertificate(DeleteFactoryCertificateRequest) returns (DeleteFactoryCertificateResponse);
   rpc ListFactoryChanges(ListFactoryChangesRequest) returns (ListFactoryChangesResponse);
   rpc ImportFactories(ImportFactoriesRequest) returns (ImportFactoriesResponse);
+  rpc CheckFactoryDuplicates(CheckFactoryDuplicatesRequest) returns (CheckFactoryDuplicatesResponse);
+  rpc GetFactoryDeactivationImpact(GetFactoryDeactivationImpactRequest) returns (GetFactoryDeactivationImpactResponse);
 }
 
 // OptionService serves dropdown dictionaries (payment methods, trade terms,
@@ -130,6 +135,8 @@ service PortService {
   rpc ImportPorts(ImportPortsRequest) returns (ImportPortsResponse);
   rpc UpdatePort(UpdatePortRequest) returns (UpdatePortResponse);
   rpc SetPortStatus(SetPortStatusRequest) returns (SetPortStatusResponse);
+  rpc GetPortDeactivationImpact(GetPortDeactivationImpactRequest) returns (GetPortDeactivationImpactResponse);
+  rpc ListPortChanges(ListPortChangesRequest) returns (ListPortChangesResponse);
 }
 
 message Port {
@@ -155,11 +162,12 @@ message Port {
 message CreatePortRequest { Port port = 1; }
 message GetPortRequest { int64 id = 1; }
 message UpdatePortRequest { Port port = 1; }
-message SetPortStatusRequest { int64 id = 1; string status = 2; int32 version = 3; }
+message SetPortStatusRequest { int64 id = 1; string status = 2; int32 version = 3; string reason = 4; }
 message CreatePortResponse { Port port = 1; }
 message GetPortResponse { Port port = 1; }
 message UpdatePortResponse { Port port = 1; }
 message SetPortStatusResponse { Port port = 1; }
+
 message ListPortsRequest {
   erp.common.v1.PageRequest page = 1;
   string keyword = 2;
@@ -430,12 +438,14 @@ message UpdateCustomerProfileResponse {
 
 message DeactivateCustomerRequest {
   int64 id = 1;
+  string reason = 2;
 }
 
 message DeactivateCustomerResponse {}
 
 message ActivateCustomerRequest {
   int64 id = 1;
+  string reason = 2;
 }
 
 message ActivateCustomerResponse {}
@@ -657,6 +667,7 @@ message CheckCustomerDuplicatesRequest {
   string name = 1;
   string tax_id = 2;
   int64 exclude_id = 3;
+  string email = 4;
 }
 
 message CustomerDuplicate {
@@ -664,6 +675,8 @@ message CustomerDuplicate {
   string code = 2;
   string name = 3;
   string tax_id = 4;
+  string email = 5;
+  repeated string match_fields = 6;
 }
 
 message CheckCustomerDuplicatesResponse { repeated CustomerDuplicate candidates = 1; }
@@ -764,12 +777,14 @@ message UpdateSupplierResponse {
 
 message DeactivateSupplierRequest {
   int64 id = 1;
+  string reason = 2;
 }
 
 message DeactivateSupplierResponse {}
 
 message ActivateSupplierRequest {
   int64 id = 1;
+  string reason = 2;
 }
 
 message ActivateSupplierResponse {}
@@ -1018,3 +1033,66 @@ message ListNumberRulesRequest {}
 message ListNumberRulesResponse {
   repeated NumberRule rules = 1;
 }
+
+// 以下消息是基础数据各实体共用的停用预检、重复预检和港口审计契约。
+// 集中放在文件末尾，避免新增消息导致既有生成代码大范围重排。
+message DeactivationImpactItem {
+  string code = 1;
+  string label = 2;
+  int64 count = 3;
+}
+message GetCustomerDeactivationImpactRequest { int64 id = 1; }
+message GetCustomerDeactivationImpactResponse {
+  repeated DeactivationImpactItem items = 1;
+  int64 total = 2;
+}
+message GetSupplierDeactivationImpactRequest { int64 id = 1; }
+message GetSupplierDeactivationImpactResponse {
+  repeated DeactivationImpactItem items = 1;
+  int64 total = 2;
+}
+message GetFactoryDeactivationImpactRequest { int64 id = 1; }
+message GetFactoryDeactivationImpactResponse {
+  repeated DeactivationImpactItem items = 1;
+  int64 total = 2;
+}
+message GetPortDeactivationImpactRequest { int64 id = 1; }
+message GetPortDeactivationImpactResponse {
+  repeated DeactivationImpactItem items = 1;
+  int64 total = 2;
+}
+message ListPortChangesRequest { int64 port_id = 1; }
+message ListPortChangesResponse { repeated MasterDataChange changes = 1; }
+
+message CheckSupplierDuplicatesRequest {
+  string name = 1;
+  string tax_id = 2;
+  string email = 3;
+  int64 exclude_id = 4;
+}
+message SupplierDuplicate {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  string tax_id = 4;
+  string email = 5;
+  repeated string match_fields = 6;
+}
+message CheckSupplierDuplicatesResponse { repeated SupplierDuplicate candidates = 1; }
+
+message CheckFactoryDuplicatesRequest {
+  int64 supplier_id = 1;
+  string name = 2;
+  string address = 3;
+  int64 exclude_id = 4;
+}
+message FactoryDuplicate {
+  int64 id = 1;
+  string code = 2;
+  int64 supplier_id = 3;
+  string supplier_name = 4;
+  string name = 5;
+  string address = 6;
+  repeated string match_fields = 7;
+}
+message CheckFactoryDuplicatesResponse { repeated FactoryDuplicate candidates = 1; }

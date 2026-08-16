@@ -3,6 +3,7 @@ package grpcin
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -12,6 +13,50 @@ import (
 	"github.com/sgao19/erp-go/services/masterdata/internal/app"
 	"github.com/sgao19/erp-go/services/masterdata/internal/store"
 )
+
+// CheckSupplierDuplicates 在保存前返回可能重复的供应商，结果仅用于提醒，不替代数据库唯一约束。
+func (h *Handler) CheckSupplierDuplicates(ctx context.Context, req *mdv1.CheckSupplierDuplicatesRequest) (*mdv1.CheckSupplierDuplicatesResponse, error) {
+	rows, err := h.svc.CheckSupplierDuplicates(ctx, grpcx.TenantID(ctx), strings.TrimSpace(req.GetName()), strings.TrimSpace(req.GetTaxId()), strings.TrimSpace(req.GetEmail()), req.GetExcludeId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mdv1.SupplierDuplicate, len(rows))
+	for i, row := range rows {
+		out[i] = &mdv1.SupplierDuplicate{Id: row.ID, Code: row.Code, Name: row.Name, TaxId: row.TaxID, Email: row.Email, MatchFields: row.MatchFields}
+	}
+	return &mdv1.CheckSupplierDuplicatesResponse{Candidates: out}, nil
+}
+
+// CheckFactoryDuplicates 在同一供应商范围内检查工厂名称和地址是否相似。
+func (h *Handler) CheckFactoryDuplicates(ctx context.Context, req *mdv1.CheckFactoryDuplicatesRequest) (*mdv1.CheckFactoryDuplicatesResponse, error) {
+	rows, err := h.svc.CheckFactoryDuplicates(ctx, grpcx.TenantID(ctx), req.GetSupplierId(), strings.TrimSpace(req.GetName()), strings.TrimSpace(req.GetAddress()), req.GetExcludeId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mdv1.FactoryDuplicate, len(rows))
+	for i, row := range rows {
+		out[i] = &mdv1.FactoryDuplicate{Id: row.ID, Code: row.Code, SupplierId: row.SupplierID, SupplierName: row.SupplierName, Name: row.Name, Address: row.Address, MatchFields: row.MatchFields}
+	}
+	return &mdv1.CheckFactoryDuplicatesResponse{Candidates: out}, nil
+}
+
+func (h *Handler) GetSupplierDeactivationImpact(ctx context.Context, req *mdv1.GetSupplierDeactivationImpactRequest) (*mdv1.GetSupplierDeactivationImpactResponse, error) {
+	rows, err := h.svc.DeactivationImpact(ctx, grpcx.TenantID(ctx), "SUPPLIER", req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	items, total := impactItems(rows)
+	return &mdv1.GetSupplierDeactivationImpactResponse{Items: items, Total: total}, nil
+}
+
+func (h *Handler) GetFactoryDeactivationImpact(ctx context.Context, req *mdv1.GetFactoryDeactivationImpactRequest) (*mdv1.GetFactoryDeactivationImpactResponse, error) {
+	rows, err := h.svc.DeactivationImpact(ctx, grpcx.TenantID(ctx), "FACTORY", req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	items, total := impactItems(rows)
+	return &mdv1.GetFactoryDeactivationImpactResponse{Items: items, Total: total}, nil
+}
 
 func dateText(v pgtype.Date) string {
 	if !v.Valid {

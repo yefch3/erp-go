@@ -220,12 +220,69 @@ SELECT count(*) FROM customer_change_logs
 WHERE tenant_id = sqlc.arg(tenant_id) AND customer_id = sqlc.arg(customer_id);
 
 -- name: CustomerDuplicateCandidates :many
-SELECT id, code, name, tax_id
-FROM customers
+SELECT DISTINCT c.id, c.code, c.name, c.tax_id,
+       coalesce((SELECT cc.email FROM customer_contacts cc
+                 WHERE cc.tenant_id = c.tenant_id AND cc.customer_id = c.id
+                   AND cc.status = 'ACTIVE' AND cc.email <> ''
+                 ORDER BY cc.is_primary DESC, cc.id LIMIT 1), '')::text AS email
+FROM customers c
+WHERE c.tenant_id = sqlc.arg(tenant_id)
+  AND (sqlc.arg(exclude_id)::bigint = 0 OR c.id <> sqlc.arg(exclude_id))
+  AND (
+    (sqlc.arg(name)::text <> '' AND (
+      lower(btrim(c.name)) = lower(btrim(sqlc.arg(name))) OR
+      lower(btrim(c.name)) LIKE '%' || lower(btrim(sqlc.arg(name))) || '%' OR
+      lower(btrim(sqlc.arg(name))) LIKE '%' || lower(btrim(c.name)) || '%'
+    ))
+    OR (sqlc.arg(tax_id)::text <> '' AND lower(btrim(c.tax_id)) = lower(btrim(sqlc.arg(tax_id))))
+    OR (sqlc.arg(email)::text <> '' AND EXISTS (
+      SELECT 1 FROM customer_contacts cc
+      WHERE cc.tenant_id = c.tenant_id AND cc.customer_id = c.id
+        AND lower(btrim(cc.email)) = lower(btrim(sqlc.arg(email)))
+    ))
+  )
+ORDER BY c.id
+LIMIT 10;
+
+-- name: SupplierDuplicateCandidates :many
+SELECT id, code, coalesce(nullif(name_zh, ''), nullif(name_en, ''), name)::text AS name,
+       tax_id, contact_email
+FROM suppliers
 WHERE tenant_id = sqlc.arg(tenant_id)
-  AND (lower(name) = lower(sqlc.arg(name)) OR (sqlc.arg(tax_id)::text <> '' AND tax_id = sqlc.arg(tax_id)))
   AND (sqlc.arg(exclude_id)::bigint = 0 OR id <> sqlc.arg(exclude_id))
+  AND (
+    (sqlc.arg(name)::text <> '' AND (
+      lower(btrim(coalesce(nullif(name_zh, ''), nullif(name_en, ''), name))) = lower(btrim(sqlc.arg(name))) OR
+      lower(btrim(coalesce(nullif(name_zh, ''), nullif(name_en, ''), name))) LIKE '%' || lower(btrim(sqlc.arg(name))) || '%' OR
+      lower(btrim(sqlc.arg(name))) LIKE '%' || lower(btrim(coalesce(nullif(name_zh, ''), nullif(name_en, ''), name))) || '%'
+    ))
+    OR (sqlc.arg(tax_id)::text <> '' AND lower(btrim(tax_id)) = lower(btrim(sqlc.arg(tax_id))))
+    OR (sqlc.arg(email)::text <> '' AND lower(btrim(contact_email)) = lower(btrim(sqlc.arg(email))))
+  )
 ORDER BY id
+LIMIT 10;
+
+-- name: FactoryDuplicateCandidates :many
+SELECT f.id, f.code, f.supplier_id,
+       coalesce(nullif(s.name_zh, ''), nullif(s.name_en, ''), s.name)::text AS supplier_name,
+       coalesce(nullif(f.name_zh, ''), f.name_en)::text AS name, f.address
+FROM factories f
+JOIN suppliers s ON s.tenant_id = f.tenant_id AND s.id = f.supplier_id
+WHERE f.tenant_id = sqlc.arg(tenant_id)
+  AND f.supplier_id = sqlc.arg(supplier_id)
+  AND (sqlc.arg(exclude_id)::bigint = 0 OR f.id <> sqlc.arg(exclude_id))
+  AND sqlc.arg(name)::text <> ''
+  AND (
+    lower(btrim(coalesce(nullif(f.name_zh, ''), f.name_en))) = lower(btrim(sqlc.arg(name))) OR
+    lower(btrim(coalesce(nullif(f.name_zh, ''), f.name_en))) LIKE '%' || lower(btrim(sqlc.arg(name))) || '%' OR
+    lower(btrim(sqlc.arg(name))) LIKE '%' || lower(btrim(coalesce(nullif(f.name_zh, ''), f.name_en))) || '%'
+  )
+  AND (
+    sqlc.arg(address)::text = '' OR f.address = '' OR
+    lower(regexp_replace(btrim(f.address), '[[:space:]]+', '', 'g')) =
+      lower(regexp_replace(btrim(sqlc.arg(address)), '[[:space:]]+', '', 'g'))
+  )
+ORDER BY f.id
 LIMIT 10;
 
 -- name: CustomerCodeExists :one

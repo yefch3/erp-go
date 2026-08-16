@@ -41,18 +41,18 @@ func (s *Server) resolveShippingMasterdata(r *http.Request, in *shippingv1.Sched
 		return nil
 	}
 	if in.GetCustomerId() > 0 {
-		resp, err := s.Customers.GetCustomer(r.Context(), &mdv1.GetCustomerRequest{Id: in.GetCustomerId()})
+		customer, err := s.resolveActiveCustomer(r.Context(), in.GetCustomerId())
 		if err != nil {
 			return err
 		}
-		in.CustomerName = resp.GetCustomer().GetName()
+		in.CustomerName = customer.GetName()
 	}
 	if in.GetCarrierId() > 0 {
-		resp, err := s.Suppliers.GetSupplier(r.Context(), &mdv1.GetSupplierRequest{Id: in.GetCarrierId()})
+		supplier, err := s.resolveActiveSupplier(r.Context(), in.GetCarrierId())
 		if err != nil {
 			return err
 		}
-		in.CarrierForwarder = resp.GetSupplier().GetName()
+		in.CarrierForwarder = supplier.GetName()
 	}
 	if requirePorts || in.GetLoadingPortId() > 0 {
 		loading, err := s.resolveActivePort(r, in.GetLoadingPortId())

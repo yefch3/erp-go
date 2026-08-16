@@ -336,6 +336,9 @@ func (s *Service) UpdateFactory(ctx context.Context, tenantID, id int64, in Fact
 		if before.SupplierID != in.SupplierID && strings.TrimSpace(in.TransferReason) == "" {
 			return apierr.Invalid("MD_FACTORY_TRANSFER_REASON_REQUIRED", "变更所属供应商时必须填写转移原因")
 		}
+		if before.Status != in.Status && strings.TrimSpace(in.TransferReason) == "" {
+			return apierr.Invalid("MD_FACTORY_STATUS_REASON_REQUIRED", "变更工厂状态时必须填写原因")
+		}
 		out, err = q.UpdateFactory(ctx, store.UpdateFactoryParams{TenantID: tenantID, ID: id, SupplierID: in.SupplierID, NameZh: in.NameZh, NameEn: in.NameEn, ShortName: in.ShortName, CountryCode: in.CountryCode, Timezone: in.Timezone, StateProvince: in.StateProvince, City: in.City, District: in.District, PostalCode: in.PostalCode, Address: in.Address, Status: in.Status, Remark: in.Remark, OperatorID: in.OperatorID})
 		if err != nil {
 			return err
@@ -343,6 +346,8 @@ func (s *Service) UpdateFactory(ctx context.Context, tenantID, id int64, in Fact
 		summary := "更新工厂基本资料"
 		if before.SupplierID != out.SupplierID {
 			summary = "转移工厂所属供应商：" + strings.TrimSpace(in.TransferReason)
+		} else if before.Status != out.Status {
+			summary = "工厂状态由 " + before.Status + " 变更为 " + out.Status + "：" + strings.TrimSpace(in.TransferReason)
 		}
 		return recordFactoryChange(ctx, q, tenantID, id, "UPDATE", "PROFILE", summary, before, out, in.OperatorID, in.OperatorName)
 	})

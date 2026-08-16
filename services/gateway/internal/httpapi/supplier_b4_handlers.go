@@ -12,6 +12,28 @@ func boolFromQuery(r *http.Request, key string) bool {
 	return value
 }
 
+func (s *Server) checkSupplierDuplicates(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Suppliers.CheckSupplierDuplicates(r.Context(), &mdv1.CheckSupplierDuplicatesRequest{
+		Name: r.URL.Query().Get("name"), TaxId: r.URL.Query().Get("tax_id"), Email: r.URL.Query().Get("email"), ExcludeId: int64FromQuery(r, "exclude_id"),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) checkFactoryDuplicates(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Suppliers.CheckFactoryDuplicates(r.Context(), &mdv1.CheckFactoryDuplicatesRequest{
+		SupplierId: int64FromQuery(r, "supplier_id"), Name: r.URL.Query().Get("name"), Address: r.URL.Query().Get("address"), ExcludeId: int64FromQuery(r, "exclude_id"),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) getSupplier(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Suppliers.GetSupplier(r.Context(), &mdv1.GetSupplierRequest{Id: idFromPath(r)})
 	if err != nil {
@@ -34,7 +56,12 @@ func (s *Server) updateSupplier(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 func (s *Server) deactivateSupplier(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Suppliers.DeactivateSupplier(r.Context(), &mdv1.DeactivateSupplierRequest{Id: idFromPath(r)})
+	req := &mdv1.DeactivateSupplierRequest{Id: idFromPath(r), Reason: r.URL.Query().Get("reason")}
+	if r.ContentLength > 0 && !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Suppliers.DeactivateSupplier(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -42,7 +69,30 @@ func (s *Server) deactivateSupplier(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 func (s *Server) activateSupplier(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Suppliers.ActivateSupplier(r.Context(), &mdv1.ActivateSupplierRequest{Id: idFromPath(r)})
+	req := &mdv1.ActivateSupplierRequest{Id: idFromPath(r), Reason: r.URL.Query().Get("reason")}
+	if r.ContentLength > 0 && !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Suppliers.ActivateSupplier(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getSupplierDeactivationImpact(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Suppliers.GetSupplierDeactivationImpact(r.Context(), &mdv1.GetSupplierDeactivationImpactRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getFactoryDeactivationImpact(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Suppliers.GetFactoryDeactivationImpact(r.Context(), &mdv1.GetFactoryDeactivationImpactRequest{Id: idFromPath(r)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

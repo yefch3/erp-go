@@ -113,6 +113,9 @@ export default {
     portRequired:'Select an active port', routeNodeAdded:'Port call added',
   },
   common: {
+    deactivationImpact: 'Deactivate {name}? {total} active business record(s) may be affected.', historyRetained: 'Existing orders, schedules and history will be retained; this record will only be blocked from new business.', lifecycleReasonPlaceholder: 'Enter the reason for this change', lifecycleReasonRequired: 'A reason is required', confirmDeactivate: 'Confirm deactivation', confirmActivate: 'Confirm reactivation', activationReason: 'Reactivate {name}? Enter the reason for restoring it.',
+    selectCustomer: 'Select an active customer', selectEmployee: 'Select an active employee', selectSupplier: 'Select an active supplier', selectFactory: 'Select a cooperating factory', selectPort: 'Select an active port',
+    duplicateTitle: 'Possible duplicate master data', duplicateWarning: '{count} similar record(s) were found. Review them before saving:', duplicateMore: 'and {count} more', saveAnyway: 'Save anyway', backToEdit: 'Back to edit',
     close: 'Close',
     detail: 'Detail',
     logout: 'Sign out',

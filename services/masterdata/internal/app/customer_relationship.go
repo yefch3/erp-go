@@ -358,11 +358,3 @@ func (s *Service) ListCustomerChanges(ctx context.Context, tenantID, customerID 
 	total, err := s.q.CountCustomerChangeLogs(ctx, store.CountCustomerChangeLogsParams{TenantID: tenantID, CustomerID: customerID})
 	return rows, total, err
 }
-
-func (s *Service) CheckCustomerDuplicates(ctx context.Context, tenantID int64, name, taxID string, excludeID int64) ([]store.CustomerDuplicateCandidatesRow, error) {
-	name, taxID = strings.TrimSpace(name), strings.TrimSpace(taxID)
-	if name == "" && taxID == "" {
-		return nil, nil
-	}
-	return s.q.CustomerDuplicateCandidates(ctx, store.CustomerDuplicateCandidatesParams{TenantID: tenantID, Name: name, TaxID: taxID, ExcludeID: excludeID})
-}
