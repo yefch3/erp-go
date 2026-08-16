@@ -242,9 +242,9 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="createOpen" :title="editing ? t('employees.edit') : t('employees.create')" width="min(680px, calc(100vw - 24px))">
-      <el-form :model="form" label-width="110px">
-        <div class="grid">
+    <el-dialog v-model="createOpen" :title="editing ? t('employees.edit') : t('employees.create')" width="min(720px, calc(100vw - 24px))">
+      <el-form :model="form" label-width="96px" class="employee-form">
+        <div class="grid employee-form-grid">
           <el-form-item :label="t('employees.code')" required>
             <el-input v-model="form.code" placeholder="E003" />
           </el-form-item>
@@ -262,12 +262,19 @@
           <el-form-item :label="t('employees.position')">
             <el-input v-model="form.position" />
           </el-form-item>
-          <el-form-item :label="t('employees.manager')">
+          <el-form-item>
+            <template #label>
+              <span class="field-label">
+                {{ t('employees.manager') }}
+                <el-tooltip :content="t('employees.managerHint')" placement="top">
+                  <span class="field-help" tabindex="0">?</span>
+                </el-tooltip>
+              </span>
+            </template>
             <el-select v-model="form.managerId" clearable filterable style="width: 100%"
                        :placeholder="t('employees.managerNone')">
               <el-option v-for="e in managerCandidates" :key="e.id" :value="e.id" :label="`${e.code} · ${e.name}`" />
             </el-select>
-            <div class="hint">{{ t('employees.managerHint') }}</div>
           </el-form-item>
           <el-form-item :label="t('employees.email')">
             <el-input v-model="form.email" />
@@ -285,11 +292,14 @@
             <el-input v-model="form.remark" type="textarea" :rows="2" />
           </el-form-item>
         </div>
-        <el-divider v-if="!editing" content-position="left">
-          {{ t('employees.accountSection') }}
-          <span class="hint">{{ t('employees.accountHint') }}</span>
-        </el-divider>
-        <div v-if="!editing" class="grid">
+        <template v-if="!editing">
+          <el-divider class="form-divider" />
+          <div class="section-heading">
+            <span class="section-title">{{ t('employees.accountSection') }}</span>
+            <span class="section-hint">{{ t('employees.accountHint') }}</span>
+          </div>
+        </template>
+        <div v-if="!editing" class="grid employee-form-grid account-grid">
           <el-form-item :label="t('employees.username')">
             <el-input v-model="form.username" autocomplete="off" />
           </el-form-item>
@@ -799,6 +809,55 @@ onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
   grid-template-columns: 1fr 1fr;
   column-gap: 12px;
 }
+.employee-form-grid {
+  align-items: start;
+  column-gap: 28px;
+}
+.employee-form-grid :deep(.el-form-item) {
+  margin-bottom: 18px;
+}
+.employee-form-grid :deep(.el-form-item__label) {
+  padding-right: 12px;
+}
+.field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.field-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 50%;
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+  line-height: 1;
+  cursor: help;
+}
+.form-divider {
+  margin: 6px 0 14px;
+}
+.section-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding-left: 4px;
+}
+.section-title {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
+.section-hint {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.account-grid :deep(.el-form-item) {
+  margin-bottom: 4px;
+}
 .sub {
   color: var(--el-text-color-secondary);
   font-size: 12px;
@@ -946,6 +1005,14 @@ onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
   }
   .grid {
     grid-template-columns: 1fr;
+  }
+  .employee-form-grid {
+    column-gap: 0;
+  }
+  .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
   }
   .detail-tabs :deep(.el-tabs__nav-wrap) {
     overflow-x: auto;
