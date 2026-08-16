@@ -296,6 +296,7 @@ export default {
     dataScope: 'Data scope',
     scopeExport: 'Export',
     scopeSourcing: 'Procurement sourcing',
+    scopeShipping: 'Shipping schedules',
     scopes: { SELF: 'Own records only', DEPT: 'Own department', DEPT_AND_SUB: 'Department and below', ALL: 'Everything' },
     scopeHint: 'Permissions decide which features a role may use; the scope decides whose records. Unset behaves as own records only.',
     saveScope: 'Save scope',

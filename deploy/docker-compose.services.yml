@@ -225,6 +225,8 @@ services:
       INTERNAL_SIGNING_KEY: ${INTERNAL_SIGNING_KEY:?set it in deploy/.env — openssl rand -hex 32}
       DB_DSN: postgres://erp_shipping:erp_shipping_pw@postgres:5432/erp_shipping?sslmode=disable
       GRPC_PORT: "9009"
+      IAM_ADDR: iam:9001
+      MASTERDATA_ADDR: masterdata:9002
       # Empty REDIS_ADDR silently disables the arrival-reminder live push
       # (services/shipping/cmd/main.go guards on it), so it must be set here.
       REDIS_ADDR: redis:6379
@@ -236,6 +238,7 @@ services:
     ports:
       - "127.0.0.1:9009:9009"
     networks: [infra]
+    depends_on: [iam, masterdata]
     restart: unless-stopped
 
   mail:

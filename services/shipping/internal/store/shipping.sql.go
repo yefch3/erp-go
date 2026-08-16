@@ -182,43 +182,54 @@ SELECT count(*)
 FROM shipping_schedules
 WHERE tenant_id = $1
   AND (
-    $2::text = ''
-    OR schedule_no ILIKE '%' || $2::text || '%'
-    OR contract_no ILIKE '%' || $2::text || '%'
-    OR customer_name ILIKE '%' || $2::text || '%'
-    OR vessel_name ILIKE '%' || $2::text || '%'
-    OR voyage_no ILIKE '%' || $2::text || '%'
-    OR responsible_name ILIKE '%' || $2::text || '%'
+    $2::boolean
+    OR responsible_employee_id = ANY($3::bigint[])
+    OR COALESCE(customer_id, 0) = ANY($4::bigint[])
   )
   AND (
-    $3::text = ''
-    OR ($3::text = 'ACTIVE' AND status NOT IN ('COMPLETED','CANCELLED'))
-    OR ($3::text = 'ARCHIVED' AND status IN ('COMPLETED','CANCELLED'))
-    OR status = $3::text
+    $5::text = ''
+    OR schedule_no ILIKE '%' || $5::text || '%'
+    OR contract_no ILIKE '%' || $5::text || '%'
+    OR customer_name ILIKE '%' || $5::text || '%'
+    OR vessel_name ILIKE '%' || $5::text || '%'
+    OR voyage_no ILIKE '%' || $5::text || '%'
+    OR responsible_name ILIKE '%' || $5::text || '%'
   )
-  AND ($4::text = '' OR port_of_loading = $4::text)
-  AND ($5::text = '' OR port_of_discharge = $5::text)
-  AND ($6::date IS NULL OR etd >= $6::date)
-  AND ($7::date IS NULL OR etd <= $7::date)
-  AND ($8::date IS NULL OR eta >= $8::date)
-  AND ($9::date IS NULL OR eta <= $9::date)
+  AND (
+    $6::text = ''
+    OR ($6::text = 'ACTIVE' AND status NOT IN ('COMPLETED','CANCELLED'))
+    OR ($6::text = 'ARCHIVED' AND status IN ('COMPLETED','CANCELLED'))
+    OR status = $6::text
+  )
+  AND ($7::text = '' OR port_of_loading = $7::text)
+  AND ($8::text = '' OR port_of_discharge = $8::text)
+  AND ($9::date IS NULL OR etd >= $9::date)
+  AND ($10::date IS NULL OR etd <= $10::date)
+  AND ($11::date IS NULL OR eta >= $11::date)
+  AND ($12::date IS NULL OR eta <= $12::date)
 `
 
 type CountSchedulesParams struct {
-	TenantID        int64
-	Keyword         string
-	Status          string
-	PortOfLoading   string
-	PortOfDischarge string
-	EtdFrom         pgtype.Date
-	EtdTo           pgtype.Date
-	EtaFrom         pgtype.Date
-	EtaTo           pgtype.Date
+	TenantID           int64
+	ScopeAll           bool
+	VisibleEmployeeIds []int64
+	VisibleCustomerIds []int64
+	Keyword            string
+	Status             string
+	PortOfLoading      string
+	PortOfDischarge    string
+	EtdFrom            pgtype.Date
+	EtdTo              pgtype.Date
+	EtaFrom            pgtype.Date
+	EtaTo              pgtype.Date
 }
 
 func (q *Queries) CountSchedules(ctx context.Context, arg CountSchedulesParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countSchedules,
 		arg.TenantID,
+		arg.ScopeAll,
+		arg.VisibleEmployeeIds,
+		arg.VisibleCustomerIds,
 		arg.Keyword,
 		arg.Status,
 		arg.PortOfLoading,
@@ -1398,45 +1409,53 @@ SELECT id, tenant_id, schedule_no, contract_id, contract_no, customer_id, custom
 FROM shipping_schedules
 WHERE tenant_id = $1
   AND (
-    $2::text = ''
-    OR schedule_no ILIKE '%' || $2::text || '%'
-    OR contract_no ILIKE '%' || $2::text || '%'
-    OR customer_name ILIKE '%' || $2::text || '%'
-    OR vessel_name ILIKE '%' || $2::text || '%'
-    OR voyage_no ILIKE '%' || $2::text || '%'
-    OR responsible_name ILIKE '%' || $2::text || '%'
+    $2::boolean
+    OR responsible_employee_id = ANY($3::bigint[])
+    OR COALESCE(customer_id, 0) = ANY($4::bigint[])
   )
   AND (
-    $3::text = ''
-    OR ($3::text = 'ACTIVE' AND status NOT IN ('COMPLETED','CANCELLED'))
-    OR ($3::text = 'ARCHIVED' AND status IN ('COMPLETED','CANCELLED'))
-    OR status = $3::text
+    $5::text = ''
+    OR schedule_no ILIKE '%' || $5::text || '%'
+    OR contract_no ILIKE '%' || $5::text || '%'
+    OR customer_name ILIKE '%' || $5::text || '%'
+    OR vessel_name ILIKE '%' || $5::text || '%'
+    OR voyage_no ILIKE '%' || $5::text || '%'
+    OR responsible_name ILIKE '%' || $5::text || '%'
   )
-  AND ($4::text = '' OR port_of_loading = $4::text)
-  AND ($5::text = '' OR port_of_discharge = $5::text)
-  AND ($6::date IS NULL OR etd >= $6::date)
-  AND ($7::date IS NULL OR etd <= $7::date)
-  AND ($8::date IS NULL OR eta >= $8::date)
-  AND ($9::date IS NULL OR eta <= $9::date)
+  AND (
+    $6::text = ''
+    OR ($6::text = 'ACTIVE' AND status NOT IN ('COMPLETED','CANCELLED'))
+    OR ($6::text = 'ARCHIVED' AND status IN ('COMPLETED','CANCELLED'))
+    OR status = $6::text
+  )
+  AND ($7::text = '' OR port_of_loading = $7::text)
+  AND ($8::text = '' OR port_of_discharge = $8::text)
+  AND ($9::date IS NULL OR etd >= $9::date)
+  AND ($10::date IS NULL OR etd <= $10::date)
+  AND ($11::date IS NULL OR eta >= $11::date)
+  AND ($12::date IS NULL OR eta <= $12::date)
 ORDER BY
   CASE WHEN eta >= CURRENT_DATE THEN 0 ELSE 1 END,
   CASE WHEN eta >= CURRENT_DATE THEN eta END ASC,
   updated_at DESC
-LIMIT $11 OFFSET $10
+LIMIT $14 OFFSET $13
 `
 
 type ListSchedulesParams struct {
-	TenantID        int64
-	Keyword         string
-	Status          string
-	PortOfLoading   string
-	PortOfDischarge string
-	EtdFrom         pgtype.Date
-	EtdTo           pgtype.Date
-	EtaFrom         pgtype.Date
-	EtaTo           pgtype.Date
-	RowOffset       int32
-	RowLimit        int32
+	TenantID           int64
+	ScopeAll           bool
+	VisibleEmployeeIds []int64
+	VisibleCustomerIds []int64
+	Keyword            string
+	Status             string
+	PortOfLoading      string
+	PortOfDischarge    string
+	EtdFrom            pgtype.Date
+	EtdTo              pgtype.Date
+	EtaFrom            pgtype.Date
+	EtaTo              pgtype.Date
+	RowOffset          int32
+	RowLimit           int32
 }
 
 type ListSchedulesRow struct {
@@ -1487,6 +1506,9 @@ type ListSchedulesRow struct {
 func (q *Queries) ListSchedules(ctx context.Context, arg ListSchedulesParams) ([]ListSchedulesRow, error) {
 	rows, err := q.db.Query(ctx, listSchedules,
 		arg.TenantID,
+		arg.ScopeAll,
+		arg.VisibleEmployeeIds,
+		arg.VisibleCustomerIds,
 		arg.Keyword,
 		arg.Status,
 		arg.PortOfLoading,
@@ -2419,7 +2441,19 @@ SELECT
   count(*) FILTER (WHERE has_temporary_call AND status <> 'CANCELLED')::bigint AS temporary_call
 FROM shipping_schedules
 WHERE tenant_id = $1
+  AND (
+    $2::boolean
+    OR responsible_employee_id = ANY($3::bigint[])
+    OR COALESCE(customer_id, 0) = ANY($4::bigint[])
+  )
 `
+
+type ShippingStatisticsParams struct {
+	TenantID           int64
+	ScopeAll           bool
+	VisibleEmployeeIds []int64
+	VisibleCustomerIds []int64
+}
 
 type ShippingStatisticsRow struct {
 	InTransit           int64
@@ -2428,8 +2462,13 @@ type ShippingStatisticsRow struct {
 	TemporaryCall       int64
 }
 
-func (q *Queries) ShippingStatistics(ctx context.Context, tenantID int64) (ShippingStatisticsRow, error) {
-	row := q.db.QueryRow(ctx, shippingStatistics, tenantID)
+func (q *Queries) ShippingStatistics(ctx context.Context, arg ShippingStatisticsParams) (ShippingStatisticsRow, error) {
+	row := q.db.QueryRow(ctx, shippingStatistics,
+		arg.TenantID,
+		arg.ScopeAll,
+		arg.VisibleEmployeeIds,
+		arg.VisibleCustomerIds,
+	)
 	var i ShippingStatisticsRow
 	err := row.Scan(
 		&i.InTransit,

@@ -150,6 +150,16 @@ WHERE tenant_id = sqlc.arg(tenant_id) AND customer_id = sqlc.arg(customer_id)
   AND (sqlc.arg(status)::text = 'ALL' OR status = 'ACTIVE')
 ORDER BY status, is_primary DESC, responsibility_code, id;
 
+-- name: ListCustomerIDsOwnedByEmployees :many
+SELECT DISTINCT customer_id
+FROM customer_owners
+WHERE tenant_id = sqlc.arg(tenant_id)
+  AND employee_id = ANY(sqlc.arg(employee_ids)::bigint[])
+  AND status = 'ACTIVE'
+  AND (start_date IS NULL OR start_date <= CURRENT_DATE)
+  AND (end_date IS NULL OR end_date >= CURRENT_DATE)
+ORDER BY customer_id;
+
 -- name: CountActiveCustomerOwners :one
 SELECT count(*) FROM customer_owners
 WHERE tenant_id = sqlc.arg(tenant_id) AND customer_id = sqlc.arg(customer_id)

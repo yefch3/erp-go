@@ -790,8 +790,8 @@ func (s *Service) ListPermissions(ctx context.Context) ([]store.Permission, erro
 	return s.q.ListPermissions(ctx)
 }
 
-// GrantRolePermissions replaces the role's permission set atomically.
-func (s *Service) GrantRolePermissions(ctx context.Context, tenantID, roleID int64, codes []string) error {
+// GrantRolePermissions 原子替换角色权限，并记录修改前后权限及操作人。
+func (s *Service) GrantRolePermissions(ctx context.Context, tenantID, roleID int64, codes []string, operatorIDs ...int64) error {
 	ids, err := s.q.GetPermissionIDsByCodes(ctx, codes)
 	if err != nil {
 		return err
@@ -800,8 +800,16 @@ func (s *Service) GrantRolePermissions(ctx context.Context, tenantID, roleID int
 		return apierr.Invalid("IAM_PERMISSION_UNKNOWN", "存在未知的权限编码").
 			WithMeta("requested", fmt.Sprint(len(codes)), "matched", fmt.Sprint(len(ids)))
 	}
+	var operatorID int64
+	if len(operatorIDs) > 0 {
+		operatorID = operatorIDs[0]
+	}
 	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		before, err := q.ListRolePermissionCodes(ctx, store.ListRolePermissionCodesParams{TenantID: tenantID, RoleID: roleID})
+		if err != nil {
+			return err
+		}
 		if err := q.ReplaceRolePermissions(ctx, store.ReplaceRolePermissionsParams{TenantID: tenantID, RoleID: roleID}); err != nil {
 			return err
 		}
@@ -810,14 +818,26 @@ func (s *Service) GrantRolePermissions(ctx context.Context, tenantID, roleID int
 				return err
 			}
 		}
-		return nil
+		return q.InsertDirectoryChange(ctx, store.InsertDirectoryChangeParams{
+			TenantID: tenantID, EntityType: "ROLE", EntityID: roleID, Action: "SET_PERMISSIONS",
+			BeforeData: snapshotJSON(map[string]any{"permission_codes": before}),
+			AfterData:  snapshotJSON(map[string]any{"permission_codes": codes}), OperatorID: operatorID,
+		})
 	})
 }
 
-// AssignEmployeeRoles replaces the employee's role set atomically.
-func (s *Service) AssignEmployeeRoles(ctx context.Context, tenantID, employeeID int64, roleIDs []int64) error {
+// AssignEmployeeRoles 原子替换员工角色，并记录角色关系变更。
+func (s *Service) AssignEmployeeRoles(ctx context.Context, tenantID, employeeID int64, roleIDs []int64, operatorIDs ...int64) error {
+	var operatorID int64
+	if len(operatorIDs) > 0 {
+		operatorID = operatorIDs[0]
+	}
 	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		before, err := q.ListEmployeeRoleIDs(ctx, store.ListEmployeeRoleIDsParams{TenantID: tenantID, EmployeeID: employeeID})
+		if err != nil {
+			return err
+		}
 		if err := q.ReplaceEmployeeRoles(ctx, store.ReplaceEmployeeRolesParams{TenantID: tenantID, EmployeeID: employeeID}); err != nil {
 			return err
 		}
@@ -826,7 +846,11 @@ func (s *Service) AssignEmployeeRoles(ctx context.Context, tenantID, employeeID 
 				return err
 			}
 		}
-		return nil
+		return q.InsertDirectoryChange(ctx, store.InsertDirectoryChangeParams{
+			TenantID: tenantID, EntityType: "EMPLOYEE", EntityID: employeeID, Action: "SET_ROLES",
+			BeforeData: snapshotJSON(map[string]any{"role_ids": before}),
+			AfterData:  snapshotJSON(map[string]any{"role_ids": roleIDs}), OperatorID: operatorID,
+		})
 	})
 }
 

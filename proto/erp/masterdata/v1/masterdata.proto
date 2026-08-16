@@ -25,6 +25,8 @@ service CustomerService {
   rpc UpdateCustomerContact(UpdateCustomerContactRequest) returns (UpdateCustomerContactResponse);
   rpc DeactivateCustomerContact(DeactivateCustomerContactRequest) returns (DeactivateCustomerContactResponse);
   rpc ListCustomerOwners(ListCustomerOwnersRequest) returns (ListCustomerOwnersResponse);
+  // 供跨模块数据范围校验使用，只返回客户 ID，不向调用方暴露客户资料字段。
+  rpc ListCustomerIdsByOwnerEmployees(ListCustomerIdsByOwnerEmployeesRequest) returns (ListCustomerIdsByOwnerEmployeesResponse);
   rpc CreateCustomerOwner(CreateCustomerOwnerRequest) returns (CreateCustomerOwnerResponse);
   rpc UpdateCustomerOwner(UpdateCustomerOwnerRequest) returns (UpdateCustomerOwnerResponse);
   rpc DeactivateCustomerOwner(DeactivateCustomerOwnerRequest) returns (DeactivateCustomerOwnerResponse);
@@ -1096,3 +1098,12 @@ message FactoryDuplicate {
   repeated string match_fields = 7;
 }
 message CheckFactoryDuplicatesResponse { repeated FactoryDuplicate candidates = 1; }
+
+// 数据范围内部查询消息放在文件末尾，避免新增消息改变既有公开消息的描述符编号。
+message ListCustomerIdsByOwnerEmployeesRequest {
+  repeated int64 employee_ids = 1;
+}
+
+message ListCustomerIdsByOwnerEmployeesResponse {
+  repeated int64 customer_ids = 1;
+}

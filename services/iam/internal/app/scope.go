@@ -138,7 +138,9 @@ var scopeTypes = map[string]bool{
 	"SELF": true, "DEPT": true, "DEPT_AND_SUB": true, "ALL": true, "CUSTOM": true,
 }
 
-func (s *Service) SetDataScope(ctx context.Context, tenantID, roleID int64, module, scopeType string, deptIDs []int64) error {
+// SetDataScope 保存角色的数据范围，并把修改前后内容写入统一变更记录。
+// operatorIDs 使用可选参数是为了兼容已有的内部调用；来自 API 的请求必须传入操作员工 ID。
+func (s *Service) SetDataScope(ctx context.Context, tenantID, roleID int64, module, scopeType string, deptIDs []int64, operatorIDs ...int64) error {
 	if roleID == 0 || module == "" {
 		return apierr.Invalid("IAM_SCOPE_FIELDS_REQUIRED", "角色和模块必填")
 	}
@@ -151,8 +153,38 @@ func (s *Service) SetDataScope(ctx context.Context, tenantID, roleID int64, modu
 	if scopeType == "CUSTOM" && len(deptIDs) == 0 {
 		return apierr.Invalid("IAM_SCOPE_DEPTS_REQUIRED", "自定义范围必须选择部门")
 	}
-	return s.q.SetRoleDataScope(ctx, store.SetRoleDataScopeParams{
-		TenantID: tenantID, RoleID: roleID, Module: module,
-		ScopeType: scopeType, CustomDeptIds: deptIDs,
+	var operatorID int64
+	if len(operatorIDs) > 0 {
+		operatorID = operatorIDs[0]
+	}
+	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		before := map[string]any{
+			"role_id": roleID, "module": module, "scope_type": "SELF", "department_ids": []int64{},
+		}
+		rows, err := q.ListRoleDataScopes(ctx, tenantID)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			if row.RoleID == roleID && row.Module == module {
+				before["scope_type"] = row.ScopeType
+				before["department_ids"] = row.CustomDeptIds
+				break
+			}
+		}
+		if err := q.SetRoleDataScope(ctx, store.SetRoleDataScopeParams{
+			TenantID: tenantID, RoleID: roleID, Module: module,
+			ScopeType: scopeType, CustomDeptIds: deptIDs,
+		}); err != nil {
+			return err
+		}
+		after := map[string]any{
+			"role_id": roleID, "module": module, "scope_type": scopeType, "department_ids": deptIDs,
+		}
+		return q.InsertDirectoryChange(ctx, store.InsertDirectoryChangeParams{
+			TenantID: tenantID, EntityType: "ROLE", EntityID: roleID, Action: "SET_DATA_SCOPE",
+			BeforeData: snapshotJSON(before), AfterData: snapshotJSON(after), OperatorID: operatorID,
+		})
 	})
 }

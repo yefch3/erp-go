@@ -64,6 +64,15 @@
                 {{ t('roles.saveScope') }}
               </el-button>
             </div>
+            <div class="scope-row">
+              <span class="scope-label">{{ t('roles.scopeShipping') }}</span>
+              <el-select v-model="scopeShipping" :disabled="!canWrite" style="width: 220px">
+                <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
+              </el-select>
+              <el-button v-if="canWrite" :loading="savingScope" @click="saveShippingScope">
+                {{ t('roles.saveScope') }}
+              </el-button>
+            </div>
             <p class="footnote">{{ t('roles.scopeHint') }}</p>
           </div>
           <p class="footnote">{{ t('roles.serverEnforced') }}</p>
@@ -120,6 +129,7 @@ const SCOPE_TYPES = ['SELF', 'DEPT', 'DEPT_AND_SUB', 'ALL']
 const scopes = ref<Record<string, string>>({})
 const scopeExport = ref('SELF')
 const scopeSourcing = ref('SELF')
+const scopeShipping = ref('SELF')
 const savingScope = ref(false)
 const form = reactive({ code: '', name: '', description: '' })
 
@@ -148,6 +158,7 @@ function select(role: Role) {
   checked.value = [...role.permissionCodes]
   scopeExport.value = scopes.value[`${role.id}:export`] ?? 'SELF'
   scopeSourcing.value = scopes.value[`${role.id}:procurement_sourcing`] ?? 'SELF'
+  scopeShipping.value = scopes.value[`${role.id}:shipping`] ?? 'SELF'
 }
 
 async function loadScopes() {
@@ -156,6 +167,7 @@ async function loadScopes() {
   if (selected.value) {
     scopeExport.value = scopes.value[`${selected.value.id}:export`] ?? 'SELF'
     scopeSourcing.value = scopes.value[`${selected.value.id}:procurement_sourcing`] ?? 'SELF'
+    scopeShipping.value = scopes.value[`${selected.value.id}:shipping`] ?? 'SELF'
   }
 }
 
@@ -177,6 +189,19 @@ async function saveSourcingScope() {
   try {
     await put(`/roles/${selected.value!.id}/data-scope`, {
       scope: { module: 'procurement_sourcing', scopeType: scopeSourcing.value },
+    })
+    ElMessage.success(t('roles.scopeSaved'))
+    await loadScopes()
+  } finally {
+    savingScope.value = false
+  }
+}
+
+async function saveShippingScope() {
+  savingScope.value = true
+  try {
+    await put(`/roles/${selected.value!.id}/data-scope`, {
+      scope: { module: 'shipping', scopeType: scopeShipping.value },
     })
     ElMessage.success(t('roles.scopeSaved'))
     await loadScopes()

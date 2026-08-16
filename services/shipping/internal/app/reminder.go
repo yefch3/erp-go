@@ -74,7 +74,14 @@ func createConfiguredArrivalReminders(ctx context.Context, q *store.Queries, ten
 }
 
 // GetArrivalReminderRules 返回某条船期当前启用的全部提前天数。
-func (s *Service) GetArrivalReminderRules(ctx context.Context, tenantID, scheduleID int64) ([]int32, error) {
+func (s *Service) GetArrivalReminderRules(ctx context.Context, tenantID, scheduleID int64, operators ...Operator) ([]int32, error) {
+	var op Operator
+	if len(operators) > 0 {
+		op = operators[0]
+	}
+	if _, err := s.authorizeSchedule(ctx, tenantID, scheduleID, op); err != nil {
+		return nil, err
+	}
 	if _, err := s.q.GetSchedule(ctx, store.GetScheduleParams{TenantID: tenantID, ID: scheduleID}); errors.Is(err, pgx.ErrNoRows) {
 		return nil, apierr.NotFound("SHIPPING_NOT_FOUND", "船期不存在")
 	} else if err != nil {
@@ -86,6 +93,9 @@ func (s *Service) GetArrivalReminderRules(ctx context.Context, tenantID, schedul
 // UpdateArrivalReminderRules 替换一条船期的提醒规则，并按最新 ETA 重建未发送提醒。
 // 已发送提醒作为业务历史保留，不会因修改规则而删除。
 func (s *Service) UpdateArrivalReminderRules(ctx context.Context, tenantID, scheduleID int64, days []int32, op Operator) ([]int32, error) {
+	if _, err := s.authorizeSchedule(ctx, tenantID, scheduleID, op); err != nil {
+		return nil, err
+	}
 	normalized, err := normalizeArrivalReminderDays(days)
 	if err != nil {
 		return nil, err

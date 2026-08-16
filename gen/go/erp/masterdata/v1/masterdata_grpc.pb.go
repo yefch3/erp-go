@@ -19,32 +19,33 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CustomerService_CreateCustomer_FullMethodName                = "/erp.masterdata.v1.CustomerService/CreateCustomer"
-	CustomerService_GetCustomer_FullMethodName                   = "/erp.masterdata.v1.CustomerService/GetCustomer"
-	CustomerService_ListCustomers_FullMethodName                 = "/erp.masterdata.v1.CustomerService/ListCustomers"
-	CustomerService_UpdateCustomer_FullMethodName                = "/erp.masterdata.v1.CustomerService/UpdateCustomer"
-	CustomerService_UpdateCustomerProfile_FullMethodName         = "/erp.masterdata.v1.CustomerService/UpdateCustomerProfile"
-	CustomerService_DeactivateCustomer_FullMethodName            = "/erp.masterdata.v1.CustomerService/DeactivateCustomer"
-	CustomerService_ActivateCustomer_FullMethodName              = "/erp.masterdata.v1.CustomerService/ActivateCustomer"
-	CustomerService_ListCustomerAddresses_FullMethodName         = "/erp.masterdata.v1.CustomerService/ListCustomerAddresses"
-	CustomerService_CreateCustomerAddress_FullMethodName         = "/erp.masterdata.v1.CustomerService/CreateCustomerAddress"
-	CustomerService_UpdateCustomerAddress_FullMethodName         = "/erp.masterdata.v1.CustomerService/UpdateCustomerAddress"
-	CustomerService_DeactivateCustomerAddress_FullMethodName     = "/erp.masterdata.v1.CustomerService/DeactivateCustomerAddress"
-	CustomerService_ListCustomerContacts_FullMethodName          = "/erp.masterdata.v1.CustomerService/ListCustomerContacts"
-	CustomerService_CreateCustomerContact_FullMethodName         = "/erp.masterdata.v1.CustomerService/CreateCustomerContact"
-	CustomerService_UpdateCustomerContact_FullMethodName         = "/erp.masterdata.v1.CustomerService/UpdateCustomerContact"
-	CustomerService_DeactivateCustomerContact_FullMethodName     = "/erp.masterdata.v1.CustomerService/DeactivateCustomerContact"
-	CustomerService_ListCustomerOwners_FullMethodName            = "/erp.masterdata.v1.CustomerService/ListCustomerOwners"
-	CustomerService_CreateCustomerOwner_FullMethodName           = "/erp.masterdata.v1.CustomerService/CreateCustomerOwner"
-	CustomerService_UpdateCustomerOwner_FullMethodName           = "/erp.masterdata.v1.CustomerService/UpdateCustomerOwner"
-	CustomerService_DeactivateCustomerOwner_FullMethodName       = "/erp.masterdata.v1.CustomerService/DeactivateCustomerOwner"
-	CustomerService_ListCustomerChanges_FullMethodName           = "/erp.masterdata.v1.CustomerService/ListCustomerChanges"
-	CustomerService_ImportCustomers_FullMethodName               = "/erp.masterdata.v1.CustomerService/ImportCustomers"
-	CustomerService_CheckCustomerDuplicates_FullMethodName       = "/erp.masterdata.v1.CustomerService/CheckCustomerDuplicates"
-	CustomerService_GetCustomerDeactivationImpact_FullMethodName = "/erp.masterdata.v1.CustomerService/GetCustomerDeactivationImpact"
-	CustomerService_ListMailingContacts_FullMethodName           = "/erp.masterdata.v1.CustomerService/ListMailingContacts"
-	CustomerService_ListCustomerCountries_FullMethodName         = "/erp.masterdata.v1.CustomerService/ListCustomerCountries"
-	CustomerService_ContactsInCountry_FullMethodName             = "/erp.masterdata.v1.CustomerService/ContactsInCountry"
+	CustomerService_CreateCustomer_FullMethodName                  = "/erp.masterdata.v1.CustomerService/CreateCustomer"
+	CustomerService_GetCustomer_FullMethodName                     = "/erp.masterdata.v1.CustomerService/GetCustomer"
+	CustomerService_ListCustomers_FullMethodName                   = "/erp.masterdata.v1.CustomerService/ListCustomers"
+	CustomerService_UpdateCustomer_FullMethodName                  = "/erp.masterdata.v1.CustomerService/UpdateCustomer"
+	CustomerService_UpdateCustomerProfile_FullMethodName           = "/erp.masterdata.v1.CustomerService/UpdateCustomerProfile"
+	CustomerService_DeactivateCustomer_FullMethodName              = "/erp.masterdata.v1.CustomerService/DeactivateCustomer"
+	CustomerService_ActivateCustomer_FullMethodName                = "/erp.masterdata.v1.CustomerService/ActivateCustomer"
+	CustomerService_ListCustomerAddresses_FullMethodName           = "/erp.masterdata.v1.CustomerService/ListCustomerAddresses"
+	CustomerService_CreateCustomerAddress_FullMethodName           = "/erp.masterdata.v1.CustomerService/CreateCustomerAddress"
+	CustomerService_UpdateCustomerAddress_FullMethodName           = "/erp.masterdata.v1.CustomerService/UpdateCustomerAddress"
+	CustomerService_DeactivateCustomerAddress_FullMethodName       = "/erp.masterdata.v1.CustomerService/DeactivateCustomerAddress"
+	CustomerService_ListCustomerContacts_FullMethodName            = "/erp.masterdata.v1.CustomerService/ListCustomerContacts"
+	CustomerService_CreateCustomerContact_FullMethodName           = "/erp.masterdata.v1.CustomerService/CreateCustomerContact"
+	CustomerService_UpdateCustomerContact_FullMethodName           = "/erp.masterdata.v1.CustomerService/UpdateCustomerContact"
+	CustomerService_DeactivateCustomerContact_FullMethodName       = "/erp.masterdata.v1.CustomerService/DeactivateCustomerContact"
+	CustomerService_ListCustomerOwners_FullMethodName              = "/erp.masterdata.v1.CustomerService/ListCustomerOwners"
+	CustomerService_ListCustomerIdsByOwnerEmployees_FullMethodName = "/erp.masterdata.v1.CustomerService/ListCustomerIdsByOwnerEmployees"
+	CustomerService_CreateCustomerOwner_FullMethodName             = "/erp.masterdata.v1.CustomerService/CreateCustomerOwner"
+	CustomerService_UpdateCustomerOwner_FullMethodName             = "/erp.masterdata.v1.CustomerService/UpdateCustomerOwner"
+	CustomerService_DeactivateCustomerOwner_FullMethodName         = "/erp.masterdata.v1.CustomerService/DeactivateCustomerOwner"
+	CustomerService_ListCustomerChanges_FullMethodName             = "/erp.masterdata.v1.CustomerService/ListCustomerChanges"
+	CustomerService_ImportCustomers_FullMethodName                 = "/erp.masterdata.v1.CustomerService/ImportCustomers"
+	CustomerService_CheckCustomerDuplicates_FullMethodName         = "/erp.masterdata.v1.CustomerService/CheckCustomerDuplicates"
+	CustomerService_GetCustomerDeactivationImpact_FullMethodName   = "/erp.masterdata.v1.CustomerService/GetCustomerDeactivationImpact"
+	CustomerService_ListMailingContacts_FullMethodName             = "/erp.masterdata.v1.CustomerService/ListMailingContacts"
+	CustomerService_ListCustomerCountries_FullMethodName           = "/erp.masterdata.v1.CustomerService/ListCustomerCountries"
+	CustomerService_ContactsInCountry_FullMethodName               = "/erp.masterdata.v1.CustomerService/ContactsInCountry"
 )
 
 // CustomerServiceClient is the client API for CustomerService service.
@@ -72,6 +73,8 @@ type CustomerServiceClient interface {
 	UpdateCustomerContact(ctx context.Context, in *UpdateCustomerContactRequest, opts ...grpc.CallOption) (*UpdateCustomerContactResponse, error)
 	DeactivateCustomerContact(ctx context.Context, in *DeactivateCustomerContactRequest, opts ...grpc.CallOption) (*DeactivateCustomerContactResponse, error)
 	ListCustomerOwners(ctx context.Context, in *ListCustomerOwnersRequest, opts ...grpc.CallOption) (*ListCustomerOwnersResponse, error)
+	// 供跨模块数据范围校验使用，只返回客户 ID，不向调用方暴露客户资料字段。
+	ListCustomerIdsByOwnerEmployees(ctx context.Context, in *ListCustomerIdsByOwnerEmployeesRequest, opts ...grpc.CallOption) (*ListCustomerIdsByOwnerEmployeesResponse, error)
 	CreateCustomerOwner(ctx context.Context, in *CreateCustomerOwnerRequest, opts ...grpc.CallOption) (*CreateCustomerOwnerResponse, error)
 	UpdateCustomerOwner(ctx context.Context, in *UpdateCustomerOwnerRequest, opts ...grpc.CallOption) (*UpdateCustomerOwnerResponse, error)
 	DeactivateCustomerOwner(ctx context.Context, in *DeactivateCustomerOwnerRequest, opts ...grpc.CallOption) (*DeactivateCustomerOwnerResponse, error)
@@ -259,6 +262,16 @@ func (c *customerServiceClient) ListCustomerOwners(ctx context.Context, in *List
 	return out, nil
 }
 
+func (c *customerServiceClient) ListCustomerIdsByOwnerEmployees(ctx context.Context, in *ListCustomerIdsByOwnerEmployeesRequest, opts ...grpc.CallOption) (*ListCustomerIdsByOwnerEmployeesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCustomerIdsByOwnerEmployeesResponse)
+	err := c.cc.Invoke(ctx, CustomerService_ListCustomerIdsByOwnerEmployees_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *customerServiceClient) CreateCustomerOwner(ctx context.Context, in *CreateCustomerOwnerRequest, opts ...grpc.CallOption) (*CreateCustomerOwnerResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateCustomerOwnerResponse)
@@ -384,6 +397,8 @@ type CustomerServiceServer interface {
 	UpdateCustomerContact(context.Context, *UpdateCustomerContactRequest) (*UpdateCustomerContactResponse, error)
 	DeactivateCustomerContact(context.Context, *DeactivateCustomerContactRequest) (*DeactivateCustomerContactResponse, error)
 	ListCustomerOwners(context.Context, *ListCustomerOwnersRequest) (*ListCustomerOwnersResponse, error)
+	// 供跨模块数据范围校验使用，只返回客户 ID，不向调用方暴露客户资料字段。
+	ListCustomerIdsByOwnerEmployees(context.Context, *ListCustomerIdsByOwnerEmployeesRequest) (*ListCustomerIdsByOwnerEmployeesResponse, error)
 	CreateCustomerOwner(context.Context, *CreateCustomerOwnerRequest) (*CreateCustomerOwnerResponse, error)
 	UpdateCustomerOwner(context.Context, *UpdateCustomerOwnerRequest) (*UpdateCustomerOwnerResponse, error)
 	DeactivateCustomerOwner(context.Context, *DeactivateCustomerOwnerRequest) (*DeactivateCustomerOwnerResponse, error)
@@ -458,6 +473,9 @@ func (UnimplementedCustomerServiceServer) DeactivateCustomerContact(context.Cont
 }
 func (UnimplementedCustomerServiceServer) ListCustomerOwners(context.Context, *ListCustomerOwnersRequest) (*ListCustomerOwnersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListCustomerOwners not implemented")
+}
+func (UnimplementedCustomerServiceServer) ListCustomerIdsByOwnerEmployees(context.Context, *ListCustomerIdsByOwnerEmployeesRequest) (*ListCustomerIdsByOwnerEmployeesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCustomerIdsByOwnerEmployees not implemented")
 }
 func (UnimplementedCustomerServiceServer) CreateCustomerOwner(context.Context, *CreateCustomerOwnerRequest) (*CreateCustomerOwnerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateCustomerOwner not implemented")
@@ -798,6 +816,24 @@ func _CustomerService_ListCustomerOwners_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CustomerService_ListCustomerIdsByOwnerEmployees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCustomerIdsByOwnerEmployeesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).ListCustomerIdsByOwnerEmployees(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_ListCustomerIdsByOwnerEmployees_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).ListCustomerIdsByOwnerEmployees(ctx, req.(*ListCustomerIdsByOwnerEmployeesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CustomerService_CreateCustomerOwner_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateCustomerOwnerRequest)
 	if err := dec(in); err != nil {
@@ -1048,6 +1084,10 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListCustomerOwners",
 			Handler:    _CustomerService_ListCustomerOwners_Handler,
+		},
+		{
+			MethodName: "ListCustomerIdsByOwnerEmployees",
+			Handler:    _CustomerService_ListCustomerIdsByOwnerEmployees_Handler,
 		},
 		{
 			MethodName: "CreateCustomerOwner",

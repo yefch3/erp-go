@@ -237,14 +237,16 @@ func (h *Handler) ListPermissions(ctx context.Context, _ *iamv1.ListPermissionsR
 }
 
 func (h *Handler) GrantRolePermissions(ctx context.Context, req *iamv1.GrantRolePermissionsRequest) (*iamv1.GrantRolePermissionsResponse, error) {
-	if err := h.svc.GrantRolePermissions(ctx, grpcx.TenantID(ctx), req.GetRoleId(), req.GetPermissionCodes()); err != nil {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	if err := h.svc.GrantRolePermissions(ctx, grpcx.TenantID(ctx), req.GetRoleId(), req.GetPermissionCodes(), op.EmployeeID); err != nil {
 		return nil, err
 	}
 	return &iamv1.GrantRolePermissionsResponse{}, nil
 }
 
 func (h *Handler) AssignEmployeeRoles(ctx context.Context, req *iamv1.AssignEmployeeRolesRequest) (*iamv1.AssignEmployeeRolesResponse, error) {
-	if err := h.svc.AssignEmployeeRoles(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(), req.GetRoleIds()); err != nil {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	if err := h.svc.AssignEmployeeRoles(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(), req.GetRoleIds(), op.EmployeeID); err != nil {
 		return nil, err
 	}
 	return &iamv1.AssignEmployeeRolesResponse{}, nil
@@ -464,8 +466,9 @@ func (h *Handler) ListDataScopes(ctx context.Context, _ *iamv1.ListDataScopesReq
 
 func (h *Handler) SetDataScope(ctx context.Context, req *iamv1.SetDataScopeRequest) (*iamv1.SetDataScopeResponse, error) {
 	sc := req.GetScope()
+	op, _ := grpcx.OperatorFromContext(ctx)
 	if err := h.svc.SetDataScope(ctx, grpcx.TenantID(ctx), sc.GetRoleId(),
-		sc.GetModule(), sc.GetScopeType(), sc.GetDepartmentIds()); err != nil {
+		sc.GetModule(), sc.GetScopeType(), sc.GetDepartmentIds(), op.EmployeeID); err != nil {
 		return nil, err
 	}
 	return &iamv1.SetDataScopeResponse{Saved: true}, nil

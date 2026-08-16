@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 
 	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
@@ -30,6 +31,12 @@ func main() {
 	}
 }
 
+func dial(addr string) (*grpc.ClientConn, error) {
+	return grpc.NewClient(addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(grpcx.UnaryClientPropagator()))
+}
+
 func run(log *slog.Logger) error {
 	cfg := config.Load()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -41,6 +48,17 @@ func run(log *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	iamConn, err := dial(cfg.IAMAddr)
+	if err != nil {
+		return err
+	}
+	defer iamConn.Close()
+	masterdataConn, err := dial(cfg.MasterdataAddr)
+	if err != nil {
+		return err
+	}
+	defer masterdataConn.Close()
+
 	files, err := blobstore.New(ctx, blobstore.Config{
 		Endpoint: cfg.MinioEndpoint, PublicEndpoint: cfg.MinioPublicEndpoint,
 		AccessKey: cfg.MinioAccessKey, SecretKey: cfg.MinioSecretKey,
@@ -51,6 +69,7 @@ func run(log *slog.Logger) error {
 	}
 
 	svc := app.New(pool, grpcout.NewFiles(files))
+	svc.UseAccessControl(grpcout.NewScopes(iamConn), grpcout.NewCustomerAccess(masterdataConn))
 	svc.UseLogger(log)
 	if cfg.RedisAddr != "" {
 		publisher := livefeed.NewPublisher(cfg.RedisAddr, log)

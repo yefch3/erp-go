@@ -87,6 +87,14 @@ func (h *Handler) ListCustomerOwners(ctx context.Context, req *mdv1.ListCustomer
 	return &mdv1.ListCustomerOwnersResponse{Owners: out}, nil
 }
 
+func (h *Handler) ListCustomerIdsByOwnerEmployees(ctx context.Context, req *mdv1.ListCustomerIdsByOwnerEmployeesRequest) (*mdv1.ListCustomerIdsByOwnerEmployeesResponse, error) {
+	ids, err := h.svc.ListCustomerIDsOwnedByEmployees(ctx, grpcx.TenantID(ctx), req.GetEmployeeIds())
+	if err != nil {
+		return nil, err
+	}
+	return &mdv1.ListCustomerIdsByOwnerEmployeesResponse{CustomerIds: ids}, nil
+}
+
 func (h *Handler) CreateCustomerOwner(ctx context.Context, req *mdv1.CreateCustomerOwnerRequest) (*mdv1.CreateCustomerOwnerResponse, error) {
 	in := req.GetOwner()
 	if in == nil {

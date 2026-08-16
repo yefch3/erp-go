@@ -2445,6 +2445,42 @@ func (q *Queries) ListCustomerCountries(ctx context.Context, arg ListCustomerCou
 	return items, nil
 }
 
+const listCustomerIDsOwnedByEmployees = `-- name: ListCustomerIDsOwnedByEmployees :many
+SELECT DISTINCT customer_id
+FROM customer_owners
+WHERE tenant_id = $1
+  AND employee_id = ANY($2::bigint[])
+  AND status = 'ACTIVE'
+  AND (start_date IS NULL OR start_date <= CURRENT_DATE)
+  AND (end_date IS NULL OR end_date >= CURRENT_DATE)
+ORDER BY customer_id
+`
+
+type ListCustomerIDsOwnedByEmployeesParams struct {
+	TenantID    int64
+	EmployeeIds []int64
+}
+
+func (q *Queries) ListCustomerIDsOwnedByEmployees(ctx context.Context, arg ListCustomerIDsOwnedByEmployeesParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listCustomerIDsOwnedByEmployees, arg.TenantID, arg.EmployeeIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var customer_id int64
+		if err := rows.Scan(&customer_id); err != nil {
+			return nil, err
+		}
+		items = append(items, customer_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCustomerOwners = `-- name: ListCustomerOwners :many
 SELECT id, tenant_id, customer_id, employee_id, employee_name, responsibility_code, start_date, end_date, status, created_at, created_by, updated_at, updated_by, is_primary FROM customer_owners
 WHERE tenant_id = $1 AND customer_id = $2

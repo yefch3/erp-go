@@ -10,6 +10,8 @@ import (
 type Config struct {
 	DSN                 string
 	GRPCPort            string
+	IAMAddr             string
+	MasterdataAddr      string
 	MinioEndpoint       string
 	MinioPublicEndpoint string
 	MinioAccessKey      string
@@ -25,6 +27,8 @@ func Load() Config {
 	return Config{
 		DSN:                 env("DB_DSN", "postgres://erp_shipping:erp_shipping_pw@localhost:5433/erp_shipping?sslmode=disable"),
 		GRPCPort:            env("GRPC_PORT", "9009"),
+		IAMAddr:             env("IAM_ADDR", "localhost:9001"),
+		MasterdataAddr:      env("MASTERDATA_ADDR", "localhost:9002"),
 		MinioEndpoint:       env("MINIO_ENDPOINT", "localhost:19000"),
 		MinioPublicEndpoint: env("MINIO_PUBLIC_ENDPOINT", ""),
 		MinioAccessKey:      env("MINIO_ACCESS_KEY", "erp"),

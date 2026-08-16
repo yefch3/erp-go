@@ -328,6 +328,7 @@ func (s *Server) Router() http.Handler {
 		// not contracts: it is shipping information reached from the other end.
 		r.With(s.perm("export:shipment:read")).Get("/api/contracts/{id}/vessels", s.listContractVessels)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/status", s.getShippingStatus)
+		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/responsible-options", s.listVisibleEmployees)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules", s.listShippingSchedules)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/statistics", s.getShippingStatistics)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/reminders", s.listShippingArrivalNotifications)

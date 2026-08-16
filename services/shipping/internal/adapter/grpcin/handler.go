@@ -226,7 +226,7 @@ func (h *Handler) ListSchedules(ctx context.Context, req *shippingv1.ListSchedul
 	rows, total, page, size, err := h.svc.ListSchedules(ctx, grpcx.TenantID(ctx), app.ListFilter{
 		Keyword: req.GetKeyword(), Status: req.GetStatus(), PortOfLoading: req.GetPortOfLoading(), PortOfDischarge: req.GetPortOfDischarge(),
 		ETDFrom: req.GetEtdFrom(), ETDTo: req.GetEtdTo(), ETAFrom: req.GetEtaFrom(), ETATo: req.GetEtaTo(), Page: page, PageSize: size,
-	})
+	}, operator(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +238,7 @@ func (h *Handler) ListSchedules(ctx context.Context, req *shippingv1.ListSchedul
 }
 
 func (h *Handler) GetSchedule(ctx context.Context, req *shippingv1.GetScheduleRequest) (*shippingv1.GetScheduleResponse, error) {
-	details, err := h.svc.GetScheduleDetails(ctx, grpcx.TenantID(ctx), req.GetId())
+	details, err := h.svc.GetScheduleDetails(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +282,7 @@ func (h *Handler) CleanupExpiredArrivalReminders(ctx context.Context, _ *shippin
 }
 
 func (h *Handler) GetArrivalReminderRules(ctx context.Context, req *shippingv1.GetArrivalReminderRulesRequest) (*shippingv1.GetArrivalReminderRulesResponse, error) {
-	days, err := h.svc.GetArrivalReminderRules(ctx, grpcx.TenantID(ctx), req.GetScheduleId())
+	days, err := h.svc.GetArrivalReminderRules(ctx, grpcx.TenantID(ctx), req.GetScheduleId(), operator(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +298,7 @@ func (h *Handler) UpdateArrivalReminderRules(ctx context.Context, req *shippingv
 }
 
 func (h *Handler) GetShippingStatistics(ctx context.Context, _ *shippingv1.GetShippingStatisticsRequest) (*shippingv1.GetShippingStatisticsResponse, error) {
-	r, err := h.svc.ShippingStatistics(ctx, grpcx.TenantID(ctx))
+	r, err := h.svc.ShippingStatistics(ctx, grpcx.TenantID(ctx), operator(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +343,7 @@ func (h *Handler) UpdateProgress(ctx context.Context, req *shippingv1.UpdateProg
 }
 
 func (h *Handler) PresignDocumentUpload(ctx context.Context, req *shippingv1.PresignDocumentUploadRequest) (*shippingv1.PresignDocumentUploadResponse, error) {
-	key, url, expires, err := h.svc.PresignDocumentUpload(ctx, grpcx.TenantID(ctx), req.GetScheduleId(), req.GetFileName())
+	key, url, expires, err := h.svc.PresignDocumentUpload(ctx, grpcx.TenantID(ctx), req.GetScheduleId(), req.GetFileName(), operator(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -359,7 +359,7 @@ func (h *Handler) RegisterDocument(ctx context.Context, req *shippingv1.Register
 }
 
 func (h *Handler) ListDocuments(ctx context.Context, req *shippingv1.ListDocumentsRequest) (*shippingv1.ListDocumentsResponse, error) {
-	rows, err := h.svc.ListDocuments(ctx, grpcx.TenantID(ctx), req.GetScheduleId())
+	rows, err := h.svc.ListDocuments(ctx, grpcx.TenantID(ctx), req.GetScheduleId(), operator(ctx))
 	if err != nil {
 		return nil, err
 	}
