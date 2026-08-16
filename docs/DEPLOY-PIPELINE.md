@@ -267,5 +267,7 @@ jobs:
 - **不做蓝绿/金丝雀**：一台机器的试点，停机窗口是几秒钟的 `up -d`，
   为它引入双环境不值得。等有第二台机器再谈。
 - **不做 Kubernetes**：11 个容器一台机器，compose 够用且人人看得懂。
+  将来若扩展到需要它，路线已备好：[K8S-PATH.md](./K8S-PATH.md)
+  （触发条件、逐项搬家对照表、.env → ConfigMap/Secret 的去向）。
 - **不把 `.env` 搬进 GitHub Secrets**：秘密的家在服务器上（将来在 SSM
   Parameter Store），管道只该知道"去哪台机器执行"，不该知道业务秘密。
