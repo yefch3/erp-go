@@ -173,6 +173,11 @@ function measure() {
 // item to the native menu, only suppress it. Right-click now belongs entirely
 // to the browser; our entry appears under the selection the moment one
 // exists, and leaves with it.
+// The parent-window mouseup listener of the current binding. Each new srcdoc
+// is a new document and a new binding; the previous window listener must go
+// with its document or they pile up one per opened mail.
+let detachWindowMouseUp: (() => void) | null = null
+
 function bindSelectionBubble() {
   const el = frame.value
   const d = el?.contentDocument
@@ -210,15 +215,28 @@ function bindSelectionBubble() {
 
   // While the mouse is down the selection is still being made; judging it
   // then would flash the bubble across the screen as the drag grows.
-  d.addEventListener('mousedown', () => {
-    dragging = true
-  })
-  d.addEventListener('mouseup', () => {
+  const finishDrag = () => {
     dragging = false
     // After the tick, not in it: on a plain click the selection collapses a
     // beat after mouseup, and reading it too early keeps a stale bubble open.
     schedule(0)
+  }
+  d.addEventListener('mousedown', () => {
+    dragging = true
   })
+  d.addEventListener('mouseup', finishDrag)
+  // A drag that starts in the mail does not always end in it. A bottom-to-top
+  // selection is usually released above the text — over the subject line, in
+  // the parent document — where this frame's mouseup never fires; without
+  // this, dragging stayed true and the bubble never appeared for backward
+  // selections. The guard keeps parent clicks that never touched this frame
+  // from being treated as the end of a drag.
+  const windowUp = () => {
+    if (dragging) finishDrag()
+  }
+  detachWindowMouseUp?.()
+  window.addEventListener('mouseup', windowUp)
+  detachWindowMouseUp = () => window.removeEventListener('mouseup', windowUp)
   // Keyboard selection (shift+arrows) never sees a mouseup.
   d.addEventListener('selectionchange', () => {
     if (!dragging) schedule(150)
@@ -300,7 +318,10 @@ watch(() => props.html, () => {
 
 // The first mail is not a change, so the watcher above never fires for it.
 onMounted(measure)
-onBeforeUnmount(() => window.clearInterval(poll))
+onBeforeUnmount(() => {
+  window.clearInterval(poll)
+  detachWindowMouseUp?.()
+})
 </script>
 
 <style scoped>
