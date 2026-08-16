@@ -6,7 +6,11 @@
         <span class="txt">{{ t('login.title') }}</span>
       </div>
       <el-menu :default-active="menuActive" router class="side-menu">
-        <el-menu-item v-if="auth.can('approval:task:act')" index="/todos">
+        <!-- No permission gate: 我的待办 is the landing page and the one
+             surface every employee owns. Somebody with no approval role sees
+             an empty list (and, with no roles at all, a hint to ask the
+             administrator) — hiding the page would leave them nowhere. -->
+        <el-menu-item index="/todos">
           {{ t('menu.todos') }}
         </el-menu-item>
         <el-popover

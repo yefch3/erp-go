@@ -5,7 +5,13 @@
       <el-button @click="load">{{ t('common.query') }}</el-button>
     </div>
 
-    <el-card shadow="never">
+    <el-card v-if="noPermission" shadow="never">
+      <el-empty :description="t('todos.noPermission')">
+        <p class="no-perm-hint">{{ t('todos.noPermissionHint') }}</p>
+      </el-empty>
+    </el-card>
+
+    <el-card v-else shadow="never">
       <el-radio-group v-model="scope" class="tabs" @change="() => { page = 1; load() }">
         <el-radio-button value="">{{ t('todos.tabPending') }}</el-radio-button>
         <el-radio-button value="APPROVED">{{ t('todos.tabApproved') }}</el-radio-button>
@@ -120,7 +126,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { get, post } from '../api'
+import { get, post, quietErrors } from '../api'
 import { onLive } from '../live'
 
 interface Task { id: string; nodeSeq: number; nodeName: string; status: string }
@@ -146,6 +152,9 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = 10
 const loading = ref(false)
+// The account exists but carries no roles yet — the state every invited
+// employee is in between activating and the administrator's next move.
+const noPermission = ref(false)
 const dialogOpen = ref(false)
 const acting = ref(false)
 const comment = ref('')
@@ -159,11 +168,22 @@ const actionTitle = computed(() => ({
 async function load() {
   loading.value = true
   try {
+    // Quiet on purpose: this page is where a freshly activated account with
+    // no roles at all lands first, and its permission refusal is a normal
+    // state to explain in place, not an error to toast. Everything that is
+    // not that one refusal gets the toast it would have gotten.
     const data = await get<{ todos: Todo[]; meta: { total: string } }>('/approvals/todos', {
       page: page.value, page_size: pageSize, status: scope.value,
-    })
+    }, quietErrors)
+    noPermission.value = false
     todos.value = data.todos ?? []
     total.value = Number(data.meta.total)
+  } catch (err) {
+    if ((err as { code?: string })?.code === 'AUTH_PERMISSION_DENIED') {
+      noPermission.value = true
+    } else {
+      ElMessage.error((err as { message?: string })?.message || t('common.requestFailed'))
+    }
   } finally {
     loading.value = false
   }
@@ -311,5 +331,9 @@ onUnmounted(stopListening)
 .target {
   margin: 0 0 12px;
   color: var(--el-text-color-regular);
+}
+.no-perm-hint {
+  margin: 0;
+  color: var(--el-text-color-secondary);
 }
 </style>

@@ -785,6 +785,8 @@ export default {
   },
   todos: {
     title: '我的待办',
+    noPermission: '账号已激活，但还没有分配权限',
+    noPermissionHint: '请联系管理员为你分配角色，分配后刷新本页即可开始使用。',
     bizType: '单据类型',
     bizNo: '单据编号',
     summary: '摘要',
