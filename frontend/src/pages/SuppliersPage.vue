@@ -61,37 +61,39 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { del, get, post } from '../api'
 import SupplierFactoryImportDialog from '../components/SupplierFactoryImportDialog.vue'
 import { countryName, countryOptions } from '../lib/countries'
 import { businessRoleLabel } from '../lib/masterDataDisplay'
+import { masterDataListQuery, queryPage, queryText } from '../lib/masterDataListQuery'
 import { useAuthStore } from '../stores/auth'
 
 interface Supplier { id:string;code:string;name:string;nameZh:string;nameEn:string;shortName:string;countryCode:string;businessTypes:string[];ownerNames:string;factoryCount:string;status:string }
 interface CountryGroup { countryCode:string;count:string }
 interface OptionItem { code:string;label:string }
-const { t, locale } = useI18n(); const router=useRouter(); const auth=useAuthStore()
+const { t, locale } = useI18n(); const route=useRoute(); const router=useRouter(); const auth=useAuthStore()
 const rows=ref<Supplier[]>([]), countries=ref<CountryGroup[]>([]), businessOptions=ref<OptionItem[]>([]), paymentOptions=ref<OptionItem[]>([])
-const keyword=ref(''), countryCode=ref(''), businessType=ref(''), status=ref(''), loading=ref(false), saving=ref(false), dialogOpen=ref(false), importOpen=ref(false)
-const page=ref(1), pageSize=20, total=ref(0)
+const keyword=ref(queryText(route.query.keyword)), countryCode=ref(queryText(route.query.country)), businessType=ref(queryText(route.query.business_type)), status=ref(queryText(route.query.status)), loading=ref(false), saving=ref(false), dialogOpen=ref(false), importOpen=ref(false)
+const page=ref(queryPage(route.query.page)), pageSize=20, total=ref(0)
 const empty={code:'',name:'',nameZh:'',nameEn:'',shortName:'',country:'',countryCode:'',currency:'USD',businessTypes:['GENERAL'],taxId:'',paymentTerm:'',registeredAddress:'',address:'',remark:''}
 const form=reactive({...empty})
 const countryTotal=computed(()=>countries.value.reduce((n,g)=>n+Number(g.count),0))
 function displayName(r:Supplier){return locale.value==='zh'?r.nameZh||r.nameEn||r.name:r.nameEn||r.nameZh||r.name}
 function secondaryName(r:Supplier){const v=locale.value==='zh'?r.nameEn:r.nameZh;return v&&v!==displayName(r)?v:''}
 function optionLabel(code:string){return businessRoleLabel(code,t,businessOptions.value.find(o=>o.code===code)?.label)}
-async function load(){loading.value=true;try{const d=await get<any>('/suppliers',{page:page.value,page_size:pageSize,keyword:keyword.value,country_code:countryCode.value,business_type:businessType.value,status:status.value});rows.value=d.suppliers||[];total.value=Number(d.meta?.total||0)}finally{loading.value=false}}
-async function loadGroups(){const d=await get<any>('/suppliers/countries');countries.value=(d.countries||[]) as CountryGroup[]}
+async function syncQuery(){await router.replace({query:masterDataListQuery({keyword:keyword.value,country:countryCode.value,businessType:businessType.value,status:status.value,page:page.value})})}
+async function load(){loading.value=true;try{await syncQuery();const d=await get<any>('/suppliers',{page:page.value,page_size:pageSize,keyword:keyword.value,country_code:countryCode.value,business_type:businessType.value,status:status.value});rows.value=d.suppliers||[];total.value=Number(d.meta?.total||0)}catch{rows.value=[];total.value=0}finally{loading.value=false}}
+async function loadGroups(){try{const d=await get<any>('/suppliers/countries');countries.value=(d.countries||[]) as CountryGroup[]}catch{countries.value=[]}}
 function resetLoad(){page.value=1;load()}
 function chooseCountry(v:string){countryCode.value=v;resetLoad()}
 function changePage(v:number){page.value=v;load()}
 function openCreate(){Object.assign(form,empty,{businessTypes:['GENERAL']});dialogOpen.value=true}
 function openDetail(r:Supplier){router.push(`/basic/suppliers/${r.id}`)}
 async function refreshAll(){await Promise.all([load(),loadGroups()])}
-async function toggleStatus(row:Supplier){const deactivating=row.status==='ACTIVE';const message=deactivating?t('suppliers.deactivateCascadeConfirm',{name:displayName(row),count:Number(row.factoryCount||0)}):t('suppliers.activateConfirm',{name:displayName(row)});await ElMessageBox.confirm(message,t('suppliers.confirmTitle'),{confirmButtonText:deactivating?t('suppliers.deactivateAndPause'):t('common.activate'),cancelButtonText:t('common.cancel'),type:deactivating?'warning':'info'});if(deactivating)await del(`/suppliers/${row.id}`);else await post(`/suppliers/${row.id}/activate`);ElMessage.success(deactivating?t('suppliers.deactivatedWithFactories'):t('suppliers.activatedFactoriesRemainPaused'));await refreshAll()}
-async function save(){if(!form.nameZh.trim()&&!form.nameEn.trim()){ElMessage.warning(t('suppliers.nameRequired'));return}saving.value=true;try{await post('/suppliers',{...form,name:form.nameZh||form.nameEn,country:form.countryCode});dialogOpen.value=false;ElMessage.success(t('suppliers.saved'));await refreshAll()}finally{saving.value=false}}
-onMounted(async()=>{const [,business,payment]=await Promise.all([Promise.all([load(),loadGroups()]),get<any>('/options',{category:'SUPPLIER_BUSINESS_TYPE'}),get<any>('/options',{category:'PAYMENT_METHOD'})]);businessOptions.value=business.options||[];paymentOptions.value=payment.options||[]})
+async function toggleStatus(row:Supplier){const deactivating=row.status==='ACTIVE';const message=deactivating?t('suppliers.deactivateCascadeConfirm',{name:displayName(row),count:Number(row.factoryCount||0)}):t('suppliers.activateConfirm',{name:displayName(row)});try{await ElMessageBox.confirm(message,t('suppliers.confirmTitle'),{confirmButtonText:deactivating?t('suppliers.deactivateAndPause'):t('common.activate'),cancelButtonText:t('common.cancel'),type:deactivating?'warning':'info'});if(deactivating)await del(`/suppliers/${row.id}`);else await post(`/suppliers/${row.id}/activate`);ElMessage.success(deactivating?t('suppliers.deactivatedWithFactories'):t('suppliers.activatedFactoriesRemainPaused'));await refreshAll()}catch{/* 取消确认或接口错误已由全局拦截器处理。 */}}
+async function save(){if(!form.nameZh.trim()&&!form.nameEn.trim()){ElMessage.warning(t('suppliers.nameRequired'));return}saving.value=true;try{await post('/suppliers',{...form,name:form.nameZh||form.nameEn,country:form.countryCode});dialogOpen.value=false;ElMessage.success(t('suppliers.saved'));await refreshAll()}catch{/* 接口错误已显示统一提示，保留表单便于修正。 */}finally{saving.value=false}}
+onMounted(async()=>{try{const [,business,payment]=await Promise.all([Promise.all([load(),loadGroups()]),get<any>('/options',{category:'SUPPLIER_BUSINESS_TYPE'}),get<any>('/options',{category:'PAYMENT_METHOD'})]);businessOptions.value=business.options||[];paymentOptions.value=payment.options||[]}catch{/* 各请求已由全局拦截器提示。 */}})
 </script>
 
 <style scoped>

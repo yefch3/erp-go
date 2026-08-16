@@ -53,21 +53,22 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { get, post } from '../api'
 import SupplierFactoryImportDialog from '../components/SupplierFactoryImportDialog.vue'
 import { countryName, countryOptions } from '../lib/countries'
 import { defaultPortTimezone, portCityOptions, portTimezoneOptions } from '../lib/portOptions'
+import { masterDataListQuery, queryPage, queryText } from '../lib/masterDataListQuery'
 import { useAuthStore } from '../stores/auth'
 
 interface Factory { id:string;code:string;nameZh:string;nameEn:string;supplierName:string;countryCode:string;city:string;ownerNames:string;status:string }
 interface Group { countryCode:string;count:string }
 interface Supplier { id:string;code:string;name:string;nameZh:string;nameEn:string }
-const { t, locale }=useI18n(), router=useRouter(), auth=useAuthStore()
+const { t, locale }=useI18n(), route=useRoute(), router=useRouter(), auth=useAuthStore()
 const rows=ref<Factory[]>([]), groups=ref<Group[]>([]), supplierOptions=ref<Supplier[]>([])
 const loading=ref(false), saving=ref(false), dialogOpen=ref(false), importOpen=ref(false)
-const keyword=ref(''), city=ref(''), productCategory=ref(''), countryCode=ref(''), status=ref('')
-const page=ref(1), pageSize=20, total=ref(0)
+const keyword=ref(queryText(route.query.keyword)), city=ref(queryText(route.query.city)), productCategory=ref(queryText(route.query.product_category)), countryCode=ref(queryText(route.query.country)), status=ref(queryText(route.query.status))
+const page=ref(queryPage(route.query.page)), pageSize=20, total=ref(0)
 const statuses=['PREPARING','COOPERATING','SUSPENDED','INACTIVE']
 const empty={supplierId:'',code:'',nameZh:'',nameEn:'',shortName:'',countryCode:'',timezone:'',stateProvince:'',city:'',district:'',postalCode:'',address:'',status:'PREPARING',remark:''}
 const form=reactive({...empty})
@@ -76,8 +77,9 @@ const cityOptions=computed(()=>portCityOptions(form.countryCode))
 const timezoneOptions=computed(()=>portTimezoneOptions(form.countryCode))
 function displayName(r:Factory){return locale.value==='zh'?r.nameZh||r.nameEn:r.nameEn||r.nameZh}
 function statusLabel(s:string){return t(`suppliers.factoryStatus.${s}`)}
-async function load(){loading.value=true;try{const d=await get<any>('/factories',{page:page.value,page_size:pageSize,keyword:keyword.value,city:city.value,product_category:productCategory.value,country_code:countryCode.value,status:status.value});rows.value=d.factories||[];total.value=Number(d.meta?.total||0)}finally{loading.value=false}}
-async function loadMeta(){const [g,s]=await Promise.all([get<any>('/factories/countries'),get<any>('/suppliers',{page:1,page_size:200,status:''})]);groups.value=g.countries||[];supplierOptions.value=s.suppliers||[]}
+async function syncQuery(){await router.replace({query:masterDataListQuery({keyword:keyword.value,country:countryCode.value,city:city.value,productCategory:productCategory.value,status:status.value,page:page.value})})}
+async function load(){loading.value=true;try{await syncQuery();const d=await get<any>('/factories',{page:page.value,page_size:pageSize,keyword:keyword.value,city:city.value,product_category:productCategory.value,country_code:countryCode.value,status:status.value});rows.value=d.factories||[];total.value=Number(d.meta?.total||0)}catch{rows.value=[];total.value=0}finally{loading.value=false}}
+async function loadMeta(){try{const [g,s]=await Promise.all([get<any>('/factories/countries'),get<any>('/suppliers',{page:1,page_size:200,status:''})]);groups.value=g.countries||[];supplierOptions.value=s.suppliers||[]}catch{groups.value=[];supplierOptions.value=[]}}
 async function refreshAll(){await Promise.all([load(),loadMeta()])}
 function resetLoad(){page.value=1;load()}
 function selectCountry(v:string){countryCode.value=v;resetLoad()}
@@ -85,8 +87,8 @@ function changePage(v:number){page.value=v;load()}
 function detail(r:Factory){router.push(`/basic/suppliers/factories/${r.id}`)}
 function openCreate(){Object.assign(form,empty);dialogOpen.value=true}
 function syncCountry(){form.city='';form.timezone=defaultPortTimezone(form.countryCode)}
-async function save(){if(!form.supplierId||!form.nameZh.trim()){ElMessage.warning(t('suppliers.factoryRequired'));return}saving.value=true;try{await post('/factories',{factory:{...form}});dialogOpen.value=false;ElMessage.success(t('suppliers.saved'));await refreshAll()}finally{saving.value=false}}
-onMounted(()=>refreshAll())
+async function save(){if(!form.supplierId||!form.nameZh.trim()){ElMessage.warning(t('suppliers.factoryRequired'));return}saving.value=true;try{await post('/factories',{factory:{...form}});dialogOpen.value=false;ElMessage.success(t('suppliers.saved'));await refreshAll()}catch{/* 接口错误已显示统一提示，保留表单便于修正。 */}finally{saving.value=false}}
+onMounted(()=>{void refreshAll()})
 </script>
 
 <style scoped>
