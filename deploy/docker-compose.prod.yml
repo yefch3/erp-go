@@ -1,0 +1,50 @@
+# Production overlay: binaries come from GHCR, pinned to one git SHA.
+#
+#   ERP_SHA=<git-sha> docker compose \
+#     -f deploy/docker-compose.services.yml -f deploy/docker-compose.prod.yml \
+#     pull && ... up -d
+#
+# The base file keeps its build: sections for development; this overlay
+# repoints every service at the image the CI built from exactly that commit.
+# `pull` fetches, `up -d` (without --build) runs what was pulled — the server
+# never compiles anything. See docs/DEPLOY-PIPELINE.md.
+#
+# ERP_SHA is required on purpose: a production deploy of "whatever was lying
+# around" must fail loudly, not proceed quietly.
+
+services:
+  iam:
+    image: ghcr.io/yefch3/erp-go/iam:${ERP_SHA:?production runs pinned images — pass ERP_SHA=<git-sha>}
+  masterdata:
+    image: ghcr.io/yefch3/erp-go/masterdata:${ERP_SHA}
+  fx:
+    image: ghcr.io/yefch3/erp-go/fx:${ERP_SHA}
+  product:
+    image: ghcr.io/yefch3/erp-go/product:${ERP_SHA}
+  approval:
+    image: ghcr.io/yefch3/erp-go/approval:${ERP_SHA}
+  export:
+    image: ghcr.io/yefch3/erp-go/export:${ERP_SHA}
+  inventory:
+    image: ghcr.io/yefch3/erp-go/inventory:${ERP_SHA}
+  procurement:
+    image: ghcr.io/yefch3/erp-go/procurement:${ERP_SHA}
+  shipping:
+    image: ghcr.io/yefch3/erp-go/shipping:${ERP_SHA}
+  mail:
+    image: ghcr.io/yefch3/erp-go/mail:${ERP_SHA}
+  gateway:
+    image: ghcr.io/yefch3/erp-go/gateway:${ERP_SHA}
+    environment:
+      # /api/healthz reports this back, so a deploy can confirm the swap
+      # happened instead of inferring it from silence.
+      ERP_SHA: ${ERP_SHA}
+
+  # The built SPA behind the host nginx (which owns 443 and the certs, and
+  # proxies / here and /api to the gateway). Loopback-only like everything
+  # else — 443 stays the single open port.
+  frontend:
+    image: ghcr.io/yefch3/erp-go/frontend:${ERP_SHA}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:80"

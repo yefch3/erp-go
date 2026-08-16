@@ -106,6 +106,12 @@ func (s *Server) Router() http.Handler {
 	// Without this a handler panic drops the connection, which reaches the
 	// user as "network error" instead of a readable failure.
 	r.Use(s.recoverPanics)
+	// The deploy script's question and the monitor's question are the same
+	// question: is the gateway process up and answering. Login-free because
+	// both askers are machines with no session, and the answer — a version
+	// string that is public in every response header of the frontend anyway —
+	// gives an attacker nothing.
+	r.Get("/api/healthz", s.healthz)
 	r.Post("/api/auth/login", s.login)
 	r.Post("/api/auth/logout", s.logout)
 	// Activation. Login-free of necessity: whoever holds the link has no

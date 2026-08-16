@@ -1,0 +1,73 @@
+# Every merge into main becomes a set of pinned, pullable images. This is the
+# "制品" half of docs/DEPLOY-PIPELINE.md; the deploy half arrives with the
+# EC2 box (phase 2). Until then the value is: the artifacts exist, rollback
+# tags accumulate, and migration day is `pull`, not `build`.
+name: build
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  # A newer merge supersedes an older build still in flight; images are
+  # per-SHA so cancelling the old run loses nothing.
+  group: build-images
+  cancel-in-progress: true
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # One loop, not a matrix: the eleven builds share module download and
+      # compile cache through buildx's gha cache, and a matrix would pay the
+      # checkout + cache restore eleven times over for jobs that each finish
+      # in seconds once the cache is warm.
+      - name: services
+        run: |
+          for s in iam masterdata fx product approval export \
+                   inventory procurement shipping mail gateway; do
+            docker buildx build --push \
+              --build-arg SERVICE=$s \
+              --cache-from type=gha --cache-to type=gha,mode=max \
+              -f deploy/Dockerfile \
+              -t ghcr.io/${{ github.repository }}/$s:${{ github.sha }} \
+              -t ghcr.io/${{ github.repository }}/$s:latest .
+          done
+
+      - name: frontend
+        run: |
+          docker buildx build --push \
+            --cache-from type=gha --cache-to type=gha,mode=max \
+            -f deploy/frontend.Dockerfile \
+            -t ghcr.io/${{ github.repository }}/frontend:${{ github.sha }} \
+            -t ghcr.io/${{ github.repository }}/frontend:latest .
+
+  # GHCR storage is finite (and billed); ten SHAs of history is more rollback
+  # depth than a single-box pilot will ever use. Runs after the push so the
+  # count includes what this run just added.
+  retention:
+    needs: images
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        pkg: [iam, masterdata, fx, product, approval, export,
+              inventory, procurement, shipping, mail, gateway, frontend]
+    steps:
+      - name: keep the last 10 versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: erp-go/${{ matrix.pkg }}
+          package-type: container
+          min-versions-to-keep: 10
