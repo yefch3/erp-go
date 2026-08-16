@@ -51,6 +51,38 @@ service SupplierService {
   rpc UpdateSupplier(UpdateSupplierRequest) returns (UpdateSupplierResponse);
   rpc DeactivateSupplier(DeactivateSupplierRequest) returns (DeactivateSupplierResponse);
   rpc ActivateSupplier(ActivateSupplierRequest) returns (ActivateSupplierResponse);
+  rpc ListSupplierCountries(ListSupplierCountriesRequest) returns (ListSupplierCountriesResponse);
+  rpc ListSupplierContacts(ListSupplierContactsRequest) returns (ListSupplierContactsResponse);
+  rpc CreateSupplierContact(CreateSupplierContactRequest) returns (CreateSupplierContactResponse);
+  rpc UpdateSupplierContact(UpdateSupplierContactRequest) returns (UpdateSupplierContactResponse);
+  rpc DeactivateSupplierContact(DeactivateSupplierContactRequest) returns (DeactivateSupplierContactResponse);
+  rpc ListSupplierOwners(ListSupplierOwnersRequest) returns (ListSupplierOwnersResponse);
+  rpc CreateSupplierOwner(CreateSupplierOwnerRequest) returns (CreateSupplierOwnerResponse);
+  rpc UpdateSupplierOwner(UpdateSupplierOwnerRequest) returns (UpdateSupplierOwnerResponse);
+  rpc DeactivateSupplierOwner(DeactivateSupplierOwnerRequest) returns (DeactivateSupplierOwnerResponse);
+  rpc ListSupplierChanges(ListSupplierChangesRequest) returns (ListSupplierChangesResponse);
+  rpc ImportSuppliers(ImportSuppliersRequest) returns (ImportSuppliersResponse);
+  rpc ListFactories(ListFactoriesRequest) returns (ListFactoriesResponse);
+  rpc GetFactory(GetFactoryRequest) returns (GetFactoryResponse);
+  rpc CreateFactory(CreateFactoryRequest) returns (CreateFactoryResponse);
+  rpc UpdateFactory(UpdateFactoryRequest) returns (UpdateFactoryResponse);
+  rpc ListFactoryCountries(ListFactoryCountriesRequest) returns (ListFactoryCountriesResponse);
+  rpc ListFactoryContacts(ListFactoryContactsRequest) returns (ListFactoryContactsResponse);
+  rpc CreateFactoryContact(CreateFactoryContactRequest) returns (CreateFactoryContactResponse);
+  rpc UpdateFactoryContact(UpdateFactoryContactRequest) returns (UpdateFactoryContactResponse);
+  rpc DeactivateFactoryContact(DeactivateFactoryContactRequest) returns (DeactivateFactoryContactResponse);
+  rpc ListFactoryOwners(ListFactoryOwnersRequest) returns (ListFactoryOwnersResponse);
+  rpc CreateFactoryOwner(CreateFactoryOwnerRequest) returns (CreateFactoryOwnerResponse);
+  rpc UpdateFactoryOwner(UpdateFactoryOwnerRequest) returns (UpdateFactoryOwnerResponse);
+  rpc DeactivateFactoryOwner(DeactivateFactoryOwnerRequest) returns (DeactivateFactoryOwnerResponse);
+  rpc ListFactoryCapabilities(ListFactoryCapabilitiesRequest) returns (ListFactoryCapabilitiesResponse);
+  rpc CreateFactoryCapability(CreateFactoryCapabilityRequest) returns (CreateFactoryCapabilityResponse);
+  rpc DeleteFactoryCapability(DeleteFactoryCapabilityRequest) returns (DeleteFactoryCapabilityResponse);
+  rpc ListFactoryCertificates(ListFactoryCertificatesRequest) returns (ListFactoryCertificatesResponse);
+  rpc CreateFactoryCertificate(CreateFactoryCertificateRequest) returns (CreateFactoryCertificateResponse);
+  rpc DeleteFactoryCertificate(DeleteFactoryCertificateRequest) returns (DeleteFactoryCertificateResponse);
+  rpc ListFactoryChanges(ListFactoryChangesRequest) returns (ListFactoryChangesResponse);
+  rpc ImportFactories(ImportFactoriesRequest) returns (ImportFactoriesResponse);
 }
 
 // OptionService serves dropdown dictionaries (payment methods, trade terms,
@@ -648,6 +680,16 @@ message Supplier {
   string contact_email = 9;
   string remark = 10;
   string status = 11;
+  string name_zh = 12;
+  string name_en = 13;
+  string short_name = 14;
+  string country_code = 15;
+  string tax_id = 16;
+  string registered_address = 17;
+  string payment_term = 18;
+  repeated string business_types = 19;
+  int64 factory_count = 20;
+  string owner_names = 21;
 }
 
 message CreateSupplierRequest {
@@ -660,6 +702,14 @@ message CreateSupplierRequest {
   string contact_phone = 7;
   string contact_email = 8;
   string remark = 9;
+  string name_zh = 10;
+  string name_en = 11;
+  string short_name = 12;
+  string country_code = 13;
+  string tax_id = 14;
+  string registered_address = 15;
+  string payment_term = 16;
+  repeated string business_types = 17;
 }
 
 message CreateSupplierResponse {
@@ -678,6 +728,9 @@ message ListSuppliersRequest {
   erp.common.v1.PageRequest page = 1;
   string keyword = 2;
   string status = 3;
+  string country_code = 4;
+  string business_type = 5;
+  int64 owner_id = 6;
 }
 
 message ListSuppliersResponse {
@@ -695,6 +748,14 @@ message UpdateSupplierRequest {
   string contact_phone = 7;
   string contact_email = 8;
   string remark = 9;
+  string name_zh = 10;
+  string name_en = 11;
+  string short_name = 12;
+  string country_code = 13;
+  string tax_id = 14;
+  string registered_address = 15;
+  string payment_term = 16;
+  repeated string business_types = 17;
 }
 
 message UpdateSupplierResponse {
@@ -712,6 +773,196 @@ message ActivateSupplierRequest {
 }
 
 message ActivateSupplierResponse {}
+
+message CountryCount { string country_code = 1; int64 count = 2; }
+message ListSupplierCountriesRequest { bool include_inactive = 1; }
+message ListSupplierCountriesResponse { repeated CountryCount countries = 1; }
+
+message SupplierContact {
+  int64 id = 1; int64 supplier_id = 2; string name = 3; string department = 4;
+  string title = 5; string phone = 6; string email = 7; bool is_primary = 8;
+  string status = 9; string remark = 10;
+}
+message SupplierContactInput {
+  string name = 1; string department = 2; string title = 3; string phone = 4;
+  string email = 5; bool is_primary = 6; string remark = 7;
+}
+message ListSupplierContactsRequest { int64 supplier_id = 1; bool include_inactive = 2; }
+message ListSupplierContactsResponse { repeated SupplierContact contacts = 1; }
+message CreateSupplierContactRequest { int64 supplier_id = 1; SupplierContactInput contact = 2; }
+message CreateSupplierContactResponse { SupplierContact contact = 1; }
+message UpdateSupplierContactRequest { int64 supplier_id = 1; int64 id = 2; SupplierContactInput contact = 3; }
+message UpdateSupplierContactResponse { SupplierContact contact = 1; }
+message DeactivateSupplierContactRequest { int64 supplier_id = 1; int64 id = 2; }
+message DeactivateSupplierContactResponse {}
+
+message SupplierOwner {
+  int64 id = 1; int64 supplier_id = 2; int64 employee_id = 3; string employee_name = 4;
+  string responsibility_code = 5; bool is_primary = 6; string start_date = 7;
+  string end_date = 8; string status = 9;
+}
+message SupplierOwnerInput {
+  int64 employee_id = 1; string employee_name = 2; string responsibility_code = 3;
+  bool is_primary = 4; string start_date = 5; string end_date = 6;
+}
+message ListSupplierOwnersRequest { int64 supplier_id = 1; bool include_inactive = 2; }
+message ListSupplierOwnersResponse { repeated SupplierOwner owners = 1; }
+message CreateSupplierOwnerRequest { int64 supplier_id = 1; SupplierOwnerInput owner = 2; }
+message CreateSupplierOwnerResponse { SupplierOwner owner = 1; }
+message UpdateSupplierOwnerRequest { int64 supplier_id = 1; int64 id = 2; SupplierOwnerInput owner = 3; }
+message UpdateSupplierOwnerResponse { SupplierOwner owner = 1; }
+message DeactivateSupplierOwnerRequest { int64 supplier_id = 1; int64 id = 2; }
+message DeactivateSupplierOwnerResponse {}
+
+message MasterDataChange {
+  int64 id = 1; string action = 2; string section = 3; string summary = 4;
+  string before_json = 5; string after_json = 6; int64 operator_id = 7;
+  string operator_name = 8; string created_at = 9;
+}
+message ListSupplierChangesRequest { int64 supplier_id = 1; }
+message ListSupplierChangesResponse { repeated MasterDataChange changes = 1; }
+
+message Factory {
+  int64 id = 1; int64 supplier_id = 2; string code = 3; string name_zh = 4;
+  string name_en = 5; string short_name = 6; string country_code = 7; string timezone = 8;
+  string state_province = 9; string city = 10; string district = 11; string postal_code = 12;
+  string address = 13; string status = 14; string remark = 15; string supplier_code = 16;
+  string supplier_name = 17; string owner_names = 18;
+}
+message FactoryInput {
+  int64 supplier_id = 1; string code = 2; string name_zh = 3; string name_en = 4;
+  string short_name = 5; string country_code = 6; string timezone = 7; string state_province = 8;
+  string city = 9; string district = 10; string postal_code = 11; string address = 12;
+  string status = 13; string remark = 14;
+}
+message ListFactoriesRequest {
+  erp.common.v1.PageRequest page = 1; string keyword = 2; string status = 3;
+  string country_code = 4; string city = 5; int64 supplier_id = 6; int64 owner_id = 7;
+  string product_category = 8;
+}
+message ListFactoriesResponse { repeated Factory factories = 1; erp.common.v1.PageMeta meta = 2; }
+message GetFactoryRequest { int64 id = 1; }
+message GetFactoryResponse { Factory factory = 1; }
+message CreateFactoryRequest { FactoryInput factory = 1; }
+message CreateFactoryResponse { Factory factory = 1; }
+message UpdateFactoryRequest { int64 id = 1; FactoryInput factory = 2; string transfer_reason = 3; }
+message UpdateFactoryResponse { Factory factory = 1; }
+message ListFactoryCountriesRequest { bool include_inactive = 1; }
+message ListFactoryCountriesResponse { repeated CountryCount countries = 1; }
+
+message FactoryContact {
+  int64 id = 1; int64 factory_id = 2; string name = 3; string department = 4;
+  string title = 5; string phone = 6; string email = 7; bool is_primary = 8;
+  string status = 9; string remark = 10;
+}
+message FactoryContactInput { string name=1; string department=2; string title=3; string phone=4; string email=5; bool is_primary=6; string remark=7; }
+message ListFactoryContactsRequest { int64 factory_id=1; bool include_inactive=2; }
+message ListFactoryContactsResponse { repeated FactoryContact contacts=1; }
+message CreateFactoryContactRequest { int64 factory_id=1; FactoryContactInput contact=2; }
+message CreateFactoryContactResponse { FactoryContact contact=1; }
+message UpdateFactoryContactRequest { int64 factory_id=1; int64 id=2; FactoryContactInput contact=3; }
+message UpdateFactoryContactResponse { FactoryContact contact=1; }
+message DeactivateFactoryContactRequest { int64 factory_id=1; int64 id=2; }
+message DeactivateFactoryContactResponse {}
+
+message FactoryOwner {
+  int64 id=1; int64 factory_id=2; int64 employee_id=3; string employee_name=4;
+  string responsibility_code=5; bool is_primary=6; string start_date=7; string end_date=8; string status=9;
+}
+message FactoryOwnerInput { int64 employee_id=1; string employee_name=2; string responsibility_code=3; bool is_primary=4; string start_date=5; string end_date=6; }
+message ListFactoryOwnersRequest { int64 factory_id=1; bool include_inactive=2; }
+message ListFactoryOwnersResponse { repeated FactoryOwner owners=1; }
+message CreateFactoryOwnerRequest { int64 factory_id=1; FactoryOwnerInput owner=2; }
+message CreateFactoryOwnerResponse { FactoryOwner owner=1; }
+message UpdateFactoryOwnerRequest { int64 factory_id=1; int64 id=2; FactoryOwnerInput owner=3; }
+message UpdateFactoryOwnerResponse { FactoryOwner owner=1; }
+message DeactivateFactoryOwnerRequest { int64 factory_id=1; int64 id=2; }
+message DeactivateFactoryOwnerResponse {}
+
+message FactoryCapability {
+  int64 id=1; int64 factory_id=2; string product_category=3; string process=4;
+  string monthly_capacity=5; string capacity_unit=6; string moq=7; int32 lead_time_days=8;
+  string period_label=9; string confirmed_on=10; string remark=11;
+}
+message FactoryCapabilityInput { string product_category=1; string process=2; string monthly_capacity=3; string capacity_unit=4; string moq=5; int32 lead_time_days=6; string period_label=7; string confirmed_on=8; string remark=9; }
+message ListFactoryCapabilitiesRequest { int64 factory_id=1; }
+message ListFactoryCapabilitiesResponse { repeated FactoryCapability capabilities=1; }
+message CreateFactoryCapabilityRequest { int64 factory_id=1; FactoryCapabilityInput capability=2; }
+message CreateFactoryCapabilityResponse { FactoryCapability capability=1; }
+message DeleteFactoryCapabilityRequest { int64 factory_id=1; int64 id=2; }
+message DeleteFactoryCapabilityResponse {}
+
+message FactoryCertificate {
+  int64 id=1; int64 factory_id=2; string name=3; string certificate_no=4;
+  string issued_on=5; string expires_on=6; string status=7; string file_key=8; string remark=9;
+}
+message FactoryCertificateInput { string name=1; string certificate_no=2; string issued_on=3; string expires_on=4; string status=5; string file_key=6; string remark=7; }
+message ListFactoryCertificatesRequest { int64 factory_id=1; }
+message ListFactoryCertificatesResponse { repeated FactoryCertificate certificates=1; }
+message CreateFactoryCertificateRequest { int64 factory_id=1; FactoryCertificateInput certificate=2; }
+message CreateFactoryCertificateResponse { FactoryCertificate certificate=1; }
+message DeleteFactoryCertificateRequest { int64 factory_id=1; int64 id=2; }
+message DeleteFactoryCertificateResponse {}
+
+message ListFactoryChangesRequest { int64 factory_id=1; }
+message ListFactoryChangesResponse { repeated MasterDataChange changes=1; }
+
+message SupplierImportRow {
+  int32 row_number = 1;
+  string code = 2;
+  string name_zh = 3;
+  string name_en = 4;
+  string short_name = 5;
+  string country_code = 6;
+  string currency = 7;
+  string payment_term = 8;
+  repeated string business_types = 9;
+  string contact_name = 10;
+  string contact_phone = 11;
+  string contact_email = 12;
+  string address = 13;
+  string remark = 14;
+}
+
+message FactoryImportRow {
+  int32 row_number = 1;
+  string code = 2;
+  string supplier_code = 3;
+  string name_zh = 4;
+  string name_en = 5;
+  string short_name = 6;
+  string country_code = 7;
+  string timezone = 8;
+  string state_province = 9;
+  string city = 10;
+  string district = 11;
+  string postal_code = 12;
+  string address = 13;
+  string status = 14;
+  string remark = 15;
+}
+
+message ImportMasterDataIssue {
+  int32 row_number = 1;
+  string code = 2;
+  string name = 3;
+  string message = 4;
+}
+
+message ImportSuppliersResponse {
+  int32 ready_count = 1;
+  int32 imported_count = 2;
+  repeated ImportMasterDataIssue issues = 3;
+}
+
+message ImportFactoriesResponse {
+  int32 ready_count = 1;
+  int32 imported_count = 2;
+  repeated ImportMasterDataIssue issues = 3;
+}
+
+message ImportSuppliersRequest { repeated SupplierImportRow rows = 1; bool confirm = 2; }
+message ImportFactoriesRequest { repeated FactoryImportRow rows = 1; bool confirm = 2; }
 
 message OptionItem {
   int64 id = 1;

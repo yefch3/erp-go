@@ -188,6 +188,50 @@ func (q *Queries) ClearDefaultCustomerAddress(ctx context.Context, arg ClearDefa
 	return err
 }
 
+const clearFactoryPrimaryContact = `-- name: ClearFactoryPrimaryContact :exec
+UPDATE factory_contacts SET is_primary=false,updated_by=$1,updated_at=now()
+WHERE tenant_id=$2 AND factory_id=$3 AND status='ACTIVE' AND id<>$4
+`
+
+type ClearFactoryPrimaryContactParams struct {
+	OperatorID int64
+	TenantID   int64
+	FactoryID  int64
+	ExceptID   int64
+}
+
+func (q *Queries) ClearFactoryPrimaryContact(ctx context.Context, arg ClearFactoryPrimaryContactParams) error {
+	_, err := q.db.Exec(ctx, clearFactoryPrimaryContact,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.FactoryID,
+		arg.ExceptID,
+	)
+	return err
+}
+
+const clearFactoryPrimaryOwner = `-- name: ClearFactoryPrimaryOwner :exec
+UPDATE factory_owners SET is_primary=false,updated_by=$1,updated_at=now()
+WHERE tenant_id=$2 AND factory_id=$3 AND status='ACTIVE' AND id<>$4
+`
+
+type ClearFactoryPrimaryOwnerParams struct {
+	OperatorID int64
+	TenantID   int64
+	FactoryID  int64
+	ExceptID   int64
+}
+
+func (q *Queries) ClearFactoryPrimaryOwner(ctx context.Context, arg ClearFactoryPrimaryOwnerParams) error {
+	_, err := q.db.Exec(ctx, clearFactoryPrimaryOwner,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.FactoryID,
+		arg.ExceptID,
+	)
+	return err
+}
+
 const clearPrimaryCustomerContact = `-- name: ClearPrimaryCustomerContact :exec
 UPDATE customer_contacts
 SET is_primary = false, updated_by = $1, updated_at = now()
@@ -227,6 +271,50 @@ func (q *Queries) ClearPrimaryCustomerOwners(ctx context.Context, arg ClearPrima
 		arg.TenantID,
 		arg.CustomerID,
 		arg.ExcludeID,
+	)
+	return err
+}
+
+const clearSupplierPrimaryContact = `-- name: ClearSupplierPrimaryContact :exec
+UPDATE supplier_contacts SET is_primary=false, updated_by=$1, updated_at=now()
+WHERE tenant_id=$2 AND supplier_id=$3 AND status='ACTIVE' AND id<>$4
+`
+
+type ClearSupplierPrimaryContactParams struct {
+	OperatorID int64
+	TenantID   int64
+	SupplierID int64
+	ExceptID   int64
+}
+
+func (q *Queries) ClearSupplierPrimaryContact(ctx context.Context, arg ClearSupplierPrimaryContactParams) error {
+	_, err := q.db.Exec(ctx, clearSupplierPrimaryContact,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.SupplierID,
+		arg.ExceptID,
+	)
+	return err
+}
+
+const clearSupplierPrimaryOwner = `-- name: ClearSupplierPrimaryOwner :exec
+UPDATE supplier_owners SET is_primary=false, updated_by=$1, updated_at=now()
+WHERE tenant_id=$2 AND supplier_id=$3 AND status='ACTIVE' AND id<>$4
+`
+
+type ClearSupplierPrimaryOwnerParams struct {
+	OperatorID int64
+	TenantID   int64
+	SupplierID int64
+	ExceptID   int64
+}
+
+func (q *Queries) ClearSupplierPrimaryOwner(ctx context.Context, arg ClearSupplierPrimaryOwnerParams) error {
+	_, err := q.db.Exec(ctx, clearSupplierPrimaryOwner,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.SupplierID,
+		arg.ExceptID,
 	)
 	return err
 }
@@ -683,6 +771,318 @@ func (q *Queries) CreateCustomerOwner(ctx context.Context, arg CreateCustomerOwn
 	return i, err
 }
 
+const createFactory = `-- name: CreateFactory :one
+INSERT INTO factories (tenant_id,supplier_id,code,name_zh,name_en,short_name,country_code,timezone,state_province,city,district,postal_code,address,status,remark,created_by,updated_by)
+VALUES ($1,$2,$3,$4,$5,$6,
+ $7,$8,$9,$10,$11,$12,
+ $13,$14,$15,$16,$16) RETURNING id, tenant_id, supplier_id, code, name_zh, name_en, short_name, country_code, timezone, state_province, city, district, postal_code, address, status, remark, created_at, created_by, updated_at, updated_by
+`
+
+type CreateFactoryParams struct {
+	TenantID      int64
+	SupplierID    int64
+	Code          string
+	NameZh        string
+	NameEn        string
+	ShortName     string
+	CountryCode   string
+	Timezone      string
+	StateProvince string
+	City          string
+	District      string
+	PostalCode    string
+	Address       string
+	Status        string
+	Remark        string
+	OperatorID    int64
+}
+
+func (q *Queries) CreateFactory(ctx context.Context, arg CreateFactoryParams) (Factory, error) {
+	row := q.db.QueryRow(ctx, createFactory,
+		arg.TenantID,
+		arg.SupplierID,
+		arg.Code,
+		arg.NameZh,
+		arg.NameEn,
+		arg.ShortName,
+		arg.CountryCode,
+		arg.Timezone,
+		arg.StateProvince,
+		arg.City,
+		arg.District,
+		arg.PostalCode,
+		arg.Address,
+		arg.Status,
+		arg.Remark,
+		arg.OperatorID,
+	)
+	var i Factory
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.SupplierID,
+		&i.Code,
+		&i.NameZh,
+		&i.NameEn,
+		&i.ShortName,
+		&i.CountryCode,
+		&i.Timezone,
+		&i.StateProvince,
+		&i.City,
+		&i.District,
+		&i.PostalCode,
+		&i.Address,
+		&i.Status,
+		&i.Remark,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
+}
+
+const createFactoryCapability = `-- name: CreateFactoryCapability :one
+INSERT INTO factory_capabilities (tenant_id,factory_id,product_category,process,monthly_capacity,capacity_unit,moq,lead_time_days,period_label,confirmed_on,remark,created_by,updated_by)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12) RETURNING id, tenant_id, factory_id, product_category, process, monthly_capacity, capacity_unit, moq, lead_time_days, period_label, confirmed_on, remark, created_at, created_by, updated_at, updated_by
+`
+
+type CreateFactoryCapabilityParams struct {
+	TenantID        int64
+	FactoryID       int64
+	ProductCategory string
+	Process         string
+	MonthlyCapacity pgtype.Numeric
+	CapacityUnit    string
+	Moq             pgtype.Numeric
+	LeadTimeDays    int32
+	PeriodLabel     string
+	ConfirmedOn     pgtype.Date
+	Remark          string
+	OperatorID      int64
+}
+
+func (q *Queries) CreateFactoryCapability(ctx context.Context, arg CreateFactoryCapabilityParams) (FactoryCapability, error) {
+	row := q.db.QueryRow(ctx, createFactoryCapability,
+		arg.TenantID,
+		arg.FactoryID,
+		arg.ProductCategory,
+		arg.Process,
+		arg.MonthlyCapacity,
+		arg.CapacityUnit,
+		arg.Moq,
+		arg.LeadTimeDays,
+		arg.PeriodLabel,
+		arg.ConfirmedOn,
+		arg.Remark,
+		arg.OperatorID,
+	)
+	var i FactoryCapability
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.FactoryID,
+		&i.ProductCategory,
+		&i.Process,
+		&i.MonthlyCapacity,
+		&i.CapacityUnit,
+		&i.Moq,
+		&i.LeadTimeDays,
+		&i.PeriodLabel,
+		&i.ConfirmedOn,
+		&i.Remark,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
+}
+
+const createFactoryCertificate = `-- name: CreateFactoryCertificate :one
+INSERT INTO factory_certificates (tenant_id,factory_id,name,certificate_no,issued_on,expires_on,status,file_key,remark,created_by,updated_by)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10) RETURNING id, tenant_id, factory_id, name, certificate_no, issued_on, expires_on, status, file_key, remark, created_at, created_by, updated_at, updated_by
+`
+
+type CreateFactoryCertificateParams struct {
+	TenantID      int64
+	FactoryID     int64
+	Name          string
+	CertificateNo string
+	IssuedOn      pgtype.Date
+	ExpiresOn     pgtype.Date
+	Status        string
+	FileKey       string
+	Remark        string
+	OperatorID    int64
+}
+
+func (q *Queries) CreateFactoryCertificate(ctx context.Context, arg CreateFactoryCertificateParams) (FactoryCertificate, error) {
+	row := q.db.QueryRow(ctx, createFactoryCertificate,
+		arg.TenantID,
+		arg.FactoryID,
+		arg.Name,
+		arg.CertificateNo,
+		arg.IssuedOn,
+		arg.ExpiresOn,
+		arg.Status,
+		arg.FileKey,
+		arg.Remark,
+		arg.OperatorID,
+	)
+	var i FactoryCertificate
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.FactoryID,
+		&i.Name,
+		&i.CertificateNo,
+		&i.IssuedOn,
+		&i.ExpiresOn,
+		&i.Status,
+		&i.FileKey,
+		&i.Remark,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
+}
+
+const createFactoryChange = `-- name: CreateFactoryChange :exec
+INSERT INTO factory_change_logs (tenant_id,factory_id,action,section,summary,before_data,after_data,operator_id,operator_name)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+`
+
+type CreateFactoryChangeParams struct {
+	TenantID     int64
+	FactoryID    int64
+	Action       string
+	Section      string
+	Summary      string
+	BeforeData   []byte
+	AfterData    []byte
+	OperatorID   int64
+	OperatorName string
+}
+
+func (q *Queries) CreateFactoryChange(ctx context.Context, arg CreateFactoryChangeParams) error {
+	_, err := q.db.Exec(ctx, createFactoryChange,
+		arg.TenantID,
+		arg.FactoryID,
+		arg.Action,
+		arg.Section,
+		arg.Summary,
+		arg.BeforeData,
+		arg.AfterData,
+		arg.OperatorID,
+		arg.OperatorName,
+	)
+	return err
+}
+
+const createFactoryContact = `-- name: CreateFactoryContact :one
+INSERT INTO factory_contacts (tenant_id,factory_id,name,department,title,phone,email,is_primary,remark,created_by,updated_by)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10) RETURNING id, tenant_id, factory_id, name, department, title, phone, email, is_primary, status, remark, created_at, created_by, updated_at, updated_by
+`
+
+type CreateFactoryContactParams struct {
+	TenantID   int64
+	FactoryID  int64
+	Name       string
+	Department string
+	Title      string
+	Phone      string
+	Email      string
+	IsPrimary  bool
+	Remark     string
+	OperatorID int64
+}
+
+func (q *Queries) CreateFactoryContact(ctx context.Context, arg CreateFactoryContactParams) (FactoryContact, error) {
+	row := q.db.QueryRow(ctx, createFactoryContact,
+		arg.TenantID,
+		arg.FactoryID,
+		arg.Name,
+		arg.Department,
+		arg.Title,
+		arg.Phone,
+		arg.Email,
+		arg.IsPrimary,
+		arg.Remark,
+		arg.OperatorID,
+	)
+	var i FactoryContact
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.FactoryID,
+		&i.Name,
+		&i.Department,
+		&i.Title,
+		&i.Phone,
+		&i.Email,
+		&i.IsPrimary,
+		&i.Status,
+		&i.Remark,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
+}
+
+const createFactoryOwner = `-- name: CreateFactoryOwner :one
+INSERT INTO factory_owners (tenant_id,factory_id,employee_id,employee_name,responsibility_code,is_primary,start_date,end_date,created_by,updated_by)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9) RETURNING id, tenant_id, factory_id, employee_id, employee_name, responsibility_code, is_primary, start_date, end_date, status, created_at, created_by, updated_at, updated_by
+`
+
+type CreateFactoryOwnerParams struct {
+	TenantID           int64
+	FactoryID          int64
+	EmployeeID         int64
+	EmployeeName       string
+	ResponsibilityCode string
+	IsPrimary          bool
+	StartDate          pgtype.Date
+	EndDate            pgtype.Date
+	OperatorID         int64
+}
+
+func (q *Queries) CreateFactoryOwner(ctx context.Context, arg CreateFactoryOwnerParams) (FactoryOwner, error) {
+	row := q.db.QueryRow(ctx, createFactoryOwner,
+		arg.TenantID,
+		arg.FactoryID,
+		arg.EmployeeID,
+		arg.EmployeeName,
+		arg.ResponsibilityCode,
+		arg.IsPrimary,
+		arg.StartDate,
+		arg.EndDate,
+		arg.OperatorID,
+	)
+	var i FactoryOwner
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.FactoryID,
+		&i.EmployeeID,
+		&i.EmployeeName,
+		&i.ResponsibilityCode,
+		&i.IsPrimary,
+		&i.StartDate,
+		&i.EndDate,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
+}
+
 const createOption = `-- name: CreateOption :one
 INSERT INTO option_items (tenant_id, category, code, label, sort_order)
 VALUES ($1, $2, $3, $4, $5)
@@ -719,23 +1119,41 @@ func (q *Queries) CreateOption(ctx context.Context, arg CreateOptionParams) (Opt
 }
 
 const createSupplier = `-- name: CreateSupplier :one
-INSERT INTO suppliers (tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, created_by, updated_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
-RETURNING id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by
+INSERT INTO suppliers (
+  tenant_id, code, name, name_zh, name_en, short_name, country, country_code,
+  address, registered_address, tax_id, currency, payment_term, business_types,
+  contact_name, contact_phone, contact_email, remark, created_by, updated_by
+)
+VALUES (
+  $1, $2, $3, $4, $5,
+  $6, $7, $8, $9,
+  $10, $11, $12, $13,
+  $14, $15, $16,
+  $17, $18, $19, $19
+)
+RETURNING id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types
 `
 
 type CreateSupplierParams struct {
-	TenantID     int64
-	Code         string
-	Name         string
-	Country      string
-	Address      string
-	Currency     string
-	ContactName  string
-	ContactPhone string
-	ContactEmail string
-	Remark       string
-	CreatedBy    int64
+	TenantID          int64
+	Code              string
+	Name              string
+	NameZh            string
+	NameEn            string
+	ShortName         string
+	Country           string
+	CountryCode       string
+	Address           string
+	RegisteredAddress string
+	TaxID             string
+	Currency          string
+	PaymentTerm       string
+	BusinessTypes     []string
+	ContactName       string
+	ContactPhone      string
+	ContactEmail      string
+	Remark            string
+	OperatorID        int64
 }
 
 func (q *Queries) CreateSupplier(ctx context.Context, arg CreateSupplierParams) (Supplier, error) {
@@ -743,14 +1161,22 @@ func (q *Queries) CreateSupplier(ctx context.Context, arg CreateSupplierParams) 
 		arg.TenantID,
 		arg.Code,
 		arg.Name,
+		arg.NameZh,
+		arg.NameEn,
+		arg.ShortName,
 		arg.Country,
+		arg.CountryCode,
 		arg.Address,
+		arg.RegisteredAddress,
+		arg.TaxID,
 		arg.Currency,
+		arg.PaymentTerm,
+		arg.BusinessTypes,
 		arg.ContactName,
 		arg.ContactPhone,
 		arg.ContactEmail,
 		arg.Remark,
-		arg.CreatedBy,
+		arg.OperatorID,
 	)
 	var i Supplier
 	err := row.Scan(
@@ -765,6 +1191,152 @@ func (q *Queries) CreateSupplier(ctx context.Context, arg CreateSupplierParams) 
 		&i.ContactPhone,
 		&i.ContactEmail,
 		&i.Remark,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+		&i.NameZh,
+		&i.NameEn,
+		&i.ShortName,
+		&i.CountryCode,
+		&i.TaxID,
+		&i.RegisteredAddress,
+		&i.PaymentTerm,
+		&i.BusinessTypes,
+	)
+	return i, err
+}
+
+const createSupplierChange = `-- name: CreateSupplierChange :exec
+INSERT INTO supplier_change_logs (tenant_id, supplier_id, action, section, summary, before_data, after_data, operator_id, operator_name)
+VALUES ($1, $2, $3, $4, $5,
+ $6, $7, $8, $9)
+`
+
+type CreateSupplierChangeParams struct {
+	TenantID     int64
+	SupplierID   int64
+	Action       string
+	Section      string
+	Summary      string
+	BeforeData   []byte
+	AfterData    []byte
+	OperatorID   int64
+	OperatorName string
+}
+
+func (q *Queries) CreateSupplierChange(ctx context.Context, arg CreateSupplierChangeParams) error {
+	_, err := q.db.Exec(ctx, createSupplierChange,
+		arg.TenantID,
+		arg.SupplierID,
+		arg.Action,
+		arg.Section,
+		arg.Summary,
+		arg.BeforeData,
+		arg.AfterData,
+		arg.OperatorID,
+		arg.OperatorName,
+	)
+	return err
+}
+
+const createSupplierContact = `-- name: CreateSupplierContact :one
+INSERT INTO supplier_contacts (tenant_id, supplier_id, name, department, title, phone, email, is_primary, remark, created_by, updated_by)
+VALUES ($1, $2, $3, $4, $5,
+        $6, $7, $8, $9, $10, $10)
+RETURNING id, tenant_id, supplier_id, name, department, title, phone, email, is_primary, status, remark, created_at, created_by, updated_at, updated_by
+`
+
+type CreateSupplierContactParams struct {
+	TenantID   int64
+	SupplierID int64
+	Name       string
+	Department string
+	Title      string
+	Phone      string
+	Email      string
+	IsPrimary  bool
+	Remark     string
+	OperatorID int64
+}
+
+func (q *Queries) CreateSupplierContact(ctx context.Context, arg CreateSupplierContactParams) (SupplierContact, error) {
+	row := q.db.QueryRow(ctx, createSupplierContact,
+		arg.TenantID,
+		arg.SupplierID,
+		arg.Name,
+		arg.Department,
+		arg.Title,
+		arg.Phone,
+		arg.Email,
+		arg.IsPrimary,
+		arg.Remark,
+		arg.OperatorID,
+	)
+	var i SupplierContact
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.SupplierID,
+		&i.Name,
+		&i.Department,
+		&i.Title,
+		&i.Phone,
+		&i.Email,
+		&i.IsPrimary,
+		&i.Status,
+		&i.Remark,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
+}
+
+const createSupplierOwner = `-- name: CreateSupplierOwner :one
+INSERT INTO supplier_owners (tenant_id, supplier_id, employee_id, employee_name, responsibility_code, is_primary, start_date, end_date, created_by, updated_by)
+VALUES ($1, $2, $3, $4,
+ $5, $6, $7, $8, $9, $9)
+RETURNING id, tenant_id, supplier_id, employee_id, employee_name, responsibility_code, is_primary, start_date, end_date, status, created_at, created_by, updated_at, updated_by
+`
+
+type CreateSupplierOwnerParams struct {
+	TenantID           int64
+	SupplierID         int64
+	EmployeeID         int64
+	EmployeeName       string
+	ResponsibilityCode string
+	IsPrimary          bool
+	StartDate          pgtype.Date
+	EndDate            pgtype.Date
+	OperatorID         int64
+}
+
+func (q *Queries) CreateSupplierOwner(ctx context.Context, arg CreateSupplierOwnerParams) (SupplierOwner, error) {
+	row := q.db.QueryRow(ctx, createSupplierOwner,
+		arg.TenantID,
+		arg.SupplierID,
+		arg.EmployeeID,
+		arg.EmployeeName,
+		arg.ResponsibilityCode,
+		arg.IsPrimary,
+		arg.StartDate,
+		arg.EndDate,
+		arg.OperatorID,
+	)
+	var i SupplierOwner
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.SupplierID,
+		&i.EmployeeID,
+		&i.EmployeeName,
+		&i.ResponsibilityCode,
+		&i.IsPrimary,
+		&i.StartDate,
+		&i.EndDate,
 		&i.Status,
 		&i.CreatedAt,
 		&i.CreatedBy,
@@ -952,6 +1524,56 @@ func (q *Queries) DeactivateCustomerOwner(ctx context.Context, arg DeactivateCus
 	return result.RowsAffected(), nil
 }
 
+const deactivateFactoryContact = `-- name: DeactivateFactoryContact :execrows
+UPDATE factory_contacts SET status='INACTIVE',is_primary=false,updated_by=$1,updated_at=now()
+WHERE tenant_id=$2 AND factory_id=$3 AND id=$4 AND status='ACTIVE'
+`
+
+type DeactivateFactoryContactParams struct {
+	OperatorID int64
+	TenantID   int64
+	FactoryID  int64
+	ID         int64
+}
+
+func (q *Queries) DeactivateFactoryContact(ctx context.Context, arg DeactivateFactoryContactParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deactivateFactoryContact,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.FactoryID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deactivateFactoryOwner = `-- name: DeactivateFactoryOwner :execrows
+UPDATE factory_owners SET status='INACTIVE',is_primary=false,updated_by=$1,updated_at=now()
+WHERE tenant_id=$2 AND factory_id=$3 AND id=$4 AND status='ACTIVE'
+`
+
+type DeactivateFactoryOwnerParams struct {
+	OperatorID int64
+	TenantID   int64
+	FactoryID  int64
+	ID         int64
+}
+
+func (q *Queries) DeactivateFactoryOwner(ctx context.Context, arg DeactivateFactoryOwnerParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deactivateFactoryOwner,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.FactoryID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deactivateSupplier = `-- name: DeactivateSupplier :execrows
 UPDATE suppliers SET status = 'INACTIVE', updated_by = $3, updated_at = now()
 WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'
@@ -971,6 +1593,56 @@ func (q *Queries) DeactivateSupplier(ctx context.Context, arg DeactivateSupplier
 	return result.RowsAffected(), nil
 }
 
+const deactivateSupplierContact = `-- name: DeactivateSupplierContact :execrows
+UPDATE supplier_contacts SET status='INACTIVE', is_primary=false, updated_by=$1, updated_at=now()
+WHERE tenant_id=$2 AND supplier_id=$3 AND id=$4 AND status='ACTIVE'
+`
+
+type DeactivateSupplierContactParams struct {
+	OperatorID int64
+	TenantID   int64
+	SupplierID int64
+	ID         int64
+}
+
+func (q *Queries) DeactivateSupplierContact(ctx context.Context, arg DeactivateSupplierContactParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deactivateSupplierContact,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.SupplierID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deactivateSupplierOwner = `-- name: DeactivateSupplierOwner :execrows
+UPDATE supplier_owners SET status='INACTIVE', is_primary=false, updated_by=$1, updated_at=now()
+WHERE tenant_id=$2 AND supplier_id=$3 AND id=$4 AND status='ACTIVE'
+`
+
+type DeactivateSupplierOwnerParams struct {
+	OperatorID int64
+	TenantID   int64
+	SupplierID int64
+	ID         int64
+}
+
+func (q *Queries) DeactivateSupplierOwner(ctx context.Context, arg DeactivateSupplierOwnerParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deactivateSupplierOwner,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.SupplierID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteCustomerContacts = `-- name: DeleteCustomerContacts :exec
 DELETE FROM customer_contacts WHERE tenant_id = $1 AND customer_id = $2
 `
@@ -983,6 +1655,61 @@ type DeleteCustomerContactsParams struct {
 func (q *Queries) DeleteCustomerContacts(ctx context.Context, arg DeleteCustomerContactsParams) error {
 	_, err := q.db.Exec(ctx, deleteCustomerContacts, arg.TenantID, arg.CustomerID)
 	return err
+}
+
+const deleteFactoryCapability = `-- name: DeleteFactoryCapability :execrows
+DELETE FROM factory_capabilities WHERE tenant_id=$1 AND factory_id=$2 AND id=$3
+`
+
+type DeleteFactoryCapabilityParams struct {
+	TenantID  int64
+	FactoryID int64
+	ID        int64
+}
+
+func (q *Queries) DeleteFactoryCapability(ctx context.Context, arg DeleteFactoryCapabilityParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteFactoryCapability, arg.TenantID, arg.FactoryID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteFactoryCertificate = `-- name: DeleteFactoryCertificate :execrows
+DELETE FROM factory_certificates WHERE tenant_id=$1 AND factory_id=$2 AND id=$3
+`
+
+type DeleteFactoryCertificateParams struct {
+	TenantID  int64
+	FactoryID int64
+	ID        int64
+}
+
+func (q *Queries) DeleteFactoryCertificate(ctx context.Context, arg DeleteFactoryCertificateParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteFactoryCertificate, arg.TenantID, arg.FactoryID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const factoryCodeExists = `-- name: FactoryCodeExists :one
+SELECT EXISTS (
+  SELECT 1 FROM factories
+  WHERE tenant_id = $1 AND upper(code) = upper($2)
+)
+`
+
+type FactoryCodeExistsParams struct {
+	TenantID int64
+	Code     interface{}
+}
+
+func (q *Queries) FactoryCodeExists(ctx context.Context, arg FactoryCodeExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, factoryCodeExists, arg.TenantID, arg.Code)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const getCustomer = `-- name: GetCustomer :one
@@ -1148,6 +1875,43 @@ func (q *Queries) GetCustomerOwner(ctx context.Context, arg GetCustomerOwnerPara
 	return i, err
 }
 
+const getFactory = `-- name: GetFactory :one
+SELECT id, tenant_id, supplier_id, code, name_zh, name_en, short_name, country_code, timezone, state_province, city, district, postal_code, address, status, remark, created_at, created_by, updated_at, updated_by FROM factories WHERE tenant_id=$1 AND id=$2
+`
+
+type GetFactoryParams struct {
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) GetFactory(ctx context.Context, arg GetFactoryParams) (Factory, error) {
+	row := q.db.QueryRow(ctx, getFactory, arg.TenantID, arg.ID)
+	var i Factory
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.SupplierID,
+		&i.Code,
+		&i.NameZh,
+		&i.NameEn,
+		&i.ShortName,
+		&i.CountryCode,
+		&i.Timezone,
+		&i.StateProvince,
+		&i.City,
+		&i.District,
+		&i.PostalCode,
+		&i.Address,
+		&i.Status,
+		&i.Remark,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
+}
+
 const getNumberRule = `-- name: GetNumberRule :one
 SELECT id, tenant_id, biz_type, prefix, period, seq_len FROM number_rules WHERE tenant_id = $1 AND biz_type = $2
 `
@@ -1172,7 +1936,7 @@ func (q *Queries) GetNumberRule(ctx context.Context, arg GetNumberRuleParams) (N
 }
 
 const getSupplier = `-- name: GetSupplier :one
-SELECT id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by FROM suppliers WHERE tenant_id = $1 AND id = $2
+SELECT id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types FROM suppliers WHERE tenant_id = $1 AND id = $2
 `
 
 type GetSupplierParams struct {
@@ -1200,6 +1964,57 @@ func (q *Queries) GetSupplier(ctx context.Context, arg GetSupplierParams) (Suppl
 		&i.CreatedBy,
 		&i.UpdatedAt,
 		&i.UpdatedBy,
+		&i.NameZh,
+		&i.NameEn,
+		&i.ShortName,
+		&i.CountryCode,
+		&i.TaxID,
+		&i.RegisteredAddress,
+		&i.PaymentTerm,
+		&i.BusinessTypes,
+	)
+	return i, err
+}
+
+const getSupplierByCode = `-- name: GetSupplierByCode :one
+SELECT id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types FROM suppliers
+WHERE tenant_id = $1 AND upper(code) = upper($2)
+LIMIT 1
+`
+
+type GetSupplierByCodeParams struct {
+	TenantID int64
+	Code     interface{}
+}
+
+func (q *Queries) GetSupplierByCode(ctx context.Context, arg GetSupplierByCodeParams) (Supplier, error) {
+	row := q.db.QueryRow(ctx, getSupplierByCode, arg.TenantID, arg.Code)
+	var i Supplier
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Code,
+		&i.Name,
+		&i.Country,
+		&i.Address,
+		&i.Currency,
+		&i.ContactName,
+		&i.ContactPhone,
+		&i.ContactEmail,
+		&i.Remark,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+		&i.NameZh,
+		&i.NameEn,
+		&i.ShortName,
+		&i.CountryCode,
+		&i.TaxID,
+		&i.RegisteredAddress,
+		&i.PaymentTerm,
+		&i.BusinessTypes,
 	)
 	return i, err
 }
@@ -1736,6 +2551,382 @@ func (q *Queries) ListCustomers(ctx context.Context, arg ListCustomersParams) ([
 	return items, nil
 }
 
+const listFactories = `-- name: ListFactories :many
+SELECT f.id, f.tenant_id, f.supplier_id, f.code, f.name_zh, f.name_en, f.short_name, f.country_code, f.timezone, f.state_province, f.city, f.district, f.postal_code, f.address, f.status, f.remark, f.created_at, f.created_by, f.updated_at, f.updated_by, s.code AS supplier_code, s.name AS supplier_name,
+ COALESCE((SELECT string_agg(fo.employee_name, '、' ORDER BY fo.is_primary DESC, fo.id)
+  FROM factory_owners fo WHERE fo.tenant_id=f.tenant_id AND fo.factory_id=f.id AND fo.status='ACTIVE'), ''::text)::text AS owner_names,
+ count(*) OVER () AS total
+FROM factories f JOIN suppliers s ON s.tenant_id=f.tenant_id AND s.id=f.supplier_id
+WHERE f.tenant_id=$1
+ AND ($2::text='ALL' OR ($2::text='' AND f.status<>'INACTIVE') OR f.status=$2::text)
+ AND ($3::text='' OR f.country_code=$3::text)
+ AND ($4::text='' OR f.city ILIKE '%' || $4::text || '%')
+ AND ($5::bigint=0 OR f.supplier_id=$5::bigint)
+ AND ($6::bigint=0 OR EXISTS (SELECT 1 FROM factory_owners fo WHERE fo.tenant_id=f.tenant_id AND fo.factory_id=f.id AND fo.employee_id=$6::bigint AND fo.status='ACTIVE'))
+ AND ($7::text='' OR EXISTS (
+   SELECT 1 FROM factory_capabilities fc
+   WHERE fc.tenant_id=f.tenant_id AND fc.factory_id=f.id
+     AND fc.product_category ILIKE '%' || $7::text || '%'))
+ AND ($8::text='' OR f.code ILIKE '%' || $8::text || '%' OR f.name_zh ILIKE '%' || $8::text || '%' OR f.name_en ILIKE '%' || $8::text || '%')
+ORDER BY f.id DESC LIMIT $10 OFFSET $9
+`
+
+type ListFactoriesParams struct {
+	TenantID        int64
+	Status          string
+	CountryCode     string
+	City            string
+	SupplierID      int64
+	OwnerID         int64
+	ProductCategory string
+	Keyword         string
+	PageOffset      int32
+	PageSize        int32
+}
+
+type ListFactoriesRow struct {
+	ID            int64
+	TenantID      int64
+	SupplierID    int64
+	Code          string
+	NameZh        string
+	NameEn        string
+	ShortName     string
+	CountryCode   string
+	Timezone      string
+	StateProvince string
+	City          string
+	District      string
+	PostalCode    string
+	Address       string
+	Status        string
+	Remark        string
+	CreatedAt     pgtype.Timestamptz
+	CreatedBy     int64
+	UpdatedAt     pgtype.Timestamptz
+	UpdatedBy     int64
+	SupplierCode  string
+	SupplierName  string
+	OwnerNames    string
+	Total         int64
+}
+
+func (q *Queries) ListFactories(ctx context.Context, arg ListFactoriesParams) ([]ListFactoriesRow, error) {
+	rows, err := q.db.Query(ctx, listFactories,
+		arg.TenantID,
+		arg.Status,
+		arg.CountryCode,
+		arg.City,
+		arg.SupplierID,
+		arg.OwnerID,
+		arg.ProductCategory,
+		arg.Keyword,
+		arg.PageOffset,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListFactoriesRow
+	for rows.Next() {
+		var i ListFactoriesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.SupplierID,
+			&i.Code,
+			&i.NameZh,
+			&i.NameEn,
+			&i.ShortName,
+			&i.CountryCode,
+			&i.Timezone,
+			&i.StateProvince,
+			&i.City,
+			&i.District,
+			&i.PostalCode,
+			&i.Address,
+			&i.Status,
+			&i.Remark,
+			&i.CreatedAt,
+			&i.CreatedBy,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
+			&i.SupplierCode,
+			&i.SupplierName,
+			&i.OwnerNames,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFactoryCapabilities = `-- name: ListFactoryCapabilities :many
+SELECT id, tenant_id, factory_id, product_category, process, monthly_capacity, capacity_unit, moq, lead_time_days, period_label, confirmed_on, remark, created_at, created_by, updated_at, updated_by FROM factory_capabilities WHERE tenant_id=$1 AND factory_id=$2 ORDER BY id
+`
+
+type ListFactoryCapabilitiesParams struct {
+	TenantID  int64
+	FactoryID int64
+}
+
+func (q *Queries) ListFactoryCapabilities(ctx context.Context, arg ListFactoryCapabilitiesParams) ([]FactoryCapability, error) {
+	rows, err := q.db.Query(ctx, listFactoryCapabilities, arg.TenantID, arg.FactoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FactoryCapability
+	for rows.Next() {
+		var i FactoryCapability
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.FactoryID,
+			&i.ProductCategory,
+			&i.Process,
+			&i.MonthlyCapacity,
+			&i.CapacityUnit,
+			&i.Moq,
+			&i.LeadTimeDays,
+			&i.PeriodLabel,
+			&i.ConfirmedOn,
+			&i.Remark,
+			&i.CreatedAt,
+			&i.CreatedBy,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFactoryCertificates = `-- name: ListFactoryCertificates :many
+SELECT id, tenant_id, factory_id, name, certificate_no, issued_on, expires_on, status, file_key, remark, created_at, created_by, updated_at, updated_by FROM factory_certificates WHERE tenant_id=$1 AND factory_id=$2 ORDER BY expires_on NULLS LAST,id
+`
+
+type ListFactoryCertificatesParams struct {
+	TenantID  int64
+	FactoryID int64
+}
+
+func (q *Queries) ListFactoryCertificates(ctx context.Context, arg ListFactoryCertificatesParams) ([]FactoryCertificate, error) {
+	rows, err := q.db.Query(ctx, listFactoryCertificates, arg.TenantID, arg.FactoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FactoryCertificate
+	for rows.Next() {
+		var i FactoryCertificate
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.FactoryID,
+			&i.Name,
+			&i.CertificateNo,
+			&i.IssuedOn,
+			&i.ExpiresOn,
+			&i.Status,
+			&i.FileKey,
+			&i.Remark,
+			&i.CreatedAt,
+			&i.CreatedBy,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFactoryChanges = `-- name: ListFactoryChanges :many
+SELECT id, tenant_id, factory_id, action, section, summary, before_data, after_data, operator_id, operator_name, created_at FROM factory_change_logs WHERE tenant_id=$1 AND factory_id=$2
+ORDER BY created_at DESC,id DESC LIMIT 200
+`
+
+type ListFactoryChangesParams struct {
+	TenantID  int64
+	FactoryID int64
+}
+
+func (q *Queries) ListFactoryChanges(ctx context.Context, arg ListFactoryChangesParams) ([]FactoryChangeLog, error) {
+	rows, err := q.db.Query(ctx, listFactoryChanges, arg.TenantID, arg.FactoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FactoryChangeLog
+	for rows.Next() {
+		var i FactoryChangeLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.FactoryID,
+			&i.Action,
+			&i.Section,
+			&i.Summary,
+			&i.BeforeData,
+			&i.AfterData,
+			&i.OperatorID,
+			&i.OperatorName,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFactoryContacts = `-- name: ListFactoryContacts :many
+SELECT id, tenant_id, factory_id, name, department, title, phone, email, is_primary, status, remark, created_at, created_by, updated_at, updated_by FROM factory_contacts WHERE tenant_id=$1 AND factory_id=$2
+ AND ($3::boolean OR status='ACTIVE') ORDER BY is_primary DESC,id
+`
+
+type ListFactoryContactsParams struct {
+	TenantID        int64
+	FactoryID       int64
+	IncludeInactive bool
+}
+
+func (q *Queries) ListFactoryContacts(ctx context.Context, arg ListFactoryContactsParams) ([]FactoryContact, error) {
+	rows, err := q.db.Query(ctx, listFactoryContacts, arg.TenantID, arg.FactoryID, arg.IncludeInactive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FactoryContact
+	for rows.Next() {
+		var i FactoryContact
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.FactoryID,
+			&i.Name,
+			&i.Department,
+			&i.Title,
+			&i.Phone,
+			&i.Email,
+			&i.IsPrimary,
+			&i.Status,
+			&i.Remark,
+			&i.CreatedAt,
+			&i.CreatedBy,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFactoryCountries = `-- name: ListFactoryCountries :many
+SELECT country_code,count(*) AS factory_count FROM factories WHERE tenant_id=$1
+ AND ($2::boolean OR status<>'INACTIVE') GROUP BY country_code ORDER BY country_code
+`
+
+type ListFactoryCountriesParams struct {
+	TenantID        int64
+	IncludeInactive bool
+}
+
+type ListFactoryCountriesRow struct {
+	CountryCode  string
+	FactoryCount int64
+}
+
+func (q *Queries) ListFactoryCountries(ctx context.Context, arg ListFactoryCountriesParams) ([]ListFactoryCountriesRow, error) {
+	rows, err := q.db.Query(ctx, listFactoryCountries, arg.TenantID, arg.IncludeInactive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListFactoryCountriesRow
+	for rows.Next() {
+		var i ListFactoryCountriesRow
+		if err := rows.Scan(&i.CountryCode, &i.FactoryCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFactoryOwners = `-- name: ListFactoryOwners :many
+SELECT id, tenant_id, factory_id, employee_id, employee_name, responsibility_code, is_primary, start_date, end_date, status, created_at, created_by, updated_at, updated_by FROM factory_owners WHERE tenant_id=$1 AND factory_id=$2
+ AND ($3::boolean OR status='ACTIVE') ORDER BY is_primary DESC,id
+`
+
+type ListFactoryOwnersParams struct {
+	TenantID        int64
+	FactoryID       int64
+	IncludeInactive bool
+}
+
+func (q *Queries) ListFactoryOwners(ctx context.Context, arg ListFactoryOwnersParams) ([]FactoryOwner, error) {
+	rows, err := q.db.Query(ctx, listFactoryOwners, arg.TenantID, arg.FactoryID, arg.IncludeInactive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FactoryOwner
+	for rows.Next() {
+		var i FactoryOwner
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.FactoryID,
+			&i.EmployeeID,
+			&i.EmployeeName,
+			&i.ResponsibilityCode,
+			&i.IsPrimary,
+			&i.StartDate,
+			&i.EndDate,
+			&i.Status,
+			&i.CreatedAt,
+			&i.CreatedBy,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMailingContacts = `-- name: ListMailingContacts :many
 WITH hits AS (
     -- Matches on the person: uses the contact trigram indexes.
@@ -1922,51 +3113,256 @@ func (q *Queries) ListOptions(ctx context.Context, arg ListOptionsParams) ([]Opt
 	return items, nil
 }
 
-const listSuppliers = `-- name: ListSuppliers :many
-SELECT id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, count(*) OVER () AS total
+const listSupplierChanges = `-- name: ListSupplierChanges :many
+SELECT id, tenant_id, supplier_id, action, section, summary, before_data, after_data, operator_id, operator_name, created_at FROM supplier_change_logs WHERE tenant_id=$1 AND supplier_id=$2
+ORDER BY created_at DESC, id DESC LIMIT 200
+`
+
+type ListSupplierChangesParams struct {
+	TenantID   int64
+	SupplierID int64
+}
+
+func (q *Queries) ListSupplierChanges(ctx context.Context, arg ListSupplierChangesParams) ([]SupplierChangeLog, error) {
+	rows, err := q.db.Query(ctx, listSupplierChanges, arg.TenantID, arg.SupplierID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SupplierChangeLog
+	for rows.Next() {
+		var i SupplierChangeLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.SupplierID,
+			&i.Action,
+			&i.Section,
+			&i.Summary,
+			&i.BeforeData,
+			&i.AfterData,
+			&i.OperatorID,
+			&i.OperatorName,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSupplierContacts = `-- name: ListSupplierContacts :many
+SELECT id, tenant_id, supplier_id, name, department, title, phone, email, is_primary, status, remark, created_at, created_by, updated_at, updated_by FROM supplier_contacts
+WHERE tenant_id = $1 AND supplier_id = $2
+  AND ($3::boolean OR status = 'ACTIVE')
+ORDER BY is_primary DESC, id
+`
+
+type ListSupplierContactsParams struct {
+	TenantID        int64
+	SupplierID      int64
+	IncludeInactive bool
+}
+
+func (q *Queries) ListSupplierContacts(ctx context.Context, arg ListSupplierContactsParams) ([]SupplierContact, error) {
+	rows, err := q.db.Query(ctx, listSupplierContacts, arg.TenantID, arg.SupplierID, arg.IncludeInactive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SupplierContact
+	for rows.Next() {
+		var i SupplierContact
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.SupplierID,
+			&i.Name,
+			&i.Department,
+			&i.Title,
+			&i.Phone,
+			&i.Email,
+			&i.IsPrimary,
+			&i.Status,
+			&i.Remark,
+			&i.CreatedAt,
+			&i.CreatedBy,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSupplierCountries = `-- name: ListSupplierCountries :many
+SELECT country_code, count(*) AS supplier_count
 FROM suppliers
 WHERE tenant_id = $1
-  AND ($4::text = 'ALL' OR status = 'ACTIVE')
-  AND ($5::text = '' OR name ILIKE '%' || $5 || '%' OR code ILIKE '%' || $5 || '%')
-ORDER BY id DESC
-LIMIT $2 OFFSET $3
+  AND ($2::boolean OR status = 'ACTIVE')
+GROUP BY country_code
+ORDER BY country_code
+`
+
+type ListSupplierCountriesParams struct {
+	TenantID        int64
+	IncludeInactive bool
+}
+
+type ListSupplierCountriesRow struct {
+	CountryCode   string
+	SupplierCount int64
+}
+
+func (q *Queries) ListSupplierCountries(ctx context.Context, arg ListSupplierCountriesParams) ([]ListSupplierCountriesRow, error) {
+	rows, err := q.db.Query(ctx, listSupplierCountries, arg.TenantID, arg.IncludeInactive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSupplierCountriesRow
+	for rows.Next() {
+		var i ListSupplierCountriesRow
+		if err := rows.Scan(&i.CountryCode, &i.SupplierCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSupplierOwners = `-- name: ListSupplierOwners :many
+SELECT id, tenant_id, supplier_id, employee_id, employee_name, responsibility_code, is_primary, start_date, end_date, status, created_at, created_by, updated_at, updated_by FROM supplier_owners
+WHERE tenant_id=$1 AND supplier_id=$2
+  AND ($3::boolean OR status='ACTIVE')
+ORDER BY is_primary DESC, id
+`
+
+type ListSupplierOwnersParams struct {
+	TenantID        int64
+	SupplierID      int64
+	IncludeInactive bool
+}
+
+func (q *Queries) ListSupplierOwners(ctx context.Context, arg ListSupplierOwnersParams) ([]SupplierOwner, error) {
+	rows, err := q.db.Query(ctx, listSupplierOwners, arg.TenantID, arg.SupplierID, arg.IncludeInactive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SupplierOwner
+	for rows.Next() {
+		var i SupplierOwner
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.SupplierID,
+			&i.EmployeeID,
+			&i.EmployeeName,
+			&i.ResponsibilityCode,
+			&i.IsPrimary,
+			&i.StartDate,
+			&i.EndDate,
+			&i.Status,
+			&i.CreatedAt,
+			&i.CreatedBy,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSuppliers = `-- name: ListSuppliers :many
+SELECT s.id, s.tenant_id, s.code, s.name, s.country, s.address, s.currency, s.contact_name, s.contact_phone, s.contact_email, s.remark, s.status, s.created_at, s.created_by, s.updated_at, s.updated_by, s.name_zh, s.name_en, s.short_name, s.country_code, s.tax_id, s.registered_address, s.payment_term, s.business_types,
+       (SELECT count(*) FROM factories f WHERE f.tenant_id = s.tenant_id AND f.supplier_id = s.id AND f.status <> 'INACTIVE') AS factory_count,
+       COALESCE((SELECT string_agg(so.employee_name, '、' ORDER BY so.is_primary DESC, so.id)
+          FROM supplier_owners so WHERE so.tenant_id = s.tenant_id AND so.supplier_id = s.id AND so.status = 'ACTIVE'), ''::text)::text AS owner_names,
+       count(*) OVER () AS total
+FROM suppliers s
+WHERE s.tenant_id = $1
+  AND ($2::text = 'ALL' OR ($2::text = '' AND s.status = 'ACTIVE') OR s.status = $2::text)
+  AND ($3::text = '' OR s.country_code = $3::text)
+  AND ($4::text = '' OR $4::text = ANY(s.business_types))
+  AND ($5::bigint = 0 OR EXISTS (
+        SELECT 1 FROM supplier_owners so WHERE so.tenant_id = s.tenant_id AND so.supplier_id = s.id
+          AND so.employee_id = $5::bigint AND so.status = 'ACTIVE'))
+  AND ($6::text = '' OR s.name ILIKE '%' || $6 || '%'
+       OR s.name_zh ILIKE '%' || $6 || '%' OR s.name_en ILIKE '%' || $6 || '%'
+       OR s.short_name ILIKE '%' || $6 || '%' OR s.code ILIKE '%' || $6 || '%')
+ORDER BY s.id DESC
+LIMIT $8 OFFSET $7
 `
 
 type ListSuppliersParams struct {
-	TenantID int64
-	Limit    int32
-	Offset   int32
-	Status   string
-	Keyword  string
+	TenantID     int64
+	Status       string
+	CountryCode  string
+	BusinessType string
+	OwnerID      int64
+	Keyword      string
+	PageOffset   int32
+	PageSize     int32
 }
 
 type ListSuppliersRow struct {
-	ID           int64
-	TenantID     int64
-	Code         string
-	Name         string
-	Country      string
-	Address      string
-	Currency     string
-	ContactName  string
-	ContactPhone string
-	ContactEmail string
-	Remark       string
-	Status       string
-	CreatedAt    pgtype.Timestamptz
-	CreatedBy    int64
-	UpdatedAt    pgtype.Timestamptz
-	UpdatedBy    int64
-	Total        int64
+	ID                int64
+	TenantID          int64
+	Code              string
+	Name              string
+	Country           string
+	Address           string
+	Currency          string
+	ContactName       string
+	ContactPhone      string
+	ContactEmail      string
+	Remark            string
+	Status            string
+	CreatedAt         pgtype.Timestamptz
+	CreatedBy         int64
+	UpdatedAt         pgtype.Timestamptz
+	UpdatedBy         int64
+	NameZh            string
+	NameEn            string
+	ShortName         string
+	CountryCode       string
+	TaxID             string
+	RegisteredAddress string
+	PaymentTerm       string
+	BusinessTypes     []string
+	FactoryCount      int64
+	OwnerNames        string
+	Total             int64
 }
 
 func (q *Queries) ListSuppliers(ctx context.Context, arg ListSuppliersParams) ([]ListSuppliersRow, error) {
 	rows, err := q.db.Query(ctx, listSuppliers,
 		arg.TenantID,
-		arg.Limit,
-		arg.Offset,
 		arg.Status,
+		arg.CountryCode,
+		arg.BusinessType,
+		arg.OwnerID,
 		arg.Keyword,
+		arg.PageOffset,
+		arg.PageSize,
 	)
 	if err != nil {
 		return nil, err
@@ -1992,6 +3388,16 @@ func (q *Queries) ListSuppliers(ctx context.Context, arg ListSuppliersParams) ([
 			&i.CreatedBy,
 			&i.UpdatedAt,
 			&i.UpdatedBy,
+			&i.NameZh,
+			&i.NameEn,
+			&i.ShortName,
+			&i.CountryCode,
+			&i.TaxID,
+			&i.RegisteredAddress,
+			&i.PaymentTerm,
+			&i.BusinessTypes,
+			&i.FactoryCount,
+			&i.OwnerNames,
 			&i.Total,
 		); err != nil {
 			return nil, err
@@ -2026,6 +3432,25 @@ func (q *Queries) NextSeq(ctx context.Context, arg NextSeqParams) (int64, error)
 	var next_seq int64
 	err := row.Scan(&next_seq)
 	return next_seq, err
+}
+
+const supplierCodeExists = `-- name: SupplierCodeExists :one
+SELECT EXISTS (
+  SELECT 1 FROM suppliers
+  WHERE tenant_id = $1 AND upper(code) = upper($2)
+)
+`
+
+type SupplierCodeExistsParams struct {
+	TenantID int64
+	Code     interface{}
+}
+
+func (q *Queries) SupplierCodeExists(ctx context.Context, arg SupplierCodeExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, supplierCodeExists, arg.TenantID, arg.Code)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const updateCustomer = `-- name: UpdateCustomer :one
@@ -2414,42 +3839,238 @@ func (q *Queries) UpdateCustomerProfile(ctx context.Context, arg UpdateCustomerP
 	return i, err
 }
 
+const updateFactory = `-- name: UpdateFactory :one
+UPDATE factories SET supplier_id=$1,name_zh=$2,name_en=$3,short_name=$4,
+ country_code=$5,timezone=$6,state_province=$7,city=$8,district=$9,
+ postal_code=$10,address=$11,status=$12,remark=$13,updated_by=$14,updated_at=now()
+WHERE tenant_id=$15 AND id=$16 RETURNING id, tenant_id, supplier_id, code, name_zh, name_en, short_name, country_code, timezone, state_province, city, district, postal_code, address, status, remark, created_at, created_by, updated_at, updated_by
+`
+
+type UpdateFactoryParams struct {
+	SupplierID    int64
+	NameZh        string
+	NameEn        string
+	ShortName     string
+	CountryCode   string
+	Timezone      string
+	StateProvince string
+	City          string
+	District      string
+	PostalCode    string
+	Address       string
+	Status        string
+	Remark        string
+	OperatorID    int64
+	TenantID      int64
+	ID            int64
+}
+
+func (q *Queries) UpdateFactory(ctx context.Context, arg UpdateFactoryParams) (Factory, error) {
+	row := q.db.QueryRow(ctx, updateFactory,
+		arg.SupplierID,
+		arg.NameZh,
+		arg.NameEn,
+		arg.ShortName,
+		arg.CountryCode,
+		arg.Timezone,
+		arg.StateProvince,
+		arg.City,
+		arg.District,
+		arg.PostalCode,
+		arg.Address,
+		arg.Status,
+		arg.Remark,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i Factory
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.SupplierID,
+		&i.Code,
+		&i.NameZh,
+		&i.NameEn,
+		&i.ShortName,
+		&i.CountryCode,
+		&i.Timezone,
+		&i.StateProvince,
+		&i.City,
+		&i.District,
+		&i.PostalCode,
+		&i.Address,
+		&i.Status,
+		&i.Remark,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
+}
+
+const updateFactoryContact = `-- name: UpdateFactoryContact :one
+UPDATE factory_contacts SET name=$1,department=$2,title=$3,phone=$4,email=$5,is_primary=$6,remark=$7,updated_by=$8,updated_at=now()
+WHERE tenant_id=$9 AND factory_id=$10 AND id=$11 RETURNING id, tenant_id, factory_id, name, department, title, phone, email, is_primary, status, remark, created_at, created_by, updated_at, updated_by
+`
+
+type UpdateFactoryContactParams struct {
+	Name       string
+	Department string
+	Title      string
+	Phone      string
+	Email      string
+	IsPrimary  bool
+	Remark     string
+	OperatorID int64
+	TenantID   int64
+	FactoryID  int64
+	ID         int64
+}
+
+func (q *Queries) UpdateFactoryContact(ctx context.Context, arg UpdateFactoryContactParams) (FactoryContact, error) {
+	row := q.db.QueryRow(ctx, updateFactoryContact,
+		arg.Name,
+		arg.Department,
+		arg.Title,
+		arg.Phone,
+		arg.Email,
+		arg.IsPrimary,
+		arg.Remark,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.FactoryID,
+		arg.ID,
+	)
+	var i FactoryContact
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.FactoryID,
+		&i.Name,
+		&i.Department,
+		&i.Title,
+		&i.Phone,
+		&i.Email,
+		&i.IsPrimary,
+		&i.Status,
+		&i.Remark,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
+}
+
+const updateFactoryOwner = `-- name: UpdateFactoryOwner :one
+UPDATE factory_owners SET employee_id=$1,employee_name=$2,responsibility_code=$3,is_primary=$4,start_date=$5,end_date=$6,updated_by=$7,updated_at=now()
+WHERE tenant_id=$8 AND factory_id=$9 AND id=$10 RETURNING id, tenant_id, factory_id, employee_id, employee_name, responsibility_code, is_primary, start_date, end_date, status, created_at, created_by, updated_at, updated_by
+`
+
+type UpdateFactoryOwnerParams struct {
+	EmployeeID         int64
+	EmployeeName       string
+	ResponsibilityCode string
+	IsPrimary          bool
+	StartDate          pgtype.Date
+	EndDate            pgtype.Date
+	OperatorID         int64
+	TenantID           int64
+	FactoryID          int64
+	ID                 int64
+}
+
+func (q *Queries) UpdateFactoryOwner(ctx context.Context, arg UpdateFactoryOwnerParams) (FactoryOwner, error) {
+	row := q.db.QueryRow(ctx, updateFactoryOwner,
+		arg.EmployeeID,
+		arg.EmployeeName,
+		arg.ResponsibilityCode,
+		arg.IsPrimary,
+		arg.StartDate,
+		arg.EndDate,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.FactoryID,
+		arg.ID,
+	)
+	var i FactoryOwner
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.FactoryID,
+		&i.EmployeeID,
+		&i.EmployeeName,
+		&i.ResponsibilityCode,
+		&i.IsPrimary,
+		&i.StartDate,
+		&i.EndDate,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
+}
+
 const updateSupplier = `-- name: UpdateSupplier :one
 UPDATE suppliers
-SET name = $3, country = $4, address = $5, currency = $6,
-    contact_name = $7, contact_phone = $8, contact_email = $9, remark = $10,
-    updated_by = $11, updated_at = now()
-WHERE tenant_id = $1 AND id = $2
-RETURNING id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by
+SET name = $1, name_zh = $2, name_en = $3,
+    short_name = $4, country = $5, country_code = $6,
+    address = $7, registered_address = $8, tax_id = $9,
+    currency = $10, payment_term = $11, business_types = $12,
+    contact_name = $13, contact_phone = $14,
+    contact_email = $15, remark = $16,
+    updated_by = $17, updated_at = now()
+WHERE tenant_id = $18 AND id = $19
+RETURNING id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types
 `
 
 type UpdateSupplierParams struct {
-	TenantID     int64
-	ID           int64
-	Name         string
-	Country      string
-	Address      string
-	Currency     string
-	ContactName  string
-	ContactPhone string
-	ContactEmail string
-	Remark       string
-	UpdatedBy    int64
+	Name              string
+	NameZh            string
+	NameEn            string
+	ShortName         string
+	Country           string
+	CountryCode       string
+	Address           string
+	RegisteredAddress string
+	TaxID             string
+	Currency          string
+	PaymentTerm       string
+	BusinessTypes     []string
+	ContactName       string
+	ContactPhone      string
+	ContactEmail      string
+	Remark            string
+	OperatorID        int64
+	TenantID          int64
+	ID                int64
 }
 
 func (q *Queries) UpdateSupplier(ctx context.Context, arg UpdateSupplierParams) (Supplier, error) {
 	row := q.db.QueryRow(ctx, updateSupplier,
-		arg.TenantID,
-		arg.ID,
 		arg.Name,
+		arg.NameZh,
+		arg.NameEn,
+		arg.ShortName,
 		arg.Country,
+		arg.CountryCode,
 		arg.Address,
+		arg.RegisteredAddress,
+		arg.TaxID,
 		arg.Currency,
+		arg.PaymentTerm,
+		arg.BusinessTypes,
 		arg.ContactName,
 		arg.ContactPhone,
 		arg.ContactEmail,
 		arg.Remark,
-		arg.UpdatedBy,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.ID,
 	)
 	var i Supplier
 	err := row.Scan(
@@ -2464,6 +4085,125 @@ func (q *Queries) UpdateSupplier(ctx context.Context, arg UpdateSupplierParams) 
 		&i.ContactPhone,
 		&i.ContactEmail,
 		&i.Remark,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+		&i.NameZh,
+		&i.NameEn,
+		&i.ShortName,
+		&i.CountryCode,
+		&i.TaxID,
+		&i.RegisteredAddress,
+		&i.PaymentTerm,
+		&i.BusinessTypes,
+	)
+	return i, err
+}
+
+const updateSupplierContact = `-- name: UpdateSupplierContact :one
+UPDATE supplier_contacts SET name=$1, department=$2, title=$3,
+ phone=$4, email=$5, is_primary=$6, remark=$7,
+ updated_by=$8, updated_at=now()
+WHERE tenant_id=$9 AND supplier_id=$10 AND id=$11
+RETURNING id, tenant_id, supplier_id, name, department, title, phone, email, is_primary, status, remark, created_at, created_by, updated_at, updated_by
+`
+
+type UpdateSupplierContactParams struct {
+	Name       string
+	Department string
+	Title      string
+	Phone      string
+	Email      string
+	IsPrimary  bool
+	Remark     string
+	OperatorID int64
+	TenantID   int64
+	SupplierID int64
+	ID         int64
+}
+
+func (q *Queries) UpdateSupplierContact(ctx context.Context, arg UpdateSupplierContactParams) (SupplierContact, error) {
+	row := q.db.QueryRow(ctx, updateSupplierContact,
+		arg.Name,
+		arg.Department,
+		arg.Title,
+		arg.Phone,
+		arg.Email,
+		arg.IsPrimary,
+		arg.Remark,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.SupplierID,
+		arg.ID,
+	)
+	var i SupplierContact
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.SupplierID,
+		&i.Name,
+		&i.Department,
+		&i.Title,
+		&i.Phone,
+		&i.Email,
+		&i.IsPrimary,
+		&i.Status,
+		&i.Remark,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
+}
+
+const updateSupplierOwner = `-- name: UpdateSupplierOwner :one
+UPDATE supplier_owners SET employee_id=$1, employee_name=$2,
+ responsibility_code=$3, is_primary=$4,
+ start_date=$5, end_date=$6, updated_by=$7, updated_at=now()
+WHERE tenant_id=$8 AND supplier_id=$9 AND id=$10
+RETURNING id, tenant_id, supplier_id, employee_id, employee_name, responsibility_code, is_primary, start_date, end_date, status, created_at, created_by, updated_at, updated_by
+`
+
+type UpdateSupplierOwnerParams struct {
+	EmployeeID         int64
+	EmployeeName       string
+	ResponsibilityCode string
+	IsPrimary          bool
+	StartDate          pgtype.Date
+	EndDate            pgtype.Date
+	OperatorID         int64
+	TenantID           int64
+	SupplierID         int64
+	ID                 int64
+}
+
+func (q *Queries) UpdateSupplierOwner(ctx context.Context, arg UpdateSupplierOwnerParams) (SupplierOwner, error) {
+	row := q.db.QueryRow(ctx, updateSupplierOwner,
+		arg.EmployeeID,
+		arg.EmployeeName,
+		arg.ResponsibilityCode,
+		arg.IsPrimary,
+		arg.StartDate,
+		arg.EndDate,
+		arg.OperatorID,
+		arg.TenantID,
+		arg.SupplierID,
+		arg.ID,
+	)
+	var i SupplierOwner
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.SupplierID,
+		&i.EmployeeID,
+		&i.EmployeeName,
+		&i.ResponsibilityCode,
+		&i.IsPrimary,
+		&i.StartDate,
+		&i.EndDate,
 		&i.Status,
 		&i.CreatedAt,
 		&i.CreatedBy,

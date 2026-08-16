@@ -423,21 +423,73 @@ func replaceContacts(ctx context.Context, q *store.Queries, tenantID, customerID
 // ---------------------------------------------------------------- suppliers
 
 type SupplierInput struct {
-	Code, Name, Country, Address, Currency          string
-	ContactName, ContactPhone, ContactEmail, Remark string
-	OperatorID                                      int64
+	Code, Name, NameZh, NameEn, ShortName            string
+	Country, CountryCode, Address, RegisteredAddress string
+	TaxID, Currency, PaymentTerm                     string
+	BusinessTypes                                    []string
+	ContactName, ContactPhone, ContactEmail, Remark  string
+	OperatorID                                       int64
+	OperatorName                                     string
 }
 
-func (s *Service) CreateSupplier(ctx context.Context, tenantID int64, in SupplierInput) (store.Supplier, error) {
+// normalizeSupplierInput 统一旧调用和 B4 新资料字段，并阻止不认识的业务类型进入主数据。
+func normalizeSupplierInput(in *SupplierInput) error {
+	in.NameZh, in.NameEn = strings.TrimSpace(in.NameZh), strings.TrimSpace(in.NameEn)
+	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" {
-		return store.Supplier{}, apierr.Invalid("MD_SUPPLIER_FIELDS_REQUIRED", "供应商名称必填")
+		in.Name = in.NameZh
+		if in.Name == "" {
+			in.Name = in.NameEn
+		}
 	}
+	if in.NameZh == "" && in.NameEn == "" {
+		in.NameZh = in.Name
+	}
+	if in.Name == "" {
+		return apierr.Invalid("MD_SUPPLIER_FIELDS_REQUIRED", "供应商中文名或英文名至少填写一项")
+	}
+	in.CountryCode = strings.ToUpper(strings.TrimSpace(in.CountryCode))
+	if in.CountryCode != "" && len(in.CountryCode) != 2 {
+		return apierr.Invalid("MD_SUPPLIER_COUNTRY_INVALID", "国家/地区必须使用两位 ISO 代码")
+	}
+	if in.Country == "" {
+		in.Country = in.CountryCode
+	}
+	if in.RegisteredAddress == "" {
+		in.RegisteredAddress = in.Address
+	}
+	allowed := map[string]bool{
+		"GENERAL": true, "CARRIER": true, "FORWARDER": true,
+		"CUSTOMS_BROKER": true, "WAREHOUSE": true, "SERVICE": true,
+	}
+	seen := map[string]bool{}
+	normalized := make([]string, 0, len(in.BusinessTypes))
+	for _, value := range in.BusinessTypes {
+		value = strings.ToUpper(strings.TrimSpace(value))
+		if !allowed[value] {
+			return apierr.Invalid("MD_SUPPLIER_TYPE_INVALID", "供应商业务类型不正确")
+		}
+		if !seen[value] {
+			seen[value] = true
+			normalized = append(normalized, value)
+		}
+	}
+	if len(normalized) == 0 {
+		normalized = []string{"GENERAL"}
+	}
+	in.BusinessTypes = normalized
 	if in.Currency == "" {
 		in.Currency = "CNY"
 	}
+	return nil
+}
+
+func (s *Service) CreateSupplier(ctx context.Context, tenantID int64, in SupplierInput) (store.Supplier, error) {
+	if err := normalizeSupplierInput(&in); err != nil {
+		return store.Supplier{}, err
+	}
 	var out store.Supplier
-	// Same deal as customers: an empty code is issued here so an abandoned
-	// form never burns a number. See CreateCustomer.
+	// 供应商编码只在确认保存时生成，避免用户放弃表单时浪费编号。
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		code := in.Code
@@ -448,16 +500,19 @@ func (s *Service) CreateSupplier(ctx context.Context, tenantID int64, in Supplie
 			}
 		}
 		sp, err := q.CreateSupplier(ctx, store.CreateSupplierParams{
-			TenantID: tenantID, Code: code, Name: in.Name, Country: in.Country,
-			Address: in.Address, Currency: in.Currency, ContactName: in.ContactName,
+			TenantID: tenantID, Code: code, Name: in.Name, NameZh: in.NameZh, NameEn: in.NameEn,
+			ShortName: in.ShortName, Country: in.Country, CountryCode: in.CountryCode,
+			Address: in.Address, RegisteredAddress: in.RegisteredAddress, TaxID: in.TaxID,
+			Currency: in.Currency, PaymentTerm: in.PaymentTerm, BusinessTypes: in.BusinessTypes,
+			ContactName:  in.ContactName,
 			ContactPhone: in.ContactPhone, ContactEmail: in.ContactEmail,
-			Remark: in.Remark, CreatedBy: in.OperatorID,
+			Remark: in.Remark, OperatorID: in.OperatorID,
 		})
 		if err != nil {
 			return translateUnique(err, "MD_SUPPLIER_CODE_TAKEN", "供应商编码已存在")
 		}
 		out = sp
-		return nil
+		return recordSupplierChange(ctx, q, tenantID, out.ID, "CREATE", "PROFILE", "新增供应商："+out.Name, nil, out, in.OperatorID, in.OperatorName)
 	})
 	return out, err
 }
@@ -470,11 +525,12 @@ func (s *Service) GetSupplier(ctx context.Context, tenantID, id int64) (store.Su
 	return sp, err
 }
 
-func (s *Service) ListSuppliers(ctx context.Context, tenantID int64, keyword, status string, page, size int32) ([]store.ListSuppliersRow, int64, error) {
+func (s *Service) ListSuppliers(ctx context.Context, tenantID int64, keyword, status, countryCode, businessType string, ownerID int64, page, size int32) ([]store.ListSuppliersRow, int64, error) {
 	page, size = normalizePage(page, size)
 	rows, err := s.q.ListSuppliers(ctx, store.ListSuppliersParams{
-		TenantID: tenantID, Status: status, Keyword: keyword,
-		Limit: size, Offset: (page - 1) * size,
+		TenantID: tenantID, Status: status, CountryCode: strings.ToUpper(strings.TrimSpace(countryCode)),
+		BusinessType: strings.ToUpper(strings.TrimSpace(businessType)), OwnerID: ownerID, Keyword: keyword,
+		PageSize: size, PageOffset: (page - 1) * size,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -487,14 +543,28 @@ func (s *Service) ListSuppliers(ctx context.Context, tenantID int64, keyword, st
 }
 
 func (s *Service) UpdateSupplier(ctx context.Context, tenantID, id int64, in SupplierInput) (store.Supplier, error) {
-	if in.Name == "" {
-		return store.Supplier{}, apierr.Invalid("MD_SUPPLIER_FIELDS_REQUIRED", "供应商名称必填")
+	if err := normalizeSupplierInput(&in); err != nil {
+		return store.Supplier{}, err
 	}
-	sp, err := s.q.UpdateSupplier(ctx, store.UpdateSupplierParams{
-		TenantID: tenantID, ID: id, Name: in.Name, Country: in.Country,
-		Address: in.Address, Currency: in.Currency, ContactName: in.ContactName,
-		ContactPhone: in.ContactPhone, ContactEmail: in.ContactEmail,
-		Remark: in.Remark, UpdatedBy: in.OperatorID,
+	var sp store.Supplier
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		before, err := q.GetSupplier(ctx, store.GetSupplierParams{TenantID: tenantID, ID: id})
+		if err != nil {
+			return err
+		}
+		sp, err = q.UpdateSupplier(ctx, store.UpdateSupplierParams{
+			TenantID: tenantID, ID: id, Name: in.Name, NameZh: in.NameZh, NameEn: in.NameEn,
+			ShortName: in.ShortName, Country: in.Country, CountryCode: in.CountryCode,
+			Address: in.Address, RegisteredAddress: in.RegisteredAddress, TaxID: in.TaxID,
+			Currency: in.Currency, PaymentTerm: in.PaymentTerm, BusinessTypes: in.BusinessTypes,
+			ContactName: in.ContactName, ContactPhone: in.ContactPhone, ContactEmail: in.ContactEmail,
+			Remark: in.Remark, OperatorID: in.OperatorID,
+		})
+		if err != nil {
+			return err
+		}
+		return recordSupplierChange(ctx, q, tenantID, id, "UPDATE", "PROFILE", "更新供应商基本资料", before, sp, in.OperatorID, in.OperatorName)
 	})
 	if err != nil && errors.Is(err, pgx.ErrNoRows) {
 		return store.Supplier{}, apierr.NotFound("MD_SUPPLIER_NOT_FOUND", "供应商不存在")
@@ -502,15 +572,67 @@ func (s *Service) UpdateSupplier(ctx context.Context, tenantID, id int64, in Sup
 	return sp, err
 }
 
-func (s *Service) DeactivateSupplier(ctx context.Context, tenantID, id, operatorID int64) error {
-	n, err := s.q.DeactivateSupplier(ctx, store.DeactivateSupplierParams{TenantID: tenantID, ID: id, UpdatedBy: operatorID})
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return apierr.NotFound("MD_SUPPLIER_NOT_FOUND", "供应商不存在或已停用")
-	}
-	return nil
+// DeactivateSupplier 在同一事务内停用供应商，并把仍可用于新业务的下属工厂暂停合作。
+// 已经停用或暂停的工厂保持原状态；未来重新启用供应商时也不会自动恢复工厂。
+func (s *Service) DeactivateSupplier(ctx context.Context, tenantID, id, operatorID int64, operatorName string) error {
+	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		before, err := q.GetSupplier(ctx, store.GetSupplierParams{TenantID: tenantID, ID: id})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apierr.NotFound("MD_SUPPLIER_NOT_FOUND", "供应商不存在或已停用")
+		}
+		if err != nil {
+			return err
+		}
+		if before.Status != "ACTIVE" {
+			return apierr.NotFound("MD_SUPPLIER_NOT_FOUND", "供应商不存在或已停用")
+		}
+
+		factories, err := q.ListFactories(ctx, store.ListFactoriesParams{
+			TenantID: tenantID, Status: "ALL", SupplierID: id, PageSize: 10000,
+		})
+		if err != nil {
+			return err
+		}
+		paused := 0
+		for _, factory := range factories {
+			if factory.Status != "PREPARING" && factory.Status != "COOPERATING" {
+				continue
+			}
+			after, err := q.UpdateFactory(ctx, store.UpdateFactoryParams{
+				TenantID: tenantID, ID: factory.ID, SupplierID: factory.SupplierID,
+				NameZh: factory.NameZh, NameEn: factory.NameEn, ShortName: factory.ShortName,
+				CountryCode: factory.CountryCode, Timezone: factory.Timezone,
+				StateProvince: factory.StateProvince, City: factory.City, District: factory.District,
+				PostalCode: factory.PostalCode, Address: factory.Address, Status: "SUSPENDED",
+				Remark: factory.Remark, OperatorID: operatorID,
+			})
+			if err != nil {
+				return err
+			}
+			if err := recordFactoryChange(ctx, q, tenantID, factory.ID, "CASCADE", "PROFILE", "所属供应商停用，工厂自动暂停合作", factory, after, operatorID, operatorName); err != nil {
+				return err
+			}
+			paused++
+		}
+
+		n, err := q.DeactivateSupplier(ctx, store.DeactivateSupplierParams{TenantID: tenantID, ID: id, UpdatedBy: operatorID})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return apierr.NotFound("MD_SUPPLIER_NOT_FOUND", "供应商不存在或已停用")
+		}
+		after, err := q.GetSupplier(ctx, store.GetSupplierParams{TenantID: tenantID, ID: id})
+		if err != nil {
+			return err
+		}
+		summary := "停用供应商"
+		if paused > 0 {
+			summary = "停用供应商并联动暂停下属工厂"
+		}
+		return recordSupplierChange(ctx, q, tenantID, id, "DEACTIVATE", "PROFILE", summary, before, after, operatorID, operatorName)
+	})
 }
 
 // ---------------------------------------------------------------- options

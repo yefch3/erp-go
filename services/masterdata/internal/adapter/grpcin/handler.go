@@ -269,6 +269,9 @@ func supplierToProto(s store.Supplier) *mdv1.Supplier {
 		Id: s.ID, Code: s.Code, Name: s.Name, Country: s.Country, Address: s.Address,
 		Currency: s.Currency, ContactName: s.ContactName, ContactPhone: s.ContactPhone,
 		ContactEmail: s.ContactEmail, Remark: s.Remark, Status: s.Status,
+		NameZh: s.NameZh, NameEn: s.NameEn, ShortName: s.ShortName,
+		CountryCode: s.CountryCode, TaxId: s.TaxID, RegisteredAddress: s.RegisteredAddress,
+		PaymentTerm: s.PaymentTerm, BusinessTypes: s.BusinessTypes,
 	}
 }
 
@@ -278,7 +281,10 @@ func (h *Handler) CreateSupplier(ctx context.Context, req *mdv1.CreateSupplierRe
 		Address: req.GetAddress(), Currency: req.GetCurrency(),
 		ContactName: req.GetContactName(), ContactPhone: req.GetContactPhone(),
 		ContactEmail: req.GetContactEmail(), Remark: req.GetRemark(),
-		OperatorID: operatorID(ctx),
+		NameZh: req.GetNameZh(), NameEn: req.GetNameEn(), ShortName: req.GetShortName(),
+		CountryCode: req.GetCountryCode(), TaxID: req.GetTaxId(), RegisteredAddress: req.GetRegisteredAddress(),
+		PaymentTerm: req.GetPaymentTerm(), BusinessTypes: req.GetBusinessTypes(),
+		OperatorID: operatorID(ctx), OperatorName: operatorName(ctx),
 	})
 	if err != nil {
 		return nil, err
@@ -296,7 +302,8 @@ func (h *Handler) GetSupplier(ctx context.Context, req *mdv1.GetSupplierRequest)
 
 func (h *Handler) ListSuppliers(ctx context.Context, req *mdv1.ListSuppliersRequest) (*mdv1.ListSuppliersResponse, error) {
 	page, size := req.GetPage().GetPage(), req.GetPage().GetPageSize()
-	rows, total, err := h.svc.ListSuppliers(ctx, grpcx.TenantID(ctx), req.GetKeyword(), req.GetStatus(), page, size)
+	rows, total, err := h.svc.ListSuppliers(ctx, grpcx.TenantID(ctx), req.GetKeyword(), req.GetStatus(),
+		req.GetCountryCode(), req.GetBusinessType(), req.GetOwnerId(), page, size)
 	if err != nil {
 		return nil, err
 	}
@@ -306,6 +313,10 @@ func (h *Handler) ListSuppliers(ctx context.Context, req *mdv1.ListSuppliersRequ
 			Id: r.ID, Code: r.Code, Name: r.Name, Country: r.Country, Address: r.Address,
 			Currency: r.Currency, ContactName: r.ContactName, ContactPhone: r.ContactPhone,
 			ContactEmail: r.ContactEmail, Remark: r.Remark, Status: r.Status,
+			NameZh: r.NameZh, NameEn: r.NameEn, ShortName: r.ShortName,
+			CountryCode: r.CountryCode, TaxId: r.TaxID, RegisteredAddress: r.RegisteredAddress,
+			PaymentTerm: r.PaymentTerm, BusinessTypes: r.BusinessTypes,
+			FactoryCount: r.FactoryCount, OwnerNames: r.OwnerNames,
 		}
 	}
 	if page < 1 {
@@ -325,7 +336,10 @@ func (h *Handler) UpdateSupplier(ctx context.Context, req *mdv1.UpdateSupplierRe
 		Name: req.GetName(), Country: req.GetCountry(), Address: req.GetAddress(),
 		Currency: req.GetCurrency(), ContactName: req.GetContactName(),
 		ContactPhone: req.GetContactPhone(), ContactEmail: req.GetContactEmail(),
-		Remark: req.GetRemark(), OperatorID: operatorID(ctx),
+		Remark: req.GetRemark(), NameZh: req.GetNameZh(), NameEn: req.GetNameEn(),
+		ShortName: req.GetShortName(), CountryCode: req.GetCountryCode(), TaxID: req.GetTaxId(),
+		RegisteredAddress: req.GetRegisteredAddress(), PaymentTerm: req.GetPaymentTerm(),
+		BusinessTypes: req.GetBusinessTypes(), OperatorID: operatorID(ctx), OperatorName: operatorName(ctx),
 	})
 	if err != nil {
 		return nil, err
@@ -334,7 +348,7 @@ func (h *Handler) UpdateSupplier(ctx context.Context, req *mdv1.UpdateSupplierRe
 }
 
 func (h *Handler) DeactivateSupplier(ctx context.Context, req *mdv1.DeactivateSupplierRequest) (*mdv1.DeactivateSupplierResponse, error) {
-	if err := h.svc.DeactivateSupplier(ctx, grpcx.TenantID(ctx), req.GetId(), operatorID(ctx)); err != nil {
+	if err := h.svc.DeactivateSupplier(ctx, grpcx.TenantID(ctx), req.GetId(), operatorID(ctx), operatorName(ctx)); err != nil {
 		return nil, err
 	}
 	return &mdv1.DeactivateSupplierResponse{}, nil

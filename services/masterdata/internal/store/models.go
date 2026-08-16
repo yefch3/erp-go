@@ -120,6 +120,114 @@ type CustomerOwner struct {
 	IsPrimary          bool
 }
 
+type Factory struct {
+	ID            int64
+	TenantID      int64
+	SupplierID    int64
+	Code          string
+	NameZh        string
+	NameEn        string
+	ShortName     string
+	CountryCode   string
+	Timezone      string
+	StateProvince string
+	City          string
+	District      string
+	PostalCode    string
+	Address       string
+	Status        string
+	Remark        string
+	CreatedAt     pgtype.Timestamptz
+	CreatedBy     int64
+	UpdatedAt     pgtype.Timestamptz
+	UpdatedBy     int64
+}
+
+type FactoryCapability struct {
+	ID              int64
+	TenantID        int64
+	FactoryID       int64
+	ProductCategory string
+	Process         string
+	MonthlyCapacity pgtype.Numeric
+	CapacityUnit    string
+	Moq             pgtype.Numeric
+	LeadTimeDays    int32
+	PeriodLabel     string
+	ConfirmedOn     pgtype.Date
+	Remark          string
+	CreatedAt       pgtype.Timestamptz
+	CreatedBy       int64
+	UpdatedAt       pgtype.Timestamptz
+	UpdatedBy       int64
+}
+
+type FactoryCertificate struct {
+	ID            int64
+	TenantID      int64
+	FactoryID     int64
+	Name          string
+	CertificateNo string
+	IssuedOn      pgtype.Date
+	ExpiresOn     pgtype.Date
+	Status        string
+	FileKey       string
+	Remark        string
+	CreatedAt     pgtype.Timestamptz
+	CreatedBy     int64
+	UpdatedAt     pgtype.Timestamptz
+	UpdatedBy     int64
+}
+
+type FactoryChangeLog struct {
+	ID           int64
+	TenantID     int64
+	FactoryID    int64
+	Action       string
+	Section      string
+	Summary      string
+	BeforeData   []byte
+	AfterData    []byte
+	OperatorID   int64
+	OperatorName string
+	CreatedAt    pgtype.Timestamptz
+}
+
+type FactoryContact struct {
+	ID         int64
+	TenantID   int64
+	FactoryID  int64
+	Name       string
+	Department string
+	Title      string
+	Phone      string
+	Email      string
+	IsPrimary  bool
+	Status     string
+	Remark     string
+	CreatedAt  pgtype.Timestamptz
+	CreatedBy  int64
+	UpdatedAt  pgtype.Timestamptz
+	UpdatedBy  int64
+}
+
+type FactoryOwner struct {
+	ID                 int64
+	TenantID           int64
+	FactoryID          int64
+	EmployeeID         int64
+	EmployeeName       string
+	ResponsibilityCode string
+	IsPrimary          bool
+	StartDate          pgtype.Date
+	EndDate            pgtype.Date
+	Status             string
+	CreatedAt          pgtype.Timestamptz
+	CreatedBy          int64
+	UpdatedAt          pgtype.Timestamptz
+	UpdatedBy          int64
+}
+
 type NumberRule struct {
 	ID       int64
 	TenantID int64
@@ -186,20 +294,77 @@ type PortChangeLog struct {
 }
 
 type Supplier struct {
+	ID                int64
+	TenantID          int64
+	Code              string
+	Name              string
+	Country           string
+	Address           string
+	Currency          string
+	ContactName       string
+	ContactPhone      string
+	ContactEmail      string
+	Remark            string
+	Status            string
+	CreatedAt         pgtype.Timestamptz
+	CreatedBy         int64
+	UpdatedAt         pgtype.Timestamptz
+	UpdatedBy         int64
+	NameZh            string
+	NameEn            string
+	ShortName         string
+	CountryCode       string
+	TaxID             string
+	RegisteredAddress string
+	PaymentTerm       string
+	BusinessTypes     []string
+}
+
+type SupplierChangeLog struct {
 	ID           int64
 	TenantID     int64
-	Code         string
-	Name         string
-	Country      string
-	Address      string
-	Currency     string
-	ContactName  string
-	ContactPhone string
-	ContactEmail string
-	Remark       string
-	Status       string
+	SupplierID   int64
+	Action       string
+	Section      string
+	Summary      string
+	BeforeData   []byte
+	AfterData    []byte
+	OperatorID   int64
+	OperatorName string
 	CreatedAt    pgtype.Timestamptz
-	CreatedBy    int64
-	UpdatedAt    pgtype.Timestamptz
-	UpdatedBy    int64
+}
+
+type SupplierContact struct {
+	ID         int64
+	TenantID   int64
+	SupplierID int64
+	Name       string
+	Department string
+	Title      string
+	Phone      string
+	Email      string
+	IsPrimary  bool
+	Status     string
+	Remark     string
+	CreatedAt  pgtype.Timestamptz
+	CreatedBy  int64
+	UpdatedAt  pgtype.Timestamptz
+	UpdatedBy  int64
+}
+
+type SupplierOwner struct {
+	ID                 int64
+	TenantID           int64
+	SupplierID         int64
+	EmployeeID         int64
+	EmployeeName       string
+	ResponsibilityCode string
+	IsPrimary          bool
+	StartDate          pgtype.Date
+	EndDate            pgtype.Date
+	Status             string
+	CreatedAt          pgtype.Timestamptz
+	CreatedBy          int64
+	UpdatedAt          pgtype.Timestamptz
+	UpdatedBy          int64
 }
