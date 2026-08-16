@@ -64,9 +64,22 @@ if [ "$EXISTING" != "None" ]; then
   echo "实例 $INSTANCE_NAME 已存在（$EXISTING），跳过创建"
   INSTANCE_ID=$EXISTING
 else
+  # The SSM public parameter is the tidy way to ask "current Ubuntu 24.04",
+  # but it needs ssm:GetParameter, which a narrowed permission set may not
+  # carry. Canonical's own image listing answers the same question with only
+  # ec2:DescribeImages: newest 24.04 gp3 image published by Canonical's
+  # account (099720109477 — their well-known owner id, not a magic number).
   AMI=$(aws ssm get-parameter \
     --name /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id \
-    --query 'Parameter.Value' --output text)
+    --query 'Parameter.Value' --output text 2>/dev/null) || AMI=""
+  if [ -z "$AMI" ]; then
+    AMI=$(aws ec2 describe-images \
+      --owners 099720109477 \
+      --filters "Name=name,Values=ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*" \
+                "Name=state,Values=available" \
+      --query 'sort_by(Images, &CreationDate)[-1].ImageId' --output text)
+  fi
+  echo "AMI: $AMI"
 
   # Docker and compose from Ubuntu's own repo: pinned by the distro,
   # patched by unattended-upgrades, no curl-pipe-sh. systemd-timesyncd is
