@@ -88,6 +88,9 @@ func (s *Service) UpdateTemplate(ctx context.Context, tenantID, id int64, in Tem
 	if err != nil {
 		return err
 	}
+	// Same sweep as signatures, same reason: a logo edited out of a template
+	// is as orphaned as one whose template is gone.
+	old, _ := s.q.GetEmailTemplate(ctx, store.GetEmailTemplateParams{TenantID: tenantID, ID: id})
 	// The owner guard lives in the statement: a row the caller may not touch
 	// simply matches nothing.
 	n, err := s.q.UpdateEmailTemplate(ctx, store.UpdateEmailTemplateParams{
@@ -102,10 +105,12 @@ func (s *Service) UpdateTemplate(ctx context.Context, tenantID, id int64, in Tem
 	if n == 0 {
 		return apierr.NotFound("NT_TEMPLATE_NOT_FOUND", "模板不存在")
 	}
+	s.sweepRemovedImages(ctx, tenantID, old.Content, content)
 	return nil
 }
 
 func (s *Service) DeleteTemplate(ctx context.Context, tenantID, id int64, op Operator) error {
+	old, _ := s.q.GetEmailTemplate(ctx, store.GetEmailTemplateParams{TenantID: tenantID, ID: id})
 	n, err := s.q.DeleteEmailTemplate(ctx, store.DeleteEmailTemplateParams{
 		TenantID: tenantID, ID: id, EmployeeID: op.ID,
 	})
@@ -115,5 +120,6 @@ func (s *Service) DeleteTemplate(ctx context.Context, tenantID, id int64, op Ope
 	if n == 0 {
 		return apierr.NotFound("NT_TEMPLATE_NOT_FOUND", "模板不存在")
 	}
+	s.sweepRemovedImages(ctx, tenantID, old.Content, "")
 	return nil
 }

@@ -43,3 +43,8 @@ DELETE FROM email_templates
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND id = sqlc.arg(id)::bigint
   AND (owner_type = 'TENANT' OR owner_id = sqlc.arg(employee_id)::bigint);
+
+-- name: GetEmailTemplate :one
+SELECT id, owner_type, owner_id, name, lang, subject, content, body_format
+FROM email_templates
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;

@@ -647,3 +647,33 @@ FROM email_messages
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND campaign_id = sqlc.arg(campaign_id)::bigint
 ORDER BY id;
+
+-- name: WithdrawImageIfOrphaned :execrows
+-- The reference count nobody has to maintain: counted at the moment of the
+-- question, across every place a gallery image can be embedded. One
+-- statement, so the check and the withdrawal cannot disagree.
+--
+-- email_messages is in the list on purpose and matters most: a mail already
+-- sent references its images forever — the customer re-opens it next year
+-- and their mail client fetches the logo again. An image any sent mail uses
+-- is never withdrawn by this path, which is what makes the automatic sweep
+-- safe by construction.
+UPDATE email_images i SET status = 'WITHDRAWN'
+WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND i.token = sqlc.arg(token)::text
+  AND i.status = 'ACTIVE'
+  AND NOT EXISTS (SELECT 1 FROM email_signatures s
+                  WHERE s.tenant_id = sqlc.arg(tenant_id)::bigint
+                    AND s.content LIKE '%' || sqlc.arg(token)::text || '%')
+  AND NOT EXISTS (SELECT 1 FROM email_templates t
+                  WHERE t.tenant_id = sqlc.arg(tenant_id)::bigint
+                    AND t.content LIKE '%' || sqlc.arg(token)::text || '%')
+  AND NOT EXISTS (SELECT 1 FROM email_drafts d
+                  WHERE d.tenant_id = sqlc.arg(tenant_id)::bigint
+                    AND d.body LIKE '%' || sqlc.arg(token)::text || '%')
+  AND NOT EXISTS (SELECT 1 FROM email_campaigns c
+                  WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
+                    AND c.body_tpl LIKE '%' || sqlc.arg(token)::text || '%')
+  AND NOT EXISTS (SELECT 1 FROM email_messages m
+                  WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint
+                    AND m.body LIKE '%' || sqlc.arg(token)::text || '%');

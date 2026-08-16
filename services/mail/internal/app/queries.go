@@ -328,7 +328,10 @@ func (s *Service) UpdateSignature(ctx context.Context, tenantID, id int64, in Si
 	if err != nil {
 		return err
 	}
-	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	// An edit removes images as surely as a delete does — the logo swapped
+	// out of a signature is just as orphaned as one whose signature is gone.
+	old, _ := s.q.GetSignature(ctx, store.GetSignatureParams{TenantID: tenantID, ID: id})
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		if in.IsDefault {
 			if err := q.ClearDefaultSignature(ctx, store.ClearDefaultSignatureParams{
@@ -354,6 +357,11 @@ func (s *Service) UpdateSignature(ctx context.Context, tenantID, id int64, in Si
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.sweepRemovedImages(ctx, tenantID, old.Content, content)
+	return nil
 }
 
 // blankSignature reports markup that renders as nothing.
@@ -368,6 +376,10 @@ func blankSignature(html string) bool {
 }
 
 func (s *Service) DeleteSignature(ctx context.Context, tenantID, id int64, op Operator) error {
+	// Read before delete: the content is the only record of which images
+	// this signature was using, and the sweep below needs it after the row
+	// is gone. A failed read only skips the sweep, never the delete.
+	old, _ := s.q.GetSignature(ctx, store.GetSignatureParams{TenantID: tenantID, ID: id})
 	n, err := s.q.DeleteSignature(ctx, store.DeleteSignatureParams{
 		TenantID: tenantID, ID: id, EmployeeID: op.ID,
 	})
@@ -377,6 +389,7 @@ func (s *Service) DeleteSignature(ctx context.Context, tenantID, id int64, op Op
 	if n == 0 {
 		return apierr.NotFound("NT_SIGNATURE_NOT_FOUND", "签名不存在")
 	}
+	s.sweepRemovedImages(ctx, tenantID, old.Content, "")
 	return nil
 }
 

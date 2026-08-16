@@ -71,6 +71,44 @@ func (q *Queries) DeleteEmailTemplate(ctx context.Context, arg DeleteEmailTempla
 	return result.RowsAffected(), nil
 }
 
+const getEmailTemplate = `-- name: GetEmailTemplate :one
+SELECT id, owner_type, owner_id, name, lang, subject, content, body_format
+FROM email_templates
+WHERE tenant_id = $1::bigint AND id = $2::bigint
+`
+
+type GetEmailTemplateParams struct {
+	TenantID int64
+	ID       int64
+}
+
+type GetEmailTemplateRow struct {
+	ID         int64
+	OwnerType  string
+	OwnerID    int64
+	Name       string
+	Lang       string
+	Subject    string
+	Content    string
+	BodyFormat string
+}
+
+func (q *Queries) GetEmailTemplate(ctx context.Context, arg GetEmailTemplateParams) (GetEmailTemplateRow, error) {
+	row := q.db.QueryRow(ctx, getEmailTemplate, arg.TenantID, arg.ID)
+	var i GetEmailTemplateRow
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerType,
+		&i.OwnerID,
+		&i.Name,
+		&i.Lang,
+		&i.Subject,
+		&i.Content,
+		&i.BodyFormat,
+	)
+	return i, err
+}
+
 const listEmailTemplates = `-- name: ListEmailTemplates :many
 SELECT id, owner_type, owner_id, name, lang, subject, content, body_format
 FROM email_templates
