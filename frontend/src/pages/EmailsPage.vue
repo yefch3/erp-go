@@ -204,11 +204,12 @@
                 v-if="it.bodyFormat === 'HTML'"
                 :html="it.body"
                 @selection-context="openTextExcelMenu($event, it.direction === 'IN' ? it.id : '')"
+                @selection-clear="closeExcelMenu"
               />
               <pre
                 v-else
                 class="in-text"
-                @contextmenu="openPlainTextExcelMenu($event, it.direction === 'IN' ? it.id : '')"
+                @mouseup="openPlainTextExcelMenu($event, it.direction === 'IN' ? it.id : '')"
               >{{ it.body }}</pre>
               <QuotedHistory v-if="it.quoted" :html="it.quoted" />
             </div>
@@ -219,11 +220,12 @@
             v-if="openedInbound.bodyHtml"
             :html="openedInbound.bodyHtml"
             @selection-context="openTextExcelMenu($event, openedInbound.id)"
+            @selection-clear="closeExcelMenu"
           />
           <pre
             v-else
             class="in-text"
-            @contextmenu="openPlainTextExcelMenu($event, openedInbound.id)"
+            @mouseup="openPlainTextExcelMenu($event, openedInbound.id)"
           >{{ openedInbound.bodyText }}</pre>
           <QuotedHistory v-if="openedInbound.quotedHtml" :html="openedInbound.quotedHtml" />
         </template>
@@ -686,9 +688,11 @@
   <MailSignatureDialog v-model="signaturesOpen" />
   <MailTemplatesDialog v-model="templatesOpen" />
 
-  <!-- A native-like context action. It is rendered at the click point rather
-       than permanently adding another button to every attachment and every
-       line of mail. -->
+  <!-- The selection bubble. It follows the current text selection (or a
+       clicked embedded image) and leaves when the selection does. Not a
+       context menu: right-click stays native, because a page cannot add an
+       entry to the browser's own menu — it can only replace it, and
+       replacing it costs the reader copy, look-up and translate. -->
   <div
     v-if="excelMenu.open"
     class="excel-context"
@@ -2191,7 +2195,9 @@ onUnmounted(() => {
 })
 
 function positionExcelMenu(x: number, y: number, source: ExcelSource, disabledReason = '') {
-  excelMenu.x = Math.max(8, Math.min(x, window.innerWidth - 210))
+  // x is the anchor's centre (the bubble is centred via CSS), so the clamp
+  // keeps half a bubble's width inside each edge.
+  excelMenu.x = Math.max(110, Math.min(x, window.innerWidth - 110))
   excelMenu.y = Math.max(8, Math.min(y, window.innerHeight - 54))
   excelMenu.source = source
   excelMenu.disabledReason = disabledReason
@@ -2216,10 +2222,18 @@ function openTextExcelMenu(
 
 function openPlainTextExcelMenu(event: MouseEvent, mailId: string) {
   if (!mailId) return
-  const text = window.getSelection()?.toString().trim() ?? ''
-  if (!text) return
-  event.preventDefault()
-  positionExcelMenu(event.clientX, event.clientY, { kind: 'text', mailId, text })
+  // Two ticks of patience, one for each of this handler's problems: the
+  // selection is only final a beat after mouseup, and the click that follows
+  // mouseup runs the window-level closeExcelMenu — opening synchronously here
+  // would be undone before the user saw it.
+  window.setTimeout(() => {
+    const text = window.getSelection()?.toString().trim() ?? ''
+    if (!text) {
+      closeExcelMenu()
+      return
+    }
+    positionExcelMenu(event.clientX, event.clientY + 12, { kind: 'text', mailId, text })
+  }, 0)
 }
 
 function openAttachmentExcelMenu(event: MouseEvent, file: MailFile) {
@@ -2235,9 +2249,14 @@ function closeExcelMenu() {
 }
 window.addEventListener('click', closeExcelMenu)
 window.addEventListener('blur', closeExcelMenu)
+// Capture phase, because the reading pane scrolls in an inner container and
+// scroll events do not bubble. A fixed-position bubble that stays put while
+// its selection scrolls away is pointing at nothing.
+window.addEventListener('scroll', closeExcelMenu, true)
 onUnmounted(() => {
   window.removeEventListener('click', closeExcelMenu)
   window.removeEventListener('blur', closeExcelMenu)
+  window.removeEventListener('scroll', closeExcelMenu, true)
 })
 
 async function convertExcelSelection() {
@@ -3012,7 +3031,9 @@ async function doUnsuppress(row: Suppression) {
 .excel-context {
   position: fixed;
   z-index: 4000;
+  transform: translateX(-50%);
   min-width: 190px;
+  max-width: 320px;
   padding: 5px;
   border: 1px solid var(--el-border-color-light);
   border-radius: 7px;

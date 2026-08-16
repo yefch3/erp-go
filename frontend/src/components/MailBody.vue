@@ -36,6 +36,7 @@ const { t } = useI18n()
 const props = defineProps<{ html: string }>()
 const emit = defineEmits<{
   selectionContext: [payload: { text?: string; attachmentId?: string; x: number; y: number }]
+  selectionClear: []
 }>()
 
 const frame = ref<HTMLIFrameElement | null>(null)
@@ -140,7 +141,7 @@ let poll: number | undefined
 // would have to live inside the frame, and inside the frame is exactly where
 // we have chosen not to run scripts.
 function measure() {
-  bindSelectionMenu()
+  bindSelectionBubble()
   read()
   window.clearInterval(poll)
   let ticks = 0
@@ -160,31 +161,87 @@ function measure() {
   }, 100)
 }
 
-// Context-menu events do not cross an iframe boundary. The parent owns this
-// listener (no script is admitted into the untrusted mail document), reads
+// Selection events do not cross an iframe boundary. The parent owns these
+// listeners (no script is admitted into the untrusted mail document), reads
 // the user's current selection or the trusted attachment marker placed on an
 // embedded image by the mail service, and emits coordinates in the app's
-// viewport so the ordinary menu can be rendered outside the frame.
-function bindSelectionMenu() {
+// viewport so the bubble can be rendered outside the frame.
+//
+// A bubble that follows the selection, not a replacement context menu. This
+// used to intercept `contextmenu`, which cost the reader the browser's own
+// right-click menu — copy, look up, translate — because a page cannot add an
+// item to the native menu, only suppress it. Right-click now belongs entirely
+// to the browser; our entry appears under the selection the moment one
+// exists, and leaves with it.
+function bindSelectionBubble() {
   const el = frame.value
   const d = el?.contentDocument
-  if (!el || !d || d.documentElement.dataset.excelMenuBound === '1') return
-  d.documentElement.dataset.excelMenuBound = '1'
-  d.addEventListener('contextmenu', (event) => {
-    const rect = el.getBoundingClientRect()
-    const point = { x: rect.left + event.clientX, y: rect.top + event.clientY }
-    const target = event.target as { closest?: (selector: string) => Element | null } | null
-    const image = target?.closest?.('img') as HTMLImageElement | null
-    const attachmentId = embeddedAttachmentID(image?.currentSrc || image?.getAttribute('src') || '')
-    if (attachmentId) {
-      event.preventDefault()
-      emit('selectionContext', { attachmentId, ...point })
+  if (!el || !d || d.documentElement.dataset.excelBubbleBound === '1') return
+  d.documentElement.dataset.excelBubbleBound = '1'
+
+  let timer = 0
+  let dragging = false
+  const evaluate = () => {
+    const sel = d.getSelection()
+    const text = sel?.toString().trim() ?? ''
+    if (!sel || !text || sel.rangeCount === 0) {
+      emit('selectionClear')
       return
     }
-    const text = d.getSelection()?.toString().trim() ?? ''
-    if (!text) return
-    event.preventDefault()
-    emit('selectionContext', { text, ...point })
+    const rect = sel.getRangeAt(0).getBoundingClientRect()
+    if (rect.width === 0 && rect.height === 0) {
+      emit('selectionClear')
+      return
+    }
+    // The frame never scrolls internally (it is sized to its content), so
+    // frame-viewport coordinates plus the frame's own position are already
+    // app-viewport coordinates.
+    const frameRect = el.getBoundingClientRect()
+    emit('selectionContext', {
+      text,
+      x: frameRect.left + rect.left + rect.width / 2,
+      y: frameRect.top + rect.bottom + 8,
+    })
+  }
+  const schedule = (delay: number) => {
+    window.clearTimeout(timer)
+    timer = window.setTimeout(evaluate, delay)
+  }
+
+  // While the mouse is down the selection is still being made; judging it
+  // then would flash the bubble across the screen as the drag grows.
+  d.addEventListener('mousedown', () => {
+    dragging = true
+  })
+  d.addEventListener('mouseup', () => {
+    dragging = false
+    // After the tick, not in it: on a plain click the selection collapses a
+    // beat after mouseup, and reading it too early keeps a stale bubble open.
+    schedule(0)
+  })
+  // Keyboard selection (shift+arrows) never sees a mouseup.
+  d.addEventListener('selectionchange', () => {
+    if (!dragging) schedule(150)
+  })
+
+  // An embedded attachment image gets the same bubble on a plain click.
+  // Linked images are left alone — the click is already spoken for (the
+  // sandbox lets it open a popup), and fighting it would do both at once.
+  d.addEventListener('click', (event) => {
+    const target = event.target as { closest?: (selector: string) => Element | null } | null
+    const image = target?.closest?.('img') as HTMLImageElement | null
+    if (image?.closest('a[href]')) return
+    const attachmentId = embeddedAttachmentID(image?.currentSrc || image?.getAttribute('src') || '')
+    if (!attachmentId) return
+    // The mouseup that preceded this click scheduled an evaluation that
+    // would find no selection and close the bubble this click is opening.
+    window.clearTimeout(timer)
+    const frameRect = el.getBoundingClientRect()
+    emit('selectionContext', {
+      attachmentId,
+      x: frameRect.left + event.clientX,
+      y: frameRect.top + event.clientY + 8,
+    })
   })
 }
 
