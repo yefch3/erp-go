@@ -111,7 +111,12 @@
               ref="editor"
               v-model="form.content"
               :placeholder="t('signatures.contentPlaceholder')"
+              @image-inserted="checkLogoSize"
             />
+            <!-- Said before anything goes wrong, not only after: the person
+                 choosing a logo file deserves the target sizes while the
+                 picker is still open. -->
+            <div class="var-hint">{{ t('signatures.sizeHint') }}</div>
           </div>
         </el-form-item>
         <el-form-item>
@@ -205,6 +210,26 @@ function textToHTML(s: string) {
 
 function insertVariable(name: string) {
   editor.value?.insertText(`{{${name}}}`)
+}
+
+// A signature rides on every mail its owner ever sends, so an oversized
+// logo is not one slow load — it is a permanent tax on every recipient, and
+// heavy image-to-text ratios are a spam-score classic. Gmail's guidance
+// (the requirement's reference): 300–400 wide by 70–100 tall. Warned, not
+// blocked: a marketing banner in a campaign signature can be a deliberate
+// choice, and the person on the spot knows things a threshold does not.
+const LOGO_WARN_WIDTH = 1000
+const LOGO_WARN_HEIGHT = 200
+const LOGO_WARN_BYTES = 200 * 1024
+
+function checkLogoSize(info: { width: number; height: number; bytes: number }) {
+  if (
+    info.width > LOGO_WARN_WIDTH ||
+    info.height > LOGO_WARN_HEIGHT ||
+    info.bytes > LOGO_WARN_BYTES
+  ) {
+    ElMessage.warning(t('signatures.imageTooBig', { w: info.width, h: info.height }))
+  }
 }
 
 async function save() {

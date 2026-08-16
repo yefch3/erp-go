@@ -1428,6 +1428,8 @@ export default {
     deleted: '已删除',
     deleteHint: '确认删除签名「{n}」？',
     empty: '还没有签名模板',
+    sizeHint: 'logo 建议宽 300–400、高 70–100 像素——多数邮件客户端按原尺寸显示',
+    imageTooBig: '这张图 {w}×{h}，对签名来说偏大：收件人加载慢，图文比例失衡还容易被判垃圾邮件。建议压到 400×100 以内',
   },
   editor: {
     font: '字体',

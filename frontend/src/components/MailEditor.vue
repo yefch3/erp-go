@@ -162,7 +162,15 @@ interface MailImage {
 }
 
 const props = defineProps<{ modelValue: string; placeholder?: string }>()
-const emit = defineEmits<{ 'update:modelValue': [string]; 'insert-variable': [] }>()
+const emit = defineEmits<{
+  'update:modelValue': [string]
+  'insert-variable': []
+  // Fired with the real dimensions once an inserted image has loaded. The
+  // editor reports facts and holds no opinion — whether 1600px is "too big"
+  // depends on whether this editor is writing a mail body or a signature,
+  // and only the parent knows which it is.
+  'image-inserted': [info: { width: number; height: number; bytes: number }]
+}>()
 
 const { t } = useI18n()
 
@@ -436,6 +444,17 @@ function insertImage(img: MailImage) {
     )
     emitChange()
   })
+  // Measured from the served image rather than trusted from metadata: the
+  // stored row never recorded dimensions, and the file itself is the one
+  // thing that cannot be wrong about them.
+  const probe = new Image()
+  probe.onload = () =>
+    emit('image-inserted', {
+      width: probe.naturalWidth,
+      height: probe.naturalHeight,
+      bytes: Number(img.fileSize) || 0,
+    })
+  probe.src = src
 }
 </script>
 
