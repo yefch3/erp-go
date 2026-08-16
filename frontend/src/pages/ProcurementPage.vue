@@ -1,6 +1,5 @@
 <template>
   <div class="page">
-    <ProcurementNav />
     <div class="page-head">
       <div>
         <h1>{{ t('procurementWorkbench.title') }}</h1>
@@ -36,7 +35,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import ProcurementNav from '../components/ProcurementNav.vue'
 import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()

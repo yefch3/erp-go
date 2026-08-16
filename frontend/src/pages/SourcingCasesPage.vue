@@ -1,6 +1,5 @@
 <template>
   <div class="page">
-    <ProcurementNav />
     <div class="page-head">
       <div>
         <h1>{{ t('sourcing.title') }}</h1>
@@ -262,7 +261,6 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { download, get, post, put, saveBlob } from '../api'
 import { useAuthStore } from '../stores/auth'
-import ProcurementNav from '../components/ProcurementNav.vue'
 
 interface ExtractedLine {
   product: string; materialStandard: string; grade: string; thickness: string

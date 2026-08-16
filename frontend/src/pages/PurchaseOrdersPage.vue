@@ -1,6 +1,5 @@
 <template>
   <div>
-    <ProcurementNav />
     <div class="page-head">
       <h2>{{ t('orders.title') }}</h2>
       <span class="head-note">{{ t('orders.subtitle') }}</span>
@@ -331,7 +330,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { get, post, put } from '../api'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
-import ProcurementNav from '../components/ProcurementNav.vue'
 
 interface Order {
   id: string

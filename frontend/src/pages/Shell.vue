@@ -17,31 +17,31 @@
           :offset="6"
           :show-arrow="false"
           trigger="hover"
-          popper-class="basic-data-flyout-popper"
+          popper-class="module-flyout-popper"
         >
           <template #reference>
             <button
               type="button"
-              class="basic-data-trigger"
+              class="module-menu-trigger"
               :class="{ 'is-active': route.path.startsWith('/basic/') }"
               @click="basicDataOpen = !basicDataOpen"
             >
               <span>{{ t('menu.basicData') }}</span>
-              <span class="basic-data-arrow" aria-hidden="true">›</span>
+              <span class="module-menu-arrow" aria-hidden="true">›</span>
             </button>
           </template>
-          <nav class="basic-data-flyout" :aria-label="t('menu.basicData')">
-            <div class="basic-data-flyout-title">{{ t('menu.basicData') }}</div>
+          <nav class="module-flyout" :aria-label="t('menu.basicData')">
+            <div class="module-flyout-title">{{ t('menu.basicData') }}</div>
             <button
               v-for="item in basicDataItems"
               :key="item.path"
               type="button"
-              class="basic-data-flyout-item"
+              class="module-flyout-item"
               :class="{ 'is-active': route.path.startsWith(item.activePrefix) }"
               @click="goBasicData(item.path)"
             >
               <span>{{ item.label }}</span>
-              <span v-if="item.todo" class="basic-data-todo">{{ t('menu.todo') }}</span>
+              <span v-if="item.todo" class="module-flyout-badge">{{ t('menu.todo') }}</span>
             </button>
           </nav>
         </el-popover>
@@ -73,9 +73,41 @@
         <el-menu-item v-if="auth.can('inventory:stock:read')" index="/outbounds">
           {{ t('menu.outbounds') }}
         </el-menu-item>
-        <el-menu-item v-if="hasProcurement" index="/procurement">
-          {{ t('menu.procurement') }}
-        </el-menu-item>
+        <el-popover
+          v-if="hasProcurement"
+          v-model:visible="procurementOpen"
+          placement="right-start"
+          :width="200"
+          :offset="6"
+          :show-arrow="false"
+          trigger="hover"
+          popper-class="module-flyout-popper"
+        >
+          <template #reference>
+            <button
+              type="button"
+              class="module-menu-trigger"
+              :class="{ 'is-active': procurementActive }"
+              @click="procurementOpen = !procurementOpen"
+            >
+              <span>{{ t('menu.procurement') }}</span>
+              <span class="module-menu-arrow" aria-hidden="true">›</span>
+            </button>
+          </template>
+          <nav class="module-flyout" :aria-label="t('menu.procurement')">
+            <div class="module-flyout-title">{{ t('menu.procurement') }}</div>
+            <button
+              v-for="item in procurementItems"
+              :key="item.path"
+              type="button"
+              class="module-flyout-item"
+              :class="{ 'is-active': route.path === item.path }"
+              @click="goProcurement(item.path)"
+            >
+              {{ item.label }}
+            </button>
+          </nav>
+        </el-popover>
         <el-menu-item v-if="auth.can('mail:email:read')" index="/emails">
           {{ t('menu.emails') }}
         </el-menu-item>
@@ -162,16 +194,14 @@ const route = useRoute()
 const router = useRouter()
 const shippingNotifications = ref<InstanceType<typeof ShippingArrivalNotifications> | null>(null)
 const basicDataOpen = ref(false)
+const procurementOpen = ref(false)
 const hasProcurement = computed(() => [
   'procurement:sourcing:read',
   'procurement:requirement:read',
   'procurement:order:read',
 ].some(auth.can))
-const menuActive = computed(() => (
-  ['/procurement', '/requirements', '/sourcing-cases', '/purchase-orders'].includes(route.path)
-    ? '/procurement'
-    : route.path
-))
+const procurementActive = computed(() => procurementItems.value.some((item) => route.path === item.path))
+const menuActive = computed(() => route.path)
 
 // 基础数据的子模块集中在右侧浮层中，避免展开后挤压左侧主导航。
 const basicDataItems = computed(() => [
@@ -189,8 +219,21 @@ const basicDataItems = computed(() => [
     : []),
 ])
 
+// 采购管理与基础数据使用同一种浮层导航，子页面不再各自重复一排按钮。
+const procurementItems = computed(() => [
+  { path: '/procurement', label: t('procurementNav.workbench'), allowed: true },
+  { path: '/sourcing-cases', label: t('procurementNav.sourcing'), allowed: auth.can('procurement:sourcing:read') },
+  { path: '/requirements', label: t('procurementNav.requirements'), allowed: auth.can('procurement:requirement:read') },
+  { path: '/purchase-orders', label: t('procurementNav.orders'), allowed: auth.can('procurement:order:read') },
+].filter((item) => item.allowed))
+
 function goBasicData(path: string) {
   basicDataOpen.value = false
+  router.push(path)
+}
+
+function goProcurement(path: string) {
+  procurementOpen.value = false
   router.push(path)
 }
 
@@ -320,7 +363,7 @@ async function changePassword() {
   --el-menu-hover-bg-color: #1e293b;
   --el-menu-active-color: #38bdf8;
 }
-.basic-data-trigger {
+.module-menu-trigger {
   width: 100%;
   height: 56px;
   padding: 0 20px;
@@ -335,38 +378,38 @@ async function changePassword() {
   justify-content: space-between;
   transition: color 0.2s, background-color 0.2s;
 }
-.basic-data-trigger:hover,
-.basic-data-trigger:focus-visible {
+.module-menu-trigger:hover,
+.module-menu-trigger:focus-visible {
   outline: none;
   color: #e2e8f0;
   background: #1e293b;
 }
-.basic-data-trigger.is-active {
+.module-menu-trigger.is-active {
   color: #38bdf8;
   background: #172033;
 }
-.basic-data-arrow {
+.module-menu-arrow {
   font-size: 22px;
   line-height: 1;
   transition: transform 0.2s;
 }
-.basic-data-trigger:hover .basic-data-arrow,
-.basic-data-trigger:focus-visible .basic-data-arrow {
+.module-menu-trigger:hover .module-menu-arrow,
+.module-menu-trigger:focus-visible .module-menu-arrow {
   transform: translateX(3px);
 }
-:global(.basic-data-flyout-popper.el-popper) {
+:global(.module-flyout-popper.el-popper) {
   padding: 8px;
   border: 1px solid #334155;
   border-radius: 10px;
   background: #172033;
   box-shadow: 0 14px 34px rgb(15 23 42 / 32%);
 }
-.basic-data-flyout {
+.module-flyout {
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
-.basic-data-flyout-title {
+.module-flyout-title {
   padding: 8px 10px 10px;
   color: #94a3b8;
   font-size: 12px;
@@ -374,7 +417,7 @@ async function changePassword() {
   border-bottom: 1px solid #334155;
   margin-bottom: 3px;
 }
-.basic-data-flyout-item {
+.module-flyout-item {
   min-height: 40px;
   padding: 0 10px;
   border: 0;
@@ -388,18 +431,18 @@ async function changePassword() {
   align-items: center;
   justify-content: space-between;
 }
-.basic-data-flyout-item:hover,
-.basic-data-flyout-item:focus-visible {
+.module-flyout-item:hover,
+.module-flyout-item:focus-visible {
   outline: none;
   color: #f8fafc;
   background: #26334a;
 }
-.basic-data-flyout-item.is-active {
+.module-flyout-item.is-active {
   color: #7dd3fc;
   background: #24344d;
   font-weight: 600;
 }
-.basic-data-todo {
+.module-flyout-badge {
   color: #fbbf24;
   font-size: 11px;
 }

@@ -216,20 +216,24 @@ SELECT id, case_no, title, customer_id, customer_name, contact_name,
        owner_id, owner_name, created_at, updated_at, count(*) OVER () AS total
 FROM sourcing_cases
 WHERE tenant_id = $1::bigint
-  AND ($2::text = '' OR status = $2::text)
-  AND ($3::text = '' OR case_no ILIKE '%' || $3::text || '%'
-       OR title ILIKE '%' || $3::text || '%'
-       OR customer_name ILIKE '%' || $3::text || '%')
+  AND ($2::bool
+       OR owner_id = ANY($3::bigint[]))
+  AND ($4::text = '' OR status = $4::text)
+  AND ($5::text = '' OR case_no ILIKE '%' || $5::text || '%'
+       OR title ILIKE '%' || $5::text || '%'
+       OR customer_name ILIKE '%' || $5::text || '%')
 ORDER BY updated_at DESC, id DESC
-LIMIT $5::int OFFSET $4::int
+LIMIT $7::int OFFSET $6::int
 `
 
 type ListSourcingCasesParams struct {
-	TenantID  int64
-	Status    string
-	Keyword   string
-	RowOffset int32
-	RowLimit  int32
+	TenantID   int64
+	VisibleAll bool
+	VisibleIds []int64
+	Status     string
+	Keyword    string
+	RowOffset  int32
+	RowLimit   int32
 }
 
 type ListSourcingCasesRow struct {
@@ -253,6 +257,8 @@ type ListSourcingCasesRow struct {
 func (q *Queries) ListSourcingCases(ctx context.Context, arg ListSourcingCasesParams) ([]ListSourcingCasesRow, error) {
 	rows, err := q.db.Query(ctx, listSourcingCases,
 		arg.TenantID,
+		arg.VisibleAll,
+		arg.VisibleIds,
 		arg.Status,
 		arg.Keyword,
 		arg.RowOffset,

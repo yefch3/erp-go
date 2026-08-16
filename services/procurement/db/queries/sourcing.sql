@@ -38,6 +38,8 @@ SELECT id, case_no, title, customer_id, customer_name, contact_name,
        owner_id, owner_name, created_at, updated_at, count(*) OVER () AS total
 FROM sourcing_cases
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND (sqlc.arg(visible_all)::bool
+       OR owner_id = ANY(sqlc.arg(visible_ids)::bigint[]))
   AND (sqlc.arg(status)::text = '' OR status = sqlc.arg(status)::text)
   AND (sqlc.arg(keyword)::text = '' OR case_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR title ILIKE '%' || sqlc.arg(keyword)::text || '%'

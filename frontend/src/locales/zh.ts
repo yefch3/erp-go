@@ -292,6 +292,7 @@ export default {
     grantsSaved: '权限已保存',
     dataScope: '数据范围',
     scopeExport: '出口业务',
+    scopeSourcing: '采购询价',
     scopes: { SELF: '仅本人', DEPT: '本部门', DEPT_AND_SUB: '本部门及下级', ALL: '全部' },
     scopeHint: '权限决定能用哪些功能，数据范围决定能看谁的单据。未配置时按「仅本人」处理。',
     saveScope: '保存范围',

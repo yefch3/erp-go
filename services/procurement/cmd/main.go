@@ -75,6 +75,11 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer fxConn.Close()
+	iamConn, err := dial(cfg.IAMAddr)
+	if err != nil {
+		return err
+	}
+	defer iamConn.Close()
 
 	svc := app.New(pool, app.Deps{
 		Numbering:  grpcout.NewNumbering(mdConn),
@@ -82,6 +87,7 @@ func run(log *slog.Logger) error {
 		Suppliers:  grpcout.NewSuppliers(mdConn),
 		Warehouses: grpcout.NewWarehouses(invConn),
 		Rates:      grpcout.NewRates(fxConn),
+		Scopes:     grpcout.NewScopes(iamConn),
 		Live:       live,
 	})
 
