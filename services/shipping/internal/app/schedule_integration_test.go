@@ -29,6 +29,7 @@ func TestScheduleLifecycle(t *testing.T) {
 
 	input := validInput()
 	input.ContractNo = "CON-D1-001"
+	input.CustomerID = 41
 	input.CustomerName = "D1 Customer"
 	created, err := svc.CreateSchedule(ctx, tenantID, input, op, false)
 	if err != nil {
@@ -63,6 +64,27 @@ func TestScheduleLifecycle(t *testing.T) {
 	if err != nil || len(rows) != 0 || total != 2 {
 		t.Fatalf("empty page rows=%d total=%d err=%v", len(rows), total, err)
 	}
+
+	// B5 数据范围必须落到数据库查询和详情入口，不能只在页面隐藏按钮。
+	svc.UseAccessControl(scopesStub{visibility: Visibility{EmployeeIDs: []int64{7}, ScopeType: "SELF"}}, customerAccessStub{})
+	rows, total, _, _, err = svc.ListSchedules(ctx, tenantID, ListFilter{Keyword: "CON-D1", Page: 1, PageSize: 20}, op)
+	if err != nil || len(rows) != 2 || total != 2 {
+		t.Fatalf("visible scope rows=%d total=%d err=%v", len(rows), total, err)
+	}
+	svc.UseAccessControl(scopesStub{visibility: Visibility{EmployeeIDs: []int64{999}, ScopeType: "SELF"}}, customerAccessStub{customerIDs: []int64{41}})
+	rows, total, _, _, err = svc.ListSchedules(ctx, tenantID, ListFilter{Keyword: "CON-D1", Page: 1, PageSize: 20}, op)
+	if err != nil || len(rows) != 2 || total != 2 {
+		t.Fatalf("customer-owner scope rows=%d total=%d err=%v", len(rows), total, err)
+	}
+	svc.UseAccessControl(scopesStub{visibility: Visibility{EmployeeIDs: []int64{999}, ScopeType: "SELF"}}, customerAccessStub{})
+	rows, total, _, _, err = svc.ListSchedules(ctx, tenantID, ListFilter{Keyword: "CON-D1", Page: 1, PageSize: 20}, op)
+	if err != nil || len(rows) != 0 || total != 0 {
+		t.Fatalf("out-of-scope list rows=%d total=%d err=%v", len(rows), total, err)
+	}
+	if _, err = svc.GetScheduleDetails(ctx, tenantID, created.ID, op); errorCode(err) != "SHIPPING_NOT_FOUND" {
+		t.Fatalf("out-of-scope detail code=%q err=%v", errorCode(err), err)
+	}
+	svc.UseAccessControl(nil, nil)
 
 	changed := input
 	changed.ETD = "2026-08-11"

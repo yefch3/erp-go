@@ -135,7 +135,14 @@ func (s *Service) requireDocumentStorage() error {
 
 // PresignDocumentUpload checks the schedule and file type before granting a
 // short-lived capability to write one object under that schedule's namespace.
-func (s *Service) PresignDocumentUpload(ctx context.Context, tenantID, scheduleID int64, fileName string) (string, string, int32, error) {
+func (s *Service) PresignDocumentUpload(ctx context.Context, tenantID, scheduleID int64, fileName string, operators ...Operator) (string, string, int32, error) {
+	var op Operator
+	if len(operators) > 0 {
+		op = operators[0]
+	}
+	if _, err := s.authorizeSchedule(ctx, tenantID, scheduleID, op); err != nil {
+		return "", "", 0, err
+	}
 	if err := s.requireDocumentStorage(); err != nil {
 		return "", "", 0, err
 	}
@@ -157,6 +164,9 @@ func (s *Service) PresignDocumentUpload(ctx context.Context, tenantID, scheduleI
 // RegisterDocument verifies the bytes already in object storage, then creates
 // either a new document series or the next immutable version of an old one.
 func (s *Service) RegisterDocument(ctx context.Context, tenantID, scheduleID int64, key, fileName, category, remark string, replacesID int64, op Operator) (store.ShippingDocument, error) {
+	if _, err := s.authorizeSchedule(ctx, tenantID, scheduleID, op); err != nil {
+		return store.ShippingDocument{}, err
+	}
 	if err := s.requireDocumentStorage(); err != nil {
 		return store.ShippingDocument{}, err
 	}
@@ -245,7 +255,14 @@ func (s *Service) RegisterDocument(ctx context.Context, tenantID, scheduleID int
 	return out, err
 }
 
-func (s *Service) ListDocuments(ctx context.Context, tenantID, scheduleID int64) ([]store.ShippingDocument, error) {
+func (s *Service) ListDocuments(ctx context.Context, tenantID, scheduleID int64, operators ...Operator) ([]store.ShippingDocument, error) {
+	var op Operator
+	if len(operators) > 0 {
+		op = operators[0]
+	}
+	if _, err := s.authorizeSchedule(ctx, tenantID, scheduleID, op); err != nil {
+		return nil, err
+	}
 	if _, err := s.q.GetSchedule(ctx, store.GetScheduleParams{TenantID: tenantID, ID: scheduleID}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, apierr.NotFound("SHIPPING_NOT_FOUND", "船期不存在")
@@ -258,6 +275,9 @@ func (s *Service) ListDocuments(ctx context.Context, tenantID, scheduleID int64)
 // DocumentAccess creates a two-minute URL only after the caller has passed the
 // gateway permission check and the document has been matched to this schedule.
 func (s *Service) DocumentAccess(ctx context.Context, tenantID, scheduleID, documentID int64, mode string, op Operator) (string, error) {
+	if _, err := s.authorizeSchedule(ctx, tenantID, scheduleID, op); err != nil {
+		return "", err
+	}
 	if err := s.requireDocumentStorage(); err != nil {
 		return "", err
 	}
@@ -291,6 +311,9 @@ func (s *Service) DocumentAccess(ctx context.Context, tenantID, scheduleID, docu
 // InvalidateDocument preserves both metadata and bytes. This is an auditable
 // business reversal, not a delete operation.
 func (s *Service) InvalidateDocument(ctx context.Context, tenantID, scheduleID, documentID int64, reason string, op Operator) (store.ShippingDocument, error) {
+	if _, err := s.authorizeSchedule(ctx, tenantID, scheduleID, op); err != nil {
+		return store.ShippingDocument{}, err
+	}
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		return store.ShippingDocument{}, apierr.Invalid("SHIPPING_DOCUMENT_VOID_REASON_REQUIRED", "作废原因必填")

@@ -243,6 +243,17 @@ func (s *Service) ListCustomerOwners(ctx context.Context, tenantID, customerID i
 	return s.q.ListCustomerOwners(ctx, store.ListCustomerOwnersParams{TenantID: tenantID, CustomerID: customerID, Status: status})
 }
 
+// ListCustomerIDsOwnedByEmployees 返回给定员工当前有效负责的客户 ID。
+// 跨模块的数据范围只需要 ID，不应把客户敏感资料复制到其他服务。
+func (s *Service) ListCustomerIDsOwnedByEmployees(ctx context.Context, tenantID int64, employeeIDs []int64) ([]int64, error) {
+	if len(employeeIDs) == 0 {
+		return []int64{}, nil
+	}
+	return s.q.ListCustomerIDsOwnedByEmployees(ctx, store.ListCustomerIDsOwnedByEmployeesParams{
+		TenantID: tenantID, EmployeeIds: employeeIDs,
+	})
+}
+
 func (s *Service) CreateCustomerOwner(ctx context.Context, tenantID, customerID int64, in CustomerOwnerInput) (store.CustomerOwner, error) {
 	if in.EmployeeID == 0 || strings.TrimSpace(in.EmployeeName) == "" {
 		return store.CustomerOwner{}, apierr.Invalid("MD_CUSTOMER_OWNER_REQUIRED", "负责人、姓名和职责必填")

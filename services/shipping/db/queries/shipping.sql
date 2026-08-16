@@ -38,6 +38,11 @@ SELECT *, count(*) OVER () AS total
 FROM shipping_schedules
 WHERE tenant_id = sqlc.arg(tenant_id)
   AND (
+    sqlc.arg(scope_all)::boolean
+    OR responsible_employee_id = ANY(sqlc.arg(visible_employee_ids)::bigint[])
+    OR COALESCE(customer_id, 0) = ANY(sqlc.arg(visible_customer_ids)::bigint[])
+  )
+  AND (
     sqlc.arg(keyword)::text = ''
     OR schedule_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
     OR contract_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
@@ -68,6 +73,11 @@ LIMIT sqlc.arg(row_limit) OFFSET sqlc.arg(row_offset);
 SELECT count(*)
 FROM shipping_schedules
 WHERE tenant_id = sqlc.arg(tenant_id)
+  AND (
+    sqlc.arg(scope_all)::boolean
+    OR responsible_employee_id = ANY(sqlc.arg(visible_employee_ids)::bigint[])
+    OR COALESCE(customer_id, 0) = ANY(sqlc.arg(visible_customer_ids)::bigint[])
+  )
   AND (
     sqlc.arg(keyword)::text = ''
     OR schedule_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
@@ -399,7 +409,12 @@ SELECT
   count(*) FILTER (WHERE delay_days > 0 AND status <> 'CANCELLED')::bigint AS delayed,
   count(*) FILTER (WHERE has_temporary_call AND status <> 'CANCELLED')::bigint AS temporary_call
 FROM shipping_schedules
-WHERE tenant_id = $1;
+WHERE tenant_id = sqlc.arg(tenant_id)
+  AND (
+    sqlc.arg(scope_all)::boolean
+    OR responsible_employee_id = ANY(sqlc.arg(visible_employee_ids)::bigint[])
+    OR COALESCE(customer_id, 0) = ANY(sqlc.arg(visible_customer_ids)::bigint[])
+  );
 
 -- name: CreateShippingDocument :one
 INSERT INTO shipping_documents (

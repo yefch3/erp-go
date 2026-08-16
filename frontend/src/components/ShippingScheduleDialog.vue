@@ -13,7 +13,7 @@
           </el-select>
         </el-form-item></el-col>
         <el-col :span="12"><el-form-item :label="t('shipping.responsible')" prop="responsibleEmployeeId">
-          <EmployeeSelect v-model="form.responsibleEmployeeId" @selected="employee=>form.responsibleName=employee?.name||''" />
+          <EmployeeSelect v-model="form.responsibleEmployeeId" data-scope-module="shipping" @selected="employee=>form.responsibleName=employee?.name||''" />
         </el-form-item></el-col>
         <el-col :span="12"><el-form-item :label="t('shipping.vessel')" prop="vesselName"><el-input v-model="form.vesselName" /></el-form-item></el-col>
         <el-col :span="12"><el-form-item :label="t('shipping.voyage')" prop="voyageNo"><el-input v-model="form.voyageNo" /></el-form-item></el-col>

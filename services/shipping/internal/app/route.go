@@ -159,7 +159,14 @@ func createInitialRoute(ctx context.Context, q *store.Queries, s store.ShippingS
 	})
 }
 
-func (s *Service) GetScheduleDetails(ctx context.Context, tenantID, id int64) (ScheduleDetails, error) {
+func (s *Service) GetScheduleDetails(ctx context.Context, tenantID, id int64, operators ...Operator) (ScheduleDetails, error) {
+	var op Operator
+	if len(operators) > 0 {
+		op = operators[0]
+	}
+	if _, err := s.authorizeSchedule(ctx, tenantID, id, op); err != nil {
+		return ScheduleDetails{}, err
+	}
 	schedule, changes, err := s.GetSchedule(ctx, tenantID, id)
 	if err != nil {
 		return ScheduleDetails{}, err
@@ -176,13 +183,27 @@ func (s *Service) GetScheduleDetails(ctx context.Context, tenantID, id int64) (S
 	return ScheduleDetails{Schedule: schedule, Changes: changes, Route: route, Delays: delays, Reminders: reminders}, err
 }
 
-func (s *Service) ShippingStatistics(ctx context.Context, tenantID int64) (store.ShippingStatisticsRow, error) {
-	return s.q.ShippingStatistics(ctx, tenantID)
+func (s *Service) ShippingStatistics(ctx context.Context, tenantID int64, operators ...Operator) (store.ShippingStatisticsRow, error) {
+	var op Operator
+	if len(operators) > 0 {
+		op = operators[0]
+	}
+	visible, err := s.visibleTo(ctx, op)
+	if err != nil {
+		return store.ShippingStatisticsRow{}, err
+	}
+	return s.q.ShippingStatistics(ctx, store.ShippingStatisticsParams{
+		TenantID: tenantID, ScopeAll: visible.All,
+		VisibleEmployeeIds: visible.EmployeeIDs, VisibleCustomerIds: visible.CustomerIDs,
+	})
 }
 
 func validRouteNodeType(v string) bool { return v == "TRANSIT" || v == "TEMPORARY" }
 
 func (s *Service) AddRouteNode(ctx context.Context, tenantID, id int64, in RouteNodeInput, op Operator) ([]store.ShippingRouteNode, int32, error) {
+	if _, err := s.authorizeSchedule(ctx, tenantID, id, op); err != nil {
+		return nil, 0, err
+	}
 	in.NodeType = strings.ToUpper(strings.TrimSpace(in.NodeType))
 	in.PortName = strings.TrimSpace(in.PortName)
 	in.Reason = strings.TrimSpace(in.Reason)
@@ -286,6 +307,9 @@ func (s *Service) AddRouteNode(ctx context.Context, tenantID, id int64, in Route
 // row and its change history remain available for audit; origin/destination
 // nodes and ports that already have operational progress cannot be removed.
 func (s *Service) RemoveRouteNode(ctx context.Context, tenantID, id, nodeID int64, reason string, routeVersion int32, op Operator) ([]store.ShippingRouteNode, int32, error) {
+	if _, err := s.authorizeSchedule(ctx, tenantID, id, op); err != nil {
+		return nil, 0, err
+	}
 	reason = strings.TrimSpace(reason)
 	if nodeID == 0 || reason == "" {
 		return nil, 0, apierr.Invalid("SHIPPING_ROUTE_REMOVE_FIELDS_REQUIRED", "港口节点和移除原因必填")
@@ -364,6 +388,9 @@ func idsText(nodes []store.ShippingRouteNode) string {
 }
 
 func (s *Service) ReorderRoute(ctx context.Context, tenantID, id int64, ids []int64, reason string, routeVersion int32, op Operator) ([]store.ShippingRouteNode, int32, error) {
+	if _, err := s.authorizeSchedule(ctx, tenantID, id, op); err != nil {
+		return nil, 0, err
+	}
 	if len(ids) < 2 || strings.TrimSpace(reason) == "" {
 		return nil, 0, apierr.Invalid("SHIPPING_ROUTE_ORDER_REQUIRED", "完整路线顺序和变更原因必填")
 	}
@@ -627,6 +654,9 @@ func (s *Service) updateNodeTimes(ctx context.Context, q *store.Queries, current
 // drive the schedule lifecycle automatically; UPDATE_TIMES is the audited
 // correction path and never overwrites original ETA/ETD values.
 func (s *Service) UpdateProgress(ctx context.Context, tenantID, id int64, in ProgressInput, op Operator) (store.ShippingSchedule, []store.ShippingRouteNode, []store.ShippingDelayEvent, error) {
+	if _, err := s.authorizeSchedule(ctx, tenantID, id, op); err != nil {
+		return store.ShippingSchedule{}, nil, nil, err
+	}
 	in.Action = strings.ToUpper(strings.TrimSpace(in.Action))
 	in.Reason = strings.TrimSpace(in.Reason)
 	if in.RouteNodeID == 0 || in.Action == "" || in.Reason == "" {

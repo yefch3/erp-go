@@ -30,6 +30,8 @@ type Service struct {
 	log              *slog.Logger
 	reminderNotifier ReminderNotifier
 	reminderWake     chan struct{}
+	scopes           Scopes
+	customerAccess   CustomerAccess
 }
 
 // New accepts the small pinger interface so the readiness check remains easy
@@ -74,6 +76,8 @@ type ListFilter struct {
 	Keyword, Status, PortOfLoading, PortOfDischarge string
 	ETDFrom, ETDTo, ETAFrom, ETATo                  string
 	Page, PageSize                                  int32
+	ScopeAll                                        bool
+	VisibleEmployeeIDs, VisibleCustomerIDs          []int64
 }
 
 func parseDate(value, field string, required bool) (pgtype.Date, error) {
@@ -173,6 +177,9 @@ func (s *Service) rejectDuplicate(ctx context.Context, q *store.Queries, tenantI
 }
 
 func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in ScheduleInput, op Operator, confirmed bool) (store.ShippingSchedule, error) {
+	if err := s.authorizeAssignment(ctx, in.ResponsibleEmployeeID, op); err != nil {
+		return store.ShippingSchedule{}, err
+	}
 	p, err := validateInput(in)
 	if err != nil {
 		return store.ShippingSchedule{}, err
@@ -212,7 +219,16 @@ func (s *Service) GetSchedule(ctx context.Context, tenantID, id int64) (store.Sh
 	return schedule, changes, err
 }
 
-func (s *Service) ListSchedules(ctx context.Context, tenantID int64, f ListFilter) ([]store.ListSchedulesRow, int64, int32, int32, error) {
+func (s *Service) ListSchedules(ctx context.Context, tenantID int64, f ListFilter, operators ...Operator) ([]store.ListSchedulesRow, int64, int32, int32, error) {
+	var op Operator
+	if len(operators) > 0 {
+		op = operators[0]
+	}
+	visible, err := s.visibleTo(ctx, op)
+	if err != nil {
+		return nil, 0, f.Page, f.PageSize, err
+	}
+	f.ScopeAll, f.VisibleEmployeeIDs, f.VisibleCustomerIDs = visible.All, visible.EmployeeIDs, visible.CustomerIDs
 	f.Status = strings.ToUpper(strings.TrimSpace(f.Status))
 	if f.Page < 1 {
 		f.Page = 1
@@ -247,6 +263,7 @@ func (s *Service) ListSchedules(ctx context.Context, tenantID int64, f ListFilte
 		PortOfLoading: strings.TrimSpace(f.PortOfLoading), PortOfDischarge: strings.TrimSpace(f.PortOfDischarge),
 		EtdFrom: etdFrom, EtdTo: etdTo, EtaFrom: etaFrom, EtaTo: etaTo,
 		RowLimit: f.PageSize, RowOffset: (f.Page - 1) * f.PageSize,
+		ScopeAll: f.ScopeAll, VisibleEmployeeIds: f.VisibleEmployeeIDs, VisibleCustomerIds: f.VisibleCustomerIDs,
 	})
 	if err != nil {
 		return nil, 0, f.Page, f.PageSize, err
@@ -259,6 +276,7 @@ func (s *Service) ListSchedules(ctx context.Context, tenantID int64, f ListFilte
 			TenantID: tenantID, Keyword: strings.TrimSpace(f.Keyword), Status: f.Status,
 			PortOfLoading: strings.TrimSpace(f.PortOfLoading), PortOfDischarge: strings.TrimSpace(f.PortOfDischarge),
 			EtdFrom: etdFrom, EtdTo: etdTo, EtaFrom: etaFrom, EtaTo: etaTo,
+			ScopeAll: f.ScopeAll, VisibleEmployeeIds: f.VisibleEmployeeIDs, VisibleCustomerIds: f.VisibleCustomerIDs,
 		})
 		if err != nil {
 			return nil, 0, f.Page, f.PageSize, err
@@ -286,6 +304,16 @@ func addChange(ctx context.Context, q *store.Queries, tenantID, id int64, kind, 
 }
 
 func (s *Service) UpdateSchedule(ctx context.Context, tenantID, id int64, in ScheduleInput, reason string, op Operator, confirmed bool) (store.ShippingSchedule, error) {
+	current, err := s.authorizeSchedule(ctx, tenantID, id, op)
+	if err != nil {
+		return store.ShippingSchedule{}, err
+	}
+	// 只有实际更换负责人时才检查候选范围；客户负责人可以保留原负责人并维护其可见船期。
+	if in.ResponsibleEmployeeID != current.ResponsibleEmployeeID {
+		if err := s.authorizeAssignment(ctx, in.ResponsibleEmployeeID, op); err != nil {
+			return store.ShippingSchedule{}, err
+		}
+	}
 	p, err := validateInput(in)
 	if err != nil {
 		return store.ShippingSchedule{}, err
@@ -425,6 +453,9 @@ var transitions = map[string]map[string]bool{
 }
 
 func (s *Service) changeStatus(ctx context.Context, tenantID, id int64, next, reason, kind string, op Operator) (store.ShippingSchedule, error) {
+	if _, err := s.authorizeSchedule(ctx, tenantID, id, op); err != nil {
+		return store.ShippingSchedule{}, err
+	}
 	if !validStatus(next) {
 		return store.ShippingSchedule{}, apierr.Invalid("SHIPPING_STATUS_INVALID", "船期状态无效")
 	}
