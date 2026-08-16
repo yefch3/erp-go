@@ -29,6 +29,22 @@ WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
   AND i.owner_id = sqlc.arg(owner_id)::bigint
   AND i.thread_key = sqlc.arg(thread_key)::text
   AND NOT i.is_bounce
+  -- Same duplicate-silencing as ListThread, for the same reason: an export
+  -- of a conversation must not carry every ERP-sent reply twice. See the
+  -- comment there for the anatomy of a SENT-folder mirror copy.
+  AND NOT (i.folder = 'SENT' AND i.message_id <> '' AND (
+    EXISTS (
+      SELECT 1 FROM email_messages sent
+      WHERE sent.tenant_id = i.tenant_id AND sent.sender_id = i.owner_id
+        AND sent.message_key::text = split_part(i.message_id, '@', 1)
+    )
+    OR EXISTS (
+      SELECT 1 FROM email_inbound twin
+      WHERE twin.tenant_id = i.tenant_id AND twin.owner_id = i.owner_id
+        AND twin.thread_key = i.thread_key AND twin.message_id = i.message_id
+        AND twin.id <> i.id AND twin.folder <> 'SENT' AND NOT twin.is_bounce
+    )
+  ))
 ORDER BY at;
 
 -- name: ListThreadInboundFiles :many

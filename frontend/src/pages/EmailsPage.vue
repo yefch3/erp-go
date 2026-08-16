@@ -188,11 +188,11 @@
             v-for="it in threadItems"
             :key="it.direction + it.id"
             class="thread-item"
-            :class="{ out: it.direction === 'OUT' }"
+            :class="{ out: isOwnMail(it) }"
           >
             <button type="button" class="thread-head" @click="toggleThreadItem(it)">
-              <el-tag size="small" :type="it.direction === 'OUT' ? 'info' : 'success'" effect="plain">
-                {{ it.direction === 'OUT' ? t('emails.threadOut') : t('emails.threadIn') }}
+              <el-tag size="small" :type="isOwnMail(it) ? 'info' : 'success'" effect="plain">
+                {{ isOwnMail(it) ? t('emails.threadOut') : t('emails.threadIn') }}
               </el-tag>
               <span class="strong">{{ it.who || it.counterparty }}</span>
               <span class="sub ellipsis">{{ it.counterparty }}</span>
@@ -1031,6 +1031,15 @@ const markingAll = ref(false)
 const emptying = ref(false)
 // What the server last said went wrong with this mailbox, empty when healthy.
 const syncError = ref('')
+// The bound mailbox's own address. A thread entry whose sender is this
+// address is our own mail even when it arrived through the inbox (a mail
+// sent to yourself), and must wear the 我发出 tag, not 对方.
+const accountEmail = ref('')
+
+function isOwnMail(it: { direction: string; counterparty: string }) {
+  return it.direction === 'OUT'
+    || (accountEmail.value !== '' && it.counterparty.trim().toLowerCase() === accountEmail.value)
+}
 // The mail being read full-page. Set from the URL, never directly: opening a
 // mail is a navigation, so refresh reopens it and back returns to the list.
 const openedInbound = ref<InboundMail | null>(null)
@@ -1993,8 +2002,9 @@ async function markAllRead() {
 // in says nothing about whether mail is still arriving.
 async function checkSyncHealth() {
   try {
-    const d = await get<{ account: { lastError: string }; excelAvailable: boolean }>('/my-mail-account')
+    const d = await get<{ account: { lastError: string; email: string }; excelAvailable: boolean }>('/my-mail-account')
     syncError.value = d.account?.lastError ?? ''
+    accountEmail.value = (d.account?.email ?? '').trim().toLowerCase()
     excelAvailable.value = d.excelAvailable === true
   } catch {
     excelAvailable.value = false
