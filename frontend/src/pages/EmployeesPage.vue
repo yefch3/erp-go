@@ -14,6 +14,9 @@
         <el-button v-if="canWrite && invitable.length" @click="inviteSelected">
           {{ t('employees.inviteSelected', { n: invitable.length }) }}
         </el-button>
+        <el-button v-if="canGrant && selected.length" @click="openBatchRoles">
+          {{ t('employees.assignRolesBatch', { n: selected.length }) }}
+        </el-button>
         <el-button v-if="canWrite" @click="importOpen = true">{{ t('employees.import') }}</el-button>
         <el-button v-if="canWrite" type="primary" @click="openCreate">{{ t('employees.create') }}</el-button>
       </div>
@@ -63,14 +66,15 @@
         stripe
         @selection-change="onSelect"
       >
-        <!-- Only rows an invitation could actually go to are selectable.
-             Offering a checkbox that then reports "已激活" is a slower way of
-             saying what the 激活状态 column already says. -->
+        <!-- The selection serves two batch acts now: inviting (only rows an
+             invitation could go to) and role assignment (anybody, for an
+             administrator who may grant). Each batch action filters the
+             selection down to the rows it can act on. -->
         <el-table-column
-          v-if="canWrite"
+          v-if="canWrite || canGrant"
           type="selection"
           width="48"
-          :selectable="(row: Employee) => canInvite(row)"
+          :selectable="(row: Employee) => canInvite(row) || canGrant"
         />
         <el-table-column :label="t('employees.employeeInfo')" min-width="240">
           <template #default="{ row }">
@@ -340,6 +344,49 @@
       </template>
     </el-dialog>
 
+    <!-- Invitation with the roles decided up front. Assigning after
+         activation gave every new employee a stretch of owning an account
+         that could do nothing; choosing here closes that window — the mail
+         can be opened seconds after it is sent. Optional on purpose: a
+         re-invite must be possible without touching roles at all. -->
+    <el-dialog v-model="inviteOpen" :title="inviteTitle" width="min(480px, calc(100vw - 24px))">
+      <p class="target">{{ inviteText }}</p>
+      <template v-if="canGrant && roles.length">
+        <el-divider />
+        <p class="sub">{{ t('employees.inviteRolesHint') }}</p>
+        <el-checkbox-group v-model="inviteRoleIds" class="role-list">
+          <el-checkbox v-for="r in roles" :key="r.id" :value="r.id" :label="`${r.name}（${r.code}）`" />
+        </el-checkbox-group>
+      </template>
+      <template #footer>
+        <el-button @click="inviteOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="invitingNow" @click="confirmInvite">
+          {{ t('employees.sendInvite') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Roles for a whole selection at once. Append is the default and the
+         common case (a hiring wave shares one岗位); replace is for cleanups
+         and says exactly what it does. -->
+    <el-dialog
+      v-model="batchRolesOpen"
+      :title="t('employees.assignRolesBatch', { n: selected.length })"
+      width="min(480px, calc(100vw - 24px))"
+    >
+      <el-radio-group v-model="batchRolesMode" class="batch-mode">
+        <el-radio value="append">{{ t('employees.rolesAppend') }}</el-radio>
+        <el-radio value="replace">{{ t('employees.rolesReplace') }}</el-radio>
+      </el-radio-group>
+      <el-checkbox-group v-model="batchRoleIds" class="role-list">
+        <el-checkbox v-for="r in roles" :key="r.id" :value="r.id" :label="`${r.name}（${r.code}）`" />
+      </el-checkbox-group>
+      <template #footer>
+        <el-button @click="batchRolesOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="saveBatchRoles">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="passwordOpen" :title="passwordTitle" width="min(420px, calc(100vw - 24px))">
       <p class="target">{{ current?.name }}</p>
       <el-form label-width="100px">
@@ -363,7 +410,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type ElTable } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { del, get, post, put } from '../api'
+import { del, get, post, put, quietErrors } from '../api'
 import { useAuthStore } from '../stores/auth'
 import ImportEmployeesDialog from '../components/ImportEmployeesDialog.vue'
 import BasicDataEmployeeNav from '../components/BasicDataEmployeeNav.vue'
@@ -662,48 +709,130 @@ async function savePassword() {
   }
 }
 
-// Sending the invitation. Confirmed first because it puts a mail in somebody
-// else's inbox from this administrator's own address — an action with a
-// visible outside, not a form save.
-async function invite(row: Employee) {
-  const again = Number(row.inviteExpiresAt) > 0
-  await ElMessageBox.confirm(
-    t(again ? 'employees.confirmReinvite' : 'employees.confirmInvite', {
-      name: row.name,
-      email: row.email,
-    }),
-    t(again ? 'employees.reinvite' : 'employees.invite'),
-  )
-  inviting.value = row.id
+// Sending the invitation, single or batch, goes through one dialog: it
+// states what is about to be sent (mail leaves this administrator's own
+// address — an action with a visible outside, not a form save) and lets the
+// roles be chosen in the same breath, so the account never exists in the
+// usable-but-powerless state.
+const inviteOpen = ref(false)
+const inviteTargets = ref<Employee[]>([])
+const inviteRoleIds = ref<string[]>([])
+const invitingNow = ref(false)
+
+const inviteTitle = computed(() => {
+  const targets = inviteTargets.value
+  if (targets.length > 1) return t('employees.inviteSelected', { n: targets.length })
+  const again = Number(targets[0]?.inviteExpiresAt) > 0
+  return t(again ? 'employees.reinvite' : 'employees.invite')
+})
+const inviteText = computed(() => {
+  const targets = inviteTargets.value
+  if (targets.length > 1) return t('employees.confirmInviteMany', { n: targets.length })
+  const one = targets[0]
+  if (!one) return ''
+  const again = Number(one.inviteExpiresAt) > 0
+  return t(again ? 'employees.confirmReinvite' : 'employees.confirmInvite', {
+    name: one.name, email: one.email,
+  })
+})
+
+function invite(row: Employee) {
+  inviteTargets.value = [row]
+  inviteRoleIds.value = []
+  inviteOpen.value = true
+}
+
+function inviteSelected() {
+  inviteTargets.value = invitable.value
+  inviteRoleIds.value = []
+  inviteOpen.value = true
+}
+
+async function confirmInvite() {
+  const targets = inviteTargets.value
+  if (!targets.length) return
+  invitingNow.value = true
   try {
-    await post(`/employees/${row.id}/invite`, {})
-    ElMessage.success(t('employees.invited', { email: row.email }))
+    // Roles first: the mail can be opened seconds after it is sent, and the
+    // point of choosing roles here is that activation lands on a working
+    // account. Left empty, roles are not touched — a re-invite is about the
+    // link, not the key ring.
+    if (canGrant && inviteRoleIds.value.length) {
+      for (const e of targets) {
+        await post(`/employees/${e.id}/roles`, { roleIds: inviteRoleIds.value })
+      }
+    }
+    if (targets.length === 1) {
+      inviting.value = targets[0].id
+      await post(`/employees/${targets[0].id}/invite`, {})
+      ElMessage.success(t('employees.invited', { email: targets[0].email }))
+    } else {
+      const d = await post<{
+        sent: number
+        results: { name: string; email: string; sent: boolean; reason: string }[]
+      }>('/employees/invite-batch', { employeeIds: targets.map((e) => e.id) })
+      batchSent.value = Number(d.sent ?? 0)
+      batchFailed.value = (d.results ?? []).filter((r) => !r.sent)
+      // The dialog opens either way. "全部发送成功" is worth seeing after
+      // eighty sends, and it is the only confirmation that the count was
+      // what was meant.
+      batchOpen.value = true
+      table.value?.clearSelection()
+    }
+    inviteOpen.value = false
     load()
   } finally {
     inviting.value = ''
+    invitingNow.value = false
   }
 }
 
-// Batch invitation. Confirmed with the count and the sending address spelled
-// out, because this puts N messages into N inboxes from the operator's own
-// mailbox — an action with a visible outside, and one nobody can take back.
-async function inviteSelected() {
-  const targets = invitable.value
-  await ElMessageBox.confirm(
-    t('employees.confirmInviteMany', { n: targets.length }),
-    t('employees.inviteSelected', { n: targets.length }),
-  )
-  const d = await post<{
-    sent: number
-    results: { name: string; email: string; sent: boolean; reason: string }[]
-  }>('/employees/invite-batch', { employeeIds: targets.map((e) => e.id) })
-  batchSent.value = Number(d.sent ?? 0)
-  batchFailed.value = (d.results ?? []).filter((r) => !r.sent)
-  // The dialog opens either way. "全部发送成功" is worth seeing after eighty
-  // sends, and it is the only confirmation that the count was what was meant.
-  batchOpen.value = true
-  table.value?.clearSelection()
-  load()
+// Roles for the whole selection. Append unions with what each person already
+// holds; replace sets exactly the chosen set. Per-row requests, quiet, with
+// one report at the end — half the reasons one row fails are about that row.
+const batchRolesOpen = ref(false)
+const batchRolesMode = ref<'append' | 'replace'>('append')
+const batchRoleIds = ref<string[]>([])
+
+function openBatchRoles() {
+  batchRolesMode.value = 'append'
+  batchRoleIds.value = []
+  batchRolesOpen.value = true
+}
+
+async function saveBatchRoles() {
+  const targets = selected.value
+  if (!targets.length) return
+  saving.value = true
+  try {
+    let failed = 0
+    for (const e of targets) {
+      try {
+        let ids = batchRoleIds.value
+        if (batchRolesMode.value === 'append') {
+          // The list rows do not carry roleIds — only the detail endpoint
+          // does — and a union against that empty list would quietly turn
+          // append into replace, stripping whatever the person already
+          // held. Read the truth per person before writing.
+          const d = await get<{ employee: { roleIds: string[] } }>(`/employees/${e.id}`, undefined, quietErrors)
+          ids = Array.from(new Set([...(d.employee.roleIds ?? []), ...batchRoleIds.value]))
+        }
+        await post(`/employees/${e.id}/roles`, { roleIds: ids }, quietErrors)
+      } catch {
+        failed++
+      }
+    }
+    batchRolesOpen.value = false
+    if (failed) {
+      ElMessage.warning(t('employees.rolesAssignPartial', { ok: targets.length - failed, fail: failed }))
+    } else {
+      ElMessage.success(t('employees.rolesAssigned', { n: targets.length }))
+    }
+    table.value?.clearSelection()
+    load()
+  } finally {
+    saving.value = false
+  }
 }
 
 async function deactivate(row: Employee) {
@@ -928,6 +1057,9 @@ onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
   font-weight: 400;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.batch-mode {
+  margin-bottom: 12px;
 }
 .target {
   margin: 0 0 12px;
