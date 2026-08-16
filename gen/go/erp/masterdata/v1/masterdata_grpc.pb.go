@@ -1057,12 +1057,44 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	SupplierService_CreateSupplier_FullMethodName     = "/erp.masterdata.v1.SupplierService/CreateSupplier"
-	SupplierService_GetSupplier_FullMethodName        = "/erp.masterdata.v1.SupplierService/GetSupplier"
-	SupplierService_ListSuppliers_FullMethodName      = "/erp.masterdata.v1.SupplierService/ListSuppliers"
-	SupplierService_UpdateSupplier_FullMethodName     = "/erp.masterdata.v1.SupplierService/UpdateSupplier"
-	SupplierService_DeactivateSupplier_FullMethodName = "/erp.masterdata.v1.SupplierService/DeactivateSupplier"
-	SupplierService_ActivateSupplier_FullMethodName   = "/erp.masterdata.v1.SupplierService/ActivateSupplier"
+	SupplierService_CreateSupplier_FullMethodName            = "/erp.masterdata.v1.SupplierService/CreateSupplier"
+	SupplierService_GetSupplier_FullMethodName               = "/erp.masterdata.v1.SupplierService/GetSupplier"
+	SupplierService_ListSuppliers_FullMethodName             = "/erp.masterdata.v1.SupplierService/ListSuppliers"
+	SupplierService_UpdateSupplier_FullMethodName            = "/erp.masterdata.v1.SupplierService/UpdateSupplier"
+	SupplierService_DeactivateSupplier_FullMethodName        = "/erp.masterdata.v1.SupplierService/DeactivateSupplier"
+	SupplierService_ActivateSupplier_FullMethodName          = "/erp.masterdata.v1.SupplierService/ActivateSupplier"
+	SupplierService_ListSupplierCountries_FullMethodName     = "/erp.masterdata.v1.SupplierService/ListSupplierCountries"
+	SupplierService_ListSupplierContacts_FullMethodName      = "/erp.masterdata.v1.SupplierService/ListSupplierContacts"
+	SupplierService_CreateSupplierContact_FullMethodName     = "/erp.masterdata.v1.SupplierService/CreateSupplierContact"
+	SupplierService_UpdateSupplierContact_FullMethodName     = "/erp.masterdata.v1.SupplierService/UpdateSupplierContact"
+	SupplierService_DeactivateSupplierContact_FullMethodName = "/erp.masterdata.v1.SupplierService/DeactivateSupplierContact"
+	SupplierService_ListSupplierOwners_FullMethodName        = "/erp.masterdata.v1.SupplierService/ListSupplierOwners"
+	SupplierService_CreateSupplierOwner_FullMethodName       = "/erp.masterdata.v1.SupplierService/CreateSupplierOwner"
+	SupplierService_UpdateSupplierOwner_FullMethodName       = "/erp.masterdata.v1.SupplierService/UpdateSupplierOwner"
+	SupplierService_DeactivateSupplierOwner_FullMethodName   = "/erp.masterdata.v1.SupplierService/DeactivateSupplierOwner"
+	SupplierService_ListSupplierChanges_FullMethodName       = "/erp.masterdata.v1.SupplierService/ListSupplierChanges"
+	SupplierService_ImportSuppliers_FullMethodName           = "/erp.masterdata.v1.SupplierService/ImportSuppliers"
+	SupplierService_ListFactories_FullMethodName             = "/erp.masterdata.v1.SupplierService/ListFactories"
+	SupplierService_GetFactory_FullMethodName                = "/erp.masterdata.v1.SupplierService/GetFactory"
+	SupplierService_CreateFactory_FullMethodName             = "/erp.masterdata.v1.SupplierService/CreateFactory"
+	SupplierService_UpdateFactory_FullMethodName             = "/erp.masterdata.v1.SupplierService/UpdateFactory"
+	SupplierService_ListFactoryCountries_FullMethodName      = "/erp.masterdata.v1.SupplierService/ListFactoryCountries"
+	SupplierService_ListFactoryContacts_FullMethodName       = "/erp.masterdata.v1.SupplierService/ListFactoryContacts"
+	SupplierService_CreateFactoryContact_FullMethodName      = "/erp.masterdata.v1.SupplierService/CreateFactoryContact"
+	SupplierService_UpdateFactoryContact_FullMethodName      = "/erp.masterdata.v1.SupplierService/UpdateFactoryContact"
+	SupplierService_DeactivateFactoryContact_FullMethodName  = "/erp.masterdata.v1.SupplierService/DeactivateFactoryContact"
+	SupplierService_ListFactoryOwners_FullMethodName         = "/erp.masterdata.v1.SupplierService/ListFactoryOwners"
+	SupplierService_CreateFactoryOwner_FullMethodName        = "/erp.masterdata.v1.SupplierService/CreateFactoryOwner"
+	SupplierService_UpdateFactoryOwner_FullMethodName        = "/erp.masterdata.v1.SupplierService/UpdateFactoryOwner"
+	SupplierService_DeactivateFactoryOwner_FullMethodName    = "/erp.masterdata.v1.SupplierService/DeactivateFactoryOwner"
+	SupplierService_ListFactoryCapabilities_FullMethodName   = "/erp.masterdata.v1.SupplierService/ListFactoryCapabilities"
+	SupplierService_CreateFactoryCapability_FullMethodName   = "/erp.masterdata.v1.SupplierService/CreateFactoryCapability"
+	SupplierService_DeleteFactoryCapability_FullMethodName   = "/erp.masterdata.v1.SupplierService/DeleteFactoryCapability"
+	SupplierService_ListFactoryCertificates_FullMethodName   = "/erp.masterdata.v1.SupplierService/ListFactoryCertificates"
+	SupplierService_CreateFactoryCertificate_FullMethodName  = "/erp.masterdata.v1.SupplierService/CreateFactoryCertificate"
+	SupplierService_DeleteFactoryCertificate_FullMethodName  = "/erp.masterdata.v1.SupplierService/DeleteFactoryCertificate"
+	SupplierService_ListFactoryChanges_FullMethodName        = "/erp.masterdata.v1.SupplierService/ListFactoryChanges"
+	SupplierService_ImportFactories_FullMethodName           = "/erp.masterdata.v1.SupplierService/ImportFactories"
 )
 
 // SupplierServiceClient is the client API for SupplierService service.
@@ -1077,6 +1109,38 @@ type SupplierServiceClient interface {
 	UpdateSupplier(ctx context.Context, in *UpdateSupplierRequest, opts ...grpc.CallOption) (*UpdateSupplierResponse, error)
 	DeactivateSupplier(ctx context.Context, in *DeactivateSupplierRequest, opts ...grpc.CallOption) (*DeactivateSupplierResponse, error)
 	ActivateSupplier(ctx context.Context, in *ActivateSupplierRequest, opts ...grpc.CallOption) (*ActivateSupplierResponse, error)
+	ListSupplierCountries(ctx context.Context, in *ListSupplierCountriesRequest, opts ...grpc.CallOption) (*ListSupplierCountriesResponse, error)
+	ListSupplierContacts(ctx context.Context, in *ListSupplierContactsRequest, opts ...grpc.CallOption) (*ListSupplierContactsResponse, error)
+	CreateSupplierContact(ctx context.Context, in *CreateSupplierContactRequest, opts ...grpc.CallOption) (*CreateSupplierContactResponse, error)
+	UpdateSupplierContact(ctx context.Context, in *UpdateSupplierContactRequest, opts ...grpc.CallOption) (*UpdateSupplierContactResponse, error)
+	DeactivateSupplierContact(ctx context.Context, in *DeactivateSupplierContactRequest, opts ...grpc.CallOption) (*DeactivateSupplierContactResponse, error)
+	ListSupplierOwners(ctx context.Context, in *ListSupplierOwnersRequest, opts ...grpc.CallOption) (*ListSupplierOwnersResponse, error)
+	CreateSupplierOwner(ctx context.Context, in *CreateSupplierOwnerRequest, opts ...grpc.CallOption) (*CreateSupplierOwnerResponse, error)
+	UpdateSupplierOwner(ctx context.Context, in *UpdateSupplierOwnerRequest, opts ...grpc.CallOption) (*UpdateSupplierOwnerResponse, error)
+	DeactivateSupplierOwner(ctx context.Context, in *DeactivateSupplierOwnerRequest, opts ...grpc.CallOption) (*DeactivateSupplierOwnerResponse, error)
+	ListSupplierChanges(ctx context.Context, in *ListSupplierChangesRequest, opts ...grpc.CallOption) (*ListSupplierChangesResponse, error)
+	ImportSuppliers(ctx context.Context, in *ImportSuppliersRequest, opts ...grpc.CallOption) (*ImportSuppliersResponse, error)
+	ListFactories(ctx context.Context, in *ListFactoriesRequest, opts ...grpc.CallOption) (*ListFactoriesResponse, error)
+	GetFactory(ctx context.Context, in *GetFactoryRequest, opts ...grpc.CallOption) (*GetFactoryResponse, error)
+	CreateFactory(ctx context.Context, in *CreateFactoryRequest, opts ...grpc.CallOption) (*CreateFactoryResponse, error)
+	UpdateFactory(ctx context.Context, in *UpdateFactoryRequest, opts ...grpc.CallOption) (*UpdateFactoryResponse, error)
+	ListFactoryCountries(ctx context.Context, in *ListFactoryCountriesRequest, opts ...grpc.CallOption) (*ListFactoryCountriesResponse, error)
+	ListFactoryContacts(ctx context.Context, in *ListFactoryContactsRequest, opts ...grpc.CallOption) (*ListFactoryContactsResponse, error)
+	CreateFactoryContact(ctx context.Context, in *CreateFactoryContactRequest, opts ...grpc.CallOption) (*CreateFactoryContactResponse, error)
+	UpdateFactoryContact(ctx context.Context, in *UpdateFactoryContactRequest, opts ...grpc.CallOption) (*UpdateFactoryContactResponse, error)
+	DeactivateFactoryContact(ctx context.Context, in *DeactivateFactoryContactRequest, opts ...grpc.CallOption) (*DeactivateFactoryContactResponse, error)
+	ListFactoryOwners(ctx context.Context, in *ListFactoryOwnersRequest, opts ...grpc.CallOption) (*ListFactoryOwnersResponse, error)
+	CreateFactoryOwner(ctx context.Context, in *CreateFactoryOwnerRequest, opts ...grpc.CallOption) (*CreateFactoryOwnerResponse, error)
+	UpdateFactoryOwner(ctx context.Context, in *UpdateFactoryOwnerRequest, opts ...grpc.CallOption) (*UpdateFactoryOwnerResponse, error)
+	DeactivateFactoryOwner(ctx context.Context, in *DeactivateFactoryOwnerRequest, opts ...grpc.CallOption) (*DeactivateFactoryOwnerResponse, error)
+	ListFactoryCapabilities(ctx context.Context, in *ListFactoryCapabilitiesRequest, opts ...grpc.CallOption) (*ListFactoryCapabilitiesResponse, error)
+	CreateFactoryCapability(ctx context.Context, in *CreateFactoryCapabilityRequest, opts ...grpc.CallOption) (*CreateFactoryCapabilityResponse, error)
+	DeleteFactoryCapability(ctx context.Context, in *DeleteFactoryCapabilityRequest, opts ...grpc.CallOption) (*DeleteFactoryCapabilityResponse, error)
+	ListFactoryCertificates(ctx context.Context, in *ListFactoryCertificatesRequest, opts ...grpc.CallOption) (*ListFactoryCertificatesResponse, error)
+	CreateFactoryCertificate(ctx context.Context, in *CreateFactoryCertificateRequest, opts ...grpc.CallOption) (*CreateFactoryCertificateResponse, error)
+	DeleteFactoryCertificate(ctx context.Context, in *DeleteFactoryCertificateRequest, opts ...grpc.CallOption) (*DeleteFactoryCertificateResponse, error)
+	ListFactoryChanges(ctx context.Context, in *ListFactoryChangesRequest, opts ...grpc.CallOption) (*ListFactoryChangesResponse, error)
+	ImportFactories(ctx context.Context, in *ImportFactoriesRequest, opts ...grpc.CallOption) (*ImportFactoriesResponse, error)
 }
 
 type supplierServiceClient struct {
@@ -1147,6 +1211,326 @@ func (c *supplierServiceClient) ActivateSupplier(ctx context.Context, in *Activa
 	return out, nil
 }
 
+func (c *supplierServiceClient) ListSupplierCountries(ctx context.Context, in *ListSupplierCountriesRequest, opts ...grpc.CallOption) (*ListSupplierCountriesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSupplierCountriesResponse)
+	err := c.cc.Invoke(ctx, SupplierService_ListSupplierCountries_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) ListSupplierContacts(ctx context.Context, in *ListSupplierContactsRequest, opts ...grpc.CallOption) (*ListSupplierContactsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSupplierContactsResponse)
+	err := c.cc.Invoke(ctx, SupplierService_ListSupplierContacts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) CreateSupplierContact(ctx context.Context, in *CreateSupplierContactRequest, opts ...grpc.CallOption) (*CreateSupplierContactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateSupplierContactResponse)
+	err := c.cc.Invoke(ctx, SupplierService_CreateSupplierContact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) UpdateSupplierContact(ctx context.Context, in *UpdateSupplierContactRequest, opts ...grpc.CallOption) (*UpdateSupplierContactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateSupplierContactResponse)
+	err := c.cc.Invoke(ctx, SupplierService_UpdateSupplierContact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) DeactivateSupplierContact(ctx context.Context, in *DeactivateSupplierContactRequest, opts ...grpc.CallOption) (*DeactivateSupplierContactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeactivateSupplierContactResponse)
+	err := c.cc.Invoke(ctx, SupplierService_DeactivateSupplierContact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) ListSupplierOwners(ctx context.Context, in *ListSupplierOwnersRequest, opts ...grpc.CallOption) (*ListSupplierOwnersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSupplierOwnersResponse)
+	err := c.cc.Invoke(ctx, SupplierService_ListSupplierOwners_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) CreateSupplierOwner(ctx context.Context, in *CreateSupplierOwnerRequest, opts ...grpc.CallOption) (*CreateSupplierOwnerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateSupplierOwnerResponse)
+	err := c.cc.Invoke(ctx, SupplierService_CreateSupplierOwner_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) UpdateSupplierOwner(ctx context.Context, in *UpdateSupplierOwnerRequest, opts ...grpc.CallOption) (*UpdateSupplierOwnerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateSupplierOwnerResponse)
+	err := c.cc.Invoke(ctx, SupplierService_UpdateSupplierOwner_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) DeactivateSupplierOwner(ctx context.Context, in *DeactivateSupplierOwnerRequest, opts ...grpc.CallOption) (*DeactivateSupplierOwnerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeactivateSupplierOwnerResponse)
+	err := c.cc.Invoke(ctx, SupplierService_DeactivateSupplierOwner_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) ListSupplierChanges(ctx context.Context, in *ListSupplierChangesRequest, opts ...grpc.CallOption) (*ListSupplierChangesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSupplierChangesResponse)
+	err := c.cc.Invoke(ctx, SupplierService_ListSupplierChanges_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) ImportSuppliers(ctx context.Context, in *ImportSuppliersRequest, opts ...grpc.CallOption) (*ImportSuppliersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ImportSuppliersResponse)
+	err := c.cc.Invoke(ctx, SupplierService_ImportSuppliers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) ListFactories(ctx context.Context, in *ListFactoriesRequest, opts ...grpc.CallOption) (*ListFactoriesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFactoriesResponse)
+	err := c.cc.Invoke(ctx, SupplierService_ListFactories_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) GetFactory(ctx context.Context, in *GetFactoryRequest, opts ...grpc.CallOption) (*GetFactoryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetFactoryResponse)
+	err := c.cc.Invoke(ctx, SupplierService_GetFactory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) CreateFactory(ctx context.Context, in *CreateFactoryRequest, opts ...grpc.CallOption) (*CreateFactoryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateFactoryResponse)
+	err := c.cc.Invoke(ctx, SupplierService_CreateFactory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) UpdateFactory(ctx context.Context, in *UpdateFactoryRequest, opts ...grpc.CallOption) (*UpdateFactoryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateFactoryResponse)
+	err := c.cc.Invoke(ctx, SupplierService_UpdateFactory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) ListFactoryCountries(ctx context.Context, in *ListFactoryCountriesRequest, opts ...grpc.CallOption) (*ListFactoryCountriesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFactoryCountriesResponse)
+	err := c.cc.Invoke(ctx, SupplierService_ListFactoryCountries_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) ListFactoryContacts(ctx context.Context, in *ListFactoryContactsRequest, opts ...grpc.CallOption) (*ListFactoryContactsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFactoryContactsResponse)
+	err := c.cc.Invoke(ctx, SupplierService_ListFactoryContacts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) CreateFactoryContact(ctx context.Context, in *CreateFactoryContactRequest, opts ...grpc.CallOption) (*CreateFactoryContactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateFactoryContactResponse)
+	err := c.cc.Invoke(ctx, SupplierService_CreateFactoryContact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) UpdateFactoryContact(ctx context.Context, in *UpdateFactoryContactRequest, opts ...grpc.CallOption) (*UpdateFactoryContactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateFactoryContactResponse)
+	err := c.cc.Invoke(ctx, SupplierService_UpdateFactoryContact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) DeactivateFactoryContact(ctx context.Context, in *DeactivateFactoryContactRequest, opts ...grpc.CallOption) (*DeactivateFactoryContactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeactivateFactoryContactResponse)
+	err := c.cc.Invoke(ctx, SupplierService_DeactivateFactoryContact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) ListFactoryOwners(ctx context.Context, in *ListFactoryOwnersRequest, opts ...grpc.CallOption) (*ListFactoryOwnersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFactoryOwnersResponse)
+	err := c.cc.Invoke(ctx, SupplierService_ListFactoryOwners_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) CreateFactoryOwner(ctx context.Context, in *CreateFactoryOwnerRequest, opts ...grpc.CallOption) (*CreateFactoryOwnerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateFactoryOwnerResponse)
+	err := c.cc.Invoke(ctx, SupplierService_CreateFactoryOwner_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) UpdateFactoryOwner(ctx context.Context, in *UpdateFactoryOwnerRequest, opts ...grpc.CallOption) (*UpdateFactoryOwnerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateFactoryOwnerResponse)
+	err := c.cc.Invoke(ctx, SupplierService_UpdateFactoryOwner_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) DeactivateFactoryOwner(ctx context.Context, in *DeactivateFactoryOwnerRequest, opts ...grpc.CallOption) (*DeactivateFactoryOwnerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeactivateFactoryOwnerResponse)
+	err := c.cc.Invoke(ctx, SupplierService_DeactivateFactoryOwner_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) ListFactoryCapabilities(ctx context.Context, in *ListFactoryCapabilitiesRequest, opts ...grpc.CallOption) (*ListFactoryCapabilitiesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFactoryCapabilitiesResponse)
+	err := c.cc.Invoke(ctx, SupplierService_ListFactoryCapabilities_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) CreateFactoryCapability(ctx context.Context, in *CreateFactoryCapabilityRequest, opts ...grpc.CallOption) (*CreateFactoryCapabilityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateFactoryCapabilityResponse)
+	err := c.cc.Invoke(ctx, SupplierService_CreateFactoryCapability_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) DeleteFactoryCapability(ctx context.Context, in *DeleteFactoryCapabilityRequest, opts ...grpc.CallOption) (*DeleteFactoryCapabilityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteFactoryCapabilityResponse)
+	err := c.cc.Invoke(ctx, SupplierService_DeleteFactoryCapability_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) ListFactoryCertificates(ctx context.Context, in *ListFactoryCertificatesRequest, opts ...grpc.CallOption) (*ListFactoryCertificatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFactoryCertificatesResponse)
+	err := c.cc.Invoke(ctx, SupplierService_ListFactoryCertificates_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) CreateFactoryCertificate(ctx context.Context, in *CreateFactoryCertificateRequest, opts ...grpc.CallOption) (*CreateFactoryCertificateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateFactoryCertificateResponse)
+	err := c.cc.Invoke(ctx, SupplierService_CreateFactoryCertificate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) DeleteFactoryCertificate(ctx context.Context, in *DeleteFactoryCertificateRequest, opts ...grpc.CallOption) (*DeleteFactoryCertificateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteFactoryCertificateResponse)
+	err := c.cc.Invoke(ctx, SupplierService_DeleteFactoryCertificate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) ListFactoryChanges(ctx context.Context, in *ListFactoryChangesRequest, opts ...grpc.CallOption) (*ListFactoryChangesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFactoryChangesResponse)
+	err := c.cc.Invoke(ctx, SupplierService_ListFactoryChanges_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) ImportFactories(ctx context.Context, in *ImportFactoriesRequest, opts ...grpc.CallOption) (*ImportFactoriesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ImportFactoriesResponse)
+	err := c.cc.Invoke(ctx, SupplierService_ImportFactories_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SupplierServiceServer is the server API for SupplierService service.
 // All implementations must embed UnimplementedSupplierServiceServer
 // for forward compatibility.
@@ -1159,6 +1543,38 @@ type SupplierServiceServer interface {
 	UpdateSupplier(context.Context, *UpdateSupplierRequest) (*UpdateSupplierResponse, error)
 	DeactivateSupplier(context.Context, *DeactivateSupplierRequest) (*DeactivateSupplierResponse, error)
 	ActivateSupplier(context.Context, *ActivateSupplierRequest) (*ActivateSupplierResponse, error)
+	ListSupplierCountries(context.Context, *ListSupplierCountriesRequest) (*ListSupplierCountriesResponse, error)
+	ListSupplierContacts(context.Context, *ListSupplierContactsRequest) (*ListSupplierContactsResponse, error)
+	CreateSupplierContact(context.Context, *CreateSupplierContactRequest) (*CreateSupplierContactResponse, error)
+	UpdateSupplierContact(context.Context, *UpdateSupplierContactRequest) (*UpdateSupplierContactResponse, error)
+	DeactivateSupplierContact(context.Context, *DeactivateSupplierContactRequest) (*DeactivateSupplierContactResponse, error)
+	ListSupplierOwners(context.Context, *ListSupplierOwnersRequest) (*ListSupplierOwnersResponse, error)
+	CreateSupplierOwner(context.Context, *CreateSupplierOwnerRequest) (*CreateSupplierOwnerResponse, error)
+	UpdateSupplierOwner(context.Context, *UpdateSupplierOwnerRequest) (*UpdateSupplierOwnerResponse, error)
+	DeactivateSupplierOwner(context.Context, *DeactivateSupplierOwnerRequest) (*DeactivateSupplierOwnerResponse, error)
+	ListSupplierChanges(context.Context, *ListSupplierChangesRequest) (*ListSupplierChangesResponse, error)
+	ImportSuppliers(context.Context, *ImportSuppliersRequest) (*ImportSuppliersResponse, error)
+	ListFactories(context.Context, *ListFactoriesRequest) (*ListFactoriesResponse, error)
+	GetFactory(context.Context, *GetFactoryRequest) (*GetFactoryResponse, error)
+	CreateFactory(context.Context, *CreateFactoryRequest) (*CreateFactoryResponse, error)
+	UpdateFactory(context.Context, *UpdateFactoryRequest) (*UpdateFactoryResponse, error)
+	ListFactoryCountries(context.Context, *ListFactoryCountriesRequest) (*ListFactoryCountriesResponse, error)
+	ListFactoryContacts(context.Context, *ListFactoryContactsRequest) (*ListFactoryContactsResponse, error)
+	CreateFactoryContact(context.Context, *CreateFactoryContactRequest) (*CreateFactoryContactResponse, error)
+	UpdateFactoryContact(context.Context, *UpdateFactoryContactRequest) (*UpdateFactoryContactResponse, error)
+	DeactivateFactoryContact(context.Context, *DeactivateFactoryContactRequest) (*DeactivateFactoryContactResponse, error)
+	ListFactoryOwners(context.Context, *ListFactoryOwnersRequest) (*ListFactoryOwnersResponse, error)
+	CreateFactoryOwner(context.Context, *CreateFactoryOwnerRequest) (*CreateFactoryOwnerResponse, error)
+	UpdateFactoryOwner(context.Context, *UpdateFactoryOwnerRequest) (*UpdateFactoryOwnerResponse, error)
+	DeactivateFactoryOwner(context.Context, *DeactivateFactoryOwnerRequest) (*DeactivateFactoryOwnerResponse, error)
+	ListFactoryCapabilities(context.Context, *ListFactoryCapabilitiesRequest) (*ListFactoryCapabilitiesResponse, error)
+	CreateFactoryCapability(context.Context, *CreateFactoryCapabilityRequest) (*CreateFactoryCapabilityResponse, error)
+	DeleteFactoryCapability(context.Context, *DeleteFactoryCapabilityRequest) (*DeleteFactoryCapabilityResponse, error)
+	ListFactoryCertificates(context.Context, *ListFactoryCertificatesRequest) (*ListFactoryCertificatesResponse, error)
+	CreateFactoryCertificate(context.Context, *CreateFactoryCertificateRequest) (*CreateFactoryCertificateResponse, error)
+	DeleteFactoryCertificate(context.Context, *DeleteFactoryCertificateRequest) (*DeleteFactoryCertificateResponse, error)
+	ListFactoryChanges(context.Context, *ListFactoryChangesRequest) (*ListFactoryChangesResponse, error)
+	ImportFactories(context.Context, *ImportFactoriesRequest) (*ImportFactoriesResponse, error)
 	mustEmbedUnimplementedSupplierServiceServer()
 }
 
@@ -1186,6 +1602,102 @@ func (UnimplementedSupplierServiceServer) DeactivateSupplier(context.Context, *D
 }
 func (UnimplementedSupplierServiceServer) ActivateSupplier(context.Context, *ActivateSupplierRequest) (*ActivateSupplierResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ActivateSupplier not implemented")
+}
+func (UnimplementedSupplierServiceServer) ListSupplierCountries(context.Context, *ListSupplierCountriesRequest) (*ListSupplierCountriesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSupplierCountries not implemented")
+}
+func (UnimplementedSupplierServiceServer) ListSupplierContacts(context.Context, *ListSupplierContactsRequest) (*ListSupplierContactsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSupplierContacts not implemented")
+}
+func (UnimplementedSupplierServiceServer) CreateSupplierContact(context.Context, *CreateSupplierContactRequest) (*CreateSupplierContactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateSupplierContact not implemented")
+}
+func (UnimplementedSupplierServiceServer) UpdateSupplierContact(context.Context, *UpdateSupplierContactRequest) (*UpdateSupplierContactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateSupplierContact not implemented")
+}
+func (UnimplementedSupplierServiceServer) DeactivateSupplierContact(context.Context, *DeactivateSupplierContactRequest) (*DeactivateSupplierContactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeactivateSupplierContact not implemented")
+}
+func (UnimplementedSupplierServiceServer) ListSupplierOwners(context.Context, *ListSupplierOwnersRequest) (*ListSupplierOwnersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSupplierOwners not implemented")
+}
+func (UnimplementedSupplierServiceServer) CreateSupplierOwner(context.Context, *CreateSupplierOwnerRequest) (*CreateSupplierOwnerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateSupplierOwner not implemented")
+}
+func (UnimplementedSupplierServiceServer) UpdateSupplierOwner(context.Context, *UpdateSupplierOwnerRequest) (*UpdateSupplierOwnerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateSupplierOwner not implemented")
+}
+func (UnimplementedSupplierServiceServer) DeactivateSupplierOwner(context.Context, *DeactivateSupplierOwnerRequest) (*DeactivateSupplierOwnerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeactivateSupplierOwner not implemented")
+}
+func (UnimplementedSupplierServiceServer) ListSupplierChanges(context.Context, *ListSupplierChangesRequest) (*ListSupplierChangesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSupplierChanges not implemented")
+}
+func (UnimplementedSupplierServiceServer) ImportSuppliers(context.Context, *ImportSuppliersRequest) (*ImportSuppliersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ImportSuppliers not implemented")
+}
+func (UnimplementedSupplierServiceServer) ListFactories(context.Context, *ListFactoriesRequest) (*ListFactoriesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFactories not implemented")
+}
+func (UnimplementedSupplierServiceServer) GetFactory(context.Context, *GetFactoryRequest) (*GetFactoryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetFactory not implemented")
+}
+func (UnimplementedSupplierServiceServer) CreateFactory(context.Context, *CreateFactoryRequest) (*CreateFactoryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateFactory not implemented")
+}
+func (UnimplementedSupplierServiceServer) UpdateFactory(context.Context, *UpdateFactoryRequest) (*UpdateFactoryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateFactory not implemented")
+}
+func (UnimplementedSupplierServiceServer) ListFactoryCountries(context.Context, *ListFactoryCountriesRequest) (*ListFactoryCountriesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFactoryCountries not implemented")
+}
+func (UnimplementedSupplierServiceServer) ListFactoryContacts(context.Context, *ListFactoryContactsRequest) (*ListFactoryContactsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFactoryContacts not implemented")
+}
+func (UnimplementedSupplierServiceServer) CreateFactoryContact(context.Context, *CreateFactoryContactRequest) (*CreateFactoryContactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateFactoryContact not implemented")
+}
+func (UnimplementedSupplierServiceServer) UpdateFactoryContact(context.Context, *UpdateFactoryContactRequest) (*UpdateFactoryContactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateFactoryContact not implemented")
+}
+func (UnimplementedSupplierServiceServer) DeactivateFactoryContact(context.Context, *DeactivateFactoryContactRequest) (*DeactivateFactoryContactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeactivateFactoryContact not implemented")
+}
+func (UnimplementedSupplierServiceServer) ListFactoryOwners(context.Context, *ListFactoryOwnersRequest) (*ListFactoryOwnersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFactoryOwners not implemented")
+}
+func (UnimplementedSupplierServiceServer) CreateFactoryOwner(context.Context, *CreateFactoryOwnerRequest) (*CreateFactoryOwnerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateFactoryOwner not implemented")
+}
+func (UnimplementedSupplierServiceServer) UpdateFactoryOwner(context.Context, *UpdateFactoryOwnerRequest) (*UpdateFactoryOwnerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateFactoryOwner not implemented")
+}
+func (UnimplementedSupplierServiceServer) DeactivateFactoryOwner(context.Context, *DeactivateFactoryOwnerRequest) (*DeactivateFactoryOwnerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeactivateFactoryOwner not implemented")
+}
+func (UnimplementedSupplierServiceServer) ListFactoryCapabilities(context.Context, *ListFactoryCapabilitiesRequest) (*ListFactoryCapabilitiesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFactoryCapabilities not implemented")
+}
+func (UnimplementedSupplierServiceServer) CreateFactoryCapability(context.Context, *CreateFactoryCapabilityRequest) (*CreateFactoryCapabilityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateFactoryCapability not implemented")
+}
+func (UnimplementedSupplierServiceServer) DeleteFactoryCapability(context.Context, *DeleteFactoryCapabilityRequest) (*DeleteFactoryCapabilityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteFactoryCapability not implemented")
+}
+func (UnimplementedSupplierServiceServer) ListFactoryCertificates(context.Context, *ListFactoryCertificatesRequest) (*ListFactoryCertificatesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFactoryCertificates not implemented")
+}
+func (UnimplementedSupplierServiceServer) CreateFactoryCertificate(context.Context, *CreateFactoryCertificateRequest) (*CreateFactoryCertificateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateFactoryCertificate not implemented")
+}
+func (UnimplementedSupplierServiceServer) DeleteFactoryCertificate(context.Context, *DeleteFactoryCertificateRequest) (*DeleteFactoryCertificateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteFactoryCertificate not implemented")
+}
+func (UnimplementedSupplierServiceServer) ListFactoryChanges(context.Context, *ListFactoryChangesRequest) (*ListFactoryChangesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFactoryChanges not implemented")
+}
+func (UnimplementedSupplierServiceServer) ImportFactories(context.Context, *ImportFactoriesRequest) (*ImportFactoriesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ImportFactories not implemented")
 }
 func (UnimplementedSupplierServiceServer) mustEmbedUnimplementedSupplierServiceServer() {}
 func (UnimplementedSupplierServiceServer) testEmbeddedByValue()                         {}
@@ -1316,6 +1828,582 @@ func _SupplierService_ActivateSupplier_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SupplierService_ListSupplierCountries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSupplierCountriesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).ListSupplierCountries(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_ListSupplierCountries_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).ListSupplierCountries(ctx, req.(*ListSupplierCountriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_ListSupplierContacts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSupplierContactsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).ListSupplierContacts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_ListSupplierContacts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).ListSupplierContacts(ctx, req.(*ListSupplierContactsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_CreateSupplierContact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateSupplierContactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).CreateSupplierContact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_CreateSupplierContact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).CreateSupplierContact(ctx, req.(*CreateSupplierContactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_UpdateSupplierContact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateSupplierContactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).UpdateSupplierContact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_UpdateSupplierContact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).UpdateSupplierContact(ctx, req.(*UpdateSupplierContactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_DeactivateSupplierContact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeactivateSupplierContactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).DeactivateSupplierContact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_DeactivateSupplierContact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).DeactivateSupplierContact(ctx, req.(*DeactivateSupplierContactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_ListSupplierOwners_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSupplierOwnersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).ListSupplierOwners(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_ListSupplierOwners_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).ListSupplierOwners(ctx, req.(*ListSupplierOwnersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_CreateSupplierOwner_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateSupplierOwnerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).CreateSupplierOwner(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_CreateSupplierOwner_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).CreateSupplierOwner(ctx, req.(*CreateSupplierOwnerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_UpdateSupplierOwner_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateSupplierOwnerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).UpdateSupplierOwner(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_UpdateSupplierOwner_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).UpdateSupplierOwner(ctx, req.(*UpdateSupplierOwnerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_DeactivateSupplierOwner_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeactivateSupplierOwnerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).DeactivateSupplierOwner(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_DeactivateSupplierOwner_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).DeactivateSupplierOwner(ctx, req.(*DeactivateSupplierOwnerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_ListSupplierChanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSupplierChangesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).ListSupplierChanges(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_ListSupplierChanges_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).ListSupplierChanges(ctx, req.(*ListSupplierChangesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_ImportSuppliers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ImportSuppliersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).ImportSuppliers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_ImportSuppliers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).ImportSuppliers(ctx, req.(*ImportSuppliersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_ListFactories_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFactoriesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).ListFactories(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_ListFactories_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).ListFactories(ctx, req.(*ListFactoriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_GetFactory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetFactoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).GetFactory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_GetFactory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).GetFactory(ctx, req.(*GetFactoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_CreateFactory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateFactoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).CreateFactory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_CreateFactory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).CreateFactory(ctx, req.(*CreateFactoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_UpdateFactory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateFactoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).UpdateFactory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_UpdateFactory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).UpdateFactory(ctx, req.(*UpdateFactoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_ListFactoryCountries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFactoryCountriesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).ListFactoryCountries(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_ListFactoryCountries_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).ListFactoryCountries(ctx, req.(*ListFactoryCountriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_ListFactoryContacts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFactoryContactsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).ListFactoryContacts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_ListFactoryContacts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).ListFactoryContacts(ctx, req.(*ListFactoryContactsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_CreateFactoryContact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateFactoryContactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).CreateFactoryContact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_CreateFactoryContact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).CreateFactoryContact(ctx, req.(*CreateFactoryContactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_UpdateFactoryContact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateFactoryContactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).UpdateFactoryContact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_UpdateFactoryContact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).UpdateFactoryContact(ctx, req.(*UpdateFactoryContactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_DeactivateFactoryContact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeactivateFactoryContactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).DeactivateFactoryContact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_DeactivateFactoryContact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).DeactivateFactoryContact(ctx, req.(*DeactivateFactoryContactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_ListFactoryOwners_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFactoryOwnersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).ListFactoryOwners(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_ListFactoryOwners_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).ListFactoryOwners(ctx, req.(*ListFactoryOwnersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_CreateFactoryOwner_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateFactoryOwnerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).CreateFactoryOwner(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_CreateFactoryOwner_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).CreateFactoryOwner(ctx, req.(*CreateFactoryOwnerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_UpdateFactoryOwner_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateFactoryOwnerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).UpdateFactoryOwner(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_UpdateFactoryOwner_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).UpdateFactoryOwner(ctx, req.(*UpdateFactoryOwnerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_DeactivateFactoryOwner_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeactivateFactoryOwnerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).DeactivateFactoryOwner(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_DeactivateFactoryOwner_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).DeactivateFactoryOwner(ctx, req.(*DeactivateFactoryOwnerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_ListFactoryCapabilities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFactoryCapabilitiesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).ListFactoryCapabilities(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_ListFactoryCapabilities_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).ListFactoryCapabilities(ctx, req.(*ListFactoryCapabilitiesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_CreateFactoryCapability_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateFactoryCapabilityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).CreateFactoryCapability(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_CreateFactoryCapability_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).CreateFactoryCapability(ctx, req.(*CreateFactoryCapabilityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_DeleteFactoryCapability_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteFactoryCapabilityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).DeleteFactoryCapability(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_DeleteFactoryCapability_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).DeleteFactoryCapability(ctx, req.(*DeleteFactoryCapabilityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_ListFactoryCertificates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFactoryCertificatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).ListFactoryCertificates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_ListFactoryCertificates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).ListFactoryCertificates(ctx, req.(*ListFactoryCertificatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_CreateFactoryCertificate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateFactoryCertificateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).CreateFactoryCertificate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_CreateFactoryCertificate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).CreateFactoryCertificate(ctx, req.(*CreateFactoryCertificateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_DeleteFactoryCertificate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteFactoryCertificateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).DeleteFactoryCertificate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_DeleteFactoryCertificate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).DeleteFactoryCertificate(ctx, req.(*DeleteFactoryCertificateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_ListFactoryChanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFactoryChangesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).ListFactoryChanges(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_ListFactoryChanges_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).ListFactoryChanges(ctx, req.(*ListFactoryChangesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_ImportFactories_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ImportFactoriesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).ImportFactories(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_ImportFactories_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).ImportFactories(ctx, req.(*ImportFactoriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SupplierService_ServiceDesc is the grpc.ServiceDesc for SupplierService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1346,6 +2434,134 @@ var SupplierService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ActivateSupplier",
 			Handler:    _SupplierService_ActivateSupplier_Handler,
+		},
+		{
+			MethodName: "ListSupplierCountries",
+			Handler:    _SupplierService_ListSupplierCountries_Handler,
+		},
+		{
+			MethodName: "ListSupplierContacts",
+			Handler:    _SupplierService_ListSupplierContacts_Handler,
+		},
+		{
+			MethodName: "CreateSupplierContact",
+			Handler:    _SupplierService_CreateSupplierContact_Handler,
+		},
+		{
+			MethodName: "UpdateSupplierContact",
+			Handler:    _SupplierService_UpdateSupplierContact_Handler,
+		},
+		{
+			MethodName: "DeactivateSupplierContact",
+			Handler:    _SupplierService_DeactivateSupplierContact_Handler,
+		},
+		{
+			MethodName: "ListSupplierOwners",
+			Handler:    _SupplierService_ListSupplierOwners_Handler,
+		},
+		{
+			MethodName: "CreateSupplierOwner",
+			Handler:    _SupplierService_CreateSupplierOwner_Handler,
+		},
+		{
+			MethodName: "UpdateSupplierOwner",
+			Handler:    _SupplierService_UpdateSupplierOwner_Handler,
+		},
+		{
+			MethodName: "DeactivateSupplierOwner",
+			Handler:    _SupplierService_DeactivateSupplierOwner_Handler,
+		},
+		{
+			MethodName: "ListSupplierChanges",
+			Handler:    _SupplierService_ListSupplierChanges_Handler,
+		},
+		{
+			MethodName: "ImportSuppliers",
+			Handler:    _SupplierService_ImportSuppliers_Handler,
+		},
+		{
+			MethodName: "ListFactories",
+			Handler:    _SupplierService_ListFactories_Handler,
+		},
+		{
+			MethodName: "GetFactory",
+			Handler:    _SupplierService_GetFactory_Handler,
+		},
+		{
+			MethodName: "CreateFactory",
+			Handler:    _SupplierService_CreateFactory_Handler,
+		},
+		{
+			MethodName: "UpdateFactory",
+			Handler:    _SupplierService_UpdateFactory_Handler,
+		},
+		{
+			MethodName: "ListFactoryCountries",
+			Handler:    _SupplierService_ListFactoryCountries_Handler,
+		},
+		{
+			MethodName: "ListFactoryContacts",
+			Handler:    _SupplierService_ListFactoryContacts_Handler,
+		},
+		{
+			MethodName: "CreateFactoryContact",
+			Handler:    _SupplierService_CreateFactoryContact_Handler,
+		},
+		{
+			MethodName: "UpdateFactoryContact",
+			Handler:    _SupplierService_UpdateFactoryContact_Handler,
+		},
+		{
+			MethodName: "DeactivateFactoryContact",
+			Handler:    _SupplierService_DeactivateFactoryContact_Handler,
+		},
+		{
+			MethodName: "ListFactoryOwners",
+			Handler:    _SupplierService_ListFactoryOwners_Handler,
+		},
+		{
+			MethodName: "CreateFactoryOwner",
+			Handler:    _SupplierService_CreateFactoryOwner_Handler,
+		},
+		{
+			MethodName: "UpdateFactoryOwner",
+			Handler:    _SupplierService_UpdateFactoryOwner_Handler,
+		},
+		{
+			MethodName: "DeactivateFactoryOwner",
+			Handler:    _SupplierService_DeactivateFactoryOwner_Handler,
+		},
+		{
+			MethodName: "ListFactoryCapabilities",
+			Handler:    _SupplierService_ListFactoryCapabilities_Handler,
+		},
+		{
+			MethodName: "CreateFactoryCapability",
+			Handler:    _SupplierService_CreateFactoryCapability_Handler,
+		},
+		{
+			MethodName: "DeleteFactoryCapability",
+			Handler:    _SupplierService_DeleteFactoryCapability_Handler,
+		},
+		{
+			MethodName: "ListFactoryCertificates",
+			Handler:    _SupplierService_ListFactoryCertificates_Handler,
+		},
+		{
+			MethodName: "CreateFactoryCertificate",
+			Handler:    _SupplierService_CreateFactoryCertificate_Handler,
+		},
+		{
+			MethodName: "DeleteFactoryCertificate",
+			Handler:    _SupplierService_DeleteFactoryCertificate_Handler,
+		},
+		{
+			MethodName: "ListFactoryChanges",
+			Handler:    _SupplierService_ListFactoryChanges_Handler,
+		},
+		{
+			MethodName: "ImportFactories",
+			Handler:    _SupplierService_ImportFactories_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
