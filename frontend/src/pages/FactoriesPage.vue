@@ -59,6 +59,7 @@ import SupplierFactoryImportDialog from '../components/SupplierFactoryImportDial
 import { countryName, countryOptions } from '../lib/countries'
 import { defaultPortTimezone, portCityOptions, portTimezoneOptions } from '../lib/portOptions'
 import { masterDataListQuery, queryPage, queryText } from '../lib/masterDataListQuery'
+import { confirmPossibleDuplicates } from '../lib/masterDataDuplicates'
 import { useAuthStore } from '../stores/auth'
 
 interface Factory { id:string;code:string;nameZh:string;nameEn:string;supplierName:string;countryCode:string;city:string;ownerNames:string;status:string }
@@ -87,7 +88,7 @@ function changePage(v:number){page.value=v;load()}
 function detail(r:Factory){router.push(`/basic/suppliers/factories/${r.id}`)}
 function openCreate(){Object.assign(form,empty);dialogOpen.value=true}
 function syncCountry(){form.city='';form.timezone=defaultPortTimezone(form.countryCode)}
-async function save(){if(!form.supplierId||!form.nameZh.trim()){ElMessage.warning(t('suppliers.factoryRequired'));return}saving.value=true;try{await post('/factories',{factory:{...form}});dialogOpen.value=false;ElMessage.success(t('suppliers.saved'));await refreshAll()}catch{/* 接口错误已显示统一提示，保留表单便于修正。 */}finally{saving.value=false}}
+async function save(){if(!form.supplierId||!form.nameZh.trim()){ElMessage.warning(t('suppliers.factoryRequired'));return}saving.value=true;try{const duplicates=await get<any>('/factories/duplicates',{supplier_id:form.supplierId,name:form.nameZh,address:form.address});await confirmPossibleDuplicates(duplicates.candidates||[],t);await post('/factories',{factory:{...form}});dialogOpen.value=false;ElMessage.success(t('suppliers.saved'));await refreshAll()}catch{/* 取消重复确认或接口错误时保留表单，便于用户复核。 */}finally{saving.value=false}}
 onMounted(()=>{void refreshAll()})
 </script>
 

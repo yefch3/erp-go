@@ -39,6 +39,15 @@ func (s *Server) createContract(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, req) {
 		return
 	}
+	quotation, err := s.Quotations.GetQuotation(r.Context(), &exv1.GetQuotationRequest{Id: req.GetQuotationId()})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if _, err := s.resolveActiveCustomer(r.Context(), quotation.GetQuotation().GetCustomerId()); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
 	resp, err := s.Contracts.CreateContractFromQuotation(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -54,6 +63,10 @@ func (s *Server) createContract(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createDirectContract(w http.ResponseWriter, r *http.Request) {
 	req := &exv1.CreateContractRequest{}
 	if !s.decodeBody(w, r, req) {
+		return
+	}
+	if _, err := s.resolveActiveCustomer(r.Context(), req.GetCustomerId()); err != nil {
+		s.writeGRPCError(w, err)
 		return
 	}
 	resp, err := s.Contracts.CreateContract(r.Context(), req)

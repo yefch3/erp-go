@@ -110,6 +110,10 @@ func (s *Server) createSourcingCase(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, req) {
 		return
 	}
+	if _, err := s.resolveActiveCustomer(r.Context(), req.GetCustomerId()); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
 	resp, err := s.Sourcing.CreateCase(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -175,6 +179,10 @@ func (s *Server) reviewSourcingLine(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createFactoryRFQ(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.CreateFactoryRfqRequest{}
 	if !s.decodeBody(w, r, req) {
+		return
+	}
+	if _, err := s.resolveActiveSupplier(r.Context(), req.GetSupplierId()); err != nil {
+		s.writeGRPCError(w, err)
 		return
 	}
 	req.CaseId = idFromPath(r)

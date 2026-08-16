@@ -113,6 +113,9 @@ export default {
     portRequired:'请选择启用中的港口', routeNodeAdded:'港口节点已添加',
   },
   common: {
+    deactivationImpact: '确定停用“{name}”吗？共有 {total} 条进行中业务可能受到影响。', historyRetained: '已有订单、船期和历史记录会保留；该资料只会禁止用于新业务。', lifecycleReasonPlaceholder: '请输入本次停用或恢复原因', lifecycleReasonRequired: '必须填写原因', confirmDeactivate: '确认停用', confirmActivate: '确认恢复', activationReason: '确定恢复“{name}”吗？请填写恢复原因。',
+    selectCustomer: '选择可用客户', selectEmployee: '选择在职员工', selectSupplier: '选择已启用供应商', selectFactory: '选择合作中工厂', selectPort: '选择已启用港口',
+    duplicateTitle: '可能存在重复资料', duplicateWarning: '发现 {count} 条相似资料，请确认后再保存：', duplicateMore: '另有 {count} 条', saveAnyway: '仍然保存', backToEdit: '返回修改',
     close: '关闭',
     detail: '详情',
     logout: '退出登录',

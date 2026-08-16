@@ -184,8 +184,8 @@ export async function put<T>(url: string, body?: object, cfg?: AxiosRequestConfi
   return resp.data.data as T
 }
 
-export async function del<T>(url: string, body?: object): Promise<T> {
-  const resp = await http.delete<Envelope<T>>(url, { data: body })
+export async function del<T>(url: string, body?: object, cfg?: AxiosRequestConfig): Promise<T> {
+  const resp = await http.delete<Envelope<T>>(url, { ...cfg, data: body })
   return resp.data.data as T
 }
 

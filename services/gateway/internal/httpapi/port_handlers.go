@@ -82,3 +82,21 @@ func (s *Server) setPortStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
+
+func (s *Server) getPortDeactivationImpact(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Ports.GetPortDeactivationImpact(r.Context(), &mdv1.GetPortDeactivationImpactRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) listPortChanges(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Ports.ListPortChanges(r.Context(), &mdv1.ListPortChangesRequest{PortId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}

@@ -36,6 +36,10 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, req) {
 		return
 	}
+	if _, err := s.resolveActiveSupplier(r.Context(), req.GetSupplierId()); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
 	resp, err := s.Orders.CreateOrder(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -47,6 +51,10 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
 func (s *Server) updateOrder(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.UpdateOrderRequest{}
 	if !s.decodeBody(w, r, req) {
+		return
+	}
+	if _, err := s.resolveActiveSupplier(r.Context(), req.GetSupplierId()); err != nil {
+		s.writeGRPCError(w, err)
 		return
 	}
 	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)

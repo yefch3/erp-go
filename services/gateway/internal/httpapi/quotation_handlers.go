@@ -62,6 +62,10 @@ func (s *Server) createQuotation(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, req) {
 		return
 	}
+	if _, err := s.resolveActiveCustomer(r.Context(), req.GetCustomerId()); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
 	resp, err := s.Quotations.CreateQuotation(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -73,6 +77,10 @@ func (s *Server) createQuotation(w http.ResponseWriter, r *http.Request) {
 func (s *Server) updateQuotation(w http.ResponseWriter, r *http.Request) {
 	req := &exv1.UpdateQuotationRequest{}
 	if !s.decodeBody(w, r, req) {
+		return
+	}
+	if _, err := s.resolveActiveCustomer(r.Context(), req.GetCustomerId()); err != nil {
+		s.writeGRPCError(w, err)
 		return
 	}
 	req.Id = idFromPath(r)

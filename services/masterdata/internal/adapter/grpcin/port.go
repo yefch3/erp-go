@@ -2,6 +2,7 @@ package grpcin
 
 import (
 	"context"
+	"time"
 
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
@@ -95,9 +96,30 @@ func (h *Handler) UpdatePort(ctx context.Context, req *mdv1.UpdatePortRequest) (
 	return &mdv1.UpdatePortResponse{Port: portToProto(p)}, nil
 }
 func (h *Handler) SetPortStatus(ctx context.Context, req *mdv1.SetPortStatusRequest) (*mdv1.SetPortStatusResponse, error) {
-	p, err := h.svc.SetPortStatus(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetStatus(), req.GetVersion(), operatorID(ctx), operatorName(ctx))
+	p, err := h.svc.SetPortStatus(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetStatus(), req.GetVersion(), operatorID(ctx), operatorName(ctx), req.GetReason())
 	if err != nil {
 		return nil, err
 	}
 	return &mdv1.SetPortStatusResponse{Port: portToProto(p)}, nil
+}
+
+func (h *Handler) GetPortDeactivationImpact(ctx context.Context, req *mdv1.GetPortDeactivationImpactRequest) (*mdv1.GetPortDeactivationImpactResponse, error) {
+	rows, err := h.svc.DeactivationImpact(ctx, grpcx.TenantID(ctx), "PORT", req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	items, total := impactItems(rows)
+	return &mdv1.GetPortDeactivationImpactResponse{Items: items, Total: total}, nil
+}
+
+func (h *Handler) ListPortChanges(ctx context.Context, req *mdv1.ListPortChangesRequest) (*mdv1.ListPortChangesResponse, error) {
+	rows, err := h.svc.ListPortChanges(ctx, grpcx.TenantID(ctx), req.GetPortId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mdv1.MasterDataChange, len(rows))
+	for i, row := range rows {
+		out[i] = changeToProto(row.ID, row.Action, "LIFECYCLE", "港口资料变更", row.BeforeData, row.AfterData, row.OperatorID, row.OperatorName, row.CreatedAt.Format(time.RFC3339))
+	}
+	return &mdv1.ListPortChangesResponse{Changes: out}, nil
 }

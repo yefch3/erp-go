@@ -205,7 +205,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { del, get, post, put } from '../api'
@@ -213,6 +213,8 @@ import { DIAL_CODES, dialCodeOfCode, splitPhone } from '../constants'
 import { countryName, countryOptions } from '../lib/countries'
 import { validateCustomerContact } from '../lib/customerForms'
 import { useAuthStore } from '../stores/auth'
+import { confirmPossibleDuplicates } from '../lib/masterDataDuplicates'
+import { confirmDeactivation, promptActivationReason } from '../lib/masterDataLifecycle'
 import ImportCustomersDialog from '../components/ImportCustomersDialog.vue'
 
 interface Contact {
@@ -420,6 +422,12 @@ async function save() {
     contacts: [...primary, ...otherContacts.value],
   }
   try {
+    const duplicateResult = await get<any>('/customers/duplicates', {
+      name: form.name,
+      email: form.contactEmail,
+      exclude_id: editingId.value || undefined,
+    })
+    await confirmPossibleDuplicates(duplicateResult.candidates || [], t)
     if (editingId.value) {
       await put(`/customers/${editingId.value}`, body)
       ElMessage.success(t('customers.updated'))
@@ -436,17 +444,15 @@ async function save() {
 }
 
 async function deactivate(row: Customer) {
-  await ElMessageBox.confirm(
-    t('customers.confirmDeactivate', { name: row.name }),
-    t('customers.confirmTitle'),
-  )
-  await del(`/customers/${row.id}`)
+  const reason = await confirmDeactivation(`/customers/${row.id}/deactivation-impact`, row.name, t)
+  await del(`/customers/${row.id}`, { reason })
   ElMessage.success(t('customers.deactivated'))
   await Promise.all([load(), loadCountryGroups()])
 }
 
 async function activate(row: Customer) {
-  await post(`/customers/${row.id}/activate`)
+  const reason = await promptActivationReason(row.name, t)
+  await post(`/customers/${row.id}/activate`, { reason })
   ElMessage.success(t('customers.activated'))
   await Promise.all([load(), loadCountryGroups()])
 }

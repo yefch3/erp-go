@@ -113,6 +113,9 @@ export default {
     portRequired:'Seleccione un puerto activo', routeNodeAdded:'Escala añadida',
   },
   common: {
+    deactivationImpact: '¿Desactivar {name}? {total} registro(s) activo(s) pueden verse afectados.', historyRetained: 'Los pedidos, itinerarios y el historial existentes se conservarán; solo se bloqueará para nuevos negocios.', lifecycleReasonPlaceholder: 'Introduce el motivo del cambio', lifecycleReasonRequired: 'El motivo es obligatorio', confirmDeactivate: 'Confirmar desactivación', confirmActivate: 'Confirmar reactivación', activationReason: '¿Reactivar {name}? Introduce el motivo.',
+    selectCustomer: 'Selecciona un cliente activo', selectEmployee: 'Selecciona un empleado activo', selectSupplier: 'Selecciona un proveedor activo', selectFactory: 'Selecciona una fábrica colaboradora', selectPort: 'Selecciona un puerto activo',
+    duplicateTitle: 'Posibles datos duplicados', duplicateWarning: 'Se encontraron {count} registros similares. Revísalos antes de guardar:', duplicateMore: 'y {count} más', saveAnyway: 'Guardar de todos modos', backToEdit: 'Volver a editar',
     close: 'Cerrar',
     detail: 'Detalle',
     logout: 'Cerrar sesión',

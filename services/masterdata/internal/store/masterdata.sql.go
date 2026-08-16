@@ -1365,20 +1365,37 @@ func (q *Queries) CustomerCodeExists(ctx context.Context, arg CustomerCodeExists
 }
 
 const customerDuplicateCandidates = `-- name: CustomerDuplicateCandidates :many
-SELECT id, code, name, tax_id
-FROM customers
-WHERE tenant_id = $1
-  AND (lower(name) = lower($2) OR ($3::text <> '' AND tax_id = $3))
-  AND ($4::bigint = 0 OR id <> $4)
-ORDER BY id
+SELECT DISTINCT c.id, c.code, c.name, c.tax_id,
+       coalesce((SELECT cc.email FROM customer_contacts cc
+                 WHERE cc.tenant_id = c.tenant_id AND cc.customer_id = c.id
+                   AND cc.status = 'ACTIVE' AND cc.email <> ''
+                 ORDER BY cc.is_primary DESC, cc.id LIMIT 1), '')::text AS email
+FROM customers c
+WHERE c.tenant_id = $1
+  AND ($2::bigint = 0 OR c.id <> $2)
+  AND (
+    ($3::text <> '' AND (
+      lower(btrim(c.name)) = lower(btrim($3)) OR
+      lower(btrim(c.name)) LIKE '%' || lower(btrim($3)) || '%' OR
+      lower(btrim($3)) LIKE '%' || lower(btrim(c.name)) || '%'
+    ))
+    OR ($4::text <> '' AND lower(btrim(c.tax_id)) = lower(btrim($4)))
+    OR ($5::text <> '' AND EXISTS (
+      SELECT 1 FROM customer_contacts cc
+      WHERE cc.tenant_id = c.tenant_id AND cc.customer_id = c.id
+        AND lower(btrim(cc.email)) = lower(btrim($5))
+    ))
+  )
+ORDER BY c.id
 LIMIT 10
 `
 
 type CustomerDuplicateCandidatesParams struct {
 	TenantID  int64
+	ExcludeID int64
 	Name      string
 	TaxID     string
-	ExcludeID int64
+	Email     string
 }
 
 type CustomerDuplicateCandidatesRow struct {
@@ -1386,14 +1403,16 @@ type CustomerDuplicateCandidatesRow struct {
 	Code  string
 	Name  string
 	TaxID string
+	Email string
 }
 
 func (q *Queries) CustomerDuplicateCandidates(ctx context.Context, arg CustomerDuplicateCandidatesParams) ([]CustomerDuplicateCandidatesRow, error) {
 	rows, err := q.db.Query(ctx, customerDuplicateCandidates,
 		arg.TenantID,
+		arg.ExcludeID,
 		arg.Name,
 		arg.TaxID,
-		arg.ExcludeID,
+		arg.Email,
 	)
 	if err != nil {
 		return nil, err
@@ -1407,6 +1426,7 @@ func (q *Queries) CustomerDuplicateCandidates(ctx context.Context, arg CustomerD
 			&i.Code,
 			&i.Name,
 			&i.TaxID,
+			&i.Email,
 		); err != nil {
 			return nil, err
 		}
@@ -1710,6 +1730,80 @@ func (q *Queries) FactoryCodeExists(ctx context.Context, arg FactoryCodeExistsPa
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const factoryDuplicateCandidates = `-- name: FactoryDuplicateCandidates :many
+SELECT f.id, f.code, f.supplier_id,
+       coalesce(nullif(s.name_zh, ''), nullif(s.name_en, ''), s.name)::text AS supplier_name,
+       coalesce(nullif(f.name_zh, ''), f.name_en)::text AS name, f.address
+FROM factories f
+JOIN suppliers s ON s.tenant_id = f.tenant_id AND s.id = f.supplier_id
+WHERE f.tenant_id = $1
+  AND f.supplier_id = $2
+  AND ($3::bigint = 0 OR f.id <> $3)
+  AND $4::text <> ''
+  AND (
+    lower(btrim(coalesce(nullif(f.name_zh, ''), f.name_en))) = lower(btrim($4)) OR
+    lower(btrim(coalesce(nullif(f.name_zh, ''), f.name_en))) LIKE '%' || lower(btrim($4)) || '%' OR
+    lower(btrim($4)) LIKE '%' || lower(btrim(coalesce(nullif(f.name_zh, ''), f.name_en))) || '%'
+  )
+  AND (
+    $5::text = '' OR f.address = '' OR
+    lower(regexp_replace(btrim(f.address), '[[:space:]]+', '', 'g')) =
+      lower(regexp_replace(btrim($5), '[[:space:]]+', '', 'g'))
+  )
+ORDER BY f.id
+LIMIT 10
+`
+
+type FactoryDuplicateCandidatesParams struct {
+	TenantID   int64
+	SupplierID int64
+	ExcludeID  int64
+	Name       string
+	Address    string
+}
+
+type FactoryDuplicateCandidatesRow struct {
+	ID           int64
+	Code         string
+	SupplierID   int64
+	SupplierName string
+	Name         string
+	Address      string
+}
+
+func (q *Queries) FactoryDuplicateCandidates(ctx context.Context, arg FactoryDuplicateCandidatesParams) ([]FactoryDuplicateCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, factoryDuplicateCandidates,
+		arg.TenantID,
+		arg.SupplierID,
+		arg.ExcludeID,
+		arg.Name,
+		arg.Address,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FactoryDuplicateCandidatesRow
+	for rows.Next() {
+		var i FactoryDuplicateCandidatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Code,
+			&i.SupplierID,
+			&i.SupplierName,
+			&i.Name,
+			&i.Address,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getCustomer = `-- name: GetCustomer :one
@@ -3451,6 +3545,73 @@ func (q *Queries) SupplierCodeExists(ctx context.Context, arg SupplierCodeExists
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const supplierDuplicateCandidates = `-- name: SupplierDuplicateCandidates :many
+SELECT id, code, coalesce(nullif(name_zh, ''), nullif(name_en, ''), name)::text AS name,
+       tax_id, contact_email
+FROM suppliers
+WHERE tenant_id = $1
+  AND ($2::bigint = 0 OR id <> $2)
+  AND (
+    ($3::text <> '' AND (
+      lower(btrim(coalesce(nullif(name_zh, ''), nullif(name_en, ''), name))) = lower(btrim($3)) OR
+      lower(btrim(coalesce(nullif(name_zh, ''), nullif(name_en, ''), name))) LIKE '%' || lower(btrim($3)) || '%' OR
+      lower(btrim($3)) LIKE '%' || lower(btrim(coalesce(nullif(name_zh, ''), nullif(name_en, ''), name))) || '%'
+    ))
+    OR ($4::text <> '' AND lower(btrim(tax_id)) = lower(btrim($4)))
+    OR ($5::text <> '' AND lower(btrim(contact_email)) = lower(btrim($5)))
+  )
+ORDER BY id
+LIMIT 10
+`
+
+type SupplierDuplicateCandidatesParams struct {
+	TenantID  int64
+	ExcludeID int64
+	Name      string
+	TaxID     string
+	Email     string
+}
+
+type SupplierDuplicateCandidatesRow struct {
+	ID           int64
+	Code         string
+	Name         string
+	TaxID        string
+	ContactEmail string
+}
+
+func (q *Queries) SupplierDuplicateCandidates(ctx context.Context, arg SupplierDuplicateCandidatesParams) ([]SupplierDuplicateCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, supplierDuplicateCandidates,
+		arg.TenantID,
+		arg.ExcludeID,
+		arg.Name,
+		arg.TaxID,
+		arg.Email,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SupplierDuplicateCandidatesRow
+	for rows.Next() {
+		var i SupplierDuplicateCandidatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Code,
+			&i.Name,
+			&i.TaxID,
+			&i.ContactEmail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateCustomer = `-- name: UpdateCustomer :one

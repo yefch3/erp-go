@@ -19,31 +19,32 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CustomerService_CreateCustomer_FullMethodName            = "/erp.masterdata.v1.CustomerService/CreateCustomer"
-	CustomerService_GetCustomer_FullMethodName               = "/erp.masterdata.v1.CustomerService/GetCustomer"
-	CustomerService_ListCustomers_FullMethodName             = "/erp.masterdata.v1.CustomerService/ListCustomers"
-	CustomerService_UpdateCustomer_FullMethodName            = "/erp.masterdata.v1.CustomerService/UpdateCustomer"
-	CustomerService_UpdateCustomerProfile_FullMethodName     = "/erp.masterdata.v1.CustomerService/UpdateCustomerProfile"
-	CustomerService_DeactivateCustomer_FullMethodName        = "/erp.masterdata.v1.CustomerService/DeactivateCustomer"
-	CustomerService_ActivateCustomer_FullMethodName          = "/erp.masterdata.v1.CustomerService/ActivateCustomer"
-	CustomerService_ListCustomerAddresses_FullMethodName     = "/erp.masterdata.v1.CustomerService/ListCustomerAddresses"
-	CustomerService_CreateCustomerAddress_FullMethodName     = "/erp.masterdata.v1.CustomerService/CreateCustomerAddress"
-	CustomerService_UpdateCustomerAddress_FullMethodName     = "/erp.masterdata.v1.CustomerService/UpdateCustomerAddress"
-	CustomerService_DeactivateCustomerAddress_FullMethodName = "/erp.masterdata.v1.CustomerService/DeactivateCustomerAddress"
-	CustomerService_ListCustomerContacts_FullMethodName      = "/erp.masterdata.v1.CustomerService/ListCustomerContacts"
-	CustomerService_CreateCustomerContact_FullMethodName     = "/erp.masterdata.v1.CustomerService/CreateCustomerContact"
-	CustomerService_UpdateCustomerContact_FullMethodName     = "/erp.masterdata.v1.CustomerService/UpdateCustomerContact"
-	CustomerService_DeactivateCustomerContact_FullMethodName = "/erp.masterdata.v1.CustomerService/DeactivateCustomerContact"
-	CustomerService_ListCustomerOwners_FullMethodName        = "/erp.masterdata.v1.CustomerService/ListCustomerOwners"
-	CustomerService_CreateCustomerOwner_FullMethodName       = "/erp.masterdata.v1.CustomerService/CreateCustomerOwner"
-	CustomerService_UpdateCustomerOwner_FullMethodName       = "/erp.masterdata.v1.CustomerService/UpdateCustomerOwner"
-	CustomerService_DeactivateCustomerOwner_FullMethodName   = "/erp.masterdata.v1.CustomerService/DeactivateCustomerOwner"
-	CustomerService_ListCustomerChanges_FullMethodName       = "/erp.masterdata.v1.CustomerService/ListCustomerChanges"
-	CustomerService_ImportCustomers_FullMethodName           = "/erp.masterdata.v1.CustomerService/ImportCustomers"
-	CustomerService_CheckCustomerDuplicates_FullMethodName   = "/erp.masterdata.v1.CustomerService/CheckCustomerDuplicates"
-	CustomerService_ListMailingContacts_FullMethodName       = "/erp.masterdata.v1.CustomerService/ListMailingContacts"
-	CustomerService_ListCustomerCountries_FullMethodName     = "/erp.masterdata.v1.CustomerService/ListCustomerCountries"
-	CustomerService_ContactsInCountry_FullMethodName         = "/erp.masterdata.v1.CustomerService/ContactsInCountry"
+	CustomerService_CreateCustomer_FullMethodName                = "/erp.masterdata.v1.CustomerService/CreateCustomer"
+	CustomerService_GetCustomer_FullMethodName                   = "/erp.masterdata.v1.CustomerService/GetCustomer"
+	CustomerService_ListCustomers_FullMethodName                 = "/erp.masterdata.v1.CustomerService/ListCustomers"
+	CustomerService_UpdateCustomer_FullMethodName                = "/erp.masterdata.v1.CustomerService/UpdateCustomer"
+	CustomerService_UpdateCustomerProfile_FullMethodName         = "/erp.masterdata.v1.CustomerService/UpdateCustomerProfile"
+	CustomerService_DeactivateCustomer_FullMethodName            = "/erp.masterdata.v1.CustomerService/DeactivateCustomer"
+	CustomerService_ActivateCustomer_FullMethodName              = "/erp.masterdata.v1.CustomerService/ActivateCustomer"
+	CustomerService_ListCustomerAddresses_FullMethodName         = "/erp.masterdata.v1.CustomerService/ListCustomerAddresses"
+	CustomerService_CreateCustomerAddress_FullMethodName         = "/erp.masterdata.v1.CustomerService/CreateCustomerAddress"
+	CustomerService_UpdateCustomerAddress_FullMethodName         = "/erp.masterdata.v1.CustomerService/UpdateCustomerAddress"
+	CustomerService_DeactivateCustomerAddress_FullMethodName     = "/erp.masterdata.v1.CustomerService/DeactivateCustomerAddress"
+	CustomerService_ListCustomerContacts_FullMethodName          = "/erp.masterdata.v1.CustomerService/ListCustomerContacts"
+	CustomerService_CreateCustomerContact_FullMethodName         = "/erp.masterdata.v1.CustomerService/CreateCustomerContact"
+	CustomerService_UpdateCustomerContact_FullMethodName         = "/erp.masterdata.v1.CustomerService/UpdateCustomerContact"
+	CustomerService_DeactivateCustomerContact_FullMethodName     = "/erp.masterdata.v1.CustomerService/DeactivateCustomerContact"
+	CustomerService_ListCustomerOwners_FullMethodName            = "/erp.masterdata.v1.CustomerService/ListCustomerOwners"
+	CustomerService_CreateCustomerOwner_FullMethodName           = "/erp.masterdata.v1.CustomerService/CreateCustomerOwner"
+	CustomerService_UpdateCustomerOwner_FullMethodName           = "/erp.masterdata.v1.CustomerService/UpdateCustomerOwner"
+	CustomerService_DeactivateCustomerOwner_FullMethodName       = "/erp.masterdata.v1.CustomerService/DeactivateCustomerOwner"
+	CustomerService_ListCustomerChanges_FullMethodName           = "/erp.masterdata.v1.CustomerService/ListCustomerChanges"
+	CustomerService_ImportCustomers_FullMethodName               = "/erp.masterdata.v1.CustomerService/ImportCustomers"
+	CustomerService_CheckCustomerDuplicates_FullMethodName       = "/erp.masterdata.v1.CustomerService/CheckCustomerDuplicates"
+	CustomerService_GetCustomerDeactivationImpact_FullMethodName = "/erp.masterdata.v1.CustomerService/GetCustomerDeactivationImpact"
+	CustomerService_ListMailingContacts_FullMethodName           = "/erp.masterdata.v1.CustomerService/ListMailingContacts"
+	CustomerService_ListCustomerCountries_FullMethodName         = "/erp.masterdata.v1.CustomerService/ListCustomerCountries"
+	CustomerService_ContactsInCountry_FullMethodName             = "/erp.masterdata.v1.CustomerService/ContactsInCountry"
 )
 
 // CustomerServiceClient is the client API for CustomerService service.
@@ -77,6 +78,7 @@ type CustomerServiceClient interface {
 	ListCustomerChanges(ctx context.Context, in *ListCustomerChangesRequest, opts ...grpc.CallOption) (*ListCustomerChangesResponse, error)
 	ImportCustomers(ctx context.Context, in *ImportCustomersRequest, opts ...grpc.CallOption) (*ImportCustomersResponse, error)
 	CheckCustomerDuplicates(ctx context.Context, in *CheckCustomerDuplicatesRequest, opts ...grpc.CallOption) (*CheckCustomerDuplicatesResponse, error)
+	GetCustomerDeactivationImpact(ctx context.Context, in *GetCustomerDeactivationImpactRequest, opts ...grpc.CallOption) (*GetCustomerDeactivationImpactResponse, error)
 	// The address book, flattened: every contact that has an email, with the
 	// customer it belongs to. One call rather than a customer list followed by
 	// a lookup per customer, because the mail composer needs all of them at
@@ -317,6 +319,16 @@ func (c *customerServiceClient) CheckCustomerDuplicates(ctx context.Context, in 
 	return out, nil
 }
 
+func (c *customerServiceClient) GetCustomerDeactivationImpact(ctx context.Context, in *GetCustomerDeactivationImpactRequest, opts ...grpc.CallOption) (*GetCustomerDeactivationImpactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCustomerDeactivationImpactResponse)
+	err := c.cc.Invoke(ctx, CustomerService_GetCustomerDeactivationImpact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *customerServiceClient) ListMailingContacts(ctx context.Context, in *ListMailingContactsRequest, opts ...grpc.CallOption) (*ListMailingContactsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListMailingContactsResponse)
@@ -378,6 +390,7 @@ type CustomerServiceServer interface {
 	ListCustomerChanges(context.Context, *ListCustomerChangesRequest) (*ListCustomerChangesResponse, error)
 	ImportCustomers(context.Context, *ImportCustomersRequest) (*ImportCustomersResponse, error)
 	CheckCustomerDuplicates(context.Context, *CheckCustomerDuplicatesRequest) (*CheckCustomerDuplicatesResponse, error)
+	GetCustomerDeactivationImpact(context.Context, *GetCustomerDeactivationImpactRequest) (*GetCustomerDeactivationImpactResponse, error)
 	// The address book, flattened: every contact that has an email, with the
 	// customer it belongs to. One call rather than a customer list followed by
 	// a lookup per customer, because the mail composer needs all of them at
@@ -463,6 +476,9 @@ func (UnimplementedCustomerServiceServer) ImportCustomers(context.Context, *Impo
 }
 func (UnimplementedCustomerServiceServer) CheckCustomerDuplicates(context.Context, *CheckCustomerDuplicatesRequest) (*CheckCustomerDuplicatesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CheckCustomerDuplicates not implemented")
+}
+func (UnimplementedCustomerServiceServer) GetCustomerDeactivationImpact(context.Context, *GetCustomerDeactivationImpactRequest) (*GetCustomerDeactivationImpactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCustomerDeactivationImpact not implemented")
 }
 func (UnimplementedCustomerServiceServer) ListMailingContacts(context.Context, *ListMailingContactsRequest) (*ListMailingContactsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListMailingContacts not implemented")
@@ -890,6 +906,24 @@ func _CustomerService_CheckCustomerDuplicates_Handler(srv interface{}, ctx conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CustomerService_GetCustomerDeactivationImpact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCustomerDeactivationImpactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).GetCustomerDeactivationImpact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_GetCustomerDeactivationImpact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).GetCustomerDeactivationImpact(ctx, req.(*GetCustomerDeactivationImpactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CustomerService_ListMailingContacts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListMailingContactsRequest)
 	if err := dec(in); err != nil {
@@ -1040,6 +1074,10 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CustomerService_CheckCustomerDuplicates_Handler,
 		},
 		{
+			MethodName: "GetCustomerDeactivationImpact",
+			Handler:    _CustomerService_GetCustomerDeactivationImpact_Handler,
+		},
+		{
 			MethodName: "ListMailingContacts",
 			Handler:    _CustomerService_ListMailingContacts_Handler,
 		},
@@ -1057,44 +1095,48 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	SupplierService_CreateSupplier_FullMethodName            = "/erp.masterdata.v1.SupplierService/CreateSupplier"
-	SupplierService_GetSupplier_FullMethodName               = "/erp.masterdata.v1.SupplierService/GetSupplier"
-	SupplierService_ListSuppliers_FullMethodName             = "/erp.masterdata.v1.SupplierService/ListSuppliers"
-	SupplierService_UpdateSupplier_FullMethodName            = "/erp.masterdata.v1.SupplierService/UpdateSupplier"
-	SupplierService_DeactivateSupplier_FullMethodName        = "/erp.masterdata.v1.SupplierService/DeactivateSupplier"
-	SupplierService_ActivateSupplier_FullMethodName          = "/erp.masterdata.v1.SupplierService/ActivateSupplier"
-	SupplierService_ListSupplierCountries_FullMethodName     = "/erp.masterdata.v1.SupplierService/ListSupplierCountries"
-	SupplierService_ListSupplierContacts_FullMethodName      = "/erp.masterdata.v1.SupplierService/ListSupplierContacts"
-	SupplierService_CreateSupplierContact_FullMethodName     = "/erp.masterdata.v1.SupplierService/CreateSupplierContact"
-	SupplierService_UpdateSupplierContact_FullMethodName     = "/erp.masterdata.v1.SupplierService/UpdateSupplierContact"
-	SupplierService_DeactivateSupplierContact_FullMethodName = "/erp.masterdata.v1.SupplierService/DeactivateSupplierContact"
-	SupplierService_ListSupplierOwners_FullMethodName        = "/erp.masterdata.v1.SupplierService/ListSupplierOwners"
-	SupplierService_CreateSupplierOwner_FullMethodName       = "/erp.masterdata.v1.SupplierService/CreateSupplierOwner"
-	SupplierService_UpdateSupplierOwner_FullMethodName       = "/erp.masterdata.v1.SupplierService/UpdateSupplierOwner"
-	SupplierService_DeactivateSupplierOwner_FullMethodName   = "/erp.masterdata.v1.SupplierService/DeactivateSupplierOwner"
-	SupplierService_ListSupplierChanges_FullMethodName       = "/erp.masterdata.v1.SupplierService/ListSupplierChanges"
-	SupplierService_ImportSuppliers_FullMethodName           = "/erp.masterdata.v1.SupplierService/ImportSuppliers"
-	SupplierService_ListFactories_FullMethodName             = "/erp.masterdata.v1.SupplierService/ListFactories"
-	SupplierService_GetFactory_FullMethodName                = "/erp.masterdata.v1.SupplierService/GetFactory"
-	SupplierService_CreateFactory_FullMethodName             = "/erp.masterdata.v1.SupplierService/CreateFactory"
-	SupplierService_UpdateFactory_FullMethodName             = "/erp.masterdata.v1.SupplierService/UpdateFactory"
-	SupplierService_ListFactoryCountries_FullMethodName      = "/erp.masterdata.v1.SupplierService/ListFactoryCountries"
-	SupplierService_ListFactoryContacts_FullMethodName       = "/erp.masterdata.v1.SupplierService/ListFactoryContacts"
-	SupplierService_CreateFactoryContact_FullMethodName      = "/erp.masterdata.v1.SupplierService/CreateFactoryContact"
-	SupplierService_UpdateFactoryContact_FullMethodName      = "/erp.masterdata.v1.SupplierService/UpdateFactoryContact"
-	SupplierService_DeactivateFactoryContact_FullMethodName  = "/erp.masterdata.v1.SupplierService/DeactivateFactoryContact"
-	SupplierService_ListFactoryOwners_FullMethodName         = "/erp.masterdata.v1.SupplierService/ListFactoryOwners"
-	SupplierService_CreateFactoryOwner_FullMethodName        = "/erp.masterdata.v1.SupplierService/CreateFactoryOwner"
-	SupplierService_UpdateFactoryOwner_FullMethodName        = "/erp.masterdata.v1.SupplierService/UpdateFactoryOwner"
-	SupplierService_DeactivateFactoryOwner_FullMethodName    = "/erp.masterdata.v1.SupplierService/DeactivateFactoryOwner"
-	SupplierService_ListFactoryCapabilities_FullMethodName   = "/erp.masterdata.v1.SupplierService/ListFactoryCapabilities"
-	SupplierService_CreateFactoryCapability_FullMethodName   = "/erp.masterdata.v1.SupplierService/CreateFactoryCapability"
-	SupplierService_DeleteFactoryCapability_FullMethodName   = "/erp.masterdata.v1.SupplierService/DeleteFactoryCapability"
-	SupplierService_ListFactoryCertificates_FullMethodName   = "/erp.masterdata.v1.SupplierService/ListFactoryCertificates"
-	SupplierService_CreateFactoryCertificate_FullMethodName  = "/erp.masterdata.v1.SupplierService/CreateFactoryCertificate"
-	SupplierService_DeleteFactoryCertificate_FullMethodName  = "/erp.masterdata.v1.SupplierService/DeleteFactoryCertificate"
-	SupplierService_ListFactoryChanges_FullMethodName        = "/erp.masterdata.v1.SupplierService/ListFactoryChanges"
-	SupplierService_ImportFactories_FullMethodName           = "/erp.masterdata.v1.SupplierService/ImportFactories"
+	SupplierService_CreateSupplier_FullMethodName                = "/erp.masterdata.v1.SupplierService/CreateSupplier"
+	SupplierService_GetSupplier_FullMethodName                   = "/erp.masterdata.v1.SupplierService/GetSupplier"
+	SupplierService_ListSuppliers_FullMethodName                 = "/erp.masterdata.v1.SupplierService/ListSuppliers"
+	SupplierService_UpdateSupplier_FullMethodName                = "/erp.masterdata.v1.SupplierService/UpdateSupplier"
+	SupplierService_DeactivateSupplier_FullMethodName            = "/erp.masterdata.v1.SupplierService/DeactivateSupplier"
+	SupplierService_ActivateSupplier_FullMethodName              = "/erp.masterdata.v1.SupplierService/ActivateSupplier"
+	SupplierService_ListSupplierCountries_FullMethodName         = "/erp.masterdata.v1.SupplierService/ListSupplierCountries"
+	SupplierService_ListSupplierContacts_FullMethodName          = "/erp.masterdata.v1.SupplierService/ListSupplierContacts"
+	SupplierService_CreateSupplierContact_FullMethodName         = "/erp.masterdata.v1.SupplierService/CreateSupplierContact"
+	SupplierService_UpdateSupplierContact_FullMethodName         = "/erp.masterdata.v1.SupplierService/UpdateSupplierContact"
+	SupplierService_DeactivateSupplierContact_FullMethodName     = "/erp.masterdata.v1.SupplierService/DeactivateSupplierContact"
+	SupplierService_ListSupplierOwners_FullMethodName            = "/erp.masterdata.v1.SupplierService/ListSupplierOwners"
+	SupplierService_CreateSupplierOwner_FullMethodName           = "/erp.masterdata.v1.SupplierService/CreateSupplierOwner"
+	SupplierService_UpdateSupplierOwner_FullMethodName           = "/erp.masterdata.v1.SupplierService/UpdateSupplierOwner"
+	SupplierService_DeactivateSupplierOwner_FullMethodName       = "/erp.masterdata.v1.SupplierService/DeactivateSupplierOwner"
+	SupplierService_ListSupplierChanges_FullMethodName           = "/erp.masterdata.v1.SupplierService/ListSupplierChanges"
+	SupplierService_ImportSuppliers_FullMethodName               = "/erp.masterdata.v1.SupplierService/ImportSuppliers"
+	SupplierService_CheckSupplierDuplicates_FullMethodName       = "/erp.masterdata.v1.SupplierService/CheckSupplierDuplicates"
+	SupplierService_GetSupplierDeactivationImpact_FullMethodName = "/erp.masterdata.v1.SupplierService/GetSupplierDeactivationImpact"
+	SupplierService_ListFactories_FullMethodName                 = "/erp.masterdata.v1.SupplierService/ListFactories"
+	SupplierService_GetFactory_FullMethodName                    = "/erp.masterdata.v1.SupplierService/GetFactory"
+	SupplierService_CreateFactory_FullMethodName                 = "/erp.masterdata.v1.SupplierService/CreateFactory"
+	SupplierService_UpdateFactory_FullMethodName                 = "/erp.masterdata.v1.SupplierService/UpdateFactory"
+	SupplierService_ListFactoryCountries_FullMethodName          = "/erp.masterdata.v1.SupplierService/ListFactoryCountries"
+	SupplierService_ListFactoryContacts_FullMethodName           = "/erp.masterdata.v1.SupplierService/ListFactoryContacts"
+	SupplierService_CreateFactoryContact_FullMethodName          = "/erp.masterdata.v1.SupplierService/CreateFactoryContact"
+	SupplierService_UpdateFactoryContact_FullMethodName          = "/erp.masterdata.v1.SupplierService/UpdateFactoryContact"
+	SupplierService_DeactivateFactoryContact_FullMethodName      = "/erp.masterdata.v1.SupplierService/DeactivateFactoryContact"
+	SupplierService_ListFactoryOwners_FullMethodName             = "/erp.masterdata.v1.SupplierService/ListFactoryOwners"
+	SupplierService_CreateFactoryOwner_FullMethodName            = "/erp.masterdata.v1.SupplierService/CreateFactoryOwner"
+	SupplierService_UpdateFactoryOwner_FullMethodName            = "/erp.masterdata.v1.SupplierService/UpdateFactoryOwner"
+	SupplierService_DeactivateFactoryOwner_FullMethodName        = "/erp.masterdata.v1.SupplierService/DeactivateFactoryOwner"
+	SupplierService_ListFactoryCapabilities_FullMethodName       = "/erp.masterdata.v1.SupplierService/ListFactoryCapabilities"
+	SupplierService_CreateFactoryCapability_FullMethodName       = "/erp.masterdata.v1.SupplierService/CreateFactoryCapability"
+	SupplierService_DeleteFactoryCapability_FullMethodName       = "/erp.masterdata.v1.SupplierService/DeleteFactoryCapability"
+	SupplierService_ListFactoryCertificates_FullMethodName       = "/erp.masterdata.v1.SupplierService/ListFactoryCertificates"
+	SupplierService_CreateFactoryCertificate_FullMethodName      = "/erp.masterdata.v1.SupplierService/CreateFactoryCertificate"
+	SupplierService_DeleteFactoryCertificate_FullMethodName      = "/erp.masterdata.v1.SupplierService/DeleteFactoryCertificate"
+	SupplierService_ListFactoryChanges_FullMethodName            = "/erp.masterdata.v1.SupplierService/ListFactoryChanges"
+	SupplierService_ImportFactories_FullMethodName               = "/erp.masterdata.v1.SupplierService/ImportFactories"
+	SupplierService_CheckFactoryDuplicates_FullMethodName        = "/erp.masterdata.v1.SupplierService/CheckFactoryDuplicates"
+	SupplierService_GetFactoryDeactivationImpact_FullMethodName  = "/erp.masterdata.v1.SupplierService/GetFactoryDeactivationImpact"
 )
 
 // SupplierServiceClient is the client API for SupplierService service.
@@ -1120,6 +1162,8 @@ type SupplierServiceClient interface {
 	DeactivateSupplierOwner(ctx context.Context, in *DeactivateSupplierOwnerRequest, opts ...grpc.CallOption) (*DeactivateSupplierOwnerResponse, error)
 	ListSupplierChanges(ctx context.Context, in *ListSupplierChangesRequest, opts ...grpc.CallOption) (*ListSupplierChangesResponse, error)
 	ImportSuppliers(ctx context.Context, in *ImportSuppliersRequest, opts ...grpc.CallOption) (*ImportSuppliersResponse, error)
+	CheckSupplierDuplicates(ctx context.Context, in *CheckSupplierDuplicatesRequest, opts ...grpc.CallOption) (*CheckSupplierDuplicatesResponse, error)
+	GetSupplierDeactivationImpact(ctx context.Context, in *GetSupplierDeactivationImpactRequest, opts ...grpc.CallOption) (*GetSupplierDeactivationImpactResponse, error)
 	ListFactories(ctx context.Context, in *ListFactoriesRequest, opts ...grpc.CallOption) (*ListFactoriesResponse, error)
 	GetFactory(ctx context.Context, in *GetFactoryRequest, opts ...grpc.CallOption) (*GetFactoryResponse, error)
 	CreateFactory(ctx context.Context, in *CreateFactoryRequest, opts ...grpc.CallOption) (*CreateFactoryResponse, error)
@@ -1141,6 +1185,8 @@ type SupplierServiceClient interface {
 	DeleteFactoryCertificate(ctx context.Context, in *DeleteFactoryCertificateRequest, opts ...grpc.CallOption) (*DeleteFactoryCertificateResponse, error)
 	ListFactoryChanges(ctx context.Context, in *ListFactoryChangesRequest, opts ...grpc.CallOption) (*ListFactoryChangesResponse, error)
 	ImportFactories(ctx context.Context, in *ImportFactoriesRequest, opts ...grpc.CallOption) (*ImportFactoriesResponse, error)
+	CheckFactoryDuplicates(ctx context.Context, in *CheckFactoryDuplicatesRequest, opts ...grpc.CallOption) (*CheckFactoryDuplicatesResponse, error)
+	GetFactoryDeactivationImpact(ctx context.Context, in *GetFactoryDeactivationImpactRequest, opts ...grpc.CallOption) (*GetFactoryDeactivationImpactResponse, error)
 }
 
 type supplierServiceClient struct {
@@ -1315,6 +1361,26 @@ func (c *supplierServiceClient) ImportSuppliers(ctx context.Context, in *ImportS
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ImportSuppliersResponse)
 	err := c.cc.Invoke(ctx, SupplierService_ImportSuppliers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) CheckSupplierDuplicates(ctx context.Context, in *CheckSupplierDuplicatesRequest, opts ...grpc.CallOption) (*CheckSupplierDuplicatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckSupplierDuplicatesResponse)
+	err := c.cc.Invoke(ctx, SupplierService_CheckSupplierDuplicates_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) GetSupplierDeactivationImpact(ctx context.Context, in *GetSupplierDeactivationImpactRequest, opts ...grpc.CallOption) (*GetSupplierDeactivationImpactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSupplierDeactivationImpactResponse)
+	err := c.cc.Invoke(ctx, SupplierService_GetSupplierDeactivationImpact_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1531,6 +1597,26 @@ func (c *supplierServiceClient) ImportFactories(ctx context.Context, in *ImportF
 	return out, nil
 }
 
+func (c *supplierServiceClient) CheckFactoryDuplicates(ctx context.Context, in *CheckFactoryDuplicatesRequest, opts ...grpc.CallOption) (*CheckFactoryDuplicatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckFactoryDuplicatesResponse)
+	err := c.cc.Invoke(ctx, SupplierService_CheckFactoryDuplicates_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supplierServiceClient) GetFactoryDeactivationImpact(ctx context.Context, in *GetFactoryDeactivationImpactRequest, opts ...grpc.CallOption) (*GetFactoryDeactivationImpactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetFactoryDeactivationImpactResponse)
+	err := c.cc.Invoke(ctx, SupplierService_GetFactoryDeactivationImpact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SupplierServiceServer is the server API for SupplierService service.
 // All implementations must embed UnimplementedSupplierServiceServer
 // for forward compatibility.
@@ -1554,6 +1640,8 @@ type SupplierServiceServer interface {
 	DeactivateSupplierOwner(context.Context, *DeactivateSupplierOwnerRequest) (*DeactivateSupplierOwnerResponse, error)
 	ListSupplierChanges(context.Context, *ListSupplierChangesRequest) (*ListSupplierChangesResponse, error)
 	ImportSuppliers(context.Context, *ImportSuppliersRequest) (*ImportSuppliersResponse, error)
+	CheckSupplierDuplicates(context.Context, *CheckSupplierDuplicatesRequest) (*CheckSupplierDuplicatesResponse, error)
+	GetSupplierDeactivationImpact(context.Context, *GetSupplierDeactivationImpactRequest) (*GetSupplierDeactivationImpactResponse, error)
 	ListFactories(context.Context, *ListFactoriesRequest) (*ListFactoriesResponse, error)
 	GetFactory(context.Context, *GetFactoryRequest) (*GetFactoryResponse, error)
 	CreateFactory(context.Context, *CreateFactoryRequest) (*CreateFactoryResponse, error)
@@ -1575,6 +1663,8 @@ type SupplierServiceServer interface {
 	DeleteFactoryCertificate(context.Context, *DeleteFactoryCertificateRequest) (*DeleteFactoryCertificateResponse, error)
 	ListFactoryChanges(context.Context, *ListFactoryChangesRequest) (*ListFactoryChangesResponse, error)
 	ImportFactories(context.Context, *ImportFactoriesRequest) (*ImportFactoriesResponse, error)
+	CheckFactoryDuplicates(context.Context, *CheckFactoryDuplicatesRequest) (*CheckFactoryDuplicatesResponse, error)
+	GetFactoryDeactivationImpact(context.Context, *GetFactoryDeactivationImpactRequest) (*GetFactoryDeactivationImpactResponse, error)
 	mustEmbedUnimplementedSupplierServiceServer()
 }
 
@@ -1635,6 +1725,12 @@ func (UnimplementedSupplierServiceServer) ListSupplierChanges(context.Context, *
 }
 func (UnimplementedSupplierServiceServer) ImportSuppliers(context.Context, *ImportSuppliersRequest) (*ImportSuppliersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ImportSuppliers not implemented")
+}
+func (UnimplementedSupplierServiceServer) CheckSupplierDuplicates(context.Context, *CheckSupplierDuplicatesRequest) (*CheckSupplierDuplicatesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CheckSupplierDuplicates not implemented")
+}
+func (UnimplementedSupplierServiceServer) GetSupplierDeactivationImpact(context.Context, *GetSupplierDeactivationImpactRequest) (*GetSupplierDeactivationImpactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSupplierDeactivationImpact not implemented")
 }
 func (UnimplementedSupplierServiceServer) ListFactories(context.Context, *ListFactoriesRequest) (*ListFactoriesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListFactories not implemented")
@@ -1698,6 +1794,12 @@ func (UnimplementedSupplierServiceServer) ListFactoryChanges(context.Context, *L
 }
 func (UnimplementedSupplierServiceServer) ImportFactories(context.Context, *ImportFactoriesRequest) (*ImportFactoriesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ImportFactories not implemented")
+}
+func (UnimplementedSupplierServiceServer) CheckFactoryDuplicates(context.Context, *CheckFactoryDuplicatesRequest) (*CheckFactoryDuplicatesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CheckFactoryDuplicates not implemented")
+}
+func (UnimplementedSupplierServiceServer) GetFactoryDeactivationImpact(context.Context, *GetFactoryDeactivationImpactRequest) (*GetFactoryDeactivationImpactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetFactoryDeactivationImpact not implemented")
 }
 func (UnimplementedSupplierServiceServer) mustEmbedUnimplementedSupplierServiceServer() {}
 func (UnimplementedSupplierServiceServer) testEmbeddedByValue()                         {}
@@ -2022,6 +2124,42 @@ func _SupplierService_ImportSuppliers_Handler(srv interface{}, ctx context.Conte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SupplierServiceServer).ImportSuppliers(ctx, req.(*ImportSuppliersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_CheckSupplierDuplicates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckSupplierDuplicatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).CheckSupplierDuplicates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_CheckSupplierDuplicates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).CheckSupplierDuplicates(ctx, req.(*CheckSupplierDuplicatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_GetSupplierDeactivationImpact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSupplierDeactivationImpactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).GetSupplierDeactivationImpact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_GetSupplierDeactivationImpact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).GetSupplierDeactivationImpact(ctx, req.(*GetSupplierDeactivationImpactRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2404,6 +2542,42 @@ func _SupplierService_ImportFactories_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SupplierService_CheckFactoryDuplicates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckFactoryDuplicatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).CheckFactoryDuplicates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_CheckFactoryDuplicates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).CheckFactoryDuplicates(ctx, req.(*CheckFactoryDuplicatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupplierService_GetFactoryDeactivationImpact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetFactoryDeactivationImpactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupplierServiceServer).GetFactoryDeactivationImpact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupplierService_GetFactoryDeactivationImpact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupplierServiceServer).GetFactoryDeactivationImpact(ctx, req.(*GetFactoryDeactivationImpactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SupplierService_ServiceDesc is the grpc.ServiceDesc for SupplierService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2478,6 +2652,14 @@ var SupplierService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ImportSuppliers",
 			Handler:    _SupplierService_ImportSuppliers_Handler,
+		},
+		{
+			MethodName: "CheckSupplierDuplicates",
+			Handler:    _SupplierService_CheckSupplierDuplicates_Handler,
+		},
+		{
+			MethodName: "GetSupplierDeactivationImpact",
+			Handler:    _SupplierService_GetSupplierDeactivationImpact_Handler,
 		},
 		{
 			MethodName: "ListFactories",
@@ -2562,6 +2744,14 @@ var SupplierService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ImportFactories",
 			Handler:    _SupplierService_ImportFactories_Handler,
+		},
+		{
+			MethodName: "CheckFactoryDuplicates",
+			Handler:    _SupplierService_CheckFactoryDuplicates_Handler,
+		},
+		{
+			MethodName: "GetFactoryDeactivationImpact",
+			Handler:    _SupplierService_GetFactoryDeactivationImpact_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -2863,13 +3053,15 @@ var NumberingService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	PortService_CreatePort_FullMethodName        = "/erp.masterdata.v1.PortService/CreatePort"
-	PortService_GetPort_FullMethodName           = "/erp.masterdata.v1.PortService/GetPort"
-	PortService_ListPorts_FullMethodName         = "/erp.masterdata.v1.PortService/ListPorts"
-	PortService_ListPortCountries_FullMethodName = "/erp.masterdata.v1.PortService/ListPortCountries"
-	PortService_ImportPorts_FullMethodName       = "/erp.masterdata.v1.PortService/ImportPorts"
-	PortService_UpdatePort_FullMethodName        = "/erp.masterdata.v1.PortService/UpdatePort"
-	PortService_SetPortStatus_FullMethodName     = "/erp.masterdata.v1.PortService/SetPortStatus"
+	PortService_CreatePort_FullMethodName                = "/erp.masterdata.v1.PortService/CreatePort"
+	PortService_GetPort_FullMethodName                   = "/erp.masterdata.v1.PortService/GetPort"
+	PortService_ListPorts_FullMethodName                 = "/erp.masterdata.v1.PortService/ListPorts"
+	PortService_ListPortCountries_FullMethodName         = "/erp.masterdata.v1.PortService/ListPortCountries"
+	PortService_ImportPorts_FullMethodName               = "/erp.masterdata.v1.PortService/ImportPorts"
+	PortService_UpdatePort_FullMethodName                = "/erp.masterdata.v1.PortService/UpdatePort"
+	PortService_SetPortStatus_FullMethodName             = "/erp.masterdata.v1.PortService/SetPortStatus"
+	PortService_GetPortDeactivationImpact_FullMethodName = "/erp.masterdata.v1.PortService/GetPortDeactivationImpact"
+	PortService_ListPortChanges_FullMethodName           = "/erp.masterdata.v1.PortService/ListPortChanges"
 )
 
 // PortServiceClient is the client API for PortService service.
@@ -2886,6 +3078,8 @@ type PortServiceClient interface {
 	ImportPorts(ctx context.Context, in *ImportPortsRequest, opts ...grpc.CallOption) (*ImportPortsResponse, error)
 	UpdatePort(ctx context.Context, in *UpdatePortRequest, opts ...grpc.CallOption) (*UpdatePortResponse, error)
 	SetPortStatus(ctx context.Context, in *SetPortStatusRequest, opts ...grpc.CallOption) (*SetPortStatusResponse, error)
+	GetPortDeactivationImpact(ctx context.Context, in *GetPortDeactivationImpactRequest, opts ...grpc.CallOption) (*GetPortDeactivationImpactResponse, error)
+	ListPortChanges(ctx context.Context, in *ListPortChangesRequest, opts ...grpc.CallOption) (*ListPortChangesResponse, error)
 }
 
 type portServiceClient struct {
@@ -2966,6 +3160,26 @@ func (c *portServiceClient) SetPortStatus(ctx context.Context, in *SetPortStatus
 	return out, nil
 }
 
+func (c *portServiceClient) GetPortDeactivationImpact(ctx context.Context, in *GetPortDeactivationImpactRequest, opts ...grpc.CallOption) (*GetPortDeactivationImpactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetPortDeactivationImpactResponse)
+	err := c.cc.Invoke(ctx, PortService_GetPortDeactivationImpact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *portServiceClient) ListPortChanges(ctx context.Context, in *ListPortChangesRequest, opts ...grpc.CallOption) (*ListPortChangesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPortChangesResponse)
+	err := c.cc.Invoke(ctx, PortService_ListPortChanges_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PortServiceServer is the server API for PortService service.
 // All implementations must embed UnimplementedPortServiceServer
 // for forward compatibility.
@@ -2980,6 +3194,8 @@ type PortServiceServer interface {
 	ImportPorts(context.Context, *ImportPortsRequest) (*ImportPortsResponse, error)
 	UpdatePort(context.Context, *UpdatePortRequest) (*UpdatePortResponse, error)
 	SetPortStatus(context.Context, *SetPortStatusRequest) (*SetPortStatusResponse, error)
+	GetPortDeactivationImpact(context.Context, *GetPortDeactivationImpactRequest) (*GetPortDeactivationImpactResponse, error)
+	ListPortChanges(context.Context, *ListPortChangesRequest) (*ListPortChangesResponse, error)
 	mustEmbedUnimplementedPortServiceServer()
 }
 
@@ -3010,6 +3226,12 @@ func (UnimplementedPortServiceServer) UpdatePort(context.Context, *UpdatePortReq
 }
 func (UnimplementedPortServiceServer) SetPortStatus(context.Context, *SetPortStatusRequest) (*SetPortStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetPortStatus not implemented")
+}
+func (UnimplementedPortServiceServer) GetPortDeactivationImpact(context.Context, *GetPortDeactivationImpactRequest) (*GetPortDeactivationImpactResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetPortDeactivationImpact not implemented")
+}
+func (UnimplementedPortServiceServer) ListPortChanges(context.Context, *ListPortChangesRequest) (*ListPortChangesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListPortChanges not implemented")
 }
 func (UnimplementedPortServiceServer) mustEmbedUnimplementedPortServiceServer() {}
 func (UnimplementedPortServiceServer) testEmbeddedByValue()                     {}
@@ -3158,6 +3380,42 @@ func _PortService_SetPortStatus_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PortService_GetPortDeactivationImpact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPortDeactivationImpactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PortServiceServer).GetPortDeactivationImpact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PortService_GetPortDeactivationImpact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PortServiceServer).GetPortDeactivationImpact(ctx, req.(*GetPortDeactivationImpactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PortService_ListPortChanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPortChangesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PortServiceServer).ListPortChanges(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PortService_ListPortChanges_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PortServiceServer).ListPortChanges(ctx, req.(*ListPortChangesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PortService_ServiceDesc is the grpc.ServiceDesc for PortService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3192,6 +3450,14 @@ var PortService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetPortStatus",
 			Handler:    _PortService_SetPortStatus_Handler,
+		},
+		{
+			MethodName: "GetPortDeactivationImpact",
+			Handler:    _PortService_GetPortDeactivationImpact_Handler,
+		},
+		{
+			MethodName: "ListPortChanges",
+			Handler:    _PortService_ListPortChanges_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

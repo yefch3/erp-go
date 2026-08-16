@@ -394,15 +394,40 @@ func (s *Service) UpdateCustomerProfile(ctx context.Context, tenantID, id int64,
 	return out, nil
 }
 
-func (s *Service) DeactivateCustomer(ctx context.Context, tenantID, id, operatorID int64) error {
-	n, err := s.q.DeactivateCustomer(ctx, store.DeactivateCustomerParams{TenantID: tenantID, ID: id, UpdatedBy: operatorID})
-	if err != nil {
-		return err
+func (s *Service) DeactivateCustomer(ctx context.Context, tenantID, id, operatorID int64, audit ...string) error {
+	operatorName, reason := "", ""
+	if len(audit) > 0 {
+		operatorName = audit[0]
 	}
-	if n == 0 {
-		return apierr.NotFound("MD_CUSTOMER_NOT_FOUND", "客户不存在或已停用")
+	if len(audit) > 1 {
+		reason = audit[1]
+		if strings.TrimSpace(reason) == "" {
+			return apierr.Invalid("MD_CUSTOMER_LIFECYCLE_REASON_REQUIRED", "停用客户时必须填写原因")
+		}
 	}
-	return nil
+	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		before, err := q.GetCustomer(ctx, store.GetCustomerParams{TenantID: tenantID, ID: id})
+		if err != nil {
+			return err
+		}
+		n, err := q.DeactivateCustomer(ctx, store.DeactivateCustomerParams{TenantID: tenantID, ID: id, UpdatedBy: operatorID})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return apierr.NotFound("MD_CUSTOMER_NOT_FOUND", "客户不存在或已停用")
+		}
+		after, err := q.GetCustomer(ctx, store.GetCustomerParams{TenantID: tenantID, ID: id})
+		if err != nil {
+			return err
+		}
+		summary := "停用客户"
+		if strings.TrimSpace(reason) != "" {
+			summary += "：" + strings.TrimSpace(reason)
+		}
+		return recordCustomerChange(ctx, q, tenantID, id, "DEACTIVATE", "LIFECYCLE", summary, before, after, operatorID, operatorName)
+	})
 }
 
 func replaceContacts(ctx context.Context, q *store.Queries, tenantID, customerID int64, contacts []ContactInput) error {
@@ -574,7 +599,14 @@ func (s *Service) UpdateSupplier(ctx context.Context, tenantID, id int64, in Sup
 
 // DeactivateSupplier 在同一事务内停用供应商，并把仍可用于新业务的下属工厂暂停合作。
 // 已经停用或暂停的工厂保持原状态；未来重新启用供应商时也不会自动恢复工厂。
-func (s *Service) DeactivateSupplier(ctx context.Context, tenantID, id, operatorID int64, operatorName string) error {
+func (s *Service) DeactivateSupplier(ctx context.Context, tenantID, id, operatorID int64, operatorName string, reasons ...string) error {
+	reason := ""
+	if len(reasons) > 0 {
+		reason = reasons[0]
+		if strings.TrimSpace(reason) == "" {
+			return apierr.Invalid("MD_SUPPLIER_LIFECYCLE_REASON_REQUIRED", "停用供应商时必须填写原因")
+		}
+	}
 	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		before, err := q.GetSupplier(ctx, store.GetSupplierParams{TenantID: tenantID, ID: id})
@@ -631,6 +663,9 @@ func (s *Service) DeactivateSupplier(ctx context.Context, tenantID, id, operator
 		if paused > 0 {
 			summary = "停用供应商并联动暂停下属工厂"
 		}
+		if strings.TrimSpace(reason) != "" {
+			summary += "：" + strings.TrimSpace(reason)
+		}
 		return recordSupplierChange(ctx, q, tenantID, id, "DEACTIVATE", "PROFILE", summary, before, after, operatorID, operatorName)
 	})
 }
@@ -677,26 +712,76 @@ func translateUnique(err error, code, msg string) error {
 	return err
 }
 
-func (s *Service) ActivateCustomer(ctx context.Context, tenantID, id, operatorID int64) error {
-	n, err := s.q.ActivateCustomer(ctx, store.ActivateCustomerParams{TenantID: tenantID, ID: id, UpdatedBy: operatorID})
-	if err != nil {
-		return err
+func (s *Service) ActivateCustomer(ctx context.Context, tenantID, id, operatorID int64, audit ...string) error {
+	operatorName, reason := "", ""
+	if len(audit) > 0 {
+		operatorName = audit[0]
 	}
-	if n == 0 {
-		return apierr.NotFound("MD_CUSTOMER_NOT_FOUND", "客户不存在或已是启用状态")
+	if len(audit) > 1 {
+		reason = audit[1]
+		if strings.TrimSpace(reason) == "" {
+			return apierr.Invalid("MD_CUSTOMER_LIFECYCLE_REASON_REQUIRED", "恢复客户时必须填写原因")
+		}
 	}
-	return nil
+	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		before, err := q.GetCustomer(ctx, store.GetCustomerParams{TenantID: tenantID, ID: id})
+		if err != nil {
+			return err
+		}
+		n, err := q.ActivateCustomer(ctx, store.ActivateCustomerParams{TenantID: tenantID, ID: id, UpdatedBy: operatorID})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return apierr.NotFound("MD_CUSTOMER_NOT_FOUND", "客户不存在或已是启用状态")
+		}
+		after, err := q.GetCustomer(ctx, store.GetCustomerParams{TenantID: tenantID, ID: id})
+		if err != nil {
+			return err
+		}
+		summary := "恢复客户"
+		if strings.TrimSpace(reason) != "" {
+			summary += "：" + strings.TrimSpace(reason)
+		}
+		return recordCustomerChange(ctx, q, tenantID, id, "ACTIVATE", "LIFECYCLE", summary, before, after, operatorID, operatorName)
+	})
 }
 
-func (s *Service) ActivateSupplier(ctx context.Context, tenantID, id, operatorID int64) error {
-	n, err := s.q.ActivateSupplier(ctx, store.ActivateSupplierParams{TenantID: tenantID, ID: id, UpdatedBy: operatorID})
-	if err != nil {
-		return err
+func (s *Service) ActivateSupplier(ctx context.Context, tenantID, id, operatorID int64, audit ...string) error {
+	operatorName, reason := "", ""
+	if len(audit) > 0 {
+		operatorName = audit[0]
 	}
-	if n == 0 {
-		return apierr.NotFound("MD_SUPPLIER_NOT_FOUND", "供应商不存在或已是启用状态")
+	if len(audit) > 1 {
+		reason = audit[1]
+		if strings.TrimSpace(reason) == "" {
+			return apierr.Invalid("MD_SUPPLIER_LIFECYCLE_REASON_REQUIRED", "恢复供应商时必须填写原因")
+		}
 	}
-	return nil
+	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		before, err := q.GetSupplier(ctx, store.GetSupplierParams{TenantID: tenantID, ID: id})
+		if err != nil {
+			return err
+		}
+		n, err := q.ActivateSupplier(ctx, store.ActivateSupplierParams{TenantID: tenantID, ID: id, UpdatedBy: operatorID})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return apierr.NotFound("MD_SUPPLIER_NOT_FOUND", "供应商不存在或已是启用状态")
+		}
+		after, err := q.GetSupplier(ctx, store.GetSupplierParams{TenantID: tenantID, ID: id})
+		if err != nil {
+			return err
+		}
+		summary := "恢复供应商"
+		if strings.TrimSpace(reason) != "" {
+			summary += "：" + strings.TrimSpace(reason)
+		}
+		return recordSupplierChange(ctx, q, tenantID, id, "ACTIVATE", "LIFECYCLE", summary, before, after, operatorID, operatorName)
+	})
 }
 
 // ListMailingContacts is the address book the mail composer picks from.

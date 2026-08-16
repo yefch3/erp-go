@@ -168,13 +168,13 @@ func (h *Handler) ImportCustomers(ctx context.Context, req *mdv1.ImportCustomers
 }
 
 func (h *Handler) CheckCustomerDuplicates(ctx context.Context, req *mdv1.CheckCustomerDuplicatesRequest) (*mdv1.CheckCustomerDuplicatesResponse, error) {
-	rows, err := h.svc.CheckCustomerDuplicates(ctx, grpcx.TenantID(ctx), strings.TrimSpace(req.GetName()), strings.TrimSpace(req.GetTaxId()), req.GetExcludeId())
+	rows, err := h.svc.CheckCustomerDuplicates(ctx, grpcx.TenantID(ctx), strings.TrimSpace(req.GetName()), strings.TrimSpace(req.GetTaxId()), strings.TrimSpace(req.GetEmail()), req.GetExcludeId())
 	if err != nil {
 		return nil, err
 	}
 	out := make([]*mdv1.CustomerDuplicate, len(rows))
 	for i, r := range rows {
-		out[i] = &mdv1.CustomerDuplicate{Id: r.ID, Code: r.Code, Name: r.Name, TaxId: r.TaxID}
+		out[i] = &mdv1.CustomerDuplicate{Id: r.ID, Code: r.Code, Name: r.Name, TaxId: r.TaxID, Email: r.Email, MatchFields: r.MatchFields}
 	}
 	return &mdv1.CheckCustomerDuplicatesResponse{Candidates: out}, nil
 }
