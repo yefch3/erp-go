@@ -1446,6 +1446,8 @@ export default {
     deleted: 'Deleted',
     deleteHint: 'Delete the signature “{n}”?',
     empty: 'No signature templates yet',
+    sizeHint: 'Logo works best at 300–400 × 70–100 px — most mail clients show it at full size',
+    imageTooBig: 'This image is {w}×{h} — large for a signature: slow for recipients and a classic spam-score trigger. Aim for 400×100 or less',
   },
   editor: {
     font: 'Font',

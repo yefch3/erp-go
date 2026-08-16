@@ -1449,6 +1449,8 @@ export default {
     deleted: 'Eliminada',
     deleteHint: '¿Eliminar la firma «{n}»?',
     empty: 'Aún no hay plantillas de firma',
+    sizeHint: 'El logo funciona mejor a 300–400 × 70–100 px — la mayoría de clientes lo muestran a tamaño real',
+    imageTooBig: 'Esta imagen mide {w}×{h} — grande para una firma: carga lenta y típico disparador de spam. Procure 400×100 o menos',
   },
   editor: {
     font: 'Fuente',
