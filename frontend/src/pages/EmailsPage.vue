@@ -209,7 +209,7 @@
               <pre
                 v-else
                 class="in-text"
-                @mouseup="openPlainTextExcelMenu($event, it.direction === 'IN' ? it.id : '')"
+                :data-mail-id="it.direction === 'IN' ? it.id : ''"
               >{{ it.body }}</pre>
               <QuotedHistory v-if="it.quoted" :html="it.quoted" />
             </div>
@@ -225,7 +225,7 @@
           <pre
             v-else
             class="in-text"
-            @mouseup="openPlainTextExcelMenu($event, openedInbound.id)"
+            :data-mail-id="openedInbound.id"
           >{{ openedInbound.bodyText }}</pre>
           <QuotedHistory v-if="openedInbound.quotedHtml" :html="openedInbound.quotedHtml" />
         </template>
@@ -2230,19 +2230,41 @@ function openTextExcelMenu(
   positionExcelMenu(event.x, event.y, { kind: 'text', mailId, text })
 }
 
-function openPlainTextExcelMenu(event: MouseEvent, mailId: string) {
-  if (!mailId) return
-  // Two ticks of patience, one for each of this handler's problems: the
-  // selection is only final a beat after mouseup, and the click that follows
-  // mouseup runs the window-level closeExcelMenu — opening synchronously here
-  // would be undone before the user saw it.
+// Window-level, not @mouseup on the <pre>: a bottom-to-top drag is usually
+// released above the text it selected — over the subject line, the toolbar —
+// and a listener on the element never hears that mouseup. The selection
+// itself knows which mail it lives in; where the finger lifted is
+// irrelevant.
+//
+// One tick of patience for each of this handler's problems: the selection is
+// only final a beat after mouseup, and the click that follows mouseup runs
+// the window-level closeExcelMenu — opening synchronously would be undone
+// before the user saw it.
+function onPlainTextMouseUp() {
   window.setTimeout(() => {
-    const text = window.getSelection()?.toString().trim() ?? ''
-    if (!text) {
-      closeExcelMenu()
-      return
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
+    const anchorEl = sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode?.parentElement
+    const focusEl = sel.focusNode instanceof Element ? sel.focusNode : sel.focusNode?.parentElement
+    const pre = (anchorEl?.closest('pre.in-text') ?? focusEl?.closest('pre.in-text')) as HTMLElement | null
+    if (!pre) return
+    const mailId = pre.dataset.mailId ?? ''
+    if (!mailId) return
+    // Clamp to the mail body. An overshooting drag has the subject line or a
+    // toolbar label in it, and those were never part of the mail.
+    const range = sel.getRangeAt(0).cloneRange()
+    const bounds = document.createRange()
+    bounds.selectNodeContents(pre)
+    if (range.compareBoundaryPoints(Range.START_TO_START, bounds) < 0) {
+      range.setStart(bounds.startContainer, bounds.startOffset)
     }
-    positionExcelMenu(event.clientX, event.clientY + 12, { kind: 'text', mailId, text })
+    if (range.compareBoundaryPoints(Range.END_TO_END, bounds) > 0) {
+      range.setEnd(bounds.endContainer, bounds.endOffset)
+    }
+    const text = range.toString().trim()
+    if (!text) return
+    const rect = range.getBoundingClientRect()
+    positionExcelMenu(rect.left + rect.width / 2, rect.bottom + 8, { kind: 'text', mailId, text })
   }, 0)
 }
 
@@ -2263,10 +2285,12 @@ window.addEventListener('blur', closeExcelMenu)
 // scroll events do not bubble. A fixed-position bubble that stays put while
 // its selection scrolls away is pointing at nothing.
 window.addEventListener('scroll', closeExcelMenu, true)
+window.addEventListener('mouseup', onPlainTextMouseUp)
 onUnmounted(() => {
   window.removeEventListener('click', closeExcelMenu)
   window.removeEventListener('blur', closeExcelMenu)
   window.removeEventListener('scroll', closeExcelMenu, true)
+  window.removeEventListener('mouseup', onPlainTextMouseUp)
 })
 
 async function convertExcelSelection() {
