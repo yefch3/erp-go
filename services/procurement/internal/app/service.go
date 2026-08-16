@@ -40,6 +40,18 @@ type Rates interface {
 	Latest(context.Context, string) (Rate, error)
 }
 
+// Scopes asks IAM whose sourcing cases the caller may access. Procurement
+// owns the documents; IAM owns the organisation chart and role policy.
+type Scopes interface {
+	VisibleEmployees(ctx context.Context, employeeID int64, module string) (Visibility, error)
+}
+
+type Visibility struct {
+	All         bool
+	EmployeeIDs []int64
+	ScopeType   string
+}
+
 // Approvals is the approval engine. It never learns what a purchase order is
 // — it routes on a business type and an amount and reports a decision.
 type Approvals interface {
@@ -92,6 +104,7 @@ type Deps struct {
 	Suppliers  Suppliers
 	Warehouses Warehouses
 	Rates      Rates
+	Scopes     Scopes
 	// Optional: without it the pages still work, they just need a refresh.
 	Live *livefeed.Publisher
 }
@@ -104,6 +117,7 @@ type Service struct {
 	suppliers  Suppliers
 	warehouses Warehouses
 	rates      Rates
+	scopes     Scopes
 	live       *livefeed.Publisher
 }
 
@@ -111,7 +125,8 @@ func New(pool *pgxpool.Pool, d Deps) *Service {
 	return &Service{
 		pool: pool, q: store.New(pool),
 		numbering: d.Numbering, approvals: d.Approvals,
-		suppliers: d.Suppliers, warehouses: d.Warehouses, rates: d.Rates, live: d.Live,
+		suppliers: d.Suppliers, warehouses: d.Warehouses, rates: d.Rates,
+		scopes: d.Scopes, live: d.Live,
 	}
 }
 

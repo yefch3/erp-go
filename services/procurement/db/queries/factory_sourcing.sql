@@ -28,6 +28,9 @@ ORDER BY r.created_at DESC;
 -- name: FactoryRFQForQuote :one
 SELECT id,case_id,currency,status FROM factory_rfqs WHERE tenant_id=$1 AND id=$2 FOR UPDATE;
 
+-- name: FactoryRFQCase :one
+SELECT case_id FROM factory_rfqs WHERE tenant_id=$1 AND id=$2;
+
 -- name: FactoryRFQLines :many
 SELECT sourcing_line_id,qty::text,uom_code,spec_snapshot FROM factory_rfq_lines
 WHERE tenant_id=$1 AND factory_rfq_id=$2 ORDER BY line_no;

@@ -10,12 +10,27 @@ import (
 
 	apv1 "github.com/sgao19/erp-go/gen/go/erp/approval/v1"
 	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
+	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	inv1 "github.com/sgao19/erp-go/gen/go/erp/inventory/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/services/procurement/internal/app"
 	"github.com/shopspring/decimal"
 )
+
+type Scopes struct{ client iamv1.AccessServiceClient }
+
+func NewScopes(conn *grpc.ClientConn) *Scopes {
+	return &Scopes{client: iamv1.NewAccessServiceClient(conn)}
+}
+
+func (s *Scopes) VisibleEmployees(ctx context.Context, employeeID int64, module string) (app.Visibility, error) {
+	resp, err := s.client.VisibleEmployees(ctx, &iamv1.VisibleEmployeesRequest{EmployeeId: employeeID, Module: module})
+	if err != nil {
+		return app.Visibility{}, err
+	}
+	return app.Visibility{All: resp.GetAll(), EmployeeIDs: resp.GetEmployeeIds(), ScopeType: resp.GetScopeType()}, nil
+}
 
 type Rates struct{ client fxv1.FxServiceClient }
 

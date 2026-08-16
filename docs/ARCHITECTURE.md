@@ -1003,8 +1003,10 @@ CREATE TABLE contract_items (
   结果「因为单价报错被驳回」这种最常见的情况无路可走——两个入口都够不着。
   现在两者都收 `items`,`UpdateContract` 在版本仍是 `DRAFT` 时删了重写,
   汇率快照始终继承不动:改错字不该顺带把交易重新定价。
-- **暂缓**：合同不支持脱离报价单独建（`quotation_id` 已可空，接口留待需要时补）；
-  已生效合同的「终止」与「作废」是两回事，目前只实现作废（且仅限从未生效过的合同）。
+- **直接新建合同已实现**：`POST /api/contracts/direct` 可在没有报价单的情况下创建合同，
+  此时 `quotation_id` 为空，录入人即初始负责人；合同明细仍为必填，供出货进度和收款对账使用。
+- **暂缓**：已生效合同的「终止」与「作废」是两回事，目前只实现作废
+  （且仅限从未生效过的合同）。
 
 **合同文件（2026-07-28 已实现）**
 
@@ -1437,7 +1439,7 @@ export 问 approval 要 `MyInvolvedDocuments(biz_type)`(任何状态的任务都
 
 **转移的单位是「一单生意」,不是「一份单据」。**
 
-报价单和合同是严格 1:1 的:
+对于**由报价生成**的合同，报价单和存活合同是严格 1:1 的:
 
 ```sql
 CREATE UNIQUE INDEX contracts_quotation_idx ON contracts (tenant_id, quotation_id)
@@ -1445,8 +1447,9 @@ CREATE UNIQUE INDEX contracts_quotation_idx ON contracts (tenant_id, quotation_i
 ```
 
 一张报价单最多一份未作废的合同;作废后索引放开,可以重开一份。
-而且目前**只有**从报价单生成合同这一条路,`quotation_id` 可空只是给将来的
-独立合同留位置。所以今天每份合同都恰好对应一张报价单。
+系统也支持通过 `POST /api/contracts/direct` 直接新建合同；这类合同的
+`quotation_id` 为空，没有需要连带转移的报价单。所以下面的链路不变量只约束
+**由报价生成**的合同，不约束直接新建合同。
 
 分开转会断在「作废重开」这条路径上:
 
@@ -1485,8 +1488,8 @@ C 作废
 |---|---|
 | 权限码 | `export:ownership:transfer`,种给超级管理员和销售主管,**不给销售只读** |
 | 接口 | `POST /api/ownership/transfer`、`GET /api/ownership/transfers` |
-| 入口 | 报价单号或合同号任选一端,另一端自己找出来一起转 |
-| 留痕 | `ownership_transfers`,一份单据一行,所以一次交接产生两行 |
+| 入口 | 由报价生成的合同可从报价单号或合同号任一端发起并整链转移；直接新建合同从合同端发起 |
+| 留痕 | `ownership_transfers`,一份单据一行；报价链交接产生两行，直接新建合同交接产生一行 |
 
 拒绝的情况:接收人就是当前负责人、接收人已停用、
 单据或接收人不在操作人的数据范围内、合同正在审批中。

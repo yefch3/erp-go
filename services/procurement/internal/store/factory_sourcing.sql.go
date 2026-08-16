@@ -162,6 +162,22 @@ func (q *Queries) CreateSupplierQuoteLine(ctx context.Context, arg CreateSupplie
 	return err
 }
 
+const factoryRFQCase = `-- name: FactoryRFQCase :one
+SELECT case_id FROM factory_rfqs WHERE tenant_id=$1 AND id=$2
+`
+
+type FactoryRFQCaseParams struct {
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) FactoryRFQCase(ctx context.Context, arg FactoryRFQCaseParams) (int64, error) {
+	row := q.db.QueryRow(ctx, factoryRFQCase, arg.TenantID, arg.ID)
+	var case_id int64
+	err := row.Scan(&case_id)
+	return case_id, err
+}
+
 const factoryRFQForQuote = `-- name: FactoryRFQForQuote :one
 SELECT id,case_id,currency,status FROM factory_rfqs WHERE tenant_id=$1 AND id=$2 FOR UPDATE
 `

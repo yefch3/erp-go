@@ -17,6 +17,23 @@ type SourcingHandler struct {
 
 func NewSourcing(svc *app.Service) *SourcingHandler { return &SourcingHandler{svc: svc} }
 
+func sourcingOperator(ctx context.Context) app.Operator {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	return app.Operator{ID: op.EmployeeID, Name: op.Name}
+}
+
+func (h *SourcingHandler) authorizeCase(ctx context.Context, caseID int64) error {
+	return h.svc.AuthorizeSourcingCase(ctx, grpcx.TenantID(ctx), caseID, sourcingOperator(ctx))
+}
+
+func (h *SourcingHandler) authorizeRFQ(ctx context.Context, rfqID int64) error {
+	return h.svc.AuthorizeFactoryRFQ(ctx, grpcx.TenantID(ctx), rfqID, sourcingOperator(ctx))
+}
+
+func (h *SourcingHandler) authorizeScenario(ctx context.Context, scenarioID int64) error {
+	return h.svc.AuthorizeCostScenario(ctx, grpcx.TenantID(ctx), scenarioID, sourcingOperator(ctx))
+}
+
 func (h *SourcingHandler) CreateCase(ctx context.Context, req *prv1.CreateCaseRequest) (*prv1.CreateCaseResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
 	lines := make([]app.SourcingLineInput, 0, len(req.GetLines()))
@@ -35,9 +52,10 @@ func (h *SourcingHandler) CreateCase(ctx context.Context, req *prv1.CreateCaseRe
 }
 
 func (h *SourcingHandler) ListCases(ctx context.Context, req *prv1.ListCasesRequest) (*prv1.ListCasesResponse, error) {
+	op := sourcingOperator(ctx)
 	rows, total, err := h.svc.ListSourcingCases(ctx, grpcx.TenantID(ctx), app.SourcingFilter{
 		Status: req.GetStatus(), Keyword: req.GetKeyword(),
-	}, req.GetPage().GetPage(), req.GetPage().GetPageSize())
+	}, req.GetPage().GetPage(), req.GetPage().GetPageSize(), op)
 	if err != nil {
 		return nil, err
 	}
@@ -49,6 +67,9 @@ func (h *SourcingHandler) ListCases(ctx context.Context, req *prv1.ListCasesRequ
 }
 
 func (h *SourcingHandler) GetCase(ctx context.Context, req *prv1.GetCaseRequest) (*prv1.GetCaseResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	view, err := h.svc.GetSourcingCase(ctx, grpcx.TenantID(ctx), req.GetId())
 	if err != nil {
 		return nil, err
@@ -57,6 +78,9 @@ func (h *SourcingHandler) GetCase(ctx context.Context, req *prv1.GetCaseRequest)
 }
 
 func (h *SourcingHandler) ConfirmLines(ctx context.Context, req *prv1.ConfirmLinesRequest) (*prv1.ConfirmLinesResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
 	view, err := h.svc.ConfirmSourcingLines(ctx, grpcx.TenantID(ctx), req.GetCaseId(), req.GetSourcingLineIds())
 	if err != nil {
 		return nil, err
@@ -65,6 +89,9 @@ func (h *SourcingHandler) ConfirmLines(ctx context.Context, req *prv1.ConfirmLin
 }
 
 func (h *SourcingHandler) ReviewLine(ctx context.Context, req *prv1.ReviewLineRequest) (*prv1.ReviewLineResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
 	op, _ := grpcx.OperatorFromContext(ctx)
 	view, err := h.svc.ReviewSourcingLine(ctx, grpcx.TenantID(ctx), app.SourcingLineReview{
 		CaseID: req.GetCaseId(), LineID: req.GetLineId(), ProductID: req.GetProductId(), SkuID: req.GetSkuId(),
@@ -77,6 +104,9 @@ func (h *SourcingHandler) ReviewLine(ctx context.Context, req *prv1.ReviewLineRe
 }
 
 func (h *SourcingHandler) CreateFactoryRfq(ctx context.Context, req *prv1.CreateFactoryRfqRequest) (*prv1.CreateFactoryRfqResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
 	op, _ := grpcx.OperatorFromContext(ctx)
 	row, err := h.svc.CreateFactoryRFQ(ctx, grpcx.TenantID(ctx), app.NewFactoryRFQ{CaseID: req.GetCaseId(), SupplierID: req.GetSupplierId(),
 		ContactEmail: req.GetContactEmail(), Currency: req.GetCurrency(), ResponseDueAt: req.GetResponseDueAt(), SourcingLineIDs: req.GetSourcingLineIds()}, app.Operator{ID: op.EmployeeID, Name: op.Name})
@@ -87,6 +117,9 @@ func (h *SourcingHandler) CreateFactoryRfq(ctx context.Context, req *prv1.Create
 }
 
 func (h *SourcingHandler) ListFactoryRfqs(ctx context.Context, req *prv1.ListFactoryRfqsRequest) (*prv1.ListFactoryRfqsResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
 	rows, err := h.svc.ListFactoryRFQs(ctx, grpcx.TenantID(ctx), req.GetCaseId())
 	if err != nil {
 		return nil, err
@@ -99,6 +132,9 @@ func (h *SourcingHandler) ListFactoryRfqs(ctx context.Context, req *prv1.ListFac
 }
 
 func (h *SourcingHandler) CreateSupplierQuote(ctx context.Context, req *prv1.CreateSupplierQuoteRequest) (*prv1.CreateSupplierQuoteResponse, error) {
+	if err := h.authorizeRFQ(ctx, req.GetFactoryRfqId()); err != nil {
+		return nil, err
+	}
 	op, _ := grpcx.OperatorFromContext(ctx)
 	lines := make([]app.SupplierQuoteLineInput, 0, len(req.GetLines()))
 	for _, line := range req.GetLines() {
@@ -112,6 +148,9 @@ func (h *SourcingHandler) CreateSupplierQuote(ctx context.Context, req *prv1.Cre
 }
 
 func (h *SourcingHandler) GetFactoryRfqWorkbook(ctx context.Context, req *prv1.GetFactoryRfqWorkbookRequest) (*prv1.GetFactoryRfqWorkbookResponse, error) {
+	if err := h.authorizeRFQ(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	book, err := h.svc.GetFactoryRFQWorkbook(ctx, grpcx.TenantID(ctx), req.GetId())
 	if err != nil {
 		return nil, err
@@ -121,6 +160,9 @@ func (h *SourcingHandler) GetFactoryRfqWorkbook(ctx context.Context, req *prv1.G
 }
 
 func (h *SourcingHandler) ImportSupplierQuoteWorkbook(ctx context.Context, req *prv1.ImportSupplierQuoteWorkbookRequest) (*prv1.ImportSupplierQuoteWorkbookResponse, error) {
+	if err := h.authorizeRFQ(ctx, req.GetFactoryRfqId()); err != nil {
+		return nil, err
+	}
 	op, _ := grpcx.OperatorFromContext(ctx)
 	row, err := h.svc.ImportSupplierQuoteWorkbook(ctx, grpcx.TenantID(ctx), req.GetFileData(), app.NewSupplierQuote{
 		FactoryRFQID: req.GetFactoryRfqId(), QuotedAt: req.GetQuotedAt(), ValidUntil: req.GetValidUntil(), Currency: req.GetCurrency(),
@@ -133,6 +175,9 @@ func (h *SourcingHandler) ImportSupplierQuoteWorkbook(ctx context.Context, req *
 }
 
 func (h *SourcingHandler) MarkFactoryRfqSent(ctx context.Context, req *prv1.MarkFactoryRfqSentRequest) (*prv1.MarkFactoryRfqSentResponse, error) {
+	if err := h.authorizeRFQ(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	if err := h.svc.MarkFactoryRFQSent(ctx, grpcx.TenantID(ctx), req.GetId()); err != nil {
 		return nil, err
 	}
@@ -140,6 +185,9 @@ func (h *SourcingHandler) MarkFactoryRfqSent(ctx context.Context, req *prv1.Mark
 }
 
 func (h *SourcingHandler) ListSupplierQuoteComparison(ctx context.Context, req *prv1.ListSupplierQuoteComparisonRequest) (*prv1.ListSupplierQuoteComparisonResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
 	rows, err := h.svc.ListSupplierQuoteComparison(ctx, grpcx.TenantID(ctx), req.GetCaseId())
 	if err != nil {
 		return nil, err
@@ -152,6 +200,9 @@ func (h *SourcingHandler) ListSupplierQuoteComparison(ctx context.Context, req *
 }
 
 func (h *SourcingHandler) CreateCostScenario(ctx context.Context, req *prv1.CreateCostScenarioRequest) (*prv1.CreateCostScenarioResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
 	op, _ := grpcx.OperatorFromContext(ctx)
 	in := app.NewCostScenario{
 		CaseID: req.GetCaseId(), Currency: req.GetCurrency(), AllocationBasis: req.GetAllocationBasis(),
@@ -178,6 +229,9 @@ func (h *SourcingHandler) CreateCostScenario(ctx context.Context, req *prv1.Crea
 }
 
 func (h *SourcingHandler) ListCostScenarios(ctx context.Context, req *prv1.ListCostScenariosRequest) (*prv1.ListCostScenariosResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
 	rows, err := h.svc.ListCostScenarios(ctx, grpcx.TenantID(ctx), req.GetCaseId())
 	if err != nil {
 		return nil, err
@@ -190,6 +244,9 @@ func (h *SourcingHandler) ListCostScenarios(ctx context.Context, req *prv1.ListC
 }
 
 func (h *SourcingHandler) GetCostScenario(ctx context.Context, req *prv1.GetCostScenarioRequest) (*prv1.GetCostScenarioResponse, error) {
+	if err := h.authorizeScenario(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	view, err := h.svc.GetCostScenario(ctx, grpcx.TenantID(ctx), req.GetId())
 	if err != nil {
 		return nil, err
@@ -198,6 +255,9 @@ func (h *SourcingHandler) GetCostScenario(ctx context.Context, req *prv1.GetCost
 }
 
 func (h *SourcingHandler) ConfirmCostScenario(ctx context.Context, req *prv1.ConfirmCostScenarioRequest) (*prv1.ConfirmCostScenarioResponse, error) {
+	if err := h.authorizeScenario(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	op, _ := grpcx.OperatorFromContext(ctx)
 	view, err := h.svc.ConfirmCostScenario(ctx, grpcx.TenantID(ctx), req.GetId(), app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
@@ -207,6 +267,9 @@ func (h *SourcingHandler) ConfirmCostScenario(ctx context.Context, req *prv1.Con
 }
 
 func (h *SourcingHandler) PrepareCustomerQuotation(ctx context.Context, req *prv1.PrepareCustomerQuotationRequest) (*prv1.PrepareCustomerQuotationResponse, error) {
+	if err := h.authorizeScenario(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	draft, err := h.svc.PrepareCustomerQuotation(ctx, grpcx.TenantID(ctx), req.GetId())
 	if err != nil {
 		return nil, err
@@ -229,6 +292,9 @@ func (h *SourcingHandler) PrepareCustomerQuotation(ctx context.Context, req *prv
 }
 
 func (h *SourcingHandler) LinkCustomerQuotation(ctx context.Context, req *prv1.LinkCustomerQuotationRequest) (*prv1.LinkCustomerQuotationResponse, error) {
+	if err := h.authorizeScenario(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	if err := h.svc.LinkCustomerQuotation(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetQuotationId(), req.GetQuoteNo()); err != nil {
 		return nil, err
 	}

@@ -55,6 +55,15 @@
                 {{ t('roles.saveScope') }}
               </el-button>
             </div>
+            <div class="scope-row">
+              <span class="scope-label">{{ t('roles.scopeSourcing') }}</span>
+              <el-select v-model="scopeSourcing" :disabled="!canWrite" style="width: 220px">
+                <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
+              </el-select>
+              <el-button v-if="canWrite" :loading="savingScope" @click="saveSourcingScope">
+                {{ t('roles.saveScope') }}
+              </el-button>
+            </div>
             <p class="footnote">{{ t('roles.scopeHint') }}</p>
           </div>
           <p class="footnote">{{ t('roles.serverEnforced') }}</p>
@@ -110,6 +119,7 @@ const createOpen = ref(false)
 const SCOPE_TYPES = ['SELF', 'DEPT', 'DEPT_AND_SUB', 'ALL']
 const scopes = ref<Record<string, string>>({})
 const scopeExport = ref('SELF')
+const scopeSourcing = ref('SELF')
 const savingScope = ref(false)
 const form = reactive({ code: '', name: '', description: '' })
 
@@ -137,12 +147,16 @@ function select(role: Role) {
   selected.value = role
   checked.value = [...role.permissionCodes]
   scopeExport.value = scopes.value[`${role.id}:export`] ?? 'SELF'
+  scopeSourcing.value = scopes.value[`${role.id}:procurement_sourcing`] ?? 'SELF'
 }
 
 async function loadScopes() {
   const data = await get<{ scopes: { roleId: string; module: string; scopeType: string }[] }>('/data-scopes')
   scopes.value = Object.fromEntries((data.scopes ?? []).map((s) => [`${s.roleId}:${s.module}`, s.scopeType]))
-  if (selected.value) scopeExport.value = scopes.value[`${selected.value.id}:export`] ?? 'SELF'
+  if (selected.value) {
+    scopeExport.value = scopes.value[`${selected.value.id}:export`] ?? 'SELF'
+    scopeSourcing.value = scopes.value[`${selected.value.id}:procurement_sourcing`] ?? 'SELF'
+  }
 }
 
 async function saveScope() {
@@ -150,6 +164,19 @@ async function saveScope() {
   try {
     await put(`/roles/${selected.value!.id}/data-scope`, {
       scope: { module: 'export', scopeType: scopeExport.value },
+    })
+    ElMessage.success(t('roles.scopeSaved'))
+    await loadScopes()
+  } finally {
+    savingScope.value = false
+  }
+}
+
+async function saveSourcingScope() {
+  savingScope.value = true
+  try {
+    await put(`/roles/${selected.value!.id}/data-scope`, {
+      scope: { module: 'procurement_sourcing', scopeType: scopeSourcing.value },
     })
     ElMessage.success(t('roles.scopeSaved'))
     await loadScopes()
@@ -206,6 +233,9 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.scope-row + .scope-row {
+  margin-top: 10px;
 }
 .scope-label {
   font-size: 13px;

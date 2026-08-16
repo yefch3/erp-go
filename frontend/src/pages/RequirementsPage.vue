@@ -1,6 +1,5 @@
 <template>
   <div>
-    <ProcurementNav />
     <div class="page-head">
       <h2>{{ t('requirements.title') }}</h2>
       <span class="head-note">{{ t('requirements.readOnlyHint') }}</span>
@@ -251,7 +250,6 @@ import { useRouter } from 'vue-router'
 import { get, post } from '../api'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
-import ProcurementNav from '../components/ProcurementNav.vue'
 
 interface Requirement {
   id: string

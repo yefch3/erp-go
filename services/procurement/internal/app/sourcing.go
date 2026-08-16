@@ -88,10 +88,15 @@ func sourcingLineParams(tenantID, caseID int64, lineNo int32, in SourcingLineInp
 	}
 }
 
-func (s *Service) ListSourcingCases(ctx context.Context, tenantID int64, f SourcingFilter, page, size int32) ([]store.ListSourcingCasesRow, int64, error) {
+func (s *Service) ListSourcingCases(ctx context.Context, tenantID int64, f SourcingFilter, page, size int32, op Operator) ([]store.ListSourcingCasesRow, int64, error) {
 	page, size = normalizePage(page, size)
+	visible, err := s.visibleSourcingTo(ctx, op)
+	if err != nil {
+		return nil, 0, err
+	}
 	rows, err := s.q.ListSourcingCases(ctx, store.ListSourcingCasesParams{
 		TenantID: tenantID, Status: f.Status, Keyword: f.Keyword,
+		VisibleAll: visible.All, VisibleIds: visible.EmployeeIDs,
 		RowOffset: (page - 1) * size, RowLimit: size,
 	})
 	if err != nil {
