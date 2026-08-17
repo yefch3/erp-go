@@ -246,6 +246,8 @@ message LinkCustomerQuotationResponse { int64 quotation_id = 1; string quote_no 
 // balance is netted first.
 service RequirementService {
   rpc ListRequirements(ListRequirementsRequest) returns (ListRequirementsResponse);
+  // Export a versioned, identity-bearing workbook for selected open requirements.
+  rpc ExportPurchaseTemplate(ExportPurchaseTemplateRequest) returns (ExportPurchaseTemplateResponse);
   // Raise an exceptional requirement by hand, independent of a contract.
   rpc CreateRequirement(CreateRequirementRequest) returns (CreateRequirementResponse);
   rpc GetRequirement(GetRequirementRequest) returns (GetRequirementResponse);
@@ -337,6 +339,13 @@ message ListRequirementsResponse {
   erp.common.v1.PageMeta meta = 2;
 }
 
+message ExportPurchaseTemplateRequest { repeated int64 requirement_ids = 1; }
+message ExportPurchaseTemplateResponse {
+  string file_name = 1;
+  bytes file_data = 2;
+  string template_version = 3;
+}
+
 message CreateRequirementRequest {
   int64 product_id = 1;
   int64 sku_id = 2;
@@ -382,6 +391,9 @@ service PurchaseOrderService {
   // Preview persists the rows the employee reviewed but does not allocate a
   // purchase-order number or change a requirement.
   rpc PreviewOrderImport(PreviewOrderImportRequest) returns (PreviewOrderImportResponse);
+  // Parse the system purchase template, validate its protected identities and
+  // create one ordinary import session per supplier.
+  rpc PreviewPurchaseTemplateImport(PreviewPurchaseTemplateImportRequest) returns (PreviewPurchaseTemplateImportResponse);
   // Confirmation is idempotent by import_token. The import record and draft
   // order are committed together.
   rpc ConfirmOrderImport(ConfirmOrderImportRequest) returns (ConfirmOrderImportResponse);
@@ -408,6 +420,10 @@ message OrderImportRow {
   string quantity_unit = 7;
   string quantity = 8;
   string unit_price = 9;
+  int64 requirement_id = 10;
+  int64 product_id = 11;
+  int64 sku_id = 12;
+  int64 uom_id = 13;
 }
 
 message OrderImportCandidate {
@@ -448,6 +464,39 @@ message PreviewOrderImportResponse {
   string import_token = 1;
   string expires_at = 2;
   repeated OrderImportPreviewRow rows = 3;
+}
+
+message PreviewPurchaseTemplateImportRequest {
+  bytes file_data = 1;
+  string source_file_name = 2;
+}
+
+message PurchaseTemplateImportLine {
+  int32 row_no = 1;
+  int64 requirement_id = 2;
+  string product_name = 3;
+  string qty = 4;
+  string uom_code = 5;
+  string unit_price = 6;
+  string moq = 7;
+}
+
+message PurchaseTemplateImportGroup {
+  string import_token = 1;
+  int64 supplier_id = 2;
+  string supplier_code = 3;
+  string supplier_name = 4;
+  string currency = 5;
+  string expected_date = 6;
+  string payment_terms = 7;
+  repeated PurchaseTemplateImportLine lines = 8;
+}
+
+message PreviewPurchaseTemplateImportResponse {
+  repeated PurchaseTemplateImportGroup groups = 1;
+  string template_version = 2;
+  string error_file_name = 3;
+  bytes error_file_data = 4;
 }
 
 message ConfirmOrderImportLine {

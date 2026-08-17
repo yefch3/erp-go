@@ -10,6 +10,12 @@
       <el-button v-if="canOrder && selected.length" type="primary" @click="goOrder">
         {{ t('requirements.orderSelected', { n: selected.length }) }}
       </el-button>
+      <el-button v-if="canOrder && selected.length" :loading="saving" @click="exportTemplate">
+        {{ t('requirements.exportTemplate', { n: selected.length }) }}
+      </el-button>
+      <el-button v-if="canOrder" @click="openTemplateImport">
+        {{ t('requirements.importTemplate') }}
+      </el-button>
       <el-button v-if="canException" @click="openCreate">
         {{ t('requirements.create') }}
       </el-button>
@@ -239,6 +245,26 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="templateImportOpen" :title="t('requirements.importTemplate')" width="760px">
+      <el-alert :title="t('requirements.templateHint')" type="info" :closable="false" show-icon class="alert" />
+      <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" @change="selectTemplateFile" />
+      <template v-if="templateGroups.length">
+        <div class="side-title">{{ t('requirements.templateGroups', { n: templateGroups.length }) }}</div>
+        <el-table :data="templateGroups" size="small" border>
+          <el-table-column prop="supplierName" :label="t('orders.supplier')" min-width="180" />
+          <el-table-column prop="currency" :label="t('requirements.currency')" width="90" />
+          <el-table-column prop="expectedDate" :label="t('orders.expected')" width="120" />
+          <el-table-column :label="t('requirements.templateLines')" width="100"><template #default="{ row }">{{ row.lines.length }}</template></el-table-column>
+          <el-table-column prop="paymentTerms" :label="t('requirements.paymentTerms')" min-width="150" />
+        </el-table>
+      </template>
+      <template #footer>
+        <el-button @click="templateImportOpen = false">{{ common('cancel') }}</el-button>
+        <el-button v-if="!templateGroups.length" type="primary" :disabled="!templateFile" :loading="saving" @click="previewTemplateImport">{{ t('requirements.previewTemplate') }}</el-button>
+        <el-button v-else type="primary" :loading="saving" @click="confirmTemplateImport">{{ t('requirements.createTemplateOrders', { n: templateGroups.length }) }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -247,7 +273,7 @@ import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { get, post } from '../api'
+import { get, post, postDownload, saveBlob } from '../api'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 
@@ -309,6 +335,11 @@ const selected = ref<Requirement[]>([])
 const detailOpen = ref(false)
 const detail = ref<Requirement | null>(null)
 const covering = ref<CoveringOrder[]>([])
+interface TemplateLine { rowNo: number; requirementId: string; productName: string; qty: string; uomCode: string; unitPrice: string; moq: string }
+interface TemplateGroup { importToken: string; supplierId: string; supplierCode: string; supplierName: string; currency: string; expectedDate: string; paymentTerms: string; lines: TemplateLine[] }
+const templateImportOpen = ref(false)
+const templateFile = ref<File | null>(null)
+const templateGroups = ref<TemplateGroup[]>([])
 
 const common = (k: string) => t(`common.${k}`)
 
@@ -417,6 +448,74 @@ function goOrder(rows?: Requirement[]) {
   router.push({ path: '/purchase-orders', query: { requirements: picked.map((r) => r.id).join(',') } })
 }
 
+async function exportTemplate() {
+  saving.value = true
+  try {
+    const file = await postDownload('/requirements/purchase-template/export', { requirement_ids: selected.value.map((row) => Number(row.id)) })
+    saveBlob(file.blob, file.fileName || 'purchase-import.xlsx')
+  } finally { saving.value = false }
+}
+
+function openTemplateImport() {
+  templateFile.value = null
+  templateGroups.value = []
+  templateImportOpen.value = true
+}
+
+function selectTemplateFile(event: Event) {
+  templateFile.value = (event.target as HTMLInputElement).files?.[0] ?? null
+  templateGroups.value = []
+}
+
+async function fileBase64(file: File) {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(binary)
+}
+
+function base64Blob(value: string): Blob {
+  const binary = atob(value)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+}
+
+async function previewTemplateImport() {
+  if (!templateFile.value) return
+  if (templateFile.value.size > 2 * 1024 * 1024) { ElMessage.warning(t('requirements.templateTooLarge')); return }
+  saving.value = true
+  try {
+    const result = await post<{ groups: TemplateGroup[]; errorFileName?: string; errorFileData?: string }>('/purchase-orders/template-imports/preview', { file_data: await fileBase64(templateFile.value), source_file_name: templateFile.value.name })
+    if (result.errorFileData) {
+      saveBlob(base64Blob(result.errorFileData), result.errorFileName || 'purchase-import-errors.xlsx')
+      ElMessage.warning(t('requirements.templateHasErrors'))
+      return
+    }
+    templateGroups.value = result.groups ?? []
+    if (!templateGroups.value.length) ElMessage.warning(t('requirements.templateNoGroups'))
+  } finally { saving.value = false }
+}
+
+async function confirmTemplateImport() {
+  saving.value = true
+  try {
+    const created: { id: string; poNo: string }[] = []
+    for (const group of templateGroups.value) {
+      const moq = group.lines.filter((line) => line.moq).map((line) => `${line.productName}: MOQ ${line.moq}`).join('; ')
+      const remark = [t('requirements.templateImportRemark'), group.paymentTerms ? `${t('requirements.paymentTerms')}: ${group.paymentTerms}` : '', moq].filter(Boolean).join('; ')
+      created.push(await post<{ id: string; poNo: string }>(`/purchase-orders/imports/${group.importToken}/confirm`, {
+        supplier_id: Number(group.supplierId), currency: group.currency, expected_date: group.expectedDate, remark,
+        lines: group.lines.map((line) => ({ row_no: line.rowNo, requirement_id: Number(line.requirementId), qty: line.qty, unit_price: line.unitPrice || '0' })),
+      }))
+    }
+    ElMessage.success(t('requirements.templateOrdersCreated', { n: created.length }))
+    templateImportOpen.value = false
+    if (created.length === 1) router.push({ path: '/purchase-orders', query: { order: created[0].id } })
+    else router.push('/purchase-orders')
+  } finally { saving.value = false }
+}
+
 async function openDetail(row: Requirement) {
   detail.value = row
   covering.value = []
@@ -468,7 +567,7 @@ const stopListening = onLive((event) => {
   if (event.type !== 'requirement.changed') return
   // Not while a dialog is open: swapping the numbers under somebody who is
   // halfway through filling in a form is worse than showing them stale ones.
-  if (createOpen.value || closeOpen.value || detailOpen.value) return
+  if (createOpen.value || closeOpen.value || detailOpen.value || templateImportOpen.value) return
   load()
 })
 onUnmounted(stopListening)

@@ -51,6 +51,19 @@ func (s *Server) previewOrderImport(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) previewPurchaseTemplateImport(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.PreviewPurchaseTemplateImportRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Orders.PreviewPurchaseTemplateImport(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) confirmOrderImport(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.ConfirmOrderImportRequest{}
 	if !s.decodeBody(w, r, req) {

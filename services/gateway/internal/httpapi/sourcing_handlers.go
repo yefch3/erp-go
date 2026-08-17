@@ -12,9 +12,11 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
+	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	pdv1 "github.com/sgao19/erp-go/gen/go/erp/product/v1"
+	"github.com/sgao19/erp-go/pkg/grpcx"
 )
 
 func (s *Server) listSourcingCases(w http.ResponseWriter, r *http.Request) {
@@ -223,6 +225,14 @@ func (s *Server) listSupplierQuoteComparison(w http.ResponseWriter, r *http.Requ
 		s.writeGRPCError(w, err)
 		return
 	}
+	allowed, err := s.hasPermission(r, "procurement:sourcing:price")
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if !allowed {
+		redactSupplierQuotePrices(resp)
+	}
 	s.writeProto(w, resp)
 }
 
@@ -231,6 +241,14 @@ func (s *Server) listCostScenarios(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
+	}
+	allowed, err := s.hasPermission(r, "procurement:sourcing:price")
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if !allowed {
+		redactCostScenarioList(resp)
 	}
 	s.writeProto(w, resp)
 }
@@ -246,7 +264,70 @@ func (s *Server) createCostScenario(w http.ResponseWriter, r *http.Request) {
 		s.writeGRPCError(w, err)
 		return
 	}
+	allowed, err := s.hasPermission(r, "procurement:sourcing:price")
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if !allowed {
+		redactCostScenario(resp.GetCostScenario())
+	}
 	s.writeProto(w, resp)
+}
+
+func (s *Server) hasPermission(r *http.Request, code string) (bool, error) {
+	op, ok := grpcx.OperatorFromContext(r.Context())
+	if !ok || op.EmployeeID == 0 {
+		return false, nil
+	}
+	resp, err := s.Access.CheckPermission(r.Context(), &iamv1.CheckPermissionRequest{
+		EmployeeId: op.EmployeeID, PermissionCode: code,
+	})
+	if err != nil {
+		return false, err
+	}
+	return resp.GetAllowed(), nil
+}
+
+func redactSupplierQuotePrices(resp *prv1.ListSupplierQuoteComparisonResponse) {
+	for _, line := range resp.GetLines() {
+		line.UnitPrice = ""
+		line.Amount = ""
+	}
+}
+
+func redactCostScenarioList(resp *prv1.ListCostScenariosResponse) {
+	for _, scenario := range resp.GetCostScenarios() {
+		redactCostScenario(scenario)
+	}
+}
+
+func redactCostScenario(scenario *prv1.CostScenario) {
+	if scenario == nil {
+		return
+	}
+	scenario.MarginType = ""
+	scenario.MarginValue = ""
+	scenario.FxRate = ""
+	scenario.FxRateAt = ""
+	scenario.FxSource = ""
+	scenario.ProductTotal = ""
+	scenario.ChargeTotal = ""
+	scenario.LandedTotal = ""
+	scenario.MarginTotal = ""
+	scenario.Charges = nil
+	for _, line := range scenario.GetLines() {
+		line.SupplierQuoteLineId = 0
+		line.SupplierName = ""
+		line.SourceCurrency = ""
+		line.SourceUnitPrice = ""
+		line.SourceFxRate = ""
+		line.TargetFxRate = ""
+		line.ProductCost = ""
+		line.AllocatedCharge = ""
+		line.LandedCost = ""
+		line.MarginAmount = ""
+	}
 }
 
 func (s *Server) getCostScenario(w http.ResponseWriter, r *http.Request) {

@@ -211,6 +211,16 @@ export async function download(url: string, params?: object): Promise<Downloaded
   }
 }
 
+/** Download bytes produced by a POST request (for exports with a JSON selection). */
+export async function postDownload(url: string, body?: object): Promise<Downloaded> {
+  const resp = await http.post<Blob>(url, body, { responseType: 'blob' })
+  return {
+    blob: resp.data,
+    fileName: fileNameFrom(String(resp.headers['content-disposition'] ?? '')),
+    text: () => resp.data.text(),
+  }
+}
+
 /**
  * The name the server gave the file.
  *
