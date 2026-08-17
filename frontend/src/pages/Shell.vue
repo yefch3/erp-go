@@ -246,6 +246,7 @@ const basicDataItems = computed(() => [
 // 采购管理与基础数据使用同一种浮层导航，子页面不再各自重复一排按钮。
 const procurementItems = computed(() => [
   { path: '/procurement', label: t('procurementNav.workbench'), allowed: true },
+  { path: '/procurement/intakes', label: t('procurementNav.intakes'), allowed: auth.can('procurement:sourcing:read') },
   { path: '/sourcing-cases', label: t('procurementNav.sourcing'), allowed: auth.can('procurement:sourcing:read') },
   { path: '/requirements', label: t('procurementNav.requirements'), allowed: auth.can('procurement:requirement:read') },
   { path: '/purchase-orders', label: t('procurementNav.orders'), allowed: auth.can('procurement:order:read') },

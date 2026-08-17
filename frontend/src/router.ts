@@ -39,6 +39,7 @@ export const router = createRouter({
         { path: 'stocks', component: () => import('./pages/StocksPage.vue') },
         { path: 'outbounds', component: () => import('./pages/OutboundsPage.vue') },
         { path: 'procurement', component: () => import('./pages/ProcurementPage.vue') },
+        { path: 'procurement/intakes', component: () => import('./pages/ProcurementIntakesPage.vue') },
         { path: 'requirements', component: () => import('./pages/RequirementsPage.vue') },
         { path: 'sourcing-cases', component: () => import('./pages/SourcingCasesPage.vue') },
         { path: 'purchase-orders', component: () => import('./pages/PurchaseOrdersPage.vue') },

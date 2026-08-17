@@ -2431,9 +2431,9 @@ async function createSourcingCaseFromExcel() {
       sourceAttachmentId: source.kind === 'attachment' ? source.attachmentId : '0',
       lines,
     })
-    ElMessage.success(t('emails.sourcingCaseCreated', { no: response.sourcingCase.caseNo }))
+    ElMessage.success(t('procurementIntakes.autoTransferred', { no: response.sourcingCase.caseNo }))
     excelOpen.value = false
-    router.push(`/sourcing-cases?case=${response.sourcingCase.id}`)
+    router.push(`/procurement/intakes?intake=${response.sourcingCase.id}`)
   } finally {
     creatingSourcingCase.value = false
   }

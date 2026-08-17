@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/shopspring/decimal"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
@@ -70,6 +71,10 @@ func (s *Service) CreateSourcingCase(ctx context.Context, tenantID int64, in New
 		return nil
 	})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && (pgErr.ConstraintName == "sourcing_cases_mail_attachment_idx" || pgErr.ConstraintName == "sourcing_cases_manual_file_idx") {
+			return SourcingCaseView{}, apierr.Conflict("SC_INTAKE_DUPLICATE", "相同来源的标准询盘已经进入待确认队列")
+		}
 		return SourcingCaseView{}, err
 	}
 	return s.GetSourcingCase(ctx, tenantID, id)
@@ -131,6 +136,34 @@ func (s *Service) ConfirmSourcingLines(ctx context.Context, tenantID, caseID int
 	}
 	if len(ids) == 0 {
 		return SourcingCaseView{}, apierr.Invalid("SC_CONFIRM_LINES_REQUIRED", "请选择需要确认的询价明细")
+	}
+	// 待确认询盘只检查明细是否属于当前询盘；此阶段不强制匹配内部产品。
+	// 确认后进入原有 REVIEWING 阶段，再由采购人员完成产品匹配和逐行复核。
+	if view.Head.Status == "INTAKE_PENDING" {
+		allowed := make(map[int64]bool, len(view.Lines))
+		for _, line := range view.Lines {
+			allowed[line.ID] = true
+		}
+		seen := map[int64]bool{}
+		for _, id := range ids {
+			if !allowed[id] || seen[id] {
+				return SourcingCaseView{}, apierr.Invalid("SC_INTAKE_LINES_INVALID", "待确认询盘明细已变化，请刷新后重试")
+			}
+			seen[id] = true
+		}
+		if len(seen) == 0 {
+			return SourcingCaseView{}, apierr.Invalid("SC_CONFIRM_LINES_REQUIRED", "至少保留一条有效询盘明细")
+		}
+		result, err := s.pool.Exec(ctx,
+			"UPDATE sourcing_cases SET status='REVIEWING', updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status='INTAKE_PENDING'",
+			tenantID, caseID)
+		if err != nil {
+			return SourcingCaseView{}, err
+		}
+		if result.RowsAffected() != 1 {
+			return SourcingCaseView{}, apierr.Conflict("SC_INTAKE_CHANGED", "待确认询盘已被处理，请刷新后重试")
+		}
+		return s.GetSourcingCase(ctx, tenantID, caseID)
 	}
 	allowed := make(map[int64]bool, len(view.Lines))
 	for _, line := range view.Lines {
