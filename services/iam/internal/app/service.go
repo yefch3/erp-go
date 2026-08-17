@@ -73,6 +73,10 @@ type LoginResult struct {
 	ExpiresInSeconds int64
 	Employee         store.GetEmployeeRow
 	PermissionCodes  []string
+	// The password that just worked was typed by an administrator. The
+	// session is real but owes an immediate change; the frontend blocks
+	// everything else until it happens.
+	MustChangePassword bool
 }
 
 // Login takes the company address somebody typed, not a username.
@@ -185,6 +189,7 @@ func (s *Service) Login(ctx context.Context, email, password string) (*LoginResu
 		ExpiresInSeconds: int64(s.jwtTTL.Seconds()),
 		Employee:         emp,
 		PermissionCodes:  perms,
+		MustChangePassword: u.MustChangePassword,
 	}, nil
 }
 

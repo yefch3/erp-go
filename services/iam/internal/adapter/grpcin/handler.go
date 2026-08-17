@@ -39,6 +39,7 @@ func (h *Handler) Login(ctx context.Context, req *iamv1.LoginRequest) (*iamv1.Lo
 		ExpiresInSeconds: res.ExpiresInSeconds,
 		Employee:         employeeRowToProto(res.Employee, nil),
 		PermissionCodes:  res.PermissionCodes,
+		MustChangePassword: res.MustChangePassword,
 	}, nil
 }
 
@@ -281,7 +282,8 @@ func (h *Handler) ListRoleMembers(ctx context.Context, req *iamv1.ListRoleMember
 }
 
 func (h *Handler) OpenAccount(ctx context.Context, req *iamv1.OpenAccountRequest) (*iamv1.OpenAccountResponse, error) {
-	username, err := h.svc.OpenAccount(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(),
+	op, _ := grpcx.OperatorFromContext(ctx)
+	username, err := h.svc.OpenAccount(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(), op.EmployeeID,
 		req.GetUsername(), req.GetInitialPassword())
 	if err != nil {
 		return nil, err
@@ -290,10 +292,62 @@ func (h *Handler) OpenAccount(ctx context.Context, req *iamv1.OpenAccountRequest
 }
 
 func (h *Handler) ResetPassword(ctx context.Context, req *iamv1.ResetPasswordRequest) (*iamv1.ResetPasswordResponse, error) {
-	if err := h.svc.ResetPassword(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(), req.GetNewPassword()); err != nil {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	if err := h.svc.ResetPassword(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(), op.EmployeeID, req.GetNewPassword()); err != nil {
 		return nil, err
 	}
 	return &iamv1.ResetPasswordResponse{Reset_: true}, nil
+}
+
+func (h *Handler) CreatePasswordReset(ctx context.Context, req *iamv1.CreatePasswordResetRequest) (*iamv1.CreatePasswordResetResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	reset, err := h.svc.CreatePasswordReset(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(), op.EmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	return &iamv1.CreatePasswordResetResponse{
+		Token: reset.Token, Email: reset.Email, Name: reset.Name,
+		ExpiresAt: reset.ExpiresAt.Unix(),
+	}, nil
+}
+
+func (h *Handler) RecordAccountEvent(ctx context.Context, req *iamv1.RecordAccountEventRequest) (*iamv1.RecordAccountEventResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	h.svc.RecordAccountEvent(ctx, grpcx.TenantID(ctx), req.GetEmployeeId(), op.EmployeeID, req.GetAction())
+	return &iamv1.RecordAccountEventResponse{Recorded: true}, nil
+}
+
+func (h *Handler) RequestPasswordReset(ctx context.Context, req *iamv1.RequestPasswordResetRequest) (*iamv1.RequestPasswordResetResponse, error) {
+	reset, found, err := h.svc.RequestPasswordResetByEmail(ctx, req.GetEmail())
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return &iamv1.RequestPasswordResetResponse{Found: false}, nil
+	}
+	return &iamv1.RequestPasswordResetResponse{
+		Found: true, Token: reset.Token, Email: reset.Email, Name: reset.Name,
+		TenantId: reset.TenantID, EmployeeId: reset.EmployeeID,
+		SenderEmployeeId: reset.SenderID, ExpiresAt: reset.ExpiresAt.Unix(),
+	}, nil
+}
+
+func (h *Handler) PeekPasswordReset(ctx context.Context, req *iamv1.PeekPasswordResetRequest) (*iamv1.PeekPasswordResetResponse, error) {
+	target, err := h.svc.PeekPasswordReset(ctx, req.GetToken())
+	if err != nil {
+		return nil, err
+	}
+	return &iamv1.PeekPasswordResetResponse{Name: target.Name, Email: target.Email}, nil
+}
+
+func (h *Handler) RedeemPasswordReset(ctx context.Context, req *iamv1.RedeemPasswordResetRequest) (*iamv1.RedeemPasswordResetResponse, error) {
+	res, err := h.svc.RedeemPasswordReset(ctx, req.GetToken(), req.GetPassword())
+	if err != nil {
+		return nil, err
+	}
+	return &iamv1.RedeemPasswordResetResponse{
+		Email: res.Email, TenantId: res.TenantID, EmployeeId: res.EmployeeID,
+	}, nil
 }
 
 func (h *Handler) ChangePassword(ctx context.Context, req *iamv1.ChangePasswordRequest) (*iamv1.ChangePasswordResponse, error) {

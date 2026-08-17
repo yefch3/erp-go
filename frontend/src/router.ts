@@ -7,6 +7,7 @@ export const router = createRouter({
     // Reached from a mail, by somebody who has no account yet — having one is
     // what they are here to arrange. Outside the shell and outside the guard.
     { path: '/activate', component: () => import('./pages/ActivatePage.vue') },
+    { path: '/reset', component: () => import('./pages/ResetPage.vue') },
     {
       path: '/',
       component: () => import('./pages/Shell.vue'),
@@ -68,9 +69,10 @@ router.beforeEach((to) => {
   // stale signal only means one extra round trip — the API answers 401 and
   // the interceptor routes to /login regardless.
   const loggedIn = localStorage.getItem('employeeName') !== null
-  // Activation is the one page whose whole audience is logged out and has to
-  // stay that way: sending them to /login would hide the only link they hold.
-  if (to.path === '/activate') return true
+  // Activation and password reset are the pages whose whole audience is
+  // logged out and has to stay that way: sending them to /login would hide
+  // the only link they hold.
+  if (to.path === '/activate' || to.path === '/reset') return true
   // Where they were trying to go travels with them, so opening a bookmarked
   // mail on a dead session lands on that mail after signing in rather than on
   // the home page with the reason forgotten.

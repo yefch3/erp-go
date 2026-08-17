@@ -127,16 +127,32 @@
               <el-dropdown v-if="canWrite" trigger="click" @command="(command: string) => handleRowCommand(command, row)">
                 <el-button link type="primary">{{ t('employees.moreActions') }}<span class="dropdown-arrow">⌄</span></el-button>
                 <template #dropdown>
+                  <!-- Two labelled sections. 账号 acts on the login (who can
+                       get in and how); 人事 acts on the employment fact. They
+                       used to sit in one flat list, and 标记离职 next to
+                       发送邀请 read as if both were account switches. -->
                   <el-dropdown-menu>
                     <el-dropdown-item command="changes">{{ t('employees.changes') }}</el-dropdown-item>
+                    <el-dropdown-item disabled class="menu-section" divided>{{ t('employees.sectionAccount') }}</el-dropdown-item>
                     <el-dropdown-item v-if="canGrant" command="roles">{{ t('employees.roles') }}</el-dropdown-item>
                     <el-dropdown-item v-if="canInvite(row)" command="invite">
                       {{ Number(row.inviteExpiresAt) ? t('employees.reinvite') : t('employees.invite') }}
                     </el-dropdown-item>
-                    <el-dropdown-item :command="row.username ? 'resetPassword' : 'openAccount'">
-                      {{ row.username ? t('employees.resetPassword') : t('employees.openAccount') }}
+                    <!-- Reset over a mailed link for everyone with a proved
+                         mailbox — no administrator ever sees the password.
+                         The typed-password reset survives only for username
+                         accounts, where a link has nowhere to go. -->
+                    <el-dropdown-item v-if="row.username && row.emailVerified" command="resetLink">
+                      {{ t('employees.sendResetLink') }}
                     </el-dropdown-item>
-                    <el-dropdown-item v-if="row.username" command="revoke" divided>{{ t('employees.revokeSessions') }}</el-dropdown-item>
+                    <el-dropdown-item v-else-if="row.username" command="resetPassword">
+                      {{ t('employees.resetPassword') }}
+                    </el-dropdown-item>
+                    <el-dropdown-item v-else command="openAccount">
+                      {{ t('employees.openAccount') }}
+                    </el-dropdown-item>
+                    <el-dropdown-item v-if="row.username" command="revoke">{{ t('employees.revokeSessions') }}</el-dropdown-item>
+                    <el-dropdown-item disabled class="menu-section" divided>{{ t('employees.sectionEmployment') }}</el-dropdown-item>
                     <el-dropdown-item v-if="row.status === 'ACTIVE'" command="leave" class="danger-action">
                       {{ t('employees.markLeft') }}
                     </el-dropdown-item>
@@ -397,6 +413,9 @@
           <el-input v-model="accountForm.password" type="password" show-password autocomplete="new-password" />
         </el-form-item>
       </el-form>
+      <!-- Because this password was typed by you, not chosen by them: it
+           opens exactly one door — the change-password form at first login. -->
+      <p class="sub">{{ t('employees.typedPasswordHint') }}</p>
       <template #footer>
         <el-button @click="passwordOpen = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="saving" @click="savePassword">{{ t('common.save') }}</el-button>
@@ -569,6 +588,7 @@ function handleRowCommand(command: string, row: Employee) {
     case 'invite': void invite(row); break
     case 'openAccount': openAccount(row); break
     case 'resetPassword': openReset(row); break
+    case 'resetLink': void sendResetLink(row); break
     case 'revoke': void revokeSessions(row); break
     case 'leave': void deactivate(row); break
     case 'reinstate': void reinstate(row); break
@@ -844,6 +864,18 @@ async function deactivate(row: Employee) {
 
 // Confirmed, because it is not undoable and it interrupts somebody: whoever
 // is holding that session is thrown back to the login page mid-task.
+// The administrator's 忘记密码-on-your-behalf: mails a one-time link, so no
+// administrator ever holds a password that is not their own. Confirmed first
+// because it puts a mail in somebody's inbox from this operator's address.
+async function sendResetLink(row: Employee) {
+  await ElMessageBox.confirm(
+    t('employees.confirmResetLink', { name: row.name, email: row.email }),
+    t('employees.sendResetLink'),
+  )
+  await post(`/employees/${row.id}/reset-link`, {})
+  ElMessage.success(t('employees.resetLinkSent', { email: row.email }))
+}
+
 async function revokeSessions(row: Employee) {
   await ElMessageBox.confirm(
     t('employees.confirmRevoke', { name: row.name }),
@@ -1039,6 +1071,13 @@ onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
 .dropdown-arrow {
   margin-left: 3px;
   font-size: 14px;
+}
+:global(.menu-section.el-dropdown-menu__item.is-disabled) {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  cursor: default;
+  padding-top: 2px;
+  padding-bottom: 2px;
 }
 :global(.danger-action) {
   color: var(--el-color-danger) !important;

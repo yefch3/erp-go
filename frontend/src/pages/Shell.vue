@@ -156,7 +156,27 @@
       </el-main>
     </el-container>
 
-    <el-dialog v-model="passwordOpen" :title="t('password.title')" width="420px">
+    <!-- One dialog, two moods. Voluntary: opened from the user menu, closable.
+         Obligatory: the password that logged this session in was typed by an
+         administrator (must_change_password), so the dialog is already open,
+         cannot be dismissed, and the rest of the app waits behind it. -->
+    <el-dialog
+      :model-value="passwordOpen || auth.mustChangePassword"
+      :title="t('password.title')"
+      width="420px"
+      :close-on-click-modal="!auth.mustChangePassword"
+      :close-on-press-escape="!auth.mustChangePassword"
+      :show-close="!auth.mustChangePassword"
+      @update:model-value="(v: boolean) => { if (!auth.mustChangePassword) passwordOpen = v }"
+    >
+      <el-alert
+        v-if="auth.mustChangePassword"
+        type="warning"
+        :title="t('password.mustChange')"
+        :closable="false"
+        show-icon
+        class="pw-must"
+      />
       <el-form label-width="110px">
         <el-form-item :label="t('password.current')">
           <el-input v-model="pw.oldPassword" type="password" show-password autocomplete="current-password" />
@@ -170,7 +190,7 @@
       </el-form>
       <p class="pw-hint">{{ t('password.hint') }}</p>
       <template #footer>
-        <el-button @click="passwordOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button v-if="!auth.mustChangePassword" @click="passwordOpen = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="saving" @click="changePassword">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
@@ -299,6 +319,9 @@ async function changePassword() {
     await post('/me/password', { oldPassword: pw.oldPassword, newPassword: pw.newPassword })
     ElMessage.success(t('password.changed'))
     passwordOpen.value = false
+    // Pays off the must-change debt too: the server cleared its flag the
+    // moment an owner-chosen password landed, and the gate follows.
+    auth.passwordChanged()
     Object.assign(pw, { oldPassword: '', newPassword: '', confirm: '' })
   } finally {
     saving.value = false
@@ -311,6 +334,9 @@ async function changePassword() {
   margin: 0;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.pw-must {
+  margin-bottom: 14px;
 }
 /* The shell is exactly the viewport, and the content column is the only
    thing that scrolls. It used to be the document: el-main asked for

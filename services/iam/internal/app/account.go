@@ -12,7 +12,12 @@ import (
 
 // OpenAccount gives an employee who has none a login. Employees without an
 // account are normal - a warehouse worker may never open the system.
-func (s *Service) OpenAccount(ctx context.Context, tenantID, employeeID int64, username, password string) (string, error) {
+//
+// The initial password was typed by the administrator, so the administrator
+// knows it — must_change_password makes it open exactly one door, the
+// change-password form. operatorID is who opened the account, for the
+// change history.
+func (s *Service) OpenAccount(ctx context.Context, tenantID, employeeID, operatorID int64, username, password string) (string, error) {
 	if username == "" || password == "" {
 		return "", apierr.Invalid("IAM_ACCOUNT_FIELDS_REQUIRED", "用户名和初始密码必填")
 	}
@@ -43,16 +48,37 @@ func (s *Service) OpenAccount(ctx context.Context, tenantID, employeeID int64, u
 	}); err != nil {
 		return "", translateUnique(err, "IAM_USERNAME_TAKEN", "用户名已存在")
 	}
+	if _, err := s.q.SetMustChangePassword(ctx, store.SetMustChangePasswordParams{
+		TenantID: tenantID, EmployeeID: employeeID, MustChange: true,
+	}); err != nil {
+		return "", err
+	}
+	s.recordAccountEvent(ctx, tenantID, employeeID, operatorID, "ACCOUNT_OPENED")
 	return username, nil
 }
 
-// ResetPassword is the administrator path: it proves nothing about the old
-// password because the administrator does not know it.
-func (s *Service) ResetPassword(ctx context.Context, tenantID, employeeID int64, newPassword string) error {
+// ResetPassword is the administrator typing a password for somebody else.
+// It survives for exactly one population — username accounts with no
+// verified mailbox, where a reset link has nowhere to go. Everyone else goes
+// through CreatePasswordReset, where no administrator ever sees a password.
+//
+// Because the administrator knows what they typed, the new password opens
+// only the change-password form (must_change_password), and the act is
+// written into the change history under the administrator's name.
+func (s *Service) ResetPassword(ctx context.Context, tenantID, employeeID, operatorID int64, newPassword string) error {
 	if err := s.checkPassword(ctx, tenantID, employeeID, newPassword); err != nil {
 		return err
 	}
-	return s.setPassword(ctx, tenantID, employeeID, newPassword)
+	if err := s.setPassword(ctx, tenantID, employeeID, newPassword); err != nil {
+		return err
+	}
+	if _, err := s.q.SetMustChangePassword(ctx, store.SetMustChangePasswordParams{
+		TenantID: tenantID, EmployeeID: employeeID, MustChange: true,
+	}); err != nil {
+		return err
+	}
+	s.recordAccountEvent(ctx, tenantID, employeeID, operatorID, "PASSWORD_RESET_BY_ADMIN")
+	return nil
 }
 
 // ChangePassword is the self-service path: the current password is the proof
@@ -71,7 +97,17 @@ func (s *Service) ChangePassword(ctx context.Context, tenantID, employeeID int64
 	if !VerifyPassword(user.PasswordHash, oldPassword) {
 		return apierr.Unauthorized("IAM_PASSWORD_WRONG", "当前密码不正确")
 	}
-	return s.setPassword(ctx, tenantID, employeeID, newPassword)
+	if err := s.setPassword(ctx, tenantID, employeeID, newPassword); err != nil {
+		return err
+	}
+	// This password was chosen by its owner — the exact condition the
+	// must-change flag was waiting on.
+	if _, err := s.q.SetMustChangePassword(ctx, store.SetMustChangePasswordParams{
+		TenantID: tenantID, EmployeeID: employeeID, MustChange: false,
+	}); err != nil {
+		return err
+	}
+	return nil
 }
 
 // checkPassword judges a password knowing whose it is.

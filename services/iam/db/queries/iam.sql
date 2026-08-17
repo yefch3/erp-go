@@ -18,7 +18,7 @@
 -- along because login has to refuse an account whose mailbox was never proved
 -- to exist, and doing it here keeps that check free.
 SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
-       u.locked_until,
+       u.locked_until, u.must_change_password,
        e.name AS employee_name, e.code AS employee_code, e.department_id,
        e.status AS employee_status, e.email_verified_at,
        t.status AS tenant_status
