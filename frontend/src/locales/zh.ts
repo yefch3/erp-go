@@ -79,15 +79,23 @@ export default {
     todo: '（待开发）',
   },
   procurementNav: {
-    title: '采购管理导航', workbench: '采购工作台', sourcing: '询价案件',
+    title: '采购管理导航', workbench: '采购工作台', intakes: '待确认询盘', sourcing: '询价案件',
     requirements: '待采购', orders: '采购订单',
   },
   procurementWorkbench: {
-    title: '采购工作台', subtitle: '从客户询价到工厂送达码头的采购流程',
+    eyebrow: 'PROCUREMENT CONTROL', title: '采购工作台', subtitle: '标准询盘进入采购后的统一处理入口', downloadTemplate: '下载标准模板', uploadInquiry: '导入客户询盘', handlePending: '待确认询盘', handlePendingCount: '待确认询盘（{n}）',
+    mailTransfer: '从邮件转入', mailTransferHint: '在邮件中完成标准化并确认转入', openMail: '前往邮件', manualUpload: '手工上传标准询盘', manualUploadHint: '直接上传已经标准化的 Excel 或 CSV', startUpload: '开始上传', converge: '统一进入', pendingCount: '{n} 条待确认询盘', reviewNow: '立即复核',
+    pendingMetric: '待确认询盘', pendingMetricHint: '需要检查标准字段', sourcingMetric: '进行中询价', sourcingMetricHint: '复核、RFQ、比价与成本', requirementMetric: '待采购任务', requirementMetricHint: '合同生效后的采购需求', orderMetric: '采购订单', orderMetricHint: '全部采购订单',
+    focusEyebrow: 'TODAY', focusTitle: '今日重点', updatedNow: '实时数据', pendingAction: '预览并确认导入明细', pendingItem: '客户询盘待确认', reviewingCount: '{n} 个案件待产品复核', reviewingAction: '匹配内部产品后开始询价', reviewingItem: '询价产品待复核', requirementCount: '{n} 条待采购任务', requirementAction: '核算库存并建立采购订单', requirementItem: '待执行采购任务', requiredBy: '要求日期：{date}', emptyTitle: '暂无待处理采购任务', emptyHint: '可以从邮件转入需求，或导入标准客户询盘。',
+    mailStates: { connected: '邮箱已连接', error: '授权异常，前往邮件重新绑定', unavailable: '邮箱未连接或无访问权限' },
+    flowEyebrow: 'FLOW', flowTitle: '采购业务路径', phaseOne: '询盘确认与询价', phaseOneHint: '标准 Excel → 待确认 → RFQ → 工厂报价', phaseTwo: '成本与客户报价', phaseTwoHint: '价格、交期、费用和利润测算', phaseThree: '合同后的执行采购', phaseThreeHint: '采购需求 → 审批 → 正式下单 → 收货',
     sourcingTitle: '询价案件', sourcingDescription: '复核客户需求，向工厂询价并准备成本方案',
     requirementsTitle: '待采购', requirementsDescription: '查看合同生效后必须执行的采购任务',
     ordersTitle: '采购订单', ordersDescription: '向供应商下单、跟踪审批和码头到货',
     flowHint: '询价案件不会直接生成采购订单；客户接受报价并形成合同后，系统才产生待采购任务。',
+  },
+  procurementIntakes: {
+    eyebrow: 'STANDARD INQUIRY INTAKE', title: '待确认询盘', subtitle: '集中检查邮件转入或手工上传的标准询盘', manualUpload: '手工上传标准询盘', mailSource: '邮件转入', mailHint: '来自已确认的 LLM 标准化结果', manualSource: '员工手工上传', manualHint: '仅接受统一标准的 Excel 或 CSV', pendingQueue: '待确认队列', queueHint: '检查、修正或忽略异常行后再建立询价项目', search: '搜索询盘编号、客户或文件名', number: '询盘编号', source: '来源', fileOrSubject: '文件/邮件主题', customer: '客户', lines: '明细', receivedAt: '进入时间', review: '预览确认', empty: '暂无待确认询盘', mailAuto: '邮件转入', manual: '手工上传', uploadTitle: '上传标准询盘', uploadHint: '这里不负责识别客户原始邮件，只接收已经标准化的 Excel。支持 .xlsx 和 .csv，最大 8MB。', inquiryTitle: '询盘标题', titleAuto: '留空则使用文件名', contact: '客户联系人', contactEmail: '联系邮箱', standardFile: '标准文件', uploadAndReview: '上传并预览', fileRequired: '请选择标准询盘文件', uploaded: '标准询盘已进入待确认队列', reviewTitle: '复核标准询盘', reviewHint: '请检查产品、规格、数量和交期。错误行可以修改，不需要的行可以忽略；确认后才进入正式询价复核。', product: '产品', material: '材质/标准', grade: '牌号/等级', spec: '厚度/宽度', quantity: '数量/单位', deliveryPort: '交期/港口', restore: '恢复', ignore: '忽略', keepOne: '至少保留一条有效明细', confirmCreate: '确认并建立询价项目', confirmHint: '确认后该询盘将进入正式询价复核阶段，是否继续？', confirmed: '询价项目已建立', autoTransferred: '标准询盘 {no} 已转入采购待确认队列',
   },
   basicData: {
     employeeList: '员工列表', departments: '部门管理', roles: '角色权限',

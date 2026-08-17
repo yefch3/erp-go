@@ -40,7 +40,9 @@ FROM sourcing_cases
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND (sqlc.arg(visible_all)::bool
        OR owner_id = ANY(sqlc.arg(visible_ids)::bigint[]))
-  AND (sqlc.arg(status)::text = '' OR status = sqlc.arg(status)::text)
+  -- 待确认询盘有独立页面；正式询价列表默认不混入尚未确认的数据。
+  AND ((sqlc.arg(status)::text = '' AND status <> 'INTAKE_PENDING')
+       OR status = sqlc.arg(status)::text)
   AND (sqlc.arg(keyword)::text = '' OR case_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR title ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR customer_name ILIKE '%' || sqlc.arg(keyword)::text || '%')

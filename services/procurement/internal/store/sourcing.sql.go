@@ -218,7 +218,9 @@ FROM sourcing_cases
 WHERE tenant_id = $1::bigint
   AND ($2::bool
        OR owner_id = ANY($3::bigint[]))
-  AND ($4::text = '' OR status = $4::text)
+  -- 待确认询盘有独立页面；正式询价列表默认不混入尚未确认的数据。
+  AND (($4::text = '' AND status <> 'INTAKE_PENDING')
+       OR status = $4::text)
   AND ($5::text = '' OR case_no ILIKE '%' || $5::text || '%'
        OR title ILIKE '%' || $5::text || '%'
        OR customer_name ILIKE '%' || $5::text || '%')
