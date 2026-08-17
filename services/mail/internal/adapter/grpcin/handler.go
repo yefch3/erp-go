@@ -166,6 +166,18 @@ func (h *Handler) SendProcurementRfq(ctx context.Context, req *mailv1.SendProcur
 	return &mailv1.SendProcurementRfqResponse{CampaignId: res.CampaignID, CampaignNo: res.CampaignNo, Queued: int32(res.Queued)}, nil
 }
 
+func (h *Handler) SendProcurementOrder(ctx context.Context, req *mailv1.SendProcurementOrderRequest) (*mailv1.SendProcurementOrderResponse, error) {
+	files := make([]app.ProcurementOrderAttachment, 0, len(req.GetAttachments()))
+	for _, file := range req.GetAttachments() {
+		files = append(files, app.ProcurementOrderAttachment{FileName: file.GetFileName(), ContentType: file.GetContentType(), Data: file.GetFileData()})
+	}
+	res, err := h.svc.SendProcurementOrder(ctx, grpcx.TenantID(ctx), req.GetSenderEmployeeId(), req.GetRecipientName(), req.GetRecipientEmail(), req.GetSubject(), req.GetBody(), files)
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.SendProcurementOrderResponse{CampaignId: res.CampaignID, CampaignNo: res.CampaignNo, Queued: int32(res.Queued)}, nil
+}
+
 func pendingFromProto(in []*mailv1.PendingAttachment) []app.PendingAttachment {
 	out := make([]app.PendingAttachment, 0, len(in))
 	for _, f := range in {

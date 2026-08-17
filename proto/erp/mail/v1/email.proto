@@ -23,6 +23,7 @@ service EmailService {
   // The gateway supplies the configured employee id; browsers cannot choose
   // an arbitrary colleague as sender.
   rpc SendProcurementRfq(SendProcurementRfqRequest) returns (SendProcurementRfqResponse);
+  rpc SendProcurementOrder(SendProcurementOrderRequest) returns (SendProcurementOrderResponse);
 
   // The per-recipient list. Also the failed-delivery queue, filtered.
   rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
@@ -855,6 +856,27 @@ message SendProcurementRfqRequest {
 }
 
 message SendProcurementRfqResponse {
+  int64 campaign_id = 1;
+  string campaign_no = 2;
+  int32 queued = 3;
+}
+
+message ProcurementOrderAttachment {
+  string file_name = 1;
+  bytes file_data = 2;
+  string content_type = 3;
+}
+
+message SendProcurementOrderRequest {
+  int64 sender_employee_id = 1;
+  string recipient_name = 2;
+  string recipient_email = 3;
+  string subject = 4;
+  string body = 5;
+  repeated ProcurementOrderAttachment attachments = 6;
+}
+
+message SendProcurementOrderResponse {
   int64 campaign_id = 1;
   string campaign_no = 2;
   int32 queued = 3;

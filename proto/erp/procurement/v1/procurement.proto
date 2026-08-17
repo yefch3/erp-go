@@ -408,6 +408,14 @@ service PurchaseOrderService {
   rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);
   // Finished goods arriving into a port-terminal custody location.
   rpc ReceiveOrder(ReceiveOrderRequest) returns (ReceiveOrderResponse);
+  rpc GetOrderDocuments(GetOrderDocumentsRequest) returns (GetOrderDocumentsResponse);
+  rpc BeginOrderSend(BeginOrderSendRequest) returns (BeginOrderSendResponse);
+  rpc CompleteOrderSend(CompleteOrderSendRequest) returns (CompleteOrderSendResponse);
+  rpc GetOrderExecution(GetOrderExecutionRequest) returns (GetOrderExecutionResponse);
+  rpc RecordSupplierConfirmation(RecordSupplierConfirmationRequest) returns (RecordSupplierConfirmationResponse);
+  rpc SaveProductionMilestone(SaveProductionMilestoneRequest) returns (SaveProductionMilestoneResponse);
+  rpc ReportReceiptException(ReportReceiptExceptionRequest) returns (ReportReceiptExceptionResponse);
+  rpc ResolveReceiptException(ResolveReceiptExceptionRequest) returns (ResolveReceiptExceptionResponse);
 }
 
 message OrderImportRow {
@@ -543,6 +551,11 @@ message PurchaseOrder {
   string received_qty = 16;
   string created_at = 17;
   int64 approval_instance_id = 18;
+  string send_status = 19;
+  string sent_to = 20;
+  string sent_at = 21;
+  string sent_by = 22;
+  string send_error = 23;
 }
 
 message PurchaseOrderItem {
@@ -665,3 +678,143 @@ message ReceiveOrderRequest {
 message ReceiveOrderResponse {
   string receipt_no = 1;
 }
+
+message GetOrderDocumentsRequest { int64 id = 1; }
+message GetOrderDocumentsResponse {
+  string xlsx_file_name = 1;
+  bytes xlsx_data = 2;
+  string pdf_file_name = 3;
+  bytes pdf_data = 4;
+  string template_version = 5;
+}
+
+message BeginOrderSendRequest {
+  int64 id = 1;
+  string recipient_email = 2;
+  int64 sender_employee_id = 3;
+  string sender_name = 4;
+}
+message BeginOrderSendResponse { int64 attempt_id = 1; }
+
+message CompleteOrderSendRequest {
+  int64 id = 1;
+  int64 attempt_id = 2;
+  bool success = 3;
+  int64 campaign_id = 4;
+  string campaign_no = 5;
+  string error_message = 6;
+  repeated string attachment_names = 7;
+  string template_version = 8;
+}
+message CompleteOrderSendResponse { string send_status = 1; }
+
+message SupplierConfirmationLine {
+  int64 po_item_id = 1;
+  string confirmed_qty = 2;
+  string confirmed_unit_price = 3;
+}
+message SupplierConfirmation {
+  int64 id = 1;
+  string status = 2;
+  string confirmed_date = 3;
+  string confirmed_expected_date = 4;
+  string remark = 5;
+  int64 approval_instance_id = 6;
+  string created_by = 7;
+  string created_at = 8;
+  repeated SupplierConfirmationLine lines = 9;
+}
+
+message ProductionAttachment {
+  string file_name = 1;
+  string file_url = 2;
+  string content_type = 3;
+}
+message ProductionMilestone {
+  int64 id = 1;
+  string node = 2;
+  string planned_date = 3;
+  string actual_date = 4;
+  int64 owner_id = 5;
+  string owner_name = 6;
+  string remark = 7;
+  bool delayed = 8;
+  repeated ProductionAttachment attachments = 9;
+  string updated_at = 10;
+}
+
+message ReceiptException {
+  int64 id = 1;
+  int64 receipt_id = 2;
+  int64 po_item_id = 3;
+  string exception_type = 4;
+  string qty = 5;
+  string actual_product = 6;
+  string actual_uom = 7;
+  string description = 8;
+  string status = 9;
+  string resolution = 10;
+  string reported_by = 11;
+  string reported_at = 12;
+  string resolved_by = 13;
+  string resolved_at = 14;
+}
+
+message ProductionReminder {
+  int64 id = 1;
+  string node = 2;
+  string planned_date = 3;
+  int64 buyer_id = 4;
+  string buyer_name = 5;
+  string related_contracts = 6;
+  string status = 7;
+  string created_at = 8;
+}
+
+message GetOrderExecutionRequest { int64 id = 1; }
+message GetOrderExecutionResponse {
+  repeated SupplierConfirmation confirmations = 1;
+  repeated ProductionMilestone milestones = 2;
+  repeated ReceiptException exceptions = 3;
+  repeated ProductionReminder reminders = 4;
+}
+
+message RecordSupplierConfirmationRequest {
+  int64 id = 1;
+  string confirmed_date = 2;
+  string confirmed_expected_date = 3;
+  string remark = 4;
+  repeated SupplierConfirmationLine lines = 5;
+}
+message RecordSupplierConfirmationResponse { SupplierConfirmation confirmation = 1; }
+
+message SaveProductionMilestoneRequest {
+  int64 id = 1;
+  string node = 2;
+  string planned_date = 3;
+  string actual_date = 4;
+  int64 owner_id = 5;
+  string owner_name = 6;
+  string remark = 7;
+  repeated ProductionAttachment attachments = 8;
+}
+message SaveProductionMilestoneResponse { ProductionMilestone milestone = 1; }
+
+message ReportReceiptExceptionRequest {
+  int64 id = 1;
+  int64 receipt_id = 2;
+  int64 po_item_id = 3;
+  string exception_type = 4;
+  string qty = 5;
+  string actual_product = 6;
+  string actual_uom = 7;
+  string description = 8;
+}
+message ReportReceiptExceptionResponse { ReceiptException exception = 1; }
+
+message ResolveReceiptExceptionRequest {
+  int64 id = 1;
+  int64 exception_id = 2;
+  string resolution = 3;
+}
+message ResolveReceiptExceptionResponse { ReceiptException exception = 1; }

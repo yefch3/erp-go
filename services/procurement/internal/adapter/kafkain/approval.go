@@ -34,6 +34,9 @@ func ApprovalDecisions(svc *app.Service, log *slog.Logger) kafkax.Handler {
 				"event_id", e.EventID, "err", err)
 			return nil
 		}
+		if d.BizType == app.BizTypePurchaseOrderChange {
+			return svc.ApplyConfirmationApproval(ctx, e.TenantID, d.BizID, d.InstanceID, d.Result)
+		}
 		if d.BizType != app.BizTypePurchaseOrder {
 			return nil // some other document type; not ours
 		}

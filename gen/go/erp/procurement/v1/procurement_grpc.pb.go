@@ -1139,6 +1139,14 @@ const (
 	PurchaseOrderService_SubmitOrder_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/SubmitOrder"
 	PurchaseOrderService_CancelOrder_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/CancelOrder"
 	PurchaseOrderService_ReceiveOrder_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/ReceiveOrder"
+	PurchaseOrderService_GetOrderDocuments_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/GetOrderDocuments"
+	PurchaseOrderService_BeginOrderSend_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/BeginOrderSend"
+	PurchaseOrderService_CompleteOrderSend_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/CompleteOrderSend"
+	PurchaseOrderService_GetOrderExecution_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/GetOrderExecution"
+	PurchaseOrderService_RecordSupplierConfirmation_FullMethodName    = "/erp.procurement.v1.PurchaseOrderService/RecordSupplierConfirmation"
+	PurchaseOrderService_SaveProductionMilestone_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/SaveProductionMilestone"
+	PurchaseOrderService_ReportReceiptException_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/ReportReceiptException"
+	PurchaseOrderService_ResolveReceiptException_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ResolveReceiptException"
 )
 
 // PurchaseOrderServiceClient is the client API for PurchaseOrderService service.
@@ -1173,6 +1181,14 @@ type PurchaseOrderServiceClient interface {
 	CancelOrder(ctx context.Context, in *CancelOrderRequest, opts ...grpc.CallOption) (*CancelOrderResponse, error)
 	// Finished goods arriving into a port-terminal custody location.
 	ReceiveOrder(ctx context.Context, in *ReceiveOrderRequest, opts ...grpc.CallOption) (*ReceiveOrderResponse, error)
+	GetOrderDocuments(ctx context.Context, in *GetOrderDocumentsRequest, opts ...grpc.CallOption) (*GetOrderDocumentsResponse, error)
+	BeginOrderSend(ctx context.Context, in *BeginOrderSendRequest, opts ...grpc.CallOption) (*BeginOrderSendResponse, error)
+	CompleteOrderSend(ctx context.Context, in *CompleteOrderSendRequest, opts ...grpc.CallOption) (*CompleteOrderSendResponse, error)
+	GetOrderExecution(ctx context.Context, in *GetOrderExecutionRequest, opts ...grpc.CallOption) (*GetOrderExecutionResponse, error)
+	RecordSupplierConfirmation(ctx context.Context, in *RecordSupplierConfirmationRequest, opts ...grpc.CallOption) (*RecordSupplierConfirmationResponse, error)
+	SaveProductionMilestone(ctx context.Context, in *SaveProductionMilestoneRequest, opts ...grpc.CallOption) (*SaveProductionMilestoneResponse, error)
+	ReportReceiptException(ctx context.Context, in *ReportReceiptExceptionRequest, opts ...grpc.CallOption) (*ReportReceiptExceptionResponse, error)
+	ResolveReceiptException(ctx context.Context, in *ResolveReceiptExceptionRequest, opts ...grpc.CallOption) (*ResolveReceiptExceptionResponse, error)
 }
 
 type purchaseOrderServiceClient struct {
@@ -1283,6 +1299,86 @@ func (c *purchaseOrderServiceClient) ReceiveOrder(ctx context.Context, in *Recei
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) GetOrderDocuments(ctx context.Context, in *GetOrderDocumentsRequest, opts ...grpc.CallOption) (*GetOrderDocumentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetOrderDocumentsResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_GetOrderDocuments_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) BeginOrderSend(ctx context.Context, in *BeginOrderSendRequest, opts ...grpc.CallOption) (*BeginOrderSendResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginOrderSendResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_BeginOrderSend_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) CompleteOrderSend(ctx context.Context, in *CompleteOrderSendRequest, opts ...grpc.CallOption) (*CompleteOrderSendResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CompleteOrderSendResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_CompleteOrderSend_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) GetOrderExecution(ctx context.Context, in *GetOrderExecutionRequest, opts ...grpc.CallOption) (*GetOrderExecutionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetOrderExecutionResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_GetOrderExecution_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) RecordSupplierConfirmation(ctx context.Context, in *RecordSupplierConfirmationRequest, opts ...grpc.CallOption) (*RecordSupplierConfirmationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecordSupplierConfirmationResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_RecordSupplierConfirmation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) SaveProductionMilestone(ctx context.Context, in *SaveProductionMilestoneRequest, opts ...grpc.CallOption) (*SaveProductionMilestoneResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveProductionMilestoneResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_SaveProductionMilestone_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ReportReceiptException(ctx context.Context, in *ReportReceiptExceptionRequest, opts ...grpc.CallOption) (*ReportReceiptExceptionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportReceiptExceptionResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ReportReceiptException_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ResolveReceiptException(ctx context.Context, in *ResolveReceiptExceptionRequest, opts ...grpc.CallOption) (*ResolveReceiptExceptionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveReceiptExceptionResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ResolveReceiptException_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PurchaseOrderServiceServer is the server API for PurchaseOrderService service.
 // All implementations must embed UnimplementedPurchaseOrderServiceServer
 // for forward compatibility.
@@ -1315,6 +1411,14 @@ type PurchaseOrderServiceServer interface {
 	CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error)
 	// Finished goods arriving into a port-terminal custody location.
 	ReceiveOrder(context.Context, *ReceiveOrderRequest) (*ReceiveOrderResponse, error)
+	GetOrderDocuments(context.Context, *GetOrderDocumentsRequest) (*GetOrderDocumentsResponse, error)
+	BeginOrderSend(context.Context, *BeginOrderSendRequest) (*BeginOrderSendResponse, error)
+	CompleteOrderSend(context.Context, *CompleteOrderSendRequest) (*CompleteOrderSendResponse, error)
+	GetOrderExecution(context.Context, *GetOrderExecutionRequest) (*GetOrderExecutionResponse, error)
+	RecordSupplierConfirmation(context.Context, *RecordSupplierConfirmationRequest) (*RecordSupplierConfirmationResponse, error)
+	SaveProductionMilestone(context.Context, *SaveProductionMilestoneRequest) (*SaveProductionMilestoneResponse, error)
+	ReportReceiptException(context.Context, *ReportReceiptExceptionRequest) (*ReportReceiptExceptionResponse, error)
+	ResolveReceiptException(context.Context, *ResolveReceiptExceptionRequest) (*ResolveReceiptExceptionResponse, error)
 	mustEmbedUnimplementedPurchaseOrderServiceServer()
 }
 
@@ -1354,6 +1458,30 @@ func (UnimplementedPurchaseOrderServiceServer) CancelOrder(context.Context, *Can
 }
 func (UnimplementedPurchaseOrderServiceServer) ReceiveOrder(context.Context, *ReceiveOrderRequest) (*ReceiveOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReceiveOrder not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) GetOrderDocuments(context.Context, *GetOrderDocumentsRequest) (*GetOrderDocumentsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetOrderDocuments not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) BeginOrderSend(context.Context, *BeginOrderSendRequest) (*BeginOrderSendResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BeginOrderSend not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) CompleteOrderSend(context.Context, *CompleteOrderSendRequest) (*CompleteOrderSendResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CompleteOrderSend not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) GetOrderExecution(context.Context, *GetOrderExecutionRequest) (*GetOrderExecutionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetOrderExecution not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) RecordSupplierConfirmation(context.Context, *RecordSupplierConfirmationRequest) (*RecordSupplierConfirmationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RecordSupplierConfirmation not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) SaveProductionMilestone(context.Context, *SaveProductionMilestoneRequest) (*SaveProductionMilestoneResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveProductionMilestone not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ReportReceiptException(context.Context, *ReportReceiptExceptionRequest) (*ReportReceiptExceptionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportReceiptException not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ResolveReceiptException(context.Context, *ResolveReceiptExceptionRequest) (*ResolveReceiptExceptionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResolveReceiptException not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) mustEmbedUnimplementedPurchaseOrderServiceServer() {}
 func (UnimplementedPurchaseOrderServiceServer) testEmbeddedByValue()                              {}
@@ -1556,6 +1684,150 @@ func _PurchaseOrderService_ReceiveOrder_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_GetOrderDocuments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOrderDocumentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).GetOrderDocuments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_GetOrderDocuments_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).GetOrderDocuments(ctx, req.(*GetOrderDocumentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_BeginOrderSend_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginOrderSendRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).BeginOrderSend(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_BeginOrderSend_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).BeginOrderSend(ctx, req.(*BeginOrderSendRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_CompleteOrderSend_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompleteOrderSendRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).CompleteOrderSend(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_CompleteOrderSend_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).CompleteOrderSend(ctx, req.(*CompleteOrderSendRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_GetOrderExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOrderExecutionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).GetOrderExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_GetOrderExecution_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).GetOrderExecution(ctx, req.(*GetOrderExecutionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_RecordSupplierConfirmation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordSupplierConfirmationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).RecordSupplierConfirmation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_RecordSupplierConfirmation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).RecordSupplierConfirmation(ctx, req.(*RecordSupplierConfirmationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_SaveProductionMilestone_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveProductionMilestoneRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).SaveProductionMilestone(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_SaveProductionMilestone_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).SaveProductionMilestone(ctx, req.(*SaveProductionMilestoneRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ReportReceiptException_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportReceiptExceptionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ReportReceiptException(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ReportReceiptException_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ReportReceiptException(ctx, req.(*ReportReceiptExceptionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ResolveReceiptException_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveReceiptExceptionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ResolveReceiptException(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ResolveReceiptException_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ResolveReceiptException(ctx, req.(*ResolveReceiptExceptionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PurchaseOrderService_ServiceDesc is the grpc.ServiceDesc for PurchaseOrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1602,6 +1874,38 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReceiveOrder",
 			Handler:    _PurchaseOrderService_ReceiveOrder_Handler,
+		},
+		{
+			MethodName: "GetOrderDocuments",
+			Handler:    _PurchaseOrderService_GetOrderDocuments_Handler,
+		},
+		{
+			MethodName: "BeginOrderSend",
+			Handler:    _PurchaseOrderService_BeginOrderSend_Handler,
+		},
+		{
+			MethodName: "CompleteOrderSend",
+			Handler:    _PurchaseOrderService_CompleteOrderSend_Handler,
+		},
+		{
+			MethodName: "GetOrderExecution",
+			Handler:    _PurchaseOrderService_GetOrderExecution_Handler,
+		},
+		{
+			MethodName: "RecordSupplierConfirmation",
+			Handler:    _PurchaseOrderService_RecordSupplierConfirmation_Handler,
+		},
+		{
+			MethodName: "SaveProductionMilestone",
+			Handler:    _PurchaseOrderService_SaveProductionMilestone_Handler,
+		},
+		{
+			MethodName: "ReportReceiptException",
+			Handler:    _PurchaseOrderService_ReportReceiptException_Handler,
+		},
+		{
+			MethodName: "ResolveReceiptException",
+			Handler:    _PurchaseOrderService_ResolveReceiptException_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

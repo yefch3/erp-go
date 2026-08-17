@@ -358,6 +358,7 @@ SELECT
     coalesce(o.approval_instance_id, 0)::bigint AS approval_instance_id,
     o.reject_reason, o.cancel_reason, o.buyer_id, o.buyer_name, o.remark,
     coalesce(o.expected_date::text, '')::text AS expected_date,
+    o.send_status, o.sent_to, o.sent_at, o.sent_by_name, o.send_error,
     o.ordered_at, o.created_at
 FROM purchase_orders o
 WHERE o.tenant_id = $1::bigint AND o.id = $2::bigint
@@ -384,6 +385,11 @@ type GetPurchaseOrderRow struct {
 	BuyerName          string
 	Remark             string
 	ExpectedDate       string
+	SendStatus         string
+	SentTo             string
+	SentAt             pgtype.Timestamptz
+	SentByName         string
+	SendError          string
 	OrderedAt          pgtype.Timestamptz
 	CreatedAt          pgtype.Timestamptz
 }
@@ -407,6 +413,11 @@ func (q *Queries) GetPurchaseOrder(ctx context.Context, arg GetPurchaseOrderPara
 		&i.BuyerName,
 		&i.Remark,
 		&i.ExpectedDate,
+		&i.SendStatus,
+		&i.SentTo,
+		&i.SentAt,
+		&i.SentByName,
+		&i.SendError,
 		&i.OrderedAt,
 		&i.CreatedAt,
 	)
@@ -472,6 +483,7 @@ SELECT
     o.total_amount::text AS total_amount, o.status, o.buyer_name, o.remark,
     o.reject_reason, o.cancel_reason,
     coalesce(o.expected_date::text, '')::text AS expected_date,
+    o.send_status, o.sent_to, o.sent_at, o.sent_by_name, o.send_error,
     o.created_at,
     (SELECT count(*) FROM purchase_order_items i WHERE i.po_id = o.id) AS item_count,
     coalesce((SELECT sum(i.qty) FROM purchase_order_items i WHERE i.po_id = o.id), 0)::text AS total_qty,
@@ -508,6 +520,11 @@ type ListPurchaseOrdersRow struct {
 	RejectReason string
 	CancelReason string
 	ExpectedDate string
+	SendStatus   string
+	SentTo       string
+	SentAt       pgtype.Timestamptz
+	SentByName   string
+	SendError    string
 	CreatedAt    pgtype.Timestamptz
 	ItemCount    int64
 	TotalQty     string
@@ -543,6 +560,11 @@ func (q *Queries) ListPurchaseOrders(ctx context.Context, arg ListPurchaseOrders
 			&i.RejectReason,
 			&i.CancelReason,
 			&i.ExpectedDate,
+			&i.SendStatus,
+			&i.SentTo,
+			&i.SentAt,
+			&i.SentByName,
+			&i.SendError,
 			&i.CreatedAt,
 			&i.ItemCount,
 			&i.TotalQty,
