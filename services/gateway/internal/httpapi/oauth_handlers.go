@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -62,11 +63,50 @@ func (u *UnlockStore) TakeOAuthState(ctx context.Context, state string) (int64, 
 	return tenantID, employeeID, email, true
 }
 
+// googleWillRefuse reports whether Google would reject this redirect URI
+// before we send anybody to it, and says why in words the person can act on.
+//
+// Google's OAuth 2.0 policy takes only https:// on a real domain name; the
+// single exception is localhost, which may use http. A deployment reached by
+// bare IP — which is exactly what this system is between moving to the cloud
+// and buying a domain — therefore cannot use the Google button at all.
+//
+// Checked here rather than left to Google, because Google's refusal is a page
+// titled "Access blocked: Authorization Error / Error 400: invalid_request"
+// which names neither the cause nor the alternative. Ours does both, and the
+// alternative genuinely works: 密码/授权码 login binds the same mailbox.
+func googleWillRefuse(redirect string) string {
+	u, err := url.Parse(redirect)
+	if err != nil || u.Host == "" {
+		return "回调地址无效，请联系管理员检查 MAIL_OAUTH_REDIRECT_URL"
+	}
+	host := u.Hostname()
+	if host == "localhost" || host == "127.0.0.1" {
+		return ""
+	}
+	const useThePasswordPath = "请改用下方的「邮箱密码 / 客户端授权码」登录（Gmail 请使用应用专用密码）。"
+	// The IP case is judged first and its message names BOTH requirements on
+	// purpose: a bare IP over https is still refused, so telling somebody
+	// only "needs https" would send them to buy a certificate for an address
+	// that can never work. Getting a domain is what unlocks both.
+	if net.ParseIP(host) != nil {
+		return "Google 登录要求使用域名（且必须是 https），当前系统还在用 IP 地址访问。" + useThePasswordPath
+	}
+	if u.Scheme != "https" {
+		return "Google 登录要求 https 地址，当前系统还在用 http 访问。" + useThePasswordPath
+	}
+	return ""
+}
+
 // startGoogleOAuth hands the browser the door to Google's own login page.
 func (s *Server) startGoogleOAuth(w http.ResponseWriter, r *http.Request) {
 	if s.GoogleClientID == "" {
 		s.writeError(w, http.StatusConflict, "OAUTH_NOT_CONFIGURED",
 			"Google OAuth 未配置（缺少 GOOGLE_OAUTH_CLIENT_ID）")
+		return
+	}
+	if why := googleWillRefuse(s.OAuthRedirectURL); why != "" {
+		s.writeError(w, http.StatusConflict, "OAUTH_UNAVAILABLE_HERE", why)
 		return
 	}
 	b := make([]byte, 24)
