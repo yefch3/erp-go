@@ -216,3 +216,5 @@ DSN 没写的时候才填默认值）。但加之前先算总和——超了 100
       才看得见。2026-08-11/12 找到的三个 bug 里有两个是这样扫出来的，不是等人报障）
 - [ ] 客户超过几十人的话，第五之二节那两个数字算过一遍
       （连接池总和 ≤ `max_connections`；收信一轮 < `MAIL_SYNC_INTERVAL`）
+- [ ] 上线次日：按 [MONITORING.md](./MONITORING.md) 配监控
+      （外部拨测 + CloudWatch 八条告警线 + audit-mail 进 cron，约半小时）
