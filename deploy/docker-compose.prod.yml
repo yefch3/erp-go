@@ -82,12 +82,27 @@ services:
       # /api/healthz reports this back, so a deploy can confirm the swap
       # happened instead of inferring it from silence.
       ERP_SHA: ${ERP_SHA}
+      # Not in the base file's environment at all — dev never sets them, so
+      # this overlay is the only path by which they reach the container.
+      # TRUST_PROXY_HEADERS is unconditional here: this overlay IS the
+      # behind-a-reverse-proxy deployment.
+      TRUST_PROXY_HEADERS: "1"
+      # 0 until TLS exists (the IP-only phase serves plain http); flipped to
+      # 1 in .env the day the domain and certificate land. DEPLOY.md 三.
+      COOKIE_SECURE: ${COOKIE_SECURE:-0}
+    # The base file publishes 8080 on every interface, which is right for a
+    # laptop and wrong behind nginx: the proxy is the one public door.
+    # !override replaces the list instead of appending to it.
+    ports: !override
+      - "127.0.0.1:8080:8080"
 
   # The built SPA behind the host nginx (which owns the public port and, once
   # a domain exists, the certificates; it proxies / here and /api to the
-  # gateway). Loopback-only like everything else.
+  # gateway). Loopback-only like everything else. 8082 because 8081 already
+  # belongs to pixel-proxy in the base file.
   frontend:
     image: ghcr.io/yefch3/erp-go/frontend:${ERP_SHA}
     restart: unless-stopped
+    networks: [infra]
     ports:
-      - "127.0.0.1:8081:80"
+      - "127.0.0.1:8082:80"
