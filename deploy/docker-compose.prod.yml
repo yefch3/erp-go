@@ -1,38 +1,81 @@
-# Production overlay: binaries come from GHCR, pinned to one git SHA.
+# Production overlay: binaries from GHCR pinned to one git SHA, and every
+# value that must differ from the dev defaults injected from the server's
+# own .env — DSNs pointing at RDS with per-service passwords that are not
+# the repository's, and object storage pointing at S3 instead of the MinIO
+# container.
 #
 #   ERP_SHA=<git-sha> docker compose \
 #     -f deploy/docker-compose.services.yml -f deploy/docker-compose.prod.yml \
 #     pull && ... up -d
 #
-# The base file keeps its build: sections for development; this overlay
-# repoints every service at the image the CI built from exactly that commit.
-# `pull` fetches, `up -d` (without --build) runs what was pulled — the server
-# never compiles anything. See docs/DEPLOY-PIPELINE.md.
+# The base file keeps its build: sections and its hardcoded dev values for
+# development; this overlay replaces exactly the set a production box may
+# not run with. Everything here is ${VAR:?} on purpose: a production deploy
+# missing one of these must fail loudly at compose time, not at runtime.
+# See docs/DEPLOY-PIPELINE.md and docs/DEPLOY.md 三.
 #
-# ERP_SHA is required on purpose: a production deploy of "whatever was lying
-# around" must fail loudly, not proceed quietly.
+# MINIO_USE_SSL is the string "true", not "1" — the services compare
+# literally against "true".
 
 services:
   iam:
     image: ghcr.io/yefch3/erp-go/iam:${ERP_SHA:?production runs pinned images — pass ERP_SHA=<git-sha>}
+    environment:
+      DB_DSN: ${IAM_DB_DSN:?set in deploy/.env}
   masterdata:
     image: ghcr.io/yefch3/erp-go/masterdata:${ERP_SHA}
+    environment:
+      DB_DSN: ${MASTERDATA_DB_DSN:?set in deploy/.env}
   fx:
     image: ghcr.io/yefch3/erp-go/fx:${ERP_SHA}
+    environment:
+      DB_DSN: ${FX_DB_DSN:?set in deploy/.env}
   product:
     image: ghcr.io/yefch3/erp-go/product:${ERP_SHA}
+    environment:
+      DB_DSN: ${PRODUCT_DB_DSN:?set in deploy/.env}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:?set in deploy/.env}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:?set in deploy/.env}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?set in deploy/.env}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?set in deploy/.env}
+      MINIO_BUCKET: ${MINIO_BUCKET:?set in deploy/.env}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-true}
   approval:
     image: ghcr.io/yefch3/erp-go/approval:${ERP_SHA}
+    environment:
+      DB_DSN: ${APPROVAL_DB_DSN:?set in deploy/.env}
   export:
     image: ghcr.io/yefch3/erp-go/export:${ERP_SHA}
+    environment:
+      DB_DSN: ${EXPORT_DB_DSN:?set in deploy/.env}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-true}
   inventory:
     image: ghcr.io/yefch3/erp-go/inventory:${ERP_SHA}
+    environment:
+      DB_DSN: ${INVENTORY_DB_DSN:?set in deploy/.env}
   procurement:
     image: ghcr.io/yefch3/erp-go/procurement:${ERP_SHA}
+    environment:
+      DB_DSN: ${PROCUREMENT_DB_DSN:?set in deploy/.env}
   shipping:
     image: ghcr.io/yefch3/erp-go/shipping:${ERP_SHA}
+    environment:
+      DB_DSN: ${SHIPPING_DB_DSN:?set in deploy/.env}
   mail:
     image: ghcr.io/yefch3/erp-go/mail:${ERP_SHA}
+    environment:
+      DB_DSN: ${MAIL_DB_DSN:?set in deploy/.env}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-true}
   gateway:
     image: ghcr.io/yefch3/erp-go/gateway:${ERP_SHA}
     environment:
@@ -40,9 +83,9 @@ services:
       # happened instead of inferring it from silence.
       ERP_SHA: ${ERP_SHA}
 
-  # The built SPA behind the host nginx (which owns 443 and the certs, and
-  # proxies / here and /api to the gateway). Loopback-only like everything
-  # else — 443 stays the single open port.
+  # The built SPA behind the host nginx (which owns the public port and, once
+  # a domain exists, the certificates; it proxies / here and /api to the
+  # gateway). Loopback-only like everything else.
   frontend:
     image: ghcr.io/yefch3/erp-go/frontend:${ERP_SHA}
     restart: unless-stopped
