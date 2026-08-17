@@ -3,6 +3,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -13,6 +14,9 @@ type Config struct {
 	FetchURL      string
 	FetchSymbols  []string
 	FetchInterval time.Duration
+	// How much history to pull at startup so the 汇率走势 chart has a curve
+	// on the first day rather than after a year of uptime. 0 disables it.
+	BackfillDays int
 }
 
 func Load() Config {
@@ -23,7 +27,18 @@ func Load() Config {
 		FetchURL:      env("FX_FETCH_URL", "https://api.frankfurter.app/latest"),
 		FetchSymbols:  strings.Split(env("FX_SYMBOLS", "CNY,EUR,GBP,JPY,HKD"), ","),
 		FetchInterval: envDuration("FX_FETCH_INTERVAL", 6*time.Hour),
+		// A year: enough for the longest range the chart offers, and one
+		// request either way.
+		BackfillDays: envInt("FX_BACKFILL_DAYS", 365),
 	}
+}
+
+func envInt(key string, def int) int {
+	v, err := strconv.Atoi(os.Getenv(key))
+	if err != nil || v < 0 {
+		return def
+	}
+	return v
 }
 
 func env(key, def string) string {
