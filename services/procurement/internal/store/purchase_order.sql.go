@@ -308,6 +308,49 @@ func (q *Queries) DeletePurchaseOrderItems(ctx context.Context, arg DeletePurcha
 	return err
 }
 
+const draftReservedQtyForRequirements = `-- name: DraftReservedQtyForRequirements :many
+SELECT i.requirement_id, coalesce(sum(i.qty), 0)::text AS reserved_qty
+FROM purchase_order_items i
+JOIN purchase_orders o ON o.id = i.po_id AND o.tenant_id = i.tenant_id
+WHERE i.tenant_id = $1::bigint
+  AND i.requirement_id = ANY($2::bigint[])
+  AND o.status IN ('DRAFT', 'REJECTED', 'PENDING_APPROVAL')
+GROUP BY i.requirement_id
+`
+
+type DraftReservedQtyForRequirementsParams struct {
+	TenantID int64
+	Ids      []int64
+}
+
+type DraftReservedQtyForRequirementsRow struct {
+	RequirementID int64
+	ReservedQty   string
+}
+
+// Imported drafts reserve their demand until they are cancelled or ordered.
+// This is deliberately read after RequirementsForOrder has locked the
+// requirement rows, making simultaneous import confirmations serialize.
+func (q *Queries) DraftReservedQtyForRequirements(ctx context.Context, arg DraftReservedQtyForRequirementsParams) ([]DraftReservedQtyForRequirementsRow, error) {
+	rows, err := q.db.Query(ctx, draftReservedQtyForRequirements, arg.TenantID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DraftReservedQtyForRequirementsRow
+	for rows.Next() {
+		var i DraftReservedQtyForRequirementsRow
+		if err := rows.Scan(&i.RequirementID, &i.ReservedQty); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPurchaseOrder = `-- name: GetPurchaseOrder :one
 SELECT
     o.id, o.po_no, o.supplier_id, o.supplier_code, o.supplier_name, o.currency,

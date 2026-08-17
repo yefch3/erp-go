@@ -19,6 +19,67 @@ type OrderHandler struct {
 
 func NewOrders(svc *app.Service) *OrderHandler { return &OrderHandler{svc: svc} }
 
+func (h *OrderHandler) PreviewOrderImport(ctx context.Context, req *prv1.PreviewOrderImportRequest) (*prv1.PreviewOrderImportResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	rows := make([]app.OrderImportRow, 0, len(req.GetRows()))
+	for _, row := range req.GetRows() {
+		rows = append(rows, app.OrderImportRow{
+			RowNo: row.GetRowNo(), Product: row.GetProduct(), MaterialStandard: row.GetMaterialStandard(),
+			Grade: row.GetGrade(), Thickness: row.GetThickness(), Width: row.GetWidth(),
+			QuantityUnit: row.GetQuantityUnit(), Quantity: row.GetQuantity(), UnitPrice: row.GetUnitPrice(),
+		})
+	}
+	result, err := h.svc.PreviewOrderImport(ctx, grpcx.TenantID(ctx), app.PreviewOrderImportInput{
+		SourceType: req.GetSourceType(), SourceMailID: req.GetSourceMailId(),
+		SourceAttachmentID: req.GetSourceAttachmentId(), SourceFileName: req.GetSourceFileName(),
+		FileSHA256: req.GetFileSha256(), Rows: rows,
+	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	outRows := make([]*prv1.OrderImportPreviewRow, 0, len(result.Rows))
+	for _, row := range result.Rows {
+		candidates := make([]*prv1.OrderImportCandidate, 0, len(row.Candidates))
+		for _, candidate := range row.Candidates {
+			candidates = append(candidates, &prv1.OrderImportCandidate{
+				RequirementId: candidate.RequirementID, ContractNo: candidate.ContractNo,
+				ProductName: candidate.ProductName, ProductCode: candidate.ProductCode,
+				Spec: candidate.Spec, UomCode: candidate.UomCode, RequiredQty: candidate.RequiredQty,
+				OrderedQty: candidate.OrderedQty, OpenQty: candidate.OpenQty, Status: candidate.Status,
+			})
+		}
+		outRows = append(outRows, &prv1.OrderImportPreviewRow{
+			RowNo: row.RowNo, Product: row.Product, Quantity: row.Quantity,
+			QuantityUnit: row.QuantityUnit, UnitPrice: row.UnitPrice,
+			Candidates: candidates, Result: row.Result, Message: row.Message,
+			SuggestedRequirementId: row.SuggestedRequirementID,
+		})
+	}
+	return &prv1.PreviewOrderImportResponse{
+		ImportToken: result.ImportToken, ExpiresAt: result.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"), Rows: outRows,
+	}, nil
+}
+
+func (h *OrderHandler) ConfirmOrderImport(ctx context.Context, req *prv1.ConfirmOrderImportRequest) (*prv1.ConfirmOrderImportResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	lines := make([]app.ConfirmOrderImportLine, 0, len(req.GetLines()))
+	for _, line := range req.GetLines() {
+		lines = append(lines, app.ConfirmOrderImportLine{
+			RowNo: line.GetRowNo(), RequirementID: line.GetRequirementId(), Qty: line.GetQty(), UnitPrice: line.GetUnitPrice(),
+		})
+	}
+	result, err := h.svc.ConfirmOrderImport(ctx, grpcx.TenantID(ctx), app.ConfirmOrderImportInput{
+		ImportToken: req.GetImportToken(), SupplierID: req.GetSupplierId(), Currency: req.GetCurrency(),
+		ExpectedDate: req.GetExpectedDate(), Remark: req.GetRemark(), Lines: lines,
+	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.ConfirmOrderImportResponse{
+		Id: result.ID, PoNo: result.PONo, Status: result.Status, AlreadyCreated: result.AlreadyCreated,
+	}, nil
+}
+
 func (h *OrderHandler) ListOrders(ctx context.Context, req *prv1.ListOrdersRequest) (*prv1.ListOrdersResponse, error) {
 	rows, total, err := h.svc.ListOrders(ctx, grpcx.TenantID(ctx), app.OrderFilter{
 		Status: req.GetStatus(), Keyword: req.GetKeyword(),

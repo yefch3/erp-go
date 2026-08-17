@@ -10,7 +10,7 @@
       <el-button v-if="canOrder && selected.length" type="primary" @click="goOrder">
         {{ t('requirements.orderSelected', { n: selected.length }) }}
       </el-button>
-      <el-button v-if="canWrite" @click="openCreate">
+      <el-button v-if="canException" @click="openCreate">
         {{ t('requirements.create') }}
       </el-button>
     </div>
@@ -284,6 +284,7 @@ const { t } = useI18n()
 const auth = useAuthStore()
 const router = useRouter()
 const canWrite = auth.can('procurement:requirement:write')
+const canException = auth.can('procurement:requirement:exception')
 // Raising a requirement and committing money to a supplier are separate
 // permissions, so the ordering actions are gated separately too.
 const canOrder = auth.can('procurement:order:write')

@@ -74,9 +74,9 @@
         <el-table-column :label="t('common.actions')" width="210" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">{{ t('common.detail') }}</el-button>
-            <template v-if="canWrite">
+            <template>
               <el-button
-                v-if="row.status === 'DRAFT' || row.status === 'REJECTED'"
+                v-if="canWrite && (row.status === 'DRAFT' || row.status === 'REJECTED')"
                 link
                 type="primary"
                 @click="openEdit(row)"
@@ -84,7 +84,7 @@
                 {{ common('edit') }}
               </el-button>
               <el-button
-                v-if="row.status === 'DRAFT' || row.status === 'REJECTED'"
+                v-if="canSubmit && (row.status === 'DRAFT' || row.status === 'REJECTED')"
                 link
                 type="success"
                 @click="submit(row)"
@@ -92,7 +92,7 @@
                 {{ t('orders.submit') }}
               </el-button>
               <el-button
-                v-if="['DRAFT', 'REJECTED', 'ORDERED'].includes(row.status)"
+                v-if="canCancel && ['DRAFT', 'REJECTED', 'ORDERED'].includes(row.status)"
                 link
                 type="danger"
                 @click="openCancel(row)"
@@ -389,7 +389,9 @@ const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const canWrite = auth.can('procurement:order:write')
-const canReceive = auth.can('procurement:order:write')
+const canSubmit = auth.can('procurement:order:submit')
+const canCancel = auth.can('procurement:order:cancel')
+const canReceive = auth.can('procurement:receipt:write')
 const canManageSupplier = auth.can('masterdata:supplier:write')
 
 const rows = ref<Order[]>([])

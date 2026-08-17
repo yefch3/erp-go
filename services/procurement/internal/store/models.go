@@ -157,6 +157,24 @@ type PurchaseOrder struct {
 	UpdatedAt          pgtype.Timestamptz
 }
 
+type PurchaseOrderImport struct {
+	ID                 int64
+	TenantID           int64
+	ImportToken        string
+	SourceType         string
+	SourceMailID       int64
+	SourceAttachmentID int64
+	SourceFileName     string
+	FileSha256         string
+	PreviewRows        []byte
+	Status             string
+	PurchaseOrderID    *int64
+	CreatedBy          int64
+	CreatedAt          pgtype.Timestamptz
+	ExpiresAt          pgtype.Timestamptz
+	ConfirmedAt        pgtype.Timestamptz
+}
+
 type PurchaseOrderItem struct {
 	ID            int64
 	TenantID      int64
