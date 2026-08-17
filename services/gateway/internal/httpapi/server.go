@@ -130,6 +130,14 @@ func (s *Server) Router() http.Handler {
 	// Google sends the browser back here after its own login page. State is
 	// the authentication; see googleOAuthCallback.
 	r.Get("/api/oauth/google/callback", s.googleOAuthCallback)
+	// Password reset. Login-free of necessity — the person asking cannot log
+	// in — and rate-limited hard: these routes send mail and answer strangers.
+	r.Post("/api/auth/forgot-password",
+		s.limitPublic("reset", publicResetBudget, s.forgotPassword))
+	r.Get("/api/auth/reset",
+		s.limitPublic("reset", publicResetBudget, s.peekPasswordReset))
+	r.Post("/api/auth/reset",
+		s.limitPublic("reset", publicResetBudget, s.redeemPasswordReset))
 	r.Group(func(r chi.Router) {
 		r.Use(s.auth)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers", s.listCustomers)
@@ -233,6 +241,9 @@ func (s *Server) Router() http.Handler {
 		// Sending the invitation is employee administration, so it carries the
 		// same permission as creating the row it invites.
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/invite", s.inviteEmployee)
+		// The administrator's 忘记密码-on-your-behalf. Same permission as the
+		// direct reset it replaces for everyone who has a verified mailbox.
+		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/reset-link", s.sendResetLinkToEmployee)
 		// The same act for a selection, with one report at the end. A separate
 		// route rather than a list-shaped body on the one above, because the
 		// answer has a different shape: per-person outcomes, not a status code.

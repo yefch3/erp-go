@@ -17,6 +17,19 @@ service AuthService {
   // ActivateAccount redeems the link: it sets the password the person chose
   // and records that their company mailbox was proved to be theirs.
   rpc ActivateAccount(ActivateAccountRequest) returns (ActivateAccountResponse);
+  // RequestPasswordReset mints a one-time reset link for the account behind
+  // an address, if one exists — and says so only to the gateway. Whether an
+  // address has an account must never reach the unauthenticated caller: a
+  // login page that answers differently is a staff directory.
+  rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse);
+  // PeekPasswordReset reads a reset link without redeeming it, same contract
+  // as PeekInvitation: say the link is dead before asking for a password.
+  rpc PeekPasswordReset(PeekPasswordResetRequest) returns (PeekPasswordResetResponse);
+  // RedeemPasswordReset spends the link and sets the password the person
+  // chose. The caller is expected to end the account's live sessions next —
+  // "I lost the password" and "somebody else may have it" are the same event
+  // until proven otherwise.
+  rpc RedeemPasswordReset(RedeemPasswordResetRequest) returns (RedeemPasswordResetResponse);
 }
 
 // DirectoryService owns departments and employees.
@@ -54,6 +67,13 @@ service DirectoryService {
   // iam, so the reverse edge would close a cycle. The gateway, which holds
   // both, does the sending.
   rpc InviteEmployee(InviteEmployeeRequest) returns (InviteEmployeeResponse);
+  // CreatePasswordReset is the administrator's version of the login page's
+  // 忘记密码: same link, but minted on somebody's behalf and recorded as such.
+  rpc CreatePasswordReset(CreatePasswordResetRequest) returns (CreatePasswordResetResponse);
+  // RecordAccountEvent writes an account action into the change history when
+  // the action itself happens outside iam — today, the gateway ending
+  // somebody's sessions in Redis. Audit lives here because 变更记录 lives here.
+  rpc RecordAccountEvent(RecordAccountEventRequest) returns (RecordAccountEventResponse);
   // ImportEmployees takes a whole pasted block. dry_run makes it a preview:
   // same validation, nothing written. The two share one code path on purpose
   // — a preview computed by a second, simpler validator eventually lies, and
@@ -126,6 +146,10 @@ message LoginResponse {
   int64 expires_in_seconds = 2;
   Employee employee = 3;
   repeated string permission_codes = 4;
+  // The password that just worked was typed by an administrator, not chosen
+  // by this person. The session is real but owes an immediate change — the
+  // frontend blocks everything else until it happens.
+  bool must_change_password = 5;
 }
 
 message InviteEmployeeRequest {
@@ -209,6 +233,69 @@ message ActivateAccountResponse {
   // The address that now logs in. Returned so the page can go straight to a
   // filled-in login form instead of asking somebody to retype what we know.
   string email = 1;
+}
+
+message RequestPasswordResetRequest {
+  string email = 1;
+}
+
+message RequestPasswordResetResponse {
+  // False means "no usable account behind that address" — a fact for the
+  // gateway alone, which answers the caller identically either way.
+  bool found = 1;
+  // The token in the clear, on this response and nowhere else — storage
+  // holds only its sha256. The gateway puts it into the link and drops it.
+  string token = 2;
+  string email = 3;
+  string name = 4;
+  int64 tenant_id = 5;
+  int64 employee_id = 6;
+  // Whose bound mailbox should carry the mail: the person's inviter, or the
+  // person themselves when no invitation ever existed (the bootstrap admin).
+  int64 sender_employee_id = 7;
+  int64 expires_at = 8;
+}
+
+message PeekPasswordResetRequest {
+  string token = 1;
+}
+
+message PeekPasswordResetResponse {
+  string name = 1;
+  string email = 2;
+}
+
+message RedeemPasswordResetRequest {
+  string token = 1;
+  string password = 2;
+}
+
+message RedeemPasswordResetResponse {
+  string email = 1;
+  int64 tenant_id = 2;
+  int64 employee_id = 3;
+}
+
+message CreatePasswordResetRequest {
+  int64 employee_id = 1;
+}
+
+message CreatePasswordResetResponse {
+  string token = 1;
+  string email = 2;
+  string name = 3;
+  int64 expires_at = 4;
+}
+
+message RecordAccountEventRequest {
+  int64 employee_id = 1;
+  // A short verb from the fixed vocabulary the gateway and iam share,
+  // e.g. SESSIONS_REVOKED. Free text stays out of an audit column.
+  string action = 2;
+}
+
+message RecordAccountEventResponse {
+  bool recorded = 1;
 }
 
 message Department {

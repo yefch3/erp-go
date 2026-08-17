@@ -7,7 +7,30 @@
       <p>{{ t('login.subtitle') }}</p>
     </div>
     <el-card class="login-card" shadow="never">
-      <el-form :model="form" label-position="top" @keyup.enter="submit">
+      <!-- 忘记密码. One field, one sentence back — and always the same
+           sentence: whether an address has an account here is not something
+           this page tells strangers. -->
+      <template v-if="forgotOpen">
+        <el-form label-position="top" @keyup.enter="sendForgot">
+          <p class="forgot-title">{{ t('login.forgotTitle') }}</p>
+          <template v-if="forgotSent">
+            <el-alert type="success" :title="t('login.forgotSent')" :closable="false" show-icon />
+            <el-button class="login-btn" @click="forgotOpen = false">{{ t('login.backToLogin') }}</el-button>
+          </template>
+          <template v-else>
+            <p class="forgot-note">{{ t('login.forgotExplain') }}</p>
+            <el-form-item :label="t('login.email')">
+              <el-input v-model="forgotEmail" type="email" placeholder="you@yourcompany.com" />
+            </el-form-item>
+            <el-button type="primary" class="login-btn" :loading="loading" @click="sendForgot">
+              {{ t('login.forgotSubmit') }}
+            </el-button>
+            <el-button link class="forgot-link" @click="forgotOpen = false">{{ t('login.backToLogin') }}</el-button>
+          </template>
+        </el-form>
+      </template>
+
+      <el-form v-else :model="form" label-position="top" @keyup.enter="submit">
         <el-form-item :label="t('login.email')">
           <!-- The domain of this address selects the company, so there is no
                company field and none should be added. -->
@@ -27,6 +50,7 @@
         <el-button type="primary" class="login-btn" :loading="loading" @click="submit">
           {{ t('login.submit') }}
         </el-button>
+        <el-button link class="forgot-link" @click="openForgot">{{ t('login.forgot') }}</el-button>
       </el-form>
     </el-card>
   </div>
@@ -36,6 +60,7 @@
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { post, quietErrors } from '../api'
 import { useAuthStore } from '../stores/auth'
 import LangSwitcher from '../components/LangSwitcher.vue'
 
@@ -63,6 +88,34 @@ function landing() {
   const to = route.query.redirect
   if (typeof to !== 'string' || !to.startsWith('/') || to.startsWith('//')) return '/'
   return to
+}
+
+const forgotOpen = ref(false)
+const forgotSent = ref(false)
+const forgotEmail = ref('')
+
+function openForgot() {
+  // Whatever address is already typed rides along; retyping it would be the
+  // only cost of the panel being a panel.
+  forgotEmail.value = form.email
+  forgotSent.value = false
+  forgotOpen.value = true
+}
+
+async function sendForgot() {
+  const addr = forgotEmail.value.trim()
+  if (!addr || !addr.includes('@')) return
+  loading.value = true
+  try {
+    await post('/auth/forgot-password', { email: addr }, quietErrors)
+  } catch {
+    // The answer on screen is the same either way — the server already
+    // answers identically on purpose, and a network hiccup must not become
+    // the one distinguishable outcome.
+  } finally {
+    forgotSent.value = true
+    loading.value = false
+  }
 }
 
 async function submit() {
@@ -136,6 +189,20 @@ async function submit() {
 .login-btn {
   width: 100%;
   margin-top: 4px;
+}
+.forgot-link {
+  width: 100%;
+  margin: 10px 0 0;
+}
+.forgot-title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.forgot-note {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
 }
 .login-error {
   margin-bottom: 16px;

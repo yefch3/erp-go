@@ -19,9 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AuthService_Login_FullMethodName           = "/erp.iam.v1.AuthService/Login"
-	AuthService_PeekInvitation_FullMethodName  = "/erp.iam.v1.AuthService/PeekInvitation"
-	AuthService_ActivateAccount_FullMethodName = "/erp.iam.v1.AuthService/ActivateAccount"
+	AuthService_Login_FullMethodName                = "/erp.iam.v1.AuthService/Login"
+	AuthService_PeekInvitation_FullMethodName       = "/erp.iam.v1.AuthService/PeekInvitation"
+	AuthService_ActivateAccount_FullMethodName      = "/erp.iam.v1.AuthService/ActivateAccount"
+	AuthService_RequestPasswordReset_FullMethodName = "/erp.iam.v1.AuthService/RequestPasswordReset"
+	AuthService_PeekPasswordReset_FullMethodName    = "/erp.iam.v1.AuthService/PeekPasswordReset"
+	AuthService_RedeemPasswordReset_FullMethodName  = "/erp.iam.v1.AuthService/RedeemPasswordReset"
 )
 
 // AuthServiceClient is the client API for AuthService service.
@@ -41,6 +44,19 @@ type AuthServiceClient interface {
 	// ActivateAccount redeems the link: it sets the password the person chose
 	// and records that their company mailbox was proved to be theirs.
 	ActivateAccount(ctx context.Context, in *ActivateAccountRequest, opts ...grpc.CallOption) (*ActivateAccountResponse, error)
+	// RequestPasswordReset mints a one-time reset link for the account behind
+	// an address, if one exists — and says so only to the gateway. Whether an
+	// address has an account must never reach the unauthenticated caller: a
+	// login page that answers differently is a staff directory.
+	RequestPasswordReset(ctx context.Context, in *RequestPasswordResetRequest, opts ...grpc.CallOption) (*RequestPasswordResetResponse, error)
+	// PeekPasswordReset reads a reset link without redeeming it, same contract
+	// as PeekInvitation: say the link is dead before asking for a password.
+	PeekPasswordReset(ctx context.Context, in *PeekPasswordResetRequest, opts ...grpc.CallOption) (*PeekPasswordResetResponse, error)
+	// RedeemPasswordReset spends the link and sets the password the person
+	// chose. The caller is expected to end the account's live sessions next —
+	// "I lost the password" and "somebody else may have it" are the same event
+	// until proven otherwise.
+	RedeemPasswordReset(ctx context.Context, in *RedeemPasswordResetRequest, opts ...grpc.CallOption) (*RedeemPasswordResetResponse, error)
 }
 
 type authServiceClient struct {
@@ -81,6 +97,36 @@ func (c *authServiceClient) ActivateAccount(ctx context.Context, in *ActivateAcc
 	return out, nil
 }
 
+func (c *authServiceClient) RequestPasswordReset(ctx context.Context, in *RequestPasswordResetRequest, opts ...grpc.CallOption) (*RequestPasswordResetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RequestPasswordResetResponse)
+	err := c.cc.Invoke(ctx, AuthService_RequestPasswordReset_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authServiceClient) PeekPasswordReset(ctx context.Context, in *PeekPasswordResetRequest, opts ...grpc.CallOption) (*PeekPasswordResetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PeekPasswordResetResponse)
+	err := c.cc.Invoke(ctx, AuthService_PeekPasswordReset_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authServiceClient) RedeemPasswordReset(ctx context.Context, in *RedeemPasswordResetRequest, opts ...grpc.CallOption) (*RedeemPasswordResetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RedeemPasswordResetResponse)
+	err := c.cc.Invoke(ctx, AuthService_RedeemPasswordReset_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuthServiceServer is the server API for AuthService service.
 // All implementations must embed UnimplementedAuthServiceServer
 // for forward compatibility.
@@ -98,6 +144,19 @@ type AuthServiceServer interface {
 	// ActivateAccount redeems the link: it sets the password the person chose
 	// and records that their company mailbox was proved to be theirs.
 	ActivateAccount(context.Context, *ActivateAccountRequest) (*ActivateAccountResponse, error)
+	// RequestPasswordReset mints a one-time reset link for the account behind
+	// an address, if one exists — and says so only to the gateway. Whether an
+	// address has an account must never reach the unauthenticated caller: a
+	// login page that answers differently is a staff directory.
+	RequestPasswordReset(context.Context, *RequestPasswordResetRequest) (*RequestPasswordResetResponse, error)
+	// PeekPasswordReset reads a reset link without redeeming it, same contract
+	// as PeekInvitation: say the link is dead before asking for a password.
+	PeekPasswordReset(context.Context, *PeekPasswordResetRequest) (*PeekPasswordResetResponse, error)
+	// RedeemPasswordReset spends the link and sets the password the person
+	// chose. The caller is expected to end the account's live sessions next —
+	// "I lost the password" and "somebody else may have it" are the same event
+	// until proven otherwise.
+	RedeemPasswordReset(context.Context, *RedeemPasswordResetRequest) (*RedeemPasswordResetResponse, error)
 	mustEmbedUnimplementedAuthServiceServer()
 }
 
@@ -116,6 +175,15 @@ func (UnimplementedAuthServiceServer) PeekInvitation(context.Context, *PeekInvit
 }
 func (UnimplementedAuthServiceServer) ActivateAccount(context.Context, *ActivateAccountRequest) (*ActivateAccountResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ActivateAccount not implemented")
+}
+func (UnimplementedAuthServiceServer) RequestPasswordReset(context.Context, *RequestPasswordResetRequest) (*RequestPasswordResetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RequestPasswordReset not implemented")
+}
+func (UnimplementedAuthServiceServer) PeekPasswordReset(context.Context, *PeekPasswordResetRequest) (*PeekPasswordResetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PeekPasswordReset not implemented")
+}
+func (UnimplementedAuthServiceServer) RedeemPasswordReset(context.Context, *RedeemPasswordResetRequest) (*RedeemPasswordResetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RedeemPasswordReset not implemented")
 }
 func (UnimplementedAuthServiceServer) mustEmbedUnimplementedAuthServiceServer() {}
 func (UnimplementedAuthServiceServer) testEmbeddedByValue()                     {}
@@ -192,6 +260,60 @@ func _AuthService_ActivateAccount_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthService_RequestPasswordReset_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestPasswordResetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).RequestPasswordReset(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_RequestPasswordReset_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).RequestPasswordReset(ctx, req.(*RequestPasswordResetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthService_PeekPasswordReset_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PeekPasswordResetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).PeekPasswordReset(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_PeekPasswordReset_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).PeekPasswordReset(ctx, req.(*PeekPasswordResetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthService_RedeemPasswordReset_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RedeemPasswordResetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).RedeemPasswordReset(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_RedeemPasswordReset_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).RedeemPasswordReset(ctx, req.(*RedeemPasswordResetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AuthService_ServiceDesc is the grpc.ServiceDesc for AuthService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -210,6 +332,18 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ActivateAccount",
 			Handler:    _AuthService_ActivateAccount_Handler,
+		},
+		{
+			MethodName: "RequestPasswordReset",
+			Handler:    _AuthService_RequestPasswordReset_Handler,
+		},
+		{
+			MethodName: "PeekPasswordReset",
+			Handler:    _AuthService_PeekPasswordReset_Handler,
+		},
+		{
+			MethodName: "RedeemPasswordReset",
+			Handler:    _AuthService_RedeemPasswordReset_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -232,6 +366,8 @@ const (
 	DirectoryService_ListManagers_FullMethodName         = "/erp.iam.v1.DirectoryService/ListManagers"
 	DirectoryService_SetManager_FullMethodName           = "/erp.iam.v1.DirectoryService/SetManager"
 	DirectoryService_InviteEmployee_FullMethodName       = "/erp.iam.v1.DirectoryService/InviteEmployee"
+	DirectoryService_CreatePasswordReset_FullMethodName  = "/erp.iam.v1.DirectoryService/CreatePasswordReset"
+	DirectoryService_RecordAccountEvent_FullMethodName   = "/erp.iam.v1.DirectoryService/RecordAccountEvent"
 	DirectoryService_ImportEmployees_FullMethodName      = "/erp.iam.v1.DirectoryService/ImportEmployees"
 	DirectoryService_ListDirectoryChanges_FullMethodName = "/erp.iam.v1.DirectoryService/ListDirectoryChanges"
 )
@@ -275,6 +411,13 @@ type DirectoryServiceClient interface {
 	// iam, so the reverse edge would close a cycle. The gateway, which holds
 	// both, does the sending.
 	InviteEmployee(ctx context.Context, in *InviteEmployeeRequest, opts ...grpc.CallOption) (*InviteEmployeeResponse, error)
+	// CreatePasswordReset is the administrator's version of the login page's
+	// 忘记密码: same link, but minted on somebody's behalf and recorded as such.
+	CreatePasswordReset(ctx context.Context, in *CreatePasswordResetRequest, opts ...grpc.CallOption) (*CreatePasswordResetResponse, error)
+	// RecordAccountEvent writes an account action into the change history when
+	// the action itself happens outside iam — today, the gateway ending
+	// somebody's sessions in Redis. Audit lives here because 变更记录 lives here.
+	RecordAccountEvent(ctx context.Context, in *RecordAccountEventRequest, opts ...grpc.CallOption) (*RecordAccountEventResponse, error)
 	// ImportEmployees takes a whole pasted block. dry_run makes it a preview:
 	// same validation, nothing written. The two share one code path on purpose
 	// — a preview computed by a second, simpler validator eventually lies, and
@@ -441,6 +584,26 @@ func (c *directoryServiceClient) InviteEmployee(ctx context.Context, in *InviteE
 	return out, nil
 }
 
+func (c *directoryServiceClient) CreatePasswordReset(ctx context.Context, in *CreatePasswordResetRequest, opts ...grpc.CallOption) (*CreatePasswordResetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreatePasswordResetResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_CreatePasswordReset_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *directoryServiceClient) RecordAccountEvent(ctx context.Context, in *RecordAccountEventRequest, opts ...grpc.CallOption) (*RecordAccountEventResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecordAccountEventResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_RecordAccountEvent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *directoryServiceClient) ImportEmployees(ctx context.Context, in *ImportEmployeesRequest, opts ...grpc.CallOption) (*ImportEmployeesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ImportEmployeesResponse)
@@ -500,6 +663,13 @@ type DirectoryServiceServer interface {
 	// iam, so the reverse edge would close a cycle. The gateway, which holds
 	// both, does the sending.
 	InviteEmployee(context.Context, *InviteEmployeeRequest) (*InviteEmployeeResponse, error)
+	// CreatePasswordReset is the administrator's version of the login page's
+	// 忘记密码: same link, but minted on somebody's behalf and recorded as such.
+	CreatePasswordReset(context.Context, *CreatePasswordResetRequest) (*CreatePasswordResetResponse, error)
+	// RecordAccountEvent writes an account action into the change history when
+	// the action itself happens outside iam — today, the gateway ending
+	// somebody's sessions in Redis. Audit lives here because 变更记录 lives here.
+	RecordAccountEvent(context.Context, *RecordAccountEventRequest) (*RecordAccountEventResponse, error)
 	// ImportEmployees takes a whole pasted block. dry_run makes it a preview:
 	// same validation, nothing written. The two share one code path on purpose
 	// — a preview computed by a second, simpler validator eventually lies, and
@@ -560,6 +730,12 @@ func (UnimplementedDirectoryServiceServer) SetManager(context.Context, *SetManag
 }
 func (UnimplementedDirectoryServiceServer) InviteEmployee(context.Context, *InviteEmployeeRequest) (*InviteEmployeeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method InviteEmployee not implemented")
+}
+func (UnimplementedDirectoryServiceServer) CreatePasswordReset(context.Context, *CreatePasswordResetRequest) (*CreatePasswordResetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreatePasswordReset not implemented")
+}
+func (UnimplementedDirectoryServiceServer) RecordAccountEvent(context.Context, *RecordAccountEventRequest) (*RecordAccountEventResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RecordAccountEvent not implemented")
 }
 func (UnimplementedDirectoryServiceServer) ImportEmployees(context.Context, *ImportEmployeesRequest) (*ImportEmployeesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ImportEmployees not implemented")
@@ -858,6 +1034,42 @@ func _DirectoryService_InviteEmployee_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DirectoryService_CreatePasswordReset_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreatePasswordResetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).CreatePasswordReset(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_CreatePasswordReset_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).CreatePasswordReset(ctx, req.(*CreatePasswordResetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DirectoryService_RecordAccountEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordAccountEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).RecordAccountEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_RecordAccountEvent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).RecordAccountEvent(ctx, req.(*RecordAccountEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DirectoryService_ImportEmployees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ImportEmployeesRequest)
 	if err := dec(in); err != nil {
@@ -960,6 +1172,14 @@ var DirectoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "InviteEmployee",
 			Handler:    _DirectoryService_InviteEmployee_Handler,
+		},
+		{
+			MethodName: "CreatePasswordReset",
+			Handler:    _DirectoryService_CreatePasswordReset_Handler,
+		},
+		{
+			MethodName: "RecordAccountEvent",
+			Handler:    _DirectoryService_RecordAccountEvent_Handler,
 		},
 		{
 			MethodName: "ImportEmployees",
