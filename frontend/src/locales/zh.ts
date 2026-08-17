@@ -495,7 +495,7 @@ export default {
     cancelReason: '请填写取消原因',
     cancelReasonRequired: '请填写取消原因',
     cancelled: '采购单已取消',
-    downloadOrder: '供应商文件', sendOrder: '正式发单', retrySend: '重试发单', execution: '执行跟踪',
+    download: '下载', downloadExcel: '下载 Excel', downloadPdf: '下载 PDF', downloaded: '已下载 {name}', sendOrder: '正式发单', retrySend: '重试发单', execution: '执行跟踪',
     sendStatus: '发单状态', sendFor: '正式发单 · {no}', sendHint: '系统将生成供应商版 Excel 和 PDF 并作为同一封邮件的附件。只有邮件成功进入发送队列才会标记为已发送。',
     sender: '发件邮箱', publicMailbox: '采购公共邮箱', myMailbox: '我的邮箱', recipient: '收件人', supplierDefaultEmail: '留空使用供应商主联系人邮箱', subject: '主题', mailBody: '正文', sent: '采购单已进入邮件发送队列',
     executionFor: '采购执行 · {no}', confirmations: '供应商确认', confirmedDate: '确认日期', confirmedExpected: '确认交期', confirmedQty: '确认数量', confirmedPrice: '确认单价', confirmRemark: '差异原因或供应商备注', saveConfirmation: '保存确认', confirmationSaved: '供应商确认已保存',
