@@ -3,6 +3,7 @@ module github.com/sgao19/erp-go/services/procurement
 go 1.25.0
 
 require (
+	codeberg.org/go-pdf/fpdf v0.10.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/sgao19/erp-go/gen v0.0.0-00010101000000-000000000000
 	github.com/sgao19/erp-go/pkg v0.0.0

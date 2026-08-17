@@ -24,6 +24,7 @@ const (
 	EmailService_PreviewCampaign_FullMethodName              = "/erp.mail.v1.EmailService/PreviewCampaign"
 	EmailService_CreateCampaign_FullMethodName               = "/erp.mail.v1.EmailService/CreateCampaign"
 	EmailService_SendProcurementRfq_FullMethodName           = "/erp.mail.v1.EmailService/SendProcurementRfq"
+	EmailService_SendProcurementOrder_FullMethodName         = "/erp.mail.v1.EmailService/SendProcurementOrder"
 	EmailService_ListMessages_FullMethodName                 = "/erp.mail.v1.EmailService/ListMessages"
 	EmailService_GetMessage_FullMethodName                   = "/erp.mail.v1.EmailService/GetMessage"
 	EmailService_RequeueMessage_FullMethodName               = "/erp.mail.v1.EmailService/RequeueMessage"
@@ -104,6 +105,7 @@ type EmailServiceClient interface {
 	// The gateway supplies the configured employee id; browsers cannot choose
 	// an arbitrary colleague as sender.
 	SendProcurementRfq(ctx context.Context, in *SendProcurementRfqRequest, opts ...grpc.CallOption) (*SendProcurementRfqResponse, error)
+	SendProcurementOrder(ctx context.Context, in *SendProcurementOrderRequest, opts ...grpc.CallOption) (*SendProcurementOrderResponse, error)
 	// The per-recipient list. Also the failed-delivery queue, filtered.
 	ListMessages(ctx context.Context, in *ListMessagesRequest, opts ...grpc.CallOption) (*ListMessagesResponse, error)
 	GetMessage(ctx context.Context, in *GetMessageRequest, opts ...grpc.CallOption) (*GetMessageResponse, error)
@@ -291,6 +293,16 @@ func (c *emailServiceClient) SendProcurementRfq(ctx context.Context, in *SendPro
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SendProcurementRfqResponse)
 	err := c.cc.Invoke(ctx, EmailService_SendProcurementRfq_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) SendProcurementOrder(ctx context.Context, in *SendProcurementOrderRequest, opts ...grpc.CallOption) (*SendProcurementOrderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SendProcurementOrderResponse)
+	err := c.cc.Invoke(ctx, EmailService_SendProcurementOrder_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -870,6 +882,7 @@ type EmailServiceServer interface {
 	// The gateway supplies the configured employee id; browsers cannot choose
 	// an arbitrary colleague as sender.
 	SendProcurementRfq(context.Context, *SendProcurementRfqRequest) (*SendProcurementRfqResponse, error)
+	SendProcurementOrder(context.Context, *SendProcurementOrderRequest) (*SendProcurementOrderResponse, error)
 	// The per-recipient list. Also the failed-delivery queue, filtered.
 	ListMessages(context.Context, *ListMessagesRequest) (*ListMessagesResponse, error)
 	GetMessage(context.Context, *GetMessageRequest) (*GetMessageResponse, error)
@@ -1027,6 +1040,9 @@ func (UnimplementedEmailServiceServer) CreateCampaign(context.Context, *CreateCa
 }
 func (UnimplementedEmailServiceServer) SendProcurementRfq(context.Context, *SendProcurementRfqRequest) (*SendProcurementRfqResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendProcurementRfq not implemented")
+}
+func (UnimplementedEmailServiceServer) SendProcurementOrder(context.Context, *SendProcurementOrderRequest) (*SendProcurementOrderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SendProcurementOrder not implemented")
 }
 func (UnimplementedEmailServiceServer) ListMessages(context.Context, *ListMessagesRequest) (*ListMessagesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListMessages not implemented")
@@ -1300,6 +1316,24 @@ func _EmailService_SendProcurementRfq_Handler(srv interface{}, ctx context.Conte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(EmailServiceServer).SendProcurementRfq(ctx, req.(*SendProcurementRfqRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_SendProcurementOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SendProcurementOrderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).SendProcurementOrder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_SendProcurementOrder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).SendProcurementOrder(ctx, req.(*SendProcurementOrderRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2320,6 +2354,10 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SendProcurementRfq",
 			Handler:    _EmailService_SendProcurementRfq_Handler,
+		},
+		{
+			MethodName: "SendProcurementOrder",
+			Handler:    _EmailService_SendProcurementOrder_Handler,
 		},
 		{
 			MethodName: "ListMessages",

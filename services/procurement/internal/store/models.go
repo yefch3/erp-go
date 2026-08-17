@@ -136,25 +136,33 @@ type ProcessedEvent struct {
 }
 
 type PurchaseOrder struct {
-	ID                 int64
-	TenantID           int64
-	PoNo               string
-	SupplierID         int64
-	SupplierCode       string
-	SupplierName       string
-	Currency           string
-	TotalAmount        pgtype.Numeric
-	ExpectedDate       pgtype.Date
-	Status             string
-	ApprovalInstanceID *int64
-	RejectReason       string
-	CancelReason       string
-	BuyerID            int64
-	BuyerName          string
-	Remark             string
-	OrderedAt          pgtype.Timestamptz
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
+	ID                  int64
+	TenantID            int64
+	PoNo                string
+	SupplierID          int64
+	SupplierCode        string
+	SupplierName        string
+	Currency            string
+	TotalAmount         pgtype.Numeric
+	ExpectedDate        pgtype.Date
+	Status              string
+	ApprovalInstanceID  *int64
+	RejectReason        string
+	CancelReason        string
+	BuyerID             int64
+	BuyerName           string
+	Remark              string
+	OrderedAt           pgtype.Timestamptz
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+	SendStatus          string
+	SentTo              string
+	SentAt              pgtype.Timestamptz
+	SentByID            int64
+	SentByName          string
+	SendError           string
+	SendTemplateVersion string
+	SendAttachmentNames []byte
 }
 
 type PurchaseOrderImport struct {
@@ -193,6 +201,55 @@ type PurchaseOrderItem struct {
 	ReceivedQty   pgtype.Numeric
 }
 
+type PurchaseOrderSendAttempt struct {
+	ID               int64
+	TenantID         int64
+	PoID             int64
+	RecipientEmail   string
+	SenderEmployeeID int64
+	SenderName       string
+	Status           string
+	CampaignID       int64
+	CampaignNo       string
+	AttachmentNames  []byte
+	TemplateVersion  string
+	ErrorMessage     string
+	StartedAt        pgtype.Timestamptz
+	CompletedAt      pgtype.Timestamptz
+}
+
+type PurchaseProductionMilestone struct {
+	ID            int64
+	TenantID      int64
+	PoID          int64
+	Node          string
+	PlannedDate   pgtype.Date
+	ActualDate    pgtype.Date
+	OwnerID       int64
+	OwnerName     string
+	Remark        string
+	Attachments   []byte
+	UpdatedByID   int64
+	UpdatedByName string
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+}
+
+type PurchaseProductionReminder struct {
+	ID               int64
+	TenantID         int64
+	PoID             int64
+	MilestoneID      int64
+	Node             string
+	PlannedDate      pgtype.Date
+	BuyerID          int64
+	BuyerName        string
+	RelatedContracts string
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	ClosedAt         pgtype.Timestamptz
+}
+
 type PurchaseReceipt struct {
 	ID           int64
 	TenantID     int64
@@ -203,6 +260,27 @@ type PurchaseReceipt struct {
 	OperatorName string
 	Remark       string
 	ReceivedAt   pgtype.Timestamptz
+}
+
+type PurchaseReceiptException struct {
+	ID             int64
+	TenantID       int64
+	PoID           int64
+	ReceiptID      *int64
+	PoItemID       *int64
+	ExceptionType  string
+	Qty            pgtype.Numeric
+	ActualProduct  string
+	ActualUom      string
+	Description    string
+	Status         string
+	Resolution     string
+	ReportedByID   int64
+	ReportedByName string
+	ReportedAt     pgtype.Timestamptz
+	ResolvedByID   int64
+	ResolvedByName string
+	ResolvedAt     pgtype.Timestamptz
 }
 
 type PurchaseReceiptItem struct {
@@ -238,6 +316,31 @@ type PurchaseRequirement struct {
 	CreatedAt         pgtype.Timestamptz
 	UpdatedAt         pgtype.Timestamptz
 	ReceivedQty       pgtype.Numeric
+}
+
+type PurchaseSupplierConfirmation struct {
+	ID                    int64
+	TenantID              int64
+	PoID                  int64
+	Status                string
+	ConfirmedDate         pgtype.Date
+	ConfirmedExpectedDate pgtype.Date
+	Remark                string
+	ApprovalInstanceID    *int64
+	CreatedByID           int64
+	CreatedByName         string
+	CreatedAt             pgtype.Timestamptz
+}
+
+type PurchaseSupplierConfirmationLine struct {
+	ID                 int64
+	TenantID           int64
+	ConfirmationID     int64
+	PoItemID           int64
+	OriginalQty        pgtype.Numeric
+	OriginalUnitPrice  pgtype.Numeric
+	ConfirmedQty       pgtype.Numeric
+	ConfirmedUnitPrice pgtype.Numeric
 }
 
 type SourcingCase struct {

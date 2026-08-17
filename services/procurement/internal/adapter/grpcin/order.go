@@ -113,7 +113,8 @@ func (h *OrderHandler) ListOrders(ctx context.Context, req *prv1.ListOrdersReque
 			Status: r.Status, BuyerName: r.BuyerName, Remark: r.Remark,
 			RejectReason: r.RejectReason, CancelReason: r.CancelReason,
 			ItemCount: r.ItemCount, TotalQty: r.TotalQty, ReceivedQty: r.ReceivedQty,
-			CreatedAt: ts(r.CreatedAt),
+			CreatedAt: ts(r.CreatedAt), SendStatus: r.SendStatus, SentTo: r.SentTo,
+			SentAt: ts(r.SentAt), SentBy: r.SentByName, SendError: r.SendError,
 		})
 	}
 	return &prv1.ListOrdersResponse{Orders: out, Meta: &commonv1.PageMeta{Total: total}}, nil
@@ -160,6 +161,8 @@ func (h *OrderHandler) GetOrder(ctx context.Context, req *prv1.GetOrderRequest) 
 			BuyerName: head.BuyerName, Remark: head.Remark,
 			RejectReason: head.RejectReason, CancelReason: head.CancelReason,
 			ApprovalInstanceId: head.ApprovalInstanceID, CreatedAt: ts(head.CreatedAt),
+			SendStatus: head.SendStatus, SentTo: head.SentTo, SentAt: ts(head.SentAt),
+			SentBy: head.SentByName, SendError: head.SendError,
 		},
 		Items: outItems, Receipts: outReceipts,
 	}, nil
@@ -234,4 +237,117 @@ func (h *OrderHandler) ReceiveOrder(ctx context.Context, req *prv1.ReceiveOrderR
 		return nil, err
 	}
 	return &prv1.ReceiveOrderResponse{ReceiptNo: no}, nil
+}
+
+func (h *OrderHandler) GetOrderDocuments(ctx context.Context, req *prv1.GetOrderDocumentsRequest) (*prv1.GetOrderDocumentsResponse, error) {
+	doc, err := h.svc.GetOrderDocuments(ctx, grpcx.TenantID(ctx), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.GetOrderDocumentsResponse{XlsxFileName: doc.XLSXFileName, XlsxData: doc.XLSXData, PdfFileName: doc.PDFFileName, PdfData: doc.PDFData, TemplateVersion: doc.Version}, nil
+}
+
+func (h *OrderHandler) BeginOrderSend(ctx context.Context, req *prv1.BeginOrderSendRequest) (*prv1.BeginOrderSendResponse, error) {
+	id, err := h.svc.BeginOrderSend(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetRecipientEmail(), req.GetSenderEmployeeId(), req.GetSenderName())
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.BeginOrderSendResponse{AttemptId: id}, nil
+}
+
+func (h *OrderHandler) CompleteOrderSend(ctx context.Context, req *prv1.CompleteOrderSendRequest) (*prv1.CompleteOrderSendResponse, error) {
+	status, err := h.svc.CompleteOrderSend(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetAttemptId(), req.GetSuccess(), req.GetCampaignId(), req.GetCampaignNo(), req.GetErrorMessage(), req.GetAttachmentNames(), req.GetTemplateVersion())
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.CompleteOrderSendResponse{SendStatus: status}, nil
+}
+
+func (h *OrderHandler) GetOrderExecution(ctx context.Context, req *prv1.GetOrderExecutionRequest) (*prv1.GetOrderExecutionResponse, error) {
+	execution, err := h.svc.GetOrderExecution(ctx, grpcx.TenantID(ctx), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return executionToProto(execution), nil
+}
+
+func (h *OrderHandler) RecordSupplierConfirmation(ctx context.Context, req *prv1.RecordSupplierConfirmationRequest) (*prv1.RecordSupplierConfirmationResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	lines := make([]app.SupplierConfirmationLine, 0, len(req.GetLines()))
+	for _, line := range req.GetLines() {
+		lines = append(lines, app.SupplierConfirmationLine{POItemID: line.GetPoItemId(), ConfirmedQty: line.GetConfirmedQty(), ConfirmedUnitPrice: line.GetConfirmedUnitPrice()})
+	}
+	confirmation, err := h.svc.RecordSupplierConfirmation(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetConfirmedDate(), req.GetConfirmedExpectedDate(), req.GetRemark(), lines, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.RecordSupplierConfirmationResponse{Confirmation: confirmationToProto(confirmation)}, nil
+}
+
+func (h *OrderHandler) SaveProductionMilestone(ctx context.Context, req *prv1.SaveProductionMilestoneRequest) (*prv1.SaveProductionMilestoneResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	attachments := make([]app.ProductionAttachment, 0, len(req.GetAttachments()))
+	for _, attachment := range req.GetAttachments() {
+		attachments = append(attachments, app.ProductionAttachment{FileName: attachment.GetFileName(), FileURL: attachment.GetFileUrl(), ContentType: attachment.GetContentType()})
+	}
+	milestone, err := h.svc.SaveProductionMilestone(ctx, grpcx.TenantID(ctx), req.GetId(), app.ProductionMilestone{Node: req.GetNode(), PlannedDate: req.GetPlannedDate(), ActualDate: req.GetActualDate(), OwnerID: req.GetOwnerId(), OwnerName: req.GetOwnerName(), Remark: req.GetRemark(), Attachments: attachments}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.SaveProductionMilestoneResponse{Milestone: milestoneToProto(milestone)}, nil
+}
+
+func (h *OrderHandler) ReportReceiptException(ctx context.Context, req *prv1.ReportReceiptExceptionRequest) (*prv1.ReportReceiptExceptionResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	exception, err := h.svc.ReportReceiptException(ctx, grpcx.TenantID(ctx), req.GetId(), app.ReceiptException{ReceiptID: req.GetReceiptId(), POItemID: req.GetPoItemId(), Type: req.GetExceptionType(), Qty: req.GetQty(), ActualProduct: req.GetActualProduct(), ActualUOM: req.GetActualUom(), Description: req.GetDescription()}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.ReportReceiptExceptionResponse{Exception: exceptionToProto(exception)}, nil
+}
+
+func (h *OrderHandler) ResolveReceiptException(ctx context.Context, req *prv1.ResolveReceiptExceptionRequest) (*prv1.ResolveReceiptExceptionResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	exception, err := h.svc.ResolveReceiptException(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetExceptionId(), req.GetResolution(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.ResolveReceiptExceptionResponse{Exception: exceptionToProto(exception)}, nil
+}
+
+func executionToProto(execution app.OrderExecution) *prv1.GetOrderExecutionResponse {
+	out := &prv1.GetOrderExecutionResponse{}
+	for _, row := range execution.Confirmations {
+		out.Confirmations = append(out.Confirmations, confirmationToProto(row))
+	}
+	for _, row := range execution.Milestones {
+		out.Milestones = append(out.Milestones, milestoneToProto(row))
+	}
+	for _, row := range execution.Exceptions {
+		out.Exceptions = append(out.Exceptions, exceptionToProto(row))
+	}
+	for _, row := range execution.Reminders {
+		out.Reminders = append(out.Reminders, &prv1.ProductionReminder{Id: row.ID, Node: row.Node, PlannedDate: row.PlannedDate, BuyerId: row.BuyerID, BuyerName: row.BuyerName, RelatedContracts: row.RelatedContracts, Status: row.Status, CreatedAt: row.CreatedAt})
+	}
+	return out
+}
+
+func confirmationToProto(row app.SupplierConfirmation) *prv1.SupplierConfirmation {
+	out := &prv1.SupplierConfirmation{Id: row.ID, Status: row.Status, ConfirmedDate: row.ConfirmedDate, ConfirmedExpectedDate: row.ExpectedDate, Remark: row.Remark, ApprovalInstanceId: row.ApprovalInstanceID, CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt}
+	for _, line := range row.Lines {
+		out.Lines = append(out.Lines, &prv1.SupplierConfirmationLine{PoItemId: line.POItemID, ConfirmedQty: line.ConfirmedQty, ConfirmedUnitPrice: line.ConfirmedUnitPrice})
+	}
+	return out
+}
+
+func milestoneToProto(row app.ProductionMilestone) *prv1.ProductionMilestone {
+	out := &prv1.ProductionMilestone{Id: row.ID, Node: row.Node, PlannedDate: row.PlannedDate, ActualDate: row.ActualDate, OwnerId: row.OwnerID, OwnerName: row.OwnerName, Remark: row.Remark, Delayed: row.Delayed, UpdatedAt: row.UpdatedAt}
+	for _, attachment := range row.Attachments {
+		out.Attachments = append(out.Attachments, &prv1.ProductionAttachment{FileName: attachment.FileName, FileUrl: attachment.FileURL, ContentType: attachment.ContentType})
+	}
+	return out
+}
+
+func exceptionToProto(row app.ReceiptException) *prv1.ReceiptException {
+	return &prv1.ReceiptException{Id: row.ID, ReceiptId: row.ReceiptID, PoItemId: row.POItemID, ExceptionType: row.Type, Qty: row.Qty, ActualProduct: row.ActualProduct, ActualUom: row.ActualUOM, Description: row.Description, Status: row.Status, Resolution: row.Resolution, ReportedBy: row.ReportedBy, ReportedAt: row.ReportedAt, ResolvedBy: row.ResolvedBy, ResolvedAt: row.ResolvedAt}
 }
