@@ -63,6 +63,8 @@ func run(log *slog.Logger) error {
 		Endpoint: cfg.MinioEndpoint, PublicEndpoint: cfg.MinioPublicEndpoint,
 		AccessKey: cfg.MinioAccessKey, SecretKey: cfg.MinioSecretKey,
 		Bucket: cfg.MinioBucket, UseSSL: cfg.MinioUseSSL,
+		// See the note in mail's main.go: S3 needs the region or it 301s.
+		Region: os.Getenv("MINIO_REGION"),
 	})
 	if err != nil {
 		return err

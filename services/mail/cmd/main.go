@@ -74,6 +74,10 @@ func run(log *slog.Logger) error {
 		SecretKey:      cfg.MinioSecretKey,
 		Bucket:         cfg.MinioBucket,
 		UseSSL:         cfg.MinioUseSSL,
+		// Empty for MinIO (which ignores it); required against real S3 —
+		// an unset region signs for us-east-1 and any other region answers
+		// 301 to every request, including the startup bucket check.
+		Region: os.Getenv("MINIO_REGION"),
 	})
 	if err != nil {
 		return err
