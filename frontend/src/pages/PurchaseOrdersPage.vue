@@ -71,9 +71,37 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="330" fixed="right">
+        <el-table-column :label="t('common.actions')" width="380" fixed="right">
           <template #default="{ row }">
+            <div class="row-actions">
             <el-button link type="primary" @click="openDetail(row)">{{ t('common.detail') }}</el-button>
+            <el-dropdown
+              v-if="['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status)"
+              trigger="click"
+              @command="(format: string) => downloadOrder(row, format)"
+            >
+              <el-button link type="primary" :loading="downloadingId === Number(row.id)">
+                {{ t('orders.download') }}
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="xlsx">{{ t('orders.downloadExcel') }}</el-dropdown-item>
+                  <el-dropdown-item command="pdf">{{ t('orders.downloadPdf') }}</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-button
+              v-if="canReceive && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status)"
+              link
+              type="warning"
+              @click="openReceive(row)"
+            >
+              {{ t('orders.receive') }}
+            </el-button>
+            <el-button
+              v-if="['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status)"
+              link type="warning" @click="openExecution(row)"
+            >{{ t('orders.execution') }}</el-button>
             <template>
               <el-button
                 v-if="canWrite && (row.status === 'DRAFT' || row.status === 'REJECTED')"
@@ -101,25 +129,10 @@
               </el-button>
             </template>
             <el-button
-              v-if="canReceive && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status)"
-              link
-              type="warning"
-              @click="openReceive(row)"
-            >
-              {{ t('orders.receive') }}
-            </el-button>
-            <el-button
-              v-if="['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status)"
-              link type="primary" @click="downloadOrder(row, 'xlsx')"
-            >{{ t('orders.downloadOrder') }}</el-button>
-            <el-button
               v-if="canSend && ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status) && row.sendStatus !== 'SENT'"
               link type="success" @click="openSend(row)"
             >{{ row.sendStatus === 'FAILED' ? t('orders.retrySend') : t('orders.sendOrder') }}</el-button>
-            <el-button
-              v-if="['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status)"
-              link type="warning" @click="openExecution(row)"
-            >{{ t('orders.execution') }}</el-button>
+            </div>
           </template>
         </el-table-column>
         <template #empty>{{ t('orders.empty') }}</template>
@@ -526,6 +539,7 @@ const status = ref('')
 const keyword = ref('')
 const loading = ref(false)
 const saving = ref(false)
+const downloadingId = ref(0)
 
 const createOpen = ref(false)
 const editing = ref<Order | null>(null)
@@ -736,9 +750,16 @@ async function openDetail(row: Order) {
   detailOpen.value = true
 }
 
-async function downloadOrder(row: Order, format: 'xlsx' | 'pdf') {
-  const file = await download(`/purchase-orders/${row.id}/documents`, { format })
-  saveBlob(file.blob, file.fileName)
+async function downloadOrder(row: Order, format: string) {
+  if (format !== 'xlsx' && format !== 'pdf') return
+  downloadingId.value = Number(row.id)
+  try {
+    const file = await download(`/purchase-orders/${row.id}/documents`, { format })
+    saveBlob(file.blob, file.fileName)
+    ElMessage.success(t('orders.downloaded', { name: file.fileName }))
+  } finally {
+    downloadingId.value = 0
+  }
 }
 
 function openSend(row: Order) {
@@ -1010,6 +1031,15 @@ onMounted(async () => {
   display: flex;
   gap: 10px;
   margin-bottom: 14px;
+}
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+}
+.row-actions :deep(.el-button) {
+  margin-left: 0;
 }
 .prod {
   font-weight: 500;

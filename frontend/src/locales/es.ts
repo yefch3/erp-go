@@ -495,7 +495,7 @@ export default {
     cancelReason: 'Motivo de la anulación',
     cancelReasonRequired: 'Indique el motivo',
     cancelled: 'Orden anulada',
-    downloadOrder: 'Archivos proveedor', sendOrder: 'Enviar orden', retrySend: 'Reintentar envío', execution: 'Ejecución',
+    download: 'Descargar', downloadExcel: 'Descargar Excel', downloadPdf: 'Descargar PDF', downloaded: 'Descargado {name}', sendOrder: 'Enviar orden', retrySend: 'Reintentar envío', execution: 'Ejecución',
     sendStatus: 'Estado de envío', sendFor: 'Enviar orden · {no}', sendHint: 'El Excel y PDF para el proveedor se adjuntan al mismo correo. Solo se marca enviada cuando entra en la cola de entrega.',
     sender: 'Remitente', publicMailbox: 'Buzón de compras', myMailbox: 'Mi buzón', recipient: 'Destinatario', supplierDefaultEmail: 'Vacío usa el correo de contacto del proveedor', subject: 'Asunto', mailBody: 'Mensaje', sent: 'Orden en cola de envío',
     executionFor: 'Ejecución de compra · {no}', confirmations: 'Confirmación del proveedor', confirmedDate: 'Fecha confirmada', confirmedExpected: 'Entrega confirmada', confirmedQty: 'Cantidad confirmada', confirmedPrice: 'Precio confirmado', confirmRemark: 'Motivo de diferencia o nota', saveConfirmation: 'Guardar confirmación', confirmationSaved: 'Confirmación guardada',

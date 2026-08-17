@@ -492,7 +492,7 @@ export default {
     cancelReason: 'Reason for cancelling',
     cancelReasonRequired: 'Please give a reason',
     cancelled: 'Order cancelled',
-    downloadOrder: 'Supplier files', sendOrder: 'Send order', retrySend: 'Retry send', execution: 'Execution',
+    download: 'Download', downloadExcel: 'Download Excel', downloadPdf: 'Download PDF', downloaded: 'Downloaded {name}', sendOrder: 'Send order', retrySend: 'Retry send', execution: 'Execution',
     sendStatus: 'Send status', sendFor: 'Send order · {no}', sendHint: 'The supplier Excel and PDF are attached to one message. The order is marked sent only after the message enters the delivery queue.',
     sender: 'Sender', publicMailbox: 'Procurement mailbox', myMailbox: 'My mailbox', recipient: 'Recipient', supplierDefaultEmail: 'Blank uses the supplier contact email', subject: 'Subject', mailBody: 'Message', sent: 'Purchase order queued for delivery',
     executionFor: 'Purchase execution · {no}', confirmations: 'Supplier confirmation', confirmedDate: 'Confirmed on', confirmedExpected: 'Confirmed delivery', confirmedQty: 'Confirmed qty', confirmedPrice: 'Confirmed price', confirmRemark: 'Difference reason or supplier note', saveConfirmation: 'Save confirmation', confirmationSaved: 'Supplier confirmation saved',
