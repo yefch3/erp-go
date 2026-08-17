@@ -30,6 +30,10 @@ type OrderImportRow struct {
 	QuantityUnit     string `json:"quantityUnit"`
 	Quantity         string `json:"quantity"`
 	UnitPrice        string `json:"unitPrice"`
+	RequirementID    int64  `json:"requirementId,omitempty"`
+	ProductID        int64  `json:"productId,omitempty"`
+	SKUID            int64  `json:"skuId,omitempty"`
+	UomID            int64  `json:"uomId,omitempty"`
 }
 
 type PreviewOrderImportInput struct {
@@ -110,7 +114,7 @@ func (s *Service) PreviewOrderImport(ctx context.Context, tenantID int64, in Pre
 	if len(in.Rows) > 200 {
 		return PreviewOrderImportResult{}, apierr.Invalid("PO_IMPORT_TOO_LARGE", "预览最多处理 200 行")
 	}
-	if in.SourceType != "MAIL_EXCEL" && in.SourceType != "UPLOAD" {
+	if in.SourceType != "MAIL_EXCEL" && in.SourceType != "UPLOAD" && in.SourceType != "PURCHASE_TEMPLATE" {
 		return PreviewOrderImportResult{}, apierr.Invalid("PO_IMPORT_SOURCE_INVALID", "采购导入来源无效")
 	}
 
@@ -152,13 +156,14 @@ func (s *Service) PreviewOrderImport(ctx context.Context, tenantID int64, in Pre
 			continue
 		}
 
-		candidates, err := s.q.ImportRequirementCandidates(ctx, store.ImportRequirementCandidatesParams{
-			TenantID: tenantID, Keyword: row.Product,
-		})
+		candidates, err := s.q.ImportRequirementCandidates(ctx, store.ImportRequirementCandidatesParams{TenantID: tenantID, Keyword: row.Product})
 		if err != nil {
 			return PreviewOrderImportResult{}, err
 		}
 		for _, candidate := range candidates {
+			if raw.RequirementID != 0 && candidate.ID != raw.RequirementID {
+				continue
+			}
 			row.Candidates = append(row.Candidates, OrderImportCandidate{
 				RequirementID: candidate.ID, ContractNo: candidate.ContractNo,
 				ProductName: candidate.ProductName, ProductCode: candidate.ProductCode,
@@ -282,6 +287,9 @@ func (s *Service) ConfirmOrderImport(ctx context.Context, tenantID int64, in Con
 			raw, ok := rawByNo[line.RowNo]
 			if !ok || seenRows[line.RowNo] || line.RequirementID == 0 {
 				return apierr.Invalid("PO_IMPORT_REQUIREMENT_REQUIRED", "每一行都必须匹配采购需求")
+			}
+			if raw.RequirementID != 0 && raw.RequirementID != line.RequirementID {
+				return apierr.Invalid("PO_TEMPLATE_IDENTITY_CHANGED", "采购模板中的采购需求 ID 不允许修改")
 			}
 			seenRows[line.RowNo] = true
 			if seenRequirements[line.RequirementID] {

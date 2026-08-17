@@ -775,12 +775,13 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	RequirementService_ListRequirements_FullMethodName      = "/erp.procurement.v1.RequirementService/ListRequirements"
-	RequirementService_CreateRequirement_FullMethodName     = "/erp.procurement.v1.RequirementService/CreateRequirement"
-	RequirementService_GetRequirement_FullMethodName        = "/erp.procurement.v1.RequirementService/GetRequirement"
-	RequirementService_CancelRequirement_FullMethodName     = "/erp.procurement.v1.RequirementService/CancelRequirement"
-	RequirementService_ReopenRequirement_FullMethodName     = "/erp.procurement.v1.RequirementService/ReopenRequirement"
-	RequirementService_ListRequirementOrders_FullMethodName = "/erp.procurement.v1.RequirementService/ListRequirementOrders"
+	RequirementService_ListRequirements_FullMethodName       = "/erp.procurement.v1.RequirementService/ListRequirements"
+	RequirementService_ExportPurchaseTemplate_FullMethodName = "/erp.procurement.v1.RequirementService/ExportPurchaseTemplate"
+	RequirementService_CreateRequirement_FullMethodName      = "/erp.procurement.v1.RequirementService/CreateRequirement"
+	RequirementService_GetRequirement_FullMethodName         = "/erp.procurement.v1.RequirementService/GetRequirement"
+	RequirementService_CancelRequirement_FullMethodName      = "/erp.procurement.v1.RequirementService/CancelRequirement"
+	RequirementService_ReopenRequirement_FullMethodName      = "/erp.procurement.v1.RequirementService/ReopenRequirement"
+	RequirementService_ListRequirementOrders_FullMethodName  = "/erp.procurement.v1.RequirementService/ListRequirementOrders"
 )
 
 // RequirementServiceClient is the client API for RequirementService service.
@@ -794,6 +795,8 @@ const (
 // balance is netted first.
 type RequirementServiceClient interface {
 	ListRequirements(ctx context.Context, in *ListRequirementsRequest, opts ...grpc.CallOption) (*ListRequirementsResponse, error)
+	// Export a versioned, identity-bearing workbook for selected open requirements.
+	ExportPurchaseTemplate(ctx context.Context, in *ExportPurchaseTemplateRequest, opts ...grpc.CallOption) (*ExportPurchaseTemplateResponse, error)
 	// Raise an exceptional requirement by hand, independent of a contract.
 	CreateRequirement(ctx context.Context, in *CreateRequirementRequest, opts ...grpc.CallOption) (*CreateRequirementResponse, error)
 	GetRequirement(ctx context.Context, in *GetRequirementRequest, opts ...grpc.CallOption) (*GetRequirementResponse, error)
@@ -818,6 +821,16 @@ func (c *requirementServiceClient) ListRequirements(ctx context.Context, in *Lis
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListRequirementsResponse)
 	err := c.cc.Invoke(ctx, RequirementService_ListRequirements_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *requirementServiceClient) ExportPurchaseTemplate(ctx context.Context, in *ExportPurchaseTemplateRequest, opts ...grpc.CallOption) (*ExportPurchaseTemplateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExportPurchaseTemplateResponse)
+	err := c.cc.Invoke(ctx, RequirementService_ExportPurchaseTemplate_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -885,6 +898,8 @@ func (c *requirementServiceClient) ListRequirementOrders(ctx context.Context, in
 // balance is netted first.
 type RequirementServiceServer interface {
 	ListRequirements(context.Context, *ListRequirementsRequest) (*ListRequirementsResponse, error)
+	// Export a versioned, identity-bearing workbook for selected open requirements.
+	ExportPurchaseTemplate(context.Context, *ExportPurchaseTemplateRequest) (*ExportPurchaseTemplateResponse, error)
 	// Raise an exceptional requirement by hand, independent of a contract.
 	CreateRequirement(context.Context, *CreateRequirementRequest) (*CreateRequirementResponse, error)
 	GetRequirement(context.Context, *GetRequirementRequest) (*GetRequirementResponse, error)
@@ -907,6 +922,9 @@ type UnimplementedRequirementServiceServer struct{}
 
 func (UnimplementedRequirementServiceServer) ListRequirements(context.Context, *ListRequirementsRequest) (*ListRequirementsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListRequirements not implemented")
+}
+func (UnimplementedRequirementServiceServer) ExportPurchaseTemplate(context.Context, *ExportPurchaseTemplateRequest) (*ExportPurchaseTemplateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExportPurchaseTemplate not implemented")
 }
 func (UnimplementedRequirementServiceServer) CreateRequirement(context.Context, *CreateRequirementRequest) (*CreateRequirementResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateRequirement not implemented")
@@ -958,6 +976,24 @@ func _RequirementService_ListRequirements_Handler(srv interface{}, ctx context.C
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RequirementServiceServer).ListRequirements(ctx, req.(*ListRequirementsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RequirementService_ExportPurchaseTemplate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExportPurchaseTemplateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RequirementServiceServer).ExportPurchaseTemplate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RequirementService_ExportPurchaseTemplate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RequirementServiceServer).ExportPurchaseTemplate(ctx, req.(*ExportPurchaseTemplateRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1064,6 +1100,10 @@ var RequirementService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _RequirementService_ListRequirements_Handler,
 		},
 		{
+			MethodName: "ExportPurchaseTemplate",
+			Handler:    _RequirementService_ExportPurchaseTemplate_Handler,
+		},
+		{
 			MethodName: "CreateRequirement",
 			Handler:    _RequirementService_CreateRequirement_Handler,
 		},
@@ -1089,15 +1129,16 @@ var RequirementService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	PurchaseOrderService_ListOrders_FullMethodName         = "/erp.procurement.v1.PurchaseOrderService/ListOrders"
-	PurchaseOrderService_GetOrder_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/GetOrder"
-	PurchaseOrderService_PreviewOrderImport_FullMethodName = "/erp.procurement.v1.PurchaseOrderService/PreviewOrderImport"
-	PurchaseOrderService_ConfirmOrderImport_FullMethodName = "/erp.procurement.v1.PurchaseOrderService/ConfirmOrderImport"
-	PurchaseOrderService_CreateOrder_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/CreateOrder"
-	PurchaseOrderService_UpdateOrder_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/UpdateOrder"
-	PurchaseOrderService_SubmitOrder_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/SubmitOrder"
-	PurchaseOrderService_CancelOrder_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/CancelOrder"
-	PurchaseOrderService_ReceiveOrder_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ReceiveOrder"
+	PurchaseOrderService_ListOrders_FullMethodName                    = "/erp.procurement.v1.PurchaseOrderService/ListOrders"
+	PurchaseOrderService_GetOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/GetOrder"
+	PurchaseOrderService_PreviewOrderImport_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/PreviewOrderImport"
+	PurchaseOrderService_PreviewPurchaseTemplateImport_FullMethodName = "/erp.procurement.v1.PurchaseOrderService/PreviewPurchaseTemplateImport"
+	PurchaseOrderService_ConfirmOrderImport_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/ConfirmOrderImport"
+	PurchaseOrderService_CreateOrder_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/CreateOrder"
+	PurchaseOrderService_UpdateOrder_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/UpdateOrder"
+	PurchaseOrderService_SubmitOrder_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/SubmitOrder"
+	PurchaseOrderService_CancelOrder_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/CancelOrder"
+	PurchaseOrderService_ReceiveOrder_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/ReceiveOrder"
 )
 
 // PurchaseOrderServiceClient is the client API for PurchaseOrderService service.
@@ -1115,6 +1156,9 @@ type PurchaseOrderServiceClient interface {
 	// Preview persists the rows the employee reviewed but does not allocate a
 	// purchase-order number or change a requirement.
 	PreviewOrderImport(ctx context.Context, in *PreviewOrderImportRequest, opts ...grpc.CallOption) (*PreviewOrderImportResponse, error)
+	// Parse the system purchase template, validate its protected identities and
+	// create one ordinary import session per supplier.
+	PreviewPurchaseTemplateImport(ctx context.Context, in *PreviewPurchaseTemplateImportRequest, opts ...grpc.CallOption) (*PreviewPurchaseTemplateImportResponse, error)
 	// Confirmation is idempotent by import_token. The import record and draft
 	// order are committed together.
 	ConfirmOrderImport(ctx context.Context, in *ConfirmOrderImportRequest, opts ...grpc.CallOption) (*ConfirmOrderImportResponse, error)
@@ -1163,6 +1207,16 @@ func (c *purchaseOrderServiceClient) PreviewOrderImport(ctx context.Context, in 
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PreviewOrderImportResponse)
 	err := c.cc.Invoke(ctx, PurchaseOrderService_PreviewOrderImport_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) PreviewPurchaseTemplateImport(ctx context.Context, in *PreviewPurchaseTemplateImportRequest, opts ...grpc.CallOption) (*PreviewPurchaseTemplateImportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewPurchaseTemplateImportResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_PreviewPurchaseTemplateImport_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1244,6 +1298,9 @@ type PurchaseOrderServiceServer interface {
 	// Preview persists the rows the employee reviewed but does not allocate a
 	// purchase-order number or change a requirement.
 	PreviewOrderImport(context.Context, *PreviewOrderImportRequest) (*PreviewOrderImportResponse, error)
+	// Parse the system purchase template, validate its protected identities and
+	// create one ordinary import session per supplier.
+	PreviewPurchaseTemplateImport(context.Context, *PreviewPurchaseTemplateImportRequest) (*PreviewPurchaseTemplateImportResponse, error)
 	// Confirmation is idempotent by import_token. The import record and draft
 	// order are committed together.
 	ConfirmOrderImport(context.Context, *ConfirmOrderImportRequest) (*ConfirmOrderImportResponse, error)
@@ -1276,6 +1333,9 @@ func (UnimplementedPurchaseOrderServiceServer) GetOrder(context.Context, *GetOrd
 }
 func (UnimplementedPurchaseOrderServiceServer) PreviewOrderImport(context.Context, *PreviewOrderImportRequest) (*PreviewOrderImportResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PreviewOrderImport not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) PreviewPurchaseTemplateImport(context.Context, *PreviewPurchaseTemplateImportRequest) (*PreviewPurchaseTemplateImportResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PreviewPurchaseTemplateImport not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) ConfirmOrderImport(context.Context, *ConfirmOrderImportRequest) (*ConfirmOrderImportResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ConfirmOrderImport not implemented")
@@ -1366,6 +1426,24 @@ func _PurchaseOrderService_PreviewOrderImport_Handler(srv interface{}, ctx conte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PurchaseOrderServiceServer).PreviewOrderImport(ctx, req.(*PreviewOrderImportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_PreviewPurchaseTemplateImport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewPurchaseTemplateImportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).PreviewPurchaseTemplateImport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_PreviewPurchaseTemplateImport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).PreviewPurchaseTemplateImport(ctx, req.(*PreviewPurchaseTemplateImportRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1496,6 +1574,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PreviewOrderImport",
 			Handler:    _PurchaseOrderService_PreviewOrderImport_Handler,
+		},
+		{
+			MethodName: "PreviewPurchaseTemplateImport",
+			Handler:    _PurchaseOrderService_PreviewPurchaseTemplateImport_Handler,
 		},
 		{
 			MethodName: "ConfirmOrderImport",

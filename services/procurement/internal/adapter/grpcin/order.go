@@ -27,6 +27,7 @@ func (h *OrderHandler) PreviewOrderImport(ctx context.Context, req *prv1.Preview
 			RowNo: row.GetRowNo(), Product: row.GetProduct(), MaterialStandard: row.GetMaterialStandard(),
 			Grade: row.GetGrade(), Thickness: row.GetThickness(), Width: row.GetWidth(),
 			QuantityUnit: row.GetQuantityUnit(), Quantity: row.GetQuantity(), UnitPrice: row.GetUnitPrice(),
+			RequirementID: row.GetRequirementId(), ProductID: row.GetProductId(), SKUID: row.GetSkuId(), UomID: row.GetUomId(),
 		})
 	}
 	result, err := h.svc.PreviewOrderImport(ctx, grpcx.TenantID(ctx), app.PreviewOrderImportInput{
@@ -58,6 +59,23 @@ func (h *OrderHandler) PreviewOrderImport(ctx context.Context, req *prv1.Preview
 	return &prv1.PreviewOrderImportResponse{
 		ImportToken: result.ImportToken, ExpiresAt: result.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"), Rows: outRows,
 	}, nil
+}
+
+func (h *OrderHandler) PreviewPurchaseTemplateImport(ctx context.Context, req *prv1.PreviewPurchaseTemplateImportRequest) (*prv1.PreviewPurchaseTemplateImportResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	result, err := h.svc.PreviewPurchaseTemplateImport(ctx, grpcx.TenantID(ctx), req.GetFileData(), req.GetSourceFileName(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	groups := make([]*prv1.PurchaseTemplateImportGroup, 0, len(result.Groups))
+	for _, group := range result.Groups {
+		lines := make([]*prv1.PurchaseTemplateImportLine, 0, len(group.Lines))
+		for _, line := range group.Lines {
+			lines = append(lines, &prv1.PurchaseTemplateImportLine{RowNo: line.RowNo, RequirementId: line.RequirementID, ProductName: line.ProductName, Qty: line.Qty, UomCode: line.UomCode, UnitPrice: line.UnitPrice, Moq: line.MOQ})
+		}
+		groups = append(groups, &prv1.PurchaseTemplateImportGroup{ImportToken: group.ImportToken, SupplierId: group.Supplier.ID, SupplierCode: group.Supplier.Code, SupplierName: group.Supplier.Name, Currency: group.Currency, ExpectedDate: group.ExpectedDate, PaymentTerms: group.PaymentTerms, Lines: lines})
+	}
+	return &prv1.PreviewPurchaseTemplateImportResponse{Groups: groups, TemplateVersion: result.Version, ErrorFileName: result.ErrorFileName, ErrorFileData: result.ErrorFileData}, nil
 }
 
 func (h *OrderHandler) ConfirmOrderImport(ctx context.Context, req *prv1.ConfirmOrderImportRequest) (*prv1.ConfirmOrderImportResponse, error) {

@@ -84,6 +84,7 @@
           <el-button v-if="canPrice" link type="primary" @click.stop="openImport(row)">{{ t('sourcing.importQuote') }}</el-button>
         </template></el-table-column>
       </el-table>
+      <template v-if="canPrice">
       <h3 class="section-title">{{ t('sourcing.quoteComparison') }}</h3>
       <el-table :data="quoteLines" size="small" border>
         <el-table-column prop="supplierName" :label="t('sourcing.supplier')" min-width="150" />
@@ -97,6 +98,7 @@
         <el-table-column prop="paymentTerms" :label="t('sourcing.paymentTerms')" min-width="180" />
         <el-table-column prop="validUntil" :label="t('sourcing.validUntil')" width="130" />
       </el-table>
+      </template>
       <div class="section-heading">
         <h3 class="section-title">{{ t('sourcing.costScenarios') }}</h3>
         <el-button v-if="canPrice && quoteLines.length" type="primary" plain @click="openCostScenario">{{ t('sourcing.createCostScenario') }}</el-button>
@@ -104,10 +106,10 @@
       <el-table :data="costScenarios" size="small" border @row-click="openCostDetail">
         <el-table-column prop="scenarioNo" :label="t('sourcing.scenarioNo')" width="180" />
         <el-table-column prop="currency" :label="t('sourcing.currency')" width="90" />
-        <el-table-column prop="productTotal" :label="t('sourcing.productTotal')" width="130" align="right" />
-        <el-table-column prop="chargeTotal" :label="t('sourcing.chargeTotal')" width="130" align="right" />
-        <el-table-column prop="landedTotal" :label="t('sourcing.landedTotal')" width="130" align="right" />
-        <el-table-column prop="marginTotal" :label="t('sourcing.marginTotal')" width="130" align="right" />
+        <el-table-column v-if="canPrice" prop="productTotal" :label="t('sourcing.productTotal')" width="130" align="right" />
+        <el-table-column v-if="canPrice" prop="chargeTotal" :label="t('sourcing.chargeTotal')" width="130" align="right" />
+        <el-table-column v-if="canPrice" prop="landedTotal" :label="t('sourcing.landedTotal')" width="130" align="right" />
+        <el-table-column v-if="canPrice" prop="marginTotal" :label="t('sourcing.marginTotal')" width="130" align="right" />
         <el-table-column prop="customerTotal" :label="t('sourcing.customerTotal')" width="140" align="right" />
         <el-table-column :label="t('common.status')" width="120"><template #default="{ row }"><el-tag effect="plain">{{ t(`sourcing.costStatuses.${row.status}`) }}</el-tag></template></el-table-column>
         <el-table-column :label="t('common.actions')" width="220" fixed="right"><template #default="{ row }">
@@ -229,18 +231,18 @@
 
     <el-dialog v-model="costDetailOpen" :title="costDetail?.scenarioNo || t('sourcing.costScenarios')" width="min(1100px, 95vw)" append-to-body>
       <el-descriptions v-if="costDetail" :column="4" border>
-        <el-descriptions-item :label="t('sourcing.productTotal')">{{ costDetail.currency }} {{ costDetail.productTotal }}</el-descriptions-item>
-        <el-descriptions-item :label="t('sourcing.chargeTotal')">{{ costDetail.currency }} {{ costDetail.chargeTotal }}</el-descriptions-item>
-        <el-descriptions-item :label="t('sourcing.marginTotal')">{{ costDetail.currency }} {{ costDetail.marginTotal }}</el-descriptions-item>
+        <el-descriptions-item v-if="canPrice" :label="t('sourcing.productTotal')">{{ costDetail.currency }} {{ costDetail.productTotal }}</el-descriptions-item>
+        <el-descriptions-item v-if="canPrice" :label="t('sourcing.chargeTotal')">{{ costDetail.currency }} {{ costDetail.chargeTotal }}</el-descriptions-item>
+        <el-descriptions-item v-if="canPrice" :label="t('sourcing.marginTotal')">{{ costDetail.currency }} {{ costDetail.marginTotal }}</el-descriptions-item>
         <el-descriptions-item :label="t('sourcing.customerTotal')">{{ costDetail.currency }} {{ costDetail.customerTotal }}</el-descriptions-item>
       </el-descriptions>
       <el-table :data="costDetail?.lines || []" size="small" border class="cost-lines">
         <el-table-column prop="productName" :label="t('sourcing.product')" min-width="150" />
-        <el-table-column prop="supplierName" :label="t('sourcing.supplier')" min-width="150" />
+        <el-table-column v-if="canPrice" prop="supplierName" :label="t('sourcing.supplier')" min-width="150" />
         <el-table-column prop="qty" :label="t('sourcing.quantity')" width="100" align="right" />
-        <el-table-column prop="productCost" :label="t('sourcing.productTotal')" width="130" align="right" />
-        <el-table-column prop="allocatedCharge" :label="t('sourcing.allocatedCharge')" width="130" align="right" />
-        <el-table-column prop="landedCost" :label="t('sourcing.landedUnit')" width="130" align="right" />
+        <el-table-column v-if="canPrice" prop="productCost" :label="t('sourcing.productTotal')" width="130" align="right" />
+        <el-table-column v-if="canPrice" prop="allocatedCharge" :label="t('sourcing.allocatedCharge')" width="130" align="right" />
+        <el-table-column v-if="canPrice" prop="landedCost" :label="t('sourcing.landedUnit')" width="130" align="right" />
         <el-table-column prop="customerUnitPrice" :label="t('sourcing.customerUnit')" width="140" align="right" />
         <el-table-column prop="customerAmount" :label="t('sourcing.customerTotal')" width="140" align="right" />
       </el-table>

@@ -2,12 +2,29 @@ package httpapi
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 )
+
+func (s *Server) exportPurchaseTemplate(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.ExportPurchaseTemplateRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Requirements.ExportPurchaseTemplate(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(resp.GetFileName()))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(resp.GetFileData())
+}
 
 func (s *Server) listRequirements(w http.ResponseWriter, r *http.Request) {
 	contractID, _ := strconv.ParseInt(r.URL.Query().Get("contract_id"), 10, 64)

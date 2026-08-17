@@ -49,6 +49,14 @@ func (h *Handler) ListRequirements(ctx context.Context, req *prv1.ListRequiremen
 	}, nil
 }
 
+func (h *Handler) ExportPurchaseTemplate(ctx context.Context, req *prv1.ExportPurchaseTemplateRequest) (*prv1.ExportPurchaseTemplateResponse, error) {
+	book, err := h.svc.ExportPurchaseTemplate(ctx, grpcx.TenantID(ctx), req.GetRequirementIds())
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.ExportPurchaseTemplateResponse{FileName: book.FileName, FileData: book.Data, TemplateVersion: book.Version}, nil
+}
+
 func (h *Handler) CreateRequirement(ctx context.Context, req *prv1.CreateRequirementRequest) (*prv1.CreateRequirementResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
 	row, err := h.svc.CreateRequirement(ctx, grpcx.TenantID(ctx), app.ManualRequirement{
