@@ -26,9 +26,23 @@
       <p class="hint">{{ t('fx.clickHint') }}</p>
     </el-card>
 
+    <el-card shadow="never" class="block" v-loading="loadingHistory">
+      <template #header>
+        <div class="chart-head">
+          <span>{{ t('fx.trend') }} — {{ selected }}</span>
+          <el-radio-group v-model="days" size="small" @change="() => selectCurrency(selected)">
+            <el-radio-button v-for="d in RANGES" :key="d" :value="d">
+              {{ t('fx.rangeDays', { n: d }) }}
+            </el-radio-button>
+          </el-radio-group>
+        </div>
+      </template>
+      <RateChart :points="chartPoints" :currency="selected" />
+    </el-card>
+
     <el-card shadow="never" class="block">
       <template #header>{{ t('fx.history') }} — {{ selected }}</template>
-      <el-table :data="history" v-loading="loadingHistory" size="small">
+      <el-table :data="history" v-loading="loadingHistory" size="small" max-height="320">
         <el-table-column prop="rateDate" :label="t('fx.date')" width="140" />
         <el-table-column :label="t('fx.unitsPerUsd')" min-width="150">
           <template #default="{ row }">{{ row.unitsPerUsd }}</template>
@@ -56,9 +70,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { get } from '../api'
+import RateChart, { type ChartPoint } from '../components/RateChart.vue'
 
 interface RateRow {
   quoteCurrency: string
@@ -77,14 +92,27 @@ interface AnomalyRow {
 }
 
 const SYMBOLS = ['CNY', 'EUR', 'GBP', 'JPY', 'HKD']
+// 30 for "what happened lately", 365 for "what is this pair actually doing".
+// The feed publishes working days only, so 30 days is about 22 points.
+const RANGES = [30, 90, 365]
 
 const { t } = useI18n()
 const latest = ref<RateRow[]>([])
 const history = ref<RateRow[]>([])
 const anomalies = ref<AnomalyRow[]>([])
 const selected = ref('CNY')
+const days = ref(90)
 const loadingLatest = ref(false)
 const loadingHistory = ref(false)
+
+// The table reads newest-first (which is what somebody scanning for today's
+// number wants); a chart has to read oldest-first, or time runs backwards.
+const chartPoints = computed<ChartPoint[]>(() =>
+  history.value
+    .map((r) => ({ date: r.rateDate, value: Number(r.unitsPerUsd) }))
+    .filter((p) => isFinite(p.value) && p.value > 0)
+    .reverse(),
+)
 
 // ListRates returns 200 with an empty list for unknown currencies, so a
 // per-symbol probe never spams error toasts the way a 404 would.
@@ -104,7 +132,7 @@ async function selectCurrency(currency: string) {
   selected.value = currency
   loadingHistory.value = true
   try {
-    history.value = (await get<{ rates: RateRow[] }>('/fx/rates', { currency, days: 90 })).rates
+    history.value = (await get<{ rates: RateRow[] }>('/fx/rates', { currency, days: days.value })).rates
   } finally {
     loadingHistory.value = false
   }
@@ -144,5 +172,12 @@ onMounted(async () => {
 .deviation {
   color: #d97706;
   font-weight: 500;
+}
+.chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 </style>
