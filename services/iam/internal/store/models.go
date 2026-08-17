@@ -75,6 +75,18 @@ type EmployeeRole struct {
 	RoleID     int64
 }
 
+type PasswordReset struct {
+	ID          int64
+	TenantID    int64
+	EmployeeID  int64
+	Email       string
+	TokenHash   []byte
+	ExpiresAt   pgtype.Timestamptz
+	UsedAt      pgtype.Timestamptz
+	RequestedBy int64
+	CreatedAt   pgtype.Timestamptz
+}
+
 type Permission struct {
 	ID       int64
 	Code     string
@@ -123,15 +135,16 @@ type TenantDomain struct {
 }
 
 type User struct {
-	ID           int64
-	TenantID     int64
-	EmployeeID   int64
-	Username     string
-	PasswordHash string
-	Status       string
-	FailedCount  int32
-	LastLoginAt  pgtype.Timestamptz
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
-	LockedUntil  pgtype.Timestamptz
+	ID                 int64
+	TenantID           int64
+	EmployeeID         int64
+	Username           string
+	PasswordHash       string
+	Status             string
+	FailedCount        int32
+	LastLoginAt        pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+	LockedUntil        pgtype.Timestamptz
+	MustChangePassword bool
 }

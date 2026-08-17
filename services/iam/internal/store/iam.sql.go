@@ -765,7 +765,7 @@ func (q *Queries) GetPermissionIDsByCodes(ctx context.Context, dollar_1 []string
 
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT u.id, u.tenant_id, u.employee_id, u.username, u.password_hash, u.status, u.failed_count,
-       u.locked_until,
+       u.locked_until, u.must_change_password,
        e.name AS employee_name, e.code AS employee_code, e.department_id,
        e.status AS employee_status, e.email_verified_at,
        t.status AS tenant_status
@@ -777,20 +777,21 @@ WHERE e.email <> ''
 `
 
 type GetUserByEmailRow struct {
-	ID              int64
-	TenantID        int64
-	EmployeeID      int64
-	Username        string
-	PasswordHash    string
-	Status          string
-	FailedCount     int32
-	LockedUntil     pgtype.Timestamptz
-	EmployeeName    string
-	EmployeeCode    string
-	DepartmentID    int64
-	EmployeeStatus  string
-	EmailVerifiedAt pgtype.Timestamptz
-	TenantStatus    string
+	ID                 int64
+	TenantID           int64
+	EmployeeID         int64
+	Username           string
+	PasswordHash       string
+	Status             string
+	FailedCount        int32
+	LockedUntil        pgtype.Timestamptz
+	MustChangePassword bool
+	EmployeeName       string
+	EmployeeCode       string
+	DepartmentID       int64
+	EmployeeStatus     string
+	EmailVerifiedAt    pgtype.Timestamptz
+	TenantStatus       string
 }
 
 // The whole of login's lookup, in one round trip and without asking the
@@ -823,6 +824,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 		&i.Status,
 		&i.FailedCount,
 		&i.LockedUntil,
+		&i.MustChangePassword,
 		&i.EmployeeName,
 		&i.EmployeeCode,
 		&i.DepartmentID,

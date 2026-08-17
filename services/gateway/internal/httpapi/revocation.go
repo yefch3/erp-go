@@ -11,6 +11,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 )
 
@@ -240,5 +241,13 @@ func (s *Server) revokeSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Log.Info("sessions revoked", "employee", id, "by", op.EmployeeID)
+	// The footprint. Ending somebody's sessions is invisible in the database
+	// — it happens in Redis — so without this row the change history would
+	// have a hole exactly where an audit most wants to look.
+	if _, err := s.Directory.RecordAccountEvent(r.Context(), &iamv1.RecordAccountEventRequest{
+		EmployeeId: id, Action: "SESSIONS_REVOKED",
+	}); err != nil {
+		s.Log.Warn("could not record revocation in change history", "employee", id, "err", err)
+	}
 	writeUnlockJSON(w, map[string]any{"revoked": true})
 }

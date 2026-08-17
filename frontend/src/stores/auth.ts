@@ -13,6 +13,10 @@ interface LoginData {
   expiresInSeconds: string
   employee: Employee
   permissionCodes: string[]
+  // True when the password that just worked was typed by an administrator,
+  // not chosen by this person. The session is real but owes an immediate
+  // change; the shell blocks everything else until it happens.
+  mustChangePassword?: boolean
 }
 
 export const useAuthStore = defineStore('auth', {
@@ -30,6 +34,9 @@ export const useAuthStore = defineStore('auth', {
     // asking, because the mailbox somebody binds is the one they signed in as.
     employeeEmail: localStorage.getItem('employeeEmail') ?? '',
     permissions: JSON.parse(localStorage.getItem('permissions') ?? '[]') as string[],
+    // Persisted so a refresh mid-obligation does not shake the debt off —
+    // the shell keeps its blocking dialog up until the change happens.
+    mustChangePassword: localStorage.getItem('mustChangePassword') === '1',
   }),
   getters: {
     isLoggedIn: (s) => s.employeeName !== '',
@@ -50,10 +57,21 @@ export const useAuthStore = defineStore('auth', {
       this.employeeName = data.employee.name
       this.employeeEmail = data.employee.email ?? ''
       this.permissions = data.permissionCodes
+      this.mustChangePassword = data.mustChangePassword === true
       localStorage.setItem('employeeId', data.employee.id)
       localStorage.setItem('employeeName', data.employee.name)
       localStorage.setItem('employeeEmail', data.employee.email ?? '')
       localStorage.setItem('permissions', JSON.stringify(data.permissionCodes))
+      if (this.mustChangePassword) {
+        localStorage.setItem('mustChangePassword', '1')
+      } else {
+        localStorage.removeItem('mustChangePassword')
+      }
+    },
+    // The moment the owner chooses their own password, the debt is paid.
+    passwordChanged() {
+      this.mustChangePassword = false
+      localStorage.removeItem('mustChangePassword')
     },
     // Permission codes are cached in localStorage so the first paint is not
     // gated on a round trip, but a cache that only refills at login goes
@@ -84,6 +102,7 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('employeeName')
       localStorage.removeItem('employeeEmail')
       localStorage.removeItem('permissions')
+      localStorage.removeItem('mustChangePassword')
     },
   },
 })
