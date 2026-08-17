@@ -1089,13 +1089,15 @@ var RequirementService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	PurchaseOrderService_ListOrders_FullMethodName   = "/erp.procurement.v1.PurchaseOrderService/ListOrders"
-	PurchaseOrderService_GetOrder_FullMethodName     = "/erp.procurement.v1.PurchaseOrderService/GetOrder"
-	PurchaseOrderService_CreateOrder_FullMethodName  = "/erp.procurement.v1.PurchaseOrderService/CreateOrder"
-	PurchaseOrderService_UpdateOrder_FullMethodName  = "/erp.procurement.v1.PurchaseOrderService/UpdateOrder"
-	PurchaseOrderService_SubmitOrder_FullMethodName  = "/erp.procurement.v1.PurchaseOrderService/SubmitOrder"
-	PurchaseOrderService_CancelOrder_FullMethodName  = "/erp.procurement.v1.PurchaseOrderService/CancelOrder"
-	PurchaseOrderService_ReceiveOrder_FullMethodName = "/erp.procurement.v1.PurchaseOrderService/ReceiveOrder"
+	PurchaseOrderService_ListOrders_FullMethodName         = "/erp.procurement.v1.PurchaseOrderService/ListOrders"
+	PurchaseOrderService_GetOrder_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/GetOrder"
+	PurchaseOrderService_PreviewOrderImport_FullMethodName = "/erp.procurement.v1.PurchaseOrderService/PreviewOrderImport"
+	PurchaseOrderService_ConfirmOrderImport_FullMethodName = "/erp.procurement.v1.PurchaseOrderService/ConfirmOrderImport"
+	PurchaseOrderService_CreateOrder_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/CreateOrder"
+	PurchaseOrderService_UpdateOrder_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/UpdateOrder"
+	PurchaseOrderService_SubmitOrder_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/SubmitOrder"
+	PurchaseOrderService_CancelOrder_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/CancelOrder"
+	PurchaseOrderService_ReceiveOrder_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ReceiveOrder"
 )
 
 // PurchaseOrderServiceClient is the client API for PurchaseOrderService service.
@@ -1110,6 +1112,12 @@ const (
 type PurchaseOrderServiceClient interface {
 	ListOrders(ctx context.Context, in *ListOrdersRequest, opts ...grpc.CallOption) (*ListOrdersResponse, error)
 	GetOrder(ctx context.Context, in *GetOrderRequest, opts ...grpc.CallOption) (*GetOrderResponse, error)
+	// Preview persists the rows the employee reviewed but does not allocate a
+	// purchase-order number or change a requirement.
+	PreviewOrderImport(ctx context.Context, in *PreviewOrderImportRequest, opts ...grpc.CallOption) (*PreviewOrderImportResponse, error)
+	// Confirmation is idempotent by import_token. The import record and draft
+	// order are committed together.
+	ConfirmOrderImport(ctx context.Context, in *ConfirmOrderImportRequest, opts ...grpc.CallOption) (*ConfirmOrderImportResponse, error)
 	CreateOrder(ctx context.Context, in *CreateOrderRequest, opts ...grpc.CallOption) (*CreateOrderResponse, error)
 	// Only a draft or a rejected order can be changed. Saving a rejected order
 	// turns it back into a draft so its corrected snapshot is explicit before
@@ -1145,6 +1153,26 @@ func (c *purchaseOrderServiceClient) GetOrder(ctx context.Context, in *GetOrderR
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetOrderResponse)
 	err := c.cc.Invoke(ctx, PurchaseOrderService_GetOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) PreviewOrderImport(ctx context.Context, in *PreviewOrderImportRequest, opts ...grpc.CallOption) (*PreviewOrderImportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewOrderImportResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_PreviewOrderImport_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ConfirmOrderImport(ctx context.Context, in *ConfirmOrderImportRequest, opts ...grpc.CallOption) (*ConfirmOrderImportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfirmOrderImportResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ConfirmOrderImport_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1213,6 +1241,12 @@ func (c *purchaseOrderServiceClient) ReceiveOrder(ctx context.Context, in *Recei
 type PurchaseOrderServiceServer interface {
 	ListOrders(context.Context, *ListOrdersRequest) (*ListOrdersResponse, error)
 	GetOrder(context.Context, *GetOrderRequest) (*GetOrderResponse, error)
+	// Preview persists the rows the employee reviewed but does not allocate a
+	// purchase-order number or change a requirement.
+	PreviewOrderImport(context.Context, *PreviewOrderImportRequest) (*PreviewOrderImportResponse, error)
+	// Confirmation is idempotent by import_token. The import record and draft
+	// order are committed together.
+	ConfirmOrderImport(context.Context, *ConfirmOrderImportRequest) (*ConfirmOrderImportResponse, error)
 	CreateOrder(context.Context, *CreateOrderRequest) (*CreateOrderResponse, error)
 	// Only a draft or a rejected order can be changed. Saving a rejected order
 	// turns it back into a draft so its corrected snapshot is explicit before
@@ -1239,6 +1273,12 @@ func (UnimplementedPurchaseOrderServiceServer) ListOrders(context.Context, *List
 }
 func (UnimplementedPurchaseOrderServiceServer) GetOrder(context.Context, *GetOrderRequest) (*GetOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetOrder not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) PreviewOrderImport(context.Context, *PreviewOrderImportRequest) (*PreviewOrderImportResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PreviewOrderImport not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ConfirmOrderImport(context.Context, *ConfirmOrderImportRequest) (*ConfirmOrderImportResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ConfirmOrderImport not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) CreateOrder(context.Context, *CreateOrderRequest) (*CreateOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateOrder not implemented")
@@ -1308,6 +1348,42 @@ func _PurchaseOrderService_GetOrder_Handler(srv interface{}, ctx context.Context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PurchaseOrderServiceServer).GetOrder(ctx, req.(*GetOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_PreviewOrderImport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewOrderImportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).PreviewOrderImport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_PreviewOrderImport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).PreviewOrderImport(ctx, req.(*PreviewOrderImportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ConfirmOrderImport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmOrderImportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ConfirmOrderImport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ConfirmOrderImport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ConfirmOrderImport(ctx, req.(*ConfirmOrderImportRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1416,6 +1492,14 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetOrder",
 			Handler:    _PurchaseOrderService_GetOrder_Handler,
+		},
+		{
+			MethodName: "PreviewOrderImport",
+			Handler:    _PurchaseOrderService_PreviewOrderImport_Handler,
+		},
+		{
+			MethodName: "ConfirmOrderImport",
+			Handler:    _PurchaseOrderService_ConfirmOrderImport_Handler,
 		},
 		{
 			MethodName: "CreateOrder",

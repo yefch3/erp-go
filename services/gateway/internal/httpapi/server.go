@@ -439,7 +439,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:sourcing:price")).Post("/api/factory-rfqs/{id}/supplier-quotes/import", s.importSupplierQuoteWorkbook)
 		r.With(s.perm("procurement:sourcing:send")).Post("/api/factory-rfqs/{id}/send", s.sendFactoryRFQ)
 		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements/{id}", s.getRequirement)
-		r.With(s.perm("procurement:requirement:write")).Post("/api/requirements", s.createRequirement)
+		r.With(s.perm("procurement:requirement:exception")).Post("/api/requirements", s.createRequirement)
 		r.With(s.perm("procurement:requirement:write")).Post("/api/requirements/{id}/cancel", s.cancelRequirement)
 		r.With(s.perm("procurement:requirement:write")).Post("/api/requirements/{id}/reopen", s.reopenRequirement)
 		// Which orders cover a requirement. Reading orders, so it rides on the
@@ -452,13 +452,14 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders", s.listOrders)
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}", s.getOrder)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/imports/preview", s.previewOrderImport)
+		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/imports/{importToken}/confirm", s.confirmOrderImport)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders", s.createOrder)
 		r.With(s.perm("procurement:order:write")).Put("/api/purchase-orders/{id}", s.updateOrder)
-		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/submit", s.submitOrder)
-		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/cancel", s.cancelOrder)
+		r.With(s.perm("procurement:order:submit")).Post("/api/purchase-orders/{id}/submit", s.submitOrder)
+		r.With(s.perm("procurement:order:cancel")).Post("/api/purchase-orders/{id}/cancel", s.cancelOrder)
 		// Receiving is warehouse work, so it rides on the stock permission
 		// rather than the buyer's.
-		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/{id}/receive", s.receiveOrder)
+		r.With(s.perm("procurement:receipt:write")).Post("/api/purchase-orders/{id}/receive", s.receiveOrder)
 		r.With(s.perm("export:ownership:transfer")).Post("/api/ownership/transfer", s.transferOwnership)
 		// Reading the handover history is scoped like reading the document, so
 		// the contract's own permission is the right gate.

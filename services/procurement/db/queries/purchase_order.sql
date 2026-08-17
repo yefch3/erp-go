@@ -19,6 +19,18 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 ORDER BY id
 FOR UPDATE;
 
+-- name: DraftReservedQtyForRequirements :many
+-- Imported drafts reserve their demand until they are cancelled or ordered.
+-- This is deliberately read after RequirementsForOrder has locked the
+-- requirement rows, making simultaneous import confirmations serialize.
+SELECT i.requirement_id, coalesce(sum(i.qty), 0)::text AS reserved_qty
+FROM purchase_order_items i
+JOIN purchase_orders o ON o.id = i.po_id AND o.tenant_id = i.tenant_id
+WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND i.requirement_id = ANY(sqlc.arg(ids)::bigint[])
+  AND o.status IN ('DRAFT', 'REJECTED', 'PENDING_APPROVAL')
+GROUP BY i.requirement_id;
+
 -- name: AddRequirementOrdered :one
 -- Ordering moves a requirement along. Fully covered means ORDERED; partly
 -- covered means somebody still has to buy the rest.

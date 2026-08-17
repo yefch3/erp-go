@@ -3,10 +3,12 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/shopspring/decimal"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
@@ -34,6 +36,9 @@ type OrderLine struct {
 	RequirementID int64
 	Qty           string
 	UnitPrice     string
+	// Filled by an Excel import. Ordinary order entry leaves it blank because
+	// the order line takes its unit directly from the selected requirement.
+	UomCode string
 }
 
 type CreateOrderInput struct {
@@ -92,113 +97,181 @@ type receivedLine struct {
 // 2000 against a requirement for 1500 is either a typo or somebody stocking
 // up, and stocking up belongs on a requirement of its own where it is visible
 // rather than buried inside a contract's order.
-func (s *Service) CreateOrder(ctx context.Context, tenantID int64, in CreateOrderInput, op Operator) (store.CreatePurchaseOrderRow, error) {
+type parsedOrderLine struct {
+	qty, price decimal.Decimal
+	uomCode    string
+}
+
+type preparedOrder struct {
+	in   CreateOrderInput
+	want map[int64]parsedOrderLine
+	ids  []int64
+}
+
+func (s *Service) prepareOrder(ctx context.Context, in CreateOrderInput) (preparedOrder, error) {
 	if in.SupplierID == 0 {
-		return store.CreatePurchaseOrderRow{}, apierr.Invalid("PO_SUPPLIER_REQUIRED", "请选择供应商")
+		return preparedOrder{}, apierr.Invalid("PO_SUPPLIER_REQUIRED", "请选择供应商")
 	}
 	supplier, err := s.supplierForOrder(ctx, in.SupplierID)
 	if err != nil {
-		return store.CreatePurchaseOrderRow{}, err
+		return preparedOrder{}, err
 	}
 	// Supplier code/name are immutable document snapshots, but their source is
 	// master data at write time—not display strings supplied by the browser.
 	in.SupplierCode, in.SupplierName = supplier.Code, supplier.Name
 	if len(in.Lines) == 0 {
-		return store.CreatePurchaseOrderRow{}, apierr.Invalid("PO_LINES_REQUIRED", "采购单明细不能为空")
+		return preparedOrder{}, apierr.Invalid("PO_LINES_REQUIRED", "采购单明细不能为空")
 	}
 	if in.Currency == "" {
 		in.Currency = "CNY"
 	}
 
-	type parsed struct {
-		qty   decimal.Decimal
-		price decimal.Decimal
-	}
-	want := make(map[int64]parsed, len(in.Lines))
+	want := make(map[int64]parsedOrderLine, len(in.Lines))
 	ids := make([]int64, 0, len(in.Lines))
 	for _, l := range in.Lines {
 		qty, err := decimal.NewFromString(l.Qty)
 		if err != nil || qty.LessThanOrEqual(decimal.Zero) {
-			return store.CreatePurchaseOrderRow{}, apierr.Invalid("PO_QTY_INVALID", "采购数量必须大于 0")
+			return preparedOrder{}, apierr.Invalid("PO_QTY_INVALID", "采购数量必须大于 0")
 		}
 		price, err := decimal.NewFromString(orZero(l.UnitPrice))
 		if err != nil || price.IsNegative() {
-			return store.CreatePurchaseOrderRow{}, apierr.Invalid("PO_PRICE_INVALID", "单价不能为负数")
+			return preparedOrder{}, apierr.Invalid("PO_PRICE_INVALID", "单价不能为负数")
 		}
 		if _, dup := want[l.RequirementID]; dup {
-			return store.CreatePurchaseOrderRow{}, apierr.Invalid("PO_LINE_DUPLICATED",
+			return preparedOrder{}, apierr.Invalid("PO_LINE_DUPLICATED",
 				"同一采购需求在一张采购单里只能出现一次")
 		}
-		want[l.RequirementID] = parsed{qty: qty, price: price}
+		want[l.RequirementID] = parsedOrderLine{qty: qty, price: price, uomCode: strings.TrimSpace(l.UomCode)}
 		ids = append(ids, l.RequirementID)
 	}
+	return preparedOrder{in: in, want: want, ids: ids}, nil
+}
 
+func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID int64, prepared preparedOrder, op Operator) (store.CreatePurchaseOrderRow, error) {
+	q := s.q.WithTx(tx)
+	in, want, ids := prepared.in, prepared.want, prepared.ids
 	var head store.CreatePurchaseOrderRow
-	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
-		q := s.q.WithTx(tx)
-		reqs, err := q.RequirementsForOrder(ctx, store.RequirementsForOrderParams{
+	reqs, err := q.RequirementsForOrder(ctx, store.RequirementsForOrderParams{
+		TenantID: tenantID, Ids: ids,
+	})
+	if err != nil {
+		return head, err
+	}
+	if len(reqs) != len(ids) {
+		return head, apierr.Invalid("PO_REQUIREMENT_NOT_FOUND", "有采购需求不存在，请刷新后重试")
+	}
+	reserved := make(map[int64]decimal.Decimal)
+	imported := false
+	for _, line := range want {
+		imported = imported || line.uomCode != ""
+	}
+	if imported {
+		rows, err := q.DraftReservedQtyForRequirements(ctx, store.DraftReservedQtyForRequirementsParams{
 			TenantID: tenantID, Ids: ids,
 		})
 		if err != nil {
-			return err
+			return head, err
 		}
-		if len(reqs) != len(ids) {
-			return apierr.Invalid("PO_REQUIREMENT_NOT_FOUND", "有采购需求不存在，请刷新后重试")
-		}
-
-		total := decimal.Zero
-		for _, r := range reqs {
-			p := want[r.ID]
-			if r.Status == "CANCELLED" || r.Status == "SUPERSEDED" {
-				return apierr.Invalid("PO_REQUIREMENT_CLOSED",
-					"「"+r.ProductName+"」的采购需求已关闭，不能下单").
-					WithMeta("status", r.Status)
-			}
-			open, err := decimal.NewFromString(r.OpenQty)
+		for _, row := range rows {
+			qty, err := decimal.NewFromString(row.ReservedQty)
 			if err != nil {
-				return err
+				return head, err
 			}
-			if p.qty.GreaterThan(open) {
-				// The guard that keeps an order honest about what it is for.
-				return apierr.Invalid("PO_EXCEEDS_REQUIREMENT",
-					"「"+r.ProductName+"」下单数量超过需求未下单部分").
-					WithMeta("requested", p.qty.String()).
-					WithMeta("open", open.String())
-			}
-			total = total.Add(p.qty.Mul(p.price))
+			reserved[row.RequirementID] = qty
 		}
+	}
 
-		// The number is drawn only once every line has passed. Asking earlier
-		// would burn one on each refusal, and refusals are routine here, so
-		// the order series would jump and look like lost paperwork.
+	total := decimal.Zero
+	for _, r := range reqs {
+		p := want[r.ID]
+		if r.Status == "CANCELLED" || r.Status == "SUPERSEDED" {
+			return head, apierr.Invalid("PO_REQUIREMENT_CLOSED",
+				"「"+r.ProductName+"」的采购需求已关闭，不能下单").
+				WithMeta("status", r.Status)
+		}
+		if p.uomCode != "" && !strings.EqualFold(p.uomCode, strings.TrimSpace(r.UomCode)) {
+			return head, apierr.Invalid("PO_IMPORT_UNIT_MISMATCH", "Excel 单位与采购需求不一致").
+				WithMeta("excel_unit", p.uomCode).WithMeta("requirement_unit", r.UomCode)
+		}
+		open, err := decimal.NewFromString(r.OpenQty)
+		if err != nil {
+			return head, err
+		}
+		available := open.Sub(reserved[r.ID])
+		if p.qty.GreaterThan(available) {
+			// The guard that keeps an order honest about what it is for.
+			return head, apierr.Invalid("PO_EXCEEDS_REQUIREMENT",
+				"「"+r.ProductName+"」下单数量超过需求未下单部分").
+				WithMeta("requested", p.qty.String()).
+				WithMeta("open", available.String())
+		}
+		total = total.Add(p.qty.Mul(p.price))
+	}
+
+	// The number is drawn only once every line has passed. Asking earlier
+	// would burn one on each refusal, and refusals are routine here, so
+	// the order series would jump and look like lost paperwork.
+	for attempt := 0; attempt < 2; attempt++ {
 		no, err := s.numbering.Next(ctx, "PURCHASE_ORDER")
 		if err != nil {
-			return err
+			return head, err
 		}
-		head, err = q.CreatePurchaseOrder(ctx, store.CreatePurchaseOrderParams{
+		// PostgreSQL marks a transaction failed after a unique violation. A
+		// savepoint lets us roll back only the collided insert and safely draw
+		// one new number without losing the requirement locks.
+		savepoint, err := tx.Begin(ctx)
+		if err != nil {
+			return head, err
+		}
+		head, err = store.New(savepoint).CreatePurchaseOrder(ctx, store.CreatePurchaseOrderParams{
 			TenantID: tenantID, PoNo: no, SupplierID: in.SupplierID,
 			SupplierCode: in.SupplierCode, SupplierName: in.SupplierName,
 			Currency: in.Currency, TotalAmount: total.StringFixed(2),
 			ExpectedDate: in.ExpectedDate, BuyerID: op.ID, BuyerName: op.Name,
 			Remark: in.Remark,
 		})
-		if err != nil {
-			return err
-		}
-		for _, r := range reqs {
-			p := want[r.ID]
-			if _, err := q.CreatePurchaseOrderItem(ctx, store.CreatePurchaseOrderItemParams{
-				TenantID: tenantID, PoID: head.ID, RequirementID: r.ID,
-				ProductID: r.ProductID, SkuID: r.SkuID,
-				ProductCode: r.ProductCode, ProductName: r.ProductName, Spec: r.Spec,
-				UomID: r.UomID, UomCode: r.UomCode,
-				Qty: p.qty.String(), UnitPrice: p.price.String(),
-				Amount: p.qty.Mul(p.price).StringFixed(2),
-			}); err != nil {
-				return err
+		if err == nil {
+			if err = savepoint.Commit(ctx); err != nil {
+				return head, err
 			}
+			break
 		}
-		return nil
+		_ = savepoint.Rollback(ctx)
+		var pgErr *pgconn.PgError
+		if attempt == 0 && errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			continue
+		}
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return head, apierr.Conflict("PO_NUMBER_CONFLICT", "采购单号生成冲突，请重试")
+		}
+		return head, err
+	}
+	for _, r := range reqs {
+		p := want[r.ID]
+		if _, err := q.CreatePurchaseOrderItem(ctx, store.CreatePurchaseOrderItemParams{
+			TenantID: tenantID, PoID: head.ID, RequirementID: r.ID,
+			ProductID: r.ProductID, SkuID: r.SkuID,
+			ProductCode: r.ProductCode, ProductName: r.ProductName, Spec: r.Spec,
+			UomID: r.UomID, UomCode: r.UomCode,
+			Qty: p.qty.String(), UnitPrice: p.price.String(),
+			Amount: p.qty.Mul(p.price).StringFixed(2),
+		}); err != nil {
+			return head, err
+		}
+	}
+	return head, nil
+}
+
+func (s *Service) CreateOrder(ctx context.Context, tenantID int64, in CreateOrderInput, op Operator) (store.CreatePurchaseOrderRow, error) {
+	prepared, err := s.prepareOrder(ctx, in)
+	if err != nil {
+		return store.CreatePurchaseOrderRow{}, err
+	}
+	var head store.CreatePurchaseOrderRow
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		var createErr error
+		head, createErr = s.createPreparedOrder(ctx, tx, tenantID, prepared, op)
+		return createErr
 	})
 	if err != nil {
 		return store.CreatePurchaseOrderRow{}, err

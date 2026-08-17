@@ -24,6 +24,7 @@ TEST_ENV := \
 	MAIL_TEST_DSN='postgres://erp_mail:erp_mail_pw@localhost:$(PG_PORT)/erp_mail?sslmode=disable' \
 	SHIPPING_TEST_DSN='postgres://erp_shipping:erp_shipping_pw@localhost:$(PG_PORT)/erp_shipping?sslmode=disable' \
 	SHIPPING_MIGRATION_TEST_DSN='postgres://erp_shipping:erp_shipping_pw@localhost:$(PG_PORT)/erp_shipping_migrations?sslmode=disable' \
+	PROCUREMENT_TEST_DSN='postgres://erp_procurement:erp_procurement_pw@localhost:$(PG_PORT)/erp_procurement?sslmode=disable' \
 	GATEWAY_TEST_REDIS='127.0.0.1:$(REDIS_PORT)'
 
 .PHONY: help

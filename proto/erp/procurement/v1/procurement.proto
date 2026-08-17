@@ -379,6 +379,12 @@ message CancelRequirementResponse {
 service PurchaseOrderService {
   rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);
   rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
+  // Preview persists the rows the employee reviewed but does not allocate a
+  // purchase-order number or change a requirement.
+  rpc PreviewOrderImport(PreviewOrderImportRequest) returns (PreviewOrderImportResponse);
+  // Confirmation is idempotent by import_token. The import record and draft
+  // order are committed together.
+  rpc ConfirmOrderImport(ConfirmOrderImportRequest) returns (ConfirmOrderImportResponse);
   rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
   // Only a draft or a rejected order can be changed. Saving a rejected order
   // turns it back into a draft so its corrected snapshot is explicit before
@@ -390,6 +396,81 @@ service PurchaseOrderService {
   rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);
   // Finished goods arriving into a port-terminal custody location.
   rpc ReceiveOrder(ReceiveOrderRequest) returns (ReceiveOrderResponse);
+}
+
+message OrderImportRow {
+  int32 row_no = 1;
+  string product = 2;
+  string material_standard = 3;
+  string grade = 4;
+  string thickness = 5;
+  string width = 6;
+  string quantity_unit = 7;
+  string quantity = 8;
+  string unit_price = 9;
+}
+
+message OrderImportCandidate {
+  int64 requirement_id = 1;
+  string contract_no = 2;
+  string product_name = 3;
+  string product_code = 4;
+  string spec = 5;
+  string uom_code = 6;
+  string required_qty = 7;
+  string ordered_qty = 8;
+  string open_qty = 9;
+  string status = 10;
+}
+
+message OrderImportPreviewRow {
+  int32 row_no = 1;
+  string product = 2;
+  string quantity = 3;
+  string quantity_unit = 4;
+  string unit_price = 5;
+  repeated OrderImportCandidate candidates = 6;
+  string result = 7;
+  string message = 8;
+  int64 suggested_requirement_id = 9;
+}
+
+message PreviewOrderImportRequest {
+  string source_type = 1;
+  int64 source_mail_id = 2;
+  int64 source_attachment_id = 3;
+  string source_file_name = 4;
+  string file_sha256 = 5;
+  repeated OrderImportRow rows = 6;
+}
+
+message PreviewOrderImportResponse {
+  string import_token = 1;
+  string expires_at = 2;
+  repeated OrderImportPreviewRow rows = 3;
+}
+
+message ConfirmOrderImportLine {
+  int32 row_no = 1;
+  int64 requirement_id = 2;
+  string qty = 3;
+  string unit_price = 4;
+}
+
+message ConfirmOrderImportRequest {
+  string import_token = 1;
+  int64 supplier_id = 2;
+  string currency = 3;
+  string expected_date = 4;
+  string remark = 5;
+  repeated ConfirmOrderImportLine lines = 6;
+}
+
+message ConfirmOrderImportResponse {
+  int64 id = 1;
+  string po_no = 2;
+  string status = 3;
+  bool already_created = 4;
 }
 
 message PurchaseOrder {
