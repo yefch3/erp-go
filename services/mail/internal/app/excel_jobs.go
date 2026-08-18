@@ -29,9 +29,12 @@ type ExcelJob struct {
 
 // StartExcelJob validates ownership and the selected source before enqueueing
 // work. The expensive blob read and model call happen only in the worker.
+// columns 是发起时默认询盘模板的列快照，随任务持久化：之后模板改版不影响
+// 已排队任务的产出。
 func (s *Service) StartExcelJob(
 	ctx context.Context, tenantID, ownerID, inboundID int64,
 	attachmentID *int64, selectedText *string, locale string,
+	columns []InquiryColumn,
 ) (ExcelJob, error) {
 	if s.tables == nil {
 		return ExcelJob{}, apierr.Invalid("MAIL_EXCEL_NOT_CONFIGURED", "Excel 智能转换尚未配置")
@@ -43,10 +46,14 @@ func (s *Service) StartExcelJob(
 		trimmed := strings.TrimSpace(*selectedText)
 		selectedText = &trimmed
 	}
+	columnSnapshot, err := json.Marshal(columns)
+	if err != nil {
+		return ExcelJob{}, err
+	}
 	row, err := s.q.CreateExcelJob(ctx, store.CreateExcelJobParams{
 		TenantID: tenantID, OwnerID: ownerID, InboundID: inboundID,
 		AttachmentID: attachmentID, SelectedText: selectedText,
-		Locale: normalizeExcelLocale(locale),
+		Locale: normalizeExcelLocale(locale), TemplateColumns: columnSnapshot,
 	})
 	if err != nil {
 		return ExcelJob{}, err
@@ -171,9 +178,14 @@ func (s *Service) drainExcelJobs(ctx context.Context) error {
 }
 
 func (s *Service) processExcelJob(ctx context.Context, row store.MailExcelJob) {
+	var columns []InquiryColumn
+	if err := json.Unmarshal(row.TemplateColumns, &columns); err != nil {
+		s.log.Error("decode excel job template columns", "job", row.ID, "err", err)
+		columns = nil
+	}
 	result, err := s.ConvertInboundToExcel(
 		ctx, row.TenantID, row.OwnerID, row.InboundID,
-		row.AttachmentID, row.SelectedText, row.Locale,
+		row.AttachmentID, row.SelectedText, row.Locale, columns,
 	)
 	if err != nil {
 		code, message := "MAIL_EXCEL_MODEL_FAILED", "智能转换失败，请稍后重试"

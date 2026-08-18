@@ -79,7 +79,7 @@ export default {
     todo: '（待开发）',
   },
   procurementNav: {
-    title: '采购管理导航', workbench: '采购工作台', intakes: '待复核询盘', sourcing: '询价案件',
+    title: '采购管理导航', workbench: '采购工作台', intakes: '待复核询盘', sourcing: '询价案件', inquiryTemplates: '询盘模板',
     requirements: '待采购', orders: '采购订单', backToWorkbench: '返回采购工作台',
   },
   procurementWorkbench: {
@@ -96,6 +96,32 @@ export default {
   },
   procurementIntakes: {
     eyebrow: 'STANDARD INQUIRY REVIEW', title: '待复核询盘', subtitle: '人工核对邮件转入或员工上传的标准询盘', manualUpload: '手工上传标准询盘', mailSource: '邮件转入', mailHint: '来自已确认的 LLM 标准化结果', manualSource: '员工手工上传', manualHint: '仅接受统一标准的 Excel 或 CSV', pendingQueue: '待复核队列', queueHint: '检查、修正或忽略异常行后再进入询价', search: '搜索询盘编号、客户或文件名', number: '询盘编号', source: '来源', fileOrSubject: '文件/邮件主题', customer: '客户', lines: '明细', receivedAt: '进入时间', review: '人工复核', empty: '暂无待复核询盘', mailAuto: '邮件转入', manual: '手工上传', uploadTitle: '上传标准询盘', uploadHint: '仅接收已经标准化的 Excel 或 CSV；上传后直接在网页中人工复核。最大 8MB。', inquiryTitle: '询盘标题', titleAuto: '留空则使用文件名', contact: '客户联系人', contactEmail: '联系邮箱', standardFile: '标准文件', uploadAndReview: '上传并开始复核', fileRequired: '请选择标准询盘文件', uploaded: '标准询盘已进入待复核队列', reviewTitle: '人工复核询盘', reviewHint: '请直接核对并修改产品、规格、数量、单位、交期和港口；不需要的明细可以忽略，确认后进入询价。', product: '产品', material: '材质/标准', grade: '牌号/等级', spec: '厚度/宽度', quantity: '数量/单位', deliveryPort: '交期/港口', restore: '恢复', ignore: '忽略', keepOne: '至少保留一条有效明细', confirmCreate: '确认完成并进入询价', confirmHint: '确认产品、数量、单位及其他规格均已完成复核，并进入正式询价吗？', confirmed: '询盘复核完成，已进入询价', autoTransferred: '标准询盘 {no} 已转入采购待复核队列', requiredMissing:'第 {lines} 行缺少产品、数量或单位，请补充后再进入询价。',
+  },
+  inquiryTemplates: {
+    eyebrow: 'COMPANY INQUIRY FORMAT', title: '询盘模板管理',
+    subtitle: '维护邮件标准化与待复核共用的标准列：表头、顺序、必填与默认值；当前默认模板驱动 LLM 识别与上传校验',
+    create: '新建公司模板', systemTag: '系统内置', inUse: '使用中',
+    colName: '模板名称', colCode: '模板编码', colVersion: '版本', colFields: '列数', colDefault: '默认模板', colStatus: '状态',
+    statuses: { ACTIVE: '生效中', DISABLED: '已停用', SUPERSEDED: '历史版本' },
+    download: '下载模板', makeDefault: '设为默认', disable: '停用', enable: '启用', copyCustomize: '复制并自定义',
+    empty: '暂无询盘模板',
+    editTitle: '修改询盘模板', createTitle: '新建公司模板',
+    versionNotice: '保存修改会生成新版本，不覆盖历史版本。产品、数量、单位、单价和总价是不可删除的核心字段，价格列在询盘阶段留空。',
+    createNotice: '新模板默认只含核心字段（产品、数量、单位、单价、总价），按需添加自定义列；核心字段不可删除。',
+    fieldCode: '模板编码', fieldName: '模板名称', fieldDefault: '默认模板', fieldDescription: '说明',
+    codePlaceholder: '如 AAA_STANDARD',
+    fieldsTitle: '字段设置', fieldsHint: '可以修改表头、排序、是否必填和默认值；公司专用列请添加自定义字段。', addCustom: '新增自定义列',
+    colOrder: '顺序', colKey: '内部字段', colHeader: 'Excel 表头', colType: '类型', colRequired: '必填', colDefaultValue: '默认值', coreTag: '核心字段',
+    copySuffix: '自定义', savedNewVersion: '已保存为新版本', created: '模板已创建',
+    defaultConfirm: '将「{name}」设为默认模板？邮件识别与上传校验将立即改用它的列。', defaultSet: '默认模板已更新',
+    disableConfirm: '停用「{name}」？停用后不能再用于新询盘，历史数据不受影响。',
+    errors: {
+      fieldsRequired: '模板至少需要一列', nameRequired: '每一列都必须填写 Excel 表头',
+      keyInvalid: '字段标识只能是小写字母、数字或下划线（自定义列以 custom. 开头）',
+      keyDuplicate: '字段标识重复', nameDuplicate: 'Excel 表头重复',
+      coreMissing: '产品、数量、单位、单价和总价是不可删除的核心字段', codeInvalid: '模板编码须为大写字母、数字或下划线', nameEmpty: '请填写模板名称',
+      priceRequired: '单价和总价在询盘阶段留空，不能标为必填',
+    },
   },
   basicData: {
     employeeList: '员工列表', departments: '部门管理', roles: '角色权限',

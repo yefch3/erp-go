@@ -1987,3 +1987,358 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "erp/procurement/v1/procurement.proto",
 }
+
+const (
+	InquiryTemplateService_ListInquiryTemplates_FullMethodName      = "/erp.procurement.v1.InquiryTemplateService/ListInquiryTemplates"
+	InquiryTemplateService_GetInquiryTemplate_FullMethodName        = "/erp.procurement.v1.InquiryTemplateService/GetInquiryTemplate"
+	InquiryTemplateService_GetDefaultInquiryTemplate_FullMethodName = "/erp.procurement.v1.InquiryTemplateService/GetDefaultInquiryTemplate"
+	InquiryTemplateService_CreateInquiryTemplate_FullMethodName     = "/erp.procurement.v1.InquiryTemplateService/CreateInquiryTemplate"
+	InquiryTemplateService_SaveInquiryTemplate_FullMethodName       = "/erp.procurement.v1.InquiryTemplateService/SaveInquiryTemplate"
+	InquiryTemplateService_SetInquiryTemplateStatus_FullMethodName  = "/erp.procurement.v1.InquiryTemplateService/SetInquiryTemplateStatus"
+	InquiryTemplateService_SetDefaultInquiryTemplate_FullMethodName = "/erp.procurement.v1.InquiryTemplateService/SetDefaultInquiryTemplate"
+)
+
+// InquiryTemplateServiceClient is the client API for InquiryTemplateService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// InquiryTemplateService manages the company's standard inquiry column sets.
+// The mail module's standardization output and the procurement intake's
+// validation both follow the tenant's default template: editing the default
+// template changes what the LLM is asked to extract and what an uploaded
+// standard file must contain. Saving never mutates a version — it issues the
+// next one, so historical inquiries keep pointing at the layout they were
+// read with.
+type InquiryTemplateServiceClient interface {
+	ListInquiryTemplates(ctx context.Context, in *ListInquiryTemplatesRequest, opts ...grpc.CallOption) (*ListInquiryTemplatesResponse, error)
+	GetInquiryTemplate(ctx context.Context, in *GetInquiryTemplateRequest, opts ...grpc.CallOption) (*GetInquiryTemplateResponse, error)
+	// The consumer-facing read: mail conversion and intake parsing fetch the
+	// default template through this. Seeds the system layout on first use.
+	GetDefaultInquiryTemplate(ctx context.Context, in *GetDefaultInquiryTemplateRequest, opts ...grpc.CallOption) (*GetDefaultInquiryTemplateResponse, error)
+	CreateInquiryTemplate(ctx context.Context, in *CreateInquiryTemplateRequest, opts ...grpc.CallOption) (*CreateInquiryTemplateResponse, error)
+	// Saves as the next version of the same code; the previous ACTIVE version
+	// becomes SUPERSEDED inside the same transaction.
+	SaveInquiryTemplate(ctx context.Context, in *SaveInquiryTemplateRequest, opts ...grpc.CallOption) (*SaveInquiryTemplateResponse, error)
+	SetInquiryTemplateStatus(ctx context.Context, in *SetInquiryTemplateStatusRequest, opts ...grpc.CallOption) (*SetInquiryTemplateStatusResponse, error)
+	SetDefaultInquiryTemplate(ctx context.Context, in *SetDefaultInquiryTemplateRequest, opts ...grpc.CallOption) (*SetDefaultInquiryTemplateResponse, error)
+}
+
+type inquiryTemplateServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewInquiryTemplateServiceClient(cc grpc.ClientConnInterface) InquiryTemplateServiceClient {
+	return &inquiryTemplateServiceClient{cc}
+}
+
+func (c *inquiryTemplateServiceClient) ListInquiryTemplates(ctx context.Context, in *ListInquiryTemplatesRequest, opts ...grpc.CallOption) (*ListInquiryTemplatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListInquiryTemplatesResponse)
+	err := c.cc.Invoke(ctx, InquiryTemplateService_ListInquiryTemplates_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *inquiryTemplateServiceClient) GetInquiryTemplate(ctx context.Context, in *GetInquiryTemplateRequest, opts ...grpc.CallOption) (*GetInquiryTemplateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetInquiryTemplateResponse)
+	err := c.cc.Invoke(ctx, InquiryTemplateService_GetInquiryTemplate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *inquiryTemplateServiceClient) GetDefaultInquiryTemplate(ctx context.Context, in *GetDefaultInquiryTemplateRequest, opts ...grpc.CallOption) (*GetDefaultInquiryTemplateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetDefaultInquiryTemplateResponse)
+	err := c.cc.Invoke(ctx, InquiryTemplateService_GetDefaultInquiryTemplate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *inquiryTemplateServiceClient) CreateInquiryTemplate(ctx context.Context, in *CreateInquiryTemplateRequest, opts ...grpc.CallOption) (*CreateInquiryTemplateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateInquiryTemplateResponse)
+	err := c.cc.Invoke(ctx, InquiryTemplateService_CreateInquiryTemplate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *inquiryTemplateServiceClient) SaveInquiryTemplate(ctx context.Context, in *SaveInquiryTemplateRequest, opts ...grpc.CallOption) (*SaveInquiryTemplateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveInquiryTemplateResponse)
+	err := c.cc.Invoke(ctx, InquiryTemplateService_SaveInquiryTemplate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *inquiryTemplateServiceClient) SetInquiryTemplateStatus(ctx context.Context, in *SetInquiryTemplateStatusRequest, opts ...grpc.CallOption) (*SetInquiryTemplateStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetInquiryTemplateStatusResponse)
+	err := c.cc.Invoke(ctx, InquiryTemplateService_SetInquiryTemplateStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *inquiryTemplateServiceClient) SetDefaultInquiryTemplate(ctx context.Context, in *SetDefaultInquiryTemplateRequest, opts ...grpc.CallOption) (*SetDefaultInquiryTemplateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetDefaultInquiryTemplateResponse)
+	err := c.cc.Invoke(ctx, InquiryTemplateService_SetDefaultInquiryTemplate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// InquiryTemplateServiceServer is the server API for InquiryTemplateService service.
+// All implementations must embed UnimplementedInquiryTemplateServiceServer
+// for forward compatibility.
+//
+// InquiryTemplateService manages the company's standard inquiry column sets.
+// The mail module's standardization output and the procurement intake's
+// validation both follow the tenant's default template: editing the default
+// template changes what the LLM is asked to extract and what an uploaded
+// standard file must contain. Saving never mutates a version — it issues the
+// next one, so historical inquiries keep pointing at the layout they were
+// read with.
+type InquiryTemplateServiceServer interface {
+	ListInquiryTemplates(context.Context, *ListInquiryTemplatesRequest) (*ListInquiryTemplatesResponse, error)
+	GetInquiryTemplate(context.Context, *GetInquiryTemplateRequest) (*GetInquiryTemplateResponse, error)
+	// The consumer-facing read: mail conversion and intake parsing fetch the
+	// default template through this. Seeds the system layout on first use.
+	GetDefaultInquiryTemplate(context.Context, *GetDefaultInquiryTemplateRequest) (*GetDefaultInquiryTemplateResponse, error)
+	CreateInquiryTemplate(context.Context, *CreateInquiryTemplateRequest) (*CreateInquiryTemplateResponse, error)
+	// Saves as the next version of the same code; the previous ACTIVE version
+	// becomes SUPERSEDED inside the same transaction.
+	SaveInquiryTemplate(context.Context, *SaveInquiryTemplateRequest) (*SaveInquiryTemplateResponse, error)
+	SetInquiryTemplateStatus(context.Context, *SetInquiryTemplateStatusRequest) (*SetInquiryTemplateStatusResponse, error)
+	SetDefaultInquiryTemplate(context.Context, *SetDefaultInquiryTemplateRequest) (*SetDefaultInquiryTemplateResponse, error)
+	mustEmbedUnimplementedInquiryTemplateServiceServer()
+}
+
+// UnimplementedInquiryTemplateServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedInquiryTemplateServiceServer struct{}
+
+func (UnimplementedInquiryTemplateServiceServer) ListInquiryTemplates(context.Context, *ListInquiryTemplatesRequest) (*ListInquiryTemplatesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListInquiryTemplates not implemented")
+}
+func (UnimplementedInquiryTemplateServiceServer) GetInquiryTemplate(context.Context, *GetInquiryTemplateRequest) (*GetInquiryTemplateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetInquiryTemplate not implemented")
+}
+func (UnimplementedInquiryTemplateServiceServer) GetDefaultInquiryTemplate(context.Context, *GetDefaultInquiryTemplateRequest) (*GetDefaultInquiryTemplateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetDefaultInquiryTemplate not implemented")
+}
+func (UnimplementedInquiryTemplateServiceServer) CreateInquiryTemplate(context.Context, *CreateInquiryTemplateRequest) (*CreateInquiryTemplateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateInquiryTemplate not implemented")
+}
+func (UnimplementedInquiryTemplateServiceServer) SaveInquiryTemplate(context.Context, *SaveInquiryTemplateRequest) (*SaveInquiryTemplateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveInquiryTemplate not implemented")
+}
+func (UnimplementedInquiryTemplateServiceServer) SetInquiryTemplateStatus(context.Context, *SetInquiryTemplateStatusRequest) (*SetInquiryTemplateStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetInquiryTemplateStatus not implemented")
+}
+func (UnimplementedInquiryTemplateServiceServer) SetDefaultInquiryTemplate(context.Context, *SetDefaultInquiryTemplateRequest) (*SetDefaultInquiryTemplateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetDefaultInquiryTemplate not implemented")
+}
+func (UnimplementedInquiryTemplateServiceServer) mustEmbedUnimplementedInquiryTemplateServiceServer() {
+}
+func (UnimplementedInquiryTemplateServiceServer) testEmbeddedByValue() {}
+
+// UnsafeInquiryTemplateServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to InquiryTemplateServiceServer will
+// result in compilation errors.
+type UnsafeInquiryTemplateServiceServer interface {
+	mustEmbedUnimplementedInquiryTemplateServiceServer()
+}
+
+func RegisterInquiryTemplateServiceServer(s grpc.ServiceRegistrar, srv InquiryTemplateServiceServer) {
+	// If the following call pancis, it indicates UnimplementedInquiryTemplateServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&InquiryTemplateService_ServiceDesc, srv)
+}
+
+func _InquiryTemplateService_ListInquiryTemplates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListInquiryTemplatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InquiryTemplateServiceServer).ListInquiryTemplates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InquiryTemplateService_ListInquiryTemplates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InquiryTemplateServiceServer).ListInquiryTemplates(ctx, req.(*ListInquiryTemplatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InquiryTemplateService_GetInquiryTemplate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetInquiryTemplateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InquiryTemplateServiceServer).GetInquiryTemplate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InquiryTemplateService_GetInquiryTemplate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InquiryTemplateServiceServer).GetInquiryTemplate(ctx, req.(*GetInquiryTemplateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InquiryTemplateService_GetDefaultInquiryTemplate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDefaultInquiryTemplateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InquiryTemplateServiceServer).GetDefaultInquiryTemplate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InquiryTemplateService_GetDefaultInquiryTemplate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InquiryTemplateServiceServer).GetDefaultInquiryTemplate(ctx, req.(*GetDefaultInquiryTemplateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InquiryTemplateService_CreateInquiryTemplate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateInquiryTemplateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InquiryTemplateServiceServer).CreateInquiryTemplate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InquiryTemplateService_CreateInquiryTemplate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InquiryTemplateServiceServer).CreateInquiryTemplate(ctx, req.(*CreateInquiryTemplateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InquiryTemplateService_SaveInquiryTemplate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveInquiryTemplateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InquiryTemplateServiceServer).SaveInquiryTemplate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InquiryTemplateService_SaveInquiryTemplate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InquiryTemplateServiceServer).SaveInquiryTemplate(ctx, req.(*SaveInquiryTemplateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InquiryTemplateService_SetInquiryTemplateStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetInquiryTemplateStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InquiryTemplateServiceServer).SetInquiryTemplateStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InquiryTemplateService_SetInquiryTemplateStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InquiryTemplateServiceServer).SetInquiryTemplateStatus(ctx, req.(*SetInquiryTemplateStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InquiryTemplateService_SetDefaultInquiryTemplate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetDefaultInquiryTemplateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InquiryTemplateServiceServer).SetDefaultInquiryTemplate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InquiryTemplateService_SetDefaultInquiryTemplate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InquiryTemplateServiceServer).SetDefaultInquiryTemplate(ctx, req.(*SetDefaultInquiryTemplateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// InquiryTemplateService_ServiceDesc is the grpc.ServiceDesc for InquiryTemplateService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var InquiryTemplateService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "erp.procurement.v1.InquiryTemplateService",
+	HandlerType: (*InquiryTemplateServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListInquiryTemplates",
+			Handler:    _InquiryTemplateService_ListInquiryTemplates_Handler,
+		},
+		{
+			MethodName: "GetInquiryTemplate",
+			Handler:    _InquiryTemplateService_GetInquiryTemplate_Handler,
+		},
+		{
+			MethodName: "GetDefaultInquiryTemplate",
+			Handler:    _InquiryTemplateService_GetDefaultInquiryTemplate_Handler,
+		},
+		{
+			MethodName: "CreateInquiryTemplate",
+			Handler:    _InquiryTemplateService_CreateInquiryTemplate_Handler,
+		},
+		{
+			MethodName: "SaveInquiryTemplate",
+			Handler:    _InquiryTemplateService_SaveInquiryTemplate_Handler,
+		},
+		{
+			MethodName: "SetInquiryTemplateStatus",
+			Handler:    _InquiryTemplateService_SetInquiryTemplateStatus_Handler,
+		},
+		{
+			MethodName: "SetDefaultInquiryTemplate",
+			Handler:    _InquiryTemplateService_SetDefaultInquiryTemplate_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "erp/procurement/v1/procurement.proto",
+}

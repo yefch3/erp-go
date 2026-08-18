@@ -169,6 +169,7 @@ func run(log *slog.Logger) error {
 		Requirements:            prv1.NewRequirementServiceClient(prConn),
 		Orders:                  prv1.NewPurchaseOrderServiceClient(prConn),
 		Sourcing:                prv1.NewSourcingServiceClient(prConn),
+		InquiryTemplates:        prv1.NewInquiryTemplateServiceClient(prConn),
 		Stocks:                  ivv1.NewStockServiceClient(ivConn),
 		Shipping:                shippingv1.NewShippingServiceClient(shippingConn),
 		Emails:                  mailv1.NewEmailServiceClient(ntConn),

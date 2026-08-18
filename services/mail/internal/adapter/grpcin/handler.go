@@ -830,7 +830,7 @@ func (h *Handler) ConvertInboundToExcel(ctx context.Context, req *mailv1.Convert
 	op := operator(ctx)
 	result, err := h.svc.ConvertInboundToExcel(
 		ctx, grpcx.TenantID(ctx), op.ID, req.GetId(),
-		req.AttachmentId, req.SelectedText, req.GetLocale(),
+		req.AttachmentId, req.SelectedText, req.GetLocale(), nil,
 	)
 	if err != nil {
 		return nil, err
@@ -840,9 +840,17 @@ func (h *Handler) ConvertInboundToExcel(ctx context.Context, req *mailv1.Convert
 
 func (h *Handler) StartInboundExcelConversion(ctx context.Context, req *mailv1.StartInboundExcelConversionRequest) (*mailv1.StartInboundExcelConversionResponse, error) {
 	op := operator(ctx)
+	columns := make([]app.InquiryColumn, 0, len(req.GetTemplateColumns()))
+	for _, column := range req.GetTemplateColumns() {
+		columns = append(columns, app.InquiryColumn{
+			FieldKey: column.GetFieldKey(), DisplayName: column.GetDisplayName(),
+			DataType: column.GetDataType(), IsRequired: column.GetIsRequired(),
+			DefaultValue: column.GetDefaultValue(),
+		})
+	}
 	job, err := h.svc.StartExcelJob(
 		ctx, grpcx.TenantID(ctx), op.ID, req.GetId(),
-		req.AttachmentId, req.SelectedText, req.GetLocale(),
+		req.AttachmentId, req.SelectedText, req.GetLocale(), columns,
 	)
 	if err != nil {
 		return nil, err
@@ -883,7 +891,7 @@ func excelResultToProto(result app.ExcelResult) *mailv1.ConvertInboundToExcelRes
 	for _, sheet := range result.Workbook.Sheets {
 		preview := &mailv1.ExcelSheetPreview{
 			Name: sheet.Name, Summary: sheet.Summary, Columns: sheet.Columns,
-			TotalRows: int64(len(sheet.Rows)),
+			TotalRows: int64(len(sheet.Rows)), ColumnKeys: sheet.ColumnKeys,
 		}
 		rows := sheet.Rows
 		if len(rows) > 200 {

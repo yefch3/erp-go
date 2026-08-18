@@ -40,6 +40,7 @@ export const router = createRouter({
         { path: 'outbounds', component: () => import('./pages/OutboundsPage.vue') },
         { path: 'procurement', component: () => import('./pages/ProcurementPage.vue') },
         { path: 'procurement/intakes', component: () => import('./pages/ProcurementIntakesPage.vue') },
+        { path: 'procurement/settings/inquiry-templates', component: () => import('./pages/InquiryTemplatesPage.vue') },
         { path: 'requirements', component: () => import('./pages/RequirementsPage.vue') },
         { path: 'sourcing-cases', component: () => import('./pages/SourcingCasesListPage.vue') },
         { path: 'sourcing-cases/:id', component: () => import('./pages/SourcingCaseDetailPage.vue') },

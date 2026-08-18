@@ -37,10 +37,11 @@ func TestExtractorUsesStructuredResponsesForTextAndRealImageSample(t *testing.T)
 			t.Fatal(err)
 		}
 		requests = append(requests, request)
-		extracted, _ := json.Marshal(app.InquiryExtraction{
-			Title: "Extracted", Summary: "sample", Items: []app.InquiryItem{{
-				Product: "HRC", MaterialStandard: "ASTM A36", Thickness: "1.10",
-				Width: "1200", QuantityUnit: "MT", Quantity: "1250",
+		extracted, _ := json.Marshal(map[string]any{
+			"title": "Extracted", "summary": "sample",
+			"items": []map[string]string{{
+				"product": "HRC", "material_standard": "ASTM A36", "thickness": "1.10",
+				"width": "1200", "quantity_unit": "MT", "quantity": "1250",
 			}},
 		})
 		responseBytes, _ := json.Marshal(map[string]any{
@@ -119,6 +120,58 @@ func TestImageMediaTypePrefersBytesOverMailMetadata(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestExtractorFollowsTemplateColumns(t *testing.T) {
+	columns := []app.InquiryColumn{
+		{FieldKey: "product", DisplayName: "品名", DataType: "TEXT", IsRequired: true},
+		{FieldKey: "quantity", DisplayName: "需求数量", DataType: "NUMBER", IsRequired: true},
+		{FieldKey: "quantity_unit", DisplayName: "计量单位", DataType: "TEXT", IsRequired: true},
+		{FieldKey: "custom.customer_part_no", DisplayName: "客户料号", DataType: "TEXT"},
+	}
+	var captured map[string]any
+	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &captured)
+		extracted, _ := json.Marshal(map[string]any{
+			"title": "t", "summary": "s",
+			"items": []map[string]string{{
+				"product": "镀锌卷", "quantity": "25", "quantity_unit": "MT", "custom.customer_part_no": "CP-99887",
+			}},
+		})
+		responseBytes, _ := json.Marshal(map[string]any{
+			"model": "gpt-5.6-luna", "status": "completed",
+			"output": []any{map[string]any{"type": "message", "content": []any{
+				map[string]any{"type": "output_text", "text": string(extracted)},
+			}}},
+		})
+		return &http.Response{
+			StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(bytes.NewReader(responseBytes)), Request: r,
+		}, nil
+	})}
+
+	client := NewTableExtractor("test-key", "https://api.test/v1", "gpt-5.6-luna", time.Second).WithHTTPClient(httpClient)
+	book, _, err := client.Extract(t.Context(), app.TableExtractionInput{Text: "询价：镀锌卷 25MT，料号 CP-99887", Columns: columns})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sheet := book.Sheets[0]
+	if strings.Join(sheet.Columns, ",") != "品名,需求数量,计量单位,客户料号" {
+		t.Fatalf("columns should come from the template, got %v", sheet.Columns)
+	}
+	if got := strings.Join(sheet.Rows[0], ","); got != "镀锌卷,25,MT,CP-99887" {
+		t.Fatalf("row = %q", got)
+	}
+	schema := captured["text"].(map[string]any)["format"].(map[string]any)["schema"].(map[string]any)
+	items := schema["properties"].(map[string]any)["items"].(map[string]any)["items"].(map[string]any)
+	if _, ok := items["properties"].(map[string]any)["custom.customer_part_no"]; !ok {
+		t.Fatal("schema should carry the template's custom column")
+	}
+	prompt := captured["input"].([]any)[0].(map[string]any)["content"].([]any)[0].(map[string]any)["text"].(string)
+	if !strings.Contains(prompt, "custom.customer_part_no") || !strings.Contains(prompt, "客户料号") {
+		t.Fatal("prompt should describe the template columns")
+	}
+}
 
 func TestExtractorRejectsMissingAPIKeyWithoutNetwork(t *testing.T) {
 	client := NewTableExtractor("", "", "", time.Second)

@@ -55,6 +55,8 @@ type Server struct {
 	Requirements prv1.RequirementServiceClient
 	Orders       prv1.PurchaseOrderServiceClient
 	Sourcing     prv1.SourcingServiceClient
+	// 询盘列模板：邮件标准化与待复核解析共用的列注册表。
+	InquiryTemplates prv1.InquiryTemplateServiceClient
 	Stocks       ivv1.StockServiceClient
 	Shipping     shippingv1.ShippingServiceClient
 	Emails       mailv1.EmailServiceClient
@@ -427,6 +429,14 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/changes", s.listSourcingCaseChanges)
 		r.With(s.perm("procurement:sourcing:write")).Post("/api/sourcing-cases", s.createSourcingCase)
 		r.With(s.perm("procurement:sourcing:write")).Post("/api/sourcing-intakes/import", s.importSourcingIntake)
+		// 询盘列模板：列注册表的管理面。读给所有采购相关角色，写跟 sourcing 写权限。
+		r.With(s.perm("procurement:sourcing:read")).Get("/api/inquiry-templates", s.listInquiryTemplates)
+		r.With(s.perm("procurement:sourcing:read")).Get("/api/inquiry-templates/{id}", s.getInquiryTemplate)
+		r.With(s.perm("procurement:sourcing:read")).Get("/api/inquiry-templates/{id}/download", s.downloadInquiryTemplate)
+		r.With(s.perm("procurement:sourcing:write")).Post("/api/inquiry-templates", s.createInquiryTemplate)
+		r.With(s.perm("procurement:sourcing:write")).Put("/api/inquiry-templates/{id}", s.saveInquiryTemplate)
+		r.With(s.perm("procurement:sourcing:write")).Post("/api/inquiry-templates/{id}/status", s.setInquiryTemplateStatus)
+		r.With(s.perm("procurement:sourcing:write")).Post("/api/inquiry-templates/{id}/default", s.setDefaultInquiryTemplate)
 		r.With(s.perm("procurement:sourcing:write")).Post("/api/sourcing-cases/{id}/confirm-lines", s.confirmSourcingLines)
 		r.With(s.perm("procurement:sourcing:write"), s.perm("product:product:read")).Put("/api/sourcing-cases/{id}/lines/{lineId}", s.reviewSourcingLine)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/factory-rfqs", s.listFactoryRFQs)

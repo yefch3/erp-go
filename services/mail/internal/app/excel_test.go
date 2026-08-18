@@ -68,14 +68,14 @@ func TestBuildXLSXCreatesWorkbookAndNeverTurnsTextIntoFormula(t *testing.T) {
 }
 
 func TestInquiryWorkbookHasFixedColumnsBlankUnitPriceAndTrustedTotalFormula(t *testing.T) {
-	book := NewInquiryWorkbook(InquiryExtraction{
+	book := NewTemplateWorkbook(ExtractedInquiry{
 		Title: "Customer inquiry", Summary: "HRC 1250 MT",
-		Items: []InquiryItem{{
-			Product: "HRC", MaterialStandard: "ASTM A36 / JIS G 3132 SPHT-1",
-			Thickness: "1.10", Width: "1200", CoilWeight: "10.50 MT max",
-			CoilID: "762 MM", QuantityUnit: "MT", Quantity: "1250",
+		Items: []map[string]string{{
+			"product": "HRC", "material_standard": "ASTM A36 / JIS G 3132 SPHT-1",
+			"thickness": "1.10", "width": "1200", "coil_weight": "10.50 MT max",
+			"coil_id": "762 MM", "quantity_unit": "MT", "quantity": "1250",
 		}},
-	})
+	}, nil)
 	if err := validateWorkbook(&book); err != nil {
 		t.Fatal(err)
 	}
@@ -109,6 +109,40 @@ func TestInquiryWorkbookHasFixedColumnsBlankUnitPriceAndTrustedTotalFormula(t *t
 	}
 	if !strings.Contains(xml, `<c r="U2" s="3"><f>S2*T2</f><v>0</v></c>`) {
 		t.Fatalf("trusted total formula missing: %s", xml)
+	}
+}
+
+func TestTemplateWorkbookFollowsTemplateColumns(t *testing.T) {
+	columns := []InquiryColumn{
+		{FieldKey: "product", DisplayName: "品名", DataType: "TEXT", IsRequired: true},
+		{FieldKey: "quantity", DisplayName: "需求数量", DataType: "NUMBER", IsRequired: true},
+		{FieldKey: "quantity_unit", DisplayName: "计量单位", DataType: "TEXT", IsRequired: true, DefaultValue: "MT"},
+		{FieldKey: "custom.customer_part_no", DisplayName: "客户料号", DataType: "TEXT"},
+		{FieldKey: "unit_price", DisplayName: "单价", DataType: "NUMBER"},
+		{FieldKey: "total_price", DisplayName: "总价", DataType: "NUMBER"},
+	}
+	book := NewTemplateWorkbook(ExtractedInquiry{
+		Title: "t",
+		Items: []map[string]string{{
+			"product": "镀锌卷", "quantity": "25", "custom.customer_part_no": "CP-99887",
+		}},
+	}, columns)
+	if err := validateWorkbook(&book); err != nil {
+		t.Fatal(err)
+	}
+	sheet := book.Sheets[0]
+	if strings.Join(sheet.Columns, ",") != "品名,需求数量,计量单位,客户料号,单价,总价" {
+		t.Fatalf("columns should follow the template, got %v", sheet.Columns)
+	}
+	if sheet.ColumnKeys[3] != "custom.customer_part_no" {
+		t.Fatalf("column keys should follow the template, got %v", sheet.ColumnKeys)
+	}
+	row := sheet.Rows[0]
+	if row[2] != "MT" {
+		t.Fatalf("template default value should fill the unit, got %q", row[2])
+	}
+	if row[5] != "=B2*E2" || sheet.ColumnTypes[5] != "formula" {
+		t.Fatalf("total formula should follow template column positions, got %q type %s", row[5], sheet.ColumnTypes[5])
 	}
 }
 

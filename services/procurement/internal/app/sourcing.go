@@ -20,6 +20,35 @@ type SourcingLineInput struct {
 	RawText, Product, MaterialStandard, Grade, Thickness, Width, LengthOrForm string
 	SurfaceRequirement, Coating, Tolerance, CoilWeight, CoilID, Packaging     string
 	Delivery, PaymentTerms, Incoterm, Port, QuantityUnit, Remarks, Quantity   string
+	// 模板里的 custom.* 自定义列，键即字段标识。
+	CustomFields map[string]string
+}
+
+func marshalCustomFields(fields map[string]string) []byte {
+	if len(fields) == 0 {
+		return []byte("{}")
+	}
+	for key, value := range fields {
+		if strings.TrimSpace(value) == "" {
+			delete(fields, key)
+		}
+	}
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return []byte("{}")
+	}
+	return out
+}
+
+// 复核编辑只覆盖标准字段；自定义列未被提交时保留读取时的值。
+func reviewCustomFields(previous []byte, next map[string]string) []byte {
+	if next == nil {
+		if len(previous) == 0 {
+			return []byte("{}")
+		}
+		return previous
+	}
+	return marshalCustomFields(next)
 }
 
 type NewSourcingCase struct {
@@ -54,8 +83,15 @@ func (s *Service) CreateSourcingCase(ctx context.Context, tenantID int64, in New
 		}
 	}
 
+	// 询盘记录读取时的列布局：默认模板的 id/编码/版本快照随案件保存，
+	// 之后模板再改版也不影响这单已有的明细。
+	template, err := s.GetDefaultInquiryTemplate(ctx, tenantID)
+	if err != nil {
+		return SourcingCaseView{}, err
+	}
+
 	var id int64
-	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		head, err := q.CreateSourcingCase(ctx, store.CreateSourcingCaseParams{
 			TenantID: tenantID, Title: strings.TrimSpace(in.Title), CustomerID: in.CustomerID,
@@ -63,8 +99,8 @@ func (s *Service) CreateSourcingCase(ctx context.Context, tenantID int64, in New
 			ContactEmail: strings.TrimSpace(in.ContactEmail), SourceMailID: in.SourceMailID,
 			SourceAttachmentID: in.SourceAttachmentID, OwnerID: op.ID, OwnerName: op.Name,
 			SourceFileName: strings.TrimSpace(in.SourceFileName), SourceContentType: in.SourceContentType,
-			SourceFileData: in.SourceFileData, InquiryTemplateID: 0,
-			InquiryTemplateCode: "SYSTEM_STANDARD", InquiryTemplateVersion: 1,
+			SourceFileData: in.SourceFileData, InquiryTemplateID: template.Template.ID,
+			InquiryTemplateCode: template.Template.TemplateCode, InquiryTemplateVersion: template.Template.Version,
 		})
 		if err != nil {
 			return err
@@ -99,7 +135,7 @@ func sourcingLineParams(tenantID, caseID int64, lineNo int32, in SourcingLineInp
 		Tolerance: in.Tolerance, CoilWeight: in.CoilWeight, CoilID: in.CoilID,
 		Packaging: in.Packaging, Delivery: in.Delivery, PaymentTerms: in.PaymentTerms,
 		Incoterm: in.Incoterm, Port: in.Port, QuantityUnit: in.QuantityUnit,
-		Remarks: in.Remarks, Quantity: in.Quantity, CustomFields: []byte("{}"),
+		Remarks: in.Remarks, Quantity: in.Quantity, CustomFields: marshalCustomFields(in.CustomFields),
 	}
 }
 
@@ -270,7 +306,8 @@ func (s *Service) ReviewSourcingLine(ctx context.Context, tenantID int64, in Sou
 			CoilID: in.Extracted.CoilID, Packaging: in.Extracted.Packaging, Delivery: in.Extracted.Delivery,
 			PaymentTerms: in.Extracted.PaymentTerms, Incoterm: in.Extracted.Incoterm, Port: in.Extracted.Port,
 			QuantityUnit: in.Extracted.QuantityUnit, Remarks: in.Extracted.Remarks, Quantity: in.Extracted.Quantity,
-			CustomFields: []byte("{}"),
+			// 复核编辑的是标准字段；自定义列未被提交时保留读取时的值。
+			CustomFields:  reviewCustomFields(previous.CustomFields, in.Extracted.CustomFields),
 			ProductID:    in.ProductID, SkuID: in.SkuID, UomID: in.UomID, Decision: in.Decision,
 			DecidedBy: op.ID, DecidedByName: op.Name,
 		})

@@ -62,6 +62,15 @@
         <el-table-column :label="t('procurementIntakes.spec')" min-width="180"><template #default="{ row }"><el-input v-model="row.extracted.thickness" :disabled="row.decision === 'SKIPPED'" placeholder="T" /><el-input v-model="row.extracted.width" :disabled="row.decision === 'SKIPPED'" placeholder="W" class="stack-input" /></template></el-table-column>
         <el-table-column :label="t('procurementIntakes.quantity')" min-width="155"><template #default="{ row }"><div class="qty"><el-input v-model="row.extracted.quantity" :disabled="row.decision === 'SKIPPED'" /><el-input v-model="row.extracted.quantityUnit" :disabled="row.decision === 'SKIPPED'" /></div></template></el-table-column>
         <el-table-column :label="t('procurementIntakes.deliveryPort')" min-width="170"><template #default="{ row }"><el-input v-model="row.extracted.delivery" :disabled="row.decision === 'SKIPPED'" /><el-input v-model="row.extracted.port" :disabled="row.decision === 'SKIPPED'" class="stack-input" /></template></el-table-column>
+        <el-table-column v-for="column in customColumns" :key="column.key" :label="column.label" min-width="140">
+          <template #default="{ row }">
+            <el-input
+              :model-value="row.extracted.customFields?.[column.key] ?? ''"
+              :disabled="row.decision === 'SKIPPED'"
+              @input="(value: string) => setCustomField(row, column.key, value)"
+            />
+          </template>
+        </el-table-column>
         <el-table-column :label="t('common.actions')" width="105" fixed="right"><template #default="{ row }"><el-button link :type="row.decision === 'SKIPPED' ? 'success' : 'danger'" @click="row.decision = row.decision === 'SKIPPED' ? 'PENDING' : 'SKIPPED'">{{ row.decision === 'SKIPPED' ? t('procurementIntakes.restore') : t('procurementIntakes.ignore') }}</el-button></template></el-table-column>
       </el-table>
       <template #footer><el-button @click="detailOpen = false">{{ t('common.cancel') }}</el-button><el-button v-if="canWrite" type="primary" :loading="saving" @click="confirmIntake">{{ t('procurementIntakes.confirmCreate') }}</el-button></template>
@@ -77,9 +86,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { get, http, post, put, type Envelope } from '../api'
 import { useAuthStore } from '../stores/auth'
 
-interface Extracted { product: string; materialStandard: string; grade: string; thickness: string; width: string; quantity: string; quantityUnit: string; delivery: string; port: string }
+interface Extracted { product: string; materialStandard: string; grade: string; thickness: string; width: string; quantity: string; quantityUnit: string; delivery: string; port: string; customFields?: Record<string, string> }
 interface IntakeLine { id: string; lineNo: number; decision: string; extracted: Extracted }
-interface Intake { id: string; caseNo: string; title: string; customerName: string; contactName: string; contactEmail: string; sourceMailId: string; sourceFileName: string; createdAt: string; lines?: IntakeLine[] }
+interface Intake { id: string; caseNo: string; title: string; customerName: string; contactName: string; contactEmail: string; sourceMailId: string; sourceFileName: string; createdAt: string; inquiryTemplateId?: string; lines?: IntakeLine[] }
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -89,6 +98,30 @@ const canWrite = auth.can('procurement:sourcing:write')
 const loading = ref(false), saving = ref(false), uploadOpen = ref(false), detailOpen = ref(false)
 const rows = ref<Intake[]>([]), detail = ref<Intake | null>(null), keyword = ref(''), page = ref(1), total = ref(0)
 const uploadForm = reactive({ title: '', customerName: '', contactName: '', contactEmail: '', file: null as File | null })
+// 模板自定义列（custom.*）：复核页按案件读取时的模板版本解析表头。
+const customColumns = ref<{ key: string; label: string }[]>([])
+
+function setCustomField(line: IntakeLine, key: string, value: string) {
+  const fields = { ...(line.extracted.customFields ?? {}) }
+  if (value === '') delete fields[key]; else fields[key] = value
+  line.extracted.customFields = fields
+}
+
+async function resolveCustomColumns(intake: Intake) {
+  const keys = new Set<string>()
+  for (const line of intake.lines ?? []) {
+    for (const key of Object.keys(line.extracted.customFields ?? {})) keys.add(key)
+  }
+  if (!keys.size) { customColumns.value = []; return }
+  const labels: Record<string, string> = {}
+  if (intake.inquiryTemplateId && Number(intake.inquiryTemplateId) > 0) {
+    try {
+      const data = await get<{ template: { fields?: { fieldKey: string; displayName: string }[] } }>(`/inquiry-templates/${intake.inquiryTemplateId}`)
+      for (const field of data.template.fields ?? []) labels[field.fieldKey] = field.displayName
+    } catch { /* 模板读取失败时退化为字段标识 */ }
+  }
+  customColumns.value = [...keys].map((key) => ({ key, label: labels[key] || key.replace(/^custom\./, '') }))
+}
 
 function formatTime(value: string) { return value ? new Date(value).toLocaleString() : '—' }
 function pickFile(event: Event) { uploadForm.file = (event.target as HTMLInputElement).files?.[0] ?? null }
@@ -119,6 +152,7 @@ async function upload() {
 async function openDetail(row: Intake) {
   const data = await get<{ sourcingCase: Intake }>(`/sourcing-cases/${row.id}`)
   detail.value = data.sourcingCase; detailOpen.value = true
+  await resolveCustomColumns(data.sourcingCase)
 }
 
 async function saveLine(line: IntakeLine) {

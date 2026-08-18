@@ -79,7 +79,7 @@ export default {
     todo: ' (próximamente)',
   },
   procurementNav: {
-    title: 'Navegación de compras', workbench: 'Panel', intakes: 'Consultas pendientes', sourcing: 'Casos de cotización',
+    title: 'Navegación de compras', workbench: 'Panel', intakes: 'Consultas pendientes', sourcing: 'Casos de cotización', inquiryTemplates: 'Plantillas de consulta',
     requirements: 'Por comprar', orders: 'Órdenes de compra', backToWorkbench: 'Volver al panel de compras',
   },
   procurementWorkbench: {
@@ -94,6 +94,32 @@ export default {
   },
   procurementIntakes: {
     eyebrow: 'REVISIÓN DE CONSULTAS', title: 'Pendientes de revisión', subtitle: 'Revisar consultas estandarizadas de Correo o carga manual', manualUpload: 'Subir consulta estándar', mailSource: 'Transferencia por correo', mailHint: 'Resultado ya estandarizado por LLM', manualSource: 'Carga manual', manualHint: 'Solo Excel o CSV estándar', pendingQueue: 'Cola de revisión', queueHint: 'Corregir o ignorar líneas antes de cotizar', search: 'Buscar número, cliente o archivo', number: 'N.º consulta', source: 'Origen', fileOrSubject: 'Archivo / asunto', customer: 'Cliente', lines: 'Líneas', receivedAt: 'Entrada', review: 'Revisión manual', empty: 'Sin consultas por revisar', mailAuto: 'Transferencia por correo', manual: 'Manual', uploadTitle: 'Subir consulta estándar', uploadHint: 'Solo se aceptan archivos .xlsx o .csv ya estandarizados. Revise los datos en esta página después de subirlos. Máximo 8MB.', inquiryTitle: 'Título', titleAuto: 'Nombre del archivo si está vacío', contact: 'Contacto', contactEmail: 'Correo', standardFile: 'Archivo estándar', uploadAndReview: 'Subir e iniciar revisión', fileRequired: 'Seleccione el archivo estándar', uploaded: 'Consulta añadida a la cola de revisión', reviewTitle: 'Revisar consulta', reviewHint: 'Revise y edite directamente producto, especificación, cantidad, unidad, entrega y puerto. Ignore líneas innecesarias y envíe a cotización.', product: 'Producto', material: 'Material / norma', grade: 'Grado', spec: 'Espesor / ancho', quantity: 'Cantidad / unidad', deliveryPort: 'Entrega / puerto', restore: 'Restaurar', ignore: 'Ignorar', keepOne: 'Conserve al menos una línea válida', confirmCreate: 'Finalizar revisión e iniciar cotización', confirmHint: '¿Confirma la revisión de producto, cantidad, unidad y especificaciones e inicia la cotización?', confirmed: 'Revisión completada y enviada a cotización', autoTransferred: 'Consulta {no} transferida a compras', requiredMissing:'Las líneas {lines} no tienen producto, cantidad o unidad. Complételas antes de cotizar.',
+  },
+  inquiryTemplates: {
+    eyebrow: 'COMPANY INQUIRY FORMAT', title: 'Plantillas de consulta',
+    subtitle: 'Las columnas estándar compartidas por la estandarización de correo y la revisión: encabezados, orden, obligatoriedad y valores por defecto. La plantilla por defecto guía la extracción con IA y la validación de cargas.',
+    create: 'Nueva plantilla', systemTag: 'Integrada', inUse: 'En uso',
+    colName: 'Nombre', colCode: 'Código', colVersion: 'Versión', colFields: 'Columnas', colDefault: 'Por defecto', colStatus: 'Estado',
+    statuses: { ACTIVE: 'Activa', DISABLED: 'Desactivada', SUPERSEDED: 'Sustituida' },
+    download: 'Descargar', makeDefault: 'Marcar por defecto', disable: 'Desactivar', enable: 'Activar', copyCustomize: 'Copiar y personalizar',
+    empty: 'Aún no hay plantillas',
+    editTitle: 'Editar plantilla', createTitle: 'Nueva plantilla de empresa',
+    versionNotice: 'Guardar crea una nueva versión y nunca reescribe el historial. Producto, cantidad, unidad, precio unitario y total son columnas núcleo y no pueden eliminarse; los precios quedan vacíos en la consulta.',
+    createNotice: 'Una plantilla nueva empieza solo con las columnas núcleo (producto, cantidad, unidad, precio unitario y total); añada personalizadas según necesite. Las columnas núcleo no pueden eliminarse.',
+    fieldCode: 'Código', fieldName: 'Nombre', fieldDefault: 'Por defecto', fieldDescription: 'Descripción',
+    codePlaceholder: 'p. ej. AAA_STANDARD',
+    fieldsTitle: 'Columnas', fieldsHint: 'Renombre encabezados, reordene, marque obligatoriedad y valores por defecto; añada columnas personalizadas para datos de la empresa.', addCustom: 'Añadir columna personalizada',
+    colOrder: 'Orden', colKey: 'Campo interno', colHeader: 'Encabezado Excel', colType: 'Tipo', colRequired: 'Oblig.', colDefaultValue: 'Por defecto', coreTag: 'Núcleo',
+    copySuffix: 'personalizada', savedNewVersion: 'Guardado como nueva versión', created: 'Plantilla creada',
+    defaultConfirm: '¿Marcar «{name}» como plantilla por defecto? La extracción con IA y la validación de cargas usarán sus columnas de inmediato.', defaultSet: 'Plantilla por defecto actualizada',
+    disableConfirm: '¿Desactivar «{name}»? No podrá usarse para nuevas consultas; el historial no se ve afectado.',
+    errors: {
+      fieldsRequired: 'Se requiere al menos una columna', nameRequired: 'Cada columna necesita un encabezado',
+      keyInvalid: 'Los campos usan minúsculas, dígitos y guion bajo (las personalizadas empiezan por custom.)',
+      keyDuplicate: 'Campo interno duplicado', nameDuplicate: 'Encabezado duplicado',
+      coreMissing: 'Producto, cantidad, unidad, precio unitario y total son columnas núcleo y no pueden eliminarse', codeInvalid: 'El código usa mayúsculas, dígitos y guion bajo', nameEmpty: 'El nombre es obligatorio',
+      priceRequired: 'Los precios quedan vacíos en la consulta y no pueden ser obligatorios',
+    },
   },
   basicData: {
     employeeList: 'Empleados', departments: 'Departamentos', roles: 'Roles',

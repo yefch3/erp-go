@@ -25,7 +25,7 @@ UPDATE mail_excel_jobs j SET
   error_code='', error_message='', updated_at=now()
 FROM candidate
 WHERE j.id=candidate.id
-RETURNING j.id, j.tenant_id, j.owner_id, j.inbound_id, j.attachment_id, j.selected_text, j.locale, j.status, j.attempt_count, j.file_name, j.file_data, j.workbook_json, j.model, j.error_code, j.error_message, j.created_at, j.started_at, j.completed_at, j.updated_at
+RETURNING j.id, j.tenant_id, j.owner_id, j.inbound_id, j.attachment_id, j.selected_text, j.locale, j.status, j.attempt_count, j.file_name, j.file_data, j.workbook_json, j.model, j.error_code, j.error_message, j.created_at, j.started_at, j.completed_at, j.updated_at, j.template_columns
 `
 
 func (q *Queries) ClaimExcelJob(ctx context.Context) (MailExcelJob, error) {
@@ -51,6 +51,7 @@ func (q *Queries) ClaimExcelJob(ctx context.Context) (MailExcelJob, error) {
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.UpdatedAt,
+		&i.TemplateColumns,
 	)
 	return i, err
 }
@@ -87,21 +88,23 @@ func (q *Queries) CompleteExcelJob(ctx context.Context, arg CompleteExcelJobPara
 
 const createExcelJob = `-- name: CreateExcelJob :one
 INSERT INTO mail_excel_jobs (
-  tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale
+  tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, template_columns
 ) VALUES (
   $1, $2, $3,
-  $4, $5, $6
+  $4, $5, $6,
+  $7::jsonb
 )
-RETURNING id, tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, status, attempt_count, file_name, file_data, workbook_json, model, error_code, error_message, created_at, started_at, completed_at, updated_at
+RETURNING id, tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, status, attempt_count, file_name, file_data, workbook_json, model, error_code, error_message, created_at, started_at, completed_at, updated_at, template_columns
 `
 
 type CreateExcelJobParams struct {
-	TenantID     int64
-	OwnerID      int64
-	InboundID    int64
-	AttachmentID *int64
-	SelectedText *string
-	Locale       string
+	TenantID        int64
+	OwnerID         int64
+	InboundID       int64
+	AttachmentID    *int64
+	SelectedText    *string
+	Locale          string
+	TemplateColumns []byte
 }
 
 func (q *Queries) CreateExcelJob(ctx context.Context, arg CreateExcelJobParams) (MailExcelJob, error) {
@@ -112,6 +115,7 @@ func (q *Queries) CreateExcelJob(ctx context.Context, arg CreateExcelJobParams) 
 		arg.AttachmentID,
 		arg.SelectedText,
 		arg.Locale,
+		arg.TemplateColumns,
 	)
 	var i MailExcelJob
 	err := row.Scan(
@@ -134,6 +138,7 @@ func (q *Queries) CreateExcelJob(ctx context.Context, arg CreateExcelJobParams) 
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.UpdatedAt,
+		&i.TemplateColumns,
 	)
 	return i, err
 }
@@ -161,7 +166,7 @@ func (q *Queries) FailExcelJob(ctx context.Context, arg FailExcelJobParams) (int
 }
 
 const getExcelJob = `-- name: GetExcelJob :one
-SELECT id, tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, status, attempt_count, file_name, file_data, workbook_json, model, error_code, error_message, created_at, started_at, completed_at, updated_at FROM mail_excel_jobs
+SELECT id, tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, status, attempt_count, file_name, file_data, workbook_json, model, error_code, error_message, created_at, started_at, completed_at, updated_at, template_columns FROM mail_excel_jobs
 WHERE tenant_id=$1 AND owner_id=$2 AND id=$3
 `
 
@@ -194,6 +199,7 @@ func (q *Queries) GetExcelJob(ctx context.Context, arg GetExcelJobParams) (MailE
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.UpdatedAt,
+		&i.TemplateColumns,
 	)
 	return i, err
 }

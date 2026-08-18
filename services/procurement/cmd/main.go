@@ -125,6 +125,7 @@ func run(log *slog.Logger) error {
 	prv1.RegisterRequirementServiceServer(srv, grpcin.New(svc))
 	prv1.RegisterPurchaseOrderServiceServer(srv, grpcin.NewOrders(svc))
 	prv1.RegisterSourcingServiceServer(srv, grpcin.NewSourcing(svc))
+	prv1.RegisterInquiryTemplateServiceServer(srv, grpcin.NewInquiryTemplates(svc))
 	reflection.Register(srv)
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)

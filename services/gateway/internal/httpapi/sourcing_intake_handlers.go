@@ -23,7 +23,8 @@ import (
 const standardizedInquiryMaxBytes = 8 << 20
 
 // importSourcingIntake 接收邮件模块已经生成的标准 Excel，或员工手工上传的同格式文件。
-// 两种入口最终都调用采购服务的同一套询盘创建校验。
+// 两种入口最终都调用采购服务的同一套询盘创建校验。可接受的列由租户当前
+// 默认询盘模板决定：模板改版，可上传的文件格式随之切换。
 func (s *Server) importSourcingIntake(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, standardizedInquiryMaxBytes)
 	if err := r.ParseMultipartForm(standardizedInquiryMaxBytes); err != nil {
@@ -41,7 +42,12 @@ func (s *Server) importSourcingIntake(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, "SC_INTAKE_FILE_READ_FAILED", "无法读取上传文件")
 		return
 	}
-	lines, err := parseStandardizedInquiry(header, data)
+	template, err := s.InquiryTemplates.GetDefaultInquiryTemplate(r.Context(), &prv1.GetDefaultInquiryTemplateRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	lines, err := parseStandardizedInquiry(header, data, intakeFieldsFromTemplate(template.GetTemplate()))
 	if err != nil {
 		s.writeError(w, http.StatusBadRequest, "SC_INTAKE_FILE_INVALID", err.Error())
 		return
@@ -74,8 +80,20 @@ func inquiryFingerprint(data []byte) int64 {
 	return value
 }
 
-func parseStandardizedInquiry(header *multipart.FileHeader, data []byte) ([]*prv1.SourcingLineInput, error) {
-	fields := standardizedInquiryFields()
+// 模板的列定义转成解析用的字段表，按模板设定的顺序。
+func intakeFieldsFromTemplate(template *prv1.InquiryTemplate) []standardizedInquiryField {
+	protoFields := append([]*prv1.InquiryTemplateField(nil), template.GetFields()...)
+	sort.SliceStable(protoFields, func(i, j int) bool { return protoFields[i].GetSortOrder() < protoFields[j].GetSortOrder() })
+	fields := make([]standardizedInquiryField, 0, len(protoFields))
+	for _, field := range protoFields {
+		fields = append(fields, standardizedInquiryField{
+			Key: field.GetFieldKey(), Header: field.GetDisplayName(), DefaultValue: field.GetDefaultValue(),
+		})
+	}
+	return fields
+}
+
+func parseStandardizedInquiry(header *multipart.FileHeader, data []byte, fields []standardizedInquiryField) ([]*prv1.SourcingLineInput, error) {
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	var rows [][]string
 	var err error
@@ -208,22 +226,6 @@ func normalizeStrictInquiryHeader(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
-func standardizedInquiryFields() []standardizedInquiryField {
-	names := []struct{ key, display string }{
-		{"product", "产品"}, {"material_standard", "材质/标准"}, {"grade", "牌号/等级"},
-		{"thickness", "厚度"}, {"width", "宽度"}, {"length_or_form", "长度/形式"},
-		{"surface_requirement", "表面要求"}, {"coating", "涂层/镀层"}, {"tolerance", "公差"},
-		{"coil_weight", "卷重"}, {"coil_id", "卷内径"}, {"packaging", "包装"}, {"delivery", "交期"},
-		{"payment_terms", "付款条件"}, {"incoterm", "贸易术语"}, {"port", "港口"},
-		{"quantity", "数量"}, {"quantity_unit", "单位"}, {"remarks", "备注"},
-	}
-	fields := make([]standardizedInquiryField, 0, len(names))
-	for _, item := range names {
-		fields = append(fields, standardizedInquiryField{Key: item.key, Header: item.display})
-	}
-	return fields
-}
-
 func assignInquiryField(line *prv1.SourcingLineInput, key, value string) {
 	switch key {
 	case "product":
@@ -264,6 +266,16 @@ func assignInquiryField(line *prv1.SourcingLineInput, key, value string) {
 		line.QuantityUnit = value
 	case "remarks":
 		line.Remarks = value
+	case "unit_price", "total_price":
+		// 价格在询盘阶段为空或由公式计算，不属于采购明细事实。
+	default:
+		// 模板的 custom.* 自定义列随明细保存，键即模板里的字段标识。
+		if strings.HasPrefix(key, "custom.") && value != "" {
+			if line.CustomFields == nil {
+				line.CustomFields = map[string]string{}
+			}
+			line.CustomFields[key] = value
+		}
 	}
 }
 
