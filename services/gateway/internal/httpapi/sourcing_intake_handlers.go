@@ -276,15 +276,6 @@ func normalizeInquiryHeader(value string) string {
 	}, strings.TrimSpace(value))
 }
 
-func hasAnyHeader(columns map[string]int, names ...string) bool {
-	for _, name := range names {
-		if _, ok := columns[normalizeInquiryHeader(name)]; ok {
-			return true
-		}
-	}
-	return false
-}
-
 type xlsxSharedStrings struct {
 	Items []struct {
 		Text string `xml:"t"`
