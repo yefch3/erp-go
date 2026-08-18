@@ -210,6 +210,7 @@
                 v-else
                 class="in-text"
                 :data-mail-id="it.direction === 'IN' ? it.id : ''"
+                @mouseover="onPlainTextHover"
               >{{ it.body }}</pre>
               <QuotedHistory v-if="it.quoted" :html="it.quoted" />
             </div>
@@ -226,6 +227,7 @@
             v-else
             class="in-text"
             :data-mail-id="openedInbound.id"
+            @mouseover="onPlainTextHover"
           >{{ openedInbound.bodyText }}</pre>
           <QuotedHistory v-if="openedInbound.quotedHtml" :html="openedInbound.quotedHtml" />
         </template>
@@ -244,6 +246,8 @@
               :class="{ dead: !a.downloadUrl }"
               :title="fileHint(a)"
               @contextmenu="openAttachmentExcelMenu($event, a)"
+              @mouseenter="hoverAttachmentExcelMenu($event, a)"
+              @mouseleave="scheduleExcelMenuHide"
             >
               <el-icon><Paperclip /></el-icon>
               <span class="fname ellipsis">{{ a.fileName }}</span>
@@ -698,17 +702,19 @@
     class="excel-context"
     :style="{ left: excelMenu.x + 'px', top: excelMenu.y + 'px' }"
     role="menu"
+    @mouseenter="cancelExcelMenuHide"
+    @mouseleave="scheduleExcelMenuHide"
   >
     <button
       type="button"
       role="menuitem"
-      :disabled="!excelAvailable || !!excelMenu.disabledReason"
-      :aria-describedby="(!excelAvailable || excelMenu.disabledReason) ? 'excel-unavailable-reason' : undefined"
+      :disabled="(!excelAvailable && !excelMenuDirectFile) || !!excelMenu.disabledReason"
+      :aria-describedby="((!excelAvailable && !excelMenuDirectFile) || excelMenu.disabledReason) ? 'excel-unavailable-reason' : undefined"
       @click="convertExcelSelection"
     >
       {{ t('emails.convertToExcel') }}
     </button>
-    <p v-if="!excelAvailable || excelMenu.disabledReason" id="excel-unavailable-reason" class="excel-context-reason">
+    <p v-if="(!excelAvailable && !excelMenuDirectFile) || excelMenu.disabledReason" id="excel-unavailable-reason" class="excel-context-reason">
       {{ excelMenu.disabledReason ? t(excelMenu.disabledReason) : t('emails.excelUnavailable') }}
     </p>
   </div>
@@ -719,11 +725,16 @@
     width="min(1100px, 94vw)"
     top="4vh"
     append-to-body
+    :close-on-click-modal="false"
+    :close-on-press-escape="false"
   >
     <div v-loading="excelBusy" class="excel-preview">
       <el-empty v-if="!excelBusy && !excelResult" :description="t('emails.excelWaiting')" />
       <template v-else-if="excelResult">
-        <div class="excel-model">{{ t('emails.generatedBy', { model: excelResult.model }) }}</div>
+        <div class="excel-model">
+          <template v-if="excelResult.model">{{ t('emails.generatedBy', { model: excelResult.model }) }}</template>
+          <template v-else>{{ t('emails.excelDirectNote') }}</template>
+        </div>
         <el-tabs v-model="excelSheet">
           <el-tab-pane
             v-for="sheet in excelResult.sheets"
@@ -758,92 +769,12 @@
       >
         {{ t('emails.createSourcingCase') }}
       </el-button>
-      <el-button
-        v-if="excelResult && auth.can('procurement:order:write')"
-        :loading="purchaseImportBusy"
-        @click="openPurchaseOrderImport"
-      >
-        {{ t('emails.importPurchaseOrder') }}
+      <el-button v-if="excelResult" :loading="excelBusy" @click="regenerateExcel">
+        {{ t('emails.regenerateExcel') }}
       </el-button>
       <el-button v-if="excelResult" type="primary" @click="downloadExcel">
         {{ t('emails.downloadExcel') }}
       </el-button>
-    </template>
-  </el-dialog>
-
-  <el-dialog v-model="purchaseImportOpen" :title="t('emails.purchaseImportTitle')" width="min(1200px, 94vw)" destroy-on-close>
-    <el-steps :active="purchaseImportStep" finish-status="success" align-center class="purchase-import-steps">
-      <el-step :title="t('emails.importBasicStep')" />
-      <el-step :title="t('emails.importMatchStep')" />
-      <el-step :title="t('emails.importConfirmStep')" />
-    </el-steps>
-    <el-alert type="info" :closable="false" show-icon class="excel-import-hint">
-      {{ t('emails.purchaseImportHint') }}
-    </el-alert>
-    <el-form v-if="purchaseImportStep === 0" label-width="110px" class="purchase-import-form">
-      <el-form-item :label="t('emails.supplier')" required>
-        <el-select v-model="purchaseImportForm.supplierId" filterable style="width: 360px" @change="applySupplierCurrency">
-          <el-option
-            v-for="supplier in purchaseImportSuppliers"
-            :key="supplier.id"
-            :value="String(supplier.id)"
-            :label="`${supplier.code} · ${supplier.name}`"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item :label="t('emails.importCurrency')" required>
-        <el-input v-model="purchaseImportForm.currency" maxlength="3" style="width: 120px" />
-      </el-form-item>
-      <el-form-item :label="t('emails.importExpectedDate')">
-        <el-date-picker v-model="purchaseImportForm.expectedDate" type="date" value-format="YYYY-MM-DD" />
-      </el-form-item>
-      <el-form-item :label="t('emails.importRemark')">
-        <el-input v-model="purchaseImportForm.remark" type="textarea" :rows="3" maxlength="500" show-word-limit />
-      </el-form-item>
-    </el-form>
-    <el-table v-else-if="purchaseImportStep === 1" :data="purchaseImportRows" size="small" border max-height="440px">
-      <el-table-column prop="rowNo" label="#" width="55" />
-      <el-table-column prop="product" :label="t('emails.product')" min-width="180" />
-      <el-table-column :label="t('emails.quantity')" width="130"><template #default="{ row }"><el-input v-model="row.quantity" @input="onPurchaseRequirementChange(row)" /></template></el-table-column>
-      <el-table-column prop="quantityUnit" :label="t('emails.importUnit')" width="90" />
-      <el-table-column :label="t('emails.unitPrice')" width="130"><template #default="{ row }"><el-input v-model="row.unitPrice" @input="onPurchaseRequirementChange(row)" /></template></el-table-column>
-      <el-table-column :label="t('emails.purchaseRequirement')" min-width="330">
-        <template #default="{ row }">
-          <el-select v-model="row.requirementId" clearable :placeholder="row.message || t('emails.chooseRequirement')" style="width: 100%" @change="onPurchaseRequirementChange(row)">
-            <el-option
-              v-for="candidate in row.candidates"
-              :key="candidate.requirementId"
-              :value="String(candidate.requirementId)"
-              :label="`${candidate.contractNo || '—'} · ${candidate.productName} · ${candidate.openQty} ${candidate.uomCode}`"
-            />
-          </el-select>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('common.status')" width="130">
-        <template #default="{ row }">
-          <el-tag :type="row.result === 'MATCHED' ? 'success' : row.result === 'MULTIPLE' ? 'warning' : 'danger'" effect="plain">
-            {{ t(`emails.importResults.${row.result}`) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-    </el-table>
-    <div v-else class="purchase-import-confirm">
-      <el-descriptions :column="2" border>
-        <el-descriptions-item :label="t('emails.supplier')">{{ selectedPurchaseImportSupplier?.name }}</el-descriptions-item>
-        <el-descriptions-item :label="t('emails.importCurrency')">{{ purchaseImportForm.currency }}</el-descriptions-item>
-        <el-descriptions-item :label="t('emails.importExpectedDate')">{{ purchaseImportForm.expectedDate || '—' }}</el-descriptions-item>
-        <el-descriptions-item :label="t('emails.importLineCount')">{{ purchaseImportRows.length }}</el-descriptions-item>
-        <el-descriptions-item :label="t('emails.importTotalQuantity')">{{ purchaseImportTotalsValue.quantity }}</el-descriptions-item>
-        <el-descriptions-item :label="t('emails.importTotalAmount')">{{ purchaseImportForm.currency }} {{ purchaseImportTotalsValue.amount.toFixed(2) }}</el-descriptions-item>
-        <el-descriptions-item :label="t('emails.importRemark')" :span="2">{{ purchaseImportForm.remark || '—' }}</el-descriptions-item>
-      </el-descriptions>
-      <el-alert type="warning" :closable="false" show-icon :title="t('emails.importDraftNotice')" />
-    </div>
-    <template #footer>
-      <el-button @click="purchaseImportOpen = false">{{ t('common.close') }}</el-button>
-      <el-button v-if="purchaseImportStep > 0" @click="purchaseImportStep--">{{ t('emails.importPrevious') }}</el-button>
-      <el-button v-if="purchaseImportStep < 2" type="primary" :loading="purchaseImportBusy" @click="nextPurchaseImportStep">{{ t('emails.importNext') }}</el-button>
-      <el-button v-else type="primary" :loading="purchaseImportBusy" @click="createPurchaseOrderFromImport">{{ t('emails.importCreateDraft') }}</el-button>
     </template>
   </el-dialog>
 
@@ -889,12 +820,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { del, download, get, http, mailExcelRequest, mailHostRequest, post, saveBlob } from '../api'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
-import {
-  evaluatePurchaseImportRow,
-  purchaseImportTotals,
-  validatePurchaseImportRows,
-  type PurchaseImportRow,
-} from '../lib/purchaseOrderImport'
+import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import EmailComposer from '../components/EmailComposer.vue'
@@ -2222,22 +2148,26 @@ const excelSheet = ref('')
 const excelAvailable = ref(false)
 const creatingSourcingCase = ref(false)
 const convertedExcelSource = ref<ExcelSource | null>(null)
-const purchaseImportOpen = ref(false)
-const purchaseImportBusy = ref(false)
-const purchaseImportStep = ref(0)
-const purchaseImportToken = ref('')
-const purchaseImportForm = reactive({ supplierId: '', currency: 'CNY', expectedDate: '', remark: '' })
-const purchaseImportSuppliers = ref<{ id: string; code: string; name: string; currency: string }[]>([])
-const purchaseImportRows = ref<PurchaseImportRow[]>([])
-const selectedPurchaseImportSupplier = computed(() => purchaseImportSuppliers.value.find((supplier) => String(supplier.id) === purchaseImportForm.supplierId))
-const purchaseImportTotalsValue = computed(() => purchaseImportTotals(purchaseImportRows.value))
+// Results live in memory: asking for the same attachment or text again opens
+// the stored workbook instead of spending another model call. 重新生成 is the
+// explicit way to pay for a fresh read.
+const excelResultCache = new Map<string, ExcelResult>()
 let excelPollTimer: ReturnType<typeof setTimeout> | null = null
+
+function excelCacheKey(source: ExcelSource): string {
+  return source.kind === 'attachment'
+    ? `attachment:${source.mailId}:${source.attachmentId}`
+    : `text:${source.mailId}:${source.text}`
+}
 
 onUnmounted(() => {
   if (excelPollTimer) window.clearTimeout(excelPollTimer)
+  if (excelHoverTimer) window.clearTimeout(excelHoverTimer)
+  if (excelHideTimer) window.clearTimeout(excelHideTimer)
 })
 
 function positionExcelMenu(x: number, y: number, source: ExcelSource, disabledReason = '') {
+  cancelExcelMenuHide()
   // x is the anchor's centre (the bubble is centred via CSS), so the clamp
   // keeps half a bubble's width inside each edge.
   excelMenu.x = Math.max(110, Math.min(x, window.innerWidth - 110))
@@ -2245,6 +2175,69 @@ function positionExcelMenu(x: number, y: number, source: ExcelSource, disabledRe
   excelMenu.source = source
   excelMenu.disabledReason = disabledReason
   excelMenu.open = true
+}
+
+// When the menu's source is a spreadsheet we can read directly, the entry
+// stays available even with no model configured.
+const excelMenuDirectFile = computed(() => (excelMenu.source ? directTableAttachment(excelMenu.source) : null))
+
+let excelHoverTimer: ReturnType<typeof setTimeout> | null = null
+let excelHideTimer: ReturnType<typeof setTimeout> | null = null
+
+// Hover opens the same bubble right-click opens; the brief delay keeps a
+// mouse crossing the attachments row from flashing it on every card.
+function hoverAttachmentExcelMenu(event: MouseEvent, file: MailFile) {
+  if (!openedInbound.value) return
+  const mailId = openedInbound.value.id
+  const current = excelMenu.source
+  if (excelMenu.open && current?.kind === 'attachment' && current.attachmentId === file.id) return
+  if (excelHoverTimer) window.clearTimeout(excelHoverTimer)
+  const card = event.currentTarget as HTMLElement
+  excelHoverTimer = window.setTimeout(() => {
+    const rect = card.getBoundingClientRect()
+    positionExcelMenu(rect.left + rect.width / 2, rect.bottom + 6, {
+      kind: 'attachment', mailId, attachmentId: file.id,
+    }, file.stored ? '' : 'emails.attachmentNotStored')
+  }, 250)
+}
+
+function scheduleExcelMenuHide() {
+  if (excelHoverTimer) {
+    window.clearTimeout(excelHoverTimer)
+    excelHoverTimer = null
+  }
+  if (excelHideTimer) window.clearTimeout(excelHideTimer)
+  excelHideTimer = window.setTimeout(closeExcelMenu, 300)
+}
+
+function cancelExcelMenuHide() {
+  if (excelHoverTimer) {
+    window.clearTimeout(excelHoverTimer)
+    excelHoverTimer = null
+  }
+  if (excelHideTimer) {
+    window.clearTimeout(excelHideTimer)
+    excelHideTimer = null
+  }
+}
+
+// Plain-text bodies: the bubble opens when the selection is made; hovering
+// the highlighted range brings it back after a page click dismissed it (the
+// window click listener closes the bubble without touching the selection).
+function onPlainTextHover(event: MouseEvent) {
+  if (excelMenu.open || excelBusy.value) return
+  const pre = event.currentTarget as HTMLElement
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
+  const anchorEl = sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode?.parentElement
+  if (anchorEl?.closest('pre.in-text') !== pre) return
+  const mailId = pre.dataset.mailId ?? ''
+  if (!mailId) return
+  const rect = sel.getRangeAt(0).getBoundingClientRect()
+  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return
+  const text = sel.toString().trim()
+  if (!text) return
+  positionExcelMenu(rect.left + rect.width / 2, rect.bottom + 8, { kind: 'text', mailId, text })
 }
 
 function openTextExcelMenu(
@@ -2329,7 +2322,86 @@ onUnmounted(() => {
 async function convertExcelSelection() {
   const source = excelMenu.source
   closeExcelMenu()
-  if (!excelAvailable.value || excelMenu.disabledReason || !source || excelBusy.value) return
+  if (!source || excelBusy.value || excelMenu.disabledReason) return
+  const cached = excelResultCache.get(excelCacheKey(source))
+  if (cached) {
+    convertedExcelSource.value = source
+    excelResult.value = cached
+    excelSheet.value = cached.sheets[0]?.name ?? ''
+    excelOpen.value = true
+    return
+  }
+  // A spreadsheet attachment is already a table: read it as-is and skip the
+  // model entirely. Other sources — or a local read that failed — fall
+  // through to the model path below.
+  const directFile = directTableAttachment(source)
+  if (directFile && (await openAttachmentDirect(directFile))) return
+  if (!excelAvailable.value) {
+    if (directFile) ElMessage.error(t('emails.excelFailed'))
+    return
+  }
+  await startExcelConversion(source)
+}
+
+function directTableAttachment(source: ExcelSource): MailFile | null {
+  if (source.kind !== 'attachment') return null
+  const file = openedInbound.value?.attachments?.find((a) => String(a.id) === source.attachmentId)
+  if (!file?.downloadUrl || !isDirectTableFile(file.fileName, file.contentType)) return null
+  return file
+}
+
+// Reads the spreadsheet straight from its signed storage URL — the same
+// bytes the download button hands out — and presents the parsed preview.
+// Returns false when anything about the read fails, so the caller can fall
+// back to the model.
+async function openAttachmentDirect(file: MailFile): Promise<boolean> {
+  const mailId = openedInbound.value?.id
+  if (!mailId || !file.downloadUrl) return false
+  const source: ExcelSource = { kind: 'attachment', mailId, attachmentId: file.id }
+  excelResult.value = null
+  convertedExcelSource.value = source
+  excelSheet.value = ''
+  excelOpen.value = true
+  excelBusy.value = true
+  try {
+    const response = await fetch(file.downloadUrl)
+    if (!response.ok) throw new Error(`attachment fetch failed: ${response.status}`)
+    const data = await response.arrayBuffer()
+    const parsed = await parseTableFile(file.fileName, data)
+    const result: ExcelResult = {
+      fileName: file.fileName,
+      fileData: bytesToBase64(new Uint8Array(data)),
+      sheets: parsed.sheets.map((sheet) => ({
+        name: sheet.name,
+        summary: '',
+        columns: sheet.columns,
+        rows: sheet.rows.map((cells) => ({ cells })),
+        totalRows: String(sheet.totalRows),
+      })),
+      model: '',
+    }
+    excelResultCache.set(excelCacheKey(source), result)
+    excelResult.value = result
+    excelSheet.value = result.sheets[0]?.name ?? ''
+    return true
+  } catch {
+    excelResult.value = null
+    excelOpen.value = false
+    return false
+  } finally {
+    excelBusy.value = false
+  }
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  }
+  return btoa(binary)
+}
+
+async function startExcelConversion(source: ExcelSource) {
   excelResult.value = null
   convertedExcelSource.value = source
   excelSheet.value = ''
@@ -2352,6 +2424,12 @@ async function convertExcelSelection() {
   }
 }
 
+async function regenerateExcel() {
+  const source = convertedExcelSource.value
+  if (!source || excelBusy.value || !excelAvailable.value) return
+  await startExcelConversion(source)
+}
+
 function resumeExcelJob() {
   const id = sessionStorage.getItem('mailExcelJobId') ?? ''
   if (!id || excelJobId.value === id) return
@@ -2369,15 +2447,21 @@ function scheduleExcelJobPoll(delay = 1500) {
 
 async function refreshExcelJob(subject = '') {
   const idFromEvent = subject.startsWith('EXCEL_JOB:') ? subject.slice('EXCEL_JOB:'.length) : ''
-  if (!excelJobId.value || (idFromEvent && idFromEvent !== excelJobId.value)) return
+  const id = excelJobId.value
+  if (!id || (idFromEvent && idFromEvent !== id)) return
   try {
-    const response = await get<{ job: ExcelJob }>(`/inbound-excel-jobs/${excelJobId.value}`, undefined, mailExcelRequest)
+    const response = await get<{ job: ExcelJob }>(`/inbound-excel-jobs/${id}`, undefined, mailExcelRequest)
+    // The poll timer and the SSE hint race to fetch the same job; only the
+    // first response back may announce the terminal state, the later one
+    // finds the id already settled and stays silent.
+    if (excelJobId.value !== id) return
     const job = response.job
     if (job.status === 'PENDING' || job.status === 'PROCESSING') {
       scheduleExcelJobPoll()
       return
     }
     excelBusy.value = false
+    excelJobId.value = ''
     sessionStorage.removeItem('mailExcelJobId')
     if (job.status === 'FAILED' || !job.result) {
       excelOpen.value = false
@@ -2385,6 +2469,9 @@ async function refreshExcelJob(subject = '') {
       return
     }
     excelResult.value = job.result
+    if (convertedExcelSource.value) {
+      excelResultCache.set(excelCacheKey(convertedExcelSource.value), job.result)
+    }
     excelSheet.value = job.result.sheets[0]?.name ?? ''
     excelOpen.value = true
     ElMessage.success(t('emails.excelReady'))
@@ -2436,129 +2523,6 @@ async function createSourcingCaseFromExcel() {
     router.push(`/procurement/intakes?intake=${response.sourcingCase.id}`)
   } finally {
     creatingSourcingCase.value = false
-  }
-}
-
-async function openPurchaseOrderImport() {
-  const sheet = excelResult.value?.sheets[0]
-  if (!sheet?.rows.length) return
-  if (Number(sheet.totalRows) > sheet.rows.length) {
-    ElMessage.warning(t('emails.sourcingPreviewIncomplete'))
-    return
-  }
-  if (!sheet.columns.includes('数量')) {
-    ElMessage.warning(t('emails.importQuantityColumnRequired'))
-    return
-  }
-  purchaseImportStep.value = 0
-  purchaseImportToken.value = ''
-  purchaseImportRows.value = []
-  purchaseImportForm.supplierId = ''
-  purchaseImportForm.currency = 'CNY'
-  purchaseImportForm.expectedDate = ''
-  purchaseImportForm.remark = `${t('emails.importSourceMail')}: ${openedInbound.value?.subject || excelResult.value?.fileName || ''}`
-  if (!purchaseImportSuppliers.value.length) {
-    purchaseImportBusy.value = true
-    try {
-      const response = await get<{ suppliers: { id: string; code: string; name: string; currency: string }[] }>('/suppliers', { page: 1, page_size: 200, status: 'ACTIVE' })
-      purchaseImportSuppliers.value = response.suppliers ?? []
-    } finally {
-      purchaseImportBusy.value = false
-    }
-  }
-  purchaseImportOpen.value = true
-}
-
-function applySupplierCurrency() {
-  purchaseImportForm.currency = selectedPurchaseImportSupplier.value?.currency || 'CNY'
-}
-
-function onPurchaseRequirementChange(row: PurchaseImportRow) {
-  Object.assign(row, evaluatePurchaseImportRow(row))
-}
-
-async function nextPurchaseImportStep() {
-  if (purchaseImportStep.value === 0) {
-    if (!purchaseImportForm.supplierId) {
-      ElMessage.warning(t('emails.importSupplierRequired'))
-      return
-    }
-    if (!/^[A-Za-z]{3}$/.test(purchaseImportForm.currency)) {
-      ElMessage.warning(t('emails.importCurrencyRequired'))
-      return
-    }
-    await previewPurchaseOrderImport()
-    return
-  }
-  purchaseImportRows.value = purchaseImportRows.value.map(evaluatePurchaseImportRow)
-  const validation = validatePurchaseImportRows(purchaseImportRows.value)
-  if (validation) {
-    ElMessage.warning(t(validation === 'DUPLICATED' ? 'emails.importDuplicated' : 'emails.importRequirementRequired'))
-    return
-  }
-  purchaseImportStep.value = 2
-}
-
-async function previewPurchaseOrderImport() {
-  const result = excelResult.value
-  const source = convertedExcelSource.value
-  const sheet = result?.sheets[0]
-  if (!result || !source || !sheet?.rows.length) return
-  const fieldByColumn: Record<string, string> = {
-    '产品': 'product', '材质/标准': 'materialStandard', '牌号/等级': 'grade',
-    '厚度': 'thickness', '宽度': 'width', '单位': 'quantityUnit', '数量': 'quantity', '单价': 'unitPrice',
-  }
-  const rows = sheet.rows.map((row, index) => {
-    const values: Record<string, string> = {}
-    sheet.columns.forEach((column, ci) => { const field = fieldByColumn[column]; if (field) values[field] = row.cells[ci] ?? '' })
-    return { rowNo: index + 2, ...values }
-  })
-  purchaseImportBusy.value = true
-  try {
-    const response = await post<{ importToken: string; expiresAt: string; rows: (PurchaseImportRow & { suggestedRequirementId?: string })[] }>('/purchase-orders/imports/preview', {
-      sourceType: 'MAIL_EXCEL',
-      sourceMailId: Number(source.mailId),
-      sourceAttachmentId: source.kind === 'attachment' ? Number(source.attachmentId) : 0,
-      sourceFileName: result.fileName,
-      rows,
-    })
-    purchaseImportToken.value = response.importToken
-    purchaseImportRows.value = (response.rows ?? []).map((row) => ({
-      ...row,
-      requirementId: row.requirementId || String(row.suggestedRequirementId || ''),
-    }))
-    purchaseImportStep.value = 1
-  } finally {
-    purchaseImportBusy.value = false
-  }
-}
-
-async function createPurchaseOrderFromImport() {
-  const validation = validatePurchaseImportRows(purchaseImportRows.value)
-  if (validation || !purchaseImportToken.value) {
-    ElMessage.warning(t('emails.importRequirementRequired'))
-    return
-  }
-  purchaseImportBusy.value = true
-  try {
-    const response = await post<{ id: string; poNo: string; status: string; alreadyCreated: boolean }>(`/purchase-orders/imports/${purchaseImportToken.value}/confirm`, {
-      supplierId: Number(purchaseImportForm.supplierId),
-      currency: purchaseImportForm.currency.toUpperCase(),
-      expectedDate: purchaseImportForm.expectedDate,
-      remark: purchaseImportForm.remark,
-      lines: purchaseImportRows.value.map((row) => ({
-        rowNo: row.rowNo,
-        requirementId: Number(row.requirementId),
-        qty: row.quantity,
-        unitPrice: row.unitPrice || '0',
-      })),
-    })
-    ElMessage.success(t('emails.importCreated', { no: response.poNo }))
-    purchaseImportOpen.value = false
-    excelOpen.value = false
-    router.push(`/purchase-orders?order=${response.id}`)
-  } finally {
-    purchaseImportBusy.value = false
   }
 }
 
@@ -3232,18 +3196,6 @@ async function doUnsuppress(row: Suppression) {
   z-index: 1;
   background: var(--el-fill-color-light);
   font-weight: 600;
-}
-.purchase-import-steps {
-  margin: 0 0 18px;
-}
-.purchase-import-form {
-  max-width: 760px;
-  margin-top: 18px;
-}
-.purchase-import-confirm {
-  display: grid;
-  gap: 16px;
-  margin-top: 18px;
 }
 
 .in-html {
