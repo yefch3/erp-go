@@ -34,10 +34,19 @@ jobs:
     # build 失败时不部署。workflow_run 无论成败都会触发，所以这一行是闸门。
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    # 这里刻意不写 `environment:`。声明环境会把 OIDC 令牌的主体从
-    # repo:…:ref:refs/heads/main 改成 repo:…:environment:<名字>，而角色的信任
-    # 策略锁的是前者 —— 加上它，AWS 会直接拒绝换取凭据。将来若要环境审批门，
-    # 得同时改 IAM 信任策略的 sub，两处一起动。
+    # 信任策略里的 sub 必须写成 GitHub 的不可变形式 —— 用户名和仓库名后面各
+    # 挂一个数字 ID，防的是「改名后有人占用旧名字」：
+    #
+    #   repo:yefch3@45281759/erp-go@1318022431:ref:refs/heads/main
+    #
+    # 不是想当然的 repo:yefch3/erp-go:…。写错的表现是部署停在
+    # configure-aws-credentials，报 Not authorized to perform
+    # sts:AssumeRoleWithWebIdentity —— 那句话不区分「角色不存在」和「主体对不
+    # 上」，所以只能把令牌的 sub 打出来看。
+    #
+    # 这里也刻意不写 `environment:`：声明环境会把主体的后半段从
+    # ref:refs/heads/main 换成 environment:<名字>，届时 IAM 那边要跟着改，
+    # 且环境主体不含分支信息，必须另配分支策略才不会放宽信任面。
     steps:
       - uses: actions/checkout@v4
 
