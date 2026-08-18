@@ -1,5 +1,9 @@
 -- +goose Up
 
+-- migration-safety: ALTER COLUMN kind TYPE VARCHAR(3) —— 加宽而非改型，
+--   VARCHAR(2) 的值在 VARCHAR(3) 里原样可读，旧代码读写 'TO'/'CC' 不受影响。
+--   （2026-08-17 补声明；该迁移早已应用，此处只是把当时的判断写下来）
+
 -- Blind carbon copy.
 --
 -- The third recipient field, and the only one whose defining property is what

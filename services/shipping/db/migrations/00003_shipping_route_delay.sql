@@ -1,5 +1,10 @@
 -- +goose Up
 
+-- migration-safety: original_eta SET NOT NULL —— 同一个迁移在置非空之前
+--   已经把每一行回填完毕（见下方 UPDATE ... WHERE original_eta IS NULL），
+--   且该列由本迁移引入、旧代码从不写它，因此旧版本插入行时不会撞上约束。
+--   （2026-08-17 补声明；该迁移早已应用）
+
 ALTER TABLE shipping_schedules
     ADD COLUMN original_eta DATE,
     ADD COLUMN eta_revision INT NOT NULL DEFAULT 1,

@@ -1,0 +1,112 @@
+# 部署到生产。两个入口，同一条路径：
+#
+#   * build 成功后自动触发（合并 main → 出镜像 → 部署）
+#   * 手动触发，可指定任意 SHA —— 回滚就是它：填上一个好版本跑一次
+#
+# 服务器上没有为运维开放任何入站端口。命令经 AWS SSM 送达，走的是机器自己
+# 向外拨出的那条长连接；本 workflow 的 AWS 身份来自 GitHub OIDC 联合，
+# 换取 15 分钟的临时凭据 —— 仓库里不存任何长期 AWS 密钥。
+name: deploy
+
+on:
+  workflow_run:
+    workflows: [build]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 要部署的 git SHA（留空=当前 main；回滚填旧 SHA）
+        required: false
+
+permissions:
+  id-token: write   # OIDC 的钥匙孔
+  contents: read
+
+# 同一时刻只允许一个部署。不取消进行中的那个：一个被打断在「迁完库、
+# 没换容器」中间的部署，比多等两分钟糟糕得多。
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # build 失败时不部署。workflow_run 无论成败都会触发，所以这一行是闸门。
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 确定要部署的版本
+        id: pick
+        run: |
+          if [ -n "${{ inputs.sha }}" ]; then
+            SHA="${{ inputs.sha }}"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            # 部署刚构建完的那个提交，而不是此刻的 main —— 两者在连续合并时
+            # 会不同，而只有前者的镜像确定已经在货架上。
+            SHA="${{ github.event.workflow_run.head_sha }}"
+          else
+            SHA="${{ github.sha }}"
+          fi
+          # 全长 40 位十六进制，因为镜像标签就是它；短 SHA 会拉不到。
+          case "$SHA" in
+            [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;;
+            *) echo "SHA 看起来不合法：$SHA" >&2; exit 1 ;;
+          esac
+          [ ${#SHA} -eq 40 ] || { echo "需要完整 40 位 SHA，收到 ${#SHA} 位：$SHA" >&2; exit 1; }
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "部署 $SHA"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: SSM 执行部署脚本
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.pick.outputs.sha }}"
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name AWS-RunShellScript \
+            --comment "deploy $SHA" \
+            --timeout-seconds 900 \
+            --parameters "commands=[\"sh /opt/erp/repo/deploy/deploy.sh $SHA\"]" \
+            --query Command.CommandId --output text)
+          echo "SSM command: $CMD_ID"
+
+          # 自己轮询而不用 `ssm wait`：wait 的上限比一次冷启动部署短，
+          # 到点就把一次正常的部署报成失败。
+          for _ in $(seq 1 60); do
+            sleep 15
+            STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" \
+              --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            case "$STATUS" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+          done
+
+          aws ssm get-command-invocation --command-id "$CMD_ID" \
+            --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+            --query StandardOutputContent --output text
+          ERRTEXT=$(aws ssm get-command-invocation --command-id "$CMD_ID" \
+            --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+            --query StandardErrorContent --output text)
+          [ -z "$ERRTEXT" ] || { echo "--- stderr ---"; echo "$ERRTEXT"; }
+
+          [ "$STATUS" = "Success" ] || {
+            echo "部署失败（$STATUS）。服务器已按 deploy.sh 的规则自行回滚到上一个好版本；" >&2
+            echo "确认现状：curl http://<公网IP>/api/healthz 看 version 字段。" >&2
+            exit 1
+          }
+
+      - name: 从公网确认
+        run: |
+          # 服务器自己说健康还不够 —— 真正要成立的是「外面的人能用」。
+          BODY=$(curl -fsS --max-time 10 "http://${{ secrets.PUBLIC_HOST }}/api/healthz")
+          echo "$BODY"
+          echo "$BODY" | grep -q "${{ steps.pick.outputs.sha }}" || {
+            echo "公网 healthz 报的版本与本次部署不一致" >&2; exit 1; }

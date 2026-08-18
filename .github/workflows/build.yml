@@ -54,6 +54,16 @@ jobs:
             -t ghcr.io/${{ github.repository }}/frontend:${{ github.sha }} \
             -t ghcr.io/${{ github.repository }}/frontend:latest .
 
+      # The one image allowed to change the production schema. Built here so
+      # it carries the same SHA as the binaries whose migrations it runs.
+      - name: migrate
+        run: |
+          docker buildx build --push \
+            --cache-from type=gha --cache-to type=gha,mode=max \
+            -f deploy/migrate.Dockerfile \
+            -t ghcr.io/${{ github.repository }}/migrate:${{ github.sha }} \
+            -t ghcr.io/${{ github.repository }}/migrate:latest .
+
   # GHCR storage is finite (and billed); ten SHAs of history is more rollback
   # depth than a single-box pilot will ever use. Runs after the push so the
   # count includes what this run just added.
@@ -63,7 +73,7 @@ jobs:
     strategy:
       matrix:
         pkg: [iam, masterdata, fx, product, approval, export,
-              inventory, procurement, shipping, mail, gateway, frontend]
+              inventory, procurement, shipping, mail, gateway, frontend, migrate]
     steps:
       - name: keep the last 10 versions
         uses: actions/delete-package-versions@v5
