@@ -241,6 +241,20 @@ function bindSelectionBubble() {
   d.addEventListener('selectionchange', () => {
     if (!dragging) schedule(150)
   })
+  // Hovering an existing selection brings the bubble back after a click in
+  // the parent page dismissed it: that click closes the bubble but cannot
+  // clear a selection that lives inside this frame.
+  d.addEventListener('mouseover', (event) => {
+    if (dragging) return
+    const sel = d.getSelection()
+    const text = sel?.toString().trim() ?? ''
+    if (!sel || !text || sel.rangeCount === 0) return
+    const rect = sel.getRangeAt(0).getBoundingClientRect()
+    if (rect.width === 0 && rect.height === 0) return
+    const mouse = event as MouseEvent
+    if (mouse.clientX < rect.left || mouse.clientX > rect.right || mouse.clientY < rect.top || mouse.clientY > rect.bottom) return
+    schedule(150)
+  })
 
   // An embedded attachment image gets the same bubble on a plain click.
   // Linked images are left alone — the click is already spoken for (the

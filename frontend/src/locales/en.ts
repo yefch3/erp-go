@@ -1188,6 +1188,8 @@ export default {
     excelReady: 'Excel is ready',
     excelFailed: 'Could not generate the inquiry Excel. Please try again later.',
     downloadExcel: 'Download',
+    regenerateExcel: 'Regenerate',
+    excelDirectNote: 'The attachment is already a spreadsheet, read directly without the AI model. Choose "Regenerate" for AI extraction.',
     createSourcingCase: 'Send to review queue',
     sourcingCaseCreated: 'Sourcing case {no} created',
     sourcingPreviewIncomplete: 'The preview is limited to 200 rows. Download and review it before creating a case.',

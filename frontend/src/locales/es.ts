@@ -1191,6 +1191,8 @@ export default {
     excelReady: 'El Excel está listo',
     excelFailed: 'No se pudo generar el Excel de consulta. Inténtelo de nuevo más tarde.',
     downloadExcel: 'Descargar',
+    regenerateExcel: 'Regenerar',
+    excelDirectNote: 'El adjunto ya es una hoja de cálculo, leída directamente sin el modelo de IA. Pulsa «Regenerar» para la extracción con IA.',
     createSourcingCase: 'Enviar a la cola de revisión',
     sourcingCaseCreated: 'Caso de compras {no} creado',
     sourcingPreviewIncomplete: 'La vista previa está limitada a 200 filas. Descárguela y revísela antes de crear el caso.',

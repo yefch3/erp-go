@@ -210,6 +210,7 @@
                 v-else
                 class="in-text"
                 :data-mail-id="it.direction === 'IN' ? it.id : ''"
+                @mouseover="onPlainTextHover"
               >{{ it.body }}</pre>
               <QuotedHistory v-if="it.quoted" :html="it.quoted" />
             </div>
@@ -226,6 +227,7 @@
             v-else
             class="in-text"
             :data-mail-id="openedInbound.id"
+            @mouseover="onPlainTextHover"
           >{{ openedInbound.bodyText }}</pre>
           <QuotedHistory v-if="openedInbound.quotedHtml" :html="openedInbound.quotedHtml" />
         </template>
@@ -244,6 +246,8 @@
               :class="{ dead: !a.downloadUrl }"
               :title="fileHint(a)"
               @contextmenu="openAttachmentExcelMenu($event, a)"
+              @mouseenter="hoverAttachmentExcelMenu($event, a)"
+              @mouseleave="scheduleExcelMenuHide"
             >
               <el-icon><Paperclip /></el-icon>
               <span class="fname ellipsis">{{ a.fileName }}</span>
@@ -698,17 +702,19 @@
     class="excel-context"
     :style="{ left: excelMenu.x + 'px', top: excelMenu.y + 'px' }"
     role="menu"
+    @mouseenter="cancelExcelMenuHide"
+    @mouseleave="scheduleExcelMenuHide"
   >
     <button
       type="button"
       role="menuitem"
-      :disabled="!excelAvailable || !!excelMenu.disabledReason"
-      :aria-describedby="(!excelAvailable || excelMenu.disabledReason) ? 'excel-unavailable-reason' : undefined"
+      :disabled="(!excelAvailable && !excelMenuDirectFile) || !!excelMenu.disabledReason"
+      :aria-describedby="((!excelAvailable && !excelMenuDirectFile) || excelMenu.disabledReason) ? 'excel-unavailable-reason' : undefined"
       @click="convertExcelSelection"
     >
       {{ t('emails.convertToExcel') }}
     </button>
-    <p v-if="!excelAvailable || excelMenu.disabledReason" id="excel-unavailable-reason" class="excel-context-reason">
+    <p v-if="(!excelAvailable && !excelMenuDirectFile) || excelMenu.disabledReason" id="excel-unavailable-reason" class="excel-context-reason">
       {{ excelMenu.disabledReason ? t(excelMenu.disabledReason) : t('emails.excelUnavailable') }}
     </p>
   </div>
@@ -725,7 +731,10 @@
     <div v-loading="excelBusy" class="excel-preview">
       <el-empty v-if="!excelBusy && !excelResult" :description="t('emails.excelWaiting')" />
       <template v-else-if="excelResult">
-        <div class="excel-model">{{ t('emails.generatedBy', { model: excelResult.model }) }}</div>
+        <div class="excel-model">
+          <template v-if="excelResult.model">{{ t('emails.generatedBy', { model: excelResult.model }) }}</template>
+          <template v-else>{{ t('emails.excelDirectNote') }}</template>
+        </div>
         <el-tabs v-model="excelSheet">
           <el-tab-pane
             v-for="sheet in excelResult.sheets"
@@ -759,6 +768,9 @@
         @click="createSourcingCaseFromExcel"
       >
         {{ t('emails.createSourcingCase') }}
+      </el-button>
+      <el-button v-if="excelResult" :loading="excelBusy" @click="regenerateExcel">
+        {{ t('emails.regenerateExcel') }}
       </el-button>
       <el-button v-if="excelResult" type="primary" @click="downloadExcel">
         {{ t('emails.downloadExcel') }}
@@ -808,6 +820,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { del, download, get, http, mailExcelRequest, mailHostRequest, post, saveBlob } from '../api'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
+import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import EmailComposer from '../components/EmailComposer.vue'
@@ -2135,13 +2148,26 @@ const excelSheet = ref('')
 const excelAvailable = ref(false)
 const creatingSourcingCase = ref(false)
 const convertedExcelSource = ref<ExcelSource | null>(null)
+// Results live in memory: asking for the same attachment or text again opens
+// the stored workbook instead of spending another model call. 重新生成 is the
+// explicit way to pay for a fresh read.
+const excelResultCache = new Map<string, ExcelResult>()
 let excelPollTimer: ReturnType<typeof setTimeout> | null = null
+
+function excelCacheKey(source: ExcelSource): string {
+  return source.kind === 'attachment'
+    ? `attachment:${source.mailId}:${source.attachmentId}`
+    : `text:${source.mailId}:${source.text}`
+}
 
 onUnmounted(() => {
   if (excelPollTimer) window.clearTimeout(excelPollTimer)
+  if (excelHoverTimer) window.clearTimeout(excelHoverTimer)
+  if (excelHideTimer) window.clearTimeout(excelHideTimer)
 })
 
 function positionExcelMenu(x: number, y: number, source: ExcelSource, disabledReason = '') {
+  cancelExcelMenuHide()
   // x is the anchor's centre (the bubble is centred via CSS), so the clamp
   // keeps half a bubble's width inside each edge.
   excelMenu.x = Math.max(110, Math.min(x, window.innerWidth - 110))
@@ -2149,6 +2175,69 @@ function positionExcelMenu(x: number, y: number, source: ExcelSource, disabledRe
   excelMenu.source = source
   excelMenu.disabledReason = disabledReason
   excelMenu.open = true
+}
+
+// When the menu's source is a spreadsheet we can read directly, the entry
+// stays available even with no model configured.
+const excelMenuDirectFile = computed(() => (excelMenu.source ? directTableAttachment(excelMenu.source) : null))
+
+let excelHoverTimer: ReturnType<typeof setTimeout> | null = null
+let excelHideTimer: ReturnType<typeof setTimeout> | null = null
+
+// Hover opens the same bubble right-click opens; the brief delay keeps a
+// mouse crossing the attachments row from flashing it on every card.
+function hoverAttachmentExcelMenu(event: MouseEvent, file: MailFile) {
+  if (!openedInbound.value) return
+  const mailId = openedInbound.value.id
+  const current = excelMenu.source
+  if (excelMenu.open && current?.kind === 'attachment' && current.attachmentId === file.id) return
+  if (excelHoverTimer) window.clearTimeout(excelHoverTimer)
+  const card = event.currentTarget as HTMLElement
+  excelHoverTimer = window.setTimeout(() => {
+    const rect = card.getBoundingClientRect()
+    positionExcelMenu(rect.left + rect.width / 2, rect.bottom + 6, {
+      kind: 'attachment', mailId, attachmentId: file.id,
+    }, file.stored ? '' : 'emails.attachmentNotStored')
+  }, 250)
+}
+
+function scheduleExcelMenuHide() {
+  if (excelHoverTimer) {
+    window.clearTimeout(excelHoverTimer)
+    excelHoverTimer = null
+  }
+  if (excelHideTimer) window.clearTimeout(excelHideTimer)
+  excelHideTimer = window.setTimeout(closeExcelMenu, 300)
+}
+
+function cancelExcelMenuHide() {
+  if (excelHoverTimer) {
+    window.clearTimeout(excelHoverTimer)
+    excelHoverTimer = null
+  }
+  if (excelHideTimer) {
+    window.clearTimeout(excelHideTimer)
+    excelHideTimer = null
+  }
+}
+
+// Plain-text bodies: the bubble opens when the selection is made; hovering
+// the highlighted range brings it back after a page click dismissed it (the
+// window click listener closes the bubble without touching the selection).
+function onPlainTextHover(event: MouseEvent) {
+  if (excelMenu.open || excelBusy.value) return
+  const pre = event.currentTarget as HTMLElement
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
+  const anchorEl = sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode?.parentElement
+  if (anchorEl?.closest('pre.in-text') !== pre) return
+  const mailId = pre.dataset.mailId ?? ''
+  if (!mailId) return
+  const rect = sel.getRangeAt(0).getBoundingClientRect()
+  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return
+  const text = sel.toString().trim()
+  if (!text) return
+  positionExcelMenu(rect.left + rect.width / 2, rect.bottom + 8, { kind: 'text', mailId, text })
 }
 
 function openTextExcelMenu(
@@ -2233,7 +2322,86 @@ onUnmounted(() => {
 async function convertExcelSelection() {
   const source = excelMenu.source
   closeExcelMenu()
-  if (!excelAvailable.value || excelMenu.disabledReason || !source || excelBusy.value) return
+  if (!source || excelBusy.value || excelMenu.disabledReason) return
+  const cached = excelResultCache.get(excelCacheKey(source))
+  if (cached) {
+    convertedExcelSource.value = source
+    excelResult.value = cached
+    excelSheet.value = cached.sheets[0]?.name ?? ''
+    excelOpen.value = true
+    return
+  }
+  // A spreadsheet attachment is already a table: read it as-is and skip the
+  // model entirely. Other sources — or a local read that failed — fall
+  // through to the model path below.
+  const directFile = directTableAttachment(source)
+  if (directFile && (await openAttachmentDirect(directFile))) return
+  if (!excelAvailable.value) {
+    if (directFile) ElMessage.error(t('emails.excelFailed'))
+    return
+  }
+  await startExcelConversion(source)
+}
+
+function directTableAttachment(source: ExcelSource): MailFile | null {
+  if (source.kind !== 'attachment') return null
+  const file = openedInbound.value?.attachments?.find((a) => String(a.id) === source.attachmentId)
+  if (!file?.downloadUrl || !isDirectTableFile(file.fileName, file.contentType)) return null
+  return file
+}
+
+// Reads the spreadsheet straight from its signed storage URL — the same
+// bytes the download button hands out — and presents the parsed preview.
+// Returns false when anything about the read fails, so the caller can fall
+// back to the model.
+async function openAttachmentDirect(file: MailFile): Promise<boolean> {
+  const mailId = openedInbound.value?.id
+  if (!mailId || !file.downloadUrl) return false
+  const source: ExcelSource = { kind: 'attachment', mailId, attachmentId: file.id }
+  excelResult.value = null
+  convertedExcelSource.value = source
+  excelSheet.value = ''
+  excelOpen.value = true
+  excelBusy.value = true
+  try {
+    const response = await fetch(file.downloadUrl)
+    if (!response.ok) throw new Error(`attachment fetch failed: ${response.status}`)
+    const data = await response.arrayBuffer()
+    const parsed = await parseTableFile(file.fileName, data)
+    const result: ExcelResult = {
+      fileName: file.fileName,
+      fileData: bytesToBase64(new Uint8Array(data)),
+      sheets: parsed.sheets.map((sheet) => ({
+        name: sheet.name,
+        summary: '',
+        columns: sheet.columns,
+        rows: sheet.rows.map((cells) => ({ cells })),
+        totalRows: String(sheet.totalRows),
+      })),
+      model: '',
+    }
+    excelResultCache.set(excelCacheKey(source), result)
+    excelResult.value = result
+    excelSheet.value = result.sheets[0]?.name ?? ''
+    return true
+  } catch {
+    excelResult.value = null
+    excelOpen.value = false
+    return false
+  } finally {
+    excelBusy.value = false
+  }
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  }
+  return btoa(binary)
+}
+
+async function startExcelConversion(source: ExcelSource) {
   excelResult.value = null
   convertedExcelSource.value = source
   excelSheet.value = ''
@@ -2254,6 +2422,12 @@ async function convertExcelSelection() {
     excelOpen.value = false
     excelBusy.value = false
   }
+}
+
+async function regenerateExcel() {
+  const source = convertedExcelSource.value
+  if (!source || excelBusy.value || !excelAvailable.value) return
+  await startExcelConversion(source)
 }
 
 function resumeExcelJob() {
@@ -2295,6 +2469,9 @@ async function refreshExcelJob(subject = '') {
       return
     }
     excelResult.value = job.result
+    if (convertedExcelSource.value) {
+      excelResultCache.set(excelCacheKey(convertedExcelSource.value), job.result)
+    }
     excelSheet.value = job.result.sheets[0]?.name ?? ''
     excelOpen.value = true
     ElMessage.success(t('emails.excelReady'))

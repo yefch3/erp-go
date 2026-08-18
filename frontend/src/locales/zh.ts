@@ -1188,6 +1188,8 @@ export default {
     excelReady: '询价 Excel 已生成',
     excelFailed: '询价 Excel 生成失败，请稍后重试',
     downloadExcel: '下载',
+    regenerateExcel: '重新生成',
+    excelDirectNote: '附件本身是表格，已直接读取，未调用大模型；需要智能识别时点「重新生成」。',
     createSourcingCase: '转入待复核询盘',
     sourcingCaseCreated: '询价案件 {no} 已建立',
     sourcingPreviewIncomplete: '明细超过 200 行，请先下载核对；当前预览不完整，不能直接建案。',
