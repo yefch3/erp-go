@@ -401,7 +401,13 @@ async function changePassword() {
   border: 0;
   background: transparent;
   color: #94a3b8;
+  /* `font: inherit` alone made 基础数据 and 采购管理 the two odd items in the
+     sidebar: it inherits from el-menu (16px), while every el-menu-item sizes
+     itself from --el-menu-item-font-size (14px) applied to the item, not the
+     container. Reading Element's own variable keeps the two kinds of row in
+     step through a theme change instead of pinning a number here. */
   font: inherit;
+  font-size: var(--el-menu-item-font-size, var(--el-font-size-base, 14px));
   text-align: left;
   cursor: pointer;
   display: flex;

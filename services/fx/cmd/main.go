@@ -39,7 +39,7 @@ func run(log *slog.Logger) error {
 	defer pool.Close()
 
 	svc := app.New(pool, log)
-	go svc.RunFetcher(ctx, cfg.FetchURL, cfg.FetchSymbols, cfg.FetchInterval)
+	go svc.RunFetcher(ctx, cfg.FetchURL, cfg.FetchSymbols, cfg.FetchInterval, cfg.BackfillDays)
 
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
 	fxv1.RegisterFxServiceServer(srv, grpcin.New(svc))
