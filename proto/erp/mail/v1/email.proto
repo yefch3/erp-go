@@ -1298,6 +1298,9 @@ message ExcelSheetPreview {
   message Row { repeated string cells = 1; }
   repeated Row rows = 4;
   int64 total_rows = 5;
+  // Parallel to columns: the template field key of each column, so the
+  // procurement transfer maps by identity instead of header text.
+  repeated string column_keys = 6;
 }
 
 message ConvertInboundToExcelResponse {
@@ -1307,11 +1310,25 @@ message ConvertInboundToExcelResponse {
   string model = 4;
 }
 
+// One column of the tenant's current default inquiry template, snapshotted
+// into the job at request time: a template edit afterwards cannot change
+// what an already-queued conversion produces.
+message InquiryColumnSpec {
+  string field_key = 1;
+  string display_name = 2;
+  string data_type = 3; // TEXT | NUMBER | DATE
+  bool is_required = 4;
+  string default_value = 5;
+}
+
 message StartInboundExcelConversionRequest {
   int64 id = 1;
   optional int64 attachment_id = 2;
   optional string selected_text = 3;
   string locale = 4;
+  // The default inquiry template's columns, resolved by the gateway. Empty
+  // falls back to the system layout so older callers keep working.
+  repeated InquiryColumnSpec template_columns = 5;
 }
 
 message ExcelConversionJob {

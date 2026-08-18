@@ -1,9 +1,10 @@
 -- name: CreateExcelJob :one
 INSERT INTO mail_excel_jobs (
-  tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale
+  tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, template_columns
 ) VALUES (
   sqlc.arg(tenant_id), sqlc.arg(owner_id), sqlc.arg(inbound_id),
-  sqlc.narg(attachment_id), sqlc.narg(selected_text), sqlc.arg(locale)
+  sqlc.narg(attachment_id), sqlc.narg(selected_text), sqlc.arg(locale),
+  sqlc.arg(template_columns)::jsonb
 )
 RETURNING *;
 

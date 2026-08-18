@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 
 	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
+	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 )
 
@@ -742,6 +744,22 @@ func (s *Server) convertInboundToExcel(w http.ResponseWriter, r *http.Request) {
 	}
 	// URL ownership wins over any body field, as with every other mail action.
 	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	// 转换按租户当前默认询盘模板的列进行；快照随任务持久化，模板之后的
+	// 改版不影响这次已排队的识别。
+	template, err := s.InquiryTemplates.GetDefaultInquiryTemplate(r.Context(), &prv1.GetDefaultInquiryTemplateRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	fields := append([]*prv1.InquiryTemplateField(nil), template.GetTemplate().GetFields()...)
+	sort.SliceStable(fields, func(i, j int) bool { return fields[i].GetSortOrder() < fields[j].GetSortOrder() })
+	for _, field := range fields {
+		req.TemplateColumns = append(req.TemplateColumns, &mailv1.InquiryColumnSpec{
+			FieldKey: field.GetFieldKey(), DisplayName: field.GetDisplayName(),
+			DataType: field.GetDataType(), IsRequired: field.GetIsRequired(),
+			DefaultValue: field.GetDefaultValue(),
+		})
+	}
 	resp, err := s.Emails.StartInboundExcelConversion(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)

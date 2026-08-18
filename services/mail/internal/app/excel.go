@@ -42,6 +42,8 @@ type TableExtractionInput struct {
 	FileData    []byte
 	Locale      string
 	SafetyID    string
+	// 当前默认询盘模板的列快照；空时按系统内置 21 列处理。
+	Columns []InquiryColumn
 }
 
 type Workbook struct {
@@ -54,73 +56,118 @@ type WorkbookSheet struct {
 	Summary     string     `json:"summary"`
 	Columns     []string   `json:"columns"`
 	ColumnTypes []string   `json:"column_types"`
-	Rows        [][]string `json:"rows"`
+	// 与 Columns 平行的模板字段标识，采购转入按它而不是表头文字对齐。
+	ColumnKeys []string `json:"column_keys,omitempty"`
+	Rows       [][]string `json:"rows"`
 }
 
-// InquiryExtraction is the only shape the model may return. The company
-// workbook itself is built below, rather than allowing a model to decide its
-// columns, order, formulas, or formatting.
-type InquiryExtraction struct {
-	Title   string        `json:"title"`
-	Summary string        `json:"summary"`
-	Items   []InquiryItem `json:"items"`
+// InquiryColumn 是询盘模板的一列。列注册表在采购服务；网关在发起转换时
+// 把当前默认模板的列快照随请求传入，邮件服务不反向依赖采购。
+type InquiryColumn struct {
+	FieldKey     string `json:"field_key"`
+	DisplayName  string `json:"display_name"`
+	DataType     string `json:"data_type"`
+	IsRequired   bool   `json:"is_required"`
+	DefaultValue string `json:"default_value"`
 }
 
-type InquiryItem struct {
-	Product            string `json:"product"`
-	MaterialStandard   string `json:"material_standard"`
-	Grade              string `json:"grade"`
-	Thickness          string `json:"thickness"`
-	Width              string `json:"width"`
-	LengthOrForm       string `json:"length_or_form"`
-	SurfaceRequirement string `json:"surface_requirement"`
-	Coating            string `json:"coating"`
-	Tolerance          string `json:"tolerance"`
-	CoilWeight         string `json:"coil_weight"`
-	CoilID             string `json:"coil_id"`
-	Packaging          string `json:"packaging"`
-	Delivery           string `json:"delivery"`
-	PaymentTerms       string `json:"payment_terms"`
-	Incoterm           string `json:"incoterm"`
-	Port               string `json:"port"`
-	QuantityUnit       string `json:"quantity_unit"`
-	Remarks            string `json:"remarks"`
-	Quantity           string `json:"quantity"`
+// SystemInquiryColumns 是系统内置 21 列布局，只在请求没有携带模板快照时
+// 兜底（旧任务、直连调试）。正常路径永远使用采购侧默认模板的快照。
+func SystemInquiryColumns() []InquiryColumn {
+	type c = InquiryColumn
+	return []c{
+		{FieldKey: "product", DisplayName: "产品", DataType: "TEXT", IsRequired: true},
+		{FieldKey: "material_standard", DisplayName: "材质/标准", DataType: "TEXT"},
+		{FieldKey: "grade", DisplayName: "牌号/等级", DataType: "TEXT"},
+		{FieldKey: "thickness", DisplayName: "厚度", DataType: "TEXT"},
+		{FieldKey: "width", DisplayName: "宽度", DataType: "TEXT"},
+		{FieldKey: "length_or_form", DisplayName: "长度/形式", DataType: "TEXT"},
+		{FieldKey: "surface_requirement", DisplayName: "表面要求", DataType: "TEXT"},
+		{FieldKey: "coating", DisplayName: "涂层/镀层", DataType: "TEXT"},
+		{FieldKey: "tolerance", DisplayName: "公差", DataType: "TEXT"},
+		{FieldKey: "coil_weight", DisplayName: "卷重", DataType: "TEXT"},
+		{FieldKey: "coil_id", DisplayName: "卷内径", DataType: "TEXT"},
+		{FieldKey: "packaging", DisplayName: "包装", DataType: "TEXT"},
+		{FieldKey: "delivery", DisplayName: "交期", DataType: "TEXT"},
+		{FieldKey: "payment_terms", DisplayName: "付款条件", DataType: "TEXT"},
+		{FieldKey: "incoterm", DisplayName: "贸易术语", DataType: "TEXT"},
+		{FieldKey: "port", DisplayName: "港口", DataType: "TEXT"},
+		{FieldKey: "quantity_unit", DisplayName: "单位", DataType: "TEXT", IsRequired: true},
+		{FieldKey: "remarks", DisplayName: "备注", DataType: "TEXT"},
+		{FieldKey: "quantity", DisplayName: "数量", DataType: "NUMBER", IsRequired: true},
+		{FieldKey: "unit_price", DisplayName: "单价", DataType: "NUMBER"},
+		{FieldKey: "total_price", DisplayName: "总价", DataType: "NUMBER"},
+	}
 }
 
-var InquiryColumns = []string{
-	"产品", "材质/标准", "牌号/等级", "厚度", "宽度", "长度/形式",
-	"表面要求", "涂层/镀层", "公差", "卷重", "卷内径", "包装",
-	"交期", "付款条件", "贸易术语", "港口", "单位", "备注",
-	"数量", "单价", "总价",
+// ExtractedInquiry 是模型唯一允许返回的形状：每行是按模板字段标识 keyed
+// 的事实。公司工作簿由服务端按模板列组装，模型不能决定列名、顺序或公式。
+type ExtractedInquiry struct {
+	Title   string              `json:"title"`
+	Summary string              `json:"summary"`
+	Items   []map[string]string `json:"items"`
 }
 
-// NewInquiryWorkbook centralises the internal format. Quantity is the final
-// extracted field. Unit price is intentionally blank for staff/factories to
-// fill, and total is a trusted server-created Excel formula.
-func NewInquiryWorkbook(in InquiryExtraction) Workbook {
+// NewTemplateWorkbook 按模板列把抽取结果落成工作簿：列名与顺序来自模板，
+// 空值落模板默认值；当模板同时包含数量、单价、总价三列时，总价列生成
+// 「数量×单价」公式（列位置按模板顺序动态计算）。
+func NewTemplateWorkbook(in ExtractedInquiry, columns []InquiryColumn) Workbook {
+	if len(columns) == 0 {
+		columns = SystemInquiryColumns()
+	}
+	qtyIdx, priceIdx, totalIdx := -1, -1, -1
+	for i, column := range columns {
+		switch column.FieldKey {
+		case "quantity":
+			qtyIdx = i
+		case "unit_price":
+			priceIdx = i
+		case "total_price":
+			totalIdx = i
+		}
+	}
+	withFormula := qtyIdx >= 0 && priceIdx >= 0 && totalIdx >= 0
+
+	headers := make([]string, len(columns))
+	keys := make([]string, len(columns))
+	types := make([]string, len(columns))
+	for i, column := range columns {
+		headers[i] = column.DisplayName
+		keys[i] = column.FieldKey
+		switch column.DataType {
+		case "NUMBER":
+			types[i] = "number"
+		case "DATE":
+			types[i] = "date"
+		default:
+			types[i] = "string"
+		}
+	}
+	if withFormula {
+		types[totalIdx] = "formula"
+	}
+
 	rows := make([][]string, 0, len(in.Items))
 	for i, item := range in.Items {
 		excelRow := i + 2 // row 1 is the header
-		rows = append(rows, []string{
-			item.Product, item.MaterialStandard, item.Grade, item.Thickness,
-			item.Width, item.LengthOrForm, item.SurfaceRequirement, item.Coating,
-			item.Tolerance, item.CoilWeight, item.CoilID, item.Packaging,
-			item.Delivery, item.PaymentTerms, item.Incoterm, item.Port,
-			item.QuantityUnit, item.Remarks, item.Quantity, "",
-			fmt.Sprintf("=S%d*T%d", excelRow, excelRow),
-		})
+		row := make([]string, len(columns))
+		for c, column := range columns {
+			switch {
+			case withFormula && c == totalIdx:
+				row[c] = fmt.Sprintf("=%s%d*%s%d", excelColumn(qtyIdx+1), excelRow, excelColumn(priceIdx+1), excelRow)
+			default:
+				value := strings.TrimSpace(item[column.FieldKey])
+				if value == "" {
+					value = column.DefaultValue
+				}
+				row[c] = value
+			}
+		}
+		rows = append(rows, row)
 	}
-	types := make([]string, len(InquiryColumns))
-	for i := range types {
-		types[i] = "string"
-	}
-	types[len(types)-3] = "number"
-	types[len(types)-2] = "number"
-	types[len(types)-1] = "formula"
 	return Workbook{Title: in.Title, Sheets: []WorkbookSheet{{
 		Name: "询价明细", Summary: in.Summary,
-		Columns: append([]string(nil), InquiryColumns...), ColumnTypes: types, Rows: rows,
+		Columns: headers, ColumnTypes: types, ColumnKeys: keys, Rows: rows,
 	}}}
 }
 
@@ -137,9 +184,13 @@ type ExcelResult struct {
 func (s *Service) ConvertInboundToExcel(
 	ctx context.Context, tenantID, ownerID, inboundID int64,
 	attachmentID *int64, selectedText *string, locale string,
+	columns []InquiryColumn,
 ) (ExcelResult, error) {
 	if s.tables == nil {
 		return ExcelResult{}, apierr.Invalid("MAIL_EXCEL_NOT_CONFIGURED", "Excel 智能转换尚未配置")
+	}
+	if len(columns) == 0 {
+		columns = SystemInquiryColumns()
 	}
 	if inboundID <= 0 {
 		return ExcelResult{}, apierr.Invalid("MAIL_EXCEL_MAIL_REQUIRED", "缺少邮件标识")
@@ -153,7 +204,7 @@ func (s *Service) ConvertInboundToExcel(
 		return ExcelResult{}, errNotFound()
 	}
 
-	in := TableExtractionInput{Locale: normalizeExcelLocale(locale)}
+	in := TableExtractionInput{Locale: normalizeExcelLocale(locale), Columns: columns}
 	// This is an opaque, stable identifier rather than an email address or a
 	// name. The API uses it only for abuse monitoring.
 	in.SafetyID = fmt.Sprintf("tenant-%d-user-%d", tenantID, ownerID)
