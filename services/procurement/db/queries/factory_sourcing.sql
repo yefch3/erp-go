@@ -1,9 +1,10 @@
 -- name: CreateFactoryRFQ :one
 INSERT INTO factory_rfqs (tenant_id, case_id, rfq_no, supplier_id, supplier_code, supplier_name,
- contact_email, currency, response_due_at, created_by, created_by_name)
+ factory_id, factory_code, factory_name, contact_email, currency, response_due_at, created_by, created_by_name)
 VALUES (sqlc.arg(tenant_id), sqlc.arg(case_id),
  'RFQ-' || to_char(current_date,'YYYYMMDD') || '-' || lpad(nextval('factory_rfq_no_seq')::text,6,'0'),
- sqlc.arg(supplier_id), sqlc.arg(supplier_code), sqlc.arg(supplier_name), sqlc.arg(contact_email),
+ sqlc.arg(supplier_id), sqlc.arg(supplier_code), sqlc.arg(supplier_name),
+ sqlc.arg(factory_id), sqlc.arg(factory_code), sqlc.arg(factory_name), sqlc.arg(contact_email),
  sqlc.arg(currency), nullif(sqlc.arg(response_due_at)::text,'')::date,
  sqlc.arg(created_by), sqlc.arg(created_by_name))
 RETURNING id, rfq_no;
@@ -17,13 +18,20 @@ WHERE sl.tenant_id=sqlc.arg(tenant_id) AND sl.case_id=sqlc.arg(case_id) AND sl.i
   AND sl.quantity IS NOT NULL AND sl.quantity > 0;
 
 -- name: ListFactoryRFQs :many
-SELECT r.id,r.case_id,r.rfq_no,r.supplier_id,r.supplier_code,r.supplier_name,r.contact_email,
+SELECT r.id,r.case_id,r.rfq_no,r.supplier_id,r.supplier_code,r.supplier_name,
+ r.factory_id,r.factory_code,r.factory_name,r.contact_email,
  r.currency,coalesce(r.response_due_at::text,'')::text AS response_due_at,r.status,r.created_at,
  (SELECT count(*)::int FROM factory_rfq_lines fl WHERE fl.tenant_id=r.tenant_id AND fl.factory_rfq_id=r.id) AS line_count,
  ARRAY(SELECT fl.sourcing_line_id FROM factory_rfq_lines fl WHERE fl.tenant_id=r.tenant_id AND fl.factory_rfq_id=r.id ORDER BY fl.line_no)::bigint[] AS sourcing_line_ids
 FROM factory_rfqs r
 WHERE r.tenant_id=$1 AND r.case_id=$2
 ORDER BY r.created_at DESC;
+
+-- name: UpdateFactoryRFQ :execrows
+UPDATE factory_rfqs SET contact_email=sqlc.arg(contact_email),
+ response_due_at=nullif(sqlc.arg(response_due_at)::text,'')::date,updated_at=now()
+WHERE tenant_id=sqlc.arg(tenant_id) AND id=sqlc.arg(id)
+  AND status IN ('DRAFT','SENT','PARTIALLY_QUOTED');
 
 -- name: FactoryRFQForQuote :one
 SELECT id,case_id,currency,status FROM factory_rfqs WHERE tenant_id=$1 AND id=$2 FOR UPDATE;

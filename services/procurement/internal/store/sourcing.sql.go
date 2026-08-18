@@ -34,7 +34,9 @@ func (q *Queries) ConfirmSourcingLines(ctx context.Context, arg ConfirmSourcingL
 const createSourcingCase = `-- name: CreateSourcingCase :one
 INSERT INTO sourcing_cases (
     tenant_id, case_no, title, customer_id, customer_name, contact_name,
-    contact_email, source_mail_id, source_attachment_id, owner_id, owner_name
+    contact_email, source_mail_id, source_attachment_id, owner_id, owner_name,
+    source_file_name, source_content_type, source_file_data,
+    inquiry_template_id, inquiry_template_code, inquiry_template_version
 ) VALUES (
     $1::bigint,
     'SC-' || to_char(current_date, 'YYYYMMDD') || '-' || lpad(nextval('sourcing_case_no_seq')::text, 6, '0'),
@@ -42,22 +44,31 @@ INSERT INTO sourcing_cases (
     $4::text, $5::text,
     $6::text, $7::bigint,
     $8::bigint, $9::bigint,
-    $10::text
+    $10::text, $11::text,
+    $12::text, $13::bytea,
+    $14::bigint, $15::text,
+    $16::int
 )
 RETURNING id, case_no
 `
 
 type CreateSourcingCaseParams struct {
-	TenantID           int64
-	Title              string
-	CustomerID         int64
-	CustomerName       string
-	ContactName        string
-	ContactEmail       string
-	SourceMailID       int64
-	SourceAttachmentID int64
-	OwnerID            int64
-	OwnerName          string
+	TenantID               int64
+	Title                  string
+	CustomerID             int64
+	CustomerName           string
+	ContactName            string
+	ContactEmail           string
+	SourceMailID           int64
+	SourceAttachmentID     int64
+	OwnerID                int64
+	OwnerName              string
+	SourceFileName         string
+	SourceContentType      string
+	SourceFileData         []byte
+	InquiryTemplateID      int64
+	InquiryTemplateCode    string
+	InquiryTemplateVersion int32
 }
 
 type CreateSourcingCaseRow struct {
@@ -77,10 +88,55 @@ func (q *Queries) CreateSourcingCase(ctx context.Context, arg CreateSourcingCase
 		arg.SourceAttachmentID,
 		arg.OwnerID,
 		arg.OwnerName,
+		arg.SourceFileName,
+		arg.SourceContentType,
+		arg.SourceFileData,
+		arg.InquiryTemplateID,
+		arg.InquiryTemplateCode,
+		arg.InquiryTemplateVersion,
 	)
 	var i CreateSourcingCaseRow
 	err := row.Scan(&i.ID, &i.CaseNo)
 	return i, err
+}
+
+const createSourcingChange = `-- name: CreateSourcingChange :exec
+INSERT INTO sourcing_case_changes
+ (tenant_id,case_id,section,action,entity_id,summary,before_json,after_json,reason,operator_id,operator_name)
+VALUES ($1,$2,$3,$4,$5,
+ $6,$7::jsonb,$8::jsonb,$9,
+ $10,$11)
+`
+
+type CreateSourcingChangeParams struct {
+	TenantID     int64
+	CaseID       int64
+	Section      string
+	Action       string
+	EntityID     int64
+	Summary      string
+	BeforeJson   []byte
+	AfterJson    []byte
+	Reason       string
+	OperatorID   int64
+	OperatorName string
+}
+
+func (q *Queries) CreateSourcingChange(ctx context.Context, arg CreateSourcingChangeParams) error {
+	_, err := q.db.Exec(ctx, createSourcingChange,
+		arg.TenantID,
+		arg.CaseID,
+		arg.Section,
+		arg.Action,
+		arg.EntityID,
+		arg.Summary,
+		arg.BeforeJson,
+		arg.AfterJson,
+		arg.Reason,
+		arg.OperatorID,
+		arg.OperatorName,
+	)
+	return err
 }
 
 const createSourcingLine = `-- name: CreateSourcingLine :exec
@@ -88,7 +144,7 @@ INSERT INTO sourcing_lines (
     tenant_id, case_id, line_no, raw_text, product, material_standard, grade,
     thickness, width, length_or_form, surface_requirement, coating, tolerance,
     coil_weight, coil_id, packaging, delivery, payment_terms, incoterm, port,
-    quantity_unit, remarks, quantity
+    quantity_unit, remarks, quantity, custom_fields
 ) VALUES (
     $1::bigint, $2::bigint, $3::int,
     $4::text, $5::text,
@@ -99,7 +155,8 @@ INSERT INTO sourcing_lines (
     $16::text, $17::text,
     $18::text, $19::text, $20::text,
     $21::text, $22::text,
-    nullif($23::text, '')::numeric
+    nullif($23::text, '')::numeric,
+    $24::jsonb
 )
 `
 
@@ -127,6 +184,7 @@ type CreateSourcingLineParams struct {
 	QuantityUnit       string
 	Remarks            string
 	Quantity           string
+	CustomFields       []byte
 }
 
 func (q *Queries) CreateSourcingLine(ctx context.Context, arg CreateSourcingLineParams) error {
@@ -154,6 +212,7 @@ func (q *Queries) CreateSourcingLine(ctx context.Context, arg CreateSourcingLine
 		arg.QuantityUnit,
 		arg.Remarks,
 		arg.Quantity,
+		arg.CustomFields,
 	)
 	return err
 }
@@ -161,7 +220,8 @@ func (q *Queries) CreateSourcingLine(ctx context.Context, arg CreateSourcingLine
 const getSourcingCase = `-- name: GetSourcingCase :one
 SELECT id, case_no, title, customer_id, customer_name, contact_name,
        contact_email, source_mail_id, source_attachment_id, status,
-       owner_id, owner_name, created_at, updated_at
+       owner_id, owner_name, source_file_name, inquiry_template_id,
+       inquiry_template_code, inquiry_template_version, created_at, updated_at
 FROM sourcing_cases
 WHERE tenant_id = $1 AND id = $2
 `
@@ -172,20 +232,24 @@ type GetSourcingCaseParams struct {
 }
 
 type GetSourcingCaseRow struct {
-	ID                 int64
-	CaseNo             string
-	Title              string
-	CustomerID         int64
-	CustomerName       string
-	ContactName        string
-	ContactEmail       string
-	SourceMailID       int64
-	SourceAttachmentID int64
-	Status             string
-	OwnerID            int64
-	OwnerName          string
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
+	ID                     int64
+	CaseNo                 string
+	Title                  string
+	CustomerID             int64
+	CustomerName           string
+	ContactName            string
+	ContactEmail           string
+	SourceMailID           int64
+	SourceAttachmentID     int64
+	Status                 string
+	OwnerID                int64
+	OwnerName              string
+	SourceFileName         string
+	InquiryTemplateID      int64
+	InquiryTemplateCode    string
+	InquiryTemplateVersion int32
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
 }
 
 func (q *Queries) GetSourcingCase(ctx context.Context, arg GetSourcingCaseParams) (GetSourcingCaseRow, error) {
@@ -204,22 +268,51 @@ func (q *Queries) GetSourcingCase(ctx context.Context, arg GetSourcingCaseParams
 		&i.Status,
 		&i.OwnerID,
 		&i.OwnerName,
+		&i.SourceFileName,
+		&i.InquiryTemplateID,
+		&i.InquiryTemplateCode,
+		&i.InquiryTemplateVersion,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
+const getSourcingSourceFile = `-- name: GetSourcingSourceFile :one
+SELECT source_file_name, source_content_type, source_file_data
+FROM sourcing_cases WHERE tenant_id=$1 AND id=$2
+`
+
+type GetSourcingSourceFileParams struct {
+	TenantID int64
+	ID       int64
+}
+
+type GetSourcingSourceFileRow struct {
+	SourceFileName    string
+	SourceContentType string
+	SourceFileData    []byte
+}
+
+func (q *Queries) GetSourcingSourceFile(ctx context.Context, arg GetSourcingSourceFileParams) (GetSourcingSourceFileRow, error) {
+	row := q.db.QueryRow(ctx, getSourcingSourceFile, arg.TenantID, arg.ID)
+	var i GetSourcingSourceFileRow
+	err := row.Scan(&i.SourceFileName, &i.SourceContentType, &i.SourceFileData)
+	return i, err
+}
+
 const listSourcingCases = `-- name: ListSourcingCases :many
 SELECT id, case_no, title, customer_id, customer_name, contact_name,
        contact_email, source_mail_id, source_attachment_id, status,
-       owner_id, owner_name, created_at, updated_at, count(*) OVER () AS total
+       owner_id, owner_name, source_file_name, inquiry_template_id,
+       inquiry_template_code, inquiry_template_version, created_at, updated_at,
+       count(*) OVER () AS total
 FROM sourcing_cases
 WHERE tenant_id = $1::bigint
   AND ($2::bool
        OR owner_id = ANY($3::bigint[]))
   -- 待确认询盘有独立页面；正式询价列表默认不混入尚未确认的数据。
-  AND (($4::text = '' AND status <> 'INTAKE_PENDING')
+  AND (($4::text = '' AND status NOT IN ('INTAKE_PENDING','CUSTOMER_QUOTE_CREATED','CANCELLED'))
        OR status = $4::text)
   AND ($5::text = '' OR case_no ILIKE '%' || $5::text || '%'
        OR title ILIKE '%' || $5::text || '%'
@@ -239,21 +332,25 @@ type ListSourcingCasesParams struct {
 }
 
 type ListSourcingCasesRow struct {
-	ID                 int64
-	CaseNo             string
-	Title              string
-	CustomerID         int64
-	CustomerName       string
-	ContactName        string
-	ContactEmail       string
-	SourceMailID       int64
-	SourceAttachmentID int64
-	Status             string
-	OwnerID            int64
-	OwnerName          string
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
-	Total              int64
+	ID                     int64
+	CaseNo                 string
+	Title                  string
+	CustomerID             int64
+	CustomerName           string
+	ContactName            string
+	ContactEmail           string
+	SourceMailID           int64
+	SourceAttachmentID     int64
+	Status                 string
+	OwnerID                int64
+	OwnerName              string
+	SourceFileName         string
+	InquiryTemplateID      int64
+	InquiryTemplateCode    string
+	InquiryTemplateVersion int32
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	Total                  int64
 }
 
 func (q *Queries) ListSourcingCases(ctx context.Context, arg ListSourcingCasesParams) ([]ListSourcingCasesRow, error) {
@@ -286,9 +383,72 @@ func (q *Queries) ListSourcingCases(ctx context.Context, arg ListSourcingCasesPa
 			&i.Status,
 			&i.OwnerID,
 			&i.OwnerName,
+			&i.SourceFileName,
+			&i.InquiryTemplateID,
+			&i.InquiryTemplateCode,
+			&i.InquiryTemplateVersion,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSourcingChanges = `-- name: ListSourcingChanges :many
+SELECT id,section,action,entity_id,summary,before_json,after_json,reason,
+ operator_id,operator_name,created_at
+FROM sourcing_case_changes
+WHERE tenant_id=$1 AND case_id=$2
+ORDER BY created_at DESC,id DESC
+`
+
+type ListSourcingChangesParams struct {
+	TenantID int64
+	CaseID   int64
+}
+
+type ListSourcingChangesRow struct {
+	ID           int64
+	Section      string
+	Action       string
+	EntityID     int64
+	Summary      string
+	BeforeJson   []byte
+	AfterJson    []byte
+	Reason       string
+	OperatorID   int64
+	OperatorName string
+	CreatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) ListSourcingChanges(ctx context.Context, arg ListSourcingChangesParams) ([]ListSourcingChangesRow, error) {
+	rows, err := q.db.Query(ctx, listSourcingChanges, arg.TenantID, arg.CaseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSourcingChangesRow
+	for rows.Next() {
+		var i ListSourcingChangesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Section,
+			&i.Action,
+			&i.EntityID,
+			&i.Summary,
+			&i.BeforeJson,
+			&i.AfterJson,
+			&i.Reason,
+			&i.OperatorID,
+			&i.OperatorName,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -306,7 +466,7 @@ SELECT id, case_id, line_no, raw_text, product, material_standard, grade,
        coil_weight, coil_id, packaging, delivery, payment_terms, incoterm, port,
        quantity_unit, remarks, coalesce(quantity::text, '')::text AS quantity,
        product_id, sku_id, uom_id, decision, decided_by, decided_by_name,
-       coalesce(decided_at::text, '')::text AS decided_at
+       coalesce(decided_at::text, '')::text AS decided_at, revision_no, custom_fields
 FROM sourcing_lines
 WHERE tenant_id = $1 AND case_id = $2
 ORDER BY line_no
@@ -348,6 +508,8 @@ type ListSourcingLinesRow struct {
 	DecidedBy          int64
 	DecidedByName      string
 	DecidedAt          string
+	RevisionNo         int32
+	CustomFields       []byte
 }
 
 func (q *Queries) ListSourcingLines(ctx context.Context, arg ListSourcingLinesParams) ([]ListSourcingLinesRow, error) {
@@ -390,6 +552,8 @@ func (q *Queries) ListSourcingLines(ctx context.Context, arg ListSourcingLinesPa
 			&i.DecidedBy,
 			&i.DecidedByName,
 			&i.DecidedAt,
+			&i.RevisionNo,
+			&i.CustomFields,
 		); err != nil {
 			return nil, err
 		}
@@ -409,11 +573,13 @@ UPDATE sourcing_lines SET
  coil_weight=$10,coil_id=$11,packaging=$12,
  delivery=$13,payment_terms=$14,incoterm=$15,
  port=$16,quantity_unit=$17,remarks=$18,
- quantity=nullif($19::text,'')::numeric,product_id=$20,
- sku_id=$21,uom_id=$22,decision=$23,
- decided_by=$24,decided_by_name=$25,
- decided_at=CASE WHEN $23::varchar='PENDING' THEN NULL ELSE now() END,updated_at=now()
-WHERE tenant_id=$26 AND case_id=$27 AND id=$28
+ quantity=nullif($19::text,'')::numeric,custom_fields=$20::jsonb,
+ product_id=$21,
+ sku_id=$22,uom_id=$23,decision=$24,
+ decided_by=$25,decided_by_name=$26,
+ decided_at=CASE WHEN $24::varchar='PENDING' THEN NULL ELSE now() END,
+ revision_no=revision_no+CASE WHEN decision='CONFIRMED' THEN 1 ELSE 0 END,updated_at=now()
+WHERE tenant_id=$27 AND case_id=$28 AND id=$29
 `
 
 type ReviewSourcingLineParams struct {
@@ -436,6 +602,7 @@ type ReviewSourcingLineParams struct {
 	QuantityUnit       string
 	Remarks            string
 	Quantity           string
+	CustomFields       []byte
 	ProductID          int64
 	SkuID              int64
 	UomID              int64
@@ -468,6 +635,7 @@ func (q *Queries) ReviewSourcingLine(ctx context.Context, arg ReviewSourcingLine
 		arg.QuantityUnit,
 		arg.Remarks,
 		arg.Quantity,
+		arg.CustomFields,
 		arg.ProductID,
 		arg.SkuID,
 		arg.UomID,

@@ -6,7 +6,7 @@
         <h1>{{ t('procurementIntakes.title') }}</h1>
         <p>{{ t('procurementIntakes.subtitle') }}</p>
       </div>
-      <el-button v-if="canWrite" type="primary" @click="uploadOpen = true">{{ t('procurementIntakes.manualUpload') }}</el-button>
+      <div class="head-actions"><el-button @click="router.push('/procurement')">← {{ t('procurementNav.backToWorkbench') }}</el-button><el-button v-if="canWrite" type="primary" @click="uploadOpen = true">{{ t('procurementIntakes.manualUpload') }}</el-button></div>
     </header>
 
     <section class="panel">
@@ -23,8 +23,10 @@
         <el-table-column prop="customerName" :label="t('procurementIntakes.customer')" min-width="150"><template #default="{ row }">{{ row.customerName || '—' }}</template></el-table-column>
         <el-table-column :label="t('procurementIntakes.lines')" width="90" align="center"><template #default="{ row }">{{ row.lines?.length ?? 0 }}</template></el-table-column>
         <el-table-column prop="createdAt" :label="t('procurementIntakes.receivedAt')" width="185"><template #default="{ row }">{{ formatTime(row.createdAt) }}</template></el-table-column>
-        <el-table-column :label="t('common.actions')" width="120" fixed="right">
-          <template #default="{ row }"><el-button link type="primary" @click="openDetail(row)">{{ t('procurementIntakes.review') }}</el-button></template>
+        <el-table-column :label="t('common.actions')" width="125" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" size="small" @click="openDetail(row)">{{ t('procurementIntakes.review') }}</el-button>
+          </template>
         </el-table-column>
         <template #empty>{{ t('procurementIntakes.empty') }}</template>
       </el-table>
@@ -75,9 +77,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { get, http, post, put, type Envelope } from '../api'
 import { useAuthStore } from '../stores/auth'
 
-interface Extracted { [key: string]: string; product: string; materialStandard: string; grade: string; thickness: string; width: string; quantity: string; quantityUnit: string; delivery: string; port: string }
+interface Extracted { product: string; materialStandard: string; grade: string; thickness: string; width: string; quantity: string; quantityUnit: string; delivery: string; port: string }
 interface IntakeLine { id: string; lineNo: number; decision: string; extracted: Extracted }
-interface Intake { id: string; caseNo: string; title: string; customerName: string; contactName: string; contactEmail: string; sourceMailId: string; createdAt: string; lines?: IntakeLine[] }
+interface Intake { id: string; caseNo: string; title: string; customerName: string; contactName: string; contactEmail: string; sourceMailId: string; sourceFileName: string; createdAt: string; lines?: IntakeLine[] }
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -127,6 +129,8 @@ async function confirmIntake() {
   if (!detail.value) return
   const active = detail.value.lines?.filter((line) => line.decision !== 'SKIPPED') ?? []
   if (!active.length) { ElMessage.warning(t('procurementIntakes.keepOne')); return }
+  const incomplete = active.filter((line) => !line.extracted.product?.trim() || !line.extracted.quantity?.trim() || !line.extracted.quantityUnit?.trim())
+  if (incomplete.length) { ElMessage.warning(t('procurementIntakes.requiredMissing', { lines: incomplete.map((line) => line.lineNo).join('、') })); return }
   await ElMessageBox.confirm(t('procurementIntakes.confirmHint'), t('procurementIntakes.confirmCreate'), { type: 'warning' })
   saving.value = true
   try {
@@ -143,5 +147,5 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.page{padding:28px;background:#f4f7f7;min-height:100%}.page-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px}.eyebrow{color:#16766b;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}.page-head h1{margin:5px 0 4px;font-size:26px;color:#173042}.page-head p{margin:0;color:#71808b}.panel{background:#fff;border:1px solid #dfe8e6;border-radius:12px;padding:18px}.filters{display:flex;gap:10px;width:460px;margin-bottom:14px}.el-pagination{justify-content:flex-end;margin-top:16px}.upload-form{margin-top:20px}.detail-summary{display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px;margin-bottom:14px}.detail-summary>div{display:flex;flex-direction:column;gap:4px;padding:11px 14px;background:#f4f7f7;border-radius:8px}.detail-summary small{color:#7b8992}.review-alert{margin-bottom:14px}.stack-input{margin-top:6px}.qty{display:grid;grid-template-columns:1fr 70px;gap:6px}@media(max-width:850px){.filters{width:100%}.detail-summary{grid-template-columns:1fr}}
+.page{padding:28px;background:#f4f7f7;min-height:100%}.page-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px}.head-actions{display:flex;gap:10px}.eyebrow{color:#16766b;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}.page-head h1{margin:5px 0 4px;font-size:26px;color:#173042}.page-head p{margin:0;color:#71808b}.panel{background:#fff;border:1px solid #dfe8e6;border-radius:12px;padding:18px}.filters{display:flex;gap:10px;width:460px;margin-bottom:14px}.row-actions{display:flex;align-items:center;gap:8px;white-space:nowrap}.el-pagination{justify-content:flex-end;margin-top:16px}.upload-form{margin-top:20px}.detail-summary{display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px;margin-bottom:14px}.detail-summary>div{display:flex;flex-direction:column;gap:4px;padding:11px 14px;background:#f4f7f7;border-radius:8px}.detail-summary small{color:#7b8992}.review-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;padding:10px 14px;border:1px solid #dce8e5;border-radius:8px;background:#f7fbfa;color:#536873}.review-alert{margin-bottom:14px}.stack-input{margin-top:6px}.qty{display:grid;grid-template-columns:1fr 70px;gap:6px}.custom-fields{display:grid;gap:8px}.custom-fields label{display:grid;gap:3px}.custom-fields small{color:#71808b}@media(max-width:850px){.filters{width:100%}.detail-summary{grid-template-columns:1fr}.page-head{gap:14px;flex-direction:column}.head-actions{flex-wrap:wrap}.review-toolbar{align-items:flex-start;flex-direction:column}}
 </style>

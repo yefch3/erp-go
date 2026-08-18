@@ -37,6 +37,8 @@ const (
 	SourcingService_ConfirmCostScenario_FullMethodName         = "/erp.procurement.v1.SourcingService/ConfirmCostScenario"
 	SourcingService_PrepareCustomerQuotation_FullMethodName    = "/erp.procurement.v1.SourcingService/PrepareCustomerQuotation"
 	SourcingService_LinkCustomerQuotation_FullMethodName       = "/erp.procurement.v1.SourcingService/LinkCustomerQuotation"
+	SourcingService_ListCaseChanges_FullMethodName             = "/erp.procurement.v1.SourcingService/ListCaseChanges"
+	SourcingService_UpdateFactoryRfq_FullMethodName            = "/erp.procurement.v1.SourcingService/UpdateFactoryRfq"
 )
 
 // SourcingServiceClient is the client API for SourcingService service.
@@ -65,6 +67,8 @@ type SourcingServiceClient interface {
 	ConfirmCostScenario(ctx context.Context, in *ConfirmCostScenarioRequest, opts ...grpc.CallOption) (*ConfirmCostScenarioResponse, error)
 	PrepareCustomerQuotation(ctx context.Context, in *PrepareCustomerQuotationRequest, opts ...grpc.CallOption) (*PrepareCustomerQuotationResponse, error)
 	LinkCustomerQuotation(ctx context.Context, in *LinkCustomerQuotationRequest, opts ...grpc.CallOption) (*LinkCustomerQuotationResponse, error)
+	ListCaseChanges(ctx context.Context, in *ListCaseChangesRequest, opts ...grpc.CallOption) (*ListCaseChangesResponse, error)
+	UpdateFactoryRfq(ctx context.Context, in *UpdateFactoryRfqRequest, opts ...grpc.CallOption) (*UpdateFactoryRfqResponse, error)
 }
 
 type sourcingServiceClient struct {
@@ -255,6 +259,26 @@ func (c *sourcingServiceClient) LinkCustomerQuotation(ctx context.Context, in *L
 	return out, nil
 }
 
+func (c *sourcingServiceClient) ListCaseChanges(ctx context.Context, in *ListCaseChangesRequest, opts ...grpc.CallOption) (*ListCaseChangesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCaseChangesResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListCaseChanges_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) UpdateFactoryRfq(ctx context.Context, in *UpdateFactoryRfqRequest, opts ...grpc.CallOption) (*UpdateFactoryRfqResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateFactoryRfqResponse)
+	err := c.cc.Invoke(ctx, SourcingService_UpdateFactoryRfq_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SourcingServiceServer is the server API for SourcingService service.
 // All implementations must embed UnimplementedSourcingServiceServer
 // for forward compatibility.
@@ -281,6 +305,8 @@ type SourcingServiceServer interface {
 	ConfirmCostScenario(context.Context, *ConfirmCostScenarioRequest) (*ConfirmCostScenarioResponse, error)
 	PrepareCustomerQuotation(context.Context, *PrepareCustomerQuotationRequest) (*PrepareCustomerQuotationResponse, error)
 	LinkCustomerQuotation(context.Context, *LinkCustomerQuotationRequest) (*LinkCustomerQuotationResponse, error)
+	ListCaseChanges(context.Context, *ListCaseChangesRequest) (*ListCaseChangesResponse, error)
+	UpdateFactoryRfq(context.Context, *UpdateFactoryRfqRequest) (*UpdateFactoryRfqResponse, error)
 	mustEmbedUnimplementedSourcingServiceServer()
 }
 
@@ -344,6 +370,12 @@ func (UnimplementedSourcingServiceServer) PrepareCustomerQuotation(context.Conte
 }
 func (UnimplementedSourcingServiceServer) LinkCustomerQuotation(context.Context, *LinkCustomerQuotationRequest) (*LinkCustomerQuotationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LinkCustomerQuotation not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListCaseChanges(context.Context, *ListCaseChangesRequest) (*ListCaseChangesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCaseChanges not implemented")
+}
+func (UnimplementedSourcingServiceServer) UpdateFactoryRfq(context.Context, *UpdateFactoryRfqRequest) (*UpdateFactoryRfqResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateFactoryRfq not implemented")
 }
 func (UnimplementedSourcingServiceServer) mustEmbedUnimplementedSourcingServiceServer() {}
 func (UnimplementedSourcingServiceServer) testEmbeddedByValue()                         {}
@@ -690,6 +722,42 @@ func _SourcingService_LinkCustomerQuotation_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SourcingService_ListCaseChanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCaseChangesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListCaseChanges(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListCaseChanges_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListCaseChanges(ctx, req.(*ListCaseChangesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_UpdateFactoryRfq_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateFactoryRfqRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).UpdateFactoryRfq(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_UpdateFactoryRfq_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).UpdateFactoryRfq(ctx, req.(*UpdateFactoryRfqRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SourcingService_ServiceDesc is the grpc.ServiceDesc for SourcingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -768,6 +836,14 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "LinkCustomerQuotation",
 			Handler:    _SourcingService_LinkCustomerQuotation_Handler,
+		},
+		{
+			MethodName: "ListCaseChanges",
+			Handler:    _SourcingService_ListCaseChanges_Handler,
+		},
+		{
+			MethodName: "UpdateFactoryRfq",
+			Handler:    _SourcingService_UpdateFactoryRfq_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

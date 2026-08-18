@@ -28,6 +28,8 @@ service SourcingService {
   rpc ConfirmCostScenario(ConfirmCostScenarioRequest) returns (ConfirmCostScenarioResponse);
   rpc PrepareCustomerQuotation(PrepareCustomerQuotationRequest) returns (PrepareCustomerQuotationResponse);
   rpc LinkCustomerQuotation(LinkCustomerQuotationRequest) returns (LinkCustomerQuotationResponse);
+  rpc ListCaseChanges(ListCaseChangesRequest) returns (ListCaseChangesResponse);
+  rpc UpdateFactoryRfq(UpdateFactoryRfqRequest) returns (UpdateFactoryRfqResponse);
 }
 
 message SourcingLineInput {
@@ -63,6 +65,7 @@ message SourcingLine {
   string decision = 7;
   string decided_by_name = 8;
   string decided_at = 9;
+  int32 revision_no = 10;
 }
 
 message SourcingCase {
@@ -81,6 +84,7 @@ message SourcingCase {
   string created_at = 13;
   string updated_at = 14;
   repeated SourcingLine lines = 15;
+  string source_file_name = 16;
 }
 
 message CreateCaseRequest {
@@ -92,6 +96,9 @@ message CreateCaseRequest {
   int64 source_mail_id = 6;
   int64 source_attachment_id = 7;
   repeated SourcingLineInput lines = 8;
+  string source_file_name = 9;
+  string source_content_type = 10;
+  bytes source_file_data = 11;
 }
 
 message CreateCaseResponse { SourcingCase sourcing_case = 1; }
@@ -115,6 +122,7 @@ message ReviewLineRequest {
   int64 case_id = 1; int64 line_id = 2; SourcingLineInput extracted = 3;
   int64 product_id = 4; int64 sku_id = 5; int64 uom_id = 6;
   string decision = 7;
+  string reason = 8;
 }
 message ReviewLineResponse { SourcingCase sourcing_case = 1; }
 
@@ -123,14 +131,28 @@ message FactoryRfq {
   string supplier_code = 5; string supplier_name = 6; string contact_email = 7;
   string currency = 8; string response_due_at = 9; string status = 10;
   int32 line_count = 11; string created_at = 12; repeated int64 sourcing_line_ids = 13;
+  int64 factory_id = 14; string factory_code = 15; string factory_name = 16;
 }
 message CreateFactoryRfqRequest {
   int64 case_id = 1; int64 supplier_id = 2; string contact_email = 3;
   string currency = 4; string response_due_at = 5; repeated int64 sourcing_line_ids = 6;
+  int64 factory_id = 7; string factory_code = 8; string factory_name = 9;
 }
 message CreateFactoryRfqResponse { FactoryRfq factory_rfq = 1; }
 message ListFactoryRfqsRequest { int64 case_id = 1; }
 message ListFactoryRfqsResponse { repeated FactoryRfq factory_rfqs = 1; }
+
+message SourcingCaseChange {
+  int64 id = 1; string section = 2; string action = 3; int64 entity_id = 4;
+  string summary = 5; string before_json = 6; string after_json = 7;
+  string reason = 8; int64 operator_id = 9; string operator_name = 10; string created_at = 11;
+}
+message ListCaseChangesRequest { int64 case_id = 1; }
+message ListCaseChangesResponse { repeated SourcingCaseChange changes = 1; }
+message UpdateFactoryRfqRequest {
+  int64 id = 1; string contact_email = 2; string response_due_at = 3; string reason = 4;
+}
+message UpdateFactoryRfqResponse { FactoryRfq factory_rfq = 1; }
 
 message GetFactoryRfqWorkbookRequest { int64 id = 1; }
 message GetFactoryRfqWorkbookResponse {
