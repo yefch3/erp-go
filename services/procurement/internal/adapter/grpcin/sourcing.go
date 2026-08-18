@@ -2,6 +2,7 @@ package grpcin
 
 import (
 	"context"
+	"encoding/json"
 
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
@@ -393,6 +394,7 @@ func lineInput(in *prv1.SourcingLineInput) app.SourcingLineInput {
 		CoilID: in.GetCoilId(), Packaging: in.GetPackaging(), Delivery: in.GetDelivery(),
 		PaymentTerms: in.GetPaymentTerms(), Incoterm: in.GetIncoterm(), Port: in.GetPort(),
 		QuantityUnit: in.GetQuantityUnit(), Remarks: in.GetRemarks(), Quantity: in.GetQuantity(),
+		CustomFields: in.GetCustomFields(),
 	}
 }
 
@@ -413,6 +415,8 @@ func sourcingCaseHead(row store.GetSourcingCaseRow) *prv1.SourcingCase {
 		Status: row.Status, OwnerId: row.OwnerID, OwnerName: row.OwnerName,
 		CreatedAt: ts(row.CreatedAt), UpdatedAt: ts(row.UpdatedAt),
 		SourceFileName: row.SourceFileName,
+		InquiryTemplateId: row.InquiryTemplateID, InquiryTemplateCode: row.InquiryTemplateCode,
+		InquiryTemplateVersion: row.InquiryTemplateVersion,
 	}
 }
 
@@ -428,6 +432,8 @@ func sourcingCaseList(row store.ListSourcingCasesRow) *prv1.SourcingCase {
 }
 
 func sourcingLine(row store.ListSourcingLinesRow) *prv1.SourcingLine {
+	customFields := map[string]string{}
+	_ = json.Unmarshal(row.CustomFields, &customFields)
 	return &prv1.SourcingLine{Id: row.ID, LineNo: row.LineNo, Decision: row.Decision,
 		ProductId: row.ProductID, SkuId: row.SkuID, UomId: row.UomID,
 		DecidedByName: row.DecidedByName, DecidedAt: row.DecidedAt, RevisionNo: row.RevisionNo,
@@ -439,5 +445,6 @@ func sourcingLine(row store.ListSourcingLinesRow) *prv1.SourcingLine {
 			CoilId: row.CoilID, Packaging: row.Packaging, Delivery: row.Delivery,
 			PaymentTerms: row.PaymentTerms, Incoterm: row.Incoterm, Port: row.Port,
 			QuantityUnit: row.QuantityUnit, Remarks: row.Remarks, Quantity: row.Quantity,
+			CustomFields: customFields,
 		}}
 }

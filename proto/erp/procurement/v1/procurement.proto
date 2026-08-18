@@ -53,6 +53,9 @@ message SourcingLineInput {
   string quantity_unit = 18;
   string remarks = 19;
   string quantity = 20;
+  // custom.* template columns land here, keyed by field key (no custom. prefix
+  // stripping: the key is the identity the template owns).
+  map<string, string> custom_fields = 21;
 }
 
 message SourcingLine {
@@ -85,6 +88,10 @@ message SourcingCase {
   string updated_at = 14;
   repeated SourcingLine lines = 15;
   string source_file_name = 16;
+  // The inquiry template layout this case was read with.
+  int64 inquiry_template_id = 17;
+  string inquiry_template_code = 18;
+  int32 inquiry_template_version = 19;
 }
 
 message CreateCaseRequest {
@@ -840,3 +847,87 @@ message ResolveReceiptExceptionRequest {
   string resolution = 3;
 }
 message ResolveReceiptExceptionResponse { ReceiptException exception = 1; }
+
+// InquiryTemplateService manages the company's standard inquiry column sets.
+// The mail module's standardization output and the procurement intake's
+// validation both follow the tenant's default template: editing the default
+// template changes what the LLM is asked to extract and what an uploaded
+// standard file must contain. Saving never mutates a version — it issues the
+// next one, so historical inquiries keep pointing at the layout they were
+// read with.
+service InquiryTemplateService {
+  rpc ListInquiryTemplates(ListInquiryTemplatesRequest) returns (ListInquiryTemplatesResponse);
+  rpc GetInquiryTemplate(GetInquiryTemplateRequest) returns (GetInquiryTemplateResponse);
+  // The consumer-facing read: mail conversion and intake parsing fetch the
+  // default template through this. Seeds the system layout on first use.
+  rpc GetDefaultInquiryTemplate(GetDefaultInquiryTemplateRequest) returns (GetDefaultInquiryTemplateResponse);
+  rpc CreateInquiryTemplate(CreateInquiryTemplateRequest) returns (CreateInquiryTemplateResponse);
+  // Saves as the next version of the same code; the previous ACTIVE version
+  // becomes SUPERSEDED inside the same transaction.
+  rpc SaveInquiryTemplate(SaveInquiryTemplateRequest) returns (SaveInquiryTemplateResponse);
+  rpc SetInquiryTemplateStatus(SetInquiryTemplateStatusRequest) returns (SetInquiryTemplateStatusResponse);
+  rpc SetDefaultInquiryTemplate(SetDefaultInquiryTemplateRequest) returns (SetDefaultInquiryTemplateResponse);
+}
+
+message InquiryTemplateField {
+  // Known business keys (product, quantity, …) have fixed meanings; company
+  // additions use a custom.* key. The key is the stable identity across
+  // versions; the display name is only the Excel header and may be renamed.
+  string field_key = 1;
+  string display_name = 2;
+  int32 sort_order = 3;
+  bool is_required = 4;
+  string default_value = 5;
+  string data_type = 6; // TEXT | NUMBER | DATE
+  bool is_custom = 7;
+  bool is_core = 8; // product / quantity / quantity_unit: present in every template
+}
+
+message InquiryTemplate {
+  int64 id = 1;
+  string template_code = 2;
+  int32 version = 3;
+  string name = 4;
+  string description = 5;
+  string status = 6; // ACTIVE | SUPERSEDED | DISABLED
+  bool is_default = 7;
+  bool is_system = 8; // seeded SYSTEM_DEFAULT layout; editable like any template
+  int32 field_count = 9;
+  repeated InquiryTemplateField fields = 10;
+  string created_by_name = 11;
+  string created_at = 12;
+  string updated_at = 13;
+}
+
+message ListInquiryTemplatesRequest {}
+message ListInquiryTemplatesResponse { repeated InquiryTemplate templates = 1; }
+message GetInquiryTemplateRequest { int64 id = 1; }
+message GetInquiryTemplateResponse { InquiryTemplate template = 1; }
+message GetDefaultInquiryTemplateRequest {}
+message GetDefaultInquiryTemplateResponse { InquiryTemplate template = 1; }
+message CreateInquiryTemplateResponse { InquiryTemplate template = 1; }
+message SaveInquiryTemplateResponse { InquiryTemplate template = 1; }
+message SetInquiryTemplateStatusResponse { InquiryTemplate template = 1; }
+message SetDefaultInquiryTemplateResponse { InquiryTemplate template = 1; }
+
+message CreateInquiryTemplateRequest {
+  string template_code = 1;
+  string name = 2;
+  string description = 3;
+  bool is_default = 4;
+  repeated InquiryTemplateField fields = 5;
+}
+
+message SaveInquiryTemplateRequest {
+  int64 id = 1; // the version being edited
+  string name = 2;
+  string description = 3;
+  bool is_default = 4;
+  repeated InquiryTemplateField fields = 5;
+}
+
+message SetInquiryTemplateStatusRequest {
+  int64 id = 1;
+  string status = 2; // ACTIVE | DISABLED
+}
+message SetDefaultInquiryTemplateRequest { int64 id = 1; }
