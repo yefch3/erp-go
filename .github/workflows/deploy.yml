@@ -34,7 +34,10 @@ jobs:
     # build 失败时不部署。workflow_run 无论成败都会触发，所以这一行是闸门。
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    environment: production
+    # 这里刻意不写 `environment:`。声明环境会把 OIDC 令牌的主体从
+    # repo:…:ref:refs/heads/main 改成 repo:…:environment:<名字>，而角色的信任
+    # 策略锁的是前者 —— 加上它，AWS 会直接拒绝换取凭据。将来若要环境审批门，
+    # 得同时改 IAM 信任策略的 sub，两处一起动。
     steps:
       - uses: actions/checkout@v4
 
