@@ -20,8 +20,9 @@ on:
         required: false
 
 permissions:
-  id-token: write   # OIDC 的钥匙孔
+  id-token: write     # OIDC 的钥匙孔
   contents: read
+  deployments: write  # 自己往仓库的 Deployments 里写记录，见下方说明
 
 # 同一时刻只允许一个部署。不取消进行中的那个：一个被打断在「迁完库、
 # 没换容器」中间的部署，比多等两分钟糟糕得多。
@@ -47,6 +48,10 @@ jobs:
     # 这里也刻意不写 `environment:`：声明环境会把主体的后半段从
     # ref:refs/heads/main 换成 environment:<名字>，届时 IAM 那边要跟着改，
     # 且环境主体不含分支信息，必须另配分支策略才不会放宽信任面。
+    #
+    # 仓库首页那个 Deployments 时间线仍然要，只是改由本工作流用 API 自己写：
+    # 拿到的是同样的可见性（现在跑的是哪个提交、什么时候上的、成没成），
+    # 却不必把取凭据的主体绑到环境上。
     steps:
       - uses: actions/checkout@v4
 
@@ -70,6 +75,21 @@ jobs:
           [ ${#SHA} -eq 40 ] || { echo "需要完整 40 位 SHA，收到 ${#SHA} 位：$SHA" >&2; exit 1; }
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "部署 $SHA"
+
+      # 在动手之前登记，这样连「凭据都没换到」这种早夭也会留下痕迹 —— 时间线
+      # 要能说出失败，不然它只是一排绿灯，看不出系统曾经拦住过什么。
+      # required_contexts 必须显式给空数组：默认值是「等所有检查通过」，而这
+      # 条流水线本来就是被 build 成功这件事触发的，留默认会让登记直接被拒。
+      - name: 登记一次部署
+        id: dep
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ID=$(jq -nc --arg ref "${{ steps.pick.outputs.sha }}" \
+                 '{ref:$ref, environment:"production", auto_merge:false,
+                    required_contexts:[], description:"自动部署"}' \
+             | gh api repos/${{ github.repository }}/deployments --input - --jq .id)
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -122,3 +142,20 @@ jobs:
           echo "$BODY"
           echo "$BODY" | grep -q "${{ steps.pick.outputs.sha }}" || {
             echo "公网 healthz 报的版本与本次部署不一致" >&2; exit 1; }
+
+      # always()：失败路径尤其要回填，否则时间线上会留下一条永远「进行中」的
+      # 记录 —— 那比红叉更糟，它什么也没说。
+      - name: 回填部署结果
+        if: always() && steps.dep.outputs.id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            STATE=success; DESC="已上线并从公网核对过版本号"
+          else
+            STATE=failure; DESC="部署未完成；服务器按 deploy.sh 的规则自行回滚"
+          fi
+          jq -nc --arg s "$STATE" --arg d "$DESC" --arg u "http://${{ secrets.PUBLIC_HOST }}" \
+             '{state:$s, description:$d, environment_url:$u}' \
+            | gh api repos/${{ github.repository }}/deployments/${{ steps.dep.outputs.id }}/statuses \
+                --input - --jq .state
