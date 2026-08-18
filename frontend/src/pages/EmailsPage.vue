@@ -719,6 +719,8 @@
     width="min(1100px, 94vw)"
     top="4vh"
     append-to-body
+    :close-on-click-modal="false"
+    :close-on-press-escape="false"
   >
     <div v-loading="excelBusy" class="excel-preview">
       <el-empty v-if="!excelBusy && !excelResult" :description="t('emails.excelWaiting')" />
@@ -758,92 +760,9 @@
       >
         {{ t('emails.createSourcingCase') }}
       </el-button>
-      <el-button
-        v-if="excelResult && auth.can('procurement:order:write')"
-        :loading="purchaseImportBusy"
-        @click="openPurchaseOrderImport"
-      >
-        {{ t('emails.importPurchaseOrder') }}
-      </el-button>
       <el-button v-if="excelResult" type="primary" @click="downloadExcel">
         {{ t('emails.downloadExcel') }}
       </el-button>
-    </template>
-  </el-dialog>
-
-  <el-dialog v-model="purchaseImportOpen" :title="t('emails.purchaseImportTitle')" width="min(1200px, 94vw)" destroy-on-close>
-    <el-steps :active="purchaseImportStep" finish-status="success" align-center class="purchase-import-steps">
-      <el-step :title="t('emails.importBasicStep')" />
-      <el-step :title="t('emails.importMatchStep')" />
-      <el-step :title="t('emails.importConfirmStep')" />
-    </el-steps>
-    <el-alert type="info" :closable="false" show-icon class="excel-import-hint">
-      {{ t('emails.purchaseImportHint') }}
-    </el-alert>
-    <el-form v-if="purchaseImportStep === 0" label-width="110px" class="purchase-import-form">
-      <el-form-item :label="t('emails.supplier')" required>
-        <el-select v-model="purchaseImportForm.supplierId" filterable style="width: 360px" @change="applySupplierCurrency">
-          <el-option
-            v-for="supplier in purchaseImportSuppliers"
-            :key="supplier.id"
-            :value="String(supplier.id)"
-            :label="`${supplier.code} · ${supplier.name}`"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item :label="t('emails.importCurrency')" required>
-        <el-input v-model="purchaseImportForm.currency" maxlength="3" style="width: 120px" />
-      </el-form-item>
-      <el-form-item :label="t('emails.importExpectedDate')">
-        <el-date-picker v-model="purchaseImportForm.expectedDate" type="date" value-format="YYYY-MM-DD" />
-      </el-form-item>
-      <el-form-item :label="t('emails.importRemark')">
-        <el-input v-model="purchaseImportForm.remark" type="textarea" :rows="3" maxlength="500" show-word-limit />
-      </el-form-item>
-    </el-form>
-    <el-table v-else-if="purchaseImportStep === 1" :data="purchaseImportRows" size="small" border max-height="440px">
-      <el-table-column prop="rowNo" label="#" width="55" />
-      <el-table-column prop="product" :label="t('emails.product')" min-width="180" />
-      <el-table-column :label="t('emails.quantity')" width="130"><template #default="{ row }"><el-input v-model="row.quantity" @input="onPurchaseRequirementChange(row)" /></template></el-table-column>
-      <el-table-column prop="quantityUnit" :label="t('emails.importUnit')" width="90" />
-      <el-table-column :label="t('emails.unitPrice')" width="130"><template #default="{ row }"><el-input v-model="row.unitPrice" @input="onPurchaseRequirementChange(row)" /></template></el-table-column>
-      <el-table-column :label="t('emails.purchaseRequirement')" min-width="330">
-        <template #default="{ row }">
-          <el-select v-model="row.requirementId" clearable :placeholder="row.message || t('emails.chooseRequirement')" style="width: 100%" @change="onPurchaseRequirementChange(row)">
-            <el-option
-              v-for="candidate in row.candidates"
-              :key="candidate.requirementId"
-              :value="String(candidate.requirementId)"
-              :label="`${candidate.contractNo || '—'} · ${candidate.productName} · ${candidate.openQty} ${candidate.uomCode}`"
-            />
-          </el-select>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('common.status')" width="130">
-        <template #default="{ row }">
-          <el-tag :type="row.result === 'MATCHED' ? 'success' : row.result === 'MULTIPLE' ? 'warning' : 'danger'" effect="plain">
-            {{ t(`emails.importResults.${row.result}`) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-    </el-table>
-    <div v-else class="purchase-import-confirm">
-      <el-descriptions :column="2" border>
-        <el-descriptions-item :label="t('emails.supplier')">{{ selectedPurchaseImportSupplier?.name }}</el-descriptions-item>
-        <el-descriptions-item :label="t('emails.importCurrency')">{{ purchaseImportForm.currency }}</el-descriptions-item>
-        <el-descriptions-item :label="t('emails.importExpectedDate')">{{ purchaseImportForm.expectedDate || '—' }}</el-descriptions-item>
-        <el-descriptions-item :label="t('emails.importLineCount')">{{ purchaseImportRows.length }}</el-descriptions-item>
-        <el-descriptions-item :label="t('emails.importTotalQuantity')">{{ purchaseImportTotalsValue.quantity }}</el-descriptions-item>
-        <el-descriptions-item :label="t('emails.importTotalAmount')">{{ purchaseImportForm.currency }} {{ purchaseImportTotalsValue.amount.toFixed(2) }}</el-descriptions-item>
-        <el-descriptions-item :label="t('emails.importRemark')" :span="2">{{ purchaseImportForm.remark || '—' }}</el-descriptions-item>
-      </el-descriptions>
-      <el-alert type="warning" :closable="false" show-icon :title="t('emails.importDraftNotice')" />
-    </div>
-    <template #footer>
-      <el-button @click="purchaseImportOpen = false">{{ t('common.close') }}</el-button>
-      <el-button v-if="purchaseImportStep > 0" @click="purchaseImportStep--">{{ t('emails.importPrevious') }}</el-button>
-      <el-button v-if="purchaseImportStep < 2" type="primary" :loading="purchaseImportBusy" @click="nextPurchaseImportStep">{{ t('emails.importNext') }}</el-button>
-      <el-button v-else type="primary" :loading="purchaseImportBusy" @click="createPurchaseOrderFromImport">{{ t('emails.importCreateDraft') }}</el-button>
     </template>
   </el-dialog>
 
@@ -889,12 +808,6 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { del, download, get, http, mailExcelRequest, mailHostRequest, post, saveBlob } from '../api'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
-import {
-  evaluatePurchaseImportRow,
-  purchaseImportTotals,
-  validatePurchaseImportRows,
-  type PurchaseImportRow,
-} from '../lib/purchaseOrderImport'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import EmailComposer from '../components/EmailComposer.vue'
@@ -2222,15 +2135,6 @@ const excelSheet = ref('')
 const excelAvailable = ref(false)
 const creatingSourcingCase = ref(false)
 const convertedExcelSource = ref<ExcelSource | null>(null)
-const purchaseImportOpen = ref(false)
-const purchaseImportBusy = ref(false)
-const purchaseImportStep = ref(0)
-const purchaseImportToken = ref('')
-const purchaseImportForm = reactive({ supplierId: '', currency: 'CNY', expectedDate: '', remark: '' })
-const purchaseImportSuppliers = ref<{ id: string; code: string; name: string; currency: string }[]>([])
-const purchaseImportRows = ref<PurchaseImportRow[]>([])
-const selectedPurchaseImportSupplier = computed(() => purchaseImportSuppliers.value.find((supplier) => String(supplier.id) === purchaseImportForm.supplierId))
-const purchaseImportTotalsValue = computed(() => purchaseImportTotals(purchaseImportRows.value))
 let excelPollTimer: ReturnType<typeof setTimeout> | null = null
 
 onUnmounted(() => {
@@ -2369,15 +2273,21 @@ function scheduleExcelJobPoll(delay = 1500) {
 
 async function refreshExcelJob(subject = '') {
   const idFromEvent = subject.startsWith('EXCEL_JOB:') ? subject.slice('EXCEL_JOB:'.length) : ''
-  if (!excelJobId.value || (idFromEvent && idFromEvent !== excelJobId.value)) return
+  const id = excelJobId.value
+  if (!id || (idFromEvent && idFromEvent !== id)) return
   try {
-    const response = await get<{ job: ExcelJob }>(`/inbound-excel-jobs/${excelJobId.value}`, undefined, mailExcelRequest)
+    const response = await get<{ job: ExcelJob }>(`/inbound-excel-jobs/${id}`, undefined, mailExcelRequest)
+    // The poll timer and the SSE hint race to fetch the same job; only the
+    // first response back may announce the terminal state, the later one
+    // finds the id already settled and stays silent.
+    if (excelJobId.value !== id) return
     const job = response.job
     if (job.status === 'PENDING' || job.status === 'PROCESSING') {
       scheduleExcelJobPoll()
       return
     }
     excelBusy.value = false
+    excelJobId.value = ''
     sessionStorage.removeItem('mailExcelJobId')
     if (job.status === 'FAILED' || !job.result) {
       excelOpen.value = false
@@ -2436,129 +2346,6 @@ async function createSourcingCaseFromExcel() {
     router.push(`/procurement/intakes?intake=${response.sourcingCase.id}`)
   } finally {
     creatingSourcingCase.value = false
-  }
-}
-
-async function openPurchaseOrderImport() {
-  const sheet = excelResult.value?.sheets[0]
-  if (!sheet?.rows.length) return
-  if (Number(sheet.totalRows) > sheet.rows.length) {
-    ElMessage.warning(t('emails.sourcingPreviewIncomplete'))
-    return
-  }
-  if (!sheet.columns.includes('数量')) {
-    ElMessage.warning(t('emails.importQuantityColumnRequired'))
-    return
-  }
-  purchaseImportStep.value = 0
-  purchaseImportToken.value = ''
-  purchaseImportRows.value = []
-  purchaseImportForm.supplierId = ''
-  purchaseImportForm.currency = 'CNY'
-  purchaseImportForm.expectedDate = ''
-  purchaseImportForm.remark = `${t('emails.importSourceMail')}: ${openedInbound.value?.subject || excelResult.value?.fileName || ''}`
-  if (!purchaseImportSuppliers.value.length) {
-    purchaseImportBusy.value = true
-    try {
-      const response = await get<{ suppliers: { id: string; code: string; name: string; currency: string }[] }>('/suppliers', { page: 1, page_size: 200, status: 'ACTIVE' })
-      purchaseImportSuppliers.value = response.suppliers ?? []
-    } finally {
-      purchaseImportBusy.value = false
-    }
-  }
-  purchaseImportOpen.value = true
-}
-
-function applySupplierCurrency() {
-  purchaseImportForm.currency = selectedPurchaseImportSupplier.value?.currency || 'CNY'
-}
-
-function onPurchaseRequirementChange(row: PurchaseImportRow) {
-  Object.assign(row, evaluatePurchaseImportRow(row))
-}
-
-async function nextPurchaseImportStep() {
-  if (purchaseImportStep.value === 0) {
-    if (!purchaseImportForm.supplierId) {
-      ElMessage.warning(t('emails.importSupplierRequired'))
-      return
-    }
-    if (!/^[A-Za-z]{3}$/.test(purchaseImportForm.currency)) {
-      ElMessage.warning(t('emails.importCurrencyRequired'))
-      return
-    }
-    await previewPurchaseOrderImport()
-    return
-  }
-  purchaseImportRows.value = purchaseImportRows.value.map(evaluatePurchaseImportRow)
-  const validation = validatePurchaseImportRows(purchaseImportRows.value)
-  if (validation) {
-    ElMessage.warning(t(validation === 'DUPLICATED' ? 'emails.importDuplicated' : 'emails.importRequirementRequired'))
-    return
-  }
-  purchaseImportStep.value = 2
-}
-
-async function previewPurchaseOrderImport() {
-  const result = excelResult.value
-  const source = convertedExcelSource.value
-  const sheet = result?.sheets[0]
-  if (!result || !source || !sheet?.rows.length) return
-  const fieldByColumn: Record<string, string> = {
-    '产品': 'product', '材质/标准': 'materialStandard', '牌号/等级': 'grade',
-    '厚度': 'thickness', '宽度': 'width', '单位': 'quantityUnit', '数量': 'quantity', '单价': 'unitPrice',
-  }
-  const rows = sheet.rows.map((row, index) => {
-    const values: Record<string, string> = {}
-    sheet.columns.forEach((column, ci) => { const field = fieldByColumn[column]; if (field) values[field] = row.cells[ci] ?? '' })
-    return { rowNo: index + 2, ...values }
-  })
-  purchaseImportBusy.value = true
-  try {
-    const response = await post<{ importToken: string; expiresAt: string; rows: (PurchaseImportRow & { suggestedRequirementId?: string })[] }>('/purchase-orders/imports/preview', {
-      sourceType: 'MAIL_EXCEL',
-      sourceMailId: Number(source.mailId),
-      sourceAttachmentId: source.kind === 'attachment' ? Number(source.attachmentId) : 0,
-      sourceFileName: result.fileName,
-      rows,
-    })
-    purchaseImportToken.value = response.importToken
-    purchaseImportRows.value = (response.rows ?? []).map((row) => ({
-      ...row,
-      requirementId: row.requirementId || String(row.suggestedRequirementId || ''),
-    }))
-    purchaseImportStep.value = 1
-  } finally {
-    purchaseImportBusy.value = false
-  }
-}
-
-async function createPurchaseOrderFromImport() {
-  const validation = validatePurchaseImportRows(purchaseImportRows.value)
-  if (validation || !purchaseImportToken.value) {
-    ElMessage.warning(t('emails.importRequirementRequired'))
-    return
-  }
-  purchaseImportBusy.value = true
-  try {
-    const response = await post<{ id: string; poNo: string; status: string; alreadyCreated: boolean }>(`/purchase-orders/imports/${purchaseImportToken.value}/confirm`, {
-      supplierId: Number(purchaseImportForm.supplierId),
-      currency: purchaseImportForm.currency.toUpperCase(),
-      expectedDate: purchaseImportForm.expectedDate,
-      remark: purchaseImportForm.remark,
-      lines: purchaseImportRows.value.map((row) => ({
-        rowNo: row.rowNo,
-        requirementId: Number(row.requirementId),
-        qty: row.quantity,
-        unitPrice: row.unitPrice || '0',
-      })),
-    })
-    ElMessage.success(t('emails.importCreated', { no: response.poNo }))
-    purchaseImportOpen.value = false
-    excelOpen.value = false
-    router.push(`/purchase-orders?order=${response.id}`)
-  } finally {
-    purchaseImportBusy.value = false
   }
 }
 
@@ -3232,18 +3019,6 @@ async function doUnsuppress(row: Suppression) {
   z-index: 1;
   background: var(--el-fill-color-light);
   font-weight: 600;
-}
-.purchase-import-steps {
-  margin: 0 0 18px;
-}
-.purchase-import-form {
-  max-width: 760px;
-  margin-top: 18px;
-}
-.purchase-import-confirm {
-  display: grid;
-  gap: 16px;
-  margin-top: 18px;
 }
 
 .in-html {
