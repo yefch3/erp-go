@@ -2114,6 +2114,8 @@ interface ExcelSheet {
   name: string
   summary: string
   columns: string[]
+  // 每列的模板字段标识（新版 LLM 结果携带）；没有它时退回表头映射。
+  columnKeys?: string[]
   rows: { cells: string[] }[]
   totalRows: string
 }
@@ -2499,11 +2501,21 @@ async function createSourcingCaseFromExcel() {
     '付款条件': 'paymentTerms', '贸易术语': 'incoterm', '港口': 'port',
     '单位': 'quantityUnit', '备注': 'remarks', '数量': 'quantity',
   }
+  // LLM 结果每列携带模板字段标识（snake_case），按标识对齐——公司用模板
+  // 改过表头也不受影响；本地直读的结果没有标识，退回表头映射。价格列不
+  // 属于采购明细事实（由工厂报价产生），custom.* 自定义列进 custom_fields。
+  const columnKeys = sheet.columnKeys ?? []
   const lines = sheet.rows.map((row) => {
-    const line: Record<string, string> = {}
+    const line: Record<string, string> & { customFields?: Record<string, string> } = {}
     sheet.columns.forEach((column, index) => {
-      const field = fieldByColumn[column]
-      if (field) line[field] = row.cells[index] ?? ''
+      const key = columnKeys[index] ?? fieldByColumn[column]
+      if (!key || key === 'unit_price' || key === 'total_price') return
+      const cell = row.cells[index] ?? ''
+      if (key.startsWith('custom.')) {
+        ;(line.customFields ??= {})[key] = cell
+      } else {
+        line[key] = cell
+      }
     })
     return line
   })

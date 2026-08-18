@@ -79,7 +79,7 @@ export default {
     todo: ' (coming soon)',
   },
   procurementNav: {
-    title: 'Procurement navigation', workbench: 'Workbench', intakes: 'Pending inquiries', sourcing: 'Sourcing cases',
+    title: 'Procurement navigation', workbench: 'Workbench', intakes: 'Pending inquiries', sourcing: 'Sourcing cases', inquiryTemplates: 'Inquiry templates',
     requirements: 'To purchase', orders: 'Purchase orders', backToWorkbench: 'Back to procurement workbench',
   },
   procurementWorkbench: {
@@ -94,6 +94,32 @@ export default {
   },
   procurementIntakes: {
     eyebrow: 'STANDARD INQUIRY REVIEW', title: 'Pending review', subtitle: 'Review standardized inquiries transferred from Mail or uploaded manually', manualUpload: 'Upload standard inquiry', mailSource: 'Mail transfer', mailHint: 'From a confirmed LLM standardization result', manualSource: 'Manual upload', manualHint: 'Standard Excel or CSV only', pendingQueue: 'Review queue', queueHint: 'Correct or ignore rows before sourcing', search: 'Search number, customer or file', number: 'Inquiry no.', source: 'Source', fileOrSubject: 'File / subject', customer: 'Customer', lines: 'Lines', receivedAt: 'Received', review: 'Review', empty: 'No inquiries awaiting review', mailAuto: 'Mail transfer', manual: 'Manual', uploadTitle: 'Upload standard inquiry', uploadHint: 'Only already-standardized .xlsx or .csv files are accepted. Review the data directly on this page after upload. Maximum 8MB.', inquiryTitle: 'Inquiry title', titleAuto: 'File name if blank', contact: 'Contact', contactEmail: 'Contact email', standardFile: 'Standard file', uploadAndReview: 'Upload and start review', fileRequired: 'Choose a standardized inquiry file', uploaded: 'Inquiry added to the review queue', reviewTitle: 'Review inquiry', reviewHint: 'Review and edit product, specification, quantity, unit, delivery and port directly. Ignore unneeded rows, then send the inquiry to sourcing.', product: 'Product', material: 'Material / standard', grade: 'Grade', spec: 'Thickness / width', quantity: 'Quantity / unit', deliveryPort: 'Delivery / port', restore: 'Restore', ignore: 'Ignore', keepOne: 'Keep at least one valid line', confirmCreate: 'Finish review and start sourcing', confirmHint: 'Confirm that product, quantity, unit and specifications have been reviewed and start formal sourcing?', confirmed: 'Review completed and inquiry sent to sourcing', autoTransferred: 'Inquiry {no} moved to the procurement review queue', requiredMissing:'Lines {lines} are missing product, quantity, or unit. Complete them before sourcing.',
+  },
+  inquiryTemplates: {
+    eyebrow: 'COMPANY INQUIRY FORMAT', title: 'Inquiry templates',
+    subtitle: 'The standard columns shared by mail standardization and intake review: headers, order, required flags and defaults. The default template drives LLM extraction and upload validation.',
+    create: 'New company template', systemTag: 'Built-in', inUse: 'In use',
+    colName: 'Name', colCode: 'Code', colVersion: 'Version', colFields: 'Columns', colDefault: 'Default', colStatus: 'Status',
+    statuses: { ACTIVE: 'Active', DISABLED: 'Disabled', SUPERSEDED: 'Superseded' },
+    download: 'Download', makeDefault: 'Make default', disable: 'Disable', enable: 'Enable', copyCustomize: 'Copy & customize',
+    empty: 'No inquiry templates yet',
+    editTitle: 'Edit inquiry template', createTitle: 'New company template',
+    versionNotice: 'Saving creates a new version and never rewrites history. Product, quantity, unit, unit price and total price are core columns and cannot be removed; price columns stay blank at inquiry stage.',
+    createNotice: 'A new template starts with only the core columns (product, quantity, unit, unit price, total price); add custom columns as needed. Core columns cannot be removed.',
+    fieldCode: 'Template code', fieldName: 'Template name', fieldDefault: 'Default template', fieldDescription: 'Description',
+    codePlaceholder: 'e.g. AAA_STANDARD',
+    fieldsTitle: 'Columns', fieldsHint: 'Rename headers, reorder, set required flags and defaults; add custom columns for company-specific data.', addCustom: 'Add custom column',
+    colOrder: 'Order', colKey: 'Field key', colHeader: 'Excel header', colType: 'Type', colRequired: 'Required', colDefaultValue: 'Default', coreTag: 'Core',
+    copySuffix: 'custom', savedNewVersion: 'Saved as a new version', created: 'Template created',
+    defaultConfirm: 'Make "{name}" the default template? LLM extraction and upload validation switch to its columns immediately.', defaultSet: 'Default template updated',
+    disableConfirm: 'Disable "{name}"? It can no longer be used for new inquiries; history is unaffected.',
+    errors: {
+      fieldsRequired: 'At least one column is required', nameRequired: 'Every column needs an Excel header',
+      keyInvalid: 'Field keys use lowercase letters, digits and underscores (custom columns start with custom.)',
+      keyDuplicate: 'Duplicate field key', nameDuplicate: 'Duplicate Excel header',
+      coreMissing: 'Product, quantity, unit, unit price and total price are core columns and cannot be removed', codeInvalid: 'Template code uses uppercase letters, digits and underscores', nameEmpty: 'Template name is required',
+      priceRequired: 'Unit price and total price stay blank at inquiry stage and cannot be required',
+    },
   },
   basicData: {
     employeeList: 'Employees', departments: 'Departments', roles: 'Roles',
