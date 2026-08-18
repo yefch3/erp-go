@@ -4,6 +4,7 @@
       <h2>{{ t('requirements.title') }}</h2>
       <span class="head-note">{{ t('requirements.readOnlyHint') }}</span>
       <span class="grow" />
+      <el-button @click="router.push('/procurement')">← {{ t('procurementNav.backToWorkbench') }}</el-button>
       <!-- Ordering is what a buyer actually comes here to do. Several lines at
            once, because one order to one supplier covering three contracts is
            the whole reason the job exists. -->

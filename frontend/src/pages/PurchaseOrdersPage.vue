@@ -4,6 +4,7 @@
       <h2>{{ t('orders.title') }}</h2>
       <span class="head-note">{{ t('orders.subtitle') }}</span>
       <span class="grow" />
+      <el-button @click="router.push('/procurement')">← {{ t('procurementNav.backToWorkbench') }}</el-button>
       <el-button v-if="canWrite" type="primary" @click="openCreate">{{ t('orders.create') }}</el-button>
     </div>
 

@@ -14,6 +14,7 @@ import (
 	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
+	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	pdv1 "github.com/sgao19/erp-go/gen/go/erp/product/v1"
 	"github.com/sgao19/erp-go/pkg/grpcx"
@@ -107,6 +108,15 @@ func (s *Server) getSourcingCase(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) listSourcingCaseChanges(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.ListCaseChanges(r.Context(), &prv1.ListCaseChangesRequest{CaseId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) createSourcingCase(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.CreateCaseRequest{}
 	if !s.decodeBody(w, r, req) {
@@ -187,8 +197,48 @@ func (s *Server) createFactoryRFQ(w http.ResponseWriter, r *http.Request) {
 		s.writeGRPCError(w, err)
 		return
 	}
+	factoryResp, err := s.Suppliers.GetFactory(r.Context(), &mdv1.GetFactoryRequest{Id: req.GetFactoryId()})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	factory := factoryResp.GetFactory()
+	if factory.GetStatus() != "COOPERATING" || factory.GetSupplierId() != req.GetSupplierId() {
+		s.writeError(w, http.StatusConflict, "SC_FACTORY_NOT_COOPERATING", "请选择当前供应商下合作中的工厂")
+		return
+	}
+	req.FactoryCode = factory.GetCode()
+	req.FactoryName = factory.GetNameZh()
+	if req.FactoryName == "" {
+		req.FactoryName = factory.GetNameEn()
+	}
+	if req.GetContactEmail() == "" {
+		contacts, contactErr := s.Suppliers.ListFactoryContacts(r.Context(), &mdv1.ListFactoryContactsRequest{FactoryId: factory.GetId()})
+		if contactErr == nil {
+			for _, contact := range contacts.GetContacts() {
+				if contact.GetIsPrimary() && contact.GetStatus() == "ACTIVE" {
+					req.ContactEmail = contact.GetEmail()
+					break
+				}
+			}
+		}
+	}
 	req.CaseId = idFromPath(r)
 	resp, err := s.Sourcing.CreateFactoryRfq(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) updateFactoryRFQ(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.UpdateFactoryRfqRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Sourcing.UpdateFactoryRfq(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

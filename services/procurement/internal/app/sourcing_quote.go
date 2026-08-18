@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -123,7 +124,8 @@ func parseSupplierQuoteWorkbook(data []byte, rfqNo string, expected []store.Fact
 }
 
 type NewFactoryRFQ struct {
-	CaseID, SupplierID                    int64
+	CaseID, SupplierID, FactoryID         int64
+	FactoryCode, FactoryName              string
 	ContactEmail, Currency, ResponseDueAt string
 	SourcingLineIDs                       []int64
 }
@@ -140,8 +142,8 @@ type NewSupplierQuote struct {
 }
 
 func (s *Service) CreateFactoryRFQ(ctx context.Context, tenantID int64, in NewFactoryRFQ, op Operator) (store.ListFactoryRFQsRow, error) {
-	if in.CaseID == 0 || in.SupplierID == 0 {
-		return store.ListFactoryRFQsRow{}, apierr.Invalid("SC_RFQ_REQUIRED", "请选择询价案件和供应商")
+	if in.CaseID == 0 || in.SupplierID == 0 || in.FactoryID == 0 {
+		return store.ListFactoryRFQsRow{}, apierr.Invalid("SC_RFQ_REQUIRED", "请选择询价案件、供应商和具体合作工厂")
 	}
 	if _, err := s.GetSourcingCase(ctx, tenantID, in.CaseID); err != nil {
 		return store.ListFactoryRFQsRow{}, err
@@ -179,6 +181,7 @@ func (s *Service) CreateFactoryRFQ(ctx context.Context, tenantID int64, in NewFa
 		q := s.q.WithTx(tx)
 		head, err := q.CreateFactoryRFQ(ctx, store.CreateFactoryRFQParams{TenantID: tenantID, CaseID: in.CaseID,
 			SupplierID: supplier.ID, SupplierCode: supplier.Code, SupplierName: supplier.Name,
+			FactoryID: in.FactoryID, FactoryCode: strings.TrimSpace(in.FactoryCode), FactoryName: strings.TrimSpace(in.FactoryName),
 			ContactEmail: strings.TrimSpace(in.ContactEmail), Currency: strings.ToUpper(in.Currency),
 			ResponseDueAt: in.ResponseDueAt, CreatedBy: op.ID, CreatedByName: op.Name})
 		if err != nil {
@@ -190,12 +193,70 @@ func (s *Service) CreateFactoryRFQ(ctx context.Context, tenantID int64, in NewFa
 				return err
 			}
 		}
+		if err := q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: in.CaseID,
+			Section: "RFQ", Action: "RFQ_CREATED", EntityID: id, Summary: "向工厂 " + in.FactoryName + " 创建询价",
+			BeforeJson: []byte("{}"), AfterJson: []byte(`{"status":"DRAFT"}`), OperatorID: op.ID, OperatorName: op.Name}); err != nil {
+			return err
+		}
 		return q.MarkSourcingCaseSourcing(ctx, store.MarkSourcingCaseSourcingParams{TenantID: tenantID, ID: in.CaseID})
 	})
 	if err != nil {
 		return store.ListFactoryRFQsRow{}, err
 	}
 	rows, err := s.ListFactoryRFQs(ctx, tenantID, in.CaseID)
+	if err != nil {
+		return store.ListFactoryRFQsRow{}, err
+	}
+	for _, row := range rows {
+		if row.ID == id {
+			return row, nil
+		}
+	}
+	return store.ListFactoryRFQsRow{}, apierr.NotFound("SC_RFQ_NOT_FOUND", "工厂询价不存在")
+}
+
+// UpdateFactoryRFQ 修改对外询价的联系人或截止日期，并强制留下业务原因。
+func (s *Service) UpdateFactoryRFQ(ctx context.Context, tenantID, id int64, contactEmail, dueAt, reason string, op Operator) (store.ListFactoryRFQsRow, error) {
+	if strings.TrimSpace(reason) == "" {
+		return store.ListFactoryRFQsRow{}, apierr.Invalid("SC_RFQ_CHANGE_REASON_REQUIRED", "修改 RFQ 联系人或截止日期时必须填写原因")
+	}
+	caseID, err := s.q.FactoryRFQCase(ctx, store.FactoryRFQCaseParams{TenantID: tenantID, ID: id})
+	if err != nil {
+		return store.ListFactoryRFQsRow{}, apierr.NotFound("SC_RFQ_NOT_FOUND", "工厂询价不存在")
+	}
+	rows, err := s.q.ListFactoryRFQs(ctx, store.ListFactoryRFQsParams{TenantID: tenantID, CaseID: caseID})
+	if err != nil {
+		return store.ListFactoryRFQsRow{}, err
+	}
+	var before store.ListFactoryRFQsRow
+	for _, row := range rows {
+		if row.ID == id {
+			before = row
+			break
+		}
+	}
+	if before.ID == 0 {
+		return store.ListFactoryRFQsRow{}, apierr.NotFound("SC_RFQ_NOT_FOUND", "工厂询价不存在")
+	}
+	beforeJSON, _ := json.Marshal(before)
+	afterJSON, _ := json.Marshal(map[string]string{"contactEmail": contactEmail, "responseDueAt": dueAt})
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		changed, updateErr := q.UpdateFactoryRFQ(ctx, store.UpdateFactoryRFQParams{TenantID: tenantID, ID: id, ContactEmail: strings.TrimSpace(contactEmail), ResponseDueAt: dueAt})
+		if updateErr != nil {
+			return updateErr
+		}
+		if changed == 0 {
+			return apierr.Conflict("SC_RFQ_NOT_EDITABLE", "当前 RFQ 状态不能修改")
+		}
+		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: caseID,
+			Section: "RFQ", Action: "RFQ_UPDATED", EntityID: id, Summary: "修改工厂询价联系人或截止日期",
+			BeforeJson: beforeJSON, AfterJson: afterJSON, Reason: strings.TrimSpace(reason), OperatorID: op.ID, OperatorName: op.Name})
+	})
+	if err != nil {
+		return store.ListFactoryRFQsRow{}, err
+	}
+	rows, err = s.q.ListFactoryRFQs(ctx, store.ListFactoryRFQsParams{TenantID: tenantID, CaseID: caseID})
 	if err != nil {
 		return store.ListFactoryRFQsRow{}, err
 	}
@@ -267,6 +328,11 @@ func (s *Service) CreateSupplierQuote(ctx context.Context, tenantID int64, in Ne
 				return err
 			}
 		}
+		if err := q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: rfq.CaseID,
+			Section: "QUOTE", Action: "QUOTE_RECEIVED", EntityID: result.ID, Summary: "录入工厂报价 " + result.SupplierQuoteNo,
+			BeforeJson: []byte("{}"), AfterJson: []byte(`{"source":"` + in.Source + `"}`), OperatorID: op.ID, OperatorName: op.Name}); err != nil {
+			return err
+		}
 		if err := q.MarkFactoryRFQQuoted(ctx, store.MarkFactoryRFQQuotedParams{TenantID: tenantID, ID: in.FactoryRFQID}); err != nil {
 			return err
 		}
@@ -282,15 +348,39 @@ func (s *Service) ListSupplierQuoteComparison(ctx context.Context, tenantID, cas
 	return s.q.ListSupplierQuoteComparison(ctx, store.ListSupplierQuoteComparisonParams{TenantID: tenantID, CaseID: caseID})
 }
 
-func (s *Service) MarkFactoryRFQSent(ctx context.Context, tenantID, id int64) error {
+func (s *Service) MarkFactoryRFQSent(ctx context.Context, tenantID, id int64, op Operator) error {
+	caseID, err := s.q.FactoryRFQCase(ctx, store.FactoryRFQCaseParams{TenantID: tenantID, ID: id})
+	if err != nil {
+		return apierr.NotFound("SC_RFQ_NOT_FOUND", "工厂询价不存在")
+	}
+	rows, err := s.q.ListFactoryRFQs(ctx, store.ListFactoryRFQsParams{TenantID: tenantID, CaseID: caseID})
+	if err != nil {
+		return err
+	}
+	beforeStatus := ""
+	for _, row := range rows {
+		if row.ID == id {
+			beforeStatus = row.Status
+			break
+		}
+	}
+	if beforeStatus == "" {
+		return apierr.NotFound("SC_RFQ_NOT_FOUND", "工厂询价不存在")
+	}
+	if beforeStatus == "CANCELLED" || beforeStatus == "CLOSED" {
+		return apierr.Conflict("SC_RFQ_NOT_SENDABLE", "已关闭或已取消的 RFQ 不能重新发送")
+	}
 	affected, err := s.q.MarkFactoryRFQSent(ctx, store.MarkFactoryRFQSentParams{TenantID: tenantID, ID: id})
 	if err != nil {
 		return err
 	}
-	if affected == 0 {
-		if _, err := s.q.GetFactoryRFQDocument(ctx, store.GetFactoryRFQDocumentParams{TenantID: tenantID, ID: id}); err != nil {
-			return apierr.NotFound("SC_RFQ_NOT_FOUND", "工厂询价不存在")
-		}
+	action, summary, afterStatus := "RFQ_RESENT", "重新发送工厂询价", beforeStatus
+	if affected > 0 {
+		action, summary, afterStatus = "RFQ_SENT", "发送工厂询价", "SENT"
 	}
-	return nil
+	beforeJSON, _ := json.Marshal(map[string]string{"status": beforeStatus})
+	afterJSON, _ := json.Marshal(map[string]string{"status": afterStatus})
+	return s.q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: caseID,
+		Section: "RFQ", Action: action, EntityID: id, Summary: summary,
+		BeforeJson: beforeJSON, AfterJson: afterJSON, OperatorID: op.ID, OperatorName: op.Name})
 }

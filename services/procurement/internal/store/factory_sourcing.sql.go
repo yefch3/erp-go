@@ -13,12 +13,13 @@ import (
 
 const createFactoryRFQ = `-- name: CreateFactoryRFQ :one
 INSERT INTO factory_rfqs (tenant_id, case_id, rfq_no, supplier_id, supplier_code, supplier_name,
- contact_email, currency, response_due_at, created_by, created_by_name)
+ factory_id, factory_code, factory_name, contact_email, currency, response_due_at, created_by, created_by_name)
 VALUES ($1, $2,
  'RFQ-' || to_char(current_date,'YYYYMMDD') || '-' || lpad(nextval('factory_rfq_no_seq')::text,6,'0'),
- $3, $4, $5, $6,
- $7, nullif($8::text,'')::date,
- $9, $10)
+ $3, $4, $5,
+ $6, $7, $8, $9,
+ $10, nullif($11::text,'')::date,
+ $12, $13)
 RETURNING id, rfq_no
 `
 
@@ -28,6 +29,9 @@ type CreateFactoryRFQParams struct {
 	SupplierID    int64
 	SupplierCode  string
 	SupplierName  string
+	FactoryID     int64
+	FactoryCode   string
+	FactoryName   string
 	ContactEmail  string
 	Currency      string
 	ResponseDueAt string
@@ -47,6 +51,9 @@ func (q *Queries) CreateFactoryRFQ(ctx context.Context, arg CreateFactoryRFQPara
 		arg.SupplierID,
 		arg.SupplierCode,
 		arg.SupplierName,
+		arg.FactoryID,
+		arg.FactoryCode,
+		arg.FactoryName,
 		arg.ContactEmail,
 		arg.Currency,
 		arg.ResponseDueAt,
@@ -283,7 +290,8 @@ func (q *Queries) GetFactoryRFQDocument(ctx context.Context, arg GetFactoryRFQDo
 }
 
 const listFactoryRFQs = `-- name: ListFactoryRFQs :many
-SELECT r.id,r.case_id,r.rfq_no,r.supplier_id,r.supplier_code,r.supplier_name,r.contact_email,
+SELECT r.id,r.case_id,r.rfq_no,r.supplier_id,r.supplier_code,r.supplier_name,
+ r.factory_id,r.factory_code,r.factory_name,r.contact_email,
  r.currency,coalesce(r.response_due_at::text,'')::text AS response_due_at,r.status,r.created_at,
  (SELECT count(*)::int FROM factory_rfq_lines fl WHERE fl.tenant_id=r.tenant_id AND fl.factory_rfq_id=r.id) AS line_count,
  ARRAY(SELECT fl.sourcing_line_id FROM factory_rfq_lines fl WHERE fl.tenant_id=r.tenant_id AND fl.factory_rfq_id=r.id ORDER BY fl.line_no)::bigint[] AS sourcing_line_ids
@@ -304,6 +312,9 @@ type ListFactoryRFQsRow struct {
 	SupplierID      int64
 	SupplierCode    string
 	SupplierName    string
+	FactoryID       int64
+	FactoryCode     string
+	FactoryName     string
 	ContactEmail    string
 	Currency        string
 	ResponseDueAt   string
@@ -329,6 +340,9 @@ func (q *Queries) ListFactoryRFQs(ctx context.Context, arg ListFactoryRFQsParams
 			&i.SupplierID,
 			&i.SupplierCode,
 			&i.SupplierName,
+			&i.FactoryID,
+			&i.FactoryCode,
+			&i.FactoryName,
 			&i.ContactEmail,
 			&i.Currency,
 			&i.ResponseDueAt,
@@ -486,4 +500,31 @@ type MarkSourcingCaseSourcingParams struct {
 func (q *Queries) MarkSourcingCaseSourcing(ctx context.Context, arg MarkSourcingCaseSourcingParams) error {
 	_, err := q.db.Exec(ctx, markSourcingCaseSourcing, arg.TenantID, arg.ID)
 	return err
+}
+
+const updateFactoryRFQ = `-- name: UpdateFactoryRFQ :execrows
+UPDATE factory_rfqs SET contact_email=$1,
+ response_due_at=nullif($2::text,'')::date,updated_at=now()
+WHERE tenant_id=$3 AND id=$4
+  AND status IN ('DRAFT','SENT','PARTIALLY_QUOTED')
+`
+
+type UpdateFactoryRFQParams struct {
+	ContactEmail  string
+	ResponseDueAt string
+	TenantID      int64
+	ID            int64
+}
+
+func (q *Queries) UpdateFactoryRFQ(ctx context.Context, arg UpdateFactoryRFQParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateFactoryRFQ,
+		arg.ContactEmail,
+		arg.ResponseDueAt,
+		arg.TenantID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

@@ -102,6 +102,9 @@ type FactoryRfq struct {
 	CreatedByName string
 	CreatedAt     pgtype.Timestamptz
 	UpdatedAt     pgtype.Timestamptz
+	FactoryID     int64
+	FactoryCode   string
+	FactoryName   string
 }
 
 type FactoryRfqLine struct {
@@ -113,6 +116,34 @@ type FactoryRfqLine struct {
 	Qty            pgtype.Numeric
 	UomCode        string
 	SpecSnapshot   string
+}
+
+type InquiryTemplate struct {
+	ID            int64
+	TenantID      int64
+	TemplateCode  string
+	Version       int32
+	Name          string
+	Description   string
+	Status        string
+	IsDefault     bool
+	CreatedBy     int64
+	CreatedByName string
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+}
+
+type InquiryTemplateField struct {
+	ID           int64
+	TenantID     int64
+	TemplateID   int64
+	FieldKey     string
+	DisplayName  string
+	SortOrder    int32
+	IsRequired   bool
+	DefaultValue string
+	DataType     string
+	IsCustom     bool
 }
 
 type OutboxEvent struct {
@@ -344,21 +375,43 @@ type PurchaseSupplierConfirmationLine struct {
 }
 
 type SourcingCase struct {
-	ID                 int64
-	TenantID           int64
-	CaseNo             string
-	Title              string
-	CustomerID         int64
-	CustomerName       string
-	ContactName        string
-	ContactEmail       string
-	SourceMailID       int64
-	SourceAttachmentID int64
-	Status             string
-	OwnerID            int64
-	OwnerName          string
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
+	ID                     int64
+	TenantID               int64
+	CaseNo                 string
+	Title                  string
+	CustomerID             int64
+	CustomerName           string
+	ContactName            string
+	ContactEmail           string
+	SourceMailID           int64
+	SourceAttachmentID     int64
+	Status                 string
+	OwnerID                int64
+	OwnerName              string
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	SourceFileName         string
+	SourceContentType      string
+	SourceFileData         []byte
+	InquiryTemplateID      int64
+	InquiryTemplateCode    string
+	InquiryTemplateVersion int32
+}
+
+type SourcingCaseChange struct {
+	ID           int64
+	TenantID     int64
+	CaseID       int64
+	Section      string
+	Action       string
+	EntityID     int64
+	Summary      string
+	BeforeJson   []byte
+	AfterJson    []byte
+	Reason       string
+	OperatorID   int64
+	OperatorName string
+	CreatedAt    pgtype.Timestamptz
 }
 
 type SourcingLine struct {
@@ -395,6 +448,8 @@ type SourcingLine struct {
 	DecidedBy          int64
 	DecidedByName      string
 	DecidedAt          pgtype.Timestamptz
+	RevisionNo         int32
+	CustomFields       []byte
 }
 
 type SupplierQuote struct {
