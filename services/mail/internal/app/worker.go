@@ -173,11 +173,14 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 	// standing; waiting an hour costs nothing but an hour, so the check
 	// happens here rather than being discovered from a 4xx.
 	if wait, reason := s.overQuota(ctx, cfg.TenantID, m.SenderID); wait > 0 {
-		// Deliberately not counted as an attempt against the backoff budget:
-		// being paced is not a delivery failure, and letting it burn retries
-		// would push a perfectly good message into the attention queue just
-		// for being sent on a busy afternoon.
-		if err := s.q.MarkRetryable(ctx, store.MarkRetryableParams{
+		// Not counted as an attempt against the backoff budget: being paced is
+		// not a delivery failure, and letting it burn retries would push a
+		// perfectly good message into the attention queue just for being sent
+		// on a busy afternoon.
+		//
+		// DeferForQuota rather than MarkRetryable because claiming already
+		// charged one attempt; nothing was dialled, so it gets refunded.
+		if err := s.q.DeferForQuota(ctx, store.DeferForQuotaParams{
 			TenantID: cfg.TenantID, ID: m.ID, LastError: reason,
 			BackoffSeconds: int32(wait.Seconds()),
 		}); err != nil {
