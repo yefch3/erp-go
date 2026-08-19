@@ -257,6 +257,23 @@ SET status = 'QUEUED', last_error = sqlc.arg(last_error)::text,
     next_retry_at = now() + (sqlc.arg(backoff_seconds)::int || ' seconds')::interval
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
+-- name: DeferForQuota :exec
+-- 被邮箱配额限速时的推迟。和 MarkRetryable 只差最后一行，而那一行正是重点：
+-- 退还认领时预扣的那一次尝试。
+--
+-- 认领之所以先加一次，是因为那一行是"曾经尝试过"的唯一证据，进程若在调用
+-- 邮件服务器的途中崩溃，只有它能说明发生过什么。但配额检查发生在拨号之前，
+-- 一通电话都没打出去，就不该记在账上——否则一封信仅仅因为发在忙碌的下午被
+-- 推迟几次，就会耗尽重试预算，然后在第一次真实的临时故障时被判成
+-- "重试 5 次仍未成功"，而它一次都没真正重试过。
+--
+-- GREATEST 兜底：并发或历史数据让计数已经是 0 时，不要写成 -1。
+UPDATE email_messages
+SET status = 'QUEUED', last_error = sqlc.arg(last_error)::text,
+    next_retry_at = now() + (sqlc.arg(backoff_seconds)::int || ' seconds')::interval,
+    attempt_count = GREATEST(attempt_count - 1, 0)
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
 -- name: MarkTerminal :exec
 -- FAILED, HARD_BOUNCED, SEND_UNKNOWN or NEEDS_ATTENTION — everything that
 -- stops the automatic path and, where relevant, hands the message to a person.
