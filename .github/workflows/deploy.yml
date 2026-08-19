@@ -131,14 +131,16 @@ jobs:
 
           [ "$STATUS" = "Success" ] || {
             echo "部署失败（$STATUS）。服务器已按 deploy.sh 的规则自行回滚到上一个好版本；" >&2
-            echo "确认现状：curl http://<公网IP>/api/healthz 看 version 字段。" >&2
+            echo "确认现状：curl https://<公网域名>/api/healthz 看 version 字段。" >&2
             exit 1
           }
 
       - name: 从公网确认
         run: |
           # 服务器自己说健康还不够 —— 真正要成立的是「外面的人能用」。
-          BODY=$(curl -fsS --max-time 10 "http://${{ secrets.PUBLIC_HOST }}/api/healthz")
+          # 走 https 且不加 -L：证书、域名、跳转链任何一环坏掉都应当让部署失败，
+          # 而不是被一次「跟随跳转后碰巧拿到了」掩盖过去。
+          BODY=$(curl -fsS --max-time 10 "https://${{ secrets.PUBLIC_HOST }}/api/healthz")
           echo "$BODY"
           echo "$BODY" | grep -q "${{ steps.pick.outputs.sha }}" || {
             echo "公网 healthz 报的版本与本次部署不一致" >&2; exit 1; }
@@ -155,7 +157,7 @@ jobs:
           else
             STATE=failure; DESC="部署未完成；服务器按 deploy.sh 的规则自行回滚"
           fi
-          jq -nc --arg s "$STATE" --arg d "$DESC" --arg u "http://${{ secrets.PUBLIC_HOST }}" \
+          jq -nc --arg s "$STATE" --arg d "$DESC" --arg u "https://${{ secrets.PUBLIC_HOST }}" \
              '{state:$s, description:$d, environment_url:$u}' \
             | gh api repos/${{ github.repository }}/deployments/${{ steps.dep.outputs.id }}/statuses \
                 --input - --jq .state
