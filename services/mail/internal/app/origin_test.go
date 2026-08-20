@@ -11,8 +11,20 @@ import (
 type fakeResolver struct {
 	ptr   map[string][]string // address → names
 	fwd   map[string][]string // name → addresses
+	txt   map[string][]string // cymru query → answer
 	calls int
 	fail  bool
+}
+
+func (f *fakeResolver) LookupTXT(_ context.Context, name string) ([]string, error) {
+	if f.fail {
+		return nil, errors.New("dns is down")
+	}
+	t, ok := f.txt[name]
+	if !ok {
+		return nil, errors.New("no TXT")
+	}
+	return t, nil
 }
 
 func (f *fakeResolver) LookupAddr(_ context.Context, addr string) ([]string, error) {
@@ -58,6 +70,15 @@ func realWorld() *fakeResolver {
 			// Genuinely Proofpoint's, and not the address that claimed it.
 			"mx0a-00364e01.pphosted.com": {"148.163.135.74"},
 		},
+		// Answers as Team Cymru actually returned them for the addresses that
+		// fetched our pixels.
+		txt: map[string][]string{
+			"73.15.59.108.origin.asn.cymru.com":  {"30633 | 108.59.0.0/20 | US | arin | 2010-11-18"},
+			"126.3.202.38.origin.asn.cymru.com":  {"9009 | 38.202.0.0/22 | US | arin | 1991-04-16"},
+			"33.237.63.100.origin.asn.cymru.com": {"14618 | 100.48.0.0/12 | US | arin | 2024-12-12"},
+			"224.84.249.66.origin.asn.cymru.com": {"15169 | 66.249.64.0/19 | US | arin | 2004-03-05"},
+			"9.113.0.203.origin.asn.cymru.com":   {"64500 | 203.0.113.0/24 | US | arin | 2010-01-01"},
+		},
 	}
 }
 
@@ -74,6 +95,15 @@ func TestOriginClassify(t *testing.T) {
 		{"gmail image proxy is a person, not a machine", "66.249.84.1", false},
 		{"apple relay by range, no PTR needed", "17.58.63.10", true},
 		{"a reader on their own isp", "203.0.113.9", false},
+		// The three scanners. Byte-identical Chrome/149 agents arriving from
+		// three unrelated hosting companies; timing could not separate these
+		// from the genuine open at 66 seconds.
+		{"leaseweb", "108.59.15.73", true},
+		{"m247", "38.202.3.126", true},
+		{"aws, no matching reverse name", "100.63.237.33", true},
+		// Google runs a cloud too, and must never be filtered as one: it also
+		// runs the proxy that fetches for a reader.
+		{"google's network is not hosting", "66.249.84.224", false},
 		{"an address with no reverse record at all", "192.0.2.44", false},
 		{"forged PTR claiming proofpoint is rejected", "198.51.100.5", false},
 		{"loopback is not evidence of anything", "127.0.0.1", false},
