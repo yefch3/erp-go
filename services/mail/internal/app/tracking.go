@@ -89,6 +89,14 @@ func (s *Service) RecordOpen(ctx context.Context, messageKey, userAgent, ip stri
 	}
 	verdict := classifyFetch(userAgent, row.ToEmail, sinceSent)
 
+	// The agent is what the fetcher says it is; the address is where it
+	// actually came from. Only consult the address when the agent looked
+	// innocent — the second opinion is two DNS queries, and there is nothing
+	// to add once the first has already decided.
+	if !verdict.machine {
+		verdict = s.origins().classify(ctx, sanitiseIP(ip))
+	}
+
 	if !verdict.machine {
 		// First open only for the timestamp; every fetch still appends an
 		// event, so a message opened repeatedly is distinguishable from one
