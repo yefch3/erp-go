@@ -539,7 +539,7 @@ const getInbound = `-- name: GetInbound :one
 SELECT i.id, i.account_id, i.owner_id, i.message_id, i.thread_key, i.reply_to_id,
        i.from_email, i.from_name, i.to_email, i.subject, i.body_html, i.body_text,
        i.raw_key, i.raw_size, i.is_read, i.has_attachments, i.received_at, i.sent_at,
-       i.folder,
+       i.folder, i.reply_to, i.cc, i.auth_spf, i.auth_dkim,
        coalesce(m.status, '') AS sent_status,
        m.opened_at AS sent_opened_at,
        coalesce(m.tracked, FALSE) AS sent_tracked
@@ -574,6 +574,10 @@ type GetInboundRow struct {
 	ReceivedAt     pgtype.Timestamptz
 	SentAt         pgtype.Timestamptz
 	Folder         string
+	ReplyTo        string
+	Cc             string
+	AuthSpf        string
+	AuthDkim       string
 	SentStatus     string
 	SentOpenedAt   pgtype.Timestamptz
 	SentTracked    bool
@@ -610,6 +614,10 @@ func (q *Queries) GetInbound(ctx context.Context, arg GetInboundParams) (GetInbo
 		&i.ReceivedAt,
 		&i.SentAt,
 		&i.Folder,
+		&i.ReplyTo,
+		&i.Cc,
+		&i.AuthSpf,
+		&i.AuthDkim,
 		&i.SentStatus,
 		&i.SentOpenedAt,
 		&i.SentTracked,
@@ -864,7 +872,8 @@ INSERT INTO email_inbound (
     from_email, from_name, to_email, subject, body_html, body_text, snippet,
     raw_key, raw_size, is_bounce, has_attachments, is_read, sent_at, received_at,
     sent_message_id, search_text,
-    customer_id, contact_id, customer_name
+    customer_id, contact_id, customer_name,
+    reply_to, cc, auth_spf, auth_dkim
 ) VALUES (
     $1::bigint, $2::bigint, $3::bigint,
     $4::text, $5::bigint,
@@ -891,7 +900,12 @@ INSERT INTO email_inbound (
     -- Non-zero when this mail answers something we sent to a customer.
     $27::bigint,
     $28::bigint,
-    $29::text
+    $29::text,
+    -- 真正的回信地址、抄送，以及收信服务器验过的两个身份。见 00036。
+    $30::text,
+    $31::text,
+    $32::text,
+    $33::text
 )
 ON CONFLICT (tenant_id, account_id, folder, imap_uid) DO NOTHING
 RETURNING id
@@ -927,6 +941,10 @@ type InsertInboundParams struct {
 	CustomerID     int64
 	ContactID      int64
 	CustomerName   string
+	ReplyTo        string
+	Cc             string
+	AuthSpf        string
+	AuthDkim       string
 }
 
 // ON CONFLICT DO NOTHING plus a returned id of 0 is how a repeated fetch of
@@ -962,6 +980,10 @@ func (q *Queries) InsertInbound(ctx context.Context, arg InsertInboundParams) (i
 		arg.CustomerID,
 		arg.ContactID,
 		arg.CustomerName,
+		arg.ReplyTo,
+		arg.Cc,
+		arg.AuthSpf,
+		arg.AuthDkim,
 	)
 	var id int64
 	err := row.Scan(&id)

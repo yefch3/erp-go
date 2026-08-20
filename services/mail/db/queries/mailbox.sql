@@ -170,7 +170,8 @@ INSERT INTO email_inbound (
     from_email, from_name, to_email, subject, body_html, body_text, snippet,
     raw_key, raw_size, is_bounce, has_attachments, is_read, sent_at, received_at,
     sent_message_id, search_text,
-    customer_id, contact_id, customer_name
+    customer_id, contact_id, customer_name,
+    reply_to, cc, auth_spf, auth_dkim
 ) VALUES (
     sqlc.arg(tenant_id)::bigint, sqlc.arg(account_id)::bigint, sqlc.arg(owner_id)::bigint,
     sqlc.arg(folder)::text, sqlc.arg(imap_uid)::bigint,
@@ -197,7 +198,12 @@ INSERT INTO email_inbound (
     -- Non-zero when this mail answers something we sent to a customer.
     sqlc.arg(customer_id)::bigint,
     sqlc.arg(contact_id)::bigint,
-    sqlc.arg(customer_name)::text
+    sqlc.arg(customer_name)::text,
+    -- 真正的回信地址、抄送，以及收信服务器验过的两个身份。见 00036。
+    sqlc.arg(reply_to)::text,
+    sqlc.arg(cc)::text,
+    sqlc.arg(auth_spf)::text,
+    sqlc.arg(auth_dkim)::text
 )
 ON CONFLICT (tenant_id, account_id, folder, imap_uid) DO NOTHING
 RETURNING id;
@@ -403,7 +409,7 @@ RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archive
 SELECT i.id, i.account_id, i.owner_id, i.message_id, i.thread_key, i.reply_to_id,
        i.from_email, i.from_name, i.to_email, i.subject, i.body_html, i.body_text,
        i.raw_key, i.raw_size, i.is_read, i.has_attachments, i.received_at, i.sent_at,
-       i.folder,
+       i.folder, i.reply_to, i.cc, i.auth_spf, i.auth_dkim,
        coalesce(m.status, '') AS sent_status,
        m.opened_at AS sent_opened_at,
        coalesce(m.tracked, FALSE) AS sent_tracked

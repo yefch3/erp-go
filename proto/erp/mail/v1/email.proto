@@ -237,6 +237,15 @@ message InboundMail {
   // why a mail did not arrive or whether it is the one being talked about.
   string message_id_header = 25;
   int64 raw_size = 26;
+  // 真正的回信地址。与 from_email 不同时界面高亮：From 是发信人自己写的，
+  // 想写什么写什么；Reply-To 决定「点回复会发给谁」。伪造一封看似来自老供应商
+  // 的邮件、把这里换成自己的地址，是商业邮件诈骗最常用的一手。
+  string reply_to = 27;
+  string cc = 28;
+  // 收信服务器拿去 DNS 核对过的身份，也就是 Gmail 的 mailed-by / signed-by。
+  // 只在验证通过时有值：没通过就什么都不是，不能把一个签名没证明的域名摆出来。
+  string auth_spf = 29;
+  string auth_dkim = 30;
 }
 
 message InboundAttachment {

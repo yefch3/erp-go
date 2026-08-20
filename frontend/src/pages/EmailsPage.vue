@@ -114,6 +114,13 @@
           </span>
         </div>
 
+        <!-- 不藏在详情里：详情是折起来的，而这一条正是那种「不特意去看就不会
+             知道」的事。 -->
+        <div v-if="replyToMismatch" class="reply-mismatch">
+          <el-icon><WarningFilled /></el-icon>
+          <span>{{ t('emails.replyToMismatch', { addr: openedInbound.replyTo }) }}</span>
+        </div>
+
         <dl v-if="detailsOpen" class="mail-details">
           <template v-for="row in detailRows" :key="row.k">
             <dt>{{ row.k }}</dt>
@@ -924,6 +931,11 @@ interface InboundMail {
   // The details panel.
   messageIdHeader?: string
   rawSize?: number
+  // 真正的回信地址，以及收信服务器验过的两个身份。
+  replyTo?: string
+  cc?: string
+  authSpf?: string
+  authDkim?: string
   // Messages in this conversation; the list shows one row per conversation.
   threadCount?: number
   receivedAt: string
@@ -1063,6 +1075,20 @@ watch(openedInbound, () => {
 
 // Only the rows that have something in them. An empty "抄送:" is not
 // information, it is a line to read past.
+// 回信地址与发件人不一致。
+//
+// 这不是异常，正常业务里也常见（noreply 发出、客服组统一回收）。所以措辞是
+// 「注意」而不是「警告」：提示要说出事实，由看得懂的人判断，而不是替他断定
+// 这是诈骗——狼来了喊多了，真来的那次就没人听了。
+//
+// 但它值得被看见：伪造一封看似来自老供应商的邮件、把 Reply-To 换成自己的
+// 地址，是骗走货款最常用的一手，而 From 那一行看上去毫无破绽。
+const replyToMismatch = computed(() => {
+  const m = openedInbound.value
+  if (!m?.replyTo || !m.fromEmail) return false
+  return m.replyTo.trim().toLowerCase() !== m.fromEmail.trim().toLowerCase()
+})
+
 const detailRows = computed(() => {
   const m = openedInbound.value
   if (!m) return []
@@ -1072,7 +1098,14 @@ const detailRows = computed(() => {
   }
   add(t('emails.detail.from'), `${m.fromName ? m.fromName + ' ' : ''}<${m.fromEmail}>`)
   add(t('emails.detail.to'), m.toEmail)
+  add(t('emails.detail.cc'), m.cc)
+  // 只在与 From 不同时才列：一样的时候它不是信息，是一行要读过去的字。
+  if (replyToMismatch.value) add(t('emails.detail.replyTo'), m.replyTo)
   add(t('emails.detail.subject'), m.subject)
+  // Gmail 的 mailed-by / signed-by。空表示未记录或未通过验证 —— 两者都不该
+  // 说成「验证失败」，那是在断言一件我们并不知道的事。
+  add(t('emails.detail.mailedBy'), m.authSpf)
+  add(t('emails.detail.signedBy'), m.authDkim)
   if (m.sentAt) add(t('emails.detail.sentAt'), zonedStamp(m.sentAt))
   if (m.receivedAt) add(t('emails.detail.receivedAt'), zonedStamp(m.receivedAt))
   add(t('emails.detail.folder'), m.folder)
@@ -3103,6 +3136,19 @@ async function doUnsuppress(row: Suppression) {
 }
 .in-when {
   white-space: nowrap;
+}
+/* 琥珀色而不是红色：这是「看一眼」，不是「出事了」。 */
+.reply-mismatch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--el-color-warning-light-5);
+  border-radius: 8px;
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning-dark-2);
+  font-size: 13px;
 }
 .details-toggle {
   margin-left: 8px;

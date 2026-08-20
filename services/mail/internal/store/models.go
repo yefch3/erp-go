@@ -125,6 +125,10 @@ type EmailInbound struct {
 	ContactID      int64
 	CustomerName   string
 	ImagesCachedAt pgtype.Timestamptz
+	ReplyTo        string
+	Cc             string
+	AuthSpf        string
+	AuthDkim       string
 }
 
 type EmailInboundAttachment struct {
