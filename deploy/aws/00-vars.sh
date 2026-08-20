@@ -18,6 +18,16 @@ PROJECT=erp
 #   export ERP_BUCKET=erp-files-<your-suffix>
 BUCKET="${ERP_BUCKET:-}"
 
+# Where the browser loads the app from.
+#
+# Needed because uploads go straight from the browser to the bucket, which
+# makes them cross-origin: the page is served from here and the PUT goes to
+# s3.amazonaws.com. A browser answers that by sending a preflight first, and
+# S3 refuses every preflight unless the bucket names this origin. Getting it
+# wrong does not fail at deploy time — it fails the first time somebody tries
+# to attach a file.
+APP_ORIGIN="${ERP_APP_ORIGIN:-https://mercova.ip-ddns.com}"
+
 # ---------------------------------------------------------------- sizes
 # t3.xlarge: 4 vCPU / 16 GB. The 11 Go services are light; the sizing is for
 # Kafka's fixed 1 GB heap plus mail-sync concurrency. ~$120/month on-demand.
