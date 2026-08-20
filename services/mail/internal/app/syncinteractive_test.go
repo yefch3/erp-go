@@ -35,10 +35,21 @@ func fakePass(inboxAfter, tailFor time.Duration, n int, inboxErr error, tailRan 
 	}
 }
 
-// runInteractive mirrors SyncMailboxInteractive's control flow over a stub
+// runInteractive drives SyncMailboxInteractive's control flow over a stub
 // pass, so the wiring is under test without a mail host behind it.
+//
+// The waiting half is not reimplemented here — it calls awaitInbox, the same
+// function production calls. A test that reimplements the logic it is meant to
+// pin will agree with itself forever, including about a bug.
 func runInteractive(ctx context.Context, f *syncFleet, mailbox int64,
 	pass func(chan<- syncOutcome) (int, error)) (int, error) {
+
+	n, _, err := runInteractiveWithin(ctx, f, mailbox, interactiveWait, pass)
+	return n, err
+}
+
+func runInteractiveWithin(ctx context.Context, f *syncFleet, mailbox int64,
+	wait time.Duration, pass func(chan<- syncOutcome) (int, error)) (int, bool, error) {
 
 	inbox := make(chan syncOutcome, 1)
 	tail, cancel := context.WithTimeout(context.WithoutCancel(ctx), inboxTail)
@@ -50,12 +61,7 @@ func runInteractive(ctx context.Context, f *syncFleet, mailbox int64,
 		default:
 		}
 	}()
-	select {
-	case r := <-inbox:
-		return r.n, r.err
-	case <-ctx.Done():
-		return 0, ctx.Err()
-	}
+	return awaitInbox(ctx, inbox, wait)
 }
 
 func TestInteractiveSyncAnswersOnTheInboxNotTheWholePass(t *testing.T) {
@@ -188,5 +194,65 @@ func TestInteractiveSyncTailSurvivesTheCallerGivingUp(t *testing.T) {
 			t.Fatal("the pass was abandoned when the caller went away")
 		case <-time.After(10 * time.Millisecond):
 		}
+	}
+}
+
+// 一个从没同步过的邮箱，收件箱这一程可能要几分钟。请求不能一直挂着：调用方前面
+// 是 nginx，60 秒不响应就是 504 —— 一个页面报错，报的却是一件正在正常进行的事。
+//
+// 到点要给出的答案是"还在收"，而不是错误，也不是假装收完了。
+func TestInteractiveSyncAnswersStillRunningRatherThanHanging(t *testing.T) {
+	f := newSyncFleet(1)
+	var tailRan atomic.Bool
+	// 收件箱那一程比等待窗口长得多。
+	pass := fakePass(300*time.Millisecond, 10*time.Millisecond, 7, nil, &tailRan)
+
+	start := time.Now()
+	n, pending, err := runInteractiveWithin(context.Background(), f, 1, 30*time.Millisecond, pass)
+	waited := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("还在收不是错误，却返回了 %v", err)
+	}
+	if !pending {
+		t.Error("pending = false，期望 true")
+	}
+	if n != 0 {
+		t.Errorf("fetched = %d，期望 0 —— 还没数出来的数字不该报给用户", n)
+	}
+	if waited > 200*time.Millisecond {
+		t.Errorf("等了 %v，远超给定的 30ms 窗口", waited)
+	}
+
+	// 尾巴照跑：人不等了，信还是要收进来的。
+	deadline := time.Now().Add(2 * time.Second)
+	for !tailRan.Load() && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !tailRan.Load() {
+		t.Error("调用方拿到「还在收」之后，后台那一程没有继续")
+	}
+}
+
+// 收得快的时候不该白等满一个窗口。
+func TestInteractiveSyncStillAnswersImmediatelyWhenTheInboxIsQuick(t *testing.T) {
+	f := newSyncFleet(1)
+	var tailRan atomic.Bool
+	pass := fakePass(time.Millisecond, time.Millisecond, 3, nil, &tailRan)
+
+	start := time.Now()
+	n, pending, err := runInteractiveWithin(context.Background(), f, 1, time.Second, pass)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending {
+		t.Error("pending = true，但收件箱已经收完了")
+	}
+	if n != 3 {
+		t.Errorf("fetched = %d，期望 3", n)
+	}
+	if d := time.Since(start); d > 500*time.Millisecond {
+		t.Errorf("等了 %v —— 收完就该立刻返回，不是等满窗口", d)
 	}
 }

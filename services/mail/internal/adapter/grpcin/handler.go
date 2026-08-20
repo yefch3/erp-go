@@ -1009,11 +1009,13 @@ func (h *Handler) EmptyJunk(ctx context.Context, _ *mailv1.EmptyJunkRequest) (*m
 
 func (h *Handler) SyncMailbox(ctx context.Context, _ *mailv1.SyncMailboxRequest) (*mailv1.SyncMailboxResponse, error) {
 	op := operator(ctx)
-	n, err := h.svc.SyncNow(ctx, grpcx.TenantID(ctx), op.ID)
+	n, pending, err := h.svc.SyncNow(ctx, grpcx.TenantID(ctx), op.ID)
 	if err != nil {
 		return &mailv1.SyncMailboxResponse{Fetched: 0, Detail: err.Error()}, nil
 	}
-	return &mailv1.SyncMailboxResponse{Fetched: int32(n)}, nil
+	// pending 不填 Detail：Detail 是给错误用的，前端见到它就弹红字。还在收
+	// 不是错误。
+	return &mailv1.SyncMailboxResponse{Fetched: int32(n), Pending: pending}, nil
 }
 
 func (h *Handler) ListMailboxSent(ctx context.Context, req *mailv1.ListMailboxSentRequest) (*mailv1.ListMailboxSentResponse, error) {

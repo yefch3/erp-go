@@ -2040,7 +2040,7 @@ async function reauth() {
 async function syncNow() {
   syncing.value = true
   try {
-    const d = await post<{ fetched: number; detail: string }>(
+    const d = await post<{ fetched: number; detail: string; pending?: boolean }>(
       '/mailbox/sync',
       undefined,
       mailHostRequest,
@@ -2051,6 +2051,12 @@ async function syncNow() {
       return
     }
     syncError.value = ''
+    // 还在收，不是出错。一个从没同步过的邮箱首次要收几分钟，而请求前面的 nginx
+    // 只等 60 秒 —— 服务端到点就先答话，这里要把它说成"进行中"而不是红字报错，
+    // 否则用户会以为坏了，然后反复点，反复排队。
+    if (d.pending) {
+      ElMessage({ type: 'info', message: t('emails.syncPending') })
+    }
     // The list refreshes in place, under the mail if one is open — and that
     // mail's own thread with it, so a reply that just arrived joins the
     // conversation being read rather than waiting for a reopen.
