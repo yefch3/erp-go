@@ -337,10 +337,11 @@
       <el-alert v-else-if="schedulePreview" type="info" :closable="false" show-icon>
         {{ schedulePreview }}
       </el-alert>
-      <!-- The undo window lives here because this dialog is where sending's
-           time behaviour is decided — it just also governs the "now" case.
-           Like Gmail: 5 to 30 seconds, never off; the delay is the safety
-           net, and a net you can remove is a net somebody has removed. -->
+      <!-- 撤回窗口放在这里，是因为这个对话框决定的就是「什么时候发」——它顺带
+           也管着「现在发」那一档。
+           原本刻意不给 0（「一张可以摘掉的网就是已经被人摘掉的网」）。现在给了，
+           并且默认 0：使用方要的是点了就走。代价是发错了追不回来，所以 0 这一
+           档的说明文字要把这句话说出来，而不是只显示一个数字。 -->
       <el-divider />
       <el-form-item :label="t('emails.undoWindow')">
         <div class="body-box">
@@ -349,7 +350,9 @@
               {{ s }}s
             </el-radio-button>
           </el-radio-group>
-          <div class="var-hint">{{ t('emails.undoWindowHint', { s: undoSeconds }) }}</div>
+          <div class="var-hint">
+            {{ undoSeconds === 0 ? t('emails.undoWindowOff') : t('emails.undoWindowHint', { s: undoSeconds }) }}
+          </div>
         </div>
       </el-form-item>
     </el-form>
@@ -436,9 +439,15 @@ interface CreateResult {
 // Per person per browser (localStorage), like the rest of this page's
 // preferences: the window is a reflex-speed setting, and reflexes do not
 // need to sync across devices badly enough to earn a server round trip.
-const UNDO_CHOICES = [5, 10, 20, 30]
+// 0 是「点了就寄出去，没有反悔时间」。
+//
+// 这里原本刻意不给 0，理由写在下面那段注释里，是对的：延迟就是那张安全网。
+// 现在给了，并且默认给 0 —— 这是使用方明确要求的取舍，记在这里而不是留一句
+// 与代码不符的注释：日后有人因为「发错了追不回」回来看这段，该看到的是一个
+// 有人做过的决定，不是一个像是漏掉的选项。
+const UNDO_CHOICES = [0, 5, 10, 20, 30]
 const storedUndo = Number(localStorage.getItem('mail.undoSeconds'))
-const undoSeconds = ref(UNDO_CHOICES.includes(storedUndo) ? storedUndo : 10)
+const undoSeconds = ref(UNDO_CHOICES.includes(storedUndo) ? storedUndo : 0)
 watch(undoSeconds, (s) => localStorage.setItem('mail.undoSeconds', String(s)))
 
 // The whole substitution vocabulary. It mirrors app.KnownVariables() in the
@@ -1247,10 +1256,13 @@ async function readyToSend() {
 // differ by a timestamp and nothing else — the queue holds every mail either
 // way, and only the moment it becomes due changes.
 async function submitSend(at: string) {
-  // An immediate send leaves ten seconds from now, not zero seconds: the
-  // undo window. A time the person picked themselves is left alone — they
-  // can cancel it from 已定时 at leisure.
-  const undoable = at === ''
+  // 立即发送会被推后一个撤回窗口，而不是零秒 —— 那个窗口就是撤回本身。
+  // 使用者自己挑的时间不动：那种信可以从「已定时」里从容取消。
+  //
+  // 窗口设为 0 时不设 scheduled_at，而不是设成「此刻」：两者对 worker 效果
+  // 一样，但一个空字段比一个刚好等于 now() 的时间戳更不容易在日后被误读成
+  // 「这封信被定时过」。
+  const undoable = at === '' && undoSeconds.value > 0
   if (undoable) {
     at = new Date(Date.now() + undoSeconds.value * 1000).toISOString()
   }
