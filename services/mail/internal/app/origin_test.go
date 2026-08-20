@@ -68,7 +68,10 @@ func TestOriginClassify(t *testing.T) {
 		machine bool
 	}{
 		{"proofpoint gateway, forward confirmed", "148.163.139.74", true},
-		{"gmail image proxy, forward confirmed", "66.249.84.1", true},
+		// Gmail's proxy fetches because somebody displayed the message.
+		// Filtering it by address would undo the displayProxies decision one
+		// layer down, so google.com is deliberately not in machineHosts.
+		{"gmail image proxy is a person, not a machine", "66.249.84.1", false},
 		{"apple relay by range, no PTR needed", "17.58.63.10", true},
 		{"a reader on their own isp", "203.0.113.9", false},
 		{"an address with no reverse record at all", "192.0.2.44", false},
@@ -143,7 +146,6 @@ func TestMatchHost(t *testing.T) {
 	machine := []string{
 		"mx0b-00364e01.pphosted.com",
 		"pphosted.com",
-		"google-proxy-66-249-84-1.google.com",
 		"crawl-66-249-66-1.googlebot.com",
 		"something.protection.outlook.com",
 	}
@@ -154,6 +156,8 @@ func TestMatchHost(t *testing.T) {
 	}
 
 	human := []string{
+		// Gmail's proxy: a display proxy, judged by classifyFetch, not here.
+		"google-proxy-66-249-84-1.google.com",
 		"evil-google.com",
 		"google.com.attacker.example",
 		"notpphosted.com",

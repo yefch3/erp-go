@@ -36,25 +36,39 @@ func TestClassifyFetch(t *testing.T) {
 			machine:   false,
 		},
 		{
-			name:      "gmail proxy for a recipient who is not on gmail is our own sent copy",
+			// The bug this file was rewritten for. columbia.edu publishes
+			// Proofpoint MX records and delivers into Google Workspace behind
+			// them, so its readers open mail in Gmail and the fetch arrives
+			// through Google's proxy. Filtering it reported 未检测到打开 for a
+			// message the recipient had plainly read.
+			name:      "gmail proxy counts even when the domain looks nothing like google",
 			ua:        gmailProxyUA,
 			to:        "fy2272@columbia.edu",
 			sinceSent: 3 * time.Hour,
-			machine:   true,
+			machine:   false,
 		},
 		{
-			name:      "gmail proxy for a gmail recipient is a real open",
+			name:      "gmail proxy for a consumer gmail recipient",
 			ua:        gmailProxyUA,
 			to:        "buyer@gmail.com",
 			sinceSent: 3 * time.Hour,
 			machine:   false,
 		},
 		{
-			name:      "gmail proxy is still a real open on the alternate domain",
-			ua:        gmailProxyUA,
-			to:        "Buyer@GoogleMail.com",
+			name:      "yahoo's proxy is a display proxy too",
+			ua:        "YahooMailProxy; https://help.yahoo.com/kb/yahoo-mail-proxy-SLN28749.html",
+			to:        "buyer@yahoo.com",
 			sinceSent: 3 * time.Hour,
 			machine:   false,
+		},
+		{
+			// A display proxy is exempt from the agent list, not from timing.
+			// Providers do occasionally prefetch on delivery.
+			name:      "a display proxy fetching on delivery is still suppressed",
+			ua:        gmailProxyUA,
+			to:        "fy2272@columbia.edu",
+			sinceSent: 10 * time.Second,
+			machine:   true,
 		},
 		{
 			name:      "a person on a real browser well after sending counts",
@@ -123,7 +137,7 @@ func TestClassifyFetch(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := classifyFetch(tc.ua, tc.to, tc.sinceSent)
+			got := classifyFetch(tc.ua, tc.sinceSent)
 			if got.machine != tc.machine {
 				t.Fatalf("machine = %v, want %v (reason %q)", got.machine, tc.machine, got.reason)
 			}
@@ -134,29 +148,6 @@ func TestClassifyFetch(t *testing.T) {
 				t.Fatalf("a fetch that counted should carry no reason, got %q", got.reason)
 			}
 		})
-	}
-}
-
-// The recipient domain decides the Gmail proxy case, so parsing it wrongly
-// would silently flip that rule.
-func TestGoogleMailbox(t *testing.T) {
-	cases := map[string]bool{
-		"buyer@gmail.com":            true,
-		"buyer@GMAIL.COM":            true,
-		"buyer@googlemail.com":       true,
-		"buyer@columbia.edu":         false,
-		"buyer@notgmail.com":         false,
-		"buyer@gmail.com.example.cn": false,
-		"gmail.com":                  false,
-		"":                           false,
-		// A display form that slipped through unparsed must not match on the
-		// strength of containing the domain somewhere.
-		"Buyer <buyer@gmail.com>": false,
-	}
-	for addr, want := range cases {
-		if got := googleMailbox(addr); got != want {
-			t.Errorf("googleMailbox(%q) = %v, want %v", addr, got, want)
-		}
 	}
 }
 

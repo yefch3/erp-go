@@ -57,8 +57,6 @@ type fetchVerdict struct {
 // pixel, and a list that tries to name every crawler ends up matching a real
 // browser by accident.
 var machineAgents = []string{
-	// Provider image proxies, which announce themselves.
-	"yahoomailproxy",
 	// Security gateways and scanners.
 	"proofpoint",
 	"mimecast",
@@ -85,17 +83,38 @@ var machineAgents = []string{
 	"preview",
 }
 
-// googleProxyMarker is how Gmail's image proxy identifies itself.
-const googleProxyMarker = "googleimageproxy"
-
-// googleMailboxDomains are the domains where a Gmail proxy fetch plausibly
-// means the recipient looked at the message.
+// displayProxies are provider image proxies that fetch because a person
+// displayed the message.
 //
-// Google Workspace domains are missed by this list, since recognising them
-// needs an MX lookup and this runs while a recipient's mail client is waiting
-// for an image. Missing one costs an under-report on a signal already
-// presented as a maybe, which is the safe direction to be wrong in.
-var googleMailboxDomains = []string{"gmail.com", "googlemail.com"}
+// These must NOT be filtered, and the distinction is the one this file got
+// wrong the first time. Sort proxies by what triggers them, not by the fact
+// that they are proxies:
+//
+//   - Gmail and Yahoo fetch through their proxy when a mailbox displays the
+//     message. A person did something. That is exactly the event we are trying
+//     to observe, arriving via an intermediary.
+//   - Apple's Mail Privacy Protection relay fetches on delivery whether or not
+//     anybody opens anything. No person is involved, so it is filtered — by
+//     address, in origin.go, since its agent is indistinguishable from a real
+//     Apple Mail.
+//
+// Filtering Gmail's proxy is not a small over-correction. Google Workspace
+// hosts an enormous share of business mail, including domains that look like
+// anything but Google from the outside — columbia.edu publishes Proofpoint MX
+// records and delivers into Google Workspace behind them — so suppressing it
+// does not shade the number down, it reports "未检测到打开" forever for a large
+// class of perfectly ordinary recipients. That is not a conservative error. It
+// is a broken feature.
+//
+// This does let one false positive through: our own sender viewing their copy
+// in 已发送 inside Gmail, which fetches the same pixel. That is a narrower
+// problem than the one above and is not worth paying for with the primary
+// signal.
+var displayProxies = []string{
+	"googleimageproxy",
+	"ggpht.com",
+	"yahoomailproxy",
+}
 
 // classifyFetch decides whether a pixel fetch is evidence that a person read
 // the message.
@@ -103,7 +122,7 @@ var googleMailboxDomains = []string{"gmail.com", "googlemail.com"}
 // sinceSent is the gap between the send and this fetch; a non-positive value
 // means we do not know when the message went out (it was never marked sent)
 // and the timing rule is skipped rather than guessed at.
-func classifyFetch(userAgent, toEmail string, sinceSent time.Duration) fetchVerdict {
+func classifyFetch(userAgent string, sinceSent time.Duration) fetchVerdict {
 	ua := strings.ToLower(strings.TrimSpace(userAgent))
 
 	// No agent at all. Every mail client and browser sends one; something that
@@ -112,23 +131,15 @@ func classifyFetch(userAgent, toEmail string, sinceSent time.Duration) fetchVerd
 		return fetchVerdict{machine: true, reason: "no user-agent"}
 	}
 
-	// Gmail's proxy is the ambiguous case and gets its own rule.
-	//
-	// It fetches when a Gmail user displays a message — which is a real open
-	// if that user is the recipient. But our own senders are on Gmail too, and
-	// their copy in 已发送 carries the same pixel, so opening one's own sent
-	// mail in Gmail reports the customer as having read it. When the recipient
-	// is not on Gmail, that is the only thing this fetch can be.
-	if strings.Contains(ua, googleProxyMarker) {
-		if !googleMailbox(toEmail) {
-			return fetchVerdict{machine: true, reason: "gmail proxy, recipient not on gmail"}
-		}
-		return fetchVerdict{}
-	}
-
-	for _, frag := range machineAgents {
-		if strings.Contains(ua, frag) {
-			return fetchVerdict{machine: true, reason: "agent matched " + frag}
+	// A display proxy skips the agent list — it is an intermediary for a
+	// person, not a machine acting on its own — but still faces the timing
+	// rule below, which catches the minority of provider fetches that happen
+	// on delivery rather than on display.
+	if !containsAny(ua, displayProxies) {
+		for _, frag := range machineAgents {
+			if strings.Contains(ua, frag) {
+				return fetchVerdict{machine: true, reason: "agent matched " + frag}
+			}
 		}
 	}
 
@@ -139,15 +150,9 @@ func classifyFetch(userAgent, toEmail string, sinceSent time.Duration) fetchVerd
 	return fetchVerdict{}
 }
 
-// googleMailbox reports whether an address is on a Google consumer mailbox.
-func googleMailbox(addr string) bool {
-	at := strings.LastIndex(addr, "@")
-	if at < 0 {
-		return false
-	}
-	domain := strings.ToLower(strings.TrimSpace(addr[at+1:]))
-	for _, d := range googleMailboxDomains {
-		if domain == d {
+func containsAny(s string, fragments []string) bool {
+	for _, f := range fragments {
+		if strings.Contains(s, f) {
 			return true
 		}
 	}

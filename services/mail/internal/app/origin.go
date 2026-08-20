@@ -70,12 +70,14 @@ var machineHosts = []string{
 	"trendmicro.com",         // Trend Micro
 	"fireeye.com",            // Trellix
 	"googlebot.com",          // Google crawlers
-	// Google's own hosts. A person reading our mail connects from their own
-	// network; an image fetch arriving from inside Google is a proxy or a
-	// crawler. The Gmail image proxy is judged earlier and more precisely by
-	// classifyFetch, which knows who the message was addressed to, so this
-	// only catches what that rule did not.
-	"google.com",
+	// google.com is deliberately absent.
+	//
+	// Gmail's image proxy answers to google-proxy-*.google.com, and it fetches
+	// because somebody displayed the message — see displayProxies. Listing the
+	// parent domain here would filter every Google Workspace recipient by
+	// address, silently undoing that decision one layer down, which is exactly
+	// how the first version of this managed to report nothing at all for a
+	// columbia.edu reader.
 }
 
 // originTTL is how long one verdict about an address is reused.
