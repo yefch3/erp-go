@@ -93,6 +93,16 @@ export default {
     flowHint: 'Un caso de cotización no crea una orden directamente. La tarea de compra aparece después de que el cliente acepte y el contrato entre en vigor.',
   },
   procurementIntakes: {
+    format: 'Formato de consulta', autoRecognize: 'Detectar formato automáticamente (recomendado)', boundFormat: 'Formato vinculado', historicalFormat: 'Formato heredado', autoFormatHint: 'El sistema compara todos los encabezados con los formatos activos. Seleccione uno solo si hay ambigüedad.', selectedFormatHint: 'El archivo se validará con “{name} · v{version}”.',
+    dynamicReviewHint: 'Revise cada campo definido por este formato. Complete los elementos marcados o guarde un borrador.',
+    completeness: 'Integridad', complete: 'Completo', ignored: 'Ignorado', missingCount: 'Faltan {count}',
+    dynamicRequiredMissing: 'Faltan datos obligatorios: línea {detail}. Guarde el borrador o complételo antes de cotizar.',
+    template: 'Plantilla de consulta',
+    templatePlaceholder: 'Detectar o especificar un formato',
+    templateHint: 'El sistema detecta el formato o permite elegirlo manualmente.',
+    defaultTemplate: 'Predeterminada',
+    downloadSelectedTemplate: 'Descargar plantilla elegida',
+    templateRequired: 'Seleccione una plantilla de consulta',
     eyebrow: 'REVISIÓN DE CONSULTAS', title: 'Pendientes de revisión', subtitle: 'Revisar consultas estandarizadas de Correo o carga manual', manualUpload: 'Subir consulta estándar', mailSource: 'Transferencia por correo', mailHint: 'Resultado ya estandarizado por LLM', manualSource: 'Carga manual', manualHint: 'Solo Excel o CSV estándar', pendingQueue: 'Cola de revisión', queueHint: 'Corregir o ignorar líneas antes de cotizar', search: 'Buscar número, cliente o archivo', number: 'N.º consulta', source: 'Origen', fileOrSubject: 'Archivo / asunto', customer: 'Cliente', lines: 'Líneas', receivedAt: 'Entrada', review: 'Revisión manual', empty: 'Sin consultas por revisar', mailAuto: 'Transferencia por correo', manual: 'Manual', uploadTitle: 'Subir consulta estándar', uploadHint: 'Solo se aceptan archivos .xlsx o .csv ya estandarizados. Revise los datos en esta página después de subirlos. Máximo 8MB.', inquiryTitle: 'Título', titleAuto: 'Nombre del archivo si está vacío', contact: 'Contacto', contactEmail: 'Correo', standardFile: 'Archivo estándar', uploadAndReview: 'Subir e iniciar revisión', fileRequired: 'Seleccione el archivo estándar', uploaded: 'Consulta añadida a la cola de revisión', reviewTitle: 'Revisar consulta', reviewHint: 'Revise y edite directamente producto, especificación, cantidad, unidad, entrega y puerto. Ignore líneas innecesarias y envíe a cotización.', product: 'Producto', material: 'Material / norma', grade: 'Grado', spec: 'Espesor / ancho', quantity: 'Cantidad / unidad', deliveryPort: 'Entrega / puerto', restore: 'Restaurar', ignore: 'Ignorar', keepOne: 'Conserve al menos una línea válida', confirmCreate: 'Finalizar revisión e iniciar cotización', confirmHint: '¿Confirma la revisión de producto, cantidad, unidad y especificaciones e inicia la cotización?', confirmed: 'Revisión completada y enviada a cotización', autoTransferred: 'Consulta {no} transferida a compras', requiredMissing:'Las líneas {lines} no tienen producto, cantidad o unidad. Complételas antes de cotizar.',
   },
   inquiryTemplates: {

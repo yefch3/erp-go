@@ -13,6 +13,7 @@ service SourcingService {
   rpc CreateCase(CreateCaseRequest) returns (CreateCaseResponse);
   rpc ListCases(ListCasesRequest) returns (ListCasesResponse);
   rpc GetCase(GetCaseRequest) returns (GetCaseResponse);
+  rpc AddLine(AddLineRequest) returns (AddLineResponse);
   rpc ConfirmLines(ConfirmLinesRequest) returns (ConfirmLinesResponse);
   rpc ReviewLine(ReviewLineRequest) returns (ReviewLineResponse);
   rpc CreateFactoryRfq(CreateFactoryRfqRequest) returns (CreateFactoryRfqResponse);
@@ -106,6 +107,10 @@ message CreateCaseRequest {
   string source_file_name = 9;
   string source_content_type = 10;
   bytes source_file_data = 11;
+  // The immutable inquiry-template version used to produce/parse this case.
+  int64 inquiry_template_id = 12;
+  string inquiry_template_code = 13;
+  int32 inquiry_template_version = 14;
 }
 
 message CreateCaseResponse { SourcingCase sourcing_case = 1; }
@@ -123,6 +128,8 @@ message ListCasesResponse {
 
 message GetCaseRequest { int64 id = 1; }
 message GetCaseResponse { SourcingCase sourcing_case = 1; }
+message AddLineRequest { int64 case_id = 1; SourcingLineInput extracted = 2; }
+message AddLineResponse { SourcingCase sourcing_case = 1; }
 message ConfirmLinesRequest { int64 case_id = 1; repeated int64 sourcing_line_ids = 2; }
 message ConfirmLinesResponse { SourcingCase sourcing_case = 1; }
 message ReviewLineRequest {

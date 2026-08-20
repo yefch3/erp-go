@@ -57,9 +57,9 @@ type Server struct {
 	Sourcing     prv1.SourcingServiceClient
 	// 询盘列模板：邮件标准化与待复核解析共用的列注册表。
 	InquiryTemplates prv1.InquiryTemplateServiceClient
-	Stocks       ivv1.StockServiceClient
-	Shipping     shippingv1.ShippingServiceClient
-	Emails       mailv1.EmailServiceClient
+	Stocks           ivv1.StockServiceClient
+	Shipping         shippingv1.ShippingServiceClient
+	Emails           mailv1.EmailServiceClient
 	// Unlock holds mailbox-verification tokens. Nil fails closed: every mail
 	// route answers MAIL_LOCKED until a store exists.
 	Unlock *UnlockStore
@@ -429,6 +429,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/changes", s.listSourcingCaseChanges)
 		r.With(s.perm("procurement:sourcing:write")).Post("/api/sourcing-cases", s.createSourcingCase)
 		r.With(s.perm("procurement:sourcing:write")).Post("/api/sourcing-intakes/import", s.importSourcingIntake)
+		r.With(s.perm("procurement:sourcing:write")).Post("/api/sourcing-cases/{id}/lines", s.addSourcingLine)
 		// 询盘列模板：列注册表的管理面。读给所有采购相关角色，写跟 sourcing 写权限。
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/inquiry-templates", s.listInquiryTemplates)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/inquiry-templates/{id}", s.getInquiryTemplate)

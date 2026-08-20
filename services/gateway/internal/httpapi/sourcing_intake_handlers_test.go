@@ -4,6 +4,8 @@ import (
 	"mime/multipart"
 	"strings"
 	"testing"
+
+	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 )
 
 // 与系统种子模板一致的 21 列字段表；intake 解析的列定义来自默认模板。
@@ -89,5 +91,74 @@ func TestParseStandardizedInquiryRejectsUnknownFile(t *testing.T) {
 	_, err := parseStandardizedInquiry(&multipart.FileHeader{Filename: "raw-email.txt"}, []byte("hello"), testInquiryFields())
 	if err == nil {
 		t.Fatal("expected unsupported file error")
+	}
+}
+
+func TestParseOptionalManualInquiryTemplateID(t *testing.T) {
+	if id, err := parseOptionalManualInquiryTemplateID(" 42 "); err != nil || id != 42 {
+		t.Fatalf("valid template id: id=%d err=%v", id, err)
+	}
+	if id, err := parseOptionalManualInquiryTemplateID(""); err != nil || id != 0 {
+		t.Fatalf("empty id should enable automatic recognition: id=%d err=%v", id, err)
+	}
+	for _, value := range []string{"0", "not-a-number"} {
+		if _, err := parseOptionalManualInquiryTemplateID(value); err == nil {
+			t.Fatalf("template id %q should be rejected", value)
+		}
+	}
+}
+
+func TestRecognizeInquiryTemplateByHeaders(t *testing.T) {
+	templates := []*prv1.InquiryTemplate{
+		{Id: 11, Name: "钢材询盘", Status: "ACTIVE", Fields: []*prv1.InquiryTemplateField{
+			{FieldKey: "product", DisplayName: "产品", SortOrder: 1},
+			{FieldKey: "quantity", DisplayName: "数量", SortOrder: 2},
+			{FieldKey: "quantity_unit", DisplayName: "单位", SortOrder: 3},
+		}},
+		{Id: 12, Name: "食品询盘", Status: "ACTIVE", Fields: []*prv1.InquiryTemplateField{
+			{FieldKey: "product", DisplayName: "品名", SortOrder: 1},
+			{FieldKey: "quantity", DisplayName: "需求数量", SortOrder: 2},
+			{FieldKey: "quantity_unit", DisplayName: "计量单位", SortOrder: 3},
+		}},
+	}
+	id, err := recognizeInquiryTemplate(
+		&multipart.FileHeader{Filename: "food.csv"},
+		[]byte("计量单位,品名,需求数量\n箱,冻干草莓,100\n"),
+		templates,
+	)
+	if err != nil || id != 12 {
+		t.Fatalf("recognized id=%d err=%v, want 12", id, err)
+	}
+}
+
+func TestRecognizeInquiryTemplatePrefersDefaultWhenHeadersDuplicate(t *testing.T) {
+	fields := []*prv1.InquiryTemplateField{
+		{FieldKey: "product", DisplayName: "产品", SortOrder: 1},
+		{FieldKey: "quantity", DisplayName: "数量", SortOrder: 2},
+	}
+	templates := []*prv1.InquiryTemplate{
+		{Id: 21, Status: "ACTIVE", Fields: fields},
+		{Id: 22, Status: "ACTIVE", IsDefault: true, Fields: fields},
+	}
+	id, err := recognizeInquiryTemplate(&multipart.FileHeader{Filename: "same.csv"}, []byte("产品,数量\n螺栓,10\n"), templates)
+	if err != nil || id != 22 {
+		t.Fatalf("recognized id=%d err=%v, want default 22", id, err)
+	}
+}
+
+func TestRecognizeInquiryTemplateAcceptsUTF8BOM(t *testing.T) {
+	templates := []*prv1.InquiryTemplate{{
+		Id: 31, Status: "ACTIVE", Fields: []*prv1.InquiryTemplateField{
+			{FieldKey: "product", DisplayName: "产品", SortOrder: 1},
+			{FieldKey: "quantity", DisplayName: "数量", SortOrder: 2},
+		},
+	}}
+	id, err := recognizeInquiryTemplate(
+		&multipart.FileHeader{Filename: "downloaded-template.csv"},
+		[]byte("\xef\xbb\xbf产品,数量\n轴承,20\n"),
+		templates,
+	)
+	if err != nil || id != 31 {
+		t.Fatalf("BOM template should be recognized: id=%d err=%v", id, err)
 	}
 }

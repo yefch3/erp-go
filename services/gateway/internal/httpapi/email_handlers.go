@@ -744,13 +744,26 @@ func (s *Server) convertInboundToExcel(w http.ResponseWriter, r *http.Request) {
 	}
 	// URL ownership wins over any body field, as with every other mail action.
 	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	// 转换按租户当前默认询盘模板的列进行；快照随任务持久化，模板之后的
-	// 改版不影响这次已排队的识别。
-	template, err := s.InquiryTemplates.GetDefaultInquiryTemplate(r.Context(), &prv1.GetDefaultInquiryTemplateRequest{})
+	// 邮件侧已经识别客户或公司模板时可传明确的模板 ID；尚未接入识别规则的
+	// 旧调用继续使用默认模板。无论哪种方式，身份和列快照都随任务持久化。
+	var template *prv1.GetInquiryTemplateResponse
+	var err error
+	if req.GetInquiryTemplateId() > 0 {
+		template, err = s.InquiryTemplates.GetInquiryTemplate(r.Context(), &prv1.GetInquiryTemplateRequest{Id: req.GetInquiryTemplateId()})
+	} else {
+		fallback, fallbackErr := s.InquiryTemplates.GetDefaultInquiryTemplate(r.Context(), &prv1.GetDefaultInquiryTemplateRequest{})
+		err = fallbackErr
+		if fallback != nil {
+			template = &prv1.GetInquiryTemplateResponse{Template: fallback.GetTemplate()}
+		}
+	}
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
 	}
+	req.InquiryTemplateId = template.GetTemplate().GetId()
+	req.InquiryTemplateCode = template.GetTemplate().GetTemplateCode()
+	req.InquiryTemplateVersion = template.GetTemplate().GetVersion()
 	fields := append([]*prv1.InquiryTemplateField(nil), template.GetTemplate().GetFields()...)
 	sort.SliceStable(fields, func(i, j int) bool { return fields[i].GetSortOrder() < fields[j].GetSortOrder() })
 	for _, field := range fields {

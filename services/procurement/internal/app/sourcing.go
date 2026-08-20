@@ -57,6 +57,9 @@ type NewSourcingCase struct {
 	CustomerID, SourceMailID, SourceAttachmentID   int64
 	SourceFileData                                 []byte
 	Lines                                          []SourcingLineInput
+	InquiryTemplateID                              int64
+	InquiryTemplateCode                            string
+	InquiryTemplateVersion                         int32
 }
 
 type SourcingCaseView struct {
@@ -83,9 +86,9 @@ func (s *Service) CreateSourcingCase(ctx context.Context, tenantID int64, in New
 		}
 	}
 
-	// 询盘记录读取时的列布局：默认模板的 id/编码/版本快照随案件保存，
-	// 之后模板再改版也不影响这单已有的明细。
-	template, err := s.GetDefaultInquiryTemplate(ctx, tenantID)
+	// 询盘必须绑定“生成或解析它的那一版模板”。邮件转换和手工上传会明确
+	// 传入模板 ID；未传仅用于兼容旧调用。模板之后改版不会影响历史询盘。
+	template, err := s.resolveSourcingInquiryTemplate(ctx, tenantID, in)
 	if err != nil {
 		return SourcingCaseView{}, err
 	}
@@ -124,6 +127,25 @@ func (s *Service) CreateSourcingCase(ctx context.Context, tenantID int64, in New
 		return SourcingCaseView{}, err
 	}
 	return s.GetSourcingCase(ctx, tenantID, id)
+}
+
+// resolveSourcingInquiryTemplate 解析并校验跨模块传入的模板身份，防止只传
+// ID 却误配编码或版本。SUPERSEDED 版本仍可用于已由它生成的历史询盘。
+func (s *Service) resolveSourcingInquiryTemplate(ctx context.Context, tenantID int64, in NewSourcingCase) (InquiryTemplateView, error) {
+	if in.InquiryTemplateID <= 0 {
+		return s.GetDefaultInquiryTemplate(ctx, tenantID)
+	}
+	template, err := s.GetInquiryTemplate(ctx, tenantID, in.InquiryTemplateID)
+	if err != nil {
+		return InquiryTemplateView{}, err
+	}
+	if code := strings.TrimSpace(in.InquiryTemplateCode); code != "" && code != template.Template.TemplateCode {
+		return InquiryTemplateView{}, apierr.Conflict("SC_INQUIRY_TEMPLATE_MISMATCH", "询盘模板编码与模板版本不一致，请重新生成标准询盘")
+	}
+	if in.InquiryTemplateVersion > 0 && in.InquiryTemplateVersion != template.Template.Version {
+		return InquiryTemplateView{}, apierr.Conflict("SC_INQUIRY_TEMPLATE_MISMATCH", "询盘模板版本与模板记录不一致，请重新生成标准询盘")
+	}
+	return template, nil
 }
 
 func sourcingLineParams(tenantID, caseID int64, lineNo int32, in SourcingLineInput) store.CreateSourcingLineParams {
@@ -175,6 +197,53 @@ func (s *Service) GetSourcingCase(ctx context.Context, tenantID, id int64) (Sour
 	return SourcingCaseView{Head: head, Lines: lines}, nil
 }
 
+// AddSourcingLine 在人工复核阶段补录一条产品需求，并将操作写入询盘变更记录。
+// 只有尚未进入询价的待复核询盘可以增加明细，避免改变已经用于报价的依据。
+func (s *Service) AddSourcingLine(ctx context.Context, tenantID, caseID int64, in SourcingLineInput, op Operator) (SourcingCaseView, error) {
+	view, err := s.GetSourcingCase(ctx, tenantID, caseID)
+	if err != nil {
+		return SourcingCaseView{}, err
+	}
+	if view.Head.Status != "INTAKE_PENDING" {
+		return SourcingCaseView{}, apierr.Conflict("SC_INTAKE_ALREADY_CONFIRMED", "询盘已进入询价，不能继续新增产品明细")
+	}
+	if strings.TrimSpace(in.Product) == "" {
+		return SourcingCaseView{}, apierr.Invalid("SC_PRODUCT_REQUIRED", "请填写产品名称")
+	}
+	if strings.TrimSpace(in.Quantity) != "" {
+		qty, parseErr := decimal.NewFromString(in.Quantity)
+		if parseErr != nil || qty.LessThanOrEqual(decimal.Zero) {
+			return SourcingCaseView{}, apierr.Invalid("SC_QUANTITY_INVALID", "询价数量必须是大于 0 的数字")
+		}
+	}
+
+	afterJSON, _ := json.Marshal(in)
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		var status string
+		if lockErr := tx.QueryRow(ctx, "SELECT status FROM sourcing_cases WHERE tenant_id=$1 AND id=$2 FOR UPDATE", tenantID, caseID).Scan(&status); lockErr != nil {
+			return lockErr
+		}
+		if status != "INTAKE_PENDING" {
+			return apierr.Conflict("SC_INTAKE_ALREADY_CONFIRMED", "询盘已进入询价，不能继续新增产品明细")
+		}
+		var nextLineNo int32
+		if numberErr := tx.QueryRow(ctx, "SELECT coalesce(max(line_no), 0) + 1 FROM sourcing_lines WHERE tenant_id=$1 AND case_id=$2", tenantID, caseID).Scan(&nextLineNo); numberErr != nil {
+			return numberErr
+		}
+		if createErr := q.CreateSourcingLine(ctx, sourcingLineParams(tenantID, caseID, nextLineNo, in)); createErr != nil {
+			return createErr
+		}
+		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: caseID,
+			Section: "PRODUCT", Action: "LINE_ADDED", Summary: "人工新增产品明细第 " + fmt.Sprint(nextLineNo) + " 行",
+			BeforeJson: []byte("{}"), AfterJson: afterJSON, OperatorID: op.ID, OperatorName: op.Name})
+	})
+	if err != nil {
+		return SourcingCaseView{}, err
+	}
+	return s.GetSourcingCase(ctx, tenantID, caseID)
+}
+
 func (s *Service) ConfirmSourcingLines(ctx context.Context, tenantID, caseID int64, ids []int64, op Operator) (SourcingCaseView, error) {
 	view, err := s.GetSourcingCase(ctx, tenantID, caseID)
 	if err != nil {
@@ -186,19 +255,39 @@ func (s *Service) ConfirmSourcingLines(ctx context.Context, tenantID, caseID int
 	// 待复核询盘只检查明细是否属于当前询盘；此阶段不强制匹配内部产品。
 	// 确认后进入原有 REVIEWING 阶段，再由采购人员完成产品匹配和逐行复核。
 	if view.Head.Status == "INTAKE_PENDING" {
-		allowed := make(map[int64]bool, len(view.Lines))
+		requiredFields := []store.ListInquiryTemplateFieldsRow{
+			{FieldKey: "product", DisplayName: "产品", IsRequired: true},
+			{FieldKey: "quantity", DisplayName: "数量", IsRequired: true},
+			{FieldKey: "quantity_unit", DisplayName: "单位", IsRequired: true},
+		}
+		if view.Head.InquiryTemplateID > 0 {
+			template, templateErr := s.GetInquiryTemplate(ctx, tenantID, view.Head.InquiryTemplateID)
+			if templateErr != nil {
+				return SourcingCaseView{}, templateErr
+			}
+			requiredFields = template.Fields
+		}
+		allowed := make(map[int64]store.ListSourcingLinesRow, len(view.Lines))
 		for _, line := range view.Lines {
-			allowed[line.ID] = true
+			allowed[line.ID] = line
 		}
 		seen := map[int64]bool{}
+		incompleteLines := make([]string, 0)
 		for _, id := range ids {
-			if !allowed[id] || seen[id] {
+			line, exists := allowed[id]
+			if !exists || seen[id] {
 				return SourcingCaseView{}, apierr.Invalid("SC_INTAKE_LINES_INVALID", "待复核询盘明细已变化，请刷新后重试")
 			}
 			seen[id] = true
+			if missing := missingIntakeReviewFields(line, requiredFields); len(missing) > 0 {
+				incompleteLines = append(incompleteLines, fmt.Sprintf("第 %d 行：%s", line.LineNo, strings.Join(missing, "、")))
+			}
 		}
 		if len(seen) == 0 {
 			return SourcingCaseView{}, apierr.Invalid("SC_CONFIRM_LINES_REQUIRED", "至少保留一条有效询盘明细")
+		}
+		if len(incompleteLines) > 0 {
+			return SourcingCaseView{}, apierr.Invalid("SC_INTAKE_FIELDS_REQUIRED", "询盘资料不完整；"+strings.Join(incompleteLines, "；")+"需要填写")
 		}
 		err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 			result, execErr := tx.Exec(ctx,
@@ -248,6 +337,72 @@ func (s *Service) ConfirmSourcingLines(ctx context.Context, tenantID, caseID int
 		return SourcingCaseView{}, err
 	}
 	return s.GetSourcingCase(ctx, tenantID, caseID)
+}
+
+func missingIntakeReviewFields(line store.ListSourcingLinesRow, templateFields []store.ListInquiryTemplateFieldsRow) []string {
+	customFields := map[string]string{}
+	_ = json.Unmarshal(line.CustomFields, &customFields)
+	missing := make([]string, 0)
+	for _, field := range templateFields {
+		if !field.IsRequired || field.FieldKey == "unit_price" || field.FieldKey == "total_price" {
+			continue
+		}
+		if strings.TrimSpace(intakeReviewFieldValue(line, customFields, field.FieldKey)) == "" {
+			name := strings.TrimSpace(field.DisplayName)
+			if name == "" {
+				name = field.FieldKey
+			}
+			missing = append(missing, name)
+		}
+	}
+	return missing
+}
+
+// intakeReviewFieldValue 将模板字段读取统一映射到询盘行，确保不同客户的
+// 自定义模板和系统已知字段使用同一套必填校验。
+func intakeReviewFieldValue(line store.ListSourcingLinesRow, customFields map[string]string, key string) string {
+	switch key {
+	case "product":
+		return line.Product
+	case "material_standard":
+		return line.MaterialStandard
+	case "grade":
+		return line.Grade
+	case "thickness":
+		return line.Thickness
+	case "width":
+		return line.Width
+	case "length_or_form":
+		return line.LengthOrForm
+	case "surface_requirement":
+		return line.SurfaceRequirement
+	case "coating":
+		return line.Coating
+	case "tolerance":
+		return line.Tolerance
+	case "coil_weight":
+		return line.CoilWeight
+	case "coil_id":
+		return line.CoilID
+	case "packaging":
+		return line.Packaging
+	case "delivery":
+		return line.Delivery
+	case "payment_terms":
+		return line.PaymentTerms
+	case "incoterm":
+		return line.Incoterm
+	case "port":
+		return line.Port
+	case "quantity_unit":
+		return line.QuantityUnit
+	case "remarks":
+		return line.Remarks
+	case "quantity":
+		return line.Quantity
+	default:
+		return customFields[key]
+	}
 }
 
 type SourcingLineReview struct {
@@ -307,7 +462,7 @@ func (s *Service) ReviewSourcingLine(ctx context.Context, tenantID int64, in Sou
 			PaymentTerms: in.Extracted.PaymentTerms, Incoterm: in.Extracted.Incoterm, Port: in.Extracted.Port,
 			QuantityUnit: in.Extracted.QuantityUnit, Remarks: in.Extracted.Remarks, Quantity: in.Extracted.Quantity,
 			// 复核编辑的是标准字段；自定义列未被提交时保留读取时的值。
-			CustomFields:  reviewCustomFields(previous.CustomFields, in.Extracted.CustomFields),
+			CustomFields: reviewCustomFields(previous.CustomFields, in.Extracted.CustomFields),
 			ProductID:    in.ProductID, SkuID: in.SkuID, UomID: in.UomID, Decision: in.Decision,
 			DecidedBy: op.ID, DecidedByName: op.Name,
 		})
