@@ -59,6 +59,14 @@ type InboundView struct {
 	// panel, not the reader.
 	MessageIDHeader string
 	RawSize         int64
+	// 真正的回信地址。与 FromEmail 不同时，界面要提醒——那是伪造供应商邮件
+	// 骗货款最常用的一手。
+	ReplyTo string
+	CC      string
+	// 收信服务器验过的身份，只在验证通过时有值。空表示「未验证」，不是
+	// 「验证失败」——老邮件在这两列存在之前就入库了。
+	AuthSPF  string
+	AuthDKIM string
 
 	// Whether the original MIME is still in object storage, which is what
 	// forward-as-attachment sends. The send path refuses without it anyway;
@@ -301,6 +309,8 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 		IsRead: true, HasAttachments: row.HasAttachments,
 		HasRaw: row.RawKey != "",
 		Folder: row.Folder, MessageIDHeader: row.MessageID, RawSize: row.RawSize,
+		ReplyTo: row.ReplyTo, CC: row.Cc,
+		AuthSPF: row.AuthSpf, AuthDKIM: row.AuthDkim,
 		// Null for anything the inbox reads: an inbound mail has no delivery
 		// record, and coalesce already turned "no row" into the empty answer.
 		Status: row.SentStatus, Tracked: row.SentTracked,

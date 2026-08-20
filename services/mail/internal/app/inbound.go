@@ -661,6 +661,11 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 		MessageID: parsed.MessageID, InReplyTo: parsed.InReplyTo,
 		ReferencesIds: strings.Join(parsed.References, " "),
 		ThreadKey:     threadKey, ReplyToID: replyTo,
+		// 真正的回信地址、抄送，以及收信服务器验过的两个身份。
+		// ReplyTo 与 ReplyToID 是两件毫不相干的事：前者是邮件头里那个地址，
+		// 后者是本库里这封信答复的那一行。名字像，含义无关。
+		ReplyTo: parsed.ReplyTo, Cc: parsed.CC,
+		AuthSpf: parsed.AuthSPF, AuthDkim: parsed.AuthDKIM,
 		FromEmail: parsed.FromEmail, FromName: parsed.FromName,
 		ToEmail: parsed.ToEmail, Subject: parsed.Subject,
 		BodyHtml: parsed.BodyHTML, BodyText: parsed.BodyText,

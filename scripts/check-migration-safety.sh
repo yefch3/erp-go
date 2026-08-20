@@ -67,4 +67,36 @@ if [ "$fail" -ne 0 ]; then
 MSG
   exit 1
 fi
+# 第二道：同一个服务里不能有两个相同编号的迁移。
+#
+# 两个人并行开发时必然发生：各自看到最大号是 35，各自建了 36。goose 会在
+# 跑到那个服务时 panic，而那已经是 CI 跑了几分钟之后的事，报错还是一句
+# "duplicate version 36 detected" 夹在一堆 goroutine 栈里。
+#
+# 放在这里是为了让本地 `make ci` 就能拦住 —— 改个文件名的事，不该等推上去
+# 才发现。
+dup_found=0
+for dir in services/*/db/migrations; do
+  [ -d "$dir" ] || continue
+  dups=$(ls "$dir" 2>/dev/null | sed -n 's/^\([0-9][0-9]*\)_.*/\1/p' | sort | uniq -d)
+  [ -z "$dups" ] && continue
+  dup_found=1
+  for n in $dups; do
+    echo "迁移编号重复：$dir 里有多个 $n" >&2
+    ls "$dir" | grep "^$n" | sed 's/^/    /' >&2
+  done
+done
+if [ "$dup_found" -ne 0 ]; then
+  cat >&2 <<'DUP'
+
+同一个服务里两个迁移用了同一个编号，goose 会直接 panic，整个服务的迁移
+一条都不会跑。
+
+通常是并行开发撞的：两个人各自看到最大号是 N，各自建了 N+1。把后合并的那个
+改成下一个未被占用的编号即可 —— 迁移是按编号排序执行的，改名不影响已经
+应用过的记录（goose 记的是编号，而那个编号本来就还没被应用）。
+DUP
+  exit 1
+fi
+
 echo "migration safety check passed"

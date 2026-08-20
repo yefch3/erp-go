@@ -18,12 +18,21 @@ import (
 
 // ParsedMail is one received message, reduced to what the application needs.
 type ParsedMail struct {
-	MessageID   string
-	InReplyTo   string
-	References  []string
-	FromEmail   string
-	FromName    string
-	ToEmail     string
+	MessageID  string
+	InReplyTo  string
+	References []string
+	FromEmail  string
+	FromName   string
+	ToEmail    string
+	// 真正的回信地址。与 From 不同时，「点回复会发给谁」和「谁写的」就是两个
+	// 答案 —— 商业邮件诈骗最常用的一手正是改这里。
+	ReplyTo string
+	// 抄送，原样保留（含显示名）：谁在这段对话里能看到，本身就是业务事实。
+	CC string
+	// 收信服务器验过的身份：SPF 通过的信封域、DKIM 签名的域。
+	// 只在通过时有值，见 parseAuthResults。
+	AuthSPF     string
+	AuthDKIM    string
 	Subject     string
 	BodyHTML    string
 	BodyText    string
@@ -82,6 +91,16 @@ func ParseMail(raw []byte) (ParsedMail, error) {
 	} else {
 		out.ToEmail, _ = looseAddress(firstHeader(ent, "To"))
 	}
+	if addrs, err := h.AddressList("Reply-To"); err == nil && len(addrs) > 0 {
+		out.ReplyTo = strings.ToLower(addrs[0].Address)
+	} else {
+		out.ReplyTo, _ = looseAddress(firstHeader(ent, "Reply-To"))
+	}
+	out.CC = decodeHeader(firstHeader(ent, "Cc"))
+	// 第一条，不是全部：这个头是经手的服务器写的，上游那些爱写什么写什么。
+	// 最上面那条是我们自己的邮箱主机加的，也只有它可信。
+	out.AuthSPF, out.AuthDKIM = parseAuthResults(firstHeader(ent, "Authentication-Results"))
+
 	if t, err := h.Date(); err == nil {
 		out.SentAt = t
 	}
