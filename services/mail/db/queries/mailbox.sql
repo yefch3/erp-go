@@ -666,7 +666,12 @@ ORDER BY at;
 -- no session and therefore no tenant. The key is a random UUID, so it is the
 -- only identifier available — and knowing one tells you nothing beyond the
 -- message it belongs to.
-SELECT id, tenant_id, to_email FROM email_messages
+--
+-- sent_at comes back because the gap between sending and the first fetch is
+-- one of the few things that separates a person from a scanner: a security
+-- gateway loads the image while the message is still in transit, and nobody
+-- reads their mail within seconds of it landing.
+SELECT id, tenant_id, to_email, sent_at FROM email_messages
 WHERE message_key::text = sqlc.arg(message_key)::text;
 
 -- name: MarkOpened :exec

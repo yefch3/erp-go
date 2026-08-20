@@ -197,7 +197,11 @@ type Service struct {
 	// 本公司的人打开自己发出的信就会把对方标成已读。空表示没配公网地址，
 	// 那种情况下在外面也不存在我们的像素。见 ownpixel.go。
 	selfHost string
-	log      *slog.Logger
+
+	// Address classification for the tracking pixel, built on first use.
+	originsOnce sync.Once
+	originClass *originClassifier
+	log         *slog.Logger
 }
 
 // UsePublicBaseURL tells the read path what our own address looks like.
@@ -213,6 +217,16 @@ func New(pool *pgxpool.Pool, d Deps, log *slog.Logger) *Service {
 		provider: d.Provider, files: d.Files, tables: d.Tables,
 		secrets: d.Secrets, live: d.Live, log: log,
 	}
+}
+
+// origins returns the address classifier, building it on first use.
+//
+// Lazy rather than constructed in New because it is only ever touched by the
+// tracking pixel route, and every other caller of New — every test that builds
+// a Service — would otherwise pay for a field it never reads.
+func (s *Service) origins() *originClassifier {
+	s.originsOnce.Do(func() { s.originClass = newOriginClassifier(nil) })
+	return s.originClass
 }
 
 // UseProvider installs the sending adapter after construction.
