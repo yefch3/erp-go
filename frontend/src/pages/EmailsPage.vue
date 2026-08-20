@@ -254,6 +254,17 @@
                 @mouseover="onPlainTextHover"
               >{{ it.body }}</pre>
               <QuotedHistory v-if="it.quoted" :html="it.quoted" />
+              <!-- 这一封自己带的附件。放在正文下面、引用历史之后，和阅读单封
+                   时的顺序一致。 -->
+              <MailAttachments
+                v-if="it.attachments?.length"
+                :files="it.attachments"
+                class="thread-files"
+                @preview="openPreview"
+                @excel-menu="openAttachmentExcelMenu"
+                @excel-hover="hoverAttachmentExcelMenu"
+                @excel-leave="scheduleExcelMenuHide"
+              />
             </div>
           </div>
         </template>
@@ -275,52 +286,13 @@
         <template v-if="openedInbound.attachments?.length">
           <el-divider />
           <h4 class="side-title">{{ t('emails.attachments') }}</h4>
-          <!-- Links, not labels. Until now these were plain tags: the file was
-               listed, stored, and impossible to get back out. The href is a
-               signed, time-limited URL straight to storage, so the bytes never
-               pass through the gateway. -->
-          <div class="files">
-            <div
-              v-for="a in openedInbound.attachments"
-              :key="a.id"
-              class="file"
-              :class="{ dead: !a.downloadUrl }"
-              :title="fileHint(a)"
-              @contextmenu="openAttachmentExcelMenu($event, a)"
-              @mouseenter="hoverAttachmentExcelMenu($event, a)"
-              @mouseleave="scheduleExcelMenuHide"
-            >
-              <el-icon><Paperclip /></el-icon>
-              <span class="fname ellipsis">{{ a.fileName }}</span>
-              <span class="sub">{{ humanSize(Number(a.fileSize)) }}</span>
-              <!-- Look and take are separate acts, so they get separate
-                   buttons. A preview only appears for what can honestly be
-                   shown; for a .pptx or a .zip the download is the whole
-                   interaction. -->
-              <el-tooltip
-                v-if="a.previewUrl"
-                :content="t('emails.previewFile')"
-                placement="top"
-                :show-after="0"
-                :hide-after="0"
-              >
-                <button type="button" class="fbtn" @click="openPreview(a)">
-                  <el-icon><View /></el-icon>
-                </button>
-              </el-tooltip>
-              <el-tooltip
-                v-if="a.downloadUrl"
-                :content="t('emails.downloadFile', { f: a.fileName })"
-                placement="top"
-                :show-after="0"
-                :hide-after="0"
-              >
-                <a class="fbtn" :href="a.downloadUrl" :download="a.fileName">
-                  <el-icon><Download /></el-icon>
-                </a>
-              </el-tooltip>
-            </div>
-          </div>
+          <MailAttachments
+            :files="openedInbound.attachments"
+            @preview="openPreview"
+            @excel-menu="openAttachmentExcelMenu"
+            @excel-hover="hoverAttachmentExcelMenu"
+            @excel-leave="scheduleExcelMenuHide"
+          />
         </template>
       </template>
 
@@ -866,6 +838,7 @@ import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import EmailComposer from '../components/EmailComposer.vue'
 import MailReader, { type Mail } from '../components/MailReader.vue'
+import MailAttachments from '../components/MailAttachments.vue'
 import MailboxGate from '../components/MailboxGate.vue'
 import MailHostDialog from '../components/MailHostDialog.vue'
 import MailSignatureDialog from '../components/MailSignatureDialog.vue'
@@ -1694,6 +1667,15 @@ interface ThreadItem {
   counterparty: string
   who: string
   at: string
+  attachments?: {
+    id: string
+    fileName: string
+    fileSize: number | string
+    contentType?: string
+    downloadUrl?: string
+    previewUrl?: string
+    stored?: boolean
+  }[]
 }
 const threadItems = ref<ThreadItem[]>([])
 const expandedThread = ref<Set<string>>(new Set())

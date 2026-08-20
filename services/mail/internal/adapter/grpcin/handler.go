@@ -926,6 +926,13 @@ func (h *Handler) GetMailThread(ctx context.Context, req *mailv1.GetMailThreadRe
 		if !v.At.IsZero() {
 			it.At = v.At.Format(time.RFC3339)
 		}
+		for _, a := range v.Attachments {
+			it.Attachments = append(it.Attachments, &mailv1.InboundAttachment{
+				Id: a.ID, FileName: a.FileName, ContentType: a.ContentType,
+				FileSize: a.FileSize, DownloadUrl: a.DownloadURL,
+				PreviewUrl: a.PreviewURL, Stored: a.FileKey != "",
+			})
+		}
 		out = append(out, it)
 	}
 	return &mailv1.GetMailThreadResponse{Items: out}, nil

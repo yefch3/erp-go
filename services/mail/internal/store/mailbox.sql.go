@@ -1936,6 +1936,80 @@ func (q *Queries) ListThread(ctx context.Context, arg ListThreadParams) ([]ListT
 	return items, nil
 }
 
+const listThreadAttachments = `-- name: ListThreadAttachments :many
+SELECT 'IN'::text AS direction, i.id AS message_id,
+       a.id, a.file_name, a.content_type, a.file_size, a.file_key
+FROM email_inbound i
+JOIN email_inbound_attachments a
+  ON a.tenant_id = i.tenant_id AND a.inbound_id = i.id
+WHERE i.tenant_id = $1::bigint
+  AND i.owner_id = $2::bigint
+  AND i.thread_key = $3::text
+  AND a.content_id = ''
+UNION ALL
+SELECT 'OUT'::text AS direction, m.id AS message_id,
+       a.id, a.file_name, a.content_type, a.file_size, a.file_key
+FROM email_messages m
+JOIN email_attachments a
+  ON a.tenant_id = m.tenant_id AND a.campaign_id = m.campaign_id
+WHERE m.tenant_id = $1::bigint
+  AND m.sender_id = $2::bigint
+  AND m.thread_key = $3::text
+ORDER BY 1, 2, 3
+`
+
+type ListThreadAttachmentsParams struct {
+	TenantID  int64
+	OwnerID   int64
+	ThreadKey string
+}
+
+type ListThreadAttachmentsRow struct {
+	Direction   string
+	MessageID   int64
+	ID          int64
+	FileName    string
+	ContentType string
+	FileSize    int64
+	FileKey     string
+}
+
+// 整条会话的附件，一次取回，两个方向。
+//
+// 按会话取而不是逐封取：一段十六轮的往来会变成十六次往返，而这些行加起来
+// 也就几十条。分组交给 Go。
+//
+// content_id 非空的不算附件——那是正文里的内嵌图片（签名档的图标之类），
+// 已经在正文里渲染过了，再在下面列一遍只会让每封信都挂着一堆看不懂的
+// image001.png。发件侧没有内嵌这一说，所以那一半恒为空串。
+func (q *Queries) ListThreadAttachments(ctx context.Context, arg ListThreadAttachmentsParams) ([]ListThreadAttachmentsRow, error) {
+	rows, err := q.db.Query(ctx, listThreadAttachments, arg.TenantID, arg.OwnerID, arg.ThreadKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListThreadAttachmentsRow
+	for rows.Next() {
+		var i ListThreadAttachmentsRow
+		if err := rows.Scan(
+			&i.Direction,
+			&i.MessageID,
+			&i.ID,
+			&i.FileName,
+			&i.ContentType,
+			&i.FileSize,
+			&i.FileKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listThreadForPurge = `-- name: ListThreadForPurge :many
 SELECT id, raw_key, account_id, folder, imap_uid, message_id
 FROM email_inbound

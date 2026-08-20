@@ -328,6 +328,9 @@ message ThreadItem {
   // all: the thread view is already showing those turns separately, so
   // repeating them inside each one is the same text sixteen times over.
   string quoted = 9;
+  // 这一封自己带的附件。内嵌图片不在其中——那是正文的一部分，已经渲染过了，
+  // 再在下面列一遍只会让每封信都挂着一堆看不懂的 image001.png。
+  repeated InboundAttachment attachments = 10;
 }
 
 message GetMailThreadResponse {
