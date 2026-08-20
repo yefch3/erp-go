@@ -1336,7 +1336,7 @@ export default {
     openedCol: '¿Abierto?',
     maybeOpened: 'Posiblemente abierto',
     noOpenYet: 'Sin apertura detectada',
-    openedHint: 'La imagen del mensaje se cargó el {at}. Se excluyen los análisis de pasarelas de seguridad, la precarga de privacidad de Apple y cualquier carga dentro del minuto posterior al envío; los proxies de imágenes de Gmail y Yahoo sí cuentan, porque se activan cuando un buzón muestra el mensaje. Sigue siendo solo orientativo: una máquina que no reconocimos sobrestima y Outlook bloqueando imágenes subestima. La respuesta del cliente es la única señal segura.',
+    openedHint: 'La imagen del mensaje se cargó el {at}. Se excluyen los análisis de pasarelas de seguridad, la precarga de privacidad de Apple, las cargas desde redes de centros de datos y cualquier carga dentro del minuto posterior al envío; los proxies de imágenes de Gmail y Yahoo sí cuentan, porque se activan cuando un buzón muestra el mensaje. Sigue siendo solo orientativo: una máquina que no reconocimos sobrestima y Outlook bloqueando imágenes subestima. La respuesta del cliente es la única señal segura.',
     inboundTo: 'Entregado a {to}',
     inboxNotConnected: 'La bandeja de entrada aún no está conectada',
     inboxExplain: 'Recibir correo requiere un canal de entrada del proveedor de envío. Cuando se elija uno, las respuestas de los clientes aparecerán aquí junto al envío que contestan. Hasta entonces, las respuestas siguen llegando al buzón de empresa de cada persona.',

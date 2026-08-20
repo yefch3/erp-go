@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/netip"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -80,6 +81,53 @@ var machineHosts = []string{
 	// columbia.edu reader.
 }
 
+// hostingASNs are networks that rent out machines rather than connect people.
+//
+// This is the rule that separates the two populations we actually observed,
+// after timing was shown not to. Three fetches carrying a byte-identical
+// Chrome/149 User-Agent arrived from Leaseweb, M247 and Amazon — three
+// unrelated hosting companies — while every fetch that turned out to be the
+// recipient came through Google's proxy. Real browsers drift across versions
+// and connect from the networks people live and work on; a frozen version
+// string arriving from rented machines is a fleet.
+//
+// Timing cannot do this job. On one message the genuine open landed 66 seconds
+// after sending, between scans at 53 and 91 seconds. Widening the window to
+// catch the later scan would have discarded the real reader.
+//
+// Numbers verified against Team Cymru rather than written from memory.
+// Deliberately absent: Google (15169), Microsoft (8075) and Apple (714). All
+// three run clouds, and all three also run the mailbox proxies that fetch on a
+// reader's behalf — filtering them is the mistake this file already made once.
+//
+// The cost is a recipient who reads mail through a commercial VPN, since VPN
+// exit nodes live on exactly these networks; M247 sells both. For overseas
+// business buyers that is uncommon, and the alternative — reporting a read for
+// every message a security gateway happens to scan — is worse and is what sent
+// us here.
+var hostingASNs = map[string]string{
+	"14618": "Amazon AWS",
+	"16509": "Amazon AWS",
+	"30633": "Leaseweb",
+	"60781": "Leaseweb",
+	"9009":  "M247",
+	"14061": "DigitalOcean",
+	"63949": "Akamai/Linode",
+	"24940": "Hetzner",
+	"16276": "OVH",
+	"20473": "Vultr",
+	"51167": "Contabo",
+}
+
+// cymruOriginZone answers "which network announces this address" over DNS.
+//
+// Chosen over an IP-range file because it needs no key, no download and no
+// refresh — an ASN is a stable fact about an address and Team Cymru publishes
+// it. It is an outside dependency in a path that decides a product number, so
+// a failure has to be harmless: byASN returns "not a machine" on any error,
+// same as every other unknown here.
+const cymruOriginZone = "origin.asn.cymru.com"
+
 // originTTL is how long one verdict about an address is reused.
 //
 // Two lookups per address is already the cost of forward confirmation, and a
@@ -100,6 +148,7 @@ const originLookupTimeout = 3 * time.Second
 type resolver interface {
 	LookupAddr(ctx context.Context, addr string) ([]string, error)
 	LookupHost(ctx context.Context, host string) ([]string, error)
+	LookupTXT(ctx context.Context, name string) ([]string, error)
 }
 
 // originClassifier decides whether an address belongs to an automated fetcher,
@@ -157,8 +206,46 @@ func (o *originClassifier) classify(ctx context.Context, addr string) fetchVerdi
 	}
 
 	v := o.byName(ctx, key)
+	if !v.machine {
+		v = o.byASN(ctx, ip)
+	}
 	o.remember(key, v)
 	return v
+}
+
+// byASN asks which network announces the address and whether that network
+// rents machines out.
+//
+// IPv4 only. The v6 zone uses a different name and nibble encoding, and no
+// fetch we have seen arrived over v6; a v6 address simply skips this check
+// rather than being guessed at.
+func (o *originClassifier) byASN(ctx context.Context, ip netip.Addr) fetchVerdict {
+	if !ip.Is4() {
+		return fetchVerdict{}
+	}
+	b := ip.As4()
+	name := strconv.Itoa(int(b[3])) + "." + strconv.Itoa(int(b[2])) + "." +
+		strconv.Itoa(int(b[1])) + "." + strconv.Itoa(int(b[0])) + "." + cymruOriginZone
+
+	ctx, cancel := context.WithTimeout(ctx, originLookupTimeout)
+	defer cancel()
+
+	txts, err := o.res.LookupTXT(ctx, name)
+	if err != nil {
+		return fetchVerdict{}
+	}
+	for _, txt := range txts {
+		// "30633 | 108.59.0.0/20 | US | arin | 2010-11-18", and the first
+		// field carries more than one number when several networks announce
+		// the same prefix.
+		field, _, _ := strings.Cut(txt, "|")
+		for _, asn := range strings.Fields(field) {
+			if who, ok := hostingASNs[asn]; ok {
+				return fetchVerdict{machine: true, reason: "AS" + asn + " " + who + " (hosting)"}
+			}
+		}
+	}
+	return fetchVerdict{}
 }
 
 func (o *originClassifier) cached(key string) (fetchVerdict, bool) {
