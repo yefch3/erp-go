@@ -1372,6 +1372,7 @@ export default {
     undoSend: 'Deshacer',
     undoWindow: 'Ventana de deshacer',
     undoWindowHint: 'Durante {s} segundos tras enviar, Deshacer puede retener el correo',
+    undoWindowOff: 'Se envía al instante: no hay margen para deshacer',
     undone: 'Deshecho — restaurado como borrador',
     undoTooLate: 'Ya se envió, demasiado tarde para cancelar',
     applyTemplate: 'Aplicar plantilla',

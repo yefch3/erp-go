@@ -1369,6 +1369,7 @@ export default {
     undoSend: '撤回',
     undoWindow: '撤回窗口',
     undoWindowHint: '发送后 {s} 秒内可点「撤回」拦下这封邮件',
+    undoWindowOff: '点「发送」即刻寄出，没有撤回时间',
     undone: '已撤回，草稿已恢复',
     undoTooLate: '已经发出，来不及取消了',
     applyTemplate: '套用模板',

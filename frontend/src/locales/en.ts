@@ -1369,6 +1369,7 @@ export default {
     undoSend: 'Undo',
     undoWindow: 'Undo window',
     undoWindowHint: 'For {s} seconds after sending, Undo can pull the mail back',
+    undoWindowOff: 'Sends the moment you click — no window to take it back',
     undone: 'Undone — restored as a draft',
     undoTooLate: 'Already sent, too late to cancel',
     applyTemplate: 'Apply template',
