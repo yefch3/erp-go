@@ -1960,17 +1960,16 @@ func (q *Queries) ListThread(ctx context.Context, arg ListThreadParams) ([]ListT
 
 const listThreadAttachments = `-- name: ListThreadAttachments :many
 SELECT 'IN'::text AS direction, i.id AS message_id,
-       a.id, a.file_name, a.content_type, a.file_size, a.file_key
+       a.id, a.file_name, a.content_type, a.file_size, a.file_key, a.content_id
 FROM email_inbound i
 JOIN email_inbound_attachments a
   ON a.tenant_id = i.tenant_id AND a.inbound_id = i.id
 WHERE i.tenant_id = $1::bigint
   AND i.owner_id = $2::bigint
   AND i.thread_key = $3::text
-  AND a.content_id = ''
 UNION ALL
 SELECT 'OUT'::text AS direction, m.id AS message_id,
-       a.id, a.file_name, a.content_type, a.file_size, a.file_key
+       a.id, a.file_name, a.content_type, a.file_size, a.file_key, ''::text AS content_id
 FROM email_messages m
 JOIN email_attachments a
   ON a.tenant_id = m.tenant_id AND a.campaign_id = m.campaign_id
@@ -1994,6 +1993,7 @@ type ListThreadAttachmentsRow struct {
 	ContentType string
 	FileSize    int64
 	FileKey     string
+	ContentID   string
 }
 
 // 整条会话的附件，一次取回，两个方向。
@@ -2001,9 +2001,15 @@ type ListThreadAttachmentsRow struct {
 // 按会话取而不是逐封取：一段十六轮的往来会变成十六次往返，而这些行加起来
 // 也就几十条。分组交给 Go。
 //
-// content_id 非空的不算附件——那是正文里的内嵌图片（签名档的图标之类），
-// 已经在正文里渲染过了，再在下面列一遍只会让每封信都挂着一堆看不懂的
-// image001.png。发件侧没有内嵌这一说，所以那一半恒为空串。
+// content_id 一并取回，但**不在这里过滤**。
+//
+// 曾经这里写的是 a.content_id = ”，理由是「内嵌图片不该列成附件」。那个判断
+// 是错的：Gmail 给每一个 MIME 部件都写 Content-ID，包括真附件。结果是一封
+// 带简历的信，附件在库里好好存着，界面上一个都不显示。
+//
+// 「是不是内嵌」的正确判断只有一个：**正文有没有真的引用那个 cid**。那件事
+// 需要正文，所以留给 Go 里的 hideEmbedded 做——GetInbound 一直是这么做的，
+// 这里当初不该另发明一个更粗的代理指标。
 func (q *Queries) ListThreadAttachments(ctx context.Context, arg ListThreadAttachmentsParams) ([]ListThreadAttachmentsRow, error) {
 	rows, err := q.db.Query(ctx, listThreadAttachments, arg.TenantID, arg.OwnerID, arg.ThreadKey)
 	if err != nil {
@@ -2021,6 +2027,7 @@ func (q *Queries) ListThreadAttachments(ctx context.Context, arg ListThreadAttac
 			&i.ContentType,
 			&i.FileSize,
 			&i.FileKey,
+			&i.ContentID,
 		); err != nil {
 			return nil, err
 		}

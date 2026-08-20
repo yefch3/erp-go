@@ -38,7 +38,9 @@ func InjectOpenPixel(html, baseURL, messageKey string) string {
 	if strings.TrimSpace(html) == "" || baseURL == "" || messageKey == "" {
 		return html
 	}
-	url := strings.TrimSuffix(baseURL, "/") + "/api/public/mail-open/" + messageKey
+	// 同一个常量供 stripOwnPixel 使用：改了这里而没改那边，读信时就会重新
+	// 开始误报自己的已读。
+	url := strings.TrimSuffix(baseURL, "/") + openPixelPath + messageKey
 
 	// width/height as attributes as well as CSS: Outlook's renderer ignores
 	// the style on an img often enough to leave a visible gap otherwise.

@@ -129,6 +129,9 @@ func run(log *slog.Logger) error {
 	// the service to resolve credentials — hence the two-step wiring.
 	sender := provider.Pick(cfg.Provider, svc, blobs, cfg.SendTimeout, log)
 	svc.UseProvider(sender)
+	// 读路径靠它认出自家的追踪像素并拆掉。不给的话，本公司的人打开自己发出
+	// 的信就会把对方标成已读。
+	svc.UsePublicBaseURL(cfg.PublicBaseURL)
 	if cfg.GoogleClientID != "" {
 		svc.UseOAuth(app.OAuthConfig{
 			ClientID: cfg.GoogleClientID, ClientSecret: cfg.GoogleClientSecret,
