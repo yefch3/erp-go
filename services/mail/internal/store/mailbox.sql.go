@@ -514,7 +514,7 @@ func (q *Queries) FindMessageByKey(ctx context.Context, arg FindMessageByKeyPara
 }
 
 const findMessageByKeyAnyTenant = `-- name: FindMessageByKeyAnyTenant :one
-SELECT id, tenant_id, to_email FROM email_messages
+SELECT id, tenant_id, to_email, sent_at FROM email_messages
 WHERE message_key::text = $1::text
 `
 
@@ -522,16 +522,27 @@ type FindMessageByKeyAnyTenantRow struct {
 	ID       int64
 	TenantID int64
 	ToEmail  string
+	SentAt   pgtype.Timestamptz
 }
 
 // The tracking pixel is fetched by a recipient's mail client, which carries
 // no session and therefore no tenant. The key is a random UUID, so it is the
 // only identifier available — and knowing one tells you nothing beyond the
 // message it belongs to.
+//
+// sent_at comes back because the gap between sending and the first fetch is
+// one of the few things that separates a person from a scanner: a security
+// gateway loads the image while the message is still in transit, and nobody
+// reads their mail within seconds of it landing.
 func (q *Queries) FindMessageByKeyAnyTenant(ctx context.Context, messageKey string) (FindMessageByKeyAnyTenantRow, error) {
 	row := q.db.QueryRow(ctx, findMessageByKeyAnyTenant, messageKey)
 	var i FindMessageByKeyAnyTenantRow
-	err := row.Scan(&i.ID, &i.TenantID, &i.ToEmail)
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ToEmail,
+		&i.SentAt,
+	)
 	return i, err
 }
 
