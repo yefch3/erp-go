@@ -232,6 +232,43 @@ func (s *Service) SyncMailbox(ctx context.Context, cfg SyncConfig, employeeID in
 // for ever.
 const inboxTail = 5 * time.Minute
 
+// interactiveWait is how long 立即收信 will hold the HTTP request open before
+// answering "还在收".
+//
+// The inbox leg is not instant on a mailbox that has never been synced: nine
+// thousand messages arrive in batches, each one a download and an upload. The
+// caller is a browser behind nginx, whose patience is 60 seconds and whose way
+// of running out is a 504 — an error page for something that is not an error
+// and that is, at that very moment, working.
+//
+// So the wait is bounded well under that and the tail carries on regardless.
+// Twenty seconds is chosen from the other end too: past it, a person who
+// clicked a button has stopped believing it did anything.
+const interactiveWait = 20 * time.Second
+
+// awaitInbox waits for the inbox leg of an interactive pass.
+//
+// Three outcomes, and the middle one is the point: answered, still running, or
+// the caller gave up. "Still running" is not an error and must not be dressed
+// as one — the mail is on its way in and saying so is the honest report.
+//
+// Shared with the tests rather than mirrored by them: a test that reimplements
+// the control flow it is meant to pin will agree with itself forever.
+func awaitInbox(ctx context.Context, inbox <-chan syncOutcome, wait time.Duration) (int, bool, error) {
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case r := <-inbox:
+		return r.n, false, r.err
+	case <-timer.C:
+		return 0, true, nil
+	case <-ctx.Done():
+		// The person navigated away. The pass carries on regardless — the
+		// mail is worth having whether or not anyone is still watching.
+		return 0, false, ctx.Err()
+	}
+}
+
 type syncOutcome struct {
 	n   int
 	err error
@@ -250,7 +287,8 @@ type syncOutcome struct {
 // which matters: the fleet is what stops the same mailbox being synced twice
 // over, and a tail running outside it would let a second click open a second
 // IMAP session on an account that already has one.
-func (s *Service) SyncMailboxInteractive(ctx context.Context, cfg SyncConfig, employeeID int64) (int, error) {
+// Returns (收到几封, 是否仍在后台继续, 错误).
+func (s *Service) SyncMailboxInteractive(ctx context.Context, cfg SyncConfig, employeeID int64) (int, bool, error) {
 	cfg = cfg.withDefaults()
 	inbox := make(chan syncOutcome, 1)
 
@@ -272,14 +310,7 @@ func (s *Service) SyncMailboxInteractive(ctx context.Context, cfg SyncConfig, em
 		}
 	}()
 
-	select {
-	case r := <-inbox:
-		return r.n, r.err
-	case <-ctx.Done():
-		// The person navigated away. The pass carries on regardless - the
-		// mail is worth having whether or not anyone is still watching.
-		return 0, ctx.Err()
-	}
+	return awaitInbox(ctx, inbox, interactiveWait)
 }
 
 // SyncMailboxIfDue is the poller's entry point: it skips a mailbox that failed

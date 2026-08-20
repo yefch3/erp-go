@@ -1314,6 +1314,7 @@ export default {
     emptyInbox: 'La bandeja está vacía',
     searchEmpty: 'Ningún correo contiene «{q}». La búsqueda mira el asunto, el remitente y el cuerpo, pero no el correo no deseado ni la papelera.',
     syncNow: 'Recibir ahora',
+    syncPending: 'Sigue descargando en segundo plano; el correo nuevo aparecerá en breve',
     openedCol: '¿Abierto?',
     maybeOpened: 'Posiblemente abierto',
     noOpenYet: 'Sin apertura detectada',

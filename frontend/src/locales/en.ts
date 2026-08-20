@@ -1311,6 +1311,7 @@ export default {
     emptyInbox: 'The inbox is empty',
     searchEmpty: 'No mail contains “{q}”. Search looks at the subject, the sender and the body, but not junk or trash.',
     syncNow: 'Check mail now',
+    syncPending: 'Still fetching in the background — new mail will appear shortly',
     openedCol: 'Opened?',
     maybeOpened: 'Possibly opened',
     noOpenYet: 'No open detected',

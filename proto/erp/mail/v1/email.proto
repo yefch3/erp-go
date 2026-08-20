@@ -443,6 +443,9 @@ message SyncMailboxRequest {}
 message SyncMailboxResponse {
   int32 fetched = 1;
   string detail = 2;
+  // 收件箱这一程还没跑完，但后台仍在继续。不是错误：一个九千封的邮箱首次
+  // 同步本来就要几分钟，而调用方（浏览器、以及它前面的 nginx）等不了那么久。
+  bool pending = 3;
 }
 
 message RecordOpenRequest {

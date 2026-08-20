@@ -1311,6 +1311,7 @@ export default {
     emptyInbox: '收件箱是空的',
     searchEmpty: '没有找到包含「{q}」的邮件。搜索会看主题、发件人和正文，但不含垃圾邮件和回收站。',
     syncNow: '立即收信',
+    syncPending: '邮件较多，正在后台继续收取，稍后会自动出现',
     openedCol: '对方已读',
     maybeOpened: '可能已打开',
     noOpenYet: '未检测到打开',
