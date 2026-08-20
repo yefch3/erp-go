@@ -860,6 +860,7 @@ func (h *Handler) StartInboundExcelConversion(ctx context.Context, req *mailv1.S
 	job, err := h.svc.StartExcelJob(
 		ctx, grpcx.TenantID(ctx), op.ID, req.GetId(),
 		req.AttachmentId, req.SelectedText, req.GetLocale(), columns,
+		req.GetInquiryTemplateId(), req.GetInquiryTemplateCode(), req.GetInquiryTemplateVersion(),
 	)
 	if err != nil {
 		return nil, err
@@ -879,7 +880,8 @@ func (h *Handler) GetInboundExcelConversionJob(ctx context.Context, req *mailv1.
 func excelJobToProto(job app.ExcelJob) *mailv1.ExcelConversionJob {
 	out := &mailv1.ExcelConversionJob{
 		Id: job.ID, Status: job.Status, ErrorCode: job.ErrorCode,
-		ErrorMessage: job.ErrorMessage,
+		ErrorMessage: job.ErrorMessage, InquiryTemplateId: job.InquiryTemplateID,
+		InquiryTemplateCode: job.InquiryTemplateCode, InquiryTemplateVersion: job.InquiryTemplateVersion,
 	}
 	if !job.CreatedAt.IsZero() {
 		out.CreatedAt = job.CreatedAt.Format(time.RFC3339)

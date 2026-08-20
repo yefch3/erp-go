@@ -1361,6 +1361,11 @@ message StartInboundExcelConversionRequest {
   // The default inquiry template's columns, resolved by the gateway. Empty
   // falls back to the system layout so older callers keep working.
   repeated InquiryColumnSpec template_columns = 5;
+  // Immutable identity for the column snapshot above. Mail only carries it;
+  // procurement remains the owner of template definitions.
+  int64 inquiry_template_id = 6;
+  string inquiry_template_code = 7;
+  int32 inquiry_template_version = 8;
 }
 
 message ExcelConversionJob {
@@ -1371,6 +1376,9 @@ message ExcelConversionJob {
   string error_message = 5;
   string created_at = 6;
   string completed_at = 7;
+  int64 inquiry_template_id = 8;
+  string inquiry_template_code = 9;
+  int32 inquiry_template_version = 10;
 }
 
 message StartInboundExcelConversionResponse { ExcelConversionJob job = 1; }

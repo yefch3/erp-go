@@ -18,13 +18,23 @@ import (
 // ExcelJob is the durable state returned to the browser. Result is populated
 // only after the worker has atomically persisted both the preview and XLSX.
 type ExcelJob struct {
-	ID           int64
-	Status       string
-	Result       ExcelResult
-	ErrorCode    string
-	ErrorMessage string
-	CreatedAt    time.Time
-	CompletedAt  time.Time
+	ID                     int64
+	Status                 string
+	Result                 ExcelResult
+	ErrorCode              string
+	ErrorMessage           string
+	CreatedAt              time.Time
+	CompletedAt            time.Time
+	InquiryTemplateID      int64
+	InquiryTemplateCode    string
+	InquiryTemplateVersion int32
+}
+
+type inquiryTemplateSnapshot struct {
+	ID      int64           `json:"id"`
+	Code    string          `json:"code"`
+	Version int32           `json:"version"`
+	Columns []InquiryColumn `json:"columns"`
 }
 
 // StartExcelJob validates ownership and the selected source before enqueueing
@@ -34,7 +44,7 @@ type ExcelJob struct {
 func (s *Service) StartExcelJob(
 	ctx context.Context, tenantID, ownerID, inboundID int64,
 	attachmentID *int64, selectedText *string, locale string,
-	columns []InquiryColumn,
+	columns []InquiryColumn, templateID int64, templateCode string, templateVersion int32,
 ) (ExcelJob, error) {
 	if s.tables == nil {
 		return ExcelJob{}, apierr.Invalid("MAIL_EXCEL_NOT_CONFIGURED", "Excel 智能转换尚未配置")
@@ -46,7 +56,9 @@ func (s *Service) StartExcelJob(
 		trimmed := strings.TrimSpace(*selectedText)
 		selectedText = &trimmed
 	}
-	columnSnapshot, err := json.Marshal(columns)
+	columnSnapshot, err := json.Marshal(inquiryTemplateSnapshot{
+		ID: templateID, Code: strings.TrimSpace(templateCode), Version: templateVersion, Columns: columns,
+	})
 	if err != nil {
 		return ExcelJob{}, err
 	}
@@ -129,6 +141,13 @@ func excelJobFromRow(row store.MailExcelJob) (ExcelJob, error) {
 		ID: row.ID, Status: row.Status, ErrorCode: row.ErrorCode,
 		ErrorMessage: row.ErrorMessage, CreatedAt: row.CreatedAt.Time,
 	}
+	snapshot, err := decodeInquiryTemplateSnapshot(row.TemplateColumns)
+	if err != nil {
+		return ExcelJob{}, fmt.Errorf("decode excel job template snapshot: %w", err)
+	}
+	job.InquiryTemplateID = snapshot.ID
+	job.InquiryTemplateCode = snapshot.Code
+	job.InquiryTemplateVersion = snapshot.Version
 	if row.CompletedAt.Valid {
 		job.CompletedAt = row.CompletedAt.Time
 	}
@@ -139,6 +158,21 @@ func excelJobFromRow(row store.MailExcelJob) (ExcelJob, error) {
 		}
 	}
 	return job, nil
+}
+
+// decodeInquiryTemplateSnapshot 同时接受新版带身份的对象和历史任务保存的
+// 纯列数组，确保部署升级后队列中已有任务仍能继续执行。
+func decodeInquiryTemplateSnapshot(data []byte) (inquiryTemplateSnapshot, error) {
+	var snapshot inquiryTemplateSnapshot
+	if err := json.Unmarshal(data, &snapshot); err == nil && snapshot.Columns != nil {
+		return snapshot, nil
+	}
+	var legacy []InquiryColumn
+	if err := json.Unmarshal(data, &legacy); err != nil {
+		return inquiryTemplateSnapshot{}, err
+	}
+	snapshot.Columns = legacy
+	return snapshot, nil
 }
 
 // RunExcelWorker drains the durable extraction queue. SKIP LOCKED in the
@@ -178,9 +212,10 @@ func (s *Service) drainExcelJobs(ctx context.Context) error {
 }
 
 func (s *Service) processExcelJob(ctx context.Context, row store.MailExcelJob) {
-	var columns []InquiryColumn
-	if err := json.Unmarshal(row.TemplateColumns, &columns); err != nil {
-		s.log.Error("decode excel job template columns", "job", row.ID, "err", err)
+	snapshot, decodeErr := decodeInquiryTemplateSnapshot(row.TemplateColumns)
+	columns := snapshot.Columns
+	if decodeErr != nil {
+		s.log.Error("decode excel job template columns", "job", row.ID, "err", decodeErr)
 		columns = nil
 	}
 	result, err := s.ConvertInboundToExcel(

@@ -23,8 +23,8 @@ import (
 const standardizedInquiryMaxBytes = 8 << 20
 
 // importSourcingIntake 接收邮件模块已经生成的标准 Excel，或员工手工上传的同格式文件。
-// 两种入口最终都调用采购服务的同一套询盘创建校验。可接受的列由租户当前
-// 默认询盘模板决定：模板改版，可上传的文件格式随之切换。
+// 两种入口最终都调用采购服务的同一套询盘创建校验。解析成功后把本次
+// 使用的模板 ID/编码/版本一起保存，之后模板改版不影响这份询盘。
 func (s *Server) importSourcingIntake(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, standardizedInquiryMaxBytes)
 	if err := r.ParseMultipartForm(standardizedInquiryMaxBytes); err != nil {
@@ -42,9 +42,30 @@ func (s *Server) importSourcingIntake(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, "SC_INTAKE_FILE_READ_FAILED", "无法读取上传文件")
 		return
 	}
-	template, err := s.InquiryTemplates.GetDefaultInquiryTemplate(r.Context(), &prv1.GetDefaultInquiryTemplateRequest{})
+	templateID, err := parseOptionalManualInquiryTemplateID(r.FormValue("inquiry_template_id"))
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "SC_INTAKE_TEMPLATE_INVALID", err.Error())
+		return
+	}
+	if templateID == 0 {
+		list, listErr := s.InquiryTemplates.ListInquiryTemplates(r.Context(), &prv1.ListInquiryTemplatesRequest{})
+		if listErr != nil {
+			s.writeGRPCError(w, listErr)
+			return
+		}
+		templateID, err = recognizeInquiryTemplate(header, data, list.GetTemplates())
+		if err != nil {
+			s.writeError(w, http.StatusBadRequest, "SC_INTAKE_TEMPLATE_NOT_RECOGNIZED", err.Error())
+			return
+		}
+	}
+	template, err := s.InquiryTemplates.GetInquiryTemplate(r.Context(), &prv1.GetInquiryTemplateRequest{Id: templateID})
 	if err != nil {
 		s.writeGRPCError(w, err)
+		return
+	}
+	if template.GetTemplate().GetStatus() != "ACTIVE" {
+		s.writeError(w, http.StatusConflict, "SC_INTAKE_TEMPLATE_INACTIVE", "所选询盘模板已停用或已被新版本替代，请重新选择生效中的模板")
 		return
 	}
 	lines, err := parseStandardizedInquiry(header, data, intakeFieldsFromTemplate(template.GetTemplate()))
@@ -63,12 +84,65 @@ func (s *Server) importSourcingIntake(w http.ResponseWriter, r *http.Request) {
 		// -1 表示手工上传；摘要用于阻止同一文件被重复导入。
 		SourceMailId: -1, SourceAttachmentId: inquiryFingerprint(data), Lines: lines,
 		SourceFileName: filepath.Base(header.Filename), SourceContentType: header.Header.Get("Content-Type"), SourceFileData: data,
+		InquiryTemplateId: template.GetTemplate().GetId(), InquiryTemplateCode: template.GetTemplate().GetTemplateCode(),
+		InquiryTemplateVersion: template.GetTemplate().GetVersion(),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
 	}
 	s.writeProto(w, resp)
+}
+
+// parseOptionalManualInquiryTemplateID 允许员工把格式留空交给系统按表头识别；
+// 一旦员工明确选择，则必须是合法的正整数，不能静默回退到默认格式。
+func parseOptionalManualInquiryTemplateID(value string) (int64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, nil
+	}
+	id, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, fmt.Errorf("所选询盘格式无效，请重新选择")
+	}
+	return id, nil
+}
+
+// recognizeInquiryTemplate 用完整表头集合匹配生效中的询盘格式。列顺序可以不同，
+// 但列名必须完全一致；若多个格式相同，唯一默认格式优先，否则要求员工明确选择。
+func recognizeInquiryTemplate(header *multipart.FileHeader, data []byte, templates []*prv1.InquiryTemplate) (int64, error) {
+	rows, err := readStandardizedInquiryRows(header, data)
+	if err != nil {
+		return 0, err
+	}
+	if len(rows) == 0 {
+		return 0, fmt.Errorf("标准询盘文件没有表头")
+	}
+	matches := make([]*prv1.InquiryTemplate, 0, 1)
+	for _, template := range templates {
+		if template.GetStatus() != "ACTIVE" {
+			continue
+		}
+		if _, matchErr := validateInquiryHeaders(rows[0], intakeFieldsFromTemplate(template)); matchErr == nil {
+			matches = append(matches, template)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0].GetId(), nil
+	}
+	if len(matches) > 1 {
+		defaults := make([]*prv1.InquiryTemplate, 0, 1)
+		for _, match := range matches {
+			if match.GetIsDefault() {
+				defaults = append(defaults, match)
+			}
+		}
+		if len(defaults) == 1 {
+			return defaults[0].GetId(), nil
+		}
+		return 0, fmt.Errorf("文件表头同时匹配多个询盘格式，请在上传窗口中明确选择一个格式")
+	}
+	return 0, fmt.Errorf("无法根据文件表头识别询盘格式，请检查文件是否由邮件标准化流程生成，或在上传窗口中选择正确格式后重试")
 }
 
 func inquiryFingerprint(data []byte) int64 {
@@ -94,6 +168,14 @@ func intakeFieldsFromTemplate(template *prv1.InquiryTemplate) []standardizedInqu
 }
 
 func parseStandardizedInquiry(header *multipart.FileHeader, data []byte, fields []standardizedInquiryField) ([]*prv1.SourcingLineInput, error) {
+	rows, err := readStandardizedInquiryRows(header, data)
+	if err != nil {
+		return nil, err
+	}
+	return parseStandardizedInquiryRows(rows, fields)
+}
+
+func readStandardizedInquiryRows(header *multipart.FileHeader, data []byte) ([][]string, error) {
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	var rows [][]string
 	var err error
@@ -108,6 +190,10 @@ func parseStandardizedInquiry(header *multipart.FileHeader, data []byte, fields 
 	if err != nil {
 		return nil, fmt.Errorf("无法解析标准询盘文件：%w", err)
 	}
+	return rows, nil
+}
+
+func parseStandardizedInquiryRows(rows [][]string, fields []standardizedInquiryField) ([]*prv1.SourcingLineInput, error) {
 	if len(rows) < 2 {
 		return nil, fmt.Errorf("标准询盘文件没有可导入的明细")
 	}
@@ -223,6 +309,7 @@ func validateInquiryHeaders(headers []string, fields []standardizedInquiryField)
 }
 
 func normalizeStrictInquiryHeader(value string) string {
+	value = strings.TrimPrefix(strings.TrimSpace(value), "\ufeff")
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
@@ -280,6 +367,7 @@ func assignInquiryField(line *prv1.SourcingLineInput, key, value string) {
 }
 
 func normalizeInquiryHeader(value string) string {
+	value = strings.TrimPrefix(strings.TrimSpace(value), "\ufeff")
 	return strings.Map(func(r rune) rune {
 		if unicode.IsSpace(r) || strings.ContainsRune("_-/（）()", r) {
 			return -1

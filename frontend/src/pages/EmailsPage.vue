@@ -2279,6 +2279,9 @@ interface ExcelResult {
   fileData: string
   sheets: ExcelSheet[]
   model: string
+  inquiryTemplateId?: string
+  inquiryTemplateCode?: string
+  inquiryTemplateVersion?: number
 }
 
 interface ExcelJob {
@@ -2287,6 +2290,9 @@ interface ExcelJob {
   result?: ExcelResult
   errorCode?: string
   errorMessage?: string
+  inquiryTemplateId?: string
+  inquiryTemplateCode?: string
+  inquiryTemplateVersion?: number
 }
 
 type ExcelSource =
@@ -2624,6 +2630,9 @@ async function refreshExcelJob(subject = '') {
       ElMessage.error(job.errorMessage || t('emails.excelFailed'))
       return
     }
+    job.result.inquiryTemplateId = job.inquiryTemplateId
+    job.result.inquiryTemplateCode = job.inquiryTemplateCode
+    job.result.inquiryTemplateVersion = job.inquiryTemplateVersion
     excelResult.value = job.result
     if (convertedExcelSource.value) {
       excelResultCache.set(excelCacheKey(convertedExcelSource.value), job.result)
@@ -2682,6 +2691,9 @@ async function createSourcingCaseFromExcel() {
       contactEmail: openedInbound.value?.fromEmail || '',
       sourceMailId: source.mailId,
       sourceAttachmentId: source.kind === 'attachment' ? source.attachmentId : '0',
+      inquiryTemplateId: result.inquiryTemplateId || '0',
+      inquiryTemplateCode: result.inquiryTemplateCode || '',
+      inquiryTemplateVersion: result.inquiryTemplateVersion || 0,
       lines,
     })
     ElMessage.success(t('procurementIntakes.autoTransferred', { no: response.sourcingCase.caseNo }))

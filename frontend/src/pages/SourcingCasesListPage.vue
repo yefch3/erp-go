@@ -12,7 +12,7 @@
       <el-table v-loading="loading" :data="rows" stripe @row-click="openCase">
         <el-table-column prop="caseNo" :label="t('sourcing.caseNo')" width="185" />
         <el-table-column :label="t('sourcing.customerAndTitle')" min-width="230"><template #default="{ row }"><strong>{{ row.customerName || '—' }}</strong><small>{{ row.title }}</small></template></el-table-column>
-        <el-table-column :label="t('sourcing.currentStage')" width="150"><template #default="{ row }"><el-tag effect="plain">{{ t(`sourcing.statuses.${row.status}`) }}</el-tag></template></el-table-column>
+        <el-table-column :label="t('sourcing.currentStage')" width="150"><template #default="{ row }"><el-tag effect="plain">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
         <el-table-column :label="t('sourcing.currentWaiting')" min-width="180"><template #default="{ row }">{{ waitingFor(row.status) }}</template></el-table-column>
         <el-table-column prop="ownerName" :label="t('sourcing.owner')" width="130" />
         <el-table-column :label="t('sourcing.recentUpdate')" width="175"><template #default="{ row }">{{ formatTime(row.updatedAt) }}</template></el-table-column>
@@ -45,7 +45,10 @@ function reload(){page.value=1;void load()}
 function openCase(row:SourcingCase){void router.push(`/sourcing-cases/${row.id}`)}
 function formatTime(value:string){return value?new Date(value).toLocaleString():'—'}
 function isStale(row:SourcingCase){return Date.now()-new Date(row.updatedAt).getTime()>7*86400000}
-function waitingFor(value:string){return t(`sourcing.waiting.${value}`)}
+const knownStatuses = new Set(['REVIEWING','SOURCING','QUOTES_RECEIVED','COSTING','CUSTOMER_QUOTE_CREATED','CANCELLED'])
+function normalizedStatus(value?:string){return value && knownStatuses.has(value) ? value : 'UNKNOWN'}
+function statusLabel(value?:string){const statusKey=normalizedStatus(value);return statusKey==='UNKNOWN'?t('sourcing.unknownStatus'):t(`sourcing.statuses.${statusKey}`)}
+function waitingFor(value?:string){return t(`sourcing.waiting.${normalizedStatus(value)}`)}
 
 // 兼容采购工作台和询盘确认页生成的旧链接，并统一跳转到新的独立详情页。
 const linkedCaseID = String(route.query.case || '')

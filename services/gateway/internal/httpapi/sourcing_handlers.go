@@ -134,6 +134,20 @@ func (s *Server) createSourcingCase(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) addSourcingLine(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.AddLineRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.CaseId = idFromPath(r)
+	resp, err := s.Sourcing.AddLine(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) confirmSourcingLines(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.ConfirmLinesRequest{}
 	if !s.decodeBody(w, r, req) {

@@ -95,7 +95,17 @@ export default {
     flowHint: '询价案件不会直接生成采购订单；客户接受报价并形成合同后，系统才产生待采购任务。',
   },
   procurementIntakes: {
-    eyebrow: 'STANDARD INQUIRY REVIEW', title: '待复核询盘', subtitle: '人工核对邮件转入或员工上传的标准询盘', manualUpload: '手工上传标准询盘', mailSource: '邮件转入', mailHint: '来自已确认的 LLM 标准化结果', manualSource: '员工手工上传', manualHint: '仅接受统一标准的 Excel 或 CSV', pendingQueue: '待复核队列', queueHint: '检查、修正或忽略异常行后再进入询价', search: '搜索询盘编号、客户或文件名', number: '询盘编号', source: '来源', fileOrSubject: '文件/邮件主题', customer: '客户', lines: '明细', receivedAt: '进入时间', review: '人工复核', empty: '暂无待复核询盘', mailAuto: '邮件转入', manual: '手工上传', uploadTitle: '上传标准询盘', uploadHint: '仅接收已经标准化的 Excel 或 CSV；上传后直接在网页中人工复核。最大 8MB。', inquiryTitle: '询盘标题', titleAuto: '留空则使用文件名', contact: '客户联系人', contactEmail: '联系邮箱', standardFile: '标准文件', uploadAndReview: '上传并开始复核', fileRequired: '请选择标准询盘文件', uploaded: '标准询盘已进入待复核队列', reviewTitle: '人工复核询盘', reviewHint: '请直接核对并修改产品、规格、数量、单位、交期和港口；不需要的明细可以忽略，确认后进入询价。', product: '产品', material: '材质/标准', grade: '牌号/等级', spec: '厚度/宽度', quantity: '数量/单位', deliveryPort: '交期/港口', restore: '恢复', ignore: '忽略', keepOne: '至少保留一条有效明细', confirmCreate: '确认完成并进入询价', confirmHint: '确认产品、数量、单位及其他规格均已完成复核，并进入正式询价吗？', confirmed: '询盘复核完成，已进入询价', autoTransferred: '标准询盘 {no} 已转入采购待复核队列', requiredMissing:'第 {lines} 行缺少产品、数量或单位，请补充后再进入询价。',
+    format: '询盘格式', autoRecognize: '自动识别文件格式（推荐）', boundFormat: '使用格式', historicalFormat: '历史兼容格式', autoFormatHint: '系统会根据完整表头自动匹配生效中的格式；识别不唯一时再手工选择。', selectedFormatHint: '将严格按“{name} · v{version}”校验本次文件。',
+    dynamicReviewHint: '请按本询盘绑定的字段逐项复核；红色“缺少”标记必须补齐，未完成时可先保存草稿。',
+    completeness: '完整性', complete: '资料完整', ignored: '已忽略', missingCount: '缺少 {count} 项',
+    dynamicRequiredMissing: '仍有必填资料未完成：第 {detail} 行。可先保存修改，补齐后再进入询价。',
+    template: '询盘模板',
+    templatePlaceholder: '自动识别，或手工指定格式',
+    templateHint: '系统优先自动识别，也可手工指定格式。',
+    defaultTemplate: '默认',
+    downloadSelectedTemplate: '下载所选模板',
+    templateRequired: '请选择询盘模板',
+    eyebrow: 'STANDARD INQUIRY REVIEW', title: '待复核询盘', subtitle: '人工核对邮件转入或员工上传的标准询盘', manualUpload: '手工上传标准询盘', mailSource: '邮件转入', mailHint: '来自已确认的 LLM 标准化结果', manualSource: '员工手工上传', manualHint: '仅接受统一标准的 Excel 或 CSV', pendingQueue: '待复核队列', queueHint: '检查、修正或忽略异常行后再进入询价', search: '搜索询盘编号、客户或文件名', number: '询盘编号', source: '来源', fileOrSubject: '文件/邮件主题', customer: '客户', lines: '明细', receivedAt: '进入时间', review: '人工复核', empty: '暂无待复核询盘', mailAuto: '邮件转入', manual: '手工上传', uploadTitle: '上传标准询盘', uploadHint: '仅接收已经标准化的 Excel 或 CSV；上传后直接在网页中人工复核。最大 8MB。', inquiryTitle: '询盘标题', titleAuto: '留空则使用文件名', contact: '客户联系人', contactEmail: '联系邮箱', standardFile: '标准文件', uploadAndReview: '上传并开始复核', fileRequired: '请选择标准询盘文件', uploaded: '标准询盘已进入待复核队列', reviewTitle: '人工复核询盘', reviewHint: '请直接核对并修改产品、材质、牌号、厚度、宽度、数量、单位、交期和港口；资料不完整的明细不能进入询价。', product: '产品', material: '材质/标准', grade: '牌号/等级', spec: '厚度/宽度', quantity: '数量/单位', deliveryPort: '交期/港口', restore: '恢复', ignore: '忽略', keepOne: '至少保留一条有效明细', draftHint: '资料未填完时可以保存复核进度；全部完整后才能进入询价。', saveDraft: '保存修改', draftSaved: '复核修改已保存', addProduct: '新增产品明细', addProductTitle: '新增询盘产品', addAndSave: '新增并保存', newProductRequired: '请填写产品、数量和单位', productAdded: '产品明细已新增并保存', confirmCreate: '确认完成并进入询价', confirmHint: '确认所有产品资料均已填写完整，并进入正式询价吗？', confirmed: '询盘复核完成，已进入询价', autoTransferred: '标准询盘 {no} 已转入采购待复核队列', requiredMissing:'第 {lines} 行资料不完整；产品、材质、牌号、厚度、宽度、数量、单位、交期和港口均需填写后才能进入询价。',
   },
   inquiryTemplates: {
     eyebrow: 'COMPANY INQUIRY FORMAT', title: '询盘模板管理',
@@ -595,7 +605,8 @@ export default {
   },
   sourcing: {
     listEyebrow: 'SOURCING PROJECTS', activeProjects: '进行中的项目', customerAndTitle: '客户 / 项目', currentStage: '当前阶段', currentWaiting: '当前等待', recentUpdate: '最近更新', exception: '异常', stale: '超过 7 天未更新',
-    waiting: { REVIEWING: '采购人员确认产品规范', SOURCING: '工厂回复 RFQ', QUOTES_RECEIVED: '采购人员比较报价', COSTING: '负责人确认成本', CUSTOMER_QUOTE_CREATED: '客户确认报价', CANCELLED: '已结束' },
+    waiting: { REVIEWING: '采购人员确认产品规范', SOURCING: '工厂回复 RFQ', QUOTES_RECEIVED: '采购人员比较报价', COSTING: '负责人确认成本', CUSTOMER_QUOTE_CREATED: '客户确认报价', CANCELLED: '已结束', UNKNOWN: '确认当前业务阶段' },
+    unknownStatus: '待确认',
     title: '采购询价', subtitle: '客户询盘复核、工厂询价与成本测算', search: '搜索案件号、客户或标题',
     caseNo: '案件号', inquiry: '询盘', customer: '客户', owner: '负责人', createdAt: '建立时间',
     contact: '联系人', product: '产品', standard: '材质/标准', size: '规格', port: '港口',

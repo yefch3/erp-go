@@ -46,6 +46,8 @@ func (h *SourcingHandler) CreateCase(ctx context.Context, req *prv1.CreateCaseRe
 		ContactName: req.GetContactName(), ContactEmail: req.GetContactEmail(),
 		SourceMailID: req.GetSourceMailId(), SourceAttachmentID: req.GetSourceAttachmentId(), Lines: lines,
 		SourceFileName: req.GetSourceFileName(), SourceContentType: req.GetSourceContentType(), SourceFileData: req.GetSourceFileData(),
+		InquiryTemplateID: req.GetInquiryTemplateId(), InquiryTemplateCode: req.GetInquiryTemplateCode(),
+		InquiryTemplateVersion: req.GetInquiryTemplateVersion(),
 	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
 		return nil, err
@@ -77,6 +79,17 @@ func (h *SourcingHandler) GetCase(ctx context.Context, req *prv1.GetCaseRequest)
 		return nil, err
 	}
 	return &prv1.GetCaseResponse{SourcingCase: sourcingCaseView(view)}, nil
+}
+
+func (h *SourcingHandler) AddLine(ctx context.Context, req *prv1.AddLineRequest) (*prv1.AddLineResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
+	view, err := h.svc.AddSourcingLine(ctx, grpcx.TenantID(ctx), req.GetCaseId(), lineInput(req.GetExtracted()), sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.AddLineResponse{SourcingCase: sourcingCaseView(view)}, nil
 }
 
 func (h *SourcingHandler) ConfirmLines(ctx context.Context, req *prv1.ConfirmLinesRequest) (*prv1.ConfirmLinesResponse, error) {
@@ -414,7 +427,7 @@ func sourcingCaseHead(row store.GetSourcingCaseRow) *prv1.SourcingCase {
 		SourceMailId: row.SourceMailID, SourceAttachmentId: row.SourceAttachmentID,
 		Status: row.Status, OwnerId: row.OwnerID, OwnerName: row.OwnerName,
 		CreatedAt: ts(row.CreatedAt), UpdatedAt: ts(row.UpdatedAt),
-		SourceFileName: row.SourceFileName,
+		SourceFileName:    row.SourceFileName,
 		InquiryTemplateId: row.InquiryTemplateID, InquiryTemplateCode: row.InquiryTemplateCode,
 		InquiryTemplateVersion: row.InquiryTemplateVersion,
 	}
