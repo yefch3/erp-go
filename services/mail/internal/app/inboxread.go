@@ -351,8 +351,13 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 	// through, and matching the raw form would miss those.
 	embedded := s.embeddedSwap(ctx, tenantID, id)
 	sanitised := SanitizeForReading(s.localiseImages(ctx, row.BodyHtml, embedded))
+	// 自家像素在这里拆掉，拆在本地化之后：图片缓存刻意不缓存我们自己的主机，
+	// 于是那条地址会原样留到浏览器手里，由浏览器去把它拉一次 —— 那正是它要
+	// 记录的「打开」。见 ownpixel.go。
 	v.BodyHTML, v.QuotedHTML = SplitQuotedHistory(
-		s.localiseImages(ctx, sanitised, s.swapForMessage(ctx, tenantID, id)))
+		stripOwnPixel(
+			s.localiseImages(ctx, sanitised, s.swapForMessage(ctx, tenantID, id)),
+			s.selfHost))
 	if row.ReceivedAt.Valid {
 		v.ReceivedAt = row.ReceivedAt.Time
 	}
@@ -433,7 +438,7 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID int64, th
 		for _, f := range fs {
 			flat = append(flat, Attachment{
 				ID: f.ID, FileName: f.FileName, ContentType: f.ContentType,
-				FileSize: f.FileSize, FileKey: f.FileKey,
+				FileSize: f.FileSize, FileKey: f.FileKey, ContentID: f.ContentID,
 			})
 		}
 		// Signed once for the whole conversation, and here rather than at
@@ -459,15 +464,21 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID int64, th
 			// up, and the thread already shows those separately.
 			// Embedded before the sanitiser, remote after — see GetInbound.
 			body, quoted = SplitQuotedHistory(
-				s.localiseImages(ctx,
-					SanitizeForReading(s.localiseImages(ctx, body, embedded[r.ID])),
-					swaps[r.ID]))
+				stripOwnPixel(
+					s.localiseImages(ctx,
+						SanitizeForReading(s.localiseImages(ctx, body, embedded[r.ID])),
+						swaps[r.ID]),
+					s.selfHost))
 		}
 		v := ThreadItem{
 			Direction: r.Direction, ID: r.ID, Subject: r.Subject,
 			Body: body, Quoted: quoted, BodyFormat: r.BodyFormat,
 			Counterparty: r.Counterparty, Who: r.Who,
-			Attachments: files[r.Direction+":"+strconv.FormatInt(r.ID, 10)],
+			// 内嵌图片在这里剔除，而不是在 SQL 里：判断的依据是「正文有没有
+			// 真的引用那个 cid」，而正文只有到这一步才拿得到。同 GetInbound。
+			Attachments: hideEmbedded(
+				files[r.Direction+":"+strconv.FormatInt(r.ID, 10)],
+				r.Body, embedded[r.ID]),
 		}
 		if r.At.Valid {
 			v.At = r.At.Time

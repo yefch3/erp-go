@@ -193,8 +193,18 @@ type Service struct {
 	// Where each account's special folders live, keyed "sent:<id>" and
 	// "junk:<id>"; found once, never changes.
 	sentFolders sync.Map
-	log         *slog.Logger
+	// 我们自己的公网主机名。读信时用来认出自家的追踪像素并拆掉它——不拆，
+	// 本公司的人打开自己发出的信就会把对方标成已读。空表示没配公网地址，
+	// 那种情况下在外面也不存在我们的像素。见 ownpixel.go。
+	selfHost string
+	log      *slog.Logger
 }
+
+// UsePublicBaseURL tells the read path what our own address looks like.
+//
+// 与 SyncConfig.PublicBaseURL 同一个值，但读路径拿不到那份配置，而它恰恰是
+// 需要认出自家像素的那一侧。
+func (s *Service) UsePublicBaseURL(base string) { s.selfHost = publicHostOf(base) }
 
 func New(pool *pgxpool.Pool, d Deps, log *slog.Logger) *Service {
 	return &Service{
