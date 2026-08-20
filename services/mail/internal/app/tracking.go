@@ -87,7 +87,7 @@ func (s *Service) RecordOpen(ctx context.Context, messageKey, userAgent, ip stri
 	if row.SentAt.Valid {
 		sinceSent = time.Since(row.SentAt.Time)
 	}
-	verdict := classifyFetch(userAgent, row.ToEmail, sinceSent)
+	verdict := classifyFetch(userAgent, sinceSent)
 
 	// The agent is what the fetcher says it is; the address is where it
 	// actually came from. Only consult the address when the agent looked

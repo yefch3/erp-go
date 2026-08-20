@@ -1333,7 +1333,7 @@ export default {
     openedCol: 'Opened?',
     maybeOpened: 'Possibly opened',
     noOpenYet: 'No open detected',
-    openedHint: 'The message image was loaded at {at}. Security-gateway scans, Gmail\'s image proxy and any fetch within a minute of sending are excluded and do not count here. Still indicative only: a machine we failed to recognise over-reports, and Outlook blocking images under-reports. A reply is the only certain signal.',
+    openedHint: 'The message image was loaded at {at}. Security-gateway scans, Apple\'s privacy pre-fetch and any fetch within a minute of sending are excluded; Gmail and Yahoo image proxies do count, because they fetch when a mailbox displays the message. Still indicative only: a machine we failed to recognise over-reports, and Outlook blocking images under-reports. A reply is the only certain signal.',
     inboundTo: 'Delivered to {to}',
     inboxNotConnected: 'Inbox is not connected yet',
     inboxExplain: 'Receiving mail needs an inbound channel from the sending provider — something that forwards arriving mail into the system. Once a provider is chosen, customer replies land here and thread onto the send they answer. Until then, replies still go to each person\u2019s own company mailbox.',
