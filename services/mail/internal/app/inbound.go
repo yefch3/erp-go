@@ -736,7 +736,21 @@ type mailOwner struct {
 
 func (s *Service) resolveThread(ctx context.Context, tenantID int64, p ParsedMail) (string, *int64, mailOwner) {
 	candidates := append([]string{p.InReplyTo}, p.References...)
-	for _, id := range candidates {
+	// Our own sent copy names itself. The host hands the message back out of
+	// its Sent folder carrying the Message-ID we issued, so for that one the
+	// anchor is its own header rather than a reference to somebody else's.
+	//
+	// Checked last, so a genuine reply still wins: a mail can be both an
+	// answer to us and one of ours (a colleague replying from the same
+	// mailbox), and the chain it answers is the better thread.
+	//
+	// Without this the copy starts a thread of one — keyed on the raw
+	// <uuid@domain> — while the customer's reply resolves through
+	// FindMessageByKey to the ERP record's thread, keyed on the bare uuid.
+	// Same conversation, two keys: 收件箱 shows the exchange and 已发送 shows
+	// a lone message with no sign a reply ever came.
+	candidates = append(candidates, p.MessageID)
+	for i, id := range candidates {
 		key := messageKeyFromID(id)
 		if key == "" {
 			continue
@@ -751,6 +765,16 @@ func (s *Service) resolveThread(ctx context.Context, tenantID int64, p ParsedMai
 		thread := row.ThreadKey
 		if thread == "" {
 			thread = row.MessageKey
+		}
+		// Matching on its own Message-ID means this *is* the message that was
+		// sent, not an answer to it, so it gets no reply_to_id — pointing a
+		// message at itself would make the chain a loop.
+		if i == len(candidates)-1 {
+			return thread, nil, mailOwner{
+				CustomerID:   row.CustomerID,
+				ContactID:    row.ContactID,
+				CustomerName: row.CustomerName,
+			}
 		}
 		// The reply inherits the customer of the message it answers. This is
 		// the whole first layer of linking mail to business records, and it

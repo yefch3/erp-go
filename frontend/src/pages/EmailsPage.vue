@@ -98,12 +98,53 @@
               <span class="strong">{{ openedInbound.fromName || openedInbound.fromEmail }}</span>
               <span class="sub">&lt;{{ openedInbound.fromEmail }}&gt;</span>
             </div>
-            <div class="sub">{{ t('emails.inboundTo', { to: openedInbound.toEmail }) }}</div>
+            <div class="sub">
+              {{ t('emails.inboundTo', { to: openedInbound.toEmail }) }}
+              <!-- 详情 folds the headers away rather than dropping them: a
+                   reader is for reading, but "which address did this really
+                   come from" has to be answerable without leaving the page. -->
+              <button class="details-toggle" @click="detailsOpen = !detailsOpen">
+                {{ detailsOpen ? t('emails.hideDetails') : t('emails.showDetails') }}
+              </button>
+            </div>
           </div>
           <span class="grow" />
           <span class="sub in-when" :title="zonedStamp(openedInbound.sentAt || openedInbound.receivedAt)">
             {{ shortTime(openedInbound.sentAt || openedInbound.receivedAt) }}
           </span>
+        </div>
+
+        <dl v-if="detailsOpen" class="mail-details">
+          <template v-for="row in detailRows" :key="row.k">
+            <dt>{{ row.k }}</dt>
+            <dd>{{ row.v }}</dd>
+          </template>
+        </dl>
+
+        <!-- 对方是否已读, for a copy out of the Sent folder.
+             Stated in three states rather than two: "not opened" and "we were
+             not watching" look identical in the data — both an empty
+             timestamp — and only the first says anything about the recipient.
+             Claiming the second as the first would be the system inventing a
+             fact about a customer. -->
+        <div v-if="openedInbound.folder === 'SENT'" class="readback">
+          <span class="rb-label">{{ t('reader.openedLabel') }}</span>
+          <el-tooltip
+            v-if="openedInbound.openedAt"
+            :content="t('emails.openedHint', { at: zonedStamp(openedInbound.openedAt) })"
+            placement="top"
+            :show-after="0"
+          >
+            <span class="rb-yes">
+              {{ t('emails.maybeOpened') }} · {{ shortTime(openedInbound.openedAt) }}
+            </span>
+          </el-tooltip>
+          <el-tooltip v-else-if="openedInbound.tracked" :content="t('reader.noOpenHint')" placement="top" :show-after="0">
+            <span class="rb-no">{{ t('emails.noOpenYet') }}</span>
+          </el-tooltip>
+          <el-tooltip v-else :content="t('reader.noTrackingHint')" placement="top" :show-after="0">
+            <span class="rb-off">{{ t('reader.noTracking') }}</span>
+          </el-tooltip>
         </div>
         <div class="in-actions">
           <template v-if="canWrite">
@@ -213,6 +254,17 @@
                 @mouseover="onPlainTextHover"
               >{{ it.body }}</pre>
               <QuotedHistory v-if="it.quoted" :html="it.quoted" />
+              <!-- 这一封自己带的附件。放在正文下面、引用历史之后，和阅读单封
+                   时的顺序一致。 -->
+              <MailAttachments
+                v-if="it.attachments?.length"
+                :files="it.attachments"
+                class="thread-files"
+                @preview="openPreview"
+                @excel-menu="openAttachmentExcelMenu"
+                @excel-hover="hoverAttachmentExcelMenu"
+                @excel-leave="scheduleExcelMenuHide"
+              />
             </div>
           </div>
         </template>
@@ -234,52 +286,13 @@
         <template v-if="openedInbound.attachments?.length">
           <el-divider />
           <h4 class="side-title">{{ t('emails.attachments') }}</h4>
-          <!-- Links, not labels. Until now these were plain tags: the file was
-               listed, stored, and impossible to get back out. The href is a
-               signed, time-limited URL straight to storage, so the bytes never
-               pass through the gateway. -->
-          <div class="files">
-            <div
-              v-for="a in openedInbound.attachments"
-              :key="a.id"
-              class="file"
-              :class="{ dead: !a.downloadUrl }"
-              :title="fileHint(a)"
-              @contextmenu="openAttachmentExcelMenu($event, a)"
-              @mouseenter="hoverAttachmentExcelMenu($event, a)"
-              @mouseleave="scheduleExcelMenuHide"
-            >
-              <el-icon><Paperclip /></el-icon>
-              <span class="fname ellipsis">{{ a.fileName }}</span>
-              <span class="sub">{{ humanSize(Number(a.fileSize)) }}</span>
-              <!-- Look and take are separate acts, so they get separate
-                   buttons. A preview only appears for what can honestly be
-                   shown; for a .pptx or a .zip the download is the whole
-                   interaction. -->
-              <el-tooltip
-                v-if="a.previewUrl"
-                :content="t('emails.previewFile')"
-                placement="top"
-                :show-after="0"
-                :hide-after="0"
-              >
-                <button type="button" class="fbtn" @click="openPreview(a)">
-                  <el-icon><View /></el-icon>
-                </button>
-              </el-tooltip>
-              <el-tooltip
-                v-if="a.downloadUrl"
-                :content="t('emails.downloadFile', { f: a.fileName })"
-                placement="top"
-                :show-after="0"
-                :hide-after="0"
-              >
-                <a class="fbtn" :href="a.downloadUrl" :download="a.fileName">
-                  <el-icon><Download /></el-icon>
-                </a>
-              </el-tooltip>
-            </div>
-          </div>
+          <MailAttachments
+            :files="openedInbound.attachments"
+            @preview="openPreview"
+            @excel-menu="openAttachmentExcelMenu"
+            @excel-hover="hoverAttachmentExcelMenu"
+            @excel-leave="scheduleExcelMenuHide"
+          />
         </template>
       </template>
 
@@ -825,6 +838,7 @@ import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import EmailComposer from '../components/EmailComposer.vue'
 import MailReader, { type Mail } from '../components/MailReader.vue'
+import MailAttachments from '../components/MailAttachments.vue'
 import MailboxGate from '../components/MailboxGate.vue'
 import MailHostDialog from '../components/MailHostDialog.vue'
 import MailSignatureDialog from '../components/MailSignatureDialog.vue'
@@ -871,6 +885,16 @@ interface InboundMail {
   hasRaw?: boolean
   // Set only on search results: which folder the hit was found in.
   matchFolder?: string
+  // Which mailbox folder this copy sits in. 'SENT' is what tells the reader
+  // to show 对方是否已读 — once both are an InboundMail, nothing else does.
+  folder?: string
+  // 对方是否已读, for a Sent copy the ERP has a delivery record for. Three
+  // states between them: openedAt set, tracked without openedAt, neither.
+  openedAt?: string
+  tracked?: boolean
+  // The details panel.
+  messageIdHeader?: string
+  rawSize?: number
   // Messages in this conversation; the list shows one row per conversation.
   threadCount?: number
   receivedAt: string
@@ -1000,6 +1024,35 @@ function isOwnMail(it: { direction: string; counterparty: string }) {
 // The mail being read full-page. Set from the URL, never directly: opening a
 // mail is a navigation, so refresh reopens it and back returns to the list.
 const openedInbound = ref<InboundMail | null>(null)
+
+// Folded by default, and folded again on every open: the details are for the
+// one mail somebody is questioning, not a preference to carry into the next.
+const detailsOpen = ref(false)
+watch(openedInbound, () => {
+  detailsOpen.value = false
+})
+
+// Only the rows that have something in them. An empty "抄送:" is not
+// information, it is a line to read past.
+const detailRows = computed(() => {
+  const m = openedInbound.value
+  if (!m) return []
+  const rows: { k: string; v: string }[] = []
+  const add = (k: string, v?: string | number) => {
+    if (v !== undefined && v !== null && v !== '' && v !== 0) rows.push({ k, v: String(v) })
+  }
+  add(t('emails.detail.from'), `${m.fromName ? m.fromName + ' ' : ''}<${m.fromEmail}>`)
+  add(t('emails.detail.to'), m.toEmail)
+  add(t('emails.detail.subject'), m.subject)
+  if (m.sentAt) add(t('emails.detail.sentAt'), zonedStamp(m.sentAt))
+  if (m.receivedAt) add(t('emails.detail.receivedAt'), zonedStamp(m.receivedAt))
+  add(t('emails.detail.folder'), m.folder)
+  add(t('emails.detail.size'), m.rawSize ? humanSize(m.rawSize) : '')
+  // Last, and unabbreviated: it is the identifier somebody quotes to a mail
+  // administrator when a message has to be traced through somebody else's logs.
+  add(t('emails.detail.messageId'), m.messageIdHeader)
+  return rows
+})
 
 // ---------------------------------------------------------------- URL state
 // The address bar is the source of truth for where the person is: folder,
@@ -1614,6 +1667,15 @@ interface ThreadItem {
   counterparty: string
   who: string
   at: string
+  attachments?: {
+    id: string
+    fileName: string
+    fileSize: number | string
+    contentType?: string
+    downloadUrl?: string
+    previewUrl?: string
+    stored?: boolean
+  }[]
 }
 const threadItems = ref<ThreadItem[]>([])
 const expandedThread = ref<Set<string>>(new Set())
@@ -2988,6 +3050,59 @@ async function doUnsuppress(row: Suppression) {
 }
 .in-when {
   white-space: nowrap;
+}
+.details-toggle {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--el-color-primary);
+  font-size: inherit;
+  cursor: pointer;
+}
+.details-toggle:hover {
+  text-decoration: underline;
+}
+/* A definition list, not a table: these are labelled facts about one mail,
+   and the label column should size itself to the longest label rather than
+   to a guess. */
+.mail-details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+  font-size: 13px;
+}
+.mail-details dt {
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
+.mail-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.readback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+.readback .rb-label {
+  color: var(--el-text-color-secondary);
+}
+.readback .rb-yes {
+  color: var(--el-color-success);
+  cursor: help;
+}
+.readback .rb-no,
+.readback .rb-off {
+  color: var(--el-text-color-secondary);
+  cursor: help;
 }
 .in-actions {
   display: flex;

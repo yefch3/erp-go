@@ -46,6 +46,19 @@ type InboundView struct {
 	ToName   string
 	Status   string
 	OpenedAt time.Time
+	// Whether a tracking pixel actually went into this send. The third state,
+	// and it cannot be inferred: "nobody opened it" and "nobody was watching"
+	// are the same empty OpenedAt, and only the first says anything about the
+	// recipient.
+	Tracked bool
+
+	// Which mailbox folder this copy sits in. SENT is what tells the reader to
+	// show 对方是否已读; once both are an InboundView, nothing else does.
+	Folder string
+	// The RFC 5322 Message-ID and the size of the stored MIME — the details
+	// panel, not the reader.
+	MessageIDHeader string
+	RawSize         int64
 
 	// Whether the original MIME is still in object storage, which is what
 	// forward-as-attachment sends. The send path refuses without it anyway;
@@ -287,6 +300,10 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 		ToEmail: row.ToEmail, Subject: row.Subject, ThreadKey: row.ThreadKey,
 		IsRead: true, HasAttachments: row.HasAttachments,
 		HasRaw: row.RawKey != "",
+		Folder: row.Folder, MessageIDHeader: row.MessageID, RawSize: row.RawSize,
+		// Null for anything the inbox reads: an inbound mail has no delivery
+		// record, and coalesce already turned "no row" into the empty answer.
+		Status: row.SentStatus, Tracked: row.SentTracked,
 		// Sanitised on the way out, not just on the way in: this HTML came
 		// from the wild, and it is about to be rendered inside our page.
 		// Read with the wider reader policy: this goes into a sandboxed
@@ -332,6 +349,9 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 	if row.SentAt.Valid {
 		v.SentAt = row.SentAt.Time
 	}
+	if row.SentOpenedAt.Valid {
+		v.OpenedAt = row.SentOpenedAt.Time
+	}
 
 	atts, err := s.q.ListInboundAttachments(ctx, store.ListInboundAttachmentsParams{
 		TenantID: tenantID, InboundID: id,
@@ -367,6 +387,8 @@ type ThreadItem struct {
 	Counterparty string
 	Who          string
 	At           time.Time
+	// 这一封自己带的附件。内嵌图片不在其中——那是正文的一部分，已经渲染过了。
+	Attachments []Attachment
 }
 
 // GetMailThread returns one conversation, oldest first, both directions.
@@ -390,6 +412,34 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID int64, th
 	swaps := s.swapForThread(ctx, tenantID, ownerID, threadKey)
 	embedded := s.embeddedSwapForThread(ctx, tenantID, ownerID, threadKey)
 
+	// One query for the conversation's attachments, keyed by direction and id
+	// because the two legs number their rows in different tables and an
+	// inbound 7 is not an outbound 7.
+	files := map[string][]Attachment{}
+	if fs, err := s.q.ListThreadAttachments(ctx, store.ListThreadAttachmentsParams{
+		TenantID: tenantID, OwnerID: ownerID, ThreadKey: threadKey,
+	}); err == nil {
+		flat := make([]Attachment, 0, len(fs))
+		for _, f := range fs {
+			flat = append(flat, Attachment{
+				ID: f.ID, FileName: f.FileName, ContentType: f.ContentType,
+				FileSize: f.FileSize, FileKey: f.FileKey,
+			})
+		}
+		// Signed once for the whole conversation, and here rather than at
+		// ingest: a URL minted when the mail arrived would have expired long
+		// before anybody opened the thread.
+		flat = s.signDownloads(ctx, flat)
+		for i, f := range fs {
+			k := f.Direction + ":" + strconv.FormatInt(f.MessageID, 10)
+			files[k] = append(files[k], flat[i])
+		}
+	} else {
+		// The bodies are worth showing without the file list; a thread that
+		// refuses to open because one join failed is the worse outcome.
+		s.log.Warn("could not load thread attachments", "thread", threadKey, "err", err)
+	}
+
 	out := make([]ThreadItem, 0, len(rows))
 	for _, r := range rows {
 		body, quoted := r.Body, ""
@@ -407,6 +457,7 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID int64, th
 			Direction: r.Direction, ID: r.ID, Subject: r.Subject,
 			Body: body, Quoted: quoted, BodyFormat: r.BodyFormat,
 			Counterparty: r.Counterparty, Who: r.Who,
+			Attachments: files[r.Direction+":"+strconv.FormatInt(r.ID, 10)],
 		}
 		if r.At.Valid {
 			v.At = r.At.Time

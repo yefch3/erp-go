@@ -392,11 +392,25 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archived_at, deleted_at, not_junk;
 
 -- name: GetInbound :one
-SELECT id, account_id, owner_id, message_id, thread_key, reply_to_id,
-       from_email, from_name, to_email, subject, body_html, body_text,
-       raw_key, raw_size, is_read, has_attachments, received_at, sent_at
-FROM email_inbound
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+-- The ERP's delivery record is joined on for the same reason ListSentUnified
+-- joins it: 对方是否已读 is knowable only there, and 已发送 opens this row
+-- rather than the ERP one whenever the host kept a copy — which, with Gmail,
+-- is always. Without the join the answer exists in the database and appears
+-- nowhere on the screen.
+--
+-- LEFT, and null for everything the inbox reads: an inbound mail has no
+-- delivery record and must not be made to look like it lost one.
+SELECT i.id, i.account_id, i.owner_id, i.message_id, i.thread_key, i.reply_to_id,
+       i.from_email, i.from_name, i.to_email, i.subject, i.body_html, i.body_text,
+       i.raw_key, i.raw_size, i.is_read, i.has_attachments, i.received_at, i.sent_at,
+       i.folder,
+       coalesce(m.status, '') AS sent_status,
+       m.opened_at AS sent_opened_at,
+       coalesce(m.tracked, FALSE) AS sent_tracked
+FROM email_inbound i
+LEFT JOIN email_messages m
+       ON m.id = i.sent_message_id AND m.tenant_id = i.tenant_id
+WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint AND i.id = sqlc.arg(id)::bigint;
 
 -- name: GetInboundForCompose :one
 -- The reply/forward context: the owner (for the caller check), the
@@ -1104,3 +1118,32 @@ SELECT count(*)::bigint FROM mail_thread_view
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND view = sqlc.arg(view)::text;
+
+-- name: ListThreadAttachments :many
+-- 整条会话的附件，一次取回，两个方向。
+--
+-- 按会话取而不是逐封取：一段十六轮的往来会变成十六次往返，而这些行加起来
+-- 也就几十条。分组交给 Go。
+--
+-- content_id 非空的不算附件——那是正文里的内嵌图片（签名档的图标之类），
+-- 已经在正文里渲染过了，再在下面列一遍只会让每封信都挂着一堆看不懂的
+-- image001.png。发件侧没有内嵌这一说，所以那一半恒为空串。
+SELECT 'IN'::text AS direction, i.id AS message_id,
+       a.id, a.file_name, a.content_type, a.file_size, a.file_key
+FROM email_inbound i
+JOIN email_inbound_attachments a
+  ON a.tenant_id = i.tenant_id AND a.inbound_id = i.id
+WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND i.owner_id = sqlc.arg(owner_id)::bigint
+  AND i.thread_key = sqlc.arg(thread_key)::text
+  AND a.content_id = ''
+UNION ALL
+SELECT 'OUT'::text AS direction, m.id AS message_id,
+       a.id, a.file_name, a.content_type, a.file_size, a.file_key
+FROM email_messages m
+JOIN email_attachments a
+  ON a.tenant_id = m.tenant_id AND a.campaign_id = m.campaign_id
+WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND m.sender_id = sqlc.arg(owner_id)::bigint
+  AND m.thread_key = sqlc.arg(thread_key)::text
+ORDER BY 1, 2, 3;

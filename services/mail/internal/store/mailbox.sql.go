@@ -536,11 +536,17 @@ func (q *Queries) FindMessageByKeyAnyTenant(ctx context.Context, messageKey stri
 }
 
 const getInbound = `-- name: GetInbound :one
-SELECT id, account_id, owner_id, message_id, thread_key, reply_to_id,
-       from_email, from_name, to_email, subject, body_html, body_text,
-       raw_key, raw_size, is_read, has_attachments, received_at, sent_at
-FROM email_inbound
-WHERE tenant_id = $1::bigint AND id = $2::bigint
+SELECT i.id, i.account_id, i.owner_id, i.message_id, i.thread_key, i.reply_to_id,
+       i.from_email, i.from_name, i.to_email, i.subject, i.body_html, i.body_text,
+       i.raw_key, i.raw_size, i.is_read, i.has_attachments, i.received_at, i.sent_at,
+       i.folder,
+       coalesce(m.status, '') AS sent_status,
+       m.opened_at AS sent_opened_at,
+       coalesce(m.tracked, FALSE) AS sent_tracked
+FROM email_inbound i
+LEFT JOIN email_messages m
+       ON m.id = i.sent_message_id AND m.tenant_id = i.tenant_id
+WHERE i.tenant_id = $1::bigint AND i.id = $2::bigint
 `
 
 type GetInboundParams struct {
@@ -567,8 +573,20 @@ type GetInboundRow struct {
 	HasAttachments bool
 	ReceivedAt     pgtype.Timestamptz
 	SentAt         pgtype.Timestamptz
+	Folder         string
+	SentStatus     string
+	SentOpenedAt   pgtype.Timestamptz
+	SentTracked    bool
 }
 
+// The ERP's delivery record is joined on for the same reason ListSentUnified
+// joins it: 对方是否已读 is knowable only there, and 已发送 opens this row
+// rather than the ERP one whenever the host kept a copy — which, with Gmail,
+// is always. Without the join the answer exists in the database and appears
+// nowhere on the screen.
+//
+// LEFT, and null for everything the inbox reads: an inbound mail has no
+// delivery record and must not be made to look like it lost one.
 func (q *Queries) GetInbound(ctx context.Context, arg GetInboundParams) (GetInboundRow, error) {
 	row := q.db.QueryRow(ctx, getInbound, arg.TenantID, arg.ID)
 	var i GetInboundRow
@@ -591,6 +609,10 @@ func (q *Queries) GetInbound(ctx context.Context, arg GetInboundParams) (GetInbo
 		&i.HasAttachments,
 		&i.ReceivedAt,
 		&i.SentAt,
+		&i.Folder,
+		&i.SentStatus,
+		&i.SentOpenedAt,
+		&i.SentTracked,
 	)
 	return i, err
 }
@@ -1903,6 +1925,80 @@ func (q *Queries) ListThread(ctx context.Context, arg ListThreadParams) ([]ListT
 			&i.Counterparty,
 			&i.Who,
 			&i.At,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listThreadAttachments = `-- name: ListThreadAttachments :many
+SELECT 'IN'::text AS direction, i.id AS message_id,
+       a.id, a.file_name, a.content_type, a.file_size, a.file_key
+FROM email_inbound i
+JOIN email_inbound_attachments a
+  ON a.tenant_id = i.tenant_id AND a.inbound_id = i.id
+WHERE i.tenant_id = $1::bigint
+  AND i.owner_id = $2::bigint
+  AND i.thread_key = $3::text
+  AND a.content_id = ''
+UNION ALL
+SELECT 'OUT'::text AS direction, m.id AS message_id,
+       a.id, a.file_name, a.content_type, a.file_size, a.file_key
+FROM email_messages m
+JOIN email_attachments a
+  ON a.tenant_id = m.tenant_id AND a.campaign_id = m.campaign_id
+WHERE m.tenant_id = $1::bigint
+  AND m.sender_id = $2::bigint
+  AND m.thread_key = $3::text
+ORDER BY 1, 2, 3
+`
+
+type ListThreadAttachmentsParams struct {
+	TenantID  int64
+	OwnerID   int64
+	ThreadKey string
+}
+
+type ListThreadAttachmentsRow struct {
+	Direction   string
+	MessageID   int64
+	ID          int64
+	FileName    string
+	ContentType string
+	FileSize    int64
+	FileKey     string
+}
+
+// 整条会话的附件，一次取回，两个方向。
+//
+// 按会话取而不是逐封取：一段十六轮的往来会变成十六次往返，而这些行加起来
+// 也就几十条。分组交给 Go。
+//
+// content_id 非空的不算附件——那是正文里的内嵌图片（签名档的图标之类），
+// 已经在正文里渲染过了，再在下面列一遍只会让每封信都挂着一堆看不懂的
+// image001.png。发件侧没有内嵌这一说，所以那一半恒为空串。
+func (q *Queries) ListThreadAttachments(ctx context.Context, arg ListThreadAttachmentsParams) ([]ListThreadAttachmentsRow, error) {
+	rows, err := q.db.Query(ctx, listThreadAttachments, arg.TenantID, arg.OwnerID, arg.ThreadKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListThreadAttachmentsRow
+	for rows.Next() {
+		var i ListThreadAttachmentsRow
+		if err := rows.Scan(
+			&i.Direction,
+			&i.MessageID,
+			&i.ID,
+			&i.FileName,
+			&i.ContentType,
+			&i.FileSize,
+			&i.FileKey,
 		); err != nil {
 			return nil, err
 		}
