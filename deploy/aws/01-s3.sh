@@ -58,6 +58,41 @@ aws s3api put-bucket-lifecycle-configuration --bucket "$BUCKET" \
     ]
   }'
 
+# ---------------------------------------------------------------------- cors
+# Without this, every upload in the product is broken in production and works
+# perfectly in development.
+#
+# Files go browser-to-bucket through a presigned URL, so the gateway never
+# carries a 20 MB attachment. That makes the request cross-origin — the page
+# came from APP_ORIGIN, the PUT goes to s3.amazonaws.com — and a cross-origin
+# PUT is not a request a browser will simply send. It asks first, with an
+# OPTIONS preflight, and S3 answers 403 to every preflight until the bucket
+# names the origin. The upload then fails without ever being attempted.
+#
+# It hid for as long as it did because MinIO, which stands in for S3 locally,
+# answers preflights permissively. Nothing in development can catch this; only
+# the real bucket can.
+#
+# GET is here as well as PUT: the reader fetches an attachment's bytes to hand
+# to the spreadsheet preview, and that fetch is cross-origin too.
+#
+# AllowedHeaders is "*" on purpose. The credential is the signature in the
+# URL; a header allowlist protects nothing here and turns every new request
+# header into another production-only failure.
+aws s3api put-bucket-cors --bucket "$BUCKET" \
+  --cors-configuration "{
+    \"CORSRules\": [
+      {
+        \"AllowedOrigins\": [\"$APP_ORIGIN\"],
+        \"AllowedMethods\": [\"GET\", \"PUT\", \"HEAD\"],
+        \"AllowedHeaders\": [\"*\"],
+        \"ExposeHeaders\": [\"ETag\"],
+        \"MaxAgeSeconds\": 3000
+      }
+    ]
+  }"
+echo "CORS 已设置，允许来源：$APP_ORIGIN"
+
 # ---------------------------------------------------------------- app user
 # A dedicated IAM user whose entire world is this bucket. The services speak
 # the S3 API through static keys (pkg/blobstore), so this is the identity
