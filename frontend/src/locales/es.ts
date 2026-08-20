@@ -1315,6 +1315,7 @@ export default {
     searchEmpty: 'Ningún correo contiene «{q}». La búsqueda mira el asunto, el remitente y el cuerpo, pero no el correo no deseado ni la papelera.',
     syncNow: 'Recibir ahora',
     showDetails: 'Detalles',
+    threadFiles: 'Archivos de esta conversación ({n})',
     hideDetails: 'Ocultar detalles',
     detail: {
       from: 'De',

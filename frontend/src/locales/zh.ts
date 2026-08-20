@@ -1312,6 +1312,7 @@ export default {
     searchEmpty: '没有找到包含「{q}」的邮件。搜索会看主题、发件人和正文，但不含垃圾邮件和回收站。',
     syncNow: '立即收信',
     showDetails: '详情',
+    threadFiles: '本会话的附件（{n}）',
     hideDetails: '收起详情',
     detail: {
       from: '发件人',
