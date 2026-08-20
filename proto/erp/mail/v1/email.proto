@@ -220,6 +220,23 @@ message InboundMail {
   // folding — the answer for most mail. Turn sixteen of a thread is turns one
   // to fifteen stacked up, and one such message measured 10747 pixels.
   string quoted_html = 22;
+  // Whether a tracking pixel actually went into this send.
+  //
+  // The third state, and the reason it cannot be inferred from opened_at:
+  // "nobody opened it" and "nobody was watching" are the same empty timestamp,
+  // and only the first says anything about the recipient. A plain-text mail
+  // and a send made before the service had a public address both get none.
+  bool tracked = 23;
+  // Which mailbox folder this copy sits in. The reader shows 对方是否已读 for
+  // a copy out of SENT and not for one out of INBOX, and that is the only
+  // thing that distinguishes them once both are InboundMail.
+  string folder = 24;
+  // ---- The details panel. ------------------------------------------------
+  // The RFC 5322 Message-ID and the size of the stored MIME. Neither is worth
+  // a line in the reader, both are worth having when somebody is working out
+  // why a mail did not arrive or whether it is the one being talked about.
+  string message_id_header = 25;
+  int64 raw_size = 26;
 }
 
 message InboundAttachment {

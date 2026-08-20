@@ -392,11 +392,25 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archived_at, deleted_at, not_junk;
 
 -- name: GetInbound :one
-SELECT id, account_id, owner_id, message_id, thread_key, reply_to_id,
-       from_email, from_name, to_email, subject, body_html, body_text,
-       raw_key, raw_size, is_read, has_attachments, received_at, sent_at
-FROM email_inbound
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+-- The ERP's delivery record is joined on for the same reason ListSentUnified
+-- joins it: 对方是否已读 is knowable only there, and 已发送 opens this row
+-- rather than the ERP one whenever the host kept a copy — which, with Gmail,
+-- is always. Without the join the answer exists in the database and appears
+-- nowhere on the screen.
+--
+-- LEFT, and null for everything the inbox reads: an inbound mail has no
+-- delivery record and must not be made to look like it lost one.
+SELECT i.id, i.account_id, i.owner_id, i.message_id, i.thread_key, i.reply_to_id,
+       i.from_email, i.from_name, i.to_email, i.subject, i.body_html, i.body_text,
+       i.raw_key, i.raw_size, i.is_read, i.has_attachments, i.received_at, i.sent_at,
+       i.folder,
+       coalesce(m.status, '') AS sent_status,
+       m.opened_at AS sent_opened_at,
+       coalesce(m.tracked, FALSE) AS sent_tracked
+FROM email_inbound i
+LEFT JOIN email_messages m
+       ON m.id = i.sent_message_id AND m.tenant_id = i.tenant_id
+WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint AND i.id = sqlc.arg(id)::bigint;
 
 -- name: GetInboundForCompose :one
 -- The reply/forward context: the owner (for the caller check), the

@@ -759,6 +759,11 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 		ToName:      v.ToName,
 		Status:      v.Status,
 		HasRaw:      v.HasRaw,
+		Tracked:     v.Tracked,
+		Folder:      v.Folder,
+
+		MessageIdHeader: v.MessageIDHeader,
+		RawSize:         v.RawSize,
 	}
 	if !v.OpenedAt.IsZero() {
 		m.OpenedAt = v.OpenedAt.Format(time.RFC3339)

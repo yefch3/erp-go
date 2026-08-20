@@ -536,11 +536,17 @@ func (q *Queries) FindMessageByKeyAnyTenant(ctx context.Context, messageKey stri
 }
 
 const getInbound = `-- name: GetInbound :one
-SELECT id, account_id, owner_id, message_id, thread_key, reply_to_id,
-       from_email, from_name, to_email, subject, body_html, body_text,
-       raw_key, raw_size, is_read, has_attachments, received_at, sent_at
-FROM email_inbound
-WHERE tenant_id = $1::bigint AND id = $2::bigint
+SELECT i.id, i.account_id, i.owner_id, i.message_id, i.thread_key, i.reply_to_id,
+       i.from_email, i.from_name, i.to_email, i.subject, i.body_html, i.body_text,
+       i.raw_key, i.raw_size, i.is_read, i.has_attachments, i.received_at, i.sent_at,
+       i.folder,
+       coalesce(m.status, '') AS sent_status,
+       m.opened_at AS sent_opened_at,
+       coalesce(m.tracked, FALSE) AS sent_tracked
+FROM email_inbound i
+LEFT JOIN email_messages m
+       ON m.id = i.sent_message_id AND m.tenant_id = i.tenant_id
+WHERE i.tenant_id = $1::bigint AND i.id = $2::bigint
 `
 
 type GetInboundParams struct {
@@ -567,8 +573,20 @@ type GetInboundRow struct {
 	HasAttachments bool
 	ReceivedAt     pgtype.Timestamptz
 	SentAt         pgtype.Timestamptz
+	Folder         string
+	SentStatus     string
+	SentOpenedAt   pgtype.Timestamptz
+	SentTracked    bool
 }
 
+// The ERP's delivery record is joined on for the same reason ListSentUnified
+// joins it: 对方是否已读 is knowable only there, and 已发送 opens this row
+// rather than the ERP one whenever the host kept a copy — which, with Gmail,
+// is always. Without the join the answer exists in the database and appears
+// nowhere on the screen.
+//
+// LEFT, and null for everything the inbox reads: an inbound mail has no
+// delivery record and must not be made to look like it lost one.
 func (q *Queries) GetInbound(ctx context.Context, arg GetInboundParams) (GetInboundRow, error) {
 	row := q.db.QueryRow(ctx, getInbound, arg.TenantID, arg.ID)
 	var i GetInboundRow
@@ -591,6 +609,10 @@ func (q *Queries) GetInbound(ctx context.Context, arg GetInboundParams) (GetInbo
 		&i.HasAttachments,
 		&i.ReceivedAt,
 		&i.SentAt,
+		&i.Folder,
+		&i.SentStatus,
+		&i.SentOpenedAt,
+		&i.SentTracked,
 	)
 	return i, err
 }
