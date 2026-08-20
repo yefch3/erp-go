@@ -225,9 +225,38 @@
              GetMailThread. -->
         <template v-if="threadItems.length > 1">
           <div class="thread-count">{{ t('emails.threadCount', { n: threadItems.length }) }}</div>
+
+          <!-- 整条会话的附件，汇总在最上面。
+               每封信下面已经有自己的附件了，这一条解决的是另一个问题：业务员
+               记得「客户发过一版装箱单」，却不记得在第几封信里。逐封展开去找
+               是最笨的办法，而这恰恰是 ERP 该比通用邮箱强的地方。
+               点一个文件就跳到它所在的那一封并展开。 -->
+          <details v-if="threadFiles.length" class="thread-files-strip" open>
+            <summary>{{ t('emails.threadFiles', { n: threadFiles.length }) }}</summary>
+            <div class="strip-rows">
+              <button
+                v-for="f in threadFiles"
+                :key="f.item.direction + f.item.id + ':' + f.file.id"
+                type="button"
+                class="strip-row"
+                @click="jumpToThreadItem(f.item)"
+              >
+                <el-icon><Paperclip /></el-icon>
+                <span class="fname ellipsis">{{ f.file.fileName }}</span>
+                <span class="sub">{{ humanSize(Number(f.file.fileSize)) }}</span>
+                <span class="grow" />
+                <!-- 谁发的、什么时候：这两样才是「哪一封」的答案。 -->
+                <span class="sub ellipsis strip-who">
+                  {{ isOwnMail(f.item) ? t('emails.threadOut') : f.item.who || f.item.counterparty }}
+                </span>
+                <span class="sub">{{ shortTime(f.item.at) }}</span>
+              </button>
+            </div>
+          </details>
           <div
             v-for="it in threadItems"
             :key="it.direction + it.id"
+            :data-thread-item="threadItemKey(it)"
             class="thread-item"
             :class="{ out: isOwnMail(it) }"
           >
@@ -1678,14 +1707,38 @@ interface ThreadItem {
   }[]
 }
 const threadItems = ref<ThreadItem[]>([])
+
+// 整条会话的附件，按时间顺序摊平。threadItems 本身就是按发生顺序来的，所以
+// 这里不再排序——文件的顺序就是对话的顺序。
+const threadFiles = computed(() =>
+  threadItems.value.flatMap((item) =>
+    (item.attachments ?? []).map((file) => ({ item, file })),
+  ),
+)
+
+// 点汇总条里的文件：展开它所在的那一封并滚过去。不直接下载——使用者要找的
+// 通常不只是文件，还有当时的上下文（客户说了什么、要求改哪里）。
+function jumpToThreadItem(it: ThreadItem) {
+  expandedThread.value = new Set([...expandedThread.value, threadItemKey(it)])
+  nextTick(() => {
+    document
+      .querySelector(`[data-thread-item="${threadItemKey(it)}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
 const expandedThread = ref<Set<string>>(new Set())
 
+// 两条腿的行号来自不同的表，收件的 7 不是发件的 7，所以键要带方向。
+function threadItemKey(it: ThreadItem) {
+  return `${it.direction}:${it.id}`
+}
+
 function isThreadOpen(it: ThreadItem) {
-  return expandedThread.value.has(`${it.direction}:${it.id}`)
+  return expandedThread.value.has(threadItemKey(it))
 }
 
 function toggleThreadItem(it: ThreadItem) {
-  const k = `${it.direction}:${it.id}`
+  const k = threadItemKey(it)
   const next = new Set(expandedThread.value)
   if (next.has(k)) {
     next.delete(k)
@@ -3109,6 +3162,46 @@ async function doUnsuppress(row: Suppression) {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 14px;
+}
+/* 汇总条：默认展开，但可以折起来。一条十六轮的往来可能挂着九个文件，
+   而有时使用者只是想读信。 */
+.thread-files-strip {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+  font-size: 13px;
+}
+.thread-files-strip summary {
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+}
+.strip-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+}
+.strip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.strip-row:hover {
+  background: var(--el-fill-color);
+}
+.strip-who {
+  max-width: 160px;
 }
 .thread-item {
   transition: box-shadow var(--mail-fast) var(--mail-ease);

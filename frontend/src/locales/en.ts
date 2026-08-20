@@ -1312,6 +1312,7 @@ export default {
     searchEmpty: 'No mail contains “{q}”. Search looks at the subject, the sender and the body, but not junk or trash.',
     syncNow: 'Check mail now',
     showDetails: 'Details',
+    threadFiles: 'Files in this conversation ({n})',
     hideDetails: 'Hide details',
     detail: {
       from: 'From',
