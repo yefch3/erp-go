@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/mail"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
@@ -141,11 +143,51 @@ type NewSupplierQuote struct {
 	Lines                                                                  []SupplierQuoteLineInput
 }
 
+// rfqEligibleSourcingLineIDs 返回人工复核后保留的询盘明细。
+// 兼容旧数据的 PENDING 状态，但明确忽略或不匹配的行不会进入 RFQ。
+func rfqEligibleSourcingLineIDs(lines []store.ListSourcingLinesRow) []int64 {
+	ids := make([]int64, 0, len(lines))
+	for _, line := range lines {
+		if line.Decision != "SKIPPED" && line.Decision != "NO_MATCH" {
+			ids = append(ids, line.ID)
+		}
+	}
+	return ids
+}
+
+// validateFactoryRFQContact 校验对外询价必须具备可投递联系人和明确回复期限。
+func validateFactoryRFQContact(contactEmail, currency, responseDueAt string, today time.Time) error {
+	contactEmail = strings.TrimSpace(contactEmail)
+	address, err := mail.ParseAddress(contactEmail)
+	if err != nil || !strings.EqualFold(address.Address, contactEmail) {
+		return apierr.Invalid("SC_RFQ_CONTACT_INVALID", "请填写有效的工厂询价联系人邮箱")
+	}
+	currency = strings.ToUpper(strings.TrimSpace(currency))
+	if len(currency) != 3 {
+		return apierr.Invalid("SC_RFQ_CURRENCY_INVALID", "币种必须使用 3 位代码，例如 USD 或 CNY")
+	}
+	for _, char := range currency {
+		if char < 'A' || char > 'Z' {
+			return apierr.Invalid("SC_RFQ_CURRENCY_INVALID", "币种必须使用 3 位代码，例如 USD 或 CNY")
+		}
+	}
+	due, err := time.Parse("2006-01-02", strings.TrimSpace(responseDueAt))
+	if err != nil {
+		return apierr.Invalid("SC_RFQ_DUE_DATE_INVALID", "请选择有效的工厂回复期限")
+	}
+	startOfToday := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC)
+	if due.Before(startOfToday) {
+		return apierr.Invalid("SC_RFQ_DUE_DATE_PAST", "工厂回复期限不能早于今天")
+	}
+	return nil
+}
+
 func (s *Service) CreateFactoryRFQ(ctx context.Context, tenantID int64, in NewFactoryRFQ, op Operator) (store.ListFactoryRFQsRow, error) {
 	if in.CaseID == 0 || in.SupplierID == 0 || in.FactoryID == 0 {
 		return store.ListFactoryRFQsRow{}, apierr.Invalid("SC_RFQ_REQUIRED", "请选择询价案件、供应商和具体合作工厂")
 	}
-	if _, err := s.GetSourcingCase(ctx, tenantID, in.CaseID); err != nil {
+	caseView, err := s.GetSourcingCase(ctx, tenantID, in.CaseID)
+	if err != nil {
 		return store.ListFactoryRFQsRow{}, err
 	}
 	supplier, err := s.supplierForOrder(ctx, in.SupplierID)
@@ -158,22 +200,39 @@ func (s *Service) CreateFactoryRFQ(ctx context.Context, tenantID int64, in NewFa
 	if in.Currency == "" {
 		in.Currency = "USD"
 	}
+	if err := validateFactoryRFQContact(in.ContactEmail, in.Currency, in.ResponseDueAt, time.Now().UTC()); err != nil {
+		return store.ListFactoryRFQsRow{}, err
+	}
 	caseLines, err := s.q.ListSourcingLines(ctx, store.ListSourcingLinesParams{TenantID: tenantID, CaseID: in.CaseID})
 	if err != nil {
 		return store.ListFactoryRFQsRow{}, err
 	}
 	allowed := make(map[int64]bool, len(caseLines))
 	for _, line := range caseLines {
-		allowed[line.ID] = line.Decision == "CONFIRMED"
+		allowed[line.ID] = line.Decision != "SKIPPED" && line.Decision != "NO_MATCH"
 	}
 	if len(in.SourcingLineIDs) == 0 {
-		for _, line := range caseLines {
-			in.SourcingLineIDs = append(in.SourcingLineIDs, line.ID)
-		}
+		in.SourcingLineIDs = rfqEligibleSourcingLineIDs(caseLines)
+	}
+	if len(in.SourcingLineIDs) == 0 {
+		return store.ListFactoryRFQsRow{}, apierr.Invalid("SC_RFQ_LINES_REQUIRED", "询盘没有可用于工厂询价的产品明细")
+	}
+	requiredFields, err := s.sourcingRequiredFields(ctx, tenantID, caseView.Head.InquiryTemplateID)
+	if err != nil {
+		return store.ListFactoryRFQsRow{}, err
 	}
 	for _, id := range in.SourcingLineIDs {
 		if !allowed[id] {
-			return store.ListFactoryRFQsRow{}, apierr.Invalid("SC_RFQ_LINE_UNCONFIRMED", "请先人工确认全部询价明细")
+			return store.ListFactoryRFQsRow{}, apierr.Invalid("SC_RFQ_LINE_UNAVAILABLE", "所选产品明细已被忽略，不能进入工厂询价")
+		}
+		for _, line := range caseLines {
+			if line.ID != id {
+				continue
+			}
+			if missing := missingIntakeReviewFields(line, requiredFields); len(missing) > 0 {
+				return store.ListFactoryRFQsRow{}, apierr.Invalid("SC_RFQ_FIELDS_REQUIRED", fmt.Sprintf("第 %d 行询盘资料不完整：%s", line.LineNo, strings.Join(missing, "、")))
+			}
+			break
 		}
 	}
 	var id int64
@@ -219,6 +278,9 @@ func (s *Service) CreateFactoryRFQ(ctx context.Context, tenantID int64, in NewFa
 func (s *Service) UpdateFactoryRFQ(ctx context.Context, tenantID, id int64, contactEmail, dueAt, reason string, op Operator) (store.ListFactoryRFQsRow, error) {
 	if strings.TrimSpace(reason) == "" {
 		return store.ListFactoryRFQsRow{}, apierr.Invalid("SC_RFQ_CHANGE_REASON_REQUIRED", "修改 RFQ 联系人或截止日期时必须填写原因")
+	}
+	if err := validateFactoryRFQContact(contactEmail, "USD", dueAt, time.Now().UTC()); err != nil {
+		return store.ListFactoryRFQsRow{}, err
 	}
 	caseID, err := s.q.FactoryRFQCase(ctx, store.FactoryRFQCaseParams{TenantID: tenantID, ID: id})
 	if err != nil {
