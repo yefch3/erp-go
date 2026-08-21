@@ -478,6 +478,14 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:order:read")).Get("/api/purchase-orders/{id}/execution", s.getOrderExecution)
 		r.With(s.perm("procurement:production:write")).Post("/api/purchase-orders/{id}/supplier-confirmations", s.recordSupplierConfirmation)
 		r.With(s.perm("procurement:production:write")).Post("/api/purchase-orders/{id}/production-milestones", s.saveProductionMilestone)
+
+		// The factory's claim of what we owe — the third leg of the
+		// three-way match. Its own permission, not the order one: placing
+		// orders and registering invoices for payment are different jobs.
+		r.With(s.perm("procurement:invoice:read")).Get("/api/supplier-invoices", s.listSupplierInvoices)
+		r.With(s.perm("procurement:invoice:read")).Get("/api/supplier-invoices/{id}", s.getSupplierInvoice)
+		r.With(s.perm("procurement:invoice:write")).Post("/api/supplier-invoices", s.createSupplierInvoice)
+		r.With(s.perm("procurement:invoice:write")).Post("/api/supplier-invoices/{id}/void", s.voidSupplierInvoice)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/exceptions", s.reportReceiptException)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/exceptions/{exceptionId}/resolve", s.resolveReceiptException)
 		// Receiving is warehouse work, so it rides on the stock permission

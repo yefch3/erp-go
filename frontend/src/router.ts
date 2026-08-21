@@ -45,6 +45,7 @@ export const router = createRouter({
         { path: 'sourcing-cases', component: () => import('./pages/SourcingCasesListPage.vue') },
         { path: 'sourcing-cases/:id', component: () => import('./pages/SourcingCaseDetailPage.vue') },
         { path: 'purchase-orders', component: () => import('./pages/PurchaseOrdersPage.vue') },
+        { path: 'supplier-invoices', component: () => import('./pages/SupplierInvoicesPage.vue') },
         { path: 'emails', component: () => import('./pages/EmailsPage.vue') },
         { path: 'team-mail', component: () => import('./pages/TeamMailPage.vue') },
         { path: 'mail/export-log', component: () => import('./pages/MailExportLogPage.vue') },

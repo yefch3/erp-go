@@ -452,6 +452,13 @@ service PurchaseOrderService {
   rpc SaveProductionMilestone(SaveProductionMilestoneRequest) returns (SaveProductionMilestoneResponse);
   rpc ReportReceiptException(ReportReceiptExceptionRequest) returns (ReportReceiptExceptionResponse);
   rpc ResolveReceiptException(ResolveReceiptExceptionRequest) returns (ResolveReceiptExceptionResponse);
+
+  // Supplier invoices: the third leg of the three-way match. Lives on the
+  // order service because an invoice is meaningless except against orders.
+  rpc CreateSupplierInvoice(CreateSupplierInvoiceRequest) returns (CreateSupplierInvoiceResponse);
+  rpc ListSupplierInvoices(ListSupplierInvoicesRequest) returns (ListSupplierInvoicesResponse);
+  rpc GetSupplierInvoice(GetSupplierInvoiceRequest) returns (GetSupplierInvoiceResponse);
+  rpc VoidSupplierInvoice(VoidSupplierInvoiceRequest) returns (VoidSupplierInvoiceResponse);
 }
 
 message OrderImportRow {
@@ -938,3 +945,82 @@ message SetInquiryTemplateStatusRequest {
   string status = 2; // ACTIVE | DISABLED
 }
 message SetDefaultInquiryTemplateRequest { int64 id = 1; }
+
+// ------------------------------------------------------------------ invoices
+
+message SupplierInvoiceLine {
+  int64 id = 1;
+  int64 po_id = 2;       // 0 = a charge on no order (freight, samples)
+  int64 po_item_id = 3;  // 0 = not bound to an order line
+  string description = 4;
+  string qty = 5;
+  string unit_price = 6;
+  string amount = 7;
+  string po_no = 8; // resolved for display; empty when po_id is 0
+}
+
+message SupplierInvoice {
+  int64 id = 1;
+  int64 supplier_id = 2;
+  string supplier_code = 3;
+  string supplier_name = 4;
+  string invoice_no = 5;
+  string invoice_type = 6; // COMMERCIAL | PROFORMA | VAT_SPECIAL | VAT_PLAIN | OTHER
+  string currency = 7;
+  string total_amount = 8;
+  string tax_amount = 9;
+  string invoice_date = 10; // YYYY-MM-DD
+  string due_date = 11;     // empty = none
+  string match_status = 12; // PENDING | MATCHED | EXCEPTION
+  string match_note = 13;
+  string status = 14; // OPEN | SETTLED | VOID
+  string void_reason = 15;
+  string created_by = 16;
+  string created_at = 17;
+  repeated SupplierInvoiceLine lines = 18; // populated on Get, empty on List
+}
+
+message SupplierInvoiceLineInput {
+  int64 po_id = 1;
+  int64 po_item_id = 2;
+  string description = 3;
+  string qty = 4;
+  string unit_price = 5;
+  string amount = 6;
+}
+
+message CreateSupplierInvoiceRequest {
+  int64 supplier_id = 1;
+  string supplier_code = 2;
+  string supplier_name = 3;
+  string invoice_no = 4;
+  string invoice_type = 5;
+  string currency = 6;
+  string total_amount = 7;
+  string tax_amount = 8;
+  string invoice_date = 9;
+  string due_date = 10;
+  repeated SupplierInvoiceLineInput lines = 11;
+}
+message CreateSupplierInvoiceResponse { SupplierInvoice invoice = 1; }
+
+message ListSupplierInvoicesRequest {
+  erp.common.v1.PageRequest page = 1;
+  int64 supplier_id = 2;
+  string status = 3;
+  string match_status = 4;
+  string keyword = 5; // invoice_no or supplier name
+}
+message ListSupplierInvoicesResponse {
+  repeated SupplierInvoice items = 1;
+  int64 total = 2;
+}
+
+message GetSupplierInvoiceRequest { int64 id = 1; }
+message GetSupplierInvoiceResponse { SupplierInvoice invoice = 1; }
+
+message VoidSupplierInvoiceRequest {
+  int64 id = 1;
+  string reason = 2;
+}
+message VoidSupplierInvoiceResponse { SupplierInvoice invoice = 1; }

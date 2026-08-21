@@ -1261,6 +1261,10 @@ const (
 	PurchaseOrderService_SaveProductionMilestone_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/SaveProductionMilestone"
 	PurchaseOrderService_ReportReceiptException_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/ReportReceiptException"
 	PurchaseOrderService_ResolveReceiptException_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ResolveReceiptException"
+	PurchaseOrderService_CreateSupplierInvoice_FullMethodName         = "/erp.procurement.v1.PurchaseOrderService/CreateSupplierInvoice"
+	PurchaseOrderService_ListSupplierInvoices_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/ListSupplierInvoices"
+	PurchaseOrderService_GetSupplierInvoice_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/GetSupplierInvoice"
+	PurchaseOrderService_VoidSupplierInvoice_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/VoidSupplierInvoice"
 )
 
 // PurchaseOrderServiceClient is the client API for PurchaseOrderService service.
@@ -1303,6 +1307,12 @@ type PurchaseOrderServiceClient interface {
 	SaveProductionMilestone(ctx context.Context, in *SaveProductionMilestoneRequest, opts ...grpc.CallOption) (*SaveProductionMilestoneResponse, error)
 	ReportReceiptException(ctx context.Context, in *ReportReceiptExceptionRequest, opts ...grpc.CallOption) (*ReportReceiptExceptionResponse, error)
 	ResolveReceiptException(ctx context.Context, in *ResolveReceiptExceptionRequest, opts ...grpc.CallOption) (*ResolveReceiptExceptionResponse, error)
+	// Supplier invoices: the third leg of the three-way match. Lives on the
+	// order service because an invoice is meaningless except against orders.
+	CreateSupplierInvoice(ctx context.Context, in *CreateSupplierInvoiceRequest, opts ...grpc.CallOption) (*CreateSupplierInvoiceResponse, error)
+	ListSupplierInvoices(ctx context.Context, in *ListSupplierInvoicesRequest, opts ...grpc.CallOption) (*ListSupplierInvoicesResponse, error)
+	GetSupplierInvoice(ctx context.Context, in *GetSupplierInvoiceRequest, opts ...grpc.CallOption) (*GetSupplierInvoiceResponse, error)
+	VoidSupplierInvoice(ctx context.Context, in *VoidSupplierInvoiceRequest, opts ...grpc.CallOption) (*VoidSupplierInvoiceResponse, error)
 }
 
 type purchaseOrderServiceClient struct {
@@ -1493,6 +1503,46 @@ func (c *purchaseOrderServiceClient) ResolveReceiptException(ctx context.Context
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) CreateSupplierInvoice(ctx context.Context, in *CreateSupplierInvoiceRequest, opts ...grpc.CallOption) (*CreateSupplierInvoiceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateSupplierInvoiceResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_CreateSupplierInvoice_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ListSupplierInvoices(ctx context.Context, in *ListSupplierInvoicesRequest, opts ...grpc.CallOption) (*ListSupplierInvoicesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSupplierInvoicesResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListSupplierInvoices_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) GetSupplierInvoice(ctx context.Context, in *GetSupplierInvoiceRequest, opts ...grpc.CallOption) (*GetSupplierInvoiceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSupplierInvoiceResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_GetSupplierInvoice_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) VoidSupplierInvoice(ctx context.Context, in *VoidSupplierInvoiceRequest, opts ...grpc.CallOption) (*VoidSupplierInvoiceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VoidSupplierInvoiceResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_VoidSupplierInvoice_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PurchaseOrderServiceServer is the server API for PurchaseOrderService service.
 // All implementations must embed UnimplementedPurchaseOrderServiceServer
 // for forward compatibility.
@@ -1533,6 +1583,12 @@ type PurchaseOrderServiceServer interface {
 	SaveProductionMilestone(context.Context, *SaveProductionMilestoneRequest) (*SaveProductionMilestoneResponse, error)
 	ReportReceiptException(context.Context, *ReportReceiptExceptionRequest) (*ReportReceiptExceptionResponse, error)
 	ResolveReceiptException(context.Context, *ResolveReceiptExceptionRequest) (*ResolveReceiptExceptionResponse, error)
+	// Supplier invoices: the third leg of the three-way match. Lives on the
+	// order service because an invoice is meaningless except against orders.
+	CreateSupplierInvoice(context.Context, *CreateSupplierInvoiceRequest) (*CreateSupplierInvoiceResponse, error)
+	ListSupplierInvoices(context.Context, *ListSupplierInvoicesRequest) (*ListSupplierInvoicesResponse, error)
+	GetSupplierInvoice(context.Context, *GetSupplierInvoiceRequest) (*GetSupplierInvoiceResponse, error)
+	VoidSupplierInvoice(context.Context, *VoidSupplierInvoiceRequest) (*VoidSupplierInvoiceResponse, error)
 	mustEmbedUnimplementedPurchaseOrderServiceServer()
 }
 
@@ -1596,6 +1652,18 @@ func (UnimplementedPurchaseOrderServiceServer) ReportReceiptException(context.Co
 }
 func (UnimplementedPurchaseOrderServiceServer) ResolveReceiptException(context.Context, *ResolveReceiptExceptionRequest) (*ResolveReceiptExceptionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ResolveReceiptException not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) CreateSupplierInvoice(context.Context, *CreateSupplierInvoiceRequest) (*CreateSupplierInvoiceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateSupplierInvoice not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ListSupplierInvoices(context.Context, *ListSupplierInvoicesRequest) (*ListSupplierInvoicesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSupplierInvoices not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) GetSupplierInvoice(context.Context, *GetSupplierInvoiceRequest) (*GetSupplierInvoiceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSupplierInvoice not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) VoidSupplierInvoice(context.Context, *VoidSupplierInvoiceRequest) (*VoidSupplierInvoiceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VoidSupplierInvoice not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) mustEmbedUnimplementedPurchaseOrderServiceServer() {}
 func (UnimplementedPurchaseOrderServiceServer) testEmbeddedByValue()                              {}
@@ -1942,6 +2010,78 @@ func _PurchaseOrderService_ResolveReceiptException_Handler(srv interface{}, ctx 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_CreateSupplierInvoice_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateSupplierInvoiceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).CreateSupplierInvoice(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_CreateSupplierInvoice_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).CreateSupplierInvoice(ctx, req.(*CreateSupplierInvoiceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ListSupplierInvoices_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSupplierInvoicesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListSupplierInvoices(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListSupplierInvoices_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListSupplierInvoices(ctx, req.(*ListSupplierInvoicesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_GetSupplierInvoice_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSupplierInvoiceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).GetSupplierInvoice(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_GetSupplierInvoice_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).GetSupplierInvoice(ctx, req.(*GetSupplierInvoiceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_VoidSupplierInvoice_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VoidSupplierInvoiceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).VoidSupplierInvoice(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_VoidSupplierInvoice_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).VoidSupplierInvoice(ctx, req.(*VoidSupplierInvoiceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PurchaseOrderService_ServiceDesc is the grpc.ServiceDesc for PurchaseOrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2020,6 +2160,22 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveReceiptException",
 			Handler:    _PurchaseOrderService_ResolveReceiptException_Handler,
+		},
+		{
+			MethodName: "CreateSupplierInvoice",
+			Handler:    _PurchaseOrderService_CreateSupplierInvoice_Handler,
+		},
+		{
+			MethodName: "ListSupplierInvoices",
+			Handler:    _PurchaseOrderService_ListSupplierInvoices_Handler,
+		},
+		{
+			MethodName: "GetSupplierInvoice",
+			Handler:    _PurchaseOrderService_GetSupplierInvoice_Handler,
+		},
+		{
+			MethodName: "VoidSupplierInvoice",
+			Handler:    _PurchaseOrderService_VoidSupplierInvoice_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
