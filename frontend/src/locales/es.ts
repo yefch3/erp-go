@@ -1506,7 +1506,7 @@ export default {
     codePlaceholder: 'Contraseña del buzón / código de autorización',
     codeRequired: 'Introduzca la contraseña o el código del buzón',
     signInEmail: 'Iniciar sesión con el correo',
-    hint: 'Gmail usa una contraseña de aplicación; los proveedores tradicionales como 263 aceptan la contraseña de la cuenta o un código de cliente: un solo campo sirve para ambos. La verificación dura 12 horas; en un equipo compartido, cierre la sesión del buzón antes de irse.',
+    hint: 'Gmail usa una contraseña de aplicación; los proveedores tradicionales como 263 aceptan la contraseña de la cuenta o un código de cliente: un solo campo sirve para ambos. La verificación dura 30 días; en un equipo compartido, cierre la sesión del buzón antes de irse.',
     failed: 'Verificación fallida',
     signOut: 'Cerrar sesión del buzón',
     reauth: 'La autorización de Google ya no es válida (un cambio de contraseña o su caducidad lo provocan). Redirigiendo a Google para iniciar sesión de nuevo…',
