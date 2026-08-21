@@ -327,6 +327,11 @@ services:
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       # Must match iam's. See the note there.
       JWT_TTL: ${JWT_TTL:-12h}
+      # How long one mailbox verification stays good before the person has to
+      # log in to their mailbox again. The code has honoured this variable
+      # since the unlock store was built; the compose file just never passed
+      # it through, so setting it in .env silently did nothing.
+      MAIL_UNLOCK_TTL: ${MAIL_UNLOCK_TTL:-12h}
       HTTP_PORT: "8080"
     # The one port that answers from elsewhere, because it is the one the
     # browser talks to. In front of a real deployment this belongs behind a

@@ -1504,7 +1504,7 @@ export default {
     codePlaceholder: 'Mailbox password / client authorisation code',
     codeRequired: 'Please enter the mailbox password or code',
     signInEmail: 'Sign in with email',
-    hint: 'Gmail takes an app password; traditional hosts such as 263 take the account password or a client authorisation code — one field serves both, whichever the host honours. Verification lasts 12 hours; on a shared computer, use Sign out of mailbox before leaving.',
+    hint: 'Gmail takes an app password; traditional hosts such as 263 take the account password or a client authorisation code — one field serves both, whichever the host honours. Verification lasts 30 days; on a shared computer, use Sign out of mailbox before leaving.',
     failed: 'Verification failed',
     signOut: 'Sign out of mailbox',
     reauth: 'The Google grant is no longer valid (a password change or expiry does this). Heading to Google to sign in again…',
