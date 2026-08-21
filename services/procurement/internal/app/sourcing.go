@@ -252,20 +252,12 @@ func (s *Service) ConfirmSourcingLines(ctx context.Context, tenantID, caseID int
 	if len(ids) == 0 {
 		return SourcingCaseView{}, apierr.Invalid("SC_CONFIRM_LINES_REQUIRED", "请选择需要确认的询价明细")
 	}
-	// 待复核询盘只检查明细是否属于当前询盘；此阶段不强制匹配内部产品。
-	// 确认后进入原有 REVIEWING 阶段，再由采购人员完成产品匹配和逐行复核。
+	// 待复核询盘已经由员工完成字段审核。转入询价时，保留行直接确认，
+	// 其余行记录为暂不采购，询价项目不再重复要求匹配内部产品。
 	if view.Head.Status == "INTAKE_PENDING" {
-		requiredFields := []store.ListInquiryTemplateFieldsRow{
-			{FieldKey: "product", DisplayName: "产品", IsRequired: true},
-			{FieldKey: "quantity", DisplayName: "数量", IsRequired: true},
-			{FieldKey: "quantity_unit", DisplayName: "单位", IsRequired: true},
-		}
-		if view.Head.InquiryTemplateID > 0 {
-			template, templateErr := s.GetInquiryTemplate(ctx, tenantID, view.Head.InquiryTemplateID)
-			if templateErr != nil {
-				return SourcingCaseView{}, templateErr
-			}
-			requiredFields = template.Fields
+		requiredFields, fieldsErr := s.sourcingRequiredFields(ctx, tenantID, view.Head.InquiryTemplateID)
+		if fieldsErr != nil {
+			return SourcingCaseView{}, fieldsErr
 		}
 		allowed := make(map[int64]store.ListSourcingLinesRow, len(view.Lines))
 		for _, line := range view.Lines {
@@ -291,7 +283,7 @@ func (s *Service) ConfirmSourcingLines(ctx context.Context, tenantID, caseID int
 		}
 		err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 			result, execErr := tx.Exec(ctx,
-				"UPDATE sourcing_cases SET status='REVIEWING', updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status='INTAKE_PENDING'",
+				"UPDATE sourcing_cases SET status='SOURCING', updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status='INTAKE_PENDING'",
 				tenantID, caseID)
 			if execErr != nil {
 				return execErr
@@ -299,23 +291,38 @@ func (s *Service) ConfirmSourcingLines(ctx context.Context, tenantID, caseID int
 			if result.RowsAffected() != 1 {
 				return apierr.Conflict("SC_INTAKE_CHANGED", "待复核询盘已被处理，请刷新后重试")
 			}
-			return s.q.WithTx(tx).CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: caseID,
-				Section: "CASE", Action: "INTAKE_CONFIRMED", Summary: "确认标准询盘并进入产品规范复核",
-				BeforeJson: []byte(`{"status":"INTAKE_PENDING"}`), AfterJson: []byte(`{"status":"REVIEWING"}`), OperatorID: op.ID, OperatorName: op.Name})
+			q := s.q.WithTx(tx)
+			if _, execErr = tx.Exec(ctx, `UPDATE sourcing_lines
+SET decision=CASE WHEN id=ANY($3::bigint[]) THEN 'CONFIRMED' ELSE 'SKIPPED' END,
+    decided_by=$4, decided_by_name=$5, updated_at=now()
+WHERE tenant_id=$1 AND case_id=$2`, tenantID, caseID, ids, op.ID, op.Name); execErr != nil {
+				return execErr
+			}
+			return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: caseID,
+				Section: "CASE", Action: "INTAKE_CONFIRMED", Summary: "确认标准询盘并进入工厂询价",
+				BeforeJson: []byte(`{"status":"INTAKE_PENDING"}`), AfterJson: []byte(`{"status":"SOURCING"}`), OperatorID: op.ID, OperatorName: op.Name})
 		})
 		if err != nil {
 			return SourcingCaseView{}, err
 		}
 		return s.GetSourcingCase(ctx, tenantID, caseID)
 	}
-	allowed := make(map[int64]bool, len(view.Lines))
+	requiredFields, err := s.sourcingRequiredFields(ctx, tenantID, view.Head.InquiryTemplateID)
+	if err != nil {
+		return SourcingCaseView{}, err
+	}
+	allowed := make(map[int64]store.ListSourcingLinesRow, len(view.Lines))
 	for _, line := range view.Lines {
-		allowed[line.ID] = line.ProductID > 0
+		allowed[line.ID] = line
 	}
 	seen := map[int64]bool{}
 	for _, id := range ids {
-		if !allowed[id] || seen[id] {
+		line, exists := allowed[id]
+		if !exists || line.ProductID == 0 || line.UomID == 0 || seen[id] {
 			return SourcingCaseView{}, apierr.Invalid("SC_CONFIRM_PRODUCT_REQUIRED", "请先逐行匹配内部产品")
+		}
+		if missing := missingIntakeReviewFields(line, requiredFields); len(missing) > 0 {
+			return SourcingCaseView{}, apierr.Invalid("SC_PRODUCT_FIELDS_REQUIRED", fmt.Sprintf("第 %d 行资料不完整：%s", line.LineNo, strings.Join(missing, "、")))
 		}
 		seen[id] = true
 	}
@@ -356,6 +363,38 @@ func missingIntakeReviewFields(line store.ListSourcingLinesRow, templateFields [
 		}
 	}
 	return missing
+}
+
+func defaultSourcingRequiredFields() []store.ListInquiryTemplateFieldsRow {
+	return []store.ListInquiryTemplateFieldsRow{
+		{FieldKey: "product", DisplayName: "产品", IsRequired: true},
+		{FieldKey: "quantity", DisplayName: "数量", IsRequired: true},
+		{FieldKey: "quantity_unit", DisplayName: "单位", IsRequired: true},
+	}
+}
+
+// sourcingRequiredFields 返回询盘锁定模板中的字段规则；旧数据没有模板时使用兼容必填项。
+func (s *Service) sourcingRequiredFields(ctx context.Context, tenantID, templateID int64) ([]store.ListInquiryTemplateFieldsRow, error) {
+	if templateID == 0 {
+		return defaultSourcingRequiredFields(), nil
+	}
+	template, err := s.GetInquiryTemplate(ctx, tenantID, templateID)
+	if err != nil {
+		return nil, err
+	}
+	return template.Fields, nil
+}
+
+func sourcingInputAsRow(in SourcingLineInput) store.ListSourcingLinesRow {
+	return store.ListSourcingLinesRow{
+		Product: in.Product, MaterialStandard: in.MaterialStandard, Grade: in.Grade,
+		Thickness: in.Thickness, Width: in.Width, LengthOrForm: in.LengthOrForm,
+		SurfaceRequirement: in.SurfaceRequirement, Coating: in.Coating, Tolerance: in.Tolerance,
+		CoilWeight: in.CoilWeight, CoilID: in.CoilID, Packaging: in.Packaging,
+		Delivery: in.Delivery, PaymentTerms: in.PaymentTerms, Incoterm: in.Incoterm,
+		Port: in.Port, QuantityUnit: in.QuantityUnit, Remarks: in.Remarks, Quantity: in.Quantity,
+		CustomFields: marshalCustomFields(in.CustomFields),
+	}
 }
 
 // intakeReviewFieldValue 将模板字段读取统一映射到询盘行，确保不同客户的
@@ -428,6 +467,15 @@ func (s *Service) ReviewSourcingLine(ctx context.Context, tenantID int64, in Sou
 	view, err := s.GetSourcingCase(ctx, tenantID, in.CaseID)
 	if err != nil {
 		return SourcingCaseView{}, err
+	}
+	if in.Decision == "CONFIRMED" {
+		requiredFields, fieldsErr := s.sourcingRequiredFields(ctx, tenantID, view.Head.InquiryTemplateID)
+		if fieldsErr != nil {
+			return SourcingCaseView{}, fieldsErr
+		}
+		if missing := missingIntakeReviewFields(sourcingInputAsRow(in.Extracted), requiredFields); len(missing) > 0 {
+			return SourcingCaseView{}, apierr.Invalid("SC_PRODUCT_FIELDS_REQUIRED", "产品规范资料不完整："+strings.Join(missing, "、"))
+		}
 	}
 	var previous *store.ListSourcingLinesRow
 	for i := range view.Lines {
