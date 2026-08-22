@@ -64,6 +64,14 @@ services:
     image: ghcr.io/yefch3/erp-go/procurement:${ERP_SHA}
     environment:
       DB_DSN: ${PROCUREMENT_DB_DSN:?set in deploy/.env}
+      # Invoice scans go to the same bucket as everything else.
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-true}
+      MINIO_REGION: ${MINIO_REGION:-us-west-2}
   shipping:
     image: ghcr.io/yefch3/erp-go/shipping:${ERP_SHA}
     environment:

@@ -93,8 +93,32 @@ func supplierInvoiceProto(v app.SupplierInvoice) *prv1.SupplierInvoice {
 		MatchStatus: v.MatchStatus, MatchNote: v.MatchNote,
 		Status: v.Status, VoidReason: v.VoidReason,
 		CreatedBy: v.CreatedBy, CreatedAt: v.CreatedAt,
-		Lines: lines,
+		Lines:         lines,
+		AttachmentKey: v.AttachmentKey, AttachmentUrl: v.AttachmentURL,
+		AttachmentName: v.AttachmentName,
 	}
+}
+
+func (h *OrderHandler) PresignSupplierInvoiceFile(ctx context.Context, req *prv1.PresignSupplierInvoiceFileRequest) (*prv1.PresignSupplierInvoiceFileResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	p, err := h.svc.PresignSupplierInvoiceFile(ctx, grpcx.TenantID(ctx),
+		req.GetInvoiceId(), req.GetFileName(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.PresignSupplierInvoiceFileResponse{
+		Key: p.Key, UploadUrl: p.UploadURL, ExpiresSeconds: p.Expires,
+	}, nil
+}
+
+func (h *OrderHandler) AttachSupplierInvoiceFile(ctx context.Context, req *prv1.AttachSupplierInvoiceFileRequest) (*prv1.AttachSupplierInvoiceFileResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	v, err := h.svc.AttachSupplierInvoiceFile(ctx, grpcx.TenantID(ctx),
+		req.GetInvoiceId(), req.GetKey(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.AttachSupplierInvoiceFileResponse{Invoice: supplierInvoiceProto(v)}, nil
 }
 
 func (h *OrderHandler) MatchSupplierInvoice(ctx context.Context, req *prv1.MatchSupplierInvoiceRequest) (*prv1.MatchSupplierInvoiceResponse, error) {

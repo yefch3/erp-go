@@ -475,6 +475,12 @@ service PurchaseOrderService {
   // Re-runs the three-way verdict — after a receipt lands or an exception
   // is resolved, the stored MATCHED/EXCEPTION may be stale.
   rpc MatchSupplierInvoice(MatchSupplierInvoiceRequest) returns (MatchSupplierInvoiceResponse);
+  // The scan of the paper. Presign hands the browser a short-lived URL it
+  // PUTs the file to; Attach records the uploaded key on the invoice. The
+  // download URL is minted fresh on every Get — the URL expires, the key
+  // does not.
+  rpc PresignSupplierInvoiceFile(PresignSupplierInvoiceFileRequest) returns (PresignSupplierInvoiceFileResponse);
+  rpc AttachSupplierInvoiceFile(AttachSupplierInvoiceFileRequest) returns (AttachSupplierInvoiceFileResponse);
 
   // Payments: our assertion that money left. Allocation is the separate,
   // revisable judgement about what it settled — an invoice, or a purchase
@@ -1003,6 +1009,9 @@ message SupplierInvoice {
   string created_by = 16;
   string created_at = 17;
   repeated SupplierInvoiceLine lines = 18; // populated on Get, empty on List
+  string attachment_key = 19;  // empty = no scan uploaded
+  string attachment_url = 20;  // fresh presigned GET; populated on Get only
+  string attachment_name = 21; // original file name, for display
 }
 
 message SupplierInvoiceLineInput {
@@ -1052,6 +1061,22 @@ message VoidSupplierInvoiceResponse { SupplierInvoice invoice = 1; }
 
 message MatchSupplierInvoiceRequest { int64 id = 1; }
 message MatchSupplierInvoiceResponse { SupplierInvoice invoice = 1; }
+
+message PresignSupplierInvoiceFileRequest {
+  int64 invoice_id = 1;
+  string file_name = 2;
+}
+message PresignSupplierInvoiceFileResponse {
+  string key = 1;
+  string upload_url = 2;
+  int32 expires_seconds = 3;
+}
+
+message AttachSupplierInvoiceFileRequest {
+  int64 invoice_id = 1;
+  string key = 2; // must be one this invoice's Presign handed out
+}
+message AttachSupplierInvoiceFileResponse { SupplierInvoice invoice = 1; }
 
 // ------------------------------------------------------------------ payments
 

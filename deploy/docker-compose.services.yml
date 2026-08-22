@@ -213,6 +213,12 @@ services:
       # the MAIL_UNLOCK_TTL lesson.
       MATCH_TOLERANCE_PCT: ${MATCH_TOLERANCE_PCT:-}
       MATCH_TOLERANCE_ABS: ${MATCH_TOLERANCE_ABS:-}
+      # Invoice scans. Same MinIO-in-dev / S3-in-prod split as product.
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: localhost:19000
+      MINIO_ACCESS_KEY: erp
+      MINIO_SECRET_KEY: erp_dev_password
+      MINIO_BUCKET: erp-files
     ports:
       - "127.0.0.1:9007:9007"
     networks: [infra]

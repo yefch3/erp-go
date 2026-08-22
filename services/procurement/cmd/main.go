@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
+	"github.com/sgao19/erp-go/pkg/blobstore"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/pkg/idempotency"
 	"github.com/sgao19/erp-go/pkg/kafkax"
@@ -82,6 +83,20 @@ func run(log *slog.Logger) error {
 	}
 	defer iamConn.Close()
 
+	files, err := blobstore.New(ctx, blobstore.Config{
+		Endpoint:       cfg.MinioEndpoint,
+		PublicEndpoint: cfg.MinioPublicEndpoint,
+		AccessKey:      cfg.MinioAccessKey,
+		SecretKey:      cfg.MinioSecretKey,
+		Bucket:         cfg.MinioBucket,
+		UseSSL:         cfg.MinioUseSSL,
+		// See the note in mail's main.go: S3 needs the region or it 301s.
+		Region: os.Getenv("MINIO_REGION"),
+	})
+	if err != nil {
+		return err
+	}
+
 	svc := app.New(pool, app.Deps{
 		Numbering:  grpcout.NewNumbering(mdConn),
 		Approvals:  grpcout.NewApprovals(apConn),
@@ -89,6 +104,7 @@ func run(log *slog.Logger) error {
 		Warehouses: grpcout.NewWarehouses(invConn),
 		Rates:      grpcout.NewRates(fxConn),
 		Scopes:     grpcout.NewScopes(iamConn),
+		Files:      grpcout.NewFiles(files),
 		Live:       live,
 	})
 	// Three-way-match tolerance. Zero unless set: a pilot should first see

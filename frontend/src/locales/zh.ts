@@ -119,6 +119,8 @@ export default {
     linesSum: '明细合计', sumMismatch: '与发票金额不一致，保存会被拒绝',
     void: '作废', voidPrompt: '作废不是删除：这张纸存在过，谁录的、为什么不算数都会留在记录里。请填写原因。', voidReason: '作废原因',
     created: '发票已录入', voided: '已作废',
+    attachment: '发票扫描件', uploadScan: '上传扫描件', replaceScan: '替换扫描件', noScan: '未上传',
+    scanUploaded: '扫描件已上传', scanUploadFailed: '扫描件上传失败，请重试',
     empty: '还没有录入任何供应商发票',
   },
   procurementNav: {

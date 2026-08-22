@@ -1266,6 +1266,8 @@ const (
 	PurchaseOrderService_GetSupplierInvoice_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/GetSupplierInvoice"
 	PurchaseOrderService_VoidSupplierInvoice_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/VoidSupplierInvoice"
 	PurchaseOrderService_MatchSupplierInvoice_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/MatchSupplierInvoice"
+	PurchaseOrderService_PresignSupplierInvoiceFile_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/PresignSupplierInvoiceFile"
+	PurchaseOrderService_AttachSupplierInvoiceFile_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/AttachSupplierInvoiceFile"
 	PurchaseOrderService_CreateSupplierPayment_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/CreateSupplierPayment"
 	PurchaseOrderService_ListSupplierPayments_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/ListSupplierPayments"
 	PurchaseOrderService_GetSupplierPayment_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/GetSupplierPayment"
@@ -1322,6 +1324,12 @@ type PurchaseOrderServiceClient interface {
 	// Re-runs the three-way verdict — after a receipt lands or an exception
 	// is resolved, the stored MATCHED/EXCEPTION may be stale.
 	MatchSupplierInvoice(ctx context.Context, in *MatchSupplierInvoiceRequest, opts ...grpc.CallOption) (*MatchSupplierInvoiceResponse, error)
+	// The scan of the paper. Presign hands the browser a short-lived URL it
+	// PUTs the file to; Attach records the uploaded key on the invoice. The
+	// download URL is minted fresh on every Get — the URL expires, the key
+	// does not.
+	PresignSupplierInvoiceFile(ctx context.Context, in *PresignSupplierInvoiceFileRequest, opts ...grpc.CallOption) (*PresignSupplierInvoiceFileResponse, error)
+	AttachSupplierInvoiceFile(ctx context.Context, in *AttachSupplierInvoiceFileRequest, opts ...grpc.CallOption) (*AttachSupplierInvoiceFileResponse, error)
 	// Payments: our assertion that money left. Allocation is the separate,
 	// revisable judgement about what it settled — an invoice, or a purchase
 	// order when it is a deposit wired before any invoice exists.
@@ -1570,6 +1578,26 @@ func (c *purchaseOrderServiceClient) MatchSupplierInvoice(ctx context.Context, i
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) PresignSupplierInvoiceFile(ctx context.Context, in *PresignSupplierInvoiceFileRequest, opts ...grpc.CallOption) (*PresignSupplierInvoiceFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PresignSupplierInvoiceFileResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_PresignSupplierInvoiceFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) AttachSupplierInvoiceFile(ctx context.Context, in *AttachSupplierInvoiceFileRequest, opts ...grpc.CallOption) (*AttachSupplierInvoiceFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AttachSupplierInvoiceFileResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_AttachSupplierInvoiceFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *purchaseOrderServiceClient) CreateSupplierPayment(ctx context.Context, in *CreateSupplierPaymentRequest, opts ...grpc.CallOption) (*CreateSupplierPaymentResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateSupplierPaymentResponse)
@@ -1669,6 +1697,12 @@ type PurchaseOrderServiceServer interface {
 	// Re-runs the three-way verdict — after a receipt lands or an exception
 	// is resolved, the stored MATCHED/EXCEPTION may be stale.
 	MatchSupplierInvoice(context.Context, *MatchSupplierInvoiceRequest) (*MatchSupplierInvoiceResponse, error)
+	// The scan of the paper. Presign hands the browser a short-lived URL it
+	// PUTs the file to; Attach records the uploaded key on the invoice. The
+	// download URL is minted fresh on every Get — the URL expires, the key
+	// does not.
+	PresignSupplierInvoiceFile(context.Context, *PresignSupplierInvoiceFileRequest) (*PresignSupplierInvoiceFileResponse, error)
+	AttachSupplierInvoiceFile(context.Context, *AttachSupplierInvoiceFileRequest) (*AttachSupplierInvoiceFileResponse, error)
 	// Payments: our assertion that money left. Allocation is the separate,
 	// revisable judgement about what it settled — an invoice, or a purchase
 	// order when it is a deposit wired before any invoice exists.
@@ -1755,6 +1789,12 @@ func (UnimplementedPurchaseOrderServiceServer) VoidSupplierInvoice(context.Conte
 }
 func (UnimplementedPurchaseOrderServiceServer) MatchSupplierInvoice(context.Context, *MatchSupplierInvoiceRequest) (*MatchSupplierInvoiceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MatchSupplierInvoice not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) PresignSupplierInvoiceFile(context.Context, *PresignSupplierInvoiceFileRequest) (*PresignSupplierInvoiceFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PresignSupplierInvoiceFile not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) AttachSupplierInvoiceFile(context.Context, *AttachSupplierInvoiceFileRequest) (*AttachSupplierInvoiceFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AttachSupplierInvoiceFile not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) CreateSupplierPayment(context.Context, *CreateSupplierPaymentRequest) (*CreateSupplierPaymentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateSupplierPayment not implemented")
@@ -2206,6 +2246,42 @@ func _PurchaseOrderService_MatchSupplierInvoice_Handler(srv interface{}, ctx con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_PresignSupplierInvoiceFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PresignSupplierInvoiceFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).PresignSupplierInvoiceFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_PresignSupplierInvoiceFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).PresignSupplierInvoiceFile(ctx, req.(*PresignSupplierInvoiceFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_AttachSupplierInvoiceFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AttachSupplierInvoiceFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).AttachSupplierInvoiceFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_AttachSupplierInvoiceFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).AttachSupplierInvoiceFile(ctx, req.(*AttachSupplierInvoiceFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PurchaseOrderService_CreateSupplierPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateSupplierPaymentRequest)
 	if err := dec(in); err != nil {
@@ -2394,6 +2470,14 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MatchSupplierInvoice",
 			Handler:    _PurchaseOrderService_MatchSupplierInvoice_Handler,
+		},
+		{
+			MethodName: "PresignSupplierInvoiceFile",
+			Handler:    _PurchaseOrderService_PresignSupplierInvoiceFile_Handler,
+		},
+		{
+			MethodName: "AttachSupplierInvoiceFile",
+			Handler:    _PurchaseOrderService_AttachSupplierInvoiceFile_Handler,
 		},
 		{
 			MethodName: "CreateSupplierPayment",

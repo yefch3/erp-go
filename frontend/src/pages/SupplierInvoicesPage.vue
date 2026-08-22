@@ -141,7 +141,15 @@
         <el-descriptions-item :label="t('supplierInvoices.createdBy')">{{ detail.createdBy }}</el-descriptions-item>
         <el-descriptions-item v-if="detail.voidReason" :label="t('supplierInvoices.voidReason')" :span="3">{{ detail.voidReason }}</el-descriptions-item>
         <el-descriptions-item v-if="detail.matchNote" :label="t('supplierInvoices.matchNote')" :span="3">{{ detail.matchNote }}</el-descriptions-item>
+        <el-descriptions-item :label="t('supplierInvoices.attachment')" :span="3">
+          <a v-if="detail.attachmentUrl" :href="detail.attachmentUrl" target="_blank" rel="noopener">{{ detail.attachmentName || t('supplierInvoices.attachment') }}</a>
+          <span v-else class="scan-none">{{ t('supplierInvoices.noScan') }}</span>
+          <el-button v-if="canWrite" size="small" style="margin-left: 12px" :loading="uploadingScan" @click="scanInput?.click()">
+            {{ detail.attachmentKey ? t('supplierInvoices.replaceScan') : t('supplierInvoices.uploadScan') }}
+          </el-button>
+        </el-descriptions-item>
       </el-descriptions>
+      <input ref="scanInput" type="file" accept="image/*,application/pdf" style="display: none" @change="onScanPicked" />
       <el-table v-if="detail?.lines?.length" :data="detail.lines" size="small" stripe style="margin-top: 12px">
         <el-table-column prop="poNo" :label="t('supplierInvoices.linePO')" width="150"><template #default="{ row }">{{ row.poNo || '—' }}</template></el-table-column>
         <el-table-column prop="description" :label="t('supplierInvoices.lineDesc')" min-width="180" />
@@ -181,6 +189,9 @@ interface InvoiceRow {
   voidReason: string
   createdBy: string
   lines?: LineRow[]
+  attachmentKey?: string
+  attachmentUrl?: string
+  attachmentName?: string
 }
 interface LineRow {
   poNo?: string
@@ -209,6 +220,8 @@ const poLoading = ref(false)
 const pickedPO = ref('')
 const detailOpen = ref(false)
 const detail = ref<InvoiceRow | null>(null)
+const uploadingScan = ref(false)
+const scanInput = ref<HTMLInputElement | null>(null)
 
 const form = reactive({
   supplierId: '', invoiceNo: '', invoiceType: 'COMMERCIAL', currency: '',
@@ -318,6 +331,35 @@ async function openDetail(row: InvoiceRow) {
   detailOpen.value = true
 }
 
+// The scan never passes through our gateway: presign hands the browser a
+// short-lived URL, the browser PUTs the file straight to object storage,
+// and only then is the key recorded on the invoice.
+async function onScanPicked(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || !detail.value) return
+  uploadingScan.value = true
+  try {
+    const signed = await post<{ key: string; uploadUrl: string }>(
+      `/supplier-invoices/${detail.value.id}/attachment/presign`,
+      { fileName: file.name },
+    )
+    const put = await fetch(signed.uploadUrl, { method: 'PUT', body: file })
+    if (!put.ok) throw new Error(`upload failed: ${put.status}`)
+    const resp = await post<{ invoice: InvoiceRow }>(
+      `/supplier-invoices/${detail.value.id}/attachment`,
+      { key: signed.key },
+    )
+    detail.value = resp.invoice
+    ElMessage.success(t('supplierInvoices.scanUploaded'))
+  } catch {
+    ElMessage.error(t('supplierInvoices.scanUploadFailed'))
+  } finally {
+    uploadingScan.value = false
+    input.value = ''
+  }
+}
+
 async function rematch(row: InvoiceRow) {
   await post(`/supplier-invoices/${row.id}/match`, {})
   ElMessage.success(t('supplierInvoices.rematched'))
@@ -344,4 +386,5 @@ onMounted(load)
 .lines-sum { margin-top: 6px; font-size: 13px; color: var(--el-text-color-secondary); }
 .lines-sum.mismatch { color: var(--el-color-danger); }
 .overdue { color: var(--el-color-danger); font-weight: 600; }
+.scan-none { color: var(--el-text-color-secondary); }
 </style>

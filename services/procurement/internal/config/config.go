@@ -27,6 +27,14 @@ type Config struct {
 	// Live hints to open pages. Optional: without Redis the pages still work,
 	// they just need a manual refresh.
 	RedisAddr string
+	// Object storage for invoice scans. MinIO in dev, S3 in production —
+	// same API, only the endpoint differs.
+	MinioEndpoint       string
+	MinioPublicEndpoint string
+	MinioAccessKey      string
+	MinioSecretKey      string
+	MinioBucket         string
+	MinioUseSSL         bool
 }
 
 func Load() Config {
@@ -45,6 +53,12 @@ func Load() Config {
 		FxAddr:                env("FX_ADDR", "localhost:9003"),
 		IAMAddr:               env("IAM_ADDR", "localhost:9001"),
 		RedisAddr:             env("REDIS_ADDR", "localhost:6379"),
+		MinioEndpoint:         env("MINIO_ENDPOINT", "localhost:19000"),
+		MinioPublicEndpoint:   env("MINIO_PUBLIC_ENDPOINT", ""),
+		MinioAccessKey:        env("MINIO_ACCESS_KEY", "erp"),
+		MinioSecretKey:        env("MINIO_SECRET_KEY", "erp_dev_password"),
+		MinioBucket:           env("MINIO_BUCKET", "erp-files"),
+		MinioUseSSL:           env("MINIO_USE_SSL", "") == "true",
 	}
 }
 

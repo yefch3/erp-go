@@ -487,6 +487,8 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:invoice:write")).Post("/api/supplier-invoices", s.createSupplierInvoice)
 		r.With(s.perm("procurement:invoice:write")).Post("/api/supplier-invoices/{id}/void", s.voidSupplierInvoice)
 		r.With(s.perm("procurement:invoice:write")).Post("/api/supplier-invoices/{id}/match", s.matchSupplierInvoice)
+		r.With(s.perm("procurement:invoice:write")).Post("/api/supplier-invoices/{id}/attachment/presign", s.presignSupplierInvoiceFile)
+		r.With(s.perm("procurement:invoice:write")).Post("/api/supplier-invoices/{id}/attachment", s.attachSupplierInvoiceFile)
 
 		// Money leaving, and the revisable record of what it settled.
 		// Separate permission from invoices: registering a claim and moving
