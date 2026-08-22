@@ -509,6 +509,8 @@ export default {
     accepted: 'Marked as accepted',
     reject: 'Customer rejected',
     rejected: 'Marked as rejected',
+    rejectNotePrompt: "What did the customer say? 'Too expensive by 5 USD' teaches far more than 'rejected' — the words travel back to the cost scenario. Leave empty if they said nothing.",
+    rejectNotePlaceholder: 'e.g. target price 605, lead time acceptable',
     statuses: { DRAFT: 'Draft', SENT: 'Sent', ACCEPTED: 'Accepted', REJECTED: 'Rejected', EXPIRED: 'Expired', CANCELLED: 'Cancelled' },
   },
   stocks: {

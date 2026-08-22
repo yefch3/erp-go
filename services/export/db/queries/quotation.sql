@@ -46,7 +46,7 @@ SELECT
     coalesce(valid_until::text, '')::text AS valid_until,
     fx_rate::text AS fx_rate, fx_rate_at, fx_source, fx_base_currency,
     total_amount::text AS total_amount, base_amount::text AS base_amount,
-    remark, status, sales_employee_id, sales_employee, sent_at, responded_at, created_at,
+    remark, status, respond_note, sales_employee_id, sales_employee, sent_at, responded_at, created_at,
     coalesce(source_cost_scenario_id, 0)::bigint AS source_cost_scenario_id,
     source_cost_scenario_no, coalesce(source_sourcing_case_id, 0)::bigint AS source_sourcing_case_id
 FROM quotations
@@ -56,7 +56,7 @@ WHERE tenant_id = $1 AND id = $2;
 SELECT
     q.id, q.quote_no, q.customer_id, q.customer_name, q.currency,
     q.total_amount::text AS total_amount, q.base_amount::text AS base_amount,
-    q.status, q.sales_employee_id, q.sales_employee, coalesce(q.valid_until::text, '')::text AS valid_until,
+    q.status, q.respond_note, q.sales_employee_id, q.sales_employee, coalesce(q.valid_until::text, '')::text AS valid_until,
     q.created_at, coalesce(q.source_cost_scenario_id, 0)::bigint AS source_cost_scenario_id,
     q.source_cost_scenario_no, coalesce(q.source_sourcing_case_id, 0)::bigint AS source_sourcing_case_id,
     count(*) OVER () AS total
@@ -88,6 +88,9 @@ UPDATE quotations SET
     sent_at = CASE WHEN sqlc.arg(new_status)::text = 'SENT' THEN now() ELSE sent_at END,
     responded_at = CASE WHEN sqlc.arg(new_status)::text IN ('ACCEPTED','REJECTED')
                         THEN now() ELSE responded_at END,
+    -- The customer's words land with the answer and only with the answer.
+    respond_note = CASE WHEN sqlc.arg(new_status)::text IN ('ACCEPTED','REJECTED')
+                        THEN sqlc.arg(respond_note)::text ELSE respond_note END,
     updated_at = now(), updated_by = $3
 WHERE tenant_id = $1 AND id = $2
 RETURNING status;

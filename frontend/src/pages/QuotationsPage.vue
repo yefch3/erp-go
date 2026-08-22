@@ -33,9 +33,10 @@
         <el-table-column :label="t('quotations.validUntil')" width="100">
           <template #default="{ row }">{{ row.validUntil || '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.status')" width="90">
+        <el-table-column :label="t('common.status')" width="150">
           <template #default="{ row }">
             <el-tag size="small" :type="statusType(row.status)">{{ t(`quotations.statuses.${row.status}`) }}</el-tag>
+            <div v-if="row.respondNote" class="sub respond-note">{{ row.respondNote }}</div>
           </template>
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="300" fixed="right">
@@ -192,7 +193,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { download, get, post, put, saveBlob } from '../api'
@@ -206,6 +207,7 @@ interface Fx { rate: string; rateAt: string; source: string; baseCurrency: strin
 interface Quotation {
   id: string
   quoteNo: string
+  respondNote?: string
   salesEmployeeId: string
   customerId: string
   customerName: string
@@ -420,8 +422,19 @@ async function act(row: Quotation, action: string) {
   load()
 }
 
+// 拒绝时问一句客户怎么说的（B1）——「REJECTED」本身教不会我们任何事，
+// 「贵了 5 美元」才是下一版成本方案的输入。客户没说就留空。
 async function respond(row: Quotation, answer: string) {
-  await post(`/quotations/${row.id}/respond`, { status: answer })
+  let note = ''
+  if (answer === 'REJECTED') {
+    const result = await ElMessageBox.prompt(
+      t('quotations.rejectNotePrompt'), t('quotations.reject'),
+      { inputPlaceholder: t('quotations.rejectNotePlaceholder'), inputType: 'textarea' },
+    ).catch(() => null)
+    if (result === null) return
+    note = result.value || ''
+  }
+  await post(`/quotations/${row.id}/respond`, { status: answer, note })
   ElMessage.success(t(answer === 'ACCEPTED' ? 'quotations.accepted' : 'quotations.rejected'))
   load()
 }

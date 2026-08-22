@@ -210,6 +210,7 @@ type Quotation struct {
 	SourceCostScenarioID *int64
 	SourceCostScenarioNo string
 	SourceSourcingCaseID *int64
+	RespondNote          string
 }
 
 type QuotationItem struct {

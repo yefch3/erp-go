@@ -175,7 +175,7 @@ SELECT
     coalesce(valid_until::text, '')::text AS valid_until,
     fx_rate::text AS fx_rate, fx_rate_at, fx_source, fx_base_currency,
     total_amount::text AS total_amount, base_amount::text AS base_amount,
-    remark, status, sales_employee_id, sales_employee, sent_at, responded_at, created_at,
+    remark, status, respond_note, sales_employee_id, sales_employee, sent_at, responded_at, created_at,
     coalesce(source_cost_scenario_id, 0)::bigint AS source_cost_scenario_id,
     source_cost_scenario_no, coalesce(source_sourcing_case_id, 0)::bigint AS source_sourcing_case_id
 FROM quotations
@@ -210,6 +210,7 @@ type GetQuotationRow struct {
 	BaseAmount           string
 	Remark               string
 	Status               string
+	RespondNote          string
 	SalesEmployeeID      int64
 	SalesEmployee        string
 	SentAt               pgtype.Timestamptz
@@ -246,6 +247,7 @@ func (q *Queries) GetQuotation(ctx context.Context, arg GetQuotationParams) (Get
 		&i.BaseAmount,
 		&i.Remark,
 		&i.Status,
+		&i.RespondNote,
 		&i.SalesEmployeeID,
 		&i.SalesEmployee,
 		&i.SentAt,
@@ -332,7 +334,7 @@ const listQuotations = `-- name: ListQuotations :many
 SELECT
     q.id, q.quote_no, q.customer_id, q.customer_name, q.currency,
     q.total_amount::text AS total_amount, q.base_amount::text AS base_amount,
-    q.status, q.sales_employee_id, q.sales_employee, coalesce(q.valid_until::text, '')::text AS valid_until,
+    q.status, q.respond_note, q.sales_employee_id, q.sales_employee, coalesce(q.valid_until::text, '')::text AS valid_until,
     q.created_at, coalesce(q.source_cost_scenario_id, 0)::bigint AS source_cost_scenario_id,
     q.source_cost_scenario_no, coalesce(q.source_sourcing_case_id, 0)::bigint AS source_sourcing_case_id,
     count(*) OVER () AS total
@@ -378,6 +380,7 @@ type ListQuotationsRow struct {
 	TotalAmount          string
 	BaseAmount           string
 	Status               string
+	RespondNote          string
 	SalesEmployeeID      int64
 	SalesEmployee        string
 	ValidUntil           string
@@ -418,6 +421,7 @@ func (q *Queries) ListQuotations(ctx context.Context, arg ListQuotationsParams) 
 			&i.TotalAmount,
 			&i.BaseAmount,
 			&i.Status,
+			&i.RespondNote,
 			&i.SalesEmployeeID,
 			&i.SalesEmployee,
 			&i.ValidUntil,
@@ -474,16 +478,20 @@ UPDATE quotations SET
     sent_at = CASE WHEN $4::text = 'SENT' THEN now() ELSE sent_at END,
     responded_at = CASE WHEN $4::text IN ('ACCEPTED','REJECTED')
                         THEN now() ELSE responded_at END,
+    -- The customer's words land with the answer and only with the answer.
+    respond_note = CASE WHEN $4::text IN ('ACCEPTED','REJECTED')
+                        THEN $5::text ELSE respond_note END,
     updated_at = now(), updated_by = $3
 WHERE tenant_id = $1 AND id = $2
 RETURNING status
 `
 
 type SetQuotationStatusParams struct {
-	TenantID  int64
-	ID        int64
-	UpdatedBy int64
-	NewStatus string
+	TenantID    int64
+	ID          int64
+	UpdatedBy   int64
+	NewStatus   string
+	RespondNote string
 }
 
 func (q *Queries) SetQuotationStatus(ctx context.Context, arg SetQuotationStatusParams) (string, error) {
@@ -492,6 +500,7 @@ func (q *Queries) SetQuotationStatus(ctx context.Context, arg SetQuotationStatus
 		arg.ID,
 		arg.UpdatedBy,
 		arg.NewStatus,
+		arg.RespondNote,
 	)
 	var status string
 	err := row.Scan(&status)

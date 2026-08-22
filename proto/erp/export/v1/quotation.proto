@@ -78,6 +78,8 @@ message Quotation {
   int64 source_cost_scenario_id = 24;
   string source_cost_scenario_no = 25;
   int64 source_sourcing_case_id = 26;
+  // What the customer said when accepting or rejecting.
+  string respond_note = 27;
 }
 
 // 客户报价明细可以选择关联产品主数据；未关联时保留已审核询盘的名称和单位快照。
@@ -170,6 +172,9 @@ message RespondQuotationRequest {
   int64 id = 1;
   // ACCEPTED or REJECTED.
   string status = 2;
+  // The customer's words — "too expensive by 5 USD/t" is what the next
+  // cost scenario gets built from. Optional: a ghosting customer leaves none.
+  string note = 3;
 }
 
 message RespondQuotationResponse {

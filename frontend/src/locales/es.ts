@@ -509,6 +509,8 @@ export default {
     accepted: 'Marcada como aceptada',
     reject: 'Cliente rechaza',
     rejected: 'Marcada como rechazada',
+    rejectNotePrompt: '¿Qué dijo el cliente? «5 USD más caro» enseña mucho más que «rechazada»; sus palabras vuelven al escenario de coste. Deje vacío si no dijo nada.',
+    rejectNotePlaceholder: 'p. ej.: precio objetivo 605, plazo aceptable',
     statuses: { DRAFT: 'Borrador', SENT: 'Enviada', ACCEPTED: 'Aceptada', REJECTED: 'Rechazada', EXPIRED: 'Vencida', CANCELLED: 'Cancelada' },
   },
   stocks: {

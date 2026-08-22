@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/services/export/internal/store"
@@ -29,7 +30,7 @@ func allowed(from, to string) bool {
 }
 
 // setStatus moves a quotation, refusing anything the state machine forbids.
-func (s *Service) setStatus(ctx context.Context, tenantID, id, operatorID int64, to string) (string, error) {
+func (s *Service) setStatus(ctx context.Context, tenantID, id, operatorID int64, to, note string) (string, error) {
 	current, _, err := s.GetQuotation(ctx, tenantID, id)
 	if err != nil {
 		return "", err
@@ -49,6 +50,7 @@ func (s *Service) setStatus(ctx context.Context, tenantID, id, operatorID int64,
 	}
 	status, err := s.q.SetQuotationStatus(ctx, store.SetQuotationStatusParams{
 		TenantID: tenantID, ID: id, NewStatus: to, UpdatedBy: operatorID,
+		RespondNote: note,
 	})
 	if err != nil {
 		return "", err
@@ -59,17 +61,19 @@ func (s *Service) setStatus(ctx context.Context, tenantID, id, operatorID int64,
 // Send marks a quotation as issued to the customer. From here on the fx
 // snapshot and the prices are a promise, so edits are refused.
 func (s *Service) Send(ctx context.Context, tenantID, id, operatorID int64) (string, error) {
-	return s.setStatus(ctx, tenantID, id, operatorID, "SENT")
+	return s.setStatus(ctx, tenantID, id, operatorID, "SENT", "")
 }
 
-// Respond records the customer's answer.
-func (s *Service) Respond(ctx context.Context, tenantID, id, operatorID int64, status string) (string, error) {
+// Respond records the customer's answer — and their words. "REJECTED" alone
+// teaches nothing; "贵了 5 美元" is what the next cost scenario is built
+// from (B1). The note is optional: a customer who ghosts leaves no words.
+func (s *Service) Respond(ctx context.Context, tenantID, id, operatorID int64, status, note string) (string, error) {
 	if status != "ACCEPTED" && status != "REJECTED" {
 		return "", apierr.Invalid("EX_RESPONSE_INVALID", "客户答复只能是 ACCEPTED 或 REJECTED")
 	}
-	return s.setStatus(ctx, tenantID, id, operatorID, status)
+	return s.setStatus(ctx, tenantID, id, operatorID, status, strings.TrimSpace(note))
 }
 
 func (s *Service) Cancel(ctx context.Context, tenantID, id, operatorID int64) (string, error) {
-	return s.setStatus(ctx, tenantID, id, operatorID, "CANCELLED")
+	return s.setStatus(ctx, tenantID, id, operatorID, "CANCELLED", "")
 }
