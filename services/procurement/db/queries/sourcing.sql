@@ -2,7 +2,7 @@
 INSERT INTO sourcing_cases (
     tenant_id, case_no, title, customer_id, customer_name, contact_name,
     contact_email, source_mail_id, source_attachment_id, owner_id, owner_name,
-    source_file_name, source_content_type, source_file_data,
+    source_file_name, source_content_type, source_file_data, source_file_key,
     inquiry_template_id, inquiry_template_code, inquiry_template_version
 ) VALUES (
     sqlc.arg(tenant_id)::bigint,
@@ -13,6 +13,7 @@ INSERT INTO sourcing_cases (
     sqlc.arg(source_attachment_id)::bigint, sqlc.arg(owner_id)::bigint,
     sqlc.arg(owner_name)::text, sqlc.arg(source_file_name)::text,
     sqlc.arg(source_content_type)::text, sqlc.arg(source_file_data)::bytea,
+    sqlc.arg(source_file_key)::text,
     sqlc.arg(inquiry_template_id)::bigint, sqlc.arg(inquiry_template_code)::text,
     sqlc.arg(inquiry_template_version)::int
 )
@@ -60,7 +61,8 @@ LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
 -- name: GetSourcingCase :one
 SELECT id, case_no, title, customer_id, customer_name, contact_name,
        contact_email, source_mail_id, source_attachment_id, status,
-       owner_id, owner_name, source_file_name, inquiry_template_id,
+       owner_id, owner_name, source_file_name, source_file_key,
+       inquiry_template_id,
        inquiry_template_code, inquiry_template_version, created_at, updated_at
 FROM sourcing_cases
 WHERE tenant_id = $1 AND id = $2;

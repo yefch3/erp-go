@@ -2,9 +2,12 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -65,6 +68,9 @@ type NewSourcingCase struct {
 type SourcingCaseView struct {
 	Head  store.GetSourcingCaseRow
 	Lines []store.ListSourcingLinesRow
+	// Fresh presigned download for the original inquiry file; empty when the
+	// case predates object storage or carries no file. Never persisted.
+	SourceFileURL string
 }
 
 type SourcingFilter struct{ Status, Keyword string }
@@ -93,6 +99,19 @@ func (s *Service) CreateSourcingCase(ctx context.Context, tenantID int64, in New
 		return SourcingCaseView{}, err
 	}
 
+	// 原始 Excel 进对象存储，库里只留 key。上传失败则退回旧路——整份字节
+	// 存 BYTEA：录入是事实，不能因为存储打盹而被拦（和汇率快照同一条原则）。
+	// 先传后写库：传成功库却没写只留一个可清扫的孤儿对象，反过来则是指着
+	// 空气的 key。
+	sourceFileKey := ""
+	if s.files != nil && len(in.SourceFileData) > 0 {
+		key := sourcingObjectKey(tenantID, in.SourceFileName)
+		if err := s.files.Put(ctx, key, in.SourceFileData, in.SourceContentType); err == nil {
+			sourceFileKey = key
+			in.SourceFileData = nil
+		}
+	}
+
 	var id int64
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
@@ -102,7 +121,8 @@ func (s *Service) CreateSourcingCase(ctx context.Context, tenantID int64, in New
 			ContactEmail: strings.TrimSpace(in.ContactEmail), SourceMailID: in.SourceMailID,
 			SourceAttachmentID: in.SourceAttachmentID, OwnerID: op.ID, OwnerName: op.Name,
 			SourceFileName: strings.TrimSpace(in.SourceFileName), SourceContentType: in.SourceContentType,
-			SourceFileData: in.SourceFileData, InquiryTemplateID: template.Template.ID,
+			SourceFileData: in.SourceFileData, SourceFileKey: sourceFileKey,
+			InquiryTemplateID: template.Template.ID,
 			InquiryTemplateCode: template.Template.TemplateCode, InquiryTemplateVersion: template.Template.Version,
 		})
 		if err != nil {
@@ -194,7 +214,28 @@ func (s *Service) GetSourcingCase(ctx context.Context, tenantID, id int64) (Sour
 	if err != nil {
 		return SourcingCaseView{}, err
 	}
-	return SourcingCaseView{Head: head, Lines: lines}, nil
+	view := SourcingCaseView{Head: head, Lines: lines}
+	if head.SourceFileKey != "" && s.files != nil {
+		// A failed presign degrades to "named but not downloadable", which
+		// beats failing the whole detail.
+		if url, err := s.files.PresignGet(ctx, head.SourceFileKey); err == nil {
+			view.SourceFileURL = url
+		}
+	}
+	return view, nil
+}
+
+// sourcingObjectKey namespaces the original inquiry file by tenant. The case
+// number does not exist yet when the upload happens (the INSERT mints it),
+// so a random prefix carries the uniqueness instead.
+func sourcingObjectKey(tenantID int64, fileName string) string {
+	buf := make([]byte, 8)
+	_, _ = rand.Read(buf)
+	base := path.Base(strings.ReplaceAll(fileName, "\\", "/"))
+	if base == "" || base == "." {
+		base = "inquiry.xlsx"
+	}
+	return fmt.Sprintf("sourcing-cases/%d/%s-%s", tenantID, hex.EncodeToString(buf), base)
 }
 
 // AddSourcingLine 在人工复核阶段补录一条产品需求，并将操作写入询盘变更记录。

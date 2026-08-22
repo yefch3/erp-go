@@ -459,6 +459,7 @@ func lineInput(in *prv1.SourcingLineInput) app.SourcingLineInput {
 
 func sourcingCaseView(view app.SourcingCaseView) *prv1.SourcingCase {
 	out := sourcingCaseHead(view.Head)
+	out.SourceFileUrl = view.SourceFileURL
 	out.Lines = make([]*prv1.SourcingLine, 0, len(view.Lines))
 	for _, line := range view.Lines {
 		out.Lines = append(out.Lines, sourcingLine(line))

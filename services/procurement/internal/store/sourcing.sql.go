@@ -35,7 +35,7 @@ const createSourcingCase = `-- name: CreateSourcingCase :one
 INSERT INTO sourcing_cases (
     tenant_id, case_no, title, customer_id, customer_name, contact_name,
     contact_email, source_mail_id, source_attachment_id, owner_id, owner_name,
-    source_file_name, source_content_type, source_file_data,
+    source_file_name, source_content_type, source_file_data, source_file_key,
     inquiry_template_id, inquiry_template_code, inquiry_template_version
 ) VALUES (
     $1::bigint,
@@ -46,8 +46,9 @@ INSERT INTO sourcing_cases (
     $8::bigint, $9::bigint,
     $10::text, $11::text,
     $12::text, $13::bytea,
-    $14::bigint, $15::text,
-    $16::int
+    $14::text,
+    $15::bigint, $16::text,
+    $17::int
 )
 RETURNING id, case_no
 `
@@ -66,6 +67,7 @@ type CreateSourcingCaseParams struct {
 	SourceFileName         string
 	SourceContentType      string
 	SourceFileData         []byte
+	SourceFileKey          string
 	InquiryTemplateID      int64
 	InquiryTemplateCode    string
 	InquiryTemplateVersion int32
@@ -91,6 +93,7 @@ func (q *Queries) CreateSourcingCase(ctx context.Context, arg CreateSourcingCase
 		arg.SourceFileName,
 		arg.SourceContentType,
 		arg.SourceFileData,
+		arg.SourceFileKey,
 		arg.InquiryTemplateID,
 		arg.InquiryTemplateCode,
 		arg.InquiryTemplateVersion,
@@ -220,7 +223,8 @@ func (q *Queries) CreateSourcingLine(ctx context.Context, arg CreateSourcingLine
 const getSourcingCase = `-- name: GetSourcingCase :one
 SELECT id, case_no, title, customer_id, customer_name, contact_name,
        contact_email, source_mail_id, source_attachment_id, status,
-       owner_id, owner_name, source_file_name, inquiry_template_id,
+       owner_id, owner_name, source_file_name, source_file_key,
+       inquiry_template_id,
        inquiry_template_code, inquiry_template_version, created_at, updated_at
 FROM sourcing_cases
 WHERE tenant_id = $1 AND id = $2
@@ -245,6 +249,7 @@ type GetSourcingCaseRow struct {
 	OwnerID                int64
 	OwnerName              string
 	SourceFileName         string
+	SourceFileKey          string
 	InquiryTemplateID      int64
 	InquiryTemplateCode    string
 	InquiryTemplateVersion int32
@@ -269,6 +274,7 @@ func (q *Queries) GetSourcingCase(ctx context.Context, arg GetSourcingCaseParams
 		&i.OwnerID,
 		&i.OwnerName,
 		&i.SourceFileName,
+		&i.SourceFileKey,
 		&i.InquiryTemplateID,
 		&i.InquiryTemplateCode,
 		&i.InquiryTemplateVersion,

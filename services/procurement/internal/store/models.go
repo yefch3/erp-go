@@ -166,6 +166,22 @@ type OutboxEvent struct {
 	LastError     *string
 }
 
+type PaymentAllocation struct {
+	ID              int64
+	TenantID        int64
+	PaymentID       int64
+	InvoiceID       *int64
+	PoID            *int64
+	Amount          pgtype.Numeric
+	FeeAmount       pgtype.Numeric
+	Currency        string
+	ReversalOf      *int64
+	ReverseReason   string
+	AllocatedBy     int64
+	AllocatedByName string
+	AllocatedAt     pgtype.Timestamptz
+}
+
 type ProcessedEvent struct {
 	EventID       string
 	ConsumerGroup string
@@ -402,6 +418,7 @@ type SourcingCase struct {
 	InquiryTemplateID      int64
 	InquiryTemplateCode    string
 	InquiryTemplateVersion int32
+	SourceFileKey          string
 }
 
 type SourcingCaseChange struct {
@@ -479,6 +496,9 @@ type SupplierInvoice struct {
 	CreatedByID   int64
 	CreatedByName string
 	CreatedAt     pgtype.Timestamptz
+	BaseCurrency  string
+	BaseAmount    pgtype.Numeric
+	FxRate        pgtype.Numeric
 }
 
 type SupplierInvoiceLine struct {
@@ -491,6 +511,28 @@ type SupplierInvoiceLine struct {
 	Qty         pgtype.Numeric
 	UnitPrice   pgtype.Numeric
 	Amount      pgtype.Numeric
+}
+
+type SupplierPayment struct {
+	ID            int64
+	TenantID      int64
+	SupplierID    int64
+	SupplierName  string
+	PaymentNo     string
+	PaymentType   string
+	Currency      string
+	Amount        pgtype.Numeric
+	BaseCurrency  string
+	BaseAmount    pgtype.Numeric
+	FxRate        pgtype.Numeric
+	PaidAt        pgtype.Date
+	Method        string
+	BankRef       string
+	BankTxnID     *int64
+	Remark        string
+	CreatedByID   int64
+	CreatedByName string
+	CreatedAt     pgtype.Timestamptz
 }
 
 type SupplierQuote struct {

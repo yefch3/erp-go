@@ -14,6 +14,7 @@ import (
 // of it so the test can assert the row-first-object-second choreography.
 type fakeFiles struct {
 	removed []string
+	stored  []string
 }
 
 func (f *fakeFiles) PresignPut(_ context.Context, key string) (string, int32, error) {
@@ -21,6 +22,10 @@ func (f *fakeFiles) PresignPut(_ context.Context, key string) (string, int32, er
 }
 func (f *fakeFiles) PresignGet(_ context.Context, key string) (string, error) {
 	return "https://fake-store/get/" + key, nil
+}
+func (f *fakeFiles) Put(_ context.Context, key string, data []byte, _ string) error {
+	f.stored = append(f.stored, key)
+	return nil
 }
 func (f *fakeFiles) Remove(_ context.Context, key string) error {
 	f.removed = append(f.removed, key)
