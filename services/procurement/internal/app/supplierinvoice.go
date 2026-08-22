@@ -84,6 +84,11 @@ type SupplierInvoice struct {
 	CreatedBy    string
 	CreatedAt    string
 	Lines        []SupplierInvoiceLine
+	// The scan of the paper. URL is minted per read and never persisted:
+	// it expires, the key does not.
+	AttachmentKey  string
+	AttachmentURL  string
+	AttachmentName string
 }
 
 // SupplierInvoiceFilter narrows the list.
@@ -308,17 +313,27 @@ func (s *Service) GetSupplierInvoice(ctx context.Context, tenantID, id int64) (S
 		       invoice_type, currency, total_amount::text, tax_amount::text,
 		       invoice_date::text, coalesce(due_date::text,''),
 		       match_status, match_note, status, void_reason,
-		       created_by_name, created_at::text
+		       created_by_name, created_at::text, attachment_key
 		  FROM supplier_invoices WHERE tenant_id=$1 AND id=$2`, tenantID, id,
 	).Scan(&v.ID, &v.SupplierID, &v.SupplierCode, &v.SupplierName,
 		&v.InvoiceNo, &v.InvoiceType, &v.Currency, &v.TotalAmount, &v.TaxAmount,
 		&v.InvoiceDate, &v.DueDate, &v.MatchStatus, &v.MatchNote,
-		&v.Status, &v.VoidReason, &v.CreatedBy, &v.CreatedAt)
+		&v.Status, &v.VoidReason, &v.CreatedBy, &v.CreatedAt, &v.AttachmentKey)
 	if err == pgx.ErrNoRows {
 		return SupplierInvoice{}, apierr.NotFound("INV_NOT_FOUND", "发票不存在")
 	}
 	if err != nil {
 		return SupplierInvoice{}, err
+	}
+	if v.AttachmentKey != "" {
+		v.AttachmentName = attachmentDisplayName(v.AttachmentKey)
+		if s.files != nil {
+			// A failed presign degrades to "listed but not downloadable",
+			// which beats failing the whole read.
+			if url, err := s.files.PresignGet(ctx, v.AttachmentKey); err == nil {
+				v.AttachmentURL = url
+			}
+		}
 	}
 	lines, err := s.pool.Query(ctx, `
 		SELECT l.id, coalesce(l.po_id,0), coalesce(l.po_item_id,0),

@@ -119,6 +119,8 @@ export default {
     linesSum: 'Suma de líneas', sumMismatch: 'difiere del total de la factura; se rechazará al guardar',
     void: 'Anular', voidPrompt: 'Anular no es borrar: el papel existió, y quién lo registró y por qué ya no cuenta quedan en el registro. Indique el motivo.', voidReason: 'Motivo',
     created: 'Factura registrada', voided: 'Anulada',
+    attachment: 'Escaneo de la factura', uploadScan: 'Subir escaneo', replaceScan: 'Reemplazar escaneo', noScan: 'Sin subir',
+    scanUploaded: 'Escaneo subido', scanUploadFailed: 'Error al subir el escaneo, reintente',
     empty: 'Aún no hay facturas de proveedor',
   },
   procurementNav: {

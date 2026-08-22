@@ -77,6 +77,15 @@ type Warehouses interface {
 	Get(ctx context.Context, id int64) (Warehouse, error)
 }
 
+// Files is the object storage the invoice scans live in. Procurement never
+// streams file bytes itself: it presigns URLs and the browser talks to the
+// store directly, the same shape product and export use.
+type Files interface {
+	PresignPut(ctx context.Context, key string) (url string, expires int32, err error)
+	PresignGet(ctx context.Context, key string) (string, error)
+	Remove(ctx context.Context, key string) error
+}
+
 type Warehouse struct {
 	ID     int64
 	Name   string
@@ -105,6 +114,9 @@ type Deps struct {
 	Warehouses Warehouses
 	Rates      Rates
 	Scopes     Scopes
+	// Optional in tests; main always wires it. Nil degrades attachment
+	// endpoints to a clean error instead of a panic.
+	Files Files
 	// Optional: without it the pages still work, they just need a refresh.
 	Live *livefeed.Publisher
 }
@@ -118,6 +130,7 @@ type Service struct {
 	warehouses Warehouses
 	rates      Rates
 	scopes     Scopes
+	files      Files
 	live       *livefeed.Publisher
 
 	// Three-way-match tolerance, zero unless the operator widens it.
@@ -131,7 +144,7 @@ func New(pool *pgxpool.Pool, d Deps) *Service {
 		pool: pool, q: store.New(pool),
 		numbering: d.Numbering, approvals: d.Approvals,
 		suppliers: d.Suppliers, warehouses: d.Warehouses, rates: d.Rates,
-		scopes: d.Scopes, live: d.Live,
+		scopes: d.Scopes, files: d.Files, live: d.Live,
 	}
 }
 

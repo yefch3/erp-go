@@ -70,3 +70,35 @@ func (s *Server) matchSupplierInvoice(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
+
+// The scan of the paper: presign hands the browser an upload URL, attach
+// records the uploaded key. The browser PUTs to object storage directly —
+// the file bytes never pass through the gateway.
+
+func (s *Server) presignSupplierInvoiceFile(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.PresignSupplierInvoiceFileRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.InvoiceId = idFromPath(r)
+	resp, err := s.Orders.PresignSupplierInvoiceFile(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) attachSupplierInvoiceFile(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.AttachSupplierInvoiceFileRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.InvoiceId = idFromPath(r)
+	resp, err := s.Orders.AttachSupplierInvoiceFile(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
