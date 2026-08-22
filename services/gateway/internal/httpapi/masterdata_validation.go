@@ -38,3 +38,16 @@ func (s *Server) resolveActiveSupplier(ctx context.Context, id int64) (*mdv1.Sup
 	}
 	return supplier, nil
 }
+
+// supplierHasRole reports whether the supplier carries any of the given
+// business types. Roles live in master data and nowhere else.
+func supplierHasRole(supplier *mdv1.Supplier, roles ...string) bool {
+	for _, have := range supplier.GetBusinessTypes() {
+		for _, want := range roles {
+			if have == want {
+				return true
+			}
+		}
+	}
+	return false
+}

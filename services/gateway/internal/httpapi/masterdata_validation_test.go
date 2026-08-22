@@ -2,9 +2,12 @@ package httpapi
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
+	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
 	"google.golang.org/grpc"
 )
 
@@ -19,11 +22,12 @@ func (s activeCustomerClientStub) GetCustomer(context.Context, *mdv1.GetCustomer
 
 type activeSupplierClientStub struct {
 	mdv1.SupplierServiceClient
-	status string
+	status        string
+	businessTypes []string
 }
 
 func (s activeSupplierClientStub) GetSupplier(context.Context, *mdv1.GetSupplierRequest, ...grpc.CallOption) (*mdv1.GetSupplierResponse, error) {
-	return &mdv1.GetSupplierResponse{Supplier: &mdv1.Supplier{Id: 8, Name: "测试供应商", Status: s.status}}, nil
+	return &mdv1.GetSupplierResponse{Supplier: &mdv1.Supplier{Id: 8, Name: "测试供应商", Status: s.status, BusinessTypes: s.businessTypes}}, nil
 }
 
 // TestResolveActiveMasterdata 验证新业务只能引用启用的客户和供应商。
@@ -50,6 +54,29 @@ func TestResolveActiveMasterdata(t *testing.T) {
 		s := &Server{Suppliers: activeSupplierClientStub{status: "INACTIVE"}}
 		if _, err := s.resolveActiveSupplier(context.Background(), 8); err == nil {
 			t.Fatal("expected inactive supplier error")
+		}
+	})
+}
+
+// TestScheduleCarrierRole 验证船期的承运方必须真是船公司或货代（B3）：
+// 主数据里的业务类型是唯一的角色事实，一家钢厂不能被选成船公司。
+func TestScheduleCarrierRole(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/shipping/schedules", nil)
+	t.Run("钢厂被拒", func(t *testing.T) {
+		s := &Server{Suppliers: activeSupplierClientStub{status: "ACTIVE", businessTypes: []string{"MATERIAL"}}}
+		in := &shippingv1.ScheduleInput{CarrierId: 8}
+		if err := s.resolveShippingMasterdata(req, in, false); err == nil {
+			t.Fatal("a supplier without CARRIER/FORWARDER role must be refused")
+		}
+	})
+	t.Run("货代放行并快照名称", func(t *testing.T) {
+		s := &Server{Suppliers: activeSupplierClientStub{status: "ACTIVE", businessTypes: []string{"FORWARDER", "WAREHOUSE"}}}
+		in := &shippingv1.ScheduleInput{CarrierId: 8, CarrierForwarder: "浏览器传来的旧名字"}
+		if err := s.resolveShippingMasterdata(req, in, false); err != nil {
+			t.Fatalf("forwarder should pass: %v", err)
+		}
+		if in.CarrierForwarder != "测试供应商" {
+			t.Fatalf("the snapshot must come from master data, got %q", in.CarrierForwarder)
 		}
 	})
 }

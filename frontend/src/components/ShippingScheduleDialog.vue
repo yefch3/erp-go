@@ -93,7 +93,12 @@ watch(()=>props.modelValue,async visible=>{
   loading.value=true
   const requests:Promise<void>[]=[]
   if(props.schedule) requests.push(get<{leadDays:number[]}>(`/shipping/schedules/${props.schedule.id}/reminder-rules`).then(data=>{form.reminderDays=[...(data.leadDays??[])]}))
-  if(auth.can('masterdata:supplier:read')) requests.push(get<{suppliers:{id:string;name:string}[]}>('/suppliers',{page_size:200}).then(data=>{carriers.value=data.suppliers??[]}))
+  // 只列启用的、真是船公司或货代的公司（B3）——钢厂不该出现在这个下拉里，
+  // 停用的也不该。一家公司可以两个角色都占，所以取并集去重。
+  if(auth.can('masterdata:supplier:read')) requests.push(Promise.all([
+    get<{suppliers:{id:string;name:string}[]}>('/suppliers',{page_size:200,status:'ACTIVE',business_type:'CARRIER'}),
+    get<{suppliers:{id:string;name:string}[]}>('/suppliers',{page_size:200,status:'ACTIVE',business_type:'FORWARDER'}),
+  ]).then(([carrierList,forwarderList])=>{const seen=new Map<string,{id:string;name:string}>();for(const item of[...(carrierList.suppliers??[]),...(forwarderList.suppliers??[])])seen.set(String(item.id),item);carriers.value=[...seen.values()]}))
   await Promise.allSettled(requests)
   loading.value=false
 })
