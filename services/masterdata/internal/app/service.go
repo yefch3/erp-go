@@ -21,6 +21,9 @@ import (
 type Service struct {
 	pool *pgxpool.Pool
 	q    *store.Queries
+	// Object storage for certificate scans; nil until UseFiles, and the
+	// file endpoints refuse cleanly without it.
+	files Files
 }
 
 func New(pool *pgxpool.Pool) *Service {

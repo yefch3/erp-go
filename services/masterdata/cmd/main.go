@@ -12,8 +12,10 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
+	"github.com/sgao19/erp-go/pkg/blobstore"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/pkg/pgdb"
+	"github.com/sgao19/erp-go/services/masterdata/internal/adapter/filestore"
 	"github.com/sgao19/erp-go/services/masterdata/internal/adapter/grpcin"
 	"github.com/sgao19/erp-go/services/masterdata/internal/app"
 	"github.com/sgao19/erp-go/services/masterdata/internal/config"
@@ -38,7 +40,22 @@ func run(log *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	files, err := blobstore.New(ctx, blobstore.Config{
+		Endpoint:       cfg.MinioEndpoint,
+		PublicEndpoint: cfg.MinioPublicEndpoint,
+		AccessKey:      cfg.MinioAccessKey,
+		SecretKey:      cfg.MinioSecretKey,
+		Bucket:         cfg.MinioBucket,
+		UseSSL:         cfg.MinioUseSSL,
+		// See the note in mail's main.go: S3 needs the region or it 301s.
+		Region: os.Getenv("MINIO_REGION"),
+	})
+	if err != nil {
+		return err
+	}
+
 	svc := app.New(pool)
+	svc.UseFiles(filestore.New(files))
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
 	h := grpcin.New(svc)
 	mdv1.RegisterCustomerServiceServer(srv, h)

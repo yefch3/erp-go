@@ -207,6 +207,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("masterdata:factory:read")).Get("/api/factories/{id}/certificates", s.listFactoryCertificates)
 		r.With(s.perm("masterdata:factory:write")).Post("/api/factories/{id}/certificates", s.createFactoryCertificate)
 		r.With(s.perm("masterdata:factory:write")).Delete("/api/factories/{id}/certificates/{certificateId}", s.deleteFactoryCertificate)
+		r.With(s.perm("masterdata:factory:write")).Post("/api/factories/{id}/certificates/presign", s.presignFactoryCertificateFile)
 		r.With(s.perm("masterdata:factory:read")).Get("/api/factories/{id}/changes", s.listFactoryChanges)
 		r.With(s.perm("masterdata:port:read")).Get("/api/ports", s.listPorts)
 		r.With(s.perm("masterdata:port:read")).Get("/api/ports/countries", s.listPortCountries)

@@ -422,6 +422,22 @@ func (s *Server) deleteFactoryCertificate(w http.ResponseWriter, r *http.Request
 	}
 	s.writeProto(w, resp)
 }
+
+// The certificate scan uploads straight from the browser to object storage;
+// the gateway only brokers the short-lived URL.
+func (s *Server) presignFactoryCertificateFile(w http.ResponseWriter, r *http.Request) {
+	req := &mdv1.PresignFactoryCertificateFileRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.FactoryId = idFromPath(r)
+	resp, err := s.Suppliers.PresignFactoryCertificateFile(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
 func (s *Server) listFactoryChanges(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Suppliers.ListFactoryChanges(r.Context(), &mdv1.ListFactoryChangesRequest{FactoryId: idFromPath(r)})
 	if err != nil {
