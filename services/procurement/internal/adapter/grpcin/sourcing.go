@@ -266,7 +266,8 @@ func (h *SourcingHandler) ListSupplierQuoteComparison(ctx context.Context, req *
 		return nil, err
 	}
 	out := make([]*prv1.SupplierQuoteComparisonLine, 0, len(rows))
-	for _, row := range rows {
+	for _, v := range rows {
+		row := v.Row
 		out = append(out, &prv1.SupplierQuoteComparisonLine{
 			QuoteId: row.QuoteID, QuoteLineId: row.QuoteLineID, SupplierQuoteNo: row.SupplierQuoteNo,
 			FactoryRfqId: row.FactoryRfqID, SupplierId: row.SupplierID, SupplierName: row.SupplierName,
@@ -276,6 +277,7 @@ func (h *SourcingHandler) ListSupplierQuoteComparison(ctx context.Context, req *
 			EvidenceNote: row.EvidenceNote, SourcingLineId: row.SourcingLineID, Qty: row.LQty,
 			UnitPrice: row.LUnitPrice, Amount: row.LAmount, Moq: row.Moq,
 			LeadTime: row.LeadTime, LineRemark: row.LineRemark,
+			ComparePrice: v.ComparePrice, CompareCurrency: v.CompareCurrency,
 		})
 	}
 	return &prv1.ListSupplierQuoteComparisonResponse{Lines: out}, nil
@@ -341,7 +343,7 @@ func (h *SourcingHandler) ConfirmCostScenario(ctx context.Context, req *prv1.Con
 		return nil, err
 	}
 	op, _ := grpcx.OperatorFromContext(ctx)
-	view, err := h.svc.ConfirmCostScenario(ctx, grpcx.TenantID(ctx), req.GetId(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	view, err := h.svc.ConfirmCostScenario(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetReason(), app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
 		return nil, err
 	}
@@ -407,6 +409,7 @@ func costScenarioView(view app.CostScenarioView) *prv1.CostScenario {
 		CustomerQuotationId: h.CustomerQuotationID, CustomerQuoteNo: h.CustomerQuoteNo,
 		CreatedByName: h.CreatedByName, ConfirmedByName: h.ConfirmedByName,
 		ConfirmedAt: ts(h.ConfirmedAt), CreatedAt: ts(h.CreatedAt),
+		ConfirmReason: h.ConfirmReason,
 	}
 	for _, charge := range view.Charges {
 		out.Charges = append(out.Charges, &prv1.CostCharge{

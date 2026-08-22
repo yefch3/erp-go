@@ -225,6 +225,12 @@ message SupplierQuoteComparisonLine {
   string amount = 16; string moq = 17; string lead_time = 18; string line_remark = 19;
   int64 quote_line_id = 20;
   int32 version_no = 21; string confirmation_status = 22; string evidence_note = 23;
+  // Unit price expressed in the comparison currency, so a CNY quote and a
+  // USD quote for the same product rank on one axis. Display-only, computed
+  // at read time from the latest rate; empty when fx is unreachable — the
+  // original currency and price above are the record, this is the lens.
+  string compare_price = 24;
+  string compare_currency = 25;
 }
 message ListSupplierQuoteComparisonResponse { repeated SupplierQuoteComparisonLine lines = 1; }
 
@@ -261,6 +267,7 @@ message CostScenario {
   int64 customer_quotation_id = 18; string customer_quote_no = 19;
   string created_by_name = 20; string confirmed_by_name = 21; string confirmed_at = 22; string created_at = 23;
   repeated CostCharge charges = 24; repeated CostScenarioLine lines = 25;
+  string confirm_reason = 26;
 }
 message CreateCostScenarioRequest {
   int64 case_id = 1; string currency = 2; string allocation_basis = 3;
@@ -272,7 +279,11 @@ message ListCostScenariosRequest { int64 case_id = 1; }
 message ListCostScenariosResponse { repeated CostScenario cost_scenarios = 1; }
 message GetCostScenarioRequest { int64 id = 1; }
 message GetCostScenarioResponse { CostScenario cost_scenario = 1; }
-message ConfirmCostScenarioRequest { int64 id = 1; }
+message ConfirmCostScenarioRequest {
+  int64 id = 1;
+  // Why this combination won — the award decision's paper trail.
+  string reason = 2;
+}
 message ConfirmCostScenarioResponse { CostScenario cost_scenario = 1; }
 message CustomerQuotationLine {
   int64 cost_scenario_line_id = 1; int64 product_id = 2; int64 sku_id = 3;

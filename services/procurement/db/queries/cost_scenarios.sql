@@ -58,14 +58,14 @@ VALUES(sqlc.arg(tenant_id),sqlc.arg(scenario_id),sqlc.arg(sourcing_line_id),sqlc
 SELECT id,case_id,scenario_no,currency,allocation_basis,margin_type,margin_value::text,fx_rate::text,fx_rate_at,
  fx_source,fx_base_currency,product_total::text,charge_total::text,landed_total::text,margin_total::text,
  customer_total::text,status,coalesce(customer_quotation_id,0)::bigint AS customer_quotation_id,customer_quote_no,
- created_by_name,confirmed_by_name,confirmed_at,created_at
+ created_by_name,confirmed_by_name,confirmed_at,confirm_reason,created_at
 FROM cost_scenarios WHERE tenant_id=$1 AND case_id=$2 ORDER BY created_at DESC;
 
 -- name: GetCostScenario :one
 SELECT id,case_id,scenario_no,currency,allocation_basis,margin_type,margin_value::text,fx_rate::text,fx_rate_at,
  fx_source,fx_base_currency,product_total::text,charge_total::text,landed_total::text,margin_total::text,
  customer_total::text,status,coalesce(customer_quotation_id,0)::bigint AS customer_quotation_id,customer_quote_no,
- created_by_name,confirmed_by_name,confirmed_at,created_at
+ created_by_name,confirmed_by_name,confirmed_at,confirm_reason,created_at
 FROM cost_scenarios WHERE tenant_id=$1 AND id=$2;
 
 -- name: ListCostCharges :many
@@ -82,6 +82,7 @@ FROM cost_scenario_lines WHERE tenant_id=$1 AND scenario_id=$2 ORDER BY sourcing
 
 -- name: ConfirmCostScenario :execrows
 UPDATE cost_scenarios SET status='CONFIRMED',confirmed_by=sqlc.arg(confirmed_by),confirmed_by_name=sqlc.arg(confirmed_by_name),
+ confirm_reason=sqlc.arg(confirm_reason),
  confirmed_at=now(),updated_at=now() WHERE tenant_id=sqlc.arg(tenant_id) AND id=sqlc.arg(id) AND status='DRAFT';
 
 -- name: SupersedeOtherCostScenarios :exec

@@ -99,28 +99,62 @@ func parseSupplierQuoteWorkbook(data []byte, rfqNo string, expected []store.Fact
 	for _, line := range expected {
 		wanted[line.SourcingLineID] = line
 	}
+	// Problems are collected per row and reported together with the Excel
+	// row numbers the clerk actually sees — "somewhere in your file" is not
+	// an error message anyone can act on (A2 §1). The import stays
+	// all-or-nothing on purpose: a quote missing lines is not a smaller
+	// quote, it is no quote.
 	result := make([]SupplierQuoteLineInput, 0, len(expected))
 	seen := make(map[int64]bool, len(expected))
-	for _, row := range rows[1:] {
+	mentioned := make(map[int64]bool, len(expected))
+	var problems []string
+	for i, row := range rows[1:] {
+		excelRow := strconv.Itoa(i + 2) // header is Excel row 1
 		for len(row) < len(supplierQuoteHeaders) {
 			row = append(row, "")
 		}
 		if strings.TrimSpace(strings.Join(row, "")) == "" {
 			continue
 		}
-		lineID, convErr := strconv.ParseInt(strings.TrimSpace(row[1]), 10, 64)
-		expect, ok := wanted[lineID]
-		if row[0] != rfqNo || convErr != nil || !ok || seen[lineID] {
-			return nil, apierr.Invalid("SC_QUOTE_LINE_INVALID", "报价明细与工厂询价不一致")
+		if row[0] != rfqNo {
+			problems = append(problems, "第 "+excelRow+" 行：询价单号被修改（应为 "+rfqNo+"）")
+			continue
 		}
-		if row[3] != expect.Qty || row[4] != expect.UomCode || strings.TrimSpace(row[5]) == "" {
-			return nil, apierr.Invalid("SC_QUOTE_TEMPLATE_VALUES_INVALID", "请勿修改数量和单位，并填写全部单价")
+		lineID, convErr := strconv.ParseInt(strings.TrimSpace(row[1]), 10, 64)
+		if convErr != nil {
+			problems = append(problems, "第 "+excelRow+" 行：行号不是数字，请勿修改模板的行号列")
+			continue
+		}
+		expect, ok := wanted[lineID]
+		if !ok {
+			problems = append(problems, "第 "+excelRow+" 行：行号 "+strconv.FormatInt(lineID, 10)+" 不属于这份询价")
+			continue
+		}
+		// A row that showed up with a value problem is complained about
+		// above; only lines that never appeared get the "missing" line.
+		mentioned[lineID] = true
+		if seen[lineID] {
+			problems = append(problems, "第 "+excelRow+" 行：行号 "+strconv.FormatInt(lineID, 10)+" 重复出现")
+			continue
+		}
+		if row[3] != expect.Qty || row[4] != expect.UomCode {
+			problems = append(problems, "第 "+excelRow+" 行：数量或单位被修改（应为 "+expect.Qty+" "+expect.UomCode+"）")
+			continue
+		}
+		if strings.TrimSpace(row[5]) == "" {
+			problems = append(problems, "第 "+excelRow+" 行：单价未填写")
+			continue
 		}
 		seen[lineID] = true
 		result = append(result, SupplierQuoteLineInput{SourcingLineID: lineID, Qty: expect.Qty, UnitPrice: row[5], MOQ: row[6], LeadTime: row[7], Remark: row[8]})
 	}
-	if len(result) != len(expected) {
-		return nil, apierr.Invalid("SC_QUOTE_INCOMPLETE", "请填写全部询价明细的报价")
+	for _, line := range expected {
+		if !mentioned[line.SourcingLineID] {
+			problems = append(problems, "行号 "+strconv.FormatInt(line.SourcingLineID, 10)+"（"+line.SpecSnapshot+"）缺少报价")
+		}
+	}
+	if len(problems) > 0 {
+		return nil, apierr.Invalid("SC_QUOTE_ROWS_INVALID", strings.Join(problems, "；"))
 	}
 	return result, nil
 }
@@ -449,11 +483,49 @@ func (s *Service) CreateSupplierQuote(ctx context.Context, tenantID int64, in Ne
 	return result, err
 }
 
-func (s *Service) ListSupplierQuoteComparison(ctx context.Context, tenantID, caseID int64) ([]store.ListSupplierQuoteComparisonRow, error) {
+// SupplierQuoteComparisonLine is one quote line plus its price through the
+// comparison lens: the same unit price expressed in the book currency, so a
+// CNY quote and a USD quote for the same coil rank on one axis (A2 §4).
+// Display-only and computed per read — the original currency is the record,
+// the conversion is the lens, and a stored conversion would just be a
+// number that stops being true when the rate moves.
+type SupplierQuoteComparisonLine struct {
+	Row             store.ListSupplierQuoteComparisonRow
+	ComparePrice    string
+	CompareCurrency string
+}
+
+func (s *Service) ListSupplierQuoteComparison(ctx context.Context, tenantID, caseID int64) ([]SupplierQuoteComparisonLine, error) {
 	if _, err := s.GetSourcingCase(ctx, tenantID, caseID); err != nil {
 		return nil, err
 	}
-	return s.q.ListSupplierQuoteComparison(ctx, store.ListSupplierQuoteComparisonParams{TenantID: tenantID, CaseID: caseID})
+	rows, err := s.q.ListSupplierQuoteComparison(ctx, store.ListSupplierQuoteComparisonParams{TenantID: tenantID, CaseID: caseID})
+	if err != nil {
+		return nil, err
+	}
+	base := s.bookCurrency()
+	// One rate per distinct currency, not per row: the fx service is a
+	// network away.
+	rateCache := map[string]decimal.Decimal{}
+	out := make([]SupplierQuoteComparisonLine, 0, len(rows))
+	for _, row := range rows {
+		v := SupplierQuoteComparisonLine{Row: row}
+		rate, ok := rateCache[row.Currency]
+		if !ok {
+			rate = s.crossRate(ctx, row.Currency)
+			rateCache[row.Currency] = rate
+		}
+		// Rate unavailable → no lens for this row; the frontend falls back
+		// to same-currency ranking rather than pretending.
+		if !rate.IsZero() {
+			if price, err := decimal.NewFromString(row.LUnitPrice); err == nil {
+				v.ComparePrice = price.Mul(rate).Round(4).String()
+				v.CompareCurrency = base
+			}
+		}
+		out = append(out, v)
+	}
+	return out, nil
 }
 
 func (s *Service) MarkFactoryRFQSent(ctx context.Context, tenantID, id int64, op Operator) error {

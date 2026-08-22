@@ -8,6 +8,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type BankTransaction struct {
+	ID             int64
+	TenantID       int64
+	TxnDate        pgtype.Date
+	Direction      string
+	Amount         pgtype.Numeric
+	Currency       string
+	Counterparty   string
+	BankRef        string
+	Remark         string
+	SourceFile     string
+	ImportedByID   int64
+	ImportedByName string
+	CreatedAt      pgtype.Timestamptz
+}
+
 type CostCharge struct {
 	ID              int64
 	TenantID        int64
@@ -59,6 +75,7 @@ type CostScenario struct {
 	ConfirmedAt         pgtype.Timestamptz
 	CreatedAt           pgtype.Timestamptz
 	UpdatedAt           pgtype.Timestamptz
+	ConfirmReason       string
 }
 
 type CostScenarioLine struct {
