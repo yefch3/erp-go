@@ -125,6 +125,13 @@ func (h *OrderHandler) ListOrders(ctx context.Context, req *prv1.ListOrdersReque
 			ItemCount: r.ItemCount, TotalQty: r.TotalQty, ReceivedQty: r.ReceivedQty,
 			CreatedAt: ts(r.CreatedAt), SendStatus: r.SendStatus, SentTo: r.SentTo,
 			SentAt: ts(r.SentAt), SentBy: r.SentByName, SendError: r.SendError,
+			FulfillmentMode: r.FulfillmentMode, DeliveryLocationType: r.DeliveryLocationType,
+			DeliveryPortId: r.DeliveryPortID, DeliveryPortCode: r.DeliveryPortCode,
+			DeliveryPortName: r.DeliveryPortName, WarehouseId: r.WarehouseID,
+			WarehouseName: r.WarehouseName, DeliveryAddress: r.DeliveryAddress,
+			SourceQuotationId: r.SourceQuotationID, SourceQuotationNo: r.SourceQuotationNo,
+			SourceCostScenarioId: r.SourceCostScenarioID, FactoryId: r.FactoryID,
+			FactoryCode: r.FactoryCode, FactoryName: r.FactoryName,
 		})
 	}
 	return &prv1.ListOrdersResponse{Orders: out, Meta: &commonv1.PageMeta{Total: total}}, nil
@@ -176,6 +183,13 @@ func (h *OrderHandler) GetOrder(ctx context.Context, req *prv1.GetOrderRequest) 
 			ApprovalInstanceId: head.ApprovalInstanceID, CreatedAt: ts(head.CreatedAt),
 			SendStatus: head.SendStatus, SentTo: head.SentTo, SentAt: ts(head.SentAt),
 			SentBy: head.SentByName, SendError: head.SendError,
+			FulfillmentMode: head.FulfillmentMode, DeliveryLocationType: head.DeliveryLocationType,
+			DeliveryPortId: head.DeliveryPortID, DeliveryPortCode: head.DeliveryPortCode,
+			DeliveryPortName: head.DeliveryPortName, WarehouseId: head.WarehouseID,
+			WarehouseName: head.WarehouseName, DeliveryAddress: head.DeliveryAddress,
+			SourceQuotationId: head.SourceQuotationID, SourceQuotationNo: head.SourceQuotationNo,
+			SourceCostScenarioId: head.SourceCostScenarioID, FactoryId: head.FactoryID,
+			FactoryCode: head.FactoryCode, FactoryName: head.FactoryName,
 		},
 		Items: outItems, Receipts: outReceipts,
 	}, nil
@@ -193,6 +207,10 @@ func (h *OrderHandler) CreateOrder(ctx context.Context, req *prv1.CreateOrderReq
 		SupplierID: req.GetSupplierId(), SupplierCode: req.GetSupplierCode(),
 		SupplierName: req.GetSupplierName(), Currency: req.GetCurrency(),
 		ExpectedDate: req.GetExpectedDate(), Remark: req.GetRemark(), Lines: lines,
+		FulfillmentMode: req.GetFulfillmentMode(), DeliveryLocationType: req.GetDeliveryLocationType(),
+		DeliveryPortID: req.GetDeliveryPortId(), DeliveryPortCode: req.GetDeliveryPortCode(), DeliveryPortName: req.GetDeliveryPortName(),
+		WarehouseID: req.GetWarehouseId(), WarehouseName: req.GetWarehouseName(), DeliveryAddress: req.GetDeliveryAddress(),
+		SourceChangeReason: req.GetSourceChangeReason(),
 	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
 		return nil, err
@@ -215,6 +233,10 @@ func (h *OrderHandler) UpdateOrder(ctx context.Context, req *prv1.UpdateOrderReq
 		SupplierID: req.GetSupplierId(), SupplierCode: req.GetSupplierCode(),
 		SupplierName: req.GetSupplierName(), Currency: req.GetCurrency(),
 		ExpectedDate: req.GetExpectedDate(), Remark: req.GetRemark(), Lines: lines,
+		FulfillmentMode: req.GetFulfillmentMode(), DeliveryLocationType: req.GetDeliveryLocationType(),
+		DeliveryPortID: req.GetDeliveryPortId(), DeliveryPortCode: req.GetDeliveryPortCode(), DeliveryPortName: req.GetDeliveryPortName(),
+		WarehouseID: req.GetWarehouseId(), WarehouseName: req.GetWarehouseName(), DeliveryAddress: req.GetDeliveryAddress(),
+		SourceChangeReason: req.GetSourceChangeReason(),
 	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
 		return nil, err

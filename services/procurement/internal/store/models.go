@@ -166,6 +166,22 @@ type OutboxEvent struct {
 	LastError     *string
 }
 
+type PaymentAllocation struct {
+	ID              int64
+	TenantID        int64
+	PaymentID       int64
+	InvoiceID       *int64
+	PoID            *int64
+	Amount          pgtype.Numeric
+	FeeAmount       pgtype.Numeric
+	Currency        string
+	ReversalOf      *int64
+	ReverseReason   string
+	AllocatedBy     int64
+	AllocatedByName string
+	AllocatedAt     pgtype.Timestamptz
+}
+
 type ProcessedEvent struct {
 	EventID       string
 	ConsumerGroup string
@@ -173,33 +189,48 @@ type ProcessedEvent struct {
 }
 
 type PurchaseOrder struct {
-	ID                  int64
-	TenantID            int64
-	PoNo                string
-	SupplierID          int64
-	SupplierCode        string
-	SupplierName        string
-	Currency            string
-	TotalAmount         pgtype.Numeric
-	ExpectedDate        pgtype.Date
-	Status              string
-	ApprovalInstanceID  *int64
-	RejectReason        string
-	CancelReason        string
-	BuyerID             int64
-	BuyerName           string
-	Remark              string
-	OrderedAt           pgtype.Timestamptz
-	CreatedAt           pgtype.Timestamptz
-	UpdatedAt           pgtype.Timestamptz
-	SendStatus          string
-	SentTo              string
-	SentAt              pgtype.Timestamptz
-	SentByID            int64
-	SentByName          string
-	SendError           string
-	SendTemplateVersion string
-	SendAttachmentNames []byte
+	ID                   int64
+	TenantID             int64
+	PoNo                 string
+	SupplierID           int64
+	SupplierCode         string
+	SupplierName         string
+	Currency             string
+	TotalAmount          pgtype.Numeric
+	ExpectedDate         pgtype.Date
+	Status               string
+	ApprovalInstanceID   *int64
+	RejectReason         string
+	CancelReason         string
+	BuyerID              int64
+	BuyerName            string
+	Remark               string
+	OrderedAt            pgtype.Timestamptz
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+	SendStatus           string
+	SentTo               string
+	SentAt               pgtype.Timestamptz
+	SentByID             int64
+	SentByName           string
+	SendError            string
+	SendTemplateVersion  string
+	SendAttachmentNames  []byte
+	SourceQuotationID    int64
+	SourceQuotationNo    string
+	SourceCostScenarioID int64
+	FactoryID            int64
+	FactoryCode          string
+	FactoryName          string
+	FulfillmentMode      string
+	DeliveryLocationType string
+	DeliveryPortID       int64
+	DeliveryPortCode     string
+	DeliveryPortName     string
+	WarehouseID          int64
+	WarehouseName        string
+	DeliveryAddress      string
+	SourceChangeReason   string
 }
 
 type PurchaseOrderImport struct {
@@ -329,30 +360,47 @@ type PurchaseReceiptItem struct {
 }
 
 type PurchaseRequirement struct {
-	ID                int64
-	TenantID          int64
-	ContractID        int64
-	ContractNo        string
-	ContractVersionID int64
-	VersionNo         int32
-	ContractItemID    int64
-	CustomerName      string
-	ProductID         int64
-	SkuID             *int64
-	ProductCode       string
-	ProductName       string
-	Spec              string
-	UomID             int64
-	UomCode           string
-	RequiredQty       pgtype.Numeric
-	OrderedQty        pgtype.Numeric
-	RequiredDate      pgtype.Date
-	Source            string
-	Status            string
-	ClosedReason      string
-	CreatedAt         pgtype.Timestamptz
-	UpdatedAt         pgtype.Timestamptz
-	ReceivedQty       pgtype.Numeric
+	ID                  int64
+	TenantID            int64
+	ContractID          int64
+	ContractNo          string
+	ContractVersionID   int64
+	VersionNo           int32
+	ContractItemID      int64
+	CustomerName        string
+	ProductID           int64
+	SkuID               *int64
+	ProductCode         string
+	ProductName         string
+	Spec                string
+	UomID               int64
+	UomCode             string
+	RequiredQty         pgtype.Numeric
+	OrderedQty          pgtype.Numeric
+	RequiredDate        pgtype.Date
+	Source              string
+	Status              string
+	ClosedReason        string
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+	ReceivedQty         pgtype.Numeric
+	QuotationID         int64
+	QuotationNo         string
+	CostScenarioID      int64
+	CostScenarioNo      string
+	SourcingCaseID      int64
+	SourcingLineID      int64
+	SupplierQuoteLineID int64
+	SupplierID          int64
+	SupplierCode        string
+	SupplierName        string
+	FactoryID           int64
+	FactoryCode         string
+	FactoryName         string
+	SourceCurrency      string
+	SourceUnitPrice     pgtype.Numeric
+	Moq                 pgtype.Numeric
+	LeadTime            string
 }
 
 type PurchaseSupplierConfirmation struct {
@@ -479,6 +527,9 @@ type SupplierInvoice struct {
 	CreatedByID   int64
 	CreatedByName string
 	CreatedAt     pgtype.Timestamptz
+	BaseCurrency  string
+	BaseAmount    pgtype.Numeric
+	FxRate        pgtype.Numeric
 }
 
 type SupplierInvoiceLine struct {
@@ -491,6 +542,28 @@ type SupplierInvoiceLine struct {
 	Qty         pgtype.Numeric
 	UnitPrice   pgtype.Numeric
 	Amount      pgtype.Numeric
+}
+
+type SupplierPayment struct {
+	ID            int64
+	TenantID      int64
+	SupplierID    int64
+	SupplierName  string
+	PaymentNo     string
+	PaymentType   string
+	Currency      string
+	Amount        pgtype.Numeric
+	BaseCurrency  string
+	BaseAmount    pgtype.Numeric
+	FxRate        pgtype.Numeric
+	PaidAt        pgtype.Date
+	Method        string
+	BankRef       string
+	BankTxnID     *int64
+	Remark        string
+	CreatedByID   int64
+	CreatedByName string
+	CreatedAt     pgtype.Timestamptz
 }
 
 type SupplierQuote struct {

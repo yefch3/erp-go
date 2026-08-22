@@ -374,6 +374,24 @@ message Requirement {
   // manually raised requirement: it has no contract behind it, so no amount
   // of stock arriving for somebody else ever satisfies it.
   string received_qty = 22;
+  // 客户接受报价后生成的待下单快照；普通合同或手工需求保持为空。
+  int64 quotation_id = 23;
+  string quotation_no = 24;
+  int64 cost_scenario_id = 25;
+  string cost_scenario_no = 26;
+  int64 sourcing_case_id = 27;
+  int64 sourcing_line_id = 28;
+  int64 supplier_quote_line_id = 29;
+  int64 supplier_id = 30;
+  string supplier_code = 31;
+  string supplier_name = 32;
+  int64 factory_id = 33;
+  string factory_code = 34;
+  string factory_name = 35;
+  string source_currency = 36;
+  string source_unit_price = 37;
+  string moq = 38;
+  string lead_time = 39;
 }
 
 message ListRequirementsRequest {
@@ -636,6 +654,20 @@ message PurchaseOrder {
   string sent_at = 21;
   string sent_by = 22;
   string send_error = 23;
+  string fulfillment_mode = 24;
+  string delivery_location_type = 25;
+  int64 delivery_port_id = 26;
+  string delivery_port_code = 27;
+  string delivery_port_name = 28;
+  int64 warehouse_id = 29;
+  string warehouse_name = 30;
+  string delivery_address = 31;
+  int64 source_quotation_id = 32;
+  string source_quotation_no = 33;
+  int64 source_cost_scenario_id = 34;
+  int64 factory_id = 35;
+  string factory_code = 36;
+  string factory_name = 37;
 }
 
 message PurchaseOrderItem {
@@ -702,6 +734,15 @@ message CreateOrderRequest {
   string expected_date = 5;
   string remark = 6;
   repeated CreateOrderLine lines = 7;
+  string fulfillment_mode = 8;
+  string delivery_location_type = 9;
+  int64 delivery_port_id = 10;
+  string delivery_port_code = 11;
+  string delivery_port_name = 12;
+  int64 warehouse_id = 13;
+  string warehouse_name = 14;
+  string delivery_address = 15;
+  string source_change_reason = 16;
 }
 
 message CreateOrderResponse {
@@ -719,6 +760,15 @@ message UpdateOrderRequest {
   string expected_date = 6;
   string remark = 7;
   repeated CreateOrderLine lines = 8;
+  string fulfillment_mode = 9;
+  string delivery_location_type = 10;
+  int64 delivery_port_id = 11;
+  string delivery_port_code = 12;
+  string delivery_port_name = 13;
+  int64 warehouse_id = 14;
+  string warehouse_name = 15;
+  string delivery_address = 16;
+  string source_change_reason = 17;
 }
 
 message UpdateOrderResponse {

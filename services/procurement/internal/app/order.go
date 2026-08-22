@@ -42,13 +42,22 @@ type OrderLine struct {
 }
 
 type CreateOrderInput struct {
-	SupplierID   int64
-	SupplierCode string
-	SupplierName string
-	Currency     string
-	ExpectedDate string
-	Remark       string
-	Lines        []OrderLine
+	SupplierID           int64
+	SupplierCode         string
+	SupplierName         string
+	Currency             string
+	ExpectedDate         string
+	Remark               string
+	Lines                []OrderLine
+	FulfillmentMode      string
+	DeliveryLocationType string
+	DeliveryPortID       int64
+	DeliveryPortCode     string
+	DeliveryPortName     string
+	WarehouseID          int64
+	WarehouseName        string
+	DeliveryAddress      string
+	SourceChangeReason   string
 }
 
 // ReceiptLine is one order line arriving.
@@ -125,6 +134,25 @@ func (s *Service) prepareOrder(ctx context.Context, in CreateOrderInput) (prepar
 	if in.Currency == "" {
 		in.Currency = "CNY"
 	}
+	if in.FulfillmentMode == "" {
+		in.FulfillmentMode = "DIRECT_SHIP"
+	}
+	if in.DeliveryLocationType == "" {
+		in.DeliveryLocationType = "PORT"
+	}
+	if in.FulfillmentMode != "DIRECT_SHIP" && in.FulfillmentMode != "WAREHOUSE" {
+		return preparedOrder{}, apierr.Invalid("PO_FULFILLMENT_INVALID", "请选择直发或入库后发货")
+	}
+	if in.FulfillmentMode == "WAREHOUSE" {
+		in.DeliveryLocationType = "WAREHOUSE"
+		if in.WarehouseID == 0 {
+			return preparedOrder{}, apierr.Invalid("PO_WAREHOUSE_REQUIRED", "入库后发货必须选择仓库")
+		}
+	} else if in.DeliveryLocationType == "PORT" && in.DeliveryPortID == 0 && strings.TrimSpace(in.DeliveryPortName) == "" {
+		return preparedOrder{}, apierr.Invalid("PO_DELIVERY_PORT_REQUIRED", "直发到港口时请选择收货港口")
+	} else if in.DeliveryLocationType == "CUSTOM" && strings.TrimSpace(in.DeliveryAddress) == "" {
+		return preparedOrder{}, apierr.Invalid("PO_DELIVERY_ADDRESS_REQUIRED", "自定义收货地点不能为空")
+	}
 
 	want := make(map[int64]parsedOrderLine, len(in.Lines))
 	ids := make([]int64, 0, len(in.Lines))
@@ -182,6 +210,8 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 	}
 
 	total := decimal.Zero
+	var quoteID, scenarioID, inheritedSupplierID, factoryID int64
+	var quoteNo, factoryCode, factoryName string
 	for _, r := range reqs {
 		p := want[r.ID]
 		if r.Status == "CANCELLED" || r.Status == "SUPERSEDED" {
@@ -206,6 +236,24 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 				WithMeta("open", available.String())
 		}
 		total = total.Add(p.qty.Mul(p.price))
+		if r.Source == "CUSTOMER_QUOTATION" {
+			if quoteID == 0 {
+				quoteID, quoteNo, scenarioID = r.QuotationID, r.QuotationNo, r.CostScenarioID
+				inheritedSupplierID = r.InheritedSupplierID
+				factoryID, factoryCode, factoryName = r.InheritedFactoryID, r.InheritedFactoryCode, r.InheritedFactoryName
+			}
+			if r.QuotationID != quoteID || r.InheritedSupplierID != inheritedSupplierID {
+				return head, apierr.Invalid("PO_QUOTATION_SUPPLIER_MIXED", "一张采购单只能包含同一客户报价、同一供应商的待下单明细")
+			}
+			if in.SupplierID != r.InheritedSupplierID {
+				return head, apierr.Invalid("PO_SUPPLIER_SNAPSHOT_MISMATCH", "供应商必须与已确认成本方案一致")
+			}
+			if !strings.EqualFold(in.Currency, r.SourceCurrency) || !p.price.Equal(decimal.RequireFromString(r.SourceUnitPrice)) {
+				if strings.TrimSpace(in.SourceChangeReason) == "" {
+					return head, apierr.Invalid("PO_SOURCE_CHANGE_REASON_REQUIRED", "修改确认报价的币种或单价时必须填写原因")
+				}
+			}
+		}
 	}
 
 	// The number is drawn only once every line has passed. Asking earlier
@@ -228,7 +276,12 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 			SupplierCode: in.SupplierCode, SupplierName: in.SupplierName,
 			Currency: in.Currency, TotalAmount: total.StringFixed(2),
 			ExpectedDate: in.ExpectedDate, BuyerID: op.ID, BuyerName: op.Name,
-			Remark: in.Remark,
+			Remark: in.Remark, SourceQuotationID: quoteID, SourceQuotationNo: quoteNo,
+			SourceCostScenarioID: scenarioID, FactoryID: factoryID, FactoryCode: factoryCode, FactoryName: factoryName,
+			FulfillmentMode: in.FulfillmentMode, DeliveryLocationType: in.DeliveryLocationType,
+			DeliveryPortID: in.DeliveryPortID, DeliveryPortCode: in.DeliveryPortCode, DeliveryPortName: in.DeliveryPortName,
+			WarehouseID: in.WarehouseID, WarehouseName: in.WarehouseName,
+			DeliveryAddress: in.DeliveryAddress, SourceChangeReason: in.SourceChangeReason,
 		})
 		if err == nil {
 			if err = savepoint.Commit(ctx); err != nil {
@@ -240,6 +293,9 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 		var pgErr *pgconn.PgError
 		if attempt == 0 && errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			continue
+		}
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "purchase_orders_quotation_supplier_idx" {
+			return head, apierr.Conflict("PO_QUOTATION_ALREADY_ORDERED", "该客户报价与供应商已经生成采购单")
 		}
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return head, apierr.Conflict("PO_NUMBER_CONFLICT", "采购单号生成冲突，请重试")
@@ -289,44 +345,11 @@ func (s *Service) UpdateOrder(
 	in CreateOrderInput,
 	op Operator,
 ) (store.UpdatePurchaseOrderDraftRow, error) {
-	if in.SupplierID == 0 {
-		return store.UpdatePurchaseOrderDraftRow{}, apierr.Invalid("PO_SUPPLIER_REQUIRED", "请选择供应商")
-	}
-	supplier, err := s.supplierForOrder(ctx, in.SupplierID)
+	prepared, err := s.prepareOrder(ctx, in)
 	if err != nil {
 		return store.UpdatePurchaseOrderDraftRow{}, err
 	}
-	in.SupplierCode, in.SupplierName = supplier.Code, supplier.Name
-	if len(in.Lines) == 0 {
-		return store.UpdatePurchaseOrderDraftRow{}, apierr.Invalid("PO_LINES_REQUIRED", "采购单明细不能为空")
-	}
-	if in.Currency == "" {
-		in.Currency = "CNY"
-	}
-
-	type parsed struct {
-		qty   decimal.Decimal
-		price decimal.Decimal
-	}
-	want := make(map[int64]parsed, len(in.Lines))
-	ids := make([]int64, 0, len(in.Lines))
-	for _, l := range in.Lines {
-		qty, parseErr := decimal.NewFromString(l.Qty)
-		if parseErr != nil || qty.LessThanOrEqual(decimal.Zero) {
-			return store.UpdatePurchaseOrderDraftRow{}, apierr.Invalid("PO_QTY_INVALID", "采购数量必须大于 0")
-		}
-		price, parseErr := decimal.NewFromString(orZero(l.UnitPrice))
-		if parseErr != nil || price.IsNegative() {
-			return store.UpdatePurchaseOrderDraftRow{}, apierr.Invalid("PO_PRICE_INVALID", "单价不能为负数")
-		}
-		if _, duplicated := want[l.RequirementID]; duplicated {
-			return store.UpdatePurchaseOrderDraftRow{}, apierr.Invalid(
-				"PO_LINE_DUPLICATED", "同一采购需求在一张采购单里只能出现一次",
-			)
-		}
-		want[l.RequirementID] = parsed{qty: qty, price: price}
-		ids = append(ids, l.RequirementID)
-	}
+	in, want, ids := prepared.in, prepared.want, prepared.ids
 
 	var updated store.UpdatePurchaseOrderDraftRow
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
@@ -369,6 +392,18 @@ func (s *Service) UpdateOrder(
 				return apierr.Invalid("PO_EXCEEDS_REQUIREMENT", "「"+requirement.ProductName+"」下单数量超过需求未下单部分").
 					WithMeta("requested", line.qty.String()).WithMeta("open", open.String())
 			}
+			if requirement.Source == "CUSTOMER_QUOTATION" {
+				if head.SourceQuotationID == 0 || requirement.QuotationID != head.SourceQuotationID ||
+					requirement.InheritedSupplierID != in.SupplierID {
+					return apierr.Invalid("PO_QUOTATION_SOURCE_CHANGED", "报价转入的采购单不能改为其他报价或供应商")
+				}
+				if !strings.EqualFold(in.Currency, requirement.SourceCurrency) ||
+					!line.price.Equal(decimal.RequireFromString(requirement.SourceUnitPrice)) {
+					if strings.TrimSpace(in.SourceChangeReason) == "" {
+						return apierr.Invalid("PO_SOURCE_CHANGE_REASON_REQUIRED", "修改确认报价的币种或单价时必须填写原因")
+					}
+				}
+			}
 			total = total.Add(line.qty.Mul(line.price))
 		}
 
@@ -377,7 +412,12 @@ func (s *Service) UpdateOrder(
 			SupplierCode: in.SupplierCode, SupplierName: in.SupplierName,
 			Currency: in.Currency, TotalAmount: total.StringFixed(2),
 			ExpectedDate: in.ExpectedDate, BuyerID: op.ID, BuyerName: op.Name,
-			Remark: in.Remark,
+			Remark: in.Remark, FulfillmentMode: in.FulfillmentMode,
+			DeliveryLocationType: in.DeliveryLocationType,
+			DeliveryPortID:       in.DeliveryPortID, DeliveryPortCode: in.DeliveryPortCode,
+			DeliveryPortName: in.DeliveryPortName, WarehouseID: in.WarehouseID,
+			WarehouseName: in.WarehouseName, DeliveryAddress: in.DeliveryAddress,
+			SourceChangeReason: in.SourceChangeReason,
 		})
 		if reqErr != nil {
 			return reqErr

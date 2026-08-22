@@ -157,7 +157,13 @@ SELECT
     ordered_qty::text  AS ordered_qty,
     received_qty::text AS received_qty,
     coalesce(required_date::text, '')::text AS required_date,
-    source, status, closed_reason, created_at
+    source, status, closed_reason, created_at,
+    quotation_id, quotation_no, cost_scenario_id, cost_scenario_no,
+    sourcing_case_id, sourcing_line_id, supplier_quote_line_id,
+    supplier_id, supplier_code, supplier_name,
+    factory_id, factory_code, factory_name,
+    source_currency, source_unit_price::text AS source_unit_price,
+    coalesce(moq::text,'')::text AS moq, lead_time
 FROM purchase_requirements
 WHERE tenant_id = $1 AND id = $2
 `
@@ -168,28 +174,45 @@ type GetRequirementParams struct {
 }
 
 type GetRequirementRow struct {
-	ID                int64
-	ContractID        int64
-	ContractNo        string
-	ContractVersionID int64
-	VersionNo         int32
-	ContractItemID    int64
-	CustomerName      string
-	ProductID         int64
-	SkuID             int64
-	ProductCode       string
-	ProductName       string
-	Spec              string
-	UomID             int64
-	UomCode           string
-	RequiredQty       string
-	OrderedQty        string
-	ReceivedQty       string
-	RequiredDate      string
-	Source            string
-	Status            string
-	ClosedReason      string
-	CreatedAt         pgtype.Timestamptz
+	ID                  int64
+	ContractID          int64
+	ContractNo          string
+	ContractVersionID   int64
+	VersionNo           int32
+	ContractItemID      int64
+	CustomerName        string
+	ProductID           int64
+	SkuID               int64
+	ProductCode         string
+	ProductName         string
+	Spec                string
+	UomID               int64
+	UomCode             string
+	RequiredQty         string
+	OrderedQty          string
+	ReceivedQty         string
+	RequiredDate        string
+	Source              string
+	Status              string
+	ClosedReason        string
+	CreatedAt           pgtype.Timestamptz
+	QuotationID         int64
+	QuotationNo         string
+	CostScenarioID      int64
+	CostScenarioNo      string
+	SourcingCaseID      int64
+	SourcingLineID      int64
+	SupplierQuoteLineID int64
+	SupplierID          int64
+	SupplierCode        string
+	SupplierName        string
+	FactoryID           int64
+	FactoryCode         string
+	FactoryName         string
+	SourceCurrency      string
+	SourceUnitPrice     string
+	Moq                 string
+	LeadTime            string
 }
 
 func (q *Queries) GetRequirement(ctx context.Context, arg GetRequirementParams) (GetRequirementRow, error) {
@@ -218,6 +241,23 @@ func (q *Queries) GetRequirement(ctx context.Context, arg GetRequirementParams) 
 		&i.Status,
 		&i.ClosedReason,
 		&i.CreatedAt,
+		&i.QuotationID,
+		&i.QuotationNo,
+		&i.CostScenarioID,
+		&i.CostScenarioNo,
+		&i.SourcingCaseID,
+		&i.SourcingLineID,
+		&i.SupplierQuoteLineID,
+		&i.SupplierID,
+		&i.SupplierCode,
+		&i.SupplierName,
+		&i.FactoryID,
+		&i.FactoryCode,
+		&i.FactoryName,
+		&i.SourceCurrency,
+		&i.SourceUnitPrice,
+		&i.Moq,
+		&i.LeadTime,
 	)
 	return i, err
 }
@@ -233,6 +273,12 @@ SELECT
     received_qty::text AS received_qty,
     coalesce(required_date::text, '')::text AS required_date,
     source, status, closed_reason, created_at,
+    quotation_id, quotation_no, cost_scenario_id, cost_scenario_no,
+    sourcing_case_id, sourcing_line_id, supplier_quote_line_id,
+    supplier_id, supplier_code, supplier_name,
+    factory_id, factory_code, factory_name,
+    source_currency, source_unit_price::text AS source_unit_price,
+    coalesce(moq::text,'')::text AS moq, lead_time,
     count(*) OVER () AS total
 FROM purchase_requirements
 WHERE tenant_id = $1::bigint
@@ -261,29 +307,46 @@ type ListRequirementsParams struct {
 }
 
 type ListRequirementsRow struct {
-	ID                int64
-	ContractID        int64
-	ContractNo        string
-	ContractVersionID int64
-	VersionNo         int32
-	ContractItemID    int64
-	CustomerName      string
-	ProductID         int64
-	SkuID             int64
-	ProductCode       string
-	ProductName       string
-	Spec              string
-	UomID             int64
-	UomCode           string
-	RequiredQty       string
-	OrderedQty        string
-	ReceivedQty       string
-	RequiredDate      string
-	Source            string
-	Status            string
-	ClosedReason      string
-	CreatedAt         pgtype.Timestamptz
-	Total             int64
+	ID                  int64
+	ContractID          int64
+	ContractNo          string
+	ContractVersionID   int64
+	VersionNo           int32
+	ContractItemID      int64
+	CustomerName        string
+	ProductID           int64
+	SkuID               int64
+	ProductCode         string
+	ProductName         string
+	Spec                string
+	UomID               int64
+	UomCode             string
+	RequiredQty         string
+	OrderedQty          string
+	ReceivedQty         string
+	RequiredDate        string
+	Source              string
+	Status              string
+	ClosedReason        string
+	CreatedAt           pgtype.Timestamptz
+	QuotationID         int64
+	QuotationNo         string
+	CostScenarioID      int64
+	CostScenarioNo      string
+	SourcingCaseID      int64
+	SourcingLineID      int64
+	SupplierQuoteLineID int64
+	SupplierID          int64
+	SupplierCode        string
+	SupplierName        string
+	FactoryID           int64
+	FactoryCode         string
+	FactoryName         string
+	SourceCurrency      string
+	SourceUnitPrice     string
+	Moq                 string
+	LeadTime            string
+	Total               int64
 }
 
 func (q *Queries) ListRequirements(ctx context.Context, arg ListRequirementsParams) ([]ListRequirementsRow, error) {
@@ -325,6 +388,23 @@ func (q *Queries) ListRequirements(ctx context.Context, arg ListRequirementsPara
 			&i.Status,
 			&i.ClosedReason,
 			&i.CreatedAt,
+			&i.QuotationID,
+			&i.QuotationNo,
+			&i.CostScenarioID,
+			&i.CostScenarioNo,
+			&i.SourcingCaseID,
+			&i.SourcingLineID,
+			&i.SupplierQuoteLineID,
+			&i.SupplierID,
+			&i.SupplierCode,
+			&i.SupplierName,
+			&i.FactoryID,
+			&i.FactoryCode,
+			&i.FactoryName,
+			&i.SourceCurrency,
+			&i.SourceUnitPrice,
+			&i.Moq,
+			&i.LeadTime,
 			&i.Total,
 		); err != nil {
 			return nil, err
@@ -391,6 +471,115 @@ func (q *Queries) SupersedeRequirementsBefore(ctx context.Context, arg Supersede
 		return nil, err
 	}
 	return items, nil
+}
+
+const upsertQuotationRequirement = `-- name: UpsertQuotationRequirement :one
+INSERT INTO purchase_requirements (
+    tenant_id, contract_id, contract_no, contract_version_id, version_no,
+    contract_item_id, customer_name, product_id, sku_id, product_code,
+    product_name, spec, uom_id, uom_code, required_qty, source,
+    quotation_id, quotation_no, cost_scenario_id, cost_scenario_no,
+    sourcing_case_id, sourcing_line_id, supplier_quote_line_id,
+    supplier_id, supplier_code, supplier_name,
+    factory_id, factory_code, factory_name,
+    source_currency, source_unit_price, moq, lead_time
+) VALUES (
+    $1, 0, '', 0, 0,
+    -nextval('purchase_requirements_id_seq'), $2,
+    $3, nullif($4::bigint,0), '',
+    $5, $6, 0, $7,
+    $8::text::numeric, 'CUSTOMER_QUOTATION',
+    $9, $10,
+    $11, $12,
+    $13, $14, $15,
+    $16, $17, $18,
+    $19, $20, $21,
+    $22, $23::text::numeric,
+    nullif($24::text,'')::numeric, $25
+)
+ON CONFLICT (tenant_id, quotation_id, sourcing_line_id)
+    WHERE source='CUSTOMER_QUOTATION'
+DO UPDATE SET
+    customer_name=excluded.customer_name,
+    product_name=excluded.product_name,
+    spec=excluded.spec,
+    required_qty=excluded.required_qty,
+    supplier_id=excluded.supplier_id,
+    supplier_code=excluded.supplier_code,
+    supplier_name=excluded.supplier_name,
+    factory_id=excluded.factory_id,
+    factory_code=excluded.factory_code,
+    factory_name=excluded.factory_name,
+    source_currency=excluded.source_currency,
+    source_unit_price=excluded.source_unit_price,
+    moq=excluded.moq,
+    lead_time=excluded.lead_time,
+    updated_at=now()
+WHERE purchase_requirements.ordered_qty=0
+RETURNING id
+`
+
+type UpsertQuotationRequirementParams struct {
+	TenantID            int64
+	CustomerName        string
+	ProductID           int64
+	SkuID               int64
+	ProductName         string
+	Spec                string
+	UomCode             string
+	RequiredQty         string
+	QuotationID         int64
+	QuotationNo         string
+	CostScenarioID      int64
+	CostScenarioNo      string
+	SourcingCaseID      int64
+	SourcingLineID      int64
+	SupplierQuoteLineID int64
+	SupplierID          int64
+	SupplierCode        string
+	SupplierName        string
+	FactoryID           int64
+	FactoryCode         string
+	FactoryName         string
+	SourceCurrency      string
+	SourceUnitPrice     string
+	Moq                 string
+	LeadTime            string
+}
+
+// 客户接受报价后，已确认成本方案中的每条产品成为一条待下单明细。
+// 幂等键是“报价 + 询盘产品行”；Kafka 重投只刷新尚未下单的快照。
+func (q *Queries) UpsertQuotationRequirement(ctx context.Context, arg UpsertQuotationRequirementParams) (int64, error) {
+	row := q.db.QueryRow(ctx, upsertQuotationRequirement,
+		arg.TenantID,
+		arg.CustomerName,
+		arg.ProductID,
+		arg.SkuID,
+		arg.ProductName,
+		arg.Spec,
+		arg.UomCode,
+		arg.RequiredQty,
+		arg.QuotationID,
+		arg.QuotationNo,
+		arg.CostScenarioID,
+		arg.CostScenarioNo,
+		arg.SourcingCaseID,
+		arg.SourcingLineID,
+		arg.SupplierQuoteLineID,
+		arg.SupplierID,
+		arg.SupplierCode,
+		arg.SupplierName,
+		arg.FactoryID,
+		arg.FactoryCode,
+		arg.FactoryName,
+		arg.SourceCurrency,
+		arg.SourceUnitPrice,
+		arg.Moq,
+		arg.LeadTime,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const upsertRequirement = `-- name: UpsertRequirement :one

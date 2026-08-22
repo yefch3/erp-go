@@ -136,7 +136,7 @@ export default {
   },
   procurementNav: {
     title: 'Procurement navigation', workbench: 'Workbench', intakes: 'Pending inquiries', sourcing: 'Sourcing cases', inquiryTemplates: 'Inquiry templates',
-    requirements: 'To purchase', orders: 'Purchase orders', supplierInvoices: 'Supplier invoices', supplierPayments: 'Supplier payments', supplierStatements: 'Supplier statements', backToWorkbench: 'Back to procurement workbench',
+    requirements: 'To order', orders: 'Purchase orders', supplierInvoices: 'Supplier invoices', supplierPayments: 'Supplier payments', supplierStatements: 'Supplier statements', backToWorkbench: 'Back to procurement workbench',
   },
   procurementWorkbench: {
     eyebrow: 'PROCUREMENT CONTROL', title: 'Procurement workbench', subtitle: 'Review standardized inquiries and advance sourcing and purchasing', downloadTemplate: 'Download template', uploadInquiry: 'Import customer inquiry', handlePending: 'Pending review', handlePendingCount: 'Pending review ({n})',

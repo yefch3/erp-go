@@ -9,6 +9,12 @@ SELECT
     id, contract_id, contract_no, contract_item_id, customer_name, source,
     product_id, coalesce(sku_id, 0)::bigint AS sku_id,
     product_code, product_name, spec, uom_id, uom_code, status,
+    quotation_id, quotation_no, cost_scenario_id,
+    supplier_id AS inherited_supplier_id, supplier_code AS inherited_supplier_code,
+    supplier_name AS inherited_supplier_name,
+    factory_id AS inherited_factory_id, factory_code AS inherited_factory_code,
+    factory_name AS inherited_factory_name,
+    source_currency, source_unit_price::text AS source_unit_price,
     required_qty::text                 AS required_qty,
     ordered_qty::text                  AS ordered_qty,
     (required_qty - ordered_qty)::text AS open_qty,
@@ -78,7 +84,12 @@ RETURNING received_qty::text AS received_qty, status;
 -- name: CreatePurchaseOrder :one
 INSERT INTO purchase_orders (
     tenant_id, po_no, supplier_id, supplier_code, supplier_name,
-    currency, total_amount, expected_date, buyer_id, buyer_name, remark
+    currency, total_amount, expected_date, buyer_id, buyer_name, remark,
+    source_quotation_id, source_quotation_no, source_cost_scenario_id,
+    factory_id, factory_code, factory_name,
+    fulfillment_mode, delivery_location_type,
+    delivery_port_id, delivery_port_code, delivery_port_name,
+    warehouse_id, warehouse_name, delivery_address, source_change_reason
 ) VALUES (
     sqlc.arg(tenant_id)::bigint,
     sqlc.arg(po_no)::text,
@@ -90,7 +101,12 @@ INSERT INTO purchase_orders (
     nullif(sqlc.arg(expected_date)::text, '')::date,
     sqlc.arg(buyer_id)::bigint,
     sqlc.arg(buyer_name)::text,
-    sqlc.arg(remark)::text
+    sqlc.arg(remark)::text,
+    sqlc.arg(source_quotation_id), sqlc.arg(source_quotation_no), sqlc.arg(source_cost_scenario_id),
+    sqlc.arg(factory_id), sqlc.arg(factory_code), sqlc.arg(factory_name),
+    sqlc.arg(fulfillment_mode), sqlc.arg(delivery_location_type),
+    sqlc.arg(delivery_port_id), sqlc.arg(delivery_port_code), sqlc.arg(delivery_port_name),
+    sqlc.arg(warehouse_id), sqlc.arg(warehouse_name), sqlc.arg(delivery_address), sqlc.arg(source_change_reason)
 )
 RETURNING id, po_no, status, created_at;
 
@@ -105,6 +121,15 @@ UPDATE purchase_orders SET
     buyer_id = sqlc.arg(buyer_id)::bigint,
     buyer_name = sqlc.arg(buyer_name)::text,
     remark = sqlc.arg(remark)::text,
+    fulfillment_mode = sqlc.arg(fulfillment_mode)::text,
+    delivery_location_type = sqlc.arg(delivery_location_type)::text,
+    delivery_port_id = nullif(sqlc.arg(delivery_port_id)::bigint, 0),
+    delivery_port_code = sqlc.arg(delivery_port_code)::text,
+    delivery_port_name = sqlc.arg(delivery_port_name)::text,
+    warehouse_id = nullif(sqlc.arg(warehouse_id)::bigint, 0),
+    warehouse_name = sqlc.arg(warehouse_name)::text,
+    delivery_address = sqlc.arg(delivery_address)::text,
+    source_change_reason = sqlc.arg(source_change_reason)::text,
     status = 'DRAFT',
     approval_instance_id = NULL,
     reject_reason = '',
@@ -144,7 +169,14 @@ SELECT id, po_no, supplier_id, supplier_code, supplier_name, currency,
        total_amount::text AS total_amount, status,
        coalesce(approval_instance_id, 0)::bigint AS approval_instance_id,
        buyer_id, buyer_name, remark,
-       coalesce(expected_date::text, '')::text AS expected_date
+       coalesce(expected_date::text, '')::text AS expected_date,
+       coalesce(source_quotation_id, 0)::bigint AS source_quotation_id,
+       source_quotation_no, coalesce(source_cost_scenario_id, 0)::bigint AS source_cost_scenario_id,
+       fulfillment_mode, delivery_location_type,
+       coalesce(delivery_port_id, 0)::bigint AS delivery_port_id,
+       delivery_port_code, delivery_port_name,
+       coalesce(warehouse_id, 0)::bigint AS warehouse_id, warehouse_name,
+       delivery_address, source_change_reason
 FROM purchase_orders
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint
 FOR UPDATE;
@@ -157,7 +189,15 @@ SELECT
     o.reject_reason, o.cancel_reason, o.buyer_id, o.buyer_name, o.remark,
     coalesce(o.expected_date::text, '')::text AS expected_date,
     o.send_status, o.sent_to, o.sent_at, o.sent_by_name, o.send_error,
-    o.ordered_at, o.created_at
+    o.ordered_at, o.created_at,
+    o.fulfillment_mode, o.delivery_location_type,
+    coalesce(o.delivery_port_id, 0)::bigint AS delivery_port_id,
+    o.delivery_port_code, o.delivery_port_name,
+    coalesce(o.warehouse_id, 0)::bigint AS warehouse_id, o.warehouse_name,
+    o.delivery_address, o.source_change_reason,
+    coalesce(o.source_quotation_id, 0)::bigint AS source_quotation_id,
+    o.source_quotation_no, coalesce(o.source_cost_scenario_id, 0)::bigint AS source_cost_scenario_id,
+    coalesce(o.factory_id, 0)::bigint AS factory_id, o.factory_code, o.factory_name
 FROM purchase_orders o
 WHERE o.tenant_id = sqlc.arg(tenant_id)::bigint AND o.id = sqlc.arg(id)::bigint;
 
@@ -263,7 +303,14 @@ SELECT
     o.reject_reason, o.cancel_reason,
     coalesce(o.expected_date::text, '')::text AS expected_date,
     o.send_status, o.sent_to, o.sent_at, o.sent_by_name, o.send_error,
-    o.created_at,
+    o.created_at, o.fulfillment_mode, o.delivery_location_type,
+    coalesce(o.delivery_port_id, 0)::bigint AS delivery_port_id,
+    o.delivery_port_code, o.delivery_port_name,
+    coalesce(o.warehouse_id, 0)::bigint AS warehouse_id, o.warehouse_name,
+    o.delivery_address,
+    coalesce(o.source_quotation_id, 0)::bigint AS source_quotation_id,
+    o.source_quotation_no, coalesce(o.source_cost_scenario_id, 0)::bigint AS source_cost_scenario_id,
+    coalesce(o.factory_id, 0)::bigint AS factory_id, o.factory_code, o.factory_name,
     (SELECT count(*) FROM purchase_order_items i WHERE i.po_id = o.id) AS item_count,
     coalesce((SELECT sum(i.qty) FROM purchase_order_items i WHERE i.po_id = o.id), 0)::text AS total_qty,
     coalesce((SELECT sum(i.received_qty) FROM purchase_order_items i WHERE i.po_id = o.id), 0)::text AS received_qty,

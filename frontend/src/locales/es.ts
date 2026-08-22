@@ -136,7 +136,7 @@ export default {
   },
   procurementNav: {
     title: 'Navegación de compras', workbench: 'Panel', intakes: 'Consultas pendientes', sourcing: 'Casos de cotización', inquiryTemplates: 'Plantillas de consulta',
-    requirements: 'Por comprar', orders: 'Órdenes de compra', supplierInvoices: 'Facturas de proveedor', supplierPayments: 'Pagos a proveedores', supplierStatements: 'Conciliación de proveedores', backToWorkbench: 'Volver al panel de compras',
+    requirements: 'Por pedir', orders: 'Órdenes de compra', supplierInvoices: 'Facturas de proveedor', supplierPayments: 'Pagos a proveedores', supplierStatements: 'Conciliación de proveedores', backToWorkbench: 'Volver al panel de compras',
   },
   procurementWorkbench: {
     eyebrow: 'CONTROL DE COMPRAS', title: 'Panel de compras', subtitle: 'Revisar consultas estandarizadas y avanzar compras', downloadTemplate: 'Descargar plantilla', uploadInquiry: 'Importar consulta del cliente', handlePending: 'Pendientes de revisión', handlePendingCount: 'Pendientes de revisión ({n})',
