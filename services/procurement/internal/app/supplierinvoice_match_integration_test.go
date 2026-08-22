@@ -32,14 +32,24 @@ func TestThreeWayMatch(t *testing.T) {
 	defer pool.Close()
 	tenantID := time.Now().UnixNano()
 
-	var reqID, orderID, itemID int64
+	var reqID, req2ID, orderID, itemID, item2ID int64
 	if err = pool.QueryRow(ctx, `INSERT INTO purchase_requirements (tenant_id,contract_id,contract_no,contract_version_id,contract_item_id,product_id,product_code,product_name,uom_id,uom_code,required_qty,ordered_qty,status) VALUES ($1,1,'CT-MATCH',1,$1,11,'P-11','Match Coil',7,'TON',10,10,'ORDERED') RETURNING id`, tenantID).Scan(&reqID); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, `INSERT INTO purchase_requirements (tenant_id,contract_id,contract_no,contract_version_id,contract_item_id,product_id,product_code,product_name,uom_id,uom_code,required_qty,ordered_qty,status) VALUES ($1,1,'CT-MATCH',1,$1+1,12,'P-12','Match Sheet',7,'TON',10,10,'ORDERED') RETURNING id`, tenantID).Scan(&req2ID); err != nil {
 		t.Fatal(err)
 	}
 	if err = pool.QueryRow(ctx, `INSERT INTO purchase_orders (tenant_id,po_no,supplier_id,supplier_code,supplier_name,currency,total_amount,expected_date,status,buyer_id,buyer_name,ordered_at) VALUES ($1,'PO-MATCH-1',9,'SUP-9','Mill','USD',5200,current_date+10,'PARTIALLY_RECEIVED',77,'Buyer',now()) RETURNING id`, tenantID).Scan(&orderID); err != nil {
 		t.Fatal(err)
 	}
 	if err = pool.QueryRow(ctx, `INSERT INTO purchase_order_items (tenant_id,po_id,requirement_id,product_id,product_code,product_name,uom_id,uom_code,qty,unit_price,amount,received_qty) VALUES ($1,$2,$3,11,'P-11','Match Coil',7,'TON',10,520,5200,8) RETURNING id`, tenantID, orderID, reqID).Scan(&itemID); err != nil {
+		t.Fatal(err)
+	}
+	// A second line for the tolerance cases: received 7, no exceptions, so
+	// payable is 3640 with nothing billed against it yet. They cannot share
+	// the first line — once it is fully billed, the cumulative rule
+	// (correctly) flags any further paper, tolerance or not.
+	if err = pool.QueryRow(ctx, `INSERT INTO purchase_order_items (tenant_id,po_id,requirement_id,product_id,product_code,product_name,uom_id,uom_code,qty,unit_price,amount,received_qty) VALUES ($1,$2,$3,12,'P-12','Match Sheet',7,'TON',10,520,5200,7) RETURNING id`, tenantID, orderID, req2ID).Scan(&item2ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO purchase_receipt_exceptions (tenant_id,po_id,po_item_id,exception_type,qty,description,reported_by_id,reported_by_name) VALUES ($1,$2,$3,'SHORT_SHIPMENT',1,'短装一吨',77,'Buyer')`, tenantID, orderID, itemID); err != nil {
@@ -53,12 +63,12 @@ func TestThreeWayMatch(t *testing.T) {
 
 	svc := New(pool, Deps{})
 	op := Operator{ID: 77, Name: "Buyer"}
-	mkInvoice := func(no, total, lineAmount string) SupplierInvoice {
+	mkInvoice := func(no string, item int64, total, lineAmount string) SupplierInvoice {
 		inv, err := svc.CreateSupplierInvoice(ctx, tenantID, SupplierInvoiceInput{
 			SupplierID: 9, SupplierName: "Mill", InvoiceNo: no,
 			Currency: "USD", TotalAmount: total, InvoiceDate: "2026-08-21",
 			Lines: []SupplierInvoiceLineInput{
-				{POItemID: itemID, Qty: "7", UnitPrice: "520", Amount: lineAmount},
+				{POItemID: item, Qty: "7", UnitPrice: "520", Amount: lineAmount},
 			},
 		}, op)
 		if err != nil {
@@ -68,7 +78,7 @@ func TestThreeWayMatch(t *testing.T) {
 	}
 
 	// Claim equals payable → the verdict lands with the entry, already MATCHED.
-	exact := mkInvoice("FP-M-1", "3640", "3640")
+	exact := mkInvoice("FP-M-1", itemID, "3640", "3640")
 	if exact.MatchStatus != "MATCHED" {
 		t.Fatalf("exact claim should MATCH on create, got %s (%s)", exact.MatchStatus, exact.MatchNote)
 	}
@@ -116,7 +126,7 @@ func TestThreeWayMatch(t *testing.T) {
 	// Tolerance turns near-misses back into MATCHED — min(pct, abs), the
 	// ERPNext convention. 3645 vs 3640: inside 1% (36.4), outside abs 3.
 	svc.UseMatchTolerance(decimal.RequireFromString("0.01"), decimal.RequireFromString("3"))
-	near := mkInvoice("FP-M-4", "3645", "3645")
+	near := mkInvoice("FP-M-4", item2ID, "3645", "3645")
 	if near.MatchStatus != "EXCEPTION" {
 		t.Fatalf("min(36.4, 3)=3 < 5: still EXCEPTION, got %s", near.MatchStatus)
 	}
