@@ -21,6 +21,7 @@ REDIS_PORT ?= 6380
 TEST_ENV := \
 	IAM_TEST_DSN='postgres://erp_iam:erp_iam_pw@localhost:$(PG_PORT)/erp_iam?sslmode=disable' \
 	MD_TEST_DSN='postgres://erp_masterdata:erp_masterdata_pw@localhost:$(PG_PORT)/erp_masterdata?sslmode=disable' \
+	MD_MIGRATION_TEST_DSN='postgres://erp_masterdata:erp_masterdata_pw@localhost:$(PG_PORT)/erp_masterdata_migrations?sslmode=disable' \
 	MAIL_TEST_DSN='postgres://erp_mail:erp_mail_pw@localhost:$(PG_PORT)/erp_mail?sslmode=disable' \
 	SHIPPING_TEST_DSN='postgres://erp_shipping:erp_shipping_pw@localhost:$(PG_PORT)/erp_shipping?sslmode=disable' \
 	SHIPPING_MIGRATION_TEST_DSN='postgres://erp_shipping:erp_shipping_pw@localhost:$(PG_PORT)/erp_shipping_migrations?sslmode=disable' \
@@ -90,7 +91,8 @@ migrate: ## Run goose migrations for every service that has them
 		svc=$$(echo "$$dir" | cut -d/ -f2); \
 		echo "==> migrating $$svc"; \
 		go run github.com/pressly/goose/v3/cmd/goose@v3.24.0 -dir "$$dir" postgres \
-			"postgres://erp_$$svc:erp_$${svc}_pw@localhost:$(PG_PORT)/erp_$$svc?sslmode=disable" up; \
+			"postgres://erp_$$svc:erp_$${svc}_pw@localhost:$(PG_PORT)/erp_$$svc?sslmode=disable" up \
+			|| { echo "迁移失败：$$svc"; exit 1; }; \
 	done; \
 	[ "$$found" = 1 ] || echo "no migrations yet"
 
