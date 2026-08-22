@@ -25,6 +25,9 @@ if ! flock -n 9; then
 fi
 
 cd "$REPO"
+# 记下进场时的上一个好版本。回滚要回到它，清理要保住它——必须在
+# last-good 被本次部署覆盖之前取值。
+PREV_GOOD=$(cat "$LAST_GOOD" 2>/dev/null || true)
 git fetch --quiet origin
 git checkout --quiet "$SHA"
 echo "checked out $(git log --oneline -1)"
@@ -81,6 +84,21 @@ fi
 
 echo "$SHA" > "$LAST_GOOD"
 echo "deployed $SHA"
+
+# ---------------------------------------------------------------- 镜像清理
+# 只在部署成功后运行，只保留两个版本：本次（在跑）和上一个好版本（回滚
+# 用）。不清的后果已经量过：每次部署留下 13 个镜像，三周攒了 331 个、
+# 12.5GB——盘不是今天满，但它只会朝一个方向走。
+#
+# 失败路径刻意不清理：一次失败的部署本来就该把现场留给人看。
+# docker rmi 不加 -f：正在被容器使用的镜像删不掉，而那正是要保住的。
+docker images --format '{{.Repository}}:{{.Tag}}' \
+  | grep '^ghcr.io/yefch3/erp-go/' \
+  | grep -vE ":($SHA|${PREV_GOOD:-none})\$" \
+  | xargs -r docker rmi > /dev/null 2>&1 || true
+# 悬空层（被新标签顶掉的旧层）一并回收。
+docker image prune -f > /dev/null 2>&1 || true
+echo "镜像清理完成，保留 $SHA 与 ${PREV_GOOD:-'(无上一版)'}"
 docker ps --filter status=restarting --format '{{.Names}}' | while read -r c; do
   [ -z "$c" ] || echo "注意：$c 正在重启" >&2
 done
