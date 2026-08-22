@@ -1402,6 +1402,7 @@ export default {
     undoSend: 'Deshacer',
     undoWindow: 'Ventana de deshacer',
     undoWindowHint: 'Durante {s} segundos tras enviar, Deshacer puede retener el correo',
+    trackOpens: 'Rastrear aperturas', trackOpensOn: 'Este correo lleva el p\u00edxel de seguimiento y puede mostrar \u00abposiblemente abierto\u00bb. Los p\u00edxeles restan ante filtros estrictos: para el primer correo a un cliente nuevo, mejor apagarlo.', trackOpensOff: 'Sin p\u00edxel: mejor entregabilidad, pero el indicador mostrar\u00e1 seguimiento desactivado.',
     undoWindowOff: 'Se envía al instante: no hay margen para deshacer',
     undone: 'Deshecho — restaurado como borrador',
     undoTooLate: 'Ya se envió, demasiado tarde para cancelar',

@@ -132,11 +132,11 @@ func TestRawOriginalRefetch(t *testing.T) {
 		folder, mid, rawKey string
 		uid                 int64
 	}{
-		{"SENT", "a@example.com", "", 614},         // recoverable
-		{"SENT", "b@example.com", "", 615},         // host serves a stranger
-		{"JUNK", "c@example.com", "", 8},           // purged from the host
+		{"SENT", "a@example.com", "", 614},          // recoverable
+		{"SENT", "b@example.com", "", 615},          // host serves a stranger
+		{"JUNK", "c@example.com", "", 8},            // purged from the host
 		{"SENT", "d@example.com", "mail/keep", 616}, // has its original; not the query's business
-		{"SENT", "", "", 617},                      // no Message-ID: nothing to search by
+		{"SENT", "", "", 617},                       // no Message-ID: nothing to search by
 	} {
 		if _, err := pool.Exec(ctx, `
 			INSERT INTO email_inbound (tenant_id, account_id, owner_id, folder, imap_uid, message_id, raw_key, subject)

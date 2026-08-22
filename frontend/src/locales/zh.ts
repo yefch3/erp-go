@@ -1400,6 +1400,7 @@ export default {
     undoSend: '撤回',
     undoWindow: '撤回窗口',
     undoWindowHint: '发送后 {s} 秒内可点「撤回」拦下这封邮件',
+    trackOpens: '追踪打开', trackOpensOn: '这封信会带追踪像素，显示「可能已打开」。像素是敏感邮箱过滤器的减分项——给新客户的第一封信建议关掉。', trackOpensOff: '这封信不带追踪像素，送达率最好，但「对方是否已读」将显示未开启追踪。',
     undoWindowOff: '点「发送」即刻寄出，没有撤回时间',
     undone: '已撤回，草稿已恢复',
     undoTooLate: '已经发出，来不及取消了',

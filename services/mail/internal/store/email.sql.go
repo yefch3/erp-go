@@ -265,7 +265,7 @@ WHERE m.id = due.id
 RETURNING m.id, m.message_key::text AS message_key, m.kind, m.to_email, m.to_name,
           m.sender_id, m.sender_name, m.subject, m.body, m.body_text, m.body_format,
           coalesce(m.campaign_id, 0)::bigint AS campaign_id, m.attempt_count,
-          m.send_mode, m.in_reply_to, m.references_ids
+          m.send_mode, m.in_reply_to, m.references_ids, m.track_opens
 `
 
 type ClaimMessagesParams struct {
@@ -290,6 +290,7 @@ type ClaimMessagesRow struct {
 	SendMode      string
 	InReplyTo     string
 	ReferencesIds string
+	TrackOpens    bool
 }
 
 // The worker's claim. SKIP LOCKED lets several workers drain the same queue
@@ -323,6 +324,7 @@ func (q *Queries) ClaimMessages(ctx context.Context, arg ClaimMessagesParams) ([
 			&i.SendMode,
 			&i.InReplyTo,
 			&i.ReferencesIds,
+			&i.TrackOpens,
 		); err != nil {
 			return nil, err
 		}
@@ -613,7 +615,7 @@ const getDraft = `-- name: GetDraft :one
 SELECT id, subject, body, body_format, signature_id, kind,
        recipients, attachments, updated_at,
        send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id,
-       forward_as_attachment
+       forward_as_attachment, track_opens
 FROM email_drafts
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
@@ -642,6 +644,7 @@ type GetDraftRow struct {
 	ReplyToInboundID    int64
 	ForwardInboundID    int64
 	ForwardAsAttachment bool
+	TrackOpens          bool
 }
 
 func (q *Queries) GetDraft(ctx context.Context, arg GetDraftParams) (GetDraftRow, error) {
@@ -663,6 +666,7 @@ func (q *Queries) GetDraft(ctx context.Context, arg GetDraftParams) (GetDraftRow
 		&i.ReplyToInboundID,
 		&i.ForwardInboundID,
 		&i.ForwardAsAttachment,
+		&i.TrackOpens,
 	)
 	return i, err
 }
@@ -1769,7 +1773,8 @@ INSERT INTO email_messages (
     tenant_id, campaign_id, message_key, kind, sender_id, sender_name,
     to_email, to_name, customer_id, customer_name, contact_id,
     subject, body, body_text, body_format, status, attention_reason,
-    send_mode, thread_key, in_reply_to, references_ids, scheduled_at
+    send_mode, thread_key, in_reply_to, references_ids, scheduled_at,
+    track_opens
 ) VALUES (
     $1::bigint,
     nullif($2::bigint, 0),
@@ -1792,7 +1797,8 @@ INSERT INTO email_messages (
     coalesce(nullif($19::text, ''), $3::text),
     $20::text,
     $21::text,
-    $22::timestamptz
+    $22::timestamptz,
+    $23::boolean
 )
 RETURNING id
 `
@@ -1820,6 +1826,7 @@ type QueueMessageParams struct {
 	InReplyTo       string
 	ReferencesIds   string
 	ScheduledAt     pgtype.Timestamptz
+	TrackOpens      bool
 }
 
 // thread_key falls back to the message's own key: a fresh mail is the root
@@ -1848,6 +1855,7 @@ func (q *Queries) QueueMessage(ctx context.Context, arg QueueMessageParams) (int
 		arg.InReplyTo,
 		arg.ReferencesIds,
 		arg.ScheduledAt,
+		arg.TrackOpens,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -1973,7 +1981,7 @@ INSERT INTO email_drafts (
     id, tenant_id, owner_id, subject, body, body_format,
     signature_id, kind, recipients, attachments,
     send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id,
-    forward_as_attachment
+    forward_as_attachment, track_opens
 ) VALUES (
     coalesce(nullif($1::bigint, 0), nextval('email_drafts_id_seq')),
     $2::bigint,
@@ -1990,7 +1998,8 @@ INSERT INTO email_drafts (
     $13::jsonb,
     $14::bigint,
     $15::bigint,
-    $16::boolean
+    $16::boolean,
+    $17::boolean
 )
 ON CONFLICT (id) DO UPDATE SET
     subject = excluded.subject,
@@ -2002,6 +2011,7 @@ ON CONFLICT (id) DO UPDATE SET
     attachments = excluded.attachments,
     bcc = excluded.bcc,
     send_mode = excluded.send_mode,
+    track_opens = excluded.track_opens,
     cc = excluded.cc,
     reply_to_inbound_id = excluded.reply_to_inbound_id,
     forward_inbound_id = excluded.forward_inbound_id,
@@ -2029,6 +2039,7 @@ type SaveDraftParams struct {
 	ReplyToInboundID    int64
 	ForwardInboundID    int64
 	ForwardAsAttachment bool
+	TrackOpens          bool
 }
 
 // ------------------------------------------------------------------ drafts
@@ -2054,6 +2065,7 @@ func (q *Queries) SaveDraft(ctx context.Context, arg SaveDraftParams) (int64, er
 		arg.ReplyToInboundID,
 		arg.ForwardInboundID,
 		arg.ForwardAsAttachment,
+		arg.TrackOpens,
 	)
 	var id int64
 	err := row.Scan(&id)

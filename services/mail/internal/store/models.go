@@ -61,6 +61,7 @@ type EmailDraft struct {
 	ForwardInboundID    int64
 	Bcc                 []byte
 	ForwardAsAttachment bool
+	TrackOpens          bool
 }
 
 type EmailEvent struct {
@@ -190,6 +191,7 @@ type EmailMessage struct {
 	ScheduledAt     pgtype.Timestamptz
 	Tracked         bool
 	FromEmail       string
+	TrackOpens      bool
 }
 
 type EmailMessageRecipient struct {

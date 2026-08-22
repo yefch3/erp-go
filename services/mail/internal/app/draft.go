@@ -38,6 +38,7 @@ type DraftInput struct {
 	// forgot this would reopen as a quoted forward — the words survive and
 	// the message changes.
 	ForwardAsAttachment bool
+	DisableTracking     bool
 }
 
 // DraftView is one saved draft, restored into the composer.
@@ -60,6 +61,7 @@ type DraftView struct {
 	// forgot this would reopen as a quoted forward — the words survive and
 	// the message changes.
 	ForwardAsAttachment bool
+	DisableTracking     bool
 }
 
 // SaveDraft creates or updates. Both directions are the same call because the
@@ -114,6 +116,7 @@ func (s *Service) SaveDraft(ctx context.Context, tenantID int64, in DraftInput, 
 		ReplyToInboundID:    in.ReplyToInboundID,
 		ForwardInboundID:    in.ForwardInboundID,
 		ForwardAsAttachment: in.ForwardAsAttachment,
+		TrackOpens:          !in.DisableTracking,
 	})
 	if err == pgx.ErrNoRows {
 		// The upsert's WHERE refused it: the id exists but belongs to
@@ -147,6 +150,7 @@ func (s *Service) GetDraft(ctx context.Context, tenantID, id int64, op Operator)
 		ReplyToInboundID:    d.ReplyToInboundID,
 		ForwardInboundID:    d.ForwardInboundID,
 		ForwardAsAttachment: d.ForwardAsAttachment,
+		DisableTracking:     !d.TrackOpens,
 	}
 	if d.UpdatedAt.Valid {
 		out.UpdatedAt = d.UpdatedAt.Time.Format("2006-01-02T15:04:05Z07:00")
@@ -195,6 +199,7 @@ func (s *Service) SendDraft(ctx context.Context, tenantID, id int64, at time.Tim
 		SendMode: d.SendMode, CC: d.CC, BCC: d.BCC,
 		ReplyToInboundID: d.ReplyToInboundID,
 		ForwardInboundID: d.ForwardInboundID,
+		DisableTracking:  d.DisableTracking,
 		ScheduledAt:      at,
 	}, op)
 	if err != nil {

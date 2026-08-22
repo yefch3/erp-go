@@ -52,12 +52,12 @@ type Workbook struct {
 }
 
 type WorkbookSheet struct {
-	Name        string     `json:"name"`
-	Summary     string     `json:"summary"`
-	Columns     []string   `json:"columns"`
-	ColumnTypes []string   `json:"column_types"`
+	Name        string   `json:"name"`
+	Summary     string   `json:"summary"`
+	Columns     []string `json:"columns"`
+	ColumnTypes []string `json:"column_types"`
 	// 与 Columns 平行的模板字段标识，采购转入按它而不是表头文字对齐。
-	ColumnKeys []string `json:"column_keys,omitempty"`
+	ColumnKeys []string   `json:"column_keys,omitempty"`
 	Rows       [][]string `json:"rows"`
 }
 
