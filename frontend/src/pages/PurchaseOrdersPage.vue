@@ -148,6 +148,37 @@
         <el-form-item :label="t('orders.expected')">
           <el-date-picker v-model="form.expectedDate" type="date" value-format="YYYY-MM-DD" style="width: 200px" />
         </el-form-item>
+        <el-form-item label="履约方式" required>
+          <el-radio-group v-model="form.fulfillmentMode">
+            <el-radio-button value="DIRECT_SHIP">直接发往港口/指定地点</el-radio-button>
+            <el-radio-button value="WAREHOUSE">先入库再发货</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <template v-if="form.fulfillmentMode === 'DIRECT_SHIP'">
+          <el-form-item label="收货地点" required>
+            <el-radio-group v-model="form.deliveryLocationType">
+              <el-radio value="PORT">港口</el-radio>
+              <el-radio value="CUSTOM">自定义地址</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item v-if="form.deliveryLocationType === 'PORT'" label="收货港口" required>
+            <el-select v-model="form.deliveryPortId" filterable style="width: 420px" @change="selectDeliveryPort">
+              <el-option v-for="p in deliveryPorts" :key="p.id" :value="Number(p.id)" :label="`${p.unLocode} · ${p.nameZh || p.nameEn}`" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-else label="收货地址" required><el-input v-model="form.deliveryAddress" /></el-form-item>
+        </template>
+        <el-form-item v-else label="入库仓库" required>
+          <el-select v-model="form.warehouseId" style="width: 420px" @change="selectOrderWarehouse">
+            <el-option v-for="w in warehouses" :key="w.id" :value="Number(w.id)" :label="w.name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="调整原因">
+          <el-input
+            v-model="form.sourceChangeReason"
+            placeholder="如修改了已确认报价的供应商单价或币种，请说明原因"
+          />
+        </el-form-item>
         <el-form-item :label="t('orders.remark')">
           <el-input v-model="form.remark" type="textarea" :rows="2" />
         </el-form-item>
@@ -505,6 +536,20 @@ interface Order {
   closedAt: string
   closedBy: string
   confirmStatus: string
+  fulfillmentMode: string
+  deliveryLocationType: string
+  deliveryPortId: string
+  deliveryPortCode: string
+  deliveryPortName: string
+  warehouseId: string
+  warehouseName: string
+  deliveryAddress: string
+  sourceQuotationId: string
+  sourceQuotationNo: string
+  sourceCostScenarioId: string
+  factoryId: string
+  factoryCode: string
+  factoryName: string
 }
 interface OrderItem {
   id: string
@@ -537,6 +582,10 @@ interface Requirement {
   orderedQty: string
   requiredDate: string
   source: string
+  supplierId: string
+  supplierName: string
+  sourceCurrency: string
+  sourceUnitPrice: string
 }
 interface Supplier { id: string; code: string; name: string }
 interface Warehouse { id: string; code: string; name: string; whType: string }
@@ -561,6 +610,8 @@ const canProduction = auth.can('procurement:production:write')
 const canException = auth.can('procurement:exception:write')
 const canClose = auth.can('procurement:order:close')
 const canManageSupplier = auth.can('masterdata:supplier:write')
+const canReadPorts = auth.can('masterdata:port:read')
+const canReadWarehouses = auth.can('inventory:stock:read')
 
 const rows = ref<Order[]>([])
 const total = ref(0)
@@ -578,7 +629,8 @@ const pending = ref<Requirement[]>([])
 const suppliers = ref<Supplier[]>([])
 const qtyOf = reactive<Record<string, string>>({})
 const priceOf = reactive<Record<string, string>>({})
-const form = reactive({ supplierId: 0, currency: 'CNY', expectedDate: '', remark: '' })
+const form = reactive({ supplierId: 0, currency: 'CNY', expectedDate: '', remark: '', fulfillmentMode: 'DIRECT_SHIP', deliveryLocationType: 'PORT', deliveryPortId: 0, deliveryPortCode: '', deliveryPortName: '', warehouseId: 0, warehouseName: '', deliveryAddress: '', sourceChangeReason: '' })
+const deliveryPorts = ref<{ id: string; unLocode: string; nameZh: string; nameEn: string }[]>([])
 
 const supplierOpen = ref(false)
 const supplierForm = reactive({ code: '', name: '', country: '' })
@@ -737,11 +789,26 @@ async function openCreate(preselect?: string[]) {
   form.currency = 'CNY'
   form.expectedDate = ''
   form.remark = ''
+  form.fulfillmentMode = 'DIRECT_SHIP'
+  form.deliveryLocationType = canReadPorts ? 'PORT' : 'CUSTOM'
+  form.deliveryPortId = 0
+  form.deliveryPortCode = ''
+  form.deliveryPortName = ''
+  form.deliveryAddress = ''
+  form.warehouseId = 0
+  form.warehouseName = ''
+  form.sourceChangeReason = ''
   Object.keys(qtyOf).forEach((k) => delete qtyOf[k])
   Object.keys(priceOf).forEach((k) => delete priceOf[k])
-  const [reqs, sups] = await Promise.all([
+  const [reqs, sups, ports, whs] = await Promise.all([
     get<{ requirements: Requirement[] }>('/requirements', { status: 'PENDING', page_size: 200 }),
     get<{ suppliers: Supplier[] }>('/suppliers', { page_size: 200 }),
+    canReadPorts
+      ? get<{ ports: typeof deliveryPorts.value }>('/ports', { page_size: 200, status: 'ACTIVE' })
+      : Promise.resolve({ ports: [] }),
+    canReadWarehouses
+      ? get<{ warehouses: Warehouse[] }>('/warehouses')
+      : Promise.resolve({ warehouses: [] }),
   ])
   // Partially ordered ones belong here too: what is left is still owed.
   const partial = await get<{ requirements: Requirement[] }>('/requirements', {
@@ -749,24 +816,39 @@ async function openCreate(preselect?: string[]) {
   })
   pending.value = [...(reqs.requirements ?? []), ...(partial.requirements ?? [])]
   suppliers.value = sups.suppliers ?? []
+  deliveryPorts.value = ports.ports ?? []
+  warehouses.value = whs.warehouses ?? []
   // Arriving from the requirements page with lines already chosen: pre-fill
   // exactly those and leave the rest blank, so the buyer does not have to
   // find them again by product name.
   if (preselect?.length) {
     const wanted = new Set(preselect)
     pending.value.forEach((r) => {
-      if (wanted.has(String(r.id))) qtyOf[r.id] = String(Number(r.requiredQty) - Number(r.orderedQty))
+      if (wanted.has(String(r.id))) {
+        qtyOf[r.id] = String(Number(r.requiredQty) - Number(r.orderedQty))
+        if (r.source === 'CUSTOMER_QUOTATION') {
+          form.supplierId = Number(r.supplierId)
+          form.currency = r.sourceCurrency || 'USD'
+          priceOf[r.id] = r.sourceUnitPrice || '0'
+        }
+      }
     })
   }
   createOpen.value = true
 }
 
 async function openEdit(row: Order) {
-  const [detailData, reqs, partial, sups] = await Promise.all([
+  const [detailData, reqs, partial, sups, ports, whs] = await Promise.all([
     get<{ order: Order; items: OrderItem[] }>(`/purchase-orders/${row.id}`),
     get<{ requirements: Requirement[] }>('/requirements', { status: 'PENDING', page_size: 200 }),
     get<{ requirements: Requirement[] }>('/requirements', { status: 'PARTIALLY_ORDERED', page_size: 200 }),
     get<{ suppliers: Supplier[] }>('/suppliers', { page_size: 200 }),
+    canReadPorts
+      ? get<{ ports: typeof deliveryPorts.value }>('/ports', { page_size: 200, status: 'ACTIVE' })
+      : Promise.resolve({ ports: [] }),
+    canReadWarehouses
+      ? get<{ warehouses: Warehouse[] }>('/warehouses')
+      : Promise.resolve({ warehouses: [] }),
   ])
   const current = detailData.order
   if (!['DRAFT', 'REJECTED'].includes(current.status)) {
@@ -779,10 +861,21 @@ async function openEdit(row: Order) {
   form.currency = current.currency || 'CNY'
   form.expectedDate = current.expectedDate || ''
   form.remark = current.remark || ''
+  form.fulfillmentMode = current.fulfillmentMode || 'DIRECT_SHIP'
+  form.deliveryLocationType = current.deliveryLocationType || 'PORT'
+  form.deliveryPortId = Number(current.deliveryPortId || 0)
+  form.deliveryPortCode = current.deliveryPortCode || ''
+  form.deliveryPortName = current.deliveryPortName || ''
+  form.warehouseId = Number(current.warehouseId || 0)
+  form.warehouseName = current.warehouseName || ''
+  form.deliveryAddress = current.deliveryAddress || ''
+  form.sourceChangeReason = ''
   Object.keys(qtyOf).forEach((key) => delete qtyOf[key])
   Object.keys(priceOf).forEach((key) => delete priceOf[key])
   pending.value = [...(reqs.requirements ?? []), ...(partial.requirements ?? [])]
   suppliers.value = sups.suppliers ?? []
+  deliveryPorts.value = ports.ports ?? []
+  warehouses.value = whs.warehouses ?? []
   for (const item of detailData.items ?? []) {
     qtyOf[item.requirementId] = item.qty
     priceOf[item.requirementId] = item.unitPrice
@@ -829,6 +922,20 @@ async function submitCreate() {
     ElMessage.warning(t('orders.pickSomething'))
     return
   }
+  if (form.fulfillmentMode === 'WAREHOUSE' && !form.warehouseId) {
+    ElMessage.warning('请选择入库仓库')
+    return
+  }
+  if (form.fulfillmentMode === 'DIRECT_SHIP' && form.deliveryLocationType === 'PORT' &&
+      !form.deliveryPortId && !form.deliveryPortName.trim()) {
+    ElMessage.warning('请选择收货港口')
+    return
+  }
+  if (form.fulfillmentMode === 'DIRECT_SHIP' && form.deliveryLocationType === 'CUSTOM' &&
+      !form.deliveryAddress.trim()) {
+    ElMessage.warning('请填写收货地址')
+    return
+  }
   saving.value = true
   try {
     const payload = {
@@ -836,6 +943,15 @@ async function submitCreate() {
       currency: form.currency,
       expected_date: form.expectedDate,
       remark: form.remark,
+      fulfillment_mode: form.fulfillmentMode,
+      delivery_location_type: form.fulfillmentMode === 'WAREHOUSE' ? 'WAREHOUSE' : form.deliveryLocationType,
+      delivery_port_id: form.deliveryPortId,
+      delivery_port_code: form.deliveryPortCode,
+      delivery_port_name: form.deliveryPortName,
+      warehouse_id: form.warehouseId,
+      warehouse_name: form.warehouseName,
+      delivery_address: form.deliveryAddress,
+      source_change_reason: form.sourceChangeReason,
       lines,
     }
     const res = editing.value
@@ -850,6 +966,16 @@ async function submitCreate() {
   } finally {
     saving.value = false
   }
+}
+
+function selectDeliveryPort(id: number) {
+  const port = deliveryPorts.value.find((item) => Number(item.id) === Number(id))
+  form.deliveryPortCode = port?.unLocode ?? ''
+  form.deliveryPortName = port?.nameZh || port?.nameEn || ''
+}
+
+function selectOrderWarehouse(id: number) {
+  form.warehouseName = warehouses.value.find((item) => Number(item.id) === Number(id))?.name ?? ''
 }
 
 async function openDetail(row: Order) {

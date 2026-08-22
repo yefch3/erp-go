@@ -150,7 +150,7 @@ export default {
   },
   procurementNav: {
     title: 'Navegación de compras', workbench: 'Panel', intakes: 'Consultas pendientes', sourcing: 'Casos de cotización', inquiryTemplates: 'Plantillas de consulta',
-    requirements: 'Por comprar', orders: 'Órdenes de compra', backToWorkbench: 'Volver al panel de compras',
+    requirements: 'Por pedir', orders: 'Órdenes de compra', backToWorkbench: 'Volver al panel de compras',
   },
   financeNav: {
     title: 'Finanzas', receivable: 'Por cobrar · clientes', payable: 'Por pagar · proveedores', bank: 'Banco',

@@ -150,7 +150,7 @@ export default {
   },
   procurementNav: {
     title: 'Procurement navigation', workbench: 'Workbench', intakes: 'Pending inquiries', sourcing: 'Sourcing cases', inquiryTemplates: 'Inquiry templates',
-    requirements: 'To purchase', orders: 'Purchase orders', backToWorkbench: 'Back to procurement workbench',
+    requirements: 'To order', orders: 'Purchase orders', backToWorkbench: 'Back to procurement workbench',
   },
   financeNav: {
     title: 'Finance', receivable: 'Receivable · customers', payable: 'Payable · suppliers', bank: 'Bank',

@@ -11,6 +11,118 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const acceptedQuotationLines = `-- name: AcceptedQuotationLines :many
+SELECT cl.sourcing_line_id, cl.supplier_quote_line_id,
+       r.supplier_id, r.supplier_code, r.supplier_name,
+       r.factory_id, r.factory_code, r.factory_name,
+       cl.product_id, coalesce(cl.sku_id,0)::bigint AS sku_id,
+       cl.product_name, cl.spec_snapshot, cl.qty::text AS qty, cl.uom_code,
+       cl.source_currency, cl.source_unit_price::text AS source_unit_price,
+       coalesce(ql.moq::text,'')::text AS moq, ql.lead_time
+FROM cost_scenario_lines cl
+JOIN supplier_quote_lines ql ON ql.id=cl.supplier_quote_line_id AND ql.tenant_id=cl.tenant_id
+JOIN supplier_quotes sq ON sq.id=ql.supplier_quote_id AND sq.tenant_id=ql.tenant_id
+JOIN factory_rfqs r ON r.id=sq.factory_rfq_id AND r.tenant_id=sq.tenant_id
+WHERE cl.tenant_id=$1 AND cl.scenario_id=$2
+ORDER BY r.supplier_id, cl.sourcing_line_id
+`
+
+type AcceptedQuotationLinesParams struct {
+	TenantID   int64
+	ScenarioID int64
+}
+
+type AcceptedQuotationLinesRow struct {
+	SourcingLineID      int64
+	SupplierQuoteLineID int64
+	SupplierID          int64
+	SupplierCode        string
+	SupplierName        string
+	FactoryID           int64
+	FactoryCode         string
+	FactoryName         string
+	ProductID           int64
+	SkuID               int64
+	ProductName         string
+	SpecSnapshot        string
+	Qty                 string
+	UomCode             string
+	SourceCurrency      string
+	SourceUnitPrice     string
+	Moq                 string
+	LeadTime            string
+}
+
+func (q *Queries) AcceptedQuotationLines(ctx context.Context, arg AcceptedQuotationLinesParams) ([]AcceptedQuotationLinesRow, error) {
+	rows, err := q.db.Query(ctx, acceptedQuotationLines, arg.TenantID, arg.ScenarioID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AcceptedQuotationLinesRow
+	for rows.Next() {
+		var i AcceptedQuotationLinesRow
+		if err := rows.Scan(
+			&i.SourcingLineID,
+			&i.SupplierQuoteLineID,
+			&i.SupplierID,
+			&i.SupplierCode,
+			&i.SupplierName,
+			&i.FactoryID,
+			&i.FactoryCode,
+			&i.FactoryName,
+			&i.ProductID,
+			&i.SkuID,
+			&i.ProductName,
+			&i.SpecSnapshot,
+			&i.Qty,
+			&i.UomCode,
+			&i.SourceCurrency,
+			&i.SourceUnitPrice,
+			&i.Moq,
+			&i.LeadTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const acceptedQuotationScenario = `-- name: AcceptedQuotationScenario :one
+SELECT id, case_id, scenario_no, currency
+FROM cost_scenarios
+WHERE tenant_id=$1 AND customer_quotation_id=$2
+  AND status='CONFIRMED'
+`
+
+type AcceptedQuotationScenarioParams struct {
+	TenantID    int64
+	QuotationID *int64
+}
+
+type AcceptedQuotationScenarioRow struct {
+	ID         int64
+	CaseID     int64
+	ScenarioNo string
+	Currency   string
+}
+
+func (q *Queries) AcceptedQuotationScenario(ctx context.Context, arg AcceptedQuotationScenarioParams) (AcceptedQuotationScenarioRow, error) {
+	row := q.db.QueryRow(ctx, acceptedQuotationScenario, arg.TenantID, arg.QuotationID)
+	var i AcceptedQuotationScenarioRow
+	err := row.Scan(
+		&i.ID,
+		&i.CaseID,
+		&i.ScenarioNo,
+		&i.Currency,
+	)
+	return i, err
+}
+
 const confirmCostScenario = `-- name: ConfirmCostScenario :execrows
 UPDATE cost_scenarios SET status='CONFIRMED',confirmed_by=$1,confirmed_by_name=$2,
  confirm_reason=$3,

@@ -2,9 +2,14 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"strconv"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/outbox"
+	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/export/internal/store"
 )
 
@@ -48,14 +53,40 @@ func (s *Service) setStatus(ctx context.Context, tenantID, id, operatorID int64,
 		return "", apierr.Conflict("EX_STATUS_TRANSITION", "当前状态不允许该操作").
 			WithMeta("from", current.Status).WithMeta("to", to)
 	}
-	status, err := s.q.SetQuotationStatus(ctx, store.SetQuotationStatusParams{
-		TenantID: tenantID, ID: id, NewStatus: to, UpdatedBy: operatorID,
-		RespondNote: note,
+	status := ""
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		var setErr error
+		status, setErr = q.SetQuotationStatus(ctx, store.SetQuotationStatusParams{
+			TenantID: tenantID, ID: id, NewStatus: to, UpdatedBy: operatorID,
+			RespondNote: note,
+		})
+		if setErr != nil {
+			return setErr
+		}
+		if to != "ACCEPTED" {
+			return nil
+		}
+		// 客户接受报价是采购“待下单”的唯一入口。事件与状态在同一事务提交，
+		// 避免状态已接受但采购任务丢失，或重复点击生成两次任务。
+		payload, marshalErr := json.Marshal(map[string]any{
+			"quotation_id":     id,
+			"quotation_no":     current.QuoteNo,
+			"customer_id":      current.CustomerID,
+			"customer_name":    current.CustomerName,
+			"cost_scenario_id": current.SourceCostScenarioID,
+			"sourcing_case_id": current.SourceSourcingCaseID,
+		})
+		if marshalErr != nil {
+			return marshalErr
+		}
+		return outbox.Append(ctx, tx, outbox.Event{
+			TenantID: tenantID, AggregateType: "quotation",
+			AggregateID: strconv.FormatInt(id, 10), EventType: "QuotationAccepted",
+			Payload: payload,
+		})
 	})
-	if err != nil {
-		return "", err
-	}
-	return status, nil
+	return status, err
 }
 
 // Send marks a quotation as issued to the customer. From here on the fx

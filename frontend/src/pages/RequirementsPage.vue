@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="page-head">
-      <h2>{{ t('requirements.title') }}</h2>
+      <h2>待下单</h2>
       <span class="head-note">{{ t('requirements.readOnlyHint') }}</span>
       <span class="grow" />
       <el-button @click="router.push('/procurement')">← {{ t('procurementNav.backToWorkbench') }}</el-button>
@@ -49,6 +49,16 @@
           <template #default="{ row }">
             <div class="prod">{{ row.productName }}</div>
             <div class="sub">{{ row.productCode }}<span v-if="row.spec"> · {{ row.spec }}</span></div>
+          </template>
+        </el-table-column>
+        <el-table-column label="来源报价 / 供应商" min-width="210">
+          <template #default="{ row }">
+            <template v-if="row.source === 'CUSTOMER_QUOTATION'">
+              <div class="prod">{{ row.quotationNo }}</div>
+              <div class="sub">{{ row.supplierName }}<span v-if="row.factoryName"> · {{ row.factoryName }}</span></div>
+              <div class="sub">{{ row.sourceCurrency }} {{ row.sourceUnitPrice }} / {{ row.uomCode }} · MOQ {{ row.moq || '—' }} · {{ row.leadTime || '—' }}</div>
+            </template>
+            <span v-else>—</span>
           </template>
         </el-table-column>
         <el-table-column :label="t('requirements.qty')" width="150" align="right">
@@ -297,6 +307,17 @@ interface Requirement {
   ownerName: string
   closedReason: string
   receivedQty: string
+  quotationId: string
+  quotationNo: string
+  supplierId: string
+  supplierCode: string
+  supplierName: string
+  factoryId: string
+  factoryName: string
+  sourceCurrency: string
+  sourceUnitPrice: string
+  moq: string
+  leadTime: string
 }
 
 interface CoveringOrder {
@@ -448,6 +469,11 @@ function onSelect(rows: Requirement[]) {
 // not have to find them again by product name.
 function goOrder(rows?: Requirement[]) {
   const picked = rows ?? selected.value
+  const quoteRows = picked.filter((row) => row.source === 'CUSTOMER_QUOTATION')
+  if (quoteRows.length && quoteRows.some((row) => row.quotationId !== quoteRows[0].quotationId || row.supplierId !== quoteRows[0].supplierId)) {
+    ElMessage.warning('请一次只选择同一客户报价、同一供应商的明细')
+    return
+  }
   router.push({ path: '/purchase-orders', query: { requirements: picked.map((r) => r.id).join(',') } })
 }
 

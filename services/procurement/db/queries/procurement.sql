@@ -107,6 +107,12 @@ SELECT
     coalesce(required_date::text, '')::text AS required_date,
     source, status, closed_reason, created_at,
     owner_id, owner_name,
+    quotation_id, quotation_no, cost_scenario_id, cost_scenario_no,
+    sourcing_case_id, sourcing_line_id, supplier_quote_line_id,
+    supplier_id, supplier_code, supplier_name,
+    factory_id, factory_code, factory_name,
+    source_currency, source_unit_price::text AS source_unit_price,
+    coalesce(moq::text,'')::text AS moq, lead_time,
     count(*) OVER () AS total
 FROM purchase_requirements
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
@@ -138,7 +144,13 @@ SELECT
     received_qty::text AS received_qty,
     coalesce(required_date::text, '')::text AS required_date,
     source, status, closed_reason, created_at,
-    owner_id, owner_name
+    owner_id, owner_name,
+    quotation_id, quotation_no, cost_scenario_id, cost_scenario_no,
+    sourcing_case_id, sourcing_line_id, supplier_quote_line_id,
+    supplier_id, supplier_code, supplier_name,
+    factory_id, factory_code, factory_name,
+    source_currency, source_unit_price::text AS source_unit_price,
+    coalesce(moq::text,'')::text AS moq, lead_time
 FROM purchase_requirements
 WHERE tenant_id = $1 AND id = $2;
 
@@ -192,4 +204,51 @@ INSERT INTO purchase_requirements (
     sqlc.arg(owner_id)::bigint,
     sqlc.arg(owner_name)::text
 )
+RETURNING id;
+
+-- name: UpsertQuotationRequirement :one
+-- 客户接受报价后，已确认成本方案中的每条产品成为一条待下单明细。
+-- 幂等键是“报价 + 询盘产品行”；Kafka 重投只刷新尚未下单的快照。
+INSERT INTO purchase_requirements (
+    tenant_id, contract_id, contract_no, contract_version_id, version_no,
+    contract_item_id, customer_name, product_id, sku_id, product_code,
+    product_name, spec, uom_id, uom_code, required_qty, source,
+    quotation_id, quotation_no, cost_scenario_id, cost_scenario_no,
+    sourcing_case_id, sourcing_line_id, supplier_quote_line_id,
+    supplier_id, supplier_code, supplier_name,
+    factory_id, factory_code, factory_name,
+    source_currency, source_unit_price, moq, lead_time
+) VALUES (
+    sqlc.arg(tenant_id), 0, '', 0, 0,
+    -nextval('purchase_requirements_id_seq'), sqlc.arg(customer_name),
+    sqlc.arg(product_id), nullif(sqlc.arg(sku_id)::bigint,0), '',
+    sqlc.arg(product_name), sqlc.arg(spec), 0, sqlc.arg(uom_code),
+    sqlc.arg(required_qty)::text::numeric, 'CUSTOMER_QUOTATION',
+    sqlc.arg(quotation_id), sqlc.arg(quotation_no),
+    sqlc.arg(cost_scenario_id), sqlc.arg(cost_scenario_no),
+    sqlc.arg(sourcing_case_id), sqlc.arg(sourcing_line_id), sqlc.arg(supplier_quote_line_id),
+    sqlc.arg(supplier_id), sqlc.arg(supplier_code), sqlc.arg(supplier_name),
+    sqlc.arg(factory_id), sqlc.arg(factory_code), sqlc.arg(factory_name),
+    sqlc.arg(source_currency), sqlc.arg(source_unit_price)::text::numeric,
+    nullif(sqlc.arg(moq)::text,'')::numeric, sqlc.arg(lead_time)
+)
+ON CONFLICT (tenant_id, quotation_id, sourcing_line_id)
+    WHERE source='CUSTOMER_QUOTATION'
+DO UPDATE SET
+    customer_name=excluded.customer_name,
+    product_name=excluded.product_name,
+    spec=excluded.spec,
+    required_qty=excluded.required_qty,
+    supplier_id=excluded.supplier_id,
+    supplier_code=excluded.supplier_code,
+    supplier_name=excluded.supplier_name,
+    factory_id=excluded.factory_id,
+    factory_code=excluded.factory_code,
+    factory_name=excluded.factory_name,
+    source_currency=excluded.source_currency,
+    source_unit_price=excluded.source_unit_price,
+    moq=excluded.moq,
+    lead_time=excluded.lead_time,
+    updated_at=now()
+WHERE purchase_requirements.ordered_qty=0
 RETURNING id;
