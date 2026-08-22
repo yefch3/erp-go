@@ -36,7 +36,7 @@ func TestThreeWayMatch(t *testing.T) {
 	if err = pool.QueryRow(ctx, `INSERT INTO purchase_requirements (tenant_id,contract_id,contract_no,contract_version_id,contract_item_id,product_id,product_code,product_name,uom_id,uom_code,required_qty,ordered_qty,status) VALUES ($1,1,'CT-MATCH',1,$1,11,'P-11','Match Coil',7,'TON',10,10,'ORDERED') RETURNING id`, tenantID).Scan(&reqID); err != nil {
 		t.Fatal(err)
 	}
-	if err = pool.QueryRow(ctx, `INSERT INTO purchase_requirements (tenant_id,contract_id,contract_no,contract_version_id,contract_item_id,product_id,product_code,product_name,uom_id,uom_code,required_qty,ordered_qty,status) VALUES ($1,1,'CT-MATCH',1,$1+1,12,'P-12','Match Sheet',7,'TON',10,10,'ORDERED') RETURNING id`, tenantID).Scan(&req2ID); err != nil {
+	if err = pool.QueryRow(ctx, `INSERT INTO purchase_requirements (tenant_id,contract_id,contract_no,contract_version_id,contract_item_id,product_id,product_code,product_name,uom_id,uom_code,required_qty,ordered_qty,status) VALUES ($1,1,'CT-MATCH',1,$2,12,'P-12','Match Sheet',7,'TON',10,10,'ORDERED') RETURNING id`, tenantID, tenantID+1).Scan(&req2ID); err != nil {
 		t.Fatal(err)
 	}
 	if err = pool.QueryRow(ctx, `INSERT INTO purchase_orders (tenant_id,po_no,supplier_id,supplier_code,supplier_name,currency,total_amount,expected_date,status,buyer_id,buyer_name,ordered_at) VALUES ($1,'PO-MATCH-1',9,'SUP-9','Mill','USD',5200,current_date+10,'PARTIALLY_RECEIVED',77,'Buyer',now()) RETURNING id`, tenantID).Scan(&orderID); err != nil {
