@@ -123,9 +123,19 @@ export default {
     scanUploaded: 'Escaneo subido', scanUploadFailed: 'Error al subir el escaneo, reintente',
     empty: 'Aún no hay facturas de proveedor',
   },
+  supplierStatements: {
+    eyebrow: 'CONCILIACIÓN', title: 'Estados de cuenta de proveedor', subtitle: 'Órdenes, recepciones, facturas y pagos lado a lado: las diferencias se muestran solas',
+    search: 'Buscar proveedor', supplier: 'Proveedor', currency: 'Moneda',
+    ordered: 'Ordenado', received: 'Recibido', exception: 'Excepciones', invoiced: 'Facturado',
+    paid: 'Pagado', advance: 'Anticipos en OC', unallocated: 'Sin aplicar', balance: 'Saldo pendiente',
+    overdue: 'Vencido (n.º)', empty: 'Aún no hay movimientos con proveedores',
+    lineAt: 'Fecha', lineType: 'Tipo', lineRef: 'Ref.', lineAgainst: 'Contra',
+    lineAmount: 'Importe', lineBalance: 'Saldo', lineNote: 'Nota',
+    lineTypes: { INVOICE: 'Factura', PAYMENT: 'Pago', PAYMENT_REVERSAL: 'Reverso', ADVANCE: 'Anticipo', ADVANCE_REVERSAL: 'Reverso de anticipo' },
+  },
   procurementNav: {
     title: 'Navegación de compras', workbench: 'Panel', intakes: 'Consultas pendientes', sourcing: 'Casos de cotización', inquiryTemplates: 'Plantillas de consulta',
-    requirements: 'Por comprar', orders: 'Órdenes de compra', supplierInvoices: 'Facturas de proveedor', supplierPayments: 'Pagos a proveedores', backToWorkbench: 'Volver al panel de compras',
+    requirements: 'Por comprar', orders: 'Órdenes de compra', supplierInvoices: 'Facturas de proveedor', supplierPayments: 'Pagos a proveedores', supplierStatements: 'Conciliación de proveedores', backToWorkbench: 'Volver al panel de compras',
   },
   procurementWorkbench: {
     eyebrow: 'CONTROL DE COMPRAS', title: 'Panel de compras', subtitle: 'Revisar consultas estandarizadas y avanzar compras', downloadTemplate: 'Descargar plantilla', uploadInquiry: 'Importar consulta del cliente', handlePending: 'Pendientes de revisión', handlePendingCount: 'Pendientes de revisión ({n})',

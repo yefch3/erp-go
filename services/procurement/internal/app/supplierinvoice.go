@@ -370,8 +370,21 @@ func (s *Service) VoidSupplierInvoice(ctx context.Context, tenantID, id int64, r
 	if err := s.AuthorizeSupplierInvoice(ctx, tenantID, id, op); err != nil {
 		return SupplierInvoice{}, err
 	}
-	// P3 note: once payment_allocations exists, an invoice with live
-	// allocations must refuse to void until they are reversed.
+	// An invoice with live allocations refuses to void: money is recorded as
+	// settling this claim, and "the claim doesn't count but the settlement
+	// stands" is not a state the book can hold. Reverse the allocations
+	// first — reversals net to zero, so a fully-reversed invoice voids fine.
+	var allocated string
+	if err := s.pool.QueryRow(ctx, `
+		SELECT coalesce(sum(amount),0)::text FROM payment_allocations
+		 WHERE tenant_id=$1 AND invoice_id=$2`, tenantID, id).Scan(&allocated); err != nil {
+		return SupplierInvoice{}, err
+	}
+	if alloc, _ := decimal.NewFromString(allocated); !alloc.IsZero() {
+		return SupplierInvoice{}, apierr.Conflict("INV_HAS_ALLOCATIONS",
+			"发票上还核销着 "+alloc.String()+"，先冲销再作废").
+			WithMeta("allocated", allocated)
+	}
 	cmd, err := s.pool.Exec(ctx, `
 		UPDATE supplier_invoices SET status='VOID', void_reason=$3
 		 WHERE tenant_id=$1 AND id=$2 AND status='OPEN'`,

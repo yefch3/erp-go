@@ -123,9 +123,19 @@ export default {
     scanUploaded: 'Scan uploaded', scanUploadFailed: 'Scan upload failed, please retry',
     empty: 'No supplier invoices yet',
   },
+  supplierStatements: {
+    eyebrow: 'RECONCILIATION', title: 'Supplier statements', subtitle: 'Orders, receipts, invoices and payments side by side — the gaps show themselves',
+    search: 'Search supplier', supplier: 'Supplier', currency: 'Currency',
+    ordered: 'Ordered', received: 'Received', exception: 'Exceptions', invoiced: 'Invoiced',
+    paid: 'Paid', advance: 'Advances parked', unallocated: 'Unallocated', balance: 'Balance due',
+    overdue: 'Overdue (count)', empty: 'No supplier activity yet',
+    lineAt: 'Time', lineType: 'Type', lineRef: 'Ref', lineAgainst: 'Against',
+    lineAmount: 'Amount', lineBalance: 'Balance', lineNote: 'Note',
+    lineTypes: { INVOICE: 'Invoice', PAYMENT: 'Payment', PAYMENT_REVERSAL: 'Reversal', ADVANCE: 'Advance', ADVANCE_REVERSAL: 'Advance reversal' },
+  },
   procurementNav: {
     title: 'Procurement navigation', workbench: 'Workbench', intakes: 'Pending inquiries', sourcing: 'Sourcing cases', inquiryTemplates: 'Inquiry templates',
-    requirements: 'To purchase', orders: 'Purchase orders', supplierInvoices: 'Supplier invoices', supplierPayments: 'Supplier payments', backToWorkbench: 'Back to procurement workbench',
+    requirements: 'To purchase', orders: 'Purchase orders', supplierInvoices: 'Supplier invoices', supplierPayments: 'Supplier payments', supplierStatements: 'Supplier statements', backToWorkbench: 'Back to procurement workbench',
   },
   procurementWorkbench: {
     eyebrow: 'PROCUREMENT CONTROL', title: 'Procurement workbench', subtitle: 'Review standardized inquiries and advance sourcing and purchasing', downloadTemplate: 'Download template', uploadInquiry: 'Import customer inquiry', handlePending: 'Pending review', handlePendingCount: 'Pending review ({n})',

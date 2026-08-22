@@ -123,9 +123,19 @@ export default {
     scanUploaded: '扫描件已上传', scanUploadFailed: '扫描件上传失败，请重试',
     empty: '还没有录入任何供应商发票',
   },
+  supplierStatements: {
+    eyebrow: 'RECONCILIATION', title: '供应商对账', subtitle: '订单、收货、发票、付款五组数字并排——差在哪，一屏看清',
+    search: '搜索供应商', supplier: '供应商', currency: '币种',
+    ordered: '订单金额', received: '已收金额', exception: '异常扣减', invoiced: '已开票',
+    paid: '已付款', advance: '预付未冲抵', unallocated: '未核销付款', balance: '未付余额',
+    overdue: '逾期（笔数）', empty: '还没有任何供应商往来',
+    lineAt: '时间', lineType: '类型', lineRef: '单号', lineAgainst: '对象',
+    lineAmount: '金额', lineBalance: '结余', lineNote: '备注',
+    lineTypes: { INVOICE: '开票', PAYMENT: '付款核销', PAYMENT_REVERSAL: '核销冲销', ADVANCE: '预付挂单', ADVANCE_REVERSAL: '预付冲销' },
+  },
   procurementNav: {
     title: '采购管理导航', workbench: '采购工作台', intakes: '待复核询盘', sourcing: '询价案件', inquiryTemplates: '询盘模板',
-    requirements: '待采购', orders: '采购订单', supplierInvoices: '供应商发票', supplierPayments: '供应商付款', backToWorkbench: '返回采购工作台',
+    requirements: '待采购', orders: '采购订单', supplierInvoices: '供应商发票', supplierPayments: '供应商付款', supplierStatements: '供应商对账', backToWorkbench: '返回采购工作台',
   },
   procurementWorkbench: {
     eyebrow: 'PROCUREMENT CONTROL', title: '采购工作台', subtitle: '复核标准询盘并推进询价与采购执行', downloadTemplate: '下载标准模板', uploadInquiry: '导入客户询盘', handlePending: '待复核询盘', handlePendingCount: '待复核询盘（{n}）',
