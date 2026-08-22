@@ -125,6 +125,7 @@ func (h *OrderHandler) ListOrders(ctx context.Context, req *prv1.ListOrdersReque
 			ItemCount: r.ItemCount, TotalQty: r.TotalQty, ReceivedQty: r.ReceivedQty,
 			CreatedAt: ts(r.CreatedAt), SendStatus: r.SendStatus, SentTo: r.SentTo,
 			SentAt: ts(r.SentAt), SentBy: r.SentByName, SendError: r.SendError,
+			ClosedAt: r.ClosedAt, ClosedBy: r.ClosedByName,
 		})
 	}
 	return &prv1.ListOrdersResponse{Orders: out, Meta: &commonv1.PageMeta{Total: total}}, nil
@@ -176,6 +177,7 @@ func (h *OrderHandler) GetOrder(ctx context.Context, req *prv1.GetOrderRequest) 
 			ApprovalInstanceId: head.ApprovalInstanceID, CreatedAt: ts(head.CreatedAt),
 			SendStatus: head.SendStatus, SentTo: head.SentTo, SentAt: ts(head.SentAt),
 			SentBy: head.SentByName, SendError: head.SendError,
+			ClosedAt: head.ClosedAt, ClosedBy: head.ClosedByName,
 		},
 		Items: outItems, Receipts: outReceipts,
 	}, nil
@@ -364,6 +366,56 @@ func (h *OrderHandler) ResolveReceiptException(ctx context.Context, req *prv1.Re
 	return &prv1.ResolveReceiptExceptionResponse{Exception: exceptionToProto(exception)}, nil
 }
 
+func (h *OrderHandler) RecordInspection(ctx context.Context, req *prv1.RecordInspectionRequest) (*prv1.RecordInspectionResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	op, _ := grpcx.OperatorFromContext(ctx)
+	attachments := make([]app.ProductionAttachment, 0, len(req.GetAttachments()))
+	for _, attachment := range req.GetAttachments() {
+		attachments = append(attachments, app.ProductionAttachment{FileName: attachment.GetFileName(), FileURL: attachment.GetFileUrl(), ContentType: attachment.GetContentType()})
+	}
+	inspection, err := h.svc.RecordInspection(ctx, grpcx.TenantID(ctx), req.GetId(), app.PurchaseInspection{
+		ReceiptID: req.GetReceiptId(), POItemID: req.GetPoItemId(), Result: req.GetResult(),
+		InspectedQty: req.GetInspectedQty(), DefectQty: req.GetDefectQty(), Note: req.GetNote(),
+		Attachments: attachments,
+	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.RecordInspectionResponse{Inspection: inspectionToProto(inspection)}, nil
+}
+
+func (h *OrderHandler) ResolveInspection(ctx context.Context, req *prv1.ResolveInspectionRequest) (*prv1.ResolveInspectionResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	op, _ := grpcx.OperatorFromContext(ctx)
+	inspection, err := h.svc.ResolveInspection(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetInspectionId(), req.GetDisposition(), req.GetDispositionNote(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.ResolveInspectionResponse{Inspection: inspectionToProto(inspection)}, nil
+}
+
+func (h *OrderHandler) CloseOrder(ctx context.Context, req *prv1.CloseOrderRequest) (*prv1.CloseOrderResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	op, _ := grpcx.OperatorFromContext(ctx)
+	if err := h.svc.CloseOrder(ctx, grpcx.TenantID(ctx), req.GetId(), app.Operator{ID: op.EmployeeID, Name: op.Name}); err != nil {
+		return nil, err
+	}
+	head, err := h.svc.GetOrder(ctx, grpcx.TenantID(ctx), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.CloseOrderResponse{Order: &prv1.PurchaseOrder{
+		Id: head.ID, PoNo: head.PoNo, Status: head.Status,
+		ClosedAt: head.ClosedAt, ClosedBy: head.ClosedByName,
+	}}, nil
+}
+
 func executionToProto(execution app.OrderExecution) *prv1.GetOrderExecutionResponse {
 	out := &prv1.GetOrderExecutionResponse{}
 	for _, row := range execution.Confirmations {
@@ -377,6 +429,17 @@ func executionToProto(execution app.OrderExecution) *prv1.GetOrderExecutionRespo
 	}
 	for _, row := range execution.Reminders {
 		out.Reminders = append(out.Reminders, &prv1.ProductionReminder{Id: row.ID, Node: row.Node, PlannedDate: row.PlannedDate, BuyerId: row.BuyerID, BuyerName: row.BuyerName, RelatedContracts: row.RelatedContracts, Status: row.Status, CreatedAt: row.CreatedAt})
+	}
+	for _, row := range execution.Inspections {
+		out.Inspections = append(out.Inspections, inspectionToProto(row))
+	}
+	return out
+}
+
+func inspectionToProto(row app.PurchaseInspection) *prv1.PurchaseInspection {
+	out := &prv1.PurchaseInspection{Id: row.ID, ReceiptId: row.ReceiptID, ReceiptNo: row.ReceiptNo, PoItemId: row.POItemID, Result: row.Result, InspectedQty: row.InspectedQty, DefectQty: row.DefectQty, Note: row.Note, Status: row.Status, Disposition: row.Disposition, DispositionNote: row.DispositionNote, InspectedBy: row.InspectedBy, InspectedAt: row.InspectedAt, ResolvedBy: row.ResolvedBy, ResolvedAt: row.ResolvedAt}
+	for _, attachment := range row.Attachments {
+		out.Attachments = append(out.Attachments, &prv1.ProductionAttachment{FileName: attachment.FileName, FileUrl: attachment.FileURL, ContentType: attachment.ContentType})
 	}
 	return out
 }

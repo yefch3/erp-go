@@ -67,6 +67,7 @@ type OrderExecution struct {
 	Milestones    []ProductionMilestone
 	Exceptions    []ReceiptException
 	Reminders     []ProductionReminder
+	Inspections   []PurchaseInspection
 }
 
 func (s *Service) GetOrderDocuments(ctx context.Context, tenantID, id int64) (OrderDocuments, error) {
@@ -523,5 +524,18 @@ func (s *Service) GetOrderExecution(ctx context.Context, tenantID, poID int64) (
 		out.Reminders = append(out.Reminders, row)
 	}
 	reminders.Close()
+	inspections, err := s.pool.Query(ctx, `SELECT `+inspectionColumns+` FROM purchase_inspections i LEFT JOIN purchase_receipts r ON r.id=i.receipt_id WHERE i.tenant_id=$1 AND i.po_id=$2 ORDER BY i.inspected_at DESC,i.id DESC`, tenantID, poID)
+	if err != nil {
+		return out, err
+	}
+	for inspections.Next() {
+		row, err := scanInspection(inspections)
+		if err != nil {
+			inspections.Close()
+			return out, err
+		}
+		out.Inspections = append(out.Inspections, row)
+	}
+	inspections.Close()
 	return out, nil
 }

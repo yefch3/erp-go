@@ -494,6 +494,11 @@ service PurchaseOrderService {
   rpc SaveProductionMilestone(SaveProductionMilestoneRequest) returns (SaveProductionMilestoneResponse);
   rpc ReportReceiptException(ReportReceiptExceptionRequest) returns (ReportReceiptExceptionResponse);
   rpc ResolveReceiptException(ResolveReceiptExceptionRequest) returns (ResolveReceiptExceptionResponse);
+  // 质检记录（A3）：结果、不合格数量、附件、处置。挂在收货单上。
+  rpc RecordInspection(RecordInspectionRequest) returns (RecordInspectionResponse);
+  rpc ResolveInspection(ResolveInspectionRequest) returns (ResolveInspectionResponse);
+  // 结案：全部收满、无未解决异常、无未解决质检才放行。
+  rpc CloseOrder(CloseOrderRequest) returns (CloseOrderResponse);
 
   // Supplier invoices: the third leg of the three-way match. Lives on the
   // order service because an invoice is meaningless except against orders.
@@ -674,6 +679,9 @@ message PurchaseOrder {
   string sent_at = 21;
   string sent_by = 22;
   string send_error = 23;
+  // 结案是 RECEIVED 之外的一个事实，不是新状态：空串即未结案。
+  string closed_at = 24;
+  string closed_by = 25;
 }
 
 message PurchaseOrderItem {
@@ -898,7 +906,53 @@ message GetOrderExecutionResponse {
   repeated ProductionMilestone milestones = 2;
   repeated ReceiptException exceptions = 3;
   repeated ProductionReminder reminders = 4;
+  repeated PurchaseInspection inspections = 5;
 }
+
+message PurchaseInspection {
+  int64 id = 1;
+  int64 receipt_id = 2;
+  string receipt_no = 3;
+  int64 po_item_id = 4;
+  // PASS / FAIL
+  string result = 5;
+  string inspected_qty = 6;
+  string defect_qty = 7;
+  string note = 8;
+  repeated ProductionAttachment attachments = 9;
+  // OPEN / RESOLVED
+  string status = 10;
+  // RETURN / DEDUCTION / CONCESSION / REWORK；未处置为空
+  string disposition = 11;
+  string disposition_note = 12;
+  string inspected_by = 13;
+  string inspected_at = 14;
+  string resolved_by = 15;
+  string resolved_at = 16;
+}
+
+message RecordInspectionRequest {
+  int64 id = 1;
+  int64 receipt_id = 2;
+  int64 po_item_id = 3;
+  string result = 4;
+  string inspected_qty = 5;
+  string defect_qty = 6;
+  string note = 7;
+  repeated ProductionAttachment attachments = 8;
+}
+message RecordInspectionResponse { PurchaseInspection inspection = 1; }
+
+message ResolveInspectionRequest {
+  int64 id = 1;
+  int64 inspection_id = 2;
+  string disposition = 3;
+  string disposition_note = 4;
+}
+message ResolveInspectionResponse { PurchaseInspection inspection = 1; }
+
+message CloseOrderRequest { int64 id = 1; }
+message CloseOrderResponse { PurchaseOrder order = 1; }
 
 message RecordSupplierConfirmationRequest {
   int64 id = 1;
