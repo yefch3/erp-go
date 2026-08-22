@@ -49,6 +49,7 @@ export const router = createRouter({
         { path: 'supplier-invoices', component: () => import('./pages/SupplierInvoicesPage.vue') },
         { path: 'supplier-payments', component: () => import('./pages/SupplierPaymentsPage.vue') },
         { path: 'supplier-statements', component: () => import('./pages/SupplierStatementsPage.vue') },
+        { path: 'bank-transactions', component: () => import('./pages/BankTransactionsPage.vue') },
         { path: 'emails', component: () => import('./pages/EmailsPage.vue') },
         { path: 'team-mail', component: () => import('./pages/TeamMailPage.vue') },
         { path: 'mail/export-log', component: () => import('./pages/MailExportLogPage.vue') },

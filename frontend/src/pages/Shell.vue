@@ -250,6 +250,7 @@ const procurementItems = computed(() => [
   { path: '/supplier-invoices', label: t('procurementNav.supplierInvoices'), allowed: auth.can('procurement:invoice:read') },
   { path: '/supplier-payments', label: t('procurementNav.supplierPayments'), allowed: auth.can('procurement:payment:read') },
   { path: '/supplier-statements', label: t('procurementNav.supplierStatements'), allowed: auth.can('procurement:recon:read') },
+  { path: '/bank-transactions', label: t('procurementNav.bankTransactions'), allowed: auth.can('procurement:payment:read') },
   { path: '/procurement/settings/inquiry-templates', label: t('procurementNav.inquiryTemplates'), allowed: auth.can('procurement:sourcing:read') },
 ].filter((item) => item.allowed))
 
