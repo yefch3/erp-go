@@ -80,8 +80,7 @@ message Quotation {
   int64 source_sourcing_case_id = 26;
 }
 
-// ItemInput is one line the caller wants quoted. Only the product, quantity
-// and price come from the client; names and units are resolved server-side.
+// 客户报价明细可以选择关联产品主数据；未关联时保留已审核询盘的名称和单位快照。
 message ItemInput {
   int64 product_id = 1;
   int64 sku_id = 2;
@@ -90,6 +89,9 @@ message ItemInput {
   string unit_price = 5;
   string remark = 6;
   int64 source_cost_scenario_line_id = 7;
+  string product_name = 8;
+  string uom_code = 9;
+  string product_code = 10;
 }
 
 message ListQuotationsRequest {

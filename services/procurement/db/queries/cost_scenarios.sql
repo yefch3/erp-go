@@ -10,14 +10,17 @@ JOIN supplier_quotes q ON q.id=ql.supplier_quote_id AND q.tenant_id=ql.tenant_id
 JOIN factory_rfqs r ON r.id=q.factory_rfq_id AND r.tenant_id=q.tenant_id
 JOIN factory_rfq_lines fl ON fl.factory_rfq_id=r.id AND fl.sourcing_line_id=ql.sourcing_line_id AND fl.tenant_id=ql.tenant_id
 JOIN sourcing_lines sl ON sl.id=ql.sourcing_line_id AND sl.tenant_id=ql.tenant_id
-WHERE ql.tenant_id=$1 AND r.case_id=$2 AND ql.id=$3;
+WHERE ql.tenant_id=$1 AND r.case_id=$2 AND ql.id=$3
+  AND q.confirmation_status='WRITTEN_CONFIRMED';
 
 -- name: CountConfirmedSourcingLines :one
-SELECT count(*) FROM sourcing_lines WHERE tenant_id=$1 AND case_id=$2 AND decision='CONFIRMED';
+-- 进入询价后的历史数据可能仍保留 PENDING；只有明确忽略或不匹配的产品不参与成本方案。
+SELECT count(*) FROM sourcing_lines
+WHERE tenant_id=$1 AND case_id=$2 AND decision NOT IN ('SKIPPED','NO_MATCH');
 
 -- name: CostScenarioTerms :one
 SELECT incoterm,port,payment_terms FROM sourcing_lines
-WHERE tenant_id=$1 AND case_id=$2 AND decision='CONFIRMED' ORDER BY line_no LIMIT 1;
+WHERE tenant_id=$1 AND case_id=$2 AND decision NOT IN ('SKIPPED','NO_MATCH') ORDER BY line_no LIMIT 1;
 
 -- name: CreateCostScenario :one
 INSERT INTO cost_scenarios(tenant_id,case_id,scenario_no,currency,allocation_basis,margin_type,margin_value,

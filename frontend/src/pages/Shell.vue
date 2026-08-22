@@ -52,9 +52,6 @@
         <el-menu-item v-if="auth.can('product:product:read')" index="/products">
           {{ t('menu.products') }}
         </el-menu-item>
-        <el-menu-item v-if="auth.can('export:quotation:read')" index="/quotations">
-          {{ t('menu.quotations') }}
-        </el-menu-item>
         <el-menu-item v-if="auth.can('export:contract:read')" index="/contracts">
           {{ t('menu.contracts') }}
         </el-menu-item>

@@ -87,24 +87,30 @@ type CostScenarioLine struct {
 }
 
 type FactoryRfq struct {
-	ID            int64
-	TenantID      int64
-	CaseID        int64
-	RfqNo         string
-	SupplierID    int64
-	SupplierCode  string
-	SupplierName  string
-	ContactEmail  string
-	Currency      string
-	ResponseDueAt pgtype.Date
-	Status        string
-	CreatedBy     int64
-	CreatedByName string
-	CreatedAt     pgtype.Timestamptz
-	UpdatedAt     pgtype.Timestamptz
-	FactoryID     int64
-	FactoryCode   string
-	FactoryName   string
+	ID             int64
+	TenantID       int64
+	CaseID         int64
+	RfqNo          string
+	SupplierID     int64
+	SupplierCode   string
+	SupplierName   string
+	ContactEmail   string
+	Currency       string
+	ResponseDueAt  pgtype.Date
+	Status         string
+	CreatedBy      int64
+	CreatedByName  string
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	FactoryID      int64
+	FactoryCode    string
+	FactoryName    string
+	InquiryChannel string
+	ContactName    string
+	ContactValue   string
+	ContactedAt    pgtype.Timestamptz
+	InquiryNote    string
+	RoundNo        int32
 }
 
 type FactoryRfqLine struct {
@@ -452,20 +458,58 @@ type SourcingLine struct {
 	CustomFields       []byte
 }
 
+type SupplierInvoice struct {
+	ID            int64
+	TenantID      int64
+	SupplierID    int64
+	SupplierCode  string
+	SupplierName  string
+	InvoiceNo     string
+	InvoiceType   string
+	Currency      string
+	TotalAmount   pgtype.Numeric
+	TaxAmount     pgtype.Numeric
+	InvoiceDate   pgtype.Date
+	DueDate       pgtype.Date
+	MatchStatus   string
+	MatchNote     string
+	Status        string
+	VoidReason    string
+	AttachmentKey string
+	CreatedByID   int64
+	CreatedByName string
+	CreatedAt     pgtype.Timestamptz
+}
+
+type SupplierInvoiceLine struct {
+	ID          int64
+	TenantID    int64
+	InvoiceID   int64
+	PoID        *int64
+	PoItemID    *int64
+	Description string
+	Qty         pgtype.Numeric
+	UnitPrice   pgtype.Numeric
+	Amount      pgtype.Numeric
+}
+
 type SupplierQuote struct {
-	ID              int64
-	TenantID        int64
-	FactoryRfqID    int64
-	SupplierQuoteNo string
-	QuotedAt        pgtype.Date
-	ValidUntil      pgtype.Date
-	Currency        string
-	PaymentTerms    string
-	Delivery        string
-	Remark          string
-	Source          string
-	CreatedBy       int64
-	CreatedAt       pgtype.Timestamptz
+	ID                 int64
+	TenantID           int64
+	FactoryRfqID       int64
+	SupplierQuoteNo    string
+	QuotedAt           pgtype.Date
+	ValidUntil         pgtype.Date
+	Currency           string
+	PaymentTerms       string
+	Delivery           string
+	Remark             string
+	Source             string
+	CreatedBy          int64
+	CreatedAt          pgtype.Timestamptz
+	VersionNo          int32
+	ConfirmationStatus string
+	EvidenceNote       string
 }
 
 type SupplierQuoteLine struct {

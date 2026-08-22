@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -13,6 +14,32 @@ import (
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/export/internal/store"
 )
+
+// normalizeQuotationSpec 兼容历史报价：移除规格中重复的产品名称，并清理空规格段。
+func normalizeQuotationSpec(productName, spec string) string {
+	productName = strings.TrimSpace(productName)
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return ""
+	}
+	if productName != "" {
+		for _, separator := range []string{" / ", "/"} {
+			prefix := productName + separator
+			if strings.HasPrefix(spec, prefix) {
+				spec = strings.TrimSpace(strings.TrimPrefix(spec, prefix))
+				break
+			}
+		}
+	}
+	parts := strings.Split(spec, "/")
+	cleaned := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			cleaned = append(cleaned, part)
+		}
+	}
+	return strings.Join(cleaned, " / ")
+}
 
 // pickContact returns the addressee: the one asked for, or the primary when
 // none was chosen. Choosing a contact who works for a different customer is
@@ -39,6 +66,7 @@ func pickContact(customer Customer, contactID int64) (Contact, error) {
 
 type ItemInput struct {
 	ProductID, SkuID, SourceCostScenarioLineID int64
+	ProductCode, ProductName, UomCode          string
 	Spec                                       string
 	Qty                                        string
 	UnitPrice                                  string
@@ -100,13 +128,28 @@ func (s *Service) resolve(ctx context.Context, in QuotationInput) (Customer, []p
 			return Customer{}, nil, decimal.Zero, apierr.Invalid("EX_PRICE_INVALID", "单价必须是不小于 0 的数字").
 				WithMeta("line", itoa(i+1))
 		}
-		product, err := s.products.Get(ctx, item.ProductID)
-		if err != nil {
-			return Customer{}, nil, decimal.Zero, err
-		}
-		if product.Status != "ACTIVE" {
-			return Customer{}, nil, decimal.Zero, apierr.Invalid("EX_PRODUCT_INACTIVE", "产品已停用，不能报价").
-				WithMeta("product", product.Code)
+		var product Product
+		if item.ProductID != 0 {
+			// 已绑定产品主数据时仍执行有效性校验，避免引用已停用产品。
+			product, err = s.products.Get(ctx, item.ProductID)
+			if err != nil {
+				return Customer{}, nil, decimal.Zero, err
+			}
+			if product.Status != "ACTIVE" {
+				return Customer{}, nil, decimal.Zero, apierr.Invalid("EX_PRODUCT_INACTIVE", "产品已停用，不能报价").
+					WithMeta("product", product.Code)
+			}
+		} else {
+			// 采购询盘允许先于产品主数据存在；客户报价保存人工审核后的快照。
+			if item.ProductName == "" {
+				return Customer{}, nil, decimal.Zero, apierr.Invalid("EX_PRODUCT_NAME_REQUIRED", "产品名称必填").
+					WithMeta("line", itoa(i+1))
+			}
+			if item.UomCode == "" {
+				return Customer{}, nil, decimal.Zero, apierr.Invalid("EX_UOM_REQUIRED", "计量单位必填").
+					WithMeta("line", itoa(i+1))
+			}
+			product = Product{Code: item.ProductCode, Name: item.ProductName, UomCode: item.UomCode, Status: "SNAPSHOT"}
 		}
 		// Rounded per line, then summed: the customer sees line amounts, and
 		// the total must be exactly their sum, not a re-rounded product.
@@ -299,6 +342,9 @@ func (s *Service) GetQuotation(ctx context.Context, tenantID, id int64) (store.G
 		return store.GetQuotationRow{}, nil, err
 	}
 	items, err := s.q.ListQuotationItems(ctx, store.ListQuotationItemsParams{TenantID: tenantID, QuotationID: id})
+	for i := range items {
+		items[i].Spec = normalizeQuotationSpec(items[i].ProductName, items[i].Spec)
+	}
 	return q, items, err
 }
 

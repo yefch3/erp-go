@@ -3,6 +3,7 @@ package grpcin
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
@@ -10,6 +11,32 @@ import (
 	"github.com/sgao19/erp-go/services/procurement/internal/app"
 	"github.com/sgao19/erp-go/services/procurement/internal/store"
 )
+
+// removeRepeatedProductName 兼容旧 RFQ 快照：移除重复产品名称，并清理空规格段。
+func removeRepeatedProductName(productName, spec string) string {
+	productName = strings.TrimSpace(productName)
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return ""
+	}
+	if productName != "" {
+		for _, separator := range []string{" / ", "/"} {
+			prefix := productName + separator
+			if strings.HasPrefix(spec, prefix) {
+				spec = strings.TrimSpace(strings.TrimPrefix(spec, prefix))
+				break
+			}
+		}
+	}
+	parts := strings.Split(spec, "/")
+	cleaned := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			cleaned = append(cleaned, part)
+		}
+	}
+	return strings.Join(cleaned, " / ")
+}
 
 type SourcingHandler struct {
 	prv1.UnimplementedSourcingServiceServer
@@ -125,7 +152,9 @@ func (h *SourcingHandler) CreateFactoryRfq(ctx context.Context, req *prv1.Create
 	op, _ := grpcx.OperatorFromContext(ctx)
 	row, err := h.svc.CreateFactoryRFQ(ctx, grpcx.TenantID(ctx), app.NewFactoryRFQ{CaseID: req.GetCaseId(), SupplierID: req.GetSupplierId(),
 		FactoryID: req.GetFactoryId(), FactoryCode: req.GetFactoryCode(), FactoryName: req.GetFactoryName(),
-		ContactEmail: req.GetContactEmail(), Currency: req.GetCurrency(), ResponseDueAt: req.GetResponseDueAt(), SourcingLineIDs: req.GetSourcingLineIds()}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+		ContactEmail: req.GetContactEmail(), Currency: req.GetCurrency(), ResponseDueAt: req.GetResponseDueAt(), SourcingLineIDs: req.GetSourcingLineIds(),
+		InquiryChannel: req.GetInquiryChannel(), ContactName: req.GetContactName(), ContactValue: req.GetContactValue(),
+		ContactedAt: req.GetContactedAt(), InquiryNote: req.GetInquiryNote(), RoundNo: req.GetRoundNo()}, app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +182,7 @@ func (h *SourcingHandler) UpdateFactoryRfq(ctx context.Context, req *prv1.Update
 	if err := h.authorizeRFQ(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	row, err := h.svc.UpdateFactoryRFQ(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetContactEmail(), req.GetResponseDueAt(), req.GetReason(), sourcingOperator(ctx))
+	row, err := h.svc.UpdateFactoryRFQ(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetInquiryChannel(), req.GetContactName(), req.GetContactEmail(), req.GetContactValue(), req.GetContactedAt(), req.GetInquiryNote(), req.GetResponseDueAt(), req.GetReason(), sourcingOperator(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -184,11 +213,11 @@ func (h *SourcingHandler) CreateSupplierQuote(ctx context.Context, req *prv1.Cre
 	for _, line := range req.GetLines() {
 		lines = append(lines, app.SupplierQuoteLineInput{SourcingLineID: line.GetSourcingLineId(), Qty: line.GetQty(), UnitPrice: line.GetUnitPrice(), MOQ: line.GetMoq(), LeadTime: line.GetLeadTime(), Remark: line.GetRemark()})
 	}
-	row, err := h.svc.CreateSupplierQuote(ctx, grpcx.TenantID(ctx), app.NewSupplierQuote{FactoryRFQID: req.GetFactoryRfqId(), QuotedAt: req.GetQuotedAt(), ValidUntil: req.GetValidUntil(), Currency: req.GetCurrency(), PaymentTerms: req.GetPaymentTerms(), Delivery: req.GetDelivery(), Remark: req.GetRemark(), Source: req.GetSource(), Lines: lines}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	row, err := h.svc.CreateSupplierQuote(ctx, grpcx.TenantID(ctx), app.NewSupplierQuote{FactoryRFQID: req.GetFactoryRfqId(), QuotedAt: req.GetQuotedAt(), ValidUntil: req.GetValidUntil(), Currency: req.GetCurrency(), PaymentTerms: req.GetPaymentTerms(), Delivery: req.GetDelivery(), Remark: req.GetRemark(), Source: req.GetSource(), ConfirmationStatus: req.GetConfirmationStatus(), EvidenceNote: req.GetEvidenceNote(), Lines: lines}, app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
 		return nil, err
 	}
-	return &prv1.CreateSupplierQuoteResponse{Id: row.ID, SupplierQuoteNo: row.SupplierQuoteNo}, nil
+	return &prv1.CreateSupplierQuoteResponse{Id: row.ID, SupplierQuoteNo: row.SupplierQuoteNo, VersionNo: row.VersionNo}, nil
 }
 
 func (h *SourcingHandler) GetFactoryRfqWorkbook(ctx context.Context, req *prv1.GetFactoryRfqWorkbookRequest) (*prv1.GetFactoryRfqWorkbookResponse, error) {
@@ -238,7 +267,16 @@ func (h *SourcingHandler) ListSupplierQuoteComparison(ctx context.Context, req *
 	}
 	out := make([]*prv1.SupplierQuoteComparisonLine, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, &prv1.SupplierQuoteComparisonLine{QuoteId: row.QuoteID, QuoteLineId: row.QuoteLineID, SupplierQuoteNo: row.SupplierQuoteNo, FactoryRfqId: row.FactoryRfqID, SupplierId: row.SupplierID, SupplierName: row.SupplierName, Currency: row.Currency, QuotedAt: row.QuotedAt, ValidUntil: row.ValidUntil, PaymentTerms: row.PaymentTerms, Delivery: row.Delivery, QuoteRemark: row.Remark, Source: row.Source, SourcingLineId: row.SourcingLineID, Qty: row.LQty, UnitPrice: row.LUnitPrice, Amount: row.LAmount, Moq: row.Moq, LeadTime: row.LeadTime, LineRemark: row.LineRemark})
+		out = append(out, &prv1.SupplierQuoteComparisonLine{
+			QuoteId: row.QuoteID, QuoteLineId: row.QuoteLineID, SupplierQuoteNo: row.SupplierQuoteNo,
+			FactoryRfqId: row.FactoryRfqID, SupplierId: row.SupplierID, SupplierName: row.SupplierName,
+			Currency: row.Currency, QuotedAt: row.QuotedAt, ValidUntil: row.ValidUntil,
+			PaymentTerms: row.PaymentTerms, Delivery: row.Delivery, QuoteRemark: row.Remark,
+			Source: row.Source, VersionNo: row.VersionNo, ConfirmationStatus: row.ConfirmationStatus,
+			EvidenceNote: row.EvidenceNote, SourcingLineId: row.SourcingLineID, Qty: row.LQty,
+			UnitPrice: row.LUnitPrice, Amount: row.LAmount, Moq: row.Moq,
+			LeadTime: row.LeadTime, LineRemark: row.LineRemark,
+		})
 	}
 	return &prv1.ListSupplierQuoteComparisonResponse{Lines: out}, nil
 }
@@ -328,8 +366,8 @@ func (h *SourcingHandler) PrepareCustomerQuotation(ctx context.Context, req *prv
 	for _, line := range draft.Lines {
 		out.Lines = append(out.Lines, &prv1.CustomerQuotationLine{
 			CostScenarioLineId: line.ID, ProductId: line.ProductID, SkuId: line.SkuID,
-			Spec: line.SpecSnapshot, Qty: line.Qty, UnitPrice: line.CustomerUnitPrice,
-			Remark: line.SupplierName,
+			Spec: removeRepeatedProductName(line.ProductName, line.SpecSnapshot), Qty: line.Qty, UnitPrice: line.CustomerUnitPrice,
+			Remark: line.SupplierName, ProductName: line.ProductName, UomCode: line.UomCode,
 		})
 	}
 	return out, nil
@@ -395,7 +433,15 @@ func costScenarioView(view app.CostScenarioView) *prv1.CostScenario {
 }
 
 func factoryRFQ(row store.ListFactoryRFQsRow) *prv1.FactoryRfq {
-	return &prv1.FactoryRfq{Id: row.ID, CaseId: row.CaseID, RfqNo: row.RfqNo, SupplierId: row.SupplierID, SupplierCode: row.SupplierCode, SupplierName: row.SupplierName, FactoryId: row.FactoryID, FactoryCode: row.FactoryCode, FactoryName: row.FactoryName, ContactEmail: row.ContactEmail, Currency: row.Currency, ResponseDueAt: row.ResponseDueAt, Status: row.Status, LineCount: row.LineCount, CreatedAt: ts(row.CreatedAt), SourcingLineIds: row.SourcingLineIds}
+	return &prv1.FactoryRfq{
+		Id: row.ID, CaseId: row.CaseID, RfqNo: row.RfqNo, SupplierId: row.SupplierID,
+		SupplierCode: row.SupplierCode, SupplierName: row.SupplierName, FactoryId: row.FactoryID,
+		FactoryCode: row.FactoryCode, FactoryName: row.FactoryName, ContactEmail: row.ContactEmail,
+		Currency: row.Currency, ResponseDueAt: row.ResponseDueAt, Status: row.Status,
+		LineCount: row.LineCount, CreatedAt: ts(row.CreatedAt), SourcingLineIds: row.SourcingLineIds,
+		InquiryChannel: row.InquiryChannel, ContactName: row.ContactName, ContactValue: row.ContactValue,
+		ContactedAt: row.ContactedAt, InquiryNote: row.InquiryNote, RoundNo: row.RoundNo,
+	}
 }
 
 func lineInput(in *prv1.SourcingLineInput) app.SourcingLineInput {

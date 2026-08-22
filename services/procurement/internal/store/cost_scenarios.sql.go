@@ -45,6 +45,7 @@ JOIN factory_rfqs r ON r.id=q.factory_rfq_id AND r.tenant_id=q.tenant_id
 JOIN factory_rfq_lines fl ON fl.factory_rfq_id=r.id AND fl.sourcing_line_id=ql.sourcing_line_id AND fl.tenant_id=ql.tenant_id
 JOIN sourcing_lines sl ON sl.id=ql.sourcing_line_id AND sl.tenant_id=ql.tenant_id
 WHERE ql.tenant_id=$1 AND r.case_id=$2 AND ql.id=$3
+  AND q.confirmation_status='WRITTEN_CONFIRMED'
 `
 
 type CostScenarioCandidateParams struct {
@@ -121,7 +122,7 @@ func (q *Queries) CostScenarioCase(ctx context.Context, arg CostScenarioCasePara
 
 const costScenarioTerms = `-- name: CostScenarioTerms :one
 SELECT incoterm,port,payment_terms FROM sourcing_lines
-WHERE tenant_id=$1 AND case_id=$2 AND decision='CONFIRMED' ORDER BY line_no LIMIT 1
+WHERE tenant_id=$1 AND case_id=$2 AND decision NOT IN ('SKIPPED','NO_MATCH') ORDER BY line_no LIMIT 1
 `
 
 type CostScenarioTermsParams struct {
@@ -143,7 +144,8 @@ func (q *Queries) CostScenarioTerms(ctx context.Context, arg CostScenarioTermsPa
 }
 
 const countConfirmedSourcingLines = `-- name: CountConfirmedSourcingLines :one
-SELECT count(*) FROM sourcing_lines WHERE tenant_id=$1 AND case_id=$2 AND decision='CONFIRMED'
+SELECT count(*) FROM sourcing_lines
+WHERE tenant_id=$1 AND case_id=$2 AND decision NOT IN ('SKIPPED','NO_MATCH')
 `
 
 type CountConfirmedSourcingLinesParams struct {
@@ -151,6 +153,7 @@ type CountConfirmedSourcingLinesParams struct {
 	CaseID   int64
 }
 
+// 进入询价后的历史数据可能仍保留 PENDING；只有明确忽略或不匹配的产品不参与成本方案。
 func (q *Queries) CountConfirmedSourcingLines(ctx context.Context, arg CountConfirmedSourcingLinesParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countConfirmedSourcingLines, arg.TenantID, arg.CaseID)
 	var count int64

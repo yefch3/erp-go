@@ -1,12 +1,12 @@
 <template>
-  <div>
-    <div class="page-head">
+  <div :class="{ 'quotation-embedded': embedded }">
+    <div v-if="!embedded" class="page-head">
       <h2>{{ t('quotations.title') }}</h2>
       <el-button v-if="canWrite" type="primary" @click="openCreate">{{ t('quotations.create') }}</el-button>
     </div>
 
     <el-card shadow="never">
-      <div class="filters">
+      <div v-if="!embedded" class="filters">
         <el-input
           v-model="keyword"
           :placeholder="t('quotations.searchPlaceholder')"
@@ -60,7 +60,9 @@
         </el-table-column>
       </el-table>
 
+      <el-empty v-if="embedded && !loading && quotations.length === 0" :description="t('quotations.empty')" />
       <el-pagination
+        v-if="!embedded"
         class="pager"
         layout="total, prev, pager, next"
         :total="total"
@@ -124,13 +126,21 @@
         <el-table :data="form.items" size="small">
           <el-table-column :label="t('quotations.product')" min-width="220">
             <template #default="{ row }">
-              <el-select v-model="row.productId" filterable style="width: 100%" :placeholder="t('quotations.pickProduct')">
+              <div v-if="row.productName && (!row.productId || row.productId === '0')" class="product-snapshot">
+                <span>{{ row.productName }}</span>
+                <small v-if="row.productCode">{{ row.productCode }}</small>
+              </div>
+              <el-select v-else v-model="row.productId" filterable style="width: 100%" :placeholder="t('quotations.pickProduct')">
                 <el-option v-for="p in products" :key="p.id" :value="p.id" :label="`${p.code} · ${p.name}`" />
               </el-select>
             </template>
           </el-table-column>
-          <el-table-column :label="t('quotations.spec')" width="150">
-            <template #default="{ row }"><el-input v-model="row.spec" /></template>
+          <el-table-column :label="t('quotations.spec')" min-width="260">
+            <template #default="{ row }">
+              <el-tooltip :content="row.spec || '—'" placement="top" :disabled="!row.spec">
+                <el-input v-model="row.spec" />
+              </el-tooltip>
+            </template>
           </el-table-column>
           <el-table-column :label="t('quotations.qty')" width="110">
             <template #default="{ row }"><el-input v-model="row.qty" placeholder="0" /></template>
@@ -218,6 +228,9 @@ interface Quotation {
 }
 interface Item {
   productId: string
+  productCode: string
+  productName: string
+  uomCode: string
   spec: string
   qty: string
   unitPrice: string
@@ -234,6 +247,14 @@ const EMPTY_FORM = {
 }
 
 const { t } = useI18n()
+const props = withDefaults(defineProps<{
+  embedded?: boolean
+  quotationIds?: Array<string | number>
+}>(), {
+  embedded: false,
+  quotationIds: () => [],
+})
+const embedded = computed(() => props.embedded)
 const auth = useAuthStore()
 const route = useRoute()
 const canWrite = auth.can('export:quotation:write')
@@ -294,6 +315,16 @@ watch(() => form.customerId, async (id) => {
 async function load() {
   loading.value = true
   try {
+    if (embedded.value) {
+      const ids = [...new Set(props.quotationIds.map(String).filter(Boolean))]
+      const results = await Promise.all(ids.map(async quotationID => {
+        const data = await get<{ quotation: Quotation }>(`/quotations/${quotationID}`)
+        return data.quotation
+      }))
+      quotations.value = results
+      total.value = results.length
+      return
+    }
     const data = await get<{ quotations: Quotation[]; meta: { total: string } }>('/quotations', {
       page: page.value, page_size: pageSize, keyword: keyword.value, status: status.value,
     })
@@ -313,7 +344,7 @@ function openCreate() {
   editingId.value = null
   readOnly.value = false
   detail.value = null
-  Object.assign(form, { ...EMPTY_FORM, items: [{ productId: '', spec: '', qty: '', unitPrice: '', remark: '' }] })
+  Object.assign(form, { ...EMPTY_FORM, items: [{ productId: '', productCode: '', productName: '', uomCode: '', spec: '', qty: '', unitPrice: '', remark: '' }] })
   dialogOpen.value = true
 }
 
@@ -334,7 +365,8 @@ async function openEdit(row: Quotation) {
       portOfLoading: data.quotation.portOfLoading, portOfDischarge: data.quotation.portOfDischarge,
       validUntil: data.quotation.validUntil, remark: data.quotation.remark,
       items: (data.items ?? []).map((i) => ({
-        productId: i.productId, spec: i.spec, qty: i.qty, unitPrice: i.unitPrice, remark: i.remark,
+        productId: String(i.productId || ''), productCode: i.productCode || '', productName: i.productName || '',
+        uomCode: i.uomCode || '', spec: i.spec, qty: i.qty, unitPrice: i.unitPrice, remark: i.remark,
       })),
     })
   } catch {
@@ -350,7 +382,7 @@ async function downloadQuotation(row: Quotation, type: 'workbook' | 'pdf') {
 }
 
 function addItem() {
-  form.items.push({ productId: '', spec: '', qty: '', unitPrice: '', remark: '' })
+  form.items.push({ productId: '', productCode: '', productName: '', uomCode: '', spec: '', qty: '', unitPrice: '', remark: '' })
 }
 
 async function save() {
@@ -407,10 +439,15 @@ onMounted(async () => {
   customers.value = (await get<{ customers: Customer[] }>('/customers', { page_size: 200 })).customers ?? []
   products.value = (await get<{ products: Product[] }>('/products', { page_size: 200 })).products ?? []
   paymentOptions.value = (await get<{ options: OptionItem[] }>('/options', { category: 'PAYMENT_METHOD' })).options ?? []
-  const quoteID = String(route.query.quote || '')
+  const quoteID = embedded.value ? '' : String(route.query.quote || '')
   const row = quotations.value.find(quotation => String(quotation.id) === quoteID)
   if (row) await openEdit(row)
 })
+
+watch(
+  () => props.quotationIds.map(String).join(','),
+  () => { if (embedded.value) void load() },
+)
 </script>
 
 <style scoped>
@@ -465,5 +502,22 @@ onMounted(async () => {
   border-radius: 6px;
   background: var(--el-fill-color-light);
   font-size: 13px;
+}
+.quotation-embedded :deep(.el-card) {
+  border: 0;
+}
+.quotation-embedded :deep(.el-card__body) {
+  padding: 0;
+}
+.product-snapshot {
+  display: flex;
+  min-height: 32px;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.35;
+  color: var(--el-text-color-primary);
+}
+.product-snapshot small {
+  color: var(--el-text-color-secondary);
 }
 </style>

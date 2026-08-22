@@ -30,7 +30,8 @@ export const router = createRouter({
         { path: 'basic/suppliers/factories/:id', component: () => import('./pages/FactoryDetailPage.vue') },
         { path: 'basic/suppliers/:id', component: () => import('./pages/SupplierDetailPage.vue') },
         { path: 'products', component: () => import('./pages/ProductsPage.vue') },
-        { path: 'quotations', component: () => import('./pages/QuotationsPage.vue') },
+        // 报价单属于采购询价项目，不再提供第二套独立入口；旧书签仍能安全返回项目列表。
+        { path: 'quotations', redirect: '/sourcing-cases' },
         { path: 'contracts', component: () => import('./pages/ContractsPage.vue') },
         { path: 'shipments', component: () => import('./pages/ShipmentsPage.vue') },
         { path: 'shipping', component: () => import('./pages/ShippingPage.vue') },
