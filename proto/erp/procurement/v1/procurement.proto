@@ -475,6 +475,15 @@ service PurchaseOrderService {
   // Re-runs the three-way verdict — after a receipt lands or an exception
   // is resolved, the stored MATCHED/EXCEPTION may be stale.
   rpc MatchSupplierInvoice(MatchSupplierInvoiceRequest) returns (MatchSupplierInvoiceResponse);
+
+  // Payments: our assertion that money left. Allocation is the separate,
+  // revisable judgement about what it settled — an invoice, or a purchase
+  // order when it is a deposit wired before any invoice exists.
+  rpc CreateSupplierPayment(CreateSupplierPaymentRequest) returns (CreateSupplierPaymentResponse);
+  rpc ListSupplierPayments(ListSupplierPaymentsRequest) returns (ListSupplierPaymentsResponse);
+  rpc GetSupplierPayment(GetSupplierPaymentRequest) returns (GetSupplierPaymentResponse);
+  rpc AllocateSupplierPayment(AllocateSupplierPaymentRequest) returns (AllocateSupplierPaymentResponse);
+  rpc ReverseSupplierPaymentAllocation(ReverseSupplierPaymentAllocationRequest) returns (ReverseSupplierPaymentAllocationResponse);
 }
 
 message OrderImportRow {
@@ -1043,3 +1052,83 @@ message VoidSupplierInvoiceResponse { SupplierInvoice invoice = 1; }
 
 message MatchSupplierInvoiceRequest { int64 id = 1; }
 message MatchSupplierInvoiceResponse { SupplierInvoice invoice = 1; }
+
+// ------------------------------------------------------------------ payments
+
+message PaymentAllocation {
+  int64 id = 1;
+  int64 invoice_id = 2;
+  string invoice_no = 3;
+  int64 po_id = 4;
+  string po_no = 5;
+  string amount = 6;      // negative on a reversal row
+  string fee_amount = 7;
+  string currency = 8;
+  int64 reversal_of = 9;  // 0 unless this row undoes another
+  string reverse_reason = 10;
+  string allocated_by = 11;
+  string allocated_at = 12;
+}
+
+message SupplierPayment {
+  int64 id = 1;
+  int64 supplier_id = 2;
+  string supplier_name = 3;
+  string payment_no = 4;
+  string payment_type = 5; // ADVANCE | SETTLEMENT | REFUND
+  string currency = 6;
+  string amount = 7;
+  string unallocated = 8;
+  string paid_at = 9; // YYYY-MM-DD
+  string method = 10; // WIRE | LC | TT | CASH | OTHER
+  string bank_ref = 11;
+  string remark = 12;
+  string created_by = 13;
+  string created_at = 14;
+  repeated PaymentAllocation allocations = 15; // populated on Get
+}
+
+message CreateSupplierPaymentRequest {
+  int64 supplier_id = 1;
+  string supplier_name = 2;
+  string payment_type = 3;
+  string currency = 4;
+  string amount = 5;
+  string paid_at = 6;
+  string method = 7;
+  string bank_ref = 8;
+  string remark = 9;
+}
+message CreateSupplierPaymentResponse { SupplierPayment payment = 1; }
+
+message ListSupplierPaymentsRequest {
+  erp.common.v1.PageRequest page = 1;
+  int64 supplier_id = 2;
+  string payment_type = 3;
+  string keyword = 4;
+}
+message ListSupplierPaymentsResponse {
+  repeated SupplierPayment items = 1;
+  int64 total = 2;
+}
+
+message GetSupplierPaymentRequest { int64 id = 1; }
+message GetSupplierPaymentResponse { SupplierPayment payment = 1; }
+
+message PaymentAllocationInput {
+  int64 invoice_id = 1; // exactly one of invoice_id / po_id
+  int64 po_id = 2;
+  string amount = 3;
+  string fee_amount = 4;
+}
+message AllocateSupplierPaymentRequest {
+  int64 id = 1;
+  repeated PaymentAllocationInput lines = 2;
+}
+message AllocateSupplierPaymentResponse { SupplierPayment payment = 1; }
+
+message ReverseSupplierPaymentAllocationRequest {
+  int64 allocation_id = 1;
+  string reason = 2;
+}
+message ReverseSupplierPaymentAllocationResponse { SupplierPayment payment = 1; }

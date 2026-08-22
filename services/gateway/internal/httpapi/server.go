@@ -487,6 +487,15 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:invoice:write")).Post("/api/supplier-invoices", s.createSupplierInvoice)
 		r.With(s.perm("procurement:invoice:write")).Post("/api/supplier-invoices/{id}/void", s.voidSupplierInvoice)
 		r.With(s.perm("procurement:invoice:write")).Post("/api/supplier-invoices/{id}/match", s.matchSupplierInvoice)
+
+		// Money leaving, and the revisable record of what it settled.
+		// Separate permission from invoices: registering a claim and moving
+		// company money are the two jobs segregation-of-duties keeps apart.
+		r.With(s.perm("procurement:payment:read")).Get("/api/supplier-payments", s.listSupplierPayments)
+		r.With(s.perm("procurement:payment:read")).Get("/api/supplier-payments/{id}", s.getSupplierPayment)
+		r.With(s.perm("procurement:payment:write")).Post("/api/supplier-payments", s.createSupplierPayment)
+		r.With(s.perm("procurement:payment:write")).Post("/api/supplier-payments/{id}/allocations", s.allocateSupplierPayment)
+		r.With(s.perm("procurement:payment:write")).Post("/api/supplier-payments/allocations/{allocationId}/reverse", s.reverseSupplierPaymentAllocation)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/exceptions", s.reportReceiptException)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/exceptions/{exceptionId}/resolve", s.resolveReceiptException)
 		// Receiving is warehouse work, so it rides on the stock permission

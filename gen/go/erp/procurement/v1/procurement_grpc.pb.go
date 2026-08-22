@@ -1243,29 +1243,34 @@ var RequirementService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	PurchaseOrderService_ListOrders_FullMethodName                    = "/erp.procurement.v1.PurchaseOrderService/ListOrders"
-	PurchaseOrderService_GetOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/GetOrder"
-	PurchaseOrderService_PreviewOrderImport_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/PreviewOrderImport"
-	PurchaseOrderService_PreviewPurchaseTemplateImport_FullMethodName = "/erp.procurement.v1.PurchaseOrderService/PreviewPurchaseTemplateImport"
-	PurchaseOrderService_ConfirmOrderImport_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/ConfirmOrderImport"
-	PurchaseOrderService_CreateOrder_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/CreateOrder"
-	PurchaseOrderService_UpdateOrder_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/UpdateOrder"
-	PurchaseOrderService_SubmitOrder_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/SubmitOrder"
-	PurchaseOrderService_CancelOrder_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/CancelOrder"
-	PurchaseOrderService_ReceiveOrder_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/ReceiveOrder"
-	PurchaseOrderService_GetOrderDocuments_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/GetOrderDocuments"
-	PurchaseOrderService_BeginOrderSend_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/BeginOrderSend"
-	PurchaseOrderService_CompleteOrderSend_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/CompleteOrderSend"
-	PurchaseOrderService_GetOrderExecution_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/GetOrderExecution"
-	PurchaseOrderService_RecordSupplierConfirmation_FullMethodName    = "/erp.procurement.v1.PurchaseOrderService/RecordSupplierConfirmation"
-	PurchaseOrderService_SaveProductionMilestone_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/SaveProductionMilestone"
-	PurchaseOrderService_ReportReceiptException_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/ReportReceiptException"
-	PurchaseOrderService_ResolveReceiptException_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ResolveReceiptException"
-	PurchaseOrderService_CreateSupplierInvoice_FullMethodName         = "/erp.procurement.v1.PurchaseOrderService/CreateSupplierInvoice"
-	PurchaseOrderService_ListSupplierInvoices_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/ListSupplierInvoices"
-	PurchaseOrderService_GetSupplierInvoice_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/GetSupplierInvoice"
-	PurchaseOrderService_VoidSupplierInvoice_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/VoidSupplierInvoice"
-	PurchaseOrderService_MatchSupplierInvoice_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/MatchSupplierInvoice"
+	PurchaseOrderService_ListOrders_FullMethodName                       = "/erp.procurement.v1.PurchaseOrderService/ListOrders"
+	PurchaseOrderService_GetOrder_FullMethodName                         = "/erp.procurement.v1.PurchaseOrderService/GetOrder"
+	PurchaseOrderService_PreviewOrderImport_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/PreviewOrderImport"
+	PurchaseOrderService_PreviewPurchaseTemplateImport_FullMethodName    = "/erp.procurement.v1.PurchaseOrderService/PreviewPurchaseTemplateImport"
+	PurchaseOrderService_ConfirmOrderImport_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/ConfirmOrderImport"
+	PurchaseOrderService_CreateOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/CreateOrder"
+	PurchaseOrderService_UpdateOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/UpdateOrder"
+	PurchaseOrderService_SubmitOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/SubmitOrder"
+	PurchaseOrderService_CancelOrder_FullMethodName                      = "/erp.procurement.v1.PurchaseOrderService/CancelOrder"
+	PurchaseOrderService_ReceiveOrder_FullMethodName                     = "/erp.procurement.v1.PurchaseOrderService/ReceiveOrder"
+	PurchaseOrderService_GetOrderDocuments_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/GetOrderDocuments"
+	PurchaseOrderService_BeginOrderSend_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/BeginOrderSend"
+	PurchaseOrderService_CompleteOrderSend_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/CompleteOrderSend"
+	PurchaseOrderService_GetOrderExecution_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/GetOrderExecution"
+	PurchaseOrderService_RecordSupplierConfirmation_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/RecordSupplierConfirmation"
+	PurchaseOrderService_SaveProductionMilestone_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/SaveProductionMilestone"
+	PurchaseOrderService_ReportReceiptException_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/ReportReceiptException"
+	PurchaseOrderService_ResolveReceiptException_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/ResolveReceiptException"
+	PurchaseOrderService_CreateSupplierInvoice_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/CreateSupplierInvoice"
+	PurchaseOrderService_ListSupplierInvoices_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/ListSupplierInvoices"
+	PurchaseOrderService_GetSupplierInvoice_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/GetSupplierInvoice"
+	PurchaseOrderService_VoidSupplierInvoice_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/VoidSupplierInvoice"
+	PurchaseOrderService_MatchSupplierInvoice_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/MatchSupplierInvoice"
+	PurchaseOrderService_CreateSupplierPayment_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/CreateSupplierPayment"
+	PurchaseOrderService_ListSupplierPayments_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/ListSupplierPayments"
+	PurchaseOrderService_GetSupplierPayment_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/GetSupplierPayment"
+	PurchaseOrderService_AllocateSupplierPayment_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/AllocateSupplierPayment"
+	PurchaseOrderService_ReverseSupplierPaymentAllocation_FullMethodName = "/erp.procurement.v1.PurchaseOrderService/ReverseSupplierPaymentAllocation"
 )
 
 // PurchaseOrderServiceClient is the client API for PurchaseOrderService service.
@@ -1317,6 +1322,14 @@ type PurchaseOrderServiceClient interface {
 	// Re-runs the three-way verdict — after a receipt lands or an exception
 	// is resolved, the stored MATCHED/EXCEPTION may be stale.
 	MatchSupplierInvoice(ctx context.Context, in *MatchSupplierInvoiceRequest, opts ...grpc.CallOption) (*MatchSupplierInvoiceResponse, error)
+	// Payments: our assertion that money left. Allocation is the separate,
+	// revisable judgement about what it settled — an invoice, or a purchase
+	// order when it is a deposit wired before any invoice exists.
+	CreateSupplierPayment(ctx context.Context, in *CreateSupplierPaymentRequest, opts ...grpc.CallOption) (*CreateSupplierPaymentResponse, error)
+	ListSupplierPayments(ctx context.Context, in *ListSupplierPaymentsRequest, opts ...grpc.CallOption) (*ListSupplierPaymentsResponse, error)
+	GetSupplierPayment(ctx context.Context, in *GetSupplierPaymentRequest, opts ...grpc.CallOption) (*GetSupplierPaymentResponse, error)
+	AllocateSupplierPayment(ctx context.Context, in *AllocateSupplierPaymentRequest, opts ...grpc.CallOption) (*AllocateSupplierPaymentResponse, error)
+	ReverseSupplierPaymentAllocation(ctx context.Context, in *ReverseSupplierPaymentAllocationRequest, opts ...grpc.CallOption) (*ReverseSupplierPaymentAllocationResponse, error)
 }
 
 type purchaseOrderServiceClient struct {
@@ -1557,6 +1570,56 @@ func (c *purchaseOrderServiceClient) MatchSupplierInvoice(ctx context.Context, i
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) CreateSupplierPayment(ctx context.Context, in *CreateSupplierPaymentRequest, opts ...grpc.CallOption) (*CreateSupplierPaymentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateSupplierPaymentResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_CreateSupplierPayment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ListSupplierPayments(ctx context.Context, in *ListSupplierPaymentsRequest, opts ...grpc.CallOption) (*ListSupplierPaymentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSupplierPaymentsResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListSupplierPayments_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) GetSupplierPayment(ctx context.Context, in *GetSupplierPaymentRequest, opts ...grpc.CallOption) (*GetSupplierPaymentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSupplierPaymentResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_GetSupplierPayment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) AllocateSupplierPayment(ctx context.Context, in *AllocateSupplierPaymentRequest, opts ...grpc.CallOption) (*AllocateSupplierPaymentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AllocateSupplierPaymentResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_AllocateSupplierPayment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ReverseSupplierPaymentAllocation(ctx context.Context, in *ReverseSupplierPaymentAllocationRequest, opts ...grpc.CallOption) (*ReverseSupplierPaymentAllocationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReverseSupplierPaymentAllocationResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ReverseSupplierPaymentAllocation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PurchaseOrderServiceServer is the server API for PurchaseOrderService service.
 // All implementations must embed UnimplementedPurchaseOrderServiceServer
 // for forward compatibility.
@@ -1606,6 +1669,14 @@ type PurchaseOrderServiceServer interface {
 	// Re-runs the three-way verdict — after a receipt lands or an exception
 	// is resolved, the stored MATCHED/EXCEPTION may be stale.
 	MatchSupplierInvoice(context.Context, *MatchSupplierInvoiceRequest) (*MatchSupplierInvoiceResponse, error)
+	// Payments: our assertion that money left. Allocation is the separate,
+	// revisable judgement about what it settled — an invoice, or a purchase
+	// order when it is a deposit wired before any invoice exists.
+	CreateSupplierPayment(context.Context, *CreateSupplierPaymentRequest) (*CreateSupplierPaymentResponse, error)
+	ListSupplierPayments(context.Context, *ListSupplierPaymentsRequest) (*ListSupplierPaymentsResponse, error)
+	GetSupplierPayment(context.Context, *GetSupplierPaymentRequest) (*GetSupplierPaymentResponse, error)
+	AllocateSupplierPayment(context.Context, *AllocateSupplierPaymentRequest) (*AllocateSupplierPaymentResponse, error)
+	ReverseSupplierPaymentAllocation(context.Context, *ReverseSupplierPaymentAllocationRequest) (*ReverseSupplierPaymentAllocationResponse, error)
 	mustEmbedUnimplementedPurchaseOrderServiceServer()
 }
 
@@ -1684,6 +1755,21 @@ func (UnimplementedPurchaseOrderServiceServer) VoidSupplierInvoice(context.Conte
 }
 func (UnimplementedPurchaseOrderServiceServer) MatchSupplierInvoice(context.Context, *MatchSupplierInvoiceRequest) (*MatchSupplierInvoiceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MatchSupplierInvoice not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) CreateSupplierPayment(context.Context, *CreateSupplierPaymentRequest) (*CreateSupplierPaymentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateSupplierPayment not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ListSupplierPayments(context.Context, *ListSupplierPaymentsRequest) (*ListSupplierPaymentsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSupplierPayments not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) GetSupplierPayment(context.Context, *GetSupplierPaymentRequest) (*GetSupplierPaymentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSupplierPayment not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) AllocateSupplierPayment(context.Context, *AllocateSupplierPaymentRequest) (*AllocateSupplierPaymentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AllocateSupplierPayment not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ReverseSupplierPaymentAllocation(context.Context, *ReverseSupplierPaymentAllocationRequest) (*ReverseSupplierPaymentAllocationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReverseSupplierPaymentAllocation not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) mustEmbedUnimplementedPurchaseOrderServiceServer() {}
 func (UnimplementedPurchaseOrderServiceServer) testEmbeddedByValue()                              {}
@@ -2120,6 +2206,96 @@ func _PurchaseOrderService_MatchSupplierInvoice_Handler(srv interface{}, ctx con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_CreateSupplierPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateSupplierPaymentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).CreateSupplierPayment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_CreateSupplierPayment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).CreateSupplierPayment(ctx, req.(*CreateSupplierPaymentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ListSupplierPayments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSupplierPaymentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListSupplierPayments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListSupplierPayments_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListSupplierPayments(ctx, req.(*ListSupplierPaymentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_GetSupplierPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSupplierPaymentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).GetSupplierPayment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_GetSupplierPayment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).GetSupplierPayment(ctx, req.(*GetSupplierPaymentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_AllocateSupplierPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AllocateSupplierPaymentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).AllocateSupplierPayment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_AllocateSupplierPayment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).AllocateSupplierPayment(ctx, req.(*AllocateSupplierPaymentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ReverseSupplierPaymentAllocation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReverseSupplierPaymentAllocationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ReverseSupplierPaymentAllocation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ReverseSupplierPaymentAllocation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ReverseSupplierPaymentAllocation(ctx, req.(*ReverseSupplierPaymentAllocationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PurchaseOrderService_ServiceDesc is the grpc.ServiceDesc for PurchaseOrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2218,6 +2394,26 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MatchSupplierInvoice",
 			Handler:    _PurchaseOrderService_MatchSupplierInvoice_Handler,
+		},
+		{
+			MethodName: "CreateSupplierPayment",
+			Handler:    _PurchaseOrderService_CreateSupplierPayment_Handler,
+		},
+		{
+			MethodName: "ListSupplierPayments",
+			Handler:    _PurchaseOrderService_ListSupplierPayments_Handler,
+		},
+		{
+			MethodName: "GetSupplierPayment",
+			Handler:    _PurchaseOrderService_GetSupplierPayment_Handler,
+		},
+		{
+			MethodName: "AllocateSupplierPayment",
+			Handler:    _PurchaseOrderService_AllocateSupplierPayment_Handler,
+		},
+		{
+			MethodName: "ReverseSupplierPaymentAllocation",
+			Handler:    _PurchaseOrderService_ReverseSupplierPaymentAllocation_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
