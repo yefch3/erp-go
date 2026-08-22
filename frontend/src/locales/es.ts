@@ -63,7 +63,7 @@ export default {
     contracts: 'Contratos de exportación',
     shipments: 'Embarques',
     shipping: 'Calendario marítimo',
-    receipts: 'Conciliación',
+    finance: 'Finanzas',
     stocks: 'Inventario',
     outbounds: 'Salidas',
     procurement: 'Compras',
@@ -150,7 +150,11 @@ export default {
   },
   procurementNav: {
     title: 'Navegación de compras', workbench: 'Panel', intakes: 'Consultas pendientes', sourcing: 'Casos de cotización', inquiryTemplates: 'Plantillas de consulta',
-    requirements: 'Por comprar', orders: 'Órdenes de compra', supplierInvoices: 'Facturas de proveedor', supplierPayments: 'Pagos a proveedores', supplierStatements: 'Conciliación de proveedores', bankTransactions: 'Movimientos bancarios', backToWorkbench: 'Volver al panel de compras',
+    requirements: 'Por comprar', orders: 'Órdenes de compra', backToWorkbench: 'Volver al panel de compras',
+  },
+  financeNav: {
+    title: 'Finanzas', receivable: 'Por cobrar · clientes', payable: 'Por pagar · proveedores', bank: 'Banco',
+    receipts: 'Cobros de clientes', supplierInvoices: 'Facturas de proveedor', supplierPayments: 'Pagos a proveedores', supplierStatements: 'Conciliación de proveedores', bankTransactions: 'Movimientos bancarios',
   },
   procurementWorkbench: {
     eyebrow: 'CONTROL DE COMPRAS', title: 'Panel de compras', subtitle: 'Revisar consultas estandarizadas y avanzar compras', downloadTemplate: 'Descargar plantilla', uploadInquiry: 'Importar consulta del cliente', handlePending: 'Pendientes de revisión', handlePendingCount: 'Pendientes de revisión ({n})',

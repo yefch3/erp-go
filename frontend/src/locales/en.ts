@@ -63,7 +63,7 @@ export default {
     contracts: 'Export contracts',
     shipments: 'Shipments',
     shipping: 'Shipping schedules',
-    receipts: 'Reconciliation',
+    finance: 'Finance',
     stocks: 'Stock',
     outbounds: 'Outbound',
     procurement: 'Procurement',
@@ -150,7 +150,11 @@ export default {
   },
   procurementNav: {
     title: 'Procurement navigation', workbench: 'Workbench', intakes: 'Pending inquiries', sourcing: 'Sourcing cases', inquiryTemplates: 'Inquiry templates',
-    requirements: 'To purchase', orders: 'Purchase orders', supplierInvoices: 'Supplier invoices', supplierPayments: 'Supplier payments', supplierStatements: 'Supplier statements', bankTransactions: 'Bank transactions', backToWorkbench: 'Back to procurement workbench',
+    requirements: 'To purchase', orders: 'Purchase orders', backToWorkbench: 'Back to procurement workbench',
+  },
+  financeNav: {
+    title: 'Finance', receivable: 'Receivable · customers', payable: 'Payable · suppliers', bank: 'Bank',
+    receipts: 'Customer receipts', supplierInvoices: 'Supplier invoices', supplierPayments: 'Supplier payments', supplierStatements: 'Supplier statements', bankTransactions: 'Bank transactions',
   },
   procurementWorkbench: {
     eyebrow: 'PROCUREMENT CONTROL', title: 'Procurement workbench', subtitle: 'Review standardized inquiries and advance sourcing and purchasing', downloadTemplate: 'Download template', uploadInquiry: 'Import customer inquiry', handlePending: 'Pending review', handlePendingCount: 'Pending review ({n})',
