@@ -638,6 +638,8 @@ export default {
     closedTag: 'Cerrada', closeOrder: 'Cerrar orden',
     closeConfirm: '¿Cerrar la orden de compra {no}? Cerrar significa que mercancía, cuentas e inspecciones quedan zanjadas.',
     closedOk: 'Orden de compra cerrada',
+    confirmTags: { NONE: 'Pendiente de fábrica', CONFIRMED: 'Confirmado por fábrica', PENDING_APPROVAL: 'Aprobación de diferencias', REJECTED: 'Confirmación rechazada' },
+    nextStep: 'Siguiente paso',
     exceptionStatuses: { OPEN: 'Pendiente', RESOLVED: 'Resuelta' },
     empty: 'Aún no hay órdenes de compra',
     statuses: {

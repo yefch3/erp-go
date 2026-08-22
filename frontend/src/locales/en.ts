@@ -635,6 +635,8 @@ export default {
     closedTag: 'Closed', closeOrder: 'Close order',
     closeConfirm: 'Close purchase order {no}? Closing means goods, money and inspections are settled.',
     closedOk: 'Purchase order closed',
+    confirmTags: { NONE: 'Awaiting factory', CONFIRMED: 'Factory confirmed', PENDING_APPROVAL: 'Variance approval', REJECTED: 'Confirmation rejected' },
+    nextStep: 'Next step',
     exceptionStatuses: { OPEN: 'Open', RESOLVED: 'Resolved' },
     empty: 'No purchase orders yet',
     statuses: {
