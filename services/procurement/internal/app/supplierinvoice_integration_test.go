@@ -66,8 +66,12 @@ func TestSupplierInvoiceLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if inv.Status != "OPEN" || inv.MatchStatus != "PENDING" {
-		t.Fatalf("fresh invoice should be OPEN/PENDING, got %s/%s", inv.Status, inv.MatchStatus)
+	// Since P2 the verdict lands with the entry. Nothing has been received
+	// against this order yet, so the honest verdict for a full-amount claim
+	// is EXCEPTION — billed before delivery is exactly what the matcher is
+	// for. PENDING now only means "the matcher could not run".
+	if inv.Status != "OPEN" || inv.MatchStatus != "EXCEPTION" {
+		t.Fatalf("fresh invoice should be OPEN/EXCEPTION (billed before goods), got %s/%s", inv.Status, inv.MatchStatus)
 	}
 	if inv.Currency != "USD" {
 		t.Fatalf("currency should be uppercased, got %q", inv.Currency)
