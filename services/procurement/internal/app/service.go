@@ -77,12 +77,15 @@ type Warehouses interface {
 	Get(ctx context.Context, id int64) (Warehouse, error)
 }
 
-// Files is the object storage the invoice scans live in. Procurement never
-// streams file bytes itself: it presigns URLs and the browser talks to the
-// store directly, the same shape product and export use.
+// Files is the object storage invoice scans and inquiry originals live in.
+// Browser uploads go through presigned URLs so the bytes never pass through
+// this service; Put is the one exception — the inquiry Excel arrives inside
+// the create request itself, so the service stores it on the caller's
+// behalf.
 type Files interface {
 	PresignPut(ctx context.Context, key string) (url string, expires int32, err error)
 	PresignGet(ctx context.Context, key string) (string, error)
+	Put(ctx context.Context, key string, data []byte, contentType string) error
 	Remove(ctx context.Context, key string) error
 }
 

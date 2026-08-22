@@ -93,6 +93,9 @@ message SourcingCase {
   int64 inquiry_template_id = 17;
   string inquiry_template_code = 18;
   int32 inquiry_template_version = 19;
+  // Fresh presigned download of the original inquiry file; empty when the
+  // case predates object storage. Populated on Get only.
+  string source_file_url = 20;
 }
 
 message CreateCaseRequest {

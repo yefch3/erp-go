@@ -1,6 +1,7 @@
 package grpcout
 
 import (
+	"bytes"
 	"context"
 	"time"
 
@@ -26,6 +27,11 @@ func (f *Files) PresignPut(ctx context.Context, key string) (string, int32, erro
 		return "", 0, err
 	}
 	return u.String(), int32(f.putExpiry.Seconds()), nil
+}
+
+func (f *Files) Put(ctx context.Context, key string, data []byte, contentType string) error {
+	_, err := f.store.Put(ctx, key, bytes.NewReader(data), int64(len(data)), contentType)
+	return err
 }
 
 func (f *Files) PresignGet(ctx context.Context, key string) (string, error) {
