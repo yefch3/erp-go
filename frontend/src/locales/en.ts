@@ -93,6 +93,7 @@ export default {
     matchStatuses: { PENDING: 'Pending', MATCHED: 'Matched', EXCEPTION: 'Exception' },
     lines: 'Lines', pickPO: "Pick this supplier's PO", pullFromPO: 'Pull from PO', addLine: 'Add line',
     linePO: 'PO', lineDesc: 'Description', lineQty: 'Qty', linePrice: 'Unit price', lineAmount: 'Amount',
+    matchNote: 'Match notes', rematch: 'Re-match', rematched: 'Re-matched — differences are stated, nothing is blocked, the call stays yours',
     linesSum: 'Lines total', sumMismatch: 'differs from the invoice total; saving will be refused',
     void: 'Void', voidPrompt: 'Void is not delete: the paper existed, and who entered it and why it no longer counts stay on record. Give a reason.', voidReason: 'Reason',
     created: 'Invoice registered', voided: 'Voided',

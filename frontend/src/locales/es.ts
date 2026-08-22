@@ -93,6 +93,7 @@ export default {
     matchStatuses: { PENDING: 'Pendiente', MATCHED: 'Coincide', EXCEPTION: 'Excepción' },
     lines: 'Líneas', pickPO: 'Elija una OC de este proveedor', pullFromPO: 'Traer de la OC', addLine: 'Agregar línea',
     linePO: 'OC', lineDesc: 'Descripción', lineQty: 'Cant.', linePrice: 'Precio unit.', lineAmount: 'Importe',
+    matchNote: 'Notas de cotejo', rematch: 'Recotejar', rematched: 'Recotejado: las diferencias se indican, nada se bloquea, la decisión es suya',
     linesSum: 'Suma de líneas', sumMismatch: 'difiere del total de la factura; se rechazará al guardar',
     void: 'Anular', voidPrompt: 'Anular no es borrar: el papel existió, y quién lo registró y por qué ya no cuenta quedan en el registro. Indique el motivo.', voidReason: 'Motivo',
     created: 'Factura registrada', voided: 'Anulada',

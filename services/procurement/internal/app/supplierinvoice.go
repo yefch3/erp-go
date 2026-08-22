@@ -242,6 +242,11 @@ func (s *Service) CreateSupplierInvoice(ctx context.Context, tenantID int64, in 
 	if err := tx.Commit(ctx); err != nil {
 		return SupplierInvoice{}, err
 	}
+	// The verdict lands with the entry so the screen never shows a bare
+	// PENDING for a paper that could have been judged at once. Best-effort:
+	// the entry is committed, and a matcher hiccup must not look like a
+	// failed save — PENDING plus the re-run button is the honest fallback.
+	_ = s.matchInvoice(ctx, tenantID, id)
 	s.nudge(ctx, tenantID)
 	return s.GetSupplierInvoice(ctx, tenantID, id)
 }

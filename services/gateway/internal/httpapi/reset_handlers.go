@@ -7,9 +7,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/sgao19/erp-go/pkg/grpcx"
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
 	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
+	"github.com/sgao19/erp-go/pkg/grpcx"
 )
 
 // Password reset over a mailed link: the way back in for somebody locked out,

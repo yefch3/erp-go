@@ -459,6 +459,9 @@ service PurchaseOrderService {
   rpc ListSupplierInvoices(ListSupplierInvoicesRequest) returns (ListSupplierInvoicesResponse);
   rpc GetSupplierInvoice(GetSupplierInvoiceRequest) returns (GetSupplierInvoiceResponse);
   rpc VoidSupplierInvoice(VoidSupplierInvoiceRequest) returns (VoidSupplierInvoiceResponse);
+  // Re-runs the three-way verdict — after a receipt lands or an exception
+  // is resolved, the stored MATCHED/EXCEPTION may be stale.
+  rpc MatchSupplierInvoice(MatchSupplierInvoiceRequest) returns (MatchSupplierInvoiceResponse);
 }
 
 message OrderImportRow {
@@ -1024,3 +1027,6 @@ message VoidSupplierInvoiceRequest {
   string reason = 2;
 }
 message VoidSupplierInvoiceResponse { SupplierInvoice invoice = 1; }
+
+message MatchSupplierInvoiceRequest { int64 id = 1; }
+message MatchSupplierInvoiceResponse { SupplierInvoice invoice = 1; }

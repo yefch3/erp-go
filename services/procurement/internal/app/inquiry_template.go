@@ -60,9 +60,9 @@ var (
 )
 
 type InquiryTemplateFieldInput struct {
-	FieldKey, DisplayName string
-	SortOrder             int32
-	IsRequired            bool
+	FieldKey, DisplayName  string
+	SortOrder              int32
+	IsRequired             bool
 	DefaultValue, DataType string
 }
 
