@@ -101,5 +101,6 @@ func supplierPaymentProto(v app.SupplierPayment) *prv1.SupplierPayment {
 		Currency: v.Currency, Amount: v.Amount, Unallocated: v.Unallocated,
 		PaidAt: v.PaidAt, Method: v.Method, BankRef: v.BankRef, Remark: v.Remark,
 		CreatedBy: v.CreatedBy, CreatedAt: v.CreatedAt, Allocations: allocs,
+		BaseCurrency: v.BaseCurrency, BaseAmount: v.BaseAmount, FxRate: v.FxRate,
 	}
 }

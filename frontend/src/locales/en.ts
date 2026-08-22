@@ -129,6 +129,7 @@ export default {
     ordered: 'Ordered', received: 'Received', exception: 'Exceptions', invoiced: 'Invoiced',
     paid: 'Paid', advance: 'Advances parked', unallocated: 'Unallocated', balance: 'Balance due',
     overdue: 'Overdue (count)', empty: 'No supplier activity yet',
+    invoicedBase: 'Invoiced (book)', paidBase: 'Paid (book)', fxGainLoss: 'FX gain/loss',
     lineAt: 'Time', lineType: 'Type', lineRef: 'Ref', lineAgainst: 'Against',
     lineAmount: 'Amount', lineBalance: 'Balance', lineNote: 'Note',
     lineTypes: { INVOICE: 'Invoice', PAYMENT: 'Payment', PAYMENT_REVERSAL: 'Reversal', ADVANCE: 'Advance', ADVANCE_REVERSAL: 'Advance reversal' },

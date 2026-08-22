@@ -1018,6 +1018,10 @@ message SupplierInvoice {
   string attachment_key = 19;  // empty = no scan uploaded
   string attachment_url = 20;  // fresh presigned GET; populated on Get only
   string attachment_name = 21; // original file name, for display
+  // Book-currency snapshot from entry time (P6); zero = not captured.
+  string base_currency = 22;
+  string base_amount = 23;
+  string fx_rate = 24;
 }
 
 message SupplierInvoiceLineInput {
@@ -1117,6 +1121,10 @@ message SupplierPayment {
   string created_by = 13;
   string created_at = 14;
   repeated PaymentAllocation allocations = 15; // populated on Get
+  // Book-currency snapshot from entry time (P6); zero = not captured.
+  string base_currency = 16;
+  string base_amount = 17;
+  string fx_rate = 18;
 }
 
 message CreateSupplierPaymentRequest {
@@ -1183,6 +1191,12 @@ message SupplierStatement {
   string balance = 11;           // invoiced − paid
   int32 overdue_count = 12;      // open invoices past due_date
   string overdue_amount = 13;    // their unpaid remainder
+  // Book-currency view (P6). Built only from rows carrying fx snapshots;
+  // gain/loss is realized: allocation × (invoice rate − payment rate).
+  string base_currency = 14;
+  string invoiced_base = 15;
+  string paid_base = 16;
+  string fx_gain_loss = 17;
 }
 
 message ListSupplierStatementsRequest {

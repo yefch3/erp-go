@@ -92,7 +92,11 @@ type SupplierPayment struct {
 	Remark      string
 	CreatedBy   string
 	CreatedAt   string
-	Allocations []PaymentAllocationView
+	// Book-currency snapshot from entry time (P6); zero = not captured.
+	BaseCurrency string
+	BaseAmount   string
+	FxRate       string
+	Allocations  []PaymentAllocationView
 }
 
 // SupplierPaymentFilter narrows the list.
@@ -164,18 +168,24 @@ func (s *Service) CreateSupplierPayment(ctx context.Context, tenantID int64, in 
 	if err != nil {
 		return SupplierPayment{}, err
 	}
+	// The fx snapshot rides in the same INSERT: "what was this worth in book
+	// currency the day it left" only exists if written down then (P6).
+	fxRate, baseAmount := s.fxSnapshot(ctx, currency, amount)
 	var id int64
 	err = s.pool.QueryRow(ctx, `
 		INSERT INTO supplier_payments
 		  (tenant_id, supplier_id, supplier_name, payment_no, payment_type,
 		   currency, amount, paid_at, method, bank_ref, remark,
-		   created_by_id, created_by_name)
-		VALUES ($1,$2,$3,$4,$5,$6,$7::numeric,$8::date,$9,$10,$11,$12,$13)
+		   created_by_id, created_by_name,
+		   base_currency, base_amount, fx_rate)
+		VALUES ($1,$2,$3,$4,$5,$6,$7::numeric,$8::date,$9,$10,$11,$12,$13,
+		        $14,$15::numeric,$16::numeric)
 		RETURNING id`,
 		tenantID, in.SupplierID, strings.TrimSpace(in.SupplierName), no, ptype,
 		currency, amount.String(), in.PaidAt, method,
 		strings.TrimSpace(in.BankRef), strings.TrimSpace(in.Remark),
 		op.ID, op.Name,
+		s.bookCurrency(), baseAmount.String(), fxRate.String(),
 	).Scan(&id)
 	if err != nil {
 		return SupplierPayment{}, err
@@ -215,6 +225,7 @@ func (s *Service) ListSupplierPayments(ctx context.Context, tenantID int64, f Su
 		         WHERE a.tenant_id = p.tenant_id AND a.payment_id = p.id), 0))::text,
 		       p.paid_at::text, p.method, p.bank_ref, p.remark,
 		       p.created_by_name, p.created_at::text,
+		       p.base_currency, p.base_amount::text, p.fx_rate::text,
 		       count(*) OVER () AS total
 		  FROM supplier_payments p
 		 WHERE p.tenant_id = $1
@@ -238,7 +249,8 @@ func (s *Service) ListSupplierPayments(ctx context.Context, tenantID int64, f Su
 		if err := rows.Scan(&v.ID, &v.SupplierID, &v.SupplierName, &v.PaymentNo,
 			&v.PaymentType, &v.Currency, &v.Amount, &v.Unallocated,
 			&v.PaidAt, &v.Method, &v.BankRef, &v.Remark,
-			&v.CreatedBy, &v.CreatedAt, &total); err != nil {
+			&v.CreatedBy, &v.CreatedAt,
+			&v.BaseCurrency, &v.BaseAmount, &v.FxRate, &total); err != nil {
 			return nil, 0, err
 		}
 		out = append(out, v)
@@ -257,11 +269,13 @@ func (s *Service) GetSupplierPayment(ctx context.Context, tenantID, id int64) (S
 		          FROM payment_allocations a
 		         WHERE a.tenant_id = p.tenant_id AND a.payment_id = p.id), 0))::text,
 		       p.paid_at::text, p.method, p.bank_ref, p.remark,
-		       p.created_by_name, p.created_at::text
+		       p.created_by_name, p.created_at::text,
+		       p.base_currency, p.base_amount::text, p.fx_rate::text
 		  FROM supplier_payments p WHERE p.tenant_id=$1 AND p.id=$2`, tenantID, id,
 	).Scan(&v.ID, &v.SupplierID, &v.SupplierName, &v.PaymentNo, &v.PaymentType,
 		&v.Currency, &v.Amount, &v.Unallocated, &v.PaidAt, &v.Method,
-		&v.BankRef, &v.Remark, &v.CreatedBy, &v.CreatedAt)
+		&v.BankRef, &v.Remark, &v.CreatedBy, &v.CreatedAt,
+		&v.BaseCurrency, &v.BaseAmount, &v.FxRate)
 	if err == pgx.ErrNoRows {
 		return SupplierPayment{}, apierr.NotFound("PAY_NOT_FOUND", "付款单不存在")
 	}

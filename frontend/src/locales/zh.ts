@@ -129,6 +129,7 @@ export default {
     ordered: '订单金额', received: '已收金额', exception: '异常扣减', invoiced: '已开票',
     paid: '已付款', advance: '预付未冲抵', unallocated: '未核销付款', balance: '未付余额',
     overdue: '逾期（笔数）', empty: '还没有任何供应商往来',
+    invoicedBase: '本位币开票', paidBase: '本位币已付', fxGainLoss: '汇兑损益',
     lineAt: '时间', lineType: '类型', lineRef: '单号', lineAgainst: '对象',
     lineAmount: '金额', lineBalance: '结余', lineNote: '备注',
     lineTypes: { INVOICE: '开票', PAYMENT: '付款核销', PAYMENT_REVERSAL: '核销冲销', ADVANCE: '预付挂单', ADVANCE_REVERSAL: '预付冲销' },

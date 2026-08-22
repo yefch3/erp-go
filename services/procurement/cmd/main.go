@@ -115,6 +115,8 @@ func run(log *slog.Logger) error {
 	tolPct, _ := decimal.NewFromString(os.Getenv("MATCH_TOLERANCE_PCT"))
 	tolAbs, _ := decimal.NewFromString(os.Getenv("MATCH_TOLERANCE_ABS"))
 	svc.UseMatchTolerance(tolPct, tolAbs)
+	// Book currency for fx snapshots; empty keeps CNY (see fxsnapshot.go).
+	svc.UseBaseCurrency(os.Getenv("BASE_CURRENCY"))
 
 	// Receipts go out as events: the stock increase and the receipt record
 	// must either both happen or neither, and only the outbox can promise

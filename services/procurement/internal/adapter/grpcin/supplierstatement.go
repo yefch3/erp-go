@@ -50,5 +50,7 @@ func statementProto(v app.SupplierStatement) *prv1.SupplierStatement {
 		PaidAmount: v.PaidAmount, AdvanceAmount: v.AdvanceAmount,
 		UnallocatedAmount: v.UnallocatedAmount, Balance: v.Balance,
 		OverdueCount: v.OverdueCount, OverdueAmount: v.OverdueAmount,
+		BaseCurrency: v.BaseCurrency, InvoicedBase: v.InvoicedBase,
+		PaidBase: v.PaidBase, FxGainLoss: v.FxGainLoss,
 	}
 }

@@ -129,6 +129,7 @@ export default {
     ordered: 'Ordenado', received: 'Recibido', exception: 'Excepciones', invoiced: 'Facturado',
     paid: 'Pagado', advance: 'Anticipos en OC', unallocated: 'Sin aplicar', balance: 'Saldo pendiente',
     overdue: 'Vencido (n.º)', empty: 'Aún no hay movimientos con proveedores',
+    invoicedBase: 'Facturado (libro)', paidBase: 'Pagado (libro)', fxGainLoss: 'Dif. cambiaria',
     lineAt: 'Fecha', lineType: 'Tipo', lineRef: 'Ref.', lineAgainst: 'Contra',
     lineAmount: 'Importe', lineBalance: 'Saldo', lineNote: 'Nota',
     lineTypes: { INVOICE: 'Factura', PAYMENT: 'Pago', PAYMENT_REVERSAL: 'Reverso', ADVANCE: 'Anticipo', ADVANCE_REVERSAL: 'Reverso de anticipo' },
