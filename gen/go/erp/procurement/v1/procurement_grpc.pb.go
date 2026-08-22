@@ -1273,6 +1273,8 @@ const (
 	PurchaseOrderService_GetSupplierPayment_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/GetSupplierPayment"
 	PurchaseOrderService_AllocateSupplierPayment_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/AllocateSupplierPayment"
 	PurchaseOrderService_ReverseSupplierPaymentAllocation_FullMethodName = "/erp.procurement.v1.PurchaseOrderService/ReverseSupplierPaymentAllocation"
+	PurchaseOrderService_ListSupplierStatements_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/ListSupplierStatements"
+	PurchaseOrderService_GetSupplierStatement_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/GetSupplierStatement"
 )
 
 // PurchaseOrderServiceClient is the client API for PurchaseOrderService service.
@@ -1338,6 +1340,11 @@ type PurchaseOrderServiceClient interface {
 	GetSupplierPayment(ctx context.Context, in *GetSupplierPaymentRequest, opts ...grpc.CallOption) (*GetSupplierPaymentResponse, error)
 	AllocateSupplierPayment(ctx context.Context, in *AllocateSupplierPaymentRequest, opts ...grpc.CallOption) (*AllocateSupplierPaymentResponse, error)
 	ReverseSupplierPaymentAllocation(ctx context.Context, in *ReverseSupplierPaymentAllocationRequest, opts ...grpc.CallOption) (*ReverseSupplierPaymentAllocationResponse, error)
+	// The reconciliation view (A4 P5): one row per supplier and currency,
+	// summing all five kinds of paper. Read-only — every number here is
+	// derived from the tables above and never stored.
+	ListSupplierStatements(ctx context.Context, in *ListSupplierStatementsRequest, opts ...grpc.CallOption) (*ListSupplierStatementsResponse, error)
+	GetSupplierStatement(ctx context.Context, in *GetSupplierStatementRequest, opts ...grpc.CallOption) (*GetSupplierStatementResponse, error)
 }
 
 type purchaseOrderServiceClient struct {
@@ -1648,6 +1655,26 @@ func (c *purchaseOrderServiceClient) ReverseSupplierPaymentAllocation(ctx contex
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) ListSupplierStatements(ctx context.Context, in *ListSupplierStatementsRequest, opts ...grpc.CallOption) (*ListSupplierStatementsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSupplierStatementsResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListSupplierStatements_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) GetSupplierStatement(ctx context.Context, in *GetSupplierStatementRequest, opts ...grpc.CallOption) (*GetSupplierStatementResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSupplierStatementResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_GetSupplierStatement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PurchaseOrderServiceServer is the server API for PurchaseOrderService service.
 // All implementations must embed UnimplementedPurchaseOrderServiceServer
 // for forward compatibility.
@@ -1711,6 +1738,11 @@ type PurchaseOrderServiceServer interface {
 	GetSupplierPayment(context.Context, *GetSupplierPaymentRequest) (*GetSupplierPaymentResponse, error)
 	AllocateSupplierPayment(context.Context, *AllocateSupplierPaymentRequest) (*AllocateSupplierPaymentResponse, error)
 	ReverseSupplierPaymentAllocation(context.Context, *ReverseSupplierPaymentAllocationRequest) (*ReverseSupplierPaymentAllocationResponse, error)
+	// The reconciliation view (A4 P5): one row per supplier and currency,
+	// summing all five kinds of paper. Read-only — every number here is
+	// derived from the tables above and never stored.
+	ListSupplierStatements(context.Context, *ListSupplierStatementsRequest) (*ListSupplierStatementsResponse, error)
+	GetSupplierStatement(context.Context, *GetSupplierStatementRequest) (*GetSupplierStatementResponse, error)
 	mustEmbedUnimplementedPurchaseOrderServiceServer()
 }
 
@@ -1810,6 +1842,12 @@ func (UnimplementedPurchaseOrderServiceServer) AllocateSupplierPayment(context.C
 }
 func (UnimplementedPurchaseOrderServiceServer) ReverseSupplierPaymentAllocation(context.Context, *ReverseSupplierPaymentAllocationRequest) (*ReverseSupplierPaymentAllocationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReverseSupplierPaymentAllocation not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ListSupplierStatements(context.Context, *ListSupplierStatementsRequest) (*ListSupplierStatementsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSupplierStatements not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) GetSupplierStatement(context.Context, *GetSupplierStatementRequest) (*GetSupplierStatementResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSupplierStatement not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) mustEmbedUnimplementedPurchaseOrderServiceServer() {}
 func (UnimplementedPurchaseOrderServiceServer) testEmbeddedByValue()                              {}
@@ -2372,6 +2410,42 @@ func _PurchaseOrderService_ReverseSupplierPaymentAllocation_Handler(srv interfac
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_ListSupplierStatements_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSupplierStatementsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListSupplierStatements(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListSupplierStatements_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListSupplierStatements(ctx, req.(*ListSupplierStatementsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_GetSupplierStatement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSupplierStatementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).GetSupplierStatement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_GetSupplierStatement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).GetSupplierStatement(ctx, req.(*GetSupplierStatementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PurchaseOrderService_ServiceDesc is the grpc.ServiceDesc for PurchaseOrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2498,6 +2572,14 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReverseSupplierPaymentAllocation",
 			Handler:    _PurchaseOrderService_ReverseSupplierPaymentAllocation_Handler,
+		},
+		{
+			MethodName: "ListSupplierStatements",
+			Handler:    _PurchaseOrderService_ListSupplierStatements_Handler,
+		},
+		{
+			MethodName: "GetSupplierStatement",
+			Handler:    _PurchaseOrderService_GetSupplierStatement_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -498,6 +498,8 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:payment:write")).Post("/api/supplier-payments", s.createSupplierPayment)
 		r.With(s.perm("procurement:payment:write")).Post("/api/supplier-payments/{id}/allocations", s.allocateSupplierPayment)
 		r.With(s.perm("procurement:payment:write")).Post("/api/supplier-payments/allocations/{allocationId}/reverse", s.reverseSupplierPaymentAllocation)
+		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-statements", s.listSupplierStatements)
+		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-statements/{id}", s.getSupplierStatement)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/exceptions", s.reportReceiptException)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/exceptions/{exceptionId}/resolve", s.resolveReceiptException)
 		// Receiving is warehouse work, so it rides on the stock permission

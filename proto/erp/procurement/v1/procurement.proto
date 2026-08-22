@@ -490,6 +490,12 @@ service PurchaseOrderService {
   rpc GetSupplierPayment(GetSupplierPaymentRequest) returns (GetSupplierPaymentResponse);
   rpc AllocateSupplierPayment(AllocateSupplierPaymentRequest) returns (AllocateSupplierPaymentResponse);
   rpc ReverseSupplierPaymentAllocation(ReverseSupplierPaymentAllocationRequest) returns (ReverseSupplierPaymentAllocationResponse);
+
+  // The reconciliation view (A4 P5): one row per supplier and currency,
+  // summing all five kinds of paper. Read-only — every number here is
+  // derived from the tables above and never stored.
+  rpc ListSupplierStatements(ListSupplierStatementsRequest) returns (ListSupplierStatementsResponse);
+  rpc GetSupplierStatement(GetSupplierStatementRequest) returns (GetSupplierStatementResponse);
 }
 
 message OrderImportRow {
@@ -1157,3 +1163,55 @@ message ReverseSupplierPaymentAllocationRequest {
   string reason = 2;
 }
 message ReverseSupplierPaymentAllocationResponse { SupplierPayment payment = 1; }
+
+// -------------------------------------------------------------- statement
+
+// SupplierStatement is one supplier in one currency, all five kinds of paper
+// summed. Currencies are never mixed in one row: before P6 wires fx there is
+// no honest way to add USD to CNY.
+message SupplierStatement {
+  int64 supplier_id = 1;
+  string supplier_name = 2;
+  string currency = 3;
+  string ordered_amount = 4;     // placed orders (ORDERED and beyond)
+  string received_amount = 5;    // received_qty × our unit price
+  string exception_amount = 6;   // open SHORT/DAMAGE/QUALITY/RETURN × unit price
+  string invoiced_amount = 7;    // non-void invoice totals
+  string paid_amount = 8;        // allocations to invoices, reversals included
+  string advance_amount = 9;     // allocations still parked on orders
+  string unallocated_amount = 10; // money sent but not yet attributed anywhere
+  string balance = 11;           // invoiced − paid
+  int32 overdue_count = 12;      // open invoices past due_date
+  string overdue_amount = 13;    // their unpaid remainder
+}
+
+message ListSupplierStatementsRequest {
+  string keyword = 1; // supplier name filter; empty = all
+}
+message ListSupplierStatementsResponse {
+  repeated SupplierStatement items = 1;
+}
+
+// StatementLine is one event in a supplier's money history, in time order.
+// INVOICE raises the balance; PAYMENT and PAYMENT_REVERSAL move it back
+// (reversal rows carry negative amounts, so one rule covers both). ADVANCE
+// rows are money parked on orders — shown, but the invoice balance does not
+// move until they are re-pointed.
+message StatementLine {
+  string at = 1;
+  string type = 2;   // INVOICE | PAYMENT | PAYMENT_REVERSAL | ADVANCE | ADVANCE_REVERSAL
+  string ref = 3;    // invoice_no, or payment_no for allocation rows
+  string against = 4; // what an allocation row points at: invoice_no or po_no
+  string amount = 5;
+  string balance = 6; // running invoiced − paid after this line
+  string note = 7;
+}
+
+message GetSupplierStatementRequest {
+  int64 supplier_id = 1;
+  string currency = 2;
+}
+message GetSupplierStatementResponse {
+  SupplierStatement summary = 1;
+  repeated StatementLine lines = 2;
+}
