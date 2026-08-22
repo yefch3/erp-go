@@ -867,6 +867,10 @@ message CreateCampaignRequest {
   // once, where the customer's zone is known, and what reaches the queue is
   // the moment itself - which no daylight-saving change can move.
   string scheduled_at = 12;
+  // True turns the open-tracking pixel OFF for this send. Inverted so the
+  // zero value keeps today's behaviour: an old client that never heard of
+  // the field still gets tracked mail, not silently untracked mail.
+  bool disable_tracking = 15;
 }
 
 message CreateCampaignResponse {
@@ -1210,6 +1214,7 @@ message Draft {
   int64 forward_inbound_id = 14;
   repeated Recipient bcc = 15;
   bool forward_as_attachment = 16;
+  bool disable_tracking = 17;
 }
 
 message SaveDraftRequest {
@@ -1231,6 +1236,7 @@ message SaveDraftRequest {
   int64 forward_inbound_id = 12;
   repeated Recipient bcc = 13;
   bool forward_as_attachment = 14;
+  bool disable_tracking = 15;
 }
 
 message SaveDraftResponse {

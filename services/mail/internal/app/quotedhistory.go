@@ -87,14 +87,14 @@ var quoteOpeners = []*regexp.Regexp{
 // quoteClasses are the containers clients wrap history in. Class and id both,
 // because Outlook uses an id and Gmail a class.
 var quoteClasses = []string{
-	"gmail_quote",       // Gmail
-	"gmail_extra",       // older Gmail
-	"moz-cite-prefix",   // Thunderbird
-	"yahoo_quoted",      // Yahoo
+	"gmail_quote",                         // Gmail
+	"gmail_extra",                         // older Gmail
+	"moz-cite-prefix",                     // Thunderbird
+	"yahoo_quoted",                        // Yahoo
 	"ms-outlook-mobile-reference-message", // Outlook mobile
-	"quoted",            // several Chinese clients
-	"divrplyfwdmsg",     // Outlook desktop (an id)
-	"appendonsend",      // Outlook's marker for "everything below is history"
+	"quoted",                              // several Chinese clients
+	"divrplyfwdmsg",                       // Outlook desktop (an id)
+	"appendonsend",                        // Outlook's marker for "everything below is history"
 }
 
 // SplitQuotedHistory divides a received mail into what was written now and

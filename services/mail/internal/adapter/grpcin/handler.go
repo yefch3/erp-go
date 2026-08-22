@@ -143,6 +143,7 @@ func (h *Handler) CreateCampaign(ctx context.Context, req *mailv1.CreateCampaign
 		ReplyToInboundID:    req.GetReplyToInboundId(),
 		ForwardInboundID:    req.GetForwardInboundId(),
 		ForwardAsAttachment: req.GetForwardAsAttachment(),
+		DisableTracking:     req.GetDisableTracking(),
 		Attachments:         pendingFromProto(req.GetAttachments()),
 		ScheduledAt:         at,
 	}, operator(ctx))
@@ -556,6 +557,7 @@ func (h *Handler) SaveDraft(ctx context.Context, req *mailv1.SaveDraftRequest) (
 		ReplyToInboundID:    req.GetReplyToInboundId(),
 		ForwardInboundID:    req.GetForwardInboundId(),
 		ForwardAsAttachment: req.GetForwardAsAttachment(),
+		DisableTracking:     req.GetDisableTracking(),
 	}, operator(ctx))
 	if err != nil {
 		return nil, err
@@ -594,6 +596,7 @@ func (h *Handler) GetDraft(ctx context.Context, req *mailv1.GetDraftRequest) (*m
 		ReplyToInboundId:    d.ReplyToInboundID,
 		ForwardInboundId:    d.ForwardInboundID,
 		ForwardAsAttachment: d.ForwardAsAttachment,
+		DisableTracking:     d.DisableTracking,
 	}}, nil
 }
 

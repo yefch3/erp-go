@@ -27,7 +27,7 @@ const refetchBatch = 8
 //
 // A message the host no longer has — spam past its retention, mail deleted
 // in another client — is left as it is and said out loud once. The row keeps
-// raw_key = '' and every repair pass keeps skipping it, which is the honest
+// raw_key = ” and every repair pass keeps skipping it, which is the honest
 // state: no original, and no pretending otherwise.
 //
 // Runs last in the repair chain, after the collision repair has finished

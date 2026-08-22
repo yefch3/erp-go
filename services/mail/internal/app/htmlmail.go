@@ -137,9 +137,9 @@ var (
 	// and is what copying a table out of a browser produces; the paste parser
 	// on the other side of this product splits on it for the same reason.
 	// Any trailing tab left before a row break is swept up by trailingWS.
-	cellEnd  = regexp.MustCompile(`(?i)</(td|th)\s*>`)
-	brTag    = regexp.MustCompile(`(?i)<br\s*/?>`)
-	listItem = regexp.MustCompile(`(?i)<li[^>]*>`)
+	cellEnd    = regexp.MustCompile(`(?i)</(td|th)\s*>`)
+	brTag      = regexp.MustCompile(`(?i)<br\s*/?>`)
+	listItem   = regexp.MustCompile(`(?i)<li[^>]*>`)
 	anyTag     = regexp.MustCompile(`<[^>]*>`)
 	manyBlanks = regexp.MustCompile(`\n{3,}`)
 	trailingWS = regexp.MustCompile(`[ \t]+\n`)

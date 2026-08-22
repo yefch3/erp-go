@@ -1400,6 +1400,7 @@ export default {
     undoSend: 'Undo',
     undoWindow: 'Undo window',
     undoWindowHint: 'For {s} seconds after sending, Undo can pull the mail back',
+    trackOpens: 'Track opens', trackOpensOn: 'This mail carries the tracking pixel and can show \u201cpossibly opened\u201d. Pixels count against you with strict spam filters \u2014 consider turning it off for a first mail to a new customer.', trackOpensOff: 'No tracking pixel: best deliverability, but the read indicator will show tracking-off.',
     undoWindowOff: 'Sends the moment you click — no window to take it back',
     undone: 'Undone — restored as a draft',
     undoTooLate: 'Already sent, too late to cancel',

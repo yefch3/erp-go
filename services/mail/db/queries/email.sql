@@ -158,7 +158,8 @@ INSERT INTO email_messages (
     tenant_id, campaign_id, message_key, kind, sender_id, sender_name,
     to_email, to_name, customer_id, customer_name, contact_id,
     subject, body, body_text, body_format, status, attention_reason,
-    send_mode, thread_key, in_reply_to, references_ids, scheduled_at
+    send_mode, thread_key, in_reply_to, references_ids, scheduled_at,
+    track_opens
 ) VALUES (
     sqlc.arg(tenant_id)::bigint,
     nullif(sqlc.arg(campaign_id)::bigint, 0),
@@ -181,7 +182,8 @@ INSERT INTO email_messages (
     coalesce(nullif(sqlc.arg(thread_key)::text, ''), sqlc.arg(message_key)::text),
     sqlc.arg(in_reply_to)::text,
     sqlc.arg(references_ids)::text,
-    sqlc.narg(scheduled_at)::timestamptz
+    sqlc.narg(scheduled_at)::timestamptz,
+    sqlc.arg(track_opens)::boolean
 )
 RETURNING id;
 
@@ -232,7 +234,7 @@ WHERE m.id = due.id
 RETURNING m.id, m.message_key::text AS message_key, m.kind, m.to_email, m.to_name,
           m.sender_id, m.sender_name, m.subject, m.body, m.body_text, m.body_format,
           coalesce(m.campaign_id, 0)::bigint AS campaign_id, m.attempt_count,
-          m.send_mode, m.in_reply_to, m.references_ids;
+          m.send_mode, m.in_reply_to, m.references_ids, m.track_opens;
 
 -- name: MarkAccepted :exec
 -- tracked is written here rather than guessed later: whether a pixel went out
@@ -514,7 +516,7 @@ INSERT INTO email_drafts (
     id, tenant_id, owner_id, subject, body, body_format,
     signature_id, kind, recipients, attachments,
     send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id,
-    forward_as_attachment
+    forward_as_attachment, track_opens
 ) VALUES (
     coalesce(nullif(sqlc.arg(id)::bigint, 0), nextval('email_drafts_id_seq')),
     sqlc.arg(tenant_id)::bigint,
@@ -531,7 +533,8 @@ INSERT INTO email_drafts (
     sqlc.arg(bcc)::jsonb,
     sqlc.arg(reply_to_inbound_id)::bigint,
     sqlc.arg(forward_inbound_id)::bigint,
-    sqlc.arg(forward_as_attachment)::boolean
+    sqlc.arg(forward_as_attachment)::boolean,
+    sqlc.arg(track_opens)::boolean
 )
 ON CONFLICT (id) DO UPDATE SET
     subject = excluded.subject,
@@ -543,6 +546,7 @@ ON CONFLICT (id) DO UPDATE SET
     attachments = excluded.attachments,
     bcc = excluded.bcc,
     send_mode = excluded.send_mode,
+    track_opens = excluded.track_opens,
     cc = excluded.cc,
     reply_to_inbound_id = excluded.reply_to_inbound_id,
     forward_inbound_id = excluded.forward_inbound_id,
@@ -569,7 +573,7 @@ LIMIT 200;
 SELECT id, subject, body, body_format, signature_id, kind,
        recipients, attachments, updated_at,
        send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id,
-       forward_as_attachment
+       forward_as_attachment, track_opens
 FROM email_drafts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint

@@ -54,6 +54,9 @@ type CampaignInput struct {
 	// is a retelling, and a retelling cannot be used to prove where a mail
 	// came from.
 	ForwardAsAttachment bool
+	// True switches the open-tracking pixel off for this send. Inverted so
+	// the zero value keeps the historical behaviour — see the proto note.
+	DisableTracking bool
 	// Files already in storage, registered inside the same transaction that
 	// creates the send so no message can go out before its attachment row.
 	Attachments []PendingAttachment
@@ -296,6 +299,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID int64, in Campaig
 				ThreadKey: thread.ThreadKey,
 				InReplyTo: thread.InReplyTo, ReferencesIds: thread.References,
 				ScheduledAt: due,
+				TrackOpens:  !in.DisableTracking,
 			}); err != nil {
 				return err
 			}
@@ -657,6 +661,7 @@ func (s *Service) createMerged(
 			ThreadKey: thread.ThreadKey,
 			InReplyTo: thread.InReplyTo, ReferencesIds: thread.References,
 			ScheduledAt: due,
+			TrackOpens:  !in.DisableTracking,
 		})
 		if err != nil {
 			return err

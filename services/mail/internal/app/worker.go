@@ -206,7 +206,13 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 		body, inline = s.InlineMailImages(ctx, body)
 		body = AbsolutiseMailImages(body, cfg.PublicBaseURL)
 		withoutPixel := body
-		body = InjectOpenPixel(body, cfg.PublicBaseURL, m.MessageKey)
+		// The sender chose per message. Off means the mail goes out clean —
+		// the pixel is a hidden image on our own domain, one of the signals
+		// that put a test mail in the spam folder, and the first mail to a
+		// new customer needs deliverability more than it needs a maybe.
+		if m.TrackOpens {
+			body = InjectOpenPixel(body, cfg.PublicBaseURL, m.MessageKey)
+		}
 		// Whether a pixel actually went in, rather than whether we asked for
 		// one: a plain-text mail or a service with no public address gets none,
 		// and the screen has to be able to tell "nobody opened it" from "nobody

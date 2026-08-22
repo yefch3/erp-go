@@ -355,6 +355,14 @@
           </div>
         </div>
       </el-form-item>
+      <el-form-item :label="t('emails.trackOpens')">
+        <div class="body-box">
+          <el-switch v-model="trackOpens" />
+          <div class="var-hint">
+            {{ trackOpens ? t('emails.trackOpensOn') : t('emails.trackOpensOff') }}
+          </div>
+        </div>
+      </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="scheduleOpen = false">{{ common('cancel') }}</el-button>
@@ -446,6 +454,12 @@ interface CreateResult {
 // 与代码不符的注释：日后有人因为「发错了追不回」回来看这段，该看到的是一个
 // 有人做过的决定，不是一个像是漏掉的选项。
 const UNDO_CHOICES = [0, 5, 10, 20, 30]
+// Per-person default, per-message choice — same pattern as the undo window.
+// True unless they switched it off last time: the switch changes who
+// decides, not what happens when nobody does.
+const trackOpens = ref(localStorage.getItem('mail.trackOpens') !== 'off')
+watch(trackOpens, (v) => localStorage.setItem('mail.trackOpens', v ? 'on' : 'off'))
+
 const storedUndo = Number(localStorage.getItem('mail.undoSeconds'))
 const undoSeconds = ref(UNDO_CHOICES.includes(storedUndo) ? storedUndo : 0)
 watch(undoSeconds, (s) => localStorage.setItem('mail.undoSeconds', String(s)))
@@ -661,6 +675,7 @@ async function openDraft(id: string) {
   replyCtx.replyToInboundId = draft.replyToInboundId ?? '0'
   replyCtx.forwardInboundId = draft.forwardInboundId ?? '0'
   replyCtx.forwardAsAttachment = draft.forwardAsAttachment ?? false
+  trackOpens.value = !(draft.disableTracking ?? false)
   attachments.value = (draft.attachments ?? []).map((a: any) => ({
     fileName: a.fileName,
     fileKey: a.fileKey,
@@ -778,6 +793,7 @@ function draftPayload() {
     replyToInboundId: replyCtx.replyToInboundId,
     forwardInboundId: replyCtx.forwardInboundId,
     forwardAsAttachment: replyCtx.forwardAsAttachment,
+    disableTracking: !trackOpens.value,
     recipients: selected.value.map(asProto),
     attachments: attachments.value.map((a) => ({
       fileName: a.fileName,
@@ -1293,6 +1309,7 @@ async function submitSend(at: string) {
       replyToInboundId: replyCtx.replyToInboundId,
       forwardInboundId: replyCtx.forwardInboundId,
       forwardAsAttachment: replyCtx.forwardAsAttachment,
+      disableTracking: !trackOpens.value,
       scheduledAt: at,
       attachments: attachments.value.map((a) => ({
         fileName: a.fileName,
