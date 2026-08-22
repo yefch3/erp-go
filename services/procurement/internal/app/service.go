@@ -137,6 +137,10 @@ type Service struct {
 	// See UseMatchTolerance for what the two numbers mean.
 	matchTolPct decimal.Decimal
 	matchTolAbs decimal.Decimal
+
+	// Book currency for fx snapshots; empty means the default (CNY).
+	// See fxsnapshot.go.
+	baseCurrency string
 }
 
 func New(pool *pgxpool.Pool, d Deps) *Service {

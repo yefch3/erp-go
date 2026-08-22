@@ -89,6 +89,10 @@ type SupplierInvoice struct {
 	AttachmentKey  string
 	AttachmentURL  string
 	AttachmentName string
+	// Book-currency snapshot from entry time (P6); zero = not captured.
+	BaseCurrency string
+	BaseAmount   string
+	FxRate       string
 }
 
 // SupplierInvoiceFilter narrows the list.
@@ -213,18 +217,23 @@ func (s *Service) CreateSupplierInvoice(ctx context.Context, tenantID int64, in 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// Same-moment fx snapshot as payments get (P6): gain/loss is the
+	// difference between two snapshots, and one alone prices nothing.
+	fxRate, baseAmount := s.fxSnapshot(ctx, currency, total)
 	var id int64
 	err = tx.QueryRow(ctx, `
 		INSERT INTO supplier_invoices
 		  (tenant_id, supplier_id, supplier_code, supplier_name, invoice_no,
 		   invoice_type, currency, total_amount, tax_amount, invoice_date,
-		   due_date, created_by_id, created_by_name)
+		   due_date, created_by_id, created_by_name,
+		   base_currency, base_amount, fx_rate)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8::numeric,$9::numeric,$10::date,
-		        nullif($11,'')::date,$12,$13)
+		        nullif($11,'')::date,$12,$13,$14,$15::numeric,$16::numeric)
 		RETURNING id`,
 		tenantID, in.SupplierID, strings.TrimSpace(in.SupplierCode),
 		strings.TrimSpace(in.SupplierName), invoiceNo, invType, currency,
 		total.String(), tax.String(), in.InvoiceDate, dueDate, op.ID, op.Name,
+		s.bookCurrency(), baseAmount.String(), fxRate.String(),
 	).Scan(&id)
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -313,12 +322,14 @@ func (s *Service) GetSupplierInvoice(ctx context.Context, tenantID, id int64) (S
 		       invoice_type, currency, total_amount::text, tax_amount::text,
 		       invoice_date::text, coalesce(due_date::text,''),
 		       match_status, match_note, status, void_reason,
-		       created_by_name, created_at::text, attachment_key
+		       created_by_name, created_at::text, attachment_key,
+		       base_currency, base_amount::text, fx_rate::text
 		  FROM supplier_invoices WHERE tenant_id=$1 AND id=$2`, tenantID, id,
 	).Scan(&v.ID, &v.SupplierID, &v.SupplierCode, &v.SupplierName,
 		&v.InvoiceNo, &v.InvoiceType, &v.Currency, &v.TotalAmount, &v.TaxAmount,
 		&v.InvoiceDate, &v.DueDate, &v.MatchStatus, &v.MatchNote,
-		&v.Status, &v.VoidReason, &v.CreatedBy, &v.CreatedAt, &v.AttachmentKey)
+		&v.Status, &v.VoidReason, &v.CreatedBy, &v.CreatedAt, &v.AttachmentKey,
+		&v.BaseCurrency, &v.BaseAmount, &v.FxRate)
 	if err == pgx.ErrNoRows {
 		return SupplierInvoice{}, apierr.NotFound("INV_NOT_FOUND", "发票不存在")
 	}

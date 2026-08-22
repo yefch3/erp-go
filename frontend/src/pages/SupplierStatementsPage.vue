@@ -47,6 +47,12 @@
             <span v-else>—</span>
           </template>
         </el-table-column>
+        <el-table-column :label="t('supplierStatements.fxGainLoss')" width="120" align="right">
+          <template #default="{ row }">
+            <span v-if="Number(row.fxGainLoss) !== 0" :class="Number(row.fxGainLoss) > 0 ? 'gain' : 'overdue'">{{ row.fxGainLoss }}</span>
+            <span v-else>—</span>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('common.actions')" width="90" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="openDetail(row)">{{ t('common.detail') }}</el-button>
@@ -66,6 +72,11 @@
         <el-descriptions-item :label="t('supplierStatements.advance')">{{ summary.advanceAmount }}</el-descriptions-item>
         <el-descriptions-item :label="t('supplierStatements.unallocated')">{{ summary.unallocatedAmount }}</el-descriptions-item>
         <el-descriptions-item :label="t('supplierStatements.balance')"><strong>{{ summary.balance }}</strong></el-descriptions-item>
+        <el-descriptions-item :label="`${t('supplierStatements.invoicedBase')}（${summary.baseCurrency}）`">{{ summary.invoicedBase }}</el-descriptions-item>
+        <el-descriptions-item :label="`${t('supplierStatements.paidBase')}（${summary.baseCurrency}）`">{{ summary.paidBase }}</el-descriptions-item>
+        <el-descriptions-item :label="`${t('supplierStatements.fxGainLoss')}（${summary.baseCurrency}）`">
+          <span :class="Number(summary.fxGainLoss) > 0 ? 'gain' : Number(summary.fxGainLoss) < 0 ? 'overdue' : ''">{{ summary.fxGainLoss }}</span>
+        </el-descriptions-item>
       </el-descriptions>
       <el-table :data="lines" size="small" stripe style="margin-top: 12px" v-loading="detailLoading">
         <el-table-column :label="t('supplierStatements.lineAt')" width="165">
@@ -115,6 +126,10 @@ interface StatementRow {
   balance: string
   overdueCount: number
   overdueAmount: string
+  baseCurrency: string
+  invoicedBase: string
+  paidBase: string
+  fxGainLoss: string
 }
 interface LedgerLine {
   at: string
@@ -175,4 +190,5 @@ onMounted(load)
 <style scoped>
 .overdue { color: var(--el-color-danger); font-weight: 600; }
 .warn { color: var(--el-color-warning); }
+.gain { color: var(--el-color-success); font-weight: 600; }
 </style>

@@ -96,6 +96,7 @@ func supplierInvoiceProto(v app.SupplierInvoice) *prv1.SupplierInvoice {
 		Lines:         lines,
 		AttachmentKey: v.AttachmentKey, AttachmentUrl: v.AttachmentURL,
 		AttachmentName: v.AttachmentName,
+		BaseCurrency: v.BaseCurrency, BaseAmount: v.BaseAmount, FxRate: v.FxRate,
 	}
 }
 

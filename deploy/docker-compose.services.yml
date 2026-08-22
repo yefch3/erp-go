@@ -219,6 +219,8 @@ services:
       MINIO_ACCESS_KEY: erp
       MINIO_SECRET_KEY: erp_dev_password
       MINIO_BUCKET: erp-files
+      # Book currency for fx snapshots (P6); empty keeps CNY.
+      BASE_CURRENCY: ${BASE_CURRENCY:-}
     ports:
       - "127.0.0.1:9007:9007"
     networks: [infra]

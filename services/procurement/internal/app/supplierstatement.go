@@ -34,6 +34,14 @@ type SupplierStatement struct {
 	Balance           string
 	OverdueCount      int32
 	OverdueAmount     string
+	// Book-currency view (P6), built only from rows that carry snapshots;
+	// zero-snapshot rows sit out rather than pretend. Gain/loss is realized:
+	// allocation × (invoice rate − payment rate) — what the claim was booked
+	// at versus what the cash was worth when it left.
+	BaseCurrency string
+	InvoicedBase string
+	PaidBase     string
+	FxGainLoss   string
 }
 
 // StatementLine is one event in the money history, in time order.
@@ -135,7 +143,21 @@ func (s *Service) ListSupplierStatements(ctx context.Context, tenantID int64, ke
 			        (SELECT sum(a.amount) FROM payment_allocations a WHERE a.tenant_id=$1 AND a.invoice_id=si.id),0))
 			      FROM supplier_invoices si
 			     WHERE si.tenant_id=$1 AND si.supplier_id=k.supplier_id AND si.currency=k.currency
-			       AND si.status='OPEN' AND si.due_date IS NOT NULL AND si.due_date < current_date),0)::text AS overdue_amount
+			       AND si.status='OPEN' AND si.due_date IS NOT NULL AND si.due_date < current_date),0)::text AS overdue_amount,
+			  round(coalesce((SELECT sum(si.base_amount) FROM supplier_invoices si
+			     WHERE si.tenant_id=$1 AND si.supplier_id=k.supplier_id AND si.currency=k.currency
+			       AND si.status <> 'VOID'),0), 2)::text AS invoiced_base,
+			  round(coalesce((SELECT sum(a.amount * sp.fx_rate)
+			      FROM payment_allocations a
+			      JOIN supplier_payments sp ON sp.id=a.payment_id
+			      JOIN supplier_invoices si ON si.id=a.invoice_id
+			     WHERE a.tenant_id=$1 AND si.supplier_id=k.supplier_id AND a.currency=k.currency),0), 2)::text AS paid_base,
+			  round(coalesce((SELECT sum(a.amount * (si.fx_rate - sp.fx_rate))
+			      FROM payment_allocations a
+			      JOIN supplier_payments sp ON sp.id=a.payment_id
+			      JOIN supplier_invoices si ON si.id=a.invoice_id
+			     WHERE a.tenant_id=$1 AND si.supplier_id=k.supplier_id AND a.currency=k.currency
+			       AND si.fx_rate <> 0 AND sp.fx_rate <> 0),0), 2)::text AS fx_gain_loss
 			FROM keys k
 		) t
 		WHERE $2 = '' OR t.supplier_name ILIKE '%'||$2||'%'
@@ -151,10 +173,12 @@ func (s *Service) ListSupplierStatements(ctx context.Context, tenantID int64, ke
 		if err := rows.Scan(&v.SupplierID, &v.Currency, &v.SupplierName,
 			&v.OrderedAmount, &v.ReceivedAmount, &v.ExceptionAmount,
 			&v.InvoicedAmount, &v.PaidAmount, &v.AdvanceAmount,
-			&v.UnallocatedAmount, &v.OverdueCount, &v.OverdueAmount); err != nil {
+			&v.UnallocatedAmount, &v.OverdueCount, &v.OverdueAmount,
+			&v.InvoicedBase, &v.PaidBase, &v.FxGainLoss); err != nil {
 			return nil, err
 		}
 		v.Balance = subtractMoney(v.InvoicedAmount, v.PaidAmount)
+		v.BaseCurrency = s.bookCurrency()
 		out = append(out, v)
 	}
 	return out, rows.Err()
