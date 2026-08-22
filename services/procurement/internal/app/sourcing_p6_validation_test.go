@@ -52,6 +52,28 @@ func TestValidateFactoryRFQContact(t *testing.T) {
 	}
 }
 
+func TestValidateFactoryRFQCommunicationAllowsManualChannels(t *testing.T) {
+	today := time.Date(2026, time.August, 21, 12, 0, 0, 0, time.UTC)
+	if err := validateFactoryRFQCommunication("PHONE", "", "+1 555 0100", "USD", "2026-08-22", today); err != nil {
+		t.Fatalf("电话询价不应强制要求邮箱: %v", err)
+	}
+	if err := validateFactoryRFQCommunication("WECHAT", "", "", "CNY", "2026-08-22", today); err == nil {
+		t.Fatal("微信询价缺少联系方式时应被拒绝")
+	}
+	if err := validateFactoryRFQCommunication("SYSTEM_EMAIL", "invalid", "", "USD", "2026-08-22", today); err == nil {
+		t.Fatal("系统邮件询价必须校验邮箱")
+	}
+}
+
+func TestValidateFactoryRFQTargetAllowsSupplierWithoutFactory(t *testing.T) {
+	if err := validateFactoryRFQTarget(10, 20); err != nil {
+		t.Fatalf("已选择询价案件和供应商时不应强制要求工厂: %v", err)
+	}
+	if err := validateFactoryRFQTarget(10, 0); err == nil {
+		t.Fatal("缺少供应商时应被拒绝")
+	}
+}
+
 func TestRFQEligibleSourcingLineIDsKeepsReviewedLegacyLines(t *testing.T) {
 	lines := []store.ListSourcingLinesRow{
 		{ID: 10, Decision: "CONFIRMED"},

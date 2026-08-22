@@ -312,7 +312,7 @@ WHERE tenant_id = $1::bigint
   AND ($2::bool
        OR owner_id = ANY($3::bigint[]))
   -- 待复核询盘有独立页面；正式询价列表默认不混入尚未复核的数据。
-  AND (($4::text = '' AND status NOT IN ('INTAKE_PENDING','CUSTOMER_QUOTE_CREATED','CANCELLED'))
+  AND (($4::text = '' AND status NOT IN ('INTAKE_PENDING','CANCELLED'))
        OR status = $4::text)
   AND ($5::text = '' OR case_no ILIKE '%' || $5::text || '%'
        OR title ILIKE '%' || $5::text || '%'

@@ -211,28 +211,32 @@ func (s *Server) createFactoryRFQ(w http.ResponseWriter, r *http.Request) {
 		s.writeGRPCError(w, err)
 		return
 	}
-	factoryResp, err := s.Suppliers.GetFactory(r.Context(), &mdv1.GetFactoryRequest{Id: req.GetFactoryId()})
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
-	factory := factoryResp.GetFactory()
-	if factory.GetStatus() != "COOPERATING" || factory.GetSupplierId() != req.GetSupplierId() {
-		s.writeError(w, http.StatusConflict, "SC_FACTORY_NOT_COOPERATING", "请选择当前供应商下合作中的工厂")
-		return
-	}
-	req.FactoryCode = factory.GetCode()
-	req.FactoryName = factory.GetNameZh()
-	if req.FactoryName == "" {
-		req.FactoryName = factory.GetNameEn()
-	}
-	if req.GetContactEmail() == "" {
-		contacts, contactErr := s.Suppliers.ListFactoryContacts(r.Context(), &mdv1.ListFactoryContactsRequest{FactoryId: factory.GetId()})
-		if contactErr == nil {
-			for _, contact := range contacts.GetContacts() {
-				if contact.GetIsPrimary() && contact.GetStatus() == "ACTIVE" {
-					req.ContactEmail = contact.GetEmail()
-					break
+	// 生产工厂是可选信息。只有用户明确选择工厂时，才校验工厂归属、
+	// 合作状态并回填工厂联系人；向贸易商或供应商总部询价时允许留空。
+	if req.GetFactoryId() != 0 {
+		factoryResp, err := s.Suppliers.GetFactory(r.Context(), &mdv1.GetFactoryRequest{Id: req.GetFactoryId()})
+		if err != nil {
+			s.writeGRPCError(w, err)
+			return
+		}
+		factory := factoryResp.GetFactory()
+		if factory.GetStatus() != "COOPERATING" || factory.GetSupplierId() != req.GetSupplierId() {
+			s.writeError(w, http.StatusConflict, "SC_FACTORY_NOT_COOPERATING", "请选择当前供应商下合作中的工厂")
+			return
+		}
+		req.FactoryCode = factory.GetCode()
+		req.FactoryName = factory.GetNameZh()
+		if req.FactoryName == "" {
+			req.FactoryName = factory.GetNameEn()
+		}
+		if req.GetContactEmail() == "" {
+			contacts, contactErr := s.Suppliers.ListFactoryContacts(r.Context(), &mdv1.ListFactoryContactsRequest{FactoryId: factory.GetId()})
+			if contactErr == nil {
+				for _, contact := range contacts.GetContacts() {
+					if contact.GetIsPrimary() && contact.GetStatus() == "ACTIVE" {
+						req.ContactEmail = contact.GetEmail()
+						break
+					}
 				}
 			}
 		}
@@ -435,7 +439,8 @@ func (s *Server) createCustomerQuotationFromCost(w http.ResponseWriter, r *http.
 		items = append(items, &exv1.ItemInput{
 			ProductId: line.GetProductId(), SkuId: line.GetSkuId(), Spec: line.GetSpec(),
 			Qty: line.GetQty(), UnitPrice: line.GetUnitPrice(), Remark: line.GetRemark(),
-			SourceCostScenarioLineId: line.GetCostScenarioLineId(),
+			SourceCostScenarioLineId: line.GetCostScenarioLineId(), ProductName: line.GetProductName(),
+			UomCode: line.GetUomCode(),
 		})
 	}
 	customerID := draft.GetCustomerId()

@@ -73,7 +73,7 @@ func (s *Service) CreateCostScenario(ctx context.Context, tenantID int64, in New
 		return CostScenarioView{}, err
 	}
 	if int64(len(in.Selections)) != expected {
-		return CostScenarioView{}, apierr.Invalid("SC_COST_INCOMPLETE", "每条已确认询盘明细必须选择一个供应商报价")
+		return CostScenarioView{}, apierr.Invalid("SC_COST_INCOMPLETE", "每条有效询盘明细必须选择一个供应商报价")
 	}
 	targetRate, err := s.rates.Latest(ctx, in.Currency)
 	if err != nil {

@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"os"
 	"testing"
 
 	"github.com/sgao19/erp-go/pkg/xlsx"
@@ -10,13 +11,13 @@ import (
 
 func quotationDocumentFixture() (store.GetQuotationRow, []store.ListQuotationItemsRow) {
 	return store.GetQuotationRow{
-			QuoteNo: "QT-TEST-1", CustomerName: "Test Customer", Currency: "USD", Incoterm: "CFR",
-			PortOfLoading: "Shanghai", PortOfDischarge: "Valparaiso", PaymentMethod: "T/T",
-			TotalAmount: "625.00",
-		}, []store.ListQuotationItemsRow{{
-			LineNo: 1, ProductCode: "P-1", ProductName: "Steel Coil", Spec: "ASTM A653",
-			Qty: "10", UomCode: "TON", UnitPrice: "62.5", Amount: "625.00",
-		}}
+		QuoteNo: "QT-TEST-1", CustomerName: "测试客户", Currency: "USD", Incoterm: "CFR",
+		PortOfLoading: "宁波", PortOfDischarge: "洛杉矶", PaymentMethod: "即期信用证",
+		TotalAmount: "625.00",
+	}, []store.ListQuotationItemsRow{{
+		LineNo: 1, ProductCode: "P-1", ProductName: "热镀锌钢卷", Spec: "EN 10346 / S350GD+Z / 1.2 × 1450mm",
+		Qty: "10", UomCode: "吨", UnitPrice: "62.5", Amount: "625.00",
+	}}
 }
 
 func TestBuildQuotationWorkbookKeepsServerAmounts(t *testing.T) {
@@ -42,5 +43,16 @@ func TestBuildQuotationPDF(t *testing.T) {
 	}
 	if !bytes.HasPrefix(data, []byte("%PDF-")) || len(data) < 800 {
 		t.Fatalf("invalid PDF output: prefix=%q bytes=%d", data[:min(5, len(data))], len(data))
+	}
+	if output := os.Getenv("QUOTATION_PDF_TEST_OUTPUT"); output != "" {
+		if err := os.WriteFile(output, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestPDFTextPreservesChinese(t *testing.T) {
+	if got := pdfText("测试客户\t热镀锌钢卷"); got != "测试客户 热镀锌钢卷" {
+		t.Fatalf("pdfText() = %q", got)
 	}
 }

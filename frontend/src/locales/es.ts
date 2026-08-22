@@ -419,7 +419,7 @@ export default {
     create: 'Nueva cotización',
     edit: 'Editar cotización',
     view: 'Ver',
-    searchPlaceholder: 'Buscar número o cliente',
+    searchPlaceholder: 'Buscar número o cliente', empty: 'Este proyecto de compras todavía no tiene cotización',
     allStatus: 'Todos los estados',
     quoteNo: 'Número',
     customer: 'Cliente',

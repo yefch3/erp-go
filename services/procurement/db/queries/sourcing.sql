@@ -49,7 +49,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND (sqlc.arg(visible_all)::bool
        OR owner_id = ANY(sqlc.arg(visible_ids)::bigint[]))
   -- 待复核询盘有独立页面；正式询价列表默认不混入尚未复核的数据。
-  AND ((sqlc.arg(status)::text = '' AND status NOT IN ('INTAKE_PENDING','CUSTOMER_QUOTE_CREATED','CANCELLED'))
+  AND ((sqlc.arg(status)::text = '' AND status NOT IN ('INTAKE_PENDING','CANCELLED'))
        OR status = sqlc.arg(status)::text)
   AND (sqlc.arg(keyword)::text = '' OR case_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR title ILIKE '%' || sqlc.arg(keyword)::text || '%'

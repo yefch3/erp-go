@@ -146,11 +146,15 @@ message FactoryRfq {
   string currency = 8; string response_due_at = 9; string status = 10;
   int32 line_count = 11; string created_at = 12; repeated int64 sourcing_line_ids = 13;
   int64 factory_id = 14; string factory_code = 15; string factory_name = 16;
+  string inquiry_channel = 17; string contact_name = 18; string contact_value = 19;
+  string contacted_at = 20; string inquiry_note = 21; int32 round_no = 22;
 }
 message CreateFactoryRfqRequest {
   int64 case_id = 1; int64 supplier_id = 2; string contact_email = 3;
   string currency = 4; string response_due_at = 5; repeated int64 sourcing_line_ids = 6;
   int64 factory_id = 7; string factory_code = 8; string factory_name = 9;
+  string inquiry_channel = 10; string contact_name = 11; string contact_value = 12;
+  string contacted_at = 13; string inquiry_note = 14; int32 round_no = 15;
 }
 message CreateFactoryRfqResponse { FactoryRfq factory_rfq = 1; }
 message ListFactoryRfqsRequest { int64 case_id = 1; }
@@ -165,6 +169,11 @@ message ListCaseChangesRequest { int64 case_id = 1; }
 message ListCaseChangesResponse { repeated SourcingCaseChange changes = 1; }
 message UpdateFactoryRfqRequest {
   int64 id = 1; string contact_email = 2; string response_due_at = 3; string reason = 4;
+  string inquiry_channel = 5;
+  string contact_name = 6;
+  string contact_value = 7;
+  string contacted_at = 8;
+  string inquiry_note = 9;
 }
 message UpdateFactoryRfqResponse { FactoryRfq factory_rfq = 1; }
 
@@ -187,8 +196,9 @@ message CreateSupplierQuoteRequest {
   int64 factory_rfq_id = 1; string quoted_at = 2; string valid_until = 3;
   string currency = 4; string payment_terms = 5; string delivery = 6;
   string remark = 7; string source = 8; repeated SupplierQuoteLineInput lines = 9;
+  string confirmation_status = 10; string evidence_note = 11;
 }
-message CreateSupplierQuoteResponse { int64 id = 1; string supplier_quote_no = 2; }
+message CreateSupplierQuoteResponse { int64 id = 1; string supplier_quote_no = 2; int32 version_no = 3; }
 message ImportSupplierQuoteWorkbookRequest {
   int64 factory_rfq_id = 1;
   bytes file_data = 2;
@@ -211,6 +221,7 @@ message SupplierQuoteComparisonLine {
   int64 sourcing_line_id = 13; string qty = 14; string unit_price = 15;
   string amount = 16; string moq = 17; string lead_time = 18; string line_remark = 19;
   int64 quote_line_id = 20;
+  int32 version_no = 21; string confirmation_status = 22; string evidence_note = 23;
 }
 message ListSupplierQuoteComparisonResponse { repeated SupplierQuoteComparisonLine lines = 1; }
 
@@ -263,6 +274,8 @@ message ConfirmCostScenarioResponse { CostScenario cost_scenario = 1; }
 message CustomerQuotationLine {
   int64 cost_scenario_line_id = 1; int64 product_id = 2; int64 sku_id = 3;
   string spec = 4; string qty = 5; string unit_price = 6; string remark = 7;
+  // 已审核询盘可以尚未绑定产品主数据；此时用名称和单位快照生成客户报价。
+  string product_name = 8; string uom_code = 9;
 }
 message PrepareCustomerQuotationRequest { int64 id = 1; }
 message PrepareCustomerQuotationResponse {

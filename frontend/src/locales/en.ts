@@ -419,7 +419,7 @@ export default {
     create: 'New quotation',
     edit: 'Edit quotation',
     view: 'View',
-    searchPlaceholder: 'Search number or customer',
+    searchPlaceholder: 'Search number or customer', empty: 'No quotation has been created for this sourcing project',
     allStatus: 'All statuses',
     quoteNo: 'Number',
     customer: 'Customer',
@@ -619,7 +619,7 @@ export default {
     statuses: { DRAFT: 'To ship', CONFIRMED: 'Shipped', CANCELLED: 'Cancelled' },
   },
   sourcing: {
-    listEyebrow: 'SOURCING PROJECTS', activeProjects: 'Active projects', customerAndTitle: 'Customer / project', currentStage: 'Current stage', currentWaiting: 'Waiting for', recentUpdate: 'Last update', exception: 'Exception', stale: 'No update for 7+ days',
+    listEyebrow: 'SOURCING PROJECTS', activeProjects: 'All sourcing projects', customerAndTitle: 'Customer / project', currentStage: 'Current stage', currentWaiting: 'Waiting for', recentUpdate: 'Last update', exception: 'Exception', stale: 'No update for 7+ days',
     waiting: { REVIEWING: 'Product specification review', SOURCING: 'Factory RFQ response', QUOTES_RECEIVED: 'Quote comparison', COSTING: 'Cost approval', CUSTOMER_QUOTE_CREATED: 'Customer decision', CANCELLED: 'Closed', UNKNOWN: 'Confirm the current workflow stage' },
     unknownStatus: 'Needs review',
     title: 'Sourcing', subtitle: 'Review customer inquiries, request mill quotes, and build cost scenarios', search: 'Search case, customer, or title',

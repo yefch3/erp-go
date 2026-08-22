@@ -126,10 +126,12 @@ func parseSupplierQuoteWorkbook(data []byte, rfqNo string, expected []store.Fact
 }
 
 type NewFactoryRFQ struct {
-	CaseID, SupplierID, FactoryID         int64
-	FactoryCode, FactoryName              string
-	ContactEmail, Currency, ResponseDueAt string
-	SourcingLineIDs                       []int64
+	CaseID, SupplierID, FactoryID                                       int64
+	FactoryCode, FactoryName                                            string
+	ContactEmail, Currency, ResponseDueAt                               string
+	InquiryChannel, ContactName, ContactValue, ContactedAt, InquiryNote string
+	RoundNo                                                             int32
+	SourcingLineIDs                                                     []int64
 }
 
 type SupplierQuoteLineInput struct {
@@ -140,6 +142,7 @@ type SupplierQuoteLineInput struct {
 type NewSupplierQuote struct {
 	FactoryRFQID                                                           int64
 	QuotedAt, ValidUntil, Currency, PaymentTerms, Delivery, Remark, Source string
+	ConfirmationStatus, EvidenceNote                                       string
 	Lines                                                                  []SupplierQuoteLineInput
 }
 
@@ -156,11 +159,15 @@ func rfqEligibleSourcingLineIDs(lines []store.ListSourcingLinesRow) []int64 {
 }
 
 // validateFactoryRFQContact 校验对外询价必须具备可投递联系人和明确回复期限。
-func validateFactoryRFQContact(contactEmail, currency, responseDueAt string, today time.Time) error {
-	contactEmail = strings.TrimSpace(contactEmail)
-	address, err := mail.ParseAddress(contactEmail)
-	if err != nil || !strings.EqualFold(address.Address, contactEmail) {
-		return apierr.Invalid("SC_RFQ_CONTACT_INVALID", "请填写有效的工厂询价联系人邮箱")
+func validateFactoryRFQCommunication(channel, contactEmail, contactValue, currency, responseDueAt string, today time.Time) error {
+	if channel == "SYSTEM_EMAIL" {
+		contactEmail = strings.TrimSpace(contactEmail)
+		address, err := mail.ParseAddress(contactEmail)
+		if err != nil || !strings.EqualFold(address.Address, contactEmail) {
+			return apierr.Invalid("SC_RFQ_CONTACT_INVALID", "系统邮件询价必须填写有效的联系人邮箱")
+		}
+	} else if strings.TrimSpace(contactValue) == "" {
+		return apierr.Invalid("SC_RFQ_CONTACT_REQUIRED", "人工询价必须填写电话、账号或联系说明")
 	}
 	currency = strings.ToUpper(strings.TrimSpace(currency))
 	if len(currency) != 3 {
@@ -182,9 +189,23 @@ func validateFactoryRFQContact(contactEmail, currency, responseDueAt string, tod
 	return nil
 }
 
+// validateFactoryRFQContact 保留邮件询价校验入口，兼容既有测试和调用方。
+func validateFactoryRFQContact(contactEmail, currency, responseDueAt string, today time.Time) error {
+	return validateFactoryRFQCommunication("SYSTEM_EMAIL", contactEmail, "", currency, responseDueAt, today)
+}
+
+// validateFactoryRFQTarget 只要求询价案件和供应商存在。
+// 生产工厂是可选快照：向贸易商或供应商总部询价时允许不指定工厂。
+func validateFactoryRFQTarget(caseID, supplierID int64) error {
+	if caseID == 0 || supplierID == 0 {
+		return apierr.Invalid("SC_RFQ_REQUIRED", "请选择询价案件和供应商")
+	}
+	return nil
+}
+
 func (s *Service) CreateFactoryRFQ(ctx context.Context, tenantID int64, in NewFactoryRFQ, op Operator) (store.ListFactoryRFQsRow, error) {
-	if in.CaseID == 0 || in.SupplierID == 0 || in.FactoryID == 0 {
-		return store.ListFactoryRFQsRow{}, apierr.Invalid("SC_RFQ_REQUIRED", "请选择询价案件、供应商和具体合作工厂")
+	if err := validateFactoryRFQTarget(in.CaseID, in.SupplierID); err != nil {
+		return store.ListFactoryRFQsRow{}, err
 	}
 	caseView, err := s.GetSourcingCase(ctx, tenantID, in.CaseID)
 	if err != nil {
@@ -200,7 +221,13 @@ func (s *Service) CreateFactoryRFQ(ctx context.Context, tenantID int64, in NewFa
 	if in.Currency == "" {
 		in.Currency = "USD"
 	}
-	if err := validateFactoryRFQContact(in.ContactEmail, in.Currency, in.ResponseDueAt, time.Now().UTC()); err != nil {
+	if in.InquiryChannel == "" {
+		in.InquiryChannel = "SYSTEM_EMAIL"
+	}
+	if in.RoundNo <= 0 {
+		in.RoundNo = 1
+	}
+	if err := validateFactoryRFQCommunication(in.InquiryChannel, in.ContactEmail, in.ContactValue, in.Currency, in.ResponseDueAt, time.Now().UTC()); err != nil {
 		return store.ListFactoryRFQsRow{}, err
 	}
 	caseLines, err := s.q.ListSourcingLines(ctx, store.ListSourcingLinesParams{TenantID: tenantID, CaseID: in.CaseID})
@@ -242,7 +269,9 @@ func (s *Service) CreateFactoryRFQ(ctx context.Context, tenantID int64, in NewFa
 			SupplierID: supplier.ID, SupplierCode: supplier.Code, SupplierName: supplier.Name,
 			FactoryID: in.FactoryID, FactoryCode: strings.TrimSpace(in.FactoryCode), FactoryName: strings.TrimSpace(in.FactoryName),
 			ContactEmail: strings.TrimSpace(in.ContactEmail), Currency: strings.ToUpper(in.Currency),
-			ResponseDueAt: in.ResponseDueAt, CreatedBy: op.ID, CreatedByName: op.Name})
+			ResponseDueAt: in.ResponseDueAt, CreatedBy: op.ID, CreatedByName: op.Name,
+			InquiryChannel: in.InquiryChannel, ContactName: strings.TrimSpace(in.ContactName), ContactValue: strings.TrimSpace(in.ContactValue),
+			ContactedAt: in.ContactedAt, InquiryNote: strings.TrimSpace(in.InquiryNote), RoundNo: in.RoundNo})
 		if err != nil {
 			return err
 		}
@@ -252,8 +281,12 @@ func (s *Service) CreateFactoryRFQ(ctx context.Context, tenantID int64, in NewFa
 				return err
 			}
 		}
+		targetName := strings.TrimSpace(in.FactoryName)
+		if targetName == "" {
+			targetName = supplier.Name
+		}
 		if err := q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: in.CaseID,
-			Section: "RFQ", Action: "RFQ_CREATED", EntityID: id, Summary: "向工厂 " + in.FactoryName + " 创建询价",
+			Section: "RFQ", Action: "RFQ_CREATED", EntityID: id, Summary: "向 " + targetName + " 创建询价",
 			BeforeJson: []byte("{}"), AfterJson: []byte(`{"status":"DRAFT"}`), OperatorID: op.ID, OperatorName: op.Name}); err != nil {
 			return err
 		}
@@ -274,13 +307,10 @@ func (s *Service) CreateFactoryRFQ(ctx context.Context, tenantID int64, in NewFa
 	return store.ListFactoryRFQsRow{}, apierr.NotFound("SC_RFQ_NOT_FOUND", "工厂询价不存在")
 }
 
-// UpdateFactoryRFQ 修改对外询价的联系人或截止日期，并强制留下业务原因。
-func (s *Service) UpdateFactoryRFQ(ctx context.Context, tenantID, id int64, contactEmail, dueAt, reason string, op Operator) (store.ListFactoryRFQsRow, error) {
+// UpdateFactoryRFQ 修改对外询价的渠道、联系人和截止日期，并强制留下业务原因。
+func (s *Service) UpdateFactoryRFQ(ctx context.Context, tenantID, id int64, inquiryChannel, contactName, contactEmail, contactValue, contactedAt, inquiryNote, dueAt, reason string, op Operator) (store.ListFactoryRFQsRow, error) {
 	if strings.TrimSpace(reason) == "" {
-		return store.ListFactoryRFQsRow{}, apierr.Invalid("SC_RFQ_CHANGE_REASON_REQUIRED", "修改 RFQ 联系人或截止日期时必须填写原因")
-	}
-	if err := validateFactoryRFQContact(contactEmail, "USD", dueAt, time.Now().UTC()); err != nil {
-		return store.ListFactoryRFQsRow{}, err
+		return store.ListFactoryRFQsRow{}, apierr.Invalid("SC_RFQ_CHANGE_REASON_REQUIRED", "修改询价记录时必须填写原因")
 	}
 	caseID, err := s.q.FactoryRFQCase(ctx, store.FactoryRFQCaseParams{TenantID: tenantID, ID: id})
 	if err != nil {
@@ -300,11 +330,20 @@ func (s *Service) UpdateFactoryRFQ(ctx context.Context, tenantID, id int64, cont
 	if before.ID == 0 {
 		return store.ListFactoryRFQsRow{}, apierr.NotFound("SC_RFQ_NOT_FOUND", "工厂询价不存在")
 	}
+	if strings.TrimSpace(inquiryChannel) == "" {
+		inquiryChannel = before.InquiryChannel
+	}
+	if err := validateFactoryRFQCommunication(inquiryChannel, contactEmail, contactValue, before.Currency, dueAt, time.Now().UTC()); err != nil {
+		return store.ListFactoryRFQsRow{}, err
+	}
 	beforeJSON, _ := json.Marshal(before)
-	afterJSON, _ := json.Marshal(map[string]string{"contactEmail": contactEmail, "responseDueAt": dueAt})
+	afterJSON, _ := json.Marshal(map[string]string{"inquiryChannel": inquiryChannel, "contactName": contactName, "contactEmail": contactEmail, "contactValue": contactValue, "contactedAt": contactedAt, "inquiryNote": inquiryNote, "responseDueAt": dueAt})
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
-		changed, updateErr := q.UpdateFactoryRFQ(ctx, store.UpdateFactoryRFQParams{TenantID: tenantID, ID: id, ContactEmail: strings.TrimSpace(contactEmail), ResponseDueAt: dueAt})
+		changed, updateErr := q.UpdateFactoryRFQ(ctx, store.UpdateFactoryRFQParams{TenantID: tenantID, ID: id,
+			InquiryChannel: strings.TrimSpace(inquiryChannel), ContactName: strings.TrimSpace(contactName),
+			ContactEmail: strings.TrimSpace(contactEmail), ContactValue: strings.TrimSpace(contactValue),
+			ContactedAt: strings.TrimSpace(contactedAt), InquiryNote: strings.TrimSpace(inquiryNote), ResponseDueAt: dueAt})
 		if updateErr != nil {
 			return updateErr
 		}
@@ -312,7 +351,7 @@ func (s *Service) UpdateFactoryRFQ(ctx context.Context, tenantID, id int64, cont
 			return apierr.Conflict("SC_RFQ_NOT_EDITABLE", "当前 RFQ 状态不能修改")
 		}
 		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: caseID,
-			Section: "RFQ", Action: "RFQ_UPDATED", EntityID: id, Summary: "修改工厂询价联系人或截止日期",
+			Section: "RFQ", Action: "RFQ_UPDATED", EntityID: id, Summary: "修改工厂询价记录",
 			BeforeJson: beforeJSON, AfterJson: afterJSON, Reason: strings.TrimSpace(reason), OperatorID: op.ID, OperatorName: op.Name})
 	})
 	if err != nil {
@@ -347,6 +386,12 @@ func (s *Service) CreateSupplierQuote(ctx context.Context, tenantID int64, in Ne
 	if in.Source == "" {
 		in.Source = "MANUAL"
 	}
+	// 进入报价比较的数据均已由员工核实，统一作为正式报价。
+	in.ConfirmationStatus = "WRITTEN_CONFIRMED"
+	allowedSources := map[string]bool{"MANUAL": true, "EXCEL_IMPORT": true, "EMAIL_ATTACHMENT": true, "PHONE": true, "WECHAT": true, "WHATSAPP": true, "IN_PERSON": true, "OTHER": true}
+	if !allowedSources[in.Source] {
+		return store.CreateSupplierQuoteRow{}, apierr.Invalid("SC_QUOTE_SOURCE_INVALID", "报价来源无效")
+	}
 	var result store.CreateSupplierQuoteRow
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
@@ -379,7 +424,8 @@ func (s *Service) CreateSupplierQuote(ctx context.Context, tenantID int64, in Ne
 		}
 		result, err = q.CreateSupplierQuote(ctx, store.CreateSupplierQuoteParams{TenantID: tenantID, FactoryRfqID: in.FactoryRFQID,
 			QuotedAt: in.QuotedAt, ValidUntil: in.ValidUntil, Currency: strings.ToUpper(in.Currency), PaymentTerms: in.PaymentTerms,
-			Delivery: in.Delivery, Remark: in.Remark, Source: in.Source, CreatedBy: op.ID})
+			Delivery: in.Delivery, Remark: in.Remark, Source: in.Source, CreatedBy: op.ID,
+			ConfirmationStatus: in.ConfirmationStatus, EvidenceNote: strings.TrimSpace(in.EvidenceNote)})
 		if err != nil {
 			return err
 		}

@@ -35,7 +35,8 @@ interface SourcingCase { id:string; caseNo:string; customerName:string; title:st
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
-const statuses = ['REVIEWING','SOURCING','QUOTES_RECEIVED','COSTING']
+// 进行中的项目作为默认视图，同时允许用户主动找回已生成报价单或已取消的历史项目。
+const statuses = ['REVIEWING','SOURCING','QUOTES_RECEIVED','COSTING','CUSTOMER_QUOTE_CREATED','CANCELLED']
 const rows=ref<SourcingCase[]>([]),total=ref(0),page=ref(1),keyword=ref(''),status=ref(''),loading=ref(false)
 const pageSize=20
 
