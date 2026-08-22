@@ -52,6 +52,13 @@ func (s *Server) resolveShippingMasterdata(r *http.Request, in *shippingv1.Sched
 		if err != nil {
 			return err
 		}
+		// 船期的承运方必须真是船公司或货代（B3）：主数据里业务类型是
+		// 唯一的角色事实，没勾就是不是——选一家钢厂当船公司应当被拒，
+		// 而不是等年底延误率报表统计出一家轧钢厂。
+		if !supplierHasRole(supplier, "CARRIER", "FORWARDER") {
+			return apierr.Invalid("SHIPPING_CARRIER_ROLE",
+				"所选公司不是船公司或货代——请先在供应商主数据里为它勾选相应业务类型")
+		}
 		in.CarrierForwarder = supplier.GetName()
 	}
 	if requirePorts || in.GetLoadingPortId() > 0 {

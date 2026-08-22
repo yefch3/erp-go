@@ -193,9 +193,10 @@ func (s *Server) deactivateCustomer(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listSuppliers(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Suppliers.ListSuppliers(r.Context(), &mdv1.ListSuppliersRequest{
-		Page:    pageFromQuery(r),
-		Keyword: r.URL.Query().Get("keyword"),
-		Status:  r.URL.Query().Get("status"),
+		Page:         pageFromQuery(r),
+		Keyword:      r.URL.Query().Get("keyword"),
+		Status:       r.URL.Query().Get("status"),
+		BusinessType: r.URL.Query().Get("business_type"),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
