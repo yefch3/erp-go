@@ -359,7 +359,8 @@ SELECT
     o.reject_reason, o.cancel_reason, o.buyer_id, o.buyer_name, o.remark,
     coalesce(o.expected_date::text, '')::text AS expected_date,
     o.send_status, o.sent_to, o.sent_at, o.sent_by_name, o.send_error,
-    o.ordered_at, o.created_at
+    o.ordered_at, o.created_at,
+    coalesce(o.closed_at::text, '')::text AS closed_at, o.closed_by_name
 FROM purchase_orders o
 WHERE o.tenant_id = $1::bigint AND o.id = $2::bigint
 `
@@ -392,6 +393,8 @@ type GetPurchaseOrderRow struct {
 	SendError          string
 	OrderedAt          pgtype.Timestamptz
 	CreatedAt          pgtype.Timestamptz
+	ClosedAt           string
+	ClosedByName       string
 }
 
 func (q *Queries) GetPurchaseOrder(ctx context.Context, arg GetPurchaseOrderParams) (GetPurchaseOrderRow, error) {
@@ -420,6 +423,8 @@ func (q *Queries) GetPurchaseOrder(ctx context.Context, arg GetPurchaseOrderPara
 		&i.SendError,
 		&i.OrderedAt,
 		&i.CreatedAt,
+		&i.ClosedAt,
+		&i.ClosedByName,
 	)
 	return i, err
 }
@@ -485,6 +490,7 @@ SELECT
     coalesce(o.expected_date::text, '')::text AS expected_date,
     o.send_status, o.sent_to, o.sent_at, o.sent_by_name, o.send_error,
     o.created_at,
+    coalesce(o.closed_at::text, '')::text AS closed_at, o.closed_by_name,
     (SELECT count(*) FROM purchase_order_items i WHERE i.po_id = o.id) AS item_count,
     coalesce((SELECT sum(i.qty) FROM purchase_order_items i WHERE i.po_id = o.id), 0)::text AS total_qty,
     coalesce((SELECT sum(i.received_qty) FROM purchase_order_items i WHERE i.po_id = o.id), 0)::text AS received_qty,
@@ -536,6 +542,8 @@ type ListPurchaseOrdersRow struct {
 	SentByName   string
 	SendError    string
 	CreatedAt    pgtype.Timestamptz
+	ClosedAt     string
+	ClosedByName string
 	ItemCount    int64
 	TotalQty     string
 	ReceivedQty  string
@@ -579,6 +587,8 @@ func (q *Queries) ListPurchaseOrders(ctx context.Context, arg ListPurchaseOrders
 			&i.SentByName,
 			&i.SendError,
 			&i.CreatedAt,
+			&i.ClosedAt,
+			&i.ClosedByName,
 			&i.ItemCount,
 			&i.TotalQty,
 			&i.ReceivedQty,

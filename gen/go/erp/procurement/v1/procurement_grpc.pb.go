@@ -1303,6 +1303,9 @@ const (
 	PurchaseOrderService_SaveProductionMilestone_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/SaveProductionMilestone"
 	PurchaseOrderService_ReportReceiptException_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/ReportReceiptException"
 	PurchaseOrderService_ResolveReceiptException_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/ResolveReceiptException"
+	PurchaseOrderService_RecordInspection_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/RecordInspection"
+	PurchaseOrderService_ResolveInspection_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/ResolveInspection"
+	PurchaseOrderService_CloseOrder_FullMethodName                       = "/erp.procurement.v1.PurchaseOrderService/CloseOrder"
 	PurchaseOrderService_CreateSupplierInvoice_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/CreateSupplierInvoice"
 	PurchaseOrderService_ListSupplierInvoices_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/ListSupplierInvoices"
 	PurchaseOrderService_GetSupplierInvoice_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/GetSupplierInvoice"
@@ -1363,6 +1366,11 @@ type PurchaseOrderServiceClient interface {
 	SaveProductionMilestone(ctx context.Context, in *SaveProductionMilestoneRequest, opts ...grpc.CallOption) (*SaveProductionMilestoneResponse, error)
 	ReportReceiptException(ctx context.Context, in *ReportReceiptExceptionRequest, opts ...grpc.CallOption) (*ReportReceiptExceptionResponse, error)
 	ResolveReceiptException(ctx context.Context, in *ResolveReceiptExceptionRequest, opts ...grpc.CallOption) (*ResolveReceiptExceptionResponse, error)
+	// 质检记录（A3）：结果、不合格数量、附件、处置。挂在收货单上。
+	RecordInspection(ctx context.Context, in *RecordInspectionRequest, opts ...grpc.CallOption) (*RecordInspectionResponse, error)
+	ResolveInspection(ctx context.Context, in *ResolveInspectionRequest, opts ...grpc.CallOption) (*ResolveInspectionResponse, error)
+	// 结案：全部收满、无未解决异常、无未解决质检才放行。
+	CloseOrder(ctx context.Context, in *CloseOrderRequest, opts ...grpc.CallOption) (*CloseOrderResponse, error)
 	// Supplier invoices: the third leg of the three-way match. Lives on the
 	// order service because an invoice is meaningless except against orders.
 	CreateSupplierInvoice(ctx context.Context, in *CreateSupplierInvoiceRequest, opts ...grpc.CallOption) (*CreateSupplierInvoiceResponse, error)
@@ -1589,6 +1597,36 @@ func (c *purchaseOrderServiceClient) ResolveReceiptException(ctx context.Context
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) RecordInspection(ctx context.Context, in *RecordInspectionRequest, opts ...grpc.CallOption) (*RecordInspectionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecordInspectionResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_RecordInspection_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ResolveInspection(ctx context.Context, in *ResolveInspectionRequest, opts ...grpc.CallOption) (*ResolveInspectionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveInspectionResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ResolveInspection_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) CloseOrder(ctx context.Context, in *CloseOrderRequest, opts ...grpc.CallOption) (*CloseOrderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CloseOrderResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_CloseOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *purchaseOrderServiceClient) CreateSupplierInvoice(ctx context.Context, in *CreateSupplierInvoiceRequest, opts ...grpc.CallOption) (*CreateSupplierInvoiceResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateSupplierInvoiceResponse)
@@ -1809,6 +1847,11 @@ type PurchaseOrderServiceServer interface {
 	SaveProductionMilestone(context.Context, *SaveProductionMilestoneRequest) (*SaveProductionMilestoneResponse, error)
 	ReportReceiptException(context.Context, *ReportReceiptExceptionRequest) (*ReportReceiptExceptionResponse, error)
 	ResolveReceiptException(context.Context, *ResolveReceiptExceptionRequest) (*ResolveReceiptExceptionResponse, error)
+	// 质检记录（A3）：结果、不合格数量、附件、处置。挂在收货单上。
+	RecordInspection(context.Context, *RecordInspectionRequest) (*RecordInspectionResponse, error)
+	ResolveInspection(context.Context, *ResolveInspectionRequest) (*ResolveInspectionResponse, error)
+	// 结案：全部收满、无未解决异常、无未解决质检才放行。
+	CloseOrder(context.Context, *CloseOrderRequest) (*CloseOrderResponse, error)
 	// Supplier invoices: the third leg of the three-way match. Lives on the
 	// order service because an invoice is meaningless except against orders.
 	CreateSupplierInvoice(context.Context, *CreateSupplierInvoiceRequest) (*CreateSupplierInvoiceResponse, error)
@@ -1908,6 +1951,15 @@ func (UnimplementedPurchaseOrderServiceServer) ReportReceiptException(context.Co
 }
 func (UnimplementedPurchaseOrderServiceServer) ResolveReceiptException(context.Context, *ResolveReceiptExceptionRequest) (*ResolveReceiptExceptionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ResolveReceiptException not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) RecordInspection(context.Context, *RecordInspectionRequest) (*RecordInspectionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RecordInspection not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ResolveInspection(context.Context, *ResolveInspectionRequest) (*ResolveInspectionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResolveInspection not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) CloseOrder(context.Context, *CloseOrderRequest) (*CloseOrderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CloseOrder not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) CreateSupplierInvoice(context.Context, *CreateSupplierInvoiceRequest) (*CreateSupplierInvoiceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateSupplierInvoice not implemented")
@@ -2304,6 +2356,60 @@ func _PurchaseOrderService_ResolveReceiptException_Handler(srv interface{}, ctx 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PurchaseOrderServiceServer).ResolveReceiptException(ctx, req.(*ResolveReceiptExceptionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_RecordInspection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordInspectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).RecordInspection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_RecordInspection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).RecordInspection(ctx, req.(*RecordInspectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ResolveInspection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveInspectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ResolveInspection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ResolveInspection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ResolveInspection(ctx, req.(*ResolveInspectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_CloseOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CloseOrderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).CloseOrder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_CloseOrder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).CloseOrder(ctx, req.(*CloseOrderRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2710,6 +2816,18 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveReceiptException",
 			Handler:    _PurchaseOrderService_ResolveReceiptException_Handler,
+		},
+		{
+			MethodName: "RecordInspection",
+			Handler:    _PurchaseOrderService_RecordInspection_Handler,
+		},
+		{
+			MethodName: "ResolveInspection",
+			Handler:    _PurchaseOrderService_ResolveInspection_Handler,
+		},
+		{
+			MethodName: "CloseOrder",
+			Handler:    _PurchaseOrderService_CloseOrder_Handler,
 		},
 		{
 			MethodName: "CreateSupplierInvoice",

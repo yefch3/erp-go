@@ -205,6 +205,28 @@ type ProcessedEvent struct {
 	ProcessedAt   pgtype.Timestamptz
 }
 
+type PurchaseInspection struct {
+	ID              int64
+	TenantID        int64
+	PoID            int64
+	ReceiptID       int64
+	PoItemID        *int64
+	Result          string
+	InspectedQty    pgtype.Numeric
+	DefectQty       pgtype.Numeric
+	Note            string
+	Attachments     []byte
+	Status          string
+	Disposition     string
+	DispositionNote string
+	InspectedByID   int64
+	InspectedByName string
+	InspectedAt     pgtype.Timestamptz
+	ResolvedByID    int64
+	ResolvedByName  string
+	ResolvedAt      pgtype.Timestamptz
+}
+
 type PurchaseOrder struct {
 	ID                  int64
 	TenantID            int64
@@ -233,6 +255,9 @@ type PurchaseOrder struct {
 	SendError           string
 	SendTemplateVersion string
 	SendAttachmentNames []byte
+	ClosedAt            pgtype.Timestamptz
+	ClosedByID          int64
+	ClosedByName        string
 }
 
 type PurchaseOrderImport struct {

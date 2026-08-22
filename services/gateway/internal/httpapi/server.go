@@ -509,6 +509,10 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/unmatch", s.unmatchBankTransaction)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/exceptions", s.reportReceiptException)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/exceptions/{exceptionId}/resolve", s.resolveReceiptException)
+		// 质检与到货异常同一职责同一旋钮；结案是生命周期决定，单独的码。
+		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/inspections", s.recordInspection)
+		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/inspections/{inspectionId}/resolve", s.resolveInspection)
+		r.With(s.perm("procurement:order:close")).Post("/api/purchase-orders/{id}/close", s.closePurchaseOrder)
 		// Receiving is warehouse work, so it rides on the stock permission
 		// rather than the buyer's.
 		r.With(s.perm("procurement:receipt:write")).Post("/api/purchase-orders/{id}/receive", s.receiveOrder)

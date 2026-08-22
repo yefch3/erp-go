@@ -261,3 +261,41 @@ func (s *Server) resolveReceiptException(w http.ResponseWriter, r *http.Request)
 	}
 	s.writeProto(w, resp)
 }
+
+func (s *Server) recordInspection(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.RecordInspectionRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Orders.RecordInspection(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) resolveInspection(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.ResolveInspectionRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	req.InspectionId, _ = strconv.ParseInt(chi.URLParam(r, "inspectionId"), 10, 64)
+	resp, err := s.Orders.ResolveInspection(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) closePurchaseOrder(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.CloseOrder(r.Context(), &prv1.CloseOrderRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
