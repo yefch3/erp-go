@@ -13,6 +13,7 @@
         <el-radio-button value="">{{ t('orders.allStatuses') }}</el-radio-button>
         <el-radio-button value="DRAFT">{{ t('orders.statuses.DRAFT') }}</el-radio-button>
         <el-radio-button value="PENDING_APPROVAL">{{ t('orders.statuses.PENDING_APPROVAL') }}</el-radio-button>
+        <el-radio-button value="UNSENT">{{ t('orders.unsentTab') }}</el-radio-button>
         <el-radio-button value="ORDERED">{{ t('orders.statuses.ORDERED') }}</el-radio-button>
         <el-radio-button value="PARTIALLY_RECEIVED">{{ t('orders.statuses.PARTIALLY_RECEIVED') }}</el-radio-button>
         <el-radio-button value="RECEIVED">{{ t('orders.statuses.RECEIVED') }}</el-radio-button>
@@ -62,77 +63,43 @@
         <el-table-column :label="t('orders.expected')" width="110">
           <template #default="{ row }">{{ row.expectedDate || '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.status')" width="170">
+        <el-table-column :label="t('common.status')" width="190">
           <template #default="{ row }">
             <el-tag size="small" :type="statusType(row.status)" effect="plain">
               {{ t(`orders.statuses.${row.status}`) }}
             </el-tag>
+            <el-tag
+              v-if="['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status)"
+              size="small" effect="plain" style="margin-left: 4px"
+              :type="row.sendStatus === 'SENT' ? 'success' : row.sendStatus === 'FAILED' ? 'danger' : 'info'"
+            >{{ row.sendStatus === 'SENT' ? t('orders.sentTag') : row.sendStatus === 'FAILED' ? t('orders.sendFailedTag') : t('orders.unsentTag') }}</el-tag>
             <div v-if="row.rejectReason || row.cancelReason" class="sub reason">
               {{ row.rejectReason || row.cancelReason }}
             </div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="380" fixed="right">
+        <!-- 一行只亮「当前该做的那一个动作」，其余收进「更多」（B5）。
+             七个按钮同排的年代，采购员点错的不是手，是布局。 -->
+        <el-table-column :label="t('common.actions')" width="235" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
-            <el-button link type="primary" @click="openDetail(row)">{{ t('common.detail') }}</el-button>
-            <el-dropdown
-              v-if="['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status)"
-              trigger="click"
-              @command="(format: string) => downloadOrder(row, format)"
-            >
-              <el-button link type="primary" :loading="downloadingId === Number(row.id)">
-                {{ t('orders.download') }}
-              </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="xlsx">{{ t('orders.downloadExcel') }}</el-dropdown-item>
-                  <el-dropdown-item command="pdf">{{ t('orders.downloadPdf') }}</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-            <el-button
-              v-if="canReceive && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status)"
-              link
-              type="warning"
-              @click="openReceive(row)"
-            >
-              {{ t('orders.receive') }}
-            </el-button>
-            <el-button
-              v-if="['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status)"
-              link type="warning" @click="openExecution(row)"
-            >{{ t('orders.execution') }}</el-button>
-            <template>
+              <el-button link type="primary" @click="openDetail(row)">{{ t('common.detail') }}</el-button>
               <el-button
-                v-if="canWrite && (row.status === 'DRAFT' || row.status === 'REJECTED')"
-                link
-                type="primary"
-                @click="openEdit(row)"
-              >
-                {{ common('edit') }}
-              </el-button>
-              <el-button
-                v-if="canSubmit && (row.status === 'DRAFT' || row.status === 'REJECTED')"
-                link
-                type="success"
-                @click="submit(row)"
-              >
-                {{ t('orders.submit') }}
-              </el-button>
-              <el-button
-                v-if="canCancel && ['DRAFT', 'REJECTED', 'ORDERED'].includes(row.status)"
-                link
-                type="danger"
-                @click="openCancel(row)"
-              >
-                {{ common('cancel') }}
-              </el-button>
-            </template>
-            <el-button
-              v-if="canSend && ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status) && row.sendStatus !== 'SENT'"
-              link type="success" @click="openSend(row)"
-            >{{ row.sendStatus === 'FAILED' ? t('orders.retrySend') : t('orders.sendOrder') }}</el-button>
+                v-if="primaryAction(row)"
+                link :type="primaryAction(row)!.tone"
+                :loading="primaryAction(row)!.key === 'download' && downloadingId === Number(row.id)"
+                @click="primaryAction(row)!.run()"
+              >{{ primaryAction(row)!.label }}</el-button>
+              <el-dropdown v-if="moreActions(row).length" trigger="click" @command="(key: string) => runMoreAction(row, key)">
+                <el-button link>{{ t('orders.more') }} ▾</el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item v-for="action in moreActions(row)" :key="action.key" :command="action.key">
+                      {{ action.label }}
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
           </template>
         </el-table-column>
@@ -600,11 +567,59 @@ const estimated = computed(() => {
   return sum.toFixed(2)
 })
 
+// 当前主动作按订单状态推导（B5）：草稿去提交、批完去发单、发完去收货、
+// 收完看履约。其余动作全部收进「更多」。
+interface RowAction { key: string; label: string; tone: 'primary' | 'success' | 'warning' | 'danger'; run: () => void }
+function primaryAction(row: Order): RowAction | null {
+  if ((row.status === 'DRAFT' || row.status === 'REJECTED') && canSubmit)
+    return { key: 'submit', label: t('orders.submit'), tone: 'success', run: () => submit(row) }
+  if ((row.status === 'DRAFT' || row.status === 'REJECTED') && canWrite)
+    return { key: 'edit', label: common('edit'), tone: 'primary', run: () => openEdit(row) }
+  if (['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status) && row.sendStatus !== 'SENT' && canSend)
+    return { key: 'send', label: row.sendStatus === 'FAILED' ? t('orders.retrySend') : t('orders.sendOrder'), tone: 'success', run: () => openSend(row) }
+  if (['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status) && canReceive)
+    return { key: 'receive', label: t('orders.receive'), tone: 'warning', run: () => openReceive(row) }
+  if (['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
+    return { key: 'execution', label: t('orders.execution'), tone: 'warning', run: () => openExecution(row) }
+  return null
+}
+function moreActions(row: Order): { key: string; label: string }[] {
+  const primary = primaryAction(row)?.key
+  const out: { key: string; label: string }[] = []
+  const add = (key: string, label: string, allowed: boolean) => { if (allowed && key !== primary) out.push({ key, label }) }
+  add('edit', common('edit'), canWrite && (row.status === 'DRAFT' || row.status === 'REJECTED'))
+  add('submit', t('orders.submit'), canSubmit && (row.status === 'DRAFT' || row.status === 'REJECTED'))
+  add('send', row.sendStatus === 'FAILED' ? t('orders.retrySend') : t('orders.sendOrder'),
+    canSend && ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status) && row.sendStatus !== 'SENT')
+  add('receive', t('orders.receive'), canReceive && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status))
+  add('execution', t('orders.execution'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
+  add('downloadXlsx', t('orders.downloadExcel'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
+  add('downloadPdf', t('orders.downloadPdf'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
+  add('cancel', common('cancel'), canCancel && ['DRAFT', 'REJECTED', 'ORDERED'].includes(row.status))
+  return out
+}
+function runMoreAction(row: Order, key: string) {
+  switch (key) {
+    case 'edit': openEdit(row); break
+    case 'submit': void submit(row); break
+    case 'send': openSend(row); break
+    case 'receive': openReceive(row); break
+    case 'execution': openExecution(row); break
+    case 'downloadXlsx': void downloadOrder(row, 'xlsx'); break
+    case 'downloadPdf': void downloadOrder(row, 'pdf'); break
+    case 'cancel': openCancel(row); break
+  }
+}
+
 async function load() {
   loading.value = true
   try {
+    // UNSENT 是前端造的伪状态：ORDERED 且未发单，服务端用 unsent 参数过滤。
+    const unsent = status.value === 'UNSENT'
     const d = await get<{ orders: Order[]; meta: { total: number } }>('/purchase-orders', {
-      page: page.value, page_size: pageSize, status: status.value, keyword: keyword.value,
+      page: page.value, page_size: pageSize,
+      status: unsent ? 'ORDERED' : status.value, unsent: unsent ? '1' : '',
+      keyword: keyword.value,
     })
     rows.value = d.orders ?? []
     total.value = Number(d.meta?.total ?? 0)
@@ -992,6 +1007,16 @@ onMounted(async () => {
   const kw = String(route.query.keyword ?? '')
   if (kw) {
     keyword.value = kw
+    reload()
+  }
+  // 工作台的指标点进来要落在筛好的列表上（B4），不是全量。
+  const qsStatus = String(route.query.status ?? '')
+  const qsUnsent = String(route.query.unsent ?? '')
+  if (qsUnsent === '1') {
+    status.value = 'UNSENT'
+    reload()
+  } else if (qsStatus) {
+    status.value = qsStatus
     reload()
   }
 })

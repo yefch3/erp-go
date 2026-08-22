@@ -31,7 +31,22 @@ service SourcingService {
   rpc LinkCustomerQuotation(LinkCustomerQuotationRequest) returns (LinkCustomerQuotationResponse);
   rpc ListCaseChanges(ListCaseChangesRequest) returns (ListCaseChangesResponse);
   rpc UpdateFactoryRfq(UpdateFactoryRfqRequest) returns (UpdateFactoryRfqResponse);
+  // The workbench's chase list (B4): RFQs past their reply deadline,
+  // most overdue first, fenced like the case list it derives from.
+  rpc ListOverdueFactoryRfqs(ListOverdueFactoryRfqsRequest) returns (ListOverdueFactoryRfqsResponse);
 }
+
+message ListOverdueFactoryRfqsRequest { int32 limit = 1; }
+message OverdueFactoryRfq {
+  int64 id = 1;
+  string rfq_no = 2;
+  int64 case_id = 3;
+  string case_no = 4;
+  string supplier_name = 5;
+  string response_due_at = 6; // YYYY-MM-DD
+  int32 overdue_days = 7;
+}
+message ListOverdueFactoryRfqsResponse { repeated OverdueFactoryRfq items = 1; }
 
 message SourcingLineInput {
   string raw_text = 1;
@@ -694,6 +709,9 @@ message ListOrdersRequest {
   erp.common.v1.PageRequest page = 1;
   string status = 2;
   string keyword = 3;
+  // Approved but not yet sent to the supplier — the workbench's
+  // actionable number, filtered by the list's own fence.
+  bool unsent = 4;
 }
 
 message ListOrdersResponse {

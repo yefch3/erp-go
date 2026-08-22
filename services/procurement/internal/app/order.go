@@ -826,6 +826,8 @@ func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, wareho
 type OrderFilter struct {
 	Status  string
 	Keyword string
+	// 只看「批下来了、还没发给供应商」的单——工作台的行动数字（B4）。
+	Unsent bool
 }
 
 func (s *Service) ListOrders(ctx context.Context, tenantID int64, f OrderFilter, page, size int32, operators ...Operator) ([]store.ListPurchaseOrdersRow, int64, error) {
@@ -842,7 +844,7 @@ func (s *Service) ListOrders(ctx context.Context, tenantID int64, f OrderFilter,
 	}
 	page, size = normalizePage(page, size)
 	rows, err := s.q.ListPurchaseOrders(ctx, store.ListPurchaseOrdersParams{
-		TenantID: tenantID, Status: f.Status, Keyword: f.Keyword,
+		TenantID: tenantID, Status: f.Status, Keyword: f.Keyword, Unsent: f.Unsent,
 		ScopeAll: visible.All, BuyerIds: visible.EmployeeIDs,
 		RowLimit: size, RowOffset: (page - 1) * size,
 	})

@@ -109,7 +109,7 @@ func (h *OrderHandler) ConfirmOrderImport(ctx context.Context, req *prv1.Confirm
 func (h *OrderHandler) ListOrders(ctx context.Context, req *prv1.ListOrdersRequest) (*prv1.ListOrdersResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
 	rows, total, err := h.svc.ListOrders(ctx, grpcx.TenantID(ctx), app.OrderFilter{
-		Status: req.GetStatus(), Keyword: req.GetKeyword(),
+		Status: req.GetStatus(), Keyword: req.GetKeyword(), Unsent: req.GetUnsent(),
 	}, req.GetPage().GetPage(), req.GetPage().GetPageSize(),
 		app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {

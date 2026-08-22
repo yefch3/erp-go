@@ -274,6 +274,10 @@ WHERE o.tenant_id = sqlc.arg(tenant_id)::bigint
   -- buyer. scope_all short-circuits so administrators never pay for a list.
   AND (sqlc.arg(scope_all)::bool OR o.buyer_id = ANY(sqlc.arg(buyer_ids)::bigint[]))
   AND (sqlc.arg(status)::text = '' OR o.status = sqlc.arg(status)::text)
+  -- 待正式发单：批下来了、还没发给供应商。工作台的行动数字（B4），
+  -- 用列表自己的围栏，不另起一套统计。
+  AND (sqlc.arg(unsent)::bool = false
+       OR (o.status = 'ORDERED' AND o.send_status <> 'SENT'))
   AND (sqlc.arg(keyword)::text = ''
        OR o.po_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR o.supplier_name ILIKE '%' || sqlc.arg(keyword)::text || '%')

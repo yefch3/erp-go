@@ -495,11 +495,15 @@ WHERE o.tenant_id = $1::bigint
   -- buyer. scope_all short-circuits so administrators never pay for a list.
   AND ($2::bool OR o.buyer_id = ANY($3::bigint[]))
   AND ($4::text = '' OR o.status = $4::text)
-  AND ($5::text = ''
-       OR o.po_no ILIKE '%' || $5::text || '%'
-       OR o.supplier_name ILIKE '%' || $5::text || '%')
+  -- 待正式发单：批下来了、还没发给供应商。工作台的行动数字（B4），
+  -- 用列表自己的围栏，不另起一套统计。
+  AND ($5::bool = false
+       OR (o.status = 'ORDERED' AND o.send_status <> 'SENT'))
+  AND ($6::text = ''
+       OR o.po_no ILIKE '%' || $6::text || '%'
+       OR o.supplier_name ILIKE '%' || $6::text || '%')
 ORDER BY o.created_at DESC, o.id DESC
-LIMIT $7::int OFFSET $6::int
+LIMIT $8::int OFFSET $7::int
 `
 
 type ListPurchaseOrdersParams struct {
@@ -507,6 +511,7 @@ type ListPurchaseOrdersParams struct {
 	ScopeAll  bool
 	BuyerIds  []int64
 	Status    string
+	Unsent    bool
 	Keyword   string
 	RowOffset int32
 	RowLimit  int32
@@ -543,6 +548,7 @@ func (q *Queries) ListPurchaseOrders(ctx context.Context, arg ListPurchaseOrders
 		arg.ScopeAll,
 		arg.BuyerIds,
 		arg.Status,
+		arg.Unsent,
 		arg.Keyword,
 		arg.RowOffset,
 		arg.RowLimit,

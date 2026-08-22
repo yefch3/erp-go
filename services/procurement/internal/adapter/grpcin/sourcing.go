@@ -178,6 +178,24 @@ func (h *SourcingHandler) ListCaseChanges(ctx context.Context, req *prv1.ListCas
 	return &prv1.ListCaseChangesResponse{Changes: out}, nil
 }
 
+func (h *SourcingHandler) ListOverdueFactoryRfqs(ctx context.Context, req *prv1.ListOverdueFactoryRfqsRequest) (*prv1.ListOverdueFactoryRfqsResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	rows, err := h.svc.ListOverdueFactoryRFQs(ctx, grpcx.TenantID(ctx), req.GetLimit(),
+		app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*prv1.OverdueFactoryRfq, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, &prv1.OverdueFactoryRfq{
+			Id: row.ID, RfqNo: row.RfqNo, CaseId: row.CaseID, CaseNo: row.CaseNo,
+			SupplierName: row.SupplierName, ResponseDueAt: row.ResponseDueAt,
+			OverdueDays: row.OverdueDays,
+		})
+	}
+	return &prv1.ListOverdueFactoryRfqsResponse{Items: out}, nil
+}
+
 func (h *SourcingHandler) UpdateFactoryRfq(ctx context.Context, req *prv1.UpdateFactoryRfqRequest) (*prv1.UpdateFactoryRfqResponse, error) {
 	if err := h.authorizeRFQ(ctx, req.GetId()); err != nil {
 		return nil, err
