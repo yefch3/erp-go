@@ -37,11 +37,13 @@ func (h *OrderHandler) CreateSupplierInvoice(ctx context.Context, req *prv1.Crea
 }
 
 func (h *OrderHandler) ListSupplierInvoices(ctx context.Context, req *prv1.ListSupplierInvoicesRequest) (*prv1.ListSupplierInvoicesResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
 	items, total, err := h.svc.ListSupplierInvoices(ctx, grpcx.TenantID(ctx),
 		app.SupplierInvoiceFilter{
 			SupplierID: req.GetSupplierId(), Status: req.GetStatus(),
 			MatchStatus: req.GetMatchStatus(), Keyword: req.GetKeyword(),
-		}, req.GetPage().GetPage(), req.GetPage().GetPageSize())
+		}, req.GetPage().GetPage(), req.GetPage().GetPageSize(),
+		app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
 		return nil, err
 	}
@@ -53,6 +55,10 @@ func (h *OrderHandler) ListSupplierInvoices(ctx context.Context, req *prv1.ListS
 }
 
 func (h *OrderHandler) GetSupplierInvoice(ctx context.Context, req *prv1.GetSupplierInvoiceRequest) (*prv1.GetSupplierInvoiceResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	if err := h.svc.AuthorizeSupplierInvoice(ctx, grpcx.TenantID(ctx), req.GetId(), app.Operator{ID: op.EmployeeID, Name: op.Name}); err != nil {
+		return nil, err
+	}
 	v, err := h.svc.GetSupplierInvoice(ctx, grpcx.TenantID(ctx), req.GetId())
 	if err != nil {
 		return nil, err

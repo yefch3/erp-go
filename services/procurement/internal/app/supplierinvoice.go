@@ -247,7 +247,15 @@ func (s *Service) CreateSupplierInvoice(ctx context.Context, tenantID int64, in 
 }
 
 // ListSupplierInvoices pages through the claims.
-func (s *Service) ListSupplierInvoices(ctx context.Context, tenantID int64, f SupplierInvoiceFilter, page, size int32) ([]SupplierInvoice, int64, error) {
+func (s *Service) ListSupplierInvoices(ctx context.Context, tenantID int64, f SupplierInvoiceFilter, page, size int32, operators ...Operator) ([]SupplierInvoice, int64, error) {
+	var op Operator
+	if len(operators) > 0 {
+		op = operators[0]
+	}
+	visible, err := s.visibleOrdersTo(ctx, op)
+	if err != nil {
+		return nil, 0, err
+	}
 	page, size = normalizePage(page, size)
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, supplier_id, supplier_code, supplier_name, invoice_no,
@@ -262,10 +270,12 @@ func (s *Service) ListSupplierInvoices(ctx context.Context, tenantID int64, f Su
 		   AND ($3 = '' OR status = $3)
 		   AND ($4 = '' OR match_status = $4)
 		   AND ($5 = '' OR invoice_no ILIKE '%'||$5||'%' OR supplier_name ILIKE '%'||$5||'%')
+		   AND ($6::bool OR created_by_id = ANY($7::bigint[]))
 		 ORDER BY created_at DESC, id DESC
-		 LIMIT $6 OFFSET $7`,
+		 LIMIT $8 OFFSET $9`,
 		tenantID, f.SupplierID, f.Status, f.MatchStatus,
-		strings.TrimSpace(f.Keyword), size, (page-1)*size)
+		strings.TrimSpace(f.Keyword), visible.All, visible.EmployeeIDs,
+		size, (page-1)*size)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -336,6 +346,9 @@ func (s *Service) GetSupplierInvoice(ctx context.Context, tenantID, id int64) (S
 func (s *Service) VoidSupplierInvoice(ctx context.Context, tenantID, id int64, reason string, op Operator) (SupplierInvoice, error) {
 	if strings.TrimSpace(reason) == "" {
 		return SupplierInvoice{}, apierr.Invalid("INV_VOID_REASON_REQUIRED", "请填写作废原因")
+	}
+	if err := s.AuthorizeSupplierInvoice(ctx, tenantID, id, op); err != nil {
+		return SupplierInvoice{}, err
 	}
 	// P3 note: once payment_allocations exists, an invoice with live
 	// allocations must refuse to void until they are reversed.

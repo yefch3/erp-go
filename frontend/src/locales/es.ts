@@ -394,7 +394,7 @@ export default {
     grantsSaved: 'Permisos guardados',
     dataScope: 'Alcance de datos',
     scopeExport: 'Exportación',
-    scopeSourcing: 'Consultas de compras',
+    scopeSourcing: 'Consultas de compras', scopeOrder: 'Visibilidad de órdenes de compra',
     scopeShipping: 'Programación de embarques',
     scopes: { SELF: 'Solo propios', DEPT: 'Su departamento', DEPT_AND_SUB: 'Departamento e inferiores', ALL: 'Todo' },
     scopeHint: 'Los permisos deciden qué funciones usa un rol; el alcance decide sobre qué registros. Sin configurar equivale a solo propios.',

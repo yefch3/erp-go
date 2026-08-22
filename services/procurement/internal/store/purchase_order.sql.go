@@ -491,16 +491,21 @@ SELECT
     count(*) OVER () AS total
 FROM purchase_orders o
 WHERE o.tenant_id = $1::bigint
-  AND ($2::text = '' OR o.status = $2::text)
-  AND ($3::text = ''
-       OR o.po_no ILIKE '%' || $3::text || '%'
-       OR o.supplier_name ILIKE '%' || $3::text || '%')
+  -- Data scope: an order is visible when the caller's range covers its
+  -- buyer. scope_all short-circuits so administrators never pay for a list.
+  AND ($2::bool OR o.buyer_id = ANY($3::bigint[]))
+  AND ($4::text = '' OR o.status = $4::text)
+  AND ($5::text = ''
+       OR o.po_no ILIKE '%' || $5::text || '%'
+       OR o.supplier_name ILIKE '%' || $5::text || '%')
 ORDER BY o.created_at DESC, o.id DESC
-LIMIT $5::int OFFSET $4::int
+LIMIT $7::int OFFSET $6::int
 `
 
 type ListPurchaseOrdersParams struct {
 	TenantID  int64
+	ScopeAll  bool
+	BuyerIds  []int64
 	Status    string
 	Keyword   string
 	RowOffset int32
@@ -535,6 +540,8 @@ type ListPurchaseOrdersRow struct {
 func (q *Queries) ListPurchaseOrders(ctx context.Context, arg ListPurchaseOrdersParams) ([]ListPurchaseOrdersRow, error) {
 	rows, err := q.db.Query(ctx, listPurchaseOrders,
 		arg.TenantID,
+		arg.ScopeAll,
+		arg.BuyerIds,
 		arg.Status,
 		arg.Keyword,
 		arg.RowOffset,

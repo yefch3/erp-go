@@ -452,6 +452,41 @@ type SourcingLine struct {
 	CustomFields       []byte
 }
 
+type SupplierInvoice struct {
+	ID            int64
+	TenantID      int64
+	SupplierID    int64
+	SupplierCode  string
+	SupplierName  string
+	InvoiceNo     string
+	InvoiceType   string
+	Currency      string
+	TotalAmount   pgtype.Numeric
+	TaxAmount     pgtype.Numeric
+	InvoiceDate   pgtype.Date
+	DueDate       pgtype.Date
+	MatchStatus   string
+	MatchNote     string
+	Status        string
+	VoidReason    string
+	AttachmentKey string
+	CreatedByID   int64
+	CreatedByName string
+	CreatedAt     pgtype.Timestamptz
+}
+
+type SupplierInvoiceLine struct {
+	ID          int64
+	TenantID    int64
+	InvoiceID   int64
+	PoID        *int64
+	PoItemID    *int64
+	Description string
+	Qty         pgtype.Numeric
+	UnitPrice   pgtype.Numeric
+	Amount      pgtype.Numeric
+}
+
 type SupplierQuote struct {
 	ID              int64
 	TenantID        int64
