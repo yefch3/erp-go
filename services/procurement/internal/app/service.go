@@ -119,6 +119,11 @@ type Service struct {
 	rates      Rates
 	scopes     Scopes
 	live       *livefeed.Publisher
+
+	// Three-way-match tolerance, zero unless the operator widens it.
+	// See UseMatchTolerance for what the two numbers mean.
+	matchTolPct decimal.Decimal
+	matchTolAbs decimal.Decimal
 }
 
 func New(pool *pgxpool.Pool, d Deps) *Service {

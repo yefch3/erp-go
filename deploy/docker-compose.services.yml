@@ -208,7 +208,11 @@ services:
       APPROVAL_TOPIC: erp.approval.task.v1
       APPROVAL_CONSUMER_GROUP: procurement.approval.v1
       PURCHASE_TOPIC: erp.procurement.purchase.v1
-      REDIS_ADDR: redis:6379
+      REDIS_ADDR: redis:6379      # Three-way-match tolerance; see procurement cmd/main.go. Passed through
+      # because an env var the compose file does not carry is silently dead —
+      # the MAIL_UNLOCK_TTL lesson.
+      MATCH_TOLERANCE_PCT: ${MATCH_TOLERANCE_PCT:-}
+      MATCH_TOLERANCE_ABS: ${MATCH_TOLERANCE_ABS:-}
     ports:
       - "127.0.0.1:9007:9007"
     networks: [infra]

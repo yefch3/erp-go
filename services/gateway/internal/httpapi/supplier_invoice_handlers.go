@@ -61,3 +61,12 @@ func (s *Server) voidSupplierInvoice(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
+
+func (s *Server) matchSupplierInvoice(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.MatchSupplierInvoice(r.Context(), &prv1.MatchSupplierInvoiceRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
