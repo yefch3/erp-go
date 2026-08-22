@@ -86,6 +86,9 @@ service SupplierService {
   rpc ListFactoryCertificates(ListFactoryCertificatesRequest) returns (ListFactoryCertificatesResponse);
   rpc CreateFactoryCertificate(CreateFactoryCertificateRequest) returns (CreateFactoryCertificateResponse);
   rpc DeleteFactoryCertificate(DeleteFactoryCertificateRequest) returns (DeleteFactoryCertificateResponse);
+  // The certificate scan: presign hands the browser a short-lived upload
+  // URL, the returned key goes into the certificate's file_key on create.
+  rpc PresignFactoryCertificateFile(PresignFactoryCertificateFileRequest) returns (PresignFactoryCertificateFileResponse);
   rpc ListFactoryChanges(ListFactoryChangesRequest) returns (ListFactoryChangesResponse);
   rpc ImportFactories(ImportFactoriesRequest) returns (ImportFactoriesResponse);
   rpc CheckFactoryDuplicates(CheckFactoryDuplicatesRequest) returns (CheckFactoryDuplicatesResponse);
@@ -912,6 +915,8 @@ message DeleteFactoryCapabilityResponse {}
 message FactoryCertificate {
   int64 id=1; int64 factory_id=2; string name=3; string certificate_no=4;
   string issued_on=5; string expires_on=6; string status=7; string file_key=8; string remark=9;
+  string file_url=10;  // fresh presigned GET per read; empty = no scan
+  string file_name=11; // original upload name, for display
 }
 message FactoryCertificateInput { string name=1; string certificate_no=2; string issued_on=3; string expires_on=4; string status=5; string file_key=6; string remark=7; }
 message ListFactoryCertificatesRequest { int64 factory_id=1; }
@@ -920,6 +925,8 @@ message CreateFactoryCertificateRequest { int64 factory_id=1; FactoryCertificate
 message CreateFactoryCertificateResponse { FactoryCertificate certificate=1; }
 message DeleteFactoryCertificateRequest { int64 factory_id=1; int64 id=2; }
 message DeleteFactoryCertificateResponse {}
+message PresignFactoryCertificateFileRequest { int64 factory_id=1; string file_name=2; }
+message PresignFactoryCertificateFileResponse { string key=1; string upload_url=2; int32 expires_seconds=3; }
 
 message ListFactoryChangesRequest { int64 factory_id=1; }
 message ListFactoryChangesResponse { repeated MasterDataChange changes=1; }

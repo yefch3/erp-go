@@ -69,6 +69,12 @@ services:
       INTERNAL_SIGNING_KEY: ${INTERNAL_SIGNING_KEY:?set it in deploy/.env — openssl rand -hex 32}
       DB_DSN: postgres://erp_masterdata:erp_masterdata_pw@postgres:5432/erp_masterdata?sslmode=disable
       GRPC_PORT: "9002"
+      # Factory certificate scans. Same MinIO-in-dev / S3-in-prod split.
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: localhost:19000
+      MINIO_ACCESS_KEY: erp
+      MINIO_SECRET_KEY: erp_dev_password
+      MINIO_BUCKET: erp-files
     ports:
       - "127.0.0.1:9002:9002"
     networks: [infra]

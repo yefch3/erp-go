@@ -522,8 +522,16 @@ func (s *Service) DeleteFactoryCapability(ctx context.Context, tenantID, factory
 	}
 	return recordFactoryChange(ctx, s.q, tenantID, factoryID, "DELETE", "CAPABILITY", "移除生产能力", nil, nil, operatorID, operatorName)
 }
-func (s *Service) ListFactoryCertificates(ctx context.Context, tenantID, factoryID int64) ([]store.FactoryCertificate, error) {
-	return s.q.ListFactoryCertificates(ctx, store.ListFactoryCertificatesParams{TenantID: tenantID, FactoryID: factoryID})
+func (s *Service) ListFactoryCertificates(ctx context.Context, tenantID, factoryID int64) ([]FactoryCertificateView, error) {
+	rows, err := s.q.ListFactoryCertificates(ctx, store.ListFactoryCertificatesParams{TenantID: tenantID, FactoryID: factoryID})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FactoryCertificateView, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, s.withFileURL(ctx, r))
+	}
+	return out, nil
 }
 func (s *Service) CreateFactoryCertificate(ctx context.Context, tenantID, factoryID int64, in FactoryCertificateInput) (store.FactoryCertificate, error) {
 	if strings.TrimSpace(in.Name) == "" {
@@ -543,6 +551,9 @@ func (s *Service) CreateFactoryCertificate(ctx context.Context, tenantID, factor
 	if in.Status == "" {
 		in.Status = "VALID"
 	}
+	if err := validateCertificateFileKey(tenantID, factoryID, in.FileKey); err != nil {
+		return store.FactoryCertificate{}, err
+	}
 	out, err := s.q.CreateFactoryCertificate(ctx, store.CreateFactoryCertificateParams{TenantID: tenantID, FactoryID: factoryID, Name: in.Name, CertificateNo: in.CertificateNo, IssuedOn: issued, ExpiresOn: expires, Status: in.Status, FileKey: in.FileKey, Remark: in.Remark, OperatorID: in.OperatorID})
 	if err == nil {
 		_ = recordFactoryChange(ctx, s.q, tenantID, factoryID, "CREATE", "CERTIFICATE", "新增资质："+out.Name, nil, out, in.OperatorID, in.OperatorName)
@@ -550,12 +561,23 @@ func (s *Service) CreateFactoryCertificate(ctx context.Context, tenantID, factor
 	return out, err
 }
 func (s *Service) DeleteFactoryCertificate(ctx context.Context, tenantID, factoryID, id, operatorID int64, operatorName string) error {
+	// Read the file key before the row goes: afterwards nothing points at
+	// the object and it would leak silently.
+	var fileKey string
+	_ = s.pool.QueryRow(ctx,
+		`SELECT file_key FROM factory_certificates WHERE tenant_id=$1 AND factory_id=$2 AND id=$3`,
+		tenantID, factoryID, id).Scan(&fileKey)
 	n, err := s.q.DeleteFactoryCertificate(ctx, store.DeleteFactoryCertificateParams{TenantID: tenantID, FactoryID: factoryID, ID: id})
 	if err != nil {
 		return err
 	}
 	if n == 0 {
 		return apierr.NotFound("MD_FACTORY_CERTIFICATE_NOT_FOUND", "资质记录不存在")
+	}
+	if fileKey != "" && s.files != nil {
+		// Row first, object second; a removal hiccup leaves only litter a
+		// sweep can collect, and must not fail the delete the user saw.
+		_ = s.files.Remove(ctx, fileKey)
 	}
 	return recordFactoryChange(ctx, s.q, tenantID, factoryID, "DELETE", "CERTIFICATE", "移除工厂资质", nil, nil, operatorID, operatorName)
 }

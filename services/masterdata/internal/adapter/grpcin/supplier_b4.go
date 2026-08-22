@@ -409,9 +409,17 @@ func (h *Handler) ListFactoryCertificates(ctx context.Context, req *mdv1.ListFac
 	}
 	out := make([]*mdv1.FactoryCertificate, len(rows))
 	for i, v := range rows {
-		out[i] = &mdv1.FactoryCertificate{Id: v.ID, FactoryId: v.FactoryID, Name: v.Name, CertificateNo: v.CertificateNo, IssuedOn: dateText(v.IssuedOn), ExpiresOn: dateText(v.ExpiresOn), Status: v.Status, FileKey: v.FileKey, Remark: v.Remark}
+		out[i] = &mdv1.FactoryCertificate{Id: v.Row.ID, FactoryId: v.Row.FactoryID, Name: v.Row.Name, CertificateNo: v.Row.CertificateNo, IssuedOn: dateText(v.Row.IssuedOn), ExpiresOn: dateText(v.Row.ExpiresOn), Status: v.Row.Status, FileKey: v.Row.FileKey, Remark: v.Row.Remark, FileUrl: v.FileURL, FileName: v.FileName}
 	}
 	return &mdv1.ListFactoryCertificatesResponse{Certificates: out}, nil
+}
+
+func (h *Handler) PresignFactoryCertificateFile(ctx context.Context, req *mdv1.PresignFactoryCertificateFileRequest) (*mdv1.PresignFactoryCertificateFileResponse, error) {
+	p, err := h.svc.PresignFactoryCertificateFile(ctx, grpcx.TenantID(ctx), req.GetFactoryId(), req.GetFileName())
+	if err != nil {
+		return nil, err
+	}
+	return &mdv1.PresignFactoryCertificateFileResponse{Key: p.Key, UploadUrl: p.UploadURL, ExpiresSeconds: p.Expires}, nil
 }
 func (h *Handler) CreateFactoryCertificate(ctx context.Context, req *mdv1.CreateFactoryCertificateRequest) (*mdv1.CreateFactoryCertificateResponse, error) {
 	v := req.GetCertificate()
