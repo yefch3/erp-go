@@ -408,7 +408,12 @@ func (s *Server) getCostScenario(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) confirmCostScenario(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Sourcing.ConfirmCostScenario(r.Context(), &prv1.ConfirmCostScenarioRequest{Id: idFromPath(r)})
+	req := &prv1.ConfirmCostScenarioRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Sourcing.ConfirmCostScenario(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

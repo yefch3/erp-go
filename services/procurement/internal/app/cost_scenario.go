@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -232,7 +233,17 @@ func (s *Service) GetCostScenario(ctx context.Context, tenantID, id int64) (Cost
 	l, e := s.q.ListCostScenarioLines(ctx, store.ListCostScenarioLinesParams{TenantID: tenantID, ScenarioID: id})
 	return CostScenarioView{Header: h, Charges: c, Lines: l}, e
 }
-func (s *Service) ConfirmCostScenario(ctx context.Context, tenantID, id int64, op Operator) (CostScenarioView, error) {
+// ConfirmCostScenario is the award decision: this combination of factory
+// quotes wins. The reason is mandatory (A2 §6) because the winner is often
+// NOT the cheapest row — MOQ, lead time or an old relationship outweighed
+// price — and "why did we pick the dearer mill" is exactly the question an
+// audit asks eight months later. Operator, time and reason all land in the
+// case's change history, next to every other judgement made on it.
+func (s *Service) ConfirmCostScenario(ctx context.Context, tenantID, id int64, reason string, op Operator) (CostScenarioView, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return CostScenarioView{}, apierr.Invalid("SC_COST_REASON_REQUIRED", "请填写选择该方案的原因——中标依据要留在纸上")
+	}
 	current, e := s.GetCostScenario(ctx, tenantID, id)
 	if e != nil {
 		return CostScenarioView{}, e
@@ -245,14 +256,19 @@ func (s *Service) ConfirmCostScenario(ctx context.Context, tenantID, id int64, o
 		if e := q.SupersedeOtherCostScenarios(ctx, store.SupersedeOtherCostScenariosParams{TenantID: tenantID, CaseID: current.Header.CaseID, ID: id}); e != nil {
 			return e
 		}
-		n, e := q.ConfirmCostScenario(ctx, store.ConfirmCostScenarioParams{ConfirmedBy: &op.ID, ConfirmedByName: op.Name, TenantID: tenantID, ID: id})
+		n, e := q.ConfirmCostScenario(ctx, store.ConfirmCostScenarioParams{ConfirmedBy: &op.ID, ConfirmedByName: op.Name, ConfirmReason: reason, TenantID: tenantID, ID: id})
 		if e != nil {
 			return e
 		}
 		if n != 1 {
 			return apierr.Conflict("SC_COST_NOT_DRAFT", "成本方案状态已改变")
 		}
-		return nil
+		afterJSON, _ := json.Marshal(map[string]string{"scenarioNo": current.Header.ScenarioNo, "reason": reason})
+		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: current.Header.CaseID,
+			Section: "COST", Action: "CONFIRMED", EntityID: id,
+			Summary:    "确认成本方案（中标）" + current.Header.ScenarioNo,
+			BeforeJson: []byte(`{"status":"DRAFT"}`), AfterJson: afterJSON,
+			OperatorID: op.ID, OperatorName: op.Name})
 	})
 	if e != nil {
 		return CostScenarioView{}, e

@@ -13,12 +13,14 @@ import (
 
 const confirmCostScenario = `-- name: ConfirmCostScenario :execrows
 UPDATE cost_scenarios SET status='CONFIRMED',confirmed_by=$1,confirmed_by_name=$2,
- confirmed_at=now(),updated_at=now() WHERE tenant_id=$3 AND id=$4 AND status='DRAFT'
+ confirm_reason=$3,
+ confirmed_at=now(),updated_at=now() WHERE tenant_id=$4 AND id=$5 AND status='DRAFT'
 `
 
 type ConfirmCostScenarioParams struct {
 	ConfirmedBy     *int64
 	ConfirmedByName string
+	ConfirmReason   string
 	TenantID        int64
 	ID              int64
 }
@@ -27,6 +29,7 @@ func (q *Queries) ConfirmCostScenario(ctx context.Context, arg ConfirmCostScenar
 	result, err := q.db.Exec(ctx, confirmCostScenario,
 		arg.ConfirmedBy,
 		arg.ConfirmedByName,
+		arg.ConfirmReason,
 		arg.TenantID,
 		arg.ID,
 	)
@@ -348,7 +351,7 @@ const getCostScenario = `-- name: GetCostScenario :one
 SELECT id,case_id,scenario_no,currency,allocation_basis,margin_type,margin_value::text,fx_rate::text,fx_rate_at,
  fx_source,fx_base_currency,product_total::text,charge_total::text,landed_total::text,margin_total::text,
  customer_total::text,status,coalesce(customer_quotation_id,0)::bigint AS customer_quotation_id,customer_quote_no,
- created_by_name,confirmed_by_name,confirmed_at,created_at
+ created_by_name,confirmed_by_name,confirmed_at,confirm_reason,created_at
 FROM cost_scenarios WHERE tenant_id=$1 AND id=$2
 `
 
@@ -380,6 +383,7 @@ type GetCostScenarioRow struct {
 	CreatedByName       string
 	ConfirmedByName     string
 	ConfirmedAt         pgtype.Timestamptz
+	ConfirmReason       string
 	CreatedAt           pgtype.Timestamptz
 }
 
@@ -409,6 +413,7 @@ func (q *Queries) GetCostScenario(ctx context.Context, arg GetCostScenarioParams
 		&i.CreatedByName,
 		&i.ConfirmedByName,
 		&i.ConfirmedAt,
+		&i.ConfirmReason,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -591,7 +596,7 @@ const listCostScenarios = `-- name: ListCostScenarios :many
 SELECT id,case_id,scenario_no,currency,allocation_basis,margin_type,margin_value::text,fx_rate::text,fx_rate_at,
  fx_source,fx_base_currency,product_total::text,charge_total::text,landed_total::text,margin_total::text,
  customer_total::text,status,coalesce(customer_quotation_id,0)::bigint AS customer_quotation_id,customer_quote_no,
- created_by_name,confirmed_by_name,confirmed_at,created_at
+ created_by_name,confirmed_by_name,confirmed_at,confirm_reason,created_at
 FROM cost_scenarios WHERE tenant_id=$1 AND case_id=$2 ORDER BY created_at DESC
 `
 
@@ -623,6 +628,7 @@ type ListCostScenariosRow struct {
 	CreatedByName       string
 	ConfirmedByName     string
 	ConfirmedAt         pgtype.Timestamptz
+	ConfirmReason       string
 	CreatedAt           pgtype.Timestamptz
 }
 
@@ -658,6 +664,7 @@ func (q *Queries) ListCostScenarios(ctx context.Context, arg ListCostScenariosPa
 			&i.CreatedByName,
 			&i.ConfirmedByName,
 			&i.ConfirmedAt,
+			&i.ConfirmReason,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
