@@ -40,6 +40,7 @@ const (
 	SourcingService_LinkCustomerQuotation_FullMethodName       = "/erp.procurement.v1.SourcingService/LinkCustomerQuotation"
 	SourcingService_ListCaseChanges_FullMethodName             = "/erp.procurement.v1.SourcingService/ListCaseChanges"
 	SourcingService_UpdateFactoryRfq_FullMethodName            = "/erp.procurement.v1.SourcingService/UpdateFactoryRfq"
+	SourcingService_ListOverdueFactoryRfqs_FullMethodName      = "/erp.procurement.v1.SourcingService/ListOverdueFactoryRfqs"
 )
 
 // SourcingServiceClient is the client API for SourcingService service.
@@ -71,6 +72,9 @@ type SourcingServiceClient interface {
 	LinkCustomerQuotation(ctx context.Context, in *LinkCustomerQuotationRequest, opts ...grpc.CallOption) (*LinkCustomerQuotationResponse, error)
 	ListCaseChanges(ctx context.Context, in *ListCaseChangesRequest, opts ...grpc.CallOption) (*ListCaseChangesResponse, error)
 	UpdateFactoryRfq(ctx context.Context, in *UpdateFactoryRfqRequest, opts ...grpc.CallOption) (*UpdateFactoryRfqResponse, error)
+	// The workbench's chase list (B4): RFQs past their reply deadline,
+	// most overdue first, fenced like the case list it derives from.
+	ListOverdueFactoryRfqs(ctx context.Context, in *ListOverdueFactoryRfqsRequest, opts ...grpc.CallOption) (*ListOverdueFactoryRfqsResponse, error)
 }
 
 type sourcingServiceClient struct {
@@ -291,6 +295,16 @@ func (c *sourcingServiceClient) UpdateFactoryRfq(ctx context.Context, in *Update
 	return out, nil
 }
 
+func (c *sourcingServiceClient) ListOverdueFactoryRfqs(ctx context.Context, in *ListOverdueFactoryRfqsRequest, opts ...grpc.CallOption) (*ListOverdueFactoryRfqsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListOverdueFactoryRfqsResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListOverdueFactoryRfqs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SourcingServiceServer is the server API for SourcingService service.
 // All implementations must embed UnimplementedSourcingServiceServer
 // for forward compatibility.
@@ -320,6 +334,9 @@ type SourcingServiceServer interface {
 	LinkCustomerQuotation(context.Context, *LinkCustomerQuotationRequest) (*LinkCustomerQuotationResponse, error)
 	ListCaseChanges(context.Context, *ListCaseChangesRequest) (*ListCaseChangesResponse, error)
 	UpdateFactoryRfq(context.Context, *UpdateFactoryRfqRequest) (*UpdateFactoryRfqResponse, error)
+	// The workbench's chase list (B4): RFQs past their reply deadline,
+	// most overdue first, fenced like the case list it derives from.
+	ListOverdueFactoryRfqs(context.Context, *ListOverdueFactoryRfqsRequest) (*ListOverdueFactoryRfqsResponse, error)
 	mustEmbedUnimplementedSourcingServiceServer()
 }
 
@@ -392,6 +409,9 @@ func (UnimplementedSourcingServiceServer) ListCaseChanges(context.Context, *List
 }
 func (UnimplementedSourcingServiceServer) UpdateFactoryRfq(context.Context, *UpdateFactoryRfqRequest) (*UpdateFactoryRfqResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateFactoryRfq not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListOverdueFactoryRfqs(context.Context, *ListOverdueFactoryRfqsRequest) (*ListOverdueFactoryRfqsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListOverdueFactoryRfqs not implemented")
 }
 func (UnimplementedSourcingServiceServer) mustEmbedUnimplementedSourcingServiceServer() {}
 func (UnimplementedSourcingServiceServer) testEmbeddedByValue()                         {}
@@ -792,6 +812,24 @@ func _SourcingService_UpdateFactoryRfq_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SourcingService_ListOverdueFactoryRfqs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListOverdueFactoryRfqsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListOverdueFactoryRfqs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListOverdueFactoryRfqs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListOverdueFactoryRfqs(ctx, req.(*ListOverdueFactoryRfqsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SourcingService_ServiceDesc is the grpc.ServiceDesc for SourcingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -882,6 +920,10 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateFactoryRfq",
 			Handler:    _SourcingService_UpdateFactoryRfq_Handler,
+		},
+		{
+			MethodName: "ListOverdueFactoryRfqs",
+			Handler:    _SourcingService_ListOverdueFactoryRfqs_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

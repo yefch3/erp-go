@@ -96,3 +96,19 @@ FROM supplier_quotes q JOIN factory_rfqs r ON r.id=q.factory_rfq_id AND r.tenant
 JOIN supplier_quote_lines l ON l.supplier_quote_id=q.id AND l.tenant_id=q.tenant_id
 WHERE q.tenant_id=$1 AND r.case_id=$2
 ORDER BY l.sourcing_line_id,l.unit_price,q.created_at;
+
+-- name: ListOverdueFactoryRFQs :many
+-- 工作台的今日重点（B4）：过了回复期限还没报价的询价。围栏沿用询价
+-- 案件的属主可见性——工作台只是列表的另一个入口，不是另一套权限。
+SELECT r.id, r.rfq_no, r.case_id, c.case_no, r.supplier_name,
+       r.response_due_at::text AS response_due_at,
+       (current_date - r.response_due_at)::int AS overdue_days
+FROM factory_rfqs r
+JOIN sourcing_cases c ON c.id = r.case_id AND c.tenant_id = r.tenant_id
+WHERE r.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND r.status IN ('SENT', 'PARTIALLY_QUOTED')
+  AND r.response_due_at < current_date
+  AND (sqlc.arg(visible_all)::bool
+       OR c.owner_id = ANY(sqlc.arg(visible_ids)::bigint[]))
+ORDER BY r.response_due_at, r.id
+LIMIT sqlc.arg(row_limit)::int;

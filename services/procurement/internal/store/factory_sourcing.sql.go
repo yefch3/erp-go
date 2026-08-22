@@ -395,6 +395,73 @@ func (q *Queries) ListFactoryRFQs(ctx context.Context, arg ListFactoryRFQsParams
 	return items, nil
 }
 
+const listOverdueFactoryRFQs = `-- name: ListOverdueFactoryRFQs :many
+SELECT r.id, r.rfq_no, r.case_id, c.case_no, r.supplier_name,
+       r.response_due_at::text AS response_due_at,
+       (current_date - r.response_due_at)::int AS overdue_days
+FROM factory_rfqs r
+JOIN sourcing_cases c ON c.id = r.case_id AND c.tenant_id = r.tenant_id
+WHERE r.tenant_id = $1::bigint
+  AND r.status IN ('SENT', 'PARTIALLY_QUOTED')
+  AND r.response_due_at < current_date
+  AND ($2::bool
+       OR c.owner_id = ANY($3::bigint[]))
+ORDER BY r.response_due_at, r.id
+LIMIT $4::int
+`
+
+type ListOverdueFactoryRFQsParams struct {
+	TenantID   int64
+	VisibleAll bool
+	VisibleIds []int64
+	RowLimit   int32
+}
+
+type ListOverdueFactoryRFQsRow struct {
+	ID            int64
+	RfqNo         string
+	CaseID        int64
+	CaseNo        string
+	SupplierName  string
+	ResponseDueAt string
+	OverdueDays   int32
+}
+
+// 工作台的今日重点（B4）：过了回复期限还没报价的询价。围栏沿用询价
+// 案件的属主可见性——工作台只是列表的另一个入口，不是另一套权限。
+func (q *Queries) ListOverdueFactoryRFQs(ctx context.Context, arg ListOverdueFactoryRFQsParams) ([]ListOverdueFactoryRFQsRow, error) {
+	rows, err := q.db.Query(ctx, listOverdueFactoryRFQs,
+		arg.TenantID,
+		arg.VisibleAll,
+		arg.VisibleIds,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOverdueFactoryRFQsRow
+	for rows.Next() {
+		var i ListOverdueFactoryRFQsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RfqNo,
+			&i.CaseID,
+			&i.CaseNo,
+			&i.SupplierName,
+			&i.ResponseDueAt,
+			&i.OverdueDays,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSupplierQuoteComparison = `-- name: ListSupplierQuoteComparison :many
 SELECT q.id AS quote_id,l.id AS quote_line_id,q.supplier_quote_no,q.factory_rfq_id,r.supplier_id,r.supplier_name,q.currency,
  coalesce(q.quoted_at::text,'')::text AS quoted_at,coalesce(q.valid_until::text,'')::text AS valid_until,

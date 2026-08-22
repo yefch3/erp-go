@@ -18,6 +18,7 @@ func (s *Server) listOrders(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Orders.ListOrders(r.Context(), &prv1.ListOrdersRequest{
 		Page:   pageFromQuery(r),
 		Status: r.URL.Query().Get("status"), Keyword: r.URL.Query().Get("keyword"),
+		Unsent: r.URL.Query().Get("unsent") == "1",
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)

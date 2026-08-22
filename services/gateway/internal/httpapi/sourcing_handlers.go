@@ -273,6 +273,16 @@ func (s *Server) listFactoryRFQs(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) listOverdueFactoryRFQs(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.ParseInt(r.URL.Query().Get("limit"), 10, 32)
+	resp, err := s.Sourcing.ListOverdueFactoryRfqs(r.Context(), &prv1.ListOverdueFactoryRfqsRequest{Limit: int32(limit)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) createSupplierQuote(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.CreateSupplierQuoteRequest{}
 	if !s.decodeBody(w, r, req) {

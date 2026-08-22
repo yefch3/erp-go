@@ -403,6 +403,23 @@ func (s *Service) UpdateFactoryRFQ(ctx context.Context, tenantID, id int64, inqu
 	return store.ListFactoryRFQsRow{}, apierr.NotFound("SC_RFQ_NOT_FOUND", "工厂询价不存在")
 }
 
+// ListOverdueFactoryRFQs 是工作台的催办清单：过了回复期限还没报价的询价，
+// 最逾期的排最前。围栏沿用询价案件的属主可见性——工作台只是另一个入口，
+// 不是另一套权限。
+func (s *Service) ListOverdueFactoryRFQs(ctx context.Context, tenantID int64, limit int32, op Operator) ([]store.ListOverdueFactoryRFQsRow, error) {
+	visible, err := s.visibleSourcingTo(ctx, op)
+	if err != nil {
+		return nil, err
+	}
+	if limit < 1 || limit > 50 {
+		limit = 10
+	}
+	return s.q.ListOverdueFactoryRFQs(ctx, store.ListOverdueFactoryRFQsParams{
+		TenantID: tenantID, VisibleAll: visible.All, VisibleIds: visible.EmployeeIDs,
+		RowLimit: limit,
+	})
+}
+
 func (s *Service) ListFactoryRFQs(ctx context.Context, tenantID, caseID int64) ([]store.ListFactoryRFQsRow, error) {
 	if _, err := s.GetSourcingCase(ctx, tenantID, caseID); err != nil {
 		return nil, err

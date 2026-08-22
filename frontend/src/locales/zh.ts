@@ -155,7 +155,8 @@ export default {
   procurementWorkbench: {
     eyebrow: 'PROCUREMENT CONTROL', title: '采购工作台', subtitle: '复核标准询盘并推进询价与采购执行', downloadTemplate: '下载标准模板', uploadInquiry: '导入客户询盘', handlePending: '待复核询盘', handlePendingCount: '待复核询盘（{n}）',
     mailTransfer: '邮件一键转入', mailTransferHint: '邮件里生成标准 Excel 后一键转入采购', mailAutomatic: '邮件页面一键操作', openMail: '前往邮件', manualUpload: '手工上传标准询盘', manualUploadHint: '上传已经标准化的 Excel 或 CSV', startUpload: '开始上传', converge: '进入复核', pendingCount: '{n} 条待复核询盘', reviewNow: '立即复核',
-    pendingMetric: '待复核询盘', pendingMetricHint: '需要人工核对并修正明细', sourcingMetric: '进行中询价', sourcingMetricHint: '复核、RFQ、比价与成本', requirementMetric: '待采购任务', requirementMetricHint: '合同生效后的采购需求', orderMetric: '采购订单', orderMetricHint: '全部采购订单',
+    pendingMetric: '待复核询盘', pendingMetricHint: '需要人工核对并修正明细', sourcingMetric: '进行中询价', sourcingMetricHint: '复核、RFQ、比价与成本', requirementMetric: '待采购任务', requirementMetricHint: '合同生效后的采购需求', orderMetric: '订单待办', orderMetricHint: '全部采购订单',
+    ordersPendingApproval: '待审批', ordersToSend: '待正式发单', overdueRfqItem: '工厂报价已逾期 {n} 天', approveOrderItem: '采购订单待审批', costScenarioItem: '成本方案待确认', countOverdueRfq: '逾期询价 {n}', countApprovals: '待审批 {n}',
     focusEyebrow: 'TODAY', focusTitle: '今日重点', updatedNow: '实时数据', pendingAction: '预览并确认导入明细', pendingItem: '客户询盘待确认', reviewingCount: '{n} 个案件待产品复核', reviewingAction: '匹配内部产品后开始询价', reviewingItem: '询价产品待复核', requirementCount: '{n} 条待采购任务', requirementAction: '核算库存并建立采购订单', requirementItem: '待执行采购任务', requiredBy: '要求日期：{date}', emptyTitle: '暂无待处理采购任务', emptyHint: '可以从邮件转入需求，或导入标准客户询盘。',
     mailStates: { connected: '邮箱已连接', error: '授权异常，前往邮件重新绑定', unavailable: '邮箱未连接或无访问权限' },
     flowEyebrow: 'FLOW', flowTitle: '采购业务路径', phaseOne: '询盘确认与询价', phaseOneHint: '标准 Excel → 待确认 → RFQ → 工厂报价', phaseTwo: '成本与客户报价', phaseTwoHint: '价格、交期、费用和利润测算', phaseThree: '合同后的执行采购', phaseThreeHint: '采购需求 → 审批 → 正式下单 → 收货',
@@ -613,6 +614,7 @@ export default {
     cancelReasonRequired: '请填写取消原因',
     cancelled: '采购单已取消',
     download: '下载', downloadExcel: '下载 Excel', downloadPdf: '下载 PDF', downloaded: '已下载 {name}', sendOrder: '正式发单', retrySend: '重试发单', execution: '执行跟踪',
+    more: '更多', unsentTab: '待发单', sentTag: '已发单', unsentTag: '未发单', sendFailedTag: '发送失败',
     sendStatus: '发单状态', sendFor: '正式发单 · {no}', sendHint: '系统将生成供应商版 Excel 和 PDF 并作为同一封邮件的附件。只有邮件成功进入发送队列才会标记为已发送。',
     sender: '发件邮箱', publicMailbox: '采购公共邮箱', myMailbox: '我的邮箱', recipient: '收件人', supplierDefaultEmail: '留空使用供应商主联系人邮箱', subject: '主题', mailBody: '正文', sent: '采购单已进入邮件发送队列',
     executionFor: '采购执行 · {no}', confirmations: '供应商确认', confirmedDate: '确认日期', confirmedExpected: '确认交期', confirmedQty: '确认数量', confirmedPrice: '确认单价', confirmRemark: '差异原因或供应商备注', saveConfirmation: '保存确认', confirmationSaved: '供应商确认已保存',
