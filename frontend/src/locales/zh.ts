@@ -93,6 +93,7 @@ export default {
     matchStatuses: { PENDING: '待核对', MATCHED: '三单一致', EXCEPTION: '有差异' },
     lines: '发票明细', pickPO: '选择该供应商的采购单', pullFromPO: '从采购单带入', addLine: '手工加行',
     linePO: '采购单', lineDesc: '摘要', lineQty: '数量', linePrice: '单价', lineAmount: '金额',
+    matchNote: '核对说明', rematch: '重新核对', rematched: '已重新核对——差异照实标出，不拦付款，判断留给人',
     linesSum: '明细合计', sumMismatch: '与发票金额不一致，保存会被拒绝',
     void: '作废', voidPrompt: '作废不是删除：这张纸存在过，谁录的、为什么不算数都会留在记录里。请填写原因。', voidReason: '作废原因',
     created: '发票已录入', voided: '已作废',

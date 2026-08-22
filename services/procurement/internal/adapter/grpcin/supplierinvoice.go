@@ -96,3 +96,12 @@ func supplierInvoiceProto(v app.SupplierInvoice) *prv1.SupplierInvoice {
 		Lines: lines,
 	}
 }
+
+func (h *OrderHandler) MatchSupplierInvoice(ctx context.Context, req *prv1.MatchSupplierInvoiceRequest) (*prv1.MatchSupplierInvoiceResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	v, err := h.svc.MatchSupplierInvoice(ctx, grpcx.TenantID(ctx), req.GetId(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.MatchSupplierInvoiceResponse{Invoice: supplierInvoiceProto(v)}, nil
+}

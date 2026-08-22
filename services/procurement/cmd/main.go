@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/shopspring/decimal"
 	"log/slog"
 	"net"
 	"os"
@@ -90,6 +91,14 @@ func run(log *slog.Logger) error {
 		Scopes:     grpcout.NewScopes(iamConn),
 		Live:       live,
 	})
+	// Three-way-match tolerance. Zero unless set: a pilot should first see
+	// how often reality differs before deciding how much to stop looking at.
+	//   MATCH_TOLERANCE_PCT=0.01  → 1% of the payable amount
+	//   MATCH_TOLERANCE_ABS=5     → 5 currency units
+	// The line tolerance is min() of whichever are set.
+	tolPct, _ := decimal.NewFromString(os.Getenv("MATCH_TOLERANCE_PCT"))
+	tolAbs, _ := decimal.NewFromString(os.Getenv("MATCH_TOLERANCE_ABS"))
+	svc.UseMatchTolerance(tolPct, tolAbs)
 
 	// Receipts go out as events: the stock increase and the receipt record
 	// must either both happen or neither, and only the outbox can promise

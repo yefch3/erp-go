@@ -47,9 +47,10 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="150" fixed="right">
+        <el-table-column :label="t('common.actions')" width="210" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="openDetail(row)">{{ t('common.detail') }}</el-button>
+            <el-button v-if="canWrite && row.status === 'OPEN'" size="small" link @click="rematch(row)">{{ t('supplierInvoices.rematch') }}</el-button>
             <el-button v-if="canWrite && row.status === 'OPEN'" size="small" type="danger" link @click="voidInvoice(row)">{{ t('supplierInvoices.void') }}</el-button>
           </template>
         </el-table-column>
@@ -139,6 +140,7 @@
         <el-descriptions-item :label="t('supplierInvoices.matchStatus')">{{ t(`supplierInvoices.matchStatuses.${detail.matchStatus}`) }}</el-descriptions-item>
         <el-descriptions-item :label="t('supplierInvoices.createdBy')">{{ detail.createdBy }}</el-descriptions-item>
         <el-descriptions-item v-if="detail.voidReason" :label="t('supplierInvoices.voidReason')" :span="3">{{ detail.voidReason }}</el-descriptions-item>
+        <el-descriptions-item v-if="detail.matchNote" :label="t('supplierInvoices.matchNote')" :span="3">{{ detail.matchNote }}</el-descriptions-item>
       </el-descriptions>
       <el-table v-if="detail?.lines?.length" :data="detail.lines" size="small" stripe style="margin-top: 12px">
         <el-table-column prop="poNo" :label="t('supplierInvoices.linePO')" width="150"><template #default="{ row }">{{ row.poNo || '—' }}</template></el-table-column>
@@ -174,6 +176,7 @@ interface InvoiceRow {
   invoiceDate: string
   dueDate: string
   matchStatus: string
+  matchNote: string
   status: string
   voidReason: string
   createdBy: string
@@ -313,6 +316,12 @@ async function openDetail(row: InvoiceRow) {
   const resp = await get<{ invoice: InvoiceRow }>(`/supplier-invoices/${row.id}`)
   detail.value = resp.invoice
   detailOpen.value = true
+}
+
+async function rematch(row: InvoiceRow) {
+  await post(`/supplier-invoices/${row.id}/match`, {})
+  ElMessage.success(t('supplierInvoices.rematched'))
+  void load()
 }
 
 async function voidInvoice(row: InvoiceRow) {
