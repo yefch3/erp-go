@@ -1275,6 +1275,10 @@ const (
 	PurchaseOrderService_ReverseSupplierPaymentAllocation_FullMethodName = "/erp.procurement.v1.PurchaseOrderService/ReverseSupplierPaymentAllocation"
 	PurchaseOrderService_ListSupplierStatements_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/ListSupplierStatements"
 	PurchaseOrderService_GetSupplierStatement_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/GetSupplierStatement"
+	PurchaseOrderService_ImportBankStatement_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/ImportBankStatement"
+	PurchaseOrderService_ListBankTransactions_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/ListBankTransactions"
+	PurchaseOrderService_MatchBankTransaction_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/MatchBankTransaction"
+	PurchaseOrderService_UnmatchBankTransaction_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/UnmatchBankTransaction"
 )
 
 // PurchaseOrderServiceClient is the client API for PurchaseOrderService service.
@@ -1345,6 +1349,14 @@ type PurchaseOrderServiceClient interface {
 	// derived from the tables above and never stored.
 	ListSupplierStatements(ctx context.Context, in *ListSupplierStatementsRequest, opts ...grpc.CallOption) (*ListSupplierStatementsResponse, error)
 	GetSupplierStatement(ctx context.Context, in *GetSupplierStatementRequest, opts ...grpc.CallOption) (*GetSupplierStatementResponse, error)
+	// Bank statement rows: the fifth voice. Imported verbatim from the CSV
+	// the bank portal exports, deduplicated by the bank's own reference, and
+	// matched to payments — the match lives on the payment and is reversible;
+	// the bank's row never changes.
+	ImportBankStatement(ctx context.Context, in *ImportBankStatementRequest, opts ...grpc.CallOption) (*ImportBankStatementResponse, error)
+	ListBankTransactions(ctx context.Context, in *ListBankTransactionsRequest, opts ...grpc.CallOption) (*ListBankTransactionsResponse, error)
+	MatchBankTransaction(ctx context.Context, in *MatchBankTransactionRequest, opts ...grpc.CallOption) (*MatchBankTransactionResponse, error)
+	UnmatchBankTransaction(ctx context.Context, in *UnmatchBankTransactionRequest, opts ...grpc.CallOption) (*UnmatchBankTransactionResponse, error)
 }
 
 type purchaseOrderServiceClient struct {
@@ -1675,6 +1687,46 @@ func (c *purchaseOrderServiceClient) GetSupplierStatement(ctx context.Context, i
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) ImportBankStatement(ctx context.Context, in *ImportBankStatementRequest, opts ...grpc.CallOption) (*ImportBankStatementResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ImportBankStatementResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ImportBankStatement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ListBankTransactions(ctx context.Context, in *ListBankTransactionsRequest, opts ...grpc.CallOption) (*ListBankTransactionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListBankTransactionsResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListBankTransactions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) MatchBankTransaction(ctx context.Context, in *MatchBankTransactionRequest, opts ...grpc.CallOption) (*MatchBankTransactionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MatchBankTransactionResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_MatchBankTransaction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) UnmatchBankTransaction(ctx context.Context, in *UnmatchBankTransactionRequest, opts ...grpc.CallOption) (*UnmatchBankTransactionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnmatchBankTransactionResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_UnmatchBankTransaction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PurchaseOrderServiceServer is the server API for PurchaseOrderService service.
 // All implementations must embed UnimplementedPurchaseOrderServiceServer
 // for forward compatibility.
@@ -1743,6 +1795,14 @@ type PurchaseOrderServiceServer interface {
 	// derived from the tables above and never stored.
 	ListSupplierStatements(context.Context, *ListSupplierStatementsRequest) (*ListSupplierStatementsResponse, error)
 	GetSupplierStatement(context.Context, *GetSupplierStatementRequest) (*GetSupplierStatementResponse, error)
+	// Bank statement rows: the fifth voice. Imported verbatim from the CSV
+	// the bank portal exports, deduplicated by the bank's own reference, and
+	// matched to payments — the match lives on the payment and is reversible;
+	// the bank's row never changes.
+	ImportBankStatement(context.Context, *ImportBankStatementRequest) (*ImportBankStatementResponse, error)
+	ListBankTransactions(context.Context, *ListBankTransactionsRequest) (*ListBankTransactionsResponse, error)
+	MatchBankTransaction(context.Context, *MatchBankTransactionRequest) (*MatchBankTransactionResponse, error)
+	UnmatchBankTransaction(context.Context, *UnmatchBankTransactionRequest) (*UnmatchBankTransactionResponse, error)
 	mustEmbedUnimplementedPurchaseOrderServiceServer()
 }
 
@@ -1848,6 +1908,18 @@ func (UnimplementedPurchaseOrderServiceServer) ListSupplierStatements(context.Co
 }
 func (UnimplementedPurchaseOrderServiceServer) GetSupplierStatement(context.Context, *GetSupplierStatementRequest) (*GetSupplierStatementResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetSupplierStatement not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ImportBankStatement(context.Context, *ImportBankStatementRequest) (*ImportBankStatementResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ImportBankStatement not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ListBankTransactions(context.Context, *ListBankTransactionsRequest) (*ListBankTransactionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListBankTransactions not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) MatchBankTransaction(context.Context, *MatchBankTransactionRequest) (*MatchBankTransactionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MatchBankTransaction not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) UnmatchBankTransaction(context.Context, *UnmatchBankTransactionRequest) (*UnmatchBankTransactionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UnmatchBankTransaction not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) mustEmbedUnimplementedPurchaseOrderServiceServer() {}
 func (UnimplementedPurchaseOrderServiceServer) testEmbeddedByValue()                              {}
@@ -2446,6 +2518,78 @@ func _PurchaseOrderService_GetSupplierStatement_Handler(srv interface{}, ctx con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_ImportBankStatement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ImportBankStatementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ImportBankStatement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ImportBankStatement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ImportBankStatement(ctx, req.(*ImportBankStatementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ListBankTransactions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBankTransactionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListBankTransactions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListBankTransactions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListBankTransactions(ctx, req.(*ListBankTransactionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_MatchBankTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MatchBankTransactionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).MatchBankTransaction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_MatchBankTransaction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).MatchBankTransaction(ctx, req.(*MatchBankTransactionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_UnmatchBankTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnmatchBankTransactionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).UnmatchBankTransaction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_UnmatchBankTransaction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).UnmatchBankTransaction(ctx, req.(*UnmatchBankTransactionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PurchaseOrderService_ServiceDesc is the grpc.ServiceDesc for PurchaseOrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2580,6 +2724,22 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetSupplierStatement",
 			Handler:    _PurchaseOrderService_GetSupplierStatement_Handler,
+		},
+		{
+			MethodName: "ImportBankStatement",
+			Handler:    _PurchaseOrderService_ImportBankStatement_Handler,
+		},
+		{
+			MethodName: "ListBankTransactions",
+			Handler:    _PurchaseOrderService_ListBankTransactions_Handler,
+		},
+		{
+			MethodName: "MatchBankTransaction",
+			Handler:    _PurchaseOrderService_MatchBankTransaction_Handler,
+		},
+		{
+			MethodName: "UnmatchBankTransaction",
+			Handler:    _PurchaseOrderService_UnmatchBankTransaction_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -499,6 +499,15 @@ service PurchaseOrderService {
   // derived from the tables above and never stored.
   rpc ListSupplierStatements(ListSupplierStatementsRequest) returns (ListSupplierStatementsResponse);
   rpc GetSupplierStatement(GetSupplierStatementRequest) returns (GetSupplierStatementResponse);
+
+  // Bank statement rows: the fifth voice. Imported verbatim from the CSV
+  // the bank portal exports, deduplicated by the bank's own reference, and
+  // matched to payments — the match lives on the payment and is reversible;
+  // the bank's row never changes.
+  rpc ImportBankStatement(ImportBankStatementRequest) returns (ImportBankStatementResponse);
+  rpc ListBankTransactions(ListBankTransactionsRequest) returns (ListBankTransactionsResponse);
+  rpc MatchBankTransaction(MatchBankTransactionRequest) returns (MatchBankTransactionResponse);
+  rpc UnmatchBankTransaction(UnmatchBankTransactionRequest) returns (UnmatchBankTransactionResponse);
 }
 
 message OrderImportRow {
@@ -1232,3 +1241,59 @@ message GetSupplierStatementResponse {
   SupplierStatement summary = 1;
   repeated StatementLine lines = 2;
 }
+
+// ------------------------------------------------------------ bank ledger
+
+message BankTransaction {
+  int64 id = 1;
+  string txn_date = 2; // YYYY-MM-DD
+  string direction = 3; // DEBIT | CREDIT
+  string amount = 4;
+  string currency = 5;
+  string counterparty = 6;
+  string bank_ref = 7;
+  string remark = 8;
+  string imported_by = 9;
+  string created_at = 10;
+  int64 matched_payment_id = 11;   // 0 = nobody claims this row yet
+  string matched_payment_no = 12;
+  int64 suggested_payment_id = 13; // closest unclaimed same-amount payment
+  string suggested_payment_no = 14;
+  string suggested_payment_supplier = 15;
+}
+
+message ImportBankStatementRequest {
+  string file_name = 1;
+  bytes data = 2; // the CSV as uploaded; UTF-8 or GBK
+  // Used for rows whose file carries no currency column.
+  string default_currency = 3;
+}
+message BankImportRowError {
+  int32 row_no = 1; // 1-based, as Excel shows it
+  string reason = 2;
+}
+message ImportBankStatementResponse {
+  int32 imported = 1;
+  int32 duplicates = 2; // same bank_ref seen before — re-uploads are safe
+  repeated BankImportRowError errors = 3;
+}
+
+message ListBankTransactionsRequest {
+  erp.common.v1.PageRequest page = 1;
+  string status = 2;    // MATCHED | UNMATCHED | ""
+  string direction = 3; // DEBIT | CREDIT | ""
+  string keyword = 4;   // counterparty, bank_ref or remark
+}
+message ListBankTransactionsResponse {
+  repeated BankTransaction items = 1;
+  int64 total = 2;
+}
+
+message MatchBankTransactionRequest {
+  int64 txn_id = 1;
+  int64 payment_id = 2;
+}
+message MatchBankTransactionResponse {}
+
+message UnmatchBankTransactionRequest { int64 txn_id = 1; }
+message UnmatchBankTransactionResponse {}
