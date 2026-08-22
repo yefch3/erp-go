@@ -19,6 +19,14 @@ type OrderHandler struct {
 
 func NewOrders(svc *app.Service) *OrderHandler { return &OrderHandler{svc: svc} }
 
+// authorizeOrder fences every handler that addresses one order. At the
+// adapter because that is where a request stops being anonymous plumbing and
+// starts being a person — the same place the sourcing handlers gate.
+func (h *OrderHandler) authorizeOrder(ctx context.Context, orderID int64) error {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	return h.svc.AuthorizeOrder(ctx, grpcx.TenantID(ctx), orderID, app.Operator{ID: op.EmployeeID, Name: op.Name})
+}
+
 func (h *OrderHandler) PreviewOrderImport(ctx context.Context, req *prv1.PreviewOrderImportRequest) (*prv1.PreviewOrderImportResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
 	rows := make([]app.OrderImportRow, 0, len(req.GetRows()))
@@ -99,9 +107,11 @@ func (h *OrderHandler) ConfirmOrderImport(ctx context.Context, req *prv1.Confirm
 }
 
 func (h *OrderHandler) ListOrders(ctx context.Context, req *prv1.ListOrdersRequest) (*prv1.ListOrdersResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
 	rows, total, err := h.svc.ListOrders(ctx, grpcx.TenantID(ctx), app.OrderFilter{
 		Status: req.GetStatus(), Keyword: req.GetKeyword(),
-	}, req.GetPage().GetPage(), req.GetPage().GetPageSize())
+	}, req.GetPage().GetPage(), req.GetPage().GetPageSize(),
+		app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
 		return nil, err
 	}
@@ -121,6 +131,9 @@ func (h *OrderHandler) ListOrders(ctx context.Context, req *prv1.ListOrdersReque
 }
 
 func (h *OrderHandler) GetOrder(ctx context.Context, req *prv1.GetOrderRequest) (*prv1.GetOrderResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	tenantID := grpcx.TenantID(ctx)
 	head, err := h.svc.GetOrder(ctx, tenantID, req.GetId())
 	if err != nil {
@@ -188,6 +201,9 @@ func (h *OrderHandler) CreateOrder(ctx context.Context, req *prv1.CreateOrderReq
 }
 
 func (h *OrderHandler) UpdateOrder(ctx context.Context, req *prv1.UpdateOrderRequest) (*prv1.UpdateOrderResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	op, _ := grpcx.OperatorFromContext(ctx)
 	lines := make([]app.OrderLine, 0, len(req.GetLines()))
 	for _, line := range req.GetLines() {
@@ -207,6 +223,9 @@ func (h *OrderHandler) UpdateOrder(ctx context.Context, req *prv1.UpdateOrderReq
 }
 
 func (h *OrderHandler) SubmitOrder(ctx context.Context, req *prv1.SubmitOrderRequest) (*prv1.SubmitOrderResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	op, _ := grpcx.OperatorFromContext(ctx)
 	status, instanceID, err := h.svc.SubmitOrder(ctx, grpcx.TenantID(ctx), req.GetId(),
 		app.Operator{ID: op.EmployeeID, Name: op.Name})
@@ -217,6 +236,9 @@ func (h *OrderHandler) SubmitOrder(ctx context.Context, req *prv1.SubmitOrderReq
 }
 
 func (h *OrderHandler) CancelOrder(ctx context.Context, req *prv1.CancelOrderRequest) (*prv1.CancelOrderResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	op, _ := grpcx.OperatorFromContext(ctx)
 	if err := h.svc.CancelOrder(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetReason(),
 		app.Operator{ID: op.EmployeeID, Name: op.Name}); err != nil {
@@ -226,6 +248,9 @@ func (h *OrderHandler) CancelOrder(ctx context.Context, req *prv1.CancelOrderReq
 }
 
 func (h *OrderHandler) ReceiveOrder(ctx context.Context, req *prv1.ReceiveOrderRequest) (*prv1.ReceiveOrderResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	op, _ := grpcx.OperatorFromContext(ctx)
 	lines := make([]app.ReceiptLine, 0, len(req.GetLines()))
 	for _, l := range req.GetLines() {
@@ -240,6 +265,9 @@ func (h *OrderHandler) ReceiveOrder(ctx context.Context, req *prv1.ReceiveOrderR
 }
 
 func (h *OrderHandler) GetOrderDocuments(ctx context.Context, req *prv1.GetOrderDocumentsRequest) (*prv1.GetOrderDocumentsResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	doc, err := h.svc.GetOrderDocuments(ctx, grpcx.TenantID(ctx), req.GetId())
 	if err != nil {
 		return nil, err
@@ -248,6 +276,9 @@ func (h *OrderHandler) GetOrderDocuments(ctx context.Context, req *prv1.GetOrder
 }
 
 func (h *OrderHandler) BeginOrderSend(ctx context.Context, req *prv1.BeginOrderSendRequest) (*prv1.BeginOrderSendResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	id, err := h.svc.BeginOrderSend(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetRecipientEmail(), req.GetSenderEmployeeId(), req.GetSenderName())
 	if err != nil {
 		return nil, err
@@ -256,6 +287,9 @@ func (h *OrderHandler) BeginOrderSend(ctx context.Context, req *prv1.BeginOrderS
 }
 
 func (h *OrderHandler) CompleteOrderSend(ctx context.Context, req *prv1.CompleteOrderSendRequest) (*prv1.CompleteOrderSendResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	status, err := h.svc.CompleteOrderSend(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetAttemptId(), req.GetSuccess(), req.GetCampaignId(), req.GetCampaignNo(), req.GetErrorMessage(), req.GetAttachmentNames(), req.GetTemplateVersion())
 	if err != nil {
 		return nil, err
@@ -264,6 +298,9 @@ func (h *OrderHandler) CompleteOrderSend(ctx context.Context, req *prv1.Complete
 }
 
 func (h *OrderHandler) GetOrderExecution(ctx context.Context, req *prv1.GetOrderExecutionRequest) (*prv1.GetOrderExecutionResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	execution, err := h.svc.GetOrderExecution(ctx, grpcx.TenantID(ctx), req.GetId())
 	if err != nil {
 		return nil, err
@@ -272,6 +309,9 @@ func (h *OrderHandler) GetOrderExecution(ctx context.Context, req *prv1.GetOrder
 }
 
 func (h *OrderHandler) RecordSupplierConfirmation(ctx context.Context, req *prv1.RecordSupplierConfirmationRequest) (*prv1.RecordSupplierConfirmationResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	op, _ := grpcx.OperatorFromContext(ctx)
 	lines := make([]app.SupplierConfirmationLine, 0, len(req.GetLines()))
 	for _, line := range req.GetLines() {
@@ -285,6 +325,9 @@ func (h *OrderHandler) RecordSupplierConfirmation(ctx context.Context, req *prv1
 }
 
 func (h *OrderHandler) SaveProductionMilestone(ctx context.Context, req *prv1.SaveProductionMilestoneRequest) (*prv1.SaveProductionMilestoneResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	op, _ := grpcx.OperatorFromContext(ctx)
 	attachments := make([]app.ProductionAttachment, 0, len(req.GetAttachments()))
 	for _, attachment := range req.GetAttachments() {
@@ -298,6 +341,9 @@ func (h *OrderHandler) SaveProductionMilestone(ctx context.Context, req *prv1.Sa
 }
 
 func (h *OrderHandler) ReportReceiptException(ctx context.Context, req *prv1.ReportReceiptExceptionRequest) (*prv1.ReportReceiptExceptionResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	op, _ := grpcx.OperatorFromContext(ctx)
 	exception, err := h.svc.ReportReceiptException(ctx, grpcx.TenantID(ctx), req.GetId(), app.ReceiptException{ReceiptID: req.GetReceiptId(), POItemID: req.GetPoItemId(), Type: req.GetExceptionType(), Qty: req.GetQty(), ActualProduct: req.GetActualProduct(), ActualUOM: req.GetActualUom(), Description: req.GetDescription()}, app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
@@ -307,6 +353,9 @@ func (h *OrderHandler) ReportReceiptException(ctx context.Context, req *prv1.Rep
 }
 
 func (h *OrderHandler) ResolveReceiptException(ctx context.Context, req *prv1.ResolveReceiptExceptionRequest) (*prv1.ResolveReceiptExceptionResponse, error) {
+	if err := h.authorizeOrder(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	op, _ := grpcx.OperatorFromContext(ctx)
 	exception, err := h.svc.ResolveReceiptException(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetExceptionId(), req.GetResolution(), app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {

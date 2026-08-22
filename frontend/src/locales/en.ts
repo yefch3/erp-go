@@ -394,7 +394,7 @@ export default {
     grantsSaved: 'Permissions saved',
     dataScope: 'Data scope',
     scopeExport: 'Export',
-    scopeSourcing: 'Procurement sourcing',
+    scopeSourcing: 'Procurement sourcing', scopeOrder: 'Purchase-order visibility',
     scopeShipping: 'Shipping schedules',
     scopes: { SELF: 'Own records only', DEPT: 'Own department', DEPT_AND_SUB: 'Department and below', ALL: 'Everything' },
     scopeHint: 'Permissions decide which features a role may use; the scope decides whose records. Unset behaves as own records only.',

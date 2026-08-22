@@ -270,6 +270,9 @@ SELECT
     count(*) OVER () AS total
 FROM purchase_orders o
 WHERE o.tenant_id = sqlc.arg(tenant_id)::bigint
+  -- Data scope: an order is visible when the caller's range covers its
+  -- buyer. scope_all short-circuits so administrators never pay for a list.
+  AND (sqlc.arg(scope_all)::bool OR o.buyer_id = ANY(sqlc.arg(buyer_ids)::bigint[]))
   AND (sqlc.arg(status)::text = '' OR o.status = sqlc.arg(status)::text)
   AND (sqlc.arg(keyword)::text = ''
        OR o.po_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
