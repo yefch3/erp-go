@@ -63,7 +63,7 @@ export default {
     contracts: '出口合同',
     shipments: '出运单',
     shipping: '船期管理',
-    receipts: '收款对账',
+    finance: '财务',
     stocks: '库存管理',
     outbounds: '出库管理',
     procurement: '采购管理',
@@ -150,7 +150,11 @@ export default {
   },
   procurementNav: {
     title: '采购管理导航', workbench: '采购工作台', intakes: '待复核询盘', sourcing: '询价案件', inquiryTemplates: '询盘模板',
-    requirements: '待采购', orders: '采购订单', supplierInvoices: '供应商发票', supplierPayments: '供应商付款', supplierStatements: '供应商对账', bankTransactions: '银行流水', backToWorkbench: '返回采购工作台',
+    requirements: '待采购', orders: '采购订单', backToWorkbench: '返回采购工作台',
+  },
+  financeNav: {
+    title: '财务', receivable: '应收 · 客户', payable: '应付 · 供应商', bank: '银行',
+    receipts: '收款对账', supplierInvoices: '供应商发票', supplierPayments: '供应商付款', supplierStatements: '供应商对账', bankTransactions: '银行流水',
   },
   procurementWorkbench: {
     eyebrow: 'PROCUREMENT CONTROL', title: '采购工作台', subtitle: '复核标准询盘并推进询价与采购执行', downloadTemplate: '下载标准模板', uploadInquiry: '导入客户询盘', handlePending: '待复核询盘', handlePendingCount: '待复核询盘（{n}）',

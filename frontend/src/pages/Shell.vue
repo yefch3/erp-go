@@ -65,9 +65,6 @@
         >
           {{ t('menu.shipping') }}
         </el-menu-item>
-        <el-menu-item v-if="auth.can('export:receipt:read')" index="/receipts">
-          {{ t('menu.receipts') }}
-        </el-menu-item>
         <el-menu-item v-if="auth.can('inventory:stock:read')" index="/stocks">
           {{ t('menu.stocks') }}
         </el-menu-item>
@@ -107,6 +104,44 @@
             >
               {{ item.label }}
             </button>
+          </nav>
+        </el-popover>
+        <el-popover
+          v-if="hasFinance"
+          v-model:visible="financeOpen"
+          placement="right-start"
+          :width="220"
+          :offset="6"
+          :show-arrow="false"
+          trigger="hover"
+          popper-class="module-flyout-popper"
+        >
+          <template #reference>
+            <button
+              type="button"
+              class="module-menu-trigger"
+              :class="{ 'is-active': financeActive }"
+              @click="financeOpen = !financeOpen"
+            >
+              <span>{{ t('menu.finance') }}</span>
+              <span class="module-menu-arrow" aria-hidden="true">›</span>
+            </button>
+          </template>
+          <nav class="module-flyout" :aria-label="t('menu.finance')">
+            <div class="module-flyout-title">{{ t('menu.finance') }}</div>
+            <template v-for="group in financeGroups" :key="group.key">
+              <div class="module-flyout-group">{{ group.label }}</div>
+              <button
+                v-for="item in group.items"
+                :key="item.path"
+                type="button"
+                class="module-flyout-item"
+                :class="{ 'is-active': route.path === item.path }"
+                @click="goFinance(item.path)"
+              >
+                {{ item.label }}
+              </button>
+            </template>
           </nav>
         </el-popover>
         <el-menu-item v-if="auth.can('mail:email:read')" index="/emails">
@@ -216,6 +251,7 @@ const router = useRouter()
 const shippingNotifications = ref<InstanceType<typeof ShippingArrivalNotifications> | null>(null)
 const basicDataOpen = ref(false)
 const procurementOpen = ref(false)
+const financeOpen = ref(false)
 const hasProcurement = computed(() => [
   'procurement:sourcing:read',
   'procurement:requirement:read',
@@ -247,12 +283,47 @@ const procurementItems = computed(() => [
   { path: '/sourcing-cases', label: t('procurementNav.sourcing'), allowed: auth.can('procurement:sourcing:read') },
   { path: '/requirements', label: t('procurementNav.requirements'), allowed: auth.can('procurement:requirement:read') },
   { path: '/purchase-orders', label: t('procurementNav.orders'), allowed: auth.can('procurement:order:read') },
-  { path: '/supplier-invoices', label: t('procurementNav.supplierInvoices'), allowed: auth.can('procurement:invoice:read') },
-  { path: '/supplier-payments', label: t('procurementNav.supplierPayments'), allowed: auth.can('procurement:payment:read') },
-  { path: '/supplier-statements', label: t('procurementNav.supplierStatements'), allowed: auth.can('procurement:recon:read') },
-  { path: '/bank-transactions', label: t('procurementNav.bankTransactions'), allowed: auth.can('procurement:payment:read') },
   { path: '/procurement/settings/inquiry-templates', label: t('procurementNav.inquiryTemplates'), allowed: auth.can('procurement:sourcing:read') },
 ].filter((item) => item.allowed))
+
+// 财务对账集中一处：应收看客户、应付看供应商、银行流水居中对照两边。
+// 数据仍住在各自的服务里（应收在出口、应付在采购），这里只是把入口
+// 摆到财务的动线上——同一个人对账不用在两个业务模块之间来回找。
+const financeGroups = computed(() => [
+  {
+    key: 'receivable',
+    label: t('financeNav.receivable'),
+    items: auth.can('export:receipt:read')
+      ? [{ path: '/receipts', label: t('financeNav.receipts') }]
+      : [],
+  },
+  {
+    key: 'payable',
+    label: t('financeNav.payable'),
+    items: [
+      ...(auth.can('procurement:invoice:read')
+        ? [{ path: '/supplier-invoices', label: t('financeNav.supplierInvoices') }]
+        : []),
+      ...(auth.can('procurement:payment:read')
+        ? [{ path: '/supplier-payments', label: t('financeNav.supplierPayments') }]
+        : []),
+      ...(auth.can('procurement:recon:read')
+        ? [{ path: '/supplier-statements', label: t('financeNav.supplierStatements') }]
+        : []),
+    ],
+  },
+  {
+    key: 'bank',
+    label: t('financeNav.bank'),
+    items: auth.can('procurement:payment:read')
+      ? [{ path: '/bank-transactions', label: t('financeNav.bankTransactions') }]
+      : [],
+  },
+].filter((group) => group.items.length > 0))
+const hasFinance = computed(() => financeGroups.value.length > 0)
+const financeActive = computed(() =>
+  financeGroups.value.some((group) => group.items.some((item) => route.path === item.path)),
+)
 
 function goBasicData(path: string) {
   basicDataOpen.value = false
@@ -261,6 +332,11 @@ function goBasicData(path: string) {
 
 function goProcurement(path: string) {
   procurementOpen.value = false
+  router.push(path)
+}
+
+function goFinance(path: string) {
+  financeOpen.value = false
   router.push(path)
 }
 
@@ -484,6 +560,13 @@ async function changePassword() {
 .module-flyout-badge {
   color: #fbbf24;
   font-size: 11px;
+}
+.module-flyout-group {
+  padding: 10px 10px 4px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
 }
 .topbar {
   display: flex;
