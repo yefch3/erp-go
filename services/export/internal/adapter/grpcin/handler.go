@@ -39,6 +39,7 @@ func (h *Handler) ListQuotations(ctx context.Context, req *exv1.ListQuotationsRe
 			CreatedAt:            ts(r.CreatedAt),
 			SourceCostScenarioId: r.SourceCostScenarioID, SourceCostScenarioNo: r.SourceCostScenarioNo,
 			SourceSourcingCaseId: r.SourceSourcingCaseID,
+			RespondNote:          r.RespondNote,
 		})
 	}
 	return &exv1.ListQuotationsResponse{Quotations: out, Meta: &commonv1.PageMeta{Total: total}}, nil
@@ -97,7 +98,7 @@ func (h *Handler) SendQuotation(ctx context.Context, req *exv1.SendQuotationRequ
 
 func (h *Handler) RespondQuotation(ctx context.Context, req *exv1.RespondQuotationRequest) (*exv1.RespondQuotationResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
-	status, err := h.svc.Respond(ctx, grpcx.TenantID(ctx), req.GetId(), op.EmployeeID, req.GetStatus())
+	status, err := h.svc.Respond(ctx, grpcx.TenantID(ctx), req.GetId(), op.EmployeeID, req.GetStatus(), req.GetNote())
 	if err != nil {
 		return nil, err
 	}
@@ -166,6 +167,7 @@ func quotationToProto(q store.GetQuotationRow) *exv1.Quotation {
 		SentAt: ts(q.SentAt), RespondedAt: ts(q.RespondedAt), CreatedAt: ts(q.CreatedAt),
 		SourceCostScenarioId: q.SourceCostScenarioID, SourceCostScenarioNo: q.SourceCostScenarioNo,
 		SourceSourcingCaseId: q.SourceSourcingCaseID,
+		RespondNote:          q.RespondNote,
 	}
 }
 

@@ -512,6 +512,8 @@ export default {
     accepted: '已标记为接受',
     reject: '客户拒绝',
     rejected: '已标记为拒绝',
+    rejectNotePrompt: '客户怎么说的？「贵了 5 美元」比「拒绝」有用得多——这句话会跟着案件回到成本方案。没说就留空。',
+    rejectNotePlaceholder: '例如：目标价 605，交期可以接受',
     statuses: { DRAFT: '草稿', SENT: '已发送', ACCEPTED: '已接受', REJECTED: '已拒绝', EXPIRED: '已过期', CANCELLED: '已取消' },
   },
   stocks: {
