@@ -16,6 +16,9 @@ import (
 //	wire 30% before any invoice exists → park it on the order
 //	invoice arrives → reverse the parking, re-point at the invoice
 //	pay the balance → invoice flips to SETTLED, arithmetic intact throughout
+//
+// plus the two ceilings on an allocation: the payment's own balance, and
+// the invoice's total — a payment may be big enough, the invoice is not.
 func TestSupplierPaymentLifecycle(t *testing.T) {
 	dsn := os.Getenv("PROCUREMENT_TEST_DSN")
 	if dsn == "" {
@@ -137,6 +140,37 @@ func TestSupplierPaymentLifecycle(t *testing.T) {
 	reopened, err := svc.GetSupplierInvoice(ctx, tenantID, inv.ID)
 	if err != nil || reopened.Status != "OPEN" {
 		t.Fatalf("reversal must reopen the invoice, got %s (%v)", reopened.Status, err)
+	}
+
+	// The invoice-side ceiling: the balance payment still has 7025 free and
+	// the invoice has 7000 to go — but one cent past the invoice total must
+	// be refused, and two lines naming the same invoice in one request sum
+	// together before either is allowed.
+	if _, err := svc.AllocateSupplierPayment(ctx, tenantID, balance.ID,
+		[]PaymentAllocationInput{{InvoiceID: inv.ID, Amount: "7000.01"}}, op); err == nil ||
+		!strings.Contains(err.Error(), "PAY_ALLOC_EXCEEDS_INVOICE") {
+		t.Fatalf("settling past the invoice total must be refused, got %v", err)
+	}
+	if _, err := svc.AllocateSupplierPayment(ctx, tenantID, balance.ID,
+		[]PaymentAllocationInput{{InvoiceID: inv.ID, Amount: "4000"}, {InvoiceID: inv.ID, Amount: "4000"}}, op); err == nil ||
+		!strings.Contains(err.Error(), "PAY_ALLOC_EXCEEDS_INVOICE") {
+		t.Fatalf("two lines to one invoice must be summed before the cap, got %v", err)
+	}
+	// Exactly to the total is legal and settles the invoice...
+	if _, err := svc.AllocateSupplierPayment(ctx, tenantID, balance.ID,
+		[]PaymentAllocationInput{{InvoiceID: inv.ID, Amount: "7000"}}, op); err != nil {
+		t.Fatalf("settling exactly to the invoice total must pass: %v", err)
+	}
+	settledAgain, err := svc.GetSupplierInvoice(ctx, tenantID, inv.ID)
+	if err != nil || settledAgain.Status != "SETTLED" {
+		t.Fatalf("invoice settled to its total must be SETTLED, got %s (%v)", settledAgain.Status, err)
+	}
+	// ...and a settled invoice refuses further allocations outright: the fix
+	// for a settled invoice is a reversal, not more money.
+	if _, err := svc.AllocateSupplierPayment(ctx, tenantID, balance.ID,
+		[]PaymentAllocationInput{{InvoiceID: inv.ID, Amount: "25"}}, op); err == nil ||
+		!strings.Contains(err.Error(), "PAY_ALLOC_INVOICE_SETTLED") {
+		t.Fatalf("a settled invoice must refuse further allocation, got %v", err)
 	}
 
 	// Guards that keep money from crossing lines: somebody else's supplier,
