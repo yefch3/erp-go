@@ -336,6 +336,25 @@ service RequirementService {
   // Which purchase orders are covering it. An outstanding line that is
   // already on order needs waiting on, not buying again.
   rpc ListRequirementOrders(ListRequirementOrdersRequest) returns (ListRequirementOrdersResponse);
+  // 一页合同的采购进度，一次问完（D2 合同执行一览表）。批量而不是逐行：
+  // 一页 20 张合同逐行问就是 20 次跨服务调用。
+  rpc ContractProcurementProgress(ContractProcurementProgressRequest) returns (ContractProcurementProgressResponse);
+}
+
+message ContractProcurementProgressRequest {
+  repeated int64 contract_ids = 1;
+}
+
+// 一张合同的采购办到哪了，按项数说——一张合同上 100 吨和 50 件加不起来。
+message ContractProcurementProgressItem {
+  int64 contract_id = 1;
+  int32 total_lines = 2;
+  int32 ordered_lines = 3;
+  int32 received_lines = 4;
+}
+
+message ContractProcurementProgressResponse {
+  repeated ContractProcurementProgressItem items = 1;
 }
 
 message ReopenRequirementRequest {

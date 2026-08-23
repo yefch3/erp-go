@@ -61,6 +61,66 @@ func (q *Queries) CloseCoveredRequirement(ctx context.Context, arg CloseCoveredR
 	return result.RowsAffected(), nil
 }
 
+const contractProcurementProgress = `-- name: ContractProcurementProgress :many
+SELECT
+    contract_id,
+    count(*)::int                                                   AS total_lines,
+    count(*) FILTER (WHERE ordered_qty  >= required_qty)::int        AS ordered_lines,
+    count(*) FILTER (WHERE received_qty >= required_qty)::int        AS received_lines
+FROM purchase_requirements
+WHERE tenant_id = $1::bigint
+  AND contract_id = ANY($2::bigint[])
+  AND status NOT IN ('CANCELLED', 'SUPERSEDED')
+GROUP BY contract_id
+`
+
+type ContractProcurementProgressParams struct {
+	TenantID    int64
+	ContractIds []int64
+}
+
+type ContractProcurementProgressRow struct {
+	ContractID    int64
+	TotalLines    int32
+	OrderedLines  int32
+	ReceivedLines int32
+}
+
+// 一页合同的采购进度（D2），一次问完。
+//
+// 按**项数**而不是数量：一张合同上 100 吨钢卷和 50 件配件加不起来，折成
+// 金额又会把采购成本混进一张讲营收的表。「共 3 项，3 项订齐，2 项到齐」
+// 单位无关，也正是采购员口头汇报的说法。
+//
+// 作废和被改版顶掉的行不算在内——它们不是没办完的活，是不存在的活。
+//
+// 没有采购需求的合同不会出现在结果里；网关按合同补零，这样「一项都没有」
+// 和「查不到」在页面上是同一个答案：还没开始采购。
+func (q *Queries) ContractProcurementProgress(ctx context.Context, arg ContractProcurementProgressParams) ([]ContractProcurementProgressRow, error) {
+	rows, err := q.db.Query(ctx, contractProcurementProgress, arg.TenantID, arg.ContractIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ContractProcurementProgressRow
+	for rows.Next() {
+		var i ContractProcurementProgressRow
+		if err := rows.Scan(
+			&i.ContractID,
+			&i.TotalLines,
+			&i.OrderedLines,
+			&i.ReceivedLines,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countOrderedOnOldVersions = `-- name: CountOrderedOnOldVersions :one
 SELECT count(*) FROM purchase_requirements
 WHERE tenant_id = $1

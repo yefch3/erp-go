@@ -443,3 +443,21 @@ func (h *Handler) CancelSchedule(ctx context.Context, req *shippingv1.CancelSche
 	}
 	return &shippingv1.CancelScheduleResponse{Schedule: scheduleToProto(s)}, nil
 }
+
+// ContractShippingSnapshot 一次答完一页合同的船期状态（D2）。
+func (h *Handler) ContractShippingSnapshot(ctx context.Context, req *shippingv1.ContractShippingSnapshotRequest) (*shippingv1.ContractShippingSnapshotResponse, error) {
+	byContract, err := h.svc.ContractShippingSnapshot(ctx, grpcx.TenantID(ctx), req.GetContractNos())
+	if err != nil {
+		return nil, err
+	}
+	items := make([]*shippingv1.ContractShippingSnapshotItem, 0, len(byContract))
+	for _, s := range byContract {
+		items = append(items, &shippingv1.ContractShippingSnapshotItem{
+			ContractNo: s.ContractNo, ScheduleId: s.ScheduleID, ScheduleNo: s.ScheduleNo,
+			VesselName: s.VesselName, VoyageNo: s.VoyageNo, Status: s.Status,
+			Etd: s.ETD, Atd: s.ATD, Eta: s.ETA, Ata: s.ATA,
+			DelayDays: s.DelayDays, LegCount: s.LegCount,
+		})
+	}
+	return &shippingv1.ContractShippingSnapshotResponse{Items: items}, nil
+}

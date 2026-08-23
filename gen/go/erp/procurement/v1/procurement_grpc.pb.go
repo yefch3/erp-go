@@ -931,13 +931,14 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	RequirementService_ListRequirements_FullMethodName       = "/erp.procurement.v1.RequirementService/ListRequirements"
-	RequirementService_ExportPurchaseTemplate_FullMethodName = "/erp.procurement.v1.RequirementService/ExportPurchaseTemplate"
-	RequirementService_CreateRequirement_FullMethodName      = "/erp.procurement.v1.RequirementService/CreateRequirement"
-	RequirementService_GetRequirement_FullMethodName         = "/erp.procurement.v1.RequirementService/GetRequirement"
-	RequirementService_CancelRequirement_FullMethodName      = "/erp.procurement.v1.RequirementService/CancelRequirement"
-	RequirementService_ReopenRequirement_FullMethodName      = "/erp.procurement.v1.RequirementService/ReopenRequirement"
-	RequirementService_ListRequirementOrders_FullMethodName  = "/erp.procurement.v1.RequirementService/ListRequirementOrders"
+	RequirementService_ListRequirements_FullMethodName            = "/erp.procurement.v1.RequirementService/ListRequirements"
+	RequirementService_ExportPurchaseTemplate_FullMethodName      = "/erp.procurement.v1.RequirementService/ExportPurchaseTemplate"
+	RequirementService_CreateRequirement_FullMethodName           = "/erp.procurement.v1.RequirementService/CreateRequirement"
+	RequirementService_GetRequirement_FullMethodName              = "/erp.procurement.v1.RequirementService/GetRequirement"
+	RequirementService_CancelRequirement_FullMethodName           = "/erp.procurement.v1.RequirementService/CancelRequirement"
+	RequirementService_ReopenRequirement_FullMethodName           = "/erp.procurement.v1.RequirementService/ReopenRequirement"
+	RequirementService_ListRequirementOrders_FullMethodName       = "/erp.procurement.v1.RequirementService/ListRequirementOrders"
+	RequirementService_ContractProcurementProgress_FullMethodName = "/erp.procurement.v1.RequirementService/ContractProcurementProgress"
 )
 
 // RequirementServiceClient is the client API for RequirementService service.
@@ -963,6 +964,9 @@ type RequirementServiceClient interface {
 	// Which purchase orders are covering it. An outstanding line that is
 	// already on order needs waiting on, not buying again.
 	ListRequirementOrders(ctx context.Context, in *ListRequirementOrdersRequest, opts ...grpc.CallOption) (*ListRequirementOrdersResponse, error)
+	// 一页合同的采购进度，一次问完（D2 合同执行一览表）。批量而不是逐行：
+	// 一页 20 张合同逐行问就是 20 次跨服务调用。
+	ContractProcurementProgress(ctx context.Context, in *ContractProcurementProgressRequest, opts ...grpc.CallOption) (*ContractProcurementProgressResponse, error)
 }
 
 type requirementServiceClient struct {
@@ -1043,6 +1047,16 @@ func (c *requirementServiceClient) ListRequirementOrders(ctx context.Context, in
 	return out, nil
 }
 
+func (c *requirementServiceClient) ContractProcurementProgress(ctx context.Context, in *ContractProcurementProgressRequest, opts ...grpc.CallOption) (*ContractProcurementProgressResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContractProcurementProgressResponse)
+	err := c.cc.Invoke(ctx, RequirementService_ContractProcurementProgress_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RequirementServiceServer is the server API for RequirementService service.
 // All implementations must embed UnimplementedRequirementServiceServer
 // for forward compatibility.
@@ -1066,6 +1080,9 @@ type RequirementServiceServer interface {
 	// Which purchase orders are covering it. An outstanding line that is
 	// already on order needs waiting on, not buying again.
 	ListRequirementOrders(context.Context, *ListRequirementOrdersRequest) (*ListRequirementOrdersResponse, error)
+	// 一页合同的采购进度，一次问完（D2 合同执行一览表）。批量而不是逐行：
+	// 一页 20 张合同逐行问就是 20 次跨服务调用。
+	ContractProcurementProgress(context.Context, *ContractProcurementProgressRequest) (*ContractProcurementProgressResponse, error)
 	mustEmbedUnimplementedRequirementServiceServer()
 }
 
@@ -1096,6 +1113,9 @@ func (UnimplementedRequirementServiceServer) ReopenRequirement(context.Context, 
 }
 func (UnimplementedRequirementServiceServer) ListRequirementOrders(context.Context, *ListRequirementOrdersRequest) (*ListRequirementOrdersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListRequirementOrders not implemented")
+}
+func (UnimplementedRequirementServiceServer) ContractProcurementProgress(context.Context, *ContractProcurementProgressRequest) (*ContractProcurementProgressResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ContractProcurementProgress not implemented")
 }
 func (UnimplementedRequirementServiceServer) mustEmbedUnimplementedRequirementServiceServer() {}
 func (UnimplementedRequirementServiceServer) testEmbeddedByValue()                            {}
@@ -1244,6 +1264,24 @@ func _RequirementService_ListRequirementOrders_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RequirementService_ContractProcurementProgress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContractProcurementProgressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RequirementServiceServer).ContractProcurementProgress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RequirementService_ContractProcurementProgress_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RequirementServiceServer).ContractProcurementProgress(ctx, req.(*ContractProcurementProgressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // RequirementService_ServiceDesc is the grpc.ServiceDesc for RequirementService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1278,6 +1316,10 @@ var RequirementService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListRequirementOrders",
 			Handler:    _RequirementService_ListRequirementOrders_Handler,
+		},
+		{
+			MethodName: "ContractProcurementProgress",
+			Handler:    _RequirementService_ContractProcurementProgress_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

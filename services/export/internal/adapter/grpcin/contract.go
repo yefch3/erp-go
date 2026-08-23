@@ -40,6 +40,29 @@ func (h *ContractHandler) ListContracts(ctx context.Context, req *exv1.ListContr
 	return &exv1.ListContractsResponse{Contracts: out, Meta: &commonv1.PageMeta{Total: total}}, nil
 }
 
+// ListContractExecution 出一览表的出口半边（D2）。
+func (h *ContractHandler) ListContractExecution(ctx context.Context, req *exv1.ListContractExecutionRequest) (*exv1.ListContractExecutionResponse, error) {
+	rows, total, err := h.svc.ListContractExecution(ctx, grpcx.TenantID(ctx), app.ExecutionFilter{
+		Status: req.GetStatus(), CustomerID: req.GetCustomerId(), Keyword: req.GetKeyword(),
+	}, req.GetPage().GetPage(), req.GetPage().GetPageSize(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*exv1.ContractExecutionRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, &exv1.ContractExecutionRow{
+			ContractId: r.ContractID, ContractNo: r.ContractNo,
+			CustomerId: r.CustomerID, CustomerName: r.CustomerName,
+			SalesEmployeeId: r.SalesEmployeeID, SalesEmployee: r.SalesEmployee,
+			Status: r.Status, EffectiveDate: r.EffectiveDate,
+			Currency: r.Currency, TotalAmount: r.TotalAmount,
+			ShippedAmount: r.ShippedAmount, ReceivedAmount: r.ReceivedAmount,
+			DueDate: r.DueDate, OverdueDays: r.OverdueDays, DueUnset: r.DueUnset,
+		})
+	}
+	return &exv1.ListContractExecutionResponse{Rows: out, Meta: &commonv1.PageMeta{Total: total}}, nil
+}
+
 func (h *ContractHandler) GetContract(ctx context.Context, req *exv1.GetContractRequest) (*exv1.GetContractResponse, error) {
 	view, err := h.svc.GetContractFor(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetVersionId(), operator(ctx))
 	if err != nil {

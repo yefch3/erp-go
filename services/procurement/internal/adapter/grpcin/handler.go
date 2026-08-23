@@ -182,3 +182,19 @@ func (h *Handler) ListRequirementOrders(ctx context.Context, req *prv1.ListRequi
 	}
 	return &prv1.ListRequirementOrdersResponse{Orders: out}, nil
 }
+
+// ContractProcurementProgress 一次答完一页合同的采购进度（D2）。
+func (h *Handler) ContractProcurementProgress(ctx context.Context, req *prv1.ContractProcurementProgressRequest) (*prv1.ContractProcurementProgressResponse, error) {
+	byContract, err := h.svc.ContractProcurementProgress(ctx, grpcx.TenantID(ctx), req.GetContractIds())
+	if err != nil {
+		return nil, err
+	}
+	items := make([]*prv1.ContractProcurementProgressItem, 0, len(byContract))
+	for _, p := range byContract {
+		items = append(items, &prv1.ContractProcurementProgressItem{
+			ContractId: p.ContractID, TotalLines: p.TotalLines,
+			OrderedLines: p.OrderedLines, ReceivedLines: p.ReceivedLines,
+		})
+	}
+	return &prv1.ContractProcurementProgressResponse{Items: items}, nil
+}

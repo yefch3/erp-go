@@ -55,6 +55,9 @@
         <el-menu-item v-if="auth.can('export:contract:read')" index="/contracts">
           {{ t('menu.contracts') }}
         </el-menu-item>
+        <el-menu-item v-if="auth.can('export:contract:read')" index="/contract-execution">
+          {{ t('menu.contractExecution') }}
+        </el-menu-item>
         <el-menu-item v-if="auth.can('export:shipment:read')" index="/shipments">
           {{ t('menu.shipments') }}
         </el-menu-item>
