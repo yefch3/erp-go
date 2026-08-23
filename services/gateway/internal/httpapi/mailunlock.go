@@ -20,9 +20,11 @@ import (
 //
 // The token exists because an ERP session must not be enough to read mail: a
 // JWT proves somebody logged in this morning, not that the person at the
-// keyboard now is the mailbox's owner. The proof is deliberately short-lived
-// and per-person; it lives in Redis so every gateway replica sees it, and it
-// dies on its own rather than needing a logout path.
+// keyboard now is the mailbox's owner. The proof is per-person, lives in
+// Redis so every gateway replica sees it, and dies on its own rather than
+// needing a logout path.
+//
+// 它是「闲置多久失效」，不是「验证后多久必失效」——见 Check。
 type UnlockStore struct {
 	rdb *redis.Client
 	ttl time.Duration
@@ -54,15 +56,39 @@ func (u *UnlockStore) Grant(ctx context.Context, tenantID, employeeID int64) (st
 	return token, int(u.ttl.Seconds()), nil
 }
 
-// Check reports whether this token is currently good for this person. The
-// token is bound to the identity in the key, so a token lifted from one
-// person's session says nothing about anybody else's mailbox.
+// Check reports whether this token is currently good for this person, and
+// extends it while it is being used. The token is bound to the identity in
+// the key, so a token lifted from one person's session says nothing about
+// anybody else's mailbox.
+//
+// 用着就续期，和 ERP 登录会话同一个规矩（renewIfHalfSpent）。从前这里只问
+// 「还在吗」，从不续期，于是有效期是从验证那一刻起的一段固定时长——不管
+// 当天用得多勤，到点必掉，天天如此。会话会滑而邮箱不滑，是两套凭证的不
+// 一致，不是安全设计。
+//
+// 续期的门槛也照会话来：用掉一半才续，不是每个请求都写一次 Redis。邮件
+// 页面每次翻页都会打这里，逐次续期就是把一次读变成一次写。
 func (u *UnlockStore) Check(ctx context.Context, tenantID, employeeID int64, token string) bool {
 	if token == "" {
 		return false
 	}
-	n, err := u.rdb.Exists(ctx, u.key(tenantID, employeeID, token)).Result()
-	return err == nil && n > 0
+	key := u.key(tenantID, employeeID, token)
+	left, err := u.rdb.TTL(ctx, key).Result()
+	if err != nil {
+		return false
+	}
+	// 还剩一半以上：什么都不做，这是绝大多数请求走的路。
+	if left > 0 && left >= u.ttl/2 {
+		return true
+	}
+	// 到这里有三种情况：将要过期、键不存在、键没有到期时间。TTL 用负数
+	// 哨兵表示后两种，而那个负数的单位随客户端实现而变——照着哨兵的数值
+	// 判断，是把正确性押在库的内部约定上。
+	//
+	// EXPIRE 自己就能把话说清：键不存在时它不设置任何东西并返回 false。
+	// 所以「续期」和「这把钥匙还在不在」是同一个答案。
+	ok, err := u.rdb.Expire(ctx, key, u.ttl).Result()
+	return err == nil && ok
 }
 
 // Revoke kills one token now rather than waiting out its TTL. Signing out

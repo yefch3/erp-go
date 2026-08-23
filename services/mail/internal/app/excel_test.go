@@ -74,6 +74,10 @@ func TestInquiryWorkbookHasFixedColumnsBlankUnitPriceAndTrustedTotalFormula(t *t
 			"product": "HRC", "material_standard": "ASTM A36 / JIS G 3132 SPHT-1",
 			"thickness": "1.10", "width": "1200", "coil_weight": "10.50 MT max",
 			"coil_id": "762 MM", "quantity_unit": "MT", "quantity": "1250",
+		}, {
+			// 第二行带单价：询盘阶段不会有，但模板被改成也收单价时公式
+			// 照旧要出，而且位置要对。
+			"product": "CRC", "quantity_unit": "MT", "quantity": "20", "unit_price": "612.5",
 		}},
 	}, nil)
 	if err := validateWorkbook(&book); err != nil {
@@ -86,8 +90,20 @@ func TestInquiryWorkbookHasFixedColumnsBlankUnitPriceAndTrustedTotalFormula(t *t
 	if got := sheet.Columns[len(sheet.Columns)-3:]; strings.Join(got, ",") != "数量,单价,总价" {
 		t.Fatalf("last columns = %v", got)
 	}
-	if sheet.Rows[0][19] != "" || sheet.Rows[0][20] != "=S2*T2" {
-		t.Fatalf("price cells = %q, %q", sheet.Rows[0][19], sheet.Rows[0][20])
+	// 询盘阶段模型不给单价——单价空，总价就该空，而不是一个指着空格子的
+	// 算式（那在 Excel 里算成 0，在页面预览里露出「=S2*T2」）。
+	if sheet.Rows[0][19] != "" || sheet.Rows[0][20] != "" {
+		t.Fatalf("没有单价时单价和总价都该为空，实际 %q, %q", sheet.Rows[0][19], sheet.Rows[0][20])
+	}
+	if sheet.PreviewRows[0][20] != "" {
+		t.Fatalf("没有单价时预览的总价也该为空，实际 %q", sheet.PreviewRows[0][20])
+	}
+	// 有单价的那一行：文件里落公式，预览里落算出来的数。
+	if sheet.Rows[1][20] != "=S3*T3" {
+		t.Fatalf("有单价时该落公式 =S3*T3，实际 %q", sheet.Rows[1][20])
+	}
+	if sheet.PreviewRows[1][20] != "12250" {
+		t.Fatalf("预览该显示 20×612.5=12250，实际 %q", sheet.PreviewRows[1][20])
 	}
 
 	data, err := buildXLSX(book)
@@ -107,8 +123,14 @@ func TestInquiryWorkbookHasFixedColumnsBlankUnitPriceAndTrustedTotalFormula(t *t
 			xml = string(b)
 		}
 	}
-	if !strings.Contains(xml, `<c r="U2" s="3"><f>S2*T2</f><v>0</v></c>`) {
+	// 公式由服务端按模板列位算出来，模型碰不到；缓存值是真算出来的数，
+	// 不重算公式的看表工具也能显示对。
+	if !strings.Contains(xml, `<c r="U3" s="3"><f>S3*T3</f><v>12250</v></c>`) {
 		t.Fatalf("trusted total formula missing: %s", xml)
+	}
+	// 没有单价的那一行连公式都不该有。
+	if strings.Contains(xml, `r="U2" s="3"`) {
+		t.Fatalf("没有单价的行不该落公式: %s", xml)
 	}
 }
 
@@ -125,6 +147,7 @@ func TestTemplateWorkbookFollowsTemplateColumns(t *testing.T) {
 		Title: "t",
 		Items: []map[string]string{{
 			"product": "镀锌卷", "quantity": "25", "custom.customer_part_no": "CP-99887",
+			"unit_price": "480",
 		}},
 	}, columns)
 	if err := validateWorkbook(&book); err != nil {

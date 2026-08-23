@@ -907,7 +907,12 @@ func excelResultToProto(result app.ExcelResult) *mailv1.ConvertInboundToExcelRes
 			Name: sheet.Name, Summary: sheet.Summary, Columns: sheet.Columns,
 			TotalRows: int64(len(sheet.Rows)), ColumnKeys: sheet.ColumnKeys,
 		}
-		rows := sheet.Rows
+		// 给人看的那一版：总价列是算出来的数，不是「=S2*T2」。旧任务的
+		// 缓存里没有这一份，回落到原始行。
+		rows := sheet.PreviewRows
+		if len(rows) != len(sheet.Rows) {
+			rows = sheet.Rows
+		}
 		if len(rows) > 200 {
 			rows = rows[:200]
 		}
