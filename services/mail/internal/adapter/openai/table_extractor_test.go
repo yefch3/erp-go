@@ -73,8 +73,14 @@ func TestExtractorUsesStructuredResponsesForTextAndRealImageSample(t *testing.T)
 		if got := book.Sheets[0].Columns; got[len(got)-3] != "数量" || got[len(got)-2] != "单价" || got[len(got)-1] != "总价" {
 			t.Fatalf("fixed price columns = %v", got[len(got)-3:])
 		}
-		if got := book.Sheets[0].Rows[0][len(book.Sheets[0].Columns)-1]; got != "=S2*T2" {
-			t.Fatalf("total formula = %q", got)
+		// 询盘阶段模型不给单价（提示词写死了），所以总价该是空的——不是
+		// 一个指着空单价格子的算式。
+		cols := len(book.Sheets[0].Columns)
+		if got := book.Sheets[0].Rows[0][cols-2]; got != "" {
+			t.Fatalf("unit price must stay blank at inquiry stage, got %q", got)
+		}
+		if got := book.Sheets[0].Rows[0][cols-1]; got != "" {
+			t.Fatalf("total must stay blank when there is no unit price, got %q", got)
 		}
 	}
 	if len(requests) != 2 {
