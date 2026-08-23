@@ -99,7 +99,12 @@ func (q *Queries) AddRequirementReceived(ctx context.Context, arg AddRequirement
 const createPurchaseOrder = `-- name: CreatePurchaseOrder :one
 INSERT INTO purchase_orders (
     tenant_id, po_no, supplier_id, supplier_code, supplier_name,
-    currency, total_amount, expected_date, buyer_id, buyer_name, remark
+    currency, total_amount, expected_date, buyer_id, buyer_name, remark,
+    source_quotation_id, source_quotation_no, source_cost_scenario_id,
+    factory_id, factory_code, factory_name,
+    fulfillment_mode, delivery_location_type,
+    delivery_port_id, delivery_port_code, delivery_port_name,
+    warehouse_id, warehouse_name, delivery_address, source_change_reason
 ) VALUES (
     $1::bigint,
     $2::text,
@@ -111,23 +116,43 @@ INSERT INTO purchase_orders (
     nullif($8::text, '')::date,
     $9::bigint,
     $10::text,
-    $11::text
+    $11::text,
+    $12, $13, $14,
+    $15, $16, $17,
+    $18, $19,
+    $20, $21, $22,
+    $23, $24, $25, $26
 )
 RETURNING id, po_no, status, created_at
 `
 
 type CreatePurchaseOrderParams struct {
-	TenantID     int64
-	PoNo         string
-	SupplierID   int64
-	SupplierCode string
-	SupplierName string
-	Currency     string
-	TotalAmount  string
-	ExpectedDate string
-	BuyerID      int64
-	BuyerName    string
-	Remark       string
+	TenantID             int64
+	PoNo                 string
+	SupplierID           int64
+	SupplierCode         string
+	SupplierName         string
+	Currency             string
+	TotalAmount          string
+	ExpectedDate         string
+	BuyerID              int64
+	BuyerName            string
+	Remark               string
+	SourceQuotationID    int64
+	SourceQuotationNo    string
+	SourceCostScenarioID int64
+	FactoryID            int64
+	FactoryCode          string
+	FactoryName          string
+	FulfillmentMode      string
+	DeliveryLocationType string
+	DeliveryPortID       int64
+	DeliveryPortCode     string
+	DeliveryPortName     string
+	WarehouseID          int64
+	WarehouseName        string
+	DeliveryAddress      string
+	SourceChangeReason   string
 }
 
 type CreatePurchaseOrderRow struct {
@@ -150,6 +175,21 @@ func (q *Queries) CreatePurchaseOrder(ctx context.Context, arg CreatePurchaseOrd
 		arg.BuyerID,
 		arg.BuyerName,
 		arg.Remark,
+		arg.SourceQuotationID,
+		arg.SourceQuotationNo,
+		arg.SourceCostScenarioID,
+		arg.FactoryID,
+		arg.FactoryCode,
+		arg.FactoryName,
+		arg.FulfillmentMode,
+		arg.DeliveryLocationType,
+		arg.DeliveryPortID,
+		arg.DeliveryPortCode,
+		arg.DeliveryPortName,
+		arg.WarehouseID,
+		arg.WarehouseName,
+		arg.DeliveryAddress,
+		arg.SourceChangeReason,
 	)
 	var i CreatePurchaseOrderRow
 	err := row.Scan(
@@ -363,7 +403,15 @@ SELECT
     coalesce(o.closed_at::text, '')::text AS closed_at, o.closed_by_name,
     coalesce((SELECT c.status FROM purchase_supplier_confirmations c
               WHERE c.tenant_id = o.tenant_id AND c.po_id = o.id
-              ORDER BY c.created_at DESC, c.id DESC LIMIT 1), '')::text AS confirm_status
+              ORDER BY c.created_at DESC, c.id DESC LIMIT 1), '')::text AS confirm_status,
+    o.fulfillment_mode, o.delivery_location_type,
+    coalesce(o.delivery_port_id, 0)::bigint AS delivery_port_id,
+    o.delivery_port_code, o.delivery_port_name,
+    coalesce(o.warehouse_id, 0)::bigint AS warehouse_id, o.warehouse_name,
+    o.delivery_address, o.source_change_reason,
+    coalesce(o.source_quotation_id, 0)::bigint AS source_quotation_id,
+    o.source_quotation_no, coalesce(o.source_cost_scenario_id, 0)::bigint AS source_cost_scenario_id,
+    coalesce(o.factory_id, 0)::bigint AS factory_id, o.factory_code, o.factory_name
 FROM purchase_orders o
 WHERE o.tenant_id = $1::bigint AND o.id = $2::bigint
 `
@@ -374,31 +422,46 @@ type GetPurchaseOrderParams struct {
 }
 
 type GetPurchaseOrderRow struct {
-	ID                 int64
-	PoNo               string
-	SupplierID         int64
-	SupplierCode       string
-	SupplierName       string
-	Currency           string
-	TotalAmount        string
-	Status             string
-	ApprovalInstanceID int64
-	RejectReason       string
-	CancelReason       string
-	BuyerID            int64
-	BuyerName          string
-	Remark             string
-	ExpectedDate       string
-	SendStatus         string
-	SentTo             string
-	SentAt             pgtype.Timestamptz
-	SentByName         string
-	SendError          string
-	OrderedAt          pgtype.Timestamptz
-	CreatedAt          pgtype.Timestamptz
-	ClosedAt           string
-	ClosedByName       string
-	ConfirmStatus      string
+	ID                   int64
+	PoNo                 string
+	SupplierID           int64
+	SupplierCode         string
+	SupplierName         string
+	Currency             string
+	TotalAmount          string
+	Status               string
+	ApprovalInstanceID   int64
+	RejectReason         string
+	CancelReason         string
+	BuyerID              int64
+	BuyerName            string
+	Remark               string
+	ExpectedDate         string
+	SendStatus           string
+	SentTo               string
+	SentAt               pgtype.Timestamptz
+	SentByName           string
+	SendError            string
+	OrderedAt            pgtype.Timestamptz
+	CreatedAt            pgtype.Timestamptz
+	ClosedAt             string
+	ClosedByName         string
+	ConfirmStatus        string
+	FulfillmentMode      string
+	DeliveryLocationType string
+	DeliveryPortID       int64
+	DeliveryPortCode     string
+	DeliveryPortName     string
+	WarehouseID          int64
+	WarehouseName        string
+	DeliveryAddress      string
+	SourceChangeReason   string
+	SourceQuotationID    int64
+	SourceQuotationNo    string
+	SourceCostScenarioID int64
+	FactoryID            int64
+	FactoryCode          string
+	FactoryName          string
 }
 
 func (q *Queries) GetPurchaseOrder(ctx context.Context, arg GetPurchaseOrderParams) (GetPurchaseOrderRow, error) {
@@ -430,6 +493,21 @@ func (q *Queries) GetPurchaseOrder(ctx context.Context, arg GetPurchaseOrderPara
 		&i.ClosedAt,
 		&i.ClosedByName,
 		&i.ConfirmStatus,
+		&i.FulfillmentMode,
+		&i.DeliveryLocationType,
+		&i.DeliveryPortID,
+		&i.DeliveryPortCode,
+		&i.DeliveryPortName,
+		&i.WarehouseID,
+		&i.WarehouseName,
+		&i.DeliveryAddress,
+		&i.SourceChangeReason,
+		&i.SourceQuotationID,
+		&i.SourceQuotationNo,
+		&i.SourceCostScenarioID,
+		&i.FactoryID,
+		&i.FactoryCode,
+		&i.FactoryName,
 	)
 	return i, err
 }
@@ -439,7 +517,14 @@ SELECT id, po_no, supplier_id, supplier_code, supplier_name, currency,
        total_amount::text AS total_amount, status,
        coalesce(approval_instance_id, 0)::bigint AS approval_instance_id,
        buyer_id, buyer_name, remark,
-       coalesce(expected_date::text, '')::text AS expected_date
+       coalesce(expected_date::text, '')::text AS expected_date,
+       coalesce(source_quotation_id, 0)::bigint AS source_quotation_id,
+       source_quotation_no, coalesce(source_cost_scenario_id, 0)::bigint AS source_cost_scenario_id,
+       fulfillment_mode, delivery_location_type,
+       coalesce(delivery_port_id, 0)::bigint AS delivery_port_id,
+       delivery_port_code, delivery_port_name,
+       coalesce(warehouse_id, 0)::bigint AS warehouse_id, warehouse_name,
+       delivery_address, source_change_reason
 FROM purchase_orders
 WHERE tenant_id = $1::bigint AND id = $2::bigint
 FOR UPDATE
@@ -451,19 +536,31 @@ type GetPurchaseOrderForUpdateParams struct {
 }
 
 type GetPurchaseOrderForUpdateRow struct {
-	ID                 int64
-	PoNo               string
-	SupplierID         int64
-	SupplierCode       string
-	SupplierName       string
-	Currency           string
-	TotalAmount        string
-	Status             string
-	ApprovalInstanceID int64
-	BuyerID            int64
-	BuyerName          string
-	Remark             string
-	ExpectedDate       string
+	ID                   int64
+	PoNo                 string
+	SupplierID           int64
+	SupplierCode         string
+	SupplierName         string
+	Currency             string
+	TotalAmount          string
+	Status               string
+	ApprovalInstanceID   int64
+	BuyerID              int64
+	BuyerName            string
+	Remark               string
+	ExpectedDate         string
+	SourceQuotationID    int64
+	SourceQuotationNo    string
+	SourceCostScenarioID int64
+	FulfillmentMode      string
+	DeliveryLocationType string
+	DeliveryPortID       int64
+	DeliveryPortCode     string
+	DeliveryPortName     string
+	WarehouseID          int64
+	WarehouseName        string
+	DeliveryAddress      string
+	SourceChangeReason   string
 }
 
 func (q *Queries) GetPurchaseOrderForUpdate(ctx context.Context, arg GetPurchaseOrderForUpdateParams) (GetPurchaseOrderForUpdateRow, error) {
@@ -483,6 +580,18 @@ func (q *Queries) GetPurchaseOrderForUpdate(ctx context.Context, arg GetPurchase
 		&i.BuyerName,
 		&i.Remark,
 		&i.ExpectedDate,
+		&i.SourceQuotationID,
+		&i.SourceQuotationNo,
+		&i.SourceCostScenarioID,
+		&i.FulfillmentMode,
+		&i.DeliveryLocationType,
+		&i.DeliveryPortID,
+		&i.DeliveryPortCode,
+		&i.DeliveryPortName,
+		&i.WarehouseID,
+		&i.WarehouseName,
+		&i.DeliveryAddress,
+		&i.SourceChangeReason,
 	)
 	return i, err
 }
@@ -501,6 +610,14 @@ SELECT
     coalesce((SELECT c.status FROM purchase_supplier_confirmations c
               WHERE c.tenant_id = o.tenant_id AND c.po_id = o.id
               ORDER BY c.created_at DESC, c.id DESC LIMIT 1), '')::text AS confirm_status,
+    o.fulfillment_mode, o.delivery_location_type,
+    coalesce(o.delivery_port_id, 0)::bigint AS delivery_port_id,
+    o.delivery_port_code, o.delivery_port_name,
+    coalesce(o.warehouse_id, 0)::bigint AS warehouse_id, o.warehouse_name,
+    o.delivery_address,
+    coalesce(o.source_quotation_id, 0)::bigint AS source_quotation_id,
+    o.source_quotation_no, coalesce(o.source_cost_scenario_id, 0)::bigint AS source_cost_scenario_id,
+    coalesce(o.factory_id, 0)::bigint AS factory_id, o.factory_code, o.factory_name,
     (SELECT count(*) FROM purchase_order_items i WHERE i.po_id = o.id) AS item_count,
     coalesce((SELECT sum(i.qty) FROM purchase_order_items i WHERE i.po_id = o.id), 0)::text AS total_qty,
     coalesce((SELECT sum(i.received_qty) FROM purchase_order_items i WHERE i.po_id = o.id), 0)::text AS received_qty,
@@ -534,31 +651,45 @@ type ListPurchaseOrdersParams struct {
 }
 
 type ListPurchaseOrdersRow struct {
-	ID            int64
-	PoNo          string
-	SupplierID    int64
-	SupplierName  string
-	Currency      string
-	TotalAmount   string
-	Status        string
-	BuyerName     string
-	Remark        string
-	RejectReason  string
-	CancelReason  string
-	ExpectedDate  string
-	SendStatus    string
-	SentTo        string
-	SentAt        pgtype.Timestamptz
-	SentByName    string
-	SendError     string
-	CreatedAt     pgtype.Timestamptz
-	ClosedAt      string
-	ClosedByName  string
-	ConfirmStatus string
-	ItemCount     int64
-	TotalQty      string
-	ReceivedQty   string
-	Total         int64
+	ID                   int64
+	PoNo                 string
+	SupplierID           int64
+	SupplierName         string
+	Currency             string
+	TotalAmount          string
+	Status               string
+	BuyerName            string
+	Remark               string
+	RejectReason         string
+	CancelReason         string
+	ExpectedDate         string
+	SendStatus           string
+	SentTo               string
+	SentAt               pgtype.Timestamptz
+	SentByName           string
+	SendError            string
+	CreatedAt            pgtype.Timestamptz
+	ClosedAt             string
+	ClosedByName         string
+	ConfirmStatus        string
+	FulfillmentMode      string
+	DeliveryLocationType string
+	DeliveryPortID       int64
+	DeliveryPortCode     string
+	DeliveryPortName     string
+	WarehouseID          int64
+	WarehouseName        string
+	DeliveryAddress      string
+	SourceQuotationID    int64
+	SourceQuotationNo    string
+	SourceCostScenarioID int64
+	FactoryID            int64
+	FactoryCode          string
+	FactoryName          string
+	ItemCount            int64
+	TotalQty             string
+	ReceivedQty          string
+	Total                int64
 }
 
 func (q *Queries) ListPurchaseOrders(ctx context.Context, arg ListPurchaseOrdersParams) ([]ListPurchaseOrdersRow, error) {
@@ -601,6 +732,20 @@ func (q *Queries) ListPurchaseOrders(ctx context.Context, arg ListPurchaseOrders
 			&i.ClosedAt,
 			&i.ClosedByName,
 			&i.ConfirmStatus,
+			&i.FulfillmentMode,
+			&i.DeliveryLocationType,
+			&i.DeliveryPortID,
+			&i.DeliveryPortCode,
+			&i.DeliveryPortName,
+			&i.WarehouseID,
+			&i.WarehouseName,
+			&i.DeliveryAddress,
+			&i.SourceQuotationID,
+			&i.SourceQuotationNo,
+			&i.SourceCostScenarioID,
+			&i.FactoryID,
+			&i.FactoryCode,
+			&i.FactoryName,
 			&i.ItemCount,
 			&i.TotalQty,
 			&i.ReceivedQty,
@@ -996,6 +1141,12 @@ SELECT
     id, contract_id, contract_no, contract_item_id, customer_name, source,
     product_id, coalesce(sku_id, 0)::bigint AS sku_id,
     product_code, product_name, spec, uom_id, uom_code, status,
+    quotation_id, quotation_no, cost_scenario_id,
+    supplier_id AS inherited_supplier_id, supplier_code AS inherited_supplier_code,
+    supplier_name AS inherited_supplier_name,
+    factory_id AS inherited_factory_id, factory_code AS inherited_factory_code,
+    factory_name AS inherited_factory_name,
+    source_currency, source_unit_price::text AS source_unit_price,
     required_qty::text                 AS required_qty,
     ordered_qty::text                  AS ordered_qty,
     (required_qty - ordered_qty)::text AS open_qty,
@@ -1013,24 +1164,35 @@ type RequirementsForOrderParams struct {
 }
 
 type RequirementsForOrderRow struct {
-	ID             int64
-	ContractID     int64
-	ContractNo     string
-	ContractItemID int64
-	CustomerName   string
-	Source         string
-	ProductID      int64
-	SkuID          int64
-	ProductCode    string
-	ProductName    string
-	Spec           string
-	UomID          int64
-	UomCode        string
-	Status         string
-	RequiredQty    string
-	OrderedQty     string
-	OpenQty        string
-	RequiredDate   string
+	ID                    int64
+	ContractID            int64
+	ContractNo            string
+	ContractItemID        int64
+	CustomerName          string
+	Source                string
+	ProductID             int64
+	SkuID                 int64
+	ProductCode           string
+	ProductName           string
+	Spec                  string
+	UomID                 int64
+	UomCode               string
+	Status                string
+	QuotationID           int64
+	QuotationNo           string
+	CostScenarioID        int64
+	InheritedSupplierID   int64
+	InheritedSupplierCode string
+	InheritedSupplierName string
+	InheritedFactoryID    int64
+	InheritedFactoryCode  string
+	InheritedFactoryName  string
+	SourceCurrency        string
+	SourceUnitPrice       string
+	RequiredQty           string
+	OrderedQty            string
+	OpenQty               string
+	RequiredDate          string
 }
 
 // Purchase orders. Same rule as the rest of the system: quantities and money
@@ -1062,6 +1224,17 @@ func (q *Queries) RequirementsForOrder(ctx context.Context, arg RequirementsForO
 			&i.UomID,
 			&i.UomCode,
 			&i.Status,
+			&i.QuotationID,
+			&i.QuotationNo,
+			&i.CostScenarioID,
+			&i.InheritedSupplierID,
+			&i.InheritedSupplierCode,
+			&i.InheritedSupplierName,
+			&i.InheritedFactoryID,
+			&i.InheritedFactoryCode,
+			&i.InheritedFactoryName,
+			&i.SourceCurrency,
+			&i.SourceUnitPrice,
 			&i.RequiredQty,
 			&i.OrderedQty,
 			&i.OpenQty,
@@ -1171,28 +1344,48 @@ UPDATE purchase_orders SET
     buyer_id = $7::bigint,
     buyer_name = $8::text,
     remark = $9::text,
+    fulfillment_mode = $10::text,
+    delivery_location_type = $11::text,
+    delivery_port_id = nullif($12::bigint, 0),
+    delivery_port_code = $13::text,
+    delivery_port_name = $14::text,
+    -- 采购单表为兼容直接发往港口的模式，以 0 表示“不经过仓库”。
+    -- 这里不能写成 NULL，否则恢复旧草稿时会违反 warehouse_id 的非空约束。
+    warehouse_id = $15::bigint,
+    warehouse_name = $16::text,
+    delivery_address = $17::text,
+    source_change_reason = $18::text,
     status = 'DRAFT',
     approval_instance_id = NULL,
     reject_reason = '',
     updated_at = now()
-WHERE tenant_id = $10::bigint
-  AND id = $11::bigint
+WHERE tenant_id = $19::bigint
+  AND id = $20::bigint
   AND status IN ('DRAFT', 'REJECTED')
 RETURNING id, po_no, status, created_at
 `
 
 type UpdatePurchaseOrderDraftParams struct {
-	SupplierID   int64
-	SupplierCode string
-	SupplierName string
-	Currency     string
-	TotalAmount  string
-	ExpectedDate string
-	BuyerID      int64
-	BuyerName    string
-	Remark       string
-	TenantID     int64
-	ID           int64
+	SupplierID           int64
+	SupplierCode         string
+	SupplierName         string
+	Currency             string
+	TotalAmount          string
+	ExpectedDate         string
+	BuyerID              int64
+	BuyerName            string
+	Remark               string
+	FulfillmentMode      string
+	DeliveryLocationType string
+	DeliveryPortID       int64
+	DeliveryPortCode     string
+	DeliveryPortName     string
+	WarehouseID          int64
+	WarehouseName        string
+	DeliveryAddress      string
+	SourceChangeReason   string
+	TenantID             int64
+	ID                   int64
 }
 
 type UpdatePurchaseOrderDraftRow struct {
@@ -1213,6 +1406,15 @@ func (q *Queries) UpdatePurchaseOrderDraft(ctx context.Context, arg UpdatePurcha
 		arg.BuyerID,
 		arg.BuyerName,
 		arg.Remark,
+		arg.FulfillmentMode,
+		arg.DeliveryLocationType,
+		arg.DeliveryPortID,
+		arg.DeliveryPortCode,
+		arg.DeliveryPortName,
+		arg.WarehouseID,
+		arg.WarehouseName,
+		arg.DeliveryAddress,
+		arg.SourceChangeReason,
 		arg.TenantID,
 		arg.ID,
 	)

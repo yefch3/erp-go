@@ -42,13 +42,22 @@ type OrderLine struct {
 }
 
 type CreateOrderInput struct {
-	SupplierID   int64
-	SupplierCode string
-	SupplierName string
-	Currency     string
-	ExpectedDate string
-	Remark       string
-	Lines        []OrderLine
+	SupplierID           int64
+	SupplierCode         string
+	SupplierName         string
+	Currency             string
+	ExpectedDate         string
+	Remark               string
+	Lines                []OrderLine
+	FulfillmentMode      string
+	DeliveryLocationType string
+	DeliveryPortID       int64
+	DeliveryPortCode     string
+	DeliveryPortName     string
+	WarehouseID          int64
+	WarehouseName        string
+	DeliveryAddress      string
+	SourceChangeReason   string
 }
 
 // ReceiptLine is one order line arriving.
@@ -108,7 +117,9 @@ type preparedOrder struct {
 	ids  []int64
 }
 
-func (s *Service) prepareOrder(ctx context.Context, in CreateOrderInput) (preparedOrder, error) {
+// prepareOrder 统一校验采购单和解析明细。
+// requireDelivery 为 true 时执行 P8 新采购流程的履约地点校验；旧模板导入先生成草稿，允许稍后补齐配送信息。
+func (s *Service) prepareOrder(ctx context.Context, in CreateOrderInput, requireDelivery bool) (preparedOrder, error) {
 	if in.SupplierID == 0 {
 		return preparedOrder{}, apierr.Invalid("PO_SUPPLIER_REQUIRED", "请选择供应商")
 	}
@@ -124,6 +135,25 @@ func (s *Service) prepareOrder(ctx context.Context, in CreateOrderInput) (prepar
 	}
 	if in.Currency == "" {
 		in.Currency = "CNY"
+	}
+	if in.FulfillmentMode == "" {
+		in.FulfillmentMode = "DIRECT_SHIP"
+	}
+	if in.DeliveryLocationType == "" {
+		in.DeliveryLocationType = "PORT"
+	}
+	if in.FulfillmentMode != "DIRECT_SHIP" && in.FulfillmentMode != "WAREHOUSE" {
+		return preparedOrder{}, apierr.Invalid("PO_FULFILLMENT_INVALID", "请选择直发或入库后发货")
+	}
+	if requireDelivery && in.FulfillmentMode == "WAREHOUSE" {
+		in.DeliveryLocationType = "WAREHOUSE"
+		if in.WarehouseID == 0 {
+			return preparedOrder{}, apierr.Invalid("PO_WAREHOUSE_REQUIRED", "入库后发货必须选择仓库")
+		}
+	} else if requireDelivery && in.DeliveryLocationType == "PORT" && in.DeliveryPortID == 0 && strings.TrimSpace(in.DeliveryPortName) == "" {
+		return preparedOrder{}, apierr.Invalid("PO_DELIVERY_PORT_REQUIRED", "直发到港口时请选择收货港口")
+	} else if requireDelivery && in.DeliveryLocationType == "CUSTOM" && strings.TrimSpace(in.DeliveryAddress) == "" {
+		return preparedOrder{}, apierr.Invalid("PO_DELIVERY_ADDRESS_REQUIRED", "自定义收货地点不能为空")
 	}
 
 	want := make(map[int64]parsedOrderLine, len(in.Lines))
@@ -182,6 +212,8 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 	}
 
 	total := decimal.Zero
+	var quoteID, scenarioID, inheritedSupplierID, factoryID int64
+	var quoteNo, factoryCode, factoryName string
 	for _, r := range reqs {
 		p := want[r.ID]
 		if r.Status == "CANCELLED" || r.Status == "SUPERSEDED" {
@@ -206,6 +238,24 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 				WithMeta("open", available.String())
 		}
 		total = total.Add(p.qty.Mul(p.price))
+		if r.Source == "CUSTOMER_QUOTATION" {
+			if quoteID == 0 {
+				quoteID, quoteNo, scenarioID = r.QuotationID, r.QuotationNo, r.CostScenarioID
+				inheritedSupplierID = r.InheritedSupplierID
+				factoryID, factoryCode, factoryName = r.InheritedFactoryID, r.InheritedFactoryCode, r.InheritedFactoryName
+			}
+			if r.QuotationID != quoteID || r.InheritedSupplierID != inheritedSupplierID {
+				return head, apierr.Invalid("PO_QUOTATION_SUPPLIER_MIXED", "一张采购单只能包含同一客户报价、同一供应商的待下单明细")
+			}
+			if in.SupplierID != r.InheritedSupplierID {
+				return head, apierr.Invalid("PO_SUPPLIER_SNAPSHOT_MISMATCH", "供应商必须与已确认成本方案一致")
+			}
+			if !strings.EqualFold(in.Currency, r.SourceCurrency) || !p.price.Equal(decimal.RequireFromString(r.SourceUnitPrice)) {
+				if strings.TrimSpace(in.SourceChangeReason) == "" {
+					return head, apierr.Invalid("PO_SOURCE_CHANGE_REASON_REQUIRED", "修改确认报价的币种或单价时必须填写原因")
+				}
+			}
+		}
 	}
 
 	// The number is drawn only once every line has passed. Asking earlier
@@ -228,7 +278,12 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 			SupplierCode: in.SupplierCode, SupplierName: in.SupplierName,
 			Currency: in.Currency, TotalAmount: total.StringFixed(2),
 			ExpectedDate: in.ExpectedDate, BuyerID: op.ID, BuyerName: op.Name,
-			Remark: in.Remark,
+			Remark: in.Remark, SourceQuotationID: quoteID, SourceQuotationNo: quoteNo,
+			SourceCostScenarioID: scenarioID, FactoryID: factoryID, FactoryCode: factoryCode, FactoryName: factoryName,
+			FulfillmentMode: in.FulfillmentMode, DeliveryLocationType: in.DeliveryLocationType,
+			DeliveryPortID: in.DeliveryPortID, DeliveryPortCode: in.DeliveryPortCode, DeliveryPortName: in.DeliveryPortName,
+			WarehouseID: in.WarehouseID, WarehouseName: in.WarehouseName,
+			DeliveryAddress: in.DeliveryAddress, SourceChangeReason: in.SourceChangeReason,
 		})
 		if err == nil {
 			if err = savepoint.Commit(ctx); err != nil {
@@ -240,6 +295,9 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 		var pgErr *pgconn.PgError
 		if attempt == 0 && errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			continue
+		}
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "purchase_orders_quotation_supplier_idx" {
+			return head, apierr.Conflict("PO_QUOTATION_ALREADY_ORDERED", "该客户报价与供应商已经生成采购单")
 		}
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return head, apierr.Conflict("PO_NUMBER_CONFLICT", "采购单号生成冲突，请重试")
@@ -263,7 +321,7 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 }
 
 func (s *Service) CreateOrder(ctx context.Context, tenantID int64, in CreateOrderInput, op Operator) (store.CreatePurchaseOrderRow, error) {
-	prepared, err := s.prepareOrder(ctx, in)
+	prepared, err := s.prepareOrder(ctx, in, true)
 	if err != nil {
 		return store.CreatePurchaseOrderRow{}, err
 	}
@@ -271,7 +329,17 @@ func (s *Service) CreateOrder(ctx context.Context, tenantID int64, in CreateOrde
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		var createErr error
 		head, createErr = s.createPreparedOrder(ctx, tx, tenantID, prepared, op)
-		return createErr
+		if createErr != nil {
+			return createErr
+		}
+		// “待采购并审批”就是公司对本次采购的人工审批点。员工在该页面
+		// 确认后，建单、占用采购需求和进入已下单必须在同一事务内完成；
+		// 任一步失败都会整体回滚，不能留下页面看不见的半成品草稿。
+		if createErr = commitOrderRequirements(ctx, s.q.WithTx(tx), tenantID, head.ID); createErr != nil {
+			return createErr
+		}
+		head.Status = poOrdered
+		return nil
 	})
 	if err != nil {
 		return store.CreatePurchaseOrderRow{}, err
@@ -289,44 +357,11 @@ func (s *Service) UpdateOrder(
 	in CreateOrderInput,
 	op Operator,
 ) (store.UpdatePurchaseOrderDraftRow, error) {
-	if in.SupplierID == 0 {
-		return store.UpdatePurchaseOrderDraftRow{}, apierr.Invalid("PO_SUPPLIER_REQUIRED", "请选择供应商")
-	}
-	supplier, err := s.supplierForOrder(ctx, in.SupplierID)
+	prepared, err := s.prepareOrder(ctx, in, true)
 	if err != nil {
 		return store.UpdatePurchaseOrderDraftRow{}, err
 	}
-	in.SupplierCode, in.SupplierName = supplier.Code, supplier.Name
-	if len(in.Lines) == 0 {
-		return store.UpdatePurchaseOrderDraftRow{}, apierr.Invalid("PO_LINES_REQUIRED", "采购单明细不能为空")
-	}
-	if in.Currency == "" {
-		in.Currency = "CNY"
-	}
-
-	type parsed struct {
-		qty   decimal.Decimal
-		price decimal.Decimal
-	}
-	want := make(map[int64]parsed, len(in.Lines))
-	ids := make([]int64, 0, len(in.Lines))
-	for _, l := range in.Lines {
-		qty, parseErr := decimal.NewFromString(l.Qty)
-		if parseErr != nil || qty.LessThanOrEqual(decimal.Zero) {
-			return store.UpdatePurchaseOrderDraftRow{}, apierr.Invalid("PO_QTY_INVALID", "采购数量必须大于 0")
-		}
-		price, parseErr := decimal.NewFromString(orZero(l.UnitPrice))
-		if parseErr != nil || price.IsNegative() {
-			return store.UpdatePurchaseOrderDraftRow{}, apierr.Invalid("PO_PRICE_INVALID", "单价不能为负数")
-		}
-		if _, duplicated := want[l.RequirementID]; duplicated {
-			return store.UpdatePurchaseOrderDraftRow{}, apierr.Invalid(
-				"PO_LINE_DUPLICATED", "同一采购需求在一张采购单里只能出现一次",
-			)
-		}
-		want[l.RequirementID] = parsed{qty: qty, price: price}
-		ids = append(ids, l.RequirementID)
-	}
+	in, want, ids := prepared.in, prepared.want, prepared.ids
 
 	var updated store.UpdatePurchaseOrderDraftRow
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
@@ -369,6 +404,18 @@ func (s *Service) UpdateOrder(
 				return apierr.Invalid("PO_EXCEEDS_REQUIREMENT", "「"+requirement.ProductName+"」下单数量超过需求未下单部分").
 					WithMeta("requested", line.qty.String()).WithMeta("open", open.String())
 			}
+			if requirement.Source == "CUSTOMER_QUOTATION" {
+				if head.SourceQuotationID == 0 || requirement.QuotationID != head.SourceQuotationID ||
+					requirement.InheritedSupplierID != in.SupplierID {
+					return apierr.Invalid("PO_QUOTATION_SOURCE_CHANGED", "报价转入的采购单不能改为其他报价或供应商")
+				}
+				if !strings.EqualFold(in.Currency, requirement.SourceCurrency) ||
+					!line.price.Equal(decimal.RequireFromString(requirement.SourceUnitPrice)) {
+					if strings.TrimSpace(in.SourceChangeReason) == "" {
+						return apierr.Invalid("PO_SOURCE_CHANGE_REASON_REQUIRED", "修改确认报价的币种或单价时必须填写原因")
+					}
+				}
+			}
 			total = total.Add(line.qty.Mul(line.price))
 		}
 
@@ -377,7 +424,12 @@ func (s *Service) UpdateOrder(
 			SupplierCode: in.SupplierCode, SupplierName: in.SupplierName,
 			Currency: in.Currency, TotalAmount: total.StringFixed(2),
 			ExpectedDate: in.ExpectedDate, BuyerID: op.ID, BuyerName: op.Name,
-			Remark: in.Remark,
+			Remark: in.Remark, FulfillmentMode: in.FulfillmentMode,
+			DeliveryLocationType: in.DeliveryLocationType,
+			DeliveryPortID:       in.DeliveryPortID, DeliveryPortCode: in.DeliveryPortCode,
+			DeliveryPortName: in.DeliveryPortName, WarehouseID: in.WarehouseID,
+			WarehouseName: in.WarehouseName, DeliveryAddress: in.DeliveryAddress,
+			SourceChangeReason: in.SourceChangeReason,
 		})
 		if reqErr != nil {
 			return reqErr
@@ -423,47 +475,72 @@ func (s *Service) supplierForOrder(ctx context.Context, id int64) (Supplier, err
 	return supplier, nil
 }
 
-// SubmitOrder sends the order for approval.
-//
-// The requirement is NOT marked as ordered here. Until somebody has approved
-// the spend nothing has been promised to a supplier, and marking it early
-// would hide the demand from the next buyer who looks at the list — they
-// would see it as handled and it would quietly never be bought.
+// SubmitOrder 收口历史草稿或导入草稿。当前主流程的人工审批已经在
+// “待采购并审批”页面完成，因此这里不再发起第二套审批，而是原子地把
+// 草稿转成已下单；该接口也用于恢复旧版本遗留的草稿。
 func (s *Service) SubmitOrder(ctx context.Context, tenantID, id int64, op Operator) (string, int64, error) {
-	head, err := s.GetOrder(ctx, tenantID, id)
-	if err != nil {
-		return "", 0, err
-	}
-	if head.Status != poDraft && head.Status != "REJECTED" {
-		return "", 0, apierr.Conflict("PO_NOT_SUBMITTABLE", "只有草稿或已驳回的采购单可以提交审批").
-			WithMeta("status", head.Status)
-	}
-	items, err := s.q.PurchaseOrderItems(ctx, store.PurchaseOrderItemsParams{
-		TenantID: tenantID, PoID: id,
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		head, lockErr := q.GetPurchaseOrderForUpdate(ctx, store.GetPurchaseOrderForUpdateParams{
+			TenantID: tenantID, ID: id,
+		})
+		if lockErr == pgx.ErrNoRows {
+			return apierr.NotFound("PO_ORDER_NOT_FOUND", "采购单不存在")
+		}
+		if lockErr != nil {
+			return lockErr
+		}
+		if head.Status != poDraft && head.Status != "REJECTED" {
+			return apierr.Conflict("PO_NOT_SUBMITTABLE", "只有历史草稿或已驳回采购单可以确认").
+				WithMeta("status", head.Status)
+		}
+		return commitOrderRequirements(ctx, q, tenantID, id)
 	})
 	if err != nil {
-		return "", 0, err
-	}
-	if len(items) == 0 {
-		return "", 0, apierr.Invalid("PO_LINES_REQUIRED", "采购单没有明细，无法提交")
-	}
-
-	instanceID, err := s.approvals.Submit(ctx, ApprovalSubmission{
-		BizType: BizTypePurchaseOrder, BizID: head.ID, BizNo: head.PoNo,
-		Summary:     orderSummary(head, items),
-		SubmitterID: op.ID, SubmitterName: op.Name,
-		Amount: head.TotalAmount,
-	})
-	if err != nil {
-		return "", 0, err
-	}
-	if err := s.q.SetPurchaseOrderSubmitted(ctx, store.SetPurchaseOrderSubmittedParams{
-		TenantID: tenantID, ID: id, InstanceID: instanceID,
-	}); err != nil {
 		return "", 0, err
 	}
 	s.nudge(ctx, tenantID)
-	return poPending, instanceID, nil
+	return poOrdered, 0, nil
+}
+
+// commitOrderRequirements 在采购单和全部采购需求均已锁定的事务中执行。
+// 它既防止重复占用同一需求，也保证“批准成功”和“进入已下单”不会分裂。
+func commitOrderRequirements(ctx context.Context, q *store.Queries, tenantID, poID int64) error {
+	items, err := q.PurchaseOrderItemsForUpdate(ctx, store.PurchaseOrderItemsForUpdateParams{
+		TenantID: tenantID, PoID: poID,
+	})
+	if err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		return apierr.Invalid("PO_LINES_REQUIRED", "采购单没有明细，无法确认")
+	}
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.RequirementID)
+	}
+	requirements, err := q.RequirementsForOrder(ctx, store.RequirementsForOrderParams{
+		TenantID: tenantID, Ids: ids,
+	})
+	if err != nil {
+		return err
+	}
+	if reason := approvalRequirementConflict(requirements, items); reason != "" {
+		return apierr.Conflict("PO_REQUIREMENT_CHANGED", reason)
+	}
+	for _, item := range items {
+		if _, err = q.AddRequirementOrdered(ctx, store.AddRequirementOrderedParams{
+			TenantID: tenantID, ID: item.RequirementID, Qty: item.Qty,
+		}); err != nil {
+			if err == pgx.ErrNoRows {
+				return apierr.Conflict("PO_REQUIREMENT_CHANGED", "采购需求状态或剩余数量已变化，请刷新后重试")
+			}
+			return err
+		}
+	}
+	return q.SetPurchaseOrderOrdered(ctx, store.SetPurchaseOrderOrderedParams{
+		TenantID: tenantID, ID: poID,
+	})
 }
 
 // ApplyApprovalDecision is what the Kafka consumer calls. Approving an order
@@ -872,37 +949,6 @@ func (s *Service) OrderItems(ctx context.Context, tenantID, poID int64) ([]store
 
 func (s *Service) OrderReceipts(ctx context.Context, tenantID, poID int64) ([]store.ListPurchaseReceiptsRow, error) {
 	return s.q.ListPurchaseReceipts(ctx, store.ListPurchaseReceiptsParams{TenantID: tenantID, PoID: poID})
-}
-
-// orderSummary is what an approver sees before they have opened anything.
-// Enough to decide without leaving the queue: who, how much, and for what.
-func orderSummary(head store.GetPurchaseOrderRow, items []store.PurchaseOrderItemsRow) string {
-	type line struct {
-		Product string `json:"product"`
-		Qty     string `json:"qty"`
-		Price   string `json:"price"`
-		Amount  string `json:"amount"`
-	}
-	body := struct {
-		Supplier string `json:"supplier"`
-		Currency string `json:"currency"`
-		Amount   string `json:"amount"`
-		Expected string `json:"expected_date"`
-		Lines    []line `json:"lines"`
-	}{
-		Supplier: head.SupplierName, Currency: head.Currency,
-		Amount: head.TotalAmount, Expected: head.ExpectedDate,
-	}
-	for _, it := range items {
-		body.Lines = append(body.Lines, line{
-			Product: it.ProductName, Qty: it.Qty, Price: it.UnitPrice, Amount: it.Amount,
-		})
-	}
-	out, err := json.Marshal(body)
-	if err != nil {
-		return ""
-	}
-	return string(out)
 }
 
 func orZero(v string) string {
