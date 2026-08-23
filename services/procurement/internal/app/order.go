@@ -247,14 +247,54 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 			if r.QuotationID != quoteID || r.InheritedSupplierID != inheritedSupplierID {
 				return head, apierr.Invalid("PO_QUOTATION_SUPPLIER_MIXED", "一张采购单只能包含同一客户报价、同一供应商的待下单明细")
 			}
-			if in.SupplierID != r.InheritedSupplierID {
-				return head, apierr.Invalid("PO_SUPPLIER_SNAPSHOT_MISMATCH", "供应商必须与已确认成本方案一致")
+			// 换一家供应商要说明白为什么。
+			//
+			// 报给客户的价是按成本方案里那家工厂算出来的，换一家，利润就
+			// 跟着变——这是必须留痕的偏离，不是随手改个下拉框。但也不能像
+			// 从前那样一口回绝：这批只供得了 80 吨、剩下 20 吨得另找一家，
+			// 是这行的常事，堵死了员工就只能在系统外面办。
+			//
+			// 用的是这里现成的规矩：偏离已确认方案，写原因即可放行，原因
+			// 随单存档（source_change_reason）。
+			if in.SupplierID != r.InheritedSupplierID && strings.TrimSpace(in.SourceChangeReason) == "" {
+				return head, apierr.Invalid("PO_SUPPLIER_CHANGE_REASON_REQUIRED",
+					"「"+r.ProductName+"」的已确认成本方案定的是「"+r.InheritedSupplierName+"」，改向其他供应商采购必须填写原因").
+					WithMeta("scenario_supplier", r.InheritedSupplierName)
 			}
 			if !strings.EqualFold(in.Currency, r.SourceCurrency) || !p.price.Equal(decimal.RequireFromString(r.SourceUnitPrice)) {
 				if strings.TrimSpace(in.SourceChangeReason) == "" {
 					return head, apierr.Invalid("PO_SOURCE_CHANGE_REASON_REQUIRED", "修改确认报价的币种或单价时必须填写原因")
 				}
 			}
+		}
+	}
+
+	// 这份报价已经给这家供应商开过单了——接着办上一张，还是再来一张？
+	//
+	// 00024 之前这两种情况由一条唯一索引一起挡住。可它们的处理方式正相反：
+	// 停在草稿的那张是「上次没办完」，该接着办完；已经确认下单的那张是
+	// 「这次要补购」，该放行。分开判断，各走各的路。
+	if quoteID > 0 {
+		existing, err := q.LiveOrdersForQuotationSupplier(ctx, store.LiveOrdersForQuotationSupplierParams{
+			TenantID: tenantID, QuotationID: quoteID, SupplierID: in.SupplierID,
+		})
+		if err != nil {
+			return head, err
+		}
+		for _, prior := range existing {
+			// 还没确认的草稿。前端认这个错误码，会把上一张调出来接着办，
+			// 免得留下两张半成品。措辞保持原样，别把前端的判断打散。
+			if prior.Status == poDraft || prior.Status == poPending || prior.Status == "REJECTED" {
+				return head, apierr.Conflict("PO_QUOTATION_ALREADY_ORDERED",
+					"该客户报价与供应商已经生成采购单").WithMeta("po_no", prior.PoNo)
+			}
+		}
+		if len(existing) > 0 && strings.TrimSpace(in.SourceChangeReason) == "" {
+			last := existing[len(existing)-1]
+			return head, apierr.Invalid("PO_QUOTATION_REORDER_REASON_REQUIRED",
+				"这份客户报价已经向「"+in.SupplierName+"」下过采购单（"+last.PoNo+"）。"+
+					"补购剩下的数量请填写原因；如果只是重复提交，请关掉本页").
+				WithMeta("po_no", last.PoNo)
 		}
 	}
 
@@ -295,9 +335,6 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 		var pgErr *pgconn.PgError
 		if attempt == 0 && errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			continue
-		}
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "purchase_orders_quotation_supplier_idx" {
-			return head, apierr.Conflict("PO_QUOTATION_ALREADY_ORDERED", "该客户报价与供应商已经生成采购单")
 		}
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return head, apierr.Conflict("PO_NUMBER_CONFLICT", "采购单号生成冲突，请重试")
@@ -405,9 +442,16 @@ func (s *Service) UpdateOrder(
 					WithMeta("requested", line.qty.String()).WithMeta("open", open.String())
 			}
 			if requirement.Source == "CUSTOMER_QUOTATION" {
-				if head.SourceQuotationID == 0 || requirement.QuotationID != head.SourceQuotationID ||
-					requirement.InheritedSupplierID != in.SupplierID {
-					return apierr.Invalid("PO_QUOTATION_SOURCE_CHANGED", "报价转入的采购单不能改为其他报价或供应商")
+				// 换成另一份报价始终不行——那已经是另一笔生意了。换供应商
+				// 则与新建单一个规矩：写明原因就放行。
+				if head.SourceQuotationID == 0 || requirement.QuotationID != head.SourceQuotationID {
+					return apierr.Invalid("PO_QUOTATION_SOURCE_CHANGED", "报价转入的采购单不能改为其他报价")
+				}
+				if requirement.InheritedSupplierID != in.SupplierID &&
+					strings.TrimSpace(in.SourceChangeReason) == "" {
+					return apierr.Invalid("PO_SUPPLIER_CHANGE_REASON_REQUIRED",
+						"「"+requirement.ProductName+"」的已确认成本方案定的是「"+requirement.InheritedSupplierName+"」，改向其他供应商采购必须填写原因").
+						WithMeta("scenario_supplier", requirement.InheritedSupplierName)
 				}
 				if !strings.EqualFold(in.Currency, requirement.SourceCurrency) ||
 					!line.price.Equal(decimal.RequireFromString(requirement.SourceUnitPrice)) {

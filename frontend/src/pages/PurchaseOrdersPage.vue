@@ -125,7 +125,7 @@
       <el-form label-width="90px" class="head-form">
         <el-form-item :label="t('orders.supplier')" required>
           <div class="supplier-row">
-            <el-select v-model="form.supplierId" filterable :disabled="approvalEntry" style="width: 420px">
+            <el-select v-model="form.supplierId" filterable :disabled="supplierLocked" style="width: 420px">
               <el-option
                 v-for="s in suppliers"
                 :key="s.id"
@@ -133,6 +133,12 @@
                 :label="`${s.code} · ${s.name}`"
               />
             </el-select>
+            <el-button v-if="approvalEntry && scenarioSupplierName" link type="primary" @click="toggleSupplierSwitch">
+              {{ switchSupplier ? `改回${scenarioSupplierName}` : '改向其他供应商' }}
+            </el-button>
+          </div>
+          <div v-if="scenarioSupplierName" class="form-note">
+            比价确认的方案定的是「{{ scenarioSupplierName }}」<template v-if="switchSupplier">，换一家要在下面写明原因</template>
           </div>
         </el-form-item>
         <el-form-item :label="approvalEntry ? t('orders.requiredArrivalDate') : t('orders.expected')" :required="approvalEntry">
@@ -168,11 +174,11 @@
             <el-option v-for="w in warehouses" :key="w.id" :value="Number(w.id)" :label="w.name" />
           </el-select>
         </el-form-item>
-        <el-form-item label="调整原因">
-          <el-input
-            v-model="form.sourceChangeReason"
-            placeholder="如修改了已确认报价的供应商单价或币种，请说明原因"
-          />
+        <el-form-item label="调整原因" :required="reasonRequired">
+          <el-input v-model="form.sourceChangeReason" :placeholder="reasonPlaceholder" />
+          <div v-if="isReorder && !switchSupplier" class="form-note">
+            这批之前已经下过单，本次买的是剩下的数量
+          </div>
         </el-form-item>
         <el-form-item :label="t('orders.remark')">
           <el-input v-model="form.remark" type="textarea" :rows="2" />
@@ -666,6 +672,8 @@ const downloadingId = ref(0)
 
 const createOpen = ref(false)
 const approvalEntry = ref(false)
+// 明确要求换一家供应商——不是随手改下拉框，是一次要留痕的偏离。
+const switchSupplier = ref(false)
 const editing = ref<Order | null>(null)
 const pending = ref<Requirement[]>([])
 const suppliers = ref<Supplier[]>([])
@@ -744,6 +752,39 @@ const estimated = computed(() => {
   }
   return sum.toFixed(2)
 })
+
+// 报价转来的待采购行（A5）。
+//
+// 这条路上供应商和数量在询价比价阶段就定死了，所以默认锁住下拉框——这是
+// 常态，不该每次都让人重新挑一遍。但工厂这批只供得了一部分是常事，剩下的
+// 要么另找一家、要么过些天再向同一家追加，两条路都得走得通。做法是把
+// 「偏离已确认方案」变成一个明确动作：点一下解锁，写明原因才放行。
+const quotationLines = computed(() =>
+  pending.value.filter((r) => r.source === 'CUSTOMER_QUOTATION' && Number(qtyOf[r.id] ?? 0) > 0),
+)
+const scenarioSupplierName = computed(() => quotationLines.value[0]?.supplierName || '')
+// 这批之前已经下过单，本次买的是剩下的数量。
+const isReorder = computed(() => quotationLines.value.some((r) => Number(r.orderedQty ?? 0) > 0))
+const supplierLocked = computed(() => approvalEntry.value && !switchSupplier.value)
+const reasonRequired = computed(() =>
+  quotationLines.value.length > 0 && (switchSupplier.value || isReorder.value),
+)
+const reasonPlaceholder = computed(() => {
+  if (switchSupplier.value && scenarioSupplierName.value)
+    return `为什么不向「${scenarioSupplierName.value}」采购？如：本批只能供 80 吨，余量转其他工厂`
+  if (isReorder.value) return '这批之前已经下过单，请说明为什么再开一张。如：首批只排到 80 吨，余量本月底补齐'
+  return '如修改了已确认报价的供应商单价或币种，请说明原因'
+})
+
+function toggleSupplierSwitch() {
+  switchSupplier.value = !switchSupplier.value
+  if (!switchSupplier.value) {
+    // 改回原厂：把成本方案里的供应商和单价一并还原，免得留下半改不改的单子。
+    const line = quotationLines.value[0]
+    if (line) form.supplierId = Number(line.supplierId)
+    quotationLines.value.forEach((r) => { priceOf[r.id] = r.sourceUnitPrice || '0' })
+  }
+}
 
 // 当前主动作按订单状态推导（B5）：草稿去提交、批完去发单、发完去收货、
 // 收完看履约。其余动作全部收进「更多」。
@@ -856,6 +897,7 @@ async function openCreate(preselect?: string[]) {
   form.warehouseId = 0
   form.warehouseName = ''
   form.sourceChangeReason = ''
+  switchSupplier.value = false
   Object.keys(qtyOf).forEach((k) => delete qtyOf[k])
   Object.keys(priceOf).forEach((k) => delete priceOf[k])
   const [reqs, sups, ports, whs] = await Promise.all([
@@ -930,6 +972,7 @@ async function openEdit(row: Order) {
   form.warehouseName = current.warehouseName || ''
   form.deliveryAddress = current.deliveryAddress || ''
   form.sourceChangeReason = ''
+  switchSupplier.value = false
   Object.keys(qtyOf).forEach((key) => delete qtyOf[key])
   Object.keys(priceOf).forEach((key) => delete priceOf[key])
   pending.value = [...(reqs.requirements ?? []), ...(partial.requirements ?? [])]
@@ -977,6 +1020,12 @@ async function submitCreate() {
   if (form.fulfillmentMode === 'DIRECT_SHIP' && form.deliveryLocationType === 'CUSTOM' &&
       !form.deliveryAddress.trim()) {
     ElMessage.warning('请填写收货地址')
+    return
+  }
+  // 换供应商或补购都是对已确认方案的偏离，原因必填。后端也会拦，这里先说
+  // 一声，省一趟白跑。
+  if (reasonRequired.value && !form.sourceChangeReason.trim()) {
+    ElMessage.warning(switchSupplier.value ? '换供应商请填写调整原因' : '补购剩余数量请填写调整原因')
     return
   }
   saving.value = true
@@ -1556,6 +1605,12 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+.form-note {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
 }
 .side-title {
   margin: 14px 0 8px;

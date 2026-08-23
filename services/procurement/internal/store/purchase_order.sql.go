@@ -824,6 +824,56 @@ func (q *Queries) ListPurchaseReceipts(ctx context.Context, arg ListPurchaseRece
 	return items, nil
 }
 
+const liveOrdersForQuotationSupplier = `-- name: LiveOrdersForQuotationSupplier :many
+SELECT id, po_no, status
+FROM purchase_orders
+WHERE tenant_id = $1::bigint
+  AND source_quotation_id = $2::bigint
+  AND supplier_id = $3::bigint
+  AND status <> 'CANCELLED'
+ORDER BY id
+`
+
+type LiveOrdersForQuotationSupplierParams struct {
+	TenantID    int64
+	QuotationID int64
+	SupplierID  int64
+}
+
+type LiveOrdersForQuotationSupplierRow struct {
+	ID     int64
+	PoNo   string
+	Status string
+}
+
+// 这份客户报价已经给这家供应商开过的、还没作废的采购单。
+//
+// 这里问的是「已经有单了吗」，答案分两种，处理方式完全不同：还停在草稿的
+// 是上次没办完，应该接着办那一张；已经确认下单的则说明这是补购——工厂这
+// 批只供得了一部分，剩下的再向同一家追加。00024 之前两种情况被一条唯一
+// 索引一起挡在门外。
+//
+// 读在需求行锁住之后，所以并发的重复提交会排队，第二个看得见第一个。
+func (q *Queries) LiveOrdersForQuotationSupplier(ctx context.Context, arg LiveOrdersForQuotationSupplierParams) ([]LiveOrdersForQuotationSupplierRow, error) {
+	rows, err := q.db.Query(ctx, liveOrdersForQuotationSupplier, arg.TenantID, arg.QuotationID, arg.SupplierID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LiveOrdersForQuotationSupplierRow
+	for rows.Next() {
+		var i LiveOrdersForQuotationSupplierRow
+		if err := rows.Scan(&i.ID, &i.PoNo, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ordersForRequirement = `-- name: OrdersForRequirement :many
 SELECT
     o.id, o.po_no, o.supplier_name, o.status, o.currency,
