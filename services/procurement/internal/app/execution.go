@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/mail"
@@ -17,7 +18,11 @@ import (
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/pkg/xlsx"
+	"github.com/sgao19/erp-go/services/procurement/internal/store"
 )
+
+//go:embed fonts/NotoSansSC-VF.ttf
+var purchaseOrderPDFFont []byte
 
 const (
 	PurchaseOrderDocumentVersion = "PO_SUPPLIER_V1"
@@ -82,11 +87,16 @@ func (s *Service) GetOrderDocuments(ctx context.Context, tenantID, id int64) (Or
 	if err != nil {
 		return OrderDocuments{}, err
 	}
+	return buildPurchaseOrderDocuments(head, items)
+}
+
+// buildPurchaseOrderDocuments 使用同一份采购单快照生成 Excel 和 PDF，保证两种下载内容一致。
+func buildPurchaseOrderDocuments(head store.GetPurchaseOrderRow, items []store.PurchaseOrderItemsRow) (OrderDocuments, error) {
 	rows := [][]string{
-		{"Template Version", "Purchase Order", "Supplier", "Currency", "Expected Date", "Buyer"},
+		{"模板版本 / Version", "采购单号 / Purchase Order", "供应商 / Supplier", "币种 / Currency", "要求到货日期 / Required Date", "采购员 / Buyer"},
 		{PurchaseOrderDocumentVersion, head.PoNo, head.SupplierName, head.Currency, head.ExpectedDate, head.BuyerName},
 		{},
-		{"Line", "Product Code", "Product", "Specification", "Quantity", "Unit", "Unit Price", "Amount"},
+		{"序号 / Line", "产品编码 / Product Code", "产品 / Product", "规格 / Specification", "数量 / Quantity", "单位 / Unit", "单价 / Unit Price", "金额 / Amount"},
 	}
 	formulas := make(map[string]xlsx.Formula, len(items)+1)
 	for index, item := range items {
@@ -95,59 +105,109 @@ func (s *Service) GetOrderDocuments(ctx context.Context, tenantID, id int64) (Or
 		formulas[fmt.Sprintf("H%d", rowNo)] = xlsx.Formula{Expression: fmt.Sprintf("E%d*G%d", rowNo, rowNo), CachedValue: item.Amount}
 	}
 	totalRow := len(rows) + 1
-	rows = append(rows, []string{"", "", "", "", "", "", "Total", head.TotalAmount})
+	rows = append(rows, []string{"", "", "", "", "", "", "合计 / Total", head.TotalAmount})
 	if len(items) > 0 {
 		formulas[fmt.Sprintf("H%d", totalRow)] = xlsx.Formula{Expression: fmt.Sprintf("SUM(H5:H%d)", totalRow-1), CachedValue: head.TotalAmount}
 	}
-	xlsxData, err := xlsx.BuildWithFormulas("Purchase Order", rows, formulas)
+	xlsxData, err := xlsx.BuildWithFormulas("采购订单 Purchase Order", rows, formulas)
 	if err != nil {
 		return OrderDocuments{}, err
 	}
-	pdf := fpdf.New("P", "mm", "A4", "")
-	pdf.SetMargins(12, 12, 12)
-	pdf.AddPage()
-	pdf.SetFont("Helvetica", "B", 16)
-	pdf.CellFormat(0, 10, "PURCHASE ORDER", "", 1, "C", false, 0, "")
-	pdf.SetFont("Helvetica", "", 9)
-	for _, line := range []string{"Order: " + head.PoNo, "Supplier: " + executionPDFText(head.SupplierName), "Currency: " + head.Currency, "Expected date: " + head.ExpectedDate, "Buyer: " + executionPDFText(head.BuyerName)} {
-		pdf.CellFormat(0, 5, line, "", 1, "L", false, 0, "")
-	}
-	pdf.Ln(3)
-	widths := []float64{10, 28, 48, 45, 20, 20, 20}
-	for index, label := range []string{"#", "Code", "Product", "Specification", "Qty", "Unit price", "Amount"} {
-		pdf.SetFont("Helvetica", "B", 8)
-		pdf.CellFormat(widths[index], 7, label, "1", 0, "C", false, 0, "")
-	}
-	pdf.Ln(-1)
-	pdf.SetFont("Helvetica", "", 8)
-	for index, item := range items {
-		values := []string{strconv.Itoa(index + 1), item.ProductCode, executionPDFText(item.ProductName), executionPDFText(item.Spec), item.Qty + " " + item.UomCode, item.UnitPrice, item.Amount}
-		for col, value := range values {
-			align := "L"
-			if col >= 4 {
-				align = "R"
-			}
-			pdf.CellFormat(widths[col], 7, value, "1", 0, align, false, 0, "")
-		}
-		pdf.Ln(-1)
-	}
-	pdf.SetFont("Helvetica", "B", 9)
-	pdf.CellFormat(151, 8, "Total "+head.Currency, "1", 0, "R", false, 0, "")
-	pdf.CellFormat(20, 8, head.TotalAmount, "1", 1, "R", false, 0, "")
-	var pdfOut bytes.Buffer
-	if err := pdf.Output(&pdfOut); err != nil {
+	pdfData, err := buildPurchaseOrderPDF(head, items)
+	if err != nil {
 		return OrderDocuments{}, err
 	}
-	return OrderDocuments{XLSXFileName: head.PoNo + ".xlsx", XLSXData: xlsxData, PDFFileName: head.PoNo + ".pdf", PDFData: pdfOut.Bytes(), Version: PurchaseOrderDocumentVersion}, nil
+	return OrderDocuments{XLSXFileName: head.PoNo + ".xlsx", XLSXData: xlsxData, PDFFileName: head.PoNo + ".pdf", PDFData: pdfData, Version: PurchaseOrderDocumentVersion}, nil
+}
+
+// buildPurchaseOrderPDF 生成支持中文、自动换行且不会越过 A4 可用宽度的采购订单。
+func buildPurchaseOrderPDF(head store.GetPurchaseOrderRow, items []store.PurchaseOrderItemsRow) ([]byte, error) {
+	pdf := fpdf.New("P", "mm", "A4", "")
+	pdf.SetMargins(12, 12, 12)
+	pdf.SetAutoPageBreak(true, 12)
+	pdf.AddUTF8FontFromBytes("NotoSansSC", "", purchaseOrderPDFFont)
+	pdf.AddUTF8FontFromBytes("NotoSansSC", "B", purchaseOrderPDFFont)
+	if err := pdf.Error(); err != nil {
+		return nil, fmt.Errorf("load purchase order PDF font: %w", err)
+	}
+	pdf.AddPage()
+	pdf.SetFont("NotoSansSC", "B", 16)
+	pdf.CellFormat(0, 10, "采购订单 / PURCHASE ORDER", "", 1, "C", false, 0, "")
+	pdf.SetFont("NotoSansSC", "", 9)
+	for _, line := range []string{
+		"采购单号 / Order: " + head.PoNo,
+		"供应商 / Supplier: " + executionPDFText(head.SupplierName),
+		"币种 / Currency: " + head.Currency,
+		"要求到货日期 / Required date: " + head.ExpectedDate,
+		"采购员 / Buyer: " + executionPDFText(head.BuyerName),
+	} {
+		pdf.MultiCell(0, 5, line, "", "L", false)
+	}
+	pdf.Ln(3)
+	// 所有列宽之和严格等于 A4 可用宽度 186mm，数量和单位单独成列。
+	widths := []float64{8, 17, 30, 45, 17, 12, 25, 32}
+	headers := []string{"#", "编码", "产品", "规格", "数量", "单位", "单价", "金额"}
+	drawPurchaseOrderPDFRow(pdf, headers, widths, true)
+	pdf.SetFont("NotoSansSC", "", 8)
+	for index, item := range items {
+		values := []string{strconv.Itoa(index + 1), item.ProductCode, executionPDFText(item.ProductName), executionPDFText(item.Spec), item.Qty, item.UomCode, item.UnitPrice, item.Amount}
+		rowHeight := purchaseOrderPDFRowHeight(pdf, values, widths, 4.5)
+		if pdf.GetY()+rowHeight > 285 {
+			pdf.AddPage()
+			drawPurchaseOrderPDFRow(pdf, headers, widths, true)
+			pdf.SetFont("NotoSansSC", "", 8)
+		}
+		drawPurchaseOrderPDFRow(pdf, values, widths, false)
+	}
+	pdf.SetFont("NotoSansSC", "B", 9)
+	pdf.CellFormat(154, 8, "合计 / Total "+head.Currency, "1", 0, "R", false, 0, "")
+	pdf.CellFormat(32, 8, head.TotalAmount, "1", 1, "R", false, 0, "")
+	var pdfOut bytes.Buffer
+	if err := pdf.Output(&pdfOut); err != nil {
+		return nil, err
+	}
+	return pdfOut.Bytes(), nil
+}
+
+func purchaseOrderPDFRowHeight(pdf *fpdf.Fpdf, values []string, widths []float64, lineHeight float64) float64 {
+	maxLines := 1
+	for index, value := range values {
+		lines := pdf.SplitText(executionPDFText(value), widths[index]-2)
+		if len(lines) > maxLines {
+			maxLines = len(lines)
+		}
+	}
+	return float64(maxLines)*lineHeight + 2
+}
+
+func drawPurchaseOrderPDFRow(pdf *fpdf.Fpdf, values []string, widths []float64, header bool) {
+	lineHeight := 4.5
+	if header {
+		pdf.SetFont("NotoSansSC", "B", 8)
+	}
+	rowHeight := purchaseOrderPDFRowHeight(pdf, values, widths, lineHeight)
+	startX, startY := pdf.GetX(), pdf.GetY()
+	leftX := startX
+	for index, value := range values {
+		width := widths[index]
+		pdf.Rect(startX, startY, width, rowHeight, "")
+		pdf.SetXY(startX+1, startY+1)
+		align := "L"
+		if header {
+			align = "C"
+		} else if index >= 4 {
+			align = "R"
+		}
+		pdf.MultiCell(width-2, lineHeight, executionPDFText(value), "", align, false)
+		startX += width
+	}
+	pdf.SetXY(leftX, startY+rowHeight)
 }
 
 func executionPDFText(value string) string {
 	return strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\r' || r == '\t' {
 			return ' '
-		}
-		if r > 255 {
-			return '?'
 		}
 		return r
 	}, value)
@@ -237,8 +297,10 @@ func (s *Service) RecordSupplierConfirmation(ctx context.Context, tenantID, poID
 	if err != nil {
 		return SupplierConfirmation{}, err
 	}
-	if head.SendStatus != "SENT" {
-		return SupplierConfirmation{}, apierr.Conflict("PO_CONFIRM_NOT_SENT", "采购单正式发送后才能记录供应商确认")
+	// 采购审批通过并生成采购单后，采购单已经进入履约阶段。发送邮件只是
+	// 沟通方式之一（也可能通过电话、微信或线下完成），不能作为供应商确认的前置条件。
+	if head.Status != poOrdered && head.Status != poPartial && head.Status != poReceived {
+		return SupplierConfirmation{}, apierr.Conflict("PO_CONFIRM_NOT_ORDERED", "只有已下单采购单可以记录供应商确认")
 	}
 	items, err := s.OrderItems(ctx, tenantID, poID)
 	if err != nil {
@@ -251,7 +313,6 @@ func (s *Service) RecordSupplierConfirmation(ctx context.Context, tenantID, poID
 	for _, line := range lines {
 		byID[line.POItemID] = line
 	}
-	different := expectedDate != "" && expectedDate != head.ExpectedDate
 	for _, item := range items {
 		line, ok := byID[item.ID]
 		if !ok {
@@ -262,20 +323,11 @@ func (s *Service) RecordSupplierConfirmation(ctx context.Context, tenantID, poID
 		if qtyErr != nil || qty.LessThanOrEqual(decimal.Zero) || priceErr != nil || price.IsNegative() {
 			return SupplierConfirmation{}, apierr.Invalid("PO_CONFIRM_VALUE_INVALID", "供应商确认数量或价格无效")
 		}
-		different = different || qty.String() != decimal.RequireFromString(item.Qty).String() || price.String() != decimal.RequireFromString(item.UnitPrice).String()
 	}
-	status, instanceID := "MATCHED", int64(0)
-	if different {
-		if s.approvals == nil {
-			return SupplierConfirmation{}, apierr.Internal("PO_APPROVAL_UNAVAILABLE", "审批服务未配置")
-		}
-		summary, _ := json.Marshal(map[string]any{"po_no": head.PoNo, "supplier": head.SupplierName, "expected_date": expectedDate, "lines": lines, "reason": remark})
-		instanceID, err = s.approvals.Submit(ctx, ApprovalSubmission{BizType: BizTypePurchaseOrderChange, BizID: poID, BizNo: head.PoNo + "-CHANGE", Summary: string(summary), SubmitterID: op.ID, SubmitterName: op.Name, Amount: head.TotalAmount})
-		if err != nil {
-			return SupplierConfirmation{}, err
-		}
-		status = "PENDING_APPROVAL"
-	}
+	// 供应商确认属于采购单审批完成后的履约记录，不再次发起审批。
+	// 原采购数量、单价和交期不会被覆盖；确认值会与原值同时保存，供进度计算和差异追溯。
+	const status = "MATCHED"
+	const instanceID int64 = 0
 	var confirmationID int64
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `INSERT INTO purchase_supplier_confirmations (tenant_id,po_id,status,confirmed_date,confirmed_expected_date,remark,approval_instance_id,created_by_id,created_by_name) VALUES ($1,$2,$3,$4::date,nullif($5,'')::date,$6,nullif($7,0),$8,$9) RETURNING id`, tenantID, poID, status, confirmedDate, expectedDate, strings.TrimSpace(remark), instanceID, op.ID, op.Name).Scan(&confirmationID); err != nil {

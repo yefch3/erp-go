@@ -10,13 +10,6 @@ import (
 	"github.com/sgao19/erp-go/pkg/pgdb"
 )
 
-type executionApprovalStub struct{ next int64 }
-
-func (s *executionApprovalStub) Submit(context.Context, ApprovalSubmission) (int64, error) {
-	s.next++
-	return s.next, nil
-}
-
 func TestPurchaseOrderSendAndExecutionLifecycle(t *testing.T) {
 	dsn := os.Getenv("PROCUREMENT_TEST_DSN")
 	if dsn == "" {
@@ -52,8 +45,7 @@ func TestPurchaseOrderSendAndExecutionLifecycle(t *testing.T) {
 		_, _ = pool.Exec(ctx, `DELETE FROM purchase_requirements WHERE tenant_id=$1`, tenantID)
 	}()
 
-	approvals := &executionApprovalStub{next: 900}
-	svc := New(pool, Deps{Approvals: approvals})
+	svc := New(pool, Deps{})
 	documents, err := svc.GetOrderDocuments(ctx, tenantID, orderID)
 	if err != nil {
 		t.Fatal(err)
@@ -80,15 +72,12 @@ func TestPurchaseOrderSendAndExecutionLifecycle(t *testing.T) {
 		t.Fatal("expected duplicate send to be rejected")
 	}
 
-	confirmation, err := svc.RecordSupplierConfirmation(ctx, tenantID, orderID, time.Now().UTC().Format("2006-01-02"), time.Now().UTC().AddDate(0, 0, 11).Format("2006-01-02"), "supplier requests one day later", []SupplierConfirmationLine{{POItemID: itemID, ConfirmedQty: "10", ConfirmedUnitPrice: "520"}}, Operator{ID: 77, Name: "Buyer"})
+	confirmation, err := svc.RecordSupplierConfirmation(ctx, tenantID, orderID, time.Now().UTC().Format("2006-01-02"), time.Now().UTC().AddDate(0, 0, 11).Format("2006-01-02"), "supplier confirms partial quantity and a later date", []SupplierConfirmationLine{{POItemID: itemID, ConfirmedQty: "8", ConfirmedUnitPrice: "525"}}, Operator{ID: 77, Name: "Buyer"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if confirmation.Status != "PENDING_APPROVAL" || confirmation.ApprovalInstanceID == 0 {
-		t.Fatalf("difference did not enter approval: %#v", confirmation)
-	}
-	if err = svc.ApplyConfirmationApproval(ctx, tenantID, orderID, confirmation.ApprovalInstanceID, "APPROVED"); err != nil {
-		t.Fatal(err)
+	if confirmation.Status != "MATCHED" || confirmation.ApprovalInstanceID != 0 || len(confirmation.Lines) != 1 || confirmation.Lines[0].ConfirmedQty != "8" || confirmation.Lines[0].ConfirmedUnitPrice != "525" {
+		t.Fatalf("supplier confirmation should be recorded without a second approval: %#v", confirmation)
 	}
 	// B5 尾巴：最新回签状态要跟着订单一起出来，列表和详情才有子标签可挂。
 	if head, err := svc.GetOrder(ctx, tenantID, orderID); err != nil || head.ConfirmStatus != "APPROVED" {
@@ -120,7 +109,7 @@ func TestPurchaseOrderSendAndExecutionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(execution.Confirmations) != 1 || execution.Confirmations[0].Status != "APPROVED" || len(execution.Milestones) != 1 || len(execution.Reminders) != 1 || len(execution.Exceptions) != 1 {
+	if len(execution.Confirmations) != 1 || execution.Confirmations[0].Status != "MATCHED" || len(execution.Milestones) != 1 || len(execution.Reminders) != 1 || len(execution.Exceptions) != 1 {
 		t.Fatalf("execution=%#v", execution)
 	}
 }

@@ -126,7 +126,9 @@ UPDATE purchase_orders SET
     delivery_port_id = nullif(sqlc.arg(delivery_port_id)::bigint, 0),
     delivery_port_code = sqlc.arg(delivery_port_code)::text,
     delivery_port_name = sqlc.arg(delivery_port_name)::text,
-    warehouse_id = nullif(sqlc.arg(warehouse_id)::bigint, 0),
+    -- 采购单表为兼容直接发往港口的模式，以 0 表示“不经过仓库”。
+    -- 这里不能写成 NULL，否则恢复旧草稿时会违反 warehouse_id 的非空约束。
+    warehouse_id = sqlc.arg(warehouse_id)::bigint,
     warehouse_name = sqlc.arg(warehouse_name)::text,
     delivery_address = sqlc.arg(delivery_address)::text,
     source_change_reason = sqlc.arg(source_change_reason)::text,

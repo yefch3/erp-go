@@ -327,7 +327,17 @@ func (s *Service) CreateOrder(ctx context.Context, tenantID int64, in CreateOrde
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		var createErr error
 		head, createErr = s.createPreparedOrder(ctx, tx, tenantID, prepared, op)
-		return createErr
+		if createErr != nil {
+			return createErr
+		}
+		// “待采购并审批”就是公司对本次采购的人工审批点。员工在该页面
+		// 确认后，建单、占用采购需求和进入已下单必须在同一事务内完成；
+		// 任一步失败都会整体回滚，不能留下页面看不见的半成品草稿。
+		if createErr = commitOrderRequirements(ctx, s.q.WithTx(tx), tenantID, head.ID); createErr != nil {
+			return createErr
+		}
+		head.Status = poOrdered
+		return nil
 	})
 	if err != nil {
 		return store.CreatePurchaseOrderRow{}, err
@@ -463,47 +473,72 @@ func (s *Service) supplierForOrder(ctx context.Context, id int64) (Supplier, err
 	return supplier, nil
 }
 
-// SubmitOrder sends the order for approval.
-//
-// The requirement is NOT marked as ordered here. Until somebody has approved
-// the spend nothing has been promised to a supplier, and marking it early
-// would hide the demand from the next buyer who looks at the list — they
-// would see it as handled and it would quietly never be bought.
+// SubmitOrder 收口历史草稿或导入草稿。当前主流程的人工审批已经在
+// “待采购并审批”页面完成，因此这里不再发起第二套审批，而是原子地把
+// 草稿转成已下单；该接口也用于恢复旧版本遗留的草稿。
 func (s *Service) SubmitOrder(ctx context.Context, tenantID, id int64, op Operator) (string, int64, error) {
-	head, err := s.GetOrder(ctx, tenantID, id)
-	if err != nil {
-		return "", 0, err
-	}
-	if head.Status != poDraft && head.Status != "REJECTED" {
-		return "", 0, apierr.Conflict("PO_NOT_SUBMITTABLE", "只有草稿或已驳回的采购单可以提交审批").
-			WithMeta("status", head.Status)
-	}
-	items, err := s.q.PurchaseOrderItems(ctx, store.PurchaseOrderItemsParams{
-		TenantID: tenantID, PoID: id,
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		head, lockErr := q.GetPurchaseOrderForUpdate(ctx, store.GetPurchaseOrderForUpdateParams{
+			TenantID: tenantID, ID: id,
+		})
+		if lockErr == pgx.ErrNoRows {
+			return apierr.NotFound("PO_ORDER_NOT_FOUND", "采购单不存在")
+		}
+		if lockErr != nil {
+			return lockErr
+		}
+		if head.Status != poDraft && head.Status != "REJECTED" {
+			return apierr.Conflict("PO_NOT_SUBMITTABLE", "只有历史草稿或已驳回采购单可以确认").
+				WithMeta("status", head.Status)
+		}
+		return commitOrderRequirements(ctx, q, tenantID, id)
 	})
 	if err != nil {
-		return "", 0, err
-	}
-	if len(items) == 0 {
-		return "", 0, apierr.Invalid("PO_LINES_REQUIRED", "采购单没有明细，无法提交")
-	}
-
-	instanceID, err := s.approvals.Submit(ctx, ApprovalSubmission{
-		BizType: BizTypePurchaseOrder, BizID: head.ID, BizNo: head.PoNo,
-		Summary:     orderSummary(head, items),
-		SubmitterID: op.ID, SubmitterName: op.Name,
-		Amount: head.TotalAmount,
-	})
-	if err != nil {
-		return "", 0, err
-	}
-	if err := s.q.SetPurchaseOrderSubmitted(ctx, store.SetPurchaseOrderSubmittedParams{
-		TenantID: tenantID, ID: id, InstanceID: instanceID,
-	}); err != nil {
 		return "", 0, err
 	}
 	s.nudge(ctx, tenantID)
-	return poPending, instanceID, nil
+	return poOrdered, 0, nil
+}
+
+// commitOrderRequirements 在采购单和全部采购需求均已锁定的事务中执行。
+// 它既防止重复占用同一需求，也保证“批准成功”和“进入已下单”不会分裂。
+func commitOrderRequirements(ctx context.Context, q *store.Queries, tenantID, poID int64) error {
+	items, err := q.PurchaseOrderItemsForUpdate(ctx, store.PurchaseOrderItemsForUpdateParams{
+		TenantID: tenantID, PoID: poID,
+	})
+	if err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		return apierr.Invalid("PO_LINES_REQUIRED", "采购单没有明细，无法确认")
+	}
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.RequirementID)
+	}
+	requirements, err := q.RequirementsForOrder(ctx, store.RequirementsForOrderParams{
+		TenantID: tenantID, Ids: ids,
+	})
+	if err != nil {
+		return err
+	}
+	if reason := approvalRequirementConflict(requirements, items); reason != "" {
+		return apierr.Conflict("PO_REQUIREMENT_CHANGED", reason)
+	}
+	for _, item := range items {
+		if _, err = q.AddRequirementOrdered(ctx, store.AddRequirementOrderedParams{
+			TenantID: tenantID, ID: item.RequirementID, Qty: item.Qty,
+		}); err != nil {
+			if err == pgx.ErrNoRows {
+				return apierr.Conflict("PO_REQUIREMENT_CHANGED", "采购需求状态或剩余数量已变化，请刷新后重试")
+			}
+			return err
+		}
+	}
+	return q.SetPurchaseOrderOrdered(ctx, store.SetPurchaseOrderOrderedParams{
+		TenantID: tenantID, ID: poID,
+	})
 }
 
 // ApplyApprovalDecision is what the Kafka consumer calls. Approving an order
@@ -912,37 +947,6 @@ func (s *Service) OrderItems(ctx context.Context, tenantID, poID int64) ([]store
 
 func (s *Service) OrderReceipts(ctx context.Context, tenantID, poID int64) ([]store.ListPurchaseReceiptsRow, error) {
 	return s.q.ListPurchaseReceipts(ctx, store.ListPurchaseReceiptsParams{TenantID: tenantID, PoID: poID})
-}
-
-// orderSummary is what an approver sees before they have opened anything.
-// Enough to decide without leaving the queue: who, how much, and for what.
-func orderSummary(head store.GetPurchaseOrderRow, items []store.PurchaseOrderItemsRow) string {
-	type line struct {
-		Product string `json:"product"`
-		Qty     string `json:"qty"`
-		Price   string `json:"price"`
-		Amount  string `json:"amount"`
-	}
-	body := struct {
-		Supplier string `json:"supplier"`
-		Currency string `json:"currency"`
-		Amount   string `json:"amount"`
-		Expected string `json:"expected_date"`
-		Lines    []line `json:"lines"`
-	}{
-		Supplier: head.SupplierName, Currency: head.Currency,
-		Amount: head.TotalAmount, Expected: head.ExpectedDate,
-	}
-	for _, it := range items {
-		body.Lines = append(body.Lines, line{
-			Product: it.ProductName, Qty: it.Qty, Price: it.UnitPrice, Amount: it.Amount,
-		})
-	}
-	out, err := json.Marshal(body)
-	if err != nil {
-		return ""
-	}
-	return string(out)
 }
 
 func orZero(v string) string {
