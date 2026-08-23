@@ -777,3 +777,50 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND cc.status = 'ACTIVE'
   AND cc.email_permission = 'ALLOWED'
 ORDER BY c.name, cc.is_primary DESC, cc.sort_order, cc.id;
+
+-- name: RecordCreditRating :one
+-- 记一次评级（E3）。历史表是事实来源，主数据行上的当前评级是它的投影。
+INSERT INTO credit_ratings (
+    tenant_id, party_type, party_id, grade, previous_grade,
+    basis, evidence, rated_by, rated_by_name
+) VALUES (
+    sqlc.arg(tenant_id)::bigint, sqlc.arg(party_type)::text, sqlc.arg(party_id)::bigint,
+    sqlc.arg(grade)::text, sqlc.arg(previous_grade)::text,
+    sqlc.arg(basis)::text, sqlc.arg(evidence)::jsonb,
+    sqlc.arg(rated_by)::bigint, sqlc.arg(rated_by_name)::text
+)
+RETURNING id, rated_at;
+
+-- name: ListCreditRatings :many
+-- 一个客户或供应商的评级变更史，最近的在前。
+--
+-- 这张列表本身就是这套东西的看门人：上一次评级是什么时候、依据是什么，
+-- 摆在眼前，谁也说不出「一直都是 B」这种话。
+SELECT id, grade, previous_grade, basis, evidence,
+       rated_by, rated_by_name, rated_at
+FROM credit_ratings
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND party_type = sqlc.arg(party_type)::text
+  AND party_id = sqlc.arg(party_id)::bigint
+ORDER BY rated_at DESC, id DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: SetCustomerCreditGrade :execrows
+UPDATE customers SET credit_grade = sqlc.arg(grade)::text, credit_graded_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: SetSupplierCreditGrade :execrows
+UPDATE suppliers SET credit_grade = sqlc.arg(grade)::text, credit_graded_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: GetCustomerCreditGrade :one
+SELECT coalesce(credit_grade, '')::text AS credit_grade,
+       coalesce(credit_graded_at::text, '')::text AS credit_graded_at
+FROM customers
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: GetSupplierCreditGrade :one
+SELECT coalesce(credit_grade, '')::text AS credit_grade,
+       coalesce(credit_graded_at::text, '')::text AS credit_graded_at
+FROM suppliers
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;

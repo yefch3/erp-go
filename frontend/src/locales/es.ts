@@ -180,6 +180,28 @@ export default {
     legUnavailable: 'No se pudo consultar {legs} esta vez, así que esas columnas quedan vacías — no es «nada», es «no consultado». Prueba a recargar.',
     empty: 'No hay contratos en curso',
   },
+  credit: {
+    tab: 'Calificación', currentGrade: 'Calificación actual', neverRated: 'Sin calificar',
+    ratedToday: 'calificado hoy', ratedDaysAgo: 'calificado hace {n} días',
+    rateNow: 'Calificar', rerate: 'Recalificar', noData: 'Sin datos aún',
+    emptyHistory: 'Aún no hay historial',
+    dialogTitle: 'Calificación crediticia', grade: 'Grado', basis: 'Fundamento',
+    basisPlaceholder: '¿Por qué este grado? p. ej. tres años pagando por adelantado; o dos facturas con más de 40 días de retraso este año',
+    basisNote: 'Obligatorio. Quien lea esto en seis meses debe poder juzgar si el grado sigue vigente.',
+    basisRequired: 'Indica el fundamento de la calificación',
+    saved: 'Calificación registrada',
+    gradeHint: {
+      A: 'Sólido: siempre cumple. Condiciones estándar.',
+      B: 'Normal: incidencias menores. Condiciones estándar, con seguimiento.',
+      C: 'Vigilar: ha habido problemas reales. Endurecer condiciones.',
+      D: 'Precaución: ha causado pérdidas o incumple de forma reiterada.',
+    },
+    dim: {
+      overdue_count: 'Facturas vencidas', max_overdue_days: 'Mayor retraso', open_amount: 'Saldo pendiente',
+      on_time_rate: 'Entregas a tiempo', full_supply_rate: 'Suministro completo', quality_pass_rate: 'Aprobación de calidad',
+      short_supply_count: 'Entregas incompletas',
+    },
+  },
   receivableDue: {
     eyebrow: 'COBROS PENDIENTES', title: 'Cobros por vencer', subtitle: 'El plazo cuenta desde la entrada en vigor del contrato',
     overdueCount: 'Vencidos', overdueHint: 'Pasada la fecha acordada y sin cobrar',

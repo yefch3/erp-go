@@ -8,6 +8,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type CreditRating struct {
+	ID            int64
+	TenantID      int64
+	PartyType     string
+	PartyID       int64
+	Grade         string
+	PreviousGrade string
+	Basis         string
+	Evidence      []byte
+	RatedBy       int64
+	RatedByName   string
+	RatedAt       pgtype.Timestamptz
+}
+
 type Customer struct {
 	ID               int64
 	TenantID         int64
@@ -44,6 +58,8 @@ type Customer struct {
 	CreditCurrency   string
 	CreditStatus     string
 	BusinessStatus   string
+	CreditGrade      string
+	CreditGradedAt   pgtype.Timestamptz
 }
 
 type CustomerAddress struct {
@@ -318,6 +334,8 @@ type Supplier struct {
 	RegisteredAddress string
 	PaymentTerm       string
 	BusinessTypes     []string
+	CreditGrade       string
+	CreditGradedAt    pgtype.Timestamptz
 }
 
 type SupplierChangeLog struct {

@@ -228,6 +228,17 @@
             }}</el-tag>
           </div>
         </div>
+
+        <SectionHead title="信用评级" />
+        <CreditRating
+          v-if="customer"
+          party="customers"
+          :party-id="customer.id"
+          :grade="customer.creditGrade || ''"
+          :graded-at="customer.creditGradedAt || ''"
+          :can-rate="canWrite"
+          @rated="onRated"
+        />
       </el-tab-pane>
 
       <el-tab-pane label="负责人" name="owners">
@@ -623,6 +634,7 @@ import {
   validateCustomerProfile,
 } from "../lib/customerForms";
 import { useAuthStore } from "../stores/auth";
+import CreditRating from "../components/CreditRating.vue";
 
 const InfoRow = defineComponent({
   props: { label: String, value: [String, Number] },
@@ -672,6 +684,14 @@ const route = useRoute(),
   auth = useAuthStore(),
   id = String(route.params.id);
 const canWrite = computed(() => auth.can("masterdata:customer:write"));
+
+// 评完就地更新，不用刷整页——组件自己会重拉历史，这里只同步顶上那个当前
+// 评级和「多久没评了」。
+function onRated(grade: string) {
+  if (!customer.value) return;
+  customer.value.creditGrade = grade;
+  customer.value.creditGradedAt = new Date().toISOString();
+}
 const loading = ref(true),
   saving = ref(false),
   activeTab = ref("basic");

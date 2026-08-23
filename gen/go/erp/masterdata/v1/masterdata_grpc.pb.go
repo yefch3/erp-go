@@ -1135,6 +1135,154 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	CreditRatingService_RateCredit_FullMethodName        = "/erp.masterdata.v1.CreditRatingService/RateCredit"
+	CreditRatingService_ListCreditRatings_FullMethodName = "/erp.masterdata.v1.CreditRatingService/ListCreditRatings"
+)
+
+// CreditRatingServiceClient is the client API for CreditRatingService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// SupplierService owns supplier master data, referenced by procurement.
+// CreditRatingService 管信用评级（E3）。客户和供应商共用——问的问题不同，
+// 但「谁在什么时候依据什么评了什么」是同一个形状。
+type CreditRatingServiceClient interface {
+	RateCredit(ctx context.Context, in *RateCreditRequest, opts ...grpc.CallOption) (*RateCreditResponse, error)
+	ListCreditRatings(ctx context.Context, in *ListCreditRatingsRequest, opts ...grpc.CallOption) (*ListCreditRatingsResponse, error)
+}
+
+type creditRatingServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewCreditRatingServiceClient(cc grpc.ClientConnInterface) CreditRatingServiceClient {
+	return &creditRatingServiceClient{cc}
+}
+
+func (c *creditRatingServiceClient) RateCredit(ctx context.Context, in *RateCreditRequest, opts ...grpc.CallOption) (*RateCreditResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RateCreditResponse)
+	err := c.cc.Invoke(ctx, CreditRatingService_RateCredit_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *creditRatingServiceClient) ListCreditRatings(ctx context.Context, in *ListCreditRatingsRequest, opts ...grpc.CallOption) (*ListCreditRatingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCreditRatingsResponse)
+	err := c.cc.Invoke(ctx, CreditRatingService_ListCreditRatings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// CreditRatingServiceServer is the server API for CreditRatingService service.
+// All implementations must embed UnimplementedCreditRatingServiceServer
+// for forward compatibility.
+//
+// SupplierService owns supplier master data, referenced by procurement.
+// CreditRatingService 管信用评级（E3）。客户和供应商共用——问的问题不同，
+// 但「谁在什么时候依据什么评了什么」是同一个形状。
+type CreditRatingServiceServer interface {
+	RateCredit(context.Context, *RateCreditRequest) (*RateCreditResponse, error)
+	ListCreditRatings(context.Context, *ListCreditRatingsRequest) (*ListCreditRatingsResponse, error)
+	mustEmbedUnimplementedCreditRatingServiceServer()
+}
+
+// UnimplementedCreditRatingServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedCreditRatingServiceServer struct{}
+
+func (UnimplementedCreditRatingServiceServer) RateCredit(context.Context, *RateCreditRequest) (*RateCreditResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RateCredit not implemented")
+}
+func (UnimplementedCreditRatingServiceServer) ListCreditRatings(context.Context, *ListCreditRatingsRequest) (*ListCreditRatingsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCreditRatings not implemented")
+}
+func (UnimplementedCreditRatingServiceServer) mustEmbedUnimplementedCreditRatingServiceServer() {}
+func (UnimplementedCreditRatingServiceServer) testEmbeddedByValue()                             {}
+
+// UnsafeCreditRatingServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to CreditRatingServiceServer will
+// result in compilation errors.
+type UnsafeCreditRatingServiceServer interface {
+	mustEmbedUnimplementedCreditRatingServiceServer()
+}
+
+func RegisterCreditRatingServiceServer(s grpc.ServiceRegistrar, srv CreditRatingServiceServer) {
+	// If the following call pancis, it indicates UnimplementedCreditRatingServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&CreditRatingService_ServiceDesc, srv)
+}
+
+func _CreditRatingService_RateCredit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RateCreditRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CreditRatingServiceServer).RateCredit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CreditRatingService_RateCredit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CreditRatingServiceServer).RateCredit(ctx, req.(*RateCreditRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CreditRatingService_ListCreditRatings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCreditRatingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CreditRatingServiceServer).ListCreditRatings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CreditRatingService_ListCreditRatings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CreditRatingServiceServer).ListCreditRatings(ctx, req.(*ListCreditRatingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// CreditRatingService_ServiceDesc is the grpc.ServiceDesc for CreditRatingService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var CreditRatingService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "erp.masterdata.v1.CreditRatingService",
+	HandlerType: (*CreditRatingServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "RateCredit",
+			Handler:    _CreditRatingService_RateCredit_Handler,
+		},
+		{
+			MethodName: "ListCreditRatings",
+			Handler:    _CreditRatingService_ListCreditRatings_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "erp/masterdata/v1/masterdata.proto",
+}
+
+const (
 	SupplierService_CreateSupplier_FullMethodName                = "/erp.masterdata.v1.SupplierService/CreateSupplier"
 	SupplierService_GetSupplier_FullMethodName                   = "/erp.masterdata.v1.SupplierService/GetSupplier"
 	SupplierService_ListSuppliers_FullMethodName                 = "/erp.masterdata.v1.SupplierService/ListSuppliers"
@@ -1183,8 +1331,6 @@ const (
 // SupplierServiceClient is the client API for SupplierService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// SupplierService owns supplier master data, referenced by procurement.
 type SupplierServiceClient interface {
 	CreateSupplier(ctx context.Context, in *CreateSupplierRequest, opts ...grpc.CallOption) (*CreateSupplierResponse, error)
 	GetSupplier(ctx context.Context, in *GetSupplierRequest, opts ...grpc.CallOption) (*GetSupplierResponse, error)
@@ -1674,8 +1820,6 @@ func (c *supplierServiceClient) GetFactoryDeactivationImpact(ctx context.Context
 // SupplierServiceServer is the server API for SupplierService service.
 // All implementations must embed UnimplementedSupplierServiceServer
 // for forward compatibility.
-//
-// SupplierService owns supplier master data, referenced by procurement.
 type SupplierServiceServer interface {
 	CreateSupplier(context.Context, *CreateSupplierRequest) (*CreateSupplierResponse, error)
 	GetSupplier(context.Context, *GetSupplierRequest) (*GetSupplierResponse, error)
