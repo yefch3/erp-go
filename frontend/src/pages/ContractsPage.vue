@@ -767,6 +767,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { del, get, post, put } from '../api'
+import { CURRENCIES } from '../constants'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 
@@ -952,7 +953,6 @@ const detailOpen = ref(false)
 const generateOpen = ref(false)
 const directOpen = ref(false)
 const customers = ref<{ id: string; code: string; name: string }[]>([])
-const CURRENCIES = ['USD', 'EUR', 'CNY', 'JPY', 'GBP']
 
 // productId is undefined rather than 0 while unset: el-select shows its
 // placeholder for undefined, but renders a literal "0" for zero.

@@ -197,6 +197,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { download, get, post, put, saveBlob } from '../api'
+import { CURRENCIES } from '../constants'
 import { useAuthStore } from '../stores/auth'
 
 interface Customer { id: string; code: string; name: string }
@@ -240,7 +241,6 @@ interface Item {
 }
 
 const STATUSES = ['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'CANCELLED']
-const CURRENCIES = ['USD', 'EUR', 'CNY', 'GBP', 'JPY', 'HKD']
 const INCOTERMS = ['FOB', 'CIF', 'CFR', 'EXW', 'DDP']
 const EMPTY_FORM = {
   customerId: '', contactId: '', currency: 'USD', incoterm: 'FOB', paymentMethod: '',

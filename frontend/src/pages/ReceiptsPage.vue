@@ -317,6 +317,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post } from '../api'
+import { CURRENCIES } from '../constants'
 import { useAuthStore } from '../stores/auth'
 
 interface Transaction {
@@ -354,7 +355,6 @@ interface Receivable { contractId: string; contractNo: string; customerName: str
 interface Account { id: string; accountNo: string; accountName: string; bankName: string; currency: string }
 interface DraftRow { contractId?: number; amount: string; fee: string }
 
-const CURRENCIES = ['USD', 'EUR', 'CNY', 'JPY', 'GBP']
 
 const { t } = useI18n()
 const auth = useAuthStore()

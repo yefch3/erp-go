@@ -100,3 +100,11 @@ export function splitPhone(phone: string): { dial: string; number: string } {
   if (!match) return { dial: '', number: phone }
   return { dial: match, number: phone.slice(match.length).trim() }
 }
+
+// 交易币种。曾经在五个页面各写一遍，而且写的还不一样——报价单能报
+// HKD，客户主数据里却选不出来，同一家客户的报价和主数据从此对不上。
+// 列表取的是当时五处的并集；要加新币种改这一处即可。
+//
+// 币种是封闭集合，所以 UI 一律用下拉：手输会写出 usd、USDD、以及
+// 全角字符，而这些最终都要拿去和汇率表、银行流水对账。
+export const CURRENCIES: readonly string[] = ['USD', 'EUR', 'CNY', 'GBP', 'JPY', 'HKD']
