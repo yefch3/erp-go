@@ -171,6 +171,8 @@
             v-if="auth.can('shipping:schedule:read') && route.path.startsWith('/shipping')"
             ref="shippingNotifications"
           />
+          <!-- 应收提醒常驻：逾期的钱不该只在打开某个页面时才看得见。 -->
+          <ReceivableReminders v-if="auth.can('export:receipt:read')" />
           <LangSwitcher />
           <el-dropdown @command="onCommand">
             <span class="user">{{ auth.employeeName || '—' }}</span>
@@ -238,6 +240,7 @@ import { post } from '../api'
 import { useAuthStore } from '../stores/auth'
 import LangSwitcher from '../components/LangSwitcher.vue'
 import ShippingArrivalNotifications from '../components/ShippingArrivalNotifications.vue'
+import ReceivableReminders from '../components/ReceivableReminders.vue'
 import { onLive, startLive, stopLive } from '../live'
 
 const passwordOpen = ref(false)
@@ -294,7 +297,10 @@ const financeGroups = computed(() => [
     key: 'receivable',
     label: t('financeNav.receivable'),
     items: auth.can('export:receipt:read')
-      ? [{ path: '/receipts', label: t('financeNav.receipts') }]
+      ? [
+          { path: '/receivable-due', label: t('financeNav.receivableDue') },
+          { path: '/receipts', label: t('financeNav.receipts') },
+        ]
       : [],
   },
   {

@@ -3,6 +3,7 @@ package grpcin
 import (
 	"context"
 
+	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/services/export/internal/app"
@@ -157,6 +158,62 @@ func (h *ReceiptHandler) ListOpenReceivables(ctx context.Context, req *exv1.List
 		})
 	}
 	return &exv1.ListOpenReceivablesResponse{Receivables: out}, nil
+}
+
+// ListReceivableDue 是财务的催收清单（E1）。按人围栏——应收是钱的事，
+// 谁能看见哪张合同的欠款和谁能看见哪张合同是同一个问题。
+func (h *ReceiptHandler) ListReceivableDue(ctx context.Context, req *exv1.ListReceivableDueRequest) (*exv1.ListReceivableDueResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	rows, total, err := h.svc.ListReceivableDue(ctx, grpcx.TenantID(ctx), app.ReceivableFilter{
+		OverdueOnly: req.GetOverdueOnly(), UnsetOnly: req.GetUnsetOnly(), Keyword: req.GetKeyword(),
+	}, req.GetPage().GetPage(), req.GetPage().GetPageSize(),
+		app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*exv1.ReceivableDue, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, &exv1.ReceivableDue{
+			ContractId: r.ContractID, ContractNo: r.ContractNo,
+			CustomerId: r.CustomerID, CustomerName: r.CustomerName,
+			SalesEmployeeId: r.SalesEmployeeID, SalesEmployee: r.SalesEmployee,
+			DueDate: r.DueDate, EffectiveDate: r.EffectiveDate,
+			Currency: r.Currency, TotalAmount: r.TotalAmount,
+			ReceivedAmount: r.ReceivedAmount, OpenAmount: r.OpenAmount,
+			OverdueDays: r.OverdueDays, DueUnset: r.DueUnset,
+		})
+	}
+	return &exv1.ListReceivableDueResponse{Items: out, Meta: &commonv1.PageMeta{Total: total}}, nil
+}
+
+// ListReceivableReminders 是本人的应收提醒收件箱——按登录人隔离，
+// 不需要额外围栏：提醒本来就是发给具体某个人的。
+func (h *ReceiptHandler) ListReceivableReminders(ctx context.Context, req *exv1.ListReceivableRemindersRequest) (*exv1.ListReceivableRemindersResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	rows, unread, err := h.svc.ReceivableInbox(ctx, grpcx.TenantID(ctx), op.EmployeeID, req.GetUnreadOnly(), req.GetLimit())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*exv1.ReceivableReminder, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, &exv1.ReceivableReminder{
+			Id: r.ID, ContractId: r.ContractID, ContractNo: r.ContractNo,
+			CustomerName: r.CustomerName, ReminderType: r.Type, PeriodNo: r.PeriodNo,
+			DueDate: r.DueDate, OpenAmount: r.OpenAmount, Currency: r.Currency,
+			Title: r.Title, Content: r.Content, DetailUrl: r.DetailURL,
+			CreatedAt: r.CreatedAt, Unread: r.Unread,
+		})
+	}
+	return &exv1.ListReceivableRemindersResponse{Items: out, UnreadTotal: unread}, nil
+}
+
+func (h *ReceiptHandler) MarkReceivableRemindersRead(ctx context.Context, req *exv1.MarkReceivableRemindersReadRequest) (*exv1.MarkReceivableRemindersReadResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	n, err := h.svc.MarkReceivableRemindersRead(ctx, grpcx.TenantID(ctx), op.EmployeeID, req.GetIds())
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.MarkReceivableRemindersReadResponse{Marked: n}, nil
 }
 
 func (h *ReceiptHandler) GetContractReceipts(ctx context.Context, req *exv1.GetContractReceiptsRequest) (*exv1.GetContractReceiptsResponse, error) {

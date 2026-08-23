@@ -255,6 +255,9 @@ type PurchaseOrder struct {
 	SendError            string
 	SendTemplateVersion  string
 	SendAttachmentNames  []byte
+	ClosedAt             pgtype.Timestamptz
+	ClosedByID           int64
+	ClosedByName         string
 	SourceQuotationID    int64
 	SourceQuotationNo    string
 	SourceCostScenarioID int64
@@ -270,9 +273,6 @@ type PurchaseOrder struct {
 	WarehouseName        string
 	DeliveryAddress      string
 	SourceChangeReason   string
-	ClosedAt             pgtype.Timestamptz
-	ClosedByID           int64
-	ClosedByName         string
 }
 
 type PurchaseOrderImport struct {
@@ -426,6 +426,8 @@ type PurchaseRequirement struct {
 	CreatedAt           pgtype.Timestamptz
 	UpdatedAt           pgtype.Timestamptz
 	ReceivedQty         pgtype.Numeric
+	OwnerID             int64
+	OwnerName           string
 	QuotationID         int64
 	QuotationNo         string
 	CostScenarioID      int64
@@ -443,8 +445,6 @@ type PurchaseRequirement struct {
 	SourceUnitPrice     pgtype.Numeric
 	Moq                 pgtype.Numeric
 	LeadTime            string
-	OwnerID             int64
-	OwnerName           string
 }
 
 type PurchaseSupplierConfirmation struct {

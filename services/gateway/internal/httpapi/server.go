@@ -385,6 +385,11 @@ func (s *Server) Router() http.Handler {
 		// Reversal, not deletion: there is no DELETE route here on purpose.
 		r.With(s.perm("export:receipt:write")).Post("/api/receipt-allocations/{id}/reverse", s.reverseAllocation)
 		r.With(s.perm("export:receipt:read")).Get("/api/open-receivables", s.listOpenReceivables)
+		// 应收到期清单（E1）：沿用收款的读权限——能看收款的人就该看得见该收什么。
+		r.With(s.perm("export:receipt:read")).Get("/api/receivable-due", s.listReceivableDue)
+		// 提醒收件箱按登录人隔离，读自己的东西不再另设权限。
+		r.Get("/api/receivable-reminders", s.listReceivableReminders)
+		r.Post("/api/receivable-reminders/read", s.markReceivableRemindersRead)
 		// Attribute templates. Defining what a category's spec looks like is
 		// catalogue maintenance, so it rides on the product write permission
 		// rather than inventing a third one for the same job.

@@ -37,6 +37,7 @@ export const router = createRouter({
         { path: 'shipping', component: () => import('./pages/ShippingPage.vue') },
         { path: 'shipping/:id', component: () => import('./pages/ShippingDetailPage.vue') },
         { path: 'receipts', component: () => import('./pages/ReceiptsPage.vue') },
+        { path: 'receivable-due', component: () => import('./pages/ReceivableDuePage.vue') },
         { path: 'stocks', component: () => import('./pages/StocksPage.vue') },
         { path: 'outbounds', component: () => import('./pages/OutboundsPage.vue') },
         { path: 'procurement', component: () => import('./pages/ProcurementPage.vue') },

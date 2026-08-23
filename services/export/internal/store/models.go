@@ -63,6 +63,7 @@ type Contract struct {
 	UpdatedAt            pgtype.Timestamptz
 	UpdatedBy            int64
 	SignatureSource      string
+	ReceivableDueDate    pgtype.Date
 }
 
 type ContractAttachment struct {
@@ -247,6 +248,25 @@ type ReceiptAllocation struct {
 	AllocatedBy     int64
 	AllocatedByName string
 	AllocatedAt     pgtype.Timestamptz
+}
+
+type ReceivableReminder struct {
+	ID                  int64
+	TenantID            int64
+	ContractID          int64
+	ContractNo          string
+	CustomerName        string
+	RecipientEmployeeID int64
+	ReminderType        string
+	PeriodNo            int32
+	DueDate             pgtype.Date
+	OpenAmount          pgtype.Numeric
+	Currency            string
+	Title               string
+	Content             string
+	DetailUrl           string
+	CreatedAt           pgtype.Timestamptz
+	ReadAt              pgtype.Timestamptz
 }
 
 type Shipment struct {

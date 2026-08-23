@@ -91,6 +91,31 @@ func (q *Queries) AllocationReversed(ctx context.Context, arg AllocationReversed
 	return reversed, err
 }
 
+const backfillReceivableDue = `-- name: BackfillReceivableDue :execrows
+UPDATE contracts SET receivable_due_date = (effective_at::date + $1::int)
+WHERE tenant_id = $2::bigint
+  AND customer_id = $3::bigint
+  AND receivable_due_date IS NULL
+  AND effective_at IS NOT NULL
+  AND $1::int > 0
+`
+
+type BackfillReceivableDueParams struct {
+	PaymentDays int32
+	TenantID    int64
+	CustomerID  int64
+}
+
+// 存量补算：已经生效但没有到期日的合同，按传入的（客户 → 账期）补。
+// 幂等，只碰为空的行。
+func (q *Queries) BackfillReceivableDue(ctx context.Context, arg BackfillReceivableDueParams) (int64, error) {
+	result, err := q.db.Exec(ctx, backfillReceivableDue, arg.PaymentDays, arg.TenantID, arg.CustomerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const contractReceiptProgress = `-- name: ContractReceiptProgress :one
 SELECT
     c.id, c.contract_no, c.customer_name,
@@ -641,6 +666,207 @@ func (q *Queries) ListBankTransactions(ctx context.Context, arg ListBankTransact
 	return items, nil
 }
 
+const listReceivableDue = `-- name: ListReceivableDue :many
+SELECT
+    c.id, c.contract_no, c.customer_id, c.customer_name,
+    c.sales_employee_id, c.sales_employee,
+    coalesce(c.receivable_due_date::text, '')::text AS due_date,
+    coalesce(c.effective_at::date::text, '')::text  AS effective_date,
+    coalesce(v.currency, '')::text                  AS currency,
+    coalesce(v.total_amount, 0)::text               AS total_amount,
+    coalesce(r.received, 0)::text                   AS received_amount,
+    (coalesce(v.total_amount, 0) - coalesce(r.received, 0))::text AS open_amount,
+    coalesce((current_date - c.receivable_due_date), 0)::int       AS overdue_days,
+    (c.receivable_due_date IS NULL)::bool                          AS due_unset,
+    count(*) OVER () AS total
+FROM contracts c
+JOIN contract_versions v ON v.id = c.current_version_id
+LEFT JOIN (
+    SELECT contract_id, sum(amount + fee_amount) AS received
+    FROM receipt_allocations
+    WHERE tenant_id = $1::bigint
+    GROUP BY contract_id
+) r ON r.contract_id = c.id
+WHERE c.tenant_id = $1::bigint
+  AND c.status IN ('EFFECTIVE', 'EXECUTING')
+  -- 收完的不再出现在催收清单上。留 0.01 的容差是因为汇路手续费：
+  -- 客户汇的 50000 到账 49975，fee_amount 补上差额后总和可能有分位尾差。
+  AND (coalesce(v.total_amount, 0) - coalesce(r.received, 0)) > 0.01
+  -- 数据范围：应收是钱的事，沿用出口模块自己的围栏（同合同列表）。
+  AND ($2::bool OR c.sales_employee_id = ANY($3::bigint[]))
+  -- 只看逾期 / 只看未配账期，两个互斥的筛子，都不给就是全部。
+  AND ($4::bool = false
+       OR (c.receivable_due_date IS NOT NULL AND c.receivable_due_date < current_date))
+  AND ($5::bool = false OR c.receivable_due_date IS NULL)
+  AND ($6::text = ''
+       OR c.contract_no ILIKE '%' || $6::text || '%'
+       OR c.customer_name ILIKE '%' || $6::text || '%')
+ORDER BY c.receivable_due_date ASC NULLS LAST, c.id DESC
+LIMIT $8::int OFFSET $7::int
+`
+
+type ListReceivableDueParams struct {
+	TenantID    int64
+	ScopeAll    bool
+	EmployeeIds []int64
+	OverdueOnly bool
+	UnsetOnly   bool
+	Keyword     string
+	RowOffset   int32
+	RowLimit    int32
+}
+
+type ListReceivableDueRow struct {
+	ID              int64
+	ContractNo      string
+	CustomerID      int64
+	CustomerName    string
+	SalesEmployeeID int64
+	SalesEmployee   string
+	DueDate         string
+	EffectiveDate   string
+	Currency        string
+	TotalAmount     string
+	ReceivedAmount  string
+	OpenAmount      string
+	OverdueDays     int32
+	DueUnset        bool
+	Total           int64
+}
+
+// 财务的到期清单：还没收完的生效合同，按该收的日子排，逾期的在最前。
+//
+// 「还没收完」是算出来的而不是存的状态——sum(核销) < 合同金额。核销表
+// append-only（冲销是负行），所以求和天然反映当下的真相。
+//
+// overdue_days 正数表示已逾期，负数表示还有几天到期；到期日为空的合同
+// 排在最后，它们缺的是客户账期配置，不是钱。
+func (q *Queries) ListReceivableDue(ctx context.Context, arg ListReceivableDueParams) ([]ListReceivableDueRow, error) {
+	rows, err := q.db.Query(ctx, listReceivableDue,
+		arg.TenantID,
+		arg.ScopeAll,
+		arg.EmployeeIds,
+		arg.OverdueOnly,
+		arg.UnsetOnly,
+		arg.Keyword,
+		arg.RowOffset,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListReceivableDueRow
+	for rows.Next() {
+		var i ListReceivableDueRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ContractNo,
+			&i.CustomerID,
+			&i.CustomerName,
+			&i.SalesEmployeeID,
+			&i.SalesEmployee,
+			&i.DueDate,
+			&i.EffectiveDate,
+			&i.Currency,
+			&i.TotalAmount,
+			&i.ReceivedAmount,
+			&i.OpenAmount,
+			&i.OverdueDays,
+			&i.DueUnset,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReceivableReminders = `-- name: ListReceivableReminders :many
+SELECT id, contract_id, contract_no, customer_name, reminder_type, period_no,
+       due_date::text AS due_date, open_amount::text AS open_amount, currency,
+       title, content, detail_url, created_at,
+       (read_at IS NULL)::bool AS unread,
+       count(*) FILTER (WHERE read_at IS NULL) OVER () AS unread_total
+FROM receivable_reminders
+WHERE tenant_id = $1::bigint
+  AND recipient_employee_id = $2::bigint
+  AND ($3::bool = false OR read_at IS NULL)
+ORDER BY (read_at IS NULL) DESC, created_at DESC
+LIMIT $4::int
+`
+
+type ListReceivableRemindersParams struct {
+	TenantID   int64
+	EmployeeID int64
+	UnreadOnly bool
+	RowLimit   int32
+}
+
+type ListReceivableRemindersRow struct {
+	ID           int64
+	ContractID   int64
+	ContractNo   string
+	CustomerName string
+	ReminderType string
+	PeriodNo     int32
+	DueDate      string
+	OpenAmount   string
+	Currency     string
+	Title        string
+	Content      string
+	DetailUrl    string
+	CreatedAt    pgtype.Timestamptz
+	Unread       bool
+	UnreadTotal  int64
+}
+
+// 某人的应收提醒收件箱。未读在前，同一批里新的在前。
+func (q *Queries) ListReceivableReminders(ctx context.Context, arg ListReceivableRemindersParams) ([]ListReceivableRemindersRow, error) {
+	rows, err := q.db.Query(ctx, listReceivableReminders,
+		arg.TenantID,
+		arg.EmployeeID,
+		arg.UnreadOnly,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListReceivableRemindersRow
+	for rows.Next() {
+		var i ListReceivableRemindersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ContractID,
+			&i.ContractNo,
+			&i.CustomerName,
+			&i.ReminderType,
+			&i.PeriodNo,
+			&i.DueDate,
+			&i.OpenAmount,
+			&i.Currency,
+			&i.Title,
+			&i.Content,
+			&i.DetailUrl,
+			&i.CreatedAt,
+			&i.Unread,
+			&i.UnreadTotal,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockBankTransaction = `-- name: LockBankTransaction :one
 SELECT id, bank_ref, direction, amount::text AS amount, currency, disposition
 FROM bank_transactions
@@ -674,6 +900,29 @@ func (q *Queries) LockBankTransaction(ctx context.Context, arg LockBankTransacti
 		&i.Disposition,
 	)
 	return i, err
+}
+
+const markReceivableRemindersRead = `-- name: MarkReceivableRemindersRead :execrows
+UPDATE receivable_reminders SET read_at = now()
+WHERE tenant_id = $1::bigint
+  AND recipient_employee_id = $2::bigint
+  AND read_at IS NULL
+  AND ($3::bigint[] = '{}' OR id = ANY($3::bigint[]))
+`
+
+type MarkReceivableRemindersReadParams struct {
+	TenantID   int64
+	EmployeeID int64
+	Ids        []int64
+}
+
+// 标记已读。只动自己的——收件箱是按人隔离的，别人的提醒不该被谁点掉。
+func (q *Queries) MarkReceivableRemindersRead(ctx context.Context, arg MarkReceivableRemindersReadParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markReceivableRemindersRead, arg.TenantID, arg.EmployeeID, arg.Ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const openReceivables = `-- name: OpenReceivables :many
@@ -829,6 +1078,25 @@ func (q *Queries) RecordBankTransaction(ctx context.Context, arg RecordBankTrans
 	return id, err
 }
 
+const setContractReceivableDue = `-- name: SetContractReceivableDue :exec
+UPDATE contracts SET receivable_due_date = $1::text::date
+WHERE tenant_id = $2::bigint AND id = $3::bigint
+  AND receivable_due_date IS NULL
+`
+
+type SetContractReceivableDueParams struct {
+	DueDate  string
+	TenantID int64
+	ID       int64
+}
+
+// 合同生效那一刻把到期日钉下来（E1）。只在为空时写，和 effective_at
+// 同一个哲学：第一次生效定的日子就是约定，之后客户改账期不再回头改它。
+func (q *Queries) SetContractReceivableDue(ctx context.Context, arg SetContractReceivableDueParams) error {
+	_, err := q.db.Exec(ctx, setContractReceivableDue, arg.DueDate, arg.TenantID, arg.ID)
+	return err
+}
+
 const setTransactionDisposition = `-- name: SetTransactionDisposition :execrows
 UPDATE bank_transactions SET
     disposition     = $1::text,
@@ -854,6 +1122,77 @@ func (q *Queries) SetTransactionDisposition(ctx context.Context, arg SetTransact
 		arg.TenantID,
 		arg.ID,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const sweepReceivableReminders = `-- name: SweepReceivableReminders :execrows
+INSERT INTO receivable_reminders (
+    tenant_id, contract_id, contract_no, customer_name, recipient_employee_id,
+    reminder_type, period_no, due_date, open_amount, currency, title, content, detail_url
+)
+SELECT
+    c.tenant_id, c.id, c.contract_no, c.customer_name, c.sales_employee_id,
+    d.reminder_type, d.period_no, c.receivable_due_date,
+    (v.total_amount - coalesce(r.received, 0)), v.currency,
+    d.title, d.content, '/receivable-due'
+FROM contracts c
+JOIN contract_versions v ON v.id = c.current_version_id
+LEFT JOIN (
+    SELECT tenant_id, contract_id, sum(amount + fee_amount) AS received
+    FROM receipt_allocations
+    GROUP BY tenant_id, contract_id
+) r ON r.tenant_id = c.tenant_id AND r.contract_id = c.id
+CROSS JOIN LATERAL (
+    SELECT
+        CASE
+            WHEN current_date > c.receivable_due_date THEN 'OVERDUE'
+            WHEN c.receivable_due_date - current_date <= 7 THEN 'DUE'
+            ELSE 'SOON'
+        END AS reminder_type,
+        CASE
+            WHEN current_date > c.receivable_due_date
+            THEN ceil((current_date - c.receivable_due_date)::numeric / 7)::int
+            ELSE 0
+        END AS period_no,
+        CASE
+            WHEN current_date > c.receivable_due_date
+            THEN c.contract_no || ' 应收逾期 ' || (current_date - c.receivable_due_date) || ' 天'
+            WHEN c.receivable_due_date = current_date THEN c.contract_no || ' 今天到期'
+            ELSE c.contract_no || ' 还有 ' || (c.receivable_due_date - current_date) || ' 天到期'
+        END AS title,
+        c.customer_name || ' · 未收 ' || v.currency || ' ' ||
+            to_char(v.total_amount - coalesce(r.received, 0), 'FM999999999990.00') ||
+            ' · 应收日 ' || c.receivable_due_date AS content
+) d
+WHERE c.status IN ('EFFECTIVE', 'EXECUTING')
+  AND c.receivable_due_date IS NOT NULL
+  -- 没有负责人就没有收件人。这类合同在清单页上仍然看得见，只是没人被点名。
+  AND c.sales_employee_id > 0
+  AND (v.total_amount - coalesce(r.received, 0)) > 0.01
+  -- 只在进入视野之后才提醒：30 天以外的不打扰。
+  AND c.receivable_due_date - current_date <= 30
+ON CONFLICT (tenant_id, contract_id, recipient_employee_id, reminder_type, period_no, due_date)
+DO NOTHING
+`
+
+// 一趟扫出所有该提醒而未提醒的合同，直接写成站内信。
+//
+// 幂等全靠唯一键：同一张合同、同一个人、同一档、同一轮、同一个到期日
+// 只会有一行。所以 worker 多跑几次、停几天再补跑，结果都一样。
+//
+// 档位用**范围**判断而不是等号——「今天正好是到期前 30 天」这种写法，
+// worker 那天没跑就永远错过。范围加唯一键则是：第一次进入范围时发一条，
+// 之后再扫都撞唯一键，什么也不发。
+//
+// 逾期按 7 天一轮：period_no = ceil(逾期天数 / 7)，所以逾期第 1–7 天是
+// 第一轮，8–14 天是第二轮。轮次进了唯一键，于是每周恰好再响一次。
+// 跨租户扫描：worker 没有租户上下文，新租户也不该需要额外配置才被覆盖。
+// 每一行写回的仍是合同自己的 tenant_id。
+func (q *Queries) SweepReceivableReminders(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, sweepReceivableReminders)
 	if err != nil {
 		return 0, err
 	}

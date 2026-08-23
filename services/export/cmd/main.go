@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -146,6 +147,10 @@ func run(log *slog.Logger) error {
 			log.Error("stock consumer stopped", "err", err)
 		}
 	}()
+
+	// 应收到期提醒（E1）：每天扫一趟，把该提醒而未提醒的写成站内信。
+	// 跨租户，启动时先跑一次补上停机期间的。
+	go svc.RunReceivableReminderWorker(ctx, 24*time.Hour, log)
 
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
 	exv1.RegisterQuotationServiceServer(srv, grpcin.New(svc))
