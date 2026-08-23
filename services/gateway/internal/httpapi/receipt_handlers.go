@@ -117,6 +117,22 @@ func (s *Server) reopenTransaction(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// 应收到期清单（E1）。围栏在服务端（按销售负责人），这里只转参数。
+func (s *Server) listReceivableDue(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	resp, err := s.Receipts.ListReceivableDue(r.Context(), &exv1.ListReceivableDueRequest{
+		Page:        pageFromQuery(r),
+		OverdueOnly: q.Get("overdue") == "1",
+		UnsetOnly:   q.Get("unset") == "1",
+		Keyword:     q.Get("keyword"),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) listOpenReceivables(w http.ResponseWriter, r *http.Request) {
 	customerID, _ := strconv.ParseInt(r.URL.Query().Get("customer_id"), 10, 64)
 	resp, err := s.Receipts.ListOpenReceivables(r.Context(), &exv1.ListOpenReceivablesRequest{

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -195,6 +196,17 @@ func (s *Service) SignContract(ctx context.Context, tenantID, id int64, op Opera
 	if err != nil {
 		return "", err
 	}
+	// 应收到期日（E1）：账期从合同生效日起算，而生效就是现在。
+	//
+	// 在事务外问客户主数据，因为那是一次网络调用——放进事务里会让锁
+	// 持有时间取决于另一个服务的响应。账期拿不到不该拦住签署：合同生效
+	// 是业务事实，到期日只是它的推论，留空之后能补（清单页会催）。
+	dueDate := ""
+	if s.customers != nil && view.Contract.CustomerID > 0 {
+		if customer, cerr := s.customers.Get(ctx, view.Contract.CustomerID); cerr == nil && customer.PaymentDays > 0 {
+			dueDate = time.Now().UTC().AddDate(0, 0, int(customer.PaymentDays)).Format("2006-01-02")
+		}
+	}
 
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
@@ -228,6 +240,14 @@ func (s *Service) SignContract(ctx context.Context, tenantID, id int64, op Opera
 			TenantID: tenantID, ID: id, SignatureSource: SourceManual, UpdatedBy: op.ID,
 		}); err != nil {
 			return err
+		}
+		// 只在为空时写入（SQL 里带条件），所以重复生效不会改动已定的到期日。
+		if dueDate != "" {
+			if err := q.SetContractReceivableDue(ctx, store.SetContractReceivableDueParams{
+				TenantID: tenantID, ID: id, DueDate: dueDate,
+			}); err != nil {
+				return err
+			}
 		}
 		return outbox.Append(ctx, tx, outbox.Event{
 			TenantID: tenantID, AggregateType: "contract",

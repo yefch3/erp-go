@@ -30,6 +30,8 @@ service ReceiptService {
   rpc ListOpenReceivables(ListOpenReceivablesRequest) returns (ListOpenReceivablesResponse);
   // The other half: one contract collected in instalments.
   rpc GetContractReceipts(GetContractReceiptsRequest) returns (GetContractReceiptsResponse);
+  // 应收到期清单（E1）：还没收完的生效合同，按该收的日子排。
+  rpc ListReceivableDue(ListReceivableDueRequest) returns (ListReceivableDueResponse);
 }
 
 // BankAccount is one of our own accounts. Kept so a transfer between two of
@@ -262,4 +264,36 @@ message GetContractReceiptsRequest {
 message GetContractReceiptsResponse {
   ReceiptProgress progress = 1;
   repeated ContractReceipt receipts = 2;
+}
+
+// ReceivableDue 是催收清单上的一行。
+message ReceivableDue {
+  int64 contract_id = 1;
+  string contract_no = 2;
+  int64 customer_id = 3;
+  string customer_name = 4;
+  int64 sales_employee_id = 5;
+  string sales_employee = 6;
+  // 空串 = 客户主数据里没配账期，不是「今天到期」。
+  string due_date = 7;
+  string effective_date = 8;
+  string currency = 9;
+  string total_amount = 10;
+  string received_amount = 11;
+  string open_amount = 12;
+  // 正数已逾期，负数是还剩几天；due_unset 为真时无意义。
+  int32 overdue_days = 13;
+  bool due_unset = 14;
+}
+
+message ListReceivableDueRequest {
+  erp.common.v1.PageRequest page = 1;
+  bool overdue_only = 2;
+  // 只看还没配账期的合同——催配置，不是催钱。
+  bool unset_only = 3;
+  string keyword = 4;
+}
+message ListReceivableDueResponse {
+  repeated ReceivableDue items = 1;
+  erp.common.v1.PageMeta meta = 2;
 }

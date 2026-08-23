@@ -38,6 +38,7 @@ func (c *Customers) Get(ctx context.Context, id int64) (app.Customer, error) {
 	return app.Customer{
 		ID: cu.GetId(), Name: cu.GetName(), Address: cu.GetAddress(),
 		Currency: cu.GetCurrency(), Status: cu.GetStatus(), Contacts: contacts,
+		PaymentDays: cu.GetPaymentDays(),
 	}, nil
 }
 

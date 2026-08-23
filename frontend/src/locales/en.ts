@@ -156,7 +156,21 @@ export default {
   },
   financeNav: {
     title: 'Finance', receivable: 'Receivable · customers', payable: 'Payable · suppliers', bank: 'Bank',
+    receivableDue: 'Receivables due',
     receipts: 'Customer receipts', supplierInvoices: 'Supplier invoices', supplierPayments: 'Supplier payments', supplierStatements: 'Supplier statements', bankTransactions: 'Bank transactions',
+  },
+  receivableDue: {
+    eyebrow: 'RECEIVABLES DUE', title: 'Receivables due', subtitle: 'Terms run from the contract effective date — what is owed, and when',
+    overdueCount: 'Overdue', overdueHint: 'Past the agreed date and still unpaid',
+    dueSoonCount: 'Due within 30 days', dueSoonHint: 'Know before it slips',
+    unsetCount: 'No payment terms', unsetHint: 'Customer master data has no terms, so no due date can be derived',
+    viewAll: 'All', viewOverdue: 'Overdue only', viewUnset: 'Missing terms only',
+    search: 'Search contract / customer',
+    contract: 'Contract / customer', dueDate: 'Due date', openAmount: 'Outstanding', received: 'Received',
+    effectiveDate: 'Effective', owner: 'Owner',
+    ofTotal: 'of {total}', unsetTag: 'No terms',
+    overdueBy: '{n} days overdue', dueToday: 'Due today', dueIn: 'in {n} days',
+    empty: 'Nothing outstanding — all collected', emptyOverdue: 'Nothing overdue',
   },
   procurementWorkbench: {
     eyebrow: 'PROCUREMENT CONTROL', title: 'Procurement workbench', subtitle: 'Review standardized inquiries and advance sourcing and purchasing', downloadTemplate: 'Download template', uploadInquiry: 'Import customer inquiry', handlePending: 'Pending review', handlePendingCount: 'Pending review ({n})',

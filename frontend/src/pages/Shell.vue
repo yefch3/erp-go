@@ -294,7 +294,10 @@ const financeGroups = computed(() => [
     key: 'receivable',
     label: t('financeNav.receivable'),
     items: auth.can('export:receipt:read')
-      ? [{ path: '/receipts', label: t('financeNav.receipts') }]
+      ? [
+          { path: '/receivable-due', label: t('financeNav.receivableDue') },
+          { path: '/receipts', label: t('financeNav.receipts') },
+        ]
       : [],
   },
   {

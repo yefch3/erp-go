@@ -63,6 +63,7 @@ type Contract struct {
 	UpdatedAt            pgtype.Timestamptz
 	UpdatedBy            int64
 	SignatureSource      string
+	ReceivableDueDate    pgtype.Date
 }
 
 type ContractAttachment struct {

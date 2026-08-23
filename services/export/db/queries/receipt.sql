@@ -239,3 +239,65 @@ LEFT JOIN (
 ) r ON r.contract_id = c.id
 WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND c.contract_no = ANY(sqlc.arg(contract_nos)::text[]);
+
+-- name: SetContractReceivableDue :exec
+-- 合同生效那一刻把到期日钉下来（E1）。只在为空时写，和 effective_at
+-- 同一个哲学：第一次生效定的日子就是约定，之后客户改账期不再回头改它。
+UPDATE contracts SET receivable_due_date = sqlc.arg(due_date)::text::date
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint
+  AND receivable_due_date IS NULL;
+
+-- name: ListReceivableDue :many
+-- 财务的到期清单：还没收完的生效合同，按该收的日子排，逾期的在最前。
+--
+-- 「还没收完」是算出来的而不是存的状态——sum(核销) < 合同金额。核销表
+-- append-only（冲销是负行），所以求和天然反映当下的真相。
+--
+-- overdue_days 正数表示已逾期，负数表示还有几天到期；到期日为空的合同
+-- 排在最后，它们缺的是客户账期配置，不是钱。
+SELECT
+    c.id, c.contract_no, c.customer_id, c.customer_name,
+    c.sales_employee_id, c.sales_employee,
+    coalesce(c.receivable_due_date::text, '')::text AS due_date,
+    coalesce(c.effective_at::date::text, '')::text  AS effective_date,
+    coalesce(v.currency, '')::text                  AS currency,
+    coalesce(v.total_amount, 0)::text               AS total_amount,
+    coalesce(r.received, 0)::text                   AS received_amount,
+    (coalesce(v.total_amount, 0) - coalesce(r.received, 0))::text AS open_amount,
+    coalesce((current_date - c.receivable_due_date), 0)::int       AS overdue_days,
+    (c.receivable_due_date IS NULL)::bool                          AS due_unset,
+    count(*) OVER () AS total
+FROM contracts c
+JOIN contract_versions v ON v.id = c.current_version_id
+LEFT JOIN (
+    SELECT contract_id, sum(amount + fee_amount) AS received
+    FROM receipt_allocations
+    WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+    GROUP BY contract_id
+) r ON r.contract_id = c.id
+WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND c.status IN ('EFFECTIVE', 'EXECUTING')
+  -- 收完的不再出现在催收清单上。留 0.01 的容差是因为汇路手续费：
+  -- 客户汇的 50000 到账 49975，fee_amount 补上差额后总和可能有分位尾差。
+  AND (coalesce(v.total_amount, 0) - coalesce(r.received, 0)) > 0.01
+  -- 数据范围：应收是钱的事，沿用出口模块自己的围栏（同合同列表）。
+  AND (sqlc.arg(scope_all)::bool OR c.sales_employee_id = ANY(sqlc.arg(employee_ids)::bigint[]))
+  -- 只看逾期 / 只看未配账期，两个互斥的筛子，都不给就是全部。
+  AND (sqlc.arg(overdue_only)::bool = false
+       OR (c.receivable_due_date IS NOT NULL AND c.receivable_due_date < current_date))
+  AND (sqlc.arg(unset_only)::bool = false OR c.receivable_due_date IS NULL)
+  AND (sqlc.arg(keyword)::text = ''
+       OR c.contract_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
+       OR c.customer_name ILIKE '%' || sqlc.arg(keyword)::text || '%')
+ORDER BY c.receivable_due_date ASC NULLS LAST, c.id DESC
+LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
+
+-- name: BackfillReceivableDue :execrows
+-- 存量补算：已经生效但没有到期日的合同，按传入的（客户 → 账期）补。
+-- 幂等，只碰为空的行。
+UPDATE contracts SET receivable_due_date = (effective_at::date + sqlc.arg(payment_days)::int)
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND customer_id = sqlc.arg(customer_id)::bigint
+  AND receivable_due_date IS NULL
+  AND effective_at IS NOT NULL
+  AND sqlc.arg(payment_days)::int > 0;

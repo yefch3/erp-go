@@ -26,6 +26,7 @@ TEST_ENV := \
 	SHIPPING_TEST_DSN='postgres://erp_shipping:erp_shipping_pw@localhost:$(PG_PORT)/erp_shipping?sslmode=disable' \
 	SHIPPING_MIGRATION_TEST_DSN='postgres://erp_shipping:erp_shipping_pw@localhost:$(PG_PORT)/erp_shipping_migrations?sslmode=disable' \
 	PROCUREMENT_TEST_DSN='postgres://erp_procurement:erp_procurement_pw@localhost:$(PG_PORT)/erp_procurement?sslmode=disable' \
+	EXPORT_TEST_DSN='postgres://erp_export:erp_export_pw@localhost:$(PG_PORT)/erp_export?sslmode=disable' \
 	PROCUREMENT_MIGRATION_TEST_DSN='postgres://erp_procurement:erp_procurement_pw@localhost:$(PG_PORT)/erp_procurement_migrations?sslmode=disable' \
 	GATEWAY_TEST_REDIS='127.0.0.1:$(REDIS_PORT)'
 

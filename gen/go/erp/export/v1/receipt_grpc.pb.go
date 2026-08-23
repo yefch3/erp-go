@@ -30,6 +30,7 @@ const (
 	ReceiptService_ReopenTransaction_FullMethodName   = "/erp.export.v1.ReceiptService/ReopenTransaction"
 	ReceiptService_ListOpenReceivables_FullMethodName = "/erp.export.v1.ReceiptService/ListOpenReceivables"
 	ReceiptService_GetContractReceipts_FullMethodName = "/erp.export.v1.ReceiptService/GetContractReceipts"
+	ReceiptService_ListReceivableDue_FullMethodName   = "/erp.export.v1.ReceiptService/ListReceivableDue"
 )
 
 // ReceiptServiceClient is the client API for ReceiptService service.
@@ -62,6 +63,8 @@ type ReceiptServiceClient interface {
 	ListOpenReceivables(ctx context.Context, in *ListOpenReceivablesRequest, opts ...grpc.CallOption) (*ListOpenReceivablesResponse, error)
 	// The other half: one contract collected in instalments.
 	GetContractReceipts(ctx context.Context, in *GetContractReceiptsRequest, opts ...grpc.CallOption) (*GetContractReceiptsResponse, error)
+	// 应收到期清单（E1）：还没收完的生效合同，按该收的日子排。
+	ListReceivableDue(ctx context.Context, in *ListReceivableDueRequest, opts ...grpc.CallOption) (*ListReceivableDueResponse, error)
 }
 
 type receiptServiceClient struct {
@@ -182,6 +185,16 @@ func (c *receiptServiceClient) GetContractReceipts(ctx context.Context, in *GetC
 	return out, nil
 }
 
+func (c *receiptServiceClient) ListReceivableDue(ctx context.Context, in *ListReceivableDueRequest, opts ...grpc.CallOption) (*ListReceivableDueResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListReceivableDueResponse)
+	err := c.cc.Invoke(ctx, ReceiptService_ListReceivableDue_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ReceiptServiceServer is the server API for ReceiptService service.
 // All implementations must embed UnimplementedReceiptServiceServer
 // for forward compatibility.
@@ -212,6 +225,8 @@ type ReceiptServiceServer interface {
 	ListOpenReceivables(context.Context, *ListOpenReceivablesRequest) (*ListOpenReceivablesResponse, error)
 	// The other half: one contract collected in instalments.
 	GetContractReceipts(context.Context, *GetContractReceiptsRequest) (*GetContractReceiptsResponse, error)
+	// 应收到期清单（E1）：还没收完的生效合同，按该收的日子排。
+	ListReceivableDue(context.Context, *ListReceivableDueRequest) (*ListReceivableDueResponse, error)
 	mustEmbedUnimplementedReceiptServiceServer()
 }
 
@@ -254,6 +269,9 @@ func (UnimplementedReceiptServiceServer) ListOpenReceivables(context.Context, *L
 }
 func (UnimplementedReceiptServiceServer) GetContractReceipts(context.Context, *GetContractReceiptsRequest) (*GetContractReceiptsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetContractReceipts not implemented")
+}
+func (UnimplementedReceiptServiceServer) ListReceivableDue(context.Context, *ListReceivableDueRequest) (*ListReceivableDueResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListReceivableDue not implemented")
 }
 func (UnimplementedReceiptServiceServer) mustEmbedUnimplementedReceiptServiceServer() {}
 func (UnimplementedReceiptServiceServer) testEmbeddedByValue()                        {}
@@ -474,6 +492,24 @@ func _ReceiptService_GetContractReceipts_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ReceiptService_ListReceivableDue_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListReceivableDueRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReceiptServiceServer).ListReceivableDue(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReceiptService_ListReceivableDue_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReceiptServiceServer).ListReceivableDue(ctx, req.(*ListReceivableDueRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ReceiptService_ServiceDesc is the grpc.ServiceDesc for ReceiptService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -524,6 +560,10 @@ var ReceiptService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetContractReceipts",
 			Handler:    _ReceiptService_GetContractReceipts_Handler,
+		},
+		{
+			MethodName: "ListReceivableDue",
+			Handler:    _ReceiptService_ListReceivableDue_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -156,7 +156,21 @@ export default {
   },
   financeNav: {
     title: 'Finanzas', receivable: 'Por cobrar · clientes', payable: 'Por pagar · proveedores', bank: 'Banco',
+    receivableDue: 'Cobros por vencer',
     receipts: 'Cobros de clientes', supplierInvoices: 'Facturas de proveedor', supplierPayments: 'Pagos a proveedores', supplierStatements: 'Conciliación de proveedores', bankTransactions: 'Movimientos bancarios',
+  },
+  receivableDue: {
+    eyebrow: 'COBROS PENDIENTES', title: 'Cobros por vencer', subtitle: 'El plazo cuenta desde la entrada en vigor del contrato',
+    overdueCount: 'Vencidos', overdueHint: 'Pasada la fecha acordada y sin cobrar',
+    dueSoonCount: 'Vencen en 30 días', dueSoonHint: 'Saberlo antes de que venza',
+    unsetCount: 'Sin plazo definido', unsetHint: 'El maestro de clientes no tiene plazo, no se puede calcular la fecha',
+    viewAll: 'Todos', viewOverdue: 'Solo vencidos', viewUnset: 'Solo sin plazo',
+    search: 'Buscar contrato / cliente',
+    contract: 'Contrato / cliente', dueDate: 'Fecha de cobro', openAmount: 'Pendiente', received: 'Cobrado',
+    effectiveDate: 'En vigor', owner: 'Responsable',
+    ofTotal: 'de {total}', unsetTag: 'Sin plazo',
+    overdueBy: '{n} días vencido', dueToday: 'Vence hoy', dueIn: 'en {n} días',
+    empty: 'Nada pendiente — todo cobrado', emptyOverdue: 'Nada vencido',
   },
   procurementWorkbench: {
     eyebrow: 'CONTROL DE COMPRAS', title: 'Panel de compras', subtitle: 'Revisar consultas estandarizadas y avanzar compras', downloadTemplate: 'Descargar plantilla', uploadInquiry: 'Importar consulta del cliente', handlePending: 'Pendientes de revisión', handlePendingCount: 'Pendientes de revisión ({n})',

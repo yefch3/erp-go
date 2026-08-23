@@ -156,7 +156,21 @@ export default {
   },
   financeNav: {
     title: '财务', receivable: '应收 · 客户', payable: '应付 · 供应商', bank: '银行',
+    receivableDue: '应收到期',
     receipts: '收款对账', supplierInvoices: '供应商发票', supplierPayments: '供应商付款', supplierStatements: '供应商对账', bankTransactions: '银行流水',
+  },
+  receivableDue: {
+    eyebrow: 'RECEIVABLES DUE', title: '应收到期', subtitle: '账期从合同生效日起算——该收的钱，什么时候该收',
+    overdueCount: '已逾期', overdueHint: '过了约定日子还没收到，该打电话了',
+    dueSoonCount: '30 天内到期', dueSoonHint: '提前知道，别等逾期',
+    unsetCount: '未配账期', unsetHint: '客户主数据里没填账期，算不出到期日',
+    viewAll: '全部', viewOverdue: '只看逾期', viewUnset: '只看未配账期',
+    search: '搜合同号 / 客户',
+    contract: '合同 / 客户', dueDate: '应收日期', openAmount: '未收金额', received: '已收',
+    effectiveDate: '生效日期', owner: '负责人',
+    ofTotal: '合同额 {total}', unsetTag: '未配账期',
+    overdueBy: '逾期 {n} 天', dueToday: '今天到期', dueIn: '还有 {n} 天',
+    empty: '没有待收的合同——钱都收齐了', emptyOverdue: '没有逾期的合同',
   },
   procurementWorkbench: {
     eyebrow: 'PROCUREMENT CONTROL', title: '采购工作台', subtitle: '复核标准询盘并推进询价与采购执行', downloadTemplate: '下载标准模板', uploadInquiry: '导入客户询盘', handlePending: '待复核询盘', handlePendingCount: '待复核询盘（{n}）',
