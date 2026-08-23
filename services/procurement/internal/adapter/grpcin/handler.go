@@ -52,6 +52,14 @@ func (h *Handler) ListRequirements(ctx context.Context, req *prv1.ListRequiremen
 			RequiredDate: r.RequiredDate, Source: r.Source, Status: r.Status,
 			ClosedReason: r.ClosedReason, CreatedAt: ts(r.CreatedAt),
 			OwnerId: r.OwnerID, OwnerName: r.OwnerName,
+			QuotationId: r.QuotationID, QuotationNo: r.QuotationNo,
+			CostScenarioId: r.CostScenarioID, CostScenarioNo: r.CostScenarioNo,
+			SourcingCaseId: r.SourcingCaseID, SourcingLineId: r.SourcingLineID,
+			SupplierQuoteLineId: r.SupplierQuoteLineID,
+			SupplierId:          r.SupplierID, SupplierCode: r.SupplierCode, SupplierName: r.SupplierName,
+			FactoryId: r.FactoryID, FactoryCode: r.FactoryCode, FactoryName: r.FactoryName,
+			SourceCurrency: r.SourceCurrency, SourceUnitPrice: r.SourceUnitPrice,
+			Moq: r.Moq, LeadTime: r.LeadTime,
 		})
 	}
 	return &prv1.ListRequirementsResponse{
@@ -125,6 +133,14 @@ func requirementToProto(r store.GetRequirementRow) *prv1.Requirement {
 		RequiredDate: r.RequiredDate, Source: r.Source, Status: r.Status,
 		ClosedReason: r.ClosedReason, CreatedAt: ts(r.CreatedAt),
 		OwnerId: r.OwnerID, OwnerName: r.OwnerName,
+		QuotationId: r.QuotationID, QuotationNo: r.QuotationNo,
+		CostScenarioId: r.CostScenarioID, CostScenarioNo: r.CostScenarioNo,
+		SourcingCaseId: r.SourcingCaseID, SourcingLineId: r.SourcingLineID,
+		SupplierQuoteLineId: r.SupplierQuoteLineID,
+		SupplierId:          r.SupplierID, SupplierCode: r.SupplierCode, SupplierName: r.SupplierName,
+		FactoryId: r.FactoryID, FactoryCode: r.FactoryCode, FactoryName: r.FactoryName,
+		SourceCurrency: r.SourceCurrency, SourceUnitPrice: r.SourceUnitPrice,
+		Moq: r.Moq, LeadTime: r.LeadTime,
 	}
 }
 

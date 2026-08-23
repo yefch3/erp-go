@@ -98,3 +98,24 @@ WHERE tenant_id=$1 AND id=$2 AND status='CONFIRMED' AND customer_quotation_id IS
 
 -- name: MarkSourcingCaseQuoted :exec
 UPDATE sourcing_cases SET status='CUSTOMER_QUOTE_CREATED',updated_at=now() WHERE tenant_id=$1 AND id=$2;
+
+-- name: AcceptedQuotationScenario :one
+SELECT id, case_id, scenario_no, currency
+FROM cost_scenarios
+WHERE tenant_id=sqlc.arg(tenant_id) AND customer_quotation_id=sqlc.arg(quotation_id)
+  AND status='CONFIRMED';
+
+-- name: AcceptedQuotationLines :many
+SELECT cl.sourcing_line_id, cl.supplier_quote_line_id,
+       r.supplier_id, r.supplier_code, r.supplier_name,
+       r.factory_id, r.factory_code, r.factory_name,
+       cl.product_id, coalesce(cl.sku_id,0)::bigint AS sku_id,
+       cl.product_name, cl.spec_snapshot, cl.qty::text AS qty, cl.uom_code,
+       cl.source_currency, cl.source_unit_price::text AS source_unit_price,
+       coalesce(ql.moq::text,'')::text AS moq, ql.lead_time
+FROM cost_scenario_lines cl
+JOIN supplier_quote_lines ql ON ql.id=cl.supplier_quote_line_id AND ql.tenant_id=cl.tenant_id
+JOIN supplier_quotes sq ON sq.id=ql.supplier_quote_id AND sq.tenant_id=ql.tenant_id
+JOIN factory_rfqs r ON r.id=sq.factory_rfq_id AND r.tenant_id=sq.tenant_id
+WHERE cl.tenant_id=sqlc.arg(tenant_id) AND cl.scenario_id=sqlc.arg(scenario_id)
+ORDER BY r.supplier_id, cl.sourcing_line_id;

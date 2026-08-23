@@ -10,12 +10,27 @@ import (
 	"github.com/sgao19/erp-go/services/procurement/internal/app"
 )
 
-const eventContractEffective = "ContractEffective"
+const (
+	eventContractEffective = "ContractEffective"
+	eventQuotationAccepted = "QuotationAccepted"
+)
 
 // ContractEvents raises the full purchase quantity from an effective customer
 // contract. Inventory allocation is intentionally not consulted.
 func ContractEvents(svc *app.Service, log *slog.Logger) kafkax.Handler {
 	return func(ctx context.Context, e kafkax.Envelope) error {
+		if e.EventType == eventQuotationAccepted {
+			var accepted app.QuotationAccepted
+			if err := json.Unmarshal(e.Payload, &accepted); err != nil {
+				log.Error("quotation event: unreadable payload, skipping", "event_id", e.EventID, "err", err)
+				return nil
+			}
+			if accepted.QuotationID == 0 {
+				log.Error("quotation event without quotation id, skipping", "event_id", e.EventID)
+				return nil
+			}
+			return svc.RequirementsFromAcceptedQuotation(ctx, e.TenantID, accepted, log)
+		}
 		if e.EventType != eventContractEffective {
 			return nil
 		}
