@@ -80,7 +80,7 @@ func TestPurchaseOrderSendAndExecutionLifecycle(t *testing.T) {
 		t.Fatal("expected duplicate send to be rejected")
 	}
 
-	confirmation, err := svc.RecordSupplierConfirmation(ctx, tenantID, orderID, time.Now().Format("2006-01-02"), time.Now().AddDate(0, 0, 11).Format("2006-01-02"), "supplier requests one day later", []SupplierConfirmationLine{{POItemID: itemID, ConfirmedQty: "10", ConfirmedUnitPrice: "520"}}, Operator{ID: 77, Name: "Buyer"})
+	confirmation, err := svc.RecordSupplierConfirmation(ctx, tenantID, orderID, time.Now().UTC().Format("2006-01-02"), time.Now().UTC().AddDate(0, 0, 11).Format("2006-01-02"), "supplier requests one day later", []SupplierConfirmationLine{{POItemID: itemID, ConfirmedQty: "10", ConfirmedUnitPrice: "520"}}, Operator{ID: 77, Name: "Buyer"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestPurchaseOrderSendAndExecutionLifecycle(t *testing.T) {
 		t.Fatalf("confirm status on order head=%q err=%v", head.ConfirmStatus, err)
 	}
 
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
 	milestone, err := svc.SaveProductionMilestone(ctx, tenantID, orderID, ProductionMilestone{Node: "IN_PRODUCTION", PlannedDate: yesterday, OwnerID: 77, OwnerName: "Buyer", Remark: "late", Attachments: []ProductionAttachment{{FileName: "photo.jpg", FileURL: "https://files.example/photo.jpg", ContentType: "image/jpeg"}}}, Operator{ID: 77, Name: "Buyer"})
 	if err != nil {
 		t.Fatal(err)

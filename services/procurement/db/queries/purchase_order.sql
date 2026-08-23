@@ -205,7 +205,9 @@ SELECT
     i.unit_price::text   AS unit_price,
     i.amount::text       AS amount,
     i.received_qty::text AS received_qty,
-    r.contract_no, r.customer_name, r.source
+    r.contract_no, r.customer_name, r.source,
+    -- 合同负责人跟着明细走：单归执行采购员，谁谈的生意仍留在行上。
+    r.owner_name AS contract_owner
 FROM purchase_order_items i
 JOIN purchase_requirements r ON r.id = i.requirement_id
 WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint AND i.po_id = sqlc.arg(po_id)::bigint

@@ -81,7 +81,7 @@
               {{ row.contractNo }}
             </router-link>
             <span class="ver">v{{ row.versionNo }}</span>
-            <div class="sub">{{ row.customerName }}</div>
+            <div class="sub">{{ row.customerName }}<template v-if="row.ownerName"> · {{ row.ownerName }}</template></div>
             </template>
           </template>
         </el-table-column>
@@ -143,6 +143,7 @@
         </el-descriptions-item>
         <el-descriptions-item v-if="detail?.source !== 'MANUAL'" :label="t('requirements.fromContract')">
           {{ detail?.contractNo }} · {{ detail?.customerName }}
+          <template v-if="detail?.ownerName"> · {{ detail.ownerName }}</template>
         </el-descriptions-item>
         <el-descriptions-item :label="t('requirements.requiredDate')">
           {{ detail?.requiredDate || '—' }}
@@ -293,6 +294,7 @@ interface Requirement {
   requiredDate: string
   source: string
   status: string
+  ownerName: string
   closedReason: string
   receivedQty: string
 }

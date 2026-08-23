@@ -157,6 +157,7 @@ func (h *OrderHandler) GetOrder(ctx context.Context, req *prv1.GetOrderRequest) 
 			Spec: it.Spec, UomCode: it.UomCode, Qty: it.Qty, UnitPrice: it.UnitPrice,
 			Amount: it.Amount, ReceivedQty: it.ReceivedQty,
 			ContractNo: it.ContractNo, CustomerName: it.CustomerName, Source: it.Source,
+			ContractOwner: it.ContractOwner,
 		})
 	}
 	outReceipts := make([]*prv1.PurchaseReceipt, 0, len(receipts))

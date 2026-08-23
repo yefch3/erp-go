@@ -16,11 +16,47 @@ import (
 // are different sensitivities, often held by different people.
 //
 // The ownership dimension is the buyer for orders and the clerk who entered
-// it for invoices. Purchase requirements are deliberately NOT scoped here:
-// they have no owner column, and inventing one (the contract's salesperson?
-// the future buyer?) is a product decision, not a refactor. Recorded in
-// docs/开发计划.md rather than half-guessed.
+// it for invoices.
+//
+// Requirements got their owner in the 2026-08-22 product decision: a
+// requirement split from a contract belongs to the contract's salesperson, a
+// manual one to whoever raised it. SELF for a salesperson means "my own
+// customers' purchase needs"; buyers work the whole queue and are widened to
+// ALL on the roles page. owner_id = 0 marks pre-decision history — visible
+// only to ALL, never leaked into a per-person view.
 const orderScopeModule = "procurement_order"
+const requirementScopeModule = "procurement_requirement"
+
+func (s *Service) visibleRequirementsTo(ctx context.Context, op Operator) (Visibility, error) {
+	if s.scopes == nil {
+		return Visibility{All: true, ScopeType: "ALL"}, nil
+	}
+	return s.scopes.VisibleEmployees(ctx, op.ID, requirementScopeModule)
+}
+
+// AuthorizeRequirement refuses access to a requirement outside the caller's
+// range. Not-found rather than forbidden, same as everywhere else: confirming
+// that another salesperson's deal exists is itself information.
+func (s *Service) AuthorizeRequirement(ctx context.Context, tenantID, requirementID int64, op Operator) error {
+	var ownerID int64
+	err := s.pool.QueryRow(ctx,
+		`SELECT owner_id FROM purchase_requirements WHERE tenant_id=$1 AND id=$2`,
+		tenantID, requirementID).Scan(&ownerID)
+	if err == pgx.ErrNoRows {
+		return apierr.NotFound("PR_REQUIREMENT_NOT_FOUND", "采购需求不存在")
+	}
+	if err != nil {
+		return err
+	}
+	visible, err := s.visibleRequirementsTo(ctx, op)
+	if err != nil {
+		return err
+	}
+	if !ownerVisible(visible, ownerID) {
+		return apierr.NotFound("PR_REQUIREMENT_NOT_FOUND", "采购需求不存在")
+	}
+	return nil
+}
 
 func (s *Service) visibleOrdersTo(ctx context.Context, op Operator) (Visibility, error) {
 	// Production always supplies IAM; the fallback keeps isolated app tests

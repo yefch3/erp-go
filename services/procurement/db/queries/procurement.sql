@@ -14,7 +14,8 @@
 INSERT INTO purchase_requirements (
     tenant_id, contract_id, contract_no, contract_version_id, version_no,
     contract_item_id, customer_name, product_id, sku_id, product_code,
-    product_name, spec, uom_id, uom_code, required_qty, required_date, source
+    product_name, spec, uom_id, uom_code, required_qty, required_date, source,
+    owner_id, owner_name
 ) VALUES (
     sqlc.arg(tenant_id)::bigint,
     sqlc.arg(contract_id)::bigint,
@@ -32,7 +33,9 @@ INSERT INTO purchase_requirements (
     sqlc.arg(uom_code)::text,
     sqlc.arg(required_qty)::text::numeric,
     nullif(sqlc.arg(required_date)::text, '')::date,
-    'CONTRACT'
+    'CONTRACT',
+    sqlc.arg(owner_id)::bigint,
+    sqlc.arg(owner_name)::text
 )
 ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
     required_qty        = excluded.required_qty,
@@ -41,6 +44,12 @@ ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
     contract_version_id = excluded.contract_version_id,
     version_no          = excluded.version_no,
     product_name        = excluded.product_name,
+    -- 合同重发或换版时刷新属主：负责人转手后，新版本生效即改归属。
+    -- 事件不带属主（0）则保留原值，别把已知的抹成未知。
+    owner_id   = CASE WHEN excluded.owner_id <> 0 THEN excluded.owner_id
+                      ELSE purchase_requirements.owner_id END,
+    owner_name = CASE WHEN excluded.owner_id <> 0 THEN excluded.owner_name
+                      ELSE purchase_requirements.owner_name END,
     -- A line that is short again is owed again. Without this a requirement
     -- retired by a contract change — or closed because stock briefly covered
     -- it — stays closed forever, and the shortage sits there with nobody
@@ -97,9 +106,13 @@ SELECT
     received_qty::text AS received_qty,
     coalesce(required_date::text, '')::text AS required_date,
     source, status, closed_reason, created_at,
+    owner_id, owner_name,
     count(*) OVER () AS total
 FROM purchase_requirements
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  -- 数据范围（A1）：属主是合同负责人（手工需求是创建人）。owner_id=0 的
+  -- 历史行只有 scope_all 能看见——fail-closed，错也只错在看不见。
+  AND (sqlc.arg(scope_all)::bool OR owner_id = ANY(sqlc.arg(owner_ids)::bigint[]))
   AND (sqlc.arg(status)::text = '' OR status = sqlc.arg(status)::text)
   AND (sqlc.arg(contract_id)::bigint = 0 OR contract_id = sqlc.arg(contract_id)::bigint)
   AND (sqlc.arg(keyword)::text = ''
@@ -124,7 +137,8 @@ SELECT
     ordered_qty::text  AS ordered_qty,
     received_qty::text AS received_qty,
     coalesce(required_date::text, '')::text AS required_date,
-    source, status, closed_reason, created_at
+    source, status, closed_reason, created_at,
+    owner_id, owner_name
 FROM purchase_requirements
 WHERE tenant_id = $1 AND id = $2;
 
@@ -160,7 +174,7 @@ INSERT INTO purchase_requirements (
     -- of the way of real contract_item_ids in the same unique index.
     contract_item_id, customer_name, product_id, sku_id, product_code,
     product_name, spec, uom_id, uom_code, required_qty, required_date,
-    source, closed_reason
+    source, closed_reason, owner_id, owner_name
 ) VALUES (
     sqlc.arg(tenant_id)::bigint, 0, '', 0, 0,
     -nextval('purchase_requirements_id_seq'),
@@ -174,6 +188,8 @@ INSERT INTO purchase_requirements (
     sqlc.arg(required_qty)::text::numeric,
     nullif(sqlc.arg(required_date)::text, '')::date,
     'MANUAL',
-    sqlc.arg(remark)::text
+    sqlc.arg(remark)::text,
+    sqlc.arg(owner_id)::bigint,
+    sqlc.arg(owner_name)::text
 )
 RETURNING id;

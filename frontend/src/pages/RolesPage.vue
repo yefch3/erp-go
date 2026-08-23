@@ -74,6 +74,15 @@
               </el-button>
             </div>
             <div class="scope-row">
+              <span class="scope-label">{{ t('roles.scopeRequirement') }}</span>
+              <el-select v-model="scopeRequirement" :disabled="!canWrite" style="width: 220px">
+                <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
+              </el-select>
+              <el-button v-if="canWrite" :loading="savingScope" @click="saveRequirementScope">
+                {{ t('roles.saveScope') }}
+              </el-button>
+            </div>
+            <div class="scope-row">
               <span class="scope-label">{{ t('roles.scopeShipping') }}</span>
               <el-select v-model="scopeShipping" :disabled="!canWrite" style="width: 220px">
                 <el-option v-for="k in SCOPE_TYPES" :key="k" :value="k" :label="t(`roles.scopes.${k}`)" />
@@ -139,6 +148,7 @@ const scopes = ref<Record<string, string>>({})
 const scopeExport = ref('SELF')
 const scopeSourcing = ref('SELF')
 const scopeOrder = ref('SELF')
+const scopeRequirement = ref('SELF')
 const scopeShipping = ref('SELF')
 const savingScope = ref(false)
 const form = reactive({ code: '', name: '', description: '' })
@@ -169,6 +179,7 @@ function select(role: Role) {
   scopeExport.value = scopes.value[`${role.id}:export`] ?? 'SELF'
   scopeSourcing.value = scopes.value[`${role.id}:procurement_sourcing`] ?? 'SELF'
   scopeOrder.value = scopes.value[`${role.id}:procurement_order`] ?? 'SELF'
+  scopeRequirement.value = scopes.value[`${role.id}:procurement_requirement`] ?? 'SELF'
   scopeShipping.value = scopes.value[`${role.id}:shipping`] ?? 'SELF'
 }
 
@@ -179,6 +190,7 @@ async function loadScopes() {
     scopeExport.value = scopes.value[`${selected.value.id}:export`] ?? 'SELF'
     scopeSourcing.value = scopes.value[`${selected.value.id}:procurement_sourcing`] ?? 'SELF'
     scopeOrder.value = scopes.value[`${selected.value.id}:procurement_order`] ?? 'SELF'
+    scopeRequirement.value = scopes.value[`${selected.value.id}:procurement_requirement`] ?? 'SELF'
     scopeShipping.value = scopes.value[`${selected.value.id}:shipping`] ?? 'SELF'
   }
 }
@@ -214,6 +226,19 @@ async function saveOrderScope() {
   try {
     await put(`/roles/${selected.value!.id}/data-scope`, {
       scope: { module: 'procurement_order', scopeType: scopeOrder.value },
+    })
+    ElMessage.success(t('roles.scopeSaved'))
+    await loadScopes()
+  } finally {
+    savingScope.value = false
+  }
+}
+
+async function saveRequirementScope() {
+  savingScope.value = true
+  try {
+    await put(`/roles/${selected.value!.id}/data-scope`, {
+      scope: { module: 'procurement_requirement', scopeType: scopeRequirement.value },
     })
     ElMessage.success(t('roles.scopeSaved'))
     await loadScopes()

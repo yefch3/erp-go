@@ -411,6 +411,8 @@ type PurchaseRequirement struct {
 	CreatedAt         pgtype.Timestamptz
 	UpdatedAt         pgtype.Timestamptz
 	ReceivedQty       pgtype.Numeric
+	OwnerID           int64
+	OwnerName         string
 }
 
 type PurchaseSupplierConfirmation struct {
