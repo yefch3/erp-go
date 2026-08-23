@@ -3,6 +3,7 @@ package grpcin
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -907,7 +908,15 @@ func excelResultToProto(result app.ExcelResult) *mailv1.ConvertInboundToExcelRes
 			Name: sheet.Name, Summary: sheet.Summary, Columns: sheet.Columns,
 			TotalRows: int64(len(sheet.Rows)), ColumnKeys: sheet.ColumnKeys,
 		}
-		rows := sheet.Rows
+		// 给人看的那一版：总价列是算出来的数，不是「=S2*T2」。
+		//
+		// 旧任务的缓存里没有这一份（workbook_json 是修复前存下的），回落到
+		// 原始行——但原始行里恰恰躺着那串算式。所以回落之后还要再擦一道：
+		// 算式是给 Excel 的，任何时候都不该出现在人眼前。
+		rows := sheet.PreviewRows
+		if len(rows) != len(sheet.Rows) {
+			rows = stripFormulaCells(sheet.Rows)
+		}
 		if len(rows) > 200 {
 			rows = rows[:200]
 		}
@@ -1078,4 +1087,27 @@ func (h *Handler) CompleteGoogleOAuth(ctx context.Context, req *mailv1.CompleteG
 		return nil, err
 	}
 	return &mailv1.CompleteGoogleOAuthResponse{Email: email}, nil
+}
+
+// stripFormulaCells 把算式格清空，只用于预览。
+//
+// 修复前生成的任务缓存里，总价列存的是「=S2*T2」这样的算式：文件里它是
+// 给 Excel 的，页面上原样打出来就成了给人看的乱码。重新生成会得到带
+// PreviewRows 的新版本，但已经存下的那些不该继续显示成坏的。
+//
+// 复制而不是就地改：入参来自缓存对象，擦花了会连带影响同一次请求里别的
+// 用途（下载的文件仍然要那串算式）。
+func stripFormulaCells(rows [][]string) [][]string {
+	out := make([][]string, len(rows))
+	for i, row := range rows {
+		copied := make([]string, len(row))
+		for j, cell := range row {
+			if strings.HasPrefix(cell, "=") {
+				continue
+			}
+			copied[j] = cell
+		}
+		out[i] = copied
+	}
+	return out
 }

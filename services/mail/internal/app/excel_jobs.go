@@ -95,11 +95,7 @@ func (s *Service) validateExcelJobSource(
 		if len(text) > maxExcelSelectedText {
 			return apierr.Invalid("MAIL_EXCEL_TEXT_TOO_LARGE", "选中的文字过长，请缩小选择范围")
 		}
-		body := row.BodyText
-		if strings.TrimSpace(body) == "" {
-			body = HTMLToText(row.BodyHtml)
-		}
-		if !containsNormalizedText(body, text) {
+		if !selectionBelongsToMail(row.BodyText, row.BodyHtml, text) {
 			return apierr.Invalid("MAIL_EXCEL_TEXT_NOT_IN_MAIL", "选中的文字不属于这封邮件")
 		}
 		return nil

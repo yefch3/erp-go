@@ -1389,8 +1389,13 @@ function onUnlocked() {
   init()
 }
 
-// The unlock expires after twelve hours, and it expires wherever the person
-// happens to be — usually mid-list, with a request already in flight. The
+// 解锁凭证是「闲置多久失效」，用着就会自动续期（服务端 UnlockStore.Check，
+// 和 ERP 登录会话同一个规矩）。所以走到这里通常是真的搁了一夜，而不是
+// 用着用着被踢——后者曾经是常态，因为从前的有效期从验证那一刻起算、
+// 从不续期。
+//
+// 失效发生在人正在做别的事的时候 — usually mid-list, with a request
+// already in flight. The
 // interceptor drops the dead token and says so here; this puts the sign-in
 // gate back in place of the mailbox. Before, the page stayed as it was and
 // announced the problem in a toast, which left somebody looking at a list they

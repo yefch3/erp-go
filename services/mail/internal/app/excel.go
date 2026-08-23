@@ -13,7 +13,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
+
+	"github.com/shopspring/decimal"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/services/mail/internal/store"
@@ -59,6 +62,12 @@ type WorkbookSheet struct {
 	// 与 Columns 平行的模板字段标识，采购转入按它而不是表头文字对齐。
 	ColumnKeys []string   `json:"column_keys,omitempty"`
 	Rows       [][]string `json:"rows"`
+	// 给人看的那一版：和 Rows 逐格对应，但公式换成算出来的数。文件里要
+	// 留活公式（在 Excel 里改数量总价要跟着动），页面上要显示结果——同一
+	// 份数据的两种用途，分开存比在渲染时猜哪个是公式可靠。
+	//
+	// 旧任务的缓存里没有这个字段，取不到时回落 Rows。
+	PreviewRows [][]string `json:"preview_rows,omitempty"`
 }
 
 // InquiryColumn 是询盘模板的一列。列注册表在采购服务；网关在发起转换时
@@ -148,27 +157,62 @@ func NewTemplateWorkbook(in ExtractedInquiry, columns []InquiryColumn) Workbook 
 	}
 
 	rows := make([][]string, 0, len(in.Items))
+	previews := make([][]string, 0, len(in.Items))
 	for i, item := range in.Items {
 		excelRow := i + 2 // row 1 is the header
 		row := make([]string, len(columns))
+		preview := make([]string, len(columns))
 		for c, column := range columns {
-			switch {
-			case withFormula && c == totalIdx:
-				row[c] = fmt.Sprintf("=%s%d*%s%d", excelColumn(qtyIdx+1), excelRow, excelColumn(priceIdx+1), excelRow)
-			default:
-				value := strings.TrimSpace(item[column.FieldKey])
-				if value == "" {
-					value = column.DefaultValue
-				}
-				row[c] = value
+			value := strings.TrimSpace(item[column.FieldKey])
+			if value == "" {
+				value = column.DefaultValue
+			}
+			row[c] = value
+			preview[c] = value
+		}
+		// 总价只在这一行确实有数量和单价时才落公式。
+		//
+		// 询盘阶段单价永远是空的——提示词写死了「报价是工厂后面给的，这里
+		// 绝不计算也绝不臆造」。从前不管有没有单价都写公式，于是每一行的
+		// 总价都是一个指着空格子的算式：Excel 里算出 0，预览里露出
+		// 「=S2*T2」。一列从头到尾没有意义，还看着像坏了。
+		if withFormula {
+			qty, qtyOK := safeExcelDecimal(row[qtyIdx])
+			price, priceOK := safeExcelDecimal(row[priceIdx])
+			if qtyOK && priceOK {
+				row[totalIdx] = fmt.Sprintf("=%s%d*%s%d",
+					excelColumn(qtyIdx+1), excelRow, excelColumn(priceIdx+1), excelRow)
+				// 预览显示算出来的数，不是算式。浏览器里那张表是把单元格
+				// 原样打出来的，公式落进去就成了给人看的乱码。
+				preview[totalIdx] = multiplyDecimalText(qty, price)
+			} else {
+				row[totalIdx] = ""
+				preview[totalIdx] = ""
 			}
 		}
 		rows = append(rows, row)
+		previews = append(previews, preview)
 	}
 	return Workbook{Title: in.Title, Sheets: []WorkbookSheet{{
 		Name: "询价明细", Summary: in.Summary,
-		Columns: headers, ColumnTypes: types, ColumnKeys: keys, Rows: rows,
+		Columns: headers, ColumnTypes: types, ColumnKeys: keys,
+		Rows: rows, PreviewRows: previews,
 	}}}
+}
+
+// multiplyDecimalText 把两个已经过 safeExcelDecimal 的十进制文本相乘，
+// 只为预览显示。文件里落的仍是公式：在 Excel 里改了数量或单价，总价要跟
+// 着动。
+func multiplyDecimalText(a, b string) string {
+	x, err := decimal.NewFromString(a)
+	if err != nil {
+		return ""
+	}
+	y, err := decimal.NewFromString(b)
+	if err != nil {
+		return ""
+	}
+	return x.Mul(y).String()
 }
 
 type ExcelResult struct {
@@ -216,11 +260,7 @@ func (s *Service) ConvertInboundToExcel(
 		if len(text) > maxExcelSelectedText {
 			return ExcelResult{}, apierr.Invalid("MAIL_EXCEL_TEXT_TOO_LARGE", "选中的文字过长，请缩小选择范围")
 		}
-		body := row.BodyText
-		if strings.TrimSpace(body) == "" {
-			body = HTMLToText(row.BodyHtml)
-		}
-		if !containsNormalizedText(body, text) {
+		if !selectionBelongsToMail(row.BodyText, row.BodyHtml, text) {
 			return ExcelResult{}, apierr.Invalid("MAIL_EXCEL_TEXT_NOT_IN_MAIL", "选中的文字不属于这封邮件")
 		}
 		in.Text = text
@@ -282,9 +322,53 @@ func (s *Service) ConvertInboundToExcel(
 	return ExcelResult{FileName: name + ".xlsx", Data: data, Workbook: book, Model: model}, nil
 }
 
+// selectionBelongsToMail 判断这段选中的文字确实出自这封信。
+//
+// 存在的理由是：选中的文字会原样交给模型，所以必须先证明它来自这封邮件，
+// 而不是谁往请求里塞的一段话。
+//
+// **两个版本都要试**。一封信常常同时带纯文本和 HTML 两个版本，内容可以差
+// 得很远——尤其是带表格的报价单，纯文本那版往往是发信软件草草压平的。而
+// 页面上渲染的是 HTML 版，人从那里选字。从前只比纯文本版，于是明明是这封
+// 信里的字，系统说不是。任一版命中就算数。
+func selectionBelongsToMail(bodyText, bodyHTML, selected string) bool {
+	if containsNormalizedText(bodyText, selected) {
+		return true
+	}
+	return containsNormalizedText(HTMLToText(bodyHTML), selected)
+}
+
+// containsNormalizedText 比较时抹掉两类差异：**所有空白**，以及全角半角
+// 标点。
+//
+// 空白整个丢掉而不是压成一个空格：中文正文里「规格：3.0」和「规格: 3.0」
+// 只差一个空格，浏览器跨单元格拖选还会带出制表符和换行——压成一个空格仍
+// 然对不上。丢掉空白不会放外来内容进来：能通过的字符串必须是这封信去掉
+// 空白后的子串，内容还是这封信的。
 func containsNormalizedText(body, selected string) bool {
-	norm := func(s string) string { return strings.Join(strings.Fields(s), " ") }
-	return strings.Contains(norm(body), norm(selected))
+	if strings.TrimSpace(body) == "" {
+		return false
+	}
+	return strings.Contains(normalizeForSelection(body), normalizeForSelection(selected))
+}
+
+// 全角标点 → 半角。只做标点，不动文字：把全角汉字数字也一起折了会让
+// 「１２３」和「123」混为一谈，那是另一回事。
+var fullWidthPunct = strings.NewReplacer(
+	"，", ",", "。", ".", "：", ":", "；", ";", "！", "!", "？", "?",
+	"（", "(", "）", ")", "［", "[", "］", "]", "｛", "{", "｝", "}",
+	"　", " ", "＂", `"`, "＇", "'", "－", "-", "／", "/", "＼", "\\",
+	"＝", "=", "＋", "+", "％", "%", "＊", "*", "＃", "#", "＠", "@",
+	"“", `"`, "”", `"`, "‘", "'", "’", "'", "、", ",",
+)
+
+func normalizeForSelection(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, fullWidthPunct.Replace(s))
 }
 
 func normalizeExcelLocale(v string) string {
@@ -345,6 +429,22 @@ func validateWorkbook(book *Workbook) error {
 			}
 			for len(s.Rows[j]) < len(s.Columns) {
 				s.Rows[j] = append(s.Rows[j], "")
+			}
+		}
+		// 预览行对不上就整份丢掉，不半修半留。它只是同一份数据给人看的
+		// 那一版，缺了回落到 Rows 仍然可读；留一份长度不齐的反而会让页面
+		// 错位。
+		if len(s.PreviewRows) != len(s.Rows) {
+			s.PreviewRows = nil
+			continue
+		}
+		for j := range s.PreviewRows {
+			if len(s.PreviewRows[j]) > len(s.Columns) {
+				s.PreviewRows = nil
+				break
+			}
+			for len(s.PreviewRows[j]) < len(s.Columns) {
+				s.PreviewRows[j] = append(s.PreviewRows[j], "")
 			}
 		}
 	}
@@ -469,7 +569,7 @@ func worksheetXML(s WorkbookSheet) string {
 		fmt.Fprintf(&b, `<col min="%d" max="%d" width="%.1f" customWidth="1"/>`, i+1, i+1, width)
 	}
 	b.WriteString(`</cols><sheetData>`)
-	writeRow := func(row int, values []string, types []string, style int) {
+	writeRow := func(row int, values []string, types []string, cached []string, style int) {
 		fmt.Fprintf(&b, `<row r="%d">`, row)
 		for col, value := range values {
 			ref := excelColumn(col+1) + strconv.Itoa(row)
@@ -477,13 +577,25 @@ func worksheetXML(s WorkbookSheet) string {
 			if col < len(types) {
 				kind = types[col]
 			}
-			writeCell(&b, ref, value, kind, style)
+			cache := ""
+			if col < len(cached) {
+				cache = cached[col]
+			}
+			writeCell(&b, ref, value, kind, cache, style)
 		}
 		b.WriteString(`</row>`)
 	}
-	writeRow(1, s.Columns, nil, 1)
+	writeRow(1, s.Columns, nil, nil, 1)
+	// 公式格的缓存值取预览行里算好的那个数。有些看表的工具不会重算公式，
+	// 只显示文件里存的那份缓存——从前一律存 0，于是在那些工具里总价永远
+	// 是 0。
+	usePreview := len(s.PreviewRows) == len(s.Rows)
 	for i, row := range s.Rows {
-		writeRow(i+2, row, s.ColumnTypes, 0)
+		var cached []string
+		if usePreview {
+			cached = s.PreviewRows[i]
+		}
+		writeRow(i+2, row, s.ColumnTypes, cached, 0)
 	}
 	b.WriteString(`</sheetData>`)
 	if len(s.Rows) > 0 {
@@ -493,7 +605,7 @@ func worksheetXML(s WorkbookSheet) string {
 	return b.String()
 }
 
-func writeCell(b *strings.Builder, ref, value, kind string, style int) {
+func writeCell(b *strings.Builder, ref, value, kind, cached string, style int) {
 	styleAttr := ""
 	if style > 0 {
 		styleAttr = fmt.Sprintf(` s="%d"`, style)
@@ -502,7 +614,11 @@ func writeCell(b *strings.Builder, ref, value, kind string, style int) {
 	case "formula":
 		formula := strings.TrimPrefix(value, "=")
 		if formula != "" {
-			fmt.Fprintf(b, `<c r="%s" s="3"><f>%s</f><v>0</v></c>`, ref, xmlText(formula))
+			shown, ok := safeExcelDecimal(cached)
+			if !ok {
+				shown = "0"
+			}
+			fmt.Fprintf(b, `<c r="%s" s="3"><f>%s</f><v>%s</v></c>`, ref, xmlText(formula), shown)
 			return
 		}
 	case "number":
