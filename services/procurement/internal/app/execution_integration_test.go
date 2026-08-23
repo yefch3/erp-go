@@ -80,7 +80,7 @@ func TestPurchaseOrderSendAndExecutionLifecycle(t *testing.T) {
 		t.Fatalf("supplier confirmation should be recorded without a second approval: %#v", confirmation)
 	}
 	// B5 尾巴：最新回签状态要跟着订单一起出来，列表和详情才有子标签可挂。
-	if head, err := svc.GetOrder(ctx, tenantID, orderID); err != nil || head.ConfirmStatus != "APPROVED" {
+	if head, err := svc.GetOrder(ctx, tenantID, orderID); err != nil || head.ConfirmStatus != "MATCHED" {
 		t.Fatalf("confirm status on order head=%q err=%v", head.ConfirmStatus, err)
 	}
 
