@@ -171,6 +171,7 @@ export default {
     ofTotal: '合同额 {total}', unsetTag: '未配账期',
     overdueBy: '逾期 {n} 天', dueToday: '今天到期', dueIn: '还有 {n} 天',
     empty: '没有待收的合同——钱都收齐了', emptyOverdue: '没有逾期的合同',
+    remindersTitle: '应收提醒', markAllRead: '全部已读', noReminders: '暂无应收提醒',
   },
   procurementWorkbench: {
     eyebrow: 'PROCUREMENT CONTROL', title: '采购工作台', subtitle: '复核标准询盘并推进询价与采购执行', downloadTemplate: '下载标准模板', uploadInquiry: '导入客户询盘', handlePending: '待复核询盘', handlePendingCount: '待复核询盘（{n}）',

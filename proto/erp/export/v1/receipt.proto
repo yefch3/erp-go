@@ -32,6 +32,9 @@ service ReceiptService {
   rpc GetContractReceipts(GetContractReceiptsRequest) returns (GetContractReceiptsResponse);
   // 应收到期清单（E1）：还没收完的生效合同，按该收的日子排。
   rpc ListReceivableDue(ListReceivableDueRequest) returns (ListReceivableDueResponse);
+  // 应收提醒收件箱（E1 第二期）。
+  rpc ListReceivableReminders(ListReceivableRemindersRequest) returns (ListReceivableRemindersResponse);
+  rpc MarkReceivableRemindersRead(MarkReceivableRemindersReadRequest) returns (MarkReceivableRemindersReadResponse);
 }
 
 // BankAccount is one of our own accounts. Kept so a transfer between two of
@@ -297,3 +300,37 @@ message ListReceivableDueResponse {
   repeated ReceivableDue items = 1;
   erp.common.v1.PageMeta meta = 2;
 }
+
+// ReceivableReminder 是应收提醒收件箱里的一条。
+message ReceivableReminder {
+  int64 id = 1;
+  int64 contract_id = 2;
+  string contract_no = 3;
+  string customer_name = 4;
+  // SOON（30 天内）/ DUE（7 天内含当天）/ OVERDUE（逾期，按 period_no 每周一轮）
+  string reminder_type = 5;
+  int32 period_no = 6;
+  string due_date = 7;
+  string open_amount = 8;
+  string currency = 9;
+  string title = 10;
+  string content = 11;
+  string detail_url = 12;
+  string created_at = 13;
+  bool unread = 14;
+}
+
+message ListReceivableRemindersRequest {
+  bool unread_only = 1;
+  int32 limit = 2;
+}
+message ListReceivableRemindersResponse {
+  repeated ReceivableReminder items = 1;
+  int64 unread_total = 2;
+}
+
+message MarkReceivableRemindersReadRequest {
+  // 空 = 全部标记已读。
+  repeated int64 ids = 1;
+}
+message MarkReceivableRemindersReadResponse { int64 marked = 1; }

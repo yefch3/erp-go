@@ -117,6 +117,32 @@ func (s *Server) reopenTransaction(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) listReceivableReminders(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.ParseInt(r.URL.Query().Get("limit"), 10, 32)
+	resp, err := s.Receipts.ListReceivableReminders(r.Context(), &exv1.ListReceivableRemindersRequest{
+		UnreadOnly: r.URL.Query().Get("unread") == "1",
+		Limit:      int32(limit),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) markReceivableRemindersRead(w http.ResponseWriter, r *http.Request) {
+	req := &exv1.MarkReceivableRemindersReadRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Receipts.MarkReceivableRemindersRead(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 // 应收到期清单（E1）。围栏在服务端（按销售负责人），这里只转参数。
 func (s *Server) listReceivableDue(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()

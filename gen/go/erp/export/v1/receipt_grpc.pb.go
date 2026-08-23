@@ -19,18 +19,20 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ReceiptService_ListBankAccounts_FullMethodName    = "/erp.export.v1.ReceiptService/ListBankAccounts"
-	ReceiptService_CreateBankAccount_FullMethodName   = "/erp.export.v1.ReceiptService/CreateBankAccount"
-	ReceiptService_ListTransactions_FullMethodName    = "/erp.export.v1.ReceiptService/ListTransactions"
-	ReceiptService_GetTransaction_FullMethodName      = "/erp.export.v1.ReceiptService/GetTransaction"
-	ReceiptService_RecordTransaction_FullMethodName   = "/erp.export.v1.ReceiptService/RecordTransaction"
-	ReceiptService_AllocateReceipt_FullMethodName     = "/erp.export.v1.ReceiptService/AllocateReceipt"
-	ReceiptService_ReverseAllocation_FullMethodName   = "/erp.export.v1.ReceiptService/ReverseAllocation"
-	ReceiptService_MarkIrrelevant_FullMethodName      = "/erp.export.v1.ReceiptService/MarkIrrelevant"
-	ReceiptService_ReopenTransaction_FullMethodName   = "/erp.export.v1.ReceiptService/ReopenTransaction"
-	ReceiptService_ListOpenReceivables_FullMethodName = "/erp.export.v1.ReceiptService/ListOpenReceivables"
-	ReceiptService_GetContractReceipts_FullMethodName = "/erp.export.v1.ReceiptService/GetContractReceipts"
-	ReceiptService_ListReceivableDue_FullMethodName   = "/erp.export.v1.ReceiptService/ListReceivableDue"
+	ReceiptService_ListBankAccounts_FullMethodName            = "/erp.export.v1.ReceiptService/ListBankAccounts"
+	ReceiptService_CreateBankAccount_FullMethodName           = "/erp.export.v1.ReceiptService/CreateBankAccount"
+	ReceiptService_ListTransactions_FullMethodName            = "/erp.export.v1.ReceiptService/ListTransactions"
+	ReceiptService_GetTransaction_FullMethodName              = "/erp.export.v1.ReceiptService/GetTransaction"
+	ReceiptService_RecordTransaction_FullMethodName           = "/erp.export.v1.ReceiptService/RecordTransaction"
+	ReceiptService_AllocateReceipt_FullMethodName             = "/erp.export.v1.ReceiptService/AllocateReceipt"
+	ReceiptService_ReverseAllocation_FullMethodName           = "/erp.export.v1.ReceiptService/ReverseAllocation"
+	ReceiptService_MarkIrrelevant_FullMethodName              = "/erp.export.v1.ReceiptService/MarkIrrelevant"
+	ReceiptService_ReopenTransaction_FullMethodName           = "/erp.export.v1.ReceiptService/ReopenTransaction"
+	ReceiptService_ListOpenReceivables_FullMethodName         = "/erp.export.v1.ReceiptService/ListOpenReceivables"
+	ReceiptService_GetContractReceipts_FullMethodName         = "/erp.export.v1.ReceiptService/GetContractReceipts"
+	ReceiptService_ListReceivableDue_FullMethodName           = "/erp.export.v1.ReceiptService/ListReceivableDue"
+	ReceiptService_ListReceivableReminders_FullMethodName     = "/erp.export.v1.ReceiptService/ListReceivableReminders"
+	ReceiptService_MarkReceivableRemindersRead_FullMethodName = "/erp.export.v1.ReceiptService/MarkReceivableRemindersRead"
 )
 
 // ReceiptServiceClient is the client API for ReceiptService service.
@@ -65,6 +67,9 @@ type ReceiptServiceClient interface {
 	GetContractReceipts(ctx context.Context, in *GetContractReceiptsRequest, opts ...grpc.CallOption) (*GetContractReceiptsResponse, error)
 	// 应收到期清单（E1）：还没收完的生效合同，按该收的日子排。
 	ListReceivableDue(ctx context.Context, in *ListReceivableDueRequest, opts ...grpc.CallOption) (*ListReceivableDueResponse, error)
+	// 应收提醒收件箱（E1 第二期）。
+	ListReceivableReminders(ctx context.Context, in *ListReceivableRemindersRequest, opts ...grpc.CallOption) (*ListReceivableRemindersResponse, error)
+	MarkReceivableRemindersRead(ctx context.Context, in *MarkReceivableRemindersReadRequest, opts ...grpc.CallOption) (*MarkReceivableRemindersReadResponse, error)
 }
 
 type receiptServiceClient struct {
@@ -195,6 +200,26 @@ func (c *receiptServiceClient) ListReceivableDue(ctx context.Context, in *ListRe
 	return out, nil
 }
 
+func (c *receiptServiceClient) ListReceivableReminders(ctx context.Context, in *ListReceivableRemindersRequest, opts ...grpc.CallOption) (*ListReceivableRemindersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListReceivableRemindersResponse)
+	err := c.cc.Invoke(ctx, ReceiptService_ListReceivableReminders_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *receiptServiceClient) MarkReceivableRemindersRead(ctx context.Context, in *MarkReceivableRemindersReadRequest, opts ...grpc.CallOption) (*MarkReceivableRemindersReadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MarkReceivableRemindersReadResponse)
+	err := c.cc.Invoke(ctx, ReceiptService_MarkReceivableRemindersRead_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ReceiptServiceServer is the server API for ReceiptService service.
 // All implementations must embed UnimplementedReceiptServiceServer
 // for forward compatibility.
@@ -227,6 +252,9 @@ type ReceiptServiceServer interface {
 	GetContractReceipts(context.Context, *GetContractReceiptsRequest) (*GetContractReceiptsResponse, error)
 	// 应收到期清单（E1）：还没收完的生效合同，按该收的日子排。
 	ListReceivableDue(context.Context, *ListReceivableDueRequest) (*ListReceivableDueResponse, error)
+	// 应收提醒收件箱（E1 第二期）。
+	ListReceivableReminders(context.Context, *ListReceivableRemindersRequest) (*ListReceivableRemindersResponse, error)
+	MarkReceivableRemindersRead(context.Context, *MarkReceivableRemindersReadRequest) (*MarkReceivableRemindersReadResponse, error)
 	mustEmbedUnimplementedReceiptServiceServer()
 }
 
@@ -272,6 +300,12 @@ func (UnimplementedReceiptServiceServer) GetContractReceipts(context.Context, *G
 }
 func (UnimplementedReceiptServiceServer) ListReceivableDue(context.Context, *ListReceivableDueRequest) (*ListReceivableDueResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListReceivableDue not implemented")
+}
+func (UnimplementedReceiptServiceServer) ListReceivableReminders(context.Context, *ListReceivableRemindersRequest) (*ListReceivableRemindersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListReceivableReminders not implemented")
+}
+func (UnimplementedReceiptServiceServer) MarkReceivableRemindersRead(context.Context, *MarkReceivableRemindersReadRequest) (*MarkReceivableRemindersReadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MarkReceivableRemindersRead not implemented")
 }
 func (UnimplementedReceiptServiceServer) mustEmbedUnimplementedReceiptServiceServer() {}
 func (UnimplementedReceiptServiceServer) testEmbeddedByValue()                        {}
@@ -510,6 +544,42 @@ func _ReceiptService_ListReceivableDue_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ReceiptService_ListReceivableReminders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListReceivableRemindersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReceiptServiceServer).ListReceivableReminders(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReceiptService_ListReceivableReminders_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReceiptServiceServer).ListReceivableReminders(ctx, req.(*ListReceivableRemindersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ReceiptService_MarkReceivableRemindersRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkReceivableRemindersReadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReceiptServiceServer).MarkReceivableRemindersRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReceiptService_MarkReceivableRemindersRead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReceiptServiceServer).MarkReceivableRemindersRead(ctx, req.(*MarkReceivableRemindersReadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ReceiptService_ServiceDesc is the grpc.ServiceDesc for ReceiptService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -564,6 +634,14 @@ var ReceiptService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListReceivableDue",
 			Handler:    _ReceiptService_ListReceivableDue_Handler,
+		},
+		{
+			MethodName: "ListReceivableReminders",
+			Handler:    _ReceiptService_ListReceivableReminders_Handler,
+		},
+		{
+			MethodName: "MarkReceivableRemindersRead",
+			Handler:    _ReceiptService_MarkReceivableRemindersRead_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

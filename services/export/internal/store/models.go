@@ -250,6 +250,25 @@ type ReceiptAllocation struct {
 	AllocatedAt     pgtype.Timestamptz
 }
 
+type ReceivableReminder struct {
+	ID                  int64
+	TenantID            int64
+	ContractID          int64
+	ContractNo          string
+	CustomerName        string
+	RecipientEmployeeID int64
+	ReminderType        string
+	PeriodNo            int32
+	DueDate             pgtype.Date
+	OpenAmount          pgtype.Numeric
+	Currency            string
+	Title               string
+	Content             string
+	DetailUrl           string
+	CreatedAt           pgtype.Timestamptz
+	ReadAt              pgtype.Timestamptz
+}
+
 type Shipment struct {
 	ID              int64
 	TenantID        int64

@@ -186,6 +186,36 @@ func (h *ReceiptHandler) ListReceivableDue(ctx context.Context, req *exv1.ListRe
 	return &exv1.ListReceivableDueResponse{Items: out, Meta: &commonv1.PageMeta{Total: total}}, nil
 }
 
+// ListReceivableReminders 是本人的应收提醒收件箱——按登录人隔离，
+// 不需要额外围栏：提醒本来就是发给具体某个人的。
+func (h *ReceiptHandler) ListReceivableReminders(ctx context.Context, req *exv1.ListReceivableRemindersRequest) (*exv1.ListReceivableRemindersResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	rows, unread, err := h.svc.ReceivableInbox(ctx, grpcx.TenantID(ctx), op.EmployeeID, req.GetUnreadOnly(), req.GetLimit())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*exv1.ReceivableReminder, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, &exv1.ReceivableReminder{
+			Id: r.ID, ContractId: r.ContractID, ContractNo: r.ContractNo,
+			CustomerName: r.CustomerName, ReminderType: r.Type, PeriodNo: r.PeriodNo,
+			DueDate: r.DueDate, OpenAmount: r.OpenAmount, Currency: r.Currency,
+			Title: r.Title, Content: r.Content, DetailUrl: r.DetailURL,
+			CreatedAt: r.CreatedAt, Unread: r.Unread,
+		})
+	}
+	return &exv1.ListReceivableRemindersResponse{Items: out, UnreadTotal: unread}, nil
+}
+
+func (h *ReceiptHandler) MarkReceivableRemindersRead(ctx context.Context, req *exv1.MarkReceivableRemindersReadRequest) (*exv1.MarkReceivableRemindersReadResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	n, err := h.svc.MarkReceivableRemindersRead(ctx, grpcx.TenantID(ctx), op.EmployeeID, req.GetIds())
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.MarkReceivableRemindersReadResponse{Marked: n}, nil
+}
+
 func (h *ReceiptHandler) GetContractReceipts(ctx context.Context, req *exv1.GetContractReceiptsRequest) (*exv1.GetContractReceiptsResponse, error) {
 	progress, rows, err := h.svc.ContractReceipts(ctx, grpcx.TenantID(ctx), req.GetContractId())
 	if err != nil {

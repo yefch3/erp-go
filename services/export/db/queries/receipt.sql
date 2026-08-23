@@ -301,3 +301,87 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND receivable_due_date IS NULL
   AND effective_at IS NOT NULL
   AND sqlc.arg(payment_days)::int > 0;
+
+-- name: SweepReceivableReminders :execrows
+-- 一趟扫出所有该提醒而未提醒的合同，直接写成站内信。
+--
+-- 幂等全靠唯一键：同一张合同、同一个人、同一档、同一轮、同一个到期日
+-- 只会有一行。所以 worker 多跑几次、停几天再补跑，结果都一样。
+--
+-- 档位用**范围**判断而不是等号——「今天正好是到期前 30 天」这种写法，
+-- worker 那天没跑就永远错过。范围加唯一键则是：第一次进入范围时发一条，
+-- 之后再扫都撞唯一键，什么也不发。
+--
+-- 逾期按 7 天一轮：period_no = ceil(逾期天数 / 7)，所以逾期第 1–7 天是
+-- 第一轮，8–14 天是第二轮。轮次进了唯一键，于是每周恰好再响一次。
+INSERT INTO receivable_reminders (
+    tenant_id, contract_id, contract_no, customer_name, recipient_employee_id,
+    reminder_type, period_no, due_date, open_amount, currency, title, content, detail_url
+)
+SELECT
+    c.tenant_id, c.id, c.contract_no, c.customer_name, c.sales_employee_id,
+    d.reminder_type, d.period_no, c.receivable_due_date,
+    (v.total_amount - coalesce(r.received, 0)), v.currency,
+    d.title, d.content, '/receivable-due'
+FROM contracts c
+JOIN contract_versions v ON v.id = c.current_version_id
+LEFT JOIN (
+    SELECT tenant_id, contract_id, sum(amount + fee_amount) AS received
+    FROM receipt_allocations
+    GROUP BY tenant_id, contract_id
+) r ON r.tenant_id = c.tenant_id AND r.contract_id = c.id
+CROSS JOIN LATERAL (
+    SELECT
+        CASE
+            WHEN current_date > c.receivable_due_date THEN 'OVERDUE'
+            WHEN c.receivable_due_date - current_date <= 7 THEN 'DUE'
+            ELSE 'SOON'
+        END AS reminder_type,
+        CASE
+            WHEN current_date > c.receivable_due_date
+            THEN ceil((current_date - c.receivable_due_date)::numeric / 7)::int
+            ELSE 0
+        END AS period_no,
+        CASE
+            WHEN current_date > c.receivable_due_date
+            THEN c.contract_no || ' 应收逾期 ' || (current_date - c.receivable_due_date) || ' 天'
+            WHEN c.receivable_due_date = current_date THEN c.contract_no || ' 今天到期'
+            ELSE c.contract_no || ' 还有 ' || (c.receivable_due_date - current_date) || ' 天到期'
+        END AS title,
+        c.customer_name || ' · 未收 ' || v.currency || ' ' ||
+            to_char(v.total_amount - coalesce(r.received, 0), 'FM999999999990.00') ||
+            ' · 应收日 ' || c.receivable_due_date AS content
+) d
+-- 跨租户扫描：worker 没有租户上下文，新租户也不该需要额外配置才被覆盖。
+-- 每一行写回的仍是合同自己的 tenant_id。
+WHERE c.status IN ('EFFECTIVE', 'EXECUTING')
+  AND c.receivable_due_date IS NOT NULL
+  -- 没有负责人就没有收件人。这类合同在清单页上仍然看得见，只是没人被点名。
+  AND c.sales_employee_id > 0
+  AND (v.total_amount - coalesce(r.received, 0)) > 0.01
+  -- 只在进入视野之后才提醒：30 天以外的不打扰。
+  AND c.receivable_due_date - current_date <= 30
+ON CONFLICT (tenant_id, contract_id, recipient_employee_id, reminder_type, period_no, due_date)
+DO NOTHING;
+
+-- name: ListReceivableReminders :many
+-- 某人的应收提醒收件箱。未读在前，同一批里新的在前。
+SELECT id, contract_id, contract_no, customer_name, reminder_type, period_no,
+       due_date::text AS due_date, open_amount::text AS open_amount, currency,
+       title, content, detail_url, created_at,
+       (read_at IS NULL)::bool AS unread,
+       count(*) FILTER (WHERE read_at IS NULL) OVER () AS unread_total
+FROM receivable_reminders
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND recipient_employee_id = sqlc.arg(employee_id)::bigint
+  AND (sqlc.arg(unread_only)::bool = false OR read_at IS NULL)
+ORDER BY (read_at IS NULL) DESC, created_at DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: MarkReceivableRemindersRead :execrows
+-- 标记已读。只动自己的——收件箱是按人隔离的，别人的提醒不该被谁点掉。
+UPDATE receivable_reminders SET read_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND recipient_employee_id = sqlc.arg(employee_id)::bigint
+  AND read_at IS NULL
+  AND (sqlc.arg(ids)::bigint[] = '{}' OR id = ANY(sqlc.arg(ids)::bigint[]));

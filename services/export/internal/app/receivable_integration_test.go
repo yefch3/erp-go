@@ -169,3 +169,130 @@ func TestReceivableDueList(t *testing.T) {
 		t.Fatalf("补算之后不该还有未配账期的行：%+v", rows)
 	}
 }
+
+// TestReceivableReminderSweep 钉住提醒的触发时机与幂等：
+// 四档各响一次、30 天以外不打扰、逾期每 7 天恰好再响一次、重复扫描
+// 不产生第二条、收件箱按人隔离。
+func TestReceivableReminderSweep(t *testing.T) {
+	dsn := os.Getenv("EXPORT_TEST_DSN")
+	if dsn == "" {
+		t.Skip("EXPORT_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenantID := time.Now().UnixNano()
+	defer func() {
+		for _, tbl := range []string{"receivable_reminders", "receipt_allocations", "bank_transactions", "bank_accounts", "contract_versions", "contracts"} {
+			_, _ = pool.Exec(ctx, "DELETE FROM "+tbl+" WHERE tenant_id=$1", tenantID)
+		}
+	}()
+
+	const sales = 61
+	mk := func(no string, total string, dueOffsetDays int) {
+		var id int64
+		due := time.Now().UTC().AddDate(0, 0, dueOffsetDays).Format("2006-01-02")
+		if err := pool.QueryRow(ctx, `INSERT INTO contracts
+			(tenant_id, contract_no, customer_id, customer_name, status, sales_employee_id, sales_employee,
+			 effective_at, receivable_due_date, created_by, updated_by)
+			VALUES ($1,$2,9,'客户','EFFECTIVE',$3,'销售', now()-interval '1 day', $4::date, 1,1) RETURNING id`,
+			tenantID, no, sales, due).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		var vid int64
+		if err := pool.QueryRow(ctx, `INSERT INTO contract_versions
+			(tenant_id, contract_id, version_no, status, currency, total_amount, created_by, fx_rate, fx_rate_at, fx_source)
+			VALUES ($1,$2,1,'APPROVED','USD',$3::numeric,1,1,now(),'TEST') RETURNING id`, tenantID, id, total).Scan(&vid); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `UPDATE contracts SET current_version_id=$2 WHERE id=$1`, id, vid); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mk("CT-REM-FAR", "10000", 60)  // 60 天后到期——还没进视野
+	mk("CT-REM-SOON", "20000", 20) // 20 天后——SOON
+	mk("CT-REM-DUE", "30000", 3)   // 3 天后——DUE
+	mk("CT-REM-TODAY", "40000", 0) // 今天——DUE
+	mk("CT-REM-OD1", "50000", -3)  // 逾期 3 天——OVERDUE 第 1 轮
+	mk("CT-REM-OD2", "60000", -10) // 逾期 10 天——OVERDUE 第 2 轮
+
+	svc := New(pool, Deps{})
+	if _, err := svc.SweepReceivableReminders(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	type slot struct {
+		Type     string
+		PeriodNo int32
+	}
+	kind := map[string]slot{}
+	rows, err := pool.Query(ctx, `SELECT contract_no, reminder_type, period_no FROM receivable_reminders WHERE tenant_id=$1`, tenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var no, typ string
+		var period int32
+		if err := rows.Scan(&no, &typ, &period); err != nil {
+			t.Fatal(err)
+		}
+		kind[no] = slot{typ, period}
+	}
+	rows.Close()
+
+	if _, ok := kind["CT-REM-FAR"]; ok {
+		t.Fatal("60 天后到期的不该打扰——30 天以外不进视野")
+	}
+	for no, want := range map[string]slot{
+		"CT-REM-SOON":  {"SOON", 0},
+		"CT-REM-DUE":   {"DUE", 0},
+		"CT-REM-TODAY": {"DUE", 0},
+		"CT-REM-OD1":   {"OVERDUE", 1}, // 逾期 3 天 → 第一轮
+		"CT-REM-OD2":   {"OVERDUE", 2}, // 逾期 10 天 → 第二轮
+	} {
+		got, ok := kind[no]
+		if !ok {
+			t.Fatalf("%s 应当有一条提醒", no)
+		}
+		if got != want {
+			t.Fatalf("%s 的档位错了：want %+v got %+v", no, want, got)
+		}
+	}
+
+	// 幂等：再扫一趟什么都不该多出来。
+	again, err := svc.SweepReceivableReminders(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again != 0 {
+		t.Fatalf("重复扫描不该再发提醒，实际又写了 %d 条", again)
+	}
+
+	// 收件箱：未读数对得上，全部已读之后归零。
+	inbox, unread, err := svc.ReceivableInbox(ctx, tenantID, sales, true, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inbox) != 5 || unread != 5 {
+		t.Fatalf("收件箱应有五条未读，实际 %d 条 / 未读 %d", len(inbox), unread)
+	}
+	marked, err := svc.MarkReceivableRemindersRead(ctx, tenantID, sales, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if marked != 5 {
+		t.Fatalf("全部已读应标记五条，实际 %d", marked)
+	}
+	if _, unread, err = svc.ReceivableInbox(ctx, tenantID, sales, false, 50); err != nil || unread != 0 {
+		t.Fatalf("标记之后不该还有未读：%d，err=%v", unread, err)
+	}
+
+	// 别人的收件箱是空的——提醒按人隔离。
+	if other, _, err := svc.ReceivableInbox(ctx, tenantID, 62, false, 50); err != nil || len(other) != 0 {
+		t.Fatalf("别人的收件箱不该有东西：%d 条，err=%v", len(other), err)
+	}
+}

@@ -171,6 +171,7 @@ export default {
     ofTotal: 'de {total}', unsetTag: 'Sin plazo',
     overdueBy: '{n} días vencido', dueToday: 'Vence hoy', dueIn: 'en {n} días',
     empty: 'Nada pendiente — todo cobrado', emptyOverdue: 'Nada vencido',
+    remindersTitle: 'Avisos de cobro', markAllRead: 'Marcar todo leído', noReminders: 'Sin avisos de cobro',
   },
   procurementWorkbench: {
     eyebrow: 'CONTROL DE COMPRAS', title: 'Panel de compras', subtitle: 'Revisar consultas estandarizadas y avanzar compras', downloadTemplate: 'Descargar plantilla', uploadInquiry: 'Importar consulta del cliente', handlePending: 'Pendientes de revisión', handlePendingCount: 'Pendientes de revisión ({n})',

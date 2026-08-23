@@ -171,6 +171,7 @@ export default {
     ofTotal: 'of {total}', unsetTag: 'No terms',
     overdueBy: '{n} days overdue', dueToday: 'Due today', dueIn: 'in {n} days',
     empty: 'Nothing outstanding — all collected', emptyOverdue: 'Nothing overdue',
+    remindersTitle: 'Receivable alerts', markAllRead: 'Mark all read', noReminders: 'No receivable alerts',
   },
   procurementWorkbench: {
     eyebrow: 'PROCUREMENT CONTROL', title: 'Procurement workbench', subtitle: 'Review standardized inquiries and advance sourcing and purchasing', downloadTemplate: 'Download template', uploadInquiry: 'Import customer inquiry', handlePending: 'Pending review', handlePendingCount: 'Pending review ({n})',
