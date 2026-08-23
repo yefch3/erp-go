@@ -15,8 +15,12 @@ fail=0
 for f in services/iam/db/migrations/*.sql; do
   base=$(basename "$f")
   num=${base%%_*}
-  # 10# forces decimal: 00008 would otherwise read as octal.
-  [ "$((10#$num))" -ge 33 ] || continue
+  # Pre-convention migrations are left as history. Pattern, not arithmetic:
+  # the zero padding reads as octal in $(( )), and 10# is a bashism — CI
+  # runs this script as dash, which has neither.
+  case "$num" in
+    0000[0-9]|0001[0-9]|0002[0-9]|0003[0-2]) continue ;;
+  esac
   awk -v file="$base" '
     /INSERT[[:space:]]+INTO[[:space:]]+role_permissions/ { pending = 1; next }
     pending && /^[[:space:]]*SELECT[[:space:]]+[0-9]/ {
