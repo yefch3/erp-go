@@ -8,7 +8,7 @@ INSERT INTO permissions (code, name, module, menu_path) VALUES
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO role_permissions (tenant_id, role_id, permission_id)
-SELECT 1, r.id, p.id FROM roles r CROSS JOIN permissions p
+SELECT r.tenant_id, r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.code = 'SUPER_ADMIN' AND p.code = 'procurement:recon:read'
 ON CONFLICT DO NOTHING;
 

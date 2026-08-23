@@ -348,6 +348,13 @@ func (s *Service) AllocateSupplierPayment(ctx context.Context, tenantID, payment
 
 		adding := decimal.Zero
 		touched := map[int64]bool{}
+		// The payment-side balance is not the only ceiling: an invoice must
+		// not be settled past its own total either. Per-invoice sums are read
+		// once, under the invoice row lock every allocator takes, and amounts
+		// from this very request accumulate against them — two lines naming
+		// the same invoice are one claim, not two independent ones.
+		settledByInvoice := map[int64]decimal.Decimal{}
+		addingByInvoice := map[int64]decimal.Decimal{}
 		for i, l := range lines {
 			lineNo := itoa(i + 1)
 			if (l.InvoiceID != 0) == (l.POID != 0) {
@@ -365,16 +372,20 @@ func (s *Service) AllocateSupplierPayment(ctx context.Context, tenantID, payment
 
 			if l.InvoiceID != 0 {
 				var invSupplier int64
-				var invCurrency, invStatus string
+				var invCurrency, invStatus, invTotalText string
 				err := tx.QueryRow(ctx, `
-					SELECT supplier_id, currency, status FROM supplier_invoices
+					SELECT supplier_id, currency, status, total_amount::text FROM supplier_invoices
 					 WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,
-					tenantID, l.InvoiceID).Scan(&invSupplier, &invCurrency, &invStatus)
+					tenantID, l.InvoiceID).Scan(&invSupplier, &invCurrency, &invStatus, &invTotalText)
 				if err != nil {
 					return apierr.NotFound("PAY_ALLOC_INVOICE_NOT_FOUND", "第 "+lineNo+" 笔的发票不存在")
 				}
 				if invStatus == "VOID" {
 					return apierr.Invalid("PAY_ALLOC_INVOICE_VOID", "第 "+lineNo+" 笔的发票已作废")
+				}
+				if invStatus == "SETTLED" {
+					return apierr.Invalid("PAY_ALLOC_INVOICE_SETTLED",
+						"第 "+lineNo+" 笔的发票已结清——如需改动请先冲销一笔核销")
 				}
 				if invSupplier != supplierID {
 					return apierr.Invalid("PAY_ALLOC_SUPPLIER_MISMATCH", "第 "+lineNo+" 笔的发票不属于该供应商")
@@ -386,6 +397,25 @@ func (s *Service) AllocateSupplierPayment(ctx context.Context, tenantID, payment
 					return apierr.Invalid("PAY_ALLOC_CURRENCY_MISMATCH",
 						"第 "+lineNo+" 笔币种不符：发票 "+invCurrency+"，付款 "+currency)
 				}
+				settled, seen := settledByInvoice[l.InvoiceID]
+				if !seen {
+					var settledText string
+					if err := tx.QueryRow(ctx, `
+						SELECT coalesce(sum(amount),0)::text FROM payment_allocations
+						 WHERE tenant_id=$1 AND invoice_id=$2`,
+						tenantID, l.InvoiceID).Scan(&settledText); err != nil {
+						return err
+					}
+					settled = decimal.RequireFromString(settledText)
+					settledByInvoice[l.InvoiceID] = settled
+				}
+				invTotal := decimal.RequireFromString(invTotalText)
+				newSum := settled.Add(addingByInvoice[l.InvoiceID]).Add(amt)
+				if newSum.GreaterThan(invTotal) {
+					return apierr.Invalid("PAY_ALLOC_EXCEEDS_INVOICE",
+						"第 "+lineNo+" 笔核销后该发票累计核销 "+newSum.String()+" 超出发票金额 "+invTotal.String())
+				}
+				addingByInvoice[l.InvoiceID] = addingByInvoice[l.InvoiceID].Add(amt)
 				touched[l.InvoiceID] = true
 			} else {
 				var poSupplier int64

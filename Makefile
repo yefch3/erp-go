@@ -122,6 +122,10 @@ lint: ## golangci-lint over every module
 check-tenant: ## Verify every migration table carries tenant_id
 	sh scripts/check-tenant-id.sh
 
+.PHONY: check-iam-seeds
+check-iam-seeds: ## Verify role grants follow the role's own tenant
+	sh scripts/check-iam-seeds.sh
+
 .PHONY: check-migration-safety
 check-migration-safety: ## Refuse undeclared destructive migrations (deploy rolls back containers, not schema)
 	sh scripts/check-migration-safety.sh
@@ -144,7 +148,7 @@ audit-mail: ## Check stored mail against its invariants (needs a running databas
 # Prerequisites run in the order written, cheapest first, so a stale gen/ or
 # a missed tenant_id fails in seconds, not after the full test suite.
 .PHONY: ci
-ci: proto-check check-tenant check-migration-safety check-mail-sandbox test-integration lint ## Everything CI runs (needs `make up` + `make migrate` first)
+ci: proto-check check-tenant check-iam-seeds check-migration-safety check-mail-sandbox test-integration lint ## Everything CI runs (needs `make up` + `make migrate` first)
 	@echo "ci: all checks passed"
 
 .PHONY: sqlc

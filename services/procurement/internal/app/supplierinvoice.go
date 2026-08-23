@@ -172,10 +172,11 @@ func (s *Service) CreateSupplierInvoice(ctx context.Context, tenantID int64, in 
 		// line can never point at somebody else's purchase.
 		if poItemID != 0 {
 			var itemPO, poSupplier int64
+			var poCurrency string
 			err := s.pool.QueryRow(ctx,
-				`SELECT i.po_id, o.supplier_id FROM purchase_order_items i
+				`SELECT i.po_id, o.supplier_id, o.currency FROM purchase_order_items i
 				   JOIN purchase_orders o ON o.id = i.po_id
-				  WHERE i.tenant_id=$1 AND i.id=$2`, tenantID, poItemID).Scan(&itemPO, &poSupplier)
+				  WHERE i.tenant_id=$1 AND i.id=$2`, tenantID, poItemID).Scan(&itemPO, &poSupplier, &poCurrency)
 			if err != nil {
 				return SupplierInvoice{}, apierr.Invalid("INV_LINE_ITEM_INVALID", "第 "+itoa(i+1)+" 行的采购明细不存在")
 			}
@@ -185,17 +186,30 @@ func (s *Service) CreateSupplierInvoice(ctx context.Context, tenantID int64, in 
 			if poSupplier != in.SupplierID {
 				return SupplierInvoice{}, apierr.Invalid("INV_LINE_SUPPLIER_MISMATCH", "第 "+itoa(i+1)+" 行的采购单不属于该供应商")
 			}
+			if poCurrency != currency {
+				// The matcher subtracts the claim (invoice currency) from the
+				// payable (order currency); a mixed pair makes that arithmetic
+				// meaningless. Refused at entry, exactly as cross-currency
+				// settlement is refused at allocation.
+				return SupplierInvoice{}, apierr.Invalid("INV_LINE_CURRENCY_MISMATCH",
+					"第 "+itoa(i+1)+" 行币种不符：发票 "+currency+"，采购单 "+poCurrency)
+			}
 			poID = itemPO
 		} else if poID != 0 {
 			var poSupplier int64
+			var poCurrency string
 			err := s.pool.QueryRow(ctx,
-				`SELECT supplier_id FROM purchase_orders WHERE tenant_id=$1 AND id=$2`,
-				tenantID, poID).Scan(&poSupplier)
+				`SELECT supplier_id, currency FROM purchase_orders WHERE tenant_id=$1 AND id=$2`,
+				tenantID, poID).Scan(&poSupplier, &poCurrency)
 			if err != nil {
 				return SupplierInvoice{}, apierr.Invalid("INV_LINE_PO_INVALID", "第 "+itoa(i+1)+" 行的采购单不存在")
 			}
 			if poSupplier != in.SupplierID {
 				return SupplierInvoice{}, apierr.Invalid("INV_LINE_SUPPLIER_MISMATCH", "第 "+itoa(i+1)+" 行的采购单不属于该供应商")
+			}
+			if poCurrency != currency {
+				return SupplierInvoice{}, apierr.Invalid("INV_LINE_CURRENCY_MISMATCH",
+					"第 "+itoa(i+1)+" 行币种不符：发票 "+currency+"，采购单 "+poCurrency)
 			}
 		}
 		sum = sum.Add(amount)
