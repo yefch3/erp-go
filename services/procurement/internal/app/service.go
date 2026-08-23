@@ -175,10 +175,22 @@ type RequirementFilter struct {
 	Keyword    string
 }
 
-func (s *Service) ListRequirements(ctx context.Context, tenantID int64, f RequirementFilter, page, size int32) ([]store.ListRequirementsRow, int64, error) {
+func (s *Service) ListRequirements(ctx context.Context, tenantID int64, f RequirementFilter, page, size int32, operators ...Operator) ([]store.ListRequirementsRow, int64, error) {
+	// Variadic for the same reason ListOrders is: internal callers and old
+	// tests carry no operator and keep the unscoped view, while every request
+	// that represents a person passes one and is fenced.
+	var op Operator
+	if len(operators) > 0 {
+		op = operators[0]
+	}
+	visible, err := s.visibleRequirementsTo(ctx, op)
+	if err != nil {
+		return nil, 0, err
+	}
 	page, size = normalizePage(page, size)
 	rows, err := s.q.ListRequirements(ctx, store.ListRequirementsParams{
 		TenantID: tenantID, Status: f.Status, ContractID: f.ContractID, Keyword: f.Keyword,
+		ScopeAll: visible.All, OwnerIds: visible.EmployeeIDs,
 		RowLimit: size, RowOffset: (page - 1) * size,
 	})
 	if err != nil {
@@ -276,6 +288,8 @@ func (s *Service) CreateRequirement(ctx context.Context, tenantID int64, in Manu
 		ProductCode: in.ProductCode, ProductName: in.ProductName, Spec: in.Spec,
 		UomID: in.UomID, UomCode: in.UomCode, RequiredQty: qty.String(),
 		RequiredDate: in.RequiredDate, Remark: in.Remark,
+		// 手工需求没有合同负责人可继承，归创建人（A1）。
+		OwnerID: op.ID, OwnerName: op.Name,
 	})
 	if err != nil {
 		return store.GetRequirementRow{}, err

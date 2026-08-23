@@ -247,7 +247,7 @@
             <div>{{ row.productName }}</div>
             <div class="sub">
               <template v-if="row.source === 'MANUAL'">{{ t('orders.manual') }}</template>
-              <template v-else>{{ row.contractNo }} · {{ row.customerName }}</template>
+              <template v-else>{{ row.contractNo }} · {{ row.customerName }}<template v-if="row.contractOwner"> · {{ t('orders.contractOwner') }} {{ row.contractOwner }}</template></template>
             </div>
           </template>
         </el-table-column>
@@ -518,6 +518,7 @@ interface OrderItem {
   contractNo: string
   customerName: string
   source: string
+  contractOwner: string
 }
 interface Receipt {
   id: string

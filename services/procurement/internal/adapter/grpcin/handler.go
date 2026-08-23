@@ -23,10 +23,19 @@ type Handler struct {
 
 func New(svc *app.Service) *Handler { return &Handler{svc: svc} }
 
+// authorizeRequirement fences every handler that addresses one requirement,
+// same place and same shape as the order handlers gate.
+func (h *Handler) authorizeRequirement(ctx context.Context, requirementID int64) error {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	return h.svc.AuthorizeRequirement(ctx, grpcx.TenantID(ctx), requirementID, app.Operator{ID: op.EmployeeID, Name: op.Name})
+}
+
 func (h *Handler) ListRequirements(ctx context.Context, req *prv1.ListRequirementsRequest) (*prv1.ListRequirementsResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
 	rows, total, err := h.svc.ListRequirements(ctx, grpcx.TenantID(ctx), app.RequirementFilter{
 		Status: req.GetStatus(), ContractID: req.GetContractId(), Keyword: req.GetKeyword(),
-	}, req.GetPage().GetPage(), req.GetPage().GetPageSize())
+	}, req.GetPage().GetPage(), req.GetPage().GetPageSize(),
+		app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
 		return nil, err
 	}
@@ -42,6 +51,7 @@ func (h *Handler) ListRequirements(ctx context.Context, req *prv1.ListRequiremen
 			RequiredQty: r.RequiredQty, OrderedQty: r.OrderedQty, ReceivedQty: r.ReceivedQty,
 			RequiredDate: r.RequiredDate, Source: r.Source, Status: r.Status,
 			ClosedReason: r.ClosedReason, CreatedAt: ts(r.CreatedAt),
+			OwnerId: r.OwnerID, OwnerName: r.OwnerName,
 		})
 	}
 	return &prv1.ListRequirementsResponse{
@@ -50,6 +60,13 @@ func (h *Handler) ListRequirements(ctx context.Context, req *prv1.ListRequiremen
 }
 
 func (h *Handler) ExportPurchaseTemplate(ctx context.Context, req *prv1.ExportPurchaseTemplateRequest) (*prv1.ExportPurchaseTemplateResponse, error) {
+	// Bulk read by id is still a read by id: every requirement in the
+	// selection must be inside the caller's range.
+	for _, id := range req.GetRequirementIds() {
+		if err := h.authorizeRequirement(ctx, id); err != nil {
+			return nil, err
+		}
+	}
 	book, err := h.svc.ExportPurchaseTemplate(ctx, grpcx.TenantID(ctx), req.GetRequirementIds())
 	if err != nil {
 		return nil, err
@@ -73,6 +90,9 @@ func (h *Handler) CreateRequirement(ctx context.Context, req *prv1.CreateRequire
 }
 
 func (h *Handler) GetRequirement(ctx context.Context, req *prv1.GetRequirementRequest) (*prv1.GetRequirementResponse, error) {
+	if err := h.authorizeRequirement(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	r, err := h.svc.GetRequirement(ctx, grpcx.TenantID(ctx), req.GetId())
 	if err != nil {
 		return nil, err
@@ -81,6 +101,9 @@ func (h *Handler) GetRequirement(ctx context.Context, req *prv1.GetRequirementRe
 }
 
 func (h *Handler) CancelRequirement(ctx context.Context, req *prv1.CancelRequirementRequest) (*prv1.CancelRequirementResponse, error) {
+	if err := h.authorizeRequirement(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	op, _ := grpcx.OperatorFromContext(ctx)
 	status, err := h.svc.CancelRequirement(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetReason(),
 		app.Operator{ID: op.EmployeeID, Name: op.Name})
@@ -101,6 +124,7 @@ func requirementToProto(r store.GetRequirementRow) *prv1.Requirement {
 		RequiredQty: r.RequiredQty, OrderedQty: r.OrderedQty, ReceivedQty: r.ReceivedQty,
 		RequiredDate: r.RequiredDate, Source: r.Source, Status: r.Status,
 		ClosedReason: r.ClosedReason, CreatedAt: ts(r.CreatedAt),
+		OwnerId: r.OwnerID, OwnerName: r.OwnerName,
 	}
 }
 
@@ -112,6 +136,9 @@ func ts(t pgtype.Timestamptz) string {
 }
 
 func (h *Handler) ReopenRequirement(ctx context.Context, req *prv1.ReopenRequirementRequest) (*prv1.ReopenRequirementResponse, error) {
+	if err := h.authorizeRequirement(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	op, _ := grpcx.OperatorFromContext(ctx)
 	status, err := h.svc.ReopenRequirement(ctx, grpcx.TenantID(ctx), req.GetId(),
 		app.Operator{ID: op.EmployeeID, Name: op.Name})
@@ -122,6 +149,9 @@ func (h *Handler) ReopenRequirement(ctx context.Context, req *prv1.ReopenRequire
 }
 
 func (h *Handler) ListRequirementOrders(ctx context.Context, req *prv1.ListRequirementOrdersRequest) (*prv1.ListRequirementOrdersResponse, error) {
+	if err := h.authorizeRequirement(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	rows, err := h.svc.RequirementOrders(ctx, grpcx.TenantID(ctx), req.GetId())
 	if err != nil {
 		return nil, err

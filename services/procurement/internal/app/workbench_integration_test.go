@@ -63,8 +63,8 @@ func TestWorkbenchQueries(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	past := time.Now().AddDate(0, 0, -3).Format("2006-01-02")
-	future := time.Now().AddDate(0, 0, 3).Format("2006-01-02")
+	past := time.Now().UTC().AddDate(0, 0, -3).Format("2006-01-02")
+	future := time.Now().UTC().AddDate(0, 0, 3).Format("2006-01-02")
 	seedRFQ("RFQ-WB-LATE", past, "SENT")
 	seedRFQ("RFQ-WB-OK", future, "SENT")
 	seedRFQ("RFQ-WB-DONE", past, "QUOTED") // answered late is not overdue work

@@ -290,6 +290,10 @@ type contractEffectiveEvent struct {
 	TotalAmount  string              `json:"total_amount"`
 	DeliveryDate string              `json:"delivery_date"`
 	Incoterm     string              `json:"incoterm"`
+	// 合同负责人（A1）：采购需求生而继承它作为属主——合同是谁谈的，
+	// 拆出来的采购动向就归谁看。
+	SalesEmployeeID int64  `json:"sales_employee_id"`
+	SalesEmployee   string `json:"sales_employee"`
 	Items        []effectiveEventItem `json:"items"`
 }
 
@@ -328,6 +332,7 @@ func effectiveEvent(view ContractView) contractEffectiveEvent {
 		CustomerID: view.Contract.CustomerID, CustomerName: view.Contract.CustomerName,
 		Currency: view.Version.Currency, TotalAmount: view.Version.TotalAmount,
 		DeliveryDate: view.Version.DeliveryDate, Incoterm: view.Version.Incoterm,
+		SalesEmployeeID: view.Contract.SalesEmployeeID, SalesEmployee: view.Contract.SalesEmployee,
 		Items: items,
 	}
 }

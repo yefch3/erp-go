@@ -25,6 +25,10 @@ type ContractEffective struct {
 	VersionNo    int32          `json:"version_no"`
 	CustomerName string         `json:"customer_name"`
 	DeliveryDate string         `json:"delivery_date"`
+	// 合同负责人：拆出的需求生而继承它作为属主（A1）。旧事件不带这
+	// 两个字段时归 0——属主未知，只有「全部」范围能看见。
+	SalesEmployeeID int64  `json:"sales_employee_id"`
+	SalesEmployee   string `json:"sales_employee"`
 	Items        []ContractLine `json:"items"`
 }
 
@@ -69,6 +73,7 @@ func (s *Service) RequirementsFromContract(ctx context.Context, tenantID int64, 
 				ProductCode: line.ProductCode, ProductName: line.ProductName,
 				UomID: line.UomID, UomCode: line.UomCode,
 				RequiredQty: qty.String(), RequiredDate: e.DeliveryDate,
+				OwnerID: e.SalesEmployeeID, OwnerName: e.SalesEmployee,
 			}); err != nil {
 				return err
 			}

@@ -403,6 +403,10 @@ message Requirement {
   // manually raised requirement: it has no contract behind it, so no amount
   // of stock arriving for somebody else ever satisfies it.
   string received_qty = 22;
+  // 属主（A1）：合同拆出的需求归合同负责人，手工需求归创建人。
+  // 0 = 属主未知的历史数据，只有「全部」范围能看见。
+  int64 owner_id = 23;
+  string owner_name = 24;
 }
 
 message ListRequirementsRequest {
@@ -704,6 +708,8 @@ message PurchaseOrderItem {
   string contract_no = 13;
   string customer_name = 14;
   string source = 15;
+  // 合同负责人：单归执行采购员，但每一行都记得这单生意是谁谈的。
+  string contract_owner = 16;
 }
 
 message PurchaseReceipt {
