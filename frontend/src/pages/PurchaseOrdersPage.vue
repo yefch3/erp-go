@@ -483,6 +483,40 @@
       </el-tabs>
     </el-dialog>
 
+    <!-- 货没到齐还要关单：人得先说清剩下的怎么办（A5）。 -->
+    <el-dialog v-model="closeShortOpen" :title="t('orders.closeShortTitle')" width="520px">
+      <el-alert v-if="closingOrder" type="warning" :closable="false" show-icon class="alert">
+        {{ t('orders.closeShortHint', {
+          no: closingOrder.poNo,
+          ordered: trim(closingOrder.totalQty),
+          received: trim(closingOrder.receivedQty),
+          gap: trim(String(Number(closingOrder.totalQty) - Number(closingOrder.receivedQty))),
+        }) }}
+      </el-alert>
+      <el-form label-width="120px">
+        <el-form-item :label="t('orders.shortfallAction')" required>
+          <el-radio-group v-model="closeForm.shortfallAction">
+            <el-radio value="REORDER">{{ t('orders.shortfallReorder') }}</el-radio>
+            <el-radio value="DROPPED">{{ t('orders.shortfallDropped') }}</el-radio>
+          </el-radio-group>
+          <div class="sub">
+            {{ closeForm.shortfallAction === 'REORDER'
+              ? t('orders.shortfallReorderHint') : t('orders.shortfallDroppedHint') }}
+          </div>
+        </el-form-item>
+        <el-form-item :label="t('orders.closeNote')" required>
+          <el-input v-model="closeForm.note" type="textarea" :rows="3"
+            :placeholder="t('orders.closeNotePlaceholder')" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="closeShortOpen = false">{{ common('cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="submitCloseShort">
+          {{ t('orders.closeOrder') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="dispositionOpen" :title="t('orders.dispose')" width="440px">
       <el-form label-width="90px">
         <el-form-item :label="t('orders.disposition')" required>
@@ -676,6 +710,9 @@ const exceptionTypes = ['WRONG_PRODUCT', 'UNIT_MISMATCH', 'SHORT_SHIPMENT', 'DAM
 const exceptionForm = reactive<{ type: string; receiptId?: number; itemId?: number; qty: string; actualProduct: string; actualUom: string; description: string }>({ type: 'SHORT_SHIPMENT', receiptId: undefined, itemId: undefined, qty: '', actualProduct: '', actualUom: '', description: '' })
 const inspectionForm = reactive({ receiptId: 0, itemId: 0, result: 'PASS', inspectedQty: '0', defectQty: '0', fileName: '', fileUrl: '', note: '' })
 const dispositionKinds = ['RETURN', 'DEDUCTION', 'CONCESSION', 'REWORK']
+const closeShortOpen = ref(false)
+const closingOrder = ref<Order | null>(null)
+const closeForm = reactive({ shortfallAction: 'REORDER', note: '' })
 const dispositionOpen = ref(false)
 const dispositionTarget = ref<PurchaseInspection | null>(null)
 const dispositionForm = reactive({ disposition: 'DEDUCTION', note: '' })
@@ -739,7 +776,7 @@ function moreActions(row: Order): { key: string; label: string }[] {
   add('execution', t('orders.execution'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('downloadXlsx', t('orders.downloadExcel'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('downloadPdf', t('orders.downloadPdf'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
-  add('close', t('orders.closeOrder'), canClose && row.status === 'RECEIVED' && !row.closedAt)
+  add('close', t('orders.closeOrder'), canClose && ['RECEIVED', 'PARTIALLY_RECEIVED'].includes(row.status) && !row.closedAt)
   add('cancel', common('cancel'), canCancel && ['DRAFT', 'REJECTED', 'ORDERED'].includes(row.status))
   return out
 }
@@ -1202,6 +1239,15 @@ async function submitDisposition() {
 }
 
 async function closeOrder(row: Order) {
+  // 货没到齐的单要人先决定「剩下的怎么办」，所以走一个有选项的弹框；
+  // 收齐的单还是一句确认就够。
+  if (Number(row.receivedQty) < Number(row.totalQty)) {
+    closingOrder.value = row
+    closeForm.shortfallAction = 'REORDER'
+    closeForm.note = ''
+    closeShortOpen.value = true
+    return
+  }
   await ElMessageBox.confirm(t('orders.closeConfirm', { no: row.poNo }), t('orders.closeOrder'), {
     type: 'warning',
     confirmButtonText: t('orders.closeOrder'),
@@ -1210,6 +1256,27 @@ async function closeOrder(row: Order) {
   await post(`/purchase-orders/${row.id}/close`, {})
   ElMessage.success(t('orders.closedOk'))
   load()
+}
+
+async function submitCloseShort() {
+  if (!closingOrder.value) return
+  if (!closeForm.note.trim()) {
+    ElMessage.warning(t('orders.closeNoteRequired'))
+    return
+  }
+  saving.value = true
+  try {
+    await post(`/purchase-orders/${closingOrder.value.id}/close`, {
+      shortfall_action: closeForm.shortfallAction,
+      close_note: closeForm.note,
+    })
+    ElMessage.success(closeForm.shortfallAction === 'REORDER'
+      ? t('orders.closedReorder') : t('orders.closedOk'))
+    closeShortOpen.value = false
+    load()
+  } finally {
+    saving.value = false
+  }
 }
 
 async function submit(row: Order) {

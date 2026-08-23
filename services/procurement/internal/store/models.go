@@ -273,6 +273,8 @@ type PurchaseOrder struct {
 	WarehouseName        string
 	DeliveryAddress      string
 	SourceChangeReason   string
+	CloseNote            string
+	ShortfallAction      string
 }
 
 type PurchaseOrderImport struct {

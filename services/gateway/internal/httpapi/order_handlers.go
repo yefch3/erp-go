@@ -292,7 +292,13 @@ func (s *Server) resolveInspection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) closePurchaseOrder(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Orders.CloseOrder(r.Context(), &prv1.CloseOrderRequest{Id: idFromPath(r)})
+	// 货没到齐时，前端会带上「剩下的怎么办」和原因；收齐的单两个都是空的。
+	req := &prv1.CloseOrderRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Orders.CloseOrder(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

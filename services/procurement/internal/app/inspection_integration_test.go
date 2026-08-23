@@ -94,7 +94,7 @@ func TestInspectionAndCloseLifecycle(t *testing.T) {
 
 	buyer := Operator{ID: 77, Name: "Buyer"}
 	// 没收满：不能结案。
-	if err = svc.CloseOrder(ctx, tenantID, orderID, buyer); code(err) != "PO_NOT_CLOSABLE" {
+	if err = svc.CloseOrder(ctx, tenantID, orderID, CloseOrderInput{}, buyer); code(err) != "PO_NOT_CLOSABLE" {
 		t.Fatalf("expected PO_NOT_CLOSABLE, got %v", err)
 	}
 	if _, err = pool.Exec(ctx, `UPDATE purchase_orders SET status='RECEIVED' WHERE tenant_id=$1 AND id=$2`, tenantID, orderID); err != nil {
@@ -106,7 +106,7 @@ func TestInspectionAndCloseLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = svc.CloseOrder(ctx, tenantID, orderID, buyer)
+	err = svc.CloseOrder(ctx, tenantID, orderID, CloseOrderInput{}, buyer)
 	if code(err) != "PO_OPEN_ISSUES" {
 		t.Fatalf("expected PO_OPEN_ISSUES, got %v", err)
 	}
@@ -118,7 +118,7 @@ func TestInspectionAndCloseLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 异常清了、质检还开着：仍然不行。
-	if err = svc.CloseOrder(ctx, tenantID, orderID, buyer); code(err) != "PO_OPEN_ISSUES" {
+	if err = svc.CloseOrder(ctx, tenantID, orderID, CloseOrderInput{}, buyer); code(err) != "PO_OPEN_ISSUES" {
 		t.Fatalf("expected PO_OPEN_ISSUES after exception resolved, got %v", err)
 	}
 
@@ -136,7 +136,7 @@ func TestInspectionAndCloseLifecycle(t *testing.T) {
 	}
 
 	// 三道闸全清：结案放行，且只放一次。
-	if err = svc.CloseOrder(ctx, tenantID, orderID, buyer); err != nil {
+	if err = svc.CloseOrder(ctx, tenantID, orderID, CloseOrderInput{}, buyer); err != nil {
 		t.Fatal(err)
 	}
 	head, err := svc.GetOrder(ctx, tenantID, orderID)
@@ -146,7 +146,7 @@ func TestInspectionAndCloseLifecycle(t *testing.T) {
 	if head.ClosedAt == "" || head.ClosedByName != "Buyer" {
 		t.Fatalf("closed head=%#v", head)
 	}
-	if err = svc.CloseOrder(ctx, tenantID, orderID, buyer); code(err) != "PO_ALREADY_CLOSED" {
+	if err = svc.CloseOrder(ctx, tenantID, orderID, CloseOrderInput{}, buyer); code(err) != "PO_ALREADY_CLOSED" {
 		t.Fatalf("expected PO_ALREADY_CLOSED, got %v", err)
 	}
 

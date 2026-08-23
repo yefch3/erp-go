@@ -193,6 +193,7 @@ SELECT
     o.send_status, o.sent_to, o.sent_at, o.sent_by_name, o.send_error,
     o.ordered_at, o.created_at,
     coalesce(o.closed_at::text, '')::text AS closed_at, o.closed_by_name,
+    o.close_note, o.shortfall_action,
     coalesce((SELECT c.status FROM purchase_supplier_confirmations c
               WHERE c.tenant_id = o.tenant_id AND c.po_id = o.id
               ORDER BY c.created_at DESC, c.id DESC LIMIT 1), '')::text AS confirm_status,
@@ -313,6 +314,7 @@ SELECT
     o.send_status, o.sent_to, o.sent_at, o.sent_by_name, o.send_error,
     o.created_at,
     coalesce(o.closed_at::text, '')::text AS closed_at, o.closed_by_name,
+    o.close_note, o.shortfall_action,
     -- 最新一条工厂回签的状态（B5 尾巴）：「发了、工厂回没回」要在列表上
     -- 直接可见，不该藏在执行跟踪的页签里。空串 = 从未回签。
     coalesce((SELECT c.status FROM purchase_supplier_confirmations c

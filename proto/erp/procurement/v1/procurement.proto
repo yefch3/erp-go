@@ -704,6 +704,9 @@ message PurchaseOrder {
   // 结案是 RECEIVED 之外的一个事实，不是新状态：空串即未结案。
   string closed_at = 24;
   string closed_by = 25;
+  // 货没到齐就结案时填的：为什么、剩下的怎么办。
+  string close_note = 41;
+  string shortfall_action = 42;
   // 最新一条工厂回签的状态：MATCHED / PENDING_APPROVAL / APPROVED /
   // REJECTED；空串 = 从未回签。
   string confirm_status = 26;
@@ -1010,7 +1013,15 @@ message ResolveInspectionRequest {
 }
 message ResolveInspectionResponse { PurchaseInspection inspection = 1; }
 
-message CloseOrderRequest { int64 id = 1; }
+message CloseOrderRequest {
+  int64 id = 1;
+  // 没收到的那部分怎么办。全部收齐时留空；没收齐时必须选：
+  //   REORDER  放回待采购清单，另找工厂
+  //   DROPPED  不要了
+  string shortfall_action = 2;
+  // 为什么这么定。没收齐时必填。
+  string close_note = 3;
+}
 message CloseOrderResponse { PurchaseOrder order = 1; }
 
 message RecordSupplierConfirmationRequest {

@@ -21,14 +21,20 @@ import (
 // 挡住结案的门。
 
 type PurchaseInspection struct {
-	ID, ReceiptID, POItemID                    int64
-	ReceiptNo, Result                          string
-	InspectedQty, DefectQty, Note              string
-	Attachments                                []ProductionAttachment
-	Status, Disposition, DispositionNote       string
-	InspectedBy, InspectedAt                   string
-	ResolvedBy, ResolvedAt                     string
+	ID, ReceiptID, POItemID              int64
+	ReceiptNo, Result                    string
+	InspectedQty, DefectQty, Note        string
+	Attachments                          []ProductionAttachment
+	Status, Disposition, DispositionNote string
+	InspectedBy, InspectedAt             string
+	ResolvedBy, ResolvedAt               string
 }
+
+// 没收到的那部分怎么处理。业务说常态是另找工厂买。
+const (
+	shortfallReorder = "REORDER"
+	shortfallDropped = "DROPPED"
+)
 
 var inspectionDispositions = map[string]bool{"RETURN": true, "DEDUCTION": true, "CONCESSION": true, "REWORK": true}
 
@@ -121,10 +127,28 @@ func (s *Service) inspectionByID(ctx context.Context, tenantID, poID, id int64) 
 	return out, err
 }
 
-// CloseOrder 宣布一张采购单到此为止。三道闸：全部收满（RECEIVED）、
-// 没有未解决的到货异常、没有未解决的质检。拒绝时把数量带在 meta 里，
-// 前端能告诉人差在哪，而不是一句冷冰冰的「不行」。
-func (s *Service) CloseOrder(ctx context.Context, tenantID, poID int64, op Operator) error {
+// CloseOrderInput 是关单时人做的那个判断。
+type CloseOrderInput struct {
+	// 没收到的那部分怎么办。全部收齐时留空；没收齐时必须选：
+	//   REORDER  放回待采购清单，另找工厂（业务说这是常态）
+	//   DROPPED  不要了（客户减了量，或这批就这样了）
+	ShortfallAction string
+	// 为什么这么定。没收齐时必填——半年后翻账的人得知道当初出了什么事。
+	Note string
+}
+
+// CloseOrder 宣布一张采购单到此为止。
+//
+// 两道闸永远在：没有悬着的到货异常、没有悬着的质检。第三道「必须全部
+// 收满」现在可以由人来免除——工厂只发了 80 吨而剩下的 20 吨永远不会来
+// 的时候，逼着系统等下去只会让财务在系统外记账。
+//
+// 免除的代价是必须说清楚两件事：没收到的部分要不要另找工厂买，以及为
+// 什么。选了「另找工厂」就把那部分退回待采购清单——退回用的是取消订单
+// 时那套现成的机制，于是新单能照常从池子里领走它。
+//
+// 订单明细的数量一个字不改：「订了 100」是事实，「认 80 就算完」是判断。
+func (s *Service) CloseOrder(ctx context.Context, tenantID, poID int64, in CloseOrderInput, op Operator) error {
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		if _, err := q.GetPurchaseOrderForUpdate(ctx, store.GetPurchaseOrderForUpdateParams{
@@ -145,8 +169,43 @@ func (s *Service) CloseOrder(ctx context.Context, tenantID, poID int64, op Opera
 		if closed {
 			return apierr.Conflict("PO_ALREADY_CLOSED", "采购单已经结案")
 		}
-		if status != poReceived {
-			return apierr.Conflict("PO_NOT_CLOSABLE", "全部收货完成后才能结案").WithMeta("status", status)
+		// 收货进度：还差多少没到。全部收满的单走原来的路，一个字不用填。
+		items, err := q.PurchaseOrderItemsForUpdate(ctx, store.PurchaseOrderItemsForUpdateParams{
+			TenantID: tenantID, PoID: poID,
+		})
+		if err != nil {
+			return err
+		}
+		shortfall := make(map[int64]decimal.Decimal, len(items))
+		anyShort := false
+		for _, it := range items {
+			ordered, parseErr := decimal.NewFromString(it.Qty)
+			if parseErr != nil {
+				return parseErr
+			}
+			received, parseErr := decimal.NewFromString(it.ReceivedQty)
+			if parseErr != nil {
+				return parseErr
+			}
+			if gap := ordered.Sub(received); gap.GreaterThan(decimal.Zero) {
+				shortfall[it.RequirementID] = shortfall[it.RequirementID].Add(gap)
+				anyShort = true
+			}
+		}
+		if status != poReceived && status != poPartial {
+			// 还没开始收货、或者已经取消的单，谈不上「货没到齐」。
+			return apierr.Conflict("PO_NOT_CLOSABLE", "只有收过货的采购单可以结案").
+				WithMeta("status", status)
+		}
+		if anyShort {
+			// 人必须替系统做这个判断，而且要说清楚为什么。
+			if in.ShortfallAction != shortfallReorder && in.ShortfallAction != shortfallDropped {
+				return apierr.Invalid("PO_SHORTFALL_ACTION_REQUIRED",
+					"这单还有没收到的数量，请先说明剩下的要另找工厂买还是不要了")
+			}
+			if strings.TrimSpace(in.Note) == "" {
+				return apierr.Invalid("PO_CLOSE_NOTE_REQUIRED", "货没到齐就结案，请填写原因")
+			}
 		}
 		var openExceptions, openInspections int64
 		if err := tx.QueryRow(ctx, `SELECT
@@ -160,7 +219,24 @@ func (s *Service) CloseOrder(ctx context.Context, tenantID, poID int64, op Opera
 				WithMeta("openExceptions", strconv.FormatInt(openExceptions, 10)).
 				WithMeta("openInspections", strconv.FormatInt(openInspections, 10))
 		}
-		_, err := tx.Exec(ctx, `UPDATE purchase_orders SET closed_at=now(),closed_by_id=$3,closed_by_name=$4,updated_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, poID, op.ID, op.Name)
+		// 选了「另找工厂」就把没收到的数量退回待采购清单，用的是取消订单
+		// 时那套现成的机制（ReleaseRequirementOrdered）——需求的已下单量
+		// 减回去，状态跟着回到待采购或部分已订，于是新单能照常领走它。
+		action := in.ShortfallAction
+		if !anyShort {
+			action = ""
+		}
+		if action == shortfallReorder {
+			for requirementID, qty := range shortfall {
+				if err := q.ReleaseRequirementOrdered(ctx, store.ReleaseRequirementOrderedParams{
+					TenantID: tenantID, ID: requirementID, Qty: qty.String(),
+				}); err != nil {
+					return err
+				}
+			}
+		}
+		_, err = tx.Exec(ctx, `UPDATE purchase_orders SET closed_at=now(),closed_by_id=$3,closed_by_name=$4,close_note=$5,shortfall_action=$6,updated_at=now() WHERE tenant_id=$1 AND id=$2`,
+			tenantID, poID, op.ID, op.Name, strings.TrimSpace(in.Note), action)
 		return err
 	})
 	if err != nil {
