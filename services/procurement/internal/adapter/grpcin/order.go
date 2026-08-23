@@ -126,7 +126,8 @@ func (h *OrderHandler) ListOrders(ctx context.Context, req *prv1.ListOrdersReque
 			CreatedAt: ts(r.CreatedAt), SendStatus: r.SendStatus, SentTo: r.SentTo,
 			SentAt: ts(r.SentAt), SentBy: r.SentByName, SendError: r.SendError,
 			ClosedAt: r.ClosedAt, ClosedBy: r.ClosedByName,
-			ConfirmStatus: r.ConfirmStatus,
+			CloseNote: r.CloseNote, ShortfallAction: r.ShortfallAction,
+			ConfirmStatus:   r.ConfirmStatus,
 			FulfillmentMode: r.FulfillmentMode, DeliveryLocationType: r.DeliveryLocationType,
 			DeliveryPortId: r.DeliveryPortID, DeliveryPortCode: r.DeliveryPortCode,
 			DeliveryPortName: r.DeliveryPortName, WarehouseId: r.WarehouseID,
@@ -187,7 +188,8 @@ func (h *OrderHandler) GetOrder(ctx context.Context, req *prv1.GetOrderRequest) 
 			SendStatus: head.SendStatus, SentTo: head.SentTo, SentAt: ts(head.SentAt),
 			SentBy: head.SentByName, SendError: head.SendError,
 			ClosedAt: head.ClosedAt, ClosedBy: head.ClosedByName,
-			ConfirmStatus: head.ConfirmStatus,
+			CloseNote: head.CloseNote, ShortfallAction: head.ShortfallAction,
+			ConfirmStatus:   head.ConfirmStatus,
 			FulfillmentMode: head.FulfillmentMode, DeliveryLocationType: head.DeliveryLocationType,
 			DeliveryPortId: head.DeliveryPortID, DeliveryPortCode: head.DeliveryPortCode,
 			DeliveryPortName: head.DeliveryPortName, WarehouseId: head.WarehouseID,
@@ -428,7 +430,9 @@ func (h *OrderHandler) CloseOrder(ctx context.Context, req *prv1.CloseOrderReque
 		return nil, err
 	}
 	op, _ := grpcx.OperatorFromContext(ctx)
-	if err := h.svc.CloseOrder(ctx, grpcx.TenantID(ctx), req.GetId(), app.Operator{ID: op.EmployeeID, Name: op.Name}); err != nil {
+	if err := h.svc.CloseOrder(ctx, grpcx.TenantID(ctx), req.GetId(), app.CloseOrderInput{
+		ShortfallAction: req.GetShortfallAction(), Note: req.GetCloseNote(),
+	}, app.Operator{ID: op.EmployeeID, Name: op.Name}); err != nil {
 		return nil, err
 	}
 	head, err := h.svc.GetOrder(ctx, grpcx.TenantID(ctx), req.GetId())
@@ -438,6 +442,7 @@ func (h *OrderHandler) CloseOrder(ctx context.Context, req *prv1.CloseOrderReque
 	return &prv1.CloseOrderResponse{Order: &prv1.PurchaseOrder{
 		Id: head.ID, PoNo: head.PoNo, Status: head.Status,
 		ClosedAt: head.ClosedAt, ClosedBy: head.ClosedByName,
+		CloseNote: head.CloseNote, ShortfallAction: head.ShortfallAction,
 	}}, nil
 }
 
