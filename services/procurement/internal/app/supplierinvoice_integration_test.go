@@ -96,6 +96,33 @@ func TestSupplierInvoiceLifecycle(t *testing.T) {
 		t.Fatalf("cross-supplier binding must be refused, got %v", err)
 	}
 
+	// A line bound to an order in another currency would make the matcher
+	// subtract CNY from USD. Refused at the door, both through the order
+	// and through one of its items — cross-currency settlement is refused
+	// at allocation for the same reason.
+	var cnyOrderID, cnyItemID int64
+	if err = pool.QueryRow(ctx, `INSERT INTO purchase_orders (tenant_id,po_no,supplier_id,supplier_code,supplier_name,currency,total_amount,expected_date,status,buyer_id,buyer_name,ordered_at) VALUES ($1,'PO-INV-3',9,'SUP-9','Mill','CNY',700,current_date+10,'ORDERED',77,'Buyer',now()) RETURNING id`, tenantID).Scan(&cnyOrderID); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, `INSERT INTO purchase_order_items (tenant_id,po_id,requirement_id,product_id,product_code,product_name,uom_id,uom_code,qty,unit_price,amount) VALUES ($1,$2,$3,11,'P-11','Invoice Coil',7,'TON',1,700,700) RETURNING id`, tenantID, cnyOrderID, requirementID).Scan(&cnyItemID); err != nil {
+		t.Fatal(err)
+	}
+	mixedPO := base
+	mixedPO.InvoiceNo = "FP-2026-005"
+	mixedPO.TotalAmount = "700"
+	mixedPO.Lines = []SupplierInvoiceLineInput{{POID: cnyOrderID, Amount: "700"}}
+	if _, err := svc.CreateSupplierInvoice(ctx, tenantID, mixedPO, op); err == nil ||
+		!strings.Contains(err.Error(), "INV_LINE_CURRENCY_MISMATCH") {
+		t.Fatalf("binding a CNY order to a USD invoice must be refused, got %v", err)
+	}
+	mixedItem := mixedPO
+	mixedItem.InvoiceNo = "FP-2026-006"
+	mixedItem.Lines = []SupplierInvoiceLineInput{{POItemID: cnyItemID, Amount: "700"}}
+	if _, err := svc.CreateSupplierInvoice(ctx, tenantID, mixedItem, op); err == nil ||
+		!strings.Contains(err.Error(), "INV_LINE_CURRENCY_MISMATCH") {
+		t.Fatalf("binding a CNY order item to a USD invoice must be refused, got %v", err)
+	}
+
 	// Lines that do not reproduce the header total are a typo caught at
 	// entry, not a discrepancy for the matcher.
 	gap := base
