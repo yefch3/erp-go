@@ -37,6 +37,23 @@ WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
   AND o.status IN ('DRAFT', 'REJECTED', 'PENDING_APPROVAL')
 GROUP BY i.requirement_id;
 
+-- name: LiveOrdersForQuotationSupplier :many
+-- 这份客户报价已经给这家供应商开过的、还没作废的采购单。
+--
+-- 这里问的是「已经有单了吗」，答案分两种，处理方式完全不同：还停在草稿的
+-- 是上次没办完，应该接着办那一张；已经确认下单的则说明这是补购——工厂这
+-- 批只供得了一部分，剩下的再向同一家追加。00024 之前两种情况被一条唯一
+-- 索引一起挡在门外。
+--
+-- 读在需求行锁住之后，所以并发的重复提交会排队，第二个看得见第一个。
+SELECT id, po_no, status
+FROM purchase_orders
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND source_quotation_id = sqlc.arg(quotation_id)::bigint
+  AND supplier_id = sqlc.arg(supplier_id)::bigint
+  AND status <> 'CANCELLED'
+ORDER BY id;
+
 -- name: AddRequirementOrdered :one
 -- Ordering moves a requirement along. Fully covered means ORDERED; partly
 -- covered means somebody still has to buy the rest.

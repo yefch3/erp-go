@@ -384,7 +384,6 @@ const page = ref(1)
 const pageSize = 20
 // Outstanding work is what a buyer opens this page for; everything else is
 // history they go looking for deliberately.
-const status = ref('PENDING')
 const keyword = ref('')
 const loading = ref(false)
 const saving = ref(false)
@@ -424,11 +423,26 @@ const common = (k: string) => t(`common.${k}`)
 async function load() {
   loading.value = true
   try {
-    const data = await get<{ requirements: Requirement[]; meta: { total: number } }>(
-      '/requirements',
-      { page: page.value, page_size: pageSize, status: status.value, keyword: keyword.value },
+    // 只买了一部分的也留在这页（A5）。
+    //
+    // 工厂这批只供得了 80 吨，剩下的 20 吨仍然是要买的活儿。从前这页只列
+    // 「一点没买」的，一旦下了第一张单整批就从眼前消失了——等于告诉采购员
+    // 这事办完了。剩下的得靠人记着，正是这类事情最容易掉的地方。
+    const [pending, partial] = await Promise.all(
+      ['PENDING', 'PARTIALLY_ORDERED'].map((state) =>
+        get<{ requirements: Requirement[] }>(
+          '/requirements',
+          { page: page.value, page_size: pageSize, status: state, keyword: keyword.value },
+        ),
+      ),
     )
-    rows.value = data.requirements ?? []
+    const seen = new Set<string>()
+    rows.value = [...(pending.requirements ?? []), ...(partial.requirements ?? [])]
+      .filter((line) => {
+        if (seen.has(line.id)) return false
+        seen.add(line.id)
+        return true
+      })
   } finally {
     loading.value = false
   }
@@ -477,7 +491,6 @@ async function submitCreate() {
     })
     ElMessage.success(t('requirements.created'))
     createOpen.value = false
-    status.value = 'PENDING'
     reload()
   } finally {
     saving.value = false
