@@ -141,6 +141,21 @@ func (s *Service) EnsureAdmin(ctx context.Context, tenantID int64, seed SeedTena
 				return err
 			}
 		}
+		// 数据范围，和权限是两件事：权限决定能用哪些功能，范围决定能看谁的
+		// 单据。引导程序原来只给了前者，于是超管能打开每一个页面，却在每个
+		// 页面上只看得见自己经手的那几张单——解析器对未配置的模块兜底 SELF。
+		//
+		// 采购几个模块看起来正常纯属巧合：它们的范围种子迁移（00031/00037/
+		// 00041）用 FROM roles 无条件插入，跑的时候超管已经被引导创建出来了。
+		// 而 export 的种子（00005）跑在引导之前，那时 roles 表还是空的。
+		for _, module := range superAdminScopeModules {
+			if err := q.SetRoleDataScope(ctx, store.SetRoleDataScopeParams{
+				TenantID: tenantID, RoleID: role.ID, Module: module,
+				ScopeType: "ALL", CustomDeptIds: []int64{},
+			}); err != nil {
+				return err
+			}
+		}
 		if err := q.AddEmployeeRole(ctx, store.AddEmployeeRoleParams{
 			TenantID: tenantID, EmployeeID: emp.ID, RoleID: role.ID,
 		}); err != nil {
@@ -152,6 +167,23 @@ func (s *Service) EnsureAdmin(ctx context.Context, tenantID int64, seed SeedTena
 			"admin", adminEmail, "employee_id", emp.ID, "permissions", len(perms))
 		return nil
 	})
+}
+
+// superAdminScopeModules 是引导时给超管铺开的数据范围。
+//
+// **mail 故意不在列内。** 邮件正文是这套系统里最私密的东西——客户的报价
+// 往来、员工的私人通信都在里面。让超管看别人的邮箱应当是一个显式的、
+// 有人负责的决定（在角色页上点出来，留下变更记录），不该由引导程序在
+// 没人看着的时候默默给出。需要时管理员自己开，一次点击的事。
+//
+// 加新模块时记得同时补这里和订正迁移——漏了的症状是「管理员说他看不见
+// 别人的单子」，而权限页上一切正常。
+var superAdminScopeModules = []string{
+	"export",
+	"shipping",
+	"procurement_order",
+	"procurement_requirement",
+	"procurement_sourcing",
 }
 
 // splitDomains turns the configured list into lower-cased entries, dropping
