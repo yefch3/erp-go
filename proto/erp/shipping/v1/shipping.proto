@@ -28,6 +28,9 @@ service ShippingService {
   rpc InvalidateDocument(InvalidateDocumentRequest) returns (InvalidateDocumentResponse);
   rpc ListArrivalNotifications(ListArrivalNotificationsRequest) returns (ListArrivalNotificationsResponse);
   rpc MarkArrivalReminderRead(MarkArrivalReminderReadRequest) returns (MarkArrivalReminderReadResponse);
+  // 提单签发提醒（E2）：船开了、正本还没上传，催船务这批人。
+  rpc ListBlReminders(ListBlRemindersRequest) returns (ListBlRemindersResponse);
+  rpc MarkBlRemindersRead(MarkBlRemindersReadRequest) returns (MarkBlRemindersReadResponse);
   rpc CleanupExpiredArrivalReminders(CleanupExpiredArrivalRemindersRequest) returns (CleanupExpiredArrivalRemindersResponse);
   rpc GetArrivalReminderRules(GetArrivalReminderRulesRequest) returns (GetArrivalReminderRulesResponse);
   rpc UpdateArrivalReminderRules(UpdateArrivalReminderRulesRequest) returns (UpdateArrivalReminderRulesResponse);
@@ -349,3 +352,37 @@ message UpdateArrivalReminderRulesRequest {
   repeated int32 lead_days = 2;
 }
 message UpdateArrivalReminderRulesResponse { repeated int32 lead_days = 1; }
+
+// BlReminder 是提单签发提醒收件箱里的一条。
+message BlReminder {
+  int64 id = 1;
+  int64 schedule_id = 2;
+  string schedule_no = 3;
+  string vessel_name = 4;
+  string voyage_no = 5;
+  string contract_no = 6;
+  string customer_name = 7;
+  // 开船后第几轮（每 3 天一轮）。
+  int32 period_no = 8;
+  string departed_on = 9;
+  string title = 10;
+  string content = 11;
+  string detail_url = 12;
+  string created_at = 13;
+  bool unread = 14;
+}
+
+message ListBlRemindersRequest {
+  bool unread_only = 1;
+  int32 limit = 2;
+}
+message ListBlRemindersResponse {
+  repeated BlReminder items = 1;
+  int64 unread_total = 2;
+}
+
+message MarkBlRemindersReadRequest {
+  // 空 = 全部标记已读。
+  repeated int64 ids = 1;
+}
+message MarkBlRemindersReadResponse { int64 marked = 1; }

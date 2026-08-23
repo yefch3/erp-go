@@ -173,6 +173,9 @@ export default {
     empty: '没有待收的合同——钱都收齐了', emptyOverdue: '没有逾期的合同',
     remindersTitle: '应收提醒', markAllRead: '全部已读', noReminders: '暂无应收提醒',
   },
+  blReminders: {
+    title: '提单签发提醒', markAllRead: '全部已读', empty: '暂无待签提单',
+  },
   procurementWorkbench: {
     eyebrow: 'PROCUREMENT CONTROL', title: '采购工作台', subtitle: '复核标准询盘并推进询价与采购执行', downloadTemplate: '下载标准模板', uploadInquiry: '导入客户询盘', handlePending: '待复核询盘', handlePendingCount: '待复核询盘（{n}）',
     mailTransfer: '邮件一键转入', mailTransferHint: '邮件里生成标准 Excel 后一键转入采购', mailAutomatic: '邮件页面一键操作', openMail: '前往邮件', manualUpload: '手工上传标准询盘', manualUploadHint: '上传已经标准化的 Excel 或 CSV', startUpload: '开始上传', converge: '进入复核', pendingCount: '{n} 条待复核询盘', reviewNow: '立即复核',

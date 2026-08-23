@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -72,6 +73,7 @@ func run(log *slog.Logger) error {
 
 	svc := app.New(pool, grpcout.NewFiles(files))
 	svc.UseAccessControl(grpcout.NewScopes(iamConn), grpcout.NewCustomerAccess(masterdataConn))
+	svc.UseDirectory(grpcout.NewDirectory(iamConn))
 	svc.UseLogger(log)
 	if cfg.RedisAddr != "" {
 		publisher := livefeed.NewPublisher(cfg.RedisAddr, log)
@@ -79,6 +81,8 @@ func run(log *slog.Logger) error {
 		svc.UseReminderNotifier(grpcout.NewReminderNotifier(publisher))
 	}
 	go svc.RunArrivalReminderWorker(ctx, cfg.ReminderInterval, cfg.ReminderBatchSize)
+	// 提单签发提醒（E2）：每天扫一趟，船开了正本还没上传就催船务这批人。
+	go svc.RunBLReminderWorker(ctx, 24*time.Hour, log)
 
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
 	shippingv1.RegisterShippingServiceServer(srv, grpcin.New(svc))

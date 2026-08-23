@@ -55,6 +55,25 @@ type ShippingArrivalReminderRule struct {
 	CreatedAt     pgtype.Timestamptz
 }
 
+type ShippingBlReminder struct {
+	ID                  int64
+	TenantID            int64
+	ScheduleID          int64
+	ScheduleNo          string
+	VesselName          string
+	VoyageNo            string
+	ContractNo          string
+	CustomerName        string
+	RecipientEmployeeID int64
+	PeriodNo            int32
+	DepartedOn          pgtype.Date
+	Title               string
+	Content             string
+	DetailUrl           string
+	CreatedAt           pgtype.Timestamptz
+	ReadAt              pgtype.Timestamptz
+}
+
 type ShippingDelayEvent struct {
 	ID                  int64
 	TenantID            int64

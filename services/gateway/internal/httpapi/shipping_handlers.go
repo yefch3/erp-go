@@ -190,6 +190,33 @@ func shippingReminderID(r *http.Request) int64 {
 	return id
 }
 
+// 提单签发提醒（E2）。围栏在服务端（按登录人），这里只转参数。
+func (s *Server) listBLReminders(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.ParseInt(r.URL.Query().Get("limit"), 10, 32)
+	resp, err := s.Shipping.ListBlReminders(r.Context(), &shippingv1.ListBlRemindersRequest{
+		UnreadOnly: r.URL.Query().Get("unread") == "1",
+		Limit:      int32(limit),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) markBLRemindersRead(w http.ResponseWriter, r *http.Request) {
+	req := &shippingv1.MarkBlRemindersReadRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Shipping.MarkBlRemindersRead(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) listShippingArrivalNotifications(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Shipping.ListArrivalNotifications(r.Context(), &shippingv1.ListArrivalNotificationsRequest{
 		UnreadOnly: r.URL.Query().Get("unread_only") == "true",

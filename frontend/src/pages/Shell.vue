@@ -173,6 +173,8 @@
           />
           <!-- 应收提醒常驻：逾期的钱不该只在打开某个页面时才看得见。 -->
           <ReceivableReminders v-if="auth.can('export:receipt:read')" />
+          <!-- 提单签发提醒（E2）：船开了正本还没签，整个船务部门都收得到。 -->
+          <BLReminders v-if="auth.can('shipping:schedule:read')" />
           <LangSwitcher />
           <el-dropdown @command="onCommand">
             <span class="user">{{ auth.employeeName || '—' }}</span>
@@ -241,6 +243,7 @@ import { useAuthStore } from '../stores/auth'
 import LangSwitcher from '../components/LangSwitcher.vue'
 import ShippingArrivalNotifications from '../components/ShippingArrivalNotifications.vue'
 import ReceivableReminders from '../components/ReceivableReminders.vue'
+import BLReminders from '../components/BLReminders.vue'
 import { onLive, startLive, stopLive } from '../live'
 
 const passwordOpen = ref(false)
