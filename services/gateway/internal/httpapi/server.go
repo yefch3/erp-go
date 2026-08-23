@@ -352,6 +352,9 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules", s.listShippingSchedules)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/statistics", s.getShippingStatistics)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/reminders", s.listShippingArrivalNotifications)
+		// 提单签发提醒（E2）：按登录人隔离，读自己的收件箱不再另设权限。
+		r.Get("/api/bl-reminders", s.listBLReminders)
+		r.Post("/api/bl-reminders/read", s.markBLRemindersRead)
 		r.With(s.perm("shipping:schedule:read")).Delete("/api/shipping/reminders/expired", s.cleanupExpiredShippingArrivalReminders)
 		r.With(s.perm("shipping:schedule:read")).Post("/api/shipping/reminders/{reminderID}/read", s.markShippingArrivalReminderRead)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules/{id}", s.getShippingSchedule)

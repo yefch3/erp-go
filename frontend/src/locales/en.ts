@@ -173,6 +173,9 @@ export default {
     empty: 'Nothing outstanding — all collected', emptyOverdue: 'Nothing overdue',
     remindersTitle: 'Receivable alerts', markAllRead: 'Mark all read', noReminders: 'No receivable alerts',
   },
+  blReminders: {
+    title: 'B/L issuance alerts', markAllRead: 'Mark all read', empty: 'No pending bills of lading',
+  },
   procurementWorkbench: {
     eyebrow: 'PROCUREMENT CONTROL', title: 'Procurement workbench', subtitle: 'Review standardized inquiries and advance sourcing and purchasing', downloadTemplate: 'Download template', uploadInquiry: 'Import customer inquiry', handlePending: 'Pending review', handlePendingCount: 'Pending review ({n})',
     mailTransfer: 'One-click transfer from Mail', mailTransferHint: 'Generate the standard Excel in Mail, then send it to Procurement in one click', mailAutomatic: 'One click in the mail page', openMail: 'Open Mail', manualUpload: 'Upload standard inquiry', manualUploadHint: 'Upload an already standardized Excel or CSV', startUpload: 'Start upload', converge: 'Review queue', pendingCount: '{n} inquiries to review', reviewNow: 'Review now',

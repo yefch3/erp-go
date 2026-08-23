@@ -173,6 +173,9 @@ export default {
     empty: 'Nada pendiente — todo cobrado', emptyOverdue: 'Nada vencido',
     remindersTitle: 'Avisos de cobro', markAllRead: 'Marcar todo leído', noReminders: 'Sin avisos de cobro',
   },
+  blReminders: {
+    title: 'Avisos de B/L', markAllRead: 'Marcar todo leído', empty: 'Sin conocimientos pendientes',
+  },
   procurementWorkbench: {
     eyebrow: 'CONTROL DE COMPRAS', title: 'Panel de compras', subtitle: 'Revisar consultas estandarizadas y avanzar compras', downloadTemplate: 'Descargar plantilla', uploadInquiry: 'Importar consulta del cliente', handlePending: 'Pendientes de revisión', handlePendingCount: 'Pendientes de revisión ({n})',
     mailTransfer: 'Transferencia desde Correo con un clic', mailTransferHint: 'Genere el Excel estándar en Correo y envíelo a Compras con un clic', mailAutomatic: 'Un clic en la página de correo', manualUpload: 'Carga manual estándar', manualUploadHint: 'Subir Excel o CSV ya estandarizado', startUpload: 'Iniciar carga', converge: 'Cola de revisión', pendingCount: '{n} consultas por revisar', reviewNow: 'Revisar ahora',

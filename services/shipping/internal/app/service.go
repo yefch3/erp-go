@@ -23,6 +23,8 @@ const SchemaVersion int32 = 9
 type databasePinger interface{ Ping(context.Context) error }
 
 type Service struct {
+	// 按角色找人（E2 提单提醒的收件人来源）。
+	directory        Directory
 	db               databasePinger
 	pool             *pgxpool.Pool
 	q                *store.Queries

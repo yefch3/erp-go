@@ -452,3 +452,81 @@ UPDATE shipping_documents SET
     void_reason = $6
 WHERE tenant_id = $1 AND schedule_id = $2 AND id = $3 AND status = 'ACTIVE'
 RETURNING *;
+
+-- name: SweepBLReminders :execrows
+-- 扫出「船开了、提单正本还没上传」的船期，给每个收件人各写一条站内信。
+--
+-- 触发用**范围**而非等号（同 E1 的应收提醒）：写成「开船后正好第 3 天」
+-- 的话，worker 那天没跑就永远错过；范围加唯一键则是停几天再起来能补齐
+-- 且不重复。轮次 = ceil(开船天数 / 3)，所以每 3 天恰好再响一次。
+--
+-- 开船日取 atd（实际开船），没登记就退回 etd（计划开船）——船务还没
+-- 回填实际开船日不该成为不提醒的理由。
+INSERT INTO shipping_bl_reminders (
+    tenant_id, schedule_id, schedule_no, vessel_name, voyage_no,
+    contract_no, customer_name, recipient_employee_id,
+    period_no, departed_on, title, content, detail_url
+)
+SELECT
+    s.tenant_id, s.id, s.schedule_no, s.vessel_name, s.voyage_no,
+    s.contract_no, s.customer_name, r.employee_id,
+    ceil((current_date - coalesce(s.atd, s.etd))::numeric / 3)::int,
+    coalesce(s.atd, s.etd),
+    s.schedule_no || ' 提单正本未签发（开船 ' || (current_date - coalesce(s.atd, s.etd)) || ' 天）',
+    s.vessel_name || ' / ' || s.voyage_no ||
+        CASE WHEN s.contract_no <> '' THEN ' · ' || s.contract_no ELSE '' END ||
+        CASE WHEN s.customer_name <> '' THEN ' · ' || s.customer_name ELSE '' END,
+    '/shipping/' || s.id
+FROM shipping_schedules s
+CROSS JOIN unnest(sqlc.arg(recipient_ids)::bigint[]) AS r(employee_id)
+WHERE s.tenant_id = sqlc.arg(tenant_id)::bigint
+  -- 已到港/完成/取消的不再催提单——那时候要么早签了，要么这单已经不作数。
+  AND s.status NOT IN ('ARRIVED', 'COMPLETED', 'CANCELLED')
+  -- 船得先开：没开船谈不上签提单。
+  AND coalesce(s.atd, s.etd) <= current_date
+  -- 给三天缓冲：开船当天就催是噪音，签提单本来就要几天。
+  AND current_date - coalesce(s.atd, s.etd) >= 3
+  -- 已经有有效的提单正本就不催了。草稿不算——草稿不是能拿去交单的东西。
+  AND NOT EXISTS (
+      SELECT 1 FROM shipping_documents d
+      WHERE d.tenant_id = s.tenant_id AND d.schedule_id = s.id
+        AND d.category = 'BILL_OF_LADING_FINAL' AND d.status = 'ACTIVE'
+  )
+ON CONFLICT (tenant_id, schedule_id, recipient_employee_id, period_no, departed_on)
+DO NOTHING;
+
+-- name: ListBLReminders :many
+-- 某人的提单提醒收件箱：未读在前，同批里新的在前。
+SELECT id, schedule_id, schedule_no, vessel_name, voyage_no, contract_no,
+       customer_name, period_no, departed_on::text AS departed_on,
+       title, content, detail_url, created_at,
+       (read_at IS NULL)::bool AS unread,
+       count(*) FILTER (WHERE read_at IS NULL) OVER () AS unread_total
+FROM shipping_bl_reminders
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND recipient_employee_id = sqlc.arg(employee_id)::bigint
+  AND (sqlc.arg(unread_only)::bool = false OR read_at IS NULL)
+ORDER BY (read_at IS NULL) DESC, created_at DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: MarkBLRemindersRead :execrows
+-- 标记已读，只动自己的那些。
+UPDATE shipping_bl_reminders SET read_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND recipient_employee_id = sqlc.arg(employee_id)::bigint
+  AND read_at IS NULL
+  AND (sqlc.arg(ids)::bigint[] = '{}' OR id = ANY(sqlc.arg(ids)::bigint[]));
+
+-- name: DistinctTenantIDs :many
+-- worker 没有租户上下文，扫描前先问一句有哪些租户在用船期。
+SELECT DISTINCT tenant_id FROM shipping_schedules;
+
+-- name: ScheduleOwnersPendingBL :many
+-- 还欠提单正本的船期，各自的负责人。用来保证即使角色没配好，经办人也
+-- 收得到——「部门都没人管」和「连经办人都不知道」是两个严重程度。
+SELECT DISTINCT responsible_employee_id
+FROM shipping_schedules
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND status NOT IN ('ARRIVED', 'COMPLETED', 'CANCELLED')
+  AND responsible_employee_id > 0
+  AND coalesce(atd, etd) <= current_date;

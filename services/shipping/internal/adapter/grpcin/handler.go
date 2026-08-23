@@ -254,6 +254,36 @@ func (h *Handler) GetSchedule(ctx context.Context, req *shippingv1.GetScheduleRe
 	return &shippingv1.GetScheduleResponse{Schedule: scheduleToProto(details.Schedule), Changes: out, RouteNodes: routeNodesToProto(details.Route), DelayEvents: delaysToProto(details.Delays), Reminders: reminders}, nil
 }
 
+// ListBlReminders 是本人的提单提醒收件箱（E2）——按登录人隔离，
+// 提醒本来就是发给具体某个人的，不需要额外围栏。
+func (h *Handler) ListBlReminders(ctx context.Context, req *shippingv1.ListBlRemindersRequest) (*shippingv1.ListBlRemindersResponse, error) {
+	op := operator(ctx)
+	rows, unread, err := h.svc.BLInbox(ctx, grpcx.TenantID(ctx), op.ID, req.GetUnreadOnly(), req.GetLimit())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*shippingv1.BlReminder, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, &shippingv1.BlReminder{
+			Id: r.ID, ScheduleId: r.ScheduleID, ScheduleNo: r.ScheduleNo,
+			VesselName: r.VesselName, VoyageNo: r.VoyageNo, ContractNo: r.ContractNo,
+			CustomerName: r.CustomerName, PeriodNo: r.PeriodNo, DepartedOn: r.DepartedOn,
+			Title: r.Title, Content: r.Content, DetailUrl: r.DetailURL,
+			CreatedAt: r.CreatedAt, Unread: r.Unread,
+		})
+	}
+	return &shippingv1.ListBlRemindersResponse{Items: out, UnreadTotal: unread}, nil
+}
+
+func (h *Handler) MarkBlRemindersRead(ctx context.Context, req *shippingv1.MarkBlRemindersReadRequest) (*shippingv1.MarkBlRemindersReadResponse, error) {
+	op := operator(ctx)
+	n, err := h.svc.MarkBLRemindersRead(ctx, grpcx.TenantID(ctx), op.ID, req.GetIds())
+	if err != nil {
+		return nil, err
+	}
+	return &shippingv1.MarkBlRemindersReadResponse{Marked: n}, nil
+}
+
 func (h *Handler) ListArrivalNotifications(ctx context.Context, req *shippingv1.ListArrivalNotificationsRequest) (*shippingv1.ListArrivalNotificationsResponse, error) {
 	op := operator(ctx)
 	page, err := h.svc.ListArrivalNotifications(ctx, grpcx.TenantID(ctx), op.ID, req.GetUnreadOnly())

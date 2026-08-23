@@ -584,6 +584,31 @@ func (q *Queries) DeleteExpiredEmployeeArrivalReminders(ctx context.Context, arg
 	return items, nil
 }
 
+const distinctTenantIDs = `-- name: DistinctTenantIDs :many
+SELECT DISTINCT tenant_id FROM shipping_schedules
+`
+
+// worker 没有租户上下文，扫描前先问一句有哪些租户在用船期。
+func (q *Queries) DistinctTenantIDs(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.Query(ctx, distinctTenantIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var tenant_id int64
+		if err := rows.Scan(&tenant_id); err != nil {
+			return nil, err
+		}
+		items = append(items, tenant_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const findPossibleDuplicates = `-- name: FindPossibleDuplicates :many
 SELECT id, schedule_no
 FROM shipping_schedules
@@ -1162,6 +1187,87 @@ func (q *Queries) ListArrivalReminders(ctx context.Context, arg ListArrivalRemin
 	return items, nil
 }
 
+const listBLReminders = `-- name: ListBLReminders :many
+SELECT id, schedule_id, schedule_no, vessel_name, voyage_no, contract_no,
+       customer_name, period_no, departed_on::text AS departed_on,
+       title, content, detail_url, created_at,
+       (read_at IS NULL)::bool AS unread,
+       count(*) FILTER (WHERE read_at IS NULL) OVER () AS unread_total
+FROM shipping_bl_reminders
+WHERE tenant_id = $1::bigint
+  AND recipient_employee_id = $2::bigint
+  AND ($3::bool = false OR read_at IS NULL)
+ORDER BY (read_at IS NULL) DESC, created_at DESC
+LIMIT $4::int
+`
+
+type ListBLRemindersParams struct {
+	TenantID   int64
+	EmployeeID int64
+	UnreadOnly bool
+	RowLimit   int32
+}
+
+type ListBLRemindersRow struct {
+	ID           int64
+	ScheduleID   int64
+	ScheduleNo   string
+	VesselName   string
+	VoyageNo     string
+	ContractNo   string
+	CustomerName string
+	PeriodNo     int32
+	DepartedOn   string
+	Title        string
+	Content      string
+	DetailUrl    string
+	CreatedAt    pgtype.Timestamptz
+	Unread       bool
+	UnreadTotal  int64
+}
+
+// 某人的提单提醒收件箱：未读在前，同批里新的在前。
+func (q *Queries) ListBLReminders(ctx context.Context, arg ListBLRemindersParams) ([]ListBLRemindersRow, error) {
+	rows, err := q.db.Query(ctx, listBLReminders,
+		arg.TenantID,
+		arg.EmployeeID,
+		arg.UnreadOnly,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBLRemindersRow
+	for rows.Next() {
+		var i ListBLRemindersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ScheduleID,
+			&i.ScheduleNo,
+			&i.VesselName,
+			&i.VoyageNo,
+			&i.ContractNo,
+			&i.CustomerName,
+			&i.PeriodNo,
+			&i.DepartedOn,
+			&i.Title,
+			&i.Content,
+			&i.DetailUrl,
+			&i.CreatedAt,
+			&i.Unread,
+			&i.UnreadTotal,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDelayEvents = `-- name: ListDelayEvents :many
 SELECT id, tenant_id, schedule_id, impact_type, affected_node_id, from_node_id, to_node_id, reason_code, reason, note, old_eta, new_eta, change_days, cumulative_delay_days, status, operator_id, operator_name, created_at, resolved_at FROM shipping_delay_events
 WHERE tenant_id = $1 AND schedule_id = $2
@@ -1699,6 +1805,29 @@ func (q *Queries) MarkArrivalReminderSent(ctx context.Context, arg MarkArrivalRe
 	return i, err
 }
 
+const markBLRemindersRead = `-- name: MarkBLRemindersRead :execrows
+UPDATE shipping_bl_reminders SET read_at = now()
+WHERE tenant_id = $1::bigint
+  AND recipient_employee_id = $2::bigint
+  AND read_at IS NULL
+  AND ($3::bigint[] = '{}' OR id = ANY($3::bigint[]))
+`
+
+type MarkBLRemindersReadParams struct {
+	TenantID   int64
+	EmployeeID int64
+	Ids        []int64
+}
+
+// 标记已读，只动自己的那些。
+func (q *Queries) MarkBLRemindersRead(ctx context.Context, arg MarkBLRemindersReadParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markBLRemindersRead, arg.TenantID, arg.EmployeeID, arg.Ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const markEmployeeArrivalReminderRead = `-- name: MarkEmployeeArrivalReminderRead :one
 UPDATE shipping_arrival_reminders
 SET read_at = COALESCE(read_at, now()), updated_at = now()
@@ -1780,6 +1909,37 @@ type ResetOtherApproachingRouteNodesParams struct {
 func (q *Queries) ResetOtherApproachingRouteNodes(ctx context.Context, arg ResetOtherApproachingRouteNodesParams) error {
 	_, err := q.db.Exec(ctx, resetOtherApproachingRouteNodes, arg.TenantID, arg.ScheduleID, arg.ID)
 	return err
+}
+
+const scheduleOwnersPendingBL = `-- name: ScheduleOwnersPendingBL :many
+SELECT DISTINCT responsible_employee_id
+FROM shipping_schedules
+WHERE tenant_id = $1::bigint
+  AND status NOT IN ('ARRIVED', 'COMPLETED', 'CANCELLED')
+  AND responsible_employee_id > 0
+  AND coalesce(atd, etd) <= current_date
+`
+
+// 还欠提单正本的船期，各自的负责人。用来保证即使角色没配好，经办人也
+// 收得到——「部门都没人管」和「连经办人都不知道」是两个严重程度。
+func (q *Queries) ScheduleOwnersPendingBL(ctx context.Context, tenantID int64) ([]int64, error) {
+	rows, err := q.db.Query(ctx, scheduleOwnersPendingBL, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var responsible_employee_id int64
+		if err := rows.Scan(&responsible_employee_id); err != nil {
+			return nil, err
+		}
+		items = append(items, responsible_employee_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setDestinationETA = `-- name: SetDestinationETA :one
@@ -2477,6 +2637,62 @@ func (q *Queries) ShippingStatistics(ctx context.Context, arg ShippingStatistics
 		&i.TemporaryCall,
 	)
 	return i, err
+}
+
+const sweepBLReminders = `-- name: SweepBLReminders :execrows
+INSERT INTO shipping_bl_reminders (
+    tenant_id, schedule_id, schedule_no, vessel_name, voyage_no,
+    contract_no, customer_name, recipient_employee_id,
+    period_no, departed_on, title, content, detail_url
+)
+SELECT
+    s.tenant_id, s.id, s.schedule_no, s.vessel_name, s.voyage_no,
+    s.contract_no, s.customer_name, r.employee_id,
+    ceil((current_date - coalesce(s.atd, s.etd))::numeric / 3)::int,
+    coalesce(s.atd, s.etd),
+    s.schedule_no || ' 提单正本未签发（开船 ' || (current_date - coalesce(s.atd, s.etd)) || ' 天）',
+    s.vessel_name || ' / ' || s.voyage_no ||
+        CASE WHEN s.contract_no <> '' THEN ' · ' || s.contract_no ELSE '' END ||
+        CASE WHEN s.customer_name <> '' THEN ' · ' || s.customer_name ELSE '' END,
+    '/shipping/' || s.id
+FROM shipping_schedules s
+CROSS JOIN unnest($1::bigint[]) AS r(employee_id)
+WHERE s.tenant_id = $2::bigint
+  -- 已到港/完成/取消的不再催提单——那时候要么早签了，要么这单已经不作数。
+  AND s.status NOT IN ('ARRIVED', 'COMPLETED', 'CANCELLED')
+  -- 船得先开：没开船谈不上签提单。
+  AND coalesce(s.atd, s.etd) <= current_date
+  -- 给三天缓冲：开船当天就催是噪音，签提单本来就要几天。
+  AND current_date - coalesce(s.atd, s.etd) >= 3
+  -- 已经有有效的提单正本就不催了。草稿不算——草稿不是能拿去交单的东西。
+  AND NOT EXISTS (
+      SELECT 1 FROM shipping_documents d
+      WHERE d.tenant_id = s.tenant_id AND d.schedule_id = s.id
+        AND d.category = 'BILL_OF_LADING_FINAL' AND d.status = 'ACTIVE'
+  )
+ON CONFLICT (tenant_id, schedule_id, recipient_employee_id, period_no, departed_on)
+DO NOTHING
+`
+
+type SweepBLRemindersParams struct {
+	RecipientIds []int64
+	TenantID     int64
+}
+
+// 扫出「船开了、提单正本还没上传」的船期，给每个收件人各写一条站内信。
+//
+// 触发用**范围**而非等号（同 E1 的应收提醒）：写成「开船后正好第 3 天」
+// 的话，worker 那天没跑就永远错过；范围加唯一键则是停几天再起来能补齐
+// 且不重复。轮次 = ceil(开船天数 / 3)，所以每 3 天恰好再响一次。
+//
+// 开船日取 atd（实际开船），没登记就退回 etd（计划开船）——船务还没
+// 回填实际开船日不该成为不提醒的理由。
+func (q *Queries) SweepBLReminders(ctx context.Context, arg SweepBLRemindersParams) (int64, error) {
+	result, err := q.db.Exec(ctx, sweepBLReminders, arg.RecipientIds, arg.TenantID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateRouteNodeTimes = `-- name: UpdateRouteNodeTimes :one

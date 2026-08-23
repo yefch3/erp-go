@@ -38,6 +38,8 @@ const (
 	ShippingService_InvalidateDocument_FullMethodName             = "/erp.shipping.v1.ShippingService/InvalidateDocument"
 	ShippingService_ListArrivalNotifications_FullMethodName       = "/erp.shipping.v1.ShippingService/ListArrivalNotifications"
 	ShippingService_MarkArrivalReminderRead_FullMethodName        = "/erp.shipping.v1.ShippingService/MarkArrivalReminderRead"
+	ShippingService_ListBlReminders_FullMethodName                = "/erp.shipping.v1.ShippingService/ListBlReminders"
+	ShippingService_MarkBlRemindersRead_FullMethodName            = "/erp.shipping.v1.ShippingService/MarkBlRemindersRead"
 	ShippingService_CleanupExpiredArrivalReminders_FullMethodName = "/erp.shipping.v1.ShippingService/CleanupExpiredArrivalReminders"
 	ShippingService_GetArrivalReminderRules_FullMethodName        = "/erp.shipping.v1.ShippingService/GetArrivalReminderRules"
 	ShippingService_UpdateArrivalReminderRules_FullMethodName     = "/erp.shipping.v1.ShippingService/UpdateArrivalReminderRules"
@@ -69,6 +71,9 @@ type ShippingServiceClient interface {
 	InvalidateDocument(ctx context.Context, in *InvalidateDocumentRequest, opts ...grpc.CallOption) (*InvalidateDocumentResponse, error)
 	ListArrivalNotifications(ctx context.Context, in *ListArrivalNotificationsRequest, opts ...grpc.CallOption) (*ListArrivalNotificationsResponse, error)
 	MarkArrivalReminderRead(ctx context.Context, in *MarkArrivalReminderReadRequest, opts ...grpc.CallOption) (*MarkArrivalReminderReadResponse, error)
+	// 提单签发提醒（E2）：船开了、正本还没上传，催船务这批人。
+	ListBlReminders(ctx context.Context, in *ListBlRemindersRequest, opts ...grpc.CallOption) (*ListBlRemindersResponse, error)
+	MarkBlRemindersRead(ctx context.Context, in *MarkBlRemindersReadRequest, opts ...grpc.CallOption) (*MarkBlRemindersReadResponse, error)
 	CleanupExpiredArrivalReminders(ctx context.Context, in *CleanupExpiredArrivalRemindersRequest, opts ...grpc.CallOption) (*CleanupExpiredArrivalRemindersResponse, error)
 	GetArrivalReminderRules(ctx context.Context, in *GetArrivalReminderRulesRequest, opts ...grpc.CallOption) (*GetArrivalReminderRulesResponse, error)
 	UpdateArrivalReminderRules(ctx context.Context, in *UpdateArrivalReminderRulesRequest, opts ...grpc.CallOption) (*UpdateArrivalReminderRulesResponse, error)
@@ -272,6 +277,26 @@ func (c *shippingServiceClient) MarkArrivalReminderRead(ctx context.Context, in 
 	return out, nil
 }
 
+func (c *shippingServiceClient) ListBlReminders(ctx context.Context, in *ListBlRemindersRequest, opts ...grpc.CallOption) (*ListBlRemindersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListBlRemindersResponse)
+	err := c.cc.Invoke(ctx, ShippingService_ListBlReminders_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *shippingServiceClient) MarkBlRemindersRead(ctx context.Context, in *MarkBlRemindersReadRequest, opts ...grpc.CallOption) (*MarkBlRemindersReadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MarkBlRemindersReadResponse)
+	err := c.cc.Invoke(ctx, ShippingService_MarkBlRemindersRead_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *shippingServiceClient) CleanupExpiredArrivalReminders(ctx context.Context, in *CleanupExpiredArrivalRemindersRequest, opts ...grpc.CallOption) (*CleanupExpiredArrivalRemindersResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CleanupExpiredArrivalRemindersResponse)
@@ -328,6 +353,9 @@ type ShippingServiceServer interface {
 	InvalidateDocument(context.Context, *InvalidateDocumentRequest) (*InvalidateDocumentResponse, error)
 	ListArrivalNotifications(context.Context, *ListArrivalNotificationsRequest) (*ListArrivalNotificationsResponse, error)
 	MarkArrivalReminderRead(context.Context, *MarkArrivalReminderReadRequest) (*MarkArrivalReminderReadResponse, error)
+	// 提单签发提醒（E2）：船开了、正本还没上传，催船务这批人。
+	ListBlReminders(context.Context, *ListBlRemindersRequest) (*ListBlRemindersResponse, error)
+	MarkBlRemindersRead(context.Context, *MarkBlRemindersReadRequest) (*MarkBlRemindersReadResponse, error)
 	CleanupExpiredArrivalReminders(context.Context, *CleanupExpiredArrivalRemindersRequest) (*CleanupExpiredArrivalRemindersResponse, error)
 	GetArrivalReminderRules(context.Context, *GetArrivalReminderRulesRequest) (*GetArrivalReminderRulesResponse, error)
 	UpdateArrivalReminderRules(context.Context, *UpdateArrivalReminderRulesRequest) (*UpdateArrivalReminderRulesResponse, error)
@@ -397,6 +425,12 @@ func (UnimplementedShippingServiceServer) ListArrivalNotifications(context.Conte
 }
 func (UnimplementedShippingServiceServer) MarkArrivalReminderRead(context.Context, *MarkArrivalReminderReadRequest) (*MarkArrivalReminderReadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MarkArrivalReminderRead not implemented")
+}
+func (UnimplementedShippingServiceServer) ListBlReminders(context.Context, *ListBlRemindersRequest) (*ListBlRemindersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListBlReminders not implemented")
+}
+func (UnimplementedShippingServiceServer) MarkBlRemindersRead(context.Context, *MarkBlRemindersReadRequest) (*MarkBlRemindersReadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MarkBlRemindersRead not implemented")
 }
 func (UnimplementedShippingServiceServer) CleanupExpiredArrivalReminders(context.Context, *CleanupExpiredArrivalRemindersRequest) (*CleanupExpiredArrivalRemindersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CleanupExpiredArrivalReminders not implemented")
@@ -770,6 +804,42 @@ func _ShippingService_MarkArrivalReminderRead_Handler(srv interface{}, ctx conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ShippingService_ListBlReminders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBlRemindersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).ListBlReminders(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_ListBlReminders_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).ListBlReminders(ctx, req.(*ListBlRemindersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ShippingService_MarkBlRemindersRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkBlRemindersReadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).MarkBlRemindersRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_MarkBlRemindersRead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).MarkBlRemindersRead(ctx, req.(*MarkBlRemindersReadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ShippingService_CleanupExpiredArrivalReminders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CleanupExpiredArrivalRemindersRequest)
 	if err := dec(in); err != nil {
@@ -906,6 +976,14 @@ var ShippingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MarkArrivalReminderRead",
 			Handler:    _ShippingService_MarkArrivalReminderRead_Handler,
+		},
+		{
+			MethodName: "ListBlReminders",
+			Handler:    _ShippingService_ListBlReminders_Handler,
+		},
+		{
+			MethodName: "MarkBlRemindersRead",
+			Handler:    _ShippingService_MarkBlRemindersRead_Handler,
 		},
 		{
 			MethodName: "CleanupExpiredArrivalReminders",
