@@ -9,10 +9,6 @@
 
     <el-card shadow="never">
       <el-radio-group v-model="status" class="tabs" @change="reload">
-        <el-radio-button value="">{{ t('orders.allStatuses') }}</el-radio-button>
-        <el-radio-button value="DRAFT">{{ t('orders.statuses.DRAFT') }}</el-radio-button>
-        <el-radio-button value="PENDING_APPROVAL">{{ t('orders.statuses.PENDING_APPROVAL') }}</el-radio-button>
-        <el-radio-button value="UNSENT">{{ t('orders.unsentTab') }}</el-radio-button>
         <el-radio-button value="ORDERED">{{ t('orders.statuses.ORDERED') }}</el-radio-button>
         <el-radio-button value="PARTIALLY_RECEIVED">{{ t('orders.statuses.PARTIALLY_RECEIVED') }}</el-radio-button>
         <el-radio-button value="RECEIVED">{{ t('orders.statuses.RECEIVED') }}</el-radio-button>
@@ -786,14 +782,10 @@ function toggleSupplierSwitch() {
   }
 }
 
-// 当前主动作按订单状态推导（B5）：草稿去提交、批完去发单、发完去收货、
-// 收完看履约。其余动作全部收进「更多」。
+// 采购单只承接已经完成采购审批的执行单据。发单、收货和履约是执行动作，
+// 不再把草稿、审批中或“待发单”伪装成采购单业务状态。
 interface RowAction { key: string; label: string; tone: 'primary' | 'success' | 'warning' | 'danger'; run: () => void }
 function primaryAction(row: Order): RowAction | null {
-  if ((row.status === 'DRAFT' || row.status === 'REJECTED') && canSubmit)
-    return { key: 'submit', label: t('orders.submit'), tone: 'success', run: () => submit(row) }
-  if ((row.status === 'DRAFT' || row.status === 'REJECTED') && canWrite)
-    return { key: 'edit', label: common('edit'), tone: 'primary', run: () => openEdit(row) }
   if (['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status) && row.sendStatus !== 'SENT' && canSend)
     return { key: 'send', label: row.sendStatus === 'FAILED' ? t('orders.retrySend') : t('orders.sendOrder'), tone: 'success', run: () => openSend(row) }
   if (['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status) && canReceive)
@@ -809,8 +801,6 @@ function moreActions(row: Order): { key: string; label: string }[] {
   const primary = primaryAction(row)?.key
   const out: { key: string; label: string }[] = []
   const add = (key: string, label: string, allowed: boolean) => { if (allowed && key !== primary) out.push({ key, label }) }
-  add('edit', common('edit'), canWrite && (row.status === 'DRAFT' || row.status === 'REJECTED'))
-  add('submit', t('orders.submit'), canSubmit && (row.status === 'DRAFT' || row.status === 'REJECTED'))
   add('send', row.sendStatus === 'FAILED' ? t('orders.retrySend') : t('orders.sendOrder'),
     canSend && ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status) && row.sendStatus !== 'SENT')
   add('receive', t('orders.receive'), canReceive && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status))
@@ -818,7 +808,7 @@ function moreActions(row: Order): { key: string; label: string }[] {
   add('downloadXlsx', t('orders.downloadExcel'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('downloadPdf', t('orders.downloadPdf'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('close', t('orders.closeOrder'), canClose && ['RECEIVED', 'PARTIALLY_RECEIVED'].includes(row.status) && !row.closedAt)
-  add('cancel', common('cancel'), canCancel && ['DRAFT', 'REJECTED', 'ORDERED'].includes(row.status))
+  add('cancel', common('cancel'), canCancel && row.status === 'ORDERED')
   return out
 }
 // 工厂回签状态的列表子标签（B5 尾巴）。只在已发单之后才有意义：
@@ -859,11 +849,9 @@ function runMoreAction(row: Order, key: string) {
 async function load() {
   loading.value = true
   try {
-    // UNSENT 是前端造的伪状态：ORDERED 且未发单，服务端用 unsent 参数过滤。
-    const unsent = status.value === 'UNSENT'
     const d = await get<{ orders: Order[]; meta: { total: number } }>('/purchase-orders', {
       page: page.value, page_size: pageSize,
-      status: unsent ? 'ORDERED' : status.value, unsent: unsent ? '1' : '',
+      status: status.value,
       keyword: keyword.value,
     })
     rows.value = d.orders ?? []

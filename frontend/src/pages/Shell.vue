@@ -290,9 +290,9 @@ const procurementItems = computed(() => [
   { path: '/procurement', label: t('procurementNav.workbench'), allowed: true },
   { path: '/procurement/intakes', label: t('procurementNav.intakes'), allowed: auth.can('procurement:sourcing:read') },
   { path: '/sourcing-cases', label: t('procurementNav.sourcing'), allowed: auth.can('procurement:sourcing:read') },
+  { path: '/procurement/settings/inquiry-templates', label: t('procurementNav.inquiryTemplates'), allowed: auth.can('procurement:sourcing:read') },
   { path: '/requirements', label: t('procurementNav.requirements'), allowed: auth.can('procurement:requirement:read') },
   { path: '/purchase-orders', label: t('procurementNav.orders'), allowed: auth.can('procurement:order:read') },
-  { path: '/procurement/settings/inquiry-templates', label: t('procurementNav.inquiryTemplates'), allowed: auth.can('procurement:sourcing:read') },
 ].filter((item) => item.allowed))
 
 // 财务对账集中一处：应收看客户、应付看供应商、银行流水居中对照两边。

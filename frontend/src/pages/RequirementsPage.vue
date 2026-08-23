@@ -48,25 +48,8 @@
         <el-table-column :label="t('common.status')" min-width="150">
           <template #default="{ row }">{{ row.statusLabels || '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="180" fixed="right">
+        <el-table-column :label="t('common.actions')" width="150" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDetail(row.lines[0])">{{ common('detail') }}</el-button>
-            <el-button
-              v-if="canOrder && row.lines.some(isOrderable)"
-              link
-              type="success"
-              @click="goOrder(row.lines.filter(isOrderable))"
-            >{{ t('requirements.order') }}</el-button>
-            <el-button
-              v-if="canWrite && row.lines.some((line: Requirement) => line.status === 'PENDING')"
-              link type="danger"
-              @click="openClose(row.lines.find((line: Requirement) => line.status === 'PENDING')!)"
-            >{{ t('requirements.close') }}</el-button>
-            <el-button
-              v-if="canWrite && row.lines.some(canReopen)"
-              link type="warning"
-              @click="reopen(row.lines.find(canReopen)!)"
-            >{{ t('requirements.reopen') }}</el-button>
             <el-button type="primary" plain @click="openBatchReview(row)">
               {{ t('requirements.reviewAndApprove') }}
             </el-button>
