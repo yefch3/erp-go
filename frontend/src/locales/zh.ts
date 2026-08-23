@@ -640,6 +640,8 @@ export default {
     closedTag: '已结案', closeOrder: '结案',
     closeConfirm: '确认将采购单 {no} 结案？结案表示货、账、质检都到此为止。',
     closedOk: '采购单已结案',
+    confirmTags: { NONE: '待工厂确认', CONFIRMED: '工厂已确认', PENDING_APPROVAL: '差异审批中', REJECTED: '确认被驳回' },
+    nextStep: '下一步',
     exceptionStatuses: { OPEN: '待处理', RESOLVED: '已处理' },
     empty: '暂无采购单',
     statuses: {

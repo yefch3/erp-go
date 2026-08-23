@@ -126,6 +126,7 @@ func (h *OrderHandler) ListOrders(ctx context.Context, req *prv1.ListOrdersReque
 			CreatedAt: ts(r.CreatedAt), SendStatus: r.SendStatus, SentTo: r.SentTo,
 			SentAt: ts(r.SentAt), SentBy: r.SentByName, SendError: r.SendError,
 			ClosedAt: r.ClosedAt, ClosedBy: r.ClosedByName,
+			ConfirmStatus: r.ConfirmStatus,
 		})
 	}
 	return &prv1.ListOrdersResponse{Orders: out, Meta: &commonv1.PageMeta{Total: total}}, nil
@@ -178,6 +179,7 @@ func (h *OrderHandler) GetOrder(ctx context.Context, req *prv1.GetOrderRequest) 
 			SendStatus: head.SendStatus, SentTo: head.SentTo, SentAt: ts(head.SentAt),
 			SentBy: head.SentByName, SendError: head.SendError,
 			ClosedAt: head.ClosedAt, ClosedBy: head.ClosedByName,
+			ConfirmStatus: head.ConfirmStatus,
 		},
 		Items: outItems, Receipts: outReceipts,
 	}, nil

@@ -90,6 +90,10 @@ func TestPurchaseOrderSendAndExecutionLifecycle(t *testing.T) {
 	if err = svc.ApplyConfirmationApproval(ctx, tenantID, orderID, confirmation.ApprovalInstanceID, "APPROVED"); err != nil {
 		t.Fatal(err)
 	}
+	// B5 尾巴：最新回签状态要跟着订单一起出来，列表和详情才有子标签可挂。
+	if head, err := svc.GetOrder(ctx, tenantID, orderID); err != nil || head.ConfirmStatus != "APPROVED" {
+		t.Fatalf("confirm status on order head=%q err=%v", head.ConfirmStatus, err)
+	}
 
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 	milestone, err := svc.SaveProductionMilestone(ctx, tenantID, orderID, ProductionMilestone{Node: "IN_PRODUCTION", PlannedDate: yesterday, OwnerID: 77, OwnerName: "Buyer", Remark: "late", Attachments: []ProductionAttachment{{FileName: "photo.jpg", FileURL: "https://files.example/photo.jpg", ContentType: "image/jpeg"}}}, Operator{ID: 77, Name: "Buyer"})

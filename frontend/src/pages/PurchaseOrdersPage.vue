@@ -73,6 +73,9 @@
               size="small" effect="plain" style="margin-left: 4px"
               :type="row.sendStatus === 'SENT' ? 'success' : row.sendStatus === 'FAILED' ? 'danger' : 'info'"
             >{{ row.sendStatus === 'SENT' ? t('orders.sentTag') : row.sendStatus === 'FAILED' ? t('orders.sendFailedTag') : t('orders.unsentTag') }}</el-tag>
+            <el-tag v-if="confirmTag(row)" size="small" effect="plain" :type="confirmTag(row)!.type" style="margin-left: 4px">
+              {{ confirmTag(row)!.label }}
+            </el-tag>
             <el-tag v-if="row.closedAt" size="small" type="success" style="margin-left: 4px">
               {{ t('orders.closedTag') }}
             </el-tag>
@@ -212,6 +215,11 @@
     </el-dialog>
 
     <el-dialog v-model="detailOpen" :title="detail?.poNo" width="820px">
+      <!-- B5 尾巴：看完单子不用回列表找按钮——下一步就在眼前。 -->
+      <div v-if="detailNext" class="next-step">
+        <span class="next-step-label">{{ t('orders.nextStep') }}</span>
+        <el-button size="small" :type="detailNext.tone" @click="runDetailNext">{{ detailNext.label }}</el-button>
+      </div>
       <el-descriptions :column="3" border size="small" class="desc">
         <el-descriptions-item :label="t('orders.supplier')">{{ detail?.supplierName }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.amount')">
@@ -226,6 +234,10 @@
         <el-descriptions-item :label="t('orders.sendStatus')">
           {{ detail ? t(`orders.sendStatuses.${detail.sendStatus || 'NOT_SENT'}`) : '' }}
           <span v-if="detail?.sentTo" class="sub"> · {{ detail.sentTo }}</span>
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('orders.confirmations')">
+          <template v-if="detail && confirmTag(detail)">{{ confirmTag(detail)!.label }}</template>
+          <template v-else>—</template>
         </el-descriptions-item>
       </el-descriptions>
 
@@ -492,6 +504,7 @@ interface Order {
   sendError: string
   closedAt: string
   closedBy: string
+  confirmStatus: string
 }
 interface OrderItem {
   id: string
@@ -656,6 +669,27 @@ function moreActions(row: Order): { key: string; label: string }[] {
   add('cancel', common('cancel'), canCancel && ['DRAFT', 'REJECTED', 'ORDERED'].includes(row.status))
   return out
 }
+// 工厂回签状态的列表子标签（B5 尾巴）。只在已发单之后才有意义：
+// 没发出去的单谈不上「工厂还没回」，那时未发单标签已经说明了一切。
+function confirmTag(row: Order): { label: string; type: 'success' | 'warning' | 'danger' | 'info' } | null {
+  if (row.sendStatus !== 'SENT') return null
+  if (!['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status)) return null
+  const s = row.confirmStatus
+  if (s === 'MATCHED' || s === 'APPROVED') return { label: t('orders.confirmTags.CONFIRMED'), type: 'success' }
+  if (s === 'PENDING_APPROVAL') return { label: t('orders.confirmTags.PENDING_APPROVAL'), type: 'warning' }
+  if (s === 'REJECTED') return { label: t('orders.confirmTags.REJECTED'), type: 'danger' }
+  return { label: t('orders.confirmTags.NONE'), type: 'info' }
+}
+
+// 详情页的「下一步」与列表主动作同一套推导——两处永远说同一句话。
+const detailNext = computed(() => (detail.value ? primaryAction(detail.value) : null))
+function runDetailNext() {
+  const next = detailNext.value
+  if (!next) return
+  detailOpen.value = false
+  next.run()
+}
+
 function runMoreAction(row: Order, key: string) {
   switch (key) {
     case 'edit': openEdit(row); break
@@ -1228,5 +1262,18 @@ onMounted(async () => {
 .pager {
   margin-top: 14px;
   justify-content: flex-end;
+}
+.next-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border-radius: 6px;
+  background: var(--el-fill-color-light);
+}
+.next-step-label {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
 }
 </style>

@@ -682,6 +682,9 @@ message PurchaseOrder {
   // 结案是 RECEIVED 之外的一个事实，不是新状态：空串即未结案。
   string closed_at = 24;
   string closed_by = 25;
+  // 最新一条工厂回签的状态：MATCHED / PENDING_APPROVAL / APPROVED /
+  // REJECTED；空串 = 从未回签。
+  string confirm_status = 26;
 }
 
 message PurchaseOrderItem {
