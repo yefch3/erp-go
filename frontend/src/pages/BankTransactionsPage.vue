@@ -7,7 +7,18 @@
         <p>{{ t('bankTransactions.subtitle') }}</p>
       </div>
       <div class="head-actions">
-        <el-input v-model="defaultCurrency" style="width: 110px" :placeholder="t('bankTransactions.defaultCurrency')" />
+        <!-- 导入用的兜底币种，不是筛选条件——所以它贴着导入按钮，并且
+             把「什么时候会用到」写在提示里：有人把它当成查询框问过。 -->
+        <el-tooltip :content="t('bankTransactions.defaultCurrencyHint')" placement="bottom">
+          <el-select
+            v-model="defaultCurrency"
+            clearable
+            style="width: 150px"
+            :placeholder="t('bankTransactions.defaultCurrency')"
+          >
+            <el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c" />
+          </el-select>
+        </el-tooltip>
         <el-button v-if="canWrite" type="primary" :loading="importing" @click="fileInput?.click()">
           {{ t('bankTransactions.import') }}
         </el-button>
@@ -103,6 +114,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post } from '../api'
+import { CURRENCIES } from '../constants'
 import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()

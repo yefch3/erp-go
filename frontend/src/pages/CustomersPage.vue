@@ -141,9 +141,7 @@
         </el-form-item>
         <el-form-item :label="t('customers.currency')">
           <el-select v-model="form.currency" style="width: 140px">
-            <el-option value="USD" label="USD" />
-            <el-option value="EUR" label="EUR" />
-            <el-option value="CNY" label="CNY" />
+            <el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('customers.paymentTerm')">
@@ -209,6 +207,7 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { del, get, post, put } from '../api'
+import { CURRENCIES } from '../constants'
 import { DIAL_CODES, dialCodeOfCode, splitPhone } from '../constants'
 import { countryName, countryOptions } from '../lib/countries'
 import { validateCustomerContact } from '../lib/customerForms'

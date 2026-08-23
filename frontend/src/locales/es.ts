@@ -136,7 +136,9 @@ export default {
   },
   bankTransactions: {
     eyebrow: 'EXTRACTO', title: 'Movimientos bancarios', subtitle: 'El registro del banco: importe extractos y emparéjelos con pagos',
-    import: 'Importar CSV', defaultCurrency: 'Moneda por defecto', imported: 'Importados {n}, duplicados omitidos {d}',
+    import: 'Importar CSV', defaultCurrency: 'Moneda de importación (opcional)',
+    defaultCurrencyHint: 'Solo para importar: si el CSV trae columna de moneda, manda el archivo; esto cubre cuando no la trae. No es un filtro.',
+    imported: 'Importados {n}, duplicados omitidos {d}',
     importErrors: 'Algunas filas no entraron', rowNo: 'Fila', reason: 'Motivo',
     statusAll: 'Todos', matched: 'Emparejado', unmatched: 'Sin emparejar',
     directionAll: 'Sentido', debit: 'Salida', credit: 'Entrada',

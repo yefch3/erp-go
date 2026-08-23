@@ -318,7 +318,7 @@
         <el-form-item label="默认币种"
           ><el-select v-model="basicForm.currency"
             ><el-option
-              v-for="c in ['USD', 'EUR', 'CNY', 'GBP', 'JPY']"
+              v-for="c in CURRENCIES"
               :key="c"
               :value="c" /></el-select
         ></el-form-item>
@@ -417,7 +417,7 @@
         ><el-form-item label="额度币种"
           ><el-select v-model="profileForm.creditCurrency"
             ><el-option
-              v-for="c in ['USD', 'EUR', 'CNY', 'GBP', 'JPY']"
+              v-for="c in CURRENCIES"
               :key="c"
               :value="c" /></el-select
         ></el-form-item>
@@ -616,6 +616,7 @@ import { computed, defineComponent, h, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 import { del, get, post, put } from "../api";
+import { CURRENCIES } from "../constants";
 import { countryName, countryOptions } from "../lib/countries";
 import {
   validateCustomerContact,

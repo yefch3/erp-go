@@ -136,7 +136,9 @@ export default {
   },
   bankTransactions: {
     eyebrow: 'BANK LEDGER', title: '银行流水', subtitle: '银行说钱怎么走的——导入对账单，和付款单对上号',
-    import: '导入对账单 CSV', defaultCurrency: '默认币种', imported: '导入 {n} 条，跳过重复 {d} 条',
+    import: '导入对账单 CSV', defaultCurrency: '导入币种（选填）',
+    defaultCurrencyHint: '仅用于导入：CSV 里有币种列就以文件为准，没有时才用这里填的。不是筛选条件。',
+    imported: '导入 {n} 条，跳过重复 {d} 条',
     importErrors: '有些行没进来', rowNo: '行号', reason: '原因',
     statusAll: '全部状态', matched: '已匹配', unmatched: '未匹配',
     directionAll: '收支', debit: '出账', credit: '入账',

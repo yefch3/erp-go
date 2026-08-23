@@ -136,7 +136,9 @@ export default {
   },
   bankTransactions: {
     eyebrow: 'BANK LEDGER', title: 'Bank transactions', subtitle: "The bank's own record — import statements and pair them with payments",
-    import: 'Import statement CSV', defaultCurrency: 'Default currency', imported: 'Imported {n}, skipped {d} duplicates',
+    import: 'Import statement CSV', defaultCurrency: 'Import currency (optional)',
+    defaultCurrencyHint: 'Used only when importing: the file wins if it has a currency column; this fills the gap when it does not. Not a filter.',
+    imported: 'Imported {n}, skipped {d} duplicates',
     importErrors: 'Some rows did not make it', rowNo: 'Row', reason: 'Reason',
     statusAll: 'All statuses', matched: 'Matched', unmatched: 'Unmatched',
     directionAll: 'Direction', debit: 'Out', credit: 'In',
