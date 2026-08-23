@@ -177,6 +177,94 @@ func (q *Queries) CancelPendingReminders(ctx context.Context, arg CancelPendingR
 	return err
 }
 
+const contractShippingSnapshot = `-- name: ContractShippingSnapshot :many
+SELECT DISTINCT ON (s.contract_no)
+    s.contract_no,
+    s.id            AS schedule_id,
+    s.schedule_no,
+    s.vessel_name,
+    s.voyage_no,
+    s.status,
+    coalesce(s.etd::text, '')::text AS etd,
+    coalesce(s.atd::text, '')::text AS atd,
+    coalesce(s.eta::text, '')::text AS eta,
+    coalesce(s.ata::text, '')::text AS ata,
+    s.delay_days,
+    (SELECT count(*) FROM shipping_schedules s2
+      WHERE s2.tenant_id = s.tenant_id AND s2.contract_no = s.contract_no
+        AND s2.status <> 'CANCELLED')::int AS leg_count
+FROM shipping_schedules s
+WHERE s.tenant_id = $1::bigint
+  AND s.contract_no = ANY($2::text[])
+  AND s.status <> 'CANCELLED'
+ORDER BY s.contract_no, s.etd DESC NULLS LAST, s.id DESC
+`
+
+type ContractShippingSnapshotParams struct {
+	TenantID    int64
+	ContractNos []string
+}
+
+type ContractShippingSnapshotRow struct {
+	ContractNo string
+	ScheduleID int64
+	ScheduleNo string
+	VesselName string
+	VoyageNo   string
+	Status     string
+	Etd        string
+	Atd        string
+	Eta        string
+	Ata        string
+	DelayDays  int32
+	LegCount   int32
+}
+
+// 一页合同各自最新一班船的状态（D2），一次问完。
+//
+// 一张合同可能分几批走，一览表上只放**最新那一班**——「这单到哪了」问的
+// 是当下，历史班次点进船期页看。班次数一并给出，好让页面能说「共 3 班」
+// 而不是假装只有一班。
+//
+// 关联用的是合同号而不是合同 id：shipping_schedules.contract_id 可空，
+// 真正建了索引、也真正填得住的是 contract_no（见 00001 的
+// shipping_schedules_contract_idx）。
+//
+// 这里不加数据范围。船期自己的围栏管的是「谁能操作这班船」，而这一行问的
+// 是「我这张合同的货到哪了」——合同能不能看已经在出口那边判过了。
+func (q *Queries) ContractShippingSnapshot(ctx context.Context, arg ContractShippingSnapshotParams) ([]ContractShippingSnapshotRow, error) {
+	rows, err := q.db.Query(ctx, contractShippingSnapshot, arg.TenantID, arg.ContractNos)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ContractShippingSnapshotRow
+	for rows.Next() {
+		var i ContractShippingSnapshotRow
+		if err := rows.Scan(
+			&i.ContractNo,
+			&i.ScheduleID,
+			&i.ScheduleNo,
+			&i.VesselName,
+			&i.VoyageNo,
+			&i.Status,
+			&i.Etd,
+			&i.Atd,
+			&i.Eta,
+			&i.Ata,
+			&i.DelayDays,
+			&i.LegCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countSchedules = `-- name: CountSchedules :one
 SELECT count(*)
 FROM shipping_schedules

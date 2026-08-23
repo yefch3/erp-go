@@ -34,6 +34,8 @@ service ShippingService {
   rpc CleanupExpiredArrivalReminders(CleanupExpiredArrivalRemindersRequest) returns (CleanupExpiredArrivalRemindersResponse);
   rpc GetArrivalReminderRules(GetArrivalReminderRulesRequest) returns (GetArrivalReminderRulesResponse);
   rpc UpdateArrivalReminderRules(UpdateArrivalReminderRulesRequest) returns (UpdateArrivalReminderRulesResponse);
+  // 一页合同各自最新一班船的状态，一次问完（D2 合同执行一览表）。
+  rpc ContractShippingSnapshot(ContractShippingSnapshotRequest) returns (ContractShippingSnapshotResponse);
 }
 
 message GetModuleStatusRequest {}
@@ -386,3 +388,30 @@ message MarkBlRemindersReadRequest {
   repeated int64 ids = 1;
 }
 message MarkBlRemindersReadResponse { int64 marked = 1; }
+
+message ContractShippingSnapshotRequest {
+  // 按合同号关联而不是合同 id：shipping_schedules.contract_id 可空，
+  // 真正建了索引也真正填得住的是 contract_no。
+  repeated string contract_nos = 1;
+}
+
+// 一张合同最新一班船的状态。合同可能分几批走，一览表只放最新那一班；
+// leg_count 一并给出，好让页面能说「共 3 班」而不是假装只有一班。
+message ContractShippingSnapshotItem {
+  string contract_no = 1;
+  int64 schedule_id = 2;
+  string schedule_no = 3;
+  string vessel_name = 4;
+  string voyage_no = 5;
+  string status = 6;
+  string etd = 7;
+  string atd = 8;
+  string eta = 9;
+  string ata = 10;
+  int32 delay_days = 11;
+  int32 leg_count = 12;
+}
+
+message ContractShippingSnapshotResponse {
+  repeated ContractShippingSnapshotItem items = 1;
+}

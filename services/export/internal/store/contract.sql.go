@@ -599,6 +599,156 @@ func (q *Queries) ListContractAttachments(ctx context.Context, arg ListContractA
 	return items, nil
 }
 
+const listContractExecution = `-- name: ListContractExecution :many
+SELECT
+    c.id, c.contract_no, c.customer_id, c.customer_name,
+    c.sales_employee_id, c.sales_employee, c.status,
+    coalesce(c.effective_at::date::text, '')::text  AS effective_date,
+    coalesce(c.receivable_due_date::text, '')::text AS due_date,
+    coalesce((current_date - c.receivable_due_date), 0)::int AS overdue_days,
+    (c.receivable_due_date IS NULL)::bool            AS due_unset,
+    coalesce(v.currency, '')::text                   AS currency,
+    coalesce(v.total_amount, 0)::text                AS total_amount,
+    coalesce(s.shipped_amount, 0)::text              AS shipped_amount,
+    coalesce(r.received, 0)::text                    AS received_amount,
+    count(*) OVER () AS total
+FROM contracts c
+JOIN contract_versions v ON v.id = c.current_version_id
+LEFT JOIN LATERAL (
+    -- 已出运折成金额，按产品配对——和 ShipmentProgressOf 同一个口径，理由
+    -- 也一样：改版会重写明细行的 id，按行配对会让改版前发出去的货凭空消失。
+    --
+    -- 单价取生效版本的加权均价（同一产品occasionally 落在两行上），和收款用
+    -- 生效版本总额是同一个立场：合同改了，按改后的算。
+    --
+    -- 已出运可能超过合同金额——改版把量调小、而货已经发了。不夹紧，露出来。
+    -- 反过来，改版把某个产品整个删掉、而它已经发过货，那部分在这里算不出
+    -- 金额（没有单价可依），点进合同详情按产品看得见。
+    -- 折到分。除法算出来的均价带一长串小数，原样冒出去会在页面上显示成
+    -- 25000.00000000000000000000；两位与合同金额、已收款同一个刻度。
+    SELECT round(sum(sh.shipped * li.unit_price), 2) AS shipped_amount
+    FROM (
+        SELECT product_id, coalesce(sku_id, 0) AS sku_id, sum(qty) AS shipped
+        FROM contract_shipments
+        WHERE tenant_id = c.tenant_id AND contract_id = c.id
+        GROUP BY product_id, coalesce(sku_id, 0)
+    ) sh
+    JOIN (
+        SELECT product_id, coalesce(sku_id, 0) AS sku_id,
+               CASE WHEN sum(qty) > 0 THEN sum(amount) / sum(qty) ELSE 0 END AS unit_price
+        FROM contract_items
+        WHERE tenant_id = c.tenant_id AND contract_version_id = c.current_version_id
+        GROUP BY product_id, coalesce(sku_id, 0)
+    ) li ON li.product_id = sh.product_id AND li.sku_id = sh.sku_id
+) s ON true
+LEFT JOIN (
+    SELECT contract_id, sum(amount + fee_amount) AS received
+    FROM receipt_allocations
+    WHERE tenant_id = $1::bigint
+    GROUP BY contract_id
+) r ON r.contract_id = c.id
+WHERE c.tenant_id = $1::bigint
+  -- 数据范围沿用合同列表那道围栏：看得见这张合同，才看得见它的进度。
+  AND ($2::bool OR c.sales_employee_id = ANY($3::bigint[]))
+  -- 默认只看在跑的。签之前没什么进程可言，作废的也不必占地方。
+  AND ($4::text <> '' OR c.status IN ('EFFECTIVE', 'EXECUTING', 'COMPLETED'))
+  AND ($4::text = '' OR c.status = $4::text)
+  AND ($5::bigint = 0 OR c.customer_id = $5::bigint)
+  AND ($6::text = ''
+       OR c.contract_no ILIKE '%' || $6::text || '%'
+       OR c.customer_name ILIKE '%' || $6::text || '%')
+ORDER BY c.effective_at DESC NULLS LAST, c.id DESC
+LIMIT $8::int OFFSET $7::int
+`
+
+type ListContractExecutionParams struct {
+	TenantID    int64
+	ScopeAll    bool
+	EmployeeIds []int64
+	Status      string
+	CustomerID  int64
+	Keyword     string
+	RowOffset   int32
+	RowLimit    int32
+}
+
+type ListContractExecutionRow struct {
+	ID              int64
+	ContractNo      string
+	CustomerID      int64
+	CustomerName    string
+	SalesEmployeeID int64
+	SalesEmployee   string
+	Status          string
+	EffectiveDate   string
+	DueDate         string
+	OverdueDays     int32
+	DueUnset        bool
+	Currency        string
+	TotalAmount     string
+	ShippedAmount   string
+	ReceivedAmount  string
+	Total           int64
+}
+
+// 一行一合同的执行进程（D2）：钱谈成了多少、货走了多少、款收了多少。
+//
+// 「这单到哪了」现在要翻四个页面：合同看金额、采购看订没订、出运看走没走、
+// 银行流水看收没收。四份答案分散在四个人手里，没有一个人看得见整件事。
+//
+// 三条腿在同一个库里，所以一条 SQL 就够，不会有 N+1：合同、已出运、已收款。
+// 另外两条（采购下没下单、船到哪了）在别的服务，由网关按这一页的合同批量取
+// 回来拼上——一页两次调用，不是一行两次。
+//
+// 出运和收款都折成金额，是为了让两个数直接可比：走了六成货、收了三成款，
+// 一眼看得出钱和货脱节。数量做不到这一点——一张合同上 100 吨和 50 件加不
+// 起来。
+func (q *Queries) ListContractExecution(ctx context.Context, arg ListContractExecutionParams) ([]ListContractExecutionRow, error) {
+	rows, err := q.db.Query(ctx, listContractExecution,
+		arg.TenantID,
+		arg.ScopeAll,
+		arg.EmployeeIds,
+		arg.Status,
+		arg.CustomerID,
+		arg.Keyword,
+		arg.RowOffset,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListContractExecutionRow
+	for rows.Next() {
+		var i ListContractExecutionRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ContractNo,
+			&i.CustomerID,
+			&i.CustomerName,
+			&i.SalesEmployeeID,
+			&i.SalesEmployee,
+			&i.Status,
+			&i.EffectiveDate,
+			&i.DueDate,
+			&i.OverdueDays,
+			&i.DueUnset,
+			&i.Currency,
+			&i.TotalAmount,
+			&i.ShippedAmount,
+			&i.ReceivedAmount,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listContractItems = `-- name: ListContractItems :many
 SELECT
     id, contract_version_id, line_no, product_id, sku_id, product_code, product_name,

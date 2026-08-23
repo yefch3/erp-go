@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	ContractService_ListContracts_FullMethodName               = "/erp.export.v1.ContractService/ListContracts"
+	ContractService_ListContractExecution_FullMethodName       = "/erp.export.v1.ContractService/ListContractExecution"
 	ContractService_GetContract_FullMethodName                 = "/erp.export.v1.ContractService/GetContract"
 	ContractService_CreateContractFromQuotation_FullMethodName = "/erp.export.v1.ContractService/CreateContractFromQuotation"
 	ContractService_CreateContract_FullMethodName              = "/erp.export.v1.ContractService/CreateContract"
@@ -45,6 +46,9 @@ const (
 // terms means adding a version, never editing the one in force.
 type ContractServiceClient interface {
 	ListContracts(ctx context.Context, in *ListContractsRequest, opts ...grpc.CallOption) (*ListContractsResponse, error)
+	// 合同执行进程一览（D2）：一行一合同，钱谈了多少、货走了多少、款收了
+	// 多少。采购和船期两列由网关向另外两个服务批量取回来拼上。
+	ListContractExecution(ctx context.Context, in *ListContractExecutionRequest, opts ...grpc.CallOption) (*ListContractExecutionResponse, error)
 	GetContract(ctx context.Context, in *GetContractRequest, opts ...grpc.CallOption) (*GetContractResponse, error)
 	// Turn an accepted quotation into a draft contract, inheriting its prices
 	// and its exchange-rate snapshot.
@@ -88,6 +92,16 @@ func (c *contractServiceClient) ListContracts(ctx context.Context, in *ListContr
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListContractsResponse)
 	err := c.cc.Invoke(ctx, ContractService_ListContracts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *contractServiceClient) ListContractExecution(ctx context.Context, in *ListContractExecutionRequest, opts ...grpc.CallOption) (*ListContractExecutionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListContractExecutionResponse)
+	err := c.cc.Invoke(ctx, ContractService_ListContractExecution_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -243,6 +257,9 @@ func (c *contractServiceClient) ListOwnershipTransfers(ctx context.Context, in *
 // terms means adding a version, never editing the one in force.
 type ContractServiceServer interface {
 	ListContracts(context.Context, *ListContractsRequest) (*ListContractsResponse, error)
+	// 合同执行进程一览（D2）：一行一合同，钱谈了多少、货走了多少、款收了
+	// 多少。采购和船期两列由网关向另外两个服务批量取回来拼上。
+	ListContractExecution(context.Context, *ListContractExecutionRequest) (*ListContractExecutionResponse, error)
 	GetContract(context.Context, *GetContractRequest) (*GetContractResponse, error)
 	// Turn an accepted quotation into a draft contract, inheriting its prices
 	// and its exchange-rate snapshot.
@@ -284,6 +301,9 @@ type UnimplementedContractServiceServer struct{}
 
 func (UnimplementedContractServiceServer) ListContracts(context.Context, *ListContractsRequest) (*ListContractsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListContracts not implemented")
+}
+func (UnimplementedContractServiceServer) ListContractExecution(context.Context, *ListContractExecutionRequest) (*ListContractExecutionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListContractExecution not implemented")
 }
 func (UnimplementedContractServiceServer) GetContract(context.Context, *GetContractRequest) (*GetContractResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetContract not implemented")
@@ -362,6 +382,24 @@ func _ContractService_ListContracts_Handler(srv interface{}, ctx context.Context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ContractServiceServer).ListContracts(ctx, req.(*ListContractsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ContractService_ListContractExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListContractExecutionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ContractServiceServer).ListContractExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ContractService_ListContractExecution_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ContractServiceServer).ListContractExecution(ctx, req.(*ListContractExecutionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -628,6 +666,10 @@ var ContractService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListContracts",
 			Handler:    _ContractService_ListContracts_Handler,
+		},
+		{
+			MethodName: "ListContractExecution",
+			Handler:    _ContractService_ListContractExecution_Handler,
 		},
 		{
 			MethodName: "GetContract",

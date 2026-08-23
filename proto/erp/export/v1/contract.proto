@@ -12,6 +12,9 @@ import "erp/export/v1/quotation.proto";
 // terms means adding a version, never editing the one in force.
 service ContractService {
   rpc ListContracts(ListContractsRequest) returns (ListContractsResponse);
+  // 合同执行进程一览（D2）：一行一合同，钱谈了多少、货走了多少、款收了
+  // 多少。采购和船期两列由网关向另外两个服务批量取回来拼上。
+  rpc ListContractExecution(ListContractExecutionRequest) returns (ListContractExecutionResponse);
   rpc GetContract(GetContractRequest) returns (GetContractResponse);
   // Turn an accepted quotation into a draft contract, inheriting its prices
   // and its exchange-rate snapshot.
@@ -367,4 +370,39 @@ message CancelContractRequest {
 
 message CancelContractResponse {
   string status = 1;
+}
+
+message ListContractExecutionRequest {
+  // 留空表示只看在跑的（生效 / 执行中 / 已完成）——签之前没有进程可言。
+  string status = 1;
+  int64 customer_id = 2;
+  string keyword = 3;
+  erp.common.v1.PageRequest page = 4;
+}
+
+// 一览表上属于出口的那半行。采购与船期由网关补齐。
+message ContractExecutionRow {
+  int64 contract_id = 1;
+  string contract_no = 2;
+  int64 customer_id = 3;
+  string customer_name = 4;
+  int64 sales_employee_id = 5;
+  string sales_employee = 6;
+  string status = 7;
+  string effective_date = 8;
+  string currency = 9;
+  string total_amount = 10;
+  // 已出运折成金额。可能超过合同金额——改版把量调小而货已经发了。
+  string shipped_amount = 11;
+  string received_amount = 12;
+  // 空串表示客户主数据里没配账期——不是「今天到期」。
+  string due_date = 13;
+  // 正数已逾期，负数是还剩几天；due_unset 时无意义。
+  int32 overdue_days = 14;
+  bool due_unset = 15;
+}
+
+message ListContractExecutionResponse {
+  repeated ContractExecutionRow rows = 1;
+  erp.common.v1.PageMeta meta = 2;
 }

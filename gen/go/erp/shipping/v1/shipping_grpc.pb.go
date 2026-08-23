@@ -43,6 +43,7 @@ const (
 	ShippingService_CleanupExpiredArrivalReminders_FullMethodName = "/erp.shipping.v1.ShippingService/CleanupExpiredArrivalReminders"
 	ShippingService_GetArrivalReminderRules_FullMethodName        = "/erp.shipping.v1.ShippingService/GetArrivalReminderRules"
 	ShippingService_UpdateArrivalReminderRules_FullMethodName     = "/erp.shipping.v1.ShippingService/UpdateArrivalReminderRules"
+	ShippingService_ContractShippingSnapshot_FullMethodName       = "/erp.shipping.v1.ShippingService/ContractShippingSnapshot"
 )
 
 // ShippingServiceClient is the client API for ShippingService service.
@@ -77,6 +78,8 @@ type ShippingServiceClient interface {
 	CleanupExpiredArrivalReminders(ctx context.Context, in *CleanupExpiredArrivalRemindersRequest, opts ...grpc.CallOption) (*CleanupExpiredArrivalRemindersResponse, error)
 	GetArrivalReminderRules(ctx context.Context, in *GetArrivalReminderRulesRequest, opts ...grpc.CallOption) (*GetArrivalReminderRulesResponse, error)
 	UpdateArrivalReminderRules(ctx context.Context, in *UpdateArrivalReminderRulesRequest, opts ...grpc.CallOption) (*UpdateArrivalReminderRulesResponse, error)
+	// 一页合同各自最新一班船的状态，一次问完（D2 合同执行一览表）。
+	ContractShippingSnapshot(ctx context.Context, in *ContractShippingSnapshotRequest, opts ...grpc.CallOption) (*ContractShippingSnapshotResponse, error)
 }
 
 type shippingServiceClient struct {
@@ -327,6 +330,16 @@ func (c *shippingServiceClient) UpdateArrivalReminderRules(ctx context.Context, 
 	return out, nil
 }
 
+func (c *shippingServiceClient) ContractShippingSnapshot(ctx context.Context, in *ContractShippingSnapshotRequest, opts ...grpc.CallOption) (*ContractShippingSnapshotResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContractShippingSnapshotResponse)
+	err := c.cc.Invoke(ctx, ShippingService_ContractShippingSnapshot_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ShippingServiceServer is the server API for ShippingService service.
 // All implementations must embed UnimplementedShippingServiceServer
 // for forward compatibility.
@@ -359,6 +372,8 @@ type ShippingServiceServer interface {
 	CleanupExpiredArrivalReminders(context.Context, *CleanupExpiredArrivalRemindersRequest) (*CleanupExpiredArrivalRemindersResponse, error)
 	GetArrivalReminderRules(context.Context, *GetArrivalReminderRulesRequest) (*GetArrivalReminderRulesResponse, error)
 	UpdateArrivalReminderRules(context.Context, *UpdateArrivalReminderRulesRequest) (*UpdateArrivalReminderRulesResponse, error)
+	// 一页合同各自最新一班船的状态，一次问完（D2 合同执行一览表）。
+	ContractShippingSnapshot(context.Context, *ContractShippingSnapshotRequest) (*ContractShippingSnapshotResponse, error)
 	mustEmbedUnimplementedShippingServiceServer()
 }
 
@@ -440,6 +455,9 @@ func (UnimplementedShippingServiceServer) GetArrivalReminderRules(context.Contex
 }
 func (UnimplementedShippingServiceServer) UpdateArrivalReminderRules(context.Context, *UpdateArrivalReminderRulesRequest) (*UpdateArrivalReminderRulesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateArrivalReminderRules not implemented")
+}
+func (UnimplementedShippingServiceServer) ContractShippingSnapshot(context.Context, *ContractShippingSnapshotRequest) (*ContractShippingSnapshotResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ContractShippingSnapshot not implemented")
 }
 func (UnimplementedShippingServiceServer) mustEmbedUnimplementedShippingServiceServer() {}
 func (UnimplementedShippingServiceServer) testEmbeddedByValue()                         {}
@@ -894,6 +912,24 @@ func _ShippingService_UpdateArrivalReminderRules_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ShippingService_ContractShippingSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContractShippingSnapshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShippingServiceServer).ContractShippingSnapshot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShippingService_ContractShippingSnapshot_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShippingServiceServer).ContractShippingSnapshot(ctx, req.(*ContractShippingSnapshotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ShippingService_ServiceDesc is the grpc.ServiceDesc for ShippingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -996,6 +1032,10 @@ var ShippingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateArrivalReminderRules",
 			Handler:    _ShippingService_UpdateArrivalReminderRules_Handler,
+		},
+		{
+			MethodName: "ContractShippingSnapshot",
+			Handler:    _ShippingService_ContractShippingSnapshot_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
