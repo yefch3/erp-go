@@ -117,7 +117,9 @@ type preparedOrder struct {
 	ids  []int64
 }
 
-func (s *Service) prepareOrder(ctx context.Context, in CreateOrderInput) (preparedOrder, error) {
+// prepareOrder 统一校验采购单和解析明细。
+// requireDelivery 为 true 时执行 P8 新采购流程的履约地点校验；旧模板导入先生成草稿，允许稍后补齐配送信息。
+func (s *Service) prepareOrder(ctx context.Context, in CreateOrderInput, requireDelivery bool) (preparedOrder, error) {
 	if in.SupplierID == 0 {
 		return preparedOrder{}, apierr.Invalid("PO_SUPPLIER_REQUIRED", "请选择供应商")
 	}
@@ -143,14 +145,14 @@ func (s *Service) prepareOrder(ctx context.Context, in CreateOrderInput) (prepar
 	if in.FulfillmentMode != "DIRECT_SHIP" && in.FulfillmentMode != "WAREHOUSE" {
 		return preparedOrder{}, apierr.Invalid("PO_FULFILLMENT_INVALID", "请选择直发或入库后发货")
 	}
-	if in.FulfillmentMode == "WAREHOUSE" {
+	if requireDelivery && in.FulfillmentMode == "WAREHOUSE" {
 		in.DeliveryLocationType = "WAREHOUSE"
 		if in.WarehouseID == 0 {
 			return preparedOrder{}, apierr.Invalid("PO_WAREHOUSE_REQUIRED", "入库后发货必须选择仓库")
 		}
-	} else if in.DeliveryLocationType == "PORT" && in.DeliveryPortID == 0 && strings.TrimSpace(in.DeliveryPortName) == "" {
+	} else if requireDelivery && in.DeliveryLocationType == "PORT" && in.DeliveryPortID == 0 && strings.TrimSpace(in.DeliveryPortName) == "" {
 		return preparedOrder{}, apierr.Invalid("PO_DELIVERY_PORT_REQUIRED", "直发到港口时请选择收货港口")
-	} else if in.DeliveryLocationType == "CUSTOM" && strings.TrimSpace(in.DeliveryAddress) == "" {
+	} else if requireDelivery && in.DeliveryLocationType == "CUSTOM" && strings.TrimSpace(in.DeliveryAddress) == "" {
 		return preparedOrder{}, apierr.Invalid("PO_DELIVERY_ADDRESS_REQUIRED", "自定义收货地点不能为空")
 	}
 
@@ -319,7 +321,7 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 }
 
 func (s *Service) CreateOrder(ctx context.Context, tenantID int64, in CreateOrderInput, op Operator) (store.CreatePurchaseOrderRow, error) {
-	prepared, err := s.prepareOrder(ctx, in)
+	prepared, err := s.prepareOrder(ctx, in, true)
 	if err != nil {
 		return store.CreatePurchaseOrderRow{}, err
 	}
@@ -355,7 +357,7 @@ func (s *Service) UpdateOrder(
 	in CreateOrderInput,
 	op Operator,
 ) (store.UpdatePurchaseOrderDraftRow, error) {
-	prepared, err := s.prepareOrder(ctx, in)
+	prepared, err := s.prepareOrder(ctx, in, true)
 	if err != nil {
 		return store.UpdatePurchaseOrderDraftRow{}, err
 	}

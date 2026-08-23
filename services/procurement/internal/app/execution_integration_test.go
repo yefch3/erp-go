@@ -76,7 +76,7 @@ func TestPurchaseOrderSendAndExecutionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if confirmation.Status != "MATCHED" || confirmation.ApprovalInstanceID != 0 || len(confirmation.Lines) != 1 || confirmation.Lines[0].ConfirmedQty != "8" || confirmation.Lines[0].ConfirmedUnitPrice != "525" {
+	if confirmation.Status != "MATCHED" || confirmation.ApprovalInstanceID != 0 || len(confirmation.Lines) != 1 || confirmation.Lines[0].ConfirmedQty != "8.0000" || confirmation.Lines[0].ConfirmedUnitPrice != "525.0000" {
 		t.Fatalf("supplier confirmation should be recorded without a second approval: %#v", confirmation)
 	}
 	// B5 尾巴：最新回签状态要跟着订单一起出来，列表和详情才有子标签可挂。

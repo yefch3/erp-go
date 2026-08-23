@@ -322,7 +322,7 @@ func (s *Service) ConfirmOrderImport(ctx context.Context, tenantID int64, in Con
 		prepared, err := s.prepareOrder(ctx, CreateOrderInput{
 			SupplierID: in.SupplierID, Currency: strings.ToUpper(strings.TrimSpace(in.Currency)),
 			ExpectedDate: strings.TrimSpace(in.ExpectedDate), Remark: strings.TrimSpace(in.Remark), Lines: orderLines,
-		})
+		}, false)
 		if err != nil {
 			return err
 		}
