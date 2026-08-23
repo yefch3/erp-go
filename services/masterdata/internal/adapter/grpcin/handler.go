@@ -5,6 +5,9 @@ package grpcin
 import (
 	"context"
 	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
@@ -19,6 +22,7 @@ type Handler struct {
 	mdv1.UnimplementedPortServiceServer
 	mdv1.UnimplementedOptionServiceServer
 	mdv1.UnimplementedNumberingServiceServer
+	mdv1.UnimplementedCreditRatingServiceServer
 	svc *app.Service
 }
 
@@ -89,6 +93,15 @@ func addressToProto(a store.CustomerAddress) *mdv1.CustomerAddress {
 	}
 }
 
+// 时间戳过边界统一成 RFC3339 文本，空值给空串——「没有评过」和「1970 年
+// 评的」在页面上必须长得不一样。
+func ts(t pgtype.Timestamptz) string {
+	if !t.Valid {
+		return ""
+	}
+	return t.Time.UTC().Format(time.RFC3339)
+}
+
 func customerToProto(c store.Customer, contacts []store.CustomerContact, addresses []store.CustomerAddress) *mdv1.Customer {
 	out := &mdv1.Customer{
 		Id: c.ID, Code: c.Code, Name: c.Name, Country: c.Country,
@@ -102,6 +115,7 @@ func customerToProto(c store.Customer, contacts []store.CustomerContact, address
 		InvoiceRemark: c.InvoiceRemark, PaymentDays: c.PaymentDays,
 		CreditLimitMinor: c.CreditLimitMinor, CreditCurrency: c.CreditCurrency,
 		CreditStatus: c.CreditStatus, BusinessStatus: c.BusinessStatus,
+		CreditGrade: c.CreditGrade, CreditGradedAt: ts(c.CreditGradedAt),
 	}
 	for _, ct := range contacts {
 		out.Contacts = append(out.Contacts, contactToProto(ct))
@@ -165,6 +179,7 @@ func (h *Handler) ListCustomers(ctx context.Context, req *mdv1.ListCustomersRequ
 			InvoiceRemark: r.InvoiceRemark, PaymentDays: r.PaymentDays,
 			CreditLimitMinor: r.CreditLimitMinor, CreditCurrency: r.CreditCurrency,
 			CreditStatus: r.CreditStatus, BusinessStatus: r.BusinessStatus,
+			CreditGrade: r.CreditGrade, CreditGradedAt: ts(r.CreditGradedAt),
 			PrimaryContactName: r.PrimaryContactName,
 		}
 		if r.OwnerNames != "" {
@@ -272,6 +287,7 @@ func supplierToProto(s store.Supplier) *mdv1.Supplier {
 		NameZh: s.NameZh, NameEn: s.NameEn, ShortName: s.ShortName,
 		CountryCode: s.CountryCode, TaxId: s.TaxID, RegisteredAddress: s.RegisteredAddress,
 		PaymentTerm: s.PaymentTerm, BusinessTypes: s.BusinessTypes,
+		CreditGrade: s.CreditGrade, CreditGradedAt: ts(s.CreditGradedAt),
 	}
 }
 
@@ -316,6 +332,7 @@ func (h *Handler) ListSuppliers(ctx context.Context, req *mdv1.ListSuppliersRequ
 			NameZh: r.NameZh, NameEn: r.NameEn, ShortName: r.ShortName,
 			CountryCode: r.CountryCode, TaxId: r.TaxID, RegisteredAddress: r.RegisteredAddress,
 			PaymentTerm: r.PaymentTerm, BusinessTypes: r.BusinessTypes,
+			CreditGrade: r.CreditGrade, CreditGradedAt: ts(r.CreditGradedAt),
 			FactoryCount: r.FactoryCount, OwnerNames: r.OwnerNames,
 		}
 	}

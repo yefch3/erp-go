@@ -180,6 +180,28 @@ export default {
     legUnavailable: 'Could not reach {legs} this time, so those columns are blank — not "none", just "not asked". Try refreshing.',
     empty: 'No running contracts',
   },
+  credit: {
+    tab: 'Credit rating', currentGrade: 'Current grade', neverRated: 'Never rated',
+    ratedToday: 'rated today', ratedDaysAgo: 'rated {n} days ago',
+    rateNow: 'Rate', rerate: 'Re-rate', noData: 'No data yet',
+    emptyHistory: 'No rating history yet',
+    dialogTitle: 'Credit rating', grade: 'Grade', basis: 'Basis',
+    basisPlaceholder: 'Why this grade? e.g. three years of early payment; or two invoices over 40 days late this year',
+    basisNote: 'Required. Whoever reads this in six months must be able to judge whether the grade still holds.',
+    basisRequired: 'Please state the basis for this grade',
+    saved: 'Rating recorded',
+    gradeHint: {
+      A: 'Solid: always pays / delivers as agreed. Standard terms.',
+      B: 'Normal: minor hiccups. Standard terms, keep an eye on it.',
+      C: 'Watch: real problems have occurred. Tighten terms.',
+      D: 'Caution: has caused losses or repeatedly broken terms. Think twice.',
+    },
+    dim: {
+      overdue_count: 'Late invoices', max_overdue_days: 'Longest delay', open_amount: 'Outstanding',
+      on_time_rate: 'On-time delivery', full_supply_rate: 'Full-quantity rate', quality_pass_rate: 'QC pass rate',
+      short_supply_count: 'Short shipments',
+    },
+  },
   receivableDue: {
     eyebrow: 'RECEIVABLES DUE', title: 'Receivables due', subtitle: 'Terms run from the contract effective date — what is owed, and when',
     overdueCount: 'Overdue', overdueHint: 'Past the agreed date and still unpaid',

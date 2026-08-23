@@ -40,6 +40,8 @@ type Server struct {
 	Access       iamv1.AccessServiceClient
 	Customers    mdv1.CustomerServiceClient
 	Suppliers    mdv1.SupplierServiceClient
+	// 信用评级（E3）：客户和供应商共用一套。
+	CreditRatings mdv1.CreditRatingServiceClient
 	Ports        mdv1.PortServiceClient
 	Options      mdv1.OptionServiceClient
 	Numbering    mdv1.NumberingServiceClient
@@ -148,6 +150,12 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/duplicates", s.checkCustomerDuplicates)
 		r.With(s.perm("masterdata:customer:write")).Post("/api/customers/import", s.importCustomers)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}", s.getCustomer)
+		// 信用评级（E3）。读跟着各自主数据的读权限走；打分要写权限——
+		// 评级是对外授信和下单的依据，不是备注。
+		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/{id}/credit-ratings", s.listCustomerCreditRatings)
+		r.With(s.perm("masterdata:customer:write")).Post("/api/customers/{id}/credit-ratings", s.rateCustomerCredit)
+		r.With(s.perm("masterdata:supplier:read")).Get("/api/suppliers/{id}/credit-ratings", s.listSupplierCreditRatings)
+		r.With(s.perm("masterdata:supplier:write")).Post("/api/suppliers/{id}/credit-ratings", s.rateSupplierCredit)
 		r.With(s.perm("masterdata:customer:write")).Put("/api/customers/{id}", s.updateCustomer)
 		r.With(s.perm("masterdata:customer:write")).Put("/api/customers/{id}/profile", s.updateCustomerProfile)
 		r.With(s.perm("masterdata:customer:write")).Delete("/api/customers/{id}", s.deactivateCustomer)

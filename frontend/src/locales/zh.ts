@@ -180,6 +180,28 @@ export default {
     legUnavailable: '{legs}的数据这次没取回来，那几列先空着——不是「没有」，是「没问到」。刷新试试。',
     empty: '没有在跑的合同',
   },
+  credit: {
+    tab: '信用评级', currentGrade: '当前评级', neverRated: '还没评过',
+    ratedToday: '今天刚评', ratedDaysAgo: '{n} 天前评的',
+    rateNow: '评级', rerate: '重新评级', noData: '暂无数据',
+    emptyHistory: '还没有评级记录',
+    dialogTitle: '信用评级', grade: '评级', basis: '评级依据',
+    basisPlaceholder: '为什么给这个分？例如：合作三年每次提前付款；或今年两笔各逾期 40 天以上',
+    basisNote: '必填。半年后翻到这条记录的人，要能据此判断这个评级还作不作数。',
+    basisRequired: '请填写评级依据',
+    saved: '评级已记录',
+    gradeHint: {
+      A: '放心：一直守约，可以按常规条件做',
+      B: '正常：偶有小状况，按常规条件做但留意',
+      C: '留意：出过实质问题，条件要收紧',
+      D: '警惕：已经造成损失或长期失约，新单要慎重',
+    },
+    dim: {
+      overdue_count: '逾期笔数', max_overdue_days: '最长逾期', open_amount: '当前欠款',
+      on_time_rate: '交期准时率', full_supply_rate: '供货足量率', quality_pass_rate: '质检合格率',
+      short_supply_count: '少供次数',
+    },
+  },
   receivableDue: {
     eyebrow: 'RECEIVABLES DUE', title: '应收到期', subtitle: '账期从合同生效日起算——该收的钱，什么时候该收',
     overdueCount: '已逾期', overdueHint: '过了约定日子还没收到，该打电话了',

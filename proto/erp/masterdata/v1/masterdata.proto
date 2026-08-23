@@ -47,6 +47,51 @@ service CustomerService {
 }
 
 // SupplierService owns supplier master data, referenced by procurement.
+// CreditRatingService 管信用评级（E3）。客户和供应商共用——问的问题不同，
+// 但「谁在什么时候依据什么评了什么」是同一个形状。
+service CreditRatingService {
+  rpc RateCredit(RateCreditRequest) returns (RateCreditResponse);
+  rpc ListCreditRatings(ListCreditRatingsRequest) returns (ListCreditRatingsResponse);
+}
+
+message CreditRating {
+  int64 id = 1;
+  // A / B / C / D
+  string grade = 2;
+  // 上一次是什么；空串表示首次评级。
+  string previous_grade = 3;
+  // 为什么给这个分。必填——说不出为什么的评级等于没评。
+  string basis = 4;
+  // 评级那一刻系统里的数字。现在大多是空的：合同和采购单还没跑起来。
+  map<string, string> evidence = 5;
+  int64 rated_by = 6;
+  string rated_by_name = 7;
+  string rated_at = 8;
+}
+
+message RateCreditRequest {
+  // CUSTOMER / SUPPLIER
+  string party_type = 1;
+  int64 party_id = 2;
+  string grade = 3;
+  string basis = 4;
+  map<string, string> evidence = 5;
+}
+
+message RateCreditResponse {
+  CreditRating rating = 1;
+}
+
+message ListCreditRatingsRequest {
+  string party_type = 1;
+  int64 party_id = 2;
+  int32 limit = 3;
+}
+
+message ListCreditRatingsResponse {
+  repeated CreditRating ratings = 1;
+}
+
 service SupplierService {
   rpc CreateSupplier(CreateSupplierRequest) returns (CreateSupplierResponse);
   rpc GetSupplier(GetSupplierRequest) returns (GetSupplierResponse);
@@ -257,6 +302,10 @@ message Customer {
   repeated CustomerAddress addresses = 32;
   string primary_contact_name = 33;
   repeated CustomerOwner owners = 34;
+  // 当前信用评级（E3）。空串表示还没评过——空和 D 是两回事，一个是没看过，
+  // 一个是看过并判定为差。graded_at 用来回答「多久没评了」。
+  string credit_grade = 35;
+  string credit_graded_at = 36;
 }
 
 message CreateCustomerRequest {
@@ -708,6 +757,10 @@ message Supplier {
   repeated string business_types = 19;
   int64 factory_count = 20;
   string owner_names = 21;
+  // 当前信用评级（E3）。供应商评的是交期准不准、供货足不足量、质量合格率。
+  // 空串表示还没评过——空和 D 是两回事。
+  string credit_grade = 22;
+  string credit_graded_at = 23;
 }
 
 message CreateSupplierRequest {

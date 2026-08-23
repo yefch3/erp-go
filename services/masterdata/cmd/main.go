@@ -63,6 +63,7 @@ func run(log *slog.Logger) error {
 	mdv1.RegisterPortServiceServer(srv, h)
 	mdv1.RegisterOptionServiceServer(srv, h)
 	mdv1.RegisterNumberingServiceServer(srv, h)
+	mdv1.RegisterCreditRatingServiceServer(srv, h)
 	reflection.Register(srv)
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
