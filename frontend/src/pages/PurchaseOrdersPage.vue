@@ -5,17 +5,14 @@
       <span class="head-note">{{ t('orders.subtitle') }}</span>
       <span class="grow" />
       <el-button @click="router.push('/procurement')">← {{ t('procurementNav.backToWorkbench') }}</el-button>
-      <el-button v-if="canWrite" type="primary" @click="openCreate">{{ t('orders.create') }}</el-button>
     </div>
 
     <el-card shadow="never">
       <el-radio-group v-model="status" class="tabs" @change="reload">
-        <el-radio-button value="">{{ t('orders.allStatuses') }}</el-radio-button>
-        <el-radio-button value="DRAFT">{{ t('orders.statuses.DRAFT') }}</el-radio-button>
-        <el-radio-button value="PENDING_APPROVAL">{{ t('orders.statuses.PENDING_APPROVAL') }}</el-radio-button>
-        <el-radio-button value="ORDERED">{{ t('orders.statuses.ORDERED') }}</el-radio-button>
+        <el-radio-button value="ORDERED">{{ t('orders.activeOrders') }}</el-radio-button>
         <el-radio-button value="PARTIALLY_RECEIVED">{{ t('orders.statuses.PARTIALLY_RECEIVED') }}</el-radio-button>
         <el-radio-button value="RECEIVED">{{ t('orders.statuses.RECEIVED') }}</el-radio-button>
+        <el-radio-button value="CANCELLED">{{ t('orders.statuses.CANCELLED') }}</el-radio-button>
       </el-radio-group>
 
       <div class="filters">
@@ -43,96 +40,60 @@
             <div class="sub">{{ t('orders.buyer') }} {{ row.buyerName || '—' }}</div>
           </template>
         </el-table-column>
+        <el-table-column :label="t('orders.purchaseBatch')" min-width="170">
+          <template #default="{ row }">
+            <div>{{ row.sourceQuotationNo || '—' }}</div>
+            <div class="sub">{{ t('orders.lines', { n: row.itemCount }) }}</div>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('orders.amount')" width="150" align="right">
           <template #default="{ row }">
             <span class="num money">{{ row.currency }} {{ row.totalAmount }}</span>
             <div class="sub">{{ t('orders.lines', { n: row.itemCount }) }}</div>
           </template>
         </el-table-column>
-        <!-- Progress only means something once part of it has arrived; a bar
-             at zero on every open order is noise. -->
-        <el-table-column :label="t('orders.received')" width="130" align="right">
-          <template #default="{ row }">
-            <template v-if="Number(row.receivedQty) > 0">
-              <span class="num">{{ trim(row.receivedQty) }} / {{ trim(row.totalQty) }}</span>
-            </template>
-            <span v-else class="num dim">{{ trim(row.totalQty) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('orders.expected')" width="110">
+        <el-table-column :label="t('orders.requiredArrivalDate')" width="125">
           <template #default="{ row }">{{ row.expectedDate || '—' }}</template>
         </el-table-column>
         <el-table-column :label="t('common.status')" width="170">
           <template #default="{ row }">
             <el-tag size="small" :type="statusType(row.status)" effect="plain">
-              {{ t(`orders.statuses.${row.status}`) }}
+              {{ orderStatusLabel(row) }}
             </el-tag>
             <div v-if="row.rejectReason || row.cancelReason" class="sub reason">
               {{ row.rejectReason || row.cancelReason }}
             </div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="380" fixed="right">
+        <el-table-column :label="t('common.actions')" width="160" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
-            <el-button link type="primary" @click="openDetail(row)">{{ t('common.detail') }}</el-button>
-            <el-dropdown
-              v-if="['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status)"
-              trigger="click"
-              @command="(format: string) => downloadOrder(row, format)"
-            >
-              <el-button link type="primary" :loading="downloadingId === Number(row.id)">
-                {{ t('orders.download') }}
-              </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="xlsx">{{ t('orders.downloadExcel') }}</el-dropdown-item>
-                  <el-dropdown-item command="pdf">{{ t('orders.downloadPdf') }}</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-            <el-button
-              v-if="canReceive && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status)"
-              link
-              type="warning"
-              @click="openReceive(row)"
-            >
-              {{ t('orders.receive') }}
-            </el-button>
-            <el-button
-              v-if="['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status)"
-              link type="warning" @click="openExecution(row)"
-            >{{ t('orders.execution') }}</el-button>
-            <template>
-              <el-button
-                v-if="canWrite && (row.status === 'DRAFT' || row.status === 'REJECTED')"
-                link
-                type="primary"
-                @click="openEdit(row)"
+              <el-button link type="primary" @click="openDetail(row)">{{ t('common.detail') }}</el-button>
+              <el-dropdown
+                v-if="['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status)"
+                trigger="click"
+                @command="(command: string) => handleOrderAction(row, command)"
               >
-                {{ common('edit') }}
-              </el-button>
-              <el-button
-                v-if="canSubmit && (row.status === 'DRAFT' || row.status === 'REJECTED')"
-                link
-                type="success"
-                @click="submit(row)"
-              >
-                {{ t('orders.submit') }}
-              </el-button>
-              <el-button
-                v-if="canCancel && ['DRAFT', 'REJECTED', 'ORDERED'].includes(row.status)"
-                link
-                type="danger"
-                @click="openCancel(row)"
-              >
-                {{ common('cancel') }}
-              </el-button>
-            </template>
-            <el-button
-              v-if="canSend && ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status) && row.sendStatus !== 'SENT'"
-              link type="success" @click="openSend(row)"
-            >{{ row.sendStatus === 'FAILED' ? t('orders.retrySend') : t('orders.sendOrder') }}</el-button>
+                <el-button link type="primary" :loading="downloadingId === Number(row.id)">
+                  {{ t('common.more') }}
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="xlsx">{{ t('orders.downloadExcel') }}</el-dropdown-item>
+                    <el-dropdown-item command="pdf">{{ t('orders.downloadPdf') }}</el-dropdown-item>
+                    <el-dropdown-item
+                      v-if="canReceive && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status)"
+                      command="receive"
+                    >{{ t('orders.receive') }}</el-dropdown-item>
+                    <el-dropdown-item command="execution">{{ t('orders.execution') }}</el-dropdown-item>
+                    <el-dropdown-item
+                      v-if="canCancel && row.status === 'ORDERED'"
+                      command="cancel"
+                      divided
+                    >{{ common('cancel') }}</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
           </template>
         </el-table-column>
@@ -156,7 +117,7 @@
       <el-form label-width="90px" class="head-form">
         <el-form-item :label="t('orders.supplier')" required>
           <div class="supplier-row">
-            <el-select v-model="form.supplierId" filterable style="width: 320px">
+            <el-select v-model="form.supplierId" filterable :disabled="approvalEntry" style="width: 420px">
               <el-option
                 v-for="s in suppliers"
                 :key="s.id"
@@ -164,15 +125,9 @@
                 :label="`${s.code} · ${s.name}`"
               />
             </el-select>
-            <!-- There is no supplier page yet, and a purchase order without a
-                 supplier cannot exist. Creating one here beats blocking the
-                 whole feature on a screen nobody asked for. -->
-            <el-button v-if="canManageSupplier" link type="primary" @click="supplierOpen = true">
-              {{ t('orders.newSupplier') }}
-            </el-button>
           </div>
         </el-form-item>
-        <el-form-item :label="t('orders.expected')">
+        <el-form-item :label="approvalEntry ? t('orders.requiredArrivalDate') : t('orders.expected')" :required="approvalEntry">
           <el-date-picker v-model="form.expectedDate" type="date" value-format="YYYY-MM-DD" style="width: 200px" />
         </el-form-item>
         <el-form-item label="履约方式" required>
@@ -190,7 +145,12 @@
           </el-form-item>
           <el-form-item v-if="form.deliveryLocationType === 'PORT'" label="收货港口" required>
             <el-select v-model="form.deliveryPortId" filterable style="width: 420px" @change="selectDeliveryPort">
-              <el-option v-for="p in deliveryPorts" :key="p.id" :value="Number(p.id)" :label="`${p.unLocode} · ${p.nameZh || p.nameEn}`" />
+              <el-option
+                v-for="p in deliveryPorts"
+                :key="p.id"
+                :value="Number(p.id)"
+                :label="portLabel(p)"
+              />
             </el-select>
           </el-form-item>
           <el-form-item v-else label="收货地址" required><el-input v-model="form.deliveryAddress" /></el-form-item>
@@ -250,25 +210,9 @@
 
       <template #footer>
         <el-button @click="createOpen = false">{{ common('cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="submitCreate">{{ common('save') }}</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="supplierOpen" :title="t('orders.newSupplier')" width="460px">
-      <el-form label-width="80px">
-        <el-form-item :label="t('orders.supplierCode')">
-          <el-input v-model="supplierForm.code" :placeholder="t('orders.autoCode')" style="width: 200px" />
-        </el-form-item>
-        <el-form-item :label="t('orders.supplierName')" required>
-          <el-input v-model="supplierForm.name" />
-        </el-form-item>
-        <el-form-item :label="t('orders.country')">
-          <el-input v-model="supplierForm.country" style="width: 200px" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="supplierOpen = false">{{ common('cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="createSupplier">{{ common('save') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="submitCreate">
+          {{ approvalEntry ? t('orders.createAndSubmit') : common('save') }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -381,30 +325,18 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="sendOpen" :title="t('orders.sendFor', { no: sending?.poNo })" width="560px">
-      <el-alert type="info" :closable="false" show-icon class="alert">{{ t('orders.sendHint') }}</el-alert>
-      <el-form label-width="110px">
-        <el-form-item :label="t('orders.sender')">
-          <el-radio-group v-model="sendForm.senderMode">
-            <el-radio value="PUBLIC">{{ t('orders.publicMailbox') }}</el-radio>
-            <el-radio value="ME">{{ t('orders.myMailbox') }}</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item :label="t('orders.recipient')">
-          <el-input v-model="sendForm.recipientEmail" :placeholder="t('orders.supplierDefaultEmail')" />
-        </el-form-item>
-        <el-form-item :label="t('orders.subject')"><el-input v-model="sendForm.subject" /></el-form-item>
-        <el-form-item :label="t('orders.mailBody')"><el-input v-model="sendForm.body" type="textarea" :rows="5" /></el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="sendOpen = false">{{ common('cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="submitSend">{{ t('orders.sendOrder') }}</el-button>
-      </template>
-    </el-dialog>
-
     <el-dialog v-model="executionOpen" :title="t('orders.executionFor', { no: executing?.poNo })" width="960px">
       <el-tabs v-model="executionTab">
         <el-tab-pane :label="t('orders.confirmations')" name="confirmation">
+          <div class="execution-section-head">
+            <div>
+              <strong>{{ t('orders.confirmationProgress') }}</strong>
+              <div class="sub">{{ t('orders.confirmationProgressHint') }}</div>
+            </div>
+            <div class="overall-progress">
+              <el-progress :percentage="confirmationProgress" :stroke-width="10" />
+            </div>
+          </div>
           <el-form v-if="canProduction" label-width="110px" inline>
             <el-form-item :label="t('orders.confirmedDate')"><el-date-picker v-model="confirmationForm.confirmedDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
             <el-form-item :label="t('orders.confirmedExpected')"><el-date-picker v-model="confirmationForm.expectedDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
@@ -413,6 +345,9 @@
             <el-table-column prop="productName" :label="t('orders.product')" min-width="180" />
             <el-table-column :label="t('orders.orderQty')" width="110"><template #default="{row}">{{ trim(row.qty) }} {{ row.uomCode }}</template></el-table-column>
             <el-table-column :label="t('orders.confirmedQty')" width="130"><template #default="{row}"><el-input v-model="confirmationQty[row.id]" size="small" :disabled="!canProduction" /></template></el-table-column>
+            <el-table-column :label="t('orders.completionProgress')" width="150">
+              <template #default="{ row }"><el-progress :percentage="lineConfirmationProgress(row)" :stroke-width="8" /></template>
+            </el-table-column>
             <el-table-column :label="t('orders.unitPrice')" width="110"><template #default="{row}">{{ trim(row.unitPrice) }}</template></el-table-column>
             <el-table-column :label="t('orders.confirmedPrice')" width="130"><template #default="{row}"><el-input v-model="confirmationPrice[row.id]" size="small" :disabled="!canProduction" /></template></el-table-column>
           </el-table>
@@ -431,16 +366,27 @@
           <el-alert v-for="reminder in execution.reminders.filter(r => r.status === 'OPEN')" :key="reminder.id" type="warning" :closable="false" class="alert">
             {{ t('orders.delayReminder', { node: productionNodeLabel(reminder.node), date: reminder.plannedDate, contracts: reminder.relatedContracts || '—' }) }}
           </el-alert>
-          <el-form v-if="canProduction" label-width="100px" inline>
-            <el-form-item :label="t('orders.productionNode')"><el-select v-model="milestoneForm.node" style="width:190px"><el-option v-for="node in productionNodes" :key="node" :value="node" :label="productionNodeLabel(node)" /></el-select></el-form-item>
-            <el-form-item :label="t('orders.plannedDate')"><el-date-picker v-model="milestoneForm.plannedDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
-            <el-form-item :label="t('orders.actualDate')"><el-date-picker v-model="milestoneForm.actualDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
-            <el-form-item :label="t('orders.owner')"><el-input v-model="milestoneForm.ownerName" style="width:180px" /></el-form-item>
-            <el-form-item :label="t('orders.attachmentName')"><el-input v-model="milestoneForm.fileName" style="width:180px" /></el-form-item>
-            <el-form-item :label="t('orders.attachmentUrl')"><el-input v-model="milestoneForm.fileUrl" style="width:260px" /></el-form-item>
-          </el-form>
-          <el-input v-if="canProduction" v-model="milestoneForm.remark" type="textarea" :rows="2" :placeholder="t('orders.remark')" class="execution-note" />
-          <el-button v-if="canProduction" type="primary" :loading="saving" @click="submitMilestone">{{ t('orders.saveMilestone') }}</el-button>
+          <section v-if="canProduction" class="execution-editor">
+            <div class="execution-section-head">
+              <div><strong>{{ t('orders.updateProduction') }}</strong><div class="sub">{{ t('orders.updateProductionHint') }}</div></div>
+            </div>
+            <el-form label-position="top" class="execution-form-grid">
+              <el-form-item :label="t('orders.productionNode')"><el-select v-model="milestoneForm.node"><el-option v-for="node in productionNodes" :key="node" :value="node" :label="productionNodeLabel(node)" /></el-select></el-form-item>
+              <el-form-item :label="t('orders.plannedDate')"><el-date-picker v-model="milestoneForm.plannedDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
+              <el-form-item :label="t('orders.actualDate')"><el-date-picker v-model="milestoneForm.actualDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
+              <el-form-item :label="t('orders.owner')"><el-input v-model="milestoneForm.ownerName" /></el-form-item>
+              <el-form-item class="span-all" :label="t('orders.remark')"><el-input v-model="milestoneForm.remark" type="textarea" :rows="2" /></el-form-item>
+              <el-collapse class="span-all optional-fields">
+                <el-collapse-item :title="t('orders.optionalAttachment')" name="attachment">
+                  <div class="execution-form-grid attachment-grid">
+                    <el-form-item :label="t('orders.attachmentName')"><el-input v-model="milestoneForm.fileName" /></el-form-item>
+                    <el-form-item :label="t('orders.attachmentUrl')"><el-input v-model="milestoneForm.fileUrl" /></el-form-item>
+                  </div>
+                </el-collapse-item>
+              </el-collapse>
+            </el-form>
+            <el-button type="primary" :loading="saving" @click="submitMilestone">{{ t('orders.saveMilestone') }}</el-button>
+          </section>
           <el-table :data="execution.milestones" size="small" class="history-table">
             <el-table-column :label="t('orders.productionNode')" width="150"><template #default="{row}">{{ productionNodeLabel(row.node) }}</template></el-table-column>
             <el-table-column prop="plannedDate" :label="t('orders.plannedDate')" width="110" />
@@ -452,9 +398,9 @@
         </el-tab-pane>
 
         <el-tab-pane :label="t('orders.exceptions')" name="exceptions">
-          <el-form v-if="canException" label-width="100px" inline>
+          <el-form v-if="canException" label-position="top" class="execution-form-grid execution-editor">
             <el-form-item :label="t('orders.exceptionType')"><el-select v-model="exceptionForm.type" style="width:180px"><el-option v-for="kind in exceptionTypes" :key="kind" :value="kind" :label="t(`orders.exceptionTypes.${kind}`)" /></el-select></el-form-item>
-            <el-form-item :label="t('orders.receiptNo')"><el-select v-model="exceptionForm.receiptId" clearable style="width:180px"><el-option v-for="receipt in executionReceipts" :key="receipt.id" :value="Number(receipt.id)" :label="receipt.receiptNo" /></el-select></el-form-item>
+            <el-form-item :label="t('orders.optionalReceiptNo')"><el-select v-model="exceptionForm.receiptId" clearable :placeholder="t('orders.optionalReceiptNoHint')"><el-option v-for="receipt in executionReceipts" :key="receipt.id" :value="Number(receipt.id)" :label="receipt.receiptNo" /></el-select></el-form-item>
             <el-form-item :label="t('orders.product')"><el-select v-model="exceptionForm.itemId" clearable style="width:200px"><el-option v-for="item in executionItems" :key="item.id" :value="Number(item.id)" :label="item.productName" /></el-select></el-form-item>
             <el-form-item :label="t('orders.qty')"><el-input v-model="exceptionForm.qty" style="width:120px" /></el-form-item>
             <el-form-item :label="t('orders.actualProduct')"><el-input v-model="exceptionForm.actualProduct" style="width:180px" /></el-form-item>
@@ -481,7 +427,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { download, get, post, put, saveBlob } from '../api'
+import { download, get, post, put, quietErrors, saveBlob } from '../api'
 import { onLive } from '../live'
 import { buildConfirmationLines } from '../lib/purchaseExecution'
 import { useAuthStore } from '../stores/auth'
@@ -554,14 +500,17 @@ interface Requirement {
   orderedQty: string
   requiredDate: string
   source: string
+  quotationId: string
   supplierId: string
   supplierName: string
   sourceCurrency: string
   sourceUnitPrice: string
 }
 interface Supplier { id: string; code: string; name: string }
+interface ApiFailure { code?: string; message?: string }
 interface Warehouse { id: string; code: string; name: string; whType: string }
-interface SupplierConfirmation { id: string; status: string; confirmedDate: string; confirmedExpectedDate: string; remark: string; createdBy: string }
+interface SupplierConfirmationLine { poItemId: string; confirmedQty: string; confirmedUnitPrice: string }
+interface SupplierConfirmation { id: string; status: string; confirmedDate: string; confirmedExpectedDate: string; remark: string; createdBy: string; lines: SupplierConfirmationLine[] }
 interface ProductionAttachment { fileName: string; fileUrl: string; contentType: string }
 interface ProductionMilestone { id: string; node: string; plannedDate: string; actualDate: string; ownerName: string; remark: string; delayed: boolean; attachments: ProductionAttachment[] }
 interface ReceiptException { id: string; exceptionType: string; qty: string; description: string; status: string; resolution: string }
@@ -573,13 +522,10 @@ const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const canWrite = auth.can('procurement:order:write')
-const canSubmit = auth.can('procurement:order:submit')
 const canCancel = auth.can('procurement:order:cancel')
 const canReceive = auth.can('procurement:receipt:write')
-const canSend = auth.can('procurement:order:send')
 const canProduction = auth.can('procurement:production:write')
 const canException = auth.can('procurement:exception:write')
-const canManageSupplier = auth.can('masterdata:supplier:write')
 const canReadPorts = auth.can('masterdata:port:read')
 const canReadWarehouses = auth.can('inventory:stock:read')
 
@@ -587,13 +533,16 @@ const rows = ref<Order[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = 20
-const status = ref('')
+// 采购单页面只展示已经通过采购审批的执行单据。草稿、审批中和驳回
+// 都属于“待采购并审批”的过程状态，不在这里形成第二个审批入口。
+const status = ref('ORDERED')
 const keyword = ref('')
 const loading = ref(false)
 const saving = ref(false)
 const downloadingId = ref(0)
 
 const createOpen = ref(false)
+const approvalEntry = ref(false)
 const editing = ref<Order | null>(null)
 const pending = ref<Requirement[]>([])
 const suppliers = ref<Supplier[]>([])
@@ -601,9 +550,6 @@ const qtyOf = reactive<Record<string, string>>({})
 const priceOf = reactive<Record<string, string>>({})
 const form = reactive({ supplierId: 0, currency: 'CNY', expectedDate: '', remark: '', fulfillmentMode: 'DIRECT_SHIP', deliveryLocationType: 'PORT', deliveryPortId: 0, deliveryPortCode: '', deliveryPortName: '', warehouseId: 0, warehouseName: '', deliveryAddress: '', sourceChangeReason: '' })
 const deliveryPorts = ref<{ id: string; unLocode: string; nameZh: string; nameEn: string }[]>([])
-
-const supplierOpen = ref(false)
-const supplierForm = reactive({ code: '', name: '', country: '' })
 
 const detailOpen = ref(false)
 const detail = ref<Order | null>(null)
@@ -622,10 +568,6 @@ const cancelOpen = ref(false)
 const cancelling = ref<Order | null>(null)
 const cancelReason = ref('')
 
-const sendOpen = ref(false)
-const sending = ref<Order | null>(null)
-const sendForm = reactive({ senderMode: 'PUBLIC', recipientEmail: '', subject: '', body: '' })
-
 const executionOpen = ref(false)
 const executionTab = ref('confirmation')
 const executing = ref<Order | null>(null)
@@ -638,7 +580,23 @@ const confirmationForm = reactive({ confirmedDate: '', expectedDate: '', remark:
 const productionNodes = ['PENDING_SCHEDULE', 'SCHEDULED', 'IN_PRODUCTION', 'QUALITY_INSPECTION', 'READY_TO_SHIP', 'SENT_TO_PORT']
 const milestoneForm = reactive({ node: 'PENDING_SCHEDULE', plannedDate: '', actualDate: '', ownerName: '', fileName: '', fileUrl: '', remark: '' })
 const exceptionTypes = ['WRONG_PRODUCT', 'UNIT_MISMATCH', 'SHORT_SHIPMENT', 'DAMAGE', 'QUALITY_DISPUTE', 'RETURN']
-const exceptionForm = reactive({ type: 'SHORT_SHIPMENT', receiptId: 0, itemId: 0, qty: '0', actualProduct: '', actualUom: '', description: '' })
+const exceptionForm = reactive<{ type: string; receiptId?: number; itemId?: number; qty: string; actualProduct: string; actualUom: string; description: string }>({ type: 'SHORT_SHIPMENT', receiptId: undefined, itemId: undefined, qty: '', actualProduct: '', actualUom: '', description: '' })
+
+function lineConfirmationProgress(item: OrderItem): number {
+  const ordered = Number(item.qty)
+  if (!(ordered > 0)) return 0
+  const latest = execution.confirmations[0]?.lines?.find((line) => Number(line.poItemId) === Number(item.id))
+  const confirmed = latest ? Number(latest.confirmedQty) : 0
+  return Math.max(0, Math.min(100, Math.round((confirmed / ordered) * 1000) / 10))
+}
+
+// 不同产品可能使用 MT、PCS、SET 等单位，不能直接把数量相加。
+// 总体完成进度取每条产品确认比例的平均值。
+const confirmationProgress = computed(() => {
+  if (!executionItems.value.length) return 0
+  const sum = executionItems.value.reduce((total, item) => total + lineConfirmationProgress(item), 0)
+  return Math.round((sum / executionItems.value.length) * 10) / 10
+})
 
 const common = (k: string) => t(`common.${k}`)
 
@@ -667,7 +625,7 @@ async function load() {
 
 function reload() {
   page.value = 1
-  load()
+  return load()
 }
 
 function openOf(r: Requirement): string {
@@ -714,16 +672,18 @@ async function openCreate(preselect?: string[]) {
   // find them again by product name.
   if (preselect?.length) {
     const wanted = new Set(preselect)
+    // 从待采购审批进入时严格只显示员工勾选的产品，避免其它待采购行混入本次审批。
+    pending.value = pending.value.filter((r) => wanted.has(String(r.id)))
     pending.value.forEach((r) => {
-      if (wanted.has(String(r.id))) {
-        qtyOf[r.id] = String(Number(r.requiredQty) - Number(r.orderedQty))
-        if (r.source === 'CUSTOMER_QUOTATION') {
-          form.supplierId = Number(r.supplierId)
-          form.currency = r.sourceCurrency || 'USD'
-          priceOf[r.id] = r.sourceUnitPrice || '0'
-        }
+      qtyOf[r.id] = String(Number(r.requiredQty) - Number(r.orderedQty))
+      if (r.source === 'CUSTOMER_QUOTATION') {
+        form.supplierId = Number(r.supplierId)
+        form.currency = r.sourceCurrency || 'USD'
+        priceOf[r.id] = r.sourceUnitPrice || '0'
       }
     })
+    const requiredDates = pending.value.map((r) => r.requiredDate).filter(Boolean).sort()
+    form.expectedDate = requiredDates[0] || ''
   }
   createOpen.value = true
 }
@@ -774,29 +734,8 @@ async function openEdit(row: Order) {
   createOpen.value = true
 }
 
-async function createSupplier() {
-  if (!supplierForm.name.trim()) {
-    ElMessage.warning(t('orders.supplierNameRequired'))
-    return
-  }
-  saving.value = true
-  try {
-    await post('/suppliers', {
-      code: supplierForm.code, name: supplierForm.name, country: supplierForm.country,
-    })
-    suppliers.value = (await get<{ suppliers: Supplier[] }>('/suppliers', { page_size: 200 })).suppliers ?? []
-    const created = suppliers.value.find((s) => s.name === supplierForm.name)
-    if (created) form.supplierId = Number(created.id)
-    supplierForm.code = ''
-    supplierForm.name = ''
-    supplierForm.country = ''
-    supplierOpen.value = false
-  } finally {
-    saving.value = false
-  }
-}
-
 async function submitCreate() {
+  const wasApprovalEntry = approvalEntry.value
   const supplier = suppliers.value.find((s) => Number(s.id) === form.supplierId)
   if (!supplier) {
     ElMessage.warning(t('orders.supplierRequired'))
@@ -815,6 +754,10 @@ async function submitCreate() {
   }
   if (form.fulfillmentMode === 'WAREHOUSE' && !form.warehouseId) {
     ElMessage.warning('请选择入库仓库')
+    return
+  }
+  if (approvalEntry.value && !form.expectedDate) {
+    ElMessage.warning(t('orders.requiredArrivalDateRequired'))
     return
   }
   if (form.fulfillmentMode === 'DIRECT_SHIP' && form.deliveryLocationType === 'PORT' &&
@@ -845,15 +788,60 @@ async function submitCreate() {
       source_change_reason: form.sourceChangeReason,
       lines,
     }
-    const res = editing.value
-      ? await put<{ poNo: string }>(`/purchase-orders/${editing.value.id}`, payload)
-      : await post<{ poNo: string }>('/purchase-orders', payload)
+    let res: { id?: string; poNo: string }
+    let recoveredLegacyDraft = false
+    if (editing.value) {
+      res = await put<{ id?: string; poNo: string }>(`/purchase-orders/${editing.value.id}`, payload)
+    } else {
+      try {
+        res = await post<{ id: string; poNo: string }>(
+          '/purchase-orders', payload, wasApprovalEntry ? quietErrors : undefined,
+        )
+      } catch (failure) {
+        const apiFailure = failure as ApiFailure
+        if (!wasApprovalEntry || apiFailure.code !== 'PO_QUOTATION_ALREADY_ORDERED') {
+          ElMessage.error(apiFailure.message || t('common.requestFailed'))
+          throw failure
+        }
+        // 上次建单成功但审批提交失败时会留下草稿。再次操作应继续这张草稿，
+        // 更新为员工本次确认的内容后提交，不能既隐藏草稿又阻止员工继续办理。
+        const quotationID = Number(pending.value.find((item) => Number(item.quotationId) > 0)?.quotationId || 0)
+        const existingLists = await Promise.all(['DRAFT', 'REJECTED'].map((draftStatus) =>
+          get<{ orders: Order[] }>('/purchase-orders', {
+            status: draftStatus, keyword: supplier.name, page_size: 200,
+          }, quietErrors),
+        ))
+        const existing = existingLists
+          .flatMap((item) => item.orders ?? [])
+          .find((order) => Number(order.sourceQuotationId) === quotationID && Number(order.supplierId) === Number(supplier.id))
+        if (!existing) {
+          ElMessage.error(apiFailure.message || t('common.requestFailed'))
+          throw failure
+        }
+        const updated = await put<{ poNo: string }>(`/purchase-orders/${existing.id}`, payload)
+        res = { id: existing.id, poNo: updated.poNo }
+        recoveredLegacyDraft = true
+      }
+    }
+    if (wasApprovalEntry && recoveredLegacyDraft && res.id) {
+      // 仅旧版本遗留的草稿需要补做一次提交；新流程在创建事务内已经直接转为 ORDERED。
+      await post(`/purchase-orders/${res.id}/submit`, {})
+    }
     ElMessage.success(editing.value
       ? t('orders.updated', { no: res.poNo })
-      : t('orders.created', { no: res.poNo }))
+      : wasApprovalEntry
+        ? t('orders.createdAndSubmitted', { no: res.poNo })
+        : t('orders.created', { no: res.poNo }))
     createOpen.value = false
+    approvalEntry.value = false
     editing.value = null
-    reload()
+    if (wasApprovalEntry) {
+      // 这里就是唯一的人工审批点。后端会在同一事务中生成采购单并将其
+      // 转为 ORDERED，因此返回列表后能够直接看到“已下单”。
+      await router.push('/requirements')
+    } else {
+      reload()
+    }
   } finally {
     saving.value = false
   }
@@ -863,6 +851,10 @@ function selectDeliveryPort(id: number) {
   const port = deliveryPorts.value.find((item) => Number(item.id) === Number(id))
   form.deliveryPortCode = port?.unLocode ?? ''
   form.deliveryPortName = port?.nameZh || port?.nameEn || ''
+}
+
+function portLabel(port: { unLocode?: string; nameZh?: string; nameEn?: string }) {
+  return [port.unLocode, port.nameZh || port.nameEn].filter(Boolean).join(' · ')
 }
 
 function selectOrderWarehouse(id: number) {
@@ -887,30 +879,6 @@ async function downloadOrder(row: Order, format: string) {
   } finally {
     downloadingId.value = 0
   }
-}
-
-function openSend(row: Order) {
-  sending.value = row
-  sendForm.senderMode = 'PUBLIC'
-  sendForm.recipientEmail = ''
-  sendForm.subject = `Purchase Order ${row.poNo}`
-  sendForm.body = ''
-  sendOpen.value = true
-}
-
-async function submitSend() {
-  saving.value = true
-  try {
-    await post(`/purchase-orders/${sending.value?.id}/send`, {
-      sender_mode: sendForm.senderMode,
-      recipient_email: sendForm.recipientEmail,
-      subject: sendForm.subject,
-      body: sendForm.body,
-    })
-    ElMessage.success(t('orders.sent'))
-    sendOpen.value = false
-    await load()
-  } finally { saving.value = false }
 }
 
 async function loadExecution() {
@@ -975,6 +943,11 @@ async function submitException() {
       description: exceptionForm.description,
     })
     ElMessage.success(t('orders.exceptionReported'))
+    exceptionForm.receiptId = undefined
+    exceptionForm.itemId = undefined
+    exceptionForm.qty = ''
+    exceptionForm.actualProduct = ''
+    exceptionForm.actualUom = ''
     exceptionForm.description = ''
     await loadExecution()
   } finally { saving.value = false }
@@ -985,17 +958,6 @@ async function resolveException(row: ReceiptException) {
   await post(`/purchase-orders/${executing.value?.id}/exceptions/${row.id}/resolve`, { resolution: value })
   ElMessage.success(t('orders.exceptionResolved'))
   await loadExecution()
-}
-
-async function submit(row: Order) {
-  await ElMessageBox.confirm(t('orders.submitWarning', { no: row.poNo }), t('orders.submit'), {
-    type: 'warning',
-    confirmButtonText: t('orders.submit'),
-    cancelButtonText: common('cancel'),
-  })
-  await post(`/purchase-orders/${row.id}/submit`, {})
-  ElMessage.success(t('orders.submitted'))
-  load()
 }
 
 function openCancel(row: Order) {
@@ -1074,6 +1036,31 @@ function statusType(s: string): 'info' | 'warning' | 'primary' | 'success' | 'da
   return 'info'
 }
 
+// 采购单列表仅保留“详情”为主操作，其余动作统一放进下拉菜单，
+// 避免操作列随业务功能增加而持续横向膨胀。
+function handleOrderAction(row: Order, command: string) {
+  if (command === 'xlsx' || command === 'pdf') {
+    void downloadOrder(row, command)
+    return
+  }
+  if (command === 'receive') {
+    void openReceive(row)
+    return
+  }
+  if (command === 'execution') {
+    void openExecution(row)
+    return
+  }
+  if (command === 'cancel') openCancel(row)
+}
+
+// 人工审批通过并生成采购单后，业务状态统一显示为“已下单”。
+// 供应商邮件仅是辅助沟通记录，不再构成第二次“下单”动作或业务状态门槛。
+function orderStatusLabel(row: Order): string {
+  if (row.status === 'ORDERED') return t('orders.businessStatuses.ORDERED')
+  return t(`orders.statuses.${row.status}`)
+}
+
 function trim(v: string): string {
   if (!v) return '0'
   if (!v.includes('.')) return v
@@ -1099,6 +1086,7 @@ onMounted(async () => {
   // turn them into an order.
   const picked = String(route.query.requirements ?? '').split(',').filter(Boolean)
   if (picked.length && canWrite) {
+    approvalEntry.value = String(route.query.approval ?? '') === '1'
     await openCreate(picked)
     router.replace({ path: '/purchase-orders' })
   }
@@ -1150,6 +1138,41 @@ onMounted(async () => {
 }
 .history-table {
   margin-top: 16px;
+}
+.execution-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 14px;
+}
+.overall-progress {
+  width: 240px;
+}
+.execution-editor {
+  padding: 16px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-extra-light);
+}
+.execution-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 18px;
+}
+.execution-form-grid :deep(.el-form-item),
+.execution-form-grid :deep(.el-select),
+.execution-form-grid :deep(.el-date-editor) {
+  width: 100%;
+}
+.span-all {
+  grid-column: 1 / -1;
+}
+.optional-fields {
+  margin-bottom: 14px;
+}
+.attachment-grid {
+  padding-top: 8px;
 }
 .history-table a + a {
   margin-left: 8px;
@@ -1216,5 +1239,11 @@ onMounted(async () => {
 .pager {
   margin-top: 14px;
   justify-content: flex-end;
+}
+@media (max-width: 760px) {
+  .execution-section-head { align-items: flex-start; flex-direction: column; }
+  .overall-progress { width: 100%; }
+  .execution-form-grid { grid-template-columns: 1fr; }
+  .span-all { grid-column: auto; }
 }
 </style>

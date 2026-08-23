@@ -1,36 +1,13 @@
 <template>
   <div>
     <div class="page-head">
-      <h2>待下单</h2>
+      <h2>{{ t('requirements.title') }}</h2>
       <span class="head-note">{{ t('requirements.readOnlyHint') }}</span>
       <span class="grow" />
       <el-button @click="router.push('/procurement')">← {{ t('procurementNav.backToWorkbench') }}</el-button>
-      <!-- Ordering is what a buyer actually comes here to do. Several lines at
-           once, because one order to one supplier covering three contracts is
-           the whole reason the job exists. -->
-      <el-button v-if="canOrder && selected.length" type="primary" @click="goOrder">
-        {{ t('requirements.orderSelected', { n: selected.length }) }}
-      </el-button>
-      <el-button v-if="canOrder && selected.length" :loading="saving" @click="exportTemplate">
-        {{ t('requirements.exportTemplate', { n: selected.length }) }}
-      </el-button>
-      <el-button v-if="canOrder" @click="openTemplateImport">
-        {{ t('requirements.importTemplate') }}
-      </el-button>
-      <el-button v-if="canException" @click="openCreate">
-        {{ t('requirements.create') }}
-      </el-button>
     </div>
 
     <el-card shadow="never">
-      <el-radio-group v-model="status" class="tabs" @change="reload">
-        <el-radio-button value="PENDING">{{ t('requirements.tabPending') }}</el-radio-button>
-        <el-radio-button value="ORDERED">{{ t('requirements.tabOrdered') }}</el-radio-button>
-        <el-radio-button value="SUPERSEDED">{{ t('requirements.tabSuperseded') }}</el-radio-button>
-        <el-radio-button value="CANCELLED">{{ t('requirements.tabCancelled') }}</el-radio-button>
-        <el-radio-button value="">{{ t('requirements.tabAll') }}</el-radio-button>
-      </el-radio-group>
-
       <div class="filters">
         <el-input
           v-model="keyword"
@@ -43,88 +20,29 @@
         <el-button @click="reload">{{ t('common.query') }}</el-button>
       </div>
 
-      <el-table :data="rows" v-loading="loading" @selection-change="onSelect">
-        <el-table-column v-if="canOrder" type="selection" width="42" :selectable="isOrderable" />
-        <el-table-column :label="t('requirements.product')" min-width="200">
+      <el-table :data="purchaseBatches" v-loading="loading">
+        <el-table-column :label="t('requirements.purchaseBatch')" min-width="230">
           <template #default="{ row }">
-            <div class="prod">{{ row.productName }}</div>
-            <div class="sub">{{ row.productCode }}<span v-if="row.spec"> · {{ row.spec }}</span></div>
+            <div class="batch-no">{{ row.label }}</div>
+            <div class="sub">{{ row.customerName || '—' }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="来源报价 / 供应商" min-width="210">
+        <el-table-column :label="t('requirements.batchProducts')" min-width="300">
           <template #default="{ row }">
-            <template v-if="row.source === 'CUSTOMER_QUOTATION'">
-              <div class="prod">{{ row.quotationNo }}</div>
-              <div class="sub">{{ row.supplierName }}<span v-if="row.factoryName"> · {{ row.factoryName }}</span></div>
-              <div class="sub">{{ row.sourceCurrency }} {{ row.sourceUnitPrice }} / {{ row.uomCode }} · MOQ {{ row.moq || '—' }} · {{ row.leadTime || '—' }}</div>
-            </template>
-            <span v-else>—</span>
+            <div class="batch-products">{{ row.productNames }}</div>
+            <div class="sub">{{ t('requirements.lineCount', { n: row.lines.length }) }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('requirements.qty')" width="150" align="right">
+        <el-table-column :label="t('requirements.batchSuppliers')" min-width="230">
           <template #default="{ row }">
-            <span class="qty">{{ trimQty(row.requiredQty) }}</span> {{ row.uomCode }}
-            <!-- Progress only means something once part of it is on order;
-                 showing "0 / 500" on every untouched line is noise. -->
-            <div v-if="Number(row.orderedQty) > 0" class="sub">
-              {{ t('requirements.ordered', { n: trimQty(row.orderedQty) }) }}
-            </div>
+            <div>{{ row.supplierNames || '—' }}</div>
+            <div class="sub">{{ t('requirements.supplierCount', { n: row.supplierCount }) }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('requirements.requiredDate')" width="120">
+        <el-table-column :label="t('common.actions')" width="180" fixed="right">
           <template #default="{ row }">
-            <span :class="{ overdue: isOverdue(row) }">{{ row.requiredDate || '—' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('requirements.fromContract')" width="180">
-          <template #default="{ row }">
-            <!-- A manually raised requirement has no contract behind it, and
-                 saying so is more useful than an empty cell. -->
-            <template v-if="row.source === 'MANUAL'">
-              <el-tag size="small" type="info" effect="plain">{{ t('requirements.manual') }}</el-tag>
-            </template>
-            <template v-else>
-            <!-- The contract is the reason this line exists, so it has to be
-                 one click away: a buyer about to spend money should be able
-                 to read what was actually sold. -->
-            <router-link :to="`/contracts?id=${row.contractId}`" class="doc-link">
-              {{ row.contractNo }}
-            </router-link>
-            <span class="ver">v{{ row.versionNo }}</span>
-            <div class="sub">{{ row.customerName }}</div>
-            </template>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('common.status')" width="180">
-          <template #default="{ row }">
-            <el-tag size="small" :type="statusType(row.status)" effect="plain">
-              {{ t(`requirements.statuses.${row.status}`) }}
-            </el-tag>
-            <div v-if="row.closedReason" class="sub reason">{{ row.closedReason }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('common.actions')" width="200" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="openDetail(row)">{{ common('detail') }}</el-button>
-            <el-button
-              v-if="canOrder && isOrderable(row)"
-              link
-              type="success"
-              @click="goOrder([row])"
-            >
-              {{ t('requirements.order') }}
-            </el-button>
-            <el-button v-if="canWrite && row.status === 'PENDING'" link type="danger" @click="openClose(row)">
-              {{ t('requirements.close') }}
-            </el-button>
-            <!-- A close can be wrong or a contract change can be reverted. -->
-            <el-button
-              v-if="canWrite && canReopen(row)"
-              link
-              type="warning"
-              @click="reopen(row)"
-            >
-              {{ t('requirements.reopen') }}
+            <el-button type="primary" plain @click="openBatchReview(row)">
+              {{ t('requirements.reviewAndApprove') }}
             </el-button>
           </template>
         </el-table-column>
@@ -134,12 +52,58 @@
       <el-pagination
         class="pager"
         layout="total, prev, pager, next"
-        :total="total"
+        :total="purchaseBatches.length"
         :page-size="pageSize"
         :current-page="page"
         @current-change="(p: number) => { page = p; load() }"
       />
     </el-card>
+
+    <el-dialog v-model="batchReviewOpen" :title="activeBatch?.label" width="920px" destroy-on-close>
+      <el-alert type="info" :closable="false" show-icon class="alert">
+        {{ t('requirements.batchApprovalHint') }}
+      </el-alert>
+      <section v-for="group in activeSupplierGroups" :key="group.key" class="supplier-group">
+        <div class="supplier-group-head">
+          <div>
+            <strong>{{ group.supplierName || '—' }}</strong>
+            <span v-if="group.factoryNames" class="sub supplier-factories">{{ group.factoryNames }}</span>
+          </div>
+          <el-button
+            v-if="canApprovalRequest"
+            type="success"
+            plain
+            @click="goOrder(group.lines)"
+          >
+            {{ t('requirements.submitSupplierApproval', { n: group.lines.length }) }}
+          </el-button>
+        </div>
+        <el-table :data="group.lines" size="small" border>
+          <el-table-column :label="t('requirements.product')" min-width="260">
+            <template #default="{ row }">
+              <div class="prod">{{ row.productName }}</div>
+              <div class="sub">{{ row.spec || row.productCode || '—' }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('requirements.qty')" width="140" align="right">
+            <template #default="{ row }"><span class="qty">{{ trimQty(row.requiredQty) }}</span> {{ row.uomCode }}</template>
+          </el-table-column>
+          <el-table-column :label="t('requirements.quoteSummary')" min-width="230">
+            <template #default="{ row }">
+              {{ row.sourceCurrency }} {{ row.sourceUnitPrice }} / {{ row.uomCode }}
+              <div class="sub">MOQ {{ row.moq || '—' }} · {{ row.leadTime || '—' }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('requirements.requiredDate')" width="130">
+            <template #default="{ row }">{{ row.requiredDate || t('requirements.setOnApproval') }}</template>
+          </el-table-column>
+          <el-table-column :label="t('common.actions')" width="90">
+            <template #default="{ row }"><el-button link type="primary" @click="openDetail(row)">{{ common('detail') }}</el-button></template>
+          </el-table-column>
+        </el-table>
+      </section>
+      <template #footer><el-button @click="batchReviewOpen = false">{{ common('close') }}</el-button></template>
+    </el-dialog>
 
     <el-drawer v-model="detailOpen" :title="detail?.productName" size="620px">
       <el-descriptions :column="2" border size="small" class="desc">
@@ -280,7 +244,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -328,17 +292,60 @@ interface CoveringOrder {
   receivedQty: string
 }
 
+interface PurchaseBatch {
+  key: string
+  label: string
+  customerName: string
+  productNames: string
+  supplierNames: string
+  supplierCount: number
+  lines: Requirement[]
+}
+
+interface SupplierGroup {
+  key: string
+  supplierName: string
+  factoryNames: string
+  lines: Requirement[]
+}
+
 const { t } = useI18n()
 const auth = useAuthStore()
 const router = useRouter()
 const canWrite = auth.can('procurement:requirement:write')
-const canException = auth.can('procurement:requirement:exception')
 // Raising a requirement and committing money to a supplier are separate
 // permissions, so the ordering actions are gated separately too.
 const canOrder = auth.can('procurement:order:write')
+const canApprovalRequest = canOrder && auth.can('procurement:order:submit')
 
 const rows = ref<Requirement[]>([])
-const total = ref(0)
+// 同一客户报价是一批采购业务；批次内仍保留产品行，便于按供应商拆分审批。
+const displayRows = computed(() => [...rows.value].sort((a, b) => {
+  const batch = purchaseBatchKey(a).localeCompare(purchaseBatchKey(b))
+  if (batch !== 0) return batch
+  return `${a.supplierName}\u0000${a.productName}`.localeCompare(`${b.supplierName}\u0000${b.productName}`)
+}))
+// 主页面按客户报价/采购批次汇总，避免同一单据的每个产品重复占一行。
+const purchaseBatches = computed<PurchaseBatch[]>(() => {
+  const grouped = new Map<string, Requirement[]>()
+  for (const row of displayRows.value) {
+    const key = purchaseBatchKey(row)
+    grouped.set(key, [...(grouped.get(key) ?? []), row])
+  }
+  return [...grouped.entries()].map(([key, lines]) => {
+    const supplierNames = [...new Set(lines.map((line) => line.supplierName).filter(Boolean))]
+    const productNames = [...new Set(lines.map((line) => line.productName).filter(Boolean))]
+    return {
+      key,
+      label: lines[0]?.quotationNo || lines[0]?.contractNo || t('requirements.manualBatch'),
+      customerName: lines[0]?.customerName ?? '',
+      productNames: productNames.slice(0, 3).join('、') + (productNames.length > 3 ? ` +${productNames.length - 3}` : ''),
+      supplierNames: supplierNames.join('、'),
+      supplierCount: supplierNames.length,
+      lines,
+    }
+  })
+})
 const page = ref(1)
 const pageSize = 20
 // Outstanding work is what a buyer opens this page for; everything else is
@@ -354,6 +361,21 @@ const createForm = reactive({ productId: 0, qty: '', requiredDate: '', remark: '
 const closing = ref<Requirement | null>(null)
 const closeReason = ref('')
 const selected = ref<Requirement[]>([])
+const batchReviewOpen = ref(false)
+const activeBatch = ref<PurchaseBatch | null>(null)
+const activeSupplierGroups = computed<SupplierGroup[]>(() => {
+  const grouped = new Map<string, Requirement[]>()
+  for (const line of activeBatch.value?.lines ?? []) {
+    const key = line.supplierId || line.supplierName || `UNASSIGNED-${line.id}`
+    grouped.set(key, [...(grouped.get(key) ?? []), line])
+  }
+  return [...grouped.entries()].map(([key, lines]) => ({
+    key,
+    supplierName: lines[0]?.supplierName ?? '',
+    factoryNames: [...new Set(lines.map((line) => line.factoryName).filter(Boolean))].join('、'),
+    lines: lines.filter(isOrderable),
+  })).filter((group) => group.lines.length > 0)
+})
 const detailOpen = ref(false)
 const detail = ref<Requirement | null>(null)
 const covering = ref<CoveringOrder[]>([])
@@ -373,7 +395,6 @@ async function load() {
       { page: page.value, page_size: pageSize, status: status.value, keyword: keyword.value },
     )
     rows.value = data.requirements ?? []
-    total.value = Number(data.meta?.total ?? 0)
   } finally {
     loading.value = false
   }
@@ -382,6 +403,11 @@ async function load() {
 function reload() {
   page.value = 1
   load()
+}
+
+function openBatchReview(batch: PurchaseBatch) {
+  activeBatch.value = batch
+  batchReviewOpen.value = true
 }
 
 // This is an exceptional requirement raised independently of a contract.
@@ -462,17 +488,24 @@ function onSelect(rows: Requirement[]) {
   selected.value = rows
 }
 
+function purchaseBatchKey(row: Requirement): string {
+  return row.quotationId || row.quotationNo || row.contractId || row.contractNo || `MANUAL-${row.id}`
+}
+
 // The order itself is raised on the purchase-order page — one dialog, not two
 // that can drift apart. This carries the picked lines across so the buyer does
 // not have to find them again by product name.
-function goOrder(rows?: Requirement[]) {
-  const picked = rows ?? selected.value
+function goOrder(chosen?: Requirement[]) {
+  const picked = chosen ?? selected.value
   const quoteRows = picked.filter((row) => row.source === 'CUSTOMER_QUOTATION')
   if (quoteRows.length && quoteRows.some((row) => row.quotationId !== quoteRows[0].quotationId || row.supplierId !== quoteRows[0].supplierId)) {
     ElMessage.warning('请一次只选择同一客户报价、同一供应商的明细')
     return
   }
-  router.push({ path: '/purchase-orders', query: { requirements: picked.map((r) => r.id).join(',') } })
+  batchReviewOpen.value = false
+  router.push({ path: '/purchase-orders', query: {
+    requirements: picked.map((r) => r.id).join(','), approval: '1',
+  } })
 }
 
 async function exportTemplate() {
@@ -563,14 +596,6 @@ async function reopen(row: Requirement) {
   load()
 }
 
-function statusType(s: string): 'warning' | 'primary' | 'success' | 'info' {
-  if (s === 'PENDING') return 'warning'
-  if (s === 'PARTIALLY_ORDERED') return 'primary'
-  if (s === 'ORDERED') return 'success'
-  if (s === 'RECEIVED') return 'success'
-  return 'info'
-}
-
 // Quantities arrive as exact decimals; "1500.0000 PCS" reads worse than
 // "1500 PCS" and means the same thing.
 function trimQty(v: string): string {
@@ -594,7 +619,7 @@ const stopListening = onLive((event) => {
   if (event.type !== 'requirement.changed') return
   // Not while a dialog is open: swapping the numbers under somebody who is
   // halfway through filling in a form is worse than showing them stale ones.
-  if (createOpen.value || closeOpen.value || detailOpen.value || templateImportOpen.value) return
+  if (createOpen.value || closeOpen.value || detailOpen.value || batchReviewOpen.value || templateImportOpen.value) return
   load()
 })
 onUnmounted(stopListening)
@@ -621,16 +646,46 @@ onMounted(load)
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
-.tabs {
-  margin-bottom: 14px;
-}
 .filters {
   display: flex;
   gap: 10px;
   margin-bottom: 14px;
 }
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+.row-actions :deep(.el-button) {
+  margin-left: 0;
+}
 .prod {
   font-weight: 500;
+}
+.batch-no {
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+.batch-products {
+  line-height: 1.5;
+}
+.supplier-group {
+  padding: 14px;
+  margin-top: 14px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+}
+.supplier-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.supplier-factories {
+  margin-left: 10px;
 }
 .qty {
   font-variant-numeric: tabular-nums;

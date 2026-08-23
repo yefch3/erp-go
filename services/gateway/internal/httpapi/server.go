@@ -469,7 +469,12 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/imports/preview", s.previewOrderImport)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/template-imports/preview", s.previewPurchaseTemplateImport)
 		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders/imports/{importToken}/confirm", s.confirmOrderImport)
-		r.With(s.perm("procurement:order:write")).Post("/api/purchase-orders", s.createOrder)
+		// 待采购页面的确认会直接形成公司采购承诺，因此创建接口同时要求
+		// 建单和审批权限，避免绕过唯一的人工审批入口。
+		r.With(
+			s.perm("procurement:order:write"),
+			s.perm("procurement:order:submit"),
+		).Post("/api/purchase-orders", s.createOrder)
 		r.With(s.perm("procurement:order:write")).Put("/api/purchase-orders/{id}", s.updateOrder)
 		r.With(s.perm("procurement:order:submit")).Post("/api/purchase-orders/{id}/submit", s.submitOrder)
 		r.With(s.perm("procurement:order:cancel")).Post("/api/purchase-orders/{id}/cancel", s.cancelOrder)

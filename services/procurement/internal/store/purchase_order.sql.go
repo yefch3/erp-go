@@ -1316,7 +1316,9 @@ UPDATE purchase_orders SET
     delivery_port_id = nullif($12::bigint, 0),
     delivery_port_code = $13::text,
     delivery_port_name = $14::text,
-    warehouse_id = nullif($15::bigint, 0),
+    -- 采购单表为兼容直接发往港口的模式，以 0 表示“不经过仓库”。
+    -- 这里不能写成 NULL，否则恢复旧草稿时会违反 warehouse_id 的非空约束。
+    warehouse_id = $15::bigint,
     warehouse_name = $16::text,
     delivery_address = $17::text,
     source_change_reason = $18::text,
