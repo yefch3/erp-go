@@ -290,6 +290,7 @@ const procurementItems = computed(() => [
   { path: '/procurement', label: t('procurementNav.workbench'), allowed: true },
   { path: '/procurement/intakes', label: t('procurementNav.intakes'), allowed: auth.can('procurement:sourcing:read') },
   { path: '/sourcing-cases', label: t('procurementNav.sourcing'), allowed: auth.can('procurement:sourcing:read') },
+  { path: '/procurement/settings/inquiry-templates', label: t('procurementNav.inquiryTemplates'), allowed: auth.can('procurement:sourcing:read') },
   { path: '/requirements', label: t('procurementNav.requirements'), allowed: auth.can('procurement:requirement:read') },
   { path: '/purchase-orders', label: t('procurementNav.orders'), allowed: auth.can('procurement:order:read') },
 ].filter((item) => item.allowed))
