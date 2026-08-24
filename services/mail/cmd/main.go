@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/shopspring/decimal"
+
 	"context"
 	"fmt"
 	"log/slog"
@@ -109,12 +111,27 @@ func run(log *slog.Logger) error {
 			cfg.OpenAIAPIKey, cfg.OpenAIBaseURL, cfg.OpenAIModel, cfg.OpenAITimeout,
 		)
 	}
+	// 单价解析不了就当没配：用量照记，金额留空。绝不因为一个价格填错了
+	// 就让邮件服务起不来。
+	pricing := app.ModelPricing{Currency: cfg.OpenAIPriceCurrency}
+	if v, err := decimal.NewFromString(cfg.OpenAIInputPerMTok); err == nil {
+		pricing.InputPerMTok = v
+	} else if cfg.OpenAIInputPerMTok != "" {
+		log.Warn("OPENAI_INPUT_PER_MTOK is not a number; usage will be reported without a cost")
+	}
+	if v, err := decimal.NewFromString(cfg.OpenAIOutputPerMTok); err == nil {
+		pricing.OutputPerMTok = v
+	} else if cfg.OpenAIOutputPerMTok != "" {
+		log.Warn("OPENAI_OUTPUT_PER_MTOK is not a number; usage will be reported without a cost")
+	}
+
 	svc := app.New(pool, app.Deps{
 		Numbering: grpcout.NewNumbering(mdConn),
 		Directory: grpcout.NewDirectory(iamConn),
 		Scopes:    grpcout.NewScopes(iamConn),
 		Files:     blobs,
 		Tables:    tables,
+		Pricing:   pricing,
 		Secrets:   secrets,
 		Live:      live,
 	}, log)

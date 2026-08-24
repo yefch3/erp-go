@@ -138,6 +138,9 @@ service EmailService {
   // One conversation, both directions, oldest first. Owner-scoped: the
   // caller sees only their own half of the world.
   rpc GetMailThread(GetMailThreadRequest) returns (GetMailThreadResponse);
+  // 智能转换的用量账（计量）：一个月一行，按人拆开。token 是事实，金额由
+  // 服务端按当下单价折算。
+  rpc ExcelUsage(ExcelUsageRequest) returns (ExcelUsageResponse);
   // One conversation as a document somebody outside the ERP can read: a
   // transcript, self-contained, nothing fetched when it is opened. Records
   // the export before returning the bytes — an export that cannot be logged
@@ -1390,3 +1393,26 @@ message ExcelConversionJob {
 message StartInboundExcelConversionResponse { ExcelConversionJob job = 1; }
 message GetInboundExcelConversionJobRequest { int64 id = 1; }
 message GetInboundExcelConversionJobResponse { ExcelConversionJob job = 1; }
+
+message ExcelUsageRequest {
+  // YYYY-MM；留空表示全部月份。
+  string month = 1;
+}
+
+message ExcelUsageRow {
+  string month = 1;
+  int64 owner_id = 2;
+  string owner_name = 3;
+  int64 runs = 4;
+  int64 succeeded = 5;
+  int64 failed = 6;
+  int64 input_tokens = 7;
+  int64 output_tokens = 8;
+  // 按当下单价折出来的估算金额。空串表示没配单价——空和 0 是两回事。
+  string estimated_cost = 9;
+  string currency = 10;
+}
+
+message ExcelUsageResponse {
+  repeated ExcelUsageRow rows = 1;
+}

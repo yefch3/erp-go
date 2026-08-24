@@ -845,3 +845,19 @@ func (s *Server) searchMail(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
+
+// excelUsage 出智能转换的用量账（计量）。
+//
+// 这条路由和其它邮件路由不同：不要求邮箱解锁。解锁证明的是「键盘前这个人
+// 是这个邮箱的主人」，而这份账里没有任何信件内容——只有次数和 token 数。
+// 拿邮箱解锁去守一份不含邮件的报表，只会逼人为了看账去解锁邮箱。
+func (s *Server) excelUsage(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.ExcelUsage(r.Context(), &mailv1.ExcelUsageRequest{
+		Month: r.URL.Query().Get("month"),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}

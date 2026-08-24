@@ -634,6 +634,10 @@ func (s *Server) Router() http.Handler {
 		// sent to the configured model and returned as an Excel workbook.
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/excel", s.convertInboundToExcel)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/inbound-excel-jobs/{jobId}", s.getInboundExcelJob)
+		// 智能转换的用量账（计量）。挂管理员的读权限而不是邮件读权限——
+		// 这是账不是信，而且它跨全公司的人，不该谁能读自己的邮件谁就能看。
+		// 也不需要邮箱解锁：它不含任何信件内容。
+		r.With(s.perm("iam:employee:read")).Get("/api/excel-usage", s.excelUsage)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/mark", s.markInbound)
 		// Permanent deletion out of the trash. ERP-side copies only; the mail
 		// host's original is beyond this API's reach by design.

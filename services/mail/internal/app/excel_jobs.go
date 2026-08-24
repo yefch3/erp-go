@@ -218,6 +218,15 @@ func (s *Service) processExcelJob(ctx context.Context, row store.MailExcelJob) {
 		ctx, row.TenantID, row.OwnerID, row.InboundID,
 		row.AttachmentID, row.SelectedText, row.Locale, columns,
 	)
+	// 先记账，再管状态。成败都要记——模型答了钱就花了，重试几遍就花几遍。
+	// 记账失败不该拖垮任务本身：账少记一笔比活干不成轻。
+	if result.Usage.InputTokens > 0 || result.Usage.OutputTokens > 0 {
+		if _, usageErr := s.q.RecordExcelJobUsage(ctx, store.RecordExcelJobUsageParams{
+			ID: row.ID, InputTokens: result.Usage.InputTokens, OutputTokens: result.Usage.OutputTokens,
+		}); usageErr != nil {
+			s.log.Error("persist Excel job usage", "job", row.ID, "err", usageErr)
+		}
+	}
 	if err != nil {
 		code, message := "MAIL_EXCEL_MODEL_FAILED", "智能转换失败，请稍后重试"
 		var business *apierr.Error
