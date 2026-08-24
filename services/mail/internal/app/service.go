@@ -160,6 +160,9 @@ type Deps struct {
 	// attachment. Nil keeps the rest of mail fully operational and makes only
 	// the explicit Excel action report that it is not configured.
 	Tables TableExtractor
+	// Pricing 把 token 折成钱，只为给人看。零值表示没配单价：用量照记，
+	// 金额留空——空和 0 是两回事，一个是「不知道」，一个是「不要钱」。
+	Pricing ModelPricing
 	// Secrets decrypts stored mailbox credentials. Nil in tests and in any
 	// deployment that has not been given a key; every path that needs it
 	// checks and fails loudly rather than proceeding without encryption.
@@ -183,7 +186,9 @@ type Service struct {
 	provider  Provider
 	files     Files
 	tables    TableExtractor
-	mailbox   Mailbox
+	// 模型单价，只用来把 token 折成钱给人看。零值就不折——不猜价格。
+	pricing ModelPricing
+	mailbox Mailbox
 	secrets   *SecretBox
 	live      *livefeed.Publisher
 	oauth     OAuthConfig
@@ -215,6 +220,7 @@ func New(pool *pgxpool.Pool, d Deps, log *slog.Logger) *Service {
 		pool: pool, q: store.New(pool),
 		number: d.Numbering, directory: d.Directory, scopes: d.Scopes,
 		provider: d.Provider, files: d.Files, tables: d.Tables,
+		pricing: d.Pricing,
 		secrets: d.Secrets, live: d.Live, log: log,
 	}
 }

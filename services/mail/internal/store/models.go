@@ -280,6 +280,8 @@ type MailExcelJob struct {
 	CompletedAt     pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
 	TemplateColumns []byte
+	InputTokens     int64
+	OutputTokens    int64
 }
 
 type MailExportLog struct {

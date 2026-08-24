@@ -33,6 +33,7 @@ export const router = createRouter({
         // 报价单属于采购询价项目，不再提供第二套独立入口；旧书签仍能安全返回项目列表。
         { path: 'quotations', redirect: '/sourcing-cases' },
         { path: 'contracts', component: () => import('./pages/ContractsPage.vue') },
+        { path: 'basic/excel-usage', component: () => import('./pages/ExcelUsagePage.vue') },
         { path: 'contract-execution', component: () => import('./pages/ContractExecutionPage.vue') },
         { path: 'shipments', component: () => import('./pages/ShipmentsPage.vue') },
         { path: 'shipping', component: () => import('./pages/ShippingPage.vue') },

@@ -73,6 +73,12 @@ type Config struct {
 	OpenAIBaseURL string
 	OpenAIModel   string
 	OpenAITimeout time.Duration
+	// 模型单价，按每百万 token 计——模型厂就是这么报价的。留空表示不配：
+	// 用量照记，页面上金额留空。**不猜价格**：一个猜出来的成本比没有成本
+	// 更坏，因为它看着像账。
+	OpenAIInputPerMTok  string
+	OpenAIOutputPerMTok string
+	OpenAIPriceCurrency string
 }
 
 func Load() Config {
@@ -94,24 +100,27 @@ func Load() Config {
 		CredKey:        os.Getenv("MAIL_CRED_KEY"),
 		CredKeyVersion: envInt("MAIL_CRED_KEY_VERSION", 1),
 
-		BatchSize:          int32(envInt("MAIL_BATCH_SIZE", 20)),
-		SendDelay:          envDuration("MAIL_SEND_DELAY", 100*time.Millisecond),
-		DecisionWindow:     envDuration("MAIL_DECISION_WINDOW", 10*time.Minute),
-		SendTimeout:        envDuration("MAIL_SEND_TIMEOUT", 45*time.Second),
-		SyncInterval:       envDuration("MAIL_SYNC_INTERVAL", 2*time.Minute),
-		SyncTimeout:        envDuration("MAIL_SYNC_TIMEOUT", 90*time.Second),
-		SyncBatch:          envInt("MAIL_SYNC_BATCH", 50),
-		SyncConcurrency:    envInt("MAIL_SYNC_CONCURRENCY", 8),
-		DialTimeout:        envDuration("MAIL_DIAL_TIMEOUT", 10*time.Second),
-		SyncHistory:        envInt("MAIL_SYNC_HISTORY", 500),
-		RedisAddr:          os.Getenv("REDIS_ADDR"),
-		GoogleClientID:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
-		GoogleClientSecret: os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
-		PublicBaseURL:      os.Getenv("MAIL_PUBLIC_BASE_URL"),
-		OpenAIAPIKey:       os.Getenv("OPENAI_API_KEY"),
-		OpenAIBaseURL:      env("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-		OpenAIModel:        env("OPENAI_MODEL", "gpt-5.6-luna"),
-		OpenAITimeout:      envDuration("OPENAI_TIMEOUT", 2*time.Minute),
+		BatchSize:           int32(envInt("MAIL_BATCH_SIZE", 20)),
+		SendDelay:           envDuration("MAIL_SEND_DELAY", 100*time.Millisecond),
+		DecisionWindow:      envDuration("MAIL_DECISION_WINDOW", 10*time.Minute),
+		SendTimeout:         envDuration("MAIL_SEND_TIMEOUT", 45*time.Second),
+		SyncInterval:        envDuration("MAIL_SYNC_INTERVAL", 2*time.Minute),
+		SyncTimeout:         envDuration("MAIL_SYNC_TIMEOUT", 90*time.Second),
+		SyncBatch:           envInt("MAIL_SYNC_BATCH", 50),
+		SyncConcurrency:     envInt("MAIL_SYNC_CONCURRENCY", 8),
+		DialTimeout:         envDuration("MAIL_DIAL_TIMEOUT", 10*time.Second),
+		SyncHistory:         envInt("MAIL_SYNC_HISTORY", 500),
+		RedisAddr:           os.Getenv("REDIS_ADDR"),
+		GoogleClientID:      os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
+		GoogleClientSecret:  os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
+		PublicBaseURL:       os.Getenv("MAIL_PUBLIC_BASE_URL"),
+		OpenAIAPIKey:        os.Getenv("OPENAI_API_KEY"),
+		OpenAIBaseURL:       env("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+		OpenAIModel:         env("OPENAI_MODEL", "gpt-5.6-luna"),
+		OpenAITimeout:       envDuration("OPENAI_TIMEOUT", 2*time.Minute),
+		OpenAIInputPerMTok:  os.Getenv("OPENAI_INPUT_PER_MTOK"),
+		OpenAIOutputPerMTok: os.Getenv("OPENAI_OUTPUT_PER_MTOK"),
+		OpenAIPriceCurrency: env("OPENAI_PRICE_CURRENCY", "USD"),
 	}
 }
 

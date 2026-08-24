@@ -813,8 +813,7 @@
       <el-button @click="excelOpen = false">{{ t('emails.close') }}</el-button>
       <el-button
         v-if="excelResult && auth.can('procurement:sourcing:write')"
-        :loading="creatingSourcingCase"
-        @click="createSourcingCaseFromExcel"
+        @click="openSourcingTransfer"
       >
         {{ t('emails.createSourcingCase') }}
       </el-button>
@@ -823,6 +822,42 @@
       </el-button>
       <el-button v-if="excelResult" type="primary" @click="downloadExcel">
         {{ t('emails.downloadExcel') }}
+      </el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 转入采购前先落客户。客户是必填的，联系人和邮箱只是这封信的事实，
+       抄过来方便核对，改不改都行。 -->
+  <el-dialog
+    v-model="sourcingOpen"
+    :title="t('emails.sourcingTransferTitle')"
+    width="min(460px, 92vw)"
+    append-to-body
+  >
+    <p class="sourcing-hint">{{ t('emails.sourcingTransferHint') }}</p>
+    <el-form label-position="top">
+      <el-form-item :label="t('emails.sourcingCustomer')" required>
+        <CustomerSelect
+          v-model="sourcingForm.customerId"
+          @selected="(customer) => (sourcingForm.customerName = customer?.name || '')"
+        />
+      </el-form-item>
+      <el-form-item :label="t('emails.sourcingContact')">
+        <el-input v-model="sourcingForm.contactName" />
+      </el-form-item>
+      <el-form-item :label="t('emails.sourcingContactEmail')">
+        <el-input v-model="sourcingForm.contactEmail" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="sourcingOpen = false">{{ t('emails.close') }}</el-button>
+      <el-button
+        type="primary"
+        :loading="creatingSourcingCase"
+        :disabled="!sourcingForm.customerId"
+        @click="createSourcingCaseFromExcel"
+      >
+        {{ t('emails.createSourcingCase') }}
       </el-button>
     </template>
   </el-dialog>
@@ -886,6 +921,7 @@ import MailList from '../components/MailList.vue'
 // left on v-html.
 import MailBody from '../components/MailBody.vue'
 import QuotedHistory from '../components/QuotedHistory.vue'
+import CustomerSelect from '../components/masterdata/CustomerSelect.vue'
 import {
   Box,
   CircleClose,
@@ -2314,6 +2350,10 @@ const excelJobId = ref('')
 const excelSheet = ref('')
 const excelAvailable = ref(false)
 const creatingSourcingCase = ref(false)
+const sourcingOpen = ref(false)
+// 转入采购要落到一个真客户身上。邮件里只有发件人的显示名和邮箱，猜不出是
+// 哪一家——客户档案的检索只认名称和编号，不认邮箱——所以让人选一次。
+const sourcingForm = reactive({ customerId: '', customerName: '', contactName: '', contactEmail: '' })
 const convertedExcelSource = ref<ExcelSource | null>(null)
 // Results live in memory: asking for the same attachment or text again opens
 // the stored workbook instead of spending another model call. 重新生成 is the
@@ -2652,13 +2692,32 @@ async function refreshExcelJob(subject = '') {
   }
 }
 
+// 先问客户，再转。询盘最后要变成报价和合同，那两步都要一个真客户；这里不
+// 问，就会在生成报价那一步才卡住——错得更晚，也更难查。
+function openSourcingTransfer() {
+  const result = excelResult.value
+  const sheet = result?.sheets[0]
+  if (!result || !convertedExcelSource.value || !sheet?.rows.length) return
+  if (Number(sheet.totalRows) > sheet.rows.length) {
+    ElMessage.warning(t('emails.sourcingPreviewIncomplete'))
+    return
+  }
+  sourcingForm.customerId = ''
+  sourcingForm.customerName = ''
+  // 联系人和邮箱可以从来信直接抄——那是这封信的事实。客户是谁不能抄，
+  // 那是判断。
+  sourcingForm.contactName = openedInbound.value?.fromName || ''
+  sourcingForm.contactEmail = openedInbound.value?.fromEmail || ''
+  sourcingOpen.value = true
+}
+
 async function createSourcingCaseFromExcel() {
   const result = excelResult.value
   const source = convertedExcelSource.value
   const sheet = result?.sheets[0]
   if (!result || !source || !sheet?.rows.length) return
-  if (Number(sheet.totalRows) > sheet.rows.length) {
-    ElMessage.warning(t('emails.sourcingPreviewIncomplete'))
+  if (!sourcingForm.customerId) {
+    ElMessage.warning(t('emails.sourcingCustomerRequired'))
     return
   }
   const fieldByColumn: Record<string, string> = {
@@ -2691,9 +2750,10 @@ async function createSourcingCaseFromExcel() {
   try {
     const response = await post<{ sourcingCase: { id: string; caseNo: string } }>('/sourcing-cases', {
       title: result.fileName.replace(/\.xlsx$/i, ''),
-      customerName: openedInbound.value?.fromName || '',
-      contactName: openedInbound.value?.fromName || '',
-      contactEmail: openedInbound.value?.fromEmail || '',
+      customerId: sourcingForm.customerId,
+      customerName: sourcingForm.customerName,
+      contactName: sourcingForm.contactName,
+      contactEmail: sourcingForm.contactEmail,
       sourceMailId: source.mailId,
       sourceAttachmentId: source.kind === 'attachment' ? source.attachmentId : '0',
       inquiryTemplateId: result.inquiryTemplateId || '0',
@@ -2702,6 +2762,7 @@ async function createSourcingCaseFromExcel() {
       lines,
     })
     ElMessage.success(t('procurementIntakes.autoTransferred', { no: response.sourcingCase.caseNo }))
+    sourcingOpen.value = false
     excelOpen.value = false
     router.push(`/procurement/intakes?intake=${response.sourcingCase.id}`)
   } finally {
@@ -3453,6 +3514,11 @@ async function doUnsuppress(row: Suppression) {
 }
 .excel-model {
   margin-bottom: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.sourcing-hint {
+  margin: 0 0 14px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }

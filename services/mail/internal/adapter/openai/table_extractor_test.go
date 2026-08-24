@@ -63,10 +63,11 @@ func TestExtractorUsesStructuredResponsesForTextAndRealImageSample(t *testing.T)
 		{FileName: "sample.jpg", ContentType: "image/jpeg", FileData: image, Locale: "zh", SafetyID: "test-user"},
 	}
 	for _, input := range inputs {
-		book, model, err := client.Extract(t.Context(), input)
+		got, err := client.Extract(t.Context(), input)
 		if err != nil {
 			t.Fatal(err)
 		}
+		book, model := got.Workbook, got.Model
 		if model != "gpt-5.6-luna" || len(book.Sheets) != 1 {
 			t.Fatalf("unexpected result: %#v %s", book, model)
 		}
@@ -157,11 +158,11 @@ func TestExtractorFollowsTemplateColumns(t *testing.T) {
 	})}
 
 	client := NewTableExtractor("test-key", "https://api.test/v1", "gpt-5.6-luna", time.Second).WithHTTPClient(httpClient)
-	book, _, err := client.Extract(t.Context(), app.TableExtractionInput{Text: "询价：镀锌卷 25MT，料号 CP-99887", Columns: columns})
+	got, err := client.Extract(t.Context(), app.TableExtractionInput{Text: "询价：镀锌卷 25MT，料号 CP-99887", Columns: columns})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sheet := book.Sheets[0]
+	sheet := got.Workbook.Sheets[0]
 	if strings.Join(sheet.Columns, ",") != "品名,需求数量,计量单位,客户料号" {
 		t.Fatalf("columns should come from the template, got %v", sheet.Columns)
 	}
@@ -181,8 +182,55 @@ func TestExtractorFollowsTemplateColumns(t *testing.T) {
 
 func TestExtractorRejectsMissingAPIKeyWithoutNetwork(t *testing.T) {
 	client := NewTableExtractor("", "", "", time.Second)
-	_, _, err := client.Extract(t.Context(), app.TableExtractionInput{Text: "a,b\n1,2"})
+	_, err := client.Extract(t.Context(), app.TableExtractionInput{Text: "a,b\n1,2"})
 	if err == nil || !strings.Contains(err.Error(), "OPENAI_API_KEY") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// 用量是计费的唯一依据，而它最容易悄悄失效：字段名改了、模型换了、
+// 中间加了层代理，Extract 照样返回结果，只是账上从此是零。
+func TestExtractorReportsTokenUsageIncludingOnFailure(t *testing.T) {
+	reply := func(outputText string) []byte {
+		b, _ := json.Marshal(map[string]any{
+			"model": "gpt-5.6-luna", "status": "completed",
+			"usage": map[string]any{"input_tokens": 12345, "output_tokens": 678},
+			"output": []any{map[string]any{"type": "message", "content": []any{
+				map[string]any{"type": "output_text", "text": outputText},
+			}}},
+		})
+		return b
+	}
+	newClient := func(body []byte) *TableExtractor {
+		hc := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(bytes.NewReader(body)), Request: r,
+			}, nil
+		})}
+		return NewTableExtractor("test-key", "https://api.test/v1", "gpt-5.6-luna", time.Second).WithHTTPClient(hc)
+	}
+
+	valid, _ := json.Marshal(map[string]any{
+		"title": "t", "summary": "s",
+		"items": []map[string]string{{"product": "HRC", "quantity": "10", "quantity_unit": "MT"}},
+	})
+	got, err := newClient(reply(string(valid))).Extract(t.Context(), app.TableExtractionInput{Text: "询价"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Usage.InputTokens != 12345 || got.Usage.OutputTokens != 678 {
+		t.Fatalf("成功时该带回用量，实际 %+v", got.Usage)
+	}
+
+	// 模型答了、钱花了，只是答出来的东西解不开。这几次照样计费——漏掉它们，
+	// 我们的账和模型厂的账单就对不上。
+	broken, err := newClient(reply("这不是 JSON")).Extract(t.Context(), app.TableExtractionInput{Text: "询价"})
+	if err == nil {
+		t.Fatal("解不开的返回该报错")
+	}
+	if broken.Usage.InputTokens != 12345 || broken.Usage.OutputTokens != 678 {
+		t.Fatalf("失败时也必须带回用量，实际 %+v", broken.Usage)
 	}
 }
