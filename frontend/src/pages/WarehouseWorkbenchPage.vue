@@ -2,7 +2,7 @@
   <div class="page">
     <header class="hero">
       <div><p class="eyebrow">WAREHOUSE CONTROL</p><h1>仓库管理</h1><p>统一管理公司仓、港口仓与第三方仓库；是否经过仓库由公司模式决定。</p></div>
-      <div class="actions"><el-button @click="router.push('/warehouses/settings')">仓库设置</el-button><el-button type="primary" @click="router.push('/warehouses/profiles')">维护仓库档案</el-button></div>
+      <div class="actions"><el-button v-if="isAdmin" @click="router.push('/warehouses/settings')">业务设置</el-button><el-button type="primary" @click="router.push('/warehouses/profiles')">维护仓库档案</el-button></div>
     </header>
 
     <el-card v-loading="loading" shadow="never" class="mode-card">
@@ -34,13 +34,15 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { get } from '../api'
+import { useAuthStore } from '../stores/auth'
 
 interface Warehouse { id:string; code:string; name:string; profileType:string; city:string; countryCode:string; status:string }
 interface Settings { usageMode:string; allowDirectDelivery:boolean; allowInventory:boolean; defaultWarehouseId:string }
-const router=useRouter(), loading=ref(false), warehouses=ref<Warehouse[]>([])
+const router=useRouter(), auth=useAuthStore(), loading=ref(false), warehouses=ref<Warehouse[]>([])
+const isAdmin=computed(()=>auth.can('iam:role:write'))
 const settings=ref<Settings>({usageMode:'USE_WAREHOUSE',allowDirectDelivery:true,allowInventory:true,defaultWarehouseId:'0'})
-const modeText=computed(()=>({NO_WAREHOUSE:'不使用自有仓库',USE_WAREHOUSE:'启用仓库管理',SELECT_PER_ORDER:'每张订单选择履约方式'}[settings.value.usageMode] ?? settings.value.usageMode))
-const modeDescription=computed(()=>settings.value.usageMode==='NO_WAREHOUSE'?'业务默认直接发往港口或指定地点，历史仓库资料仍会保留。':settings.value.usageMode==='SELECT_PER_ORDER'?'每张采购单可选择直接交付或先入库。':'采购与库存业务可选择已启用的仓库。')
+const modeText=computed(()=>({NO_WAREHOUSE:'默认直接交付',USE_WAREHOUSE:'统一经过仓库',SELECT_PER_ORDER:'按订单选择'}[settings.value.usageMode] ?? settings.value.usageMode))
+const modeDescription=computed(()=>settings.value.usageMode==='NO_WAREHOUSE'?'新采购默认直接发往港口、客户或指定地点。':settings.value.usageMode==='SELECT_PER_ORDER'?'经办人在每张采购单上选择直接交付或先入仓再发货。':'新采购统一进入默认仓库，再按收货、库存和出库流程交付。')
 const stats=computed(()=>[
   {label:'启用仓库',value:warehouses.value.filter(x=>x.status==='ACTIVE').length},
   {label:'公司自有仓',value:warehouses.value.filter(x=>x.profileType==='OWN').length},

@@ -305,7 +305,6 @@ const warehouseItems = computed(() => [
   { path: '/warehouses', label: t('warehouseNav.workbench') },
   { path: '/warehouses/profiles', label: t('warehouseNav.profiles') },
   { path: '/stocks', label: t('warehouseNav.stock') },
-  { path: '/warehouses/settings', label: t('warehouseNav.settings') },
 ])
 const warehouseActive = computed(() => route.path === '/stocks' || route.path.startsWith('/warehouses'))
 
