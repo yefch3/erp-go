@@ -44,7 +44,12 @@ func NewIMAP(timeout, dialTimeout time.Duration, log *slog.Logger) *IMAP {
 	if dialTimeout <= 0 || dialTimeout > timeout {
 		dialTimeout = 10 * time.Second
 	}
-	return &IMAP{log: log, timeout: timeout, dialTimeout: dialTimeout, pool: newConnPool()}
+	return &IMAP{
+		log: log, timeout: timeout, dialTimeout: dialTimeout,
+		// The pool's idle window is bounded by the command timeout, not chosen
+		// independently of it — see idleWindow.
+		pool: newConnPool(idleWindow(timeout)),
+	}
 }
 
 // Fetch returns messages with a UID above sinceUID, newest last.
