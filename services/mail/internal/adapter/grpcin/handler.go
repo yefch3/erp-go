@@ -839,18 +839,6 @@ func (h *Handler) GetInbound(ctx context.Context, req *mailv1.GetInboundRequest)
 	return &mailv1.GetInboundResponse{Mail: inboundToProto(v)}, nil
 }
 
-func (h *Handler) ConvertInboundToExcel(ctx context.Context, req *mailv1.ConvertInboundToExcelRequest) (*mailv1.ConvertInboundToExcelResponse, error) {
-	op := operator(ctx)
-	result, err := h.svc.ConvertInboundToExcel(
-		ctx, grpcx.TenantID(ctx), op.ID, req.GetId(),
-		req.AttachmentId, req.SelectedText, req.GetLocale(), nil,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return excelResultToProto(result), nil
-}
-
 func (h *Handler) StartInboundExcelConversion(ctx context.Context, req *mailv1.StartInboundExcelConversionRequest) (*mailv1.StartInboundExcelConversionResponse, error) {
 	op := operator(ctx)
 	columns := make([]app.InquiryColumn, 0, len(req.GetTemplateColumns()))

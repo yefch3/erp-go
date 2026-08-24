@@ -246,6 +246,12 @@ type ExcelResult struct {
 // ConvertInboundToExcel accepts exactly one user-selected source. It does not
 // accept object keys or arbitrary files from the browser: attachment ids are
 // resolved against the already owner-scoped mail record.
+//
+// Reached only from processExcelJob, and that is the whole design: this call
+// spends model tokens, and the only place the spend gets recorded is the job
+// row the worker holds. Exposing it on a transport directly — a handler, an
+// RPC — would buy tokens that never appear in 智能转换用量. If a caller needs a
+// conversion, it enqueues a job.
 func (s *Service) ConvertInboundToExcel(
 	ctx context.Context, tenantID, ownerID, inboundID int64,
 	attachmentID *int64, selectedText *string, locale string,
