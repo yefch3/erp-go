@@ -343,7 +343,10 @@ func (s *Service) ConvertInboundToExcel(
 	if name == "" {
 		name = "客户询价单"
 	}
-	return ExcelResult{FileName: name + ".xlsx", Data: data, Workbook: book, Model: model}, nil
+	// 从 spent 上补齐，不另起一个空壳——新建一个返回值就会把上面记下来的用量
+	// 丢在半路，而成功恰恰是绝大多数情况，账会一直是 0。
+	spent.FileName, spent.Data, spent.Workbook = name+".xlsx", data, book
+	return spent, nil
 }
 
 // selectionBelongsToMail 判断这段选中的文字确实出自这封信。
