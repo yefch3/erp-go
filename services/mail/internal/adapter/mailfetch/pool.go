@@ -46,13 +46,55 @@ import (
 //     minutes with no read deadline; letting a fetch wait behind that would
 //     turn "reuse the connection" into "block the sync for twenty minutes".
 
-// idleEvictAfter is how long an unused connection is kept.
+// maxIdleWindow caps how long an unused connection is kept, before the command
+// timeout gets a say. Short enough that a mailbox nobody touches is not holding
+// a socket on somebody else's server all night; hosts drop idle IMAP sessions
+// somewhere around thirty minutes anyway, and closing first is politer than
+// being closed.
+const maxIdleWindow = 10 * time.Minute
+
+// logoutTimeout bounds the LOGOUT the reaper sends when it closes a parked
+// connection. Small: the connection is being thrown away either way, and the
+// only thing worth avoiding is the reaper goroutine blocking on a host that
+// accepted the socket and then went quiet.
+const logoutTimeout = 10 * time.Second
+
+// idleWindow is how long a parked connection may wait before the reaper closes
+// it. The ceiling is not politeness — it is the read deadline the connection is
+// already carrying.
 //
-// Long enough to span the two-minute poll and a person working through their
-// mail, short enough that a mailbox nobody touches is not holding a socket on
-// somebody else's server all night. Hosts drop idle IMAP sessions somewhere
-// around thirty minutes anyway; closing first is politer than being closed.
-const idleEvictAfter = 10 * time.Minute
+// go-imap sets a deadline on the whole socket inside execute() and only changes
+// it on the *next* command, so the deadline from the last command outlives that
+// command. Meanwhile its reader goroutine sits blocked on the socket. Park a
+// connection for longer than the command timeout and that blocked read trips
+// the stale deadline: the library logs "error reading response: i/o timeout"
+// and throws the connection away — after the work already succeeded, so nothing
+// visible breaks and the log fills with errors that mean nothing.
+//
+// That is exactly what production did: one cluster of timeouts every two
+// minutes, metronomically, one per borrow in the previous poll.
+//
+// So a parked connection has to be handed back before its own deadline expires.
+// Half the timeout leaves room for the reaper's tick to be late.
+//
+// The cost is real and worth naming: with a 90s command timeout and a 2 minute
+// poll, a connection cannot survive from one poll to the next, so each poll
+// dials fresh. Reuse *within* a cycle — twelve operations, a person clicking
+// through their mail — is what this pool actually buys, and that is preserved.
+// Reuse across cycles would need the command timeout raised above the poll
+// interval, which buys one handshake per mailbox per poll at the price of
+// letting a hung command hang that much longer. Not worth it; see
+// TestIdleWindowStaysUnderTheCommandTimeout.
+func idleWindow(commandTimeout time.Duration) time.Duration {
+	w := commandTimeout / 2
+	if w > maxIdleWindow {
+		w = maxIdleWindow
+	}
+	if w < time.Second {
+		w = time.Second
+	}
+	return w
+}
 
 // conn is what the pool holds. An interface, not *client.Client, purely so
 // the pool's own logic — which is concurrent and is where a bug would hide —
@@ -71,10 +113,14 @@ type pooled struct {
 type connPool struct {
 	mu    sync.Mutex
 	conns map[int64]*pooled
+	// idleAfter is how long an unused connection is kept. Derived from the
+	// command timeout rather than fixed, because the timeout is what actually
+	// bounds it — see idleWindow.
+	idleAfter time.Duration
 }
 
-func newConnPool() *connPool {
-	return &connPool{conns: map[int64]*pooled{}}
+func newConnPool(idleAfter time.Duration) *connPool {
+	return &connPool{conns: map[int64]*pooled{}, idleAfter: idleAfter}
 }
 
 // take claims the cached connection for an account, or reports that the
@@ -146,7 +192,7 @@ func (p *connPool) evictIdle(now time.Time) int {
 	p.mu.Lock()
 	var dead []conn
 	for id, e := range p.conns {
-		if e.inUse || now.Sub(e.lastUsed) < idleEvictAfter {
+		if e.inUse || now.Sub(e.lastUsed) < p.idleAfter {
 			continue
 		}
 		if e.c != nil {
@@ -221,14 +267,24 @@ func (f *IMAP) borrow(acct app.MailAccount) (*client.Client, error) {
 // release returns the connection. Pass the command's error: a failed command
 // means the connection is suspect and is closed rather than handed on.
 func (f *IMAP) release(acct app.MailAccount, c *client.Client, err error) {
-	// Parked connections carry no read deadline. go-imap reads the connection
-	// continuously in the background, so a deadline on an idle session is a
-	// timer counting down to killing our own connection — which is exactly
-	// what happened on the first deployment of this pool: the first sync was
-	// twice as fast and the next one failed with "i/o timeout" against a
-	// connection that had been sitting quiet for two minutes.
+	// A parked connection *does* still carry a read deadline, and assigning
+	// Timeout here does not take it off.
+	//
+	// This used to set Timeout to 0 believing that parked it deadline-free. It
+	// does not: go-imap touches the socket deadline only inside execute(), so
+	// the field takes effect on the next command and the deadline from the last
+	// one keeps counting down on a connection nobody is talking on. The symptom
+	// was a cluster of "error reading response: i/o timeout" every poll, for
+	// years, against work that had already succeeded.
+	//
+	// What keeps a parked connection alive is therefore not this line but
+	// idleWindow: the reaper closes it before that deadline can fire.
+	//
+	// Timeout is still lowered, for a different reason — the reaper's Logout is
+	// a command too, and at 0 it would run with no deadline at all and could
+	// hang the reaper against a host that has stopped answering.
 	if c != nil && err == nil {
-		c.Timeout = 0
+		c.Timeout = logoutTimeout
 	}
 	f.pool.put(acct.AccountID, c, err != nil)
 }
@@ -240,7 +296,10 @@ func (f *IMAP) release(acct app.MailAccount, c *client.Client, err error) {
 // sessions on their own schedule anyway, and being dropped is worse than
 // leaving — the drop surfaces as a failed command on some later sync.
 func (f *IMAP) Run(ctx context.Context) {
-	t := time.NewTicker(idleEvictAfter / 2)
+	// A third of the window, not half: the connection has to be closed before
+	// the deadline it is carrying expires, and a tick that lands late is the
+	// only thing between us and the timeout this pool exists to avoid.
+	t := time.NewTicker(f.pool.idleAfter / 3)
 	defer t.Stop()
 	for {
 		select {
