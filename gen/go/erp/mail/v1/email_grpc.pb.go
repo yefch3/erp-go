@@ -71,6 +71,7 @@ const (
 	EmailService_StartInboundExcelConversion_FullMethodName  = "/erp.mail.v1.EmailService/StartInboundExcelConversion"
 	EmailService_GetInboundExcelConversionJob_FullMethodName = "/erp.mail.v1.EmailService/GetInboundExcelConversionJob"
 	EmailService_GetMailThread_FullMethodName                = "/erp.mail.v1.EmailService/GetMailThread"
+	EmailService_ExcelUsage_FullMethodName                   = "/erp.mail.v1.EmailService/ExcelUsage"
 	EmailService_ExportMailThread_FullMethodName             = "/erp.mail.v1.EmailService/ExportMailThread"
 	EmailService_ListMailExports_FullMethodName              = "/erp.mail.v1.EmailService/ListMailExports"
 	EmailService_MarkInbound_FullMethodName                  = "/erp.mail.v1.EmailService/MarkInbound"
@@ -206,6 +207,9 @@ type EmailServiceClient interface {
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error)
+	// 智能转换的用量账（计量）：一个月一行，按人拆开。token 是事实，金额由
+	// 服务端按当下单价折算。
+	ExcelUsage(ctx context.Context, in *ExcelUsageRequest, opts ...grpc.CallOption) (*ExcelUsageResponse, error)
 	// One conversation as a document somebody outside the ERP can read: a
 	// transcript, self-contained, nothing fetched when it is opened. Records
 	// the export before returning the bytes — an export that cannot be logged
@@ -769,6 +773,16 @@ func (c *emailServiceClient) GetMailThread(ctx context.Context, in *GetMailThrea
 	return out, nil
 }
 
+func (c *emailServiceClient) ExcelUsage(ctx context.Context, in *ExcelUsageRequest, opts ...grpc.CallOption) (*ExcelUsageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExcelUsageResponse)
+	err := c.cc.Invoke(ctx, EmailService_ExcelUsage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) ExportMailThread(ctx context.Context, in *ExportMailThreadRequest, opts ...grpc.CallOption) (*ExportMailThreadResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ExportMailThreadResponse)
@@ -983,6 +997,9 @@ type EmailServiceServer interface {
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error)
+	// 智能转换的用量账（计量）：一个月一行，按人拆开。token 是事实，金额由
+	// 服务端按当下单价折算。
+	ExcelUsage(context.Context, *ExcelUsageRequest) (*ExcelUsageResponse, error)
 	// One conversation as a document somebody outside the ERP can read: a
 	// transcript, self-contained, nothing fetched when it is opened. Records
 	// the export before returning the bytes — an export that cannot be logged
@@ -1181,6 +1198,9 @@ func (UnimplementedEmailServiceServer) GetInboundExcelConversionJob(context.Cont
 }
 func (UnimplementedEmailServiceServer) GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMailThread not implemented")
+}
+func (UnimplementedEmailServiceServer) ExcelUsage(context.Context, *ExcelUsageRequest) (*ExcelUsageResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExcelUsage not implemented")
 }
 func (UnimplementedEmailServiceServer) ExportMailThread(context.Context, *ExportMailThreadRequest) (*ExportMailThreadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ExportMailThread not implemented")
@@ -2166,6 +2186,24 @@ func _EmailService_GetMailThread_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_ExcelUsage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExcelUsageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).ExcelUsage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_ExcelUsage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).ExcelUsage(ctx, req.(*ExcelUsageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_ExportMailThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ExportMailThreadRequest)
 	if err := dec(in); err != nil {
@@ -2542,6 +2580,10 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMailThread",
 			Handler:    _EmailService_GetMailThread_Handler,
+		},
+		{
+			MethodName: "ExcelUsage",
+			Handler:    _EmailService_ExcelUsage_Handler,
 		},
 		{
 			MethodName: "ExportMailThread",

@@ -283,6 +283,11 @@ const basicDataItems = computed(() => [
   ...(auth.can('masterdata:supplier:read')
     ? [{ path: '/basic/suppliers', activePrefix: '/basic/suppliers', label: t('menu.suppliers'), todo: false }]
     : []),
+  // 智能转换用量：这是账不是业务数据，跟员工管理同一道权限——它跨全公司
+  // 的人，不该谁能用这个功能谁就能看全公司花了多少。
+  ...(auth.can('iam:employee:read')
+    ? [{ path: '/basic/excel-usage', activePrefix: '/basic/excel-usage', label: t('menu.excelUsage'), todo: false }]
+    : []),
 ])
 
 // 采购管理与基础数据使用同一种浮层导航，子页面不再各自重复一排按钮。

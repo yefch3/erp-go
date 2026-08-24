@@ -25,7 +25,7 @@ UPDATE mail_excel_jobs j SET
   error_code='', error_message='', updated_at=now()
 FROM candidate
 WHERE j.id=candidate.id
-RETURNING j.id, j.tenant_id, j.owner_id, j.inbound_id, j.attachment_id, j.selected_text, j.locale, j.status, j.attempt_count, j.file_name, j.file_data, j.workbook_json, j.model, j.error_code, j.error_message, j.created_at, j.started_at, j.completed_at, j.updated_at, j.template_columns
+RETURNING j.id, j.tenant_id, j.owner_id, j.inbound_id, j.attachment_id, j.selected_text, j.locale, j.status, j.attempt_count, j.file_name, j.file_data, j.workbook_json, j.model, j.error_code, j.error_message, j.created_at, j.started_at, j.completed_at, j.updated_at, j.template_columns, j.input_tokens, j.output_tokens
 `
 
 func (q *Queries) ClaimExcelJob(ctx context.Context) (MailExcelJob, error) {
@@ -52,6 +52,8 @@ func (q *Queries) ClaimExcelJob(ctx context.Context) (MailExcelJob, error) {
 		&i.CompletedAt,
 		&i.UpdatedAt,
 		&i.TemplateColumns,
+		&i.InputTokens,
+		&i.OutputTokens,
 	)
 	return i, err
 }
@@ -94,7 +96,7 @@ INSERT INTO mail_excel_jobs (
   $4, $5, $6,
   $7::jsonb
 )
-RETURNING id, tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, status, attempt_count, file_name, file_data, workbook_json, model, error_code, error_message, created_at, started_at, completed_at, updated_at, template_columns
+RETURNING id, tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, status, attempt_count, file_name, file_data, workbook_json, model, error_code, error_message, created_at, started_at, completed_at, updated_at, template_columns, input_tokens, output_tokens
 `
 
 type CreateExcelJobParams struct {
@@ -139,8 +141,77 @@ func (q *Queries) CreateExcelJob(ctx context.Context, arg CreateExcelJobParams) 
 		&i.CompletedAt,
 		&i.UpdatedAt,
 		&i.TemplateColumns,
+		&i.InputTokens,
+		&i.OutputTokens,
 	)
 	return i, err
+}
+
+const excelUsageByMonth = `-- name: ExcelUsageByMonth :many
+SELECT
+    to_char(date_trunc('month', created_at), 'YYYY-MM')::text AS month,
+    owner_id,
+    count(*)::bigint                                            AS runs,
+    count(*) FILTER (WHERE status = 'COMPLETED')::bigint        AS succeeded,
+    count(*) FILTER (WHERE status = 'FAILED')::bigint           AS failed,
+    coalesce(sum(input_tokens), 0)::bigint                      AS input_tokens,
+    coalesce(sum(output_tokens), 0)::bigint                     AS output_tokens
+FROM mail_excel_jobs
+WHERE tenant_id = $1::bigint
+  AND ($2::text = ''
+       OR to_char(date_trunc('month', created_at), 'YYYY-MM') = $2::text)
+GROUP BY 1, 2
+ORDER BY 1 DESC, runs DESC
+`
+
+type ExcelUsageByMonthParams struct {
+	TenantID int64
+	Month    string
+}
+
+type ExcelUsageByMonthRow struct {
+	Month        string
+	OwnerID      int64
+	Runs         int64
+	Succeeded    int64
+	Failed       int64
+	InputTokens  int64
+	OutputTokens int64
+}
+
+// 智能转换的用量账：一个月一行，按人拆开。
+//
+// jobs 表本身就是账本，不另建汇总表——这套东西一个月几十到几百次，为它
+// 维护一张会和账本失同步的汇总表是提前优化。
+//
+// 只出 token 数，不出金额：金额由读的一方按当下单价算。单价会因为谈折扣、
+// 换模型而变，存进去等于把一个会过期的判断固化成历史。
+func (q *Queries) ExcelUsageByMonth(ctx context.Context, arg ExcelUsageByMonthParams) ([]ExcelUsageByMonthRow, error) {
+	rows, err := q.db.Query(ctx, excelUsageByMonth, arg.TenantID, arg.Month)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ExcelUsageByMonthRow
+	for rows.Next() {
+		var i ExcelUsageByMonthRow
+		if err := rows.Scan(
+			&i.Month,
+			&i.OwnerID,
+			&i.Runs,
+			&i.Succeeded,
+			&i.Failed,
+			&i.InputTokens,
+			&i.OutputTokens,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const failExcelJob = `-- name: FailExcelJob :execrows
@@ -166,7 +237,7 @@ func (q *Queries) FailExcelJob(ctx context.Context, arg FailExcelJobParams) (int
 }
 
 const getExcelJob = `-- name: GetExcelJob :one
-SELECT id, tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, status, attempt_count, file_name, file_data, workbook_json, model, error_code, error_message, created_at, started_at, completed_at, updated_at, template_columns FROM mail_excel_jobs
+SELECT id, tenant_id, owner_id, inbound_id, attachment_id, selected_text, locale, status, attempt_count, file_name, file_data, workbook_json, model, error_code, error_message, created_at, started_at, completed_at, updated_at, template_columns, input_tokens, output_tokens FROM mail_excel_jobs
 WHERE tenant_id=$1 AND owner_id=$2 AND id=$3
 `
 
@@ -200,6 +271,34 @@ func (q *Queries) GetExcelJob(ctx context.Context, arg GetExcelJobParams) (MailE
 		&i.CompletedAt,
 		&i.UpdatedAt,
 		&i.TemplateColumns,
+		&i.InputTokens,
+		&i.OutputTokens,
 	)
 	return i, err
+}
+
+const recordExcelJobUsage = `-- name: RecordExcelJobUsage :execrows
+UPDATE mail_excel_jobs SET
+  input_tokens  = input_tokens  + $1::bigint,
+  output_tokens = output_tokens + $2::bigint,
+  updated_at = now()
+WHERE id = $3::bigint
+`
+
+type RecordExcelJobUsageParams struct {
+	InputTokens  int64
+	OutputTokens int64
+	ID           int64
+}
+
+// 累加这次调用花掉的 token。重试会走到这里几遍，每遍都真花了钱。
+//
+// 和成功/失败分开写：一次任务可能先失败几次再成功，用量要全算上，而
+// CompleteExcelJob / FailExcelJob 只该管状态。
+func (q *Queries) RecordExcelJobUsage(ctx context.Context, arg RecordExcelJobUsageParams) (int64, error) {
+	result, err := q.db.Exec(ctx, recordExcelJobUsage, arg.InputTokens, arg.OutputTokens, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

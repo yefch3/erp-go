@@ -53,9 +53,9 @@ func (c *TableExtractor) WithHTTPClient(client *http.Client) *TableExtractor {
 	return c
 }
 
-func (c *TableExtractor) Extract(ctx context.Context, in app.TableExtractionInput) (app.Workbook, string, error) {
+func (c *TableExtractor) Extract(ctx context.Context, in app.TableExtractionInput) (app.Extraction, error) {
 	if c.apiKey == "" {
-		return app.Workbook{}, "", errors.New("OPENAI_API_KEY is not configured")
+		return app.Extraction{}, errors.New("OPENAI_API_KEY is not configured")
 	}
 	columns := in.Columns
 	if len(columns) == 0 {
@@ -95,45 +95,49 @@ func (c *TableExtractor) Extract(ctx context.Context, in app.TableExtractionInpu
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return app.Workbook{}, "", err
+		return app.Extraction{}, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/responses", bytes.NewReader(body))
 	if err != nil {
-		return app.Workbook{}, "", err
+		return app.Extraction{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return app.Workbook{}, "", fmt.Errorf("OpenAI request: %w", err)
+		return app.Extraction{}, fmt.Errorf("OpenAI request: %w", err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return app.Workbook{}, "", fmt.Errorf("OpenAI response: %w", err)
+		return app.Extraction{}, fmt.Errorf("OpenAI response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return app.Workbook{}, "", fmt.Errorf("OpenAI returned HTTP %d: %s", resp.StatusCode, apiErrorMessage(data))
+		return app.Extraction{}, fmt.Errorf("OpenAI returned HTTP %d: %s", resp.StatusCode, apiErrorMessage(data))
 	}
 
 	var result responseEnvelope
 	if err := json.Unmarshal(data, &result); err != nil {
-		return app.Workbook{}, "", fmt.Errorf("decode OpenAI response: %w", err)
+		return app.Extraction{}, fmt.Errorf("decode OpenAI response: %w", err)
+	}
+	// 用量从这里往下一路带着，包括出错的返回。模型答了、钱就花了，答出来
+	// 的东西解不开是另一回事——把这几次的消耗漏掉，账就对不上真实账单。
+	out := app.Extraction{Model: result.Model, Usage: app.ModelUsage{
+		InputTokens: result.Usage.InputTokens, OutputTokens: result.Usage.OutputTokens,
+	}}
+	if out.Model == "" {
+		out.Model = c.model
 	}
 	text, err := result.outputText()
 	if err != nil {
-		return app.Workbook{}, result.Model, err
+		return out, err
 	}
 	var extracted app.ExtractedInquiry
 	if err := json.Unmarshal([]byte(text), &extracted); err != nil {
-		return app.Workbook{}, result.Model, fmt.Errorf("decode inquiry JSON: %w", err)
+		return out, fmt.Errorf("decode inquiry JSON: %w", err)
 	}
-	book := app.NewTemplateWorkbook(extracted, columns)
-	model := result.Model
-	if model == "" {
-		model = c.model
-	}
-	return book, model, nil
+	out.Workbook = app.NewTemplateWorkbook(extracted, columns)
+	return out, nil
 }
 
 // 提示词由模板列驱动：列集合变了，模型要抽取的事实随之变化。已知业务字段
@@ -309,6 +313,12 @@ func supportedImageMediaType(v string) bool {
 type responseEnvelope struct {
 	Model  string `json:"model"`
 	Status string `json:"status"`
+	// 计费的依据。Responses API 每次都回，字段缺失时是零值——零和「没查到」
+	// 在这里是同一个意思：这次没记到用量，账上就当它没花，宁可少报。
+	Usage struct {
+		InputTokens  int64 `json:"input_tokens"`
+		OutputTokens int64 `json:"output_tokens"`
+	} `json:"usage"`
 	Error  *struct {
 		Message string `json:"message"`
 	} `json:"error"`

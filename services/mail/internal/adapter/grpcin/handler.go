@@ -1111,3 +1111,37 @@ func stripFormulaCells(rows [][]string) [][]string {
 	}
 	return out
 }
+
+// ExcelUsage 出智能转换的用量账（计量）。
+//
+// 名字用得上：owner_id 是数字，账要给人看，所以在这里补上姓名——目录在
+// IAM，邮件服务不自己存人名。
+func (h *Handler) ExcelUsage(ctx context.Context, req *mailv1.ExcelUsageRequest) (*mailv1.ExcelUsageResponse, error) {
+	rows, err := h.svc.ExcelUsageByMonth(ctx, grpcx.TenantID(ctx), req.GetMonth())
+	if err != nil {
+		return nil, err
+	}
+	names := h.svc.EmployeeNames(ctx, grpcx.TenantID(ctx), ownerIDsOf(rows))
+	out := make([]*mailv1.ExcelUsageRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, &mailv1.ExcelUsageRow{
+			Month: r.Month, OwnerId: r.OwnerID, OwnerName: names[r.OwnerID],
+			Runs: r.Runs, Succeeded: r.Succeeded, Failed: r.Failed,
+			InputTokens: r.InputTokens, OutputTokens: r.OutputTokens,
+			EstimatedCost: r.EstimatedCost, Currency: r.Currency,
+		})
+	}
+	return &mailv1.ExcelUsageResponse{Rows: out}, nil
+}
+
+func ownerIDsOf(rows []app.ExcelUsageRow) []int64 {
+	seen := map[int64]bool{}
+	out := make([]int64, 0, len(rows))
+	for _, r := range rows {
+		if r.OwnerID != 0 && !seen[r.OwnerID] {
+			seen[r.OwnerID] = true
+			out = append(out, r.OwnerID)
+		}
+	}
+	return out
+}

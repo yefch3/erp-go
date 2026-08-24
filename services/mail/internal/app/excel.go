@@ -35,7 +35,25 @@ const (
 // receives bytes only after the mail service has proved that the caller owns
 // the message and that the attachment belongs to it.
 type TableExtractor interface {
-	Extract(ctx context.Context, in TableExtractionInput) (Workbook, string, error)
+	Extract(ctx context.Context, in TableExtractionInput) (Extraction, error)
+}
+
+// Extraction 是一次模型调用的全部产出：结果、用的哪个模型、花了多少。
+//
+// Usage 即使在 err 非空时也可能是有值的——模型答了、钱花了，只是答出来的
+// 东西解不开。计量要记的是花掉的，不是成功的：把失败那次的消耗漏掉，账就
+// 对不上真实账单。
+type Extraction struct {
+	Workbook Workbook
+	Model    string
+	Usage    ModelUsage
+}
+
+// ModelUsage 是一次调用的用量。只存 token 数，不存金额——token 是事实，
+// 折成多少钱是判断，会因为谈折扣、换模型而变。
+type ModelUsage struct {
+	InputTokens  int64
+	OutputTokens int64
 }
 
 type TableExtractionInput struct {
@@ -220,6 +238,9 @@ type ExcelResult struct {
 	Data     []byte
 	Workbook Workbook
 	Model    string
+	// 这次调用花了多少。**失败时也可能有值**——模型答了、钱花了，只是答出
+	// 来的东西解不开。记账要记花掉的，不是成功的。
+	Usage ModelUsage
 }
 
 // ConvertInboundToExcel accepts exactly one user-selected source. It does not
@@ -302,18 +323,21 @@ func (s *Service) ConvertInboundToExcel(
 		in.FileName, in.ContentType, in.FileData = chosen.FileName, chosen.ContentType, data
 	}
 
-	book, model, err := s.tables.Extract(ctx, in)
+	extracted, err := s.tables.Extract(ctx, in)
+	book, model := extracted.Workbook, extracted.Model
+	// 失败也要把用量带出去。这几次照样计费，漏掉它们账就对不上真实账单。
+	spent := ExcelResult{Model: model, Usage: extracted.Usage}
 	if err != nil {
 		s.log.Error("table extraction failed", "mail", inboundID, "err", err)
-		return ExcelResult{}, apierr.Internal("MAIL_EXCEL_MODEL_FAILED", "智能转换失败，请稍后重试").Wrap(err)
+		return spent, apierr.Internal("MAIL_EXCEL_MODEL_FAILED", "智能转换失败，请稍后重试").Wrap(err)
 	}
 	if err := validateWorkbook(&book); err != nil {
 		s.log.Error("table extraction returned an invalid workbook", "mail", inboundID, "err", err)
-		return ExcelResult{}, apierr.Internal("MAIL_EXCEL_INVALID_RESULT", "模型返回的表格格式无效，请重试").Wrap(err)
+		return spent, apierr.Internal("MAIL_EXCEL_INVALID_RESULT", "模型返回的表格格式无效，请重试").Wrap(err)
 	}
 	data, err := buildXLSX(book)
 	if err != nil {
-		return ExcelResult{}, apierr.Internal("MAIL_EXCEL_BUILD_FAILED", "生成 Excel 失败，请重试").Wrap(err)
+		return spent, apierr.Internal("MAIL_EXCEL_BUILD_FAILED", "生成 Excel 失败，请重试").Wrap(err)
 	}
 	name := safeExcelFileName(book.Title)
 	if name == "" {

@@ -43,3 +43,37 @@ UPDATE mail_excel_jobs SET
   error_code=sqlc.arg(error_code), error_message=sqlc.arg(error_message),
   completed_at=now(), updated_at=now()
 WHERE id=sqlc.arg(id) AND status='PROCESSING';
+
+-- name: RecordExcelJobUsage :execrows
+-- 累加这次调用花掉的 token。重试会走到这里几遍，每遍都真花了钱。
+--
+-- 和成功/失败分开写：一次任务可能先失败几次再成功，用量要全算上，而
+-- CompleteExcelJob / FailExcelJob 只该管状态。
+UPDATE mail_excel_jobs SET
+  input_tokens  = input_tokens  + sqlc.arg(input_tokens)::bigint,
+  output_tokens = output_tokens + sqlc.arg(output_tokens)::bigint,
+  updated_at = now()
+WHERE id = sqlc.arg(id)::bigint;
+
+-- name: ExcelUsageByMonth :many
+-- 智能转换的用量账：一个月一行，按人拆开。
+--
+-- jobs 表本身就是账本，不另建汇总表——这套东西一个月几十到几百次，为它
+-- 维护一张会和账本失同步的汇总表是提前优化。
+--
+-- 只出 token 数，不出金额：金额由读的一方按当下单价算。单价会因为谈折扣、
+-- 换模型而变，存进去等于把一个会过期的判断固化成历史。
+SELECT
+    to_char(date_trunc('month', created_at), 'YYYY-MM')::text AS month,
+    owner_id,
+    count(*)::bigint                                            AS runs,
+    count(*) FILTER (WHERE status = 'COMPLETED')::bigint        AS succeeded,
+    count(*) FILTER (WHERE status = 'FAILED')::bigint           AS failed,
+    coalesce(sum(input_tokens), 0)::bigint                      AS input_tokens,
+    coalesce(sum(output_tokens), 0)::bigint                     AS output_tokens
+FROM mail_excel_jobs
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND (sqlc.arg(month)::text = ''
+       OR to_char(date_trunc('month', created_at), 'YYYY-MM') = sqlc.arg(month)::text)
+GROUP BY 1, 2
+ORDER BY 1 DESC, runs DESC;
