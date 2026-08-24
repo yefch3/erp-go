@@ -306,6 +306,12 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-luna}
       OPENAI_TIMEOUT: ${OPENAI_TIMEOUT:-2m}
+      # 模型单价，按每百万 token 计——模型厂就是这么报价的。留空表示不配：
+      # 用量照记，用量页上金额留空。不猜价格：一个猜出来的成本比没有成本
+      # 更坏，因为它看着像账。
+      OPENAI_INPUT_PER_MTOK: ${OPENAI_INPUT_PER_MTOK:-}
+      OPENAI_OUTPUT_PER_MTOK: ${OPENAI_OUTPUT_PER_MTOK:-}
+      OPENAI_PRICE_CURRENCY: ${OPENAI_PRICE_CURRENCY:-USD}
       # For pushing "new mail" hints to open browser tabs over the live feed.
       REDIS_ADDR: redis:6379
       # Google OAuth application credentials, from deploy/.env (gitignored).
