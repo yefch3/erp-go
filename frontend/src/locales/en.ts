@@ -66,6 +66,7 @@ export default {
     shipping: 'Shipping schedules',
     finance: 'Finance',
     stocks: 'Stock',
+    warehouse: 'Warehouses',
     outbounds: 'Outbound',
     procurement: 'Procurement',
     requirements: 'Purchase needs',
@@ -78,6 +79,9 @@ export default {
     teamMail: 'Team mail',
     exportLog: 'Export log',
     todo: ' (coming soon)',
+  },
+  warehouseNav: {
+    workbench: 'Warehouse workspace', profiles: 'Warehouse profiles', stock: 'Stock inquiry', settings: 'Warehouse settings',
   },
   supplierPayments: {
     eyebrow: 'ACCOUNTS PAYABLE',

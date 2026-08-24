@@ -1,0 +1,57 @@
+<template>
+  <div class="page">
+    <header class="hero">
+      <div><p class="eyebrow">WAREHOUSE CONTROL</p><h1>仓库管理</h1><p>统一管理公司仓、港口仓与第三方仓库；是否经过仓库由公司模式决定。</p></div>
+      <div class="actions"><el-button @click="router.push('/warehouses/settings')">仓库设置</el-button><el-button type="primary" @click="router.push('/warehouses/profiles')">维护仓库档案</el-button></div>
+    </header>
+
+    <el-card v-loading="loading" shadow="never" class="mode-card">
+      <div><span class="muted">当前公司模式</span><h2>{{ modeText }}</h2><p>{{ modeDescription }}</p></div>
+      <el-tag :type="settings.usageMode === 'NO_WAREHOUSE' ? 'info' : 'success'">{{ modeText }}</el-tag>
+    </el-card>
+
+    <section class="stats">
+      <el-card v-for="item in stats" :key="item.label" shadow="never"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></el-card>
+    </section>
+
+    <el-card shadow="never" class="workspace">
+      <template #header><div class="card-head"><div><h2>仓库档案概览</h2><p>联系人、负责人、地址和记账方式集中维护。</p></div><el-button link type="primary" @click="router.push('/warehouses/profiles')">查看全部 →</el-button></div></template>
+      <el-empty v-if="!warehouses.length" description="尚未建立仓库档案">
+        <el-button type="primary" @click="router.push('/warehouses/profiles')">建立第一个仓库</el-button>
+      </el-empty>
+      <div v-else class="warehouse-grid">
+        <article v-for="warehouse in warehouses.slice(0, 6)" :key="warehouse.id">
+          <div class="card-head"><strong>{{ warehouse.name }}</strong><el-tag size="small" :type="warehouse.status === 'ACTIVE' ? 'success' : 'info'">{{ warehouse.status === 'ACTIVE' ? '启用' : '停用' }}</el-tag></div>
+          <p>{{ profileText(warehouse.profileType) }} · {{ warehouse.code }}</p>
+          <p>{{ [warehouse.city, warehouse.countryCode].filter(Boolean).join(' · ') || '未填写地点' }}</p>
+        </article>
+      </div>
+    </el-card>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { get } from '../api'
+
+interface Warehouse { id:string; code:string; name:string; profileType:string; city:string; countryCode:string; status:string }
+interface Settings { usageMode:string; allowDirectDelivery:boolean; allowInventory:boolean; defaultWarehouseId:string }
+const router=useRouter(), loading=ref(false), warehouses=ref<Warehouse[]>([])
+const settings=ref<Settings>({usageMode:'USE_WAREHOUSE',allowDirectDelivery:true,allowInventory:true,defaultWarehouseId:'0'})
+const modeText=computed(()=>({NO_WAREHOUSE:'不使用自有仓库',USE_WAREHOUSE:'启用仓库管理',SELECT_PER_ORDER:'每张订单选择履约方式'}[settings.value.usageMode] ?? settings.value.usageMode))
+const modeDescription=computed(()=>settings.value.usageMode==='NO_WAREHOUSE'?'业务默认直接发往港口或指定地点，历史仓库资料仍会保留。':settings.value.usageMode==='SELECT_PER_ORDER'?'每张采购单可选择直接交付或先入库。':'采购与库存业务可选择已启用的仓库。')
+const stats=computed(()=>[
+  {label:'启用仓库',value:warehouses.value.filter(x=>x.status==='ACTIVE').length},
+  {label:'公司自有仓',value:warehouses.value.filter(x=>x.profileType==='OWN').length},
+  {label:'港口仓库',value:warehouses.value.filter(x=>x.profileType==='PORT').length},
+  {label:'第三方仓库',value:warehouses.value.filter(x=>x.profileType==='THIRD_PARTY').length},
+])
+function profileText(value:string){return ({OWN:'公司自有仓',PORT:'港口仓库',THIRD_PARTY:'第三方仓库'}[value] ?? value)}
+async function load(){loading.value=true;try{const [w,s]=await Promise.all([get<{warehouses:Warehouse[]}>('/warehouses',{include_inactive:true}),get<{settings:Settings}>('/warehouse-settings')]);warehouses.value=w.warehouses??[];settings.value=s.settings??settings.value}finally{loading.value=false}}
+onMounted(load)
+</script>
+
+<style scoped>
+.page{padding:28px;max-width:1500px;margin:auto}.hero,.card-head{display:flex;align-items:center;justify-content:space-between;gap:20px}.hero h1{font-size:30px;margin:4px 0}.hero p,.workspace p,.mode-card p{color:#738095;margin:5px 0}.eyebrow{font-size:12px!important;letter-spacing:2px;color:#087f78!important;font-weight:700}.actions{display:flex}.mode-card{margin:22px 0;border-color:#cfe8e4}.mode-card :deep(.el-card__body){display:flex;justify-content:space-between;align-items:center;background:linear-gradient(110deg,#f1faf8,#fff)}.mode-card h2{margin:7px 0}.muted{color:#738095}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}.stats span{display:block;color:#738095}.stats strong{display:block;font-size:30px;margin-top:10px;color:#17324d}.workspace h2{margin:0}.warehouse-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.warehouse-grid article{border:1px solid #e1e8ef;border-radius:10px;padding:16px}.warehouse-grid p{font-size:13px}@media(max-width:900px){.hero{align-items:flex-start;flex-direction:column}.stats,.warehouse-grid{grid-template-columns:1fr 1fr}}@media(max-width:560px){.stats,.warehouse-grid{grid-template-columns:1fr}.page{padding:16px}}
+</style>

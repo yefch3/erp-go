@@ -68,9 +68,41 @@
         >
           {{ t('menu.shipping') }}
         </el-menu-item>
-        <el-menu-item v-if="auth.can('inventory:stock:read')" index="/stocks">
-          {{ t('menu.stocks') }}
-        </el-menu-item>
+        <el-popover
+          v-if="auth.can('inventory:stock:read')"
+          v-model:visible="warehouseOpen"
+          placement="right-start"
+          :width="200"
+          :offset="6"
+          :show-arrow="false"
+          trigger="hover"
+          popper-class="module-flyout-popper"
+        >
+          <template #reference>
+            <button
+              type="button"
+              class="module-menu-trigger"
+              :class="{ 'is-active': warehouseActive }"
+              @click="warehouseOpen = !warehouseOpen"
+            >
+              <span>{{ t('menu.warehouse') }}</span>
+              <span class="module-menu-arrow" aria-hidden="true">›</span>
+            </button>
+          </template>
+          <nav class="module-flyout" :aria-label="t('menu.warehouse')">
+            <div class="module-flyout-title">{{ t('menu.warehouse') }}</div>
+            <button
+              v-for="item in warehouseItems"
+              :key="item.path"
+              type="button"
+              class="module-flyout-item"
+              :class="{ 'is-active': route.path === item.path }"
+              @click="goWarehouse(item.path)"
+            >
+              {{ item.label }}
+            </button>
+          </nav>
+        </el-popover>
         <el-menu-item v-if="auth.can('inventory:stock:read')" index="/outbounds">
           {{ t('menu.outbounds') }}
         </el-menu-item>
@@ -261,6 +293,7 @@ const shippingNotifications = ref<InstanceType<typeof ShippingArrivalNotificatio
 const basicDataOpen = ref(false)
 const procurementOpen = ref(false)
 const financeOpen = ref(false)
+const warehouseOpen = ref(false)
 const hasProcurement = computed(() => [
   'procurement:sourcing:read',
   'procurement:requirement:read',
@@ -268,6 +301,13 @@ const hasProcurement = computed(() => [
 ].some(auth.can))
 const procurementActive = computed(() => procurementItems.value.some((item) => route.path === item.path))
 const menuActive = computed(() => route.path)
+const warehouseItems = computed(() => [
+  { path: '/warehouses', label: t('warehouseNav.workbench') },
+  { path: '/warehouses/profiles', label: t('warehouseNav.profiles') },
+  { path: '/stocks', label: t('warehouseNav.stock') },
+  { path: '/warehouses/settings', label: t('warehouseNav.settings') },
+])
+const warehouseActive = computed(() => route.path === '/stocks' || route.path.startsWith('/warehouses'))
 
 // 基础数据的子模块集中在右侧浮层中，避免展开后挤压左侧主导航。
 const basicDataItems = computed(() => [
@@ -344,6 +384,11 @@ function goBasicData(path: string) {
 
 function goProcurement(path: string) {
   procurementOpen.value = false
+  router.push(path)
+}
+
+function goWarehouse(path: string) {
+  warehouseOpen.value = false
   router.push(path)
 }
 

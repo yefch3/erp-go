@@ -20,6 +20,55 @@ func (s *Server) listWarehouses(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) createWarehouse(w http.ResponseWriter, r *http.Request) {
+	req := &ivv1.CreateWarehouseRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Stocks.CreateWarehouse(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) updateWarehouse(w http.ResponseWriter, r *http.Request) {
+	req := &ivv1.UpdateWarehouseRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	resp, err := s.Stocks.UpdateWarehouse(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getWarehouseSettings(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Stocks.GetWarehouseSettings(r.Context(), &ivv1.GetWarehouseSettingsRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) updateWarehouseSettings(w http.ResponseWriter, r *http.Request) {
+	req := &ivv1.UpdateWarehouseSettingsRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Stocks.UpdateWarehouseSettings(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) listStocks(w http.ResponseWriter, r *http.Request) {
 	warehouseID, _ := strconv.ParseInt(r.URL.Query().Get("warehouse_id"), 10, 64)
 	resp, err := s.Stocks.ListStocks(r.Context(), &ivv1.ListStocksRequest{

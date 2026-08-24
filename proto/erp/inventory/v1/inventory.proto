@@ -11,6 +11,10 @@ option go_package = "github.com/sgao19/erp-go/gen/go/erp/inventory/v1;inventoryv
 // here are the only ones that count.
 service StockService {
   rpc ListWarehouses(ListWarehousesRequest) returns (ListWarehousesResponse);
+  rpc CreateWarehouse(CreateWarehouseRequest) returns (CreateWarehouseResponse);
+  rpc UpdateWarehouse(UpdateWarehouseRequest) returns (UpdateWarehouseResponse);
+  rpc GetWarehouseSettings(GetWarehouseSettingsRequest) returns (GetWarehouseSettingsResponse);
+  rpc UpdateWarehouseSettings(UpdateWarehouseSettingsRequest) returns (UpdateWarehouseSettingsResponse);
   rpc ListStocks(ListStocksRequest) returns (ListStocksResponse);
   rpc ListLedger(ListLedgerRequest) returns (ListLedgerResponse);
   // Receive goods. Manual for now; purchase receipts will call it later.
@@ -35,6 +39,23 @@ message Warehouse {
   string wh_type = 4;
   string address = 5;
   string status = 6;
+  string profile_type = 7;
+  string country_code = 8;
+  string city = 9;
+  string timezone = 10;
+  string accounting_mode = 11;
+  repeated WarehouseContact contacts = 12;
+}
+
+message WarehouseContact {
+  int64 id = 1;
+  string contact_type = 2;
+  int64 employee_id = 3;
+  string name = 4;
+  string phone = 5;
+  string email = 6;
+  bool is_primary = 7;
+  string status = 8;
 }
 
 message ListWarehousesRequest {
@@ -44,6 +65,43 @@ message ListWarehousesRequest {
 message ListWarehousesResponse {
   repeated Warehouse warehouses = 1;
 }
+
+message WarehouseInput {
+  string code = 1;
+  string name = 2;
+  string profile_type = 3;
+  string address = 4;
+  string country_code = 5;
+  string city = 6;
+  string timezone = 7;
+  string accounting_mode = 8;
+  string status = 9;
+  repeated WarehouseContact contacts = 10;
+  string change_reason = 11;
+}
+
+message CreateWarehouseRequest { WarehouseInput warehouse = 1; }
+message CreateWarehouseResponse { Warehouse warehouse = 1; }
+message UpdateWarehouseRequest { int64 id = 1; WarehouseInput warehouse = 2; }
+message UpdateWarehouseResponse { Warehouse warehouse = 1; }
+
+message WarehouseSettings {
+  string usage_mode = 1;
+  bool allow_direct_delivery = 2;
+  bool allow_inventory = 3;
+  int64 default_warehouse_id = 4;
+  string updated_at = 5;
+}
+
+message GetWarehouseSettingsRequest {}
+message GetWarehouseSettingsResponse { WarehouseSettings settings = 1; }
+message UpdateWarehouseSettingsRequest {
+  string usage_mode = 1;
+  bool allow_direct_delivery = 2;
+  bool allow_inventory = 3;
+  int64 default_warehouse_id = 4;
+}
+message UpdateWarehouseSettingsResponse { WarehouseSettings settings = 1; }
 
 // Stock is one SKU in one warehouse. The four claim columns are separate
 // because they mean different things and are released differently.

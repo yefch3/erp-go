@@ -35,28 +35,28 @@ import (
 )
 
 type Server struct {
-	IAM          iamv1.AuthServiceClient
-	Directory    iamv1.DirectoryServiceClient
-	Access       iamv1.AccessServiceClient
-	Customers    mdv1.CustomerServiceClient
-	Suppliers    mdv1.SupplierServiceClient
+	IAM       iamv1.AuthServiceClient
+	Directory iamv1.DirectoryServiceClient
+	Access    iamv1.AccessServiceClient
+	Customers mdv1.CustomerServiceClient
+	Suppliers mdv1.SupplierServiceClient
 	// 信用评级（E3）：客户和供应商共用一套。
 	CreditRatings mdv1.CreditRatingServiceClient
-	Ports        mdv1.PortServiceClient
-	Options      mdv1.OptionServiceClient
-	Numbering    mdv1.NumberingServiceClient
-	Fx           fxv1.FxServiceClient
-	Approval     apv1.ApprovalServiceClient
-	Catalog      pdv1.CatalogServiceClient
-	Attachments  pdv1.AttachmentServiceClient
-	Attributes   pdv1.AttributeServiceClient
-	Quotations   exv1.QuotationServiceClient
-	Contracts    exv1.ContractServiceClient
-	Shipments    exv1.ShipmentServiceClient
-	Receipts     exv1.ReceiptServiceClient
-	Requirements prv1.RequirementServiceClient
-	Orders       prv1.PurchaseOrderServiceClient
-	Sourcing     prv1.SourcingServiceClient
+	Ports         mdv1.PortServiceClient
+	Options       mdv1.OptionServiceClient
+	Numbering     mdv1.NumberingServiceClient
+	Fx            fxv1.FxServiceClient
+	Approval      apv1.ApprovalServiceClient
+	Catalog       pdv1.CatalogServiceClient
+	Attachments   pdv1.AttachmentServiceClient
+	Attributes    pdv1.AttributeServiceClient
+	Quotations    exv1.QuotationServiceClient
+	Contracts     exv1.ContractServiceClient
+	Shipments     exv1.ShipmentServiceClient
+	Receipts      exv1.ReceiptServiceClient
+	Requirements  prv1.RequirementServiceClient
+	Orders        prv1.PurchaseOrderServiceClient
+	Sourcing      prv1.SourcingServiceClient
 	// 询盘列模板：邮件标准化与待复核解析共用的列注册表。
 	InquiryTemplates prv1.InquiryTemplateServiceClient
 	Stocks           ivv1.StockServiceClient
@@ -429,6 +429,10 @@ func (s *Server) Router() http.Handler {
 		// Stock. Reading it is what every sourcing decision starts from, so it
 		// sits with the rest of the operational reads.
 		r.With(s.perm("inventory:stock:read")).Get("/api/warehouses", s.listWarehouses)
+		r.With(s.perm("inventory:stock:write")).Post("/api/warehouses", s.createWarehouse)
+		r.With(s.perm("inventory:stock:write")).Put("/api/warehouses/{id}", s.updateWarehouse)
+		r.With(s.perm("inventory:stock:read")).Get("/api/warehouse-settings", s.getWarehouseSettings)
+		r.With(s.perm("inventory:stock:write")).Put("/api/warehouse-settings", s.updateWarehouseSettings)
 		r.With(s.perm("inventory:stock:read")).Get("/api/stocks", s.listStocks)
 		r.With(s.perm("inventory:stock:read")).Get("/api/stock-ledger", s.listStockLedger)
 		r.With(s.perm("inventory:stock:write")).Post("/api/stocks/receive", s.receiveStock)

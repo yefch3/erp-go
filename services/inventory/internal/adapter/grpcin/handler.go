@@ -12,6 +12,7 @@ import (
 	ivv1 "github.com/sgao19/erp-go/gen/go/erp/inventory/v1"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/services/inventory/internal/app"
+	"github.com/sgao19/erp-go/services/inventory/internal/store"
 )
 
 type Handler struct {
@@ -30,10 +31,84 @@ func (h *Handler) ListWarehouses(ctx context.Context, req *ivv1.ListWarehousesRe
 	for _, r := range rows {
 		out = append(out, &ivv1.Warehouse{
 			Id: r.ID, Code: r.Code, Name: r.Name, WhType: r.WhType,
-			Address: r.Address, Status: r.Status,
+			Address: r.Address, Status: r.Status, ProfileType: r.ProfileType,
+			CountryCode: r.CountryCode, City: r.City, Timezone: r.Timezone,
+			AccountingMode: r.AccountingMode,
 		})
 	}
 	return &ivv1.ListWarehousesResponse{Warehouses: out}, nil
+}
+
+// CreateWarehouse 创建完整仓库档案，并由应用层统一保存联系人和审计记录。
+func (h *Handler) CreateWarehouse(ctx context.Context, req *ivv1.CreateWarehouseRequest) (*ivv1.CreateWarehouseResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	row, err := h.svc.CreateWarehouse(ctx, grpcx.TenantID(ctx), warehouseInput(req.GetWarehouse()), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &ivv1.CreateWarehouseResponse{Warehouse: warehouseProfile(row)}, nil
+}
+
+// UpdateWarehouse 更新仓库档案；停用、联系人和核算方式等变化均写入历史。
+func (h *Handler) UpdateWarehouse(ctx context.Context, req *ivv1.UpdateWarehouseRequest) (*ivv1.UpdateWarehouseResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	row, err := h.svc.UpdateWarehouse(ctx, grpcx.TenantID(ctx), req.GetId(), warehouseInput(req.GetWarehouse()), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &ivv1.UpdateWarehouseResponse{Warehouse: warehouseProfile(row)}, nil
+}
+
+func (h *Handler) GetWarehouseSettings(ctx context.Context, _ *ivv1.GetWarehouseSettingsRequest) (*ivv1.GetWarehouseSettingsResponse, error) {
+	row, err := h.svc.GetWarehouseSettings(ctx, grpcx.TenantID(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &ivv1.GetWarehouseSettingsResponse{Settings: warehouseSettings(row)}, nil
+}
+
+// UpdateWarehouseSettings 保存公司级仓库模式，供采购、库存和收货流程共同判断。
+func (h *Handler) UpdateWarehouseSettings(ctx context.Context, req *ivv1.UpdateWarehouseSettingsRequest) (*ivv1.UpdateWarehouseSettingsResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	row, err := h.svc.UpdateWarehouseSettings(ctx, grpcx.TenantID(ctx), app.WarehouseSettingsInput{
+		UsageMode: req.GetUsageMode(), AllowDirectDelivery: req.GetAllowDirectDelivery(),
+		AllowInventory: req.GetAllowInventory(), DefaultWarehouseID: req.GetDefaultWarehouseId(),
+	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &ivv1.UpdateWarehouseSettingsResponse{Settings: warehouseSettings(row)}, nil
+}
+
+func warehouseInput(in *ivv1.WarehouseInput) app.WarehouseInput {
+	if in == nil {
+		return app.WarehouseInput{}
+	}
+	contacts := make([]app.WarehouseContactInput, 0, len(in.GetContacts()))
+	for _, c := range in.GetContacts() {
+		contacts = append(contacts, app.WarehouseContactInput{ContactType: c.GetContactType(), EmployeeID: c.GetEmployeeId(), Name: c.GetName(), Phone: c.GetPhone(), Email: c.GetEmail(), IsPrimary: c.GetIsPrimary(), Status: c.GetStatus()})
+	}
+	return app.WarehouseInput{Code: in.GetCode(), Name: in.GetName(), ProfileType: in.GetProfileType(), Address: in.GetAddress(), CountryCode: in.GetCountryCode(), City: in.GetCity(), Timezone: in.GetTimezone(), AccountingMode: in.GetAccountingMode(), Status: in.GetStatus(), Reason: in.GetChangeReason(), Contacts: contacts}
+}
+
+func warehouseProfile(row app.WarehouseProfile) *ivv1.Warehouse {
+	out := &ivv1.Warehouse{Id: row.ID, Code: row.Code, Name: row.Name, WhType: row.WhType, Address: row.Address, Status: row.Status, ProfileType: row.ProfileType, CountryCode: row.CountryCode, City: row.City, Timezone: row.Timezone, AccountingMode: row.AccountingMode}
+	for _, c := range row.Contacts {
+		employeeID := int64(0)
+		if c.EmployeeID != nil {
+			employeeID = *c.EmployeeID
+		}
+		out.Contacts = append(out.Contacts, &ivv1.WarehouseContact{Id: c.ID, ContactType: c.ContactType, EmployeeId: employeeID, Name: c.Name, Phone: c.Phone, Email: c.Email, IsPrimary: c.IsPrimary, Status: c.Status})
+	}
+	return out
+}
+
+func warehouseSettings(row store.GetWarehouseSettingsRow) *ivv1.WarehouseSettings {
+	defaultID := int64(0)
+	if row.DefaultWarehouseID != nil {
+		defaultID = *row.DefaultWarehouseID
+	}
+	return &ivv1.WarehouseSettings{UsageMode: row.UsageMode, AllowDirectDelivery: row.AllowDirectDelivery, AllowInventory: row.AllowInventory, DefaultWarehouseId: defaultID, UpdatedAt: ts(row.UpdatedAt)}
 }
 
 func (h *Handler) ListStocks(ctx context.Context, req *ivv1.ListStocksRequest) (*ivv1.ListStocksResponse, error) {
