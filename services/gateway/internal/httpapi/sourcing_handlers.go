@@ -122,10 +122,14 @@ func (s *Server) createSourcingCase(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, req) {
 		return
 	}
-	if _, err := s.resolveActiveCustomer(r.Context(), req.GetCustomerId()); err != nil {
+	customer, err := s.resolveActiveCustomer(r.Context(), req.GetCustomerId())
+	if err != nil {
 		s.writeGRPCError(w, err)
 		return
 	}
+	// 名字以主数据为准，不用调用方传来的那个。客户改名之后，邮件里的旧称呼
+	// 和档案里的名字会对不上；存进询盘的应该是档案里的那一个。
+	req.CustomerName = customer.GetName()
 	resp, err := s.Sourcing.CreateCase(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)

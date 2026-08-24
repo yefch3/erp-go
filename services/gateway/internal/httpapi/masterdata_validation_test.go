@@ -4,9 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
+	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
 	"google.golang.org/grpc"
 )
@@ -54,6 +56,74 @@ func TestResolveActiveMasterdata(t *testing.T) {
 		s := &Server{Suppliers: activeSupplierClientStub{status: "INACTIVE"}}
 		if _, err := s.resolveActiveSupplier(context.Background(), 8); err == nil {
 			t.Fatal("expected inactive supplier error")
+		}
+	})
+}
+
+type captureSourcingClientStub struct {
+	prv1.SourcingServiceClient
+	got *prv1.CreateCaseRequest
+}
+
+func (c *captureSourcingClientStub) CreateCase(_ context.Context, in *prv1.CreateCaseRequest, _ ...grpc.CallOption) (*prv1.CreateCaseResponse, error) {
+	c.got = in
+	return &prv1.CreateCaseResponse{SourcingCase: &prv1.SourcingCase{Id: 1, CaseNo: "SC-0001"}}, nil
+}
+
+func postSourcingCase(t *testing.T, s *Server, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/sourcing-cases", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.createSourcingCase(rec, req)
+	return rec
+}
+
+// 询盘必须落在一个真客户身上。
+//
+// 邮件那条入口曾经只传一个发件人显示名，于是每次都撞在「请选择有效客户」
+// 上——按钮在，路不通。这里钉住两头：没客户要挡下，有客户则以主数据的名字
+// 为准，不用调用方传来的那个。
+func TestCreateSourcingCaseRequiresRealCustomer(t *testing.T) {
+	t.Run("没有客户被拒", func(t *testing.T) {
+		sourcing := &captureSourcingClientStub{}
+		s := &Server{Customers: activeCustomerClientStub{status: "ACTIVE"}, Sourcing: sourcing}
+		rec := postSourcingCase(t, s, `{"title":"客户询价单","customerName":"邮件里的发件人"}`)
+		if rec.Code == http.StatusOK {
+			t.Fatal("只有一个名字不该建得成询盘")
+		}
+		if !strings.Contains(rec.Body.String(), "MASTERDATA_CUSTOMER_REQUIRED") {
+			t.Fatalf("该报缺客户，实际 %s", rec.Body.String())
+		}
+		if sourcing.got != nil {
+			t.Fatal("挡下来的请求不该到达采购服务")
+		}
+	})
+
+	t.Run("客户名以主数据为准", func(t *testing.T) {
+		sourcing := &captureSourcingClientStub{}
+		s := &Server{Customers: activeCustomerClientStub{status: "ACTIVE"}, Sourcing: sourcing}
+		rec := postSourcingCase(t, s,
+			`{"title":"客户询价单","customerId":"7","customerName":"浏览器传来的旧名字"}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("选了启用客户就该建得成，实际 %d %s", rec.Code, rec.Body.String())
+		}
+		if sourcing.got.GetCustomerId() != 7 {
+			t.Fatalf("客户 id 该原样传下去，实际 %d", sourcing.got.GetCustomerId())
+		}
+		if sourcing.got.GetCustomerName() != "测试客户" {
+			t.Fatalf("名字该来自主数据而不是调用方，实际 %q", sourcing.got.GetCustomerName())
+		}
+	})
+
+	t.Run("停用客户被拒", func(t *testing.T) {
+		sourcing := &captureSourcingClientStub{}
+		s := &Server{Customers: activeCustomerClientStub{status: "INACTIVE"}, Sourcing: sourcing}
+		rec := postSourcingCase(t, s, `{"title":"客户询价单","customerId":"7"}`)
+		if rec.Code == http.StatusOK {
+			t.Fatal("停用客户不能用于新业务")
+		}
+		if sourcing.got != nil {
+			t.Fatal("挡下来的请求不该到达采购服务")
 		}
 	})
 }
