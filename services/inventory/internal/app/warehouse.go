@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/pgdb"
@@ -62,6 +63,16 @@ func (s *Service) GetWarehouseProfile(ctx context.Context, tenantID, id int64) (
 
 // CreateWarehouse 创建仓库档案、联系人和首条变更记录。
 func (s *Service) CreateWarehouse(ctx context.Context, tenantID int64, in WarehouseInput, op Operator) (WarehouseProfile, error) {
+	if strings.TrimSpace(in.Code) == "" {
+		if s.numbering == nil {
+			return WarehouseProfile{}, apierr.Internal("WAREHOUSE_NUMBERING_UNAVAILABLE", "仓库编号服务不可用")
+		}
+		code, err := s.numbering.Next(ctx, "WAREHOUSE")
+		if err != nil {
+			return WarehouseProfile{}, err
+		}
+		in.Code = code
+	}
 	in, err := normalizeWarehouseInput(in)
 	if err != nil {
 		return WarehouseProfile{}, err
@@ -83,7 +94,7 @@ func (s *Service) CreateWarehouse(ctx context.Context, tenantID int64, in Wareho
 		})
 	})
 	if err != nil {
-		return WarehouseProfile{}, err
+		return WarehouseProfile{}, translateWarehouseWriteError(err)
 	}
 	return s.GetWarehouseProfile(ctx, tenantID, id)
 }
@@ -118,7 +129,7 @@ func (s *Service) UpdateWarehouse(ctx context.Context, tenantID, id int64, in Wa
 		})
 	})
 	if err != nil {
-		return WarehouseProfile{}, err
+		return WarehouseProfile{}, translateWarehouseWriteError(err)
 	}
 	return s.GetWarehouseProfile(ctx, tenantID, id)
 }
@@ -196,6 +207,9 @@ func normalizeWarehouseInput(in WarehouseInput) (WarehouseInput, error) {
 		if !oneOf(in.Contacts[i].ContactType, "OWNER", "CONTACT") || strings.TrimSpace(in.Contacts[i].Name) == "" {
 			return in, apierr.Invalid("WAREHOUSE_CONTACT_INVALID", "联系人类型和姓名不能为空")
 		}
+		if in.Contacts[i].ContactType == "OWNER" && in.Contacts[i].EmployeeID == 0 {
+			return in, apierr.Invalid("WAREHOUSE_OWNER_EMPLOYEE_REQUIRED", "内部负责人必须选择在职员工")
+		}
 		if in.Contacts[i].Status == "" {
 			in.Contacts[i].Status = "ACTIVE"
 		}
@@ -230,7 +244,24 @@ func profileToWHType(profile string) string {
 	if profile == "PORT" {
 		return "PORT_TERMINAL"
 	}
-	return "PHYSICAL"
+	return "NORMAL"
+}
+
+func translateWarehouseWriteError(err error) error {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		return err
+	}
+	switch pgErr.ConstraintName {
+	case "warehouses_tenant_id_code_key":
+		return apierr.Conflict("WAREHOUSE_CODE_TAKEN", "仓库编码已存在")
+	case "uq_warehouse_primary_owner":
+		return apierr.Conflict("WAREHOUSE_PRIMARY_OWNER_TAKEN", "只能设置一名主要内部负责人")
+	case "uq_warehouse_primary_contact":
+		return apierr.Conflict("WAREHOUSE_PRIMARY_CONTACT_TAKEN", "只能设置一名主要外部联系人")
+	default:
+		return apierr.Conflict("WAREHOUSE_DUPLICATE", "仓库档案存在重复数据")
+	}
 }
 
 func oneOf(value string, options ...string) bool {

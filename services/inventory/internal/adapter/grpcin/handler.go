@@ -29,12 +29,11 @@ func (h *Handler) ListWarehouses(ctx context.Context, req *ivv1.ListWarehousesRe
 	}
 	out := make([]*ivv1.Warehouse, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, &ivv1.Warehouse{
-			Id: r.ID, Code: r.Code, Name: r.Name, WhType: r.WhType,
-			Address: r.Address, Status: r.Status, ProfileType: r.ProfileType,
-			CountryCode: r.CountryCode, City: r.City, Timezone: r.Timezone,
-			AccountingMode: r.AccountingMode,
-		})
+		profile, err := h.svc.GetWarehouseProfile(ctx, grpcx.TenantID(ctx), r.ID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, warehouseProfile(profile))
 	}
 	return &ivv1.ListWarehousesResponse{Warehouses: out}, nil
 }

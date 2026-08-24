@@ -33,6 +33,7 @@ func TestUpDownUp(t *testing.T) {
 		t.Fatalf("up: %v", err)
 	}
 	assertNumberRule(t, db, "SUPPLIER_PAYMENT", true)
+	assertNumberRule(t, db, "WAREHOUSE", true)
 	if err := goose.DownTo(db, ".", 0); err != nil {
 		t.Fatalf("down: %v", err)
 	}
@@ -41,6 +42,7 @@ func TestUpDownUp(t *testing.T) {
 		t.Fatalf("second up: %v", err)
 	}
 	assertNumberRule(t, db, "SUPPLIER_PAYMENT", true)
+	assertNumberRule(t, db, "WAREHOUSE", true)
 }
 
 func assertMasterdataTable(t *testing.T, db *sql.DB, name string, want bool) {
