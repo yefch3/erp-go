@@ -164,13 +164,70 @@ type StockReservationLine struct {
 }
 
 type Warehouse struct {
-	ID        int64
-	TenantID  int64
-	Code      string
-	Name      string
-	WhType    string
-	Address   string
-	ManagerID int64
-	Status    string
-	CreatedAt pgtype.Timestamptz
+	ID             int64
+	TenantID       int64
+	Code           string
+	Name           string
+	WhType         string
+	Address        string
+	ManagerID      int64
+	Status         string
+	CreatedAt      pgtype.Timestamptz
+	ProfileType    string
+	CountryCode    string
+	City           string
+	Timezone       string
+	Latitude       pgtype.Numeric
+	Longitude      pgtype.Numeric
+	AccountingMode string
+	UpdatedAt      pgtype.Timestamptz
+}
+
+type WarehouseChangeHistory struct {
+	ID            int64
+	TenantID      int64
+	WarehouseID   int64
+	Action        string
+	BeforeData    []byte
+	AfterData     []byte
+	Reason        string
+	ChangedBy     *int64
+	ChangedByName string
+	ChangedAt     pgtype.Timestamptz
+}
+
+type WarehouseContact struct {
+	ID          int64
+	TenantID    int64
+	WarehouseID int64
+	ContactType string
+	EmployeeID  *int64
+	Name        string
+	Phone       string
+	Email       string
+	IsPrimary   bool
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
+type WarehouseSetting struct {
+	TenantID            int64
+	UsageMode           string
+	AllowDirectDelivery bool
+	AllowInventory      bool
+	DefaultWarehouseID  *int64
+	UpdatedBy           *int64
+	UpdatedAt           pgtype.Timestamptz
+}
+
+type WarehouseSettingsHistory struct {
+	ID                  int64
+	TenantID            int64
+	UsageMode           string
+	AllowDirectDelivery bool
+	AllowInventory      bool
+	DefaultWarehouseID  *int64
+	ChangedBy           *int64
+	ChangedAt           pgtype.Timestamptz
 }

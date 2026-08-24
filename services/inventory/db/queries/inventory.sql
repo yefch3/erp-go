@@ -2,10 +2,112 @@
 -- this system: Go holds decimal strings and never a float64.
 
 -- name: ListWarehouses :many
-SELECT id, code, name, wh_type, address, manager_id, status, created_at
+SELECT id, code, name, wh_type, address, manager_id, status, created_at,
+       profile_type, country_code, city, timezone, accounting_mode, updated_at
 FROM warehouses
 WHERE tenant_id = $1 AND (sqlc.arg(include_inactive)::bool OR status = 'ACTIVE')
 ORDER BY code;
+
+-- name: GetWarehouse :one
+SELECT id, code, name, wh_type, address, manager_id, status, created_at,
+       profile_type, country_code, city, timezone, accounting_mode, updated_at
+FROM warehouses
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: CreateWarehouse :one
+INSERT INTO warehouses (
+    tenant_id, code, name, wh_type, address, status, profile_type,
+    country_code, city, timezone, accounting_mode
+) VALUES (
+    sqlc.arg(tenant_id)::bigint, sqlc.arg(code)::text, sqlc.arg(name)::text,
+    sqlc.arg(wh_type)::text, sqlc.arg(address)::text, sqlc.arg(status)::text,
+    sqlc.arg(profile_type)::text, sqlc.arg(country_code)::text,
+    sqlc.arg(city)::text, sqlc.arg(timezone)::text, sqlc.arg(accounting_mode)::text
+)
+RETURNING id;
+
+-- name: UpdateWarehouse :exec
+UPDATE warehouses SET
+    code = sqlc.arg(code)::text,
+    name = sqlc.arg(name)::text,
+    wh_type = sqlc.arg(wh_type)::text,
+    address = sqlc.arg(address)::text,
+    status = sqlc.arg(status)::text,
+    profile_type = sqlc.arg(profile_type)::text,
+    country_code = sqlc.arg(country_code)::text,
+    city = sqlc.arg(city)::text,
+    timezone = sqlc.arg(timezone)::text,
+    accounting_mode = sqlc.arg(accounting_mode)::text,
+    updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: ListWarehouseContacts :many
+SELECT id, contact_type, employee_id, name, phone, email, is_primary, status
+FROM warehouse_contacts
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND warehouse_id = sqlc.arg(warehouse_id)::bigint
+ORDER BY contact_type, is_primary DESC, id;
+
+-- name: DeleteWarehouseContacts :exec
+DELETE FROM warehouse_contacts
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND warehouse_id = sqlc.arg(warehouse_id)::bigint;
+
+-- name: CreateWarehouseContact :exec
+INSERT INTO warehouse_contacts (
+    tenant_id, warehouse_id, contact_type, employee_id, name, phone, email, is_primary, status
+) VALUES (
+    sqlc.arg(tenant_id)::bigint, sqlc.arg(warehouse_id)::bigint,
+    sqlc.arg(contact_type)::text, NULLIF(sqlc.arg(employee_id)::bigint, 0),
+    sqlc.arg(name)::text, sqlc.arg(phone)::text, sqlc.arg(email)::text,
+    sqlc.arg(is_primary)::bool, sqlc.arg(status)::text
+);
+
+-- name: CreateWarehouseHistory :exec
+INSERT INTO warehouse_change_history (
+    tenant_id, warehouse_id, action, before_data, after_data, reason,
+    changed_by, changed_by_name
+) VALUES (
+    sqlc.arg(tenant_id)::bigint, sqlc.arg(warehouse_id)::bigint,
+    sqlc.arg(action)::text, sqlc.arg(before_data)::jsonb, sqlc.arg(after_data)::jsonb,
+    sqlc.arg(reason)::text, NULLIF(sqlc.arg(changed_by)::bigint, 0),
+    sqlc.arg(changed_by_name)::text
+);
+
+-- name: GetWarehouseSettings :one
+SELECT usage_mode, allow_direct_delivery, allow_inventory,
+       default_warehouse_id, updated_at
+FROM warehouse_settings
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint;
+
+-- name: UpsertWarehouseSettings :exec
+INSERT INTO warehouse_settings (
+    tenant_id, usage_mode, allow_direct_delivery, allow_inventory,
+    default_warehouse_id, updated_by, updated_at
+) VALUES (
+    sqlc.arg(tenant_id)::bigint, sqlc.arg(usage_mode)::text,
+    sqlc.arg(allow_direct_delivery)::bool, sqlc.arg(allow_inventory)::bool,
+    NULLIF(sqlc.arg(default_warehouse_id)::bigint, 0),
+    NULLIF(sqlc.arg(updated_by)::bigint, 0), now()
+)
+ON CONFLICT (tenant_id) DO UPDATE SET
+    usage_mode = excluded.usage_mode,
+    allow_direct_delivery = excluded.allow_direct_delivery,
+    allow_inventory = excluded.allow_inventory,
+    default_warehouse_id = excluded.default_warehouse_id,
+    updated_by = excluded.updated_by,
+    updated_at = now();
+
+-- name: CreateWarehouseSettingsHistory :exec
+INSERT INTO warehouse_settings_history (
+    tenant_id, usage_mode, allow_direct_delivery, allow_inventory,
+    default_warehouse_id, changed_by
+) VALUES (
+    sqlc.arg(tenant_id)::bigint, sqlc.arg(usage_mode)::text,
+    sqlc.arg(allow_direct_delivery)::bool, sqlc.arg(allow_inventory)::bool,
+    NULLIF(sqlc.arg(default_warehouse_id)::bigint, 0),
+    NULLIF(sqlc.arg(changed_by)::bigint, 0)
+);
 
 -- name: StockCostForUpdate :one
 -- The average this row currently carries, locked so a concurrent receipt

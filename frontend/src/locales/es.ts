@@ -67,6 +67,7 @@ export default {
     shipping: 'Calendario marítimo',
     finance: 'Finanzas',
     stocks: 'Inventario',
+    warehouse: 'Almacenes',
     outbounds: 'Salidas',
     procurement: 'Compras',
     requirements: 'Necesidades de compra',
@@ -79,6 +80,9 @@ export default {
     teamMail: 'Correo del equipo',
     exportLog: 'Registro de exportaciones',
     todo: ' (próximamente)',
+  },
+  warehouseNav: {
+    workbench: 'Panel de almacenes', profiles: 'Fichas de almacén', stock: 'Consulta de existencias', settings: 'Configuración',
   },
   supplierPayments: {
     eyebrow: 'CUENTAS POR PAGAR',

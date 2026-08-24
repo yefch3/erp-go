@@ -19,17 +19,21 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	StockService_ListWarehouses_FullMethodName     = "/erp.inventory.v1.StockService/ListWarehouses"
-	StockService_ListStocks_FullMethodName         = "/erp.inventory.v1.StockService/ListStocks"
-	StockService_ListLedger_FullMethodName         = "/erp.inventory.v1.StockService/ListLedger"
-	StockService_ReceiveStock_FullMethodName       = "/erp.inventory.v1.StockService/ReceiveStock"
-	StockService_ListShippable_FullMethodName      = "/erp.inventory.v1.StockService/ListShippable"
-	StockService_ListShippableLines_FullMethodName = "/erp.inventory.v1.StockService/ListShippableLines"
-	StockService_CreateOutbound_FullMethodName     = "/erp.inventory.v1.StockService/CreateOutbound"
-	StockService_ConfirmOutbound_FullMethodName    = "/erp.inventory.v1.StockService/ConfirmOutbound"
-	StockService_CancelOutbound_FullMethodName     = "/erp.inventory.v1.StockService/CancelOutbound"
-	StockService_ListOutbounds_FullMethodName      = "/erp.inventory.v1.StockService/ListOutbounds"
-	StockService_ListOutboundItems_FullMethodName  = "/erp.inventory.v1.StockService/ListOutboundItems"
+	StockService_ListWarehouses_FullMethodName          = "/erp.inventory.v1.StockService/ListWarehouses"
+	StockService_CreateWarehouse_FullMethodName         = "/erp.inventory.v1.StockService/CreateWarehouse"
+	StockService_UpdateWarehouse_FullMethodName         = "/erp.inventory.v1.StockService/UpdateWarehouse"
+	StockService_GetWarehouseSettings_FullMethodName    = "/erp.inventory.v1.StockService/GetWarehouseSettings"
+	StockService_UpdateWarehouseSettings_FullMethodName = "/erp.inventory.v1.StockService/UpdateWarehouseSettings"
+	StockService_ListStocks_FullMethodName              = "/erp.inventory.v1.StockService/ListStocks"
+	StockService_ListLedger_FullMethodName              = "/erp.inventory.v1.StockService/ListLedger"
+	StockService_ReceiveStock_FullMethodName            = "/erp.inventory.v1.StockService/ReceiveStock"
+	StockService_ListShippable_FullMethodName           = "/erp.inventory.v1.StockService/ListShippable"
+	StockService_ListShippableLines_FullMethodName      = "/erp.inventory.v1.StockService/ListShippableLines"
+	StockService_CreateOutbound_FullMethodName          = "/erp.inventory.v1.StockService/CreateOutbound"
+	StockService_ConfirmOutbound_FullMethodName         = "/erp.inventory.v1.StockService/ConfirmOutbound"
+	StockService_CancelOutbound_FullMethodName          = "/erp.inventory.v1.StockService/CancelOutbound"
+	StockService_ListOutbounds_FullMethodName           = "/erp.inventory.v1.StockService/ListOutbounds"
+	StockService_ListOutboundItems_FullMethodName       = "/erp.inventory.v1.StockService/ListOutboundItems"
 )
 
 // StockServiceClient is the client API for StockService service.
@@ -41,6 +45,10 @@ const (
 // here are the only ones that count.
 type StockServiceClient interface {
 	ListWarehouses(ctx context.Context, in *ListWarehousesRequest, opts ...grpc.CallOption) (*ListWarehousesResponse, error)
+	CreateWarehouse(ctx context.Context, in *CreateWarehouseRequest, opts ...grpc.CallOption) (*CreateWarehouseResponse, error)
+	UpdateWarehouse(ctx context.Context, in *UpdateWarehouseRequest, opts ...grpc.CallOption) (*UpdateWarehouseResponse, error)
+	GetWarehouseSettings(ctx context.Context, in *GetWarehouseSettingsRequest, opts ...grpc.CallOption) (*GetWarehouseSettingsResponse, error)
+	UpdateWarehouseSettings(ctx context.Context, in *UpdateWarehouseSettingsRequest, opts ...grpc.CallOption) (*UpdateWarehouseSettingsResponse, error)
 	ListStocks(ctx context.Context, in *ListStocksRequest, opts ...grpc.CallOption) (*ListStocksResponse, error)
 	ListLedger(ctx context.Context, in *ListLedgerRequest, opts ...grpc.CallOption) (*ListLedgerResponse, error)
 	// Receive goods. Manual for now; purchase receipts will call it later.
@@ -68,6 +76,46 @@ func (c *stockServiceClient) ListWarehouses(ctx context.Context, in *ListWarehou
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListWarehousesResponse)
 	err := c.cc.Invoke(ctx, StockService_ListWarehouses_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stockServiceClient) CreateWarehouse(ctx context.Context, in *CreateWarehouseRequest, opts ...grpc.CallOption) (*CreateWarehouseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateWarehouseResponse)
+	err := c.cc.Invoke(ctx, StockService_CreateWarehouse_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stockServiceClient) UpdateWarehouse(ctx context.Context, in *UpdateWarehouseRequest, opts ...grpc.CallOption) (*UpdateWarehouseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateWarehouseResponse)
+	err := c.cc.Invoke(ctx, StockService_UpdateWarehouse_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stockServiceClient) GetWarehouseSettings(ctx context.Context, in *GetWarehouseSettingsRequest, opts ...grpc.CallOption) (*GetWarehouseSettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetWarehouseSettingsResponse)
+	err := c.cc.Invoke(ctx, StockService_GetWarehouseSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stockServiceClient) UpdateWarehouseSettings(ctx context.Context, in *UpdateWarehouseSettingsRequest, opts ...grpc.CallOption) (*UpdateWarehouseSettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateWarehouseSettingsResponse)
+	err := c.cc.Invoke(ctx, StockService_UpdateWarehouseSettings_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -183,6 +231,10 @@ func (c *stockServiceClient) ListOutboundItems(ctx context.Context, in *ListOutb
 // here are the only ones that count.
 type StockServiceServer interface {
 	ListWarehouses(context.Context, *ListWarehousesRequest) (*ListWarehousesResponse, error)
+	CreateWarehouse(context.Context, *CreateWarehouseRequest) (*CreateWarehouseResponse, error)
+	UpdateWarehouse(context.Context, *UpdateWarehouseRequest) (*UpdateWarehouseResponse, error)
+	GetWarehouseSettings(context.Context, *GetWarehouseSettingsRequest) (*GetWarehouseSettingsResponse, error)
+	UpdateWarehouseSettings(context.Context, *UpdateWarehouseSettingsRequest) (*UpdateWarehouseSettingsResponse, error)
 	ListStocks(context.Context, *ListStocksRequest) (*ListStocksResponse, error)
 	ListLedger(context.Context, *ListLedgerRequest) (*ListLedgerResponse, error)
 	// Receive goods. Manual for now; purchase receipts will call it later.
@@ -208,6 +260,18 @@ type UnimplementedStockServiceServer struct{}
 
 func (UnimplementedStockServiceServer) ListWarehouses(context.Context, *ListWarehousesRequest) (*ListWarehousesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListWarehouses not implemented")
+}
+func (UnimplementedStockServiceServer) CreateWarehouse(context.Context, *CreateWarehouseRequest) (*CreateWarehouseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateWarehouse not implemented")
+}
+func (UnimplementedStockServiceServer) UpdateWarehouse(context.Context, *UpdateWarehouseRequest) (*UpdateWarehouseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateWarehouse not implemented")
+}
+func (UnimplementedStockServiceServer) GetWarehouseSettings(context.Context, *GetWarehouseSettingsRequest) (*GetWarehouseSettingsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetWarehouseSettings not implemented")
+}
+func (UnimplementedStockServiceServer) UpdateWarehouseSettings(context.Context, *UpdateWarehouseSettingsRequest) (*UpdateWarehouseSettingsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateWarehouseSettings not implemented")
 }
 func (UnimplementedStockServiceServer) ListStocks(context.Context, *ListStocksRequest) (*ListStocksResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListStocks not implemented")
@@ -274,6 +338,78 @@ func _StockService_ListWarehouses_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StockServiceServer).ListWarehouses(ctx, req.(*ListWarehousesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StockService_CreateWarehouse_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateWarehouseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).CreateWarehouse(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_CreateWarehouse_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).CreateWarehouse(ctx, req.(*CreateWarehouseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StockService_UpdateWarehouse_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateWarehouseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).UpdateWarehouse(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_UpdateWarehouse_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).UpdateWarehouse(ctx, req.(*UpdateWarehouseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StockService_GetWarehouseSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetWarehouseSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).GetWarehouseSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_GetWarehouseSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).GetWarehouseSettings(ctx, req.(*GetWarehouseSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StockService_UpdateWarehouseSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateWarehouseSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).UpdateWarehouseSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_UpdateWarehouseSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).UpdateWarehouseSettings(ctx, req.(*UpdateWarehouseSettingsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -468,6 +604,22 @@ var StockService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListWarehouses",
 			Handler:    _StockService_ListWarehouses_Handler,
+		},
+		{
+			MethodName: "CreateWarehouse",
+			Handler:    _StockService_CreateWarehouse_Handler,
+		},
+		{
+			MethodName: "UpdateWarehouse",
+			Handler:    _StockService_UpdateWarehouse_Handler,
+		},
+		{
+			MethodName: "GetWarehouseSettings",
+			Handler:    _StockService_GetWarehouseSettings_Handler,
+		},
+		{
+			MethodName: "UpdateWarehouseSettings",
+			Handler:    _StockService_UpdateWarehouseSettings_Handler,
 		},
 		{
 			MethodName: "ListStocks",

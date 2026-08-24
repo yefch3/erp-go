@@ -230,6 +230,176 @@ func (q *Queries) CreateReservation(ctx context.Context, arg CreateReservationPa
 	return id, err
 }
 
+const createWarehouse = `-- name: CreateWarehouse :one
+INSERT INTO warehouses (
+    tenant_id, code, name, wh_type, address, status, profile_type,
+    country_code, city, timezone, accounting_mode
+) VALUES (
+    $1::bigint, $2::text, $3::text,
+    $4::text, $5::text, $6::text,
+    $7::text, $8::text,
+    $9::text, $10::text, $11::text
+)
+RETURNING id
+`
+
+type CreateWarehouseParams struct {
+	TenantID       int64
+	Code           string
+	Name           string
+	WhType         string
+	Address        string
+	Status         string
+	ProfileType    string
+	CountryCode    string
+	City           string
+	Timezone       string
+	AccountingMode string
+}
+
+func (q *Queries) CreateWarehouse(ctx context.Context, arg CreateWarehouseParams) (int64, error) {
+	row := q.db.QueryRow(ctx, createWarehouse,
+		arg.TenantID,
+		arg.Code,
+		arg.Name,
+		arg.WhType,
+		arg.Address,
+		arg.Status,
+		arg.ProfileType,
+		arg.CountryCode,
+		arg.City,
+		arg.Timezone,
+		arg.AccountingMode,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const createWarehouseContact = `-- name: CreateWarehouseContact :exec
+INSERT INTO warehouse_contacts (
+    tenant_id, warehouse_id, contact_type, employee_id, name, phone, email, is_primary, status
+) VALUES (
+    $1::bigint, $2::bigint,
+    $3::text, NULLIF($4::bigint, 0),
+    $5::text, $6::text, $7::text,
+    $8::bool, $9::text
+)
+`
+
+type CreateWarehouseContactParams struct {
+	TenantID    int64
+	WarehouseID int64
+	ContactType string
+	EmployeeID  int64
+	Name        string
+	Phone       string
+	Email       string
+	IsPrimary   bool
+	Status      string
+}
+
+func (q *Queries) CreateWarehouseContact(ctx context.Context, arg CreateWarehouseContactParams) error {
+	_, err := q.db.Exec(ctx, createWarehouseContact,
+		arg.TenantID,
+		arg.WarehouseID,
+		arg.ContactType,
+		arg.EmployeeID,
+		arg.Name,
+		arg.Phone,
+		arg.Email,
+		arg.IsPrimary,
+		arg.Status,
+	)
+	return err
+}
+
+const createWarehouseHistory = `-- name: CreateWarehouseHistory :exec
+INSERT INTO warehouse_change_history (
+    tenant_id, warehouse_id, action, before_data, after_data, reason,
+    changed_by, changed_by_name
+) VALUES (
+    $1::bigint, $2::bigint,
+    $3::text, $4::jsonb, $5::jsonb,
+    $6::text, NULLIF($7::bigint, 0),
+    $8::text
+)
+`
+
+type CreateWarehouseHistoryParams struct {
+	TenantID      int64
+	WarehouseID   int64
+	Action        string
+	BeforeData    []byte
+	AfterData     []byte
+	Reason        string
+	ChangedBy     int64
+	ChangedByName string
+}
+
+func (q *Queries) CreateWarehouseHistory(ctx context.Context, arg CreateWarehouseHistoryParams) error {
+	_, err := q.db.Exec(ctx, createWarehouseHistory,
+		arg.TenantID,
+		arg.WarehouseID,
+		arg.Action,
+		arg.BeforeData,
+		arg.AfterData,
+		arg.Reason,
+		arg.ChangedBy,
+		arg.ChangedByName,
+	)
+	return err
+}
+
+const createWarehouseSettingsHistory = `-- name: CreateWarehouseSettingsHistory :exec
+INSERT INTO warehouse_settings_history (
+    tenant_id, usage_mode, allow_direct_delivery, allow_inventory,
+    default_warehouse_id, changed_by
+) VALUES (
+    $1::bigint, $2::text,
+    $3::bool, $4::bool,
+    NULLIF($5::bigint, 0),
+    NULLIF($6::bigint, 0)
+)
+`
+
+type CreateWarehouseSettingsHistoryParams struct {
+	TenantID            int64
+	UsageMode           string
+	AllowDirectDelivery bool
+	AllowInventory      bool
+	DefaultWarehouseID  int64
+	ChangedBy           int64
+}
+
+func (q *Queries) CreateWarehouseSettingsHistory(ctx context.Context, arg CreateWarehouseSettingsHistoryParams) error {
+	_, err := q.db.Exec(ctx, createWarehouseSettingsHistory,
+		arg.TenantID,
+		arg.UsageMode,
+		arg.AllowDirectDelivery,
+		arg.AllowInventory,
+		arg.DefaultWarehouseID,
+		arg.ChangedBy,
+	)
+	return err
+}
+
+const deleteWarehouseContacts = `-- name: DeleteWarehouseContacts :exec
+DELETE FROM warehouse_contacts
+WHERE tenant_id = $1::bigint
+  AND warehouse_id = $2::bigint
+`
+
+type DeleteWarehouseContactsParams struct {
+	TenantID    int64
+	WarehouseID int64
+}
+
+func (q *Queries) DeleteWarehouseContacts(ctx context.Context, arg DeleteWarehouseContactsParams) error {
+	_, err := q.db.Exec(ctx, deleteWarehouseContacts, arg.TenantID, arg.WarehouseID)
+	return err
+}
+
 const findStock = `-- name: FindStock :one
 SELECT id, cost_currency, avg_cost::text AS avg_cost, on_hand_qty::text AS on_hand_qty
 FROM stocks
@@ -312,6 +482,85 @@ func (q *Queries) GetReservationByRef(ctx context.Context, arg GetReservationByR
 		&i.ReservedQty,
 		&i.ShortageQty,
 		&i.Status,
+	)
+	return i, err
+}
+
+const getWarehouse = `-- name: GetWarehouse :one
+SELECT id, code, name, wh_type, address, manager_id, status, created_at,
+       profile_type, country_code, city, timezone, accounting_mode, updated_at
+FROM warehouses
+WHERE tenant_id = $1::bigint AND id = $2::bigint
+`
+
+type GetWarehouseParams struct {
+	TenantID int64
+	ID       int64
+}
+
+type GetWarehouseRow struct {
+	ID             int64
+	Code           string
+	Name           string
+	WhType         string
+	Address        string
+	ManagerID      int64
+	Status         string
+	CreatedAt      pgtype.Timestamptz
+	ProfileType    string
+	CountryCode    string
+	City           string
+	Timezone       string
+	AccountingMode string
+	UpdatedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) GetWarehouse(ctx context.Context, arg GetWarehouseParams) (GetWarehouseRow, error) {
+	row := q.db.QueryRow(ctx, getWarehouse, arg.TenantID, arg.ID)
+	var i GetWarehouseRow
+	err := row.Scan(
+		&i.ID,
+		&i.Code,
+		&i.Name,
+		&i.WhType,
+		&i.Address,
+		&i.ManagerID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.ProfileType,
+		&i.CountryCode,
+		&i.City,
+		&i.Timezone,
+		&i.AccountingMode,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getWarehouseSettings = `-- name: GetWarehouseSettings :one
+SELECT usage_mode, allow_direct_delivery, allow_inventory,
+       default_warehouse_id, updated_at
+FROM warehouse_settings
+WHERE tenant_id = $1::bigint
+`
+
+type GetWarehouseSettingsRow struct {
+	UsageMode           string
+	AllowDirectDelivery bool
+	AllowInventory      bool
+	DefaultWarehouseID  *int64
+	UpdatedAt           pgtype.Timestamptz
+}
+
+func (q *Queries) GetWarehouseSettings(ctx context.Context, tenantID int64) (GetWarehouseSettingsRow, error) {
+	row := q.db.QueryRow(ctx, getWarehouseSettings, tenantID)
+	var i GetWarehouseSettingsRow
+	err := row.Scan(
+		&i.UsageMode,
+		&i.AllowDirectDelivery,
+		&i.AllowInventory,
+		&i.DefaultWarehouseID,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -572,9 +821,63 @@ func (q *Queries) ListStocks(ctx context.Context, arg ListStocksParams) ([]ListS
 	return items, nil
 }
 
+const listWarehouseContacts = `-- name: ListWarehouseContacts :many
+SELECT id, contact_type, employee_id, name, phone, email, is_primary, status
+FROM warehouse_contacts
+WHERE tenant_id = $1::bigint
+  AND warehouse_id = $2::bigint
+ORDER BY contact_type, is_primary DESC, id
+`
+
+type ListWarehouseContactsParams struct {
+	TenantID    int64
+	WarehouseID int64
+}
+
+type ListWarehouseContactsRow struct {
+	ID          int64
+	ContactType string
+	EmployeeID  *int64
+	Name        string
+	Phone       string
+	Email       string
+	IsPrimary   bool
+	Status      string
+}
+
+func (q *Queries) ListWarehouseContacts(ctx context.Context, arg ListWarehouseContactsParams) ([]ListWarehouseContactsRow, error) {
+	rows, err := q.db.Query(ctx, listWarehouseContacts, arg.TenantID, arg.WarehouseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWarehouseContactsRow
+	for rows.Next() {
+		var i ListWarehouseContactsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ContactType,
+			&i.EmployeeID,
+			&i.Name,
+			&i.Phone,
+			&i.Email,
+			&i.IsPrimary,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWarehouses = `-- name: ListWarehouses :many
 
-SELECT id, code, name, wh_type, address, manager_id, status, created_at
+SELECT id, code, name, wh_type, address, manager_id, status, created_at,
+       profile_type, country_code, city, timezone, accounting_mode, updated_at
 FROM warehouses
 WHERE tenant_id = $1 AND ($2::bool OR status = 'ACTIVE')
 ORDER BY code
@@ -586,14 +889,20 @@ type ListWarehousesParams struct {
 }
 
 type ListWarehousesRow struct {
-	ID        int64
-	Code      string
-	Name      string
-	WhType    string
-	Address   string
-	ManagerID int64
-	Status    string
-	CreatedAt pgtype.Timestamptz
+	ID             int64
+	Code           string
+	Name           string
+	WhType         string
+	Address        string
+	ManagerID      int64
+	Status         string
+	CreatedAt      pgtype.Timestamptz
+	ProfileType    string
+	CountryCode    string
+	City           string
+	Timezone       string
+	AccountingMode string
+	UpdatedAt      pgtype.Timestamptz
 }
 
 // Quantities cross this boundary as text, same rule as everywhere else in
@@ -616,6 +925,12 @@ func (q *Queries) ListWarehouses(ctx context.Context, arg ListWarehousesParams) 
 			&i.ManagerID,
 			&i.Status,
 			&i.CreatedAt,
+			&i.ProfileType,
+			&i.CountryCode,
+			&i.City,
+			&i.Timezone,
+			&i.AccountingMode,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -798,6 +1113,55 @@ func (q *Queries) StocksForItemForUpdate(ctx context.Context, arg StocksForItemF
 	return items, nil
 }
 
+const updateWarehouse = `-- name: UpdateWarehouse :exec
+UPDATE warehouses SET
+    code = $1::text,
+    name = $2::text,
+    wh_type = $3::text,
+    address = $4::text,
+    status = $5::text,
+    profile_type = $6::text,
+    country_code = $7::text,
+    city = $8::text,
+    timezone = $9::text,
+    accounting_mode = $10::text,
+    updated_at = now()
+WHERE tenant_id = $11::bigint AND id = $12::bigint
+`
+
+type UpdateWarehouseParams struct {
+	Code           string
+	Name           string
+	WhType         string
+	Address        string
+	Status         string
+	ProfileType    string
+	CountryCode    string
+	City           string
+	Timezone       string
+	AccountingMode string
+	TenantID       int64
+	ID             int64
+}
+
+func (q *Queries) UpdateWarehouse(ctx context.Context, arg UpdateWarehouseParams) error {
+	_, err := q.db.Exec(ctx, updateWarehouse,
+		arg.Code,
+		arg.Name,
+		arg.WhType,
+		arg.Address,
+		arg.Status,
+		arg.ProfileType,
+		arg.CountryCode,
+		arg.City,
+		arg.Timezone,
+		arg.AccountingMode,
+		arg.TenantID,
+		arg.ID,
+	)
+	return err
+}
+
 const upsertStockOnInbound = `-- name: UpsertStockOnInbound :one
 INSERT INTO stocks (
     tenant_id, warehouse_id, product_id, sku_id, uom_id, uom_code,
@@ -876,4 +1240,44 @@ func (q *Queries) UpsertStockOnInbound(ctx context.Context, arg UpsertStockOnInb
 		&i.CostCurrency,
 	)
 	return i, err
+}
+
+const upsertWarehouseSettings = `-- name: UpsertWarehouseSettings :exec
+INSERT INTO warehouse_settings (
+    tenant_id, usage_mode, allow_direct_delivery, allow_inventory,
+    default_warehouse_id, updated_by, updated_at
+) VALUES (
+    $1::bigint, $2::text,
+    $3::bool, $4::bool,
+    NULLIF($5::bigint, 0),
+    NULLIF($6::bigint, 0), now()
+)
+ON CONFLICT (tenant_id) DO UPDATE SET
+    usage_mode = excluded.usage_mode,
+    allow_direct_delivery = excluded.allow_direct_delivery,
+    allow_inventory = excluded.allow_inventory,
+    default_warehouse_id = excluded.default_warehouse_id,
+    updated_by = excluded.updated_by,
+    updated_at = now()
+`
+
+type UpsertWarehouseSettingsParams struct {
+	TenantID            int64
+	UsageMode           string
+	AllowDirectDelivery bool
+	AllowInventory      bool
+	DefaultWarehouseID  int64
+	UpdatedBy           int64
+}
+
+func (q *Queries) UpsertWarehouseSettings(ctx context.Context, arg UpsertWarehouseSettingsParams) error {
+	_, err := q.db.Exec(ctx, upsertWarehouseSettings,
+		arg.TenantID,
+		arg.UsageMode,
+		arg.AllowDirectDelivery,
+		arg.AllowInventory,
+		arg.DefaultWarehouseID,
+		arg.UpdatedBy,
+	)
+	return err
 }

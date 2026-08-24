@@ -67,6 +67,7 @@ export default {
     shipping: '船期管理',
     finance: '财务',
     stocks: '库存管理',
+    warehouse: '仓库管理',
     outbounds: '出库管理',
     procurement: '采购管理',
     requirements: '采购需求',
@@ -79,6 +80,9 @@ export default {
     teamMail: '员工邮件',
     exportLog: '导出记录',
     todo: '（待开发）',
+  },
+  warehouseNav: {
+    workbench: '仓库工作台', profiles: '仓库档案', stock: '库存查询', settings: '仓库设置',
   },
   supplierPayments: {
     eyebrow: 'ACCOUNTS PAYABLE',
