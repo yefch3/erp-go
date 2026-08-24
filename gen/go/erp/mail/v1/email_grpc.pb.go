@@ -67,7 +67,6 @@ const (
 	EmailService_ListInbound_FullMethodName                  = "/erp.mail.v1.EmailService/ListInbound"
 	EmailService_SearchMail_FullMethodName                   = "/erp.mail.v1.EmailService/SearchMail"
 	EmailService_GetInbound_FullMethodName                   = "/erp.mail.v1.EmailService/GetInbound"
-	EmailService_ConvertInboundToExcel_FullMethodName        = "/erp.mail.v1.EmailService/ConvertInboundToExcel"
 	EmailService_StartInboundExcelConversion_FullMethodName  = "/erp.mail.v1.EmailService/StartInboundExcelConversion"
 	EmailService_GetInboundExcelConversionJob_FullMethodName = "/erp.mail.v1.EmailService/GetInboundExcelConversionJob"
 	EmailService_GetMailThread_FullMethodName                = "/erp.mail.v1.EmailService/GetMailThread"
@@ -198,10 +197,12 @@ type EmailServiceClient interface {
 	// its stored attachments into a real Excel workbook. Exactly one source is
 	// accepted. The source is resolved inside this service so a caller cannot
 	// make the model read another employee's mail or an arbitrary object key.
-	ConvertInboundToExcel(ctx context.Context, in *ConvertInboundToExcelRequest, opts ...grpc.CallOption) (*ConvertInboundToExcelResponse, error)
-	// The UI uses the durable form: enqueue immediately, then receive a live
-	// completion hint and re-read the owner-scoped job. The synchronous RPC is
-	// retained for internal compatibility and worker execution.
+	//
+	// Enqueue only. There is deliberately no synchronous twin: the usage ledger
+	// hangs off the job row, so a conversion that never becomes a job is a
+	// conversion nobody is billed for. Anything that spends model tokens here
+	// goes through a job, and the worker writes the token count whether the
+	// model succeeds or fails.
 	StartInboundExcelConversion(ctx context.Context, in *StartInboundExcelConversionRequest, opts ...grpc.CallOption) (*StartInboundExcelConversionResponse, error)
 	GetInboundExcelConversionJob(ctx context.Context, in *GetInboundExcelConversionJobRequest, opts ...grpc.CallOption) (*GetInboundExcelConversionJobResponse, error)
 	// One conversation, both directions, oldest first. Owner-scoped: the
@@ -733,16 +734,6 @@ func (c *emailServiceClient) GetInbound(ctx context.Context, in *GetInboundReque
 	return out, nil
 }
 
-func (c *emailServiceClient) ConvertInboundToExcel(ctx context.Context, in *ConvertInboundToExcelRequest, opts ...grpc.CallOption) (*ConvertInboundToExcelResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ConvertInboundToExcelResponse)
-	err := c.cc.Invoke(ctx, EmailService_ConvertInboundToExcel_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *emailServiceClient) StartInboundExcelConversion(ctx context.Context, in *StartInboundExcelConversionRequest, opts ...grpc.CallOption) (*StartInboundExcelConversionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StartInboundExcelConversionResponse)
@@ -988,10 +979,12 @@ type EmailServiceServer interface {
 	// its stored attachments into a real Excel workbook. Exactly one source is
 	// accepted. The source is resolved inside this service so a caller cannot
 	// make the model read another employee's mail or an arbitrary object key.
-	ConvertInboundToExcel(context.Context, *ConvertInboundToExcelRequest) (*ConvertInboundToExcelResponse, error)
-	// The UI uses the durable form: enqueue immediately, then receive a live
-	// completion hint and re-read the owner-scoped job. The synchronous RPC is
-	// retained for internal compatibility and worker execution.
+	//
+	// Enqueue only. There is deliberately no synchronous twin: the usage ledger
+	// hangs off the job row, so a conversion that never becomes a job is a
+	// conversion nobody is billed for. Anything that spends model tokens here
+	// goes through a job, and the worker writes the token count whether the
+	// model succeeds or fails.
 	StartInboundExcelConversion(context.Context, *StartInboundExcelConversionRequest) (*StartInboundExcelConversionResponse, error)
 	GetInboundExcelConversionJob(context.Context, *GetInboundExcelConversionJobRequest) (*GetInboundExcelConversionJobResponse, error)
 	// One conversation, both directions, oldest first. Owner-scoped: the
@@ -1186,9 +1179,6 @@ func (UnimplementedEmailServiceServer) SearchMail(context.Context, *SearchMailRe
 }
 func (UnimplementedEmailServiceServer) GetInbound(context.Context, *GetInboundRequest) (*GetInboundResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetInbound not implemented")
-}
-func (UnimplementedEmailServiceServer) ConvertInboundToExcel(context.Context, *ConvertInboundToExcelRequest) (*ConvertInboundToExcelResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ConvertInboundToExcel not implemented")
 }
 func (UnimplementedEmailServiceServer) StartInboundExcelConversion(context.Context, *StartInboundExcelConversionRequest) (*StartInboundExcelConversionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartInboundExcelConversion not implemented")
@@ -2114,24 +2104,6 @@ func _EmailService_GetInbound_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
-func _EmailService_ConvertInboundToExcel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ConvertInboundToExcelRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(EmailServiceServer).ConvertInboundToExcel(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: EmailService_ConvertInboundToExcel_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(EmailServiceServer).ConvertInboundToExcel(ctx, req.(*ConvertInboundToExcelRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _EmailService_StartInboundExcelConversion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(StartInboundExcelConversionRequest)
 	if err := dec(in); err != nil {
@@ -2564,10 +2536,6 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetInbound",
 			Handler:    _EmailService_GetInbound_Handler,
-		},
-		{
-			MethodName: "ConvertInboundToExcel",
-			Handler:    _EmailService_ConvertInboundToExcel_Handler,
 		},
 		{
 			MethodName: "StartInboundExcelConversion",
