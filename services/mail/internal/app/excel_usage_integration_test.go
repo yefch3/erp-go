@@ -13,6 +13,76 @@ import (
 	"github.com/sgao19/erp-go/services/mail/internal/store"
 )
 
+// stubExtractor 冒充模型：给什么就返回什么，不联网。
+type stubExtractor struct {
+	out Extraction
+	err error
+}
+
+func (s stubExtractor) Extract(context.Context, TableExtractionInput) (Extraction, error) {
+	return s.out, s.err
+}
+
+// 转换**成功**时，用量必须跟着结果一起出来。
+//
+// 这条看着理所当然，恰恰是最容易漏的：失败路径上我们特意把用量带出去了，
+// 反倒是成功路径顺手新建了一个返回值，把用量丢在了半路。结果就是「成功的
+// 不记账、失败的才记账」——而正常情况下绝大多数都是成功的，于是页面上转换
+// 次数在涨、token 永远是 0。
+func TestExcelUsageSurvivesTheSuccessPath(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	tenantID := time.Now().UnixNano()
+	const ownerID = 601
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM email_inbound WHERE tenant_id=$1", tenantID)
+	}()
+
+	const body = "Please confirm 120 tons of SS304."
+	var inboundID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO email_inbound
+		(tenant_id, account_id, owner_id, folder, imap_uid, message_id, thread_key,
+		 from_email, from_name, subject, body_html, body_text, sent_at)
+		VALUES ($1,1,$2,'INBOX',$3,$4,$5,'buyer@example.com','Ana Costa','询价',
+		        '<p>'||$6||'</p>', $6, now()) RETURNING id`,
+		tenantID, ownerID, tenantID%1000000, "m-"+time.Now().Format("150405.000000"),
+		"t-"+time.Now().Format("150405.000000"), body).Scan(&inboundID); err != nil {
+		t.Fatal(err)
+	}
+
+	usage := ModelUsage{InputTokens: 14_200, OutputTokens: 3_100}
+	svc := New(pool, Deps{Tables: stubExtractor{out: Extraction{
+		Model: "gpt-5.6-luna",
+		Usage: usage,
+		Workbook: Workbook{Title: "客户询价单", Sheets: []WorkbookSheet{{
+			Name: "Lines", Columns: []string{"品名", "数量"},
+			ColumnTypes: []string{"string", "number"},
+			Rows:        [][]string{{"SS304", "120"}},
+		}}},
+	}}}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	text := body
+	got, err := svc.ConvertInboundToExcel(ctx, tenantID, ownerID, inboundID, nil, &text, "zh", nil)
+	if err != nil {
+		t.Fatalf("转换该成功：%v", err)
+	}
+	if len(got.Data) == 0 {
+		t.Fatal("成功了却没有文件")
+	}
+	if got.Usage != usage {
+		t.Fatalf("成功的转换把用量弄丢了：该是 %+v，实际 %+v", usage, got.Usage)
+	}
+}
+
 // 智能转换的用量账（计量）。
 //
 // 钉两条最容易做错的：**失败也要计费**（模型答了钱就花了），以及**金额是
