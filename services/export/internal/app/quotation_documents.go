@@ -3,19 +3,16 @@ package app
 import (
 	"bytes"
 	"context"
-	_ "embed"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"codeberg.org/go-pdf/fpdf"
 
+	"github.com/sgao19/erp-go/pkg/pdffont"
 	"github.com/sgao19/erp-go/pkg/xlsx"
 	"github.com/sgao19/erp-go/services/export/internal/store"
 )
-
-//go:embed fonts/NotoSansSC-VF.ttf
-var quotationPDFFont []byte
 
 func (s *Service) GetQuotationWorkbook(ctx context.Context, tenantID, id int64, op Operator) (string, []byte, error) {
 	q, items, err := s.GetQuotationFor(ctx, tenantID, id, op)
@@ -67,16 +64,15 @@ func buildQuotationPDF(q store.GetQuotationRow, items []store.ListQuotationItems
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetMargins(12, 12, 12)
 	pdf.SetAutoPageBreak(true, 12)
-	// 字体必须随程序嵌入，Docker 容器和开发电脑才能生成完全一致的中文报价单。
-	pdf.AddUTF8FontFromBytes("NotoSansSC", "", quotationPDFFont)
-	pdf.AddUTF8FontFromBytes("NotoSansSC", "B", quotationPDFFont)
+	// 字体随程序嵌入（见 pkg/pdffont）：Docker 容器和开发电脑才能生成完全一致的中文报价单。
+	pdffont.Register(pdf)
 	if err := pdf.Error(); err != nil {
 		return nil, fmt.Errorf("load quotation PDF font: %w", err)
 	}
 	pdf.AddPage()
-	pdf.SetFont("NotoSansSC", "B", 16)
+	pdf.SetFont(pdffont.Name, "B", 16)
 	pdf.CellFormat(0, 10, "客户报价单 / CUSTOMER QUOTATION", "", 1, "C", false, 0, "")
-	pdf.SetFont("NotoSansSC", "", 9)
+	pdf.SetFont(pdffont.Name, "", 9)
 	meta := []string{
 		"报价单号: " + q.QuoteNo,
 		"客户: " + pdfText(q.CustomerName),
@@ -92,7 +88,7 @@ func buildQuotationPDF(q store.GetQuotationRow, items []store.ListQuotationItems
 	widths := []float64{8, 17, 30, 45, 17, 12, 25, 32}
 	headers := []string{"#", "编码", "产品", "规格", "数量", "单位", "单价", "金额"}
 	drawQuotationPDFRow(pdf, headers, widths, true)
-	pdf.SetFont("NotoSansSC", "", 8)
+	pdf.SetFont(pdffont.Name, "", 8)
 	for _, item := range items {
 		values := []string{
 			strconv.Itoa(int(item.LineNo)), item.ProductCode, pdfText(item.ProductName), pdfText(item.Spec),
@@ -102,11 +98,11 @@ func buildQuotationPDF(q store.GetQuotationRow, items []store.ListQuotationItems
 		if pdf.GetY()+rowHeight > 285 {
 			pdf.AddPage()
 			drawQuotationPDFRow(pdf, headers, widths, true)
-			pdf.SetFont("NotoSansSC", "", 8)
+			pdf.SetFont(pdffont.Name, "", 8)
 		}
 		drawQuotationPDFRow(pdf, values, widths, false)
 	}
-	pdf.SetFont("NotoSansSC", "B", 9)
+	pdf.SetFont(pdffont.Name, "B", 9)
 	pdf.CellFormat(154, 8, "合计 "+q.Currency, "1", 0, "R", false, 0, "")
 	pdf.CellFormat(32, 8, q.TotalAmount, "1", 1, "R", false, 0, "")
 	var out bytes.Buffer
@@ -130,7 +126,7 @@ func quotationPDFRowHeight(pdf *fpdf.Fpdf, values []string, widths []float64, li
 func drawQuotationPDFRow(pdf *fpdf.Fpdf, values []string, widths []float64, header bool) {
 	lineHeight := 4.5
 	if header {
-		pdf.SetFont("NotoSansSC", "B", 8)
+		pdf.SetFont(pdffont.Name, "B", 8)
 	}
 	rowHeight := quotationPDFRowHeight(pdf, values, widths, lineHeight)
 	startX, startY := pdf.GetX(), pdf.GetY()
