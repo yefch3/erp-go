@@ -3,7 +3,6 @@ package app
 import (
 	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/mail"
@@ -16,13 +15,11 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/pdffont"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/pkg/xlsx"
 	"github.com/sgao19/erp-go/services/procurement/internal/store"
 )
-
-//go:embed fonts/NotoSansSC-VF.ttf
-var purchaseOrderPDFFont []byte
 
 const (
 	PurchaseOrderDocumentVersion = "PO_SUPPLIER_V1"
@@ -125,15 +122,14 @@ func buildPurchaseOrderPDF(head store.GetPurchaseOrderRow, items []store.Purchas
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetMargins(12, 12, 12)
 	pdf.SetAutoPageBreak(true, 12)
-	pdf.AddUTF8FontFromBytes("NotoSansSC", "", purchaseOrderPDFFont)
-	pdf.AddUTF8FontFromBytes("NotoSansSC", "B", purchaseOrderPDFFont)
+	pdffont.Register(pdf)
 	if err := pdf.Error(); err != nil {
 		return nil, fmt.Errorf("load purchase order PDF font: %w", err)
 	}
 	pdf.AddPage()
-	pdf.SetFont("NotoSansSC", "B", 16)
+	pdf.SetFont(pdffont.Name, "B", 16)
 	pdf.CellFormat(0, 10, "采购订单 / PURCHASE ORDER", "", 1, "C", false, 0, "")
-	pdf.SetFont("NotoSansSC", "", 9)
+	pdf.SetFont(pdffont.Name, "", 9)
 	for _, line := range []string{
 		"采购单号 / Order: " + head.PoNo,
 		"供应商 / Supplier: " + executionPDFText(head.SupplierName),
@@ -148,18 +144,18 @@ func buildPurchaseOrderPDF(head store.GetPurchaseOrderRow, items []store.Purchas
 	widths := []float64{8, 17, 30, 45, 17, 12, 25, 32}
 	headers := []string{"#", "编码", "产品", "规格", "数量", "单位", "单价", "金额"}
 	drawPurchaseOrderPDFRow(pdf, headers, widths, true)
-	pdf.SetFont("NotoSansSC", "", 8)
+	pdf.SetFont(pdffont.Name, "", 8)
 	for index, item := range items {
 		values := []string{strconv.Itoa(index + 1), item.ProductCode, executionPDFText(item.ProductName), executionPDFText(item.Spec), item.Qty, item.UomCode, item.UnitPrice, item.Amount}
 		rowHeight := purchaseOrderPDFRowHeight(pdf, values, widths, 4.5)
 		if pdf.GetY()+rowHeight > 285 {
 			pdf.AddPage()
 			drawPurchaseOrderPDFRow(pdf, headers, widths, true)
-			pdf.SetFont("NotoSansSC", "", 8)
+			pdf.SetFont(pdffont.Name, "", 8)
 		}
 		drawPurchaseOrderPDFRow(pdf, values, widths, false)
 	}
-	pdf.SetFont("NotoSansSC", "B", 9)
+	pdf.SetFont(pdffont.Name, "B", 9)
 	pdf.CellFormat(154, 8, "合计 / Total "+head.Currency, "1", 0, "R", false, 0, "")
 	pdf.CellFormat(32, 8, head.TotalAmount, "1", 1, "R", false, 0, "")
 	var pdfOut bytes.Buffer
@@ -183,7 +179,7 @@ func purchaseOrderPDFRowHeight(pdf *fpdf.Fpdf, values []string, widths []float64
 func drawPurchaseOrderPDFRow(pdf *fpdf.Fpdf, values []string, widths []float64, header bool) {
 	lineHeight := 4.5
 	if header {
-		pdf.SetFont("NotoSansSC", "B", 8)
+		pdf.SetFont(pdffont.Name, "B", 8)
 	}
 	rowHeight := purchaseOrderPDFRowHeight(pdf, values, widths, lineHeight)
 	startX, startY := pdf.GetX(), pdf.GetY()
