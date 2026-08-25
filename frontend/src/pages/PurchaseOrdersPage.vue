@@ -14,8 +14,8 @@
         <el-radio-button value="REJECTED">{{ t('orders.statuses.REJECTED') }}</el-radio-button>
         <el-radio-button value="ORDERED">{{ t('orders.statuses.ORDERED') }}</el-radio-button>
         <el-radio-button value="PARTIALLY_RECEIVED">{{ t('orders.statuses.PARTIALLY_RECEIVED') }}</el-radio-button>
-        <el-radio-button value="RECEIVED">{{ t('orders.statuses.RECEIVED') }}</el-radio-button>
-        <el-radio-button value="CANCELLED">{{ t('orders.statuses.CANCELLED') }}</el-radio-button>
+        <el-radio-button value="RECEIVED_OPEN">{{ t('orders.statuses.RECEIVED') }}</el-radio-button>
+        <el-radio-button value="HISTORY">{{ t('orders.statuses.HISTORY') }}</el-radio-button>
       </el-radio-group>
 
       <div class="filters">

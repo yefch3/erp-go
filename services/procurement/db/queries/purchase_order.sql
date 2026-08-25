@@ -354,7 +354,17 @@ WHERE o.tenant_id = sqlc.arg(tenant_id)::bigint
   -- Data scope: an order is visible when the caller's range covers its
   -- buyer. scope_all short-circuits so administrators never pay for a list.
   AND (sqlc.arg(scope_all)::bool OR o.buyer_id = ANY(sqlc.arg(buyer_ids)::bigint[]))
-  AND (sqlc.arg(status)::text = '' OR o.status = sqlc.arg(status)::text)
+  -- 列表页把“当前工作”和“历史留档”分开：
+  -- 已到货只保留尚待结案的采购单；已结案与已作废统一进入历史记录。
+  AND (
+       sqlc.arg(status)::text = ''
+       OR (sqlc.arg(status)::text = 'RECEIVED_OPEN'
+           AND o.status = 'RECEIVED' AND o.closed_at IS NULL)
+       OR (sqlc.arg(status)::text = 'HISTORY'
+           AND (o.status = 'CANCELLED' OR o.closed_at IS NOT NULL))
+       OR (sqlc.arg(status)::text NOT IN ('RECEIVED_OPEN', 'HISTORY')
+           AND o.status = sqlc.arg(status)::text AND o.closed_at IS NULL)
+  )
   -- 待正式发单：批下来了、还没发给供应商。工作台的行动数字（B4），
   -- 用列表自己的围栏，不另起一套统计。
   AND (sqlc.arg(unsent)::bool = false

@@ -779,7 +779,7 @@ export default {
     statuses: {
       DRAFT: 'Draft', PENDING_APPROVAL: 'In approval', REJECTED: 'Rejected',
       ORDERED: 'Placed', PARTIALLY_RECEIVED: 'Part delivered',
-      RECEIVED: 'Delivered', CANCELLED: 'Cancelled',
+      RECEIVED: 'Delivered', CANCELLED: 'Voided', HISTORY: 'History',
     },
   },
   outbounds: {
