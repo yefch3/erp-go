@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"github.com/jackc/pgx/v5"
 	"log/slog"
 	"os"
 	"strings"
@@ -150,7 +151,7 @@ func TestQuoteComparisonAndAwardReason(t *testing.T) {
 	// 只有正式拒绝事件能让 V1 失效并把案件退回成本测算，之后才能确认 V2。
 	if err := svc.ReturnRejectedQuotationToCosting(ctx, tenantID, QuotationRejected{
 		QuotationID: 9001, QuotationNo: "QT-A2-V1", CostScenarioID: scenarioID, SourcingCaseID: caseID,
-	}, slog.Default()); err != nil {
+	}, slog.Default(), noopClaim); err != nil {
 		t.Fatalf("return rejected quotation: %v", err)
 	}
 	confirmedV2, err := svc.ConfirmCostScenario(ctx, tenantID, scenarioV2, "客户反馈价格偏高，利润率由 8% 调整为 6%", op)
@@ -178,3 +179,6 @@ func TestQuoteComparisonAndAwardReason(t *testing.T) {
 		t.Fatalf("the award must land in the change history, found %d rows", changeCount)
 	}
 }
+
+// 单测直接调服务方法，没有事件要认领——认领是消费者传进来的东西。
+func noopClaim(context.Context, pgx.Tx) error { return nil }

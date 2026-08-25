@@ -15,9 +15,9 @@ import (
 // StockOutbound is the slice of inventory's event export acts on: goods
 // physically left the warehouse against a contract.
 type StockOutbound struct {
-	OutboundNo string          `json:"outbound_no"`
-	ContractID int64           `json:"contract_id"`
-	ContractNo string          `json:"contract_no"`
+	OutboundNo string            `json:"outbound_no"`
+	ContractID int64             `json:"contract_id"`
+	ContractNo string            `json:"contract_no"`
 	Lines      []OutboundShipped `json:"lines"`
 }
 
@@ -38,7 +38,7 @@ type OutboundShipped struct {
 // Nothing is written onto the contract itself. An approved version is frozen
 // by a database trigger because it records what was agreed; what has since
 // shipped is a fact about the world and belongs beside it, not inside it.
-func (s *Service) ApplyShipment(ctx context.Context, tenantID int64, e StockOutbound, log *slog.Logger) error {
+func (s *Service) ApplyShipment(ctx context.Context, tenantID int64, e StockOutbound, log *slog.Logger, claim EventClaim) error {
 	if e.ContractID == 0 || len(e.Lines) == 0 {
 		log.Warn("outbound event with nothing to record, skipping",
 			"outbound_no", e.OutboundNo, "contract_id", e.ContractID)
@@ -48,6 +48,11 @@ func (s *Service) ApplyShipment(ctx context.Context, tenantID int64, e StockOutb
 	var owner int64
 	recorded := 0
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		// 认领与这一笔业务写入同生共死：崩溃一起回滚，提交一起落库。
+		// 见 eventclaim.go。
+		if err := claim(ctx, tx); err != nil {
+			return err
+		}
 		q := s.q.WithTx(tx)
 		recorded = 0
 		for _, l := range e.Lines {

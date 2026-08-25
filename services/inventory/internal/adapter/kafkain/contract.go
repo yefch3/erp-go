@@ -17,7 +17,7 @@ const eventContractEffective = "ContractEffective"
 // has to be bought is whatever stock could not cover, and only this service
 // can answer that without racing.
 func ContractEvents(svc *app.Service, log *slog.Logger) kafkax.Handler {
-	return func(ctx context.Context, e kafkax.Envelope) error {
+	return func(ctx context.Context, e kafkax.Envelope, claim kafkax.Claim) error {
 		if e.EventType != eventContractEffective {
 			return nil
 		}
@@ -31,6 +31,6 @@ func ContractEvents(svc *app.Service, log *slog.Logger) kafkax.Handler {
 			log.Error("contract event without a contract id, skipping", "event_id", e.EventID)
 			return nil
 		}
-		return svc.AllocateContract(ctx, e.TenantID, c, log)
+		return svc.AllocateContract(ctx, e.TenantID, c, log, app.EventClaim(claim))
 	}
 }

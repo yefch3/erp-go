@@ -93,8 +93,8 @@ func run(log *slog.Logger) error {
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
 	// 死信运维面：同一个 handler、同一个死信表——重放跑的就是失败时那条路。
 	console := deadletter.NewConsole()
-	console.Add(cfg.ConsumerGroup, dlContract, kafkax.ReplayHandler(contractHandler))
-	console.Add(cfg.PurchaseConsumerGroup, dlPurchase, kafkax.ReplayHandler(purchaseHandler))
+	console.Add(cfg.ConsumerGroup, dlContract, kafkax.ReplayHandler(contractHandler, idempotency.New(pool, cfg.ConsumerGroup)))
+	console.Add(cfg.PurchaseConsumerGroup, dlPurchase, kafkax.ReplayHandler(purchaseHandler, idempotency.New(pool, cfg.PurchaseConsumerGroup)))
 	h := grpcin.New(svc)
 	h.UseDeadLetterConsole(console)
 	ivv1.RegisterStockServiceServer(srv, h)

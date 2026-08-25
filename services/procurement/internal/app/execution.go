@@ -353,19 +353,33 @@ func (s *Service) RecordSupplierConfirmation(ctx context.Context, tenantID, poID
 	return SupplierConfirmation{}, apierr.Internal("PO_CONFIRM_READ_FAILED", "供应商确认保存后无法读取")
 }
 
-func (s *Service) ApplyConfirmationApproval(ctx context.Context, tenantID, poID, instanceID int64, result string) error {
+func (s *Service) ApplyConfirmationApproval(ctx context.Context, tenantID, poID, instanceID int64, result string, claim EventClaim) error {
 	status := "REJECTED"
 	if result == "APPROVED" {
 		status = "APPROVED"
 	}
-	command, err := s.pool.Exec(ctx, `UPDATE purchase_supplier_confirmations SET status=$4 WHERE tenant_id=$1 AND po_id=$2 AND approval_instance_id=$3 AND status='PENDING_APPROVAL'`, tenantID, poID, instanceID, status)
-	if err != nil {
+	// 这里原来是一条裸 Exec。为了让「认领」和这一笔更新同生共死，包进一个
+	// 事务——否则崩在两者之间，这条审批结论就永远消失了。见 eventclaim.go。
+	var changed bool
+	if err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		// 认领无条件先记：即使下面这条更新一行都没改（重复的审批结论），
+		// 「这条事件看过了」也是事实，跳过它是对的。
+		if err := claim(ctx, tx); err != nil {
+			return err
+		}
+		command, err := tx.Exec(ctx, `UPDATE purchase_supplier_confirmations SET status=$4 WHERE tenant_id=$1 AND po_id=$2 AND approval_instance_id=$3 AND status='PENDING_APPROVAL'`, tenantID, poID, instanceID, status)
+		if err != nil {
+			return err
+		}
+		changed = command.RowsAffected() > 0
+		return nil
+	}); err != nil {
 		return err
 	}
-	if command.RowsAffected() == 0 {
-		return nil
+	// 提交之后才提醒：回滚掉的变化不该让谁的页面去读一件没发生的事。
+	if changed {
+		s.nudge(ctx, tenantID)
 	}
-	s.nudge(ctx, tenantID)
 	return nil
 }
 

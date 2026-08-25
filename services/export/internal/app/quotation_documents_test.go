@@ -11,13 +11,13 @@ import (
 
 func quotationDocumentFixture() (store.GetQuotationRow, []store.ListQuotationItemsRow) {
 	return store.GetQuotationRow{
-		QuoteNo: "QT-TEST-1", CustomerName: "测试客户", Currency: "USD", Incoterm: "CFR",
-		PortOfLoading: "宁波", PortOfDischarge: "洛杉矶", PaymentMethod: "即期信用证",
-		TotalAmount: "625.00",
-	}, []store.ListQuotationItemsRow{{
-		LineNo: 1, ProductCode: "P-1", ProductName: "热镀锌钢卷", Spec: "EN 10346 / S350GD+Z / 1.2 × 1450mm",
-		Qty: "10", UomCode: "吨", UnitPrice: "62.5", Amount: "625.00",
-	}}
+			QuoteNo: "QT-TEST-1", CustomerName: "测试客户", Currency: "USD", Incoterm: "CFR",
+			PortOfLoading: "宁波", PortOfDischarge: "洛杉矶", PaymentMethod: "即期信用证",
+			TotalAmount: "625.00",
+		}, []store.ListQuotationItemsRow{{
+			LineNo: 1, ProductCode: "P-1", ProductName: "热镀锌钢卷", Spec: "EN 10346 / S350GD+Z / 1.2 × 1450mm",
+			Qty: "10", UomCode: "吨", UnitPrice: "62.5", Amount: "625.00",
+		}}
 }
 
 func TestBuildQuotationWorkbookKeepsServerAmounts(t *testing.T) {

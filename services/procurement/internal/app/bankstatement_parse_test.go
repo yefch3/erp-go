@@ -15,12 +15,12 @@ import (
 // the clerk can find in Excel, never silently drop.
 func TestParseBankStatementCSV(t *testing.T) {
 	cases := []struct {
-		name        string
-		csv         string
-		defaultCcy  string
-		wantRows    int
-		wantErrs    int
-		check       func(t *testing.T, rows []BankStatementRow, errs []BankRowError)
+		name       string
+		csv        string
+		defaultCcy string
+		wantRows   int
+		wantErrs   int
+		check      func(t *testing.T, rows []BankStatementRow, errs []BankRowError)
 	}{
 		{
 			name: "standard Chinese header with 借贷 column",

@@ -595,9 +595,15 @@ func (s *Service) ApplyApprovalDecision(
 	ctx context.Context,
 	tenantID, poID, approvalInstanceID int64,
 	result, comment string,
+	claim EventClaim,
 ) (string, error) {
 	status := ""
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		// 认领与这一笔业务写入同生共死：崩溃一起回滚，提交一起落库。
+		// 见 eventclaim.go。
+		if err := claim(ctx, tx); err != nil {
+			return err
+		}
 		q := s.q.WithTx(tx)
 		head, err := q.GetPurchaseOrderForUpdate(ctx, store.GetPurchaseOrderForUpdateParams{
 			TenantID: tenantID, ID: poID,
