@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
 
 	"github.com/sgao19/erp-go/pkg/pgdb"
 )
@@ -17,15 +20,39 @@ import (
 // 新公司开张就该有第一家公司开箱即有的四个预置角色。
 //
 // 这组测试里最重要的是**对表测试**：把新公司每个预置角色的权限码和数据范围，
-// 与同一个库里第一家公司的同名角色逐条对比。测试库每次从迁移现刷，第一家
-// 就是迁移的纯产物——所以 presetroles.go 那张 Go 表和十几个迁移的一致性
-// 不靠注释请求人同改，靠这条测试当场变红。
+// 与迁移播给 1 号公司的同名角色逐条对比——presetroles.go 那张 Go 表和十几个
+// 迁移的一致性不靠注释请求人同改，靠这条测试当场变红。
+//
+// 对比必须在**专用的一次性迁移库**上做（IAM_MIGRATION_TEST_DSN），不能用
+// 共享测试库。第一版用了共享库，CI 当场揭穿：共享库里哪个测试先建公司谁就
+// 拿到 1 号，清理时把迁移播给 1 号的角色一起删了——基准被污染，本地却因为
+// 服务引导过 1 号而一直是绿的。一次性库里 1 号就是迁移的纯产物，没有别人。
 func TestPresetRolesMatchWhatMigrationsGaveTheFirstTenant(t *testing.T) {
-	dsn := os.Getenv("IAM_TEST_DSN")
+	dsn := os.Getenv("IAM_MIGRATION_TEST_DSN")
 	if dsn == "" {
-		t.Skip("set IAM_TEST_DSN to a migrated PostgreSQL database")
+		t.Skip("set IAM_MIGRATION_TEST_DSN to a disposable PostgreSQL database")
 	}
 	ctx := context.Background()
+
+	// 把一次性库刷到最新——它平时没人碰，第一次跑要从零建起。
+	sqlDB, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatal(err)
+	}
+	if err := goose.Up(sqlDB, "../../db/migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+	// 序列拨远：这个库里 1 号必须永远是迁移播种的那家，新建的公司不许撞上。
+	// 取现有最大号 +100 而不是固定值，本地反复跑不回拨序列。
+	if _, err := sqlDB.Exec(
+		`SELECT setval('tenants_id_seq', (SELECT COALESCE(MAX(id),0)+100 FROM tenants))`); err != nil {
+		t.Fatal(err)
+	}
+
 	pool, err := pgdb.New(ctx, dsn)
 	if err != nil {
 		t.Fatal(err)

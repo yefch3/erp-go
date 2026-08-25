@@ -30,8 +30,6 @@ var presetRoles = []presetRole{
 		Permissions: []string{
 			"export:contract:read", "export:shipment:read", "export:shipment:write",
 			"inventory:stock:read", "inventory:stock:write",
-			"mail:email:export", "mail:email:read", "mail:email:write",
-			"mail:export:audit", "mail:suppression:write",
 			"masterdata:supplier:read",
 			"procurement:exception:write", "procurement:order:read", "procurement:receipt:write",
 			"product:product:read",
@@ -50,8 +48,6 @@ var presetRoles = []presetRole{
 		Permissions: []string{
 			"export:contract:read", "export:receipt:read", "export:receipt:write",
 			"export:shipment:read",
-			"mail:email:export", "mail:email:read", "mail:email:write",
-			"mail:export:audit", "mail:suppression:write",
 			"masterdata:customer:read", "masterdata:port:read",
 			"procurement:payment:read", "procurement:payment:write",
 		},
