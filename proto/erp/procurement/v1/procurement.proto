@@ -1039,9 +1039,7 @@ message ResolveInspectionResponse { PurchaseInspection inspection = 1; }
 
 message CloseOrderRequest {
   int64 id = 1;
-  // 没收到的那部分怎么办。全部收齐时留空；没收齐时必须选：
-  //   REORDER  放回待采购清单，另找工厂
-  //   DROPPED  不要了
+  // 没收到的那部分怎么办。全部收齐时留空；没收齐时选择 REORDER（放回待采购）或 DROPPED（不再采购）。
   string shortfall_action = 2;
   // 为什么这么定。没收齐时必填。
   string close_note = 3;

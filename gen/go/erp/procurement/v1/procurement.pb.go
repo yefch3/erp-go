@@ -10605,9 +10605,7 @@ func (x *ResolveInspectionResponse) GetInspection() *PurchaseInspection {
 type CloseOrderRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	// 没收到的那部分怎么办。全部收齐时留空；没收齐时必须选：
-	//   REORDER  放回待采购清单，另找工厂
-	//   DROPPED  不要了
+	// 没收到的那部分怎么办。全部收齐时留空；没收齐时选择 REORDER（放回待采购）或 DROPPED（不再采购）。
 	ShortfallAction string `protobuf:"bytes,2,opt,name=shortfall_action,json=shortfallAction,proto3" json:"shortfall_action,omitempty"`
 	// 为什么这么定。没收齐时必填。
 	CloseNote     string `protobuf:"bytes,3,opt,name=close_note,json=closeNote,proto3" json:"close_note,omitempty"`
