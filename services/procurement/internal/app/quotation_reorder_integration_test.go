@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 )
 
@@ -61,8 +62,8 @@ func TestQuotationSourcedReorder(t *testing.T) {
 		return CreateOrderInput{
 			SupplierID: supplierID, Currency: "CNY", ExpectedDate: "2026-10-01",
 			DeliveryLocationType: "PORT", DeliveryPortName: "宁波港",
-			SourceChangeReason:   reason,
-			Lines:                []OrderLine{{RequirementID: reqID, Qty: qty, UnitPrice: price}},
+			SourceChangeReason: reason,
+			Lines:              []OrderLine{{RequirementID: reqID, Qty: qty, UnitPrice: price}},
 		}
 	}
 	requirementState := func(id int64) (ordered, status string) {
@@ -73,12 +74,27 @@ func TestQuotationSourcedReorder(t *testing.T) {
 		}
 		return
 	}
+	// 本测试关注分单和补购规则；用正式审批通过时相同的事务方法推进订单，
+	// 不绕过采购需求的锁定与并发校验。
+	approve := func(poID int64) {
+		t.Helper()
+		if err := pgdb.InTx(ctx, pool, func(ctx context.Context, tx pgx.Tx) error {
+			return commitOrderRequirements(ctx, svc.q.WithTx(tx), tenantID, poID)
+		}); err != nil {
+			t.Fatalf("模拟审批通过采购单 %d: %v", poID, err)
+		}
+	}
 
 	// ---- 剩下的 20 吨换一家工厂 ----
 	reqA := newRequirement(tenantID%1000000 + 1)
-	if _, err := svc.CreateOrder(ctx, tenantID, order(9, reqA, "80", "520", ""), op); err != nil {
-		t.Fatalf("按成本方案订 80 吨就该直接放行：%v", err)
+	firstA, err := svc.CreateOrder(ctx, tenantID, order(9, reqA, "80", "520", ""), op)
+	if err != nil {
+		t.Fatalf("按成本方案建立 80 吨草稿：%v", err)
 	}
+	if ordered, status := requirementState(reqA); ordered != "0.0000" || status != "PENDING" {
+		t.Fatalf("草稿不能占用采购需求，实际 已下单 %s 状态 %s", ordered, status)
+	}
+	approve(firstA.ID)
 	if ordered, status := requirementState(reqA); ordered != "80.0000" || status != "PARTIALLY_ORDERED" {
 		t.Fatalf("订了 80 之后需求该剩 20 可买，实际 已下单 %s 状态 %s", ordered, status)
 	}
@@ -90,6 +106,7 @@ func TestQuotationSourcedReorder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("写了原因就该放行：%v", err)
 	}
+	approve(changed.ID)
 	if ordered, status := requirementState(reqA); ordered != "100.0000" || status != "ORDERED" {
 		t.Fatalf("两张单加起来买齐了，需求该是已下单 100，实际 %s / %s", ordered, status)
 	}
@@ -106,15 +123,19 @@ func TestQuotationSourcedReorder(t *testing.T) {
 
 	// ---- 剩下的 20 吨还找同一家追加 ----
 	reqB := newRequirement(tenantID%1000000 + 2)
-	if _, err := svc.CreateOrder(ctx, tenantID, order(9, reqB, "80", "520", ""), op); err != nil {
+	firstB, err := svc.CreateOrder(ctx, tenantID, order(9, reqB, "80", "520", ""), op)
+	if err != nil {
 		t.Fatal(err)
 	}
+	approve(firstB.ID)
 	if _, err := svc.CreateOrder(ctx, tenantID, order(9, reqB, "20", "520", ""), op); code(err) != "PO_QUOTATION_REORDER_REASON_REQUIRED" {
 		t.Fatalf("向同一家补购不写原因就不该放行，得到 %v", err)
 	}
-	if _, err := svc.CreateOrder(ctx, tenantID, order(9, reqB, "20", "520", "首批只排到 80 吨，余量本月底补齐"), op); err != nil {
+	secondB, err := svc.CreateOrder(ctx, tenantID, order(9, reqB, "20", "520", "首批只排到 80 吨，余量本月底补齐"), op)
+	if err != nil {
 		t.Fatalf("写了原因的补购该放行：%v", err)
 	}
+	approve(secondB.ID)
 	if ordered, status := requirementState(reqB); ordered != "100.0000" || status != "ORDERED" {
 		t.Fatalf("补购之后需求该是已下单 100，实际 %s / %s", ordered, status)
 	}

@@ -51,7 +51,7 @@
         <el-table-column :label="t('common.actions')" width="150" fixed="right" align="center">
           <template #default="{ row }">
             <el-button type="primary" plain @click="openBatchReview(row)">
-              {{ t('requirements.reviewAndApprove') }}
+              {{ t('requirements.prepareOrder') }}
             </el-button>
           </template>
         </el-table-column>

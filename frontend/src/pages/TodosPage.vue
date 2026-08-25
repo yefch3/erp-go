@@ -126,6 +126,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { get, post, quietErrors } from '../api'
 import { onLive } from '../live'
 
@@ -144,6 +145,7 @@ interface Todo { task: Task; instance: Instance }
 type ActionCode = 'APPROVE' | 'REJECT' | 'RETURN'
 
 const { t } = useI18n()
+const route = useRoute()
 // '' = pending queue; the other values are past decisions of mine.
 const scope = ref('')
 const pending = computed(() => scope.value === '')
@@ -172,12 +174,18 @@ async function load() {
     // no roles at all lands first, and its permission refusal is a normal
     // state to explain in place, not an error to toast. Everything that is
     // not that one refusal gets the toast it would have gotten.
+    const requestedBizType = String(route.query.bizType ?? '')
+    const requestedBizID = String(route.query.bizId ?? '')
+    const isTargeted = Boolean(requestedBizType || requestedBizID)
     const data = await get<{ todos: Todo[]; meta: { total: string } }>('/approvals/todos', {
-      page: page.value, page_size: pageSize, status: scope.value,
+      page: isTargeted ? 1 : page.value, page_size: isTargeted ? 200 : pageSize, status: scope.value,
     }, quietErrors)
     noPermission.value = false
-    todos.value = data.todos ?? []
-    total.value = Number(data.meta.total)
+    todos.value = (data.todos ?? []).filter((row) =>
+      (!requestedBizType || row.instance.bizType === requestedBizType) &&
+      (!requestedBizID || String(row.instance.bizId) === requestedBizID),
+    )
+    total.value = isTargeted ? todos.value.length : Number(data.meta.total)
   } catch (err) {
     if ((err as { code?: string })?.code === 'AUTH_PERMISSION_DENIED') {
       noPermission.value = true
@@ -218,11 +226,14 @@ async function submit() {
 // Where each document type lives. Types absent from the map render as plain
 // text rather than a broken link, which is what happens until their page
 // exists.
-const DOC_ROUTES: Record<string, string> = { CONTRACT: '/contracts' }
+const DOC_ROUTES: Record<string, string> = { CONTRACT: '/contracts', PURCHASE_ORDER: '/purchase-orders' }
 
-function docLink(instance: Instance): { path: string; query: { id: string } } | null {
+function docLink(instance: Instance): { path: string; query: Record<string, string> } | null {
   const path = DOC_ROUTES[instance.bizType]
-  return path ? { path, query: { id: instance.bizId } } : null
+  if (!path) return null
+  return instance.bizType === 'PURCHASE_ORDER'
+    ? { path, query: { order: instance.bizId, status: 'PENDING_APPROVAL' } }
+    : { path, query: { id: instance.bizId } }
 }
 
 // Keys a business service is likely to send get a readable label; anything

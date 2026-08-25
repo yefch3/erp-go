@@ -57,7 +57,7 @@ func run(log *slog.Logger) error {
 	live := livefeed.NewPublisher(cfg.RedisAddr, log)
 	defer live.Close()
 
-	svc := app.New(pool, grpcout.NewIAM(iamConn), live)
+	svc := app.New(pool, grpcout.NewIAM(iamConn), live, cfg.PurchaseOrderFallbackRoleID)
 
 	// The relay is what turns committed outbox rows into Kafka messages;
 	// business code never touches the producer.

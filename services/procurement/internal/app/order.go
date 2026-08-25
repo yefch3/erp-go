@@ -366,17 +366,7 @@ func (s *Service) CreateOrder(ctx context.Context, tenantID int64, in CreateOrde
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		var createErr error
 		head, createErr = s.createPreparedOrder(ctx, tx, tenantID, prepared, op)
-		if createErr != nil {
-			return createErr
-		}
-		// “待采购并审批”就是公司对本次采购的人工审批点。员工在该页面
-		// 确认后，建单、占用采购需求和进入已下单必须在同一事务内完成；
-		// 任一步失败都会整体回滚，不能留下页面看不见的半成品草稿。
-		if createErr = commitOrderRequirements(ctx, s.q.WithTx(tx), tenantID, head.ID); createErr != nil {
-			return createErr
-		}
-		head.Status = poOrdered
-		return nil
+		return createErr
 	})
 	if err != nil {
 		return store.CreatePurchaseOrderRow{}, err
@@ -519,32 +509,43 @@ func (s *Service) supplierForOrder(ctx context.Context, id int64) (Supplier, err
 	return supplier, nil
 }
 
-// SubmitOrder 收口历史草稿或导入草稿。当前主流程的人工审批已经在
-// “待采购并审批”页面完成，因此这里不再发起第二套审批，而是原子地把
-// 草稿转成已下单；该接口也用于恢复旧版本遗留的草稿。
+// SubmitOrder 将采购员确认完成的草稿提交给审批服务。
+// 提交只改变审批状态，不占用采购需求；只有审批通过后才正式计入已采购数量。
 func (s *Service) SubmitOrder(ctx context.Context, tenantID, id int64, op Operator) (string, int64, error) {
-	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
-		q := s.q.WithTx(tx)
-		head, lockErr := q.GetPurchaseOrderForUpdate(ctx, store.GetPurchaseOrderForUpdateParams{
-			TenantID: tenantID, ID: id,
-		})
-		if lockErr == pgx.ErrNoRows {
-			return apierr.NotFound("PO_ORDER_NOT_FOUND", "采购单不存在")
-		}
-		if lockErr != nil {
-			return lockErr
-		}
-		if head.Status != poDraft && head.Status != "REJECTED" {
-			return apierr.Conflict("PO_NOT_SUBMITTABLE", "只有历史草稿或已驳回采购单可以确认").
-				WithMeta("status", head.Status)
-		}
-		return commitOrderRequirements(ctx, q, tenantID, id)
+	head, err := s.GetOrder(ctx, tenantID, id)
+	if err != nil {
+		return "", 0, err
+	}
+	if head.Status != poDraft && head.Status != "REJECTED" {
+		return "", 0, apierr.Conflict("PO_NOT_SUBMITTABLE", "只有草稿或已驳回的采购单可以提交审批").
+			WithMeta("status", head.Status)
+	}
+	items, err := s.q.PurchaseOrderItems(ctx, store.PurchaseOrderItemsParams{
+		TenantID: tenantID, PoID: id,
 	})
 	if err != nil {
 		return "", 0, err
 	}
+	if len(items) == 0 {
+		return "", 0, apierr.Invalid("PO_LINES_REQUIRED", "采购单没有明细，无法提交")
+	}
+
+	instanceID, err := s.approvals.Submit(ctx, ApprovalSubmission{
+		BizType: BizTypePurchaseOrder, BizID: head.ID, BizNo: head.PoNo,
+		Summary:     orderSummary(head, items),
+		SubmitterID: op.ID, SubmitterName: op.Name,
+		Amount: head.TotalAmount,
+	})
+	if err != nil {
+		return "", 0, err
+	}
+	if err := s.q.SetPurchaseOrderSubmitted(ctx, store.SetPurchaseOrderSubmittedParams{
+		TenantID: tenantID, ID: id, InstanceID: instanceID,
+	}); err != nil {
+		return "", 0, err
+	}
 	s.nudge(ctx, tenantID)
-	return poOrdered, 0, nil
+	return poPending, instanceID, nil
 }
 
 // commitOrderRequirements 在采购单和全部采购需求均已锁定的事务中执行。
@@ -999,6 +1000,37 @@ func (s *Service) OrderItems(ctx context.Context, tenantID, poID int64) ([]store
 
 func (s *Service) OrderReceipts(ctx context.Context, tenantID, poID int64) ([]store.ListPurchaseReceiptsRow, error) {
 	return s.q.ListPurchaseReceipts(ctx, store.ListPurchaseReceiptsParams{TenantID: tenantID, PoID: poID})
+}
+
+// orderSummary 生成审批待办中使用的采购单只读摘要。
+// 审批人无需读取采购服务数据库，也能看到供应商、金额、交期和逐项采购内容。
+func orderSummary(head store.GetPurchaseOrderRow, items []store.PurchaseOrderItemsRow) string {
+	type line struct {
+		Product string `json:"product"`
+		Qty     string `json:"qty"`
+		Price   string `json:"price"`
+		Amount  string `json:"amount"`
+	}
+	body := struct {
+		Supplier string `json:"supplier"`
+		Currency string `json:"currency"`
+		Amount   string `json:"amount"`
+		Expected string `json:"expected_date"`
+		Lines    []line `json:"lines"`
+	}{
+		Supplier: head.SupplierName, Currency: head.Currency,
+		Amount: head.TotalAmount, Expected: head.ExpectedDate,
+	}
+	for _, item := range items {
+		body.Lines = append(body.Lines, line{
+			Product: item.ProductName, Qty: item.Qty, Price: item.UnitPrice, Amount: item.Amount,
+		})
+	}
+	out, err := json.Marshal(body)
+	if err != nil {
+		return ""
+	}
+	return string(out)
 }
 
 func orZero(v string) string {
