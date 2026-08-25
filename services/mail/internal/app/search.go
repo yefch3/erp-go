@@ -115,8 +115,8 @@ const searchBackfillBatch = 200
 // Idempotent, and safe to run on every start: it selects only rows that are
 // still empty and have a body to derive from. Once done, the query matches
 // nothing and costs one indexless-but-tiny scan per boot.
-func (s *Service) BackfillSearchText(ctx context.Context, cfg SyncConfig) {
-	cfg = cfg.withDefaults()
+// 不再收 SyncConfig：批大小是本文件的常量，公司名单现查，配置一项都不读。
+func (s *Service) BackfillSearchText(ctx context.Context) {
 	// 每家公司各补一遍。一家补不动就换下一家——backfillTenant 里的每条 return
 	// 都只结束当前这家，不该让别家的旧邮件跟着搜不到。
 	for _, tenantID := range s.tenantsToServe(ctx) {

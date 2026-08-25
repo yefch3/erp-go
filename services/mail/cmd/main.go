@@ -183,11 +183,11 @@ func run(log *slog.Logger) error {
 		go svc.RunFlagWriteback(ctx, syncCfg)
 		// Trash that clears itself, so "deleted" eventually means deleted
 		// without anybody having to remember to empty it.
-		go svc.RunTrashSweeper(ctx, syncCfg)
+		go svc.RunTrashSweeper(ctx)
 		// Mail stored before search_text existed has none. Derived here with
 		// the same function ingest uses rather than by a regexp in the
 		// migration, so old and new mail are searched by the same text.
-		go svc.BackfillSearchText(ctx, syncCfg)
+		go svc.BackfillSearchText(ctx)
 		// Received mail's pictures, fetched by us at delivery instead of by
 		// the reader's browser at reading time — so opening a mail stops
 		// being an event the sender observes. Its own loop for the same
