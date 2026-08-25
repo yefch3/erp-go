@@ -784,7 +784,7 @@ export default {
     statuses: {
       DRAFT: '草稿', PENDING_APPROVAL: '审批中', REJECTED: '已驳回',
       ORDERED: '已下单', PARTIALLY_RECEIVED: '部分到货',
-      RECEIVED: '已到货', CANCELLED: '已取消',
+      RECEIVED: '已到货', CANCELLED: '已作废', HISTORY: '历史记录',
     },
   },
   outbounds: {

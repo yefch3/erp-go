@@ -76,6 +76,7 @@ type CostScenario struct {
 	CreatedAt           pgtype.Timestamptz
 	UpdatedAt           pgtype.Timestamptz
 	ConfirmReason       string
+	VersionNo           int32
 }
 
 type CostScenarioLine struct {

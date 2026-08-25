@@ -95,7 +95,7 @@
             </template>
           </el-table-column>
           <el-table-column :label="t('requirements.qty')" width="140" align="right">
-            <template #default="{ row }"><span class="qty">{{ trimQty(row.requiredQty) }}</span> {{ row.uomCode }}</template>
+            <template #default="{ row }"><span class="qty">{{ trimQty(row.availableQty) }}</span> {{ row.uomCode }}</template>
           </el-table-column>
           <el-table-column :label="t('requirements.quoteSummary')" min-width="230">
             <template #default="{ row }">
@@ -274,6 +274,8 @@ interface Requirement {
   uomCode: string
   requiredQty: string
   orderedQty: string
+  reservedQty: string
+  availableQty: string
   requiredDate: string
   source: string
   status: string
@@ -421,6 +423,7 @@ async function load() {
     )
     const seen = new Set<string>()
     rows.value = [...(pending.requirements ?? []), ...(partial.requirements ?? [])]
+      .filter((line) => Number(line.availableQty ?? 0) > 0)
       .filter((line) => {
         if (seen.has(line.id)) return false
         seen.add(line.id)
@@ -506,7 +509,7 @@ async function confirmClose() {
 // Only lines with something still unbought can go onto an order.
 function isOrderable(row: Requirement): boolean {
   if (row.status !== 'PENDING' && row.status !== 'PARTIALLY_ORDERED') return false
-  return Number(row.requiredQty ?? 0) - Number(row.orderedQty ?? 0) > 0
+  return Number(row.availableQty ?? 0) > 0
 }
 
 function canReopen(row: Requirement): boolean {

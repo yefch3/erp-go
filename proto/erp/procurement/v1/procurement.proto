@@ -283,6 +283,7 @@ message CostScenario {
   string created_by_name = 20; string confirmed_by_name = 21; string confirmed_at = 22; string created_at = 23;
   repeated CostCharge charges = 24; repeated CostScenarioLine lines = 25;
   string confirm_reason = 26;
+  int32 version_no = 27;
 }
 message CreateCostScenarioRequest {
   int64 case_id = 1; string currency = 2; string allocation_basis = 3;
@@ -444,6 +445,10 @@ message Requirement {
   string source_unit_price = 39;
   string moq = 40;
   string lead_time = 41;
+  // 草稿、被驳回待修改和审批中的采购单会预占需求，但尚不算正式下单。
+  string reserved_qty = 42;
+  // 当前还能建立采购单的数量：需求 - 已下单 - 草稿预占。
+  string available_qty = 43;
 }
 
 message ListRequirementsRequest {
@@ -1034,9 +1039,7 @@ message ResolveInspectionResponse { PurchaseInspection inspection = 1; }
 
 message CloseOrderRequest {
   int64 id = 1;
-  // 没收到的那部分怎么办。全部收齐时留空；没收齐时必须选：
-  //   REORDER  放回待采购清单，另找工厂
-  //   DROPPED  不要了
+  // 没收到的那部分怎么办。全部收齐时留空；没收齐时选择 REORDER（放回待采购）或 DROPPED（不再采购）。
   string shortfall_action = 2;
   // 为什么这么定。没收齐时必填。
   string close_note = 3;

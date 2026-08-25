@@ -782,7 +782,7 @@ export default {
     statuses: {
       DRAFT: 'Borrador', PENDING_APPROVAL: 'En aprobación', REJECTED: 'Rechazada',
       ORDERED: 'Emitida', PARTIALLY_RECEIVED: 'Entrega parcial',
-      RECEIVED: 'Entregada', CANCELLED: 'Anulada',
+      RECEIVED: 'Entregada', CANCELLED: 'Anulada', HISTORY: 'Historial',
     },
   },
   outbounds: {

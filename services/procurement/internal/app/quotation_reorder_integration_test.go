@@ -94,6 +94,21 @@ func TestQuotationSourcedReorder(t *testing.T) {
 	if ordered, status := requirementState(reqA); ordered != "0.0000" || status != "PENDING" {
 		t.Fatalf("草稿不能占用采购需求，实际 已下单 %s 状态 %s", ordered, status)
 	}
+	// 草稿不算正式下单，但会预占数量；待采购只能继续展示真正还能制单的 20 吨。
+	listed, _, err := svc.ListRequirements(ctx, tenantID, RequirementFilter{Status: "PENDING"}, 1, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reserved, available string
+	for _, requirement := range listed {
+		if requirement.ID == reqA {
+			reserved, available = requirement.ReservedQty, requirement.AvailableQty
+			break
+		}
+	}
+	if reserved != "80.0000" || available != "20.0000" {
+		t.Fatalf("草稿预占后应剩 20 可制单，实际预占 %s / 可用 %s", reserved, available)
+	}
 	approve(firstA.ID)
 	if ordered, status := requirementState(reqA); ordered != "80.0000" || status != "PARTIALLY_ORDERED" {
 		t.Fatalf("订了 80 之后需求该剩 20 可买，实际 已下单 %s 状态 %s", ordered, status)

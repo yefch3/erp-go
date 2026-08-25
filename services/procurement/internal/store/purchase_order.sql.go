@@ -633,7 +633,17 @@ WHERE o.tenant_id = $1::bigint
   -- Data scope: an order is visible when the caller's range covers its
   -- buyer. scope_all short-circuits so administrators never pay for a list.
   AND ($2::bool OR o.buyer_id = ANY($3::bigint[]))
-  AND ($4::text = '' OR o.status = $4::text)
+  -- 列表页把“当前工作”和“历史留档”分开：
+  -- 已到货只保留尚待结案的采购单；已结案与已作废统一进入历史记录。
+  AND (
+       $4::text = ''
+       OR ($4::text = 'RECEIVED_OPEN'
+           AND o.status = 'RECEIVED' AND o.closed_at IS NULL)
+       OR ($4::text = 'HISTORY'
+           AND (o.status = 'CANCELLED' OR o.closed_at IS NOT NULL))
+       OR ($4::text NOT IN ('RECEIVED_OPEN', 'HISTORY')
+           AND o.status = $4::text AND o.closed_at IS NULL)
+  )
   -- 待正式发单：批下来了、还没发给供应商。工作台的行动数字（B4），
   -- 用列表自己的围栏，不另起一套统计。
   AND ($5::bool = false
