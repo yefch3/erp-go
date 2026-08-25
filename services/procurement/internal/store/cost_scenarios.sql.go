@@ -96,7 +96,7 @@ const acceptedQuotationScenario = `-- name: AcceptedQuotationScenario :one
 SELECT id, case_id, scenario_no, currency
 FROM cost_scenarios
 WHERE tenant_id=$1 AND customer_quotation_id=$2
-  AND status='CUSTOMER_QUOTE_CREATED'
+  AND status='CONFIRMED'
 `
 
 type AcceptedQuotationScenarioParams struct {
@@ -536,9 +536,28 @@ func (q *Queries) GetCostScenario(ctx context.Context, arg GetCostScenarioParams
 	return i, err
 }
 
+const hasAcceptedQuotationRequirements = `-- name: HasAcceptedQuotationRequirements :one
+SELECT EXISTS (
+  SELECT 1 FROM purchase_requirements
+  WHERE tenant_id=$1 AND sourcing_case_id=$2
+) AS has_accepted
+`
+
+type HasAcceptedQuotationRequirementsParams struct {
+	TenantID int64
+	CaseID   int64
+}
+
+func (q *Queries) HasAcceptedQuotationRequirements(ctx context.Context, arg HasAcceptedQuotationRequirementsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasAcceptedQuotationRequirements, arg.TenantID, arg.CaseID)
+	var has_accepted bool
+	err := row.Scan(&has_accepted)
+	return has_accepted, err
+}
+
 const linkCustomerQuotation = `-- name: LinkCustomerQuotation :execrows
 UPDATE cost_scenarios
-SET customer_quotation_id=$3,customer_quote_no=$4,status='CUSTOMER_QUOTE_CREATED',updated_at=now()
+SET customer_quotation_id=$3,customer_quote_no=$4,updated_at=now()
 WHERE tenant_id=$1 AND id=$2 AND status='CONFIRMED' AND customer_quotation_id IS NULL
 `
 
@@ -843,10 +862,29 @@ func (q *Queries) MarkSourcingCaseQuoted(ctx context.Context, arg MarkSourcingCa
 	return err
 }
 
+const returnRejectedQuotationCaseToCosting = `-- name: ReturnRejectedQuotationCaseToCosting :execrows
+UPDATE sourcing_cases SET status='COSTING',updated_at=now()
+WHERE tenant_id=$1 AND id=$2
+  AND status='CUSTOMER_QUOTE_CREATED'
+`
+
+type ReturnRejectedQuotationCaseToCostingParams struct {
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) ReturnRejectedQuotationCaseToCosting(ctx context.Context, arg ReturnRejectedQuotationCaseToCostingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, returnRejectedQuotationCaseToCosting, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const supersedeOtherCostScenarios = `-- name: SupersedeOtherCostScenarios :exec
 UPDATE cost_scenarios SET status='SUPERSEDED',updated_at=now()
 WHERE tenant_id=$1 AND case_id=$2 AND id<>$3
-  AND status IN ('CONFIRMED','CUSTOMER_QUOTE_CREATED')
+  AND status='CONFIRMED' AND customer_quotation_id IS NULL
 `
 
 type SupersedeOtherCostScenariosParams struct {
@@ -858,4 +896,24 @@ type SupersedeOtherCostScenariosParams struct {
 func (q *Queries) SupersedeOtherCostScenarios(ctx context.Context, arg SupersedeOtherCostScenariosParams) error {
 	_, err := q.db.Exec(ctx, supersedeOtherCostScenarios, arg.TenantID, arg.CaseID, arg.ID)
 	return err
+}
+
+const supersedeRejectedQuotationScenario = `-- name: SupersedeRejectedQuotationScenario :execrows
+UPDATE cost_scenarios SET status='SUPERSEDED',updated_at=now()
+WHERE tenant_id=$1 AND id=$2
+  AND customer_quotation_id=$3 AND status='CONFIRMED'
+`
+
+type SupersedeRejectedQuotationScenarioParams struct {
+	TenantID    int64
+	ID          int64
+	QuotationID *int64
+}
+
+func (q *Queries) SupersedeRejectedQuotationScenario(ctx context.Context, arg SupersedeRejectedQuotationScenarioParams) (int64, error) {
+	result, err := q.db.Exec(ctx, supersedeRejectedQuotationScenario, arg.TenantID, arg.ID, arg.QuotationID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

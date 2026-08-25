@@ -64,11 +64,11 @@ func (s *Service) setStatus(ctx context.Context, tenantID, id, operatorID int64,
 		if setErr != nil {
 			return setErr
 		}
-		if to != "ACCEPTED" {
+		if to != "ACCEPTED" && to != "REJECTED" {
 			return nil
 		}
-		// 客户接受报价是采购“待下单”的唯一入口。事件与状态在同一事务提交，
-		// 避免状态已接受但采购任务丢失，或重复点击生成两次任务。
+		// 客户接受或拒绝都要回到采购链路：接受生成待下单，拒绝让旧成本版本失效。
+		// 事件与状态在同一事务提交，避免报价状态已改变但采购侧没有收到结果。
 		payload, marshalErr := json.Marshal(map[string]any{
 			"quotation_id":     id,
 			"quotation_no":     current.QuoteNo,
@@ -80,9 +80,13 @@ func (s *Service) setStatus(ctx context.Context, tenantID, id, operatorID int64,
 		if marshalErr != nil {
 			return marshalErr
 		}
+		eventType := "QuotationAccepted"
+		if to == "REJECTED" {
+			eventType = "QuotationRejected"
+		}
 		return outbox.Append(ctx, tx, outbox.Event{
 			TenantID: tenantID, AggregateType: "quotation",
-			AggregateID: strconv.FormatInt(id, 10), EventType: "QuotationAccepted",
+			AggregateID: strconv.FormatInt(id, 10), EventType: eventType,
 			Payload: payload,
 		})
 	})

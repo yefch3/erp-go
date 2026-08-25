@@ -13,12 +13,21 @@ import (
 const (
 	eventContractEffective = "ContractEffective"
 	eventQuotationAccepted = "QuotationAccepted"
+	eventQuotationRejected = "QuotationRejected"
 )
 
 // ContractEvents raises the full purchase quantity from an effective customer
 // contract. Inventory allocation is intentionally not consulted.
 func ContractEvents(svc *app.Service, log *slog.Logger) kafkax.Handler {
 	return func(ctx context.Context, e kafkax.Envelope) error {
+		if e.EventType == eventQuotationRejected {
+			var rejected app.QuotationRejected
+			if err := json.Unmarshal(e.Payload, &rejected); err != nil {
+				log.Error("rejected quotation event: unreadable payload, skipping", "event_id", e.EventID, "err", err)
+				return nil
+			}
+			return svc.ReturnRejectedQuotationToCosting(ctx, e.TenantID, rejected, log)
+		}
 		if e.EventType == eventQuotationAccepted {
 			var accepted app.QuotationAccepted
 			if err := json.Unmarshal(e.Payload, &accepted); err != nil {

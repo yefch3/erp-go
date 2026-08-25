@@ -67,7 +67,7 @@ func (s *Service) CreateCostScenario(ctx context.Context, tenantID int64, in New
 	if err != nil {
 		return CostScenarioView{}, apierr.NotFound("SC_CASE_NOT_FOUND", "询价案件不存在")
 	}
-	if caseRow.Status != "QUOTES_RECEIVED" && caseRow.Status != "COSTING" && caseRow.Status != "CUSTOMER_QUOTE_CREATED" {
+	if caseRow.Status != "QUOTES_RECEIVED" && caseRow.Status != "COSTING" {
 		return CostScenarioView{}, apierr.Conflict("SC_QUOTES_REQUIRED", "请先收齐供应商报价")
 	}
 	expected, err := s.q.CountConfirmedSourcingLines(ctx, store.CountConfirmedSourcingLinesParams{TenantID: tenantID, CaseID: in.CaseID})
@@ -256,6 +256,13 @@ func (s *Service) ConfirmCostScenario(ctx context.Context, tenantID, id int64, r
 	if current.Header.Status != "DRAFT" {
 		return CostScenarioView{}, apierr.Conflict("SC_COST_NOT_DRAFT", "只有草稿成本方案可以确认")
 	}
+	caseRow, e := s.q.CostScenarioCase(ctx, store.CostScenarioCaseParams{TenantID: tenantID, ID: current.Header.CaseID})
+	if e != nil {
+		return CostScenarioView{}, e
+	}
+	if caseRow.Status != "QUOTES_RECEIVED" && caseRow.Status != "COSTING" {
+		return CostScenarioView{}, apierr.Conflict("SC_COST_QUOTE_ACTIVE", "当前已有客户报价在处理；只有客户明确拒绝后才能确认新成本版本")
+	}
 	e = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		if e := q.SupersedeOtherCostScenarios(ctx, store.SupersedeOtherCostScenariosParams{TenantID: tenantID, CaseID: current.Header.CaseID, ID: id}); e != nil {
@@ -294,7 +301,7 @@ func (s *Service) PrepareCustomerQuotation(ctx context.Context, tenantID, id int
 	if e != nil {
 		return CustomerQuotationDraft{}, e
 	}
-	if v.Header.Status != "CONFIRMED" && v.Header.Status != "CUSTOMER_QUOTE_CREATED" {
+	if v.Header.Status != "CONFIRMED" {
 		return CustomerQuotationDraft{}, apierr.Conflict("SC_COST_NOT_CONFIRMED", "请先确认成本方案")
 	}
 	c, e := s.q.CostScenarioCase(ctx, store.CostScenarioCaseParams{TenantID: tenantID, ID: v.Header.CaseID})
@@ -308,7 +315,7 @@ func (s *Service) PrepareCustomerQuotation(ctx context.Context, tenantID, id int
 	return CustomerQuotationDraft{Scenario: v.Header, Case: c, Terms: t, Lines: v.Lines}, nil
 }
 
-// LinkCustomerQuotation 把已创建的客户报价关联回成本版本，并推进为已生成客户报价状态。
+// LinkCustomerQuotation 把已创建的客户报价关联回成本版本；成本状态与客户报价状态各自维护。
 func (s *Service) LinkCustomerQuotation(ctx context.Context, tenantID, id, quotationID int64, quoteNo string) error {
 	v, e := s.GetCostScenario(ctx, tenantID, id)
 	if e != nil {

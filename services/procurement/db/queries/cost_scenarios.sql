@@ -95,14 +95,14 @@ UPDATE cost_scenarios SET status='CONFIRMED',confirmed_by=sqlc.arg(confirmed_by)
 -- name: SupersedeOtherCostScenarios :exec
 UPDATE cost_scenarios SET status='SUPERSEDED',updated_at=now()
 WHERE tenant_id=$1 AND case_id=$2 AND id<>$3
-  AND status IN ('CONFIRMED','CUSTOMER_QUOTE_CREATED');
+  AND status='CONFIRMED' AND customer_quotation_id IS NULL;
 
 -- name: MarkSourcingCaseCosting :exec
 UPDATE sourcing_cases SET status='COSTING',updated_at=now() WHERE tenant_id=$1 AND id=$2;
 
 -- name: LinkCustomerQuotation :execrows
 UPDATE cost_scenarios
-SET customer_quotation_id=$3,customer_quote_no=$4,status='CUSTOMER_QUOTE_CREATED',updated_at=now()
+SET customer_quotation_id=$3,customer_quote_no=$4,updated_at=now()
 WHERE tenant_id=$1 AND id=$2 AND status='CONFIRMED' AND customer_quotation_id IS NULL;
 
 -- name: MarkSourcingCaseQuoted :exec
@@ -112,7 +112,23 @@ UPDATE sourcing_cases SET status='CUSTOMER_QUOTE_CREATED',updated_at=now() WHERE
 SELECT id, case_id, scenario_no, currency
 FROM cost_scenarios
 WHERE tenant_id=sqlc.arg(tenant_id) AND customer_quotation_id=sqlc.arg(quotation_id)
+  AND status='CONFIRMED';
+
+-- name: SupersedeRejectedQuotationScenario :execrows
+UPDATE cost_scenarios SET status='SUPERSEDED',updated_at=now()
+WHERE tenant_id=sqlc.arg(tenant_id) AND id=sqlc.arg(id)
+  AND customer_quotation_id=sqlc.arg(quotation_id) AND status='CONFIRMED';
+
+-- name: ReturnRejectedQuotationCaseToCosting :execrows
+UPDATE sourcing_cases SET status='COSTING',updated_at=now()
+WHERE tenant_id=sqlc.arg(tenant_id) AND id=sqlc.arg(id)
   AND status='CUSTOMER_QUOTE_CREATED';
+
+-- name: HasAcceptedQuotationRequirements :one
+SELECT EXISTS (
+  SELECT 1 FROM purchase_requirements
+  WHERE tenant_id=sqlc.arg(tenant_id) AND sourcing_case_id=sqlc.arg(case_id)
+) AS has_accepted;
 
 -- name: AcceptedQuotationLines :many
 SELECT cl.sourcing_line_id, cl.supplier_quote_line_id,

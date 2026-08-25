@@ -21,6 +21,61 @@ type QuotationAccepted struct {
 	SourcingCaseID int64  `json:"sourcing_case_id"`
 }
 
+// QuotationRejected 是客户拒绝报价时传回采购的不可变来源标识。
+// 字段与接受事件保持一致，便于采购准确定位原成本版本和询价项目。
+type QuotationRejected QuotationAccepted
+
+// ReturnRejectedQuotationToCosting 只让被客户明确拒绝的成本版本失效，并将原询价项目退回成本测算。
+// 重复消费同一个事件不会影响其他版本，也不会把等待中或已接受的报价误判为失效。
+func (s *Service) ReturnRejectedQuotationToCosting(
+	ctx context.Context,
+	tenantID int64,
+	e QuotationRejected,
+	log *slog.Logger,
+) error {
+	if e.QuotationID == 0 || e.CostScenarioID == 0 || e.SourcingCaseID == 0 {
+		log.Warn("rejected quotation has incomplete sourcing trace; cost scenario unchanged",
+			"quotation_id", e.QuotationID, "scenario_id", e.CostScenarioID, "case_id", e.SourcingCaseID)
+		return nil
+	}
+	changed := false
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		hasAccepted, err := q.HasAcceptedQuotationRequirements(ctx, store.HasAcceptedQuotationRequirementsParams{
+			TenantID: tenantID, CaseID: e.SourcingCaseID,
+		})
+		if err != nil {
+			return err
+		}
+		n, err := q.SupersedeRejectedQuotationScenario(ctx, store.SupersedeRejectedQuotationScenarioParams{
+			TenantID: tenantID, ID: e.CostScenarioID, QuotationID: &e.QuotationID,
+		})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return nil
+		}
+		changed = true
+		if hasAccepted {
+			return nil
+		}
+		_, err = q.ReturnRejectedQuotationCaseToCosting(ctx, store.ReturnRejectedQuotationCaseToCostingParams{
+			TenantID: tenantID, ID: e.SourcingCaseID,
+		})
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if changed {
+		s.nudge(ctx, tenantID)
+		log.Info("rejected quotation cost scenario superseded",
+			"quotation_id", e.QuotationID, "scenario_id", e.CostScenarioID, "case_id", e.SourcingCaseID)
+	}
+	return nil
+}
+
 // RequirementsFromAcceptedQuotation 把已接受报价按确认成本方案转成待下单明细。
 // 每条明细锁定当时选中的供应商报价；工厂允许为空，内部产品也允许为 0。
 func (s *Service) RequirementsFromAcceptedQuotation(
