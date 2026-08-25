@@ -144,3 +144,85 @@ func TestRescueDoesNotLeaveTheMailTwice(t *testing.T) {
 	}
 	_ = pgx.ErrNoRows // 让导入名副其实：上面的行为全依赖它被正确区分
 }
+
+// 宿主侧的两扇门，方向相反，合并语义必须都对。
+//
+// 门一：在网页端点「不是垃圾」——对账发现信离开垃圾箱、在收件箱找到它。
+// 门二：在网页端「标记为垃圾」——对账发现信离开收件箱、在垃圾箱找到它。
+// 两扇门都由 mergeRepoint 收尾；这里钉的是**两个方向**都保旧行、清副本，
+// 而不只是 #219 修的 ERP 内那扇。
+func TestWebmailMovesMergeInBothDirections(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	tenantID := time.Now().UnixNano()
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM email_inbound WHERE tenant_id=$1", tenantID)
+	}()
+	put := func(folder string, uid int64, messageID string, read bool) int64 {
+		t.Helper()
+		var id int64
+		if err := pool.QueryRow(ctx, `INSERT INTO email_inbound
+			(tenant_id, account_id, owner_id, folder, imap_uid, message_id, thread_key,
+			 from_email, from_name, subject, body_text, is_read, sent_at)
+			VALUES ($1,1,801,$2,$3,$4,'t-'||$4,'x@example.com','X','s','b',$5,now())
+			RETURNING id`, tenantID, folder, uid, messageID, read).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	svc := New(pool, Deps{}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	// 门一：垃圾箱行（已读）+ 收件箱抢先落库的副本 → 合并进 INBOX。
+	m1 := fmt.Sprintf("<web-rescue-%d@x>", tenantID)
+	oldA := put("JUNK", 10, m1, true)
+	put("INBOX", 11, m1, false)
+	if err := svc.mergeRepoint(ctx, tenantID, 1, "JUNK", 10, "INBOX", 11, m1); err != nil {
+		t.Fatalf("门一合并失败：%v", err)
+	}
+
+	// 门二：收件箱行（已读）+ 垃圾箱抢先落库的副本 → 合并进 JUNK。
+	m2 := fmt.Sprintf("<web-spam-%d@x>", tenantID)
+	oldB := put("INBOX", 20, m2, true)
+	put("JUNK", 21, m2, false)
+	if err := svc.mergeRepoint(ctx, tenantID, 1, "INBOX", 20, "JUNK", 21, m2); err != nil {
+		t.Fatalf("门二合并失败：%v", err)
+	}
+
+	for _, tc := range []struct {
+		id     int64
+		folder string
+		uid    int64
+		mid    string
+	}{{oldA, "INBOX", 11, m1}, {oldB, "JUNK", 21, m2}} {
+		var folder string
+		var uid int64
+		var read bool
+		if err := pool.QueryRow(ctx,
+			"SELECT folder, imap_uid, is_read FROM email_inbound WHERE id=$1", tc.id).
+			Scan(&folder, &uid, &read); err != nil {
+			t.Fatalf("旧行 %d 没了：%v", tc.id, err)
+		}
+		if folder != tc.folder || uid != tc.uid || !read {
+			t.Fatalf("旧行 %d 该带着已读状态坐到 %s/%d，实际 %s/%d read=%v",
+				tc.id, tc.folder, tc.uid, folder, uid, read)
+		}
+		var n int
+		if err := pool.QueryRow(ctx,
+			"SELECT count(*) FROM email_inbound WHERE tenant_id=$1 AND message_id=$2",
+			tenantID, tc.mid).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Fatalf("%s 合并后仍有 %d 行", tc.mid, n)
+		}
+	}
+}
