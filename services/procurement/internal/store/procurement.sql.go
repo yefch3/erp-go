@@ -341,6 +341,8 @@ SELECT
     product_code, product_name, spec, uom_id, uom_code,
     required_qty::text AS required_qty,
     ordered_qty::text  AS ordered_qty,
+    draft.reserved_qty::text AS reserved_qty,
+    greatest(required_qty - ordered_qty - draft.reserved_qty, 0)::text AS available_qty,
     received_qty::text AS received_qty,
     coalesce(required_date::text, '')::text AS required_date,
     source, status, closed_reason, created_at,
@@ -353,6 +355,14 @@ SELECT
     coalesce(moq::text,'')::text AS moq, lead_time,
     count(*) OVER () AS total
 FROM purchase_requirements
+LEFT JOIN LATERAL (
+    SELECT coalesce(sum(i.qty), 0) AS reserved_qty
+    FROM purchase_order_items i
+    JOIN purchase_orders o ON o.id = i.po_id AND o.tenant_id = i.tenant_id
+    WHERE i.tenant_id = purchase_requirements.tenant_id
+      AND i.requirement_id = purchase_requirements.id
+      AND o.status IN ('DRAFT', 'REJECTED', 'PENDING_APPROVAL')
+) draft ON true
 WHERE tenant_id = $1::bigint
   -- 数据范围（A1）：属主是合同负责人（手工需求是创建人）。owner_id=0 的
   -- 历史行只有 scope_all 能看见——fail-closed，错也只错在看不见。
@@ -400,6 +410,8 @@ type ListRequirementsRow struct {
 	UomCode             string
 	RequiredQty         string
 	OrderedQty          string
+	ReservedQty         string
+	AvailableQty        string
 	ReceivedQty         string
 	RequiredDate        string
 	Source              string
@@ -463,6 +475,8 @@ func (q *Queries) ListRequirements(ctx context.Context, arg ListRequirementsPara
 			&i.UomCode,
 			&i.RequiredQty,
 			&i.OrderedQty,
+			&i.ReservedQty,
+			&i.AvailableQty,
 			&i.ReceivedQty,
 			&i.RequiredDate,
 			&i.Source,

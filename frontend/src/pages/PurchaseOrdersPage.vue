@@ -631,6 +631,8 @@ interface Requirement {
   uomCode: string
   requiredQty: string
   orderedQty: string
+  reservedQty: string
+  availableQty: string
   requiredDate: string
   source: string
   quotationId: string
@@ -952,7 +954,9 @@ function reload() {
 }
 
 function openOf(r: Requirement): string {
-  return String(Number(r.requiredQty ?? 0) - Number(r.orderedQty ?? 0))
+  // 编辑已有草稿时要把该草稿自己的数量留给员工修改；新建采购单才扣除所有草稿预占。
+  if (editing.value) return String(Number(r.requiredQty ?? 0) - Number(r.orderedQty ?? 0))
+  return r.availableQty ?? String(Number(r.requiredQty ?? 0) - Number(r.orderedQty ?? 0))
 }
 
 async function openCreate(preselect?: string[]) {
@@ -988,6 +992,7 @@ async function openCreate(preselect?: string[]) {
     status: 'PARTIALLY_ORDERED', page_size: 200,
   })
   pending.value = [...(reqs.requirements ?? []), ...(partial.requirements ?? [])]
+    .filter((r) => Number(r.availableQty ?? 0) > 0)
   suppliers.value = sups.suppliers ?? []
   deliveryPorts.value = ports.ports ?? []
   warehouses.value = whs.warehouses ?? []
@@ -999,7 +1004,7 @@ async function openCreate(preselect?: string[]) {
     // 从待采购审批进入时严格只显示员工勾选的产品，避免其它待采购行混入本次审批。
     pending.value = pending.value.filter((r) => wanted.has(String(r.id)))
     pending.value.forEach((r) => {
-      qtyOf[r.id] = String(Number(r.requiredQty) - Number(r.orderedQty))
+      qtyOf[r.id] = openOf(r)
       if (r.source === 'CUSTOMER_QUOTATION') {
         form.supplierId = Number(r.supplierId)
         form.currency = r.sourceCurrency || 'USD'
