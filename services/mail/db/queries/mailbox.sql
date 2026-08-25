@@ -1179,3 +1179,13 @@ ORDER BY 1, 2, 3;
 -- 故障就是有人忘了开，然后邮件安静地堆在队列里没人发。绑了邮箱就该被服务，
 -- 不该再有第二个开关。
 SELECT DISTINCT tenant_id FROM mail_accounts WHERE is_active ORDER BY tenant_id;
+
+-- name: GetInboundByFolderUID :one
+-- 挪信收尾（repoint）先问一句：目的位置是不是已经被人占了。占位的几乎总是
+-- 同一封信——IDLE 推送让同步抢在收尾之前把挪过去的信当新邮件下载了一遍。
+SELECT id, owner_id, raw_key, message_id
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder = sqlc.arg(folder)::text
+  AND imap_uid = sqlc.arg(imap_uid)::bigint;

@@ -636,6 +636,48 @@ func (q *Queries) GetInbound(ctx context.Context, arg GetInboundParams) (GetInbo
 	return i, err
 }
 
+const getInboundByFolderUID = `-- name: GetInboundByFolderUID :one
+SELECT id, owner_id, raw_key, message_id
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND account_id = $2::bigint
+  AND folder = $3::text
+  AND imap_uid = $4::bigint
+`
+
+type GetInboundByFolderUIDParams struct {
+	TenantID  int64
+	AccountID int64
+	Folder    string
+	ImapUid   int64
+}
+
+type GetInboundByFolderUIDRow struct {
+	ID        int64
+	OwnerID   int64
+	RawKey    string
+	MessageID string
+}
+
+// 挪信收尾（repoint）先问一句：目的位置是不是已经被人占了。占位的几乎总是
+// 同一封信——IDLE 推送让同步抢在收尾之前把挪过去的信当新邮件下载了一遍。
+func (q *Queries) GetInboundByFolderUID(ctx context.Context, arg GetInboundByFolderUIDParams) (GetInboundByFolderUIDRow, error) {
+	row := q.db.QueryRow(ctx, getInboundByFolderUID,
+		arg.TenantID,
+		arg.AccountID,
+		arg.Folder,
+		arg.ImapUid,
+	)
+	var i GetInboundByFolderUIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.RawKey,
+		&i.MessageID,
+	)
+	return i, err
+}
+
 const getInboundForCompose = `-- name: GetInboundForCompose :one
 SELECT id, owner_id, message_id, references_ids, thread_key, raw_key, subject
 FROM email_inbound
