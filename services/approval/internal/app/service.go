@@ -22,6 +22,9 @@ import (
 // the iam gRPC client; the engine never reads iam's tables.
 type Directory interface {
 	RoleMembers(ctx context.Context, roleID int64) ([]int64, error)
+	// RoleMembersByCode is the same question asked portably: a role id names
+	// one company's role, a role code names each company's own.
+	RoleMembersByCode(ctx context.Context, roleCode string) ([]int64, error)
 	// ManagersOf walks the submitter's reporting line: level 1 is their
 	// direct manager, 2 is that person's manager. Empty once it runs out.
 	ManagersOf(ctx context.Context, employeeID int64, levels int32) ([]int64, error)
@@ -34,17 +37,17 @@ type Live interface {
 }
 
 type Service struct {
-	pool                        *pgxpool.Pool
-	q                           *store.Queries
-	dir                         Directory
-	live                        Live
-	purchaseOrderFallbackRoleID int64
+	pool                          *pgxpool.Pool
+	q                             *store.Queries
+	dir                           Directory
+	live                          Live
+	purchaseOrderFallbackRoleCode string
 }
 
-func New(pool *pgxpool.Pool, dir Directory, live Live, purchaseOrderFallbackRoleID int64) *Service {
+func New(pool *pgxpool.Pool, dir Directory, live Live, purchaseOrderFallbackRoleCode string) *Service {
 	return &Service{
 		pool: pool, q: store.New(pool), dir: dir, live: live,
-		purchaseOrderFallbackRoleID: purchaseOrderFallbackRoleID,
+		purchaseOrderFallbackRoleCode: purchaseOrderFallbackRoleCode,
 	}
 }
 
@@ -158,15 +161,18 @@ func (s *Service) Submit(ctx context.Context, tenantID int64, in SubmitInput) (s
 	// 采购单会形成真实的付款承诺。组织架构没有上级时，转交配置的
 	// 采购审批角色，仍然生成待办，不能自动通过或停在草稿之外。
 	if firstNode == nil && usesPurchaseOrderFallback(in.BizType) {
-		fallback, err := s.dir.RoleMembers(ctx, s.purchaseOrderFallbackRoleID)
+		fallback, err := s.dir.RoleMembersByCode(ctx, s.purchaseOrderFallbackRoleCode)
 		if err != nil {
-			return store.ApprovalInstance{}, nil, fmt.Errorf("approval: resolve purchase fallback role %d: %w", s.purchaseOrderFallbackRoleID, err)
+			return store.ApprovalInstance{}, nil, fmt.Errorf("approval: resolve purchase fallback role %s: %w", s.purchaseOrderFallbackRoleCode, err)
 		}
 		fallback = preferOtherApprovers(fallback, in.SubmitterID)
 		if len(fallback) == 0 {
+			// 话要能照着做。原来只说「请先配置采购审批角色成员」，而第二家
+			// 公司连这个角色都还没有——照着做不了的提示等于没有提示。
 			return store.ApprovalInstance{}, nil, apierr.Invalid(
-				"AP_APPROVER_REQUIRED", "采购单没有可用审批人，请先配置采购审批角色成员",
-			)
+				"AP_APPROVER_REQUIRED",
+				"采购单没有可用审批人：请在角色管理里创建编码为 "+s.purchaseOrderFallbackRoleCode+" 的角色并添加成员",
+			).WithMeta("role_code", s.purchaseOrderFallbackRoleCode)
 		}
 		node := nodes[0]
 		node.Name = "采购审批人审批"

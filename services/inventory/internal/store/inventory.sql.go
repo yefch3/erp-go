@@ -156,6 +156,20 @@ func (q *Queries) AppendLedger(ctx context.Context, arg AppendLedgerParams) erro
 	return err
 }
 
+const countWarehouses = `-- name: CountWarehouses :one
+
+SELECT count(*)::bigint FROM warehouses WHERE tenant_id = $1
+`
+
+// 下面两条只服务「第一次真的要用仓库时补一个默认仓库」，见 app/warehouseseed.go。
+// 任何状态都算：一条都没有 ≠ 有但都停用了。
+func (q *Queries) CountWarehouses(ctx context.Context, tenantID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countWarehouses, tenantID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createReservation = `-- name: CreateReservation :one
 INSERT INTO stock_reservations (
     tenant_id, ref_type, ref_id, ref_line_id, ref_no,
@@ -563,6 +577,31 @@ func (q *Queries) GetWarehouseSettings(ctx context.Context, tenantID int64) (Get
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const insertWarehouseIfAbsent = `-- name: InsertWarehouseIfAbsent :execrows
+INSERT INTO warehouses (tenant_id, code, name, wh_type) VALUES ($1, $2, $3, $4)
+ON CONFLICT (tenant_id, code) DO NOTHING
+`
+
+type InsertWarehouseIfAbsentParams struct {
+	TenantID int64
+	Code     string
+	Name     string
+	WhType   string
+}
+
+func (q *Queries) InsertWarehouseIfAbsent(ctx context.Context, arg InsertWarehouseIfAbsentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertWarehouseIfAbsent,
+		arg.TenantID,
+		arg.Code,
+		arg.Name,
+		arg.WhType,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const listActiveReservationsFor = `-- name: ListActiveReservationsFor :many

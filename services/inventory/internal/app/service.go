@@ -38,6 +38,18 @@ func New(pool *pgxpool.Pool, numbering Numbering) *Service {
 }
 
 func (s *Service) ListWarehouses(ctx context.Context, tenantID int64, includeInactive bool) ([]store.ListWarehousesRow, error) {
+	rows, err := s.q.ListWarehouses(ctx, store.ListWarehousesParams{
+		TenantID: tenantID, IncludeInactive: includeInactive,
+	})
+	if err != nil || len(rows) > 0 {
+		return rows, err
+	}
+	// 空 ≠ 该空：也可能只是这家公司还没被播过种。见 warehouseseed.go——补种
+	// 放在这里而不是开户时，是为了让不囤货的贸易公司永远不会凭空多出一个
+	// 它根本没有的仓库。
+	if err := s.seedDefaultWarehouses(ctx, tenantID); err != nil {
+		return nil, err
+	}
 	return s.q.ListWarehouses(ctx, store.ListWarehousesParams{
 		TenantID: tenantID, IncludeInactive: includeInactive,
 	})

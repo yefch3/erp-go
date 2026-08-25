@@ -20,13 +20,17 @@ type stubDirectory struct {
 	// 按层级给上级：1 是直属上级，2 是上级的上级。缺的层级返回空，
 	// 表示汇报线到顶了。
 	managers map[int32][]int64
-	// 角色成员，按角色编号。第二家公司的采购兜底角色在这里是空的——
-	// 那个角色编号属于第一家。
-	roles map[int64][]int64
+	// 角色成员，按角色**编码**。第二家公司没有这个角色时是空的。
+	roles  map[int64][]int64
+	byCode map[string][]int64
 }
 
 func (d stubDirectory) RoleMembers(_ context.Context, roleID int64) ([]int64, error) {
 	return d.roles[roleID], nil
+}
+
+func (d stubDirectory) RoleMembersByCode(_ context.Context, code string) ([]int64, error) {
+	return d.byCode[code], nil
 }
 
 func (d stubDirectory) ManagersOf(_ context.Context, _ int64, levels int32) ([]int64, error) {
@@ -46,8 +50,8 @@ func newSeedTestService(t *testing.T, dir Directory) (*Service, func(int64)) {
 	}
 	t.Cleanup(pool.Close)
 
-	// 采购兜底角色编号沿用生产默认值 3。
-	svc := New(pool, dir, nil, 3)
+	// 采购兜底角色沿用默认编码。
+	svc := New(pool, dir, nil, "PROCUREMENT_MANAGER")
 	cleanup := func(tenantID int64) {
 		for _, stmt := range []string{
 			"DELETE FROM approval_tasks WHERE tenant_id=$1",
@@ -200,6 +204,36 @@ func TestPurchaseOrderNeverAutoApprovesWithoutApprovers(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "审批人") {
 		t.Fatalf("该说的是没有可用审批人，实际：%v", err)
+	}
+	// 话要能照着做：第二家公司连这个角色都没有，提示必须说出要建哪个角色。
+	if !strings.Contains(err.Error(), "PROCUREMENT_MANAGER") {
+		t.Fatalf("提示没说要建哪个角色，人照着做不了：%v", err)
+	}
+}
+
+// 兜底审批角色按**编码**找，不按编号。
+//
+// 编号属于某一家公司：写死一个数字，第二家公司永远找不到那个角色，而提示还
+// 让他去「配置采购审批角色成员」——他公司里根本没有那个角色。按编码找，每家
+// 公司都能解析到自己的那一个。
+func TestPurchaseFallbackIsResolvedByRoleCodeNotID(t *testing.T) {
+	dir := stubDirectory{byCode: map[string][]int64{"PROCUREMENT_MANAGER": {777}}}
+	svc, cleanup := newSeedTestService(t, dir)
+	ctx := context.Background()
+
+	tenantID := time.Now().UnixNano()
+	t.Cleanup(func() { cleanup(tenantID) })
+
+	// 提交人没有上级，走兜底：任务该落到本公司采购经理头上。
+	_, tasks, err := svc.Submit(ctx, tenantID, SubmitInput{
+		BizType: "PURCHASE_ORDER", BizID: 1, BizNo: "PO-0001",
+		SubmitterID: 500, SubmitterName: "小王", Amount: "1000",
+	})
+	if err != nil {
+		t.Fatalf("本公司有采购经理，采购单就该走得起来：%v", err)
+	}
+	if len(tasks) != 1 || tasks[0].AssigneeID != 777 {
+		t.Fatalf("兜底任务该落到本公司采购经理头上，实际 %+v", tasks)
 	}
 }
 

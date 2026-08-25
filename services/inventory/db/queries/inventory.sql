@@ -328,3 +328,13 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND warehouse_id = sqlc.arg(warehouse_id)::bigint
   AND product_id = sqlc.arg(product_id)::bigint
   AND sku_id = sqlc.arg(sku_id)::bigint;
+
+-- 下面两条只服务「第一次真的要用仓库时补一个默认仓库」，见 app/warehouseseed.go。
+
+-- name: CountWarehouses :one
+-- 任何状态都算：一条都没有 ≠ 有但都停用了。
+SELECT count(*)::bigint FROM warehouses WHERE tenant_id = $1;
+
+-- name: InsertWarehouseIfAbsent :execrows
+INSERT INTO warehouses (tenant_id, code, name, wh_type) VALUES ($1, $2, $3, $4)
+ON CONFLICT (tenant_id, code) DO NOTHING;
