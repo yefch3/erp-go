@@ -118,9 +118,15 @@ type SyncConfig struct {
 }
 
 func (c SyncConfig) withDefaults() SyncConfig {
-	if c.TenantID == 0 {
-		c.TenantID = 1
-	}
+	// TenantID 刻意不再兜底成 1。
+	//
+	// 它以前是 1，而 cmd/main.go 从来没传过——于是三个后台循环（收信轮询、IDLE
+	// 长连接、发信 worker）全都只服务第一家公司。第二家公司的员工把邮箱绑好、
+	// 授权码填对、页面上一切正常，信却永远不会来，而且**不报任何错**：循环按
+	// 名单干活，名单里没有就等于不存在。
+	//
+	// 现在名单由 tenantsToServe 每轮现查。这里留 0 是有意的：0 表示「还没说是
+	// 哪家」，让漏传变成一次空转，而不是安静地服务错的那家。
 	if c.Folder == "" {
 		c.Folder = "INBOX"
 	}
@@ -156,13 +162,35 @@ func (s *Service) RunInboundSync(ctx context.Context, cfg SyncConfig) {
 	t := time.NewTicker(cfg.Interval)
 	defer t.Stop()
 	for {
-		s.syncAllMailboxes(ctx, cfg)
+		// 每家公司各过一遍。并发上限是**全局的**（fleet 只有一个），所以公司多
+		// 起来不会变成成倍的连接同时打向邮件服务商——受不了的是对面，不是我们。
+		for _, tenantID := range s.tenantsToServe(ctx) {
+			pass := cfg
+			pass.TenantID = tenantID
+			s.syncAllMailboxes(ctx, pass)
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 		}
 	}
+}
+
+// tenantsToServe 是本轮要处理的公司名单：有活跃邮箱的那些。
+//
+// 每轮现查，不缓存——新开的公司下一轮就被发现，不用等进程重启。
+//
+// 取不到就返回空，让这一轮空转，**不回落到「第一家公司」**。回落看着更“健壮”，
+// 实际是把「暂时不知道有哪些公司」偷换成「就服务这一家」，而那正是这套代码原来
+// 的毛病：错得安静，没人发现。下一轮自然会重试。
+func (s *Service) tenantsToServe(ctx context.Context) []int64 {
+	ids, err := s.q.ListTenantsWithMailboxes(ctx)
+	if err != nil {
+		s.log.Error("could not list tenants to serve; skipping this pass", "err", err)
+		return nil
+	}
+	return ids
 }
 
 func (s *Service) syncAllMailboxes(ctx context.Context, cfg SyncConfig) {
@@ -968,32 +996,40 @@ func (s *Service) RunIdleWatchers(ctx context.Context, cfg SyncConfig) {
 	s.log.Info("idle watchers started")
 
 	var mu sync.Mutex
+	// 键是员工号。employees.id 是全局自增主键，跨公司不会撞——这一点是这个 map
+	// 能只用员工号做键的前提，换成按公司各排各的号就得改成 (公司, 员工)。
 	running := map[int64]bool{}
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for {
-		accounts, err := s.q.ListSyncableMailAccounts(ctx, cfg.TenantID)
-		if err != nil {
-			s.log.Warn("could not list mailboxes to watch", "err", err)
-		}
-		for _, a := range accounts {
-			mu.Lock()
-			already := running[a.EmployeeID]
-			if !already {
-				running[a.EmployeeID] = true
-			}
-			mu.Unlock()
-			if already {
+		for _, tenantID := range s.tenantsToServe(ctx) {
+			watch := cfg
+			watch.TenantID = tenantID
+			accounts, err := s.q.ListSyncableMailAccounts(ctx, tenantID)
+			if err != nil {
+				// 一家公司列不出来不该让别家也停：下面的 continue 只跳过这一家。
+				s.log.Warn("could not list mailboxes to watch", "tenant", tenantID, "err", err)
 				continue
 			}
-			go func(emp int64) {
-				defer func() {
-					mu.Lock()
-					delete(running, emp)
-					mu.Unlock()
-				}()
-				s.watchMailbox(ctx, cfg, waiter, emp)
-			}(a.EmployeeID)
+			for _, a := range accounts {
+				mu.Lock()
+				already := running[a.EmployeeID]
+				if !already {
+					running[a.EmployeeID] = true
+				}
+				mu.Unlock()
+				if already {
+					continue
+				}
+				go func(cfg SyncConfig, emp int64) {
+					defer func() {
+						mu.Lock()
+						delete(running, emp)
+						mu.Unlock()
+					}()
+					s.watchMailbox(ctx, cfg, waiter, emp)
+				}(watch, a.EmployeeID)
+			}
 		}
 		select {
 		case <-ctx.Done():

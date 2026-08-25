@@ -80,7 +80,11 @@ func (s *Service) RunFlagWriteback(ctx context.Context, cfg SyncConfig) {
 	t := time.NewTicker(flagWritebackInterval)
 	defer t.Stop()
 	for {
-		s.publishFlagOps(ctx, cfg)
+		for _, tenantID := range s.tenantsToServe(ctx) {
+			pass := cfg
+			pass.TenantID = tenantID
+			s.publishFlagOps(ctx, pass)
+		}
 		select {
 		case <-ctx.Done():
 			return

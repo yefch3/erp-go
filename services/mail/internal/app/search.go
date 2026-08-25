@@ -116,8 +116,15 @@ const searchBackfillBatch = 200
 // still empty and have a body to derive from. Once done, the query matches
 // nothing and costs one indexless-but-tiny scan per boot.
 func (s *Service) BackfillSearchText(ctx context.Context, cfg SyncConfig) {
-	cfg = cfg.withDefaults() // same as every other background job: tenant 1 unless told
-	tenantID := cfg.TenantID
+	cfg = cfg.withDefaults()
+	// 每家公司各补一遍。一家补不动就换下一家——backfillTenant 里的每条 return
+	// 都只结束当前这家，不该让别家的旧邮件跟着搜不到。
+	for _, tenantID := range s.tenantsToServe(ctx) {
+		s.backfillTenantSearchText(ctx, tenantID)
+	}
+}
+
+func (s *Service) backfillTenantSearchText(ctx context.Context, tenantID int64) {
 	started := time.Now()
 	filled := 0
 	for {
@@ -151,11 +158,11 @@ func (s *Service) BackfillSearchText(ctx context.Context, cfg SyncConfig) {
 		if filled == before {
 			// Every row in the batch failed to write. Without this the outer
 			// loop would fetch the same batch for ever.
-			s.log.Warn("search backfill made no progress, stopping", "remaining", len(rows))
+			s.log.Warn("search backfill made no progress, stopping", "tenant", tenantID, "remaining", len(rows))
 			return
 		}
 	}
 	if filled > 0 {
-		s.log.Info("search text backfilled", "rows", filled, "took", time.Since(started).String())
+		s.log.Info("search text backfilled", "tenant", tenantID, "rows", filled, "took", time.Since(started).String())
 	}
 }

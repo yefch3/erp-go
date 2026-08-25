@@ -927,7 +927,9 @@ func (s *Service) RunTrashSweeper(ctx context.Context, cfg SyncConfig) {
 	t := time.NewTicker(trashSweepEvery)
 	defer t.Stop()
 	for {
-		s.sweepTrashOnce(ctx, cfg.TenantID)
+		for _, tenantID := range s.tenantsToServe(ctx) {
+			s.sweepTrashOnce(ctx, tenantID)
+		}
 		select {
 		case <-ctx.Done():
 			return
