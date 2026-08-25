@@ -34,14 +34,18 @@ type Live interface {
 }
 
 type Service struct {
-	pool *pgxpool.Pool
-	q    *store.Queries
-	dir  Directory
-	live Live
+	pool                        *pgxpool.Pool
+	q                           *store.Queries
+	dir                         Directory
+	live                        Live
+	purchaseOrderFallbackRoleID int64
 }
 
-func New(pool *pgxpool.Pool, dir Directory, live Live) *Service {
-	return &Service{pool: pool, q: store.New(pool), dir: dir, live: live}
+func New(pool *pgxpool.Pool, dir Directory, live Live, purchaseOrderFallbackRoleID int64) *Service {
+	return &Service{
+		pool: pool, q: store.New(pool), dir: dir, live: live,
+		purchaseOrderFallbackRoleID: purchaseOrderFallbackRoleID,
+	}
 }
 
 // nudge tells a set of employees that something they are looking at moved.
@@ -140,6 +144,23 @@ func (s *Service) Submit(ctx context.Context, tenantID int64, in SubmitInput) (s
 	if err != nil {
 		return store.ApprovalInstance{}, nil, err
 	}
+	// 采购单会形成真实的付款承诺。组织架构没有上级时，转交配置的
+	// 采购审批角色，仍然生成待办，不能自动通过或停在草稿之外。
+	if firstNode == nil && usesPurchaseOrderFallback(in.BizType) {
+		fallback, err := s.dir.RoleMembers(ctx, s.purchaseOrderFallbackRoleID)
+		if err != nil {
+			return store.ApprovalInstance{}, nil, fmt.Errorf("approval: resolve purchase fallback role %d: %w", s.purchaseOrderFallbackRoleID, err)
+		}
+		fallback = preferOtherApprovers(fallback, in.SubmitterID)
+		if len(fallback) == 0 {
+			return store.ApprovalInstance{}, nil, apierr.Invalid(
+				"AP_APPROVER_REQUIRED", "采购单没有可用审批人，请先配置采购审批角色成员",
+			)
+		}
+		node := nodes[0]
+		node.Name = "采购审批人审批"
+		firstNode, assignees = &node, fallback
+	}
 
 	summary := in.BizSummary
 	if summary == "" {
@@ -179,6 +200,26 @@ func (s *Service) Submit(ctx context.Context, tenantID int64, in SubmitInput) (s
 	}
 	s.nudge(ctx, tenantID, assigneesOf(tasks), livefeed.TodoChanged, subjectOf(inst))
 	return inst, tasks, nil
+}
+
+// usesPurchaseOrderFallback 标记必须在无直属上级时转交审批角色的单据。
+func usesPurchaseOrderFallback(bizType string) bool {
+	return bizType == "PURCHASE_ORDER"
+}
+
+// preferOtherApprovers 有其他审批人时排除提交人；只有提交人一人时仍保留
+// 人工待办，保证开发或应急账号也不会被系统自动批准。
+func preferOtherApprovers(ids []int64, submitterID int64) []int64 {
+	others := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id != submitterID {
+			others = append(others, id)
+		}
+	}
+	if len(others) > 0 {
+		return others
+	}
+	return ids
 }
 
 func assigneesOf(tasks []store.ApprovalTask) []int64 {

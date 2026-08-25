@@ -2,11 +2,25 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/sgao19/erp-go/services/procurement/internal/store"
 )
+
+func TestOrderSummaryContainsApprovalFacts(t *testing.T) {
+	raw := orderSummary(store.GetPurchaseOrderRow{
+		SupplierName: "测试钢厂", Currency: "USD", TotalAmount: "1250.00", ExpectedDate: "2026-09-30",
+	}, []store.PurchaseOrderItemsRow{{ProductName: "钢卷", Qty: "5", UnitPrice: "250", Amount: "1250"}})
+	var summary map[string]any
+	if err := json.Unmarshal([]byte(raw), &summary); err != nil {
+		t.Fatalf("审批摘要不是合法 JSON: %v", err)
+	}
+	if summary["supplier"] != "测试钢厂" || summary["amount"] != "1250.00" {
+		t.Fatalf("审批摘要缺少关键事实: %#v", summary)
+	}
+}
 
 type supplierDirectoryStub struct {
 	supplier Supplier

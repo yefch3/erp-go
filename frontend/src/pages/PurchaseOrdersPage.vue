@@ -9,6 +9,9 @@
 
     <el-card shadow="never">
       <el-radio-group v-model="status" class="tabs" @change="reload">
+        <el-radio-button value="DRAFT">{{ t('orders.statuses.DRAFT') }}</el-radio-button>
+        <el-radio-button value="PENDING_APPROVAL">{{ t('orders.statuses.PENDING_APPROVAL') }}</el-radio-button>
+        <el-radio-button value="REJECTED">{{ t('orders.statuses.REJECTED') }}</el-radio-button>
         <el-radio-button value="ORDERED">{{ t('orders.statuses.ORDERED') }}</el-radio-button>
         <el-radio-button value="PARTIALLY_RECEIVED">{{ t('orders.statuses.PARTIALLY_RECEIVED') }}</el-radio-button>
         <el-radio-button value="RECEIVED">{{ t('orders.statuses.RECEIVED') }}</el-radio-button>
@@ -76,23 +79,23 @@
             </div>
           </template>
         </el-table-column>
-        <!-- 一行只亮「当前该做的那一个动作」，其余收进「更多」（B5）。
-             七个按钮同排的年代，采购员点错的不是手，是布局。 -->
-        <el-table-column :label="t('common.actions')" width="235" fixed="right">
+        <!-- 列表只保留一个稳定的操作入口；详情、当前主动作和辅助动作
+             按顺序收进同一菜单，避免每种状态都长出不同宽度的按钮。 -->
+        <el-table-column :label="t('common.actions')" width="76" align="center" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
-              <el-button link type="primary" @click="openDetail(row)">{{ t('common.detail') }}</el-button>
-              <el-button
-                v-if="primaryAction(row)"
-                link :type="primaryAction(row)!.tone"
-                :loading="primaryAction(row)!.key === 'download' && downloadingId === Number(row.id)"
-                @click="primaryAction(row)!.run()"
-              >{{ primaryAction(row)!.label }}</el-button>
-              <el-dropdown v-if="moreActions(row).length" trigger="click" @command="(key: string) => runMoreAction(row, key)">
-                <el-button link>{{ t('orders.more') }} ▾</el-button>
+              <el-dropdown trigger="click" @command="(key: string) => runOrderAction(row, key)">
+                <el-button class="action-trigger" size="small" text circle :aria-label="t('common.actions')">
+                  <span aria-hidden="true">•••</span>
+                </el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item v-for="action in moreActions(row)" :key="action.key" :command="action.key">
+                    <el-dropdown-item
+                      v-for="action in allActions(row)"
+                      :key="action.key"
+                      :command="action.key"
+                      :divided="action.divided"
+                    >
                       {{ action.label }}
                     </el-dropdown-item>
                   </el-dropdown-menu>
@@ -221,14 +224,19 @@
       <template #footer>
         <el-button @click="createOpen = false">{{ common('cancel') }}</el-button>
         <el-button type="primary" :loading="saving" @click="submitCreate">
-          {{ approvalEntry ? t('orders.createAndSubmit') : common('save') }}
+          {{ approvalEntry ? t('orders.createDraft') : common('save') }}
         </el-button>
       </template>
     </el-dialog>
 
     <el-dialog v-model="detailOpen" :title="detail?.poNo" width="820px">
       <!-- B5 尾巴：看完单子不用回列表找按钮——下一步就在眼前。 -->
-      <div v-if="detailNext" class="next-step">
+      <div v-if="detail && approvalTaskFor(detail)" class="next-step">
+        <span class="next-step-label">{{ t('orders.approvalDecision') }}</span>
+        <el-button size="small" type="success" @click="actOnOrderApproval(detail, 'APPROVE')">{{ t('todos.approve') }}</el-button>
+        <el-button size="small" type="danger" @click="actOnOrderApproval(detail, 'REJECT')">{{ t('todos.reject') }}</el-button>
+      </div>
+      <div v-else-if="detailNext" class="next-step">
         <span class="next-step-label">{{ t('orders.nextStep') }}</span>
         <el-button size="small" :type="detailNext.tone" @click="runDetailNext">{{ detailNext.label }}</el-button>
       </div>
@@ -545,6 +553,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { download, get, post, put, quietErrors, saveBlob } from '../api'
 import { onLive } from '../live'
+import { isDialogDismissed } from '../lib/dialogActions'
 import { buildConfirmationLines } from '../lib/purchaseExecution'
 import { useAuthStore } from '../stores/auth'
 
@@ -588,6 +597,10 @@ interface Order {
   factoryId: string
   factoryCode: string
   factoryName: string
+}
+interface ApprovalTodo {
+  task: { id: string; status: string }
+  instance: { bizType: string; bizId: string }
 }
 interface OrderItem {
   id: string
@@ -644,6 +657,7 @@ const route = useRoute()
 const router = useRouter()
 const canWrite = auth.can('procurement:order:write')
 const canSubmit = auth.can('procurement:order:submit')
+const canApprove = auth.can('approval:task:act')
 const canCancel = auth.can('procurement:order:cancel')
 const canReceive = auth.can('procurement:receipt:write')
 const canSend = auth.can('procurement:order:send')
@@ -658,13 +672,14 @@ const rows = ref<Order[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = 20
-// 采购单页面只展示已经通过采购审批的执行单据。草稿、审批中和驳回
-// 都属于“待采购并审批”的过程状态，不在这里形成第二个审批入口。
+// 采购单页面同时承接制单、审批状态查看和审批后的履约跟踪。
+// 真正的批准/驳回仍由个人审批任务执行，避免只凭采购单读取权限越权审批。
 const status = ref('ORDERED')
 const keyword = ref('')
 const loading = ref(false)
 const saving = ref(false)
 const downloadingId = ref(0)
+const approvalTasks = ref<Record<string, string>>({})
 
 const createOpen = ref(false)
 const approvalEntry = ref(false)
@@ -782,10 +797,14 @@ function toggleSupplierSwitch() {
   }
 }
 
-// 采购单只承接已经完成采购审批的执行单据。发单、收货和履约是执行动作，
-// 不再把草稿、审批中或“待发单”伪装成采购单业务状态。
 interface RowAction { key: string; label: string; tone: 'primary' | 'success' | 'warning' | 'danger'; run: () => void }
 function primaryAction(row: Order): RowAction | null {
+  if (row.status === 'PENDING_APPROVAL' && canApprove && approvalTaskFor(row))
+    return { key: 'approve', label: t('orders.reviewApproval'), tone: 'success', run: () => void openApprovalReview(row) }
+  if (row.status === 'DRAFT' && canSubmit)
+    return { key: 'submit', label: t('orders.submit'), tone: 'primary', run: () => void submit(row) }
+  if (row.status === 'REJECTED' && canWrite)
+    return { key: 'edit', label: t('orders.editAndResubmit'), tone: 'warning', run: () => void openEdit(row) }
   if (['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status) && row.sendStatus !== 'SENT' && canSend)
     return { key: 'send', label: row.sendStatus === 'FAILED' ? t('orders.retrySend') : t('orders.sendOrder'), tone: 'success', run: () => openSend(row) }
   if (['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status) && canReceive)
@@ -797,10 +816,49 @@ function primaryAction(row: Order): RowAction | null {
     return { key: 'execution', label: t('orders.execution'), tone: 'warning', run: () => openExecution(row) }
   return null
 }
+
+function approvalTaskFor(row: Order): string {
+  return approvalTasks.value[String(row.id)] ?? ''
+}
+
+async function openApprovalReview(row: Order) {
+  await openDetail(row)
+}
+
+async function actOnOrderApproval(row: Order, action: 'APPROVE' | 'REJECT') {
+  const taskID = approvalTaskFor(row)
+  if (!taskID) return
+  let comment = ''
+  try {
+    if (action === 'APPROVE') {
+      await ElMessageBox.confirm(t('orders.approveConfirm', { no: row.poNo }), t('todos.approve'), {
+        type: 'warning', confirmButtonText: t('todos.approve'), cancelButtonText: common('cancel'),
+      })
+    } else {
+      const result = await ElMessageBox.prompt(t('orders.rejectReasonHint'), t('todos.reject'), {
+        inputType: 'textarea', inputValidator: (value) => Boolean(String(value).trim()) || t('todos.commentRequired'),
+        confirmButtonText: t('todos.reject'), cancelButtonText: common('cancel'),
+      })
+      comment = result.value.trim()
+    }
+  } catch (err) {
+    if (isDialogDismissed(err)) return
+    throw err
+  }
+  await post(`/approvals/tasks/${taskID}/act`, { action, comment })
+  ElMessage.success(t('todos.acted'))
+  detailOpen.value = false
+  const nextStatus = action === 'APPROVE' ? 'ORDERED' : 'REJECTED'
+  status.value = nextStatus
+  await router.replace({ path: '/purchase-orders', query: { status: nextStatus, order: row.id } })
+  await reload()
+}
 function moreActions(row: Order): { key: string; label: string }[] {
   const primary = primaryAction(row)?.key
   const out: { key: string; label: string }[] = []
   const add = (key: string, label: string, allowed: boolean) => { if (allowed && key !== primary) out.push({ key, label }) }
+  add('edit', t('orders.edit'), canWrite && ['DRAFT', 'REJECTED'].includes(row.status))
+  add('submit', t('orders.submit'), canSubmit && ['DRAFT', 'REJECTED'].includes(row.status))
   add('send', row.sendStatus === 'FAILED' ? t('orders.retrySend') : t('orders.sendOrder'),
     canSend && ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status) && row.sendStatus !== 'SENT')
   add('receive', t('orders.receive'), canReceive && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status))
@@ -808,8 +866,17 @@ function moreActions(row: Order): { key: string; label: string }[] {
   add('downloadXlsx', t('orders.downloadExcel'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('downloadPdf', t('orders.downloadPdf'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('close', t('orders.closeOrder'), canClose && ['RECEIVED', 'PARTIALLY_RECEIVED'].includes(row.status) && !row.closedAt)
-  add('cancel', common('cancel'), canCancel && row.status === 'ORDERED')
+  add('cancel', common('cancel'), canCancel && ['DRAFT', 'REJECTED', 'ORDERED'].includes(row.status))
   return out
+}
+
+function allActions(row: Order): { key: string; label: string; divided?: boolean }[] {
+  const primary = primaryAction(row)
+  return [
+    { key: 'detail', label: t('common.detail') },
+    ...(primary ? [{ key: primary.key, label: primary.label, divided: true }] : []),
+    ...moreActions(row).map((action, index) => ({ ...action, divided: !primary && index === 0 })),
+  ]
 }
 // 工厂回签状态的列表子标签（B5 尾巴）。只在已发单之后才有意义：
 // 没发出去的单谈不上「工厂还没回」，那时未发单标签已经说明了一切。
@@ -824,7 +891,7 @@ function confirmTag(row: Order): { label: string; type: 'success' | 'warning' | 
 }
 
 // 详情页的「下一步」与列表主动作同一套推导——两处永远说同一句话。
-const detailNext = computed(() => (detail.value ? primaryAction(detail.value) : null))
+const detailNext = computed(() => (detail.value && !approvalTaskFor(detail.value) ? primaryAction(detail.value) : null))
 function runDetailNext() {
   const next = detailNext.value
   if (!next) return
@@ -832,7 +899,16 @@ function runDetailNext() {
   next.run()
 }
 
-function runMoreAction(row: Order, key: string) {
+function runOrderAction(row: Order, key: string) {
+  if (key === 'detail') {
+    void openDetail(row)
+    return
+  }
+  const primary = primaryAction(row)
+  if (primary?.key === key) {
+    primary.run()
+    return
+  }
   switch (key) {
     case 'edit': openEdit(row); break
     case 'submit': void submit(row); break
@@ -856,6 +932,15 @@ async function load() {
     })
     rows.value = d.orders ?? []
     total.value = Number(d.meta?.total ?? 0)
+    approvalTasks.value = {}
+    if (canApprove && status.value === 'PENDING_APPROVAL') {
+      const todoData = await get<{ todos: ApprovalTodo[] }>('/approvals/todos', {
+        page: 1, page_size: 200, status: '',
+      }, quietErrors)
+      approvalTasks.value = Object.fromEntries((todoData.todos ?? [])
+        .filter((todo) => todo.instance.bizType === 'PURCHASE_ORDER' && todo.task.status === 'PENDING')
+        .map((todo) => [String(todo.instance.bizId), String(todo.task.id)]))
+    }
   } finally {
     loading.value = false
   }
@@ -1035,7 +1120,6 @@ async function submitCreate() {
       lines,
     }
     let res: { id?: string; poNo: string }
-    let recoveredLegacyDraft = false
     if (editing.value) {
       res = await put<{ id?: string; poNo: string }>(`/purchase-orders/${editing.value.id}`, payload)
     } else {
@@ -1049,8 +1133,8 @@ async function submitCreate() {
           ElMessage.error(apiFailure.message || t('common.requestFailed'))
           throw failure
         }
-        // 上次建单成功但审批提交失败时会留下草稿。再次操作应继续这张草稿，
-        // 更新为员工本次确认的内容后提交，不能既隐藏草稿又阻止员工继续办理。
+        // 同一报价与供应商已有草稿时，再次从待采购进入应继续原单，
+        // 不能既隐藏草稿又阻止采购员完成制单。
         const quotationID = Number(pending.value.find((item) => Number(item.quotationId) > 0)?.quotationId || 0)
         const existingLists = await Promise.all(['DRAFT', 'REJECTED'].map((draftStatus) =>
           get<{ orders: Order[] }>('/purchase-orders', {
@@ -1066,25 +1150,19 @@ async function submitCreate() {
         }
         const updated = await put<{ poNo: string }>(`/purchase-orders/${existing.id}`, payload)
         res = { id: existing.id, poNo: updated.poNo }
-        recoveredLegacyDraft = true
       }
-    }
-    if (wasApprovalEntry && recoveredLegacyDraft && res.id) {
-      // 仅旧版本遗留的草稿需要补做一次提交；新流程在创建事务内已经直接转为 ORDERED。
-      await post(`/purchase-orders/${res.id}/submit`, {})
     }
     ElMessage.success(editing.value
       ? t('orders.updated', { no: res.poNo })
-      : wasApprovalEntry
-        ? t('orders.createdAndSubmitted', { no: res.poNo })
-        : t('orders.created', { no: res.poNo }))
+      : t('orders.created', { no: res.poNo }))
     createOpen.value = false
     approvalEntry.value = false
     editing.value = null
     if (wasApprovalEntry) {
-      // 这里就是唯一的人工审批点。后端会在同一事务中生成采购单并将其
-      // 转为 ORDERED，因此返回列表后能够直接看到“已下单”。
-      await router.push('/requirements')
+      // 待采购只负责生成草稿；采购员核对原单后再显式提交审批。
+      status.value = 'DRAFT'
+      await router.push({ path: '/purchase-orders', query: { status: 'DRAFT', order: res.id } })
+      await reload()
     } else {
       reload()
     }
@@ -1561,11 +1639,20 @@ onMounted(async () => {
 .row-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
   white-space: nowrap;
 }
 .row-actions :deep(.el-button) {
   margin-left: 0;
+}
+.action-trigger {
+  width: 30px;
+  color: var(--el-text-color-secondary);
+  letter-spacing: 1px;
+}
+.action-trigger:hover {
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
 }
 .prod {
   font-weight: 500;
