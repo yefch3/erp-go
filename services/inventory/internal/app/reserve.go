@@ -82,7 +82,7 @@ type stockShortageEvent struct {
 // Everything happens in one transaction, with the candidate stock rows locked
 // FOR UPDATE in a stable order, so concurrent contracts queue rather than
 // interleave.
-func (s *Service) AllocateContract(ctx context.Context, tenantID int64, e ContractEffective, log *slog.Logger) error {
+func (s *Service) AllocateContract(ctx context.Context, tenantID int64, e ContractEffective, log *slog.Logger, claim EventClaim) error {
 	if len(e.Items) == 0 {
 		log.Warn("contract effective with no lines, nothing to allocate",
 			"contract_id", e.ContractID, "contract_no", e.ContractNo)
@@ -91,6 +91,11 @@ func (s *Service) AllocateContract(ctx context.Context, tenantID int64, e Contra
 
 	var lines, short int
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		// 认领与这一笔业务写入同生共死：崩溃一起回滚，提交一起落库。
+		// 见 eventclaim.go。
+		if err := claim(ctx, tx); err != nil {
+			return err
+		}
 		q := s.q.WithTx(tx)
 		for _, line := range e.Items {
 			demand, err := decimal.NewFromString(line.Qty)

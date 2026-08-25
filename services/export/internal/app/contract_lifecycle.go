@@ -97,7 +97,7 @@ func readyToSubmit(view ContractView) error {
 // ApplyApprovalDecision advances a contract on the strength of an approval
 // event. It is idempotent: the same event delivered twice leaves the same
 // state, because a contract that is no longer waiting on approval is skipped.
-func (s *Service) ApplyApprovalDecision(ctx context.Context, tenantID, contractID int64, result string) (string, error) {
+func (s *Service) ApplyApprovalDecision(ctx context.Context, tenantID, contractID int64, result string, claim EventClaim) (string, error) {
 	view, err := s.GetContract(ctx, tenantID, contractID, 0)
 	if err != nil {
 		return "", err
@@ -132,6 +132,11 @@ func (s *Service) ApplyApprovalDecision(ctx context.Context, tenantID, contractI
 	}
 
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		// 认领与这一笔业务写入同生共死：崩溃一起回滚，提交一起落库。
+		// 见 eventclaim.go。
+		if err := claim(ctx, tx); err != nil {
+			return err
+		}
 		q := s.q.WithTx(tx)
 		locked, err := q.LockContract(ctx, store.LockContractParams{TenantID: tenantID, ID: contractID})
 		if err != nil {
@@ -300,21 +305,21 @@ func (s *Service) CancelContract(ctx context.Context, tenantID, id int64, op Ope
 // It carries the lines, so no consumer has to call export back to find out
 // what was actually sold.
 type contractEffectiveEvent struct {
-	ContractID   int64               `json:"contract_id"`
-	ContractNo   string              `json:"contract_no"`
-	VersionID    int64               `json:"version_id"`
-	VersionNo    int32               `json:"version_no"`
-	CustomerID   int64               `json:"customer_id"`
-	CustomerName string              `json:"customer_name"`
-	Currency     string              `json:"currency"`
-	TotalAmount  string              `json:"total_amount"`
-	DeliveryDate string              `json:"delivery_date"`
-	Incoterm     string              `json:"incoterm"`
+	ContractID   int64  `json:"contract_id"`
+	ContractNo   string `json:"contract_no"`
+	VersionID    int64  `json:"version_id"`
+	VersionNo    int32  `json:"version_no"`
+	CustomerID   int64  `json:"customer_id"`
+	CustomerName string `json:"customer_name"`
+	Currency     string `json:"currency"`
+	TotalAmount  string `json:"total_amount"`
+	DeliveryDate string `json:"delivery_date"`
+	Incoterm     string `json:"incoterm"`
 	// 合同负责人（A1）：采购需求生而继承它作为属主——合同是谁谈的，
 	// 拆出来的采购动向就归谁看。
-	SalesEmployeeID int64  `json:"sales_employee_id"`
-	SalesEmployee   string `json:"sales_employee"`
-	Items        []effectiveEventItem `json:"items"`
+	SalesEmployeeID int64                `json:"sales_employee_id"`
+	SalesEmployee   string               `json:"sales_employee"`
+	Items           []effectiveEventItem `json:"items"`
 }
 
 type effectiveEventItem struct {

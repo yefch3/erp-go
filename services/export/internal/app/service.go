@@ -151,15 +151,15 @@ type Employee struct {
 // positional call of ten of them is one transposition away from silently
 // wiring products into the rates port.
 type Deps struct {
-	Customers   Customers
-	Products    Products
-	Rates       Rates
-	Numbering   Numbering
-	Approvals   Approvals
-	Files       Files
-	Scopes      Scopes
+	Customers Customers
+	Products  Products
+	Rates     Rates
+	Numbering Numbering
+	Approvals Approvals
+	Files     Files
+	Scopes    Scopes
 	// Optional: without it the pages still work, they just need a refresh.
-	Live *livefeed.Publisher
+	Live        *livefeed.Publisher
 	Involvement Involvement
 	Directory   Directory
 	Seller      Seller

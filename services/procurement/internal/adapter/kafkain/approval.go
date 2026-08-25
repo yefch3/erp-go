@@ -27,7 +27,7 @@ type decision struct {
 // where its verdict becomes a commitment to a supplier and the requirements
 // behind it finally count as ordered.
 func ApprovalDecisions(svc *app.Service, log *slog.Logger) kafkax.Handler {
-	return func(ctx context.Context, e kafkax.Envelope) error {
+	return func(ctx context.Context, e kafkax.Envelope, claim kafkax.Claim) error {
 		var d decision
 		if err := json.Unmarshal(e.Payload, &d); err != nil {
 			log.Error("approval event: unreadable payload, skipping",
@@ -35,13 +35,14 @@ func ApprovalDecisions(svc *app.Service, log *slog.Logger) kafkax.Handler {
 			return nil
 		}
 		if d.BizType == app.BizTypePurchaseOrderChange {
-			return svc.ApplyConfirmationApproval(ctx, e.TenantID, d.BizID, d.InstanceID, d.Result)
+			return svc.ApplyConfirmationApproval(ctx, e.TenantID, d.BizID, d.InstanceID, d.Result, app.EventClaim(claim))
 		}
 		if d.BizType != app.BizTypePurchaseOrder {
 			return nil // some other document type; not ours
 		}
 		status, err := svc.ApplyApprovalDecision(
 			ctx, e.TenantID, d.BizID, d.InstanceID, d.Result, d.Comment,
+			app.EventClaim(claim),
 		)
 		if err == nil {
 			log.Info("purchase order advanced by approval",

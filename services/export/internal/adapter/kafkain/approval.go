@@ -28,7 +28,7 @@ type decision struct {
 // them. Approval never learns what a contract is; it says "1234 was
 // approved", and this is where that becomes a state change.
 func ApprovalDecisions(svc *app.Service, log *slog.Logger) kafkax.Handler {
-	return func(ctx context.Context, e kafkax.Envelope) error {
+	return func(ctx context.Context, e kafkax.Envelope, claim kafkax.Claim) error {
 		var d decision
 		if err := json.Unmarshal(e.Payload, &d); err != nil {
 			// Retrying cannot fix a payload we cannot read.
@@ -40,7 +40,7 @@ func ApprovalDecisions(svc *app.Service, log *slog.Logger) kafkax.Handler {
 			return nil // some other document type; not ours to handle
 		}
 
-		status, err := svc.ApplyApprovalDecision(ctx, e.TenantID, d.BizID, d.Result)
+		status, err := svc.ApplyApprovalDecision(ctx, e.TenantID, d.BizID, d.Result, app.EventClaim(claim))
 		if err == nil {
 			log.Info("contract advanced by approval",
 				"contract_id", d.BizID, "contract_no", d.BizNo,

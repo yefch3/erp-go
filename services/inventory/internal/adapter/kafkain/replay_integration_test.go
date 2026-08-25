@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sgao19/erp-go/pkg/deadletter"
+	"github.com/sgao19/erp-go/pkg/idempotency"
 	"github.com/sgao19/erp-go/pkg/kafkax"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/inventory/internal/app"
@@ -71,7 +72,7 @@ func TestReplayHealsAReceiptThatWasDroppedForWantOfAWarehouse(t *testing.T) {
 	}
 
 	console := deadletter.NewConsole()
-	console.Add(group, store, kafkax.ReplayHandler(PurchaseEvents(svc, log)))
+	console.Add(group, store, kafkax.ReplayHandler(PurchaseEvents(svc, log), idempotency.New(pool, group)))
 
 	// ---- 原因还没修好就点重放：拿到原因本身，事件原地不动 ----
 	err = console.Replay(ctx, group, mustOnlyParkedID(t, pool, tenantID))
@@ -97,6 +98,17 @@ func TestReplayHealsAReceiptThatWasDroppedForWantOfAWarehouse(t *testing.T) {
 	if n := parkedCount(t, pool, tenantID); n != 0 {
 		t.Fatalf("重放成功后死信该离场，实际剩 %d 条", n)
 	}
+	// 重放成功之后认领必须落库：否则同一条死信被点两次重放，库存会记两遍。
+	var claimed bool
+	if err := pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM processed_events WHERE event_id=$1 AND consumer_group=$2)`,
+		"purchase_order:9001", group).Scan(&claimed); err != nil {
+		t.Fatal(err)
+	}
+	if !claimed {
+		t.Fatal("重放成功了却没留下认领——同一条再重放一次会把库存记两遍")
+	}
+
 	var onHand string
 	if err := pool.QueryRow(ctx,
 		`SELECT on_hand_qty::text FROM stocks WHERE tenant_id=$1`, tenantID).Scan(&onHand); err != nil {

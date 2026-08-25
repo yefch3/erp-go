@@ -6,13 +6,16 @@ package kafkax
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/segmentio/kafka-go"
 
 	"github.com/sgao19/erp-go/pkg/deadletter"
+	"github.com/sgao19/erp-go/pkg/idempotency"
 )
 
 // Producer publishes messages with the aggregate id as the partition key.
@@ -55,17 +58,25 @@ func (e Envelope) DedupeKey() string {
 	return fmt.Sprintf("%s:%d", e.AggregateType, e.EventID)
 }
 
+// Claim 记下「这条事件我处理了」，**必须由 handler 在它自己干活的那个事务
+// 里调用**。这是整套机制的要点：认领和业务写入同生共死。
+//
+// 不调用也不算错——handler 因为事件类型不匹配而直接跳过时，本来就没有事务，
+// 也没有任何东西需要被记住。
+type Claim func(ctx context.Context, tx pgx.Tx) error
+
 // Handler processes one event. Returning an error means "retry later":
 // the consumer does not commit the offset.
-type Handler func(ctx context.Context, e Envelope) error
+type Handler func(ctx context.Context, e Envelope, claim Claim) error
 
 // Deduper is implemented with the processed_events table (pkg/idempotency).
-// MarkProcessed returns false when the event was already handled; Release
-// takes the mark back off when the handler did not finish, so the attempt
-// can be made again.
+//
+// 两个方法分工明确：AlreadyProcessed 是只读快路径（干过就直接提交偏移量），
+// ClaimInTx 是真正的把关——它写在 handler 自己的事务里，靠唯一约束在并发时
+// 只让一个人成功。
 type Deduper interface {
-	MarkProcessed(ctx context.Context, dedupeKey string) (fresh bool, err error)
-	Release(ctx context.Context, dedupeKey string) error
+	AlreadyProcessed(ctx context.Context, dedupeKey string) (bool, error)
+	ClaimInTx(ctx context.Context, tx pgx.Tx, dedupeKey string) error
 }
 
 // DeadLetter is where an event goes once retrying it has stopped being
@@ -189,44 +200,49 @@ const handlerAttempts = 5
 // handleOne runs one event to a conclusion and reports whether the offset may
 // be committed.
 //
-// The order of the two writes here is the whole point. The mark used to be
-// taken BEFORE the handler and never given back, so a handler that returned
-// an error left the event marked done; the redelivery saw the mark, skipped
-// the handler and committed. One failed attempt and the event was gone — a
-// receipt of goods, a contract taking effect — with a log line claiming it
-// would be retried. Nothing on any screen could show it.
+// 认领写在 handler 自己的事务里（transactional inbox），这是这段代码的
+// 全部要点。历史上它经过两版：
 //
-// The mark is still taken first, and that is deliberate rather than an
-// oversight: it is what stops the same event being applied twice. None of
-// these handlers is idempotent — booking a delivery into stock twice doubles
-// the stock — so the claim is held for the whole attempt and only released
-// when the work definitely did not happen. A handler's error means its
-// transaction rolled back, so there is nothing half-applied for the retry to
-// duplicate.
+// 一版：认领在 handler **之前**单独提交、失败也不撤销。于是 handler 只要
+// 返回一次错误，事件就永远消失——重投时认领在，跳过，提交偏移量。一次数据库
+// 抖动就能吃掉一笔收货，而日志写着 will retry。
 //
-// What this deliberately does NOT fix: a process killed hard (OOM, kill -9,
-// node death) between taking the claim and the handler's COMMIT loses the
-// event — the claim stays, the work never happened, and the redelivery sees
-// "done" and moves on. Note the asymmetry: a crash AFTER the handler commits
-// is safe (redelivery skips work that genuinely happened), and an error
-// return is safe (the claim is released below). Only the hard-kill during
-// the attempt loses. Closing that window for real means writing the claim
-// inside each handler's own transaction — a change to every handler, not to
-// this loop — and is written up in the plan as its own piece of work.
+// 二版：认领仍在前面，但失败时归还。常见故障（handler 返回错误）不再丢，
+// 可硬杀（OOM / kill -9 / 宕机）还是丢——认领已提交、活还没提交，重投时
+// 跳过一件从没干完的事。窗口是整个处理时长。
+//
+// 现在这一版把认领交给 handler，在它干活的同一个事务里写。三种时刻被杀的
+// 结果都是安全的：
+//
+//	事务提交前被杀   → 认领随事务回滚，重投时从头再来（不丢）
+//	事务提交后被杀   → 认领在，重投时跳过真正干完的活（不重）
+//	偏移量提交失败   → 同上，重投时跳过（不重）
+//
+// 代价是 handler 的签名多一个参数，且必须在事务里调用它一次。作为交换，
+// 「事件悄悄消失」这一整类故障没有了。
 func (c *Consumer) handleOne(ctx context.Context, env Envelope) bool {
 	key := env.DedupeKey()
-	fresh, err := c.dedupe.MarkProcessed(ctx, key)
+	done, err := c.dedupe.AlreadyProcessed(ctx, key)
 	if err != nil {
 		c.log.Error("kafkax: dedupe check failed, will retry", "err", err)
 		return false
 	}
-	if !fresh {
-		return true // genuinely handled before; committing is how we move on
+	if done {
+		return true // 真的干过了；提交偏移量是往前走的方式
+	}
+	claim := func(ctx context.Context, tx pgx.Tx) error {
+		return c.dedupe.ClaimInTx(ctx, tx, key)
 	}
 
 	var lastErr error
 	for attempt := 1; attempt <= handlerAttempts; attempt++ {
-		if lastErr = c.handler(ctx, env); lastErr == nil {
+		lastErr = c.handler(ctx, env, claim)
+		if lastErr == nil {
+			return true
+		}
+		// 并发的另一个消费者抢先干完了（重平衡的瞬间会有）。它已经连同认领
+		// 一起提交，我们这边的事务已经回滚——这条事件是干成了的，往前走。
+		if errors.Is(lastErr, idempotency.ErrAlreadyClaimed) {
 			return true
 		}
 		c.log.Warn("kafkax: handler failed, retrying",
@@ -236,44 +252,27 @@ func (c *Consumer) handleOne(ctx context.Context, env Envelope) bool {
 			break
 		}
 		if err := c.sleep(ctx, backoffFor(attempt)); err != nil {
-			// Shutting down mid-retry: hand the event back so the next
-			// process picks it up rather than inheriting our claim.
-			c.release(ctx, key)
+			// 停机中途：什么都没提交过，直接放手，下一个进程从头再来。
 			return false
 		}
 	}
 
 	if c.dead == nil {
-		// Nowhere to put it. Keep retrying rather than dropping it — this
-		// blocks the partition, which is bad, but a stall is recoverable and
-		// a silent loss is not.
+		// 没地方停放。宁可堵住也不丢：堵是可恢复的，丢不是。
 		c.log.Error("kafkax: handler keeps failing and no dead-letter store is configured, will keep retrying",
 			"event", env.EventType, "aggregate", env.AggregateID, "err", lastErr)
-		c.release(ctx, key)
 		return false
 	}
 	if err := c.dead.Park(ctx, env.TenantID, key, c.topic, env.EventType,
 		env.AggregateID, env.Payload, lastErr.Error()); err != nil {
-		// Could not even record giving up. Do not commit: an event that is
-		// neither done nor written down anywhere is exactly what this whole
-		// function exists to prevent.
+		// 既没干成、又没记下来的事件，正是这一整段代码存在的理由。
 		c.log.Error("kafkax: could not park a failed event, will retry", "err", err)
-		c.release(ctx, key)
 		return false
 	}
 	c.log.Error("kafkax: event set aside after repeated failures — see failed_events",
 		"event", env.EventType, "aggregate", env.AggregateID,
 		"tenant", env.TenantID, "err", lastErr)
 	return true
-}
-
-// release hands the claim back, and says so loudly if it cannot: a claim left
-// behind is an event that will never run again.
-func (c *Consumer) release(ctx context.Context, key string) {
-	if err := c.dedupe.Release(context.WithoutCancel(ctx), key); err != nil {
-		c.log.Error("kafkax: could not release a failed event's claim, it will be skipped on redelivery",
-			"key", key, "err", err)
-	}
 }
 
 // backoffFor spaces out the retries: 1s, 2s, 4s, 8s.
@@ -310,12 +309,19 @@ func nextRetry(d time.Duration) time.Duration {
 // ReplayHandler adapts a consumer's handler for the dead-letter console, so
 // a replayed event runs through exactly the code that failed it — same
 // parsing, same guards, same transaction.
-func ReplayHandler(h Handler) func(context.Context, deadletter.Envelope) error {
+//
+// 重放同样在事务里认领：停进死信表的事件从来没被认领过（认领只随成功的业务
+// 事务一起提交），所以重放就是正常地跑一遍，成功即认领。
+func ReplayHandler(h Handler, d Deduper) func(context.Context, deadletter.Envelope) error {
 	return func(ctx context.Context, e deadletter.Envelope) error {
-		return h(ctx, Envelope{
+		env := Envelope{
 			EventID: e.EventID, TenantID: e.TenantID,
 			AggregateType: e.AggregateType, AggregateID: e.AggregateID,
 			EventType: e.EventType, Payload: e.Payload,
+		}
+		key := env.DedupeKey()
+		return h(ctx, env, func(ctx context.Context, tx pgx.Tx) error {
+			return d.ClaimInTx(ctx, tx, key)
 		})
 	}
 }

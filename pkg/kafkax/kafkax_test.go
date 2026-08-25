@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/segmentio/kafka-go"
 )
 
@@ -79,8 +80,8 @@ func (f *fakeReader) counts() (calls, commits int) {
 
 type okDeduper struct{}
 
-func (okDeduper) MarkProcessed(context.Context, string) (bool, error) { return true, nil }
-func (okDeduper) Release(context.Context, string) error               { return nil }
+func (okDeduper) AlreadyProcessed(context.Context, string) (bool, error) { return false, nil }
+func (okDeduper) ClaimInTx(context.Context, pgx.Tx, string) error        { return nil }
 
 func TestNextRetryStartsAtFloorDoublesAndStopsAtCeiling(t *testing.T) {
 	if got := nextRetry(0); got != fetchRetryMin {
@@ -106,7 +107,7 @@ func TestFetchErrorIsRetriedRatherThanEndingTheConsumer(t *testing.T) {
 	f := newFakeReader(dial, dial, dial)
 
 	c := &Consumer{r: f, topic: "t", group: "g",
-		dedupe: okDeduper{}, handler: func(context.Context, Envelope) error { return nil },
+		dedupe: okDeduper{}, handler: func(context.Context, Envelope, Claim) error { return nil },
 		log: discardLogger()}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -147,7 +148,7 @@ func TestConsumerProcessesMessagesAfterAnOutage(t *testing.T) {
 	var handled int
 	var mu sync.Mutex
 	c := &Consumer{r: f, topic: "t", group: "g", dedupe: okDeduper{},
-		handler: func(context.Context, Envelope) error {
+		handler: func(context.Context, Envelope, Claim) error {
 			mu.Lock()
 			handled++
 			mu.Unlock()

@@ -25,7 +25,7 @@ const eventPurchaseReceived = "PurchaseReceived"
 // purchase requirements it covers — including ones raised for other contracts
 // entirely — with procurement knowing nothing about reservations.
 func PurchaseEvents(svc *app.Service, log *slog.Logger) kafkax.Handler {
-	return func(ctx context.Context, e kafkax.Envelope) error {
+	return func(ctx context.Context, e kafkax.Envelope, claim kafkax.Claim) error {
 		if e.EventType != eventPurchaseReceived {
 			return nil
 		}
@@ -40,6 +40,6 @@ func PurchaseEvents(svc *app.Service, log *slog.Logger) kafkax.Handler {
 				"event_id", e.EventID, "receipt_no", p.ReceiptNo)
 			return nil
 		}
-		return svc.ReceivePurchase(ctx, e.TenantID, p, log)
+		return svc.ReceivePurchase(ctx, e.TenantID, p, log, app.EventClaim(claim))
 	}
 }
