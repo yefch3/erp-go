@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"encoding/json"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"strconv"
 
@@ -198,6 +200,40 @@ func (s *Server) assignRoles(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listRoles(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Access.ListRoles(r.Context(), &iamv1.ListRolesRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// 角色管理页要看到停用的角色——否则停掉之后没有任何入口能把它启用回来。
+// 别处（分配角色的候选、审批按编码找角色）一律只拿启用的。
+func (s *Server) listAllRoles(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Access.ListAllRoles(r.Context(), &iamv1.ListAllRolesRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) setRoleStatus(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		s.writeError(w, http.StatusBadRequest, "IAM_ROLE_ID_INVALID", "角色编号不正确")
+		return
+	}
+	var input struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&input); err != nil {
+		s.writeError(w, http.StatusBadRequest, "BAD_JSON", "请求格式不正确")
+		return
+	}
+	resp, err := s.Access.SetRoleStatus(r.Context(), &iamv1.SetRoleStatusRequest{
+		Id: id, Status: input.Status,
+	})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

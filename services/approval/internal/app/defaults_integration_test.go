@@ -29,8 +29,9 @@ func (d stubDirectory) RoleMembers(_ context.Context, roleID int64) ([]int64, er
 	return d.roles[roleID], nil
 }
 
-func (d stubDirectory) RoleMembersByCode(_ context.Context, code string) ([]int64, error) {
-	return d.byCode[code], nil
+func (d stubDirectory) RoleMembersByCode(_ context.Context, code string) ([]int64, bool, error) {
+	ids, ok := d.byCode[code]
+	return ids, ok, nil
 }
 
 func (d stubDirectory) ManagersOf(_ context.Context, _ int64, levels int32) ([]int64, error) {
@@ -205,9 +206,40 @@ func TestPurchaseOrderNeverAutoApprovesWithoutApprovers(t *testing.T) {
 	if !strings.Contains(err.Error(), "审批人") {
 		t.Fatalf("该说的是没有可用审批人，实际：%v", err)
 	}
-	// 话要能照着做：第二家公司连这个角色都没有，提示必须说出要建哪个角色。
+	// 话要能照着做：角色不存在时，提示要说「创建或启用」。
 	if !strings.Contains(err.Error(), "PROCUREMENT_MANAGER") {
-		t.Fatalf("提示没说要建哪个角色，人照着做不了：%v", err)
+		t.Fatalf("提示没说是哪个角色，人照着做不了：%v", err)
+	}
+	if !strings.Contains(err.Error(), "创建") {
+		t.Fatalf("角色不存在时该让人去创建：%v", err)
+	}
+}
+
+// 角色在、只是没人时，提示只该说「加人」。
+//
+// 预置角色现在开户即有（iam 那边自动播种），所以这是绝大多数公司会遇到的
+// 那一种。让人去「创建」一个已经躺在角色页里的角色，他会找半天以为自己看错了。
+func TestApproverMessageSaysAddMembersWhenTheRoleExists(t *testing.T) {
+	// byCode 里有这个键但值为空 = 角色存在、里面没人。
+	dir := stubDirectory{byCode: map[string][]int64{"PROCUREMENT_MANAGER": {}}}
+	svc, cleanup := newSeedTestService(t, dir)
+	ctx := context.Background()
+
+	tenantID := time.Now().UnixNano()
+	t.Cleanup(func() { cleanup(tenantID) })
+
+	_, _, err := svc.Submit(ctx, tenantID, SubmitInput{
+		BizType: "PURCHASE_ORDER", BizID: 1, BizNo: "PO-0001",
+		SubmitterID: 500, SubmitterName: "小王", Amount: "1000",
+	})
+	if err == nil {
+		t.Fatal("角色里一个人都没有，采购单却通过了")
+	}
+	if !strings.Contains(err.Error(), "添加成员") {
+		t.Fatalf("角色已存在时该让人去加人：%v", err)
+	}
+	if strings.Contains(err.Error(), "创建") {
+		t.Fatalf("角色明明在角色页里躺着，却让人去创建——人会找半天以为看错了：%v", err)
 	}
 }
 

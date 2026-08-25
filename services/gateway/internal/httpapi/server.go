@@ -268,6 +268,8 @@ func (s *Server) Router() http.Handler {
 		// so it sits with the rest of employee editing.
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/manager", s.setManager)
 		r.With(s.perm("iam:role:read")).Get("/api/roles", s.listRoles)
+		r.With(s.perm("iam:role:read")).Get("/api/roles/all", s.listAllRoles)
+		r.With(s.perm("iam:role:write")).Post("/api/roles/{id}/status", s.setRoleStatus)
 		r.With(s.perm("iam:role:write")).Post("/api/roles", s.createRole)
 		r.With(s.perm("iam:role:write")).Put("/api/roles/{id}/permissions", s.grantRolePermissions)
 		r.With(s.perm("iam:role:read")).Get("/api/roles/{id}/members", s.listRoleMembers)

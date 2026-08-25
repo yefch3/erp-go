@@ -558,6 +558,12 @@ export default {
     accountAndRoles: '账号与角色',
   },
   roles: {
+    inactive: '已停用',
+    deactivate: '停用角色',
+    activate: '启用角色',
+    deactivateConfirm: '停用「{name}」会立刻收回它带来的全部权限和数据范围。确定吗？',
+    deactivated: '角色已停用，相关权限已收回',
+    activated: '角色已启用',
     title: '角色权限',
     create: '新建角色',
     code: '角色编码',
