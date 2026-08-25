@@ -61,6 +61,12 @@ func run(log *slog.Logger) error {
 			return err
 		}
 	}
+	// 给此改动之前开出的公司补齐预置角色（新公司在 seedTenantCore 里当场播）。
+	// 启动失败而不是记条日志：预置角色播不进去意味着库或权限表有问题，带病
+	// 启动只会把症状推迟到某家公司提交采购单的那一刻。
+	if err := svc.EnsurePresetRoles(ctx); err != nil {
+		return err
+	}
 
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
 	h := grpcin.New(svc)

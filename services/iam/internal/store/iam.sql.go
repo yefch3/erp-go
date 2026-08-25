@@ -1705,6 +1705,30 @@ func (q *Queries) ListTenantDomains(ctx context.Context, tenantID int64) ([]stri
 	return items, nil
 }
 
+const listTenantIDs = `-- name: ListTenantIDs :many
+SELECT id FROM tenants ORDER BY id
+`
+
+func (q *Queries) ListTenantIDs(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listTenantIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTenantsForPlatform = `-- name: ListTenantsForPlatform :many
 SELECT t.id, t.name, t.status, t.created_at,
        coalesce(a.email, '')::text AS admin_email,
@@ -1903,6 +1927,26 @@ type ReplaceRolePermissionsParams struct {
 func (q *Queries) ReplaceRolePermissions(ctx context.Context, arg ReplaceRolePermissionsParams) error {
 	_, err := q.db.Exec(ctx, replaceRolePermissions, arg.TenantID, arg.RoleID)
 	return err
+}
+
+const roleExistsByCode = `-- name: RoleExistsByCode :one
+SELECT EXISTS (
+    SELECT 1 FROM roles WHERE tenant_id = $1 AND code = $2
+)
+`
+
+type RoleExistsByCodeParams struct {
+	TenantID int64
+	Code     string
+}
+
+// 任何状态都算：角色只能停用不能删除，「有但停用了」是有人做过的决定，
+// 补种不该把它当成「没有」。
+func (q *Queries) RoleExistsByCode(ctx context.Context, arg RoleExistsByCodeParams) (bool, error) {
+	row := q.db.QueryRow(ctx, roleExistsByCode, arg.TenantID, arg.Code)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const setDepartmentPath = `-- name: SetDepartmentPath :exec

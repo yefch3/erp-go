@@ -229,6 +229,12 @@ func (s *Service) seedTenantCore(ctx context.Context, q *store.Queries, companyN
 	}); err != nil {
 		return 0, 0, 0, err
 	}
+	// 预置角色（物流/财务/采购专员/采购经理），和第一家公司开箱即有的相同。
+	// 播在这里而不是各开户入口，是因为每条开户路径都经过 seedTenantCore——
+	// 单一咽喉，加第三条路径也不会漏。见 presetroles.go。
+	if err := s.seedPresetRoles(ctx, q, tenantID); err != nil {
+		return 0, 0, 0, err
+	}
 	return tenantID, emp.ID, len(perms), nil
 }
 
