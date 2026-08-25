@@ -2,7 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/sgao19/erp-go/services/mail/internal/store"
 )
@@ -784,14 +788,63 @@ func (s *Service) repoint(ctx context.Context, acct MailAccount, row store.Claim
 			"account", acct.AccountID, "to", hostFolder, "err", err)
 		return nil
 	}
-	if err := s.q.RepointInbound(ctx, store.RepointInboundParams{
-		TenantID: row.TenantID, AccountID: row.AccountID,
-		OldFolder: row.Folder, OldUid: row.ImapUid,
-		NewFolder: erpFolder, NewUid: int64(uid),
-	}); err != nil {
+	if err := s.mergeRepoint(ctx, row.TenantID, row.AccountID,
+		row.Folder, row.ImapUid, erpFolder, int64(uid), row.MessageID); err != nil {
 		s.log.Warn("could not repoint a moved mail", "id", row.ID, "err", err)
 	}
 	return nil
+}
+
+// mergeRepoint 把挪过的信的本地行改指向它在新文件夹里的新 UID——必要时先清场。
+//
+// 清场针对的是一场几乎必输的赛跑：MoveMessages 一执行，目的文件夹的 IDLE
+// 立刻收到推送，同步抢在这里之前把挪过去的信当新邮件下载了一遍。于是目的
+// 位置已经被同一封信的年轻副本占住，原来的 RepointInbound 撞上唯一约束、
+// 记条 warn 就放弃——旧行留在旧文件夹，一封信从此两行。RepointInbound 的
+// 注释早写着「one mail, two rows」是它要防的事，但它防不过 IDLE 的速度。
+//
+// 合并的方向是**保旧弃新**：旧行带着阅读状态、星标和被引用的 id（智能转换
+// 任务等都指着它）；年轻副本是几秒前才落库的，什么都不带。清场走 purgeOne，
+// 行、附件、缓存图片、原始邮件对象一起走，不给存储留孤儿。
+//
+// 只有占位者与被挪的信是同一个 Message-ID 才清（两者都非空）。占位者是别的
+// 信意味着 UID 语义出了更大的问题，这里不该猜——保持原来的行为：改不动，
+// 记 warn，两行都留着等人看。
+func (s *Service) mergeRepoint(ctx context.Context, tenantID, accountID int64, oldFolder string, oldUID int64, newFolder string, newUID int64, messageID string) error {
+	if oldFolder == newFolder && oldUID == newUID {
+		return nil // 挪了个寂寞：已经在该在的位置上
+	}
+	occ, err := s.q.GetInboundByFolderUID(ctx, store.GetInboundByFolderUIDParams{
+		TenantID: tenantID, AccountID: accountID, Folder: newFolder, ImapUid: newUID,
+	})
+	switch {
+	case err == nil && messageID != "" && occ.MessageID == messageID:
+		// 同一封信的年轻副本。清掉它，位置让给带着历史的旧行。
+		//
+		// 两步走的是现成的销毁路径：purgeOne 只肯销毁回收站里的行（deleted_at
+		// 非空是它的守卫，防误删），所以先用 MirrorHostDelete 把副本软删进
+		// 回收站，再销毁。不为这一处发明绕开守卫的新删法。
+		if err := s.q.MirrorHostDelete(ctx, store.MirrorHostDeleteParams{
+			TenantID: tenantID, AccountID: accountID, Folder: newFolder, ImapUid: newUID,
+		}); err != nil {
+			return fmt.Errorf("bin the freshly synced duplicate: %w", err)
+		}
+		if err := s.purgeOne(ctx, tenantID, occ.OwnerID, occ.ID, occ.RawKey); err != nil {
+			return fmt.Errorf("clear the freshly synced duplicate: %w", err)
+		}
+		s.log.Info("cleared a duplicate the sync raced in ahead of a move",
+			"account", accountID, "folder", newFolder, "uid", newUID)
+	case err == nil:
+		// 位置被一封不同的信占着——不猜，留给人看。
+		return fmt.Errorf("destination %s/%d is held by a different message", newFolder, newUID)
+	case !errors.Is(err, pgx.ErrNoRows):
+		return err
+	}
+	return s.q.RepointInbound(ctx, store.RepointInboundParams{
+		TenantID: tenantID, AccountID: accountID,
+		OldFolder: oldFolder, OldUid: oldUID,
+		NewFolder: newFolder, NewUid: newUID,
+	})
 }
 
 // moveBack returns a message from where it was filed to where it came from.
