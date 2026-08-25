@@ -556,6 +556,12 @@ export default {
     accountAndRoles: 'Account and roles',
   },
   roles: {
+    inactive: 'Disabled',
+    deactivate: 'Disable role',
+    activate: 'Enable role',
+    deactivateConfirm: 'Disabling "{name}" immediately withdraws every permission and data scope it grants. Continue?',
+    deactivated: 'Role disabled; its permissions have been withdrawn',
+    activated: 'Role enabled',
     title: 'Roles',
     create: 'New role',
     code: 'Role code',

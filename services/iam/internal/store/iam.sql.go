@@ -195,6 +195,26 @@ func (q *Queries) CountOtherHoldersOf(ctx context.Context, arg CountOtherHolders
 	return count, err
 }
 
+const countRoleHolders = `-- name: CountRoleHolders :one
+SELECT count(*)::bigint FROM employee_roles er
+JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
+WHERE er.tenant_id = $1 AND er.role_id = $2 AND e.status = 'ACTIVE'
+`
+
+type CountRoleHoldersParams struct {
+	TenantID int64
+	RoleID   int64
+}
+
+// 还有几个在职员工持有这个角色。停用会当场收走他们的权限，所以这个数字要在
+// 停用之前摆到人眼前，而不是之后由他们来报「我打不开页面了」。
+func (q *Queries) CountRoleHolders(ctx context.Context, arg CountRoleHoldersParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countRoleHolders, arg.TenantID, arg.RoleID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createDepartment = `-- name: CreateDepartment :one
 INSERT INTO departments (tenant_id, code, name, parent_id, path, level)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -464,10 +484,11 @@ SELECT EXISTS (
     SELECT 1
     FROM employee_roles er
     JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
+    JOIN roles r ON r.id = er.role_id AND r.tenant_id = er.tenant_id
     JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
     JOIN permissions p ON p.id = rp.permission_id
     WHERE er.tenant_id = $1 AND er.employee_id = $2 AND p.code = $3
-      AND e.status = 'ACTIVE'
+      AND e.status = 'ACTIVE' AND r.status = 'ACTIVE'
 ) AS allowed
 `
 
@@ -480,6 +501,12 @@ type EmployeeHasPermissionParams struct {
 // The employee join is not decoration: without it a token issued before
 // someone left keeps working until it expires. Every guarded request runs
 // through here, so this is where "left the company" takes effect.
+//
+// The roles join is the same idea one level up, and it was missing: a role
+// flipped to INACTIVE vanished from the roles page while everybody holding
+// it kept every permission it granted. A button that says "停用" and takes
+// nothing away is worse than no button — the administrator believes access
+// was revoked and stops looking.
 func (q *Queries) EmployeeHasPermission(ctx context.Context, arg EmployeeHasPermissionParams) (bool, error) {
 	row := q.db.QueryRow(ctx, employeeHasPermission, arg.TenantID, arg.EmployeeID, arg.Code)
 	var allowed bool
@@ -791,6 +818,30 @@ func (q *Queries) GetPermissionIDsByCodes(ctx context.Context, dollar_1 []string
 		return nil, err
 	}
 	return items, nil
+}
+
+const getRole = `-- name: GetRole :one
+SELECT id, tenant_id, code, name, description, status, created_at FROM roles WHERE tenant_id = $1 AND id = $2
+`
+
+type GetRoleParams struct {
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) GetRole(ctx context.Context, arg GetRoleParams) (Role, error) {
+	row := q.db.QueryRow(ctx, getRole, arg.TenantID, arg.ID)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Code,
+		&i.Name,
+		&i.Description,
+		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
@@ -1190,9 +1241,11 @@ const listEmployeePermissionCodes = `-- name: ListEmployeePermissionCodes :many
 SELECT DISTINCT p.code
 FROM employee_roles er
 JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
+JOIN roles r ON r.id = er.role_id AND r.tenant_id = er.tenant_id
 JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
 JOIN permissions p ON p.id = rp.permission_id
-WHERE er.tenant_id = $1 AND er.employee_id = $2 AND e.status = 'ACTIVE'
+WHERE er.tenant_id = $1 AND er.employee_id = $2
+  AND e.status = 'ACTIVE' AND r.status = 'ACTIVE'
 ORDER BY p.code
 `
 
@@ -1201,6 +1254,8 @@ type ListEmployeePermissionCodesParams struct {
 	EmployeeID int64
 }
 
+// 同 EmployeeHasPermission：停用的角色不再给人任何权限。这条是登录时算
+// 菜单用的，两处必须同口径——否则菜单亮着、点进去 403。
 func (q *Queries) ListEmployeePermissionCodes(ctx context.Context, arg ListEmployeePermissionCodesParams) ([]string, error) {
 	rows, err := q.db.Query(ctx, listEmployeePermissionCodes, arg.TenantID, arg.EmployeeID)
 	if err != nil {
@@ -1576,7 +1631,9 @@ const listRoleMembers = `-- name: ListRoleMembers :many
 SELECT e.id AS employee_id, e.name
 FROM employee_roles er
 JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
-WHERE er.tenant_id = $1 AND er.role_id = $2 AND e.status = 'ACTIVE'
+JOIN roles r ON r.id = er.role_id AND r.tenant_id = er.tenant_id
+WHERE er.tenant_id = $1 AND er.role_id = $2
+  AND e.status = 'ACTIVE' AND r.status = 'ACTIVE'
 ORDER BY e.id
 `
 
@@ -1590,6 +1647,8 @@ type ListRoleMembersRow struct {
 	Name       string
 }
 
+// 停用的角色不再供出成员：审批流指着它时，拿到空名单会明确报「审批节点没有
+// 可用审批人」，而不是把任务派给一个公司已经废弃的角色。
 func (q *Queries) ListRoleMembers(ctx context.Context, arg ListRoleMembersParams) ([]ListRoleMembersRow, error) {
 	rows, err := q.db.Query(ctx, listRoleMembers, arg.TenantID, arg.RoleID)
 	if err != nil {
@@ -1647,8 +1706,42 @@ const listRoles = `-- name: ListRoles :many
 SELECT id, tenant_id, code, name, description, status, created_at FROM roles WHERE tenant_id = $1 AND status = 'ACTIVE' ORDER BY id
 `
 
+// 只列启用的：这是别处（审批按编码找角色、员工分配角色）依赖的语义。
 func (q *Queries) ListRoles(ctx context.Context, tenantID int64) ([]Role, error) {
 	rows, err := q.db.Query(ctx, listRoles, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Role
+	for rows.Next() {
+		var i Role
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Code,
+			&i.Name,
+			&i.Description,
+			&i.Status,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRolesIncludingInactive = `-- name: ListRolesIncludingInactive :many
+SELECT id, tenant_id, code, name, description, status, created_at FROM roles WHERE tenant_id = $1 ORDER BY status DESC, id
+`
+
+// 角色管理页专用：停用的也要看得见，否则停掉之后没有任何入口能把它启用回来。
+func (q *Queries) ListRolesIncludingInactive(ctx context.Context, tenantID int64) ([]Role, error) {
+	rows, err := q.db.Query(ctx, listRolesIncludingInactive, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -2076,6 +2169,25 @@ func (q *Queries) SetRoleDataScope(ctx context.Context, arg SetRoleDataScopePara
 	return err
 }
 
+const setRoleStatus = `-- name: SetRoleStatus :execrows
+UPDATE roles SET status = $2::text
+WHERE tenant_id = $1 AND id = $3::bigint
+`
+
+type SetRoleStatusParams struct {
+	TenantID int64
+	Status   string
+	ID       int64
+}
+
+func (q *Queries) SetRoleStatus(ctx context.Context, arg SetRoleStatusParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setRoleStatus, arg.TenantID, arg.Status, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const setTenantStatus = `-- name: SetTenantStatus :execrows
 UPDATE tenants SET status = $1::text, updated_at = now()
 WHERE id = $2::bigint
@@ -2319,7 +2431,9 @@ const widestDataScope = `-- name: WidestDataScope :one
 SELECT s.scope_type, s.custom_dept_ids
 FROM role_data_scopes s
 JOIN employee_roles er ON er.role_id = s.role_id AND er.tenant_id = s.tenant_id
+JOIN roles r ON r.id = s.role_id AND r.tenant_id = s.tenant_id
 WHERE s.tenant_id = $1 AND er.employee_id = $2 AND s.module = $3
+  AND r.status = 'ACTIVE'
 ORDER BY CASE s.scope_type
            WHEN 'ALL' THEN 4
            WHEN 'CUSTOM' THEN 3
@@ -2343,6 +2457,8 @@ type WidestDataScopeRow struct {
 
 // Someone with several roles gets the widest of them: adding a role must
 // never take visibility away. Ordered by how much each scope reveals.
+// 停用的角色不再放宽任何人的可见范围：权限收回了、范围还留着，等于人看得见
+// 一堆自己再也打不开的单据。
 func (q *Queries) WidestDataScope(ctx context.Context, arg WidestDataScopeParams) (WidestDataScopeRow, error) {
 	row := q.db.QueryRow(ctx, widestDataScope, arg.TenantID, arg.EmployeeID, arg.Module)
 	var i WidestDataScopeRow

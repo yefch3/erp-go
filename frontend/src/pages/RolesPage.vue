@@ -16,7 +16,13 @@
             :class="{ active: r.id === selected?.id }"
             @click="select(r)"
           >
-            <div class="role-name">{{ r.name }}</div>
+            <div class="role-name">
+              {{ r.name }}
+              <!-- 停用的仍然列出来，否则停掉之后没有任何入口能把它启用回来。 -->
+              <el-tag v-if="r.status === 'INACTIVE'" type="info" size="small" effect="plain">
+                {{ t('roles.inactive') }}
+              </el-tag>
+            </div>
             <div class="role-code">{{ r.code }} · {{ r.permissionCodes.length }} {{ t('roles.permissionCount') }}</div>
           </div>
         </div>
@@ -27,9 +33,22 @@
               <span class="matrix-title">{{ selected.name }}</span>
               <span class="hint">{{ selected.description || t('roles.noDescription') }}</span>
             </div>
-            <el-button v-if="canWrite" type="primary" :loading="saving" @click="saveGrants">
-              {{ t('roles.saveGrants') }}
-            </el-button>
+            <div class="head-actions">
+              <!-- 超管不给这个按钮：停掉之后没有人能把它启用回来。服务端也拦，
+                   这里只是不把一个注定被拒的按钮摆在人眼前。 -->
+              <el-button
+                v-if="canWrite && selected.code !== 'SUPER_ADMIN'"
+                :type="selected.status === 'INACTIVE' ? 'success' : 'danger'"
+                plain
+                :loading="statusSaving"
+                @click="toggleStatus"
+              >
+                {{ selected.status === 'INACTIVE' ? t('roles.activate') : t('roles.deactivate') }}
+              </el-button>
+              <el-button v-if="canWrite" type="primary" :loading="saving" @click="saveGrants">
+                {{ t('roles.saveGrants') }}
+              </el-button>
+            </div>
           </div>
           <!-- Grouped by module because that is how people think about it:
                "can this role touch customers", not "code #7". -->
@@ -121,13 +140,13 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post, put } from '../api'
 import { useAuthStore } from '../stores/auth'
 import BasicDataEmployeeNav from '../components/BasicDataEmployeeNav.vue'
 
-interface Role { id: string; code: string; name: string; description: string; permissionCodes: string[] }
+interface Role { id: string; code: string; name: string; description: string; permissionCodes: string[]; status: string }
 interface Permission { id: string; code: string; name: string; module: string }
 
 const { t } = useI18n()
@@ -152,6 +171,33 @@ const scopeRequirement = ref('SELF')
 const scopeShipping = ref('SELF')
 const savingScope = ref(false)
 const form = reactive({ code: '', name: '', description: '' })
+const statusSaving = ref(false)
+
+// 停用是真的收权：持有这个角色的人会当场失去它带来的权限和数据范围。
+// 所以先确认，而且把「还有几个人持有」这类拒绝原样弹出来——服务端会在
+// 还有人持有时拒绝并给出人数，那句话正是人下一步要做的事。
+async function toggleStatus() {
+  if (!selected.value) return
+  const role = selected.value
+  const next = role.status === 'INACTIVE' ? 'ACTIVE' : 'INACTIVE'
+  if (next === 'INACTIVE') {
+    try {
+      await ElMessageBox.confirm(t('roles.deactivateConfirm', { name: role.name }), t('roles.deactivate'), {
+        type: 'warning',
+      })
+    } catch {
+      return // 点了取消
+    }
+  }
+  statusSaving.value = true
+  try {
+    await post(`/roles/${role.id}/status`, { status: next })
+    ElMessage.success(next === 'INACTIVE' ? t('roles.deactivated') : t('roles.activated'))
+    await load()
+  } finally {
+    statusSaving.value = false
+  }
+}
 
 const grouped = computed(() => {
   const out: Record<string, Permission[]> = {}
@@ -164,7 +210,8 @@ const grouped = computed(() => {
 async function load() {
   loading.value = true
   try {
-    roles.value = (await get<{ roles: Role[] }>('/roles')).roles ?? []
+    // /roles/all 而不是 /roles：这一页要看得见停用的角色。
+    roles.value = (await get<{ roles: Role[] }>('/roles/all')).roles ?? []
     const keep = selected.value?.id
     selected.value = roles.value.find((r) => r.id === keep) ?? roles.value[0] ?? null
     checked.value = [...(selected.value?.permissionCodes ?? [])]

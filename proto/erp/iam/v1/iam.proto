@@ -103,6 +103,11 @@ service PlatformService {
 service AccessService {
   rpc CreateRole(CreateRoleRequest) returns (CreateRoleResponse);
   rpc ListRoles(ListRolesRequest) returns (ListRolesResponse);
+  // 角色管理页用：含停用的，否则停掉之后没有入口能把它启用回来。
+  rpc ListAllRoles(ListAllRolesRequest) returns (ListAllRolesResponse);
+  // 停用/启用。角色只停用不真删——编号被员工、权限、数据范围和审批节点
+  // 引用着，真删会让审批流指向不存在的东西且无从追溯。停用是真收权。
+  rpc SetRoleStatus(SetRoleStatusRequest) returns (SetRoleStatusResponse);
   rpc GrantRolePermissions(GrantRolePermissionsRequest) returns (GrantRolePermissionsResponse);
   rpc AssignEmployeeRoles(AssignEmployeeRolesRequest) returns (AssignEmployeeRolesResponse);
   rpc ListPermissions(ListPermissionsRequest) returns (ListPermissionsResponse);
@@ -496,6 +501,8 @@ message Role {
   string name = 3;
   string description = 4;
   repeated string permission_codes = 5;
+  // ACTIVE / INACTIVE。只有角色管理页会看到 INACTIVE——别处一律只拿启用的。
+  string status = 6;
 }
 
 message CreateRoleRequest {
@@ -513,6 +520,20 @@ message ListRolesRequest {}
 message ListRolesResponse {
   repeated Role roles = 1;
 }
+
+message ListAllRolesRequest {}
+
+message ListAllRolesResponse {
+  repeated Role roles = 1;
+}
+
+message SetRoleStatusRequest {
+  int64 id = 1;
+  // ACTIVE 或 INACTIVE。
+  string status = 2;
+}
+
+message SetRoleStatusResponse {}
 
 message GrantRolePermissionsResponse {}
 

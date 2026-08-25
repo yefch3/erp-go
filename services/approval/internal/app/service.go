@@ -24,7 +24,12 @@ type Directory interface {
 	RoleMembers(ctx context.Context, roleID int64) ([]int64, error)
 	// RoleMembersByCode is the same question asked portably: a role id names
 	// one company's role, a role code names each company's own.
-	RoleMembersByCode(ctx context.Context, roleCode string) ([]int64, error)
+	//
+	// found 区分「这家公司没有（或停用了）这个角色」与「角色在、里面没人」。
+	// 两种情况该说的话不一样：前者要人去建，后者要人去加人。合成一句「请创建
+	// 角色并添加成员」，在角色已经存在时会把人支到角色页找一个明明在那儿的
+	// 东西——照着做不了的提示等于没有提示。
+	RoleMembersByCode(ctx context.Context, roleCode string) (ids []int64, found bool, err error)
 	// ManagersOf walks the submitter's reporting line: level 1 is their
 	// direct manager, 2 is that person's manager. Empty once it runs out.
 	ManagersOf(ctx context.Context, employeeID int64, levels int32) ([]int64, error)
@@ -161,18 +166,23 @@ func (s *Service) Submit(ctx context.Context, tenantID int64, in SubmitInput) (s
 	// 采购单会形成真实的付款承诺。组织架构没有上级时，转交配置的
 	// 采购审批角色，仍然生成待办，不能自动通过或停在草稿之外。
 	if firstNode == nil && usesPurchaseOrderFallback(in.BizType) {
-		fallback, err := s.dir.RoleMembersByCode(ctx, s.purchaseOrderFallbackRoleCode)
+		fallback, found, err := s.dir.RoleMembersByCode(ctx, s.purchaseOrderFallbackRoleCode)
 		if err != nil {
 			return store.ApprovalInstance{}, nil, fmt.Errorf("approval: resolve purchase fallback role %s: %w", s.purchaseOrderFallbackRoleCode, err)
 		}
 		fallback = preferOtherApprovers(fallback, in.SubmitterID)
 		if len(fallback) == 0 {
-			// 话要能照着做。原来只说「请先配置采购审批角色成员」，而第二家
-			// 公司连这个角色都还没有——照着做不了的提示等于没有提示。
-			return store.ApprovalInstance{}, nil, apierr.Invalid(
-				"AP_APPROVER_REQUIRED",
-				"采购单没有可用审批人：请在角色管理里创建编码为 "+s.purchaseOrderFallbackRoleCode+" 的角色并添加成员",
-			).WithMeta("role_code", s.purchaseOrderFallbackRoleCode)
+			// 话要能照着做——而「照着做」的内容取决于卡在哪一步。角色现在由
+			// 开户时自动播种（iam 的预置角色），所以绝大多数情况下它是在的，
+			// 缺的只是成员；让人去「创建」一个已经存在的角色，他会在角色页
+			// 找半天以为自己看错了。
+			msg := "采购单没有可用审批人：请在角色管理里给「" + s.purchaseOrderFallbackRoleCode + "」角色添加成员"
+			if !found {
+				msg = "采购单没有可用审批人：本公司没有启用的「" + s.purchaseOrderFallbackRoleCode +
+					"」角色，请在角色管理里创建或启用它，并添加成员"
+			}
+			return store.ApprovalInstance{}, nil, apierr.Invalid("AP_APPROVER_REQUIRED", msg).
+				WithMeta("role_code", s.purchaseOrderFallbackRoleCode)
 		}
 		node := nodes[0]
 		node.Name = "采购审批人审批"

@@ -556,6 +556,12 @@ export default {
     accountAndRoles: 'Cuenta y roles',
   },
   roles: {
+    inactive: 'Desactivado',
+    deactivate: 'Desactivar rol',
+    activate: 'Activar rol',
+    deactivateConfirm: 'Desactivar «{name}» retira de inmediato todos los permisos y alcances de datos que otorga. ¿Continuar?',
+    deactivated: 'Rol desactivado; sus permisos han sido retirados',
+    activated: 'Rol activado',
     title: 'Roles',
     create: 'Nuevo rol',
     code: 'Código del rol',

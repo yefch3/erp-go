@@ -36,10 +36,10 @@ func (h *Handler) Login(ctx context.Context, req *iamv1.LoginRequest) (*iamv1.Lo
 		return nil, err
 	}
 	return &iamv1.LoginResponse{
-		AccessToken:      res.Token,
-		ExpiresInSeconds: res.ExpiresInSeconds,
-		Employee:         employeeRowToProto(res.Employee, nil),
-		PermissionCodes:  res.PermissionCodes,
+		AccessToken:        res.Token,
+		ExpiresInSeconds:   res.ExpiresInSeconds,
+		Employee:           employeeRowToProto(res.Employee, nil),
+		PermissionCodes:    res.PermissionCodes,
 		MustChangePassword: res.MustChangePassword,
 	}, nil
 }
@@ -220,10 +220,32 @@ func (h *Handler) ListRoles(ctx context.Context, _ *iamv1.ListRolesRequest) (*ia
 	for i, r := range roles {
 		out[i] = &iamv1.Role{
 			Id: r.ID, Code: r.Code, Name: r.Name, Description: r.Description,
-			PermissionCodes: codes[r.ID],
+			PermissionCodes: codes[r.ID], Status: r.Status,
 		}
 	}
 	return &iamv1.ListRolesResponse{Roles: out}, nil
+}
+
+func (h *Handler) ListAllRoles(ctx context.Context, _ *iamv1.ListAllRolesRequest) (*iamv1.ListAllRolesResponse, error) {
+	roles, codes, err := h.svc.ListRolesForAdmin(ctx, grpcx.TenantID(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*iamv1.Role, len(roles))
+	for i, r := range roles {
+		out[i] = &iamv1.Role{
+			Id: r.ID, Code: r.Code, Name: r.Name, Description: r.Description,
+			PermissionCodes: codes[r.ID], Status: r.Status,
+		}
+	}
+	return &iamv1.ListAllRolesResponse{Roles: out}, nil
+}
+
+func (h *Handler) SetRoleStatus(ctx context.Context, req *iamv1.SetRoleStatusRequest) (*iamv1.SetRoleStatusResponse, error) {
+	if err := h.svc.SetRoleStatus(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetStatus()); err != nil {
+		return nil, err
+	}
+	return &iamv1.SetRoleStatusResponse{}, nil
 }
 
 func (h *Handler) ListPermissions(ctx context.Context, _ *iamv1.ListPermissionsRequest) (*iamv1.ListPermissionsResponse, error) {
