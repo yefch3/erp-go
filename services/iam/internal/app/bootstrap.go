@@ -101,17 +101,17 @@ func (s *Service) EnsureExtraTenant(ctx context.Context, seed SeedTenant) error 
 	})
 }
 
-// seedTenant 是开一家公司的全部动作，EnsureAdmin 与 EnsureExtraTenant 共用：
-// 公司、邮箱域名、总部部门、持全部权限的管理员、其登录账号与数据范围。
-// 守卫在调用方——这里假定「该不该开」已经回答过了。
+// seedTenant 是配置驱动的开户路径（EnsureAdmin 与 EnsureExtraTenant 共用）：
+// 核心之外再加邮箱域名、验证章与初始密码。守卫在调用方。
+//
+// 「直接盖验证章」只属于这条路径：操作员在部署现场断言这个地址。平台开户
+// （platform.go）走的是另一条——邀请信 + 激活点击，章由本人挣来，所以它只
+// 用 seedTenantCore，不经过这里。
 func (s *Service) seedTenant(ctx context.Context, q *store.Queries, seed SeedTenant, adminEmail string, domains []string) error {
-	ten, err := q.CreateTenant(ctx, seed.CompanyName)
+	tenantID, empID, permCount, err := s.seedTenantCore(ctx, q, seed.CompanyName, adminEmail)
 	if err != nil {
 		return err
 	}
-	// Ignoring the tenant id the sequence just handed us in favour of the
-	// caller's would be a lie waiting to be found; use what was created.
-	tenantID := ten.ID
 	for _, d := range domains {
 		if err := q.AddTenantDomain(ctx, store.AddTenantDomainParams{
 			Domain: d, TenantID: tenantID,
@@ -119,29 +119,10 @@ func (s *Service) seedTenant(ctx context.Context, q *store.Queries, seed SeedTen
 			return err
 		}
 	}
-
-	dept, err := q.CreateDepartment(ctx, store.CreateDepartmentParams{
-		TenantID: tenantID, Code: "HQ", Name: "总部", Path: "/", Level: 1,
-	})
-	if err != nil {
-		return err
-	}
-	if err := q.SetDepartmentPath(ctx, store.SetDepartmentPathParams{
-		TenantID: tenantID, ID: dept.ID, Path: fmt.Sprintf("/%d/", dept.ID), Level: 1,
-	}); err != nil {
-		return err
-	}
-
-	emp, err := q.CreateEmployee(ctx, store.CreateEmployeeParams{
-		TenantID: tenantID, Code: "ADMIN", Name: "系统管理员", DepartmentID: dept.ID,
-	})
-	if err != nil {
-		return err
-	}
 	// The address is the login identity, and stamping it verified here is
 	// the shortcut described above.
 	if err := q.SetEmployeeEmailVerified(ctx, store.SetEmployeeEmailVerifiedParams{
-		TenantID: tenantID, ID: emp.ID, Email: adminEmail,
+		TenantID: tenantID, ID: empID, Email: adminEmail,
 	}); err != nil {
 		return err
 	}
@@ -165,9 +146,49 @@ func (s *Service) seedTenant(ctx context.Context, q *store.Queries, seed SeedTen
 		// the column is NOT NULL UNIQUE and other account paths still
 		// write it. Holding the address keeps it unambiguous until those
 		// paths are reworked and the column can go.
-		TenantID: tenantID, EmployeeID: emp.ID, Username: adminEmail, PasswordHash: hash,
+		TenantID: tenantID, EmployeeID: empID, Username: adminEmail, PasswordHash: hash,
 	}); err != nil {
 		return err
+	}
+
+	s.log.Info("bootstrap: tenant and admin created",
+		"tenant", seed.CompanyName, "tenant_id", tenantID, "domains", domains,
+		"admin", adminEmail, "employee_id", empID, "permissions", permCount)
+	return nil
+}
+
+// seedTenantCore 是任何一条开户路径都要做的部分：公司、总部部门、管理员员工
+// （邮箱已填、未盖验证章）、持全部权限的超管角色与数据范围。
+//
+// 不发密码、不盖章——那两样是路径的分歧点：配置路径当场给密码并断言地址；
+// 平台路径把两样都留给激活链接。
+func (s *Service) seedTenantCore(ctx context.Context, q *store.Queries, companyName, adminEmail string) (tenantID, adminEmployeeID int64, permCount int, err error) {
+	ten, err := q.CreateTenant(ctx, companyName)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	// Ignoring the tenant id the sequence just handed us in favour of the
+	// caller's would be a lie waiting to be found; use what was created.
+	tenantID = ten.ID
+
+	dept, err := q.CreateDepartment(ctx, store.CreateDepartmentParams{
+		TenantID: tenantID, Code: "HQ", Name: "总部", Path: "/", Level: 1,
+	})
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	if err := q.SetDepartmentPath(ctx, store.SetDepartmentPathParams{
+		TenantID: tenantID, ID: dept.ID, Path: fmt.Sprintf("/%d/", dept.ID), Level: 1,
+	}); err != nil {
+		return 0, 0, 0, err
+	}
+
+	emp, err := q.CreateEmployee(ctx, store.CreateEmployeeParams{
+		TenantID: tenantID, Code: "ADMIN", Name: "系统管理员",
+		DepartmentID: dept.ID, Email: adminEmail,
+	})
+	if err != nil {
+		return 0, 0, 0, err
 	}
 
 	role, err := q.CreateRole(ctx, store.CreateRoleParams{
@@ -175,17 +196,17 @@ func (s *Service) seedTenant(ctx context.Context, q *store.Queries, seed SeedTen
 		Description: "系统引导创建，持有全部权限",
 	})
 	if err != nil {
-		return err
+		return 0, 0, 0, err
 	}
 	perms, err := q.ListPermissions(ctx)
 	if err != nil {
-		return err
+		return 0, 0, 0, err
 	}
 	for _, p := range perms {
 		if err := q.AddRolePermission(ctx, store.AddRolePermissionParams{
 			TenantID: tenantID, RoleID: role.ID, PermissionID: p.ID,
 		}); err != nil {
-			return err
+			return 0, 0, 0, err
 		}
 	}
 	// 数据范围，和权限是两件事：权限决定能用哪些功能，范围决定能看谁的
@@ -200,19 +221,15 @@ func (s *Service) seedTenant(ctx context.Context, q *store.Queries, seed SeedTen
 			TenantID: tenantID, RoleID: role.ID, Module: module,
 			ScopeType: "ALL", CustomDeptIds: []int64{},
 		}); err != nil {
-			return err
+			return 0, 0, 0, err
 		}
 	}
 	if err := q.AddEmployeeRole(ctx, store.AddEmployeeRoleParams{
 		TenantID: tenantID, EmployeeID: emp.ID, RoleID: role.ID,
 	}); err != nil {
-		return err
+		return 0, 0, 0, err
 	}
-
-	s.log.Info("bootstrap: tenant and admin created",
-		"tenant", ten.Name, "tenant_id", tenantID, "domains", domains,
-		"admin", adminEmail, "employee_id", emp.ID, "permissions", len(perms))
-	return nil
+	return tenantID, emp.ID, len(perms), nil
 }
 
 // superAdminScopeModules 是引导时给超管铺开的数据范围。

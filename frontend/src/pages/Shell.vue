@@ -273,7 +273,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { post } from '../api'
+import { get, post } from '../api'
 import { useAuthStore } from '../stores/auth'
 import LangSwitcher from '../components/LangSwitcher.vue'
 import ShippingArrivalNotifications from '../components/ShippingArrivalNotifications.vue'
@@ -291,6 +291,12 @@ const route = useRoute()
 const router = useRouter()
 const shippingNotifications = ref<InstanceType<typeof ShippingArrivalNotifications> | null>(null)
 const basicDataOpen = ref(false)
+// 平台操作员探测。默认 false：探测挂了就当不是——菜单少亮一项，真操作员
+// 刷新一下就回来；反过来（默认 true）会把平台入口闪给每一个普通用户。
+const isPlatformOperator = ref(false)
+get<{ operator: boolean }>('/platform/me')
+  .then((d) => { isPlatformOperator.value = !!d.operator })
+  .catch(() => { /* 不是操作员或网络抖动,保持 false */ })
 const procurementOpen = ref(false)
 const financeOpen = ref(false)
 const warehouseOpen = ref(false)
@@ -332,6 +338,13 @@ const basicDataItems = computed(() => [
   // 的人，不该谁能用这个功能谁就能看全公司花了多少。
   ...(auth.can('iam:employee:read')
     ? [{ path: '/basic/excel-usage', activePrefix: '/basic/excel-usage', label: t('menu.excelUsage'), todo: false }]
+    : []),
+  // 平台开户：不看权限看名单（platform_operators）。权限每家公司的超管都有，
+  // 拿它当开关等于把这一项亮给所有客户管理员。名单在服务端，前端登录后探测
+  // 一次 /api/platform/me——探测失败按「不是操作员」处理，页面本身还有服务端
+  // 的 403 兜底，这里只决定菜单亮不亮。
+  ...(isPlatformOperator.value
+    ? [{ path: '/platform/tenants', activePrefix: '/platform', label: t('menu.platformTenants'), todo: false }]
     : []),
 ])
 

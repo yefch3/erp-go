@@ -95,6 +95,12 @@ type Permission struct {
 	MenuPath string
 }
 
+type PlatformOperator struct {
+	EmployeeID int64
+	Note       string
+	CreatedAt  pgtype.Timestamptz
+}
+
 type Role struct {
 	ID          int64
 	TenantID    int64
