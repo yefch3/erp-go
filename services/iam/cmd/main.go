@@ -67,6 +67,7 @@ func run(log *slog.Logger) error {
 	iamv1.RegisterAuthServiceServer(srv, h)
 	iamv1.RegisterDirectoryServiceServer(srv, h)
 	iamv1.RegisterAccessServiceServer(srv, h)
+	iamv1.RegisterPlatformServiceServer(srv, h)
 	reflection.Register(srv) // grpcurl-friendly during development
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)

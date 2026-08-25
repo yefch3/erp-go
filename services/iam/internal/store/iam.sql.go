@@ -586,6 +586,24 @@ func (q *Queries) EmployeesInMyDeptTree(ctx context.Context, arg EmployeesInMyDe
 	return items, nil
 }
 
+const findTenantAdmin = `-- name: FindTenantAdmin :one
+SELECT id, email FROM employees
+WHERE tenant_id = $1::bigint AND code = 'ADMIN'
+`
+
+type FindTenantAdminRow struct {
+	ID    int64
+	Email string
+}
+
+// 重发邀请要找的人。
+func (q *Queries) FindTenantAdmin(ctx context.Context, tenantID int64) (FindTenantAdminRow, error) {
+	row := q.db.QueryRow(ctx, findTenantAdmin, tenantID)
+	var i FindTenantAdminRow
+	err := row.Scan(&i.ID, &i.Email)
+	return i, err
+}
+
 const getDepartment = `-- name: GetDepartment :one
 SELECT id, tenant_id, code, name, parent_id, path, level, sort_order, status, created_at, updated_at, leader_employee_id, version FROM departments WHERE tenant_id = $1 AND id = $2
 `
@@ -980,6 +998,18 @@ func (q *Queries) InsertDirectoryChange(ctx context.Context, arg InsertDirectory
 		arg.OperatorID,
 	)
 	return err
+}
+
+const isPlatformOperator = `-- name: IsPlatformOperator :one
+SELECT EXISTS (SELECT 1 FROM platform_operators WHERE employee_id = $1) AS ok
+`
+
+// 平台身份住在权限系统之外，理由见 00044 的表注释。
+func (q *Queries) IsPlatformOperator(ctx context.Context, employeeID int64) (bool, error) {
+	row := q.db.QueryRow(ctx, isPlatformOperator, employeeID)
+	var ok bool
+	err := row.Scan(&ok)
+	return ok, err
 }
 
 const isTenantDomain = `-- name: IsTenantDomain :one
@@ -1675,6 +1705,53 @@ func (q *Queries) ListTenantDomains(ctx context.Context, tenantID int64) ([]stri
 	return items, nil
 }
 
+const listTenantsForPlatform = `-- name: ListTenantsForPlatform :many
+SELECT t.id, t.name, t.status, t.created_at,
+       coalesce(a.email, '')::text AS admin_email,
+       coalesce(a.email_verified_at IS NOT NULL, false)::boolean AS admin_activated
+FROM tenants t
+LEFT JOIN employees a ON a.tenant_id = t.id AND a.code = 'ADMIN'
+ORDER BY t.id
+`
+
+type ListTenantsForPlatformRow struct {
+	ID             int64
+	Name           string
+	Status         string
+	CreatedAt      pgtype.Timestamptz
+	AdminEmail     string
+	AdminActivated bool
+}
+
+// 开户页的清单：每家公司一行，带管理员地址和「激活了没有」。
+// 管理员按 code='ADMIN' 找——两条开户路径（引导种子与平台开户）写的都是它。
+func (q *Queries) ListTenantsForPlatform(ctx context.Context) ([]ListTenantsForPlatformRow, error) {
+	rows, err := q.db.Query(ctx, listTenantsForPlatform)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTenantsForPlatformRow
+	for rows.Next() {
+		var i ListTenantsForPlatformRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Status,
+			&i.CreatedAt,
+			&i.AdminEmail,
+			&i.AdminActivated,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const managerAtLevel = `-- name: ManagerAtLevel :many
 WITH RECURSIVE chain AS (
     SELECT e.id, e.manager_id, 0 AS lvl
@@ -1953,6 +2030,24 @@ func (q *Queries) SetRoleDataScope(ctx context.Context, arg SetRoleDataScopePara
 		arg.CustomDeptIds,
 	)
 	return err
+}
+
+const setTenantStatus = `-- name: SetTenantStatus :execrows
+UPDATE tenants SET status = $1::text, updated_at = now()
+WHERE id = $2::bigint
+`
+
+type SetTenantStatusParams struct {
+	Status string
+	ID     int64
+}
+
+func (q *Queries) SetTenantStatus(ctx context.Context, arg SetTenantStatusParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setTenantStatus, arg.Status, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateDepartmentDetails = `-- name: UpdateDepartmentDetails :one

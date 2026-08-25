@@ -107,14 +107,26 @@ func (s *Service) InviteEmployee(ctx context.Context, tenantID, employeeID, invi
 	// A link is only proof if it goes somewhere the company can read. An
 	// address on a domain we do not own proves the person controls a personal
 	// mailbox, which is not the question being asked.
-	owned, err := s.q.IsTenantDomain(ctx, store.IsTenantDomainParams{
-		Domain: addr[at+1:], TenantID: tenantID,
-	})
+	//
+	// **公司一个域名都没有时，这道门不设。** 两种人走到这里时公司名下没有
+	// 域名：平台刚开出来的第一位管理员（域名之后由公司自己补），以及全员用
+	// 公共邮箱（263.net、gmail.com）的公司。对他们，「地址归属」只能由激活
+	// 点击本身证明——这层防管理员手滑的网他们天生没有，页面上说明白，好过
+	// 把他们整个挡在门外。域名一旦补上，门就回来。
+	domains, err := s.q.ListTenantDomains(ctx, tenantID)
 	if err != nil {
 		return Invitation{}, err
 	}
-	if !owned {
-		return Invitation{}, errInviteForeignDomain
+	if len(domains) > 0 {
+		owned, err := s.q.IsTenantDomain(ctx, store.IsTenantDomainParams{
+			Domain: addr[at+1:], TenantID: tenantID,
+		})
+		if err != nil {
+			return Invitation{}, err
+		}
+		if !owned {
+			return Invitation{}, errInviteForeignDomain
+		}
 	}
 	// Already activated. Re-inviting would work — the mail goes to their own
 	// mailbox — but it would be a password reset wearing an invitation's

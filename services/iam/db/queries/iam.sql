@@ -561,3 +561,26 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND code = sqlc.arg(code)::text;
 -- name: DomainClaimed :one
 -- 开第二家公司时的幂等键：域名已归属任何一家就不再开。
 SELECT EXISTS (SELECT 1 FROM tenant_domains WHERE domain = $1::text) AS claimed;
+
+-- name: IsPlatformOperator :one
+-- 平台身份住在权限系统之外，理由见 00044 的表注释。
+SELECT EXISTS (SELECT 1 FROM platform_operators WHERE employee_id = $1) AS ok;
+
+-- name: ListTenantsForPlatform :many
+-- 开户页的清单：每家公司一行，带管理员地址和「激活了没有」。
+-- 管理员按 code='ADMIN' 找——两条开户路径（引导种子与平台开户）写的都是它。
+SELECT t.id, t.name, t.status, t.created_at,
+       coalesce(a.email, '')::text AS admin_email,
+       coalesce(a.email_verified_at IS NOT NULL, false)::boolean AS admin_activated
+FROM tenants t
+LEFT JOIN employees a ON a.tenant_id = t.id AND a.code = 'ADMIN'
+ORDER BY t.id;
+
+-- name: FindTenantAdmin :one
+-- 重发邀请要找的人。
+SELECT id, email FROM employees
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND code = 'ADMIN';
+
+-- name: SetTenantStatus :execrows
+UPDATE tenants SET status = sqlc.arg(status)::text, updated_at = now()
+WHERE id = sqlc.arg(id)::bigint;

@@ -34,6 +34,7 @@ export const router = createRouter({
         { path: 'quotations', redirect: '/sourcing-cases' },
         { path: 'contracts', component: () => import('./pages/ContractsPage.vue') },
         { path: 'basic/excel-usage', component: () => import('./pages/ExcelUsagePage.vue') },
+        { path: 'platform/tenants', component: () => import('./pages/PlatformTenantsPage.vue') },
         { path: 'contract-execution', component: () => import('./pages/ContractExecutionPage.vue') },
         { path: 'shipments', component: () => import('./pages/ShipmentsPage.vue') },
         { path: 'shipping', component: () => import('./pages/ShippingPage.vue') },

@@ -84,6 +84,22 @@ service DirectoryService {
 
 // AccessService owns roles, permissions and the permission check other
 // services and the gateway rely on.
+// PlatformService 是平台层：开客户公司、启停、给第一位管理员发邀请。
+//
+// 每个 RPC 的守卫都是 platform_operators 名单，不是权限系统——每家公司的超管
+// 自动持全部权限，做成权限的「开公司」会流进客户管理员手里。名单校验在 iam
+// 内部完成，网关只负责转发身份。
+service PlatformService {
+  rpc CheckOperator(CheckOperatorRequest) returns (CheckOperatorResponse);
+  rpc ListPlatformTenants(ListPlatformTenantsRequest) returns (ListPlatformTenantsResponse);
+  // 开公司并给管理员铸一张邀请。发信是网关的事（走操作员自己绑定的邮箱），
+  // 分工与员工邀请完全相同。
+  rpc CreatePlatformTenant(CreatePlatformTenantRequest) returns (CreatePlatformTenantResponse);
+  // 再铸一张（旧链接作废）。已激活的管理员会被拒绝。
+  rpc ReinvitePlatformAdmin(ReinvitePlatformAdminRequest) returns (ReinvitePlatformAdminResponse);
+  rpc SetPlatformTenantStatus(SetPlatformTenantStatusRequest) returns (SetPlatformTenantStatusResponse);
+}
+
 service AccessService {
   rpc CreateRole(CreateRoleRequest) returns (CreateRoleResponse);
   rpc ListRoles(ListRolesRequest) returns (ListRolesResponse);
@@ -619,3 +635,36 @@ message RoleMember {
 message ListRoleMembersResponse {
   repeated RoleMember members = 1;
 }
+
+message CheckOperatorRequest {}
+message CheckOperatorResponse { bool operator = 1; }
+
+message ListPlatformTenantsRequest {}
+message PlatformTenant {
+  int64 id = 1;
+  string name = 2;
+  string status = 3;
+  string created_at = 4;
+  string admin_email = 5;
+  bool admin_activated = 6;
+}
+message ListPlatformTenantsResponse { repeated PlatformTenant tenants = 1; }
+
+message CreatePlatformTenantRequest {
+  string name = 1;
+  string admin_email = 2;
+}
+message CreatePlatformTenantResponse {
+  PlatformTenant tenant = 1;
+  // 与员工邀请同一形状：token 只在这条响应上以明文存在一次。
+  InviteEmployeeResponse invitation = 2;
+}
+
+message ReinvitePlatformAdminRequest { int64 tenant_id = 1; }
+message ReinvitePlatformAdminResponse { InviteEmployeeResponse invitation = 1; }
+
+message SetPlatformTenantStatusRequest {
+  int64 tenant_id = 1;
+  string status = 2;
+}
+message SetPlatformTenantStatusResponse { bool ok = 1; }

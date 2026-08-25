@@ -37,6 +37,7 @@ import (
 type Server struct {
 	IAM       iamv1.AuthServiceClient
 	Directory iamv1.DirectoryServiceClient
+	Platform  iamv1.PlatformServiceClient
 	Access    iamv1.AccessServiceClient
 	Customers mdv1.CustomerServiceClient
 	Suppliers mdv1.SupplierServiceClient
@@ -642,6 +643,15 @@ func (s *Server) Router() http.Handler {
 		// 这是账不是信，而且它跨全公司的人，不该谁能读自己的邮件谁就能看。
 		// 也不需要邮箱解锁：它不含任何信件内容。
 		r.With(s.perm("iam:employee:read")).Get("/api/excel-usage", s.excelUsage)
+
+		// 平台开户（E7）。刻意没有 s.perm(...)：普通权限每家公司的超管都有，
+		// 用它守平台等于没守。真正的守卫是 iam 里的 platform_operators 名单，
+		// 每个 RPC 自查——网关只转发身份，名单说不行就是 403。
+		r.Get("/api/platform/me", s.platformMe)
+		r.Get("/api/platform/tenants", s.platformTenants)
+		r.Post("/api/platform/tenants", s.platformCreateTenant)
+		r.Post("/api/platform/tenants/{id}/reinvite", s.platformReinvite)
+		r.Post("/api/platform/tenants/{id}/status", s.platformSetTenantStatus)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/mark", s.markInbound)
 		// Permanent deletion out of the trash. ERP-side copies only; the mail
 		// host's original is beyond this API's reach by design.

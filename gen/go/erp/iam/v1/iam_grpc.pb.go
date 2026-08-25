@@ -1195,6 +1195,282 @@ var DirectoryService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	PlatformService_CheckOperator_FullMethodName           = "/erp.iam.v1.PlatformService/CheckOperator"
+	PlatformService_ListPlatformTenants_FullMethodName     = "/erp.iam.v1.PlatformService/ListPlatformTenants"
+	PlatformService_CreatePlatformTenant_FullMethodName    = "/erp.iam.v1.PlatformService/CreatePlatformTenant"
+	PlatformService_ReinvitePlatformAdmin_FullMethodName   = "/erp.iam.v1.PlatformService/ReinvitePlatformAdmin"
+	PlatformService_SetPlatformTenantStatus_FullMethodName = "/erp.iam.v1.PlatformService/SetPlatformTenantStatus"
+)
+
+// PlatformServiceClient is the client API for PlatformService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// AccessService owns roles, permissions and the permission check other
+// services and the gateway rely on.
+// PlatformService 是平台层：开客户公司、启停、给第一位管理员发邀请。
+//
+// 每个 RPC 的守卫都是 platform_operators 名单，不是权限系统——每家公司的超管
+// 自动持全部权限，做成权限的「开公司」会流进客户管理员手里。名单校验在 iam
+// 内部完成，网关只负责转发身份。
+type PlatformServiceClient interface {
+	CheckOperator(ctx context.Context, in *CheckOperatorRequest, opts ...grpc.CallOption) (*CheckOperatorResponse, error)
+	ListPlatformTenants(ctx context.Context, in *ListPlatformTenantsRequest, opts ...grpc.CallOption) (*ListPlatformTenantsResponse, error)
+	// 开公司并给管理员铸一张邀请。发信是网关的事（走操作员自己绑定的邮箱），
+	// 分工与员工邀请完全相同。
+	CreatePlatformTenant(ctx context.Context, in *CreatePlatformTenantRequest, opts ...grpc.CallOption) (*CreatePlatformTenantResponse, error)
+	// 再铸一张（旧链接作废）。已激活的管理员会被拒绝。
+	ReinvitePlatformAdmin(ctx context.Context, in *ReinvitePlatformAdminRequest, opts ...grpc.CallOption) (*ReinvitePlatformAdminResponse, error)
+	SetPlatformTenantStatus(ctx context.Context, in *SetPlatformTenantStatusRequest, opts ...grpc.CallOption) (*SetPlatformTenantStatusResponse, error)
+}
+
+type platformServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewPlatformServiceClient(cc grpc.ClientConnInterface) PlatformServiceClient {
+	return &platformServiceClient{cc}
+}
+
+func (c *platformServiceClient) CheckOperator(ctx context.Context, in *CheckOperatorRequest, opts ...grpc.CallOption) (*CheckOperatorResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckOperatorResponse)
+	err := c.cc.Invoke(ctx, PlatformService_CheckOperator_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *platformServiceClient) ListPlatformTenants(ctx context.Context, in *ListPlatformTenantsRequest, opts ...grpc.CallOption) (*ListPlatformTenantsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPlatformTenantsResponse)
+	err := c.cc.Invoke(ctx, PlatformService_ListPlatformTenants_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *platformServiceClient) CreatePlatformTenant(ctx context.Context, in *CreatePlatformTenantRequest, opts ...grpc.CallOption) (*CreatePlatformTenantResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreatePlatformTenantResponse)
+	err := c.cc.Invoke(ctx, PlatformService_CreatePlatformTenant_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *platformServiceClient) ReinvitePlatformAdmin(ctx context.Context, in *ReinvitePlatformAdminRequest, opts ...grpc.CallOption) (*ReinvitePlatformAdminResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReinvitePlatformAdminResponse)
+	err := c.cc.Invoke(ctx, PlatformService_ReinvitePlatformAdmin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *platformServiceClient) SetPlatformTenantStatus(ctx context.Context, in *SetPlatformTenantStatusRequest, opts ...grpc.CallOption) (*SetPlatformTenantStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetPlatformTenantStatusResponse)
+	err := c.cc.Invoke(ctx, PlatformService_SetPlatformTenantStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// PlatformServiceServer is the server API for PlatformService service.
+// All implementations must embed UnimplementedPlatformServiceServer
+// for forward compatibility.
+//
+// AccessService owns roles, permissions and the permission check other
+// services and the gateway rely on.
+// PlatformService 是平台层：开客户公司、启停、给第一位管理员发邀请。
+//
+// 每个 RPC 的守卫都是 platform_operators 名单，不是权限系统——每家公司的超管
+// 自动持全部权限，做成权限的「开公司」会流进客户管理员手里。名单校验在 iam
+// 内部完成，网关只负责转发身份。
+type PlatformServiceServer interface {
+	CheckOperator(context.Context, *CheckOperatorRequest) (*CheckOperatorResponse, error)
+	ListPlatformTenants(context.Context, *ListPlatformTenantsRequest) (*ListPlatformTenantsResponse, error)
+	// 开公司并给管理员铸一张邀请。发信是网关的事（走操作员自己绑定的邮箱），
+	// 分工与员工邀请完全相同。
+	CreatePlatformTenant(context.Context, *CreatePlatformTenantRequest) (*CreatePlatformTenantResponse, error)
+	// 再铸一张（旧链接作废）。已激活的管理员会被拒绝。
+	ReinvitePlatformAdmin(context.Context, *ReinvitePlatformAdminRequest) (*ReinvitePlatformAdminResponse, error)
+	SetPlatformTenantStatus(context.Context, *SetPlatformTenantStatusRequest) (*SetPlatformTenantStatusResponse, error)
+	mustEmbedUnimplementedPlatformServiceServer()
+}
+
+// UnimplementedPlatformServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedPlatformServiceServer struct{}
+
+func (UnimplementedPlatformServiceServer) CheckOperator(context.Context, *CheckOperatorRequest) (*CheckOperatorResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CheckOperator not implemented")
+}
+func (UnimplementedPlatformServiceServer) ListPlatformTenants(context.Context, *ListPlatformTenantsRequest) (*ListPlatformTenantsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListPlatformTenants not implemented")
+}
+func (UnimplementedPlatformServiceServer) CreatePlatformTenant(context.Context, *CreatePlatformTenantRequest) (*CreatePlatformTenantResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreatePlatformTenant not implemented")
+}
+func (UnimplementedPlatformServiceServer) ReinvitePlatformAdmin(context.Context, *ReinvitePlatformAdminRequest) (*ReinvitePlatformAdminResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReinvitePlatformAdmin not implemented")
+}
+func (UnimplementedPlatformServiceServer) SetPlatformTenantStatus(context.Context, *SetPlatformTenantStatusRequest) (*SetPlatformTenantStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetPlatformTenantStatus not implemented")
+}
+func (UnimplementedPlatformServiceServer) mustEmbedUnimplementedPlatformServiceServer() {}
+func (UnimplementedPlatformServiceServer) testEmbeddedByValue()                         {}
+
+// UnsafePlatformServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to PlatformServiceServer will
+// result in compilation errors.
+type UnsafePlatformServiceServer interface {
+	mustEmbedUnimplementedPlatformServiceServer()
+}
+
+func RegisterPlatformServiceServer(s grpc.ServiceRegistrar, srv PlatformServiceServer) {
+	// If the following call pancis, it indicates UnimplementedPlatformServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&PlatformService_ServiceDesc, srv)
+}
+
+func _PlatformService_CheckOperator_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckOperatorRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformServiceServer).CheckOperator(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformService_CheckOperator_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformServiceServer).CheckOperator(ctx, req.(*CheckOperatorRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PlatformService_ListPlatformTenants_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPlatformTenantsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformServiceServer).ListPlatformTenants(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformService_ListPlatformTenants_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformServiceServer).ListPlatformTenants(ctx, req.(*ListPlatformTenantsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PlatformService_CreatePlatformTenant_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreatePlatformTenantRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformServiceServer).CreatePlatformTenant(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformService_CreatePlatformTenant_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformServiceServer).CreatePlatformTenant(ctx, req.(*CreatePlatformTenantRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PlatformService_ReinvitePlatformAdmin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReinvitePlatformAdminRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformServiceServer).ReinvitePlatformAdmin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformService_ReinvitePlatformAdmin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformServiceServer).ReinvitePlatformAdmin(ctx, req.(*ReinvitePlatformAdminRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PlatformService_SetPlatformTenantStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetPlatformTenantStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformServiceServer).SetPlatformTenantStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformService_SetPlatformTenantStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformServiceServer).SetPlatformTenantStatus(ctx, req.(*SetPlatformTenantStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// PlatformService_ServiceDesc is the grpc.ServiceDesc for PlatformService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var PlatformService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "erp.iam.v1.PlatformService",
+	HandlerType: (*PlatformServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CheckOperator",
+			Handler:    _PlatformService_CheckOperator_Handler,
+		},
+		{
+			MethodName: "ListPlatformTenants",
+			Handler:    _PlatformService_ListPlatformTenants_Handler,
+		},
+		{
+			MethodName: "CreatePlatformTenant",
+			Handler:    _PlatformService_CreatePlatformTenant_Handler,
+		},
+		{
+			MethodName: "ReinvitePlatformAdmin",
+			Handler:    _PlatformService_ReinvitePlatformAdmin_Handler,
+		},
+		{
+			MethodName: "SetPlatformTenantStatus",
+			Handler:    _PlatformService_SetPlatformTenantStatus_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "erp/iam/v1/iam.proto",
+}
+
+const (
 	AccessService_CreateRole_FullMethodName              = "/erp.iam.v1.AccessService/CreateRole"
 	AccessService_ListRoles_FullMethodName               = "/erp.iam.v1.AccessService/ListRoles"
 	AccessService_GrantRolePermissions_FullMethodName    = "/erp.iam.v1.AccessService/GrantRolePermissions"
@@ -1211,9 +1487,6 @@ const (
 // AccessServiceClient is the client API for AccessService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// AccessService owns roles, permissions and the permission check other
-// services and the gateway rely on.
 type AccessServiceClient interface {
 	CreateRole(ctx context.Context, in *CreateRoleRequest, opts ...grpc.CallOption) (*CreateRoleResponse, error)
 	ListRoles(ctx context.Context, in *ListRolesRequest, opts ...grpc.CallOption) (*ListRolesResponse, error)
@@ -1361,9 +1634,6 @@ func (c *accessServiceClient) SetDataScope(ctx context.Context, in *SetDataScope
 // AccessServiceServer is the server API for AccessService service.
 // All implementations must embed UnimplementedAccessServiceServer
 // for forward compatibility.
-//
-// AccessService owns roles, permissions and the permission check other
-// services and the gateway rely on.
 type AccessServiceServer interface {
 	CreateRole(context.Context, *CreateRoleRequest) (*CreateRoleResponse, error)
 	ListRoles(context.Context, *ListRolesRequest) (*ListRolesResponse, error)

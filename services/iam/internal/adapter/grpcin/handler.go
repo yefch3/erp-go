@@ -20,6 +20,7 @@ type Handler struct {
 	iamv1.UnimplementedAuthServiceServer
 	iamv1.UnimplementedDirectoryServiceServer
 	iamv1.UnimplementedAccessServiceServer
+	iamv1.UnimplementedPlatformServiceServer
 	svc *app.Service
 }
 

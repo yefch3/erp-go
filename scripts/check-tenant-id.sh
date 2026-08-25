@@ -6,7 +6,7 @@ set -eu
 
 # Single line: BSD awk rejects -v values containing newlines.
 # tenants is the registry of tenants: a tenant_id on it would name itself.
-EXEMPT="outbox_events processed_events goose_db_version schema_migrations fx_rates fx_rate_latest fx_manual_overrides fx_anomalies uoms permissions tenants"
+EXEMPT="outbox_events processed_events goose_db_version schema_migrations fx_rates fx_rate_latest fx_manual_overrides fx_anomalies uoms permissions tenants platform_operators"
 
 fail=0
 for f in $(find services -path '*/db/migrations/*.sql' 2>/dev/null | sort); do
