@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -70,6 +71,20 @@ func unaryOperator(log *slog.Logger) grpc.UnaryServerInterceptor {
 			return nil, status.Error(codes.Unauthenticated, "unauthenticated")
 		}
 		if op.TenantID == 0 {
+			// 「没有登录用户就算第一家公司」。这句默认值已经咬过一次：提单
+			// 提醒的后台任务在没有登录用户的上下文里问「物流部都有谁」，拿
+			// 回的是第一家公司的人，然后发给了每一家公司（见 shipping/
+			// blreminder.go 的修复）。后台任务必须用 WithOperator 显式带上
+			// 它正在处理的那家公司。
+			//
+			// 默认值本身先不拆：登录、激活、健康检查这些调用合法地没有登录
+			// 态，贸然改成拒绝会砸掉它们。改成拆除的条件写在这里——生产日志
+			// 里这条 WARN 在合法名单之外安静了，就可以把默认改成拒绝。
+			if !tenantlessAllowed(info.FullMethod) {
+				log.Warn("grpcx: a call with no tenant was defaulted to tenant 1 — "+
+					"background work must attach its tenant with WithOperator",
+					"method", info.FullMethod)
+			}
 			op.TenantID = 1
 		}
 		return handler(WithOperator(ctx, op), req)
@@ -184,4 +199,13 @@ func decodeHeader(v string) string {
 		return decoded
 	}
 	return v
+}
+
+// tenantlessAllowed lists the calls that legitimately arrive with nobody
+// logged in. Everything else that shows up without a tenant is a background
+// task that forgot WithOperator — and is about to operate on the first
+// company's data by accident.
+func tenantlessAllowed(method string) bool {
+	return strings.HasPrefix(method, "/erp.iam.v1.AuthService/") ||
+		strings.HasPrefix(method, "/grpc.health.")
 }
