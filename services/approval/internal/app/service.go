@@ -124,6 +124,17 @@ func (s *Service) Submit(ctx context.Context, tenantID int64, in SubmitInput) (s
 	def, err := s.q.ActiveDefinitionFor(ctx, store.ActiveDefinitionForParams{
 		TenantID: tenantID, BizType: in.BizType, Amount: amount,
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		// 没有审批流 ≠ 该拒绝：也可能只是这家公司还没被播过种。基准档的下限
+		// 是 0，所以只要这个单据类型有过任何一条流程，就一定有一条匹配得上；
+		// 走到这里就是「一条都没有」。见 defaults.go。
+		if seedErr := s.seedDefaultFlows(ctx, tenantID, in.BizType); seedErr != nil {
+			return store.ApprovalInstance{}, nil, seedErr
+		}
+		def, err = s.q.ActiveDefinitionFor(ctx, store.ActiveDefinitionForParams{
+			TenantID: tenantID, BizType: in.BizType, Amount: amount,
+		})
+	}
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return store.ApprovalInstance{}, nil, apierr.NotFound("AP_DEFINITION_NOT_FOUND", "该单据类型未配置审批流").

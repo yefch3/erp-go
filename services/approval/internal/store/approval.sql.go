@@ -186,6 +186,30 @@ func (q *Queries) CloseSiblingTasks(ctx context.Context, arg CloseSiblingTasksPa
 	return items, nil
 }
 
+const countDefinitionsFor = `-- name: CountDefinitionsFor :one
+
+SELECT count(*)::bigint FROM approval_definitions
+WHERE tenant_id = $1 AND biz_type = $2
+`
+
+type CountDefinitionsForParams struct {
+	TenantID int64
+	BizType  string
+}
+
+// 下面四条只服务「新公司开张时补一套默认审批流」，见 app/defaults.go。
+// 这家公司在这个单据类型上到底有没有过审批流——任何状态都算。
+//
+// 「一条都没有」和「有但都停用了」是两件事：前者是没播过种，后者是有人
+// 特意关掉的。只看 ACTIVE 会把后者也当成前者，于是每提交一次就把人家
+// 关掉的流程复活一次。
+func (q *Queries) CountDefinitionsFor(ctx context.Context, arg CountDefinitionsForParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countDefinitionsFor, arg.TenantID, arg.BizType)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countPendingAtNode = `-- name: CountPendingAtNode :one
 SELECT count(*) FROM approval_tasks
 WHERE tenant_id = $1 AND instance_id = $2 AND node_seq = $3 AND status = 'PENDING'
@@ -512,6 +536,27 @@ func (q *Queries) GetDefinition(ctx context.Context, arg GetDefinitionParams) (G
 		&i.CreatedBy,
 	)
 	return i, err
+}
+
+const getDefinitionBand = `-- name: GetDefinitionBand :one
+SELECT id FROM approval_definitions
+WHERE tenant_id = $1 AND biz_type = $2
+  AND min_amount = $3::text::numeric
+  AND version = 1
+`
+
+type GetDefinitionBandParams struct {
+	TenantID  int64
+	BizType   string
+	MinAmount string
+}
+
+// 播种后再读：并发时插入失败的那一方，读到的才是真正生效的那条。
+func (q *Queries) GetDefinitionBand(ctx context.Context, arg GetDefinitionBandParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getDefinitionBand, arg.TenantID, arg.BizType, arg.MinAmount)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getInstance = `-- name: GetInstance :one
@@ -976,4 +1021,66 @@ func (q *Queries) NextDefinitionVersion(ctx context.Context, arg NextDefinitionV
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const seedDefinition = `-- name: SeedDefinition :execrows
+INSERT INTO approval_definitions (
+    tenant_id, biz_type, name, version, status, min_amount, created_by
+) VALUES (
+    $1, $2, $3, 1, 'ACTIVE', $4::text::numeric, 0
+)
+ON CONFLICT (tenant_id, biz_type, min_amount, version) DO NOTHING
+`
+
+type SeedDefinitionParams struct {
+	TenantID  int64
+	BizType   string
+	Name      string
+	MinAmount string
+}
+
+// DO NOTHING 而不是覆盖：两个并发的提交同时走到这里，只有一个插得进去。
+func (q *Queries) SeedDefinition(ctx context.Context, arg SeedDefinitionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, seedDefinition,
+		arg.TenantID,
+		arg.BizType,
+		arg.Name,
+		arg.MinAmount,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const seedNode = `-- name: SeedNode :execrows
+INSERT INTO approval_nodes (tenant_id, definition_id, seq, name, approver_type, approver_ref, approve_mode)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (definition_id, seq) DO NOTHING
+`
+
+type SeedNodeParams struct {
+	TenantID     int64
+	DefinitionID int64
+	Seq          int32
+	Name         string
+	ApproverType string
+	ApproverRef  int64
+	ApproveMode  string
+}
+
+func (q *Queries) SeedNode(ctx context.Context, arg SeedNodeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, seedNode,
+		arg.TenantID,
+		arg.DefinitionID,
+		arg.Seq,
+		arg.Name,
+		arg.ApproverType,
+		arg.ApproverRef,
+		arg.ApproveMode,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
