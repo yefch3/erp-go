@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/services/shipping/internal/store"
 )
 
@@ -67,15 +68,24 @@ func (s *Service) SweepBLReminders(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	var recipients []int64
-	if s.directory != nil {
-		if ids, dirErr := s.directory.EmployeeIDsByRole(ctx, blReminderRole); dirErr == nil {
-			recipients = ids
-		}
-		// 查不到就退回「只发负责人」——目录服务抖一下不该让提醒全停。
-	}
 	var total int64
 	for _, tenantID := range tenants {
+		// 「物流部都有谁」必须按**当前这家公司**问，而且必须在循环里面问。
+		//
+		// 原来这一问在循环外面，用的是后台任务自己的上下文——那上下文里没有
+		// 登录用户，而服务之间调用时「没有登录用户」会被当成 1 号公司处理
+		// （见 pkg/grpcx/interceptor.go 里的 `if op.TenantID == 0`）。于是拿
+		// 回来的永远是第一家公司的物流人员，然后被塞进每一家公司的收件人名
+		// 单里：第二家的物流人员收不到提醒，而库里攒下一批收件人是别家员工、
+		// 公司号却是本家的提醒——读的时候两边都对不上，谁也看不见。
+		var recipients []int64
+		if s.directory != nil {
+			scoped := grpcx.WithOperator(ctx, grpcx.Operator{TenantID: tenantID})
+			if ids, dirErr := s.directory.EmployeeIDsByRole(scoped, blReminderRole); dirErr == nil {
+				recipients = ids
+			}
+			// 查不到就退回「只发负责人」——目录服务抖一下不该让提醒全停。
+		}
 		ids, err := s.q.ScheduleOwnersPendingBL(ctx, tenantID)
 		if err != nil {
 			return total, err
