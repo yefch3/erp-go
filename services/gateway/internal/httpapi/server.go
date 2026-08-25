@@ -435,8 +435,11 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("inventory:stock:read")).Get("/api/warehouse-settings", s.getWarehouseSettings)
 		r.With(s.perm("inventory:stock:write")).Put("/api/warehouse-settings", s.updateWarehouseSettings)
 		r.With(s.perm("inventory:stock:read")).Get("/api/stocks", s.listStocks)
+		r.With(s.perm("inventory:stock:read")).Get("/api/stocks/{id}", s.getStock)
 		r.With(s.perm("inventory:stock:read")).Get("/api/stock-ledger", s.listStockLedger)
 		r.With(s.perm("inventory:stock:write")).Post("/api/stocks/receive", s.receiveStock)
+		r.With(s.perm("inventory:stock:write")).Post("/api/stocks/{id}/freeze", s.freezeStock)
+		r.With(s.perm("inventory:stock:write")).Post("/api/stocks/{id}/unfreeze", s.unfreezeStock)
 		// Outbound. Reading what is shippable is a stock read; taking goods
 		// off the shelf is a stock write, and the same permission covers both
 		// directions of movement.

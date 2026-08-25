@@ -129,6 +129,7 @@ SELECT
     s.reserved_qty::text AS reserved_qty,
     s.locked_qty::text AS locked_qty,
     s.frozen_qty::text AS frozen_qty,
+    s.in_transit_qty::text AS in_transit_qty,
     s.available_qty::text AS available_qty,
     s.updated_at,
     count(*) OVER () AS total
@@ -136,14 +137,54 @@ FROM stocks s
 JOIN warehouses w ON w.id = s.warehouse_id
 WHERE s.tenant_id = sqlc.arg(tenant_id)::bigint
   AND (sqlc.arg(warehouse_id)::bigint = 0 OR s.warehouse_id = sqlc.arg(warehouse_id)::bigint)
+  AND (sqlc.arg(product_id)::bigint = 0 OR s.product_id = sqlc.arg(product_id)::bigint)
+  AND (sqlc.arg(sku_id)::bigint = 0 OR s.sku_id = sqlc.arg(sku_id)::bigint)
   AND (sqlc.arg(keyword)::text = ''
        OR s.product_name ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR s.product_code ILIKE '%' || sqlc.arg(keyword)::text || '%')
   -- "Only what is actually there" is the common question; rows that fell to
   -- zero are history, not stock.
   AND (NOT sqlc.arg(in_stock_only)::bool OR s.on_hand_qty > 0)
+  AND (sqlc.arg(stock_state)::text = ''
+       OR (sqlc.arg(stock_state)::text = 'AVAILABLE' AND s.available_qty > 0)
+       OR (sqlc.arg(stock_state)::text = 'NO_AVAILABLE' AND s.available_qty = 0)
+       OR (sqlc.arg(stock_state)::text = 'FROZEN' AND s.frozen_qty > 0))
 ORDER BY s.product_code, w.code
 LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
+
+-- name: GetStock :one
+SELECT
+    s.id, s.warehouse_id, w.code AS warehouse_code, w.name AS warehouse_name,
+    s.product_id, s.sku_id, s.product_code, s.product_name, s.uom_id, s.uom_code,
+    s.cost_currency, s.total_cost::text AS total_cost, s.avg_cost::text AS avg_cost,
+    s.on_hand_qty::text AS on_hand_qty, s.reserved_qty::text AS reserved_qty,
+    s.locked_qty::text AS locked_qty, s.frozen_qty::text AS frozen_qty,
+    s.in_transit_qty::text AS in_transit_qty, s.available_qty::text AS available_qty,
+    s.updated_at
+FROM stocks s
+JOIN warehouses w ON w.id = s.warehouse_id
+WHERE s.tenant_id = sqlc.arg(tenant_id)::bigint AND s.id = sqlc.arg(id)::bigint;
+
+-- name: GetStockForUpdate :one
+SELECT id, warehouse_id, sku_id, on_hand_qty::text AS on_hand_qty,
+       reserved_qty::text AS reserved_qty, locked_qty::text AS locked_qty,
+       frozen_qty::text AS frozen_qty, available_qty::text AS available_qty,
+       avg_cost::text AS avg_cost
+FROM stocks
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint
+FOR UPDATE;
+
+-- name: AddFrozenQty :one
+UPDATE stocks SET frozen_qty = frozen_qty + sqlc.arg(qty)::text::numeric, updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint
+RETURNING on_hand_qty::text AS on_hand_qty, available_qty::text AS available_qty,
+          frozen_qty::text AS frozen_qty, avg_cost::text AS avg_cost;
+
+-- name: ReleaseFrozenQty :one
+UPDATE stocks SET frozen_qty = frozen_qty - sqlc.arg(qty)::text::numeric, updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint
+RETURNING on_hand_qty::text AS on_hand_qty, available_qty::text AS available_qty,
+          frozen_qty::text AS frozen_qty, avg_cost::text AS avg_cost;
 
 -- name: UpsertStockOnInbound :one
 -- Receiving goods. The row is created on first receipt of a SKU into a
@@ -313,8 +354,14 @@ SELECT
 FROM stock_ledger l
 JOIN stocks s ON s.id = l.stock_id
 WHERE l.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND (sqlc.arg(stock_id)::bigint = 0 OR l.stock_id = sqlc.arg(stock_id)::bigint)
+  AND (sqlc.arg(warehouse_id)::bigint = 0 OR l.warehouse_id = sqlc.arg(warehouse_id)::bigint)
   AND (sqlc.arg(sku_id)::bigint = 0 OR l.sku_id = sqlc.arg(sku_id)::bigint)
   AND (sqlc.arg(movement)::text = '' OR l.movement = sqlc.arg(movement)::text)
+  AND (sqlc.arg(keyword)::text = ''
+       OR s.product_name ILIKE '%' || sqlc.arg(keyword)::text || '%'
+       OR s.product_code ILIKE '%' || sqlc.arg(keyword)::text || '%'
+       OR l.ref_no ILIKE '%' || sqlc.arg(keyword)::text || '%')
 ORDER BY l.occurred_at DESC, l.id DESC
 LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
 

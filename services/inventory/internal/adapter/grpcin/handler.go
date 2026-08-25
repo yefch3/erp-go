@@ -113,7 +113,8 @@ func warehouseSettings(row store.GetWarehouseSettingsRow) *ivv1.WarehouseSetting
 func (h *Handler) ListStocks(ctx context.Context, req *ivv1.ListStocksRequest) (*ivv1.ListStocksResponse, error) {
 	rows, total, err := h.svc.ListStocks(ctx, grpcx.TenantID(ctx), app.StockFilter{
 		WarehouseID: req.GetWarehouseId(), Keyword: req.GetKeyword(),
-		InStockOnly: req.GetInStockOnly(),
+		InStockOnly: req.GetInStockOnly(), ProductID: req.GetProductId(),
+		SkuID: req.GetSkuId(), StockState: req.GetStockState(),
 	}, req.GetPage().GetPage(), req.GetPage().GetPageSize())
 	if err != nil {
 		return nil, err
@@ -127,14 +128,33 @@ func (h *Handler) ListStocks(ctx context.Context, req *ivv1.ListStocksRequest) (
 			OnHandQty: r.OnHandQty, ReservedQty: r.ReservedQty, LockedQty: r.LockedQty,
 			FrozenQty: r.FrozenQty, AvailableQty: r.AvailableQty, UpdatedAt: ts(r.UpdatedAt),
 			AvgCost: r.AvgCost, TotalCost: r.TotalCost, CostCurrency: r.CostCurrency,
+			InTransitQty: r.InTransitQty,
 		})
 	}
 	return &ivv1.ListStocksResponse{Stocks: out, Meta: &commonv1.PageMeta{Total: total}}, nil
 }
 
+// GetStock 返回一条租户隔离的库存快照。
+func (h *Handler) GetStock(ctx context.Context, req *ivv1.GetStockRequest) (*ivv1.GetStockResponse, error) {
+	r, err := h.svc.GetStock(ctx, grpcx.TenantID(ctx), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &ivv1.GetStockResponse{Stock: &ivv1.Stock{
+		Id: r.ID, WarehouseId: r.WarehouseID, WarehouseCode: r.WarehouseCode,
+		WarehouseName: r.WarehouseName, ProductId: r.ProductID, SkuId: r.SkuID,
+		ProductCode: r.ProductCode, ProductName: r.ProductName, UomCode: r.UomCode,
+		OnHandQty: r.OnHandQty, ReservedQty: r.ReservedQty, LockedQty: r.LockedQty,
+		FrozenQty: r.FrozenQty, InTransitQty: r.InTransitQty, AvailableQty: r.AvailableQty,
+		UpdatedAt: ts(r.UpdatedAt), AvgCost: r.AvgCost, TotalCost: r.TotalCost,
+		CostCurrency: r.CostCurrency,
+	}}, nil
+}
+
 func (h *Handler) ListLedger(ctx context.Context, req *ivv1.ListLedgerRequest) (*ivv1.ListLedgerResponse, error) {
 	rows, total, err := h.svc.ListLedger(ctx, grpcx.TenantID(ctx), app.LedgerFilter{
-		SkuID: req.GetSkuId(), Movement: req.GetMovement(),
+		StockID: req.GetStockId(), WarehouseID: req.GetWarehouseId(),
+		SkuID: req.GetSkuId(), Movement: req.GetMovement(), Keyword: req.GetKeyword(),
 	}, req.GetPage().GetPage(), req.GetPage().GetPageSize())
 	if err != nil {
 		return nil, err
@@ -152,6 +172,32 @@ func (h *Handler) ListLedger(ctx context.Context, req *ivv1.ListLedgerRequest) (
 		})
 	}
 	return &ivv1.ListLedgerResponse{Entries: out, Meta: &commonv1.PageMeta{Total: total}}, nil
+}
+
+// FreezeStock 冻结仍可分配的库存。
+func (h *Handler) FreezeStock(ctx context.Context, req *ivv1.FreezeStockRequest) (*ivv1.FreezeStockResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	if err := h.svc.FreezeStock(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetQty(), req.GetReason(), app.Operator{ID: op.EmployeeID, Name: op.Name}); err != nil {
+		return nil, err
+	}
+	resp, err := h.GetStock(ctx, &ivv1.GetStockRequest{Id: req.GetId()})
+	if err != nil {
+		return nil, err
+	}
+	return &ivv1.FreezeStockResponse{Stock: resp.GetStock()}, nil
+}
+
+// UnfreezeStock 释放已冻结库存。
+func (h *Handler) UnfreezeStock(ctx context.Context, req *ivv1.UnfreezeStockRequest) (*ivv1.UnfreezeStockResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	if err := h.svc.UnfreezeStock(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetQty(), req.GetReason(), app.Operator{ID: op.EmployeeID, Name: op.Name}); err != nil {
+		return nil, err
+	}
+	resp, err := h.GetStock(ctx, &ivv1.GetStockRequest{Id: req.GetId()})
+	if err != nil {
+		return nil, err
+	}
+	return &ivv1.UnfreezeStockResponse{Stock: resp.GetStock()}, nil
 }
 
 func (h *Handler) ReceiveStock(ctx context.Context, req *ivv1.ReceiveStockRequest) (*ivv1.ReceiveStockResponse, error) {

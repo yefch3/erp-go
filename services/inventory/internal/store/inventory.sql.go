@@ -11,6 +11,38 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addFrozenQty = `-- name: AddFrozenQty :one
+UPDATE stocks SET frozen_qty = frozen_qty + $1::text::numeric, updated_at = now()
+WHERE tenant_id = $2::bigint AND id = $3::bigint
+RETURNING on_hand_qty::text AS on_hand_qty, available_qty::text AS available_qty,
+          frozen_qty::text AS frozen_qty, avg_cost::text AS avg_cost
+`
+
+type AddFrozenQtyParams struct {
+	Qty      string
+	TenantID int64
+	ID       int64
+}
+
+type AddFrozenQtyRow struct {
+	OnHandQty    string
+	AvailableQty string
+	FrozenQty    string
+	AvgCost      string
+}
+
+func (q *Queries) AddFrozenQty(ctx context.Context, arg AddFrozenQtyParams) (AddFrozenQtyRow, error) {
+	row := q.db.QueryRow(ctx, addFrozenQty, arg.Qty, arg.TenantID, arg.ID)
+	var i AddFrozenQtyRow
+	err := row.Scan(
+		&i.OnHandQty,
+		&i.AvailableQty,
+		&i.FrozenQty,
+		&i.AvgCost,
+	)
+	return i, err
+}
+
 const addReservationLine = `-- name: AddReservationLine :exec
 INSERT INTO stock_reservation_lines (tenant_id, reservation_id, stock_id, warehouse_id, qty)
 VALUES ($1, $2, $3, $4,
@@ -486,6 +518,120 @@ func (q *Queries) GetReservationByRef(ctx context.Context, arg GetReservationByR
 	return i, err
 }
 
+const getStock = `-- name: GetStock :one
+SELECT
+    s.id, s.warehouse_id, w.code AS warehouse_code, w.name AS warehouse_name,
+    s.product_id, s.sku_id, s.product_code, s.product_name, s.uom_id, s.uom_code,
+    s.cost_currency, s.total_cost::text AS total_cost, s.avg_cost::text AS avg_cost,
+    s.on_hand_qty::text AS on_hand_qty, s.reserved_qty::text AS reserved_qty,
+    s.locked_qty::text AS locked_qty, s.frozen_qty::text AS frozen_qty,
+    s.in_transit_qty::text AS in_transit_qty, s.available_qty::text AS available_qty,
+    s.updated_at
+FROM stocks s
+JOIN warehouses w ON w.id = s.warehouse_id
+WHERE s.tenant_id = $1::bigint AND s.id = $2::bigint
+`
+
+type GetStockParams struct {
+	TenantID int64
+	ID       int64
+}
+
+type GetStockRow struct {
+	ID            int64
+	WarehouseID   int64
+	WarehouseCode string
+	WarehouseName string
+	ProductID     int64
+	SkuID         int64
+	ProductCode   string
+	ProductName   string
+	UomID         int64
+	UomCode       string
+	CostCurrency  string
+	TotalCost     string
+	AvgCost       string
+	OnHandQty     string
+	ReservedQty   string
+	LockedQty     string
+	FrozenQty     string
+	InTransitQty  string
+	AvailableQty  string
+	UpdatedAt     pgtype.Timestamptz
+}
+
+func (q *Queries) GetStock(ctx context.Context, arg GetStockParams) (GetStockRow, error) {
+	row := q.db.QueryRow(ctx, getStock, arg.TenantID, arg.ID)
+	var i GetStockRow
+	err := row.Scan(
+		&i.ID,
+		&i.WarehouseID,
+		&i.WarehouseCode,
+		&i.WarehouseName,
+		&i.ProductID,
+		&i.SkuID,
+		&i.ProductCode,
+		&i.ProductName,
+		&i.UomID,
+		&i.UomCode,
+		&i.CostCurrency,
+		&i.TotalCost,
+		&i.AvgCost,
+		&i.OnHandQty,
+		&i.ReservedQty,
+		&i.LockedQty,
+		&i.FrozenQty,
+		&i.InTransitQty,
+		&i.AvailableQty,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getStockForUpdate = `-- name: GetStockForUpdate :one
+SELECT id, warehouse_id, sku_id, on_hand_qty::text AS on_hand_qty,
+       reserved_qty::text AS reserved_qty, locked_qty::text AS locked_qty,
+       frozen_qty::text AS frozen_qty, available_qty::text AS available_qty,
+       avg_cost::text AS avg_cost
+FROM stocks
+WHERE tenant_id = $1::bigint AND id = $2::bigint
+FOR UPDATE
+`
+
+type GetStockForUpdateParams struct {
+	TenantID int64
+	ID       int64
+}
+
+type GetStockForUpdateRow struct {
+	ID           int64
+	WarehouseID  int64
+	SkuID        int64
+	OnHandQty    string
+	ReservedQty  string
+	LockedQty    string
+	FrozenQty    string
+	AvailableQty string
+	AvgCost      string
+}
+
+func (q *Queries) GetStockForUpdate(ctx context.Context, arg GetStockForUpdateParams) (GetStockForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getStockForUpdate, arg.TenantID, arg.ID)
+	var i GetStockForUpdateRow
+	err := row.Scan(
+		&i.ID,
+		&i.WarehouseID,
+		&i.SkuID,
+		&i.OnHandQty,
+		&i.ReservedQty,
+		&i.LockedQty,
+		&i.FrozenQty,
+		&i.AvailableQty,
+		&i.AvgCost,
+	)
+	return i, err
+}
+
 const getWarehouse = `-- name: GetWarehouse :one
 SELECT id, code, name, wh_type, address, manager_id, status, created_at,
        profile_type, country_code, city, timezone, accounting_mode, updated_at
@@ -627,18 +773,27 @@ SELECT
 FROM stock_ledger l
 JOIN stocks s ON s.id = l.stock_id
 WHERE l.tenant_id = $1::bigint
-  AND ($2::bigint = 0 OR l.sku_id = $2::bigint)
-  AND ($3::text = '' OR l.movement = $3::text)
+  AND ($2::bigint = 0 OR l.stock_id = $2::bigint)
+  AND ($3::bigint = 0 OR l.warehouse_id = $3::bigint)
+  AND ($4::bigint = 0 OR l.sku_id = $4::bigint)
+  AND ($5::text = '' OR l.movement = $5::text)
+  AND ($6::text = ''
+       OR s.product_name ILIKE '%' || $6::text || '%'
+       OR s.product_code ILIKE '%' || $6::text || '%'
+       OR l.ref_no ILIKE '%' || $6::text || '%')
 ORDER BY l.occurred_at DESC, l.id DESC
-LIMIT $5::int OFFSET $4::int
+LIMIT $8::int OFFSET $7::int
 `
 
 type ListLedgerParams struct {
-	TenantID  int64
-	SkuID     int64
-	Movement  string
-	RowOffset int32
-	RowLimit  int32
+	TenantID    int64
+	StockID     int64
+	WarehouseID int64
+	SkuID       int64
+	Movement    string
+	Keyword     string
+	RowOffset   int32
+	RowLimit    int32
 }
 
 type ListLedgerRow struct {
@@ -668,8 +823,11 @@ type ListLedgerRow struct {
 func (q *Queries) ListLedger(ctx context.Context, arg ListLedgerParams) ([]ListLedgerRow, error) {
 	rows, err := q.db.Query(ctx, listLedger,
 		arg.TenantID,
+		arg.StockID,
+		arg.WarehouseID,
 		arg.SkuID,
 		arg.Movement,
+		arg.Keyword,
 		arg.RowOffset,
 		arg.RowLimit,
 	)
@@ -724,6 +882,7 @@ SELECT
     s.reserved_qty::text AS reserved_qty,
     s.locked_qty::text AS locked_qty,
     s.frozen_qty::text AS frozen_qty,
+    s.in_transit_qty::text AS in_transit_qty,
     s.available_qty::text AS available_qty,
     s.updated_at,
     count(*) OVER () AS total
@@ -731,21 +890,30 @@ FROM stocks s
 JOIN warehouses w ON w.id = s.warehouse_id
 WHERE s.tenant_id = $1::bigint
   AND ($2::bigint = 0 OR s.warehouse_id = $2::bigint)
-  AND ($3::text = ''
-       OR s.product_name ILIKE '%' || $3::text || '%'
-       OR s.product_code ILIKE '%' || $3::text || '%')
+  AND ($3::bigint = 0 OR s.product_id = $3::bigint)
+  AND ($4::bigint = 0 OR s.sku_id = $4::bigint)
+  AND ($5::text = ''
+       OR s.product_name ILIKE '%' || $5::text || '%'
+       OR s.product_code ILIKE '%' || $5::text || '%')
   -- "Only what is actually there" is the common question; rows that fell to
   -- zero are history, not stock.
-  AND (NOT $4::bool OR s.on_hand_qty > 0)
+  AND (NOT $6::bool OR s.on_hand_qty > 0)
+  AND ($7::text = ''
+       OR ($7::text = 'AVAILABLE' AND s.available_qty > 0)
+       OR ($7::text = 'NO_AVAILABLE' AND s.available_qty = 0)
+       OR ($7::text = 'FROZEN' AND s.frozen_qty > 0))
 ORDER BY s.product_code, w.code
-LIMIT $6::int OFFSET $5::int
+LIMIT $9::int OFFSET $8::int
 `
 
 type ListStocksParams struct {
 	TenantID    int64
 	WarehouseID int64
+	ProductID   int64
+	SkuID       int64
 	Keyword     string
 	InStockOnly bool
+	StockState  string
 	RowOffset   int32
 	RowLimit    int32
 }
@@ -768,6 +936,7 @@ type ListStocksRow struct {
 	ReservedQty   string
 	LockedQty     string
 	FrozenQty     string
+	InTransitQty  string
 	AvailableQty  string
 	UpdatedAt     pgtype.Timestamptz
 	Total         int64
@@ -777,8 +946,11 @@ func (q *Queries) ListStocks(ctx context.Context, arg ListStocksParams) ([]ListS
 	rows, err := q.db.Query(ctx, listStocks,
 		arg.TenantID,
 		arg.WarehouseID,
+		arg.ProductID,
+		arg.SkuID,
 		arg.Keyword,
 		arg.InStockOnly,
+		arg.StockState,
 		arg.RowOffset,
 		arg.RowLimit,
 	)
@@ -807,6 +979,7 @@ func (q *Queries) ListStocks(ctx context.Context, arg ListStocksParams) ([]ListS
 			&i.ReservedQty,
 			&i.LockedQty,
 			&i.FrozenQty,
+			&i.InTransitQty,
 			&i.AvailableQty,
 			&i.UpdatedAt,
 			&i.Total,
@@ -940,6 +1113,38 @@ func (q *Queries) ListWarehouses(ctx context.Context, arg ListWarehousesParams) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const releaseFrozenQty = `-- name: ReleaseFrozenQty :one
+UPDATE stocks SET frozen_qty = frozen_qty - $1::text::numeric, updated_at = now()
+WHERE tenant_id = $2::bigint AND id = $3::bigint
+RETURNING on_hand_qty::text AS on_hand_qty, available_qty::text AS available_qty,
+          frozen_qty::text AS frozen_qty, avg_cost::text AS avg_cost
+`
+
+type ReleaseFrozenQtyParams struct {
+	Qty      string
+	TenantID int64
+	ID       int64
+}
+
+type ReleaseFrozenQtyRow struct {
+	OnHandQty    string
+	AvailableQty string
+	FrozenQty    string
+	AvgCost      string
+}
+
+func (q *Queries) ReleaseFrozenQty(ctx context.Context, arg ReleaseFrozenQtyParams) (ReleaseFrozenQtyRow, error) {
+	row := q.db.QueryRow(ctx, releaseFrozenQty, arg.Qty, arg.TenantID, arg.ID)
+	var i ReleaseFrozenQtyRow
+	err := row.Scan(
+		&i.OnHandQty,
+		&i.AvailableQty,
+		&i.FrozenQty,
+		&i.AvgCost,
+	)
+	return i, err
 }
 
 const releaseReservedQty = `-- name: ReleaseReservedQty :one

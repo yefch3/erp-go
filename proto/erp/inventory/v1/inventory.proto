@@ -16,7 +16,10 @@ service StockService {
   rpc GetWarehouseSettings(GetWarehouseSettingsRequest) returns (GetWarehouseSettingsResponse);
   rpc UpdateWarehouseSettings(UpdateWarehouseSettingsRequest) returns (UpdateWarehouseSettingsResponse);
   rpc ListStocks(ListStocksRequest) returns (ListStocksResponse);
+  rpc GetStock(GetStockRequest) returns (GetStockResponse);
   rpc ListLedger(ListLedgerRequest) returns (ListLedgerResponse);
+  rpc FreezeStock(FreezeStockRequest) returns (FreezeStockResponse);
+  rpc UnfreezeStock(UnfreezeStockRequest) returns (UnfreezeStockResponse);
   // Receive goods. Manual for now; purchase receipts will call it later.
   rpc ReceiveStock(ReceiveStockRequest) returns (ReceiveStockResponse);
 
@@ -132,6 +135,7 @@ message Stock {
   string avg_cost = 16;
   string total_cost = 17;
   string cost_currency = 18;
+  string in_transit_qty = 19;
 }
 
 message ListStocksRequest {
@@ -139,12 +143,32 @@ message ListStocksRequest {
   int64 warehouse_id = 2;
   string keyword = 3;
   bool in_stock_only = 4;
+  int64 product_id = 5;
+  int64 sku_id = 6;
+  string stock_state = 7;
 }
 
 message ListStocksResponse {
   repeated Stock stocks = 1;
   erp.common.v1.PageMeta meta = 2;
 }
+
+message GetStockRequest { int64 id = 1; }
+message GetStockResponse { Stock stock = 1; }
+
+message FreezeStockRequest {
+  int64 id = 1;
+  string qty = 2;
+  string reason = 3;
+}
+message FreezeStockResponse { Stock stock = 1; }
+
+message UnfreezeStockRequest {
+  int64 id = 1;
+  string qty = 2;
+  string reason = 3;
+}
+message UnfreezeStockResponse { Stock stock = 1; }
 
 // LedgerEntry is one movement. Append-only: the stock table says what is
 // there now, this says how it got there.
@@ -175,6 +199,9 @@ message ListLedgerRequest {
   erp.common.v1.PageRequest page = 1;
   int64 sku_id = 2;
   string movement = 3;
+  int64 stock_id = 4;
+  int64 warehouse_id = 5;
+  string keyword = 6;
 }
 
 message ListLedgerResponse {

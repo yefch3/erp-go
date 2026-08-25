@@ -71,28 +71,123 @@ func (s *Server) updateWarehouseSettings(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) listStocks(w http.ResponseWriter, r *http.Request) {
 	warehouseID, _ := strconv.ParseInt(r.URL.Query().Get("warehouse_id"), 10, 64)
+	productID, _ := strconv.ParseInt(r.URL.Query().Get("product_id"), 10, 64)
+	skuID, _ := strconv.ParseInt(r.URL.Query().Get("sku_id"), 10, 64)
 	resp, err := s.Stocks.ListStocks(r.Context(), &ivv1.ListStocksRequest{
 		Page: pageFromQuery(r), WarehouseId: warehouseID,
 		Keyword:     r.URL.Query().Get("keyword"),
 		InStockOnly: r.URL.Query().Get("in_stock_only") == "true",
+		ProductId:   productID, SkuId: skuID, StockState: r.URL.Query().Get("stock_state"),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
+	}
+	allowed, err := s.hasPermission(r, "inventory:stock:cost")
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if !allowed {
+		redactStockCosts(resp.GetStocks())
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getStock(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Stocks.GetStock(r.Context(), &ivv1.GetStockRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	allowed, err := s.hasPermission(r, "inventory:stock:cost")
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if !allowed {
+		redactStockCosts([]*ivv1.Stock{resp.GetStock()})
 	}
 	s.writeProto(w, resp)
 }
 
 func (s *Server) listStockLedger(w http.ResponseWriter, r *http.Request) {
 	skuID, _ := strconv.ParseInt(r.URL.Query().Get("sku_id"), 10, 64)
+	stockID, _ := strconv.ParseInt(r.URL.Query().Get("stock_id"), 10, 64)
+	warehouseID, _ := strconv.ParseInt(r.URL.Query().Get("warehouse_id"), 10, 64)
 	resp, err := s.Stocks.ListLedger(r.Context(), &ivv1.ListLedgerRequest{
-		Page: pageFromQuery(r), SkuId: skuID, Movement: r.URL.Query().Get("movement"),
+		Page: pageFromQuery(r), StockId: stockID, WarehouseId: warehouseID,
+		SkuId: skuID, Movement: r.URL.Query().Get("movement"), Keyword: r.URL.Query().Get("keyword"),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
 	}
+	allowed, err := s.hasPermission(r, "inventory:stock:cost")
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if !allowed {
+		for _, entry := range resp.GetEntries() {
+			entry.UnitCost, entry.Amount, entry.AvgCostAfter, entry.CostCurrency = "", "", "", ""
+		}
+	}
 	s.writeProto(w, resp)
+}
+
+func (s *Server) freezeStock(w http.ResponseWriter, r *http.Request) {
+	req := &ivv1.FreezeStockRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	// protojson 解析正文时会重置消息，路径参数必须在解析后写入。
+	req.Id = idFromPath(r)
+	resp, err := s.Stocks.FreezeStock(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	allowed, err := s.hasPermission(r, "inventory:stock:cost")
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if !allowed {
+		redactStockCosts([]*ivv1.Stock{resp.GetStock()})
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) unfreezeStock(w http.ResponseWriter, r *http.Request) {
+	req := &ivv1.UnfreezeStockRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	// 与冻结接口保持一致，避免正文解析覆盖 URL 中的库存 ID。
+	req.Id = idFromPath(r)
+	resp, err := s.Stocks.UnfreezeStock(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	allowed, err := s.hasPermission(r, "inventory:stock:cost")
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	if !allowed {
+		redactStockCosts([]*ivv1.Stock{resp.GetStock()})
+	}
+	s.writeProto(w, resp)
+}
+
+func redactStockCosts(stocks []*ivv1.Stock) {
+	for _, stock := range stocks {
+		if stock != nil {
+			stock.AvgCost, stock.TotalCost, stock.CostCurrency = "", "", ""
+		}
+	}
 }
 
 func (s *Server) receiveStock(w http.ResponseWriter, r *http.Request) {

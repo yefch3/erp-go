@@ -47,13 +47,17 @@ type StockFilter struct {
 	WarehouseID int64
 	Keyword     string
 	InStockOnly bool
+	ProductID   int64
+	SkuID       int64
+	StockState  string
 }
 
 func (s *Service) ListStocks(ctx context.Context, tenantID int64, f StockFilter, page, size int32) ([]store.ListStocksRow, int64, error) {
 	page, size = normalizePage(page, size)
 	rows, err := s.q.ListStocks(ctx, store.ListStocksParams{
 		TenantID: tenantID, WarehouseID: f.WarehouseID, Keyword: f.Keyword,
-		InStockOnly: f.InStockOnly, RowLimit: size, RowOffset: (page - 1) * size,
+		InStockOnly: f.InStockOnly, ProductID: f.ProductID, SkuID: f.SkuID,
+		StockState: f.StockState, RowLimit: size, RowOffset: (page - 1) * size,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -66,14 +70,18 @@ func (s *Service) ListStocks(ctx context.Context, tenantID int64, f StockFilter,
 }
 
 type LedgerFilter struct {
-	SkuID    int64
-	Movement string
+	StockID     int64
+	WarehouseID int64
+	SkuID       int64
+	Movement    string
+	Keyword     string
 }
 
 func (s *Service) ListLedger(ctx context.Context, tenantID int64, f LedgerFilter, page, size int32) ([]store.ListLedgerRow, int64, error) {
 	page, size = normalizePage(page, size)
 	rows, err := s.q.ListLedger(ctx, store.ListLedgerParams{
-		TenantID: tenantID, SkuID: f.SkuID, Movement: f.Movement,
+		TenantID: tenantID, StockID: f.StockID, WarehouseID: f.WarehouseID,
+		SkuID: f.SkuID, Movement: f.Movement, Keyword: f.Keyword,
 		RowLimit: size, RowOffset: (page - 1) * size,
 	})
 	if err != nil {
