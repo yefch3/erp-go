@@ -85,6 +85,36 @@ fi
 echo "$SHA" > "$LAST_GOOD"
 echo "deployed $SHA"
 
+# ---------------------------------------------------------------- 前门漂移检查
+#
+# 宿主机 nginx 的「我们那一半」源头在仓库（deploy/host-nginx.conf），落点在
+# /etc/nginx/snippets/erp-app.conf。这里只**比对**，不覆盖。
+#
+# 为什么不自动同步：nginx 是所有人的前门。部署出问题目前最多是容器起不来——上面
+# 那段有健康检查和自动回滚兜着。把 nginx reload 拉进这条路，一个配置错误就能让
+# 整站的 TLS 失效，而回滚逻辑管不到它。而且自动覆盖会**静默抹掉线上的紧急手改**：
+# 半夜有人改配置救火，第二天一次合并就给还原了，还没人知道。
+#
+# 所以这里只负责让漂移变得看得见。看见之后怎么办是人的判断——多数时候是把服务器
+# 上那份 diff 出来，决定它该回到仓库还是该被覆盖。
+#
+# 不 exit 1：配置漂移不是「这次部署失败了」，业务代码换血已经成功。把它变成部署
+# 失败会让人学会忽略它，那就白做了。
+NGINX_SNIPPET=/etc/nginx/snippets/erp-app.conf
+if [ -f "$NGINX_SNIPPET" ]; then
+  if ! cmp -s "$REPO/deploy/host-nginx.conf" "$NGINX_SNIPPET"; then
+    echo "警告：前门 nginx 配置与仓库不一致" >&2
+    echo "  仓库：$REPO/deploy/host-nginx.conf" >&2
+    echo "  线上：$NGINX_SNIPPET" >&2
+    echo "  看差异：diff $REPO/deploy/host-nginx.conf $NGINX_SNIPPET" >&2
+    echo "  应用仓库那份：cp 上面两个路径，然后 nginx -t && systemctl reload nginx" >&2
+  fi
+else
+  # 机器重建后最可能的状态：snippet 还没放上去，443 那个 server 块里的 include
+  # 指向一个不存在的文件——那样 nginx 根本起不来，站点是全黑的。宁可在这里吵。
+  echo "警告：$NGINX_SNIPPET 不存在。前门 nginx 可能还没按 docs/DEPLOY.md 配好" >&2
+fi
+
 # ---------------------------------------------------------------- 镜像清理
 # 只在部署成功后运行，只保留两个版本：本次（在跑）和上一个好版本（回滚
 # 用）。不清的后果已经量过：每次部署留下 13 个镜像，三周攒了 331 个、
