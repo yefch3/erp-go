@@ -557,3 +557,7 @@ ORDER BY domain;
 -- name: GetEmployeeByCode :one
 SELECT id, name FROM employees
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND code = sqlc.arg(code)::text;
+
+-- name: DomainClaimed :one
+-- 开第二家公司时的幂等键：域名已归属任何一家就不再开。
+SELECT EXISTS (SELECT 1 FROM tenant_domains WHERE domain = $1::text) AS claimed;

@@ -18,6 +18,14 @@ type Config struct {
 	CompanyName        string
 	CompanyMailDomains string
 	AdminEmail         string
+
+	// 再开一家公司（比如隔离测试用的）。四个都填才生效；引导键是第一个域名，
+	// 开出来之后这几个变量就可以从 .env 里删掉。密码永远只进 .env，不进聊天
+	// 不进代码。
+	ExtraTenantName          string
+	ExtraTenantMailDomains   string
+	ExtraTenantAdminEmail    string
+	ExtraTenantAdminPassword string
 }
 
 func Load() Config {
@@ -41,6 +49,12 @@ func Load() Config {
 		// example.com and example.com.cn, and both must reach one tenant.
 		CompanyMailDomains: env("COMPANY_MAIL_DOMAINS", "example.com"),
 		AdminEmail:         env("ADMIN_EMAIL", "admin@example.com"),
+
+		// 默认全空 = 不开。刻意没有默认值：第二家公司只该在有人显式要它时出现。
+		ExtraTenantName:          env("EXTRA_TENANT_NAME", ""),
+		ExtraTenantMailDomains:   env("EXTRA_TENANT_MAIL_DOMAINS", ""),
+		ExtraTenantAdminEmail:    env("EXTRA_TENANT_ADMIN_EMAIL", ""),
+		ExtraTenantAdminPassword: env("EXTRA_TENANT_ADMIN_PASSWORD", ""),
 	}
 }
 
