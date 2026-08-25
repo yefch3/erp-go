@@ -27,6 +27,8 @@ TEST_ENV := \
 	SHIPPING_MIGRATION_TEST_DSN='postgres://erp_shipping:erp_shipping_pw@localhost:$(PG_PORT)/erp_shipping_migrations?sslmode=disable' \
 	PROCUREMENT_TEST_DSN='postgres://erp_procurement:erp_procurement_pw@localhost:$(PG_PORT)/erp_procurement?sslmode=disable' \
 	EXPORT_TEST_DSN='postgres://erp_export:erp_export_pw@localhost:$(PG_PORT)/erp_export?sslmode=disable' \
+	APPROVAL_TEST_DSN='postgres://erp_approval:erp_approval_pw@localhost:$(PG_PORT)/erp_approval?sslmode=disable' \
+	PRODUCT_TEST_DSN='postgres://erp_product:erp_product_pw@localhost:$(PG_PORT)/erp_product?sslmode=disable' \
 	PROCUREMENT_MIGRATION_TEST_DSN='postgres://erp_procurement:erp_procurement_pw@localhost:$(PG_PORT)/erp_procurement_migrations?sslmode=disable' \
 	GATEWAY_TEST_REDIS='127.0.0.1:$(REDIS_PORT)'
 
@@ -127,6 +129,10 @@ check-tenant: ## Verify every migration table carries tenant_id
 check-iam-seeds: ## Verify role grants follow the role's own tenant
 	sh scripts/check-iam-seeds.sh
 
+.PHONY: check-tenant-seeds
+check-tenant-seeds: ## Refuse new migrations that seed reference data for tenant 1 only
+	sh scripts/check-tenant-seeds.sh
+
 .PHONY: check-migration-safety
 check-migration-safety: ## Refuse undeclared destructive migrations (deploy rolls back containers, not schema)
 	sh scripts/check-migration-safety.sh
@@ -149,7 +155,7 @@ audit-mail: ## Check stored mail against its invariants (needs a running databas
 # Prerequisites run in the order written, cheapest first, so a stale gen/ or
 # a missed tenant_id fails in seconds, not after the full test suite.
 .PHONY: ci
-ci: proto-check check-tenant check-iam-seeds check-migration-safety check-mail-sandbox test-integration lint ## Everything CI runs (needs `make up` + `make migrate` first)
+ci: proto-check check-tenant check-tenant-seeds check-iam-seeds check-migration-safety check-mail-sandbox test-integration lint ## Everything CI runs (needs `make up` + `make migrate` first)
 	@echo "ci: all checks passed"
 
 .PHONY: sqlc

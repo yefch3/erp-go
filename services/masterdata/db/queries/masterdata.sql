@@ -832,3 +832,19 @@ INSERT INTO number_rules (tenant_id, biz_type, prefix, period, seq_len)
 VALUES (sqlc.arg(tenant_id)::bigint, sqlc.arg(biz_type)::text,
         sqlc.arg(prefix)::text, sqlc.arg(period)::text, sqlc.arg(seq_len)::int)
 ON CONFLICT (tenant_id, biz_type) DO NOTHING;
+
+-- 下面两条只服务「新公司开张时补一套下拉字典」，见 app/optionseed.go。
+
+-- name: OptionCategoriesOf :many
+-- 这家公司已经有哪些类别——任何状态都算。
+--
+-- 「一条都没有」和「有但都停用了」是两件事：只看 ACTIVE 会把后者也当成没播
+-- 过种，于是每打开一次页面就把人家停掉的选项复活一次。
+SELECT DISTINCT category FROM option_items WHERE tenant_id = $1;
+
+-- name: InsertOptionIfAbsent :execrows
+-- DO NOTHING 而不是覆盖：并发的两次读同时走到这里，只有一个插得进去；人改过
+-- 的名称也因此永远赢——默认值只填空，不还原。
+INSERT INTO option_items (tenant_id, category, code, label, sort_order)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (tenant_id, category, code) DO NOTHING;

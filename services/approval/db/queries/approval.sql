@@ -169,3 +169,35 @@ FROM approval_tasks t
 JOIN approval_instances i ON i.id = t.instance_id AND i.tenant_id = t.tenant_id
 WHERE t.tenant_id = $1 AND t.assignee_id = $2
   AND (sqlc.arg(biz_type)::text = '' OR i.biz_type = sqlc.arg(biz_type)::text);
+
+-- 下面四条只服务「新公司开张时补一套默认审批流」，见 app/defaults.go。
+
+-- name: CountDefinitionsFor :one
+-- 这家公司在这个单据类型上到底有没有过审批流——任何状态都算。
+--
+-- 「一条都没有」和「有但都停用了」是两件事：前者是没播过种，后者是有人
+-- 特意关掉的。只看 ACTIVE 会把后者也当成前者，于是每提交一次就把人家
+-- 关掉的流程复活一次。
+SELECT count(*)::bigint FROM approval_definitions
+WHERE tenant_id = $1 AND biz_type = $2;
+
+-- name: SeedDefinition :execrows
+-- DO NOTHING 而不是覆盖：两个并发的提交同时走到这里，只有一个插得进去。
+INSERT INTO approval_definitions (
+    tenant_id, biz_type, name, version, status, min_amount, created_by
+) VALUES (
+    $1, $2, $3, 1, 'ACTIVE', sqlc.arg(min_amount)::text::numeric, 0
+)
+ON CONFLICT (tenant_id, biz_type, min_amount, version) DO NOTHING;
+
+-- name: GetDefinitionBand :one
+-- 播种后再读：并发时插入失败的那一方，读到的才是真正生效的那条。
+SELECT id FROM approval_definitions
+WHERE tenant_id = $1 AND biz_type = $2
+  AND min_amount = sqlc.arg(min_amount)::text::numeric
+  AND version = 1;
+
+-- name: SeedNode :execrows
+INSERT INTO approval_nodes (tenant_id, definition_id, seq, name, approver_type, approver_ref, approve_mode)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (definition_id, seq) DO NOTHING;

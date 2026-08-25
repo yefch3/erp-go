@@ -79,6 +79,15 @@ type SendResult struct {
 	// Recipients the host refused individually while accepting the
 	// transaction as a whole. Only ever set for merged sends.
 	Rejected []RecipientReject
+	// Raw is the message exactly as it went out, so a copy of it can be filed
+	// in the mailbox's own 已发送 folder. Set on Accepted only; there is
+	// nothing to keep a copy of otherwise.
+	//
+	// Carried back rather than rebuilt later because these are the bytes the
+	// recipient received, boundaries and Message-ID included. A rebuild would
+	// be a second rendering of the same message, and the copy in 已发送 would
+	// slowly stop being the thing that was actually sent.
+	Raw []byte
 }
 
 // Outbound is one rendered message on its way out.

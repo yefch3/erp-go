@@ -113,6 +113,9 @@ func (s *SMTP) Send(ctx context.Context, m app.Outbound) app.SendResult {
 		// mailbox, and then the lookup answers about a mailbox this mail
 		// never touched.
 		res.FromEmail = acct.Email
+		// And the message itself, for filing a copy in the sender's own Sent
+		// folder. Only the adapter has these bytes.
+		res.Raw = raw
 	}
 	if res.Outcome != app.Accepted && res.authProblem {
 		s.accounts.RecordFailure(ctx, m.TenantID, acct.AccountID, res.Err)
