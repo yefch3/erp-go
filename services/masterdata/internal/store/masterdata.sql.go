@@ -2255,6 +2255,36 @@ func (q *Queries) InsertNumberRuleIfAbsent(ctx context.Context, arg InsertNumber
 	return result.RowsAffected(), nil
 }
 
+const insertOptionIfAbsent = `-- name: InsertOptionIfAbsent :execrows
+INSERT INTO option_items (tenant_id, category, code, label, sort_order)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (tenant_id, category, code) DO NOTHING
+`
+
+type InsertOptionIfAbsentParams struct {
+	TenantID  int64
+	Category  string
+	Code      string
+	Label     string
+	SortOrder int32
+}
+
+// DO NOTHING 而不是覆盖：并发的两次读同时走到这里，只有一个插得进去；人改过
+// 的名称也因此永远赢——默认值只填空，不还原。
+func (q *Queries) InsertOptionIfAbsent(ctx context.Context, arg InsertOptionIfAbsentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertOptionIfAbsent,
+		arg.TenantID,
+		arg.Category,
+		arg.Code,
+		arg.Label,
+		arg.SortOrder,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listCreditRatings = `-- name: ListCreditRatings :many
 SELECT id, grade, previous_grade, basis, evidence,
        rated_by, rated_by_name, rated_at
@@ -3726,6 +3756,36 @@ func (q *Queries) NextSeq(ctx context.Context, arg NextSeqParams) (int64, error)
 	var next_seq int64
 	err := row.Scan(&next_seq)
 	return next_seq, err
+}
+
+const optionCategoriesOf = `-- name: OptionCategoriesOf :many
+
+SELECT DISTINCT category FROM option_items WHERE tenant_id = $1
+`
+
+// 下面两条只服务「新公司开张时补一套下拉字典」，见 app/optionseed.go。
+// 这家公司已经有哪些类别——任何状态都算。
+//
+// 「一条都没有」和「有但都停用了」是两件事：只看 ACTIVE 会把后者也当成没播
+// 过种，于是每打开一次页面就把人家停掉的选项复活一次。
+func (q *Queries) OptionCategoriesOf(ctx context.Context, tenantID int64) ([]string, error) {
+	rows, err := q.db.Query(ctx, optionCategoriesOf, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var category string
+		if err := rows.Scan(&category); err != nil {
+			return nil, err
+		}
+		items = append(items, category)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const recordCreditRating = `-- name: RecordCreditRating :one

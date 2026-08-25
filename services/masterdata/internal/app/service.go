@@ -676,6 +676,26 @@ func (s *Service) DeactivateSupplier(ctx context.Context, tenantID, id, operator
 // ---------------------------------------------------------------- options
 
 func (s *Service) ListOptions(ctx context.Context, tenantID int64, category string) ([]store.OptionItem, error) {
+	items, err := s.q.ListOptions(ctx, store.ListOptionsParams{TenantID: tenantID, Category: category})
+	if err != nil {
+		return nil, err
+	}
+	// 空 ≠ 该空：也可能只是这家公司还没被播过种。见 optionseed.go——空下拉框
+	// 是这个病里最安静的一种，它不报错，只是让人以为自己没找对地方。
+	//
+	// 「非空就不用管」只对**带类别**的查询成立。不带类别时「有一些选项」不
+	// 等于「每个类别都有」：先打开报价页补出付款方式，再整本字典取一次，早
+	// 退就会把补了一个类别的半本字典当成全本交出去。
+	if len(items) > 0 && category != "" {
+		return items, nil
+	}
+	inserted, err := s.seedDefaultOptions(ctx, tenantID, category)
+	if err != nil {
+		return nil, err
+	}
+	if !inserted {
+		return items, nil
+	}
 	return s.q.ListOptions(ctx, store.ListOptionsParams{TenantID: tenantID, Category: category})
 }
 
