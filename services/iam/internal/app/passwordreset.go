@@ -157,8 +157,8 @@ func (s *Service) mintPasswordReset(ctx context.Context, tenantID, employeeID in
 		}
 		_, err := q.CreatePasswordReset(ctx, store.CreatePasswordResetParams{
 			TenantID: tenantID, EmployeeID: employeeID, Email: email,
-			TokenHash: sum[:],
-			ExpiresAt: pgtype.Timestamptz{Time: expires, Valid: true},
+			TokenHash:   sum[:],
+			ExpiresAt:   pgtype.Timestamptz{Time: expires, Valid: true},
 			RequestedBy: requestedBy,
 		})
 		return err

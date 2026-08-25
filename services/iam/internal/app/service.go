@@ -185,10 +185,10 @@ func (s *Service) Login(ctx context.Context, email, password string) (*LoginResu
 		return nil, fmt.Errorf("login: load permissions: %w", err)
 	}
 	return &LoginResult{
-		Token:            token,
-		ExpiresInSeconds: int64(s.jwtTTL.Seconds()),
-		Employee:         emp,
-		PermissionCodes:  perms,
+		Token:              token,
+		ExpiresInSeconds:   int64(s.jwtTTL.Seconds()),
+		Employee:           emp,
+		PermissionCodes:    perms,
 		MustChangePassword: u.MustChangePassword,
 	}, nil
 }

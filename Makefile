@@ -20,6 +20,7 @@ REDIS_PORT ?= 6380
 # Each service reaches only its own database, under its own account.
 TEST_ENV := \
 	IAM_TEST_DSN='postgres://erp_iam:erp_iam_pw@localhost:$(PG_PORT)/erp_iam?sslmode=disable' \
+	IAM_MIGRATION_TEST_DSN='postgres://erp_iam:erp_iam_pw@localhost:$(PG_PORT)/erp_iam_migrations?sslmode=disable' \
 	MD_TEST_DSN='postgres://erp_masterdata:erp_masterdata_pw@localhost:$(PG_PORT)/erp_masterdata?sslmode=disable' \
 	MD_MIGRATION_TEST_DSN='postgres://erp_masterdata:erp_masterdata_pw@localhost:$(PG_PORT)/erp_masterdata_migrations?sslmode=disable' \
 	MAIL_TEST_DSN='postgres://erp_mail:erp_mail_pw@localhost:$(PG_PORT)/erp_mail?sslmode=disable' \

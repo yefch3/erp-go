@@ -584,3 +584,13 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND code = 'ADMIN';
 -- name: SetTenantStatus :execrows
 UPDATE tenants SET status = sqlc.arg(status)::text, updated_at = now()
 WHERE id = sqlc.arg(id)::bigint;
+
+-- name: RoleExistsByCode :one
+-- 任何状态都算：角色只能停用不能删除，「有但停用了」是有人做过的决定，
+-- 补种不该把它当成「没有」。
+SELECT EXISTS (
+    SELECT 1 FROM roles WHERE tenant_id = $1 AND code = $2
+);
+
+-- name: ListTenantIDs :many
+SELECT id FROM tenants ORDER BY id;
