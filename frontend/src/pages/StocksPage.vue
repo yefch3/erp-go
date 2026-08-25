@@ -128,16 +128,18 @@
           <el-table-column :label="t('stocks.qty')" width="100" align="right">
             <template #default="{ row }"><span class="num">{{ trim(row.qty) }}</span></template>
           </el-table-column>
-          <el-table-column :label="t('stocks.afterwards')" min-width="210" align="right">
+          <el-table-column :label="t('stocks.balanceAfter')" min-width="190">
             <template #default="{ row }">
-              <span class="sub">{{ t('stocks.onHand') }} {{ trim(row.onHandAfter) }} ·
-                {{ t('stocks.available') }} {{ trim(row.availableAfter) }}</span>
+              <div class="balance-after">
+                <span>{{ t('stocks.onHand') }} <b>{{ trim(row.onHandAfter) }}</b></span>
+                <span>{{ t('stocks.available') }} <b>{{ trim(row.availableAfter) }}</b></span>
+              </div>
             </template>
           </el-table-column>
-          <el-table-column :label="t('stocks.source')" min-width="200">
+          <el-table-column :label="t('stocks.sourceAndNote')" min-width="220">
             <template #default="{ row }">
-              <span v-if="row.refNo" class="sub">{{ row.refNo }}</span>
-              <span v-else class="sub">{{ row.remark || '—' }}</span>
+              <div>{{ sourceTitle(row) }}</div>
+              <div v-if="row.remark" class="sub">{{ row.remark }}</div>
             </template>
           </el-table-column>
           <template #empty>{{ t('stocks.noLedger') }}</template>
@@ -262,6 +264,7 @@ interface Ledger {
   productName: string
   movement: string
   qty: string
+  refType: string
   refNo: string
   onHandAfter: string
   availableAfter: string
@@ -439,6 +442,12 @@ function movementType(m: string): 'success' | 'danger' | 'warning' | 'info' {
   return 'info'
 }
 
+function sourceTitle(row: Ledger): string {
+  if (row.refNo) return row.refNo
+  const known = ['PURCHASE', 'MANUAL', 'STOCK', 'CONTRACT']
+  return known.includes(row.refType) ? t(`stocks.sourceTypes.${row.refType}`) : (row.refType || '—')
+}
+
 function formatTime(v: string): string {
   return v ? v.replace('T', ' ').slice(0, 16) : '—'
 }
@@ -509,7 +518,20 @@ onMounted(async () => {
   margin-top: 14px;
   justify-content: flex-end;
 }
+
 .detail-title { margin: 0 0 4px; }
 .detail-grid { margin: 18px 0; }
 .detail-actions { margin-bottom: 22px; }
+.balance-after {
+  display: flex;
+  gap: 18px;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+.balance-after b {
+  margin-left: 3px;
+  color: var(--el-text-color-primary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
 </style>
