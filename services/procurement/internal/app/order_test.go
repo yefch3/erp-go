@@ -47,18 +47,18 @@ func TestSupplierForOrderRequiresAnActiveMasterRecord(t *testing.T) {
 func TestReceiveOrderRejectsAnInactiveWarehouseBeforeWriting(t *testing.T) {
 	svc := &Service{warehouses: warehouseDirectoryStub{}}
 	_, err := svc.ReceiveOrder(context.Background(), 1, 10, 99, []ReceiptLine{{POItemID: 1, Qty: "1"}}, "", Operator{})
-	if err == nil || !strings.Contains(err.Error(), "码头库") {
+	if err == nil || !strings.Contains(err.Error(), "仓库不存在或已停用") {
 		t.Fatalf("expected inactive warehouse error, got %v", err)
 	}
 }
 
-func TestReceiveOrderRejectsANonPortWarehouseBeforeWriting(t *testing.T) {
+func TestReceiveOrderRejectsAVirtualWarehouseBeforeWriting(t *testing.T) {
 	svc := &Service{warehouses: warehouseDirectoryStub{warehouse: Warehouse{
-		ID: 99, Name: "Company warehouse", Type: "NORMAL", Status: "ACTIVE",
+		ID: 99, Name: "Virtual warehouse", Type: "VIRTUAL", Status: "ACTIVE",
 	}}}
 	_, err := svc.ReceiveOrder(context.Background(), 1, 10, 99, []ReceiptLine{{POItemID: 1, Qty: "1"}}, "", Operator{})
-	if err == nil || !strings.Contains(err.Error(), "码头库") {
-		t.Fatalf("expected non-port warehouse error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "实体仓库") {
+		t.Fatalf("expected virtual warehouse error, got %v", err)
 	}
 }
 

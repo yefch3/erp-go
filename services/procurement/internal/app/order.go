@@ -782,28 +782,29 @@ func (s *Service) CancelOrder(ctx context.Context, tenantID, id int64, reason st
 	return nil
 }
 
-// ReceiveOrder records finished goods entering a third-party port terminal.
-// The event keeps the terminal custody ledger consistent with this receipt;
-// it is not an own-stock replenishment signal and never changes purchase need.
+// ReceiveOrder 统一登记采购到货。
+// warehouseID 大于 0 表示货物进入公司管理的仓库，会发送库存入账事件；
+// warehouseID 等于 0 表示直接交付港口、客户或指定地点，只更新采购交付进度，
+// 不写入库存。两条路径共用同一套累计数量校验，避免重复或超量收货。
 func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, warehouseID int64, lines []ReceiptLine, remark string, op Operator) (string, error) {
 	if len(lines) == 0 {
 		return "", apierr.Invalid("PO_RECEIPT_LINES_REQUIRED", "收货明细不能为空")
 	}
-	if warehouseID == 0 {
-		return "", apierr.Invalid("PO_WAREHOUSE_REQUIRED", "请选择码头库")
-	}
-	if s.warehouses == nil {
-		return "", apierr.Internal("PO_WAREHOUSE_DIRECTORY_UNAVAILABLE", "码头库目录未配置")
-	}
-	warehouse, err := s.warehouses.Get(ctx, warehouseID)
-	if err != nil {
-		return "", err
-	}
-	if warehouse.ID == 0 || warehouse.Status != "ACTIVE" {
-		return "", apierr.Invalid("PO_WAREHOUSE_INACTIVE", "码头库不存在或已停用，请重新选择")
-	}
-	if warehouse.Type != "PORT_TERMINAL" {
-		return "", apierr.Invalid("PO_PORT_WAREHOUSE_REQUIRED", "采购到货只能登记到码头库")
+	directDelivery := warehouseID == 0
+	if !directDelivery {
+		if s.warehouses == nil {
+			return "", apierr.Internal("PO_WAREHOUSE_DIRECTORY_UNAVAILABLE", "仓库目录未配置")
+		}
+		warehouse, err := s.warehouses.Get(ctx, warehouseID)
+		if err != nil {
+			return "", err
+		}
+		if warehouse.ID == 0 || warehouse.Status != "ACTIVE" {
+			return "", apierr.Invalid("PO_WAREHOUSE_INACTIVE", "仓库不存在或已停用，请重新选择")
+		}
+		if warehouse.Type == "VIRTUAL" {
+			return "", apierr.Invalid("PO_PHYSICAL_WAREHOUSE_REQUIRED", "收货只能登记到实体仓库")
+		}
 	}
 	want := make(map[int64]decimal.Decimal, len(lines))
 	for _, l := range lines {
@@ -815,7 +816,7 @@ func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, wareho
 	}
 
 	receiptNo := ""
-	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		head, err := q.GetPurchaseOrderForUpdate(ctx, store.GetPurchaseOrderForUpdateParams{
 			TenantID: tenantID, ID: poID,
@@ -924,6 +925,11 @@ func (s *Service) ReceiveOrder(ctx context.Context, tenantID, poID int64, wareho
 			return err
 		}
 
+		// 直接交付不形成公司库存，因此只保存收货单和采购进度；只有进入
+		// 公司管理仓库时才发布库存入账事件，防止港口直送被重复计入库存。
+		if directDelivery {
+			return nil
+		}
 		payload, err := json.Marshal(purchaseReceivedEvent{
 			POID: poID, PONo: head.PoNo, ReceiptNo: receipt.ReceiptNo,
 			WarehouseID: warehouseID, OperatorID: op.ID, Lines: out,

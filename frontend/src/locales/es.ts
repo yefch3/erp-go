@@ -82,7 +82,7 @@ export default {
     todo: ' (próximamente)',
   },
   warehouseNav: {
-    workbench: 'Panel de almacenes', profiles: 'Fichas de almacén', stock: 'Consulta de existencias', settings: 'Configuración',
+    workbench: 'Panel de almacenes', profiles: 'Fichas de almacén', arrivals: 'Llegadas pendientes', receipts: 'Historial de recepciones', stock: 'Consulta de existencias', settings: 'Configuración',
   },
   supplierPayments: {
     eyebrow: 'CUENTAS POR PAGAR',

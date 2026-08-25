@@ -304,6 +304,12 @@ const menuActive = computed(() => route.path)
 const warehouseItems = computed(() => [
   { path: '/warehouses', label: t('warehouseNav.workbench') },
   { path: '/warehouses/profiles', label: t('warehouseNav.profiles') },
+  ...(auth.can('procurement:order:read')
+    ? [
+        { path: '/warehouses/arrivals', label: t('warehouseNav.arrivals') },
+        { path: '/warehouses/receipts', label: t('warehouseNav.receipts') },
+      ]
+    : []),
   { path: '/stocks', label: t('warehouseNav.stock') },
 ])
 const warehouseActive = computed(() => route.path === '/stocks' || route.path.startsWith('/warehouses'))
