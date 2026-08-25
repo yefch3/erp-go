@@ -47,6 +47,20 @@ func run(log *slog.Logger) error {
 	}); err != nil {
 		return err
 	}
+	// 第二家公司（有配置才开；幂等键是第一个域名，见 EnsureExtraTenant）。
+	// 四个变量填了任何一个就全都要填——填一半是配置错误，这里让启动失败，
+	// 因为改配置的人此刻正看着启动日志。
+	if cfg.ExtraTenantName != "" || cfg.ExtraTenantMailDomains != "" ||
+		cfg.ExtraTenantAdminEmail != "" || cfg.ExtraTenantAdminPassword != "" {
+		if err := svc.EnsureExtraTenant(ctx, app.SeedTenant{
+			CompanyName:     cfg.ExtraTenantName,
+			MailDomains:     cfg.ExtraTenantMailDomains,
+			AdminEmail:      cfg.ExtraTenantAdminEmail,
+			InitialPassword: cfg.ExtraTenantAdminPassword,
+		}); err != nil {
+			return err
+		}
+	}
 
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
 	h := grpcin.New(svc)

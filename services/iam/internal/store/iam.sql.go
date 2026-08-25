@@ -447,6 +447,18 @@ func (q *Queries) DeleteLiveInvitations(ctx context.Context, arg DeleteLiveInvit
 	return result.RowsAffected(), nil
 }
 
+const domainClaimed = `-- name: DomainClaimed :one
+SELECT EXISTS (SELECT 1 FROM tenant_domains WHERE domain = $1::text) AS claimed
+`
+
+// 开第二家公司时的幂等键：域名已归属任何一家就不再开。
+func (q *Queries) DomainClaimed(ctx context.Context, dollar_1 string) (bool, error) {
+	row := q.db.QueryRow(ctx, domainClaimed, dollar_1)
+	var claimed bool
+	err := row.Scan(&claimed)
+	return claimed, err
+}
+
 const employeeHasPermission = `-- name: EmployeeHasPermission :one
 SELECT EXISTS (
     SELECT 1

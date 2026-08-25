@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -56,117 +57,162 @@ func (s *Service) EnsureAdmin(ctx context.Context, tenantID int64, seed SeedTena
 	}
 
 	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
-		q := s.q.WithTx(tx)
-
-		ten, err := q.CreateTenant(ctx, seed.CompanyName)
-		if err != nil {
-			return err
-		}
-		// Ignoring the tenant id the sequence just handed us in favour of the
-		// caller's would be a lie waiting to be found; use what was created.
-		tenantID = ten.ID
-		for _, d := range domains {
-			if err := q.AddTenantDomain(ctx, store.AddTenantDomainParams{
-				Domain: d, TenantID: tenantID,
-			}); err != nil {
-				return err
-			}
-		}
-
-		dept, err := q.CreateDepartment(ctx, store.CreateDepartmentParams{
-			TenantID: tenantID, Code: "HQ", Name: "总部", Path: "/", Level: 1,
-		})
-		if err != nil {
-			return err
-		}
-		if err := q.SetDepartmentPath(ctx, store.SetDepartmentPathParams{
-			TenantID: tenantID, ID: dept.ID, Path: fmt.Sprintf("/%d/", dept.ID), Level: 1,
-		}); err != nil {
-			return err
-		}
-
-		emp, err := q.CreateEmployee(ctx, store.CreateEmployeeParams{
-			TenantID: tenantID, Code: "ADMIN", Name: "系统管理员", DepartmentID: dept.ID,
-		})
-		if err != nil {
-			return err
-		}
-		// The address is the login identity, and stamping it verified here is
-		// the shortcut described above.
-		if err := q.SetEmployeeEmailVerified(ctx, store.SetEmployeeEmailVerifiedParams{
-			TenantID: tenantID, ID: emp.ID, Email: adminEmail,
-		}); err != nil {
-			return err
-		}
-
-		// Warned about rather than refused. This account is seeded from the
-		// deployment's environment before anybody can log in to fix it, so a
-		// hard refusal here is a service that will not start — and the
-		// operator standing up the system is the one person who cannot be
-		// told about it through the system. A loud line in the startup log is
-		// the channel that actually reaches them.
-		if err := checkPasswordStrength(seed.InitialPassword, adminEmail, seed.CompanyName); err != nil {
-			s.log.Warn("the seeded administrator password does not meet the policy every other account must",
-				"admin", adminEmail, "reason", err.Error())
-		}
-		hash, err := HashPassword(seed.InitialPassword)
-		if err != nil {
-			return err
-		}
-		if _, err := q.CreateUser(ctx, store.CreateUserParams{
-			// username is no longer the login identity — the address is — but
-			// the column is NOT NULL UNIQUE and other account paths still
-			// write it. Holding the address keeps it unambiguous until those
-			// paths are reworked and the column can go.
-			TenantID: tenantID, EmployeeID: emp.ID, Username: adminEmail, PasswordHash: hash,
-		}); err != nil {
-			return err
-		}
-
-		role, err := q.CreateRole(ctx, store.CreateRoleParams{
-			TenantID: tenantID, Code: "SUPER_ADMIN", Name: "超级管理员",
-			Description: "系统引导创建，持有全部权限",
-		})
-		if err != nil {
-			return err
-		}
-		perms, err := q.ListPermissions(ctx)
-		if err != nil {
-			return err
-		}
-		for _, p := range perms {
-			if err := q.AddRolePermission(ctx, store.AddRolePermissionParams{
-				TenantID: tenantID, RoleID: role.ID, PermissionID: p.ID,
-			}); err != nil {
-				return err
-			}
-		}
-		// 数据范围，和权限是两件事：权限决定能用哪些功能，范围决定能看谁的
-		// 单据。引导程序原来只给了前者，于是超管能打开每一个页面，却在每个
-		// 页面上只看得见自己经手的那几张单——解析器对未配置的模块兜底 SELF。
-		//
-		// 采购几个模块看起来正常纯属巧合：它们的范围种子迁移（00031/00037/
-		// 00041）用 FROM roles 无条件插入，跑的时候超管已经被引导创建出来了。
-		// 而 export 的种子（00005）跑在引导之前，那时 roles 表还是空的。
-		for _, module := range superAdminScopeModules {
-			if err := q.SetRoleDataScope(ctx, store.SetRoleDataScopeParams{
-				TenantID: tenantID, RoleID: role.ID, Module: module,
-				ScopeType: "ALL", CustomDeptIds: []int64{},
-			}); err != nil {
-				return err
-			}
-		}
-		if err := q.AddEmployeeRole(ctx, store.AddEmployeeRoleParams{
-			TenantID: tenantID, EmployeeID: emp.ID, RoleID: role.ID,
-		}); err != nil {
-			return err
-		}
-
-		s.log.Info("bootstrap: tenant and admin created",
-			"tenant", ten.Name, "tenant_id", tenantID, "domains", domains,
-			"admin", adminEmail, "employee_id", emp.ID, "permissions", len(perms))
-		return nil
+		return s.seedTenant(ctx, s.q.WithTx(tx), seed, adminEmail, domains)
 	})
+}
+
+// EnsureExtraTenant 在已经有公司的库里再开一家。
+//
+// EnsureAdmin 只认「空库 → 第一家」：它的守卫是 HasAnyUser，第一家开出来之后
+// 就永远短路。第二家从这里走，守卫换成两条针对「已有人住」的：
+//
+//   - **以第一个邮箱域名为幂等键。** 域名已被认领就静默跳过——和 EnsureAdmin
+//     一样每次启动都跑，重启不会重复开户。副作用：改配置里的公司名不会改已
+//     开的公司，这是幂等的代价，文档里写明。
+//   - **管理员地址必须全系统空闲。** 00023 起登录邮箱是全局唯一（地址即身份），
+//     一个已被别家用掉的地址在这里只能是配置错误，拒绝比覆盖诚实。
+//
+// 拒绝时返回错误让启动失败，而不是记条日志继续跑。操作员在改配置的当口就
+// 站在启动日志前面——那是唯一保证有人看的时刻；放服务起来再慢慢发现「第二家
+// 没开出来」，就是又一个安静的坑。
+func (s *Service) EnsureExtraTenant(ctx context.Context, seed SeedTenant) error {
+	adminEmail := strings.ToLower(strings.TrimSpace(seed.AdminEmail))
+	domains := splitDomains(seed.MailDomains)
+	if strings.TrimSpace(seed.CompanyName) == "" || adminEmail == "" || len(domains) == 0 {
+		return fmt.Errorf("extra tenant: name, mail domains and admin email are all required")
+	}
+	if !domainAllowed(adminEmail, domains) {
+		return fmt.Errorf("extra tenant: admin %q is not on any of %v", adminEmail, domains)
+	}
+	claimed, err := s.q.DomainClaimed(ctx, domains[0])
+	if err != nil {
+		return fmt.Errorf("extra tenant: probe domain: %w", err)
+	}
+	if claimed {
+		return nil
+	}
+	if _, err := s.q.GetUserByEmail(ctx, adminEmail); err == nil {
+		return fmt.Errorf("extra tenant: admin address %q already belongs to an existing account", adminEmail)
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("extra tenant: probe admin address: %w", err)
+	}
+	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		return s.seedTenant(ctx, s.q.WithTx(tx), seed, adminEmail, domains)
+	})
+}
+
+// seedTenant 是开一家公司的全部动作，EnsureAdmin 与 EnsureExtraTenant 共用：
+// 公司、邮箱域名、总部部门、持全部权限的管理员、其登录账号与数据范围。
+// 守卫在调用方——这里假定「该不该开」已经回答过了。
+func (s *Service) seedTenant(ctx context.Context, q *store.Queries, seed SeedTenant, adminEmail string, domains []string) error {
+	ten, err := q.CreateTenant(ctx, seed.CompanyName)
+	if err != nil {
+		return err
+	}
+	// Ignoring the tenant id the sequence just handed us in favour of the
+	// caller's would be a lie waiting to be found; use what was created.
+	tenantID := ten.ID
+	for _, d := range domains {
+		if err := q.AddTenantDomain(ctx, store.AddTenantDomainParams{
+			Domain: d, TenantID: tenantID,
+		}); err != nil {
+			return err
+		}
+	}
+
+	dept, err := q.CreateDepartment(ctx, store.CreateDepartmentParams{
+		TenantID: tenantID, Code: "HQ", Name: "总部", Path: "/", Level: 1,
+	})
+	if err != nil {
+		return err
+	}
+	if err := q.SetDepartmentPath(ctx, store.SetDepartmentPathParams{
+		TenantID: tenantID, ID: dept.ID, Path: fmt.Sprintf("/%d/", dept.ID), Level: 1,
+	}); err != nil {
+		return err
+	}
+
+	emp, err := q.CreateEmployee(ctx, store.CreateEmployeeParams{
+		TenantID: tenantID, Code: "ADMIN", Name: "系统管理员", DepartmentID: dept.ID,
+	})
+	if err != nil {
+		return err
+	}
+	// The address is the login identity, and stamping it verified here is
+	// the shortcut described above.
+	if err := q.SetEmployeeEmailVerified(ctx, store.SetEmployeeEmailVerifiedParams{
+		TenantID: tenantID, ID: emp.ID, Email: adminEmail,
+	}); err != nil {
+		return err
+	}
+
+	// Warned about rather than refused. This account is seeded from the
+	// deployment's environment before anybody can log in to fix it, so a
+	// hard refusal here is a service that will not start — and the
+	// operator standing up the system is the one person who cannot be
+	// told about it through the system. A loud line in the startup log is
+	// the channel that actually reaches them.
+	if err := checkPasswordStrength(seed.InitialPassword, adminEmail, seed.CompanyName); err != nil {
+		s.log.Warn("the seeded administrator password does not meet the policy every other account must",
+			"admin", adminEmail, "reason", err.Error())
+	}
+	hash, err := HashPassword(seed.InitialPassword)
+	if err != nil {
+		return err
+	}
+	if _, err := q.CreateUser(ctx, store.CreateUserParams{
+		// username is no longer the login identity — the address is — but
+		// the column is NOT NULL UNIQUE and other account paths still
+		// write it. Holding the address keeps it unambiguous until those
+		// paths are reworked and the column can go.
+		TenantID: tenantID, EmployeeID: emp.ID, Username: adminEmail, PasswordHash: hash,
+	}); err != nil {
+		return err
+	}
+
+	role, err := q.CreateRole(ctx, store.CreateRoleParams{
+		TenantID: tenantID, Code: "SUPER_ADMIN", Name: "超级管理员",
+		Description: "系统引导创建，持有全部权限",
+	})
+	if err != nil {
+		return err
+	}
+	perms, err := q.ListPermissions(ctx)
+	if err != nil {
+		return err
+	}
+	for _, p := range perms {
+		if err := q.AddRolePermission(ctx, store.AddRolePermissionParams{
+			TenantID: tenantID, RoleID: role.ID, PermissionID: p.ID,
+		}); err != nil {
+			return err
+		}
+	}
+	// 数据范围，和权限是两件事：权限决定能用哪些功能，范围决定能看谁的
+	// 单据。引导程序原来只给了前者，于是超管能打开每一个页面，却在每个
+	// 页面上只看得见自己经手的那几张单——解析器对未配置的模块兜底 SELF。
+	//
+	// 采购几个模块看起来正常纯属巧合：它们的范围种子迁移（00031/00037/
+	// 00041）用 FROM roles 无条件插入，跑的时候超管已经被引导创建出来了。
+	// 而 export 的种子（00005）跑在引导之前，那时 roles 表还是空的。
+	for _, module := range superAdminScopeModules {
+		if err := q.SetRoleDataScope(ctx, store.SetRoleDataScopeParams{
+			TenantID: tenantID, RoleID: role.ID, Module: module,
+			ScopeType: "ALL", CustomDeptIds: []int64{},
+		}); err != nil {
+			return err
+		}
+	}
+	if err := q.AddEmployeeRole(ctx, store.AddEmployeeRoleParams{
+		TenantID: tenantID, EmployeeID: emp.ID, RoleID: role.ID,
+	}); err != nil {
+		return err
+	}
+
+	s.log.Info("bootstrap: tenant and admin created",
+		"tenant", ten.Name, "tenant_id", tenantID, "domains", domains,
+		"admin", adminEmail, "employee_id", emp.ID, "permissions", len(perms))
+	return nil
 }
 
 // superAdminScopeModules 是引导时给超管铺开的数据范围。

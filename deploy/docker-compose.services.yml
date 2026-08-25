@@ -34,6 +34,12 @@ services:
       # production — a public mail domain must never route to a tenant.
       COMPANY_MAIL_DOMAINS: ${COMPANY_MAIL_DOMAINS:-aaaindustryinc.com,gmail.com}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-fangchen1101@gmail.com}
+      # 再开一家公司（隔离测试等）。四个都填才生效，幂等键是第一个域名——
+      # 开出来之后这几行就可以从 .env 里删掉。默认全空 = 不开。
+      EXTRA_TENANT_NAME: ${EXTRA_TENANT_NAME:-}
+      EXTRA_TENANT_MAIL_DOMAINS: ${EXTRA_TENANT_MAIL_DOMAINS:-}
+      EXTRA_TENANT_ADMIN_EMAIL: ${EXTRA_TENANT_ADMIN_EMAIL:-}
+      EXTRA_TENANT_ADMIN_PASSWORD: ${EXTRA_TENANT_ADMIN_PASSWORD:-}
     # Loopback only, like every service below it.
     #
     # These ports exist for a developer with grpcurl, and for nothing else: the
