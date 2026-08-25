@@ -140,3 +140,21 @@ RETURNING *;
 
 -- name: DeleteAttachment :execrows
 DELETE FROM product_attachments WHERE tenant_id = $1 AND id = $2;
+
+-- 下面四条只服务「新公司开张时补上默认单位和分类」，见 app/catalogseed.go。
+
+-- name: CountUoms :one
+-- 任何状态都算：「一条都没有」和「有但都停用了」是两件事。
+SELECT count(*)::bigint FROM uoms WHERE tenant_id = $1;
+
+-- name: InsertUomIfAbsent :execrows
+INSERT INTO uoms (tenant_id, code, name, uom_type) VALUES ($1, $2, $3, $4)
+ON CONFLICT (tenant_id, code) DO NOTHING;
+
+-- name: CountCategories :one
+SELECT count(*)::bigint FROM product_categories WHERE tenant_id = $1;
+
+-- name: InsertCategoryIfAbsent :execrows
+INSERT INTO product_categories (tenant_id, code, name, path, level, sort_order)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (tenant_id, code) DO NOTHING;

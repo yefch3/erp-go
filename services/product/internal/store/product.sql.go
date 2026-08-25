@@ -28,6 +28,17 @@ func (q *Queries) ActivateProduct(ctx context.Context, arg ActivateProductParams
 	return result.RowsAffected(), nil
 }
 
+const countCategories = `-- name: CountCategories :one
+SELECT count(*)::bigint FROM product_categories WHERE tenant_id = $1
+`
+
+func (q *Queries) CountCategories(ctx context.Context, tenantID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countCategories, tenantID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countProductsInCategory = `-- name: CountProductsInCategory :one
 SELECT count(*) FROM products WHERE tenant_id = $1 AND category_id = $2
 `
@@ -42,6 +53,20 @@ func (q *Queries) CountProductsInCategory(ctx context.Context, arg CountProducts
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const countUoms = `-- name: CountUoms :one
+
+SELECT count(*)::bigint FROM uoms WHERE tenant_id = $1
+`
+
+// 下面四条只服务「新公司开张时补上默认单位和分类」，见 app/catalogseed.go。
+// 任何状态都算：「一条都没有」和「有但都停用了」是两件事。
+func (q *Queries) CountUoms(ctx context.Context, tenantID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countUoms, tenantID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const createAttachment = `-- name: CreateAttachment :one
@@ -449,6 +474,61 @@ func (q *Queries) GetProduct(ctx context.Context, arg GetProductParams) (GetProd
 		&i.BaseUomCode,
 	)
 	return i, err
+}
+
+const insertCategoryIfAbsent = `-- name: InsertCategoryIfAbsent :execrows
+INSERT INTO product_categories (tenant_id, code, name, path, level, sort_order)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (tenant_id, code) DO NOTHING
+`
+
+type InsertCategoryIfAbsentParams struct {
+	TenantID  int64
+	Code      string
+	Name      string
+	Path      string
+	Level     int32
+	SortOrder int32
+}
+
+func (q *Queries) InsertCategoryIfAbsent(ctx context.Context, arg InsertCategoryIfAbsentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertCategoryIfAbsent,
+		arg.TenantID,
+		arg.Code,
+		arg.Name,
+		arg.Path,
+		arg.Level,
+		arg.SortOrder,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertUomIfAbsent = `-- name: InsertUomIfAbsent :execrows
+INSERT INTO uoms (tenant_id, code, name, uom_type) VALUES ($1, $2, $3, $4)
+ON CONFLICT (tenant_id, code) DO NOTHING
+`
+
+type InsertUomIfAbsentParams struct {
+	TenantID int64
+	Code     string
+	Name     string
+	UomType  string
+}
+
+func (q *Queries) InsertUomIfAbsent(ctx context.Context, arg InsertUomIfAbsentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertUomIfAbsent,
+		arg.TenantID,
+		arg.Code,
+		arg.Name,
+		arg.UomType,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const listAttachments = `-- name: ListAttachments :many

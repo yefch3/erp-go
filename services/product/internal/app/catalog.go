@@ -42,6 +42,14 @@ func New(pool *pgxpool.Pool, number Numbering, files Files) *Service {
 // ---------------------------------------------------------------- categories
 
 func (s *Service) ListCategories(ctx context.Context, tenantID int64, status string) ([]store.ProductCategory, error) {
+	rows, err := s.q.ListCategories(ctx, store.ListCategoriesParams{TenantID: tenantID, Column2: status})
+	if err != nil || len(rows) > 0 {
+		return rows, err
+	}
+	// 空 ≠ 该空：也可能只是这家公司还没被播过种。见 catalogseed.go。
+	if err := s.seedDefaultCategories(ctx, tenantID); err != nil {
+		return nil, err
+	}
 	return s.q.ListCategories(ctx, store.ListCategoriesParams{TenantID: tenantID, Column2: status})
 }
 
@@ -113,6 +121,15 @@ func (s *Service) DeactivateCategory(ctx context.Context, tenantID, id int64) er
 // ---------------------------------------------------------------- units
 
 func (s *Service) ListUoms(ctx context.Context, tenantID int64) ([]store.Uom, error) {
+	rows, err := s.q.ListUoms(ctx, tenantID)
+	if err != nil || len(rows) > 0 {
+		return rows, err
+	}
+	// 空 ≠ 该空。这里的空还格外贵：没有单位就一个产品都建不出来，而界面上
+	// 没有新增单位的入口。见 catalogseed.go。
+	if err := s.seedDefaultUoms(ctx, tenantID); err != nil {
+		return nil, err
+	}
 	return s.q.ListUoms(ctx, tenantID)
 }
 
