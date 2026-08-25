@@ -41,9 +41,8 @@ type WorkerConfig struct {
 }
 
 func (c WorkerConfig) withDefaults() WorkerConfig {
-	if c.TenantID == 0 {
-		c.TenantID = 1
-	}
+	// TenantID 不再兜底成 1——理由同 SyncConfig.withDefaults，那里写全了。
+	// 一句话：兜底成 1 让第二家公司的邮件安静地永远发不出去。
 	if c.Interval <= 0 {
 		c.Interval = time.Second
 	}
@@ -80,9 +79,15 @@ func (s *Service) RunWorker(ctx context.Context, cfg WorkerConfig) {
 			s.log.Info("delivery worker stopped")
 			return
 		case <-ticker.C:
-			s.reviveStuck(ctx, cfg)
-			if err := s.drainOnce(ctx, cfg); err != nil {
-				s.log.Error("delivery pass failed", "err", err)
+			// 每家公司各发一遍。一家的邮件服务商不响应不该让别家也堵着，所以
+			// 这里只记错继续，不中断整轮。
+			for _, tenantID := range s.tenantsToServe(ctx) {
+				pass := cfg
+				pass.TenantID = tenantID
+				s.reviveStuck(ctx, pass)
+				if err := s.drainOnce(ctx, pass); err != nil {
+					s.log.Error("delivery pass failed", "tenant", tenantID, "err", err)
+				}
 			}
 		}
 	}

@@ -408,9 +408,15 @@ func (s *Service) RunImageCache(ctx context.Context, cfg SyncConfig) {
 	s.log.Info("mail image cache started", "self_host", selfHost)
 
 	for {
-		n, err := s.cacheImagesOnce(ctx, cfg.TenantID, client, selfHost)
-		if err != nil && ctx.Err() == nil {
-			s.log.Warn("image cache pass failed", "err", err)
+		n := 0
+		for _, tenantID := range s.tenantsToServe(ctx) {
+			got, err := s.cacheImagesOnce(ctx, tenantID, client, selfHost)
+			if err != nil && ctx.Err() == nil {
+				s.log.Warn("image cache pass failed", "tenant", tenantID, "err", err)
+			}
+			// 合计而不是取最后一家：下面用 n 决定「还有活就别歇」，只看最后一家
+			// 会在别家还堆着的时候提前进入慢节奏。
+			n += got
 		}
 		wait := cacheIdleInterval
 		if n > 0 {

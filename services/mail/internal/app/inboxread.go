@@ -920,14 +920,18 @@ func (s *Service) EmptyTrash(ctx context.Context, tenantID, ownerID int64) (int,
 // Runs on a slow tick — this is housekeeping, not a deadline. Each pass is
 // bounded so a mailbox with years of deleted mail cannot monopolise the
 // service on the first run after an upgrade.
-func (s *Service) RunTrashSweeper(ctx context.Context, cfg SyncConfig) {
-	cfg = cfg.withDefaults()
+// 不再收 SyncConfig：改成按公司遍历之后，这个循环用的全是本文件里的常量
+// （trashRetention / trashSweepEvery），配置一项都不读。留着一个被静默忽略的
+// 参数，和它原来携带的那个 bug 是同一种东西——看着有用，实际没用。
+func (s *Service) RunTrashSweeper(ctx context.Context) {
 	s.log.Info("trash sweeper started", "keep", trashRetention, "every", trashSweepEvery)
 
 	t := time.NewTicker(trashSweepEvery)
 	defer t.Stop()
 	for {
-		s.sweepTrashOnce(ctx, cfg.TenantID)
+		for _, tenantID := range s.tenantsToServe(ctx) {
+			s.sweepTrashOnce(ctx, tenantID)
+		}
 		select {
 		case <-ctx.Done():
 			return

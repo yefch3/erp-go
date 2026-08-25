@@ -1163,3 +1163,19 @@ WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint
   AND m.sender_id = sqlc.arg(owner_id)::bigint
   AND m.thread_key = sqlc.arg(thread_key)::text
 ORDER BY 1, 2, 3;
+
+-- name: ListTenantsWithMailboxes :many
+-- 后台三个循环（收信轮询、IDLE 长连接、发信 worker）要服务的公司名单。
+--
+-- 从 mail_accounts 推导，而不是去 iam 服务问「有哪些公司」：这个服务需要的不是
+-- 「所有公司」，是「有邮箱要处理的公司」，而那个集合就在本库里。少一次跨服务
+-- 调用，也少一份会过期的名单。
+--
+-- 每轮重新查，不缓存。缓存的名单会让新开的公司要等到进程重启才被发现——而
+-- Odoo 的 cron 在多库部署下的不稳定，正是从一份「不断变化却被当成稳定」的库
+-- 名单开始的。这条查询是主键范围内的一次扫描，比那个风险便宜得多。
+--
+-- 也刻意不做「按公司开关」：Frappe 每个站点要单独 enable-scheduler，最常见的
+-- 故障就是有人忘了开，然后邮件安静地堆在队列里没人发。绑了邮箱就该被服务，
+-- 不该再有第二个开关。
+SELECT DISTINCT tenant_id FROM mail_accounts WHERE is_active ORDER BY tenant_id;
