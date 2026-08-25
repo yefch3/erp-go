@@ -73,6 +73,50 @@
       </el-table>
     </section>
 
+    <section class="panel">
+      <header class="panel-head">
+        <div>
+          <h2>{{ t('platform.dlTitle') }}</h2>
+          <p class="sub">{{ t('platform.dlSubtitle') }}</p>
+        </div>
+        <el-button size="small" :loading="dlLoading" @click="loadFailed">
+          {{ t('platform.dlRefresh') }}
+        </el-button>
+      </header>
+      <el-table v-loading="dlLoading" :data="failedEvents" size="small">
+        <el-table-column :label="t('platform.dlService')" width="120" prop="service" />
+        <el-table-column :label="t('platform.dlEvent')" min-width="170">
+          <template #default="{ row }">
+            <div>{{ row.eventType || '—' }}</div>
+            <div class="sub">{{ row.aggregateId }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('platform.dlTenant')" width="90" prop="tenantId" />
+        <el-table-column :label="t('platform.dlReason')" min-width="260">
+          <template #default="{ row }">
+            <span class="reason">{{ row.reason }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('platform.dlParkedAt')" width="170" prop="parkedAt" />
+        <el-table-column :label="t('platform.actions')" width="110" align="right">
+          <template #default="{ row }">
+            <el-button
+              v-if="row.id"
+              size="small"
+              type="primary"
+              plain
+              :loading="dlBusy === row.service + row.id"
+              @click="replay(row)"
+            >
+              {{ t('platform.dlReplay') }}
+            </el-button>
+          </template>
+        </el-table-column>
+        <!-- 空列表是这一页的正常状态，值得说出来：没有事件被丢下。 -->
+        <template #empty>{{ t('platform.dlEmpty') }}</template>
+      </el-table>
+    </section>
+
     <el-dialog v-model="createOpen" :title="t('platform.createTitle')" width="min(460px, 92vw)">
       <p class="hint">{{ t('platform.createHint') }}</p>
       <el-form label-position="top">
@@ -128,6 +172,46 @@ const createOpen = ref(false)
 const creating = ref(false)
 const busyId = ref('')
 const form = reactive({ name: '', adminEmail: '' })
+
+// 死信面：三个消费事件的服务里被放弃的事件，汇成一张表。重放是同步的——
+// 失败的原因当场弹给正看着屏幕的人。
+interface FailedEvent {
+  service: string
+  id: number
+  tenantId: number
+  consumerGroup: string
+  eventType: string
+  aggregateId: string
+  reason: string
+  parkedAt: string
+}
+const failedEvents = ref<FailedEvent[]>([])
+const dlLoading = ref(false)
+const dlBusy = ref('')
+
+async function loadFailed() {
+  dlLoading.value = true
+  try {
+    failedEvents.value = (await get<{ events: FailedEvent[] }>('/platform/failed-events')).events ?? []
+  } finally {
+    dlLoading.value = false
+  }
+}
+
+async function replay(row: FailedEvent) {
+  dlBusy.value = row.service + row.id
+  try {
+    await post('/platform/failed-events/replay', {
+      service: row.service,
+      consumer_group: row.consumerGroup,
+      id: row.id,
+    })
+    ElMessage.success(t('platform.dlReplayed'))
+    await loadFailed()
+  } finally {
+    dlBusy.value = ''
+  }
+}
 
 async function load() {
   loading.value = true
@@ -199,7 +283,10 @@ async function setStatus(row: Tenant, status: 'ACTIVE' | 'SUSPENDED') {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadFailed()
+})
 </script>
 
 <style scoped>

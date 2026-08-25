@@ -131,8 +131,10 @@ func run(log *slog.Logger) error {
 
 	// Inbound: approval decisions. Dedupe is keyed by consumer group, so a
 	// second consumer added here later cannot swallow this one's events.
+	decisionHandler := kafkain.ApprovalDecisions(svc, log)
+	dlDecision := deadletter.New(pool, cfg.ConsumerGroup)
 	decisions := kafkax.NewConsumer(cfg.KafkaBrokers, cfg.ConsumerGroup, cfg.ApprovalTopic,
-		idempotency.New(pool, cfg.ConsumerGroup), deadletter.New(pool, cfg.ConsumerGroup), kafkain.ApprovalDecisions(svc, log), log)
+		idempotency.New(pool, cfg.ConsumerGroup), dlDecision, decisionHandler, log)
 	go func() {
 		if err := decisions.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Error("approval consumer stopped", "err", err)
@@ -141,8 +143,10 @@ func run(log *slog.Logger) error {
 
 	// Inbound: what the warehouse shipped. Its own consumer group, so it
 	// cannot swallow the approval consumer's events or be swallowed by them.
+	stockHandler := kafkain.StockEvents(svc, log)
+	dlStock := deadletter.New(pool, cfg.StockConsumerGroup)
 	shipments := kafkax.NewConsumer(cfg.KafkaBrokers, cfg.StockConsumerGroup, cfg.StockTopic,
-		idempotency.New(pool, cfg.StockConsumerGroup), deadletter.New(pool, cfg.StockConsumerGroup), kafkain.StockEvents(svc, log), log)
+		idempotency.New(pool, cfg.StockConsumerGroup), dlStock, stockHandler, log)
 	go func() {
 		if err := shipments.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Error("stock consumer stopped", "err", err)
@@ -155,7 +159,12 @@ func run(log *slog.Logger) error {
 
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
 	exv1.RegisterQuotationServiceServer(srv, grpcin.New(svc))
-	exv1.RegisterContractServiceServer(srv, grpcin.NewContracts(svc))
+	console := deadletter.NewConsole()
+	console.Add(cfg.ConsumerGroup, dlDecision, kafkax.ReplayHandler(decisionHandler))
+	console.Add(cfg.StockConsumerGroup, dlStock, kafkax.ReplayHandler(stockHandler))
+	contractsH := grpcin.NewContracts(svc)
+	contractsH.UseDeadLetterConsole(console)
+	exv1.RegisterContractServiceServer(srv, contractsH)
 	exv1.RegisterShipmentServiceServer(srv, grpcin.NewShipments(svc))
 	exv1.RegisterReceiptServiceServer(srv, grpcin.NewReceipts(svc))
 	reflection.Register(srv)

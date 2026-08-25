@@ -68,8 +68,10 @@ func run(log *slog.Logger) error {
 	}()
 
 	// Inbound: contracts that took effect claim stock here first.
+	contractHandler := kafkain.ContractEvents(svc, log)
+	dlContract := deadletter.New(pool, cfg.ConsumerGroup)
 	contracts := kafkax.NewConsumer(cfg.KafkaBrokers, cfg.ConsumerGroup, cfg.ContractTopic,
-		idempotency.New(pool, cfg.ConsumerGroup), deadletter.New(pool, cfg.ConsumerGroup), kafkain.ContractEvents(svc, log), log)
+		idempotency.New(pool, cfg.ConsumerGroup), dlContract, contractHandler, log)
 	go func() {
 		if err := contracts.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Error("contract consumer stopped", "err", err)
@@ -78,8 +80,10 @@ func run(log *slog.Logger) error {
 
 	// Deliveries booked by procurement become stock here, which in turn hands
 	// them to whichever contracts were waiting.
+	purchaseHandler := kafkain.PurchaseEvents(svc, log)
+	dlPurchase := deadletter.New(pool, cfg.PurchaseConsumerGroup)
 	purchases := kafkax.NewConsumer(cfg.KafkaBrokers, cfg.PurchaseConsumerGroup, cfg.PurchaseTopic,
-		idempotency.New(pool, cfg.PurchaseConsumerGroup), deadletter.New(pool, cfg.PurchaseConsumerGroup), kafkain.PurchaseEvents(svc, log), log)
+		idempotency.New(pool, cfg.PurchaseConsumerGroup), dlPurchase, purchaseHandler, log)
 	go func() {
 		if err := purchases.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Error("purchase consumer stopped", "err", err)
@@ -87,7 +91,13 @@ func run(log *slog.Logger) error {
 	}()
 
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
-	ivv1.RegisterStockServiceServer(srv, grpcin.New(svc))
+	// 死信运维面：同一个 handler、同一个死信表——重放跑的就是失败时那条路。
+	console := deadletter.NewConsole()
+	console.Add(cfg.ConsumerGroup, dlContract, kafkax.ReplayHandler(contractHandler))
+	console.Add(cfg.PurchaseConsumerGroup, dlPurchase, kafkax.ReplayHandler(purchaseHandler))
+	h := grpcin.New(svc)
+	h.UseDeadLetterConsole(console)
+	ivv1.RegisterStockServiceServer(srv, h)
 	reflection.Register(srv)
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)

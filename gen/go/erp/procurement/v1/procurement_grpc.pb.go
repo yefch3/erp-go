@@ -1327,6 +1327,8 @@ var RequirementService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	PurchaseOrderService_ListFailedEvents_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/ListFailedEvents"
+	PurchaseOrderService_ReplayFailedEvent_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/ReplayFailedEvent"
 	PurchaseOrderService_ListOrders_FullMethodName                       = "/erp.procurement.v1.PurchaseOrderService/ListOrders"
 	PurchaseOrderService_GetOrder_FullMethodName                         = "/erp.procurement.v1.PurchaseOrderService/GetOrder"
 	PurchaseOrderService_PreviewOrderImport_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/PreviewOrderImport"
@@ -1378,6 +1380,10 @@ const (
 // for 1500, which is the only way a buyer gets a better price. So an order
 // references requirements, and a requirement may span several orders.
 type PurchaseOrderServiceClient interface {
+	// 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
+	// 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
+	ListFailedEvents(ctx context.Context, in *ListFailedEventsRequest, opts ...grpc.CallOption) (*ListFailedEventsResponse, error)
+	ReplayFailedEvent(ctx context.Context, in *ReplayFailedEventRequest, opts ...grpc.CallOption) (*ReplayFailedEventResponse, error)
 	ListOrders(ctx context.Context, in *ListOrdersRequest, opts ...grpc.CallOption) (*ListOrdersResponse, error)
 	GetOrder(ctx context.Context, in *GetOrderRequest, opts ...grpc.CallOption) (*GetOrderResponse, error)
 	// Preview persists the rows the employee reviewed but does not allocate a
@@ -1457,6 +1463,26 @@ type purchaseOrderServiceClient struct {
 
 func NewPurchaseOrderServiceClient(cc grpc.ClientConnInterface) PurchaseOrderServiceClient {
 	return &purchaseOrderServiceClient{cc}
+}
+
+func (c *purchaseOrderServiceClient) ListFailedEvents(ctx context.Context, in *ListFailedEventsRequest, opts ...grpc.CallOption) (*ListFailedEventsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFailedEventsResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListFailedEvents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ReplayFailedEvent(ctx context.Context, in *ReplayFailedEventRequest, opts ...grpc.CallOption) (*ReplayFailedEventResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReplayFailedEventResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ReplayFailedEvent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *purchaseOrderServiceClient) ListOrders(ctx context.Context, in *ListOrdersRequest, opts ...grpc.CallOption) (*ListOrdersResponse, error) {
@@ -1859,6 +1885,10 @@ func (c *purchaseOrderServiceClient) UnmatchBankTransaction(ctx context.Context,
 // for 1500, which is the only way a buyer gets a better price. So an order
 // references requirements, and a requirement may span several orders.
 type PurchaseOrderServiceServer interface {
+	// 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
+	// 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
+	ListFailedEvents(context.Context, *ListFailedEventsRequest) (*ListFailedEventsResponse, error)
+	ReplayFailedEvent(context.Context, *ReplayFailedEventRequest) (*ReplayFailedEventResponse, error)
 	ListOrders(context.Context, *ListOrdersRequest) (*ListOrdersResponse, error)
 	GetOrder(context.Context, *GetOrderRequest) (*GetOrderResponse, error)
 	// Preview persists the rows the employee reviewed but does not allocate a
@@ -1940,6 +1970,12 @@ type PurchaseOrderServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedPurchaseOrderServiceServer struct{}
 
+func (UnimplementedPurchaseOrderServiceServer) ListFailedEvents(context.Context, *ListFailedEventsRequest) (*ListFailedEventsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFailedEvents not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ReplayFailedEvent(context.Context, *ReplayFailedEventRequest) (*ReplayFailedEventResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReplayFailedEvent not implemented")
+}
 func (UnimplementedPurchaseOrderServiceServer) ListOrders(context.Context, *ListOrdersRequest) (*ListOrdersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListOrders not implemented")
 }
@@ -2076,6 +2112,42 @@ func RegisterPurchaseOrderServiceServer(s grpc.ServiceRegistrar, srv PurchaseOrd
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&PurchaseOrderService_ServiceDesc, srv)
+}
+
+func _PurchaseOrderService_ListFailedEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFailedEventsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListFailedEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListFailedEvents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListFailedEvents(ctx, req.(*ListFailedEventsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ReplayFailedEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReplayFailedEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ReplayFailedEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ReplayFailedEvent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ReplayFailedEvent(ctx, req.(*ReplayFailedEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _PurchaseOrderService_ListOrders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -2787,6 +2859,14 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "erp.procurement.v1.PurchaseOrderService",
 	HandlerType: (*PurchaseOrderServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListFailedEvents",
+			Handler:    _PurchaseOrderService_ListFailedEvents_Handler,
+		},
+		{
+			MethodName: "ReplayFailedEvent",
+			Handler:    _PurchaseOrderService_ReplayFailedEvent_Handler,
+		},
 		{
 			MethodName: "ListOrders",
 			Handler:    _PurchaseOrderService_ListOrders_Handler,

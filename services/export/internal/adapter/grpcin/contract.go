@@ -5,6 +5,7 @@ import (
 
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
+	"github.com/sgao19/erp-go/pkg/deadletter"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/services/export/internal/app"
 	"github.com/sgao19/erp-go/services/export/internal/store"
@@ -14,7 +15,8 @@ import (
 // quotations, because generating a contract reads a quotation.
 type ContractHandler struct {
 	exv1.UnimplementedContractServiceServer
-	svc *app.Service
+	svc  *app.Service
+	dead *deadletter.Console
 }
 
 func NewContracts(svc *app.Service) *ContractHandler { return &ContractHandler{svc: svc} }

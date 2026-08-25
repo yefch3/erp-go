@@ -234,6 +234,17 @@ export default {
     suspendConfirm: 'Suspending "{name}" blocks everyone in that company from signing in. Continue?',
     resumed: 'Company resumed',
     typoWarning: "Double-check the address: whoever receives and activates this invite becomes the company's administrator.",
+    dlTitle: 'Dropped events',
+    dlSubtitle: 'Events the background workers gave up on — each one is a business record that never landed. Fix the cause, then replay it here.',
+    dlRefresh: 'Refresh',
+    dlService: 'Service',
+    dlEvent: 'Event',
+    dlTenant: 'Company',
+    dlReason: 'Failure reason',
+    dlParkedAt: 'Parked at',
+    dlReplay: 'Replay',
+    dlReplayed: 'Replayed — the record has been booked',
+    dlEmpty: 'No dropped events',
   },
 
   excelUsage: {

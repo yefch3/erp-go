@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/segmentio/kafka-go"
+
+	"github.com/sgao19/erp-go/pkg/deadletter"
 )
 
 // Producer publishes messages with the aggregate id as the partition key.
@@ -202,11 +204,15 @@ const handlerAttempts = 5
 // transaction rolled back, so there is nothing half-applied for the retry to
 // duplicate.
 //
-// What this deliberately does NOT fix: a process killed between the handler's
-// commit and this function returning still loses the event, because the claim
-// stays and nothing will run it again. Closing that needs the mark to be
-// written inside the handler's own transaction, which is a change to every
-// handler's signature rather than to this loop.
+// What this deliberately does NOT fix: a process killed hard (OOM, kill -9,
+// node death) between taking the claim and the handler's COMMIT loses the
+// event — the claim stays, the work never happened, and the redelivery sees
+// "done" and moves on. Note the asymmetry: a crash AFTER the handler commits
+// is safe (redelivery skips work that genuinely happened), and an error
+// return is safe (the claim is released below). Only the hard-kill during
+// the attempt loses. Closing that window for real means writing the claim
+// inside each handler's own transaction — a change to every handler, not to
+// this loop — and is written up in the plan as its own piece of work.
 func (c *Consumer) handleOne(ctx context.Context, env Envelope) bool {
 	key := env.DedupeKey()
 	fresh, err := c.dedupe.MarkProcessed(ctx, key)
@@ -299,4 +305,17 @@ func nextRetry(d time.Duration) time.Duration {
 		return fetchRetryMax
 	}
 	return d
+}
+
+// ReplayHandler adapts a consumer's handler for the dead-letter console, so
+// a replayed event runs through exactly the code that failed it — same
+// parsing, same guards, same transaction.
+func ReplayHandler(h Handler) func(context.Context, deadletter.Envelope) error {
+	return func(ctx context.Context, e deadletter.Envelope) error {
+		return h(ctx, Envelope{
+			EventID: e.EventID, TenantID: e.TenantID,
+			AggregateType: e.AggregateType, AggregateID: e.AggregateID,
+			EventType: e.EventType, Payload: e.Payload,
+		})
+	}
 }
