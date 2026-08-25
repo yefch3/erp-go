@@ -157,6 +157,12 @@ func (s *Server) sendPurchaseOrder(w http.ResponseWriter, r *http.Request) {
 	senderID, senderName := s.ProcurementMailSenderID, "采购公共邮箱"
 	if input.SenderMode == "ME" {
 		senderID, senderName = op.EmployeeID, op.Name
+	} else if senderID > 0 && !s.senderBelongsToCaller(r.Context(), senderID) {
+		// 采购公共邮箱配的是别家公司的员工。这里有「用我的邮箱」这条退路，
+		// 所以话要把退路指出来。
+		s.writeError(w, http.StatusConflict, "NT_PROCUREMENT_SENDER_NOT_IN_TENANT",
+			"采购公共发件邮箱配置的是其他公司的员工，请改用我的邮箱发送")
+		return
 	}
 	if senderID <= 0 {
 		s.writeError(w, http.StatusConflict, "NT_PROCUREMENT_SENDER_NOT_CONFIGURED", "尚未配置采购公共发件邮箱，可选择使用我的邮箱")

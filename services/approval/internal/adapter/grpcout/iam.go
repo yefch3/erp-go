@@ -37,6 +37,26 @@ func (c *IAM) RoleMembers(ctx context.Context, roleID int64) ([]int64, error) {
 	return ids, nil
 }
 
+// RoleMembersByCode answers "who holds this role in the caller's company".
+//
+// By code rather than by id, because a role id belongs to exactly one company:
+// the id that names 采购经理 at the first company names nothing at the second.
+// The roles listing is already scoped to the caller's company, so the same code
+// resolves to each company's own role.
+func (c *IAM) RoleMembersByCode(ctx context.Context, roleCode string) ([]int64, error) {
+	roles, err := c.client.ListRoles(ctx, &iamv1.ListRolesRequest{})
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range roles.GetRoles() {
+		if r.GetCode() == roleCode {
+			return c.RoleMembers(ctx, r.GetId())
+		}
+	}
+	// 这家公司没有这个角色，不是错误：调用方要据此说一句人能照着做的话。
+	return nil, nil
+}
+
 // ManagersOf resolves who the submitter reports to, for a flow node that says
 // "my manager" rather than naming a role.
 func (c *IAM) ManagersOf(ctx context.Context, employeeID int64, levels int32) ([]int64, error) {
