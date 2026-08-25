@@ -80,6 +80,7 @@ func (f *fakeReader) counts() (calls, commits int) {
 type okDeduper struct{}
 
 func (okDeduper) MarkProcessed(context.Context, string) (bool, error) { return true, nil }
+func (okDeduper) Release(context.Context, string) error               { return nil }
 
 func TestNextRetryStartsAtFloorDoublesAndStopsAtCeiling(t *testing.T) {
 	if got := nextRetry(0); got != fetchRetryMin {

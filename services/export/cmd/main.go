@@ -16,6 +16,7 @@ import (
 
 	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
 	"github.com/sgao19/erp-go/pkg/blobstore"
+	"github.com/sgao19/erp-go/pkg/deadletter"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/pkg/idempotency"
 	"github.com/sgao19/erp-go/pkg/kafkax"
@@ -131,7 +132,7 @@ func run(log *slog.Logger) error {
 	// Inbound: approval decisions. Dedupe is keyed by consumer group, so a
 	// second consumer added here later cannot swallow this one's events.
 	decisions := kafkax.NewConsumer(cfg.KafkaBrokers, cfg.ConsumerGroup, cfg.ApprovalTopic,
-		idempotency.New(pool, cfg.ConsumerGroup), kafkain.ApprovalDecisions(svc, log), log)
+		idempotency.New(pool, cfg.ConsumerGroup), deadletter.New(pool, cfg.ConsumerGroup), kafkain.ApprovalDecisions(svc, log), log)
 	go func() {
 		if err := decisions.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Error("approval consumer stopped", "err", err)
@@ -141,7 +142,7 @@ func run(log *slog.Logger) error {
 	// Inbound: what the warehouse shipped. Its own consumer group, so it
 	// cannot swallow the approval consumer's events or be swallowed by them.
 	shipments := kafkax.NewConsumer(cfg.KafkaBrokers, cfg.StockConsumerGroup, cfg.StockTopic,
-		idempotency.New(pool, cfg.StockConsumerGroup), kafkain.StockEvents(svc, log), log)
+		idempotency.New(pool, cfg.StockConsumerGroup), deadletter.New(pool, cfg.StockConsumerGroup), kafkain.StockEvents(svc, log), log)
 	go func() {
 		if err := shipments.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Error("stock consumer stopped", "err", err)

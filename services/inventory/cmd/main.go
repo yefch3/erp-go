@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	ivv1 "github.com/sgao19/erp-go/gen/go/erp/inventory/v1"
+	"github.com/sgao19/erp-go/pkg/deadletter"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/pkg/idempotency"
 	"github.com/sgao19/erp-go/pkg/kafkax"
@@ -68,7 +69,7 @@ func run(log *slog.Logger) error {
 
 	// Inbound: contracts that took effect claim stock here first.
 	contracts := kafkax.NewConsumer(cfg.KafkaBrokers, cfg.ConsumerGroup, cfg.ContractTopic,
-		idempotency.New(pool, cfg.ConsumerGroup), kafkain.ContractEvents(svc, log), log)
+		idempotency.New(pool, cfg.ConsumerGroup), deadletter.New(pool, cfg.ConsumerGroup), kafkain.ContractEvents(svc, log), log)
 	go func() {
 		if err := contracts.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Error("contract consumer stopped", "err", err)
@@ -78,7 +79,7 @@ func run(log *slog.Logger) error {
 	// Deliveries booked by procurement become stock here, which in turn hands
 	// them to whichever contracts were waiting.
 	purchases := kafkax.NewConsumer(cfg.KafkaBrokers, cfg.PurchaseConsumerGroup, cfg.PurchaseTopic,
-		idempotency.New(pool, cfg.PurchaseConsumerGroup), kafkain.PurchaseEvents(svc, log), log)
+		idempotency.New(pool, cfg.PurchaseConsumerGroup), deadletter.New(pool, cfg.PurchaseConsumerGroup), kafkain.PurchaseEvents(svc, log), log)
 	go func() {
 		if err := purchases.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Error("purchase consumer stopped", "err", err)

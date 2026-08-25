@@ -32,6 +32,28 @@ func (s *Store) MarkProcessed(ctx context.Context, dedupeKey string) (bool, erro
 	return tag.RowsAffected() == 1, nil
 }
 
+// Release takes the mark back off an event whose handler did not finish.
+//
+// Without this, "已处理" was recorded before the work was attempted, so a
+// handler that returned an error left the event marked done. The redelivery
+// then found the mark, skipped the handler and committed the offset — one
+// failed attempt and the event was gone for good, while the log line said
+// "will retry". A receipt of goods disappearing that way is invisible from
+// every screen in the system.
+//
+// Safe to call because every handler does its work in one transaction: an
+// error means that transaction rolled back, so there is nothing half-done
+// for a retry to duplicate.
+func (s *Store) Release(ctx context.Context, dedupeKey string) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM processed_events
+		WHERE event_id = $1 AND consumer_group = $2`, dedupeKey, s.group)
+	if err != nil {
+		return fmt.Errorf("idempotency: release: %w", err)
+	}
+	return nil
+}
+
 // DDL is embedded verbatim by every consuming service's migrations.
 const DDL = `
 CREATE TABLE IF NOT EXISTS processed_events (
