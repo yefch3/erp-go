@@ -2224,6 +2224,37 @@ func (q *Queries) InsertCustomerChangeLog(ctx context.Context, arg InsertCustome
 	return i, err
 }
 
+const insertNumberRuleIfAbsent = `-- name: InsertNumberRuleIfAbsent :execrows
+INSERT INTO number_rules (tenant_id, biz_type, prefix, period, seq_len)
+VALUES ($1::bigint, $2::text,
+        $3::text, $4::text, $5::int)
+ON CONFLICT (tenant_id, biz_type) DO NOTHING
+`
+
+type InsertNumberRuleIfAbsentParams struct {
+	TenantID int64
+	BizType  string
+	Prefix   string
+	Period   string
+	SeqLen   int32
+}
+
+// 懒播种的落笔（见 numbering.go）。DO NOTHING 而不是 UPDATE：已有的规则可能
+// 是人改过的，默认值永远不覆盖人的决定。
+func (q *Queries) InsertNumberRuleIfAbsent(ctx context.Context, arg InsertNumberRuleIfAbsentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertNumberRuleIfAbsent,
+		arg.TenantID,
+		arg.BizType,
+		arg.Prefix,
+		arg.Period,
+		arg.SeqLen,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listCreditRatings = `-- name: ListCreditRatings :many
 SELECT id, grade, previous_grade, basis, evidence,
        rated_by, rated_by_name, rated_at

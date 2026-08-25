@@ -824,3 +824,11 @@ SELECT coalesce(credit_grade, '')::text AS credit_grade,
        coalesce(credit_graded_at::text, '')::text AS credit_graded_at
 FROM suppliers
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: InsertNumberRuleIfAbsent :execrows
+-- 懒播种的落笔（见 numbering.go）。DO NOTHING 而不是 UPDATE：已有的规则可能
+-- 是人改过的，默认值永远不覆盖人的决定。
+INSERT INTO number_rules (tenant_id, biz_type, prefix, period, seq_len)
+VALUES (sqlc.arg(tenant_id)::bigint, sqlc.arg(biz_type)::text,
+        sqlc.arg(prefix)::text, sqlc.arg(period)::text, sqlc.arg(seq_len)::int)
+ON CONFLICT (tenant_id, biz_type) DO NOTHING;
