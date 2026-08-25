@@ -234,6 +234,17 @@ export default {
     suspendConfirm: 'Suspender «{name}» impedirá entrar a todos en esa empresa. ¿Continuar?',
     resumed: 'Empresa reanudada',
     typoWarning: 'Revise bien el correo: quien reciba y active esta invitación será el administrador de la empresa.',
+    dlTitle: 'Eventos abandonados',
+    dlSubtitle: 'Eventos que los procesos de fondo no pudieron procesar — cada uno es un registro de negocio sin contabilizar. Corrija la causa y reprodúzcalo aquí.',
+    dlRefresh: 'Actualizar',
+    dlService: 'Servicio',
+    dlEvent: 'Evento',
+    dlTenant: 'Empresa',
+    dlReason: 'Motivo del fallo',
+    dlParkedAt: 'Aparcado el',
+    dlReplay: 'Reintentar',
+    dlReplayed: 'Reintentado — el registro quedó contabilizado',
+    dlEmpty: 'No hay eventos abandonados',
   },
 
   excelUsage: {

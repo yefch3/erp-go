@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package erp.common.v1;
+
+// FailedEvent 是一条被消费者放弃、停进死信表的事件。
+//
+// 队列对「这条处理不了」只有三种答复：丢掉、永远堵着、放到一边让人看见。
+// 这张表是第三种；这个消息是它露出系统之外的样子。三个消费事件的服务
+// （procurement/inventory/export）各自持有一张死信表，消息定义放 common
+// 是为了三边長一个样，运维页面不用翻译三种方言。
+message FailedEvent {
+  int64 id = 1;
+  int64 tenant_id = 2;
+  // 去重键（aggregate_type:event_id），重放时凭它归还认领。
+  string event_key = 3;
+  string consumer_group = 4;
+  string topic = 5;
+  string event_type = 6;
+  string aggregate_id = 7;
+  // handler 最后一次失败的原因——只知道丢了、不知道为什么，等于没记。
+  string reason = 8;
+  // RFC 3339。
+  string parked_at = 9;
+}

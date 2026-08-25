@@ -16,6 +16,7 @@ import (
 
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	"github.com/sgao19/erp-go/pkg/blobstore"
+	"github.com/sgao19/erp-go/pkg/deadletter"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/pkg/idempotency"
 	"github.com/sgao19/erp-go/pkg/kafkax"
@@ -130,8 +131,10 @@ func run(log *slog.Logger) error {
 		}
 	}()
 
+	decisionHandler := kafkain.ApprovalDecisions(svc, log)
+	dlDecision := deadletter.New(pool, cfg.ApprovalConsumerGroup)
 	decisions := kafkax.NewConsumer(cfg.KafkaBrokers, cfg.ApprovalConsumerGroup, cfg.ApprovalTopic,
-		idempotency.New(pool, cfg.ApprovalConsumerGroup), kafkain.ApprovalDecisions(svc, log), log)
+		idempotency.New(pool, cfg.ApprovalConsumerGroup), dlDecision, decisionHandler, log)
 	go func() {
 		if err := decisions.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Error("approval consumer stopped", "err", err)
@@ -140,8 +143,10 @@ func run(log *slog.Logger) error {
 
 	// Every effective contract line becomes a full purchase requirement. This
 	// company has no own stock pool to net before ordering from the mill.
+	contractHandler := kafkain.ContractEvents(svc, log)
+	dlContract := deadletter.New(pool, cfg.ConsumerGroup)
 	contracts := kafkax.NewConsumer(cfg.KafkaBrokers, cfg.ConsumerGroup, cfg.ContractTopic,
-		idempotency.New(pool, cfg.ConsumerGroup), kafkain.ContractEvents(svc, log), log)
+		idempotency.New(pool, cfg.ConsumerGroup), dlContract, contractHandler, log)
 	go func() {
 		if err := contracts.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Error("contract consumer stopped", "err", err)
@@ -150,7 +155,12 @@ func run(log *slog.Logger) error {
 
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
 	prv1.RegisterRequirementServiceServer(srv, grpcin.New(svc))
-	prv1.RegisterPurchaseOrderServiceServer(srv, grpcin.NewOrders(svc))
+	console := deadletter.NewConsole()
+	console.Add(cfg.ApprovalConsumerGroup, dlDecision, kafkax.ReplayHandler(decisionHandler))
+	console.Add(cfg.ConsumerGroup, dlContract, kafkax.ReplayHandler(contractHandler))
+	orders := grpcin.NewOrders(svc)
+	orders.UseDeadLetterConsole(console)
+	prv1.RegisterPurchaseOrderServiceServer(srv, orders)
 	prv1.RegisterSourcingServiceServer(srv, grpcin.NewSourcing(svc))
 	prv1.RegisterInquiryTemplateServiceServer(srv, grpcin.NewInquiryTemplates(svc))
 	reflection.Register(srv)

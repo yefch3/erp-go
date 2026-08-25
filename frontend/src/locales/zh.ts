@@ -234,6 +234,17 @@ export default {
     suspendConfirm: '停用「{name}」后，这家公司的所有人都将无法登录。确定吗？',
     resumed: '公司已恢复使用',
     typoWarning: '请仔细核对邮箱：邀请发给谁，谁激活后就是这家公司的管理员。',
+    dlTitle: '丢下的事件',
+    dlSubtitle: '后台反复处理失败、被放到一边的事件——每一条都对应一笔没记上的业务，修好原因后在这里重放',
+    dlRefresh: '刷新',
+    dlService: '服务',
+    dlEvent: '事件',
+    dlTenant: '公司',
+    dlReason: '失败原因',
+    dlParkedAt: '停放时间',
+    dlReplay: '重放',
+    dlReplayed: '重放成功，事件已补记',
+    dlEmpty: '没有被丢下的事件',
   },
 
   excelUsage: {
