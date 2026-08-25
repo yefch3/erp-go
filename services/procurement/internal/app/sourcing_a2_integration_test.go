@@ -117,6 +117,42 @@ func TestQuoteComparisonAndAwardReason(t *testing.T) {
 	if view.Header.Status != "CONFIRMED" || view.Header.ConfirmReason != "价格第二低，但交期短 10 天" {
 		t.Fatalf("reason should ride the scenario: %+v", view.Header)
 	}
+	if view.Header.VersionNo != 1 {
+		t.Fatalf("first cost scenario version = %d, want 1", view.Header.VersionNo)
+	}
+
+	// 生成客户报价是成本版本自己的业务阶段，不再继续伪装成“已确认”。
+	if err := svc.LinkCustomerQuotation(ctx, tenantID, scenarioID, 9001, "QT-A2-V1"); err != nil {
+		t.Fatalf("link customer quotation: %v", err)
+	}
+	linked, err := svc.GetCostScenario(ctx, tenantID, scenarioID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if linked.Header.Status != "CUSTOMER_QUOTE_CREATED" || linked.Header.CustomerQuotationID != 9001 {
+		t.Fatalf("linked scenario should show generated quotation: %+v", linked.Header)
+	}
+
+	// 客户拒绝后的调整必须新增 V2；确认 V2 时 V1 留在历史并转为已失效。
+	var scenarioV2 int64
+	if err := pool.QueryRow(ctx, `INSERT INTO cost_scenarios (tenant_id,case_id,scenario_no,version_no,currency,allocation_basis,margin_type,margin_value,fx_rate,fx_rate_at,fx_source,product_total,charge_total,landed_total,margin_total,customer_total,status,created_by) VALUES ($1,$2,'CS-A2-2',2,'USD','TONS','PERCENT',6,1,now(),'STUB',100,0,100,6,106,'DRAFT',77) RETURNING id`,
+		tenantID, caseID).Scan(&scenarioV2); err != nil {
+		t.Fatal(err)
+	}
+	confirmedV2, err := svc.ConfirmCostScenario(ctx, tenantID, scenarioV2, "客户反馈价格偏高，利润率由 8% 调整为 6%", op)
+	if err != nil {
+		t.Fatalf("confirm V2: %v", err)
+	}
+	if confirmedV2.Header.VersionNo != 2 || confirmedV2.Header.Status != "CONFIRMED" {
+		t.Fatalf("new cost version should be V2 confirmed: %+v", confirmedV2.Header)
+	}
+	old, err := svc.GetCostScenario(ctx, tenantID, scenarioID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old.Header.Status != "SUPERSEDED" {
+		t.Fatalf("V1 status = %s, want SUPERSEDED", old.Header.Status)
+	}
 
 	// The decision lands in the case's history next to every other judgement.
 	var changeCount int

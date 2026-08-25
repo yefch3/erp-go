@@ -45,6 +45,7 @@ func convertAmount(amount, sourceRate, targetRate decimal.Decimal) decimal.Decim
 	return amount.Div(sourceRate).Mul(targetRate)
 }
 
+// CreateCostScenario 根据已核实的工厂报价创建新的成本版本，并保留原币、汇率、费用和利润快照。
 func (s *Service) CreateCostScenario(ctx context.Context, tenantID int64, in NewCostScenario, op Operator) (CostScenarioView, error) {
 	in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
 	in.AllocationBasis = strings.ToUpper(in.AllocationBasis)
@@ -156,6 +157,10 @@ func (s *Service) CreateCostScenario(ctx context.Context, tenantID int64, in New
 	var scenarioID int64
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		// 同一案件串行分配成本版本号，避免两名采购员同时建方案都拿到 V2。
+		if _, e := q.LockCostScenarioCase(ctx, store.LockCostScenarioCaseParams{TenantID: tenantID, ID: in.CaseID}); e != nil {
+			return e
+		}
 		head, e := q.CreateCostScenario(ctx, store.CreateCostScenarioParams{TenantID: tenantID, CaseID: in.CaseID, Currency: in.Currency, AllocationBasis: in.AllocationBasis, MarginType: in.MarginType, MarginValue: margin.String(), FxRate: targetRate.Rate.String(), FxRateAt: pgtype.Timestamptz{Time: targetRate.At, Valid: true}, FxSource: targetRate.Source, FxBaseCurrency: targetRate.Base, ProductTotal: productTotal.StringFixed(2), ChargeTotal: chargeTotal.StringFixed(2), LandedTotal: landedTotal.StringFixed(2), MarginTotal: marginTotal.StringFixed(2), CustomerTotal: customerTotal.StringFixed(2), CreatedBy: op.ID, CreatedByName: op.Name})
 		if e != nil {
 			return e
@@ -215,12 +220,15 @@ func validChargeBasis(v string) bool {
 	return false
 }
 
+// ListCostScenarios 按询价项目列出全部成本版本，供员工回看每次报价调整。
 func (s *Service) ListCostScenarios(ctx context.Context, tenantID, caseID int64) ([]store.ListCostScenariosRow, error) {
 	if _, e := s.q.CostScenarioCase(ctx, store.CostScenarioCaseParams{TenantID: tenantID, ID: caseID}); e != nil {
 		return nil, apierr.NotFound("SC_CASE_NOT_FOUND", "询价案件不存在")
 	}
 	return s.q.ListCostScenarios(ctx, store.ListCostScenariosParams{TenantID: tenantID, CaseID: caseID})
 }
+
+// GetCostScenario 返回指定成本版本及其费用、产品成本明细。
 func (s *Service) GetCostScenario(ctx context.Context, tenantID, id int64) (CostScenarioView, error) {
 	h, e := s.q.GetCostScenario(ctx, store.GetCostScenarioParams{TenantID: tenantID, ID: id})
 	if e != nil {
@@ -233,12 +241,9 @@ func (s *Service) GetCostScenario(ctx context.Context, tenantID, id int64) (Cost
 	l, e := s.q.ListCostScenarioLines(ctx, store.ListCostScenarioLinesParams{TenantID: tenantID, ScenarioID: id})
 	return CostScenarioView{Header: h, Charges: c, Lines: l}, e
 }
-// ConfirmCostScenario is the award decision: this combination of factory
-// quotes wins. The reason is mandatory (A2 §6) because the winner is often
-// NOT the cheapest row — MOQ, lead time or an old relationship outweighed
-// price — and "why did we pick the dearer mill" is exactly the question an
-// audit asks eight months later. Operator, time and reason all land in the
-// case's change history, next to every other judgement made on it.
+
+// ConfirmCostScenario 确认本次工厂报价组合并记录中标原因，同时让此前生效的成本版本失效。
+// 中标原因必填，因为最终选择可能综合 MOQ、交期、合作关系等因素，而不一定是最低价。
 func (s *Service) ConfirmCostScenario(ctx context.Context, tenantID, id int64, reason string, op Operator) (CostScenarioView, error) {
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
@@ -283,12 +288,13 @@ type CustomerQuotationDraft struct {
 	Lines    []store.ListCostScenarioLinesRow
 }
 
+// PrepareCustomerQuotation 从已确认的成本版本生成客户报价草稿；重复打开时保持幂等。
 func (s *Service) PrepareCustomerQuotation(ctx context.Context, tenantID, id int64) (CustomerQuotationDraft, error) {
 	v, e := s.GetCostScenario(ctx, tenantID, id)
 	if e != nil {
 		return CustomerQuotationDraft{}, e
 	}
-	if v.Header.Status != "CONFIRMED" {
+	if v.Header.Status != "CONFIRMED" && v.Header.Status != "CUSTOMER_QUOTE_CREATED" {
 		return CustomerQuotationDraft{}, apierr.Conflict("SC_COST_NOT_CONFIRMED", "请先确认成本方案")
 	}
 	c, e := s.q.CostScenarioCase(ctx, store.CostScenarioCaseParams{TenantID: tenantID, ID: v.Header.CaseID})
@@ -301,6 +307,8 @@ func (s *Service) PrepareCustomerQuotation(ctx context.Context, tenantID, id int
 	}
 	return CustomerQuotationDraft{Scenario: v.Header, Case: c, Terms: t, Lines: v.Lines}, nil
 }
+
+// LinkCustomerQuotation 把已创建的客户报价关联回成本版本，并推进为已生成客户报价状态。
 func (s *Service) LinkCustomerQuotation(ctx context.Context, tenantID, id, quotationID int64, quoteNo string) error {
 	v, e := s.GetCostScenario(ctx, tenantID, id)
 	if e != nil {

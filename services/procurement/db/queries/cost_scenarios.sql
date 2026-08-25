@@ -2,6 +2,11 @@
 SELECT id,customer_id,customer_name,contact_name,contact_email,status
 FROM sourcing_cases WHERE tenant_id=$1 AND id=$2;
 
+-- name: LockCostScenarioCase :one
+SELECT id FROM sourcing_cases
+WHERE tenant_id=$1 AND id=$2
+FOR UPDATE;
+
 -- name: CostScenarioCandidate :one
 SELECT ql.id AS quote_line_id,ql.sourcing_line_id,ql.qty::text,ql.unit_price::text,
  q.currency,r.supplier_name,sl.product_id,sl.sku_id,sl.product,fl.spec_snapshot,fl.uom_code
@@ -23,16 +28,18 @@ SELECT incoterm,port,payment_terms FROM sourcing_lines
 WHERE tenant_id=$1 AND case_id=$2 AND decision NOT IN ('SKIPPED','NO_MATCH') ORDER BY line_no LIMIT 1;
 
 -- name: CreateCostScenario :one
-INSERT INTO cost_scenarios(tenant_id,case_id,scenario_no,currency,allocation_basis,margin_type,margin_value,
+INSERT INTO cost_scenarios(tenant_id,case_id,scenario_no,version_no,currency,allocation_basis,margin_type,margin_value,
  fx_rate,fx_rate_at,fx_source,fx_base_currency,product_total,charge_total,landed_total,margin_total,customer_total,
  created_by,created_by_name)
 VALUES(sqlc.arg(tenant_id),sqlc.arg(case_id),
  'CS-'||to_char(current_date,'YYYYMMDD')||'-'||lpad(nextval('cost_scenario_no_seq')::text,6,'0'),
+ (SELECT coalesce(max(version_no),0)+1 FROM cost_scenarios
+  WHERE tenant_id=sqlc.arg(tenant_id) AND case_id=sqlc.arg(case_id)),
  sqlc.arg(currency),sqlc.arg(allocation_basis),sqlc.arg(margin_type),sqlc.arg(margin_value)::text::numeric,
  sqlc.arg(fx_rate)::text::numeric,sqlc.arg(fx_rate_at)::timestamptz,sqlc.arg(fx_source),sqlc.arg(fx_base_currency),
  sqlc.arg(product_total)::text::numeric,sqlc.arg(charge_total)::text::numeric,sqlc.arg(landed_total)::text::numeric,
  sqlc.arg(margin_total)::text::numeric,sqlc.arg(customer_total)::text::numeric,sqlc.arg(created_by),sqlc.arg(created_by_name))
-RETURNING id,scenario_no;
+RETURNING id,scenario_no,version_no;
 
 -- name: CreateCostCharge :exec
 INSERT INTO cost_charges(tenant_id,scenario_id,charge_type,basis,description,origin_port,destination_port,container_type,
@@ -55,14 +62,14 @@ VALUES(sqlc.arg(tenant_id),sqlc.arg(scenario_id),sqlc.arg(sourcing_line_id),sqlc
  sqlc.arg(customer_amount)::text::numeric);
 
 -- name: ListCostScenarios :many
-SELECT id,case_id,scenario_no,currency,allocation_basis,margin_type,margin_value::text,fx_rate::text,fx_rate_at,
+SELECT id,case_id,scenario_no,version_no,currency,allocation_basis,margin_type,margin_value::text,fx_rate::text,fx_rate_at,
  fx_source,fx_base_currency,product_total::text,charge_total::text,landed_total::text,margin_total::text,
  customer_total::text,status,coalesce(customer_quotation_id,0)::bigint AS customer_quotation_id,customer_quote_no,
  created_by_name,confirmed_by_name,confirmed_at,confirm_reason,created_at
 FROM cost_scenarios WHERE tenant_id=$1 AND case_id=$2 ORDER BY created_at DESC;
 
 -- name: GetCostScenario :one
-SELECT id,case_id,scenario_no,currency,allocation_basis,margin_type,margin_value::text,fx_rate::text,fx_rate_at,
+SELECT id,case_id,scenario_no,version_no,currency,allocation_basis,margin_type,margin_value::text,fx_rate::text,fx_rate_at,
  fx_source,fx_base_currency,product_total::text,charge_total::text,landed_total::text,margin_total::text,
  customer_total::text,status,coalesce(customer_quotation_id,0)::bigint AS customer_quotation_id,customer_quote_no,
  created_by_name,confirmed_by_name,confirmed_at,confirm_reason,created_at
@@ -87,13 +94,15 @@ UPDATE cost_scenarios SET status='CONFIRMED',confirmed_by=sqlc.arg(confirmed_by)
 
 -- name: SupersedeOtherCostScenarios :exec
 UPDATE cost_scenarios SET status='SUPERSEDED',updated_at=now()
-WHERE tenant_id=$1 AND case_id=$2 AND id<>$3 AND status='CONFIRMED';
+WHERE tenant_id=$1 AND case_id=$2 AND id<>$3
+  AND status IN ('CONFIRMED','CUSTOMER_QUOTE_CREATED');
 
 -- name: MarkSourcingCaseCosting :exec
 UPDATE sourcing_cases SET status='COSTING',updated_at=now() WHERE tenant_id=$1 AND id=$2;
 
 -- name: LinkCustomerQuotation :execrows
-UPDATE cost_scenarios SET customer_quotation_id=$3,customer_quote_no=$4,updated_at=now()
+UPDATE cost_scenarios
+SET customer_quotation_id=$3,customer_quote_no=$4,status='CUSTOMER_QUOTE_CREATED',updated_at=now()
 WHERE tenant_id=$1 AND id=$2 AND status='CONFIRMED' AND customer_quotation_id IS NULL;
 
 -- name: MarkSourcingCaseQuoted :exec
@@ -103,7 +112,7 @@ UPDATE sourcing_cases SET status='CUSTOMER_QUOTE_CREATED',updated_at=now() WHERE
 SELECT id, case_id, scenario_no, currency
 FROM cost_scenarios
 WHERE tenant_id=sqlc.arg(tenant_id) AND customer_quotation_id=sqlc.arg(quotation_id)
-  AND status='CONFIRMED';
+  AND status='CUSTOMER_QUOTE_CREATED';
 
 -- name: AcceptedQuotationLines :many
 SELECT cl.sourcing_line_id, cl.supplier_quote_line_id,

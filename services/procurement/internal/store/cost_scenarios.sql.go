@@ -96,7 +96,7 @@ const acceptedQuotationScenario = `-- name: AcceptedQuotationScenario :one
 SELECT id, case_id, scenario_no, currency
 FROM cost_scenarios
 WHERE tenant_id=$1 AND customer_quotation_id=$2
-  AND status='CONFIRMED'
+  AND status='CUSTOMER_QUOTE_CREATED'
 `
 
 type AcceptedQuotationScenarioParams struct {
@@ -334,16 +334,18 @@ func (q *Queries) CreateCostCharge(ctx context.Context, arg CreateCostChargePara
 }
 
 const createCostScenario = `-- name: CreateCostScenario :one
-INSERT INTO cost_scenarios(tenant_id,case_id,scenario_no,currency,allocation_basis,margin_type,margin_value,
+INSERT INTO cost_scenarios(tenant_id,case_id,scenario_no,version_no,currency,allocation_basis,margin_type,margin_value,
  fx_rate,fx_rate_at,fx_source,fx_base_currency,product_total,charge_total,landed_total,margin_total,customer_total,
  created_by,created_by_name)
 VALUES($1,$2,
  'CS-'||to_char(current_date,'YYYYMMDD')||'-'||lpad(nextval('cost_scenario_no_seq')::text,6,'0'),
+ (SELECT coalesce(max(version_no),0)+1 FROM cost_scenarios
+  WHERE tenant_id=$1 AND case_id=$2),
  $3,$4,$5,$6::text::numeric,
  $7::text::numeric,$8::timestamptz,$9,$10,
  $11::text::numeric,$12::text::numeric,$13::text::numeric,
  $14::text::numeric,$15::text::numeric,$16,$17)
-RETURNING id,scenario_no
+RETURNING id,scenario_no,version_no
 `
 
 type CreateCostScenarioParams struct {
@@ -369,6 +371,7 @@ type CreateCostScenarioParams struct {
 type CreateCostScenarioRow struct {
 	ID         int64
 	ScenarioNo string
+	VersionNo  int32
 }
 
 func (q *Queries) CreateCostScenario(ctx context.Context, arg CreateCostScenarioParams) (CreateCostScenarioRow, error) {
@@ -392,7 +395,7 @@ func (q *Queries) CreateCostScenario(ctx context.Context, arg CreateCostScenario
 		arg.CreatedByName,
 	)
 	var i CreateCostScenarioRow
-	err := row.Scan(&i.ID, &i.ScenarioNo)
+	err := row.Scan(&i.ID, &i.ScenarioNo, &i.VersionNo)
 	return i, err
 }
 
@@ -460,7 +463,7 @@ func (q *Queries) CreateCostScenarioLine(ctx context.Context, arg CreateCostScen
 }
 
 const getCostScenario = `-- name: GetCostScenario :one
-SELECT id,case_id,scenario_no,currency,allocation_basis,margin_type,margin_value::text,fx_rate::text,fx_rate_at,
+SELECT id,case_id,scenario_no,version_no,currency,allocation_basis,margin_type,margin_value::text,fx_rate::text,fx_rate_at,
  fx_source,fx_base_currency,product_total::text,charge_total::text,landed_total::text,margin_total::text,
  customer_total::text,status,coalesce(customer_quotation_id,0)::bigint AS customer_quotation_id,customer_quote_no,
  created_by_name,confirmed_by_name,confirmed_at,confirm_reason,created_at
@@ -476,6 +479,7 @@ type GetCostScenarioRow struct {
 	ID                  int64
 	CaseID              int64
 	ScenarioNo          string
+	VersionNo           int32
 	Currency            string
 	AllocationBasis     string
 	MarginType          string
@@ -506,6 +510,7 @@ func (q *Queries) GetCostScenario(ctx context.Context, arg GetCostScenarioParams
 		&i.ID,
 		&i.CaseID,
 		&i.ScenarioNo,
+		&i.VersionNo,
 		&i.Currency,
 		&i.AllocationBasis,
 		&i.MarginType,
@@ -532,7 +537,8 @@ func (q *Queries) GetCostScenario(ctx context.Context, arg GetCostScenarioParams
 }
 
 const linkCustomerQuotation = `-- name: LinkCustomerQuotation :execrows
-UPDATE cost_scenarios SET customer_quotation_id=$3,customer_quote_no=$4,updated_at=now()
+UPDATE cost_scenarios
+SET customer_quotation_id=$3,customer_quote_no=$4,status='CUSTOMER_QUOTE_CREATED',updated_at=now()
 WHERE tenant_id=$1 AND id=$2 AND status='CONFIRMED' AND customer_quotation_id IS NULL
 `
 
@@ -705,7 +711,7 @@ func (q *Queries) ListCostScenarioLines(ctx context.Context, arg ListCostScenari
 }
 
 const listCostScenarios = `-- name: ListCostScenarios :many
-SELECT id,case_id,scenario_no,currency,allocation_basis,margin_type,margin_value::text,fx_rate::text,fx_rate_at,
+SELECT id,case_id,scenario_no,version_no,currency,allocation_basis,margin_type,margin_value::text,fx_rate::text,fx_rate_at,
  fx_source,fx_base_currency,product_total::text,charge_total::text,landed_total::text,margin_total::text,
  customer_total::text,status,coalesce(customer_quotation_id,0)::bigint AS customer_quotation_id,customer_quote_no,
  created_by_name,confirmed_by_name,confirmed_at,confirm_reason,created_at
@@ -721,6 +727,7 @@ type ListCostScenariosRow struct {
 	ID                  int64
 	CaseID              int64
 	ScenarioNo          string
+	VersionNo           int32
 	Currency            string
 	AllocationBasis     string
 	MarginType          string
@@ -757,6 +764,7 @@ func (q *Queries) ListCostScenarios(ctx context.Context, arg ListCostScenariosPa
 			&i.ID,
 			&i.CaseID,
 			&i.ScenarioNo,
+			&i.VersionNo,
 			&i.Currency,
 			&i.AllocationBasis,
 			&i.MarginType,
@@ -789,6 +797,24 @@ func (q *Queries) ListCostScenarios(ctx context.Context, arg ListCostScenariosPa
 	return items, nil
 }
 
+const lockCostScenarioCase = `-- name: LockCostScenarioCase :one
+SELECT id FROM sourcing_cases
+WHERE tenant_id=$1 AND id=$2
+FOR UPDATE
+`
+
+type LockCostScenarioCaseParams struct {
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) LockCostScenarioCase(ctx context.Context, arg LockCostScenarioCaseParams) (int64, error) {
+	row := q.db.QueryRow(ctx, lockCostScenarioCase, arg.TenantID, arg.ID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const markSourcingCaseCosting = `-- name: MarkSourcingCaseCosting :exec
 UPDATE sourcing_cases SET status='COSTING',updated_at=now() WHERE tenant_id=$1 AND id=$2
 `
@@ -819,7 +845,8 @@ func (q *Queries) MarkSourcingCaseQuoted(ctx context.Context, arg MarkSourcingCa
 
 const supersedeOtherCostScenarios = `-- name: SupersedeOtherCostScenarios :exec
 UPDATE cost_scenarios SET status='SUPERSEDED',updated_at=now()
-WHERE tenant_id=$1 AND case_id=$2 AND id<>$3 AND status='CONFIRMED'
+WHERE tenant_id=$1 AND case_id=$2 AND id<>$3
+  AND status IN ('CONFIRMED','CUSTOMER_QUOTE_CREATED')
 `
 
 type SupersedeOtherCostScenariosParams struct {

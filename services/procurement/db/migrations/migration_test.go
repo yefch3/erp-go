@@ -10,7 +10,7 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-// TestUpDownUp 仅使用可丢弃的采购迁移测试库，验证 P6 迁移可以完整回滚后再次应用。
+// TestUpDownUp 仅使用可丢弃的采购迁移测试库，验证全部采购迁移可以完整回滚后再次应用。
 func TestUpDownUp(t *testing.T) {
 	dsn := os.Getenv("PROCUREMENT_MIGRATION_TEST_DSN")
 	if dsn == "" {
@@ -37,6 +37,7 @@ func TestUpDownUp(t *testing.T) {
 	assertProcurementTable(t, db, "purchase_inspections", true)
 	assertProcurementColumn(t, db, "purchase_orders", "closed_at", true)
 	assertProcurementColumn(t, db, "purchase_requirements", "owner_id", true)
+	assertProcurementColumn(t, db, "cost_scenarios", "version_no", true)
 	if err := goose.DownTo(db, ".", 0); err != nil {
 		t.Fatalf("down: %v", err)
 	}
@@ -47,6 +48,7 @@ func TestUpDownUp(t *testing.T) {
 	assertProcurementTable(t, db, "sourcing_case_changes", true)
 	assertProcurementColumn(t, db, "sourcing_lines", "revision_no", true)
 	assertProcurementTable(t, db, "inquiry_templates", true)
+	assertProcurementColumn(t, db, "cost_scenarios", "version_no", true)
 }
 
 func assertProcurementTable(t *testing.T, db *sql.DB, name string, want bool) {

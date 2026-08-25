@@ -283,6 +283,7 @@ message CostScenario {
   string created_by_name = 20; string confirmed_by_name = 21; string confirmed_at = 22; string created_at = 23;
   repeated CostCharge charges = 24; repeated CostScenarioLine lines = 25;
   string confirm_reason = 26;
+  int32 version_no = 27;
 }
 message CreateCostScenarioRequest {
   int64 case_id = 1; string currency = 2; string allocation_basis = 3;
