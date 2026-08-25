@@ -54,6 +54,52 @@ proxy_set_header Host $host;
 proxy_pass http://127.0.0.1:8080;
 ```
 
+### 前门 nginx：哪一半在仓库里
+
+宿主机的 nginx 配置**分两半**，只有一半在版本控制里：
+
+| 谁写的 | 内容 | 在哪 |
+|---|---|---|
+| 我们 | 转发规则、代理头、HSTS、SSE 处理 | **`deploy/host-nginx.conf`**（仓库） |
+| certbot | `listen 443 ssl http2`、证书路径、80→443 跳转 | 只在服务器上 |
+
+服务器上的落点：
+
+```
+/etc/nginx/snippets/erp-app.conf     ← deploy/host-nginx.conf 的副本
+/etc/nginx/sites-enabled/erp         ← certbot 管，443 块里 include 上面那个
+```
+
+**为什么不整份进仓库**：certbot 的 `installer = nginx`，它会改写 `sites-enabled/erp`
+（那些 `# managed by Certbot` 就是它写的）。整份抄进来的话，certbot 一动就和仓库
+对不上，而一个看着权威、实际过期的文件比没有文件更坏。拆开之后仓库那份是**逐字
+为真**的——certbot 碰不到 snippets 目录。
+
+**重建机器时**：装完 nginx 和 certbot 之后，把 `deploy/host-nginx.conf` 放到
+`/etc/nginx/snippets/erp-app.conf`，然后在 certbot 生成的 443 server 块里加一行：
+
+```nginx
+include /etc/nginx/snippets/erp-app.conf;
+```
+
+`nginx -t` 通过再 `systemctl reload nginx`。**顺序不能反**——先 reload 再发现语法
+错，站点就已经挂了。
+
+#### 两个不明显的坑
+
+**一、`include sites-enabled/*` 不挑后缀。** 在 `sites-enabled/` 里放备份文件
+（`erp.bak` 之类）会被 nginx 当成配置一起加载，报「conflicting server name ...
+ignored」，而且很难联想到原因——更糟的是你不知道它最终用的是哪一份。**备份要
+放到该目录之外**（例如 `/root/`）。
+
+**二、`proxy_set_header` 的继承是「全有或全无」。** nginx 只在当前层**一条都
+没有**时才继承上层的。`location /api/events` 因为要写 `proxy_set_header
+Connection ""`，上层那三行代理头对它**全部失效**——包括 `X-Forwarded-For` 的
+覆写。所以那个块里必须把三行原样再写一遍，看着重复，删掉就漏。
+
+（这正是 2026-08-25 把配置纳入版本控制时发现的：SSE 那条路上的来源地址一直是
+客户端说了算。登录和限流走 `location /api/`，不受影响。）
+
 ---
 
 ## 三、必须设的环境变量
