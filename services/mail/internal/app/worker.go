@@ -288,6 +288,9 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 		})
 		s.recordRecipientResults(ctx, cfg, m.ID, recips, res.Rejected)
 		s.countSend(ctx, cfg.TenantID, m.SenderID)
+		// Last, and never fatal: the ERP's own books are closed above, and a
+		// mail host that will not take the copy must not undo any of it.
+		s.saveSentCopy(ctx, cfg.TenantID, m.SenderID, res.Raw)
 
 	case Retryable:
 		if int(m.AttemptCount) >= len(backoff) {

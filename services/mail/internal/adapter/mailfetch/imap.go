@@ -7,6 +7,7 @@
 package mailfetch
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -569,6 +570,31 @@ func (f *IMAP) MoveMessages(ctx context.Context, acct app.MailAccount, from stri
 	}
 	if err := c.UidMove(set, to); err != nil {
 		return fmt.Errorf("移动到 %s 失败：%w", to, err)
+	}
+	return nil
+}
+
+// AppendMessage files an already-sent message into a folder on the host.
+//
+// The counterpart to sending: SMTP relays a message and puts nothing in the
+// sender's mailbox, so the copy in 已发送 has to be written over IMAP. See
+// saveSentCopy in the app package for when this is and is not wanted.
+//
+// \Seen because nobody arrives at their own Sent folder to find out what they
+// wrote; without the flag every send would raise an unread count on itself.
+func (f *IMAP) AppendMessage(ctx context.Context, acct app.MailAccount, folder string, raw []byte, at time.Time) (err error) {
+	if folder == "" || len(raw) == 0 {
+		return nil
+	}
+	c, err := f.borrow(acct)
+	if err != nil {
+		return err
+	}
+	// Released rather than logged out: the next command on this
+	// mailbox reuses it. A failed command discards it instead.
+	defer func() { f.release(acct, c, err) }()
+	if err := c.Append(folder, []string{imap.SeenFlag}, at, bytes.NewReader(raw)); err != nil {
+		return fmt.Errorf("存入 %s 失败：%w", folder, err)
 	}
 	return nil
 }

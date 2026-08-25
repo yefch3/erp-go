@@ -84,6 +84,10 @@ type Mailbox interface {
 	// RecentMessageIDs names the newest messages of a folder, for working out
 	// where mail went once it stops appearing in the inbox.
 	RecentMessageIDs(ctx context.Context, acct MailAccount, folder string, limit uint32) (map[string]bool, error)
+	// AppendMessage files a message we already sent into a folder on the
+	// host — the one write in this interface that creates a message rather
+	// than moving or flagging one. See saveSentCopy for why it exists.
+	AppendMessage(ctx context.Context, acct MailAccount, folder string, raw []byte, at time.Time) error
 }
 
 // MessageFlags is the host's view of one message.
