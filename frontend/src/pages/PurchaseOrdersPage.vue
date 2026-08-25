@@ -63,11 +63,6 @@
             <el-tag size="small" :type="statusType(row.status)" effect="plain">
               {{ orderStatusLabel(row) }}
             </el-tag>
-            <el-tag
-              v-if="['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status)"
-              size="small" effect="plain" style="margin-left: 4px"
-              :type="row.sendStatus === 'SENT' ? 'success' : row.sendStatus === 'FAILED' ? 'danger' : 'info'"
-            >{{ row.sendStatus === 'SENT' ? t('orders.sentTag') : row.sendStatus === 'FAILED' ? t('orders.sendFailedTag') : t('orders.unsentTag') }}</el-tag>
             <el-tag v-if="confirmTag(row)" size="small" effect="plain" :type="confirmTag(row)!.type" style="margin-left: 4px">
               {{ confirmTag(row)!.label }}
             </el-tag>
@@ -251,10 +246,6 @@
         <el-descriptions-item :label="t('orders.buyer')">{{ detail?.buyerName || '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.expected')">{{ detail?.expectedDate || '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.remark')">{{ detail?.remark || '—' }}</el-descriptions-item>
-        <el-descriptions-item :label="t('orders.sendStatus')">
-          {{ detail ? t(`orders.sendStatuses.${detail.sendStatus || 'NOT_SENT'}`) : '' }}
-          <span v-if="detail?.sentTo" class="sub"> · {{ detail.sentTo }}</span>
-        </el-descriptions-item>
         <el-descriptions-item :label="t('orders.confirmations')">
           <template v-if="detail && confirmTag(detail)">{{ confirmTag(detail)!.label }}</template>
           <template v-else>—</template>
@@ -349,27 +340,6 @@
       <template #footer>
         <el-button @click="cancelOpen = false">{{ common('cancel') }}</el-button>
         <el-button type="danger" :loading="saving" @click="submitCancel">{{ common('confirm') }}</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="sendOpen" :title="t('orders.sendFor', { no: sending?.poNo })" width="560px">
-      <el-alert type="info" :closable="false" show-icon class="alert">{{ t('orders.sendHint') }}</el-alert>
-      <el-form label-width="110px">
-        <el-form-item :label="t('orders.sender')">
-          <el-radio-group v-model="sendForm.senderMode">
-            <el-radio value="PUBLIC">{{ t('orders.publicMailbox') }}</el-radio>
-            <el-radio value="ME">{{ t('orders.myMailbox') }}</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item :label="t('orders.recipient')">
-          <el-input v-model="sendForm.recipientEmail" :placeholder="t('orders.supplierDefaultEmail')" />
-        </el-form-item>
-        <el-form-item :label="t('orders.subject')"><el-input v-model="sendForm.subject" /></el-form-item>
-        <el-form-item :label="t('orders.mailBody')"><el-input v-model="sendForm.body" type="textarea" :rows="5" /></el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="sendOpen = false">{{ common('cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="submitSend">{{ t('orders.sendOrder') }}</el-button>
       </template>
     </el-dialog>
 
@@ -575,11 +545,6 @@ interface Order {
   totalQty: string
   receivedQty: string
   createdAt: string
-  sendStatus: string
-  sentTo: string
-  sentAt: string
-  sentBy: string
-  sendError: string
   closedAt: string
   closedBy: string
   confirmStatus: string
@@ -662,7 +627,6 @@ const canSubmit = auth.can('procurement:order:submit')
 const canApprove = auth.can('approval:task:act')
 const canCancel = auth.can('procurement:order:cancel')
 const canReceive = auth.can('procurement:receipt:write')
-const canSend = auth.can('procurement:order:send')
 const canProduction = auth.can('procurement:production:write')
 const canException = auth.can('procurement:exception:write')
 const canClose = auth.can('procurement:order:close')
@@ -711,10 +675,6 @@ const portWarehouses = computed(() => warehouses.value.filter((w) => w.whType ==
 const cancelOpen = ref(false)
 const cancelling = ref<Order | null>(null)
 const cancelReason = ref('')
-
-const sendOpen = ref(false)
-const sending = ref<Order | null>(null)
-const sendForm = reactive({ senderMode: 'PUBLIC', recipientEmail: '', subject: '', body: '' })
 
 const executionOpen = ref(false)
 const executionTab = ref('confirmation')
@@ -801,17 +761,17 @@ function toggleSupplierSwitch() {
 
 interface RowAction { key: string; label: string; tone: 'primary' | 'success' | 'warning' | 'danger'; run: () => void }
 function primaryAction(row: Order): RowAction | null {
+  // 已结案与已作废采购单是只读历史，不再出现任何履约动作。
+  if (row.closedAt || row.status === 'CANCELLED') return null
   if (row.status === 'PENDING_APPROVAL' && canApprove && approvalTaskFor(row))
     return { key: 'approve', label: t('orders.reviewApproval'), tone: 'success', run: () => void openApprovalReview(row) }
   if (row.status === 'DRAFT' && canSubmit)
     return { key: 'submit', label: t('orders.submit'), tone: 'primary', run: () => void submit(row) }
   if (row.status === 'REJECTED' && canWrite)
     return { key: 'edit', label: t('orders.editAndResubmit'), tone: 'warning', run: () => void openEdit(row) }
-  if (['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status) && row.sendStatus !== 'SENT' && canSend)
-    return { key: 'send', label: row.sendStatus === 'FAILED' ? t('orders.retrySend') : t('orders.sendOrder'), tone: 'success', run: () => openSend(row) }
   if (['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status) && canReceive)
     return { key: 'receive', label: t('orders.receive'), tone: 'warning', run: () => openReceive(row) }
-  // 收满、发过、还没结案——当前该做的就是宣布这单到此为止（A3）。
+  // 收满、还没结案——当前该做的就是宣布这单到此为止（A3）。
   if (row.status === 'RECEIVED' && !row.closedAt && canClose)
     return { key: 'close', label: t('orders.closeOrder'), tone: 'primary', run: () => void closeOrder(row) }
   if (['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
@@ -861,10 +821,8 @@ function moreActions(row: Order): { key: string; label: string }[] {
   const add = (key: string, label: string, allowed: boolean) => { if (allowed && key !== primary) out.push({ key, label }) }
   add('edit', t('orders.edit'), canWrite && ['DRAFT', 'REJECTED'].includes(row.status))
   add('submit', t('orders.submit'), canSubmit && ['DRAFT', 'REJECTED'].includes(row.status))
-  add('send', row.sendStatus === 'FAILED' ? t('orders.retrySend') : t('orders.sendOrder'),
-    canSend && ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status) && row.sendStatus !== 'SENT')
   add('receive', t('orders.receive'), canReceive && ['ORDERED', 'PARTIALLY_RECEIVED'].includes(row.status))
-  add('execution', t('orders.execution'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
+  add('execution', t('orders.execution'), !row.closedAt && ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('downloadXlsx', t('orders.downloadExcel'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('downloadPdf', t('orders.downloadPdf'), ['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status))
   add('close', t('orders.closeOrder'), canClose && ['RECEIVED', 'PARTIALLY_RECEIVED'].includes(row.status) && !row.closedAt)
@@ -880,12 +838,12 @@ function allActions(row: Order): { key: string; label: string; divided?: boolean
     ...moreActions(row).map((action, index) => ({ ...action, divided: !primary && index === 0 })),
   ]
 }
-// 工厂回签状态的列表子标签（B5 尾巴）。只在已发单之后才有意义：
-// 没发出去的单谈不上「工厂还没回」，那时未发单标签已经说明了一切。
+// 工厂回签状态的列表子标签（B5 尾巴）。只有实际录入过回签时才显示，
+// 不再用邮件发送状态制造第二个“是否下单”的业务门槛。
 function confirmTag(row: Order): { label: string; type: 'success' | 'warning' | 'danger' | 'info' } | null {
-  if (row.sendStatus !== 'SENT') return null
   if (!['ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(row.status)) return null
   const s = row.confirmStatus
+  if (!s) return null
   if (s === 'MATCHED' || s === 'APPROVED') return { label: t('orders.confirmTags.CONFIRMED'), type: 'success' }
   if (s === 'PENDING_APPROVAL') return { label: t('orders.confirmTags.PENDING_APPROVAL'), type: 'warning' }
   if (s === 'REJECTED') return { label: t('orders.confirmTags.REJECTED'), type: 'danger' }
@@ -914,7 +872,6 @@ function runOrderAction(row: Order, key: string) {
   switch (key) {
     case 'edit': openEdit(row); break
     case 'submit': void submit(row); break
-    case 'send': openSend(row); break
     case 'receive': openReceive(row); break
     case 'execution': openExecution(row); break
     case 'downloadXlsx': void downloadOrder(row, 'xlsx'); break
@@ -1207,32 +1164,6 @@ async function downloadOrder(row: Order, format: string) {
     ElMessage.success(t('orders.downloaded', { name: file.fileName }))
   } finally {
     downloadingId.value = 0
-  }
-}
-
-function openSend(row: Order) {
-  sending.value = row
-  sendForm.senderMode = 'PUBLIC'
-  sendForm.recipientEmail = ''
-  sendForm.subject = `Purchase Order ${row.poNo}`
-  sendForm.body = ''
-  sendOpen.value = true
-}
-
-async function submitSend() {
-  saving.value = true
-  try {
-    await post(`/purchase-orders/${sending.value?.id}/send`, {
-      sender_mode: sendForm.senderMode,
-      recipient_email: sendForm.recipientEmail,
-      subject: sendForm.subject,
-      body: sendForm.body,
-    })
-    ElMessage.success(t('orders.sent'))
-    sendOpen.value = false
-    await load()
-  } finally {
-    saving.value = false
   }
 }
 
