@@ -71,6 +71,8 @@ const (
 	EmailService_GetInboundExcelConversionJob_FullMethodName = "/erp.mail.v1.EmailService/GetInboundExcelConversionJob"
 	EmailService_GetMailThread_FullMethodName                = "/erp.mail.v1.EmailService/GetMailThread"
 	EmailService_ExcelUsage_FullMethodName                   = "/erp.mail.v1.EmailService/ExcelUsage"
+	EmailService_ListExcelQuotas_FullMethodName              = "/erp.mail.v1.EmailService/ListExcelQuotas"
+	EmailService_SetExcelQuota_FullMethodName                = "/erp.mail.v1.EmailService/SetExcelQuota"
 	EmailService_ExportMailThread_FullMethodName             = "/erp.mail.v1.EmailService/ExportMailThread"
 	EmailService_ListMailExports_FullMethodName              = "/erp.mail.v1.EmailService/ListMailExports"
 	EmailService_MarkInbound_FullMethodName                  = "/erp.mail.v1.EmailService/MarkInbound"
@@ -208,9 +210,13 @@ type EmailServiceClient interface {
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error)
-	// 智能转换的用量账（计量）：一个月一行，按人拆开。token 是事实，金额由
-	// 服务端按当下单价折算。
+	// 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
+	// 额度状况。
 	ExcelUsage(ctx context.Context, in *ExcelUsageRequest, opts ...grpc.CallOption) (*ExcelUsageResponse, error)
+	// 所有公司的额度和本月用量。**跨租户，平台运营专用。**
+	ListExcelQuotas(ctx context.Context, in *ListExcelQuotasRequest, opts ...grpc.CallOption) (*ListExcelQuotasResponse, error)
+	// 给一家公司定每月上限，或恢复不限。**跨租户，平台运营专用。**
+	SetExcelQuota(ctx context.Context, in *SetExcelQuotaRequest, opts ...grpc.CallOption) (*SetExcelQuotaResponse, error)
 	// One conversation as a document somebody outside the ERP can read: a
 	// transcript, self-contained, nothing fetched when it is opened. Records
 	// the export before returning the bytes — an export that cannot be logged
@@ -774,6 +780,26 @@ func (c *emailServiceClient) ExcelUsage(ctx context.Context, in *ExcelUsageReque
 	return out, nil
 }
 
+func (c *emailServiceClient) ListExcelQuotas(ctx context.Context, in *ListExcelQuotasRequest, opts ...grpc.CallOption) (*ListExcelQuotasResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListExcelQuotasResponse)
+	err := c.cc.Invoke(ctx, EmailService_ListExcelQuotas_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) SetExcelQuota(ctx context.Context, in *SetExcelQuotaRequest, opts ...grpc.CallOption) (*SetExcelQuotaResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetExcelQuotaResponse)
+	err := c.cc.Invoke(ctx, EmailService_SetExcelQuota_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) ExportMailThread(ctx context.Context, in *ExportMailThreadRequest, opts ...grpc.CallOption) (*ExportMailThreadResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ExportMailThreadResponse)
@@ -990,9 +1016,13 @@ type EmailServiceServer interface {
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error)
-	// 智能转换的用量账（计量）：一个月一行，按人拆开。token 是事实，金额由
-	// 服务端按当下单价折算。
+	// 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
+	// 额度状况。
 	ExcelUsage(context.Context, *ExcelUsageRequest) (*ExcelUsageResponse, error)
+	// 所有公司的额度和本月用量。**跨租户，平台运营专用。**
+	ListExcelQuotas(context.Context, *ListExcelQuotasRequest) (*ListExcelQuotasResponse, error)
+	// 给一家公司定每月上限，或恢复不限。**跨租户，平台运营专用。**
+	SetExcelQuota(context.Context, *SetExcelQuotaRequest) (*SetExcelQuotaResponse, error)
 	// One conversation as a document somebody outside the ERP can read: a
 	// transcript, self-contained, nothing fetched when it is opened. Records
 	// the export before returning the bytes — an export that cannot be logged
@@ -1191,6 +1221,12 @@ func (UnimplementedEmailServiceServer) GetMailThread(context.Context, *GetMailTh
 }
 func (UnimplementedEmailServiceServer) ExcelUsage(context.Context, *ExcelUsageRequest) (*ExcelUsageResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ExcelUsage not implemented")
+}
+func (UnimplementedEmailServiceServer) ListExcelQuotas(context.Context, *ListExcelQuotasRequest) (*ListExcelQuotasResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListExcelQuotas not implemented")
+}
+func (UnimplementedEmailServiceServer) SetExcelQuota(context.Context, *SetExcelQuotaRequest) (*SetExcelQuotaResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetExcelQuota not implemented")
 }
 func (UnimplementedEmailServiceServer) ExportMailThread(context.Context, *ExportMailThreadRequest) (*ExportMailThreadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ExportMailThread not implemented")
@@ -2176,6 +2212,42 @@ func _EmailService_ExcelUsage_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_ListExcelQuotas_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListExcelQuotasRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).ListExcelQuotas(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_ListExcelQuotas_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).ListExcelQuotas(ctx, req.(*ListExcelQuotasRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_SetExcelQuota_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetExcelQuotaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).SetExcelQuota(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_SetExcelQuota_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).SetExcelQuota(ctx, req.(*SetExcelQuotaRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_ExportMailThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ExportMailThreadRequest)
 	if err := dec(in); err != nil {
@@ -2552,6 +2624,14 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ExcelUsage",
 			Handler:    _EmailService_ExcelUsage_Handler,
+		},
+		{
+			MethodName: "ListExcelQuotas",
+			Handler:    _EmailService_ListExcelQuotas_Handler,
+		},
+		{
+			MethodName: "SetExcelQuota",
+			Handler:    _EmailService_SetExcelQuota_Handler,
 		},
 		{
 			MethodName: "ExportMailThread",

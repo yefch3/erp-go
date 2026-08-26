@@ -284,6 +284,13 @@ type MailExcelJob struct {
 	OutputTokens    int64
 }
 
+type MailExcelQuota struct {
+	TenantID    int64
+	MonthlyRuns int64
+	UpdatedBy   int64
+	UpdatedAt   pgtype.Timestamptz
+}
+
 type MailExportLog struct {
 	ID           int64
 	TenantID     int64

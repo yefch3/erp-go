@@ -58,6 +58,17 @@ func (q *Queries) ClaimExcelJob(ctx context.Context) (MailExcelJob, error) {
 	return i, err
 }
 
+const clearExcelQuota = `-- name: ClearExcelQuota :exec
+DELETE FROM mail_excel_quotas WHERE tenant_id = $1::bigint
+`
+
+// 删掉这一行就是恢复不限。不是把 monthly_runs 改成 0——0 是「一次都不许
+// 用」，和「不限」正好相反。
+func (q *Queries) ClearExcelQuota(ctx context.Context, tenantID int64) error {
+	_, err := q.db.Exec(ctx, clearExcelQuota, tenantID)
+	return err
+}
+
 const completeExcelJob = `-- name: CompleteExcelJob :execrows
 UPDATE mail_excel_jobs SET
   status='COMPLETED', file_name=$1, file_data=$2,
@@ -86,6 +97,25 @@ func (q *Queries) CompleteExcelJob(ctx context.Context, arg CompleteExcelJobPara
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const countExcelRunsThisMonth = `-- name: CountExcelRunsThisMonth :one
+SELECT count(*)::bigint
+FROM mail_excel_jobs
+WHERE tenant_id = $1::bigint
+  AND created_at >= date_trunc('month', now())
+  AND created_at <  date_trunc('month', now()) + interval '1 month'
+`
+
+// 这家公司这个月转了多少次——一个数，给额度用。
+//
+// 写成半开区间而不是 to_char(...) = '2026-08'：前者能走 (tenant_id,
+// created_at) 索引的范围扫描，后者要对每一行算一次函数。
+func (q *Queries) CountExcelRunsThisMonth(ctx context.Context, tenantID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countExcelRunsThisMonth, tenantID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const createExcelJob = `-- name: CreateExcelJob :one
@@ -145,6 +175,56 @@ func (q *Queries) CreateExcelJob(ctx context.Context, arg CreateExcelJobParams) 
 		&i.OutputTokens,
 	)
 	return i, err
+}
+
+const currentUsageMonth = `-- name: CurrentUsageMonth :one
+SELECT to_char(date_trunc('month', now()), 'YYYY-MM')::text
+`
+
+// 「这个月」是哪个月，由数据库说了算。
+//
+// 不在 Go 里算 time.Now()：那是两个时钟、两个时区。只要容器和数据库对月
+// 份的理解差一点点，就会出现页面显示「41 次」而拦截说「已用 42 次」这种
+// 谁也解释不清的事——而且只在每月月初那几个小时出现，最难查。
+func (q *Queries) CurrentUsageMonth(ctx context.Context) (string, error) {
+	row := q.db.QueryRow(ctx, currentUsageMonth)
+	var column_1 string
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const excelRunsByTenantThisMonth = `-- name: ExcelRunsByTenantThisMonth :many
+SELECT tenant_id, count(*)::bigint AS runs
+FROM mail_excel_jobs
+WHERE created_at >= date_trunc('month', now())
+  AND created_at <  date_trunc('month', now()) + interval '1 month'
+GROUP BY tenant_id
+`
+
+type ExcelRunsByTenantThisMonthRow struct {
+	TenantID int64
+	Runs     int64
+}
+
+// 每家公司这个月各转了多少次。只有平台运营看得到这一条——它跨租户。
+func (q *Queries) ExcelRunsByTenantThisMonth(ctx context.Context) ([]ExcelRunsByTenantThisMonthRow, error) {
+	rows, err := q.db.Query(ctx, excelRunsByTenantThisMonth)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ExcelRunsByTenantThisMonthRow
+	for rows.Next() {
+		var i ExcelRunsByTenantThisMonthRow
+		if err := rows.Scan(&i.TenantID, &i.Runs); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const excelUsageByMonth = `-- name: ExcelUsageByMonth :many
@@ -277,6 +357,52 @@ func (q *Queries) GetExcelJob(ctx context.Context, arg GetExcelJobParams) (MailE
 	return i, err
 }
 
+const getExcelQuota = `-- name: GetExcelQuota :one
+SELECT tenant_id, monthly_runs, updated_by, updated_at FROM mail_excel_quotas WHERE tenant_id = $1::bigint
+`
+
+func (q *Queries) GetExcelQuota(ctx context.Context, tenantID int64) (MailExcelQuota, error) {
+	row := q.db.QueryRow(ctx, getExcelQuota, tenantID)
+	var i MailExcelQuota
+	err := row.Scan(
+		&i.TenantID,
+		&i.MonthlyRuns,
+		&i.UpdatedBy,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listExcelQuotas = `-- name: ListExcelQuotas :many
+SELECT tenant_id, monthly_runs, updated_by, updated_at FROM mail_excel_quotas ORDER BY tenant_id
+`
+
+// 跨租户，平台运营专用。
+func (q *Queries) ListExcelQuotas(ctx context.Context) ([]MailExcelQuota, error) {
+	rows, err := q.db.Query(ctx, listExcelQuotas)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MailExcelQuota
+	for rows.Next() {
+		var i MailExcelQuota
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.MonthlyRuns,
+			&i.UpdatedBy,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const recordExcelJobUsage = `-- name: RecordExcelJobUsage :execrows
 UPDATE mail_excel_jobs SET
   input_tokens  = input_tokens  + $1::bigint,
@@ -301,4 +427,24 @@ func (q *Queries) RecordExcelJobUsage(ctx context.Context, arg RecordExcelJobUsa
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const setExcelQuota = `-- name: SetExcelQuota :exec
+INSERT INTO mail_excel_quotas (tenant_id, monthly_runs, updated_by, updated_at)
+VALUES ($1::bigint, $2::bigint, $3::bigint, now())
+ON CONFLICT (tenant_id) DO UPDATE SET
+  monthly_runs = EXCLUDED.monthly_runs,
+  updated_by   = EXCLUDED.updated_by,
+  updated_at   = now()
+`
+
+type SetExcelQuotaParams struct {
+	TenantID    int64
+	MonthlyRuns int64
+	UpdatedBy   int64
+}
+
+func (q *Queries) SetExcelQuota(ctx context.Context, arg SetExcelQuotaParams) error {
+	_, err := q.db.Exec(ctx, setExcelQuota, arg.TenantID, arg.MonthlyRuns, arg.UpdatedBy)
+	return err
 }
