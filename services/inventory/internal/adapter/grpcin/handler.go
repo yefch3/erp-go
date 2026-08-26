@@ -202,6 +202,83 @@ func (h *Handler) UnfreezeStock(ctx context.Context, req *ivv1.UnfreezeStockRequ
 	return &ivv1.UnfreezeStockResponse{Stock: resp.GetStock()}, nil
 }
 
+// DownloadStockImportTemplate 返回当前受支持的期初库存模板。
+func (h *Handler) DownloadStockImportTemplate(context.Context, *ivv1.DownloadStockImportTemplateRequest) (*ivv1.DownloadStockImportTemplateResponse, error) {
+	name, data, version, err := app.BuildInitialStockTemplate()
+	if err != nil {
+		return nil, err
+	}
+	return &ivv1.DownloadStockImportTemplateResponse{FileName: name, FileData: data, TemplateVersion: version}, nil
+}
+
+// PreviewInitialStockImport 只做解析、业务校验和预检留档，不改库存。
+func (h *Handler) PreviewInitialStockImport(ctx context.Context, req *ivv1.PreviewInitialStockImportRequest) (*ivv1.PreviewInitialStockImportResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	preview, err := h.svc.PreviewInitialStockImport(ctx, grpcx.TenantID(ctx), req.GetFileData(), req.GetSourceFileName(), req.GetExternalBatchNo(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]*ivv1.StockImportRow, 0, len(preview.Rows))
+	for _, row := range preview.Rows {
+		rows = append(rows, stockImportRowProto(row))
+	}
+	return &ivv1.PreviewInitialStockImportResponse{Batch: stockImportBatchProto(preview.Batch), Rows: rows, ErrorFileName: preview.ErrorFileName, ErrorFileData: preview.ErrorFileData}, nil
+}
+
+// ConfirmInitialStockImport 将已通过的预检批次原子写入库存和流水。
+func (h *Handler) ConfirmInitialStockImport(ctx context.Context, req *ivv1.ConfirmInitialStockImportRequest) (*ivv1.ConfirmInitialStockImportResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	batch, already, err := h.svc.ConfirmInitialStockImport(ctx, grpcx.TenantID(ctx), req.GetImportToken(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &ivv1.ConfirmInitialStockImportResponse{Batch: stockImportBatchProto(batch), AlreadyConfirmed: already}, nil
+}
+
+func (h *Handler) ListStockImports(ctx context.Context, req *ivv1.ListStockImportsRequest) (*ivv1.ListStockImportsResponse, error) {
+	batches, total, err := h.svc.ListStockImports(ctx, grpcx.TenantID(ctx), req.GetPage().GetPage(), req.GetPage().GetPageSize())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*ivv1.StockImportBatch, 0, len(batches))
+	for _, batch := range batches {
+		out = append(out, stockImportBatchProto(batch))
+	}
+	return &ivv1.ListStockImportsResponse{Batches: out, Meta: &commonv1.PageMeta{Total: total}}, nil
+}
+
+func (h *Handler) DownloadStockImportReport(ctx context.Context, req *ivv1.DownloadStockImportReportRequest) (*ivv1.DownloadStockImportReportResponse, error) {
+	name, data, err := h.svc.StockImportReport(ctx, grpcx.TenantID(ctx), req.GetImportToken())
+	if err != nil {
+		return nil, err
+	}
+	return &ivv1.DownloadStockImportReportResponse{FileName: name, FileData: data}, nil
+}
+
+func (h *Handler) CancelStockImport(ctx context.Context, req *ivv1.CancelStockImportRequest) (*ivv1.CancelStockImportResponse, error) {
+	batch, err := h.svc.CancelStockImport(ctx, grpcx.TenantID(ctx), req.GetImportToken())
+	if err != nil {
+		return nil, err
+	}
+	return &ivv1.CancelStockImportResponse{Batch: stockImportBatchProto(batch)}, nil
+}
+
+func stockImportBatchProto(batch app.StockImportBatch) *ivv1.StockImportBatch {
+	confirmed := ""
+	if batch.ConfirmedAt != nil {
+		confirmed = batch.ConfirmedAt.Format(time.RFC3339)
+	}
+	return &ivv1.StockImportBatch{Id: batch.ID, ImportToken: batch.ImportToken, BatchNo: batch.BatchNo, ImportType: batch.ImportType, SourceFileName: batch.SourceFileName, ExternalBatchNo: batch.ExternalBatchNo, TemplateVersion: batch.TemplateVersion, Status: batch.Status, TotalCount: batch.TotalCount, ValidCount: batch.ValidCount, WarningCount: batch.WarningCount, ErrorCount: batch.ErrorCount, DuplicateCount: batch.DuplicateCount, OperatorName: batch.OperatorName, CreatedAt: batch.CreatedAt.Format(time.RFC3339), ConfirmedAt: confirmed}
+}
+
+func stockImportRowProto(row app.StockImportRow) *ivv1.StockImportRow {
+	issues := make([]*ivv1.StockImportIssue, 0, len(row.Issues))
+	for _, issue := range row.Issues {
+		issues = append(issues, &ivv1.StockImportIssue{Field: issue.Field, Value: issue.Value, Message: issue.Message})
+	}
+	return &ivv1.StockImportRow{RowNumber: row.RowNumber, WarehouseCode: row.WarehouseCode, WarehouseName: row.WarehouseName, ProductCode: row.ProductCode, ProductName: row.ProductName, SkuCode: row.SKUCode, Qty: row.Qty, UomCode: row.UomCode, UnitCost: row.UnitCost, Currency: row.Currency, Remark: row.Remark, Verdict: row.Verdict, Issues: issues}
+}
+
 func (h *Handler) ReceiveStock(ctx context.Context, req *ivv1.ReceiveStockRequest) (*ivv1.ReceiveStockResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
 	lines := make([]app.ReceiveLine, 0, len(req.GetLines()))

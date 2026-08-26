@@ -86,7 +86,7 @@ export default {
     todo: ' (coming soon)',
   },
   warehouseNav: {
-    workbench: 'Warehouse workspace', profiles: 'Warehouse profiles', arrivals: 'Pending arrivals', receipts: 'Receipt history', stock: 'Stock inquiry', settings: 'Warehouse settings',
+    workbench: 'Warehouse workspace', profiles: 'Warehouse profiles', arrivals: 'Pending arrivals', receipts: 'Receipt history', stock: 'Stock inquiry', imports: 'Import center', settings: 'Warehouse settings',
   },
   supplierPayments: {
     currency: 'Currency',

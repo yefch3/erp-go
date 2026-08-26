@@ -188,6 +188,7 @@ services:
       DB_DSN: postgres://erp_inventory:erp_inventory_pw@postgres:5432/erp_inventory?sslmode=disable
       GRPC_PORT: "9008"
       MASTERDATA_ADDR: masterdata:9002
+      PRODUCT_ADDR: product:9004
       KAFKA_BROKERS: kafka:9092
       CONTRACT_TOPIC: erp.export.contract.v1
       STOCK_TOPIC: erp.inventory.stock.v1
@@ -197,7 +198,7 @@ services:
     ports:
       - "127.0.0.1:9008:9008"
     networks: [infra]
-    depends_on: [export, masterdata]
+    depends_on: [export, masterdata, product]
     restart: unless-stopped
 
   procurement:

@@ -442,6 +442,12 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("inventory:stock:write")).Post("/api/stocks/receive", s.receiveStock)
 		r.With(s.perm("inventory:stock:write")).Post("/api/stocks/{id}/freeze", s.freezeStock)
 		r.With(s.perm("inventory:stock:write")).Post("/api/stocks/{id}/unfreeze", s.unfreezeStock)
+		r.With(s.perm("inventory:stock:import")).Get("/api/stock-imports/template", s.downloadStockImportTemplate)
+		r.With(s.perm("inventory:stock:import")).Post("/api/stock-imports/preview", s.previewInitialStockImport)
+		r.With(s.perm("inventory:stock:import")).Get("/api/stock-imports", s.listStockImports)
+		r.With(s.perm("inventory:stock:import")).Post("/api/stock-imports/{importToken}/confirm", s.confirmInitialStockImport)
+		r.With(s.perm("inventory:stock:import")).Get("/api/stock-imports/{importToken}/report", s.downloadStockImportReport)
+		r.With(s.perm("inventory:stock:import")).Post("/api/stock-imports/{importToken}/cancel", s.cancelStockImport)
 		// Outbound. Reading what is shippable is a stock read; taking goods
 		// off the shelf is a stock write, and the same permission covers both
 		// directions of movement.
@@ -946,7 +952,12 @@ func (s *Server) writeGRPCError(w http.ResponseWriter, err error) {
 // decodeBody parses a JSON request body directly into the gRPC request
 // message, so REST and gRPC share one schema definition (the proto).
 func (s *Server) decodeBody(w http.ResponseWriter, r *http.Request, msg proto.Message) bool {
-	body, ok := s.readBody(w, r)
+	return s.decodeBodyLimit(w, r, msg, 1<<20)
+}
+
+// decodeBodyLimit 为确有大请求体需求的接口提供显式上限，避免扩大其他接口的攻击面。
+func (s *Server) decodeBodyLimit(w http.ResponseWriter, r *http.Request, msg proto.Message, maxBytes int) bool {
+	body, ok := s.readBodyLimit(w, r, maxBytes)
 	if !ok {
 		return false
 	}
@@ -972,17 +983,21 @@ func (s *Server) decodeJSON(w http.ResponseWriter, r *http.Request, target any) 
 }
 
 func (s *Server) readBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	return s.readBodyLimit(w, r, 1<<20)
+}
+
+func (s *Server) readBodyLimit(w http.ResponseWriter, r *http.Request, maxBytes int) ([]byte, bool) {
 	body := make([]byte, 0, 4096)
 	buf := make([]byte, 4096)
 	for {
 		n, err := r.Body.Read(buf)
 		body = append(body, buf[:n]...)
-		if err != nil {
-			break
-		}
-		if len(body) > 1<<20 {
+		if len(body) > maxBytes {
 			s.writeError(w, http.StatusRequestEntityTooLarge, "GATEWAY_BODY_TOO_LARGE", "请求体过大")
 			return nil, false
+		}
+		if err != nil {
+			break
 		}
 	}
 	return body, true

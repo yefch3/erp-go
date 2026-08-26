@@ -11,7 +11,9 @@ type Config struct {
 	GRPCPort string
 	// masterdata issues outbound numbers; inventory does not mint its own.
 	MasterdataAddr string
-	KafkaBrokers   []string
+	// product owns the product/SKU/unit identities used by initial-stock imports.
+	ProductAddr  string
+	KafkaBrokers []string
 	// Contract events come in here; stock allocation results go out on the
 	// stock topic, which is what procurement listens to.
 	ContractTopic string
@@ -27,6 +29,7 @@ func Load() Config {
 		DSN:                   env("DB_DSN", "postgres://erp_inventory:erp_inventory_pw@localhost:5433/erp_inventory?sslmode=disable"),
 		GRPCPort:              env("GRPC_PORT", "9008"),
 		MasterdataAddr:        env("MASTERDATA_ADDR", "localhost:9002"),
+		ProductAddr:           env("PRODUCT_ADDR", "localhost:9004"),
 		KafkaBrokers:          strings.Split(env("KAFKA_BROKERS", "localhost:19092"), ","),
 		ContractTopic:         env("CONTRACT_TOPIC", "erp.export.contract.v1"),
 		StockTopic:            env("STOCK_TOPIC", "erp.inventory.stock.v1"),

@@ -47,6 +47,7 @@ export const router = createRouter({
         { path: 'warehouses/profiles', component: () => import('./pages/WarehouseProfilesPage.vue') },
         { path: 'warehouses/arrivals', component: () => import('./pages/WarehouseArrivalsPage.vue') },
         { path: 'warehouses/receipts', component: () => import('./pages/WarehouseReceiptsPage.vue') },
+        { path: 'warehouses/imports', component: () => import('./pages/WarehouseImportsPage.vue') },
         { path: 'warehouses/settings', component: () => import('./pages/WarehouseSettingsPage.vue') },
         { path: 'procurement', component: () => import('./pages/ProcurementPage.vue') },
         { path: 'procurement/intakes', component: () => import('./pages/ProcurementIntakesPage.vue') },
