@@ -35,7 +35,10 @@
       @tab-change="loadTab"
     >
       <el-tab-pane label="基本资料" name="basic">
-        <div class="card-grid">
+        <div class="tab-stack">
+          <section class="content-section">
+            <SectionHead title="基础信息" />
+            <div class="card-grid">
           <InfoCard title="客户概况" icon="企">
             <InfoRow label="客户简称" :value="customer.shortName" />
             <InfoRow label="英文名称" :value="customer.englishName" />
@@ -56,16 +59,20 @@
             <InfoRow label="标签" :value="(customer.tags || []).join('、')" />
             <InfoRow label="备注" :value="customer.remark" />
           </InfoCard>
+            </div>
+          </section>
         </div>
       </el-tab-pane>
 
       <el-tab-pane label="地址与税务" name="addresses">
-        <SectionHead
-          title="工商与税务资料"
-          :action="canWrite ? '编辑税务资料' : ''"
-          @action="openProfile"
-        />
-        <div class="card-grid compact">
+        <div class="tab-stack">
+          <section class="content-section">
+            <SectionHead
+              title="工商与税务资料"
+              :action="canWrite ? '编辑税务资料' : ''"
+              @action="openTax"
+            />
+        <div class="card-grid">
           <InfoCard title="注册资料" icon="证">
             <InfoRow label="注册名称" :value="customer.registeredName" />
             <InfoRow label="公司注册号" :value="customer.registrationNo" />
@@ -77,6 +84,8 @@
             <InfoRow label="开票备注" :value="customer.invoiceRemark" />
           </InfoCard>
         </div>
+          </section>
+          <section class="content-section">
         <SectionHead
           title="地址簿"
           :count="addresses.length"
@@ -122,9 +131,13 @@
             </div>
           </article>
         </div>
+          </section>
+        </div>
       </el-tab-pane>
 
       <el-tab-pane label="联系人" name="contacts">
+        <div class="tab-stack">
+          <section class="content-section">
         <SectionHead
           title="客户联系人"
           :count="contacts.length"
@@ -189,9 +202,13 @@
             </div>
           </article>
         </div>
+          </section>
+        </div>
       </el-tab-pane>
 
       <el-tab-pane label="结算信用" name="credit">
+        <div class="tab-stack">
+          <section class="content-section">
         <SectionHead
           title="结算与信用"
           :action="canWrite ? '编辑结算信用' : ''"
@@ -228,7 +245,9 @@
             }}</el-tag>
           </div>
         </div>
+          </section>
 
+          <section class="content-section">
         <SectionHead title="信用评级" />
         <CreditRating
           v-if="customer"
@@ -239,9 +258,13 @@
           :can-rate="canWrite"
           @rated="onRated"
         />
+          </section>
+        </div>
       </el-tab-pane>
 
       <el-tab-pane label="负责人" name="owners">
+        <div class="tab-stack">
+          <section class="content-section">
         <SectionHead
           title="内部负责人"
           :count="owners.length"
@@ -285,9 +308,13 @@
             </div>
           </div>
         </div>
+          </section>
+        </div>
       </el-tab-pane>
 
       <el-tab-pane label="变更记录" name="changes">
+        <div class="tab-stack">
+          <section class="content-section">
         <SectionHead title="客户资料变更记录" :count="changeTotal" />
         <EmptyState v-if="!changes.length" text="还没有变更记录" />
         <el-timeline v-else class="history">
@@ -306,6 +333,8 @@
             </div>
           </el-timeline-item>
         </el-timeline>
+          </section>
+        </div>
       </el-tab-pane>
     </el-tabs>
 
@@ -350,6 +379,35 @@
           >保存</el-button
         ></template
       >
+    </el-dialog>
+
+    <el-dialog v-model="taxOpen" title="编辑税务资料" width="680px">
+      <el-form :model="taxForm" label-width="110px" class="two-col-form">
+        <el-form-item label="注册名称">
+          <el-input v-model="taxForm.registeredName" />
+        </el-form-item>
+        <el-form-item label="公司注册号">
+          <el-input v-model="taxForm.registrationNo" />
+        </el-form-item>
+        <el-form-item label="税号">
+          <el-input v-model="taxForm.taxId" @blur="checkTaxDuplicates" />
+        </el-form-item>
+        <el-form-item label="开票抬头">
+          <el-input v-model="taxForm.invoiceTitle" />
+        </el-form-item>
+        <el-form-item label="开票税号">
+          <el-input v-model="taxForm.invoiceTaxNo" />
+        </el-form-item>
+        <el-form-item label="开票备注" class="full-row">
+          <el-input v-model="taxForm.invoiceRemark" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="taxOpen = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="saveTax">
+          保存
+        </el-button>
+      </template>
     </el-dialog>
 
     <el-dialog v-model="profileOpen" title="完善客户详细资料" width="780px">
@@ -640,8 +698,8 @@ const InfoRow = defineComponent({
   props: { label: String, value: [String, Number] },
   setup: (p) => () =>
     h("div", { class: "info-row" }, [
-      h("span", p.label),
-      h("strong", String(p.value || "—")),
+      h("span", { class: "info-row__label" }, p.label),
+      h("strong", { class: "info-row__value" }, String(p.value || "—")),
     ]),
 });
 const InfoCard = defineComponent({
@@ -650,8 +708,11 @@ const InfoCard = defineComponent({
     (p, { slots }) =>
     () =>
       h("article", { class: "info-card" }, [
-        h("header", [h("i", p.icon), h("strong", p.title)]),
-        h("div", { class: "info-body" }, slots.default?.()),
+        h("header", { class: "info-card__header" }, [
+          h("i", { class: "info-card__icon" }, p.icon),
+          h("strong", { class: "info-card__title" }, p.title),
+        ]),
+        h("div", { class: "info-card__body" }, slots.default?.()),
       ]),
 });
 const EmptyState = defineComponent({
@@ -669,12 +730,18 @@ const SectionHead = defineComponent({
     (p, { emit }) =>
     () =>
       h("div", { class: "section-head" }, [
-        h("div", [
-          h("h3", p.title),
-          p.count !== undefined ? h("span", `${p.count} 条`) : null,
+        h("div", { class: "section-head__main" }, [
+          h("h3", { class: "section-head__title" }, p.title),
+          p.count !== undefined
+            ? h("span", { class: "section-head__count" }, `${p.count} 条`)
+            : null,
         ]),
         p.action
-          ? h("button", { onClick: () => emit("action") }, p.action)
+          ? h(
+              "button",
+              { class: "section-head__action", onClick: () => emit("action") },
+              p.action,
+            )
           : null,
       ]),
 });
@@ -708,6 +775,7 @@ const types = ref<any[]>([]),
   employees = ref<any[]>([]);
 const countryChoices = computed(() => countryOptions("zh-CN"));
 const basicOpen = ref(false),
+  taxOpen = ref(false),
   profileOpen = ref(false),
   addressOpen = ref(false),
   contactOpen = ref(false),
@@ -716,6 +784,7 @@ const addressEditing = ref<string | null>(null),
   contactEditing = ref<string | null>(null),
   ownerEditing = ref<string | null>(null);
 const basicForm = reactive<any>({}),
+  taxForm = reactive<any>({}),
   profileForm = reactive<any>({}),
   addressForm = reactive<any>({}),
   contactForm = reactive<any>({}),
@@ -880,6 +949,59 @@ async function saveBasic() {
     basicOpen.value = false;
     await loadCustomer();
     ElMessage.success("基础资料已保存");
+  } finally {
+    saving.value = false;
+  }
+}
+function openTax() {
+  const c = customer.value;
+  Object.assign(taxForm, {
+    registeredName: c.registeredName,
+    registrationNo: c.registrationNo,
+    taxId: c.taxId,
+    invoiceTitle: c.invoiceTitle,
+    invoiceTaxNo: c.invoiceTaxNo,
+    invoiceRemark: c.invoiceRemark,
+  });
+  taxOpen.value = true;
+}
+async function checkTaxDuplicates() {
+  if (!taxForm.taxId) return;
+  const d = await get<any>("/customers/duplicates", {
+    name: customer.value.name,
+    tax_id: taxForm.taxId,
+    exclude_id: id,
+  });
+  if (d.candidates?.length) {
+    ElMessage.warning(
+      `发现相似客户：${d.candidates.map((x: any) => x.name).join("、")}`,
+    );
+  }
+}
+async function saveTax() {
+  const c = customer.value;
+  saving.value = true;
+  try {
+    await put(`/customers/${id}/profile`, {
+      shortName: c.shortName,
+      englishName: c.englishName,
+      customerType: c.customerType,
+      industry: c.industry,
+      source: c.source,
+      tags: c.tags || [],
+      website: c.website,
+      primaryLanguage: c.primaryLanguage,
+      timezone: c.timezone,
+      paymentDays: c.paymentDays || 0,
+      creditLimitMinor: c.creditLimitMinor || 0,
+      creditCurrency: c.creditCurrency || c.currency || "USD",
+      creditStatus: c.creditStatus || "NORMAL",
+      businessStatus: c.businessStatus || "PROSPECT",
+      ...taxForm,
+    });
+    taxOpen.value = false;
+    await loadCustomer();
+    ElMessage.success("税务资料已保存");
   } finally {
     saving.value = false;
   }
@@ -1211,24 +1333,35 @@ onMounted(async () => {
 .detail-tabs :deep(.el-tabs__header) {
   margin-bottom: 22px;
 }
+.tab-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.content-section {
+  padding: 20px;
+  border: 1px solid #e4ebf3;
+  border-radius: 12px;
+  background: #fff;
+}
 .card-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
-.info-card {
+.detail-tabs :deep(.info-card) {
   border: 1px solid #e4ebf3;
   border-radius: 12px;
   overflow: hidden;
 }
-.info-card header {
+.detail-tabs :deep(.info-card__header) {
   display: flex;
   align-items: center;
   gap: 9px;
   padding: 14px 16px;
   background: #f8fafc;
 }
-.info-card header i {
+.detail-tabs :deep(.info-card__icon) {
   width: 30px;
   height: 30px;
   border-radius: 9px;
@@ -1238,55 +1371,57 @@ onMounted(async () => {
   color: #2474d2;
   font-style: normal;
 }
-.info-body {
+.detail-tabs :deep(.info-card__title) {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.detail-tabs :deep(.info-card__body) {
   padding: 8px 16px 12px;
 }
-.info-row {
+.detail-tabs :deep(.info-row) {
   display: grid;
   grid-template-columns: 110px 1fr;
   gap: 14px;
   padding: 10px 0;
   border-bottom: 1px dashed #edf0f3;
 }
-.info-row:last-child {
+.detail-tabs :deep(.info-row:last-child) {
   border: 0;
 }
-.info-row span {
+.detail-tabs :deep(.info-row__label) {
   color: var(--el-text-color-secondary);
 }
-.info-row strong {
+.detail-tabs :deep(.info-row__value) {
   font-weight: 500;
   word-break: break-word;
 }
-.section-head {
+.detail-tabs :deep(.section-head) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 4px 0 14px;
+  margin: 0 0 16px;
 }
-.section-head > div {
+.detail-tabs :deep(.section-head__main) {
   display: flex;
   align-items: center;
   gap: 10px;
 }
-.section-head h3 {
+.detail-tabs :deep(.section-head__title) {
   margin: 0;
   font-size: 17px;
 }
-.section-head span {
+.detail-tabs :deep(.section-head__count) {
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
-.section-head button {
+.detail-tabs :deep(.section-head__action) {
   border: 0;
   border-radius: 8px;
   padding: 8px 13px;
   background: var(--el-color-primary-light-9);
   color: var(--el-color-primary);
   cursor: pointer;
-}
-.compact {
-  margin-bottom: 26px;
 }
 .record-grid {
   display: grid;
@@ -1332,7 +1467,7 @@ onMounted(async () => {
   margin-top: 12px;
   color: #536273;
 }
-.empty-state {
+.detail-tabs :deep(.empty-state) {
   display: grid;
   place-items: center;
   min-height: 170px;
@@ -1340,7 +1475,7 @@ onMounted(async () => {
   border-radius: 12px;
   color: var(--el-text-color-secondary);
 }
-.empty-icon {
+.detail-tabs :deep(.empty-icon) {
   width: 48px;
   height: 48px;
   border-radius: 50%;
@@ -1375,7 +1510,7 @@ onMounted(async () => {
   font-size: 19px;
 }
 .owner-list {
-  margin-top: 16px;
+  margin-top: 14px;
   border: 1px solid #e4eaf1;
   border-radius: 12px;
   overflow: hidden;
@@ -1465,6 +1600,9 @@ onMounted(async () => {
   }
   .hero-actions {
     width: 100%;
+  }
+  .content-section {
+    padding: 16px;
   }
   .card-grid,
   .record-grid,
