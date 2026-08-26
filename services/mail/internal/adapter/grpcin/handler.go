@@ -1147,6 +1147,8 @@ func (h *Handler) ListExcelQuotas(ctx context.Context, _ *mailv1.ListExcelQuotas
 		out = append(out, &mailv1.TenantExcelQuota{
 			TenantId: q.TenantID, Limited: q.Limited,
 			MonthlyRuns: q.MonthlyRuns, UsedThisMonth: q.UsedThisMonth,
+			InputTokens: q.InputTokens, OutputTokens: q.OutputTokens,
+			EstimatedCost: q.EstimatedCost, Currency: q.Currency,
 		})
 	}
 	return &mailv1.ListExcelQuotasResponse{Quotas: out, CurrentMonth: month}, nil

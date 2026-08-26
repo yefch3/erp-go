@@ -194,7 +194,11 @@ func (q *Queries) CurrentUsageMonth(ctx context.Context) (string, error) {
 }
 
 const excelRunsByTenantThisMonth = `-- name: ExcelRunsByTenantThisMonth :many
-SELECT tenant_id, count(*)::bigint AS runs
+SELECT
+    tenant_id,
+    count(*)::bigint                       AS runs,
+    coalesce(sum(input_tokens), 0)::bigint  AS input_tokens,
+    coalesce(sum(output_tokens), 0)::bigint AS output_tokens
 FROM mail_excel_jobs
 WHERE created_at >= date_trunc('month', now())
   AND created_at <  date_trunc('month', now()) + interval '1 month'
@@ -202,11 +206,18 @@ GROUP BY tenant_id
 `
 
 type ExcelRunsByTenantThisMonthRow struct {
-	TenantID int64
-	Runs     int64
+	TenantID     int64
+	Runs         int64
+	InputTokens  int64
+	OutputTokens int64
 }
 
-// 每家公司这个月各转了多少次。只有平台运营看得到这一条——它跨租户。
+// 每家公司这个月各转了多少次、烧了多少 token。只有平台运营看得到这一条
+// ——它跨租户。
+//
+// token 一起出，是因为「多少次」是给客户看的额度口径，「多少钱」是给我们
+// 看的成本口径，而这两个数只有并排放着才看得出问题：有的公司次数不多但每
+// 次都是几十兆的附件。金额仍然在读的时候按当下单价算，不落库。
 func (q *Queries) ExcelRunsByTenantThisMonth(ctx context.Context) ([]ExcelRunsByTenantThisMonthRow, error) {
 	rows, err := q.db.Query(ctx, excelRunsByTenantThisMonth)
 	if err != nil {
@@ -216,7 +227,12 @@ func (q *Queries) ExcelRunsByTenantThisMonth(ctx context.Context) ([]ExcelRunsBy
 	var items []ExcelRunsByTenantThisMonthRow
 	for rows.Next() {
 		var i ExcelRunsByTenantThisMonthRow
-		if err := rows.Scan(&i.TenantID, &i.Runs); err != nil {
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.Runs,
+			&i.InputTokens,
+			&i.OutputTokens,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

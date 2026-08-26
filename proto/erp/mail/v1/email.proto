@@ -1441,6 +1441,15 @@ message TenantExcelQuota {
   bool limited = 2;
   int64 monthly_runs = 3;
   int64 used_this_month = 4;
+  // 本月这家公司烧掉的 token，以及按当下单价折出来的估算金额。
+  //
+  // 金额只出现在这一侧：客户看的是「还能转几次」，我们看的是「这个月花了
+  // 多少」。空串表示没配单价——空和 0 是两回事，一个是「不知道」，一个是
+  // 「不要钱」。
+  int64 input_tokens = 5;
+  int64 output_tokens = 6;
+  string estimated_cost = 7;
+  string currency = 8;
 }
 
 message ListExcelQuotasResponse {
