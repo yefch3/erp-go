@@ -909,6 +909,9 @@ const INCOTERMS = ['FOB', 'CIF', 'CFR', 'EXW', 'DDP']
 const FILE_KINDS = ['DRAFT', 'SIGNED', 'OTHER']
 
 const { t } = useI18n()
+// 直接下单那张明细表上的「删除」用的就是它，而这一行一直没定义——那颗按钮
+// 在浏览器里会当场炸掉。类型检查一开就抓住了，说明那个弹窗少有人点到底。
+const common = (k: string) => t(`common.${k}`)
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()

@@ -97,7 +97,7 @@
     <el-dialog v-model="addLineOpen" :title="t('procurementIntakes.addProductTitle')" width="min(720px, 92vw)" append-to-body destroy-on-close>
       <el-form label-width="115px" class="add-line-form">
         <el-form-item v-for="field in displayFields" :key="field.key" :label="field.label" :required="field.required">
-          <el-input :model-value="readTemplateField(addLineForm, field.key)" @update:model-value="value => writeTemplateField(addLineForm, field.key, String(value ?? ''))" />
+          <el-input :model-value="readTemplateField(addLineForm, field.key)" @update:model-value="(value: unknown) => writeTemplateField(addLineForm, field.key, String(value ?? ''))" />
         </el-form-item>
       </el-form>
       <template #footer><el-button @click="addLineOpen = false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="addingLine" @click="addLine">{{ t('procurementIntakes.addAndSave') }}</el-button></template>

@@ -85,7 +85,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import type { ElTable } from 'element-plus'
+import type { TableInstance } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -109,7 +109,10 @@ const employees = ref<Employee[]>([])
 const changes = ref<Change[]>([])
 const keyword = ref(String(route.query.keyword ?? ''))
 const loading = ref(false)
-const departmentTable = ref<InstanceType<typeof ElTable>>()
+// TableInstance 而不是 InstanceType<typeof ElTable>：element-plus 2.9 把
+// 表格改成了泛型组件，typeof 拿到的不再是一个能 new 的构造器。组件自己
+// 导出了这个类型，用它就好。
+const departmentTable = ref<TableInstance>()
 const saving = ref(false)
 const dialogOpen = ref(false)
 const changesOpen = ref(false)

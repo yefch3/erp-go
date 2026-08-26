@@ -1,13 +1,21 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
+    // ES2022，不是 ES2020：`Array.prototype.at` 从 ES2022 起才在标准库里。
+    // 代码里早就在用它了（船期路线那个弹窗），只是 target 停在 ES2020，于是
+    // 类型检查说这个方法不存在——而浏览器里它一直好好地跑着。vite 打包本来
+    // 就按现代浏览器出货，这里跟上即可。
+    "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
     "jsx": "preserve",
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["vite/client"]
+    // node 是给测试用的：attachmentExcel.test.ts 用 node:zlib 造压缩过的
+    // xlsx 样本。业务代码不碰 Node API，vite 也不会把它打进产物。
+    "types": ["vite/client", "node"]
   },
+  // 只查 src。vite.config.ts 由 vite 自己加载校验，把它拉进来只会引出一条
+  // 与产品无关的配置写法之争。
   "include": ["src/**/*.ts", "src/**/*.vue"]
 }

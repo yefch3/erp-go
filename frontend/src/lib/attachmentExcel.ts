@@ -139,7 +139,11 @@ interface ZipMember {
   compressedSize: number
 }
 
-async function xlsxWorkbook(bytes: Uint8Array): Promise<DirectWorkbook> {
+// Uint8Array<ArrayBuffer> 而不是光写 Uint8Array：TypeScript 5.7 起给这个
+// 类型加了「背后是哪种 buffer」的参数，而 Blob 只收普通 ArrayBuffer 撑着
+// 的那一种。这里的字节一路来自 File.arrayBuffer()，本来就是普通的；把它
+// 写出来，比在下面某一行加断言诚实。
+async function xlsxWorkbook(bytes: Uint8Array<ArrayBuffer>): Promise<DirectWorkbook> {
   const members = zipMembers(bytes)
   const workbookXml = await memberText(bytes, members, 'xl/workbook.xml')
   if (workbookXml === undefined) throw new Error('not an xlsx: no workbook part')
@@ -249,7 +253,7 @@ function xmlUnescape(value: string): string {
 
 // ------------------------------------------------------------- zip reading
 
-function zipMembers(bytes: Uint8Array): Map<string, ZipMember> {
+function zipMembers(bytes: Uint8Array<ArrayBuffer>): Map<string, ZipMember> {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   // End of central directory: within the last 64 KiB plus its own 22 bytes.
   let eocd = -1
@@ -279,7 +283,7 @@ function zipMembers(bytes: Uint8Array): Map<string, ZipMember> {
   return members
 }
 
-async function memberText(bytes: Uint8Array, members: Map<string, ZipMember>, name: string): Promise<string | undefined> {
+async function memberText(bytes: Uint8Array<ArrayBuffer>, members: Map<string, ZipMember>, name: string): Promise<string | undefined> {
   const member = members.get(name)
   if (!member) return undefined
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
@@ -288,7 +292,7 @@ async function memberText(bytes: Uint8Array, members: Map<string, ZipMember>, na
   const extraLength = view.getUint16(member.offset + 28, true)
   const start = member.offset + 30 + nameLength + extraLength
   const slice = bytes.subarray(start, start + member.compressedSize)
-  let raw: Uint8Array
+  let raw: Uint8Array<ArrayBuffer>
   if (member.method === 0) {
     raw = slice
   } else if (member.method === 8) {
