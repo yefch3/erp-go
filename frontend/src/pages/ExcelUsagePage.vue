@@ -115,6 +115,7 @@ import { get } from '../api'
 import {
   emptyExcelQuota,
   excelQuotaPercent,
+  parseExcelQuota,
   excelQuotaProgressStatus,
   excelQuotaRemaining,
   excelQuotaState,
@@ -180,12 +181,28 @@ function formatTokens(n: number | string): string {
   return v.toLocaleString()
 }
 
+// 首屏那次的月份是浏览器猜的（new Date() 是这台机器的时钟和时区）。服务端
+// 一答话就以它为准——这一页从头到尾的规矩是「月份由数据库说了算」，唯独初值
+// 还留着浏览器在猜，那正是月初那几个小时会差出一个月的地方。
+// 只在第一次对齐，之后用户自己选的月份说了算。
+let monthAligned = false
+
 async function load() {
   loading.value = true
   try {
-    const d = await get<{ rows: Row[]; quota?: ExcelQuota }>('/excel-usage', { month: month.value })
+    const d = await get<{ rows: Row[]; quota?: unknown }>('/excel-usage', { month: month.value })
     rows.value = d.rows ?? []
-    quota.value = d.quota ?? { ...emptyExcelQuota }
+    quota.value = parseExcelQuota(d.quota)
+    if (!monthAligned) {
+      monthAligned = true
+      const serverMonth = quota.value.currentMonth
+      if (serverMonth && serverMonth !== month.value) {
+        month.value = serverMonth
+        loading.value = false
+        await load()
+        return
+      }
+    }
   } finally {
     loading.value = false
   }

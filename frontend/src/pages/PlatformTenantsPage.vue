@@ -211,7 +211,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { get, post } from '../api'
-import { emptyExcelQuota, excelQuotaPercent, type ExcelQuota } from '../lib/excelQuota'
+import { excelQuotaPercent, toCount, type ExcelQuotaUsage } from '../lib/excelQuota'
 
 // 平台开户（E7）：给客户公司的第一位管理员发邀请，对方激活后自己邀请员工。
 //
@@ -282,8 +282,11 @@ async function replay(row: FailedEvent) {
 //
 // limited=false 是不限；limited=true 且 monthlyRuns=0 是一次都不许用。这
 // 两件事正好相反，所以界面上是一个开关加一个数字，不是「填 0 表示不限」。
-interface TenantQuota extends ExcelQuota {
+// 不 extends ExcelQuota：那个类型带着 currentMonth，而这条路由的月份是**整
+// 张表一个**，不在每一行里。继承过来等于声明了一个运行时根本不存在的字段。
+interface TenantQuota extends ExcelQuotaUsage {
   tenantId: number
+  limited: boolean
   // 成本这几项只有这条平台专用路由会返回；客户那一侧的用量接口不给金额。
   inputTokens: number
   outputTokens: number
@@ -299,7 +302,7 @@ const quotaForm = reactive({ id: '', name: '', limited: false, monthlyRuns: 200 
 // 这一页只关心「用了多少 / 上限多少」，月份由列表本身声明，所以借用同一套
 // 百分比算法（含上限 0 的处理），不在这里重写一遍。
 const noQuota: TenantQuota = {
-  ...emptyExcelQuota, tenantId: 0,
+  tenantId: 0, limited: false, monthlyRuns: 0, usedThisMonth: 0,
   inputTokens: 0, outputTokens: 0, estimatedCost: '', currency: '',
 }
 
@@ -314,9 +317,24 @@ function quotaPercentOf(id: string): number {
 }
 
 async function loadQuotas() {
-  const d = await get<{ quotas: TenantQuota[] }>('/platform/excel-quotas')
+  const d = await get<{ quotas: unknown[] }>('/platform/excel-quotas')
   const byID: Record<string, TenantQuota> = {}
-  for (const q of d.quotas ?? []) byID[String(q.tenantId)] = q
+  // 这条路由走的是普通 JSON，数字本来就是数字；仍然统一过一遍 toCount，
+  // 让「拿到手就是数字」成为两条路共同的保证，而不是靠记住哪条走哪个序列化。
+  for (const raw of d.quotas ?? []) {
+    const q = (raw ?? {}) as Record<string, unknown>
+    const row: TenantQuota = {
+      tenantId: toCount(q.tenantId),
+      limited: q.limited === true,
+      monthlyRuns: toCount(q.monthlyRuns),
+      usedThisMonth: toCount(q.usedThisMonth),
+      inputTokens: toCount(q.inputTokens),
+      outputTokens: toCount(q.outputTokens),
+      estimatedCost: typeof q.estimatedCost === 'string' ? q.estimatedCost : '',
+      currency: typeof q.currency === 'string' ? q.currency : '',
+    }
+    byID[String(row.tenantId)] = row
+  }
   quotas.value = byID
 }
 
