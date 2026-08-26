@@ -10,6 +10,7 @@ import (
 
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	ivv1 "github.com/sgao19/erp-go/gen/go/erp/inventory/v1"
+	"github.com/sgao19/erp-go/pkg/deadletter"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/services/inventory/internal/app"
 	"github.com/sgao19/erp-go/services/inventory/internal/store"
@@ -17,7 +18,8 @@ import (
 
 type Handler struct {
 	ivv1.UnimplementedStockServiceServer
-	svc *app.Service
+	svc  *app.Service
+	dead *deadletter.Console
 }
 
 func New(svc *app.Service) *Handler { return &Handler{svc: svc} }

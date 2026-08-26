@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package erp.export.v1;
 
+import "erp/common/v1/failedevent.proto";
 import "erp/common/v1/pagination.proto";
 // FxSnapshot and ItemInput are shared with quotations: a contract inherits
 // the offer's rate and is priced from the same line shape.
@@ -11,6 +12,11 @@ import "erp/export/v1/quotation.proto";
 // immutable versions: once a version is approved and signed, changing the
 // terms means adding a version, never editing the one in force.
 service ContractService {
+  // 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
+  // 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
+  rpc ListFailedEvents(ListFailedEventsRequest) returns (ListFailedEventsResponse);
+  rpc ReplayFailedEvent(ReplayFailedEventRequest) returns (ReplayFailedEventResponse);
+
   rpc ListContracts(ListContractsRequest) returns (ListContractsResponse);
   // 合同执行进程一览（D2）：一行一合同，钱谈了多少、货走了多少、款收了
   // 多少。采购和船期两列由网关向另外两个服务批量取回来拼上。
@@ -406,3 +412,18 @@ message ListContractExecutionResponse {
   repeated ContractExecutionRow rows = 1;
   erp.common.v1.PageMeta meta = 2;
 }
+
+message ListFailedEventsRequest {}
+
+message ListFailedEventsResponse {
+  repeated erp.common.v1.FailedEvent events = 1;
+}
+
+message ReplayFailedEventRequest {
+  string consumer_group = 1;
+  int64 id = 2;
+}
+
+// 重放是同步的：成功即事件已被处理并离开死信表；失败则原地不动，错误原样
+// 带回给操作的人——他正看着屏幕，这是把原因交到人手上的唯一时机。
+message ReplayFailedEventResponse {}

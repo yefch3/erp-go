@@ -5,6 +5,7 @@ import (
 
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
+	"github.com/sgao19/erp-go/pkg/deadletter"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/services/procurement/internal/app"
 )
@@ -14,7 +15,8 @@ import (
 // bought and committing company money are different permissions.
 type OrderHandler struct {
 	prv1.UnimplementedPurchaseOrderServiceServer
-	svc *app.Service
+	svc  *app.Service
+	dead *deadletter.Console
 }
 
 func NewOrders(svc *app.Service) *OrderHandler { return &OrderHandler{svc: svc} }

@@ -38,6 +38,18 @@ func New(pool *pgxpool.Pool, numbering Numbering) *Service {
 }
 
 func (s *Service) ListWarehouses(ctx context.Context, tenantID int64, includeInactive bool) ([]store.ListWarehousesRow, error) {
+	rows, err := s.q.ListWarehouses(ctx, store.ListWarehousesParams{
+		TenantID: tenantID, IncludeInactive: includeInactive,
+	})
+	if err != nil || len(rows) > 0 {
+		return rows, err
+	}
+	// 空 ≠ 该空：也可能只是这家公司还没被播过种。见 warehouseseed.go——补种
+	// 放在这里而不是开户时，是为了让不囤货的贸易公司永远不会凭空多出一个
+	// 它根本没有的仓库。
+	if err := s.seedDefaultWarehouses(ctx, tenantID); err != nil {
+		return nil, err
+	}
 	return s.q.ListWarehouses(ctx, store.ListWarehousesParams{
 		TenantID: tenantID, IncludeInactive: includeInactive,
 	})
@@ -297,7 +309,7 @@ type PurchaseLine struct {
 // eventually disagree about which one hands stock to waiting contracts, and
 // the one that forgot would silently leave a purchase order's whole reason
 // for existing unfulfilled.
-func (s *Service) ReceivePurchase(ctx context.Context, tenantID int64, e PurchaseReceived, log *slog.Logger) error {
+func (s *Service) ReceivePurchase(ctx context.Context, tenantID int64, e PurchaseReceived, log *slog.Logger, claim EventClaim) error {
 	warehouseID := e.WarehouseID
 	if warehouseID == 0 {
 		// Procurement should always name one, but a delivery that cannot be
@@ -316,6 +328,11 @@ func (s *Service) ReceivePurchase(ctx context.Context, tenantID int64, e Purchas
 
 	filled := 0
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		// 认领与这一笔业务写入同生共死：崩溃一起回滚，提交一起落库。
+		// 见 eventclaim.go。
+		if err := claim(ctx, tx); err != nil {
+			return err
+		}
 		q := s.q.WithTx(tx)
 		filled = 0
 		for _, l := range e.Lines {

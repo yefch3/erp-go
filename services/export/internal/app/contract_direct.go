@@ -113,7 +113,7 @@ func (s *Service) CreateContract(ctx context.Context, tenantID int64, in DirectC
 			Currency: in.Currency, Incoterm: terms.Incoterm,
 			PortOfLoading: terms.PortOfLoading, PortOfDischarge: terms.PortOfDischarge,
 			PaymentMethod: terms.PaymentMethod, DeliveryDate: terms.DeliveryDate,
-			Terms: terms.Text,
+			Terms:       terms.Text,
 			TotalAmount: total.StringFixed(2),
 			BaseAmount:  baseAmount(total, rate).StringFixed(2),
 			FxRate:      rate.Rate.String(), FxRateAt: tsFrom(rate.At),

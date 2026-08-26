@@ -19,7 +19,7 @@ const eventStockOutbound = "StockOutbound"
 // customer's goods had left. Inventory knew, export did not, and the two
 // halves of the same order never met.
 func StockEvents(svc *app.Service, log *slog.Logger) kafkax.Handler {
-	return func(ctx context.Context, e kafkax.Envelope) error {
+	return func(ctx context.Context, e kafkax.Envelope, claim kafkax.Claim) error {
 		if e.EventType != eventStockOutbound {
 			return nil // the same topic also carries allocation results
 		}
@@ -29,6 +29,6 @@ func StockEvents(svc *app.Service, log *slog.Logger) kafkax.Handler {
 				"event_id", e.EventID, "err", err)
 			return nil
 		}
-		return svc.ApplyShipment(ctx, e.TenantID, o, log)
+		return svc.ApplyShipment(ctx, e.TenantID, o, log, app.EventClaim(claim))
 	}
 }

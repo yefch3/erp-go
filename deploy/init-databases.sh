@@ -26,6 +26,8 @@ psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres <<SQL
   REVOKE CONNECT ON DATABASE erp_procurement_migrations FROM PUBLIC;
   CREATE DATABASE erp_masterdata_migrations OWNER erp_masterdata;
   REVOKE CONNECT ON DATABASE erp_masterdata_migrations FROM PUBLIC;
+  CREATE DATABASE erp_iam_migrations OWNER erp_iam;
+  REVOKE CONNECT ON DATABASE erp_iam_migrations FROM PUBLIC;
 SQL
 
 # Dashboards and reports read through a separate account with SELECT only:

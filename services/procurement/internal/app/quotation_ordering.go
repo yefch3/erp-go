@@ -32,6 +32,7 @@ func (s *Service) ReturnRejectedQuotationToCosting(
 	tenantID int64,
 	e QuotationRejected,
 	log *slog.Logger,
+	claim EventClaim,
 ) error {
 	if e.QuotationID == 0 || e.CostScenarioID == 0 || e.SourcingCaseID == 0 {
 		log.Warn("rejected quotation has incomplete sourcing trace; cost scenario unchanged",
@@ -40,6 +41,11 @@ func (s *Service) ReturnRejectedQuotationToCosting(
 	}
 	changed := false
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		// 认领与这一笔业务写入同生共死：崩溃一起回滚，提交一起落库。
+		// 见 eventclaim.go。
+		if err := claim(ctx, tx); err != nil {
+			return err
+		}
 		q := s.q.WithTx(tx)
 		hasAccepted, err := q.HasAcceptedQuotationRequirements(ctx, store.HasAcceptedQuotationRequirementsParams{
 			TenantID: tenantID, CaseID: e.SourcingCaseID,
@@ -83,6 +89,7 @@ func (s *Service) RequirementsFromAcceptedQuotation(
 	tenantID int64,
 	e QuotationAccepted,
 	log *slog.Logger,
+	claim EventClaim,
 ) error {
 	if e.CostScenarioID == 0 {
 		log.Warn("accepted quotation has no confirmed cost scenario; no ordering task created",
@@ -112,6 +119,11 @@ func (s *Service) RequirementsFromAcceptedQuotation(
 		return nil
 	}
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		// 认领与这一笔业务写入同生共死：崩溃一起回滚，提交一起落库。
+		// 见 eventclaim.go。
+		if err := claim(ctx, tx); err != nil {
+			return err
+		}
 		q := s.q.WithTx(tx)
 		for _, line := range lines {
 			if _, err := q.UpsertQuotationRequirement(ctx, store.UpsertQuotationRequirementParams{

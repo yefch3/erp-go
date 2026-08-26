@@ -16,9 +16,9 @@ type Operator struct {
 	Name       string
 	// The address they logged in with. The mailbox gate binds this one and
 	// takes no address from the request, so there is nothing to disagree with.
-	Email string
-	IP         string
-	TraceID    string
+	Email   string
+	IP      string
+	TraceID string
 }
 
 type ctxKey struct{}

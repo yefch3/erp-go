@@ -19,6 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	ContractService_ListFailedEvents_FullMethodName            = "/erp.export.v1.ContractService/ListFailedEvents"
+	ContractService_ReplayFailedEvent_FullMethodName           = "/erp.export.v1.ContractService/ReplayFailedEvent"
 	ContractService_ListContracts_FullMethodName               = "/erp.export.v1.ContractService/ListContracts"
 	ContractService_ListContractExecution_FullMethodName       = "/erp.export.v1.ContractService/ListContractExecution"
 	ContractService_GetContract_FullMethodName                 = "/erp.export.v1.ContractService/GetContract"
@@ -45,6 +47,10 @@ const (
 // immutable versions: once a version is approved and signed, changing the
 // terms means adding a version, never editing the one in force.
 type ContractServiceClient interface {
+	// 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
+	// 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
+	ListFailedEvents(ctx context.Context, in *ListFailedEventsRequest, opts ...grpc.CallOption) (*ListFailedEventsResponse, error)
+	ReplayFailedEvent(ctx context.Context, in *ReplayFailedEventRequest, opts ...grpc.CallOption) (*ReplayFailedEventResponse, error)
 	ListContracts(ctx context.Context, in *ListContractsRequest, opts ...grpc.CallOption) (*ListContractsResponse, error)
 	// 合同执行进程一览（D2）：一行一合同，钱谈了多少、货走了多少、款收了
 	// 多少。采购和船期两列由网关向另外两个服务批量取回来拼上。
@@ -86,6 +92,26 @@ type contractServiceClient struct {
 
 func NewContractServiceClient(cc grpc.ClientConnInterface) ContractServiceClient {
 	return &contractServiceClient{cc}
+}
+
+func (c *contractServiceClient) ListFailedEvents(ctx context.Context, in *ListFailedEventsRequest, opts ...grpc.CallOption) (*ListFailedEventsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFailedEventsResponse)
+	err := c.cc.Invoke(ctx, ContractService_ListFailedEvents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *contractServiceClient) ReplayFailedEvent(ctx context.Context, in *ReplayFailedEventRequest, opts ...grpc.CallOption) (*ReplayFailedEventResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReplayFailedEventResponse)
+	err := c.cc.Invoke(ctx, ContractService_ReplayFailedEvent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *contractServiceClient) ListContracts(ctx context.Context, in *ListContractsRequest, opts ...grpc.CallOption) (*ListContractsResponse, error) {
@@ -256,6 +282,10 @@ func (c *contractServiceClient) ListOwnershipTransfers(ctx context.Context, in *
 // immutable versions: once a version is approved and signed, changing the
 // terms means adding a version, never editing the one in force.
 type ContractServiceServer interface {
+	// 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
+	// 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
+	ListFailedEvents(context.Context, *ListFailedEventsRequest) (*ListFailedEventsResponse, error)
+	ReplayFailedEvent(context.Context, *ReplayFailedEventRequest) (*ReplayFailedEventResponse, error)
 	ListContracts(context.Context, *ListContractsRequest) (*ListContractsResponse, error)
 	// 合同执行进程一览（D2）：一行一合同，钱谈了多少、货走了多少、款收了
 	// 多少。采购和船期两列由网关向另外两个服务批量取回来拼上。
@@ -299,6 +329,12 @@ type ContractServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedContractServiceServer struct{}
 
+func (UnimplementedContractServiceServer) ListFailedEvents(context.Context, *ListFailedEventsRequest) (*ListFailedEventsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFailedEvents not implemented")
+}
+func (UnimplementedContractServiceServer) ReplayFailedEvent(context.Context, *ReplayFailedEventRequest) (*ReplayFailedEventResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReplayFailedEvent not implemented")
+}
 func (UnimplementedContractServiceServer) ListContracts(context.Context, *ListContractsRequest) (*ListContractsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListContracts not implemented")
 }
@@ -366,6 +402,42 @@ func RegisterContractServiceServer(s grpc.ServiceRegistrar, srv ContractServiceS
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&ContractService_ServiceDesc, srv)
+}
+
+func _ContractService_ListFailedEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFailedEventsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ContractServiceServer).ListFailedEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ContractService_ListFailedEvents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ContractServiceServer).ListFailedEvents(ctx, req.(*ListFailedEventsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ContractService_ReplayFailedEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReplayFailedEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ContractServiceServer).ReplayFailedEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ContractService_ReplayFailedEvent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ContractServiceServer).ReplayFailedEvent(ctx, req.(*ReplayFailedEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ContractService_ListContracts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -663,6 +735,14 @@ var ContractService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "erp.export.v1.ContractService",
 	HandlerType: (*ContractServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListFailedEvents",
+			Handler:    _ContractService_ListFailedEvents_Handler,
+		},
+		{
+			MethodName: "ReplayFailedEvent",
+			Handler:    _ContractService_ReplayFailedEvent_Handler,
+		},
 		{
 			MethodName: "ListContracts",
 			Handler:    _ContractService_ListContracts_Handler,

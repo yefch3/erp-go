@@ -45,7 +45,7 @@ func TestRequirementDataScope(t *testing.T) {
 			CustomerName: "客户" + ownerName, SalesEmployeeID: owner, SalesEmployee: ownerName,
 			Items: []ContractLine{{ItemID: contractID*100 + 1, ProductID: 11, ProductCode: "P-11",
 				ProductName: "Scope Coil " + no, Qty: "10", UomID: 7, UomCode: "TON"}},
-		}, log); err != nil {
+		}, log, noopClaim); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -107,7 +107,7 @@ func TestRequirementDataScope(t *testing.T) {
 		CustomerName: "客户SalesA",
 		Items: []ContractLine{{ItemID: 900101, ProductID: 11, ProductCode: "P-11",
 			ProductName: "Scope Coil CT-SCOPE-A", Qty: "12", UomID: 7, UomCode: "TON"}},
-	}, log); err != nil {
+	}, log, noopClaim); err != nil {
 		t.Fatal(err)
 	}
 	var keptOwner int64

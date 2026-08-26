@@ -1473,6 +1473,8 @@ var PlatformService_ServiceDesc = grpc.ServiceDesc{
 const (
 	AccessService_CreateRole_FullMethodName              = "/erp.iam.v1.AccessService/CreateRole"
 	AccessService_ListRoles_FullMethodName               = "/erp.iam.v1.AccessService/ListRoles"
+	AccessService_ListAllRoles_FullMethodName            = "/erp.iam.v1.AccessService/ListAllRoles"
+	AccessService_SetRoleStatus_FullMethodName           = "/erp.iam.v1.AccessService/SetRoleStatus"
 	AccessService_GrantRolePermissions_FullMethodName    = "/erp.iam.v1.AccessService/GrantRolePermissions"
 	AccessService_AssignEmployeeRoles_FullMethodName     = "/erp.iam.v1.AccessService/AssignEmployeeRoles"
 	AccessService_ListPermissions_FullMethodName         = "/erp.iam.v1.AccessService/ListPermissions"
@@ -1490,6 +1492,11 @@ const (
 type AccessServiceClient interface {
 	CreateRole(ctx context.Context, in *CreateRoleRequest, opts ...grpc.CallOption) (*CreateRoleResponse, error)
 	ListRoles(ctx context.Context, in *ListRolesRequest, opts ...grpc.CallOption) (*ListRolesResponse, error)
+	// 角色管理页用：含停用的，否则停掉之后没有入口能把它启用回来。
+	ListAllRoles(ctx context.Context, in *ListAllRolesRequest, opts ...grpc.CallOption) (*ListAllRolesResponse, error)
+	// 停用/启用。角色只停用不真删——编号被员工、权限、数据范围和审批节点
+	// 引用着，真删会让审批流指向不存在的东西且无从追溯。停用是真收权。
+	SetRoleStatus(ctx context.Context, in *SetRoleStatusRequest, opts ...grpc.CallOption) (*SetRoleStatusResponse, error)
 	GrantRolePermissions(ctx context.Context, in *GrantRolePermissionsRequest, opts ...grpc.CallOption) (*GrantRolePermissionsResponse, error)
 	AssignEmployeeRoles(ctx context.Context, in *AssignEmployeeRolesRequest, opts ...grpc.CallOption) (*AssignEmployeeRolesResponse, error)
 	ListPermissions(ctx context.Context, in *ListPermissionsRequest, opts ...grpc.CallOption) (*ListPermissionsResponse, error)
@@ -1535,6 +1542,26 @@ func (c *accessServiceClient) ListRoles(ctx context.Context, in *ListRolesReques
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListRolesResponse)
 	err := c.cc.Invoke(ctx, AccessService_ListRoles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *accessServiceClient) ListAllRoles(ctx context.Context, in *ListAllRolesRequest, opts ...grpc.CallOption) (*ListAllRolesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAllRolesResponse)
+	err := c.cc.Invoke(ctx, AccessService_ListAllRoles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *accessServiceClient) SetRoleStatus(ctx context.Context, in *SetRoleStatusRequest, opts ...grpc.CallOption) (*SetRoleStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetRoleStatusResponse)
+	err := c.cc.Invoke(ctx, AccessService_SetRoleStatus_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1637,6 +1664,11 @@ func (c *accessServiceClient) SetDataScope(ctx context.Context, in *SetDataScope
 type AccessServiceServer interface {
 	CreateRole(context.Context, *CreateRoleRequest) (*CreateRoleResponse, error)
 	ListRoles(context.Context, *ListRolesRequest) (*ListRolesResponse, error)
+	// 角色管理页用：含停用的，否则停掉之后没有入口能把它启用回来。
+	ListAllRoles(context.Context, *ListAllRolesRequest) (*ListAllRolesResponse, error)
+	// 停用/启用。角色只停用不真删——编号被员工、权限、数据范围和审批节点
+	// 引用着，真删会让审批流指向不存在的东西且无从追溯。停用是真收权。
+	SetRoleStatus(context.Context, *SetRoleStatusRequest) (*SetRoleStatusResponse, error)
 	GrantRolePermissions(context.Context, *GrantRolePermissionsRequest) (*GrantRolePermissionsResponse, error)
 	AssignEmployeeRoles(context.Context, *AssignEmployeeRolesRequest) (*AssignEmployeeRolesResponse, error)
 	ListPermissions(context.Context, *ListPermissionsRequest) (*ListPermissionsResponse, error)
@@ -1673,6 +1705,12 @@ func (UnimplementedAccessServiceServer) CreateRole(context.Context, *CreateRoleR
 }
 func (UnimplementedAccessServiceServer) ListRoles(context.Context, *ListRolesRequest) (*ListRolesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListRoles not implemented")
+}
+func (UnimplementedAccessServiceServer) ListAllRoles(context.Context, *ListAllRolesRequest) (*ListAllRolesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListAllRoles not implemented")
+}
+func (UnimplementedAccessServiceServer) SetRoleStatus(context.Context, *SetRoleStatusRequest) (*SetRoleStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetRoleStatus not implemented")
 }
 func (UnimplementedAccessServiceServer) GrantRolePermissions(context.Context, *GrantRolePermissionsRequest) (*GrantRolePermissionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GrantRolePermissions not implemented")
@@ -1754,6 +1792,42 @@ func _AccessService_ListRoles_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AccessServiceServer).ListRoles(ctx, req.(*ListRolesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AccessService_ListAllRoles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAllRolesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccessServiceServer).ListAllRoles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccessService_ListAllRoles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccessServiceServer).ListAllRoles(ctx, req.(*ListAllRolesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AccessService_SetRoleStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetRoleStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccessServiceServer).SetRoleStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccessService_SetRoleStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccessServiceServer).SetRoleStatus(ctx, req.(*SetRoleStatusRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1934,6 +2008,14 @@ var AccessService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListRoles",
 			Handler:    _AccessService_ListRoles_Handler,
+		},
+		{
+			MethodName: "ListAllRoles",
+			Handler:    _AccessService_ListAllRoles_Handler,
+		},
+		{
+			MethodName: "SetRoleStatus",
+			Handler:    _AccessService_SetRoleStatus_Handler,
 		},
 		{
 			MethodName: "GrantRolePermissions",

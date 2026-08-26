@@ -268,6 +268,8 @@ func (s *Server) Router() http.Handler {
 		// so it sits with the rest of employee editing.
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/manager", s.setManager)
 		r.With(s.perm("iam:role:read")).Get("/api/roles", s.listRoles)
+		r.With(s.perm("iam:role:read")).Get("/api/roles/all", s.listAllRoles)
+		r.With(s.perm("iam:role:write")).Post("/api/roles/{id}/status", s.setRoleStatus)
 		r.With(s.perm("iam:role:write")).Post("/api/roles", s.createRole)
 		r.With(s.perm("iam:role:write")).Put("/api/roles/{id}/permissions", s.grantRolePermissions)
 		r.With(s.perm("iam:role:read")).Get("/api/roles/{id}/members", s.listRoleMembers)
@@ -655,6 +657,11 @@ func (s *Server) Router() http.Handler {
 		r.Post("/api/platform/tenants", s.platformCreateTenant)
 		r.Post("/api/platform/tenants/{id}/reinvite", s.platformReinvite)
 		r.Post("/api/platform/tenants/{id}/status", s.platformSetTenantStatus)
+		// 死信运维面：守卫在 handler 里（平台操作员名单，判定在 iam），
+		// 理由同上面平台开户的几条——不能用 s.perm，权限当门会向所有
+		// 客户公司的超管敞开。
+		r.Get("/api/platform/failed-events", s.listFailedEvents)
+		r.Post("/api/platform/failed-events/replay", s.replayFailedEvent)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/mark", s.markInbound)
 		// Permanent deletion out of the trash. ERP-side copies only; the mail
 		// host's original is beyond this API's reach by design.

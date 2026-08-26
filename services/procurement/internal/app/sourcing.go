@@ -122,7 +122,7 @@ func (s *Service) CreateSourcingCase(ctx context.Context, tenantID int64, in New
 			SourceAttachmentID: in.SourceAttachmentID, OwnerID: op.ID, OwnerName: op.Name,
 			SourceFileName: strings.TrimSpace(in.SourceFileName), SourceContentType: in.SourceContentType,
 			SourceFileData: in.SourceFileData, SourceFileKey: sourceFileKey,
-			InquiryTemplateID: template.Template.ID,
+			InquiryTemplateID:   template.Template.ID,
 			InquiryTemplateCode: template.Template.TemplateCode, InquiryTemplateVersion: template.Template.Version,
 		})
 		if err != nil {

@@ -20,6 +20,7 @@ REDIS_PORT ?= 6380
 # Each service reaches only its own database, under its own account.
 TEST_ENV := \
 	IAM_TEST_DSN='postgres://erp_iam:erp_iam_pw@localhost:$(PG_PORT)/erp_iam?sslmode=disable' \
+	IAM_MIGRATION_TEST_DSN='postgres://erp_iam:erp_iam_pw@localhost:$(PG_PORT)/erp_iam_migrations?sslmode=disable' \
 	MD_TEST_DSN='postgres://erp_masterdata:erp_masterdata_pw@localhost:$(PG_PORT)/erp_masterdata?sslmode=disable' \
 	MD_MIGRATION_TEST_DSN='postgres://erp_masterdata:erp_masterdata_pw@localhost:$(PG_PORT)/erp_masterdata_migrations?sslmode=disable' \
 	MAIL_TEST_DSN='postgres://erp_mail:erp_mail_pw@localhost:$(PG_PORT)/erp_mail?sslmode=disable' \
@@ -28,8 +29,8 @@ TEST_ENV := \
 	PROCUREMENT_TEST_DSN='postgres://erp_procurement:erp_procurement_pw@localhost:$(PG_PORT)/erp_procurement?sslmode=disable' \
 	EXPORT_TEST_DSN='postgres://erp_export:erp_export_pw@localhost:$(PG_PORT)/erp_export?sslmode=disable' \
 	APPROVAL_TEST_DSN='postgres://erp_approval:erp_approval_pw@localhost:$(PG_PORT)/erp_approval?sslmode=disable' \
-	PRODUCT_TEST_DSN='postgres://erp_product:erp_product_pw@localhost:$(PG_PORT)/erp_product?sslmode=disable' \
 	INVENTORY_TEST_DSN='postgres://erp_inventory:erp_inventory_pw@localhost:$(PG_PORT)/erp_inventory?sslmode=disable' \
+	PRODUCT_TEST_DSN='postgres://erp_product:erp_product_pw@localhost:$(PG_PORT)/erp_product?sslmode=disable' \
 	PROCUREMENT_MIGRATION_TEST_DSN='postgres://erp_procurement:erp_procurement_pw@localhost:$(PG_PORT)/erp_procurement_migrations?sslmode=disable' \
 	GATEWAY_TEST_REDIS='127.0.0.1:$(REDIS_PORT)'
 

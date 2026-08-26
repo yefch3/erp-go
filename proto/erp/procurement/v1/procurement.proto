@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package erp.procurement.v1;
 
+import "erp/common/v1/failedevent.proto";
 import "erp/common/v1/pagination.proto";
 
 option go_package = "github.com/sgao19/erp-go/gen/go/erp/procurement/v1;procurementv1";
@@ -510,6 +511,11 @@ message CancelRequirementResponse {
 // for 1500, which is the only way a buyer gets a better price. So an order
 // references requirements, and a requirement may span several orders.
 service PurchaseOrderService {
+  // 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
+  // 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
+  rpc ListFailedEvents(ListFailedEventsRequest) returns (ListFailedEventsResponse);
+  rpc ReplayFailedEvent(ReplayFailedEventRequest) returns (ReplayFailedEventResponse);
+
   rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);
   rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
   // Preview persists the rows the employee reviewed but does not allocate a
@@ -1472,3 +1478,18 @@ message MatchBankTransactionResponse {}
 
 message UnmatchBankTransactionRequest { int64 txn_id = 1; }
 message UnmatchBankTransactionResponse {}
+
+message ListFailedEventsRequest {}
+
+message ListFailedEventsResponse {
+  repeated erp.common.v1.FailedEvent events = 1;
+}
+
+message ReplayFailedEventRequest {
+  string consumer_group = 1;
+  int64 id = 2;
+}
+
+// 重放是同步的：成功即事件已被处理并离开死信表；失败则原地不动，错误原样
+// 带回给操作的人——他正看着屏幕，这是把原因交到人手上的唯一时机。
+message ReplayFailedEventResponse {}

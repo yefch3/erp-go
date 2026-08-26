@@ -19,17 +19,17 @@ import (
 // a custody ledger for goods that have reached a port terminal, but that
 // ledger must never reduce what is sent to the mill.
 type ContractEffective struct {
-	ContractID   int64          `json:"contract_id"`
-	ContractNo   string         `json:"contract_no"`
-	VersionID    int64          `json:"version_id"`
-	VersionNo    int32          `json:"version_no"`
-	CustomerName string         `json:"customer_name"`
-	DeliveryDate string         `json:"delivery_date"`
+	ContractID   int64  `json:"contract_id"`
+	ContractNo   string `json:"contract_no"`
+	VersionID    int64  `json:"version_id"`
+	VersionNo    int32  `json:"version_no"`
+	CustomerName string `json:"customer_name"`
+	DeliveryDate string `json:"delivery_date"`
 	// 合同负责人：拆出的需求生而继承它作为属主（A1）。旧事件不带这
 	// 两个字段时归 0——属主未知，只有「全部」范围能看见。
-	SalesEmployeeID int64  `json:"sales_employee_id"`
-	SalesEmployee   string `json:"sales_employee"`
-	Items        []ContractLine `json:"items"`
+	SalesEmployeeID int64          `json:"sales_employee_id"`
+	SalesEmployee   string         `json:"sales_employee"`
+	Items           []ContractLine `json:"items"`
 }
 
 type ContractLine struct {
@@ -46,7 +46,7 @@ type ContractLine struct {
 // RequirementsFromContract creates one gross purchase requirement for each
 // effective contract line. A redelivered event refreshes the same line; a new
 // contract version supersedes untouched requirements from the old version.
-func (s *Service) RequirementsFromContract(ctx context.Context, tenantID int64, e ContractEffective, log *slog.Logger) error {
+func (s *Service) RequirementsFromContract(ctx context.Context, tenantID int64, e ContractEffective, log *slog.Logger, claim EventClaim) error {
 	if len(e.Items) == 0 {
 		log.Warn("contract effective event has no lines, nothing to source",
 			"contract_id", e.ContractID, "contract_no", e.ContractNo)
@@ -57,6 +57,11 @@ func (s *Service) RequirementsFromContract(ctx context.Context, tenantID int64, 
 	var strandedOrders int64
 	sourced := 0
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		// 认领与这一笔业务写入同生共死：崩溃一起回滚，提交一起落库。
+		// 见 eventclaim.go。
+		if err := claim(ctx, tx); err != nil {
+			return err
+		}
 		q := s.q.WithTx(tx)
 		for _, line := range e.Items {
 			qty, err := decimal.NewFromString(line.Qty)

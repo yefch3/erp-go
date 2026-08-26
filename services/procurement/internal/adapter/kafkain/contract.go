@@ -19,14 +19,14 @@ const (
 // ContractEvents raises the full purchase quantity from an effective customer
 // contract. Inventory allocation is intentionally not consulted.
 func ContractEvents(svc *app.Service, log *slog.Logger) kafkax.Handler {
-	return func(ctx context.Context, e kafkax.Envelope) error {
+	return func(ctx context.Context, e kafkax.Envelope, claim kafkax.Claim) error {
 		if e.EventType == eventQuotationRejected {
 			var rejected app.QuotationRejected
 			if err := json.Unmarshal(e.Payload, &rejected); err != nil {
 				log.Error("rejected quotation event: unreadable payload, skipping", "event_id", e.EventID, "err", err)
 				return nil
 			}
-			return svc.ReturnRejectedQuotationToCosting(ctx, e.TenantID, rejected, log)
+			return svc.ReturnRejectedQuotationToCosting(ctx, e.TenantID, rejected, log, app.EventClaim(claim))
 		}
 		if e.EventType == eventQuotationAccepted {
 			var accepted app.QuotationAccepted
@@ -38,7 +38,7 @@ func ContractEvents(svc *app.Service, log *slog.Logger) kafkax.Handler {
 				log.Error("quotation event without quotation id, skipping", "event_id", e.EventID)
 				return nil
 			}
-			return svc.RequirementsFromAcceptedQuotation(ctx, e.TenantID, accepted, log)
+			return svc.RequirementsFromAcceptedQuotation(ctx, e.TenantID, accepted, log, app.EventClaim(claim))
 		}
 		if e.EventType != eventContractEffective {
 			return nil
@@ -53,6 +53,6 @@ func ContractEvents(svc *app.Service, log *slog.Logger) kafkax.Handler {
 			log.Error("contract event without a contract id, skipping", "event_id", e.EventID)
 			return nil
 		}
-		return svc.RequirementsFromContract(ctx, e.TenantID, c, log)
+		return svc.RequirementsFromContract(ctx, e.TenantID, c, log, app.EventClaim(claim))
 	}
 }

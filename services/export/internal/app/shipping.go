@@ -316,7 +316,7 @@ func (s *Service) ListShipments(ctx context.Context, tenantID int64, qy Shipment
 	}
 	page, size := normalizePage(qy.Page, qy.Size)
 	rows, err := s.q.ListShipments(ctx, store.ListShipmentsParams{
-		TenantID: tenantID,
+		TenantID:   tenantID,
 		VisibleAll: visible.All, VisibleIds: visible.EmployeeIDs, OperatorID: op.ID,
 		Status: qy.Status, Keyword: qy.Keyword, ContractID: qy.ContractID,
 		RowLimit: size, RowOffset: (page - 1) * size,
@@ -340,9 +340,9 @@ func (s *Service) VesselsForContract(ctx context.Context, tenantID, contractID i
 
 // resolvedLine is an input line with the contract's own words copied onto it.
 type resolvedLine struct {
-	in      ShipmentLineInput
-	qty     decimal.Decimal
-	item    store.ListContractItemsRow
+	in       ShipmentLineInput
+	qty      decimal.Decimal
+	item     store.ListContractItemsRow
 	contract store.GetContractRow
 }
 

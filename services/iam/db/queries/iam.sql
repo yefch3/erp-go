@@ -289,7 +289,26 @@ VALUES ($1, $2, $3, $4)
 RETURNING *;
 
 -- name: ListRoles :many
+-- 只列启用的：这是别处（审批按编码找角色、员工分配角色）依赖的语义。
 SELECT * FROM roles WHERE tenant_id = $1 AND status = 'ACTIVE' ORDER BY id;
+
+-- name: ListRolesIncludingInactive :many
+-- 角色管理页专用：停用的也要看得见，否则停掉之后没有任何入口能把它启用回来。
+SELECT * FROM roles WHERE tenant_id = $1 ORDER BY status DESC, id;
+
+-- name: GetRole :one
+SELECT * FROM roles WHERE tenant_id = $1 AND id = $2;
+
+-- name: CountRoleHolders :one
+-- 还有几个在职员工持有这个角色。停用会当场收走他们的权限，所以这个数字要在
+-- 停用之前摆到人眼前，而不是之后由他们来报「我打不开页面了」。
+SELECT count(*)::bigint FROM employee_roles er
+JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
+WHERE er.tenant_id = $1 AND er.role_id = $2 AND e.status = 'ACTIVE';
+
+-- name: SetRoleStatus :execrows
+UPDATE roles SET status = sqlc.arg(status)::text
+WHERE tenant_id = $1 AND id = sqlc.arg(id)::bigint;
 
 -- name: ListPermissions :many
 SELECT * FROM permissions ORDER BY module, code;
@@ -322,26 +341,37 @@ VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;
 SELECT role_id FROM employee_roles WHERE tenant_id = $1 AND employee_id = $2 ORDER BY role_id;
 
 -- name: ListEmployeePermissionCodes :many
+-- 同 EmployeeHasPermission：停用的角色不再给人任何权限。这条是登录时算
+-- 菜单用的，两处必须同口径——否则菜单亮着、点进去 403。
 SELECT DISTINCT p.code
 FROM employee_roles er
 JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
+JOIN roles r ON r.id = er.role_id AND r.tenant_id = er.tenant_id
 JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
 JOIN permissions p ON p.id = rp.permission_id
-WHERE er.tenant_id = $1 AND er.employee_id = $2 AND e.status = 'ACTIVE'
+WHERE er.tenant_id = $1 AND er.employee_id = $2
+  AND e.status = 'ACTIVE' AND r.status = 'ACTIVE'
 ORDER BY p.code;
 
 -- name: EmployeeHasPermission :one
 -- The employee join is not decoration: without it a token issued before
 -- someone left keeps working until it expires. Every guarded request runs
 -- through here, so this is where "left the company" takes effect.
+--
+-- The roles join is the same idea one level up, and it was missing: a role
+-- flipped to INACTIVE vanished from the roles page while everybody holding
+-- it kept every permission it granted. A button that says "停用" and takes
+-- nothing away is worse than no button — the administrator believes access
+-- was revoked and stops looking.
 SELECT EXISTS (
     SELECT 1
     FROM employee_roles er
     JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
+    JOIN roles r ON r.id = er.role_id AND r.tenant_id = er.tenant_id
     JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
     JOIN permissions p ON p.id = rp.permission_id
     WHERE er.tenant_id = $1 AND er.employee_id = $2 AND p.code = $3
-      AND e.status = 'ACTIVE'
+      AND e.status = 'ACTIVE' AND r.status = 'ACTIVE'
 ) AS allowed;
 
 -- name: HasAnyUser :one
@@ -352,10 +382,14 @@ SELECT EXISTS (SELECT 1 FROM users WHERE tenant_id = $1) AS has_users;
 UPDATE departments SET path = $3, level = $4 WHERE tenant_id = $1 AND id = $2;
 
 -- name: ListRoleMembers :many
+-- 停用的角色不再供出成员：审批流指着它时，拿到空名单会明确报「审批节点没有
+-- 可用审批人」，而不是把任务派给一个公司已经废弃的角色。
 SELECT e.id AS employee_id, e.name
 FROM employee_roles er
 JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
-WHERE er.tenant_id = $1 AND er.role_id = $2 AND e.status = 'ACTIVE'
+JOIN roles r ON r.id = er.role_id AND r.tenant_id = er.tenant_id
+WHERE er.tenant_id = $1 AND er.role_id = $2
+  AND e.status = 'ACTIVE' AND r.status = 'ACTIVE'
 ORDER BY e.id;
 
 -- name: GetUserByEmployee :one
@@ -392,10 +426,14 @@ WHERE e.tenant_id = $1 AND e.status = 'ACTIVE' AND e.id <> $2 AND p.code = $3;
 -- name: WidestDataScope :one
 -- Someone with several roles gets the widest of them: adding a role must
 -- never take visibility away. Ordered by how much each scope reveals.
+-- 停用的角色不再放宽任何人的可见范围：权限收回了、范围还留着，等于人看得见
+-- 一堆自己再也打不开的单据。
 SELECT s.scope_type, s.custom_dept_ids
 FROM role_data_scopes s
 JOIN employee_roles er ON er.role_id = s.role_id AND er.tenant_id = s.tenant_id
+JOIN roles r ON r.id = s.role_id AND r.tenant_id = s.tenant_id
 WHERE s.tenant_id = $1 AND er.employee_id = $2 AND s.module = $3
+  AND r.status = 'ACTIVE'
 ORDER BY CASE s.scope_type
            WHEN 'ALL' THEN 4
            WHEN 'CUSTOM' THEN 3
@@ -584,3 +622,13 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND code = 'ADMIN';
 -- name: SetTenantStatus :execrows
 UPDATE tenants SET status = sqlc.arg(status)::text, updated_at = now()
 WHERE id = sqlc.arg(id)::bigint;
+
+-- name: RoleExistsByCode :one
+-- 任何状态都算：角色只能停用不能删除，「有但停用了」是有人做过的决定，
+-- 补种不该把它当成「没有」。
+SELECT EXISTS (
+    SELECT 1 FROM roles WHERE tenant_id = $1 AND code = $2
+);
+
+-- name: ListTenantIDs :many
+SELECT id FROM tenants ORDER BY id;

@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -70,7 +71,24 @@ func unaryOperator(log *slog.Logger) grpc.UnaryServerInterceptor {
 			return nil, status.Error(codes.Unauthenticated, "unauthenticated")
 		}
 		if op.TenantID == 0 {
-			op.TenantID = 1
+			// 没带公司号的调用，除白名单外一律拒绝。
+			//
+			// 这里原来写的是 `op.TenantID = 1`——「没有登录用户就算第一家
+			// 公司」。它咬过一次：提单提醒的后台任务在没有登录用户的上下文
+			// 里问「物流部都有谁」，拿回的是第一家公司的人，发给了每一家
+			// 公司（见 shipping/blreminder.go 的修复）。这种错不报错、不留
+			// 痕，症状几天后才以「某家公司的某某收不到东西」的形式出现。
+			// 拒绝把它变成当场、大声、指名道姓的失败——后台任务必须用
+			// WithOperator 显式带上它正在处理的那家公司。
+			if !tenantlessAllowed(info.FullMethod) {
+				log.Error("grpcx: refused a call with no tenant — "+
+					"background work must attach its tenant with WithOperator",
+					"method", info.FullMethod)
+				return nil, status.Error(codes.Unauthenticated, "unauthenticated")
+			}
+			// 白名单内公司号保持 0，不再补成 1。这些方法经逐个查证不读
+			// 上下文里的公司号（各自的定位凭据是令牌）；万一将来有人读了，
+			// 0 号查出来的是空集——空结果好过别家公司的数据。
 		}
 		return handler(WithOperator(ctx, op), req)
 	}
@@ -184,4 +202,29 @@ func decodeHeader(v string) string {
 		return decoded
 	}
 	return v
+}
+
+// tenantlessAllowed lists the calls that legitimately arrive with nobody
+// logged in. Everything else that shows up without a tenant is a background
+// task that forgot WithOperator — and gets refused before it can touch the
+// wrong company's data.
+//
+// 名单按「为什么可以没有登录」逐条给出，加新条目要过同一道问句——它的
+// 定位凭据是什么？答不出令牌或同等物的，不该进来：
+//
+//   - AuthService：登录、激活、找回密码。登录之前当然没有登录态，身份由
+//     密码/邀请令牌/重置令牌证明。经逐个查证，这些 handler 都不读上下文
+//     里的公司号。（管理员替员工改密码走的是 DirectoryService，不在此列。）
+//   - mail FetchImage / RecordOpen：邮件里的图片与已读回执，取的人是收件
+//     的陌生人，永远不会登录。两者都由不可猜的令牌定位（RecordOpen 的
+//     查询叫 FindMessageByKeyAnyTenant——名字就写明了不看公司号）。
+//   - grpc.health：健康探针，机器不登录。
+func tenantlessAllowed(method string) bool {
+	switch method {
+	case "/erp.mail.v1.EmailService/FetchImage",
+		"/erp.mail.v1.EmailService/RecordOpen":
+		return true
+	}
+	return strings.HasPrefix(method, "/erp.iam.v1.AuthService/") ||
+		strings.HasPrefix(method, "/grpc.health.")
 }

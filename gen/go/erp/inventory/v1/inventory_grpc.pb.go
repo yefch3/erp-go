@@ -19,6 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	StockService_ListFailedEvents_FullMethodName        = "/erp.inventory.v1.StockService/ListFailedEvents"
+	StockService_ReplayFailedEvent_FullMethodName       = "/erp.inventory.v1.StockService/ReplayFailedEvent"
 	StockService_ListWarehouses_FullMethodName          = "/erp.inventory.v1.StockService/ListWarehouses"
 	StockService_CreateWarehouse_FullMethodName         = "/erp.inventory.v1.StockService/CreateWarehouse"
 	StockService_UpdateWarehouse_FullMethodName         = "/erp.inventory.v1.StockService/UpdateWarehouse"
@@ -47,6 +49,10 @@ const (
 // on it. Nothing else in the system may compute availability: the numbers
 // here are the only ones that count.
 type StockServiceClient interface {
+	// 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
+	// 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
+	ListFailedEvents(ctx context.Context, in *ListFailedEventsRequest, opts ...grpc.CallOption) (*ListFailedEventsResponse, error)
+	ReplayFailedEvent(ctx context.Context, in *ReplayFailedEventRequest, opts ...grpc.CallOption) (*ReplayFailedEventResponse, error)
 	ListWarehouses(ctx context.Context, in *ListWarehousesRequest, opts ...grpc.CallOption) (*ListWarehousesResponse, error)
 	CreateWarehouse(ctx context.Context, in *CreateWarehouseRequest, opts ...grpc.CallOption) (*CreateWarehouseResponse, error)
 	UpdateWarehouse(ctx context.Context, in *UpdateWarehouseRequest, opts ...grpc.CallOption) (*UpdateWarehouseResponse, error)
@@ -76,6 +82,26 @@ type stockServiceClient struct {
 
 func NewStockServiceClient(cc grpc.ClientConnInterface) StockServiceClient {
 	return &stockServiceClient{cc}
+}
+
+func (c *stockServiceClient) ListFailedEvents(ctx context.Context, in *ListFailedEventsRequest, opts ...grpc.CallOption) (*ListFailedEventsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFailedEventsResponse)
+	err := c.cc.Invoke(ctx, StockService_ListFailedEvents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stockServiceClient) ReplayFailedEvent(ctx context.Context, in *ReplayFailedEventRequest, opts ...grpc.CallOption) (*ReplayFailedEventResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReplayFailedEventResponse)
+	err := c.cc.Invoke(ctx, StockService_ReplayFailedEvent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *stockServiceClient) ListWarehouses(ctx context.Context, in *ListWarehousesRequest, opts ...grpc.CallOption) (*ListWarehousesResponse, error) {
@@ -266,6 +292,10 @@ func (c *stockServiceClient) ListOutboundItems(ctx context.Context, in *ListOutb
 // on it. Nothing else in the system may compute availability: the numbers
 // here are the only ones that count.
 type StockServiceServer interface {
+	// 死信运维口：列出被放弃的事件、把一条事件重新跑一遍。
+	// 平台运维专用（网关按平台操作员名单守门），不属于任何一家公司的业务面。
+	ListFailedEvents(context.Context, *ListFailedEventsRequest) (*ListFailedEventsResponse, error)
+	ReplayFailedEvent(context.Context, *ReplayFailedEventRequest) (*ReplayFailedEventResponse, error)
 	ListWarehouses(context.Context, *ListWarehousesRequest) (*ListWarehousesResponse, error)
 	CreateWarehouse(context.Context, *CreateWarehouseRequest) (*CreateWarehouseResponse, error)
 	UpdateWarehouse(context.Context, *UpdateWarehouseRequest) (*UpdateWarehouseResponse, error)
@@ -297,6 +327,12 @@ type StockServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedStockServiceServer struct{}
 
+func (UnimplementedStockServiceServer) ListFailedEvents(context.Context, *ListFailedEventsRequest) (*ListFailedEventsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFailedEvents not implemented")
+}
+func (UnimplementedStockServiceServer) ReplayFailedEvent(context.Context, *ReplayFailedEventRequest) (*ReplayFailedEventResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReplayFailedEvent not implemented")
+}
 func (UnimplementedStockServiceServer) ListWarehouses(context.Context, *ListWarehousesRequest) (*ListWarehousesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListWarehouses not implemented")
 }
@@ -370,6 +406,42 @@ func RegisterStockServiceServer(s grpc.ServiceRegistrar, srv StockServiceServer)
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&StockService_ServiceDesc, srv)
+}
+
+func _StockService_ListFailedEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFailedEventsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).ListFailedEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_ListFailedEvents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).ListFailedEvents(ctx, req.(*ListFailedEventsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StockService_ReplayFailedEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReplayFailedEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).ReplayFailedEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_ReplayFailedEvent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).ReplayFailedEvent(ctx, req.(*ReplayFailedEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _StockService_ListWarehouses_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -703,6 +775,14 @@ var StockService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "erp.inventory.v1.StockService",
 	HandlerType: (*StockServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListFailedEvents",
+			Handler:    _StockService_ListFailedEvents_Handler,
+		},
+		{
+			MethodName: "ReplayFailedEvent",
+			Handler:    _StockService_ReplayFailedEvent_Handler,
+		},
 		{
 			MethodName: "ListWarehouses",
 			Handler:    _StockService_ListWarehouses_Handler,

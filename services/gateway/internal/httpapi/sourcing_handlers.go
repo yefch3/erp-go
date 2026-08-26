@@ -58,8 +58,8 @@ func (s *Server) importSupplierQuoteWorkbook(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) sendFactoryRFQ(w http.ResponseWriter, r *http.Request) {
-	if s.ProcurementMailSenderID <= 0 {
-		s.writeError(w, http.StatusConflict, "NT_PROCUREMENT_SENDER_NOT_CONFIGURED", "尚未配置采购公共发件邮箱")
+	senderID, ok := s.procurementSenderFor(w, r)
+	if !ok {
 		return
 	}
 	var input struct {
@@ -85,7 +85,7 @@ func (s *Server) sendFactoryRFQ(w http.ResponseWriter, r *http.Request) {
 	if input.Body == "" {
 		input.Body = fmt.Sprintf("Dear %s,\n\nPlease complete the attached quotation workbook for %s and return it without changing RFQ No, Line ID, Quantity or Unit.\n\nThank you.", book.GetSupplierName(), book.GetRfqNo())
 	}
-	resp, err := s.Emails.SendProcurementRfq(r.Context(), &mailv1.SendProcurementRfqRequest{SenderEmployeeId: s.ProcurementMailSenderID,
+	resp, err := s.Emails.SendProcurementRfq(r.Context(), &mailv1.SendProcurementRfqRequest{SenderEmployeeId: senderID,
 		RecipientName: book.GetSupplierName(), RecipientEmail: input.RecipientEmail, Subject: input.Subject, Body: input.Body,
 		FileName: book.GetFileName(), FileData: book.GetFileData()})
 	if err != nil {
