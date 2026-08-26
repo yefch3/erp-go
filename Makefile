@@ -147,6 +147,18 @@ check-mail-sandbox: ## Verify received mail is only rendered inside the sandbox
 audit-mail: ## Check stored mail against its invariants (needs a running database)
 	sh scripts/audit-mail.sh
 
+# The frontend is half the product and until now nothing checked it: a broken
+# import, a Vue file that does not parse, a red unit test - all of it merged
+# green and was found by someone clicking. `npm ci`, not `npm install`, so the
+# lockfile is honoured and CI installs what the laptop installed.
+#
+# Not `npm run typecheck`: that one is real but currently red (see the script
+# in frontend/package.json). Gating on it today would mean gating on 60-odd
+# pre-existing errors, so it stays a local command until they are cleared.
+.PHONY: frontend-ci
+frontend-ci: ## Build the frontend and run its unit tests
+	cd frontend && npm ci && npm run build && npm test
+
 # The single definition of what CI checks. The workflow provides the
 # environment (Postgres, Redis, created databases, migrations) and then calls
 # this; it does not list checks of its own. That is deliberate: when this
@@ -157,7 +169,7 @@ audit-mail: ## Check stored mail against its invariants (needs a running databas
 # Prerequisites run in the order written, cheapest first, so a stale gen/ or
 # a missed tenant_id fails in seconds, not after the full test suite.
 .PHONY: ci
-ci: proto-check check-tenant check-tenant-seeds check-iam-seeds check-migration-safety check-mail-sandbox test-integration lint ## Everything CI runs (needs `make up` + `make migrate` first)
+ci: proto-check check-tenant check-tenant-seeds check-iam-seeds check-migration-safety check-mail-sandbox frontend-ci test-integration lint ## Everything CI runs (needs `make up` + `make migrate` first)
 	@echo "ci: all checks passed"
 
 .PHONY: sqlc
