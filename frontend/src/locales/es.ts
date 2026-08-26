@@ -165,6 +165,7 @@ export default {
     requirements: 'Por pedir', orders: 'Órdenes de compra', backToWorkbench: 'Volver al panel de compras',
   },
   financeNav: {
+    fx: 'Tipos de cambio',
     title: 'Finanzas', receivable: 'Por cobrar · clientes', payable: 'Por pagar · proveedores', bank: 'Banco',
     receivableDue: 'Cobros por vencer',
     receipts: 'Cobros de clientes', supplierInvoices: 'Facturas de proveedor', supplierPayments: 'Pagos a proveedores', supplierStatements: 'Conciliación de proveedores', bankTransactions: 'Movimientos bancarios',

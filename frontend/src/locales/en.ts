@@ -165,6 +165,7 @@ export default {
     requirements: 'To order', orders: 'Purchase orders', backToWorkbench: 'Back to procurement workbench',
   },
   financeNav: {
+    fx: 'Exchange rates',
     title: 'Finance', receivable: 'Receivable · customers', payable: 'Payable · suppliers', bank: 'Bank',
     receivableDue: 'Receivables due',
     receipts: 'Customer receipts', supplierInvoices: 'Supplier invoices', supplierPayments: 'Supplier payments', supplierStatements: 'Supplier statements', bankTransactions: 'Bank transactions',

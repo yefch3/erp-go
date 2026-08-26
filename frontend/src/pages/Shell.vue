@@ -458,7 +458,6 @@ const systemItems = computed(() => [
   ...(auth.can('approval:flow:read')
     ? [{ path: '/settings/approvals', label: t('menu.approvalFlows') }]
     : []),
-  ...(auth.can('fx:rate:read') ? [{ path: '/fx', label: t('menu.fx') }] : []),
   ...(auth.can('mail:export:audit')
     ? [{ path: '/mail/export-log', label: t('menu.exportLog') }]
     : []),
@@ -539,6 +538,14 @@ const financeGroups = computed(() => [
     items: auth.can('procurement:payment:read')
       ? [{ path: '/bank-transactions', label: t('financeNav.bankTransactions') }]
       : [],
+  },
+  // 汇率原本挂在「系统设置」下，那是放错了：它不是一次配好就不用管的开关，
+  // 是每天都在变、且直接决定报价和对账金额的业务数据。用它的人是财务和
+  // 报价的人，不是管系统的人。
+  {
+    key: 'fx',
+    label: t('financeNav.fx'),
+    items: auth.can('fx:rate:read') ? [{ path: '/fx', label: t('menu.fx') }] : [],
   },
 ].filter((group) => group.items.length > 0))
 const hasFinance = computed(() => financeGroups.value.length > 0)
