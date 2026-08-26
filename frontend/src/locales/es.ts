@@ -165,6 +165,7 @@ export default {
     requirements: 'Por pedir', orders: 'Órdenes de compra', backToWorkbench: 'Volver al panel de compras',
   },
   financeNav: {
+    fx: 'Tipos de cambio',
     title: 'Finanzas', receivable: 'Por cobrar · clientes', payable: 'Por pagar · proveedores', bank: 'Banco',
     receivableDue: 'Cobros por vencer',
     receipts: 'Cobros de clientes', supplierInvoices: 'Facturas de proveedor', supplierPayments: 'Pagos a proveedores', supplierStatements: 'Conciliación de proveedores', bankTransactions: 'Movimientos bancarios',
@@ -250,6 +251,9 @@ export default {
     quotaZeroWarning: 'Un tope de 0 significa que esta empresa no puede hacer ni una conversión. Para quitar el límite apaga el interruptor, no pongas 0.',
     quotaOffNote: 'Interruptor apagado significa sin límite: esta empresa puede convertir cuanto quiera.',
     quotaSaved: 'Cupo guardado',
+    cost: 'Coste este mes',
+    costNoPrice: 'Sin tarifa',
+    costTokens: '{n} tokens',
     dlTitle: 'Eventos abandonados',
     dlSubtitle: 'Eventos que los procesos de fondo no pudieron procesar — cada uno es un registro de negocio sin contabilizar. Corrija la causa y reprodúzcalo aquí.',
     dlRefresh: 'Actualizar',

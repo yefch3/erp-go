@@ -24,6 +24,12 @@ type tenantQuotaView struct {
 	Limited       bool  `json:"limited"`
 	MonthlyRuns   int64 `json:"monthlyRuns"`
 	UsedThisMonth int64 `json:"usedThisMonth"`
+	// 本月成本。只出现在这条平台专用的路由上——客户那一侧的 /api/excel-usage
+	// 不返回金额。空串表示没配单价，前端照原样显示「未配单价」而不是 0。
+	InputTokens   int64  `json:"inputTokens"`
+	OutputTokens  int64  `json:"outputTokens"`
+	EstimatedCost string `json:"estimatedCost"`
+	Currency      string `json:"currency"`
 }
 
 func (s *Server) listExcelQuotas(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +46,8 @@ func (s *Server) listExcelQuotas(w http.ResponseWriter, r *http.Request) {
 		out = append(out, tenantQuotaView{
 			TenantID: q.GetTenantId(), Limited: q.GetLimited(),
 			MonthlyRuns: q.GetMonthlyRuns(), UsedThisMonth: q.GetUsedThisMonth(),
+			InputTokens: q.GetInputTokens(), OutputTokens: q.GetOutputTokens(),
+			EstimatedCost: q.GetEstimatedCost(), Currency: q.GetCurrency(),
 		})
 	}
 	s.writeJSON(w, map[string]any{"quotas": out, "currentMonth": resp.GetCurrentMonth()})

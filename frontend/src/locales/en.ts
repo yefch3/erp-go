@@ -165,6 +165,7 @@ export default {
     requirements: 'To order', orders: 'Purchase orders', backToWorkbench: 'Back to procurement workbench',
   },
   financeNav: {
+    fx: 'Exchange rates',
     title: 'Finance', receivable: 'Receivable · customers', payable: 'Payable · suppliers', bank: 'Bank',
     receivableDue: 'Receivables due',
     receipts: 'Customer receipts', supplierInvoices: 'Supplier invoices', supplierPayments: 'Supplier payments', supplierStatements: 'Supplier statements', bankTransactions: 'Bank transactions',
@@ -250,6 +251,9 @@ export default {
     quotaZeroWarning: 'A cap of 0 means this company cannot run a single conversion. To remove the limit, turn the switch off — do not enter 0.',
     quotaOffNote: 'Switch off means no limit: this company may convert as often as it likes.',
     quotaSaved: 'Allowance saved',
+    cost: 'Cost this month',
+    costNoPrice: 'No rate set',
+    costTokens: '{n} tokens',
     dlTitle: 'Dropped events',
     dlSubtitle: 'Events the background workers gave up on — each one is a business record that never landed. Fix the cause, then replay it here.',
     dlRefresh: 'Refresh',

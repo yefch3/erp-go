@@ -51,6 +51,20 @@
             </template>
           </template>
         </el-table-column>
+        <!-- 本月成本。只在这一页——客户看的是「还能转几次」，我们看的是
+             「这个月花了多少」。没配单价就说没配，不给一个凭空的 0：一个
+             猜出来的成本比没有成本更坏，因为它看着像账。 -->
+        <el-table-column :label="t('platform.cost')" width="150" align="right">
+          <template #default="{ row }">
+            <div v-if="quotaOf(row.id).estimatedCost" class="num money">
+              {{ quotaOf(row.id).currency }} {{ quotaOf(row.id).estimatedCost }}
+            </div>
+            <div v-else class="sub">{{ t('platform.costNoPrice') }}</div>
+            <div class="sub">
+              {{ t('platform.costTokens', { n: formatTokens(quotaOf(row.id).inputTokens + quotaOf(row.id).outputTokens) }) }}
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('platform.actions')" width="300" align="right">
           <template #default="{ row }">
             <!-- 没激活才有「重发邀请」：给激活过的人重发不是邀请，是改密码，
@@ -270,6 +284,12 @@ async function replay(row: FailedEvent) {
 // 两件事正好相反，所以界面上是一个开关加一个数字，不是「填 0 表示不限」。
 interface TenantQuota extends ExcelQuota {
   tenantId: number
+  // 成本这几项只有这条平台专用路由会返回；客户那一侧的用量接口不给金额。
+  inputTokens: number
+  outputTokens: number
+  // 空串表示没配单价。空和 0 是两回事，所以别在这里补默认值。
+  estimatedCost: string
+  currency: string
 }
 const quotas = ref<Record<string, TenantQuota>>({})
 const quotaOpen = ref(false)
@@ -278,7 +298,14 @@ const quotaForm = reactive({ id: '', name: '', limited: false, monthlyRuns: 200 
 
 // 这一页只关心「用了多少 / 上限多少」，月份由列表本身声明，所以借用同一套
 // 百分比算法（含上限 0 的处理），不在这里重写一遍。
-const noQuota: TenantQuota = { ...emptyExcelQuota, tenantId: 0 }
+const noQuota: TenantQuota = {
+  ...emptyExcelQuota, tenantId: 0,
+  inputTokens: 0, outputTokens: 0, estimatedCost: '', currency: '',
+}
+
+function formatTokens(n: number): string {
+  return Number(n || 0).toLocaleString()
+}
 function quotaOf(id: string): TenantQuota {
   return quotas.value[id] ?? noQuota
 }
@@ -435,6 +462,9 @@ onMounted(() => {
 }
 .num {
   font-variant-numeric: tabular-nums;
+}
+.num.money {
+  font-weight: 600;
 }
 .hint {
   margin: 0 0 14px;

@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/sgao19/erp-go/pkg/pgdb"
 )
 
@@ -172,5 +174,79 @@ func TestExcelQuotaResetsEachMonth(t *testing.T) {
 	}
 	if err := svc.ensureExcelQuota(ctx, tenantID); err != nil {
 		t.Fatalf("上个月用满了不该拖累这个月：%v", err)
+	}
+}
+
+// 平台那一侧看到的是成本：本月烧了多少 token、折成多少钱。
+//
+// 钉两条：**没配单价就说没配**（空串，不是 0——一个凭空的 0 看着像账），
+// 以及跨租户这条列表里能找到我们自己那一行且数字对得上。
+func TestListExcelQuotasCarriesCostForThePlatform(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+
+	tenantID := time.Now().UnixNano()
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_excel_jobs WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_excel_quotas WHERE tenant_id=$1", tenantID)
+	})
+
+	if _, err := pool.Exec(ctx, `INSERT INTO mail_excel_jobs
+		(tenant_id, owner_id, inbound_id, selected_text, status, input_tokens, output_tokens)
+		VALUES ($1,703,1,'选中的一段','COMPLETED',120000,30000)`, tenantID); err != nil {
+		t.Fatal(err)
+	}
+
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	find := func(rows []TenantExcelQuota) TenantExcelQuota {
+		t.Helper()
+		for _, r := range rows {
+			if r.TenantID == tenantID {
+				return r
+			}
+		}
+		t.Fatal("平台列表里找不到这家公司——用过就该出现，哪怕没设过额度")
+		return TenantExcelQuota{}
+	}
+
+	// ---- 没配单价：token 照出，金额留空 ----
+	rows, month, err := New(pool, Deps{}, log).ListExcelQuotas(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if month == "" {
+		t.Error("没告诉调用方这是哪个月")
+	}
+	got := find(rows)
+	if got.InputTokens != 120000 || got.OutputTokens != 30000 {
+		t.Fatalf("token 数不对：%+v", got)
+	}
+	if got.EstimatedCost != "" {
+		t.Fatalf("没配单价却给出了金额 %q——一个猜出来的成本比没有更坏", got.EstimatedCost)
+	}
+
+	// ---- 配了单价：按每百万 token 折算 ----
+	// 12 万输入 × 1.25/百万 = 0.15；3 万输出 × 10/百万 = 0.30；合计 0.45。
+	priced := New(pool, Deps{Pricing: ModelPricing{
+		InputPerMTok:  decimal.RequireFromString("1.25"),
+		OutputPerMTok: decimal.RequireFromString("10"),
+		Currency:      "USD",
+	}}, log)
+	rows, _, err = priced.ListExcelQuotas(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = find(rows)
+	if got.EstimatedCost != "0.4500" || got.Currency != "USD" {
+		t.Fatalf("金额折算错了：%q %q，该是 USD 0.4500", got.Currency, got.EstimatedCost)
 	}
 }

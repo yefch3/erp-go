@@ -92,12 +92,22 @@ func (s *Service) ensureExcelQuota(ctx context.Context, tenantID int64) error {
 		quota.UsedThisMonth, quota.MonthlyRuns))
 }
 
-// TenantExcelQuota 是平台运营看到的一行：某家公司的额度和用量。
+// TenantExcelQuota 是平台运营看到的一行：某家公司的额度、用量和成本。
+//
+// 成本只在这一行出现，不在客户那一侧。这不是藏，是分工：客户要知道的是
+// 「还能转几次」，我们要知道的是「这个月花了多少」。两个口径都要，只是给
+// 的人不同。
 type TenantExcelQuota struct {
 	TenantID      int64
 	Limited       bool
 	MonthlyRuns   int64
 	UsedThisMonth int64
+	InputTokens   int64
+	OutputTokens  int64
+	// 按当下单价折出来的估算金额。没配单价时是空串——**不猜价格**，一个猜
+	// 出来的成本比没有成本更坏，因为它看着像账。
+	EstimatedCost string
+	Currency      string
 }
 
 // ListExcelQuotas 出所有公司的额度和本月用量。
@@ -118,10 +128,6 @@ func (s *Service) ListExcelQuotas(ctx context.Context) ([]TenantExcelQuota, stri
 	if err != nil {
 		return nil, "", err
 	}
-	used := make(map[int64]int64, len(runs))
-	for _, r := range runs {
-		used[r.TenantID] = r.Runs
-	}
 	// 一家公司可能只出现在其中一边：设了额度还没用过，或者用过但没设额度。
 	// 两边都要出现在结果里，否则平台页会漏掉正好该看的那一家。
 	byTenant := make(map[int64]*TenantExcelQuota, len(quotas)+len(runs))
@@ -130,12 +136,19 @@ func (s *Service) ListExcelQuotas(ctx context.Context) ([]TenantExcelQuota, stri
 			TenantID: q.TenantID, Limited: true, MonthlyRuns: q.MonthlyRuns,
 		}
 	}
-	for tenantID, n := range used {
-		if row, ok := byTenant[tenantID]; ok {
-			row.UsedThisMonth = n
-			continue
+	for _, r := range runs {
+		row, ok := byTenant[r.TenantID]
+		if !ok {
+			row = &TenantExcelQuota{TenantID: r.TenantID}
+			byTenant[r.TenantID] = row
 		}
-		byTenant[tenantID] = &TenantExcelQuota{TenantID: tenantID, UsedThisMonth: n}
+		row.UsedThisMonth = r.Runs
+		row.InputTokens = r.InputTokens
+		row.OutputTokens = r.OutputTokens
+		if s.pricing.Configured() {
+			row.EstimatedCost = estimateCost(r.InputTokens, r.OutputTokens, s.pricing)
+			row.Currency = s.pricing.Currency
+		}
 	}
 	out := make([]TenantExcelQuota, 0, len(byTenant))
 	for _, row := range byTenant {

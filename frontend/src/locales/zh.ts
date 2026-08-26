@@ -165,6 +165,7 @@ export default {
     requirements: '待采购', orders: '采购订单', backToWorkbench: '返回采购工作台',
   },
   financeNav: {
+    fx: '汇率',
     title: '财务', receivable: '应收 · 客户', payable: '应付 · 供应商', bank: '银行',
     receivableDue: '应收到期',
     receipts: '收款对账', supplierInvoices: '供应商发票', supplierPayments: '供应商付款', supplierStatements: '供应商对账', bankTransactions: '银行流水',
@@ -250,6 +251,9 @@ export default {
     quotaZeroWarning: '上限 0 表示这家公司一次都不能用。想放开限制请把上面的开关关掉，不是填 0。',
     quotaOffNote: '关掉开关等于不限次数：这家公司想转多少次就转多少次。',
     quotaSaved: '额度已保存',
+    cost: '本月成本',
+    costNoPrice: '未配单价',
+    costTokens: '{n} token',
     dlTitle: '丢下的事件',
     dlSubtitle: '后台反复处理失败、被放到一边的事件——每一条都对应一笔没记上的业务，修好原因后在这里重放',
     dlRefresh: '刷新',
