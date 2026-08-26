@@ -5,6 +5,9 @@
         <span class="mark">ERP</span>
         <span class="txt">{{ t('login.title') }}</span>
       </div>
+      <!-- 菜单按一笔生意的走向排，而不是按模块字母序：待办与邮箱是每天的入口，
+           中间四组是一张单子的行程（签合同 → 采购 → 进出库 → 出运），财务收尾，
+           基础数据与设置沉到底部——它们是偶尔配置一次的东西。 -->
       <el-menu :default-active="menuActive" router class="side-menu">
         <!-- No permission gate: 我的待办 is the landing page and the one
              surface every employee owns. Somebody with no approval role sees
@@ -13,9 +16,14 @@
         <el-menu-item index="/todos">
           {{ t('menu.todos') }}
         </el-menu-item>
+        <el-menu-item v-if="auth.can('mail:email:read')" index="/emails">
+          {{ t('menu.emails') }}
+        </el-menu-item>
+        <!-- 一张订单的走向：签合同 → 采购 → 出货 → 收钱。四个分组按这个
+             顺序排，相邻的就是流程上相邻的。 -->
         <el-popover
-          v-if="auth.can('iam:employee:read') || auth.can('iam:department:read') || auth.can('masterdata:customer:read') || auth.can('masterdata:port:read') || auth.can('masterdata:supplier:read')"
-          v-model:visible="basicDataOpen"
+          v-if="hasSales"
+          v-model:visible="salesOpen"
           placement="right-start"
           :width="200"
           :offset="6"
@@ -27,85 +35,27 @@
             <button
               type="button"
               class="module-menu-trigger"
-              :class="{ 'is-active': route.path.startsWith('/basic/') }"
-              @click="basicDataOpen = !basicDataOpen"
+              :class="{ 'is-active': salesActive }"
+              @click="salesOpen = !salesOpen"
             >
-              <span>{{ t('menu.basicData') }}</span>
+              <span>{{ t('menu.sales') }}</span>
               <span class="module-menu-arrow" aria-hidden="true">›</span>
             </button>
           </template>
-          <nav class="module-flyout" :aria-label="t('menu.basicData')">
-            <div class="module-flyout-title">{{ t('menu.basicData') }}</div>
+          <nav class="module-flyout" :aria-label="t('menu.sales')">
+            <div class="module-flyout-title">{{ t('menu.sales') }}</div>
             <button
-              v-for="item in basicDataItems"
-              :key="item.path"
-              type="button"
-              class="module-flyout-item"
-              :class="{ 'is-active': route.path.startsWith(item.activePrefix) }"
-              @click="goBasicData(item.path)"
-            >
-              <span>{{ item.label }}</span>
-              <span v-if="item.todo" class="module-flyout-badge">{{ t('menu.todo') }}</span>
-            </button>
-          </nav>
-        </el-popover>
-        <el-menu-item v-if="auth.can('product:product:read')" index="/products">
-          {{ t('menu.products') }}
-        </el-menu-item>
-        <el-menu-item v-if="auth.can('export:contract:read')" index="/contracts">
-          {{ t('menu.contracts') }}
-        </el-menu-item>
-        <el-menu-item v-if="auth.can('export:contract:read')" index="/contract-execution">
-          {{ t('menu.contractExecution') }}
-        </el-menu-item>
-        <el-menu-item v-if="auth.can('export:shipment:read')" index="/shipments">
-          {{ t('menu.shipments') }}
-        </el-menu-item>
-        <el-menu-item
-          v-if="auth.can('shipping:schedule:read')"
-          index="/shipping"
-          @click="pullShippingReminders"
-        >
-          {{ t('menu.shipping') }}
-        </el-menu-item>
-        <el-popover
-          v-if="auth.can('inventory:stock:read')"
-          v-model:visible="warehouseOpen"
-          placement="right-start"
-          :width="200"
-          :offset="6"
-          :show-arrow="false"
-          trigger="hover"
-          popper-class="module-flyout-popper"
-        >
-          <template #reference>
-            <button
-              type="button"
-              class="module-menu-trigger"
-              :class="{ 'is-active': warehouseActive }"
-              @click="warehouseOpen = !warehouseOpen"
-            >
-              <span>{{ t('menu.warehouse') }}</span>
-              <span class="module-menu-arrow" aria-hidden="true">›</span>
-            </button>
-          </template>
-          <nav class="module-flyout" :aria-label="t('menu.warehouse')">
-            <div class="module-flyout-title">{{ t('menu.warehouse') }}</div>
-            <button
-              v-for="item in warehouseItems"
+              v-for="item in salesItems"
               :key="item.path"
               type="button"
               class="module-flyout-item"
               :class="{ 'is-active': route.path === item.path }"
-              @click="goWarehouse(item.path)"
+              @click="goSales(item.path)"
             >
               {{ item.label }}
             </button>
           </nav>
         </el-popover>
-        <el-menu-item v-if="auth.can('inventory:stock:read')" index="/outbounds">
-          {{ t('menu.outbounds') }}
-        </el-menu-item>
         <el-popover
           v-if="hasProcurement"
           v-model:visible="procurementOpen"
@@ -136,6 +86,77 @@
               class="module-flyout-item"
               :class="{ 'is-active': route.path === item.path }"
               @click="goProcurement(item.path)"
+            >
+              {{ item.label }}
+            </button>
+          </nav>
+        </el-popover>
+        <el-popover
+          v-if="hasWarehouse"
+          v-model:visible="warehouseOpen"
+          placement="right-start"
+          :width="200"
+          :offset="6"
+          :show-arrow="false"
+          trigger="hover"
+          popper-class="module-flyout-popper"
+        >
+          <template #reference>
+            <button
+              type="button"
+              class="module-menu-trigger"
+              :class="{ 'is-active': warehouseActive }"
+              @click="warehouseOpen = !warehouseOpen"
+            >
+              <span>{{ t('menu.stockAndGoods') }}</span>
+              <span class="module-menu-arrow" aria-hidden="true">›</span>
+            </button>
+          </template>
+          <nav class="module-flyout" :aria-label="t('menu.stockAndGoods')">
+            <div class="module-flyout-title">{{ t('menu.stockAndGoods') }}</div>
+            <button
+              v-for="item in warehouseItems"
+              :key="item.path"
+              type="button"
+              class="module-flyout-item"
+              :class="{ 'is-active': route.path === item.path }"
+              @click="goWarehouse(item.path)"
+            >
+              {{ item.label }}
+            </button>
+          </nav>
+        </el-popover>
+        <!-- 出运单与船期：货离开公司之后的事，和采购收货是两段。 -->
+        <el-popover
+          v-if="hasLogistics"
+          v-model:visible="logisticsOpen"
+          placement="right-start"
+          :width="200"
+          :offset="6"
+          :show-arrow="false"
+          trigger="hover"
+          popper-class="module-flyout-popper"
+        >
+          <template #reference>
+            <button
+              type="button"
+              class="module-menu-trigger"
+              :class="{ 'is-active': logisticsActive }"
+              @click="logisticsOpen = !logisticsOpen"
+            >
+              <span>{{ t('menu.logistics') }}</span>
+              <span class="module-menu-arrow" aria-hidden="true">›</span>
+            </button>
+          </template>
+          <nav class="module-flyout" :aria-label="t('menu.logistics')">
+            <div class="module-flyout-title">{{ t('menu.logistics') }}</div>
+            <button
+              v-for="item in logisticsItems"
+              :key="item.path"
+              type="button"
+              class="module-flyout-item"
+              :class="{ 'is-active': route.path === item.path }"
+              @click="goLogistics(item.path)"
             >
               {{ item.label }}
             </button>
@@ -179,23 +200,80 @@
             </template>
           </nav>
         </el-popover>
-        <el-menu-item v-if="auth.can('mail:email:read')" index="/emails">
-          {{ t('menu.emails') }}
-        </el-menu-item>
-        <el-menu-item v-if="auth.can('fx:rate:read')" index="/fx">{{ t('menu.fx') }}</el-menu-item>
-        <!-- Only rendered for somebody whose scope reaches past themselves;
-             the server enforces it regardless. -->
-        <el-menu-item v-if="auth.can('mail:email:read')" index="/team-mail">
-          {{ t('menu.teamMail') }}
-        </el-menu-item>
-        <!-- Oversight rather than use: who took a conversation out of the
-             system. Its own permission, held by managers and administrators. -->
-        <el-menu-item v-if="auth.can('mail:export:audit')" index="/mail/export-log">
-          {{ t('menu.exportLog') }}
-        </el-menu-item>
-        <el-menu-item v-if="auth.can('approval:flow:read')" index="/settings/approvals">
-          {{ t('menu.approvalFlows') }}
-        </el-menu-item>
+        <el-popover
+          v-if="auth.can('iam:employee:read') || auth.can('iam:department:read') || auth.can('masterdata:customer:read') || auth.can('masterdata:port:read') || auth.can('masterdata:supplier:read')"
+          v-model:visible="basicDataOpen"
+          placement="right-start"
+          :width="200"
+          :offset="6"
+          :show-arrow="false"
+          trigger="hover"
+          popper-class="module-flyout-popper"
+        >
+          <template #reference>
+            <button
+              type="button"
+              class="module-menu-trigger"
+              :class="{ 'is-active': route.path.startsWith('/basic/') }"
+              @click="basicDataOpen = !basicDataOpen"
+            >
+              <span>{{ t('menu.basicData') }}</span>
+              <span class="module-menu-arrow" aria-hidden="true">›</span>
+            </button>
+          </template>
+          <nav class="module-flyout" :aria-label="t('menu.basicData')">
+            <div class="module-flyout-title">{{ t('menu.basicData') }}</div>
+            <button
+              v-for="item in basicDataItems"
+              :key="item.path"
+              type="button"
+              class="module-flyout-item"
+              :class="{ 'is-active': route.path.startsWith(item.activePrefix) }"
+              @click="goBasicData(item.path)"
+            >
+              <span>{{ item.label }}</span>
+              <span v-if="item.todo" class="module-flyout-badge">{{ t('menu.todo') }}</span>
+            </button>
+          </nav>
+        </el-popover>
+        <!-- 设置与旁观类的页面收在一起：平时不进，进来是为了配置或核查。
+             /team-mail（员工邮件）暂时不给入口——业务还用不到，路由留着，
+             想放出来把它加回 systemItems 即可。 -->
+        <el-popover
+          v-if="hasSystem"
+          v-model:visible="systemOpen"
+          placement="right-start"
+          :width="200"
+          :offset="6"
+          :show-arrow="false"
+          trigger="hover"
+          popper-class="module-flyout-popper"
+        >
+          <template #reference>
+            <button
+              type="button"
+              class="module-menu-trigger"
+              :class="{ 'is-active': systemActive }"
+              @click="systemOpen = !systemOpen"
+            >
+              <span>{{ t('menu.system') }}</span>
+              <span class="module-menu-arrow" aria-hidden="true">›</span>
+            </button>
+          </template>
+          <nav class="module-flyout" :aria-label="t('menu.system')">
+            <div class="module-flyout-title">{{ t('menu.system') }}</div>
+            <button
+              v-for="item in systemItems"
+              :key="item.path"
+              type="button"
+              class="module-flyout-item"
+              :class="{ 'is-active': route.path === item.path }"
+              @click="goSystem(item.path)"
+            >
+              {{ item.label }}
+            </button>
+          </nav>
+        </el-popover>
       </el-menu>
     </el-aside>
     <el-container class="pane-col">
@@ -300,6 +378,9 @@ get<{ operator: boolean }>('/platform/me')
 const procurementOpen = ref(false)
 const financeOpen = ref(false)
 const warehouseOpen = ref(false)
+const salesOpen = ref(false)
+const logisticsOpen = ref(false)
+const systemOpen = ref(false)
 const hasProcurement = computed(() => [
   'procurement:sourcing:read',
   'procurement:requirement:read',
@@ -307,18 +388,83 @@ const hasProcurement = computed(() => [
 ].some(auth.can))
 const procurementActive = computed(() => procurementItems.value.some((item) => route.path === item.path))
 const menuActive = computed(() => route.path)
+// 仓储：产品是「货是什么」，仓库/库存/出库是「货在哪、走了没」——同一件事的
+// 两面，原来产品和出库各自散在顶层。
 const warehouseItems = computed(() => [
-  { path: '/warehouses', label: t('warehouseNav.workbench') },
-  { path: '/warehouses/profiles', label: t('warehouseNav.profiles') },
-  ...(auth.can('procurement:order:read')
+  ...(auth.can('product:product:read')
+    ? [{ path: '/products', label: t('menu.products') }]
+    : []),
+  ...(auth.can('inventory:stock:read')
+    ? [
+        { path: '/warehouses', label: t('warehouseNav.workbench') },
+        { path: '/warehouses/profiles', label: t('warehouseNav.profiles') },
+      ]
+    : []),
+  ...(auth.can('inventory:stock:read') && auth.can('procurement:order:read')
     ? [
         { path: '/warehouses/arrivals', label: t('warehouseNav.arrivals') },
         { path: '/warehouses/receipts', label: t('warehouseNav.receipts') },
       ]
     : []),
-  { path: '/stocks', label: t('warehouseNav.stock') },
+  ...(auth.can('inventory:stock:read')
+    ? [
+        { path: '/stocks', label: t('warehouseNav.stock') },
+        { path: '/outbounds', label: t('menu.outbounds') },
+      ]
+    : []),
 ])
-const warehouseActive = computed(() => route.path === '/stocks' || route.path.startsWith('/warehouses'))
+const hasWarehouse = computed(() => warehouseItems.value.length > 0)
+const warehouseActive = computed(() =>
+  warehouseItems.value.some((item) => route.path === item.path) ||
+  route.path.startsWith('/warehouses') ||
+  route.path.startsWith('/products'),
+)
+
+// 销售：一张单子的起点——报出去、签下来、看它走到哪一步。
+const salesItems = computed(() =>
+  auth.can('export:contract:read')
+    ? [
+        { path: '/contracts', label: t('menu.contracts') },
+        { path: '/contract-execution', label: t('menu.contractExecution') },
+      ]
+    : [],
+)
+const hasSales = computed(() => salesItems.value.length > 0)
+const salesActive = computed(() =>
+  salesItems.value.some((item) => route.path === item.path) ||
+  route.path.startsWith('/contracts') ||
+  route.path.startsWith('/contract-execution'),
+)
+
+// 物流：货离开公司之后的事。
+const logisticsItems = computed(() => [
+  ...(auth.can('export:shipment:read')
+    ? [{ path: '/shipments', label: t('menu.shipments') }]
+    : []),
+  ...(auth.can('shipping:schedule:read')
+    ? [{ path: '/shipping', label: t('menu.shipping') }]
+    : []),
+])
+const hasLogistics = computed(() => logisticsItems.value.length > 0)
+const logisticsActive = computed(() =>
+  route.path.startsWith('/shipments') || route.path.startsWith('/shipping'),
+)
+
+// 系统：平时不进，进来是为了配置或核查。
+//
+// 员工邮件（/team-mail）暂时不在这里——业务还用不到。路由留着没删，想放出来
+// 把它加回这个数组即可。
+const systemItems = computed(() => [
+  ...(auth.can('approval:flow:read')
+    ? [{ path: '/settings/approvals', label: t('menu.approvalFlows') }]
+    : []),
+  ...(auth.can('fx:rate:read') ? [{ path: '/fx', label: t('menu.fx') }] : []),
+  ...(auth.can('mail:export:audit')
+    ? [{ path: '/mail/export-log', label: t('menu.exportLog') }]
+    : []),
+])
+const hasSystem = computed(() => systemItems.value.length > 0)
+const systemActive = computed(() => systemItems.value.some((item) => route.path === item.path))
 
 // 基础数据的子模块集中在右侧浮层中，避免展开后挤压左侧主导航。
 const basicDataItems = computed(() => [
@@ -417,6 +563,24 @@ function goWarehouse(path: string) {
 
 function goFinance(path: string) {
   financeOpen.value = false
+  router.push(path)
+}
+
+function goSales(path: string) {
+  salesOpen.value = false
+  router.push(path)
+}
+
+// 船期页有个额外动作：进去时主动拉一次未读提醒，原来挂在顶层菜单项上。
+// 等导航完成再拉——提醒组件是按路由 v-if 渲染的，跳转还没落地时它还不在。
+async function goLogistics(path: string) {
+  logisticsOpen.value = false
+  await router.push(path)
+  if (path === '/shipping') pullShippingReminders()
+}
+
+function goSystem(path: string) {
+  systemOpen.value = false
   router.push(path)
 }
 

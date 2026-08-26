@@ -50,6 +50,10 @@ export default {
     badLink: '激活链接无效或已失效',
   },
   menu: {
+    stockAndGoods: '产品与仓储',
+    sales: '销售',
+    logistics: '物流',
+    system: '系统设置',
     basicData: '基础数据',
     ports: '船港信息',
     employees: '员工管理',

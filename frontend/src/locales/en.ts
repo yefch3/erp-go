@@ -50,6 +50,10 @@ export default {
     badLink: 'This activation link is invalid or no longer works',
   },
   menu: {
+    stockAndGoods: 'Products & Stock',
+    sales: 'Sales',
+    logistics: 'Logistics',
+    system: 'Settings',
     basicData: 'Basic Data',
     ports: 'Ports & Carriers',
     employees: 'Employees',
