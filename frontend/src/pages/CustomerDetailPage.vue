@@ -24,7 +24,6 @@
       </div>
       <div v-if="canWrite" class="hero-actions">
         <el-button @click="openBasic">编辑基础资料</el-button>
-        <el-button type="primary" @click="openProfile">完善详细资料</el-button>
       </div>
     </section>
 
@@ -37,7 +36,11 @@
       <el-tab-pane label="基本资料" name="basic">
         <div class="tab-stack">
           <section class="content-section">
-            <SectionHead title="基础信息" />
+            <SectionHead
+              title="基础信息"
+              :action="canWrite ? '完善详细资料' : ''"
+              @action="openProfile"
+            />
             <div class="card-grid">
           <InfoCard title="客户概况" icon="企">
             <InfoRow label="客户简称" :value="customer.shortName" />
@@ -45,10 +48,14 @@
             <InfoRow
               label="客户类型"
               :value="optionLabel(types, customer.customerType)"
-            />
-            <InfoRow label="所属行业" :value="customer.industry" />
-            <InfoRow
-              label="客户来源"
+                />
+                <InfoRow label="所属行业" :value="customer.industry" />
+                <InfoRow
+                  label="业务状态"
+                  :value="businessLabel(customer.businessStatus)"
+                />
+                <InfoRow
+                  label="客户来源"
               :value="optionLabel(sources, customer.source)"
             />
           </InfoCard>
@@ -212,7 +219,7 @@
         <SectionHead
           title="结算与信用"
           :action="canWrite ? '编辑结算信用' : ''"
-          @action="openProfile"
+          @action="openCredit"
         />
         <div class="credit-board">
           <div>
@@ -355,24 +362,7 @@
               :label="c.name"
               :value="c.code" /></el-select
         ></el-form-item>
-        <el-form-item label="默认币种"
-          ><el-select v-model="basicForm.currency"
-            ><el-option
-              v-for="c in CURRENCIES"
-              :key="c"
-              :value="c" /></el-select
-        ></el-form-item>
-        <el-form-item label="付款方式"
-          ><el-select v-model="basicForm.paymentTerm" clearable
-            ><el-option
-              v-for="o in paymentOptions"
-              :key="o.code"
-              :label="o.label"
-              :value="o.code" /></el-select
-        ></el-form-item>
-        <el-form-item label="备注"
-          ><el-input v-model="basicForm.remark" type="textarea" :rows="3"
-        /></el-form-item> </el-form
+      </el-form
       ><template #footer
         ><el-button @click="basicOpen = false">取消</el-button
         ><el-button type="primary" :loading="saving" @click="saveBasic"
@@ -405,6 +395,54 @@
       <template #footer>
         <el-button @click="taxOpen = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="saveTax">
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="creditOpen" title="编辑结算信用" width="680px">
+      <el-form :model="creditForm" label-width="110px" class="two-col-form">
+        <el-form-item label="默认币种">
+          <el-select v-model="creditForm.currency">
+            <el-option v-for="c in CURRENCIES" :key="c" :value="c" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="付款方式">
+          <el-select v-model="creditForm.paymentTerm" clearable>
+            <el-option
+              v-for="o in paymentOptions"
+              :key="o.code"
+              :label="o.label"
+              :value="o.code"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="付款账期">
+          <el-input-number v-model="creditForm.paymentDays" :min="0" />
+        </el-form-item>
+        <el-form-item label="信用额度">
+          <el-input-number
+            v-model="creditForm.creditAmount"
+            :min="0"
+            :precision="2"
+          />
+        </el-form-item>
+        <el-form-item label="额度币种">
+          <el-select v-model="creditForm.creditCurrency">
+            <el-option v-for="c in CURRENCIES" :key="c" :value="c" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="信用状态">
+          <el-select v-model="creditForm.creditStatus">
+            <el-option label="正常" value="NORMAL" />
+            <el-option label="关注" value="WATCH" />
+            <el-option label="暂停赊销" value="CREDIT_SUSPENDED" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="creditOpen = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="saveCredit">
           保存
         </el-button>
       </template>
@@ -454,52 +492,17 @@
             v-model="profileForm.timezone"
             placeholder="Asia/Shanghai" /></el-form-item
         ><el-form-item label="标签"
-          ><el-select
+        ><el-select
             v-model="profileForm.tags"
             multiple
             allow-create
             filterable
             default-first-option
         /></el-form-item>
-        <el-form-item label="注册名称"
-          ><el-input v-model="profileForm.registeredName" /></el-form-item
-        ><el-form-item label="公司注册号"
-          ><el-input v-model="profileForm.registrationNo"
-        /></el-form-item>
-        <el-form-item label="税号"
-          ><el-input
-            v-model="profileForm.taxId"
-            @blur="checkDuplicates" /></el-form-item
-        ><el-form-item label="开票抬头"
-          ><el-input v-model="profileForm.invoiceTitle"
-        /></el-form-item>
-        <el-form-item label="开票税号"
-          ><el-input v-model="profileForm.invoiceTaxNo" /></el-form-item
-        ><el-form-item label="付款账期"
-          ><el-input-number v-model="profileForm.paymentDays" :min="0"
-        /></el-form-item>
-        <el-form-item label="信用额度"
-          ><el-input-number
-            v-model="profileForm.creditAmount"
-            :min="0"
-            :precision="2" /></el-form-item
-        ><el-form-item label="额度币种"
-          ><el-select v-model="profileForm.creditCurrency"
-            ><el-option
-              v-for="c in CURRENCIES"
-              :key="c"
-              :value="c" /></el-select
-        ></el-form-item>
-        <el-form-item label="信用状态"
-          ><el-select v-model="profileForm.creditStatus"
-            ><el-option label="正常" value="NORMAL" /><el-option
-              label="关注"
-              value="WATCH" /><el-option
-              label="暂停赊销"
-              value="CREDIT_SUSPENDED" /></el-select></el-form-item
-        ><el-form-item label="开票备注"
-          ><el-input v-model="profileForm.invoiceRemark"
-        /></el-form-item> </el-form
+        <el-form-item label="备注" class="full-row">
+          <el-input v-model="profileForm.remark" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form
       ><template #footer
         ><el-button @click="profileOpen = false">取消</el-button
         ><el-button type="primary" :loading="saving" @click="saveProfile"
@@ -776,6 +779,7 @@ const types = ref<any[]>([]),
 const countryChoices = computed(() => countryOptions("zh-CN"));
 const basicOpen = ref(false),
   taxOpen = ref(false),
+  creditOpen = ref(false),
   profileOpen = ref(false),
   addressOpen = ref(false),
   contactOpen = ref(false),
@@ -785,6 +789,7 @@ const addressEditing = ref<string | null>(null),
   ownerEditing = ref<string | null>(null);
 const basicForm = reactive<any>({}),
   taxForm = reactive<any>({}),
+  creditForm = reactive<any>({}),
   profileForm = reactive<any>({}),
   addressForm = reactive<any>({}),
   contactForm = reactive<any>({}),
@@ -978,37 +983,9 @@ async function checkTaxDuplicates() {
     );
   }
 }
-async function saveTax() {
+function profilePayload(overrides: Record<string, unknown> = {}) {
   const c = customer.value;
-  saving.value = true;
-  try {
-    await put(`/customers/${id}/profile`, {
-      shortName: c.shortName,
-      englishName: c.englishName,
-      customerType: c.customerType,
-      industry: c.industry,
-      source: c.source,
-      tags: c.tags || [],
-      website: c.website,
-      primaryLanguage: c.primaryLanguage,
-      timezone: c.timezone,
-      paymentDays: c.paymentDays || 0,
-      creditLimitMinor: c.creditLimitMinor || 0,
-      creditCurrency: c.creditCurrency || c.currency || "USD",
-      creditStatus: c.creditStatus || "NORMAL",
-      businessStatus: c.businessStatus || "PROSPECT",
-      ...taxForm,
-    });
-    taxOpen.value = false;
-    await loadCustomer();
-    ElMessage.success("税务资料已保存");
-  } finally {
-    saving.value = false;
-  }
-}
-function openProfile() {
-  const c = customer.value;
-  Object.assign(profileForm, {
+  return {
     shortName: c.shortName,
     englishName: c.englishName,
     customerType: c.customerType,
@@ -1025,24 +1002,81 @@ function openProfile() {
     invoiceTaxNo: c.invoiceTaxNo,
     invoiceRemark: c.invoiceRemark,
     paymentDays: c.paymentDays || 0,
-    creditAmount: Number(c.creditLimitMinor || 0) / 100,
+    creditLimitMinor: c.creditLimitMinor || 0,
     creditCurrency: c.creditCurrency || c.currency || "USD",
     creditStatus: c.creditStatus || "NORMAL",
     businessStatus: c.businessStatus || "PROSPECT",
+    ...overrides,
+  };
+}
+async function saveTax() {
+  saving.value = true;
+  try {
+    await put(`/customers/${id}/profile`, profilePayload(taxForm));
+    taxOpen.value = false;
+    await loadCustomer();
+    ElMessage.success("税务资料已保存");
+  } finally {
+    saving.value = false;
+  }
+}
+function openCredit() {
+  const c = customer.value;
+  Object.assign(creditForm, {
+    currency: c.currency || "USD",
+    paymentTerm: c.paymentTerm,
+    paymentDays: c.paymentDays || 0,
+    creditAmount: Number(c.creditLimitMinor || 0) / 100,
+    creditCurrency: c.creditCurrency || c.currency || "USD",
+    creditStatus: c.creditStatus || "NORMAL",
+  });
+  creditOpen.value = true;
+}
+async function saveCredit() {
+  const c = customer.value;
+  saving.value = true;
+  try {
+    await put(`/customers/${id}`, {
+      name: c.name,
+      countryCode: c.countryCode,
+      currency: creditForm.currency,
+      paymentTerm: creditForm.paymentTerm,
+      remark: c.remark,
+    });
+    await put(
+      `/customers/${id}/profile`,
+      profilePayload({
+        paymentDays: creditForm.paymentDays || 0,
+        creditLimitMinor: Math.round(
+          Number(creditForm.creditAmount || 0) * 100,
+        ),
+        creditCurrency: creditForm.creditCurrency,
+        creditStatus: creditForm.creditStatus,
+      }),
+    );
+    creditOpen.value = false;
+    await loadCustomer();
+    ElMessage.success("结算信用已保存");
+  } finally {
+    saving.value = false;
+  }
+}
+function openProfile() {
+  const c = customer.value;
+  Object.assign(profileForm, {
+    shortName: c.shortName,
+    englishName: c.englishName,
+    customerType: c.customerType,
+    industry: c.industry,
+    source: c.source,
+    tags: c.tags || [],
+    website: c.website,
+    primaryLanguage: c.primaryLanguage,
+    timezone: c.timezone,
+    remark: c.remark,
+    businessStatus: c.businessStatus || "PROSPECT",
   });
   profileOpen.value = true;
-}
-async function checkDuplicates() {
-  if (!profileForm.taxId) return;
-  const d = await get<any>("/customers/duplicates", {
-    name: customer.value.name,
-    tax_id: profileForm.taxId,
-    exclude_id: id,
-  });
-  if (d.candidates?.length)
-    ElMessage.warning(
-      `发现相似客户：${d.candidates.map((x: any) => x.name).join("、")}`,
-    );
 }
 async function saveProfile() {
   const error = validateCustomerProfile(profileForm);
@@ -1056,12 +1090,17 @@ async function saveProfile() {
   }
   saving.value = true;
   try {
-    const body = {
-      ...profileForm,
-      creditLimitMinor: Math.round(Number(profileForm.creditAmount || 0) * 100),
-    };
-    delete body.creditAmount;
-    await put(`/customers/${id}/profile`, body);
+    const c = customer.value;
+    await put(`/customers/${id}`, {
+      name: c.name,
+      countryCode: c.countryCode,
+      currency: c.currency,
+      paymentTerm: c.paymentTerm,
+      remark: profileForm.remark,
+    });
+    const profileDetails = { ...profileForm };
+    delete profileDetails.remark;
+    await put(`/customers/${id}/profile`, profilePayload(profileDetails));
     profileOpen.value = false;
     await loadCustomer();
     ElMessage.success("详细资料已保存");
