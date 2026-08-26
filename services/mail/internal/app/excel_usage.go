@@ -17,6 +17,11 @@ import (
 // **金额在这里算，不在库里存。** token 数是事实，折成多少钱是判断：单价会
 // 因为谈下折扣、换模型而变。存进去等于把一个会过期的判断固化成历史，而且
 // 改一次单价就得回填全部旧数据。同 A4「付款是事实、核销是判断」。
+//
+// 金额目前**不出现在客户公司的用量页上**：用的人要知道的是「还能转几次」
+// （见 excel_quota.go），不是「你花了我们多少钱」。这里照算不误，是为了平
+// 台那一侧看成本时随时能取——同时 C6 提醒过：真要给出金额，得先把单价拆到
+// 每个模型，否则换一次模型能差二十倍。
 
 // ModelPricing 是当下的单价，按每百万 token 计——模型厂就是这么报价的。
 // 零值表示没配单价：那就只出 token 数，不出金额。**不猜。**
@@ -27,8 +32,17 @@ type ModelPricing struct {
 }
 
 // Configured 说明这份单价能不能拿来算钱。
+//
+// **两个价都要有**，不是有一个就行。原来是 or：只填了输入价（或者输出价那
+// 行填错了、解析失败），另一个就按 0 参与折算——等于宣布输出 token 免费，
+// 算出来的数会少一大截，而它看着和一笔正确的账一模一样。
+//
+// 更糟的是启动日志这时会说「usage will be reported without a cost」，而实际
+// 上照样出了金额。一个自相矛盾的承诺意味着没人会去查。
+//
+// 同「空 ≠ 0」：半份单价算不出成本，那就说算不出。
 func (p ModelPricing) Configured() bool {
-	return p.InputPerMTok.IsPositive() || p.OutputPerMTok.IsPositive()
+	return p.InputPerMTok.IsPositive() && p.OutputPerMTok.IsPositive()
 }
 
 // ExcelUsageRow 是用量账上的一行：某个月、某个人。

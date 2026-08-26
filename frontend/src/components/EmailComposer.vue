@@ -727,7 +727,9 @@ function prefixSubject(subject: string, tag: string) {
 function openReply(mail: QuotedMail) {
   reset()
   replyCtx.replyToInboundId = mail.id
-  selected.value = [{ name: mail.fromName || '', email: mail.fromEmail }]
+  // customerName 补一个空串，和 RecipientField 里手输地址走的是同一条约定：
+  // 每个收件人都带着这个字段，不认识的人就是空。回信的对象常常还不是客户。
+  selected.value = [{ name: mail.fromName || '', email: mail.fromEmail, customerName: '' }]
   form.subject = prefixSubject(mail.subject || '', 'Re:')
   form.format = 'HTML'
   form.body = '<p><br></p>'

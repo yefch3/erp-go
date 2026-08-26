@@ -909,12 +909,12 @@ import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import EmailComposer from '../components/EmailComposer.vue'
 import MailReader, { type Mail } from '../components/MailReader.vue'
-import MailAttachments from '../components/MailAttachments.vue'
+import MailAttachments, { type MailFile } from '../components/MailAttachments.vue'
 import MailboxGate from '../components/MailboxGate.vue'
 import MailHostDialog from '../components/MailHostDialog.vue'
 import MailSignatureDialog from '../components/MailSignatureDialog.vue'
 import MailTemplatesDialog from '../components/MailTemplatesDialog.vue'
-import MailList from '../components/MailList.vue'
+import MailList, { type MailRow } from '../components/MailList.vue'
 // Received mail renders inside a sandboxed frame. It carries the sender's own
 // stylesheet now, and a stylesheet injected into this page would be a stranger
 // styling the ERP — which is exactly what happened when these two sites were
@@ -960,6 +960,9 @@ interface InboundMail {
   // Which mailbox folder this copy sits in. 'SENT' is what tells the reader
   // to show 对方是否已读 — once both are an InboundMail, nothing else does.
   folder?: string
+  // 已发送这一侧才有：'ERP' 是我们自己的投递记录（对方邮箱没留下副本），
+  // 'HOST' 是邮箱自己的已发送里那一封。两者点开去的是不同的详情。
+  kind?: string
   // 对方是否已读, for a Sent copy the ERP has a delivery record for. Three
   // states between them: openedAt set, tracked without openedAt, neither.
   openedAt?: string
@@ -992,6 +995,73 @@ interface InboundMail {
     // Present only for what can be shown inline: images and PDF.
     previewUrl?: string
   }[]
+}
+
+// 已发送文件夹里的一封，形状和收件箱那边完全一样（后端也确实返回同一个
+// InboundMail），区别只在 kind：'ERP' 是投递记录，'HOST' 是邮箱里的真信。
+type SentMail = InboundMail
+
+// 「需要处理」那一列：ERP 自己发出去的那条投递记录，以及它为什么卡住。
+//
+// 名字不叫 Message，是因为 Message 在这个文件里已经是 Element Plus 的一个
+// 图标组件了。两个同名的东西一个是值一个是类型，读的人分不清，编译器也
+// 分不清——它一直把这里当成那个图标。
+interface AttentionMessage {
+  id: string
+  campaignId: string
+  kind: string
+  senderId: string
+  senderName: string
+  toEmail: string
+  toName: string
+  customerName: string
+  subject: string
+  // QUEUED / SENDING / ACCEPTED / DELIVERED / SEND_UNKNOWN / SOFT_BOUNCED /
+  // HARD_BOUNCED / COMPLAINED / FAILED / NEEDS_ATTENTION
+  status: string
+  attemptCount: number
+  lastError: string
+  // 为什么要人来看这一封，用能直接照做的话写的。
+  attentionReason: string
+  queuedAt: string
+  sentAt: string
+  deliveredAt: string
+  openedAt: string
+}
+
+// 草稿箱里的一封。收件人/抄送/密送和附件都随草稿存着，所以重新打开恢复的
+// 是整封信，不只是那几行字。
+interface Draft {
+  id: string
+  subject: string
+  body: string
+  bodyFormat: string
+  signatureId: string
+  kind: string
+  recipients?: { email: string; name: string }[]
+  cc?: { email: string; name: string }[]
+  bcc?: { email: string; name: string }[]
+  attachments?: { id: string; fileName: string; contentType: string; fileSize: string }[]
+  updatedAt: string
+  recipientCount: number
+  sendMode: string
+  replyToInboundId: string
+  forwardInboundId: string
+  forwardAsAttachment: boolean
+  disableTracking: boolean
+}
+
+// 定时发送队列里的一批。按批不按封：一次群发排一条。
+interface Scheduled {
+  campaignId: string
+  campaignNo: string
+  subject: string
+  // 还有多少个收件人在等。
+  pendingCount: number
+  toNames: string
+  scheduledAt: string
+  sendMode: string
+  bodyFormat: string
 }
 
 interface Suppression {
@@ -1066,7 +1136,7 @@ const page = ref(1)
 const pageSize = 20
 const total = ref(0)
 const loading = ref(false)
-const messages = ref<Message[]>([])
+const messages = ref<AttentionMessage[]>([])
 const suppressions = ref<Suppression[]>([])
 const attentionCount = ref(0)
 const composing = ref(false)
@@ -1359,7 +1429,7 @@ const readerLoading = ref(false)
 const outboundOpen = computed(() => !!openMail.value)
 
 const requeueOpen = ref(false)
-const requeueRow = ref<Message | null>(null)
+const requeueRow = ref<AttentionMessage | null>(null)
 const newEmail = ref('')
 
 const suppressOpen = ref(false)
@@ -1690,7 +1760,7 @@ async function load() {
       nextCursor.value = d.nextCursor ?? ''
     } else if (folder.value === 'attention') {
       const d = await get<{
-        messages: Message[]
+        messages: AttentionMessage[]
         meta: { total: string }
         nextCursor: string
       }>('/email-messages', {
@@ -1715,7 +1785,7 @@ async function load() {
 }
 
 // A row click is a navigation; the route watcher does the fetching.
-function openInbound(row: InboundMail) {
+function openInbound(row: MailRow) {
   pushState({ mail: row.id })
 }
 
@@ -1978,7 +2048,7 @@ async function inChunks<T>(rows: T[], run: (row: T) => Promise<unknown>) {
   }
 }
 
-async function markRow(row: InboundMail, flags: Record<string, boolean>) {
+async function markRow(row: MailRow, flags: Record<string, boolean>) {
   await post(`/inbound-mails/${row.id}/mark`, { ...flags, wholeThread: true })
   if ('read' in flags) {
     row.isRead = flags.read
@@ -1989,7 +2059,7 @@ async function markRow(row: InboundMail, flags: Record<string, boolean>) {
   refreshUnread()
 }
 
-async function purgeRow(row: InboundMail) {
+async function purgeRow(row: MailRow) {
   await ElMessageBox.confirm(t('emails.purgeHint'), t('emails.purge'), {
     type: 'warning',
     confirmButtonText: t('emails.purge'),
@@ -1999,7 +2069,7 @@ async function purgeRow(row: InboundMail) {
   load()
 }
 
-async function toggleStar(row: InboundMail) {
+async function toggleStar(row: MailRow) {
   // Optimistic: a star that waits for the network feels broken.
   row.isStarred = !row.isStarred
   try {
@@ -2303,7 +2373,9 @@ function statusType(s: string): 'success' | 'warning' | 'danger' | 'info' {
 // A stable colour per correspondent, so the same customer looks the same every
 // time. Hue only — saturation and lightness are fixed, which is what keeps a
 // wall of avatars from turning into confetti.
-type MailFile = NonNullable<InboundMail['attachments']>[number]
+// 附件在附件条上的样子，以 MailAttachments 的定义为准——那是唯一渲染它
+// 的地方。这里原本自己从 InboundMail 推了一个同名类型出来，两个 MailFile
+// 差在 contentType 是不是必填，于是传给组件的回调一直是对不上的。
 
 interface ExcelSheet {
   name: string
@@ -2359,7 +2431,11 @@ const convertedExcelSource = ref<ExcelSource | null>(null)
 // the stored workbook instead of spending another model call. 重新生成 is the
 // explicit way to pay for a fresh read.
 const excelResultCache = new Map<string, ExcelResult>()
-let excelPollTimer: ReturnType<typeof setTimeout> | null = null
+// 计时器句柄写死成 number，不写 ReturnType<typeof setTimeout>：测试要用
+// node:zlib，于是 node 的类型进了全局，而 Node 的 setTimeout 返回的是
+// Timeout 对象、浏览器的返回 number。这三处跑在浏览器里，number 才是它
+// 们真正的样子——推导反而会挑错那一版。
+let excelPollTimer: number | null = null
 
 function excelCacheKey(source: ExcelSource): string {
   return source.kind === 'attachment'
@@ -2388,8 +2464,8 @@ function positionExcelMenu(x: number, y: number, source: ExcelSource, disabledRe
 // stays available even with no model configured.
 const excelMenuDirectFile = computed(() => (excelMenu.source ? directTableAttachment(excelMenu.source) : null))
 
-let excelHoverTimer: ReturnType<typeof setTimeout> | null = null
-let excelHideTimer: ReturnType<typeof setTimeout> | null = null
+let excelHoverTimer: number | null = null
+let excelHideTimer: number | null = null
 
 // Hover opens the same bubble right-click opens; the brief delay keeps a
 // mouse crossing the attachments row from flashing it on every card.
@@ -2827,7 +2903,7 @@ function initialOf(name: string) {
 // One list, two kinds of row. The ERP's own record opens the page that knows
 // about delivery and opens; a copy from the host's Sent folder opens the
 // ordinary mail page, because that is all there is to show about it.
-function openSentRow(row: SentMail) {
+function openSentRow(row: MailRow) {
   if (row.kind === 'ERP') {
     pushState({ msg: row.id })
     return
@@ -2835,7 +2911,7 @@ function openSentRow(row: SentMail) {
   pushState({ mail: row.id })
 }
 
-function openMessage(row: Message) {
+function openMessage(row: AttentionMessage) {
   pushState({ msg: row.id })
 }
 
@@ -2854,7 +2930,7 @@ async function loadMessage(id: string) {
   }
 }
 
-function openRequeue(row: Message) {
+function openRequeue(row: AttentionMessage) {
   requeueRow.value = row
   newEmail.value = ''
   requeueOpen.value = true
@@ -2874,7 +2950,7 @@ async function doRequeue() {
   }
 }
 
-async function doAbandon(row: Message) {
+async function doAbandon(row: AttentionMessage) {
   const { value } = await ElMessageBox.prompt(t('emails.abandonHint'), t('emails.abandonTitle'), {
     inputPlaceholder: t('emails.abandonReason'),
     inputPattern: /\S/,

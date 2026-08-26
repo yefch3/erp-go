@@ -35,7 +35,41 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="t('platform.actions')" width="230" align="right">
+        <!-- 智能转换是唯一按次花我们钱的功能，所以每家公司用了多少、上限
+             多少，摆在开户表上，不藏在别的页里。 -->
+        <el-table-column :label="t('platform.quota')" width="150">
+          <template #default="{ row }">
+            <template v-if="!quotasLoaded">
+              <div class="sub">—</div>
+            </template>
+            <template v-else-if="quotaOf(row.id).limited">
+              <div class="num">
+                {{ quotaOf(row.id).usedThisMonth }} / {{ quotaOf(row.id).monthlyRuns }}
+              </div>
+              <div class="sub">{{ quotaPercentOf(row.id) }}%</div>
+            </template>
+            <template v-else>
+              <div class="sub">{{ t('platform.quotaNone') }}</div>
+              <div class="sub">{{ t('platform.quotaUsed', { n: quotaOf(row.id).usedThisMonth }) }}</div>
+            </template>
+          </template>
+        </el-table-column>
+        <!-- 本月成本。只在这一页——客户看的是「还能转几次」，我们看的是
+             「这个月花了多少」。没配单价就说没配，不给一个凭空的 0：一个
+             猜出来的成本比没有成本更坏，因为它看着像账。 -->
+        <el-table-column :label="t('platform.cost')" width="150" align="right">
+          <template #default="{ row }">
+            <div v-if="!quotasLoaded" class="sub">—</div>
+            <div v-else-if="quotaOf(row.id).estimatedCost" class="num money">
+              {{ quotaOf(row.id).currency }} {{ quotaOf(row.id).estimatedCost }}
+            </div>
+            <div v-else class="sub">{{ t('platform.costNoPrice') }}</div>
+            <div v-if="quotasLoaded" class="sub">
+              {{ t('platform.costTokens', { n: formatTokens(quotaOf(row.id).inputTokens + quotaOf(row.id).outputTokens) }) }}
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('platform.actions')" width="300" align="right">
           <template #default="{ row }">
             <!-- 没激活才有「重发邀请」：给激活过的人重发不是邀请，是改密码，
                  后端会拒绝，这里干脆不给按钮。 -->
@@ -46,6 +80,9 @@
               @click="reinvite(row)"
             >
               {{ t('platform.reinvite') }}
+            </el-button>
+            <el-button size="small" plain @click="openQuota(row)">
+              {{ t('platform.quotaEdit') }}
             </el-button>
             <el-button
               v-if="row.status === 'ACTIVE'"
@@ -142,14 +179,50 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="quotaOpen" :title="t('platform.quotaTitle')" width="min(460px, 92vw)">
+      <p class="hint">{{ t('platform.quotaHint', { name: quotaForm.name }) }}</p>
+      <el-form label-position="top">
+        <el-form-item :label="t('platform.quotaLimited')">
+          <el-switch v-model="quotaForm.limited" />
+        </el-form-item>
+        <el-form-item v-if="quotaForm.limited" :label="t('platform.quotaRuns')">
+          <el-input-number v-model="quotaForm.monthlyRuns" :min="0" :step="10" style="width: 180px" />
+          <!-- 数字框被清空时 element-plus 给的是 null，而 null 一路发到后端
+               就是「恢复不限」——开关明明开着，结果把上限删了，和操作员的意图
+               正好相反。所以清空时不放行，也不替他猜一个数。 -->
+          <div v-if="!quotaRunsValid" class="quota-invalid">{{ t('platform.quotaRunsRequired') }}</div>
+        </el-form-item>
+      </el-form>
+      <!-- 0 和「不限」正好相反，而这正是最容易点错的一处：把开关关掉是放开，
+           把数字填 0 是彻底关停。所以两种情况各说一句。 -->
+      <el-alert
+        :type="quotaAlert.type"
+        :closable="false"
+        show-icon
+        :title="quotaAlert.title"
+      />
+      <template #footer>
+        <el-button @click="quotaOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button
+          type="primary"
+          :loading="quotaSaving"
+          :disabled="!quotaRunsValid"
+          @click="saveQuota"
+        >
+          {{ t('common.save') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { get, post } from '../api'
+import { excelQuotaPercent, toCount, type ExcelQuotaUsage } from '../lib/excelQuota'
 
 // 平台开户（E7）：给客户公司的第一位管理员发邀请，对方激活后自己邀请员工。
 //
@@ -210,6 +283,133 @@ async function replay(row: FailedEvent) {
     await loadFailed()
   } finally {
     dlBusy.value = ''
+  }
+}
+
+// 智能转换的额度：平台给每家客户公司定的每月转换次数上限。
+//
+// 为什么归这一页管：每一次转换都是我们付给模型厂的钱，定上限的必须是我们。
+// 让用钱的一方自己填，那不叫上限，叫偏好设置。
+//
+// limited=false 是不限；limited=true 且 monthlyRuns=0 是一次都不许用。这
+// 两件事正好相反，所以界面上是一个开关加一个数字，不是「填 0 表示不限」。
+// 不 extends ExcelQuota：那个类型带着 currentMonth，而这条路由的月份是**整
+// 张表一个**，不在每一行里。继承过来等于声明了一个运行时根本不存在的字段。
+interface TenantQuota extends ExcelQuotaUsage {
+  tenantId: number
+  limited: boolean
+  // 成本这几项只有这条平台专用路由会返回；客户那一侧的用量接口不给金额。
+  inputTokens: number
+  outputTokens: number
+  // 空串表示没配单价。空和 0 是两回事，所以别在这里补默认值。
+  estimatedCost: string
+  currency: string
+}
+const quotas = ref<Record<string, TenantQuota>>({})
+const quotaOpen = ref(false)
+const quotaSaving = ref(false)
+// monthlyRuns 声明成 number | null：element-plus 的数字框被清空时给的就是
+// null，装作它只会是 number 正是上一版出事的地方。
+const quotaForm = reactive<{
+  id: string; name: string; limited: boolean; monthlyRuns: number | null
+}>({ id: '', name: '', limited: false, monthlyRuns: 200 })
+
+// 「开着上限但没填数」不是一个能保存的状态。不替操作员猜一个数，也不让它
+// 一路发到后端变成「恢复不限」——那和他想做的正好相反。
+const quotaRunsValid = computed(
+  () => !quotaForm.limited || (typeof quotaForm.monthlyRuns === 'number' && quotaForm.monthlyRuns >= 0),
+)
+
+// 弹窗底部那句提示。三种状态各说各的，其中「填 0」和「关掉开关」意思相反，
+// 而「没填」既不是前者也不是后者，必须单独说。
+const quotaAlert = computed(() => {
+  if (!quotaForm.limited) return { type: 'info' as const, title: t('platform.quotaOffNote') }
+  if (!quotaRunsValid.value) return { type: 'warning' as const, title: t('platform.quotaRunsRequired') }
+  if (quotaForm.monthlyRuns === 0) return { type: 'error' as const, title: t('platform.quotaZeroWarning') }
+  return { type: 'info' as const, title: t('platform.quotaSetNote') }
+})
+
+// 这一页只关心「用了多少 / 上限多少」，月份由列表本身声明，所以借用同一套
+// 百分比算法（含上限 0 的处理），不在这里重写一遍。
+const noQuota: TenantQuota = {
+  tenantId: 0, limited: false, monthlyRuns: 0, usedThisMonth: 0,
+  inputTokens: 0, outputTokens: 0, estimatedCost: '', currency: '',
+}
+
+function formatTokens(n: number): string {
+  return Number(n || 0).toLocaleString()
+}
+function quotaOf(id: string): TenantQuota {
+  return quotas.value[id] ?? noQuota
+}
+function quotaPercentOf(id: string): number {
+  return excelQuotaPercent(quotaOf(id))
+}
+
+// 额度这份数据到手了没有。没到手的时候整张表必须说「不知道」，不能说
+// 「都不限」——那是一句确凿的假话，而且看起来和「确实一家都没设过」一模一样。
+// 客户那一页专门做了这个「不知道」态（excelQuotaState 的 unknown），这一页
+// 原来没有：接口一挂，定了 200 次上限的公司也显示成不限；操作员这时点进
+// 额度弹窗再保存，会把那条真实存在的额度删掉。
+const quotasLoaded = ref(false)
+
+async function loadQuotas() {
+  const d = await get<{ quotas: unknown[] }>('/platform/excel-quotas')
+  const byID: Record<string, TenantQuota> = {}
+  // 这条路由走的是普通 JSON，数字本来就是数字；仍然统一过一遍 toCount，
+  // 让「拿到手就是数字」成为两条路共同的保证，而不是靠记住哪条走哪个序列化。
+  for (const raw of d.quotas ?? []) {
+    const q = (raw ?? {}) as Record<string, unknown>
+    const row: TenantQuota = {
+      tenantId: toCount(q.tenantId),
+      limited: q.limited === true,
+      monthlyRuns: toCount(q.monthlyRuns),
+      usedThisMonth: toCount(q.usedThisMonth),
+      inputTokens: toCount(q.inputTokens),
+      outputTokens: toCount(q.outputTokens),
+      estimatedCost: typeof q.estimatedCost === 'string' ? q.estimatedCost : '',
+      currency: typeof q.currency === 'string' ? q.currency : '',
+    }
+    byID[String(row.tenantId)] = row
+  }
+  quotas.value = byID
+  quotasLoaded.value = true
+}
+
+function openQuota(row: Tenant) {
+  // 不知道现在是多少就不给改。照着一份没读到的数据去保存，等于拿默认值
+  // 覆盖真实设置。
+  if (!quotasLoaded.value) {
+    ElMessage.warning(t('platform.quotaUnknownBlocked'))
+    void loadQuotas()
+    return
+  }
+  const current = quotaOf(row.id)
+  quotaForm.id = row.id
+  quotaForm.name = row.name
+  quotaForm.limited = current.limited
+  // 没设过就给一个明显是「起点」的数字，而不是 0——0 的意思是停用。
+  quotaForm.monthlyRuns = current.limited ? current.monthlyRuns : 200
+  quotaOpen.value = true
+}
+
+async function saveQuota() {
+  if (!quotaRunsValid.value) return
+  quotaSaving.value = true
+  try {
+    await post('/platform/excel-quotas', {
+      tenantId: Number(quotaForm.id),
+      // 不带这个字段（null）就是恢复不限。带 0 是「一次都不许用」——两者
+      // 靠有没有这个键区分，不靠值。所以 limited 为真时这里**必须**是数字：
+      // 送出一个 null 会被后端读成「取消上限」，正好是相反的意思。
+      // quotaRunsValid 已经拦在按钮上，这里是第二道。
+      monthlyRuns: quotaForm.limited ? Number(quotaForm.monthlyRuns) : null,
+    })
+    quotaOpen.value = false
+    ElMessage.success(t('platform.quotaSaved'))
+    await loadQuotas()
+  } finally {
+    quotaSaving.value = false
   }
 }
 
@@ -285,6 +485,9 @@ async function setStatus(row: Tenant, status: 'ACTIVE' | 'SUSPENDED') {
 
 onMounted(() => {
   load()
+  // 失败不该把整页拖垮，但也不能装作读到了——quotasLoaded 留在 false，
+  // 额度那两列显示「—」。api.ts 已经弹过错误提示了，这里只是不再往下走。
+  loadQuotas().catch(() => {})
   loadFailed()
 })
 </script>
@@ -324,6 +527,17 @@ onMounted(() => {
 .sub {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+.num.money {
+  font-weight: 600;
+}
+.quota-invalid {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--el-color-warning);
 }
 .hint {
   margin: 0 0 14px;

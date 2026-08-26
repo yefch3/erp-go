@@ -67,7 +67,7 @@ const stats=computed(()=>[
   {label:'第三方仓库',value:warehouses.value.filter(x=>x.profileType==='THIRD_PARTY').length},
 ])
 function profileText(value:string){return ({OWN:'公司自有仓',PORT:'港口仓库',THIRD_PARTY:'第三方仓库'}[value] ?? value)}
-async function load(){loading.value=true;try{const [w,s,ordered,partial]=await Promise.all([get<{warehouses:Warehouse[]}>('/warehouses',{include_inactive:true}),get<{settings:Settings}>('/warehouse-settings'),canReadOrders.value?get<{meta?:{total?:number}}>('/purchase-orders',{status:'ORDERED',page_size:1}):Promise.resolve({}),canReadOrders.value?get<{meta?:{total?:number}}>('/purchase-orders',{status:'PARTIALLY_RECEIVED',page_size:1}):Promise.resolve({})]);warehouses.value=w.warehouses??[];settings.value=s.settings??settings.value;pendingArrivalCount.value=Number(ordered.meta?.total??0)+Number(partial.meta?.total??0)}finally{loading.value=false}}
+async function load(){loading.value=true;try{const [w,s,ordered,partial]=await Promise.all([get<{warehouses:Warehouse[]}>('/warehouses',{include_inactive:true}),get<{settings:Settings}>('/warehouse-settings'),canReadOrders.value?get<{meta?:{total?:number}}>('/purchase-orders',{status:'ORDERED',page_size:1}):Promise.resolve<{meta?:{total?:number}}>({}),canReadOrders.value?get<{meta?:{total?:number}}>('/purchase-orders',{status:'PARTIALLY_RECEIVED',page_size:1}):Promise.resolve<{meta?:{total?:number}}>({})]);warehouses.value=w.warehouses??[];settings.value=s.settings??settings.value;pendingArrivalCount.value=Number(ordered.meta?.total??0)+Number(partial.meta?.total??0)}finally{loading.value=false}}
 onMounted(load)
 </script>
 

@@ -114,11 +114,14 @@
             :show-after="0"
             :hide-after="0"
           >
+            <!-- run() 不收参数：actionsFor(m) 生成它的时候已经把这一行闭包
+                 进去了。之前这里写的是 a.run(m)，多传的那个参数被直接丢掉
+                 ——不会出错，但读的人会以为这一行是靠参数传进去的。 -->
             <button
               type="button"
               class="act"
               :aria-label="a.label"
-              @click.stop="a.run(m)"
+              @click.stop="a.run()"
             >
               <el-icon><component :is="a.icon" /></el-icon>
             </button>

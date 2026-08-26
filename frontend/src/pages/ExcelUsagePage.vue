@@ -29,15 +29,50 @@
           {{ t('excelUsage.tokensHint', { input: formatTokens(totals.inputTokens), output: formatTokens(totals.outputTokens) }) }}
         </span>
       </div>
-      <!-- 没配单价就不给金额。空和 0 是两回事：一个是「不知道」，一个是
-           「不要钱」，而一个凭空的 0 看着像账。 -->
-      <div class="metric" :class="{ 'is-unset': !priced }">
-        <span class="metric-label">{{ t('excelUsage.cost') }}</span>
-        <strong v-if="priced" class="metric-value">{{ currency }} {{ totals.cost }}</strong>
-        <strong v-else class="metric-value is-unknown">{{ t('excelUsage.noPrice') }}</strong>
-        <span class="metric-hint">{{ priced ? t('excelUsage.costHint') : t('excelUsage.noPriceHint') }}</span>
+      <!-- 额度。只在看着当月时给百分比：翻回七月问「还剩多少」是没有意义
+           的，那个月已经过完了。当月与否由服务端给的月份说了算，不用浏览
+           器的时钟去猜。 -->
+      <div class="metric" :class="{ 'is-unset': state !== 'live' }">
+        <span class="metric-label">{{ t('excelUsage.quota') }}</span>
+        <template v-if="state === 'live'">
+          <strong class="metric-value">{{ percent }}%</strong>
+          <span class="metric-hint">
+            {{ t('excelUsage.quotaHint', { used: quota.usedThisMonth, total: quota.monthlyRuns }) }}
+          </span>
+        </template>
+        <!-- 服务端还没说话（首屏、或那一次请求失败）：说「不知道」，不说
+             「未设上限」也不说「往月记录」——两句都是断言，而这时候我们什
+             么都还不知道。 -->
+        <template v-else-if="state === 'unknown'">
+          <strong class="metric-value is-unknown">—</strong>
+        </template>
+        <template v-else-if="state === 'unlimited'">
+          <strong class="metric-value is-unknown">{{ t('excelUsage.noQuota') }}</strong>
+          <span class="metric-hint">{{ t('excelUsage.noQuotaHint') }}</span>
+        </template>
+        <template v-else>
+          <strong class="metric-value is-unknown">{{ t('excelUsage.pastMonth') }}</strong>
+          <span class="metric-hint">{{ t('excelUsage.pastMonthHint') }}</span>
+        </template>
       </div>
     </section>
+
+    <!-- 用完了不是提示，是当场就点不动了，所以这条要比警告更重 -->
+    <el-alert
+      v-if="state === 'live'"
+      :type="tone"
+      :closable="false"
+      show-icon
+      :title="headline"
+      class="quota-bar"
+    >
+      <el-progress
+        :percentage="Math.min(percent, 100)"
+        :status="progressStatus"
+        :stroke-width="10"
+        :show-text="false"
+      />
+    </el-alert>
 
     <section class="panel">
       <el-alert type="info" show-icon :closable="false" class="alert" :title="t('excelUsage.note')" />
@@ -67,12 +102,6 @@
         <el-table-column :label="t('excelUsage.outputTokens')" width="140" align="right">
           <template #default="{ row }"><span class="num">{{ formatTokens(row.outputTokens) }}</span></template>
         </el-table-column>
-        <el-table-column :label="t('excelUsage.cost')" width="150" align="right">
-          <template #default="{ row }">
-            <span v-if="row.estimatedCost" class="num money">{{ row.currency }} {{ row.estimatedCost }}</span>
-            <span v-else class="sub">—</span>
-          </template>
-        </el-table-column>
         <template #empty>{{ t('excelUsage.empty') }}</template>
       </el-table>
     </section>
@@ -83,14 +112,25 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { get } from '../api'
+import {
+  emptyExcelQuota,
+  excelQuotaPercent,
+  parseExcelQuota,
+  excelQuotaProgressStatus,
+  excelQuotaRemaining,
+  excelQuotaState,
+  excelQuotaTone,
+  type ExcelQuota,
+} from '../lib/excelQuota'
 
 // 智能转换的用量账（计量）。
 //
 // 这是系统里唯一一处按次花真钱的地方。这一页要回答的就三句话：这个月转了
-// 多少次、烧了多少 token、大概多少钱；以及分到每个人头上各是多少。
+// 多少次、烧了多少 token、本月额度还剩多少；以及分到每个人头上各是多少。
 //
-// 金额标「估算」不是谦虚：token 数是从模型返回里抄下来的事实，单价是配置
-// 里填的，两者相乘得到的是我们这边的推算——真正的账单以模型厂为准。
+// **这里不出金额。** 服务端仍然算得出估算金额（token 数是事实，单价是配
+// 置），但那是我们看成本的口径，不是给用客户看的东西——用的人要知道的是
+// 「还能转几次」，不是「你花了我们多少钱」。要看金额去平台那一侧。
 const { t } = useI18n()
 
 interface Row {
@@ -102,29 +142,37 @@ interface Row {
   failed: string
   inputTokens: string
   outputTokens: string
-  estimatedCost: string
-  currency: string
 }
 
 const rows = ref<Row[]>([])
+const quota = ref<ExcelQuota>({ ...emptyExcelQuota })
 const loading = ref(false)
 const month = ref(new Date().toISOString().slice(0, 7))
 
-const priced = computed(() => rows.value.some((r) => r.estimatedCost !== ''))
-const currency = computed(() => rows.value.find((r) => r.currency)?.currency ?? '')
+// 这几条判断（当月与否、百分比、警戒色）都在 lib/excelQuota.ts 里，那里有
+// 测试盯着。当月与否由服务端给的月份说了算，不用浏览器的时钟去猜——月初那
+// 几个小时正是最容易差出一个月的时候。
+const state = computed(() => excelQuotaState(quota.value, month.value))
+const percent = computed(() => excelQuotaPercent(quota.value))
+const tone = computed(() => excelQuotaTone(percent.value))
+const progressStatus = computed(() => excelQuotaProgressStatus(percent.value))
+const headline = computed(() => {
+  const left = excelQuotaRemaining(quota.value)
+  if (left === 0) return t('excelUsage.quotaGone')
+  if (percent.value >= 80) return t('excelUsage.quotaLow', { left })
+  return t('excelUsage.quotaLeft', { left })
+})
 
 const totals = computed(() => {
-  let runs = 0, succeeded = 0, failed = 0, inputTokens = 0, outputTokens = 0, cost = 0
+  let runs = 0, succeeded = 0, failed = 0, inputTokens = 0, outputTokens = 0
   for (const r of rows.value) {
     runs += Number(r.runs)
     succeeded += Number(r.succeeded)
     failed += Number(r.failed)
     inputTokens += Number(r.inputTokens)
     outputTokens += Number(r.outputTokens)
-    cost += Number(r.estimatedCost || 0)
   }
-  // 合计保留四位，理由和单行一样：一个月几十次的量级，两位会把它抹成 0.00。
-  return { runs, succeeded, failed, inputTokens, outputTokens, cost: cost.toFixed(4) }
+  return { runs, succeeded, failed, inputTokens, outputTokens }
 })
 
 function formatTokens(n: number | string): string {
@@ -133,11 +181,28 @@ function formatTokens(n: number | string): string {
   return v.toLocaleString()
 }
 
+// 首屏那次的月份是浏览器猜的（new Date() 是这台机器的时钟和时区）。服务端
+// 一答话就以它为准——这一页从头到尾的规矩是「月份由数据库说了算」，唯独初值
+// 还留着浏览器在猜，那正是月初那几个小时会差出一个月的地方。
+// 只在第一次对齐，之后用户自己选的月份说了算。
+let monthAligned = false
+
 async function load() {
   loading.value = true
   try {
-    const d = await get<{ rows: Row[] }>('/excel-usage', { month: month.value })
+    const d = await get<{ rows: Row[]; quota?: unknown }>('/excel-usage', { month: month.value })
     rows.value = d.rows ?? []
+    quota.value = parseExcelQuota(d.quota)
+    if (!monthAligned) {
+      monthAligned = true
+      const serverMonth = quota.value.currentMonth
+      if (serverMonth && serverMonth !== month.value) {
+        month.value = serverMonth
+        loading.value = false
+        await load()
+        return
+      }
+    }
   } finally {
     loading.value = false
   }
@@ -213,6 +278,12 @@ onMounted(load)
 }
 .alert {
   margin-bottom: 12px;
+}
+.quota-bar :deep(.el-alert__content) {
+  width: 100%;
+}
+.quota-bar :deep(.el-progress) {
+  margin-top: 8px;
 }
 .sub {
   font-size: 12px;

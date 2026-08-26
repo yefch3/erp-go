@@ -124,6 +124,13 @@ func run(log *slog.Logger) error {
 	} else if cfg.OpenAIOutputPerMTok != "" {
 		log.Warn("OPENAI_OUTPUT_PER_MTOK is not a number; usage will be reported without a cost")
 	}
+	// 只配了一半会安静地什么金额都不出（Configured 要求两个价都有）。安静
+	// 是对的——半份单价算不出成本——但配的人得知道自己配了一半，否则他会
+	// 盯着一个空列去查一个不存在的问题。
+	if pricing.InputPerMTok.IsPositive() != pricing.OutputPerMTok.IsPositive() {
+		log.Warn("only one of OPENAI_INPUT_PER_MTOK / OPENAI_OUTPUT_PER_MTOK is set; " +
+			"cost needs both, so usage will be reported without a cost")
+	}
 
 	svc := app.New(pool, app.Deps{
 		Numbering: grpcout.NewNumbering(mdConn),

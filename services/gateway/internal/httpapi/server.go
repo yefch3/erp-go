@@ -668,6 +668,10 @@ func (s *Server) Router() http.Handler {
 		// 客户公司的超管敞开。
 		r.Get("/api/platform/failed-events", s.listFailedEvents)
 		r.Post("/api/platform/failed-events/replay", s.replayFailedEvent)
+		// 智能转换的额度：定给客户公司的每月上限。同一道门，同一个理由——
+		// 这是我们和客户之间的商务约定，不能让客户自己抬。
+		r.Get("/api/platform/excel-quotas", s.listExcelQuotas)
+		r.Post("/api/platform/excel-quotas", s.setExcelQuota)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/mark", s.markInbound)
 		// Permanent deletion out of the trash. ERP-side copies only; the mail
 		// host's original is beyond this API's reach by design.

@@ -140,9 +140,13 @@ service EmailService {
   // One conversation, both directions, oldest first. Owner-scoped: the
   // caller sees only their own half of the world.
   rpc GetMailThread(GetMailThreadRequest) returns (GetMailThreadResponse);
-  // 智能转换的用量账（计量）：一个月一行，按人拆开。token 是事实，金额由
-  // 服务端按当下单价折算。
+  // 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
+  // 额度状况。
   rpc ExcelUsage(ExcelUsageRequest) returns (ExcelUsageResponse);
+  // 所有公司的额度和本月用量。**跨租户，平台运营专用。**
+  rpc ListExcelQuotas(ListExcelQuotasRequest) returns (ListExcelQuotasResponse);
+  // 给一家公司定每月上限，或恢复不限。**跨租户，平台运营专用。**
+  rpc SetExcelQuota(SetExcelQuotaRequest) returns (SetExcelQuotaResponse);
   // One conversation as a document somebody outside the ERP can read: a
   // transcript, self-contained, nothing fetched when it is opened. Records
   // the export before returning the bytes — an export that cannot be logged
@@ -1409,6 +1413,55 @@ message ExcelUsageRow {
   string currency = 10;
 }
 
+// ExcelQuota 是一家公司当下的额度状况：上限多少、本月用了多少。
+message ExcelQuota {
+  // 有没有上限。false 时 monthly_runs 没有意义——「没设额度」和「上限 0」
+  // 是相反的两件事，所以分成两个字段，不让 0 兼职表示「不限」。
+  bool limited = 1;
+  // 每月可以转换的次数上限。
+  int64 monthly_runs = 2;
+  // 本月已经发起的次数，含失败的——失败也真的花了钱。
+  int64 used_this_month = 3;
+  // 数据库认定的当前月份 YYYY-MM。前端拿它和用户选的月份比对：只有看着
+  // 当月时，「还剩多少」才是一个活的事实。
+  string current_month = 4;
+}
+
 message ExcelUsageResponse {
   repeated ExcelUsageRow rows = 1;
+  ExcelQuota quota = 2;
 }
+
+// 以下两条**跨租户**，只给平台运营。守门在网关那一层，和死信台账同一道门。
+
+message ListExcelQuotasRequest {}
+
+message TenantExcelQuota {
+  int64 tenant_id = 1;
+  bool limited = 2;
+  int64 monthly_runs = 3;
+  int64 used_this_month = 4;
+  // 本月这家公司烧掉的 token，以及按当下单价折出来的估算金额。
+  //
+  // 金额只出现在这一侧：客户看的是「还能转几次」，我们看的是「这个月花了
+  // 多少」。空串表示没配单价——空和 0 是两回事，一个是「不知道」，一个是
+  // 「不要钱」。
+  int64 input_tokens = 5;
+  int64 output_tokens = 6;
+  string estimated_cost = 7;
+  string currency = 8;
+}
+
+message ListExcelQuotasResponse {
+  repeated TenantExcelQuota quotas = 1;
+  string current_month = 2;
+}
+
+message SetExcelQuotaRequest {
+  int64 tenant_id = 1;
+  // false 表示恢复不限（删掉这条额度），此时 monthly_runs 被忽略。
+  bool limited = 2;
+  int64 monthly_runs = 3;
+}
+
+message SetExcelQuotaResponse {}

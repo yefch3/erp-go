@@ -426,7 +426,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox, type ElTable } from 'element-plus'
+import { ElMessage, ElMessageBox, type TableInstance } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { del, get, post, put, quietErrors } from '../api'
@@ -502,7 +502,7 @@ const editing = ref(false)
 const changesOpen = ref(false)
 const changes = ref<Change[]>([])
 const importOpen = ref(false)
-const table = ref<InstanceType<typeof ElTable>>()
+const table = ref<TableInstance>()
 const selected = ref<Employee[]>([])
 const batchOpen = ref(false)
 const batchSent = ref(0)

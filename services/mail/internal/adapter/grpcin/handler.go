@@ -1100,10 +1100,15 @@ func stripFormulaCells(rows [][]string) [][]string {
 	return out
 }
 
-// ExcelUsage 出智能转换的用量账（计量）。
+// ExcelUsage 出智能转换的用量账（计量），给客户公司自己看。
 //
 // 名字用得上：owner_id 是数字，账要给人看，所以在这里补上姓名——目录在
 // IAM，邮件服务不自己存人名。
+//
+// **这条路上不带金额。** estimated_cost / currency 两个字段还在 proto 里
+// （删字段是破坏性改动），但这里一律不填：那是我们付给模型厂的钱，是平台
+// 那一侧的口径，客户要知道的是「本月还能转几次」。留着不填而不是留着填，
+// 差别是实打实的——页面不显示只挡住了眼睛，接口不返回才是真的没给出去。
 func (h *Handler) ExcelUsage(ctx context.Context, req *mailv1.ExcelUsageRequest) (*mailv1.ExcelUsageResponse, error) {
 	rows, err := h.svc.ExcelUsageByMonth(ctx, grpcx.TenantID(ctx), req.GetMonth())
 	if err != nil {
@@ -1116,10 +1121,49 @@ func (h *Handler) ExcelUsage(ctx context.Context, req *mailv1.ExcelUsageRequest)
 			Month: r.Month, OwnerId: r.OwnerID, OwnerName: names[r.OwnerID],
 			Runs: r.Runs, Succeeded: r.Succeeded, Failed: r.Failed,
 			InputTokens: r.InputTokens, OutputTokens: r.OutputTokens,
-			EstimatedCost: r.EstimatedCost, Currency: r.Currency,
 		})
 	}
-	return &mailv1.ExcelUsageResponse{Rows: out}, nil
+	quota, err := h.svc.ExcelQuotaFor(ctx, grpcx.TenantID(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.ExcelUsageResponse{Rows: out, Quota: &mailv1.ExcelQuota{
+		Limited: quota.Limited, MonthlyRuns: quota.MonthlyRuns,
+		UsedThisMonth: quota.UsedThisMonth, CurrentMonth: quota.CurrentMonth,
+	}}, nil
+}
+
+// ListExcelQuotas / SetExcelQuota 是两条**跨租户**的接口：它们不看
+// grpcx.TenantID(ctx)，看请求里点名的那家公司。
+//
+// 这在这个仓库里是例外，所以说清楚为什么：额度是我们和客户公司之间的商务
+// 约定，定额度的是我们，不是任何一家客户——按 ctx 里的租户来做，平台运营
+// 就只能给自己所在的那家公司定额度，等于这个功能不存在。守门放在网关的
+// requirePlatformOperator，和死信台账用的是同一道门；除了那两条路由，没有
+// 任何路径能走到这里。
+func (h *Handler) ListExcelQuotas(ctx context.Context, _ *mailv1.ListExcelQuotasRequest) (*mailv1.ListExcelQuotasResponse, error) {
+	quotas, month, err := h.svc.ListExcelQuotas(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mailv1.TenantExcelQuota, 0, len(quotas))
+	for _, q := range quotas {
+		out = append(out, &mailv1.TenantExcelQuota{
+			TenantId: q.TenantID, Limited: q.Limited,
+			MonthlyRuns: q.MonthlyRuns, UsedThisMonth: q.UsedThisMonth,
+			InputTokens: q.InputTokens, OutputTokens: q.OutputTokens,
+			EstimatedCost: q.EstimatedCost, Currency: q.Currency,
+		})
+	}
+	return &mailv1.ListExcelQuotasResponse{Quotas: out, CurrentMonth: month}, nil
+}
+
+func (h *Handler) SetExcelQuota(ctx context.Context, req *mailv1.SetExcelQuotaRequest) (*mailv1.SetExcelQuotaResponse, error) {
+	err := h.svc.SetExcelQuota(ctx, req.GetTenantId(), req.GetLimited(), req.GetMonthlyRuns(), operator(ctx).ID)
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.SetExcelQuotaResponse{}, nil
 }
 
 func ownerIDsOf(rows []app.ExcelUsageRow) []int64 {
