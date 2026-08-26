@@ -146,6 +146,13 @@ export default {
     lineTypes: { INVOICE: '开票', PAYMENT: '付款核销', PAYMENT_REVERSAL: '核销冲销', ADVANCE: '预付挂单', ADVANCE_REVERSAL: '预付冲销' },
   },
   bankTransactions: {
+    ownership: '归属', ownershipAll: '全部归属',
+    ownerships: { PENDING: '待处理', CUSTOMER: '客户收款', SUPPLIER: '供应商往来', TAX_REFUND: '出口退税', OTHER: '不用核销' },
+    ownershipDetails: { INTEREST: '银行利息', INTERNAL: '内部划转', DEPOSIT_RETURN: '保证金退回', OTHER: '其他' },
+    setOwnership: '改归属', ownershipTitle: '这笔钱归哪条线？',
+    ownershipDetailPlaceholder: '选一个具体类别',
+    ownershipHint: '归属不是收付方向：供应商退款是钱进来的，但归「供应商往来」，要对到采购付款单上。归属决定这笔钱接下来能被谁核销。',
+    ownershipSaved: '归属已保存',
     eyebrow: 'BANK LEDGER', title: '银行流水', subtitle: '银行说钱怎么走的——导入对账单，和付款单对上号',
     import: '导入对账单 CSV', defaultCurrency: '导入币种（选填）',
     defaultCurrencyHint: '仅用于导入：CSV 里有币种列就以文件为准，没有时才用这里填的。不是筛选条件。',

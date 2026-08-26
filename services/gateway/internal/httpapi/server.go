@@ -558,6 +558,8 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/import", s.importBankStatement)
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/match", s.matchBankTransaction)
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/unmatch", s.unmatchBankTransaction)
+		// 归属：这笔钱是谁那条线上的。见 docs/开发计划.md F2。
+		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/ownership", s.setBankTransactionOwnership)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/exceptions", s.reportReceiptException)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/exceptions/{exceptionId}/resolve", s.resolveReceiptException)
 		// 质检与到货异常同一职责同一旋钮；结案是生命周期决定，单独的码。

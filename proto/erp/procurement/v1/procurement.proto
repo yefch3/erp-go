@@ -590,6 +590,9 @@ service PurchaseOrderService {
   rpc ImportBankStatement(ImportBankStatementRequest) returns (ImportBankStatementResponse);
   rpc ListBankTransactions(ListBankTransactionsRequest) returns (ListBankTransactionsResponse);
   rpc MatchBankTransaction(MatchBankTransactionRequest) returns (MatchBankTransactionResponse);
+  // 记下这笔钱是谁那条线上的（客户 / 供应商 / 退税 / 不用核销 / 待处理）。
+  // 银行那一行本身一个字不改——归属是我们的判断，可改可撤。
+  rpc SetBankTransactionOwnership(SetBankTransactionOwnershipRequest) returns (SetBankTransactionOwnershipResponse);
   rpc UnmatchBankTransaction(UnmatchBankTransactionRequest) returns (UnmatchBankTransactionResponse);
 }
 
@@ -1441,6 +1444,14 @@ message BankTransaction {
   int64 suggested_payment_id = 13; // closest unclaimed same-amount payment
   string suggested_payment_no = 14;
   string suggested_payment_supplier = 15;
+  // 这笔钱是谁那条线上的。空串 = 待处理，还没人认领过。
+  // "" | CUSTOMER | SUPPLIER | TAX_REFUND | OTHER
+  //
+  // **归属不是 direction 的同义词**：供应商退款是进账却归 SUPPLIER，
+  // 退款给客户是出账却归 CUSTOMER。按方向推归属，这两类钱就永远对不上。
+  string ownership = 16;
+  // 只有 ownership=OTHER 时才有值：INTEREST | INTERNAL | DEPOSIT_RETURN | OTHER
+  string ownership_detail = 17;
 }
 
 message ImportBankStatementRequest {
@@ -1464,7 +1475,22 @@ message ListBankTransactionsRequest {
   string status = 2;    // MATCHED | UNMATCHED | ""
   string direction = 3; // DEBIT | CREDIT | ""
   string keyword = 4;   // counterparty, bank_ref or remark
+  // 按归属筛。空串表示不筛。
+  string ownership = 5;
+  // 只出「还没人认领的」（ownership=''）。和 ownership 互斥；同时给时以
+  // 这一位为准。单独一位而不是让 ownership="" 兼职，是因为空串已经是
+  // 「不筛」的意思了——一个值不能同时表示「全都要」和「只要没归的」。
+  bool ownership_pending = 6;
 }
+message SetBankTransactionOwnershipRequest {
+  int64 txn_id = 1;
+  // "" 表示改回待处理。
+  string ownership = 2;
+  // 只在 ownership=OTHER 时允许非空。
+  string ownership_detail = 3;
+}
+message SetBankTransactionOwnershipResponse {}
+
 message ListBankTransactionsResponse {
   repeated BankTransaction items = 1;
   int64 total = 2;

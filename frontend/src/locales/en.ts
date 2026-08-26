@@ -146,6 +146,13 @@ export default {
     lineTypes: { INVOICE: 'Invoice', PAYMENT: 'Payment', PAYMENT_REVERSAL: 'Reversal', ADVANCE: 'Advance', ADVANCE_REVERSAL: 'Advance reversal' },
   },
   bankTransactions: {
+    ownership: 'Belongs to', ownershipAll: 'Any',
+    ownerships: { PENDING: 'Unsorted', CUSTOMER: 'Customer receipt', SUPPLIER: 'Supplier', TAX_REFUND: 'Tax refund', OTHER: 'No settlement' },
+    ownershipDetails: { INTEREST: 'Bank interest', INTERNAL: 'Internal transfer', DEPOSIT_RETURN: 'Deposit returned', OTHER: 'Other' },
+    setOwnership: 'Reassign', ownershipTitle: 'Which side does this money belong to?',
+    ownershipDetailPlaceholder: 'Pick a category',
+    ownershipHint: 'This is not the same as debit/credit: a supplier refund is money coming IN but belongs to Supplier and settles against a purchase payment. What you pick here decides who can reconcile it next.',
+    ownershipSaved: 'Saved',
     eyebrow: 'BANK LEDGER', title: 'Bank transactions', subtitle: "The bank's own record — import statements and pair them with payments",
     import: 'Import statement CSV', defaultCurrency: 'Import currency (optional)',
     defaultCurrencyHint: 'Used only when importing: the file wins if it has a currency column; this fills the gap when it does not. Not a filter.',

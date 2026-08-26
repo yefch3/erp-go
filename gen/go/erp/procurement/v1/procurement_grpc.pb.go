@@ -1367,6 +1367,7 @@ const (
 	PurchaseOrderService_ImportBankStatement_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/ImportBankStatement"
 	PurchaseOrderService_ListBankTransactions_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/ListBankTransactions"
 	PurchaseOrderService_MatchBankTransaction_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/MatchBankTransaction"
+	PurchaseOrderService_SetBankTransactionOwnership_FullMethodName      = "/erp.procurement.v1.PurchaseOrderService/SetBankTransactionOwnership"
 	PurchaseOrderService_UnmatchBankTransaction_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/UnmatchBankTransaction"
 )
 
@@ -1454,6 +1455,9 @@ type PurchaseOrderServiceClient interface {
 	ImportBankStatement(ctx context.Context, in *ImportBankStatementRequest, opts ...grpc.CallOption) (*ImportBankStatementResponse, error)
 	ListBankTransactions(ctx context.Context, in *ListBankTransactionsRequest, opts ...grpc.CallOption) (*ListBankTransactionsResponse, error)
 	MatchBankTransaction(ctx context.Context, in *MatchBankTransactionRequest, opts ...grpc.CallOption) (*MatchBankTransactionResponse, error)
+	// 记下这笔钱是谁那条线上的（客户 / 供应商 / 退税 / 不用核销 / 待处理）。
+	// 银行那一行本身一个字不改——归属是我们的判断，可改可撤。
+	SetBankTransactionOwnership(ctx context.Context, in *SetBankTransactionOwnershipRequest, opts ...grpc.CallOption) (*SetBankTransactionOwnershipResponse, error)
 	UnmatchBankTransaction(ctx context.Context, in *UnmatchBankTransactionRequest, opts ...grpc.CallOption) (*UnmatchBankTransactionResponse, error)
 }
 
@@ -1865,6 +1869,16 @@ func (c *purchaseOrderServiceClient) MatchBankTransaction(ctx context.Context, i
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) SetBankTransactionOwnership(ctx context.Context, in *SetBankTransactionOwnershipRequest, opts ...grpc.CallOption) (*SetBankTransactionOwnershipResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetBankTransactionOwnershipResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_SetBankTransactionOwnership_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *purchaseOrderServiceClient) UnmatchBankTransaction(ctx context.Context, in *UnmatchBankTransactionRequest, opts ...grpc.CallOption) (*UnmatchBankTransactionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UnmatchBankTransactionResponse)
@@ -1959,6 +1973,9 @@ type PurchaseOrderServiceServer interface {
 	ImportBankStatement(context.Context, *ImportBankStatementRequest) (*ImportBankStatementResponse, error)
 	ListBankTransactions(context.Context, *ListBankTransactionsRequest) (*ListBankTransactionsResponse, error)
 	MatchBankTransaction(context.Context, *MatchBankTransactionRequest) (*MatchBankTransactionResponse, error)
+	// 记下这笔钱是谁那条线上的（客户 / 供应商 / 退税 / 不用核销 / 待处理）。
+	// 银行那一行本身一个字不改——归属是我们的判断，可改可撤。
+	SetBankTransactionOwnership(context.Context, *SetBankTransactionOwnershipRequest) (*SetBankTransactionOwnershipResponse, error)
 	UnmatchBankTransaction(context.Context, *UnmatchBankTransactionRequest) (*UnmatchBankTransactionResponse, error)
 	mustEmbedUnimplementedPurchaseOrderServiceServer()
 }
@@ -2089,6 +2106,9 @@ func (UnimplementedPurchaseOrderServiceServer) ListBankTransactions(context.Cont
 }
 func (UnimplementedPurchaseOrderServiceServer) MatchBankTransaction(context.Context, *MatchBankTransactionRequest) (*MatchBankTransactionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MatchBankTransaction not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) SetBankTransactionOwnership(context.Context, *SetBankTransactionOwnershipRequest) (*SetBankTransactionOwnershipResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetBankTransactionOwnership not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) UnmatchBankTransaction(context.Context, *UnmatchBankTransactionRequest) (*UnmatchBankTransactionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UnmatchBankTransaction not implemented")
@@ -2834,6 +2854,24 @@ func _PurchaseOrderService_MatchBankTransaction_Handler(srv interface{}, ctx con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_SetBankTransactionOwnership_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetBankTransactionOwnershipRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).SetBankTransactionOwnership(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_SetBankTransactionOwnership_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).SetBankTransactionOwnership(ctx, req.(*SetBankTransactionOwnershipRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PurchaseOrderService_UnmatchBankTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(UnmatchBankTransactionRequest)
 	if err := dec(in); err != nil {
@@ -3018,6 +3056,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MatchBankTransaction",
 			Handler:    _PurchaseOrderService_MatchBankTransaction_Handler,
+		},
+		{
+			MethodName: "SetBankTransactionOwnership",
+			Handler:    _PurchaseOrderService_SetBankTransactionOwnership_Handler,
 		},
 		{
 			MethodName: "UnmatchBankTransaction",
