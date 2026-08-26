@@ -89,6 +89,7 @@ export default {
     workbench: 'Warehouse workspace', profiles: 'Warehouse profiles', arrivals: 'Pending arrivals', receipts: 'Receipt history', stock: 'Stock inquiry', settings: 'Warehouse settings',
   },
   supplierPayments: {
+    currency: 'Currency',
     eyebrow: 'ACCOUNTS PAYABLE',
     title: 'Supplier payments',
     subtitle: 'Record the money that left, then decide what it settled — the payment is fact, the allocation is judgement, and judgement gets revised',
@@ -251,6 +252,9 @@ export default {
     quotaZeroWarning: 'A cap of 0 means this company cannot run a single conversion. To remove the limit, turn the switch off — do not enter 0.',
     quotaOffNote: 'Switch off means no limit: this company may convert as often as it likes.',
     quotaSaved: 'Allowance saved',
+    createConfirm: 'Create and send invite',
+    quotaRunsRequired: 'Enter a monthly count. Leaving it blank is read as "remove the cap" — the opposite of what you want.',
+    quotaUnknownBlocked: 'Allowances have not loaded yet. Refresh before editing — saving against data we could not read would overwrite the current setting.',
     cost: 'Cost this month',
     costNoPrice: 'No rate set',
     costTokens: '{n} tokens',
@@ -730,6 +734,9 @@ export default {
     },
   },
   orders: {
+    editFor: 'Edit purchase order · {no}',
+    updated: 'Updated',
+    notEditable: 'This purchase order has changed status and can no longer be edited',
     title: 'Purchase orders',
     subtitle: 'Buyers track drafts and approvals here; approved orders continue into fulfilment, delivery and cancellation',
     create: 'Create order',

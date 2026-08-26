@@ -250,3 +250,92 @@ func TestListExcelQuotasCarriesCostForThePlatform(t *testing.T) {
 		t.Fatalf("金额折算错了：%q %q，该是 USD 0.4500", got.Currency, got.EstimatedCost)
 	}
 }
+
+// 设了额度但这个月一次没转的公司，成本该是「本月 0 元」而不是「未配单价」。
+//
+// 上一版把金额只在「本月有用量」那个循环里赋值，于是这几家拿到空串，平台页
+// 按空串渲染成「未配单价」——而单价明明配着。**空是「不知道」，0 是「不要
+// 钱」**：把一个真实为 0 的数说成不知道，正是这套代码自己反复写下的那条规矩
+// 被违反的样子。每个月 1 号整张表都会是这句假话。
+func TestZeroUsageStillGetsACostWhenPricingIsConfigured(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+
+	tenantID := time.Now().UnixNano()
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_excel_quotas WHERE tenant_id=$1", tenantID)
+	})
+
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	priced := New(pool, Deps{Pricing: ModelPricing{
+		InputPerMTok:  decimal.RequireFromString("1.25"),
+		OutputPerMTok: decimal.RequireFromString("10"),
+		Currency:      "USD",
+	}}, log)
+
+	// 有额度，本月一次没转。
+	if err := priced.SetExcelQuota(ctx, tenantID, true, 200, 99); err != nil {
+		t.Fatal(err)
+	}
+	rows, _, err := priced.ListExcelQuotas(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got *TenantExcelQuota
+	for i := range rows {
+		if rows[i].TenantID == tenantID {
+			got = &rows[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatal("设了额度的公司没出现在平台列表里")
+	}
+	if got.UsedThisMonth != 0 {
+		t.Fatalf("本月已用 = %d，该是 0", got.UsedThisMonth)
+	}
+	if got.EstimatedCost != "0.0000" || got.Currency != "USD" {
+		t.Fatalf("成本 = %q %q，该是 USD 0.0000。空串会让平台页显示「未配单价」"+
+			"——而单价配着，真实答案是「本月 0 元」", got.Currency, got.EstimatedCost)
+	}
+}
+
+// 只配了一半单价，就当没配。
+//
+// 上一版 Configured() 是 or：只要有一个价是正数就开始算钱，另一个按 0 参与
+// 折算——等于宣布那一半的 token 免费，算出来的数会少一大截，而它看着和一笔
+// 正确的账一模一样。更糟的是启动日志这时说「will be reported without a
+// cost」，实际照样出了金额：一个自相矛盾的承诺意味着没人会去查。
+func TestHalfConfiguredPricingProducesNoCostAtAll(t *testing.T) {
+	full := ModelPricing{
+		InputPerMTok:  decimal.RequireFromString("1.25"),
+		OutputPerMTok: decimal.RequireFromString("10"),
+		Currency:      "USD",
+	}
+	if !full.Configured() {
+		t.Fatal("两个价都填了却说没配")
+	}
+
+	onlyInput := ModelPricing{InputPerMTok: decimal.RequireFromString("1.25"), Currency: "USD"}
+	if onlyInput.Configured() {
+		t.Fatal("只填了输入价却说配好了——输出 token 会被当成免费，账少算一大截，" +
+			"而它看着和一笔正确的账一模一样")
+	}
+
+	onlyOutput := ModelPricing{OutputPerMTok: decimal.RequireFromString("10"), Currency: "USD"}
+	if onlyOutput.Configured() {
+		t.Fatal("只填了输出价却说配好了")
+	}
+
+	if (ModelPricing{}).Configured() {
+		t.Fatal("什么都没填却说配好了")
+	}
+}

@@ -89,6 +89,7 @@ export default {
     workbench: '仓库工作台', profiles: '仓库档案', arrivals: '待到货', receipts: '收货记录', stock: '库存管理', settings: '仓库设置',
   },
   supplierPayments: {
+    currency: '币种',
     eyebrow: 'ACCOUNTS PAYABLE',
     title: '供应商付款',
     subtitle: '登记出去的钱，再决定它结了哪些账——付款是事实，核销是判断，判断可以修正',
@@ -251,6 +252,9 @@ export default {
     quotaZeroWarning: '上限 0 表示这家公司一次都不能用。想放开限制请把上面的开关关掉，不是填 0。',
     quotaOffNote: '关掉开关等于不限次数：这家公司想转多少次就转多少次。',
     quotaSaved: '额度已保存',
+    createConfirm: '开通并发送邀请',
+    quotaRunsRequired: '请填写每月次数。留空会被当成「取消上限」，那和你想做的正好相反。',
+    quotaUnknownBlocked: '额度数据还没读到，先刷新再改——照着读不到的数据保存会覆盖掉现有设置。',
     cost: '本月成本',
     costNoPrice: '未配单价',
     costTokens: '{n} token',
