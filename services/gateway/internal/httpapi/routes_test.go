@@ -1,0 +1,100 @@
+package httpapi
+
+import (
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/go-chi/chi/v5"
+)
+
+// 网关是一本地址簿，而它出过一次谁也没看见的错。
+//
+// GET /api/bank-transactions 被注册了两遍：一遍给收款对账（转出口服务），
+// 一遍给银行流水（转采购服务）。两行隔着 144 行，分属两个功能、两次提交。
+//
+// **chi 对重复注册既不报错也不警告，后注册的静默覆盖先注册的。** 于是收款
+// 对账的列表打到了采购的服务上；两边返回的字段名还不一样（采购叫 items，
+// 出口叫 transactions），页面拿不到就渲染成空表，并礼貌地显示「没有待处理
+// 的流水」。而「登记流水」走 POST，没被覆盖 —— 写进出口的库，读的却是采购
+// 的库。全程没有一行错误日志。
+//
+// scripts/check-duplicate-routes.sh 从源码那一侧挡住重复注册；这里从**跑起来
+// 的路由表**这一侧钉住结果：该在的地址一个都不能少。两条一起，才既拦得住
+// 「多注册了一条」，也拦得住「改名时漏改了一半」。
+
+// routeSet 走一遍真实构造出来的路由表，收集所有「方法 地址」。
+func routeSet(t *testing.T) map[string]bool {
+	t.Helper()
+	routes, ok := (&Server{}).Router().(chi.Routes)
+	if !ok {
+		t.Fatal("Router() 返回的东西没法遍历，这条测试失去意义了")
+	}
+	out := map[string]bool{}
+	if err := chi.Walk(routes, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		// chi 遍历时会把根路径的 / 补在前面，去掉好和源码里写的对得上。
+		out[method+" "+strings.TrimSuffix(route, "/")] = true
+		return nil
+	}); err != nil {
+		t.Fatalf("遍历路由表失败：%v", err)
+	}
+	return out
+}
+
+// 收款对账那一组地址必须齐。少一条，页面上就有一个按钮点了没反应。
+func TestReceiptRoutesAreAllRegistered(t *testing.T) {
+	have := routeSet(t)
+	// 和 frontend/src/pages/ReceiptsPage.vue 里调的一一对应。
+	want := []string{
+		"GET /api/receipt-transactions",                  // 列表
+		"GET /api/receipt-transactions/{id}",             // 点开一笔
+		"POST /api/receipt-transactions",                 // 「登记流水」
+		"POST /api/receipt-transactions/{id}/allocate",   // 核销到合同
+		"POST /api/receipt-transactions/{id}/irrelevant", // 「归类」
+		"POST /api/receipt-transactions/{id}/reopen",     // 「撤销标记」
+		"GET /api/open-receivables",                      // 弹窗里搜合同
+		"GET /api/bank-accounts",                         // 「收款账户」
+	}
+	for _, w := range want {
+		if !have[w] {
+			t.Errorf("收款对账少了这条地址：%s", w)
+		}
+	}
+}
+
+// 银行流水那一组同样要齐，而且**不能和收款对账用同一个地址**。
+func TestBankTransactionRoutesAreAllRegistered(t *testing.T) {
+	have := routeSet(t)
+	// 和 frontend/src/pages/BankTransactionsPage.vue 里调的一一对应。
+	want := []string{
+		"GET /api/bank-transactions",               // 列表
+		"POST /api/bank-transactions/import",       // 「导入对账单 CSV」
+		"POST /api/bank-transactions/{id}/match",   // 「匹配付款单」
+		"POST /api/bank-transactions/{id}/unmatch", // 「取消匹配」
+	}
+	for _, w := range want {
+		if !have[w] {
+			t.Errorf("银行流水少了这条地址：%s", w)
+		}
+	}
+}
+
+// 这两组地址不许再撞在一起。
+//
+// 撞了的后果不是 500，是**一个空列表**——远比崩溃难查，因为它看起来像
+// 「确实没有数据」。
+func TestReceiptsAndBankLedgerDoNotShareAnAddress(t *testing.T) {
+	have := routeSet(t)
+	for route := range have {
+		if !strings.Contains(route, "/api/bank-transactions") {
+			continue
+		}
+		// 银行流水那一组地址底下，不许挂着收款对账才有的动作。
+		for _, receiptOnly := range []string{"/allocate", "/irrelevant", "/reopen"} {
+			if strings.HasSuffix(route, receiptOnly) {
+				t.Errorf("%s 把收款对账的动作挂回了银行流水的地址下——"+
+					"这两组必须分开，否则又会互相覆盖", route)
+			}
+		}
+	}
+}
