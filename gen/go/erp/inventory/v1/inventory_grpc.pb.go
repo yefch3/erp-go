@@ -19,26 +19,32 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	StockService_ListFailedEvents_FullMethodName        = "/erp.inventory.v1.StockService/ListFailedEvents"
-	StockService_ReplayFailedEvent_FullMethodName       = "/erp.inventory.v1.StockService/ReplayFailedEvent"
-	StockService_ListWarehouses_FullMethodName          = "/erp.inventory.v1.StockService/ListWarehouses"
-	StockService_CreateWarehouse_FullMethodName         = "/erp.inventory.v1.StockService/CreateWarehouse"
-	StockService_UpdateWarehouse_FullMethodName         = "/erp.inventory.v1.StockService/UpdateWarehouse"
-	StockService_GetWarehouseSettings_FullMethodName    = "/erp.inventory.v1.StockService/GetWarehouseSettings"
-	StockService_UpdateWarehouseSettings_FullMethodName = "/erp.inventory.v1.StockService/UpdateWarehouseSettings"
-	StockService_ListStocks_FullMethodName              = "/erp.inventory.v1.StockService/ListStocks"
-	StockService_GetStock_FullMethodName                = "/erp.inventory.v1.StockService/GetStock"
-	StockService_ListLedger_FullMethodName              = "/erp.inventory.v1.StockService/ListLedger"
-	StockService_FreezeStock_FullMethodName             = "/erp.inventory.v1.StockService/FreezeStock"
-	StockService_UnfreezeStock_FullMethodName           = "/erp.inventory.v1.StockService/UnfreezeStock"
-	StockService_ReceiveStock_FullMethodName            = "/erp.inventory.v1.StockService/ReceiveStock"
-	StockService_ListShippable_FullMethodName           = "/erp.inventory.v1.StockService/ListShippable"
-	StockService_ListShippableLines_FullMethodName      = "/erp.inventory.v1.StockService/ListShippableLines"
-	StockService_CreateOutbound_FullMethodName          = "/erp.inventory.v1.StockService/CreateOutbound"
-	StockService_ConfirmOutbound_FullMethodName         = "/erp.inventory.v1.StockService/ConfirmOutbound"
-	StockService_CancelOutbound_FullMethodName          = "/erp.inventory.v1.StockService/CancelOutbound"
-	StockService_ListOutbounds_FullMethodName           = "/erp.inventory.v1.StockService/ListOutbounds"
-	StockService_ListOutboundItems_FullMethodName       = "/erp.inventory.v1.StockService/ListOutboundItems"
+	StockService_ListFailedEvents_FullMethodName            = "/erp.inventory.v1.StockService/ListFailedEvents"
+	StockService_ReplayFailedEvent_FullMethodName           = "/erp.inventory.v1.StockService/ReplayFailedEvent"
+	StockService_ListWarehouses_FullMethodName              = "/erp.inventory.v1.StockService/ListWarehouses"
+	StockService_CreateWarehouse_FullMethodName             = "/erp.inventory.v1.StockService/CreateWarehouse"
+	StockService_UpdateWarehouse_FullMethodName             = "/erp.inventory.v1.StockService/UpdateWarehouse"
+	StockService_GetWarehouseSettings_FullMethodName        = "/erp.inventory.v1.StockService/GetWarehouseSettings"
+	StockService_UpdateWarehouseSettings_FullMethodName     = "/erp.inventory.v1.StockService/UpdateWarehouseSettings"
+	StockService_ListStocks_FullMethodName                  = "/erp.inventory.v1.StockService/ListStocks"
+	StockService_GetStock_FullMethodName                    = "/erp.inventory.v1.StockService/GetStock"
+	StockService_ListLedger_FullMethodName                  = "/erp.inventory.v1.StockService/ListLedger"
+	StockService_FreezeStock_FullMethodName                 = "/erp.inventory.v1.StockService/FreezeStock"
+	StockService_UnfreezeStock_FullMethodName               = "/erp.inventory.v1.StockService/UnfreezeStock"
+	StockService_DownloadStockImportTemplate_FullMethodName = "/erp.inventory.v1.StockService/DownloadStockImportTemplate"
+	StockService_PreviewInitialStockImport_FullMethodName   = "/erp.inventory.v1.StockService/PreviewInitialStockImport"
+	StockService_ConfirmInitialStockImport_FullMethodName   = "/erp.inventory.v1.StockService/ConfirmInitialStockImport"
+	StockService_ListStockImports_FullMethodName            = "/erp.inventory.v1.StockService/ListStockImports"
+	StockService_DownloadStockImportReport_FullMethodName   = "/erp.inventory.v1.StockService/DownloadStockImportReport"
+	StockService_CancelStockImport_FullMethodName           = "/erp.inventory.v1.StockService/CancelStockImport"
+	StockService_ReceiveStock_FullMethodName                = "/erp.inventory.v1.StockService/ReceiveStock"
+	StockService_ListShippable_FullMethodName               = "/erp.inventory.v1.StockService/ListShippable"
+	StockService_ListShippableLines_FullMethodName          = "/erp.inventory.v1.StockService/ListShippableLines"
+	StockService_CreateOutbound_FullMethodName              = "/erp.inventory.v1.StockService/CreateOutbound"
+	StockService_ConfirmOutbound_FullMethodName             = "/erp.inventory.v1.StockService/ConfirmOutbound"
+	StockService_CancelOutbound_FullMethodName              = "/erp.inventory.v1.StockService/CancelOutbound"
+	StockService_ListOutbounds_FullMethodName               = "/erp.inventory.v1.StockService/ListOutbounds"
+	StockService_ListOutboundItems_FullMethodName           = "/erp.inventory.v1.StockService/ListOutboundItems"
 )
 
 // StockServiceClient is the client API for StockService service.
@@ -63,6 +69,12 @@ type StockServiceClient interface {
 	ListLedger(ctx context.Context, in *ListLedgerRequest, opts ...grpc.CallOption) (*ListLedgerResponse, error)
 	FreezeStock(ctx context.Context, in *FreezeStockRequest, opts ...grpc.CallOption) (*FreezeStockResponse, error)
 	UnfreezeStock(ctx context.Context, in *UnfreezeStockRequest, opts ...grpc.CallOption) (*UnfreezeStockResponse, error)
+	DownloadStockImportTemplate(ctx context.Context, in *DownloadStockImportTemplateRequest, opts ...grpc.CallOption) (*DownloadStockImportTemplateResponse, error)
+	PreviewInitialStockImport(ctx context.Context, in *PreviewInitialStockImportRequest, opts ...grpc.CallOption) (*PreviewInitialStockImportResponse, error)
+	ConfirmInitialStockImport(ctx context.Context, in *ConfirmInitialStockImportRequest, opts ...grpc.CallOption) (*ConfirmInitialStockImportResponse, error)
+	ListStockImports(ctx context.Context, in *ListStockImportsRequest, opts ...grpc.CallOption) (*ListStockImportsResponse, error)
+	DownloadStockImportReport(ctx context.Context, in *DownloadStockImportReportRequest, opts ...grpc.CallOption) (*DownloadStockImportReportResponse, error)
+	CancelStockImport(ctx context.Context, in *CancelStockImportRequest, opts ...grpc.CallOption) (*CancelStockImportResponse, error)
 	// Receive goods. Manual for now; purchase receipts will call it later.
 	ReceiveStock(ctx context.Context, in *ReceiveStockRequest, opts ...grpc.CallOption) (*ReceiveStockResponse, error)
 	// Contracts with goods still owed, and what each of their lines can ship.
@@ -204,6 +216,66 @@ func (c *stockServiceClient) UnfreezeStock(ctx context.Context, in *UnfreezeStoc
 	return out, nil
 }
 
+func (c *stockServiceClient) DownloadStockImportTemplate(ctx context.Context, in *DownloadStockImportTemplateRequest, opts ...grpc.CallOption) (*DownloadStockImportTemplateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DownloadStockImportTemplateResponse)
+	err := c.cc.Invoke(ctx, StockService_DownloadStockImportTemplate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stockServiceClient) PreviewInitialStockImport(ctx context.Context, in *PreviewInitialStockImportRequest, opts ...grpc.CallOption) (*PreviewInitialStockImportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewInitialStockImportResponse)
+	err := c.cc.Invoke(ctx, StockService_PreviewInitialStockImport_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stockServiceClient) ConfirmInitialStockImport(ctx context.Context, in *ConfirmInitialStockImportRequest, opts ...grpc.CallOption) (*ConfirmInitialStockImportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfirmInitialStockImportResponse)
+	err := c.cc.Invoke(ctx, StockService_ConfirmInitialStockImport_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stockServiceClient) ListStockImports(ctx context.Context, in *ListStockImportsRequest, opts ...grpc.CallOption) (*ListStockImportsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListStockImportsResponse)
+	err := c.cc.Invoke(ctx, StockService_ListStockImports_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stockServiceClient) DownloadStockImportReport(ctx context.Context, in *DownloadStockImportReportRequest, opts ...grpc.CallOption) (*DownloadStockImportReportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DownloadStockImportReportResponse)
+	err := c.cc.Invoke(ctx, StockService_DownloadStockImportReport_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stockServiceClient) CancelStockImport(ctx context.Context, in *CancelStockImportRequest, opts ...grpc.CallOption) (*CancelStockImportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelStockImportResponse)
+	err := c.cc.Invoke(ctx, StockService_CancelStockImport_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *stockServiceClient) ReceiveStock(ctx context.Context, in *ReceiveStockRequest, opts ...grpc.CallOption) (*ReceiveStockResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReceiveStockResponse)
@@ -306,6 +378,12 @@ type StockServiceServer interface {
 	ListLedger(context.Context, *ListLedgerRequest) (*ListLedgerResponse, error)
 	FreezeStock(context.Context, *FreezeStockRequest) (*FreezeStockResponse, error)
 	UnfreezeStock(context.Context, *UnfreezeStockRequest) (*UnfreezeStockResponse, error)
+	DownloadStockImportTemplate(context.Context, *DownloadStockImportTemplateRequest) (*DownloadStockImportTemplateResponse, error)
+	PreviewInitialStockImport(context.Context, *PreviewInitialStockImportRequest) (*PreviewInitialStockImportResponse, error)
+	ConfirmInitialStockImport(context.Context, *ConfirmInitialStockImportRequest) (*ConfirmInitialStockImportResponse, error)
+	ListStockImports(context.Context, *ListStockImportsRequest) (*ListStockImportsResponse, error)
+	DownloadStockImportReport(context.Context, *DownloadStockImportReportRequest) (*DownloadStockImportReportResponse, error)
+	CancelStockImport(context.Context, *CancelStockImportRequest) (*CancelStockImportResponse, error)
 	// Receive goods. Manual for now; purchase receipts will call it later.
 	ReceiveStock(context.Context, *ReceiveStockRequest) (*ReceiveStockResponse, error)
 	// Contracts with goods still owed, and what each of their lines can ship.
@@ -362,6 +440,24 @@ func (UnimplementedStockServiceServer) FreezeStock(context.Context, *FreezeStock
 }
 func (UnimplementedStockServiceServer) UnfreezeStock(context.Context, *UnfreezeStockRequest) (*UnfreezeStockResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UnfreezeStock not implemented")
+}
+func (UnimplementedStockServiceServer) DownloadStockImportTemplate(context.Context, *DownloadStockImportTemplateRequest) (*DownloadStockImportTemplateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DownloadStockImportTemplate not implemented")
+}
+func (UnimplementedStockServiceServer) PreviewInitialStockImport(context.Context, *PreviewInitialStockImportRequest) (*PreviewInitialStockImportResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PreviewInitialStockImport not implemented")
+}
+func (UnimplementedStockServiceServer) ConfirmInitialStockImport(context.Context, *ConfirmInitialStockImportRequest) (*ConfirmInitialStockImportResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ConfirmInitialStockImport not implemented")
+}
+func (UnimplementedStockServiceServer) ListStockImports(context.Context, *ListStockImportsRequest) (*ListStockImportsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListStockImports not implemented")
+}
+func (UnimplementedStockServiceServer) DownloadStockImportReport(context.Context, *DownloadStockImportReportRequest) (*DownloadStockImportReportResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DownloadStockImportReport not implemented")
+}
+func (UnimplementedStockServiceServer) CancelStockImport(context.Context, *CancelStockImportRequest) (*CancelStockImportResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CancelStockImport not implemented")
 }
 func (UnimplementedStockServiceServer) ReceiveStock(context.Context, *ReceiveStockRequest) (*ReceiveStockResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReceiveStock not implemented")
@@ -624,6 +720,114 @@ func _StockService_UnfreezeStock_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StockService_DownloadStockImportTemplate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DownloadStockImportTemplateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).DownloadStockImportTemplate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_DownloadStockImportTemplate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).DownloadStockImportTemplate(ctx, req.(*DownloadStockImportTemplateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StockService_PreviewInitialStockImport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewInitialStockImportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).PreviewInitialStockImport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_PreviewInitialStockImport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).PreviewInitialStockImport(ctx, req.(*PreviewInitialStockImportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StockService_ConfirmInitialStockImport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmInitialStockImportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).ConfirmInitialStockImport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_ConfirmInitialStockImport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).ConfirmInitialStockImport(ctx, req.(*ConfirmInitialStockImportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StockService_ListStockImports_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListStockImportsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).ListStockImports(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_ListStockImports_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).ListStockImports(ctx, req.(*ListStockImportsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StockService_DownloadStockImportReport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DownloadStockImportReportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).DownloadStockImportReport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_DownloadStockImportReport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).DownloadStockImportReport(ctx, req.(*DownloadStockImportReportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StockService_CancelStockImport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelStockImportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).CancelStockImport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_CancelStockImport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).CancelStockImport(ctx, req.(*CancelStockImportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StockService_ReceiveStock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ReceiveStockRequest)
 	if err := dec(in); err != nil {
@@ -822,6 +1026,30 @@ var StockService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UnfreezeStock",
 			Handler:    _StockService_UnfreezeStock_Handler,
+		},
+		{
+			MethodName: "DownloadStockImportTemplate",
+			Handler:    _StockService_DownloadStockImportTemplate_Handler,
+		},
+		{
+			MethodName: "PreviewInitialStockImport",
+			Handler:    _StockService_PreviewInitialStockImport_Handler,
+		},
+		{
+			MethodName: "ConfirmInitialStockImport",
+			Handler:    _StockService_ConfirmInitialStockImport_Handler,
+		},
+		{
+			MethodName: "ListStockImports",
+			Handler:    _StockService_ListStockImports_Handler,
+		},
+		{
+			MethodName: "DownloadStockImportReport",
+			Handler:    _StockService_DownloadStockImportReport_Handler,
+		},
+		{
+			MethodName: "CancelStockImport",
+			Handler:    _StockService_CancelStockImport_Handler,
 		},
 		{
 			MethodName: "ReceiveStock",

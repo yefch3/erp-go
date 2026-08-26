@@ -182,6 +182,72 @@ func (s *Server) unfreezeStock(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) downloadStockImportTemplate(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Stocks.DownloadStockImportTemplate(r.Context(), &ivv1.DownloadStockImportTemplateRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	writeXLSXDownload(w, resp.GetFileName(), resp.GetFileData())
+}
+
+func (s *Server) previewInitialStockImport(w http.ResponseWriter, r *http.Request) {
+	req := &ivv1.PreviewInitialStockImportRequest{}
+	// 2 MiB Excel 经 Base64 编码后会膨胀，导入预检单独允许 3 MiB JSON 请求体。
+	if !s.decodeBodyLimit(w, r, req, 3<<20) {
+		return
+	}
+	resp, err := s.Stocks.PreviewInitialStockImport(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) confirmInitialStockImport(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Stocks.ConfirmInitialStockImport(r.Context(), &ivv1.ConfirmInitialStockImportRequest{ImportToken: chi.URLParam(r, "importToken")})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) listStockImports(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Stocks.ListStockImports(r.Context(), &ivv1.ListStockImportsRequest{Page: pageFromQuery(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) downloadStockImportReport(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Stocks.DownloadStockImportReport(r.Context(), &ivv1.DownloadStockImportReportRequest{ImportToken: chi.URLParam(r, "importToken")})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	writeXLSXDownload(w, resp.GetFileName(), resp.GetFileData())
+}
+
+func (s *Server) cancelStockImport(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Stocks.CancelStockImport(r.Context(), &ivv1.CancelStockImportRequest{ImportToken: chi.URLParam(r, "importToken")})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func writeXLSXDownload(w http.ResponseWriter, name string, data []byte) {
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", attachmentDisposition(name))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
 func redactStockCosts(stocks []*ivv1.Stock) {
 	for _, stock := range stocks {
 		if stock != nil {

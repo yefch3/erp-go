@@ -86,7 +86,7 @@ export default {
     todo: '（待开发）',
   },
   warehouseNav: {
-    workbench: '仓库工作台', profiles: '仓库档案', arrivals: '待到货', receipts: '收货记录', stock: '库存管理', settings: '仓库设置',
+    workbench: '仓库工作台', profiles: '仓库档案', arrivals: '待到货', receipts: '收货记录', stock: '库存管理', imports: '导入中心', settings: '仓库设置',
   },
   supplierPayments: {
     eyebrow: 'ACCOUNTS PAYABLE',

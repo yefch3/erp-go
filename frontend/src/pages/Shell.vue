@@ -412,6 +412,9 @@ const warehouseItems = computed(() => [
         { path: '/outbounds', label: t('menu.outbounds') },
       ]
     : []),
+  ...(auth.can('inventory:stock:import')
+    ? [{ path: '/warehouses/imports', label: t('warehouseNav.imports') }]
+    : []),
 ])
 const hasWarehouse = computed(() => warehouseItems.value.length > 0)
 const warehouseActive = computed(() =>

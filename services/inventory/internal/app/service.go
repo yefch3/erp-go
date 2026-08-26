@@ -27,14 +27,35 @@ type Numbering interface {
 	Next(ctx context.Context, bizType string) (string, error)
 }
 
+// CatalogItem 是产品服务确认过的库存身份；导入文件中的名称不能直接成为库存主键。
+type CatalogItem struct {
+	ProductID   int64
+	ProductCode string
+	ProductName string
+	SKUID       int64
+	SKUCode     string
+	UomID       int64
+	UomCode     string
+}
+
+// Catalog 负责按当前租户解析启用中的产品和 SKU。
+type Catalog interface {
+	Resolve(ctx context.Context, productCode, skuCode string) (CatalogItem, error)
+}
+
 type Service struct {
 	pool      *pgxpool.Pool
 	q         *store.Queries
 	numbering Numbering
+	catalog   Catalog
 }
 
-func New(pool *pgxpool.Pool, numbering Numbering) *Service {
-	return &Service{pool: pool, q: store.New(pool), numbering: numbering}
+func New(pool *pgxpool.Pool, numbering Numbering, catalogs ...Catalog) *Service {
+	var catalog Catalog
+	if len(catalogs) > 0 {
+		catalog = catalogs[0]
+	}
+	return &Service{pool: pool, q: store.New(pool), numbering: numbering, catalog: catalog}
 }
 
 func (s *Service) ListWarehouses(ctx context.Context, tenantID int64, includeInactive bool) ([]store.ListWarehousesRow, error) {

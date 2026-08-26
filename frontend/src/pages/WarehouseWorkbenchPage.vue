@@ -23,6 +23,11 @@
       </el-card>
     </section>
 
+    <el-card v-if="canImport" shadow="never" class="import-card" @click="router.push('/warehouses/imports')">
+      <div><span class="muted">期初库存</span><h3>导入中心</h3><p>下载版本模板，上传后先预检，确认无误才写入库存流水。</p></div>
+      <el-button type="primary">开始导入 →</el-button>
+    </el-card>
+
     <el-card shadow="never" class="workspace">
       <template #header><div class="card-head"><div><h2>仓库档案概览</h2><p>联系人、负责人、地址和记账方式集中维护。</p></div><el-button link type="primary" @click="router.push('/warehouses/profiles')">查看全部 →</el-button></div></template>
       <el-empty v-if="!warehouses.length" description="尚未建立仓库档案">
@@ -50,6 +55,7 @@ interface Settings { usageMode:string; allowDirectDelivery:boolean; allowInvento
 const router=useRouter(), auth=useAuthStore(), loading=ref(false), warehouses=ref<Warehouse[]>([])
 const isAdmin=computed(()=>auth.can('iam:role:write'))
 const canReadOrders=computed(()=>auth.can('procurement:order:read'))
+const canImport=computed(()=>auth.can('inventory:stock:import'))
 const pendingArrivalCount=ref(0)
 const settings=ref<Settings>({usageMode:'USE_WAREHOUSE',allowDirectDelivery:true,allowInventory:true,defaultWarehouseId:'0'})
 const modeText=computed(()=>({NO_WAREHOUSE:'默认直接交付',USE_WAREHOUSE:'统一经过仓库',SELECT_PER_ORDER:'按订单选择'}[settings.value.usageMode] ?? settings.value.usageMode))
@@ -67,6 +73,7 @@ onMounted(load)
 
 <style scoped>
 .inbound-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:18px}.inbound-card{cursor:pointer}.inbound-card:hover{border-color:#159b8e}.inbound-card strong{float:right;font-size:30px;color:#087f78}.inbound-card h3{margin:8px 0}.inbound-card p{color:#738095;margin:5px 0}
+.import-card{margin-bottom:18px;cursor:pointer}.import-card:hover{border-color:#159b8e}.import-card :deep(.el-card__body){display:flex;align-items:center;justify-content:space-between;gap:20px}.import-card h3{margin:6px 0}.import-card p{margin:0;color:#738095}
 .page{padding:28px;max-width:1500px;margin:auto}.hero,.card-head{display:flex;align-items:center;justify-content:space-between;gap:20px}.hero h1{font-size:30px;margin:4px 0}.hero p,.workspace p,.mode-card p{color:#738095;margin:5px 0}.eyebrow{font-size:12px!important;letter-spacing:2px;color:#087f78!important;font-weight:700}.actions{display:flex}.mode-card{margin:22px 0;border-color:#cfe8e4}.mode-card :deep(.el-card__body){display:flex;justify-content:space-between;align-items:center;background:linear-gradient(110deg,#f1faf8,#fff)}.mode-card h2{margin:7px 0}.muted{color:#738095}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}.stats span{display:block;color:#738095}.stats strong{display:block;font-size:30px;margin-top:10px;color:#17324d}.workspace h2{margin:0}.warehouse-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.warehouse-grid article{border:1px solid #e1e8ef;border-radius:10px;padding:16px}.warehouse-grid p{font-size:13px}@media(max-width:900px){.hero{align-items:flex-start;flex-direction:column}.stats,.warehouse-grid{grid-template-columns:1fr 1fr}}@media(max-width:560px){.stats,.warehouse-grid{grid-template-columns:1fr}.page{padding:16px}}
 @media(max-width:560px){.inbound-grid{grid-template-columns:1fr}}
 </style>

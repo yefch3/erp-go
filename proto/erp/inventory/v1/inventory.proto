@@ -26,6 +26,12 @@ service StockService {
   rpc ListLedger(ListLedgerRequest) returns (ListLedgerResponse);
   rpc FreezeStock(FreezeStockRequest) returns (FreezeStockResponse);
   rpc UnfreezeStock(UnfreezeStockRequest) returns (UnfreezeStockResponse);
+  rpc DownloadStockImportTemplate(DownloadStockImportTemplateRequest) returns (DownloadStockImportTemplateResponse);
+  rpc PreviewInitialStockImport(PreviewInitialStockImportRequest) returns (PreviewInitialStockImportResponse);
+  rpc ConfirmInitialStockImport(ConfirmInitialStockImportRequest) returns (ConfirmInitialStockImportResponse);
+  rpc ListStockImports(ListStockImportsRequest) returns (ListStockImportsResponse);
+  rpc DownloadStockImportReport(DownloadStockImportReportRequest) returns (DownloadStockImportReportResponse);
+  rpc CancelStockImport(CancelStockImportRequest) returns (CancelStockImportResponse);
   // Receive goods. Manual for now; purchase receipts will call it later.
   rpc ReceiveStock(ReceiveStockRequest) returns (ReceiveStockResponse);
 
@@ -175,6 +181,88 @@ message UnfreezeStockRequest {
   string reason = 3;
 }
 message UnfreezeStockResponse { Stock stock = 1; }
+
+message DownloadStockImportTemplateRequest {}
+message DownloadStockImportTemplateResponse {
+  string file_name = 1;
+  bytes file_data = 2;
+  string template_version = 3;
+}
+
+message PreviewInitialStockImportRequest {
+  bytes file_data = 1;
+  string source_file_name = 2;
+  string external_batch_no = 3;
+}
+
+message StockImportIssue {
+  string field = 1;
+  string value = 2;
+  string message = 3;
+}
+
+message StockImportRow {
+  int32 row_number = 1;
+  string warehouse_code = 2;
+  string warehouse_name = 3;
+  string product_code = 4;
+  string product_name = 5;
+  string sku_code = 6;
+  string qty = 7;
+  string uom_code = 8;
+  string unit_cost = 9;
+  string currency = 10;
+  string remark = 11;
+  string verdict = 12;
+  repeated StockImportIssue issues = 13;
+}
+
+message StockImportBatch {
+  int64 id = 1;
+  string import_token = 2;
+  string batch_no = 3;
+  string import_type = 4;
+  string source_file_name = 5;
+  string external_batch_no = 6;
+  string template_version = 7;
+  string status = 8;
+  int32 total_count = 9;
+  int32 valid_count = 10;
+  int32 warning_count = 11;
+  int32 error_count = 12;
+  int32 duplicate_count = 13;
+  string operator_name = 14;
+  string created_at = 15;
+  string confirmed_at = 16;
+}
+
+message PreviewInitialStockImportResponse {
+  StockImportBatch batch = 1;
+  repeated StockImportRow rows = 2;
+  string error_file_name = 3;
+  bytes error_file_data = 4;
+}
+
+message ConfirmInitialStockImportRequest { string import_token = 1; }
+message ConfirmInitialStockImportResponse {
+  StockImportBatch batch = 1;
+  bool already_confirmed = 2;
+}
+
+message ListStockImportsRequest { erp.common.v1.PageRequest page = 1; }
+message ListStockImportsResponse {
+  repeated StockImportBatch batches = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message DownloadStockImportReportRequest { string import_token = 1; }
+message DownloadStockImportReportResponse {
+  string file_name = 1;
+  bytes file_data = 2;
+}
+
+message CancelStockImportRequest { string import_token = 1; }
+message CancelStockImportResponse { StockImportBatch batch = 1; }
 
 // LedgerEntry is one movement. Append-only: the stock table says what is
 // there now, this says how it got there.
