@@ -7,6 +7,7 @@ import {
   excelQuotaRemaining,
   excelQuotaState,
   excelQuotaTone,
+  parseExcelQuota,
   type ExcelQuota,
 } from './excelQuota'
 
@@ -74,5 +75,64 @@ describe('警戒色', () => {
     expect(excelQuotaTone(100)).toBe('error')
     expect(excelQuotaTone(120)).toBe('error')
     expect(excelQuotaProgressStatus(100)).toBe('exception')
+  })
+})
+
+// 接口真正送到浏览器里的是什么形状——这一组用的都是**实测**的 JSON。
+//
+// 客户那条 /api/excel-usage 走 protojson，int64 变成字符串；平台那条
+// /api/platform/excel-quotas 走普通 JSON，同样的字段是数字。两条路的类型
+// 不一样，而页面上写的都是 number。之前靠 JS 隐式转换侥幸没错，
+// 这一组把它变成保证。
+describe('parseExcelQuota', () => {
+  // 实测：go test 里把 ExcelQuota 用 protojson 打出来就是这个样子。
+  const fromProtojson = {
+    limited: true,
+    monthlyRuns: '200',
+    usedThisMonth: '41',
+    currentMonth: '2026-08',
+  }
+
+  it('把 protojson 送来的字符串数字转成真的数字', () => {
+    const q = parseExcelQuota(fromProtojson)
+    expect(q.monthlyRuns).toBe(200)
+    expect(q.usedThisMonth).toBe(41)
+    expect(typeof q.monthlyRuns).toBe('number')
+    expect(typeof q.usedThisMonth).toBe('number')
+  })
+
+  it('转完之后加法是加法，不是拼接', () => {
+    const q = parseExcelQuota(fromProtojson)
+    // 没转的话这里会得到 "411"——这正是当初埋着的那颗雷。
+    expect(q.usedThisMonth + 1).toBe(42)
+  })
+
+  it('百分比和剩余次数在字符串输入下也算得对', () => {
+    const q = parseExcelQuota(fromProtojson)
+    expect(excelQuotaPercent(q)).toBe(21)
+    expect(excelQuotaRemaining(q)).toBe(159)
+  })
+
+  it('服务端没答话时给出一份干净的空额度，而不是 NaN', () => {
+    for (const bad of [undefined, null, 'nonsense', 42]) {
+      const q = parseExcelQuota(bad)
+      expect(q.limited).toBe(false)
+      expect(q.monthlyRuns).toBe(0)
+      expect(q.currentMonth).toBe('')
+      expect(Number.isNaN(q.monthlyRuns)).toBe(false)
+    }
+  })
+
+  it('字段缺失或解不出数就当 0，绝不让 NaN 流到页面上', () => {
+    const q = parseExcelQuota({ limited: true, monthlyRuns: '不是数字' })
+    expect(q.monthlyRuns).toBe(0)
+    expect(q.usedThisMonth).toBe(0)
+    // 上限 0 的含义是「一次都不许用」，所以百分比该是 100 而不是 NaN。
+    expect(excelQuotaPercent(q)).toBe(100)
+  })
+
+  it('limited 只认真正的 true——字符串 "false" 不该被当成有上限', () => {
+    expect(parseExcelQuota({ limited: 'false' }).limited).toBe(false)
+    expect(parseExcelQuota({ limited: true }).limited).toBe(true)
   })
 })
