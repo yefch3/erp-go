@@ -143,6 +143,10 @@ check-migration-safety: ## Refuse undeclared destructive migrations (deploy roll
 check-mail-sandbox: ## Verify received mail is only rendered inside the sandbox
 	sh scripts/check-mail-sandbox.sh
 
+.PHONY: check-duplicate-routes
+check-duplicate-routes: ## Refuse two handlers on the same method + path (chi overwrites silently)
+	sh scripts/check-duplicate-routes.sh
+
 .PHONY: audit-mail
 audit-mail: ## Check stored mail against its invariants (needs a running database)
 	sh scripts/audit-mail.sh
@@ -172,7 +176,7 @@ frontend-ci: ## Type-check and build the frontend, and run its unit tests
 # Prerequisites run in the order written, cheapest first, so a stale gen/ or
 # a missed tenant_id fails in seconds, not after the full test suite.
 .PHONY: ci
-ci: proto-check check-tenant check-tenant-seeds check-iam-seeds check-migration-safety check-mail-sandbox frontend-ci test-integration lint ## Everything CI runs (needs `make up` + `make migrate` first)
+ci: proto-check check-tenant check-tenant-seeds check-iam-seeds check-migration-safety check-mail-sandbox check-duplicate-routes frontend-ci test-integration lint ## Everything CI runs (needs `make up` + `make migrate` first)
 	@echo "ci: all checks passed"
 
 .PHONY: sqlc

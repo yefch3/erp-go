@@ -432,7 +432,7 @@ function openOf(contractId?: number): string {
 async function load() {
   loading.value = true
   try {
-    const d = await get<{ transactions: Transaction[]; total: string }>('/bank-transactions', {
+    const d = await get<{ transactions: Transaction[]; total: string }>('/receipt-transactions', {
       page: page.value, page_size: pageSize,
       disposition: disposition.value, keyword: keyword.value,
     })
@@ -467,7 +467,7 @@ async function openRecord() {
 async function submitRecord() {
   saving.value = true
   try {
-    await post('/bank-transactions', {
+    await post('/receipt-transactions', {
       transaction: {
         account_id: form.accountId, bank_ref: form.bankRef, direction: form.direction,
         amount: form.amount, currency: form.currency, value_date: form.valueDate,
@@ -503,7 +503,7 @@ async function submitAccount() {
 async function openMatch(row: Transaction) {
   draft.value = []
   const d = await get<{ transaction: Transaction; allocations: Allocation[]; suggestions: Suggestion[] }>(
-    `/bank-transactions/${row.id}`,
+    `/receipt-transactions/${row.id}`,
   )
   detail.value = d.transaction
   allocations.value = d.allocations ?? []
@@ -567,7 +567,7 @@ async function submitAllocation() {
   saving.value = true
   try {
     const d = await post<{ transaction: Transaction; allocations: Allocation[] }>(
-      `/bank-transactions/${detail.value!.id}/allocate`,
+      `/receipt-transactions/${detail.value!.id}/allocate`,
       { allocations: lines },
     )
     detail.value = d.transaction
@@ -618,7 +618,7 @@ async function openIrrelevant() {
   )
   const kind = kinds.find((k) => t(`receipts.irrelevantTypes.${k}`) === value.trim())!
   const d = await post<{ transaction: Transaction }>(
-    `/bank-transactions/${detail.value!.id}/irrelevant`,
+    `/receipt-transactions/${detail.value!.id}/irrelevant`,
     { irrelevant_type: kind },
   )
   detail.value = d.transaction
@@ -628,7 +628,7 @@ async function openIrrelevant() {
 }
 
 async function reopen(row: Transaction) {
-  await post(`/bank-transactions/${row.id}/reopen`, {})
+  await post(`/receipt-transactions/${row.id}/reopen`, {})
   ElMessage.success(t('receipts.reopened'))
   load()
 }

@@ -393,12 +393,23 @@ func (s *Server) Router() http.Handler {
 		// neither should be able to do the other's job by accident.
 		r.With(s.perm("export:receipt:read")).Get("/api/bank-accounts", s.listBankAccounts)
 		r.With(s.perm("export:receipt:write")).Post("/api/bank-accounts", s.createBankAccount)
-		r.With(s.perm("export:receipt:read")).Get("/api/bank-transactions", s.listTransactions)
-		r.With(s.perm("export:receipt:read")).Get("/api/bank-transactions/{id}", s.getTransaction)
-		r.With(s.perm("export:receipt:write")).Post("/api/bank-transactions", s.recordTransaction)
-		r.With(s.perm("export:receipt:write")).Post("/api/bank-transactions/{id}/allocate", s.allocateReceipt)
-		r.With(s.perm("export:receipt:write")).Post("/api/bank-transactions/{id}/irrelevant", s.markTransactionIrrelevant)
-		r.With(s.perm("export:receipt:write")).Post("/api/bank-transactions/{id}/reopen", s.reopenTransaction)
+		// receipt-transactions, 不是 bank-transactions：这一组和采购那边的
+		// 银行流水（第 540 行起）曾经共用后一个地址，而 chi 对重复注册既不
+		// 报错也不警告，**后注册的静默覆盖先注册的**。采购那组在后面，于是
+		// 收款对账的列表实际打到了采购的服务上，取回来的字段名也不一样
+		// （采购叫 items，出口叫 transactions），页面拿不到就渲染成空表——
+		// 全程没有一行错误日志。而「登记流水」用的是 POST，没被覆盖，所以
+		// 写进的是出口的库、读的却是采购的库。
+		//
+		// 让路的是出口这一组而不是采购那一组：银行流水本身是一份谁都要用的
+		// 事实（同汇率），将来会以 bank-transactions 这个名字统一收口，
+		// 收款对账只是它「归属客户」的那一部分视图。见 docs/开发计划.md F2。
+		r.With(s.perm("export:receipt:read")).Get("/api/receipt-transactions", s.listTransactions)
+		r.With(s.perm("export:receipt:read")).Get("/api/receipt-transactions/{id}", s.getTransaction)
+		r.With(s.perm("export:receipt:write")).Post("/api/receipt-transactions", s.recordTransaction)
+		r.With(s.perm("export:receipt:write")).Post("/api/receipt-transactions/{id}/allocate", s.allocateReceipt)
+		r.With(s.perm("export:receipt:write")).Post("/api/receipt-transactions/{id}/irrelevant", s.markTransactionIrrelevant)
+		r.With(s.perm("export:receipt:write")).Post("/api/receipt-transactions/{id}/reopen", s.reopenTransaction)
 		// Reversal, not deletion: there is no DELETE route here on purpose.
 		r.With(s.perm("export:receipt:write")).Post("/api/receipt-allocations/{id}/reverse", s.reverseAllocation)
 		r.With(s.perm("export:receipt:read")).Get("/api/open-receivables", s.listOpenReceivables)
