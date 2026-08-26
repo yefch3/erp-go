@@ -52,6 +52,11 @@ func (s *Service) StartExcelJob(
 	if err := s.validateExcelJobSource(ctx, tenantID, ownerID, inboundID, attachmentID, selectedText); err != nil {
 		return ExcelJob{}, err
 	}
+	// 额度在这里拦：点了按钮就该当场知道能不能做，而不是排队十几秒之后
+	// 才被告知本来就不该让你点。见 excel_quota.go。
+	if err := s.ensureExcelQuota(ctx, tenantID); err != nil {
+		return ExcelJob{}, err
+	}
 	if selectedText != nil {
 		trimmed := strings.TrimSpace(*selectedText)
 		selectedText = &trimmed

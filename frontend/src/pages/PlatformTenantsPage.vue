@@ -35,7 +35,23 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="t('platform.actions')" width="230" align="right">
+        <!-- 智能转换是唯一按次花我们钱的功能，所以每家公司用了多少、上限
+             多少，摆在开户表上，不藏在别的页里。 -->
+        <el-table-column :label="t('platform.quota')" width="150">
+          <template #default="{ row }">
+            <template v-if="quotaOf(row.id).limited">
+              <div class="num">
+                {{ quotaOf(row.id).usedThisMonth }} / {{ quotaOf(row.id).monthlyRuns }}
+              </div>
+              <div class="sub">{{ quotaPercentOf(row.id) }}%</div>
+            </template>
+            <template v-else>
+              <div class="sub">{{ t('platform.quotaNone') }}</div>
+              <div class="sub">{{ t('platform.quotaUsed', { n: quotaOf(row.id).usedThisMonth }) }}</div>
+            </template>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('platform.actions')" width="300" align="right">
           <template #default="{ row }">
             <!-- 没激活才有「重发邀请」：给激活过的人重发不是邀请，是改密码，
                  后端会拒绝，这里干脆不给按钮。 -->
@@ -46,6 +62,9 @@
               @click="reinvite(row)"
             >
               {{ t('platform.reinvite') }}
+            </el-button>
+            <el-button size="small" plain @click="openQuota(row)">
+              {{ t('platform.quotaEdit') }}
             </el-button>
             <el-button
               v-if="row.status === 'ACTIVE'"
@@ -142,6 +161,34 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="quotaOpen" :title="t('platform.quotaTitle')" width="min(460px, 92vw)">
+      <p class="hint">{{ t('platform.quotaHint', { name: quotaForm.name }) }}</p>
+      <el-form label-position="top">
+        <el-form-item :label="t('platform.quotaLimited')">
+          <el-switch v-model="quotaForm.limited" />
+        </el-form-item>
+        <el-form-item v-if="quotaForm.limited" :label="t('platform.quotaRuns')">
+          <el-input-number v-model="quotaForm.monthlyRuns" :min="0" :step="10" style="width: 180px" />
+        </el-form-item>
+      </el-form>
+      <!-- 0 和「不限」正好相反，而这正是最容易点错的一处：把开关关掉是放开，
+           把数字填 0 是彻底关停。所以两种情况各说一句。 -->
+      <el-alert
+        :type="quotaForm.limited && quotaForm.monthlyRuns === 0 ? 'error' : 'info'"
+        :closable="false"
+        show-icon
+        :title="quotaForm.limited
+          ? (quotaForm.monthlyRuns === 0 ? t('platform.quotaZeroWarning') : t('platform.quotaSetNote'))
+          : t('platform.quotaOffNote')"
+      />
+      <template #footer>
+        <el-button @click="quotaOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="quotaSaving" @click="saveQuota">
+          {{ t('common.save') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -150,6 +197,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { get, post } from '../api'
+import { emptyExcelQuota, excelQuotaPercent, type ExcelQuota } from '../lib/excelQuota'
 
 // 平台开户（E7）：给客户公司的第一位管理员发邀请，对方激活后自己邀请员工。
 //
@@ -210,6 +258,65 @@ async function replay(row: FailedEvent) {
     await loadFailed()
   } finally {
     dlBusy.value = ''
+  }
+}
+
+// 智能转换的额度：平台给每家客户公司定的每月转换次数上限。
+//
+// 为什么归这一页管：每一次转换都是我们付给模型厂的钱，定上限的必须是我们。
+// 让用钱的一方自己填，那不叫上限，叫偏好设置。
+//
+// limited=false 是不限；limited=true 且 monthlyRuns=0 是一次都不许用。这
+// 两件事正好相反，所以界面上是一个开关加一个数字，不是「填 0 表示不限」。
+interface TenantQuota extends ExcelQuota {
+  tenantId: number
+}
+const quotas = ref<Record<string, TenantQuota>>({})
+const quotaOpen = ref(false)
+const quotaSaving = ref(false)
+const quotaForm = reactive({ id: '', name: '', limited: false, monthlyRuns: 200 })
+
+// 这一页只关心「用了多少 / 上限多少」，月份由列表本身声明，所以借用同一套
+// 百分比算法（含上限 0 的处理），不在这里重写一遍。
+const noQuota: TenantQuota = { ...emptyExcelQuota, tenantId: 0 }
+function quotaOf(id: string): TenantQuota {
+  return quotas.value[id] ?? noQuota
+}
+function quotaPercentOf(id: string): number {
+  return excelQuotaPercent(quotaOf(id))
+}
+
+async function loadQuotas() {
+  const d = await get<{ quotas: TenantQuota[] }>('/platform/excel-quotas')
+  const byID: Record<string, TenantQuota> = {}
+  for (const q of d.quotas ?? []) byID[String(q.tenantId)] = q
+  quotas.value = byID
+}
+
+function openQuota(row: Tenant) {
+  const current = quotaOf(row.id)
+  quotaForm.id = row.id
+  quotaForm.name = row.name
+  quotaForm.limited = current.limited
+  // 没设过就给一个明显是「起点」的数字，而不是 0——0 的意思是停用。
+  quotaForm.monthlyRuns = current.limited ? current.monthlyRuns : 200
+  quotaOpen.value = true
+}
+
+async function saveQuota() {
+  quotaSaving.value = true
+  try {
+    await post('/platform/excel-quotas', {
+      tenantId: Number(quotaForm.id),
+      // 不带这个字段就是恢复不限。带 0 是「一次都不许用」——两者靠有没有
+      // 这个键区分，不靠值。
+      monthlyRuns: quotaForm.limited ? quotaForm.monthlyRuns : null,
+    })
+    quotaOpen.value = false
+    ElMessage.success(t('platform.quotaSaved'))
+    await loadQuotas()
+  } finally {
+    quotaSaving.value = false
   }
 }
 
@@ -285,6 +392,7 @@ async function setStatus(row: Tenant, status: 'ACTIVE' | 'SUSPENDED') {
 
 onMounted(() => {
   load()
+  loadQuotas()
   loadFailed()
 })
 </script>
@@ -324,6 +432,9 @@ onMounted(() => {
 .sub {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.num {
+  font-variant-numeric: tabular-nums;
 }
 .hint {
   margin: 0 0 14px;

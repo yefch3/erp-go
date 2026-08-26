@@ -77,3 +77,50 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
        OR to_char(date_trunc('month', created_at), 'YYYY-MM') = sqlc.arg(month)::text)
 GROUP BY 1, 2
 ORDER BY 1 DESC, runs DESC;
+
+-- name: CurrentUsageMonth :one
+-- 「这个月」是哪个月，由数据库说了算。
+--
+-- 不在 Go 里算 time.Now()：那是两个时钟、两个时区。只要容器和数据库对月
+-- 份的理解差一点点，就会出现页面显示「41 次」而拦截说「已用 42 次」这种
+-- 谁也解释不清的事——而且只在每月月初那几个小时出现，最难查。
+SELECT to_char(date_trunc('month', now()), 'YYYY-MM')::text;
+
+-- name: CountExcelRunsThisMonth :one
+-- 这家公司这个月转了多少次——一个数，给额度用。
+--
+-- 写成半开区间而不是 to_char(...) = '2026-08'：前者能走 (tenant_id,
+-- created_at) 索引的范围扫描，后者要对每一行算一次函数。
+SELECT count(*)::bigint
+FROM mail_excel_jobs
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND created_at >= date_trunc('month', now())
+  AND created_at <  date_trunc('month', now()) + interval '1 month';
+
+-- name: ExcelRunsByTenantThisMonth :many
+-- 每家公司这个月各转了多少次。只有平台运营看得到这一条——它跨租户。
+SELECT tenant_id, count(*)::bigint AS runs
+FROM mail_excel_jobs
+WHERE created_at >= date_trunc('month', now())
+  AND created_at <  date_trunc('month', now()) + interval '1 month'
+GROUP BY tenant_id;
+
+-- name: GetExcelQuota :one
+SELECT * FROM mail_excel_quotas WHERE tenant_id = sqlc.arg(tenant_id)::bigint;
+
+-- name: ListExcelQuotas :many
+-- 跨租户，平台运营专用。
+SELECT * FROM mail_excel_quotas ORDER BY tenant_id;
+
+-- name: SetExcelQuota :exec
+INSERT INTO mail_excel_quotas (tenant_id, monthly_runs, updated_by, updated_at)
+VALUES (sqlc.arg(tenant_id)::bigint, sqlc.arg(monthly_runs)::bigint, sqlc.arg(updated_by)::bigint, now())
+ON CONFLICT (tenant_id) DO UPDATE SET
+  monthly_runs = EXCLUDED.monthly_runs,
+  updated_by   = EXCLUDED.updated_by,
+  updated_at   = now();
+
+-- name: ClearExcelQuota :exec
+-- 删掉这一行就是恢复不限。不是把 monthly_runs 改成 0——0 是「一次都不许
+-- 用」，和「不限」正好相反。
+DELETE FROM mail_excel_quotas WHERE tenant_id = sqlc.arg(tenant_id)::bigint;

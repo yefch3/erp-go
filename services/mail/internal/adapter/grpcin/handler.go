@@ -1119,7 +1119,45 @@ func (h *Handler) ExcelUsage(ctx context.Context, req *mailv1.ExcelUsageRequest)
 			EstimatedCost: r.EstimatedCost, Currency: r.Currency,
 		})
 	}
-	return &mailv1.ExcelUsageResponse{Rows: out}, nil
+	quota, err := h.svc.ExcelQuotaFor(ctx, grpcx.TenantID(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.ExcelUsageResponse{Rows: out, Quota: &mailv1.ExcelQuota{
+		Limited: quota.Limited, MonthlyRuns: quota.MonthlyRuns,
+		UsedThisMonth: quota.UsedThisMonth, CurrentMonth: quota.CurrentMonth,
+	}}, nil
+}
+
+// ListExcelQuotas / SetExcelQuota 是两条**跨租户**的接口：它们不看
+// grpcx.TenantID(ctx)，看请求里点名的那家公司。
+//
+// 这在这个仓库里是例外，所以说清楚为什么：额度是我们和客户公司之间的商务
+// 约定，定额度的是我们，不是任何一家客户——按 ctx 里的租户来做，平台运营
+// 就只能给自己所在的那家公司定额度，等于这个功能不存在。守门放在网关的
+// requirePlatformOperator，和死信台账用的是同一道门；除了那两条路由，没有
+// 任何路径能走到这里。
+func (h *Handler) ListExcelQuotas(ctx context.Context, _ *mailv1.ListExcelQuotasRequest) (*mailv1.ListExcelQuotasResponse, error) {
+	quotas, month, err := h.svc.ListExcelQuotas(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mailv1.TenantExcelQuota, 0, len(quotas))
+	for _, q := range quotas {
+		out = append(out, &mailv1.TenantExcelQuota{
+			TenantId: q.TenantID, Limited: q.Limited,
+			MonthlyRuns: q.MonthlyRuns, UsedThisMonth: q.UsedThisMonth,
+		})
+	}
+	return &mailv1.ListExcelQuotasResponse{Quotas: out, CurrentMonth: month}, nil
+}
+
+func (h *Handler) SetExcelQuota(ctx context.Context, req *mailv1.SetExcelQuotaRequest) (*mailv1.SetExcelQuotaResponse, error) {
+	err := h.svc.SetExcelQuota(ctx, req.GetTenantId(), req.GetLimited(), req.GetMonthlyRuns(), operator(ctx).ID)
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.SetExcelQuotaResponse{}, nil
 }
 
 func ownerIDsOf(rows []app.ExcelUsageRow) []int64 {
