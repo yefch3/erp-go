@@ -145,13 +145,19 @@ func (s *Service) ListExcelQuotas(ctx context.Context) ([]TenantExcelQuota, stri
 		row.UsedThisMonth = r.Runs
 		row.InputTokens = r.InputTokens
 		row.OutputTokens = r.OutputTokens
-		if s.pricing.Configured() {
-			row.EstimatedCost = estimateCost(r.InputTokens, r.OutputTokens, s.pricing)
-			row.Currency = s.pricing.Currency
-		}
 	}
+	// 金额在最后统一算，不在上面那个循环里——上面只走「本月有用量」的公司，
+	// 于是「设了额度但这个月一次没转」的那几家拿不到金额字段，页面按空串
+	// 显示成「未配单价」。而单价明明配着，真实答案是「本月 0 元」。
+	//
+	// 空是「不知道」、0 是「不要钱」——这条规矩这里自己违反了一次：把一个
+	// 真实为 0 的数说成了不知道。配了单价，每一行都该有金额，哪怕是 0。
 	out := make([]TenantExcelQuota, 0, len(byTenant))
 	for _, row := range byTenant {
+		if s.pricing.Configured() {
+			row.EstimatedCost = estimateCost(row.InputTokens, row.OutputTokens, s.pricing)
+			row.Currency = s.pricing.Currency
+		}
 		out = append(out, *row)
 	}
 	return out, month, nil

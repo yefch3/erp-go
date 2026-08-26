@@ -32,8 +32,17 @@ type ModelPricing struct {
 }
 
 // Configured 说明这份单价能不能拿来算钱。
+//
+// **两个价都要有**，不是有一个就行。原来是 or：只填了输入价（或者输出价那
+// 行填错了、解析失败），另一个就按 0 参与折算——等于宣布输出 token 免费，
+// 算出来的数会少一大截，而它看着和一笔正确的账一模一样。
+//
+// 更糟的是启动日志这时会说「usage will be reported without a cost」，而实际
+// 上照样出了金额。一个自相矛盾的承诺意味着没人会去查。
+//
+// 同「空 ≠ 0」：半份单价算不出成本，那就说算不出。
 func (p ModelPricing) Configured() bool {
-	return p.InputPerMTok.IsPositive() || p.OutputPerMTok.IsPositive()
+	return p.InputPerMTok.IsPositive() && p.OutputPerMTok.IsPositive()
 }
 
 // ExcelUsageRow 是用量账上的一行：某个月、某个人。

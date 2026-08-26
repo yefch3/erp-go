@@ -89,6 +89,7 @@ export default {
     workbench: 'Panel de almacenes', profiles: 'Fichas de almacén', arrivals: 'Llegadas pendientes', receipts: 'Historial de recepciones', stock: 'Consulta de existencias', settings: 'Configuración',
   },
   supplierPayments: {
+    currency: 'Moneda',
     eyebrow: 'CUENTAS POR PAGAR',
     title: 'Pagos a proveedores',
     subtitle: 'Registre el dinero que salió y decida qué saldó: el pago es un hecho, la aplicación es un juicio, y los juicios se corrigen',
@@ -251,6 +252,9 @@ export default {
     quotaZeroWarning: 'Un tope de 0 significa que esta empresa no puede hacer ni una conversión. Para quitar el límite apaga el interruptor, no pongas 0.',
     quotaOffNote: 'Interruptor apagado significa sin límite: esta empresa puede convertir cuanto quiera.',
     quotaSaved: 'Cupo guardado',
+    createConfirm: 'Crear y enviar invitación',
+    quotaRunsRequired: 'Introduce un número mensual. Dejarlo vacío se interpreta como «quitar el tope», lo contrario de lo que quieres.',
+    quotaUnknownBlocked: 'Los cupos aún no se han cargado. Actualiza antes de editar: guardar sobre datos no leídos sobrescribiría la configuración actual.',
     cost: 'Coste este mes',
     costNoPrice: 'Sin tarifa',
     costTokens: '{n} tokens',
@@ -301,6 +305,7 @@ export default {
     title: 'Avisos de B/L', markAllRead: 'Marcar todo leído', empty: 'Sin conocimientos pendientes',
   },
   procurementWorkbench: {
+    openMail: 'Ir al correo',
     eyebrow: 'CONTROL DE COMPRAS', title: 'Panel de compras', subtitle: 'Revisar consultas estandarizadas y avanzar compras', downloadTemplate: 'Descargar plantilla', uploadInquiry: 'Importar consulta del cliente', handlePending: 'Pendientes de revisión', handlePendingCount: 'Pendientes de revisión ({n})',
     mailTransfer: 'Transferencia desde Correo con un clic', mailTransferHint: 'Genere el Excel estándar en Correo y envíelo a Compras con un clic', mailAutomatic: 'Un clic en la página de correo', manualUpload: 'Carga manual estándar', manualUploadHint: 'Subir Excel o CSV ya estandarizado', startUpload: 'Iniciar carga', converge: 'Cola de revisión', pendingCount: '{n} consultas por revisar', reviewNow: 'Revisar ahora',
     pendingMetric: 'Consultas pendientes', pendingMetricHint: 'Campos por revisar', sourcingMetric: 'Cotizaciones activas', sourcingMetricHint: 'Revisión, RFQ, ofertas y costes', requirementMetric: 'Por comprar', requirementMetricHint: 'Tareas tras activar contratos', orderMetric: 'Órdenes pendientes', orderMetricHint: 'Todas las órdenes',
@@ -312,6 +317,14 @@ export default {
     flowHint: 'Un caso de cotización no crea una orden directamente. La tarea de compra aparece después de que el cliente acepte y el contrato entre en vigor.',
   },
   procurementIntakes: {
+    draftHint: 'Puedes guardar el progreso de la revisión aunque falten datos; para pasar a cotización debe estar todo completo.',
+    saveDraft: 'Guardar cambios',
+    draftSaved: 'Cambios de revisión guardados',
+    addProduct: 'Añadir línea de producto',
+    addProductTitle: 'Añadir producto a la consulta',
+    addAndSave: 'Añadir y guardar',
+    newProductRequired: 'Introduce producto, cantidad y unidad',
+    productAdded: 'Línea de producto añadida y guardada',
     format: 'Formato de consulta', autoRecognize: 'Detectar formato automáticamente (recomendado)', boundFormat: 'Formato vinculado', historicalFormat: 'Formato heredado', autoFormatHint: 'El sistema compara todos los encabezados con los formatos activos. Seleccione uno solo si hay ambigüedad.', selectedFormatHint: 'El archivo se validará con “{name} · v{version}”.',
     dynamicReviewHint: 'Revise cada campo definido por este formato. Complete los elementos marcados o guarde un borrador.',
     completeness: 'Integridad', complete: 'Completo', ignored: 'Ignorado', missingCount: 'Faltan {count}',
@@ -891,7 +904,8 @@ export default {
   },
   sourcing: {
     listEyebrow: 'PROYECTOS DE COMPRAS', activeProjects: 'Proyectos activos', customerAndTitle: 'Cliente / proyecto', currentStage: 'Etapa actual', currentWaiting: 'En espera de', recentUpdate: 'Última actualización', exception: 'Excepción', stale: 'Sin actualizar por más de 7 días',
-    waiting: { REVIEWING: 'Revisión de especificaciones', SOURCING: 'Respuesta RFQ de fábrica', QUOTES_RECEIVED: 'Comparación de ofertas', COSTING: 'Aprobación de costes', CUSTOMER_QUOTE_CREATED: 'Decisión del cliente', CANCELLED: 'Cerrado' },
+    waiting: { REVIEWING: 'Revisión de especificaciones', SOURCING: 'Respuesta RFQ de fábrica', QUOTES_RECEIVED: 'Comparación de ofertas', COSTING: 'Aprobación de costes', CUSTOMER_QUOTE_CREATED: 'Decisión del cliente', CANCELLED: 'Cerrado', UNKNOWN: 'Confirmar la etapa actual' },
+    unknownStatus: 'Por confirmar',
     title: 'Cotización de compras', subtitle: 'Revisar consultas, solicitar precios a fábricas y calcular costes', search: 'Buscar caso, cliente o título',
     caseNo: 'N.º de caso', inquiry: 'Consulta', customer: 'Cliente', owner: 'Responsable', createdAt: 'Creado',
     contact: 'Contacto', product: 'Producto', standard: 'Material / norma', size: 'Medidas', port: 'Puerto',
@@ -925,6 +939,7 @@ export default {
     reviewFields: { product: 'Producto del cliente', materialStandard: 'Material / norma', grade: 'Grado', thickness: 'Espesor', width: 'Ancho', lengthOrForm: 'Largo / forma', surfaceRequirement: 'Superficie', coating: 'Recubrimiento', tolerance: 'Tolerancia', coilWeight: 'Peso de bobina', coilId: 'Diámetro interior', packaging: 'Embalaje', delivery: 'Entrega', paymentTerms: 'Condiciones de pago', incoterm: 'Incoterm', port: 'Puerto', quantityUnit: 'Unidad', remarks: 'Observaciones', quantity: 'Cantidad' },
   },
   requirements: {
+    sameBatch: 'Mismo lote',
     order: 'Enviar para aprobación',
     orderSelected: 'Enviar para aprobación ({n})',
     reopen: 'Reabrir',
