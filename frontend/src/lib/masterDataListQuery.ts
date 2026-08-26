@@ -1,3 +1,5 @@
+import type { LocationQueryValue } from 'vue-router'
+
 export interface MasterDataListFilters {
   keyword?: string
   country?: string
@@ -8,7 +10,11 @@ export interface MasterDataListFilters {
   page?: number
 }
 
-type QueryValue = string | string[] | null | undefined
+// 直接用 vue-router 自己的类型，而不是手写一个 string | string[]。
+// `?country=` 这种没有值的参数，router 给的是 null 不是空串；写成 string[]
+// 的那一版把 (string | null)[] 挡在了门外，于是每一个从 URL 读筛选条件的
+// 页面都在这里报错。下面两个函数本来就用 ?? '' 兜住了 null，缺的只是类型。
+type QueryValue = LocationQueryValue | LocationQueryValue[] | undefined
 
 /** 从 Vue Router 查询参数中读取单个文本值。 */
 export function queryText(value: QueryValue): string {

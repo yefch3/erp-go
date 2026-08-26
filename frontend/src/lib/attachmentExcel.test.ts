@@ -54,7 +54,9 @@ interface ZipInput {
   deflate?: boolean
 }
 
-function buildZip(entries: ZipInput[]): Uint8Array {
+// 返回类型写上 <ArrayBuffer>：不写的话 .buffer 是 ArrayBufferLike，切出来
+// 的东西带着 SharedArrayBuffer 的可能性，而被测函数收的是普通 ArrayBuffer。
+function buildZip(entries: ZipInput[]): Uint8Array<ArrayBuffer> {
   const encoder = new TextEncoder()
   const chunks: Uint8Array[] = []
   const central: Uint8Array[] = []
@@ -105,7 +107,7 @@ function buildZip(entries: ZipInput[]): Uint8Array {
   return concat([...chunks, directory, end])
 }
 
-function concat(parts: Uint8Array[]): Uint8Array {
+function concat(parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0))
   let at = 0
   for (const part of parts) {

@@ -152,12 +152,15 @@ audit-mail: ## Check stored mail against its invariants (needs a running databas
 # green and was found by someone clicking. `npm ci`, not `npm install`, so the
 # lockfile is honoured and CI installs what the laptop installed.
 #
-# Not `npm run typecheck`: that one is real but currently red (see the script
-# in frontend/package.json). Gating on it today would mean gating on 60-odd
-# pre-existing errors, so it stays a local command until they are cleared.
+# typecheck runs FIRST and it is the one that earns its keep: `npm run build`
+# does not check types at all - vite transpiles and never type-checks - so a
+# green build says nothing about whether the code means what it says. The 63
+# errors this used to report have been cleared; among them were a button
+# calling an undefined function and a handler taking an argument that was
+# silently dropped. Both had shipped.
 .PHONY: frontend-ci
-frontend-ci: ## Build the frontend and run its unit tests
-	cd frontend && npm ci && npm run build && npm test
+frontend-ci: ## Type-check and build the frontend, and run its unit tests
+	cd frontend && npm ci && npm run typecheck && npm run build && npm test
 
 # The single definition of what CI checks. The workflow provides the
 # environment (Postgres, Redis, created databases, migrations) and then calls
