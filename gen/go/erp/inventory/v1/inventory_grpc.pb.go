@@ -27,7 +27,10 @@ const (
 	StockService_GetWarehouseSettings_FullMethodName    = "/erp.inventory.v1.StockService/GetWarehouseSettings"
 	StockService_UpdateWarehouseSettings_FullMethodName = "/erp.inventory.v1.StockService/UpdateWarehouseSettings"
 	StockService_ListStocks_FullMethodName              = "/erp.inventory.v1.StockService/ListStocks"
+	StockService_GetStock_FullMethodName                = "/erp.inventory.v1.StockService/GetStock"
 	StockService_ListLedger_FullMethodName              = "/erp.inventory.v1.StockService/ListLedger"
+	StockService_FreezeStock_FullMethodName             = "/erp.inventory.v1.StockService/FreezeStock"
+	StockService_UnfreezeStock_FullMethodName           = "/erp.inventory.v1.StockService/UnfreezeStock"
 	StockService_ReceiveStock_FullMethodName            = "/erp.inventory.v1.StockService/ReceiveStock"
 	StockService_ListShippable_FullMethodName           = "/erp.inventory.v1.StockService/ListShippable"
 	StockService_ListShippableLines_FullMethodName      = "/erp.inventory.v1.StockService/ListShippableLines"
@@ -56,7 +59,10 @@ type StockServiceClient interface {
 	GetWarehouseSettings(ctx context.Context, in *GetWarehouseSettingsRequest, opts ...grpc.CallOption) (*GetWarehouseSettingsResponse, error)
 	UpdateWarehouseSettings(ctx context.Context, in *UpdateWarehouseSettingsRequest, opts ...grpc.CallOption) (*UpdateWarehouseSettingsResponse, error)
 	ListStocks(ctx context.Context, in *ListStocksRequest, opts ...grpc.CallOption) (*ListStocksResponse, error)
+	GetStock(ctx context.Context, in *GetStockRequest, opts ...grpc.CallOption) (*GetStockResponse, error)
 	ListLedger(ctx context.Context, in *ListLedgerRequest, opts ...grpc.CallOption) (*ListLedgerResponse, error)
+	FreezeStock(ctx context.Context, in *FreezeStockRequest, opts ...grpc.CallOption) (*FreezeStockResponse, error)
+	UnfreezeStock(ctx context.Context, in *UnfreezeStockRequest, opts ...grpc.CallOption) (*UnfreezeStockResponse, error)
 	// Receive goods. Manual for now; purchase receipts will call it later.
 	ReceiveStock(ctx context.Context, in *ReceiveStockRequest, opts ...grpc.CallOption) (*ReceiveStockResponse, error)
 	// Contracts with goods still owed, and what each of their lines can ship.
@@ -158,10 +164,40 @@ func (c *stockServiceClient) ListStocks(ctx context.Context, in *ListStocksReque
 	return out, nil
 }
 
+func (c *stockServiceClient) GetStock(ctx context.Context, in *GetStockRequest, opts ...grpc.CallOption) (*GetStockResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetStockResponse)
+	err := c.cc.Invoke(ctx, StockService_GetStock_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *stockServiceClient) ListLedger(ctx context.Context, in *ListLedgerRequest, opts ...grpc.CallOption) (*ListLedgerResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListLedgerResponse)
 	err := c.cc.Invoke(ctx, StockService_ListLedger_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stockServiceClient) FreezeStock(ctx context.Context, in *FreezeStockRequest, opts ...grpc.CallOption) (*FreezeStockResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FreezeStockResponse)
+	err := c.cc.Invoke(ctx, StockService_FreezeStock_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stockServiceClient) UnfreezeStock(ctx context.Context, in *UnfreezeStockRequest, opts ...grpc.CallOption) (*UnfreezeStockResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnfreezeStockResponse)
+	err := c.cc.Invoke(ctx, StockService_UnfreezeStock_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +302,10 @@ type StockServiceServer interface {
 	GetWarehouseSettings(context.Context, *GetWarehouseSettingsRequest) (*GetWarehouseSettingsResponse, error)
 	UpdateWarehouseSettings(context.Context, *UpdateWarehouseSettingsRequest) (*UpdateWarehouseSettingsResponse, error)
 	ListStocks(context.Context, *ListStocksRequest) (*ListStocksResponse, error)
+	GetStock(context.Context, *GetStockRequest) (*GetStockResponse, error)
 	ListLedger(context.Context, *ListLedgerRequest) (*ListLedgerResponse, error)
+	FreezeStock(context.Context, *FreezeStockRequest) (*FreezeStockResponse, error)
+	UnfreezeStock(context.Context, *UnfreezeStockRequest) (*UnfreezeStockResponse, error)
 	// Receive goods. Manual for now; purchase receipts will call it later.
 	ReceiveStock(context.Context, *ReceiveStockRequest) (*ReceiveStockResponse, error)
 	// Contracts with goods still owed, and what each of their lines can ship.
@@ -312,8 +351,17 @@ func (UnimplementedStockServiceServer) UpdateWarehouseSettings(context.Context, 
 func (UnimplementedStockServiceServer) ListStocks(context.Context, *ListStocksRequest) (*ListStocksResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListStocks not implemented")
 }
+func (UnimplementedStockServiceServer) GetStock(context.Context, *GetStockRequest) (*GetStockResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetStock not implemented")
+}
 func (UnimplementedStockServiceServer) ListLedger(context.Context, *ListLedgerRequest) (*ListLedgerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListLedger not implemented")
+}
+func (UnimplementedStockServiceServer) FreezeStock(context.Context, *FreezeStockRequest) (*FreezeStockResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FreezeStock not implemented")
+}
+func (UnimplementedStockServiceServer) UnfreezeStock(context.Context, *UnfreezeStockRequest) (*UnfreezeStockResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UnfreezeStock not implemented")
 }
 func (UnimplementedStockServiceServer) ReceiveStock(context.Context, *ReceiveStockRequest) (*ReceiveStockResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReceiveStock not implemented")
@@ -504,6 +552,24 @@ func _StockService_ListStocks_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StockService_GetStock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetStockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).GetStock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_GetStock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).GetStock(ctx, req.(*GetStockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StockService_ListLedger_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListLedgerRequest)
 	if err := dec(in); err != nil {
@@ -518,6 +584,42 @@ func _StockService_ListLedger_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StockServiceServer).ListLedger(ctx, req.(*ListLedgerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StockService_FreezeStock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FreezeStockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).FreezeStock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_FreezeStock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).FreezeStock(ctx, req.(*FreezeStockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StockService_UnfreezeStock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnfreezeStockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).UnfreezeStock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_UnfreezeStock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).UnfreezeStock(ctx, req.(*UnfreezeStockRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -706,8 +808,20 @@ var StockService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _StockService_ListStocks_Handler,
 		},
 		{
+			MethodName: "GetStock",
+			Handler:    _StockService_GetStock_Handler,
+		},
+		{
 			MethodName: "ListLedger",
 			Handler:    _StockService_ListLedger_Handler,
+		},
+		{
+			MethodName: "FreezeStock",
+			Handler:    _StockService_FreezeStock_Handler,
+		},
+		{
+			MethodName: "UnfreezeStock",
+			Handler:    _StockService_UnfreezeStock_Handler,
 		},
 		{
 			MethodName: "ReceiveStock",
