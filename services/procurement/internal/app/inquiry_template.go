@@ -31,6 +31,9 @@ const (
 	// SystemInquiryTemplateCode 是首次使用时播种的内置布局。它只是种子，
 	// 不是只读约束：公司可以直接编辑它（保存为新版本）。
 	SystemInquiryTemplateCode = "SYSTEM_DEFAULT"
+	// SteelDetailedInquiryTemplateCode 是把不同截面概念完全拆开的内置模板。
+	// 它与系统默认模板并存且不自动设为默认，由用户在模板页或邮箱转换时选择。
+	SteelDetailedInquiryTemplateCode = "STEEL_DETAILED_DIMENSIONS"
 )
 
 // 核心字段承载采购后续流程的硬依赖（建行、比价、需求、价格公式列），任何
@@ -77,32 +80,69 @@ type InquiryTemplateView struct {
 	Fields   []store.ListInquiryTemplateFieldsRow
 }
 
-// systemInquiryTemplateFields 是播种内容，与邮件模块现行 21 列一一对应：
-// 19 个业务字段 + 单价（留空待填）+ 总价（数量×单价公式列）。
+// systemInquiryTemplateFields 是播种内容，与邮件模块现行 22 列一一对应。
+// 截面第二维使用 custom.* 落采购明细的 custom_fields，避免为一个尺寸字段
+// 扩大采购核心表结构，同时仍受默认模板、上传校验和 LLM schema 约束。
 func systemInquiryTemplateFields() []InquiryTemplateFieldInput {
 	type f = InquiryTemplateFieldInput
 	return []f{
 		{FieldKey: "product", DisplayName: "产品", SortOrder: 1, IsRequired: true, DataType: "TEXT"},
 		{FieldKey: "material_standard", DisplayName: "材质/标准", SortOrder: 2, DataType: "TEXT"},
 		{FieldKey: "grade", DisplayName: "牌号/等级", SortOrder: 3, DataType: "TEXT"},
-		{FieldKey: "thickness", DisplayName: "厚度", SortOrder: 4, DataType: "TEXT"},
-		{FieldKey: "width", DisplayName: "宽度", SortOrder: 5, DataType: "TEXT"},
-		{FieldKey: "length_or_form", DisplayName: "长度/形式", SortOrder: 6, DataType: "TEXT"},
-		{FieldKey: "surface_requirement", DisplayName: "表面要求", SortOrder: 7, DataType: "TEXT"},
-		{FieldKey: "coating", DisplayName: "涂层/镀层", SortOrder: 8, DataType: "TEXT"},
-		{FieldKey: "tolerance", DisplayName: "公差", SortOrder: 9, DataType: "TEXT"},
-		{FieldKey: "coil_weight", DisplayName: "卷重", SortOrder: 10, DataType: "TEXT"},
-		{FieldKey: "coil_id", DisplayName: "卷内径", SortOrder: 11, DataType: "TEXT"},
-		{FieldKey: "packaging", DisplayName: "包装", SortOrder: 12, DataType: "TEXT"},
-		{FieldKey: "delivery", DisplayName: "交期", SortOrder: 13, DataType: "TEXT"},
-		{FieldKey: "payment_terms", DisplayName: "付款条件", SortOrder: 14, DataType: "TEXT"},
-		{FieldKey: "incoterm", DisplayName: "贸易术语", SortOrder: 15, DataType: "TEXT"},
-		{FieldKey: "port", DisplayName: "港口", SortOrder: 16, DataType: "TEXT"},
-		{FieldKey: "quantity_unit", DisplayName: "单位", SortOrder: 17, IsRequired: true, DataType: "TEXT"},
-		{FieldKey: "remarks", DisplayName: "备注", SortOrder: 18, DataType: "TEXT"},
-		{FieldKey: "quantity", DisplayName: "数量", SortOrder: 19, IsRequired: true, DataType: "NUMBER"},
-		{FieldKey: "unit_price", DisplayName: "单价", SortOrder: 20, DataType: "NUMBER"},
-		{FieldKey: "total_price", DisplayName: "总价", SortOrder: 21, DataType: "NUMBER"},
+		{FieldKey: "thickness", DisplayName: "厚度/壁厚(mm)", SortOrder: 4, DataType: "NUMBER"},
+		{FieldKey: "width", DisplayName: "宽度/直径/边长1(mm)", SortOrder: 5, DataType: "NUMBER"},
+		{FieldKey: "custom.height_or_leg2", DisplayName: "高度/边长2(mm)", SortOrder: 6, DataType: "NUMBER"},
+		{FieldKey: "length_or_form", DisplayName: "长度(mm)", SortOrder: 7, DataType: "NUMBER"},
+		{FieldKey: "surface_requirement", DisplayName: "表面要求", SortOrder: 8, DataType: "TEXT"},
+		{FieldKey: "coating", DisplayName: "涂层/镀层", SortOrder: 9, DataType: "TEXT"},
+		{FieldKey: "tolerance", DisplayName: "公差", SortOrder: 10, DataType: "TEXT"},
+		{FieldKey: "coil_weight", DisplayName: "卷重", SortOrder: 11, DataType: "TEXT"},
+		{FieldKey: "coil_id", DisplayName: "卷内径", SortOrder: 12, DataType: "TEXT"},
+		{FieldKey: "packaging", DisplayName: "包装", SortOrder: 13, DataType: "TEXT"},
+		{FieldKey: "delivery", DisplayName: "交期", SortOrder: 14, DataType: "TEXT"},
+		{FieldKey: "payment_terms", DisplayName: "付款条件", SortOrder: 15, DataType: "TEXT"},
+		{FieldKey: "incoterm", DisplayName: "贸易术语", SortOrder: 16, DataType: "TEXT"},
+		{FieldKey: "port", DisplayName: "港口", SortOrder: 17, DataType: "TEXT"},
+		{FieldKey: "quantity_unit", DisplayName: "单位", SortOrder: 18, IsRequired: true, DataType: "TEXT"},
+		{FieldKey: "remarks", DisplayName: "备注", SortOrder: 19, DataType: "TEXT"},
+		{FieldKey: "quantity", DisplayName: "数量", SortOrder: 20, IsRequired: true, DataType: "NUMBER"},
+		{FieldKey: "unit_price", DisplayName: "单价", SortOrder: 21, DataType: "NUMBER"},
+		{FieldKey: "total_price", DisplayName: "总价", SortOrder: 22, DataType: "NUMBER"},
+	}
+}
+
+// steelDetailedInquiryTemplateFields 不复用含义相近但业务不同的尺寸列。
+// 不适用于某种产品的尺寸在输出中保持空白；额外尺寸放入 custom_fields，
+// 因而无需改变采购明细表结构，也能随询盘模板完整保存。
+func steelDetailedInquiryTemplateFields() []InquiryTemplateFieldInput {
+	type f = InquiryTemplateFieldInput
+	return []f{
+		{FieldKey: "product", DisplayName: "产品", SortOrder: 1, IsRequired: true, DataType: "TEXT"},
+		{FieldKey: "material_standard", DisplayName: "材质/标准", SortOrder: 2, DataType: "TEXT"},
+		{FieldKey: "grade", DisplayName: "牌号/等级", SortOrder: 3, DataType: "TEXT"},
+		{FieldKey: "custom.thickness_mm", DisplayName: "厚度(mm)", SortOrder: 4, DataType: "NUMBER"},
+		{FieldKey: "custom.wall_thickness_mm", DisplayName: "壁厚(mm)", SortOrder: 5, DataType: "NUMBER"},
+		{FieldKey: "custom.width_mm", DisplayName: "宽度(mm)", SortOrder: 6, DataType: "NUMBER"},
+		{FieldKey: "custom.height_mm", DisplayName: "高度(mm)", SortOrder: 7, DataType: "NUMBER"},
+		{FieldKey: "custom.diameter_mm", DisplayName: "直径(mm)", SortOrder: 8, DataType: "NUMBER"},
+		{FieldKey: "custom.leg1_mm", DisplayName: "边长1(mm)", SortOrder: 9, DataType: "NUMBER"},
+		{FieldKey: "custom.leg2_mm", DisplayName: "边长2(mm)", SortOrder: 10, DataType: "NUMBER"},
+		{FieldKey: "length_or_form", DisplayName: "长度(mm)", SortOrder: 11, DataType: "NUMBER"},
+		{FieldKey: "surface_requirement", DisplayName: "表面要求", SortOrder: 12, DataType: "TEXT"},
+		{FieldKey: "coating", DisplayName: "涂层/镀层", SortOrder: 13, DataType: "TEXT"},
+		{FieldKey: "tolerance", DisplayName: "公差", SortOrder: 14, DataType: "TEXT"},
+		{FieldKey: "coil_weight", DisplayName: "卷重", SortOrder: 15, DataType: "TEXT"},
+		{FieldKey: "coil_id", DisplayName: "卷内径", SortOrder: 16, DataType: "TEXT"},
+		{FieldKey: "packaging", DisplayName: "包装", SortOrder: 17, DataType: "TEXT"},
+		{FieldKey: "delivery", DisplayName: "交期", SortOrder: 18, DataType: "TEXT"},
+		{FieldKey: "payment_terms", DisplayName: "付款条件", SortOrder: 19, DataType: "TEXT"},
+		{FieldKey: "incoterm", DisplayName: "贸易术语", SortOrder: 20, DataType: "TEXT"},
+		{FieldKey: "port", DisplayName: "港口", SortOrder: 21, DataType: "TEXT"},
+		{FieldKey: "quantity_unit", DisplayName: "单位", SortOrder: 22, IsRequired: true, DataType: "TEXT"},
+		{FieldKey: "remarks", DisplayName: "备注", SortOrder: 23, DataType: "TEXT"},
+		{FieldKey: "quantity", DisplayName: "数量", SortOrder: 24, IsRequired: true, DataType: "NUMBER"},
+		{FieldKey: "unit_price", DisplayName: "单价", SortOrder: 25, DataType: "NUMBER"},
+		{FieldKey: "total_price", DisplayName: "总价", SortOrder: 26, DataType: "NUMBER"},
 	}
 }
 
@@ -120,8 +160,36 @@ func IsCoreInquiryField(key string) bool {
 // EnsureDefaultInquiryTemplate 让「每个租户都有默认模板」成为不变量：
 // 首次访问时播种系统布局。并发首访撞唯一索引时按已存在处理。
 func (s *Service) EnsureDefaultInquiryTemplate(ctx context.Context, tenantID int64) error {
-	_, err := s.q.GetDefaultInquiryTemplate(ctx, tenantID)
+	if err := s.ensureDefaultInquiryTemplate(ctx, tenantID); err != nil {
+		return err
+	}
+	return s.ensureSteelDetailedInquiryTemplate(ctx, tenantID)
+}
+
+func (s *Service) ensureDefaultInquiryTemplate(ctx context.Context, tenantID int64) error {
+	current, err := s.q.GetDefaultInquiryTemplate(ctx, tenantID)
 	if err == nil {
+		view, viewErr := s.templateView(ctx, current)
+		if viewErr != nil {
+			return viewErr
+		}
+		if isLegacySystemInquiryTemplate(view) {
+			_, saveErr := s.SaveInquiryTemplate(ctx, tenantID, current.ID, InquiryTemplateInput{
+				Name: current.Name, Description: "系统内置标准列（毫米尺寸结构）",
+				IsDefault: true, Fields: systemInquiryTemplateFields(),
+			}, Operator{Name: "system"})
+			if saveErr != nil {
+				// 并发请求可能已完成同一升级；重新读取确认即可。
+				latest, latestErr := s.q.GetDefaultInquiryTemplate(ctx, tenantID)
+				if latestErr == nil {
+					latestView, latestViewErr := s.templateView(ctx, latest)
+					if latestViewErr == nil && !isLegacySystemInquiryTemplate(latestView) {
+						return nil
+					}
+				}
+				return saveErr
+			}
+		}
 		return nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -143,7 +211,7 @@ func (s *Service) EnsureDefaultInquiryTemplate(ctx context.Context, tenantID int
 				TenantID: tenantID, TemplateID: id, FieldKey: field.FieldKey,
 				DisplayName: field.DisplayName, SortOrder: field.SortOrder,
 				IsRequired: field.IsRequired, DefaultValue: field.DefaultValue,
-				DataType: field.DataType, IsCustom: false,
+				DataType: field.DataType, IsCustom: strings.HasPrefix(field.FieldKey, "custom."),
 			}); err != nil {
 				return err
 			}
@@ -158,6 +226,67 @@ func (s *Service) EnsureDefaultInquiryTemplate(ctx context.Context, tenantID int
 		return err
 	}
 	return nil
+}
+
+func (s *Service) ensureSteelDetailedInquiryTemplate(ctx context.Context, tenantID int64) error {
+	rows, err := s.q.ListInquiryTemplates(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+	// ACTIVE 和 DISABLED 都算已经播种；用户停用后不能被系统悄悄恢复。
+	for _, row := range rows {
+		if row.TemplateCode == SteelDetailedInquiryTemplateCode {
+			return nil
+		}
+	}
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		id, createErr := q.CreateInquiryTemplate(ctx, store.CreateInquiryTemplateParams{
+			TenantID: tenantID, TemplateCode: SteelDetailedInquiryTemplateCode, Version: 1,
+			Name: "钢材详细尺寸模板", Description: "厚度、壁厚、宽度、高度、直径和边长分别独立；不适用的尺寸留空",
+			Status: InquiryTemplateStatusActive, IsDefault: false, CreatedByName: "system",
+		})
+		if createErr != nil {
+			return createErr
+		}
+		for _, field := range steelDetailedInquiryTemplateFields() {
+			if err := q.CreateInquiryTemplateField(ctx, store.CreateInquiryTemplateFieldParams{
+				TenantID: tenantID, TemplateID: id, FieldKey: field.FieldKey,
+				DisplayName: field.DisplayName, SortOrder: field.SortOrder,
+				IsRequired: field.IsRequired, DefaultValue: field.DefaultValue,
+				DataType: field.DataType, IsCustom: strings.HasPrefix(field.FieldKey, "custom."),
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && (pgErr.ConstraintName == "inquiry_templates_active_code_idx" ||
+			pgErr.ConstraintName == "inquiry_templates_tenant_id_template_code_version_key") {
+			return nil // 另一个请求刚刚完成播种
+		}
+	}
+	return err
+}
+
+func isLegacySystemInquiryTemplate(view InquiryTemplateView) bool {
+	if view.Template.TemplateCode != SystemInquiryTemplateCode || view.Template.Version != 1 || view.Template.CreatedByName != "system" || len(view.Fields) != 21 {
+		return false
+	}
+	legacyKeys := []string{
+		"product", "material_standard", "grade", "thickness", "width", "length_or_form",
+		"surface_requirement", "coating", "tolerance", "coil_weight", "coil_id", "packaging",
+		"delivery", "payment_terms", "incoterm", "port", "quantity_unit", "remarks", "quantity",
+		"unit_price", "total_price",
+	}
+	for i, field := range view.Fields {
+		if field.FieldKey != legacyKeys[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Service) templateView(ctx context.Context, row store.InquiryTemplate) (InquiryTemplateView, error) {

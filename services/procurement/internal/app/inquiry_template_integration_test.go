@@ -34,8 +34,24 @@ func TestInquiryTemplateSeedsSystemDefaultOnFirstUse(t *testing.T) {
 	if view.Template.TemplateCode != SystemInquiryTemplateCode || view.Template.Version != 1 || !view.Template.IsDefault {
 		t.Fatalf("unexpected seeded template: %#v", view.Template)
 	}
-	if len(view.Fields) != 21 {
-		t.Fatalf("system layout should carry the 21 standard columns, got %d", len(view.Fields))
+	if len(view.Fields) != 22 {
+		t.Fatalf("system layout should carry the 22 standard columns, got %d", len(view.Fields))
+	}
+	templates, err := svc.ListInquiryTemplates(ctx, tenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(templates) != 2 {
+		t.Fatalf("first use should seed default and detailed steel templates, got %d", len(templates))
+	}
+	var detailed *InquiryTemplateView
+	for i := range templates {
+		if templates[i].Template.TemplateCode == SteelDetailedInquiryTemplateCode {
+			detailed = &templates[i]
+		}
+	}
+	if detailed == nil || detailed.Template.IsDefault || len(detailed.Fields) != 26 {
+		t.Fatalf("unexpected detailed steel template: %#v", detailed)
 	}
 }
 
@@ -65,8 +81,18 @@ func TestInquiryTemplateSaveIssuesNextVersionAndKeepsDefault(t *testing.T) {
 		t.Fatalf("save should issue the next version and keep default, got v%d default=%v",
 			saved.Template.Version, saved.Template.IsDefault)
 	}
-	if len(saved.Fields) != 22 {
-		t.Fatalf("custom column missing: %d fields", len(saved.Fields))
+	if len(saved.Fields) != len(def.Fields)+1 {
+		t.Fatalf("saved fields = %d, want %d", len(saved.Fields), len(def.Fields)+1)
+	}
+	foundCustom := false
+	for _, field := range saved.Fields {
+		if field.FieldKey == "custom.customer_part_no" {
+			foundCustom = true
+			break
+		}
+	}
+	if !foundCustom {
+		t.Fatal("custom.customer_part_no missing from saved template version")
 	}
 
 	old, err := svc.GetInquiryTemplate(ctx, tenantID, def.Template.ID)

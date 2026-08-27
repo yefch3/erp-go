@@ -70,3 +70,27 @@ func TestValidateInquiryTemplateFieldsRejectsDuplicateHeaders(t *testing.T) {
 		t.Fatal("expected duplicate header to be rejected")
 	}
 }
+
+func TestSteelDetailedTemplateUsesOneMeaningPerDimensionColumn(t *testing.T) {
+	fields, err := validateInquiryTemplateFields(steelDetailedInquiryTemplateFields())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"custom.thickness_mm": "厚度(mm)", "custom.wall_thickness_mm": "壁厚(mm)",
+		"custom.width_mm": "宽度(mm)", "custom.height_mm": "高度(mm)",
+		"custom.diameter_mm": "直径(mm)", "custom.leg1_mm": "边长1(mm)",
+		"custom.leg2_mm": "边长2(mm)", "length_or_form": "长度(mm)",
+	}
+	for _, field := range fields {
+		if displayName, ok := want[field.FieldKey]; ok {
+			if field.DisplayName != displayName || field.DataType != "NUMBER" {
+				t.Fatalf("dimension field = %#v", field)
+			}
+			delete(want, field.FieldKey)
+		}
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing detailed dimension fields: %#v", want)
+	}
+}

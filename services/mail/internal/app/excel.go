@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -22,7 +23,14 @@ import (
 	"github.com/sgao19/erp-go/services/mail/internal/store"
 )
 
-var plainDecimal = regexp.MustCompile(`^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$`)
+var (
+	plainDecimal      = regexp.MustCompile(`^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$`)
+	plateDescription  = regexp.MustCompile(`(?i)^PL\s+.*?\b(ASTM\s+[A-Z0-9.-]+)\s+([0-9]+(?:[.,][0-9]+)?)\s*[Xx]\s*([0-9]+(?:[.,][0-9]+)?)\s*[Xx]\s*([0-9]+(?:[.,][0-9]+)?)\s*$`)
+	spreadsheetLength = regexp.MustCompile(`(?i)^\s*([0-9]+(?:[.,][0-9]+)?)\s*(metres?|meters?|mm|m)?\s*(.*)$`)
+	profileLength     = regexp.MustCompile(`(?i)\s*[Xx]\s*([0-9]+(?:[.,][0-9]+)?)\s*(MM|M|METRES?|METERS?)\.?\s*$`)
+	profileNumber     = regexp.MustCompile(`[0-9]+(?:[.,][0-9]+)?`)
+	profileSeparator  = regexp.MustCompile(`(?i)\s*[Xx]\s*`)
+)
 
 const (
 	maxExcelSelectedText = 200_000
@@ -45,6 +53,7 @@ type TableExtractor interface {
 // 对不上真实账单。
 type Extraction struct {
 	Workbook Workbook
+	Inquiry  ExtractedInquiry
 	Model    string
 	Usage    ModelUsage
 }
@@ -63,8 +72,19 @@ type TableExtractionInput struct {
 	FileData    []byte
 	Locale      string
 	SafetyID    string
-	// 当前默认询盘模板的列快照；空时按系统内置 21 列处理。
+	// 当前默认询盘模板的列快照；空时按系统内置 22 列处理。
 	Columns []InquiryColumn
+	// SourceRefs is populated for spreadsheet attachments when their requested
+	// detail rows can be identified locally. The model must return exactly one
+	// item for every ref, so a plausible-looking workbook can never hide a
+	// skipped source line.
+	SourceRefs []string
+	// SourceRows contains locally parsed spreadsheet rows. When present, the
+	// adapter receives these bounded records as text instead of being asked to
+	// rediscover rows from the whole workbook.
+	SourceRows    []SpreadsheetSourceRow
+	SourceContext []SpreadsheetContextBlock
+	SourceSheets  []SpreadsheetSheetInfo
 }
 
 type Workbook struct {
@@ -98,7 +118,7 @@ type InquiryColumn struct {
 	DefaultValue string `json:"default_value"`
 }
 
-// SystemInquiryColumns 是系统内置 21 列布局，只在请求没有携带模板快照时
+// SystemInquiryColumns 是系统内置 22 列布局，只在请求没有携带模板快照时
 // 兜底（旧任务、直连调试）。正常路径永远使用采购侧默认模板的快照。
 func SystemInquiryColumns() []InquiryColumn {
 	type c = InquiryColumn
@@ -106,9 +126,10 @@ func SystemInquiryColumns() []InquiryColumn {
 		{FieldKey: "product", DisplayName: "产品", DataType: "TEXT", IsRequired: true},
 		{FieldKey: "material_standard", DisplayName: "材质/标准", DataType: "TEXT"},
 		{FieldKey: "grade", DisplayName: "牌号/等级", DataType: "TEXT"},
-		{FieldKey: "thickness", DisplayName: "厚度", DataType: "TEXT"},
-		{FieldKey: "width", DisplayName: "宽度", DataType: "TEXT"},
-		{FieldKey: "length_or_form", DisplayName: "长度/形式", DataType: "TEXT"},
+		{FieldKey: "thickness", DisplayName: "厚度/壁厚(mm)", DataType: "NUMBER"},
+		{FieldKey: "width", DisplayName: "宽度/直径/边长1(mm)", DataType: "NUMBER"},
+		{FieldKey: "custom.height_or_leg2", DisplayName: "高度/边长2(mm)", DataType: "NUMBER"},
+		{FieldKey: "length_or_form", DisplayName: "长度(mm)", DataType: "NUMBER"},
 		{FieldKey: "surface_requirement", DisplayName: "表面要求", DataType: "TEXT"},
 		{FieldKey: "coating", DisplayName: "涂层/镀层", DataType: "TEXT"},
 		{FieldKey: "tolerance", DisplayName: "公差", DataType: "TEXT"},
@@ -193,7 +214,7 @@ func NewTemplateWorkbook(in ExtractedInquiry, columns []InquiryColumn) Workbook 
 		// 询盘阶段单价永远是空的——提示词写死了「报价是工厂后面给的，这里
 		// 绝不计算也绝不臆造」。从前不管有没有单价都写公式，于是每一行的
 		// 总价都是一个指着空格子的算式：Excel 里算出 0，预览里露出
-		// 「=S2*T2」。一列从头到尾没有意义，还看着像坏了。
+		// 「数量格×单价格」。一列从头到尾没有意义，还看着像坏了。
 		if withFormula {
 			qty, qtyOK := safeExcelDecimal(row[qtyIdx])
 			price, priceOK := safeExcelDecimal(row[priceIdx])
@@ -327,9 +348,21 @@ func (s *Service) ConvertInboundToExcel(
 			return ExcelResult{}, apierr.Invalid("MAIL_EXCEL_ATTACHMENT_SIZE", "附件为空或超过 10 MB")
 		}
 		in.FileName, in.ContentType, in.FileData = chosen.FileName, chosen.ContentType, data
+		if strings.EqualFold(filepath.Ext(chosen.FileName), ".xlsx") {
+			document, err := ParseSpreadsheetSource(data)
+			if err != nil {
+				return ExcelResult{}, apierr.Invalid("MAIL_EXCEL_SOURCE_PARSE", "无法读取 Excel 明细行，请检查附件是否完整").Wrap(err)
+			}
+			in.SourceRows, in.SourceContext, in.SourceSheets = document.Rows, document.ContextBlocks, document.Sheets
+		}
 	}
 
-	extracted, err := s.tables.Extract(ctx, in)
+	var extracted Extraction
+	if len(in.SourceRows) > 0 {
+		extracted, err = s.extractSpreadsheetRows(ctx, in, columns)
+	} else {
+		extracted, err = s.tables.Extract(ctx, in)
+	}
 	book, model := extracted.Workbook, extracted.Model
 	// 失败也要把用量带出去。这几次照样计费，漏掉它们账就对不上真实账单。
 	spent := ExcelResult{Model: model, Usage: extracted.Usage}
@@ -353,6 +386,467 @@ func (s *Service) ConvertInboundToExcel(
 	// 丢在半路，而成功恰恰是绝大多数情况，账会一直是 0。
 	spent.FileName, spent.Data, spent.Workbook = name+".xlsx", data, book
 	return spent, nil
+}
+
+const spreadsheetExtractionBatchSize = 20
+
+// extractSpreadsheetRows gives the model small, already-enumerated source
+// records. Each batch has independent source-ref validation in the adapter;
+// nothing is returned to the caller unless every batch succeeds.
+func (s *Service) extractSpreadsheetRows(ctx context.Context, in TableExtractionInput, columns []InquiryColumn) (Extraction, error) {
+	var combined Extraction
+	for first := 0; first < len(in.SourceRows); first += spreadsheetExtractionBatchSize {
+		last := first + spreadsheetExtractionBatchSize
+		if last > len(in.SourceRows) {
+			last = len(in.SourceRows)
+		}
+		rows := in.SourceRows[first:last]
+		contextBlocks := RelevantSpreadsheetContext(in.SourceContext, rows)
+		payload, err := json.Marshal(map[string]any{
+			"rows": rows, "context_sheets": in.SourceSheets, "context_blocks": contextBlocks,
+		})
+		if err != nil {
+			return combined, fmt.Errorf("encode spreadsheet source rows: %w", err)
+		}
+		refs := make([]string, len(rows))
+		for i, row := range rows {
+			refs[i] = row.SourceRef
+		}
+		batch := in
+		batch.Text = string(payload)
+		batch.SourceRows = nil
+		batch.SourceRefs = refs
+		extracted, err := s.tables.Extract(ctx, batch)
+		combined.Usage.InputTokens += extracted.Usage.InputTokens
+		combined.Usage.OutputTokens += extracted.Usage.OutputTokens
+		if combined.Model == "" {
+			combined.Model = extracted.Model
+		}
+		if err != nil {
+			return combined, err
+		}
+		for i := range extracted.Inquiry.Items {
+			applySpreadsheetAnchors(rows[i], extracted.Inquiry.Items[i])
+		}
+		if len(combined.Inquiry.Items) == 0 {
+			combined.Inquiry.Title = extracted.Inquiry.Title
+			combined.Inquiry.Summary = extracted.Inquiry.Summary
+		}
+		combined.Inquiry.Items = append(combined.Inquiry.Items, extracted.Inquiry.Items...)
+	}
+	combined.Workbook = NewTemplateWorkbook(combined.Inquiry, columns)
+	return combined, nil
+}
+
+// applySpreadsheetAnchors makes source facts stronger than model judgment.
+// The model may enrich a row, but it cannot blank or alter values carried by
+// explicit source columns.
+func applySpreadsheetAnchors(source SpreadsheetSourceRow, item map[string]string) {
+	cell := func(names ...string) string {
+		for header, value := range source.Cells {
+			normalized := normalizeHeader(header)
+			for _, name := range names {
+				if normalized == name {
+					return strings.TrimSpace(value)
+				}
+			}
+		}
+		return ""
+	}
+	if value := cell("description", "steel", "product", "producto"); value != "" {
+		item["product"] = value
+		applyKnownProductDimensions(value, item)
+	}
+	if value := cell("thicknessmm", "thickness", "espesormm", "espesor"); value != "" {
+		item["thickness"] = canonicalPlainDecimal(value)
+		item["custom.thickness_mm"] = item["thickness"]
+	}
+	if value := cell("widthmm", "width", "anchomm", "ancho"); value != "" {
+		item["width"] = canonicalPlainDecimal(value)
+		item["custom.width_mm"] = item["width"]
+	}
+	if value := cell("inqqty", "quantity", "qty", "cantidad"); value != "" {
+		item["quantity"] = value
+	}
+	if value := cell("coilweights", "coilweight"); value != "" {
+		item["coil_weight"] = value
+	}
+	if source.QuantityUnitHint != "" {
+		item["quantity_unit"] = source.QuantityUnitHint
+	}
+	if value := cell("paymentterms"); value != "" {
+		item["payment_terms"] = value
+	}
+	if value := cell("shipment"); value != "" {
+		item["delivery"] = value
+	}
+	normalizeSpreadsheetDimensions(item)
+	var facts []string
+	if value := cell("country", "pais"); value != "" {
+		facts = append(facts, "COUNTRY: "+value)
+	}
+	if value := cell("lot", "lote"); value != "" {
+		facts = append(facts, "LOT: "+value)
+	}
+	if value := cell("usedcolorssdesignation"); value != "" {
+		facts = append(facts, "USED / COLOR / SS DESIGNATION: "+value)
+	}
+	for _, named := range []struct {
+		headers []string
+		label   string
+	}{
+		{[]string{"remark", "remarks"}, "SOURCE REMARK"},
+		{[]string{"portofloading"}, "PORT OF LOADING"},
+		{[]string{"portofdischarge"}, "PORT OF DISCHARGE"},
+		{[]string{"countryoforigin"}, "COUNTRY OF ORIGIN"},
+		{[]string{"typeoffinancing"}, "TYPE OF FINANCING"},
+		{[]string{"milloption"}, "MILL OPTION"},
+	} {
+		if value := cell(named.headers...); value != "" {
+			facts = append(facts, named.label+": "+value)
+		}
+	}
+	if len(facts) > 0 {
+		merged := make([]string, 0, len(facts)+4)
+		seen := map[string]bool{}
+		add := func(value string) {
+			value = strings.TrimSpace(value)
+			key := strings.ToLower(value)
+			if value != "" && !seen[key] {
+				seen[key] = true
+				merged = append(merged, value)
+			}
+		}
+		for _, fact := range facts {
+			add(fact)
+		}
+		for _, remark := range strings.Split(item["remarks"], ";") {
+			add(remark)
+		}
+		item["remarks"] = strings.Join(merged, "; ")
+	}
+}
+
+// applyKnownProductDimensions parses product-family-specific size orders from
+// the authoritative PRODUCTS description. The model still enriches standards
+// and requirements, but dimensions cannot be dropped or moved between axes.
+func applyKnownProductDimensions(description string, item map[string]string) bool {
+	description = strings.TrimSpace(description)
+	if match := plateDescription.FindStringSubmatch(description); match != nil {
+		item["material_standard"] = match[1]
+		setProductDimensions(item, steelDimensions{
+			thickness: canonicalPlainDecimal(match[2]), width: canonicalPlainDecimal(match[3]),
+			length: canonicalPlainDecimal(match[4]),
+		})
+		return true
+	}
+
+	upper := strings.ToUpper(description)
+	switch {
+	case strings.HasPrefix(upper, "BARRA REDONDA"):
+		body, length, ok := splitMetreLength(description, "BARRA REDONDA")
+		if !ok {
+			return false
+		}
+		diameter, ok := measurementToMillimetres(strings.TrimSpace(body), unitForFraction(body))
+		if !ok {
+			return false
+		}
+		setProductDimensions(item, steelDimensions{diameter: diameter, length: length})
+		return true
+
+	case strings.HasPrefix(upper, "PLATINA"):
+		body, length, ok := splitMetreLength(description, "PLATINA")
+		if !ok {
+			return false
+		}
+		parts := profileSeparator.Split(strings.TrimSpace(body), -1)
+		if len(parts) != 2 {
+			return false
+		}
+		unit := "mm"
+		if strings.Contains(body, "/") {
+			unit = "in"
+		}
+		width, widthOK := measurementToMillimetres(parts[0], unit)
+		thickness, thicknessOK := measurementToMillimetres(parts[1], unit)
+		if !widthOK || !thicknessOK {
+			return false
+		}
+		setProductDimensions(item, steelDimensions{thickness: thickness, width: width, length: length})
+		return true
+
+	case strings.HasPrefix(upper, "ANG"):
+		body, length, ok := splitMetreLength(description, "ANG")
+		if !ok {
+			return false
+		}
+		parts := profileSeparator.Split(strings.TrimSpace(body), -1)
+		if len(parts) != 2 && len(parts) != 3 {
+			return false
+		}
+		defaultUnits := make([]string, len(parts))
+		for i, part := range parts {
+			defaultUnits[i] = unitForFraction(part)
+		}
+		// A complete three-axis angle with any fractional/quoted inch token is
+		// an imperial profile as a whole. This covers common forms such as
+		// 2 x 2 x 1/4, where the whole-number legs omit the inch mark. The
+		// two-axis shorthand remains token-specific because 3/4 x 2.5 means
+		// a 3/4-inch equal leg with a 2.5 mm thickness in the source samples.
+		if len(parts) == 3 && containsImperialDimension(parts) {
+			for i := range defaultUnits {
+				defaultUnits[i] = "in"
+			}
+		}
+		leg1, leg1OK := measurementToMillimetres(parts[0], defaultUnits[0])
+		leg2Token, thicknessToken := parts[0], parts[1]
+		leg2Unit, thicknessUnit := defaultUnits[0], defaultUnits[1]
+		if len(parts) == 3 {
+			leg2Token, thicknessToken = parts[1], parts[2]
+			leg2Unit, thicknessUnit = defaultUnits[1], defaultUnits[2]
+		}
+		leg2, leg2OK := measurementToMillimetres(leg2Token, leg2Unit)
+		thickness, thicknessOK := measurementToMillimetres(thicknessToken, thicknessUnit)
+		if !leg1OK || !leg2OK || !thicknessOK {
+			return false
+		}
+		setProductDimensions(item, steelDimensions{thickness: thickness, leg1: leg1, leg2: leg2, length: length})
+		return true
+
+	case strings.HasPrefix(upper, "BARRA CUADRADA"):
+		body, length, ok := splitMetreLength(description, "BARRA CUADRADA")
+		if !ok {
+			return false
+		}
+		parts := profileSeparator.Split(strings.TrimSpace(body), -1)
+		if len(parts) != 2 {
+			return false
+		}
+		leg1, firstOK := measurementToMillimetres(parts[0], unitForFraction(parts[0]))
+		leg2, secondOK := measurementToMillimetres(parts[1], unitForFraction(parts[1]))
+		if !firstOK || !secondOK {
+			return false
+		}
+		setProductDimensions(item, steelDimensions{leg1: leg1, leg2: leg2, length: length})
+		return true
+
+	case strings.HasPrefix(upper, "CUA ESTR"), strings.HasPrefix(upper, "CUAD"):
+		numbers := profileNumber.FindAllString(description, -1)
+		if len(numbers) != 3 && len(numbers) != 4 {
+			return false
+		}
+		var side1, side2, thickness, length string
+		if len(numbers) == 3 {
+			side1, side2, thickness, length = numbers[0], numbers[0], numbers[1], structuralLength(description, numbers[2])
+		} else {
+			side1, side2, thickness, length = numbers[0], numbers[1], numbers[2], structuralLength(description, numbers[3])
+		}
+		setProductDimensions(item, steelDimensions{
+			wallThickness: canonicalPlainDecimal(thickness), width: canonicalPlainDecimal(side1),
+			height: canonicalPlainDecimal(side2), length: length,
+		})
+		return true
+
+	case strings.HasPrefix(upper, "REC"), strings.HasPrefix(upper, "RECT"):
+		numbers := profileNumber.FindAllString(description, -1)
+		if len(numbers) != 4 {
+			return false
+		}
+		setProductDimensions(item, steelDimensions{
+			wallThickness: canonicalPlainDecimal(numbers[2]), width: canonicalPlainDecimal(numbers[0]),
+			height: canonicalPlainDecimal(numbers[1]), length: structuralLength(description, numbers[3]),
+		})
+		return true
+	}
+	return false
+}
+
+type steelDimensions struct {
+	thickness, wallThickness, width, height, diameter, leg1, leg2, length string
+}
+
+func setProductDimensions(item map[string]string, dimensions steelDimensions) {
+	// 精确语义供“钢材详细尺寸模板”使用。已识别产品族时先把所有尺寸清空，
+	// 防止模型把不适用的概念误填进来。
+	values := map[string]string{
+		"custom.thickness_mm":      dimensions.thickness,
+		"custom.wall_thickness_mm": dimensions.wallThickness,
+		"custom.width_mm":          dimensions.width,
+		"custom.height_mm":         dimensions.height,
+		"custom.diameter_mm":       dimensions.diameter,
+		"custom.leg1_mm":           dimensions.leg1,
+		"custom.leg2_mm":           dimensions.leg2,
+	}
+	for key, value := range values {
+		item[key] = value
+	}
+
+	// 旧模板的三列混合语义继续兼容，历史模板和客户自定义模板不会失效。
+	item["thickness"] = firstNonEmpty(dimensions.thickness, dimensions.wallThickness)
+	item["width"] = firstNonEmpty(dimensions.width, dimensions.diameter, dimensions.leg1)
+	item["custom.height_or_leg2"] = firstNonEmpty(dimensions.height, dimensions.leg2)
+	item["length_or_form"] = dimensions.length
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func splitMetreLength(description, prefix string) (string, string, bool) {
+	body := strings.TrimSpace(description[len(prefix):])
+	match := profileLength.FindStringSubmatchIndex(body)
+	if match == nil {
+		return "", "", false
+	}
+	length, ok := measurementToMillimetres(body[match[2]:match[5]], "m")
+	if !ok {
+		return "", "", false
+	}
+	return strings.TrimSpace(body[:match[0]]), length, true
+}
+
+func structuralLength(description, token string) string {
+	unit := "m"
+	if regexp.MustCompile(`(?i)\bMM\s+[0-9]+\s*$`).MatchString(description) {
+		unit = "mm"
+	}
+	value, _ := measurementToMillimetres(token, unit)
+	return value
+}
+
+func unitForFraction(value string) string {
+	if strings.Contains(value, "/") || strings.Contains(value, `"`) || strings.Contains(strings.ToLower(value), " in") {
+		return "in"
+	}
+	return "mm"
+}
+
+func containsImperialDimension(values []string) bool {
+	for _, value := range values {
+		if unitForFraction(value) == "in" {
+			return true
+		}
+	}
+	return false
+}
+
+func measurementToMillimetres(raw, defaultUnit string) (string, bool) {
+	value := strings.ToLower(strings.TrimSpace(strings.TrimSuffix(raw, ".")))
+	unit := defaultUnit
+	for _, suffix := range []struct{ text, unit string }{{"millimetres", "mm"}, {"millimeters", "mm"}, {"metres", "m"}, {"meters", "m"}, {"mm", "mm"}, {"in", "in"}, {`"`, "in"}, {"m", "m"}} {
+		if strings.HasSuffix(value, suffix.text) {
+			value = strings.TrimSpace(strings.TrimSuffix(value, suffix.text))
+			unit = suffix.unit
+			break
+		}
+	}
+	var number decimal.Decimal
+	var err error
+	parts := strings.Fields(value)
+	if strings.Contains(value, "/") {
+		whole := decimal.Zero
+		fraction := value
+		if len(parts) == 2 {
+			whole, err = decimal.NewFromString(parts[0])
+			if err != nil {
+				return "", false
+			}
+			fraction = parts[1]
+		}
+		fractionParts := strings.Split(fraction, "/")
+		if len(fractionParts) != 2 {
+			return "", false
+		}
+		numerator, numeratorErr := decimal.NewFromString(fractionParts[0])
+		denominator, denominatorErr := decimal.NewFromString(fractionParts[1])
+		if numeratorErr != nil || denominatorErr != nil || denominator.IsZero() {
+			return "", false
+		}
+		number = whole.Add(numerator.Div(denominator))
+		unit = "in"
+	} else {
+		number, err = decimal.NewFromString(strings.ReplaceAll(value, ",", "."))
+		if err != nil {
+			return "", false
+		}
+	}
+	switch unit {
+	case "m":
+		number = number.Mul(decimal.NewFromInt(1000))
+	case "in":
+		number = number.Mul(decimal.NewFromFloat(25.4))
+	case "mm", "":
+	default:
+		return "", false
+	}
+	return number.String(), true
+}
+
+func canonicalPlainDecimal(value string) string {
+	number, err := decimal.NewFromString(strings.ReplaceAll(strings.TrimSpace(value), ",", "."))
+	if err != nil {
+		return ""
+	}
+	return number.String()
+}
+
+func normalizeSpreadsheetDimensions(item map[string]string) {
+	for _, field := range []string{
+		"thickness", "width", "custom.height_or_leg2", "custom.thickness_mm",
+		"custom.wall_thickness_mm", "custom.width_mm", "custom.height_mm",
+		"custom.diameter_mm", "custom.leg1_mm", "custom.leg2_mm",
+	} {
+		raw := strings.TrimSpace(item[field])
+		if raw == "" {
+			continue
+		}
+		value, ok := measurementToMillimetres(raw, "mm")
+		if !ok {
+			item[field] = ""
+			appendSpreadsheetRemark(item, "ORIGINAL "+strings.ToUpper(field)+": "+raw)
+			continue
+		}
+		item[field] = value
+	}
+	normalizeSpreadsheetLength(item)
+}
+
+func normalizeSpreadsheetLength(item map[string]string) {
+	raw := strings.TrimSpace(item["length_or_form"])
+	if raw == "" {
+		return
+	}
+	match := spreadsheetLength.FindStringSubmatch(raw)
+	if match == nil || strings.TrimSpace(match[3]) != "" {
+		item["length_or_form"] = ""
+		appendSpreadsheetRemark(item, "ORIGINAL LENGTH/FORM: "+raw)
+		return
+	}
+	value, err := decimal.NewFromString(strings.ReplaceAll(match[1], ",", "."))
+	if err != nil {
+		item["length_or_form"] = ""
+		appendSpreadsheetRemark(item, "ORIGINAL LENGTH/FORM: "+raw)
+		return
+	}
+	unit := strings.ToLower(match[2])
+	if unit == "m" || strings.HasPrefix(unit, "met") {
+		value = value.Mul(decimal.NewFromInt(1000))
+	}
+	item["length_or_form"] = value.String()
+}
+
+func appendSpreadsheetRemark(item map[string]string, value string) {
+	if current := strings.TrimSpace(item["remarks"]); current != "" {
+		item["remarks"] = current + "; " + value
+	} else {
+		item["remarks"] = value
+	}
 }
 
 // selectionBelongsToMail 判断这段选中的文字确实出自这封信。
@@ -599,6 +1093,9 @@ func worksheetXML(s WorkbookSheet) string {
 				width = math.Min(48, math.Max(width, float64(utf8.RuneCountInString(row[i])+2)))
 			}
 		}
+		if i < len(s.ColumnKeys) && s.ColumnKeys[i] == "remarks" {
+			width = 60
+		}
 		fmt.Fprintf(&b, `<col min="%d" max="%d" width="%.1f" customWidth="1"/>`, i+1, i+1, width)
 	}
 	b.WriteString(`</cols><sheetData>`)
@@ -614,7 +1111,11 @@ func worksheetXML(s WorkbookSheet) string {
 			if col < len(cached) {
 				cache = cached[col]
 			}
-			writeCell(&b, ref, value, kind, cache, style)
+			cellStyle := style
+			if style == 0 && col < len(s.ColumnKeys) && s.ColumnKeys[col] == "remarks" {
+				cellStyle = 4
+			}
+			writeCell(&b, ref, value, kind, cache, cellStyle)
 		}
 		b.WriteString(`</row>`)
 	}
@@ -735,4 +1236,4 @@ func workbookRelsXML(n int) string {
 
 const rootRelsXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`
 
-const stylesXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="@"/><numFmt numFmtId="165" formatCode="#,##0.00"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F4E78"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" quotePrefix="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>`
+const stylesXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="@"/><numFmt numFmtId="165" formatCode="#,##0.00"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F4E78"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" quotePrefix="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs></styleSheet>`

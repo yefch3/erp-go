@@ -8,11 +8,11 @@ import (
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 )
 
-// 与系统种子模板一致的 21 列字段表；intake 解析的列定义来自默认模板。
+// 与系统种子模板一致的 22 列字段表；intake 解析的列定义来自默认模板。
 func testInquiryFields() []standardizedInquiryField {
 	names := []struct{ key, display string }{
 		{"product", "产品"}, {"material_standard", "材质/标准"}, {"grade", "牌号/等级"},
-		{"thickness", "厚度"}, {"width", "宽度"}, {"length_or_form", "长度/形式"},
+		{"thickness", "厚度/壁厚(mm)"}, {"width", "宽度/直径/边长1(mm)"}, {"custom.height_or_leg2", "高度/边长2(mm)"}, {"length_or_form", "长度(mm)"},
 		{"surface_requirement", "表面要求"}, {"coating", "涂层/镀层"}, {"tolerance", "公差"},
 		{"coil_weight", "卷重"}, {"coil_id", "卷内径"}, {"packaging", "包装"}, {"delivery", "交期"},
 		{"payment_terms", "付款条件"}, {"incoterm", "贸易术语"}, {"port", "港口"},
@@ -26,11 +26,11 @@ func testInquiryFields() []standardizedInquiryField {
 	return fields
 }
 
-const testInquiryHeader = "产品,材质/标准,牌号/等级,厚度,宽度,长度/形式,表面要求,涂层/镀层,公差,卷重,卷内径,包装,交期,付款条件,贸易术语,港口,单位,备注,数量,单价,总价"
+const testInquiryHeader = "产品,材质/标准,牌号/等级,厚度/壁厚(mm),宽度/直径/边长1(mm),高度/边长2(mm),长度(mm),表面要求,涂层/镀层,公差,卷重,卷内径,包装,交期,付款条件,贸易术语,港口,单位,备注,数量,单价,总价"
 
-// 按 21 列表头的位置构造一行，免得手数逗号。
+// 按 22 列表头的位置构造一行，免得手数逗号。
 func testInquiryRow(values map[int]string) string {
-	row := make([]string, 21)
+	row := make([]string, 22)
 	for i, value := range values {
 		row[i] = value
 	}
@@ -39,7 +39,7 @@ func testInquiryRow(values map[int]string) string {
 
 func TestParseStandardizedInquiryCSV(t *testing.T) {
 	header := &multipart.FileHeader{Filename: "standard-inquiry.csv"}
-	row := testInquiryRow(map[int]string{0: "冷轧卷", 1: "ASTM A1008", 2: "CS-B", 3: "1.2", 4: "1250", 12: "2026-09-01", 15: "上海", 16: "MT", 18: "20"})
+	row := testInquiryRow(map[int]string{0: "冷轧卷", 1: "ASTM A1008", 2: "CS-B", 3: "1.2", 4: "1250", 13: "2026-09-01", 16: "上海", 17: "MT", 19: "20"})
 	data := []byte(testInquiryHeader + "\n" + row + "\n")
 	lines, err := parseStandardizedInquiry(header, data, testInquiryFields())
 	if err != nil {
@@ -56,11 +56,11 @@ func TestParseStandardizedInquiryCSV(t *testing.T) {
 
 func TestParseStandardizedInquiryMapsCustomColumns(t *testing.T) {
 	fields := append(testInquiryFields(), standardizedInquiryField{Key: "custom.customer_part_no", Header: "客户料号"})
-	row := make([]string, 22)
+	row := make([]string, 23)
 	row[0] = "冷轧卷"
-	row[16] = "MT"
-	row[18] = "20"
-	row[21] = "CP-99887"
+	row[17] = "MT"
+	row[19] = "20"
+	row[22] = "CP-99887"
 	data := []byte(testInquiryHeader + ",客户料号\n" + strings.Join(row, ",") + "\n")
 	lines, err := parseStandardizedInquiry(&multipart.FileHeader{Filename: "custom.csv"}, data, fields)
 	if err != nil {

@@ -7,7 +7,7 @@ import (
 
 // 询盘阶段单价永远是空的（提示词写死了「报价是工厂后面给的」），所以总价
 // 那一列从前每行都是一个指着空格子的算式：Excel 里算出 0，页面预览里露出
-// 「=S2*T2」。
+// 「=T2*U2」。
 func TestTotalPriceLeftEmptyWithoutUnitPrice(t *testing.T) {
 	columns := SystemInquiryColumns()
 	qtyIdx, priceIdx, totalIdx := -1, -1, -1
@@ -21,9 +21,9 @@ func TestTotalPriceLeftEmptyWithoutUnitPrice(t *testing.T) {
 			totalIdx = i
 		}
 	}
-	// 钉住列位：数量 S、单价 T、总价 U。业务看到的就是「=S2*T2」，这三个
+	// 钉住列位：数量 T、单价 U、总价 V。业务看到的就是「=T2*U2」，这三个
 	// 位置一动，那句话的含义也跟着变。
-	if excelColumn(qtyIdx+1) != "S" || excelColumn(priceIdx+1) != "T" || excelColumn(totalIdx+1) != "U" {
+	if excelColumn(qtyIdx+1) != "T" || excelColumn(priceIdx+1) != "U" || excelColumn(totalIdx+1) != "V" {
 		t.Fatalf("默认模板的列位变了：数量 %s 单价 %s 总价 %s",
 			excelColumn(qtyIdx+1), excelColumn(priceIdx+1), excelColumn(totalIdx+1))
 	}
@@ -53,8 +53,8 @@ func TestTotalPriceLeftEmptyWithoutUnitPrice(t *testing.T) {
 
 	// 有单价的那一行：文件里是活公式（在 Excel 里改数量总价要跟着动），
 	// 预览里是算出来的数。
-	if got := sheet.Rows[1][totalIdx]; got != "=S3*T3" {
-		t.Fatalf("有单价的行该落公式 =S3*T3，实际 %q", got)
+	if got := sheet.Rows[1][totalIdx]; got != "=T3*U3" {
+		t.Fatalf("有单价的行该落公式 =T3*U3，实际 %q", got)
 	}
 	if got := sheet.PreviewRows[1][totalIdx]; got != "31025" {
 		t.Fatalf("预览该显示算出来的 50×620.5=31025，实际 %q", got)
