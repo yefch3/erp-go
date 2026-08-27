@@ -99,6 +99,7 @@ func run(log *slog.Logger) error {
 	}
 
 	svc := app.New(pool, app.Deps{
+		Log:        log,
 		Numbering:  grpcout.NewNumbering(mdConn),
 		Approvals:  grpcout.NewApprovals(apConn),
 		Suppliers:  grpcout.NewSuppliers(mdConn),

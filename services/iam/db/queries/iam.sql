@@ -330,6 +330,19 @@ JOIN permissions p ON p.id = rp.permission_id
 WHERE rp.tenant_id = $1 AND rp.role_id = $2
 ORDER BY p.code;
 
+-- name: ListPermissionCodesOfRoles :many
+-- 一次问完一批角色的权限码。
+--
+-- 角色列表原来对每个角色单独查一次（十来个角色就是十来次往返）。角色数量
+-- 不大，所以这不是性能事故，但同一个形状在别处会是——一次问完是这一类查询
+-- 该有的样子。
+SELECT rp.role_id, p.code
+FROM role_permissions rp
+JOIN permissions p ON p.id = rp.permission_id
+WHERE rp.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND rp.role_id = ANY(sqlc.arg(role_ids)::bigint[])
+ORDER BY rp.role_id, p.code;
+
 -- name: ReplaceEmployeeRoles :exec
 DELETE FROM employee_roles WHERE tenant_id = $1 AND employee_id = $2;
 

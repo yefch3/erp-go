@@ -47,9 +47,16 @@ func (r *Rates) Latest(ctx context.Context, currency string) (app.Rate, error) {
 	if err != nil {
 		return app.Rate{}, err
 	}
+	// 和出口那边同一条规矩：读不懂的时间不拿「现在」顶上。汇率快照的意义
+	// 就是「当时是多少、什么时候取的」，编一个时间会让陈旧汇率看起来新鲜，
+	// 而且这里出过问题也看不出来。
+	//
+	// 采购这边报错之后会走 fxsnapshot 的降级（记 0 = 没采到）并留下 WARN，
+	// 所以拒绝不会挡住付款——付款是事实，钱已经走了。
 	at, err := time.Parse(time.RFC3339, resp.GetRate().GetFetchedAt())
 	if err != nil {
-		at = time.Now().UTC()
+		return app.Rate{}, apierr.Invalid("PR_FX_TIME_INVALID",
+			"汇率服务返回的时间读不懂："+resp.GetRate().GetFetchedAt())
 	}
 	return app.Rate{Rate: v, At: at, Source: resp.GetRate().GetSource(), Base: resp.GetRate().GetBaseCurrency()}, nil
 }

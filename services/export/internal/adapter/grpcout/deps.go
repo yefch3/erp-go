@@ -12,6 +12,7 @@ import (
 	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	pdv1 "github.com/sgao19/erp-go/gen/go/erp/product/v1"
+	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/services/export/internal/app"
 )
 
@@ -84,9 +85,16 @@ func (r *Rates) Latest(ctx context.Context, currency string) (app.Rate, error) {
 	if err != nil {
 		return app.Rate{}, err
 	}
+	// 解析不了就报错，**不拿「现在」顶上**。
+	//
+	// 汇率快照存在的全部意义是「当时是多少、什么时候取的」。把一个读不懂的
+	// 时间换成 time.Now()，等于让一个可能几天前的汇率看起来是刚取的——事后
+	// 谁也查不出这张单子是不是按陈旧汇率定的价，而且**看不出这里出过问题**。
+	// 宁可当场拒绝建单，也不要在账上留一个编出来的时间。
 	at, err := time.Parse(time.RFC3339, rate.GetFetchedAt())
 	if err != nil {
-		at = time.Now().UTC()
+		return app.Rate{}, apierr.Invalid("EX_FX_TIME_INVALID",
+			"汇率服务返回的时间读不懂："+rate.GetFetchedAt())
 	}
 	return app.Rate{Rate: value, At: at, Source: rate.GetSource(), Base: rate.GetBaseCurrency()}, nil
 }

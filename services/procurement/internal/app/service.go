@@ -6,6 +6,7 @@ package app
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -122,6 +123,9 @@ type Deps struct {
 	Files Files
 	// Optional: without it the pages still work, they just need a refresh.
 	Live *livefeed.Publisher
+	// 可选：不给就用 slog.Default()。留给那些「降级是对的、但沉默不对」的
+	// 地方说话——最要紧的是汇率快照采不到的时候（见 fxsnapshot.go）。
+	Log *slog.Logger
 }
 
 type Service struct {
@@ -135,6 +139,7 @@ type Service struct {
 	scopes     Scopes
 	files      Files
 	live       *livefeed.Publisher
+	log        *slog.Logger
 
 	// Three-way-match tolerance, zero unless the operator widens it.
 	// See UseMatchTolerance for what the two numbers mean.
@@ -151,7 +156,7 @@ func New(pool *pgxpool.Pool, d Deps) *Service {
 		pool: pool, q: store.New(pool),
 		numbering: d.Numbering, approvals: d.Approvals,
 		suppliers: d.Suppliers, warehouses: d.Warehouses, rates: d.Rates,
-		scopes: d.Scopes, files: d.Files, live: d.Live,
+		scopes: d.Scopes, files: d.Files, live: d.Live, log: orDefaultLog(d.Log),
 	}
 }
 
@@ -296,4 +301,13 @@ func (s *Service) CreateRequirement(ctx context.Context, tenantID int64, in Manu
 	}
 	s.nudge(ctx, tenantID)
 	return s.GetRequirement(ctx, tenantID, id)
+}
+
+// orDefaultLog 让 Deps.Log 可以不填——测试里没人关心日志，生产里 main
+// 会传进来。
+func orDefaultLog(l *slog.Logger) *slog.Logger {
+	if l != nil {
+		return l
+	}
+	return slog.Default()
 }
