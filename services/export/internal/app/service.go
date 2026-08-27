@@ -163,6 +163,8 @@ type Deps struct {
 	Involvement Involvement
 	Directory   Directory
 	Seller      Seller
+	// 那本唯一的银行流水账（F2）。收款对账的每一次读写都要经过它。
+	Bank BankLedger
 }
 
 type Service struct {
@@ -179,6 +181,7 @@ type Service struct {
 	involved  Involvement
 	directory Directory
 	seller    Seller
+	bank      BankLedger
 }
 
 func New(pool *pgxpool.Pool, d Deps) *Service {
@@ -187,7 +190,7 @@ func New(pool *pgxpool.Pool, d Deps) *Service {
 		customers: d.Customers, products: d.Products, rates: d.Rates,
 		number: d.Numbering, approvals: d.Approvals, files: d.Files,
 		scopes: d.Scopes, involved: d.Involvement, directory: d.Directory, live: d.Live,
-		seller: d.Seller,
+		seller: d.Seller, bank: d.Bank,
 	}
 }
 

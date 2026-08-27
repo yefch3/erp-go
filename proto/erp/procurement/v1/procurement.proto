@@ -606,6 +606,11 @@ service PurchaseOrderService {
   // 否则流水上的 account_id 指不到任何地方。
   rpc ListBankAccounts(ListBankAccountsRequest) returns (ListBankAccountsResponse);
   rpc CreateBankAccount(CreateBankAccountRequest) returns (CreateBankAccountResponse);
+
+  // 记下这一行被认领了多少。客户那条线的核销记录在出口库，出口核完之后把
+  // 结果写回来——账本自己算不出来，但账本必须知道，否则「还没处理完」那个
+  // 队列就筛不准。
+  rpc SetBankTransactionClaim(SetBankTransactionClaimRequest) returns (SetBankTransactionClaimResponse);
 }
 
 message OrderImportRow {
@@ -1477,6 +1482,11 @@ message BankTransaction {
   string source = 22;      // MANUAL | CSV | API | PSP
   string trusted_ref = 23; // 我们自己发出去的号，可信；附言不可信
   string note = 24;        // 人写的备注，和银行给的 remark 分开
+
+  // 这一行已经被认领了多少钱。**「处理完了没有」对两条线是同一个定义**：
+  // claimed_amount < amount 就是还没完。供应商那条线由匹配写（匹配即全额），
+  // 客户那条线由出口服务核销之后写回来。
+  string claimed_amount = 25;
 }
 
 // BankTransactionInput 是手工登记一行流水要填的东西。
@@ -1542,6 +1552,14 @@ message CreateBankAccountRequest {
 }
 message CreateBankAccountResponse { int64 id = 1; }
 
+message SetBankTransactionClaimRequest {
+  int64 txn_id = 1;
+  // 认领总额，不是增量——调用方每次把重算之后的总数报上来。
+  // 用增量的话，一次重试就会把数加两遍。
+  string claimed_amount = 2;
+}
+message SetBankTransactionClaimResponse {}
+
 message ImportBankStatementRequest {
   string file_name = 1;
   bytes data = 2; // the CSV as uploaded; UTF-8 or GBK
@@ -1569,6 +1587,15 @@ message ListBankTransactionsRequest {
   // 这一位为准。单独一位而不是让 ownership="" 兼职，是因为空串已经是
   // 「不筛」的意思了——一个值不能同时表示「全都要」和「只要没归的」。
   bool ownership_pending = 6;
+  // 认领状态。"" 不筛 / "OPEN" 还没认领完 / "CLAIMED" 认领完了。
+  // 这就是财务每天要清的那个队列——收款对账的「待处理 / 已核销」走这里。
+  string claim_status = 7;
+  // 一次筛好几档归属。非空时**压过** ownership 和 ownership_pending。
+  //
+  // 收款对账要的「与应收无关」是「归属既不是客户、也不是待定」——那是三档
+  // 的并集，单值的 ownership 表达不了。空串在这里是一个正常的元素，表示
+  // 「还没人认过的那一档」。
+  repeated string ownership_in = 8;
 }
 message SetBankTransactionOwnershipRequest {
   int64 txn_id = 1;

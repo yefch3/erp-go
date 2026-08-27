@@ -167,39 +167,6 @@ func (q *Queries) ContractReceiptProgress(ctx context.Context, arg ContractRecei
 	return i, err
 }
 
-const createBankAccount = `-- name: CreateBankAccount :one
-INSERT INTO bank_accounts (tenant_id, account_no, account_name, bank_name, currency)
-VALUES (
-    $1::bigint,
-    $2::text,
-    $3::text,
-    $4::text,
-    $5::text
-)
-RETURNING id
-`
-
-type CreateBankAccountParams struct {
-	TenantID    int64
-	AccountNo   string
-	AccountName string
-	BankName    string
-	Currency    string
-}
-
-func (q *Queries) CreateBankAccount(ctx context.Context, arg CreateBankAccountParams) (int64, error) {
-	row := q.db.QueryRow(ctx, createBankAccount,
-		arg.TenantID,
-		arg.AccountNo,
-		arg.AccountName,
-		arg.BankName,
-		arg.Currency,
-	)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
-}
-
 const findContractsByNo = `-- name: FindContractsByNo :many
 SELECT c.id, c.contract_no, c.customer_name, v.currency,
        (v.total_amount - coalesce(r.received, 0))::text AS open_amount
@@ -299,102 +266,16 @@ func (q *Queries) GetAllocation(ctx context.Context, arg GetAllocationParams) (G
 	return i, err
 }
 
-const getBankTransaction = `-- name: GetBankTransaction :one
-SELECT
-    t.id, t.account_id, t.bank_ref, t.direction,
-    t.amount::text AS amount, t.currency,
-    t.value_date::text AS value_date,
-    t.counterparty, t.counterparty_account, t.remittance_info,
-    t.source, t.trusted_ref, t.disposition, t.irrelevant_type, t.note,
-    t.recorded_by_name, t.created_at,
-    coalesce(a.account_no, '')::text   AS account_no,
-    coalesce(a.account_name, '')::text AS account_name,
-    coalesce(x.allocated, 0)::text     AS allocated_amount,
-    (t.amount - coalesce(x.allocated, 0))::text AS unallocated_amount,
-    coalesce(x.fees, 0)::text          AS fee_amount
-FROM bank_transactions t
-LEFT JOIN bank_accounts a ON a.id = t.account_id
-LEFT JOIN (
-    SELECT transaction_id, sum(amount) AS allocated, sum(fee_amount) AS fees
-    FROM receipt_allocations
-    WHERE tenant_id = $1::bigint
-    GROUP BY transaction_id
-) x ON x.transaction_id = t.id
-WHERE t.tenant_id = $1::bigint AND t.id = $2::bigint
-`
-
-type GetBankTransactionParams struct {
-	TenantID int64
-	ID       int64
-}
-
-type GetBankTransactionRow struct {
-	ID                  int64
-	AccountID           int64
-	BankRef             string
-	Direction           string
-	Amount              string
-	Currency            string
-	ValueDate           string
-	Counterparty        string
-	CounterpartyAccount string
-	RemittanceInfo      string
-	Source              string
-	TrustedRef          string
-	Disposition         string
-	IrrelevantType      string
-	Note                string
-	RecordedByName      string
-	CreatedAt           pgtype.Timestamptz
-	AccountNo           string
-	AccountName         string
-	AllocatedAmount     string
-	UnallocatedAmount   string
-	FeeAmount           string
-}
-
-func (q *Queries) GetBankTransaction(ctx context.Context, arg GetBankTransactionParams) (GetBankTransactionRow, error) {
-	row := q.db.QueryRow(ctx, getBankTransaction, arg.TenantID, arg.ID)
-	var i GetBankTransactionRow
-	err := row.Scan(
-		&i.ID,
-		&i.AccountID,
-		&i.BankRef,
-		&i.Direction,
-		&i.Amount,
-		&i.Currency,
-		&i.ValueDate,
-		&i.Counterparty,
-		&i.CounterpartyAccount,
-		&i.RemittanceInfo,
-		&i.Source,
-		&i.TrustedRef,
-		&i.Disposition,
-		&i.IrrelevantType,
-		&i.Note,
-		&i.RecordedByName,
-		&i.CreatedAt,
-		&i.AccountNo,
-		&i.AccountName,
-		&i.AllocatedAmount,
-		&i.UnallocatedAmount,
-		&i.FeeAmount,
-	)
-	return i, err
-}
-
 const listAllocationsOfContract = `-- name: ListAllocationsOfContract :many
 SELECT
     a.id, a.transaction_id, a.amount::text AS amount,
     a.fee_amount::text AS fee_amount, a.currency,
     coalesce(a.reversal_of, 0)::bigint AS reversal_of,
-    a.allocated_by_name, a.allocated_at,
-    t.bank_ref, t.value_date::text AS value_date, t.counterparty, t.source
+    a.allocated_by_name, a.allocated_at
 FROM receipt_allocations a
-JOIN bank_transactions t ON t.id = a.transaction_id
 WHERE a.tenant_id = $1::bigint
   AND a.contract_id = $2::bigint
-ORDER BY t.value_date DESC, a.id DESC
+ORDER BY a.allocated_at DESC, a.id DESC
 `
 
 type ListAllocationsOfContractParams struct {
@@ -411,13 +292,17 @@ type ListAllocationsOfContractRow struct {
 	ReversalOf      int64
 	AllocatedByName string
 	AllocatedAt     pgtype.Timestamptz
-	BankRef         string
-	ValueDate       string
-	Counterparty    string
-	Source          string
 }
 
 // The other half of the many-to-many: one contract collected in instalments.
+//
+// 原来这里 JOIN bank_transactions 取流水号和到账日期。F2 之后银行流水只有一
+// 本、在采购库里，**跨库 JOIN 不了**，所以这里只出核销记录本身，流水那几列
+// 由上层拿 transaction_id 去账本取（见 app.ContractReceipts）。
+//
+// 排序也跟着换成按核销时间：到账日期在另一个库里，SQL 排不了。两者顺序通常
+// 一致——钱到了才核销——不一致的时候，按核销时间排反而更贴合这个页面在回答
+// 的问题：这张合同的钱是**什么时候被认下来的**。
 func (q *Queries) ListAllocationsOfContract(ctx context.Context, arg ListAllocationsOfContractParams) ([]ListAllocationsOfContractRow, error) {
 	rows, err := q.db.Query(ctx, listAllocationsOfContract, arg.TenantID, arg.ContractID)
 	if err != nil {
@@ -436,10 +321,6 @@ func (q *Queries) ListAllocationsOfContract(ctx context.Context, arg ListAllocat
 			&i.ReversalOf,
 			&i.AllocatedByName,
 			&i.AllocatedAt,
-			&i.BankRef,
-			&i.ValueDate,
-			&i.Counterparty,
-			&i.Source,
 		); err != nil {
 			return nil, err
 		}
@@ -503,158 +384,6 @@ func (q *Queries) ListAllocationsOfTransaction(ctx context.Context, arg ListAllo
 			&i.ReverseReason,
 			&i.AllocatedByName,
 			&i.AllocatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listBankAccounts = `-- name: ListBankAccounts :many
-SELECT id, account_no, account_name, bank_name, currency, status
-FROM bank_accounts
-WHERE tenant_id = $1::bigint
-ORDER BY status, id
-`
-
-type ListBankAccountsRow struct {
-	ID          int64
-	AccountNo   string
-	AccountName string
-	BankName    string
-	Currency    string
-	Status      string
-}
-
-func (q *Queries) ListBankAccounts(ctx context.Context, tenantID int64) ([]ListBankAccountsRow, error) {
-	rows, err := q.db.Query(ctx, listBankAccounts, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListBankAccountsRow
-	for rows.Next() {
-		var i ListBankAccountsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.AccountNo,
-			&i.AccountName,
-			&i.BankName,
-			&i.Currency,
-			&i.Status,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listBankTransactions = `-- name: ListBankTransactions :many
-SELECT
-    t.id, t.bank_ref, t.direction,
-    t.amount::text AS amount, t.currency,
-    t.value_date::text AS value_date,
-    t.counterparty, t.remittance_info, t.source, t.trusted_ref,
-    t.disposition, t.irrelevant_type, t.recorded_by_name, t.created_at,
-    coalesce(a.account_name, '')::text AS account_name,
-    coalesce(x.allocated, 0)::text     AS allocated_amount,
-    (t.amount - coalesce(x.allocated, 0))::text AS unallocated_amount,
-    count(*) OVER () AS total
-FROM bank_transactions t
-LEFT JOIN bank_accounts a ON a.id = t.account_id
-LEFT JOIN (
-    SELECT transaction_id, sum(amount) AS allocated
-    FROM receipt_allocations
-    WHERE tenant_id = $1::bigint
-    GROUP BY transaction_id
-) x ON x.transaction_id = t.id
-WHERE t.tenant_id = $1::bigint
-  AND ($2::text = '' OR t.disposition = $2::text)
-  AND ($3::text = '' OR t.direction = $3::text)
-  AND ($4::text = ''
-       OR t.bank_ref        ILIKE '%' || $4::text || '%'
-       OR t.counterparty    ILIKE '%' || $4::text || '%'
-       OR t.remittance_info ILIKE '%' || $4::text || '%')
-ORDER BY (t.disposition = 'UNPROCESSED') DESC, t.value_date DESC, t.id DESC
-LIMIT $6::int OFFSET $5::int
-`
-
-type ListBankTransactionsParams struct {
-	TenantID    int64
-	Disposition string
-	Direction   string
-	Keyword     string
-	RowOffset   int32
-	RowLimit    int32
-}
-
-type ListBankTransactionsRow struct {
-	ID                int64
-	BankRef           string
-	Direction         string
-	Amount            string
-	Currency          string
-	ValueDate         string
-	Counterparty      string
-	RemittanceInfo    string
-	Source            string
-	TrustedRef        string
-	Disposition       string
-	IrrelevantType    string
-	RecordedByName    string
-	CreatedAt         pgtype.Timestamptz
-	AccountName       string
-	AllocatedAmount   string
-	UnallocatedAmount string
-	Total             int64
-}
-
-// The reconciliation queue. Unprocessed first is deliberate: this page exists
-// to be emptied, and a list that opens on last month's settled lines is a
-// list nobody works through.
-func (q *Queries) ListBankTransactions(ctx context.Context, arg ListBankTransactionsParams) ([]ListBankTransactionsRow, error) {
-	rows, err := q.db.Query(ctx, listBankTransactions,
-		arg.TenantID,
-		arg.Disposition,
-		arg.Direction,
-		arg.Keyword,
-		arg.RowOffset,
-		arg.RowLimit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListBankTransactionsRow
-	for rows.Next() {
-		var i ListBankTransactionsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.BankRef,
-			&i.Direction,
-			&i.Amount,
-			&i.Currency,
-			&i.ValueDate,
-			&i.Counterparty,
-			&i.RemittanceInfo,
-			&i.Source,
-			&i.TrustedRef,
-			&i.Disposition,
-			&i.IrrelevantType,
-			&i.RecordedByName,
-			&i.CreatedAt,
-			&i.AccountName,
-			&i.AllocatedAmount,
-			&i.UnallocatedAmount,
-			&i.Total,
 		); err != nil {
 			return nil, err
 		}
@@ -867,41 +596,6 @@ func (q *Queries) ListReceivableReminders(ctx context.Context, arg ListReceivabl
 	return items, nil
 }
 
-const lockBankTransaction = `-- name: LockBankTransaction :one
-SELECT id, bank_ref, direction, amount::text AS amount, currency, disposition
-FROM bank_transactions
-WHERE tenant_id = $1::bigint AND id = $2::bigint
-FOR UPDATE
-`
-
-type LockBankTransactionParams struct {
-	TenantID int64
-	ID       int64
-}
-
-type LockBankTransactionRow struct {
-	ID          int64
-	BankRef     string
-	Direction   string
-	Amount      string
-	Currency    string
-	Disposition string
-}
-
-func (q *Queries) LockBankTransaction(ctx context.Context, arg LockBankTransactionParams) (LockBankTransactionRow, error) {
-	row := q.db.QueryRow(ctx, lockBankTransaction, arg.TenantID, arg.ID)
-	var i LockBankTransactionRow
-	err := row.Scan(
-		&i.ID,
-		&i.BankRef,
-		&i.Direction,
-		&i.Amount,
-		&i.Currency,
-		&i.Disposition,
-	)
-	return i, err
-}
-
 const markReceivableRemindersRead = `-- name: MarkReceivableRemindersRead :execrows
 UPDATE receivable_reminders SET read_at = now()
 WHERE tenant_id = $1::bigint
@@ -1012,72 +706,6 @@ func (q *Queries) OpenReceivables(ctx context.Context, arg OpenReceivablesParams
 	return items, nil
 }
 
-const recordBankTransaction = `-- name: RecordBankTransaction :one
-INSERT INTO bank_transactions (
-    tenant_id, account_id, bank_ref, direction, amount, currency, value_date,
-    counterparty, counterparty_account, remittance_info, source, trusted_ref,
-    note, recorded_by, recorded_by_name
-) VALUES (
-    $1::bigint,
-    $2::bigint,
-    $3::text,
-    $4::text,
-    $5::text::numeric,
-    $6::text,
-    $7::text::date,
-    $8::text,
-    $9::text,
-    $10::text,
-    $11::text,
-    $12::text,
-    $13::text,
-    $14::bigint,
-    $15::text
-)
-RETURNING id
-`
-
-type RecordBankTransactionParams struct {
-	TenantID            int64
-	AccountID           int64
-	BankRef             string
-	Direction           string
-	Amount              string
-	Currency            string
-	ValueDate           string
-	Counterparty        string
-	CounterpartyAccount string
-	RemittanceInfo      string
-	Source              string
-	TrustedRef          string
-	Note                string
-	RecordedBy          int64
-	RecordedByName      string
-}
-
-func (q *Queries) RecordBankTransaction(ctx context.Context, arg RecordBankTransactionParams) (int64, error) {
-	row := q.db.QueryRow(ctx, recordBankTransaction,
-		arg.TenantID,
-		arg.AccountID,
-		arg.BankRef,
-		arg.Direction,
-		arg.Amount,
-		arg.Currency,
-		arg.ValueDate,
-		arg.Counterparty,
-		arg.CounterpartyAccount,
-		arg.RemittanceInfo,
-		arg.Source,
-		arg.TrustedRef,
-		arg.Note,
-		arg.RecordedBy,
-		arg.RecordedByName,
-	)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
-}
-
 const setContractReceivableDue = `-- name: SetContractReceivableDue :exec
 UPDATE contracts SET receivable_due_date = $1::text::date
 WHERE tenant_id = $2::bigint AND id = $3::bigint
@@ -1095,37 +723,6 @@ type SetContractReceivableDueParams struct {
 func (q *Queries) SetContractReceivableDue(ctx context.Context, arg SetContractReceivableDueParams) error {
 	_, err := q.db.Exec(ctx, setContractReceivableDue, arg.DueDate, arg.TenantID, arg.ID)
 	return err
-}
-
-const setTransactionDisposition = `-- name: SetTransactionDisposition :execrows
-UPDATE bank_transactions SET
-    disposition     = $1::text,
-    irrelevant_type = $2::text,
-    note            = CASE WHEN $3::text = '' THEN note ELSE $3::text END,
-    updated_at      = now()
-WHERE tenant_id = $4::bigint AND id = $5::bigint
-`
-
-type SetTransactionDispositionParams struct {
-	Disposition    string
-	IrrelevantType string
-	Note           string
-	TenantID       int64
-	ID             int64
-}
-
-func (q *Queries) SetTransactionDisposition(ctx context.Context, arg SetTransactionDispositionParams) (int64, error) {
-	result, err := q.db.Exec(ctx, setTransactionDisposition,
-		arg.Disposition,
-		arg.IrrelevantType,
-		arg.Note,
-		arg.TenantID,
-		arg.ID,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
 }
 
 const sweepReceivableReminders = `-- name: SweepReceivableReminders :execrows

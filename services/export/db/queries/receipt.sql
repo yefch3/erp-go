@@ -1,105 +1,3 @@
--- name: CreateBankAccount :one
-INSERT INTO bank_accounts (tenant_id, account_no, account_name, bank_name, currency)
-VALUES (
-    sqlc.arg(tenant_id)::bigint,
-    sqlc.arg(account_no)::text,
-    sqlc.arg(account_name)::text,
-    sqlc.arg(bank_name)::text,
-    sqlc.arg(currency)::text
-)
-RETURNING id;
-
--- name: ListBankAccounts :many
-SELECT id, account_no, account_name, bank_name, currency, status
-FROM bank_accounts
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint
-ORDER BY status, id;
-
--- name: RecordBankTransaction :one
-INSERT INTO bank_transactions (
-    tenant_id, account_id, bank_ref, direction, amount, currency, value_date,
-    counterparty, counterparty_account, remittance_info, source, trusted_ref,
-    note, recorded_by, recorded_by_name
-) VALUES (
-    sqlc.arg(tenant_id)::bigint,
-    sqlc.arg(account_id)::bigint,
-    sqlc.arg(bank_ref)::text,
-    sqlc.arg(direction)::text,
-    sqlc.arg(amount)::text::numeric,
-    sqlc.arg(currency)::text,
-    sqlc.arg(value_date)::text::date,
-    sqlc.arg(counterparty)::text,
-    sqlc.arg(counterparty_account)::text,
-    sqlc.arg(remittance_info)::text,
-    sqlc.arg(source)::text,
-    sqlc.arg(trusted_ref)::text,
-    sqlc.arg(note)::text,
-    sqlc.arg(recorded_by)::bigint,
-    sqlc.arg(recorded_by_name)::text
-)
-RETURNING id;
-
--- name: GetBankTransaction :one
-SELECT
-    t.id, t.account_id, t.bank_ref, t.direction,
-    t.amount::text AS amount, t.currency,
-    t.value_date::text AS value_date,
-    t.counterparty, t.counterparty_account, t.remittance_info,
-    t.source, t.trusted_ref, t.disposition, t.irrelevant_type, t.note,
-    t.recorded_by_name, t.created_at,
-    coalesce(a.account_no, '')::text   AS account_no,
-    coalesce(a.account_name, '')::text AS account_name,
-    coalesce(x.allocated, 0)::text     AS allocated_amount,
-    (t.amount - coalesce(x.allocated, 0))::text AS unallocated_amount,
-    coalesce(x.fees, 0)::text          AS fee_amount
-FROM bank_transactions t
-LEFT JOIN bank_accounts a ON a.id = t.account_id
-LEFT JOIN (
-    SELECT transaction_id, sum(amount) AS allocated, sum(fee_amount) AS fees
-    FROM receipt_allocations
-    WHERE tenant_id = sqlc.arg(tenant_id)::bigint
-    GROUP BY transaction_id
-) x ON x.transaction_id = t.id
-WHERE t.tenant_id = sqlc.arg(tenant_id)::bigint AND t.id = sqlc.arg(id)::bigint;
-
--- name: LockBankTransaction :one
-SELECT id, bank_ref, direction, amount::text AS amount, currency, disposition
-FROM bank_transactions
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint
-FOR UPDATE;
-
--- name: ListBankTransactions :many
--- The reconciliation queue. Unprocessed first is deliberate: this page exists
--- to be emptied, and a list that opens on last month's settled lines is a
--- list nobody works through.
-SELECT
-    t.id, t.bank_ref, t.direction,
-    t.amount::text AS amount, t.currency,
-    t.value_date::text AS value_date,
-    t.counterparty, t.remittance_info, t.source, t.trusted_ref,
-    t.disposition, t.irrelevant_type, t.recorded_by_name, t.created_at,
-    coalesce(a.account_name, '')::text AS account_name,
-    coalesce(x.allocated, 0)::text     AS allocated_amount,
-    (t.amount - coalesce(x.allocated, 0))::text AS unallocated_amount,
-    count(*) OVER () AS total
-FROM bank_transactions t
-LEFT JOIN bank_accounts a ON a.id = t.account_id
-LEFT JOIN (
-    SELECT transaction_id, sum(amount) AS allocated
-    FROM receipt_allocations
-    WHERE tenant_id = sqlc.arg(tenant_id)::bigint
-    GROUP BY transaction_id
-) x ON x.transaction_id = t.id
-WHERE t.tenant_id = sqlc.arg(tenant_id)::bigint
-  AND (sqlc.arg(disposition)::text = '' OR t.disposition = sqlc.arg(disposition)::text)
-  AND (sqlc.arg(direction)::text = '' OR t.direction = sqlc.arg(direction)::text)
-  AND (sqlc.arg(keyword)::text = ''
-       OR t.bank_ref        ILIKE '%' || sqlc.arg(keyword)::text || '%'
-       OR t.counterparty    ILIKE '%' || sqlc.arg(keyword)::text || '%'
-       OR t.remittance_info ILIKE '%' || sqlc.arg(keyword)::text || '%')
-ORDER BY (t.disposition = 'UNPROCESSED') DESC, t.value_date DESC, t.id DESC
-LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
-
 -- name: AddReceiptAllocation :one
 INSERT INTO receipt_allocations (
     tenant_id, transaction_id, contract_id, contract_no, customer_name,
@@ -150,14 +48,6 @@ SELECT EXISTS (
       AND reversal_of = sqlc.arg(allocation_id)::bigint
 ) AS reversed;
 
--- name: SetTransactionDisposition :execrows
-UPDATE bank_transactions SET
-    disposition     = sqlc.arg(disposition)::text,
-    irrelevant_type = sqlc.arg(irrelevant_type)::text,
-    note            = CASE WHEN sqlc.arg(note)::text = '' THEN note ELSE sqlc.arg(note)::text END,
-    updated_at      = now()
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
-
 -- name: ContractReceiptProgress :one
 -- What one contract is owed and has been paid. The basis is the in-force
 -- version: a contract that was amended is owed what the amendment says, and
@@ -180,17 +70,23 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint AND c.id = sqlc.arg(contract_id)
 
 -- name: ListAllocationsOfContract :many
 -- The other half of the many-to-many: one contract collected in instalments.
+--
+-- 原来这里 JOIN bank_transactions 取流水号和到账日期。F2 之后银行流水只有一
+-- 本、在采购库里，**跨库 JOIN 不了**，所以这里只出核销记录本身，流水那几列
+-- 由上层拿 transaction_id 去账本取（见 app.ContractReceipts）。
+--
+-- 排序也跟着换成按核销时间：到账日期在另一个库里，SQL 排不了。两者顺序通常
+-- 一致——钱到了才核销——不一致的时候，按核销时间排反而更贴合这个页面在回答
+-- 的问题：这张合同的钱是**什么时候被认下来的**。
 SELECT
     a.id, a.transaction_id, a.amount::text AS amount,
     a.fee_amount::text AS fee_amount, a.currency,
     coalesce(a.reversal_of, 0)::bigint AS reversal_of,
-    a.allocated_by_name, a.allocated_at,
-    t.bank_ref, t.value_date::text AS value_date, t.counterparty, t.source
+    a.allocated_by_name, a.allocated_at
 FROM receipt_allocations a
-JOIN bank_transactions t ON t.id = a.transaction_id
 WHERE a.tenant_id = sqlc.arg(tenant_id)::bigint
   AND a.contract_id = sqlc.arg(contract_id)::bigint
-ORDER BY t.value_date DESC, a.id DESC;
+ORDER BY a.allocated_at DESC, a.id DESC;
 
 -- name: OpenReceivables :many
 -- Candidates for the allocation picker. Only the in-force version counts, and

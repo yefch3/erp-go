@@ -34,6 +34,7 @@ func (h *OrderHandler) ListBankTransactions(ctx context.Context, req *prv1.ListB
 		app.BankTransactionFilter{
 			Status: req.GetStatus(), Direction: req.GetDirection(), Keyword: req.GetKeyword(),
 			Ownership: req.GetOwnership(), OwnershipPending: req.GetOwnershipPending(),
+			ClaimStatus: req.GetClaimStatus(), OwnershipIn: req.GetOwnershipIn(),
 		}, req.GetPage().GetPage(), req.GetPage().GetPageSize(),
 		app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
@@ -59,6 +60,7 @@ func bankTransactionPB(v app.BankTransactionView) *prv1.BankTransaction {
 		SuggestedPaymentSupplier: v.SuggestedPaymentSupplier,
 		Ownership:                v.Ownership,
 		OwnershipDetail:          v.OwnershipDetail,
+		ClaimedAmount:            v.ClaimedAmount,
 		AccountId:                v.AccountID,
 		AccountName:              v.AccountName,
 		CounterpartyAccount:      v.CounterpartyAccount,
@@ -91,6 +93,16 @@ func (h *OrderHandler) RecordBankTransaction(ctx context.Context, req *prv1.Reco
 		return nil, err
 	}
 	return &prv1.RecordBankTransactionResponse{Transaction: bankTransactionPB(v)}, nil
+}
+
+func (h *OrderHandler) SetBankTransactionClaim(ctx context.Context, req *prv1.SetBankTransactionClaimRequest) (*prv1.SetBankTransactionClaimResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	if err := h.svc.SetBankTransactionClaim(ctx, grpcx.TenantID(ctx),
+		req.GetTxnId(), req.GetClaimedAmount(),
+		app.Operator{ID: op.EmployeeID, Name: op.Name}); err != nil {
+		return nil, err
+	}
+	return &prv1.SetBankTransactionClaimResponse{}, nil
 }
 
 func (h *OrderHandler) GetBankTransaction(ctx context.Context, req *prv1.GetBankTransactionRequest) (*prv1.GetBankTransactionResponse, error) {

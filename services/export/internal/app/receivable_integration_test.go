@@ -35,7 +35,7 @@ func TestReceivableDueList(t *testing.T) {
 	defer pool.Close()
 	tenantID := time.Now().UnixNano()
 	defer func() {
-		for _, tbl := range []string{"receipt_allocations", "bank_transactions", "bank_accounts", "contract_versions", "contracts"} {
+		for _, tbl := range []string{"receipt_allocations", "contract_versions", "contracts"} {
 			_, _ = pool.Exec(ctx, "DELETE FROM "+tbl+" WHERE tenant_id=$1", tenantID)
 		}
 	}()
@@ -73,15 +73,12 @@ func TestReceivableDueList(t *testing.T) {
 	mkContract("CT-RECV-OTHER", salesB, "10000", overdue)
 	paidID := mkContract("CT-RECV-PAID", salesA, "10000", overdue)
 
-	// 收完的那张：造一笔银行进账并全额核销，它就该从催收清单上消失。
-	var acctID, txnID int64
-	if err := pool.QueryRow(ctx, `INSERT INTO bank_accounts (tenant_id,account_no,account_name,currency) VALUES ($1,'ACC-1','我方账户','USD') RETURNING id`, tenantID).Scan(&acctID); err != nil {
-		t.Fatal(err)
-	}
-	if err := pool.QueryRow(ctx, `INSERT INTO bank_transactions (tenant_id,account_id,bank_ref,direction,amount,currency,value_date) VALUES ($1,$2,'REF-1','CREDIT',10000,'USD',current_date) RETURNING id`, tenantID, acctID).Scan(&txnID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, `INSERT INTO receipt_allocations (tenant_id,transaction_id,contract_id,contract_no,amount,currency) VALUES ($1,$2,$3,'CT-RECV-PAID',10000,'USD')`, tenantID, txnID, paidID); err != nil {
+	// 收完的那张：核销一笔就该从催收清单上消失。
+	//
+	// transaction_id 直接给一个数，不去建银行流水行：F2 之后那一行在采购
+	// 的库里，出口这边只存这个引用（跨库，所以已经不是外键了）。这个测试
+	// 问的是「收完的合同还上不上催收清单」，和那一行长什么样无关。
+	if _, err := pool.Exec(ctx, `INSERT INTO receipt_allocations (tenant_id,transaction_id,contract_id,contract_no,amount,currency) VALUES ($1,$2,$3,'CT-RECV-PAID',10000,'USD')`, tenantID, tenantID+1, paidID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -186,7 +183,7 @@ func TestReceivableReminderSweep(t *testing.T) {
 	defer pool.Close()
 	tenantID := time.Now().UnixNano()
 	defer func() {
-		for _, tbl := range []string{"receivable_reminders", "receipt_allocations", "bank_transactions", "bank_accounts", "contract_versions", "contracts"} {
+		for _, tbl := range []string{"receivable_reminders", "receipt_allocations", "contract_versions", "contracts"} {
 			_, _ = pool.Exec(ctx, "DELETE FROM "+tbl+" WHERE tenant_id=$1", tenantID)
 		}
 	}()

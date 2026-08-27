@@ -160,6 +160,8 @@ services:
       FX_ADDR: fx:9003
       APPROVAL_ADDR: approval:9005
       IAM_ADDR: iam:9001
+      # 银行流水只有一本，在采购那边（F2）。收款对账整页都要经过它。
+      PROCUREMENT_ADDR: procurement:9007
       KAFKA_BROKERS: kafka:9092
       STOCK_TOPIC: erp.inventory.stock.v1
       STOCK_CONSUMER_GROUP: export.stock.v1

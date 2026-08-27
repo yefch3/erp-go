@@ -8,20 +8,40 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type BankAccount struct {
+	ID          int64
+	TenantID    int64
+	AccountNo   string
+	AccountName string
+	BankName    string
+	Currency    string
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+}
+
 type BankTransaction struct {
-	ID             int64
-	TenantID       int64
-	TxnDate        pgtype.Date
-	Direction      string
-	Amount         pgtype.Numeric
-	Currency       string
-	Counterparty   string
-	BankRef        string
-	Remark         string
-	SourceFile     string
-	ImportedByID   int64
-	ImportedByName string
-	CreatedAt      pgtype.Timestamptz
+	ID                  int64
+	TenantID            int64
+	TxnDate             pgtype.Date
+	Direction           string
+	Amount              pgtype.Numeric
+	Currency            string
+	Counterparty        string
+	BankRef             string
+	Remark              string
+	SourceFile          string
+	ImportedByID        int64
+	ImportedByName      string
+	CreatedAt           pgtype.Timestamptz
+	Ownership           string
+	OwnershipDetail     string
+	AccountID           int64
+	CounterpartyAccount string
+	RemittanceInfo      string
+	Source              string
+	TrustedRef          string
+	Note                string
+	ClaimedAmount       pgtype.Numeric
 }
 
 type CostCharge struct {
@@ -140,6 +160,19 @@ type FactoryRfqLine struct {
 	Qty            pgtype.Numeric
 	UomCode        string
 	SpecSnapshot   string
+}
+
+type FailedEvent struct {
+	ID            int64
+	TenantID      int64
+	EventID       string
+	ConsumerGroup string
+	Topic         string
+	EventType     string
+	AggregateID   string
+	Payload       []byte
+	Reason        string
+	ParkedAt      pgtype.Timestamptz
 }
 
 type InquiryTemplate struct {

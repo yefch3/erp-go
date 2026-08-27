@@ -80,6 +80,13 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer iamConn.Close()
+	// 银行流水只有一本，在采购那边（F2）。和上面几个一样是拨号即返回，
+	// 采购起得比出口晚也不影响启动。
+	prConn, err := dial(cfg.ProcurementAddr)
+	if err != nil {
+		return err
+	}
+	defer prConn.Close()
 
 	// Contract paperwork goes straight from the browser to object storage;
 	// this service only signs the URLs and records what landed.
@@ -115,6 +122,7 @@ func run(log *slog.Logger) error {
 		Scopes:      grpcout.NewScopes(iamConn),
 		Live:        live,
 		Directory:   grpcout.NewDirectory(iamConn),
+		Bank:        grpcout.NewBankLedger(prConn),
 		Seller:      app.Seller{Name: cfg.SellerName, Address: cfg.SellerAddress},
 	})
 

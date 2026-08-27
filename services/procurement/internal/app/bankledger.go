@@ -60,9 +60,6 @@ type BankTransactionInput struct {
 // 两种可能——要么这笔钱已经记过了，要么号敲错了——两种都得让人知道，
 // 默默吞掉会让人以为钱记上了，而账上根本没有。
 func (s *Service) RecordBankTransaction(ctx context.Context, tenantID int64, in BankTransactionInput, op Operator) (BankTransactionView, error) {
-	if err := s.requireFullScope(ctx, op); err != nil {
-		return BankTransactionView{}, err
-	}
 	in, err := validateBankTransactionInput(in)
 	if err != nil {
 		return BankTransactionView{}, err
@@ -114,9 +111,6 @@ func (s *Service) RecordBankTransaction(ctx context.Context, tenantID int64, in 
 // 核销之前必须先拿到它：**金额和币种决定这笔钱能不能核、能核多少**，而这两
 // 个数只有账本说了算，不能由调用方带进来。
 func (s *Service) GetBankTransaction(ctx context.Context, tenantID, txnID int64, op Operator) (BankTransactionView, error) {
-	if err := s.requireFullScope(ctx, op); err != nil {
-		return BankTransactionView{}, err
-	}
 	var v BankTransactionView
 	err := s.pool.QueryRow(ctx, `
 		SELECT t.id, t.txn_date::text, t.direction, t.amount::text, t.currency,
@@ -124,6 +118,7 @@ func (s *Service) GetBankTransaction(ctx context.Context, tenantID, txnID int64,
 		       t.ownership, t.ownership_detail,
 		       t.account_id, coalesce(a.account_name, ''), t.counterparty_account,
 		       t.remittance_info, t.source, t.trusted_ref, t.note,
+		       t.claimed_amount::text,
 		       coalesce(p.id, 0), coalesce(p.payment_no, '')
 		  FROM bank_transactions t
 		  LEFT JOIN bank_accounts a ON a.id = t.account_id AND a.tenant_id = t.tenant_id
@@ -134,6 +129,7 @@ func (s *Service) GetBankTransaction(ctx context.Context, tenantID, txnID int64,
 		&v.Ownership, &v.OwnershipDetail,
 		&v.AccountID, &v.AccountName, &v.CounterpartyAccount,
 		&v.RemittanceInfo, &v.Source, &v.TrustedRef, &v.Note,
+		&v.ClaimedAmount,
 		&v.MatchedPaymentID, &v.MatchedPaymentNo)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return BankTransactionView{}, apierr.NotFound("BANK_TXN_NOT_FOUND", "银行流水不存在")
@@ -144,12 +140,54 @@ func (s *Service) GetBankTransaction(ctx context.Context, tenantID, txnID int64,
 	return v, nil
 }
 
+// SetBankTransactionClaim 记下这一行被认领了多少。
+//
+// 客户那条线的核销记录在出口库，账本自己算不出来，但账本必须知道——否则
+// 「还没处理完」那个队列就筛不准。所以出口核完之后把**重算后的总数**报回来。
+//
+// 三条规矩：
+//
+//	· 收的是**总额不是增量**。用增量的话，一次网络重试就把数加了两遍。
+//	· 认领不能超过这一行本身。超了说明调用方算错了，与其存下一个不可能的数，
+//	  不如当场拒绝——账上出现「认领 6 万、到账 5 万」比报错难查得多。
+//	· 归属必须是客户那一档。供应商那条线由匹配写，两边同时写同一列会互相
+//	  覆盖，而覆盖的结果没有任何地方看得出来。
+func (s *Service) SetBankTransactionClaim(ctx context.Context, tenantID, txnID int64, claimed string, op Operator) error {
+	amt, ok := normalizeBankAmount(claimed)
+	if !ok || amt.IsNegative() {
+		return apierr.Invalid("BANK_CLAIM_INVALID", "认领金额看不懂："+claimed)
+	}
+	var ownership, rowAmount string
+	err := s.pool.QueryRow(ctx, `
+		SELECT ownership, amount::text FROM bank_transactions
+		 WHERE tenant_id=$1 AND id=$2`, tenantID, txnID).Scan(&ownership, &rowAmount)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return apierr.NotFound("BANK_TXN_NOT_FOUND", "银行流水不存在")
+	}
+	if err != nil {
+		return err
+	}
+	if ownership != OwnershipCustomer {
+		return apierr.Invalid("BANK_CLAIM_OWNERSHIP",
+			"这条流水的归属不是「客户收款」，认领金额由供应商那条线的匹配来写")
+	}
+	total, _ := normalizeBankAmount(rowAmount)
+	if amt.GreaterThan(total) {
+		return apierr.Invalid("BANK_CLAIM_EXCEEDS",
+			"认领 "+amt.String()+" 超过这一行的 "+total.String())
+	}
+	if _, err := s.pool.Exec(ctx, `
+		UPDATE bank_transactions SET claimed_amount=$3::numeric
+		 WHERE tenant_id=$1 AND id=$2`, tenantID, txnID, amt.String()); err != nil {
+		return err
+	}
+	s.nudge(ctx, tenantID)
+	return nil
+}
+
 // ListBankAccounts 给出我们自己的账户。默认只给启用的——登记流水的下拉框里
 // 不该出现已经销户的账户。
 func (s *Service) ListBankAccounts(ctx context.Context, tenantID int64, includeInactive bool, op Operator) ([]BankAccountView, error) {
-	if err := s.requireFullScope(ctx, op); err != nil {
-		return nil, err
-	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, account_no, account_name, bank_name, currency, status
 		  FROM bank_accounts
@@ -173,9 +211,6 @@ func (s *Service) ListBankAccounts(ctx context.Context, tenantID int64, includeI
 
 // CreateBankAccount 记下一个我们自己的账户。
 func (s *Service) CreateBankAccount(ctx context.Context, tenantID int64, a BankAccountView, op Operator) (int64, error) {
-	if err := s.requireFullScope(ctx, op); err != nil {
-		return 0, err
-	}
 	a.AccountNo = strings.TrimSpace(a.AccountNo)
 	a.AccountName = strings.TrimSpace(a.AccountName)
 	a.BankName = strings.TrimSpace(a.BankName)

@@ -45,6 +45,12 @@ const (
 // Those are two different kinds of statement and they live in two tables. A
 // bank line is fact and is never edited; an allocation is judgement and is
 // revised by writing its opposite, never by deleting it.
+// F2（2026-08-26）之后，银行流水只有一本，在采购服务手上。这个服务下面几个
+// 和流水有关的方法**实现已经改成转发给采购**了，接口保留是因为页面还在用，
+// 而删 RPC 会被 buf breaking 拦下（proto/buf.yaml 用的是 FILE 那一档）。
+//
+// 新的调用方应该直接用 erp.procurement.v1.PurchaseOrderService 上的
+// RecordBankTransaction / ListBankAccounts / SetBankTransactionOwnership。
 type ReceiptServiceClient interface {
 	ListBankAccounts(ctx context.Context, in *ListBankAccountsRequest, opts ...grpc.CallOption) (*ListBankAccountsResponse, error)
 	CreateBankAccount(ctx context.Context, in *CreateBankAccountRequest, opts ...grpc.CallOption) (*CreateBankAccountResponse, error)
@@ -230,6 +236,12 @@ func (c *receiptServiceClient) MarkReceivableRemindersRead(ctx context.Context, 
 // Those are two different kinds of statement and they live in two tables. A
 // bank line is fact and is never edited; an allocation is judgement and is
 // revised by writing its opposite, never by deleting it.
+// F2（2026-08-26）之后，银行流水只有一本，在采购服务手上。这个服务下面几个
+// 和流水有关的方法**实现已经改成转发给采购**了，接口保留是因为页面还在用，
+// 而删 RPC 会被 buf breaking 拦下（proto/buf.yaml 用的是 FILE 那一档）。
+//
+// 新的调用方应该直接用 erp.procurement.v1.PurchaseOrderService 上的
+// RecordBankTransaction / ListBankAccounts / SetBankTransactionOwnership。
 type ReceiptServiceServer interface {
 	ListBankAccounts(context.Context, *ListBankAccountsRequest) (*ListBankAccountsResponse, error)
 	CreateBankAccount(context.Context, *CreateBankAccountRequest) (*CreateBankAccountResponse, error)

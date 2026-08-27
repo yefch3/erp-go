@@ -108,6 +108,11 @@ func (x *BankAccount) GetStatus() string {
 }
 
 // BankTransaction is one line off a statement.
+// BankTransaction 是账本上的一行，收款对账看到的样子。
+//
+// **disposition 和 irrelevant_type 现在是算出来的**，不再有对应的列：
+// 「与应收无关」变成了归属不是客户，「已核销 / 待处理」是核销记录的和与到账
+// 金额比出来的。字段保留是为了页面不必同时改；值仍然是准的。
 type BankTransaction struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	Id                  int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`

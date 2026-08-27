@@ -1373,6 +1373,7 @@ const (
 	PurchaseOrderService_GetBankTransaction_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/GetBankTransaction"
 	PurchaseOrderService_ListBankAccounts_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/ListBankAccounts"
 	PurchaseOrderService_CreateBankAccount_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/CreateBankAccount"
+	PurchaseOrderService_SetBankTransactionClaim_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/SetBankTransactionClaim"
 )
 
 // PurchaseOrderServiceClient is the client API for PurchaseOrderService service.
@@ -1473,6 +1474,10 @@ type PurchaseOrderServiceClient interface {
 	// 否则流水上的 account_id 指不到任何地方。
 	ListBankAccounts(ctx context.Context, in *ListBankAccountsRequest, opts ...grpc.CallOption) (*ListBankAccountsResponse, error)
 	CreateBankAccount(ctx context.Context, in *CreateBankAccountRequest, opts ...grpc.CallOption) (*CreateBankAccountResponse, error)
+	// 记下这一行被认领了多少。客户那条线的核销记录在出口库，出口核完之后把
+	// 结果写回来——账本自己算不出来，但账本必须知道，否则「还没处理完」那个
+	// 队列就筛不准。
+	SetBankTransactionClaim(ctx context.Context, in *SetBankTransactionClaimRequest, opts ...grpc.CallOption) (*SetBankTransactionClaimResponse, error)
 }
 
 type purchaseOrderServiceClient struct {
@@ -1943,6 +1948,16 @@ func (c *purchaseOrderServiceClient) CreateBankAccount(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) SetBankTransactionClaim(ctx context.Context, in *SetBankTransactionClaimRequest, opts ...grpc.CallOption) (*SetBankTransactionClaimResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetBankTransactionClaimResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_SetBankTransactionClaim_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PurchaseOrderServiceServer is the server API for PurchaseOrderService service.
 // All implementations must embed UnimplementedPurchaseOrderServiceServer
 // for forward compatibility.
@@ -2041,6 +2056,10 @@ type PurchaseOrderServiceServer interface {
 	// 否则流水上的 account_id 指不到任何地方。
 	ListBankAccounts(context.Context, *ListBankAccountsRequest) (*ListBankAccountsResponse, error)
 	CreateBankAccount(context.Context, *CreateBankAccountRequest) (*CreateBankAccountResponse, error)
+	// 记下这一行被认领了多少。客户那条线的核销记录在出口库，出口核完之后把
+	// 结果写回来——账本自己算不出来，但账本必须知道，否则「还没处理完」那个
+	// 队列就筛不准。
+	SetBankTransactionClaim(context.Context, *SetBankTransactionClaimRequest) (*SetBankTransactionClaimResponse, error)
 	mustEmbedUnimplementedPurchaseOrderServiceServer()
 }
 
@@ -2188,6 +2207,9 @@ func (UnimplementedPurchaseOrderServiceServer) ListBankAccounts(context.Context,
 }
 func (UnimplementedPurchaseOrderServiceServer) CreateBankAccount(context.Context, *CreateBankAccountRequest) (*CreateBankAccountResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateBankAccount not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) SetBankTransactionClaim(context.Context, *SetBankTransactionClaimRequest) (*SetBankTransactionClaimResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetBankTransactionClaim not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) mustEmbedUnimplementedPurchaseOrderServiceServer() {}
 func (UnimplementedPurchaseOrderServiceServer) testEmbeddedByValue()                              {}
@@ -3038,6 +3060,24 @@ func _PurchaseOrderService_CreateBankAccount_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_SetBankTransactionClaim_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetBankTransactionClaimRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).SetBankTransactionClaim(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_SetBankTransactionClaim_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).SetBankTransactionClaim(ctx, req.(*SetBankTransactionClaimRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PurchaseOrderService_ServiceDesc is the grpc.ServiceDesc for PurchaseOrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3228,6 +3268,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateBankAccount",
 			Handler:    _PurchaseOrderService_CreateBankAccount_Handler,
+		},
+		{
+			MethodName: "SetBankTransactionClaim",
+			Handler:    _PurchaseOrderService_SetBankTransactionClaim_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

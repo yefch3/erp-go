@@ -149,6 +149,62 @@ func TestRecordBankTransactionByHand(t *testing.T) {
 	if items[0].AccountName != "宁波信达外币户" || items[0].Source != "MANUAL" {
 		t.Fatalf("列表里少了新字段: %+v", items[0])
 	}
+
+	// 不给归属条件时**必须出全部**。
+	//
+	// 这条是踩过坑才加的：按一组归属筛是用 cardinality($n::text[]) 实现的，
+	// 而 Go 的 nil 切片到了 Postgres 是 NULL，cardinality(NULL) 是 NULL 不是
+	// 0——条件整个变成 NULL，于是一行都不出，**而且不报错**。空列表看起来
+	// 就像「这个月没有流水」。
+	all, total, err := svc.ListBankTransactions(ctx, tenantID, BankTransactionFilter{}, 1, 50, op)
+	if err != nil {
+		t.Fatalf("list all: %v", err)
+	}
+	if len(all) == 0 || total == 0 {
+		t.Fatal("不给筛选条件时应该出全部，实际一行都没有")
+	}
+
+	// 按一组归属筛：只要客户那一档和还没人认过的。
+	mine, _, err := svc.ListBankTransactions(ctx, tenantID,
+		BankTransactionFilter{OwnershipIn: []string{OwnershipCustomer, ""}}, 1, 50, op)
+	if err != nil {
+		t.Fatalf("list by ownership set: %v", err)
+	}
+	for _, r := range mine {
+		if r.Ownership != OwnershipCustomer && r.Ownership != "" {
+			t.Fatalf("按组筛漏了别的归属进来: %+v", r)
+		}
+	}
+	if len(mine) == 0 {
+		t.Fatal("刚登记的那笔归属是客户，应该在里面")
+	}
+
+	// 认领状态：刚登记还没核销，应该在「还没认领完」那一档里。
+	open, _, err := svc.ListBankTransactions(ctx, tenantID,
+		BankTransactionFilter{ClaimStatus: ClaimOpen, Keyword: ref}, 1, 50, op)
+	if err != nil {
+		t.Fatalf("list open: %v", err)
+	}
+	if len(open) != 1 {
+		t.Fatalf("刚登记的应该在待认领里，实际 %d 条", len(open))
+	}
+	if err := svc.SetBankTransactionClaim(ctx, tenantID, view.ID, view.Amount, op); err != nil {
+		t.Fatalf("set claim: %v", err)
+	}
+	open, _, err = svc.ListBankTransactions(ctx, tenantID,
+		BankTransactionFilter{ClaimStatus: ClaimOpen, Keyword: ref}, 1, 50, op)
+	if err != nil {
+		t.Fatalf("list open again: %v", err)
+	}
+	if len(open) != 0 {
+		t.Fatalf("认领满之后就不该在待认领里了，实际 %d 条", len(open))
+	}
+
+	// 认领不能超过这一行本身——账上出现「认领 6 万、到账 5 万」比报错难查得多。
+	if err := svc.SetBankTransactionClaim(ctx, tenantID, view.ID, "99999", op); err == nil ||
+		!strings.Contains(err.Error(), "BANK_CLAIM_EXCEEDS") {
+		t.Fatalf("超额认领应该被拒绝，实际 %v", err)
+	}
 }
 
 // 账户清单默认只给启用的：登记流水的下拉框里不该出现已经销户的账户，
@@ -210,5 +266,76 @@ func TestListBankAccountsHidesInactive(t *testing.T) {
 	}, op)
 	if err == nil || !strings.Contains(err.Error(), "BANK_ACCOUNT_EXISTS") {
 		t.Fatalf("重复账号应该被拒绝，实际 %v", err)
+	}
+}
+
+// **银行流水不看采购订单的数据范围。**
+//
+// 这条是修过一次才写下来的。原来这几个方法都要求「采购订单全量范围」，而
+// 生产上有那个范围的只有超级管理员——FINANCE 和 PROCUREMENT_MANAGER 的
+// procurement_order 都是 SELF。于是银行流水这个页面对财务是打不开的，
+// 报的还是一句「对账视图需要采购订单的全量数据范围」，财务看不懂也没法处理。
+//
+// 数据范围回答的是「这些行归谁」。银行流水没有归属人：一笔汇款不是某个业务员
+// 的，它就是公司账上的一笔钱。谁能看由权限决定，而权限归网关管。
+//
+// 反过来，供应商对账那边的全量要求必须还在——它算的是按供应商汇总的采购订单
+// 金额，那些行确实有主人，按人截断的合计会像完整余额一样被当真。
+func TestBankLedgerDoesNotUseOrderScope(t *testing.T) {
+	dsn := os.Getenv("PROCUREMENT_TEST_DSN")
+	if dsn == "" {
+		t.Skip("PROCUREMENT_TEST_DSN not set; skipping DB-backed scope test")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenantID := time.Now().UnixNano()
+	defer func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM bank_transactions WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM bank_accounts WHERE tenant_id=$1`, tenantID)
+	}()
+
+	// 一个只看得见自己那部分采购订单的人——生产上的财务就是这样。
+	// 不给 views，scopeStub 兜底就是 SELF——生产上的财务正是这样。
+	svc := New(pool, Deps{Scopes: &scopeStub{views: map[int64]Visibility{}}})
+	op := Operator{ID: 42, Name: "财务小王"}
+
+	acctID, err := svc.CreateBankAccount(ctx, tenantID, BankAccountView{
+		AccountNo: "S-" + itoa64(tenantID), AccountName: "对公户", Currency: "USD",
+	}, op)
+	if err != nil {
+		t.Fatalf("SELF 范围的人应该能建收款账户: %v", err)
+	}
+	if _, err := svc.ListBankAccounts(ctx, tenantID, false, op); err != nil {
+		t.Fatalf("SELF 范围的人应该能看账户清单: %v", err)
+	}
+	row, err := svc.RecordBankTransaction(ctx, tenantID, BankTransactionInput{
+		AccountID: acctID, BankRef: "S-" + itoa64(tenantID), Direction: "CREDIT",
+		Amount: "100", Currency: "USD", TxnDate: "2026-08-22",
+		Ownership: OwnershipCustomer,
+	}, op)
+	if err != nil {
+		t.Fatalf("SELF 范围的人应该能登记流水: %v", err)
+	}
+	if _, _, err := svc.ListBankTransactions(ctx, tenantID, BankTransactionFilter{}, 1, 20, op); err != nil {
+		t.Fatalf("SELF 范围的人应该能看银行流水: %v", err)
+	}
+	if _, err := svc.GetBankTransaction(ctx, tenantID, row.ID, op); err != nil {
+		t.Fatalf("SELF 范围的人应该能看单行: %v", err)
+	}
+	if err := svc.SetBankTransactionClaim(ctx, tenantID, row.ID, "100", op); err != nil {
+		t.Fatalf("SELF 范围的人应该能报认领: %v", err)
+	}
+	if err := svc.SetBankTransactionOwnership(ctx, tenantID, row.ID, OwnershipTaxRefund, "", op); err != nil {
+		t.Fatalf("SELF 范围的人应该能改归属: %v", err)
+	}
+
+	// 另一边：供应商对账仍然要全量，理由不一样，闸也不该跟着一起拆。
+	if _, err := svc.ListSupplierStatements(ctx, tenantID, "", op); err == nil ||
+		!strings.Contains(err.Error(), "PR_RECON_SCOPE_LIMITED") {
+		t.Fatalf("供应商对账应该仍然要求全量范围，实际 %v", err)
 	}
 }

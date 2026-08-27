@@ -146,11 +146,20 @@ func TestBankStatementLifecycle(t *testing.T) {
 		t.Fatalf("double unmatch must say so, got %v", err)
 	}
 
-	// The account is not divisible by clerk: partial scope sees nothing.
+	// 这里原来断言的是「按人截断的范围一行也看不见」。**那条断言把一个 bug
+	// 写成了规矩**，所以改了——理由见 TestBankLedgerDoesNotUseOrderScope：
+	//
+	// 「一个银行账户不能按人切」这句话是对的，但它推不出「要有采购订单的全量
+	// 范围」。数据范围回答的是「这些行归谁」，而银行流水没有归属人。用那把尺
+	// 量的结果是：生产上只有超级管理员的 procurement_order 是 ALL，
+	// FINANCE 和 PROCUREMENT_MANAGER 都是 SELF——**银行流水这个给财务做的
+	// 页面，财务打不开**。
+	//
+	// 谁能看，由权限决定，而权限归网关管（/api/bank-transactions* 要
+	// procurement:payment:read|write）。
 	fenced := New(pool, Deps{Scopes: fixedScope{Visibility{All: false, ScopeType: "SELF"}}})
-	if _, _, err := fenced.ListBankTransactions(ctx, tenantID, BankTransactionFilter{}, 1, 20, op); err == nil ||
-		!strings.Contains(err.Error(), "PR_RECON_SCOPE_LIMITED") {
-		t.Fatalf("partial scope must be refused, got %v", err)
+	if _, _, err := fenced.ListBankTransactions(ctx, tenantID, BankTransactionFilter{}, 1, 20, op); err != nil {
+		t.Fatalf("按人截断的范围也该看得见银行流水（谁能看归权限管），实际 %v", err)
 	}
 }
 
