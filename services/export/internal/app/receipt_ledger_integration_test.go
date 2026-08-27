@@ -1,7 +1,9 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -316,4 +318,211 @@ func seedContract(ctx context.Context, t *testing.T, pool *pgxpool.Pool,
 		t.Fatal(err)
 	}
 	return id
+}
+
+// 一边核销、一边把同一笔流水标成「与应收无关」。
+//
+// 「已经核销掉的钱不能改归属」是一个**读了再判断**的检查，不拿锁就挡不住
+// 任何东西：甲读到空、乙核销成功、甲照样把归属改走，于是几条核销记录指着
+// 一笔写着「我不是客户的钱」的流水，而合同上那笔钱照样算收到了。
+//
+// F2 之前这里是 SELECT ... FOR UPDATE；行搬到采购库之后我改写时把锁丢了，
+// 判断留着——判断留着更糟，因为它看起来像还挡着。
+func TestMarkIrrelevantRacesAllocation(t *testing.T) {
+	dsn := os.Getenv("EXPORT_TEST_DSN")
+	if dsn == "" {
+		t.Skip("EXPORT_TEST_DSN not set; skipping DB-backed race test")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	// 单跑一次赢面靠运气，所以跑几轮：**只要有一轮出现「归属改走了而核销
+	// 还在」，就是账错了**。
+	for round := 0; round < 12; round++ {
+		tenantID := time.Now().UnixNano() + int64(round)
+		contractID := seedContract(ctx, t, pool, tenantID, "CT-RACE-MI", "USD", "10000")
+		ledger := newFakeLedger(BankRow{
+			ID: 7200, BankRef: "REF-MI", Direction: "CREDIT", Amount: "10000.00",
+			Currency: "USD", ValueDate: "2026-08-20", Ownership: OwnershipCustomer,
+		})
+		svc := New(pool, Deps{Bank: ledger})
+
+		var wg sync.WaitGroup
+		var allocErr, markErr error
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_, allocErr = svc.Allocate(ctx, tenantID, 7200,
+				[]AllocationLine{{ContractID: contractID, Amount: "10000"}},
+				Operator{ID: 1, Name: "甲"})
+		}()
+		go func() {
+			defer wg.Done()
+			_, markErr = svc.MarkIrrelevant(ctx, tenantID, 7200, "TAX_REFUND", "", Operator{ID: 2, Name: "乙"})
+		}()
+		wg.Wait()
+
+		var live string
+		if err := pool.QueryRow(ctx, `SELECT coalesce(sum(amount),0)::text
+			FROM receipt_allocations WHERE tenant_id=$1 AND transaction_id=7200`,
+			tenantID).Scan(&live); err != nil {
+			t.Fatal(err)
+		}
+		row, _ := ledger.Get(ctx, 7200)
+
+		// 两个动作互斥：要么核销成了（归属还是客户），要么标记成了（一分没核）。
+		allocated := mustDec(live).IsPositive()
+		movedAway := row.Ownership != OwnershipCustomer
+		if allocated && movedAway {
+			t.Fatalf("第 %d 轮：核销了 %s 却把归属改成了 %q——"+
+				"这几条核销记录现在指着一笔写着「我不是客户的钱」的流水"+
+				"（alloc=%v mark=%v）", round, live, row.Ownership, allocErr, markErr)
+		}
+		if !allocated && !movedAway && allocErr == nil && markErr == nil {
+			t.Fatalf("第 %d 轮：两个都说成功了，账上却什么都没发生", round)
+		}
+
+		_, _ = pool.Exec(ctx, `DELETE FROM receipt_allocations WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM contract_versions WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM contracts WHERE tenant_id=$1`, tenantID)
+	}
+}
+
+// 列表**不做详情才需要的活**。
+//
+// 原来列表对每一行调 viewOf，而 viewOf 会再查一次核销明细、再扫一次汇款附言
+// 找合同号——20 行一页最多 40 次往返，换来的东西列表上一样也用不着。
+//
+// 这个测试从行为上钉住：列表给出正确的已核金额，但不带明细也不带建议。
+func TestListDoesNotDoDetailWork(t *testing.T) {
+	dsn := os.Getenv("EXPORT_TEST_DSN")
+	if dsn == "" {
+		t.Skip("EXPORT_TEST_DSN not set; skipping DB-backed list test")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenantID := time.Now().UnixNano()
+	defer func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM receipt_allocations WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM contract_versions WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM contracts WHERE tenant_id=$1`, tenantID)
+	}()
+
+	contractID := seedContract(ctx, t, pool, tenantID, "EXP-2026-0031", "USD", "10000")
+	ledger := newFakeLedger(
+		// 附言里带一个真实存在的合同号：详情会把它扫成建议，列表不该扫。
+		BankRow{ID: 7300, BankRef: "REF-L1", Direction: "CREDIT", Amount: "10000.00",
+			Currency: "USD", ValueDate: "2026-08-20", Ownership: OwnershipCustomer,
+			RemittanceInfo: "PAYMENT FOR EXP-2026-0031"},
+		BankRow{ID: 7301, BankRef: "REF-L2", Direction: "CREDIT", Amount: "500.00",
+			Currency: "USD", ValueDate: "2026-08-21", Ownership: OwnershipCustomer},
+	)
+	svc := New(pool, Deps{Bank: ledger})
+	op := Operator{ID: 5, Name: "Finance"}
+
+	if _, err := svc.Allocate(ctx, tenantID, 7300,
+		[]AllocationLine{{ContractID: contractID, Amount: "4000"}}, op); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, _, err := svc.ListTransactions(ctx, tenantID, TransactionQuery{Page: 1, Size: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[int64]TransactionView{}
+	for _, r := range rows {
+		byID[r.Transaction.ID] = r
+	}
+	// 已核金额要对——这是列表唯一需要从核销表拿的东西。
+	if got := byID[7300].AllocatedAmount; got != "4000.00" {
+		t.Fatalf("列表上的已核金额不对: %q", got)
+	}
+	if got := byID[7300].UnallocatedAmount; got != "6000.00" {
+		t.Fatalf("列表上的未核金额不对: %q", got)
+	}
+	// 一分没核的那行也要给 0，不能给空。
+	if got := byID[7301].AllocatedAmount; got != "0.00" {
+		t.Fatalf("没核过的行应该是 0.00，实际 %q", got)
+	}
+	// 明细和建议是详情的活，列表不该带。
+	if len(byID[7300].Allocations) != 0 || len(byID[7300].Suggestions) != 0 {
+		t.Fatalf("列表带上了详情才要的东西: allocs=%d suggestions=%d",
+			len(byID[7300].Allocations), len(byID[7300].Suggestions))
+	}
+	// 详情该带的还得带——别把活删过头了。
+	detail, err := svc.GetTransaction(ctx, tenantID, 7300)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Allocations) == 0 {
+		t.Fatal("详情应该带核销明细")
+	}
+	if len(detail.Suggestions) == 0 {
+		t.Fatal("详情应该把附言里的合同号扫成建议")
+	}
+}
+
+// 核销成了、但账本那边没跟上时**必须留下痕迹**。
+//
+// 原来这里是 `_ = s.bank.SetClaim(...)`：采购服务抖一下、或者用户核销完立刻
+// 关掉页面（ctx 被取消），那一行就永远停在「待处理」，而没有任何地方能告诉
+// 人为什么。核销本身不该因此失败——核销记录已经落库了，那是真相——但一声
+// 不吭不行。
+func TestClaimReportFailureIsLogged(t *testing.T) {
+	dsn := os.Getenv("EXPORT_TEST_DSN")
+	if dsn == "" {
+		t.Skip("EXPORT_TEST_DSN not set; skipping DB-backed logging test")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenantID := time.Now().UnixNano()
+	defer func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM receipt_allocations WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM contract_versions WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM contracts WHERE tenant_id=$1`, tenantID)
+	}()
+
+	contractID := seedContract(ctx, t, pool, tenantID, "CT-LOG-1", "USD", "10000")
+	ledger := newFakeLedger(BankRow{
+		ID: 7400, BankRef: "REF-LOG", Direction: "CREDIT", Amount: "10000.00",
+		Currency: "USD", ValueDate: "2026-08-20", Ownership: OwnershipCustomer,
+	})
+	ledger.fails = true // 账本那边写不进去
+
+	var buf bytes.Buffer
+	svc := New(pool, Deps{
+		Bank: ledger,
+		Log:  slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})),
+	})
+
+	view, err := svc.Allocate(ctx, tenantID, 7400,
+		[]AllocationLine{{ContractID: contractID, Amount: "10000"}},
+		Operator{ID: 5, Name: "Finance"})
+	// 核销本身要成功：核销记录已经落库了，为一个筛选把它撤掉是拿真的换假的。
+	if err != nil {
+		t.Fatalf("账本写不进去不该让核销失败: %v", err)
+	}
+	if view.AllocatedAmount != "10000.00" {
+		t.Fatalf("核销记录该是实打实的: %q", view.AllocatedAmount)
+	}
+
+	// 但一定要说出来，而且要说清楚是哪一笔、多少钱、会怎么样。
+	logged := buf.String()
+	for _, want := range []string{"7400", "10000.00", "待处理"} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("日志里少了 %q，查起来对不上号。实际:\n%s", want, logged)
+		}
+	}
 }

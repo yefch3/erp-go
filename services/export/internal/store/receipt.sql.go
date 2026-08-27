@@ -91,6 +91,48 @@ func (q *Queries) AllocationReversed(ctx context.Context, arg AllocationReversed
 	return reversed, err
 }
 
+const allocationSumsByTransactions = `-- name: AllocationSumsByTransactions :many
+SELECT transaction_id, sum(amount)::text AS allocated
+FROM receipt_allocations
+WHERE tenant_id = $1::bigint
+  AND transaction_id = ANY($2::bigint[])
+GROUP BY transaction_id
+`
+
+type AllocationSumsByTransactionsParams struct {
+	TenantID       int64
+	TransactionIds []int64
+}
+
+type AllocationSumsByTransactionsRow struct {
+	TransactionID int64
+	Allocated     string
+}
+
+// 一页流水的已核金额，一次问完。
+//
+// 收款对账的列表原来对每一行单独查一次核销记录（20 行一页就是 20 次往返），
+// 而列表上只用得到一个和——完整的核销明细只有详情页要。
+func (q *Queries) AllocationSumsByTransactions(ctx context.Context, arg AllocationSumsByTransactionsParams) ([]AllocationSumsByTransactionsRow, error) {
+	rows, err := q.db.Query(ctx, allocationSumsByTransactions, arg.TenantID, arg.TransactionIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AllocationSumsByTransactionsRow
+	for rows.Next() {
+		var i AllocationSumsByTransactionsRow
+		if err := rows.Scan(&i.TransactionID, &i.Allocated); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const backfillReceivableDue = `-- name: BackfillReceivableDue :execrows
 UPDATE contracts SET receivable_due_date = (effective_at::date + $1::int)
 WHERE tenant_id = $2::bigint

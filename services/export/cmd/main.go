@@ -123,6 +123,7 @@ func run(log *slog.Logger) error {
 		Live:        live,
 		Directory:   grpcout.NewDirectory(iamConn),
 		Bank:        grpcout.NewBankLedger(prConn),
+		Log:         log,
 		Seller:      app.Seller{Name: cfg.SellerName, Address: cfg.SellerAddress},
 	})
 

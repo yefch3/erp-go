@@ -127,7 +127,10 @@ func (s *Service) GetTransaction(ctx context.Context, tenantID, id int64) (Trans
 	return s.viewOf(ctx, tenantID, row)
 }
 
-// viewOf 把账本上的一行和出口这边的核销记录拼起来。
+// viewOf 把账本上的一行和出口这边的核销记录拼起来，**给详情页用**。
+//
+// 它每次都要再问两次库（核销明细、合同号建议），所以列表不走这里——列表
+// 只需要一个已核金额，那条路见 ListTransactions。
 //
 // **已核金额每次都重算**，不读账本上那个 claimed_amount。那一列是为了让队列
 // 能分页筛选而存的，万一写回失败就会偏旧；页面上显示的数必须来自核销记录本身。
@@ -193,13 +196,38 @@ func (s *Service) ListTransactions(ctx context.Context, tenantID int64, qy Trans
 	if err != nil {
 		return nil, 0, err
 	}
+	if len(rows) == 0 {
+		return nil, total, nil
+	}
+
+	// 一页的已核金额一次问完，不是一行问一次。
+	//
+	// 原来这里对每一行调 viewOf，而 viewOf 会**再**查一次核销明细、**再**
+	// 扫一次汇款附言找合同号——20 行一页就是最多 40 次往返，换来的东西列表
+	// 上一样也用不着：明细和合同号建议只有详情页显示。
+	ids := make([]int64, 0, len(rows))
+	for _, r := range rows {
+		ids = append(ids, r.ID)
+	}
+	sums, err := s.q.AllocationSumsByTransactions(ctx, store.AllocationSumsByTransactionsParams{
+		TenantID: tenantID, TransactionIds: ids,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	allocated := make(map[int64]decimal.Decimal, len(sums))
+	for _, a := range sums {
+		allocated[a.TransactionID] = mustDec(a.Allocated)
+	}
+
 	out := make([]TransactionView, 0, len(rows))
 	for _, r := range rows {
-		v, err := s.viewOf(ctx, tenantID, r)
-		if err != nil {
-			return nil, 0, err
-		}
-		out = append(out, v)
+		got := allocated[r.ID]
+		out = append(out, TransactionView{
+			Transaction:       r,
+			AllocatedAmount:   got.StringFixed(2),
+			UnallocatedAmount: mustDec(r.Amount).Sub(got).StringFixed(2),
+		})
 	}
 	return out, total, nil
 }
@@ -214,21 +242,10 @@ func (s *Service) Allocate(ctx context.Context, tenantID, txID int64, lines []Al
 	if len(lines) == 0 {
 		return TransactionView{}, apierr.Invalid("EX_ALLOC_EMPTY", "请至少分配一笔到合同")
 	}
-	row, err := s.bank.Get(ctx, txID)
-	if err != nil {
-		return TransactionView{}, err
-	}
-	if row.Direction != "CREDIT" {
-		return TransactionView{}, apierr.Invalid("EX_TX_NOT_CREDIT",
-			"这是一笔付出去的款，不能核销到应收合同")
-	}
-	if row.Ownership != OwnershipCustomer && row.Ownership != OwnershipPending {
-		return TransactionView{}, apierr.Invalid("EX_TX_IRRELEVANT",
-			"这笔流水的归属不是「客户收款」，不能核销到应收合同。要核先在银行流水改归属。")
-	}
 	var owners []int64
 	var claimed decimal.Decimal
-	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	var row BankRow
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		// 原来这里是 SELECT ... FOR UPDATE 锁住那行银行流水。行搬到采购库
 		// 之后跨库锁不住了，换成本库的事务级建议锁，按流水 id 取键。
@@ -242,6 +259,31 @@ func (s *Service) Allocate(ctx context.Context, tenantID, txID int64, lines []Al
 		// 读到的 row.Amount 和锁里面读到的是同一个数。
 		if err := lockReceiptTransaction(ctx, tx, tenantID, txID); err != nil {
 			return err
+		}
+
+		// **这一行也要在锁里读。**
+		//
+		// 金额是事实、落库之后不变，在锁外读没问题；**归属会变**。在锁外读
+		// 归属，就是这么错的：
+		//
+		//     甲：读到归属 = 客户
+		//                        乙：标记为「与应收无关」，归属改成退税
+		//     甲：拿到锁，照着那份旧的归属往下核 ✓
+		//
+		// 于是几条核销记录指着一笔写着「我不是客户的钱」的流水。锁保护的
+		// 必须是「读判断的依据」到「写」这一整段，不是只保护写。
+		var err error
+		row, err = s.bank.Get(ctx, txID)
+		if err != nil {
+			return err
+		}
+		if row.Direction != "CREDIT" {
+			return apierr.Invalid("EX_TX_NOT_CREDIT",
+				"这是一笔付出去的款，不能核销到应收合同")
+		}
+		if row.Ownership != OwnershipCustomer && row.Ownership != OwnershipPending {
+			return apierr.Invalid("EX_TX_IRRELEVANT",
+				"这笔流水的归属不是「客户收款」，不能核销到应收合同。要核先在银行流水改归属。")
 		}
 
 		// Read the remaining balance inside the lock. Two people allocating
@@ -357,10 +399,36 @@ func (s *Service) reportClaim(ctx context.Context, txID int64, claimed decimal.D
 	// 否则账本会拒绝认领（认领只认客户那一档）。
 	if ownership == OwnershipPending {
 		if err := s.bank.SetOwnership(ctx, txID, OwnershipCustomer, ""); err != nil {
+			// **一定要说出来。** 归属没写上有两个后果：这一行会一直显示成
+			// 「待处理」，而且它还空着的归属让供应商那条线可以把它匹配走——
+			// 一笔已经核给客户合同的钱，被当成付给供应商的款认领了。
+			s.logClaimGap(ctx, txID, claimed, "归属没能写回账本", err)
 			return
 		}
 	}
-	_ = s.bank.SetClaim(ctx, txID, claimed.StringFixed(2))
+	if err := s.bank.SetClaim(ctx, txID, claimed.StringFixed(2)); err != nil {
+		s.logClaimGap(ctx, txID, claimed, "已核金额没能写回账本", err)
+	}
+}
+
+// logClaimGap 记下「核销成了、但账本那边没跟上」。
+//
+// 这里**不回滚也不报错**：核销记录已经落在出口库里了，那是这件事的真相；
+// 账本上那个数只决定这一行出现在哪个筛选里。为了一个筛选把一笔已经成立的
+// 核销撤掉，是拿真的换假的。
+//
+// 但**绝不能一声不吭**——原来这里是 `_ =`，采购服务抖一下、或者用户核销完
+// 立刻关掉页面（ctx 被取消），那一行就永远停在「待处理」，而没有任何地方
+// 能告诉人为什么。日志里带上 bank_txn_id 和金额，是为了能直接拿去对。
+//
+// 会自己好：下一次对同一行核销或冲销时会再报一次全量。
+func (s *Service) logClaimGap(ctx context.Context, txID int64, claimed decimal.Decimal, what string, err error) {
+	s.log.WarnContext(ctx, "核销已入账，但银行流水账本没跟上",
+		"what", what,
+		"bank_txn_id", txID,
+		"allocated", claimed.StringFixed(2),
+		"err", err.Error(),
+		"impact", "这一行会停在「待处理」筛选里，直到下次对它核销或冲销")
 }
 
 // ReverseAllocation undoes one allocation by writing its opposite.
@@ -458,24 +526,43 @@ func (s *Service) MarkIrrelevant(ctx context.Context, tenantID, txID int64, kind
 	if err != nil {
 		return TransactionView{}, err
 	}
-	// 已经核销掉的钱不能改归属：改走了，那些核销记录就指着一笔写着「我不是
-	// 客户的钱」的流水。要改先冲销。
-	allocs, err := s.q.ListAllocationsOfTransaction(ctx, store.ListAllocationsOfTransactionParams{
-		TenantID: tenantID, TransactionID: txID,
+	// **要拿锁**，和核销拿的是同一把。
+	//
+	// 下面那句「已经核销掉的钱不能改归属」是一个读了再判断的检查，不锁的话
+	// 它挡不住任何东西：
+	//
+	//     甲：读核销记录 → 空
+	//                        乙：核销 10000（成功）
+	//     甲：改归属 = 退税 ✓
+	//
+	// 结果是几条核销记录指着一笔写着「我不是客户的钱」的流水，而合同上那笔
+	// 钱照样算收到了。F2 之前这里是 SELECT ... FOR UPDATE 锁住流水那一行；
+	// 行搬到采购库之后我改写时把锁丢了，判断留着——判断留着更糟，因为它看
+	// 起来像还挡着。
+	//
+	// 改归属这一步（gRPC）放在事务里，锁会一直握到它返回。这是有意的：先放
+	// 锁再改，就等于没锁。调用很短，握着的是一把建议锁，不挡别的表。
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		if err := lockReceiptTransaction(ctx, tx, tenantID, txID); err != nil {
+			return err
+		}
+		allocs, err := s.q.WithTx(tx).ListAllocationsOfTransaction(ctx,
+			store.ListAllocationsOfTransactionParams{TenantID: tenantID, TransactionID: txID})
+		if err != nil {
+			return err
+		}
+		live := decimal.Zero
+		for _, a := range allocs {
+			live = live.Add(mustDec(a.Amount))
+		}
+		if !live.IsZero() {
+			return apierr.Invalid("EX_TX_HAS_ALLOCATIONS",
+				"这笔流水已经核销到合同，请先冲销再标记").
+				WithMeta("bank_ref", row.BankRef, "allocated", live.StringFixed(2))
+		}
+		return s.bank.SetOwnership(ctx, txID, ownership, detail)
 	})
 	if err != nil {
-		return TransactionView{}, err
-	}
-	live := decimal.Zero
-	for _, a := range allocs {
-		live = live.Add(mustDec(a.Amount))
-	}
-	if !live.IsZero() {
-		return TransactionView{}, apierr.Invalid("EX_TX_HAS_ALLOCATIONS",
-			"这笔流水已经核销到合同，请先冲销再标记").
-			WithMeta("bank_ref", row.BankRef, "allocated", live.StringFixed(2))
-	}
-	if err := s.bank.SetOwnership(ctx, txID, ownership, detail); err != nil {
 		return TransactionView{}, err
 	}
 	return s.GetTransaction(ctx, tenantID, txID)

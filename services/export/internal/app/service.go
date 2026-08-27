@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -165,6 +166,9 @@ type Deps struct {
 	Seller      Seller
 	// 那本唯一的银行流水账（F2）。收款对账的每一次读写都要经过它。
 	Bank BankLedger
+	// 可选：不给就用 slog.Default()。留给那些「已经成了、但有一半没成」的
+	// 地方说话——它们不该让整个操作失败，但也绝不能一声不吭。
+	Log *slog.Logger
 }
 
 type Service struct {
@@ -182,6 +186,7 @@ type Service struct {
 	directory Directory
 	seller    Seller
 	bank      BankLedger
+	log       *slog.Logger
 }
 
 func New(pool *pgxpool.Pool, d Deps) *Service {
@@ -190,7 +195,7 @@ func New(pool *pgxpool.Pool, d Deps) *Service {
 		customers: d.Customers, products: d.Products, rates: d.Rates,
 		number: d.Numbering, approvals: d.Approvals, files: d.Files,
 		scopes: d.Scopes, involved: d.Involvement, directory: d.Directory, live: d.Live,
-		seller: d.Seller, bank: d.Bank,
+		seller: d.Seller, bank: d.Bank, log: orDefaultLog(d.Log),
 	}
 }
 
@@ -259,4 +264,13 @@ func orDefault(v, def string) string {
 
 func itoa(n int) string {
 	return decimal.NewFromInt(int64(n)).String()
+}
+
+// orDefaultLog 让 Deps.Log 可以不填——测试里没人关心日志，生产里 main
+// 会传进来。
+func orDefaultLog(l *slog.Logger) *slog.Logger {
+	if l != nil {
+		return l
+	}
+	return slog.Default()
 }
