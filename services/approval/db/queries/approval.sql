@@ -94,13 +94,37 @@ JOIN approval_instances i ON i.id = t.instance_id AND i.tenant_id = t.tenant_id
 WHERE t.tenant_id = sqlc.arg(tenant_id)::bigint
   AND t.assignee_id = sqlc.arg(assignee_id)::bigint
   AND (sqlc.arg(biz_type)::text = '' OR i.biz_type = sqlc.arg(biz_type)::text)
+  AND (sqlc.arg(keyword)::text = ''
+       OR i.biz_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
+       OR i.biz_summary::text ILIKE '%' || sqlc.arg(keyword)::text || '%'
+       OR i.submitter_name ILIKE '%' || sqlc.arg(keyword)::text || '%'
+       OR t.node_name ILIKE '%' || sqlc.arg(keyword)::text || '%')
   AND CASE
         WHEN sqlc.arg(status)::text = ''        THEN t.status = 'PENDING'
         WHEN sqlc.arg(status)::text = 'HANDLED' THEN t.status <> 'PENDING'
         ELSE t.status = sqlc.arg(status)::text
       END
--- Pending rows have no acted_at, so newest-first works for both tabs.
-ORDER BY coalesce(t.acted_at, t.created_at) DESC
+-- Pending work is oldest first because the fixed HOME1 SLA is measured from
+-- task creation; handled work remains newest decision first.
+ORDER BY
+  CASE WHEN sqlc.arg(status)::text = '' THEN t.created_at END ASC,
+  CASE WHEN sqlc.arg(status)::text <> '' THEN coalesce(t.acted_at, t.created_at) END DESC,
+  t.id DESC
+LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
+
+-- name: ListMySubmittedInstances :many
+-- Personal approval tracking for the home page. The caller's employee id is
+-- supplied by trusted gRPC metadata, never by an HTTP query parameter.
+SELECT i.*, count(*) OVER () AS total
+FROM approval_instances i
+WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND i.submitter_id = sqlc.arg(submitter_id)::bigint
+  AND (sqlc.arg(biz_type)::text = '' OR i.biz_type = sqlc.arg(biz_type)::text)
+  AND (sqlc.arg(status)::text = '' OR i.status = sqlc.arg(status)::text)
+  AND (sqlc.arg(keyword)::text = ''
+       OR i.biz_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
+       OR i.biz_summary::text ILIKE '%' || sqlc.arg(keyword)::text || '%')
+ORDER BY i.submitted_at DESC
 LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
 
 -- name: ListDefinitions :many

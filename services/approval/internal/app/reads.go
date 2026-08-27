@@ -20,18 +20,46 @@ var taskScopes = map[string]bool{
 	statusReturned: true, "CANCELLED": true, taskSkipped: true,
 }
 
+var instanceScopes = map[string]bool{
+	"": true, statusRunning: true, statusApproved: true, statusRejected: true,
+	statusReturned: true, "CANCELLED": true,
+}
+
 // MyTasks returns one employee's approval tasks: the pending queue by
 // default, or a past decision when a status is given. The caller passes its
 // own employee id: nobody can list somebody else's queue.
-func (s *Service) MyTasks(ctx context.Context, tenantID, assigneeID int64, bizType, status string, page, size int32) ([]store.ListMyTasksRow, int64, error) {
+func (s *Service) MyTasks(ctx context.Context, tenantID, assigneeID int64, bizType, status, keyword string, page, size int32) ([]store.ListMyTasksRow, int64, error) {
 	if !taskScopes[status] {
 		return nil, 0, apierr.Invalid("AP_STATUS_INVALID", "不支持的任务状态筛选").
 			WithMeta("status", status)
 	}
 	page, size = normalizePage(page, size)
 	rows, err := s.q.ListMyTasks(ctx, store.ListMyTasksParams{
-		TenantID: tenantID, AssigneeID: assigneeID, BizType: bizType, Status: status,
+		TenantID: tenantID, AssigneeID: assigneeID, BizType: bizType,
+		Status: status, Keyword: keyword,
 		RowLimit: size, RowOffset: (page - 1) * size,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	var total int64
+	if len(rows) > 0 {
+		total = rows[0].Total
+	}
+	return rows, total, nil
+}
+
+// MySubmitted 查询当前员工本人发起的审批实例。员工编号来自认证后的 gRPC
+// 元数据，不接受 HTTP 查询参数，因此不能借此读取其他员工发起的单据。
+func (s *Service) MySubmitted(ctx context.Context, tenantID, submitterID int64, bizType, status, keyword string, page, size int32) ([]store.ListMySubmittedInstancesRow, int64, error) {
+	if !instanceScopes[status] {
+		return nil, 0, apierr.Invalid("AP_INSTANCE_STATUS_INVALID", "不支持的审批状态筛选").
+			WithMeta("status", status)
+	}
+	page, size = normalizePage(page, size)
+	rows, err := s.q.ListMySubmittedInstances(ctx, store.ListMySubmittedInstancesParams{
+		TenantID: tenantID, SubmitterID: submitterID, BizType: bizType,
+		Status: status, Keyword: keyword, RowLimit: size, RowOffset: (page - 1) * size,
 	})
 	if err != nil {
 		return nil, 0, err

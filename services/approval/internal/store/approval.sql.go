@@ -780,6 +780,94 @@ func (q *Queries) ListInstancesByBiz(ctx context.Context, arg ListInstancesByBiz
 	return items, nil
 }
 
+const listMySubmittedInstances = `-- name: ListMySubmittedInstances :many
+SELECT i.id, i.tenant_id, i.definition_id, i.biz_type, i.biz_id, i.biz_no, i.biz_summary, i.submitter_id, i.submitter_name, i.status, i.current_seq, i.submitted_at, i.finished_at, i.amount, count(*) OVER () AS total
+FROM approval_instances i
+WHERE i.tenant_id = $1::bigint
+  AND i.submitter_id = $2::bigint
+  AND ($3::text = '' OR i.biz_type = $3::text)
+  AND ($4::text = '' OR i.status = $4::text)
+  AND ($5::text = ''
+       OR i.biz_no ILIKE '%' || $5::text || '%'
+       OR i.biz_summary::text ILIKE '%' || $5::text || '%')
+ORDER BY i.submitted_at DESC
+LIMIT $7::int OFFSET $6::int
+`
+
+type ListMySubmittedInstancesParams struct {
+	TenantID    int64
+	SubmitterID int64
+	BizType     string
+	Status      string
+	Keyword     string
+	RowOffset   int32
+	RowLimit    int32
+}
+
+type ListMySubmittedInstancesRow struct {
+	ID            int64
+	TenantID      int64
+	DefinitionID  int64
+	BizType       string
+	BizID         int64
+	BizNo         string
+	BizSummary    []byte
+	SubmitterID   int64
+	SubmitterName string
+	Status        string
+	CurrentSeq    int32
+	SubmittedAt   pgtype.Timestamptz
+	FinishedAt    pgtype.Timestamptz
+	Amount        pgtype.Numeric
+	Total         int64
+}
+
+// Personal approval tracking for the home page. The caller's employee id is
+// supplied by trusted gRPC metadata, never by an HTTP query parameter.
+func (q *Queries) ListMySubmittedInstances(ctx context.Context, arg ListMySubmittedInstancesParams) ([]ListMySubmittedInstancesRow, error) {
+	rows, err := q.db.Query(ctx, listMySubmittedInstances,
+		arg.TenantID,
+		arg.SubmitterID,
+		arg.BizType,
+		arg.Status,
+		arg.Keyword,
+		arg.RowOffset,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMySubmittedInstancesRow
+	for rows.Next() {
+		var i ListMySubmittedInstancesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.DefinitionID,
+			&i.BizType,
+			&i.BizID,
+			&i.BizNo,
+			&i.BizSummary,
+			&i.SubmitterID,
+			&i.SubmitterName,
+			&i.Status,
+			&i.CurrentSeq,
+			&i.SubmittedAt,
+			&i.FinishedAt,
+			&i.Amount,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMyTasks = `-- name: ListMyTasks :many
 SELECT
     t.id, t.instance_id, t.node_seq, t.node_name, t.assignee_id, t.status,
@@ -792,19 +880,28 @@ JOIN approval_instances i ON i.id = t.instance_id AND i.tenant_id = t.tenant_id
 WHERE t.tenant_id = $1::bigint
   AND t.assignee_id = $2::bigint
   AND ($3::text = '' OR i.biz_type = $3::text)
+  AND ($4::text = ''
+       OR i.biz_no ILIKE '%' || $4::text || '%'
+       OR i.biz_summary::text ILIKE '%' || $4::text || '%'
+       OR i.submitter_name ILIKE '%' || $4::text || '%'
+       OR t.node_name ILIKE '%' || $4::text || '%')
   AND CASE
-        WHEN $4::text = ''        THEN t.status = 'PENDING'
-        WHEN $4::text = 'HANDLED' THEN t.status <> 'PENDING'
-        ELSE t.status = $4::text
+        WHEN $5::text = ''        THEN t.status = 'PENDING'
+        WHEN $5::text = 'HANDLED' THEN t.status <> 'PENDING'
+        ELSE t.status = $5::text
       END
-ORDER BY coalesce(t.acted_at, t.created_at) DESC
-LIMIT $6::int OFFSET $5::int
+ORDER BY
+  CASE WHEN $5::text = '' THEN t.created_at END ASC,
+  CASE WHEN $5::text <> '' THEN coalesce(t.acted_at, t.created_at) END DESC,
+  t.id DESC
+LIMIT $7::int OFFSET $6::int
 `
 
 type ListMyTasksParams struct {
 	TenantID   int64
 	AssigneeID int64
 	BizType    string
+	Keyword    string
 	Status     string
 	RowOffset  int32
 	RowLimit   int32
@@ -834,12 +931,14 @@ type ListMyTasksRow struct {
 
 // One query serves every tab of "my approvals": the pending queue by
 // default, everything already handled, or one exact decision.
-// Pending rows have no acted_at, so newest-first works for both tabs.
+// Pending work is oldest first because the fixed HOME1 SLA is measured from
+// task creation; handled work remains newest decision first.
 func (q *Queries) ListMyTasks(ctx context.Context, arg ListMyTasksParams) ([]ListMyTasksRow, error) {
 	rows, err := q.db.Query(ctx, listMyTasks,
 		arg.TenantID,
 		arg.AssigneeID,
 		arg.BizType,
+		arg.Keyword,
 		arg.Status,
 		arg.RowOffset,
 		arg.RowLimit,

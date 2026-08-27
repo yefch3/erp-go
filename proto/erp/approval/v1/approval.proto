@@ -16,6 +16,10 @@ service ApprovalService {
   rpc Act(ActRequest) returns (ActResponse);
   // MyTodos lists the pending tasks assigned to one employee.
   rpc MyTodos(MyTodosRequest) returns (MyTodosResponse);
+  // MySubmitted lists approval instances submitted by the current employee.
+  // It powers the personal home page without exposing another employee's
+  // documents or requiring permission to act on approval tasks.
+  rpc MySubmitted(MySubmittedRequest) returns (MySubmittedResponse);
   // ListInstances returns the approval history of a business document.
   rpc ListInstances(ListInstancesRequest) returns (ListInstancesResponse);
   // GetInstance returns one instance with its full task timeline.
@@ -164,6 +168,11 @@ message Task {
 message TodoItem {
   Task task = 1;
   Instance instance = 2;
+  // HOME1 uses one server-side SLA so every client sees the same deadline
+  // and urgency regardless of browser locale or clock skew.
+  string due_at = 3;
+  string priority = 4;
+  int64 remaining_minutes = 5;
 }
 
 message SubmitRequest {
@@ -206,10 +215,26 @@ message MyTodosRequest {
   // "HANDLED" everything I already acted on, or one exact task status
   // ("APPROVED" / "REJECTED" / "RETURNED") to see just those decisions.
   string status = 3;
+  // Optional document number, summary, submitter or node search.
+  string keyword = 4;
 }
 
 message MyTodosResponse {
   repeated TodoItem todos = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+
+message MySubmittedRequest {
+  erp.common.v1.PageRequest page = 1;
+  // Optional document type and instance status filters.
+  string biz_type = 2;
+  string status = 3;
+  // Optional document number or denormalized summary search.
+  string keyword = 4;
+}
+
+message MySubmittedResponse {
+  repeated Instance instances = 1;
   erp.common.v1.PageMeta meta = 2;
 }
 

@@ -30,6 +30,7 @@ export const useAuthStore = defineStore('auth', {
     // and the two are deliberately not the same set.
     employeeId: localStorage.getItem('employeeId') ?? '',
     employeeName: localStorage.getItem('employeeName') ?? '',
+    employeeDepartment: localStorage.getItem('employeeDepartment') ?? '',
     // The address they signed in with. The mailbox gate shows it rather than
     // asking, because the mailbox somebody binds is the one they signed in as.
     employeeEmail: localStorage.getItem('employeeEmail') ?? '',
@@ -56,11 +57,13 @@ export const useAuthStore = defineStore('auth', {
       this.employeeId = data.employee.id
       this.employeeName = data.employee.name
       this.employeeEmail = data.employee.email ?? ''
+      this.employeeDepartment = data.employee.departmentName ?? ''
       this.permissions = data.permissionCodes
       this.mustChangePassword = data.mustChangePassword === true
       localStorage.setItem('employeeId', data.employee.id)
       localStorage.setItem('employeeName', data.employee.name)
       localStorage.setItem('employeeEmail', data.employee.email ?? '')
+      localStorage.setItem('employeeDepartment', data.employee.departmentName ?? '')
       localStorage.setItem('permissions', JSON.stringify(data.permissionCodes))
       if (this.mustChangePassword) {
         localStorage.setItem('mustChangePassword', '1')
@@ -101,6 +104,7 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('employeeId')
       localStorage.removeItem('employeeName')
       localStorage.removeItem('employeeEmail')
+      localStorage.removeItem('employeeDepartment')
       localStorage.removeItem('permissions')
       localStorage.removeItem('mustChangePassword')
     },

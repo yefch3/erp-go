@@ -22,6 +22,7 @@ const (
 	ApprovalService_Submit_FullMethodName              = "/erp.approval.v1.ApprovalService/Submit"
 	ApprovalService_Act_FullMethodName                 = "/erp.approval.v1.ApprovalService/Act"
 	ApprovalService_MyTodos_FullMethodName             = "/erp.approval.v1.ApprovalService/MyTodos"
+	ApprovalService_MySubmitted_FullMethodName         = "/erp.approval.v1.ApprovalService/MySubmitted"
 	ApprovalService_ListInstances_FullMethodName       = "/erp.approval.v1.ApprovalService/ListInstances"
 	ApprovalService_GetInstance_FullMethodName         = "/erp.approval.v1.ApprovalService/GetInstance"
 	ApprovalService_ListDefinitions_FullMethodName     = "/erp.approval.v1.ApprovalService/ListDefinitions"
@@ -47,6 +48,10 @@ type ApprovalServiceClient interface {
 	Act(ctx context.Context, in *ActRequest, opts ...grpc.CallOption) (*ActResponse, error)
 	// MyTodos lists the pending tasks assigned to one employee.
 	MyTodos(ctx context.Context, in *MyTodosRequest, opts ...grpc.CallOption) (*MyTodosResponse, error)
+	// MySubmitted lists approval instances submitted by the current employee.
+	// It powers the personal home page without exposing another employee's
+	// documents or requiring permission to act on approval tasks.
+	MySubmitted(ctx context.Context, in *MySubmittedRequest, opts ...grpc.CallOption) (*MySubmittedResponse, error)
 	// ListInstances returns the approval history of a business document.
 	ListInstances(ctx context.Context, in *ListInstancesRequest, opts ...grpc.CallOption) (*ListInstancesResponse, error)
 	// GetInstance returns one instance with its full task timeline.
@@ -100,6 +105,16 @@ func (c *approvalServiceClient) MyTodos(ctx context.Context, in *MyTodosRequest,
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(MyTodosResponse)
 	err := c.cc.Invoke(ctx, ApprovalService_MyTodos_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *approvalServiceClient) MySubmitted(ctx context.Context, in *MySubmittedRequest, opts ...grpc.CallOption) (*MySubmittedResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MySubmittedResponse)
+	err := c.cc.Invoke(ctx, ApprovalService_MySubmitted_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -192,6 +207,10 @@ type ApprovalServiceServer interface {
 	Act(context.Context, *ActRequest) (*ActResponse, error)
 	// MyTodos lists the pending tasks assigned to one employee.
 	MyTodos(context.Context, *MyTodosRequest) (*MyTodosResponse, error)
+	// MySubmitted lists approval instances submitted by the current employee.
+	// It powers the personal home page without exposing another employee's
+	// documents or requiring permission to act on approval tasks.
+	MySubmitted(context.Context, *MySubmittedRequest) (*MySubmittedResponse, error)
 	// ListInstances returns the approval history of a business document.
 	ListInstances(context.Context, *ListInstancesRequest) (*ListInstancesResponse, error)
 	// GetInstance returns one instance with its full task timeline.
@@ -229,6 +248,9 @@ func (UnimplementedApprovalServiceServer) Act(context.Context, *ActRequest) (*Ac
 }
 func (UnimplementedApprovalServiceServer) MyTodos(context.Context, *MyTodosRequest) (*MyTodosResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MyTodos not implemented")
+}
+func (UnimplementedApprovalServiceServer) MySubmitted(context.Context, *MySubmittedRequest) (*MySubmittedResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MySubmitted not implemented")
 }
 func (UnimplementedApprovalServiceServer) ListInstances(context.Context, *ListInstancesRequest) (*ListInstancesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListInstances not implemented")
@@ -322,6 +344,24 @@ func _ApprovalService_MyTodos_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ApprovalServiceServer).MyTodos(ctx, req.(*MyTodosRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ApprovalService_MySubmitted_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MySubmittedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApprovalServiceServer).MySubmitted(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApprovalService_MySubmitted_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApprovalServiceServer).MySubmitted(ctx, req.(*MySubmittedRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -470,6 +510,10 @@ var ApprovalService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MyTodos",
 			Handler:    _ApprovalService_MyTodos_Handler,
+		},
+		{
+			MethodName: "MySubmitted",
+			Handler:    _ApprovalService_MySubmitted_Handler,
 		},
 		{
 			MethodName: "ListInstances",
