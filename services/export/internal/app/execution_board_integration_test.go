@@ -27,7 +27,7 @@ func TestContractExecutionBoard(t *testing.T) {
 	tenantID := time.Now().UnixNano()
 	defer func() {
 		for _, tbl := range []string{
-			"contract_shipments", "receipt_allocations", "bank_transactions", "bank_accounts",
+			"contract_shipments", "receipt_allocations",
 			"contract_items", "contract_versions", "contracts",
 		} {
 			_, _ = pool.Exec(ctx, "DELETE FROM "+tbl+" WHERE tenant_id=$1", tenantID)
@@ -81,23 +81,16 @@ func TestContractExecutionBoard(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var acctID int64
-	if err := pool.QueryRow(ctx, `INSERT INTO bank_accounts (tenant_id,account_no,account_name,currency)
-		VALUES ($1,'ACC-EXEC','我方账户','USD') RETURNING id`, tenantID).Scan(&acctID); err != nil {
-		t.Fatal(err)
-	}
+	// 核销记录里的 transaction_id 给一个递增的数就够了：F2 之后那一行在
+	// 采购的库里，出口只存引用（跨库，已经不是外键）。这个看板问的是
+	// 「收了多少」，答案全在核销记录的和里，和那一行长什么样无关。
+	var nextTxn int64
 	collect := func(contractID int64, contractNo, ref, amount string) {
-		var txnID int64
-		if err := pool.QueryRow(ctx, `INSERT INTO bank_transactions
-			(tenant_id,account_id,bank_ref,direction,amount,currency,value_date)
-			VALUES ($1,$2,$3,'CREDIT',$4::numeric,'USD',current_date) RETURNING id`,
-			tenantID, acctID, ref, amount).Scan(&txnID); err != nil {
-			t.Fatal(err)
-		}
+		nextTxn++
 		if _, err := pool.Exec(ctx, `INSERT INTO receipt_allocations
 			(tenant_id,transaction_id,contract_id,contract_no,amount,currency)
 			VALUES ($1,$2,$3,$4,$5::numeric,'USD')`,
-			tenantID, txnID, contractID, contractNo, amount); err != nil {
+			tenantID, nextTxn, contractID, contractNo, amount); err != nil {
 			t.Fatal(err)
 		}
 	}

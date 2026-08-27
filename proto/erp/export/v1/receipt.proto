@@ -10,6 +10,12 @@ import "erp/common/v1/pagination.proto";
 // Those are two different kinds of statement and they live in two tables. A
 // bank line is fact and is never edited; an allocation is judgement and is
 // revised by writing its opposite, never by deleting it.
+// F2（2026-08-26）之后，银行流水只有一本，在采购服务手上。这个服务下面几个
+// 和流水有关的方法**实现已经改成转发给采购**了，接口保留是因为页面还在用，
+// 而删 RPC 会被 buf breaking 拦下（proto/buf.yaml 用的是 FILE 那一档）。
+//
+// 新的调用方应该直接用 erp.procurement.v1.PurchaseOrderService 上的
+// RecordBankTransaction / ListBankAccounts / SetBankTransactionOwnership。
 service ReceiptService {
   rpc ListBankAccounts(ListBankAccountsRequest) returns (ListBankAccountsResponse);
   rpc CreateBankAccount(CreateBankAccountRequest) returns (CreateBankAccountResponse);
@@ -49,6 +55,11 @@ message BankAccount {
 }
 
 // BankTransaction is one line off a statement.
+// BankTransaction 是账本上的一行，收款对账看到的样子。
+//
+// **disposition 和 irrelevant_type 现在是算出来的**，不再有对应的列：
+// 「与应收无关」变成了归属不是客户，「已核销 / 待处理」是核销记录的和与到账
+// 金额比出来的。字段保留是为了页面不必同时改；值仍然是准的。
 message BankTransaction {
   int64 id = 1;
   int64 account_id = 2;

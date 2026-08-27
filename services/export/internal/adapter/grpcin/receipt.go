@@ -55,16 +55,8 @@ func (h *ReceiptHandler) ListTransactions(ctx context.Context, req *exv1.ListTra
 		return nil, err
 	}
 	out := make([]*exv1.BankTransaction, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, &exv1.BankTransaction{
-			Id: r.ID, BankRef: r.BankRef, Direction: r.Direction,
-			Amount: r.Amount, Currency: r.Currency, ValueDate: r.ValueDate,
-			Counterparty: r.Counterparty, RemittanceInfo: r.RemittanceInfo,
-			Source: r.Source, TrustedRef: r.TrustedRef, Disposition: r.Disposition,
-			IrrelevantType: r.IrrelevantType, RecordedByName: r.RecordedByName,
-			CreatedAt: ts(r.CreatedAt), AccountName: r.AccountName,
-			AllocatedAmount: r.AllocatedAmount, UnallocatedAmount: r.UnallocatedAmount,
-		})
+	for _, v := range rows {
+		out = append(out, txToProto(v))
 	}
 	return &exv1.ListTransactionsResponse{Transactions: out, Total: total}, nil
 }
@@ -75,7 +67,7 @@ func (h *ReceiptHandler) GetTransaction(ctx context.Context, req *exv1.GetTransa
 		return nil, err
 	}
 	return &exv1.GetTransactionResponse{
-		Transaction: txToProto(view.Transaction),
+		Transaction: txToProto(view),
 		Allocations: allocationsToProto(view.Allocations),
 		Suggestions: suggestionsToProto(view.Suggestions),
 	}, nil
@@ -93,7 +85,7 @@ func (h *ReceiptHandler) RecordTransaction(ctx context.Context, req *exv1.Record
 	if err != nil {
 		return nil, err
 	}
-	return &exv1.RecordTransactionResponse{Transaction: txToProto(view.Transaction)}, nil
+	return &exv1.RecordTransactionResponse{Transaction: txToProto(view)}, nil
 }
 
 func (h *ReceiptHandler) AllocateReceipt(ctx context.Context, req *exv1.AllocateReceiptRequest) (*exv1.AllocateReceiptResponse, error) {
@@ -108,7 +100,7 @@ func (h *ReceiptHandler) AllocateReceipt(ctx context.Context, req *exv1.Allocate
 		return nil, err
 	}
 	return &exv1.AllocateReceiptResponse{
-		Transaction: txToProto(view.Transaction),
+		Transaction: txToProto(view),
 		Allocations: allocationsToProto(view.Allocations),
 	}, nil
 }
@@ -120,7 +112,7 @@ func (h *ReceiptHandler) ReverseAllocation(ctx context.Context, req *exv1.Revers
 		return nil, err
 	}
 	return &exv1.ReverseAllocationResponse{
-		Transaction: txToProto(view.Transaction),
+		Transaction: txToProto(view),
 		Allocations: allocationsToProto(view.Allocations),
 	}, nil
 }
@@ -131,7 +123,7 @@ func (h *ReceiptHandler) MarkIrrelevant(ctx context.Context, req *exv1.MarkIrrel
 	if err != nil {
 		return nil, err
 	}
-	return &exv1.MarkIrrelevantResponse{Transaction: txToProto(view.Transaction)}, nil
+	return &exv1.MarkIrrelevantResponse{Transaction: txToProto(view)}, nil
 }
 
 func (h *ReceiptHandler) ReopenTransaction(ctx context.Context, req *exv1.ReopenTransactionRequest) (*exv1.ReopenTransactionResponse, error) {
@@ -139,7 +131,7 @@ func (h *ReceiptHandler) ReopenTransaction(ctx context.Context, req *exv1.Reopen
 	if err != nil {
 		return nil, err
 	}
-	return &exv1.ReopenTransactionResponse{Transaction: txToProto(view.Transaction)}, nil
+	return &exv1.ReopenTransactionResponse{Transaction: txToProto(view)}, nil
 }
 
 func (h *ReceiptHandler) ListOpenReceivables(ctx context.Context, req *exv1.ListOpenReceivablesRequest) (*exv1.ListOpenReceivablesResponse, error) {
@@ -242,18 +234,36 @@ func (h *ReceiptHandler) GetContractReceipts(ctx context.Context, req *exv1.GetC
 	}, nil
 }
 
-func txToProto(r store.GetBankTransactionRow) *exv1.BankTransaction {
+// txToProto 拼出页面看到的一行。
+//
+// disposition 和 irrelevant_type 这两个字段**接口上保留、值是算出来的**：
+// 账本上已经没有这两列了（「与应收无关」变成了归属，「已核销/待处理」是核销
+// 记录和到账金额比出来的）。保留是因为页面还在用它们，删字段又会破坏接口。
+func txToProto(v app.TransactionView) *exv1.BankTransaction {
+	r := v.Transaction
 	return &exv1.BankTransaction{
 		Id: r.ID, AccountId: r.AccountID, AccountName: r.AccountName,
 		BankRef: r.BankRef, Direction: r.Direction, Amount: r.Amount,
 		Currency: r.Currency, ValueDate: r.ValueDate,
 		Counterparty: r.Counterparty, CounterpartyAccount: r.CounterpartyAccount,
 		RemittanceInfo: r.RemittanceInfo, Source: r.Source, TrustedRef: r.TrustedRef,
-		Disposition: r.Disposition, IrrelevantType: r.IrrelevantType, Note: r.Note,
-		RecordedByName: r.RecordedByName, CreatedAt: ts(r.CreatedAt),
-		AllocatedAmount: r.AllocatedAmount, UnallocatedAmount: r.UnallocatedAmount,
-		FeeAmount: r.FeeAmount,
+		Disposition: v.Disposition(), IrrelevantType: irrelevantTypeOf(r), Note: r.Note,
+		RecordedByName: r.RecordedByName, CreatedAt: r.CreatedAt,
+		AllocatedAmount: v.AllocatedAmount, UnallocatedAmount: v.UnallocatedAmount,
 	}
+}
+
+// irrelevantTypeOf 把归属翻回页面认识的那六种「与应收无关」的类别。
+func irrelevantTypeOf(r app.BankRow) string {
+	switch r.Ownership {
+	case app.OwnershipSupplier:
+		return "SUPPLIER_REFUND"
+	case app.OwnershipTaxRefund:
+		return "TAX_REFUND"
+	case app.OwnershipOther:
+		return r.OwnershipDetail
+	}
+	return ""
 }
 
 func allocationsToProto(rows []store.ListAllocationsOfTransactionRow) []*exv1.ReceiptAllocation {

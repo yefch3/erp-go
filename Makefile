@@ -115,6 +115,14 @@ test: ## Run all Go tests
 test-integration: ## All tests including DB-backed ones (needs `make up` + `make migrate` first)
 	@env $(TEST_ENV) $(MAKE) test
 
+.PHONY: test-cross-service
+test-cross-service: ## 出口↔采购在网线上对不对得上（需要先 `make services-up`）
+	@# CI 里不跑：它要求真的把服务起起来。跑不起来时是 skip 不是 fail，
+	@# 所以忘了起服务不会给出一个假的绿灯——输出里会写着 SKIP。
+	@set -a; [ -f deploy/.env ] && . ./deploy/.env; set +a; \
+	cd services/export && PROCUREMENT_GRPC_ADDR=$${PROCUREMENT_GRPC_ADDR:-127.0.0.1:9007} \
+		go test ./internal/adapter/grpcout/ -run CrossService -count=1 -v
+
 .PHONY: lint
 lint: ## golangci-lint over every module
 	@for mod in pkg $(wildcard services/*); do \

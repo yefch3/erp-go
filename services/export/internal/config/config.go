@@ -14,6 +14,9 @@ type Config struct {
 	FxAddr         string
 	ApprovalAddr   string
 	IAMAddr        string
+	// 那本唯一的银行流水账在采购服务手上（F2）。收款对账的每一次读写都要
+	// 经过它，所以这个地址配错，收款对账整页打不开——不是少几行，是打不开。
+	ProcurementAddr string
 	KafkaBrokers   []string
 	// Topic approval decisions arrive on, and the group export reads it as.
 	ApprovalTopic string
@@ -51,6 +54,7 @@ func Load() Config {
 		FxAddr:              env("FX_ADDR", "localhost:9003"),
 		ApprovalAddr:        env("APPROVAL_ADDR", "localhost:9005"),
 		IAMAddr:             env("IAM_ADDR", "localhost:9001"),
+		ProcurementAddr:     env("PROCUREMENT_ADDR", "localhost:9007"),
 		KafkaBrokers:        strings.Split(env("KAFKA_BROKERS", "localhost:19092"), ","),
 		ApprovalTopic:       env("APPROVAL_TOPIC", "erp.approval.task.v1"),
 		ConsumerGroup:       env("CONSUMER_GROUP", "export.approval.v1"),
