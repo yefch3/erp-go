@@ -13,13 +13,18 @@
       <!-- The box comes before the star because it is the outer decision:
            "this one" precedes anything you might then do to it. Its own hit
            area, kept off the row's, so ticking a box never opens a mail. -->
+      <!-- 投递记录不给勾，理由和它没有星标、没有行内按钮是同一个：邮件服务器上
+           没有这封信的正本，标记和删除都无处可写。留一个空位而不是一个勾了会
+           失败的框——否则「全选」之后它会是唯一没勾上的那行，看着像页面坏了。 -->
       <el-checkbox
+        v-if="!isRecordOnly(m)"
         class="pick"
         :model-value="isPicked(m)"
         :aria-label="t('emails.selectOne')"
         @click.stop
         @change="togglePick(m)"
       />
+      <span v-else class="pick pick-gap" aria-hidden="true" />
 
       <!-- el-tooltip rather than a title attribute. The browser's own tooltip
            takes about a second to appear, which is far too slow for a row of
@@ -340,10 +345,16 @@ function ariaFor(m: MailRow) {
   background: var(--el-color-primary-light-9);
 }
 
+/* 宽度写死，是为了让下面那个空位能对得上：一个靠内容撑开的宽度没法复制。 */
 .pick {
   flex: none;
+  width: 22px;
   margin-right: 2px;
   height: 100%;
+}
+/* 投递记录那一行的空位——列要对齐，哪怕这一行没有框可以勾。 */
+.pick-gap {
+  display: block;
 }
 /* Element Plus reserves room for a label this checkbox does not have. */
 .pick :deep(.el-checkbox__label) {
