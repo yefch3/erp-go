@@ -17,10 +17,70 @@ import (
 	"strings"
 	"unicode"
 
+	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 )
 
 const standardizedInquiryMaxBytes = 8 << 20
+
+type sourcingCustomerOption struct {
+	ID   string `json:"id"`
+	Code string `json:"code"`
+	Name string `json:"name"`
+}
+
+type sourcingCustomerContactOption struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Department string `json:"department"`
+	Title      string `json:"title"`
+	Email      string `json:"email"`
+	IsPrimary  bool   `json:"isPrimary"`
+}
+
+// listSourcingCustomerOptions 返回询盘上传所需的最小客户选择项。
+// 采购角色不需要因此取得完整客户档案的读取权限。
+func (s *Server) listSourcingCustomerOptions(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Customers.ListCustomers(r.Context(), &mdv1.ListCustomersRequest{
+		Page: pageFromQuery(r), Keyword: r.URL.Query().Get("keyword"),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	items := make([]sourcingCustomerOption, 0, len(resp.GetCustomers()))
+	for _, customer := range resp.GetCustomers() {
+		items = append(items, sourcingCustomerOption{
+			ID: strconv.FormatInt(customer.GetId(), 10), Code: customer.GetCode(), Name: customer.GetName(),
+		})
+	}
+	s.writeJSON(w, map[string]any{"customers": items})
+}
+
+// listSourcingCustomerContacts 只返回所选客户的有效联系人，主联系人优先顺序由主数据服务维护。
+func (s *Server) listSourcingCustomerContacts(w http.ResponseWriter, r *http.Request) {
+	customerID := idFromPath(r)
+	if _, err := s.resolveActiveCustomer(r.Context(), customerID); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	resp, err := s.Customers.ListCustomerContacts(r.Context(), &mdv1.ListCustomerContactsRequest{CustomerId: customerID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	items := make([]sourcingCustomerContactOption, 0, len(resp.GetContacts()))
+	for _, contact := range resp.GetContacts() {
+		if contact.GetStatus() != "ACTIVE" {
+			continue
+		}
+		items = append(items, sourcingCustomerContactOption{
+			ID: strconv.FormatInt(contact.GetId(), 10), Name: contact.GetName(), Department: contact.GetDepartment(),
+			Title: contact.GetTitle(), Email: contact.GetEmail(), IsPrimary: contact.GetIsPrimary(),
+		})
+	}
+	s.writeJSON(w, map[string]any{"contacts": items})
+}
 
 // importSourcingIntake 接收邮件模块已经生成的标准 Excel，或员工手工上传的同格式文件。
 // 两种入口最终都调用采购服务的同一套询盘创建校验。解析成功后把本次
@@ -78,9 +138,15 @@ func (s *Server) importSourcingIntake(w http.ResponseWriter, r *http.Request) {
 		title = strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename))
 	}
 	customerID, _ := strconv.ParseInt(r.FormValue("customer_id"), 10, 64)
+	contactID, _ := strconv.ParseInt(r.FormValue("contact_id"), 10, 64)
+	customer, contact, err := s.resolveActiveCustomerContact(r.Context(), customerID, contactID)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
 	resp, err := s.Sourcing.CreateCase(r.Context(), &prv1.CreateCaseRequest{
-		Title: title, CustomerId: customerID, CustomerName: strings.TrimSpace(r.FormValue("customer_name")),
-		ContactName: strings.TrimSpace(r.FormValue("contact_name")), ContactEmail: strings.TrimSpace(r.FormValue("contact_email")),
+		Title: title, CustomerId: customerID, CustomerName: customer.GetName(),
+		ContactName: contact.GetName(), ContactEmail: contact.GetEmail(),
 		// -1 表示手工上传；摘要用于阻止同一文件被重复导入。
 		SourceMailId: -1, SourceAttachmentId: inquiryFingerprint(data), Lines: lines,
 		SourceFileName: filepath.Base(header.Filename), SourceContentType: header.Header.Get("Content-Type"), SourceFileData: data,

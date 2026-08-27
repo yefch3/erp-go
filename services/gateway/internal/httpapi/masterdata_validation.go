@@ -23,6 +23,32 @@ func (s *Server) resolveActiveCustomer(ctx context.Context, id int64) (*mdv1.Cus
 	return customer, nil
 }
 
+// resolveActiveCustomerContact 校验联系人属于所选客户，并返回主数据快照。
+// 上传入口不能相信浏览器传来的姓名或邮箱，否则可以把甲客户的联系人挂到乙客户询盘上。
+func (s *Server) resolveActiveCustomerContact(ctx context.Context, customerID, contactID int64) (*mdv1.Customer, *mdv1.Contact, error) {
+	customer, err := s.resolveActiveCustomer(ctx, customerID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if contactID <= 0 {
+		return nil, nil, apierr.Invalid("MASTERDATA_CUSTOMER_CONTACT_REQUIRED", "请选择有效客户联系人")
+	}
+	resp, err := s.Customers.ListCustomerContacts(ctx, &mdv1.ListCustomerContactsRequest{CustomerId: customerID})
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, contact := range resp.GetContacts() {
+		if contact.GetId() != contactID || contact.GetStatus() != "ACTIVE" {
+			continue
+		}
+		if contact.GetEmail() == "" {
+			return nil, nil, apierr.Invalid("MASTERDATA_CUSTOMER_CONTACT_EMAIL_REQUIRED", "所选客户联系人尚未维护邮箱")
+		}
+		return customer, contact, nil
+	}
+	return nil, nil, apierr.Invalid("MASTERDATA_CUSTOMER_CONTACT_INVALID", "所选联系人不属于该客户或已停用")
+}
+
 // resolveActiveSupplier 校验供应商仍可用于新业务，并返回权威主数据供调用方保存名称快照。
 func (s *Server) resolveActiveSupplier(ctx context.Context, id int64) (*mdv1.Supplier, error) {
 	if id <= 0 {

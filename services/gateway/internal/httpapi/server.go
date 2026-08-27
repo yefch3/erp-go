@@ -476,6 +476,9 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("inventory:stock:write")).Post("/api/outbounds/{id}/cancel", s.cancelOutbound)
 		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements", s.listRequirements)
 		r.With(s.perm("procurement:requirement:read"), s.perm("procurement:order:write")).Post("/api/requirements/purchase-template/export", s.exportPurchaseTemplate)
+		// 询盘上传只需要客户和联系人选择项，不因此开放完整客户档案菜单。
+		r.With(s.perm("procurement:sourcing:write")).Get("/api/sourcing-customer-options", s.listSourcingCustomerOptions)
+		r.With(s.perm("procurement:sourcing:write")).Get("/api/sourcing-customer-options/{id}/contacts", s.listSourcingCustomerContacts)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases", s.listSourcingCases)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}", s.getSourcingCase)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/changes", s.listSourcingCaseChanges)

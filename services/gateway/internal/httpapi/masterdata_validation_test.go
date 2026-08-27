@@ -15,11 +15,15 @@ import (
 
 type activeCustomerClientStub struct {
 	mdv1.CustomerServiceClient
-	status string
+	status   string
+	contacts []*mdv1.Contact
 }
 
 func (s activeCustomerClientStub) GetCustomer(context.Context, *mdv1.GetCustomerRequest, ...grpc.CallOption) (*mdv1.GetCustomerResponse, error) {
 	return &mdv1.GetCustomerResponse{Customer: &mdv1.Customer{Id: 7, Name: "测试客户", Status: s.status}}, nil
+}
+func (s activeCustomerClientStub) ListCustomerContacts(context.Context, *mdv1.ListCustomerContactsRequest, ...grpc.CallOption) (*mdv1.ListCustomerContactsResponse, error) {
+	return &mdv1.ListCustomerContactsResponse{Contacts: s.contacts}, nil
 }
 
 type activeSupplierClientStub struct {
@@ -56,6 +60,46 @@ func TestResolveActiveMasterdata(t *testing.T) {
 		s := &Server{Suppliers: activeSupplierClientStub{status: "INACTIVE"}}
 		if _, err := s.resolveActiveSupplier(context.Background(), 8); err == nil {
 			t.Fatal("expected inactive supplier error")
+		}
+	})
+}
+
+// TestResolveActiveCustomerContact 验证上传询盘只能引用所选客户名下的有效且有邮箱联系人。
+func TestResolveActiveCustomerContact(t *testing.T) {
+	contacts := []*mdv1.Contact{
+		{Id: 11, Name: "王经理", Email: "wang@example.com", Status: "ACTIVE"},
+		{Id: 12, Name: "停用联系人", Email: "old@example.com", Status: "INACTIVE"},
+		{Id: 13, Name: "缺少邮箱", Status: "ACTIVE"},
+	}
+	s := &Server{Customers: activeCustomerClientStub{status: "ACTIVE", contacts: contacts}}
+
+	t.Run("有效联系人返回权威快照", func(t *testing.T) {
+		customer, contact, err := s.resolveActiveCustomerContact(context.Background(), 7, 11)
+		if err != nil {
+			t.Fatalf("resolve contact: %v", err)
+		}
+		if customer.GetName() != "测试客户" || contact.GetName() != "王经理" || contact.GetEmail() != "wang@example.com" {
+			t.Fatalf("unexpected snapshots: customer=%q contact=%q email=%q", customer.GetName(), contact.GetName(), contact.GetEmail())
+		}
+	})
+
+	t.Run("不属于客户或停用联系人被拒", func(t *testing.T) {
+		for _, contactID := range []int64{12, 99} {
+			if _, _, err := s.resolveActiveCustomerContact(context.Background(), 7, contactID); err == nil {
+				t.Fatalf("contact %d should be rejected", contactID)
+			}
+		}
+	})
+
+	t.Run("缺少邮箱被拒", func(t *testing.T) {
+		if _, _, err := s.resolveActiveCustomerContact(context.Background(), 7, 13); err == nil {
+			t.Fatal("contact without email should be rejected")
+		}
+	})
+
+	t.Run("未选择联系人被拒", func(t *testing.T) {
+		if _, _, err := s.resolveActiveCustomerContact(context.Background(), 7, 0); err == nil {
+			t.Fatal("missing contact should be rejected")
 		}
 	})
 }
