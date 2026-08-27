@@ -61,12 +61,14 @@ func (h *Handler) MyTodos(ctx context.Context, req *apv1.MyTodosRequest) (*apv1.
 	}
 	page, size := req.GetPage().GetPage(), req.GetPage().GetPageSize()
 	rows, total, err := h.svc.MyTasks(ctx, grpcx.TenantID(ctx), actor,
-		req.GetBizType(), req.GetStatus(), page, size)
+		req.GetBizType(), req.GetStatus(), req.GetKeyword(), page, size)
 	if err != nil {
 		return nil, err
 	}
 	todos := make([]*apv1.TodoItem, 0, len(rows))
+	now := time.Now()
 	for _, r := range rows {
+		dueAt, priority, remainingMinutes := app.ApprovalUrgency(r.CreatedAt.Time, now)
 		todos = append(todos, &apv1.TodoItem{
 			Task: &apv1.Task{
 				Id: r.ID, InstanceId: r.InstanceID, NodeSeq: r.NodeSeq, NodeName: r.NodeName,
@@ -79,9 +81,39 @@ func (h *Handler) MyTodos(ctx context.Context, req *apv1.MyTodosRequest) (*apv1.
 				SubmitterName: r.SubmitterName, Status: r.InstanceStatus,
 				CurrentSeq: r.CurrentSeq, SubmittedAt: ts(r.SubmittedAt),
 			},
+			DueAt: dueAt.Format(time.RFC3339), Priority: priority,
+			RemainingMinutes: remainingMinutes,
 		})
 	}
 	return &apv1.MyTodosResponse{Todos: todos, Meta: &commonv1.PageMeta{Total: total}}, nil
+}
+
+// MySubmitted 只返回认证员工本人发起的审批。发起关系与受理关系含义不同，
+// 因此不能与上面的审批人任务查询混为一组。
+func (h *Handler) MySubmitted(ctx context.Context, req *apv1.MySubmittedRequest) (*apv1.MySubmittedResponse, error) {
+	actor, err := actorID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	page, size := req.GetPage().GetPage(), req.GetPage().GetPageSize()
+	rows, total, err := h.svc.MySubmitted(ctx, grpcx.TenantID(ctx), actor,
+		req.GetBizType(), req.GetStatus(), req.GetKeyword(), page, size)
+	if err != nil {
+		return nil, err
+	}
+	instances := make([]*apv1.Instance, 0, len(rows))
+	for _, r := range rows {
+		instances = append(instances, &apv1.Instance{
+			Id: r.ID, BizType: r.BizType, BizId: r.BizID, BizNo: r.BizNo,
+			BizSummary: string(r.BizSummary), SubmitterId: r.SubmitterID,
+			SubmitterName: r.SubmitterName, Status: r.Status,
+			CurrentSeq: r.CurrentSeq, SubmittedAt: ts(r.SubmittedAt),
+			FinishedAt: ts(r.FinishedAt),
+		})
+	}
+	return &apv1.MySubmittedResponse{
+		Instances: instances, Meta: &commonv1.PageMeta{Total: total},
+	}, nil
 }
 
 func (h *Handler) ListInstances(ctx context.Context, req *apv1.ListInstancesRequest) (*apv1.ListInstancesResponse, error) {

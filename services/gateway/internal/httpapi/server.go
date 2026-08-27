@@ -573,9 +573,10 @@ func (s *Server) Router() http.Handler {
 		// Reading the handover history is scoped like reading the document, so
 		// the contract's own permission is the right gate.
 		r.With(s.perm("export:contract:read")).Get("/api/ownership/transfers", s.listOwnershipTransfers)
-		// Approval todos are personal: the service filters by the caller's
-		// employee id, so the permission only gates "may act on approvals".
-		r.With(s.perm("approval:task:act")).Get("/api/approvals/todos", s.myTodos)
+		// 个人审批查询从认证元数据取得员工编号；读取本人事项与审批动作分开，
+		// 真正执行通过、驳回或退回仍由下面的动作权限控制。
+		r.Get("/api/approvals/todos", s.myTodos)
+		r.Get("/api/approvals/submitted", s.mySubmittedApprovals)
 		r.With(s.perm("approval:task:act")).Post("/api/approvals/tasks/{id}/act", s.actOnTask)
 		// Reading where a document stands is not acting on it: the salesperson
 		// who submitted a contract needs to see it is waiting on the sales

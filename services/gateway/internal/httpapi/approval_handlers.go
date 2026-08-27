@@ -15,7 +15,23 @@ func (s *Server) myTodos(w http.ResponseWriter, r *http.Request) {
 		BizType: r.URL.Query().Get("biz_type"),
 		// "" is the pending queue; HANDLED / APPROVED / REJECTED / RETURNED
 		// are the "what did I decide" tabs.
-		Status: r.URL.Query().Get("status"),
+		Status:  r.URL.Query().Get("status"),
+		Keyword: r.URL.Query().Get("keyword"),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) mySubmittedApprovals(w http.ResponseWriter, r *http.Request) {
+	// 提交人来自认证元数据，接口不接受员工编号，避免个人首页查询越权扩展到他人。
+	resp, err := s.Approval.MySubmitted(r.Context(), &apv1.MySubmittedRequest{
+		Page:    pageFromQuery(r),
+		BizType: r.URL.Query().Get("biz_type"),
+		Status:  r.URL.Query().Get("status"),
+		Keyword: r.URL.Query().Get("keyword"),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
