@@ -282,7 +282,10 @@ FROM receivable_reminders
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND recipient_employee_id = sqlc.arg(employee_id)::bigint
   AND (sqlc.arg(unread_only)::bool = false OR read_at IS NULL)
-ORDER BY (read_at IS NULL) DESC, created_at DESC
+-- id 收口：提醒是 sweeper 一趟批量插的，created_at 必然打平。top-N 没有
+-- 唯一列收口时「取哪 50 条」不确定——刷新一次，看到的提醒可能换一批，
+-- 「我刚才看到那条催款提醒，现在找不到了」。
+ORDER BY (read_at IS NULL) DESC, created_at DESC, id DESC
 LIMIT sqlc.arg(row_limit)::int;
 
 -- name: MarkReceivableRemindersRead :execrows

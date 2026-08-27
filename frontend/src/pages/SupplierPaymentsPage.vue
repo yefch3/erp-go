@@ -170,6 +170,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post } from '../api'
+import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
@@ -259,6 +260,9 @@ function onSupplierChange() {
   if (s?.currency && !form.currency) form.currency = s.currency
 }
 
+// 防重键：付款单重复一笔就是真金白银记两遍。
+const createIdem = newIdempotencySession()
+
 async function save() {
   saving.value = true
   try {
@@ -267,7 +271,8 @@ async function save() {
       supplierId: form.supplierId, supplierName: s?.name || '',
       paymentType: form.paymentType, currency: form.currency, amount: form.amount,
       paidAt: form.paidAt, method: form.method, bankRef: form.bankRef, remark: form.remark,
-    })
+    }, withIdempotency(createIdem))
+    createIdem.reset()
     ElMessage.success(t('supplierPayments.created'))
     createOpen.value = false
     Object.assign(form, { supplierId: '', paymentType: 'SETTLEMENT', currency: '', amount: '', paidAt: '', method: 'WIRE', bankRef: '', remark: '' })

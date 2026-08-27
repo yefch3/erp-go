@@ -767,6 +767,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { del, get, post, put } from '../api'
+import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
+
+// 防重键：合同重复一张不是删一行的事——它会往下游派生采购需求。
+const createIdem = newIdempotencySession()
 import { CURRENCIES } from '../constants'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
@@ -1170,7 +1174,8 @@ async function generate() {
     const data = await post<Detail>('/contracts', {
       quotationId: generateForm.quotationId,
       terms: { deliveryDate: generateForm.deliveryDate, terms: generateForm.terms },
-    })
+    }, withIdempotency(createIdem))
+    createIdem.reset()
     ElMessage.success(t('contracts.created'))
     generateOpen.value = false
     load()

@@ -197,6 +197,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { download, get, post, put, saveBlob } from '../api'
+import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
+
+// 防重键：报价单重复一张，客户会收到两份一样的报价。
+const createIdem = newIdempotencySession()
 import { CURRENCIES } from '../constants'
 import { useAuthStore } from '../stores/auth'
 
@@ -406,7 +410,8 @@ async function save() {
       await put(`/quotations/${editingId.value}`, body)
       ElMessage.success(t('quotations.updated'))
     } else {
-      await post('/quotations', body)
+      await post('/quotations', body, withIdempotency(createIdem))
+      createIdem.reset()
       ElMessage.success(t('quotations.created'))
     }
     dialogOpen.value = false

@@ -317,6 +317,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post } from '../api'
+import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 import { CURRENCIES } from '../constants'
 import { useAuthStore } from '../stores/auth'
 
@@ -464,6 +465,10 @@ async function openRecord() {
   recordOpen.value = true
 }
 
+// 防重键：响应丢在路上、用户再点一次时，拿回第一次的结果而不是开出第二笔。
+const recordIdem = newIdempotencySession()
+const allocateIdem = newIdempotencySession()
+
 async function submitRecord() {
   saving.value = true
   try {
@@ -474,7 +479,8 @@ async function submitRecord() {
         counterparty: form.counterparty, remittance_info: form.remittanceInfo,
         source: 'MANUAL',
       },
-    })
+    }, withIdempotency(recordIdem))
+    recordIdem.reset() // 成功了：下一笔是新的操作，换新键
     ElMessage.success(t('receipts.recorded'))
     recordOpen.value = false
     reload()
@@ -569,7 +575,9 @@ async function submitAllocation() {
     const d = await post<{ transaction: Transaction; allocations: Allocation[] }>(
       `/receipt-transactions/${detail.value!.id}/allocate`,
       { allocations: lines },
+      withIdempotency(allocateIdem),
     )
+    allocateIdem.reset()
     detail.value = d.transaction
     allocations.value = d.allocations ?? []
     draft.value = []

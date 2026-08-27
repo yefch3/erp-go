@@ -566,7 +566,8 @@ SELECT id, subject, body_format, kind, recipients, attachments, updated_at,
 FROM email_drafts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
-ORDER BY updated_at DESC
+-- id 收口：同一秒保存的两份草稿 updated_at 打平，top-200 边界上取谁不确定。
+ORDER BY updated_at DESC, id DESC
 LIMIT 200;
 
 -- name: GetDraft :one

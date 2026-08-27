@@ -1025,7 +1025,7 @@ SELECT id, subject, body_format, kind, recipients, attachments, updated_at,
 FROM email_drafts
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
-ORDER BY updated_at DESC
+ORDER BY updated_at DESC, id DESC
 LIMIT 200
 `
 
@@ -1047,6 +1047,7 @@ type ListDraftsRow struct {
 
 // Scoped to the caller, always. Drafts are not correspondence and no data
 // scope widens this.
+// id 收口：同一秒保存的两份草稿 updated_at 打平，top-200 边界上取谁不确定。
 func (q *Queries) ListDrafts(ctx context.Context, arg ListDraftsParams) ([]ListDraftsRow, error) {
 	rows, err := q.db.Query(ctx, listDrafts, arg.TenantID, arg.OwnerID)
 	if err != nil {

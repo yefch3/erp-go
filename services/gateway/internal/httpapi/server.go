@@ -66,6 +66,9 @@ type Server struct {
 	// Unlock holds mailbox-verification tokens. Nil fails closed: every mail
 	// route answers MAIL_LOCKED until a store exists.
 	Unlock *UnlockStore
+	// Idem 是 HTTP 写入的防重存储（见 idempotency.go）。Nil 时中间件原样
+	// 放行——测试里不接 Redis 也能跑，但生产 main 必须接上。
+	Idem *IdemStore
 	// Throttle counts failed logins and failed mailbox verifications. Nil is
 	// allowed and fails open — see FailureThrottle for why this one is the
 	// other way round from Unlock.
@@ -145,6 +148,8 @@ func (s *Server) Router() http.Handler {
 		s.limitPublic("reset", publicResetBudget, s.redeemPasswordReset))
 	r.Group(func(r chi.Router) {
 		r.Use(s.auth)
+		// 挂在认证之后：防重的键按「哪家公司的哪个人」隔离，身份得先有。
+		r.Use(s.idempotent)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers", s.listCustomers)
 		r.With(s.perm("masterdata:customer:write")).Post("/api/customers", s.createCustomer)
 		r.With(s.perm("masterdata:customer:read")).Get("/api/customers/countries", s.listCustomerCountryGroups)

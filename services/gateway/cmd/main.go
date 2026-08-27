@@ -176,6 +176,7 @@ func run(log *slog.Logger) error {
 		Shipping:                shippingv1.NewShippingServiceClient(shippingConn),
 		Emails:                  mailv1.NewEmailServiceClient(ntConn),
 		Unlock:                  unlock,
+		Idem:                    httpapi.NewIdemStore(cfg.RedisAddr, log),
 		Revocations:             revocations,
 		Limits:                  httpapi.NewRateLimiter(cfg.RedisAddr, log),
 		Throttle:                throttle,
