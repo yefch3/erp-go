@@ -81,8 +81,18 @@ func TestInquiryTemplateSaveIssuesNextVersionAndKeepsDefault(t *testing.T) {
 		t.Fatalf("save should issue the next version and keep default, got v%d default=%v",
 			saved.Template.Version, saved.Template.IsDefault)
 	}
-	if len(saved.Fields) != 22 {
-		t.Fatalf("custom column missing: %d fields", len(saved.Fields))
+	if len(saved.Fields) != len(def.Fields)+1 {
+		t.Fatalf("saved fields = %d, want %d", len(saved.Fields), len(def.Fields)+1)
+	}
+	foundCustom := false
+	for _, field := range saved.Fields {
+		if field.FieldKey == "custom.customer_part_no" {
+			foundCustom = true
+			break
+		}
+	}
+	if !foundCustom {
+		t.Fatal("custom.customer_part_no missing from saved template version")
 	}
 
 	old, err := svc.GetInquiryTemplate(ctx, tenantID, def.Template.ID)
