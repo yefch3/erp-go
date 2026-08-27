@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/sgao19/erp-go/pkg/pgdb"
 )
 
@@ -63,7 +65,7 @@ func TestReceivableDueList(t *testing.T) {
 		}
 		return id
 	}
-	today := time.Now().UTC()
+	today := dbToday(ctx, t, pool)
 	overdue := today.AddDate(0, 0, -30).Format("2006-01-02") // 逾期 30 天
 	soon := today.AddDate(0, 0, 5).Format("2006-01-02")      // 还有 5 天
 
@@ -191,7 +193,7 @@ func TestReceivableReminderSweep(t *testing.T) {
 	const sales = 61
 	mk := func(no string, total string, dueOffsetDays int) {
 		var id int64
-		due := time.Now().UTC().AddDate(0, 0, dueOffsetDays).Format("2006-01-02")
+		due := dbToday(ctx, t, pool).AddDate(0, 0, dueOffsetDays).Format("2006-01-02")
 		if err := pool.QueryRow(ctx, `INSERT INTO contracts
 			(tenant_id, contract_no, customer_id, customer_name, status, sales_employee_id, sales_employee,
 			 effective_at, receivable_due_date, created_by, updated_by)
@@ -292,4 +294,22 @@ func TestReceivableReminderSweep(t *testing.T) {
 	if other, _, err := svc.ReceivableInbox(ctx, tenantID, 62, false, 50); err != nil || len(other) != 0 {
 		t.Fatalf("别人的收件箱不该有东西：%d 条，err=%v", len(other), err)
 	}
+}
+
+// dbToday 问数据库「今天是几号」。
+//
+// **不能用 Go 的 time.Now()。** 这些测试造的是「逾期 30 天」这种相对日期，
+// 而断言的是 SQL 用 current_date 算出来的天数——两个时钟只要在不同时区，
+// 结果就差一天。以前它们能过，只是因为服务器和 Go 碰巧都在 UTC；业务时区
+// 一改成 Asia/Shanghai（见 pkg/pgdb），三个测试当场全红。
+//
+// 问数据库要今天，两边就永远是同一个「今天」，而这些测试真正想钉的是天数
+// 算得对不对，本来就和时区无关。
+func dbToday(ctx context.Context, t *testing.T, pool *pgxpool.Pool) time.Time {
+	t.Helper()
+	var d time.Time
+	if err := pool.QueryRow(ctx, `SELECT current_date`).Scan(&d); err != nil {
+		t.Fatal(err)
+	}
+	return d
 }

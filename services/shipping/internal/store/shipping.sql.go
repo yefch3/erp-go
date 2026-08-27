@@ -1631,7 +1631,10 @@ WHERE tenant_id = $1
 ORDER BY
   CASE WHEN eta >= CURRENT_DATE THEN 0 ELSE 1 END,
   CASE WHEN eta >= CURRENT_DATE THEN eta END ASC,
-  updated_at DESC
+  updated_at DESC,
+  -- id 收口：updated_at 会打平（同一批导入、同一次批量改），而 OFFSET 分页
+  -- 遇到打平的行，翻页时同一条可能出现两次或者漏掉。
+  id DESC
 LIMIT $14 OFFSET $13
 `
 

@@ -63,8 +63,15 @@ func TestWorkbenchQueries(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	past := time.Now().UTC().AddDate(0, 0, -3).Format("2006-01-02")
-	future := time.Now().UTC().AddDate(0, 0, 3).Format("2006-01-02")
+	// 用**数据库的**今天，不是 Go 的。逾期天数是 SQL 拿 current_date 算的，
+	// 两个时钟在不同时区就差一天——业务时区改成 Asia/Shanghai 之后
+	// （见 pkg/pgdb），这个测试当场变红。
+	var today time.Time
+	if err := pool.QueryRow(ctx, `SELECT current_date`).Scan(&today); err != nil {
+		t.Fatal(err)
+	}
+	past := today.AddDate(0, 0, -3).Format("2006-01-02")
+	future := today.AddDate(0, 0, 3).Format("2006-01-02")
 	seedRFQ("RFQ-WB-LATE", past, "SENT")
 	seedRFQ("RFQ-WB-OK", future, "SENT")
 	seedRFQ("RFQ-WB-DONE", past, "QUOTED") // answered late is not overdue work

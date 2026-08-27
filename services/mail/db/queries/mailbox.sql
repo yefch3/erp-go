@@ -696,7 +696,9 @@ SELECT m.id, m.message_key::text AS message_key, m.subject, m.to_email, m.to_nam
 FROM email_messages m
 WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint
   AND m.sender_id = sqlc.arg(sender_id)::bigint
-ORDER BY coalesce(m.sent_at, m.queued_at) DESC
+-- id 收口：群发一次 50 封，queued_at 全落在同一毫秒，是这几个列表里最容易
+-- 打平的一个。打平 + OFFSET 分页 = 翻页时行会重复或漏掉。
+ORDER BY coalesce(m.sent_at, m.queued_at) DESC, m.id DESC
 LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
 
 -- name: SetMailAccountOAuth :exec

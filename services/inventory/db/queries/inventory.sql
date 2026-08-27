@@ -149,7 +149,10 @@ WHERE s.tenant_id = sqlc.arg(tenant_id)::bigint
        OR (sqlc.arg(stock_state)::text = 'AVAILABLE' AND s.available_qty > 0)
        OR (sqlc.arg(stock_state)::text = 'NO_AVAILABLE' AND s.available_qty = 0)
        OR (sqlc.arg(stock_state)::text = 'FROZEN' AND s.frozen_qty > 0))
-ORDER BY s.product_code, w.code
+-- id 收口：(产品编码, 仓库编码) **不唯一**——stocks 还有 sku_id 这一维，
+-- 同一个产品在同一个仓库可以有好几个 SKU。不收口的话，多 SKU 的产品在翻页
+-- 时会重复或漏行。
+ORDER BY s.product_code, w.code, s.id
 LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
 
 -- name: GetStock :one

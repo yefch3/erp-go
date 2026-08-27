@@ -1803,7 +1803,7 @@ SELECT m.id, m.message_key::text AS message_key, m.subject, m.to_email, m.to_nam
 FROM email_messages m
 WHERE m.tenant_id = $1::bigint
   AND m.sender_id = $2::bigint
-ORDER BY coalesce(m.sent_at, m.queued_at) DESC
+ORDER BY coalesce(m.sent_at, m.queued_at) DESC, m.id DESC
 LIMIT $4::int OFFSET $3::int
 `
 
@@ -1833,6 +1833,8 @@ type ListSentWithEngagementRow struct {
 // reply_count comes from real inbound messages threaded onto this send, which
 // is the only unambiguous evidence a person read it. opened_at comes from the
 // tracking pixel and is presented as a maybe.
+// id 收口：群发一次 50 封，queued_at 全落在同一毫秒，是这几个列表里最容易
+// 打平的一个。打平 + OFFSET 分页 = 翻页时行会重复或漏掉。
 func (q *Queries) ListSentWithEngagement(ctx context.Context, arg ListSentWithEngagementParams) ([]ListSentWithEngagementRow, error) {
 	rows, err := q.db.Query(ctx, listSentWithEngagement,
 		arg.TenantID,

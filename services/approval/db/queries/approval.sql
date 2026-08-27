@@ -124,7 +124,10 @@ WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
   AND (sqlc.arg(keyword)::text = ''
        OR i.biz_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR i.biz_summary::text ILIKE '%' || sqlc.arg(keyword)::text || '%')
-ORDER BY i.submitted_at DESC
+-- id 收口不是装饰：submitted_at 会打平（一批单据同时提交，时间戳落在同一
+-- 毫秒），而 OFFSET 分页遇到打平的行，翻页时顺序可能变——同一行出现在两页，
+-- 或者干脆被跳过。用户看到的是「我明明看到那条，翻到第二页就没了」。
+ORDER BY i.submitted_at DESC, i.id DESC
 LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
 
 -- name: ListDefinitions :many
