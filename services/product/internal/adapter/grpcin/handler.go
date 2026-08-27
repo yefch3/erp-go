@@ -253,6 +253,28 @@ func categoryToProto(c store.ProductCategory) *pdv1.Category {
 	}
 }
 
+func (h *Handler) GetProducts(ctx context.Context, req *pdv1.GetProductsRequest) (*pdv1.GetProductsResponse, error) {
+	rows, err := h.svc.GetProducts(ctx, grpcx.TenantID(ctx), req.GetIds())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*pdv1.Product, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, productsRowToProto(r))
+	}
+	return &pdv1.GetProductsResponse{Products: out}, nil
+}
+
+// productsRowToProto 把批量查询的行转成单条那个类型，再走同一份映射。
+//
+// 用**类型转换**而不是手写字段字面量：两个结构体只要有一个字段对不上，
+// 这一行当场编译不过。手写字面量的话，谁给产品加了一列而只在一条路上加，
+// 编译照样通过，然后批量那条路上悄悄少一列——而单条那条路是好的，
+// 查起来会很久（同一个产品，从合同页进去有 HS 编码，从报价页进去没有）。
+func productsRowToProto(p store.GetProductsRow) *pdv1.Product {
+	return productToProto(store.GetProductRow(p))
+}
+
 func productToProto(p store.GetProductRow) *pdv1.Product {
 	return &pdv1.Product{
 		Id: p.ID, Code: p.Code, Name: p.Name, NameEn: p.NameEn,

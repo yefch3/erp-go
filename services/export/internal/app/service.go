@@ -93,6 +93,12 @@ type Customers interface {
 
 type Products interface {
 	Get(ctx context.Context, id int64) (Product, error)
+	// GetMany 一次问完一批。保存报价单和合同时要逐条校验产品，一行一次
+	// 往返的话，一张 30 行的合同要问 30 次。
+	//
+	// **查不到的 id 不在返回的 map 里**，不报错——调用方按行对一遍才说得出
+	// 是第几行那个产品不存在。
+	GetMany(ctx context.Context, ids []int64) (map[int64]Product, error)
 }
 
 type Rates interface {

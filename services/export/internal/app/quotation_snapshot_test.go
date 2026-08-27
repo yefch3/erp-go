@@ -20,6 +20,13 @@ func (p *snapshotProductStub) Get(context.Context, int64) (Product, error) {
 	return Product{}, nil
 }
 
+// 批量那条路也要置位——不然「未绑定内部产品时不应调用产品目录」这条断言
+// 会因为改用批量而悄悄失效：它还在看 Get，而代码已经走 GetMany 了。
+func (p *snapshotProductStub) GetMany(context.Context, []int64) (map[int64]Product, error) {
+	p.called = true
+	return map[int64]Product{}, nil
+}
+
 // 未启用产品模块时，已审核询盘的名称、规格和单位快照也能生成报价明细。
 func TestResolveQuotationAcceptsReviewedProductSnapshot(t *testing.T) {
 	products := &snapshotProductStub{}

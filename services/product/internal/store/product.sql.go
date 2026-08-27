@@ -476,6 +476,102 @@ func (q *Queries) GetProduct(ctx context.Context, arg GetProductParams) (GetProd
 	return i, err
 }
 
+const getProducts = `-- name: GetProducts :many
+SELECT
+    p.id, p.tenant_id, p.code, p.name, p.name_en, p.category_id, p.product_type,
+    p.brand, p.base_uom_id,
+    coalesce(p.reference_price::text, '')::text     AS reference_price,
+    p.reference_currency, p.hs_code,
+    coalesce(p.tax_rate::text, '')::text            AS tax_rate,
+    coalesce(p.export_rebate_rate::text, '')::text  AS export_rebate_rate,
+    p.description, p.status, p.attributes,
+    c.name AS category_name, u.code AS base_uom_code
+FROM products p
+JOIN product_categories c ON c.id = p.category_id AND c.tenant_id = p.tenant_id
+JOIN uoms u ON u.id = p.base_uom_id AND u.tenant_id = p.tenant_id
+WHERE p.tenant_id = $1::bigint
+  AND p.id = ANY($2::bigint[])
+ORDER BY p.id
+`
+
+type GetProductsParams struct {
+	TenantID int64
+	Ids      []int64
+}
+
+type GetProductsRow struct {
+	ID                int64
+	TenantID          int64
+	Code              string
+	Name              string
+	NameEn            string
+	CategoryID        int64
+	ProductType       string
+	Brand             string
+	BaseUomID         int64
+	ReferencePrice    string
+	ReferenceCurrency string
+	HsCode            string
+	TaxRate           string
+	ExportRebateRate  string
+	Description       string
+	Status            string
+	Attributes        []byte
+	CategoryName      string
+	BaseUomCode       string
+}
+
+// 一次取一批产品，形状和 GetProduct 完全一样。
+//
+// 出口那边保存报价单和合同时要逐条校验产品——原来是一行一次 gRPC，一张
+// 30 行的合同就是 30 次往返。
+//
+// **不按状态过滤**，和 GetProduct 一样：调用方需要拿到停用的产品才能说出
+// 「产品已停用，不能报价」。在这里筛掉的话，那句话会变成「产品不存在」——
+// 一句让人去查产品主数据、结果什么也查不到的错话。
+//
+// 查不到的 id 就是不在结果里。调用方按 id 对一遍就知道少了谁，比在这里
+// 报一个「其中某个不存在」有用——它还得知道是哪一个。
+func (q *Queries) GetProducts(ctx context.Context, arg GetProductsParams) ([]GetProductsRow, error) {
+	rows, err := q.db.Query(ctx, getProducts, arg.TenantID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetProductsRow
+	for rows.Next() {
+		var i GetProductsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Code,
+			&i.Name,
+			&i.NameEn,
+			&i.CategoryID,
+			&i.ProductType,
+			&i.Brand,
+			&i.BaseUomID,
+			&i.ReferencePrice,
+			&i.ReferenceCurrency,
+			&i.HsCode,
+			&i.TaxRate,
+			&i.ExportRebateRate,
+			&i.Description,
+			&i.Status,
+			&i.Attributes,
+			&i.CategoryName,
+			&i.BaseUomCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertCategoryIfAbsent = `-- name: InsertCategoryIfAbsent :execrows
 INSERT INTO product_categories (tenant_id, code, name, path, level, sort_order)
 VALUES ($1, $2, $3, $4, $5, $6)

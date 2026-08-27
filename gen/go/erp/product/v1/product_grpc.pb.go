@@ -27,6 +27,7 @@ const (
 	CatalogService_CreateUom_FullMethodName          = "/erp.product.v1.CatalogService/CreateUom"
 	CatalogService_ListProducts_FullMethodName       = "/erp.product.v1.CatalogService/ListProducts"
 	CatalogService_GetProduct_FullMethodName         = "/erp.product.v1.CatalogService/GetProduct"
+	CatalogService_GetProducts_FullMethodName        = "/erp.product.v1.CatalogService/GetProducts"
 	CatalogService_CreateProduct_FullMethodName      = "/erp.product.v1.CatalogService/CreateProduct"
 	CatalogService_UpdateProduct_FullMethodName      = "/erp.product.v1.CatalogService/UpdateProduct"
 	CatalogService_DeactivateProduct_FullMethodName  = "/erp.product.v1.CatalogService/DeactivateProduct"
@@ -52,6 +53,9 @@ type CatalogServiceClient interface {
 	CreateUom(ctx context.Context, in *CreateUomRequest, opts ...grpc.CallOption) (*CreateUomResponse, error)
 	ListProducts(ctx context.Context, in *ListProductsRequest, opts ...grpc.CallOption) (*ListProductsResponse, error)
 	GetProduct(ctx context.Context, in *GetProductRequest, opts ...grpc.CallOption) (*GetProductResponse, error)
+	// 一次取一批。出口保存报价单和合同时要逐条校验产品，一行一次往返的话，
+	// 一张 30 行的合同就要问 30 次。
+	GetProducts(ctx context.Context, in *GetProductsRequest, opts ...grpc.CallOption) (*GetProductsResponse, error)
 	CreateProduct(ctx context.Context, in *CreateProductRequest, opts ...grpc.CallOption) (*CreateProductResponse, error)
 	UpdateProduct(ctx context.Context, in *UpdateProductRequest, opts ...grpc.CallOption) (*UpdateProductResponse, error)
 	// No Delete on purpose: a product referenced by a contract, purchase order
@@ -151,6 +155,16 @@ func (c *catalogServiceClient) GetProduct(ctx context.Context, in *GetProductReq
 	return out, nil
 }
 
+func (c *catalogServiceClient) GetProducts(ctx context.Context, in *GetProductsRequest, opts ...grpc.CallOption) (*GetProductsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetProductsResponse)
+	err := c.cc.Invoke(ctx, CatalogService_GetProducts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *catalogServiceClient) CreateProduct(ctx context.Context, in *CreateProductRequest, opts ...grpc.CallOption) (*CreateProductResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateProductResponse)
@@ -237,6 +251,9 @@ type CatalogServiceServer interface {
 	CreateUom(context.Context, *CreateUomRequest) (*CreateUomResponse, error)
 	ListProducts(context.Context, *ListProductsRequest) (*ListProductsResponse, error)
 	GetProduct(context.Context, *GetProductRequest) (*GetProductResponse, error)
+	// 一次取一批。出口保存报价单和合同时要逐条校验产品，一行一次往返的话，
+	// 一张 30 行的合同就要问 30 次。
+	GetProducts(context.Context, *GetProductsRequest) (*GetProductsResponse, error)
 	CreateProduct(context.Context, *CreateProductRequest) (*CreateProductResponse, error)
 	UpdateProduct(context.Context, *UpdateProductRequest) (*UpdateProductResponse, error)
 	// No Delete on purpose: a product referenced by a contract, purchase order
@@ -279,6 +296,9 @@ func (UnimplementedCatalogServiceServer) ListProducts(context.Context, *ListProd
 }
 func (UnimplementedCatalogServiceServer) GetProduct(context.Context, *GetProductRequest) (*GetProductResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetProduct not implemented")
+}
+func (UnimplementedCatalogServiceServer) GetProducts(context.Context, *GetProductsRequest) (*GetProductsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetProducts not implemented")
 }
 func (UnimplementedCatalogServiceServer) CreateProduct(context.Context, *CreateProductRequest) (*CreateProductResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateProduct not implemented")
@@ -466,6 +486,24 @@ func _CatalogService_GetProduct_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CatalogService_GetProducts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProductsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CatalogServiceServer).GetProducts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CatalogService_GetProducts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CatalogServiceServer).GetProducts(ctx, req.(*GetProductsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CatalogService_CreateProduct_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateProductRequest)
 	if err := dec(in); err != nil {
@@ -630,6 +668,10 @@ var CatalogService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetProduct",
 			Handler:    _CatalogService_GetProduct_Handler,
+		},
+		{
+			MethodName: "GetProducts",
+			Handler:    _CatalogService_GetProducts_Handler,
 		},
 		{
 			MethodName: "CreateProduct",

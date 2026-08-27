@@ -147,16 +147,13 @@ func (s *Service) CreateContract(ctx context.Context, tenantID int64, in DirectC
 // The customs code lives on the product and is frozen onto the contract, so a
 // product reclassified next year does not rewrite what was declared.
 func (s *Service) hsCodesForItems(ctx context.Context, items []ItemInput) (map[int64]string, error) {
-	codes := make(map[int64]string, len(items))
-	for _, item := range items {
-		if _, seen := codes[item.ProductID]; seen {
-			continue
-		}
-		product, err := s.products.Get(ctx, item.ProductID)
-		if err != nil {
-			return nil, err
-		}
-		codes[item.ProductID] = product.HsCode
+	products, err := s.productsByID(ctx, dedupeIDs(productIDsOfItems(items)))
+	if err != nil {
+		return nil, err
+	}
+	codes := make(map[int64]string, len(products))
+	for id, p := range products {
+		codes[id] = p.HsCode
 	}
 	return codes, nil
 }

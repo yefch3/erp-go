@@ -117,6 +117,12 @@ func (s *Service) resolve(ctx context.Context, in QuotationInput) (Customer, []p
 
 	lines := make([]priced, 0, len(in.Items))
 	total := decimal.Zero
+	// 这一批行用到的产品一次问完，循环里只查 map。productID 为 0 的行
+	// （询盘先于主数据存在）不占位。
+	productOf, err := s.prefetchProducts(ctx, productIDsOfItems(in.Items))
+	if err != nil {
+		return Customer{}, nil, decimal.Zero, err
+	}
 	for i, item := range in.Items {
 		qty, err := decimal.NewFromString(item.Qty)
 		if err != nil || qty.LessThanOrEqual(decimal.Zero) {
@@ -131,13 +137,13 @@ func (s *Service) resolve(ctx context.Context, in QuotationInput) (Customer, []p
 		var product Product
 		if item.ProductID != 0 {
 			// 已绑定产品主数据时仍执行有效性校验，避免引用已停用产品。
-			product, err = s.products.Get(ctx, item.ProductID)
+			product, err = productOf(item.ProductID, i+1)
 			if err != nil {
 				return Customer{}, nil, decimal.Zero, err
 			}
 			if product.Status != "ACTIVE" {
 				return Customer{}, nil, decimal.Zero, apierr.Invalid("EX_PRODUCT_INACTIVE", "产品已停用，不能报价").
-					WithMeta("product", product.Code)
+					WithMeta("product", product.Code, "line", itoa(i+1))
 			}
 		} else {
 			// 采购询盘允许先于产品主数据存在；客户报价保存人工审核后的快照。

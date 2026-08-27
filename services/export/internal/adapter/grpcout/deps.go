@@ -62,6 +62,25 @@ func (p *Products) Get(ctx context.Context, id int64) (app.Product, error) {
 	}, nil
 }
 
+func (p *Products) GetMany(ctx context.Context, ids []int64) (map[int64]app.Product, error) {
+	out := make(map[int64]app.Product, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	resp, err := p.client.GetProducts(ctx, &pdv1.GetProductsRequest{Ids: ids})
+	if err != nil {
+		return nil, err
+	}
+	for _, pr := range resp.GetProducts() {
+		out[pr.GetId()] = app.Product{
+			ID: pr.GetId(), Code: pr.GetCode(), Name: pr.GetName(),
+			UomID: pr.GetBaseUomId(), UomCode: pr.GetBaseUomCode(),
+			HsCode: pr.GetHsCode(), Status: pr.GetStatus(),
+		}
+	}
+	return out, nil
+}
+
 type Rates struct{ client fxv1.FxServiceClient }
 
 func NewRates(conn *grpc.ClientConn) *Rates {

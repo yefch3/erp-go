@@ -78,6 +78,34 @@ JOIN product_categories c ON c.id = p.category_id AND c.tenant_id = p.tenant_id
 JOIN uoms u ON u.id = p.base_uom_id AND u.tenant_id = p.tenant_id
 WHERE p.tenant_id = $1 AND p.id = $2;
 
+-- name: GetProducts :many
+-- 一次取一批产品，形状和 GetProduct 完全一样。
+--
+-- 出口那边保存报价单和合同时要逐条校验产品——原来是一行一次 gRPC，一张
+-- 30 行的合同就是 30 次往返。
+--
+-- **不按状态过滤**，和 GetProduct 一样：调用方需要拿到停用的产品才能说出
+-- 「产品已停用，不能报价」。在这里筛掉的话，那句话会变成「产品不存在」——
+-- 一句让人去查产品主数据、结果什么也查不到的错话。
+--
+-- 查不到的 id 就是不在结果里。调用方按 id 对一遍就知道少了谁，比在这里
+-- 报一个「其中某个不存在」有用——它还得知道是哪一个。
+SELECT
+    p.id, p.tenant_id, p.code, p.name, p.name_en, p.category_id, p.product_type,
+    p.brand, p.base_uom_id,
+    coalesce(p.reference_price::text, '')::text     AS reference_price,
+    p.reference_currency, p.hs_code,
+    coalesce(p.tax_rate::text, '')::text            AS tax_rate,
+    coalesce(p.export_rebate_rate::text, '')::text  AS export_rebate_rate,
+    p.description, p.status, p.attributes,
+    c.name AS category_name, u.code AS base_uom_code
+FROM products p
+JOIN product_categories c ON c.id = p.category_id AND c.tenant_id = p.tenant_id
+JOIN uoms u ON u.id = p.base_uom_id AND u.tenant_id = p.tenant_id
+WHERE p.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND p.id = ANY(sqlc.arg(ids)::bigint[])
+ORDER BY p.id;
+
 -- name: CreateProduct :one
 INSERT INTO products (
     tenant_id, code, name, name_en, category_id, product_type, brand, base_uom_id,
