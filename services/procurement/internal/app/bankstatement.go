@@ -42,6 +42,17 @@ type BankTransactionView struct {
 	// 取值见 00027 迁移；**归属不是 Direction 的同义词**，供应商退款是进账。
 	Ownership       string
 	OwnershipDetail string
+	// F2 第二步补进来的：出口那本账原来独有的信息。AccountID 为 0 表示
+	// 没填账户（CSV 导进来的行没有这个信息），**不是第 0 号账户**。
+	AccountID           int64
+	AccountName         string
+	CounterpartyAccount string
+	// 付款人自己写进汇款里的话。扫合同号靠它，和 Remark（银行导出文件里
+	// 那一列备注）不是一回事。
+	RemittanceInfo string
+	Source         string
+	TrustedRef     string
+	Note           string
 	// Set when a payment claims this row.
 	MatchedPaymentID int64
 	MatchedPaymentNo string
@@ -128,10 +139,13 @@ func (s *Service) ListBankTransactions(ctx context.Context, tenantID int64, f Ba
 		SELECT t.id, t.txn_date::text, t.direction, t.amount::text, t.currency,
 		       t.counterparty, t.bank_ref, t.remark, t.imported_by_name, t.created_at::text,
 		       t.ownership, t.ownership_detail,
+		       t.account_id, coalesce(a.account_name, ''), t.counterparty_account,
+		       t.remittance_info, t.source, t.trusted_ref, t.note,
 		       coalesce(p.id, 0), coalesce(p.payment_no, ''),
 		       coalesce(sg.id, 0), coalesce(sg.payment_no, ''), coalesce(sg.supplier_name, ''),
 		       count(*) OVER () AS total
 		  FROM bank_transactions t
+		  LEFT JOIN bank_accounts a ON a.id = t.account_id AND a.tenant_id = t.tenant_id
 		  LEFT JOIN supplier_payments p ON p.bank_txn_id = t.id
 		  LEFT JOIN LATERAL (
 		      SELECT sp.id, sp.payment_no, sp.supplier_name
@@ -146,7 +160,8 @@ func (s *Service) ListBankTransactions(ctx context.Context, tenantID int64, f Ba
 		 WHERE t.tenant_id = $1
 		   AND ($2 = '' OR ($2 = 'MATCHED') = (p.id IS NOT NULL))
 		   AND ($3 = '' OR t.direction = $3)
-		   AND ($4 = '' OR t.counterparty ILIKE '%'||$4||'%' OR t.bank_ref ILIKE '%'||$4||'%' OR t.remark ILIKE '%'||$4||'%')
+		   AND ($4 = '' OR t.counterparty ILIKE '%'||$4||'%' OR t.bank_ref ILIKE '%'||$4||'%'
+		        OR t.remark ILIKE '%'||$4||'%' OR t.remittance_info ILIKE '%'||$4||'%')
 		   -- 归属：$5 指定某一档；$6 为真时单出「待处理」（ownership='')。
 		   -- 两者互斥，由调用方保证，这里按「先看 pending」处理。
 		   AND ($6 OR $5 = '' OR t.ownership = $5)
@@ -167,6 +182,8 @@ func (s *Service) ListBankTransactions(ctx context.Context, tenantID int64, f Ba
 		if err := rows.Scan(&v.ID, &v.TxnDate, &v.Direction, &v.Amount, &v.Currency,
 			&v.Counterparty, &v.BankRef, &v.Remark, &v.ImportedBy, &v.CreatedAt,
 			&v.Ownership, &v.OwnershipDetail,
+			&v.AccountID, &v.AccountName, &v.CounterpartyAccount,
+			&v.RemittanceInfo, &v.Source, &v.TrustedRef, &v.Note,
 			&v.MatchedPaymentID, &v.MatchedPaymentNo,
 			&v.SuggestedPaymentID, &v.SuggestedPaymentNo, &v.SuggestedPaymentSupplier,
 			&total); err != nil {

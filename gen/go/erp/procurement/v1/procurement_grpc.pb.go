@@ -1369,6 +1369,10 @@ const (
 	PurchaseOrderService_MatchBankTransaction_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/MatchBankTransaction"
 	PurchaseOrderService_SetBankTransactionOwnership_FullMethodName      = "/erp.procurement.v1.PurchaseOrderService/SetBankTransactionOwnership"
 	PurchaseOrderService_UnmatchBankTransaction_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/UnmatchBankTransaction"
+	PurchaseOrderService_RecordBankTransaction_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/RecordBankTransaction"
+	PurchaseOrderService_GetBankTransaction_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/GetBankTransaction"
+	PurchaseOrderService_ListBankAccounts_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/ListBankAccounts"
+	PurchaseOrderService_CreateBankAccount_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/CreateBankAccount"
 )
 
 // PurchaseOrderServiceClient is the client API for PurchaseOrderService service.
@@ -1459,6 +1463,16 @@ type PurchaseOrderServiceClient interface {
 	// 银行那一行本身一个字不改——归属是我们的判断，可改可撤。
 	SetBankTransactionOwnership(ctx context.Context, in *SetBankTransactionOwnershipRequest, opts ...grpc.CallOption) (*SetBankTransactionOwnershipResponse, error)
 	UnmatchBankTransaction(ctx context.Context, in *UnmatchBankTransactionRequest, opts ...grpc.CallOption) (*UnmatchBankTransactionResponse, error)
+	// 手工登记一行流水。CSV 导入之外的另一条入口：银行还没出对账单、或者
+	// 客户先发了水单，财务要先把这笔钱记下来。出口的收款对账原来自己有一张
+	// 表干这件事，F2 之后由这里统一收着。
+	RecordBankTransaction(ctx context.Context, in *RecordBankTransactionRequest, opts ...grpc.CallOption) (*RecordBankTransactionResponse, error)
+	// 取单独一行。核销之前要拿到金额和币种才能判断能不能核，靠它。
+	GetBankTransaction(ctx context.Context, in *GetBankTransactionRequest, opts ...grpc.CallOption) (*GetBankTransactionResponse, error)
+	// 我们自己的银行账户。跟着账本走：账本在这个服务里，账户清单也在这里，
+	// 否则流水上的 account_id 指不到任何地方。
+	ListBankAccounts(ctx context.Context, in *ListBankAccountsRequest, opts ...grpc.CallOption) (*ListBankAccountsResponse, error)
+	CreateBankAccount(ctx context.Context, in *CreateBankAccountRequest, opts ...grpc.CallOption) (*CreateBankAccountResponse, error)
 }
 
 type purchaseOrderServiceClient struct {
@@ -1889,6 +1903,46 @@ func (c *purchaseOrderServiceClient) UnmatchBankTransaction(ctx context.Context,
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) RecordBankTransaction(ctx context.Context, in *RecordBankTransactionRequest, opts ...grpc.CallOption) (*RecordBankTransactionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecordBankTransactionResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_RecordBankTransaction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) GetBankTransaction(ctx context.Context, in *GetBankTransactionRequest, opts ...grpc.CallOption) (*GetBankTransactionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetBankTransactionResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_GetBankTransaction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ListBankAccounts(ctx context.Context, in *ListBankAccountsRequest, opts ...grpc.CallOption) (*ListBankAccountsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListBankAccountsResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListBankAccounts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) CreateBankAccount(ctx context.Context, in *CreateBankAccountRequest, opts ...grpc.CallOption) (*CreateBankAccountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateBankAccountResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_CreateBankAccount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PurchaseOrderServiceServer is the server API for PurchaseOrderService service.
 // All implementations must embed UnimplementedPurchaseOrderServiceServer
 // for forward compatibility.
@@ -1977,6 +2031,16 @@ type PurchaseOrderServiceServer interface {
 	// 银行那一行本身一个字不改——归属是我们的判断，可改可撤。
 	SetBankTransactionOwnership(context.Context, *SetBankTransactionOwnershipRequest) (*SetBankTransactionOwnershipResponse, error)
 	UnmatchBankTransaction(context.Context, *UnmatchBankTransactionRequest) (*UnmatchBankTransactionResponse, error)
+	// 手工登记一行流水。CSV 导入之外的另一条入口：银行还没出对账单、或者
+	// 客户先发了水单，财务要先把这笔钱记下来。出口的收款对账原来自己有一张
+	// 表干这件事，F2 之后由这里统一收着。
+	RecordBankTransaction(context.Context, *RecordBankTransactionRequest) (*RecordBankTransactionResponse, error)
+	// 取单独一行。核销之前要拿到金额和币种才能判断能不能核，靠它。
+	GetBankTransaction(context.Context, *GetBankTransactionRequest) (*GetBankTransactionResponse, error)
+	// 我们自己的银行账户。跟着账本走：账本在这个服务里，账户清单也在这里，
+	// 否则流水上的 account_id 指不到任何地方。
+	ListBankAccounts(context.Context, *ListBankAccountsRequest) (*ListBankAccountsResponse, error)
+	CreateBankAccount(context.Context, *CreateBankAccountRequest) (*CreateBankAccountResponse, error)
 	mustEmbedUnimplementedPurchaseOrderServiceServer()
 }
 
@@ -2112,6 +2176,18 @@ func (UnimplementedPurchaseOrderServiceServer) SetBankTransactionOwnership(conte
 }
 func (UnimplementedPurchaseOrderServiceServer) UnmatchBankTransaction(context.Context, *UnmatchBankTransactionRequest) (*UnmatchBankTransactionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UnmatchBankTransaction not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) RecordBankTransaction(context.Context, *RecordBankTransactionRequest) (*RecordBankTransactionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RecordBankTransaction not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) GetBankTransaction(context.Context, *GetBankTransactionRequest) (*GetBankTransactionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetBankTransaction not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ListBankAccounts(context.Context, *ListBankAccountsRequest) (*ListBankAccountsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListBankAccounts not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) CreateBankAccount(context.Context, *CreateBankAccountRequest) (*CreateBankAccountResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateBankAccount not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) mustEmbedUnimplementedPurchaseOrderServiceServer() {}
 func (UnimplementedPurchaseOrderServiceServer) testEmbeddedByValue()                              {}
@@ -2890,6 +2966,78 @@ func _PurchaseOrderService_UnmatchBankTransaction_Handler(srv interface{}, ctx c
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_RecordBankTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordBankTransactionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).RecordBankTransaction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_RecordBankTransaction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).RecordBankTransaction(ctx, req.(*RecordBankTransactionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_GetBankTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBankTransactionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).GetBankTransaction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_GetBankTransaction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).GetBankTransaction(ctx, req.(*GetBankTransactionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ListBankAccounts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBankAccountsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListBankAccounts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListBankAccounts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListBankAccounts(ctx, req.(*ListBankAccountsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_CreateBankAccount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateBankAccountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).CreateBankAccount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_CreateBankAccount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).CreateBankAccount(ctx, req.(*CreateBankAccountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PurchaseOrderService_ServiceDesc is the grpc.ServiceDesc for PurchaseOrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3064,6 +3212,22 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UnmatchBankTransaction",
 			Handler:    _PurchaseOrderService_UnmatchBankTransaction_Handler,
+		},
+		{
+			MethodName: "RecordBankTransaction",
+			Handler:    _PurchaseOrderService_RecordBankTransaction_Handler,
+		},
+		{
+			MethodName: "GetBankTransaction",
+			Handler:    _PurchaseOrderService_GetBankTransaction_Handler,
+		},
+		{
+			MethodName: "ListBankAccounts",
+			Handler:    _PurchaseOrderService_ListBankAccounts_Handler,
+		},
+		{
+			MethodName: "CreateBankAccount",
+			Handler:    _PurchaseOrderService_CreateBankAccount_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
