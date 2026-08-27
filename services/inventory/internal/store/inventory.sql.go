@@ -941,7 +941,7 @@ WHERE s.tenant_id = $1::bigint
        OR ($7::text = 'AVAILABLE' AND s.available_qty > 0)
        OR ($7::text = 'NO_AVAILABLE' AND s.available_qty = 0)
        OR ($7::text = 'FROZEN' AND s.frozen_qty > 0))
-ORDER BY s.product_code, w.code
+ORDER BY s.product_code, w.code, s.id
 LIMIT $9::int OFFSET $8::int
 `
 
@@ -981,6 +981,9 @@ type ListStocksRow struct {
 	Total         int64
 }
 
+// id 收口：(产品编码, 仓库编码) **不唯一**——stocks 还有 sku_id 这一维，
+// 同一个产品在同一个仓库可以有好几个 SKU。不收口的话，多 SKU 的产品在翻页
+// 时会重复或漏行。
 func (q *Queries) ListStocks(ctx context.Context, arg ListStocksParams) ([]ListStocksRow, error) {
 	rows, err := q.db.Query(ctx, listStocks,
 		arg.TenantID,

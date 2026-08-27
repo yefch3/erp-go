@@ -790,7 +790,7 @@ WHERE i.tenant_id = $1::bigint
   AND ($5::text = ''
        OR i.biz_no ILIKE '%' || $5::text || '%'
        OR i.biz_summary::text ILIKE '%' || $5::text || '%')
-ORDER BY i.submitted_at DESC
+ORDER BY i.submitted_at DESC, i.id DESC
 LIMIT $7::int OFFSET $6::int
 `
 
@@ -824,6 +824,9 @@ type ListMySubmittedInstancesRow struct {
 
 // Personal approval tracking for the home page. The caller's employee id is
 // supplied by trusted gRPC metadata, never by an HTTP query parameter.
+// id 收口不是装饰：submitted_at 会打平（一批单据同时提交，时间戳落在同一
+// 毫秒），而 OFFSET 分页遇到打平的行，翻页时顺序可能变——同一行出现在两页，
+// 或者干脆被跳过。用户看到的是「我明明看到那条，翻到第二页就没了」。
 func (q *Queries) ListMySubmittedInstances(ctx context.Context, arg ListMySubmittedInstancesParams) ([]ListMySubmittedInstancesRow, error) {
 	rows, err := q.db.Query(ctx, listMySubmittedInstances,
 		arg.TenantID,
