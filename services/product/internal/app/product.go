@@ -144,6 +144,20 @@ func (s *Service) GetProduct(ctx context.Context, tenantID, id int64) (store.Get
 	return p, err
 }
 
+// GetProducts 一次取一批，形状和 GetProduct 一致。
+//
+// **查不到的 id 不报错，就是不在结果里。** 调用方按 id 对一遍就知道少了谁，
+// 而在这里报一句「其中某个不存在」，它还得再问一遍是哪一个。
+//
+// 和 GetProduct 一样不按状态过滤：调用方要拿到停用的产品，才说得出
+// 「产品已停用」而不是「产品不存在」。
+func (s *Service) GetProducts(ctx context.Context, tenantID int64, ids []int64) ([]store.GetProductsRow, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	return s.q.GetProducts(ctx, store.GetProductsParams{TenantID: tenantID, Ids: ids})
+}
+
 func (s *Service) ListProducts(ctx context.Context, tenantID int64, keyword string, categoryID int64, status string, page, size int32) ([]store.ListProductsRow, int64, error) {
 	page, size = normalizePage(page, size)
 	rows, err := s.q.ListProducts(ctx, store.ListProductsParams{

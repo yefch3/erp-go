@@ -146,18 +146,89 @@ func (s *Service) fillTerms(in Terms, quote store.GetQuotationRow, customer Cust
 }
 
 func (s *Service) hsCodesFor(ctx context.Context, lines []store.ListQuotationItemsRow) (map[int64]string, error) {
-	codes := make(map[int64]string, len(lines))
+	ids := make([]int64, 0, len(lines))
+	seen := make(map[int64]bool, len(lines))
 	for _, line := range lines {
-		if _, seen := codes[line.ProductID]; seen {
+		if line.ProductID == 0 || seen[line.ProductID] {
 			continue
 		}
-		product, err := s.products.Get(ctx, line.ProductID)
-		if err != nil {
-			return nil, err
-		}
-		codes[line.ProductID] = product.HsCode
+		seen[line.ProductID] = true
+		ids = append(ids, line.ProductID)
+	}
+	products, err := s.productsByID(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	codes := make(map[int64]string, len(products))
+	for id, p := range products {
+		codes[id] = p.HsCode
 	}
 	return codes, nil
+}
+
+// productsByID 一次问完一批产品。
+//
+// 原来这一类地方是一行问一次——一张 30 行的合同就是 30 次跨服务往返，每一次
+// 都在等网络。去重之后一次问完，往返次数从「行数」变成「1」。
+//
+// **查不到的 id 不在返回的 map 里，这里不报错。** 谁少了要由调用方说——
+// 只有它知道那是第几行、那一行写的是什么，才说得出一句人能处理的话。
+func (s *Service) productsByID(ctx context.Context, ids []int64) (map[int64]Product, error) {
+	if len(ids) == 0 {
+		return map[int64]Product{}, nil
+	}
+	return s.products.GetMany(ctx, ids)
+}
+
+// dedupeIDs 去重并滤掉 0。
+//
+// 0 是允许的：采购询盘可以先于产品主数据存在，那种行走人工填写的名称快照，
+// 不查产品。在这里滤掉，调用方就不用每处都想一遍。
+func dedupeIDs(ids []int64) []int64 {
+	out := make([]int64, 0, len(ids))
+	seen := make(map[int64]bool, len(ids))
+	for _, id := range ids {
+		if id == 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
+}
+
+// productIDsOfItems 收集一批录入行上的产品 id。
+func productIDsOfItems(items []ItemInput) []int64 {
+	ids := make([]int64, 0, len(items))
+	for _, it := range items {
+		ids = append(ids, it.ProductID)
+	}
+	return ids
+}
+
+// prefetchProducts 把一批明细行要用到的产品一次问完，返回一个按行取的函数。
+//
+// 校验循环原来长这样：每一行 `s.products.Get(ctx, ...)`，一次跨服务往返。
+// 一张 30 行的合同就是 30 次，每一次都在等网络。现在先去重、问一次，循环里
+// 只查 map。
+//
+// 取的函数带**行号**：报错必须说得出是第几行，否则一张三十行的单子退回来，
+// 人只知道「有个产品不存在」，得自己一行行找。错误码沿用产品服务原来那个
+// （`PD_NOT_FOUND`），所以网关映射的 HTTP 状态和前端认的码都不变，只是多了
+// 一条能直接定位的行号。
+func (s *Service) prefetchProducts(ctx context.Context, ids []int64) (func(productID int64, line int) (Product, error), error) {
+	found, err := s.productsByID(ctx, dedupeIDs(ids))
+	if err != nil {
+		return nil, err
+	}
+	return func(productID int64, line int) (Product, error) {
+		p, ok := found[productID]
+		if !ok {
+			return Product{}, apierr.NotFound("PD_NOT_FOUND", "产品不存在").
+				WithMeta("line", itoa(line))
+		}
+		return p, nil
+	}, nil
 }
 
 // UpdateContract edits the version currently being drafted, lines included.
@@ -349,6 +420,11 @@ func (s *Service) ChangeContract(ctx context.Context, tenantID, id int64, terms 
 func (s *Service) priceLines(ctx context.Context, items []ItemInput) ([]priced, decimal.Decimal, error) {
 	lines := make([]priced, 0, len(items))
 	total := decimal.Zero
+	// 这一批行用到的产品一次问完，循环里只查 map。
+	productOf, err := s.prefetchProducts(ctx, productIDsOfItems(items))
+	if err != nil {
+		return nil, decimal.Zero, err
+	}
 	for i, item := range items {
 		qty, err := decimal.NewFromString(item.Qty)
 		if err != nil || qty.LessThanOrEqual(decimal.Zero) {
@@ -360,13 +436,13 @@ func (s *Service) priceLines(ctx context.Context, items []ItemInput) ([]priced, 
 			return nil, decimal.Zero, apierr.Invalid("EX_PRICE_INVALID", "单价必须是不小于 0 的数字").
 				WithMeta("line", itoa(i+1))
 		}
-		product, err := s.products.Get(ctx, item.ProductID)
+		product, err := productOf(item.ProductID, i+1)
 		if err != nil {
 			return nil, decimal.Zero, err
 		}
 		if product.Status != "ACTIVE" {
 			return nil, decimal.Zero, apierr.Invalid("EX_PRODUCT_INACTIVE", "产品已停用，不能签入合同").
-				WithMeta("product", product.Code)
+				WithMeta("product", product.Code, "line", itoa(i+1))
 		}
 		amount := qty.Mul(price).Round(2)
 		total = total.Add(amount)
