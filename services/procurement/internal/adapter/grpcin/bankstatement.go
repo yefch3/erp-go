@@ -41,19 +41,97 @@ func (h *OrderHandler) ListBankTransactions(ctx context.Context, req *prv1.ListB
 	}
 	out := make([]*prv1.BankTransaction, 0, len(items))
 	for _, v := range items {
-		out = append(out, &prv1.BankTransaction{
-			Id: v.ID, TxnDate: v.TxnDate, Direction: v.Direction,
-			Amount: v.Amount, Currency: v.Currency, Counterparty: v.Counterparty,
-			BankRef: v.BankRef, Remark: v.Remark,
-			ImportedBy: v.ImportedBy, CreatedAt: v.CreatedAt,
-			MatchedPaymentId: v.MatchedPaymentID, MatchedPaymentNo: v.MatchedPaymentNo,
-			SuggestedPaymentId: v.SuggestedPaymentID, SuggestedPaymentNo: v.SuggestedPaymentNo,
-			SuggestedPaymentSupplier: v.SuggestedPaymentSupplier,
-			Ownership:                v.Ownership,
-			OwnershipDetail:          v.OwnershipDetail,
-		})
+		out = append(out, bankTransactionPB(v))
 	}
 	return &prv1.ListBankTransactionsResponse{Items: out, Total: total}, nil
+}
+
+// bankTransactionPB 是列表和单行共用的那一层翻译。一处写，两处用——两边
+// 各写一份的话，下次加字段必然只加一边。
+func bankTransactionPB(v app.BankTransactionView) *prv1.BankTransaction {
+	return &prv1.BankTransaction{
+		Id: v.ID, TxnDate: v.TxnDate, Direction: v.Direction,
+		Amount: v.Amount, Currency: v.Currency, Counterparty: v.Counterparty,
+		BankRef: v.BankRef, Remark: v.Remark,
+		ImportedBy: v.ImportedBy, CreatedAt: v.CreatedAt,
+		MatchedPaymentId: v.MatchedPaymentID, MatchedPaymentNo: v.MatchedPaymentNo,
+		SuggestedPaymentId: v.SuggestedPaymentID, SuggestedPaymentNo: v.SuggestedPaymentNo,
+		SuggestedPaymentSupplier: v.SuggestedPaymentSupplier,
+		Ownership:                v.Ownership,
+		OwnershipDetail:          v.OwnershipDetail,
+		AccountId:                v.AccountID,
+		AccountName:              v.AccountName,
+		CounterpartyAccount:      v.CounterpartyAccount,
+		RemittanceInfo:           v.RemittanceInfo,
+		Source:                   v.Source,
+		TrustedRef:               v.TrustedRef,
+		Note:                     v.Note,
+	}
+}
+
+func (h *OrderHandler) RecordBankTransaction(ctx context.Context, req *prv1.RecordBankTransactionRequest) (*prv1.RecordBankTransactionResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	in := req.GetTransaction()
+	v, err := h.svc.RecordBankTransaction(ctx, grpcx.TenantID(ctx), app.BankTransactionInput{
+		AccountID:           in.GetAccountId(),
+		BankRef:             in.GetBankRef(),
+		Direction:           in.GetDirection(),
+		Amount:              in.GetAmount(),
+		Currency:            in.GetCurrency(),
+		TxnDate:             in.GetTxnDate(),
+		Counterparty:        in.GetCounterparty(),
+		CounterpartyAccount: in.GetCounterpartyAccount(),
+		RemittanceInfo:      in.GetRemittanceInfo(),
+		TrustedRef:          in.GetTrustedRef(),
+		Note:                in.GetNote(),
+		Ownership:           in.GetOwnership(),
+		OwnershipDetail:     in.GetOwnershipDetail(),
+	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.RecordBankTransactionResponse{Transaction: bankTransactionPB(v)}, nil
+}
+
+func (h *OrderHandler) GetBankTransaction(ctx context.Context, req *prv1.GetBankTransactionRequest) (*prv1.GetBankTransactionResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	v, err := h.svc.GetBankTransaction(ctx, grpcx.TenantID(ctx), req.GetTxnId(),
+		app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.GetBankTransactionResponse{Transaction: bankTransactionPB(v)}, nil
+}
+
+func (h *OrderHandler) ListBankAccounts(ctx context.Context, req *prv1.ListBankAccountsRequest) (*prv1.ListBankAccountsResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	items, err := h.svc.ListBankAccounts(ctx, grpcx.TenantID(ctx), req.GetIncludeInactive(),
+		app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*prv1.BankAccount, 0, len(items))
+	for _, a := range items {
+		out = append(out, &prv1.BankAccount{
+			Id: a.ID, AccountNo: a.AccountNo, AccountName: a.AccountName,
+			BankName: a.BankName, Currency: a.Currency, Status: a.Status,
+		})
+	}
+	return &prv1.ListBankAccountsResponse{Accounts: out}, nil
+}
+
+func (h *OrderHandler) CreateBankAccount(ctx context.Context, req *prv1.CreateBankAccountRequest) (*prv1.CreateBankAccountResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	id, err := h.svc.CreateBankAccount(ctx, grpcx.TenantID(ctx), app.BankAccountView{
+		AccountNo:   req.GetAccountNo(),
+		AccountName: req.GetAccountName(),
+		BankName:    req.GetBankName(),
+		Currency:    req.GetCurrency(),
+	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.CreateBankAccountResponse{Id: id}, nil
 }
 
 func (h *OrderHandler) MatchBankTransaction(ctx context.Context, req *prv1.MatchBankTransactionRequest) (*prv1.MatchBankTransactionResponse, error) {

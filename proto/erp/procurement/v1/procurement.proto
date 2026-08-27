@@ -594,6 +594,18 @@ service PurchaseOrderService {
   // 银行那一行本身一个字不改——归属是我们的判断，可改可撤。
   rpc SetBankTransactionOwnership(SetBankTransactionOwnershipRequest) returns (SetBankTransactionOwnershipResponse);
   rpc UnmatchBankTransaction(UnmatchBankTransactionRequest) returns (UnmatchBankTransactionResponse);
+
+  // 手工登记一行流水。CSV 导入之外的另一条入口：银行还没出对账单、或者
+  // 客户先发了水单，财务要先把这笔钱记下来。出口的收款对账原来自己有一张
+  // 表干这件事，F2 之后由这里统一收着。
+  rpc RecordBankTransaction(RecordBankTransactionRequest) returns (RecordBankTransactionResponse);
+  // 取单独一行。核销之前要拿到金额和币种才能判断能不能核，靠它。
+  rpc GetBankTransaction(GetBankTransactionRequest) returns (GetBankTransactionResponse);
+
+  // 我们自己的银行账户。跟着账本走：账本在这个服务里，账户清单也在这里，
+  // 否则流水上的 account_id 指不到任何地方。
+  rpc ListBankAccounts(ListBankAccountsRequest) returns (ListBankAccountsResponse);
+  rpc CreateBankAccount(CreateBankAccountRequest) returns (CreateBankAccountResponse);
 }
 
 message OrderImportRow {
@@ -1452,7 +1464,83 @@ message BankTransaction {
   string ownership = 16;
   // 只有 ownership=OTHER 时才有值：INTEREST | INTERNAL | DEPOSIT_RETURN | OTHER
   string ownership_detail = 17;
+
+  // ---- F2 第二步补进来的：出口那本账原来独有的信息 ----
+
+  // 钱进了/出了我们哪个账户。**0 = 没填**，不是「第 0 号账户」。
+  int64 account_id = 18;
+  string account_name = 19; // 便于直接显示，避免每行再查一次
+  string counterparty_account = 20;
+  // 付款人自己写进这笔汇款里的话。**扫合同号靠它**，和 remark（银行导出
+  // 文件里那一列备注）不是一回事。
+  string remittance_info = 21;
+  string source = 22;      // MANUAL | CSV | API | PSP
+  string trusted_ref = 23; // 我们自己发出去的号，可信；附言不可信
+  string note = 24;        // 人写的备注，和银行给的 remark 分开
 }
+
+// BankTransactionInput 是手工登记一行流水要填的东西。
+//
+// 只有「银行说了什么」，没有「我们打算拿它干什么」——归属和核销都是后面的
+// 判断，不在登记这一步做。同「付款是事实、核销是判断」。
+message BankTransactionInput {
+  // 0 表示不指定账户。填了就必须是一个存在且启用的账户。
+  int64 account_id = 1;
+  string bank_ref = 2;  // 银行自己的流水号，去重靠它
+  string direction = 3; // DEBIT | CREDIT
+  string amount = 4;
+  string currency = 5;
+  string txn_date = 6; // YYYY-MM-DD，银行的日子，不是谁录入的日子
+  string counterparty = 7;
+  string counterparty_account = 8;
+  string remittance_info = 9;
+  string trusted_ref = 10;
+  string note = 11;
+  // 登记时就知道这笔钱是谁那条线上的，可以直接写上；不知道就留空，
+  // 落到「待处理」。
+  string ownership = 12;
+  string ownership_detail = 13;
+}
+
+message RecordBankTransactionRequest {
+  BankTransactionInput transaction = 1;
+}
+message RecordBankTransactionResponse {
+  BankTransaction transaction = 1;
+}
+
+message GetBankTransactionRequest { int64 txn_id = 1; }
+message GetBankTransactionResponse {
+  BankTransaction transaction = 1;
+}
+
+// BankAccount 是我们自己的一个账户。留着它是为了认出「两个自己账户之间
+// 转钱」——那在流水上是一笔大额进账，长得和客户打款一模一样。
+message BankAccount {
+  int64 id = 1;
+  string account_no = 2;
+  string account_name = 3;
+  string bank_name = 4;
+  string currency = 5;
+  string status = 6; // ACTIVE | INACTIVE
+}
+
+message ListBankAccountsRequest {
+  // 为真时连停用的一起给。默认只给启用的——登记流水的下拉框不该出现
+  // 已经销户的账户。
+  bool include_inactive = 1;
+}
+message ListBankAccountsResponse {
+  repeated BankAccount accounts = 1;
+}
+
+message CreateBankAccountRequest {
+  string account_no = 1;
+  string account_name = 2;
+  string bank_name = 3;
+  string currency = 4;
+}
+message CreateBankAccountResponse { int64 id = 1; }
 
 message ImportBankStatementRequest {
   string file_name = 1;
