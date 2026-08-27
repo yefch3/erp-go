@@ -887,7 +887,16 @@ func (s *Service) applyBounce(ctx context.Context, tenantID int64, raw []byte, p
 				addr = row.ToEmail
 			}
 			if addr != "" {
-				_ = s.Suppress(ctx, tenantID, addr, "HARD_BOUNCE", p.BounceDetail)
+				// 和 worker.go 里那处同一条规矩：**拉黑失败必须喊出来**。
+				// 没拉黑的死地址会被一遍遍重投，伤的是所有邮件的送达率，
+				// 而默默失败的话没有任何地方看得出来。
+				if err := s.Suppress(ctx, tenantID, addr, "HARD_BOUNCE", p.BounceDetail); err != nil {
+					s.log.Error("硬退信地址没能拉黑，之后还会继续往这个地址发",
+						"tenant", tenantID, "email", addr, "message", row.ID,
+						"err", err,
+						"impact", "继续投递到已确认失效的地址会拖垮发信域名声誉，影响所有邮件",
+						"fix", "在「邮件 · 退信抑制」里手工把这个地址加进去")
+				}
 			}
 		}
 		s.log.Info("bounce applied", "message", row.ID, "permanent", p.BouncePermanent)

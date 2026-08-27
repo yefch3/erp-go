@@ -282,10 +282,14 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 			s.log.Error("could not record acceptance", "id", m.ID, "err", err)
 			return
 		}
-		_ = s.q.AppendEvent(ctx, store.AppendEventParams{
+		if err := s.q.AppendEvent(ctx, store.AppendEventParams{
 			TenantID: cfg.TenantID, MessageID: m.ID, Kind: "SENT",
 			Detail: res.ProviderID,
-		})
+		}); err != nil {
+			// 信已经发出去了，这里只是时间线上少了一条——不该回滚任何东西，
+			// 但也不该没人知道：邮件详情页的时间线会缺一格。
+			s.log.Warn("邮件已发出，但时间线没记上", "message", m.ID, "kind", "SENT", "err", err)
+		}
 		s.recordRecipientResults(ctx, cfg, m.ID, recips, res.Rejected)
 		s.countSend(ctx, cfg.TenantID, m.SenderID)
 		// Last, and never fatal: the ERP's own books are closed above, and a
@@ -312,16 +316,29 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 	case Permanent:
 		s.terminal(ctx, cfg, m.ID, "HARD_BOUNCED", res.Err,
 			"地址被永久拒收，请核对后更新联系人邮箱")
-		_ = s.q.AppendEvent(ctx, store.AppendEventParams{
+		if err := s.q.AppendEvent(ctx, store.AppendEventParams{
 			TenantID: cfg.TenantID, MessageID: m.ID, Kind: "BOUNCE", Detail: res.Err,
-		})
+		}); err != nil {
+			s.log.Warn("退信已入账，但时间线没记上", "message", m.ID, "kind", "BOUNCE", "err", err)
+		}
 		// A permanently dead address must never be queued again. Continuing
 		// to send at one is the fastest way to lose the sending domain's
 		// reputation, which costs every other mail too.
-		_ = s.q.AddSuppression(ctx, store.AddSuppressionParams{
+		//
+		// 上面这段话说得很重，所以**写不进去的时候必须喊出来**。原来这里是
+		// `_ =`：写库失败一次，这个死地址就永远不在黑名单里，之后每一封发给
+		// 它的信都会再退一次——而伤的是发信域名的声誉，也就是**所有**邮件的
+		// 送达率，不只是这一封。而这一切没有任何地方看得出来。
+		if err := s.q.AddSuppression(ctx, store.AddSuppressionParams{
 			TenantID: cfg.TenantID, Email: m.ToEmail,
 			Reason: "HARD_BOUNCE", Detail: res.Err,
-		})
+		}); err != nil {
+			s.log.Error("硬退信地址没能拉黑，之后还会继续往这个地址发",
+				"tenant", cfg.TenantID, "email", m.ToEmail, "message", m.ID,
+				"err", err,
+				"impact", "继续投递到已确认失效的地址会拖垮发信域名声誉，影响所有邮件",
+				"fix", "在「邮件 · 退信抑制」里手工把这个地址加进去")
+		}
 
 	case Unknown:
 		// The request went out and no answer came back. Which way to fall is

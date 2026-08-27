@@ -780,13 +780,23 @@ func (s *Service) ListRoles(ctx context.Context, tenantID int64) ([]store.Role, 
 	if err != nil {
 		return nil, nil, err
 	}
-	codes := make(map[int64][]string, len(roles))
+	// 一次问完，不是一个角色问一次。
+	ids := make([]int64, 0, len(roles))
 	for _, r := range roles {
-		cs, err := s.q.ListRolePermissionCodes(ctx, store.ListRolePermissionCodesParams{TenantID: tenantID, RoleID: r.ID})
-		if err != nil {
-			return nil, nil, err
-		}
-		codes[r.ID] = cs
+		ids = append(ids, r.ID)
+	}
+	codes := make(map[int64][]string, len(roles))
+	if len(ids) == 0 {
+		return roles, codes, nil
+	}
+	rows, err := s.q.ListPermissionCodesOfRoles(ctx, store.ListPermissionCodesOfRolesParams{
+		TenantID: tenantID, RoleIds: ids,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, row := range rows {
+		codes[row.RoleID] = append(codes[row.RoleID], row.Code)
 	}
 	return roles, codes, nil
 }

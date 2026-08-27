@@ -51,13 +51,35 @@ func (s *Service) crossRate(ctx context.Context, currency string) decimal.Decima
 	}
 	src, err := s.rates.Latest(ctx, currency)
 	if err != nil || src.Rate.IsZero() {
+		s.noRate(ctx, currency, base, "取不到"+currency+"的汇率", err)
 		return decimal.Zero
 	}
 	dst, err := s.rates.Latest(ctx, base)
 	if err != nil || dst.Rate.IsZero() {
+		// 本位币这一次特别值得说：**每一笔外币单据都要它**。CNY 取不到，
+		// 那一段时间里所有付款和采购发票的本位币金额会一起变成 0。
+		s.noRate(ctx, currency, base, "取不到本位币"+base+"的汇率", err)
 		return decimal.Zero
 	}
 	return dst.Rate.Div(src.Rate).Round(8)
+}
+
+// noRate 记下「这一单没采到汇率」。
+//
+// 降级本身是对的（见文件头）：钱已经走了，不能因为 fx 打盹就拒绝记账，
+// 而零表示「没采到」，比编一个汇率诚实。**但沉默不对。**
+//
+// 原来这里一声不吭：fx 挂一天，那天所有付款和采购发票的 base_amount 都是 0，
+// 账上悄悄多出一批洞，要等有人翻汇兑损益报表才发现——那时候已经不知道是哪天、
+// 哪些行了。日志里带上币种和本位币，是为了能直接按时间段把那些行捞出来补。
+func (s *Service) noRate(ctx context.Context, currency, base, why string, err error) {
+	msg := ""
+	if err != nil {
+		msg = err.Error()
+	}
+	s.log.WarnContext(ctx, "没采到汇率，这一单的本位币金额记为 0",
+		"currency", currency, "base", base, "why", why, "err", msg,
+		"impact", "这一行不参与汇兑损益，直到有人补上汇率并重算")
 }
 
 // fxSnapshot prices an amount into the book currency. rate zero → base zero:

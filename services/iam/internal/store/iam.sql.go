@@ -1560,6 +1560,50 @@ func (q *Queries) ListLiveInvitations(ctx context.Context, tenantID int64) ([]Li
 	return items, nil
 }
 
+const listPermissionCodesOfRoles = `-- name: ListPermissionCodesOfRoles :many
+SELECT rp.role_id, p.code
+FROM role_permissions rp
+JOIN permissions p ON p.id = rp.permission_id
+WHERE rp.tenant_id = $1::bigint
+  AND rp.role_id = ANY($2::bigint[])
+ORDER BY rp.role_id, p.code
+`
+
+type ListPermissionCodesOfRolesParams struct {
+	TenantID int64
+	RoleIds  []int64
+}
+
+type ListPermissionCodesOfRolesRow struct {
+	RoleID int64
+	Code   string
+}
+
+// 一次问完一批角色的权限码。
+//
+// 角色列表原来对每个角色单独查一次（十来个角色就是十来次往返）。角色数量
+// 不大，所以这不是性能事故，但同一个形状在别处会是——一次问完是这一类查询
+// 该有的样子。
+func (q *Queries) ListPermissionCodesOfRoles(ctx context.Context, arg ListPermissionCodesOfRolesParams) ([]ListPermissionCodesOfRolesRow, error) {
+	rows, err := q.db.Query(ctx, listPermissionCodesOfRoles, arg.TenantID, arg.RoleIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPermissionCodesOfRolesRow
+	for rows.Next() {
+		var i ListPermissionCodesOfRolesRow
+		if err := rows.Scan(&i.RoleID, &i.Code); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPermissions = `-- name: ListPermissions :many
 SELECT id, code, name, module, menu_path FROM permissions ORDER BY module, code
 `
