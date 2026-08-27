@@ -51,6 +51,7 @@ import { Money } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { get, post, quietErrors } from '../api'
+import { announceReminderChanged, onReminderChanged } from '../lib/homeReminders'
 
 interface Reminder {
   id: string
@@ -106,21 +107,31 @@ async function markAllRead() {
   await post('/receivable-reminders/read', { ids: [] }, quietErrors)
   items.value = items.value.map((r) => ({ ...r, unread: false }))
   unread.value = 0
+  announceReminderChanged()
 }
 
-function openContract(item: Reminder) {
+async function openContract(item: Reminder) {
   open.value = false
+  if (item.unread) {
+    await post('/receivable-reminders/read', { ids: [item.id] }, quietErrors)
+    item.unread = false
+    unread.value = Math.max(0, unread.value - 1)
+    announceReminderChanged()
+  }
   // 点进去要落在能干活的地方：催收清单，而不是一条只读通知。
-  router.push(item.detailUrl || '/receivable-due')
+  await router.push(item.contractNo ? `/receivable-due?keyword=${encodeURIComponent(item.contractNo)}` : (item.detailUrl || '/receivable-due'))
 }
 
 let timer: number | undefined
+let stopReminderListening: (() => void) | undefined
 onMounted(() => {
   pollUnread()
   timer = window.setInterval(pollUnread, 60_000)
+  stopReminderListening = onReminderChanged(() => { void (open.value ? load() : pollUnread()) })
 })
 onUnmounted(() => {
   if (timer) window.clearInterval(timer)
+  stopReminderListening?.()
 })
 </script>
 

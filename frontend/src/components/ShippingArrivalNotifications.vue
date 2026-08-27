@@ -70,6 +70,7 @@ import { useRouter } from 'vue-router'
 import { del, get, post } from '../api'
 import { onLive } from '../live'
 import type { ShippingArrivalReminder } from '../shipping'
+import { announceReminderChanged, onReminderChanged } from '../lib/homeReminders'
 
 const router = useRouter()
 const open = ref(false)
@@ -211,6 +212,7 @@ async function openReminder(item: ShippingArrivalReminder) {
     const data = await post<{ reminder: ShippingArrivalReminder }>(`/shipping/reminders/${item.id}/read`)
     item.readAt = data.reminder.readAt
     unreadCount.value = Math.max(0, unreadCount.value - 1)
+    announceReminderChanged()
   }
   open.value = false
   await router.push(item.detailUrl || `/shipping/${item.scheduleId}`)
@@ -221,14 +223,22 @@ function formatTime(value: string) {
 }
 
 let unsubscribe: (() => void) | undefined
+let stopReminderListening: (() => void) | undefined
+let timer: number | undefined
 onMounted(() => {
-  if (router.currentRoute.value.path.startsWith('/shipping')) void load(true)
+  void load(router.currentRoute.value.path.startsWith('/shipping'))
   unsubscribe = onLive((event) => {
-    if (event.type === 'shipping.arrival_reminder') void load(true)
+    if (event.type === 'shipping.arrival_reminder') {
+      void load(router.currentRoute.value.path.startsWith('/shipping'))
+    }
   })
+  stopReminderListening = onReminderChanged(() => { void load(false) })
+  timer = window.setInterval(() => { void load(false) }, 60_000)
 })
 onUnmounted(() => {
   unsubscribe?.()
+  stopReminderListening?.()
+  if (timer) window.clearInterval(timer)
   pendingPopups.clear()
   Array.from(activePopups.values()).forEach((popup) => popup.close())
   ElNotification.closeAll()

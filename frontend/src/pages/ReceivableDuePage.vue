@@ -100,11 +100,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { get } from '../api'
 
 const { t } = useI18n()
+const route = useRoute()
 
 interface Row {
   contractId: string
@@ -128,7 +130,7 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = 50
 const view = ref('')
-const keyword = ref('')
+const keyword = ref(String(route.query.keyword ?? ''))
 const loading = ref(false)
 
 // 三个数字算的是「当前这一页之外的全局」，所以各查一次 total——
@@ -190,6 +192,11 @@ function reload() {
   load()
   loadMetrics()
 }
+
+watch(() => route.query.keyword, (value) => {
+  keyword.value = String(value ?? '')
+  reload()
+})
 
 onMounted(() => {
   load()
