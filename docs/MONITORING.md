@@ -135,3 +135,33 @@ metronomically，持续了很久没人察觉——**日志里一直有，但没�
 同一个 cron 里顺带跑 `make audit-mail`（邮件数据完整性审计，✗ 数量 >0 时告警）
 ——它早就写好了，只是从来没被定时跑过，属于同一类问题：**能发现问题的东西
 存在，但没有人或机器去按它。**
+
+## 另一块：依赖容器停了，七条告警一条都不响
+
+2026-08-27 查出来的。Redis 和 Kafka 跑在这台机器的 Docker 里（数据库是 RDS，
+不在此列）。它们停掉之后：
+
+- CloudWatch 看的是 CPU / 内存 / 磁盘 / RDS ——**容器少了两个不体现在任何一条上**
+- `/api/healthz` 只回答「网关进程活着」，它有意不探测下游（部署门禁需要这样）
+- 员工也感觉不到：限流、登录失败节流、幂等三处在连不上 Redis 时都**选择放行**
+  （宁可不拦，也不要因为 Redis 故障让全公司登不上），只写一条 WARN
+
+合起来就是：**Redis 停了，系统看上去完全正常，只是暴力破解防护已经没了。**
+Kafka 停了则是领域事件在生产者那头一直重试、消费者那头什么都收不到。
+
+已经做的是把「让它别停」这一半补上——`deploy/docker-compose.infra.yml` 里
+那两个容器原来是 `restart: no`（十三个业务容器都是 `unless-stopped`），现在
+统一了。**没有做的是「停了要有人知道」**：那需要一个会探测下游的就绪探针，
+或者一条数容器的 cron。排在这一节上面那条日志 cron 的同一批里——两件事
+共用同一个「每天有人去按一下」的机制。
+
+在此之前，人工查一眼：
+
+```bash
+aws ssm send-command --region us-west-2 --instance-ids i-069173001683d7d9b \
+  --document-name AWS-RunShellScript \
+  --parameters 'commands=["docker ps --format \"{{.Names}}\t{{.Status}}\" | sort"]'
+```
+
+应该看到 **15 个容器全是 Up**：十三个 `erp-go-services-*`，加上
+`erp-go-infra-redis-1` 和 `erp-go-infra-kafka-1`。

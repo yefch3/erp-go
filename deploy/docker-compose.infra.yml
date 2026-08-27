@@ -1,10 +1,24 @@
-# Local infrastructure only. Host ports are shifted (+offset) so this stack
-# can run next to anything already using 5432/6379/9092; override via env.
+# 本地开发起全套；**生产也在跑这个文件里的 redis 和 kafka**。
+#
+# 生产的 postgres 是 RDS、附件是 S3，所以那两个只在本地起——生产上起的是
+#
+#     docker compose -f deploy/docker-compose.infra.yml up -d redis kafka
+#
+# 「本地专用」这句话原来写在这里，害得 restart 策略一直没人补：本地开发不需要
+# 容器自己爬起来，生产需要。2026-08-27 查出来时，十三个业务容器都是
+# unless-stopped，redis 和 kafka 是 no——机器一重启，业务容器全起来、这两个
+# 不起来，而系统看上去是好的（healthz 只答「网关活着」）。见下面 redis 那段。
+#
+# Host ports are shifted (+offset) so this stack can run next to anything
+# already using 5432/6379/9092; override via env.
 name: erp-go-infra
 
 services:
   postgres:
     image: postgres:16-alpine
+    # 只在本地起（生产是 RDS）。策略跟另外三个保持一致——「这个有那个没有」
+    # 正是这次漏掉 redis 的原因。本地不想让它开机自启就 make down。
+    restart: unless-stopped
     environment:
       POSTGRES_USER: erp
       POSTGRES_PASSWORD: erp_dev_password
@@ -26,6 +40,9 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.6.0
+    # 生产也跑它，理由同 redis。Kafka 停了业务不会报错，只是领域事件在生产者
+    # 那头一直重试、消费者那头什么都收不到——同样是没人看得见的那种坏。
+    restart: unless-stopped
     environment:
       # Kafka's own default is -Xms1G -Xmx1G, and -Xms is claimed at startup
       # whether or not there is traffic: 1 GB resident to carry a handful of
@@ -58,6 +75,28 @@ services:
 
   redis:
     image: redis:7-alpine
+    # Redis 停摆是**静默**的：限流、登录失败节流、幂等三处在连不上时都选择
+    # 放行（宁可不拦，也不要因为 Redis 故障让全公司登不上），只写一条 WARN；
+    # healthz 又只回答「网关活着」。于是「Redis 没在跑」这件事，机器层监控
+    # 看不见、员工也感觉不到——除了暴力破解防护已经没了。所以它必须自己
+    # 爬得起来。
+    restart: unless-stopped
+    # 内存护栏。库里的键都带 TTL，正常涨不到这里；这条挡的是「出了别的问题
+    # 导致无界增长」——真涨满了，默认的 noeviction 会让写入失败，而这台机器上
+    # 还住着十三个业务容器，宁可丢最旧的键也不能把主机撑爆。
+    #
+    # --save 三条是 redis 镜像的默认值，照抄一遍：一旦写了 command，镜像里
+    # 那份默认配置就不生效了，不重复写就等于顺手把落盘关掉了。
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 3600 1 --save 300 100 --save 60 10000
+    volumes:
+      # 具名卷。不写的话用的是镜像自带的匿名卷，docker volume prune 会顺手
+      # 清掉——里面的东西都可重建（大不了重新验一次邮箱授权码），但一个叫得
+      # 出名字的卷才管得住。
+      - redisdata:/data
     ports:
       - "127.0.0.1:${REDIS_PORT:-6380}:6379"
     healthcheck:
@@ -67,6 +106,8 @@ services:
 
   minio:
     image: minio/minio:latest
+    # 只在本地起（生产是 S3）。理由同 postgres。
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: erp
@@ -85,3 +126,4 @@ volumes:
   pgdata:
   kafkadata:
   miniodata:
+  redisdata:
