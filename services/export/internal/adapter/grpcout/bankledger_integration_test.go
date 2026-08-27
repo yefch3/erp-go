@@ -129,8 +129,17 @@ func TestBankLedgerCrossService(t *testing.T) {
 		t.Fatalf("错误的正文没传过来: %v", err)
 	}
 
-	// 改归属（收款对账的「标记与应收无关」就是这个动作），改完这一笔从
-	// 客户那一档消失。
+	// 已经核满的行不许把归属改走——这道闸也得在网线上拦得住，
+	// 而且错误码要能原样传回来。
+	err = ledger.SetOwnership(ctx, row.ID, app.OwnershipTaxRefund, "")
+	if code := apierr.CodeFromStatus(err); code != "BANK_TXN_OWNERSHIP_ALLOCATED" {
+		t.Fatalf("已核销的行改归属应该被拒绝: code=%q err=%v", code, err)
+	}
+
+	// 冲销回 0 之后才能改。改完这一笔从客户那一档消失。
+	if err := ledger.SetClaim(ctx, row.ID, "0"); err != nil {
+		t.Fatalf("冲销: %v", err)
+	}
 	if err := ledger.SetOwnership(ctx, row.ID, app.OwnershipTaxRefund, ""); err != nil {
 		t.Fatalf("改归属: %v", err)
 	}

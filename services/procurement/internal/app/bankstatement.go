@@ -324,8 +324,13 @@ func (s *Service) SetBankTransactionOwnership(ctx context.Context, tenantID, txn
 		return apierr.Invalid("BANK_TXN_OWNERSHIP_DETAIL",
 			"只有归属为「不用核销」时才能填二级分类")
 	}
-	// 已经被付款单认领的流水不许改归属：改走了，那张付款单就指着一笔写着
-	// 「我不是供应商的钱」的流水。要改先取消匹配。
+	// 已经被认领的流水不许把归属改走：改走了，认领它的那张单据就指着一笔
+	// 写着「我不是你那条线上的钱」的流水。要改先解开认领。
+	//
+	// **两条线都要挡，一边一句。** 这里原来只写了供应商那一句，客户那句漏了，
+	// 于是两步就能把一笔已核销的钱变成孤儿：在收款对账核销 10000（认领满），
+	// 再到银行流水页把归属改成「不用核销」——后端放行，而出口库里那几条核销
+	// 记录还指着它，合同上那 10000 照样算收到了。
 	var matched int64
 	if err := s.pool.QueryRow(ctx, `
 		SELECT count(*) FROM supplier_payments
@@ -335,6 +340,30 @@ func (s *Service) SetBankTransactionOwnership(ctx context.Context, tenantID, txn
 	if matched > 0 && ownership != OwnershipSupplier {
 		return apierr.Conflict("BANK_TXN_OWNERSHIP_MATCHED",
 			"这条流水已经匹配了供应商付款单，要改归属请先取消匹配")
+	}
+	var claimed, rowAmount string
+	err := s.pool.QueryRow(ctx, `
+		SELECT claimed_amount::text, amount::text FROM bank_transactions
+		 WHERE tenant_id=$1 AND id=$2`, tenantID, txnID).Scan(&claimed, &rowAmount)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return apierr.NotFound("BANK_TXN_NOT_FOUND", "银行流水不存在")
+	}
+	if err != nil {
+		return err
+	}
+	// 认领数是客户那条线核销之后写回来的（供应商那条线走上面的 matched，
+	// 它匹配时也会把这个数写满，所以这里只在没有付款单认领时才管——否则
+	// 取消匹配那条路会被自己挡住）。
+	//
+	// **这一道是尽力而为，不是最后一道。** 它看的是账本上那个写回来的数，
+	// 万一出口那次写回失败了（会记 WARN，见 export 的 logClaimGap），这里
+	// 就看不见那笔核销。真正说了算的是出口自己那道——收款对账的「标记与
+	// 应收无关」在锁里读的是核销记录本身。这里挡的是从银行流水页绕过去的
+	// 那条路，能挡住绝大多数，挡不住的那部分在出口那边还有一道。
+	if amt, ok := normalizeBankAmount(claimed); ok && amt.IsPositive() &&
+		matched == 0 && ownership != OwnershipCustomer {
+		return apierr.Conflict("BANK_TXN_OWNERSHIP_ALLOCATED",
+			"这条流水已经核销到出口合同（已核 "+amt.String()+"），要改归属请先在收款对账里冲销")
 	}
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE bank_transactions SET ownership=$3, ownership_detail=$4

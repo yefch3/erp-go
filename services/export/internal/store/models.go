@@ -8,40 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type BankAccount struct {
-	ID          int64
-	TenantID    int64
-	AccountNo   string
-	AccountName string
-	BankName    string
-	Currency    string
-	Status      string
-	CreatedAt   pgtype.Timestamptz
-}
-
-type BankTransaction struct {
-	ID                  int64
-	TenantID            int64
-	AccountID           int64
-	BankRef             string
-	Direction           string
-	Amount              pgtype.Numeric
-	Currency            string
-	ValueDate           pgtype.Date
-	Counterparty        string
-	CounterpartyAccount string
-	RemittanceInfo      string
-	Source              string
-	TrustedRef          string
-	Disposition         string
-	IrrelevantType      string
-	Note                string
-	RecordedBy          int64
-	RecordedByName      string
-	CreatedAt           pgtype.Timestamptz
-	UpdatedAt           pgtype.Timestamptz
-}
-
 type Contract struct {
 	ID                   int64
 	TenantID             int64
@@ -139,6 +105,19 @@ type ContractVersion struct {
 	Status          string
 	CreatedAt       pgtype.Timestamptz
 	CreatedBy       int64
+}
+
+type FailedEvent struct {
+	ID            int64
+	TenantID      int64
+	EventID       string
+	ConsumerGroup string
+	Topic         string
+	EventType     string
+	AggregateID   string
+	Payload       []byte
+	Reason        string
+	ParkedAt      pgtype.Timestamptz
 }
 
 type OutboxEvent struct {

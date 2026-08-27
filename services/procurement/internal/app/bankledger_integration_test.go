@@ -326,16 +326,96 @@ func TestBankLedgerDoesNotUseOrderScope(t *testing.T) {
 	if _, err := svc.GetBankTransaction(ctx, tenantID, row.ID, op); err != nil {
 		t.Fatalf("SELF 范围的人应该能看单行: %v", err)
 	}
-	if err := svc.SetBankTransactionClaim(ctx, tenantID, row.ID, "100", op); err != nil {
-		t.Fatalf("SELF 范围的人应该能报认领: %v", err)
-	}
+	// 改归属放在报认领之前：认领之后归属就该被锁住了（见
+	// TestOwnershipCannotBeMovedAwayFromAllocatedRow），那是另一条规矩，
+	// 和数据范围没关系。这个测试问的只是「范围拦不拦人」。
 	if err := svc.SetBankTransactionOwnership(ctx, tenantID, row.ID, OwnershipTaxRefund, "", op); err != nil {
 		t.Fatalf("SELF 范围的人应该能改归属: %v", err)
+	}
+	if err := svc.SetBankTransactionOwnership(ctx, tenantID, row.ID, OwnershipCustomer, "", op); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetBankTransactionClaim(ctx, tenantID, row.ID, "100", op); err != nil {
+		t.Fatalf("SELF 范围的人应该能报认领: %v", err)
 	}
 
 	// 另一边：供应商对账仍然要全量，理由不一样，闸也不该跟着一起拆。
 	if _, err := svc.ListSupplierStatements(ctx, tenantID, "", op); err == nil ||
 		!strings.Contains(err.Error(), "PR_RECON_SCOPE_LIMITED") {
 		t.Fatalf("供应商对账应该仍然要求全量范围，实际 %v", err)
+	}
+}
+
+// 已经核销给出口合同的流水，不许把归属改走。
+//
+// 这条以前只写了供应商那一半：付款单认领了就不许改。客户那一半漏了，于是
+// **两步就能把一笔已核销的钱变成孤儿**——在收款对账核销满，再到银行流水页
+// 把归属改成「不用核销」，后端放行，而出口库里那几条核销记录还指着它，
+// 合同上那笔钱照样算收到了。
+//
+// 两条线现在一边一句，形状一样。
+func TestOwnershipCannotBeMovedAwayFromAllocatedRow(t *testing.T) {
+	dsn := os.Getenv("PROCUREMENT_TEST_DSN")
+	if dsn == "" {
+		t.Skip("PROCUREMENT_TEST_DSN not set; skipping DB-backed ownership guard test")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenantID := time.Now().UnixNano()
+	defer func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM bank_transactions WHERE tenant_id=$1`, tenantID)
+	}()
+
+	svc := New(pool, Deps{})
+	op := Operator{ID: 9, Name: "财务"}
+
+	row, err := svc.RecordBankTransaction(ctx, tenantID, BankTransactionInput{
+		BankRef: "OWN-" + itoa64(tenantID), Direction: "CREDIT",
+		Amount: "10000", Currency: "USD", TxnDate: "2026-08-22",
+		Ownership: OwnershipCustomer,
+	}, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 还没核销：归属随便改。
+	if err := svc.SetBankTransactionOwnership(ctx, tenantID, row.ID, OwnershipTaxRefund, "", op); err != nil {
+		t.Fatalf("没核销过的行应该能改归属: %v", err)
+	}
+	if err := svc.SetBankTransactionOwnership(ctx, tenantID, row.ID, OwnershipCustomer, "", op); err != nil {
+		t.Fatal(err)
+	}
+
+	// 核销满了。
+	if err := svc.SetBankTransactionClaim(ctx, tenantID, row.ID, "10000", op); err != nil {
+		t.Fatal(err)
+	}
+
+	// 现在改到别的档：拒绝，而且要说清楚去哪儿冲销。
+	for _, target := range []string{OwnershipTaxRefund, OwnershipOther, OwnershipSupplier, ""} {
+		err := svc.SetBankTransactionOwnership(ctx, tenantID, row.ID, target, "", op)
+		if err == nil || !strings.Contains(err.Error(), "BANK_TXN_OWNERSHIP_ALLOCATED") {
+			t.Fatalf("已核销的行改归属到 %q 应该被拒绝，实际 %v", target, err)
+		}
+		if !strings.Contains(err.Error(), "收款对账") {
+			t.Fatalf("拒绝的话要说去哪儿冲销，实际 %q", err.Error())
+		}
+	}
+
+	// 改回「客户收款」是空操作，应该放行——否则连纠正 detail 都做不了。
+	if err := svc.SetBankTransactionOwnership(ctx, tenantID, row.ID, OwnershipCustomer, "", op); err != nil {
+		t.Fatalf("改回客户那一档应该放行: %v", err)
+	}
+
+	// 冲销到 0 之后又能自由改了。
+	if err := svc.SetBankTransactionClaim(ctx, tenantID, row.ID, "0", op); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetBankTransactionOwnership(ctx, tenantID, row.ID, OwnershipTaxRefund, "", op); err != nil {
+		t.Fatalf("冲销之后应该又能改: %v", err)
 	}
 }

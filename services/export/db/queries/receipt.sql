@@ -30,6 +30,17 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND transaction_id = sqlc.arg(transaction_id)::bigint
 ORDER BY id;
 
+-- name: AllocationSumsByTransactions :many
+-- 一页流水的已核金额，一次问完。
+--
+-- 收款对账的列表原来对每一行单独查一次核销记录（20 行一页就是 20 次往返），
+-- 而列表上只用得到一个和——完整的核销明细只有详情页要。
+SELECT transaction_id, sum(amount)::text AS allocated
+FROM receipt_allocations
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND transaction_id = ANY(sqlc.arg(transaction_ids)::bigint[])
+GROUP BY transaction_id;
+
 -- name: GetAllocation :one
 SELECT
     id, transaction_id, contract_id, contract_no, customer_name,
