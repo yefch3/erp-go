@@ -180,6 +180,72 @@ func TestExtractorFollowsTemplateColumns(t *testing.T) {
 	}
 }
 
+func TestExtractorRequiresEveryPrecountedSpreadsheetRow(t *testing.T) {
+	refs := []string{"PRODUCTS!3", "COILS!3"}
+	var captured map[string]any
+	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &captured)
+		extracted, _ := json.Marshal(map[string]any{
+			"title": "t", "summary": "s",
+			"items": []map[string]string{
+				{"source_ref": "PRODUCTS!3", "product": "sheet", "quantity": "1", "quantity_unit": "MT"},
+				{"source_ref": "COILS!3", "product": "coil", "quantity": "2", "quantity_unit": "MT"},
+			},
+		})
+		responseBytes, _ := json.Marshal(map[string]any{
+			"model": "gpt-5.6-luna", "status": "completed",
+			"output": []any{map[string]any{"type": "message", "content": []any{
+				map[string]any{"type": "output_text", "text": string(extracted)},
+			}}},
+		})
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(bytes.NewReader(responseBytes)), Request: r}, nil
+	})}
+	client := NewTableExtractor("test-key", "https://api.test/v1", "gpt-5.6-luna", time.Second).WithHTTPClient(httpClient)
+	got, err := client.Extract(t.Context(), app.TableExtractionInput{Text: "two rows", SourceRefs: refs})
+	if err != nil || len(got.Workbook.Sheets[0].Rows) != 2 {
+		t.Fatalf("valid source coverage: workbook=%#v err=%v", got.Workbook, err)
+	}
+	format := captured["text"].(map[string]any)["format"].(map[string]any)
+	properties := format["schema"].(map[string]any)["properties"].(map[string]any)["items"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
+	if got := properties["source_ref"].(map[string]any)["enum"]; len(got.([]any)) != 2 {
+		t.Fatalf("source_ref enum = %#v", got)
+	}
+	input := captured["input"].([]any)[0].(map[string]any)["content"].([]any)
+	prompt := input[0].(map[string]any)["text"].(string)
+	for _, want := range []string{"context_sheets", "context_blocks", "Context blocks never create requested items", "length_or_form must contain only a canonical decimal length in millimetres", "rectangular tube/REC/RECT", "custom.height_or_leg2", "inch fractions"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("spreadsheet prompt misses %q: %s", want, prompt)
+		}
+	}
+	if captured["stream"] != true {
+		t.Fatalf("stream = %#v, want true", captured["stream"])
+	}
+
+	bad := app.ExtractedInquiry{Items: []map[string]string{{"source_ref": "PRODUCTS!3"}}}
+	if err := validateSourceRefs(bad, refs); err == nil {
+		t.Fatal("missing source row must fail validation")
+	}
+}
+
+func TestDecodeStreamingCompletedResponse(t *testing.T) {
+	stream := strings.Join([]string{
+		"event: response.created",
+		`data: {"type":"response.created","response":{"status":"in_progress"}}`,
+		"",
+		"event: response.completed",
+		`data: {"type":"response.completed","response":{"model":"gpt-test","status":"completed","usage":{"input_tokens":12,"output_tokens":4},"output":[{"type":"message","content":[{"type":"output_text","text":"{\"title\":\"t\",\"summary\":\"s\",\"items\":[]}"}]}]}}`,
+		"",
+	}, "\n")
+	got, err := decodeResponse(strings.NewReader(stream), "text/event-stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "completed" || got.Model != "gpt-test" || got.Usage.InputTokens != 12 {
+		t.Fatalf("decoded stream = %#v", got)
+	}
+}
+
 func TestExtractorRejectsMissingAPIKeyWithoutNetwork(t *testing.T) {
 	client := NewTableExtractor("", "", "", time.Second)
 	_, err := client.Extract(t.Context(), app.TableExtractionInput{Text: "a,b\n1,2"})

@@ -769,6 +769,46 @@
   </div>
 
   <el-dialog
+    v-model="excelTemplateOpen"
+    :title="t('emails.selectExcelTemplate')"
+    width="min(520px, 92vw)"
+    append-to-body
+  >
+    <el-form label-position="top" v-loading="excelTemplatesBusy">
+      <el-form-item :label="t('emails.excelTemplate')" required>
+        <el-select
+          v-model="selectedInquiryTemplateId"
+          :placeholder="t('emails.excelTemplatePlaceholder')"
+          style="width: 100%"
+        >
+          <el-option
+            v-for="template in excelTemplates"
+            :key="template.id"
+            :value="template.id"
+            :label="`${template.name} (v${template.version})`"
+          >
+            <span>{{ template.name }} (v{{ template.version }})</span>
+            <el-tag v-if="template.isDefault" size="small" type="success" effect="plain" style="margin-left: 8px">
+              {{ t('emails.defaultTemplate') }}
+            </el-tag>
+          </el-option>
+        </el-select>
+      </el-form-item>
+      <p v-if="selectedExcelTemplate?.description" class="sub">{{ selectedExcelTemplate.description }}</p>
+    </el-form>
+    <template #footer>
+      <el-button @click="excelTemplateOpen = false">{{ common('cancel') }}</el-button>
+      <el-button
+        type="primary"
+        :disabled="!selectedInquiryTemplateId || excelTemplatesBusy"
+        @click="confirmExcelTemplate"
+      >
+        {{ t('emails.generateExcel') }}
+      </el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog
     v-model="excelOpen"
     :title="excelResult?.fileName || t('emails.excelPreview')"
     width="min(1100px, 94vw)"
@@ -783,6 +823,7 @@
         <div class="excel-model">
           <template v-if="excelResult.model">{{ t('emails.generatedBy', { model: excelResult.model }) }}</template>
           <template v-else>{{ t('emails.excelDirectNote') }}</template>
+          <span v-if="excelResult.model && selectedExcelTemplate"> · {{ t('emails.excelTemplateUsed', { name: selectedExcelTemplate.name, version: selectedExcelTemplate.version }) }}</span>
         </div>
         <el-tabs v-model="excelSheet">
           <el-tab-pane
@@ -817,8 +858,8 @@
       >
         {{ t('emails.createSourcingCase') }}
       </el-button>
-      <el-button v-if="excelResult" :loading="excelBusy" @click="regenerateExcel">
-        {{ t('emails.regenerateExcel') }}
+      <el-button v-if="excelResult && excelAvailable" :loading="excelBusy" @click="regenerateExcel">
+        {{ t('emails.switchTemplateAndRegenerate') }}
       </el-button>
       <el-button v-if="excelResult" type="primary" @click="downloadExcel">
         {{ t('emails.downloadExcel') }}
@@ -905,6 +946,7 @@ import { useI18n } from 'vue-i18n'
 import { del, download, get, http, mailExcelRequest, mailHostRequest, post, saveBlob } from '../api'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
 import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
+import type { InquiryTemplate } from '../lib/inquiryTemplates'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import EmailComposer from '../components/EmailComposer.vue'
@@ -2416,6 +2458,14 @@ const excelMenu = reactive({
   open: false, x: 0, y: 0, source: null as ExcelSource | null, disabledReason: '',
 })
 const excelOpen = ref(false)
+const excelTemplateOpen = ref(false)
+const excelTemplatesBusy = ref(false)
+const excelTemplates = ref<InquiryTemplate[]>([])
+const selectedInquiryTemplateId = ref('')
+const pendingExcelSource = ref<ExcelSource | null>(null)
+const selectedExcelTemplate = computed(() =>
+  excelTemplates.value.find((template) => template.id === selectedInquiryTemplateId.value) ?? null,
+)
 const excelBusy = ref(false)
 const excelResult = ref<ExcelResult | null>(null)
 const excelJobId = ref('')
@@ -2437,10 +2487,11 @@ const excelResultCache = new Map<string, ExcelResult>()
 // 们真正的样子——推导反而会挑错那一版。
 let excelPollTimer: number | null = null
 
-function excelCacheKey(source: ExcelSource): string {
-  return source.kind === 'attachment'
+function excelCacheKey(source: ExcelSource, templateId = selectedInquiryTemplateId.value): string {
+  const sourceKey = source.kind === 'attachment'
     ? `attachment:${source.mailId}:${source.attachmentId}`
     : `text:${source.mailId}:${source.text}`
+  return `${sourceKey}:template:${templateId || 'direct'}`
 }
 
 onUnmounted(() => {
@@ -2606,7 +2657,49 @@ async function convertExcelSelection() {
   const source = excelMenu.source
   closeExcelMenu()
   if (!source || excelBusy.value || excelMenu.disabledReason) return
-  const cached = excelResultCache.get(excelCacheKey(source))
+  // 有模型时先选模板，即使附件本身是 xlsx 也要按所选模板标准化。没有模型
+  // 时仍保留原表直接预览，避免破坏既有的基础查看能力。
+  const directFile = directTableAttachment(source)
+  if (!excelAvailable.value) {
+    if (directFile && (await openAttachmentDirect(directFile))) return
+    ElMessage.error(t('emails.excelUnavailable'))
+    return
+  }
+  await openExcelTemplatePicker(source)
+}
+
+async function loadExcelTemplates() {
+  excelTemplatesBusy.value = true
+  try {
+    const data = await get<{ templates: InquiryTemplate[] }>('/mail-inquiry-templates', undefined, mailExcelRequest)
+    excelTemplates.value = (data.templates ?? []).filter((template) => template.status === 'ACTIVE')
+    const selectedStillExists = excelTemplates.value.some((template) => template.id === selectedInquiryTemplateId.value)
+    if (!selectedStillExists) {
+      selectedInquiryTemplateId.value = excelTemplates.value.find((template) => template.isDefault)?.id
+        ?? excelTemplates.value[0]?.id
+        ?? ''
+    }
+  } finally {
+    excelTemplatesBusy.value = false
+  }
+}
+
+async function openExcelTemplatePicker(source: ExcelSource) {
+  pendingExcelSource.value = source
+  excelTemplateOpen.value = true
+  try {
+    await loadExcelTemplates()
+  } catch {
+    excelTemplateOpen.value = false
+  }
+}
+
+async function confirmExcelTemplate() {
+  const source = pendingExcelSource.value
+  const templateId = selectedInquiryTemplateId.value
+  if (!source || !templateId || excelTemplatesBusy.value) return
+  excelTemplateOpen.value = false
+  const cached = excelResultCache.get(excelCacheKey(source, templateId))
   if (cached) {
     convertedExcelSource.value = source
     excelResult.value = cached
@@ -2614,16 +2707,7 @@ async function convertExcelSelection() {
     excelOpen.value = true
     return
   }
-  // A spreadsheet attachment is already a table: read it as-is and skip the
-  // model entirely. Other sources — or a local read that failed — fall
-  // through to the model path below.
-  const directFile = directTableAttachment(source)
-  if (directFile && (await openAttachmentDirect(directFile))) return
-  if (!excelAvailable.value) {
-    if (directFile) ElMessage.error(t('emails.excelFailed'))
-    return
-  }
-  await startExcelConversion(source)
+  await startExcelConversion(source, templateId)
 }
 
 function directTableAttachment(source: ExcelSource): MailFile | null {
@@ -2663,7 +2747,7 @@ async function openAttachmentDirect(file: MailFile): Promise<boolean> {
       })),
       model: '',
     }
-    excelResultCache.set(excelCacheKey(source), result)
+    excelResultCache.set(excelCacheKey(source, 'direct'), result)
     excelResult.value = result
     excelSheet.value = result.sheets[0]?.name ?? ''
     return true
@@ -2684,7 +2768,7 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-async function startExcelConversion(source: ExcelSource) {
+async function startExcelConversion(source: ExcelSource, templateId = selectedInquiryTemplateId.value) {
   excelResult.value = null
   convertedExcelSource.value = source
   excelSheet.value = ''
@@ -2692,8 +2776,8 @@ async function startExcelConversion(source: ExcelSource) {
   excelBusy.value = true
   try {
     const body = source.kind === 'text'
-      ? { selectedText: source.text, locale: locale.value }
-      : { attachmentId: source.attachmentId, locale: locale.value }
+      ? { selectedText: source.text, locale: locale.value, inquiryTemplateId: templateId }
+      : { attachmentId: source.attachmentId, locale: locale.value, inquiryTemplateId: templateId }
     const response = await post<{ job: ExcelJob }>(
       `/inbound-mails/${source.mailId}/excel`, body, mailExcelRequest,
     )
@@ -2710,7 +2794,8 @@ async function startExcelConversion(source: ExcelSource) {
 async function regenerateExcel() {
   const source = convertedExcelSource.value
   if (!source || excelBusy.value || !excelAvailable.value) return
-  await startExcelConversion(source)
+  excelOpen.value = false
+  await openExcelTemplatePicker(source)
 }
 
 function resumeExcelJob() {
@@ -2754,9 +2839,10 @@ async function refreshExcelJob(subject = '') {
     job.result.inquiryTemplateId = job.inquiryTemplateId
     job.result.inquiryTemplateCode = job.inquiryTemplateCode
     job.result.inquiryTemplateVersion = job.inquiryTemplateVersion
+    if (job.inquiryTemplateId) selectedInquiryTemplateId.value = job.inquiryTemplateId
     excelResult.value = job.result
     if (convertedExcelSource.value) {
-      excelResultCache.set(excelCacheKey(convertedExcelSource.value), job.result)
+      excelResultCache.set(excelCacheKey(convertedExcelSource.value, job.inquiryTemplateId), job.result)
     }
     excelSheet.value = job.result.sheets[0]?.name ?? ''
     excelOpen.value = true

@@ -660,6 +660,9 @@ func (s *Server) Router() http.Handler {
 		// different shape.
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-search", s.searchMail)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/inbound-mails/{id}", s.getInbound)
+		// 邮箱转换也要能选择询盘模板；这里复用同一个只读 handler，但权限按
+		// 邮箱场景收口，用户无需先获得采购模块权限或跳到采购页面。
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-inquiry-templates", s.listInquiryTemplates)
 		// Explicit user action only: selected text or one stored attachment is
 		// sent to the configured model and returned as an Excel workbook.
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/excel", s.convertInboundToExcel)
