@@ -33,6 +33,7 @@ func (h *OrderHandler) ListBankTransactions(ctx context.Context, req *prv1.ListB
 	items, total, err := h.svc.ListBankTransactions(ctx, grpcx.TenantID(ctx),
 		app.BankTransactionFilter{
 			Status: req.GetStatus(), Direction: req.GetDirection(), Keyword: req.GetKeyword(),
+			Ownership: req.GetOwnership(), OwnershipPending: req.GetOwnershipPending(),
 		}, req.GetPage().GetPage(), req.GetPage().GetPageSize(),
 		app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
@@ -48,6 +49,8 @@ func (h *OrderHandler) ListBankTransactions(ctx context.Context, req *prv1.ListB
 			MatchedPaymentId: v.MatchedPaymentID, MatchedPaymentNo: v.MatchedPaymentNo,
 			SuggestedPaymentId: v.SuggestedPaymentID, SuggestedPaymentNo: v.SuggestedPaymentNo,
 			SuggestedPaymentSupplier: v.SuggestedPaymentSupplier,
+			Ownership:                v.Ownership,
+			OwnershipDetail:          v.OwnershipDetail,
 		})
 	}
 	return &prv1.ListBankTransactionsResponse{Items: out, Total: total}, nil
@@ -69,4 +72,14 @@ func (h *OrderHandler) UnmatchBankTransaction(ctx context.Context, req *prv1.Unm
 		return nil, err
 	}
 	return &prv1.UnmatchBankTransactionResponse{}, nil
+}
+
+func (h *OrderHandler) SetBankTransactionOwnership(ctx context.Context, req *prv1.SetBankTransactionOwnershipRequest) (*prv1.SetBankTransactionOwnershipResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	if err := h.svc.SetBankTransactionOwnership(ctx, grpcx.TenantID(ctx),
+		req.GetTxnId(), req.GetOwnership(), req.GetOwnershipDetail(),
+		app.Operator{ID: op.EmployeeID, Name: op.Name}); err != nil {
+		return nil, err
+	}
+	return &prv1.SetBankTransactionOwnershipResponse{}, nil
 }

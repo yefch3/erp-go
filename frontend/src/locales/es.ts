@@ -146,6 +146,13 @@ export default {
     lineTypes: { INVOICE: 'Factura', PAYMENT: 'Pago', PAYMENT_REVERSAL: 'Reverso', ADVANCE: 'Anticipo', ADVANCE_REVERSAL: 'Reverso de anticipo' },
   },
   bankTransactions: {
+    ownership: 'Pertenece a', ownershipAll: 'Cualquiera',
+    ownerships: { PENDING: 'Sin clasificar', CUSTOMER: 'Cobro de cliente', SUPPLIER: 'Proveedor', TAX_REFUND: 'Devolución de impuestos', OTHER: 'Sin conciliar' },
+    ownershipDetails: { INTEREST: 'Intereses bancarios', INTERNAL: 'Traspaso interno', DEPOSIT_RETURN: 'Devolución de depósito', OTHER: 'Otros' },
+    setOwnership: 'Reasignar', ownershipTitle: '¿A qué lado pertenece este dinero?',
+    ownershipDetailPlaceholder: 'Elige una categoría',
+    ownershipHint: 'No es lo mismo que cargo/abono: la devolución de un proveedor es dinero que ENTRA pero pertenece a Proveedor y se concilia contra un pago de compras. Lo que elijas aquí decide quién puede conciliarlo después.',
+    ownershipSaved: 'Guardado',
     eyebrow: 'EXTRACTO', title: 'Movimientos bancarios', subtitle: 'El registro del banco: importe extractos y emparéjelos con pagos',
     import: 'Importar CSV', defaultCurrency: 'Moneda de importación (opcional)',
     defaultCurrencyHint: 'Solo para importar: si el CSV trae columna de moneda, manda el archivo; esto cubre cuando no la trae. No es un filtro.',
