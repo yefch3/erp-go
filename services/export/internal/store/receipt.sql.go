@@ -567,7 +567,7 @@ FROM receivable_reminders
 WHERE tenant_id = $1::bigint
   AND recipient_employee_id = $2::bigint
   AND ($3::bool = false OR read_at IS NULL)
-ORDER BY (read_at IS NULL) DESC, created_at DESC
+ORDER BY (read_at IS NULL) DESC, created_at DESC, id DESC
 LIMIT $4::int
 `
 
@@ -597,6 +597,9 @@ type ListReceivableRemindersRow struct {
 }
 
 // 某人的应收提醒收件箱。未读在前，同一批里新的在前。
+// id 收口：提醒是 sweeper 一趟批量插的，created_at 必然打平。top-N 没有
+// 唯一列收口时「取哪 50 条」不确定——刷新一次，看到的提醒可能换一批，
+// 「我刚才看到那条催款提醒，现在找不到了」。
 func (q *Queries) ListReceivableReminders(ctx context.Context, arg ListReceivableRemindersParams) ([]ListReceivableRemindersRow, error) {
 	rows, err := q.db.Query(ctx, listReceivableReminders,
 		arg.TenantID,

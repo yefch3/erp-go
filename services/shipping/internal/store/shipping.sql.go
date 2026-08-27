@@ -1285,7 +1285,7 @@ FROM shipping_bl_reminders
 WHERE tenant_id = $1::bigint
   AND recipient_employee_id = $2::bigint
   AND ($3::bool = false OR read_at IS NULL)
-ORDER BY (read_at IS NULL) DESC, created_at DESC
+ORDER BY (read_at IS NULL) DESC, created_at DESC, id DESC
 LIMIT $4::int
 `
 
@@ -1315,6 +1315,8 @@ type ListBLRemindersRow struct {
 }
 
 // 某人的提单提醒收件箱：未读在前，同批里新的在前。
+// id 收口，理由同应收提醒：批量插入的行 created_at 打平，top-N 取哪几条
+// 不确定，刷新一次清单会换。
 func (q *Queries) ListBLReminders(ctx context.Context, arg ListBLRemindersParams) ([]ListBLRemindersRow, error) {
 	rows, err := q.db.Query(ctx, listBLReminders,
 		arg.TenantID,

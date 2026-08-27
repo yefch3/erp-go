@@ -509,7 +509,9 @@ FROM shipping_bl_reminders
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND recipient_employee_id = sqlc.arg(employee_id)::bigint
   AND (sqlc.arg(unread_only)::bool = false OR read_at IS NULL)
-ORDER BY (read_at IS NULL) DESC, created_at DESC
+-- id 收口，理由同应收提醒：批量插入的行 created_at 打平，top-N 取哪几条
+-- 不确定，刷新一次清单会换。
+ORDER BY (read_at IS NULL) DESC, created_at DESC, id DESC
 LIMIT sqlc.arg(row_limit)::int;
 
 -- name: MarkBLRemindersRead :execrows
