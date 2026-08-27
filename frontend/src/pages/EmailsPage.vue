@@ -358,7 +358,7 @@
              which is the state that tells you a click will clear rather than
              extend. -->
         <el-checkbox
-          v-if="isInboundView && inbound.length > 0"
+          v-if="isListFolder(folder) && selectable.length > 0"
           class="pick-all"
           :model-value="allPicked"
           :indeterminate="somePicked"
@@ -372,17 +372,19 @@
         <template v-if="pickedRows.length">
           <span class="picked-n">{{ t('emails.pickedN', { n: pickedRows.length }) }}</span>
           <span class="grow" />
-          <el-button v-if="folder !== 'trash'" size="small" @click="bulkMark({ read: true })">
+          <!-- 已读/未读在已发送里没有意义——自己发出去的信本来就是读过的，而且
+               行内的按钮也从来不给已发送这两个，工具条不该比行多出两个按钮。 -->
+          <el-button v-if="canBulkRead" size="small" @click="bulkMark({ read: true })">
             {{ t('emails.markRead') }}
           </el-button>
-          <el-button v-if="folder !== 'trash'" size="small" @click="bulkMark({ read: false })">
+          <el-button v-if="canBulkRead" size="small" @click="bulkMark({ read: false })">
             {{ t('emails.markUnread') }}
           </el-button>
           <el-button v-if="folder === 'junk'" size="small" @click="bulkMark({ notJunk: true })">
             {{ t('emails.notJunk') }}
           </el-button>
           <el-button
-            v-if="folder === 'inbox' || folder === 'starred'"
+            v-if="folder === 'inbox' || folder === 'starred' || folder === 'sent'"
             size="small"
             @click="bulkMark({ archived: true })"
           >
@@ -418,13 +420,69 @@
             {{ t('emails.clearSelection') }}
           </el-button>
         </template>
+        <!-- 表格类文件夹的选择。勾选框在表头（el-table 自己的选择列），能对它做
+             什么在这里——和邮件列表用的是同一条工具条，所以「选中之后去哪找按钮」
+             这个问题在十个文件夹里只有一个答案。 -->
+        <template v-else-if="tablePicked.length">
+          <span class="picked-n">
+            {{ folder === 'suppressions'
+              ? t('emails.pickedAddrN', { n: tablePicked.length })
+              : t('emails.pickedN', { n: tablePicked.length }) }}
+          </span>
+          <span class="grow" />
+          <el-button
+            v-if="folder === 'drafts'"
+            size="small"
+            type="danger"
+            plain
+            :loading="bulkBusy"
+            @click="bulkDropDrafts"
+          >
+            {{ common('delete') }}
+          </el-button>
+          <el-button
+            v-if="folder === 'scheduled'"
+            size="small"
+            type="danger"
+            plain
+            :loading="bulkBusy"
+            @click="bulkCancelScheduled"
+          >
+            {{ t('emails.cancelSchedule') }}
+          </el-button>
+          <el-button
+            v-if="folder === 'attention'"
+            size="small"
+            type="danger"
+            plain
+            :loading="bulkBusy"
+            @click="bulkAbandon"
+          >
+            {{ t('emails.abandon') }}
+          </el-button>
+          <el-button
+            v-if="folder === 'suppressions'"
+            size="small"
+            type="danger"
+            plain
+            :loading="bulkBusy"
+            @click="bulkUnsuppress"
+          >
+            {{ t('emails.unsuppress') }}
+          </el-button>
+          <el-button size="small" link @click="clearTablePick">
+            {{ t('emails.clearSelection') }}
+          </el-button>
+        </template>
         <template v-else>
         <h2>{{ t(`emails.folders.${folder}`) }}</h2>
         <span class="grow" />
         <!-- Not every folder is searchable. The scheduled list is short by
              nature and the query behind it takes no keyword; a box that
              silently ignores what is typed into it is worse than none. -->
-        <template v-if="folder !== 'scheduled'">
+        <!-- 草稿箱同理，只是一直漏在这条规矩外面：ListDrafts 不收关键词，
+             所以在草稿箱里搜什么、按几次回车，回来的都是整份草稿列表。 -->
+        <template v-if="isSearchable">
           <el-input
             v-model="keyword"
             :placeholder="t(`emails.search.${searchKey}`)"
@@ -520,11 +578,14 @@
       <!-- --------------------------------------------------------- drafts -->
       <template v-else-if="folder === 'drafts'">
       <el-table
+        ref="tableRef"
         :data="drafts"
         v-loading="loading"
         class="clickable"
-        @row-click="openDraft"
+        @row-click="openDraftRow"
+        @selection-change="onTableSelect"
       >
+        <el-table-column type="selection" width="44" />
         <el-table-column :label="t('emails.subject')" min-width="300">
           <template #default="{ row }">
             <div class="strong ellipsis">{{ row.subject || t('emails.noSubject') }}</div>
@@ -552,7 +613,13 @@
       <el-alert type="info" :closable="false" show-icon class="hint">
         {{ t('emails.scheduledHint') }}
       </el-alert>
-      <el-table :data="scheduled" v-loading="loading">
+      <el-table
+        ref="tableRef"
+        :data="scheduled"
+        v-loading="loading"
+        @selection-change="onTableSelect"
+      >
+        <el-table-column type="selection" width="44" />
         <el-table-column :label="t('emails.subject')" min-width="280">
           <template #default="{ row }">
             <div class="strong ellipsis">{{ row.subject || t('emails.noSubject') }}</div>
@@ -611,11 +678,15 @@
       <!-- ------------------------------------------------------ attention -->
       <el-table
         v-else-if="folder === 'attention'"
+        ref="tableRef"
         :data="messages"
         v-loading="loading"
         class="clickable"
-        @row-click="openMessage"
+        @row-click="openMessageRow"
+        @selection-change="onTableSelect"
       >
+        <!-- 没有放弃权限就没有勾选列：能勾、勾完却一个按钮都没有，比不能勾更难懂。 -->
+        <el-table-column v-if="canWrite" type="selection" width="44" />
         <el-table-column :label="t('emails.recipient')" min-width="190">
           <template #default="{ row }">
             <div class="strong">{{ row.toName || '—' }}</div>
@@ -652,7 +723,14 @@
       </el-table>
 
       <!-- --------------------------------------------------- suppressions -->
-      <el-table v-else :data="suppressions" v-loading="loading">
+      <el-table
+        v-else
+        ref="tableRef"
+        :data="suppressions"
+        v-loading="loading"
+        @selection-change="onTableSelect"
+      >
+        <el-table-column v-if="canSuppress" type="selection" width="44" />
         <el-table-column prop="email" :label="t('emails.email')" min-width="230" />
         <el-table-column :label="t('emails.suppressReason')" width="150">
           <template #default="{ row }">
@@ -943,9 +1021,26 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { useRoute, useRouter, type LocationQuery } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { del, download, get, http, mailExcelRequest, mailHostRequest, post, saveBlob } from '../api'
+import {
+  del,
+  download,
+  get,
+  http,
+  mailExcelRequest,
+  mailHostRequest,
+  post,
+  quietErrors,
+  saveBlob,
+} from '../api'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
 import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
+import {
+  isListFolder,
+  pickedRows as pickedRowsOf,
+  selectAllState,
+  selectableRows,
+  toggleAll,
+} from '../lib/mailSelection'
 import type { InquiryTemplate } from '../lib/inquiryTemplates'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
@@ -1158,6 +1253,11 @@ const isKeysetView = computed(
 // folder read is housekeeping nobody wants, and in the trash it is meaningless.
 const canMarkAllRead = computed(
   () => isInboundView.value && folder.value !== 'junk' && folder.value !== 'trash',
+)
+// 后端真的会按关键词过滤的文件夹。定时和草稿的查询都不收关键词，给它们一个
+// 搜索框只是让人对着一个不起作用的框反复按回车。
+const isSearchable = computed(
+  () => folder.value !== 'scheduled' && folder.value !== 'drafts',
 )
 const searchKey = computed(() => {
   if (folder.value === 'sent') return 'sent'
@@ -2019,27 +2119,167 @@ function printDocument(html: string) {
 // toolbar acts on them and a reload re-renders the list.
 const picked = ref<string[]>([])
 const bulkBusy = ref(false)
+// 废纸篓里标记已读没有意义，已发送里也没有——见工具条上那两个按钮的注释。
+const canBulkRead = computed(() => folder.value !== 'trash' && folder.value !== 'sent')
 
+// 屏幕上这一批能勾的行。哪个文件夹取哪份数据由 mailSelection 决定，不在这里
+// 各算各的——「已选 N 封」拿 inbound 算、而已发送用的是 mailboxSent，正是原来
+// 在已发送里勾了没反应的原因。
+const selectable = computed(() =>
+  selectableRows(folder.value, { inbound: inbound.value, sent: mailboxSent.value }),
+)
 // Only rows still on screen count. A selection that survived a folder change
 // or a page turn would act on mail the person can no longer see.
-const pickedRows = computed(() => inbound.value.filter((m) => picked.value.includes(m.id)))
-const allPicked = computed(
-  () => inbound.value.length > 0 && pickedRows.value.length === inbound.value.length,
-)
-const somePicked = computed(
-  () => pickedRows.value.length > 0 && pickedRows.value.length < inbound.value.length,
-)
+const pickedRows = computed(() => pickedRowsOf(selectable.value, picked.value))
+const pickState = computed(() => selectAllState(selectable.value, picked.value))
+const allPicked = computed(() => pickState.value.all)
+const somePicked = computed(() => pickState.value.some)
 
 function toggleAllPicked() {
   // Partial counts as "on" for this purpose: with some ticked, the obvious
   // meaning of clicking the box is "never mind", not "and the rest too".
-  picked.value = allPicked.value || somePicked.value ? [] : inbound.value.map((m) => m.id)
+  picked.value = toggleAll(selectable.value, picked.value)
 }
 
 // A new list means a new set of things to choose from.
-watch([folder, () => inbound.value], () => {
+watch([folder, () => inbound.value, () => mailboxSent.value], () => {
   if (picked.value.length) picked.value = []
 })
+
+// ------------------------------------------------- 表格类文件夹的勾选 ---
+// 草稿 / 定时 / 异常 / 免打扰名单四个用的是 el-table，不是邮件列表。它们的全选
+// 交给 el-table 自己的选择列——这几个列表**有表头**，表头上的框是所有人都认得
+// 的位置。邮件列表没有表头，所以它的全选框只能待在工具条上（见上面的注释）：
+// 位置不同不是不一致，是各自跟着自己的形状走。
+//
+// 一次只渲染一个文件夹，所以一个 ref 装得下。
+type TableRow = Draft | Scheduled | AttentionMessage | Suppression
+const tablePicked = ref<TableRow[]>([])
+const tableRef = ref()
+
+function onTableSelect(rows: TableRow[]) {
+  tablePicked.value = rows
+}
+
+// el-table 把勾选框那一格的点击也算成点了这一行。不挡住的话，在草稿箱里勾一封
+// 就会顺手把它打开——勾选是为了先挑出几封再一起处理，打开是相反的方向。
+function notSelectionCell(col?: { type?: string }) {
+  return col?.type !== 'selection'
+}
+
+function openDraftRow(row: Draft, col?: { type?: string }) {
+  if (notSelectionCell(col)) openDraft(row)
+}
+
+function openMessageRow(row: AttentionMessage, col?: { type?: string }) {
+  if (notSelectionCell(col)) openMessage(row)
+}
+
+function clearTablePick() {
+  tablePicked.value = []
+  tableRef.value?.clearSelection()
+}
+
+// 换文件夹、或者列表重新拉过一遍，勾选就作废：el-table 认的是行对象本身，
+// 刷新后拿到的是一批新对象，它那边已经清空了，这边不清就成了一份操作不了的
+// 幽灵勾选。
+watch(
+  [folder, () => drafts.value, () => scheduled.value, () => messages.value, () => suppressions.value],
+  () => {
+    if (tablePicked.value.length) tablePicked.value = []
+  },
+)
+
+async function bulkDropDrafts() {
+  const rows = tablePicked.value as Draft[]
+  if (!rows.length) return
+  await ElMessageBox.confirm(t('emails.dropDraftsHint', { n: rows.length }), common('delete'), {
+    type: 'warning',
+  })
+  bulkBusy.value = true
+  try {
+    const failed = await inChunks(rows, (r) => del(`/email-drafts/${r.id}`, undefined, quietErrors))
+    reportBulk(rows.length, failed, t('emails.draftsDropped', { n: rows.length - failed }))
+  } finally {
+    clearTablePick()
+    bulkBusy.value = false
+    load()
+    loadDraftCount()
+  }
+}
+
+// 只做批量取消，不做批量「立即发送」。取消能反悔——邮件回到草稿箱；而一次把
+// 十个定时任务提前放出去是发给客户的、收不回来的。
+async function bulkCancelScheduled() {
+  const rows = tablePicked.value as Scheduled[]
+  if (!rows.length) return
+  await ElMessageBox.confirm(
+    t('emails.cancelSchedulesAsk', { n: rows.length }),
+    t('emails.cancelSchedule'),
+    { type: 'warning' },
+  )
+  bulkBusy.value = true
+  try {
+    const failed = await inChunks(rows, (r) =>
+      post(`/email-scheduled/${r.campaignId}/cancel`, undefined, quietErrors),
+    )
+    reportBulk(rows.length, failed, t('emails.cancelSchedulesDone', { n: rows.length - failed }))
+  } finally {
+    clearTablePick()
+    bulkBusy.value = false
+    load()
+    loadDraftCount()
+  }
+}
+
+// 一个原因写一次，套在选中的每一封上。原因是留给日后查证的，逐封问一遍只会
+// 让人把同一句话敲十遍——那样写出来的原因也不会更准。
+async function bulkAbandon() {
+  const rows = tablePicked.value as AttentionMessage[]
+  if (!rows.length) return
+  const { value } = await ElMessageBox.prompt(
+    t('emails.abandonManyHint', { n: rows.length }),
+    t('emails.abandonTitle'),
+    {
+      inputPlaceholder: t('emails.abandonReason'),
+      inputPattern: /\S/,
+      inputErrorMessage: t('emails.abandonReason'),
+    },
+  )
+  bulkBusy.value = true
+  try {
+    const failed = await inChunks(rows, (r) =>
+      post(`/email-messages/${r.id}/abandon`, { reason: value }, quietErrors),
+    )
+    reportBulk(rows.length, failed, t('emails.abandonedN', { n: rows.length - failed }))
+  } finally {
+    clearTablePick()
+    bulkBusy.value = false
+    load()
+    refreshAttentionCount()
+  }
+}
+
+async function bulkUnsuppress() {
+  const rows = tablePicked.value as Suppression[]
+  if (!rows.length) return
+  await ElMessageBox.confirm(
+    t('emails.unsuppressManyHint', { n: rows.length }),
+    t('emails.unsuppress'),
+    { type: 'warning' },
+  )
+  bulkBusy.value = true
+  try {
+    const failed = await inChunks(rows, (r) =>
+      del(`/email-suppressions?email=${encodeURIComponent(r.email)}`, undefined, quietErrors),
+    )
+    reportBulk(rows.length, failed, t('emails.unsuppressedN', { n: rows.length - failed }))
+  } finally {
+    clearTablePick()
+    bulkBusy.value = false
+    load()
+  }
+}
 
 // Applies one change to everything ticked.
 //
@@ -2053,14 +2293,17 @@ async function bulkMark(flags: Record<string, boolean>) {
   if (!rows.length) return
   bulkBusy.value = true
   try {
-    await inChunks(rows, (row) =>
-      post(`/inbound-mails/${row.id}/mark`, { ...flags, wholeThread: true }),
+    const failed = await inChunks(rows, (row) =>
+      post(`/inbound-mails/${row.id}/mark`, { ...flags, wholeThread: true }, quietErrors),
     )
+    reportBulk(rows.length, failed, t('emails.bulkDone', { n: rows.length - failed }))
+  } finally {
+    // 无论成没成都要刷新。做了一半的时候列表还照着旧样子摆着，是最难查的一种
+    // ——人看到的和实际发生的对不上，而且没有任何提示说它们对不上。
     picked.value = []
+    bulkBusy.value = false
     load()
     refreshUnread()
-  } finally {
-    bulkBusy.value = false
   }
 }
 
@@ -2074,20 +2317,44 @@ async function bulkPurge() {
   )
   bulkBusy.value = true
   try {
-    await inChunks(rows, (row) => del(`/inbound-mails/${row.id}?whole_thread=true`))
-    picked.value = []
-    load()
+    const failed = await inChunks(rows, (row) =>
+      del(`/inbound-mails/${row.id}?whole_thread=true`, undefined, quietErrors),
+    )
+    reportBulk(rows.length, failed, t('emails.purgedN', { n: rows.length - failed }))
   } finally {
+    picked.value = []
     bulkBusy.value = false
+    load()
   }
 }
 
 const bulkConcurrency = 4
 
-async function inChunks<T>(rows: T[], run: (row: T) => Promise<unknown>) {
+/**
+ * 分批跑完，返回**失败了几条**。
+ *
+ * 用 allSettled 而不是 all：一批里有一条失败，all 会让整批一起中断、后面几批
+ * 干脆不跑——于是「删掉了 3 封、剩下 17 封没动」这件事既没人说，列表也停在原样。
+ *
+ * 每一条自己不弹错（quietErrors），由 reportBulk 汇总成一句话。二十条失败弹
+ * 二十个红条，是把同一件事说了二十遍，反而看不出到底成了几条。
+ */
+async function inChunks<T>(rows: T[], run: (row: T) => Promise<unknown>): Promise<number> {
+  let failed = 0
   for (let i = 0; i < rows.length; i += bulkConcurrency) {
-    await Promise.all(rows.slice(i, i + bulkConcurrency).map(run))
+    const settled = await Promise.allSettled(rows.slice(i, i + bulkConcurrency).map(run))
+    failed += settled.filter((r) => r.status === 'rejected').length
   }
+  return failed
+}
+
+/** 批量操作之后说一句实话：全成了，还是有几条没成。 */
+function reportBulk(total: number, failed: number, doneMsg: string) {
+  if (failed === 0) {
+    ElMessage.success(doneMsg)
+    return
+  }
+  ElMessage.warning(t('emails.bulkPartial', { done: total - failed, failed }))
 }
 
 async function markRow(row: MailRow, flags: Record<string, boolean>) {
