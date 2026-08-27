@@ -9,7 +9,7 @@
       </div>
       <div class="head-actions">
         <span v-if="updatedAt" class="updated">{{ t('todos.updatedAt', { time: updatedAt }) }}</span>
-        <el-button :loading="loading || countLoading" @click="refreshAll">{{ t('common.refresh') }}</el-button>
+        <el-button :loading="loading || countLoading || reminderCountLoading" @click="refreshAll">{{ t('common.refresh') }}</el-button>
       </div>
     </section>
 
@@ -19,14 +19,14 @@
         <strong>{{ pendingCountAvailable ? pendingTotal : '—' }}</strong>
         <small>{{ t('todos.summaryPendingHint') }}</small>
       </button>
-      <button class="summary-card" type="button" disabled>
-        <span>{{ t('todos.summaryUpcoming') }}</span><strong>—</strong><small>{{ t('todos.summaryUpcomingHint') }}</small>
+      <button class="summary-card" :class="{ active: activeTab === 'reminders' && reminderTiming === 'UPCOMING' }" type="button" :disabled="!reminderSummaryAvailable" @click="activateReminderFilter('UPCOMING')">
+        <span>{{ t('todos.summaryUpcoming') }}</span><strong>{{ reminderSummaryAvailable ? reminderSummary.upcoming : '—' }}</strong><small>{{ t('todos.summaryUpcomingHint') }}</small>
       </button>
-      <button class="summary-card danger" type="button" disabled>
-        <span>{{ t('todos.summaryOverdue') }}</span><strong>—</strong><small>{{ t('todos.sourceLater') }}</small>
+      <button class="summary-card danger" :class="{ active: activeTab === 'reminders' && reminderTiming === 'OVERDUE' }" type="button" :disabled="!reminderSummaryAvailable" @click="activateReminderFilter('OVERDUE')">
+        <span>{{ t('todos.summaryOverdue') }}</span><strong>{{ reminderSummaryAvailable ? reminderSummary.overdue : '—' }}</strong><small>{{ t('todos.summaryOverdueHint') }}</small>
       </button>
-      <button class="summary-card" type="button" disabled>
-        <span>{{ t('todos.summaryUnread') }}</span><strong>—</strong><small>{{ t('todos.sourceLater') }}</small>
+      <button class="summary-card" :class="{ active: activeTab === 'reminders' && reminderRead === 'UNREAD' }" type="button" :disabled="!reminderSummaryAvailable" @click="activateUnreadReminders">
+        <span>{{ t('todos.summaryUnread') }}</span><strong>{{ reminderSummaryAvailable ? reminderSummary.unread : '—' }}</strong><small>{{ t('todos.summaryUnreadHint') }}</small>
       </button>
     </section>
 
@@ -50,7 +50,29 @@
         <el-button type="primary" @click="query">{{ t('common.query') }}</el-button>
       </div>
 
+      <div v-else-if="hasReminderSource" class="filters reminder-filters">
+        <el-input v-model="keyword" clearable :placeholder="t('todos.reminderSearchPlaceholder')" @keyup.enter="query" @clear="query" />
+        <el-select v-model="reminderSource" :placeholder="t('todos.allReminderSources')" clearable @change="query">
+          <el-option v-for="item in reminderSourceOptions" :key="item" :label="reminderSourceLabel(item)" :value="item" />
+        </el-select>
+        <el-select v-model="reminderTiming" :placeholder="t('todos.allReminderTimings')" clearable @change="query">
+          <el-option value="UPCOMING" :label="t('todos.timing.UPCOMING')" />
+          <el-option value="OVERDUE" :label="t('todos.timing.OVERDUE')" />
+          <el-option value="REMINDER" :label="t('todos.timing.REMINDER')" />
+        </el-select>
+        <el-select v-model="reminderRead" :placeholder="t('todos.allReadStates')" clearable @change="query">
+          <el-option value="UNREAD" :label="t('todos.unread')" />
+          <el-option value="READ" :label="t('todos.read')" />
+        </el-select>
+        <el-button type="primary" @click="query">{{ t('common.query') }}</el-button>
+        <el-button v-if="reminderSummary.unread > 0" :loading="markingRead" @click="markAllRemindersRead">{{ t('todos.markAllRead') }}</el-button>
+      </div>
+
       <el-alert v-if="sourceError" class="source-error" type="warning" :closable="false" show-icon :title="t('todos.sourceUnavailable')">
+        <template #default><el-button link type="primary" @click="load">{{ t('todos.retry') }}</el-button></template>
+      </el-alert>
+
+      <el-alert v-if="hasReminderSource && reminderSourceError" class="source-error" type="warning" :closable="false" show-icon :title="t('todos.reminderSourceUnavailable')">
         <template #default><el-button link type="primary" @click="load">{{ t('todos.retry') }}</el-button></template>
       </el-alert>
 
@@ -111,9 +133,33 @@
         </el-table>
       </template>
 
+      <template v-else-if="activeTab === 'reminders'">
+        <el-table :data="reminders" v-loading="loading" class="home-table">
+          <el-table-column :label="t('todos.priority')" width="125">
+            <template #default="{ row }"><el-tag size="small" :type="homeReminderTagType(row.timing)" effect="light">{{ reminderTimingLabel(row.timing) }}</el-tag></template>
+          </el-table-column>
+          <el-table-column :label="t('todos.workItem')" min-width="360">
+            <template #default="{ row }">
+              <div class="item-title"><span v-if="row.unread" class="unread-dot" />{{ row.title }}</div>
+              <div class="item-meta">{{ reminderSourceLabel(row.source) }}<template v-if="row.bizNo"> · {{ row.bizNo }}</template></div>
+              <div class="item-summary">{{ row.content }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('todos.reminderDueAt')" width="145"><template #default="{ row }">{{ row.dueAt || '—' }}</template></el-table-column>
+          <el-table-column :label="t('common.status')" width="100"><template #default="{ row }"><el-tag size="small" :type="row.unread ? 'primary' : 'info'" effect="plain">{{ row.unread ? t('todos.unread') : t('todos.read') }}</el-tag></template></el-table-column>
+          <el-table-column :label="t('common.actions')" width="170" fixed="right">
+            <template #default="{ row }">
+              <el-button v-if="row.unread" link type="primary" @click="markReminderRead(row)">{{ t('todos.markRead') }}</el-button>
+              <el-button link type="primary" @click="openReminder(row)">{{ t('common.view') }}</el-button>
+            </template>
+          </el-table-column>
+          <template #empty><HomeEmpty :description="t('todos.emptyReminders')" /></template>
+        </el-table>
+      </template>
+
       <HomeEmpty v-else :description="futureEmptyText" />
 
-      <el-pagination v-if="hasApprovalSource && total > 0" class="pager" layout="total, prev, pager, next" :total="total" :page-size="pageSize" :current-page="page" @current-change="changePage" />
+      <el-pagination v-if="hasDataSource && total > 0" class="pager" layout="total, prev, pager, next" :total="total" :page-size="pageSize" :current-page="page" @current-change="changePage" />
     </el-card>
 
   </div>
@@ -121,13 +167,23 @@
 
 <script setup lang="ts">
 import { computed, defineComponent, h, onMounted, onUnmounted, ref } from 'vue'
-import { ElEmpty } from 'element-plus'
+import { ElEmpty, ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
-import { get, quietErrors } from '../api'
+import { useRoute, useRouter } from 'vue-router'
+import { get, post, quietErrors } from '../api'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import { approvalPriorityTagType, approvalSourceLink, approvalTimeAmount } from '../lib/homeApproval'
+import {
+  announceReminderChanged,
+  homeReminderTagType,
+  onReminderChanged,
+  type HomeReminder,
+  type HomeReminderSource,
+  type HomeReminderSourceState,
+  type HomeReminderSummary,
+  type HomeReminderTiming,
+} from '../lib/homeReminders'
 
 interface Task { id: string; nodeSeq: number; nodeName: string; status: string; comment: string; actedAt: string }
 interface Instance { id: string; bizType: string; bizId: string; bizNo: string; bizSummary: string; submitterName: string; status: string; currentSeq: number; submittedAt: string; finishedAt: string }
@@ -141,11 +197,14 @@ const HomeEmpty = defineComponent({
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 const auth = useAuthStore()
 const today = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }).format(new Date())
 const activeTab = ref<HomeTab>('pending')
 const todos = ref<Todo[]>([])
 const submitted = ref<Instance[]>([])
+const reminders = ref<HomeReminder[]>([])
+const reminderSummary = ref<HomeReminderSummary>({ upcoming: 0, overdue: 0, unread: 0 })
 const total = ref(0)
 const pendingTotal = ref(0)
 const pendingCountAvailable = ref(true)
@@ -156,20 +215,55 @@ const bizType = ref('')
 const statusFilter = ref('')
 const loading = ref(false)
 const countLoading = ref(false)
+const reminderCountLoading = ref(false)
 const sourceError = ref(false)
+const reminderSourceError = ref(false)
+const reminderSummaryAvailable = ref(false)
+const reminderSource = ref('')
+const reminderTiming = ref('')
+const reminderRead = ref('')
+const markingRead = ref(false)
 const updatedAt = ref('')
 
 const bizTypes = ['CONTRACT', 'PURCHASE_ORDER', 'PURCHASE_ORDER_CHANGE', 'PAYMENT', 'LC_AMENDMENT', 'STOCK_ADJUST']
 const hasApprovalSource = computed(() => ['pending', 'submitted', 'handled'].includes(activeTab.value))
+const hasReminderSource = computed(() => activeTab.value === 'reminders')
+const hasDataSource = computed(() => hasApprovalSource.value || hasReminderSource.value)
+const reminderSourceOptions = computed<HomeReminderSource[]>(() => [
+  ...(auth.can('export:receipt:read') ? ['RECEIVABLE' as const] : []),
+  ...(auth.can('shipping:schedule:read') ? ['ARRIVAL' as const, 'BL' as const] : []),
+])
 const statusOptions = computed(() => activeTab.value === 'handled'
   ? ['APPROVED', 'REJECTED', 'RETURNED', 'CANCELLED', 'SKIPPED']
   : ['RUNNING', 'APPROVED', 'REJECTED', 'RETURNED', 'CANCELLED'])
-const futureEmptyText = computed(() => activeTab.value === 'responsible' ? t('todos.emptyResponsible') : t('todos.emptyReminders'))
+const futureEmptyText = computed(() => t('todos.emptyResponsible'))
 
 function activate(tab: HomeTab) {
   if (activeTab.value === tab) return
   activeTab.value = tab
   onTabChange(tab)
+}
+
+function activateReminderFilter(timing: HomeReminderTiming) {
+  activeTab.value = 'reminders'
+  page.value = 1
+  keyword.value = ''
+  reminderSource.value = ''
+  reminderRead.value = ''
+  reminderTiming.value = timing
+  sourceError.value = false
+  void load()
+}
+
+function activateUnreadReminders() {
+  activeTab.value = 'reminders'
+  page.value = 1
+  keyword.value = ''
+  reminderSource.value = ''
+  reminderTiming.value = ''
+  reminderRead.value = 'UNREAD'
+  sourceError.value = false
+  void load()
 }
 
 function onTabChange(tab: string | number) {
@@ -178,7 +272,11 @@ function onTabChange(tab: string | number) {
   keyword.value = ''
   bizType.value = ''
   statusFilter.value = ''
+  reminderSource.value = ''
+  reminderTiming.value = ''
+  reminderRead.value = ''
   sourceError.value = false
+  reminderSourceError.value = false
   void load()
 }
 
@@ -198,10 +296,64 @@ async function loadPendingCount() {
   }
 }
 
+function applyReminderResponse(data: { summary?: HomeReminderSummary; sources?: HomeReminderSourceState[] }) {
+  reminderSummary.value = data.summary ?? { upcoming: 0, overdue: 0, unread: 0 }
+  reminderSummaryAvailable.value = true
+  reminderSourceError.value = (data.sources ?? []).some((source) => !source.available)
+}
+
+async function loadReminderSummary() {
+  reminderCountLoading.value = true
+  try {
+    const data = await get<{ summary: HomeReminderSummary; sources: HomeReminderSourceState[] }>(
+      '/home/reminders', { page: 1, page_size: 1 }, quietErrors,
+    )
+    applyReminderResponse(data)
+  } catch {
+    reminderSummaryAvailable.value = false
+    reminderSourceError.value = true
+  } finally {
+    reminderCountLoading.value = false
+  }
+}
+
 async function load() {
+  if (hasReminderSource.value) {
+    loading.value = true
+    reminderSourceError.value = false
+    try {
+      const data = await get<{
+        items: HomeReminder[]
+        total: number
+        summary: HomeReminderSummary
+        sources: HomeReminderSourceState[]
+      }>('/home/reminders', {
+        page: page.value,
+        page_size: pageSize,
+        keyword: keyword.value,
+        source: reminderSource.value,
+        timing: reminderTiming.value,
+        read: reminderRead.value,
+      }, quietErrors)
+      reminders.value = data.items ?? []
+      todos.value = []
+      submitted.value = []
+      total.value = Number(data.total ?? 0)
+      applyReminderResponse(data)
+      updatedAt.value = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    } catch {
+      reminderSourceError.value = true
+      reminders.value = []
+      total.value = 0
+    } finally {
+      loading.value = false
+    }
+    return
+  }
   if (!hasApprovalSource.value) {
     todos.value = []
     submitted.value = []
+    reminders.value = []
     total.value = 0
     return
   }
@@ -222,11 +374,13 @@ async function load() {
       const data = await get<{ instances: Instance[]; meta: { total: string } }>('/approvals/submitted', params, quietErrors)
       submitted.value = (data.instances ?? []).filter((row) => !requestedBizID || String(row.bizId) === requestedBizID)
       todos.value = []
+      reminders.value = []
       total.value = targeted ? submitted.value.length : Number(data.meta?.total ?? 0)
     } else {
       const data = await get<{ todos: Todo[]; meta: { total: string } }>('/approvals/todos', params, quietErrors)
       todos.value = (data.todos ?? []).filter((row) => !requestedBizID || String(row.instance.bizId) === requestedBizID)
       submitted.value = []
+      reminders.value = []
       total.value = targeted ? todos.value.length : Number(data.meta?.total ?? 0)
     }
     updatedAt.value = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -240,7 +394,39 @@ async function load() {
   }
 }
 
-async function refreshAll() { await Promise.all([loadPendingCount(), load()]) }
+async function refreshAll() {
+  if (hasReminderSource.value) await Promise.all([loadPendingCount(), load()])
+  else await Promise.all([loadPendingCount(), loadReminderSummary(), load()])
+}
+
+async function markReminderRead(item: HomeReminder) {
+  if (!item.unread) return
+  await post('/home/reminders/read', { source: item.source, ids: [item.sourceId] })
+  announceReminderChanged()
+  await load()
+}
+
+async function markAllRemindersRead() {
+  markingRead.value = true
+  try {
+    const data = await post<{ marked: number; sources: HomeReminderSourceState[] }>(
+      '/home/reminders/read', { source: 'ALL', ids: [] }, quietErrors,
+    )
+    announceReminderChanged()
+    if ((data.sources ?? []).length > 0) ElMessage.warning(t('todos.markReadPartial'))
+    else ElMessage.success(t('todos.markedRead', { count: Number(data.marked ?? 0) }))
+    await load()
+  } finally {
+    markingRead.value = false
+  }
+}
+
+async function openReminder(item: HomeReminder) {
+  if (item.unread) {
+    try { await markReminderRead(item) } catch { /* 原业务入口仍应可打开 */ }
+  }
+  if (item.detailUrl) await router.push(item.detailUrl)
+}
 
 function parseSummary(raw: string): Record<string, string> {
   if (!raw) return {}
@@ -252,6 +438,14 @@ function taskStatusLabel(code: string): string { return labelOr(`todos.task.${co
 function priorityLabel(code: string): string { return labelOr(`todos.priorityLevels.${code}`, code) }
 function instanceStatusLabel(code: string): string { return labelOr(`todos.doc.${code}`, code) }
 function bizTypeLabel(code: string): string { return labelOr(`todos.biz.${code}`, code) }
+function reminderSourceLabel(code?: string): string {
+  if (!code) return '—'
+  return labelOr(`todos.reminderSources.${code}`, code)
+}
+function reminderTimingLabel(code?: string): string {
+  if (!code) return '—'
+  return labelOr(`todos.timing.${code}`, code)
+}
 function labelOr(key: string, fallback: string): string { const label = t(key); return label === key ? fallback : label }
 function taskTagType(code: string): 'success' | 'danger' | 'warning' | 'info' { return ({ APPROVED: 'success', REJECTED: 'danger', RETURNED: 'warning' }[code] as 'success' | 'danger' | 'warning' | undefined) ?? 'info' }
 function instanceTagType(code: string): 'success' | 'danger' | 'warning' | 'info' { return ({ APPROVED: 'success', REJECTED: 'danger', RETURNED: 'warning', RUNNING: 'warning' }[code] as 'success' | 'danger' | 'warning' | undefined) ?? 'info' }
@@ -265,9 +459,13 @@ function formatTime(iso: string): string { return iso ? iso.replace('T', ' ').sl
 
 onMounted(refreshAll)
 const stopListening = onLive((event) => {
-  if (event.type === 'todo.changed' || event.type === 'doc.changed') void refreshAll()
+  if (event.type === 'todo.changed' || event.type === 'doc.changed' || event.type === 'shipping.arrival_reminder') void refreshAll()
 })
-onUnmounted(stopListening)
+const stopReminderListening = onReminderChanged(() => { void refreshAll() })
+onUnmounted(() => {
+  stopListening()
+  stopReminderListening()
+})
 </script>
 
 <style scoped>
@@ -290,9 +488,11 @@ onUnmounted(stopListening)
 .work-card { border-radius: 12px; }
 .home-tabs :deep(.el-tabs__header) { margin-bottom: 18px; }
 .filters { display: grid; grid-template-columns: minmax(260px, 1fr) 190px 180px auto; gap: 12px; margin-bottom: 16px; }
+.reminder-filters { grid-template-columns: minmax(240px, 1fr) 160px 160px 140px auto auto; }
 .source-error { margin-bottom: 14px; }
 .home-table { width: 100%; }
 .item-title { color: var(--el-text-color-primary); font-weight: 600; }
+.unread-dot { display: inline-block; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: var(--el-color-primary); vertical-align: 1px; }
 .item-meta, .item-summary { margin-top: 5px; color: var(--el-text-color-secondary); font-size: 13px; }
 .item-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .priority-reason { margin-top: 5px; color: var(--el-text-color-secondary); font-size: 12px; white-space: nowrap; }

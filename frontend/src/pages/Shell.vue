@@ -281,7 +281,7 @@
         <span />
         <div class="topbar-right">
           <ShippingArrivalNotifications
-            v-if="auth.can('shipping:schedule:read') && route.path.startsWith('/shipping')"
+            v-if="auth.can('shipping:schedule:read')"
             ref="shippingNotifications"
           />
           <!-- 应收提醒常驻：逾期的钱不该只在打开某个页面时才看得见。 -->

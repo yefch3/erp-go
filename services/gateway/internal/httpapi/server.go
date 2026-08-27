@@ -371,9 +371,9 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules", s.listShippingSchedules)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/statistics", s.getShippingStatistics)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/reminders", s.listShippingArrivalNotifications)
-		// 提单签发提醒（E2）：按登录人隔离，读自己的收件箱不再另设权限。
-		r.Get("/api/bl-reminders", s.listBLReminders)
-		r.Post("/api/bl-reminders/read", s.markBLRemindersRead)
+		// 提单签发提醒按登录人隔离，同时要求具备船期读取权限，避免首页或徽标泄露受限业务摘要。
+		r.With(s.perm("shipping:schedule:read")).Get("/api/bl-reminders", s.listBLReminders)
+		r.With(s.perm("shipping:schedule:read")).Post("/api/bl-reminders/read", s.markBLRemindersRead)
 		r.With(s.perm("shipping:schedule:read")).Delete("/api/shipping/reminders/expired", s.cleanupExpiredShippingArrivalReminders)
 		r.With(s.perm("shipping:schedule:read")).Post("/api/shipping/reminders/{reminderID}/read", s.markShippingArrivalReminderRead)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules/{id}", s.getShippingSchedule)
@@ -420,9 +420,9 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("export:receipt:read")).Get("/api/open-receivables", s.listOpenReceivables)
 		// 应收到期清单（E1）：沿用收款的读权限——能看收款的人就该看得见该收什么。
 		r.With(s.perm("export:receipt:read")).Get("/api/receivable-due", s.listReceivableDue)
-		// 提醒收件箱按登录人隔离，读自己的东西不再另设权限。
-		r.Get("/api/receivable-reminders", s.listReceivableReminders)
-		r.Post("/api/receivable-reminders/read", s.markReceivableRemindersRead)
+		// 应收提醒按登录人隔离，同时要求具备收款读取权限，避免首页或徽标成为权限后门。
+		r.With(s.perm("export:receipt:read")).Get("/api/receivable-reminders", s.listReceivableReminders)
+		r.With(s.perm("export:receipt:read")).Post("/api/receivable-reminders/read", s.markReceivableRemindersRead)
 		// Attribute templates. Defining what a category's spec looks like is
 		// catalogue maintenance, so it rides on the product write permission
 		// rather than inventing a third one for the same job.
@@ -582,6 +582,9 @@ func (s *Server) Router() http.Handler {
 		// 真正执行通过、驳回或退回仍由下面的动作权限控制。
 		r.Get("/api/approvals/todos", s.myTodos)
 		r.Get("/api/approvals/submitted", s.mySubmittedApprovals)
+		// HOME2 只聚合当前员工有权读取的现有提醒，不复制业务数据。
+		r.Get("/api/home/reminders", s.listHomeReminders)
+		r.Post("/api/home/reminders/read", s.markHomeRemindersRead)
 		r.With(s.perm("approval:task:act")).Post("/api/approvals/tasks/{id}/act", s.actOnTask)
 		// Reading where a document stands is not acting on it: the salesperson
 		// who submitted a contract needs to see it is waiting on the sales
