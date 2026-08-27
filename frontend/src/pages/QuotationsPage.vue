@@ -39,24 +39,29 @@
             <div v-if="row.respondNote" class="sub respond-note">{{ row.respondNote }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="300" fixed="right">
+        <el-table-column :label="t('common.actions')" width="76" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openEdit(row)">
-              {{ row.status === 'DRAFT' && !row.sourceCostScenarioId && canWrite && auth.owns(row.salesEmployeeId) ? t('common.edit') : t('quotations.view') }}
-            </el-button>
-            <el-button link type="primary" @click="downloadQuotation(row, 'workbook')">{{ t('quotations.downloadExcel') }}</el-button>
-            <el-button link type="primary" @click="downloadQuotation(row, 'pdf')">{{ t('quotations.downloadPdf') }}</el-button>
-            <!-- Ownership, not just the permission code: a wide data scope is
-                 for watching other people's work, not doing it. -->
-            <template v-if="canWrite && auth.owns(row.salesEmployeeId)">
-              <el-button v-if="row.status === 'DRAFT'" link type="primary" @click="act(row, 'send')">
-                {{ t('quotations.send') }}
-              </el-button>
-              <template v-if="row.status === 'SENT'">
-                <el-button link type="success" @click="respond(row, 'ACCEPTED')">{{ t('quotations.accept') }}</el-button>
-                <el-button link type="danger" @click="respond(row, 'REJECTED')">{{ t('quotations.reject') }}</el-button>
+            <el-dropdown trigger="click" @command="handleQuotationAction($event, row)">
+              <el-button text circle :aria-label="t('common.actions')"><span aria-hidden="true">•••</span></el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="open">
+                    {{ row.status === 'DRAFT' && !row.sourceCostScenarioId && canWrite && auth.owns(row.salesEmployeeId) ? t('common.edit') : t('quotations.view') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="workbook">{{ t('quotations.downloadExcel') }}</el-dropdown-item>
+                  <el-dropdown-item command="pdf">{{ t('quotations.downloadPdf') }}</el-dropdown-item>
+                  <!-- Ownership, not just the permission code: a wide data scope is
+                       for watching other people's work, not doing it. -->
+                  <el-dropdown-item v-if="canWrite && auth.owns(row.salesEmployeeId) && row.status === 'DRAFT'" command="send" divided>
+                    {{ t('quotations.send') }}
+                  </el-dropdown-item>
+                  <template v-if="canWrite && auth.owns(row.salesEmployeeId) && row.status === 'SENT'">
+                    <el-dropdown-item command="accept" divided>{{ t('quotations.accept') }}</el-dropdown-item>
+                    <el-dropdown-item command="reject">{{ t('quotations.reject') }}</el-dropdown-item>
+                  </template>
+                </el-dropdown-menu>
               </template>
-            </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
@@ -385,6 +390,14 @@ async function openEdit(row: Quotation) {
 async function downloadQuotation(row: Quotation, type: 'workbook' | 'pdf') {
   const file = await download(`/quotations/${row.id}/${type}`)
   saveBlob(file.blob, file.fileName || `${row.quoteNo}.${type === 'pdf' ? 'pdf' : 'xlsx'}`)
+}
+
+async function handleQuotationAction(command: string, row: Quotation) {
+  if (command === 'open') return openEdit(row)
+  if (command === 'workbook' || command === 'pdf') return downloadQuotation(row, command)
+  if (command === 'send') return act(row, 'send')
+  if (command === 'accept') return respond(row, 'ACCEPTED')
+  if (command === 'reject') return respond(row, 'REJECTED')
 }
 
 function addItem() {
