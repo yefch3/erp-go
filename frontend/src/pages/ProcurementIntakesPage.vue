@@ -47,9 +47,26 @@
           <div class="template-help">{{ uploadFormatHint }}</div>
         </el-form-item>
         <el-form-item :label="t('procurementIntakes.inquiryTitle')"><el-input v-model="uploadForm.title" :placeholder="t('procurementIntakes.titleAuto')" /></el-form-item>
-        <el-form-item :label="t('procurementIntakes.customer')"><el-input v-model="uploadForm.customerName" /></el-form-item>
-        <el-form-item :label="t('procurementIntakes.contact')"><el-input v-model="uploadForm.contactName" /></el-form-item>
-        <el-form-item :label="t('procurementIntakes.contactEmail')"><el-input v-model="uploadForm.contactEmail" /></el-form-item>
+        <el-form-item :label="t('procurementIntakes.customer')" required>
+          <el-select v-model="uploadForm.customerId" filterable :loading="customersLoading" :placeholder="t('procurementIntakes.customerPlaceholder')" style="width:100%" @change="loadUploadContacts">
+            <el-option v-for="item in customers" :key="item.id" :value="item.id" :label="`${item.code} · ${item.name}`" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('procurementIntakes.contact')" required>
+          <el-select v-model="uploadForm.contactId" filterable :loading="contactsLoading" :disabled="!uploadForm.customerId" :placeholder="uploadForm.customerId ? t('procurementIntakes.contactPlaceholder') : t('procurementIntakes.selectCustomerFirst')" style="width:100%">
+            <el-option
+              v-for="item in contacts"
+              :key="item.id"
+              :value="item.id"
+              :label="contactOptionLabel(item)"
+              :disabled="!item.email"
+            />
+          </el-select>
+          <div v-if="uploadForm.customerId && !contactsLoading && !contacts.length" class="template-help">{{ t('procurementIntakes.noActiveContacts') }}</div>
+        </el-form-item>
+        <el-form-item :label="t('procurementIntakes.contactEmail')">
+          <el-input :model-value="selectedContact?.email ?? ''" readonly :placeholder="t('procurementIntakes.contactEmailAuto')" />
+        </el-form-item>
         <el-form-item :label="t('procurementIntakes.standardFile')" required>
           <input type="file" accept=".xlsx,.csv" @change="pickFile" />
         </el-form-item>
@@ -119,19 +136,24 @@ interface Extracted { product: string; materialStandard: string; grade: string; 
 interface IntakeLine { id: string; lineNo: number; decision: string; extracted: Extracted }
 interface Intake { id: string; caseNo: string; title: string; customerName: string; contactName: string; contactEmail: string; sourceMailId: string; sourceFileName: string; createdAt: string; inquiryTemplateId?: string; lines?: IntakeLine[] }
 interface TemplateField { fieldKey: string; displayName: string; isRequired: boolean; sortOrder: number }
+interface CustomerOption { id: string; code: string; name: string }
+interface CustomerContactOption { id: string; name: string; department: string; title: string; email: string; isPrimary: boolean }
 
 const { t } = useI18n()
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const canWrite = auth.can('procurement:sourcing:write')
-const loading = ref(false), saving = ref(false), addingLine = ref(false), templatesLoading = ref(false), uploadOpen = ref(false), detailOpen = ref(false), addLineOpen = ref(false)
+const loading = ref(false), saving = ref(false), addingLine = ref(false), templatesLoading = ref(false), customersLoading = ref(false), contactsLoading = ref(false), uploadOpen = ref(false), detailOpen = ref(false), addLineOpen = ref(false)
 const rows = ref<Intake[]>([]), detail = ref<Intake | null>(null), keyword = ref(''), page = ref(1), total = ref(0)
-const uploadForm = reactive({ templateId: '', title: '', customerName: '', contactName: '', contactEmail: '', file: null as File | null })
+const uploadForm = reactive({ templateId: '', title: '', customerId: '', contactId: '', file: null as File | null })
 const templates = ref<InquiryTemplate[]>([])
+const customers = ref<CustomerOption[]>([])
+const contacts = ref<CustomerContactOption[]>([])
 const resolvedTemplate = ref<InquiryTemplate | null>(null)
 const activeTemplates = computed(() => templates.value.filter((item) => item.status === 'ACTIVE'))
 const selectedUploadTemplate = computed(() => activeTemplates.value.find((item) => String(item.id) === uploadForm.templateId) ?? null)
+const selectedContact = computed(() => contacts.value.find((item) => item.id === uploadForm.contactId) ?? null)
 const uploadFormatHint = computed(() => selectedUploadTemplate.value
   ? t('procurementIntakes.selectedFormatHint', { name: selectedUploadTemplate.value.name, version: selectedUploadTemplate.value.version })
   : t('procurementIntakes.autoFormatHint'))
@@ -174,6 +196,37 @@ async function resolveTemplateFields(intake: Intake) {
 function formatTime(value: string) { return value ? new Date(value).toLocaleString() : '—' }
 function pickFile(event: Event) { uploadForm.file = (event.target as HTMLInputElement).files?.[0] ?? null }
 
+function resetUploadForm() {
+  Object.assign(uploadForm, { templateId: '', title: '', customerId: '', contactId: '', file: null })
+  contacts.value = []
+}
+
+function contactOptionLabel(contact: CustomerContactOption) {
+  const role = [contact.department, contact.title].filter(Boolean).join(' / ')
+  const primary = contact.isPrimary ? ` · ${t('procurementIntakes.primaryContact')}` : ''
+  const email = contact.email || t('procurementIntakes.contactEmailMissing')
+  return `${contact.name}${role ? ` · ${role}` : ''} · ${email}${primary}`
+}
+
+async function loadUploadCustomers() {
+  customersLoading.value = true
+  try {
+    const data = await get<{ customers: CustomerOption[] }>('/sourcing-customer-options', { page_size: 500 })
+    customers.value = data.customers ?? []
+  } finally { customersLoading.value = false }
+}
+
+async function loadUploadContacts() {
+  uploadForm.contactId = ''
+  contacts.value = []
+  if (!uploadForm.customerId) return
+  contactsLoading.value = true
+  try {
+    const data = await get<{ contacts: CustomerContactOption[] }>(`/sourcing-customer-options/${uploadForm.customerId}/contacts`)
+    contacts.value = data.contacts ?? []
+  } finally { contactsLoading.value = false }
+}
+
 async function loadTemplates() {
   templatesLoading.value = true
   try {
@@ -185,8 +238,9 @@ async function loadTemplates() {
 }
 
 async function openUpload() {
+  resetUploadForm()
   uploadOpen.value = true
-  await loadTemplates()
+  await Promise.all([loadTemplates(), loadUploadCustomers()])
 }
 
 async function downloadSelectedTemplate() {
@@ -208,9 +262,12 @@ async function load() {
 }
 
 async function upload() {
+  if (!uploadForm.customerId) { ElMessage.warning(t('procurementIntakes.customerRequired')); return }
+  if (!uploadForm.contactId) { ElMessage.warning(t('procurementIntakes.contactRequired')); return }
+  if (!selectedContact.value?.email) { ElMessage.warning(t('procurementIntakes.contactEmailRequired')); return }
   if (!uploadForm.file) { ElMessage.warning(t('procurementIntakes.fileRequired')); return }
   const body = new FormData()
-  body.append('file', uploadForm.file); if (uploadForm.templateId) body.append('inquiry_template_id', uploadForm.templateId); body.append('title', uploadForm.title); body.append('customer_name', uploadForm.customerName); body.append('contact_name', uploadForm.contactName); body.append('contact_email', uploadForm.contactEmail)
+  body.append('file', uploadForm.file); if (uploadForm.templateId) body.append('inquiry_template_id', uploadForm.templateId); body.append('title', uploadForm.title); body.append('customer_id', uploadForm.customerId); body.append('contact_id', uploadForm.contactId)
   saving.value = true
   try {
     const response = await http.post<Envelope<{ sourcingCase: Intake }>>('/sourcing-intakes/import', body)
