@@ -76,6 +76,10 @@
           <el-select v-model="form.method" style="width: 160px">
             <el-option v-for="k in ['WIRE', 'LC', 'TT', 'CASH', 'OTHER']" :key="k" :value="k" :label="t(`supplierPayments.methods.${k}`)" />
           </el-select>
+          <!-- 提示不硬拦：现金外的历史单、边角场景仍要走得通。 -->
+          <div v-if="form.method === 'WIRE' || form.method === 'TT'" class="var-hint">
+            {{ t('supplierPayments.bankMethodHint') }}
+          </div>
         </el-form-item>
         <el-form-item :label="t('supplierPayments.bankRef')"><el-input v-model="form.bankRef" :placeholder="t('supplierPayments.bankRefHint')" /></el-form-item>
         <el-form-item :label="t('supplierPayments.remark')"><el-input v-model="form.remark" type="textarea" :rows="2" /></el-form-item>

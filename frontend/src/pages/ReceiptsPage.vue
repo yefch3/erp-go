@@ -18,10 +18,12 @@
         </el-radio-group>
         <span v-if="mode === 'refund'" class="sub">{{ t('receipts.refundModeHint') }}</span>
       </div>
+      <!-- 「与应收无关」不再单开一档：那些行在「全部」里带着标签可见，
+           「归类」和「撤销标记」两个动作原样保留。财务每天清的是前两档，
+           第三档只是归档柜，单独占一个页签反而让人以为要常看。 -->
       <el-radio-group v-model="disposition" class="tabs" @change="reload">
         <el-radio-button value="UNPROCESSED">{{ t('receipts.dispositions.UNPROCESSED') }}</el-radio-button>
         <el-radio-button value="ALLOCATED">{{ t('receipts.dispositions.ALLOCATED') }}</el-radio-button>
-        <el-radio-button v-if="mode === 'collect'" value="IRRELEVANT">{{ t('receipts.dispositions.IRRELEVANT') }}</el-radio-button>
         <el-radio-button value="">{{ t('receipts.allDispositions') }}</el-radio-button>
       </el-radio-group>
 
@@ -439,7 +441,7 @@ const canWrite = auth.can('export:receipt:write')
 const mode = ref<'collect' | 'refund'>('collect')
 
 function onModeChange() {
-  // 换视图回到待处理档——「与应收无关」在退款视图里不存在。
+  // 换视图回到待处理档。
   disposition.value = 'UNPROCESSED'
   page.value = 1
   void load()

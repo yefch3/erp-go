@@ -102,6 +102,7 @@ export default {
     types: { ADVANCE: '定金/预付', SETTLEMENT: '结算', REFUND: '退款' },
     methods: { WIRE: '电汇', LC: '信用证', TT: 'T/T', CASH: '现金', OTHER: '其他' },
     advanceHint: '定金付出去时发票还不存在——先挂到采购单上，发票来了再冲转过去。',
+    bankMethodHint: '这笔钱会出现在银行对账单上。建议等流水进来后在「付款对账」直接核销（系统自动建单）；这里手工登记的单之后还要去银行流水页匹配。',
     allocate: '核销', allocateTitle: '核销：这笔钱结了哪些账',
     allocRemaining: '未分配余额 {n}——本次分配不能超过它',
     allocTarget: '核销对象', targetInvoice: '发票', targetPO: '采购单', targetPOAdvance: '采购单（预付/定金）',

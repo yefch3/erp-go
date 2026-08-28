@@ -102,6 +102,7 @@ export default {
     types: { ADVANCE: 'Anticipo', SETTLEMENT: 'Liquidación', REFUND: 'Reembolso' },
     methods: { WIRE: 'Transferencia', LC: 'Carta de crédito', TT: 'T/T', CASH: 'Efectivo', OTHER: 'Otro' },
     advanceHint: 'El anticipo sale antes de que exista factura: apárquelo en la orden de compra y reasígnelo cuando llegue la factura.',
+    bankMethodHint: 'Este dinero aparecerá en el extracto bancario. Es mejor conciliar el movimiento directamente en «Conciliación de pagos» (el pago se crea solo); lo registrado aquí habrá que vincularlo luego en banco.',
     allocate: 'Aplicar', allocateTitle: 'Aplicar: qué saldó este dinero',
     allocRemaining: 'Saldo sin aplicar {n}: esta ronda no puede excederlo',
     allocTarget: 'Destino', targetInvoice: 'Factura', targetPO: 'OC', targetPOAdvance: 'Orden de compra (anticipo)',
