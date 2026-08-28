@@ -236,6 +236,7 @@ func (s *Server) listOpenReceivables(w http.ResponseWriter, r *http.Request) {
 		Currency:   r.URL.Query().Get("currency"),
 		CustomerId: customerID,
 		Keyword:    r.URL.Query().Get("keyword"),
+		ForRefund:  r.URL.Query().Get("for_refund") == "1",
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)

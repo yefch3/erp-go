@@ -936,25 +936,30 @@ WHERE c.tenant_id = $1::bigint
   -- With no search term the picker shows only what is still owed; a search
   -- reaches settled contracts too, because sometimes the question is
   -- "did this one get paid".
-  AND ((v.total_amount - coalesce(r.received, 0)) > 0 OR $4::text <> '')
+  -- 两种候选：核销要「还欠钱的」，退款要「收过钱的」（退的上限就是已收）。
+  AND (CASE WHEN $4::bool
+        THEN coalesce(r.received, 0) > 0
+        ELSE (v.total_amount - coalesce(r.received, 0)) > 0
+       END OR $5::text <> '')
   -- 结清的合同默认也不出现——它已经宣布「不用再核了」。钱真的又来了，
   -- 搜合同号还能找到它（和上面那条「搜索能到已收满的」同一个道理）。
-  AND ($4::text <> '' OR NOT EXISTS (
+  AND ($5::text <> '' OR NOT EXISTS (
       SELECT 1 FROM contract_receivable_closures cl
       WHERE cl.tenant_id = c.tenant_id AND cl.contract_id = c.id
         AND cl.revoked_at IS NULL
   ))
-  AND ($4::text = ''
-       OR c.contract_no   ILIKE '%' || $4::text || '%'
-       OR c.customer_name ILIKE '%' || $4::text || '%')
+  AND ($5::text = ''
+       OR c.contract_no   ILIKE '%' || $5::text || '%'
+       OR c.customer_name ILIKE '%' || $5::text || '%')
 ORDER BY (v.total_amount - coalesce(r.received, 0)) DESC, c.id DESC
-LIMIT $5::int
+LIMIT $6::int
 `
 
 type OpenReceivablesParams struct {
 	TenantID   int64
 	Currency   string
 	CustomerID int64
+	ForRefund  bool
 	Keyword    string
 	RowLimit   int32
 }
@@ -978,6 +983,7 @@ func (q *Queries) OpenReceivables(ctx context.Context, arg OpenReceivablesParams
 		arg.TenantID,
 		arg.Currency,
 		arg.CustomerID,
+		arg.ForRefund,
 		arg.Keyword,
 		arg.RowLimit,
 	)

@@ -46,8 +46,9 @@ func TestSettleVarianceLifecycle(t *testing.T) {
 			Currency: "USD", ValueDate: "2026-08-20", Ownership: OwnershipCustomer},
 		BankRow{ID: 8002, BankRef: "VAR-FULL", Direction: "CREDIT", Amount: "1000.00",
 			Currency: "USD", ValueDate: "2026-08-20", Ownership: OwnershipCustomer},
+		// 归属还空着的出账——多半是付给供应商的钱，客户线不能碰它。
 		BankRow{ID: 8003, BankRef: "VAR-OUT", Direction: "DEBIT", Amount: "300.00",
-			Currency: "USD", ValueDate: "2026-08-20", Ownership: OwnershipCustomer},
+			Currency: "USD", ValueDate: "2026-08-20", Ownership: OwnershipPending},
 	)
 	svc := New(pool, Deps{Bank: ledger})
 	op := Operator{ID: 5, Name: "Finance"}
@@ -130,10 +131,11 @@ func TestSettleVarianceLifecycle(t *testing.T) {
 		t.Fatalf("核满的行不该有差可认，实际 %v", err)
 	}
 
-	// 出账没有应收差额可认。
+	// 归属没到「客户往来」的出账不在退款队列里，认差同样进不来——
+	// 待处理的出账绝大多数是付给供应商的钱，这道门把它们挡在客户线外。
 	if _, err := svc.SettleTransaction(ctx, tenantID, 8003, "LOSS", "", op); err == nil ||
-		!strings.Contains(err.Error(), "EX_TX_NOT_CREDIT") {
-		t.Fatalf("出账认差应该被拒绝，实际 %v", err)
+		!strings.Contains(err.Error(), "EX_REFUND_NOT_CUSTOMER") {
+		t.Fatalf("归属未定的出账认差应该被拒绝，实际 %v", err)
 	}
 
 	// 补足差额的类别：损耗如实记，不再谎报成手续费；胡写的拒绝。

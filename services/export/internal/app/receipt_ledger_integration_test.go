@@ -155,11 +155,12 @@ func TestAllocateAgainstSharedLedger(t *testing.T) {
 		t.Fatalf("币种不一致应该被拒绝，实际 %v", err)
 	}
 
-	// 付出去的钱核不到应收上。
+	// 出账现在是退款（收付队列改造放进来的），但退款框在「已收」里面：
+	// 这张合同一分钱还没收到，往外退 100 等于凭空造钱。
 	_, err = svc.Allocate(ctx, tenantID, 7002,
 		[]AllocationLine{{ContractID: contractID, Amount: "100"}}, op)
-	if err == nil || !strings.Contains(err.Error(), "EX_TX_NOT_CREDIT") {
-		t.Fatalf("出账应该被拒绝，实际 %v", err)
+	if err == nil || !strings.Contains(err.Error(), "EX_REFUND_EXCEEDS_RECEIVED") {
+		t.Fatalf("没收过钱的合同不该能退款，实际 %v", err)
 	}
 
 	// 归属是退税的行不该出现在应收核销里——F2 之前这条闸看的是 disposition，

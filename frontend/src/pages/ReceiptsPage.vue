@@ -9,10 +9,19 @@
     </div>
 
     <el-card shadow="never">
+      <!-- 两个方向两个子视图：核销是客户打进来的钱对合同，退款是退回去的钱
+           对合同。同一张账、两个问题，不混在一个列表里让人盯着正负号猜。 -->
+      <div class="mode-row">
+        <el-radio-group v-model="mode" @change="onModeChange">
+          <el-radio-button value="collect">{{ t('receipts.modeCollect') }}</el-radio-button>
+          <el-radio-button value="refund">{{ t('receipts.modeRefund') }}</el-radio-button>
+        </el-radio-group>
+        <span v-if="mode === 'refund'" class="sub">{{ t('receipts.refundModeHint') }}</span>
+      </div>
       <el-radio-group v-model="disposition" class="tabs" @change="reload">
         <el-radio-button value="UNPROCESSED">{{ t('receipts.dispositions.UNPROCESSED') }}</el-radio-button>
         <el-radio-button value="ALLOCATED">{{ t('receipts.dispositions.ALLOCATED') }}</el-radio-button>
-        <el-radio-button value="IRRELEVANT">{{ t('receipts.dispositions.IRRELEVANT') }}</el-radio-button>
+        <el-radio-button v-if="mode === 'collect'" value="IRRELEVANT">{{ t('receipts.dispositions.IRRELEVANT') }}</el-radio-button>
         <el-radio-button value="">{{ t('receipts.allDispositions') }}</el-radio-button>
       </el-radio-group>
 
@@ -114,7 +123,7 @@
           <tr><td>{{ t('receipts.remittance') }}</td><td>{{ detail.remittanceInfo || '—' }}</td></tr>
         </table>
 
-        <el-alert v-if="suggestions.length" type="info" :closable="false" show-icon class="alert">
+        <el-alert v-if="mode === 'collect' && suggestions.length" type="info" :closable="false" show-icon class="alert">
           <template #default>
             <div class="suggest">
               <span>{{ t('receipts.suggestHint', { n: suggestions.length }) }}</span>
@@ -159,15 +168,9 @@
           </div>
         </template>
 
-        <!-- Money we paid out has no receivable to settle. The server
-             refuses it; offering the form anyway would just be a trap. -->
-        <el-alert v-if="detail.direction === 'DEBIT'" type="warning" :closable="false" show-icon class="alert">
-          {{ t('receipts.debitHint') }}
-        </el-alert>
-
-        <template v-if="canWrite && detail.disposition !== 'IRRELEVANT' && detail.direction === 'CREDIT'">
+        <template v-if="canWrite && detail.disposition !== 'IRRELEVANT' && workable(detail)">
           <div class="side-title">
-            {{ t('receipts.newAllocation') }}
+            {{ mode === 'refund' ? t('receipts.newRefund') : t('receipts.newAllocation') }}
             <el-button link type="primary" @click="addRow">{{ t('receipts.addContract') }}</el-button>
           </div>
           <el-table :data="draft" size="small">
@@ -192,18 +195,19 @@
                 </el-select>
               </template>
             </el-table-column>
-            <el-table-column :label="t('receipts.openAmount')" width="110" align="right">
+            <!-- 核销看「还欠多少」，退款看「收过多少」——上限就是这两个数。 -->
+            <el-table-column :label="mode === 'refund' ? t('receipts.receivedOf') : t('receipts.openAmount')" width="110" align="right">
               <template #default="{ row }">
-                <span class="num dim">{{ openOf(row.contractId) }}</span>
+                <span class="num dim">{{ capOf(row.contractId) }}</span>
               </template>
             </el-table-column>
-            <el-table-column :label="t('receipts.thisTime')" width="130">
+            <el-table-column :label="mode === 'refund' ? t('receipts.thisRefund') : t('receipts.thisTime')" width="130">
               <template #default="{ row }"><el-input v-model="row.amount" size="small" /></template>
             </el-table-column>
             <!-- 补足差额：不从银行那一行出、只把合同补满的那截钱。原来它
                  只有「手续费」一种说法，于是损耗扣款只能谎报成手续费——
                  类别错了，将来进总账就进错科目。 -->
-            <el-table-column width="200">
+            <el-table-column v-if="mode === 'collect'" width="200">
               <template #header>
                 <el-tooltip :content="t('receipts.feeHint')" placement="top">
                   <span>{{ t('receipts.fee') }}</span>
@@ -229,7 +233,7 @@
           </el-table>
         </template>
 
-        <div v-if="detail.direction === 'CREDIT'" class="totals">
+        <div v-if="workable(detail)" class="totals">
           <div><span class="sub">{{ t('receipts.amount') }}</span><span class="num">{{ detail.amount }}</span></div>
           <div><span class="sub">{{ t('receipts.settledTotal') }}</span><span class="num">{{ settledTotal }}</span></div>
           <div><span class="sub">{{ t('receipts.draftTotal') }}</span><span class="num">{{ draftTotal }}</span></div>
@@ -264,7 +268,7 @@
             </div>
           </template>
         </el-alert>
-        <template v-else-if="canWrite && detail.disposition === 'UNPROCESSED' && detail.direction === 'CREDIT' && Number(detail.unallocatedAmount) > 0">
+        <template v-else-if="canWrite && detail.disposition === 'UNPROCESSED' && workable(detail) && Number(detail.unallocatedAmount) > 0">
           <div v-if="!settleOpen" class="settle-invite">
             <span class="sub">{{ t('receipts.settleInvite', { n: detail.unallocatedAmount }) }}</span>
             <el-button size="small" @click="settleOpen = true">{{ t('receipts.settle') }}</el-button>
@@ -285,19 +289,19 @@
 
       <template #footer>
         <el-button
-          v-if="canWrite && detail?.disposition !== 'IRRELEVANT'"
+          v-if="canWrite && mode === 'collect' && detail?.disposition !== 'IRRELEVANT'"
           @click="openIrrelevant"
         >
           {{ t('receipts.markIrrelevant') }}
         </el-button>
         <el-button @click="matchOpen = false">{{ common('cancel') }}</el-button>
         <el-button
-          v-if="canWrite && detail?.disposition !== 'IRRELEVANT' && detail?.direction === 'CREDIT'"
+          v-if="canWrite && detail?.disposition !== 'IRRELEVANT' && detail && workable(detail)"
           type="primary"
           :loading="saving"
           @click="submitAllocation"
         >
-          {{ t('receipts.confirm') }}
+          {{ mode === 'refund' ? t('receipts.confirmRefund') : t('receipts.confirm') }}
         </el-button>
       </template>
     </el-dialog>
@@ -318,15 +322,14 @@
         <el-form-item :label="t('receipts.bankRef')" required>
           <el-input v-model="form.bankRef" :placeholder="t('receipts.bankRefPlaceholder')" />
         </el-form-item>
-        <!-- 出账的选项先摘掉，后端也拒收（EX_TX_DEBIT_NOT_YET）。原因不是
-             出账不存在，而是它今天没有去处：本页列表只出进账，登记出去的
-             那一行会从每个页面上消失，钱录进去了谁都找不到。等收付队列
-             改造给客户退款开了自己的子页面，这里再放开。 -->
+        <!-- 出账回来了：它现在有去处——归属写客户往来，落进「客户退款」
+             视图。（阶段 0 曾临时摘掉这个选项，那时登记出账等于把钱录进
+             一个谁都看不见的角落。） -->
         <el-form-item :label="t('receipts.direction')">
           <el-radio-group v-model="form.direction">
             <el-radio-button value="CREDIT">{{ t('receipts.credit') }}</el-radio-button>
+            <el-radio-button value="DEBIT">{{ t('receipts.debit') }}</el-radio-button>
           </el-radio-group>
-          <span class="direction-note">{{ t('receipts.debitComingSoon') }}</span>
         </el-form-item>
         <el-form-item :label="t('receipts.amount')" required>
           <el-input v-model="form.amount" style="width: 180px" />
@@ -423,7 +426,7 @@ interface Allocation {
   allocatedByName: string
 }
 interface Suggestion { contractId: string; contractNo: string; customerName: string; currency: string; openAmount: string }
-interface Receivable { contractId: string; contractNo: string; customerName: string; currency: string; openAmount: string }
+interface Receivable { contractId: string; contractNo: string; customerName: string; currency: string; openAmount: string; receivedAmount?: string }
 interface Account { id: string; accountNo: string; accountName: string; bankName: string; currency: string }
 interface DraftRow { contractId?: number; amount: string; fee: string; feeCat: string }
 
@@ -431,6 +434,21 @@ interface DraftRow { contractId?: number; amount: string; fee: string; feeCat: s
 const { t } = useI18n()
 const auth = useAuthStore()
 const canWrite = auth.can('export:receipt:write')
+
+// 核销收款 / 客户退款 两个子视图。同一张账，两个方向两个问题。
+const mode = ref<'collect' | 'refund'>('collect')
+
+function onModeChange() {
+  // 换视图回到待处理档——「与应收无关」在退款视图里不存在。
+  disposition.value = 'UNPROCESSED'
+  page.value = 1
+  void load()
+}
+
+// 这一行能不能在当前视图里操作：核销视图收进账，退款视图收出账。
+function workable(d: { direction: string }): boolean {
+  return mode.value === 'refund' ? d.direction === 'DEBIT' : d.direction === 'CREDIT'
+}
 
 const rows = ref<Transaction[]>([])
 const total = ref(0)
@@ -523,11 +541,9 @@ const remaining = computed(() =>
   (Number(detail.value?.amount ?? 0) - Number(settledTotal.value) - Number(draftTotal.value)).toFixed(2),
 )
 
-// A debit is filed, not matched: there is no receivable on the other side of
-// money we sent out.
 function actionLabel(row: Transaction): string {
   if (!canWrite || row.disposition === 'IRRELEVANT') return common('detail')
-  return row.direction === 'DEBIT' ? t('receipts.file') : t('receipts.match')
+  return mode.value === 'refund' ? t('receipts.matchRefund') : t('receipts.match')
 }
 
 function dispoType(d: string): 'warning' | 'success' | 'info' {
@@ -536,9 +552,12 @@ function dispoType(d: string): 'warning' | 'success' | 'info' {
   return 'warning'
 }
 
-function openOf(contractId?: number): string {
+function capOf(contractId?: number): string {
   if (!contractId) return '—'
-  return receivables.value.find((r) => Number(r.contractId) === contractId)?.openAmount ?? '—'
+  const r = receivables.value.find((x) => Number(x.contractId) === contractId)
+  if (!r) return '—'
+  // 核销的上限是这张合同还欠多少，退款的上限是它收过多少。
+  return (mode.value === 'refund' ? r.receivedAmount : r.openAmount) ?? '—'
 }
 
 async function load() {
@@ -546,6 +565,7 @@ async function load() {
   try {
     const d = await get<{ transactions: Transaction[]; total: string }>('/receipt-transactions', {
       page: page.value, page_size: pageSize,
+      direction: mode.value === 'refund' ? 'DEBIT' : 'CREDIT',
       disposition: disposition.value, keyword: keyword.value,
     })
     rows.value = d.transactions ?? []
@@ -639,6 +659,7 @@ async function searchReceivables(query: string) {
   try {
     receivables.value = (await get<{ receivables: Receivable[] }>('/open-receivables', {
       currency: detail.value.currency, keyword: query,
+      for_refund: mode.value === 'refund' ? '1' : '',
     })).receivables ?? []
   } finally {
     searching.value = false
@@ -652,7 +673,7 @@ function addRow() {
 // Fill the amount with whatever is smaller: what the contract still owes, or
 // what is left of the payment. Guessing high would only produce a refusal.
 function onPick(row: DraftRow) {
-  const open = Number(openOf(row.contractId))
+  const open = Number(capOf(row.contractId))
   if (!Number.isFinite(open)) return
   const left = Number(detail.value?.amount ?? 0) - Number(settledTotal.value) - Number(draftTotal.value)
   row.amount = Math.max(0, Math.min(open, left + Number(row.amount || 0))).toFixed(2)
@@ -876,11 +897,6 @@ onMounted(load)
   margin-top: 14px;
   justify-content: flex-end;
 }
-.direction-note {
-  margin-inline-start: 12px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
 .fee-cell {
   display: flex;
   gap: 4px;
@@ -892,5 +908,11 @@ onMounted(load)
   gap: 8px;
   flex-wrap: wrap;
   margin-top: 12px;
+}
+.mode-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 </style>
