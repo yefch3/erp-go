@@ -271,7 +271,7 @@ func (q *Queries) FindContractsByNo(ctx context.Context, arg FindContractsByNoPa
 const getAllocation = `-- name: GetAllocation :one
 SELECT
     id, transaction_id, contract_id, contract_no, customer_name,
-    amount::text AS amount, fee_amount::text AS fee_amount, currency,
+    amount::text AS amount, fee_amount::text AS fee_amount, fee_category, currency,
     coalesce(reversal_of, 0)::bigint AS reversal_of
 FROM receipt_allocations
 WHERE tenant_id = $1::bigint AND id = $2::bigint
@@ -290,6 +290,7 @@ type GetAllocationRow struct {
 	CustomerName  string
 	Amount        string
 	FeeAmount     string
+	FeeCategory   string
 	Currency      string
 	ReversalOf    int64
 }
@@ -305,6 +306,7 @@ func (q *Queries) GetAllocation(ctx context.Context, arg GetAllocationParams) (G
 		&i.CustomerName,
 		&i.Amount,
 		&i.FeeAmount,
+		&i.FeeCategory,
 		&i.Currency,
 		&i.ReversalOf,
 	)

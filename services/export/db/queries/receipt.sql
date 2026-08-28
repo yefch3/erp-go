@@ -45,7 +45,7 @@ GROUP BY transaction_id;
 -- name: GetAllocation :one
 SELECT
     id, transaction_id, contract_id, contract_no, customer_name,
-    amount::text AS amount, fee_amount::text AS fee_amount, currency,
+    amount::text AS amount, fee_amount::text AS fee_amount, fee_category, currency,
     coalesce(reversal_of, 0)::bigint AS reversal_of
 FROM receipt_allocations
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;

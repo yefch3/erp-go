@@ -696,7 +696,10 @@ func (s *Service) ReverseAllocation(ctx context.Context, tenantID, allocID int64
 			// contract as paid.
 			Amount:    mustDec(orig.Amount).Neg().StringFixed(2),
 			FeeAmount: mustDec(orig.FeeAmount).Neg().StringFixed(2),
-			Currency:  orig.Currency, ReversalOf: allocID, ReverseReason: reason,
+			// 冲销行是原行的镜像，差额类别跟着原行走——负的损耗冲掉正的损耗，
+			// 按类别汇总时两边才互相抵消。
+			FeeCategory: orig.FeeCategory,
+			Currency:    orig.Currency, ReversalOf: allocID, ReverseReason: reason,
 			AllocatedBy: op.ID, AllocatedByName: op.Name,
 		}); err != nil {
 			return err
