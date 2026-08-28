@@ -290,9 +290,18 @@
           <BLReminders v-if="auth.can('shipping:schedule:read')" />
           <LangSwitcher />
           <el-dropdown @command="onCommand">
-            <span class="user">{{ auth.employeeName || '—' }}</span>
+            <!-- 头像加名字。头像放在这里而不是只放在资料页里，是因为它顺带
+                 回答了「我现在是以谁的身份登着」——同一台电脑上换过账号的人
+                 一眼就能发现自己还挂在别人名下。 -->
+            <span class="user">
+              <el-avatar :size="24" :src="myAvatar" class="user-avatar">
+                {{ (auth.employeeName || '—').slice(0, 1) }}
+              </el-avatar>
+              {{ auth.employeeName || '—' }}
+            </span>
             <template #dropdown>
               <el-dropdown-menu>
+                <el-dropdown-item command="profile">{{ t('profile.title') }}</el-dropdown-item>
                 <el-dropdown-item command="password">{{ t('password.title') }}</el-dropdown-item>
                 <el-dropdown-item command="logout">{{ t('common.logout') }}</el-dropdown-item>
               </el-dropdown-menu>
@@ -351,7 +360,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { get, post } from '../api'
+import { get, post, quietErrors } from '../api'
 import { useAuthStore } from '../stores/auth'
 import LangSwitcher from '../components/LangSwitcher.vue'
 import ShippingArrivalNotifications from '../components/ShippingArrivalNotifications.vue'
@@ -623,6 +632,21 @@ function pullShippingReminders() {
 // One stream for the whole session, opened once the user is inside the shell
 // and closed when they leave it.
 onMounted(startLive)
+
+// 顶栏的小头像。每次进壳子现取一次——地址带签名、十几分钟就过期，
+// 所以它存不进 localStorage（见 stores/auth.ts）。
+//
+// 取不到就当没有头像：首字母的圆圈照样能用，不该为一张装饰性的图片
+// 在控制台里刷一条红的，更不该挡住页面加载。
+const myAvatar = computed(() => auth.avatarUrl)
+onMounted(async () => {
+  try {
+    const d = await get<{ profile: { avatarUrl?: string } }>('/me/profile', undefined, quietErrors)
+    auth.avatarUrl = d.profile?.avatarUrl ?? ''
+  } catch {
+    auth.avatarUrl = ''
+  }
+})
 onUnmounted(stopLive)
 
 // Desktop notification for new mail — but only when the person is NOT
@@ -649,6 +673,9 @@ onUnmounted(
 )
 
 function onCommand(cmd: string) {
+  if (cmd === 'profile') {
+    router.push('/me')
+  }
   if (cmd === 'logout') {
     stopLive()
     auth.logout()

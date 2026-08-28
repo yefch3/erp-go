@@ -26,6 +26,16 @@ type Config struct {
 	ExtraTenantMailDomains   string
 	ExtraTenantAdminEmail    string
 	ExtraTenantAdminPassword string
+
+	// 员工头像的对象存储。iam 在这次之前不碰文件，所以这几项是**可选的**：
+	// endpoint 留空就不接存储，员工资料照常读写，只是传不了头像。
+	// 变量名和其他六个服务完全一致，运维那边不用为 iam 记一套新的。
+	MinioEndpoint       string
+	MinioPublicEndpoint string
+	MinioAccessKey      string
+	MinioSecretKey      string
+	MinioBucket         string
+	MinioUseSSL         bool
 }
 
 func Load() Config {
@@ -55,6 +65,15 @@ func Load() Config {
 		ExtraTenantMailDomains:   env("EXTRA_TENANT_MAIL_DOMAINS", ""),
 		ExtraTenantAdminEmail:    env("EXTRA_TENANT_ADMIN_EMAIL", ""),
 		ExtraTenantAdminPassword: env("EXTRA_TENANT_ADMIN_PASSWORD", ""),
+
+		// 默认值和其他服务一致，本地 make up 起来就能用。生产的 endpoint 由
+		// compose 传入；留空则不接存储（见 Config 上面的说明）。
+		MinioEndpoint:       env("MINIO_ENDPOINT", "localhost:19000"),
+		MinioPublicEndpoint: env("MINIO_PUBLIC_ENDPOINT", ""),
+		MinioAccessKey:      env("MINIO_ACCESS_KEY", "erp"),
+		MinioSecretKey:      env("MINIO_SECRET_KEY", "erp_dev_password"),
+		MinioBucket:         env("MINIO_BUCKET", "erp-files"),
+		MinioUseSSL:         env("MINIO_USE_SSL", "") == "true",
 	}
 }
 

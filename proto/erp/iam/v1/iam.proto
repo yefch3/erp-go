@@ -80,6 +80,17 @@ service DirectoryService {
   // it lies at the moment somebody has already decided to trust it.
   rpc ImportEmployees(ImportEmployeesRequest) returns (ImportEmployeesResponse);
   rpc ListDirectoryChanges(ListDirectoryChangesRequest) returns (ListDirectoryChangesResponse);
+
+  // 「我的资料」。这三个 RPC 的调用者一律取自认证上下文，因此它们是这个服务里
+  // 唯一不需要 iam:employee:read 的读写口——看自己、改自己是身份自带的，
+  // 而普通员工本来就没有那个权限。
+  rpc GetMyProfile(GetMyProfileRequest) returns (GetMyProfileResponse);
+  rpc UpdateMyProfile(UpdateMyProfileRequest) returns (UpdateMyProfileResponse);
+  // 头像。employee_id 为 0 表示「我自己」；非 0 是管理员在改别人的，
+  // 由网关的 iam:employee:write 把关。
+  rpc PresignAvatarUpload(PresignAvatarUploadRequest) returns (PresignAvatarUploadResponse);
+  rpc SetAvatar(SetAvatarRequest) returns (SetAvatarResponse);
+  rpc AvatarURLs(AvatarURLsRequest) returns (AvatarURLsResponse);
 }
 
 // AccessService owns roles, permissions and the permission check other
@@ -396,6 +407,101 @@ message Employee {
   string leave_date = 18;
   string remark = 19;
   int32 version = 20;
+  // Object key of the profile photo, empty when there is none. A key rather
+  // than a URL: a URL carries a signature, expires, and stops working the day
+  // the storage endpoint moves. What the object is called belongs to the
+  // record; where it is served from belongs to the deployment.
+  string avatar_key = 21;
+}
+
+// MyProfile is what an employee is shown about themselves.
+//
+// Deliberately NOT the Employee message with some fields left blank. Two
+// things must never reach the person the record is about — `remark`, which is
+// the manager's private assessment, and `leave_date`, which an administrator
+// may have entered before anyone has had that conversation. Leaving them out
+// of the type is the only version of that guarantee which survives somebody
+// later filling in "the missing fields"; a blank string in a shared message is
+// a convention, and conventions are what get forgotten.
+message MyProfile {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  string english_name = 4;
+  string department_name = 5;
+  string position = 6;
+  string email = 7;
+  string phone = 8;
+  string status = 9;
+  // Who I report to, by name. The id is of no use on a page about myself.
+  string manager_name = 10;
+  string hire_date = 11;
+  string avatar_key = 12;
+  // 一个短命的可直接放进 <img src> 的地址，没有头像时为空。
+  //
+  // 和 key 一起返回，省掉「先拿 key 再换地址」那次往返。**不要缓存它**：
+  // 它带签名、十几分钟就过期，存进 localStorage 的下场是刷新后一张裂图。
+  string avatar_url = 15;
+  // Carried so a save can be refused when an administrator changed this
+  // record in the meantime. Same lock UpdateEmployee uses.
+  int32 version = 13;
+  bool email_verified = 14;
+}
+
+message GetMyProfileRequest {}
+
+message GetMyProfileResponse {
+  MyProfile profile = 1;
+}
+
+// No employee id anywhere in this request: the caller is taken from the
+// authenticated context, so "edit somebody else" is not a request that can be
+// expressed rather than one that has to be refused.
+message UpdateMyProfileRequest {
+  string english_name = 1;
+  string phone = 2;
+  int32 expected_version = 3;
+}
+
+message UpdateMyProfileResponse {
+  MyProfile profile = 1;
+}
+
+message PresignAvatarUploadRequest {
+  // Whose avatar. Zero means "mine" — the only value an ordinary employee may
+  // send. A non-zero id is an administrator setting somebody else's photo and
+  // is refused without iam:employee:write at the gateway.
+  int64 employee_id = 1;
+  string file_name = 2;
+  string content_type = 3;
+}
+
+message PresignAvatarUploadResponse {
+  // Hand this back to SetAvatar once the PUT succeeded.
+  string file_key = 1;
+  string upload_url = 2;
+  int32 expires_in_seconds = 3;
+}
+
+message SetAvatarRequest {
+  int64 employee_id = 1;
+  // Empty clears the photo.
+  string file_key = 2;
+}
+
+message SetAvatarResponse {
+  string avatar_key = 1;
+}
+
+// A short-lived URL for showing one avatar. Separate from the key so the
+// browser never needs credentials and the record never stores a URL.
+message AvatarURLsRequest {
+  repeated int64 employee_ids = 1;
+}
+
+message AvatarURLsResponse {
+  // employee id -> URL. Employees without a photo are simply absent.
+  map<int64, string> urls = 1;
 }
 
 message CreateEmployeeRequest {

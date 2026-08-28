@@ -40,6 +40,13 @@ services:
       EXTRA_TENANT_MAIL_DOMAINS: ${EXTRA_TENANT_MAIL_DOMAINS:-}
       EXTRA_TENANT_ADMIN_EMAIL: ${EXTRA_TENANT_ADMIN_EMAIL:-}
       EXTRA_TENANT_ADMIN_PASSWORD: ${EXTRA_TENANT_ADMIN_PASSWORD:-}
+      # 员工头像走共享的桶。留空就是不接存储——iam 照常起，只是传不了头像
+      # （见 services/iam/cmd/main.go 里那段 Warn）。
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-erp}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-erp_dev_password}
+      MINIO_BUCKET: ${MINIO_BUCKET:-erp-files}
     # Loopback only, like every service below it.
     #
     # These ports exist for a developer with grpcurl, and for nothing else: the

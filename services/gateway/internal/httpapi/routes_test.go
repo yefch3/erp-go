@@ -98,3 +98,92 @@ func TestReceiptsAndBankLedgerDoNotShareAnAddress(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------- 我的资料
+
+// 「我的资料」那一组地址必须齐，否则页面上有按钮点了没反应。
+func TestMyProfileRoutesAreAllRegistered(t *testing.T) {
+	have := routeSet(t)
+	// 和 frontend/src/pages/MyProfilePage.vue 里调的一一对应。
+	for _, w := range []string{
+		"GET /api/me/profile",                     // 打开页面
+		"PUT /api/me/profile",                     // 保存电话和英文名
+		"POST /api/me/avatar/presign",             // 换一个直传地址
+		"POST /api/me/avatar",                     // 传完落库（空 key 表示移除）
+		"POST /api/employees/avatar-urls",         // 列表页批量取头像
+		"POST /api/employees/{id}/avatar/presign", // 管理员替别人换
+		"POST /api/employees/{id}/avatar",         // 同上
+	} {
+		if !have[w] {
+			t.Errorf("我的资料少了这条地址：%s", w)
+		}
+	}
+}
+
+// middlewareCount 数一条路由挂了几层中间件。
+//
+// 只用来做**同类对比**，不看绝对值：绝对值会随着全局中间件增减而变，
+// 而「这条路由和那条已知的路由挂得一样多吗」不会。
+func middlewareCount(t *testing.T, method, route string) int {
+	t.Helper()
+	routes, ok := (&Server{}).Router().(chi.Routes)
+	if !ok {
+		t.Fatal("Router() 返回的东西没法遍历")
+	}
+	n := -1
+	if err := chi.Walk(routes, func(m, r string, _ http.Handler, mws ...func(http.Handler) http.Handler) error {
+		if m == method && strings.TrimSuffix(r, "/") == route {
+			n = len(mws)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if n < 0 {
+		t.Fatalf("路由表里没有 %s %s", method, route)
+	}
+	return n
+}
+
+// 「我的资料」不能挂权限门，管理员改别人的必须挂。
+//
+// 这条钉的是这一组最容易做错的地方。给 /api/me/* 加上 iam:employee:read 是个
+// 看起来更安全、实际是错的改动——普通员工**没有**那个权限，加了之后所有人
+// 都打不开自己的资料页，而错误信息会是「没有执行此操作的权限」，
+// 让人以为是权限配错了，去改角色，越改越远。
+//
+// 反过来，管理员那两条要是漏了权限门，任何登录的人都能改别人的照片。
+//
+// 用「和已知路由比」而不是数绝对值：/api/me/permissions 是确定不带权限门的，
+// PUT /api/employees/{id} 是确定带的。
+func TestMyProfileIsNotBehindAPermissionButTheAdminAvatarRoutesAre(t *testing.T) {
+	openBaseline := middlewareCount(t, "GET", "/api/me/permissions")
+	gatedBaseline := middlewareCount(t, "PUT", "/api/employees/{id}")
+	if openBaseline >= gatedBaseline {
+		t.Fatal("基准不成立：带权限门的路由中间件数没有多于不带的，这条测试证明不了任何事")
+	}
+
+	for _, r := range []struct{ method, route string }{
+		{"GET", "/api/me/profile"},
+		{"PUT", "/api/me/profile"},
+		{"POST", "/api/me/avatar/presign"},
+		{"POST", "/api/me/avatar"},
+	} {
+		if got := middlewareCount(t, r.method, r.route); got != openBaseline {
+			t.Errorf("%s %s 挂了 %d 层中间件，而不带权限门的路由是 %d 层——"+
+				"看自己的资料不该需要 iam:employee:read，普通员工根本没有那个权限",
+				r.method, r.route, got, openBaseline)
+		}
+	}
+
+	for _, r := range []struct{ method, route string }{
+		{"POST", "/api/employees/{id}/avatar/presign"},
+		{"POST", "/api/employees/{id}/avatar"},
+		{"POST", "/api/employees/avatar-urls"},
+	} {
+		if got := middlewareCount(t, r.method, r.route); got != gatedBaseline {
+			t.Errorf("%s %s 挂了 %d 层中间件，而带权限门的路由是 %d 层——"+
+				"改别人的头像必须要权限", r.method, r.route, got, gatedBaseline)
+		}
+	}
+}

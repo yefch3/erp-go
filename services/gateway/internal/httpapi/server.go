@@ -246,6 +246,12 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("iam:employee:write")).Post("/api/employees", s.createEmployee)
 		r.With(s.perm("iam:employee:write")).Put("/api/employees/{id}", s.updateEmployee)
 		r.With(s.perm("iam:employee:read")).Get("/api/employees/{id}/changes", s.listEmployeeChanges)
+		// 一批人的头像地址。走 read 权限，和员工列表同一道门——能看到这些人
+		// 的人才能看到他们的照片，头像不单独设一套可见性。
+		r.With(s.perm("iam:employee:read")).Post("/api/employees/avatar-urls", s.employeeAvatarURLs)
+		// 管理员替别人换/清头像。写权限，和改员工资料同一道门。
+		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/avatar/presign", s.presignEmployeeAvatar)
+		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/avatar", s.setEmployeeAvatar)
 		r.With(s.perm("iam:employee:write")).Delete("/api/employees/{id}", s.deactivateEmployee)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/activate", s.activateEmployee)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/account", s.openAccount)
@@ -297,6 +303,14 @@ func (s *Server) Router() http.Handler {
 		// through its own permission-checked route.
 		r.Get("/api/events", s.streamEvents)
 		r.Post("/api/me/password", s.changeOwnPassword)
+		// 「我的资料」。同样只要求登录：这几条的作用对象是调用者自己，
+		// iam 那边根本不接受「员工 id」这个入参，所以它们**改不到别人**。
+		// 挂 iam:employee:read 反而是错的——普通员工没有那个权限，
+		// 而看自己的电话号码不该需要「查看员工」。
+		r.Get("/api/me/profile", s.myProfile)
+		r.Put("/api/me/profile", s.updateMyProfile)
+		r.Post("/api/me/avatar/presign", s.presignMyAvatar)
+		r.Post("/api/me/avatar", s.setMyAvatar)
 		// Product catalog. Categories and units are reference data every
 		// product form needs, so reading them only requires product:read.
 		r.With(s.perm("product:product:read")).Get("/api/product-categories", s.listCategories)

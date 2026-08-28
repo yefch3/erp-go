@@ -261,7 +261,7 @@ func (q *Queries) CreateDepartment(ctx context.Context, arg CreateDepartmentPara
 const createEmployee = `-- name: CreateEmployee :one
 INSERT INTO employees (tenant_id, code, name, department_id, position, email, phone, manager_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8::bigint, 0))
-RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at, english_name, hire_date, leave_date, remark, version
+RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at, english_name, hire_date, leave_date, remark, version, avatar_key
 `
 
 type CreateEmployeeParams struct {
@@ -306,6 +306,7 @@ func (q *Queries) CreateEmployee(ctx context.Context, arg CreateEmployeeParams) 
 		&i.LeaveDate,
 		&i.Remark,
 		&i.Version,
+		&i.AvatarKey,
 	)
 	return i, err
 }
@@ -662,7 +663,7 @@ func (q *Queries) GetDepartment(ctx context.Context, arg GetDepartmentParams) (D
 }
 
 const getEmployee = `-- name: GetEmployee :one
-SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, e.english_name, e.hire_date, e.leave_date, e.remark, e.version, d.name AS department_name, coalesce(m.name, '')::text AS manager_name
+SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, e.english_name, e.hire_date, e.leave_date, e.remark, e.version, e.avatar_key, d.name AS department_name, coalesce(m.name, '')::text AS manager_name
 FROM employees e
 JOIN departments d ON d.id = e.department_id
 LEFT JOIN employees m ON m.id = e.manager_id
@@ -693,6 +694,7 @@ type GetEmployeeRow struct {
 	LeaveDate       pgtype.Date
 	Remark          string
 	Version         int32
+	AvatarKey       string
 	DepartmentName  string
 	ManagerName     string
 }
@@ -719,6 +721,7 @@ func (q *Queries) GetEmployee(ctx context.Context, arg GetEmployeeParams) (GetEm
 		&i.LeaveDate,
 		&i.Remark,
 		&i.Version,
+		&i.AvatarKey,
 		&i.DepartmentName,
 		&i.ManagerName,
 	)
@@ -1200,6 +1203,45 @@ func (q *Queries) ListEmployeeAccounts(ctx context.Context, tenantID int64) ([]L
 	return items, nil
 }
 
+const listEmployeeAvatars = `-- name: ListEmployeeAvatars :many
+SELECT id, avatar_key FROM employees
+WHERE tenant_id = $1::bigint
+  AND id = ANY($2::bigint[])
+`
+
+type ListEmployeeAvatarsParams struct {
+	TenantID int64
+	Ids      []int64
+}
+
+type ListEmployeeAvatarsRow struct {
+	ID        int64
+	AvatarKey string
+}
+
+// 一批人的头像 key。列表页和组织架构图一次要显示几十上百张，
+// 逐个去查就是逐个往返。没有头像的人也返回（key 是空串），由调用方跳过——
+// 在 SQL 里过滤会让「这个人查到了但没头像」和「这个人根本不在」变成同一件事。
+func (q *Queries) ListEmployeeAvatars(ctx context.Context, arg ListEmployeeAvatarsParams) ([]ListEmployeeAvatarsRow, error) {
+	rows, err := q.db.Query(ctx, listEmployeeAvatars, arg.TenantID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEmployeeAvatarsRow
+	for rows.Next() {
+		var i ListEmployeeAvatarsRow
+		if err := rows.Scan(&i.ID, &i.AvatarKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEmployeeIdentity = `-- name: ListEmployeeIdentity :many
 SELECT id, code, lower(email)::text AS email
 FROM employees
@@ -1306,7 +1348,7 @@ func (q *Queries) ListEmployeeRoleIDs(ctx context.Context, arg ListEmployeeRoleI
 }
 
 const listEmployees = `-- name: ListEmployees :many
-SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, e.english_name, e.hire_date, e.leave_date, e.remark, e.version, d.name AS department_name, coalesce(m.name, '')::text AS manager_name,
+SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, e.english_name, e.hire_date, e.leave_date, e.remark, e.version, e.avatar_key, d.name AS department_name, coalesce(m.name, '')::text AS manager_name,
        count(*) OVER () AS total
 FROM employees e
 JOIN departments d ON d.id = e.department_id
@@ -1345,6 +1387,7 @@ type ListEmployeesRow struct {
 	LeaveDate       pgtype.Date
 	Remark          string
 	Version         int32
+	AvatarKey       string
 	DepartmentName  string
 	ManagerName     string
 	Total           int64
@@ -1384,6 +1427,7 @@ func (q *Queries) ListEmployees(ctx context.Context, arg ListEmployeesParams) ([
 			&i.LeaveDate,
 			&i.Remark,
 			&i.Version,
+			&i.AvatarKey,
 			&i.DepartmentName,
 			&i.ManagerName,
 			&i.Total,
@@ -1399,7 +1443,7 @@ func (q *Queries) ListEmployees(ctx context.Context, arg ListEmployeesParams) ([
 }
 
 const listEmployeesFiltered = `-- name: ListEmployeesFiltered :many
-SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, e.english_name, e.hire_date, e.leave_date, e.remark, e.version, d.name AS department_name, coalesce(m.name, '')::text AS manager_name,
+SELECT e.id, e.tenant_id, e.code, e.name, e.department_id, e.position, e.email, e.phone, e.status, e.created_at, e.updated_at, e.manager_id, e.email_verified_at, e.english_name, e.hire_date, e.leave_date, e.remark, e.version, e.avatar_key, d.name AS department_name, coalesce(m.name, '')::text AS manager_name,
        count(*) OVER () AS total
 FROM employees e
 JOIN departments d ON d.id = e.department_id AND d.tenant_id = e.tenant_id
@@ -1468,6 +1512,7 @@ type ListEmployeesFilteredRow struct {
 	LeaveDate       pgtype.Date
 	Remark          string
 	Version         int32
+	AvatarKey       string
 	DepartmentName  string
 	ManagerName     string
 	Total           int64
@@ -1511,6 +1556,7 @@ func (q *Queries) ListEmployeesFiltered(ctx context.Context, arg ListEmployeesFi
 			&i.LeaveDate,
 			&i.Remark,
 			&i.Version,
+			&i.AvatarKey,
 			&i.DepartmentName,
 			&i.ManagerName,
 			&i.Total,
@@ -2151,6 +2197,54 @@ func (q *Queries) SetDepartmentStatus(ctx context.Context, arg SetDepartmentStat
 	return i, err
 }
 
+const setEmployeeAvatar = `-- name: SetEmployeeAvatar :one
+UPDATE employees
+SET avatar_key = $1::text, updated_at = now()
+WHERE tenant_id = $2::bigint AND id = $3::bigint
+RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at, english_name, hire_date, leave_date, remark, version, avatar_key
+`
+
+type SetEmployeeAvatarParams struct {
+	AvatarKey string
+	TenantID  int64
+	ID        int64
+}
+
+// 头像单独一条，不并进 UpdateEmployeeDetails，也不并进 UpdateOwnProfile。
+//
+// 并进去的话，任何一个忘了回传 avatar_key 的表单提交都会把头像清空——
+// 而「少传一个字段就悄悄删数据」这种形状，这个代码库里已经栽过。传图片本来
+// 也不是填表：点头像、选文件、传完就生效，和按「保存」是两个动作。
+//
+// 不动 version：头像不属于那张表单的乐观锁范围，管理员开着表单时员工换了张
+// 照片，不该让管理员的保存失败。
+func (q *Queries) SetEmployeeAvatar(ctx context.Context, arg SetEmployeeAvatarParams) (Employee, error) {
+	row := q.db.QueryRow(ctx, setEmployeeAvatar, arg.AvatarKey, arg.TenantID, arg.ID)
+	var i Employee
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Code,
+		&i.Name,
+		&i.DepartmentID,
+		&i.Position,
+		&i.Email,
+		&i.Phone,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ManagerID,
+		&i.EmailVerifiedAt,
+		&i.EnglishName,
+		&i.HireDate,
+		&i.LeaveDate,
+		&i.Remark,
+		&i.Version,
+		&i.AvatarKey,
+	)
+	return i, err
+}
+
 const setEmployeeEmailVerified = `-- name: SetEmployeeEmailVerified :exec
 UPDATE employees
 SET email = $1::text, email_verified_at = now(), updated_at = now()
@@ -2350,7 +2444,7 @@ SET code = $1::text,
 WHERE tenant_id = $12::bigint
   AND id = $13::bigint
   AND version = $14::int
-RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at, english_name, hire_date, leave_date, remark, version
+RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at, english_name, hire_date, leave_date, remark, version, avatar_key
 `
 
 type UpdateEmployeeDetailsParams struct {
@@ -2407,6 +2501,65 @@ func (q *Queries) UpdateEmployeeDetails(ctx context.Context, arg UpdateEmployeeD
 		&i.LeaveDate,
 		&i.Remark,
 		&i.Version,
+		&i.AvatarKey,
+	)
+	return i, err
+}
+
+const updateOwnProfile = `-- name: UpdateOwnProfile :one
+UPDATE employees
+SET english_name = $1::text,
+    phone = $2::text,
+    version = version + 1,
+    updated_at = now()
+WHERE tenant_id = $3::bigint
+  AND id = $4::bigint
+  AND version = $5::int
+RETURNING id, tenant_id, code, name, department_id, position, email, phone, status, created_at, updated_at, manager_id, email_verified_at, english_name, hire_date, leave_date, remark, version, avatar_key
+`
+
+type UpdateOwnProfileParams struct {
+	EnglishName     string
+	Phone           string
+	TenantID        int64
+	ID              int64
+	ExpectedVersion int32
+}
+
+// 员工改自己的资料。字段白名单写死在 SQL 里，不是在 Go 里过滤——
+// 一条只能改这两列的语句，比一个「记得别把别的字段传进来」的约定可靠。
+//
+// 带版本号，和 UpdateEmployeeDetails 用同一把锁：管理员正在改这个人的资料时
+// 员工按了保存，应该是「有人改过了，请刷新」，而不是谁后写谁赢。
+func (q *Queries) UpdateOwnProfile(ctx context.Context, arg UpdateOwnProfileParams) (Employee, error) {
+	row := q.db.QueryRow(ctx, updateOwnProfile,
+		arg.EnglishName,
+		arg.Phone,
+		arg.TenantID,
+		arg.ID,
+		arg.ExpectedVersion,
+	)
+	var i Employee
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Code,
+		&i.Name,
+		&i.DepartmentID,
+		&i.Position,
+		&i.Email,
+		&i.Phone,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ManagerID,
+		&i.EmailVerifiedAt,
+		&i.EnglishName,
+		&i.HireDate,
+		&i.LeaveDate,
+		&i.Remark,
+		&i.Version,
+		&i.AvatarKey,
 	)
 	return i, err
 }
