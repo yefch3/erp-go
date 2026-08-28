@@ -88,15 +88,19 @@
             <span v-else class="none">—</span>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="150" fixed="right">
+        <el-table-column :label="t('common.actions')" width="210" fixed="right">
           <template #default="{ row }">
             <!-- 匹配的条件从「是出账」改成「归属是供应商或还没归」。
                  供应商退款是**进账**却归供应商，按方向拦就永远对不上。 -->
+            <!-- noId 而不是 !row.matchedPaymentId：这个字段是 int64，没值的时候
+                 到浏览器是字符串 "0"，而 "0" 是真值。写成 ! 的那阵子，「改归属」
+                 在任何一行上都不出现，「取消匹配」在任何一行上都出现——哪怕
+                 旁边「匹配状态」那一列写着「—」。见 lib/protoId.ts。 -->
             <template v-if="canWrite && (!row.ownership || row.ownership === 'SUPPLIER')">
-              <el-button v-if="!row.matchedPaymentId" size="small" @click="openPick(row)">{{ t('bankTransactions.pickPayment') }}</el-button>
+              <el-button v-if="noId(row.matchedPaymentId)" size="small" @click="openPick(row)">{{ t('bankTransactions.pickPayment') }}</el-button>
               <el-button v-else size="small" type="danger" link @click="unmatch(row)">{{ t('bankTransactions.unmatch') }}</el-button>
             </template>
-            <el-button v-if="canWrite && !row.matchedPaymentId" size="small" link @click="openOwnership(row)">
+            <el-button v-if="canWrite && noId(row.matchedPaymentId)" size="small" link @click="openOwnership(row)">
               {{ t('bankTransactions.setOwnership') }}
             </el-button>
           </template>
@@ -164,6 +168,7 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post } from '../api'
 import { CURRENCIES } from '../constants'
+import { noId } from '../lib/protoId'
 import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
