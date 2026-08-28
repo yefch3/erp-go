@@ -1544,6 +1544,7 @@ export default {
     match: '去匹配',
     file: '归类',
     debitHint: '这是一笔付出去的款，没有应收可以核销。归类后它会从待处理里消失。',
+    debitComingSoon: '出账（客户退款）的登记入口即将上线；付给供应商的钱请走「银行流水」导入。',
     reopen: '撤销标记',
     reopened: '已撤销标记',
     empty: '这里没有待处理的流水',

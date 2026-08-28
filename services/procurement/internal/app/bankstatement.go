@@ -187,6 +187,11 @@ func (s *Service) ListBankTransactions(ctx context.Context, tenantID int64, f Ba
 		         AND sp.tenant_id = t.tenant_id AND sp.bank_txn_id IS NULL
 		         AND sp.currency = t.currency AND sp.amount = t.amount
 		         AND abs(sp.paid_at - t.txn_date) <= 5
+		         -- 方向自洽：出账建议预付/结算，进账建议退款。同一家供应商同一笔
+		         -- 金额付出去又退回来是常态，两条流水币种金额日期全同，不加这条
+		         -- 会互相指反，而界面上「采纳」是一键的。MatchBankTransaction
+		         -- 里有同一条规则兜底，两处必须同口径。
+		         AND ((t.direction = 'DEBIT') = (sp.payment_type <> 'REFUND'))
 		       ORDER BY abs(sp.paid_at - t.txn_date), sp.id
 		       LIMIT 1
 		  ) sg ON true
@@ -239,11 +244,11 @@ func (s *Service) ListBankTransactions(ctx context.Context, tenantID int64, f Ba
 // confirms. Amounts MAY differ (intermediary charges shave wires); currency
 // may not — a match across currencies is a category error, not a judgement.
 func (s *Service) MatchBankTransaction(ctx context.Context, tenantID, txnID, paymentID int64, op Operator) error {
-	var ownership, txnCurrency, bankRef string
+	var ownership, txnCurrency, bankRef, txnDirection string
 	err := s.pool.QueryRow(ctx, `
-		SELECT ownership, currency, bank_ref FROM bank_transactions
+		SELECT ownership, currency, bank_ref, direction FROM bank_transactions
 		 WHERE tenant_id=$1 AND id=$2`, tenantID, txnID,
-	).Scan(&ownership, &txnCurrency, &bankRef)
+	).Scan(&ownership, &txnCurrency, &bankRef, &txnDirection)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return apierr.NotFound("BANK_TXN_NOT_FOUND", "银行流水不存在")
 	}
@@ -262,11 +267,11 @@ func (s *Service) MatchBankTransaction(ctx context.Context, tenantID, txnID, pay
 		return apierr.Invalid("BANK_TXN_OWNERSHIP",
 			"这条流水的归属不是「供应商」，不能匹配供应商付款。要改先在归属那一列改。")
 	}
-	var payCurrency string
+	var payCurrency, payType string
 	err = s.pool.QueryRow(ctx, `
-		SELECT currency FROM supplier_payments
+		SELECT currency, payment_type FROM supplier_payments
 		 WHERE tenant_id=$1 AND id=$2 AND bank_txn_id IS NULL`, tenantID, paymentID,
-	).Scan(&payCurrency)
+	).Scan(&payCurrency, &payType)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return apierr.Conflict("PAY_NOT_MATCHABLE", "付款单不存在，或已经匹配了别的流水")
 	}
@@ -275,6 +280,19 @@ func (s *Service) MatchBankTransaction(ctx context.Context, tenantID, txnID, pay
 	}
 	if payCurrency != txnCurrency {
 		return apierr.Invalid("BANK_MATCH_CURRENCY", "流水币种 "+txnCurrency+" 与付款币种 "+payCurrency+" 不一致")
+	}
+	// 方向和付款类型必须自洽：出账（钱出去）只能对预付/结算，进账（钱进来）
+	// 只能对退款。上面故意没有按方向拒绝匹配——供应商退款正是进账——但
+	// 「一笔出账对上一张退款单」两个方向都错了，而同一家供应商同一笔金额，
+	// 付出去和退回来在几天内成对出现是常态（付错了当天退回），币种金额日期
+	// 全对得上，靠人眼根本分不出来。
+	if (txnDirection == "DEBIT") == (payType == "REFUND") {
+		if txnDirection == "DEBIT" {
+			return apierr.Invalid("BANK_MATCH_DIRECTION",
+				"这是一笔出账（钱付出去了），不能对到退款单上——退款单说的是钱退回来")
+		}
+		return apierr.Invalid("BANK_MATCH_DIRECTION",
+			"这是一笔进账（钱进来了），只能对到退款单上——预付和结算说的是钱付出去")
 	}
 	_, err = s.pool.Exec(ctx, `
 		UPDATE supplier_payments SET bank_txn_id=$3, bank_ref=$4

@@ -107,6 +107,16 @@ func (s *Service) RecordTransaction(ctx context.Context, tenantID int64, in Tran
 	if direction != "CREDIT" && direction != "DEBIT" {
 		direction = "CREDIT"
 	}
+	// 出账暂时拒收。不是永远：收付队列改造（docs/开发计划.md）会让客户退款
+	// （出账、归属客户往来）在这一页有自己的子页面。但**今天**这里登记一笔
+	// 出账，它会从每一个页面上消失：本页列表写死只出进账，归属又被无条件
+	// 写成客户，于是供应商那边的匹配也看不见它——钱录进去了，谁都找不到，
+	// 也没有任何提示。一句明确的拒绝比一次无声的吞没好。
+	if direction == "DEBIT" {
+		return TransactionView{}, apierr.Invalid("EX_TX_DEBIT_NOT_YET",
+			"这里暂时只能登记进账（客户打来的钱）。出账（客户退款）的登记入口即将上线；"+
+				"付给供应商的钱请走「银行流水」导入。")
+	}
 	row, err := s.bank.Record(ctx, BankRowInput{
 		AccountID: in.AccountID, BankRef: in.BankRef, Direction: direction,
 		Amount: amount.StringFixed(2), Currency: in.Currency, ValueDate: in.ValueDate,

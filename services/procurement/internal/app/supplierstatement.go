@@ -131,7 +131,13 @@ func (s *Service) ListSupplierStatements(ctx context.Context, tenantID int64, ke
 			  coalesce((SELECT sum(a.amount)
 			      FROM payment_allocations a JOIN purchase_orders po ON po.id=a.po_id
 			     WHERE a.tenant_id=$1 AND po.supplier_id=k.supplier_id AND a.currency=k.currency),0)::text AS advance_amount,
-			  (coalesce((SELECT sum(sp.amount) FROM supplier_payments sp
+			  -- 退款取负。supplier_payments.amount 有 CHECK(amount>0)，退款只能记成
+			  -- 「REFUND 类型 + 正数」，直接求和会把「供应商退我们 2000」读成
+			  -- 「我们还有 2000 预付款寄在供应商那里」——方向整个反了，而这一列
+			  -- 正是采购经理决定「还要不要再付」时看的数。
+			  (coalesce((SELECT sum(CASE WHEN sp.payment_type = 'REFUND'
+			                             THEN -sp.amount ELSE sp.amount END)
+			      FROM supplier_payments sp
 			     WHERE sp.tenant_id=$1 AND sp.supplier_id=k.supplier_id AND sp.currency=k.currency),0)
 			   - coalesce((SELECT sum(a.amount + a.fee_amount)
 			      FROM payment_allocations a JOIN supplier_payments sp ON sp.id=a.payment_id

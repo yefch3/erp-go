@@ -1556,6 +1556,7 @@ export default {
     match: 'Conciliar',
     file: 'Clasificar',
     debitHint: 'Es dinero que pagamos: no hay cobro que aplicar. Al clasificarlo sale de la cola.',
+    debitComingSoon: 'El registro de salidas (reembolsos a clientes) llegará pronto; los pagos a proveedores van por la importación del libro bancario.',
     reopen: 'Deshacer',
     reopened: 'Devuelto a la cola',
     empty: 'No hay nada pendiente',

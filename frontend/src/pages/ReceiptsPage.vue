@@ -254,11 +254,15 @@
         <el-form-item :label="t('receipts.bankRef')" required>
           <el-input v-model="form.bankRef" :placeholder="t('receipts.bankRefPlaceholder')" />
         </el-form-item>
+        <!-- 出账的选项先摘掉，后端也拒收（EX_TX_DEBIT_NOT_YET）。原因不是
+             出账不存在，而是它今天没有去处：本页列表只出进账，登记出去的
+             那一行会从每个页面上消失，钱录进去了谁都找不到。等收付队列
+             改造给客户退款开了自己的子页面，这里再放开。 -->
         <el-form-item :label="t('receipts.direction')">
           <el-radio-group v-model="form.direction">
             <el-radio-button value="CREDIT">{{ t('receipts.credit') }}</el-radio-button>
-            <el-radio-button value="DEBIT">{{ t('receipts.debit') }}</el-radio-button>
           </el-radio-group>
+          <span class="direction-note">{{ t('receipts.debitComingSoon') }}</span>
         </el-form-item>
         <el-form-item :label="t('receipts.amount')" required>
           <el-input v-model="form.amount" style="width: 180px" />
@@ -762,5 +766,10 @@ onMounted(load)
 .pager {
   margin-top: 14px;
   justify-content: flex-end;
+}
+.direction-note {
+  margin-inline-start: 12px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>

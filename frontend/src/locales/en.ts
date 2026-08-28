@@ -1547,6 +1547,7 @@ export default {
     match: 'Match',
     file: 'File',
     debitHint: 'This is money we paid out — there is no receivable to settle. Filing it clears it from the queue.',
+    debitComingSoon: 'Recording outgoing money (customer refunds) is coming soon; supplier payments go through the Bank Ledger import.',
     reopen: 'Undo',
     reopened: 'Put back in the queue',
     empty: 'Nothing waiting here',
