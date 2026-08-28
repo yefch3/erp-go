@@ -30,6 +30,15 @@ service AuthService {
   // "I lost the password" and "somebody else may have it" are the same event
   // until proven otherwise.
   rpc RedeemPasswordReset(RedeemPasswordResetRequest) returns (RedeemPasswordResetResponse);
+  // 确认新的登录邮箱。和 PeekInvitation / ActivateAccount 同一族：无需会话，
+  // 因为收到信的人此刻多半没登录，而他要确认的恰恰是登录方式本身。
+  // 先问「这个链接还有效吗」，页面才能在问「确认吗」之前就说链接已过期。
+  rpc PeekEmailChange(PeekEmailChangeRequest) returns (PeekEmailChangeResponse);
+  // ConfirmEmailChange 兑换链接：地址和「已验证」一起落库。不设密码、
+  // 不发会话——点开这封信证明的是「这个信箱是我的」，不是「我是这个账号的
+  // 主人」，后者靠密码而他本来就有。调用者接下来要把这个账号的会话踢掉：
+  // 登录身份变了而旧 token 还能用，等于换了锁没换钥匙。
+  rpc ConfirmEmailChange(ConfirmEmailChangeRequest) returns (ConfirmEmailChangeResponse);
 }
 
 // DirectoryService owns departments and employees.
@@ -67,6 +76,13 @@ service DirectoryService {
   // iam, so the reverse edge would close a cycle. The gateway, which holds
   // both, does the sending.
   rpc InviteEmployee(InviteEmployeeRequest) returns (InviteEmployeeResponse);
+  // 改登录邮箱：发信到新地址，点开了才生效。
+  //
+  // 和 InviteEmployee 同样的分工——mint 在这里，发信在网关。RequestEmailChange
+  // **不改 employees.email**：在有人点开链接之前，那个人照常用旧地址登录。
+  // 直接改那一列会让新地址凭空继承旧地址的「已验证」，而登录同时看这两样。
+  rpc RequestEmailChange(RequestEmailChangeRequest) returns (RequestEmailChangeResponse);
+  rpc CancelEmailChange(CancelEmailChangeRequest) returns (CancelEmailChangeResponse);
   // CreatePasswordReset is the administrator's version of the login page's
   // 忘记密码: same link, but minted on somebody's behalf and recorded as such.
   rpc CreatePasswordReset(CreatePasswordResetRequest) returns (CreatePasswordResetResponse);
@@ -202,6 +218,56 @@ message InviteEmployeeResponse {
   string email = 2;
   string name = 3;
   int64 expires_at = 4;
+}
+
+message RequestEmailChangeRequest {
+  int64 employee_id = 1;
+  string new_email = 2;
+}
+
+message RequestEmailChangeResponse {
+  // 明文 token，只在这条响应上出现，别处没有。存储里只有它的 sha256，
+  // 所以这是它唯一一次可读——调用者要立刻放进链接然后丢掉。
+  string token = 1;
+  // 信发到哪、发给谁，以及从哪个地址改过来的。返回而不是让调用者再查一次，
+  // 这样「铸钥匙时用的地址」和「信实际发到的地址」不可能不一致。
+  string new_email = 2;
+  string old_email = 3;
+  string name = 4;
+  int64 expires_at = 5;
+}
+
+message CancelEmailChangeRequest {
+  int64 employee_id = 1;
+}
+
+message CancelEmailChangeResponse {}
+
+message PeekEmailChangeRequest {
+  string token = 1;
+}
+
+message PeekEmailChangeResponse {
+  // 这些都不是秘密：拿着 token 的人就是收到这封信的人。把新旧地址都摆出来，
+  // 是为了让他能看清自己在确认什么——「你的登录邮箱要从 A 改成 B」。
+  string name = 1;
+  string old_email = 2;
+  string new_email = 3;
+}
+
+message ConfirmEmailChangeRequest {
+  string token = 1;
+}
+
+message ConfirmEmailChangeResponse {
+  // 从现在起用哪个地址登录。返回给页面，好直接跳到一个填好的登录框。
+  string new_email = 1;
+  string old_email = 2;
+  string name = 3;
+  // 网关拿这个把这个人的会话全部踢掉。登录身份变了而旧 token 还能用，
+  // 等于换了锁没换钥匙。
+  int64 employee_id = 4;
+  int64 tenant_id = 5;
 }
 
 // ImportEmployeeRow is one pasted line, untouched. Every field arrives as
@@ -415,6 +481,13 @@ message Employee {
   // the storage endpoint moves. What the object is called belongs to the
   // record; where it is served from belongs to the deployment.
   string avatar_key = 21;
+  // 待确认的新登录邮箱，没有时是空的。**这一列和 email 是两件事**：email 是
+  // 现在能登录的地址，这个是还没被确认、因此还没生效的地址。摆出来，是因为
+  // 管理员发起变更之后，屏幕上唯一能证明「这件事在进行中」的就是它——
+  // 否则他会以为自己刚才什么都没做成。
+  string pending_email = 22;
+  // 那把钥匙什么时候作废；0 表示没有待确认的变更。
+  int64 email_change_expires_at = 23;
 }
 
 // MyProfile is what an employee is shown about themselves.

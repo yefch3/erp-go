@@ -197,6 +197,59 @@ func TestMyProfileRoutesAreAllRegistered(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------- 改登录邮箱
+
+// 改邮箱那四条地址必须齐。少了确认那两条，员工点开信里的链接会看到 404，
+// 而他此刻没有任何别的办法完成这件事。
+func TestEmailChangeRoutesAreAllRegistered(t *testing.T) {
+	have := routeSet(t)
+	for _, w := range []string{
+		"POST /api/employees/{id}/email-change",   // 管理员发起
+		"DELETE /api/employees/{id}/email-change", // 管理员撤回
+		"GET /api/auth/email-change",              // 确认页先问链接还有效吗
+		"POST /api/auth/email-change",             // 员工点「确认」
+	} {
+		if !have[w] {
+			t.Errorf("改登录邮箱少了这条地址：%s", w)
+		}
+	}
+}
+
+// 确认那两条必须在登录门**外面**，发起那两条必须在里面。
+//
+// 收到信的人此刻多半没登录——他要确认的恰恰是登录方式本身。把确认挂到
+// 认证后面，等于要求他先用一个即将失效的地址登录进来。
+//
+// 反过来，发起变更要是漏了权限门，任何登录的人都能把同事的登录邮箱
+// 搬到自己的信箱上，然后走一次「忘记密码」。
+func TestConfirmingAnEmailChangeNeedsNoLoginButRequestingOneNeedsPermission(t *testing.T) {
+	// 基准：同为无登录的公开路由，和确认走的是同一套限流。
+	openBaseline := middlewareCount(t, "POST", "/api/auth/reset")
+	gatedBaseline := middlewareCount(t, "PUT", "/api/employees/{id}")
+	if openBaseline >= gatedBaseline {
+		t.Fatal("基准不成立：带权限门的路由中间件数没有多于公开路由，这条测试证明不了任何事")
+	}
+	for _, r := range []struct{ method, route string }{
+		{"GET", "/api/auth/email-change"},
+		{"POST", "/api/auth/email-change"},
+	} {
+		if got := middlewareCount(t, r.method, r.route); got != openBaseline {
+			t.Errorf("%s %s 挂了 %d 层中间件，而公开路由是 %d 层——"+
+				"点开信里链接的人没有登录，也不该被要求先登录",
+				r.method, r.route, got, openBaseline)
+		}
+	}
+	for _, r := range []struct{ method, route string }{
+		{"POST", "/api/employees/{id}/email-change"},
+		{"DELETE", "/api/employees/{id}/email-change"},
+	} {
+		if got := middlewareCount(t, r.method, r.route); got != gatedBaseline {
+			t.Errorf("%s %s 挂了 %d 层中间件，而带权限门的路由是 %d 层——"+
+				"改别人的登录邮箱必须要 iam:employee:write", r.method, r.route, got, gatedBaseline)
+		}
+	}
+}
+
 // middlewareCount 数一条路由挂了几层中间件。
 //
 // 只用来做**同类对比**，不看绝对值：绝对值会随着全局中间件增减而变，

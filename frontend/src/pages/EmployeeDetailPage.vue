@@ -33,7 +33,14 @@
               <el-descriptions-item :label="t('employees.code')">{{ employee.code }}</el-descriptions-item>
               <el-descriptions-item :label="t('employees.name')">{{ employee.name }}</el-descriptions-item>
               <el-descriptions-item :label="t('employees.englishName')">{{ employee.englishName || '—' }}</el-descriptions-item>
-              <el-descriptions-item :label="t('employees.email')">{{ employee.email || '—' }}</el-descriptions-item>
+              <!-- 显示的始终是**现在能登录**的那个地址。待确认的新地址跟在
+                   后面单独一行——它还没生效，混在一起会让人以为已经改好了。 -->
+              <el-descriptions-item :label="t('employees.email')">
+                {{ employee.email || '—' }}
+                <div v-if="employee.pendingEmail" class="pending-email">
+                  {{ t('employees.emailChangePending', { email: employee.pendingEmail }) }}
+                </div>
+              </el-descriptions-item>
               <el-descriptions-item :label="t('employees.phone')">{{ employee.phone || '—' }}</el-descriptions-item>
               <!-- 备注是主管写给管理层的评价，员工本人看不到（他打开的是
                    「我的资料」，那个接口根本不返回这个字段）。这里给它一句
@@ -157,6 +164,8 @@ interface Employee {
   managerId: string
   managerName: string
   emailVerified: boolean
+  // 待确认的新登录邮箱，空表示没有在改。
+  pendingEmail: string
   inviteExpiresAt: string
   hireDate: string
   leaveDate: string
@@ -328,5 +337,10 @@ function onResize() {
   white-space: pre-wrap;
   word-break: break-all;
   font-size: 12px;
+}
+.pending-email {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-color-warning);
 }
 </style>

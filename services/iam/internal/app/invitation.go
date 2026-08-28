@@ -97,36 +97,8 @@ func (s *Service) InviteEmployee(ctx context.Context, tenantID, employeeID, invi
 		return Invitation{}, apierr.Invalid("IAM_INVITE_NOT_ACTIVE", "该员工已离职或停用，无法邀请")
 	}
 	addr := strings.ToLower(strings.TrimSpace(emp.Email))
-	if addr == "" {
-		return Invitation{}, errInviteNoAddress
-	}
-	at := strings.LastIndex(addr, "@")
-	if at < 1 || at == len(addr)-1 {
-		return Invitation{}, errInviteNoAddress
-	}
-	// A link is only proof if it goes somewhere the company can read. An
-	// address on a domain we do not own proves the person controls a personal
-	// mailbox, which is not the question being asked.
-	//
-	// **公司一个域名都没有时，这道门不设。** 两种人走到这里时公司名下没有
-	// 域名：平台刚开出来的第一位管理员（域名之后由公司自己补），以及全员用
-	// 公共邮箱（263.net、gmail.com）的公司。对他们，「地址归属」只能由激活
-	// 点击本身证明——这层防管理员手滑的网他们天生没有，页面上说明白，好过
-	// 把他们整个挡在门外。域名一旦补上，门就回来。
-	domains, err := s.q.ListTenantDomains(ctx, tenantID)
-	if err != nil {
+	if err := s.checkCompanyAddress(ctx, tenantID, addr); err != nil {
 		return Invitation{}, err
-	}
-	if len(domains) > 0 {
-		owned, err := s.q.IsTenantDomain(ctx, store.IsTenantDomainParams{
-			Domain: addr[at+1:], TenantID: tenantID,
-		})
-		if err != nil {
-			return Invitation{}, err
-		}
-		if !owned {
-			return Invitation{}, errInviteForeignDomain
-		}
 	}
 	// Already activated. Re-inviting would work — the mail goes to their own
 	// mailbox — but it would be a password reset wearing an invitation's
@@ -167,6 +139,47 @@ func (s *Service) InviteEmployee(ctx context.Context, tenantID, employeeID, invi
 	s.log.Info("invitation issued",
 		"tenant_id", tenantID, "employee_id", employeeID, "invited_by", invitedBy)
 	return Invitation{Token: token, Email: addr, Name: emp.Name, ExpiresAt: expires}, nil
+}
+
+// checkCompanyAddress refuses an address no link should ever be sent to.
+//
+// A link is only proof if it goes somewhere the company can read. An address
+// on a domain we do not own proves the person controls a personal mailbox,
+// which is not the question being asked.
+//
+// **公司一个域名都没有时，这道门不设。** 两种人走到这里时公司名下没有域名：
+// 平台刚开出来的第一位管理员（域名之后由公司自己补），以及全员用公共邮箱
+// （263.net、gmail.com）的公司。对他们，「地址归属」只能由点击本身证明——
+// 这层防管理员手滑的网他们天生没有，页面上说明白，好过把他们整个挡在门外。
+// 域名一旦补上，门就回来。
+//
+// 邀请和改邮箱共用这一个函数，不是各写一遍：两条路都是「发一把钥匙到某个信箱」，
+// 而「哪些信箱可以收钥匙」只该有一个答案。分开写的那天，就是其中一条悄悄放宽的那天。
+func (s *Service) checkCompanyAddress(ctx context.Context, tenantID int64, addr string) error {
+	if addr == "" {
+		return errInviteNoAddress
+	}
+	at := strings.LastIndex(addr, "@")
+	if at < 1 || at == len(addr)-1 {
+		return errInviteNoAddress
+	}
+	domains, err := s.q.ListTenantDomains(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+	if len(domains) == 0 {
+		return nil
+	}
+	owned, err := s.q.IsTenantDomain(ctx, store.IsTenantDomainParams{
+		Domain: addr[at+1:], TenantID: tenantID,
+	})
+	if err != nil {
+		return err
+	}
+	if !owned {
+		return errInviteForeignDomain
+	}
+	return nil
 }
 
 // PendingInvitations maps employee id to when their unopened link dies.

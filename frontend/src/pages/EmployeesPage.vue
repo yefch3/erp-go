@@ -108,6 +108,12 @@
                 {{ t('employees.awaitingActivation') }}
               </el-tag>
               <el-tag v-else type="info" size="small">{{ t('employees.notInvited') }}</el-tag>
+              <!-- 邮箱正在改。摆在激活状态下面而不是邮箱那一格里：这是一件
+                   「正在发生、还没落地」的事，和「已激活/待激活」是同一类信息，
+                   而邮箱那一格显示的必须始终是现在能登录的那个地址。 -->
+              <el-tag v-if="row.pendingEmail" type="warning" size="small" effect="plain">
+                {{ t('employees.emailMovingTo', { email: row.pendingEmail }) }}
+              </el-tag>
               <span class="sub">{{ row.username || t('employees.noAccount') }}</span>
             </div>
           </template>
@@ -227,8 +233,24 @@
               <el-option v-for="e in managerCandidates" :key="e.id" :value="e.id" :label="`${e.code} · ${e.name}`" />
             </el-select>
           </el-form-item>
+          <!-- 登录邮箱。**激活过的人这里是只读的**——直接改这一列会让新地址
+               凭空继承旧地址的「已验证」，而登录同时看这两样：打错一个字母，
+               他的登录地址就变成一个不存在的邮箱，连重置密码的信都发不到。
+               改要走「变更邮箱」：发确认信到新地址，点开了才生效。
+
+               还没激活的人照旧直接改——他的地址本来就没被证明过，没有什么
+               可继承的，而在发邀请之前改掉一个打错的地址正是这时候要做的事。 -->
           <el-form-item :label="t('employees.email')">
-            <el-input v-model="form.email" />
+            <div v-if="editing && form.emailVerified" class="locked-email">
+              <span class="locked-value">{{ form.email || '—' }}</span>
+              <el-button link type="primary" @click="openEmailChange">
+                {{ t('employees.changeEmail') }}
+              </el-button>
+            </div>
+            <el-input v-else v-model="form.email" />
+            <div v-if="editing && form.pendingEmail" class="field-note pending">
+              {{ t('employees.emailChangePending', { email: form.pendingEmail }) }}
+            </div>
           </el-form-item>
           <el-form-item :label="t('employees.phone')">
             <el-input v-model="form.phone" />
@@ -352,6 +374,60 @@
         <el-button type="primary" :loading="saving" @click="savePassword">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- 变更登录邮箱。
+         自己一个弹窗而不是编辑表单里的一个输入框，因为它做的不是「保存」：
+         按下去只会发出一封信，员工点开之前数据库里一个字都不会变。
+         把这件事和「改岗位、改电话」摆在同一个保存按钮下面，会让人以为
+         按完就生效了。 -->
+    <el-dialog v-model="emailChangeOpen" :title="t('employees.changeEmail')" width="min(480px, calc(100vw - 24px))">
+      <p class="target">{{ emailChangeTarget?.name }}</p>
+      <!-- 已经有一封信在路上时，先说这件事。不说的话，页脚那个「撤回这次变更」
+           会凭空冒出来——管理员看不出有什么可撤的，也不知道再填一个新地址
+           会把上一封作废掉。 -->
+      <el-alert
+        v-if="emailChangeTarget?.pendingEmail"
+        type="warning"
+        :closable="false"
+        show-icon
+        class="pending-alert"
+        :title="t('employees.emailChangePending', { email: emailChangeTarget.pendingEmail })"
+        :description="t('employees.emailChangeReplaces')"
+      />
+      <el-form label-position="top">
+        <el-form-item :label="t('employees.currentEmail')">
+          <div class="locked-value">{{ emailChangeTarget?.email || '—' }}</div>
+        </el-form-item>
+        <el-form-item :label="t('employees.newEmail')">
+          <el-input v-model="newEmail" autocomplete="off" placeholder="name@company.com" @keyup.enter="submitEmailChange" />
+        </el-form-item>
+      </el-form>
+      <!-- 按下去会发生什么，逐条写清。第三条是这里最容易被漏掉的后果：
+           员工会被退出登录，而管理员得知道要提前跟他说一声。 -->
+      <ul class="effects">
+        <li>{{ t('employees.emailChangeStep1') }}</li>
+        <li>{{ t('employees.emailChangeStep2') }}</li>
+        <li>{{ t('employees.emailChangeStep3') }}</li>
+      </ul>
+      <!-- 发件信箱不跟着改，说明白。两者是两件事：一个是登录身份，
+           一个是他自己用授权码绑的信箱，只有他本人能改。 -->
+      <p class="sub">{{ t('employees.emailChangeMailboxNote') }}</p>
+      <template #footer>
+        <el-button
+          v-if="emailChangeTarget?.pendingEmail"
+          link
+          type="danger"
+          :loading="saving"
+          @click="revokeEmailChange"
+        >
+          {{ t('employees.cancelEmailChange') }}
+        </el-button>
+        <el-button @click="emailChangeOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="submitEmailChange">
+          {{ t('employees.sendEmailChange') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -387,6 +463,10 @@ interface Employee {
   // Unix seconds, as a string: int64 over JSON. 0 or absent means no
   // invitation is outstanding.
   inviteExpiresAt: string
+  // 待确认的新登录邮箱，空表示没有在改。**和 email 是两件事**：email 是
+  // 现在能登录的地址，这个是还没被确认、因此还没生效的地址。
+  pendingEmail: string
+  emailChangeExpiresAt: string
   englishName: string
   hireDate: string
   leaveDate: string
@@ -398,6 +478,9 @@ const EMPTY_FORM = {
   code: '', name: '', departmentId: '', position: '', email: '', phone: '',
   username: '', initialPassword: '', managerId: '',
   englishName: '', hireDate: '', leaveDate: '', remark: '', version: 0, id: '',
+  // 只读，不参与保存：决定邮箱那一格是输入框还是「变更邮箱」按钮。
+  // updateEmployeeBody 挑字段发出去，所以多带这两个不会被提交。
+  emailVerified: false, pendingEmail: '',
 }
 
 const { t } = useI18n()
@@ -561,6 +644,62 @@ async function save() {
     }
     ElMessage.success(t(editing.value ? 'employees.updated' : 'employees.created'))
     createOpen.value = false
+    load()
+  } finally {
+    saving.value = false
+  }
+}
+
+// ─────────────────────────────────────────────────── 改登录邮箱
+//
+// 独立于「保存」，因为它做的不是保存：按下去只发一封信，员工点开之前
+// employees.email 一个字都不会变。见 services/iam/internal/app/emailchange.go。
+
+const emailChangeOpen = ref(false)
+const emailChangeTarget = ref<Employee | null>(null)
+const newEmail = ref('')
+
+function openEmailChange() {
+  // 从编辑表单里拿当前这一行，而不是另发一次请求：表单是刚从
+  // GET /employees/{id} 填进去的，两者一定一致。
+  emailChangeTarget.value = { ...(form as unknown as Employee) }
+  newEmail.value = ''
+  emailChangeOpen.value = true
+}
+
+async function submitEmailChange() {
+  const addr = newEmail.value.trim()
+  if (!addr) {
+    ElMessage.warning(t('employees.newEmailRequired'))
+    return
+  }
+  saving.value = true
+  try {
+    const res = await post<{ newEmail: string; oldAddressNotified: boolean }>(
+      `/employees/${emailChangeTarget.value?.id}/email-change`,
+      { newEmail: addr },
+    )
+    emailChangeOpen.value = false
+    createOpen.value = false
+    ElMessage.success(t('employees.emailChangeSent', { email: res.newEmail }))
+    // 旧地址没收到通知时单独说一句。那封信是这套流程里唯一能让本人发现
+    // 「有人在动我的账号」的东西——它没发出去，管理员应该当面知会一声。
+    if (!res.oldAddressNotified) {
+      ElMessage.warning(t('employees.oldAddressNotNotified'))
+    }
+    load()
+  } finally {
+    saving.value = false
+  }
+}
+
+async function revokeEmailChange() {
+  saving.value = true
+  try {
+    await del(`/employees/${emailChangeTarget.value?.id}/email-change`)
+    emailChangeOpen.value = false
+    createOpen.value = false
+    ElMessage.success(t('employees.emailChangeCancelled'))
     load()
   } finally {
     saving.value = false
@@ -1033,6 +1172,36 @@ onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* 只读的登录邮箱：值和「变更邮箱」并排，不做成一个禁用的输入框。
+   禁用的输入框看起来像坏了，而这一格并没有坏——它只是要走另一条路。 */
+.locked-email {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.locked-value {
+  color: var(--el-text-color-primary);
+  word-break: break-all;
+}
+.field-note {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.field-note.pending {
+  color: var(--el-color-warning);
+}
+.pending-alert {
+  margin-bottom: 12px;
+}
+.effects {
+  margin: 4px 0 10px;
+  padding-inline-start: 18px;
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--el-text-color-regular);
 }
 @media (max-width: 1300px) {
   .filter-fields {

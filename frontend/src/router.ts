@@ -8,6 +8,9 @@ export const router = createRouter({
     // what they are here to arrange. Outside the shell and outside the guard.
     { path: '/activate', component: () => import('./pages/ActivatePage.vue') },
     { path: '/reset', component: () => import('./pages/ResetPage.vue') },
+    // 改登录邮箱的确认页。同样从一封信点进来，同样在壳外、守卫外——
+    // 收信的人此刻多半没登录，而他要确认的恰恰是登录方式本身。
+    { path: '/email-change', component: () => import('./pages/EmailChangePage.vue') },
     {
       path: '/',
       component: () => import('./pages/Shell.vue'),
@@ -135,7 +138,9 @@ router.beforeEach((to) => {
   // Activation and password reset are the pages whose whole audience is
   // logged out and has to stay that way: sending them to /login would hide
   // the only link they hold.
-  if (to.path === '/activate' || to.path === '/reset') return true
+  if (to.path === '/activate' || to.path === '/reset' || to.path === '/email-change') {
+    return true
+  }
   // Where they were trying to go travels with them, so opening a bookmarked
   // mail on a dead session lands on that mail after signing in rather than on
   // the home page with the reason forgotten.
