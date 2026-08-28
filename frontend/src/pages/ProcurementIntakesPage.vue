@@ -275,9 +275,11 @@ async function downloadSelectedTemplate() {
 async function load() {
   loading.value = true
   try {
-    const data = await get<{ sourcingCases: Intake[]; meta: { total: number } }>('/sourcing-cases', { status: 'INTAKE_PENDING', keyword: keyword.value, page: page.value, page_size: 20 })
+    // 读走 /sales-inquiries：同一批处理函数，但挂的是 sales:inquiry:read——
+    // 这页由销售录入补充，销售专员没有 procurement:sourcing:read。
+    const data = await get<{ sourcingCases: Intake[]; meta: { total: number } }>('/sales-inquiries', { status: 'INTAKE_PENDING', keyword: keyword.value, page: page.value, page_size: 20 })
     rows.value = await Promise.all((data.sourcingCases ?? []).map(async (item) => {
-      try { return (await get<{ sourcingCase: Intake }>(`/sourcing-cases/${item.id}`)).sourcingCase } catch { return item }
+      try { return (await get<{ sourcingCase: Intake }>(`/sales-inquiries/${item.id}`)).sourcingCase } catch { return item }
     })); total.value = Number(data.meta?.total ?? 0)
     const target = String(route.query.intake ?? '')
     if (target) { const found = rows.value.find((item) => String(item.id) === target); if (found) await openDetail(found) }
@@ -299,7 +301,7 @@ async function upload() {
 }
 
 async function openDetail(row: Intake) {
-  const data = await get<{ sourcingCase: Intake }>(`/sourcing-cases/${row.id}`)
+  const data = await get<{ sourcingCase: Intake }>(`/sales-inquiries/${row.id}`)
   detail.value = data.sourcingCase; resubmitReason.value = ''; detailOpen.value = true
   await resolveTemplateFields(data.sourcingCase)
 }
@@ -337,7 +339,7 @@ async function saveDraft() {
   saving.value = true
   try {
     for (const line of detail.value.lines ?? []) await saveLine(line)
-    const data = await get<{ sourcingCase: Intake }>(`/sourcing-cases/${detail.value.id}`)
+    const data = await get<{ sourcingCase: Intake }>(`/sales-inquiries/${detail.value.id}`)
     detail.value = data.sourcingCase
     ElMessage.success(t('procurementIntakes.draftSaved'))
   } finally { saving.value = false }
