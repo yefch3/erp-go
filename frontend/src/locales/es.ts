@@ -169,8 +169,11 @@ export default {
     empty: 'Aún no hay movimientos importados',
   },
   procurementNav: {
-    title: 'Navegación de compras', workbench: 'Panel', intakes: 'Consultas pendientes', sourcing: 'Casos de cotización', inquiryTemplates: 'Plantillas de consulta',
+    title: 'Navegación de compras', workbench: 'Panel', pendingSourcing: 'Por iniciar cotización', sourcing: 'Todos los proyectos de abastecimiento',
     requirements: 'Por pedir', orders: 'Órdenes de compra', backToWorkbench: 'Volver al panel de compras',
+  },
+  salesNav: {
+    intakes: 'Consultas por revisar', inquiries: 'Consultas de clientes', inquiryTemplates: 'Plantillas de consulta', quotations: 'Cotizaciones a clientes', backToInquiries: 'Volver a consultas de clientes',
   },
   financeNav: {
     fx: 'Tipos de cambio',

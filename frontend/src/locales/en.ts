@@ -169,8 +169,11 @@ export default {
     empty: 'No bank transactions imported yet',
   },
   procurementNav: {
-    title: 'Procurement navigation', workbench: 'Workbench', intakes: 'Pending inquiries', sourcing: 'Sourcing cases', inquiryTemplates: 'Inquiry templates',
+    title: 'Procurement navigation', workbench: 'Workbench', pendingSourcing: 'To start RFQ', sourcing: 'All sourcing projects',
     requirements: 'To order', orders: 'Purchase orders', backToWorkbench: 'Back to procurement workbench',
+  },
+  salesNav: {
+    intakes: 'Inquiries to review', inquiries: 'Customer inquiries', inquiryTemplates: 'Inquiry templates', quotations: 'Customer quotations', backToInquiries: 'Back to customer inquiries',
   },
   financeNav: {
     fx: 'Exchange rates',

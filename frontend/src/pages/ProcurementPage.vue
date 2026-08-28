@@ -3,17 +3,12 @@
     <header class="hero">
       <div><h1>{{ t('procurementWorkbench.title') }}</h1><p>{{ t('procurementWorkbench.subtitle') }}</p></div>
       <div class="hero-actions">
-        <el-button type="primary" @click="router.push('/procurement/intakes')">{{ t('procurementWorkbench.handlePendingCount', { n: metrics.pending }) }}</el-button>
+        <el-button type="primary" @click="router.push('/procurement/sourcing/pending')">待开始询价 {{ metrics.reviewing }}</el-button>
       </div>
     </header>
-    <section class="intake-band">
-      <div class="source source--passive"><span>✉</span><div><strong>{{ t('procurementWorkbench.mailTransfer') }}</strong><small>{{ t('procurementWorkbench.mailTransferHint') }}</small><em>{{ t('procurementWorkbench.mailAutomatic') }}</em></div></div><b>＋</b>
-      <button v-if="canSourcingWrite" class="source" @click="openManualUpload"><span>⇧</span><div><strong>{{ t('procurementWorkbench.manualUpload') }}</strong><small>{{ t('procurementWorkbench.manualUploadHint') }}</small><em>{{ t('procurementWorkbench.startUpload') }} →</em></div></button><div class="flow-arrow">→</div>
-      <router-link to="/procurement/intakes" class="pending-target"><small>{{ t('procurementWorkbench.converge') }}</small><strong>{{ t('procurementWorkbench.pendingCount', { n: metrics.pending }) }}</strong><span>{{ t('procurementWorkbench.reviewNow') }} →</span></router-link>
-    </section>
     <section class="metrics">
-      <router-link to="/procurement/intakes" class="metric metric--teal"><span>{{ t('procurementWorkbench.pendingMetric') }}</span><strong>{{ metrics.pending }}</strong><small>{{ t('procurementWorkbench.pendingMetricHint') }}</small></router-link>
-      <router-link to="/sourcing-cases" class="metric"><span>{{ t('procurementWorkbench.sourcingMetric') }}</span><strong>{{ metrics.sourcing }}</strong><small>{{ t('procurementWorkbench.sourcingMetricHint') }}</small></router-link>
+      <router-link to="/procurement/sourcing/pending" class="metric metric--teal"><span>待开始询价</span><strong>{{ metrics.reviewing }}</strong><small>销售已复核，等待开始工厂询价</small></router-link>
+      <router-link to="/procurement/sourcing" class="metric"><span>全部寻源项目</span><strong>{{ metrics.sourcing }}</strong><small>工厂询价、比价与成本方案</small></router-link>
       <router-link to="/requirements" class="metric"><span>{{ t('procurementWorkbench.requirementMetric') }}</span><strong>{{ metrics.requirements }}</strong><small>{{ t('procurementWorkbench.requirementMetricHint') }}</small></router-link>
       <!-- 数字要有行动含义（B4）：不是「一共多少单」，而是「几单等你批、
            几单等你发」——各自点进去就是筛好的列表。 -->
@@ -34,7 +29,7 @@
         <div v-else class="empty-focus">
           <strong>{{ t('procurementWorkbench.emptyTitle') }}</strong>
           <small>{{ t('procurementWorkbench.emptyHint') }}</small>
-          <div><el-button v-if="canSourcingWrite" @click="openManualUpload">{{ t('procurementWorkbench.manualUpload') }}</el-button></div>
+          <div><el-button v-if="canSourcingWrite" @click="router.push('/procurement/sourcing/pending')">查看待开始询价</el-button></div>
         </div>
       </div>
     </section>
@@ -53,7 +48,6 @@ const metrics = reactive({ pending: 0, reviewing: 0, sourcing: 0, requirements: 
 interface FocusRow { key: string; title: string; meta: string; color: 'red' | 'orange' | 'blue' | 'green'; path: string | { path: string; query: Record<string, string> }; urgency: number; due: string }
 const focusRows = ref<FocusRow[]>([])
 const focusCounts = ref('')
-function openManualUpload() { router.push({ path: '/procurement/intakes', query: { upload: '1' } }) }
 async function total(url: string, params: object) { try { return Number((await get<{ meta?: { total?: number } }>(url, params)).meta?.total ?? 0) } catch { return 0 } }
 const today = new Date().toISOString().slice(0, 10)
 async function loadFocusRows() {
@@ -63,7 +57,7 @@ async function loadFocusRows() {
     // 逾期 RFQ 排最前：工厂欠我们报价的每一天都在拖客户的报价。
     try {
       const overdue = await get<{ items?: { id: string; rfqNo: string; caseId: string; caseNo: string; supplierName: string; responseDueAt: string; overdueDays: number }[] }>('/factory-rfqs/overdue', { limit: 5 })
-      for (const item of overdue.items ?? []) rows.push({ key: `rfq-${item.id}`, title: `${item.caseNo} · ${item.supplierName}`, meta: t('procurementWorkbench.overdueRfqItem', { n: item.overdueDays }), color: 'red', path: { path: '/sourcing-cases', query: { case: item.caseId } }, urgency: 0, due: item.responseDueAt })
+      for (const item of overdue.items ?? []) rows.push({ key: `rfq-${item.id}`, title: `${item.caseNo} · ${item.supplierName}`, meta: t('procurementWorkbench.overdueRfqItem', { n: item.overdueDays }), color: 'red', path: `/procurement/sourcing/${item.caseId}`, urgency: 0, due: item.responseDueAt })
       if (overdue.items?.length) counts.push(t('procurementWorkbench.countOverdueRfq', { n: overdue.items.length }))
     } catch { /* 工作台待办加载失败不阻止其他模块使用。 */ }
   }
@@ -78,9 +72,9 @@ async function loadFocusRows() {
   if (auth.can('procurement:sourcing:read')) {
     try {
       const costing = await get<{ sourcingCases?: { id: string; caseNo: string; title: string; customerName: string }[] }>('/sourcing-cases', { status: 'COSTING', page_size: 3 })
-      for (const item of costing.sourcingCases ?? []) rows.push({ key: `cost-${item.id}`, title: `${item.caseNo} · ${item.customerName || item.title}`, meta: t('procurementWorkbench.costScenarioItem'), color: 'blue', path: { path: '/sourcing-cases', query: { case: item.id } }, urgency: 2, due: '9999-12-31' })
-      const pending = await get<{ sourcingCases?: { id: string; caseNo: string; title: string; customerName: string }[] }>('/sourcing-cases', { status: 'INTAKE_PENDING', page_size: 3 })
-      for (const item of pending.sourcingCases ?? []) rows.push({ key: `pending-${item.id}`, title: `${item.caseNo} · ${item.customerName || item.title}`, meta: t('procurementWorkbench.pendingItem'), color: 'orange', path: { path: '/procurement/intakes', query: { intake: item.id } }, urgency: 3, due: '9999-12-31' })
+      for (const item of costing.sourcingCases ?? []) rows.push({ key: `cost-${item.id}`, title: `${item.caseNo} · ${item.customerName || item.title}`, meta: t('procurementWorkbench.costScenarioItem'), color: 'blue', path: `/procurement/sourcing/${item.id}`, urgency: 2, due: '9999-12-31' })
+      const pending = await get<{ sourcingCases?: { id: string; caseNo: string; title: string; customerName: string }[] }>('/sourcing-cases', { status: 'REVIEWING', page_size: 3 })
+      for (const item of pending.sourcingCases ?? []) rows.push({ key: `pending-${item.id}`, title: `${item.caseNo} · ${item.customerName || item.title}`, meta: '销售已复核，等待采购开始寻源', color: 'orange', path: `/procurement/sourcing/${item.id}`, urgency: 3, due: '9999-12-31' })
     } catch { /* 同上。 */ }
   }
   if (auth.can('procurement:requirement:read')) {
@@ -98,7 +92,7 @@ async function loadFocusRows() {
 }
 async function loadMetrics() {
   const tasks: Promise<void>[] = []
-  if (auth.can('procurement:sourcing:read')) tasks.push((async () => { const [pending, reviewing, sourcing, quotes, costing] = await Promise.all([total('/sourcing-cases', { status: 'INTAKE_PENDING', page_size: 1 }), total('/sourcing-cases', { status: 'REVIEWING', page_size: 1 }), total('/sourcing-cases', { status: 'SOURCING', page_size: 1 }), total('/sourcing-cases', { status: 'QUOTES_RECEIVED', page_size: 1 }), total('/sourcing-cases', { status: 'COSTING', page_size: 1 })]); metrics.pending = pending; metrics.reviewing = reviewing; metrics.sourcing = reviewing + sourcing + quotes + costing })())
+  if (auth.can('procurement:sourcing:read')) tasks.push((async () => { const [reviewing, sourcing, quotes, costing] = await Promise.all([total('/sourcing-cases', { status: 'REVIEWING', page_size: 1 }), total('/sourcing-cases', { status: 'SOURCING', page_size: 1 }), total('/sourcing-cases', { status: 'QUOTES_RECEIVED', page_size: 1 }), total('/sourcing-cases', { status: 'COSTING', page_size: 1 })]); metrics.reviewing = reviewing; metrics.sourcing = sourcing + quotes + costing })())
   if (auth.can('procurement:requirement:read')) tasks.push(total('/requirements', { status: 'PENDING', page_size: 1 }).then((n) => { metrics.requirements = n }))
   if (auth.can('procurement:order:read')) {
     tasks.push(total('/purchase-orders', { status: 'PENDING_APPROVAL', page_size: 1 }).then((n) => { metrics.ordersPendingApproval = n }))
