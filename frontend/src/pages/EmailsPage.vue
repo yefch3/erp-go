@@ -931,7 +931,7 @@
     <template #footer>
       <el-button @click="excelOpen = false">{{ t('emails.close') }}</el-button>
       <el-button
-        v-if="excelResult && auth.can('procurement:sourcing:write')"
+        v-if="excelResult && auth.can('sales:inquiry:write')"
         @click="openSourcingTransfer"
       >
         {{ t('emails.createSourcingCase') }}

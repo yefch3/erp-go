@@ -619,7 +619,7 @@ export default {
     grantsSaved: '权限已保存',
     dataScope: '数据范围',
     scopeExport: '出口业务',
-    scopeSourcing: '采购询价', scopeOrder: '采购订单可见范围',
+    scopeSourcing: '客户询盘 / 采购寻源可见范围', scopeOrder: '采购订单可见范围',
     scopeRequirement: '采购需求可见范围',
     scopeShipping: '船期管理',
     scopes: { SELF: '仅本人', DEPT: '本部门', DEPT_AND_SUB: '本部门及下级', ALL: '全部' },
@@ -627,7 +627,7 @@ export default {
     saveScope: '保存范围',
     scopeSaved: '数据范围已保存',
     serverEnforced: '权限由网关在每次请求时校验，前端隐藏只是界面效果。',
-    modules: { iam: '组织与权限', masterdata: '基础数据', product: '产品', fx: '汇率', approval: '审批', export: '出口业务', procurement: '采购', inventory: '库存', shipping: '船务', mail: '邮件', reporting: '报表' },
+    modules: { iam: '组织与权限', masterdata: '基础数据', product: '产品', fx: '汇率', approval: '审批', sales: '销售', export: '销售与出口', procurement: '采购', inventory: '库存', shipping: '船务', mail: '邮件', reporting: '报表' },
   },
   profile: {
     title: '我的资料',

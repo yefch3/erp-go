@@ -78,7 +78,7 @@ const rows=ref<SourcingCase[]>([]),total=ref(0),page=ref(1),keyword=ref(''),stat
 const pageSize=20
 
 // load 只负责列表查询；详情操作全部放在独立详情页，避免列表再次变成大型弹窗。
-async function load(){loading.value=true;try{const response=await get<{sourcingCases:SourcingCase[];meta:{total:number}}>('/sourcing-cases',{page:page.value,page_size:pageSize,keyword:keyword.value,status:status.value});rows.value=response.sourcingCases??[];total.value=Number(response.meta?.total??0)}finally{loading.value=false}}
+async function load(){loading.value=true;try{const endpoint=isSalesView.value?'/sales-inquiries':'/sourcing-cases';const response=await get<{sourcingCases:SourcingCase[];meta:{total:number}}>(endpoint,{page:page.value,page_size:pageSize,keyword:keyword.value,status:status.value});rows.value=response.sourcingCases??[];total.value=Number(response.meta?.total??0)}finally{loading.value=false}}
 function reload(){page.value=1;void load()}
 function setStatus(value:string){status.value=value;reload()}
 function detailPath(caseID:string){return isSalesView.value ? `/sales/inquiries/${caseID}` : `/procurement/sourcing/${caseID}`}

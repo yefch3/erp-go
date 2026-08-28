@@ -617,7 +617,7 @@ export default {
     grantsSaved: 'Permissions saved',
     dataScope: 'Data scope',
     scopeExport: 'Export',
-    scopeSourcing: 'Procurement sourcing', scopeOrder: 'Purchase-order visibility',
+    scopeSourcing: 'Customer inquiry / sourcing visibility', scopeOrder: 'Purchase-order visibility',
     scopeRequirement: 'Purchase-requirement visibility',
     scopeShipping: 'Shipping schedules',
     scopes: { SELF: 'Own records only', DEPT: 'Own department', DEPT_AND_SUB: 'Department and below', ALL: 'Everything' },
@@ -625,7 +625,7 @@ export default {
     saveScope: 'Save scope',
     scopeSaved: 'Data scope saved',
     serverEnforced: 'The gateway checks these on every request; hiding controls is only cosmetic.',
-    modules: { iam: 'Organisation', masterdata: 'Master data', product: 'Products', fx: 'Exchange rates', approval: 'Approvals', export: 'Export', procurement: 'Procurement', inventory: 'Inventory', shipping: 'Shipping', mail: 'Mail', reporting: 'Reports' },
+    modules: { iam: 'Organisation', masterdata: 'Master data', product: 'Products', fx: 'Exchange rates', approval: 'Approvals', sales: 'Sales', export: 'Sales & export', procurement: 'Procurement', inventory: 'Inventory', shipping: 'Shipping', mail: 'Mail', reporting: 'Reports' },
   },
   profile: {
     title: 'My profile',

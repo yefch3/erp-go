@@ -200,10 +200,19 @@ async function toggleStatus() {
 }
 
 const grouped = computed(() => {
-  const out: Record<string, Permission[]> = {}
+  const buckets: Record<string, Permission[]> = {}
   for (const p of permissions.value) {
-    (out[p.module] ??= []).push(p)
+    (buckets[p.module] ??= []).push(p)
   }
+  const preferred = ['sales', 'export', 'procurement']
+  const modules = Object.keys(buckets).sort((a, b) => {
+    const ai = preferred.indexOf(a)
+    const bi = preferred.indexOf(b)
+    if (ai >= 0 || bi >= 0) return (ai < 0 ? preferred.length : ai) - (bi < 0 ? preferred.length : bi)
+    return a.localeCompare(b)
+  })
+  const out: Record<string, Permission[]> = {}
+  for (const module of modules) out[module] = buckets[module]
   return out
 })
 

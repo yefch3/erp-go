@@ -626,7 +626,7 @@ export default {
     grantsSaved: 'Permisos guardados',
     dataScope: 'Alcance de datos',
     scopeExport: 'Exportación',
-    scopeSourcing: 'Consultas de compras', scopeOrder: 'Visibilidad de órdenes de compra',
+    scopeSourcing: 'Visibilidad de consultas / abastecimiento', scopeOrder: 'Visibilidad de órdenes de compra',
     scopeRequirement: 'Visibilidad de necesidades de compra',
     scopeShipping: 'Programación de embarques',
     scopes: { SELF: 'Solo propios', DEPT: 'Su departamento', DEPT_AND_SUB: 'Departamento e inferiores', ALL: 'Todo' },
@@ -634,7 +634,7 @@ export default {
     saveScope: 'Guardar alcance',
     scopeSaved: 'Alcance guardado',
     serverEnforced: 'La pasarela los verifica en cada petición; ocultar controles es solo cosmético.',
-    modules: { iam: 'Organización', masterdata: 'Datos maestros', product: 'Productos', fx: 'Tipos de cambio', approval: 'Aprobaciones', export: 'Exportación', procurement: 'Compras', inventory: 'Inventario', shipping: 'Transporte', mail: 'Correo', reporting: 'Informes' },
+    modules: { iam: 'Organización', masterdata: 'Datos maestros', product: 'Productos', fx: 'Tipos de cambio', approval: 'Aprobaciones', sales: 'Ventas', export: 'Ventas y exportación', procurement: 'Compras', inventory: 'Inventario', shipping: 'Transporte', mail: 'Correo', reporting: 'Informes' },
   },
   profile: {
     title: 'Mi perfil',
