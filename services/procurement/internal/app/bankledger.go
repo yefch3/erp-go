@@ -169,7 +169,7 @@ func (s *Service) SetBankTransactionClaim(ctx context.Context, tenantID, txnID i
 	}
 	if ownership != OwnershipCustomer {
 		return apierr.Invalid("BANK_CLAIM_OWNERSHIP",
-			"这条流水的归属不是「客户收款」，认领金额由供应商那条线的匹配来写")
+			"这条流水的归属不是「客户往来」，认领金额由供应商那条线的匹配来写")
 	}
 	total, _ := normalizeBankAmount(rowAmount)
 	if amt.GreaterThan(total) {

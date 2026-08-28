@@ -24,6 +24,22 @@ func (s *Server) importBankStatement(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// recordBankTransaction 手工登记一行流水。校验全在采购服务里（方向、金额、
+// 日期、流水号去重、账户启用），这里只是转发——和 CSV 导入落的是同一张表、
+// 同一套唯一约束，重复的流水号会被一句人话拒绝。
+func (s *Server) recordBankTransaction(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.RecordBankTransactionRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Orders.RecordBankTransaction(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) listBankTransactions(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Orders.ListBankTransactions(r.Context(), &prv1.ListBankTransactionsRequest{
 		Page:      pageFromQuery(r),
