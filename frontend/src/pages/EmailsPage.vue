@@ -3194,11 +3194,6 @@ async function selectSourcingCustomer(customer?: { id: string | number; name: st
     const data = await get<{ contacts: SourcingCustomerContact[] }>(`/sourcing-customer-options/${customerId}/contacts`)
     if (String(sourcingForm.customerId) !== customerId) return
     sourcingContacts.value = data.contacts ?? []
-    const senderEmail = openedInbound.value?.fromEmail?.trim().toLowerCase()
-    const sender = senderEmail
-      ? sourcingContacts.value.find((contact) => contact.email.trim().toLowerCase() === senderEmail)
-      : undefined
-    if (sender?.email) sourcingForm.contactId = sender.id
   } finally {
     if (String(sourcingForm.customerId) === customerId) sourcingContactsLoading.value = false
   }
