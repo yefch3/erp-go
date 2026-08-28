@@ -269,6 +269,31 @@ func TestPurchaseFallbackIsResolvedByRoleCodeNotID(t *testing.T) {
 	}
 }
 
+// 没有采购经理成员时，最高权限管理员是最后一道人工兜底。管理员即使也是
+// 提交人，也必须收到一张可操作的审批待办，而不是让采购单卡死或自动通过。
+func TestPurchaseFallbackUsesSuperAdminWhenProcurementManagerIsEmpty(t *testing.T) {
+	dir := stubDirectory{byCode: map[string][]int64{
+		"PROCUREMENT_MANAGER": {},
+		"SUPER_ADMIN":         {500},
+	}}
+	svc, cleanup := newSeedTestService(t, dir)
+	ctx := context.Background()
+
+	tenantID := time.Now().UnixNano()
+	t.Cleanup(func() { cleanup(tenantID) })
+
+	_, tasks, err := svc.Submit(ctx, tenantID, SubmitInput{
+		BizType: "PURCHASE_ORDER", BizID: 1, BizNo: "PO-0001",
+		SubmitterID: 500, SubmitterName: "系统管理员", Amount: "1000",
+	})
+	if err != nil {
+		t.Fatalf("最高权限管理员应能兜底审批采购单：%v", err)
+	}
+	if len(tasks) != 1 || tasks[0].AssigneeID != 500 || tasks[0].NodeName != "最高权限管理员审批" {
+		t.Fatalf("审批待办应落到最高权限管理员，实际 %+v", tasks)
+	}
+}
+
 // 合同没有上级可批时，记录在案地自动通过——和第一家公司的行为一致。
 func TestContractApprovesWhenTheReportingLineRunsOut(t *testing.T) {
 	dir := stubDirectory{}
