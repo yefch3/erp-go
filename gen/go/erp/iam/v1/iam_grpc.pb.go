@@ -370,6 +370,11 @@ const (
 	DirectoryService_RecordAccountEvent_FullMethodName   = "/erp.iam.v1.DirectoryService/RecordAccountEvent"
 	DirectoryService_ImportEmployees_FullMethodName      = "/erp.iam.v1.DirectoryService/ImportEmployees"
 	DirectoryService_ListDirectoryChanges_FullMethodName = "/erp.iam.v1.DirectoryService/ListDirectoryChanges"
+	DirectoryService_GetMyProfile_FullMethodName         = "/erp.iam.v1.DirectoryService/GetMyProfile"
+	DirectoryService_UpdateMyProfile_FullMethodName      = "/erp.iam.v1.DirectoryService/UpdateMyProfile"
+	DirectoryService_PresignAvatarUpload_FullMethodName  = "/erp.iam.v1.DirectoryService/PresignAvatarUpload"
+	DirectoryService_SetAvatar_FullMethodName            = "/erp.iam.v1.DirectoryService/SetAvatar"
+	DirectoryService_AvatarURLs_FullMethodName           = "/erp.iam.v1.DirectoryService/AvatarURLs"
 )
 
 // DirectoryServiceClient is the client API for DirectoryService service.
@@ -424,6 +429,16 @@ type DirectoryServiceClient interface {
 	// it lies at the moment somebody has already decided to trust it.
 	ImportEmployees(ctx context.Context, in *ImportEmployeesRequest, opts ...grpc.CallOption) (*ImportEmployeesResponse, error)
 	ListDirectoryChanges(ctx context.Context, in *ListDirectoryChangesRequest, opts ...grpc.CallOption) (*ListDirectoryChangesResponse, error)
+	// 「我的资料」。这三个 RPC 的调用者一律取自认证上下文，因此它们是这个服务里
+	// 唯一不需要 iam:employee:read 的读写口——看自己、改自己是身份自带的，
+	// 而普通员工本来就没有那个权限。
+	GetMyProfile(ctx context.Context, in *GetMyProfileRequest, opts ...grpc.CallOption) (*GetMyProfileResponse, error)
+	UpdateMyProfile(ctx context.Context, in *UpdateMyProfileRequest, opts ...grpc.CallOption) (*UpdateMyProfileResponse, error)
+	// 头像。employee_id 为 0 表示「我自己」；非 0 是管理员在改别人的，
+	// 由网关的 iam:employee:write 把关。
+	PresignAvatarUpload(ctx context.Context, in *PresignAvatarUploadRequest, opts ...grpc.CallOption) (*PresignAvatarUploadResponse, error)
+	SetAvatar(ctx context.Context, in *SetAvatarRequest, opts ...grpc.CallOption) (*SetAvatarResponse, error)
+	AvatarURLs(ctx context.Context, in *AvatarURLsRequest, opts ...grpc.CallOption) (*AvatarURLsResponse, error)
 }
 
 type directoryServiceClient struct {
@@ -624,6 +639,56 @@ func (c *directoryServiceClient) ListDirectoryChanges(ctx context.Context, in *L
 	return out, nil
 }
 
+func (c *directoryServiceClient) GetMyProfile(ctx context.Context, in *GetMyProfileRequest, opts ...grpc.CallOption) (*GetMyProfileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetMyProfileResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_GetMyProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *directoryServiceClient) UpdateMyProfile(ctx context.Context, in *UpdateMyProfileRequest, opts ...grpc.CallOption) (*UpdateMyProfileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateMyProfileResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_UpdateMyProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *directoryServiceClient) PresignAvatarUpload(ctx context.Context, in *PresignAvatarUploadRequest, opts ...grpc.CallOption) (*PresignAvatarUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PresignAvatarUploadResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_PresignAvatarUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *directoryServiceClient) SetAvatar(ctx context.Context, in *SetAvatarRequest, opts ...grpc.CallOption) (*SetAvatarResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetAvatarResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_SetAvatar_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *directoryServiceClient) AvatarURLs(ctx context.Context, in *AvatarURLsRequest, opts ...grpc.CallOption) (*AvatarURLsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AvatarURLsResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_AvatarURLs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DirectoryServiceServer is the server API for DirectoryService service.
 // All implementations must embed UnimplementedDirectoryServiceServer
 // for forward compatibility.
@@ -676,6 +741,16 @@ type DirectoryServiceServer interface {
 	// it lies at the moment somebody has already decided to trust it.
 	ImportEmployees(context.Context, *ImportEmployeesRequest) (*ImportEmployeesResponse, error)
 	ListDirectoryChanges(context.Context, *ListDirectoryChangesRequest) (*ListDirectoryChangesResponse, error)
+	// 「我的资料」。这三个 RPC 的调用者一律取自认证上下文，因此它们是这个服务里
+	// 唯一不需要 iam:employee:read 的读写口——看自己、改自己是身份自带的，
+	// 而普通员工本来就没有那个权限。
+	GetMyProfile(context.Context, *GetMyProfileRequest) (*GetMyProfileResponse, error)
+	UpdateMyProfile(context.Context, *UpdateMyProfileRequest) (*UpdateMyProfileResponse, error)
+	// 头像。employee_id 为 0 表示「我自己」；非 0 是管理员在改别人的，
+	// 由网关的 iam:employee:write 把关。
+	PresignAvatarUpload(context.Context, *PresignAvatarUploadRequest) (*PresignAvatarUploadResponse, error)
+	SetAvatar(context.Context, *SetAvatarRequest) (*SetAvatarResponse, error)
+	AvatarURLs(context.Context, *AvatarURLsRequest) (*AvatarURLsResponse, error)
 	mustEmbedUnimplementedDirectoryServiceServer()
 }
 
@@ -742,6 +817,21 @@ func (UnimplementedDirectoryServiceServer) ImportEmployees(context.Context, *Imp
 }
 func (UnimplementedDirectoryServiceServer) ListDirectoryChanges(context.Context, *ListDirectoryChangesRequest) (*ListDirectoryChangesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListDirectoryChanges not implemented")
+}
+func (UnimplementedDirectoryServiceServer) GetMyProfile(context.Context, *GetMyProfileRequest) (*GetMyProfileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMyProfile not implemented")
+}
+func (UnimplementedDirectoryServiceServer) UpdateMyProfile(context.Context, *UpdateMyProfileRequest) (*UpdateMyProfileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateMyProfile not implemented")
+}
+func (UnimplementedDirectoryServiceServer) PresignAvatarUpload(context.Context, *PresignAvatarUploadRequest) (*PresignAvatarUploadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PresignAvatarUpload not implemented")
+}
+func (UnimplementedDirectoryServiceServer) SetAvatar(context.Context, *SetAvatarRequest) (*SetAvatarResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetAvatar not implemented")
+}
+func (UnimplementedDirectoryServiceServer) AvatarURLs(context.Context, *AvatarURLsRequest) (*AvatarURLsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AvatarURLs not implemented")
 }
 func (UnimplementedDirectoryServiceServer) mustEmbedUnimplementedDirectoryServiceServer() {}
 func (UnimplementedDirectoryServiceServer) testEmbeddedByValue()                          {}
@@ -1106,6 +1196,96 @@ func _DirectoryService_ListDirectoryChanges_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DirectoryService_GetMyProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMyProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).GetMyProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_GetMyProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).GetMyProfile(ctx, req.(*GetMyProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DirectoryService_UpdateMyProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateMyProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).UpdateMyProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_UpdateMyProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).UpdateMyProfile(ctx, req.(*UpdateMyProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DirectoryService_PresignAvatarUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PresignAvatarUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).PresignAvatarUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_PresignAvatarUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).PresignAvatarUpload(ctx, req.(*PresignAvatarUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DirectoryService_SetAvatar_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetAvatarRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).SetAvatar(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_SetAvatar_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).SetAvatar(ctx, req.(*SetAvatarRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DirectoryService_AvatarURLs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AvatarURLsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).AvatarURLs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_AvatarURLs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).AvatarURLs(ctx, req.(*AvatarURLsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DirectoryService_ServiceDesc is the grpc.ServiceDesc for DirectoryService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1188,6 +1368,26 @@ var DirectoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListDirectoryChanges",
 			Handler:    _DirectoryService_ListDirectoryChanges_Handler,
+		},
+		{
+			MethodName: "GetMyProfile",
+			Handler:    _DirectoryService_GetMyProfile_Handler,
+		},
+		{
+			MethodName: "UpdateMyProfile",
+			Handler:    _DirectoryService_UpdateMyProfile_Handler,
+		},
+		{
+			MethodName: "PresignAvatarUpload",
+			Handler:    _DirectoryService_PresignAvatarUpload_Handler,
+		},
+		{
+			MethodName: "SetAvatar",
+			Handler:    _DirectoryService_SetAvatar_Handler,
+		},
+		{
+			MethodName: "AvatarURLs",
+			Handler:    _DirectoryService_AvatarURLs_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -409,7 +409,7 @@ func employeeRowToProto(e store.GetEmployeeRow, roleIDs []int64) *iamv1.Employee
 		RoleIds: roleIDs, ManagerId: deref(e.ManagerID), ManagerName: e.ManagerName,
 		EmailVerified: e.EmailVerifiedAt.Valid,
 		EnglishName:   e.EnglishName, HireDate: dateText(e.HireDate), LeaveDate: dateText(e.LeaveDate),
-		Remark: e.Remark, Version: e.Version,
+		Remark: e.Remark, Version: e.Version, AvatarKey: e.AvatarKey,
 	}
 }
 
@@ -421,6 +421,7 @@ func employeeListRowToProto(e store.ListEmployeesFilteredRow, username string, i
 		Username: username, ManagerId: deref(e.ManagerID), ManagerName: e.ManagerName,
 		EmailVerified: e.EmailVerifiedAt.Valid, InviteExpiresAt: inviteExpires,
 		HireDate: dateText(e.HireDate), LeaveDate: dateText(e.LeaveDate), Remark: e.Remark, Version: e.Version,
+		AvatarKey: e.AvatarKey,
 	}
 }
 

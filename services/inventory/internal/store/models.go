@@ -8,6 +8,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type FailedEvent struct {
+	ID            int64
+	TenantID      int64
+	EventID       string
+	ConsumerGroup string
+	Topic         string
+	EventType     string
+	AggregateID   string
+	Payload       []byte
+	Reason        string
+	ParkedAt      pgtype.Timestamptz
+}
+
 type Outbound struct {
 	ID              int64
 	TenantID        int64
@@ -90,6 +103,54 @@ type Stock struct {
 	CostCurrency string
 	TotalCost    pgtype.Numeric
 	AvgCost      pgtype.Numeric
+}
+
+type StockImport struct {
+	ID              int64
+	TenantID        int64
+	ImportToken     string
+	BatchNo         string
+	ImportType      string
+	SourceFileName  string
+	FileSha256      string
+	ExternalBatchNo string
+	TemplateVersion string
+	Status          string
+	TotalCount      int32
+	ValidCount      int32
+	WarningCount    int32
+	ErrorCount      int32
+	DuplicateCount  int32
+	OperatorID      int64
+	OperatorName    string
+	CreatedAt       pgtype.Timestamptz
+	ConfirmedAt     pgtype.Timestamptz
+	CancelledAt     pgtype.Timestamptz
+}
+
+type StockImportRow struct {
+	ID            int64
+	TenantID      int64
+	ImportID      int64
+	RowNumber     int32
+	WarehouseID   int64
+	WarehouseCode string
+	WarehouseName string
+	ProductID     int64
+	ProductCode   string
+	ProductName   string
+	SkuID         int64
+	SkuCode       string
+	UomID         int64
+	UomCode       string
+	Qty           string
+	UnitCost      string
+	Currency      string
+	Remark        string
+	Verdict       string
+	IssueField    string
+	IssueValue    string
+	IssueMessage  string
 }
 
 type StockLedger struct {

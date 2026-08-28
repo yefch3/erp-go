@@ -18,6 +18,9 @@ export const router = createRouter({
         // instead of a wall of 没有权限.
         { path: '', redirect: '/todos' },
         { path: 'todos', component: () => import('./pages/TodosPage.vue') },
+        // 我的资料。不设权限守卫：每个登录的人都有一份自己的资料，
+        // 而这页读写的对象永远是调用者本人（接口里没有「员工 id」这个入参）。
+        { path: 'me', component: () => import('./pages/MyProfilePage.vue') },
         { path: 'customers', redirect: '/basic/customers' },
         { path: 'basic/customers', component: () => import('./pages/CustomersPage.vue') },
         { path: 'basic/customers/:id', component: () => import('./pages/CustomerDetailPage.vue') },

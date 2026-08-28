@@ -22,6 +22,13 @@ services:
     image: ghcr.io/yefch3/erp-go/iam:${ERP_SHA:?production runs pinned images — pass ERP_SHA=<git-sha>}
     environment:
       DB_DSN: ${IAM_DB_DSN:?set in deploy/.env}
+      # 员工头像进共享的桶，和工厂资质扫描件、合同附件同一个。
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_USE_SSL: ${MINIO_USE_SSL}
   masterdata:
     image: ghcr.io/yefch3/erp-go/masterdata:${ERP_SHA}
     environment:

@@ -55,6 +55,7 @@ type Employee struct {
 	LeaveDate       pgtype.Date
 	Remark          string
 	Version         int32
+	AvatarKey       string
 }
 
 type EmployeeInvitation struct {

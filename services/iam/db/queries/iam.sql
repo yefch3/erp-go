@@ -224,6 +224,44 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND version = sqlc.arg(expected_version)::int
 RETURNING *;
 
+-- name: UpdateOwnProfile :one
+-- 员工改自己的资料。字段白名单写死在 SQL 里，不是在 Go 里过滤——
+-- 一条只能改这两列的语句，比一个「记得别把别的字段传进来」的约定可靠。
+--
+-- 带版本号，和 UpdateEmployeeDetails 用同一把锁：管理员正在改这个人的资料时
+-- 员工按了保存，应该是「有人改过了，请刷新」，而不是谁后写谁赢。
+UPDATE employees
+SET english_name = sqlc.arg(english_name)::text,
+    phone = sqlc.arg(phone)::text,
+    version = version + 1,
+    updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+  AND version = sqlc.arg(expected_version)::int
+RETURNING *;
+
+-- name: SetEmployeeAvatar :one
+-- 头像单独一条，不并进 UpdateEmployeeDetails，也不并进 UpdateOwnProfile。
+--
+-- 并进去的话，任何一个忘了回传 avatar_key 的表单提交都会把头像清空——
+-- 而「少传一个字段就悄悄删数据」这种形状，这个代码库里已经栽过。传图片本来
+-- 也不是填表：点头像、选文件、传完就生效，和按「保存」是两个动作。
+--
+-- 不动 version：头像不属于那张表单的乐观锁范围，管理员开着表单时员工换了张
+-- 照片，不该让管理员的保存失败。
+UPDATE employees
+SET avatar_key = sqlc.arg(avatar_key)::text, updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint
+RETURNING *;
+
+-- name: ListEmployeeAvatars :many
+-- 一批人的头像 key。列表页和组织架构图一次要显示几十上百张，
+-- 逐个去查就是逐个往返。没有头像的人也返回（key 是空串），由调用方跳过——
+-- 在 SQL 里过滤会让「这个人查到了但没头像」和「这个人根本不在」变成同一件事。
+SELECT id, avatar_key FROM employees
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = ANY(sqlc.arg(ids)::bigint[]);
+
 -- name: ManagerCycleExists :one
 WITH RECURSIVE chain AS (
   SELECT id, manager_id, ARRAY[id]::bigint[] AS visited

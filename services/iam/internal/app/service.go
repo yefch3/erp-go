@@ -28,6 +28,8 @@ type Service struct {
 	jwtSecret string
 	jwtTTL    time.Duration
 	log       *slog.Logger
+	// 头像用的对象存储。可选：没接上就只是传不了头像，其余照常——见 profile.go。
+	files Files
 }
 
 func New(pool *pgxpool.Pool, jwtSecret string, jwtTTL time.Duration, log *slog.Logger) *Service {

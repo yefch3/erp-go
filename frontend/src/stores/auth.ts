@@ -34,6 +34,10 @@ export const useAuthStore = defineStore('auth', {
     // The address they signed in with. The mailbox gate shows it rather than
     // asking, because the mailbox somebody binds is the one they signed in as.
     employeeEmail: localStorage.getItem('employeeEmail') ?? '',
+    // 顶栏那个小头像的地址。**故意不进 localStorage**：它是带签名的短命
+    // 链接，十几分钟就过期，存下来的下场是刷新之后一张裂图。每次进壳子的时候
+    // 现取一遍，代价是一个请求。
+    avatarUrl: '',
     permissions: JSON.parse(localStorage.getItem('permissions') ?? '[]') as string[],
     // Persisted so a refresh mid-obligation does not shake the debt off —
     // the shell keeps its blocking dialog up until the change happens.

@@ -12,9 +12,11 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	iamv1 "github.com/sgao19/erp-go/gen/go/erp/iam/v1"
+	"github.com/sgao19/erp-go/pkg/blobstore"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/iam/internal/adapter/grpcin"
+	"github.com/sgao19/erp-go/services/iam/internal/adapter/grpcout"
 	"github.com/sgao19/erp-go/services/iam/internal/app"
 	"github.com/sgao19/erp-go/services/iam/internal/config"
 )
@@ -39,6 +41,29 @@ func run(log *slog.Logger) error {
 	defer pool.Close()
 
 	svc := app.New(pool, cfg.JWTSecret, cfg.JWTTTL, log)
+
+	// 头像用的对象存储。**接不上不算致命**：iam 是登录和权限的服务，
+	// 为了一张照片让整个系统登不进去是本末倒置。连不上就记一声，
+	// 员工资料照常读写，只有上传头像会明确报「文件存储未配置」。
+	if cfg.MinioEndpoint != "" {
+		files, err := blobstore.New(ctx, blobstore.Config{
+			Endpoint:       cfg.MinioEndpoint,
+			PublicEndpoint: cfg.MinioPublicEndpoint,
+			AccessKey:      cfg.MinioAccessKey,
+			SecretKey:      cfg.MinioSecretKey,
+			Bucket:         cfg.MinioBucket,
+			UseSSL:         cfg.MinioUseSSL,
+		})
+		if err != nil {
+			log.Warn("对象存储接不上，员工头像功能不可用（其余功能不受影响）",
+				"endpoint", cfg.MinioEndpoint, "bucket", cfg.MinioBucket, "err", err.Error())
+		} else {
+			svc.UseFiles(grpcout.NewFiles(files))
+		}
+	} else {
+		log.Warn("没有配置 MINIO_ENDPOINT，员工头像功能不可用")
+	}
+
 	if err := svc.EnsureAdmin(ctx, 1, app.SeedTenant{
 		CompanyName:     cfg.CompanyName,
 		MailDomains:     cfg.CompanyMailDomains,
