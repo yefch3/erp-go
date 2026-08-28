@@ -11,6 +11,35 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const acceptSourcingCase = `-- name: AcceptSourcingCase :execrows
+UPDATE sourcing_cases SET
+  status='SOURCING', handoff_status='IN_PROGRESS',
+  accepted_by=$1, accepted_by_name=$2, accepted_at=now(),
+  return_reason='', return_fields='{}', updated_at=now()
+WHERE tenant_id=$3 AND id=$4
+  AND status='REVIEWING' AND handoff_status='WAITING_ACCEPTANCE'
+`
+
+type AcceptSourcingCaseParams struct {
+	OperatorID   *int64
+	OperatorName string
+	TenantID     int64
+	ID           int64
+}
+
+func (q *Queries) AcceptSourcingCase(ctx context.Context, arg AcceptSourcingCaseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, acceptSourcingCase,
+		arg.OperatorID,
+		arg.OperatorName,
+		arg.TenantID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const confirmSourcingLines = `-- name: ConfirmSourcingLines :execrows
 UPDATE sourcing_lines SET decision='CONFIRMED',updated_at=now()
 WHERE tenant_id=$1 AND case_id=$2
@@ -225,7 +254,10 @@ SELECT id, case_no, title, customer_id, customer_name, contact_name,
        contact_email, source_mail_id, source_attachment_id, status,
        owner_id, owner_name, source_file_name, source_file_key,
        inquiry_template_id,
-       inquiry_template_code, inquiry_template_version, created_at, updated_at
+       inquiry_template_code, inquiry_template_version, handoff_status,
+       requirement_version_no, accepted_by, accepted_by_name, accepted_at,
+       returned_by, returned_by_name, returned_at, return_reason, return_fields,
+       created_at, updated_at
 FROM sourcing_cases
 WHERE tenant_id = $1 AND id = $2
 `
@@ -253,6 +285,16 @@ type GetSourcingCaseRow struct {
 	InquiryTemplateID      int64
 	InquiryTemplateCode    string
 	InquiryTemplateVersion int32
+	HandoffStatus          string
+	RequirementVersionNo   int32
+	AcceptedBy             *int64
+	AcceptedByName         string
+	AcceptedAt             pgtype.Timestamptz
+	ReturnedBy             *int64
+	ReturnedByName         string
+	ReturnedAt             pgtype.Timestamptz
+	ReturnReason           string
+	ReturnFields           []string
 	CreatedAt              pgtype.Timestamptz
 	UpdatedAt              pgtype.Timestamptz
 }
@@ -278,6 +320,16 @@ func (q *Queries) GetSourcingCase(ctx context.Context, arg GetSourcingCaseParams
 		&i.InquiryTemplateID,
 		&i.InquiryTemplateCode,
 		&i.InquiryTemplateVersion,
+		&i.HandoffStatus,
+		&i.RequirementVersionNo,
+		&i.AcceptedBy,
+		&i.AcceptedByName,
+		&i.AcceptedAt,
+		&i.ReturnedBy,
+		&i.ReturnedByName,
+		&i.ReturnedAt,
+		&i.ReturnReason,
+		&i.ReturnFields,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -311,7 +363,10 @@ const listSourcingCases = `-- name: ListSourcingCases :many
 SELECT id, case_no, title, customer_id, customer_name, contact_name,
        contact_email, source_mail_id, source_attachment_id, status,
        owner_id, owner_name, source_file_name, inquiry_template_id,
-       inquiry_template_code, inquiry_template_version, created_at, updated_at,
+       inquiry_template_code, inquiry_template_version, handoff_status,
+       requirement_version_no, accepted_by, accepted_by_name, accepted_at,
+       returned_by, returned_by_name, returned_at, return_reason, return_fields,
+       created_at, updated_at,
        count(*) OVER () AS total
 FROM sourcing_cases
 WHERE tenant_id = $1::bigint
@@ -354,6 +409,16 @@ type ListSourcingCasesRow struct {
 	InquiryTemplateID      int64
 	InquiryTemplateCode    string
 	InquiryTemplateVersion int32
+	HandoffStatus          string
+	RequirementVersionNo   int32
+	AcceptedBy             *int64
+	AcceptedByName         string
+	AcceptedAt             pgtype.Timestamptz
+	ReturnedBy             *int64
+	ReturnedByName         string
+	ReturnedAt             pgtype.Timestamptz
+	ReturnReason           string
+	ReturnFields           []string
 	CreatedAt              pgtype.Timestamptz
 	UpdatedAt              pgtype.Timestamptz
 	Total                  int64
@@ -393,6 +458,16 @@ func (q *Queries) ListSourcingCases(ctx context.Context, arg ListSourcingCasesPa
 			&i.InquiryTemplateID,
 			&i.InquiryTemplateCode,
 			&i.InquiryTemplateVersion,
+			&i.HandoffStatus,
+			&i.RequirementVersionNo,
+			&i.AcceptedBy,
+			&i.AcceptedByName,
+			&i.AcceptedAt,
+			&i.ReturnedBy,
+			&i.ReturnedByName,
+			&i.ReturnedAt,
+			&i.ReturnReason,
+			&i.ReturnFields,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Total,
@@ -569,6 +644,39 @@ func (q *Queries) ListSourcingLines(ctx context.Context, arg ListSourcingLinesPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const returnSourcingCase = `-- name: ReturnSourcingCase :execrows
+UPDATE sourcing_cases SET
+  status='INTAKE_PENDING', handoff_status='RETURNED_FOR_SUPPLEMENT',
+  returned_by=$1, returned_by_name=$2, returned_at=now(),
+  return_reason=$3, return_fields=$4::text[], updated_at=now()
+WHERE tenant_id=$5 AND id=$6
+  AND handoff_status IN ('WAITING_ACCEPTANCE','IN_PROGRESS')
+`
+
+type ReturnSourcingCaseParams struct {
+	OperatorID   *int64
+	OperatorName string
+	Reason       string
+	Fields       []string
+	TenantID     int64
+	ID           int64
+}
+
+func (q *Queries) ReturnSourcingCase(ctx context.Context, arg ReturnSourcingCaseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, returnSourcingCase,
+		arg.OperatorID,
+		arg.OperatorName,
+		arg.Reason,
+		arg.Fields,
+		arg.TenantID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const reviewSourcingLine = `-- name: ReviewSourcingLine :execrows

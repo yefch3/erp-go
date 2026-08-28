@@ -285,13 +285,17 @@ func (s *Service) AddSourcingLine(ctx context.Context, tenantID, caseID int64, i
 	return s.GetSourcingCase(ctx, tenantID, caseID)
 }
 
-func (s *Service) ConfirmSourcingLines(ctx context.Context, tenantID, caseID int64, ids []int64, op Operator) (SourcingCaseView, error) {
+func (s *Service) ConfirmSourcingLines(ctx context.Context, tenantID, caseID int64, ids []int64, reason string, op Operator) (SourcingCaseView, error) {
 	view, err := s.GetSourcingCase(ctx, tenantID, caseID)
 	if err != nil {
 		return SourcingCaseView{}, err
 	}
 	if len(ids) == 0 {
 		return SourcingCaseView{}, apierr.Invalid("SC_CONFIRM_LINES_REQUIRED", "请选择需要确认的询价明细")
+	}
+	reason = strings.TrimSpace(reason)
+	if view.Head.HandoffStatus == "RETURNED_FOR_SUPPLEMENT" && reason == "" {
+		return SourcingCaseView{}, apierr.Invalid("SC_RESUBMIT_REASON_REQUIRED", "采购退回后再次提交必须填写本次补充说明")
 	}
 	// 待复核询盘已经由员工完成字段审核。转入询价时，保留行直接确认，
 	// 其余行记录为暂不采购，询价项目不再重复要求匹配内部产品。
@@ -324,7 +328,10 @@ func (s *Service) ConfirmSourcingLines(ctx context.Context, tenantID, caseID int
 		}
 		err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 			result, execErr := tx.Exec(ctx,
-				"UPDATE sourcing_cases SET status='SOURCING', updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status='INTAKE_PENDING'",
+				`UPDATE sourcing_cases SET status='REVIEWING', handoff_status='WAITING_ACCEPTANCE',
+ requirement_version_no=CASE WHEN handoff_status='RETURNED_FOR_SUPPLEMENT' THEN requirement_version_no+1 ELSE greatest(requirement_version_no,1) END,
+ return_reason='', return_fields='{}',
+ updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status='INTAKE_PENDING'`,
 				tenantID, caseID)
 			if execErr != nil {
 				return execErr
@@ -340,8 +347,9 @@ WHERE tenant_id=$1 AND case_id=$2`, tenantID, caseID, ids, op.ID, op.Name); exec
 				return execErr
 			}
 			return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: caseID,
-				Section: "CASE", Action: "INTAKE_CONFIRMED", Summary: "确认标准询盘并进入工厂询价",
-				BeforeJson: []byte(`{"status":"INTAKE_PENDING"}`), AfterJson: []byte(`{"status":"SOURCING"}`), OperatorID: op.ID, OperatorName: op.Name})
+				Section: "HANDOFF", Action: "SUBMITTED_TO_PROCUREMENT", Summary: "销售提交采购寻源",
+				BeforeJson: []byte(`{"status":"INTAKE_PENDING"}`), AfterJson: []byte(`{"status":"REVIEWING","handoffStatus":"WAITING_ACCEPTANCE"}`),
+				Reason: reason, OperatorID: op.ID, OperatorName: op.Name})
 		})
 		if err != nil {
 			return SourcingCaseView{}, err

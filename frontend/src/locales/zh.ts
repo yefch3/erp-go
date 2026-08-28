@@ -170,7 +170,7 @@ export default {
     empty: '还没有导入任何银行流水',
   },
   procurementNav: {
-    title: '采购管理导航', workbench: '采购工作台', pendingSourcing: '待开始询价', sourcing: '全部寻源项目',
+    title: '采购管理导航', workbench: '采购工作台', pendingSourcing: '待接单任务', sourcing: '全部寻源项目',
     requirements: '待采购', orders: '采购订单', backToWorkbench: '返回采购工作台',
   },
   salesNav: {
@@ -972,13 +972,13 @@ export default {
   },
   sourcing: {
     listEyebrow: 'SOURCING PROJECTS', activeProjects: '全部询价项目', customerAndTitle: '客户 / 项目', currentStage: '当前阶段', currentWaiting: '当前等待', recentUpdate: '最近更新', exception: '异常', stale: '超过 7 天未更新',
-    waiting: { REVIEWING: '采购人员确认产品规范', SOURCING: '工厂回复 RFQ', QUOTES_RECEIVED: '采购人员比较报价', COSTING: '负责人确认成本', CUSTOMER_QUOTE_CREATED: '客户确认报价', CANCELLED: '已结束', UNKNOWN: '确认当前业务阶段' },
+    waiting: { REVIEWING: '采购接单或退回补充', SOURCING: '工厂回复 RFQ', QUOTES_RECEIVED: '采购人员比较报价', COSTING: '负责人确认并提交成本', CUSTOMER_QUOTE_CREATED: '客户确认报价', CANCELLED: '已结束', UNKNOWN: '确认当前业务阶段' },
     unknownStatus: '待确认',
     title: '采购询价', subtitle: '客户询盘复核、工厂询价与成本测算', search: '搜索案件号、客户或标题',
     caseNo: '案件号', inquiry: '询盘', customer: '客户', owner: '负责人', createdAt: '建立时间',
     contact: '联系人', product: '产品', standard: '材质/标准', size: '规格', port: '港口',
     quantity: '数量', decision: '复核状态', empty: '暂无采购询价案件',
-    statuses: { REVIEWING: '待复核', SOURCING: '工厂询价中', QUOTES_RECEIVED: '已收报价', COSTING: '成本测算中', CUSTOMER_QUOTE_CREATED: '已生成客户报价', CANCELLED: '已取消' },
+    statuses: { REVIEWING: '待采购接单', SOURCING: '工厂询价中', QUOTES_RECEIVED: '已收报价', COSTING: '成本测算中', CUSTOMER_QUOTE_CREATED: '已生成客户报价', CANCELLED: '已取消' },
     decisions: { PENDING: '待复核', CONFIRMED: '已确认', NO_MATCH: '无匹配', SKIPPED: '已跳过' },
     factoryRfqs: '工厂询价', rfqNo: '询价单号', supplier: '供应商', currency: '币种', responseDue: '回复截止', lineCount: '行数',
     createFactoryRfq: '建立工厂询价', contactEmail: '供应商邮箱', supplierRequired: '请选择供应商', rfqCreated: '工厂询价已建立',

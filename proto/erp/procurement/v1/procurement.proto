@@ -16,6 +16,8 @@ service SourcingService {
   rpc GetCase(GetCaseRequest) returns (GetCaseResponse);
   rpc AddLine(AddLineRequest) returns (AddLineResponse);
   rpc ConfirmLines(ConfirmLinesRequest) returns (ConfirmLinesResponse);
+  rpc AcceptCase(AcceptCaseRequest) returns (AcceptCaseResponse);
+  rpc ReturnCase(ReturnCaseRequest) returns (ReturnCaseResponse);
   rpc ReviewLine(ReviewLineRequest) returns (ReviewLineResponse);
   rpc CreateFactoryRfq(CreateFactoryRfqRequest) returns (CreateFactoryRfqResponse);
   rpc ListFactoryRfqs(ListFactoryRfqsRequest) returns (ListFactoryRfqsResponse);
@@ -28,6 +30,7 @@ service SourcingService {
   rpc ListCostScenarios(ListCostScenariosRequest) returns (ListCostScenariosResponse);
   rpc GetCostScenario(GetCostScenarioRequest) returns (GetCostScenarioResponse);
   rpc ConfirmCostScenario(ConfirmCostScenarioRequest) returns (ConfirmCostScenarioResponse);
+  rpc SubmitCostToSales(SubmitCostToSalesRequest) returns (SubmitCostToSalesResponse);
   rpc PrepareCustomerQuotation(PrepareCustomerQuotationRequest) returns (PrepareCustomerQuotationResponse);
   rpc LinkCustomerQuotation(LinkCustomerQuotationRequest) returns (LinkCustomerQuotationResponse);
   rpc ListCaseChanges(ListCaseChangesRequest) returns (ListCaseChangesResponse);
@@ -112,6 +115,16 @@ message SourcingCase {
   // Fresh presigned download of the original inquiry file; empty when the
   // case predates object storage. Populated on Get only.
   string source_file_url = 20;
+  string handoff_status = 21;
+  int32 requirement_version_no = 22;
+  int64 accepted_by = 23;
+  string accepted_by_name = 24;
+  string accepted_at = 25;
+  int64 returned_by = 26;
+  string returned_by_name = 27;
+  string returned_at = 28;
+  string return_reason = 29;
+  repeated string return_fields = 30;
 }
 
 message CreateCaseRequest {
@@ -149,8 +162,21 @@ message GetCaseRequest { int64 id = 1; }
 message GetCaseResponse { SourcingCase sourcing_case = 1; }
 message AddLineRequest { int64 case_id = 1; SourcingLineInput extracted = 2; }
 message AddLineResponse { SourcingCase sourcing_case = 1; }
-message ConfirmLinesRequest { int64 case_id = 1; repeated int64 sourcing_line_ids = 2; }
+message ConfirmLinesRequest {
+  int64 case_id = 1;
+  repeated int64 sourcing_line_ids = 2;
+  // 采购退回后再次提交时，说明本次补充或修正了什么。
+  string reason = 3;
+}
 message ConfirmLinesResponse { SourcingCase sourcing_case = 1; }
+message AcceptCaseRequest { int64 case_id = 1; }
+message AcceptCaseResponse { SourcingCase sourcing_case = 1; }
+message ReturnCaseRequest {
+  int64 case_id = 1;
+  repeated string missing_fields = 2;
+  string reason = 3;
+}
+message ReturnCaseResponse { SourcingCase sourcing_case = 1; }
 message ReviewLineRequest {
   int64 case_id = 1; int64 line_id = 2; SourcingLineInput extracted = 3;
   int64 product_id = 4; int64 sku_id = 5; int64 uom_id = 6;
@@ -285,6 +311,9 @@ message CostScenario {
   repeated CostCharge charges = 24; repeated CostScenarioLine lines = 25;
   string confirm_reason = 26;
   int32 version_no = 27;
+  int32 requirement_version_no = 28;
+  string submitted_to_sales_by_name = 29;
+  string submitted_to_sales_at = 30;
 }
 message CreateCostScenarioRequest {
   int64 case_id = 1; string currency = 2; string allocation_basis = 3;
@@ -302,6 +331,8 @@ message ConfirmCostScenarioRequest {
   string reason = 2;
 }
 message ConfirmCostScenarioResponse { CostScenario cost_scenario = 1; }
+message SubmitCostToSalesRequest { int64 id = 1; }
+message SubmitCostToSalesResponse { CostScenario cost_scenario = 1; }
 message CustomerQuotationLine {
   int64 cost_scenario_line_id = 1; int64 product_id = 2; int64 sku_id = 3;
   string spec = 4; string qty = 5; string unit_price = 6; string remark = 7;

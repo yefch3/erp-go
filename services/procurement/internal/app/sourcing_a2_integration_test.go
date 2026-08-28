@@ -126,6 +126,10 @@ func TestQuoteComparisonAndAwardReason(t *testing.T) {
 		t.Fatalf("first cost scenario version = %d, want 1", view.Header.VersionNo)
 	}
 
+	// 成本确认后必须显式提交销售，销售才可以生成并关联客户报价。
+	if _, err := svc.SubmitCostToSales(ctx, tenantID, scenarioID, op); err != nil {
+		t.Fatalf("submit cost to sales: %v", err)
+	}
 	// 生成客户报价只建立关联，不能把内部成本状态和客户报价状态混为一谈。
 	if err := svc.LinkCustomerQuotation(ctx, tenantID, scenarioID, 9001, "QT-A2-V1"); err != nil {
 		t.Fatalf("link customer quotation: %v", err)
