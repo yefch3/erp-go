@@ -49,7 +49,7 @@
               :key="item.path"
               type="button"
               class="module-flyout-item"
-              :class="{ 'is-active': route.path === item.path }"
+              :class="{ 'is-active': isSalesItemActive(item.path) }"
               @click="goSales(item.path)"
             >
               {{ item.label }}
@@ -84,7 +84,7 @@
               :key="item.path"
               type="button"
               class="module-flyout-item"
-              :class="{ 'is-active': route.path === item.path }"
+              :class="{ 'is-active': isProcurementItemActive(item.path) }"
               @click="goProcurement(item.path)"
             >
               {{ item.label }}
@@ -386,7 +386,7 @@ const hasProcurement = computed(() => [
   'procurement:requirement:read',
   'procurement:order:read',
 ].some(auth.can))
-const procurementActive = computed(() => procurementItems.value.some((item) => route.path === item.path))
+const procurementActive = computed(() => procurementItems.value.some((item) => isProcurementItemActive(item.path)))
 const menuActive = computed(() => route.path)
 // 仓储：产品是「货是什么」，仓库/库存/出库是「货在哪、走了没」——同一件事的
 // 两面，原来产品和出库各自散在顶层。
@@ -423,18 +423,29 @@ const warehouseActive = computed(() =>
   route.path.startsWith('/products'),
 )
 
-// 销售：一张单子的起点——报出去、签下来、看它走到哪一步。
-const salesItems = computed(() =>
-  auth.can('export:contract:read')
+// SP1 暂时复用既有寻源权限控制询盘入口；SP2 再把销售与采购权限正式拆开。
+const salesItems = computed(() => [
+  ...(auth.can('procurement:sourcing:read')
+    ? [
+        { path: '/sales/intakes', label: t('salesNav.intakes') },
+        { path: '/sales/inquiries', label: t('salesNav.inquiries') },
+        { path: '/sales/settings/inquiry-templates', label: t('salesNav.inquiryTemplates') },
+      ]
+    : []),
+  ...(auth.can('export:quotation:read')
+    ? [{ path: '/sales/quotations', label: t('salesNav.quotations') }]
+    : []),
+  ...(auth.can('export:contract:read')
     ? [
         { path: '/contracts', label: t('menu.contracts') },
         { path: '/contract-execution', label: t('menu.contractExecution') },
       ]
-    : [],
-)
+    : []),
+])
 const hasSales = computed(() => salesItems.value.length > 0)
 const salesActive = computed(() =>
-  salesItems.value.some((item) => route.path === item.path) ||
+  salesItems.value.some((item) => isSalesItemActive(item.path)) ||
+  route.path.startsWith('/sales/') ||
   route.path.startsWith('/contracts') ||
   route.path.startsWith('/contract-execution'),
 )
@@ -499,12 +510,22 @@ const basicDataItems = computed(() => [
 // 采购管理与基础数据使用同一种浮层导航，子页面不再各自重复一排按钮。
 const procurementItems = computed(() => [
   { path: '/procurement', label: t('procurementNav.workbench'), allowed: true },
-  { path: '/procurement/intakes', label: t('procurementNav.intakes'), allowed: auth.can('procurement:sourcing:read') },
-  { path: '/sourcing-cases', label: t('procurementNav.sourcing'), allowed: auth.can('procurement:sourcing:read') },
-  { path: '/procurement/settings/inquiry-templates', label: t('procurementNav.inquiryTemplates'), allowed: auth.can('procurement:sourcing:read') },
+  { path: '/procurement/sourcing/pending', label: t('procurementNav.pendingSourcing'), allowed: auth.can('procurement:sourcing:read') },
+  { path: '/procurement/sourcing', label: t('procurementNav.sourcing'), allowed: auth.can('procurement:sourcing:read') },
   { path: '/requirements', label: t('procurementNav.requirements'), allowed: auth.can('procurement:requirement:read') },
   { path: '/purchase-orders', label: t('procurementNav.orders'), allowed: auth.can('procurement:order:read') },
 ].filter((item) => item.allowed))
+
+function isSalesItemActive(path: string) {
+  if (path === '/sales/inquiries') return route.path === path || route.path.startsWith('/sales/inquiries/')
+  return route.path === path
+}
+
+function isProcurementItemActive(path: string) {
+  if (path === '/procurement/sourcing/pending') return route.path === path
+  if (path === '/procurement/sourcing') return route.path === path || /^\/procurement\/sourcing\/[^/]+$/.test(route.path)
+  return route.path === path
+}
 
 // 财务对账集中一处：应收看客户、应付看供应商、银行流水居中对照两边。
 // 数据仍住在各自的服务里（应收在出口、应付在采购），这里只是把入口

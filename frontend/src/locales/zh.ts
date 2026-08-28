@@ -169,8 +169,11 @@ export default {
     empty: '还没有导入任何银行流水',
   },
   procurementNav: {
-    title: '采购管理导航', workbench: '采购工作台', intakes: '待复核询盘', sourcing: '询价案件', inquiryTemplates: '询盘模板',
+    title: '采购管理导航', workbench: '采购工作台', pendingSourcing: '待开始询价', sourcing: '全部寻源项目',
     requirements: '待采购', orders: '采购订单', backToWorkbench: '返回采购工作台',
+  },
+  salesNav: {
+    intakes: '待复核询盘', inquiries: '客户询盘项目', inquiryTemplates: '询盘模板', quotations: '客户报价', backToInquiries: '返回客户询盘项目',
   },
   financeNav: {
     fx: '汇率',

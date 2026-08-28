@@ -3193,7 +3193,7 @@ async function createSourcingCaseFromExcel() {
     ElMessage.success(t('procurementIntakes.autoTransferred', { no: response.sourcingCase.caseNo }))
     sourcingOpen.value = false
     excelOpen.value = false
-    router.push(`/procurement/intakes?intake=${response.sourcingCase.id}`)
+    router.push(`/sales/intakes?intake=${response.sourcingCase.id}`)
   } finally {
     creatingSourcingCase.value = false
   }

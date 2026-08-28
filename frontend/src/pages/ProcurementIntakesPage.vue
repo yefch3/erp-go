@@ -6,7 +6,7 @@
         <h1>{{ t('procurementIntakes.title') }}</h1>
         <p>{{ t('procurementIntakes.subtitle') }}</p>
       </div>
-      <div class="head-actions"><el-button @click="router.push('/procurement')">← {{ t('procurementNav.backToWorkbench') }}</el-button><el-button v-if="canWrite" type="primary" @click="openUpload">{{ t('procurementIntakes.manualUpload') }}</el-button></div>
+      <div class="head-actions"><el-button v-if="route.query.from" @click="router.back()">← 返回</el-button><el-button v-if="canWrite" type="primary" @click="openUpload">{{ t('procurementIntakes.manualUpload') }}</el-button></div>
     </header>
 
     <section class="panel">
@@ -108,7 +108,7 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="105" fixed="right"><template #default="{ row }"><el-button link :type="row.decision === 'SKIPPED' ? 'success' : 'danger'" @click="row.decision = row.decision === 'SKIPPED' ? 'PENDING' : 'SKIPPED'">{{ row.decision === 'SKIPPED' ? t('procurementIntakes.restore') : t('procurementIntakes.ignore') }}</el-button></template></el-table-column>
       </el-table>
-      <template #footer><el-button @click="detailOpen = false">{{ t('common.cancel') }}</el-button><el-button v-if="canWrite" :loading="saving" @click="saveDraft">{{ t('procurementIntakes.saveDraft') }}</el-button><el-button v-if="canWrite" type="primary" :loading="saving" @click="confirmIntake">{{ t('procurementIntakes.confirmCreate') }}</el-button></template>
+      <template #footer><el-button @click="detailOpen = false">{{ t('common.cancel') }}</el-button><el-button v-if="canWrite" :loading="saving" @click="saveDraft">{{ t('procurementIntakes.saveDraft') }}</el-button><el-button v-if="canWrite" type="primary" :loading="saving" @click="confirmIntake">提交采购寻源</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="addLineOpen" :title="t('procurementIntakes.addProductTitle')" width="min(720px, 92vw)" append-to-body destroy-on-close>
@@ -336,7 +336,7 @@ async function confirmIntake() {
     return
   }
   try {
-    await ElMessageBox.confirm(t('procurementIntakes.confirmHint'), t('procurementIntakes.confirmCreate'), { type: 'warning' })
+    await ElMessageBox.confirm('确认客户需求已经复核完整，并提交给采购开始寻源吗？', '提交采购寻源', { type: 'warning' })
   } catch (action) {
     // 用户取消或关闭确认框时停留在复核页；真正的异常仍交给上层处理。
     if (isDialogDismissed(action)) return
@@ -346,7 +346,7 @@ async function confirmIntake() {
   try {
     for (const line of detail.value.lines ?? []) await saveLine(line)
     await post(`/sourcing-cases/${detail.value.id}/confirm-lines`, { sourcingLineIds: active.map((line) => Number(line.id)) })
-    ElMessage.success(t('procurementIntakes.confirmed')); detailOpen.value = false; await router.push({ path: '/sourcing-cases', query: { case: detail.value.id } })
+    ElMessage.success('客户需求已提交采购寻源'); detailOpen.value = false; await router.push(`/sales/inquiries/${detail.value.id}`)
   } finally { saving.value = false }
 }
 
