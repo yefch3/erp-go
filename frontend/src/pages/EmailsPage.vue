@@ -945,8 +945,7 @@
     </template>
   </el-dialog>
 
-  <!-- 转入采购前先落客户。客户是必填的，联系人和邮箱只是这封信的事实，
-       抄过来方便核对，改不改都行。 -->
+  <!-- 客户和联系人都来自基础数据。联系人按客户联动，邮箱只显示主数据快照。 -->
   <el-dialog
     v-model="sourcingOpen"
     :title="t('emails.sourcingTransferTitle')"
@@ -959,14 +958,36 @@
         <CustomerSelect
           v-model="sourcingForm.customerId"
           :placeholder="t('emails.sourcingCustomerPlaceholder')"
-          @selected="(customer) => (sourcingForm.customerName = customer?.name || '')"
+          @selected="selectSourcingCustomer"
         />
       </el-form-item>
-      <el-form-item :label="t('emails.sourcingContact')">
-        <el-input v-model="sourcingForm.contactName" />
+      <el-form-item :label="t('emails.sourcingContact')" required>
+        <el-select
+          v-model="sourcingForm.contactId"
+          filterable
+          :loading="sourcingContactsLoading"
+          :disabled="!sourcingForm.customerId"
+          :placeholder="sourcingForm.customerId ? t('emails.sourcingContactPlaceholder') : t('emails.sourcingSelectCustomerFirst')"
+          style="width:100%"
+        >
+          <el-option
+            v-for="contact in sourcingContacts"
+            :key="contact.id"
+            :value="contact.id"
+            :label="sourcingContactLabel(contact)"
+            :disabled="!contact.email"
+          />
+        </el-select>
+        <div v-if="sourcingForm.customerId && !sourcingContactsLoading && !sourcingContacts.length" class="sourcing-contact-help">
+          {{ t('emails.sourcingNoActiveContacts') }}
+        </div>
       </el-form-item>
       <el-form-item :label="t('emails.sourcingContactEmail')">
-        <el-input v-model="sourcingForm.contactEmail" />
+        <el-input
+          :model-value="selectedSourcingContact?.email || ''"
+          readonly
+          :placeholder="t('emails.sourcingContactEmailAuto')"
+        />
       </el-form-item>
     </el-form>
     <template #footer>
@@ -974,7 +995,7 @@
       <el-button
         type="primary"
         :loading="creatingSourcingCase"
-        :disabled="!sourcingForm.customerId"
+        :disabled="!sourcingForm.customerId || !sourcingForm.contactId"
         @click="createSourcingCaseFromExcel"
       >
         {{ t('emails.createSourcingCase') }}
@@ -2718,6 +2739,15 @@ interface ExcelJob {
   inquiryTemplateVersion?: number
 }
 
+interface SourcingCustomerContact {
+  id: string
+  name: string
+  department: string
+  title: string
+  email: string
+  isPrimary: boolean
+}
+
 type ExcelSource =
   | { kind: 'text'; mailId: string; text: string }
   | { kind: 'attachment'; mailId: string; attachmentId: string }
@@ -2741,9 +2771,13 @@ const excelSheet = ref('')
 const excelAvailable = ref(false)
 const creatingSourcingCase = ref(false)
 const sourcingOpen = ref(false)
-// 转入采购要落到一个真客户身上。邮件里只有发件人的显示名和邮箱，猜不出是
-// 哪一家——客户档案的检索只认名称和编号，不认邮箱——所以让人选一次。
-const sourcingForm = reactive({ customerId: '', customerName: '', contactName: '', contactEmail: '' })
+const sourcingContactsLoading = ref(false)
+const sourcingContacts = ref<SourcingCustomerContact[]>([])
+// 转入采购必须关联主数据中的客户和联系人，姓名与邮箱只作为后端保存的快照。
+const sourcingForm = reactive({ customerId: '', customerName: '', contactId: '' })
+const selectedSourcingContact = computed(() =>
+  sourcingContacts.value.find((contact) => contact.id === sourcingForm.contactId) ?? null,
+)
 const convertedExcelSource = ref<ExcelSource | null>(null)
 // Results live in memory: asking for the same attachment or text again opens
 // the stored workbook instead of spending another model call. 重新生成 is the
@@ -3134,11 +3168,40 @@ function openSourcingTransfer() {
   }
   sourcingForm.customerId = ''
   sourcingForm.customerName = ''
-  // 联系人和邮箱可以从来信直接抄——那是这封信的事实。客户是谁不能抄，
-  // 那是判断。
-  sourcingForm.contactName = openedInbound.value?.fromName || ''
-  sourcingForm.contactEmail = openedInbound.value?.fromEmail || ''
+  sourcingForm.contactId = ''
+  sourcingContacts.value = []
   sourcingOpen.value = true
+}
+
+function sourcingContactLabel(contact: SourcingCustomerContact) {
+  const role = [contact.department, contact.title].filter(Boolean).join(' / ')
+  const primary = contact.isPrimary ? ` · ${t('emails.sourcingPrimaryContact')}` : ''
+  const email = contact.email || t('emails.sourcingContactEmailMissing')
+  return `${contact.name}${role ? ` · ${role}` : ''} · ${email}${primary}`
+}
+
+async function selectSourcingCustomer(customer?: { id: string | number; name: string }) {
+  sourcingForm.customerName = customer?.name || ''
+  sourcingForm.contactId = ''
+  sourcingContacts.value = []
+  const customerId = String(customer?.id ?? sourcingForm.customerId ?? '')
+  if (!customerId) {
+    sourcingContactsLoading.value = false
+    return
+  }
+  sourcingContactsLoading.value = true
+  try {
+    const data = await get<{ contacts: SourcingCustomerContact[] }>(`/sourcing-customer-options/${customerId}/contacts`)
+    if (String(sourcingForm.customerId) !== customerId) return
+    sourcingContacts.value = data.contacts ?? []
+    const senderEmail = openedInbound.value?.fromEmail?.trim().toLowerCase()
+    const sender = senderEmail
+      ? sourcingContacts.value.find((contact) => contact.email.trim().toLowerCase() === senderEmail)
+      : undefined
+    if (sender?.email) sourcingForm.contactId = sender.id
+  } finally {
+    if (String(sourcingForm.customerId) === customerId) sourcingContactsLoading.value = false
+  }
 }
 
 async function createSourcingCaseFromExcel() {
@@ -3148,6 +3211,10 @@ async function createSourcingCaseFromExcel() {
   if (!result || !source || !sheet?.rows.length) return
   if (!sourcingForm.customerId) {
     ElMessage.warning(t('emails.sourcingCustomerRequired'))
+    return
+  }
+  if (!sourcingForm.contactId) {
+    ElMessage.warning(t('emails.sourcingContactRequired'))
     return
   }
   const fieldByColumn: Record<string, string> = {
@@ -3182,8 +3249,7 @@ async function createSourcingCaseFromExcel() {
       title: result.fileName.replace(/\.xlsx$/i, ''),
       customerId: sourcingForm.customerId,
       customerName: sourcingForm.customerName,
-      contactName: sourcingForm.contactName,
-      contactEmail: sourcingForm.contactEmail,
+      contactId: sourcingForm.contactId,
       sourceMailId: source.mailId,
       sourceAttachmentId: source.kind === 'attachment' ? source.attachmentId : '0',
       inquiryTemplateId: result.inquiryTemplateId || '0',
@@ -3951,6 +4017,12 @@ async function doUnsuppress(row: Suppression) {
   margin: 0 0 14px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.sourcing-contact-help {
+  margin-top: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.45;
 }
 .excel-grid {
   max-height: 58vh;

@@ -531,6 +531,7 @@ type SourcingCase struct {
 	InquiryTemplateCode    string
 	InquiryTemplateVersion int32
 	SourceFileKey          string
+	ContactID              int64
 }
 
 type SourcingCaseChange struct {

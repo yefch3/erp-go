@@ -122,12 +122,11 @@ func postSourcingCase(t *testing.T, s *Server, body string) *httptest.ResponseRe
 	return rec
 }
 
-// 询盘必须落在一个真客户身上。
+// 询盘必须落在一个真客户和该客户名下的有效联系人身上。
 //
-// 邮件那条入口曾经只传一个发件人显示名，于是每次都撞在「请选择有效客户」
-// 上——按钮在，路不通。这里钉住两头：没客户要挡下，有客户则以主数据的名字
-// 为准，不用调用方传来的那个。
-func TestCreateSourcingCaseRequiresRealCustomer(t *testing.T) {
+// 浏览器只能提交主数据 ID；客户名、联系人姓名和邮箱都由网关重新读取，
+// 防止旧值或跨客户联系人进入询盘快照。
+func TestCreateSourcingCaseRequiresRealCustomerContact(t *testing.T) {
 	t.Run("没有客户被拒", func(t *testing.T) {
 		sourcing := &captureSourcingClientStub{}
 		s := &Server{Customers: activeCustomerClientStub{status: "ACTIVE"}, Sourcing: sourcing}
@@ -143,19 +142,36 @@ func TestCreateSourcingCaseRequiresRealCustomer(t *testing.T) {
 		}
 	})
 
-	t.Run("客户名以主数据为准", func(t *testing.T) {
+	t.Run("客户和联系人快照以主数据为准", func(t *testing.T) {
 		sourcing := &captureSourcingClientStub{}
-		s := &Server{Customers: activeCustomerClientStub{status: "ACTIVE"}, Sourcing: sourcing}
+		s := &Server{Customers: activeCustomerClientStub{status: "ACTIVE", contacts: []*mdv1.Contact{
+			{Id: 11, Name: "王经理", Email: "wang@example.com", Status: "ACTIVE"},
+		}}, Sourcing: sourcing}
 		rec := postSourcingCase(t, s,
-			`{"title":"客户询价单","customerId":"7","customerName":"浏览器传来的旧名字"}`)
+			`{"title":"客户询价单","customerId":"7","customerName":"浏览器传来的旧名字","contactId":"11","contactName":"错误联系人","contactEmail":"old@example.com"}`)
 		if rec.Code != http.StatusOK {
-			t.Fatalf("选了启用客户就该建得成，实际 %d %s", rec.Code, rec.Body.String())
+			t.Fatalf("选了有效客户联系人就该建得成，实际 %d %s", rec.Code, rec.Body.String())
 		}
 		if sourcing.got.GetCustomerId() != 7 {
 			t.Fatalf("客户 id 该原样传下去，实际 %d", sourcing.got.GetCustomerId())
 		}
 		if sourcing.got.GetCustomerName() != "测试客户" {
 			t.Fatalf("名字该来自主数据而不是调用方，实际 %q", sourcing.got.GetCustomerName())
+		}
+		if sourcing.got.GetContactId() != 11 || sourcing.got.GetContactName() != "王经理" || sourcing.got.GetContactEmail() != "wang@example.com" {
+			t.Fatalf("联系人快照该来自主数据，实际 id=%d name=%q email=%q", sourcing.got.GetContactId(), sourcing.got.GetContactName(), sourcing.got.GetContactEmail())
+		}
+	})
+
+	t.Run("未选择联系人被拒", func(t *testing.T) {
+		sourcing := &captureSourcingClientStub{}
+		s := &Server{Customers: activeCustomerClientStub{status: "ACTIVE"}, Sourcing: sourcing}
+		rec := postSourcingCase(t, s, `{"title":"客户询价单","customerId":"7"}`)
+		if rec.Code == http.StatusOK || !strings.Contains(rec.Body.String(), "MASTERDATA_CUSTOMER_CONTACT_REQUIRED") {
+			t.Fatalf("缺少联系人应被拒，实际 %d %s", rec.Code, rec.Body.String())
+		}
+		if sourcing.got != nil {
+			t.Fatal("挡下来的请求不该到达采购服务")
 		}
 	})
 

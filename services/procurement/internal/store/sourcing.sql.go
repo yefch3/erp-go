@@ -62,7 +62,7 @@ func (q *Queries) ConfirmSourcingLines(ctx context.Context, arg ConfirmSourcingL
 
 const createSourcingCase = `-- name: CreateSourcingCase :one
 INSERT INTO sourcing_cases (
-    tenant_id, case_no, title, customer_id, customer_name, contact_name,
+    tenant_id, case_no, title, customer_id, customer_name, contact_id, contact_name,
     contact_email, source_mail_id, source_attachment_id, owner_id, owner_name,
     source_file_name, source_content_type, source_file_data, source_file_key,
     inquiry_template_id, inquiry_template_code, inquiry_template_version
@@ -70,14 +70,14 @@ INSERT INTO sourcing_cases (
     $1::bigint,
     'SC-' || to_char(current_date, 'YYYYMMDD') || '-' || lpad(nextval('sourcing_case_no_seq')::text, 6, '0'),
     $2::text, $3::bigint,
-    $4::text, $5::text,
-    $6::text, $7::bigint,
-    $8::bigint, $9::bigint,
-    $10::text, $11::text,
-    $12::text, $13::bytea,
-    $14::text,
-    $15::bigint, $16::text,
-    $17::int
+    $4::text, $5::bigint, $6::text,
+    $7::text, $8::bigint,
+    $9::bigint, $10::bigint,
+    $11::text, $12::text,
+    $13::text, $14::bytea,
+    $15::text,
+    $16::bigint, $17::text,
+    $18::int
 )
 RETURNING id, case_no
 `
@@ -87,6 +87,7 @@ type CreateSourcingCaseParams struct {
 	Title                  string
 	CustomerID             int64
 	CustomerName           string
+	ContactID              int64
 	ContactName            string
 	ContactEmail           string
 	SourceMailID           int64
@@ -113,6 +114,7 @@ func (q *Queries) CreateSourcingCase(ctx context.Context, arg CreateSourcingCase
 		arg.Title,
 		arg.CustomerID,
 		arg.CustomerName,
+		arg.ContactID,
 		arg.ContactName,
 		arg.ContactEmail,
 		arg.SourceMailID,
@@ -250,7 +252,7 @@ func (q *Queries) CreateSourcingLine(ctx context.Context, arg CreateSourcingLine
 }
 
 const getSourcingCase = `-- name: GetSourcingCase :one
-SELECT id, case_no, title, customer_id, customer_name, contact_name,
+SELECT id, case_no, title, customer_id, customer_name, contact_id, contact_name,
        contact_email, source_mail_id, source_attachment_id, status,
        owner_id, owner_name, source_file_name, source_file_key,
        inquiry_template_id,
@@ -273,6 +275,7 @@ type GetSourcingCaseRow struct {
 	Title                  string
 	CustomerID             int64
 	CustomerName           string
+	ContactID              int64
 	ContactName            string
 	ContactEmail           string
 	SourceMailID           int64
@@ -308,6 +311,7 @@ func (q *Queries) GetSourcingCase(ctx context.Context, arg GetSourcingCaseParams
 		&i.Title,
 		&i.CustomerID,
 		&i.CustomerName,
+		&i.ContactID,
 		&i.ContactName,
 		&i.ContactEmail,
 		&i.SourceMailID,
@@ -360,7 +364,7 @@ func (q *Queries) GetSourcingSourceFile(ctx context.Context, arg GetSourcingSour
 }
 
 const listSourcingCases = `-- name: ListSourcingCases :many
-SELECT id, case_no, title, customer_id, customer_name, contact_name,
+SELECT id, case_no, title, customer_id, customer_name, contact_id, contact_name,
        contact_email, source_mail_id, source_attachment_id, status,
        owner_id, owner_name, source_file_name, inquiry_template_id,
        inquiry_template_code, inquiry_template_version, handoff_status,
@@ -398,6 +402,7 @@ type ListSourcingCasesRow struct {
 	Title                  string
 	CustomerID             int64
 	CustomerName           string
+	ContactID              int64
 	ContactName            string
 	ContactEmail           string
 	SourceMailID           int64
@@ -447,6 +452,7 @@ func (q *Queries) ListSourcingCases(ctx context.Context, arg ListSourcingCasesPa
 			&i.Title,
 			&i.CustomerID,
 			&i.CustomerName,
+			&i.ContactID,
 			&i.ContactName,
 			&i.ContactEmail,
 			&i.SourceMailID,

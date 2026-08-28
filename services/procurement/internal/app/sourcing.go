@@ -55,14 +55,14 @@ func reviewCustomFields(previous []byte, next map[string]string) []byte {
 }
 
 type NewSourcingCase struct {
-	Title, CustomerName, ContactName, ContactEmail string
-	SourceFileName, SourceContentType              string
-	CustomerID, SourceMailID, SourceAttachmentID   int64
-	SourceFileData                                 []byte
-	Lines                                          []SourcingLineInput
-	InquiryTemplateID                              int64
-	InquiryTemplateCode                            string
-	InquiryTemplateVersion                         int32
+	Title, CustomerName, ContactName, ContactEmail          string
+	SourceFileName, SourceContentType                       string
+	CustomerID, ContactID, SourceMailID, SourceAttachmentID int64
+	SourceFileData                                          []byte
+	Lines                                                   []SourcingLineInput
+	InquiryTemplateID                                       int64
+	InquiryTemplateCode                                     string
+	InquiryTemplateVersion                                  int32
 }
 
 type SourcingCaseView struct {
@@ -117,7 +117,8 @@ func (s *Service) CreateSourcingCase(ctx context.Context, tenantID int64, in New
 		q := s.q.WithTx(tx)
 		head, err := q.CreateSourcingCase(ctx, store.CreateSourcingCaseParams{
 			TenantID: tenantID, Title: strings.TrimSpace(in.Title), CustomerID: in.CustomerID,
-			CustomerName: strings.TrimSpace(in.CustomerName), ContactName: strings.TrimSpace(in.ContactName),
+			CustomerName: strings.TrimSpace(in.CustomerName), ContactID: in.ContactID,
+			ContactName:  strings.TrimSpace(in.ContactName),
 			ContactEmail: strings.TrimSpace(in.ContactEmail), SourceMailID: in.SourceMailID,
 			SourceAttachmentID: in.SourceAttachmentID, OwnerID: op.ID, OwnerName: op.Name,
 			SourceFileName: strings.TrimSpace(in.SourceFileName), SourceContentType: in.SourceContentType,
