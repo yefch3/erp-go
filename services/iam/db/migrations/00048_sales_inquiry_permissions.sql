@@ -55,12 +55,30 @@ SELECT r.tenant_id, r.id, 'procurement_sourcing',
        CASE WHEN r.code = 'SALES_MANAGER' THEN 'DEPT_AND_SUB' ELSE 'SELF' END
 FROM roles r
 WHERE r.code IN ('SALES', 'SALES_MANAGER', 'SALES_RO')
-ON CONFLICT (tenant_id, role_id, module) DO NOTHING;
+ON CONFLICT (tenant_id, role_id, module) DO UPDATE
+SET scope_type = EXCLUDED.scope_type;
+
+-- 客户报价与出口合同同样按销售组织范围隔离：专员看本人，经理看本部门及下级。
+INSERT INTO role_data_scopes (tenant_id, role_id, module, scope_type)
+SELECT r.tenant_id, r.id, 'export',
+       CASE WHEN r.code = 'SALES_MANAGER' THEN 'DEPT_AND_SUB' ELSE 'SELF' END
+FROM roles r
+WHERE r.code IN ('SALES', 'SALES_MANAGER')
+ON CONFLICT (tenant_id, role_id, module) DO UPDATE
+SET scope_type = EXCLUDED.scope_type;
 
 -- +goose Down
 DELETE FROM role_data_scopes
-WHERE module = 'procurement_sourcing'
+WHERE module IN ('procurement_sourcing', 'export')
   AND role_id IN (SELECT id FROM roles WHERE code = 'SALES');
+UPDATE role_data_scopes
+SET scope_type = 'SELF'
+WHERE module = 'procurement_sourcing'
+  AND role_id IN (SELECT id FROM roles WHERE code = 'SALES_MANAGER');
+UPDATE role_data_scopes
+SET scope_type = 'ALL'
+WHERE module = 'export'
+  AND role_id IN (SELECT id FROM roles WHERE code = 'SALES_MANAGER');
 DELETE FROM role_permissions
 WHERE role_id IN (SELECT id FROM roles WHERE code = 'SALES')
    OR permission_id IN (SELECT id FROM permissions WHERE code LIKE 'sales:%');
