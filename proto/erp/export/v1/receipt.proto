@@ -303,6 +303,9 @@ message ListOpenReceivablesRequest {
   string currency = 1;
   int64 customer_id = 2;
   string keyword = 3;
+  // 退款的候选是「收过钱的」合同（退的上限就是已收），核销的候选是
+  // 「还欠钱的」。
+  bool for_refund = 4;
 }
 
 message ListOpenReceivablesResponse {

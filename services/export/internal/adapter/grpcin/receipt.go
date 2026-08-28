@@ -155,7 +155,7 @@ func (h *ReceiptHandler) RevokeSettlement(ctx context.Context, req *exv1.RevokeS
 
 func (h *ReceiptHandler) ListOpenReceivables(ctx context.Context, req *exv1.ListOpenReceivablesRequest) (*exv1.ListOpenReceivablesResponse, error) {
 	rows, err := h.svc.OpenReceivables(ctx, grpcx.TenantID(ctx),
-		req.GetCurrency(), req.GetCustomerId(), req.GetKeyword())
+		req.GetCurrency(), req.GetCustomerId(), req.GetKeyword(), req.GetForRefund())
 	if err != nil {
 		return nil, err
 	}

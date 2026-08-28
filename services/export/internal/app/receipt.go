@@ -93,10 +93,23 @@ func (v TransactionView) Disposition() string {
 	if v.VarianceAmount != "" {
 		return DispositionAllocated
 	}
-	if mustDec(v.AllocatedAmount).GreaterThanOrEqual(mustDec(v.Transaction.Amount)) {
+	if coveredOf(v.Transaction.Direction, mustDec(v.AllocatedAmount)).
+		GreaterThanOrEqual(mustDec(v.Transaction.Amount)) {
 		return DispositionAllocated
 	}
 	return DispositionUnprocessed
+}
+
+// coveredOf 把核销记录的代数和翻成「这一行被说清了多少」。
+//
+// 收款行的核销记正数，退款行的记负数（钱离开合同）；两种行「处理完了没有」
+// 都是拿说清的量和到账/付出的量比。符号在这一个函数里翻，别处不再各翻各的
+// ——散开翻的那天，就是某一处忘了翻、一笔退款把守门算式翻反的那天。
+func coveredOf(direction string, allocatedSum decimal.Decimal) decimal.Decimal {
+	if direction == "DEBIT" {
+		return allocatedSum.Neg()
+	}
+	return allocatedSum
 }
 
 // RecordTransaction stores what the bank said.
@@ -131,16 +144,8 @@ func (s *Service) RecordTransaction(ctx context.Context, tenantID int64, in Tran
 	if direction != "CREDIT" && direction != "DEBIT" {
 		direction = "CREDIT"
 	}
-	// 出账暂时拒收。不是永远：收付队列改造（docs/开发计划.md）会让客户退款
-	// （出账、归属客户往来）在这一页有自己的子页面。但**今天**这里登记一笔
-	// 出账，它会从每一个页面上消失：本页列表写死只出进账，归属又被无条件
-	// 写成客户，于是供应商那边的匹配也看不见它——钱录进去了，谁都找不到，
-	// 也没有任何提示。一句明确的拒绝比一次无声的吞没好。
-	if direction == "DEBIT" {
-		return TransactionView{}, apierr.Invalid("EX_TX_DEBIT_NOT_YET",
-			"这里暂时只能登记进账（客户打来的钱）。出账（客户退款）的登记入口即将上线；"+
-				"付给供应商的钱请走「银行流水」导入。")
-	}
+	// 出账现在有去处了：归属写客户往来，落进本页的「客户退款」视图。
+	// （阶段 0 曾在这里临时拒收，因为那时出账登记进来会从所有页面上消失。）
 	row, err := s.bank.Record(ctx, BankRowInput{
 		AccountID: in.AccountID, BankRef: in.BankRef, Direction: direction,
 		Amount: amount.StringFixed(2), Currency: in.Currency, ValueDate: in.ValueDate,
@@ -187,7 +192,7 @@ func (s *Service) viewOf(ctx context.Context, tenantID int64, row BankRow) (Tran
 	v := TransactionView{
 		Transaction: row, Allocations: allocs, Suggestions: suggestions,
 		AllocatedAmount:   allocated.StringFixed(2),
-		UnallocatedAmount: mustDec(row.Amount).Sub(allocated).StringFixed(2),
+		UnallocatedAmount: mustDec(row.Amount).Sub(coveredOf(row.Direction, allocated)).StringFixed(2),
 	}
 	if st, err := s.q.GetLiveReceiptSettlement(ctx, store.GetLiveReceiptSettlementParams{
 		TenantID: tenantID, TransactionID: row.ID,
@@ -229,8 +234,14 @@ type TransactionQuery struct {
 // 这个判断，就是在这个页面做的。
 func (s *Service) ListTransactions(ctx context.Context, tenantID int64, qy TransactionQuery) ([]TransactionView, int64, error) {
 	page, size := normalizePage(qy.Page, qy.Size)
+	// 方向从筛选来：核销视图是进账，退款视图是出账。默认进账——改版前
+	// 这个字段被写死成 CREDIT，所有老调用方都不传。
+	direction := strings.ToUpper(qy.Direction)
+	if direction == "" {
+		direction = "CREDIT"
+	}
 	q := BankLedgerQuery{
-		Keyword: qy.Keyword, Page: page, Size: size, Direction: "CREDIT",
+		Keyword: qy.Keyword, Page: page, Size: size, Direction: direction,
 	}
 	mine := []string{OwnershipCustomer, OwnershipPending}
 	switch qy.Disposition {
@@ -242,6 +253,13 @@ func (s *Service) ListTransactions(ctx context.Context, tenantID int64, qy Trans
 		// 「与应收无关」现在的意思就是归属被改到了别的档。那些行还在这个
 		// 页面上看得见（也才能撤销标记），只是不在待办队列里。
 		q.OwnershipIn = []string{OwnershipSupplier, OwnershipTaxRefund, OwnershipOther}
+	}
+	if direction == "DEBIT" {
+		// 退款队列只出**明确归到客户往来**的出账，任何档位都一样——放在
+		// switch 之后强制盖掉，是因为「与应收无关」那档的归属列表配上出账
+		// 方向，捞出来的正好是全部供应商付款流水。待处理的出账也不进来：
+		// 归属这一步就是「这不是采购的款」的判断，不能被跳过。
+		q.OwnershipIn = []string{OwnershipCustomer}
 	}
 	rows, total, err := s.bank.List(ctx, q)
 	if err != nil {
@@ -289,7 +307,7 @@ func (s *Service) ListTransactions(ctx context.Context, tenantID int64, qy Trans
 		v := TransactionView{
 			Transaction:       r,
 			AllocatedAmount:   got.StringFixed(2),
-			UnallocatedAmount: mustDec(r.Amount).Sub(got).StringFixed(2),
+			UnallocatedAmount: mustDec(r.Amount).Sub(coveredOf(r.Direction, got)).StringFixed(2),
 		}
 		if st, ok := settledBy[r.ID]; ok {
 			applySettlement(&v, st.Amount, st.Category, st.Note)
@@ -344,11 +362,16 @@ func (s *Service) Allocate(ctx context.Context, tenantID, txID int64, lines []Al
 		if err != nil {
 			return err
 		}
-		if row.Direction != "CREDIT" {
-			return apierr.Invalid("EX_TX_NOT_CREDIT",
-				"这是一笔付出去的款，不能核销到应收合同")
-		}
-		if row.Ownership != OwnershipCustomer && row.Ownership != OwnershipPending {
+		refund := row.Direction == "DEBIT"
+		if refund {
+			// 出账是退款。必须**明确**归到客户往来才能退——待处理的出账
+			// 绝大多数是付给供应商的钱，归属这一步就是「这不是采购的款」
+			// 的判断，不能被跳过。
+			if row.Ownership != OwnershipCustomer {
+				return apierr.Invalid("EX_REFUND_NOT_CUSTOMER",
+					"这笔出账的归属还不是「客户往来」，不能按客户退款处理。先在银行流水改归属。")
+			}
+		} else if row.Ownership != OwnershipCustomer && row.Ownership != OwnershipPending {
 			return apierr.Invalid("EX_TX_IRRELEVANT",
 				"这笔流水的归属不是「客户往来」，不能核销到应收合同。要核先在银行流水改归属。")
 		}
@@ -377,7 +400,10 @@ func (s *Service) Allocate(ctx context.Context, tenantID, txID int64, lines []Al
 			allocated = allocated.Add(mustDec(a.Amount))
 		}
 		total := mustDec(row.Amount)
-		remaining := total.Sub(allocated)
+		// 「还剩多少没说清」两个方向都用正数算：收款行核销记正、退款行记负，
+		// coveredOf 统一翻成覆盖量。守门算式只比正数——负数一进比较，
+		// 「adding > remaining」这道闸就形同虚设（负数永远不大于正余额）。
+		remaining := total.Sub(coveredOf(row.Direction, allocated))
 
 		// Check every line before writing any of them. A rollback would undo
 		// partial work anyway, but refusing up front means the error names
@@ -435,6 +461,24 @@ func (s *Service) Allocate(ctx context.Context, tenantID, txID int64, lines []Al
 					"contract_currency", progress.Currency,
 					"payment_currency", row.Currency)
 			}
+			if refund {
+				// 手续费的定义是「补足合同的钱」，方向朝上；退款的方向朝下，
+				// 两个叠一起等于让一个输入框同时表示两件相反的事。退款行上
+				// 拒收，需要认差时走认差结清。
+				if !fee.IsZero() {
+					return apierr.Invalid("EX_REFUND_NO_FEE",
+						"退款不能带补足差额——退款里没退干净的部分请用「认差结清」")
+				}
+				// 一张合同退出去的钱不能比它收到的多。received 是净额
+				// （历史退款已经是负行），所以连续退几笔也框得住。
+				if amount.GreaterThan(mustDec(progress.ReceivedAmount)) {
+					return apierr.Invalid("EX_REFUND_EXCEEDS_RECEIVED",
+						"退款金额超过这张合同已收的钱").WithMeta(
+						"contract_no", progress.ContractNo,
+						"received", progress.ReceivedAmount,
+						"requested", amount.StringFixed(2))
+				}
+			}
 			ready = append(ready, checked{line: l, amount: amount, fee: fee, progress: progress})
 		}
 
@@ -447,10 +491,16 @@ func (s *Service) Allocate(ctx context.Context, tenantID, txID int64, lines []Al
 		}
 
 		for _, c := range ready {
+			// 界面上填的都是正数（「退多少」），符号在这儿翻：退款行落库为负，
+			// 六处「已收 = 求和」不用改一个字就自动变小。
+			stored := c.amount
+			if refund {
+				stored = stored.Neg()
+			}
 			if _, err := q.AddReceiptAllocation(ctx, store.AddReceiptAllocationParams{
 				TenantID: tenantID, TransactionID: txID, ContractID: c.line.ContractID,
 				ContractNo: c.progress.ContractNo, CustomerName: c.progress.CustomerName,
-				Amount: c.amount.StringFixed(2), FeeAmount: c.fee.StringFixed(2),
+				Amount: stored.StringFixed(2), FeeAmount: c.fee.StringFixed(2),
 				FeeCategory: c.line.FeeCategory,
 				Currency:    c.progress.Currency, ReversalOf: 0, ReverseReason: "",
 				AllocatedBy: op.ID, AllocatedByName: op.Name,
@@ -458,7 +508,7 @@ func (s *Service) Allocate(ctx context.Context, tenantID, txID int64, lines []Al
 				return err
 			}
 		}
-		claimed = allocated.Add(adding)
+		claimed = coveredOf(row.Direction, allocated).Add(adding)
 		owners = s.ownersOf(ctx, q, tenantID, lines)
 		return nil
 	})
@@ -497,8 +547,9 @@ func (s *Service) SettleTransaction(ctx context.Context, tenantID, txID int64, c
 		if err != nil {
 			return err
 		}
-		if row.Direction != "CREDIT" {
-			return apierr.Invalid("EX_TX_NOT_CREDIT", "这是一笔付出去的款，没有应收差额可认")
+		if row.Direction == "DEBIT" && row.Ownership != OwnershipCustomer {
+			return apierr.Invalid("EX_REFUND_NOT_CUSTOMER",
+				"这笔出账的归属还不是「客户往来」，不在退款队列里")
 		}
 		if row.Ownership != OwnershipCustomer && row.Ownership != OwnershipPending {
 			return apierr.Invalid("EX_TX_IRRELEVANT",
@@ -514,7 +565,7 @@ func (s *Service) SettleTransaction(ctx context.Context, tenantID, txID int64, c
 		for _, a := range allocs {
 			allocated = allocated.Add(mustDec(a.Amount))
 		}
-		remainder := mustDec(row.Amount).Sub(allocated)
+		remainder := mustDec(row.Amount).Sub(coveredOf(row.Direction, allocated))
 		if !remainder.IsPositive() {
 			return apierr.Invalid("EX_SETTLE_NOTHING",
 				"这一行没有剩下的差额——已经核满了，不需要结清")
@@ -610,7 +661,9 @@ func (s *Service) reportClaim(ctx context.Context, txID int64, claimed decimal.D
 			return
 		}
 	}
-	if err := s.bank.SetClaim(ctx, txID, claimed.StringFixed(2)); err != nil {
+	// Abs：claimed_amount 的语义是「这一行有多少被认下来了」，是量不是向。
+	// 冲销重算后的退款行是负和，直接报会撞账本的 CHECK(claimed >= 0)。
+	if err := s.bank.SetClaim(ctx, txID, claimed.Abs().StringFixed(2)); err != nil {
 		s.logClaimGap(ctx, txID, claimed, "已核金额没能写回账本", err)
 	}
 }
@@ -870,10 +923,10 @@ func (s *Service) ContractReceipts(ctx context.Context, tenantID, contractID int
 }
 
 // OpenReceivables feeds the allocation picker.
-func (s *Service) OpenReceivables(ctx context.Context, tenantID int64, currency string, customerID int64, keyword string) ([]store.OpenReceivablesRow, error) {
+func (s *Service) OpenReceivables(ctx context.Context, tenantID int64, currency string, customerID int64, keyword string, forRefund bool) ([]store.OpenReceivablesRow, error) {
 	return s.q.OpenReceivables(ctx, store.OpenReceivablesParams{
 		TenantID: tenantID, Currency: currency, CustomerID: customerID,
-		Keyword: keyword, RowLimit: 100,
+		Keyword: keyword, ForRefund: forRefund, RowLimit: 100,
 	})
 }
 

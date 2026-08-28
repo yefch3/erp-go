@@ -125,7 +125,11 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   -- With no search term the picker shows only what is still owed; a search
   -- reaches settled contracts too, because sometimes the question is
   -- "did this one get paid".
-  AND ((v.total_amount - coalesce(r.received, 0)) > 0 OR sqlc.arg(keyword)::text <> '')
+  -- 两种候选：核销要「还欠钱的」，退款要「收过钱的」（退的上限就是已收）。
+  AND (CASE WHEN sqlc.arg(for_refund)::bool
+        THEN coalesce(r.received, 0) > 0
+        ELSE (v.total_amount - coalesce(r.received, 0)) > 0
+       END OR sqlc.arg(keyword)::text <> '')
   -- 结清的合同默认也不出现——它已经宣布「不用再核了」。钱真的又来了，
   -- 搜合同号还能找到它（和上面那条「搜索能到已收满的」同一个道理）。
   AND (sqlc.arg(keyword)::text <> '' OR NOT EXISTS (
