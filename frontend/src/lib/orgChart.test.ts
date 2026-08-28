@@ -3,6 +3,7 @@ import {
   buildDepartmentTree,
   buildReportingTree,
   countMembers,
+  focusView,
   nodeMatches,
   type OrgDepartment,
   type OrgMember,
@@ -156,5 +157,68 @@ describe('搜索', () => {
 
   it('搜不着就是搜不着', () => {
     expect(nodeMatches(node, '李四')).toBe(false)
+  })
+})
+
+// 「以自己为中心」的那张图。全公司三百个方块铺满屏幕等于什么都没说，
+// 每次只回答「这个人在组织里的位置」——所以这一组钉的是「一圈人取对了没有」。
+describe('以某人为中心', () => {
+  //   甲（无上级）
+  //   ├─ 乙  ← 中心
+  //   │   ├─ 丁
+  //   │   └─ 戊
+  //   └─ 丙
+  const people = [
+    member('1', '甲'),
+    member('2', '乙', '1'),
+    member('3', '丙', '1'),
+    member('4', '丁', '2'),
+    member('5', '戊', '2'),
+  ]
+
+  it('上级链从最高排到直属上级', () => {
+    const v = focusView(people, '4')
+    expect(v.ancestors.map((a) => a.name)).toEqual(['甲', '乙'])
+  })
+
+  it('同级里**包含自己**——抽掉自己，中心那个方块就无处安放了', () => {
+    const v = focusView(people, '2')
+    expect(v.peers.map((p) => p.name)).toEqual(['丙', '乙'])
+    expect(v.peers.some((p) => p.id === '2')).toBe(true)
+  })
+
+  it('下属只算直接下属，不含孙子辈', () => {
+    expect(focusView(people, '1').reports.map((r) => r.name)).toEqual(['丙', '乙'])
+    expect(focusView(people, '2').reports.map((r) => r.name)).toEqual(['丁', '戊'])
+  })
+
+  it('头上没人时，同级是所有头上没人的人', () => {
+    const tops = [member('1', '甲'), member('2', '乙'), member('3', '丙', '1')]
+    const v = focusView(tops, '1')
+    expect(v.ancestors).toEqual([])
+    // 按拼音：甲(jiǎ) 在 乙(yǐ) 前面
+    expect(v.peers.map((p) => p.name)).toEqual(['甲', '乙'])
+  })
+
+  it('上级已离职（不在名单里）——链子到此为止，不是崩掉', () => {
+    const v = focusView([member('9', '孤儿', '404')], '9')
+    expect(v.ancestors).toEqual([])
+    expect(v.focus?.name).toBe('孤儿')
+    // 上级查不到，就和「头上没人」同列——否则这个人会连同级都没有。
+    expect(v.peers.map((p) => p.name)).toEqual(['孤儿'])
+  })
+
+  it('成环不会转不停', () => {
+    const ring = [member('1', '甲', '2'), member('2', '乙', '3'), member('3', '丙', '1')]
+    const v = focusView(ring, '1')
+    expect(v.ancestors.length).toBeLessThanOrEqual(3)
+    expect(v.focus?.name).toBe('甲')
+  })
+
+  it('中心不在名单里就是空视图，页面据此说「找不到」', () => {
+    const v = focusView(people, '999')
+    expect(v.focus).toBeUndefined()
+    expect(v.peers).toEqual([])
+    expect(v.reports).toEqual([])
   })
 })

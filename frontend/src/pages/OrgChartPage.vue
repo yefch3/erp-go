@@ -4,76 +4,95 @@
 
     <div class="page-head">
       <h2>{{ t('orgChart.title') }}</h2>
-      <span class="counted">{{ t('orgChart.counted', { n: shownCount, total: members.length }) }}</span>
+      <el-radio-group v-model="view" size="small">
+        <el-radio-button value="focus">{{ t('orgChart.reporting') }}</el-radio-button>
+        <el-radio-button value="department">{{ t('orgChart.department') }}</el-radio-button>
+      </el-radio-group>
+      <span class="grow" />
+      <el-select
+        v-model="focusId"
+        filterable
+        clearable
+        :placeholder="t('orgChart.jumpTo')"
+        style="width: 220px"
+        @clear="focusOnMe"
+      >
+        <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id">
+          <span>{{ m.name }}</span>
+          <span class="opt-sub">{{ m.position || m.departmentName }}</span>
+        </el-option>
+      </el-select>
+      <el-button v-if="focusId !== myID" @click="focusOnMe">{{ t('orgChart.backToMe') }}</el-button>
     </div>
 
-    <el-card shadow="never">
+    <!-- ─────────────────────────────────── 以自己为中心的关系图 -->
+    <el-card v-if="view === 'focus'" v-loading="loading" shadow="never" class="chart-card">
+      <template v-if="focus">
+        <div class="chart">
+          <!-- 上级链。竖着一路排上去，每一级都点得进去——想往上看几层就点几次。 -->
+          <div v-if="ancestors.length" class="chain">
+            <div v-for="(a, i) in ancestors" :key="a.id" class="chain-step">
+              <OrgCard :member="a" :muted="i < ancestors.length - 1" :is-me="a.id === myID" @open="focusOn" />
+              <span class="link-down" />
+            </div>
+          </div>
+          <!-- 头上没人的时候说一句，否则那片空白像是没加载出来。 -->
+          <div v-else class="top-note">{{ t('orgChart.atTheTop') }}</div>
+
+          <!-- 同级行：和中心同一个上级的人，中心高亮。
+               下属**嵌在中心那张卡片底下**，不是挂在整行底下——挂在整行底下的话，
+               中心不在正中间时（比如他是最左边那个），连线会从两张卡片之间垂下来，
+               看起来像是旁边那个人的下属。 -->
+          <ul class="row" :class="{ 'has-parent': ancestors.length > 0 }">
+            <li v-for="p in peers" :key="p.id">
+              <OrgCard :member="p" :highlight="p.id === focusId" :is-me="p.id === myID" @open="focusOn" />
+              <ul v-if="p.id === focusId && reports.length" class="row has-parent nested">
+                <li v-for="r in reports" :key="r.id">
+                  <OrgCard :member="r" :is-me="r.id === myID" @open="focusOn" />
+                </li>
+              </ul>
+            </li>
+          </ul>
+
+          <div v-if="!reports.length" class="leaf-note">
+            {{ t('orgChart.noReports', { name: focus.name }) }}
+          </div>
+        </div>
+
+        <p class="legend">{{ t('orgChart.legend') }}</p>
+      </template>
+      <el-empty v-else-if="!loading" :description="t('orgChart.focusMissing')" />
+    </el-card>
+
+    <!-- ─────────────────────────────────────────────── 部门树 -->
+    <el-card v-else v-loading="loading" shadow="never">
       <div class="bar">
-        <!-- 两棵树切换。默认汇报线——「出了事找谁」比「公司长什么样」
-             更常被问到，而后者点一下就有。 -->
-        <el-radio-group v-model="treeType">
-          <el-radio-button value="reporting">{{ t('orgChart.reporting') }}</el-radio-button>
-          <el-radio-button value="department">{{ t('orgChart.department') }}</el-radio-button>
-        </el-radio-group>
-        <el-input
-          v-model="keyword"
-          clearable
-          :placeholder="t('orgChart.search')"
-          style="width: 260px"
-        />
+        <el-input v-model="keyword" clearable :placeholder="t('orgChart.search')" style="width: 260px" />
         <span class="grow" />
-        <el-button @click="setExpanded(true)">{{ t('orgChart.expandAll') }}</el-button>
-        <el-button @click="setExpanded(false)">{{ t('orgChart.collapseAll') }}</el-button>
+        <span class="counted">{{ t('orgChart.counted', { n: shownCount, total: members.length }) }}</span>
       </div>
-
-      <!-- 汇报线是森林：多个根很正常，一句话说清楚，免得人以为图坏了。 -->
-      <el-alert
-        v-if="treeType === 'reporting' && orphanCount > 0"
-        type="warning"
-        :closable="false"
-        show-icon
-        class="notice"
-        :title="t('orgChart.orphanNotice', { n: orphanCount })"
-      />
-
       <el-tree
         ref="treeRef"
-        :key="treeKey"
-        v-loading="loading"
-        :data="tree"
+        :data="deptTree"
         node-key="key"
-        :default-expand-all="expandAll"
+        default-expand-all
         :expand-on-click-node="false"
         :filter-node-method="filterNode"
-        class="org-tree"
+        class="dept-tree"
       >
         <template #default="{ data }">
-          <!-- 部门节点：名字 + 这个部门直属几个人 -->
-          <div v-if="data.kind === 'department'" class="node dept">
+          <div v-if="data.kind === 'department'" class="dept-node">
             <el-icon><OfficeBuilding /></el-icon>
             <span class="dept-name">{{ data.label }}</span>
-            <span class="sub">{{ t('orgChart.directCount', { n: directMembers(data) }) }}</span>
+            <span class="sub">{{ t('orgChart.directCount', { n: data.children.filter((c: OrgNode) => c.kind === 'member').length }) }}</span>
           </div>
-          <!-- 人：头像、姓名（英文名）、岗位，右边挂标签 -->
-          <div v-else class="node person">
-            <el-avatar :size="26" :src="data.member.avatarUrl" class="face">
-              {{ data.label.slice(0, 1) }}
-            </el-avatar>
-            <span class="who">{{ data.label }}</span>
-            <span v-if="data.member.englishName" class="sub">{{ data.member.englishName }}</span>
-            <span v-if="data.member.position" class="pos">{{ data.member.position }}</span>
-            <span v-if="treeType === 'reporting'" class="sub">{{ data.member.departmentName }}</span>
-            <el-tag v-if="data.orphaned" size="small" type="warning" effect="plain">
-              {{ t('orgChart.orphan') }}
-            </el-tag>
-            <el-tag v-if="data.member.leaveDate" size="small" type="danger" effect="plain">
-              {{ t('orgChart.leaving', { d: data.member.leaveDate }) }}
-            </el-tag>
+          <div v-else class="dept-node person" @click="focusOn(data.member.id)">
+            <el-avatar :size="22" :src="data.member.avatarUrl">{{ data.label.slice(0, 1) }}</el-avatar>
+            <span>{{ data.label }}</span>
+            <span v-if="data.member.position" class="sub">{{ data.member.position }}</span>
           </div>
         </template>
       </el-tree>
-
-      <el-empty v-if="!loading && members.length === 0" :description="t('orgChart.empty')" />
     </el-card>
   </div>
 </template>
@@ -81,13 +100,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import { OfficeBuilding } from '@element-plus/icons-vue'
 import { get } from '../api'
 import BasicDataEmployeeNav from '../components/BasicDataEmployeeNav.vue'
+import OrgCard from '../components/OrgCard.vue'
+import { useAuthStore } from '../stores/auth'
 import {
   buildDepartmentTree,
-  buildReportingTree,
   countMembers,
+  focusView,
   nodeMatches,
   type OrgDepartment,
   type OrgMember,
@@ -95,45 +117,52 @@ import {
 } from '../lib/orgChart'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
 
 const loading = ref(false)
 const members = ref<OrgMember[]>([])
 const departments = ref<OrgDepartment[]>([])
-const treeType = ref<'reporting' | 'department'>('reporting')
+const view = ref<'focus' | 'department'>('focus')
 const keyword = ref('')
-const expandAll = ref(true)
-// el-tree 的展开状态在组件内部，没有「全部展开/折叠」的命令式接口。
-// 换 key 强制重建是最短的一条路——树最多几百个节点，重建的代价看不出来。
-const treeKey = ref(0)
 const treeRef = ref()
 
-const tree = computed<OrgNode[]>(() =>
-  treeType.value === 'reporting'
-    ? buildReportingTree(members.value)
-    : buildDepartmentTree(departments.value, members.value, t('orgChart.unassigned')),
+const myID = computed(() => String(auth.employeeId || ''))
+// 中心是谁写在地址里，所以「我看的是张三那一圈」这件事可以刷新、可以后退、
+// 可以发给同事——和员工详情页是同一个道理。
+const focusId = computed({
+  get: () => String(route.query.at ?? '') || myID.value,
+  set: (id: string) => {
+    router.replace({ query: id && id !== myID.value ? { at: id } : {} })
+  },
+})
+
+const seen = computed(() => focusView(members.value, focusId.value))
+const ancestors = computed(() => seen.value.ancestors)
+const focus = computed(() => seen.value.focus)
+const peers = computed(() => seen.value.peers)
+const reports = computed(() => seen.value.reports)
+
+const deptTree = computed(() =>
+  buildDepartmentTree(departments.value, members.value, t('orgChart.unassigned')),
 )
+const shownCount = computed(() => countMembers(deptTree.value))
 
-// 图上画了几个人。和总数并排显示，是为了让「画丢了」这件事**看得见**——
-// 少一个方块没人会发现，但 299/300 会。
-const shownCount = computed(() => countMembers(tree.value))
-const orphanCount = computed(() => tree.value.filter((n) => n.orphaned).length)
-
-function directMembers(node: OrgNode): number {
-  return node.children.filter((c) => c.kind === 'member').length
+function focusOn(id: string) {
+  focusId.value = id
+  view.value = 'focus'
 }
 
-function filterNode(_value: string, data: OrgNode): boolean {
+function focusOnMe() {
+  focusId.value = myID.value
+}
+
+function filterNode(_v: string, data: OrgNode): boolean {
   return nodeMatches(data, keyword.value)
 }
 
-function setExpanded(on: boolean) {
-  expandAll.value = on
-  treeKey.value++
-}
-
-watch(keyword, (q) => {
-  treeRef.value?.filter(q)
-})
+watch(keyword, (q) => treeRef.value?.filter(q))
 
 async function load() {
   loading.value = true
@@ -152,18 +181,6 @@ onMounted(load)
 <style scoped>
 .page-head {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.counted {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-.bar {
-  display: flex;
   align-items: center;
   gap: 12px;
   margin-bottom: 12px;
@@ -173,47 +190,181 @@ onMounted(load)
   flex: 1;
 }
 
-.notice {
+.opt-sub {
+  float: right;
+  margin-left: 16px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.chart-card :deep(.el-card__body) {
+  overflow-x: auto;
+}
+
+/* 图整体居中。人少的时候靠左会显得像没画完。 */
+.chart {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: min-content;
+  padding: 8px 0 4px;
+}
+
+/* ── 上级链：一列卡片，每张下面一根竖线 */
+.chain {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.chain-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.link-down {
+  width: 0;
+  height: 22px;
+  border-left: 1px solid var(--el-border-color);
+}
+
+/* ── 一行同级/下属。连线用经典的 li::before/::after 画，不测量、不用 JS，
+      而且窗口一缩自己就跟着走。 */
+.row {
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row > li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 22px 10px 0;
+}
+
+/* 嵌套的下属行：那根从上面那张卡片垂下来的线由这一行自己画，
+   所以它永远对着**那张卡片**的中心，而不是整行的中心。 */
+.row.nested {
+  padding-top: 22px;
+}
+
+.row.nested::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 0;
+  height: 22px;
+  border-left: 1px solid var(--el-border-color);
+}
+
+/* 有父节点时才画连接线。同级行在最顶上（中心没有上级）时不该凭空长出线头。 */
+.row.has-parent > li::before,
+.row.has-parent > li::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 22px;
+  border-top: 1px solid var(--el-border-color);
+}
+
+.row.has-parent > li::before {
+  right: 50%;
+}
+
+.row.has-parent > li::after {
+  left: 50%;
+  border-left: 1px solid var(--el-border-color);
+}
+
+/* 独苗不需要横梁，一根竖线就够。 */
+.row.has-parent > li:only-child::before,
+.row.has-parent > li:only-child::after {
+  display: none;
+}
+
+.row.has-parent > li:only-child {
+  padding-top: 22px;
+}
+
+.row.has-parent > li:only-child > :deep(*) {
+  position: relative;
+}
+
+/* 最左最右的外侧半截横梁去掉，否则线会伸到没有卡片的地方去。 */
+.row.has-parent > li:first-child::before,
+.row.has-parent > li:last-child::after {
+  border: 0 none;
+}
+
+.row.has-parent > li:last-child::before {
+  border-right: 1px solid var(--el-border-color);
+  border-radius: 0 6px 0 0;
+}
+
+.row.has-parent > li:first-child::after {
+  border-radius: 6px 0 0 0;
+}
+
+.top-note,
+.leaf-note,
+.legend {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.top-note {
+  margin-bottom: 6px;
+}
+
+.leaf-note {
+  margin-top: 14px;
+}
+
+.legend {
+  margin: 18px 0 0;
+  text-align: center;
+}
+
+/* ── 部门树那一半 */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 12px;
 }
 
-/* 行高给足：一行里有头像、姓名、岗位和标签，挤在一起就读不成一句话了。 */
-.org-tree :deep(.el-tree-node__content) {
-  height: 38px;
+.counted {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
-.node {
+.dept-tree :deep(.el-tree-node__content) {
+  height: 34px;
+}
+
+.dept-node {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
 }
 
-.face {
-  flex: none;
-  font-size: 12px;
-  background: var(--el-color-primary-light-8);
-  color: var(--el-color-primary);
+.dept-node.person {
+  cursor: pointer;
 }
 
 .dept-name {
   font-weight: 600;
 }
 
-.who {
-  font-weight: 500;
-}
-
-/* 次要信息统一压一档：一行里三种字号会让眼睛无处落脚。 */
-.sub,
-.pos {
+.sub {
   font-size: 12px;
   color: var(--el-text-color-secondary);
-}
-
-.pos {
-  padding: 0 6px;
-  border-radius: 9px;
-  background: var(--el-fill-color);
 }
 </style>
