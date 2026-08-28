@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -354,6 +355,14 @@ func (s *Service) PrepareCustomerQuotation(ctx context.Context, tenantID, id int
 		return CustomerQuotationDraft{}, e
 	}
 	t, e := s.q.CostScenarioTerms(ctx, store.CostScenarioTermsParams{TenantID: tenantID, CaseID: v.Header.CaseID})
+	// Terms are optional snapshots. Historical inquiries can legitimately have
+	// no still-active source line (for example after a requirement revision),
+	// but their confirmed cost lines remain sufficient to create a quotation.
+	// Empty terms let export apply its normal defaults instead of leaking a raw
+	// pgx.ErrNoRows as an HTTP 500.
+	if errors.Is(e, pgx.ErrNoRows) {
+		e = nil
+	}
 	if e != nil {
 		return CustomerQuotationDraft{}, e
 	}
