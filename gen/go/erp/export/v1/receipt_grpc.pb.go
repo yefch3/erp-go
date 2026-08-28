@@ -28,6 +28,8 @@ const (
 	ReceiptService_ReverseAllocation_FullMethodName           = "/erp.export.v1.ReceiptService/ReverseAllocation"
 	ReceiptService_MarkIrrelevant_FullMethodName              = "/erp.export.v1.ReceiptService/MarkIrrelevant"
 	ReceiptService_ReopenTransaction_FullMethodName           = "/erp.export.v1.ReceiptService/ReopenTransaction"
+	ReceiptService_SettleTransaction_FullMethodName           = "/erp.export.v1.ReceiptService/SettleTransaction"
+	ReceiptService_RevokeSettlement_FullMethodName            = "/erp.export.v1.ReceiptService/RevokeSettlement"
 	ReceiptService_ListOpenReceivables_FullMethodName         = "/erp.export.v1.ReceiptService/ListOpenReceivables"
 	ReceiptService_GetContractReceipts_FullMethodName         = "/erp.export.v1.ReceiptService/GetContractReceipts"
 	ReceiptService_ListReceivableDue_FullMethodName           = "/erp.export.v1.ReceiptService/ListReceivableDue"
@@ -67,6 +69,10 @@ type ReceiptServiceClient interface {
 	// interest, a transfer between our own accounts.
 	MarkIrrelevant(ctx context.Context, in *MarkIrrelevantRequest, opts ...grpc.CallOption) (*MarkIrrelevantResponse, error)
 	ReopenTransaction(ctx context.Context, in *ReopenTransactionRequest, opts ...grpc.CallOption) (*ReopenTransactionResponse, error)
+	// 认差结清：核到没得核了还剩一截，员工说清这截是什么（损耗/尾差/多收/
+	// 其他），这一行就算处理完。「完成」由人确认，不由算式确认。
+	SettleTransaction(ctx context.Context, in *SettleTransactionRequest, opts ...grpc.CallOption) (*SettleTransactionResponse, error)
+	RevokeSettlement(ctx context.Context, in *RevokeSettlementRequest, opts ...grpc.CallOption) (*RevokeSettlementResponse, error)
 	// Candidates for the allocation picker: contracts still owed money.
 	ListOpenReceivables(ctx context.Context, in *ListOpenReceivablesRequest, opts ...grpc.CallOption) (*ListOpenReceivablesResponse, error)
 	// The other half: one contract collected in instalments.
@@ -176,6 +182,26 @@ func (c *receiptServiceClient) ReopenTransaction(ctx context.Context, in *Reopen
 	return out, nil
 }
 
+func (c *receiptServiceClient) SettleTransaction(ctx context.Context, in *SettleTransactionRequest, opts ...grpc.CallOption) (*SettleTransactionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SettleTransactionResponse)
+	err := c.cc.Invoke(ctx, ReceiptService_SettleTransaction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *receiptServiceClient) RevokeSettlement(ctx context.Context, in *RevokeSettlementRequest, opts ...grpc.CallOption) (*RevokeSettlementResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevokeSettlementResponse)
+	err := c.cc.Invoke(ctx, ReceiptService_RevokeSettlement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *receiptServiceClient) ListOpenReceivables(ctx context.Context, in *ListOpenReceivablesRequest, opts ...grpc.CallOption) (*ListOpenReceivablesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListOpenReceivablesResponse)
@@ -258,6 +284,10 @@ type ReceiptServiceServer interface {
 	// interest, a transfer between our own accounts.
 	MarkIrrelevant(context.Context, *MarkIrrelevantRequest) (*MarkIrrelevantResponse, error)
 	ReopenTransaction(context.Context, *ReopenTransactionRequest) (*ReopenTransactionResponse, error)
+	// 认差结清：核到没得核了还剩一截，员工说清这截是什么（损耗/尾差/多收/
+	// 其他），这一行就算处理完。「完成」由人确认，不由算式确认。
+	SettleTransaction(context.Context, *SettleTransactionRequest) (*SettleTransactionResponse, error)
+	RevokeSettlement(context.Context, *RevokeSettlementRequest) (*RevokeSettlementResponse, error)
 	// Candidates for the allocation picker: contracts still owed money.
 	ListOpenReceivables(context.Context, *ListOpenReceivablesRequest) (*ListOpenReceivablesResponse, error)
 	// The other half: one contract collected in instalments.
@@ -303,6 +333,12 @@ func (UnimplementedReceiptServiceServer) MarkIrrelevant(context.Context, *MarkIr
 }
 func (UnimplementedReceiptServiceServer) ReopenTransaction(context.Context, *ReopenTransactionRequest) (*ReopenTransactionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReopenTransaction not implemented")
+}
+func (UnimplementedReceiptServiceServer) SettleTransaction(context.Context, *SettleTransactionRequest) (*SettleTransactionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SettleTransaction not implemented")
+}
+func (UnimplementedReceiptServiceServer) RevokeSettlement(context.Context, *RevokeSettlementRequest) (*RevokeSettlementResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RevokeSettlement not implemented")
 }
 func (UnimplementedReceiptServiceServer) ListOpenReceivables(context.Context, *ListOpenReceivablesRequest) (*ListOpenReceivablesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListOpenReceivables not implemented")
@@ -502,6 +538,42 @@ func _ReceiptService_ReopenTransaction_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ReceiptService_SettleTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SettleTransactionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReceiptServiceServer).SettleTransaction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReceiptService_SettleTransaction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReceiptServiceServer).SettleTransaction(ctx, req.(*SettleTransactionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ReceiptService_RevokeSettlement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeSettlementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReceiptServiceServer).RevokeSettlement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReceiptService_RevokeSettlement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReceiptServiceServer).RevokeSettlement(ctx, req.(*RevokeSettlementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ReceiptService_ListOpenReceivables_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListOpenReceivablesRequest)
 	if err := dec(in); err != nil {
@@ -634,6 +706,14 @@ var ReceiptService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReopenTransaction",
 			Handler:    _ReceiptService_ReopenTransaction_Handler,
+		},
+		{
+			MethodName: "SettleTransaction",
+			Handler:    _ReceiptService_SettleTransaction_Handler,
+		},
+		{
+			MethodName: "RevokeSettlement",
+			Handler:    _ReceiptService_RevokeSettlement_Handler,
 		},
 		{
 			MethodName: "ListOpenReceivables",

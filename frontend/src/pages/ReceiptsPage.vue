@@ -67,6 +67,12 @@
             <div v-if="row.irrelevantType" class="sub">
               {{ t(`receipts.irrelevantTypes.${row.irrelevantType}`) }}
             </div>
+            <div v-if="row.varianceAmount" class="sub">
+              {{ t('receipts.varianceShort', {
+                n: row.varianceAmount,
+                cat: t(`receipts.varianceCategories.${row.varianceCategory}`),
+              }) }}
+            </div>
           </template>
         </el-table-column>
         <el-table-column :label="common('actions')" width="150" fixed="right">
@@ -194,8 +200,23 @@
             <el-table-column :label="t('receipts.thisTime')" width="130">
               <template #default="{ row }"><el-input v-model="row.amount" size="small" /></template>
             </el-table-column>
-            <el-table-column :label="t('receipts.fee')" width="110">
-              <template #default="{ row }"><el-input v-model="row.fee" size="small" /></template>
+            <!-- 补足差额：不从银行那一行出、只把合同补满的那截钱。原来它
+                 只有「手续费」一种说法，于是损耗扣款只能谎报成手续费——
+                 类别错了，将来进总账就进错科目。 -->
+            <el-table-column width="200">
+              <template #header>
+                <el-tooltip :content="t('receipts.feeHint')" placement="top">
+                  <span>{{ t('receipts.fee') }}</span>
+                </el-tooltip>
+              </template>
+              <template #default="{ row }">
+                <div class="fee-cell">
+                  <el-input v-model="row.fee" size="small" style="width: 84px" />
+                  <el-select v-model="row.feeCat" size="small" style="width: 96px">
+                    <el-option v-for="k in FEE_CATEGORIES" :key="k" :value="k" :label="t(`receipts.feeCategories.${k}`)" />
+                  </el-select>
+                </div>
+              </template>
             </el-table-column>
             <el-table-column width="60" align="center">
               <template #default="{ $index }">
@@ -217,6 +238,49 @@
             <span class="num" :class="remaining === '0.00' ? 'ok' : 'warn'">{{ remaining }}</span>
           </div>
         </div>
+
+        <!-- 认差结清。核到没得核了还剩一截——损耗扣款、尾差、客户多付——
+             员工说清这截是什么，这一行才算完。「完成」由人确认，不由算式：
+             差 200 是认了还是要去追客户，机器判断不了。 -->
+        <el-alert
+          v-if="detail.varianceAmount"
+          type="success"
+          :closable="false"
+          show-icon
+          class="alert"
+        >
+          <template #default>
+            <div class="suggest">
+              <span>
+                {{ t('receipts.settledVariance', {
+                  n: detail.varianceAmount,
+                  cat: t(`receipts.varianceCategories.${detail.varianceCategory}`),
+                }) }}
+                <template v-if="detail.varianceNote"> · {{ detail.varianceNote }}</template>
+              </span>
+              <el-button v-if="canWrite" size="small" type="danger" plain @click="unsettle">
+                {{ t('receipts.unsettle') }}
+              </el-button>
+            </div>
+          </template>
+        </el-alert>
+        <template v-else-if="canWrite && detail.disposition === 'UNPROCESSED' && detail.direction === 'CREDIT' && Number(detail.unallocatedAmount) > 0">
+          <div v-if="!settleOpen" class="settle-invite">
+            <span class="sub">{{ t('receipts.settleInvite', { n: detail.unallocatedAmount }) }}</span>
+            <el-button size="small" @click="settleOpen = true">{{ t('receipts.settle') }}</el-button>
+          </div>
+          <div v-else class="settle-form">
+            <span class="sub">{{ t('receipts.settleWhat', { n: detail.unallocatedAmount }) }}</span>
+            <el-select v-model="settleForm.category" size="small" style="width: 130px">
+              <el-option v-for="k in VARIANCE_CATEGORIES" :key="k" :value="k" :label="t(`receipts.varianceCategories.${k}`)" />
+            </el-select>
+            <el-input v-model="settleForm.note" size="small" style="width: 220px" :placeholder="t('receipts.settleNote')" />
+            <el-button size="small" type="primary" :loading="settling" @click="submitSettle">
+              {{ t('receipts.settleConfirm') }}
+            </el-button>
+            <el-button size="small" @click="settleOpen = false">{{ common('cancel') }}</el-button>
+          </div>
+        </template>
       </template>
 
       <template #footer>
@@ -342,6 +406,9 @@ interface Transaction {
   allocatedAmount: string
   unallocatedAmount: string
   feeAmount: string
+  varianceAmount: string
+  varianceCategory: string
+  varianceNote: string
 }
 interface Allocation {
   id: string
@@ -358,7 +425,7 @@ interface Allocation {
 interface Suggestion { contractId: string; contractNo: string; customerName: string; currency: string; openAmount: string }
 interface Receivable { contractId: string; contractNo: string; customerName: string; currency: string; openAmount: string }
 interface Account { id: string; accountNo: string; accountName: string; bankName: string; currency: string }
-interface DraftRow { contractId?: number; amount: string; fee: string }
+interface DraftRow { contractId?: number; amount: string; fee: string; feeCat: string }
 
 
 const { t } = useI18n()
@@ -381,6 +448,46 @@ const allocations = ref<Allocation[]>([])
 const suggestions = ref<Suggestion[]>([])
 const receivables = ref<Receivable[]>([])
 const draft = ref<DraftRow[]>([])
+
+// 认差结清
+const FEE_CATEGORIES = ['BANK_FEE', 'LOSS', 'ROUNDING', 'OTHER'] as const
+const VARIANCE_CATEGORIES = ['LOSS', 'ROUNDING', 'OVERPAY', 'OTHER'] as const
+const settleOpen = ref(false)
+const settling = ref(false)
+const settleForm = reactive({ category: 'LOSS', note: '' })
+
+async function submitSettle() {
+  if (!detail.value) return
+  settling.value = true
+  try {
+    const d = await post<{ transaction: Transaction }>(
+      `/receipt-transactions/${detail.value.id}/settle`,
+      { category: settleForm.category, note: settleForm.note },
+    )
+    detail.value = d.transaction
+    settleOpen.value = false
+    ElMessage.success(t('receipts.settled2'))
+    void load()
+  } finally {
+    settling.value = false
+  }
+}
+
+async function unsettle() {
+  if (!detail.value) return
+  // 撤销必须给理由——和冲销同一条纪律：没有理由的撤销事后没人说得清。
+  const { value } = await ElMessageBox.prompt(
+    t('receipts.unsettleWhy'), t('receipts.unsettle'),
+    { inputPlaceholder: t('receipts.unsettleReason'), confirmButtonText: common('confirm'), cancelButtonText: common('cancel') },
+  ).catch(() => ({ value: '' }))
+  if (!value) return
+  const d = await post<{ transaction: Transaction }>(
+    `/receipt-transactions/${detail.value.id}/unsettle`, { reason: value },
+  )
+  detail.value = d.transaction
+  ElMessage.success(t('receipts.unsettled'))
+  void load()
+}
 
 const recordOpen = ref(false)
 const accounts = ref<Account[]>([])
@@ -512,6 +619,8 @@ async function submitAccount() {
 
 async function openMatch(row: Transaction) {
   draft.value = []
+  settleOpen.value = false
+  Object.assign(settleForm, { category: 'LOSS', note: '' })
   const d = await get<{ transaction: Transaction; allocations: Allocation[]; suggestions: Suggestion[] }>(
     `/receipt-transactions/${row.id}`,
   )
@@ -537,7 +646,7 @@ async function searchReceivables(query: string) {
 }
 
 function addRow() {
-  draft.value.push({ contractId: undefined, amount: '', fee: '' })
+  draft.value.push({ contractId: undefined, amount: '', fee: '', feeCat: 'BANK_FEE' })
 }
 
 // Fill the amount with whatever is smaller: what the contract still owes, or
@@ -557,7 +666,7 @@ function adoptSuggestions() {
     if (!receivables.value.some((r) => Number(r.contractId) === id)) {
       receivables.value.push({ ...s })
     }
-    draft.value.push({ contractId: id, amount: '', fee: '' })
+    draft.value.push({ contractId: id, amount: '', fee: '', feeCat: 'BANK_FEE' })
     // Read the row back out of the array before filling it in. Pushing stores
     // the raw object; only the proxy that comes back out reports writes to
     // Vue, so mutating the local literal would set the value and never
@@ -569,7 +678,7 @@ function adoptSuggestions() {
 async function submitAllocation() {
   const lines = draft.value
     .filter((r) => r.contractId && Number(r.amount) > 0)
-    .map((r) => ({ contract_id: r.contractId, amount: r.amount, fee_amount: r.fee || '0' }))
+    .map((r) => ({ contract_id: r.contractId, amount: r.amount, fee_amount: r.fee || '0', fee_category: r.feeCat }))
   if (!lines.length) {
     ElMessage.warning(t('receipts.pickSomething'))
     return
@@ -771,5 +880,17 @@ onMounted(load)
   margin-inline-start: 12px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.fee-cell {
+  display: flex;
+  gap: 4px;
+}
+.settle-invite,
+.settle-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
 }
 </style>

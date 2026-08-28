@@ -227,6 +227,23 @@ type ReceiptAllocation struct {
 	AllocatedBy     int64
 	AllocatedByName string
 	AllocatedAt     pgtype.Timestamptz
+	FeeCategory     string
+}
+
+type ReceiptLineSettlement struct {
+	ID            int64
+	TenantID      int64
+	TransactionID int64
+	Amount        pgtype.Numeric
+	Category      string
+	Note          string
+	SettledByID   int64
+	SettledByName string
+	CreatedAt     pgtype.Timestamptz
+	RevokedAt     pgtype.Timestamptz
+	RevokedByID   int64
+	RevokedByName string
+	RevokeReason  string
 }
 
 type ReceivableReminder struct {

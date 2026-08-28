@@ -431,6 +431,9 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("export:receipt:write")).Post("/api/receipt-transactions/{id}/allocate", s.allocateReceipt)
 		r.With(s.perm("export:receipt:write")).Post("/api/receipt-transactions/{id}/irrelevant", s.markTransactionIrrelevant)
 		r.With(s.perm("export:receipt:write")).Post("/api/receipt-transactions/{id}/reopen", s.reopenTransaction)
+		// 认差结清：核不满的行由人确认完成，差额带着类别落账。
+		r.With(s.perm("export:receipt:write")).Post("/api/receipt-transactions/{id}/settle", s.settleTransaction)
+		r.With(s.perm("export:receipt:write")).Post("/api/receipt-transactions/{id}/unsettle", s.unsettleTransaction)
 		// Reversal, not deletion: there is no DELETE route here on purpose.
 		r.With(s.perm("export:receipt:write")).Post("/api/receipt-allocations/{id}/reverse", s.reverseAllocation)
 		r.With(s.perm("export:receipt:read")).Get("/api/open-receivables", s.listOpenReceivables)

@@ -93,6 +93,7 @@ func (h *ReceiptHandler) AllocateReceipt(ctx context.Context, req *exv1.Allocate
 	for _, a := range req.GetAllocations() {
 		lines = append(lines, app.AllocationLine{
 			ContractID: a.GetContractId(), Amount: a.GetAmount(), FeeAmount: a.GetFeeAmount(),
+			FeeCategory: a.GetFeeCategory(),
 		})
 	}
 	view, err := h.svc.Allocate(ctx, grpcx.TenantID(ctx), req.GetTransactionId(), lines, operator(ctx))
@@ -132,6 +133,24 @@ func (h *ReceiptHandler) ReopenTransaction(ctx context.Context, req *exv1.Reopen
 		return nil, err
 	}
 	return &exv1.ReopenTransactionResponse{Transaction: txToProto(view)}, nil
+}
+
+func (h *ReceiptHandler) SettleTransaction(ctx context.Context, req *exv1.SettleTransactionRequest) (*exv1.SettleTransactionResponse, error) {
+	view, err := h.svc.SettleTransaction(ctx, grpcx.TenantID(ctx),
+		req.GetTransactionId(), req.GetCategory(), req.GetNote(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.SettleTransactionResponse{Transaction: txToProto(view)}, nil
+}
+
+func (h *ReceiptHandler) RevokeSettlement(ctx context.Context, req *exv1.RevokeSettlementRequest) (*exv1.RevokeSettlementResponse, error) {
+	view, err := h.svc.RevokeSettlement(ctx, grpcx.TenantID(ctx),
+		req.GetTransactionId(), req.GetReason(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.RevokeSettlementResponse{Transaction: txToProto(view)}, nil
 }
 
 func (h *ReceiptHandler) ListOpenReceivables(ctx context.Context, req *exv1.ListOpenReceivablesRequest) (*exv1.ListOpenReceivablesResponse, error) {
@@ -250,6 +269,8 @@ func txToProto(v app.TransactionView) *exv1.BankTransaction {
 		Disposition: v.Disposition(), IrrelevantType: irrelevantTypeOf(r), Note: r.Note,
 		RecordedByName: r.RecordedByName, CreatedAt: r.CreatedAt,
 		AllocatedAmount: v.AllocatedAmount, UnallocatedAmount: v.UnallocatedAmount,
+		VarianceAmount: v.VarianceAmount, VarianceCategory: v.VarianceCategory,
+		VarianceNote: v.VarianceNote,
 	}
 }
 
@@ -274,6 +295,7 @@ func allocationsToProto(rows []store.ListAllocationsOfTransactionRow) []*exv1.Re
 			CustomerName: r.CustomerName, Amount: r.Amount, FeeAmount: r.FeeAmount,
 			Currency: r.Currency, ReversalOf: r.ReversalOf, ReverseReason: r.ReverseReason,
 			AllocatedByName: r.AllocatedByName, AllocatedAt: ts(r.AllocatedAt),
+			FeeCategory: r.FeeCategory,
 		})
 	}
 	return out

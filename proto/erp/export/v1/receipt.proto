@@ -32,6 +32,10 @@ service ReceiptService {
   // interest, a transfer between our own accounts.
   rpc MarkIrrelevant(MarkIrrelevantRequest) returns (MarkIrrelevantResponse);
   rpc ReopenTransaction(ReopenTransactionRequest) returns (ReopenTransactionResponse);
+  // 认差结清：核到没得核了还剩一截，员工说清这截是什么（损耗/尾差/多收/
+  // 其他），这一行就算处理完。「完成」由人确认，不由算式确认。
+  rpc SettleTransaction(SettleTransactionRequest) returns (SettleTransactionResponse);
+  rpc RevokeSettlement(RevokeSettlementRequest) returns (RevokeSettlementResponse);
   // Candidates for the allocation picker: contracts still owed money.
   rpc ListOpenReceivables(ListOpenReceivablesRequest) returns (ListOpenReceivablesResponse);
   // The other half: one contract collected in instalments.
@@ -84,6 +88,11 @@ message BankTransaction {
   string allocated_amount = 19;
   string unallocated_amount = 20;
   string fee_amount = 21;
+  // 认差结清。空串 = 没结清过。差额是认下那一刻的未核余额，员工看过并
+  // 说了它是什么之后，这一行才离开待处理——完成由人确认，不由算式。
+  string variance_amount = 22;
+  string variance_category = 23; // LOSS | ROUNDING | OVERPAY | OTHER
+  string variance_note = 24;
 }
 
 // ReceiptAllocation is one contract's share of a bank line. A reversal row
@@ -102,6 +111,7 @@ message ReceiptAllocation {
   string reverse_reason = 9;
   string allocated_by_name = 10;
   string allocated_at = 11;
+  string fee_category = 12;
 }
 
 // ContractSuggestion is a contract whose number appeared in the remittance
@@ -171,6 +181,10 @@ message AllocationInput {
   int64 contract_id = 1;
   string amount = 2;
   string fee_amount = 3;
+  // 那截补给合同的钱是什么：BANK_FEE（默认）| LOSS | ROUNDING | OTHER。
+  // 原来只有手续费一种说法，损耗只能谎报成手续费——类别错了，将来进
+  // 总账就进错科目。
+  string fee_category = 4;
 }
 
 message ListBankAccountsRequest {}
@@ -249,6 +263,26 @@ message MarkIrrelevantRequest {
 }
 
 message MarkIrrelevantResponse {
+  BankTransaction transaction = 1;
+}
+
+message SettleTransactionRequest {
+  int64 transaction_id = 1;
+  string category = 2; // LOSS | ROUNDING | OVERPAY | OTHER
+  string note = 3;
+}
+
+message SettleTransactionResponse {
+  BankTransaction transaction = 1;
+}
+
+message RevokeSettlementRequest {
+  int64 transaction_id = 1;
+  // 必填：没有理由的撤销事后没人说得清。
+  string reason = 2;
+}
+
+message RevokeSettlementResponse {
   BankTransaction transaction = 1;
 }
 

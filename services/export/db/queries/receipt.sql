@@ -1,7 +1,7 @@
 -- name: AddReceiptAllocation :one
 INSERT INTO receipt_allocations (
     tenant_id, transaction_id, contract_id, contract_no, customer_name,
-    amount, fee_amount, currency, reversal_of, reverse_reason,
+    amount, fee_amount, fee_category, currency, reversal_of, reverse_reason,
     allocated_by, allocated_by_name
 ) VALUES (
     sqlc.arg(tenant_id)::bigint,
@@ -11,6 +11,7 @@ INSERT INTO receipt_allocations (
     sqlc.arg(customer_name)::text,
     sqlc.arg(amount)::text::numeric,
     sqlc.arg(fee_amount)::text::numeric,
+    sqlc.arg(fee_category)::text,
     sqlc.arg(currency)::text,
     nullif(sqlc.arg(reversal_of)::bigint, 0),
     sqlc.arg(reverse_reason)::text,
@@ -22,7 +23,7 @@ RETURNING id;
 -- name: ListAllocationsOfTransaction :many
 SELECT
     id, contract_id, contract_no, customer_name,
-    amount::text AS amount, fee_amount::text AS fee_amount, currency,
+    amount::text AS amount, fee_amount::text AS fee_amount, fee_category, currency,
     coalesce(reversal_of, 0)::bigint AS reversal_of, reverse_reason,
     allocated_by_name, allocated_at
 FROM receipt_allocations
@@ -44,7 +45,7 @@ GROUP BY transaction_id;
 -- name: GetAllocation :one
 SELECT
     id, transaction_id, contract_id, contract_no, customer_name,
-    amount::text AS amount, fee_amount::text AS fee_amount, currency,
+    amount::text AS amount, fee_amount::text AS fee_amount, fee_category, currency,
     coalesce(reversal_of, 0)::bigint AS reversal_of
 FROM receipt_allocations
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
@@ -295,3 +296,51 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND recipient_employee_id = sqlc.arg(employee_id)::bigint
   AND read_at IS NULL
   AND (sqlc.arg(ids)::bigint[] = '{}' OR id = ANY(sqlc.arg(ids)::bigint[]));
+
+-- 认差结清。四条一组，全部只碰活着的那一条（revoked_at IS NULL）。
+
+-- name: GetLiveReceiptSettlement :one
+SELECT id, transaction_id, amount::text AS amount, category, note,
+       settled_by_name, created_at
+FROM receipt_line_settlements
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND transaction_id = sqlc.arg(transaction_id)::bigint
+  AND revoked_at IS NULL;
+
+-- name: ListLiveReceiptSettlements :many
+-- 列表页整页一次取，不是一行一问——和 AllocationSumsByTransactions 并排的
+-- 同一个理由。
+SELECT id, transaction_id, amount::text AS amount, category, note,
+       settled_by_name, created_at
+FROM receipt_line_settlements
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND transaction_id = ANY(sqlc.arg(transaction_ids)::bigint[])
+  AND revoked_at IS NULL;
+
+-- name: InsertReceiptSettlement :one
+-- 撞 receipt_line_settlements_live 就是「已经结清过了」——并发的第二次点击
+-- 在这里被唯一索引拦住，不靠先查后插。
+INSERT INTO receipt_line_settlements (
+    tenant_id, transaction_id, amount, category, note,
+    settled_by_id, settled_by_name
+) VALUES (
+    sqlc.arg(tenant_id)::bigint,
+    sqlc.arg(transaction_id)::bigint,
+    sqlc.arg(amount)::text::numeric,
+    sqlc.arg(category)::text,
+    sqlc.arg(note)::text,
+    sqlc.arg(settled_by_id)::bigint,
+    sqlc.arg(settled_by_name)::text
+)
+RETURNING id;
+
+-- name: RevokeReceiptSettlement :execrows
+-- WHERE 里的 revoked_at IS NULL 就是并发控制：两个人同时撤，只有一个改到行。
+UPDATE receipt_line_settlements
+SET revoked_at = now(),
+    revoked_by_id = sqlc.arg(revoked_by_id)::bigint,
+    revoked_by_name = sqlc.arg(revoked_by_name)::text,
+    revoke_reason = sqlc.arg(revoke_reason)::text
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND transaction_id = sqlc.arg(transaction_id)::bigint
+  AND revoked_at IS NULL;
