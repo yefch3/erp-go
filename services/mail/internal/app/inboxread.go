@@ -797,6 +797,10 @@ func (s *Service) ListMailboxSent(ctx context.Context, tenantID, ownerID int64, 
 			ThreadKey: r.ThreadKey, IsStarred: r.IsStarred,
 			// Sent mail is mail you wrote; there is nothing to have not read.
 			IsRead: true, HasAttachments: r.HasAttachments,
+			// Tracked 必须跟着 OpenedAt 一起走。查询早就把它取出来了，这里
+			// 原来漏拷——于是列表行上「没人打开」和「没在看」分不出来，
+			// 三态在详情页齐全、在列表上塌成两态。
+			Tracked: r.Tracked,
 		}
 		// One timestamp in both fields: the list sorts and displays on "when it
 		// went out", and the two halves name that differently.
