@@ -74,11 +74,15 @@
             </div>
           </template>
         </el-table-column>
-        <!-- 列表只保留一个稳定的操作入口；详情、当前主动作和辅助动作
-             按顺序收进同一菜单，避免每种状态都长出不同宽度的按钮。 -->
-        <el-table-column :label="t('common.actions')" width="76" align="center" fixed="right">
+        <!-- 审批人最关心的是直接决策；审批中的本人待办把通过/驳回放在列表上，
+             其他低频动作仍收进菜单，避免误把“有读取权限”当成“可以审批”。 -->
+        <el-table-column :label="t('common.actions')" width="190" align="center" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
+              <template v-if="canActOnOrderApproval(row)">
+                <el-button link type="success" @click.stop="actOnOrderApproval(row, 'APPROVE')">{{ t('todos.approve') }}</el-button>
+                <el-button link type="danger" @click.stop="actOnOrderApproval(row, 'REJECT')">{{ t('todos.reject') }}</el-button>
+              </template>
               <el-dropdown trigger="click" @command="(key: string) => runOrderAction(row, key)">
                 <el-button class="action-trigger" size="small" text circle :aria-label="t('common.actions')">
                   <span aria-hidden="true">•••</span>
@@ -86,7 +90,7 @@
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item
-                      v-for="action in allActions(row)"
+                      v-for="action in rowMenuActions(row)"
                       :key="action.key"
                       :command="action.key"
                       :divided="action.divided"
@@ -763,7 +767,7 @@ interface RowAction { key: string; label: string; tone: 'primary' | 'success' | 
 function primaryAction(row: Order): RowAction | null {
   // 已结案与已作废采购单是只读历史，不再出现任何履约动作。
   if (row.closedAt || row.status === 'CANCELLED') return null
-  if (row.status === 'PENDING_APPROVAL' && canApprove && approvalTaskFor(row))
+  if (canActOnOrderApproval(row))
     return { key: 'approve', label: t('orders.reviewApproval'), tone: 'success', run: () => void openApprovalReview(row) }
   if (row.status === 'DRAFT' && canSubmit)
     return { key: 'submit', label: t('orders.submit'), tone: 'primary', run: () => void submit(row) }
@@ -781,6 +785,10 @@ function primaryAction(row: Order): RowAction | null {
 
 function approvalTaskFor(row: Order): string {
   return approvalTasks.value[String(row.id)] ?? ''
+}
+
+function canActOnOrderApproval(row: Order): boolean {
+  return row.status === 'PENDING_APPROVAL' && canApprove && Boolean(approvalTaskFor(row))
 }
 
 async function openApprovalReview(row: Order) {
@@ -837,6 +845,10 @@ function allActions(row: Order): { key: string; label: string; divided?: boolean
     ...(primary ? [{ key: primary.key, label: primary.label, divided: true }] : []),
     ...moreActions(row).map((action, index) => ({ ...action, divided: !primary && index === 0 })),
   ]
+}
+
+function rowMenuActions(row: Order): { key: string; label: string; divided?: boolean }[] {
+  return allActions(row).filter((action) => !(canActOnOrderApproval(row) && action.key === 'approve'))
 }
 // 工厂回签状态的列表子标签（B5 尾巴）。只有实际录入过回签时才显示，
 // 不再用邮件发送状态制造第二个“是否下单”的业务门槛。
