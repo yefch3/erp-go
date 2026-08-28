@@ -1606,6 +1606,74 @@ func (q *Queries) ListLiveInvitations(ctx context.Context, tenantID int64) ([]Li
 	return items, nil
 }
 
+const listOrgChartMembers = `-- name: ListOrgChartMembers :many
+SELECT e.id, e.code, e.name, e.english_name, e.position, e.status,
+       e.manager_id, e.department_id, d.name AS department_name,
+       e.avatar_key, e.leave_date
+FROM employees e
+JOIN departments d ON d.id = e.department_id AND d.tenant_id = e.tenant_id
+WHERE e.tenant_id = $1::bigint
+  AND e.status = 'ACTIVE'
+ORDER BY d.path, e.id
+`
+
+type ListOrgChartMembersRow struct {
+	ID             int64
+	Code           string
+	Name           string
+	EnglishName    string
+	Position       string
+	Status         string
+	ManagerID      *int64
+	DepartmentID   int64
+	DepartmentName string
+	AvatarKey      string
+	LeaveDate      pgtype.Date
+}
+
+// 画组织架构图用的全量员工。
+//
+// 不分页：三百人的图就是要一次画完，分页的树是画不出来的（父节点在第 1 页、
+// 子节点在第 3 页，那还叫什么树）。真到了分页才画得动的规模，要换的是
+// 「按部门懒加载」这种别的做法，不是给这条加 LIMIT。
+//
+// 字段比 ListEmployees 少一大截：不联账号、不查邀请状态——图上不显示那些，
+// 而每多一个联表就是三百行乘一次。
+//
+// 只要在职的。离职的人留在图上会让「这个部门有几个人」永远算不对，
+// 而想看历史的人要的是变更记录，不是一张混着离职者的架构图。
+func (q *Queries) ListOrgChartMembers(ctx context.Context, tenantID int64) ([]ListOrgChartMembersRow, error) {
+	rows, err := q.db.Query(ctx, listOrgChartMembers, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrgChartMembersRow
+	for rows.Next() {
+		var i ListOrgChartMembersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Code,
+			&i.Name,
+			&i.EnglishName,
+			&i.Position,
+			&i.Status,
+			&i.ManagerID,
+			&i.DepartmentID,
+			&i.DepartmentName,
+			&i.AvatarKey,
+			&i.LeaveDate,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPermissionCodesOfRoles = `-- name: ListPermissionCodesOfRoles :many
 SELECT rp.role_id, p.code
 FROM role_permissions rp

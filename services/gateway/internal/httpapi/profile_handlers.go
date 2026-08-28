@@ -138,3 +138,16 @@ func (s *Server) employeeAvatarURLs(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
+
+// orgChart 一次返回画两棵树要的全部数据：人和部门。
+//
+// 两棵树共用同一批人，分两次请求就是把三百个人传两遍；而前端切换视角是
+// 一次点击，不该再等一次网络。
+func (s *Server) orgChart(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Directory.GetOrgChart(r.Context(), &iamv1.GetOrgChartRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}

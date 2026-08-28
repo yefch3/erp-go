@@ -2434,6 +2434,240 @@ func (x *MyProfile) GetEmailVerified() bool {
 	return false
 }
 
+// OrgMember 是组织架构图上的一个人。
+//
+// 比 Employee 瘦一大圈，因为图上显示不了那么多：一个方块装得下头像、姓名、
+// 岗位和一个状态标签，再多就不是图了。邮箱、电话、账号状态都在员工列表里，
+// 点进去看。
+type OrgMember struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Code        string                 `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
+	Name        string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	EnglishName string                 `protobuf:"bytes,4,opt,name=english_name,json=englishName,proto3" json:"english_name,omitempty"`
+	Position    string                 `protobuf:"bytes,5,opt,name=position,proto3" json:"position,omitempty"`
+	Status      string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
+	// 上级。0 表示这个人头上没有人——汇报线因此是一片**森林**，不是一棵树。
+	ManagerId      int64  `protobuf:"varint,7,opt,name=manager_id,json=managerId,proto3" json:"manager_id,omitempty"`
+	DepartmentId   int64  `protobuf:"varint,8,opt,name=department_id,json=departmentId,proto3" json:"department_id,omitempty"`
+	DepartmentName string `protobuf:"bytes,9,opt,name=department_name,json=departmentName,proto3" json:"department_name,omitempty"`
+	AvatarKey      string `protobuf:"bytes,10,opt,name=avatar_key,json=avatarKey,proto3" json:"avatar_key,omitempty"`
+	// 短命的签名地址，没有头像时为空。和 MyProfile.avatar_url 同样不可缓存。
+	AvatarUrl string `protobuf:"bytes,11,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
+	// 已录入的离职日期，没有则为空。图上给这种人一个「离职中」的标签——
+	// 排班和交接都得知道谁快走了。
+	LeaveDate     string `protobuf:"bytes,12,opt,name=leave_date,json=leaveDate,proto3" json:"leave_date,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OrgMember) Reset() {
+	*x = OrgMember{}
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OrgMember) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OrgMember) ProtoMessage() {}
+
+func (x *OrgMember) ProtoReflect() protoreflect.Message {
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OrgMember.ProtoReflect.Descriptor instead.
+func (*OrgMember) Descriptor() ([]byte, []int) {
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *OrgMember) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *OrgMember) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *OrgMember) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *OrgMember) GetEnglishName() string {
+	if x != nil {
+		return x.EnglishName
+	}
+	return ""
+}
+
+func (x *OrgMember) GetPosition() string {
+	if x != nil {
+		return x.Position
+	}
+	return ""
+}
+
+func (x *OrgMember) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *OrgMember) GetManagerId() int64 {
+	if x != nil {
+		return x.ManagerId
+	}
+	return 0
+}
+
+func (x *OrgMember) GetDepartmentId() int64 {
+	if x != nil {
+		return x.DepartmentId
+	}
+	return 0
+}
+
+func (x *OrgMember) GetDepartmentName() string {
+	if x != nil {
+		return x.DepartmentName
+	}
+	return ""
+}
+
+func (x *OrgMember) GetAvatarKey() string {
+	if x != nil {
+		return x.AvatarKey
+	}
+	return ""
+}
+
+func (x *OrgMember) GetAvatarUrl() string {
+	if x != nil {
+		return x.AvatarUrl
+	}
+	return ""
+}
+
+func (x *OrgMember) GetLeaveDate() string {
+	if x != nil {
+		return x.LeaveDate
+	}
+	return ""
+}
+
+type GetOrgChartRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetOrgChartRequest) Reset() {
+	*x = GetOrgChartRequest{}
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetOrgChartRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetOrgChartRequest) ProtoMessage() {}
+
+func (x *GetOrgChartRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetOrgChartRequest.ProtoReflect.Descriptor instead.
+func (*GetOrgChartRequest) Descriptor() ([]byte, []int) {
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{37}
+}
+
+// 两棵树的数据一次给全，前端切换时不再请求。
+//
+// 「部门树」和「汇报线」在这个系统里是**两棵不同的树**（见 00004_manager.sql：
+// 矩阵汇报、副职、人在 A 部门却向 B 部门汇报），所以不能只给一棵让前端推另一棵。
+// 而它们又共用同一批人，分两次请求就是把同一批人传两遍。
+type GetOrgChartResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Members       []*OrgMember           `protobuf:"bytes,1,rep,name=members,proto3" json:"members,omitempty"`
+	Departments   []*Department          `protobuf:"bytes,2,rep,name=departments,proto3" json:"departments,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetOrgChartResponse) Reset() {
+	*x = GetOrgChartResponse{}
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetOrgChartResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetOrgChartResponse) ProtoMessage() {}
+
+func (x *GetOrgChartResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetOrgChartResponse.ProtoReflect.Descriptor instead.
+func (*GetOrgChartResponse) Descriptor() ([]byte, []int) {
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *GetOrgChartResponse) GetMembers() []*OrgMember {
+	if x != nil {
+		return x.Members
+	}
+	return nil
+}
+
+func (x *GetOrgChartResponse) GetDepartments() []*Department {
+	if x != nil {
+		return x.Departments
+	}
+	return nil
+}
+
 type GetMyProfileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -2442,7 +2676,7 @@ type GetMyProfileRequest struct {
 
 func (x *GetMyProfileRequest) Reset() {
 	*x = GetMyProfileRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[36]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2454,7 +2688,7 @@ func (x *GetMyProfileRequest) String() string {
 func (*GetMyProfileRequest) ProtoMessage() {}
 
 func (x *GetMyProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[36]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2467,7 +2701,7 @@ func (x *GetMyProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMyProfileRequest.ProtoReflect.Descriptor instead.
 func (*GetMyProfileRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{36}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{39}
 }
 
 type GetMyProfileResponse struct {
@@ -2479,7 +2713,7 @@ type GetMyProfileResponse struct {
 
 func (x *GetMyProfileResponse) Reset() {
 	*x = GetMyProfileResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[37]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2491,7 +2725,7 @@ func (x *GetMyProfileResponse) String() string {
 func (*GetMyProfileResponse) ProtoMessage() {}
 
 func (x *GetMyProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[37]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2504,7 +2738,7 @@ func (x *GetMyProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMyProfileResponse.ProtoReflect.Descriptor instead.
 func (*GetMyProfileResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{37}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *GetMyProfileResponse) GetProfile() *MyProfile {
@@ -2528,7 +2762,7 @@ type UpdateMyProfileRequest struct {
 
 func (x *UpdateMyProfileRequest) Reset() {
 	*x = UpdateMyProfileRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[38]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2540,7 +2774,7 @@ func (x *UpdateMyProfileRequest) String() string {
 func (*UpdateMyProfileRequest) ProtoMessage() {}
 
 func (x *UpdateMyProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[38]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2553,7 +2787,7 @@ func (x *UpdateMyProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMyProfileRequest.ProtoReflect.Descriptor instead.
 func (*UpdateMyProfileRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{38}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *UpdateMyProfileRequest) GetEnglishName() string {
@@ -2586,7 +2820,7 @@ type UpdateMyProfileResponse struct {
 
 func (x *UpdateMyProfileResponse) Reset() {
 	*x = UpdateMyProfileResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[39]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2598,7 +2832,7 @@ func (x *UpdateMyProfileResponse) String() string {
 func (*UpdateMyProfileResponse) ProtoMessage() {}
 
 func (x *UpdateMyProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[39]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2611,7 +2845,7 @@ func (x *UpdateMyProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMyProfileResponse.ProtoReflect.Descriptor instead.
 func (*UpdateMyProfileResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{39}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *UpdateMyProfileResponse) GetProfile() *MyProfile {
@@ -2635,7 +2869,7 @@ type PresignAvatarUploadRequest struct {
 
 func (x *PresignAvatarUploadRequest) Reset() {
 	*x = PresignAvatarUploadRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[40]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2647,7 +2881,7 @@ func (x *PresignAvatarUploadRequest) String() string {
 func (*PresignAvatarUploadRequest) ProtoMessage() {}
 
 func (x *PresignAvatarUploadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[40]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2660,7 +2894,7 @@ func (x *PresignAvatarUploadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PresignAvatarUploadRequest.ProtoReflect.Descriptor instead.
 func (*PresignAvatarUploadRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{40}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *PresignAvatarUploadRequest) GetEmployeeId() int64 {
@@ -2696,7 +2930,7 @@ type PresignAvatarUploadResponse struct {
 
 func (x *PresignAvatarUploadResponse) Reset() {
 	*x = PresignAvatarUploadResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[41]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2708,7 +2942,7 @@ func (x *PresignAvatarUploadResponse) String() string {
 func (*PresignAvatarUploadResponse) ProtoMessage() {}
 
 func (x *PresignAvatarUploadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[41]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2721,7 +2955,7 @@ func (x *PresignAvatarUploadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PresignAvatarUploadResponse.ProtoReflect.Descriptor instead.
 func (*PresignAvatarUploadResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{41}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *PresignAvatarUploadResponse) GetFileKey() string {
@@ -2756,7 +2990,7 @@ type SetAvatarRequest struct {
 
 func (x *SetAvatarRequest) Reset() {
 	*x = SetAvatarRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[42]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2768,7 +3002,7 @@ func (x *SetAvatarRequest) String() string {
 func (*SetAvatarRequest) ProtoMessage() {}
 
 func (x *SetAvatarRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[42]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2781,7 +3015,7 @@ func (x *SetAvatarRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetAvatarRequest.ProtoReflect.Descriptor instead.
 func (*SetAvatarRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{42}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *SetAvatarRequest) GetEmployeeId() int64 {
@@ -2807,7 +3041,7 @@ type SetAvatarResponse struct {
 
 func (x *SetAvatarResponse) Reset() {
 	*x = SetAvatarResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[43]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2819,7 +3053,7 @@ func (x *SetAvatarResponse) String() string {
 func (*SetAvatarResponse) ProtoMessage() {}
 
 func (x *SetAvatarResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[43]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2832,7 +3066,7 @@ func (x *SetAvatarResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetAvatarResponse.ProtoReflect.Descriptor instead.
 func (*SetAvatarResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{43}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *SetAvatarResponse) GetAvatarKey() string {
@@ -2853,7 +3087,7 @@ type AvatarURLsRequest struct {
 
 func (x *AvatarURLsRequest) Reset() {
 	*x = AvatarURLsRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[44]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2865,7 +3099,7 @@ func (x *AvatarURLsRequest) String() string {
 func (*AvatarURLsRequest) ProtoMessage() {}
 
 func (x *AvatarURLsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[44]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2878,7 +3112,7 @@ func (x *AvatarURLsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AvatarURLsRequest.ProtoReflect.Descriptor instead.
 func (*AvatarURLsRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{44}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *AvatarURLsRequest) GetEmployeeIds() []int64 {
@@ -2898,7 +3132,7 @@ type AvatarURLsResponse struct {
 
 func (x *AvatarURLsResponse) Reset() {
 	*x = AvatarURLsResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[45]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2910,7 +3144,7 @@ func (x *AvatarURLsResponse) String() string {
 func (*AvatarURLsResponse) ProtoMessage() {}
 
 func (x *AvatarURLsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[45]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2923,7 +3157,7 @@ func (x *AvatarURLsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AvatarURLsResponse.ProtoReflect.Descriptor instead.
 func (*AvatarURLsResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{45}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *AvatarURLsResponse) GetUrls() map[int64]string {
@@ -2954,7 +3188,7 @@ type CreateEmployeeRequest struct {
 
 func (x *CreateEmployeeRequest) Reset() {
 	*x = CreateEmployeeRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[46]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2966,7 +3200,7 @@ func (x *CreateEmployeeRequest) String() string {
 func (*CreateEmployeeRequest) ProtoMessage() {}
 
 func (x *CreateEmployeeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[46]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2979,7 +3213,7 @@ func (x *CreateEmployeeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEmployeeRequest.ProtoReflect.Descriptor instead.
 func (*CreateEmployeeRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{46}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *CreateEmployeeRequest) GetCode() string {
@@ -3075,7 +3309,7 @@ type CreateEmployeeResponse struct {
 
 func (x *CreateEmployeeResponse) Reset() {
 	*x = CreateEmployeeResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[47]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3087,7 +3321,7 @@ func (x *CreateEmployeeResponse) String() string {
 func (*CreateEmployeeResponse) ProtoMessage() {}
 
 func (x *CreateEmployeeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[47]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3100,7 +3334,7 @@ func (x *CreateEmployeeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEmployeeResponse.ProtoReflect.Descriptor instead.
 func (*CreateEmployeeResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{47}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *CreateEmployeeResponse) GetEmployee() *Employee {
@@ -3119,7 +3353,7 @@ type GetEmployeeResponse struct {
 
 func (x *GetEmployeeResponse) Reset() {
 	*x = GetEmployeeResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[48]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3131,7 +3365,7 @@ func (x *GetEmployeeResponse) String() string {
 func (*GetEmployeeResponse) ProtoMessage() {}
 
 func (x *GetEmployeeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[48]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3144,7 +3378,7 @@ func (x *GetEmployeeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEmployeeResponse.ProtoReflect.Descriptor instead.
 func (*GetEmployeeResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{48}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *GetEmployeeResponse) GetEmployee() *Employee {
@@ -3163,7 +3397,7 @@ type GetEmployeeRequest struct {
 
 func (x *GetEmployeeRequest) Reset() {
 	*x = GetEmployeeRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[49]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3175,7 +3409,7 @@ func (x *GetEmployeeRequest) String() string {
 func (*GetEmployeeRequest) ProtoMessage() {}
 
 func (x *GetEmployeeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[49]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3188,7 +3422,7 @@ func (x *GetEmployeeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEmployeeRequest.ProtoReflect.Descriptor instead.
 func (*GetEmployeeRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{49}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *GetEmployeeRequest) GetId() int64 {
@@ -3213,7 +3447,7 @@ type ListEmployeesRequest struct {
 
 func (x *ListEmployeesRequest) Reset() {
 	*x = ListEmployeesRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[50]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3225,7 +3459,7 @@ func (x *ListEmployeesRequest) String() string {
 func (*ListEmployeesRequest) ProtoMessage() {}
 
 func (x *ListEmployeesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[50]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3238,7 +3472,7 @@ func (x *ListEmployeesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEmployeesRequest.ProtoReflect.Descriptor instead.
 func (*ListEmployeesRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{50}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *ListEmployeesRequest) GetPage() *v1.PageRequest {
@@ -3300,7 +3534,7 @@ type ListEmployeesResponse struct {
 
 func (x *ListEmployeesResponse) Reset() {
 	*x = ListEmployeesResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[51]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3312,7 +3546,7 @@ func (x *ListEmployeesResponse) String() string {
 func (*ListEmployeesResponse) ProtoMessage() {}
 
 func (x *ListEmployeesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[51]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3325,7 +3559,7 @@ func (x *ListEmployeesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEmployeesResponse.ProtoReflect.Descriptor instead.
 func (*ListEmployeesResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{51}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ListEmployeesResponse) GetEmployees() []*Employee {
@@ -3363,7 +3597,7 @@ type UpdateEmployeeRequest struct {
 
 func (x *UpdateEmployeeRequest) Reset() {
 	*x = UpdateEmployeeRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[52]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3375,7 +3609,7 @@ func (x *UpdateEmployeeRequest) String() string {
 func (*UpdateEmployeeRequest) ProtoMessage() {}
 
 func (x *UpdateEmployeeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[52]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3388,7 +3622,7 @@ func (x *UpdateEmployeeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateEmployeeRequest.ProtoReflect.Descriptor instead.
 func (*UpdateEmployeeRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{52}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *UpdateEmployeeRequest) GetId() int64 {
@@ -3491,7 +3725,7 @@ type UpdateEmployeeResponse struct {
 
 func (x *UpdateEmployeeResponse) Reset() {
 	*x = UpdateEmployeeResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[53]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3503,7 +3737,7 @@ func (x *UpdateEmployeeResponse) String() string {
 func (*UpdateEmployeeResponse) ProtoMessage() {}
 
 func (x *UpdateEmployeeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[53]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3516,7 +3750,7 @@ func (x *UpdateEmployeeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateEmployeeResponse.ProtoReflect.Descriptor instead.
 func (*UpdateEmployeeResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{53}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *UpdateEmployeeResponse) GetEmployee() *Employee {
@@ -3542,7 +3776,7 @@ type DirectoryChange struct {
 
 func (x *DirectoryChange) Reset() {
 	*x = DirectoryChange{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[54]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3554,7 +3788,7 @@ func (x *DirectoryChange) String() string {
 func (*DirectoryChange) ProtoMessage() {}
 
 func (x *DirectoryChange) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[54]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3567,7 +3801,7 @@ func (x *DirectoryChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirectoryChange.ProtoReflect.Descriptor instead.
 func (*DirectoryChange) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{54}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *DirectoryChange) GetId() int64 {
@@ -3636,7 +3870,7 @@ type ListDirectoryChangesRequest struct {
 
 func (x *ListDirectoryChangesRequest) Reset() {
 	*x = ListDirectoryChangesRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[55]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3648,7 +3882,7 @@ func (x *ListDirectoryChangesRequest) String() string {
 func (*ListDirectoryChangesRequest) ProtoMessage() {}
 
 func (x *ListDirectoryChangesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[55]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3661,7 +3895,7 @@ func (x *ListDirectoryChangesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDirectoryChangesRequest.ProtoReflect.Descriptor instead.
 func (*ListDirectoryChangesRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{55}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *ListDirectoryChangesRequest) GetEntityType() string {
@@ -3687,7 +3921,7 @@ type ListDirectoryChangesResponse struct {
 
 func (x *ListDirectoryChangesResponse) Reset() {
 	*x = ListDirectoryChangesResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[56]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3699,7 +3933,7 @@ func (x *ListDirectoryChangesResponse) String() string {
 func (*ListDirectoryChangesResponse) ProtoMessage() {}
 
 func (x *ListDirectoryChangesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[56]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3712,7 +3946,7 @@ func (x *ListDirectoryChangesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDirectoryChangesResponse.ProtoReflect.Descriptor instead.
 func (*ListDirectoryChangesResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{56}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *ListDirectoryChangesResponse) GetChanges() []*DirectoryChange {
@@ -3731,7 +3965,7 @@ type DeactivateEmployeeRequest struct {
 
 func (x *DeactivateEmployeeRequest) Reset() {
 	*x = DeactivateEmployeeRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[57]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3743,7 +3977,7 @@ func (x *DeactivateEmployeeRequest) String() string {
 func (*DeactivateEmployeeRequest) ProtoMessage() {}
 
 func (x *DeactivateEmployeeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[57]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3756,7 +3990,7 @@ func (x *DeactivateEmployeeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeactivateEmployeeRequest.ProtoReflect.Descriptor instead.
 func (*DeactivateEmployeeRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{57}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *DeactivateEmployeeRequest) GetId() int64 {
@@ -3774,7 +4008,7 @@ type DeactivateEmployeeResponse struct {
 
 func (x *DeactivateEmployeeResponse) Reset() {
 	*x = DeactivateEmployeeResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[58]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3786,7 +4020,7 @@ func (x *DeactivateEmployeeResponse) String() string {
 func (*DeactivateEmployeeResponse) ProtoMessage() {}
 
 func (x *DeactivateEmployeeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[58]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3799,7 +4033,7 @@ func (x *DeactivateEmployeeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeactivateEmployeeResponse.ProtoReflect.Descriptor instead.
 func (*DeactivateEmployeeResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{58}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{61}
 }
 
 type ActivateEmployeeRequest struct {
@@ -3811,7 +4045,7 @@ type ActivateEmployeeRequest struct {
 
 func (x *ActivateEmployeeRequest) Reset() {
 	*x = ActivateEmployeeRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[59]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3823,7 +4057,7 @@ func (x *ActivateEmployeeRequest) String() string {
 func (*ActivateEmployeeRequest) ProtoMessage() {}
 
 func (x *ActivateEmployeeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[59]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3836,7 +4070,7 @@ func (x *ActivateEmployeeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActivateEmployeeRequest.ProtoReflect.Descriptor instead.
 func (*ActivateEmployeeRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{59}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *ActivateEmployeeRequest) GetId() int64 {
@@ -3855,7 +4089,7 @@ type ActivateEmployeeResponse struct {
 
 func (x *ActivateEmployeeResponse) Reset() {
 	*x = ActivateEmployeeResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[60]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3867,7 +4101,7 @@ func (x *ActivateEmployeeResponse) String() string {
 func (*ActivateEmployeeResponse) ProtoMessage() {}
 
 func (x *ActivateEmployeeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[60]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3880,7 +4114,7 @@ func (x *ActivateEmployeeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActivateEmployeeResponse.ProtoReflect.Descriptor instead.
 func (*ActivateEmployeeResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{60}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *ActivateEmployeeResponse) GetActivated() bool {
@@ -3905,7 +4139,7 @@ type Role struct {
 
 func (x *Role) Reset() {
 	*x = Role{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[61]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3917,7 +4151,7 @@ func (x *Role) String() string {
 func (*Role) ProtoMessage() {}
 
 func (x *Role) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[61]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3930,7 +4164,7 @@ func (x *Role) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Role.ProtoReflect.Descriptor instead.
 func (*Role) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{61}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *Role) GetId() int64 {
@@ -3986,7 +4220,7 @@ type CreateRoleRequest struct {
 
 func (x *CreateRoleRequest) Reset() {
 	*x = CreateRoleRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[62]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3998,7 +4232,7 @@ func (x *CreateRoleRequest) String() string {
 func (*CreateRoleRequest) ProtoMessage() {}
 
 func (x *CreateRoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[62]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4011,7 +4245,7 @@ func (x *CreateRoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateRoleRequest.ProtoReflect.Descriptor instead.
 func (*CreateRoleRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{62}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *CreateRoleRequest) GetCode() string {
@@ -4044,7 +4278,7 @@ type CreateRoleResponse struct {
 
 func (x *CreateRoleResponse) Reset() {
 	*x = CreateRoleResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[63]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4056,7 +4290,7 @@ func (x *CreateRoleResponse) String() string {
 func (*CreateRoleResponse) ProtoMessage() {}
 
 func (x *CreateRoleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[63]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4069,7 +4303,7 @@ func (x *CreateRoleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateRoleResponse.ProtoReflect.Descriptor instead.
 func (*CreateRoleResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{63}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *CreateRoleResponse) GetRole() *Role {
@@ -4087,7 +4321,7 @@ type ListRolesRequest struct {
 
 func (x *ListRolesRequest) Reset() {
 	*x = ListRolesRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[64]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4099,7 +4333,7 @@ func (x *ListRolesRequest) String() string {
 func (*ListRolesRequest) ProtoMessage() {}
 
 func (x *ListRolesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[64]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4112,7 +4346,7 @@ func (x *ListRolesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRolesRequest.ProtoReflect.Descriptor instead.
 func (*ListRolesRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{64}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{67}
 }
 
 type ListRolesResponse struct {
@@ -4124,7 +4358,7 @@ type ListRolesResponse struct {
 
 func (x *ListRolesResponse) Reset() {
 	*x = ListRolesResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[65]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4136,7 +4370,7 @@ func (x *ListRolesResponse) String() string {
 func (*ListRolesResponse) ProtoMessage() {}
 
 func (x *ListRolesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[65]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4149,7 +4383,7 @@ func (x *ListRolesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRolesResponse.ProtoReflect.Descriptor instead.
 func (*ListRolesResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{65}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *ListRolesResponse) GetRoles() []*Role {
@@ -4167,7 +4401,7 @@ type ListAllRolesRequest struct {
 
 func (x *ListAllRolesRequest) Reset() {
 	*x = ListAllRolesRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[66]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4179,7 +4413,7 @@ func (x *ListAllRolesRequest) String() string {
 func (*ListAllRolesRequest) ProtoMessage() {}
 
 func (x *ListAllRolesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[66]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4192,7 +4426,7 @@ func (x *ListAllRolesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAllRolesRequest.ProtoReflect.Descriptor instead.
 func (*ListAllRolesRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{66}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{69}
 }
 
 type ListAllRolesResponse struct {
@@ -4204,7 +4438,7 @@ type ListAllRolesResponse struct {
 
 func (x *ListAllRolesResponse) Reset() {
 	*x = ListAllRolesResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[67]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4216,7 +4450,7 @@ func (x *ListAllRolesResponse) String() string {
 func (*ListAllRolesResponse) ProtoMessage() {}
 
 func (x *ListAllRolesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[67]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4229,7 +4463,7 @@ func (x *ListAllRolesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAllRolesResponse.ProtoReflect.Descriptor instead.
 func (*ListAllRolesResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{67}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *ListAllRolesResponse) GetRoles() []*Role {
@@ -4250,7 +4484,7 @@ type SetRoleStatusRequest struct {
 
 func (x *SetRoleStatusRequest) Reset() {
 	*x = SetRoleStatusRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[68]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4262,7 +4496,7 @@ func (x *SetRoleStatusRequest) String() string {
 func (*SetRoleStatusRequest) ProtoMessage() {}
 
 func (x *SetRoleStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[68]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4275,7 +4509,7 @@ func (x *SetRoleStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetRoleStatusRequest.ProtoReflect.Descriptor instead.
 func (*SetRoleStatusRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{68}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *SetRoleStatusRequest) GetId() int64 {
@@ -4300,7 +4534,7 @@ type SetRoleStatusResponse struct {
 
 func (x *SetRoleStatusResponse) Reset() {
 	*x = SetRoleStatusResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[69]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4312,7 +4546,7 @@ func (x *SetRoleStatusResponse) String() string {
 func (*SetRoleStatusResponse) ProtoMessage() {}
 
 func (x *SetRoleStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[69]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4325,7 +4559,7 @@ func (x *SetRoleStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetRoleStatusResponse.ProtoReflect.Descriptor instead.
 func (*SetRoleStatusResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{69}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{72}
 }
 
 type GrantRolePermissionsResponse struct {
@@ -4336,7 +4570,7 @@ type GrantRolePermissionsResponse struct {
 
 func (x *GrantRolePermissionsResponse) Reset() {
 	*x = GrantRolePermissionsResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[70]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4348,7 +4582,7 @@ func (x *GrantRolePermissionsResponse) String() string {
 func (*GrantRolePermissionsResponse) ProtoMessage() {}
 
 func (x *GrantRolePermissionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[70]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4361,7 +4595,7 @@ func (x *GrantRolePermissionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantRolePermissionsResponse.ProtoReflect.Descriptor instead.
 func (*GrantRolePermissionsResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{70}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{73}
 }
 
 type GrantRolePermissionsRequest struct {
@@ -4375,7 +4609,7 @@ type GrantRolePermissionsRequest struct {
 
 func (x *GrantRolePermissionsRequest) Reset() {
 	*x = GrantRolePermissionsRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[71]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4387,7 +4621,7 @@ func (x *GrantRolePermissionsRequest) String() string {
 func (*GrantRolePermissionsRequest) ProtoMessage() {}
 
 func (x *GrantRolePermissionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[71]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4400,7 +4634,7 @@ func (x *GrantRolePermissionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantRolePermissionsRequest.ProtoReflect.Descriptor instead.
 func (*GrantRolePermissionsRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{71}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *GrantRolePermissionsRequest) GetRoleId() int64 {
@@ -4425,7 +4659,7 @@ type AssignEmployeeRolesResponse struct {
 
 func (x *AssignEmployeeRolesResponse) Reset() {
 	*x = AssignEmployeeRolesResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[72]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4437,7 +4671,7 @@ func (x *AssignEmployeeRolesResponse) String() string {
 func (*AssignEmployeeRolesResponse) ProtoMessage() {}
 
 func (x *AssignEmployeeRolesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[72]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4450,7 +4684,7 @@ func (x *AssignEmployeeRolesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssignEmployeeRolesResponse.ProtoReflect.Descriptor instead.
 func (*AssignEmployeeRolesResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{72}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{75}
 }
 
 type AssignEmployeeRolesRequest struct {
@@ -4464,7 +4698,7 @@ type AssignEmployeeRolesRequest struct {
 
 func (x *AssignEmployeeRolesRequest) Reset() {
 	*x = AssignEmployeeRolesRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[73]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4476,7 +4710,7 @@ func (x *AssignEmployeeRolesRequest) String() string {
 func (*AssignEmployeeRolesRequest) ProtoMessage() {}
 
 func (x *AssignEmployeeRolesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[73]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4489,7 +4723,7 @@ func (x *AssignEmployeeRolesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssignEmployeeRolesRequest.ProtoReflect.Descriptor instead.
 func (*AssignEmployeeRolesRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{73}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *AssignEmployeeRolesRequest) GetEmployeeId() int64 {
@@ -4518,7 +4752,7 @@ type Permission struct {
 
 func (x *Permission) Reset() {
 	*x = Permission{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[74]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4530,7 +4764,7 @@ func (x *Permission) String() string {
 func (*Permission) ProtoMessage() {}
 
 func (x *Permission) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[74]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4543,7 +4777,7 @@ func (x *Permission) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Permission.ProtoReflect.Descriptor instead.
 func (*Permission) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{74}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *Permission) GetId() int64 {
@@ -4582,7 +4816,7 @@ type ListPermissionsRequest struct {
 
 func (x *ListPermissionsRequest) Reset() {
 	*x = ListPermissionsRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[75]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4594,7 +4828,7 @@ func (x *ListPermissionsRequest) String() string {
 func (*ListPermissionsRequest) ProtoMessage() {}
 
 func (x *ListPermissionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[75]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4607,7 +4841,7 @@ func (x *ListPermissionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPermissionsRequest.ProtoReflect.Descriptor instead.
 func (*ListPermissionsRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{75}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{78}
 }
 
 type ListPermissionsResponse struct {
@@ -4619,7 +4853,7 @@ type ListPermissionsResponse struct {
 
 func (x *ListPermissionsResponse) Reset() {
 	*x = ListPermissionsResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[76]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4631,7 +4865,7 @@ func (x *ListPermissionsResponse) String() string {
 func (*ListPermissionsResponse) ProtoMessage() {}
 
 func (x *ListPermissionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[76]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4644,7 +4878,7 @@ func (x *ListPermissionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPermissionsResponse.ProtoReflect.Descriptor instead.
 func (*ListPermissionsResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{76}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *ListPermissionsResponse) GetPermissions() []*Permission {
@@ -4664,7 +4898,7 @@ type CheckPermissionRequest struct {
 
 func (x *CheckPermissionRequest) Reset() {
 	*x = CheckPermissionRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[77]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4676,7 +4910,7 @@ func (x *CheckPermissionRequest) String() string {
 func (*CheckPermissionRequest) ProtoMessage() {}
 
 func (x *CheckPermissionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[77]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4689,7 +4923,7 @@ func (x *CheckPermissionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckPermissionRequest.ProtoReflect.Descriptor instead.
 func (*CheckPermissionRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{77}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *CheckPermissionRequest) GetEmployeeId() int64 {
@@ -4715,7 +4949,7 @@ type CheckPermissionResponse struct {
 
 func (x *CheckPermissionResponse) Reset() {
 	*x = CheckPermissionResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[78]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4727,7 +4961,7 @@ func (x *CheckPermissionResponse) String() string {
 func (*CheckPermissionResponse) ProtoMessage() {}
 
 func (x *CheckPermissionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[78]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4740,7 +4974,7 @@ func (x *CheckPermissionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckPermissionResponse.ProtoReflect.Descriptor instead.
 func (*CheckPermissionResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{78}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *CheckPermissionResponse) GetAllowed() bool {
@@ -4759,7 +4993,7 @@ type ListEmployeePermissionsRequest struct {
 
 func (x *ListEmployeePermissionsRequest) Reset() {
 	*x = ListEmployeePermissionsRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[79]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4771,7 +5005,7 @@ func (x *ListEmployeePermissionsRequest) String() string {
 func (*ListEmployeePermissionsRequest) ProtoMessage() {}
 
 func (x *ListEmployeePermissionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[79]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4784,7 +5018,7 @@ func (x *ListEmployeePermissionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEmployeePermissionsRequest.ProtoReflect.Descriptor instead.
 func (*ListEmployeePermissionsRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{79}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *ListEmployeePermissionsRequest) GetEmployeeId() int64 {
@@ -4803,7 +5037,7 @@ type ListEmployeePermissionsResponse struct {
 
 func (x *ListEmployeePermissionsResponse) Reset() {
 	*x = ListEmployeePermissionsResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[80]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4815,7 +5049,7 @@ func (x *ListEmployeePermissionsResponse) String() string {
 func (*ListEmployeePermissionsResponse) ProtoMessage() {}
 
 func (x *ListEmployeePermissionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[80]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4828,7 +5062,7 @@ func (x *ListEmployeePermissionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEmployeePermissionsResponse.ProtoReflect.Descriptor instead.
 func (*ListEmployeePermissionsResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{80}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *ListEmployeePermissionsResponse) GetPermissionCodes() []string {
@@ -4849,7 +5083,7 @@ type OpenAccountRequest struct {
 
 func (x *OpenAccountRequest) Reset() {
 	*x = OpenAccountRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[81]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4861,7 +5095,7 @@ func (x *OpenAccountRequest) String() string {
 func (*OpenAccountRequest) ProtoMessage() {}
 
 func (x *OpenAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[81]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4874,7 +5108,7 @@ func (x *OpenAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenAccountRequest.ProtoReflect.Descriptor instead.
 func (*OpenAccountRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{81}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *OpenAccountRequest) GetEmployeeId() int64 {
@@ -4907,7 +5141,7 @@ type OpenAccountResponse struct {
 
 func (x *OpenAccountResponse) Reset() {
 	*x = OpenAccountResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[82]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4919,7 +5153,7 @@ func (x *OpenAccountResponse) String() string {
 func (*OpenAccountResponse) ProtoMessage() {}
 
 func (x *OpenAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[82]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4932,7 +5166,7 @@ func (x *OpenAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenAccountResponse.ProtoReflect.Descriptor instead.
 func (*OpenAccountResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{82}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *OpenAccountResponse) GetUsername() string {
@@ -4952,7 +5186,7 @@ type ResetPasswordRequest struct {
 
 func (x *ResetPasswordRequest) Reset() {
 	*x = ResetPasswordRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[83]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4964,7 +5198,7 @@ func (x *ResetPasswordRequest) String() string {
 func (*ResetPasswordRequest) ProtoMessage() {}
 
 func (x *ResetPasswordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[83]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4977,7 +5211,7 @@ func (x *ResetPasswordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResetPasswordRequest.ProtoReflect.Descriptor instead.
 func (*ResetPasswordRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{83}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *ResetPasswordRequest) GetEmployeeId() int64 {
@@ -5003,7 +5237,7 @@ type ResetPasswordResponse struct {
 
 func (x *ResetPasswordResponse) Reset() {
 	*x = ResetPasswordResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[84]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5015,7 +5249,7 @@ func (x *ResetPasswordResponse) String() string {
 func (*ResetPasswordResponse) ProtoMessage() {}
 
 func (x *ResetPasswordResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[84]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5028,7 +5262,7 @@ func (x *ResetPasswordResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResetPasswordResponse.ProtoReflect.Descriptor instead.
 func (*ResetPasswordResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{84}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *ResetPasswordResponse) GetReset_() bool {
@@ -5048,7 +5282,7 @@ type ChangePasswordRequest struct {
 
 func (x *ChangePasswordRequest) Reset() {
 	*x = ChangePasswordRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[85]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5060,7 +5294,7 @@ func (x *ChangePasswordRequest) String() string {
 func (*ChangePasswordRequest) ProtoMessage() {}
 
 func (x *ChangePasswordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[85]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5073,7 +5307,7 @@ func (x *ChangePasswordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangePasswordRequest.ProtoReflect.Descriptor instead.
 func (*ChangePasswordRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{85}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *ChangePasswordRequest) GetOldPassword() string {
@@ -5099,7 +5333,7 @@ type ChangePasswordResponse struct {
 
 func (x *ChangePasswordResponse) Reset() {
 	*x = ChangePasswordResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[86]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5111,7 +5345,7 @@ func (x *ChangePasswordResponse) String() string {
 func (*ChangePasswordResponse) ProtoMessage() {}
 
 func (x *ChangePasswordResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[86]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5124,7 +5358,7 @@ func (x *ChangePasswordResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangePasswordResponse.ProtoReflect.Descriptor instead.
 func (*ChangePasswordResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{86}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *ChangePasswordResponse) GetChanged() bool {
@@ -5143,7 +5377,7 @@ type ListRoleMembersRequest struct {
 
 func (x *ListRoleMembersRequest) Reset() {
 	*x = ListRoleMembersRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[87]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5155,7 +5389,7 @@ func (x *ListRoleMembersRequest) String() string {
 func (*ListRoleMembersRequest) ProtoMessage() {}
 
 func (x *ListRoleMembersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[87]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5168,7 +5402,7 @@ func (x *ListRoleMembersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRoleMembersRequest.ProtoReflect.Descriptor instead.
 func (*ListRoleMembersRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{87}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *ListRoleMembersRequest) GetRoleId() int64 {
@@ -5190,7 +5424,7 @@ type ListManagersRequest struct {
 
 func (x *ListManagersRequest) Reset() {
 	*x = ListManagersRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[88]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5202,7 +5436,7 @@ func (x *ListManagersRequest) String() string {
 func (*ListManagersRequest) ProtoMessage() {}
 
 func (x *ListManagersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[88]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5215,7 +5449,7 @@ func (x *ListManagersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListManagersRequest.ProtoReflect.Descriptor instead.
 func (*ListManagersRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{88}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *ListManagersRequest) GetEmployeeId() int64 {
@@ -5241,7 +5475,7 @@ type ListManagersResponse struct {
 
 func (x *ListManagersResponse) Reset() {
 	*x = ListManagersResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[89]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5253,7 +5487,7 @@ func (x *ListManagersResponse) String() string {
 func (*ListManagersResponse) ProtoMessage() {}
 
 func (x *ListManagersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[89]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5266,7 +5500,7 @@ func (x *ListManagersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListManagersResponse.ProtoReflect.Descriptor instead.
 func (*ListManagersResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{89}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *ListManagersResponse) GetEmployeeIds() []int64 {
@@ -5287,7 +5521,7 @@ type SetManagerRequest struct {
 
 func (x *SetManagerRequest) Reset() {
 	*x = SetManagerRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[90]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5299,7 +5533,7 @@ func (x *SetManagerRequest) String() string {
 func (*SetManagerRequest) ProtoMessage() {}
 
 func (x *SetManagerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[90]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5312,7 +5546,7 @@ func (x *SetManagerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetManagerRequest.ProtoReflect.Descriptor instead.
 func (*SetManagerRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{90}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *SetManagerRequest) GetEmployeeId() int64 {
@@ -5338,7 +5572,7 @@ type SetManagerResponse struct {
 
 func (x *SetManagerResponse) Reset() {
 	*x = SetManagerResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[91]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5350,7 +5584,7 @@ func (x *SetManagerResponse) String() string {
 func (*SetManagerResponse) ProtoMessage() {}
 
 func (x *SetManagerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[91]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5363,7 +5597,7 @@ func (x *SetManagerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetManagerResponse.ProtoReflect.Descriptor instead.
 func (*SetManagerResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{91}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *SetManagerResponse) GetChanged() bool {
@@ -5384,7 +5618,7 @@ type VisibleEmployeesRequest struct {
 
 func (x *VisibleEmployeesRequest) Reset() {
 	*x = VisibleEmployeesRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[92]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5396,7 +5630,7 @@ func (x *VisibleEmployeesRequest) String() string {
 func (*VisibleEmployeesRequest) ProtoMessage() {}
 
 func (x *VisibleEmployeesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[92]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5409,7 +5643,7 @@ func (x *VisibleEmployeesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VisibleEmployeesRequest.ProtoReflect.Descriptor instead.
 func (*VisibleEmployeesRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{92}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *VisibleEmployeesRequest) GetEmployeeId() int64 {
@@ -5439,7 +5673,7 @@ type VisibleEmployeesResponse struct {
 
 func (x *VisibleEmployeesResponse) Reset() {
 	*x = VisibleEmployeesResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[93]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5451,7 +5685,7 @@ func (x *VisibleEmployeesResponse) String() string {
 func (*VisibleEmployeesResponse) ProtoMessage() {}
 
 func (x *VisibleEmployeesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[93]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5464,7 +5698,7 @@ func (x *VisibleEmployeesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VisibleEmployeesResponse.ProtoReflect.Descriptor instead.
 func (*VisibleEmployeesResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{93}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *VisibleEmployeesResponse) GetAll() bool {
@@ -5498,7 +5732,7 @@ type RoleMember struct {
 
 func (x *RoleMember) Reset() {
 	*x = RoleMember{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[94]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5510,7 +5744,7 @@ func (x *RoleMember) String() string {
 func (*RoleMember) ProtoMessage() {}
 
 func (x *RoleMember) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[94]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5523,7 +5757,7 @@ func (x *RoleMember) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoleMember.ProtoReflect.Descriptor instead.
 func (*RoleMember) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{94}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *RoleMember) GetEmployeeId() int64 {
@@ -5549,7 +5783,7 @@ type ListRoleMembersResponse struct {
 
 func (x *ListRoleMembersResponse) Reset() {
 	*x = ListRoleMembersResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[95]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5561,7 +5795,7 @@ func (x *ListRoleMembersResponse) String() string {
 func (*ListRoleMembersResponse) ProtoMessage() {}
 
 func (x *ListRoleMembersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[95]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5574,7 +5808,7 @@ func (x *ListRoleMembersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRoleMembersResponse.ProtoReflect.Descriptor instead.
 func (*ListRoleMembersResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{95}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *ListRoleMembersResponse) GetMembers() []*RoleMember {
@@ -5592,7 +5826,7 @@ type CheckOperatorRequest struct {
 
 func (x *CheckOperatorRequest) Reset() {
 	*x = CheckOperatorRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[96]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5604,7 +5838,7 @@ func (x *CheckOperatorRequest) String() string {
 func (*CheckOperatorRequest) ProtoMessage() {}
 
 func (x *CheckOperatorRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[96]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5617,7 +5851,7 @@ func (x *CheckOperatorRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckOperatorRequest.ProtoReflect.Descriptor instead.
 func (*CheckOperatorRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{96}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{99}
 }
 
 type CheckOperatorResponse struct {
@@ -5629,7 +5863,7 @@ type CheckOperatorResponse struct {
 
 func (x *CheckOperatorResponse) Reset() {
 	*x = CheckOperatorResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[97]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5641,7 +5875,7 @@ func (x *CheckOperatorResponse) String() string {
 func (*CheckOperatorResponse) ProtoMessage() {}
 
 func (x *CheckOperatorResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[97]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5654,7 +5888,7 @@ func (x *CheckOperatorResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckOperatorResponse.ProtoReflect.Descriptor instead.
 func (*CheckOperatorResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{97}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *CheckOperatorResponse) GetOperator() bool {
@@ -5672,7 +5906,7 @@ type ListPlatformTenantsRequest struct {
 
 func (x *ListPlatformTenantsRequest) Reset() {
 	*x = ListPlatformTenantsRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[98]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5684,7 +5918,7 @@ func (x *ListPlatformTenantsRequest) String() string {
 func (*ListPlatformTenantsRequest) ProtoMessage() {}
 
 func (x *ListPlatformTenantsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[98]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5697,7 +5931,7 @@ func (x *ListPlatformTenantsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPlatformTenantsRequest.ProtoReflect.Descriptor instead.
 func (*ListPlatformTenantsRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{98}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{101}
 }
 
 type PlatformTenant struct {
@@ -5714,7 +5948,7 @@ type PlatformTenant struct {
 
 func (x *PlatformTenant) Reset() {
 	*x = PlatformTenant{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[99]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5726,7 +5960,7 @@ func (x *PlatformTenant) String() string {
 func (*PlatformTenant) ProtoMessage() {}
 
 func (x *PlatformTenant) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[99]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5739,7 +5973,7 @@ func (x *PlatformTenant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlatformTenant.ProtoReflect.Descriptor instead.
 func (*PlatformTenant) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{99}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *PlatformTenant) GetId() int64 {
@@ -5793,7 +6027,7 @@ type ListPlatformTenantsResponse struct {
 
 func (x *ListPlatformTenantsResponse) Reset() {
 	*x = ListPlatformTenantsResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[100]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5805,7 +6039,7 @@ func (x *ListPlatformTenantsResponse) String() string {
 func (*ListPlatformTenantsResponse) ProtoMessage() {}
 
 func (x *ListPlatformTenantsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[100]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5818,7 +6052,7 @@ func (x *ListPlatformTenantsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPlatformTenantsResponse.ProtoReflect.Descriptor instead.
 func (*ListPlatformTenantsResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{100}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *ListPlatformTenantsResponse) GetTenants() []*PlatformTenant {
@@ -5838,7 +6072,7 @@ type CreatePlatformTenantRequest struct {
 
 func (x *CreatePlatformTenantRequest) Reset() {
 	*x = CreatePlatformTenantRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[101]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5850,7 +6084,7 @@ func (x *CreatePlatformTenantRequest) String() string {
 func (*CreatePlatformTenantRequest) ProtoMessage() {}
 
 func (x *CreatePlatformTenantRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[101]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5863,7 +6097,7 @@ func (x *CreatePlatformTenantRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePlatformTenantRequest.ProtoReflect.Descriptor instead.
 func (*CreatePlatformTenantRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{101}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *CreatePlatformTenantRequest) GetName() string {
@@ -5891,7 +6125,7 @@ type CreatePlatformTenantResponse struct {
 
 func (x *CreatePlatformTenantResponse) Reset() {
 	*x = CreatePlatformTenantResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[102]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5903,7 +6137,7 @@ func (x *CreatePlatformTenantResponse) String() string {
 func (*CreatePlatformTenantResponse) ProtoMessage() {}
 
 func (x *CreatePlatformTenantResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[102]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5916,7 +6150,7 @@ func (x *CreatePlatformTenantResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePlatformTenantResponse.ProtoReflect.Descriptor instead.
 func (*CreatePlatformTenantResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{102}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{105}
 }
 
 func (x *CreatePlatformTenantResponse) GetTenant() *PlatformTenant {
@@ -5942,7 +6176,7 @@ type ReinvitePlatformAdminRequest struct {
 
 func (x *ReinvitePlatformAdminRequest) Reset() {
 	*x = ReinvitePlatformAdminRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[103]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5954,7 +6188,7 @@ func (x *ReinvitePlatformAdminRequest) String() string {
 func (*ReinvitePlatformAdminRequest) ProtoMessage() {}
 
 func (x *ReinvitePlatformAdminRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[103]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5967,7 +6201,7 @@ func (x *ReinvitePlatformAdminRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReinvitePlatformAdminRequest.ProtoReflect.Descriptor instead.
 func (*ReinvitePlatformAdminRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{103}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *ReinvitePlatformAdminRequest) GetTenantId() int64 {
@@ -5986,7 +6220,7 @@ type ReinvitePlatformAdminResponse struct {
 
 func (x *ReinvitePlatformAdminResponse) Reset() {
 	*x = ReinvitePlatformAdminResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[104]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[107]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5998,7 +6232,7 @@ func (x *ReinvitePlatformAdminResponse) String() string {
 func (*ReinvitePlatformAdminResponse) ProtoMessage() {}
 
 func (x *ReinvitePlatformAdminResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[104]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[107]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6011,7 +6245,7 @@ func (x *ReinvitePlatformAdminResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReinvitePlatformAdminResponse.ProtoReflect.Descriptor instead.
 func (*ReinvitePlatformAdminResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{104}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{107}
 }
 
 func (x *ReinvitePlatformAdminResponse) GetInvitation() *InviteEmployeeResponse {
@@ -6031,7 +6265,7 @@ type SetPlatformTenantStatusRequest struct {
 
 func (x *SetPlatformTenantStatusRequest) Reset() {
 	*x = SetPlatformTenantStatusRequest{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[105]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[108]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6043,7 +6277,7 @@ func (x *SetPlatformTenantStatusRequest) String() string {
 func (*SetPlatformTenantStatusRequest) ProtoMessage() {}
 
 func (x *SetPlatformTenantStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[105]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[108]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6056,7 +6290,7 @@ func (x *SetPlatformTenantStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPlatformTenantStatusRequest.ProtoReflect.Descriptor instead.
 func (*SetPlatformTenantStatusRequest) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{105}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{108}
 }
 
 func (x *SetPlatformTenantStatusRequest) GetTenantId() int64 {
@@ -6082,7 +6316,7 @@ type SetPlatformTenantStatusResponse struct {
 
 func (x *SetPlatformTenantStatusResponse) Reset() {
 	*x = SetPlatformTenantStatusResponse{}
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[106]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[109]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6094,7 +6328,7 @@ func (x *SetPlatformTenantStatusResponse) String() string {
 func (*SetPlatformTenantStatusResponse) ProtoMessage() {}
 
 func (x *SetPlatformTenantStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_erp_iam_v1_iam_proto_msgTypes[106]
+	mi := &file_erp_iam_v1_iam_proto_msgTypes[109]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6107,7 +6341,7 @@ func (x *SetPlatformTenantStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPlatformTenantStatusResponse.ProtoReflect.Descriptor instead.
 func (*SetPlatformTenantStatusResponse) Descriptor() ([]byte, []int) {
-	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{106}
+	return file_erp_iam_v1_iam_proto_rawDescGZIP(), []int{109}
 }
 
 func (x *SetPlatformTenantStatusResponse) GetOk() bool {
@@ -6418,6 +6652,38 @@ var file_erp_iam_v1_iam_proto_rawDesc = []byte{
 	0x52, 0x07, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x12, 0x25, 0x0a, 0x0e, 0x65, 0x6d, 0x61,
 	0x69, 0x6c, 0x5f, 0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x65, 0x64, 0x18, 0x0e, 0x20, 0x01, 0x28,
 	0x08, 0x52, 0x0d, 0x65, 0x6d, 0x61, 0x69, 0x6c, 0x56, 0x65, 0x72, 0x69, 0x66, 0x69, 0x65, 0x64,
+	0x22, 0xe4, 0x02, 0x0a, 0x09, 0x4f, 0x72, 0x67, 0x4d, 0x65, 0x6d, 0x62, 0x65, 0x72, 0x12, 0x0e,
+	0x0a, 0x02, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x03, 0x52, 0x02, 0x69, 0x64, 0x12, 0x12,
+	0x0a, 0x04, 0x63, 0x6f, 0x64, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x63, 0x6f,
+	0x64, 0x65, 0x12, 0x12, 0x0a, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x12, 0x21, 0x0a, 0x0c, 0x65, 0x6e, 0x67, 0x6c, 0x69, 0x73,
+	0x68, 0x5f, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x65, 0x6e,
+	0x67, 0x6c, 0x69, 0x73, 0x68, 0x4e, 0x61, 0x6d, 0x65, 0x12, 0x1a, 0x0a, 0x08, 0x70, 0x6f, 0x73,
+	0x69, 0x74, 0x69, 0x6f, 0x6e, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x70, 0x6f, 0x73,
+	0x69, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x16, 0x0a, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x18,
+	0x06, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x1d, 0x0a,
+	0x0a, 0x6d, 0x61, 0x6e, 0x61, 0x67, 0x65, 0x72, 0x5f, 0x69, 0x64, 0x18, 0x07, 0x20, 0x01, 0x28,
+	0x03, 0x52, 0x09, 0x6d, 0x61, 0x6e, 0x61, 0x67, 0x65, 0x72, 0x49, 0x64, 0x12, 0x23, 0x0a, 0x0d,
+	0x64, 0x65, 0x70, 0x61, 0x72, 0x74, 0x6d, 0x65, 0x6e, 0x74, 0x5f, 0x69, 0x64, 0x18, 0x08, 0x20,
+	0x01, 0x28, 0x03, 0x52, 0x0c, 0x64, 0x65, 0x70, 0x61, 0x72, 0x74, 0x6d, 0x65, 0x6e, 0x74, 0x49,
+	0x64, 0x12, 0x27, 0x0a, 0x0f, 0x64, 0x65, 0x70, 0x61, 0x72, 0x74, 0x6d, 0x65, 0x6e, 0x74, 0x5f,
+	0x6e, 0x61, 0x6d, 0x65, 0x18, 0x09, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0e, 0x64, 0x65, 0x70, 0x61,
+	0x72, 0x74, 0x6d, 0x65, 0x6e, 0x74, 0x4e, 0x61, 0x6d, 0x65, 0x12, 0x1d, 0x0a, 0x0a, 0x61, 0x76,
+	0x61, 0x74, 0x61, 0x72, 0x5f, 0x6b, 0x65, 0x79, 0x18, 0x0a, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09,
+	0x61, 0x76, 0x61, 0x74, 0x61, 0x72, 0x4b, 0x65, 0x79, 0x12, 0x1d, 0x0a, 0x0a, 0x61, 0x76, 0x61,
+	0x74, 0x61, 0x72, 0x5f, 0x75, 0x72, 0x6c, 0x18, 0x0b, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x61,
+	0x76, 0x61, 0x74, 0x61, 0x72, 0x55, 0x72, 0x6c, 0x12, 0x1d, 0x0a, 0x0a, 0x6c, 0x65, 0x61, 0x76,
+	0x65, 0x5f, 0x64, 0x61, 0x74, 0x65, 0x18, 0x0c, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x6c, 0x65,
+	0x61, 0x76, 0x65, 0x44, 0x61, 0x74, 0x65, 0x22, 0x14, 0x0a, 0x12, 0x47, 0x65, 0x74, 0x4f, 0x72,
+	0x67, 0x43, 0x68, 0x61, 0x72, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x22, 0x80, 0x01,
+	0x0a, 0x13, 0x47, 0x65, 0x74, 0x4f, 0x72, 0x67, 0x43, 0x68, 0x61, 0x72, 0x74, 0x52, 0x65, 0x73,
+	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x2f, 0x0a, 0x07, 0x6d, 0x65, 0x6d, 0x62, 0x65, 0x72, 0x73,
+	0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x15, 0x2e, 0x65, 0x72, 0x70, 0x2e, 0x69, 0x61, 0x6d,
+	0x2e, 0x76, 0x31, 0x2e, 0x4f, 0x72, 0x67, 0x4d, 0x65, 0x6d, 0x62, 0x65, 0x72, 0x52, 0x07, 0x6d,
+	0x65, 0x6d, 0x62, 0x65, 0x72, 0x73, 0x12, 0x38, 0x0a, 0x0b, 0x64, 0x65, 0x70, 0x61, 0x72, 0x74,
+	0x6d, 0x65, 0x6e, 0x74, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x16, 0x2e, 0x65, 0x72,
+	0x70, 0x2e, 0x69, 0x61, 0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x44, 0x65, 0x70, 0x61, 0x72, 0x74, 0x6d,
+	0x65, 0x6e, 0x74, 0x52, 0x0b, 0x64, 0x65, 0x70, 0x61, 0x72, 0x74, 0x6d, 0x65, 0x6e, 0x74, 0x73,
 	0x22, 0x15, 0x0a, 0x13, 0x47, 0x65, 0x74, 0x4d, 0x79, 0x50, 0x72, 0x6f, 0x66, 0x69, 0x6c, 0x65,
 	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x22, 0x47, 0x0a, 0x14, 0x47, 0x65, 0x74, 0x4d, 0x79,
 	0x50, 0x72, 0x6f, 0x66, 0x69, 0x6c, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12,
@@ -6846,7 +7112,7 @@ var file_erp_iam_v1_iam_proto_rawDesc = []byte{
 	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x27, 0x2e, 0x65, 0x72, 0x70, 0x2e, 0x69, 0x61, 0x6d,
 	0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x64, 0x65, 0x65, 0x6d, 0x50, 0x61, 0x73, 0x73, 0x77, 0x6f,
 	0x72, 0x64, 0x52, 0x65, 0x73, 0x65, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x32,
-	0x82, 0x11, 0x0a, 0x10, 0x44, 0x69, 0x72, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x79, 0x53, 0x65, 0x72,
+	0xd2, 0x11, 0x0a, 0x10, 0x44, 0x69, 0x72, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x79, 0x53, 0x65, 0x72,
 	0x76, 0x69, 0x63, 0x65, 0x12, 0x5d, 0x0a, 0x10, 0x43, 0x72, 0x65, 0x61, 0x74, 0x65, 0x44, 0x65,
 	0x70, 0x61, 0x72, 0x74, 0x6d, 0x65, 0x6e, 0x74, 0x12, 0x23, 0x2e, 0x65, 0x72, 0x70, 0x2e, 0x69,
 	0x61, 0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x72, 0x65, 0x61, 0x74, 0x65, 0x44, 0x65, 0x70, 0x61,
@@ -6955,6 +7221,11 @@ var file_erp_iam_v1_iam_proto_rawDesc = []byte{
 	0x61, 0x6e, 0x67, 0x65, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x28, 0x2e, 0x65,
 	0x72, 0x70, 0x2e, 0x69, 0x61, 0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x4c, 0x69, 0x73, 0x74, 0x44, 0x69,
 	0x72, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x79, 0x43, 0x68, 0x61, 0x6e, 0x67, 0x65, 0x73, 0x52, 0x65,
+	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x4e, 0x0a, 0x0b, 0x47, 0x65, 0x74, 0x4f, 0x72, 0x67,
+	0x43, 0x68, 0x61, 0x72, 0x74, 0x12, 0x1e, 0x2e, 0x65, 0x72, 0x70, 0x2e, 0x69, 0x61, 0x6d, 0x2e,
+	0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x4f, 0x72, 0x67, 0x43, 0x68, 0x61, 0x72, 0x74, 0x52, 0x65,
+	0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1f, 0x2e, 0x65, 0x72, 0x70, 0x2e, 0x69, 0x61, 0x6d, 0x2e,
+	0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x4f, 0x72, 0x67, 0x43, 0x68, 0x61, 0x72, 0x74, 0x52, 0x65,
 	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x51, 0x0a, 0x0c, 0x47, 0x65, 0x74, 0x4d, 0x79, 0x50,
 	0x72, 0x6f, 0x66, 0x69, 0x6c, 0x65, 0x12, 0x1f, 0x2e, 0x65, 0x72, 0x70, 0x2e, 0x69, 0x61, 0x6d,
 	0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x4d, 0x79, 0x50, 0x72, 0x6f, 0x66, 0x69, 0x6c, 0x65,
@@ -7116,7 +7387,7 @@ func file_erp_iam_v1_iam_proto_rawDescGZIP() []byte {
 	return file_erp_iam_v1_iam_proto_rawDescData
 }
 
-var file_erp_iam_v1_iam_proto_msgTypes = make([]protoimpl.MessageInfo, 108)
+var file_erp_iam_v1_iam_proto_msgTypes = make([]protoimpl.MessageInfo, 111)
 var file_erp_iam_v1_iam_proto_goTypes = []any{
 	(*DataScope)(nil),                       // 0: erp.iam.v1.DataScope
 	(*ListDataScopesRequest)(nil),           // 1: erp.iam.v1.ListDataScopesRequest
@@ -7154,80 +7425,83 @@ var file_erp_iam_v1_iam_proto_goTypes = []any{
 	(*UpdateDepartmentResponse)(nil),        // 33: erp.iam.v1.UpdateDepartmentResponse
 	(*Employee)(nil),                        // 34: erp.iam.v1.Employee
 	(*MyProfile)(nil),                       // 35: erp.iam.v1.MyProfile
-	(*GetMyProfileRequest)(nil),             // 36: erp.iam.v1.GetMyProfileRequest
-	(*GetMyProfileResponse)(nil),            // 37: erp.iam.v1.GetMyProfileResponse
-	(*UpdateMyProfileRequest)(nil),          // 38: erp.iam.v1.UpdateMyProfileRequest
-	(*UpdateMyProfileResponse)(nil),         // 39: erp.iam.v1.UpdateMyProfileResponse
-	(*PresignAvatarUploadRequest)(nil),      // 40: erp.iam.v1.PresignAvatarUploadRequest
-	(*PresignAvatarUploadResponse)(nil),     // 41: erp.iam.v1.PresignAvatarUploadResponse
-	(*SetAvatarRequest)(nil),                // 42: erp.iam.v1.SetAvatarRequest
-	(*SetAvatarResponse)(nil),               // 43: erp.iam.v1.SetAvatarResponse
-	(*AvatarURLsRequest)(nil),               // 44: erp.iam.v1.AvatarURLsRequest
-	(*AvatarURLsResponse)(nil),              // 45: erp.iam.v1.AvatarURLsResponse
-	(*CreateEmployeeRequest)(nil),           // 46: erp.iam.v1.CreateEmployeeRequest
-	(*CreateEmployeeResponse)(nil),          // 47: erp.iam.v1.CreateEmployeeResponse
-	(*GetEmployeeResponse)(nil),             // 48: erp.iam.v1.GetEmployeeResponse
-	(*GetEmployeeRequest)(nil),              // 49: erp.iam.v1.GetEmployeeRequest
-	(*ListEmployeesRequest)(nil),            // 50: erp.iam.v1.ListEmployeesRequest
-	(*ListEmployeesResponse)(nil),           // 51: erp.iam.v1.ListEmployeesResponse
-	(*UpdateEmployeeRequest)(nil),           // 52: erp.iam.v1.UpdateEmployeeRequest
-	(*UpdateEmployeeResponse)(nil),          // 53: erp.iam.v1.UpdateEmployeeResponse
-	(*DirectoryChange)(nil),                 // 54: erp.iam.v1.DirectoryChange
-	(*ListDirectoryChangesRequest)(nil),     // 55: erp.iam.v1.ListDirectoryChangesRequest
-	(*ListDirectoryChangesResponse)(nil),    // 56: erp.iam.v1.ListDirectoryChangesResponse
-	(*DeactivateEmployeeRequest)(nil),       // 57: erp.iam.v1.DeactivateEmployeeRequest
-	(*DeactivateEmployeeResponse)(nil),      // 58: erp.iam.v1.DeactivateEmployeeResponse
-	(*ActivateEmployeeRequest)(nil),         // 59: erp.iam.v1.ActivateEmployeeRequest
-	(*ActivateEmployeeResponse)(nil),        // 60: erp.iam.v1.ActivateEmployeeResponse
-	(*Role)(nil),                            // 61: erp.iam.v1.Role
-	(*CreateRoleRequest)(nil),               // 62: erp.iam.v1.CreateRoleRequest
-	(*CreateRoleResponse)(nil),              // 63: erp.iam.v1.CreateRoleResponse
-	(*ListRolesRequest)(nil),                // 64: erp.iam.v1.ListRolesRequest
-	(*ListRolesResponse)(nil),               // 65: erp.iam.v1.ListRolesResponse
-	(*ListAllRolesRequest)(nil),             // 66: erp.iam.v1.ListAllRolesRequest
-	(*ListAllRolesResponse)(nil),            // 67: erp.iam.v1.ListAllRolesResponse
-	(*SetRoleStatusRequest)(nil),            // 68: erp.iam.v1.SetRoleStatusRequest
-	(*SetRoleStatusResponse)(nil),           // 69: erp.iam.v1.SetRoleStatusResponse
-	(*GrantRolePermissionsResponse)(nil),    // 70: erp.iam.v1.GrantRolePermissionsResponse
-	(*GrantRolePermissionsRequest)(nil),     // 71: erp.iam.v1.GrantRolePermissionsRequest
-	(*AssignEmployeeRolesResponse)(nil),     // 72: erp.iam.v1.AssignEmployeeRolesResponse
-	(*AssignEmployeeRolesRequest)(nil),      // 73: erp.iam.v1.AssignEmployeeRolesRequest
-	(*Permission)(nil),                      // 74: erp.iam.v1.Permission
-	(*ListPermissionsRequest)(nil),          // 75: erp.iam.v1.ListPermissionsRequest
-	(*ListPermissionsResponse)(nil),         // 76: erp.iam.v1.ListPermissionsResponse
-	(*CheckPermissionRequest)(nil),          // 77: erp.iam.v1.CheckPermissionRequest
-	(*CheckPermissionResponse)(nil),         // 78: erp.iam.v1.CheckPermissionResponse
-	(*ListEmployeePermissionsRequest)(nil),  // 79: erp.iam.v1.ListEmployeePermissionsRequest
-	(*ListEmployeePermissionsResponse)(nil), // 80: erp.iam.v1.ListEmployeePermissionsResponse
-	(*OpenAccountRequest)(nil),              // 81: erp.iam.v1.OpenAccountRequest
-	(*OpenAccountResponse)(nil),             // 82: erp.iam.v1.OpenAccountResponse
-	(*ResetPasswordRequest)(nil),            // 83: erp.iam.v1.ResetPasswordRequest
-	(*ResetPasswordResponse)(nil),           // 84: erp.iam.v1.ResetPasswordResponse
-	(*ChangePasswordRequest)(nil),           // 85: erp.iam.v1.ChangePasswordRequest
-	(*ChangePasswordResponse)(nil),          // 86: erp.iam.v1.ChangePasswordResponse
-	(*ListRoleMembersRequest)(nil),          // 87: erp.iam.v1.ListRoleMembersRequest
-	(*ListManagersRequest)(nil),             // 88: erp.iam.v1.ListManagersRequest
-	(*ListManagersResponse)(nil),            // 89: erp.iam.v1.ListManagersResponse
-	(*SetManagerRequest)(nil),               // 90: erp.iam.v1.SetManagerRequest
-	(*SetManagerResponse)(nil),              // 91: erp.iam.v1.SetManagerResponse
-	(*VisibleEmployeesRequest)(nil),         // 92: erp.iam.v1.VisibleEmployeesRequest
-	(*VisibleEmployeesResponse)(nil),        // 93: erp.iam.v1.VisibleEmployeesResponse
-	(*RoleMember)(nil),                      // 94: erp.iam.v1.RoleMember
-	(*ListRoleMembersResponse)(nil),         // 95: erp.iam.v1.ListRoleMembersResponse
-	(*CheckOperatorRequest)(nil),            // 96: erp.iam.v1.CheckOperatorRequest
-	(*CheckOperatorResponse)(nil),           // 97: erp.iam.v1.CheckOperatorResponse
-	(*ListPlatformTenantsRequest)(nil),      // 98: erp.iam.v1.ListPlatformTenantsRequest
-	(*PlatformTenant)(nil),                  // 99: erp.iam.v1.PlatformTenant
-	(*ListPlatformTenantsResponse)(nil),     // 100: erp.iam.v1.ListPlatformTenantsResponse
-	(*CreatePlatformTenantRequest)(nil),     // 101: erp.iam.v1.CreatePlatformTenantRequest
-	(*CreatePlatformTenantResponse)(nil),    // 102: erp.iam.v1.CreatePlatformTenantResponse
-	(*ReinvitePlatformAdminRequest)(nil),    // 103: erp.iam.v1.ReinvitePlatformAdminRequest
-	(*ReinvitePlatformAdminResponse)(nil),   // 104: erp.iam.v1.ReinvitePlatformAdminResponse
-	(*SetPlatformTenantStatusRequest)(nil),  // 105: erp.iam.v1.SetPlatformTenantStatusRequest
-	(*SetPlatformTenantStatusResponse)(nil), // 106: erp.iam.v1.SetPlatformTenantStatusResponse
-	nil,                                     // 107: erp.iam.v1.AvatarURLsResponse.UrlsEntry
-	(*v1.PageRequest)(nil),                  // 108: erp.common.v1.PageRequest
-	(*v1.PageMeta)(nil),                     // 109: erp.common.v1.PageMeta
+	(*OrgMember)(nil),                       // 36: erp.iam.v1.OrgMember
+	(*GetOrgChartRequest)(nil),              // 37: erp.iam.v1.GetOrgChartRequest
+	(*GetOrgChartResponse)(nil),             // 38: erp.iam.v1.GetOrgChartResponse
+	(*GetMyProfileRequest)(nil),             // 39: erp.iam.v1.GetMyProfileRequest
+	(*GetMyProfileResponse)(nil),            // 40: erp.iam.v1.GetMyProfileResponse
+	(*UpdateMyProfileRequest)(nil),          // 41: erp.iam.v1.UpdateMyProfileRequest
+	(*UpdateMyProfileResponse)(nil),         // 42: erp.iam.v1.UpdateMyProfileResponse
+	(*PresignAvatarUploadRequest)(nil),      // 43: erp.iam.v1.PresignAvatarUploadRequest
+	(*PresignAvatarUploadResponse)(nil),     // 44: erp.iam.v1.PresignAvatarUploadResponse
+	(*SetAvatarRequest)(nil),                // 45: erp.iam.v1.SetAvatarRequest
+	(*SetAvatarResponse)(nil),               // 46: erp.iam.v1.SetAvatarResponse
+	(*AvatarURLsRequest)(nil),               // 47: erp.iam.v1.AvatarURLsRequest
+	(*AvatarURLsResponse)(nil),              // 48: erp.iam.v1.AvatarURLsResponse
+	(*CreateEmployeeRequest)(nil),           // 49: erp.iam.v1.CreateEmployeeRequest
+	(*CreateEmployeeResponse)(nil),          // 50: erp.iam.v1.CreateEmployeeResponse
+	(*GetEmployeeResponse)(nil),             // 51: erp.iam.v1.GetEmployeeResponse
+	(*GetEmployeeRequest)(nil),              // 52: erp.iam.v1.GetEmployeeRequest
+	(*ListEmployeesRequest)(nil),            // 53: erp.iam.v1.ListEmployeesRequest
+	(*ListEmployeesResponse)(nil),           // 54: erp.iam.v1.ListEmployeesResponse
+	(*UpdateEmployeeRequest)(nil),           // 55: erp.iam.v1.UpdateEmployeeRequest
+	(*UpdateEmployeeResponse)(nil),          // 56: erp.iam.v1.UpdateEmployeeResponse
+	(*DirectoryChange)(nil),                 // 57: erp.iam.v1.DirectoryChange
+	(*ListDirectoryChangesRequest)(nil),     // 58: erp.iam.v1.ListDirectoryChangesRequest
+	(*ListDirectoryChangesResponse)(nil),    // 59: erp.iam.v1.ListDirectoryChangesResponse
+	(*DeactivateEmployeeRequest)(nil),       // 60: erp.iam.v1.DeactivateEmployeeRequest
+	(*DeactivateEmployeeResponse)(nil),      // 61: erp.iam.v1.DeactivateEmployeeResponse
+	(*ActivateEmployeeRequest)(nil),         // 62: erp.iam.v1.ActivateEmployeeRequest
+	(*ActivateEmployeeResponse)(nil),        // 63: erp.iam.v1.ActivateEmployeeResponse
+	(*Role)(nil),                            // 64: erp.iam.v1.Role
+	(*CreateRoleRequest)(nil),               // 65: erp.iam.v1.CreateRoleRequest
+	(*CreateRoleResponse)(nil),              // 66: erp.iam.v1.CreateRoleResponse
+	(*ListRolesRequest)(nil),                // 67: erp.iam.v1.ListRolesRequest
+	(*ListRolesResponse)(nil),               // 68: erp.iam.v1.ListRolesResponse
+	(*ListAllRolesRequest)(nil),             // 69: erp.iam.v1.ListAllRolesRequest
+	(*ListAllRolesResponse)(nil),            // 70: erp.iam.v1.ListAllRolesResponse
+	(*SetRoleStatusRequest)(nil),            // 71: erp.iam.v1.SetRoleStatusRequest
+	(*SetRoleStatusResponse)(nil),           // 72: erp.iam.v1.SetRoleStatusResponse
+	(*GrantRolePermissionsResponse)(nil),    // 73: erp.iam.v1.GrantRolePermissionsResponse
+	(*GrantRolePermissionsRequest)(nil),     // 74: erp.iam.v1.GrantRolePermissionsRequest
+	(*AssignEmployeeRolesResponse)(nil),     // 75: erp.iam.v1.AssignEmployeeRolesResponse
+	(*AssignEmployeeRolesRequest)(nil),      // 76: erp.iam.v1.AssignEmployeeRolesRequest
+	(*Permission)(nil),                      // 77: erp.iam.v1.Permission
+	(*ListPermissionsRequest)(nil),          // 78: erp.iam.v1.ListPermissionsRequest
+	(*ListPermissionsResponse)(nil),         // 79: erp.iam.v1.ListPermissionsResponse
+	(*CheckPermissionRequest)(nil),          // 80: erp.iam.v1.CheckPermissionRequest
+	(*CheckPermissionResponse)(nil),         // 81: erp.iam.v1.CheckPermissionResponse
+	(*ListEmployeePermissionsRequest)(nil),  // 82: erp.iam.v1.ListEmployeePermissionsRequest
+	(*ListEmployeePermissionsResponse)(nil), // 83: erp.iam.v1.ListEmployeePermissionsResponse
+	(*OpenAccountRequest)(nil),              // 84: erp.iam.v1.OpenAccountRequest
+	(*OpenAccountResponse)(nil),             // 85: erp.iam.v1.OpenAccountResponse
+	(*ResetPasswordRequest)(nil),            // 86: erp.iam.v1.ResetPasswordRequest
+	(*ResetPasswordResponse)(nil),           // 87: erp.iam.v1.ResetPasswordResponse
+	(*ChangePasswordRequest)(nil),           // 88: erp.iam.v1.ChangePasswordRequest
+	(*ChangePasswordResponse)(nil),          // 89: erp.iam.v1.ChangePasswordResponse
+	(*ListRoleMembersRequest)(nil),          // 90: erp.iam.v1.ListRoleMembersRequest
+	(*ListManagersRequest)(nil),             // 91: erp.iam.v1.ListManagersRequest
+	(*ListManagersResponse)(nil),            // 92: erp.iam.v1.ListManagersResponse
+	(*SetManagerRequest)(nil),               // 93: erp.iam.v1.SetManagerRequest
+	(*SetManagerResponse)(nil),              // 94: erp.iam.v1.SetManagerResponse
+	(*VisibleEmployeesRequest)(nil),         // 95: erp.iam.v1.VisibleEmployeesRequest
+	(*VisibleEmployeesResponse)(nil),        // 96: erp.iam.v1.VisibleEmployeesResponse
+	(*RoleMember)(nil),                      // 97: erp.iam.v1.RoleMember
+	(*ListRoleMembersResponse)(nil),         // 98: erp.iam.v1.ListRoleMembersResponse
+	(*CheckOperatorRequest)(nil),            // 99: erp.iam.v1.CheckOperatorRequest
+	(*CheckOperatorResponse)(nil),           // 100: erp.iam.v1.CheckOperatorResponse
+	(*ListPlatformTenantsRequest)(nil),      // 101: erp.iam.v1.ListPlatformTenantsRequest
+	(*PlatformTenant)(nil),                  // 102: erp.iam.v1.PlatformTenant
+	(*ListPlatformTenantsResponse)(nil),     // 103: erp.iam.v1.ListPlatformTenantsResponse
+	(*CreatePlatformTenantRequest)(nil),     // 104: erp.iam.v1.CreatePlatformTenantRequest
+	(*CreatePlatformTenantResponse)(nil),    // 105: erp.iam.v1.CreatePlatformTenantResponse
+	(*ReinvitePlatformAdminRequest)(nil),    // 106: erp.iam.v1.ReinvitePlatformAdminRequest
+	(*ReinvitePlatformAdminResponse)(nil),   // 107: erp.iam.v1.ReinvitePlatformAdminResponse
+	(*SetPlatformTenantStatusRequest)(nil),  // 108: erp.iam.v1.SetPlatformTenantStatusRequest
+	(*SetPlatformTenantStatusResponse)(nil), // 109: erp.iam.v1.SetPlatformTenantStatusResponse
+	nil,                                     // 110: erp.iam.v1.AvatarURLsResponse.UrlsEntry
+	(*v1.PageRequest)(nil),                  // 111: erp.common.v1.PageRequest
+	(*v1.PageMeta)(nil),                     // 112: erp.common.v1.PageMeta
 }
 var file_erp_iam_v1_iam_proto_depIdxs = []int32{
 	0,   // 0: erp.iam.v1.ListDataScopesResponse.scopes:type_name -> erp.iam.v1.DataScope
@@ -7238,126 +7512,130 @@ var file_erp_iam_v1_iam_proto_depIdxs = []int32{
 	27,  // 5: erp.iam.v1.CreateDepartmentResponse.department:type_name -> erp.iam.v1.Department
 	27,  // 6: erp.iam.v1.ListDepartmentsResponse.departments:type_name -> erp.iam.v1.Department
 	27,  // 7: erp.iam.v1.UpdateDepartmentResponse.department:type_name -> erp.iam.v1.Department
-	35,  // 8: erp.iam.v1.GetMyProfileResponse.profile:type_name -> erp.iam.v1.MyProfile
-	35,  // 9: erp.iam.v1.UpdateMyProfileResponse.profile:type_name -> erp.iam.v1.MyProfile
-	107, // 10: erp.iam.v1.AvatarURLsResponse.urls:type_name -> erp.iam.v1.AvatarURLsResponse.UrlsEntry
-	34,  // 11: erp.iam.v1.CreateEmployeeResponse.employee:type_name -> erp.iam.v1.Employee
-	34,  // 12: erp.iam.v1.GetEmployeeResponse.employee:type_name -> erp.iam.v1.Employee
-	108, // 13: erp.iam.v1.ListEmployeesRequest.page:type_name -> erp.common.v1.PageRequest
-	34,  // 14: erp.iam.v1.ListEmployeesResponse.employees:type_name -> erp.iam.v1.Employee
-	109, // 15: erp.iam.v1.ListEmployeesResponse.meta:type_name -> erp.common.v1.PageMeta
-	34,  // 16: erp.iam.v1.UpdateEmployeeResponse.employee:type_name -> erp.iam.v1.Employee
-	54,  // 17: erp.iam.v1.ListDirectoryChangesResponse.changes:type_name -> erp.iam.v1.DirectoryChange
-	61,  // 18: erp.iam.v1.CreateRoleResponse.role:type_name -> erp.iam.v1.Role
-	61,  // 19: erp.iam.v1.ListRolesResponse.roles:type_name -> erp.iam.v1.Role
-	61,  // 20: erp.iam.v1.ListAllRolesResponse.roles:type_name -> erp.iam.v1.Role
-	74,  // 21: erp.iam.v1.ListPermissionsResponse.permissions:type_name -> erp.iam.v1.Permission
-	94,  // 22: erp.iam.v1.ListRoleMembersResponse.members:type_name -> erp.iam.v1.RoleMember
-	99,  // 23: erp.iam.v1.ListPlatformTenantsResponse.tenants:type_name -> erp.iam.v1.PlatformTenant
-	99,  // 24: erp.iam.v1.CreatePlatformTenantResponse.tenant:type_name -> erp.iam.v1.PlatformTenant
-	8,   // 25: erp.iam.v1.CreatePlatformTenantResponse.invitation:type_name -> erp.iam.v1.InviteEmployeeResponse
-	8,   // 26: erp.iam.v1.ReinvitePlatformAdminResponse.invitation:type_name -> erp.iam.v1.InviteEmployeeResponse
-	5,   // 27: erp.iam.v1.AuthService.Login:input_type -> erp.iam.v1.LoginRequest
-	13,  // 28: erp.iam.v1.AuthService.PeekInvitation:input_type -> erp.iam.v1.PeekInvitationRequest
-	15,  // 29: erp.iam.v1.AuthService.ActivateAccount:input_type -> erp.iam.v1.ActivateAccountRequest
-	17,  // 30: erp.iam.v1.AuthService.RequestPasswordReset:input_type -> erp.iam.v1.RequestPasswordResetRequest
-	19,  // 31: erp.iam.v1.AuthService.PeekPasswordReset:input_type -> erp.iam.v1.PeekPasswordResetRequest
-	21,  // 32: erp.iam.v1.AuthService.RedeemPasswordReset:input_type -> erp.iam.v1.RedeemPasswordResetRequest
-	28,  // 33: erp.iam.v1.DirectoryService.CreateDepartment:input_type -> erp.iam.v1.CreateDepartmentRequest
-	30,  // 34: erp.iam.v1.DirectoryService.ListDepartments:input_type -> erp.iam.v1.ListDepartmentsRequest
-	32,  // 35: erp.iam.v1.DirectoryService.UpdateDepartment:input_type -> erp.iam.v1.UpdateDepartmentRequest
-	46,  // 36: erp.iam.v1.DirectoryService.CreateEmployee:input_type -> erp.iam.v1.CreateEmployeeRequest
-	49,  // 37: erp.iam.v1.DirectoryService.GetEmployee:input_type -> erp.iam.v1.GetEmployeeRequest
-	50,  // 38: erp.iam.v1.DirectoryService.ListEmployees:input_type -> erp.iam.v1.ListEmployeesRequest
-	52,  // 39: erp.iam.v1.DirectoryService.UpdateEmployee:input_type -> erp.iam.v1.UpdateEmployeeRequest
-	57,  // 40: erp.iam.v1.DirectoryService.DeactivateEmployee:input_type -> erp.iam.v1.DeactivateEmployeeRequest
-	59,  // 41: erp.iam.v1.DirectoryService.ActivateEmployee:input_type -> erp.iam.v1.ActivateEmployeeRequest
-	81,  // 42: erp.iam.v1.DirectoryService.OpenAccount:input_type -> erp.iam.v1.OpenAccountRequest
-	83,  // 43: erp.iam.v1.DirectoryService.ResetPassword:input_type -> erp.iam.v1.ResetPasswordRequest
-	85,  // 44: erp.iam.v1.DirectoryService.ChangePassword:input_type -> erp.iam.v1.ChangePasswordRequest
-	88,  // 45: erp.iam.v1.DirectoryService.ListManagers:input_type -> erp.iam.v1.ListManagersRequest
-	90,  // 46: erp.iam.v1.DirectoryService.SetManager:input_type -> erp.iam.v1.SetManagerRequest
-	7,   // 47: erp.iam.v1.DirectoryService.InviteEmployee:input_type -> erp.iam.v1.InviteEmployeeRequest
-	23,  // 48: erp.iam.v1.DirectoryService.CreatePasswordReset:input_type -> erp.iam.v1.CreatePasswordResetRequest
-	25,  // 49: erp.iam.v1.DirectoryService.RecordAccountEvent:input_type -> erp.iam.v1.RecordAccountEventRequest
-	10,  // 50: erp.iam.v1.DirectoryService.ImportEmployees:input_type -> erp.iam.v1.ImportEmployeesRequest
-	55,  // 51: erp.iam.v1.DirectoryService.ListDirectoryChanges:input_type -> erp.iam.v1.ListDirectoryChangesRequest
-	36,  // 52: erp.iam.v1.DirectoryService.GetMyProfile:input_type -> erp.iam.v1.GetMyProfileRequest
-	38,  // 53: erp.iam.v1.DirectoryService.UpdateMyProfile:input_type -> erp.iam.v1.UpdateMyProfileRequest
-	40,  // 54: erp.iam.v1.DirectoryService.PresignAvatarUpload:input_type -> erp.iam.v1.PresignAvatarUploadRequest
-	42,  // 55: erp.iam.v1.DirectoryService.SetAvatar:input_type -> erp.iam.v1.SetAvatarRequest
-	44,  // 56: erp.iam.v1.DirectoryService.AvatarURLs:input_type -> erp.iam.v1.AvatarURLsRequest
-	96,  // 57: erp.iam.v1.PlatformService.CheckOperator:input_type -> erp.iam.v1.CheckOperatorRequest
-	98,  // 58: erp.iam.v1.PlatformService.ListPlatformTenants:input_type -> erp.iam.v1.ListPlatformTenantsRequest
-	101, // 59: erp.iam.v1.PlatformService.CreatePlatformTenant:input_type -> erp.iam.v1.CreatePlatformTenantRequest
-	103, // 60: erp.iam.v1.PlatformService.ReinvitePlatformAdmin:input_type -> erp.iam.v1.ReinvitePlatformAdminRequest
-	105, // 61: erp.iam.v1.PlatformService.SetPlatformTenantStatus:input_type -> erp.iam.v1.SetPlatformTenantStatusRequest
-	62,  // 62: erp.iam.v1.AccessService.CreateRole:input_type -> erp.iam.v1.CreateRoleRequest
-	64,  // 63: erp.iam.v1.AccessService.ListRoles:input_type -> erp.iam.v1.ListRolesRequest
-	66,  // 64: erp.iam.v1.AccessService.ListAllRoles:input_type -> erp.iam.v1.ListAllRolesRequest
-	68,  // 65: erp.iam.v1.AccessService.SetRoleStatus:input_type -> erp.iam.v1.SetRoleStatusRequest
-	71,  // 66: erp.iam.v1.AccessService.GrantRolePermissions:input_type -> erp.iam.v1.GrantRolePermissionsRequest
-	73,  // 67: erp.iam.v1.AccessService.AssignEmployeeRoles:input_type -> erp.iam.v1.AssignEmployeeRolesRequest
-	75,  // 68: erp.iam.v1.AccessService.ListPermissions:input_type -> erp.iam.v1.ListPermissionsRequest
-	77,  // 69: erp.iam.v1.AccessService.CheckPermission:input_type -> erp.iam.v1.CheckPermissionRequest
-	79,  // 70: erp.iam.v1.AccessService.ListEmployeePermissions:input_type -> erp.iam.v1.ListEmployeePermissionsRequest
-	87,  // 71: erp.iam.v1.AccessService.ListRoleMembers:input_type -> erp.iam.v1.ListRoleMembersRequest
-	92,  // 72: erp.iam.v1.AccessService.VisibleEmployees:input_type -> erp.iam.v1.VisibleEmployeesRequest
-	1,   // 73: erp.iam.v1.AccessService.ListDataScopes:input_type -> erp.iam.v1.ListDataScopesRequest
-	3,   // 74: erp.iam.v1.AccessService.SetDataScope:input_type -> erp.iam.v1.SetDataScopeRequest
-	6,   // 75: erp.iam.v1.AuthService.Login:output_type -> erp.iam.v1.LoginResponse
-	14,  // 76: erp.iam.v1.AuthService.PeekInvitation:output_type -> erp.iam.v1.PeekInvitationResponse
-	16,  // 77: erp.iam.v1.AuthService.ActivateAccount:output_type -> erp.iam.v1.ActivateAccountResponse
-	18,  // 78: erp.iam.v1.AuthService.RequestPasswordReset:output_type -> erp.iam.v1.RequestPasswordResetResponse
-	20,  // 79: erp.iam.v1.AuthService.PeekPasswordReset:output_type -> erp.iam.v1.PeekPasswordResetResponse
-	22,  // 80: erp.iam.v1.AuthService.RedeemPasswordReset:output_type -> erp.iam.v1.RedeemPasswordResetResponse
-	29,  // 81: erp.iam.v1.DirectoryService.CreateDepartment:output_type -> erp.iam.v1.CreateDepartmentResponse
-	31,  // 82: erp.iam.v1.DirectoryService.ListDepartments:output_type -> erp.iam.v1.ListDepartmentsResponse
-	33,  // 83: erp.iam.v1.DirectoryService.UpdateDepartment:output_type -> erp.iam.v1.UpdateDepartmentResponse
-	47,  // 84: erp.iam.v1.DirectoryService.CreateEmployee:output_type -> erp.iam.v1.CreateEmployeeResponse
-	48,  // 85: erp.iam.v1.DirectoryService.GetEmployee:output_type -> erp.iam.v1.GetEmployeeResponse
-	51,  // 86: erp.iam.v1.DirectoryService.ListEmployees:output_type -> erp.iam.v1.ListEmployeesResponse
-	53,  // 87: erp.iam.v1.DirectoryService.UpdateEmployee:output_type -> erp.iam.v1.UpdateEmployeeResponse
-	58,  // 88: erp.iam.v1.DirectoryService.DeactivateEmployee:output_type -> erp.iam.v1.DeactivateEmployeeResponse
-	60,  // 89: erp.iam.v1.DirectoryService.ActivateEmployee:output_type -> erp.iam.v1.ActivateEmployeeResponse
-	82,  // 90: erp.iam.v1.DirectoryService.OpenAccount:output_type -> erp.iam.v1.OpenAccountResponse
-	84,  // 91: erp.iam.v1.DirectoryService.ResetPassword:output_type -> erp.iam.v1.ResetPasswordResponse
-	86,  // 92: erp.iam.v1.DirectoryService.ChangePassword:output_type -> erp.iam.v1.ChangePasswordResponse
-	89,  // 93: erp.iam.v1.DirectoryService.ListManagers:output_type -> erp.iam.v1.ListManagersResponse
-	91,  // 94: erp.iam.v1.DirectoryService.SetManager:output_type -> erp.iam.v1.SetManagerResponse
-	8,   // 95: erp.iam.v1.DirectoryService.InviteEmployee:output_type -> erp.iam.v1.InviteEmployeeResponse
-	24,  // 96: erp.iam.v1.DirectoryService.CreatePasswordReset:output_type -> erp.iam.v1.CreatePasswordResetResponse
-	26,  // 97: erp.iam.v1.DirectoryService.RecordAccountEvent:output_type -> erp.iam.v1.RecordAccountEventResponse
-	12,  // 98: erp.iam.v1.DirectoryService.ImportEmployees:output_type -> erp.iam.v1.ImportEmployeesResponse
-	56,  // 99: erp.iam.v1.DirectoryService.ListDirectoryChanges:output_type -> erp.iam.v1.ListDirectoryChangesResponse
-	37,  // 100: erp.iam.v1.DirectoryService.GetMyProfile:output_type -> erp.iam.v1.GetMyProfileResponse
-	39,  // 101: erp.iam.v1.DirectoryService.UpdateMyProfile:output_type -> erp.iam.v1.UpdateMyProfileResponse
-	41,  // 102: erp.iam.v1.DirectoryService.PresignAvatarUpload:output_type -> erp.iam.v1.PresignAvatarUploadResponse
-	43,  // 103: erp.iam.v1.DirectoryService.SetAvatar:output_type -> erp.iam.v1.SetAvatarResponse
-	45,  // 104: erp.iam.v1.DirectoryService.AvatarURLs:output_type -> erp.iam.v1.AvatarURLsResponse
-	97,  // 105: erp.iam.v1.PlatformService.CheckOperator:output_type -> erp.iam.v1.CheckOperatorResponse
-	100, // 106: erp.iam.v1.PlatformService.ListPlatformTenants:output_type -> erp.iam.v1.ListPlatformTenantsResponse
-	102, // 107: erp.iam.v1.PlatformService.CreatePlatformTenant:output_type -> erp.iam.v1.CreatePlatformTenantResponse
-	104, // 108: erp.iam.v1.PlatformService.ReinvitePlatformAdmin:output_type -> erp.iam.v1.ReinvitePlatformAdminResponse
-	106, // 109: erp.iam.v1.PlatformService.SetPlatformTenantStatus:output_type -> erp.iam.v1.SetPlatformTenantStatusResponse
-	63,  // 110: erp.iam.v1.AccessService.CreateRole:output_type -> erp.iam.v1.CreateRoleResponse
-	65,  // 111: erp.iam.v1.AccessService.ListRoles:output_type -> erp.iam.v1.ListRolesResponse
-	67,  // 112: erp.iam.v1.AccessService.ListAllRoles:output_type -> erp.iam.v1.ListAllRolesResponse
-	69,  // 113: erp.iam.v1.AccessService.SetRoleStatus:output_type -> erp.iam.v1.SetRoleStatusResponse
-	70,  // 114: erp.iam.v1.AccessService.GrantRolePermissions:output_type -> erp.iam.v1.GrantRolePermissionsResponse
-	72,  // 115: erp.iam.v1.AccessService.AssignEmployeeRoles:output_type -> erp.iam.v1.AssignEmployeeRolesResponse
-	76,  // 116: erp.iam.v1.AccessService.ListPermissions:output_type -> erp.iam.v1.ListPermissionsResponse
-	78,  // 117: erp.iam.v1.AccessService.CheckPermission:output_type -> erp.iam.v1.CheckPermissionResponse
-	80,  // 118: erp.iam.v1.AccessService.ListEmployeePermissions:output_type -> erp.iam.v1.ListEmployeePermissionsResponse
-	95,  // 119: erp.iam.v1.AccessService.ListRoleMembers:output_type -> erp.iam.v1.ListRoleMembersResponse
-	93,  // 120: erp.iam.v1.AccessService.VisibleEmployees:output_type -> erp.iam.v1.VisibleEmployeesResponse
-	2,   // 121: erp.iam.v1.AccessService.ListDataScopes:output_type -> erp.iam.v1.ListDataScopesResponse
-	4,   // 122: erp.iam.v1.AccessService.SetDataScope:output_type -> erp.iam.v1.SetDataScopeResponse
-	75,  // [75:123] is the sub-list for method output_type
-	27,  // [27:75] is the sub-list for method input_type
-	27,  // [27:27] is the sub-list for extension type_name
-	27,  // [27:27] is the sub-list for extension extendee
-	0,   // [0:27] is the sub-list for field type_name
+	36,  // 8: erp.iam.v1.GetOrgChartResponse.members:type_name -> erp.iam.v1.OrgMember
+	27,  // 9: erp.iam.v1.GetOrgChartResponse.departments:type_name -> erp.iam.v1.Department
+	35,  // 10: erp.iam.v1.GetMyProfileResponse.profile:type_name -> erp.iam.v1.MyProfile
+	35,  // 11: erp.iam.v1.UpdateMyProfileResponse.profile:type_name -> erp.iam.v1.MyProfile
+	110, // 12: erp.iam.v1.AvatarURLsResponse.urls:type_name -> erp.iam.v1.AvatarURLsResponse.UrlsEntry
+	34,  // 13: erp.iam.v1.CreateEmployeeResponse.employee:type_name -> erp.iam.v1.Employee
+	34,  // 14: erp.iam.v1.GetEmployeeResponse.employee:type_name -> erp.iam.v1.Employee
+	111, // 15: erp.iam.v1.ListEmployeesRequest.page:type_name -> erp.common.v1.PageRequest
+	34,  // 16: erp.iam.v1.ListEmployeesResponse.employees:type_name -> erp.iam.v1.Employee
+	112, // 17: erp.iam.v1.ListEmployeesResponse.meta:type_name -> erp.common.v1.PageMeta
+	34,  // 18: erp.iam.v1.UpdateEmployeeResponse.employee:type_name -> erp.iam.v1.Employee
+	57,  // 19: erp.iam.v1.ListDirectoryChangesResponse.changes:type_name -> erp.iam.v1.DirectoryChange
+	64,  // 20: erp.iam.v1.CreateRoleResponse.role:type_name -> erp.iam.v1.Role
+	64,  // 21: erp.iam.v1.ListRolesResponse.roles:type_name -> erp.iam.v1.Role
+	64,  // 22: erp.iam.v1.ListAllRolesResponse.roles:type_name -> erp.iam.v1.Role
+	77,  // 23: erp.iam.v1.ListPermissionsResponse.permissions:type_name -> erp.iam.v1.Permission
+	97,  // 24: erp.iam.v1.ListRoleMembersResponse.members:type_name -> erp.iam.v1.RoleMember
+	102, // 25: erp.iam.v1.ListPlatformTenantsResponse.tenants:type_name -> erp.iam.v1.PlatformTenant
+	102, // 26: erp.iam.v1.CreatePlatformTenantResponse.tenant:type_name -> erp.iam.v1.PlatformTenant
+	8,   // 27: erp.iam.v1.CreatePlatformTenantResponse.invitation:type_name -> erp.iam.v1.InviteEmployeeResponse
+	8,   // 28: erp.iam.v1.ReinvitePlatformAdminResponse.invitation:type_name -> erp.iam.v1.InviteEmployeeResponse
+	5,   // 29: erp.iam.v1.AuthService.Login:input_type -> erp.iam.v1.LoginRequest
+	13,  // 30: erp.iam.v1.AuthService.PeekInvitation:input_type -> erp.iam.v1.PeekInvitationRequest
+	15,  // 31: erp.iam.v1.AuthService.ActivateAccount:input_type -> erp.iam.v1.ActivateAccountRequest
+	17,  // 32: erp.iam.v1.AuthService.RequestPasswordReset:input_type -> erp.iam.v1.RequestPasswordResetRequest
+	19,  // 33: erp.iam.v1.AuthService.PeekPasswordReset:input_type -> erp.iam.v1.PeekPasswordResetRequest
+	21,  // 34: erp.iam.v1.AuthService.RedeemPasswordReset:input_type -> erp.iam.v1.RedeemPasswordResetRequest
+	28,  // 35: erp.iam.v1.DirectoryService.CreateDepartment:input_type -> erp.iam.v1.CreateDepartmentRequest
+	30,  // 36: erp.iam.v1.DirectoryService.ListDepartments:input_type -> erp.iam.v1.ListDepartmentsRequest
+	32,  // 37: erp.iam.v1.DirectoryService.UpdateDepartment:input_type -> erp.iam.v1.UpdateDepartmentRequest
+	49,  // 38: erp.iam.v1.DirectoryService.CreateEmployee:input_type -> erp.iam.v1.CreateEmployeeRequest
+	52,  // 39: erp.iam.v1.DirectoryService.GetEmployee:input_type -> erp.iam.v1.GetEmployeeRequest
+	53,  // 40: erp.iam.v1.DirectoryService.ListEmployees:input_type -> erp.iam.v1.ListEmployeesRequest
+	55,  // 41: erp.iam.v1.DirectoryService.UpdateEmployee:input_type -> erp.iam.v1.UpdateEmployeeRequest
+	60,  // 42: erp.iam.v1.DirectoryService.DeactivateEmployee:input_type -> erp.iam.v1.DeactivateEmployeeRequest
+	62,  // 43: erp.iam.v1.DirectoryService.ActivateEmployee:input_type -> erp.iam.v1.ActivateEmployeeRequest
+	84,  // 44: erp.iam.v1.DirectoryService.OpenAccount:input_type -> erp.iam.v1.OpenAccountRequest
+	86,  // 45: erp.iam.v1.DirectoryService.ResetPassword:input_type -> erp.iam.v1.ResetPasswordRequest
+	88,  // 46: erp.iam.v1.DirectoryService.ChangePassword:input_type -> erp.iam.v1.ChangePasswordRequest
+	91,  // 47: erp.iam.v1.DirectoryService.ListManagers:input_type -> erp.iam.v1.ListManagersRequest
+	93,  // 48: erp.iam.v1.DirectoryService.SetManager:input_type -> erp.iam.v1.SetManagerRequest
+	7,   // 49: erp.iam.v1.DirectoryService.InviteEmployee:input_type -> erp.iam.v1.InviteEmployeeRequest
+	23,  // 50: erp.iam.v1.DirectoryService.CreatePasswordReset:input_type -> erp.iam.v1.CreatePasswordResetRequest
+	25,  // 51: erp.iam.v1.DirectoryService.RecordAccountEvent:input_type -> erp.iam.v1.RecordAccountEventRequest
+	10,  // 52: erp.iam.v1.DirectoryService.ImportEmployees:input_type -> erp.iam.v1.ImportEmployeesRequest
+	58,  // 53: erp.iam.v1.DirectoryService.ListDirectoryChanges:input_type -> erp.iam.v1.ListDirectoryChangesRequest
+	37,  // 54: erp.iam.v1.DirectoryService.GetOrgChart:input_type -> erp.iam.v1.GetOrgChartRequest
+	39,  // 55: erp.iam.v1.DirectoryService.GetMyProfile:input_type -> erp.iam.v1.GetMyProfileRequest
+	41,  // 56: erp.iam.v1.DirectoryService.UpdateMyProfile:input_type -> erp.iam.v1.UpdateMyProfileRequest
+	43,  // 57: erp.iam.v1.DirectoryService.PresignAvatarUpload:input_type -> erp.iam.v1.PresignAvatarUploadRequest
+	45,  // 58: erp.iam.v1.DirectoryService.SetAvatar:input_type -> erp.iam.v1.SetAvatarRequest
+	47,  // 59: erp.iam.v1.DirectoryService.AvatarURLs:input_type -> erp.iam.v1.AvatarURLsRequest
+	99,  // 60: erp.iam.v1.PlatformService.CheckOperator:input_type -> erp.iam.v1.CheckOperatorRequest
+	101, // 61: erp.iam.v1.PlatformService.ListPlatformTenants:input_type -> erp.iam.v1.ListPlatformTenantsRequest
+	104, // 62: erp.iam.v1.PlatformService.CreatePlatformTenant:input_type -> erp.iam.v1.CreatePlatformTenantRequest
+	106, // 63: erp.iam.v1.PlatformService.ReinvitePlatformAdmin:input_type -> erp.iam.v1.ReinvitePlatformAdminRequest
+	108, // 64: erp.iam.v1.PlatformService.SetPlatformTenantStatus:input_type -> erp.iam.v1.SetPlatformTenantStatusRequest
+	65,  // 65: erp.iam.v1.AccessService.CreateRole:input_type -> erp.iam.v1.CreateRoleRequest
+	67,  // 66: erp.iam.v1.AccessService.ListRoles:input_type -> erp.iam.v1.ListRolesRequest
+	69,  // 67: erp.iam.v1.AccessService.ListAllRoles:input_type -> erp.iam.v1.ListAllRolesRequest
+	71,  // 68: erp.iam.v1.AccessService.SetRoleStatus:input_type -> erp.iam.v1.SetRoleStatusRequest
+	74,  // 69: erp.iam.v1.AccessService.GrantRolePermissions:input_type -> erp.iam.v1.GrantRolePermissionsRequest
+	76,  // 70: erp.iam.v1.AccessService.AssignEmployeeRoles:input_type -> erp.iam.v1.AssignEmployeeRolesRequest
+	78,  // 71: erp.iam.v1.AccessService.ListPermissions:input_type -> erp.iam.v1.ListPermissionsRequest
+	80,  // 72: erp.iam.v1.AccessService.CheckPermission:input_type -> erp.iam.v1.CheckPermissionRequest
+	82,  // 73: erp.iam.v1.AccessService.ListEmployeePermissions:input_type -> erp.iam.v1.ListEmployeePermissionsRequest
+	90,  // 74: erp.iam.v1.AccessService.ListRoleMembers:input_type -> erp.iam.v1.ListRoleMembersRequest
+	95,  // 75: erp.iam.v1.AccessService.VisibleEmployees:input_type -> erp.iam.v1.VisibleEmployeesRequest
+	1,   // 76: erp.iam.v1.AccessService.ListDataScopes:input_type -> erp.iam.v1.ListDataScopesRequest
+	3,   // 77: erp.iam.v1.AccessService.SetDataScope:input_type -> erp.iam.v1.SetDataScopeRequest
+	6,   // 78: erp.iam.v1.AuthService.Login:output_type -> erp.iam.v1.LoginResponse
+	14,  // 79: erp.iam.v1.AuthService.PeekInvitation:output_type -> erp.iam.v1.PeekInvitationResponse
+	16,  // 80: erp.iam.v1.AuthService.ActivateAccount:output_type -> erp.iam.v1.ActivateAccountResponse
+	18,  // 81: erp.iam.v1.AuthService.RequestPasswordReset:output_type -> erp.iam.v1.RequestPasswordResetResponse
+	20,  // 82: erp.iam.v1.AuthService.PeekPasswordReset:output_type -> erp.iam.v1.PeekPasswordResetResponse
+	22,  // 83: erp.iam.v1.AuthService.RedeemPasswordReset:output_type -> erp.iam.v1.RedeemPasswordResetResponse
+	29,  // 84: erp.iam.v1.DirectoryService.CreateDepartment:output_type -> erp.iam.v1.CreateDepartmentResponse
+	31,  // 85: erp.iam.v1.DirectoryService.ListDepartments:output_type -> erp.iam.v1.ListDepartmentsResponse
+	33,  // 86: erp.iam.v1.DirectoryService.UpdateDepartment:output_type -> erp.iam.v1.UpdateDepartmentResponse
+	50,  // 87: erp.iam.v1.DirectoryService.CreateEmployee:output_type -> erp.iam.v1.CreateEmployeeResponse
+	51,  // 88: erp.iam.v1.DirectoryService.GetEmployee:output_type -> erp.iam.v1.GetEmployeeResponse
+	54,  // 89: erp.iam.v1.DirectoryService.ListEmployees:output_type -> erp.iam.v1.ListEmployeesResponse
+	56,  // 90: erp.iam.v1.DirectoryService.UpdateEmployee:output_type -> erp.iam.v1.UpdateEmployeeResponse
+	61,  // 91: erp.iam.v1.DirectoryService.DeactivateEmployee:output_type -> erp.iam.v1.DeactivateEmployeeResponse
+	63,  // 92: erp.iam.v1.DirectoryService.ActivateEmployee:output_type -> erp.iam.v1.ActivateEmployeeResponse
+	85,  // 93: erp.iam.v1.DirectoryService.OpenAccount:output_type -> erp.iam.v1.OpenAccountResponse
+	87,  // 94: erp.iam.v1.DirectoryService.ResetPassword:output_type -> erp.iam.v1.ResetPasswordResponse
+	89,  // 95: erp.iam.v1.DirectoryService.ChangePassword:output_type -> erp.iam.v1.ChangePasswordResponse
+	92,  // 96: erp.iam.v1.DirectoryService.ListManagers:output_type -> erp.iam.v1.ListManagersResponse
+	94,  // 97: erp.iam.v1.DirectoryService.SetManager:output_type -> erp.iam.v1.SetManagerResponse
+	8,   // 98: erp.iam.v1.DirectoryService.InviteEmployee:output_type -> erp.iam.v1.InviteEmployeeResponse
+	24,  // 99: erp.iam.v1.DirectoryService.CreatePasswordReset:output_type -> erp.iam.v1.CreatePasswordResetResponse
+	26,  // 100: erp.iam.v1.DirectoryService.RecordAccountEvent:output_type -> erp.iam.v1.RecordAccountEventResponse
+	12,  // 101: erp.iam.v1.DirectoryService.ImportEmployees:output_type -> erp.iam.v1.ImportEmployeesResponse
+	59,  // 102: erp.iam.v1.DirectoryService.ListDirectoryChanges:output_type -> erp.iam.v1.ListDirectoryChangesResponse
+	38,  // 103: erp.iam.v1.DirectoryService.GetOrgChart:output_type -> erp.iam.v1.GetOrgChartResponse
+	40,  // 104: erp.iam.v1.DirectoryService.GetMyProfile:output_type -> erp.iam.v1.GetMyProfileResponse
+	42,  // 105: erp.iam.v1.DirectoryService.UpdateMyProfile:output_type -> erp.iam.v1.UpdateMyProfileResponse
+	44,  // 106: erp.iam.v1.DirectoryService.PresignAvatarUpload:output_type -> erp.iam.v1.PresignAvatarUploadResponse
+	46,  // 107: erp.iam.v1.DirectoryService.SetAvatar:output_type -> erp.iam.v1.SetAvatarResponse
+	48,  // 108: erp.iam.v1.DirectoryService.AvatarURLs:output_type -> erp.iam.v1.AvatarURLsResponse
+	100, // 109: erp.iam.v1.PlatformService.CheckOperator:output_type -> erp.iam.v1.CheckOperatorResponse
+	103, // 110: erp.iam.v1.PlatformService.ListPlatformTenants:output_type -> erp.iam.v1.ListPlatformTenantsResponse
+	105, // 111: erp.iam.v1.PlatformService.CreatePlatformTenant:output_type -> erp.iam.v1.CreatePlatformTenantResponse
+	107, // 112: erp.iam.v1.PlatformService.ReinvitePlatformAdmin:output_type -> erp.iam.v1.ReinvitePlatformAdminResponse
+	109, // 113: erp.iam.v1.PlatformService.SetPlatformTenantStatus:output_type -> erp.iam.v1.SetPlatformTenantStatusResponse
+	66,  // 114: erp.iam.v1.AccessService.CreateRole:output_type -> erp.iam.v1.CreateRoleResponse
+	68,  // 115: erp.iam.v1.AccessService.ListRoles:output_type -> erp.iam.v1.ListRolesResponse
+	70,  // 116: erp.iam.v1.AccessService.ListAllRoles:output_type -> erp.iam.v1.ListAllRolesResponse
+	72,  // 117: erp.iam.v1.AccessService.SetRoleStatus:output_type -> erp.iam.v1.SetRoleStatusResponse
+	73,  // 118: erp.iam.v1.AccessService.GrantRolePermissions:output_type -> erp.iam.v1.GrantRolePermissionsResponse
+	75,  // 119: erp.iam.v1.AccessService.AssignEmployeeRoles:output_type -> erp.iam.v1.AssignEmployeeRolesResponse
+	79,  // 120: erp.iam.v1.AccessService.ListPermissions:output_type -> erp.iam.v1.ListPermissionsResponse
+	81,  // 121: erp.iam.v1.AccessService.CheckPermission:output_type -> erp.iam.v1.CheckPermissionResponse
+	83,  // 122: erp.iam.v1.AccessService.ListEmployeePermissions:output_type -> erp.iam.v1.ListEmployeePermissionsResponse
+	98,  // 123: erp.iam.v1.AccessService.ListRoleMembers:output_type -> erp.iam.v1.ListRoleMembersResponse
+	96,  // 124: erp.iam.v1.AccessService.VisibleEmployees:output_type -> erp.iam.v1.VisibleEmployeesResponse
+	2,   // 125: erp.iam.v1.AccessService.ListDataScopes:output_type -> erp.iam.v1.ListDataScopesResponse
+	4,   // 126: erp.iam.v1.AccessService.SetDataScope:output_type -> erp.iam.v1.SetDataScopeResponse
+	78,  // [78:127] is the sub-list for method output_type
+	29,  // [29:78] is the sub-list for method input_type
+	29,  // [29:29] is the sub-list for extension type_name
+	29,  // [29:29] is the sub-list for extension extendee
+	0,   // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_erp_iam_v1_iam_proto_init() }
@@ -7371,7 +7649,7 @@ func file_erp_iam_v1_iam_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_erp_iam_v1_iam_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   108,
+			NumMessages:   111,
 			NumExtensions: 0,
 			NumServices:   4,
 		},

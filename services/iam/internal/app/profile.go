@@ -274,6 +274,69 @@ func (s *Service) AvatarURLs(ctx context.Context, tenantID int64, employeeIDs []
 	return out, nil
 }
 
+// ---------------------------------------------------------------- 组织架构图
+
+// OrgMemberView 是架构图上的一个人。
+type OrgMemberView struct {
+	ID             int64
+	Code           string
+	Name           string
+	EnglishName    string
+	Position       string
+	Status         string
+	ManagerID      int64
+	DepartmentID   int64
+	DepartmentName string
+	AvatarKey      string
+	AvatarURL      string
+	LeaveDate      string
+}
+
+// OrgChart 一次返回画两棵树要的全部数据。
+//
+// 部门单独返回而不是从员工反推：一个还没进人的部门也该在图上——
+// 它是刚成立还是被掏空了，正是看图的人想知道的事，而从员工反推会让它凭空消失。
+func (s *Service) OrgChart(ctx context.Context, tenantID int64) ([]OrgMemberView, []store.Department, error) {
+	rows, err := s.q.ListOrgChartMembers(ctx, tenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	depts, err := s.q.ListDepartments(ctx, tenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	members := make([]OrgMemberView, 0, len(rows))
+	for _, r := range rows {
+		m := OrgMemberView{
+			ID: r.ID, Code: r.Code, Name: r.Name, EnglishName: r.EnglishName,
+			Position: r.Position, Status: r.Status,
+			ManagerID: derefID(r.ManagerID), DepartmentID: r.DepartmentID,
+			DepartmentName: r.DepartmentName, AvatarKey: r.AvatarKey,
+			LeaveDate: dateOnly(r.LeaveDate),
+		}
+		// 头像地址逐个签。这是纯本地的 HMAC 计算，不走网络，三百个也就是
+		// 几毫秒——但真出错了要跳过而不是让整张图失败：少一张照片是小事，
+		// 打不开架构图是大事。
+		if s.files != nil && m.AvatarKey != "" {
+			if url, err := s.files.PresignGet(ctx, m.AvatarKey); err == nil {
+				m.AvatarURL = url
+			} else {
+				s.log.Warn("架构图里这个人的头像地址签名失败，会显示成没有头像",
+					"employee", m.ID, "err", err.Error())
+			}
+		}
+		members = append(members, m)
+	}
+	return members, depts, nil
+}
+
+func derefID(v *int64) int64 {
+	if v == nil {
+		return 0
+	}
+	return *v
+}
+
 // ---------------------------------------------------------------- 内部
 
 // avatarPrefix 是一个员工的头像目录。SetAvatar 拿它做前缀校验，

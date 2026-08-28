@@ -27,6 +27,7 @@ export const router = createRouter({
         { path: 'basic/employees', component: () => import('./pages/EmployeesPage.vue') },
         { path: 'basic/employees/departments', component: () => import('./pages/DepartmentsPage.vue') },
         { path: 'basic/employees/roles', component: () => import('./pages/RolesPage.vue') },
+        { path: 'basic/employees/org', component: () => import('./pages/OrgChartPage.vue') },
         { path: 'basic/ports', component: () => import('./pages/PortsPage.vue') },
         { path: 'basic/suppliers', component: () => import('./pages/SuppliersPage.vue') },
         { path: 'basic/suppliers/factories', component: () => import('./pages/FactoriesPage.vue') },

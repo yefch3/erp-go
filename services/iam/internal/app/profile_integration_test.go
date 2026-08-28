@@ -294,3 +294,60 @@ func TestPresignAvatarRefusesNonImages(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------- 组织架构图
+
+// 架构图的两条取舍，都要能被证伪：
+//
+//   - **只画在职的。** 离职的人留在图上，「这个部门有几个人」就永远算不对。
+//   - **空部门照样返回。** 一个还没进人的部门是刚成立还是被掏空了，正是看图的人
+//     想知道的事；从员工反推部门会让它凭空消失。
+func TestOrgChartShowsOnlyActivePeopleButKeepsEmptyDepartments(t *testing.T) {
+	s, ctx := profileTestService(t)
+	stamp := time.Now().UnixNano()
+
+	// 一个专门给这条测试用的空部门。
+	empty, err := s.CreateDepartment(ctx, 1, CreateDepartmentInput{
+		Code:       fmt.Sprintf("ORG%d", stamp%1_000_000_000),
+		Name:       fmt.Sprintf("空部门-%d", stamp%100000),
+		OperatorID: 1,
+	})
+	if err != nil {
+		t.Fatalf("造空部门失败: %v", err)
+	}
+
+	staying := seedProfileEmployee(t, s, ctx)
+	leaving := seedProfileEmployee(t, s, ctx)
+	if err := s.DeactivateEmployee(ctx, 1, leaving.ID, 1); err != nil {
+		t.Fatalf("停用失败: %v", err)
+	}
+
+	members, depts, err := s.OrgChart(ctx, 1)
+	if err != nil {
+		t.Fatalf("取架构图失败: %v", err)
+	}
+
+	seen := map[int64]bool{}
+	for _, m := range members {
+		seen[m.ID] = true
+		if m.Status != "ACTIVE" {
+			t.Errorf("架构图里出现了非在职的人：%s（%s）", m.Name, m.Status)
+		}
+	}
+	if !seen[staying.ID] {
+		t.Error("在职员工没出现在架构图上")
+	}
+	if seen[leaving.ID] {
+		t.Error("已离职的人还在架构图上——部门人数会永远算不对")
+	}
+
+	var foundEmpty bool
+	for _, d := range depts {
+		if d.ID == empty.ID {
+			foundEmpty = true
+		}
+	}
+	if !foundEmpty {
+		t.Error("没有人的部门从架构图里消失了——刚成立和被掏空就分不出来了")
+	}
+}

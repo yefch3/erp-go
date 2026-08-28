@@ -84,6 +84,9 @@ service DirectoryService {
   // 「我的资料」。这三个 RPC 的调用者一律取自认证上下文，因此它们是这个服务里
   // 唯一不需要 iam:employee:read 的读写口——看自己、改自己是身份自带的，
   // 而普通员工本来就没有那个权限。
+  // 组织架构图。一次给全两棵树要用的数据，走 iam:employee:read——
+  // 能看员工列表的人才看得到架构图，不为它单开一套可见性。
+  rpc GetOrgChart(GetOrgChartRequest) returns (GetOrgChartResponse);
   rpc GetMyProfile(GetMyProfileRequest) returns (GetMyProfileResponse);
   rpc UpdateMyProfile(UpdateMyProfileRequest) returns (UpdateMyProfileResponse);
   // 头像。employee_id 为 0 表示「我自己」；非 0 是管理员在改别人的，
@@ -446,6 +449,42 @@ message MyProfile {
   // record in the meantime. Same lock UpdateEmployee uses.
   int32 version = 13;
   bool email_verified = 14;
+}
+
+// OrgMember 是组织架构图上的一个人。
+//
+// 比 Employee 瘦一大圈，因为图上显示不了那么多：一个方块装得下头像、姓名、
+// 岗位和一个状态标签，再多就不是图了。邮箱、电话、账号状态都在员工列表里，
+// 点进去看。
+message OrgMember {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  string english_name = 4;
+  string position = 5;
+  string status = 6;
+  // 上级。0 表示这个人头上没有人——汇报线因此是一片**森林**，不是一棵树。
+  int64 manager_id = 7;
+  int64 department_id = 8;
+  string department_name = 9;
+  string avatar_key = 10;
+  // 短命的签名地址，没有头像时为空。和 MyProfile.avatar_url 同样不可缓存。
+  string avatar_url = 11;
+  // 已录入的离职日期，没有则为空。图上给这种人一个「离职中」的标签——
+  // 排班和交接都得知道谁快走了。
+  string leave_date = 12;
+}
+
+message GetOrgChartRequest {}
+
+// 两棵树的数据一次给全，前端切换时不再请求。
+//
+// 「部门树」和「汇报线」在这个系统里是**两棵不同的树**（见 00004_manager.sql：
+// 矩阵汇报、副职、人在 A 部门却向 B 部门汇报），所以不能只给一棵让前端推另一棵。
+// 而它们又共用同一批人，分两次请求就是把同一批人传两遍。
+message GetOrgChartResponse {
+  repeated OrgMember members = 1;
+  repeated Department departments = 2;
 }
 
 message GetMyProfileRequest {}
