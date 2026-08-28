@@ -153,7 +153,7 @@ import {
 const { t } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
-const canWrite = auth.can('procurement:sourcing:write')
+const canWrite = auth.can('sales:inquiry:write')
 
 const loading = ref(false)
 const saving = ref(false)

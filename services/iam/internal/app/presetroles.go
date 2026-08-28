@@ -10,7 +10,7 @@ import (
 	"github.com/sgao19/erp-go/services/iam/internal/store"
 )
 
-// presetRoles 是每家公司开张即有的四个预置角色，逐条取自给第一家公司播种的
+// presetRoles 是每家公司开张即有的六个预置角色，逐条取自给第一家公司播种的
 // 迁移：角色本身建于 00011（物流）/00013（财务）/00033（采购两个），授权散在
 // 00012/00016/00033/00034/00036/00038/00039/00040 等十几个迁移里。
 //
@@ -24,6 +24,34 @@ import (
 // 采购单就停在一句「请先创建该角色」上。四个一起补，是因为它们本来就是第一家
 // 公司开箱即有的东西——第二家没理由从零开始。
 var presetRoles = []presetRole{
+	{
+		Code: "SALES", Name: "销售专员",
+		Description: "维护本人客户询盘、客户报价和出口合同",
+		Permissions: []string{
+			"export:contract:read", "export:contract:write",
+			"export:quotation:read", "export:quotation:write",
+			"masterdata:customer:read", "product:product:read",
+			"sales:inquiry:read", "sales:inquiry:submit", "sales:inquiry:write",
+			"sales:procurement-progress:read",
+		},
+		Scopes: []presetScope{
+			{"export", "SELF"}, {"procurement_sourcing", "SELF"},
+		},
+	},
+	{
+		Code: "SALES_MANAGER", Name: "销售经理",
+		Description: "管理团队客户询盘、客户报价、合同审批和负责人转移",
+		Permissions: []string{
+			"export:contract:approve", "export:contract:read", "export:contract:write",
+			"export:ownership:transfer", "export:quotation:read", "export:quotation:write",
+			"masterdata:customer:read", "product:product:read",
+			"sales:inquiry:read", "sales:inquiry:submit", "sales:inquiry:write",
+			"sales:procurement-progress:read",
+		},
+		Scopes: []presetScope{
+			{"export", "DEPT_AND_SUB"}, {"procurement_sourcing", "DEPT_AND_SUB"},
+		},
+	},
 	{
 		Code: "LOGISTICS", Name: "物流管理",
 		Description: "仓储与发运：入库、出库、采购收货、库存查询",

@@ -432,9 +432,9 @@ const warehouseActive = computed(() =>
   route.path.startsWith('/products'),
 )
 
-// SP1 暂时复用既有寻源权限控制询盘入口；SP2 再把销售与采购权限正式拆开。
+// 销售询盘与采购寻源分别按自己的权限显示，避免销售为了看进度而获得采购底价权限。
 const salesItems = computed(() => [
-  ...(auth.can('procurement:sourcing:read')
+  ...(auth.can('sales:inquiry:read')
     ? [
         { path: '/sales/intakes', label: t('salesNav.intakes') },
         { path: '/sales/inquiries', label: t('salesNav.inquiries') },

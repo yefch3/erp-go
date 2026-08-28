@@ -108,6 +108,58 @@ func (s *Server) getSourcingCase(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// getSalesProcurementProgress 只返回销售协作所需的采购进度与已确认报价依据。
+// 供应商、工厂、底价和费用明细都不进入响应，避免销售借摘要接口看到采购机密。
+func (s *Server) getSalesProcurementProgress(w http.ResponseWriter, r *http.Request) {
+	caseID := idFromPath(r)
+	caseResp, err := s.Sourcing.GetCase(r.Context(), &prv1.GetCaseRequest{Id: caseID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	rfqResp, err := s.Sourcing.ListFactoryRfqs(r.Context(), &prv1.ListFactoryRfqsRequest{CaseId: caseID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	costResp, err := s.Sourcing.ListCostScenarios(r.Context(), &prv1.ListCostScenariosRequest{CaseId: caseID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+
+	s.writeJSON(w, salesProcurementProgressPayload(caseResp, rfqResp, costResp))
+}
+
+// salesProcurementProgressPayload 集中构造销售可见的采购进度摘要。
+// 这里刻意采用字段白名单，新增采购字段时不会自动泄露给销售。
+func salesProcurementProgressPayload(caseResp *prv1.GetCaseResponse, rfqResp *prv1.ListFactoryRfqsResponse, costResp *prv1.ListCostScenariosResponse) map[string]any {
+	quoted := 0
+	for _, rfq := range rfqResp.GetFactoryRfqs() {
+		if rfq.GetStatus() == "QUOTED" || rfq.GetStatus() == "PARTIALLY_QUOTED" || rfq.GetStatus() == "CLOSED" {
+			quoted++
+		}
+	}
+	confirmed := make([]map[string]any, 0)
+	for _, scenario := range costResp.GetCostScenarios() {
+		if scenario.GetStatus() != "CONFIRMED" {
+			continue
+		}
+		confirmed = append(confirmed, map[string]any{
+			"id": scenario.GetId(), "scenarioNo": scenario.GetScenarioNo(),
+			"versionNo": scenario.GetVersionNo(), "currency": scenario.GetCurrency(),
+			"status":              "CONFIRMED",
+			"customerTotal":       scenario.GetCustomerTotal(),
+			"customerQuotationId": scenario.GetCustomerQuotationId(),
+		})
+	}
+	return map[string]any{
+		"status":   caseResp.GetSourcingCase().GetStatus(),
+		"rfqCount": len(rfqResp.GetFactoryRfqs()), "quotedRfqCount": quoted,
+		"confirmedCosts": confirmed,
+	}
+}
+
 func (s *Server) listSourcingCaseChanges(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Sourcing.ListCaseChanges(r.Context(), &prv1.ListCaseChangesRequest{CaseId: idFromPath(r)})
 	if err != nil {
