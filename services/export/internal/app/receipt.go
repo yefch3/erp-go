@@ -293,7 +293,7 @@ func (s *Service) Allocate(ctx context.Context, tenantID, txID int64, lines []Al
 		}
 		if row.Ownership != OwnershipCustomer && row.Ownership != OwnershipPending {
 			return apierr.Invalid("EX_TX_IRRELEVANT",
-				"这笔流水的归属不是「客户收款」，不能核销到应收合同。要核先在银行流水改归属。")
+				"这笔流水的归属不是「客户往来」，不能核销到应收合同。要核先在银行流水改归属。")
 		}
 
 		// Read the remaining balance inside the lock. Two people allocating

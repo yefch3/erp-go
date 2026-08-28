@@ -68,6 +68,7 @@ func TestBankTransactionRoutesAreAllRegistered(t *testing.T) {
 	// 和 frontend/src/pages/BankTransactionsPage.vue 里调的一一对应。
 	want := []string{
 		"GET /api/bank-transactions",               // 列表
+		"POST /api/bank-transactions",              // 「登记流水」（手工，CSV 之外的入口）
 		"POST /api/bank-transactions/import",       // 「导入对账单 CSV」
 		"POST /api/bank-transactions/{id}/match",   // 「匹配付款单」
 		"POST /api/bank-transactions/{id}/unmatch", // 「取消匹配」

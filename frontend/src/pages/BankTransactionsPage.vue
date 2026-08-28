@@ -19,6 +19,7 @@
             <el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c" />
           </el-select>
         </el-tooltip>
+        <el-button v-if="canWrite" @click="openRecord">{{ t('bankTransactions.record') }}</el-button>
         <el-button v-if="canWrite" type="primary" :loading="importing" @click="fileInput?.click()">
           {{ t('bankTransactions.import') }}
         </el-button>
@@ -153,6 +154,56 @@
       </template>
     </el-dialog>
 
+    <!-- 手工登记。CSV 之外的另一条入口：银行还没出对账单、或者对方先发了
+         水单，先把这笔钱记下来。和导入落同一张表、同一套流水号去重——
+         之后再导对账单，同号的行自动跳过，不会记重。 -->
+    <el-dialog v-model="recordOpen" :title="t('bankTransactions.recordTitle')" width="min(560px, 94vw)" destroy-on-close>
+      <el-form label-width="96px">
+        <el-form-item :label="t('bankTransactions.direction')">
+          <el-radio-group v-model="recordForm.direction">
+            <el-radio-button value="CREDIT">{{ t('bankTransactions.credit') }}</el-radio-button>
+            <el-radio-button value="DEBIT">{{ t('bankTransactions.debit') }}</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item :label="t('bankTransactions.amount')" required>
+          <el-input v-model="recordForm.amount" style="width: 180px" />
+          <el-select v-model="recordForm.currency" style="width: 110px; margin-left: 12px">
+            <el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('bankTransactions.date')" required>
+          <el-date-picker v-model="recordForm.txnDate" type="date" value-format="YYYY-MM-DD" style="width: 180px" />
+        </el-form-item>
+        <el-form-item :label="t('bankTransactions.bankRef')" required>
+          <el-input v-model="recordForm.bankRef" :placeholder="t('bankTransactions.bankRefPlaceholder')" />
+        </el-form-item>
+        <el-form-item :label="t('bankTransactions.counterparty')">
+          <el-input v-model="recordForm.counterparty" />
+        </el-form-item>
+        <el-form-item :label="t('bankTransactions.remittance')">
+          <el-input v-model="recordForm.remittanceInfo" :placeholder="t('bankTransactions.remittanceHint')" />
+        </el-form-item>
+        <!-- 登记的人往往当场就知道这是谁那条线上的钱，让他直接写上；
+             不知道就留「待处理」，两条线的队列都看得见它。 -->
+        <el-form-item :label="t('bankTransactions.ownership')">
+          <el-select v-model="recordForm.ownership" style="width: 100%">
+            <el-option value="" :label="t('bankTransactions.ownerships.PENDING')" />
+            <el-option v-for="k in OWNERSHIPS" :key="k" :value="k" :label="t(`bankTransactions.ownerships.${k}`)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="recordForm.ownership === 'OTHER'" :label="' '">
+          <el-select v-model="recordForm.detail" style="width: 100%" :placeholder="t('bankTransactions.ownershipDetailPlaceholder')">
+            <el-option v-for="k in OWNERSHIP_DETAILS" :key="k" :value="k" :label="t(`bankTransactions.ownershipDetails.${k}`)" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <p class="sub">{{ t('bankTransactions.recordHint') }}</p>
+      <template #footer>
+        <el-button @click="recordOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="recording" @click="saveRecord">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="errorsOpen" :title="t('bankTransactions.importErrors')" width="min(560px, 94vw)">
       <el-table :data="importErrors" size="small">
         <el-table-column prop="rowNo" :label="t('bankTransactions.rowNo')" width="90" />
@@ -219,6 +270,48 @@ function ownershipTone(v: string): 'success' | 'warning' | 'info' | 'primary' {
   if (v === 'SUPPLIER') return 'warning'
   if (v === 'TAX_REFUND') return 'primary'
   return 'info'
+}
+
+const recordOpen = ref(false)
+const recording = ref(false)
+const recordForm = reactive({
+  direction: 'CREDIT', amount: '', currency: 'USD', txnDate: '',
+  bankRef: '', counterparty: '', remittanceInfo: '', ownership: '', detail: '',
+})
+
+function openRecord() {
+  Object.assign(recordForm, {
+    direction: 'CREDIT', amount: '', currency: 'USD', txnDate: '',
+    bankRef: '', counterparty: '', remittanceInfo: '', ownership: '', detail: '',
+  })
+  recordOpen.value = true
+}
+
+async function saveRecord() {
+  // 只拦「空着没填」，格式和去重交给服务端——它的报错本来就是人话
+  // （「流水号 X 已经登记过了。要么这笔钱记过一次，要么号敲错了。」）。
+  if (!recordForm.amount || !recordForm.txnDate || !recordForm.bankRef) {
+    ElMessage.warning(t('bankTransactions.recordIncomplete'))
+    return
+  }
+  recording.value = true
+  try {
+    await post('/bank-transactions', {
+      transaction: {
+        direction: recordForm.direction, amount: recordForm.amount,
+        currency: recordForm.currency, txnDate: recordForm.txnDate,
+        bankRef: recordForm.bankRef, counterparty: recordForm.counterparty,
+        remittanceInfo: recordForm.remittanceInfo,
+        ownership: recordForm.ownership,
+        ownershipDetail: recordForm.ownership === 'OTHER' ? recordForm.detail : '',
+      },
+    })
+    recordOpen.value = false
+    ElMessage.success(t('bankTransactions.recorded'))
+    await load()
+  } finally {
+    recording.value = false
+  }
 }
 
 const ownershipOpen = ref(false)

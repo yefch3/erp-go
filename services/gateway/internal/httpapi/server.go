@@ -587,6 +587,10 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-statements/{id}", s.getSupplierStatement)
 		// Bank rows are payment data: one spend chain, one knob.
 		r.With(s.perm("procurement:payment:read")).Get("/api/bank-transactions", s.listBankTransactions)
+		// 手工登记一行流水。CSV 之外的另一条入口，RPC 早就有（收款对账那边
+		// 一直在用），只是网关从没给它开过 HTTP 路由——于是银行还没出对账单、
+		// 财务想先把一笔出账记下来的时候，唯一的办法是伪造一行 CSV 导进去。
+		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions", s.recordBankTransaction)
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/import", s.importBankStatement)
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/match", s.matchBankTransaction)
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/unmatch", s.unmatchBankTransaction)
