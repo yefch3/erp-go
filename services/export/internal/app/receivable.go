@@ -2,8 +2,12 @@ package app
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
 
@@ -39,6 +43,11 @@ type ReceivableRow struct {
 	// 正数已逾期，负数是还剩几天；DueUnset 时无意义。
 	OverdueDays int32
 	DueUnset    bool
+	// 收款结清（只在 ClosedOnly 视图里非空）：为什么不催了、谁定的。
+	ClosedCategory string
+	ClosedNote     string
+	ClosedByName   string
+	ClosedAt       string
 }
 
 // ReceivableFilter 收窄清单。两个开关互斥地各管一件事：只看逾期的，
@@ -47,6 +56,9 @@ type ReceivableFilter struct {
 	OverdueOnly bool
 	UnsetOnly   bool
 	Keyword     string
+	// 只看结清了的。默认视图（false）是「该催的」，结清的不在里面——
+	// 撤销结清要来这个视图找。
+	ClosedOnly bool
 }
 
 // ListReceivableDue 返回还没收完的生效合同，按该收的日子排，逾期的在最前。
@@ -67,7 +79,8 @@ func (s *Service) ListReceivableDue(ctx context.Context, tenantID int64, f Recei
 	rows, err := s.q.ListReceivableDue(ctx, store.ListReceivableDueParams{
 		TenantID: tenantID, ScopeAll: visible.All, EmployeeIds: visible.EmployeeIDs,
 		OverdueOnly: f.OverdueOnly, UnsetOnly: f.UnsetOnly, Keyword: f.Keyword,
-		RowLimit: size, RowOffset: (page - 1) * size,
+		ClosedOnly: f.ClosedOnly,
+		RowLimit:   size, RowOffset: (page - 1) * size,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -84,6 +97,8 @@ func (s *Service) ListReceivableDue(ctx context.Context, tenantID int64, f Recei
 			Currency: r.Currency, TotalAmount: r.TotalAmount,
 			ReceivedAmount: r.ReceivedAmount, OpenAmount: r.OpenAmount,
 			OverdueDays: r.OverdueDays, DueUnset: r.DueUnset,
+			ClosedCategory: r.ClosedCategory, ClosedNote: r.ClosedNote,
+			ClosedByName: r.ClosedByName, ClosedAt: r.ClosedAt,
 		})
 	}
 	return out, total, nil
@@ -101,6 +116,67 @@ func (s *Service) BackfillReceivableDue(ctx context.Context, tenantID, customerI
 	return s.q.BackfillReceivableDue(ctx, store.BackfillReceivableDueParams{
 		TenantID: tenantID, CustomerID: customerID, PaymentDays: paymentDays,
 	})
+}
+
+// ── 收款结清 ───────────────────────────────────────────────────────
+//
+// 「算式说还欠、人说不欠了」的出口：损耗认了、尾差不追、合同取消退了款。
+// 只关催收的口，不关钱的门——结清的合同照样能核销，钱真的又来了就撤销。
+
+var receivableClosureCategories = map[string]bool{
+	"LOSS": true, "ROUNDING": true, "CANCELLED": true, "OTHER": true,
+}
+
+// CloseReceivable 把一张合同的应收停催，差额快照进记录。
+func (s *Service) CloseReceivable(ctx context.Context, tenantID, contractID int64, category, note string, op Operator) error {
+	category = strings.ToUpper(strings.TrimSpace(category))
+	if !receivableClosureCategories[category] {
+		return apierr.Invalid("EX_RCLOSE_CATEGORY_INVALID",
+			"结清类别只能是损耗、尾差、合同取消或其他")
+	}
+	// 差额取快照用的是和清单同一套算法（在途版本 + 核销求和）。
+	progress, err := s.q.ContractReceiptProgress(ctx, store.ContractReceiptProgressParams{
+		TenantID: tenantID, ContractID: contractID,
+	})
+	if err == pgx.ErrNoRows {
+		return apierr.NotFound("EX_CONTRACT_NOT_FOUND", "合同不存在")
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := s.q.InsertReceivableClosure(ctx, store.InsertReceivableClosureParams{
+		TenantID: tenantID, ContractID: contractID,
+		OpenAmount: progress.OpenAmount, Category: category,
+		Note:       strings.TrimSpace(note),
+		ClosedByID: op.ID, ClosedByName: op.Name,
+	}); err != nil {
+		var pgErr interface{ SQLState() string }
+		if errors.As(err, &pgErr) && pgErr.SQLState() == "23505" {
+			return apierr.Conflict("EX_RCLOSE_TWICE", "这张合同已经结清过了")
+		}
+		return err
+	}
+	return nil
+}
+
+// ReopenReceivable 撤销结清，合同回到催收清单（如果还有未收）。
+func (s *Service) ReopenReceivable(ctx context.Context, tenantID, contractID int64, reason string, op Operator) error {
+	if strings.TrimSpace(reason) == "" {
+		return apierr.Invalid("EX_RCLOSE_REASON_REQUIRED",
+			"请填写撤销原因——没有理由的撤销事后没人说得清")
+	}
+	n, err := s.q.RevokeReceivableClosure(ctx, store.RevokeReceivableClosureParams{
+		TenantID: tenantID, ContractID: contractID,
+		RevokedByID: op.ID, RevokedByName: op.Name,
+		RevokeReason: strings.TrimSpace(reason),
+	})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return apierr.NotFound("EX_RCLOSE_NONE", "这张合同没有可撤销的结清")
+	}
+	return nil
 }
 
 // ── 提醒（E1 第二期）───────────────────────────────────────────────

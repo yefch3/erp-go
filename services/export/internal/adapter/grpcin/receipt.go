@@ -177,6 +177,7 @@ func (h *ReceiptHandler) ListReceivableDue(ctx context.Context, req *exv1.ListRe
 	op, _ := grpcx.OperatorFromContext(ctx)
 	rows, total, err := h.svc.ListReceivableDue(ctx, grpcx.TenantID(ctx), app.ReceivableFilter{
 		OverdueOnly: req.GetOverdueOnly(), UnsetOnly: req.GetUnsetOnly(), Keyword: req.GetKeyword(),
+		ClosedOnly: req.GetClosedOnly(),
 	}, req.GetPage().GetPage(), req.GetPage().GetPageSize(),
 		app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
@@ -192,9 +193,27 @@ func (h *ReceiptHandler) ListReceivableDue(ctx context.Context, req *exv1.ListRe
 			Currency: r.Currency, TotalAmount: r.TotalAmount,
 			ReceivedAmount: r.ReceivedAmount, OpenAmount: r.OpenAmount,
 			OverdueDays: r.OverdueDays, DueUnset: r.DueUnset,
+			ClosedCategory: r.ClosedCategory, ClosedNote: r.ClosedNote,
+			ClosedByName: r.ClosedByName, ClosedAt: r.ClosedAt,
 		})
 	}
 	return &exv1.ListReceivableDueResponse{Items: out, Meta: &commonv1.PageMeta{Total: total}}, nil
+}
+
+func (h *ReceiptHandler) CloseReceivable(ctx context.Context, req *exv1.CloseReceivableRequest) (*exv1.CloseReceivableResponse, error) {
+	if err := h.svc.CloseReceivable(ctx, grpcx.TenantID(ctx),
+		req.GetContractId(), req.GetCategory(), req.GetNote(), operator(ctx)); err != nil {
+		return nil, err
+	}
+	return &exv1.CloseReceivableResponse{}, nil
+}
+
+func (h *ReceiptHandler) ReopenReceivable(ctx context.Context, req *exv1.ReopenReceivableRequest) (*exv1.ReopenReceivableResponse, error) {
+	if err := h.svc.ReopenReceivable(ctx, grpcx.TenantID(ctx),
+		req.GetContractId(), req.GetReason(), operator(ctx)); err != nil {
+		return nil, err
+	}
+	return &exv1.ReopenReceivableResponse{}, nil
 }
 
 // ListReceivableReminders 是本人的应收提醒收件箱——按登录人隔离，

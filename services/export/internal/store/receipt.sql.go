@@ -354,6 +354,47 @@ func (q *Queries) GetLiveReceiptSettlement(ctx context.Context, arg GetLiveRecei
 	return i, err
 }
 
+const getLiveReceivableClosure = `-- name: GetLiveReceivableClosure :one
+
+SELECT id, contract_id, open_amount::text AS open_amount, category, note,
+       closed_by_name, created_at
+FROM contract_receivable_closures
+WHERE tenant_id = $1::bigint
+  AND contract_id = $2::bigint
+  AND revoked_at IS NULL
+`
+
+type GetLiveReceivableClosureParams struct {
+	TenantID   int64
+	ContractID int64
+}
+
+type GetLiveReceivableClosureRow struct {
+	ID           int64
+	ContractID   int64
+	OpenAmount   string
+	Category     string
+	Note         string
+	ClosedByName string
+	CreatedAt    pgtype.Timestamptz
+}
+
+// 收款结清。表注释见 00019。
+func (q *Queries) GetLiveReceivableClosure(ctx context.Context, arg GetLiveReceivableClosureParams) (GetLiveReceivableClosureRow, error) {
+	row := q.db.QueryRow(ctx, getLiveReceivableClosure, arg.TenantID, arg.ContractID)
+	var i GetLiveReceivableClosureRow
+	err := row.Scan(
+		&i.ID,
+		&i.ContractID,
+		&i.OpenAmount,
+		&i.Category,
+		&i.Note,
+		&i.ClosedByName,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const insertReceiptSettlement = `-- name: InsertReceiptSettlement :one
 INSERT INTO receipt_line_settlements (
     tenant_id, transaction_id, amount, category, note,
@@ -391,6 +432,48 @@ func (q *Queries) InsertReceiptSettlement(ctx context.Context, arg InsertReceipt
 		arg.Note,
 		arg.SettledByID,
 		arg.SettledByName,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const insertReceivableClosure = `-- name: InsertReceivableClosure :one
+INSERT INTO contract_receivable_closures (
+    tenant_id, contract_id, open_amount, category, note,
+    closed_by_id, closed_by_name
+) VALUES (
+    $1::bigint,
+    $2::bigint,
+    $3::text::numeric,
+    $4::text,
+    $5::text,
+    $6::bigint,
+    $7::text
+)
+RETURNING id
+`
+
+type InsertReceivableClosureParams struct {
+	TenantID     int64
+	ContractID   int64
+	OpenAmount   string
+	Category     string
+	Note         string
+	ClosedByID   int64
+	ClosedByName string
+}
+
+// 撞 contract_receivable_closures_live = 已经结清过了。
+func (q *Queries) InsertReceivableClosure(ctx context.Context, arg InsertReceivableClosureParams) (int64, error) {
+	row := q.db.QueryRow(ctx, insertReceivableClosure,
+		arg.TenantID,
+		arg.ContractID,
+		arg.OpenAmount,
+		arg.Category,
+		arg.Note,
+		arg.ClosedByID,
+		arg.ClosedByName,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -594,6 +677,10 @@ SELECT
     (coalesce(v.total_amount, 0) - coalesce(r.received, 0))::text AS open_amount,
     coalesce((current_date - c.receivable_due_date), 0)::int       AS overdue_days,
     (c.receivable_due_date IS NULL)::bool                          AS due_unset,
+    coalesce(cl.category, '')::text        AS closed_category,
+    coalesce(cl.note, '')::text            AS closed_note,
+    coalesce(cl.closed_by_name, '')::text  AS closed_by_name,
+    coalesce(cl.created_at::text, '')::text AS closed_at,
     count(*) OVER () AS total
 FROM contracts c
 JOIN contract_versions v ON v.id = c.current_version_id
@@ -603,26 +690,34 @@ LEFT JOIN (
     WHERE tenant_id = $1::bigint
     GROUP BY contract_id
 ) r ON r.contract_id = c.id
+LEFT JOIN contract_receivable_closures cl
+    ON cl.tenant_id = c.tenant_id AND cl.contract_id = c.id AND cl.revoked_at IS NULL
 WHERE c.tenant_id = $1::bigint
   AND c.status IN ('EFFECTIVE', 'EXECUTING')
-  -- 收完的不再出现在催收清单上。留 0.01 的容差是因为汇路手续费：
-  -- 客户汇的 50000 到账 49975，fee_amount 补上差额后总和可能有分位尾差。
-  AND (coalesce(v.total_amount, 0) - coalesce(r.received, 0)) > 0.01
+  -- 两种视图：平时看「该催的」——没结清且还有未收（0.01 容差是汇路手续费
+  -- 的分位尾差）；closed_only 看「结清了的」——不管未收多少，撤销要在
+  -- 这儿找得到它。
+  AND (CASE WHEN $2::bool
+        THEN cl.id IS NOT NULL
+        ELSE cl.id IS NULL
+         AND (coalesce(v.total_amount, 0) - coalesce(r.received, 0)) > 0.01
+       END)
   -- 数据范围：应收是钱的事，沿用出口模块自己的围栏（同合同列表）。
-  AND ($2::bool OR c.sales_employee_id = ANY($3::bigint[]))
+  AND ($3::bool OR c.sales_employee_id = ANY($4::bigint[]))
   -- 只看逾期 / 只看未配账期，两个互斥的筛子，都不给就是全部。
-  AND ($4::bool = false
+  AND ($5::bool = false
        OR (c.receivable_due_date IS NOT NULL AND c.receivable_due_date < current_date))
-  AND ($5::bool = false OR c.receivable_due_date IS NULL)
-  AND ($6::text = ''
-       OR c.contract_no ILIKE '%' || $6::text || '%'
-       OR c.customer_name ILIKE '%' || $6::text || '%')
+  AND ($6::bool = false OR c.receivable_due_date IS NULL)
+  AND ($7::text = ''
+       OR c.contract_no ILIKE '%' || $7::text || '%'
+       OR c.customer_name ILIKE '%' || $7::text || '%')
 ORDER BY c.receivable_due_date ASC NULLS LAST, c.id DESC
-LIMIT $8::int OFFSET $7::int
+LIMIT $9::int OFFSET $8::int
 `
 
 type ListReceivableDueParams struct {
 	TenantID    int64
+	ClosedOnly  bool
 	ScopeAll    bool
 	EmployeeIds []int64
 	OverdueOnly bool
@@ -647,6 +742,10 @@ type ListReceivableDueRow struct {
 	OpenAmount      string
 	OverdueDays     int32
 	DueUnset        bool
+	ClosedCategory  string
+	ClosedNote      string
+	ClosedByName    string
+	ClosedAt        string
 	Total           int64
 }
 
@@ -657,9 +756,11 @@ type ListReceivableDueRow struct {
 //
 // overdue_days 正数表示已逾期，负数表示还有几天到期；到期日为空的合同
 // 排在最后，它们缺的是客户账期配置，不是钱。
+// 活着的结清（一张合同至多一条，部分唯一索引保证）。
 func (q *Queries) ListReceivableDue(ctx context.Context, arg ListReceivableDueParams) ([]ListReceivableDueRow, error) {
 	rows, err := q.db.Query(ctx, listReceivableDue,
 		arg.TenantID,
+		arg.ClosedOnly,
 		arg.ScopeAll,
 		arg.EmployeeIds,
 		arg.OverdueOnly,
@@ -690,6 +791,10 @@ func (q *Queries) ListReceivableDue(ctx context.Context, arg ListReceivableDuePa
 			&i.OpenAmount,
 			&i.OverdueDays,
 			&i.DueUnset,
+			&i.ClosedCategory,
+			&i.ClosedNote,
+			&i.ClosedByName,
+			&i.ClosedAt,
 			&i.Total,
 		); err != nil {
 			return nil, err
@@ -832,6 +937,13 @@ WHERE c.tenant_id = $1::bigint
   -- reaches settled contracts too, because sometimes the question is
   -- "did this one get paid".
   AND ((v.total_amount - coalesce(r.received, 0)) > 0 OR $4::text <> '')
+  -- 结清的合同默认也不出现——它已经宣布「不用再核了」。钱真的又来了，
+  -- 搜合同号还能找到它（和上面那条「搜索能到已收满的」同一个道理）。
+  AND ($4::text <> '' OR NOT EXISTS (
+      SELECT 1 FROM contract_receivable_closures cl
+      WHERE cl.tenant_id = c.tenant_id AND cl.contract_id = c.id
+        AND cl.revoked_at IS NULL
+  ))
   AND ($4::text = ''
        OR c.contract_no   ILIKE '%' || $4::text || '%'
        OR c.customer_name ILIKE '%' || $4::text || '%')
@@ -930,6 +1042,39 @@ func (q *Queries) RevokeReceiptSettlement(ctx context.Context, arg RevokeReceipt
 	return result.RowsAffected(), nil
 }
 
+const revokeReceivableClosure = `-- name: RevokeReceivableClosure :execrows
+UPDATE contract_receivable_closures
+SET revoked_at = now(),
+    revoked_by_id = $1::bigint,
+    revoked_by_name = $2::text,
+    revoke_reason = $3::text
+WHERE tenant_id = $4::bigint
+  AND contract_id = $5::bigint
+  AND revoked_at IS NULL
+`
+
+type RevokeReceivableClosureParams struct {
+	RevokedByID   int64
+	RevokedByName string
+	RevokeReason  string
+	TenantID      int64
+	ContractID    int64
+}
+
+func (q *Queries) RevokeReceivableClosure(ctx context.Context, arg RevokeReceivableClosureParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeReceivableClosure,
+		arg.RevokedByID,
+		arg.RevokedByName,
+		arg.RevokeReason,
+		arg.TenantID,
+		arg.ContractID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const setContractReceivableDue = `-- name: SetContractReceivableDue :exec
 UPDATE contracts SET receivable_due_date = $1::text::date
 WHERE tenant_id = $2::bigint AND id = $3::bigint
@@ -989,6 +1134,14 @@ CROSS JOIN LATERAL (
             ' · 应收日 ' || c.receivable_due_date AS content
 ) d
 WHERE c.status IN ('EFFECTIVE', 'EXECUTING')
+  -- 结清的合同不再提醒。这是整个结清机制存在的第一理由：一笔退款让未收
+  -- 重新变正之后，没有这一条，销售每 7 天收一封「应收逾期」，永不停止
+  -- （period_no 一直涨，唯一键永远撞不上）。
+  AND NOT EXISTS (
+      SELECT 1 FROM contract_receivable_closures cl
+      WHERE cl.tenant_id = c.tenant_id AND cl.contract_id = c.id
+        AND cl.revoked_at IS NULL
+  )
   AND c.receivable_due_date IS NOT NULL
   -- 没有负责人就没有收件人。这类合同在清单页上仍然看得见，只是没人被点名。
   AND c.sales_employee_id > 0

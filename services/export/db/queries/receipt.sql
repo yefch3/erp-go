@@ -126,6 +126,13 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   -- reaches settled contracts too, because sometimes the question is
   -- "did this one get paid".
   AND ((v.total_amount - coalesce(r.received, 0)) > 0 OR sqlc.arg(keyword)::text <> '')
+  -- 结清的合同默认也不出现——它已经宣布「不用再核了」。钱真的又来了，
+  -- 搜合同号还能找到它（和上面那条「搜索能到已收满的」同一个道理）。
+  AND (sqlc.arg(keyword)::text <> '' OR NOT EXISTS (
+      SELECT 1 FROM contract_receivable_closures cl
+      WHERE cl.tenant_id = c.tenant_id AND cl.contract_id = c.id
+        AND cl.revoked_at IS NULL
+  ))
   AND (sqlc.arg(keyword)::text = ''
        OR c.contract_no   ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR c.customer_name ILIKE '%' || sqlc.arg(keyword)::text || '%')
@@ -174,6 +181,10 @@ SELECT
     (coalesce(v.total_amount, 0) - coalesce(r.received, 0))::text AS open_amount,
     coalesce((current_date - c.receivable_due_date), 0)::int       AS overdue_days,
     (c.receivable_due_date IS NULL)::bool                          AS due_unset,
+    coalesce(cl.category, '')::text        AS closed_category,
+    coalesce(cl.note, '')::text            AS closed_note,
+    coalesce(cl.closed_by_name, '')::text  AS closed_by_name,
+    coalesce(cl.created_at::text, '')::text AS closed_at,
     count(*) OVER () AS total
 FROM contracts c
 JOIN contract_versions v ON v.id = c.current_version_id
@@ -183,11 +194,19 @@ LEFT JOIN (
     WHERE tenant_id = sqlc.arg(tenant_id)::bigint
     GROUP BY contract_id
 ) r ON r.contract_id = c.id
+-- 活着的结清（一张合同至多一条，部分唯一索引保证）。
+LEFT JOIN contract_receivable_closures cl
+    ON cl.tenant_id = c.tenant_id AND cl.contract_id = c.id AND cl.revoked_at IS NULL
 WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND c.status IN ('EFFECTIVE', 'EXECUTING')
-  -- 收完的不再出现在催收清单上。留 0.01 的容差是因为汇路手续费：
-  -- 客户汇的 50000 到账 49975，fee_amount 补上差额后总和可能有分位尾差。
-  AND (coalesce(v.total_amount, 0) - coalesce(r.received, 0)) > 0.01
+  -- 两种视图：平时看「该催的」——没结清且还有未收（0.01 容差是汇路手续费
+  -- 的分位尾差）；closed_only 看「结清了的」——不管未收多少，撤销要在
+  -- 这儿找得到它。
+  AND (CASE WHEN sqlc.arg(closed_only)::bool
+        THEN cl.id IS NOT NULL
+        ELSE cl.id IS NULL
+         AND (coalesce(v.total_amount, 0) - coalesce(r.received, 0)) > 0.01
+       END)
   -- 数据范围：应收是钱的事，沿用出口模块自己的围栏（同合同列表）。
   AND (sqlc.arg(scope_all)::bool OR c.sales_employee_id = ANY(sqlc.arg(employee_ids)::bigint[]))
   -- 只看逾期 / 只看未配账期，两个互斥的筛子，都不给就是全部。
@@ -263,6 +282,14 @@ CROSS JOIN LATERAL (
 -- 跨租户扫描：worker 没有租户上下文，新租户也不该需要额外配置才被覆盖。
 -- 每一行写回的仍是合同自己的 tenant_id。
 WHERE c.status IN ('EFFECTIVE', 'EXECUTING')
+  -- 结清的合同不再提醒。这是整个结清机制存在的第一理由：一笔退款让未收
+  -- 重新变正之后，没有这一条，销售每 7 天收一封「应收逾期」，永不停止
+  -- （period_no 一直涨，唯一键永远撞不上）。
+  AND NOT EXISTS (
+      SELECT 1 FROM contract_receivable_closures cl
+      WHERE cl.tenant_id = c.tenant_id AND cl.contract_id = c.id
+        AND cl.revoked_at IS NULL
+  )
   AND c.receivable_due_date IS NOT NULL
   -- 没有负责人就没有收件人。这类合同在清单页上仍然看得见，只是没人被点名。
   AND c.sales_employee_id > 0
@@ -343,4 +370,40 @@ SET revoked_at = now(),
     revoke_reason = sqlc.arg(revoke_reason)::text
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND transaction_id = sqlc.arg(transaction_id)::bigint
+  AND revoked_at IS NULL;
+
+-- 收款结清。表注释见 00019。
+
+-- name: GetLiveReceivableClosure :one
+SELECT id, contract_id, open_amount::text AS open_amount, category, note,
+       closed_by_name, created_at
+FROM contract_receivable_closures
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND contract_id = sqlc.arg(contract_id)::bigint
+  AND revoked_at IS NULL;
+
+-- name: InsertReceivableClosure :one
+-- 撞 contract_receivable_closures_live = 已经结清过了。
+INSERT INTO contract_receivable_closures (
+    tenant_id, contract_id, open_amount, category, note,
+    closed_by_id, closed_by_name
+) VALUES (
+    sqlc.arg(tenant_id)::bigint,
+    sqlc.arg(contract_id)::bigint,
+    sqlc.arg(open_amount)::text::numeric,
+    sqlc.arg(category)::text,
+    sqlc.arg(note)::text,
+    sqlc.arg(closed_by_id)::bigint,
+    sqlc.arg(closed_by_name)::text
+)
+RETURNING id;
+
+-- name: RevokeReceivableClosure :execrows
+UPDATE contract_receivable_closures
+SET revoked_at = now(),
+    revoked_by_id = sqlc.arg(revoked_by_id)::bigint,
+    revoked_by_name = sqlc.arg(revoked_by_name)::text,
+    revoke_reason = sqlc.arg(revoke_reason)::text
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND contract_id = sqlc.arg(contract_id)::bigint
   AND revoked_at IS NULL;
