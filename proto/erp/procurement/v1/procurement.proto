@@ -125,6 +125,8 @@ message SourcingCase {
   string returned_at = 28;
   string return_reason = 29;
   repeated string return_fields = 30;
+  // Durable link to the selected customer_contacts record; name/email above are snapshots.
+  int64 contact_id = 31;
 }
 
 message CreateCaseRequest {
@@ -143,6 +145,9 @@ message CreateCaseRequest {
   int64 inquiry_template_id = 12;
   string inquiry_template_code = 13;
   int32 inquiry_template_version = 14;
+  // Master-data contact selected for this customer. The gateway validates the
+  // relationship and replaces the name/email snapshots with authoritative values.
+  int64 contact_id = 15;
 }
 
 message CreateCaseResponse { SourcingCase sourcing_case = 1; }

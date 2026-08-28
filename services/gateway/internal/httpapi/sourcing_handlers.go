@@ -176,14 +176,16 @@ func (s *Server) createSourcingCase(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, req) {
 		return
 	}
-	customer, err := s.resolveActiveCustomer(r.Context(), req.GetCustomerId())
+	customer, contact, err := s.resolveActiveCustomerContact(r.Context(), req.GetCustomerId(), req.GetContactId())
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
 	}
-	// 名字以主数据为准，不用调用方传来的那个。客户改名之后，邮件里的旧称呼
-	// 和档案里的名字会对不上；存进询盘的应该是档案里的那一个。
+	// 客户和联系人快照都以主数据为准，不信任浏览器传来的姓名和邮箱。
+	// 这样既不会把甲客户的联系人挂到乙客户，也不会保存已经过期的邮箱。
 	req.CustomerName = customer.GetName()
+	req.ContactName = contact.GetName()
+	req.ContactEmail = contact.GetEmail()
 	resp, err := s.Sourcing.CreateCase(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)

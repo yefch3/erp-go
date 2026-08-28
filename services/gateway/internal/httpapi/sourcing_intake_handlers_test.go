@@ -71,17 +71,30 @@ func TestParseStandardizedInquiryMapsCustomColumns(t *testing.T) {
 	}
 }
 
-func TestParseStandardizedInquiryRejectsHeaderMismatch(t *testing.T) {
+func TestParseStandardizedInquiryRejectsUnknownColumns(t *testing.T) {
 	data := []byte("产品,材质/标准,牌号/等级,厚度,宽度,长度/形式,表面要求,涂层/镀层,公差,卷重,卷内径,包装,交期,付款条件,贸易术语,港口,需求数量,单位,备注,额外规格\n镀锌钢卷,,,,,,,,,,,,,,,,25,MT,,测试\n")
 	_, err := parseStandardizedInquiry(&multipart.FileHeader{Filename: "mismatch.csv"}, data, testInquiryFields())
-	if err == nil || !strings.Contains(err.Error(), "表头与系统标准不一致") ||
-		!strings.Contains(err.Error(), "缺少列") || !strings.Contains(err.Error(), "数量") || !strings.Contains(err.Error(), "非标准列") {
+	if err == nil || !strings.Contains(err.Error(), "表头与系统标准不一致") || !strings.Contains(err.Error(), "非标准列") {
 		t.Fatalf("expected detailed mismatch error, got %v", err)
 	}
 }
 
+func TestParseStandardizedInquiryAllowsMissingTemplateColumnsForReview(t *testing.T) {
+	data := []byte("产品,数量\n镀锌钢卷,25\n")
+	lines, err := parseStandardizedInquiry(&multipart.FileHeader{Filename: "partial.csv"}, data, testInquiryFields())
+	if err != nil {
+		t.Fatalf("partial inquiry should enter manual review: %v", err)
+	}
+	if len(lines) != 1 || lines[0].GetProduct() != "镀锌钢卷" || lines[0].GetQuantity() != "25" {
+		t.Fatalf("unexpected partial line: %+v", lines)
+	}
+	if lines[0].GetQuantityUnit() != "" || lines[0].GetPort() != "" {
+		t.Fatalf("missing values must stay blank instead of being invented: %+v", lines[0])
+	}
+}
+
 func TestParseStandardizedInquiryRejectsDuplicateHeader(t *testing.T) {
-	_, err := validateInquiryHeaders([]string{"产品", "数量", "数量"}, testInquiryFields())
+	_, err := validateInquiryHeaders([]string{"产品", "数量", "数量"}, testInquiryFields(), true)
 	if err == nil || !strings.Contains(err.Error(), "重复列：数量") {
 		t.Fatalf("expected duplicate header error, got %v", err)
 	}

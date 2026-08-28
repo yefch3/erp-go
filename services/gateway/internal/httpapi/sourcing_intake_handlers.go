@@ -189,7 +189,7 @@ func recognizeInquiryTemplate(header *multipart.FileHeader, data []byte, templat
 		if template.GetStatus() != "ACTIVE" {
 			continue
 		}
-		if _, matchErr := validateInquiryHeaders(rows[0], intakeFieldsFromTemplate(template)); matchErr == nil {
+		if _, matchErr := validateInquiryHeaders(rows[0], intakeFieldsFromTemplate(template), false); matchErr == nil {
 			matches = append(matches, template)
 		}
 	}
@@ -263,7 +263,9 @@ func parseStandardizedInquiryRows(rows [][]string, fields []standardizedInquiryF
 	if len(rows) < 2 {
 		return nil, fmt.Errorf("标准询盘文件没有可导入的明细")
 	}
-	columns, err := validateInquiryHeaders(rows[0], fields)
+	// 明确选择模板后，缺失列由模板补成空字段进入销售人工复核；未知列仍然
+	// 拒绝，避免客户提供的数据因为模板不匹配而被静默丢弃。
+	columns, err := validateInquiryHeaders(rows[0], fields, true)
 	if err != nil {
 		return nil, err
 	}
@@ -296,15 +298,16 @@ func parseStandardizedInquiryRows(rows [][]string, fields []standardizedInquiryF
 	return lines, nil
 }
 
-// validateInquiryHeaders 严格校验上传文件的表头是否与系统标准询盘格式一致。
-// 列顺序可以调整，但不允许缺列、额外列、空白列名或重复列名，避免采购规格被静默丢弃。
+// validateInquiryHeaders 校验上传文件表头。自动识别模板时要求完整匹配；员工
+// 已明确选择模板时允许缺列，缺失字段会以空值进入待复核。额外列、空白列名
+// 和重复列名始终拒绝，避免客户提供的数据被静默丢弃。
 type standardizedInquiryField struct {
 	Key          string
 	Header       string
 	DefaultValue string
 }
 
-func validateInquiryHeaders(headers []string, fields []standardizedInquiryField) (map[string]int, error) {
+func validateInquiryHeaders(headers []string, fields []standardizedInquiryField, allowMissing bool) (map[string]int, error) {
 	columns := make(map[string]int, len(headers))
 	actualNames := make(map[string]string, len(headers))
 	seenHeaders := make(map[string]struct{}, len(headers))
@@ -356,7 +359,7 @@ func validateInquiryHeaders(headers []string, fields []standardizedInquiryField)
 	sort.Strings(duplicateColumns)
 
 	problems := make([]string, 0, 4)
-	if len(missing) > 0 {
+	if len(missing) > 0 && !allowMissing {
 		problems = append(problems, "缺少列："+strings.Join(missing, "、"))
 	}
 	if len(unknown) > 0 {

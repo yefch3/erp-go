@@ -70,7 +70,7 @@ func (h *SourcingHandler) CreateCase(ctx context.Context, req *prv1.CreateCaseRe
 	}
 	view, err := h.svc.CreateSourcingCase(ctx, grpcx.TenantID(ctx), app.NewSourcingCase{
 		Title: req.GetTitle(), CustomerID: req.GetCustomerId(), CustomerName: req.GetCustomerName(),
-		ContactName: req.GetContactName(), ContactEmail: req.GetContactEmail(),
+		ContactID: req.GetContactId(), ContactName: req.GetContactName(), ContactEmail: req.GetContactEmail(),
 		SourceMailID: req.GetSourceMailId(), SourceAttachmentID: req.GetSourceAttachmentId(), Lines: lines,
 		SourceFileName: req.GetSourceFileName(), SourceContentType: req.GetSourceContentType(), SourceFileData: req.GetSourceFileData(),
 		InquiryTemplateID: req.GetInquiryTemplateId(), InquiryTemplateCode: req.GetInquiryTemplateCode(),
@@ -537,7 +537,7 @@ func sourcingCaseHead(row store.GetSourcingCaseRow) *prv1.SourcingCase {
 	}
 	return &prv1.SourcingCase{
 		Id: row.ID, CaseNo: row.CaseNo, Title: row.Title, CustomerId: row.CustomerID,
-		CustomerName: row.CustomerName, ContactName: row.ContactName, ContactEmail: row.ContactEmail,
+		CustomerName: row.CustomerName, ContactId: row.ContactID, ContactName: row.ContactName, ContactEmail: row.ContactEmail,
 		SourceMailId: row.SourceMailID, SourceAttachmentId: row.SourceAttachmentID,
 		Status: row.Status, OwnerId: row.OwnerID, OwnerName: row.OwnerName,
 		CreatedAt: ts(row.CreatedAt), UpdatedAt: ts(row.UpdatedAt),
@@ -561,7 +561,7 @@ func sourcingCaseList(row store.ListSourcingCasesRow) *prv1.SourcingCase {
 	}
 	return &prv1.SourcingCase{
 		Id: row.ID, CaseNo: row.CaseNo, Title: row.Title, CustomerId: row.CustomerID,
-		CustomerName: row.CustomerName, ContactName: row.ContactName, ContactEmail: row.ContactEmail,
+		CustomerName: row.CustomerName, ContactId: row.ContactID, ContactName: row.ContactName, ContactEmail: row.ContactEmail,
 		SourceMailId: row.SourceMailID, SourceAttachmentId: row.SourceAttachmentID,
 		Status: row.Status, OwnerId: row.OwnerID, OwnerName: row.OwnerName,
 		CreatedAt: ts(row.CreatedAt), UpdatedAt: ts(row.UpdatedAt),

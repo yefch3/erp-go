@@ -100,6 +100,9 @@
       <el-table v-if="detail" :data="detail.lines" border max-height="52vh">
         <el-table-column prop="lineNo" label="#" width="54" />
         <el-table-column v-for="field in displayFields" :key="field.key" :label="field.label" min-width="145">
+          <template #header>
+            <span class="review-field-label">{{ field.label }}<i v-if="field.required">*</i></span>
+          </template>
           <template #default="{ row }">
             <el-input
               :model-value="readTemplateField(row.extracted, field.key)"
@@ -119,7 +122,13 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="105" fixed="right"><template #default="{ row }"><el-button link :type="row.decision === 'SKIPPED' ? 'success' : 'danger'" @click="row.decision = row.decision === 'SKIPPED' ? 'PENDING' : 'SKIPPED'">{{ row.decision === 'SKIPPED' ? t('procurementIntakes.restore') : t('procurementIntakes.ignore') }}</el-button></template></el-table-column>
       </el-table>
-      <template #footer><el-button @click="detailOpen = false">{{ t('common.cancel') }}</el-button><el-button v-if="canWrite" :loading="saving" @click="saveDraft">{{ t('procurementIntakes.saveDraft') }}</el-button><el-button v-if="canWrite" type="primary" :loading="saving" @click="confirmIntake">提交采购寻源</el-button></template>
+      <template #footer>
+        <el-button @click="detailOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button v-if="canWrite" :loading="saving" @click="saveDraft">{{ t('procurementIntakes.saveDraft') }}</el-button>
+        <el-tooltip v-if="canWrite" :disabled="canSubmitIntake" :content="submitBlockedReason" placement="top">
+          <span><el-button type="primary" :loading="saving" :disabled="!canSubmitIntake" @click="confirmIntake">提交采购寻源</el-button></span>
+        </el-tooltip>
+      </template>
     </el-dialog>
 
     <el-dialog v-model="addLineOpen" :title="t('procurementIntakes.addProductTitle')" width="min(720px, 92vw)" append-to-body destroy-on-close>
@@ -301,6 +310,19 @@ function missingFieldLabels(line: IntakeLine) {
     .map((field) => field.label)
 }
 
+const activeReviewLines = computed(() => detail.value?.lines?.filter((line) => line.decision !== 'SKIPPED') ?? [])
+const submitMissingDetail = computed(() => activeReviewLines.value
+  .filter((line) => missingFieldLabels(line).length > 0)
+  .map((line) => `${line.lineNo}（${missingFieldLabels(line).join('、')}）`)
+  .join('；'))
+const submitBlockedReason = computed(() => {
+  if (!activeReviewLines.value.length) return t('procurementIntakes.keepOne')
+  if (submitMissingDetail.value) return t('procurementIntakes.dynamicRequiredMissing', { detail: submitMissingDetail.value })
+  if (isReturned.value && !resubmitReason.value.trim()) return '请填写本次补充说明后再提交采购寻源'
+  return ''
+})
+const canSubmitIntake = computed(() => !submitBlockedReason.value)
+
 async function saveLine(line: IntakeLine) {
   // 历史退回单可能仍带着旧的 CONFIRMED；补充阶段先按草稿保存，再由整体提交重新确认。
   const decision = line.decision === 'CONFIRMED' ? 'PENDING' : line.decision
@@ -375,5 +397,5 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.page{padding:28px;background:#f4f7f7;min-height:100%}.page-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px}.head-actions{display:flex;gap:10px}.eyebrow{color:#16766b;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}.page-head h1{margin:5px 0 4px;font-size:26px;color:#173042}.page-head p{margin:0;color:#71808b}.panel{background:#fff;border:1px solid #dfe8e6;border-radius:12px;padding:18px}.filters{display:flex;gap:10px;width:460px;margin-bottom:14px}.row-actions{display:flex;align-items:center;gap:8px;white-space:nowrap}.el-pagination{justify-content:flex-end;margin-top:16px}.upload-form{margin-top:20px}.template-picker{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;width:100%}.template-help{width:100%;margin-top:5px;color:#7b8992;font-size:12px;line-height:1.5}.detail-summary{display:grid;grid-template-columns:2fr 1fr 1fr 1.25fr;gap:14px;margin-bottom:14px}.detail-summary>div{display:flex;flex-direction:column;gap:4px;padding:11px 14px;background:#f4f7f7;border-radius:8px}.detail-summary small{color:#7b8992}.review-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;padding:10px 14px;border:1px solid #dce8e5;border-radius:8px;background:#f7fbfa;color:#536873}.review-alert{margin-bottom:14px}.resubmit-box{display:grid;gap:12px;margin:0 0 14px;padding:14px;border:1px solid #f1c8c8;border-radius:9px;background:#fffafa}.resubmit-box label{display:grid;grid-template-columns:125px minmax(0,1fr);align-items:start;gap:12px;color:#455b68}.resubmit-box label span{padding-top:8px;font-weight:600}.resubmit-box label i{color:#e64f4f;font-style:normal}.resubmit-box small{padding-left:137px;color:#7b8992}.return-fields{margin-top:5px;font-weight:400}.stack-input{margin-top:6px}.qty{display:grid;grid-template-columns:1fr 70px;gap:6px}.pair-input{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%}.custom-fields{display:grid;gap:8px}.custom-fields label{display:grid;gap:3px}.custom-fields small{color:#71808b}@media(max-width:1050px){.detail-summary{grid-template-columns:1fr 1fr}}@media(max-width:850px){.filters{width:100%}.template-picker{grid-template-columns:1fr}.detail-summary{grid-template-columns:1fr}.page-head{gap:14px;flex-direction:column}.head-actions{flex-wrap:wrap}.review-toolbar{align-items:flex-start;flex-direction:column}.resubmit-box label{grid-template-columns:1fr}.resubmit-box small{padding-left:0}.pair-input{grid-template-columns:1fr}}
+.page{padding:28px;background:#f4f7f7;min-height:100%}.page-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px}.head-actions{display:flex;gap:10px}.eyebrow{color:#16766b;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}.page-head h1{margin:5px 0 4px;font-size:26px;color:#173042}.page-head p{margin:0;color:#71808b}.panel{background:#fff;border:1px solid #dfe8e6;border-radius:12px;padding:18px}.filters{display:flex;gap:10px;width:460px;margin-bottom:14px}.row-actions{display:flex;align-items:center;gap:8px;white-space:nowrap}.el-pagination{justify-content:flex-end;margin-top:16px}.upload-form{margin-top:20px}.template-picker{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;width:100%}.template-help{width:100%;margin-top:5px;color:#7b8992;font-size:12px;line-height:1.5}.detail-summary{display:grid;grid-template-columns:2fr 1fr 1fr 1.25fr;gap:14px;margin-bottom:14px}.detail-summary>div{display:flex;flex-direction:column;gap:4px;padding:11px 14px;background:#f4f7f7;border-radius:8px}.detail-summary small{color:#7b8992}.review-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;padding:10px 14px;border:1px solid #dce8e5;border-radius:8px;background:#f7fbfa;color:#536873}.review-field-label i{margin-left:3px;color:#e64f4f;font-style:normal}.review-alert{margin-bottom:14px}.resubmit-box{display:grid;gap:12px;margin:0 0 14px;padding:14px;border:1px solid #f1c8c8;border-radius:9px;background:#fffafa}.resubmit-box label{display:grid;grid-template-columns:125px minmax(0,1fr);align-items:start;gap:12px;color:#455b68}.resubmit-box label span{padding-top:8px;font-weight:600}.resubmit-box label i{color:#e64f4f;font-style:normal}.resubmit-box small{padding-left:137px;color:#7b8992}.return-fields{margin-top:5px;font-weight:400}.stack-input{margin-top:6px}.qty{display:grid;grid-template-columns:1fr 70px;gap:6px}.pair-input{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%}.custom-fields{display:grid;gap:8px}.custom-fields label{display:grid;gap:3px}.custom-fields small{color:#71808b}@media(max-width:1050px){.detail-summary{grid-template-columns:1fr 1fr}}@media(max-width:850px){.filters{width:100%}.template-picker{grid-template-columns:1fr}.detail-summary{grid-template-columns:1fr}.page-head{gap:14px;flex-direction:column}.head-actions{flex-wrap:wrap}.review-toolbar{align-items:flex-start;flex-direction:column}.resubmit-box label{grid-template-columns:1fr}.resubmit-box small{padding-left:0}.pair-input{grid-template-columns:1fr}}
 </style>

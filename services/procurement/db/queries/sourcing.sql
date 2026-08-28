@@ -1,6 +1,6 @@
 -- name: CreateSourcingCase :one
 INSERT INTO sourcing_cases (
-    tenant_id, case_no, title, customer_id, customer_name, contact_name,
+    tenant_id, case_no, title, customer_id, customer_name, contact_id, contact_name,
     contact_email, source_mail_id, source_attachment_id, owner_id, owner_name,
     source_file_name, source_content_type, source_file_data, source_file_key,
     inquiry_template_id, inquiry_template_code, inquiry_template_version
@@ -8,7 +8,7 @@ INSERT INTO sourcing_cases (
     sqlc.arg(tenant_id)::bigint,
     'SC-' || to_char(current_date, 'YYYYMMDD') || '-' || lpad(nextval('sourcing_case_no_seq')::text, 6, '0'),
     sqlc.arg(title)::text, sqlc.arg(customer_id)::bigint,
-    sqlc.arg(customer_name)::text, sqlc.arg(contact_name)::text,
+    sqlc.arg(customer_name)::text, sqlc.arg(contact_id)::bigint, sqlc.arg(contact_name)::text,
     sqlc.arg(contact_email)::text, sqlc.arg(source_mail_id)::bigint,
     sqlc.arg(source_attachment_id)::bigint, sqlc.arg(owner_id)::bigint,
     sqlc.arg(owner_name)::text, sqlc.arg(source_file_name)::text,
@@ -40,7 +40,7 @@ INSERT INTO sourcing_lines (
 );
 
 -- name: ListSourcingCases :many
-SELECT id, case_no, title, customer_id, customer_name, contact_name,
+SELECT id, case_no, title, customer_id, customer_name, contact_id, contact_name,
        contact_email, source_mail_id, source_attachment_id, status,
        owner_id, owner_name, source_file_name, inquiry_template_id,
        inquiry_template_code, inquiry_template_version, handoff_status,
@@ -62,7 +62,7 @@ ORDER BY updated_at DESC, id DESC
 LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
 
 -- name: GetSourcingCase :one
-SELECT id, case_no, title, customer_id, customer_name, contact_name,
+SELECT id, case_no, title, customer_id, customer_name, contact_id, contact_name,
        contact_email, source_mail_id, source_attachment_id, status,
        owner_id, owner_name, source_file_name, source_file_key,
        inquiry_template_id,
