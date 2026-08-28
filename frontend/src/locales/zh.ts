@@ -1675,6 +1675,7 @@ export default {
     sourcingTransferTitle: '转入待复核询盘',
     sourcingTransferHint: '询盘之后要变成报价和合同，那两步都要一个真客户，所以这里先选定。联系人和邮箱已从来信抄来，可以改。',
     sourcingCustomer: '客户',
+    sourcingCustomerPlaceholder: '从基础数据选择客户',
     sourcingCustomerRequired: '请先选择客户',
     sourcingContact: '客户联系人',
     sourcingContactEmail: '联系邮箱',

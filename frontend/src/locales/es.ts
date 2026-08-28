@@ -1687,6 +1687,7 @@ export default {
     sourcingTransferTitle: 'Enviar a la cola de revisión',
     sourcingTransferHint: 'Esta consulta se convertirá en oferta y luego en contrato, y ambos pasos necesitan un cliente real, así que selecciónelo ahora. Los datos de contacto se copian del correo y pueden editarse.',
     sourcingCustomer: 'Cliente',
+    sourcingCustomerPlaceholder: 'Selecciona un cliente de los datos maestros',
     sourcingCustomerRequired: 'Seleccione primero un cliente',
     sourcingContact: 'Persona de contacto',
     sourcingContactEmail: 'Correo de contacto',

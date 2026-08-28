@@ -958,6 +958,7 @@
       <el-form-item :label="t('emails.sourcingCustomer')" required>
         <CustomerSelect
           v-model="sourcingForm.customerId"
+          :placeholder="t('emails.sourcingCustomerPlaceholder')"
           @selected="(customer) => (sourcingForm.customerName = customer?.name || '')"
         />
       </el-form-item>

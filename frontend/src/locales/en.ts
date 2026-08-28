@@ -1678,6 +1678,7 @@ export default {
     sourcingTransferTitle: 'Send to review queue',
     sourcingTransferHint: 'This inquiry becomes a quotation and then a contract, and both steps need a real customer — so pick one now. The contact details are copied from the email and can be edited.',
     sourcingCustomer: 'Customer',
+    sourcingCustomerPlaceholder: 'Select a customer from master data',
     sourcingCustomerRequired: 'Select a customer first',
     sourcingContact: 'Contact name',
     sourcingContactEmail: 'Contact email',
