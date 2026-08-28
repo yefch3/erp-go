@@ -84,12 +84,13 @@ const (
 )
 
 const (
-	statusRunning  = "RUNNING"
-	statusApproved = "APPROVED"
-	statusRejected = "REJECTED"
-	statusReturned = "RETURNED"
-	taskPending    = "PENDING"
-	taskSkipped    = "SKIPPED"
+	statusRunning      = "RUNNING"
+	statusApproved     = "APPROVED"
+	statusRejected     = "REJECTED"
+	statusReturned     = "RETURNED"
+	taskPending        = "PENDING"
+	taskSkipped        = "SKIPPED"
+	superAdminRoleCode = "SUPER_ADMIN"
 )
 
 // ---------------------------------------------------------------- submit
@@ -171,21 +172,36 @@ func (s *Service) Submit(ctx context.Context, tenantID int64, in SubmitInput) (s
 			return store.ApprovalInstance{}, nil, fmt.Errorf("approval: resolve purchase fallback role %s: %w", s.purchaseOrderFallbackRoleCode, err)
 		}
 		fallback = preferOtherApprovers(fallback, in.SubmitterID)
+		fallbackNodeName := "采购审批人审批"
+		adminFound := false
+		if len(fallback) == 0 && s.purchaseOrderFallbackRoleCode != superAdminRoleCode {
+			admins, foundAdminRole, adminErr := s.dir.RoleMembersByCode(ctx, superAdminRoleCode)
+			if adminErr != nil {
+				return store.ApprovalInstance{}, nil, fmt.Errorf("approval: resolve fallback role %s: %w", superAdminRoleCode, adminErr)
+			}
+			adminFound = foundAdminRole
+			fallback = preferOtherApprovers(admins, in.SubmitterID)
+			if len(fallback) > 0 {
+				fallbackNodeName = "最高权限管理员审批"
+			}
+		}
 		if len(fallback) == 0 {
 			// 话要能照着做——而「照着做」的内容取决于卡在哪一步。角色现在由
 			// 开户时自动播种（iam 的预置角色），所以绝大多数情况下它是在的，
 			// 缺的只是成员；让人去「创建」一个已经存在的角色，他会在角色页
 			// 找半天以为自己看错了。
-			msg := "采购单没有可用审批人：请在角色管理里给「" + s.purchaseOrderFallbackRoleCode + "」角色添加成员"
+			msg := "采购单没有可用审批人：请在角色管理里给「" + s.purchaseOrderFallbackRoleCode + "」或「" + superAdminRoleCode + "」角色添加成员"
 			if !found {
 				msg = "采购单没有可用审批人：本公司没有启用的「" + s.purchaseOrderFallbackRoleCode +
-					"」角色，请在角色管理里创建或启用它，并添加成员"
+					"」角色，请在角色管理里创建或启用它，或者给「" + superAdminRoleCode + "」角色添加成员"
+			} else if !adminFound {
+				msg += "；本公司也没有启用的「" + superAdminRoleCode + "」角色"
 			}
 			return store.ApprovalInstance{}, nil, apierr.Invalid("AP_APPROVER_REQUIRED", msg).
 				WithMeta("role_code", s.purchaseOrderFallbackRoleCode)
 		}
 		node := nodes[0]
-		node.Name = "采购审批人审批"
+		node.Name = fallbackNodeName
 		firstNode, assignees = &node, fallback
 	}
 
