@@ -28,6 +28,11 @@ export const router = createRouter({
         { path: 'basic/employees/departments', component: () => import('./pages/DepartmentsPage.vue') },
         { path: 'basic/employees/roles', component: () => import('./pages/RolesPage.vue') },
         { path: 'basic/employees/org', component: () => import('./pages/OrgChartPage.vue') },
+        // 员工详情有自己的地址，和客户详情（上面那行）一样。**限定数字**，
+        // 否则 :id 会把 departments / roles / org 这三个静态路径也一起吃掉——
+        // vue-router 虽然让静态段优先，但把「不可能撞上」写进路由本身，
+        // 比依赖优先级可靠。
+        { path: 'basic/employees/:id(\\d+)', component: () => import('./pages/EmployeeDetailPage.vue') },
         { path: 'basic/ports', component: () => import('./pages/PortsPage.vue') },
         { path: 'basic/suppliers', component: () => import('./pages/SuppliersPage.vue') },
         { path: 'basic/suppliers/factories', component: () => import('./pages/FactoriesPage.vue') },

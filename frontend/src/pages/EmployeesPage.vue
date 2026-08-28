@@ -177,75 +177,6 @@
 
     <ImportEmployeesDialog v-model:open="importOpen" @imported="reload" />
 
-    <el-drawer
-      v-model="detailsOpen"
-      :title="t('employees.detailTitle')"
-      :size="detailDrawerSize"
-      class="employee-detail-drawer"
-    >
-      <div v-loading="detailLoading">
-        <div v-if="detailEmployee" class="detail-head">
-          <div>
-            <div class="detail-name">{{ detailEmployee.name }}</div>
-            <div class="sub">{{ detailEmployee.englishName || '—' }} · {{ detailEmployee.code }}</div>
-          </div>
-          <el-tag :type="detailEmployee.status === 'ACTIVE' ? 'success' : 'info'">
-            {{ detailEmployee.status === 'ACTIVE' ? t('employees.onDuty') : t('employees.left') }}
-          </el-tag>
-        </div>
-
-        <el-tabs v-if="detailEmployee" v-model="detailTab" class="detail-tabs">
-          <el-tab-pane :label="t('employees.basicInformation')" name="basic">
-            <el-descriptions :column="detailColumns" border>
-              <el-descriptions-item :label="t('employees.code')">{{ detailEmployee.code }}</el-descriptions-item>
-              <el-descriptions-item :label="t('employees.name')">{{ detailEmployee.name }}</el-descriptions-item>
-              <el-descriptions-item :label="t('employees.englishName')">{{ detailEmployee.englishName || '—' }}</el-descriptions-item>
-              <el-descriptions-item :label="t('employees.email')">{{ detailEmployee.email || '—' }}</el-descriptions-item>
-              <el-descriptions-item :label="t('employees.phone')">{{ detailEmployee.phone || '—' }}</el-descriptions-item>
-              <el-descriptions-item :label="t('employees.remark')" :span="detailColumns">{{ detailEmployee.remark || '—' }}</el-descriptions-item>
-            </el-descriptions>
-          </el-tab-pane>
-          <el-tab-pane :label="t('employees.organizationRelationship')" name="organization">
-            <el-descriptions :column="detailColumns" border>
-              <el-descriptions-item :label="t('employees.department')">{{ detailEmployee.departmentName || '—' }}</el-descriptions-item>
-              <el-descriptions-item :label="t('employees.position')">{{ detailEmployee.position || '—' }}</el-descriptions-item>
-              <el-descriptions-item :label="t('employees.manager')">{{ detailEmployee.managerName || '—' }}</el-descriptions-item>
-              <el-descriptions-item :label="t('employees.hireDate')">{{ detailEmployee.hireDate || '—' }}</el-descriptions-item>
-              <el-descriptions-item :label="t('employees.leaveDate')">{{ detailEmployee.leaveDate || '—' }}</el-descriptions-item>
-              <el-descriptions-item :label="t('employees.employmentStatus')">
-                {{ detailEmployee.status === 'ACTIVE' ? t('employees.onDuty') : t('employees.left') }}
-              </el-descriptions-item>
-            </el-descriptions>
-          </el-tab-pane>
-          <el-tab-pane :label="t('employees.accountAndRoles')" name="account">
-            <el-descriptions :column="detailColumns" border>
-              <el-descriptions-item :label="t('employees.username')">{{ detailEmployee.username || t('employees.noAccount') }}</el-descriptions-item>
-              <el-descriptions-item :label="t('employees.activation')">{{ activationText(detailEmployee) }}</el-descriptions-item>
-              <el-descriptions-item :label="t('employees.roles')" :span="detailColumns">
-                <el-space wrap>
-                  <el-tag v-for="role in detailRoleNames" :key="role" type="info">{{ role }}</el-tag>
-                  <span v-if="!detailRoleNames.length">—</span>
-                </el-space>
-              </el-descriptions-item>
-            </el-descriptions>
-          </el-tab-pane>
-          <el-tab-pane :label="t('employees.changes')" name="changes">
-            <el-timeline v-if="detailChanges.length">
-              <el-timeline-item v-for="item in detailChanges" :key="item.id" :timestamp="formatTime(item.createdAt)">
-                {{ item.action }} · {{ t('employees.operator') }} #{{ item.operatorId }}
-                <el-collapse class="change-values">
-                  <el-collapse-item :title="t('departments.changeValues')">
-                    <div>{{ t('departments.before') }}</div><pre>{{ prettyJSON(item.beforeJson) }}</pre>
-                    <div>{{ t('departments.after') }}</div><pre>{{ prettyJSON(item.afterJson) }}</pre>
-                  </el-collapse-item>
-                </el-collapse>
-              </el-timeline-item>
-            </el-timeline>
-            <el-empty v-else :description="t('employees.noChanges')" />
-          </el-tab-pane>
-        </el-tabs>
-      </div>
-    </el-drawer>
 
     <!-- What actually happened, per person. A batch of eighty is exactly the
          case where "已发送" as a single toast is useless: the useful answer is
@@ -507,18 +438,7 @@ const selected = ref<Employee[]>([])
 const batchOpen = ref(false)
 const batchSent = ref(0)
 const batchFailed = ref<{ name: string; email: string; reason: string }[]>([])
-const detailsOpen = ref(false)
-const detailLoading = ref(false)
-const detailEmployee = ref<Employee | null>(null)
-const detailChanges = ref<Change[]>([])
-const detailTab = ref('basic')
 const viewportWidth = ref(window.innerWidth)
-const detailDrawerSize = computed(() => viewportWidth.value < 720 ? '100%' : '720px')
-const detailColumns = computed(() => viewportWidth.value < 620 ? 1 : 2)
-const detailRoleNames = computed(() => {
-  const ids = new Set(detailEmployee.value?.roleIds ?? [])
-  return roles.value.filter((role) => ids.has(role.id)).map((role) => role.name)
-})
 
 // Who an invitation could actually reach: still employed, and not already in.
 // Used both for the row button and for which rows may be ticked, so the two
@@ -595,29 +515,13 @@ function handleRowCommand(command: string, row: Employee) {
   }
 }
 
-// 员工详情统一展示个人资料、组织关系、账号角色和变更记录，避免把大量字段塞进列表。
-async function openDetails(row: Employee) {
-  detailsOpen.value = true
-  detailLoading.value = true
-  detailTab.value = 'basic'
-  detailEmployee.value = null
-  detailChanges.value = []
-  try {
-    const [employeeData, changeData] = await Promise.all([
-      get<{ employee: Employee }>(`/employees/${row.id}`),
-      get<{ changes: Change[] }>(`/employees/${row.id}/changes`),
-    ])
-    detailEmployee.value = employeeData.employee
-    detailChanges.value = changeData.changes ?? []
-  } finally {
-    detailLoading.value = false
-  }
-}
-
-function activationText(employee: Employee) {
-  if (employee.emailVerified) return t('employees.activated')
-  if (Number(employee.inviteExpiresAt)) return t('employees.awaitingActivation')
-  return employee.username ? t('employees.notInvited') : t('employees.accountUnopened')
+// 员工详情是一个**独立的页面**，不是列表上滑出来的抽屉。
+//
+// 抽屉的毛病和邮件页当初换掉抽屉时是同一批：没有自己的地址，所以刷新不了、
+// 后退键没用、发不了链接给同事，而且四个标签页的内容只能挤在更窄的一列里看。
+// 详情页还多一样抽屉给不了的——上级和下属点得进去，抽屉里开不出第二个抽屉。
+function openDetails(row: Employee) {
+  router.push(`/basic/employees/${row.id}`)
 }
 
 function updateViewportWidth() {
@@ -899,6 +803,27 @@ onMounted(async () => {
   if (canReadRoles) {
     roles.value = (await get<{ roles: Role[] }>('/roles')).roles ?? []
   }
+  // 从详情页按「编辑」过来的。表单只有这一份，详情页不再摆一份同样的——
+  // 一个表单两处维护，迟早只有一处会被改对。地址里带着 ?edit=，
+  // 所以这个跳转本身也是可分享、可后退的。
+  const wantEdit = String(route.query.edit ?? '')
+  if (wantEdit) {
+    const row = employees.value.find((r) => r.id === wantEdit)
+    if (row) {
+      await openEdit(row)
+    } else {
+      // 列表这一页里没有他（在第 3 页、或者被筛掉了）。直接按 id 取一次，
+      // 不然从详情页点编辑会静默地什么都不发生。
+      try {
+        const d = await get<{ employee: Employee }>(`/employees/${wantEdit}`)
+        await openEdit(d.employee)
+      } catch {
+        ElMessage.warning(t('employees.notFound'))
+      }
+    }
+    // 用过就从地址里去掉，否则刷新一次又弹一遍。
+    router.replace({ path: '/basic/employees' })
+  }
 })
 onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
 </script>
@@ -1109,22 +1034,6 @@ onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
   flex-direction: column;
   gap: 6px;
 }
-.detail-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 0 0 18px;
-}
-.detail-name {
-  margin-bottom: 4px;
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-.detail-tabs :deep(.el-descriptions__label) {
-  width: 130px;
-}
 @media (max-width: 1300px) {
   .filter-fields {
     grid-template-columns: repeat(3, minmax(150px, 1fr));
@@ -1184,12 +1093,6 @@ onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
     align-items: flex-start;
     flex-direction: column;
     gap: 4px;
-  }
-  .detail-tabs :deep(.el-tabs__nav-wrap) {
-    overflow-x: auto;
-  }
-  .detail-tabs :deep(.el-descriptions__label) {
-    width: 104px;
   }
 }
 </style>
