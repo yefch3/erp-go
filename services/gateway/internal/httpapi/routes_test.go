@@ -52,6 +52,8 @@ func TestReceiptRoutesAreAllRegistered(t *testing.T) {
 		"POST /api/receipt-transactions/{id}/allocate",   // 核销到合同
 		"POST /api/receipt-transactions/{id}/irrelevant", // 「归类」
 		"POST /api/receipt-transactions/{id}/reopen",     // 「撤销标记」
+		"POST /api/receipt-transactions/{id}/settle",     // 「认差结清」
+		"POST /api/receipt-transactions/{id}/unsettle",   // 「撤销结清」
 		"GET /api/open-receivables",                      // 弹窗里搜合同
 		"GET /api/bank-accounts",                         // 「收款账户」
 	}

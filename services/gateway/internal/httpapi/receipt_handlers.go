@@ -107,6 +107,41 @@ func (s *Server) markTransactionIrrelevant(w http.ResponseWriter, r *http.Reques
 	s.writeProto(w, resp)
 }
 
+func (s *Server) settleTransaction(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Category string `json:"category"`
+		Note     string `json:"note"`
+	}
+	if !s.decodeJSON(w, r, &body) {
+		return
+	}
+	resp, err := s.Receipts.SettleTransaction(r.Context(), &exv1.SettleTransactionRequest{
+		TransactionId: idFromPath(r), Category: body.Category, Note: body.Note,
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) unsettleTransaction(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if !s.decodeJSON(w, r, &body) {
+		return
+	}
+	resp, err := s.Receipts.RevokeSettlement(r.Context(), &exv1.RevokeSettlementRequest{
+		TransactionId: idFromPath(r), Reason: body.Reason,
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) reopenTransaction(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Receipts.ReopenTransaction(r.Context(),
 		&exv1.ReopenTransactionRequest{TransactionId: idFromPath(r)})

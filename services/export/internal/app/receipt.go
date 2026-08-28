@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 
@@ -39,6 +40,20 @@ type AllocationLine struct {
 	// What the intermediary banks took. Absorbed by us: it does not come out
 	// of the bank line, it only closes the gap on the contract.
 	FeeAmount string
+	// 那截补给合同的钱是什么：BANK_FEE 手续费（默认，历史含义）/ LOSS 损耗
+	// 扣款 / ROUNDING 尾差 / OTHER 其他。原来只有手续费一种说法，于是损耗
+	// 只能谎报成手续费——类别错了，将来进总账就进错科目。
+	FeeCategory string
+}
+
+// 补足差额的类别。空串按 BANK_FEE 收，兼容改版前的调用方。
+var feeCategories = map[string]bool{
+	"BANK_FEE": true, "LOSS": true, "ROUNDING": true, "OTHER": true,
+}
+
+// 流水侧认差的类别。没有 BANK_FEE：手续费补的是合同那一侧，走核销行。
+var settlementCategories = map[string]bool{
+	"LOSS": true, "ROUNDING": true, "OVERPAY": true, "OTHER": true,
 }
 
 // TransactionView is a bank line with what has been decided about it.
@@ -51,6 +66,11 @@ type TransactionView struct {
 	// 这一行还剩多少没核。算出来的，不存——存一份就会和核销记录对不上。
 	AllocatedAmount   string
 	UnallocatedAmount string
+	// 认差结清。空串 = 没结清过。差额是**认下那一刻**的余额，之后核销记录
+	// 再变（冲销先被挡住，见 ReverseAllocation），这个数不跟着动。
+	VarianceAmount   string
+	VarianceCategory string
+	VarianceNote     string
 }
 
 // 收款对账页面上的那三档状态。**它们是算出来的，不是存的。**
@@ -68,6 +88,10 @@ const (
 func (v TransactionView) Disposition() string {
 	if v.Transaction.Ownership != OwnershipCustomer && v.Transaction.Ownership != OwnershipPending {
 		return DispositionIrrelevant
+	}
+	// 员工认过差的行就是处理完了——这正是「认」这个动作的意思。
+	if v.VarianceAmount != "" {
+		return DispositionAllocated
 	}
 	if mustDec(v.AllocatedAmount).GreaterThanOrEqual(mustDec(v.Transaction.Amount)) {
 		return DispositionAllocated
@@ -160,11 +184,28 @@ func (s *Service) viewOf(ctx context.Context, tenantID int64, row BankRow) (Tran
 	for _, a := range allocs {
 		allocated = allocated.Add(mustDec(a.Amount))
 	}
-	return TransactionView{
+	v := TransactionView{
 		Transaction: row, Allocations: allocs, Suggestions: suggestions,
 		AllocatedAmount:   allocated.StringFixed(2),
 		UnallocatedAmount: mustDec(row.Amount).Sub(allocated).StringFixed(2),
-	}, nil
+	}
+	if st, err := s.q.GetLiveReceiptSettlement(ctx, store.GetLiveReceiptSettlementParams{
+		TenantID: tenantID, TransactionID: row.ID,
+	}); err == nil {
+		applySettlement(&v, st.Amount, st.Category, st.Note)
+	} else if err != pgx.ErrNoRows {
+		return TransactionView{}, err
+	}
+	return v, nil
+}
+
+// applySettlement 把认差写进视图：差额三字段落位，未分配清零——认过差之后
+// 没有任何钱在等着核，页面上再亮一个「未分配」就是让人重复处理一遍。
+func applySettlement(v *TransactionView, amount, category, note string) {
+	v.VarianceAmount = mustDec(amount).StringFixed(2)
+	v.VarianceCategory = category
+	v.VarianceNote = note
+	v.UnallocatedAmount = "0.00"
 }
 
 // TransactionQuery is the queue filter.
@@ -230,14 +271,30 @@ func (s *Service) ListTransactions(ctx context.Context, tenantID int64, qy Trans
 		allocated[a.TransactionID] = mustDec(a.Allocated)
 	}
 
+	// 结清也整页一次取，同一个不许 N+1 的理由。
+	settlements, err := s.q.ListLiveReceiptSettlements(ctx, store.ListLiveReceiptSettlementsParams{
+		TenantID: tenantID, TransactionIds: ids,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	settledBy := make(map[int64]store.ListLiveReceiptSettlementsRow, len(settlements))
+	for _, st := range settlements {
+		settledBy[st.TransactionID] = st
+	}
+
 	out := make([]TransactionView, 0, len(rows))
 	for _, r := range rows {
 		got := allocated[r.ID]
-		out = append(out, TransactionView{
+		v := TransactionView{
 			Transaction:       r,
 			AllocatedAmount:   got.StringFixed(2),
 			UnallocatedAmount: mustDec(r.Amount).Sub(got).StringFixed(2),
-		})
+		}
+		if st, ok := settledBy[r.ID]; ok {
+			applySettlement(&v, st.Amount, st.Category, st.Note)
+		}
+		out = append(out, v)
 	}
 	return out, total, nil
 }
@@ -295,6 +352,16 @@ func (s *Service) Allocate(ctx context.Context, tenantID, txID int64, lines []Al
 			return apierr.Invalid("EX_TX_IRRELEVANT",
 				"这笔流水的归属不是「客户往来」，不能核销到应收合同。要核先在银行流水改归属。")
 		}
+		// 认过差的行就是处理完了。还想核，先撤销结清——否则差额是「认下
+		// 那一刻的余额」这句话就不成立了。
+		if _, err := q.GetLiveReceiptSettlement(ctx, store.GetLiveReceiptSettlementParams{
+			TenantID: tenantID, TransactionID: txID,
+		}); err == nil {
+			return apierr.Conflict("EX_TX_SETTLED",
+				"这一行的差额已经认过、结清了。要继续核销，先撤销结清。")
+		} else if err != pgx.ErrNoRows {
+			return err
+		}
 
 		// Read the remaining balance inside the lock. Two people allocating
 		// the same line at once would otherwise both see it as unallocated
@@ -335,6 +402,13 @@ func (s *Service) Allocate(ctx context.Context, tenantID, txID int64, lines []Al
 				if err != nil || fee.IsNegative() {
 					return apierr.Invalid("EX_ALLOC_FEE_INVALID", "手续费不能为负数")
 				}
+			}
+			if l.FeeCategory == "" {
+				l.FeeCategory = "BANK_FEE"
+			}
+			if !feeCategories[l.FeeCategory] {
+				return apierr.Invalid("EX_ALLOC_FEE_CATEGORY_INVALID",
+					"差额类别只能是手续费、损耗、尾差或其他")
 			}
 			adding = adding.Add(amount)
 
@@ -377,7 +451,8 @@ func (s *Service) Allocate(ctx context.Context, tenantID, txID int64, lines []Al
 				TenantID: tenantID, TransactionID: txID, ContractID: c.line.ContractID,
 				ContractNo: c.progress.ContractNo, CustomerName: c.progress.CustomerName,
 				Amount: c.amount.StringFixed(2), FeeAmount: c.fee.StringFixed(2),
-				Currency: c.progress.Currency, ReversalOf: 0, ReverseReason: "",
+				FeeCategory: c.line.FeeCategory,
+				Currency:    c.progress.Currency, ReversalOf: 0, ReverseReason: "",
 				AllocatedBy: op.ID, AllocatedByName: op.Name,
 			}); err != nil {
 				return err
@@ -394,6 +469,125 @@ func (s *Service) Allocate(ctx context.Context, tenantID, txID int64, lines []Al
 	// 失败不该把已经成功的核销回滚掉，见 reportClaim。
 	s.reportClaim(ctx, txID, claimed, row.Ownership)
 	s.tellOwners(ctx, tenantID, owners)
+	return s.GetTransaction(ctx, tenantID, txID)
+}
+
+// SettleTransaction 认差结清：核到没得核了还剩一截，员工说清这截是什么，
+// 这一行就算处理完。
+//
+// 「完成」由人确认，不由算式确认——差 200 是损耗认了、还是要去追客户，
+// 机器判断不了，这本来就是人的决定。全额核满的行仍然自动完成：一个只能
+// 按「是」的确认按钮是仪式，不是决定。
+func (s *Service) SettleTransaction(ctx context.Context, tenantID, txID int64, category, note string, op Operator) (TransactionView, error) {
+	category = strings.ToUpper(strings.TrimSpace(category))
+	if !settlementCategories[category] {
+		return TransactionView{}, apierr.Invalid("EX_SETTLE_CATEGORY_INVALID",
+			"差额类别只能是损耗、尾差、多收或其他")
+	}
+	var row BankRow
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		// 和核销同一把锁、同一个道理：认的是「此刻还剩多少」，读它和写认领
+		// 必须在同一段里，否则并发的一次核销会让认下的数当场过期。
+		if err := lockReceiptTransaction(ctx, tx, tenantID, txID); err != nil {
+			return err
+		}
+		var err error
+		row, err = s.bank.Get(ctx, txID)
+		if err != nil {
+			return err
+		}
+		if row.Direction != "CREDIT" {
+			return apierr.Invalid("EX_TX_NOT_CREDIT", "这是一笔付出去的款，没有应收差额可认")
+		}
+		if row.Ownership != OwnershipCustomer && row.Ownership != OwnershipPending {
+			return apierr.Invalid("EX_TX_IRRELEVANT",
+				"这笔流水的归属不是「客户往来」，不在应收队列里")
+		}
+		allocs, err := q.ListAllocationsOfTransaction(ctx, store.ListAllocationsOfTransactionParams{
+			TenantID: tenantID, TransactionID: txID,
+		})
+		if err != nil {
+			return err
+		}
+		allocated := decimal.Zero
+		for _, a := range allocs {
+			allocated = allocated.Add(mustDec(a.Amount))
+		}
+		remainder := mustDec(row.Amount).Sub(allocated)
+		if !remainder.IsPositive() {
+			return apierr.Invalid("EX_SETTLE_NOTHING",
+				"这一行没有剩下的差额——已经核满了，不需要结清")
+		}
+		if _, err := q.InsertReceiptSettlement(ctx, store.InsertReceiptSettlementParams{
+			TenantID: tenantID, TransactionID: txID,
+			Amount: remainder.StringFixed(2), Category: category,
+			Note:        strings.TrimSpace(note),
+			SettledByID: op.ID, SettledByName: op.Name,
+		}); err != nil {
+			// 撞唯一索引 = 并发的第二次点击。说人话，不说 23505。
+			var pgErr interface{ SQLState() string }
+			if errors.As(err, &pgErr) && pgErr.SQLState() == "23505" {
+				return apierr.Conflict("EX_SETTLE_TWICE", "这一行已经结清过了")
+			}
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return TransactionView{}, err
+	}
+	// 认了差，这一行对账本来说就是认领完了——全额报回去，两条线的队列
+	// 用同一个「处理完了没有」的定义。
+	s.reportClaim(ctx, txID, mustDec(row.Amount), row.Ownership)
+	return s.GetTransaction(ctx, tenantID, txID)
+}
+
+// RevokeSettlement 撤销认差。差额回到未分配，行回到待处理队列。
+func (s *Service) RevokeSettlement(ctx context.Context, tenantID, txID int64, reason string, op Operator) (TransactionView, error) {
+	if strings.TrimSpace(reason) == "" {
+		return TransactionView{}, apierr.Invalid("EX_SETTLE_REVOKE_REASON_REQUIRED",
+			"请填写撤销原因——没有理由的撤销事后没人说得清")
+	}
+	var row BankRow
+	var claimed decimal.Decimal
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		if err := lockReceiptTransaction(ctx, tx, tenantID, txID); err != nil {
+			return err
+		}
+		n, err := q.RevokeReceiptSettlement(ctx, store.RevokeReceiptSettlementParams{
+			TenantID: tenantID, TransactionID: txID,
+			RevokedByID: op.ID, RevokedByName: op.Name,
+			RevokeReason: strings.TrimSpace(reason),
+		})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return apierr.NotFound("EX_SETTLE_NONE", "这一行没有可撤销的结清")
+		}
+		row, err = s.bank.Get(ctx, txID)
+		if err != nil {
+			return err
+		}
+		allocs, err := q.ListAllocationsOfTransaction(ctx, store.ListAllocationsOfTransactionParams{
+			TenantID: tenantID, TransactionID: txID,
+		})
+		if err != nil {
+			return err
+		}
+		claimed = decimal.Zero
+		for _, a := range allocs {
+			claimed = claimed.Add(mustDec(a.Amount))
+		}
+		return nil
+	})
+	if err != nil {
+		return TransactionView{}, err
+	}
+	// 报回真实已核的数——认领退回，行重新进「待处理」。
+	s.reportClaim(ctx, txID, claimed, row.Ownership)
 	return s.GetTransaction(ctx, tenantID, txID)
 }
 
@@ -471,6 +665,16 @@ func (s *Service) ReverseAllocation(ctx context.Context, tenantID, allocID int64
 		txID = orig.TransactionID
 		// 和核销走同一把锁：冲销也在改「这一行还剩多少」。
 		if err := lockReceiptTransaction(ctx, tx, tenantID, txID); err != nil {
+			return err
+		}
+		// 结清的行不许冲销。冲销会把钱退回未分配余额，而这一行已经被认定
+		// 「没有任何钱在等着核」——两句话不能同时成立。先撤销结清再冲。
+		if _, err := q.GetLiveReceiptSettlement(ctx, store.GetLiveReceiptSettlementParams{
+			TenantID: tenantID, TransactionID: txID,
+		}); err == nil {
+			return apierr.Conflict("EX_TX_SETTLED",
+				"这一行的差额已经认过、结清了。要冲销，先撤销结清。")
+		} else if err != pgx.ErrNoRows {
 			return err
 		}
 		reversed, err := q.AllocationReversed(ctx, store.AllocationReversedParams{

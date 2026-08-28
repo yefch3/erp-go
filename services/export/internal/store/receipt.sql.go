@@ -14,7 +14,7 @@ import (
 const addReceiptAllocation = `-- name: AddReceiptAllocation :one
 INSERT INTO receipt_allocations (
     tenant_id, transaction_id, contract_id, contract_no, customer_name,
-    amount, fee_amount, currency, reversal_of, reverse_reason,
+    amount, fee_amount, fee_category, currency, reversal_of, reverse_reason,
     allocated_by, allocated_by_name
 ) VALUES (
     $1::bigint,
@@ -25,10 +25,11 @@ INSERT INTO receipt_allocations (
     $6::text::numeric,
     $7::text::numeric,
     $8::text,
-    nullif($9::bigint, 0),
-    $10::text,
-    $11::bigint,
-    $12::text
+    $9::text,
+    nullif($10::bigint, 0),
+    $11::text,
+    $12::bigint,
+    $13::text
 )
 RETURNING id
 `
@@ -41,6 +42,7 @@ type AddReceiptAllocationParams struct {
 	CustomerName    string
 	Amount          string
 	FeeAmount       string
+	FeeCategory     string
 	Currency        string
 	ReversalOf      int64
 	ReverseReason   string
@@ -57,6 +59,7 @@ func (q *Queries) AddReceiptAllocation(ctx context.Context, arg AddReceiptAlloca
 		arg.CustomerName,
 		arg.Amount,
 		arg.FeeAmount,
+		arg.FeeCategory,
 		arg.Currency,
 		arg.ReversalOf,
 		arg.ReverseReason,
@@ -308,6 +311,90 @@ func (q *Queries) GetAllocation(ctx context.Context, arg GetAllocationParams) (G
 	return i, err
 }
 
+const getLiveReceiptSettlement = `-- name: GetLiveReceiptSettlement :one
+
+SELECT id, transaction_id, amount::text AS amount, category, note,
+       settled_by_name, created_at
+FROM receipt_line_settlements
+WHERE tenant_id = $1::bigint
+  AND transaction_id = $2::bigint
+  AND revoked_at IS NULL
+`
+
+type GetLiveReceiptSettlementParams struct {
+	TenantID      int64
+	TransactionID int64
+}
+
+type GetLiveReceiptSettlementRow struct {
+	ID            int64
+	TransactionID int64
+	Amount        string
+	Category      string
+	Note          string
+	SettledByName string
+	CreatedAt     pgtype.Timestamptz
+}
+
+// 认差结清。四条一组，全部只碰活着的那一条（revoked_at IS NULL）。
+func (q *Queries) GetLiveReceiptSettlement(ctx context.Context, arg GetLiveReceiptSettlementParams) (GetLiveReceiptSettlementRow, error) {
+	row := q.db.QueryRow(ctx, getLiveReceiptSettlement, arg.TenantID, arg.TransactionID)
+	var i GetLiveReceiptSettlementRow
+	err := row.Scan(
+		&i.ID,
+		&i.TransactionID,
+		&i.Amount,
+		&i.Category,
+		&i.Note,
+		&i.SettledByName,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const insertReceiptSettlement = `-- name: InsertReceiptSettlement :one
+INSERT INTO receipt_line_settlements (
+    tenant_id, transaction_id, amount, category, note,
+    settled_by_id, settled_by_name
+) VALUES (
+    $1::bigint,
+    $2::bigint,
+    $3::text::numeric,
+    $4::text,
+    $5::text,
+    $6::bigint,
+    $7::text
+)
+RETURNING id
+`
+
+type InsertReceiptSettlementParams struct {
+	TenantID      int64
+	TransactionID int64
+	Amount        string
+	Category      string
+	Note          string
+	SettledByID   int64
+	SettledByName string
+}
+
+// 撞 receipt_line_settlements_live 就是「已经结清过了」——并发的第二次点击
+// 在这里被唯一索引拦住，不靠先查后插。
+func (q *Queries) InsertReceiptSettlement(ctx context.Context, arg InsertReceiptSettlementParams) (int64, error) {
+	row := q.db.QueryRow(ctx, insertReceiptSettlement,
+		arg.TenantID,
+		arg.TransactionID,
+		arg.Amount,
+		arg.Category,
+		arg.Note,
+		arg.SettledByID,
+		arg.SettledByName,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const listAllocationsOfContract = `-- name: ListAllocationsOfContract :many
 SELECT
     a.id, a.transaction_id, a.amount::text AS amount,
@@ -377,7 +464,7 @@ func (q *Queries) ListAllocationsOfContract(ctx context.Context, arg ListAllocat
 const listAllocationsOfTransaction = `-- name: ListAllocationsOfTransaction :many
 SELECT
     id, contract_id, contract_no, customer_name,
-    amount::text AS amount, fee_amount::text AS fee_amount, currency,
+    amount::text AS amount, fee_amount::text AS fee_amount, fee_category, currency,
     coalesce(reversal_of, 0)::bigint AS reversal_of, reverse_reason,
     allocated_by_name, allocated_at
 FROM receipt_allocations
@@ -398,6 +485,7 @@ type ListAllocationsOfTransactionRow struct {
 	CustomerName    string
 	Amount          string
 	FeeAmount       string
+	FeeCategory     string
 	Currency        string
 	ReversalOf      int64
 	ReverseReason   string
@@ -421,11 +509,66 @@ func (q *Queries) ListAllocationsOfTransaction(ctx context.Context, arg ListAllo
 			&i.CustomerName,
 			&i.Amount,
 			&i.FeeAmount,
+			&i.FeeCategory,
 			&i.Currency,
 			&i.ReversalOf,
 			&i.ReverseReason,
 			&i.AllocatedByName,
 			&i.AllocatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLiveReceiptSettlements = `-- name: ListLiveReceiptSettlements :many
+SELECT id, transaction_id, amount::text AS amount, category, note,
+       settled_by_name, created_at
+FROM receipt_line_settlements
+WHERE tenant_id = $1::bigint
+  AND transaction_id = ANY($2::bigint[])
+  AND revoked_at IS NULL
+`
+
+type ListLiveReceiptSettlementsParams struct {
+	TenantID       int64
+	TransactionIds []int64
+}
+
+type ListLiveReceiptSettlementsRow struct {
+	ID            int64
+	TransactionID int64
+	Amount        string
+	Category      string
+	Note          string
+	SettledByName string
+	CreatedAt     pgtype.Timestamptz
+}
+
+// 列表页整页一次取，不是一行一问——和 AllocationSumsByTransactions 并排的
+// 同一个理由。
+func (q *Queries) ListLiveReceiptSettlements(ctx context.Context, arg ListLiveReceiptSettlementsParams) ([]ListLiveReceiptSettlementsRow, error) {
+	rows, err := q.db.Query(ctx, listLiveReceiptSettlements, arg.TenantID, arg.TransactionIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLiveReceiptSettlementsRow
+	for rows.Next() {
+		var i ListLiveReceiptSettlementsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TransactionID,
+			&i.Amount,
+			&i.Category,
+			&i.Note,
+			&i.SettledByName,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -749,6 +892,40 @@ func (q *Queries) OpenReceivables(ctx context.Context, arg OpenReceivablesParams
 		return nil, err
 	}
 	return items, nil
+}
+
+const revokeReceiptSettlement = `-- name: RevokeReceiptSettlement :execrows
+UPDATE receipt_line_settlements
+SET revoked_at = now(),
+    revoked_by_id = $1::bigint,
+    revoked_by_name = $2::text,
+    revoke_reason = $3::text
+WHERE tenant_id = $4::bigint
+  AND transaction_id = $5::bigint
+  AND revoked_at IS NULL
+`
+
+type RevokeReceiptSettlementParams struct {
+	RevokedByID   int64
+	RevokedByName string
+	RevokeReason  string
+	TenantID      int64
+	TransactionID int64
+}
+
+// WHERE 里的 revoked_at IS NULL 就是并发控制：两个人同时撤，只有一个改到行。
+func (q *Queries) RevokeReceiptSettlement(ctx context.Context, arg RevokeReceiptSettlementParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeReceiptSettlement,
+		arg.RevokedByID,
+		arg.RevokedByName,
+		arg.RevokeReason,
+		arg.TenantID,
+		arg.TransactionID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setContractReceivableDue = `-- name: SetContractReceivableDue :exec
