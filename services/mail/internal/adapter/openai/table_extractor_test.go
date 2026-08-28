@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"math/big"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -42,7 +44,15 @@ func TestExtractorUsesStructuredResponsesForTextAndRealImageSample(t *testing.T)
 			"items": []map[string]string{{
 				"product": "HRC", "material_standard": "ASTM A36", "thickness": "1.10",
 				"width": "1200", "quantity_unit": "MT", "quantity": "1250",
+				"section_ref": "HRC", "source_row": "1", "source_size": "1.10 x 1200", "source_quantity": "1250",
 			}},
+			"image_audit": map[string]any{
+				"detail_row_count": 1,
+				"sections": []map[string]any{{
+					"section_ref": "HRC", "detail_row_count": 1, "stated_total": "1250", "quantity_unit": "MT",
+					"shared_values": map[string]string{"product": "HRC"},
+				}},
+			},
 		})
 		responseBytes, _ := json.Marshal(map[string]any{
 			"model": "gpt-5.6-luna", "status": "completed",
@@ -122,6 +132,129 @@ func TestImageMediaTypePrefersBytesOverMailMetadata(t *testing.T) {
 	if !isImage("attachment.bin", "application/octet-stream", png) {
 		t.Fatal("PNG signature was not recognized without a useful name or content type")
 	}
+}
+
+// Opt-in regression against the real model. The fixture is small but catches
+// the failures that a mocked response cannot: skipped visual rows, a section's
+// COIL ID leaking into another section, and Peso being mistaken for a product
+// or left without its MT unit.
+func TestLiveImageInquiryFixture(t *testing.T) {
+	if os.Getenv("ERP_LIVE_OPENAI") != "1" {
+		t.Skip("set ERP_LIVE_OPENAI=1 to run the real image extraction")
+	}
+	key := os.Getenv("OPENAI_API_KEY")
+	if key == "" {
+		t.Fatal("OPENAI_API_KEY is required")
+	}
+	image, err := os.ReadFile("../../../../../_test_case/c88b244ae567a78ca04b9a232cc94a66.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := NewTableExtractor(key, os.Getenv("OPENAI_BASE_URL"), os.Getenv("OPENAI_MODEL"), 4*time.Minute)
+	got, err := client.Extract(t.Context(), app.TableExtractionInput{
+		FileName: "c88b244ae567a78ca04b9a232cc94a66.jpg", ContentType: "image/jpeg",
+		FileData: image, Locale: "zh", SafetyID: "live-image-regression",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Inquiry.Items) != 23 {
+		t.Fatalf("detail rows = %d, want 23", len(got.Inquiry.Items))
+	}
+	if got.Inquiry.ImageAudit == nil || len(got.Inquiry.ImageAudit.Sections) != 3 {
+		t.Fatalf("image audit = %#v, want 3 sections", got.Inquiry.ImageAudit)
+	}
+	wantSections := []struct {
+		name, total, coilID, surface, coating string
+		standard                              []string
+		thickness, width, quantities          []string
+	}{
+		{"HRC", "1250", "762", "", "", []string{"ASTM A36", "JIS G-3132 SPHT-1"},
+			[]string{"1.10", "1.20", "1.30", "1.40", "1.60", "1.70", "1.90", "2.38", "2.85"},
+			[]string{"", "", "", "", "", "", "", "", ""},
+			[]string{"100", "100", "100", "150", "100", "250", "250", "100", "100"}},
+		{"CRC", "550", "610", "GENERAL OILED", "", []string{"JIS G 3141 SPCC SD"},
+			[]string{"0.50", "0.55", "0.65", "0.70", "0.75", "0.85", "1.10"},
+			[]string{"1200", "1200", "1200", "1200", "1200", "1200", "1200"},
+			[]string{"50", "50", "150", "150", "50", "50", "50"}},
+		{"GALVANIZED", "1300", "610", "REGULAR SPANGLE", "Z120", []string{"ASTM A653 CS-B"},
+			[]string{"0.85", "1.10", "1.40", "1.70", "1.90", "2.38", "2.85"},
+			[]string{"1200", "1200", "1200", "1200", "1200", "1200", "1200"},
+			[]string{"50", "200", "350", "250", "250", "100", "100"}},
+	}
+	bySection := map[string][]map[string]string{}
+	for _, item := range got.Inquiry.Items {
+		bySection[item["section_ref"]] = append(bySection[item["section_ref"]], item)
+	}
+	auditBySection := map[string]app.ImageAuditSection{}
+	for _, section := range got.Inquiry.ImageAudit.Sections {
+		auditBySection[section.SectionRef] = section
+	}
+	for _, want := range wantSections {
+		items := bySection[want.name]
+		if len(items) != len(want.thickness) {
+			t.Fatalf("%s rows = %d, want %d; sections=%v", want.name, len(items), len(want.thickness), mapsKeys(bySection))
+		}
+		if actual := auditBySection[want.name].StatedTotal; !sameImageDecimal(actual, want.total) {
+			t.Fatalf("%s stated total = %q, want %s", want.name, actual, want.total)
+		}
+		for i, item := range items {
+			if item["source_row"] != strconv.Itoa(i+1) || !strings.EqualFold(item["quantity_unit"], "MT") {
+				t.Fatalf("%s row %d identity/unit = %q/%q", want.name, i+1, item["source_row"], item["quantity_unit"])
+			}
+			if canonicalImageFact(item["coil_id"]) != want.coilID {
+				t.Fatalf("%s row %d coil_id = %q, want %s", want.name, i+1, item["coil_id"], want.coilID)
+			}
+			if !sameImageDecimal(item["coil_weight"], "10.50") {
+				t.Fatalf("%s row %d coil_weight = %q", want.name, i+1, item["coil_weight"])
+			}
+			if !sameImageDecimal(item["thickness"], want.thickness[i]) || !sameImageDecimal(item["width"], want.width[i]) || !sameImageDecimal(item["quantity"], want.quantities[i]) {
+				t.Fatalf("%s row %d size/quantity = %q x %q / %q, want %s x %s / %s", want.name, i+1, item["thickness"], item["width"], item["quantity"], want.thickness[i], want.width[i], want.quantities[i])
+			}
+			standard := item["material_standard"] + " " + item["grade"]
+			for _, token := range want.standard {
+				if !strings.Contains(normalizeImageStandard(standard), normalizeImageStandard(token)) {
+					t.Fatalf("%s row %d standard = %q, missing %q", want.name, i+1, standard, token)
+				}
+			}
+			if want.surface != "" && !strings.Contains(strings.ToUpper(item["surface_requirement"]), want.surface) {
+				t.Fatalf("%s row %d surface = %q", want.name, i+1, item["surface_requirement"])
+			}
+			if want.coating != "" && !strings.Contains(strings.ToUpper(item["coating"]), want.coating) {
+				t.Fatalf("%s row %d coating = %q", want.name, i+1, item["coating"])
+			}
+		}
+	}
+}
+
+func sameImageDecimal(got, want string) bool {
+	got, want = strings.TrimSpace(got), strings.TrimSpace(want)
+	if got == "" || want == "" {
+		return got == want
+	}
+	a, aOK := new(big.Rat).SetString(got)
+	b, bOK := new(big.Rat).SetString(want)
+	return aOK && bOK && a.Cmp(b) == 0
+}
+
+func normalizeImageStandard(value string) string {
+	return strings.NewReplacer(" ", "", "-", "", "/", "").Replace(strings.ToUpper(value))
+}
+
+func canonicalImageFact(value string) string {
+	fields := strings.Fields(strings.TrimSpace(value))
+	if len(fields) == 0 {
+		return ""
+	}
+	return strings.TrimSuffix(fields[0], ".0")
+}
+
+func mapsKeys[V any](values map[string]V) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -225,6 +358,57 @@ func TestExtractorRequiresEveryPrecountedSpreadsheetRow(t *testing.T) {
 	bad := app.ExtractedInquiry{Items: []map[string]string{{"source_ref": "PRODUCTS!3"}}}
 	if err := validateSourceRefs(bad, refs); err == nil {
 		t.Fatal("missing source row must fail validation")
+	}
+}
+
+func TestImageAuditRejectsMissingRowsWrongTotalsAndSharedFacts(t *testing.T) {
+	columns := app.SystemInquiryColumns()
+	valid := app.ExtractedInquiry{
+		Items: []map[string]string{
+			{"section_ref": "HRC", "source_row": "1", "product": "HRC", "coil_id": "762", "quantity": "100"},
+			{"section_ref": "HRC", "source_row": "2", "product": "HRC", "coil_id": "762", "quantity": "150"},
+		},
+		ImageAudit: &app.ImageExtractionAudit{DetailRowCount: 2, Sections: []app.ImageAuditSection{{
+			SectionRef: "HRC", DetailRowCount: 2, StatedTotal: "250",
+			SharedValues: map[string]string{"product": "HRC", "coil_id": "762"},
+		}}},
+	}
+	if err := validateImageAudit(valid, columns); err != nil {
+		t.Fatalf("valid audit: %v", err)
+	}
+
+	missing := valid
+	missing.Items = missing.Items[:1]
+	if err := validateImageAudit(missing, columns); err == nil {
+		t.Fatal("missing image row must fail")
+	}
+
+	wrongTotal := valid
+	wrongTotal.Items = append([]map[string]string(nil), valid.Items...)
+	wrongTotal.Items[1] = map[string]string{"section_ref": "HRC", "source_row": "2", "product": "HRC", "coil_id": "762", "quantity": "140"}
+	if err := validateImageAudit(wrongTotal, columns); err == nil {
+		t.Fatal("wrong section total must fail")
+	}
+
+	wrongShared := valid
+	wrongShared.Items = append([]map[string]string(nil), valid.Items...)
+	wrongShared.Items[1] = map[string]string{"section_ref": "HRC", "source_row": "2", "product": "HRC", "coil_id": "610", "quantity": "150"}
+	if err := validateImageAudit(wrongShared, columns); err == nil {
+		t.Fatal("wrong shared coil id must fail")
+	}
+}
+
+func TestImageCellAnchorsPreventCrossSectionWidthLeak(t *testing.T) {
+	items := []map[string]string{
+		{"source_size": "1.10", "source_quantity": "100", "thickness": "1.10", "width": "1200"},
+		{"source_size": "0.50 X 1200", "source_quantity": "50 MT", "thickness": "0.50", "width": ""},
+	}
+	applyImageCellAnchors(items)
+	if items[0]["thickness"] != "1.10" || items[0]["width"] != "" || items[0]["quantity"] != "100" {
+		t.Fatalf("one-number size was not anchored: %#v", items[0])
+	}
+	if items[1]["thickness"] != "0.50" || items[1]["width"] != "1200" || items[1]["quantity"] != "50" {
+		t.Fatalf("two-number size was not anchored: %#v", items[1])
 	}
 }
 

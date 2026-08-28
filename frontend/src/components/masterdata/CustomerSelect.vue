@@ -1,5 +1,18 @@
 <template>
-  <el-select :model-value="modelValue" filterable clearable remote :remote-method="load" :loading="loading" :placeholder="placeholder || t('common.selectCustomer')" style="width:100%" @update:model-value="change">
+  <el-select
+    :model-value="modelValue"
+    filterable
+    clearable
+    remote
+    remote-show-suffix
+    default-first-option
+    :remote-method="load"
+    :loading="loading"
+    :placeholder="placeholder || t('common.selectCustomer')"
+    style="width:100%"
+    @focus="load('')"
+    @update:model-value="change"
+  >
     <el-option v-for="item in options" :key="item.id" :value="item.id" :label="`${item.code} · ${item.name}`" />
   </el-select>
 </template>

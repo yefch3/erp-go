@@ -96,14 +96,14 @@ func systemInquiryTemplateFields() []InquiryTemplateFieldInput {
 		{FieldKey: "surface_requirement", DisplayName: "表面要求", SortOrder: 8, DataType: "TEXT"},
 		{FieldKey: "coating", DisplayName: "涂层/镀层", SortOrder: 9, DataType: "TEXT"},
 		{FieldKey: "tolerance", DisplayName: "公差", SortOrder: 10, DataType: "TEXT"},
-		{FieldKey: "coil_weight", DisplayName: "卷重", SortOrder: 11, DataType: "TEXT"},
-		{FieldKey: "coil_id", DisplayName: "卷内径", SortOrder: 12, DataType: "TEXT"},
+		{FieldKey: "coil_weight", DisplayName: "卷重(MT)", SortOrder: 11, DataType: "TEXT"},
+		{FieldKey: "coil_id", DisplayName: "卷内径(mm)", SortOrder: 12, DataType: "TEXT"},
 		{FieldKey: "packaging", DisplayName: "包装", SortOrder: 13, DataType: "TEXT"},
 		{FieldKey: "delivery", DisplayName: "交期", SortOrder: 14, DataType: "TEXT"},
 		{FieldKey: "payment_terms", DisplayName: "付款条件", SortOrder: 15, DataType: "TEXT"},
 		{FieldKey: "incoterm", DisplayName: "贸易术语", SortOrder: 16, DataType: "TEXT"},
 		{FieldKey: "port", DisplayName: "港口", SortOrder: 17, DataType: "TEXT"},
-		{FieldKey: "quantity_unit", DisplayName: "单位", SortOrder: 18, IsRequired: true, DataType: "TEXT"},
+		{FieldKey: "quantity_unit", DisplayName: "数量计量单位(MT/PCS等)", SortOrder: 18, IsRequired: true, DataType: "TEXT"},
 		{FieldKey: "remarks", DisplayName: "备注", SortOrder: 19, DataType: "TEXT"},
 		{FieldKey: "quantity", DisplayName: "数量", SortOrder: 20, IsRequired: true, DataType: "NUMBER"},
 		{FieldKey: "unit_price", DisplayName: "单价", SortOrder: 21, DataType: "NUMBER"},
@@ -131,14 +131,14 @@ func steelDetailedInquiryTemplateFields() []InquiryTemplateFieldInput {
 		{FieldKey: "surface_requirement", DisplayName: "表面要求", SortOrder: 12, DataType: "TEXT"},
 		{FieldKey: "coating", DisplayName: "涂层/镀层", SortOrder: 13, DataType: "TEXT"},
 		{FieldKey: "tolerance", DisplayName: "公差", SortOrder: 14, DataType: "TEXT"},
-		{FieldKey: "coil_weight", DisplayName: "卷重", SortOrder: 15, DataType: "TEXT"},
-		{FieldKey: "coil_id", DisplayName: "卷内径", SortOrder: 16, DataType: "TEXT"},
+		{FieldKey: "coil_weight", DisplayName: "卷重(MT)", SortOrder: 15, DataType: "TEXT"},
+		{FieldKey: "coil_id", DisplayName: "卷内径(mm)", SortOrder: 16, DataType: "TEXT"},
 		{FieldKey: "packaging", DisplayName: "包装", SortOrder: 17, DataType: "TEXT"},
 		{FieldKey: "delivery", DisplayName: "交期", SortOrder: 18, DataType: "TEXT"},
 		{FieldKey: "payment_terms", DisplayName: "付款条件", SortOrder: 19, DataType: "TEXT"},
 		{FieldKey: "incoterm", DisplayName: "贸易术语", SortOrder: 20, DataType: "TEXT"},
 		{FieldKey: "port", DisplayName: "港口", SortOrder: 21, DataType: "TEXT"},
-		{FieldKey: "quantity_unit", DisplayName: "单位", SortOrder: 22, IsRequired: true, DataType: "TEXT"},
+		{FieldKey: "quantity_unit", DisplayName: "数量计量单位(MT/PCS等)", SortOrder: 22, IsRequired: true, DataType: "TEXT"},
 		{FieldKey: "remarks", DisplayName: "备注", SortOrder: 23, DataType: "TEXT"},
 		{FieldKey: "quantity", DisplayName: "数量", SortOrder: 24, IsRequired: true, DataType: "NUMBER"},
 		{FieldKey: "unit_price", DisplayName: "单价", SortOrder: 25, DataType: "NUMBER"},
@@ -173,7 +173,7 @@ func (s *Service) ensureDefaultInquiryTemplate(ctx context.Context, tenantID int
 		if viewErr != nil {
 			return viewErr
 		}
-		if isLegacySystemInquiryTemplate(view) {
+		if isLegacySystemInquiryTemplate(view) || needsInquiryUnitHeaderUpgrade(view) {
 			_, saveErr := s.SaveInquiryTemplate(ctx, tenantID, current.ID, InquiryTemplateInput{
 				Name: current.Name, Description: "系统内置标准列（毫米尺寸结构）",
 				IsDefault: true, Fields: systemInquiryTemplateFields(),
@@ -236,6 +236,19 @@ func (s *Service) ensureSteelDetailedInquiryTemplate(ctx context.Context, tenant
 	// ACTIVE 和 DISABLED 都算已经播种；用户停用后不能被系统悄悄恢复。
 	for _, row := range rows {
 		if row.TemplateCode == SteelDetailedInquiryTemplateCode {
+			if row.Status == InquiryTemplateStatusActive && row.CreatedByName == "system" {
+				view, viewErr := s.templateView(ctx, row)
+				if viewErr != nil {
+					return viewErr
+				}
+				if needsInquiryUnitHeaderUpgrade(view) {
+					_, saveErr := s.SaveInquiryTemplate(ctx, tenantID, row.ID, InquiryTemplateInput{
+						Name: row.Name, Description: row.Description, IsDefault: row.IsDefault,
+						Fields: steelDetailedInquiryTemplateFields(),
+					}, Operator{Name: "system"})
+					return saveErr
+				}
+			}
 			return nil
 		}
 	}
@@ -287,6 +300,28 @@ func isLegacySystemInquiryTemplate(view InquiryTemplateView) bool {
 		}
 	}
 	return true
+}
+
+// 早期种子把 mm/MT 写在每个值里，还把数量单位显示成一根独立的“单位”
+// 列。只升级 system 自己创建且仍保持旧标签的版本；公司已经自行改过表头的
+// 模板绝不能被后台悄悄覆盖。
+func needsInquiryUnitHeaderUpgrade(view InquiryTemplateView) bool {
+	if view.Template.CreatedByName != "system" {
+		return false
+	}
+	old := map[string]string{"coil_weight": "卷重", "coil_id": "卷内径", "quantity_unit": "单位"}
+	found := 0
+	for _, field := range view.Fields {
+		want, ok := old[field.FieldKey]
+		if !ok {
+			continue
+		}
+		if field.DisplayName != want {
+			return false
+		}
+		found++
+	}
+	return found == len(old)
 }
 
 func (s *Service) templateView(ctx context.Context, row store.InquiryTemplate) (InquiryTemplateView, error) {
