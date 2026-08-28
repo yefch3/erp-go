@@ -71,11 +71,12 @@ func TestBankTransactionRoutesAreAllRegistered(t *testing.T) {
 	have := routeSet(t)
 	// 和 frontend/src/pages/BankTransactionsPage.vue 里调的一一对应。
 	want := []string{
-		"GET /api/bank-transactions",               // 列表
-		"POST /api/bank-transactions",              // 「登记流水」（手工，CSV 之外的入口）
-		"POST /api/bank-transactions/import",       // 「导入对账单 CSV」
-		"POST /api/bank-transactions/{id}/match",   // 「匹配付款单」
-		"POST /api/bank-transactions/{id}/unmatch", // 「取消匹配」
+		"GET /api/bank-transactions",                       // 列表（银行流水页 + 付款对账页共用）
+		"POST /api/bank-transactions",                      // 「登记流水」（手工，CSV 之外的入口）
+		"POST /api/bank-transactions/import",               // 「导入对账单 CSV」
+		"POST /api/bank-transactions/{id}/match",           // 「匹配付款单」
+		"POST /api/bank-transactions/{id}/unmatch",         // 「取消匹配」
+		"POST /api/bank-transactions/{id}/settle-supplier", // 付款对账「核销」（影子付款单）
 	}
 	for _, w := range want {
 		if !have[w] {

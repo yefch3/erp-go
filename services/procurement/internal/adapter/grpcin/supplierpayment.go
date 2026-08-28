@@ -102,5 +102,25 @@ func supplierPaymentProto(v app.SupplierPayment) *prv1.SupplierPayment {
 		PaidAt: v.PaidAt, Method: v.Method, BankRef: v.BankRef, Remark: v.Remark,
 		CreatedBy: v.CreatedBy, CreatedAt: v.CreatedAt, Allocations: allocs,
 		BaseCurrency: v.BaseCurrency, BaseAmount: v.BaseAmount, FxRate: v.FxRate,
+		Source: v.Source,
 	}
+}
+
+// SettleBankTransactionToSupplier 付款对账的直接核销：建影子单 + 核销 +
+// 认领，一个事务。行的转换和 AllocateSupplierPayment 完全一致。
+func (h *OrderHandler) SettleBankTransactionToSupplier(ctx context.Context, req *prv1.SettleBankTransactionToSupplierRequest) (*prv1.SettleBankTransactionToSupplierResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	lines := make([]app.PaymentAllocationInput, 0, len(req.GetLines()))
+	for _, l := range req.GetLines() {
+		lines = append(lines, app.PaymentAllocationInput{
+			InvoiceID: l.GetInvoiceId(), POID: l.GetPoId(),
+			Amount: l.GetAmount(), FeeAmount: l.GetFeeAmount(),
+		})
+	}
+	v, err := h.svc.SettleBankTransactionToSupplier(ctx, grpcx.TenantID(ctx),
+		req.GetTxnId(), lines, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.SettleBankTransactionToSupplierResponse{Payment: supplierPaymentProto(v)}, nil
 }

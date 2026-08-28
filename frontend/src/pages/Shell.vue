@@ -564,7 +564,11 @@ const financeGroups = computed(() => [
         ? [{ path: '/supplier-invoices', label: t('financeNav.supplierInvoices') }]
         : []),
       ...(auth.can('procurement:payment:read')
-        ? [{ path: '/supplier-payments', label: t('financeNav.supplierPayments') }]
+        ? [
+            // 付款对账排在付款单前面：它是财务每天清的队列，付款单是台账。
+            { path: '/payment-recon', label: t('financeNav.paymentRecon') },
+            { path: '/supplier-payments', label: t('financeNav.supplierPayments') },
+          ]
         : []),
       ...(auth.can('procurement:recon:read')
         ? [{ path: '/supplier-statements', label: t('financeNav.supplierStatements') }]

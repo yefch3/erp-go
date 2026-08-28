@@ -50,6 +50,9 @@ func (s *Server) listBankTransactions(w http.ResponseWriter, r *http.Request) {
 		// ?ownership_pending=1 只出「还没人认领的」。单独一个开关而不是让
 		// ownership="" 兼职：空串已经是「不筛」的意思了。
 		OwnershipPending: r.URL.Query().Get("ownership_pending") == "1",
+		// 认领状态："" 不筛 / OPEN 还没认领完 / CLAIMED 认领完了。
+		// 付款对账的「待处理 / 已核销」两档走这里。
+		ClaimStatus: r.URL.Query().Get("claim_status"),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -65,6 +68,23 @@ func (s *Server) matchBankTransaction(w http.ResponseWriter, r *http.Request) {
 	}
 	req.TxnId = idFromPath(r)
 	resp, err := s.Orders.MatchBankTransaction(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// settleBankTransactionToSupplier 付款对账的直接核销：这条流水结算/退了
+// 哪些发票或采购单。采购服务在一个事务里自动建影子付款单并核销；守门
+// （归属、认领互斥、币种、净额天花板）全在那边。
+func (s *Server) settleBankTransactionToSupplier(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.SettleBankTransactionToSupplierRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.TxnId = idFromPath(r)
+	resp, err := s.Orders.SettleBankTransactionToSupplier(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

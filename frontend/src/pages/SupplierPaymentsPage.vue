@@ -21,7 +21,14 @@
       </div>
 
       <el-table v-loading="loading" :data="rows" stripe>
-        <el-table-column prop="paymentNo" :label="t('supplierPayments.paymentNo')" width="150" show-overflow-tooltip />
+        <el-table-column :label="t('supplierPayments.paymentNo')" width="185" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ row.paymentNo }}
+            <el-tooltip v-if="row.source === 'BANK'" :content="t('supplierPayments.sourceBankHint')">
+              <el-tag size="small" type="warning" effect="plain">{{ t('supplierPayments.sourceBank') }}</el-tag>
+            </el-tooltip>
+          </template>
+        </el-table-column>
         <el-table-column prop="supplierName" :label="t('supplierPayments.supplier')" min-width="160" show-overflow-tooltip />
         <el-table-column :label="t('supplierPayments.type')" width="100">
           <template #default="{ row }">
@@ -195,6 +202,8 @@ interface PaymentRow {
   supplierId: string
   supplierName: string
   paymentNo: string
+  // MANUAL 手工登记 / BANK 付款对账直核自动建的影子单。
+  source: string
   paymentType: string
   currency: string
   amount: string

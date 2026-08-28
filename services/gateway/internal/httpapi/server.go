@@ -600,6 +600,10 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/import", s.importBankStatement)
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/match", s.matchBankTransaction)
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/unmatch", s.unmatchBankTransaction)
+		// 付款对账的直接核销。地址带 -supplier 后缀：/settle 已经被收款对账
+		// （receipt-transactions）那组用掉了语义，两组动作决不能共用一个名字
+		// ——chi 对重复注册静默覆盖，见 routes_test.go 顶上的事故记录。
+		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/settle-supplier", s.settleBankTransactionToSupplier)
 		// 归属：这笔钱是谁那条线上的。见 docs/开发计划.md F2。
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/ownership", s.setBankTransactionOwnership)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/exceptions", s.reportReceiptException)

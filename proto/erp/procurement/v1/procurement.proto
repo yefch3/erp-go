@@ -635,6 +635,10 @@ service PurchaseOrderService {
   // 客户先发了水单，财务要先把这笔钱记下来。出口的收款对账原来自己有一张
   // 表干这件事，F2 之后由这里统一收着。
   rpc RecordBankTransaction(RecordBankTransactionRequest) returns (RecordBankTransactionResponse);
+  // 付款对账的直接核销：一条归属=供应商的银行流水，当场说清它结算/退了
+  // 哪些发票或采购单。同一个事务里自动建影子付款单（source=BANK，与手工
+  // 单共用号段和全部核销守门），认领全额写回流水。与「匹配付款单」互斥。
+  rpc SettleBankTransactionToSupplier(SettleBankTransactionToSupplierRequest) returns (SettleBankTransactionToSupplierResponse);
   // 取单独一行。核销之前要拿到金额和币种才能判断能不能核，靠它。
   rpc GetBankTransaction(GetBankTransactionRequest) returns (GetBankTransactionResponse);
 
@@ -1374,6 +1378,8 @@ message SupplierPayment {
   string base_currency = 16;
   string base_amount = 17;
   string fx_rate = 18;
+  // MANUAL 手工登记 / BANK 付款对账直核时系统自动建的影子单。
+  string source = 19;
 }
 
 message CreateSupplierPaymentRequest {
@@ -1414,6 +1420,13 @@ message AllocateSupplierPaymentRequest {
   repeated PaymentAllocationInput lines = 2;
 }
 message AllocateSupplierPaymentResponse { SupplierPayment payment = 1; }
+
+message SettleBankTransactionToSupplierRequest {
+  int64 txn_id = 1;
+  repeated PaymentAllocationInput lines = 2;
+}
+// 返回的就是那张自动建出的影子付款单（含核销行）。
+message SettleBankTransactionToSupplierResponse { SupplierPayment payment = 1; }
 
 message ReverseSupplierPaymentAllocationRequest {
   int64 allocation_id = 1;

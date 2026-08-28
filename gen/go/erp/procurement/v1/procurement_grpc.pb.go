@@ -1484,6 +1484,7 @@ const (
 	PurchaseOrderService_SetBankTransactionOwnership_FullMethodName      = "/erp.procurement.v1.PurchaseOrderService/SetBankTransactionOwnership"
 	PurchaseOrderService_UnmatchBankTransaction_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/UnmatchBankTransaction"
 	PurchaseOrderService_RecordBankTransaction_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/RecordBankTransaction"
+	PurchaseOrderService_SettleBankTransactionToSupplier_FullMethodName  = "/erp.procurement.v1.PurchaseOrderService/SettleBankTransactionToSupplier"
 	PurchaseOrderService_GetBankTransaction_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/GetBankTransaction"
 	PurchaseOrderService_ListBankAccounts_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/ListBankAccounts"
 	PurchaseOrderService_CreateBankAccount_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/CreateBankAccount"
@@ -1582,6 +1583,10 @@ type PurchaseOrderServiceClient interface {
 	// 客户先发了水单，财务要先把这笔钱记下来。出口的收款对账原来自己有一张
 	// 表干这件事，F2 之后由这里统一收着。
 	RecordBankTransaction(ctx context.Context, in *RecordBankTransactionRequest, opts ...grpc.CallOption) (*RecordBankTransactionResponse, error)
+	// 付款对账的直接核销：一条归属=供应商的银行流水，当场说清它结算/退了
+	// 哪些发票或采购单。同一个事务里自动建影子付款单（source=BANK，与手工
+	// 单共用号段和全部核销守门），认领全额写回流水。与「匹配付款单」互斥。
+	SettleBankTransactionToSupplier(ctx context.Context, in *SettleBankTransactionToSupplierRequest, opts ...grpc.CallOption) (*SettleBankTransactionToSupplierResponse, error)
 	// 取单独一行。核销之前要拿到金额和币种才能判断能不能核，靠它。
 	GetBankTransaction(ctx context.Context, in *GetBankTransactionRequest, opts ...grpc.CallOption) (*GetBankTransactionResponse, error)
 	// 我们自己的银行账户。跟着账本走：账本在这个服务里，账户清单也在这里，
@@ -2032,6 +2037,16 @@ func (c *purchaseOrderServiceClient) RecordBankTransaction(ctx context.Context, 
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) SettleBankTransactionToSupplier(ctx context.Context, in *SettleBankTransactionToSupplierRequest, opts ...grpc.CallOption) (*SettleBankTransactionToSupplierResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SettleBankTransactionToSupplierResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_SettleBankTransactionToSupplier_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *purchaseOrderServiceClient) GetBankTransaction(ctx context.Context, in *GetBankTransactionRequest, opts ...grpc.CallOption) (*GetBankTransactionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetBankTransactionResponse)
@@ -2164,6 +2179,10 @@ type PurchaseOrderServiceServer interface {
 	// 客户先发了水单，财务要先把这笔钱记下来。出口的收款对账原来自己有一张
 	// 表干这件事，F2 之后由这里统一收着。
 	RecordBankTransaction(context.Context, *RecordBankTransactionRequest) (*RecordBankTransactionResponse, error)
+	// 付款对账的直接核销：一条归属=供应商的银行流水，当场说清它结算/退了
+	// 哪些发票或采购单。同一个事务里自动建影子付款单（source=BANK，与手工
+	// 单共用号段和全部核销守门），认领全额写回流水。与「匹配付款单」互斥。
+	SettleBankTransactionToSupplier(context.Context, *SettleBankTransactionToSupplierRequest) (*SettleBankTransactionToSupplierResponse, error)
 	// 取单独一行。核销之前要拿到金额和币种才能判断能不能核，靠它。
 	GetBankTransaction(context.Context, *GetBankTransactionRequest) (*GetBankTransactionResponse, error)
 	// 我们自己的银行账户。跟着账本走：账本在这个服务里，账户清单也在这里，
@@ -2312,6 +2331,9 @@ func (UnimplementedPurchaseOrderServiceServer) UnmatchBankTransaction(context.Co
 }
 func (UnimplementedPurchaseOrderServiceServer) RecordBankTransaction(context.Context, *RecordBankTransactionRequest) (*RecordBankTransactionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RecordBankTransaction not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) SettleBankTransactionToSupplier(context.Context, *SettleBankTransactionToSupplierRequest) (*SettleBankTransactionToSupplierResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SettleBankTransactionToSupplier not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) GetBankTransaction(context.Context, *GetBankTransactionRequest) (*GetBankTransactionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetBankTransaction not implemented")
@@ -3120,6 +3142,24 @@ func _PurchaseOrderService_RecordBankTransaction_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_SettleBankTransactionToSupplier_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SettleBankTransactionToSupplierRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).SettleBankTransactionToSupplier(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_SettleBankTransactionToSupplier_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).SettleBankTransactionToSupplier(ctx, req.(*SettleBankTransactionToSupplierRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PurchaseOrderService_GetBankTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetBankTransactionRequest)
 	if err := dec(in); err != nil {
@@ -3370,6 +3410,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RecordBankTransaction",
 			Handler:    _PurchaseOrderService_RecordBankTransaction_Handler,
+		},
+		{
+			MethodName: "SettleBankTransactionToSupplier",
+			Handler:    _PurchaseOrderService_SettleBankTransactionToSupplier_Handler,
 		},
 		{
 			MethodName: "GetBankTransaction",

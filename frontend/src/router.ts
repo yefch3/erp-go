@@ -79,6 +79,7 @@ export const router = createRouter({
         { path: 'sourcing-cases/:id', redirect: (to) => ({ path: `/procurement/sourcing/${String(to.params.id)}`, query: to.query }) },
         { path: 'purchase-orders', component: () => import('./pages/PurchaseOrdersPage.vue') },
         { path: 'supplier-invoices', component: () => import('./pages/SupplierInvoicesPage.vue') },
+        { path: 'payment-recon', component: () => import('./pages/PaymentReconPage.vue') },
         { path: 'supplier-payments', component: () => import('./pages/SupplierPaymentsPage.vue') },
         { path: 'supplier-statements', component: () => import('./pages/SupplierStatementsPage.vue') },
         { path: 'bank-transactions', component: () => import('./pages/BankTransactionsPage.vue') },
