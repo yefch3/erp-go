@@ -82,6 +82,17 @@
         <div><small>{{ t('procurementIntakes.boundFormat') }}</small><strong>{{ resolvedTemplate ? `${resolvedTemplate.name} · v${resolvedTemplate.version}` : t('procurementIntakes.historicalFormat') }}</strong></div>
       </div>
       <el-alert :title="t('procurementIntakes.dynamicReviewHint')" type="warning" :closable="false" show-icon class="review-alert" />
+      <div v-if="isReturned" class="resubmit-box">
+        <el-alert type="error" :closable="false" show-icon>
+          <template #title>采购退回：{{ detail?.returnReason || '请根据退回要求补充资料' }}</template>
+          <div v-if="detail?.returnFields?.length" class="return-fields">需要补充：{{ detail.returnFields.join('、') }}</div>
+        </el-alert>
+        <label>
+          <span><i>*</i> 本次补充说明</span>
+          <el-input v-model="resubmitReason" type="textarea" :rows="3" maxlength="500" show-word-limit placeholder="请说明本次补充或修正了哪些内容；再次保存或提交时将写入变更记录" />
+        </label>
+        <small>再次提交将生成新的需求版本，采购可查看退回原因、本次补充说明和完整变更记录。</small>
+      </div>
       <div v-if="canWrite" class="review-toolbar">
         <span>{{ t('procurementIntakes.draftHint') }}</span>
         <el-button type="primary" plain @click="openAddLine">+ {{ t('procurementIntakes.addProduct') }}</el-button>
@@ -134,7 +145,7 @@ import { useAuthStore } from '../stores/auth'
 
 interface Extracted { product: string; materialStandard: string; grade: string; thickness: string; width: string; quantity: string; quantityUnit: string; delivery: string; port: string; customFields?: Record<string, string> }
 interface IntakeLine { id: string; lineNo: number; decision: string; extracted: Extracted }
-interface Intake { id: string; caseNo: string; title: string; customerName: string; contactName: string; contactEmail: string; sourceMailId: string; sourceFileName: string; createdAt: string; inquiryTemplateId?: string; lines?: IntakeLine[] }
+interface Intake { id: string; caseNo: string; title: string; customerName: string; contactName: string; contactEmail: string; sourceMailId: string; sourceFileName: string; createdAt: string; inquiryTemplateId?: string; handoffStatus?: string; returnReason?: string; returnFields?: string[]; requirementVersionNo?: number; lines?: IntakeLine[] }
 interface TemplateField { fieldKey: string; displayName: string; isRequired: boolean; sortOrder: number }
 interface CustomerOption { id: string; code: string; name: string }
 interface CustomerContactOption { id: string; name: string; department: string; title: string; email: string; isPrimary: boolean }
@@ -146,6 +157,7 @@ const router = useRouter()
 const canWrite = auth.can('sales:inquiry:write')
 const loading = ref(false), saving = ref(false), addingLine = ref(false), templatesLoading = ref(false), customersLoading = ref(false), contactsLoading = ref(false), uploadOpen = ref(false), detailOpen = ref(false), addLineOpen = ref(false)
 const rows = ref<Intake[]>([]), detail = ref<Intake | null>(null), keyword = ref(''), page = ref(1), total = ref(0)
+const resubmitReason = ref('')
 const uploadForm = reactive({ templateId: '', title: '', customerId: '', contactId: '', file: null as File | null })
 const templates = ref<InquiryTemplate[]>([])
 const customers = ref<CustomerOption[]>([])
@@ -166,6 +178,7 @@ const fallbackLabels: Record<string, string> = { product: '产品', material_sta
 const displayFields = computed(() => templateFields.value.length
   ? templateFields.value.filter((field) => !['unit_price', 'total_price'].includes(field.fieldKey)).sort((a, b) => Number(a.sortOrder) - Number(b.sortOrder)).map((field) => ({ key: field.fieldKey, label: field.displayName, required: field.isRequired }))
   : fallbackFields.map((key) => ({ key, label: fallbackLabels[key] ?? key, required: ['product', 'quantity', 'quantity_unit'].includes(key) })))
+const isReturned = computed(() => detail.value?.handoffStatus === 'RETURNED_FOR_SUPPLEMENT')
 
 function readTemplateField(extracted: Record<string, any>, key: string) {
   if (key.startsWith('custom.')) return extracted.customFields?.[key] ?? ''
@@ -277,7 +290,7 @@ async function upload() {
 
 async function openDetail(row: Intake) {
   const data = await get<{ sourcingCase: Intake }>(`/sourcing-cases/${row.id}`)
-  detail.value = data.sourcingCase; detailOpen.value = true
+  detail.value = data.sourcingCase; resubmitReason.value = ''; detailOpen.value = true
   await resolveTemplateFields(data.sourcingCase)
 }
 
@@ -289,11 +302,15 @@ function missingFieldLabels(line: IntakeLine) {
 }
 
 async function saveLine(line: IntakeLine) {
-  await put(`/sourcing-cases/${detail.value!.id}/lines/${line.id}`, { extracted: line.extracted, decision: line.decision })
+  // 历史退回单可能仍带着旧的 CONFIRMED；补充阶段先按草稿保存，再由整体提交重新确认。
+  const decision = line.decision === 'CONFIRMED' ? 'PENDING' : line.decision
+  await put(`/sourcing-cases/${detail.value!.id}/lines/${line.id}`, { extracted: line.extracted, decision, reason: resubmitReason.value.trim() })
+  line.decision = decision
 }
 
 async function saveDraft() {
   if (!detail.value) return
+  if (isReturned.value && !resubmitReason.value.trim()) { ElMessage.warning('请填写本次补充说明后再保存'); return }
   saving.value = true
   try {
     for (const line of detail.value.lines ?? []) await saveLine(line)
@@ -327,6 +344,7 @@ async function addLine() {
 
 async function confirmIntake() {
   if (!detail.value) return
+  if (isReturned.value && !resubmitReason.value.trim()) { ElMessage.warning('请填写本次补充说明后再提交采购寻源'); return }
   const active = detail.value.lines?.filter((line) => line.decision !== 'SKIPPED') ?? []
   if (!active.length) { ElMessage.warning(t('procurementIntakes.keepOne')); return }
   const incomplete = active.filter((line) => missingFieldLabels(line).length > 0)
@@ -345,7 +363,7 @@ async function confirmIntake() {
   saving.value = true
   try {
     for (const line of detail.value.lines ?? []) await saveLine(line)
-    await post(`/sourcing-cases/${detail.value.id}/confirm-lines`, { sourcingLineIds: active.map((line) => Number(line.id)) })
+    await post(`/sourcing-cases/${detail.value.id}/confirm-lines`, { sourcingLineIds: active.map((line) => Number(line.id)), reason: resubmitReason.value.trim() })
     ElMessage.success('客户需求已提交采购寻源'); detailOpen.value = false; await router.push(`/sales/inquiries/${detail.value.id}`)
   } finally { saving.value = false }
 }
@@ -357,5 +375,5 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.page{padding:28px;background:#f4f7f7;min-height:100%}.page-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px}.head-actions{display:flex;gap:10px}.eyebrow{color:#16766b;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}.page-head h1{margin:5px 0 4px;font-size:26px;color:#173042}.page-head p{margin:0;color:#71808b}.panel{background:#fff;border:1px solid #dfe8e6;border-radius:12px;padding:18px}.filters{display:flex;gap:10px;width:460px;margin-bottom:14px}.row-actions{display:flex;align-items:center;gap:8px;white-space:nowrap}.el-pagination{justify-content:flex-end;margin-top:16px}.upload-form{margin-top:20px}.template-picker{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;width:100%}.template-help{width:100%;margin-top:5px;color:#7b8992;font-size:12px;line-height:1.5}.detail-summary{display:grid;grid-template-columns:2fr 1fr 1fr 1.25fr;gap:14px;margin-bottom:14px}.detail-summary>div{display:flex;flex-direction:column;gap:4px;padding:11px 14px;background:#f4f7f7;border-radius:8px}.detail-summary small{color:#7b8992}.review-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;padding:10px 14px;border:1px solid #dce8e5;border-radius:8px;background:#f7fbfa;color:#536873}.review-alert{margin-bottom:14px}.stack-input{margin-top:6px}.qty{display:grid;grid-template-columns:1fr 70px;gap:6px}.pair-input{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%}.custom-fields{display:grid;gap:8px}.custom-fields label{display:grid;gap:3px}.custom-fields small{color:#71808b}@media(max-width:1050px){.detail-summary{grid-template-columns:1fr 1fr}}@media(max-width:850px){.filters{width:100%}.template-picker{grid-template-columns:1fr}.detail-summary{grid-template-columns:1fr}.page-head{gap:14px;flex-direction:column}.head-actions{flex-wrap:wrap}.review-toolbar{align-items:flex-start;flex-direction:column}.pair-input{grid-template-columns:1fr}}
+.page{padding:28px;background:#f4f7f7;min-height:100%}.page-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px}.head-actions{display:flex;gap:10px}.eyebrow{color:#16766b;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}.page-head h1{margin:5px 0 4px;font-size:26px;color:#173042}.page-head p{margin:0;color:#71808b}.panel{background:#fff;border:1px solid #dfe8e6;border-radius:12px;padding:18px}.filters{display:flex;gap:10px;width:460px;margin-bottom:14px}.row-actions{display:flex;align-items:center;gap:8px;white-space:nowrap}.el-pagination{justify-content:flex-end;margin-top:16px}.upload-form{margin-top:20px}.template-picker{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;width:100%}.template-help{width:100%;margin-top:5px;color:#7b8992;font-size:12px;line-height:1.5}.detail-summary{display:grid;grid-template-columns:2fr 1fr 1fr 1.25fr;gap:14px;margin-bottom:14px}.detail-summary>div{display:flex;flex-direction:column;gap:4px;padding:11px 14px;background:#f4f7f7;border-radius:8px}.detail-summary small{color:#7b8992}.review-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;padding:10px 14px;border:1px solid #dce8e5;border-radius:8px;background:#f7fbfa;color:#536873}.review-alert{margin-bottom:14px}.resubmit-box{display:grid;gap:12px;margin:0 0 14px;padding:14px;border:1px solid #f1c8c8;border-radius:9px;background:#fffafa}.resubmit-box label{display:grid;grid-template-columns:125px minmax(0,1fr);align-items:start;gap:12px;color:#455b68}.resubmit-box label span{padding-top:8px;font-weight:600}.resubmit-box label i{color:#e64f4f;font-style:normal}.resubmit-box small{padding-left:137px;color:#7b8992}.return-fields{margin-top:5px;font-weight:400}.stack-input{margin-top:6px}.qty{display:grid;grid-template-columns:1fr 70px;gap:6px}.pair-input{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%}.custom-fields{display:grid;gap:8px}.custom-fields label{display:grid;gap:3px}.custom-fields small{color:#71808b}@media(max-width:1050px){.detail-summary{grid-template-columns:1fr 1fr}}@media(max-width:850px){.filters{width:100%}.template-picker{grid-template-columns:1fr}.detail-summary{grid-template-columns:1fr}.page-head{gap:14px;flex-direction:column}.head-actions{flex-wrap:wrap}.review-toolbar{align-items:flex-start;flex-direction:column}.resubmit-box label{grid-template-columns:1fr}.resubmit-box small{padding-left:0}.pair-input{grid-template-columns:1fr}}
 </style>

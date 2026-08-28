@@ -123,11 +123,33 @@ func (h *SourcingHandler) ConfirmLines(ctx context.Context, req *prv1.ConfirmLin
 	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
 		return nil, err
 	}
-	view, err := h.svc.ConfirmSourcingLines(ctx, grpcx.TenantID(ctx), req.GetCaseId(), req.GetSourcingLineIds(), sourcingOperator(ctx))
+	view, err := h.svc.ConfirmSourcingLines(ctx, grpcx.TenantID(ctx), req.GetCaseId(), req.GetSourcingLineIds(), req.GetReason(), sourcingOperator(ctx))
 	if err != nil {
 		return nil, err
 	}
 	return &prv1.ConfirmLinesResponse{SourcingCase: sourcingCaseView(view)}, nil
+}
+
+func (h *SourcingHandler) AcceptCase(ctx context.Context, req *prv1.AcceptCaseRequest) (*prv1.AcceptCaseResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
+	view, err := h.svc.AcceptSourcingCase(ctx, grpcx.TenantID(ctx), req.GetCaseId(), sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.AcceptCaseResponse{SourcingCase: sourcingCaseView(view)}, nil
+}
+
+func (h *SourcingHandler) ReturnCase(ctx context.Context, req *prv1.ReturnCaseRequest) (*prv1.ReturnCaseResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
+	view, err := h.svc.ReturnSourcingCase(ctx, grpcx.TenantID(ctx), req.GetCaseId(), req.GetMissingFields(), req.GetReason(), sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.ReturnCaseResponse{SourcingCase: sourcingCaseView(view)}, nil
 }
 
 func (h *SourcingHandler) ReviewLine(ctx context.Context, req *prv1.ReviewLineRequest) (*prv1.ReviewLineResponse, error) {
@@ -368,6 +390,17 @@ func (h *SourcingHandler) ConfirmCostScenario(ctx context.Context, req *prv1.Con
 	return &prv1.ConfirmCostScenarioResponse{CostScenario: costScenarioView(view)}, nil
 }
 
+func (h *SourcingHandler) SubmitCostToSales(ctx context.Context, req *prv1.SubmitCostToSalesRequest) (*prv1.SubmitCostToSalesResponse, error) {
+	if err := h.authorizeScenario(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	view, err := h.svc.SubmitCostToSales(ctx, grpcx.TenantID(ctx), req.GetId(), sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.SubmitCostToSalesResponse{CostScenario: costScenarioView(view)}, nil
+}
+
 func (h *SourcingHandler) PrepareCustomerQuotation(ctx context.Context, req *prv1.PrepareCustomerQuotationRequest) (*prv1.PrepareCustomerQuotationResponse, error) {
 	if err := h.authorizeScenario(ctx, req.GetId()); err != nil {
 		return nil, err
@@ -414,6 +447,8 @@ func costScenarioList(row store.ListCostScenariosRow) *prv1.CostScenario {
 		CustomerQuotationId: row.CustomerQuotationID, CustomerQuoteNo: row.CustomerQuoteNo,
 		CreatedByName: row.CreatedByName, ConfirmedByName: row.ConfirmedByName,
 		ConfirmedAt: ts(row.ConfirmedAt), CreatedAt: ts(row.CreatedAt),
+		RequirementVersionNo:   int32(row.RequirementVersionNo),
+		SubmittedToSalesByName: row.SubmittedToSalesByName, SubmittedToSalesAt: ts(row.SubmittedToSalesAt),
 	}
 }
 
@@ -429,7 +464,9 @@ func costScenarioView(view app.CostScenarioView) *prv1.CostScenario {
 		CustomerQuotationId: h.CustomerQuotationID, CustomerQuoteNo: h.CustomerQuoteNo,
 		CreatedByName: h.CreatedByName, ConfirmedByName: h.ConfirmedByName,
 		ConfirmedAt: ts(h.ConfirmedAt), CreatedAt: ts(h.CreatedAt),
-		ConfirmReason: h.ConfirmReason,
+		ConfirmReason:          h.ConfirmReason,
+		RequirementVersionNo:   int32(h.RequirementVersionNo),
+		SubmittedToSalesByName: h.SubmittedToSalesByName, SubmittedToSalesAt: ts(h.SubmittedToSalesAt),
 	}
 	for _, charge := range view.Charges {
 		out.Charges = append(out.Charges, &prv1.CostCharge{
@@ -491,6 +528,13 @@ func sourcingCaseView(view app.SourcingCaseView) *prv1.SourcingCase {
 }
 
 func sourcingCaseHead(row store.GetSourcingCaseRow) *prv1.SourcingCase {
+	acceptedBy, returnedBy := int64(0), int64(0)
+	if row.AcceptedBy != nil {
+		acceptedBy = *row.AcceptedBy
+	}
+	if row.ReturnedBy != nil {
+		returnedBy = *row.ReturnedBy
+	}
 	return &prv1.SourcingCase{
 		Id: row.ID, CaseNo: row.CaseNo, Title: row.Title, CustomerId: row.CustomerID,
 		CustomerName: row.CustomerName, ContactName: row.ContactName, ContactEmail: row.ContactEmail,
@@ -500,10 +544,21 @@ func sourcingCaseHead(row store.GetSourcingCaseRow) *prv1.SourcingCase {
 		SourceFileName:    row.SourceFileName,
 		InquiryTemplateId: row.InquiryTemplateID, InquiryTemplateCode: row.InquiryTemplateCode,
 		InquiryTemplateVersion: row.InquiryTemplateVersion,
+		HandoffStatus:          row.HandoffStatus, RequirementVersionNo: row.RequirementVersionNo,
+		AcceptedBy: acceptedBy, AcceptedByName: row.AcceptedByName, AcceptedAt: ts(row.AcceptedAt),
+		ReturnedBy: returnedBy, ReturnedByName: row.ReturnedByName, ReturnedAt: ts(row.ReturnedAt),
+		ReturnReason: row.ReturnReason, ReturnFields: row.ReturnFields,
 	}
 }
 
 func sourcingCaseList(row store.ListSourcingCasesRow) *prv1.SourcingCase {
+	acceptedBy, returnedBy := int64(0), int64(0)
+	if row.AcceptedBy != nil {
+		acceptedBy = *row.AcceptedBy
+	}
+	if row.ReturnedBy != nil {
+		returnedBy = *row.ReturnedBy
+	}
 	return &prv1.SourcingCase{
 		Id: row.ID, CaseNo: row.CaseNo, Title: row.Title, CustomerId: row.CustomerID,
 		CustomerName: row.CustomerName, ContactName: row.ContactName, ContactEmail: row.ContactEmail,
@@ -511,6 +566,10 @@ func sourcingCaseList(row store.ListSourcingCasesRow) *prv1.SourcingCase {
 		Status: row.Status, OwnerId: row.OwnerID, OwnerName: row.OwnerName,
 		CreatedAt: ts(row.CreatedAt), UpdatedAt: ts(row.UpdatedAt),
 		SourceFileName: row.SourceFileName,
+		HandoffStatus:  row.HandoffStatus, RequirementVersionNo: row.RequirementVersionNo,
+		AcceptedBy: acceptedBy, AcceptedByName: row.AcceptedByName, AcceptedAt: ts(row.AcceptedAt),
+		ReturnedBy: returnedBy, ReturnedByName: row.ReturnedByName, ReturnedAt: ts(row.ReturnedAt),
+		ReturnReason: row.ReturnReason, ReturnFields: row.ReturnFields,
 	}
 }
 

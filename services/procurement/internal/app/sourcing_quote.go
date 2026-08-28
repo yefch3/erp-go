@@ -245,6 +245,9 @@ func (s *Service) CreateFactoryRFQ(ctx context.Context, tenantID int64, in NewFa
 	if err != nil {
 		return store.ListFactoryRFQsRow{}, err
 	}
+	if caseView.Head.HandoffStatus != "IN_PROGRESS" {
+		return store.ListFactoryRFQsRow{}, apierr.Conflict("SC_PROCUREMENT_ACCEPT_REQUIRED", "请先由采购员接收寻源任务")
+	}
 	supplier, err := s.supplierForOrder(ctx, in.SupplierID)
 	if err != nil {
 		return store.ListFactoryRFQsRow{}, err

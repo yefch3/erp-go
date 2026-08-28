@@ -43,7 +43,10 @@ INSERT INTO sourcing_lines (
 SELECT id, case_no, title, customer_id, customer_name, contact_name,
        contact_email, source_mail_id, source_attachment_id, status,
        owner_id, owner_name, source_file_name, inquiry_template_id,
-       inquiry_template_code, inquiry_template_version, created_at, updated_at,
+       inquiry_template_code, inquiry_template_version, handoff_status,
+       requirement_version_no, accepted_by, accepted_by_name, accepted_at,
+       returned_by, returned_by_name, returned_at, return_reason, return_fields,
+       created_at, updated_at,
        count(*) OVER () AS total
 FROM sourcing_cases
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
@@ -63,7 +66,10 @@ SELECT id, case_no, title, customer_id, customer_name, contact_name,
        contact_email, source_mail_id, source_attachment_id, status,
        owner_id, owner_name, source_file_name, source_file_key,
        inquiry_template_id,
-       inquiry_template_code, inquiry_template_version, created_at, updated_at
+       inquiry_template_code, inquiry_template_version, handoff_status,
+       requirement_version_no, accepted_by, accepted_by_name, accepted_at,
+       returned_by, returned_by_name, returned_at, return_reason, return_fields,
+       created_at, updated_at
 FROM sourcing_cases
 WHERE tenant_id = $1 AND id = $2;
 
@@ -98,6 +104,22 @@ WHERE tenant_id=sqlc.arg(tenant_id) AND case_id=sqlc.arg(case_id) AND id=sqlc.ar
 UPDATE sourcing_lines SET decision='CONFIRMED',updated_at=now()
 WHERE tenant_id=sqlc.arg(tenant_id) AND case_id=sqlc.arg(case_id)
   AND id = ANY(sqlc.arg(ids)::bigint[]);
+
+-- name: AcceptSourcingCase :execrows
+UPDATE sourcing_cases SET
+  status='SOURCING', handoff_status='IN_PROGRESS',
+  accepted_by=sqlc.arg(operator_id), accepted_by_name=sqlc.arg(operator_name), accepted_at=now(),
+  return_reason='', return_fields='{}', updated_at=now()
+WHERE tenant_id=sqlc.arg(tenant_id) AND id=sqlc.arg(id)
+  AND status='REVIEWING' AND handoff_status='WAITING_ACCEPTANCE';
+
+-- name: ReturnSourcingCase :execrows
+UPDATE sourcing_cases SET
+  status='INTAKE_PENDING', handoff_status='RETURNED_FOR_SUPPLEMENT',
+  returned_by=sqlc.arg(operator_id), returned_by_name=sqlc.arg(operator_name), returned_at=now(),
+  return_reason=sqlc.arg(reason), return_fields=sqlc.arg(fields)::text[], updated_at=now()
+WHERE tenant_id=sqlc.arg(tenant_id) AND id=sqlc.arg(id)
+  AND handoff_status IN ('WAITING_ACCEPTANCE','IN_PROGRESS');
 
 -- name: GetSourcingSourceFile :one
 SELECT source_file_name, source_content_type, source_file_data

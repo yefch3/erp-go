@@ -70,6 +70,9 @@ func (s *Service) CreateCostScenario(ctx context.Context, tenantID int64, in New
 	if caseRow.Status != "QUOTES_RECEIVED" && caseRow.Status != "COSTING" {
 		return CostScenarioView{}, apierr.Conflict("SC_QUOTES_REQUIRED", "请先收齐供应商报价")
 	}
+	if caseRow.HandoffStatus != "IN_PROGRESS" {
+		return CostScenarioView{}, apierr.Conflict("SC_HANDOFF_INACTIVE", "当前寻源任务不在采购处理中")
+	}
 	expected, err := s.q.CountConfirmedSourcingLines(ctx, store.CountConfirmedSourcingLinesParams{TenantID: tenantID, CaseID: in.CaseID})
 	if err != nil {
 		return CostScenarioView{}, err
@@ -161,7 +164,7 @@ func (s *Service) CreateCostScenario(ctx context.Context, tenantID int64, in New
 		if _, e := q.LockCostScenarioCase(ctx, store.LockCostScenarioCaseParams{TenantID: tenantID, ID: in.CaseID}); e != nil {
 			return e
 		}
-		head, e := q.CreateCostScenario(ctx, store.CreateCostScenarioParams{TenantID: tenantID, CaseID: in.CaseID, Currency: in.Currency, AllocationBasis: in.AllocationBasis, MarginType: in.MarginType, MarginValue: margin.String(), FxRate: targetRate.Rate.String(), FxRateAt: pgtype.Timestamptz{Time: targetRate.At, Valid: true}, FxSource: targetRate.Source, FxBaseCurrency: targetRate.Base, ProductTotal: productTotal.StringFixed(2), ChargeTotal: chargeTotal.StringFixed(2), LandedTotal: landedTotal.StringFixed(2), MarginTotal: marginTotal.StringFixed(2), CustomerTotal: customerTotal.StringFixed(2), CreatedBy: op.ID, CreatedByName: op.Name})
+		head, e := q.CreateCostScenario(ctx, store.CreateCostScenarioParams{TenantID: tenantID, CaseID: in.CaseID, RequirementVersionNo: caseRow.RequirementVersionNo, Currency: in.Currency, AllocationBasis: in.AllocationBasis, MarginType: in.MarginType, MarginValue: margin.String(), FxRate: targetRate.Rate.String(), FxRateAt: pgtype.Timestamptz{Time: targetRate.At, Valid: true}, FxSource: targetRate.Source, FxBaseCurrency: targetRate.Base, ProductTotal: productTotal.StringFixed(2), ChargeTotal: chargeTotal.StringFixed(2), LandedTotal: landedTotal.StringFixed(2), MarginTotal: marginTotal.StringFixed(2), CustomerTotal: customerTotal.StringFixed(2), CreatedBy: op.ID, CreatedByName: op.Name})
 		if e != nil {
 			return e
 		}
@@ -275,6 +278,9 @@ func (s *Service) ConfirmCostScenario(ctx context.Context, tenantID, id int64, r
 		if n != 1 {
 			return apierr.Conflict("SC_COST_NOT_DRAFT", "成本方案状态已改变")
 		}
+		if e := q.MarkSourcingCaseCostConfirmed(ctx, store.MarkSourcingCaseCostConfirmedParams{TenantID: tenantID, ID: current.Header.CaseID}); e != nil {
+			return e
+		}
 		afterJSON, _ := json.Marshal(map[string]string{"scenarioNo": current.Header.ScenarioNo, "reason": reason})
 		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: current.Header.CaseID,
 			Section: "COST", Action: "CONFIRMED", EntityID: id,
@@ -284,6 +290,42 @@ func (s *Service) ConfirmCostScenario(ctx context.Context, tenantID, id int64, r
 	})
 	if e != nil {
 		return CostScenarioView{}, e
+	}
+	return s.GetCostScenario(ctx, tenantID, id)
+}
+
+// SubmitCostToSales 将已确认的准确成本版本交还销售，之后销售才可据此生成客户报价。
+func (s *Service) SubmitCostToSales(ctx context.Context, tenantID, id int64, op Operator) (CostScenarioView, error) {
+	current, err := s.GetCostScenario(ctx, tenantID, id)
+	if err != nil {
+		return CostScenarioView{}, err
+	}
+	if current.Header.Status != "CONFIRMED" || current.Header.CustomerQuotationID != 0 {
+		return CostScenarioView{}, apierr.Conflict("SC_COST_NOT_SUBMITTABLE", "只有尚未生成客户报价的已确认成本可以提交销售")
+	}
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		n, err := q.SubmitCostScenarioToSales(ctx, store.SubmitCostScenarioToSalesParams{
+			OperatorID: &op.ID, OperatorName: op.Name, TenantID: tenantID, ID: id,
+		})
+		if err != nil {
+			return err
+		}
+		if n != 1 {
+			return apierr.Conflict("SC_COST_ALREADY_SUBMITTED", "该成本版本已经提交销售")
+		}
+		if err = q.MarkSourcingCaseSubmittedToSales(ctx, store.MarkSourcingCaseSubmittedToSalesParams{TenantID: tenantID, ID: current.Header.CaseID}); err != nil {
+			return err
+		}
+		after, _ := json.Marshal(map[string]any{"scenarioNo": current.Header.ScenarioNo, "costVersion": current.Header.VersionNo, "requirementVersion": current.Header.RequirementVersionNo})
+		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{
+			TenantID: tenantID, CaseID: current.Header.CaseID, Section: "HANDOFF", Action: "COST_SUBMITTED_TO_SALES",
+			EntityID: id, Summary: "采购提交成本方案给销售", BeforeJson: []byte(`{"handoffStatus":"COST_CONFIRMED"}`),
+			AfterJson: after, OperatorID: op.ID, OperatorName: op.Name,
+		})
+	})
+	if err != nil {
+		return CostScenarioView{}, err
 	}
 	return s.GetCostScenario(ctx, tenantID, id)
 }
@@ -303,6 +345,9 @@ func (s *Service) PrepareCustomerQuotation(ctx context.Context, tenantID, id int
 	}
 	if v.Header.Status != "CONFIRMED" {
 		return CustomerQuotationDraft{}, apierr.Conflict("SC_COST_NOT_CONFIRMED", "请先确认成本方案")
+	}
+	if !v.Header.SubmittedToSalesAt.Valid {
+		return CustomerQuotationDraft{}, apierr.Conflict("SC_COST_NOT_SUBMITTED", "采购尚未把该成本方案提交销售")
 	}
 	c, e := s.q.CostScenarioCase(ctx, store.CostScenarioCaseParams{TenantID: tenantID, ID: v.Header.CaseID})
 	if e != nil {
@@ -326,6 +371,9 @@ func (s *Service) LinkCustomerQuotation(ctx context.Context, tenantID, id, quota
 			return nil
 		}
 		return apierr.Conflict("SC_QUOTATION_EXISTS", "成本方案已经生成客户报价")
+	}
+	if !v.Header.SubmittedToSalesAt.Valid {
+		return apierr.Conflict("SC_COST_NOT_SUBMITTED", "采购尚未把该成本方案提交销售")
 	}
 	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)

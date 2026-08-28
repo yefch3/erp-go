@@ -514,6 +514,8 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("sales:inquiry:write")).Post("/api/inquiry-templates/{id}/status", s.setInquiryTemplateStatus)
 		r.With(s.perm("sales:inquiry:write")).Post("/api/inquiry-templates/{id}/default", s.setDefaultInquiryTemplate)
 		r.With(s.perm("sales:inquiry:submit")).Post("/api/sourcing-cases/{id}/confirm-lines", s.confirmSourcingLines)
+		r.With(s.perm("procurement:sourcing:write")).Post("/api/sourcing-cases/{id}/accept", s.acceptSourcingCase)
+		r.With(s.perm("procurement:sourcing:write")).Post("/api/sourcing-cases/{id}/return", s.returnSourcingCase)
 		r.With(s.perm("sales:inquiry:write"), s.perm("product:product:read")).Put("/api/sourcing-cases/{id}/lines/{lineId}", s.reviewSourcingLine)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/factory-rfqs", s.listFactoryRFQs)
 		r.With(s.perm("procurement:sourcing:write")).Post("/api/sourcing-cases/{id}/factory-rfqs", s.createFactoryRFQ)
@@ -524,6 +526,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:sourcing:price")).Post("/api/sourcing-cases/{id}/cost-scenarios", s.createCostScenario)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/cost-scenarios/{id}", s.getCostScenario)
 		r.With(s.perm("procurement:sourcing:approve")).Post("/api/cost-scenarios/{id}/confirm", s.confirmCostScenario)
+		r.With(s.perm("procurement:sourcing:approve")).Post("/api/cost-scenarios/{id}/submit-to-sales", s.submitCostToSales)
 		// 采购经理确认成本，到此采购责任结束；生成客户报价只由销售报价权限控制。
 		r.With(s.perm("export:quotation:write")).Post("/api/cost-scenarios/{id}/create-customer-quotation", s.createCustomerQuotationFromCost)
 		r.With(s.perm("procurement:sourcing:price")).Post("/api/factory-rfqs/{id}/supplier-quotes", s.createSupplierQuote)

@@ -59,17 +59,17 @@ const router = useRouter()
 const isSalesView = computed(() => route.path.startsWith('/sales/'))
 const isPendingView = computed(() => route.path === '/procurement/sourcing/pending')
 const pageEyebrow = computed(() => isSalesView.value ? 'CUSTOMER INQUIRIES' : 'PROCUREMENT SOURCING')
-const pageTitle = computed(() => isSalesView.value ? '客户询盘项目' : isPendingView.value ? '待开始询价' : '全部寻源项目')
+const pageTitle = computed(() => isSalesView.value ? '客户询盘项目' : isPendingView.value ? '待接单任务' : '全部寻源项目')
 const pageSubtitle = computed(() => isSalesView.value
   ? '查看客户需求、采购进度和客户报价；供应商询价与成本操作由采购侧完成。'
   : isPendingView.value
-    ? '查看已完成销售复核、等待采购开始工厂询价的客户需求。'
+    ? '查看销售已提交、等待采购接收或退回补充的客户需求。'
     : '跟进工厂询价、供应商报价比较和成本方案，并将结果交回销售。')
 // 进行中的项目作为默认视图，同时允许用户主动找回已生成报价单或已取消的历史项目。
 const statuses = ['REVIEWING','SOURCING','QUOTES_RECEIVED','COSTING','CUSTOMER_QUOTE_CREATED','CANCELLED']
 const procurementStages = [
   { value: '', label: '全部', hint: '所有项目' },
-  { value: 'REVIEWING', label: '待开始', hint: '尚未发起询价' },
+  { value: 'REVIEWING', label: '待接单', hint: '接收或退回补充' },
   { value: 'SOURCING', label: '询价中', hint: '等待供应商回复' },
   { value: 'QUOTES_RECEIVED', label: '比价中', hint: '已收到报价' },
   { value: 'COSTING', label: '成本方案', hint: '形成报价依据' },
@@ -90,7 +90,7 @@ function normalizedStatus(value?:string){return value && knownStatuses.has(value
 function statusLabel(value?:string){const statusKey=normalizedStatus(value);return statusKey==='UNKNOWN'?t('sourcing.unknownStatus'):t(`sourcing.statuses.${statusKey}`)}
 function waitingFor(value?:string){return t(`sourcing.waiting.${normalizedStatus(value)}`)}
 function stageTagType(value?:string){return ({REVIEWING:'info',SOURCING:'warning',QUOTES_RECEIVED:'primary',COSTING:'success',CUSTOMER_QUOTE_CREATED:'success',CANCELLED:'info'} as Record<string,'primary'|'success'|'warning'|'info'>)[String(value)]||'info'}
-function salesStageLabel(value?:string){return ({REVIEWING:'采购待开始',SOURCING:'采购询价中',QUOTES_RECEIVED:'采购比价中',COSTING:'采购核算中',CUSTOMER_QUOTE_CREATED:'客户报价中',CANCELLED:'已结束'} as Record<string,string>)[String(value)]||statusLabel(value)}
+function salesStageLabel(value?:string){return ({REVIEWING:'等待采购接单',SOURCING:'采购询价中',QUOTES_RECEIVED:'采购比价中',COSTING:'采购核算中',CUSTOMER_QUOTE_CREATED:'客户报价中',CANCELLED:'已结束'} as Record<string,string>)[String(value)]||statusLabel(value)}
 function salesAttention(value?:string){return ({REVIEWING:'确认客户需求已提交',SOURCING:'等待采购反馈',QUOTES_RECEIVED:'关注报价进度',COSTING:'准备客户报价',CUSTOMER_QUOTE_CREATED:'跟进客户反馈',CANCELLED:'无需继续跟进'} as Record<string,string>)[String(value)]||'查看项目进展'}
 
 // 兼容采购工作台和询盘确认页生成的旧链接，并统一跳转到新的独立详情页。

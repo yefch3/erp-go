@@ -203,7 +203,7 @@ func (q *Queries) CostScenarioCandidate(ctx context.Context, arg CostScenarioCan
 }
 
 const costScenarioCase = `-- name: CostScenarioCase :one
-SELECT id,customer_id,customer_name,contact_name,contact_email,status
+SELECT id,customer_id,customer_name,contact_name,contact_email,status,handoff_status,requirement_version_no
 FROM sourcing_cases WHERE tenant_id=$1 AND id=$2
 `
 
@@ -213,12 +213,14 @@ type CostScenarioCaseParams struct {
 }
 
 type CostScenarioCaseRow struct {
-	ID           int64
-	CustomerID   int64
-	CustomerName string
-	ContactName  string
-	ContactEmail string
-	Status       string
+	ID                   int64
+	CustomerID           int64
+	CustomerName         string
+	ContactName          string
+	ContactEmail         string
+	Status               string
+	HandoffStatus        string
+	RequirementVersionNo int32
 }
 
 func (q *Queries) CostScenarioCase(ctx context.Context, arg CostScenarioCaseParams) (CostScenarioCaseRow, error) {
@@ -231,6 +233,8 @@ func (q *Queries) CostScenarioCase(ctx context.Context, arg CostScenarioCasePara
 		&i.ContactName,
 		&i.ContactEmail,
 		&i.Status,
+		&i.HandoffStatus,
+		&i.RequirementVersionNo,
 	)
 	return i, err
 }
@@ -334,38 +338,39 @@ func (q *Queries) CreateCostCharge(ctx context.Context, arg CreateCostChargePara
 }
 
 const createCostScenario = `-- name: CreateCostScenario :one
-INSERT INTO cost_scenarios(tenant_id,case_id,scenario_no,version_no,currency,allocation_basis,margin_type,margin_value,
+INSERT INTO cost_scenarios(tenant_id,case_id,scenario_no,version_no,requirement_version_no,currency,allocation_basis,margin_type,margin_value,
  fx_rate,fx_rate_at,fx_source,fx_base_currency,product_total,charge_total,landed_total,margin_total,customer_total,
  created_by,created_by_name)
 VALUES($1,$2,
  'CS-'||to_char(current_date,'YYYYMMDD')||'-'||lpad(nextval('cost_scenario_no_seq')::text,6,'0'),
  (SELECT coalesce(max(version_no),0)+1 FROM cost_scenarios
   WHERE tenant_id=$1 AND case_id=$2),
- $3,$4,$5,$6::text::numeric,
- $7::text::numeric,$8::timestamptz,$9,$10,
- $11::text::numeric,$12::text::numeric,$13::text::numeric,
- $14::text::numeric,$15::text::numeric,$16,$17)
+ $3,$4,$5,$6,$7::text::numeric,
+ $8::text::numeric,$9::timestamptz,$10,$11,
+ $12::text::numeric,$13::text::numeric,$14::text::numeric,
+ $15::text::numeric,$16::text::numeric,$17,$18)
 RETURNING id,scenario_no,version_no
 `
 
 type CreateCostScenarioParams struct {
-	TenantID        int64
-	CaseID          int64
-	Currency        string
-	AllocationBasis string
-	MarginType      string
-	MarginValue     string
-	FxRate          string
-	FxRateAt        pgtype.Timestamptz
-	FxSource        string
-	FxBaseCurrency  string
-	ProductTotal    string
-	ChargeTotal     string
-	LandedTotal     string
-	MarginTotal     string
-	CustomerTotal   string
-	CreatedBy       int64
-	CreatedByName   string
+	TenantID             int64
+	CaseID               int64
+	RequirementVersionNo int32
+	Currency             string
+	AllocationBasis      string
+	MarginType           string
+	MarginValue          string
+	FxRate               string
+	FxRateAt             pgtype.Timestamptz
+	FxSource             string
+	FxBaseCurrency       string
+	ProductTotal         string
+	ChargeTotal          string
+	LandedTotal          string
+	MarginTotal          string
+	CustomerTotal        string
+	CreatedBy            int64
+	CreatedByName        string
 }
 
 type CreateCostScenarioRow struct {
@@ -378,6 +383,7 @@ func (q *Queries) CreateCostScenario(ctx context.Context, arg CreateCostScenario
 	row := q.db.QueryRow(ctx, createCostScenario,
 		arg.TenantID,
 		arg.CaseID,
+		arg.RequirementVersionNo,
 		arg.Currency,
 		arg.AllocationBasis,
 		arg.MarginType,
@@ -463,10 +469,11 @@ func (q *Queries) CreateCostScenarioLine(ctx context.Context, arg CreateCostScen
 }
 
 const getCostScenario = `-- name: GetCostScenario :one
-SELECT id,case_id,scenario_no,version_no,currency,allocation_basis,margin_type,margin_value::text,fx_rate::text,fx_rate_at,
+SELECT id,case_id,scenario_no,version_no,requirement_version_no,currency,allocation_basis,margin_type,margin_value::text,fx_rate::text,fx_rate_at,
  fx_source,fx_base_currency,product_total::text,charge_total::text,landed_total::text,margin_total::text,
  customer_total::text,status,coalesce(customer_quotation_id,0)::bigint AS customer_quotation_id,customer_quote_no,
- created_by_name,confirmed_by_name,confirmed_at,confirm_reason,created_at
+ created_by_name,confirmed_by_name,confirmed_at,confirm_reason,
+ submitted_to_sales_by_name,submitted_to_sales_at,created_at
 FROM cost_scenarios WHERE tenant_id=$1 AND id=$2
 `
 
@@ -476,31 +483,34 @@ type GetCostScenarioParams struct {
 }
 
 type GetCostScenarioRow struct {
-	ID                  int64
-	CaseID              int64
-	ScenarioNo          string
-	VersionNo           int32
-	Currency            string
-	AllocationBasis     string
-	MarginType          string
-	MarginValue         string
-	FxRate              string
-	FxRateAt            pgtype.Timestamptz
-	FxSource            string
-	FxBaseCurrency      string
-	ProductTotal        string
-	ChargeTotal         string
-	LandedTotal         string
-	MarginTotal         string
-	CustomerTotal       string
-	Status              string
-	CustomerQuotationID int64
-	CustomerQuoteNo     string
-	CreatedByName       string
-	ConfirmedByName     string
-	ConfirmedAt         pgtype.Timestamptz
-	ConfirmReason       string
-	CreatedAt           pgtype.Timestamptz
+	ID                     int64
+	CaseID                 int64
+	ScenarioNo             string
+	VersionNo              int32
+	RequirementVersionNo   int32
+	Currency               string
+	AllocationBasis        string
+	MarginType             string
+	MarginValue            string
+	FxRate                 string
+	FxRateAt               pgtype.Timestamptz
+	FxSource               string
+	FxBaseCurrency         string
+	ProductTotal           string
+	ChargeTotal            string
+	LandedTotal            string
+	MarginTotal            string
+	CustomerTotal          string
+	Status                 string
+	CustomerQuotationID    int64
+	CustomerQuoteNo        string
+	CreatedByName          string
+	ConfirmedByName        string
+	ConfirmedAt            pgtype.Timestamptz
+	ConfirmReason          string
+	SubmittedToSalesByName string
+	SubmittedToSalesAt     pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
 }
 
 func (q *Queries) GetCostScenario(ctx context.Context, arg GetCostScenarioParams) (GetCostScenarioRow, error) {
@@ -511,6 +521,7 @@ func (q *Queries) GetCostScenario(ctx context.Context, arg GetCostScenarioParams
 		&i.CaseID,
 		&i.ScenarioNo,
 		&i.VersionNo,
+		&i.RequirementVersionNo,
 		&i.Currency,
 		&i.AllocationBasis,
 		&i.MarginType,
@@ -531,6 +542,8 @@ func (q *Queries) GetCostScenario(ctx context.Context, arg GetCostScenarioParams
 		&i.ConfirmedByName,
 		&i.ConfirmedAt,
 		&i.ConfirmReason,
+		&i.SubmittedToSalesByName,
+		&i.SubmittedToSalesAt,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -730,10 +743,11 @@ func (q *Queries) ListCostScenarioLines(ctx context.Context, arg ListCostScenari
 }
 
 const listCostScenarios = `-- name: ListCostScenarios :many
-SELECT id,case_id,scenario_no,version_no,currency,allocation_basis,margin_type,margin_value::text,fx_rate::text,fx_rate_at,
+SELECT id,case_id,scenario_no,version_no,requirement_version_no,currency,allocation_basis,margin_type,margin_value::text,fx_rate::text,fx_rate_at,
  fx_source,fx_base_currency,product_total::text,charge_total::text,landed_total::text,margin_total::text,
  customer_total::text,status,coalesce(customer_quotation_id,0)::bigint AS customer_quotation_id,customer_quote_no,
- created_by_name,confirmed_by_name,confirmed_at,confirm_reason,created_at
+ created_by_name,confirmed_by_name,confirmed_at,confirm_reason,
+ submitted_to_sales_by_name,submitted_to_sales_at,created_at
 FROM cost_scenarios WHERE tenant_id=$1 AND case_id=$2 ORDER BY created_at DESC
 `
 
@@ -743,31 +757,34 @@ type ListCostScenariosParams struct {
 }
 
 type ListCostScenariosRow struct {
-	ID                  int64
-	CaseID              int64
-	ScenarioNo          string
-	VersionNo           int32
-	Currency            string
-	AllocationBasis     string
-	MarginType          string
-	MarginValue         string
-	FxRate              string
-	FxRateAt            pgtype.Timestamptz
-	FxSource            string
-	FxBaseCurrency      string
-	ProductTotal        string
-	ChargeTotal         string
-	LandedTotal         string
-	MarginTotal         string
-	CustomerTotal       string
-	Status              string
-	CustomerQuotationID int64
-	CustomerQuoteNo     string
-	CreatedByName       string
-	ConfirmedByName     string
-	ConfirmedAt         pgtype.Timestamptz
-	ConfirmReason       string
-	CreatedAt           pgtype.Timestamptz
+	ID                     int64
+	CaseID                 int64
+	ScenarioNo             string
+	VersionNo              int32
+	RequirementVersionNo   int32
+	Currency               string
+	AllocationBasis        string
+	MarginType             string
+	MarginValue            string
+	FxRate                 string
+	FxRateAt               pgtype.Timestamptz
+	FxSource               string
+	FxBaseCurrency         string
+	ProductTotal           string
+	ChargeTotal            string
+	LandedTotal            string
+	MarginTotal            string
+	CustomerTotal          string
+	Status                 string
+	CustomerQuotationID    int64
+	CustomerQuoteNo        string
+	CreatedByName          string
+	ConfirmedByName        string
+	ConfirmedAt            pgtype.Timestamptz
+	ConfirmReason          string
+	SubmittedToSalesByName string
+	SubmittedToSalesAt     pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
 }
 
 func (q *Queries) ListCostScenarios(ctx context.Context, arg ListCostScenariosParams) ([]ListCostScenariosRow, error) {
@@ -784,6 +801,7 @@ func (q *Queries) ListCostScenarios(ctx context.Context, arg ListCostScenariosPa
 			&i.CaseID,
 			&i.ScenarioNo,
 			&i.VersionNo,
+			&i.RequirementVersionNo,
 			&i.Currency,
 			&i.AllocationBasis,
 			&i.MarginType,
@@ -804,6 +822,8 @@ func (q *Queries) ListCostScenarios(ctx context.Context, arg ListCostScenariosPa
 			&i.ConfirmedByName,
 			&i.ConfirmedAt,
 			&i.ConfirmReason,
+			&i.SubmittedToSalesByName,
+			&i.SubmittedToSalesAt,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -834,8 +854,22 @@ func (q *Queries) LockCostScenarioCase(ctx context.Context, arg LockCostScenario
 	return id, err
 }
 
+const markSourcingCaseCostConfirmed = `-- name: MarkSourcingCaseCostConfirmed :exec
+UPDATE sourcing_cases SET handoff_status='COST_CONFIRMED',updated_at=now() WHERE tenant_id=$1 AND id=$2
+`
+
+type MarkSourcingCaseCostConfirmedParams struct {
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) MarkSourcingCaseCostConfirmed(ctx context.Context, arg MarkSourcingCaseCostConfirmedParams) error {
+	_, err := q.db.Exec(ctx, markSourcingCaseCostConfirmed, arg.TenantID, arg.ID)
+	return err
+}
+
 const markSourcingCaseCosting = `-- name: MarkSourcingCaseCosting :exec
-UPDATE sourcing_cases SET status='COSTING',updated_at=now() WHERE tenant_id=$1 AND id=$2
+UPDATE sourcing_cases SET status='COSTING',handoff_status='IN_PROGRESS',updated_at=now() WHERE tenant_id=$1 AND id=$2
 `
 
 type MarkSourcingCaseCostingParams struct {
@@ -849,7 +883,7 @@ func (q *Queries) MarkSourcingCaseCosting(ctx context.Context, arg MarkSourcingC
 }
 
 const markSourcingCaseQuoted = `-- name: MarkSourcingCaseQuoted :exec
-UPDATE sourcing_cases SET status='CUSTOMER_QUOTE_CREATED',updated_at=now() WHERE tenant_id=$1 AND id=$2
+UPDATE sourcing_cases SET status='CUSTOMER_QUOTE_CREATED',handoff_status='QUOTE_IN_PROGRESS',updated_at=now() WHERE tenant_id=$1 AND id=$2
 `
 
 type MarkSourcingCaseQuotedParams struct {
@@ -862,8 +896,23 @@ func (q *Queries) MarkSourcingCaseQuoted(ctx context.Context, arg MarkSourcingCa
 	return err
 }
 
+const markSourcingCaseSubmittedToSales = `-- name: MarkSourcingCaseSubmittedToSales :exec
+UPDATE sourcing_cases SET handoff_status='SUBMITTED_TO_SALES',updated_at=now()
+WHERE tenant_id=$1 AND id=$2
+`
+
+type MarkSourcingCaseSubmittedToSalesParams struct {
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) MarkSourcingCaseSubmittedToSales(ctx context.Context, arg MarkSourcingCaseSubmittedToSalesParams) error {
+	_, err := q.db.Exec(ctx, markSourcingCaseSubmittedToSales, arg.TenantID, arg.ID)
+	return err
+}
+
 const returnRejectedQuotationCaseToCosting = `-- name: ReturnRejectedQuotationCaseToCosting :execrows
-UPDATE sourcing_cases SET status='COSTING',updated_at=now()
+UPDATE sourcing_cases SET status='COSTING',handoff_status='IN_PROGRESS',updated_at=now()
 WHERE tenant_id=$1 AND id=$2
   AND status='CUSTOMER_QUOTE_CREATED'
 `
@@ -875,6 +924,33 @@ type ReturnRejectedQuotationCaseToCostingParams struct {
 
 func (q *Queries) ReturnRejectedQuotationCaseToCosting(ctx context.Context, arg ReturnRejectedQuotationCaseToCostingParams) (int64, error) {
 	result, err := q.db.Exec(ctx, returnRejectedQuotationCaseToCosting, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const submitCostScenarioToSales = `-- name: SubmitCostScenarioToSales :execrows
+UPDATE cost_scenarios SET submitted_to_sales_by=$1,
+ submitted_to_sales_by_name=$2,submitted_to_sales_at=now(),updated_at=now()
+WHERE tenant_id=$3 AND id=$4
+  AND status='CONFIRMED' AND submitted_to_sales_at IS NULL
+`
+
+type SubmitCostScenarioToSalesParams struct {
+	OperatorID   *int64
+	OperatorName string
+	TenantID     int64
+	ID           int64
+}
+
+func (q *Queries) SubmitCostScenarioToSales(ctx context.Context, arg SubmitCostScenarioToSalesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, submitCostScenarioToSales,
+		arg.OperatorID,
+		arg.OperatorName,
+		arg.TenantID,
+		arg.ID,
+	)
 	if err != nil {
 		return 0, err
 	}

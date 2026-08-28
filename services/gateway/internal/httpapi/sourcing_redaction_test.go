@@ -31,7 +31,8 @@ func TestSalesProcurementProgressPayloadUsesSensitiveFieldWhitelist(t *testing.T
 		}},
 		&prv1.ListCostScenariosResponse{CostScenarios: []*prv1.CostScenario{
 			{Id: 1, ScenarioNo: "COST-DRAFT", Status: "DRAFT", ProductTotal: "100", ChargeTotal: "20", CustomerTotal: "130"},
-			{Id: 2, ScenarioNo: "COST-CONFIRMED", VersionNo: 3, Currency: "USD", Status: "CONFIRMED", ProductTotal: "200", ChargeTotal: "30", LandedTotal: "230", CustomerTotal: "260", CustomerQuotationId: 9},
+			{Id: 2, ScenarioNo: "COST-CONFIRMED", VersionNo: 3, RequirementVersionNo: 2, Currency: "USD", Status: "CONFIRMED", ProductTotal: "200", ChargeTotal: "30", LandedTotal: "230", CustomerTotal: "260", CustomerQuotationId: 9, SubmittedToSalesAt: "2026-08-27T12:00:00Z"},
+			{Id: 3, ScenarioNo: "COST-NOT-SUBMITTED", Status: "CONFIRMED", CustomerTotal: "999"},
 		}},
 	)
 
@@ -40,12 +41,12 @@ func TestSalesProcurementProgressPayloadUsesSensitiveFieldWhitelist(t *testing.T
 		t.Fatal(err)
 	}
 	got := string(raw)
-	for _, secret := range []string{"秘密供应商", "秘密工厂", "secret@example.com", "100", "200", "230", "COST-DRAFT"} {
+	for _, secret := range []string{"秘密供应商", "秘密工厂", "secret@example.com", "100", "200", "230", "COST-DRAFT", "COST-NOT-SUBMITTED", "999"} {
 		if strings.Contains(got, secret) {
 			t.Fatalf("sales progress leaked procurement detail %q: %s", secret, got)
 		}
 	}
-	for _, want := range []string{`"rfqCount":2`, `"quotedRfqCount":1`, `"scenarioNo":"COST-CONFIRMED"`, `"customerTotal":"260"`} {
+	for _, want := range []string{`"rfqCount":2`, `"quotedRfqCount":1`, `"scenarioNo":"COST-CONFIRMED"`, `"requirementVersionNo":2`, `"customerTotal":"260"`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("sales progress missing %s: %s", want, got)
 		}

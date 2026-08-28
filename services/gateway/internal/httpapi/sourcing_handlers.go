@@ -142,15 +142,17 @@ func salesProcurementProgressPayload(caseResp *prv1.GetCaseResponse, rfqResp *pr
 	}
 	confirmed := make([]map[string]any, 0)
 	for _, scenario := range costResp.GetCostScenarios() {
-		if scenario.GetStatus() != "CONFIRMED" {
+		if scenario.GetStatus() != "CONFIRMED" || scenario.GetSubmittedToSalesAt() == "" {
 			continue
 		}
 		confirmed = append(confirmed, map[string]any{
 			"id": scenario.GetId(), "scenarioNo": scenario.GetScenarioNo(),
 			"versionNo": scenario.GetVersionNo(), "currency": scenario.GetCurrency(),
-			"status":              "CONFIRMED",
-			"customerTotal":       scenario.GetCustomerTotal(),
-			"customerQuotationId": scenario.GetCustomerQuotationId(),
+			"requirementVersionNo": scenario.GetRequirementVersionNo(),
+			"submittedToSalesAt":   scenario.GetSubmittedToSalesAt(),
+			"status":               "CONFIRMED",
+			"customerTotal":        scenario.GetCustomerTotal(),
+			"customerQuotationId":  scenario.GetCustomerQuotationId(),
 		})
 	}
 	return map[string]any{
@@ -211,6 +213,29 @@ func (s *Server) confirmSourcingLines(w http.ResponseWriter, r *http.Request) {
 	}
 	req.CaseId = idFromPath(r)
 	resp, err := s.Sourcing.ConfirmLines(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) acceptSourcingCase(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.AcceptCase(r.Context(), &prv1.AcceptCaseRequest{CaseId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) returnSourcingCase(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.ReturnCaseRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.CaseId = idFromPath(r)
+	resp, err := s.Sourcing.ReturnCase(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -480,6 +505,15 @@ func (s *Server) confirmCostScenario(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Id = idFromPath(r)
 	resp, err := s.Sourcing.ConfirmCostScenario(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) submitCostToSales(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.SubmitCostToSales(r.Context(), &prv1.SubmitCostToSalesRequest{Id: idFromPath(r)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

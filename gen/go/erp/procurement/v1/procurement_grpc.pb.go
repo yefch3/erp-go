@@ -24,6 +24,8 @@ const (
 	SourcingService_GetCase_FullMethodName                     = "/erp.procurement.v1.SourcingService/GetCase"
 	SourcingService_AddLine_FullMethodName                     = "/erp.procurement.v1.SourcingService/AddLine"
 	SourcingService_ConfirmLines_FullMethodName                = "/erp.procurement.v1.SourcingService/ConfirmLines"
+	SourcingService_AcceptCase_FullMethodName                  = "/erp.procurement.v1.SourcingService/AcceptCase"
+	SourcingService_ReturnCase_FullMethodName                  = "/erp.procurement.v1.SourcingService/ReturnCase"
 	SourcingService_ReviewLine_FullMethodName                  = "/erp.procurement.v1.SourcingService/ReviewLine"
 	SourcingService_CreateFactoryRfq_FullMethodName            = "/erp.procurement.v1.SourcingService/CreateFactoryRfq"
 	SourcingService_ListFactoryRfqs_FullMethodName             = "/erp.procurement.v1.SourcingService/ListFactoryRfqs"
@@ -36,6 +38,7 @@ const (
 	SourcingService_ListCostScenarios_FullMethodName           = "/erp.procurement.v1.SourcingService/ListCostScenarios"
 	SourcingService_GetCostScenario_FullMethodName             = "/erp.procurement.v1.SourcingService/GetCostScenario"
 	SourcingService_ConfirmCostScenario_FullMethodName         = "/erp.procurement.v1.SourcingService/ConfirmCostScenario"
+	SourcingService_SubmitCostToSales_FullMethodName           = "/erp.procurement.v1.SourcingService/SubmitCostToSales"
 	SourcingService_PrepareCustomerQuotation_FullMethodName    = "/erp.procurement.v1.SourcingService/PrepareCustomerQuotation"
 	SourcingService_LinkCustomerQuotation_FullMethodName       = "/erp.procurement.v1.SourcingService/LinkCustomerQuotation"
 	SourcingService_ListCaseChanges_FullMethodName             = "/erp.procurement.v1.SourcingService/ListCaseChanges"
@@ -56,6 +59,8 @@ type SourcingServiceClient interface {
 	GetCase(ctx context.Context, in *GetCaseRequest, opts ...grpc.CallOption) (*GetCaseResponse, error)
 	AddLine(ctx context.Context, in *AddLineRequest, opts ...grpc.CallOption) (*AddLineResponse, error)
 	ConfirmLines(ctx context.Context, in *ConfirmLinesRequest, opts ...grpc.CallOption) (*ConfirmLinesResponse, error)
+	AcceptCase(ctx context.Context, in *AcceptCaseRequest, opts ...grpc.CallOption) (*AcceptCaseResponse, error)
+	ReturnCase(ctx context.Context, in *ReturnCaseRequest, opts ...grpc.CallOption) (*ReturnCaseResponse, error)
 	ReviewLine(ctx context.Context, in *ReviewLineRequest, opts ...grpc.CallOption) (*ReviewLineResponse, error)
 	CreateFactoryRfq(ctx context.Context, in *CreateFactoryRfqRequest, opts ...grpc.CallOption) (*CreateFactoryRfqResponse, error)
 	ListFactoryRfqs(ctx context.Context, in *ListFactoryRfqsRequest, opts ...grpc.CallOption) (*ListFactoryRfqsResponse, error)
@@ -68,6 +73,7 @@ type SourcingServiceClient interface {
 	ListCostScenarios(ctx context.Context, in *ListCostScenariosRequest, opts ...grpc.CallOption) (*ListCostScenariosResponse, error)
 	GetCostScenario(ctx context.Context, in *GetCostScenarioRequest, opts ...grpc.CallOption) (*GetCostScenarioResponse, error)
 	ConfirmCostScenario(ctx context.Context, in *ConfirmCostScenarioRequest, opts ...grpc.CallOption) (*ConfirmCostScenarioResponse, error)
+	SubmitCostToSales(ctx context.Context, in *SubmitCostToSalesRequest, opts ...grpc.CallOption) (*SubmitCostToSalesResponse, error)
 	PrepareCustomerQuotation(ctx context.Context, in *PrepareCustomerQuotationRequest, opts ...grpc.CallOption) (*PrepareCustomerQuotationResponse, error)
 	LinkCustomerQuotation(ctx context.Context, in *LinkCustomerQuotationRequest, opts ...grpc.CallOption) (*LinkCustomerQuotationResponse, error)
 	ListCaseChanges(ctx context.Context, in *ListCaseChangesRequest, opts ...grpc.CallOption) (*ListCaseChangesResponse, error)
@@ -129,6 +135,26 @@ func (c *sourcingServiceClient) ConfirmLines(ctx context.Context, in *ConfirmLin
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ConfirmLinesResponse)
 	err := c.cc.Invoke(ctx, SourcingService_ConfirmLines_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) AcceptCase(ctx context.Context, in *AcceptCaseRequest, opts ...grpc.CallOption) (*AcceptCaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AcceptCaseResponse)
+	err := c.cc.Invoke(ctx, SourcingService_AcceptCase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ReturnCase(ctx context.Context, in *ReturnCaseRequest, opts ...grpc.CallOption) (*ReturnCaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReturnCaseResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ReturnCase_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -255,6 +281,16 @@ func (c *sourcingServiceClient) ConfirmCostScenario(ctx context.Context, in *Con
 	return out, nil
 }
 
+func (c *sourcingServiceClient) SubmitCostToSales(ctx context.Context, in *SubmitCostToSalesRequest, opts ...grpc.CallOption) (*SubmitCostToSalesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SubmitCostToSalesResponse)
+	err := c.cc.Invoke(ctx, SourcingService_SubmitCostToSales_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *sourcingServiceClient) PrepareCustomerQuotation(ctx context.Context, in *PrepareCustomerQuotationRequest, opts ...grpc.CallOption) (*PrepareCustomerQuotationResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PrepareCustomerQuotationResponse)
@@ -318,6 +354,8 @@ type SourcingServiceServer interface {
 	GetCase(context.Context, *GetCaseRequest) (*GetCaseResponse, error)
 	AddLine(context.Context, *AddLineRequest) (*AddLineResponse, error)
 	ConfirmLines(context.Context, *ConfirmLinesRequest) (*ConfirmLinesResponse, error)
+	AcceptCase(context.Context, *AcceptCaseRequest) (*AcceptCaseResponse, error)
+	ReturnCase(context.Context, *ReturnCaseRequest) (*ReturnCaseResponse, error)
 	ReviewLine(context.Context, *ReviewLineRequest) (*ReviewLineResponse, error)
 	CreateFactoryRfq(context.Context, *CreateFactoryRfqRequest) (*CreateFactoryRfqResponse, error)
 	ListFactoryRfqs(context.Context, *ListFactoryRfqsRequest) (*ListFactoryRfqsResponse, error)
@@ -330,6 +368,7 @@ type SourcingServiceServer interface {
 	ListCostScenarios(context.Context, *ListCostScenariosRequest) (*ListCostScenariosResponse, error)
 	GetCostScenario(context.Context, *GetCostScenarioRequest) (*GetCostScenarioResponse, error)
 	ConfirmCostScenario(context.Context, *ConfirmCostScenarioRequest) (*ConfirmCostScenarioResponse, error)
+	SubmitCostToSales(context.Context, *SubmitCostToSalesRequest) (*SubmitCostToSalesResponse, error)
 	PrepareCustomerQuotation(context.Context, *PrepareCustomerQuotationRequest) (*PrepareCustomerQuotationResponse, error)
 	LinkCustomerQuotation(context.Context, *LinkCustomerQuotationRequest) (*LinkCustomerQuotationResponse, error)
 	ListCaseChanges(context.Context, *ListCaseChangesRequest) (*ListCaseChangesResponse, error)
@@ -361,6 +400,12 @@ func (UnimplementedSourcingServiceServer) AddLine(context.Context, *AddLineReque
 }
 func (UnimplementedSourcingServiceServer) ConfirmLines(context.Context, *ConfirmLinesRequest) (*ConfirmLinesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ConfirmLines not implemented")
+}
+func (UnimplementedSourcingServiceServer) AcceptCase(context.Context, *AcceptCaseRequest) (*AcceptCaseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AcceptCase not implemented")
+}
+func (UnimplementedSourcingServiceServer) ReturnCase(context.Context, *ReturnCaseRequest) (*ReturnCaseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReturnCase not implemented")
 }
 func (UnimplementedSourcingServiceServer) ReviewLine(context.Context, *ReviewLineRequest) (*ReviewLineResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReviewLine not implemented")
@@ -397,6 +442,9 @@ func (UnimplementedSourcingServiceServer) GetCostScenario(context.Context, *GetC
 }
 func (UnimplementedSourcingServiceServer) ConfirmCostScenario(context.Context, *ConfirmCostScenarioRequest) (*ConfirmCostScenarioResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ConfirmCostScenario not implemented")
+}
+func (UnimplementedSourcingServiceServer) SubmitCostToSales(context.Context, *SubmitCostToSalesRequest) (*SubmitCostToSalesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SubmitCostToSales not implemented")
 }
 func (UnimplementedSourcingServiceServer) PrepareCustomerQuotation(context.Context, *PrepareCustomerQuotationRequest) (*PrepareCustomerQuotationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PrepareCustomerQuotation not implemented")
@@ -520,6 +568,42 @@ func _SourcingService_ConfirmLines_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SourcingServiceServer).ConfirmLines(ctx, req.(*ConfirmLinesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_AcceptCase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AcceptCaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).AcceptCase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_AcceptCase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).AcceptCase(ctx, req.(*AcceptCaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ReturnCase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReturnCaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ReturnCase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ReturnCase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ReturnCase(ctx, req.(*ReturnCaseRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -740,6 +824,24 @@ func _SourcingService_ConfirmCostScenario_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SourcingService_SubmitCostToSales_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitCostToSalesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).SubmitCostToSales(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_SubmitCostToSales_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).SubmitCostToSales(ctx, req.(*SubmitCostToSalesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SourcingService_PrepareCustomerQuotation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PrepareCustomerQuotationRequest)
 	if err := dec(in); err != nil {
@@ -858,6 +960,14 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _SourcingService_ConfirmLines_Handler,
 		},
 		{
+			MethodName: "AcceptCase",
+			Handler:    _SourcingService_AcceptCase_Handler,
+		},
+		{
+			MethodName: "ReturnCase",
+			Handler:    _SourcingService_ReturnCase_Handler,
+		},
+		{
 			MethodName: "ReviewLine",
 			Handler:    _SourcingService_ReviewLine_Handler,
 		},
@@ -904,6 +1014,10 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ConfirmCostScenario",
 			Handler:    _SourcingService_ConfirmCostScenario_Handler,
+		},
+		{
+			MethodName: "SubmitCostToSales",
+			Handler:    _SourcingService_SubmitCostToSales_Handler,
 		},
 		{
 			MethodName: "PrepareCustomerQuotation",
