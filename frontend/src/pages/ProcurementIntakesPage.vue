@@ -78,6 +78,7 @@
       <div v-if="detail" class="detail-summary">
         <div><small>{{ t('procurementIntakes.fileOrSubject') }}</small><strong>{{ detail.title }}</strong></div>
         <div><small>{{ t('procurementIntakes.customer') }}</small><strong>{{ detail.customerName || '—' }}</strong></div>
+        <div><small>{{ t('procurementIntakes.contact') }}</small><strong>{{ detail.contactName ? `${detail.contactName}${detail.contactEmail ? ` · ${detail.contactEmail}` : ''}` : '—' }}</strong></div>
         <div><small>{{ t('procurementIntakes.source') }}</small><strong>{{ Number(detail.sourceMailId) > 0 ? t('procurementIntakes.mailAuto') : t('procurementIntakes.manual') }}</strong></div>
         <div><small>{{ t('procurementIntakes.boundFormat') }}</small><strong>{{ resolvedTemplate ? `${resolvedTemplate.name} · v${resolvedTemplate.version}` : t('procurementIntakes.historicalFormat') }}</strong></div>
       </div>

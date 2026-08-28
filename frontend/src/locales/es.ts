@@ -352,7 +352,7 @@ export default {
     addAndSave: 'Añadir y guardar',
     newProductRequired: 'Introduce producto, cantidad y unidad',
     productAdded: 'Línea de producto añadida y guardada',
-    format: 'Formato de consulta', autoRecognize: 'Detectar formato automáticamente (recomendado)', boundFormat: 'Formato vinculado', historicalFormat: 'Formato heredado', autoFormatHint: 'El sistema compara todos los encabezados con los formatos activos. Seleccione uno solo si hay ambigüedad.', selectedFormatHint: 'El archivo se validará con “{name} · v{version}”.',
+    format: 'Formato de consulta', autoRecognize: 'Detectar formato automáticamente (recomendado)', boundFormat: 'Formato vinculado', historicalFormat: 'Formato heredado', autoFormatHint: 'El sistema compara los encabezados incluidos con los formatos activos. Las columnas ausentes quedan vacías para revisión manual; seleccione un formato solo si hay ambigüedad.', selectedFormatHint: 'Las columnas incluidas se validan con “{name} · v{version}”; las ausentes quedan vacías para revisión manual.',
     dynamicReviewHint: 'Revise cada campo definido por este formato. Complete los elementos marcados o guarde un borrador.',
     completeness: 'Integridad', complete: 'Completo', ignored: 'Ignorado', missingCount: 'Faltan {count}',
     dynamicRequiredMissing: 'Faltan datos obligatorios: línea {detail}. Guarde el borrador o complételo antes de cotizar.',

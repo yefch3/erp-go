@@ -343,7 +343,7 @@ export default {
     flowHint: 'A sourcing case never creates a purchase order directly. A purchasing task appears only after the customer accepts a quotation and a contract takes effect.',
   },
   procurementIntakes: {
-    format: 'Inquiry format', autoRecognize: 'Auto-detect file format (recommended)', boundFormat: 'Bound format', historicalFormat: 'Legacy format', autoFormatHint: 'The system matches the full header set against active formats. Select one only if recognition is ambiguous.', selectedFormatHint: 'This file will be validated against “{name} · v{version}”.',
+    format: 'Inquiry format', autoRecognize: 'Auto-detect file format (recommended)', boundFormat: 'Bound format', historicalFormat: 'Legacy format', autoFormatHint: 'The system matches the provided headers against active formats. Missing template columns stay blank for manual review; select a format only if recognition is ambiguous.', selectedFormatHint: 'Provided columns are validated against “{name} · v{version}”; missing columns stay blank for manual review.',
     dynamicReviewHint: 'Review every field defined by this inquiry format. Complete all red missing items, or save an unfinished draft.',
     completeness: 'Completeness', complete: 'Complete', ignored: 'Ignored', missingCount: '{count} missing',
     dynamicRequiredMissing: 'Required data is still missing: line {detail}. Save the draft or complete it before sourcing.',

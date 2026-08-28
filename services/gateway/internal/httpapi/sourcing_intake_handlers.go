@@ -146,7 +146,7 @@ func (s *Server) importSourcingIntake(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := s.Sourcing.CreateCase(r.Context(), &prv1.CreateCaseRequest{
 		Title: title, CustomerId: customerID, CustomerName: customer.GetName(),
-		ContactName: contact.GetName(), ContactEmail: contact.GetEmail(),
+		ContactId: contactID, ContactName: contact.GetName(), ContactEmail: contact.GetEmail(),
 		// -1 表示手工上传；摘要用于阻止同一文件被重复导入。
 		SourceMailId: -1, SourceAttachmentId: inquiryFingerprint(data), Lines: lines,
 		SourceFileName: filepath.Base(header.Filename), SourceContentType: header.Header.Get("Content-Type"), SourceFileData: data,
@@ -189,7 +189,10 @@ func recognizeInquiryTemplate(header *multipart.FileHeader, data []byte, templat
 		if template.GetStatus() != "ACTIVE" {
 			continue
 		}
-		if _, matchErr := validateInquiryHeaders(rows[0], intakeFieldsFromTemplate(template), false); matchErr == nil {
+		// 自动识别也允许文件缺少模板列：缺失内容本来就应进入销售人工复核，
+		// 不能因为模板后来新增了可选列而让旧标准文件完全无法识别。文件中
+		// 已出现的列仍必须全部属于该模板，避免静默丢弃客户数据。
+		if _, matchErr := validateInquiryHeaders(rows[0], intakeFieldsFromTemplate(template), true); matchErr == nil {
 			matches = append(matches, template)
 		}
 	}
