@@ -1,8 +1,8 @@
 # AI Agent 融入 ERP 企划书
 
-> 状态：提案稿  
-> 日期：2026-08-28  
-> 范围：产品效果、业务场景、技术架构、安全边界与衡量方式  
+> 状态：提案稿
+> 日期：2026-08-28
+> 范围：产品效果、业务场景、技术架构、安全边界与衡量方式
 > 本文只做方案说明，不代表已经实现；分批任务见 [AI Agent实施计划.md](./AI%20Agent实施计划.md)。
 
 ## 一、结论先行
@@ -461,4 +461,3 @@ mail 服务已有 OpenAI 接入，但它的数据属主是邮件。把全公司�
 - [File Search](https://developers.openai.com/api/docs/guides/tools-file-search)
 - [Guardrails and human review](https://developers.openai.com/api/docs/guides/agents/guardrails-approvals)
 - [Evaluate agent workflows](https://developers.openai.com/api/docs/guides/agent-evals)
-
