@@ -1,0 +1,447 @@
+{
+  "schema_version": 1,
+  "notes": "Expected detail rows only. Superseded and displayed total rows must not become items.",
+  "cases": [
+    {
+      "file": "01_forwarded_email_body.txt",
+      "expected_rows": 8,
+      "items": [
+        {
+          "source_ref": "TXT-01",
+          "product": "steel plate",
+          "quantity": "80",
+          "quantity_unit": "PCS",
+          "grade": "S355JR",
+          "thickness": "12",
+          "width": "2000",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "TXT-02",
+          "product": "steel plate",
+          "quantity": "24",
+          "quantity_unit": "PCS",
+          "grade": "S355JR",
+          "thickness": "20",
+          "width": "2500",
+          "length_or_form": "12000",
+          "remarks": "Use final 24 PCS; obsolete quoted chain says 240."
+        },
+        {
+          "source_ref": "TXT-03",
+          "product": "equal angle",
+          "quantity": "120",
+          "quantity_unit": "PCS",
+          "grade": "ASTM A36",
+          "custom_leg1_mm": "75",
+          "custom_leg2_mm": "75",
+          "custom_thickness_mm": "6",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "TXT-04",
+          "product": "unequal angle",
+          "quantity": "60",
+          "quantity_unit": "PCS",
+          "grade": "ASTM A36",
+          "custom_leg1_mm": "100",
+          "custom_leg2_mm": "75",
+          "custom_thickness_mm": "8",
+          "length_or_form": "12000"
+        },
+        {
+          "source_ref": "TXT-05",
+          "product": "seamless pipe",
+          "quantity": "48",
+          "quantity_unit": "PCS",
+          "grade": "ASTM A106 Gr B",
+          "custom_diameter_mm": "168.3",
+          "custom_wall_thickness_mm": "7.11",
+          "length_or_form": "11800"
+        },
+        {
+          "source_ref": "TXT-06",
+          "product": "seamless pipe",
+          "quantity": "32",
+          "quantity_unit": "PCS",
+          "grade": "ASTM A106 Gr B",
+          "custom_diameter_mm": "219.1",
+          "custom_wall_thickness_mm": "8.18",
+          "length_or_form": "random 10000-12000"
+        },
+        {
+          "source_ref": "TXT-07",
+          "product": "flat bar",
+          "quantity": "2.4",
+          "quantity_unit": "MT",
+          "grade": "S275JR",
+          "custom_width_mm": "50",
+          "custom_thickness_mm": "8",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "TXT-08",
+          "product": "round bar",
+          "quantity": "3.2",
+          "quantity_unit": "MT",
+          "grade": "C45",
+          "custom_diameter_mm": "45",
+          "length_or_form": "6000"
+        }
+      ],
+      "shared": {
+        "incoterm": "CFR",
+        "port": "Callao, Peru",
+        "delivery": "by 15 Oct 2026"
+      }
+    },
+    {
+      "file": "02_revision_with_markup.html",
+      "expected_rows": 7,
+      "items": [
+        {
+          "source_ref": "HTML-01",
+          "product": "rectangular hollow section",
+          "quantity": "96",
+          "quantity_unit": "PCS",
+          "grade": "S355J2H",
+          "custom_width_mm": "120",
+          "custom_height_mm": "60",
+          "custom_wall_thickness_mm": "5",
+          "length_or_form": "12000"
+        },
+        {
+          "source_ref": "HTML-02",
+          "product": "square hollow section",
+          "quantity": "144",
+          "quantity_unit": "PCS",
+          "grade": "S355J2H",
+          "custom_width_mm": "80",
+          "custom_height_mm": "80",
+          "custom_wall_thickness_mm": "4",
+          "length_or_form": "12000"
+        },
+        {
+          "source_ref": "HTML-03",
+          "product": "circular hollow section",
+          "quantity": "75",
+          "quantity_unit": "PCS",
+          "grade": "S355J2H",
+          "custom_diameter_mm": "114.3",
+          "custom_wall_thickness_mm": "5.0",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "HTML-04",
+          "product": "square solid bar",
+          "quantity": "1.8",
+          "quantity_unit": "MT",
+          "grade": "S275JR",
+          "custom_width_mm": "30",
+          "custom_height_mm": "30",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "HTML-05",
+          "product": "flat bar",
+          "quantity": "2.2",
+          "quantity_unit": "MT",
+          "grade": "S275JR",
+          "custom_width_mm": "100",
+          "custom_thickness_mm": "12",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "HTML-06",
+          "product": "round solid bar",
+          "quantity": "3.6",
+          "quantity_unit": "MT",
+          "grade": "C45",
+          "custom_diameter_mm": "60",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "HTML-07",
+          "product": "equal angle",
+          "quantity": "200",
+          "quantity_unit": "PCS",
+          "grade": "S275JR",
+          "custom_leg1_mm": "65",
+          "custom_leg2_mm": "65",
+          "custom_thickness_mm": "5",
+          "length_or_form": "6000"
+        }
+      ],
+      "shared": {
+        "incoterm": "CIF",
+        "port": "Mombasa, Kenya",
+        "delivery": "November 2026"
+      }
+    },
+    {
+      "file": "03_mobile_chat_inquiry.jpg",
+      "expected_rows": 9,
+      "items": [
+        {
+          "source_ref": "CHAT-01",
+          "product": "square solid bar",
+          "quantity": "180",
+          "quantity_unit": "PCS",
+          "grade": "S235JR",
+          "custom_width_mm": "25",
+          "custom_height_mm": "25",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "CHAT-02",
+          "product": "square solid bar",
+          "quantity": "72",
+          "quantity_unit": "PCS",
+          "grade": "S235JR",
+          "custom_width_mm": "40",
+          "custom_height_mm": "40",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "CHAT-03",
+          "product": "round bar",
+          "quantity": "2.6",
+          "quantity_unit": "MT",
+          "grade": "C45",
+          "custom_diameter_mm": "32",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "CHAT-04",
+          "product": "round bar",
+          "quantity": "4.1",
+          "quantity_unit": "MT",
+          "grade": "C45",
+          "custom_diameter_mm": "50",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "CHAT-05",
+          "product": "rectangular hollow section",
+          "quantity": "90",
+          "quantity_unit": "PCS",
+          "grade": "S355J2H",
+          "custom_width_mm": "100",
+          "custom_height_mm": "50",
+          "custom_wall_thickness_mm": "4",
+          "length_or_form": "12000",
+          "remarks": "Final correction is 4 mm wall; ignore earlier 3 mm voice note."
+        },
+        {
+          "source_ref": "CHAT-06",
+          "product": "square hollow section",
+          "quantity": "160",
+          "quantity_unit": "PCS",
+          "grade": "S355J2H",
+          "custom_width_mm": "75",
+          "custom_height_mm": "75",
+          "custom_wall_thickness_mm": "3",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "CHAT-07",
+          "product": "equal angle",
+          "quantity": "55",
+          "quantity_unit": "PCS",
+          "grade": "S275JR",
+          "custom_leg1_mm": "90",
+          "custom_leg2_mm": "90",
+          "custom_thickness_mm": "8",
+          "length_or_form": "12000"
+        },
+        {
+          "source_ref": "CHAT-08",
+          "product": "flat bar",
+          "quantity": "1.7",
+          "quantity_unit": "MT",
+          "grade": "S275JR",
+          "custom_width_mm": "75",
+          "custom_thickness_mm": "10",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "CHAT-09",
+          "product": "seamless pipe",
+          "quantity": "110",
+          "quantity_unit": "PCS",
+          "grade": "ASTM A106 Gr B",
+          "custom_diameter_mm": "88.9",
+          "custom_wall_thickness_mm": "5.49",
+          "length_or_form": "random 5000-7000"
+        }
+      ],
+      "shared": {
+        "incoterm": "CFR",
+        "port": "Durban",
+        "delivery": "before 30 Sep 2026"
+      },
+      "must_resolve": [
+        "RHS wall is 4 mm, not the superseded 3 mm",
+        "6M means numeric length 6000 where the selected template length field is numeric"
+      ]
+    },
+    {
+      "file": "04_scanned_multipage_rfq.pdf",
+      "expected_rows": 13,
+      "items": [
+        {
+          "source_ref": "A-01",
+          "product": "hot rolled coil",
+          "quantity": "300",
+          "quantity_unit": "MT",
+          "material_standard": "ASTM A1011 CS Type B",
+          "thickness": "0.85",
+          "width": "1250",
+          "coil_id": "508",
+          "coil_weight": "12"
+        },
+        {
+          "source_ref": "A-02",
+          "product": "hot rolled coil",
+          "quantity": "450",
+          "quantity_unit": "MT",
+          "material_standard": "ASTM A1011 CS Type B",
+          "thickness": "1.20",
+          "width": "1450",
+          "coil_id": "508",
+          "coil_weight": "12",
+          "remarks": "Page 3 changes width from 1500 to 1450 mm."
+        },
+        {
+          "source_ref": "B-01",
+          "product": "steel plate",
+          "quantity": "120",
+          "quantity_unit": "MT",
+          "grade": "S355JR",
+          "thickness": "8",
+          "width": "1500",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "B-02",
+          "product": "steel plate",
+          "quantity": "20",
+          "quantity_unit": "MT",
+          "grade": "S355JR",
+          "thickness": "10",
+          "width": "2000",
+          "length_or_form": "12000",
+          "remarks": "Page 3 changes quantity from 200 to 20 MT."
+        },
+        {
+          "source_ref": "B-03",
+          "product": "steel plate",
+          "quantity": "95",
+          "quantity_unit": "MT",
+          "grade": "S355JR",
+          "thickness": "16",
+          "width": "2500",
+          "length_or_form": "12000"
+        },
+        {
+          "source_ref": "C-01",
+          "product": "UPN channel 100",
+          "quantity": "100",
+          "quantity_unit": "PCS",
+          "grade": "S275JR",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "C-02",
+          "product": "UPN channel 160",
+          "quantity": "40",
+          "quantity_unit": "PCS",
+          "grade": "S275JR",
+          "length_or_form": "12000"
+        },
+        {
+          "source_ref": "C-03",
+          "product": "equal angle",
+          "quantity": "180",
+          "quantity_unit": "PCS",
+          "grade": "S235JR",
+          "custom_leg1_mm": "50",
+          "custom_leg2_mm": "50",
+          "custom_thickness_mm": "5",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "D-01",
+          "product": "seamless pipe",
+          "quantity": "80",
+          "quantity_unit": "PCS",
+          "grade": "ASTM A106 Gr B",
+          "custom_diameter_mm": "114.3",
+          "custom_wall_thickness_mm": "6.02",
+          "length_or_form": "12000"
+        },
+        {
+          "source_ref": "D-02",
+          "product": "seamless pipe",
+          "quantity": "60",
+          "quantity_unit": "PCS",
+          "grade": "ASTM A106 Gr B",
+          "custom_diameter_mm": "168.3",
+          "custom_wall_thickness_mm": "7.11",
+          "length_or_form": "11800",
+          "remarks": "Page 3 changes length from 6M to fixed 11.8 metres."
+        },
+        {
+          "source_ref": "D-03",
+          "product": "seamless pipe",
+          "quantity": "25",
+          "quantity_unit": "PCS",
+          "grade": "ASTM A106 Gr B",
+          "custom_diameter_mm": "219.1",
+          "custom_wall_thickness_mm": "8.18",
+          "length_or_form": "random 10000-12000"
+        },
+        {
+          "source_ref": "E-01",
+          "product": "flat bar",
+          "quantity": "2.5",
+          "quantity_unit": "MT",
+          "grade": "S275JR",
+          "custom_width_mm": "80",
+          "custom_thickness_mm": "10",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "E-02",
+          "product": "round bar",
+          "quantity": "3.0",
+          "quantity_unit": "MT",
+          "grade": "C45",
+          "custom_diameter_mm": "55",
+          "length_or_form": "6000"
+        }
+      ],
+      "shared": {
+        "incoterm": "CFR",
+        "port": "Guayaquil, Ecuador",
+        "delivery": "no later than 20 Dec 2026"
+      },
+      "must_resolve": [
+        "A-02 width 1450",
+        "B-02 quantity 20",
+        "D-02 length 11800",
+        "ignore section totals as rows",
+        "flag inconsistent 1,340 MT grand total"
+      ]
+    },
+    {
+      "file": "05_complete_mail_bundle.eml",
+      "expected_attachments": [
+        "02_revision_with_markup.html",
+        "03_mobile_chat_inquiry.jpg",
+        "04_scanned_multipage_rfq.pdf"
+      ],
+      "purpose": "mail ingestion fixture; extraction is run separately per selected body or attachment"
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+Subject: RE: urgent mixed steel requirement - REV 3 (please ignore Rev 1/2)
+
+Hi Lisa,
+
+Putting the final quantities in one mail because the WhatsApp messages got confusing.
+Everything below is the FINAL request unless I explicitly say "reference only".
+
+For the bridge package use S355JR / EN 10025-2, mill certificates 3.1:
+  plate twelve by two thousand by six thousand mm ........ 80 PCS
+  and 20 x 2500 x 12000 mm ................................ 24 pieces
+No painting. Shot blasted Sa 2.5 and shop primer 20-25 microns. Plate tolerance EN 10029 class B.
+
+Profiles (ASTM A36):
+  equal angle L75 x 75 x 6, bars are 6 metres, need 120 pcs;
+  unequal angle L100 x 75 x 8 - twelve metre bars - 60 pcs.
+Bundles suitable for ocean freight.
+
+Pipe is seamless black, bevelled ends, ASTM A106 Gr B / ASME B36.10:
+  OD 168.3, wall 7.11, fixed length 11.8 m, forty-eight lengths.
+  OD 219.1 x WT 8.18, random 10-12 m, quantity 32 pcs.
+Hydro test certificates required.
+
+Also add flat bar EN 10025 S275JR: 50 wide x 8 thick x 6M, 2.4 MT.
+And round bar C45 / EN 10083-2: diameter 45 x 6000, 3.2 metric tons.
+
+Commercial: CFR Callao, Peru. Shipment split is acceptable but everything must leave by 15 Oct 2026.
+Payment 20% advance, balance against copy B/L. Quote in USD.
+
+IMPORTANT correction to the old chain: the 20 mm plate is 24 PCS, not 240. The old 240 below is REFERENCE ONLY.
+
+---- Forwarded message (obsolete Rev 1 - DO NOT USE) ----
+Plate 12x2000x6000 80 pcs; Plate 20x2500x12000 240 pcs.
+Incoterm FOB Shanghai. Delivery September.
+---- End obsolete message ----
