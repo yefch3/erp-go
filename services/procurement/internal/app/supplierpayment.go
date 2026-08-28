@@ -220,9 +220,12 @@ func (s *Service) ListSupplierPayments(ctx context.Context, tenantID int64, f Su
 	rows, err := s.pool.Query(ctx, `
 		SELECT p.id, p.supplier_id, p.supplier_name, p.payment_no, p.payment_type,
 		       p.currency, p.amount::text,
+		       -- 退款单的核销行是负数，覆盖量要先翻号再从金额里减
+		       -- （SQL 侧的 coveredOfPayment）。
 		       (p.amount - coalesce((SELECT sum(a.amount + a.fee_amount)
 		          FROM payment_allocations a
-		         WHERE a.tenant_id = p.tenant_id AND a.payment_id = p.id), 0))::text,
+		         WHERE a.tenant_id = p.tenant_id AND a.payment_id = p.id), 0)
+		          * (CASE WHEN p.payment_type = 'REFUND' THEN -1 ELSE 1 END))::text,
 		       p.paid_at::text, p.method, p.bank_ref, p.remark,
 		       p.created_by_name, p.created_at::text,
 		       p.base_currency, p.base_amount::text, p.fx_rate::text,
@@ -265,9 +268,11 @@ func (s *Service) GetSupplierPayment(ctx context.Context, tenantID, id int64) (S
 	err := s.pool.QueryRow(ctx, `
 		SELECT p.id, p.supplier_id, p.supplier_name, p.payment_no, p.payment_type,
 		       p.currency, p.amount::text,
+		       -- 同 List：退款单的覆盖量先翻号再减（SQL 侧的 coveredOfPayment）。
 		       (p.amount - coalesce((SELECT sum(a.amount + a.fee_amount)
 		          FROM payment_allocations a
-		         WHERE a.tenant_id = p.tenant_id AND a.payment_id = p.id), 0))::text,
+		         WHERE a.tenant_id = p.tenant_id AND a.payment_id = p.id), 0)
+		          * (CASE WHEN p.payment_type = 'REFUND' THEN -1 ELSE 1 END))::text,
 		       p.paid_at::text, p.method, p.bank_ref, p.remark,
 		       p.created_by_name, p.created_at::text,
 		       p.base_currency, p.base_amount::text, p.fx_rate::text
@@ -335,16 +340,12 @@ func (s *Service) AllocateSupplierPayment(ctx context.Context, tenantID, payment
 		if err != nil {
 			return err
 		}
-		// 退款单不能核销。核销这个动作的意思是「这笔付出去的钱结清了那张
-		// 发票/订单的一部分」，而下面所有算「已付」的地方都是把核销金额直接
-		// 加起来——把一张退款核销上去，「已付」会**变大**而不是变小，发票
-		// 甚至会因此被判成已结清，之后就没人再去付它了。退款怎么冲减应付，
-		// 由付款侧退款流程另行定义（见 docs/开发计划.md 收付队列改造）。
-		if paymentType == "REFUND" {
-			return apierr.Invalid("PAY_ALLOC_REFUND",
-				"退款单不能核销到发票或采购单——核销会把「已付」算大而不是算小。"+
-					"退款只需在付款单上记录，冲减应付的流程即将上线。")
-		}
+		// 退款单的核销行落库为**负数**（界面照旧填正数，翻号只发生在写入
+		// 那一刻）。于是每一处「已付 = 把核销金额加起来」的算式——对账五组
+		// 数字、发票结清判定、付款单余额——都自动把退款算成冲减，一个求和
+		// 不用改。这里所有守门在正数域里做：coveredOfPayment 是唯一的翻号
+		// 读取点。出口侧 receipt.go 的 coveredOf 用同一套办法，先证明过。
+		isRefund := paymentType == "REFUND"
 		amount = decimal.RequireFromString(amountText)
 
 		var allocatedText string
@@ -354,7 +355,8 @@ func (s *Service) AllocateSupplierPayment(ctx context.Context, tenantID, payment
 			tenantID, paymentID).Scan(&allocatedText); err != nil {
 			return err
 		}
-		remaining := amount.Sub(decimal.RequireFromString(allocatedText))
+		remaining := amount.Sub(coveredOfPayment(paymentType,
+			decimal.RequireFromString(allocatedText)))
 
 		adding := decimal.Zero
 		touched := map[int64]bool{}
@@ -365,6 +367,10 @@ func (s *Service) AllocateSupplierPayment(ctx context.Context, tenantID, payment
 		// the same invoice are one claim, not two independent ones.
 		settledByInvoice := map[int64]decimal.Decimal{}
 		addingByInvoice := map[int64]decimal.Decimal{}
+		// 退款的镜像天花板：一张采购单/发票上只能退**实际核销过的净额**。
+		// 两个 map 都存正数量，方向由 isRefund 定。
+		advanceByPO := map[int64]decimal.Decimal{}
+		addingByPO := map[int64]decimal.Decimal{}
 		for i, l := range lines {
 			lineNo := itoa(i + 1)
 			if (l.InvoiceID != 0) == (l.POID != 0) {
@@ -378,6 +384,13 @@ func (s *Service) AllocateSupplierPayment(ctx context.Context, tenantID, payment
 			fee, err := decimal.NewFromString(orZero(strings.TrimSpace(l.FeeAmount)))
 			if err != nil || fee.IsNegative() {
 				return apierr.Invalid("PAY_ALLOC_FEE_INVALID", "第 "+lineNo+" 笔手续费不能为负数")
+			}
+			// 手续费是「补足结算差额」用的，语义只在付出去的方向成立。
+			// 退款行带手续费没有定义——银行扣了手续费导致退回来的钱变少，
+			// 走认差/少退的路，不走这里。客户侧同款闸门：EX_REFUND_NO_FEE。
+			if isRefund && !fee.IsZero() {
+				return apierr.Invalid("PAY_ALLOC_REFUND_NO_FEE",
+					"第 "+lineNo+" 笔是退款核销，不能带手续费")
 			}
 
 			if l.InvoiceID != 0 {
@@ -393,7 +406,10 @@ func (s *Service) AllocateSupplierPayment(ctx context.Context, tenantID, payment
 				if invStatus == "VOID" {
 					return apierr.Invalid("PAY_ALLOC_INVOICE_VOID", "第 "+lineNo+" 笔的发票已作废")
 				}
-				if invStatus == "SETTLED" {
+				// 已结清的发票拒绝再收钱，却必须能收退款——「付清之后厂里
+				// 退了一部分」正是退款最常见的样子。负行落下去之后
+				// recomputeInvoiceSettlement 会把它翻回 OPEN。
+				if invStatus == "SETTLED" && !isRefund {
 					return apierr.Invalid("PAY_ALLOC_INVOICE_SETTLED",
 						"第 "+lineNo+" 笔的发票已结清——如需改动请先冲销一笔核销")
 				}
@@ -419,25 +435,40 @@ func (s *Service) AllocateSupplierPayment(ctx context.Context, tenantID, payment
 					settled = decimal.RequireFromString(settledText)
 					settledByInvoice[l.InvoiceID] = settled
 				}
-				invTotal := decimal.RequireFromString(invTotalText)
-				newSum := settled.Add(addingByInvoice[l.InvoiceID]).Add(amt)
-				if newSum.GreaterThan(invTotal) {
-					return apierr.Invalid("PAY_ALLOC_EXCEEDS_INVOICE",
-						"第 "+lineNo+" 笔核销后该发票累计核销 "+newSum.String()+" 超出发票金额 "+invTotal.String())
+				if isRefund {
+					// settled 是净额（先前的退款负行已经在里面），所以这条
+					// 天花板天然框得住连续退两笔。
+					refunding := addingByInvoice[l.InvoiceID].Add(amt)
+					if refunding.GreaterThan(settled) {
+						return apierr.Invalid("PAY_ALLOC_REFUND_EXCEEDS_SETTLED",
+							"第 "+lineNo+" 笔退掉后该发票累计退 "+refunding.String()+
+								" 超出已核销净额 "+settled.String()+"——只能退实际核销过的钱")
+					}
+				} else {
+					invTotal := decimal.RequireFromString(invTotalText)
+					newSum := settled.Add(addingByInvoice[l.InvoiceID]).Add(amt)
+					if newSum.GreaterThan(invTotal) {
+						return apierr.Invalid("PAY_ALLOC_EXCEEDS_INVOICE",
+							"第 "+lineNo+" 笔核销后该发票累计核销 "+newSum.String()+" 超出发票金额 "+invTotal.String())
+					}
 				}
 				addingByInvoice[l.InvoiceID] = addingByInvoice[l.InvoiceID].Add(amt)
 				touched[l.InvoiceID] = true
 			} else {
+				// FOR UPDATE 和发票分支同理：退款的天花板（净预付款）在行锁
+				// 下读，两笔并发退款必须串行，否则各自都以为额度够。
 				var poSupplier int64
 				var poCurrency, poStatus string
 				err := tx.QueryRow(ctx, `
 					SELECT supplier_id, currency, status FROM purchase_orders
-					 WHERE tenant_id=$1 AND id=$2`,
+					 WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,
 					tenantID, l.POID).Scan(&poSupplier, &poCurrency, &poStatus)
 				if err != nil {
 					return apierr.NotFound("PAY_ALLOC_PO_NOT_FOUND", "第 "+lineNo+" 笔的采购单不存在")
 				}
-				if poStatus == "CANCELLED" {
+				// 取消的采购单拒收新预付款，却必须能收退款——「订金付了、
+				// 单取消了、厂里退钱」正是预付款退款的主场。
+				if poStatus == "CANCELLED" && !isRefund {
 					return apierr.Invalid("PAY_ALLOC_PO_CANCELLED", "第 "+lineNo+" 笔的采购单已取消")
 				}
 				if poSupplier != supplierID {
@@ -446,6 +477,27 @@ func (s *Service) AllocateSupplierPayment(ctx context.Context, tenantID, payment
 				if poCurrency != currency {
 					return apierr.Invalid("PAY_ALLOC_CURRENCY_MISMATCH",
 						"第 "+lineNo+" 笔币种不符：采购单 "+poCurrency+"，付款 "+currency)
+				}
+				if isRefund {
+					advance, seen := advanceByPO[l.POID]
+					if !seen {
+						var advText string
+						if err := tx.QueryRow(ctx, `
+							SELECT coalesce(sum(amount),0)::text FROM payment_allocations
+							 WHERE tenant_id=$1 AND po_id=$2`,
+							tenantID, l.POID).Scan(&advText); err != nil {
+							return err
+						}
+						advance = decimal.RequireFromString(advText)
+						advanceByPO[l.POID] = advance
+					}
+					refunding := addingByPO[l.POID].Add(amt)
+					if refunding.GreaterThan(advance) {
+						return apierr.Invalid("PAY_ALLOC_REFUND_EXCEEDS_ADVANCE",
+							"第 "+lineNo+" 笔退掉后该采购单累计退 "+refunding.String()+
+								" 超出预付净额 "+advance.String()+"——只能退实际付过的钱")
+					}
+					addingByPO[l.POID] = refunding
 				}
 			}
 			adding = adding.Add(amt).Add(fee)
@@ -458,6 +510,10 @@ func (s *Service) AllocateSupplierPayment(ctx context.Context, tenantID, payment
 		for _, l := range lines {
 			amt, _ := decimal.NewFromString(strings.TrimSpace(l.Amount))
 			fee, _ := decimal.NewFromString(orZero(strings.TrimSpace(l.FeeAmount)))
+			if isRefund {
+				// 唯一的翻号写入点：入参到这里始终是正数。
+				amt = amt.Neg()
+			}
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO payment_allocations
 				  (tenant_id, payment_id, invoice_id, po_id, amount, fee_amount,
@@ -512,6 +568,73 @@ func (s *Service) ReverseSupplierPaymentAllocation(ctx context.Context, tenantID
 		}
 		amt := decimal.RequireFromString(amountText).Neg()
 		fee := decimal.RequireFromString(feeText).Neg()
+		// 「已经冲销过」必须先于下面的净额闸判——重复冲销撞净额闸会报出
+		// 「净额会变负」这种让人摸不着头脑的话。这里在核销行的行锁下查，
+		// 判得可靠；末尾 INSERT 上的唯一索引仍是并发时的最后一道兜底。
+		var alreadyReversed bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS(SELECT 1 FROM payment_allocations r
+			  WHERE r.tenant_id=$1 AND r.reversal_of=$2)`,
+			tenantID, allocID).Scan(&alreadyReversed); err != nil {
+			return err
+		}
+		if alreadyReversed {
+			return apierr.Conflict("PAY_ALLOC_ALREADY_REVERSED", "这笔核销已经冲销过")
+		}
+		// 负行进账本之后，「一笔冲销」不再天然安全，落笔前先看目标上的
+		// 净核销冲完还站不站得住：
+		//  · 不能为负——发票/采购单上挂着退款时，得先冲退款再冲付款核销，
+		//    否则净额变成「退的比付的多」
+		//  · 发票不能超票面——冲掉一笔退款，净额弹回去；若这期间又有别的
+		//    付款核销进来，弹回去就越过了发票金额
+		// 目标行锁 + 锁内求和，与核销那头同一套串行化。
+		if invoiceID != 0 {
+			var invTotalText string
+			if err := tx.QueryRow(ctx, `
+				SELECT total_amount::text FROM supplier_invoices
+				 WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,
+				tenantID, invoiceID).Scan(&invTotalText); err != nil {
+				return err
+			}
+			var netText string
+			if err := tx.QueryRow(ctx, `
+				SELECT coalesce(sum(amount),0)::text FROM payment_allocations
+				 WHERE tenant_id=$1 AND invoice_id=$2`,
+				tenantID, invoiceID).Scan(&netText); err != nil {
+				return err
+			}
+			after := decimal.RequireFromString(netText).Add(amt)
+			if after.IsNegative() {
+				return apierr.Conflict("PAY_REVERSE_REFUND_FIRST",
+					"冲销后该发票净核销为 "+after.String()+"（负数）——"+
+						"先冲销挂在发票上的退款核销，再冲这笔")
+			}
+			if after.GreaterThan(decimal.RequireFromString(invTotalText)) {
+				return apierr.Conflict("PAY_REVERSE_EXCEEDS_INVOICE",
+					"冲销这笔退款后发票净核销 "+after.String()+" 超出票面 "+invTotalText+
+						"——退款之后发票又被别的付款核销过，先冲销那一笔")
+			}
+		}
+		if poID != 0 {
+			var one int
+			if err := tx.QueryRow(ctx, `
+				SELECT 1 FROM purchase_orders WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,
+				tenantID, poID).Scan(&one); err != nil {
+				return err
+			}
+			var netText string
+			if err := tx.QueryRow(ctx, `
+				SELECT coalesce(sum(amount),0)::text FROM payment_allocations
+				 WHERE tenant_id=$1 AND po_id=$2`,
+				tenantID, poID).Scan(&netText); err != nil {
+				return err
+			}
+			if after := decimal.RequireFromString(netText).Add(amt); after.IsNegative() {
+				return apierr.Conflict("PAY_REVERSE_REFUND_FIRST",
+					"冲销后该采购单净预付为 "+after.String()+"（负数）——"+
+						"先冲销挂在采购单上的退款核销，再冲这笔")
+			}
+		}
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO payment_allocations
 			  (tenant_id, payment_id, invoice_id, po_id, amount, fee_amount,
@@ -535,6 +658,19 @@ func (s *Service) ReverseSupplierPaymentAllocation(ctx context.Context, tenantID
 	}
 	s.nudge(ctx, tenantID)
 	return s.GetSupplierPayment(ctx, tenantID, paymentID)
+}
+
+// coveredOfPayment 把「这张付款单被说清了多少」换算回正数域。
+//
+// 退款单的核销行存负数，直接求和得到的是负值；报给守门和界面的量必须
+// 是正的「已说清多少」。全部翻号集中在这一个函数（SQL 里对应的 CASE 是
+// 它的镜像），别处一律在正数域里比较——这正是客户侧 coveredOf 防住
+// 「负数比大小全部失灵」的同一招。
+func coveredOfPayment(paymentType string, allocated decimal.Decimal) decimal.Decimal {
+	if paymentType == "REFUND" {
+		return allocated.Neg()
+	}
+	return allocated
 }
 
 // recomputeInvoiceSettlement moves an invoice between OPEN and SETTLED from

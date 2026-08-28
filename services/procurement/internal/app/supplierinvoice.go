@@ -398,17 +398,26 @@ func (s *Service) VoidSupplierInvoice(ctx context.Context, tenantID, id int64, r
 	// An invoice with live allocations refuses to void: money is recorded as
 	// settling this claim, and "the claim doesn't count but the settlement
 	// stands" is not a state the book can hold. Reverse the allocations
-	// first — reversals net to zero, so a fully-reversed invoice voids fine.
-	var allocated string
+	// first, one by one.
+	//
+	// 判据是「每一笔核销都已被冲销」而**不是**「净额为零」。退款核销落负行
+	// 之后，付 2000 又退 2000 的发票净额恰好是 0——但两笔真钱都发生过、
+	// 都记在这张发票上，把它当「从没结算过」作废，那两笔钱就没了下落。
+	// 冲销对（原行 + 指回它的 reversal 行）不算数；没被冲销的行，不论正负，
+	// 都算数。
+	var live int
 	if err := s.pool.QueryRow(ctx, `
-		SELECT coalesce(sum(amount),0)::text FROM payment_allocations
-		 WHERE tenant_id=$1 AND invoice_id=$2`, tenantID, id).Scan(&allocated); err != nil {
+		SELECT count(*) FROM payment_allocations a
+		 WHERE a.tenant_id=$1 AND a.invoice_id=$2 AND a.reversal_of IS NULL
+		   AND NOT EXISTS (SELECT 1 FROM payment_allocations r
+		                    WHERE r.tenant_id=a.tenant_id AND r.reversal_of=a.id)`,
+		tenantID, id).Scan(&live); err != nil {
 		return SupplierInvoice{}, err
 	}
-	if alloc, _ := decimal.NewFromString(allocated); !alloc.IsZero() {
+	if live > 0 {
 		return SupplierInvoice{}, apierr.Conflict("INV_HAS_ALLOCATIONS",
-			"发票上还核销着 "+alloc.String()+"，先冲销再作废").
-			WithMeta("allocated", allocated)
+			"发票上还挂着 "+itoa(live)+" 笔未冲销的核销/退款，先逐笔冲销再作废").
+			WithMeta("liveAllocations", itoa(live))
 	}
 	cmd, err := s.pool.Exec(ctx, `
 		UPDATE supplier_invoices SET status='VOID', void_reason=$3
