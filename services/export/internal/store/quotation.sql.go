@@ -260,6 +260,25 @@ func (q *Queries) GetQuotation(ctx context.Context, arg GetQuotationParams) (Get
 	return i, err
 }
 
+const getQuotationIDByCostScenario = `-- name: GetQuotationIDByCostScenario :one
+SELECT id
+FROM quotations
+WHERE tenant_id = $1
+  AND source_cost_scenario_id = $2
+`
+
+type GetQuotationIDByCostScenarioParams struct {
+	TenantID             int64
+	SourceCostScenarioID *int64
+}
+
+func (q *Queries) GetQuotationIDByCostScenario(ctx context.Context, arg GetQuotationIDByCostScenarioParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getQuotationIDByCostScenario, arg.TenantID, arg.SourceCostScenarioID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const listQuotationItems = `-- name: ListQuotationItems :many
 SELECT
     id, quotation_id, line_no, product_id, sku_id, product_code, product_name,

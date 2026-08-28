@@ -52,6 +52,12 @@ SELECT
 FROM quotations
 WHERE tenant_id = $1 AND id = $2;
 
+-- name: GetQuotationIDByCostScenario :one
+SELECT id
+FROM quotations
+WHERE tenant_id = sqlc.arg(tenant_id)
+  AND source_cost_scenario_id = sqlc.arg(source_cost_scenario_id);
+
 -- name: ListQuotations :many
 SELECT
     q.id, q.quote_no, q.customer_id, q.customer_name, q.currency,

@@ -167,6 +167,16 @@ func (s *Service) resolve(ctx context.Context, in QuotationInput) (Customer, []p
 }
 
 func (s *Service) CreateQuotation(ctx context.Context, tenantID int64, in QuotationInput) (store.GetQuotationRow, []store.ListQuotationItemsRow, error) {
+	// A cost scenario is the idempotency key for the sales handoff. The two
+	// services cannot share a transaction: export may have committed the quote
+	// while procurement failed before linking it back. Retrying must return
+	// that quote so the gateway can finish the link, not attempt a duplicate
+	// insert and turn the unique index into a generic 500.
+	if quotation, items, found, err := s.quotationForCostScenario(ctx, tenantID, in.SourceCostScenarioID); err != nil {
+		return store.GetQuotationRow{}, nil, err
+	} else if found {
+		return quotation, items, nil
+	}
 	if in.Currency == "" {
 		return store.GetQuotationRow{}, nil, apierr.Invalid("EX_CURRENCY_REQUIRED", "币种必选")
 	}
@@ -214,9 +224,31 @@ func (s *Service) CreateQuotation(ctx context.Context, tenantID int64, in Quotat
 		return writeItems(ctx, q, tenantID, id, lines)
 	})
 	if err != nil {
+		// Close the concurrent-retry window as well: if another request created
+		// the same sourced quote after the preflight lookup, return the winner.
+		if quotation, items, found, lookupErr := s.quotationForCostScenario(ctx, tenantID, in.SourceCostScenarioID); lookupErr == nil && found {
+			return quotation, items, nil
+		}
 		return store.GetQuotationRow{}, nil, err
 	}
 	return s.GetQuotation(ctx, tenantID, id)
+}
+
+func (s *Service) quotationForCostScenario(ctx context.Context, tenantID, sourceCostScenarioID int64) (store.GetQuotationRow, []store.ListQuotationItemsRow, bool, error) {
+	if sourceCostScenarioID == 0 {
+		return store.GetQuotationRow{}, nil, false, nil
+	}
+	id, err := s.q.GetQuotationIDByCostScenario(ctx, store.GetQuotationIDByCostScenarioParams{
+		TenantID: tenantID, SourceCostScenarioID: &sourceCostScenarioID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return store.GetQuotationRow{}, nil, false, nil
+	}
+	if err != nil {
+		return store.GetQuotationRow{}, nil, false, err
+	}
+	quotation, items, err := s.GetQuotation(ctx, tenantID, id)
+	return quotation, items, err == nil, err
 }
 
 // UpdateQuotation replaces a draft's header and lines. The fx snapshot is
