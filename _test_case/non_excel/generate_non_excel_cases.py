@@ -11,6 +11,11 @@ from email.message import EmailMessage
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
+from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Inches, Pt, RGBColor
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
@@ -98,6 +103,181 @@ Previous issue - superseded: CHS was <s>12M / 150 pcs</s>; term was <s>FOB</s>. 
 <p>Regards,<br>Amara</p>
 </body></html>"""
     (ROOT / "02_revision_with_markup.html").write_text(html, encoding="utf-8")
+
+
+def write_voice_transcript_fixture() -> None:
+    transcript = """VOICE NOTE TRANSCRIPT - buyer group / automatic transcription
+Project: Tema appliance plant replenishment
+
+[00:00] Buyer - Kojo:
+Please use this voice note as the final list. Some numbers from yesterday are repeated only so you know what changed.
+
+[00:17] Buyer - Kojo:
+Cold rolled first. Standard EN 10130, grade DC01, skin-passed and lightly oiled. Coil inside diameter six-ten millimetres; maximum nine point five metric tons each.
+Size zero point seven by one thousand, quantity one hundred eighty metric tons.
+Next is zero point nine by twelve-fifty, two hundred forty metric tons.
+
+[00:54] Engineer - Ama:
+Painted coils are separate, yes? Pre-painted galvanized, Z one-twenty coating.
+
+[01:02] Buyer - Kojo:
+Correct. PPGI zero point four-five by one thousand, colour RAL nine-zero-zero-two, one hundred twenty MT.
+Then zero point five-zero by twelve-fifty, RAL five-zero-one-zero, one hundred sixty MT.
+Both regular spangle substrate and protective film on top.
+
+[01:39] Warehouse - Mensah:
+For reinforcing steel I wrote ten millimetre yesterday.
+
+[01:45] Buyer - Kojo:
+Delete ten millimetre; we do NOT need it. Final B500B to BS 4449 is twelve millimetre by twelve metres, one hundred MT; and sixteen millimetre by twelve metres, one hundred fifty MT.
+
+[02:18] Buyer - Kojo:
+Wire rod SAE one-zero-zero-eight: five point five millimetre coils, two hundred MT. Six point five millimetre coils, one hundred eighty MT. Natural finish, mill coils.
+
+[02:43] Engineer - Ama:
+Add welded mesh, eight millimetre wire, openings one-fifty by one-fifty, sheet two point four by six metres. Five hundred sheets. Standard BS 4483.
+
+[03:10] Buyer - Kojo:
+Commercial terms for every line: CFR Tema, Ghana. Ship in two lots, first half October 2026 and balance November 2026. Irrevocable LC at sight. Do not turn pieces or sheets into tons.
+
+[03:32] System transcription note:
+Low-confidence words: "six-ten" means 610 mm; "twelve-fifty" means 1250 mm. Buyer confirmed these spellings in chat.
+"""
+    (ROOT / "06_voice_note_transcript.txt").write_text(transcript, encoding="utf-8")
+
+
+def set_docx_font(run, size: float = 11, bold: bool | None = None, color: str = "222222", italic: bool = False) -> None:
+    run.font.name = "Calibri"
+    run._element.get_or_add_rPr().rFonts.set(qn("w:ascii"), "Calibri")
+    run._element.get_or_add_rPr().rFonts.set(qn("w:hAnsi"), "Calibri")
+    run.font.size = Pt(size)
+    run.font.color.rgb = RGBColor.from_string(color)
+    run.italic = italic
+    if bold is not None:
+        run.bold = bold
+
+
+def shade_paragraph(paragraph, fill: str) -> None:
+    properties = paragraph._p.get_or_add_pPr()
+    shading = properties.find(qn("w:shd"))
+    if shading is None:
+        shading = OxmlElement("w:shd")
+        properties.append(shading)
+    shading.set(qn("w:fill"), fill)
+
+
+def add_docx_line(doc: Document, text: str, *, bullet: bool = False, color: str = "222222", bold: bool = False) -> None:
+    paragraph = doc.add_paragraph(style="List Bullet" if bullet else None)
+    paragraph.paragraph_format.space_after = Pt(6)
+    paragraph.paragraph_format.line_spacing = 1.1
+    if bullet:
+        paragraph.paragraph_format.left_indent = Inches(0.5)
+        paragraph.paragraph_format.first_line_indent = Inches(-0.25)
+    set_docx_font(paragraph.add_run(text), bold=bold, color=color)
+
+
+def write_docx_fixture() -> None:
+    doc = Document()
+    section = doc.sections[0]
+    section.page_width = Inches(8.5)
+    section.page_height = Inches(11)
+    section.top_margin = section.right_margin = section.bottom_margin = section.left_margin = Inches(1)
+    section.header_distance = section.footer_distance = Inches(0.492)
+
+    normal = doc.styles["Normal"]
+    normal.font.name = "Calibri"
+    normal._element.rPr.rFonts.set(qn("w:ascii"), "Calibri")
+    normal._element.rPr.rFonts.set(qn("w:hAnsi"), "Calibri")
+    normal.font.size = Pt(11)
+    normal.paragraph_format.space_after = Pt(6)
+    normal.paragraph_format.line_spacing = 1.1
+    for style_name, size, color in (("Heading 1", 16, "2E74B5"), ("Heading 2", 13, "2E74B5"), ("Heading 3", 12, "1F4D78")):
+        style = doc.styles[style_name]
+        style.font.name = "Calibri"
+        style._element.rPr.rFonts.set(qn("w:ascii"), "Calibri")
+        style._element.rPr.rFonts.set(qn("w:hAnsi"), "Calibri")
+        style.font.size = Pt(size)
+        style.font.color.rgb = RGBColor.from_string(color)
+
+    header = section.header.paragraphs[0]
+    header.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    set_docx_font(header.add_run("PROJECT KESTREL | MATERIAL REQUEST | REV D"), size=9, bold=True, color="6B7280")
+    footer = section.footer.paragraphs[0]
+    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    set_docx_font(footer.add_run("Fictional test fixture - values intentionally contain revisions"), size=8.5, color="6B7280")
+
+    title = doc.add_paragraph()
+    title.paragraph_format.space_after = Pt(4)
+    set_docx_font(title.add_run("PROJECT KESTREL MATERIAL REQUEST"), size=23, bold=True, color="111827")
+    subtitle = doc.add_paragraph()
+    subtitle.paragraph_format.space_after = Pt(14)
+    set_docx_font(subtitle.add_run("Revision D - FINAL FOR QUOTATION"), size=14, bold=True, color="B42318")
+    for label, value in (
+        ("To", "Export Sales Team"),
+        ("From", "Kestrel Fabrication JV - fictional buyer"),
+        ("Date", "28 August 2026"),
+        ("Rule", "Page 2 FINAL notes override matching values on page 1"),
+    ):
+        paragraph = doc.add_paragraph()
+        paragraph.paragraph_format.space_after = Pt(2)
+        set_docx_font(paragraph.add_run(f"{label}: "), bold=True)
+        set_docx_font(paragraph.add_run(value))
+
+    callout = doc.add_paragraph()
+    callout.paragraph_format.space_before = Pt(12)
+    callout.paragraph_format.space_after = Pt(12)
+    shade_paragraph(callout, "F2F4F7")
+    set_docx_font(callout.add_run("GLOBAL TERMS  "), bold=True, color="1F4D78")
+    set_docx_font(callout.add_run("DDP Brno, Czech Republic; arrival by 31 Jan 2027; payment 60 days after delivery; EN 10204 3.1 certificates."))
+
+    doc.add_heading("Frame members", level=1)
+    add_docx_line(doc, "Shared grade for the first three lines: S355J2+N / EN 10025-2. Black finish, bundle by section.")
+    add_docx_line(doc, "IPE 200, twelve-metre bars - 36 PCS", bullet=True)
+    add_docx_line(doc, "HEB 240 x 12M - 180 PCS (OLD quantity; page 2 contains FINAL correction)", bullet=True, color="7A5A00")
+    add_docx_line(doc, "UPN 120, length 6,000 mm - 90 PCS", bullet=True)
+
+    doc.add_heading("Hollow sections", level=1)
+    add_docx_line(doc, "EN 10219, grade S355J2H. Hot-dip galvanized after fabrication, average zinc 70 microns.")
+    add_docx_line(doc, "RHS 160 x 80 x 5 x 12M - 44 PCS (OLD wall; see FINAL correction)", bullet=True, color="7A5A00")
+    add_docx_line(doc, "SHS 100 x 100 x 5, six-metre lengths - 70 PCS", bullet=True)
+
+    revision = doc.add_paragraph()
+    revision.paragraph_format.page_break_before = True
+    revision.paragraph_format.space_before = Pt(12)
+    revision.paragraph_format.space_after = Pt(8)
+    shade_paragraph(revision, "FCE8E6")
+    set_docx_font(revision.add_run("FINAL REVISION NOTES - THESE CONTROL"), size=16, bold=True, color="B42318")
+
+    paragraph = doc.add_paragraph()
+    paragraph.paragraph_format.space_after = Pt(8)
+    old = paragraph.add_run("HEB 240 quantity 180 PCS")
+    set_docx_font(old, color="7A7A7A")
+    old.font.strike = True
+    set_docx_font(paragraph.add_run("  -> FINAL: 18 PCS."), bold=True, color="B42318")
+
+    paragraph = doc.add_paragraph()
+    paragraph.paragraph_format.space_after = Pt(8)
+    old = paragraph.add_run("RHS 160 x 80 wall 5 mm")
+    set_docx_font(old, color="7A7A7A")
+    old.font.strike = True
+    set_docx_font(paragraph.add_run("  -> FINAL: wall 6 mm; quantity remains 44 PCS; length remains 12M."), bold=True, color="B42318")
+
+    doc.add_heading("Additional lines approved in Revision D", level=1)
+    add_docx_line(doc, "Plate S355JR / EN 10025-2, 6 x 1500 x 3000 mm - 40 PCS", bullet=True)
+    add_docx_line(doc, "Plate S355JR / EN 10025-2, 10 x 2000 x 6000 mm - 22 PCS", bullet=True)
+    add_docx_line(doc, "Round bar C45 / EN 10083-2, diameter 70 x 6000 mm - 2.8 MT", bullet=True)
+    add_docx_line(doc, "Seamless pipe ASTM A106 Gr B, OD 273.0 x wall 9.27 x random 10-12M - 14 PCS", bullet=True)
+    add_docx_line(doc, "Equal angle S275JR, L120 x 120 x 10 x 12M - 28 PCS", bullet=True)
+
+    warning = doc.add_paragraph()
+    warning.paragraph_format.space_before = Pt(12)
+    shade_paragraph(warning, "FFF4CE")
+    set_docx_font(warning.add_run("Do not create rows for crossed-out values. Do not convert PCS to MT. Commercial terms from page 1 apply to every final line."), bold=True, color="7A5A00")
+
+    doc.core_properties.title = "Project Kestrel Material Request - Revision D"
+    doc.core_properties.author = "Fictional Buyer"
+    doc.core_properties.subject = "Non-Excel inquiry extraction fixture"
+    doc.save(ROOT / "07_word_revision_memo.docx")
 
 
 CHAT_MESSAGES = [
@@ -251,7 +431,7 @@ def write_pdf_fixture() -> list[Path]:
         page_images.append(page_path)
 
     pdf_path = ROOT / "04_scanned_multipage_rfq.pdf"
-    pdf = canvas.Canvas(str(pdf_path), pagesize=A4)
+    pdf = canvas.Canvas(str(pdf_path), pagesize=A4, invariant=1, pageCompression=1)
     page_w, page_h = A4
     for page_path in page_images:
         pdf.drawImage(str(page_path), 0, 0, width=page_w, height=page_h)
@@ -338,6 +518,41 @@ def ground_truth() -> dict:
                 "must_resolve": ["A-02 width 1450", "B-02 quantity 20", "D-02 length 11800", "ignore section totals as rows", "flag inconsistent 1,340 MT grand total"],
             },
             {
+                "file": "06_voice_note_transcript.txt",
+                "expected_rows": 9,
+                "items": [
+                    item("VOICE-01", "cold rolled coil", "180", "MT", material_standard="EN 10130", grade="DC01", thickness="0.7", width="1000", coil_id="610", coil_weight="9.5"),
+                    item("VOICE-02", "cold rolled coil", "240", "MT", material_standard="EN 10130", grade="DC01", thickness="0.9", width="1250", coil_id="610", coil_weight="9.5"),
+                    item("VOICE-03", "pre-painted galvanized coil", "120", "MT", coating="Z120; RAL 9002", thickness="0.45", width="1000"),
+                    item("VOICE-04", "pre-painted galvanized coil", "160", "MT", coating="Z120; RAL 5010", thickness="0.50", width="1250"),
+                    item("VOICE-05", "reinforcing bar", "100", "MT", material_standard="BS 4449", grade="B500B", custom_diameter_mm="12", length_or_form="12000"),
+                    item("VOICE-06", "reinforcing bar", "150", "MT", material_standard="BS 4449", grade="B500B", custom_diameter_mm="16", length_or_form="12000", remarks="Do not create the superseded 10 mm line."),
+                    item("VOICE-07", "wire rod", "200", "MT", grade="SAE 1008", custom_diameter_mm="5.5", length_or_form="coil"),
+                    item("VOICE-08", "wire rod", "180", "MT", grade="SAE 1008", custom_diameter_mm="6.5", length_or_form="coil"),
+                    item("VOICE-09", "welded mesh", "500", "SHEETS", material_standard="BS 4483", custom_diameter_mm="8", width="2400", length_or_form="6000", remarks="Opening 150 x 150 mm."),
+                ],
+                "shared": {"incoterm": "CFR", "port": "Tema, Ghana", "delivery": "two lots: first half Oct 2026 and balance Nov 2026"},
+                "must_resolve": ["six-ten means coil ID 610", "twelve-fifty means width 1250", "do not create the obsolete 10 mm rebar line"],
+            },
+            {
+                "file": "07_word_revision_memo.docx",
+                "expected_rows": 10,
+                "items": [
+                    item("WORD-01", "IPE 200", "36", "PCS", grade="S355J2+N", length_or_form="12000"),
+                    item("WORD-02", "HEB 240", "18", "PCS", grade="S355J2+N", length_or_form="12000", remarks="Revision D replaces old 180 PCS with 18 PCS."),
+                    item("WORD-03", "UPN 120", "90", "PCS", grade="S355J2+N", length_or_form="6000"),
+                    item("WORD-04", "rectangular hollow section", "44", "PCS", grade="S355J2H", custom_width_mm="160", custom_height_mm="80", custom_wall_thickness_mm="6", length_or_form="12000", remarks="Revision D replaces old 5 mm wall with 6 mm."),
+                    item("WORD-05", "square hollow section", "70", "PCS", grade="S355J2H", custom_width_mm="100", custom_height_mm="100", custom_wall_thickness_mm="5", length_or_form="6000"),
+                    item("WORD-06", "steel plate", "40", "PCS", grade="S355JR", thickness="6", width="1500", length_or_form="3000"),
+                    item("WORD-07", "steel plate", "22", "PCS", grade="S355JR", thickness="10", width="2000", length_or_form="6000"),
+                    item("WORD-08", "round bar", "2.8", "MT", grade="C45", custom_diameter_mm="70", length_or_form="6000"),
+                    item("WORD-09", "seamless pipe", "14", "PCS", grade="ASTM A106 Gr B", custom_diameter_mm="273.0", custom_wall_thickness_mm="9.27", length_or_form="random 10000-12000"),
+                    item("WORD-10", "equal angle", "28", "PCS", grade="S275JR", custom_leg1_mm="120", custom_leg2_mm="120", custom_thickness_mm="10", length_or_form="12000"),
+                ],
+                "shared": {"incoterm": "DDP", "port": "Brno, Czech Republic", "delivery": "arrival by 31 Jan 2027"},
+                "must_resolve": ["HEB quantity 18, not crossed-out 180", "RHS wall 6, not crossed-out 5", "page 1 commercial terms apply to page 2 additions"],
+            },
+            {
                 "file": "05_complete_mail_bundle.eml",
                 "expected_attachments": ["02_revision_with_markup.html", "03_mobile_chat_inquiry.jpg", "04_scanned_multipage_rfq.pdf"],
                 "purpose": "mail ingestion fixture; extraction is run separately per selected body or attachment",
@@ -358,6 +573,8 @@ def write_readme() -> None:
 - `03_mobile_chat_inquiry.jpg`：手机聊天截图，规格分散在多条消息中并有口径纠正。
 - `04_scanned_multipage_rfq.pdf`：三页纯扫描 PDF，续页、共享条件、后页更正和错误总计并存。
 - `05_complete_mail_bundle.eml`：完整 MIME 邮件，正文加三个非 Excel 附件。
+- `06_voice_note_transcript.txt`：多人语音留言转写，数字以口语表达且包含废弃规格。
+- `07_word_revision_memo.docx`：两页 Word 修订稿，删除线旧值和后页 FINAL 更正并存。
 - `expected.json`：机器可读的期望行数、关键字段和必须处理的歧义。
 
 ## 验收原则
@@ -379,7 +596,7 @@ ERP_LIVE_OPENAI=1 go test ./internal/adapter/openai \\
   -run TestLiveNonExcelInquiryFixtures -count=1 -v
 ```
 
-2026-08-28 基线结果：TXT 8/8、HTML 7/7、扫描 PDF 13/13；聊天截图被图片审计拒绝。拒绝原因是审计把普通共享备注也要求逐行完全复制，并非已经确认漏行。该样例故意保留，用于推动审计规则区分“必须逐行继承的业务字段”和“只需保留一次的说明”。
+2026-08-28 基线结果：转发 TXT 8/8、HTML 7/7、扫描 PDF 13/13、语音转写 TXT 9/9、Word 修订稿 10/10；聊天截图被图片审计拒绝。拒绝原因是审计把普通共享备注也要求逐行完全复制，并非已经确认漏行。该样例故意保留，用于推动审计规则区分“必须逐行继承的业务字段”和“只需保留一次的说明”。
 """
     (ROOT / "README.md").write_text(readme, encoding="utf-8")
 
@@ -400,6 +617,10 @@ def write_eml_fixture(pdf_path: Path) -> None:
     msg.add_attachment((ROOT / "02_revision_with_markup.html").read_bytes(), maintype="text", subtype="html", filename="02_revision_with_markup.html")
     msg.add_attachment((ROOT / "03_mobile_chat_inquiry.jpg").read_bytes(), maintype="image", subtype="jpeg", filename="03_mobile_chat_inquiry.jpg")
     msg.add_attachment(pdf_path.read_bytes(), maintype="application", subtype="pdf", filename="04_scanned_multipage_rfq.pdf")
+    msg.set_boundary("erp-go-non-excel-mixed-20260828")
+    for part in msg.iter_parts():
+        if part.get_content_type() == "multipart/alternative":
+            part.set_boundary("erp-go-non-excel-alternative-20260828")
     (ROOT / "05_complete_mail_bundle.eml").write_bytes(msg.as_bytes())
 
 
@@ -407,6 +628,8 @@ def main() -> None:
     ROOT.mkdir(parents=True, exist_ok=True)
     write_text_fixture()
     write_html_fixture()
+    write_voice_transcript_fixture()
+    write_docx_fixture()
     write_chat_fixture()
     page_images = write_pdf_fixture()
     truth = ground_truth()

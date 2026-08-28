@@ -54,6 +54,8 @@ func TestLiveNonExcelInquiryFixtures(t *testing.T) {
 		{"marked-up HTML", "02_revision_with_markup.html", "text/html", false},
 		{"mobile chat image", "03_mobile_chat_inquiry.jpg", "image/jpeg", false},
 		{"scanned multi-page PDF", "04_scanned_multipage_rfq.pdf", "application/pdf", false},
+		{"voice note transcript", "06_voice_note_transcript.txt", "text/plain", true},
+		{"Word revision memo", "07_word_revision_memo.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", false},
 	}
 
 	for _, testCase := range tests {

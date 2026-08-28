@@ -4,13 +4,13 @@ Subject: RFQ 26-771 plus warehouse addendum - non Excel package
 Date: Fri, 28 Aug 2026 09:45:00 +0800
 Message-ID: <rfq-26-771@example.test>
 MIME-Version: 1.0
-Content-Type: multipart/mixed; boundary="===============5621969141355913466=="
+Content-Type: multipart/mixed; boundary="erp-go-non-excel-mixed-20260828"
 
---===============5621969141355913466==
+--erp-go-non-excel-mixed-20260828
 Content-Type: multipart/alternative;
- boundary="===============9102089299551902395=="
+ boundary="erp-go-non-excel-alternative-20260828"
 
---===============9102089299551902395==
+--erp-go-non-excel-alternative-20260828
 Content-Type: text/plain; charset="utf-8"
 Content-Transfer-Encoding: quoted-printable
 
@@ -19,7 +19,7 @@ ne inquiry package.
 Where values conflict, explicit FINAL corrections take priority. Do not conve=
 rt PCS into MT.
 
---===============9102089299551902395==
+--erp-go-non-excel-alternative-20260828
 Content-Type: text/html; charset="utf-8"
 Content-Transfer-Encoding: quoted-printable
 MIME-Version: 1.0
@@ -56,9 +56,9 @@ Previous issue - superseded: CHS was <s>12M / 150 pcs</s>; term was <s>FOB</s=
 <p>Regards,<br>Amara</p>
 </body></html>
 
---===============9102089299551902395==--
+--erp-go-non-excel-alternative-20260828--
 
---===============5621969141355913466==
+--erp-go-non-excel-mixed-20260828
 Content-Type: text/html
 Content-Transfer-Encoding: base64
 Content-Disposition: attachment; filename="02_revision_with_markup.html"
@@ -90,7 +90,7 @@ ZWQ6IENIUyB3YXMgPHM+MTJNIC8gMTUwIHBjczwvcz47IHRlcm0gd2FzIDxzPkZPQjwvcz4uIERv
 IG5vdCBxdW90ZSB0aGVzZSBkZWxldGVkIHZhbHVlcy4KPC9ibG9ja3F1b3RlPgo8cD5SZWdhcmRz
 LDxicj5BbWFyYTwvcD4KPC9ib2R5PjwvaHRtbD4=
 
---===============5621969141355913466==
+--erp-go-non-excel-mixed-20260828
 Content-Type: image/jpeg
 Content-Transfer-Encoding: base64
 Content-Disposition: attachment; filename="03_mobile_chat_inquiry.jpg"
@@ -5155,7 +5155,7 @@ AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 AAAAAAAAf//Z
 
---===============5621969141355913466==
+--erp-go-non-excel-mixed-20260828
 Content-Type: application/pdf
 Content-Transfer-Encoding: base64
 Content-Disposition: attachment; filename="04_scanned_multipage_rfq.pdf"
@@ -51045,9 +51045,9 @@ SW1hZ2VCIC9JbWFnZUMgL0ltYWdlSSBdIC9YT2JqZWN0IDw8Ci9Gb3JtWG9iLjBjMmJlNjM3YWNl
 NmZlZWEwYWNlZmZmNzVlYWRjYTc5IDcgMCBSCj4+Cj4+IC9Sb3RhdGUgMCAvVHJhbnMgPDwKCj4+
 IAogIC9UeXBlIC9QYWdlCj4+CmVuZG9iago5IDAgb2JqCjw8Ci9QYWdlTW9kZSAvVXNlTm9uZSAv
 UGFnZXMgMTEgMCBSIC9UeXBlIC9DYXRhbG9nCj4+CmVuZG9iagoxMCAwIG9iago8PAovQXV0aG9y
-IChhbm9ueW1vdXMpIC9DcmVhdGlvbkRhdGUgKEQ6MjAyNjA4MjgxODEzNDYrMDgnMDAnKSAvQ3Jl
-YXRvciAoYW5vbnltb3VzKSAvS2V5d29yZHMgKCkgL01vZERhdGUgKEQ6MjAyNjA4MjgxODEzNDYr
-MDgnMDAnKSAvUHJvZHVjZXIgKFJlcG9ydExhYiBQREYgTGlicmFyeSAtIFwob3BlbnNvdXJjZVwp
+IChhbm9ueW1vdXMpIC9DcmVhdGlvbkRhdGUgKEQ6MjAwMDAxMDEwMDAwMDArMDAnMDAnKSAvQ3Jl
+YXRvciAoYW5vbnltb3VzKSAvS2V5d29yZHMgKCkgL01vZERhdGUgKEQ6MjAwMDAxMDEwMDAwMDAr
+MDAnMDAnKSAvUHJvZHVjZXIgKFJlcG9ydExhYiBQREYgTGlicmFyeSAtIFwob3BlbnNvdXJjZVwp
 KSAKICAvU3ViamVjdCAodW5zcGVjaWZpZWQpIC9UaXRsZSAodW50aXRsZWQpIC9UcmFwcGVkIC9G
 YWxzZQo+PgplbmRvYmoKMTEgMCBvYmoKPDwKL0NvdW50IDMgL0tpZHMgWyA0IDAgUiA2IDAgUiA4
 IDAgUiBdIC9UeXBlIC9QYWdlcwo+PgplbmRvYmoKMTIgMCBvYmoKPDwKL0ZpbHRlciBbIC9BU0NJ
@@ -51068,9 +51068,9 @@ OSAwMDAwMCBuIAowMDAwOTE2NDE2IDAwMDAwIG4gCjAwMDA5MTY2ODQgMDAwMDAgbiAKMDAwMTc1
 OTE2MyAwMDAwMCBuIAowMDAxNzU5NDMxIDAwMDAwIG4gCjAwMDI2MTUwMzIgMDAwMDAgbiAKMDAw
 MjYxNTMwMCAwMDAwMCBuIAowMDAyNjE1MzY5IDAwMDAwIG4gCjAwMDI2MTU2MzEgMDAwMDAgbiAK
 MDAwMjYxNTcwMyAwMDAwMCBuIAowMDAyNjE1OTMxIDAwMDAwIG4gCjAwMDI2MTYxNjEgMDAwMDAg
-biAKdHJhaWxlcgo8PAovSUQgCls8NGM0OWNkNWNiNWNkNGVkMzZkN2U3ZjFlNmJmMjRmZmU+PDRj
-NDljZDVjYjVjZDRlZDM2ZDdlN2YxZTZiZjI0ZmZlPl0KJSBSZXBvcnRMYWIgZ2VuZXJhdGVkIFBE
+biAKdHJhaWxlcgo8PAovSUQgCls8MWMxNzgxOThmYmRmYTUxYjI1OTk1ZDg5ZDQxMDIwNDM+PDFj
+MTc4MTk4ZmJkZmE1MWIyNTk5NWQ4OWQ0MTAyMDQzPl0KJSBSZXBvcnRMYWIgZ2VuZXJhdGVkIFBE
 RiBkb2N1bWVudCAtLSBkaWdlc3QgKG9wZW5zb3VyY2UpCgovSW5mbyAxMCAwIFIKL1Jvb3QgOSAw
 IFIKL1NpemUgMTUKPj4Kc3RhcnR4cmVmCjI2MTYzOTIKJSVFT0YK
 
---===============5621969141355913466==--
+--erp-go-non-excel-mixed-20260828--

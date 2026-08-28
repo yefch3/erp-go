@@ -435,6 +435,228 @@
       ]
     },
     {
+      "file": "06_voice_note_transcript.txt",
+      "expected_rows": 9,
+      "items": [
+        {
+          "source_ref": "VOICE-01",
+          "product": "cold rolled coil",
+          "quantity": "180",
+          "quantity_unit": "MT",
+          "material_standard": "EN 10130",
+          "grade": "DC01",
+          "thickness": "0.7",
+          "width": "1000",
+          "coil_id": "610",
+          "coil_weight": "9.5"
+        },
+        {
+          "source_ref": "VOICE-02",
+          "product": "cold rolled coil",
+          "quantity": "240",
+          "quantity_unit": "MT",
+          "material_standard": "EN 10130",
+          "grade": "DC01",
+          "thickness": "0.9",
+          "width": "1250",
+          "coil_id": "610",
+          "coil_weight": "9.5"
+        },
+        {
+          "source_ref": "VOICE-03",
+          "product": "pre-painted galvanized coil",
+          "quantity": "120",
+          "quantity_unit": "MT",
+          "coating": "Z120; RAL 9002",
+          "thickness": "0.45",
+          "width": "1000"
+        },
+        {
+          "source_ref": "VOICE-04",
+          "product": "pre-painted galvanized coil",
+          "quantity": "160",
+          "quantity_unit": "MT",
+          "coating": "Z120; RAL 5010",
+          "thickness": "0.50",
+          "width": "1250"
+        },
+        {
+          "source_ref": "VOICE-05",
+          "product": "reinforcing bar",
+          "quantity": "100",
+          "quantity_unit": "MT",
+          "material_standard": "BS 4449",
+          "grade": "B500B",
+          "custom_diameter_mm": "12",
+          "length_or_form": "12000"
+        },
+        {
+          "source_ref": "VOICE-06",
+          "product": "reinforcing bar",
+          "quantity": "150",
+          "quantity_unit": "MT",
+          "material_standard": "BS 4449",
+          "grade": "B500B",
+          "custom_diameter_mm": "16",
+          "length_or_form": "12000",
+          "remarks": "Do not create the superseded 10 mm line."
+        },
+        {
+          "source_ref": "VOICE-07",
+          "product": "wire rod",
+          "quantity": "200",
+          "quantity_unit": "MT",
+          "grade": "SAE 1008",
+          "custom_diameter_mm": "5.5",
+          "length_or_form": "coil"
+        },
+        {
+          "source_ref": "VOICE-08",
+          "product": "wire rod",
+          "quantity": "180",
+          "quantity_unit": "MT",
+          "grade": "SAE 1008",
+          "custom_diameter_mm": "6.5",
+          "length_or_form": "coil"
+        },
+        {
+          "source_ref": "VOICE-09",
+          "product": "welded mesh",
+          "quantity": "500",
+          "quantity_unit": "SHEETS",
+          "material_standard": "BS 4483",
+          "custom_diameter_mm": "8",
+          "width": "2400",
+          "length_or_form": "6000",
+          "remarks": "Opening 150 x 150 mm."
+        }
+      ],
+      "shared": {
+        "incoterm": "CFR",
+        "port": "Tema, Ghana",
+        "delivery": "two lots: first half Oct 2026 and balance Nov 2026"
+      },
+      "must_resolve": [
+        "six-ten means coil ID 610",
+        "twelve-fifty means width 1250",
+        "do not create the obsolete 10 mm rebar line"
+      ]
+    },
+    {
+      "file": "07_word_revision_memo.docx",
+      "expected_rows": 10,
+      "items": [
+        {
+          "source_ref": "WORD-01",
+          "product": "IPE 200",
+          "quantity": "36",
+          "quantity_unit": "PCS",
+          "grade": "S355J2+N",
+          "length_or_form": "12000"
+        },
+        {
+          "source_ref": "WORD-02",
+          "product": "HEB 240",
+          "quantity": "18",
+          "quantity_unit": "PCS",
+          "grade": "S355J2+N",
+          "length_or_form": "12000",
+          "remarks": "Revision D replaces old 180 PCS with 18 PCS."
+        },
+        {
+          "source_ref": "WORD-03",
+          "product": "UPN 120",
+          "quantity": "90",
+          "quantity_unit": "PCS",
+          "grade": "S355J2+N",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "WORD-04",
+          "product": "rectangular hollow section",
+          "quantity": "44",
+          "quantity_unit": "PCS",
+          "grade": "S355J2H",
+          "custom_width_mm": "160",
+          "custom_height_mm": "80",
+          "custom_wall_thickness_mm": "6",
+          "length_or_form": "12000",
+          "remarks": "Revision D replaces old 5 mm wall with 6 mm."
+        },
+        {
+          "source_ref": "WORD-05",
+          "product": "square hollow section",
+          "quantity": "70",
+          "quantity_unit": "PCS",
+          "grade": "S355J2H",
+          "custom_width_mm": "100",
+          "custom_height_mm": "100",
+          "custom_wall_thickness_mm": "5",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "WORD-06",
+          "product": "steel plate",
+          "quantity": "40",
+          "quantity_unit": "PCS",
+          "grade": "S355JR",
+          "thickness": "6",
+          "width": "1500",
+          "length_or_form": "3000"
+        },
+        {
+          "source_ref": "WORD-07",
+          "product": "steel plate",
+          "quantity": "22",
+          "quantity_unit": "PCS",
+          "grade": "S355JR",
+          "thickness": "10",
+          "width": "2000",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "WORD-08",
+          "product": "round bar",
+          "quantity": "2.8",
+          "quantity_unit": "MT",
+          "grade": "C45",
+          "custom_diameter_mm": "70",
+          "length_or_form": "6000"
+        },
+        {
+          "source_ref": "WORD-09",
+          "product": "seamless pipe",
+          "quantity": "14",
+          "quantity_unit": "PCS",
+          "grade": "ASTM A106 Gr B",
+          "custom_diameter_mm": "273.0",
+          "custom_wall_thickness_mm": "9.27",
+          "length_or_form": "random 10000-12000"
+        },
+        {
+          "source_ref": "WORD-10",
+          "product": "equal angle",
+          "quantity": "28",
+          "quantity_unit": "PCS",
+          "grade": "S275JR",
+          "custom_leg1_mm": "120",
+          "custom_leg2_mm": "120",
+          "custom_thickness_mm": "10",
+          "length_or_form": "12000"
+        }
+      ],
+      "shared": {
+        "incoterm": "DDP",
+        "port": "Brno, Czech Republic",
+        "delivery": "arrival by 31 Jan 2027"
+      },
+      "must_resolve": [
+        "HEB quantity 18, not crossed-out 180",
+        "RHS wall 6, not crossed-out 5",
+        "page 1 commercial terms apply to page 2 additions"
+      ]
+    },
+    {
       "file": "05_complete_mail_bundle.eml",
       "expected_attachments": [
         "02_revision_with_markup.html",

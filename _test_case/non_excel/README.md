@@ -9,6 +9,8 @@
 - `03_mobile_chat_inquiry.jpg`：手机聊天截图，规格分散在多条消息中并有口径纠正。
 - `04_scanned_multipage_rfq.pdf`：三页纯扫描 PDF，续页、共享条件、后页更正和错误总计并存。
 - `05_complete_mail_bundle.eml`：完整 MIME 邮件，正文加三个非 Excel 附件。
+- `06_voice_note_transcript.txt`：多人语音留言转写，数字以口语表达且包含废弃规格。
+- `07_word_revision_memo.docx`：两页 Word 修订稿，删除线旧值和后页 FINAL 更正并存。
 - `expected.json`：机器可读的期望行数、关键字段和必须处理的歧义。
 
 ## 验收原则
@@ -30,4 +32,4 @@ ERP_LIVE_OPENAI=1 go test ./internal/adapter/openai \
   -run TestLiveNonExcelInquiryFixtures -count=1 -v
 ```
 
-2026-08-28 基线结果：TXT 8/8、HTML 7/7、扫描 PDF 13/13；聊天截图被图片审计拒绝。拒绝原因是审计把普通共享备注也要求逐行完全复制，并非已经确认漏行。该样例故意保留，用于推动审计规则区分“必须逐行继承的业务字段”和“只需保留一次的说明”。
+2026-08-28 基线结果：转发 TXT 8/8、HTML 7/7、扫描 PDF 13/13、语音转写 TXT 9/9、Word 修订稿 10/10；聊天截图被图片审计拒绝。拒绝原因是审计把普通共享备注也要求逐行完全复制，并非已经确认漏行。该样例故意保留，用于推动审计规则区分“必须逐行继承的业务字段”和“只需保留一次的说明”。

@@ -1,0 +1,36 @@
+VOICE NOTE TRANSCRIPT - buyer group / automatic transcription
+Project: Tema appliance plant replenishment
+
+[00:00] Buyer - Kojo:
+Please use this voice note as the final list. Some numbers from yesterday are repeated only so you know what changed.
+
+[00:17] Buyer - Kojo:
+Cold rolled first. Standard EN 10130, grade DC01, skin-passed and lightly oiled. Coil inside diameter six-ten millimetres; maximum nine point five metric tons each.
+Size zero point seven by one thousand, quantity one hundred eighty metric tons.
+Next is zero point nine by twelve-fifty, two hundred forty metric tons.
+
+[00:54] Engineer - Ama:
+Painted coils are separate, yes? Pre-painted galvanized, Z one-twenty coating.
+
+[01:02] Buyer - Kojo:
+Correct. PPGI zero point four-five by one thousand, colour RAL nine-zero-zero-two, one hundred twenty MT.
+Then zero point five-zero by twelve-fifty, RAL five-zero-one-zero, one hundred sixty MT.
+Both regular spangle substrate and protective film on top.
+
+[01:39] Warehouse - Mensah:
+For reinforcing steel I wrote ten millimetre yesterday.
+
+[01:45] Buyer - Kojo:
+Delete ten millimetre; we do NOT need it. Final B500B to BS 4449 is twelve millimetre by twelve metres, one hundred MT; and sixteen millimetre by twelve metres, one hundred fifty MT.
+
+[02:18] Buyer - Kojo:
+Wire rod SAE one-zero-zero-eight: five point five millimetre coils, two hundred MT. Six point five millimetre coils, one hundred eighty MT. Natural finish, mill coils.
+
+[02:43] Engineer - Ama:
+Add welded mesh, eight millimetre wire, openings one-fifty by one-fifty, sheet two point four by six metres. Five hundred sheets. Standard BS 4483.
+
+[03:10] Buyer - Kojo:
+Commercial terms for every line: CFR Tema, Ghana. Ship in two lots, first half October 2026 and balance November 2026. Irrevocable LC at sight. Do not turn pieces or sheets into tons.
+
+[03:32] System transcription note:
+Low-confidence words: "six-ten" means 610 mm; "twelve-fifty" means 1250 mm. Buyer confirmed these spellings in chat.
