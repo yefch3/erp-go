@@ -198,6 +198,67 @@ function compareNodes(a: OrgNode, b: OrgNode): number {
   return a.label.localeCompare(b.label, 'zh-Hans-CN')
 }
 
+/**
+ * 以某个人为中心看到的一圈人。
+ *
+ * 组织架构图不画全公司——三百个方块铺满屏幕，等于什么都没说。每次只回答
+ * 「**这个人**在组织里的位置」：他上面一路是谁，身边是谁，下面是谁。点谁
+ * 就换成谁，一层层走过去。
+ */
+export interface FocusView {
+  /** 上级链，从最高一层排到直属上级。没有上级时是空的。 */
+  ancestors: OrgMember[]
+  /** 中心那个人。找不到时是 undefined，页面据此显示「找不到这个人」。 */
+  focus?: OrgMember
+  /**
+   * 和中心同一个上级的人，**包含中心自己**，按名字排序。
+   *
+   * 包含自己是有意的：这一行画出来就是「你和你的同事」，把自己抽掉会让
+   * 中心那个方块无处安放，也让「你在这一排的第几个」这个信息消失。
+   */
+  peers: OrgMember[]
+  /** 直接下属。 */
+  reports: OrgMember[]
+}
+
+/**
+ * 三处会走错的地方，和 buildReportingTree 是同一批：
+ *
+ *  1. 上级不在名单里（多半已离职）——链子到此为止，不是崩掉
+ *  2. 成环——沿链上溯要有步数上限，否则死循环
+ *  3. 中心自己不在名单里——返回空视图，让页面能说「找不到」
+ */
+export function focusView(members: OrgMember[], focusId: string): FocusView {
+  const byID = new Map<string, OrgMember>()
+  for (const m of members) byID.set(m.id, m)
+  const focus = byID.get(focusId)
+  if (!focus) return { ancestors: [], peers: [], reports: [] }
+
+  // 往上走，边走边记走过谁——重复出现就是环，停。
+  const ancestors: OrgMember[] = []
+  const walked = new Set<string>([focus.id])
+  let cur: OrgMember | undefined = hasManager(focus) ? byID.get(focus.managerId) : undefined
+  while (cur && !walked.has(cur.id) && ancestors.length < 32) {
+    ancestors.unshift(cur)
+    walked.add(cur.id)
+    cur = hasManager(cur) ? byID.get(cur.managerId) : undefined
+  }
+
+  // 同级 = 和中心挂在同一个上级下面的人。中心头上没人时，同级就是所有
+  // 头上没人的人——CEO、独立顾问、还没配上级的新人，他们确实是同一层。
+  const managerID = hasManager(focus) && byID.has(focus.managerId) ? focus.managerId : ''
+  const peers = members
+    .filter((m) => (managerID ? m.managerId === managerID : !hasManager(m) || !byID.has(m.managerId)))
+    .sort(byName)
+
+  const reports = members.filter((m) => m.managerId === focus.id && m.id !== focus.id).sort(byName)
+  return { ancestors, focus, peers, reports }
+}
+
+function byName(a: OrgMember, b: OrgMember): number {
+  return a.name.localeCompare(b.name, 'zh-Hans-CN')
+}
+
 /** 这一批数据里有多少个人——用来核对「图上画了几个」，见页面上的提示。 */
 export function countMembers(nodes: OrgNode[]): number {
   let n = 0
