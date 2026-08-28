@@ -16246,7 +16246,7 @@ type ListBankTransactionsRequest struct {
 	Keyword   string                 `protobuf:"bytes,4,opt,name=keyword,proto3" json:"keyword,omitempty"`     // counterparty, bank_ref or remark
 	// 按归属筛。空串表示不筛。
 	Ownership string `protobuf:"bytes,5,opt,name=ownership,proto3" json:"ownership,omitempty"`
-	// 只出「还没人认领的」（ownership=''）。和 ownership 互斥；同时给时以
+	// 只出「还没人认领的」（ownership 为空）。和 ownership 互斥；同时给时以
 	// 这一位为准。单独一位而不是让 ownership="" 兼职，是因为空串已经是
 	// 「不筛」的意思了——一个值不能同时表示「全都要」和「只要没归的」。
 	OwnershipPending bool `protobuf:"varint,6,opt,name=ownership_pending,json=ownershipPending,proto3" json:"ownership_pending,omitempty"`

@@ -1614,7 +1614,7 @@ message ListBankTransactionsRequest {
   string keyword = 4;   // counterparty, bank_ref or remark
   // 按归属筛。空串表示不筛。
   string ownership = 5;
-  // 只出「还没人认领的」（ownership=''）。和 ownership 互斥；同时给时以
+  // 只出「还没人认领的」（ownership 为空）。和 ownership 互斥；同时给时以
   // 这一位为准。单独一位而不是让 ownership="" 兼职，是因为空串已经是
   // 「不筛」的意思了——一个值不能同时表示「全都要」和「只要没归的」。
   bool ownership_pending = 6;
