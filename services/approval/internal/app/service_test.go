@@ -29,3 +29,29 @@ func TestPreferOtherApprovers(t *testing.T) {
 		t.Fatalf("只有应急账号本人时也必须生成一条人工待办: %v", got)
 	}
 }
+
+func TestSuperAdminOverrideIsLimitedToPurchaseOrders(t *testing.T) {
+	svc := &Service{dir: stubDirectory{byCode: map[string][]int64{
+		superAdminRoleCode: {500},
+	}}}
+
+	allowed, err := svc.canSuperAdminOverride(t.Context(), "PURCHASE_ORDER", 500)
+	if err != nil || !allowed {
+		t.Fatalf("最高权限管理员应能接管采购单审批: allowed=%v err=%v", allowed, err)
+	}
+	for _, tc := range []struct {
+		name    string
+		bizType string
+		actorID int64
+	}{
+		{name: "普通员工不能接管采购单", bizType: "PURCHASE_ORDER", actorID: 600},
+		{name: "管理员不能越权审批其他单据", bizType: "CONTRACT", actorID: 500},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			allowed, err := svc.canSuperAdminOverride(t.Context(), tc.bizType, tc.actorID)
+			if err != nil || allowed {
+				t.Fatalf("不应允许越权审批: allowed=%v err=%v", allowed, err)
+			}
+		})
+	}
+}

@@ -571,6 +571,9 @@ interface ApprovalTodo {
   task: { id: string; status: string }
   instance: { bizType: string; bizId: string }
 }
+interface ApprovalInstance { id: string; status: string }
+interface ApprovalTask { id: string; status: string }
+interface ApprovalRound { instance: ApprovalInstance; tasks: ApprovalTask[] }
 interface OrderItem {
   id: string
   requirementId: string
@@ -650,6 +653,8 @@ const loading = ref(false)
 const saving = ref(false)
 const downloadingId = ref(0)
 const approvalTasks = ref<Record<string, string>>({})
+const isSuperAdmin = ref(false)
+let superAdminResolved = false
 
 const createOpen = ref(false)
 const approvalEntry = ref(false)
@@ -787,6 +792,35 @@ function approvalTaskFor(row: Order): string {
   return approvalTasks.value[String(row.id)] ?? ''
 }
 
+async function resolveSuperAdmin() {
+  if (superAdminResolved) return
+  superAdminResolved = true
+  if (!canApprove || !auth.can('iam:role:read')) return
+  try {
+    const roleData = await get<{ roles: { id: string; code: string; status: string }[] }>('/roles', undefined, quietErrors)
+    const role = (roleData.roles ?? []).find((item) => item.code === 'SUPER_ADMIN' && item.status !== 'INACTIVE')
+    if (!role) return
+    const memberData = await get<{ members: { employeeId: string }[] }>(`/roles/${role.id}/members`, undefined, quietErrors)
+    isSuperAdmin.value = (memberData.members ?? []).some((member) => String(member.employeeId) === String(auth.employeeId))
+  } catch {
+    isSuperAdmin.value = false
+  }
+}
+
+async function loadPendingApprovalTask(row: Order): Promise<string> {
+  try {
+    const listed = await get<{ instances: ApprovalInstance[] }>('/approvals/instances', {
+      biz_type: 'PURCHASE_ORDER', biz_id: row.id,
+    }, quietErrors)
+    const running = (listed.instances ?? []).find((instance) => instance.status === 'RUNNING')
+    if (!running) return ''
+    const round = await get<ApprovalRound>(`/approvals/instances/${running.id}`, undefined, quietErrors)
+    return String((round.tasks ?? []).find((task) => task.status === 'PENDING')?.id ?? '')
+  } catch {
+    return ''
+  }
+}
+
 function canActOnOrderApproval(row: Order): boolean {
   return row.status === 'PENDING_APPROVAL' && canApprove && Boolean(approvalTaskFor(row))
 }
@@ -911,6 +945,18 @@ async function load() {
       approvalTasks.value = Object.fromEntries((todoData.todos ?? [])
         .filter((todo) => todo.instance.bizType === 'PURCHASE_ORDER' && todo.task.status === 'PENDING')
         .map((todo) => [String(todo.instance.bizId), String(todo.task.id)]))
+
+	  // 最高权限管理员可以处理历史遗留或分配给他人的采购审批。
+	  // 本人待办接口只返回自己的任务，因此管理员还需从审批实例中解析
+	  // 当前待处理任务；后端会再次按 SUPER_ADMIN 角色做强制校验。
+	  await resolveSuperAdmin()
+	  if (isSuperAdmin.value) {
+	    const missing = rows.value.filter((row) => !approvalTaskFor(row))
+	    const resolved = await Promise.all(missing.map(async (row) => [row.id, await loadPendingApprovalTask(row)] as const))
+	    for (const [orderID, taskID] of resolved) {
+	      if (taskID) approvalTasks.value[String(orderID)] = taskID
+	    }
+	  }
     }
   } finally {
     loading.value = false

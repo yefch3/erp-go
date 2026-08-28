@@ -43,13 +43,24 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 		}
 		return store.ApprovalInstance{}, nil, err
 	}
-	// Invariant: a task can only be acted on by the person it is assigned to.
-	if task.AssigneeID != actorID {
-		return store.ApprovalInstance{}, nil, apierr.Permission("AP_NOT_ASSIGNEE", "该审批任务不属于当前用户")
-	}
 	inst, err := s.q.GetInstance(ctx, store.GetInstanceParams{TenantID: tenantID, ID: task.InstanceID})
 	if err != nil {
 		return store.ApprovalInstance{}, nil, err
+	}
+	// Normally only the assignee may decide. Purchase orders are the one
+	// exception: a tenant's highest-privilege administrator must be able to
+	// unblock a pending purchase even when its historical task belongs to a
+	// departed or misconfigured approver. The gateway still requires the
+	// approval:task:act permission, and the event below records actorID rather
+	// than pretending the original assignee acted.
+	if task.AssigneeID != actorID {
+		override, err := s.canSuperAdminOverride(ctx, inst.BizType, actorID)
+		if err != nil {
+			return store.ApprovalInstance{}, nil, err
+		}
+		if !override {
+			return store.ApprovalInstance{}, nil, apierr.Permission("AP_NOT_ASSIGNEE", "该审批任务不属于当前用户")
+		}
 	}
 
 	var nextNode *store.ApprovalNode
@@ -169,6 +180,22 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 	// showed it sitting at the first — visible only by reloading by hand.
 	s.nudge(ctx, tenantID, []int64{inst.SubmitterID}, livefeed.DocChanged, subjectOf(inst))
 	return out, created, nil
+}
+
+func (s *Service) canSuperAdminOverride(ctx context.Context, bizType string, actorID int64) (bool, error) {
+	if bizType != "PURCHASE_ORDER" || actorID == 0 || s.dir == nil {
+		return false, nil
+	}
+	members, found, err := s.dir.RoleMembersByCode(ctx, superAdminRoleCode)
+	if err != nil || !found {
+		return false, err
+	}
+	for _, memberID := range members {
+		if memberID == actorID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // indexOfSeq locates a node by its seq; -1 when the definition changed under

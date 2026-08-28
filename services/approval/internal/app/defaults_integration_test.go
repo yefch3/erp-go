@@ -294,6 +294,38 @@ func TestPurchaseFallbackUsesSuperAdminWhenProcurementManagerIsEmpty(t *testing.
 	}
 }
 
+// 最高权限管理员不仅能在没有采购经理时兜底接单，也能处理已经分配给
+// 其他人的历史采购审批；普通员工仍然不能借任务编号越权。
+func TestSuperAdminCanOverridePurchaseOrderAssignee(t *testing.T) {
+	dir := stubDirectory{byCode: map[string][]int64{
+		"PROCUREMENT_MANAGER": {777},
+		"SUPER_ADMIN":         {500},
+	}}
+	svc, cleanup := newSeedTestService(t, dir)
+	ctx := context.Background()
+
+	tenantID := time.Now().UnixNano()
+	t.Cleanup(func() { cleanup(tenantID) })
+
+	_, tasks, err := svc.Submit(ctx, tenantID, SubmitInput{
+		BizType: "PURCHASE_ORDER", BizID: 1, BizNo: "PO-OVERRIDE-1",
+		SubmitterID: 600, SubmitterName: "采购员", Amount: "1000",
+	})
+	if err != nil || len(tasks) != 1 || tasks[0].AssigneeID != 777 {
+		t.Fatalf("采购单应先分配给采购经理: tasks=%+v err=%v", tasks, err)
+	}
+	if _, _, err := svc.Act(ctx, tenantID, 601, tasks[0].ID, ActionApprove, ""); err == nil {
+		t.Fatal("普通员工不应能接管别人的采购审批")
+	}
+	approved, _, err := svc.Act(ctx, tenantID, 500, tasks[0].ID, ActionApprove, "最高权限管理员接管")
+	if err != nil {
+		t.Fatalf("最高权限管理员应能接管采购审批: %v", err)
+	}
+	if approved.Status != statusApproved {
+		t.Fatalf("接管审批后采购单应通过，实际 %s", approved.Status)
+	}
+}
+
 // 合同没有上级可批时，记录在案地自动通过——和第一家公司的行为一致。
 func TestContractApprovesWhenTheReportingLineRunsOut(t *testing.T) {
 	dir := stubDirectory{}
