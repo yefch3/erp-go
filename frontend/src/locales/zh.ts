@@ -345,7 +345,7 @@ export default {
     flowHint: '询价案件不会直接生成采购订单；客户接受报价并形成合同后，系统才产生待采购任务。',
   },
   procurementIntakes: {
-    format: '询盘格式', autoRecognize: '自动识别文件格式（推荐）', boundFormat: '使用格式', historicalFormat: '历史兼容格式', autoFormatHint: '系统会根据完整表头自动匹配生效中的格式；识别不唯一时再手工选择。', selectedFormatHint: '将严格按“{name} · v{version}”校验本次文件。',
+    format: '询盘格式', autoRecognize: '自动识别文件格式（推荐）', boundFormat: '使用格式', historicalFormat: '历史兼容格式', autoFormatHint: '系统会根据文件已有表头匹配生效中的格式；缺少的模板列留空进入人工复核，识别不唯一时再手工选择。', selectedFormatHint: '将按“{name} · v{version}”校验已有列，缺少列留空进入人工复核。',
     dynamicReviewHint: '请按本询盘绑定的字段逐项复核；红色“缺少”标记必须补齐，未完成时可先保存草稿。',
     completeness: '完整性', complete: '资料完整', ignored: '已忽略', missingCount: '缺少 {count} 项',
     dynamicRequiredMissing: '仍有必填资料未完成：第 {detail} 行。可先保存修改，补齐后再进入询价。',

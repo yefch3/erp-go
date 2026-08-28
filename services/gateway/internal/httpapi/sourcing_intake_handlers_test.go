@@ -1,11 +1,17 @@
 package httpapi
 
 import (
+	"bytes"
+	"context"
 	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
+	"google.golang.org/grpc"
 )
 
 // 与系统种子模板一致的 22 列字段表；intake 解析的列定义来自默认模板。
@@ -173,5 +179,78 @@ func TestRecognizeInquiryTemplateAcceptsUTF8BOM(t *testing.T) {
 	)
 	if err != nil || id != 31 {
 		t.Fatalf("BOM template should be recognized: id=%d err=%v", id, err)
+	}
+}
+
+func TestRecognizeInquiryTemplateAllowsMissingTemplateColumns(t *testing.T) {
+	fields := []*prv1.InquiryTemplateField{
+		{FieldKey: "product", DisplayName: "产品", SortOrder: 1},
+		{FieldKey: "quantity", DisplayName: "数量", SortOrder: 2},
+		{FieldKey: "quantity_unit", DisplayName: "单位", SortOrder: 3},
+		{FieldKey: "custom.customer_part_no", DisplayName: "客户料号", SortOrder: 4},
+	}
+	id, err := recognizeInquiryTemplate(
+		&multipart.FileHeader{Filename: "older-standard.csv"},
+		[]byte("产品,数量,单位\n镀锌卷,20,MT\n"),
+		[]*prv1.InquiryTemplate{{Id: 41, Status: "ACTIVE", IsDefault: true, Fields: fields}},
+	)
+	if err != nil || id != 41 {
+		t.Fatalf("missing optional template columns should still recognize: id=%d err=%v", id, err)
+	}
+}
+
+type intakeTemplateClientStub struct {
+	prv1.InquiryTemplateServiceClient
+	template *prv1.InquiryTemplate
+}
+
+func (s intakeTemplateClientStub) GetInquiryTemplate(context.Context, *prv1.GetInquiryTemplateRequest, ...grpc.CallOption) (*prv1.GetInquiryTemplateResponse, error) {
+	return &prv1.GetInquiryTemplateResponse{Template: s.template}, nil
+}
+
+func TestImportSourcingIntakePreservesContactID(t *testing.T) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	file, err := writer.CreateFormFile("file", "standard.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = file.Write([]byte("产品,数量,单位\n镀锌卷,20,MT\n")); err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range map[string]string{
+		"inquiry_template_id": "42", "customer_id": "7", "contact_id": "11", "title": "联系人落库测试",
+	} {
+		if err = writer.WriteField(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	sourcing := &captureSourcingClientStub{}
+	server := &Server{
+		Customers: activeCustomerClientStub{
+			status:   "ACTIVE",
+			contacts: []*mdv1.Contact{{Id: 11, Name: "王经理", Email: "wang@example.com", Status: "ACTIVE"}},
+		},
+		InquiryTemplates: intakeTemplateClientStub{template: &prv1.InquiryTemplate{
+			Id: 42, TemplateCode: "SYSTEM_DEFAULT", Version: 3, Status: "ACTIVE", Fields: []*prv1.InquiryTemplateField{
+				{FieldKey: "product", DisplayName: "产品", SortOrder: 1},
+				{FieldKey: "quantity", DisplayName: "数量", SortOrder: 2},
+				{FieldKey: "quantity_unit", DisplayName: "单位", SortOrder: 3},
+			}}},
+		Sourcing: sourcing,
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/sourcing-intakes/import", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+	server.importSourcingIntake(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("manual intake should succeed: %d %s", rec.Code, rec.Body.String())
+	}
+	if sourcing.got == nil || sourcing.got.GetContactId() != 11 {
+		t.Fatalf("contact id must reach procurement create request: %+v", sourcing.got)
 	}
 }
