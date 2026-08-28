@@ -30,6 +30,8 @@ var (
 	profileLength     = regexp.MustCompile(`(?i)\s*[Xx]\s*([0-9]+(?:[.,][0-9]+)?)\s*(MM|M|METRES?|METERS?)\.?\s*$`)
 	profileNumber     = regexp.MustCompile(`[0-9]+(?:[.,][0-9]+)?`)
 	profileSeparator  = regexp.MustCompile(`(?i)\s*[Xx]\s*`)
+	coilWeightUnit    = regexp.MustCompile(`(?i)^\s*([0-9]+(?:[.,][0-9]+)?(?:\s*[-–~]\s*[0-9]+(?:[.,][0-9]+)?)?)\s*(?:MT|TONS?)\s*(?:MAX\.?)?\s*$`)
+	coilIDUnit        = regexp.MustCompile(`(?i)^\s*([0-9]+(?:[.,][0-9]+)?)\s*MM\s*$`)
 )
 
 const (
@@ -133,14 +135,14 @@ func SystemInquiryColumns() []InquiryColumn {
 		{FieldKey: "surface_requirement", DisplayName: "表面要求", DataType: "TEXT"},
 		{FieldKey: "coating", DisplayName: "涂层/镀层", DataType: "TEXT"},
 		{FieldKey: "tolerance", DisplayName: "公差", DataType: "TEXT"},
-		{FieldKey: "coil_weight", DisplayName: "卷重", DataType: "TEXT"},
-		{FieldKey: "coil_id", DisplayName: "卷内径", DataType: "TEXT"},
+		{FieldKey: "coil_weight", DisplayName: "卷重(MT)", DataType: "TEXT"},
+		{FieldKey: "coil_id", DisplayName: "卷内径(mm)", DataType: "TEXT"},
 		{FieldKey: "packaging", DisplayName: "包装", DataType: "TEXT"},
 		{FieldKey: "delivery", DisplayName: "交期", DataType: "TEXT"},
 		{FieldKey: "payment_terms", DisplayName: "付款条件", DataType: "TEXT"},
 		{FieldKey: "incoterm", DisplayName: "贸易术语", DataType: "TEXT"},
 		{FieldKey: "port", DisplayName: "港口", DataType: "TEXT"},
-		{FieldKey: "quantity_unit", DisplayName: "单位", DataType: "TEXT", IsRequired: true},
+		{FieldKey: "quantity_unit", DisplayName: "数量计量单位(MT/PCS等)", DataType: "TEXT", IsRequired: true},
 		{FieldKey: "remarks", DisplayName: "备注", DataType: "TEXT"},
 		{FieldKey: "quantity", DisplayName: "数量", DataType: "NUMBER", IsRequired: true},
 		{FieldKey: "unit_price", DisplayName: "单价", DataType: "NUMBER"},
@@ -151,9 +153,23 @@ func SystemInquiryColumns() []InquiryColumn {
 // ExtractedInquiry 是模型唯一允许返回的形状：每行是按模板字段标识 keyed
 // 的事实。公司工作簿由服务端按模板列组装，模型不能决定列名、顺序或公式。
 type ExtractedInquiry struct {
-	Title   string              `json:"title"`
-	Summary string              `json:"summary"`
-	Items   []map[string]string `json:"items"`
+	Title      string                `json:"title"`
+	Summary    string                `json:"summary"`
+	Items      []map[string]string   `json:"items"`
+	ImageAudit *ImageExtractionAudit `json:"image_audit,omitempty"`
+}
+
+type ImageExtractionAudit struct {
+	DetailRowCount int                 `json:"detail_row_count"`
+	Sections       []ImageAuditSection `json:"sections"`
+}
+
+type ImageAuditSection struct {
+	SectionRef     string            `json:"section_ref"`
+	DetailRowCount int               `json:"detail_row_count"`
+	StatedTotal    string            `json:"stated_total"`
+	QuantityUnit   string            `json:"quantity_unit"`
+	SharedValues   map[string]string `json:"shared_values"`
 }
 
 // NewTemplateWorkbook 按模板列把抽取结果落成工作簿：列名与顺序来自模板，
@@ -206,6 +222,7 @@ func NewTemplateWorkbook(in ExtractedInquiry, columns []InquiryColumn) Workbook 
 			if value == "" {
 				value = column.DefaultValue
 			}
+			value = valueWithoutHeaderUnit(column.FieldKey, value)
 			row[c] = value
 			preview[c] = value
 		}
@@ -237,6 +254,20 @@ func NewTemplateWorkbook(in ExtractedInquiry, columns []InquiryColumn) Workbook 
 		Columns: headers, ColumnTypes: types, ColumnKeys: keys,
 		Rows: rows, PreviewRows: previews,
 	}}}
+}
+
+func valueWithoutHeaderUnit(fieldKey, value string) string {
+	var match []string
+	switch fieldKey {
+	case "coil_weight":
+		match = coilWeightUnit.FindStringSubmatch(value)
+	case "coil_id":
+		match = coilIDUnit.FindStringSubmatch(value)
+	}
+	if len(match) > 1 {
+		return strings.ReplaceAll(strings.TrimSpace(match[1]), ",", ".")
+	}
+	return value
 }
 
 // multiplyDecimalText 把两个已经过 safeExcelDecimal 的十进制文本相乘，
