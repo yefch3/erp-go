@@ -254,6 +254,27 @@ SET avatar_key = sqlc.arg(avatar_key)::text, updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint
 RETURNING *;
 
+-- name: ListOrgChartMembers :many
+-- 画组织架构图用的全量员工。
+--
+-- 不分页：三百人的图就是要一次画完，分页的树是画不出来的（父节点在第 1 页、
+-- 子节点在第 3 页，那还叫什么树）。真到了分页才画得动的规模，要换的是
+-- 「按部门懒加载」这种别的做法，不是给这条加 LIMIT。
+--
+-- 字段比 ListEmployees 少一大截：不联账号、不查邀请状态——图上不显示那些，
+-- 而每多一个联表就是三百行乘一次。
+--
+-- 只要在职的。离职的人留在图上会让「这个部门有几个人」永远算不对，
+-- 而想看历史的人要的是变更记录，不是一张混着离职者的架构图。
+SELECT e.id, e.code, e.name, e.english_name, e.position, e.status,
+       e.manager_id, e.department_id, d.name AS department_name,
+       e.avatar_key, e.leave_date
+FROM employees e
+JOIN departments d ON d.id = e.department_id AND d.tenant_id = e.tenant_id
+WHERE e.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND e.status = 'ACTIVE'
+ORDER BY d.path, e.id;
+
 -- name: ListEmployeeAvatars :many
 -- 一批人的头像 key。列表页和组织架构图一次要显示几十上百张，
 -- 逐个去查就是逐个往返。没有头像的人也返回（key 是空串），由调用方跳过——

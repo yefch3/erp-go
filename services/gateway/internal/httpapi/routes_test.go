@@ -113,6 +113,7 @@ func TestMyProfileRoutesAreAllRegistered(t *testing.T) {
 		"POST /api/employees/avatar-urls",         // 列表页批量取头像
 		"POST /api/employees/{id}/avatar/presign", // 管理员替别人换
 		"POST /api/employees/{id}/avatar",         // 同上
+		"GET /api/org-chart",                      // 组织架构图
 	} {
 		if !have[w] {
 			t.Errorf("我的资料少了这条地址：%s", w)
@@ -180,6 +181,7 @@ func TestMyProfileIsNotBehindAPermissionButTheAdminAvatarRoutesAre(t *testing.T)
 		{"POST", "/api/employees/{id}/avatar/presign"},
 		{"POST", "/api/employees/{id}/avatar"},
 		{"POST", "/api/employees/avatar-urls"},
+		{"GET", "/api/org-chart"},
 	} {
 		if got := middlewareCount(t, r.method, r.route); got != gatedBaseline {
 			t.Errorf("%s %s 挂了 %d 层中间件，而带权限门的路由是 %d 层——"+

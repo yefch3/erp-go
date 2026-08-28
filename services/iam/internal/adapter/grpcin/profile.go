@@ -15,6 +15,29 @@ import (
 // 那时 employee_id 非零，而「能不能替别人改」由网关的权限中间件把关，
 // 不在这一层重复判断（重复判断会变成两套规则，早晚对不上）。
 
+func (h *Handler) GetOrgChart(ctx context.Context, _ *iamv1.GetOrgChartRequest) (*iamv1.GetOrgChartResponse, error) {
+	members, depts, err := h.svc.OrgChart(ctx, grpcx.TenantID(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*iamv1.OrgMember, 0, len(members))
+	for _, m := range members {
+		out = append(out, &iamv1.OrgMember{
+			Id: m.ID, Code: m.Code, Name: m.Name, EnglishName: m.EnglishName,
+			Position: m.Position, Status: m.Status, ManagerId: m.ManagerID,
+			DepartmentId: m.DepartmentID, DepartmentName: m.DepartmentName,
+			AvatarKey: m.AvatarKey, AvatarUrl: m.AvatarURL, LeaveDate: m.LeaveDate,
+		})
+	}
+	// 部门直接复用现成的映射，架构图和部门页看到的是同一份形状——
+	// 两个页面对「部门长什么样」有两套答案，是分歧的开始。
+	ds := make([]*iamv1.Department, 0, len(depts))
+	for _, d := range depts {
+		ds = append(ds, departmentToProto(d))
+	}
+	return &iamv1.GetOrgChartResponse{Members: out, Departments: ds}, nil
+}
+
 func (h *Handler) GetMyProfile(ctx context.Context, _ *iamv1.GetMyProfileRequest) (*iamv1.GetMyProfileResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
 	view, err := h.svc.GetMyProfile(ctx, grpcx.TenantID(ctx), op.EmployeeID)

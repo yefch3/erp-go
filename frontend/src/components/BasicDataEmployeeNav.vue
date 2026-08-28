@@ -3,6 +3,7 @@
     <el-tab-pane :label="t('basicData.employeeList')" name="/basic/employees" />
     <el-tab-pane :label="t('basicData.departments')" name="/basic/employees/departments" />
     <el-tab-pane :label="t('basicData.roles')" name="/basic/employees/roles" />
+    <el-tab-pane :label="t('basicData.orgChart')" name="/basic/employees/org" />
   </el-tabs>
 </template>
 

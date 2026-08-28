@@ -370,6 +370,7 @@ const (
 	DirectoryService_RecordAccountEvent_FullMethodName   = "/erp.iam.v1.DirectoryService/RecordAccountEvent"
 	DirectoryService_ImportEmployees_FullMethodName      = "/erp.iam.v1.DirectoryService/ImportEmployees"
 	DirectoryService_ListDirectoryChanges_FullMethodName = "/erp.iam.v1.DirectoryService/ListDirectoryChanges"
+	DirectoryService_GetOrgChart_FullMethodName          = "/erp.iam.v1.DirectoryService/GetOrgChart"
 	DirectoryService_GetMyProfile_FullMethodName         = "/erp.iam.v1.DirectoryService/GetMyProfile"
 	DirectoryService_UpdateMyProfile_FullMethodName      = "/erp.iam.v1.DirectoryService/UpdateMyProfile"
 	DirectoryService_PresignAvatarUpload_FullMethodName  = "/erp.iam.v1.DirectoryService/PresignAvatarUpload"
@@ -432,6 +433,9 @@ type DirectoryServiceClient interface {
 	// 「我的资料」。这三个 RPC 的调用者一律取自认证上下文，因此它们是这个服务里
 	// 唯一不需要 iam:employee:read 的读写口——看自己、改自己是身份自带的，
 	// 而普通员工本来就没有那个权限。
+	// 组织架构图。一次给全两棵树要用的数据，走 iam:employee:read——
+	// 能看员工列表的人才看得到架构图，不为它单开一套可见性。
+	GetOrgChart(ctx context.Context, in *GetOrgChartRequest, opts ...grpc.CallOption) (*GetOrgChartResponse, error)
 	GetMyProfile(ctx context.Context, in *GetMyProfileRequest, opts ...grpc.CallOption) (*GetMyProfileResponse, error)
 	UpdateMyProfile(ctx context.Context, in *UpdateMyProfileRequest, opts ...grpc.CallOption) (*UpdateMyProfileResponse, error)
 	// 头像。employee_id 为 0 表示「我自己」；非 0 是管理员在改别人的，
@@ -639,6 +643,16 @@ func (c *directoryServiceClient) ListDirectoryChanges(ctx context.Context, in *L
 	return out, nil
 }
 
+func (c *directoryServiceClient) GetOrgChart(ctx context.Context, in *GetOrgChartRequest, opts ...grpc.CallOption) (*GetOrgChartResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetOrgChartResponse)
+	err := c.cc.Invoke(ctx, DirectoryService_GetOrgChart_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *directoryServiceClient) GetMyProfile(ctx context.Context, in *GetMyProfileRequest, opts ...grpc.CallOption) (*GetMyProfileResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetMyProfileResponse)
@@ -744,6 +758,9 @@ type DirectoryServiceServer interface {
 	// 「我的资料」。这三个 RPC 的调用者一律取自认证上下文，因此它们是这个服务里
 	// 唯一不需要 iam:employee:read 的读写口——看自己、改自己是身份自带的，
 	// 而普通员工本来就没有那个权限。
+	// 组织架构图。一次给全两棵树要用的数据，走 iam:employee:read——
+	// 能看员工列表的人才看得到架构图，不为它单开一套可见性。
+	GetOrgChart(context.Context, *GetOrgChartRequest) (*GetOrgChartResponse, error)
 	GetMyProfile(context.Context, *GetMyProfileRequest) (*GetMyProfileResponse, error)
 	UpdateMyProfile(context.Context, *UpdateMyProfileRequest) (*UpdateMyProfileResponse, error)
 	// 头像。employee_id 为 0 表示「我自己」；非 0 是管理员在改别人的，
@@ -817,6 +834,9 @@ func (UnimplementedDirectoryServiceServer) ImportEmployees(context.Context, *Imp
 }
 func (UnimplementedDirectoryServiceServer) ListDirectoryChanges(context.Context, *ListDirectoryChangesRequest) (*ListDirectoryChangesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListDirectoryChanges not implemented")
+}
+func (UnimplementedDirectoryServiceServer) GetOrgChart(context.Context, *GetOrgChartRequest) (*GetOrgChartResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetOrgChart not implemented")
 }
 func (UnimplementedDirectoryServiceServer) GetMyProfile(context.Context, *GetMyProfileRequest) (*GetMyProfileResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMyProfile not implemented")
@@ -1196,6 +1216,24 @@ func _DirectoryService_ListDirectoryChanges_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DirectoryService_GetOrgChart_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOrgChartRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DirectoryServiceServer).GetOrgChart(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DirectoryService_GetOrgChart_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DirectoryServiceServer).GetOrgChart(ctx, req.(*GetOrgChartRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DirectoryService_GetMyProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetMyProfileRequest)
 	if err := dec(in); err != nil {
@@ -1368,6 +1406,10 @@ var DirectoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListDirectoryChanges",
 			Handler:    _DirectoryService_ListDirectoryChanges_Handler,
+		},
+		{
+			MethodName: "GetOrgChart",
+			Handler:    _DirectoryService_GetOrgChart_Handler,
 		},
 		{
 			MethodName: "GetMyProfile",

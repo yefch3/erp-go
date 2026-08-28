@@ -249,6 +249,8 @@ func (s *Server) Router() http.Handler {
 		// 一批人的头像地址。走 read 权限，和员工列表同一道门——能看到这些人
 		// 的人才能看到他们的照片，头像不单独设一套可见性。
 		r.With(s.perm("iam:employee:read")).Post("/api/employees/avatar-urls", s.employeeAvatarURLs)
+		// 组织架构图。一次返回两棵树要用的全部数据，走和员工列表同一道门。
+		r.With(s.perm("iam:employee:read")).Get("/api/org-chart", s.orgChart)
 		// 管理员替别人换/清头像。写权限，和改员工资料同一道门。
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/avatar/presign", s.presignEmployeeAvatar)
 		r.With(s.perm("iam:employee:write")).Post("/api/employees/{id}/avatar", s.setEmployeeAvatar)
