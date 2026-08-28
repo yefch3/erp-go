@@ -16,6 +16,12 @@
         <el-menu-item index="/todos">
           {{ t('menu.todos') }}
         </el-menu-item>
+        <!-- 我的信息紧跟待办，理由一样：这两个是每个员工都拥有的页面，
+             和角色无关。基础数据那个菜单要 iam:employee:read 才显示，
+             把自己的资料只挂在那底下，等于藏起来给最需要它的人看不见。 -->
+        <el-menu-item index="/basic/employees/me">
+          {{ t('menu.myProfile') }}
+        </el-menu-item>
         <el-menu-item v-if="auth.can('mail:email:read')" index="/emails">
           {{ t('menu.emails') }}
         </el-menu-item>
