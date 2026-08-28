@@ -42,6 +42,10 @@ service ReceiptService {
   rpc GetContractReceipts(GetContractReceiptsRequest) returns (GetContractReceiptsResponse);
   // 应收到期清单（E1）：还没收完的生效合同，按该收的日子排。
   rpc ListReceivableDue(ListReceivableDueRequest) returns (ListReceivableDueResponse);
+  // 收款结清：这张合同的钱「不用再催了」，由人说出来。只关催收的口，
+  // 不关钱的门——结清的合同照样能核销，钱真的又来了就撤销。
+  rpc CloseReceivable(CloseReceivableRequest) returns (CloseReceivableResponse);
+  rpc ReopenReceivable(ReopenReceivableRequest) returns (ReopenReceivableResponse);
   // 应收提醒收件箱（E1 第二期）。
   rpc ListReceivableReminders(ListReceivableRemindersRequest) returns (ListReceivableRemindersResponse);
   rpc MarkReceivableRemindersRead(MarkReceivableRemindersReadRequest) returns (MarkReceivableRemindersReadResponse);
@@ -332,6 +336,11 @@ message ReceivableDue {
   // 正数已逾期，负数是还剩几天；due_unset 为真时无意义。
   int32 overdue_days = 13;
   bool due_unset = 14;
+  // 收款结清（只在 closed_only 视图里非空）：为什么不催了、谁定的。
+  string closed_category = 15; // LOSS | ROUNDING | CANCELLED | OTHER
+  string closed_note = 16;
+  string closed_by_name = 17;
+  string closed_at = 18;
 }
 
 message ListReceivableDueRequest {
@@ -340,6 +349,8 @@ message ListReceivableDueRequest {
   // 只看还没配账期的合同——催配置，不是催钱。
   bool unset_only = 3;
   string keyword = 4;
+  // 只看结清了的。默认视图是「该催的」，结清的不在里面。
+  bool closed_only = 5;
 }
 message ListReceivableDueResponse {
   repeated ReceivableDue items = 1;
@@ -364,6 +375,20 @@ message ReceivableReminder {
   string created_at = 13;
   bool unread = 14;
 }
+
+message CloseReceivableRequest {
+  int64 contract_id = 1;
+  string category = 2; // LOSS | ROUNDING | CANCELLED | OTHER
+  string note = 3;
+}
+message CloseReceivableResponse {}
+
+message ReopenReceivableRequest {
+  int64 contract_id = 1;
+  // 必填：没有理由的撤销事后没人说得清。
+  string reason = 2;
+}
+message ReopenReceivableResponse {}
 
 message ListReceivableRemindersRequest {
   bool unread_only = 1;

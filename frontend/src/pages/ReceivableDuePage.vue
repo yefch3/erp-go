@@ -35,6 +35,7 @@
           <el-radio-button value="">{{ t('receivableDue.viewAll') }}</el-radio-button>
           <el-radio-button value="overdue">{{ t('receivableDue.viewOverdue') }}</el-radio-button>
           <el-radio-button value="unset">{{ t('receivableDue.viewUnset') }}</el-radio-button>
+          <el-radio-button value="closed">{{ t('receivableDue.viewClosed') }}</el-radio-button>
         </el-radio-group>
         <el-input
           v-model="keyword"
@@ -84,6 +85,23 @@
         <el-table-column :label="t('receivableDue.owner')" min-width="110">
           <template #default="{ row }">{{ row.salesEmployee || '—' }}</template>
         </el-table-column>
+        <!-- 已结清视图多一列：为什么不催了、谁定的。 -->
+        <el-table-column v-if="view === 'closed'" :label="t('receivableDue.closedWhy')" min-width="170">
+          <template #default="{ row }">
+            <el-tag size="small" effect="plain">{{ t(`receivableDue.closureCategories.${row.closedCategory}`) }}</el-tag>
+            <div class="sub">{{ row.closedByName }}<template v-if="row.closedNote"> · {{ row.closedNote }}</template></div>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="canWrite" :label="t('common.actions')" width="110" fixed="right">
+          <template #default="{ row }">
+            <el-button v-if="view === 'closed'" link type="warning" @click="reopenRow(row)">
+              {{ t('receivableDue.reopen') }}
+            </el-button>
+            <el-button v-else link type="primary" @click="openClose(row)">
+              {{ t('receivableDue.close') }}
+            </el-button>
+          </template>
+        </el-table-column>
         <template #empty>{{ view === 'overdue' ? t('receivableDue.emptyOverdue') : t('receivableDue.empty') }}</template>
       </el-table>
 
@@ -96,6 +114,37 @@
         @current-change="(p: number) => { page = p; load() }"
       />
     </section>
+
+    <!-- 收款结清：这张合同的钱「不用再催了」。三个数并排亮着，员工看着差额
+         做决定——这正是「完成由人确认」那条原则在合同侧的样子。只关催收的
+         口，不关钱的门：结清的合同照样能核销，钱真的又来了就撤销。 -->
+    <el-dialog v-model="closeOpen" :title="t('receivableDue.closeTitle')" width="min(520px, 94vw)" destroy-on-close>
+      <template v-if="closing">
+        <p class="close-target">{{ closing.contractNo }} · {{ closing.customerName }}</p>
+        <div class="close-figures">
+          <div><span class="sub">{{ t('receivableDue.figTotal') }}</span><span class="num">{{ closing.currency }} {{ closing.totalAmount }}</span></div>
+          <div><span class="sub">{{ t('receivableDue.figReceived') }}</span><span class="num">{{ closing.receivedAmount }}</span></div>
+          <div><span class="sub">{{ t('receivableDue.figOpen') }}</span><span class="num warn">{{ closing.openAmount }}</span></div>
+        </div>
+        <el-form label-position="top">
+          <el-form-item :label="t('receivableDue.closeWhat')">
+            <el-radio-group v-model="closeForm.category">
+              <el-radio v-for="k in CLOSURE_CATEGORIES" :key="k" :value="k">
+                {{ t(`receivableDue.closureCategories.${k}`) }}
+              </el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item :label="t('receivableDue.closeNote')">
+            <el-input v-model="closeForm.note" :placeholder="t('receivableDue.closeNoteHint')" />
+          </el-form-item>
+        </el-form>
+        <el-alert type="info" :closable="false" show-icon :title="t('receivableDue.closeHint')" />
+      </template>
+      <template #footer>
+        <el-button @click="closeOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="closingBusy" @click="submitClose">{{ t('receivableDue.closeConfirm') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -103,10 +152,14 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
-import { get } from '../api'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { get, post } from '../api'
+import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
 const route = useRoute()
+const auth = useAuthStore()
+const canWrite = auth.can('export:receipt:write')
 
 interface Row {
   contractId: string
@@ -123,6 +176,10 @@ interface Row {
   openAmount: string
   overdueDays: number
   dueUnset: boolean
+  closedCategory: string
+  closedNote: string
+  closedByName: string
+  closedAt: string
 }
 
 const rows = ref<Row[]>([])
@@ -163,6 +220,7 @@ async function load() {
       page: page.value, page_size: pageSize,
       overdue: view.value === 'overdue' ? '1' : '',
       unset: view.value === 'unset' ? '1' : '',
+      closed: view.value === 'closed' ? '1' : '',
       keyword: keyword.value,
     })
     rows.value = d.items ?? []
@@ -185,6 +243,46 @@ async function loadMetrics() {
   dueSoonCount.value = (all.items ?? []).filter(
     (r) => !r.dueUnset && r.overdueDays <= 0 && -r.overdueDays <= dueSoonDays,
   ).length
+}
+
+// ── 收款结清 ──────────────────────────────────────────────
+const CLOSURE_CATEGORIES = ['LOSS', 'ROUNDING', 'CANCELLED', 'OTHER'] as const
+const closeOpen = ref(false)
+const closingBusy = ref(false)
+const closing = ref<Row | null>(null)
+const closeForm = ref({ category: 'LOSS', note: '' })
+
+function openClose(row: Row) {
+  closing.value = row
+  closeForm.value = { category: 'LOSS', note: '' }
+  closeOpen.value = true
+}
+
+async function submitClose() {
+  if (!closing.value) return
+  closingBusy.value = true
+  try {
+    await post(`/receivable-due/${closing.value.contractId}/close`, {
+      category: closeForm.value.category, note: closeForm.value.note,
+    })
+    closeOpen.value = false
+    ElMessage.success(t('receivableDue.closed'))
+    reload()
+  } finally {
+    closingBusy.value = false
+  }
+}
+
+async function reopenRow(row: Row) {
+  // 撤销必须给理由，和冲销、认差撤销同一条纪律。
+  const { value } = await ElMessageBox.prompt(
+    t('receivableDue.reopenWhy', { no: row.contractNo }), t('receivableDue.reopen'),
+    { inputPlaceholder: t('receivableDue.reopenReason') },
+  ).catch(() => ({ value: '' }))
+  if (!value) return
+  await post(`/receivable-due/${row.contractId}/reopen`, { reason: value })
+  ElMessage.success(t('receivableDue.reopened'))
+  reload()
 }
 
 function reload() {
@@ -303,5 +401,22 @@ onMounted(() => {
 }
 :deep(.row-unset) {
   background: var(--el-color-warning-light-9);
+}
+.close-target {
+  margin: 0 0 10px;
+  font-weight: 600;
+}
+.close-figures {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 14px;
+}
+.close-figures > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.close-figures .warn {
+  color: var(--el-color-warning);
 }
 </style>

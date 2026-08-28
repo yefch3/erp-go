@@ -33,6 +33,8 @@ const (
 	ReceiptService_ListOpenReceivables_FullMethodName         = "/erp.export.v1.ReceiptService/ListOpenReceivables"
 	ReceiptService_GetContractReceipts_FullMethodName         = "/erp.export.v1.ReceiptService/GetContractReceipts"
 	ReceiptService_ListReceivableDue_FullMethodName           = "/erp.export.v1.ReceiptService/ListReceivableDue"
+	ReceiptService_CloseReceivable_FullMethodName             = "/erp.export.v1.ReceiptService/CloseReceivable"
+	ReceiptService_ReopenReceivable_FullMethodName            = "/erp.export.v1.ReceiptService/ReopenReceivable"
 	ReceiptService_ListReceivableReminders_FullMethodName     = "/erp.export.v1.ReceiptService/ListReceivableReminders"
 	ReceiptService_MarkReceivableRemindersRead_FullMethodName = "/erp.export.v1.ReceiptService/MarkReceivableRemindersRead"
 )
@@ -79,6 +81,10 @@ type ReceiptServiceClient interface {
 	GetContractReceipts(ctx context.Context, in *GetContractReceiptsRequest, opts ...grpc.CallOption) (*GetContractReceiptsResponse, error)
 	// 应收到期清单（E1）：还没收完的生效合同，按该收的日子排。
 	ListReceivableDue(ctx context.Context, in *ListReceivableDueRequest, opts ...grpc.CallOption) (*ListReceivableDueResponse, error)
+	// 收款结清：这张合同的钱「不用再催了」，由人说出来。只关催收的口，
+	// 不关钱的门——结清的合同照样能核销，钱真的又来了就撤销。
+	CloseReceivable(ctx context.Context, in *CloseReceivableRequest, opts ...grpc.CallOption) (*CloseReceivableResponse, error)
+	ReopenReceivable(ctx context.Context, in *ReopenReceivableRequest, opts ...grpc.CallOption) (*ReopenReceivableResponse, error)
 	// 应收提醒收件箱（E1 第二期）。
 	ListReceivableReminders(ctx context.Context, in *ListReceivableRemindersRequest, opts ...grpc.CallOption) (*ListReceivableRemindersResponse, error)
 	MarkReceivableRemindersRead(ctx context.Context, in *MarkReceivableRemindersReadRequest, opts ...grpc.CallOption) (*MarkReceivableRemindersReadResponse, error)
@@ -232,6 +238,26 @@ func (c *receiptServiceClient) ListReceivableDue(ctx context.Context, in *ListRe
 	return out, nil
 }
 
+func (c *receiptServiceClient) CloseReceivable(ctx context.Context, in *CloseReceivableRequest, opts ...grpc.CallOption) (*CloseReceivableResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CloseReceivableResponse)
+	err := c.cc.Invoke(ctx, ReceiptService_CloseReceivable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *receiptServiceClient) ReopenReceivable(ctx context.Context, in *ReopenReceivableRequest, opts ...grpc.CallOption) (*ReopenReceivableResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReopenReceivableResponse)
+	err := c.cc.Invoke(ctx, ReceiptService_ReopenReceivable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *receiptServiceClient) ListReceivableReminders(ctx context.Context, in *ListReceivableRemindersRequest, opts ...grpc.CallOption) (*ListReceivableRemindersResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListReceivableRemindersResponse)
@@ -294,6 +320,10 @@ type ReceiptServiceServer interface {
 	GetContractReceipts(context.Context, *GetContractReceiptsRequest) (*GetContractReceiptsResponse, error)
 	// 应收到期清单（E1）：还没收完的生效合同，按该收的日子排。
 	ListReceivableDue(context.Context, *ListReceivableDueRequest) (*ListReceivableDueResponse, error)
+	// 收款结清：这张合同的钱「不用再催了」，由人说出来。只关催收的口，
+	// 不关钱的门——结清的合同照样能核销，钱真的又来了就撤销。
+	CloseReceivable(context.Context, *CloseReceivableRequest) (*CloseReceivableResponse, error)
+	ReopenReceivable(context.Context, *ReopenReceivableRequest) (*ReopenReceivableResponse, error)
 	// 应收提醒收件箱（E1 第二期）。
 	ListReceivableReminders(context.Context, *ListReceivableRemindersRequest) (*ListReceivableRemindersResponse, error)
 	MarkReceivableRemindersRead(context.Context, *MarkReceivableRemindersReadRequest) (*MarkReceivableRemindersReadResponse, error)
@@ -348,6 +378,12 @@ func (UnimplementedReceiptServiceServer) GetContractReceipts(context.Context, *G
 }
 func (UnimplementedReceiptServiceServer) ListReceivableDue(context.Context, *ListReceivableDueRequest) (*ListReceivableDueResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListReceivableDue not implemented")
+}
+func (UnimplementedReceiptServiceServer) CloseReceivable(context.Context, *CloseReceivableRequest) (*CloseReceivableResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CloseReceivable not implemented")
+}
+func (UnimplementedReceiptServiceServer) ReopenReceivable(context.Context, *ReopenReceivableRequest) (*ReopenReceivableResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReopenReceivable not implemented")
 }
 func (UnimplementedReceiptServiceServer) ListReceivableReminders(context.Context, *ListReceivableRemindersRequest) (*ListReceivableRemindersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListReceivableReminders not implemented")
@@ -628,6 +664,42 @@ func _ReceiptService_ListReceivableDue_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ReceiptService_CloseReceivable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CloseReceivableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReceiptServiceServer).CloseReceivable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReceiptService_CloseReceivable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReceiptServiceServer).CloseReceivable(ctx, req.(*CloseReceivableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ReceiptService_ReopenReceivable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReopenReceivableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReceiptServiceServer).ReopenReceivable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReceiptService_ReopenReceivable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReceiptServiceServer).ReopenReceivable(ctx, req.(*ReopenReceivableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ReceiptService_ListReceivableReminders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListReceivableRemindersRequest)
 	if err := dec(in); err != nil {
@@ -726,6 +798,14 @@ var ReceiptService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListReceivableDue",
 			Handler:    _ReceiptService_ListReceivableDue_Handler,
+		},
+		{
+			MethodName: "CloseReceivable",
+			Handler:    _ReceiptService_CloseReceivable_Handler,
+		},
+		{
+			MethodName: "ReopenReceivable",
+			Handler:    _ReceiptService_ReopenReceivable_Handler,
 		},
 		{
 			MethodName: "ListReceivableReminders",

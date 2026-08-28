@@ -67,6 +67,22 @@ type ContractItem struct {
 	Remark            string
 }
 
+type ContractReceivableClosure struct {
+	ID            int64
+	TenantID      int64
+	ContractID    int64
+	OpenAmount    pgtype.Numeric
+	Category      string
+	Note          string
+	ClosedByID    int64
+	ClosedByName  string
+	CreatedAt     pgtype.Timestamptz
+	RevokedAt     pgtype.Timestamptz
+	RevokedByID   int64
+	RevokedByName string
+	RevokeReason  string
+}
+
 type ContractShipment struct {
 	ID             int64
 	TenantID       int64

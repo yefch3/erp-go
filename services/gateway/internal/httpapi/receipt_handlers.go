@@ -185,7 +185,43 @@ func (s *Server) listReceivableDue(w http.ResponseWriter, r *http.Request) {
 		Page:        pageFromQuery(r),
 		OverdueOnly: q.Get("overdue") == "1",
 		UnsetOnly:   q.Get("unset") == "1",
+		ClosedOnly:  q.Get("closed") == "1",
 		Keyword:     q.Get("keyword"),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) closeReceivable(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Category string `json:"category"`
+		Note     string `json:"note"`
+	}
+	if !s.decodeJSON(w, r, &body) {
+		return
+	}
+	resp, err := s.Receipts.CloseReceivable(r.Context(), &exv1.CloseReceivableRequest{
+		ContractId: idFromPath(r), Category: body.Category, Note: body.Note,
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) reopenReceivable(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if !s.decodeJSON(w, r, &body) {
+		return
+	}
+	resp, err := s.Receipts.ReopenReceivable(r.Context(), &exv1.ReopenReceivableRequest{
+		ContractId: idFromPath(r), Reason: body.Reason,
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
