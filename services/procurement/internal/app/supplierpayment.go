@@ -325,15 +325,25 @@ func (s *Service) AllocateSupplierPayment(ctx context.Context, tenantID, payment
 
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		var supplierID int64
-		var currency string
+		var currency, paymentType string
 		var amount decimal.Decimal
 		var amountText string
 		err := tx.QueryRow(ctx, `
-			SELECT supplier_id, currency, amount::text FROM supplier_payments
+			SELECT supplier_id, currency, payment_type, amount::text FROM supplier_payments
 			 WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,
-			tenantID, paymentID).Scan(&supplierID, &currency, &amountText)
+			tenantID, paymentID).Scan(&supplierID, &currency, &paymentType, &amountText)
 		if err != nil {
 			return err
+		}
+		// 退款单不能核销。核销这个动作的意思是「这笔付出去的钱结清了那张
+		// 发票/订单的一部分」，而下面所有算「已付」的地方都是把核销金额直接
+		// 加起来——把一张退款核销上去，「已付」会**变大**而不是变小，发票
+		// 甚至会因此被判成已结清，之后就没人再去付它了。退款怎么冲减应付，
+		// 由付款侧退款流程另行定义（见 docs/开发计划.md 收付队列改造）。
+		if paymentType == "REFUND" {
+			return apierr.Invalid("PAY_ALLOC_REFUND",
+				"退款单不能核销到发票或采购单——核销会把「已付」算大而不是算小。"+
+					"退款只需在付款单上记录，冲减应付的流程即将上线。")
 		}
 		amount = decimal.RequireFromString(amountText)
 
