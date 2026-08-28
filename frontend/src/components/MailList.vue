@@ -95,6 +95,21 @@
         </span>
       </div>
 
+      <!-- 对方是否已读，只在已发送里出现。三态和详情页同一套，措辞也同一套
+           ——「可能已打开」而不是「已读」：像素被加载只是参考，客户回信才是
+           确凿的已读，列表上把它说成事实等于替系统编造一个关于客户的事实。
+           第三态（没带追踪，纯文本信或当时没有公网地址）压最淡但不省略：
+           省略了它，「未打开」的缺席就有两种读法。 -->
+      <el-tooltip
+        v-if="folder === 'sent'"
+        :content="readMark(m).hint"
+        placement="top"
+        :show-after="0"
+        :hide-after="0"
+      >
+        <span class="readmark" :class="readMark(m).cls">{{ readMark(m).label }}</span>
+      </el-tooltip>
+
       <el-tooltip
         v-if="m.hasAttachments"
         :content="t('emails.attachments')"
@@ -170,6 +185,11 @@ export interface MailRow {
   // Search results only. The search crossed folders, so a result that does not
   // say where it was found leaves the person to open it to find out.
   matchFolder?: string
+  // Sent folder only: when the open-tracking pixel was fetched, and whether
+  // this mail carried one at all. Both needed — an empty openedAt alone cannot
+  // tell "nobody opened it" from "nobody was watching".
+  openedAt?: string
+  tracked?: boolean
 }
 
 const props = defineProps<{
@@ -197,6 +217,21 @@ const { t } = useI18n()
 
 function isRecordOnly(m: MailRow) {
   return m.kind === 'ERP'
+}
+
+// 对方是否已读的三态。判断顺序即优先级：真加载过 > 带着像素但没动静 > 根本没在看。
+function readMark(m: MailRow): { cls: string; label: string; hint: string } {
+  if (m.openedAt) {
+    return {
+      cls: 'opened',
+      label: t('emails.maybeOpened'),
+      hint: t('emails.openedHint', { at: zonedStamp(m.openedAt) }),
+    }
+  }
+  if (m.tracked) {
+    return { cls: 'watched', label: t('emails.noOpenYet'), hint: t('reader.noOpenHint') }
+  }
+  return { cls: 'off', label: t('reader.noTracking'), hint: t('reader.noTrackingHint') }
 }
 
 function isPicked(m: MailRow) {
@@ -569,5 +604,22 @@ function ariaFor(m: MailRow) {
   color: var(--el-text-color-secondary);
   background: var(--el-fill-color);
   white-space: nowrap;
+}
+
+/* 已读三态：绿的一眼能扫到（这一列存在的目的），灰的居次，没追踪的压到
+   最淡——它说的是「这封信没在看」，不该和「没人打开」争视线。 */
+.readmark {
+  flex: none;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.readmark.opened {
+  color: var(--el-color-success);
+}
+.readmark.watched {
+  color: var(--el-text-color-secondary);
+}
+.readmark.off {
+  color: var(--el-text-color-placeholder);
 }
 </style>
