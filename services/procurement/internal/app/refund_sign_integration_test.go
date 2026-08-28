@@ -19,7 +19,8 @@ import (
 // 读成「我们又付了 2000」——方向整个反了。这个文件钉住三道闸：
 //
 //  1. 供应商对账的「未核销付款」把 REFUND 取负
-//  2. 退款单不能核销到发票/采购单（核销会把「已付」算大而不是算小）
+//  2. 退款核销走标准目标校验（负行方案的完整生命周期在
+//     payment_refund_alloc_integration_test.go）
 //  3. 流水匹配和自动建议都要求方向自洽：出账↔预付/结算，进账↔退款
 
 func refundTestPool(t *testing.T) (context.Context, *Service, int64, func()) {
@@ -37,6 +38,8 @@ func refundTestPool(t *testing.T) (context.Context, *Service, int64, func()) {
 	cleanup := func() {
 		_, _ = pool.Exec(ctx, `DELETE FROM payment_allocations WHERE tenant_id=$1`, tenantID)
 		_, _ = pool.Exec(ctx, `DELETE FROM supplier_payments WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM supplier_invoices WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM purchase_orders WHERE tenant_id=$1`, tenantID)
 		_, _ = pool.Exec(ctx, `DELETE FROM bank_transactions WHERE tenant_id=$1`, tenantID)
 		pool.Close()
 	}
@@ -80,7 +83,11 @@ func TestARefundCountsAgainstNotTowardTheSupplierBalance(t *testing.T) {
 	}
 }
 
-func TestARefundPaymentCannotBeAllocated(t *testing.T) {
+// 阶段 0 曾把「退款单不能核销」整个封死（PAY_ALLOC_REFUND）。退款改走
+// 负核销行之后那道闸拆了，但拆闸不等于不设防：退款核销走的是和付款核销
+// 同一套目标校验。这条钉住换闸后的门牌——胡乱指一张不存在的发票，得到的
+// 是 NOT_FOUND，而不是当年的一刀切拒绝，更不是静默成功。
+func TestARefundAllocationStillValidatesItsTarget(t *testing.T) {
 	ctx, svc, tenantID, cleanup := refundTestPool(t)
 	defer cleanup()
 	op := Operator{ID: 77, Name: "Finance"}
@@ -92,17 +99,15 @@ func TestARefundPaymentCannotBeAllocated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 「已付」= 把核销金额加起来。把退款核销上去，已付会**变大**，发票甚至
-	// 会被判成已结清——退款的意思恰恰相反。这道闸在读发票之前就得关上。
 	_, err = svc.AllocateSupplierPayment(ctx, tenantID, refund.ID, []PaymentAllocationInput{
 		{InvoiceID: 424242, Amount: "2000"},
 	}, op)
 	if err == nil {
-		t.Fatal("一张退款单被核销进去了——「已付」会把它加成正数")
+		t.Fatal("退款核销到不存在的发票居然成功了")
 	}
 	var ae *apierr.Error
-	if !errors.As(err, &ae) || ae.Code != "PAY_ALLOC_REFUND" {
-		t.Fatalf("拒绝的理由不对：%v（要 PAY_ALLOC_REFUND，让人知道该走退款流程）", err)
+	if !errors.As(err, &ae) || ae.Code != "PAY_ALLOC_INVOICE_NOT_FOUND" {
+		t.Fatalf("拒绝的理由不对：%v（要 PAY_ALLOC_INVOICE_NOT_FOUND）", err)
 	}
 }
 
