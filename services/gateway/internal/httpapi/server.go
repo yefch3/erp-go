@@ -608,6 +608,10 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/import", s.importBankStatement)
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/match", s.matchBankTransaction)
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/unmatch", s.unmatchBankTransaction)
+		// 那份对账单（PDF）。挂在登记流水同一个权限下——能记这笔钱的人，
+		// 就该能把银行给的那张纸传上来。
+		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/attachment/presign", s.presignBankTransactionFile)
+		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/attachment", s.attachBankTransactionFile)
 		// 归属：这笔钱是谁那条线上的。见 docs/开发计划.md F2。
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/ownership", s.setBankTransactionOwnership)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/exceptions", s.reportReceiptException)

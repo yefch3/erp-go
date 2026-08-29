@@ -77,6 +77,19 @@
         <el-table-column prop="remark" :label="t('bankTransactions.remark')" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ row.remark || '—' }}</template>
         </el-table-column>
+        <!-- 银行给的那份对账单。摆在这一列而不是藏进详情：财务一眼要看出
+             哪几行还没把纸传上来。 -->
+        <el-table-column :label="t('bankTransactions.attachment')" width="185">
+          <template #default="{ row }">
+            <a v-if="row.attachmentUrl" :href="row.attachmentUrl" target="_blank" rel="noopener" class="attach-link">
+              {{ row.attachmentName || t('bankTransactions.attachment') }}
+            </a>
+            <span v-else class="none">{{ t('bankTransactions.noAttachment') }}</span>
+            <el-button v-if="canWrite" size="small" link type="primary" :loading="uploadingId === row.id" @click="pickFile(row)">
+              {{ row.attachmentKey ? t('bankTransactions.replaceAttachment') : t('bankTransactions.uploadAttachment') }}
+            </el-button>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('bankTransactions.matchState')" min-width="210">
           <template #default="{ row }">
             <el-tag v-if="row.matchedPaymentNo" type="success" effect="plain">{{ row.matchedPaymentNo }}</el-tag>
@@ -109,6 +122,7 @@
         <template #empty>{{ t('bankTransactions.empty') }}</template>
       </el-table>
       <el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="load" />
+      <input ref="attachInput" type="file" accept="application/pdf,image/*" style="display: none" @change="onAttachPicked" />
     </section>
 
     <!-- Which payment does the bank confirm? Amounts may differ (fees shave
@@ -244,11 +258,18 @@ interface TxnRow {
   // 只有 ownership='OTHER' 时才有值。
   ownershipDetail: string
   suggestedPaymentSupplier: string
+  // 银行给的那份对账单。url 是每次读的时候现签的，不要缓存。
+  attachmentKey: string
+  attachmentUrl: string
+  attachmentName: string
 }
 interface PaymentOpt { id: string; paymentNo: string; supplierName: string; currency: string; amount: string; paidAt: string; bankRef: string }
 interface RowError { rowNo: number; reason: string }
 
 const rows = ref<TxnRow[]>([])
+const attachInput = ref<HTMLInputElement | null>(null)
+const attachingRow = ref<TxnRow | null>(null)
+const uploadingId = ref('')
 const loading = ref(false)
 const page = ref(1)
 const total = ref(0)
@@ -440,6 +461,37 @@ async function unmatch(row: TxnRow) {
   void load()
 }
 
+// 对账单那张纸。文件**不经过我们的服务**：先要一个短命的直传地址，浏览器
+// 直接把 PDF 传给对象存储，传完才回来登记 key。几十兆的全月流水也不会把
+// 网关撑爆。
+function pickFile(row: TxnRow) {
+  attachingRow.value = row
+  attachInput.value?.click()
+}
+
+async function onAttachPicked(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  const row = attachingRow.value
+  if (!file || !row) return
+  uploadingId.value = row.id
+  try {
+    const signed = await post<{ key: string; uploadUrl: string }>(
+      `/bank-transactions/${row.id}/attachment/presign`, { fileName: file.name })
+    const put = await fetch(signed.uploadUrl, { method: 'PUT', body: file })
+    if (!put.ok) throw new Error(`upload failed: ${put.status}`)
+    await post(`/bank-transactions/${row.id}/attachment`, { key: signed.key })
+    ElMessage.success(t('bankTransactions.attachmentUploaded'))
+    void load()
+  } catch {
+    ElMessage.error(t('bankTransactions.attachmentFailed'))
+  } finally {
+    uploadingId.value = ''
+    attachingRow.value = null
+    input.value = ''
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -455,6 +507,8 @@ onMounted(load)
   color: var(--el-text-color-secondary);
 }
 .none { color: var(--el-text-color-secondary); }
+.attach-link { color: var(--el-color-primary); text-decoration: none; }
+.attach-link:hover { text-decoration: underline; }
 .pick-context { margin: 0 0 12px; color: var(--el-text-color-secondary); }
 .head-actions { display: flex; gap: 8px; align-items: center; }
 </style>

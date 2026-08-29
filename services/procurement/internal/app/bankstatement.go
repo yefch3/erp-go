@@ -75,6 +75,12 @@ type BankTransactionView struct {
 	Source         string
 	TrustedRef     string
 	Note           string
+	// 银行给的那份对账单（PDF）。只有 Key 落库：URL 每次读的时候现签、
+	// 一会儿就过期，存下来是个必然坏掉的链接。Name 从 key 里还原原始
+	// 文件名，给界面显示用。
+	AttachmentKey  string
+	AttachmentURL  string
+	AttachmentName string
 	// 这一行已经被认领了多少钱。**「处理完了没有」对两条线是同一个定义**：
 	// ClaimedAmount < Amount 就是还没完。供应商那条线由匹配写（匹配即全额），
 	// 客户那条线由出口服务核销之后写回来。
@@ -173,6 +179,7 @@ func (s *Service) ListBankTransactions(ctx context.Context, tenantID int64, f Ba
 		       t.ownership, t.ownership_detail,
 		       t.account_id, coalesce(a.account_name, ''), t.counterparty_account,
 		       t.remittance_info, t.source, t.trusted_ref, t.note,
+		       t.attachment_key,
 		       t.claimed_amount::text,
 		       coalesce(p.id, 0), coalesce(p.payment_no, ''),
 		       coalesce(sg.id, 0), coalesce(sg.payment_no, ''), coalesce(sg.supplier_name, ''),
@@ -229,12 +236,14 @@ func (s *Service) ListBankTransactions(ctx context.Context, tenantID int64, f Ba
 			&v.Ownership, &v.OwnershipDetail,
 			&v.AccountID, &v.AccountName, &v.CounterpartyAccount,
 			&v.RemittanceInfo, &v.Source, &v.TrustedRef, &v.Note,
+			&v.AttachmentKey,
 			&v.ClaimedAmount,
 			&v.MatchedPaymentID, &v.MatchedPaymentNo,
 			&v.SuggestedPaymentID, &v.SuggestedPaymentNo, &v.SuggestedPaymentSupplier,
 			&total); err != nil {
 			return nil, 0, err
 		}
+		s.signAttachment(ctx, &v)
 		out = append(out, v)
 	}
 	return out, total, rows.Err()

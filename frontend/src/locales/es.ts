@@ -147,6 +147,8 @@ export default {
     lineTypes: { INVOICE: 'Factura', PAYMENT: 'Pago', PAYMENT_REVERSAL: 'Reverso', ADVANCE: 'Anticipo', ADVANCE_REVERSAL: 'Reverso de anticipo' },
   },
   bankTransactions: {
+    attachment: 'Extracto', noAttachment: 'Sin subir', uploadAttachment: 'Subir', replaceAttachment: 'Reemplazar',
+    attachmentUploaded: 'Extracto subido', attachmentFailed: 'Error al subir, reintente',
     ownership: 'Pertenece a', ownershipAll: 'Cualquiera',
     ownerships: { PENDING: 'Sin clasificar', CUSTOMER: 'Cliente', SUPPLIER: 'Proveedor', TAX_REFUND: 'Devolución de impuestos', OTHER: 'Sin conciliar' },
     ownershipDetails: { INTEREST: 'Intereses bancarios', INTERNAL: 'Traspaso interno', DEPOSIT_RETURN: 'Devolución de depósito', OTHER: 'Otros' },

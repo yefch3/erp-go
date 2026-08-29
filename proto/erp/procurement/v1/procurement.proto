@@ -642,6 +642,10 @@ service PurchaseOrderService {
   // 客户先发了水单，财务要先把这笔钱记下来。出口的收款对账原来自己有一张
   // 表干这件事，F2 之后由这里统一收着。
   rpc RecordBankTransaction(RecordBankTransactionRequest) returns (RecordBankTransactionResponse);
+  // 银行给的那份对账单（PDF）。流水行是员工敲进来的数，对账单是凭证——
+  // 两者对不上时说了算的是纸。一行一份，再传一次是替换。
+  rpc PresignBankTransactionFile(PresignBankTransactionFileRequest) returns (PresignBankTransactionFileResponse);
+  rpc AttachBankTransactionFile(AttachBankTransactionFileRequest) returns (AttachBankTransactionFileResponse);
   // 取单独一行。核销之前要拿到金额和币种才能判断能不能核，靠它。
   rpc GetBankTransaction(GetBankTransactionRequest) returns (GetBankTransactionResponse);
 
@@ -1530,7 +1534,29 @@ message BankTransaction {
   // claimed_amount < amount 就是还没完。供应商那条线由匹配写（匹配即全额），
   // 客户那条线由出口服务核销之后写回来。
   string claimed_amount = 25;
+
+  // 银行给的那份对账单（PDF）。key 是存下来的；url 每次读的时候现签、
+  // 一会儿就过期，所以**不落库**；name 是从 key 还原的原始文件名。
+  string attachment_key = 26;
+  string attachment_url = 27;
+  string attachment_name = 28;
 }
+
+message PresignBankTransactionFileRequest {
+  int64 txn_id = 1;
+  string file_name = 2;
+}
+message PresignBankTransactionFileResponse {
+  string key = 1;
+  string upload_url = 2;
+  int32 expires_seconds = 3;
+}
+
+message AttachBankTransactionFileRequest {
+  int64 txn_id = 1;
+  string key = 2; // 必须是这一行流水自己 Presign 发出去的那个
+}
+message AttachBankTransactionFileResponse { BankTransaction transaction = 1; }
 
 // BankTransactionInput 是手工登记一行流水要填的东西。
 //
