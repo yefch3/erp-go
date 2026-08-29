@@ -41,29 +41,54 @@ func routeSet(t *testing.T) map[string]bool {
 	return out
 }
 
-// 收款对账那一组地址必须齐。少一条，页面上就有一个按钮点了没反应。
-func TestReceiptRoutesAreAllRegistered(t *testing.T) {
+// 应收那一组地址必须齐。少一条，页面上就有一个按钮点了没反应。
+func TestReceivableRoutesAreAllRegistered(t *testing.T) {
 	have := routeSet(t)
-	// 和 frontend/src/pages/ReceiptsPage.vue 里调的一一对应。
+	// 和 frontend/src/pages/ReceivableDuePage.vue（待核销 / 已完成两页）
+	// 以及 BankTransactionsPage 的「收款账户」一一对应。
 	want := []string{
-		"GET /api/receipt-transactions",                  // 列表
-		"GET /api/receipt-transactions/{id}",             // 点开一笔
-		"POST /api/receipt-transactions",                 // 「登记流水」
-		"POST /api/receipt-transactions/{id}/allocate",   // 核销到合同
-		"POST /api/receipt-transactions/{id}/irrelevant", // 「归类」
-		"POST /api/receipt-transactions/{id}/reopen",     // 「撤销标记」
-		"POST /api/receipt-transactions/{id}/settle",     // 「认差结清」
-		"POST /api/receipt-transactions/{id}/unsettle",   // 「撤销结清」
-		"POST /api/receivable-due/{id}/receipts",         // 待核销页「记一笔收款」（手填，不连流水）
-		"POST /api/contract-receipts/{id}/reverse",       // 冲销记错的那一笔
-		"POST /api/receivable-due/{id}/close",            // 「确认核销完成」（转到已完成页）
-		"POST /api/receivable-due/{id}/reopen",           // 「撤销完成」（回到待核销页）
-		"GET /api/open-receivables",                      // 弹窗里搜合同
-		"GET /api/bank-accounts",                         // 「收款账户」
+		"GET /api/receivable-due",                  // 两页共用的列表，closed 参数翻面
+		"POST /api/receivable-due/{id}/receipts",   // 「记一笔收款」（手填，不连流水）
+		"POST /api/contract-receipts/{id}/reverse", // 冲销记错的那一笔
+		"POST /api/receivable-due/{id}/close",      // 「确认核销完成」（转到已完成页）
+		"POST /api/receivable-due/{id}/reopen",     // 「撤销完成」（回到待核销页）
+		"GET /api/contracts/{id}/receipts",         // 展开行看这张合同的收款明细
+		"GET /api/bank-accounts",                   // 「收款账户」（现在在银行流水页上）
+		"POST /api/bank-accounts",
 	}
 	for _, w := range want {
 		if !have[w] {
-			t.Errorf("收款对账少了这条地址：%s", w)
+			t.Errorf("应收这一组少了这条地址：%s", w)
+		}
+	}
+}
+
+// 「收款对账」那一组地址必须**保持消失**。
+//
+// 需求变更后核销不再从一行银行流水出发，那一页整个下线了。这些地址是
+// 另一条写路径——它写出来的核销行挂着 bank_txn_id，绕开新页面的形状。
+// 没有界面却仍能写账的入口，是下一次「数据怎么会变成这样」的起点；
+// 哪天有人顺手把某个 handler 重新挂回路由表，这条会拦住。
+//
+// 老数据里挂着流水的核销行照样能冲销：走 /api/contract-receipts/{id}/reverse，
+// 它在服务层转交给带行锁、认差结清守门和认领量回写的那条老路径。
+func TestRetiredReceiptQueueRoutesStayGone(t *testing.T) {
+	have := routeSet(t)
+	for _, gone := range []string{
+		"GET /api/receipt-transactions",
+		"GET /api/receipt-transactions/{id}",
+		"POST /api/receipt-transactions",
+		"POST /api/receipt-transactions/{id}/allocate",
+		"POST /api/receipt-transactions/{id}/irrelevant",
+		"POST /api/receipt-transactions/{id}/reopen",
+		"POST /api/receipt-transactions/{id}/settle",
+		"POST /api/receipt-transactions/{id}/unsettle",
+		"POST /api/receipt-allocations/{id}/reverse",
+		"GET /api/open-receivables",
+	} {
+		if have[gone] {
+			t.Errorf("%s 又回来了——收款对账那条写路径是有意撤掉的，"+
+				"核销现在只从「待核销」页走 /api/receivable-due/{id}/receipts", gone)
 		}
 	}
 }
@@ -73,9 +98,9 @@ func TestBankTransactionRoutesAreAllRegistered(t *testing.T) {
 	have := routeSet(t)
 	// 和 frontend/src/pages/BankTransactionsPage.vue 里调的一一对应。
 	want := []string{
-		"GET /api/bank-transactions",               // 列表
-		"POST /api/bank-transactions",              // 「登记流水」（手工，CSV 之外的入口）
-		"POST /api/bank-transactions/import",       // 「导入对账单 CSV」
+		"GET /api/bank-transactions",                          // 列表
+		"POST /api/bank-transactions",                         // 「登记流水」（手工，CSV 之外的入口）
+		"POST /api/bank-transactions/import",                  // 「导入对账单 CSV」
 		"POST /api/bank-transactions/{id}/match",              // 「匹配付款单」
 		"POST /api/bank-transactions/{id}/unmatch",            // 「取消匹配」
 		"POST /api/bank-transactions/{id}/attachment/presign", // 传对账单：要直传地址

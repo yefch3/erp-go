@@ -553,7 +553,6 @@ const financeGroups = computed(() => [
       ? [
           { path: '/receivable-cases', label: t('financeNav.receivableCases') },
           { path: '/receivable-cases-done', label: t('financeNav.receivableCasesDone') },
-          { path: '/receipts', label: t('financeNav.receipts') },
         ]
       : [],
   },
