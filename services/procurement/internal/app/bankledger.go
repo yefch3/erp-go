@@ -118,6 +118,7 @@ func (s *Service) GetBankTransaction(ctx context.Context, tenantID, txnID int64,
 		       t.ownership, t.ownership_detail,
 		       t.account_id, coalesce(a.account_name, ''), t.counterparty_account,
 		       t.remittance_info, t.source, t.trusted_ref, t.note,
+		       t.attachment_key,
 		       t.claimed_amount::text,
 		       coalesce(p.id, 0), coalesce(p.payment_no, '')
 		  FROM bank_transactions t
@@ -129,6 +130,7 @@ func (s *Service) GetBankTransaction(ctx context.Context, tenantID, txnID int64,
 		&v.Ownership, &v.OwnershipDetail,
 		&v.AccountID, &v.AccountName, &v.CounterpartyAccount,
 		&v.RemittanceInfo, &v.Source, &v.TrustedRef, &v.Note,
+		&v.AttachmentKey,
 		&v.ClaimedAmount,
 		&v.MatchedPaymentID, &v.MatchedPaymentNo)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -137,6 +139,7 @@ func (s *Service) GetBankTransaction(ctx context.Context, tenantID, txnID int64,
 	if err != nil {
 		return BankTransactionView{}, err
 	}
+	s.signAttachment(ctx, &v)
 	return v, nil
 }
 

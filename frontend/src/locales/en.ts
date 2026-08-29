@@ -147,6 +147,8 @@ export default {
     lineTypes: { INVOICE: 'Invoice', PAYMENT: 'Payment', PAYMENT_REVERSAL: 'Reversal', ADVANCE: 'Advance', ADVANCE_REVERSAL: 'Advance reversal' },
   },
   bankTransactions: {
+    attachment: 'Statement', noAttachment: 'Not uploaded', uploadAttachment: 'Upload', replaceAttachment: 'Replace',
+    attachmentUploaded: 'Statement uploaded', attachmentFailed: 'Upload failed, please retry',
     ownership: 'Belongs to', ownershipAll: 'Any',
     ownerships: { PENDING: 'Unsorted', CUSTOMER: 'Customer', SUPPLIER: 'Supplier', TAX_REFUND: 'Tax refund', OTHER: 'No settlement' },
     ownershipDetails: { INTEREST: 'Bank interest', INTERNAL: 'Internal transfer', DEPOSIT_RETURN: 'Deposit returned', OTHER: 'Other' },

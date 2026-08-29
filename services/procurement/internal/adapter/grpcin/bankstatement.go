@@ -68,7 +68,33 @@ func bankTransactionPB(v app.BankTransactionView) *prv1.BankTransaction {
 		Source:                   v.Source,
 		TrustedRef:               v.TrustedRef,
 		Note:                     v.Note,
+		AttachmentKey:            v.AttachmentKey,
+		AttachmentUrl:            v.AttachmentURL,
+		AttachmentName:           v.AttachmentName,
 	}
+}
+
+// 对账单那张纸的两步：先发上传许可，传完再登记 key。文件不经过我们的服务。
+func (h *OrderHandler) PresignBankTransactionFile(ctx context.Context, req *prv1.PresignBankTransactionFileRequest) (*prv1.PresignBankTransactionFileResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	p, err := h.svc.PresignBankTransactionFile(ctx, grpcx.TenantID(ctx),
+		req.GetTxnId(), req.GetFileName(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.PresignBankTransactionFileResponse{
+		Key: p.Key, UploadUrl: p.UploadURL, ExpiresSeconds: p.Expires,
+	}, nil
+}
+
+func (h *OrderHandler) AttachBankTransactionFile(ctx context.Context, req *prv1.AttachBankTransactionFileRequest) (*prv1.AttachBankTransactionFileResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	v, err := h.svc.AttachBankTransactionFile(ctx, grpcx.TenantID(ctx),
+		req.GetTxnId(), req.GetKey(), app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.AttachBankTransactionFileResponse{Transaction: bankTransactionPB(v)}, nil
 }
 
 func (h *OrderHandler) RecordBankTransaction(ctx context.Context, req *prv1.RecordBankTransactionRequest) (*prv1.RecordBankTransactionResponse, error) {

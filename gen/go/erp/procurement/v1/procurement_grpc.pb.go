@@ -1636,6 +1636,8 @@ const (
 	PurchaseOrderService_SetBankTransactionOwnership_FullMethodName      = "/erp.procurement.v1.PurchaseOrderService/SetBankTransactionOwnership"
 	PurchaseOrderService_UnmatchBankTransaction_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/UnmatchBankTransaction"
 	PurchaseOrderService_RecordBankTransaction_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/RecordBankTransaction"
+	PurchaseOrderService_PresignBankTransactionFile_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/PresignBankTransactionFile"
+	PurchaseOrderService_AttachBankTransactionFile_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/AttachBankTransactionFile"
 	PurchaseOrderService_GetBankTransaction_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/GetBankTransaction"
 	PurchaseOrderService_ListBankAccounts_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/ListBankAccounts"
 	PurchaseOrderService_CreateBankAccount_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/CreateBankAccount"
@@ -1734,6 +1736,10 @@ type PurchaseOrderServiceClient interface {
 	// 客户先发了水单，财务要先把这笔钱记下来。出口的收款对账原来自己有一张
 	// 表干这件事，F2 之后由这里统一收着。
 	RecordBankTransaction(ctx context.Context, in *RecordBankTransactionRequest, opts ...grpc.CallOption) (*RecordBankTransactionResponse, error)
+	// 银行给的那份对账单（PDF）。流水行是员工敲进来的数，对账单是凭证——
+	// 两者对不上时说了算的是纸。一行一份，再传一次是替换。
+	PresignBankTransactionFile(ctx context.Context, in *PresignBankTransactionFileRequest, opts ...grpc.CallOption) (*PresignBankTransactionFileResponse, error)
+	AttachBankTransactionFile(ctx context.Context, in *AttachBankTransactionFileRequest, opts ...grpc.CallOption) (*AttachBankTransactionFileResponse, error)
 	// 取单独一行。核销之前要拿到金额和币种才能判断能不能核，靠它。
 	GetBankTransaction(ctx context.Context, in *GetBankTransactionRequest, opts ...grpc.CallOption) (*GetBankTransactionResponse, error)
 	// 我们自己的银行账户。跟着账本走：账本在这个服务里，账户清单也在这里，
@@ -2184,6 +2190,26 @@ func (c *purchaseOrderServiceClient) RecordBankTransaction(ctx context.Context, 
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) PresignBankTransactionFile(ctx context.Context, in *PresignBankTransactionFileRequest, opts ...grpc.CallOption) (*PresignBankTransactionFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PresignBankTransactionFileResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_PresignBankTransactionFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) AttachBankTransactionFile(ctx context.Context, in *AttachBankTransactionFileRequest, opts ...grpc.CallOption) (*AttachBankTransactionFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AttachBankTransactionFileResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_AttachBankTransactionFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *purchaseOrderServiceClient) GetBankTransaction(ctx context.Context, in *GetBankTransactionRequest, opts ...grpc.CallOption) (*GetBankTransactionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetBankTransactionResponse)
@@ -2316,6 +2342,10 @@ type PurchaseOrderServiceServer interface {
 	// 客户先发了水单，财务要先把这笔钱记下来。出口的收款对账原来自己有一张
 	// 表干这件事，F2 之后由这里统一收着。
 	RecordBankTransaction(context.Context, *RecordBankTransactionRequest) (*RecordBankTransactionResponse, error)
+	// 银行给的那份对账单（PDF）。流水行是员工敲进来的数，对账单是凭证——
+	// 两者对不上时说了算的是纸。一行一份，再传一次是替换。
+	PresignBankTransactionFile(context.Context, *PresignBankTransactionFileRequest) (*PresignBankTransactionFileResponse, error)
+	AttachBankTransactionFile(context.Context, *AttachBankTransactionFileRequest) (*AttachBankTransactionFileResponse, error)
 	// 取单独一行。核销之前要拿到金额和币种才能判断能不能核，靠它。
 	GetBankTransaction(context.Context, *GetBankTransactionRequest) (*GetBankTransactionResponse, error)
 	// 我们自己的银行账户。跟着账本走：账本在这个服务里，账户清单也在这里，
@@ -2464,6 +2494,12 @@ func (UnimplementedPurchaseOrderServiceServer) UnmatchBankTransaction(context.Co
 }
 func (UnimplementedPurchaseOrderServiceServer) RecordBankTransaction(context.Context, *RecordBankTransactionRequest) (*RecordBankTransactionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RecordBankTransaction not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) PresignBankTransactionFile(context.Context, *PresignBankTransactionFileRequest) (*PresignBankTransactionFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PresignBankTransactionFile not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) AttachBankTransactionFile(context.Context, *AttachBankTransactionFileRequest) (*AttachBankTransactionFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AttachBankTransactionFile not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) GetBankTransaction(context.Context, *GetBankTransactionRequest) (*GetBankTransactionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetBankTransaction not implemented")
@@ -3272,6 +3308,42 @@ func _PurchaseOrderService_RecordBankTransaction_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_PresignBankTransactionFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PresignBankTransactionFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).PresignBankTransactionFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_PresignBankTransactionFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).PresignBankTransactionFile(ctx, req.(*PresignBankTransactionFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_AttachBankTransactionFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AttachBankTransactionFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).AttachBankTransactionFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_AttachBankTransactionFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).AttachBankTransactionFile(ctx, req.(*AttachBankTransactionFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PurchaseOrderService_GetBankTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetBankTransactionRequest)
 	if err := dec(in); err != nil {
@@ -3522,6 +3594,14 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RecordBankTransaction",
 			Handler:    _PurchaseOrderService_RecordBankTransaction_Handler,
+		},
+		{
+			MethodName: "PresignBankTransactionFile",
+			Handler:    _PurchaseOrderService_PresignBankTransactionFile_Handler,
+		},
+		{
+			MethodName: "AttachBankTransactionFile",
+			Handler:    _PurchaseOrderService_AttachBankTransactionFile_Handler,
 		},
 		{
 			MethodName: "GetBankTransaction",

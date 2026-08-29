@@ -147,6 +147,8 @@ export default {
     lineTypes: { INVOICE: '开票', PAYMENT: '付款核销', PAYMENT_REVERSAL: '核销冲销', ADVANCE: '预付挂单', ADVANCE_REVERSAL: '预付冲销' },
   },
   bankTransactions: {
+    attachment: '对账单', noAttachment: '未上传', uploadAttachment: '上传', replaceAttachment: '重新上传',
+    attachmentUploaded: '对账单已上传', attachmentFailed: '上传失败，请重试',
     ownership: '归属', ownershipAll: '全部归属',
     ownerships: { PENDING: '待处理', CUSTOMER: '客户往来', SUPPLIER: '供应商往来', TAX_REFUND: '出口退税', OTHER: '不用核销' },
     ownershipDetails: { INTEREST: '银行利息', INTERNAL: '内部划转', DEPOSIT_RETURN: '保证金退回', OTHER: '其他' },
