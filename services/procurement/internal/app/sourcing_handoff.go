@@ -12,29 +12,10 @@ import (
 	"github.com/sgao19/erp-go/services/procurement/internal/store"
 )
 
-// AcceptSourcingCase 由采购员接收销售提交的寻源任务，并记录实际接单人和时间。
+// AcceptSourcingCase 保留旧接口兼容性；现在的业务含义是主动成为主责采购。
 func (s *Service) AcceptSourcingCase(ctx context.Context, tenantID, caseID int64, op Operator) (SourcingCaseView, error) {
-	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
-		q := s.q.WithTx(tx)
-		n, err := q.AcceptSourcingCase(ctx, store.AcceptSourcingCaseParams{
-			OperatorID: &op.ID, OperatorName: op.Name, TenantID: tenantID, ID: caseID,
-		})
-		if err != nil {
-			return err
-		}
-		if n != 1 {
-			return apierr.Conflict("SC_HANDOFF_NOT_WAITING", "任务已被接收或当前不在待接单状态")
-		}
-		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{
-			TenantID: tenantID, CaseID: caseID, Section: "HANDOFF", Action: "PROCUREMENT_ACCEPTED",
-			Summary: "采购接收寻源任务", BeforeJson: []byte(`{"handoffStatus":"WAITING_ACCEPTANCE"}`),
-			AfterJson: []byte(`{"handoffStatus":"IN_PROGRESS"}`), OperatorID: op.ID, OperatorName: op.Name,
-		})
-	})
-	if err != nil {
-		return SourcingCaseView{}, err
-	}
-	return s.GetSourcingCase(ctx, tenantID, caseID)
+	_, view, err := s.RequestPrimarySourcingCase(ctx, tenantID, caseID, op)
+	return view, err
 }
 
 // ReturnSourcingCase 将资料不完整的任务退回销售补充；缺失项和简短原因会永久保留在变更记录中。

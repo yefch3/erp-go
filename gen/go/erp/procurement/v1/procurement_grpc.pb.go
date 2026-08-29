@@ -25,6 +25,10 @@ const (
 	SourcingService_AddLine_FullMethodName                     = "/erp.procurement.v1.SourcingService/AddLine"
 	SourcingService_ConfirmLines_FullMethodName                = "/erp.procurement.v1.SourcingService/ConfirmLines"
 	SourcingService_AcceptCase_FullMethodName                  = "/erp.procurement.v1.SourcingService/AcceptCase"
+	SourcingService_ListCaseParticipants_FullMethodName        = "/erp.procurement.v1.SourcingService/ListCaseParticipants"
+	SourcingService_JoinCase_FullMethodName                    = "/erp.procurement.v1.SourcingService/JoinCase"
+	SourcingService_RequestPrimaryBuyer_FullMethodName         = "/erp.procurement.v1.SourcingService/RequestPrimaryBuyer"
+	SourcingService_AssignPrimaryBuyer_FullMethodName          = "/erp.procurement.v1.SourcingService/AssignPrimaryBuyer"
 	SourcingService_ReturnCase_FullMethodName                  = "/erp.procurement.v1.SourcingService/ReturnCase"
 	SourcingService_ReviewLine_FullMethodName                  = "/erp.procurement.v1.SourcingService/ReviewLine"
 	SourcingService_CreateFactoryRfq_FullMethodName            = "/erp.procurement.v1.SourcingService/CreateFactoryRfq"
@@ -60,6 +64,10 @@ type SourcingServiceClient interface {
 	AddLine(ctx context.Context, in *AddLineRequest, opts ...grpc.CallOption) (*AddLineResponse, error)
 	ConfirmLines(ctx context.Context, in *ConfirmLinesRequest, opts ...grpc.CallOption) (*ConfirmLinesResponse, error)
 	AcceptCase(ctx context.Context, in *AcceptCaseRequest, opts ...grpc.CallOption) (*AcceptCaseResponse, error)
+	ListCaseParticipants(ctx context.Context, in *ListCaseParticipantsRequest, opts ...grpc.CallOption) (*ListCaseParticipantsResponse, error)
+	JoinCase(ctx context.Context, in *JoinCaseRequest, opts ...grpc.CallOption) (*JoinCaseResponse, error)
+	RequestPrimaryBuyer(ctx context.Context, in *RequestPrimaryBuyerRequest, opts ...grpc.CallOption) (*RequestPrimaryBuyerResponse, error)
+	AssignPrimaryBuyer(ctx context.Context, in *AssignPrimaryBuyerRequest, opts ...grpc.CallOption) (*AssignPrimaryBuyerResponse, error)
 	ReturnCase(ctx context.Context, in *ReturnCaseRequest, opts ...grpc.CallOption) (*ReturnCaseResponse, error)
 	ReviewLine(ctx context.Context, in *ReviewLineRequest, opts ...grpc.CallOption) (*ReviewLineResponse, error)
 	CreateFactoryRfq(ctx context.Context, in *CreateFactoryRfqRequest, opts ...grpc.CallOption) (*CreateFactoryRfqResponse, error)
@@ -145,6 +153,46 @@ func (c *sourcingServiceClient) AcceptCase(ctx context.Context, in *AcceptCaseRe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AcceptCaseResponse)
 	err := c.cc.Invoke(ctx, SourcingService_AcceptCase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ListCaseParticipants(ctx context.Context, in *ListCaseParticipantsRequest, opts ...grpc.CallOption) (*ListCaseParticipantsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCaseParticipantsResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListCaseParticipants_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) JoinCase(ctx context.Context, in *JoinCaseRequest, opts ...grpc.CallOption) (*JoinCaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JoinCaseResponse)
+	err := c.cc.Invoke(ctx, SourcingService_JoinCase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) RequestPrimaryBuyer(ctx context.Context, in *RequestPrimaryBuyerRequest, opts ...grpc.CallOption) (*RequestPrimaryBuyerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RequestPrimaryBuyerResponse)
+	err := c.cc.Invoke(ctx, SourcingService_RequestPrimaryBuyer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) AssignPrimaryBuyer(ctx context.Context, in *AssignPrimaryBuyerRequest, opts ...grpc.CallOption) (*AssignPrimaryBuyerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AssignPrimaryBuyerResponse)
+	err := c.cc.Invoke(ctx, SourcingService_AssignPrimaryBuyer_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -355,6 +403,10 @@ type SourcingServiceServer interface {
 	AddLine(context.Context, *AddLineRequest) (*AddLineResponse, error)
 	ConfirmLines(context.Context, *ConfirmLinesRequest) (*ConfirmLinesResponse, error)
 	AcceptCase(context.Context, *AcceptCaseRequest) (*AcceptCaseResponse, error)
+	ListCaseParticipants(context.Context, *ListCaseParticipantsRequest) (*ListCaseParticipantsResponse, error)
+	JoinCase(context.Context, *JoinCaseRequest) (*JoinCaseResponse, error)
+	RequestPrimaryBuyer(context.Context, *RequestPrimaryBuyerRequest) (*RequestPrimaryBuyerResponse, error)
+	AssignPrimaryBuyer(context.Context, *AssignPrimaryBuyerRequest) (*AssignPrimaryBuyerResponse, error)
 	ReturnCase(context.Context, *ReturnCaseRequest) (*ReturnCaseResponse, error)
 	ReviewLine(context.Context, *ReviewLineRequest) (*ReviewLineResponse, error)
 	CreateFactoryRfq(context.Context, *CreateFactoryRfqRequest) (*CreateFactoryRfqResponse, error)
@@ -403,6 +455,18 @@ func (UnimplementedSourcingServiceServer) ConfirmLines(context.Context, *Confirm
 }
 func (UnimplementedSourcingServiceServer) AcceptCase(context.Context, *AcceptCaseRequest) (*AcceptCaseResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AcceptCase not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListCaseParticipants(context.Context, *ListCaseParticipantsRequest) (*ListCaseParticipantsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCaseParticipants not implemented")
+}
+func (UnimplementedSourcingServiceServer) JoinCase(context.Context, *JoinCaseRequest) (*JoinCaseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method JoinCase not implemented")
+}
+func (UnimplementedSourcingServiceServer) RequestPrimaryBuyer(context.Context, *RequestPrimaryBuyerRequest) (*RequestPrimaryBuyerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RequestPrimaryBuyer not implemented")
+}
+func (UnimplementedSourcingServiceServer) AssignPrimaryBuyer(context.Context, *AssignPrimaryBuyerRequest) (*AssignPrimaryBuyerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AssignPrimaryBuyer not implemented")
 }
 func (UnimplementedSourcingServiceServer) ReturnCase(context.Context, *ReturnCaseRequest) (*ReturnCaseResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReturnCase not implemented")
@@ -586,6 +650,78 @@ func _SourcingService_AcceptCase_Handler(srv interface{}, ctx context.Context, d
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SourcingServiceServer).AcceptCase(ctx, req.(*AcceptCaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ListCaseParticipants_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCaseParticipantsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListCaseParticipants(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListCaseParticipants_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListCaseParticipants(ctx, req.(*ListCaseParticipantsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_JoinCase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JoinCaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).JoinCase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_JoinCase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).JoinCase(ctx, req.(*JoinCaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_RequestPrimaryBuyer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestPrimaryBuyerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).RequestPrimaryBuyer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_RequestPrimaryBuyer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).RequestPrimaryBuyer(ctx, req.(*RequestPrimaryBuyerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_AssignPrimaryBuyer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AssignPrimaryBuyerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).AssignPrimaryBuyer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_AssignPrimaryBuyer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).AssignPrimaryBuyer(ctx, req.(*AssignPrimaryBuyerRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -962,6 +1098,22 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AcceptCase",
 			Handler:    _SourcingService_AcceptCase_Handler,
+		},
+		{
+			MethodName: "ListCaseParticipants",
+			Handler:    _SourcingService_ListCaseParticipants_Handler,
+		},
+		{
+			MethodName: "JoinCase",
+			Handler:    _SourcingService_JoinCase_Handler,
+		},
+		{
+			MethodName: "RequestPrimaryBuyer",
+			Handler:    _SourcingService_RequestPrimaryBuyer_Handler,
+		},
+		{
+			MethodName: "AssignPrimaryBuyer",
+			Handler:    _SourcingService_AssignPrimaryBuyer_Handler,
 		},
 		{
 			MethodName: "ReturnCase",

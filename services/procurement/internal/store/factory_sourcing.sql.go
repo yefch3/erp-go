@@ -207,7 +207,7 @@ func (q *Queries) FactoryRFQCase(ctx context.Context, arg FactoryRFQCaseParams) 
 }
 
 const factoryRFQForQuote = `-- name: FactoryRFQForQuote :one
-SELECT id,case_id,currency,status FROM factory_rfqs WHERE tenant_id=$1 AND id=$2 FOR UPDATE
+SELECT id,case_id,currency,status,created_by FROM factory_rfqs WHERE tenant_id=$1 AND id=$2 FOR UPDATE
 `
 
 type FactoryRFQForQuoteParams struct {
@@ -216,10 +216,11 @@ type FactoryRFQForQuoteParams struct {
 }
 
 type FactoryRFQForQuoteRow struct {
-	ID       int64
-	CaseID   int64
-	Currency string
-	Status   string
+	ID        int64
+	CaseID    int64
+	Currency  string
+	Status    string
+	CreatedBy int64
 }
 
 func (q *Queries) FactoryRFQForQuote(ctx context.Context, arg FactoryRFQForQuoteParams) (FactoryRFQForQuoteRow, error) {
@@ -230,6 +231,7 @@ func (q *Queries) FactoryRFQForQuote(ctx context.Context, arg FactoryRFQForQuote
 		&i.CaseID,
 		&i.Currency,
 		&i.Status,
+		&i.CreatedBy,
 	)
 	return i, err
 }
@@ -313,7 +315,7 @@ func (q *Queries) GetFactoryRFQDocument(ctx context.Context, arg GetFactoryRFQDo
 const listFactoryRFQs = `-- name: ListFactoryRFQs :many
 SELECT r.id,r.case_id,r.rfq_no,r.supplier_id,r.supplier_code,r.supplier_name,
  r.factory_id,r.factory_code,r.factory_name,r.contact_email,
- r.currency,coalesce(r.response_due_at::text,'')::text AS response_due_at,r.status,r.created_at,
+ r.currency,coalesce(r.response_due_at::text,'')::text AS response_due_at,r.status,r.created_at,r.created_by,r.created_by_name,
  r.inquiry_channel,r.contact_name,r.contact_value,coalesce(r.contacted_at::text,'')::text AS contacted_at,r.inquiry_note,r.round_no,
  (SELECT count(*)::int FROM factory_rfq_lines fl WHERE fl.tenant_id=r.tenant_id AND fl.factory_rfq_id=r.id) AS line_count,
  ARRAY(SELECT fl.sourcing_line_id FROM factory_rfq_lines fl WHERE fl.tenant_id=r.tenant_id AND fl.factory_rfq_id=r.id ORDER BY fl.line_no)::bigint[] AS sourcing_line_ids
@@ -342,6 +344,8 @@ type ListFactoryRFQsRow struct {
 	ResponseDueAt   string
 	Status          string
 	CreatedAt       pgtype.Timestamptz
+	CreatedBy       int64
+	CreatedByName   string
 	InquiryChannel  string
 	ContactName     string
 	ContactValue    string
@@ -376,6 +380,8 @@ func (q *Queries) ListFactoryRFQs(ctx context.Context, arg ListFactoryRFQsParams
 			&i.ResponseDueAt,
 			&i.Status,
 			&i.CreatedAt,
+			&i.CreatedBy,
+			&i.CreatedByName,
 			&i.InquiryChannel,
 			&i.ContactName,
 			&i.ContactValue,
@@ -465,7 +471,7 @@ func (q *Queries) ListOverdueFactoryRFQs(ctx context.Context, arg ListOverdueFac
 const listSupplierQuoteComparison = `-- name: ListSupplierQuoteComparison :many
 SELECT q.id AS quote_id,l.id AS quote_line_id,q.supplier_quote_no,q.factory_rfq_id,r.supplier_id,r.supplier_name,q.currency,
  coalesce(q.quoted_at::text,'')::text AS quoted_at,coalesce(q.valid_until::text,'')::text AS valid_until,
- q.payment_terms,q.delivery,q.remark,q.source,q.version_no,q.confirmation_status,q.evidence_note,
+ q.payment_terms,q.delivery,q.remark,q.source,q.version_no,q.confirmation_status,q.evidence_note,q.created_by,r.created_by_name,
  l.sourcing_line_id,l.qty::text,l.unit_price::text,
  l.amount::text,coalesce(l.moq::text,'')::text AS moq,l.lead_time,l.remark AS line_remark
 FROM supplier_quotes q JOIN factory_rfqs r ON r.id=q.factory_rfq_id AND r.tenant_id=q.tenant_id
@@ -496,6 +502,8 @@ type ListSupplierQuoteComparisonRow struct {
 	VersionNo          int32
 	ConfirmationStatus string
 	EvidenceNote       string
+	CreatedBy          int64
+	CreatedByName      string
 	SourcingLineID     int64
 	LQty               string
 	LUnitPrice         string
@@ -531,6 +539,8 @@ func (q *Queries) ListSupplierQuoteComparison(ctx context.Context, arg ListSuppl
 			&i.VersionNo,
 			&i.ConfirmationStatus,
 			&i.EvidenceNote,
+			&i.CreatedBy,
+			&i.CreatedByName,
 			&i.SourcingLineID,
 			&i.LQty,
 			&i.LUnitPrice,

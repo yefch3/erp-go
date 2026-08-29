@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
@@ -139,6 +140,50 @@ func (h *SourcingHandler) AcceptCase(ctx context.Context, req *prv1.AcceptCaseRe
 		return nil, err
 	}
 	return &prv1.AcceptCaseResponse{SourcingCase: sourcingCaseView(view)}, nil
+}
+
+func (h *SourcingHandler) ListCaseParticipants(ctx context.Context, req *prv1.ListCaseParticipantsRequest) (*prv1.ListCaseParticipantsResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
+	items, err := h.svc.ListSourcingParticipants(ctx, grpcx.TenantID(ctx), req.GetCaseId())
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.ListCaseParticipantsResponse{Participants: sourcingParticipants(items)}, nil
+}
+
+func (h *SourcingHandler) JoinCase(ctx context.Context, req *prv1.JoinCaseRequest) (*prv1.JoinCaseResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
+	items, err := h.svc.JoinSourcingCase(ctx, grpcx.TenantID(ctx), req.GetCaseId(), sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.JoinCaseResponse{Participants: sourcingParticipants(items)}, nil
+}
+
+func (h *SourcingHandler) RequestPrimaryBuyer(ctx context.Context, req *prv1.RequestPrimaryBuyerRequest) (*prv1.RequestPrimaryBuyerResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
+	items, view, err := h.svc.RequestPrimarySourcingCase(ctx, grpcx.TenantID(ctx), req.GetCaseId(), sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.RequestPrimaryBuyerResponse{Participants: sourcingParticipants(items), SourcingCase: sourcingCaseView(view)}, nil
+}
+
+func (h *SourcingHandler) AssignPrimaryBuyer(ctx context.Context, req *prv1.AssignPrimaryBuyerRequest) (*prv1.AssignPrimaryBuyerResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
+	items, view, err := h.svc.AssignPrimarySourcingCase(ctx, grpcx.TenantID(ctx), req.GetCaseId(), req.GetEmployeeId(), req.GetReason(), sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.AssignPrimaryBuyerResponse{Participants: sourcingParticipants(items), SourcingCase: sourcingCaseView(view)}, nil
 }
 
 func (h *SourcingHandler) ReturnCase(ctx context.Context, req *prv1.ReturnCaseRequest) (*prv1.ReturnCaseResponse, error) {
@@ -318,6 +363,7 @@ func (h *SourcingHandler) ListSupplierQuoteComparison(ctx context.Context, req *
 			UnitPrice: row.LUnitPrice, Amount: row.LAmount, Moq: row.Moq,
 			LeadTime: row.LeadTime, LineRemark: row.LineRemark,
 			ComparePrice: v.ComparePrice, CompareCurrency: v.CompareCurrency,
+			CreatedBy: row.CreatedBy, CreatedByName: row.CreatedByName,
 		})
 	}
 	return &prv1.ListSupplierQuoteComparisonResponse{Lines: out}, nil
@@ -501,6 +547,7 @@ func factoryRFQ(row store.ListFactoryRFQsRow) *prv1.FactoryRfq {
 		LineCount: row.LineCount, CreatedAt: ts(row.CreatedAt), SourcingLineIds: row.SourcingLineIds,
 		InquiryChannel: row.InquiryChannel, ContactName: row.ContactName, ContactValue: row.ContactValue,
 		ContactedAt: row.ContactedAt, InquiryNote: row.InquiryNote, RoundNo: row.RoundNo,
+		CreatedBy: row.CreatedBy, CreatedByName: row.CreatedByName,
 	}
 }
 
@@ -525,6 +572,25 @@ func sourcingCaseView(view app.SourcingCaseView) *prv1.SourcingCase {
 		out.Lines = append(out.Lines, sourcingLine(line))
 	}
 	return out
+}
+
+func sourcingParticipants(items []app.SourcingParticipant) []*prv1.SourcingParticipant {
+	out := make([]*prv1.SourcingParticipant, 0, len(items))
+	for _, item := range items {
+		out = append(out, &prv1.SourcingParticipant{
+			Id: item.ID, EmployeeId: item.EmployeeID, EmployeeName: item.EmployeeName,
+			Role: item.Role, Status: item.Status, PrimaryRequestedAt: participantTime(item.PrimaryRequestedAt),
+			JoinedAt: item.JoinedAt.Format(time.RFC3339), UpdatedAt: item.UpdatedAt.Format(time.RFC3339),
+		})
+	}
+	return out
+}
+
+func participantTime(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return value.Format(time.RFC3339)
 }
 
 func sourcingCaseHead(row store.GetSourcingCaseRow) *prv1.SourcingCase {

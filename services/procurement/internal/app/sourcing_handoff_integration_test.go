@@ -22,7 +22,7 @@ func TestSourcingHandoffAcceptReturnAndResubmitVersion(t *testing.T) {
 	defer pool.Close()
 	tenantID := time.Now().UnixNano()
 	defer func() {
-		for _, table := range []string{"sourcing_case_changes", "sourcing_lines", "sourcing_cases"} {
+		for _, table := range []string{"sourcing_case_changes", "sourcing_procurement_participants", "sourcing_lines", "sourcing_cases"} {
 			_, _ = pool.Exec(ctx, `DELETE FROM `+table+` WHERE tenant_id=$1`, tenantID)
 		}
 	}()
@@ -81,7 +81,7 @@ func TestSourcingHandoffAcceptReturnAndResubmitVersion(t *testing.T) {
 		t.Fatalf("resubmit reason = %q, want %q", submittedReason, resubmitReason)
 	}
 	var changes int
-	if err = pool.QueryRow(ctx, `SELECT count(*) FROM sourcing_case_changes WHERE tenant_id=$1 AND case_id=$2 AND action IN ('PROCUREMENT_ACCEPTED','RETURNED_FOR_SUPPLEMENT')`, tenantID, caseID).Scan(&changes); err != nil {
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM sourcing_case_changes WHERE tenant_id=$1 AND case_id=$2 AND action IN ('PRIMARY_ASSIGNED','RETURNED_FOR_SUPPLEMENT')`, tenantID, caseID).Scan(&changes); err != nil {
 		t.Fatal(err)
 	}
 	if changes != 2 {

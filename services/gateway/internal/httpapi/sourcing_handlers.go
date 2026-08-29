@@ -231,6 +231,47 @@ func (s *Server) acceptSourcingCase(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) listSourcingParticipants(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.ListCaseParticipants(r.Context(), &prv1.ListCaseParticipantsRequest{CaseId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) joinSourcingCase(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.JoinCase(r.Context(), &prv1.JoinCaseRequest{CaseId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) requestPrimarySourcingCase(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.RequestPrimaryBuyer(r.Context(), &prv1.RequestPrimaryBuyerRequest{CaseId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) assignPrimarySourcingCase(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.AssignPrimaryBuyerRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.CaseId = idFromPath(r)
+	resp, err := s.Sourcing.AssignPrimaryBuyer(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) returnSourcingCase(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.ReturnCaseRequest{}
 	if !s.decodeBody(w, r, req) {

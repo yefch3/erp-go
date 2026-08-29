@@ -68,35 +68,39 @@ type CostCharge struct {
 }
 
 type CostScenario struct {
-	ID                  int64
-	TenantID            int64
-	CaseID              int64
-	ScenarioNo          string
-	Currency            string
-	AllocationBasis     string
-	MarginType          string
-	MarginValue         pgtype.Numeric
-	FxRate              pgtype.Numeric
-	FxRateAt            pgtype.Timestamptz
-	FxSource            string
-	FxBaseCurrency      string
-	ProductTotal        pgtype.Numeric
-	ChargeTotal         pgtype.Numeric
-	LandedTotal         pgtype.Numeric
-	MarginTotal         pgtype.Numeric
-	CustomerTotal       pgtype.Numeric
-	Status              string
-	CustomerQuotationID *int64
-	CustomerQuoteNo     string
-	CreatedBy           int64
-	CreatedByName       string
-	ConfirmedBy         *int64
-	ConfirmedByName     string
-	ConfirmedAt         pgtype.Timestamptz
-	CreatedAt           pgtype.Timestamptz
-	UpdatedAt           pgtype.Timestamptz
-	ConfirmReason       string
-	VersionNo           int32
+	ID                     int64
+	TenantID               int64
+	CaseID                 int64
+	ScenarioNo             string
+	Currency               string
+	AllocationBasis        string
+	MarginType             string
+	MarginValue            pgtype.Numeric
+	FxRate                 pgtype.Numeric
+	FxRateAt               pgtype.Timestamptz
+	FxSource               string
+	FxBaseCurrency         string
+	ProductTotal           pgtype.Numeric
+	ChargeTotal            pgtype.Numeric
+	LandedTotal            pgtype.Numeric
+	MarginTotal            pgtype.Numeric
+	CustomerTotal          pgtype.Numeric
+	Status                 string
+	CustomerQuotationID    *int64
+	CustomerQuoteNo        string
+	CreatedBy              int64
+	CreatedByName          string
+	ConfirmedBy            *int64
+	ConfirmedByName        string
+	ConfirmedAt            pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	ConfirmReason          string
+	VersionNo              int32
+	RequirementVersionNo   int32
+	SubmittedToSalesBy     *int64
+	SubmittedToSalesByName string
+	SubmittedToSalesAt     pgtype.Timestamptz
 }
 
 type CostScenarioLine struct {
@@ -531,6 +535,16 @@ type SourcingCase struct {
 	InquiryTemplateCode    string
 	InquiryTemplateVersion int32
 	SourceFileKey          string
+	HandoffStatus          string
+	RequirementVersionNo   int32
+	AcceptedBy             *int64
+	AcceptedByName         string
+	AcceptedAt             pgtype.Timestamptz
+	ReturnedBy             *int64
+	ReturnedByName         string
+	ReturnedAt             pgtype.Timestamptz
+	ReturnReason           string
+	ReturnFields           []string
 	ContactID              int64
 }
 
@@ -586,6 +600,19 @@ type SourcingLine struct {
 	DecidedAt          pgtype.Timestamptz
 	RevisionNo         int32
 	CustomFields       []byte
+}
+
+type SourcingProcurementParticipant struct {
+	ID                 int64
+	TenantID           int64
+	CaseID             int64
+	EmployeeID         int64
+	EmployeeName       string
+	ParticipantRole    string
+	Status             string
+	PrimaryRequestedAt pgtype.Timestamptz
+	JoinedAt           pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
 }
 
 type SupplierInvoice struct {

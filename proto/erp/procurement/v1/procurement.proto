@@ -17,6 +17,10 @@ service SourcingService {
   rpc AddLine(AddLineRequest) returns (AddLineResponse);
   rpc ConfirmLines(ConfirmLinesRequest) returns (ConfirmLinesResponse);
   rpc AcceptCase(AcceptCaseRequest) returns (AcceptCaseResponse);
+  rpc ListCaseParticipants(ListCaseParticipantsRequest) returns (ListCaseParticipantsResponse);
+  rpc JoinCase(JoinCaseRequest) returns (JoinCaseResponse);
+  rpc RequestPrimaryBuyer(RequestPrimaryBuyerRequest) returns (RequestPrimaryBuyerResponse);
+  rpc AssignPrimaryBuyer(AssignPrimaryBuyerRequest) returns (AssignPrimaryBuyerResponse);
   rpc ReturnCase(ReturnCaseRequest) returns (ReturnCaseResponse);
   rpc ReviewLine(ReviewLineRequest) returns (ReviewLineResponse);
   rpc CreateFactoryRfq(CreateFactoryRfqRequest) returns (CreateFactoryRfqResponse);
@@ -198,6 +202,7 @@ message FactoryRfq {
   int64 factory_id = 14; string factory_code = 15; string factory_name = 16;
   string inquiry_channel = 17; string contact_name = 18; string contact_value = 19;
   string contacted_at = 20; string inquiry_note = 21; int32 round_no = 22;
+  int64 created_by = 23; string created_by_name = 24;
 }
 message CreateFactoryRfqRequest {
   int64 case_id = 1; int64 supplier_id = 2; string contact_email = 3;
@@ -278,6 +283,8 @@ message SupplierQuoteComparisonLine {
   // original currency and price above are the record, this is the lens.
   string compare_price = 24;
   string compare_currency = 25;
+  int64 created_by = 26;
+  string created_by_name = 27;
 }
 message ListSupplierQuoteComparisonResponse { repeated SupplierQuoteComparisonLine lines = 1; }
 
@@ -1670,3 +1677,34 @@ message ReplayFailedEventRequest {
 // 重放是同步的：成功即事件已被处理并离开死信表；失败则原地不动，错误原样
 // 带回给操作的人——他正看着屏幕，这是把原因交到人手上的唯一时机。
 message ReplayFailedEventResponse {}
+
+// Procurement participation is intentionally appended to preserve existing
+// protobuf message indexes in generated descriptors.
+message SourcingParticipant {
+  int64 id = 1;
+  int64 employee_id = 2;
+  string employee_name = 3;
+  string role = 4;
+  string status = 5;
+  string primary_requested_at = 6;
+  string joined_at = 7;
+  string updated_at = 8;
+}
+message ListCaseParticipantsRequest { int64 case_id = 1; }
+message ListCaseParticipantsResponse { repeated SourcingParticipant participants = 1; }
+message JoinCaseRequest { int64 case_id = 1; }
+message JoinCaseResponse { repeated SourcingParticipant participants = 1; }
+message RequestPrimaryBuyerRequest { int64 case_id = 1; }
+message RequestPrimaryBuyerResponse {
+  repeated SourcingParticipant participants = 1;
+  SourcingCase sourcing_case = 2;
+}
+message AssignPrimaryBuyerRequest {
+  int64 case_id = 1;
+  int64 employee_id = 2;
+  string reason = 3;
+}
+message AssignPrimaryBuyerResponse {
+  repeated SourcingParticipant participants = 1;
+  SourcingCase sourcing_case = 2;
+}

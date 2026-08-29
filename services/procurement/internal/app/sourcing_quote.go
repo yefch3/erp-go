@@ -245,8 +245,11 @@ func (s *Service) CreateFactoryRFQ(ctx context.Context, tenantID int64, in NewFa
 	if err != nil {
 		return store.ListFactoryRFQsRow{}, err
 	}
-	if caseView.Head.HandoffStatus != "IN_PROGRESS" {
-		return store.ListFactoryRFQsRow{}, apierr.Conflict("SC_PROCUREMENT_ACCEPT_REQUIRED", "请先由采购员接收寻源任务")
+	if caseView.Head.HandoffStatus != "WAITING_ACCEPTANCE" && caseView.Head.HandoffStatus != "IN_PROGRESS" {
+		return store.ListFactoryRFQsRow{}, apierr.Conflict("SC_PARTICIPATION_NOT_OPEN", "当前案件尚未开放采购询价")
+	}
+	if err := s.requireSourcingParticipant(ctx, tenantID, in.CaseID, op.ID); err != nil {
+		return store.ListFactoryRFQsRow{}, err
 	}
 	supplier, err := s.supplierForOrder(ctx, in.SupplierID)
 	if err != nil {
@@ -367,6 +370,9 @@ func (s *Service) UpdateFactoryRFQ(ctx context.Context, tenantID, id int64, inqu
 	if before.ID == 0 {
 		return store.ListFactoryRFQsRow{}, apierr.NotFound("SC_RFQ_NOT_FOUND", "工厂询价不存在")
 	}
+	if before.CreatedBy != op.ID {
+		return store.ListFactoryRFQsRow{}, apierr.Permission("SC_RFQ_OWNER_REQUIRED", "只能修改自己上报的工厂询价")
+	}
 	if strings.TrimSpace(inquiryChannel) == "" {
 		inquiryChannel = before.InquiryChannel
 	}
@@ -452,6 +458,9 @@ func (s *Service) CreateSupplierQuote(ctx context.Context, tenantID int64, in Ne
 		rfq, err := q.FactoryRFQForQuote(ctx, store.FactoryRFQForQuoteParams{TenantID: tenantID, ID: in.FactoryRFQID})
 		if err != nil {
 			return apierr.NotFound("SC_RFQ_NOT_FOUND", "工厂询价不存在")
+		}
+		if rfq.CreatedBy != op.ID {
+			return apierr.Permission("SC_RFQ_OWNER_REQUIRED", "只能为自己上报的工厂询价录入报价")
 		}
 		rfqLines, err := q.FactoryRFQLines(ctx, store.FactoryRFQLinesParams{TenantID: tenantID, FactoryRfqID: in.FactoryRFQID})
 		if err != nil {
@@ -561,6 +570,9 @@ func (s *Service) MarkFactoryRFQSent(ctx context.Context, tenantID, id int64, op
 	for _, row := range rows {
 		if row.ID == id {
 			beforeStatus = row.Status
+			if row.CreatedBy != op.ID {
+				return apierr.Permission("SC_RFQ_OWNER_REQUIRED", "只能发送自己上报的工厂询价")
+			}
 			break
 		}
 	}
