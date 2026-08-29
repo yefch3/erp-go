@@ -75,11 +75,14 @@ func TestReceivableDueList(t *testing.T) {
 	mkContract("CT-RECV-OTHER", salesB, "10000", overdue)
 	paidID := mkContract("CT-RECV-PAID", salesA, "10000", overdue)
 
-	// 收完的那张：核销一笔就该从催收清单上消失。
+	// 收完的那张：**收满了也照样留在待核销页上**。
+	//
+	// 这条断言在需求变更后翻了面。老模型里「收完」是算出来的，收满即自动
+	// 从清单上消失；新模型下这一页问的是「财务确认过没有」，所以收满但
+	// 没人点确认的合同必须还在，等人来点。撤掉的那句条件是 `未收 > 0.01`。
 	//
 	// transaction_id 直接给一个数，不去建银行流水行：F2 之后那一行在采购
-	// 的库里，出口这边只存这个引用（跨库，所以已经不是外键了）。这个测试
-	// 问的是「收完的合同还上不上催收清单」，和那一行长什么样无关。
+	// 的库里，出口这边只存这个引用（跨库，所以已经不是外键了）。
 	if _, err := pool.Exec(ctx, `INSERT INTO receipt_allocations (tenant_id,transaction_id,contract_id,contract_no,amount,currency) VALUES ($1,$2,$3,'CT-RECV-PAID',10000,'USD')`, tenantID, tenantID+1, paidID); err != nil {
 		t.Fatal(err)
 	}
@@ -92,46 +95,72 @@ func TestReceivableDueList(t *testing.T) {
 	opA := Operator{ID: salesA, Name: "A"}
 	opAdmin := Operator{ID: admin, Name: "Admin"}
 
-	// SELF：只看见自己的三张（收完的那张不算），且逾期的排最前、
-	// 没配账期的垫底。
+	// SELF：看见自己的四张——**包含已经收满的那张**（别人的仍然不算）。
+	// 逾期的排最前、没配账期的垫底。
 	rows, total, err := svc.ListReceivableDue(ctx, tenantID, ReceivableFilter{}, 1, 50, opA)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total != 3 || len(rows) != 3 {
-		t.Fatalf("SELF 应看到三张（收完的不算、别人的不算），实际 %d 张: %+v", total, rows)
+	if total != 4 || len(rows) != 4 {
+		t.Fatalf("SELF 应看到四张（收满的也在，等人确认；别人的不算），实际 %d 张: %+v", total, rows)
 	}
-	if rows[0].ContractNo != "CT-RECV-OVERDUE" || rows[1].ContractNo != "CT-RECV-SOON" || rows[2].ContractNo != "CT-RECV-UNSET" {
-		t.Fatalf("排序错了：逾期的该最前、没配账期的该垫底，实际 %s / %s / %s",
-			rows[0].ContractNo, rows[1].ContractNo, rows[2].ContractNo)
+	// 按合同号取行，不按下标——两张合同的到期日相同时谁在前由 id 决定，
+	// 用下标断言会在无关的改动下随机翻车。
+	byNo := map[string]ReceivableRow{}
+	order := make([]string, 0, len(rows))
+	for _, r := range rows {
+		byNo[r.ContractNo] = r
+		order = append(order, r.ContractNo)
+	}
+	paid, ok := byNo["CT-RECV-PAID"]
+	if !ok {
+		t.Fatalf("收满但没人确认完成的合同必须留在待核销页"+
+			"——「不一定数字一样就可以核销完了」，实际 %v", order)
+	}
+	if paid.OpenAmount != "0.00" {
+		t.Fatalf("收满的那张未收应为 0.00，实际 %s", paid.OpenAmount)
+	}
+	// 排序：两张逾期的在最前（彼此顺序由 id 定，不断言），没配账期的垫底。
+	if order[len(order)-1] != "CT-RECV-UNSET" {
+		t.Fatalf("没配账期的该垫底，实际顺序 %v", order)
+	}
+	if order[0] != "CT-RECV-OVERDUE" && order[0] != "CT-RECV-PAID" {
+		t.Fatalf("逾期的该排最前，实际顺序 %v", order)
 	}
 	// 逾期天数：正数是已逾期，负数是还剩几天。
-	if rows[0].OverdueDays != 30 {
-		t.Fatalf("逾期天数应为 30，实际 %d", rows[0].OverdueDays)
+	if byNo["CT-RECV-OVERDUE"].OverdueDays != 30 {
+		t.Fatalf("逾期天数应为 30，实际 %d", byNo["CT-RECV-OVERDUE"].OverdueDays)
 	}
-	if rows[1].OverdueDays != -5 {
-		t.Fatalf("未到期的应为 -5（还有五天），实际 %d", rows[1].OverdueDays)
+	if byNo["CT-RECV-SOON"].OverdueDays != -5 {
+		t.Fatalf("未到期的应为 -5（还有五天），实际 %d", byNo["CT-RECV-SOON"].OverdueDays)
 	}
-	if !rows[2].DueUnset || rows[2].DueDate != "" {
-		t.Fatalf("没配账期的行应当 DueUnset 且日期为空：%+v", rows[2])
+	if unset := byNo["CT-RECV-UNSET"]; !unset.DueUnset || unset.DueDate != "" {
+		t.Fatalf("没配账期的行应当 DueUnset 且日期为空：%+v", unset)
 	}
 	// 未收金额是算出来的，不是存的。
-	if rows[0].OpenAmount != "50000.00" || rows[0].ReceivedAmount != "0" {
-		t.Fatalf("未收金额算错：%+v", rows[0])
+	if od := byNo["CT-RECV-OVERDUE"]; od.OpenAmount != "50000.00" || od.ReceivedAmount != "0" {
+		t.Fatalf("未收金额算错：%+v", od)
 	}
 
-	// ALL：连别人的那张一起看见（仍不含收完的）。
-	if _, total, err = svc.ListReceivableDue(ctx, tenantID, ReceivableFilter{}, 1, 50, opAdmin); err != nil || total != 4 {
-		t.Fatalf("ALL 应看到四张，实际 %d，err=%v", total, err)
+	// ALL：连别人的那张一起看见（收满的那张同样在里面）。
+	if _, total, err = svc.ListReceivableDue(ctx, tenantID, ReceivableFilter{}, 1, 50, opAdmin); err != nil || total != 5 {
+		t.Fatalf("ALL 应看到五张，实际 %d，err=%v", total, err)
 	}
 
 	// 只看逾期：没到期的和没配账期的都不该出现。
+	//
+	// 「逾期」看的是**日子**，不是钱——收满的那张到期日也在过去，所以它
+	// 也在里面。这一档是给财务按时间收窄队列用的，不是「还欠钱的」的同义词。
 	rows, _, err = svc.ListReceivableDue(ctx, tenantID, ReceivableFilter{OverdueOnly: true}, 1, 50, opA)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].ContractNo != "CT-RECV-OVERDUE" {
-		t.Fatalf("只看逾期时应只剩一张：%+v", rows)
+	overdueNos := map[string]bool{}
+	for _, r := range rows {
+		overdueNos[r.ContractNo] = true
+	}
+	if len(rows) != 2 || !overdueNos["CT-RECV-OVERDUE"] || !overdueNos["CT-RECV-PAID"] {
+		t.Fatalf("只看逾期时应剩两张（过了日子的都算，含收满未确认的）：%+v", rows)
 	}
 
 	// 只看未配账期：催的是配置，不是钱。

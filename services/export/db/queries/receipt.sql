@@ -1,11 +1,15 @@
 -- name: AddReceiptAllocation :one
+-- transaction_id 走 nullif(…, 0)：**0 表示「这笔核销不挂银行流水」**，
+-- 不是「第 0 号流水」。新模型下的手工记账全部走这一条（传 0），老行还带着
+-- 真实的流水号。用 0 而不是把参数改成可空类型，是为了不让 sqlc 生成的
+-- 入参类型变成指针——那会波及每一个调用点，而这里只需要一个哨兵值。
 INSERT INTO receipt_allocations (
     tenant_id, transaction_id, contract_id, contract_no, customer_name,
     amount, fee_amount, fee_category, currency, reversal_of, reverse_reason,
-    allocated_by, allocated_by_name
+    allocated_by, allocated_by_name, received_at, note
 ) VALUES (
     sqlc.arg(tenant_id)::bigint,
-    sqlc.arg(transaction_id)::bigint,
+    nullif(sqlc.arg(transaction_id)::bigint, 0),
     sqlc.arg(contract_id)::bigint,
     sqlc.arg(contract_no)::text,
     sqlc.arg(customer_name)::text,
@@ -16,7 +20,10 @@ INSERT INTO receipt_allocations (
     nullif(sqlc.arg(reversal_of)::bigint, 0),
     sqlc.arg(reverse_reason)::text,
     sqlc.arg(allocated_by)::bigint,
-    sqlc.arg(allocated_by_name)::text
+    sqlc.arg(allocated_by_name)::text,
+    -- 空串表示不记到账日（老行就是这样：那个日子在银行流水那边）。
+    nullif(sqlc.arg(received_at)::text, '')::date,
+    sqlc.arg(note)::text
 )
 RETURNING id;
 
@@ -36,7 +43,7 @@ ORDER BY id;
 --
 -- 收款对账的列表原来对每一行单独查一次核销记录（20 行一页就是 20 次往返），
 -- 而列表上只用得到一个和——完整的核销明细只有详情页要。
-SELECT transaction_id, sum(amount)::text AS allocated
+SELECT coalesce(transaction_id, 0)::bigint AS transaction_id, sum(amount)::text AS allocated
 FROM receipt_allocations
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND transaction_id = ANY(sqlc.arg(transaction_ids)::bigint[])
@@ -44,7 +51,7 @@ GROUP BY transaction_id;
 
 -- name: GetAllocation :one
 SELECT
-    id, transaction_id, contract_id, contract_no, customer_name,
+    id, coalesce(transaction_id, 0)::bigint AS transaction_id, contract_id, contract_no, customer_name,
     amount::text AS amount, fee_amount::text AS fee_amount, fee_category, currency,
     coalesce(reversal_of, 0)::bigint AS reversal_of
 FROM receipt_allocations
@@ -91,9 +98,13 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint AND c.id = sqlc.arg(contract_id)
 -- 一致——钱到了才核销——不一致的时候，按核销时间排反而更贴合这个页面在回答
 -- 的问题：这张合同的钱是**什么时候被认下来的**。
 SELECT
-    a.id, a.transaction_id, a.amount::text AS amount,
+    a.id, coalesce(a.transaction_id, 0)::bigint AS transaction_id,
+    a.amount::text AS amount,
     a.fee_amount::text AS fee_amount, a.currency,
     coalesce(a.reversal_of, 0)::bigint AS reversal_of,
+    a.reverse_reason,
+    coalesce(a.received_at::text, '')::text AS received_at,
+    a.note,
     a.allocated_by_name, a.allocated_at
 FROM receipt_allocations a
 WHERE a.tenant_id = sqlc.arg(tenant_id)::bigint
@@ -203,13 +214,20 @@ LEFT JOIN contract_receivable_closures cl
     ON cl.tenant_id = c.tenant_id AND cl.contract_id = c.id AND cl.revoked_at IS NULL
 WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND c.status IN ('EFFECTIVE', 'EXECUTING')
-  -- 两种视图：平时看「该催的」——没结清且还有未收（0.01 容差是汇路手续费
-  -- 的分位尾差）；closed_only 看「结清了的」——不管未收多少，撤销要在
-  -- 这儿找得到它。
+  -- 两页：待核销 = 没有活着的结清；已完成 = 有。
+  --
+  -- **这里故意不看「还欠多少」。** 需求明说「是否核销完需要员工手动确认，
+  -- 不一定数字对不上就不能完成，也不一定数字一样就算完成」——所以收满的
+  -- 合同在没人点确认之前照样留在待核销页上，等人来点。原来那句
+  -- `未收 > 0.01` 正是「数字对上就自动完成」，是这次要拆掉的东西。
+  --
+  -- 注意**不要**顺手把催收扫描（SweepReceivableReminders）里那句同样的
+  -- `未收 > 0.01` 一起删掉：那一句回答的是另一个问题——「客户还欠钱吗」。
+  -- 钱已经收齐、只是没人点确认的合同，销售不该收到催款提醒。两处从此
+  -- 口径不同，这是对的，别再把它们"改一致"。
   AND (CASE WHEN sqlc.arg(closed_only)::bool
         THEN cl.id IS NOT NULL
         ELSE cl.id IS NULL
-         AND (coalesce(v.total_amount, 0) - coalesce(r.received, 0)) > 0.01
        END)
   -- 数据范围：应收是钱的事，沿用出口模块自己的围栏（同合同列表）。
   AND (sqlc.arg(scope_all)::bool OR c.sales_employee_id = ANY(sqlc.arg(employee_ids)::bigint[]))
@@ -297,6 +315,10 @@ WHERE c.status IN ('EFFECTIVE', 'EXECUTING')
   AND c.receivable_due_date IS NOT NULL
   -- 没有负责人就没有收件人。这类合同在清单页上仍然看得见，只是没人被点名。
   AND c.sales_employee_id > 0
+  -- 还真的欠着钱才催。**这一句和应收清单页那边的条件从此不同口径，是有意
+  -- 的，别再"改一致"**：清单页回答「财务确认过没有」（看有没有活着的结清），
+  -- 这里回答「客户还欠钱吗」。钱收齐了但还没人点确认的合同，留在待核销页
+  -- 上等人处理是对的，给销售发一封「应收逾期」催客户要钱就是错的。
   AND (v.total_amount - coalesce(r.received, 0)) > 0.01
   -- 只在进入视野之后才提醒：30 天以外的不打扰。
   AND c.receivable_due_date - current_date <= 30

@@ -440,6 +440,10 @@ func (s *Server) Router() http.Handler {
 		// 应收到期清单（E1）：沿用收款的读权限——能看收款的人就该看得见该收什么。
 		r.With(s.perm("export:receipt:read")).Get("/api/receivable-due", s.listReceivableDue)
 		// 收款结清：停催是对钱的判断，走收款的写权限。
+		// 待核销页上的两个动作：记一笔收款、冲销记错的那笔。
+		// {id} 一个是合同、一个是收款记录，所以地址前缀故意不同。
+		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/{id}/receipts", s.recordContractReceipt)
+		r.With(s.perm("export:receipt:write")).Post("/api/contract-receipts/{id}/reverse", s.reverseContractReceipt)
 		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/{id}/close", s.closeReceivable)
 		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/{id}/reopen", s.reopenReceivable)
 		// 应收提醒按登录人隔离，同时要求具备收款读取权限，避免首页或徽标成为权限后门。

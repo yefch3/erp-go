@@ -54,8 +54,10 @@ func TestReceiptRoutesAreAllRegistered(t *testing.T) {
 		"POST /api/receipt-transactions/{id}/reopen",     // 「撤销标记」
 		"POST /api/receipt-transactions/{id}/settle",     // 「认差结清」
 		"POST /api/receipt-transactions/{id}/unsettle",   // 「撤销结清」
-		"POST /api/receivable-due/{id}/close",            // 「收款结清」（合同停催）
-		"POST /api/receivable-due/{id}/reopen",           // 「撤销结清」（合同）
+		"POST /api/receivable-due/{id}/receipts",         // 待核销页「记一笔收款」（手填，不连流水）
+		"POST /api/contract-receipts/{id}/reverse",       // 冲销记错的那一笔
+		"POST /api/receivable-due/{id}/close",            // 「确认核销完成」（转到已完成页）
+		"POST /api/receivable-due/{id}/reopen",           // 「撤销完成」（回到待核销页）
 		"GET /api/open-receivables",                      // 弹窗里搜合同
 		"GET /api/bank-accounts",                         // 「收款账户」
 	}

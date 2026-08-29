@@ -231,7 +231,7 @@ type QuotationItem struct {
 type ReceiptAllocation struct {
 	ID              int64
 	TenantID        int64
-	TransactionID   int64
+	TransactionID   *int64
 	ContractID      int64
 	ContractNo      string
 	CustomerName    string
@@ -244,6 +244,8 @@ type ReceiptAllocation struct {
 	AllocatedByName string
 	AllocatedAt     pgtype.Timestamptz
 	FeeCategory     string
+	ReceivedAt      pgtype.Date
+	Note            string
 }
 
 type ReceiptLineSettlement struct {

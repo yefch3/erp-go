@@ -195,6 +195,47 @@ func (s *Server) listReceivableDue(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// recordContractReceipt 在待核销页上记一笔钱：选一张合同，金额和到账日期
+// 由员工手填。**不连银行流水**——那本账只用来存银行给的 statement。
+func (s *Server) recordContractReceipt(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Amount     string `json:"amount"`
+		IsRefund   bool   `json:"isRefund"`
+		ReceivedAt string `json:"receivedAt"`
+		Note       string `json:"note"`
+	}
+	if !s.decodeJSON(w, r, &body) {
+		return
+	}
+	resp, err := s.Receipts.RecordContractReceipt(r.Context(), &exv1.RecordContractReceiptRequest{
+		ContractId: idFromPath(r), Amount: body.Amount, IsRefund: body.IsRefund,
+		ReceivedAt: body.ReceivedAt, Note: body.Note,
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// reverseContractReceipt 冲销一笔记错的收款。写反向记录，不删原记录。
+func (s *Server) reverseContractReceipt(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if !s.decodeJSON(w, r, &body) {
+		return
+	}
+	resp, err := s.Receipts.ReverseContractReceipt(r.Context(), &exv1.ReverseContractReceiptRequest{
+		EntryId: idFromPath(r), Reason: body.Reason,
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) closeReceivable(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Category string `json:"category"`

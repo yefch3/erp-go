@@ -15,10 +15,10 @@ const addReceiptAllocation = `-- name: AddReceiptAllocation :one
 INSERT INTO receipt_allocations (
     tenant_id, transaction_id, contract_id, contract_no, customer_name,
     amount, fee_amount, fee_category, currency, reversal_of, reverse_reason,
-    allocated_by, allocated_by_name
+    allocated_by, allocated_by_name, received_at, note
 ) VALUES (
     $1::bigint,
-    $2::bigint,
+    nullif($2::bigint, 0),
     $3::bigint,
     $4::text,
     $5::text,
@@ -29,7 +29,10 @@ INSERT INTO receipt_allocations (
     nullif($10::bigint, 0),
     $11::text,
     $12::bigint,
-    $13::text
+    $13::text,
+    -- 空串表示不记到账日（老行就是这样：那个日子在银行流水那边）。
+    nullif($14::text, '')::date,
+    $15::text
 )
 RETURNING id
 `
@@ -48,8 +51,14 @@ type AddReceiptAllocationParams struct {
 	ReverseReason   string
 	AllocatedBy     int64
 	AllocatedByName string
+	ReceivedAt      string
+	Note            string
 }
 
+// transaction_id 走 nullif(…, 0)：**0 表示「这笔核销不挂银行流水」**，
+// 不是「第 0 号流水」。新模型下的手工记账全部走这一条（传 0），老行还带着
+// 真实的流水号。用 0 而不是把参数改成可空类型，是为了不让 sqlc 生成的
+// 入参类型变成指针——那会波及每一个调用点，而这里只需要一个哨兵值。
 func (q *Queries) AddReceiptAllocation(ctx context.Context, arg AddReceiptAllocationParams) (int64, error) {
 	row := q.db.QueryRow(ctx, addReceiptAllocation,
 		arg.TenantID,
@@ -65,6 +74,8 @@ func (q *Queries) AddReceiptAllocation(ctx context.Context, arg AddReceiptAlloca
 		arg.ReverseReason,
 		arg.AllocatedBy,
 		arg.AllocatedByName,
+		arg.ReceivedAt,
+		arg.Note,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -95,7 +106,7 @@ func (q *Queries) AllocationReversed(ctx context.Context, arg AllocationReversed
 }
 
 const allocationSumsByTransactions = `-- name: AllocationSumsByTransactions :many
-SELECT transaction_id, sum(amount)::text AS allocated
+SELECT coalesce(transaction_id, 0)::bigint AS transaction_id, sum(amount)::text AS allocated
 FROM receipt_allocations
 WHERE tenant_id = $1::bigint
   AND transaction_id = ANY($2::bigint[])
@@ -270,7 +281,7 @@ func (q *Queries) FindContractsByNo(ctx context.Context, arg FindContractsByNoPa
 
 const getAllocation = `-- name: GetAllocation :one
 SELECT
-    id, transaction_id, contract_id, contract_no, customer_name,
+    id, coalesce(transaction_id, 0)::bigint AS transaction_id, contract_id, contract_no, customer_name,
     amount::text AS amount, fee_amount::text AS fee_amount, fee_category, currency,
     coalesce(reversal_of, 0)::bigint AS reversal_of
 FROM receipt_allocations
@@ -482,9 +493,13 @@ func (q *Queries) InsertReceivableClosure(ctx context.Context, arg InsertReceiva
 
 const listAllocationsOfContract = `-- name: ListAllocationsOfContract :many
 SELECT
-    a.id, a.transaction_id, a.amount::text AS amount,
+    a.id, coalesce(a.transaction_id, 0)::bigint AS transaction_id,
+    a.amount::text AS amount,
     a.fee_amount::text AS fee_amount, a.currency,
     coalesce(a.reversal_of, 0)::bigint AS reversal_of,
+    a.reverse_reason,
+    coalesce(a.received_at::text, '')::text AS received_at,
+    a.note,
     a.allocated_by_name, a.allocated_at
 FROM receipt_allocations a
 WHERE a.tenant_id = $1::bigint
@@ -504,6 +519,9 @@ type ListAllocationsOfContractRow struct {
 	FeeAmount       string
 	Currency        string
 	ReversalOf      int64
+	ReverseReason   string
+	ReceivedAt      string
+	Note            string
 	AllocatedByName string
 	AllocatedAt     pgtype.Timestamptz
 }
@@ -533,6 +551,9 @@ func (q *Queries) ListAllocationsOfContract(ctx context.Context, arg ListAllocat
 			&i.FeeAmount,
 			&i.Currency,
 			&i.ReversalOf,
+			&i.ReverseReason,
+			&i.ReceivedAt,
+			&i.Note,
 			&i.AllocatedByName,
 			&i.AllocatedAt,
 		); err != nil {
@@ -694,13 +715,20 @@ LEFT JOIN contract_receivable_closures cl
     ON cl.tenant_id = c.tenant_id AND cl.contract_id = c.id AND cl.revoked_at IS NULL
 WHERE c.tenant_id = $1::bigint
   AND c.status IN ('EFFECTIVE', 'EXECUTING')
-  -- 两种视图：平时看「该催的」——没结清且还有未收（0.01 容差是汇路手续费
-  -- 的分位尾差）；closed_only 看「结清了的」——不管未收多少，撤销要在
-  -- 这儿找得到它。
+  -- 两页：待核销 = 没有活着的结清；已完成 = 有。
+  --
+  -- **这里故意不看「还欠多少」。** 需求明说「是否核销完需要员工手动确认，
+  -- 不一定数字对不上就不能完成，也不一定数字一样就算完成」——所以收满的
+  -- 合同在没人点确认之前照样留在待核销页上，等人来点。原来那句
+  -- ` + "`" + `未收 > 0.01` + "`" + ` 正是「数字对上就自动完成」，是这次要拆掉的东西。
+  --
+  -- 注意**不要**顺手把催收扫描（SweepReceivableReminders）里那句同样的
+  -- ` + "`" + `未收 > 0.01` + "`" + ` 一起删掉：那一句回答的是另一个问题——「客户还欠钱吗」。
+  -- 钱已经收齐、只是没人点确认的合同，销售不该收到催款提醒。两处从此
+  -- 口径不同，这是对的，别再把它们"改一致"。
   AND (CASE WHEN $2::bool
         THEN cl.id IS NOT NULL
         ELSE cl.id IS NULL
-         AND (coalesce(v.total_amount, 0) - coalesce(r.received, 0)) > 0.01
        END)
   -- 数据范围：应收是钱的事，沿用出口模块自己的围栏（同合同列表）。
   AND ($3::bool OR c.sales_employee_id = ANY($4::bigint[]))
@@ -1151,6 +1179,10 @@ WHERE c.status IN ('EFFECTIVE', 'EXECUTING')
   AND c.receivable_due_date IS NOT NULL
   -- 没有负责人就没有收件人。这类合同在清单页上仍然看得见，只是没人被点名。
   AND c.sales_employee_id > 0
+  -- 还真的欠着钱才催。**这一句和应收清单页那边的条件从此不同口径，是有意
+  -- 的，别再"改一致"**：清单页回答「财务确认过没有」（看有没有活着的结清），
+  -- 这里回答「客户还欠钱吗」。钱收齐了但还没人点确认的合同，留在待核销页
+  -- 上等人处理是对的，给销售发一封「应收逾期」催客户要钱就是错的。
   AND (v.total_amount - coalesce(r.received, 0)) > 0.01
   -- 只在进入视野之后才提醒：30 天以外的不打扰。
   AND c.receivable_due_date - current_date <= 30

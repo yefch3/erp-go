@@ -200,6 +200,36 @@ func (h *ReceiptHandler) ListReceivableDue(ctx context.Context, req *exv1.ListRe
 	return &exv1.ListReceivableDueResponse{Items: out, Meta: &commonv1.PageMeta{Total: total}}, nil
 }
 
+// progressPB 是「这张合同收了多少」的那一小块，三个地方共用。
+func progressPB(p store.ContractReceiptProgressRow) *exv1.ReceiptProgress {
+	return &exv1.ReceiptProgress{
+		ContractId: p.ID, ContractNo: p.ContractNo,
+		CustomerName: p.CustomerName, Currency: p.Currency,
+		TotalAmount: p.TotalAmount, ReceivedAmount: p.ReceivedAmount,
+		OpenAmount: p.OpenAmount,
+	}
+}
+
+func (h *ReceiptHandler) RecordContractReceipt(ctx context.Context, req *exv1.RecordContractReceiptRequest) (*exv1.RecordContractReceiptResponse, error) {
+	p, err := h.svc.RecordContractReceipt(ctx, grpcx.TenantID(ctx), app.ContractReceiptInput{
+		ContractID: req.GetContractId(), Amount: req.GetAmount(),
+		IsRefund: req.GetIsRefund(), ReceivedAt: req.GetReceivedAt(), Note: req.GetNote(),
+	}, operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.RecordContractReceiptResponse{Progress: progressPB(p)}, nil
+}
+
+func (h *ReceiptHandler) ReverseContractReceipt(ctx context.Context, req *exv1.ReverseContractReceiptRequest) (*exv1.ReverseContractReceiptResponse, error) {
+	p, err := h.svc.ReverseContractReceipt(ctx, grpcx.TenantID(ctx),
+		req.GetEntryId(), req.GetReason(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.ReverseContractReceiptResponse{Progress: progressPB(p)}, nil
+}
+
 func (h *ReceiptHandler) CloseReceivable(ctx context.Context, req *exv1.CloseReceivableRequest) (*exv1.CloseReceivableResponse, error) {
 	if err := h.svc.CloseReceivable(ctx, grpcx.TenantID(ctx),
 		req.GetContractId(), req.GetCategory(), req.GetNote(), operator(ctx)); err != nil {
@@ -259,17 +289,13 @@ func (h *ReceiptHandler) GetContractReceipts(ctx context.Context, req *exv1.GetC
 			Source: r.Source, Amount: r.Amount, FeeAmount: r.FeeAmount,
 			Currency: r.Currency, ReversalOf: r.ReversalOf,
 			AllocatedByName: r.AllocatedByName,
+			ReceivedAt:      r.ReceivedAt,
+			Note:            r.Note,
+			ReverseReason:   r.ReverseReason,
+			AllocatedAt:     r.AllocatedAt.Time.Format("2006-01-02 15:04"),
 		})
 	}
-	return &exv1.GetContractReceiptsResponse{
-		Progress: &exv1.ReceiptProgress{
-			ContractId: progress.ID, ContractNo: progress.ContractNo,
-			CustomerName: progress.CustomerName, Currency: progress.Currency,
-			TotalAmount: progress.TotalAmount, ReceivedAmount: progress.ReceivedAmount,
-			OpenAmount: progress.OpenAmount,
-		},
-		Receipts: out,
-	}, nil
+	return &exv1.GetContractReceiptsResponse{Progress: progressPB(progress), Receipts: out}, nil
 }
 
 // txToProto 拼出页面看到的一行。
