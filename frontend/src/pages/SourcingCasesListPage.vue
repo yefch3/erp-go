@@ -35,7 +35,7 @@
         <el-table-column label="客户需求" min-width="180"><template #default="{ row }">{{ row.customerName || '—' }}</template></el-table-column>
         <el-table-column label="寻源阶段" width="155"><template #default="{ row }"><el-tag effect="dark" :type="stageTagType(row.status)">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
         <el-table-column label="下一步采购动作" min-width="220"><template #default="{ row }"><strong class="procurement-next">{{ waitingFor(row.status) }}</strong></template></el-table-column>
-        <el-table-column prop="ownerName" label="采购负责人" width="140" />
+        <el-table-column prop="ownerName" label="负责销售" width="140" />
         <el-table-column label="最近更新" width="175"><template #default="{ row }">{{ formatTime(row.updatedAt) }}</template></el-table-column>
         <el-table-column label="异常" width="110"><template #default="{ row }"><el-tag v-if="isStale(row)" type="warning">{{ t('sourcing.stale') }}</el-tag><span v-else>—</span></template></el-table-column>
         <el-table-column label="操作" width="112" fixed="right" align="right"><template #default="{ row }"><el-button link type="primary" @click.stop="openCase(row)">进入寻源 →</el-button></template></el-table-column>
