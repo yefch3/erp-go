@@ -60,7 +60,7 @@ func TestSourcingParticipantsAndPrimaryBuyerChange(t *testing.T) {
 		t.Fatalf("participation must not claim or lock case: %+v", beforePrimary.Head)
 	}
 
-	participants, claimed, err := svc.RequestPrimarySourcingCase(ctx, tenantID, caseID, buyerA)
+	_, claimed, err := svc.RequestPrimarySourcingCase(ctx, tenantID, caseID, buyerA)
 	if err != nil {
 		t.Fatal(err)
 	}
