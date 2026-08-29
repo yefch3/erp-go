@@ -184,7 +184,7 @@
         <el-table-column :label="t('bankTransactions.currency')" prop="currency" width="80" />
         <template #empty>{{ t('bankTransactions.accountsEmpty') }}</template>
       </el-table>
-      <el-form v-if="canWrite" :model="accountForm" label-width="90px" style="margin-top: 14px">
+      <el-form v-if="canWriteAccounts" :model="accountForm" label-width="90px" style="margin-top: 14px">
         <el-form-item :label="t('bankTransactions.accountName')" required>
           <el-input v-model="accountForm.accountName" />
         </el-form-item>
@@ -200,7 +200,7 @@
       </el-form>
       <template #footer>
         <el-button @click="accountsOpen = false">{{ t('common.cancel') }}</el-button>
-        <el-button v-if="canWrite" type="primary" :loading="savingAccount" @click="submitAccount">
+        <el-button v-if="canWriteAccounts" type="primary" :loading="savingAccount" @click="submitAccount">
           {{ t('bankTransactions.addAccount') }}
         </el-button>
       </template>
@@ -285,6 +285,13 @@ const { t } = useI18n()
 const auth = useAuthStore()
 const canWrite = computed(() => auth.can('procurement:payment:write'))
 const canReadAccounts = computed(() => auth.can('export:receipt:read'))
+// 建账户走的是 export:receipt:write，**不是本页那个 canWrite**
+// （procurement:payment:write）。这两个权限是两回事：搬过来之前账户表单
+// 住在收款对账页上，那页的 canWrite 恰好就是 export:receipt:write，
+// 口径是对齐的；照搬本页的 canWrite 会两个方向都错——有采购写权限没
+// 收款写权限的人看得见按钮、点下去 403，反过来有收款写权限的人明明
+// 建得了却看不见表单。
+const canWriteAccounts = computed(() => auth.can('export:receipt:write'))
 
 interface TxnRow {
   id: string
