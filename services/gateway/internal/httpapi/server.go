@@ -414,29 +414,19 @@ func (s *Server) Router() http.Handler {
 		// neither should be able to do the other's job by accident.
 		r.With(s.perm("export:receipt:read")).Get("/api/bank-accounts", s.listBankAccounts)
 		r.With(s.perm("export:receipt:write")).Post("/api/bank-accounts", s.createBankAccount)
-		// receipt-transactions, 不是 bank-transactions：这一组和采购那边的
-		// 银行流水（第 540 行起）曾经共用后一个地址，而 chi 对重复注册既不
-		// 报错也不警告，**后注册的静默覆盖先注册的**。采购那组在后面，于是
-		// 收款对账的列表实际打到了采购的服务上，取回来的字段名也不一样
-		// （采购叫 items，出口叫 transactions），页面拿不到就渲染成空表——
-		// 全程没有一行错误日志。而「登记流水」用的是 POST，没被覆盖，所以
-		// 写进的是出口的库、读的却是采购的库。
+		// 「收款对账」那一组地址整体下线了（/api/receipt-transactions/*、
+		// /api/receipt-allocations/{id}/reverse、/api/open-receivables）。
 		//
-		// 让路的是出口这一组而不是采购那一组：银行流水本身是一份谁都要用的
-		// 事实（同汇率），将来会以 bank-transactions 这个名字统一收口，
-		// 收款对账只是它「归属客户」的那一部分视图。见 docs/开发计划.md F2。
-		r.With(s.perm("export:receipt:read")).Get("/api/receipt-transactions", s.listTransactions)
-		r.With(s.perm("export:receipt:read")).Get("/api/receipt-transactions/{id}", s.getTransaction)
-		r.With(s.perm("export:receipt:write")).Post("/api/receipt-transactions", s.recordTransaction)
-		r.With(s.perm("export:receipt:write")).Post("/api/receipt-transactions/{id}/allocate", s.allocateReceipt)
-		r.With(s.perm("export:receipt:write")).Post("/api/receipt-transactions/{id}/irrelevant", s.markTransactionIrrelevant)
-		r.With(s.perm("export:receipt:write")).Post("/api/receipt-transactions/{id}/reopen", s.reopenTransaction)
-		// 认差结清：核不满的行由人确认完成，差额带着类别落账。
-		r.With(s.perm("export:receipt:write")).Post("/api/receipt-transactions/{id}/settle", s.settleTransaction)
-		r.With(s.perm("export:receipt:write")).Post("/api/receipt-transactions/{id}/unsettle", s.unsettleTransaction)
-		// Reversal, not deletion: there is no DELETE route here on purpose.
-		r.With(s.perm("export:receipt:write")).Post("/api/receipt-allocations/{id}/reverse", s.reverseAllocation)
-		r.With(s.perm("export:receipt:read")).Get("/api/open-receivables", s.listOpenReceivables)
+		// 需求变更之后核销不再从一行银行流水出发：财务在「待核销」页上选一张
+		// 合同、手填金额，走下面的 /api/receivable-due/{id}/receipts。旧的那
+		// 一组是**另一条写路径**——它写的核销行挂着 bank_txn_id，绕过新页面
+		// 的形状——留着一个没有界面、却仍然能写账的入口，是下一次「数据怎么
+		// 会变成这样」的起点，所以一并摘掉。
+		//
+		// 服务端的实现和 proto 上的 RPC 都留在原地：老数据里挂着流水的核销行
+		// 还要能冲销，那条路由 ReverseContractReceipt 内部转交（见
+		// export/internal/app/receivable.go），它带着行锁、认差结清守门和
+		// 认领量回写，是新入口缺的那三样。
 		// 应收到期清单（E1）：沿用收款的读权限——能看收款的人就该看得见该收什么。
 		r.With(s.perm("export:receipt:read")).Get("/api/receivable-due", s.listReceivableDue)
 		// 收款结清：停催是对钱的判断，走收款的写权限。

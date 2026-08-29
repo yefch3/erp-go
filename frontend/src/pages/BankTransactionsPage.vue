@@ -20,6 +20,11 @@
           </el-select>
         </el-tooltip>
         <el-button v-if="canWrite" @click="openRecord">{{ t('bankTransactions.record') }}</el-button>
+        <!-- 我们自己的账户。原来住在收款对账页上，那页撤掉之后搬来这里——
+             账户是「钱进了我们哪个户头」，本来就是这本账的一部分。
+             按 export:receipt:read 显示：接口挂的是这个权限，采购经理能打开
+             本页但没有它，不判断的话按钮点下去就是 403。 -->
+        <el-button v-if="canReadAccounts" @click="openAccounts">{{ t('bankTransactions.accounts') }}</el-button>
         <el-button v-if="canWrite" type="primary" :loading="importing" @click="fileInput?.click()">
           {{ t('bankTransactions.import') }}
         </el-button>
@@ -168,6 +173,39 @@
       </template>
     </el-dialog>
 
+    <!-- 我们自己的账户：一张清单加一个新增表单。收款对账页撤掉之后搬来
+         这里——账户回答的是「钱进/出我们哪个户头」，是这本账的一部分。 -->
+    <el-dialog v-model="accountsOpen" :title="t('bankTransactions.accounts')" width="min(640px, 94vw)" destroy-on-close>
+      <el-alert type="info" :closable="false" show-icon>{{ t('bankTransactions.accountsHint') }}</el-alert>
+      <el-table :data="accounts" size="small" style="margin-top: 10px">
+        <el-table-column :label="t('bankTransactions.accountName')" prop="accountName" min-width="170" />
+        <el-table-column :label="t('bankTransactions.accountNo')" prop="accountNo" min-width="150" />
+        <el-table-column :label="t('bankTransactions.bankName')" prop="bankName" min-width="130" />
+        <el-table-column :label="t('bankTransactions.currency')" prop="currency" width="80" />
+        <template #empty>{{ t('bankTransactions.accountsEmpty') }}</template>
+      </el-table>
+      <el-form v-if="canWrite" :model="accountForm" label-width="90px" style="margin-top: 14px">
+        <el-form-item :label="t('bankTransactions.accountName')" required>
+          <el-input v-model="accountForm.accountName" />
+        </el-form-item>
+        <el-form-item :label="t('bankTransactions.accountNo')" required>
+          <el-input v-model="accountForm.accountNo" />
+        </el-form-item>
+        <el-form-item :label="t('bankTransactions.bankName')">
+          <el-input v-model="accountForm.bankName" style="width: 240px" />
+          <el-select v-model="accountForm.currency" style="width: 110px; margin-left: 12px">
+            <el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="accountsOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button v-if="canWrite" type="primary" :loading="savingAccount" @click="submitAccount">
+          {{ t('bankTransactions.addAccount') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 手工登记。CSV 之外的另一条入口：银行还没出对账单、或者对方先发了
          水单，先把这笔钱记下来。和导入落同一张表、同一套流水号去重——
          之后再导对账单，同号的行自动跳过，不会记重。 -->
@@ -187,6 +225,13 @@
         </el-form-item>
         <el-form-item :label="t('bankTransactions.date')" required>
           <el-date-picker v-model="recordForm.txnDate" type="date" value-format="YYYY-MM-DD" style="width: 180px" />
+        </el-form-item>
+        <!-- 钱进/出我们哪个户头。选填——CSV 导进来的行本来也没有这个信息。 -->
+        <el-form-item v-if="canReadAccounts" :label="t('bankTransactions.account')">
+          <el-select v-model="recordForm.accountId" clearable style="width: 100%" :placeholder="t('bankTransactions.accountPlaceholder')">
+            <el-option v-for="a in accounts" :key="a.id" :value="String(a.id)"
+              :label="`${a.accountName} · ${a.accountNo} · ${a.currency}`" />
+          </el-select>
         </el-form-item>
         <el-form-item :label="t('bankTransactions.bankRef')" required>
           <el-input v-model="recordForm.bankRef" :placeholder="t('bankTransactions.bankRefPlaceholder')" />
@@ -239,6 +284,7 @@ import { useAuthStore } from '../stores/auth'
 const { t } = useI18n()
 const auth = useAuthStore()
 const canWrite = computed(() => auth.can('procurement:payment:write'))
+const canReadAccounts = computed(() => auth.can('export:receipt:read'))
 
 interface TxnRow {
   id: string
@@ -298,14 +344,58 @@ const recording = ref(false)
 const recordForm = reactive({
   direction: 'CREDIT', amount: '', currency: 'USD', txnDate: '',
   bankRef: '', counterparty: '', remittanceInfo: '', ownership: '', detail: '',
+  accountId: '',
 })
+
+// ── 我们自己的账户 ────────────────────────────────────────
+//
+// 原来住在收款对账页上；那页撤掉之后搬来这里，账户本来就是这本账的一部分。
+// 接口挂在 export:receipt:* 上（数据经出口服务代理），而本页的门是
+// procurement:payment:*——采购经理有后者、没有前者，所以入口按前者显示，
+// 否则他点开就是一个没头没脑的 403。
+interface Account { id: string; accountNo: string; accountName: string; bankName: string; currency: string }
+const accounts = ref<Account[]>([])
+const accountsOpen = ref(false)
+const savingAccount = ref(false)
+const accountForm = reactive({ accountNo: '', accountName: '', bankName: '', currency: 'USD' })
+
+async function loadAccounts() {
+  if (!canReadAccounts.value) return
+  accounts.value = (await get<{ accounts: Account[] }>('/bank-accounts')).accounts ?? []
+}
+
+async function openAccounts() {
+  accountsOpen.value = true
+  await loadAccounts()
+}
+
+async function submitAccount() {
+  if (!accountForm.accountName.trim() || !accountForm.accountNo.trim()) {
+    ElMessage.warning(t('bankTransactions.accountIncomplete'))
+    return
+  }
+  savingAccount.value = true
+  try {
+    await post('/bank-accounts', {
+      account_no: accountForm.accountNo, account_name: accountForm.accountName,
+      bank_name: accountForm.bankName, currency: accountForm.currency,
+    })
+    Object.assign(accountForm, { accountNo: '', accountName: '', bankName: '', currency: 'USD' })
+    await loadAccounts()
+    ElMessage.success(t('bankTransactions.accountAdded'))
+  } catch { /* surfaced by the api layer */ } finally {
+    savingAccount.value = false
+  }
+}
 
 function openRecord() {
   Object.assign(recordForm, {
     direction: 'CREDIT', amount: '', currency: 'USD', txnDate: '',
     bankRef: '', counterparty: '', remittanceInfo: '', ownership: '', detail: '',
+    accountId: '',
   })
   recordOpen.value = true
+  void loadAccounts()
 }
 
 async function saveRecord() {
@@ -321,6 +411,7 @@ async function saveRecord() {
       transaction: {
         direction: recordForm.direction, amount: recordForm.amount,
         currency: recordForm.currency, txnDate: recordForm.txnDate,
+        accountId: recordForm.accountId || '0',
         bankRef: recordForm.bankRef, counterparty: recordForm.counterparty,
         remittanceInfo: recordForm.remittanceInfo,
         ownership: recordForm.ownership,

@@ -58,14 +58,15 @@ export const router = createRouter({
         { path: 'shipments', component: () => import('./pages/ShipmentsPage.vue') },
         { path: 'shipping', component: () => import('./pages/ShippingPage.vue') },
         { path: 'shipping/:id', component: () => import('./pages/ShippingDetailPage.vue') },
-        { path: 'receipts', component: () => import('./pages/ReceiptsPage.vue') },
         // 待核销 / 已完成是同一个组件的两条地址，靠 path 决定看哪一档。
         // 不用一页带 query 的写法：菜单高亮按精确路径相等判断，带 query
         // 的地址点进去菜单不会亮。
         { path: 'receivable-cases', component: () => import('./pages/ReceivableDuePage.vue') },
         { path: 'receivable-cases-done', component: () => import('./pages/ReceivableDuePage.vue') },
-        // 老地址留着：顶栏的应收提醒会跳 /receivable-due?keyword=合同号。
-        { path: 'receivable-due', component: () => import('./pages/ReceivableDuePage.vue') },
+        // 老地址重定向到待核销：外面还有指向它的链接（老书签、历史提醒里
+        // 存下来的 detailUrl）。redirect 会带着 query 一起过去，所以
+        // ?keyword=合同号 仍然能把人送到那一行上。
+        { path: 'receivable-due', redirect: (to) => ({ path: '/receivable-cases', query: to.query }) },
         { path: 'stocks', component: () => import('./pages/StocksPage.vue') },
         { path: 'outbounds', component: () => import('./pages/OutboundsPage.vue') },
         { path: 'warehouses', component: () => import('./pages/WarehouseWorkbenchPage.vue') },
