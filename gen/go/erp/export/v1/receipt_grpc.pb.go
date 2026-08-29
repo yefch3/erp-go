@@ -33,6 +33,8 @@ const (
 	ReceiptService_ListOpenReceivables_FullMethodName         = "/erp.export.v1.ReceiptService/ListOpenReceivables"
 	ReceiptService_GetContractReceipts_FullMethodName         = "/erp.export.v1.ReceiptService/GetContractReceipts"
 	ReceiptService_ListReceivableDue_FullMethodName           = "/erp.export.v1.ReceiptService/ListReceivableDue"
+	ReceiptService_RecordContractReceipt_FullMethodName       = "/erp.export.v1.ReceiptService/RecordContractReceipt"
+	ReceiptService_ReverseContractReceipt_FullMethodName      = "/erp.export.v1.ReceiptService/ReverseContractReceipt"
 	ReceiptService_CloseReceivable_FullMethodName             = "/erp.export.v1.ReceiptService/CloseReceivable"
 	ReceiptService_ReopenReceivable_FullMethodName            = "/erp.export.v1.ReceiptService/ReopenReceivable"
 	ReceiptService_ListReceivableReminders_FullMethodName     = "/erp.export.v1.ReceiptService/ListReceivableReminders"
@@ -79,10 +81,18 @@ type ReceiptServiceClient interface {
 	ListOpenReceivables(ctx context.Context, in *ListOpenReceivablesRequest, opts ...grpc.CallOption) (*ListOpenReceivablesResponse, error)
 	// The other half: one contract collected in instalments.
 	GetContractReceipts(ctx context.Context, in *GetContractReceiptsRequest, opts ...grpc.CallOption) (*GetContractReceiptsResponse, error)
-	// 应收到期清单（E1）：还没收完的生效合同，按该收的日子排。
+	// 应收到期清单（E1）：生效合同的收款情况，按该收的日子排。
+	// closed_only 翻面就是「已完成」页。
 	ListReceivableDue(ctx context.Context, in *ListReceivableDueRequest, opts ...grpc.CallOption) (*ListReceivableDueResponse, error)
-	// 收款结清：这张合同的钱「不用再催了」，由人说出来。只关催收的口，
-	// 不关钱的门——结清的合同照样能核销，钱真的又来了就撤销。
+	// 记一笔收款到合同上：员工手填金额和到账日期，**不连银行流水**。
+	RecordContractReceipt(ctx context.Context, in *RecordContractReceiptRequest, opts ...grpc.CallOption) (*RecordContractReceiptResponse, error)
+	// 冲销一笔记错的收款：写一条相反的记录，不删原记录。
+	ReverseContractReceipt(ctx context.Context, in *ReverseContractReceiptRequest, opts ...grpc.CallOption) (*ReverseContractReceiptResponse, error)
+	// 确认核销完成：这张合同的收款「说清了」，由人说出来。
+	//
+	// 完成与数字**完全解耦**：差额是正是负都能确认，数字对上了也不会自动
+	// 确认；确认之后照样能继续记收款，钱真的又来了就撤销完成。
+	// 有一条活着的记录 = 已完成页，没有 = 待核销页。
 	CloseReceivable(ctx context.Context, in *CloseReceivableRequest, opts ...grpc.CallOption) (*CloseReceivableResponse, error)
 	ReopenReceivable(ctx context.Context, in *ReopenReceivableRequest, opts ...grpc.CallOption) (*ReopenReceivableResponse, error)
 	// 应收提醒收件箱（E1 第二期）。
@@ -238,6 +248,26 @@ func (c *receiptServiceClient) ListReceivableDue(ctx context.Context, in *ListRe
 	return out, nil
 }
 
+func (c *receiptServiceClient) RecordContractReceipt(ctx context.Context, in *RecordContractReceiptRequest, opts ...grpc.CallOption) (*RecordContractReceiptResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecordContractReceiptResponse)
+	err := c.cc.Invoke(ctx, ReceiptService_RecordContractReceipt_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *receiptServiceClient) ReverseContractReceipt(ctx context.Context, in *ReverseContractReceiptRequest, opts ...grpc.CallOption) (*ReverseContractReceiptResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReverseContractReceiptResponse)
+	err := c.cc.Invoke(ctx, ReceiptService_ReverseContractReceipt_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *receiptServiceClient) CloseReceivable(ctx context.Context, in *CloseReceivableRequest, opts ...grpc.CallOption) (*CloseReceivableResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CloseReceivableResponse)
@@ -318,10 +348,18 @@ type ReceiptServiceServer interface {
 	ListOpenReceivables(context.Context, *ListOpenReceivablesRequest) (*ListOpenReceivablesResponse, error)
 	// The other half: one contract collected in instalments.
 	GetContractReceipts(context.Context, *GetContractReceiptsRequest) (*GetContractReceiptsResponse, error)
-	// 应收到期清单（E1）：还没收完的生效合同，按该收的日子排。
+	// 应收到期清单（E1）：生效合同的收款情况，按该收的日子排。
+	// closed_only 翻面就是「已完成」页。
 	ListReceivableDue(context.Context, *ListReceivableDueRequest) (*ListReceivableDueResponse, error)
-	// 收款结清：这张合同的钱「不用再催了」，由人说出来。只关催收的口，
-	// 不关钱的门——结清的合同照样能核销，钱真的又来了就撤销。
+	// 记一笔收款到合同上：员工手填金额和到账日期，**不连银行流水**。
+	RecordContractReceipt(context.Context, *RecordContractReceiptRequest) (*RecordContractReceiptResponse, error)
+	// 冲销一笔记错的收款：写一条相反的记录，不删原记录。
+	ReverseContractReceipt(context.Context, *ReverseContractReceiptRequest) (*ReverseContractReceiptResponse, error)
+	// 确认核销完成：这张合同的收款「说清了」，由人说出来。
+	//
+	// 完成与数字**完全解耦**：差额是正是负都能确认，数字对上了也不会自动
+	// 确认；确认之后照样能继续记收款，钱真的又来了就撤销完成。
+	// 有一条活着的记录 = 已完成页，没有 = 待核销页。
 	CloseReceivable(context.Context, *CloseReceivableRequest) (*CloseReceivableResponse, error)
 	ReopenReceivable(context.Context, *ReopenReceivableRequest) (*ReopenReceivableResponse, error)
 	// 应收提醒收件箱（E1 第二期）。
@@ -378,6 +416,12 @@ func (UnimplementedReceiptServiceServer) GetContractReceipts(context.Context, *G
 }
 func (UnimplementedReceiptServiceServer) ListReceivableDue(context.Context, *ListReceivableDueRequest) (*ListReceivableDueResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListReceivableDue not implemented")
+}
+func (UnimplementedReceiptServiceServer) RecordContractReceipt(context.Context, *RecordContractReceiptRequest) (*RecordContractReceiptResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RecordContractReceipt not implemented")
+}
+func (UnimplementedReceiptServiceServer) ReverseContractReceipt(context.Context, *ReverseContractReceiptRequest) (*ReverseContractReceiptResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReverseContractReceipt not implemented")
 }
 func (UnimplementedReceiptServiceServer) CloseReceivable(context.Context, *CloseReceivableRequest) (*CloseReceivableResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CloseReceivable not implemented")
@@ -664,6 +708,42 @@ func _ReceiptService_ListReceivableDue_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ReceiptService_RecordContractReceipt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordContractReceiptRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReceiptServiceServer).RecordContractReceipt(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReceiptService_RecordContractReceipt_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReceiptServiceServer).RecordContractReceipt(ctx, req.(*RecordContractReceiptRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ReceiptService_ReverseContractReceipt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReverseContractReceiptRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReceiptServiceServer).ReverseContractReceipt(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReceiptService_ReverseContractReceipt_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReceiptServiceServer).ReverseContractReceipt(ctx, req.(*ReverseContractReceiptRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ReceiptService_CloseReceivable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CloseReceivableRequest)
 	if err := dec(in); err != nil {
@@ -798,6 +878,14 @@ var ReceiptService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListReceivableDue",
 			Handler:    _ReceiptService_ListReceivableDue_Handler,
+		},
+		{
+			MethodName: "RecordContractReceipt",
+			Handler:    _ReceiptService_RecordContractReceipt_Handler,
+		},
+		{
+			MethodName: "ReverseContractReceipt",
+			Handler:    _ReceiptService_ReverseContractReceipt_Handler,
 		},
 		{
 			MethodName: "CloseReceivable",

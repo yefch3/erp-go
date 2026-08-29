@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/shopspring/decimal"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
 
@@ -118,21 +119,202 @@ func (s *Service) BackfillReceivableDue(ctx context.Context, tenantID, customerI
 	})
 }
 
-// ── 收款结清 ───────────────────────────────────────────────────────
+// ── 记一笔收款 ─────────────────────────────────────────────────────
 //
-// 「算式说还欠、人说不欠了」的出口：损耗认了、尾差不追、合同取消退了款。
-// 只关催收的口，不关钱的门——结清的合同照样能核销，钱真的又来了就撤销。
+// 员工在待核销页上选一张合同，把金额和到账日期手填进去。**一根线都不连
+// 银行流水**——那本账在采购库里，只用来存银行给的 statement。
+//
+// 落的还是 receipt_allocations 那张表（transaction_id 留空），于是「这张
+// 合同收了多少」= sum(amount + fee_amount) 这句话在六处地方一个字都不用改，
+// 老行和新行天然一起求和。
 
-var receivableClosureCategories = map[string]bool{
-	"LOSS": true, "ROUNDING": true, "CANCELLED": true, "OTHER": true,
+// ContractReceiptInput 是员工手填的一笔钱。
+type ContractReceiptInput struct {
+	ContractID int64
+	// 界面上**永远填正数**，退款由 IsRefund 表达。翻号只发生在写库那一刻，
+	// 于是所有守门都在正数域里比大小——负数一旦进到比较里，「不能超过」
+	// 那类判断会静默失效。
+	Amount     string
+	IsRefund   bool
+	ReceivedAt string // YYYY-MM-DD，钱哪天到的；空表示不记
+	Note       string
 }
 
-// CloseReceivable 把一张合同的应收停催，差额快照进记录。
+// RecordContractReceipt 记一笔收款（或退款）到一张合同上。
+//
+// 有意**不设**「不能超过合同金额」那种上限：多收、汇路尾差、并笔付款都是
+// 真事，而这次改造的原则就是数字由人负责、系统不替人判断对错。唯一保留的
+// 一道是退款不能超过这张合同的已收净额——那不是「数字对不上」，那是退一笔
+// 从来没收到过的钱，物理上不成立。
+func (s *Service) RecordContractReceipt(ctx context.Context, tenantID int64, in ContractReceiptInput, op Operator) (store.ContractReceiptProgressRow, error) {
+	amount, err := decimal.NewFromString(strings.TrimSpace(in.Amount))
+	if err != nil || !amount.IsPositive() {
+		return store.ContractReceiptProgressRow{}, apierr.Invalid("EX_RECEIPT_AMOUNT_INVALID",
+			"金额必须是大于零的数字——退款也填正数，选「退款」即可")
+	}
+	receivedAt := strings.TrimSpace(in.ReceivedAt)
+	if receivedAt != "" {
+		if _, err := time.Parse("2006-01-02", receivedAt); err != nil {
+			return store.ContractReceiptProgressRow{}, apierr.Invalid("EX_RECEIPT_DATE_INVALID",
+				"到账日期格式应为 YYYY-MM-DD")
+		}
+	}
+
+	progress, err := s.q.ContractReceiptProgress(ctx, store.ContractReceiptProgressParams{
+		TenantID: tenantID, ContractID: in.ContractID,
+	})
+	if err == pgx.ErrNoRows {
+		return store.ContractReceiptProgressRow{}, apierr.NotFound("EX_CONTRACT_NOT_FOUND", "合同不存在")
+	}
+	if err != nil {
+		return store.ContractReceiptProgressRow{}, err
+	}
+	// 币种跟合同走，不让人填——问一个只有一个正确答案的问题只会制造错答案。
+	if progress.Currency == "" {
+		return store.ContractReceiptProgressRow{}, apierr.Invalid("EX_CONTRACT_NO_VERSION",
+			"这张合同还没有生效版本，先让合同生效再记收款")
+	}
+	stored := amount
+	if in.IsRefund {
+		received := decimal.RequireFromString(progress.ReceivedAmount)
+		if amount.GreaterThan(received) {
+			return store.ContractReceiptProgressRow{}, apierr.Invalid("EX_REFUND_EXCEEDS_RECEIVED",
+				"退款 "+amount.String()+" 超过这张合同的已收净额 "+received.String()+
+					"——退不出从来没收到过的钱")
+		}
+		stored = amount.Neg()
+	}
+
+	if _, err := s.q.AddReceiptAllocation(ctx, store.AddReceiptAllocationParams{
+		TenantID: tenantID,
+		// 0 = 不挂银行流水。新模型下这里永远是 0。
+		TransactionID: 0,
+		ContractID:    in.ContractID,
+		ContractNo:    progress.ContractNo,
+		CustomerName:  progress.CustomerName,
+		Amount:        stored.String(),
+		FeeAmount:     "0",
+		// 手工记账没有「手续费」这个概念了——员工填的就是到账的那个数，
+		// 一个数说完。fee_amount 恒为 0，所以这一档只是为了过 CHECK
+		// （那一列不收空串），语义上不参与任何计算。
+		FeeCategory: "OTHER",
+		Currency:    progress.Currency,
+		ReversalOf:  0,
+		AllocatedBy: op.ID, AllocatedByName: op.Name,
+		ReceivedAt: receivedAt,
+		Note:       strings.TrimSpace(in.Note),
+	}); err != nil {
+		return store.ContractReceiptProgressRow{}, err
+	}
+	return s.q.ContractReceiptProgress(ctx, store.ContractReceiptProgressParams{
+		TenantID: tenantID, ContractID: in.ContractID,
+	})
+}
+
+// ReverseContractReceipt 冲销一笔记错的收款：写一条相反的记录，不删原记录。
+//
+// 和核销侧同一条纪律——「记错了」和「从没发生过」是两件事，账上要看得出
+// 有人改过。
+func (s *Service) ReverseContractReceipt(ctx context.Context, tenantID, entryID int64, reason string, op Operator) (store.ContractReceiptProgressRow, error) {
+	if strings.TrimSpace(reason) == "" {
+		return store.ContractReceiptProgressRow{}, apierr.Invalid("EX_REVERSE_REASON_REQUIRED",
+			"请填写冲销原因——没有理由的冲销事后没人说得清")
+	}
+	orig, err := s.q.GetAllocation(ctx, store.GetAllocationParams{TenantID: tenantID, ID: entryID})
+	if err == pgx.ErrNoRows {
+		return store.ContractReceiptProgressRow{}, apierr.NotFound("EX_ALLOC_NOT_FOUND", "这笔记录不存在")
+	}
+	if err != nil {
+		return store.ContractReceiptProgressRow{}, err
+	}
+	if orig.ReversalOf != 0 {
+		return store.ContractReceiptProgressRow{}, apierr.Invalid("EX_ALLOC_IS_REVERSAL",
+			"这本身就是一条冲销记录")
+	}
+	// **挂着银行流水的老行必须走老路。**
+	//
+	// 这张合同的明细里同时住着两种行：新的手工记账（transaction_id 为空）和
+	// F2 之前从银行流水核销出来的老行。界面上它们长得一样、冲销按钮也一样，
+	// 但老行的冲销要多做三件事，缺一件都会留下查不出来的烂账：
+	//
+	//	· 拿那一行流水的建议锁（否则和并发的核销抢同一行）
+	//	· 撞上「认差结清」要拒绝（结清记的是「认下那一刻的余额」，
+	//	  事后把钱冲走会让那句话和事实同时成立又互相矛盾）
+	//	· 把重算后的认领量报回采购的账本，否则那一行的 claimed_amount
+	//	  停在旧值，永远回不到收款对账的「待处理」队列——钱在出口这边
+	//	  已经空出来，在账本上却还认领着，全程没有一行报错
+	//
+	// 这三件事 ReverseAllocation 都做了，所以这里原样转过去，而不是在这
+	// 复制一遍（复制必然漏，而且下次改只会改一边）。
+	if orig.TransactionID != 0 {
+		if _, err := s.ReverseAllocation(ctx, tenantID, entryID, reason, op); err != nil {
+			return store.ContractReceiptProgressRow{}, err
+		}
+		return s.q.ContractReceiptProgress(ctx, store.ContractReceiptProgressParams{
+			TenantID: tenantID, ContractID: orig.ContractID,
+		})
+	}
+	reversed, err := s.q.AllocationReversed(ctx, store.AllocationReversedParams{
+		TenantID: tenantID, AllocationID: entryID,
+	})
+	if err != nil {
+		return store.ContractReceiptProgressRow{}, err
+	}
+	if reversed {
+		return store.ContractReceiptProgressRow{}, apierr.Invalid("EX_ALLOC_ALREADY_REVERSED",
+			"这笔记录已经冲销过了")
+	}
+	if _, err := s.q.AddReceiptAllocation(ctx, store.AddReceiptAllocationParams{
+		TenantID: tenantID, TransactionID: orig.TransactionID,
+		ContractID: orig.ContractID, ContractNo: orig.ContractNo,
+		CustomerName: orig.CustomerName,
+		// 镜像负行。fee_category 跟着原行走，否则按类别求和会对不上
+		// （而且空串过不了 CHECK）。
+		Amount:      decimal.RequireFromString(orig.Amount).Neg().String(),
+		FeeAmount:   decimal.RequireFromString(orig.FeeAmount).Neg().String(),
+		FeeCategory: orig.FeeCategory,
+		Currency:    orig.Currency,
+		ReversalOf:  entryID, ReverseReason: strings.TrimSpace(reason),
+		AllocatedBy: op.ID, AllocatedByName: op.Name,
+		ReceivedAt: "", Note: "",
+	}); err != nil {
+		var pgErr interface{ SQLState() string }
+		if errors.As(err, &pgErr) && pgErr.SQLState() == "23505" {
+			return store.ContractReceiptProgressRow{}, apierr.Conflict("EX_ALLOC_ALREADY_REVERSED",
+				"这笔记录已经冲销过了")
+		}
+		return store.ContractReceiptProgressRow{}, err
+	}
+	return s.q.ContractReceiptProgress(ctx, store.ContractReceiptProgressParams{
+		TenantID: tenantID, ContractID: orig.ContractID,
+	})
+}
+
+// ── 确认核销完成 ───────────────────────────────────────────────────
+//
+// 这张表原本叫「收款结清」，管的是「算式说还欠、人说不欠了」时停掉催收。
+// 新模型下它升格成**待核销 / 已完成两页的分界线**：有一条活着的记录就是
+// 已完成，没有就还在待核销。
+//
+// 升格之所以成立，是因为它当初就是照「完成与数字无关」设计的——差额只存
+// 快照、不做校验，正负都收。所以这里三条规矩一条都不用新增：
+//
+//	· 差额是正是负都能确认完成（多收着不退也是一种了结）
+//	· 数字对上了**不会**自动确认完成，必须有人点
+//	· 确认完成之后照样能继续记收款，钱真的又来了就撤销完成
+var receivableClosureCategories = map[string]bool{
+	// 新模型下最常见的一档：收齐了，正常结案。老的四档全是「有差额」的
+	// 理由，因为老模型里收满是算式自动消失、根本走不到这张表。
+	"SETTLED": true,
+	"LOSS":    true, "ROUNDING": true, "CANCELLED": true, "OTHER": true,
+}
+
+// CloseReceivable 确认这张合同的收款核销完成，差额快照进记录。
 func (s *Service) CloseReceivable(ctx context.Context, tenantID, contractID int64, category, note string, op Operator) error {
 	category = strings.ToUpper(strings.TrimSpace(category))
 	if !receivableClosureCategories[category] {
 		return apierr.Invalid("EX_RCLOSE_CATEGORY_INVALID",
-			"结清类别只能是损耗、尾差、合同取消或其他")
+			"完成类别只能是正常收完、损耗、尾差、合同取消或其他")
 	}
 	// 差额取快照用的是和清单同一套算法（在途版本 + 核销求和）。
 	progress, err := s.q.ContractReceiptProgress(ctx, store.ContractReceiptProgressParams{

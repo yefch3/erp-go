@@ -40,10 +40,18 @@ service ReceiptService {
   rpc ListOpenReceivables(ListOpenReceivablesRequest) returns (ListOpenReceivablesResponse);
   // The other half: one contract collected in instalments.
   rpc GetContractReceipts(GetContractReceiptsRequest) returns (GetContractReceiptsResponse);
-  // 应收到期清单（E1）：还没收完的生效合同，按该收的日子排。
+  // 应收到期清单（E1）：生效合同的收款情况，按该收的日子排。
+  // closed_only 翻面就是「已完成」页。
   rpc ListReceivableDue(ListReceivableDueRequest) returns (ListReceivableDueResponse);
-  // 收款结清：这张合同的钱「不用再催了」，由人说出来。只关催收的口，
-  // 不关钱的门——结清的合同照样能核销，钱真的又来了就撤销。
+  // 记一笔收款到合同上：员工手填金额和到账日期，**不连银行流水**。
+  rpc RecordContractReceipt(RecordContractReceiptRequest) returns (RecordContractReceiptResponse);
+  // 冲销一笔记错的收款：写一条相反的记录，不删原记录。
+  rpc ReverseContractReceipt(ReverseContractReceiptRequest) returns (ReverseContractReceiptResponse);
+  // 确认核销完成：这张合同的收款「说清了」，由人说出来。
+  //
+  // 完成与数字**完全解耦**：差额是正是负都能确认，数字对上了也不会自动
+  // 确认；确认之后照样能继续记收款，钱真的又来了就撤销完成。
+  // 有一条活着的记录 = 已完成页，没有 = 待核销页。
   rpc CloseReceivable(CloseReceivableRequest) returns (CloseReceivableResponse);
   rpc ReopenReceivable(ReopenReceivableRequest) returns (ReopenReceivableResponse);
   // 应收提醒收件箱（E1 第二期）。
@@ -164,6 +172,12 @@ message ContractReceipt {
   string currency = 9;
   int64 reversal_of = 10;
   string allocated_by_name = 11;
+  // 手工记账补进来的：员工填的到账日期和备注。老行（挂着银行流水的那些）
+  // received_at 为空——那个日子在流水行上。
+  string received_at = 12;
+  string note = 13;
+  string reverse_reason = 14;
+  string allocated_at = 15;
 }
 
 message TransactionInput {
@@ -379,9 +393,27 @@ message ReceivableReminder {
   bool unread = 14;
 }
 
+message RecordContractReceiptRequest {
+  int64 contract_id = 1;
+  // **永远填正数**；退款由 is_refund 表达，翻号只发生在写库那一刻。
+  string amount = 2;
+  bool is_refund = 3;
+  string received_at = 4; // YYYY-MM-DD，空表示不记
+  string note = 5;
+}
+message RecordContractReceiptResponse { ReceiptProgress progress = 1; }
+
+message ReverseContractReceiptRequest {
+  int64 entry_id = 1;
+  // 必填：没有理由的冲销事后没人说得清。
+  string reason = 2;
+}
+message ReverseContractReceiptResponse { ReceiptProgress progress = 1; }
+
 message CloseReceivableRequest {
   int64 contract_id = 1;
-  string category = 2; // LOSS | ROUNDING | CANCELLED | OTHER
+  // SETTLED 正常收完 | LOSS 认亏 | ROUNDING 尾差 | CANCELLED 合同取消 | OTHER
+  string category = 2;
   string note = 3;
 }
 message CloseReceivableResponse {}

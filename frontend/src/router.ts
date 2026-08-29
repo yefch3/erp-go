@@ -59,6 +59,12 @@ export const router = createRouter({
         { path: 'shipping', component: () => import('./pages/ShippingPage.vue') },
         { path: 'shipping/:id', component: () => import('./pages/ShippingDetailPage.vue') },
         { path: 'receipts', component: () => import('./pages/ReceiptsPage.vue') },
+        // 待核销 / 已完成是同一个组件的两条地址，靠 path 决定看哪一档。
+        // 不用一页带 query 的写法：菜单高亮按精确路径相等判断，带 query
+        // 的地址点进去菜单不会亮。
+        { path: 'receivable-cases', component: () => import('./pages/ReceivableDuePage.vue') },
+        { path: 'receivable-cases-done', component: () => import('./pages/ReceivableDuePage.vue') },
+        // 老地址留着：顶栏的应收提醒会跳 /receivable-due?keyword=合同号。
         { path: 'receivable-due', component: () => import('./pages/ReceivableDuePage.vue') },
         { path: 'stocks', component: () => import('./pages/StocksPage.vue') },
         { path: 'outbounds', component: () => import('./pages/OutboundsPage.vue') },

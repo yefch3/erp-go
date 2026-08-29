@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -903,13 +904,26 @@ func (s *Service) ContractReceipts(ctx context.Context, tenantID, contractID int
 	ledger := make(map[int64]BankRow, len(rows))
 	out := make([]ContractReceipt, 0, len(rows))
 	for _, r := range rows {
-		row, ok := ledger[r.TransactionID]
-		if !ok {
-			row, err = s.bank.Get(ctx, r.TransactionID)
-			if err != nil {
-				return progress, nil, err
+		var row BankRow
+		// 新模型下的手工记账不挂流水（transaction_id 为空，读出来是 0），
+		// 流水那几列就该空着。老行还带着真实的流水号，继续去账本取。
+		//
+		// **取不到也不能让整个页面失败**：这里原来是 `return progress, nil, err`，
+		// 而账本在另一个服务的另一个库里——它一抖，合同详情页的收款明细
+		// 整块 500，而少显示两列银行信息其实无关紧要。
+		if r.TransactionID != 0 {
+			cached, ok := ledger[r.TransactionID]
+			if !ok {
+				fetched, err := s.bank.Get(ctx, r.TransactionID)
+				if err != nil {
+					slog.WarnContext(ctx, "bank row unavailable for contract receipt",
+						"transaction_id", r.TransactionID, "error", err)
+				} else {
+					cached = fetched
+				}
+				ledger[r.TransactionID] = cached
 			}
-			ledger[r.TransactionID] = row
+			row = cached
 		}
 		out = append(out, ContractReceipt{
 			ListAllocationsOfContractRow: r,
