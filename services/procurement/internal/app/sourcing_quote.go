@@ -174,10 +174,10 @@ type SupplierQuoteLineInput struct {
 }
 
 type NewSupplierQuote struct {
-	FactoryRFQID                                                           int64
+	FactoryRFQID                                                                     int64
 	QuotedAt, ValidUntil, Currency, PaymentTerms, Delivery, Incoterm, Remark, Source string
-	ConfirmationStatus, EvidenceNote                                       string
-	Lines                                                                  []SupplierQuoteLineInput
+	ConfirmationStatus, EvidenceNote                                                 string
+	Lines                                                                            []SupplierQuoteLineInput
 }
 
 // rfqEligibleSourcingLineIDs 返回人工复核后保留的询盘明细。

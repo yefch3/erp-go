@@ -96,3 +96,57 @@ func (s *Server) reopenPurchaseOrderPayment(w http.ResponseWriter, r *http.Reque
 	}
 	s.writeProto(w, resp)
 }
+
+// ── 挂在采购单上的凭证 ────────────────────────────────────
+//
+// 发票扫描件、水单、退款回执。供应商发票页下线之后，「留凭证」这件事搬到
+// 对账页上——一张采购单可以有好几份。
+
+func (s *Server) listReconFiles(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.ListReconFiles(r.Context(),
+		&prv1.ListReconFilesRequest{PoId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) presignReconFile(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.PresignReconFileRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.PoId = idFromPath(r)
+	resp, err := s.Orders.PresignReconFile(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) attachReconFile(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.AttachReconFileRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.PoId = idFromPath(r)
+	resp, err := s.Orders.AttachReconFile(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) removeReconFile(w http.ResponseWriter, r *http.Request) {
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "fileId"), 10, 64)
+	resp, err := s.Orders.RemoveReconFile(r.Context(),
+		&prv1.RemoveReconFileRequest{FileId: fileID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}

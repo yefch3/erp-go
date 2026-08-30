@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -270,17 +269,13 @@ func TestRefundCannotExceedWhatWasActuallyPaid(t *testing.T) {
 	}
 }
 
-// 明细里同时住着两种行：手填行和改造前从付款单分配出来的预付行。**冲销老行
-// 不走这道门。**
+// 明细里同时住着两种行：手填行和改造前从付款单分配出来的预付行。冲销**必须
+// 按行的出身走不同的路**——老行要回填付款单的未分配余额，走错路会留下
+// 「付款单以为钱还占着、采购单上钱已经退回」的烂账，而且不报错。
 //
-// 冲一条老行不只是写个负数——它要动那张付款单的未分配余额，那是「付款」这件
-// 事，网关上归 procurement:payment:write 管；而对账页这道门只要
-// procurement:recon:write。在这里代劳，一个只勾了对账权限的角色就能改付款单
-// 的账，职责分离当场破掉，而且没有一行日志说发生过。
-//
-// 所以这条测试钉的是两件事：老行在这道门上被明确拒绝（并说出付款单号），
-// 以及它在自己那道门上照常冲得掉、余额照常弹回去。
-func TestReversingAPaymentBackedEntryIsRefusedHere(t *testing.T) {
+// 供应商付款页下线之后这条尤其要紧：对账页是**唯一**的入口了，它要是不接
+// 这活，所有历史 payment-backed 核销行就变成谁也动不了的死行。
+func TestReversingAPaymentBackedEntryGoesThroughTheOldPath(t *testing.T) {
 	ctx, svc, tenantID, cleanup := reconTestPool(t)
 	defer cleanup()
 	op := Operator{ID: 77, Name: "Finance"}
@@ -321,16 +316,9 @@ func TestReversingAPaymentBackedEntryIsRefusedHere(t *testing.T) {
 		t.Fatalf("两种行都该出现在明细里，实际 %+v", entries)
 	}
 
-	// 老行在对账页这道门上必须被拒，而且要说出付款单号——不说的话，
-	// 用户只知道「不行」，不知道该去哪儿。
-	_, err = svc.ReversePOPayment(ctx, tenantID, oldRow.AllocationID, "记错了", op)
-	wantAllocErr(t, err, "PR_POPAY_PAYMENT_BACKED")
-	if !strings.Contains(err.Error(), adv.PaymentNo) {
-		t.Fatalf("拒绝的时候要说出付款单号 %q，实际 %v", adv.PaymentNo, err)
-	}
-	// 而它在自己那道门上照常冲得掉，付款单的未分配余额跟着弹回 3000。
-	if _, err := svc.ReverseSupplierPaymentAllocation(ctx, tenantID,
-		oldRow.AllocationID, "记错了", op); err != nil {
+	// 冲销老行：付款单的未分配余额必须弹回 3000。弹不回去 = 没走老路，
+	// 那笔钱会在采购单上已经退回、在付款单上却还占着。
+	if _, err := svc.ReversePOPayment(ctx, tenantID, oldRow.AllocationID, "记错了", op); err != nil {
 		t.Fatal(err)
 	}
 	after, err := svc.GetSupplierPayment(ctx, tenantID, adv.ID)
@@ -338,7 +326,8 @@ func TestReversingAPaymentBackedEntryIsRefusedHere(t *testing.T) {
 		t.Fatal(err)
 	}
 	if after.Unallocated != "3000.00" && after.Unallocated != "3000" {
-		t.Fatalf("冲销之后付款单未分配余额应弹回 3000，实际 %q", after.Unallocated)
+		t.Fatalf("冲销挂付款单的行之后，付款单未分配余额应弹回 3000，实际 %q——"+
+			"没弹回去说明没有转交给 ReverseSupplierPaymentAllocation", after.Unallocated)
 	}
 	// 冲销手填行：不该去碰任何付款单。
 	if _, err := svc.ReversePOPayment(ctx, tenantID, newRow.AllocationID, "也记错了", op); err != nil {

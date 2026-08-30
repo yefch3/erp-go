@@ -649,6 +649,13 @@ service PurchaseOrderService {
   rpc ReversePurchaseOrderPayment(ReversePurchaseOrderPaymentRequest) returns (ReversePurchaseOrderPaymentResponse);
   rpc ClosePurchaseOrderPayment(ClosePurchaseOrderPaymentRequest) returns (ClosePurchaseOrderPaymentResponse);
   rpc ReopenPurchaseOrderPayment(ReopenPurchaseOrderPaymentRequest) returns (ReopenPurchaseOrderPaymentResponse);
+  // 挂在一张采购单上的凭证——发票扫描件、水单、退款回执。存的是**纸**，
+  // 不是有金额、有明细、参与运算的单据：它不进任何求和，只是「这笔钱是
+  // 怎么回事」的证据。一张单可以有好几份。
+  rpc PresignReconFile(PresignReconFileRequest) returns (PresignReconFileResponse);
+  rpc AttachReconFile(AttachReconFileRequest) returns (AttachReconFileResponse);
+  rpc ListReconFiles(ListReconFilesRequest) returns (ListReconFilesResponse);
+  rpc RemoveReconFile(RemoveReconFileRequest) returns (RemoveReconFileResponse);
 
   // Bank statement rows: the fifth voice. Imported verbatim from the CSV
   // the bank portal exports, deduplicated by the bank's own reference, and
@@ -1966,4 +1973,51 @@ message ReopenPurchaseOrderPaymentResponse {
 message ReopenPurchaseOrderPaymentRequest {
   int64 po_id = 1;
   string reason = 2;
+}
+
+// ReconFile is one piece of paper filed against a purchase order.
+message ReconFile {
+  int64 id = 1;
+  string file_name = 2;
+  string note = 3;
+  // Short-lived read URL, signed per request. Empty when signing failed —
+  // one unopenable file must not fail the whole list.
+  string url = 4;
+  string uploaded_by_name = 5;
+  string uploaded_at = 6;
+}
+
+message PresignReconFileRequest {
+  int64 po_id = 1;
+  string file_name = 2;
+}
+message PresignReconFileResponse {
+  string key = 1;
+  string upload_url = 2;
+  int32 expires_seconds = 3;
+}
+
+message AttachReconFileRequest {
+  int64 po_id = 1;
+  string key = 2;
+  string file_name = 3;
+  string note = 4;
+}
+
+message AttachReconFileResponse {
+  repeated ReconFile items = 1;
+}
+
+message ListReconFilesRequest {
+  int64 po_id = 1;
+}
+message ListReconFilesResponse {
+  repeated ReconFile items = 1;
+}
+
+message RemoveReconFileRequest {
+  int64 file_id = 1;
+}
+message RemoveReconFileResponse {
+  repeated ReconFile items = 1;
 }

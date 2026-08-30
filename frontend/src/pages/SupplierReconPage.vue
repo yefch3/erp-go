@@ -81,20 +81,45 @@
                 <el-table-column :label="t('supplierRecon.entryBy')" width="160">
                   <template #default="{ row: e }">{{ e.allocatedBy }}<div class="sub">{{ e.allocatedAt }}</div></template>
                 </el-table-column>
-                <el-table-column width="120">
+                <el-table-column width="90">
                   <template #default="{ row: e }">
-                    <!-- 挂付款单的老行不从这道门冲：那要动付款单的未分配余额，
-                         归 procurement:payment:write 管，而这一页只要 recon:write。
-                         按钮直接不给，比点下去报错好。 -->
-                    <span v-if="e.paymentNo" class="sub">{{ t('supplierRecon.reverseElsewhere') }}</span>
+                    <!-- 挂付款单的老行也从这里冲。供应商付款页下线之后这是
+                         唯一入口，服务层会把它转交给带余额回填的老路。 -->
                     <el-button
-                      v-else-if="canWrite && !Number(e.reversalOf) && !reversedIds(row).has(String(e.allocationId))"
+                      v-if="canWrite && !Number(e.reversalOf) && !reversedIds(row).has(String(e.allocationId))"
                       link type="danger" @click="reverseEntry(row, e)"
                     >{{ t('supplierRecon.entryReverse') }}</el-button>
                   </template>
                 </el-table-column>
               </el-table>
               <p v-else class="sub">{{ t('supplierRecon.entriesEmpty') }}</p>
+
+              <!-- 凭证。发票页下线之后「留凭证」搬到了这儿——需求原话是
+                   「供应商发票只是员工用来上传留凭证用的」，所以这里存的是
+                   纸，不是有金额、参与运算的单据。一张单可以有好几份。 -->
+              <div class="files">
+                <div class="files-head">
+                  <span class="files-title">{{ t('supplierRecon.files') }}</span>
+                  <span class="sub">{{ t('supplierRecon.filesHint') }}</span>
+                  <el-button
+                    v-if="canWrite" size="small" type="primary" plain
+                    :loading="uploadingPO === String(row.poId)"
+                    @click="pickFile(row)"
+                  >{{ t('supplierRecon.fileUpload') }}</el-button>
+                </div>
+                <ul v-if="filesOf(row).length" class="file-list">
+                  <li v-for="f in filesOf(row)" :key="f.id">
+                    <a v-if="f.url" :href="f.url" target="_blank" rel="noopener" class="doc-link">{{ f.fileName }}</a>
+                    <span v-else>{{ f.fileName }}</span>
+                    <span v-if="f.note" class="sub"> · {{ f.note }}</span>
+                    <span class="sub"> · {{ t('supplierRecon.fileBy', { name: f.uploadedByName, at: f.uploadedAt }) }}</span>
+                    <el-button v-if="canWrite" link type="danger" size="small" @click="removeFile(row, f)">
+                      {{ t('supplierRecon.fileRemove') }}
+                    </el-button>
+                  </li>
+                </ul>
+                <p v-else class="sub">{{ t('supplierRecon.filesEmpty') }}</p>
+              </div>
             </div>
           </template>
         </el-table-column>
@@ -163,6 +188,8 @@
         </el-table-column>
         <template #empty>{{ emptyText }}</template>
       </el-table>
+
+      <input ref="fileInput" type="file" accept="application/pdf,image/*" style="display: none" @change="onFilePicked" />
 
       <el-pagination
         class="pager"
@@ -393,7 +420,89 @@ async function loadEntries(row: Row) {
 }
 
 function onExpand(row: Row, expanded: Row[]) {
-  if (expanded.includes(row)) void loadEntries(row)
+  if (expanded.includes(row)) {
+    void loadEntries(row)
+    void loadFiles(row)
+  }
+}
+
+// ── 凭证 ──────────────────────────────────────────────────
+//
+// 发票、水单、退款回执。供应商发票页下线之后「留凭证」搬到了这里。
+// 三步直传和银行流水那份对账单同一套（lib/statementUpload 那三步漏一步
+// 都不报错、纸只是悄悄没上去），只是这边一张单可以挂好几份。
+interface ReconFile {
+  id: string
+  fileName: string
+  note: string
+  url: string
+  uploadedByName: string
+  uploadedAt: string
+}
+
+const files = ref<Record<string, ReconFile[]>>({})
+const fileInput = ref<HTMLInputElement | null>(null)
+const uploadingPO = ref('')
+const pendingRow = ref<Row | null>(null)
+
+function filesOf(row: Row): ReconFile[] {
+  return files.value[String(row.poId)] ?? []
+}
+
+async function loadFiles(row: Row) {
+  const d = await get<{ items: ReconFile[] }>(`/supplier-recon/${row.poId}/files`)
+  files.value = { ...files.value, [String(row.poId)]: d.items ?? [] }
+}
+
+function pickFile(row: Row) {
+  pendingRow.value = row
+  fileInput.value?.click()
+}
+
+async function onFilePicked(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  const row = pendingRow.value
+  // input 先清空：同一个文件连选两次，不清的话 change 不会再触发。
+  input.value = ''
+  if (!file || !row) return
+  // 说明这张纸是什么。取消（value 为 null）也照传——备注是锦上添花，
+  // 不该拦住上传本身。
+  const { value } = await ElMessageBox.prompt(
+    t('supplierRecon.fileNotePlaceholder'), t('supplierRecon.fileUpload'),
+    { inputValue: file.name.replace(/\.[^.]+$/, '') },
+  ).catch(() => ({ value: '' }))
+  uploadingPO.value = String(row.poId)
+  try {
+    const signed = await post<{ key: string; uploadUrl: string }>(
+      `/supplier-recon/${row.poId}/files/presign`, { fileName: file.name })
+    const put = await fetch(signed.uploadUrl, { method: 'PUT', body: file })
+    // fetch 对 4xx/5xx 不 reject，只把 ok 置 false。不显式检查的话，一个
+    // 403 的直传会一路走到登记那一步，把一个根本不存在的 key 挂上去——
+    // 列表里于是出现一个点开是 404 的链接，而页面写着「已上传」。
+    if (!put.ok) throw new Error(`upload failed: ${put.status}`)
+    const d = await post<{ items: ReconFile[] }>(`/supplier-recon/${row.poId}/files`, {
+      key: signed.key, fileName: file.name, note: value ?? '',
+    })
+    files.value = { ...files.value, [String(row.poId)]: d.items ?? [] }
+    ElMessage.success(t('supplierRecon.fileUploaded'))
+  } catch {
+    ElMessage.error(t('supplierRecon.fileFailed'))
+  } finally {
+    uploadingPO.value = ''
+    pendingRow.value = null
+  }
+}
+
+async function removeFile(row: Row, f: ReconFile) {
+  await ElMessageBox.confirm(t('supplierRecon.fileRemoveWhy'), t('supplierRecon.fileRemove'), {
+    type: 'warning',
+  }).catch(() => 'cancel').then(async (r) => {
+    if (r === 'cancel') return
+    const d = await post<{ items: ReconFile[] }>(`/supplier-recon/files/${f.id}/remove`, {})
+    files.value = { ...files.value, [String(row.poId)]: d.items ?? [] }
+    ElMessage.success(t('supplierRecon.fileRemoved'))
+  })
 }
 
 function openEntry(row: Row) {
@@ -500,6 +609,7 @@ watch(() => route.query.keyword, (value) => {
 // 都踩过同一个坑。
 watch(isDone, () => {
   entries.value = {}
+  files.value = {}
   reload()
 })
 
@@ -581,6 +691,27 @@ onMounted(() => {
 }
 .negative {
   color: var(--el-color-danger);
+}
+.files {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.files-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.files-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.file-list {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.9;
 }
 .num {
   font-variant-numeric: tabular-nums;
