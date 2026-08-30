@@ -192,7 +192,7 @@ export default {
   financeNav: {
     fx: 'Exchange rates',
     title: 'Finance', receivable: 'Receivable · customers', payable: 'Payable · suppliers', bank: 'Bank',
-    receivableCases: 'To reconcile', receivableCasesDone: 'Completed',
+    customerRecon: 'Customer reconciliation',
     receivableDue: 'Receivables due',
     supplierInvoices: 'Supplier invoices', supplierPayments: 'Supplier payments', supplierStatements: 'Supplier statements', bankTransactions: 'Bank transactions',
   },
@@ -313,6 +313,7 @@ export default {
     empty: 'Nobody used smart conversion this month',
   },
   receivableDue: {
+    tabOpen: 'To reconcile', tabDone: 'Completed',
     entryFee: 'plus {n} top-up',
     addReceipt: 'Record receipt', addReceiptTitle: 'Record a receipt',
     entryKind: 'This is a', kindReceipt: 'Receipt', kindRefund: 'Refund',
@@ -337,7 +338,7 @@ export default {
     figTotal: 'Contract total', figReceived: 'Received', figOpen: 'Gap (open)',
     reopen: 'Reopen', reopenWhy: 'Why reopen {no}? It returns to the chase list and reminders resume.',
     reopenReason: 'Reason', reopened: 'Reopened \u2014 chasing resumed',
-    eyebrow: 'RECEIVABLES DUE', title: 'Receivables due', subtitle: 'Terms run from the contract effective date — what is owed, and when',
+    eyebrow: 'CUSTOMER RECONCILIATION', title: 'Customer reconciliation', subtitle: 'What each contract has collected and what is still short; completion is confirmed by a person, terms run from the effective date',
     overdueCount: 'Overdue', overdueHint: 'Past the agreed date and still unpaid',
     dueSoonCount: 'Due within 30 days', dueSoonHint: 'Know before it slips',
     unsetCount: 'No payment terms', unsetHint: 'Customer master data has no terms, so no due date can be derived',

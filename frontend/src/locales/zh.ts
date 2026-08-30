@@ -192,7 +192,7 @@ export default {
   financeNav: {
     fx: '汇率',
     title: '财务', receivable: '应收 · 客户', payable: '应付 · 供应商', bank: '银行',
-    receivableCases: '待核销', receivableCasesDone: '已完成',
+    customerRecon: '客户对账',
     receivableDue: '应收到期',
     supplierInvoices: '供应商发票', supplierPayments: '供应商付款', supplierStatements: '供应商对账', bankTransactions: '银行流水',
   },
@@ -313,6 +313,7 @@ export default {
     empty: '这个月还没有人用过智能转换',
   },
   receivableDue: {
+    tabOpen: '待核销', tabDone: '已完成',
     entryFee: '另含补足 {n}',
     addReceipt: '记一笔收款', addReceiptTitle: '记一笔收款',
     entryKind: '这笔是', kindReceipt: '收款', kindRefund: '退款',
@@ -337,7 +338,7 @@ export default {
     figTotal: '合同金额', figReceived: '已收', figOpen: '差额（未收）',
     reopen: '撤销结清', reopenWhy: '为什么要撤销 {no} 的结清？合同会回到催收清单，提醒恢复。',
     reopenReason: '撤销原因', reopened: '已撤销，恢复催收',
-    eyebrow: 'RECEIVABLES DUE', title: '应收到期', subtitle: '账期从合同生效日起算——该收的钱，什么时候该收',
+    eyebrow: 'CUSTOMER RECONCILIATION', title: '客户对账', subtitle: '每张合同收了多少、还差多少；核完由人确认，账期从合同生效日起算',
     overdueCount: '已逾期', overdueHint: '过了约定日子还没收到，该打电话了',
     dueSoonCount: '30 天内到期', dueSoonHint: '提前知道，别等逾期',
     unsetCount: '未配账期', unsetHint: '客户主数据里没填账期，算不出到期日',

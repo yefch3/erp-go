@@ -31,8 +31,14 @@
 
     <section class="panel">
       <div class="filters">
-        <!-- 待核销 / 已完成是两条独立地址（菜单高亮按精确路径判断），
-             这里的三个只是待核销页内部的收窄筛子。 -->
+        <!-- 主页签：客户对账下面的两个子页。状态放在地址的 query 里，
+             这样前进/后退和分享链接都对，而菜单高亮看的是 route.path、
+             不受 query 影响，仍然稳稳停在「客户对账」上。 -->
+        <el-radio-group :model-value="isDone ? 'done' : 'open'" class="tabs" @update:model-value="switchTab">
+          <el-radio-button value="open">{{ t('receivableDue.tabOpen') }}</el-radio-button>
+          <el-radio-button value="done">{{ t('receivableDue.tabDone') }}</el-radio-button>
+        </el-radio-group>
+        <!-- 次级筛子，只在待核销那一档下有意义。 -->
         <el-radio-group v-if="!isDone" v-model="view" @change="reload">
           <el-radio-button value="">{{ t('receivableDue.viewAll') }}</el-radio-button>
           <el-radio-button value="overdue">{{ t('receivableDue.viewOverdue') }}</el-radio-button>
@@ -232,13 +238,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { get, post } from '../api'
 import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 const auth = useAuthStore()
 const canWrite = auth.can('export:receipt:write')
 
@@ -286,7 +293,16 @@ const pageSize = 50
 const view = ref('')
 // 待核销 / 已完成是两条独立地址指向同一个组件——菜单高亮按精确路径相等
 // 判断，用一页带 query 的写法菜单不会亮。
-const isDone = computed(() => route.path.endsWith('-done'))
+// 「已完成」是 ?view=done。用 query 而不是第二条路径：两个子页属于同一个
+// 服务（客户对账），菜单上只该有一项，而 route.path 不变高亮才不会掉。
+const isDone = computed(() => route.query.view === 'done')
+
+function switchTab(v: string | number | boolean | undefined) {
+  const q: Record<string, string> = {}
+  if (keyword.value) q.keyword = keyword.value
+  if (v === 'done') q.view = 'done'
+  void router.push({ path: route.path, query: q })
+}
 const emptyText = computed(() => {
   if (isDone.value) return t('receivableDue.emptyDone')
   return view.value === 'overdue' ? t('receivableDue.emptyOverdue') : t('receivableDue.empty')
@@ -479,7 +495,7 @@ watch(() => route.query.keyword, (value) => {
 // 表头和按钮都变了（isDone 是响应式的），表格里却还是上一页那批数据：
 // 对着一张从没确认过的合同点「撤销完成」，或者对着已完成的点「确认完成」。
 // 采购寻源那个列表页早就踩过同一个坑（SourcingCasesListPage 里有同款 watch）。
-watch(() => route.path, () => {
+watch(isDone, () => {
   view.value = ''
   entries.value = {}
   reload()

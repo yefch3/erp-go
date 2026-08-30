@@ -119,7 +119,7 @@ async function openContract(item: Reminder) {
     announceReminderChanged()
   }
   // 点进去要落在能干活的地方：催收清单，而不是一条只读通知。
-  await router.push(item.contractNo ? `/receivable-cases?keyword=${encodeURIComponent(item.contractNo)}` : (item.detailUrl || '/receivable-cases'))
+  await router.push(item.contractNo ? `/customer-recon?keyword=${encodeURIComponent(item.contractNo)}` : (item.detailUrl || '/customer-recon'))
 }
 
 let timer: number | undefined

@@ -1137,9 +1137,10 @@ SELECT
     c.tenant_id, c.id, c.contract_no, c.customer_name, c.sales_employee_id,
     d.reminder_type, d.period_no, c.receivable_due_date,
     (v.total_amount - coalesce(r.received, 0)), v.currency,
-    -- 提醒点进去落在「待核销」页。老行里存的还是 /receivable-due，
-    -- 那条地址保留成带 query 的重定向，所以历史提醒照样点得开。
-    d.title, d.content, '/receivable-cases'
+    -- 提醒点进去落在「客户对账」的待核销那一档。老行里存的是历史地址
+    -- （/receivable-due、/receivable-cases），那几条都保留成带 query 的
+    -- 重定向，所以旧提醒照样点得开。
+    d.title, d.content, '/customer-recon'
 FROM contracts c
 JOIN contract_versions v ON v.id = c.current_version_id
 LEFT JOIN (

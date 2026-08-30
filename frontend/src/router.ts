@@ -58,20 +58,19 @@ export const router = createRouter({
         { path: 'shipments', component: () => import('./pages/ShipmentsPage.vue') },
         { path: 'shipping', component: () => import('./pages/ShippingPage.vue') },
         { path: 'shipping/:id', component: () => import('./pages/ShippingDetailPage.vue') },
-        // 待核销 / 已完成是同一个组件的两条地址，靠 path 决定看哪一档。
-        // 不用一页带 query 的写法：菜单高亮按精确路径相等判断，带 query
-        // 的地址点进去菜单不会亮。
-        { path: 'receivable-cases', component: () => import('./pages/ReceivableDuePage.vue') },
-        { path: 'receivable-cases-done', component: () => import('./pages/ReceivableDuePage.vue') },
-        // 收款对账页撤了，老书签重定向到待核销。**不能只是把这条路由删掉**：
-        // 路由表没有兜底路由，不匹配的地址会让 matched 变成空——连外面那层
-        // Shell 都不渲染，用户看到的是一整块白，没有菜单也没有返回入口。
-        // 这个文件里另外十几条退役地址都是这么留的。
-        { path: 'receipts', redirect: '/receivable-cases' },
-        // 老地址重定向到待核销：外面还有指向它的链接（老书签、历史提醒里
-        // 存下来的 detailUrl）。redirect 会带着 query 一起过去，所以
+        // 客户对账：待核销 / 已完成是它下面的两个子页，靠 ?view=done 分。
+        // **一个服务一个菜单项**——两条路径会在菜单上排成两行，而它们是
+        // 同一件事的两个视图。query 不影响 route.path，所以菜单高亮照常。
+        { path: 'customer-recon', component: () => import('./pages/ReceivableDuePage.vue') },
+        // 退役地址一律重定向，不能直接删：路由表没有兜底路由，不匹配的
+        // 地址会让 matched 变成空——连外面那层 Shell 都不渲染，老书签点
+        // 进去是一整块白，没有菜单也没有返回入口。
+        { path: 'receipts', redirect: '/customer-recon' },
+        { path: 'receivable-cases', redirect: (to) => ({ path: '/customer-recon', query: to.query }) },
+        { path: 'receivable-cases-done', redirect: (to) => ({ path: '/customer-recon', query: { ...to.query, view: 'done' } }) },
+        // 历史提醒里存的 detailUrl 还指着它，带 query 过去，
         // ?keyword=合同号 仍然能把人送到那一行上。
-        { path: 'receivable-due', redirect: (to) => ({ path: '/receivable-cases', query: to.query }) },
+        { path: 'receivable-due', redirect: (to) => ({ path: '/customer-recon', query: to.query }) },
         { path: 'stocks', component: () => import('./pages/StocksPage.vue') },
         { path: 'outbounds', component: () => import('./pages/OutboundsPage.vue') },
         { path: 'warehouses', component: () => import('./pages/WarehouseWorkbenchPage.vue') },
