@@ -14,10 +14,12 @@ import (
 func (h *OrderHandler) ListSupplierRecon(ctx context.Context, req *prv1.ListSupplierReconRequest) (*prv1.ListSupplierReconResponse, error) {
 	items, total, err := h.svc.ListSupplierRecon(ctx, grpcx.TenantID(ctx),
 		app.SupplierReconFilter{
-			Keyword:    req.GetKeyword(),
-			ClosedOnly: req.GetClosedOnly(),
-			Page:       req.GetPage(),
-			PageSize:   req.GetPageSize(),
+			Keyword:     req.GetKeyword(),
+			ClosedOnly:  req.GetClosedOnly(),
+			OverdueOnly: req.GetOverdueOnly(),
+			UnsetOnly:   req.GetUnsetOnly(),
+			Page:        req.GetPage(),
+			PageSize:    req.GetPageSize(),
 		}, reconOperator(ctx))
 	if err != nil {
 		return nil, err
@@ -96,6 +98,7 @@ func reconRowProto(v app.SupplierReconRow) *prv1.SupplierReconRow {
 		SupplierId: v.SupplierID, SupplierName: v.SupplierName,
 		Currency: v.Currency, OrderStatus: v.OrderStatus, BuyerName: v.BuyerName,
 		OrderedDate: v.OrderedDate, ExpectedDate: v.ExpectedDate,
+		DueDate: v.DueDate, OverdueDays: v.OverdueDays, DueUnset: v.DueUnset,
 		OrderedAmount: v.OrderedAmount, PaidAmount: v.PaidAmount, OpenAmount: v.OpenAmount,
 		InvoicePaidAmount: v.InvoicePaidAmount,
 		ClosedCategory:    v.ClosedCategory, ClosedNote: v.ClosedNote,

@@ -21,8 +21,11 @@ func (s *Server) listSupplierRecon(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Orders.ListSupplierRecon(r.Context(), &prv1.ListSupplierReconRequest{
 		Keyword:    q.Get("keyword"),
 		ClosedOnly: q.Get("view") == "done",
-		Page:       int32(page),
-		PageSize:   int32(size),
+		// 两个互斥的筛子，和客户对账页同一套参数名。
+		OverdueOnly: q.Get("overdue") == "1",
+		UnsetOnly:   q.Get("unset") == "1",
+		Page:        int32(page),
+		PageSize:    int32(size),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)

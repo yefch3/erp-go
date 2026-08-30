@@ -229,12 +229,12 @@ func TestSupplierReconRoutesAreAllRegistered(t *testing.T) {
 	// 和 frontend/src/pages/SupplierReconPage.vue（待核销 / 已完成两页）
 	// 一一对应。
 	want := []string{
-		"GET /api/supplier-recon",                                  // 两页共用的列表，view=done 翻面
-		"GET /api/supplier-recon/{id}/payments",                    // 展开行看这张采购单的付款明细
-		"POST /api/supplier-recon/{id}/payments",                   // 「记一笔付款」（手填，不连流水）
+		"GET /api/supplier-recon",                                       // 两页共用的列表，view=done 翻面
+		"GET /api/supplier-recon/{id}/payments",                         // 展开行看这张采购单的付款明细
+		"POST /api/supplier-recon/{id}/payments",                        // 「记一笔付款」（手填，不连流水）
 		"POST /api/supplier-recon/{id}/payments/{allocationId}/reverse", // 冲销记错的那一笔
-		"POST /api/supplier-recon/{id}/close",                      // 「确认核销完成」（转到已完成页）
-		"POST /api/supplier-recon/{id}/reopen",                     // 「撤销完成」（回到待核销页）
+		"POST /api/supplier-recon/{id}/close",                           // 「确认核销完成」（转到已完成页）
+		"POST /api/supplier-recon/{id}/reopen",                          // 「撤销完成」（回到待核销页）
 	}
 	for _, w := range want {
 		if !have[w] {

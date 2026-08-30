@@ -41,6 +41,12 @@ type SupplierReconRow struct {
 	BuyerName    string
 	OrderedDate  string
 	ExpectedDate string
+	// 应付到期日 = 下单当天 + 供应商账期。**空串表示没配账期**，不是
+	// 「今天到期」——那种情况下 DueUnset 为真，OverdueDays 无意义。
+	DueDate string
+	// 正数已逾期，负数是还剩几天。DueUnset 为真时这个数没有意义。
+	OverdueDays int32
+	DueUnset    bool
 	// 订单金额、已付净额、以及两者之差。差为负表示多付了。
 	OrderedAmount string
 	PaidAmount    string
@@ -60,6 +66,10 @@ type SupplierReconRow struct {
 // SupplierReconFilter 收窄清单。
 type SupplierReconFilter struct {
 	Keyword string
+	// 两个互斥的筛子，都不给就是全部。只看逾期的；或者只看还没配账期的
+	// （后者是催配置，不是催钱）。和客户侧同款。
+	OverdueOnly bool
+	UnsetOnly   bool
 	// 只看确认完成了的。默认视图（false）是「还要人来处理的」。
 	ClosedOnly bool
 	Page       int32
@@ -118,6 +128,10 @@ const reconSelect = `
 	       po.status, po.buyer_name,
 	       coalesce(po.ordered_at::date::text, '')          AS ordered_date,
 	       coalesce(po.expected_date::text, '')             AS expected_date,
+	       coalesce(po.payable_due_date::text, '')          AS due_date,
+	       -- 到期日为空时这个数没有意义，界面靠 due_unset 分流，不会去读它。
+	       coalesce((current_date - po.payable_due_date), 0)::int AS overdue_days,
+	       (po.payable_due_date IS NULL)::bool              AS due_unset,
 	       po.total_amount::text                            AS ordered_amount,
 	       (coalesce(p.paid, 0) + coalesce(ip.paid, 0))::text        AS paid_amount,
 	       (po.total_amount - coalesce(p.paid, 0)
@@ -222,9 +236,14 @@ func (s *Service) ListSupplierRecon(ctx context.Context, tenantID int64,
 	   AND ($3::text = ''
 	        OR po.po_no ILIKE '%' || $3::text || '%'
 	        OR po.supplier_name ILIKE '%' || $3::text || '%')
-	 ORDER BY po.ordered_at DESC NULLS LAST, po.id DESC
-	 LIMIT $4::int OFFSET $5::int`,
-		tenantID, f.ClosedOnly, strings.TrimSpace(f.Keyword), size, (page-1)*size)
+	   AND ($4::bool = false
+	        OR (po.payable_due_date IS NOT NULL AND po.payable_due_date < current_date))
+	   AND ($5::bool = false OR po.payable_due_date IS NULL)
+	 -- 该付的排在前面，没配账期的垫底：它们缺的是配置，不是钱。
+	 ORDER BY po.payable_due_date ASC NULLS LAST, po.id DESC
+	 LIMIT $6::int OFFSET $7::int`,
+		tenantID, f.ClosedOnly, strings.TrimSpace(f.Keyword),
+		f.OverdueOnly, f.UnsetOnly, size, (page-1)*size)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -235,6 +254,7 @@ func (s *Service) ListSupplierRecon(ctx context.Context, tenantID int64,
 		var r SupplierReconRow
 		if err := rows.Scan(&r.POID, &r.PONo, &r.SupplierID, &r.SupplierName,
 			&r.Currency, &r.OrderStatus, &r.BuyerName, &r.OrderedDate, &r.ExpectedDate,
+			&r.DueDate, &r.OverdueDays, &r.DueUnset,
 			&r.OrderedAmount, &r.PaidAmount, &r.OpenAmount, &r.InvoicePaidAmount,
 			&r.ClosedCategory, &r.ClosedNote, &r.ClosedByName, &r.ClosedAt,
 			&total); err != nil {
@@ -253,6 +273,7 @@ func (s *Service) reconRowOf(ctx context.Context, tenantID, poID int64) (Supplie
 	 WHERE po.tenant_id = $1 AND po.id = $2`, tenantID, poID).
 		Scan(&r.POID, &r.PONo, &r.SupplierID, &r.SupplierName,
 			&r.Currency, &r.OrderStatus, &r.BuyerName, &r.OrderedDate, &r.ExpectedDate,
+			&r.DueDate, &r.OverdueDays, &r.DueUnset,
 			&r.OrderedAmount, &r.PaidAmount, &r.OpenAmount, &r.InvoicePaidAmount,
 			&r.ClosedCategory, &r.ClosedNote, &r.ClosedByName, &r.ClosedAt)
 	if err == pgx.ErrNoRows {

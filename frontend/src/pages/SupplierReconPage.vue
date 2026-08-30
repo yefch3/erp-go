@@ -11,20 +11,20 @@
     <!-- 三个数字回答「今天还有多少活」。全是全局合计，不是当前页——
          页面上的合计如果跟着翻页变，那就不是合计了。 -->
     <section class="metrics">
-      <div class="metric" :class="{ 'is-warn': pendingCount > 0 }">
-        <span class="metric-label">{{ t('supplierRecon.pendingCount') }}</span>
-        <strong class="metric-value">{{ pendingCount }}</strong>
-        <span class="metric-hint">{{ t('supplierRecon.pendingHint') }}</span>
+      <div class="metric" :class="{ 'is-alarm': overdueCount > 0 }">
+        <span class="metric-label">{{ t('supplierRecon.overdueCount') }}</span>
+        <strong class="metric-value">{{ overdueCount }}</strong>
+        <span class="metric-hint">{{ t('supplierRecon.overdueHint') }}</span>
       </div>
       <div class="metric">
-        <span class="metric-label">{{ t('supplierRecon.doneCount') }}</span>
-        <strong class="metric-value">{{ doneCount }}</strong>
-        <span class="metric-hint">{{ t('supplierRecon.doneHint') }}</span>
+        <span class="metric-label">{{ t('supplierRecon.dueSoonCount') }}</span>
+        <strong class="metric-value">{{ dueSoonCount }}</strong>
+        <span class="metric-hint">{{ t('supplierRecon.dueSoonHint') }}</span>
       </div>
-      <div class="metric">
-        <span class="metric-label">{{ t('supplierRecon.unpaidCount') }}</span>
-        <strong class="metric-value">{{ unpaidCount }}</strong>
-        <span class="metric-hint">{{ t('supplierRecon.unpaidHint') }}</span>
+      <div class="metric" :class="{ 'is-warn': unsetCount > 0 }">
+        <span class="metric-label">{{ t('supplierRecon.unsetCount') }}</span>
+        <strong class="metric-value">{{ unsetCount }}</strong>
+        <span class="metric-hint">{{ t('supplierRecon.unsetHint') }}</span>
       </div>
     </section>
 
@@ -37,6 +37,12 @@
           <el-radio-button value="open">{{ t('supplierRecon.tabOpen') }}</el-radio-button>
           <el-radio-button value="done">{{ t('supplierRecon.tabDone') }}</el-radio-button>
         </el-radio-group>
+        <!-- 次级筛子，只在待核销那一档下有意义：已完成的单不用再催。 -->
+        <el-radio-group v-if="!isDone" v-model="view" @change="reload">
+          <el-radio-button value="">{{ t('supplierRecon.viewAll') }}</el-radio-button>
+          <el-radio-button value="overdue">{{ t('supplierRecon.viewOverdue') }}</el-radio-button>
+          <el-radio-button value="unset">{{ t('supplierRecon.viewUnset') }}</el-radio-button>
+        </el-radio-group>
         <el-input
           v-model="keyword"
           clearable
@@ -48,7 +54,7 @@
         <el-button type="primary" @click="reload">{{ t('common.query') }}</el-button>
       </div>
 
-      <el-table v-loading="loading" :data="rows" @expand-change="onExpand">
+      <el-table v-loading="loading" :data="rows" :row-class-name="rowClass" @expand-change="onExpand">
         <!-- 展开看这张采购单付过哪几笔。明细按需加载：每行都预先拉一次，
              一页就是 20 次往返。 -->
         <el-table-column type="expand">
@@ -164,8 +170,17 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="t('supplierRecon.orderedDate')" width="120">
-          <template #default="{ row }">{{ row.orderedDate || '—' }}</template>
+        <el-table-column :label="t('supplierRecon.dueDate')" width="150">
+          <template #default="{ row }">
+            <!-- 没配账期不是「今天到期」，所以给一个标签而不是一个日子。 -->
+            <el-tag v-if="row.dueUnset" size="small" type="warning" effect="plain">
+              {{ t('supplierRecon.unsetTag') }}
+            </el-tag>
+            <template v-else>
+              <div class="num-cell">{{ row.dueDate }}</div>
+              <div class="sub" :class="{ overdue: row.overdueDays > 0 }">{{ dueLabel(row) }}</div>
+            </template>
+          </template>
         </el-table-column>
         <el-table-column :label="t('supplierRecon.buyer')" min-width="110">
           <template #default="{ row }">{{ row.buyerName || '—' }}</template>
@@ -304,6 +319,11 @@ interface Row {
   buyerName: string
   orderedDate: string
   expectedDate: string
+  // 应付到期日 = 下单当天 + 供应商账期。空串 = 没配账期（dueUnset 为真），
+  // 不是「今天到期」。
+  dueDate: string
+  overdueDays: number
+  dueUnset: boolean
   orderedAmount: string
   paidAmount: string
   openAmount: string
@@ -356,9 +376,25 @@ const emptyText = computed(() =>
 const keyword = ref(String(route.query.keyword ?? ''))
 const loading = ref(false)
 
-const pendingCount = ref(0)
-const doneCount = ref(0)
-const unpaidCount = ref(0)
+// 三个数字算的是「当前这一页之外的全局」，所以各查一次 total——页面上的
+// 合计如果只统计当前页，会在翻页时变化，那就不是合计了。
+const overdueCount = ref(0)
+const dueSoonCount = ref(0)
+const unsetCount = ref(0)
+
+const dueSoonDays = 30
+const view = ref('')
+
+function rowClass({ row }: { row: Row }) {
+  if (row.dueUnset) return 'row-unset'
+  return row.overdueDays > 0 ? 'row-overdue' : ''
+}
+
+function dueLabel(row: Row): string {
+  if (row.overdueDays > 0) return t('supplierRecon.overdueBy', { n: row.overdueDays })
+  if (row.overdueDays === 0) return t('supplierRecon.dueToday')
+  return t('supplierRecon.dueIn', { n: -row.overdueDays })
+}
 
 async function fetchPage(params: Record<string, string | number>) {
   return get<{ items: Row[]; total: string }>('/supplier-recon', params)
@@ -370,6 +406,8 @@ async function load() {
     const d = await fetchPage({
       page: page.value, page_size: pageSize,
       view: isDone.value ? 'done' : '',
+      overdue: !isDone.value && view.value === 'overdue' ? '1' : '',
+      unset: !isDone.value && view.value === 'unset' ? '1' : '',
       keyword: keyword.value,
     })
     rows.value = d.items ?? []
@@ -386,17 +424,18 @@ async function load() {
 }
 
 async function loadMetrics() {
-  const [pending, done, sample] = await Promise.all([
-    fetchPage({ page: 1, page_size: 1 }),
-    fetchPage({ page: 1, page_size: 1, view: 'done' }),
-    // 「一分钱都还没付」没有独立筛子——服务端只认「有没有人确认完成」
-    // 这一个开关，别的都是页面自己看着数字说话。拉一页样本算，够用，
-    // 且不必为一个提示数字再开一个接口。
+  const [overdue, unset, sample] = await Promise.all([
+    fetchPage({ page: 1, page_size: 1, overdue: '1' }),
+    fetchPage({ page: 1, page_size: 1, unset: '1' }),
+    // 「30 天内到期」没有独立筛子（服务端只认逾期/未配置两个），所以拉一页
+    // 算：够用且不必为一个提示数字再开一个接口。
     fetchPage({ page: 1, page_size: 200 }),
   ])
-  pendingCount.value = Number(pending.total ?? 0)
-  doneCount.value = Number(done.total ?? 0)
-  unpaidCount.value = (sample.items ?? []).filter((r) => Number(r.paidAmount) === 0).length
+  overdueCount.value = Number(overdue.total ?? 0)
+  unsetCount.value = Number(unset.total ?? 0)
+  dueSoonCount.value = (sample.items ?? []).filter(
+    (r) => !r.dueUnset && r.overdueDays <= 0 && -r.overdueDays <= dueSoonDays,
+  ).length
 }
 
 // ── 记一笔付款 ────────────────────────────────────────────
@@ -615,6 +654,7 @@ watch(() => route.query.keyword, (value) => {
 // 确认过的单点「撤销完成」。ReceivableDuePage 和 SourcingCasesListPage
 // 都踩过同一个坑。
 watch(isDone, () => {
+  view.value = ''
   entries.value = {}
   files.value = {}
   reload()
@@ -728,6 +768,22 @@ onMounted(() => {
 }
 .num.dim {
   color: var(--el-text-color-placeholder);
+}
+.num-cell {
+  font-variant-numeric: tabular-nums;
+}
+.sub.overdue {
+  color: var(--el-color-danger);
+}
+:deep(.row-overdue) {
+  background: var(--el-color-danger-light-9);
+}
+:deep(.row-unset) {
+  background: var(--el-color-warning-light-9);
+}
+.metric.is-alarm {
+  border-color: var(--el-color-danger-light-5);
+  background: var(--el-color-danger-light-9);
 }
 .po-no {
   font-variant-numeric: tabular-nums;

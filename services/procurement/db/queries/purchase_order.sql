@@ -100,7 +100,7 @@ RETURNING received_qty::text AS received_qty, status;
 
 -- name: CreatePurchaseOrder :one
 INSERT INTO purchase_orders (
-    tenant_id, po_no, supplier_id, supplier_code, supplier_name,
+    tenant_id, po_no, supplier_id, supplier_code, supplier_name, payment_days,
     currency, total_amount, expected_date, buyer_id, buyer_name, remark,
     source_quotation_id, source_quotation_no, source_cost_scenario_id,
     factory_id, factory_code, factory_name,
@@ -113,6 +113,7 @@ INSERT INTO purchase_orders (
     sqlc.arg(supplier_id)::bigint,
     sqlc.arg(supplier_code)::text,
     sqlc.arg(supplier_name)::text,
+    sqlc.arg(payment_days)::int,
     sqlc.arg(currency)::text,
     sqlc.arg(total_amount)::text::numeric,
     nullif(sqlc.arg(expected_date)::text, '')::date,
@@ -132,6 +133,9 @@ UPDATE purchase_orders SET
     supplier_id = sqlc.arg(supplier_id)::bigint,
     supplier_code = sqlc.arg(supplier_code)::text,
     supplier_name = sqlc.arg(supplier_name)::text,
+    -- 草稿改供应商时账期跟着换：这张单还没下出去，快照的是「最终按谁的
+    -- 条件下的」，不是「第一次选的那家」。
+    payment_days = sqlc.arg(payment_days)::int,
     currency = sqlc.arg(currency)::text,
     total_amount = sqlc.arg(total_amount)::text::numeric,
     expected_date = nullif(sqlc.arg(expected_date)::text, '')::date,
@@ -244,8 +248,37 @@ UPDATE purchase_orders SET status = sqlc.arg(new_status)::text, updated_at = now
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: SetPurchaseOrderOrdered :exec
-UPDATE purchase_orders SET status = 'ORDERED', ordered_at = now(), updated_at = now()
+-- 下单那一刻同时把应付到期日算出来：账期从下单那天起算（业务定的口径，
+-- 客户侧是从合同生效那天起算）。
+--
+-- payment_days 为 0 就把到期日留空——**空表示没配账期，不是今天到期**。
+-- 编一个日子会让「今天该付谁」这句话变成假的。
+--
+-- 用 CURRENT_DATE 而不是从 ordered_at 反推：这两句在同一条 UPDATE 里，
+-- now() 还没落库；而 ordered_at 是 timestamptz，转成日期还要挑时区，
+-- 平白多一处会算错一天的地方。
+UPDATE purchase_orders SET
+    status = 'ORDERED',
+    ordered_at = now(),
+    payable_due_date = CASE WHEN payment_days > 0
+        THEN CURRENT_DATE + payment_days ELSE NULL END,
+    updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: BackfillPayableDue :execrows
+-- 给存量采购单补应付到期日：下单了但没有到期日的，按传入的账期补算。
+--
+-- 幂等——只碰为空的行，跑几遍结果一样。存在的理由是时间差：到期日从今天
+-- 起才在下单时写入，在此之前下的单一张都没有；而供应商的账期也是同一批
+-- 改动里才有的字段，迁移当时全是 0。和客户侧 BackfillReceivableDue 同款。
+UPDATE purchase_orders SET
+    payment_days = sqlc.arg(payment_days)::int,
+    payable_due_date = ordered_at::date + sqlc.arg(payment_days)::int,
+    updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND supplier_id = sqlc.arg(supplier_id)::bigint
+  AND ordered_at IS NOT NULL
+  AND payable_due_date IS NULL;
 
 -- name: SetPurchaseOrderRejected :exec
 UPDATE purchase_orders SET

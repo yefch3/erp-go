@@ -1883,6 +1883,12 @@ message SupplierReconRow {
   string buyer_name = 7;
   string ordered_date = 8;
   string expected_date = 9;
+  // Payable due date = the day the order was placed + the supplier's terms.
+  // Empty means no terms configured — not "due today". due_unset says which.
+  string due_date = 18;
+  // Positive = days overdue, negative = days left. Meaningless when due_unset.
+  int32 overdue_days = 19;
+  bool due_unset = 20;
   string ordered_amount = 10;
   string paid_amount = 11;
   string open_amount = 12;
@@ -1923,6 +1929,9 @@ message PurchaseOrderPaymentEntry {
 
 message ListSupplierReconRequest {
   string keyword = 1;
+  // Two mutually exclusive narrowings; neither set means everything.
+  bool overdue_only = 5;
+  bool unset_only = 6;
   // false = still to reconcile; true = confirmed done.
   bool closed_only = 2;
   int32 page = 3;

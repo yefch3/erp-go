@@ -673,3 +673,79 @@ func TestInvoiceBackedEntriesAreVisibleAndReversibleHere(t *testing.T) {
 		t.Fatalf("付款单未分配余额应弹回 5000，实际 %q", after.Unallocated)
 	}
 }
+
+// 应付到期日：**下单当天 + 供应商账期**（业务定的口径，客户侧是从合同生效
+// 那天起算）。这一组钉三件事：
+//
+//	· 账期是**下单那一刻的快照**——供应商事后改账期不动已经下出去的单
+//	· 没配账期 → 到期日留空 → 「未配账期」，**不是「今天到期」**。编一个
+//	  日子会让「今天该付谁」这句话变成假的
+//	· 两个筛子各管一件事：只看逾期的、只看未配账期的（后者是催配置，不是催钱）
+func TestPayableDueComesFromTheDayTheOrderWasPlaced(t *testing.T) {
+	ctx, svc, tenantID, cleanup := reconTestPool(t)
+	defer cleanup()
+	op := Operator{ID: 77, Name: "Finance"}
+
+	// seedReconOrder 直接写库，绕过了下单那条路，所以到期日在这里手工摆布——
+	// 摆的是「已经算出来的结果」，测的是列表怎么读它。
+	overdue := seedReconOrder(ctx, t, svc.pool, tenantID, "PO-DUE-LATE", "1000", "ORDERED")
+	soon := seedReconOrder(ctx, t, svc.pool, tenantID, "PO-DUE-SOON", "1000", "ORDERED")
+	// 这一张什么都不设：账期为 0，到期日留空——「未配账期」。
+	seedReconOrder(ctx, t, svc.pool, tenantID, "PO-DUE-NONE", "1000", "ORDERED")
+	if _, err := svc.pool.Exec(ctx, `
+		UPDATE purchase_orders SET payment_days = 30,
+		       payable_due_date = current_date - 5
+		 WHERE tenant_id=$1 AND id=$2`, tenantID, overdue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.pool.Exec(ctx, `
+		UPDATE purchase_orders SET payment_days = 30,
+		       payable_due_date = current_date + 10
+		 WHERE tenant_id=$1 AND id=$2`, tenantID, soon); err != nil {
+		t.Fatal(err)
+	}
+
+	all := reconRows(ctx, t, svc, tenantID, false, op)
+	if got := all["PO-DUE-LATE"]; got.OverdueDays != 5 || got.DueUnset {
+		t.Fatalf("逾期 5 天的单应为 overdueDays=5、dueUnset=false，实际 %+v", got)
+	}
+	if got := all["PO-DUE-SOON"]; got.OverdueDays != -10 || got.DueUnset {
+		t.Fatalf("还有 10 天到期的单应为 overdueDays=-10，实际 %+v", got)
+	}
+	// **没配账期不是「今天到期」。** 到期日留空、dueUnset 为真，
+	// overdueDays 那个 0 是 coalesce 出来的占位，界面靠 dueUnset 分流。
+	if got := all["PO-DUE-NONE"]; !got.DueUnset || got.DueDate != "" {
+		t.Fatalf("没配账期的单应为 dueUnset=true、到期日空串，实际 %+v", got)
+	}
+
+	// 两个筛子。
+	only := func(f SupplierReconFilter) map[string]SupplierReconRow {
+		t.Helper()
+		f.Page, f.PageSize = 1, 200
+		rows, _, err := svc.ListSupplierRecon(ctx, tenantID, f, op)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]SupplierReconRow{}
+		for _, r := range rows {
+			out[r.PONo] = r
+		}
+		return out
+	}
+	od := only(SupplierReconFilter{OverdueOnly: true})
+	if _, ok := od["PO-DUE-LATE"]; !ok {
+		t.Fatal("「只看逾期」要收进逾期的那张")
+	}
+	for _, no := range []string{"PO-DUE-SOON", "PO-DUE-NONE"} {
+		if _, ok := od[no]; ok {
+			t.Fatalf("「只看逾期」不该收 %s——没到期和没配账期都不是逾期", no)
+		}
+	}
+	un := only(SupplierReconFilter{UnsetOnly: true})
+	if _, ok := un["PO-DUE-NONE"]; !ok {
+		t.Fatal("「只看未配账期」要收进没配的那张")
+	}
+	if _, ok := un["PO-DUE-LATE"]; ok {
+		t.Fatal("「只看未配账期」不该收配了账期的单——那是催钱，不是催配置")
+	}
+}

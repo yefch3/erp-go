@@ -350,14 +350,15 @@ WHERE tenant_id = sqlc.arg(tenant_id) AND customer_id = sqlc.arg(customer_id)
 -- name: CreateSupplier :one
 INSERT INTO suppliers (
   tenant_id, code, name, name_zh, name_en, short_name, country, country_code,
-  address, registered_address, tax_id, currency, payment_term, business_types,
-  contact_name, contact_phone, contact_email, remark, created_by, updated_by
+  address, registered_address, tax_id, currency, payment_term, payment_days,
+  business_types, contact_name, contact_phone, contact_email, remark,
+  created_by, updated_by
 )
 VALUES (
   sqlc.arg(tenant_id), sqlc.arg(code), sqlc.arg(name), sqlc.arg(name_zh), sqlc.arg(name_en),
   sqlc.arg(short_name), sqlc.arg(country), sqlc.arg(country_code), sqlc.arg(address),
   sqlc.arg(registered_address), sqlc.arg(tax_id), sqlc.arg(currency), sqlc.arg(payment_term),
-  sqlc.arg(business_types), sqlc.arg(contact_name), sqlc.arg(contact_phone),
+  sqlc.arg(payment_days), sqlc.arg(business_types), sqlc.arg(contact_name), sqlc.arg(contact_phone),
   sqlc.arg(contact_email), sqlc.arg(remark), sqlc.arg(operator_id), sqlc.arg(operator_id)
 )
 RETURNING *;
@@ -401,7 +402,8 @@ UPDATE suppliers
 SET name = sqlc.arg(name), name_zh = sqlc.arg(name_zh), name_en = sqlc.arg(name_en),
     short_name = sqlc.arg(short_name), country = sqlc.arg(country), country_code = sqlc.arg(country_code),
     address = sqlc.arg(address), registered_address = sqlc.arg(registered_address), tax_id = sqlc.arg(tax_id),
-    currency = sqlc.arg(currency), payment_term = sqlc.arg(payment_term), business_types = sqlc.arg(business_types),
+    currency = sqlc.arg(currency), payment_term = sqlc.arg(payment_term),
+    payment_days = sqlc.arg(payment_days), business_types = sqlc.arg(business_types),
     contact_name = sqlc.arg(contact_name), contact_phone = sqlc.arg(contact_phone),
     contact_email = sqlc.arg(contact_email), remark = sqlc.arg(remark),
     updated_by = sqlc.arg(operator_id), updated_at = now()
