@@ -729,6 +729,126 @@ type SourcingProcurementParticipant struct {
 	UpdatedAt          pgtype.Timestamptz
 }
 
+type SourcingShippingOption struct {
+	ID                 int64
+	TenantID           int64
+	RequestID          int64
+	CarrierForwarder   string
+	PortOfLoading      string
+	PortOfDischarge    string
+	QuotedAt           pgtype.Date
+	EstimatedDeparture pgtype.Date
+	EstimatedArrival   pgtype.Date
+	ValidUntil         pgtype.Date
+	Note               string
+	Status             string
+	CreatedBy          int64
+	CreatedByName      string
+	CreatedAt          pgtype.Timestamptz
+	VersionNo          int32
+	ServiceOptionName  string
+	SubmittedAt        pgtype.Timestamptz
+}
+
+type SourcingShippingOptionLine struct {
+	ID                    int64
+	TenantID              int64
+	OptionID              int64
+	SourcingLineID        int64
+	LineNo                int32
+	ProductSnapshot       string
+	SpecificationSnapshot string
+	Quantity              pgtype.Numeric
+	QuantityUnit          string
+	Currency              string
+	ChargeBasis           string
+	UnitRate              pgtype.Numeric
+	TotalFreight          pgtype.Numeric
+	Note                  string
+}
+
+type SourcingShippingParticipant struct {
+	ID                 int64
+	TenantID           int64
+	RequestID          int64
+	EmployeeID         int64
+	EmployeeName       string
+	ParticipantRole    string
+	Status             string
+	PrimaryRequestedAt pgtype.Timestamptz
+	JoinedAt           pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}
+
+type SourcingShippingPlan struct {
+	ID                     int64
+	TenantID               int64
+	RequestID              int64
+	PlanNo                 string
+	VersionNo              int32
+	RequirementVersionNo   int32
+	Status                 string
+	ManagerNote            string
+	CreatedBy              int64
+	CreatedByName          string
+	ConfirmedAt            pgtype.Timestamptz
+	SubmittedToSalesBy     *int64
+	SubmittedToSalesByName string
+	SubmittedToSalesAt     pgtype.Timestamptz
+	TargetSalesID          int64
+	TargetSalesName        string
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+}
+
+type SourcingShippingPlanItem struct {
+	ID                   int64
+	TenantID             int64
+	PlanID               int64
+	SourcingLineID       int64
+	ShippingOptionLineID int64
+	SelectionType        string
+	Priority             int32
+	Reason               string
+	Risk                 string
+	CarrierForwarder     string
+	ServiceOptionName    string
+	ShippingEmployeeID   int64
+	ShippingEmployeeName string
+	ProductName          string
+	Currency             string
+	ChargeBasis          string
+	UnitRate             pgtype.Numeric
+	TotalFreight         pgtype.Numeric
+	PortOfLoading        string
+	PortOfDischarge      string
+	EstimatedDeparture   pgtype.Date
+	EstimatedArrival     pgtype.Date
+	ValidUntil           pgtype.Date
+	QuoteVersionNo       int32
+	CreatedAt            pgtype.Timestamptz
+}
+
+type SourcingShippingRequest struct {
+	ID                   int64
+	TenantID             int64
+	CaseID               int64
+	RequirementVersionNo int32
+	Status               string
+	CaseNo               string
+	CaseTitle            string
+	CustomerID           int64
+	CustomerName         string
+	SalesEmployeeID      int64
+	SalesEmployeeName    string
+	DestinationPort      string
+	CargoSummary         string
+	RequestedBy          int64
+	RequestedByName      string
+	RequestedAt          pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+}
+
 type SupplierInvoice struct {
 	ID            int64
 	TenantID      int64

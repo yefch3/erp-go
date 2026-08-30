@@ -348,6 +348,9 @@ SET decision=CASE WHEN id=ANY($3::bigint[]) THEN 'CONFIRMED' ELSE 'SKIPPED' END,
 WHERE tenant_id=$1 AND case_id=$2`, tenantID, caseID, ids, op.ID, op.Name); execErr != nil {
 				return execErr
 			}
+			if execErr = q.UpsertSourcingShippingRequest(ctx, store.UpsertSourcingShippingRequestParams{TenantID: tenantID, CaseID: caseID, OperatorID: op.ID, OperatorName: op.Name}); execErr != nil {
+				return execErr
+			}
 			return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: caseID,
 				Section: "HANDOFF", Action: "SUBMITTED_TO_PROCUREMENT", Summary: "销售提交采购寻源",
 				BeforeJson: []byte(`{"status":"INTAKE_PENDING"}`), AfterJson: []byte(`{"status":"REVIEWING","handoffStatus":"WAITING_ACCEPTANCE"}`),

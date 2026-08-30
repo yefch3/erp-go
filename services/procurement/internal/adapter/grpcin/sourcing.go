@@ -465,6 +465,203 @@ func (h *SourcingHandler) ResolveProcurementRework(ctx context.Context, req *prv
 	return &prv1.ResolveProcurementReworkResponse{}, nil
 }
 
+func sourcingShippingRequest(row store.SourcingShippingRequest) *prv1.SourcingShippingRequest {
+	return &prv1.SourcingShippingRequest{Id: row.ID, CaseId: row.CaseID, RequirementVersionNo: row.RequirementVersionNo,
+		Status: row.Status, CaseNo: row.CaseNo, CaseTitle: row.CaseTitle, CustomerId: row.CustomerID, CustomerName: row.CustomerName,
+		SalesEmployeeId: row.SalesEmployeeID, SalesEmployeeName: row.SalesEmployeeName, DestinationPort: row.DestinationPort,
+		CargoSummary: row.CargoSummary, RequestedByName: row.RequestedByName, RequestedAt: ts(row.RequestedAt), UpdatedAt: ts(row.UpdatedAt)}
+}
+
+func sourcingShippingTask(row store.ListSourcingShippingRequestsRow) *prv1.SourcingShippingRequest {
+	return &prv1.SourcingShippingRequest{Id: row.ID, CaseId: row.CaseID, RequirementVersionNo: row.RequirementVersionNo,
+		Status: row.Status, CaseNo: row.CaseNo, CaseTitle: row.CaseTitle, CustomerId: row.CustomerID, CustomerName: row.CustomerName,
+		SalesEmployeeId: row.SalesEmployeeID, SalesEmployeeName: row.SalesEmployeeName, DestinationPort: row.DestinationPort,
+		CargoSummary: row.CargoSummary, RequestedByName: row.RequestedByName, RequestedAt: ts(row.RequestedAt), UpdatedAt: ts(row.UpdatedAt)}
+}
+
+func sourcingShippingOption(view app.SourcingShippingOption) *prv1.SourcingShippingOption {
+	row := view.Option
+	lines := make([]*prv1.SourcingShippingOptionLine, 0, len(view.Lines))
+	for _, line := range view.Lines {
+		lines = append(lines, &prv1.SourcingShippingOptionLine{Id: line.ID, OptionId: line.OptionID, SourcingLineId: line.SourcingLineID,
+			LineNo: line.LineNo, Product: line.ProductSnapshot, Specification: line.SpecificationSnapshot, Quantity: line.Quantity,
+			QuantityUnit: line.QuantityUnit, Currency: line.Currency, ChargeBasis: line.ChargeBasis, UnitRate: line.UnitRate,
+			TotalFreight: line.TotalFreight, Note: line.Note})
+	}
+	return &prv1.SourcingShippingOption{Id: row.ID, RequestId: row.RequestID, CarrierForwarder: row.CarrierForwarder, ServiceOptionName: row.ServiceOptionName,
+		PortOfLoading: row.PortOfLoading, PortOfDischarge: row.PortOfDischarge, QuotedAt: row.QuotedAt,
+		EstimatedDeparture: row.EstimatedDeparture, EstimatedArrival: row.EstimatedArrival, ValidUntil: row.ValidUntil,
+		Note: row.Note, CreatedBy: row.CreatedBy, CreatedByName: row.CreatedByName, CreatedAt: ts(row.CreatedAt),
+		VersionNo: row.VersionNo, Status: row.Status, Lines: lines}
+}
+
+func sourcingShippingParticipant(row store.ListSourcingShippingParticipantsRow) *prv1.SourcingShippingParticipant {
+	return &prv1.SourcingShippingParticipant{Id: row.ID, RequestId: row.RequestID, EmployeeId: row.EmployeeID,
+		EmployeeName: row.EmployeeName, Role: row.ParticipantRole, Status: row.Status,
+		PrimaryRequestedAt: ts(row.PrimaryRequestedAt), JoinedAt: ts(row.JoinedAt)}
+}
+
+func sourcingShippingPlan(view app.ShippingPlanView) *prv1.SourcingShippingPlan {
+	h := view.Header
+	items := make([]*prv1.SourcingShippingPlanItem, 0, len(view.Items))
+	for _, row := range view.Items {
+		items = append(items, &prv1.SourcingShippingPlanItem{Id: row.ID, SourcingLineId: row.SourcingLineID,
+			ShippingOptionLineId: row.ShippingOptionLineID, SelectionType: row.SelectionType, Priority: row.Priority,
+			Reason: row.Reason, Risk: row.Risk, CarrierForwarder: row.CarrierForwarder, ServiceOptionName: row.ServiceOptionName,
+			ShippingEmployeeId: row.ShippingEmployeeID, ShippingEmployeeName: row.ShippingEmployeeName,
+			ProductName: row.ProductName, Currency: row.Currency, ChargeBasis: row.ChargeBasis,
+			UnitRate: row.UnitRate, TotalFreight: row.TotalFreight, PortOfLoading: row.PortOfLoading,
+			PortOfDischarge: row.PortOfDischarge, EstimatedDeparture: row.EstimatedDeparture,
+			EstimatedArrival: row.EstimatedArrival, ValidUntil: row.ValidUntil, QuoteVersionNo: row.QuoteVersionNo})
+	}
+	return &prv1.SourcingShippingPlan{Id: h.ID, RequestId: h.RequestID, PlanNo: h.PlanNo, VersionNo: h.VersionNo,
+		RequirementVersionNo: h.RequirementVersionNo, Status: h.Status, ManagerNote: h.ManagerNote,
+		CreatedByName: h.CreatedByName, ConfirmedAt: ts(h.ConfirmedAt), SubmittedToSalesByName: h.SubmittedToSalesByName,
+		SubmittedToSalesAt: ts(h.SubmittedToSalesAt), TargetSalesId: h.TargetSalesID, TargetSalesName: h.TargetSalesName, Items: items}
+}
+
+func shippingCollaboration(view app.SourcingShippingCollaboration) (*prv1.SourcingShippingRequest, []*prv1.SourcingShippingOption, []*prv1.SourcingShippingCargoItem) {
+	options := make([]*prv1.SourcingShippingOption, 0, len(view.Options))
+	for _, row := range view.Options {
+		options = append(options, sourcingShippingOption(row))
+	}
+	cargo := make([]*prv1.SourcingShippingCargoItem, 0, len(view.CargoItems))
+	for _, row := range view.CargoItems {
+		cargo = append(cargo, &prv1.SourcingShippingCargoItem{SourcingLineId: row.SourcingLineID, LineNo: row.LineNo, Product: row.Product,
+			MaterialStandard: row.MaterialStandard, Grade: row.Grade, Thickness: row.Thickness, Width: row.Width,
+			LengthOrForm: row.LengthOrForm, SurfaceRequirement: row.SurfaceRequirement, Packaging: row.Packaging,
+			Delivery: row.Delivery, Quantity: row.Quantity, QuantityUnit: row.QuantityUnit})
+	}
+	return sourcingShippingRequest(view.Request), options, cargo
+}
+
+func (h *SourcingHandler) GetSourcingShippingCollaboration(ctx context.Context, req *prv1.GetSourcingShippingCollaborationRequest) (*prv1.GetSourcingShippingCollaborationResponse, error) {
+	view, err := h.svc.GetSourcingShippingCollaboration(ctx, grpcx.TenantID(ctx), req.GetCaseId())
+	if err != nil {
+		return nil, err
+	}
+	request, options, cargo := shippingCollaboration(view)
+	participants := make([]*prv1.SourcingShippingParticipant, 0, len(view.Participants))
+	for _, row := range view.Participants {
+		participants = append(participants, sourcingShippingParticipant(row))
+	}
+	plans := make([]*prv1.SourcingShippingPlan, 0, len(view.Plans))
+	for _, row := range view.Plans {
+		plans = append(plans, sourcingShippingPlan(row))
+	}
+	return &prv1.GetSourcingShippingCollaborationResponse{ShippingRequest: request, Options: options, CargoItems: cargo, Participants: participants, Plans: plans}, nil
+}
+
+func (h *SourcingHandler) JoinSourcingShippingTask(ctx context.Context, req *prv1.JoinSourcingShippingTaskRequest) (*prv1.JoinSourcingShippingTaskResponse, error) {
+	rows, err := h.svc.JoinSourcingShippingTask(ctx, grpcx.TenantID(ctx), req.GetCaseId(), sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*prv1.SourcingShippingParticipant, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, sourcingShippingParticipant(row))
+	}
+	return &prv1.JoinSourcingShippingTaskResponse{Participants: out}, nil
+}
+
+func (h *SourcingHandler) RequestPrimaryShipping(ctx context.Context, req *prv1.RequestPrimaryShippingRequest) (*prv1.RequestPrimaryShippingResponse, error) {
+	rows, err := h.svc.RequestPrimaryShipping(ctx, grpcx.TenantID(ctx), req.GetCaseId(), sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*prv1.SourcingShippingParticipant, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, sourcingShippingParticipant(row))
+	}
+	return &prv1.RequestPrimaryShippingResponse{Participants: out}, nil
+}
+
+func (h *SourcingHandler) AssignPrimaryShipping(ctx context.Context, req *prv1.AssignPrimaryShippingRequest) (*prv1.AssignPrimaryShippingResponse, error) {
+	rows, err := h.svc.AssignPrimaryShipping(ctx, grpcx.TenantID(ctx), req.GetCaseId(), req.GetEmployeeId(), req.GetReason(), sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*prv1.SourcingShippingParticipant, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, sourcingShippingParticipant(row))
+	}
+	return &prv1.AssignPrimaryShippingResponse{Participants: out}, nil
+}
+
+func (h *SourcingHandler) CreateSourcingShippingPlan(ctx context.Context, req *prv1.CreateSourcingShippingPlanRequest) (*prv1.CreateSourcingShippingPlanResponse, error) {
+	in := app.NewShippingPlan{CaseID: req.GetCaseId(), ManagerNote: req.GetManagerNote()}
+	for _, row := range req.GetSelections() {
+		in.Selections = append(in.Selections, app.ShippingPlanSelectionInput{SourcingLineID: row.GetSourcingLineId(), ShippingOptionLineID: row.GetShippingOptionLineId(), SelectionType: row.GetSelectionType(), Priority: row.GetPriority(), Reason: row.GetReason(), Risk: row.GetRisk()})
+	}
+	view, err := h.svc.CreateSourcingShippingPlan(ctx, grpcx.TenantID(ctx), in, sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.CreateSourcingShippingPlanResponse{Plan: sourcingShippingPlan(view)}, nil
+}
+
+func (h *SourcingHandler) ListSourcingShippingPlans(ctx context.Context, req *prv1.ListSourcingShippingPlansRequest) (*prv1.ListSourcingShippingPlansResponse, error) {
+	rows, err := h.svc.ListSourcingShippingPlans(ctx, grpcx.TenantID(ctx), req.GetCaseId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*prv1.SourcingShippingPlan, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, sourcingShippingPlan(row))
+	}
+	return &prv1.ListSourcingShippingPlansResponse{Plans: out}, nil
+}
+
+func (h *SourcingHandler) SubmitSourcingShippingPlanToSales(ctx context.Context, req *prv1.SubmitSourcingShippingPlanToSalesRequest) (*prv1.SubmitSourcingShippingPlanToSalesResponse, error) {
+	view, err := h.svc.SubmitSourcingShippingPlanToSales(ctx, grpcx.TenantID(ctx), req.GetId(), sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.SubmitSourcingShippingPlanToSalesResponse{Plan: sourcingShippingPlan(view)}, nil
+}
+
+func (h *SourcingHandler) ListSourcingShippingTasks(ctx context.Context, req *prv1.ListSourcingShippingTasksRequest) (*prv1.ListSourcingShippingTasksResponse, error) {
+	page, size := int32(1), int32(20)
+	if req.GetPage() != nil {
+		page, size = req.GetPage().GetPage(), req.GetPage().GetPageSize()
+	}
+	rows, total, page, size, err := h.svc.ListSourcingShippingTasks(ctx, grpcx.TenantID(ctx), req.GetStatus(), req.GetKeyword(), page, size)
+	if err != nil {
+		return nil, err
+	}
+	tasks := make([]*prv1.SourcingShippingRequest, 0, len(rows))
+	for _, row := range rows {
+		tasks = append(tasks, sourcingShippingTask(row))
+	}
+	return &prv1.ListSourcingShippingTasksResponse{Tasks: tasks, Meta: &commonv1.PageMeta{Total: total, Page: page, PageSize: size}}, nil
+}
+
+func (h *SourcingHandler) StartSourcingShippingTask(ctx context.Context, req *prv1.StartSourcingShippingTaskRequest) (*prv1.StartSourcingShippingTaskResponse, error) {
+	view, err := h.svc.StartSourcingShippingTask(ctx, grpcx.TenantID(ctx), req.GetCaseId(), sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	request, options, _ := shippingCollaboration(view)
+	return &prv1.StartSourcingShippingTaskResponse{ShippingRequest: request, Options: options}, nil
+}
+
+func (h *SourcingHandler) AddSourcingShippingOption(ctx context.Context, req *prv1.AddSourcingShippingOptionRequest) (*prv1.AddSourcingShippingOptionResponse, error) {
+	lines := make([]app.NewSourcingShippingOptionLine, 0, len(req.GetLines()))
+	for _, line := range req.GetLines() {
+		lines = append(lines, app.NewSourcingShippingOptionLine{SourcingLineID: line.GetSourcingLineId(), Currency: line.GetCurrency(), ChargeBasis: line.GetChargeBasis(), UnitRate: line.GetUnitRate(), TotalFreight: line.GetTotalFreight(), Note: line.GetNote()})
+	}
+	view, err := h.svc.AddSourcingShippingOption(ctx, grpcx.TenantID(ctx), app.NewSourcingShippingOption{
+		CaseID: req.GetCaseId(), CarrierForwarder: req.GetCarrierForwarder(), ServiceOptionName: req.GetServiceOptionName(), PortOfLoading: req.GetPortOfLoading(),
+		PortOfDischarge: req.GetPortOfDischarge(), QuotedAt: req.GetQuotedAt(), EstimatedDeparture: req.GetEstimatedDeparture(),
+		EstimatedArrival: req.GetEstimatedArrival(), ValidUntil: req.GetValidUntil(), Note: req.GetNote(), Lines: lines,
+	}, sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	request, options, _ := shippingCollaboration(view)
+	return &prv1.AddSourcingShippingOptionResponse{ShippingRequest: request, Options: options}, nil
+}
+
 func (h *SourcingHandler) CreateCostScenario(ctx context.Context, req *prv1.CreateCostScenarioRequest) (*prv1.CreateCostScenarioResponse, error) {
 	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
 		return nil, err

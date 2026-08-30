@@ -37,6 +37,16 @@ service SourcingService {
   rpc CreateProcurementRework(CreateProcurementReworkRequest) returns (CreateProcurementReworkResponse);
   rpc ListProcurementReworks(ListProcurementReworksRequest) returns (ListProcurementReworksResponse);
   rpc ResolveProcurementRework(ResolveProcurementReworkRequest) returns (ResolveProcurementReworkResponse);
+  rpc GetSourcingShippingCollaboration(GetSourcingShippingCollaborationRequest) returns (GetSourcingShippingCollaborationResponse);
+  rpc ListSourcingShippingTasks(ListSourcingShippingTasksRequest) returns (ListSourcingShippingTasksResponse);
+  rpc StartSourcingShippingTask(StartSourcingShippingTaskRequest) returns (StartSourcingShippingTaskResponse);
+  rpc AddSourcingShippingOption(AddSourcingShippingOptionRequest) returns (AddSourcingShippingOptionResponse);
+  rpc JoinSourcingShippingTask(JoinSourcingShippingTaskRequest) returns (JoinSourcingShippingTaskResponse);
+  rpc RequestPrimaryShipping(RequestPrimaryShippingRequest) returns (RequestPrimaryShippingResponse);
+  rpc AssignPrimaryShipping(AssignPrimaryShippingRequest) returns (AssignPrimaryShippingResponse);
+  rpc CreateSourcingShippingPlan(CreateSourcingShippingPlanRequest) returns (CreateSourcingShippingPlanResponse);
+  rpc ListSourcingShippingPlans(ListSourcingShippingPlansRequest) returns (ListSourcingShippingPlansResponse);
+  rpc SubmitSourcingShippingPlanToSales(SubmitSourcingShippingPlanToSalesRequest) returns (SubmitSourcingShippingPlanToSalesResponse);
   rpc CreateCostScenario(CreateCostScenarioRequest) returns (CreateCostScenarioResponse);
   rpc ListCostScenarios(ListCostScenariosRequest) returns (ListCostScenariosResponse);
   rpc GetCostScenario(GetCostScenarioRequest) returns (GetCostScenarioResponse);
@@ -1871,6 +1881,150 @@ message ListProcurementReworksRequest { int64 case_id = 1; }
 message ListProcurementReworksResponse { repeated ProcurementReworkRequest rework_requests = 1; }
 message ResolveProcurementReworkRequest { int64 id = 1; string resolution_note = 2; }
 message ResolveProcurementReworkResponse {}
+message SourcingShippingRequest {
+  int64 id = 1;
+  int64 case_id = 2;
+  int32 requirement_version_no = 3;
+  string status = 4;
+  string case_no = 5;
+  string case_title = 6;
+  int64 customer_id = 7;
+  string customer_name = 8;
+  int64 sales_employee_id = 9;
+  string sales_employee_name = 10;
+  string destination_port = 11;
+  string cargo_summary = 12;
+  string requested_by_name = 13;
+  string requested_at = 14;
+  string updated_at = 15;
+}
+message SourcingShippingOption {
+  int64 id = 1;
+  int64 request_id = 2;
+  string carrier_forwarder = 3;
+  string port_of_loading = 4;
+  string port_of_discharge = 5;
+  string quoted_at = 6;
+  string estimated_departure = 7;
+  string estimated_arrival = 8;
+  string valid_until = 9;
+  string note = 10;
+  string created_by_name = 11;
+  string created_at = 12;
+  repeated SourcingShippingOptionLine lines = 13;
+  int64 created_by = 14;
+  int32 version_no = 15;
+  string status = 16;
+  string service_option_name = 17;
+}
+message SourcingShippingParticipant {
+  int64 id = 1; int64 request_id = 2; int64 employee_id = 3; string employee_name = 4;
+  string role = 5; string status = 6; string primary_requested_at = 7; string joined_at = 8;
+}
+message SourcingShippingCargoItem {
+  int64 sourcing_line_id = 1;
+  int32 line_no = 2;
+  string product = 3;
+  string material_standard = 4;
+  string grade = 5;
+  string thickness = 6;
+  string width = 7;
+  string length_or_form = 8;
+  string surface_requirement = 9;
+  string packaging = 10;
+  string delivery = 11;
+  string quantity = 12;
+  string quantity_unit = 13;
+}
+message SourcingShippingOptionLine {
+  int64 id = 1;
+  int64 option_id = 2;
+  int64 sourcing_line_id = 3;
+  int32 line_no = 4;
+  string product = 5;
+  string specification = 6;
+  string quantity = 7;
+  string quantity_unit = 8;
+  string currency = 9;
+  string charge_basis = 10;
+  string unit_rate = 11;
+  string total_freight = 12;
+  string note = 13;
+}
+message GetSourcingShippingCollaborationRequest { int64 case_id = 1; }
+message GetSourcingShippingCollaborationResponse {
+  SourcingShippingRequest shipping_request = 1;
+  repeated SourcingShippingOption options = 2;
+  repeated SourcingShippingCargoItem cargo_items = 3;
+  repeated SourcingShippingParticipant participants = 4;
+  repeated SourcingShippingPlan plans = 5;
+}
+message ListSourcingShippingTasksRequest {
+  string status = 1;
+  string keyword = 2;
+  erp.common.v1.PageRequest page = 3;
+}
+message ListSourcingShippingTasksResponse {
+  repeated SourcingShippingRequest tasks = 1;
+  erp.common.v1.PageMeta meta = 2;
+}
+message StartSourcingShippingTaskRequest { int64 case_id = 1; }
+message StartSourcingShippingTaskResponse {
+  SourcingShippingRequest shipping_request = 1;
+  repeated SourcingShippingOption options = 2;
+}
+message AddSourcingShippingOptionRequest {
+  int64 case_id = 1;
+  string carrier_forwarder = 2;
+  string port_of_loading = 3;
+  string port_of_discharge = 4;
+  string quoted_at = 5;
+  string estimated_departure = 6;
+  string estimated_arrival = 7;
+  string valid_until = 8;
+  string note = 9;
+  repeated SourcingShippingOptionLine lines = 10;
+  string service_option_name = 11;
+}
+message AddSourcingShippingOptionResponse {
+  SourcingShippingRequest shipping_request = 1;
+  repeated SourcingShippingOption options = 2;
+}
+message JoinSourcingShippingTaskRequest { int64 case_id = 1; }
+message JoinSourcingShippingTaskResponse { repeated SourcingShippingParticipant participants = 1; }
+message RequestPrimaryShippingRequest { int64 case_id = 1; }
+message RequestPrimaryShippingResponse { repeated SourcingShippingParticipant participants = 1; }
+message AssignPrimaryShippingRequest { int64 case_id = 1; int64 employee_id = 2; string reason = 3; }
+message AssignPrimaryShippingResponse { repeated SourcingShippingParticipant participants = 1; }
+message SourcingShippingPlanSelectionInput {
+  int64 sourcing_line_id = 1; int64 shipping_option_line_id = 2; string selection_type = 3;
+  int32 priority = 4; string reason = 5; string risk = 6;
+}
+message SourcingShippingPlanItem {
+  int64 id = 1; int64 sourcing_line_id = 2; int64 shipping_option_line_id = 3;
+  string selection_type = 4; int32 priority = 5; string reason = 6; string risk = 7;
+  string carrier_forwarder = 8; int64 shipping_employee_id = 9; string shipping_employee_name = 10;
+  string product_name = 11; string currency = 12; string charge_basis = 13; string unit_rate = 14;
+  string total_freight = 15; string port_of_loading = 16; string port_of_discharge = 17;
+  string estimated_departure = 18; string estimated_arrival = 19; string valid_until = 20; int32 quote_version_no = 21;
+  string service_option_name = 22;
+}
+message SourcingShippingPlan {
+  int64 id = 1; int64 request_id = 2; string plan_no = 3; int32 version_no = 4;
+  int32 requirement_version_no = 5; string status = 6; string manager_note = 7;
+  string created_by_name = 8; string confirmed_at = 9; string submitted_to_sales_by_name = 10;
+  string submitted_to_sales_at = 11; int64 target_sales_id = 12; string target_sales_name = 13;
+  repeated SourcingShippingPlanItem items = 14;
+}
+message CreateSourcingShippingPlanRequest {
+  int64 case_id = 1; string manager_note = 2; repeated SourcingShippingPlanSelectionInput selections = 3;
+}
+message CreateSourcingShippingPlanResponse { SourcingShippingPlan plan = 1; }
+message ListSourcingShippingPlansRequest { int64 case_id = 1; }
+message ListSourcingShippingPlansResponse { repeated SourcingShippingPlan plans = 1; }
+message SubmitSourcingShippingPlanToSalesRequest { int64 id = 1; }
+message SubmitSourcingShippingPlanToSalesResponse { SourcingShippingPlan plan = 1; }
+
 // ── 供应商对账（手工核销）─────────────────────────────────────────────
 //
 // SupplierReconRow is one purchase order as it stands on the money side.

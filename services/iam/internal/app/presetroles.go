@@ -58,17 +58,28 @@ var presetRoles = []presetRole{
 		Permissions: []string{
 			"export:contract:read", "export:shipment:read", "export:shipment:write",
 			"inventory:stock:read", "inventory:stock:write",
-			"masterdata:supplier:read",
+			"masterdata:supplier:read", "masterdata:port:read",
 			"procurement:exception:write", "procurement:order:read", "procurement:receipt:write",
 			"product:product:read",
 			"shipping:progress:write", "shipping:route:write",
 			"shipping:schedule:read", "shipping:schedule:write",
+			"shipping:sourcing:read", "shipping:sourcing:write",
 		},
 		Scopes: []presetScope{
 			{"export", "ALL"}, {"mail", "SELF"},
 			{"procurement_order", "SELF"}, {"procurement_requirement", "SELF"},
 			{"procurement_sourcing", "SELF"}, {"shipping", "ALL"},
 		},
+	},
+	{
+		Code: "SHIPPING_MANAGER", Name: "船运经理",
+		Description: "管理售前船运询价、主责人员、统一方案与正式船期",
+		Permissions: []string{
+			"shipping:sourcing:read", "shipping:sourcing:write", "shipping:sourcing:approve",
+			"shipping:schedule:read", "shipping:schedule:write",
+			"masterdata:supplier:read", "masterdata:port:read", "product:product:read",
+		},
+		Scopes: []presetScope{{"shipping", "ALL"}, {"procurement_sourcing", "ALL"}},
 	},
 	{
 		Code: "FINANCE", Name: "财务",

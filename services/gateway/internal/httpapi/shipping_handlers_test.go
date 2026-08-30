@@ -7,15 +7,27 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"google.golang.org/grpc"
 
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
+	procurementv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
 )
 
 type shippingClientStub struct {
 	shippingv1.ShippingServiceClient
+}
+
+type sourcingShippingPlanClientStub struct {
+	procurementv1.SourcingServiceClient
+	received *procurementv1.CreateSourcingShippingPlanRequest
+}
+
+func (s *sourcingShippingPlanClientStub) CreateSourcingShippingPlan(_ context.Context, req *procurementv1.CreateSourcingShippingPlanRequest, _ ...grpc.CallOption) (*procurementv1.CreateSourcingShippingPlanResponse, error) {
+	s.received = req
+	return &procurementv1.CreateSourcingShippingPlanResponse{Plan: &procurementv1.SourcingShippingPlan{Id: 1}}, nil
 }
 
 type shippingPortClientStub struct{ mdv1.PortServiceClient }
@@ -79,6 +91,28 @@ func TestCreateShippingSchedule(t *testing.T) {
 	s.createShippingSchedule(recorder, req)
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"scheduleNo":"SCH-TEST-0001"`) {
 		t.Fatalf("unexpected create response: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestCreateSourcingShippingPlanPreservesCaseIDFromPath(t *testing.T) {
+	client := &sourcingShippingPlanClientStub{}
+	s := &Server{Sourcing: client}
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/shipping/sourcing-tasks/64/plans", strings.NewReader(`{"manager_note":"checked","selections":[{"sourcing_line_id":"8","shipping_option_line_id":"9","selection_type":"RECOMMENDED","priority":1,"reason":"best price"}]}`))
+	routeContext := chi.NewRouteContext()
+	routeContext.URLParams.Add("id", "64")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeContext))
+
+	s.createSourcingShippingPlan(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	if client.received == nil || client.received.GetCaseId() != 64 {
+		t.Fatalf("case id=%v, want 64", client.received)
+	}
+	if client.received.GetManagerNote() != "checked" || len(client.received.GetSelections()) != 1 {
+		t.Fatalf("request body was not preserved: %#v", client.received)
 	}
 }
 
