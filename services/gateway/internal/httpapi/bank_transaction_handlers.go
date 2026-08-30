@@ -105,3 +105,17 @@ func (s *Server) setBankTransactionOwnership(w http.ResponseWriter, r *http.Requ
 	}
 	s.writeProto(w, resp)
 }
+
+// unmatchBankTransaction 解开一条历史匹配。
+//
+// 新建匹配的入口下线了，这一条留着——SetBankTransactionOwnership 遇到已匹配
+// 的行会拒绝并让人「先取消匹配」，没有这条路那句话就是个做不到的指令。
+func (s *Server) unmatchBankTransaction(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.UnmatchBankTransaction(r.Context(),
+		&prv1.UnmatchBankTransactionRequest{TxnId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}

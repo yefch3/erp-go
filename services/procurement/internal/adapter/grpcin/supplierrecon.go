@@ -41,7 +41,7 @@ func (h *OrderHandler) ListPurchaseOrderPayments(ctx context.Context, req *prv1.
 			Amount: e.Amount, FeeAmount: e.FeeAmount, Currency: e.Currency,
 			Note: e.Note, AllocatedAt: e.AllocatedAt, AllocatedBy: e.AllocatedBy,
 			ReversalOf: e.ReversalOf, ReverseReason: e.ReverseReason,
-			PaymentNo: e.PaymentNo,
+			PaymentNo: e.PaymentNo, InvoiceNo: e.InvoiceNo,
 		})
 	}
 	return &prv1.ListPurchaseOrderPaymentsResponse{Items: out}, nil
@@ -60,7 +60,7 @@ func (h *OrderHandler) RecordPurchaseOrderPayment(ctx context.Context, req *prv1
 
 func (h *OrderHandler) ReversePurchaseOrderPayment(ctx context.Context, req *prv1.ReversePurchaseOrderPaymentRequest) (*prv1.ReversePurchaseOrderPaymentResponse, error) {
 	row, err := h.svc.ReversePOPayment(ctx, grpcx.TenantID(ctx),
-		req.GetAllocationId(), req.GetReason(), reconOperator(ctx))
+		req.GetPoId(), req.GetAllocationId(), req.GetReason(), reconOperator(ctx))
 	if err != nil {
 		return nil, err
 	}

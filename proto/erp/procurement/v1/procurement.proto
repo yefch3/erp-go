@@ -1914,6 +1914,11 @@ message PurchaseOrderPaymentEntry {
   string reverse_reason = 10;
   // Empty on hand-entered rows. Also decides which reversal path applies.
   string payment_no = 11;
+  // Non-empty when the money was allocated against an invoice that has a
+  // line pointing at this order. It counts toward this order's paid figure,
+  // but it is not money paid *on* this order — reversing it also moves any
+  // other order the invoice touches.
+  string invoice_no = 12;
 }
 
 message ListSupplierReconRequest {
@@ -1957,6 +1962,9 @@ message ReversePurchaseOrderPaymentResponse {
 message ReversePurchaseOrderPaymentRequest {
   int64 allocation_id = 1;
   string reason = 2;
+  // Which row to return afterwards. Invoice-backed allocations point at no
+  // purchase order of their own, so the caller has to say.
+  int64 po_id = 3;
 }
 message ClosePurchaseOrderPaymentResponse {
   SupplierReconRow row = 1;

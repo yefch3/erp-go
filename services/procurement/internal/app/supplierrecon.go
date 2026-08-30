@@ -95,6 +95,10 @@ type POPaymentEntry struct {
 	ReverseReason string
 	// 老行带着付款单号；手填行为空。这一列同时也是**冲销走哪条路**的依据。
 	PaymentNo string
+	// 非空表示这笔钱是核销在发票上的，只是那张发票有行指向本采购单。
+	// 界面上要标出来——它算进了本单的已付，但它不是「付在这张单上」的钱，
+	// 冲掉它会同时影响这张发票关联的其它采购单。
+	InvoiceNo string
 }
 
 // poClosureCategories 和客户侧同一份白名单。SETTLED（正常付清）是最常见的
@@ -346,6 +350,16 @@ func (s *Service) ListPOPayments(ctx context.Context, tenantID, poID int64,
 	if err := s.requireFullScope(ctx, op); err != nil {
 		return nil, err
 	}
+	// 两类行都要列出来：
+	//   · 挂在这张采购单上的（po_id = 本单）——手填的和从付款单分配的预付
+	//   · 挂在发票上、而那张发票有行指向本单的（invoice_id 非空）
+	//
+	// **第二类不列出来就是个洞。** 行上的「已付」把发票那条路的钱按发票行
+	// 分摊算了进来（见 reconFrom 的 ip 那条腿），明细里却一条都看不见——
+	// 于是那笔钱既解释不清，也没有任何冲销入口：payment_allocations 上
+	// CHECK((invoice_id IS NOT NULL) <> (po_id IS NOT NULL)) 保证它的 po_id
+	// 是空的，而供应商付款页已经下线。错的金额会被永久焊死在已付里，还会被
+	// 「确认完成」快照进 closure 记录。
 	rows, err := s.pool.Query(ctx, `
 		SELECT a.id,
 		       coalesce(a.paid_at::text, ''),
@@ -353,10 +367,18 @@ func (s *Service) ListPOPayments(ctx context.Context, tenantID, poID int64,
 		       a.allocated_at::text, a.allocated_by_name,
 		       coalesce(a.reversal_of, 0), a.reverse_reason,
 		       -- LEFT JOIN：手填行没有付款单，INNER JOIN 会让它们整行消失。
-		       coalesce(sp.payment_no, '')
+		       coalesce(sp.payment_no, ''),
+		       coalesce(si.invoice_no, '') AS invoice_no
 		  FROM payment_allocations a
 		  LEFT JOIN supplier_payments sp ON sp.id = a.payment_id
-		 WHERE a.tenant_id = $1 AND a.po_id = $2
+		  LEFT JOIN supplier_invoices si ON si.id = a.invoice_id
+		 WHERE a.tenant_id = $1
+		   AND (a.po_id = $2
+		        OR (a.invoice_id IS NOT NULL AND EXISTS (
+		              SELECT 1 FROM supplier_invoice_lines il
+		               WHERE il.tenant_id = a.tenant_id
+		                 AND il.invoice_id = a.invoice_id
+		                 AND il.po_id = $2)))
 		 ORDER BY a.allocated_at, a.id`, tenantID, poID)
 	if err != nil {
 		return nil, err
@@ -367,7 +389,7 @@ func (s *Service) ListPOPayments(ctx context.Context, tenantID, poID int64,
 		var e POPaymentEntry
 		if err := rows.Scan(&e.AllocationID, &e.PaidAt, &e.Amount, &e.FeeAmount,
 			&e.Currency, &e.Note, &e.AllocatedAt, &e.AllocatedBy,
-			&e.ReversalOf, &e.ReverseReason, &e.PaymentNo); err != nil {
+			&e.ReversalOf, &e.ReverseReason, &e.PaymentNo, &e.InvoiceNo); err != nil {
 			return nil, err
 		}
 		out = append(out, e)
@@ -377,7 +399,9 @@ func (s *Service) ListPOPayments(ctx context.Context, tenantID, poID int64,
 
 // ReversePOPayment 冲销一笔记错的付款：写一条相反的记录，不删原记录。
 // 「记错了」和「从没发生过」是两件事，账上要看得出有人改过。
-func (s *Service) ReversePOPayment(ctx context.Context, tenantID, allocID int64,
+// reconPOID 是「冲完之后回哪一行」。挂发票的核销行本身不指向任何采购单，
+// 所以这个数只能由调用方给——路由上带着它。
+func (s *Service) ReversePOPayment(ctx context.Context, tenantID, reconPOID, allocID int64,
 	reason string, op Operator) (SupplierReconRow, error) {
 	if err := s.requireFullScope(ctx, op); err != nil {
 		return SupplierReconRow{}, err
@@ -399,9 +423,26 @@ func (s *Service) ReversePOPayment(ctx context.Context, tenantID, allocID int64,
 	if err != nil {
 		return SupplierReconRow{}, err
 	}
+	// 挂发票的行（po_id 为空）也从这里冲。
+	//
+	// **上一版这里是拒绝的**，让人去供应商付款页——那一页已经下线，于是这
+	// 句话变成一个做不到的指令，而这类行的钱是算进本页「已付」的（reconFrom
+	// 的 ip 那条腿）。结果是一笔记错的发票核销被永久焊死，还会被「确认完成」
+	// 快照进记录。既然本页是唯一入口，它就得接这活。
+	//
+	// 冲完之后回哪一行：挂发票的行本身不指向任何采购单，所以用调用方传进来
+	// 的 poID（路由上带着它）。
 	if poID == 0 {
-		return SupplierReconRow{}, apierr.Invalid("PR_POPAY_NOT_ON_ORDER",
-			"这笔核销挂在发票上，不在采购单上——请到供应商付款页冲销")
+		if paymentID == 0 {
+			// invoice_id 和 po_id 由 CHECK 保证恰有其一，两个都空说明数据
+			// 坏了；说清楚比继续往下走强。
+			return SupplierReconRow{}, apierr.Conflict("PR_POPAY_ORPHAN_ROW",
+				"这笔核销既不挂采购单也不挂付款单——数据异常，请找管理员")
+		}
+		if _, err := s.ReverseSupplierPaymentAllocation(ctx, tenantID, allocID, reason, op); err != nil {
+			return SupplierReconRow{}, err
+		}
+		return s.reconRowOf(ctx, tenantID, reconPOID)
 	}
 
 	// **挂着付款单的老行转交给老路。**

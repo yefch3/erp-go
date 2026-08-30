@@ -318,7 +318,7 @@ func TestReversingAPaymentBackedEntryGoesThroughTheOldPath(t *testing.T) {
 
 	// 冲销老行：付款单的未分配余额必须弹回 3000。弹不回去 = 没走老路，
 	// 那笔钱会在采购单上已经退回、在付款单上却还占着。
-	if _, err := svc.ReversePOPayment(ctx, tenantID, oldRow.AllocationID, "记错了", op); err != nil {
+	if _, err := svc.ReversePOPayment(ctx, tenantID, poID, oldRow.AllocationID, "记错了", op); err != nil {
 		t.Fatal(err)
 	}
 	after, err := svc.GetSupplierPayment(ctx, tenantID, adv.ID)
@@ -330,7 +330,7 @@ func TestReversingAPaymentBackedEntryGoesThroughTheOldPath(t *testing.T) {
 			"没弹回去说明没有转交给 ReverseSupplierPaymentAllocation", after.Unallocated)
 	}
 	// 冲销手填行：不该去碰任何付款单。
-	if _, err := svc.ReversePOPayment(ctx, tenantID, newRow.AllocationID, "也记错了", op); err != nil {
+	if _, err := svc.ReversePOPayment(ctx, tenantID, poID, newRow.AllocationID, "也记错了", op); err != nil {
 		t.Fatal(err)
 	}
 	row := reconRows(ctx, t, svc, tenantID, false, op)["PO-RC-MIX"]
@@ -599,5 +599,77 @@ func TestHandEnteredMoneyOnACancelledOrderStillShowsInTheLedger(t *testing.T) {
 	if !found {
 		t.Fatal("这家供应商必须出现在往来汇总里——3000 块真的付出去了，" +
 			"不能因为那张单被取消、又没有付款单抬头就整行消失")
+	}
+}
+
+// 挂在发票上的核销行，也得能从这一页冲掉。
+//
+// 供应商付款页下线之后，这一页是唯一的入口。而这类行有两个性质叠在一起：
+//
+//	· 它的钱**算进本页的已付**（reconFrom 的 ip 那条腿按发票行分摊回来）
+//	· payment_allocations 上 CHECK((invoice_id IS NOT NULL) <> (po_id IS NOT
+//	  NULL)) 保证它的 po_id 是空的
+//
+// 所以「明细按 po_id 过滤」会让它一条都不出现——钱算进去了，却既解释不清，
+// 也没有任何冲销入口。一笔记错的发票核销会被永久焊死在已付里，还会被
+// 「确认完成」快照进 closure 记录。
+func TestInvoiceBackedEntriesAreVisibleAndReversibleHere(t *testing.T) {
+	ctx, svc, tenantID, cleanup := reconTestPool(t)
+	defer cleanup()
+	op := Operator{ID: 77, Name: "Finance"}
+	poID := seedReconOrder(ctx, t, svc.pool, tenantID, "PO-RC-INVREV", "5000", "ORDERED")
+
+	var invID int64
+	if err := svc.pool.QueryRow(ctx, `
+		INSERT INTO supplier_invoices
+		  (tenant_id, supplier_id, supplier_name, invoice_no, currency, total_amount, invoice_date)
+		VALUES ($1, 9, 'Mill', 'INV-REV-1', 'USD', 5000, '2026-08-01')
+		RETURNING id`, tenantID).Scan(&invID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.pool.Exec(ctx, `
+		INSERT INTO supplier_invoice_lines (tenant_id, invoice_id, po_id, description, amount)
+		VALUES ($1, $2, $3, '全额', 5000)`, tenantID, invID, poID); err != nil {
+		t.Fatal(err)
+	}
+	pay, err := svc.CreateSupplierPayment(ctx, tenantID, SupplierPaymentInput{
+		SupplierID: 9, SupplierName: "Mill", PaymentType: "SETTLEMENT",
+		Currency: "USD", Amount: "5000", PaidAt: "2026-08-20", Method: "WIRE",
+	}, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AllocateSupplierPayment(ctx, tenantID, pay.ID,
+		[]PaymentAllocationInput{{InvoiceID: invID, Amount: "5000"}}, op); err != nil {
+		t.Fatal(err)
+	}
+
+	// 明细里必须看得见它，而且标着是哪张发票——不然那 5000 从哪来说不清。
+	entries, err := svc.ListPOPayments(ctx, tenantID, poID, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("挂发票的核销行也要出现在明细里（它算进了本单的已付），实际 %d 条", len(entries))
+	}
+	if entries[0].InvoiceNo != "INV-REV-1" {
+		t.Fatalf("要标出它核销在哪张发票上，实际 %q", entries[0].InvoiceNo)
+	}
+
+	// 而且必须冲得掉。冲完之后本单的已付回到 0。
+	row, err := svc.ReversePOPayment(ctx, tenantID, poID, entries[0].AllocationID, "发票选错了", op)
+	if err != nil {
+		t.Fatalf("挂发票的行必须能从这一页冲掉——付款页已经下线，这是唯一入口：%v", err)
+	}
+	if row.PaidAmount != "0.00" && row.PaidAmount != "0" {
+		t.Fatalf("冲销之后本单已付应回到 0，实际 %q", row.PaidAmount)
+	}
+	// 走的是老路，所以付款单的未分配余额也要弹回去。
+	after, err := svc.GetSupplierPayment(ctx, tenantID, pay.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Unallocated != "5000.00" && after.Unallocated != "5000" {
+		t.Fatalf("付款单未分配余额应弹回 5000，实际 %q", after.Unallocated)
 	}
 }

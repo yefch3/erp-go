@@ -61,6 +61,9 @@ func (s *Server) reversePurchaseOrderPayment(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	req.AllocationId, _ = strconv.ParseInt(chi.URLParam(r, "allocationId"), 10, 64)
+	// 冲完之后回哪一行。挂发票的核销行本身不指向任何采购单，地址里这一段
+	// 是唯一的来源。
+	req.PoId = idFromPath(r)
 	resp, err := s.Orders.ReversePurchaseOrderPayment(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)

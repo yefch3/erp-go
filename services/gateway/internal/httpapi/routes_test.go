@@ -232,7 +232,7 @@ func TestSupplierReconRoutesAreAllRegistered(t *testing.T) {
 		"GET /api/supplier-recon",                                  // 两页共用的列表，view=done 翻面
 		"GET /api/supplier-recon/{id}/payments",                    // 展开行看这张采购单的付款明细
 		"POST /api/supplier-recon/{id}/payments",                   // 「记一笔付款」（手填，不连流水）
-		"POST /api/supplier-recon/payments/{allocationId}/reverse", // 冲销记错的那一笔
+		"POST /api/supplier-recon/{id}/payments/{allocationId}/reverse", // 冲销记错的那一笔
 		"POST /api/supplier-recon/{id}/close",                      // 「确认核销完成」（转到已完成页）
 		"POST /api/supplier-recon/{id}/reopen",                     // 「撤销完成」（回到待核销页）
 	}
@@ -274,10 +274,11 @@ func TestRetiredSupplierPageRoutesStayGone(t *testing.T) {
 		// 往来汇总：只读，但入口也一起收了。
 		"GET /api/supplier-statements",
 		"GET /api/supplier-statements/{id}",
-		// 银行流水对上付款单：付款单没有创建入口之后这两条就是空按钮，
+		// 银行流水对上付款单：付款单没有创建入口之后这条就是空按钮，
 		// 而且和「流水只是记录、不参与核销」这个新模型本来就冲突。
+		// **unmatch 不在这里**——解开历史匹配必须留着，否则那些行的归属
+		// 从此谁也改不了（改归属的守门会让人「先取消匹配」）。
 		"POST /api/bank-transactions/{id}/match",
-		"POST /api/bank-transactions/{id}/unmatch",
 	} {
 		if have[gone] {
 			t.Errorf("%s 又回来了——供应商这边只留「供应商对账」一个界面，"+

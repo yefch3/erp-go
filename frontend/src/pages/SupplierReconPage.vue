@@ -66,10 +66,15 @@
                     </div>
                   </template>
                 </el-table-column>
-                <el-table-column :label="t('supplierRecon.entrySource')" width="150">
+                <el-table-column :label="t('supplierRecon.entrySource')" width="180">
                   <template #default="{ row: e }">
                     <span v-if="e.paymentNo">{{ e.paymentNo }}</span>
                     <span v-else class="sub">{{ t('supplierRecon.entryByHand') }}</span>
+                    <!-- 这笔钱核销在发票上，只是那张发票有行指向本单。它算进
+                         本单的已付，但冲掉它会同时影响这张发票关联的其它单。 -->
+                    <div v-if="e.invoiceNo" class="sub warn-note">
+                      {{ t('supplierRecon.entryViaInvoice', { no: e.invoiceNo }) }}
+                    </div>
                   </template>
                 </el-table-column>
                 <el-table-column :label="t('supplierRecon.entryNote')" min-width="180">
@@ -326,6 +331,8 @@ interface Entry {
   reverseReason: string
   // 老行带着付款单号；手填行为空。
   paymentNo: string
+  // 非空 = 这笔钱核销在发票上，只是那张发票有行指向本单。
+  invoiceNo: string
 }
 
 const rows = ref<Row[]>([])
@@ -546,7 +553,7 @@ async function reverseEntry(row: Row, e: Entry) {
     { inputPlaceholder: t('supplierRecon.entryReverseReason') },
   ).catch(() => ({ value: '' }))
   if (!value) return
-  await post(`/supplier-recon/payments/${e.allocationId}/reverse`, { reason: value })
+  await post(`/supplier-recon/${row.poId}/payments/${e.allocationId}/reverse`, { reason: value })
   ElMessage.success(t('supplierRecon.entryReversed'))
   await loadEntries(row)
   reload()
