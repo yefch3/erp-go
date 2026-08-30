@@ -58,7 +58,7 @@ func customerInput(name, country, countryCode, address, currency, term, remark s
 func applyCustomerProfile(in *app.CustomerInput,
 	shortName, englishName, customerType, industry, source string, tags []string,
 	website, primaryLanguage, timezone, registeredName, registrationNo, taxID string,
-	invoiceTitle, invoiceTaxNo, invoiceRemark string, paymentDays int32,
+	invoiceTitle, invoiceTaxNo, invoiceRemark string,
 	creditLimitMinor int64, creditCurrency, creditStatus, businessStatus string,
 ) {
 	in.ShortName, in.EnglishName = shortName, englishName
@@ -66,7 +66,7 @@ func applyCustomerProfile(in *app.CustomerInput,
 	in.Website, in.PrimaryLanguage, in.Timezone = website, primaryLanguage, timezone
 	in.RegisteredName, in.RegistrationNo, in.TaxID = registeredName, registrationNo, taxID
 	in.InvoiceTitle, in.InvoiceTaxNo, in.InvoiceRemark = invoiceTitle, invoiceTaxNo, invoiceRemark
-	in.PaymentDays, in.CreditLimitMinor = paymentDays, creditLimitMinor
+	in.CreditLimitMinor = creditLimitMinor
 	in.CreditCurrency, in.CreditStatus, in.BusinessStatus = creditCurrency, creditStatus, businessStatus
 }
 
@@ -78,7 +78,7 @@ func customerProfileInput(req *mdv1.UpdateCustomerProfileRequest, opID int64) ap
 		Timezone: req.GetTimezone(), RegisteredName: req.GetRegisteredName(),
 		RegistrationNo: req.GetRegistrationNo(), TaxID: req.GetTaxId(),
 		InvoiceTitle: req.GetInvoiceTitle(), InvoiceTaxNo: req.GetInvoiceTaxNo(),
-		InvoiceRemark: req.GetInvoiceRemark(), PaymentDays: req.GetPaymentDays(),
+		InvoiceRemark:    req.GetInvoiceRemark(),
 		CreditLimitMinor: req.GetCreditLimitMinor(), CreditCurrency: req.GetCreditCurrency(),
 		CreditStatus: req.GetCreditStatus(), BusinessStatus: req.GetBusinessStatus(), OperatorID: opID,
 	}
@@ -112,7 +112,7 @@ func customerToProto(c store.Customer, contacts []store.CustomerContact, address
 		PrimaryLanguage: c.PrimaryLanguage, Timezone: c.Timezone,
 		RegisteredName: c.RegisteredName, RegistrationNo: c.RegistrationNo, TaxId: c.TaxID,
 		InvoiceTitle: c.InvoiceTitle, InvoiceTaxNo: c.InvoiceTaxNo,
-		InvoiceRemark: c.InvoiceRemark, PaymentDays: c.PaymentDays,
+		InvoiceRemark:    c.InvoiceRemark,
 		CreditLimitMinor: c.CreditLimitMinor, CreditCurrency: c.CreditCurrency,
 		CreditStatus: c.CreditStatus, BusinessStatus: c.BusinessStatus,
 		CreditGrade: c.CreditGrade, CreditGradedAt: ts(c.CreditGradedAt),
@@ -134,7 +134,7 @@ func (h *Handler) CreateCustomer(ctx context.Context, req *mdv1.CreateCustomerRe
 		req.GetIndustry(), req.GetSource(), req.GetTags(), req.GetWebsite(),
 		req.GetPrimaryLanguage(), req.GetTimezone(), req.GetRegisteredName(),
 		req.GetRegistrationNo(), req.GetTaxId(), req.GetInvoiceTitle(),
-		req.GetInvoiceTaxNo(), req.GetInvoiceRemark(), req.GetPaymentDays(),
+		req.GetInvoiceTaxNo(), req.GetInvoiceRemark(),
 		req.GetCreditLimitMinor(), req.GetCreditCurrency(), req.GetCreditStatus(),
 		req.GetBusinessStatus())
 	in.Code = req.GetCode()
@@ -176,7 +176,7 @@ func (h *Handler) ListCustomers(ctx context.Context, req *mdv1.ListCustomersRequ
 			PrimaryLanguage: r.PrimaryLanguage, Timezone: r.Timezone,
 			RegisteredName: r.RegisteredName, RegistrationNo: r.RegistrationNo, TaxId: r.TaxID,
 			InvoiceTitle: r.InvoiceTitle, InvoiceTaxNo: r.InvoiceTaxNo,
-			InvoiceRemark: r.InvoiceRemark, PaymentDays: r.PaymentDays,
+			InvoiceRemark:    r.InvoiceRemark,
 			CreditLimitMinor: r.CreditLimitMinor, CreditCurrency: r.CreditCurrency,
 			CreditStatus: r.CreditStatus, BusinessStatus: r.BusinessStatus,
 			CreditGrade: r.CreditGrade, CreditGradedAt: ts(r.CreditGradedAt),
@@ -286,7 +286,7 @@ func supplierToProto(s store.Supplier) *mdv1.Supplier {
 		ContactEmail: s.ContactEmail, Remark: s.Remark, Status: s.Status,
 		NameZh: s.NameZh, NameEn: s.NameEn, ShortName: s.ShortName,
 		CountryCode: s.CountryCode, TaxId: s.TaxID, RegisteredAddress: s.RegisteredAddress,
-		PaymentTerm: s.PaymentTerm, PaymentDays: s.PaymentDays,
+		PaymentTerm:   s.PaymentTerm,
 		BusinessTypes: s.BusinessTypes,
 		CreditGrade:   s.CreditGrade, CreditGradedAt: ts(s.CreditGradedAt),
 	}
@@ -300,7 +300,7 @@ func (h *Handler) CreateSupplier(ctx context.Context, req *mdv1.CreateSupplierRe
 		ContactEmail: req.GetContactEmail(), Remark: req.GetRemark(),
 		NameZh: req.GetNameZh(), NameEn: req.GetNameEn(), ShortName: req.GetShortName(),
 		CountryCode: req.GetCountryCode(), TaxID: req.GetTaxId(), RegisteredAddress: req.GetRegisteredAddress(),
-		PaymentTerm: req.GetPaymentTerm(), PaymentDays: req.GetPaymentDays(),
+		PaymentTerm:   req.GetPaymentTerm(),
 		BusinessTypes: req.GetBusinessTypes(),
 		OperatorID:    operatorID(ctx), OperatorName: operatorName(ctx),
 	})
@@ -333,7 +333,7 @@ func (h *Handler) ListSuppliers(ctx context.Context, req *mdv1.ListSuppliersRequ
 			ContactEmail: r.ContactEmail, Remark: r.Remark, Status: r.Status,
 			NameZh: r.NameZh, NameEn: r.NameEn, ShortName: r.ShortName,
 			CountryCode: r.CountryCode, TaxId: r.TaxID, RegisteredAddress: r.RegisteredAddress,
-			PaymentTerm: r.PaymentTerm, PaymentDays: r.PaymentDays,
+			PaymentTerm:   r.PaymentTerm,
 			BusinessTypes: r.BusinessTypes,
 			CreditGrade:   r.CreditGrade, CreditGradedAt: ts(r.CreditGradedAt),
 			FactoryCount: r.FactoryCount, OwnerNames: r.OwnerNames,
@@ -359,7 +359,6 @@ func (h *Handler) UpdateSupplier(ctx context.Context, req *mdv1.UpdateSupplierRe
 		Remark: req.GetRemark(), NameZh: req.GetNameZh(), NameEn: req.GetNameEn(),
 		ShortName: req.GetShortName(), CountryCode: req.GetCountryCode(), TaxID: req.GetTaxId(),
 		RegisteredAddress: req.GetRegisteredAddress(), PaymentTerm: req.GetPaymentTerm(),
-		PaymentDays:   req.GetPaymentDays(),
 		BusinessTypes: req.GetBusinessTypes(), OperatorID: operatorID(ctx), OperatorName: operatorName(ctx),
 	})
 	if err != nil {

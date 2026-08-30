@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sgao19/erp-go/pkg/pgdb"
+	"github.com/sgao19/erp-go/services/procurement/internal/store"
 )
 
 // 供应商对账（手工核销）。需求的原话是：
@@ -674,33 +675,30 @@ func TestInvoiceBackedEntriesAreVisibleAndReversibleHere(t *testing.T) {
 	}
 }
 
-// 应付到期日：**下单当天 + 供应商账期**（业务定的口径，客户侧是从合同生效
-// 那天起算）。这一组钉三件事：
+// 应付到期日是**建单的人填的**，不是从供应商账期推出来的。这一组钉的是
+// 列表怎么读它：
 //
-//	· 账期是**下单那一刻的快照**——供应商事后改账期不动已经下出去的单
-//	· 没配账期 → 到期日留空 → 「未配账期」，**不是「今天到期」**。编一个
-//	  日子会让「今天该付谁」这句话变成假的
-//	· 两个筛子各管一件事：只看逾期的、只看未配账期的（后者是催配置，不是催钱）
-func TestPayableDueComesFromTheDayTheOrderWasPlaced(t *testing.T) {
+//	· 没填 → 到期日留空 → 「未填」，**不是「今天到期」**。编一个日子会让
+//	  「今天该付谁」这句话变成假的
+//	· 两个筛子各管一件事：只看逾期的、只看没填的（后者是催人填，不是催钱）
+func TestPayableDueIsReadFromTheOrderItself(t *testing.T) {
 	ctx, svc, tenantID, cleanup := reconTestPool(t)
 	defer cleanup()
 	op := Operator{ID: 77, Name: "Finance"}
 
-	// seedReconOrder 直接写库，绕过了下单那条路，所以到期日在这里手工摆布——
-	// 摆的是「已经算出来的结果」，测的是列表怎么读它。
+	// seedReconOrder 直接写库，到期日在这里手工摆布——摆的是「员工填下的
+	// 结果」，测的是列表怎么读它。
 	overdue := seedReconOrder(ctx, t, svc.pool, tenantID, "PO-DUE-LATE", "1000", "ORDERED")
 	soon := seedReconOrder(ctx, t, svc.pool, tenantID, "PO-DUE-SOON", "1000", "ORDERED")
-	// 这一张什么都不设：账期为 0，到期日留空——「未配账期」。
+	// 这一张什么都不设：建单的人没填，到期日留空——「未填」。
 	seedReconOrder(ctx, t, svc.pool, tenantID, "PO-DUE-NONE", "1000", "ORDERED")
 	if _, err := svc.pool.Exec(ctx, `
-		UPDATE purchase_orders SET payment_days = 30,
-		       payable_due_date = current_date - 5
+		UPDATE purchase_orders SET payable_due_date = current_date - 5
 		 WHERE tenant_id=$1 AND id=$2`, tenantID, overdue); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.pool.Exec(ctx, `
-		UPDATE purchase_orders SET payment_days = 30,
-		       payable_due_date = current_date + 10
+		UPDATE purchase_orders SET payable_due_date = current_date + 10
 		 WHERE tenant_id=$1 AND id=$2`, tenantID, soon); err != nil {
 		t.Fatal(err)
 	}
@@ -712,10 +710,10 @@ func TestPayableDueComesFromTheDayTheOrderWasPlaced(t *testing.T) {
 	if got := all["PO-DUE-SOON"]; got.OverdueDays != -10 || got.DueUnset {
 		t.Fatalf("还有 10 天到期的单应为 overdueDays=-10，实际 %+v", got)
 	}
-	// **没配账期不是「今天到期」。** 到期日留空、dueUnset 为真，
+	// **没填不是「今天到期」。** 到期日留空、dueUnset 为真，
 	// overdueDays 那个 0 是 coalesce 出来的占位，界面靠 dueUnset 分流。
 	if got := all["PO-DUE-NONE"]; !got.DueUnset || got.DueDate != "" {
-		t.Fatalf("没配账期的单应为 dueUnset=true、到期日空串，实际 %+v", got)
+		t.Fatalf("没填到期日的单应为 dueUnset=true、到期日空串，实际 %+v", got)
 	}
 
 	// 两个筛子。
@@ -738,14 +736,60 @@ func TestPayableDueComesFromTheDayTheOrderWasPlaced(t *testing.T) {
 	}
 	for _, no := range []string{"PO-DUE-SOON", "PO-DUE-NONE"} {
 		if _, ok := od[no]; ok {
-			t.Fatalf("「只看逾期」不该收 %s——没到期和没配账期都不是逾期", no)
+			t.Fatalf("「只看逾期」不该收 %s——没到期和没填都不是逾期", no)
 		}
 	}
 	un := only(SupplierReconFilter{UnsetOnly: true})
 	if _, ok := un["PO-DUE-NONE"]; !ok {
-		t.Fatal("「只看未配账期」要收进没配的那张")
+		t.Fatal("「只看未填到期日」要收进没填的那张")
 	}
 	if _, ok := un["PO-DUE-LATE"]; ok {
-		t.Fatal("「只看未配账期」不该收配了账期的单——那是催钱，不是催配置")
+		t.Fatal("「只看未填到期日」不该收已经填了的单——那是催钱，不是催人填")
+	}
+}
+
+// 审批通过**不许动**员工填下的应付到期日。
+//
+// 上一版 SetPurchaseOrderOrdered 里有一句无条件赋值：
+//
+//	payable_due_date = CASE WHEN payment_days > 0
+//	    THEN CURRENT_DATE + payment_days ELSE NULL END
+//
+// 账期那一列停用之后它恒为 0，于是这句会走 ELSE 分支，把填好的日子抹成空。
+// 抹的动作发生在 Kafka 审批消费里：**没有人在场、不报错**，页面第二天只是
+// 显示「未填」，而钱该什么时候付这件事已经没人知道了。
+//
+// 所以这条测试钉的不是「下单会算出什么」，而是「下单什么都不该算」。
+func TestApprovingAnOrderDoesNotWipeTheDueDateSomebodyTyped(t *testing.T) {
+	ctx, svc, tenantID, cleanup := reconTestPool(t)
+	defer cleanup()
+
+	poID := seedReconOrder(ctx, t, svc.pool, tenantID, "PO-DUE-KEEP", "1000", "DRAFT")
+	var typed string
+	if err := svc.pool.QueryRow(ctx, `
+		UPDATE purchase_orders SET payable_due_date = current_date + 45, ordered_at = NULL
+		 WHERE tenant_id=$1 AND id=$2
+		RETURNING payable_due_date::text`, tenantID, poID).Scan(&typed); err != nil {
+		t.Fatal(err)
+	}
+
+	// 审批通过走的就是这一句。
+	if err := svc.q.SetPurchaseOrderOrdered(ctx, store.SetPurchaseOrderOrderedParams{
+		TenantID: tenantID, ID: poID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var after, status string
+	if err := svc.pool.QueryRow(ctx, `
+		SELECT coalesce(payable_due_date::text, ''), status
+		  FROM purchase_orders WHERE id=$1`, poID).Scan(&after, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "ORDERED" {
+		t.Fatalf("下单应该把状态推到 ORDERED，实际 %q", status)
+	}
+	if after != typed {
+		t.Fatalf("审批通过把员工填的到期日改掉了：填的是 %q，下单之后变成 %q", typed, after)
 	}
 }

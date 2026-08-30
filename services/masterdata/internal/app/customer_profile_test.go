@@ -22,7 +22,6 @@ func TestCustomerProfileDefaultsAndTags(t *testing.T) {
 
 func TestCustomerProfileValidation(t *testing.T) {
 	tests := []CustomerInput{
-		{Name: "A", PaymentDays: -1},
 		{Name: "A", CreditLimitMinor: -1},
 		{Name: "A", CreditCurrency: "US"},
 		{Name: "A", CreditStatus: "UNKNOWN"},

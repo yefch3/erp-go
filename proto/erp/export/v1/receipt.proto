@@ -53,6 +53,8 @@ service ReceiptService {
   // 确认；确认之后照样能继续记收款，钱真的又来了就撤销完成。
   // 有一条活着的记录 = 已完成页，没有 = 待核销页。
   rpc CloseReceivable(CloseReceivableRequest) returns (CloseReceivableResponse);
+  // 事后改一份合同的应收到期日。理由必填——这个日子决定它算不算逾期。
+  rpc SetReceivableDueDate(SetReceivableDueDateRequest) returns (SetReceivableDueDateResponse);
   rpc ReopenReceivable(ReopenReceivableRequest) returns (ReopenReceivableResponse);
   // 应收提醒收件箱（E1 第二期）。
   rpc ListReceivableReminders(ListReceivableRemindersRequest) returns (ListReceivableRemindersResponse);
@@ -417,6 +419,16 @@ message CloseReceivableRequest {
   string note = 3;
 }
 message CloseReceivableResponse {}
+
+message SetReceivableDueDateRequest {
+  int64 contract_id = 1;
+  // YYYY-MM-DD。空串表示清空，回到「没填」——填错了要能撤回。
+  string due_date = 2;
+  string reason = 3;
+}
+message SetReceivableDueDateResponse {
+  string due_date = 1;
+}
 
 message ReopenReceivableRequest {
   int64 contract_id = 1;

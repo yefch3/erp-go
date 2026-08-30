@@ -4,6 +4,7 @@ import (
 	"context"
 
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
+	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/services/procurement/internal/app"
 )
@@ -87,15 +88,24 @@ func (h *OrderHandler) ReopenPurchaseOrderPayment(ctx context.Context, req *prv1
 	return &prv1.ReopenPurchaseOrderPaymentResponse{Row: reconRowProto(row)}, nil
 }
 
-func (h *OrderHandler) BackfillPayableDue(ctx context.Context, _ *prv1.BackfillPayableDueRequest) (*prv1.BackfillPayableDueResponse, error) {
-	res, err := h.svc.BackfillPayableDue(ctx, grpcx.TenantID(ctx), reconOperator(ctx))
+// BackfillPayableDue 已下线：它按「供应商配的账期」推算存量单的到期日，
+// 而到期日现在是单据自己的字段、由人填，没有可推导的来源了。存量单要补，
+// 走对账页上的「改到期日」，一张一张地填，理由留痕。
+//
+// 空壳保留只因为 buf 的兼容检查不允许删 RPC。网关已经不挂这条路由，所以
+// 正常情况下没有人能走到这里。
+func (h *OrderHandler) BackfillPayableDue(context.Context, *prv1.BackfillPayableDueRequest) (*prv1.BackfillPayableDueResponse, error) {
+	return nil, apierr.Conflict("PR_BACKFILL_RETIRED",
+		"批量补算已下线：应付到期日现在由建单的人填，没有可以推算的账期了")
+}
+
+func (h *OrderHandler) SetPayableDueDate(ctx context.Context, req *prv1.SetPayableDueDateRequest) (*prv1.SetPayableDueDateResponse, error) {
+	row, err := h.svc.SetPOPayableDue(ctx, grpcx.TenantID(ctx),
+		req.GetPoId(), req.GetDueDate(), req.GetReason(), reconOperator(ctx))
 	if err != nil {
 		return nil, err
 	}
-	return &prv1.BackfillPayableDueResponse{
-		UpdatedOrders: res.UpdatedOrders, AppliedSuppliers: res.AppliedSuppliers,
-		SkippedSuppliers: res.SkippedSuppliers, SkippedOrders: res.SkippedOrders,
-	}, nil
+	return &prv1.SetPayableDueDateResponse{Row: reconRowProto(row)}, nil
 }
 
 func reconOperator(ctx context.Context) app.Operator {

@@ -142,7 +142,11 @@
         <el-form-item :label="approvalEntry ? t('orders.requiredArrivalDate') : t('orders.expected')" :required="approvalEntry">
           <el-date-picker v-model="form.expectedDate" type="date" value-format="YYYY-MM-DD" style="width: 200px" />
         </el-form-item>
-        <el-form-item label="履约方式" required>
+        <el-form-item :label="t('orders.payableDue')">
+      <el-date-picker v-model="form.payableDueDate" type="date" value-format="YYYY-MM-DD" clearable
+                      :placeholder="t('orders.payableDueHint')" style="width: 200px" />
+    </el-form-item>
+    <el-form-item label="履约方式" required>
           <el-radio-group v-model="form.fulfillmentMode">
             <el-radio-button value="DIRECT_SHIP">直接发往港口/指定地点</el-radio-button>
             <el-radio-button value="WAREHOUSE">先入库再发货</el-radio-button>
@@ -249,6 +253,7 @@
         </el-descriptions-item>
         <el-descriptions-item :label="t('orders.buyer')">{{ detail?.buyerName || '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.expected')">{{ detail?.expectedDate || '—' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('orders.payableDue')">{{ detail?.payableDueDate || '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.remark')">{{ detail?.remark || '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('orders.confirmations')">
           <template v-if="detail && confirmTag(detail)">{{ confirmTag(detail)!.label }}</template>
@@ -540,6 +545,7 @@ interface Order {
   currency: string
   totalAmount: string
   expectedDate: string
+  payableDueDate: string
   status: string
   buyerName: string
   remark: string
@@ -665,7 +671,7 @@ const pending = ref<Requirement[]>([])
 const suppliers = ref<Supplier[]>([])
 const qtyOf = reactive<Record<string, string>>({})
 const priceOf = reactive<Record<string, string>>({})
-const form = reactive({ supplierId: 0, currency: 'CNY', expectedDate: '', remark: '', fulfillmentMode: 'DIRECT_SHIP', deliveryLocationType: 'PORT', deliveryPortId: 0, deliveryPortCode: '', deliveryPortName: '', warehouseId: 0, warehouseName: '', deliveryAddress: '', sourceChangeReason: '' })
+const form = reactive({ supplierId: 0, currency: 'CNY', expectedDate: '', payableDueDate: '', remark: '', fulfillmentMode: 'DIRECT_SHIP', deliveryLocationType: 'PORT', deliveryPortId: 0, deliveryPortCode: '', deliveryPortName: '', warehouseId: 0, warehouseName: '', deliveryAddress: '', sourceChangeReason: '' })
 const deliveryPorts = ref<{ id: string; unLocode: string; nameZh: string; nameEn: string }[]>([])
 
 const detailOpen = ref(false)
@@ -979,6 +985,7 @@ async function openCreate(preselect?: string[]) {
   form.supplierId = 0
   form.currency = 'CNY'
   form.expectedDate = ''
+  form.payableDueDate = ''
   form.remark = ''
   form.fulfillmentMode = 'DIRECT_SHIP'
   form.deliveryLocationType = canReadPorts ? 'PORT' : 'CUSTOM'
@@ -1055,6 +1062,7 @@ async function openEdit(row: Order) {
   form.supplierId = Number(current.supplierId)
   form.currency = current.currency || 'CNY'
   form.expectedDate = current.expectedDate || ''
+  form.payableDueDate = current.payableDueDate || ''
   form.remark = current.remark || ''
   form.fulfillmentMode = current.fulfillmentMode || 'DIRECT_SHIP'
   form.deliveryLocationType = current.deliveryLocationType || 'PORT'
@@ -1127,6 +1135,7 @@ async function submitCreate() {
       supplier_id: Number(supplier.id),
       currency: form.currency,
       expected_date: form.expectedDate,
+  payable_due_date: form.payableDueDate,
       remark: form.remark,
       fulfillment_mode: form.fulfillmentMode,
       delivery_location_type: form.fulfillmentMode === 'WAREHOUSE' ? 'WAREHOUSE' : form.deliveryLocationType,

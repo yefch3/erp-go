@@ -71,7 +71,7 @@ func TestReceivableDueList(t *testing.T) {
 
 	overdueID := mkContract("CT-RECV-OVERDUE", salesA, "50000", overdue)
 	mkContract("CT-RECV-SOON", salesA, "30000", soon)
-	mkContract("CT-RECV-UNSET", salesA, "20000", "") // 客户没配账期
+	unsetID := mkContract("CT-RECV-UNSET", salesA, "20000", "") // 建单时没填到期日
 	mkContract("CT-RECV-OTHER", salesB, "10000", overdue)
 	paidID := mkContract("CT-RECV-PAID", salesA, "10000", overdue)
 
@@ -172,29 +172,60 @@ func TestReceivableDueList(t *testing.T) {
 		t.Fatalf("只看未配账期时应只剩一张：%+v", rows)
 	}
 
-	// 补算：给没有到期日的合同按客户账期补上，且只补空的。
-	// 先确认补算不会覆盖已有的日子——逾期那张的日期必须原样不动。
-	n, err := svc.BackfillReceivableDue(ctx, tenantID, 9, 90)
-	if err != nil {
+	dueIn30 := dbToday(ctx, t, pool).AddDate(0, 0, 30).Format("2006-01-02")
+	// 手填到期日：没填的那张补上，「没填」这一类就空了。
+	// 理由必填——这个日子决定合同算不算逾期。
+	if _, err := svc.SetContractReceivableDue(ctx, tenantID, unsetID, dueIn30, "", opA); err == nil {
+		t.Fatal("空理由应该被拒——改这个日子等于改「算不算逾期」，必须说清为什么")
+	}
+	if _, err := svc.SetContractReceivableDue(ctx, tenantID, unsetID, "2026-13-01", "月份越界", opA); err == nil {
+		t.Fatal("非法日期应该在服务层就被挡下来，不该让它变成数据库的 22007")
+	}
+	if _, err := svc.SetContractReceivableDue(ctx, tenantID, unsetID,
+		dueIn30, "客户确认了 30 天账期", opA); err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Fatalf("补算应只碰那一张没有到期日的，实际改了 %d 行", n)
-	}
+	// 别人的日子一个字都不能动。
 	var stillOverdue string
 	if err := pool.QueryRow(ctx, `SELECT receivable_due_date::text FROM contracts WHERE id=$1`, overdueID).Scan(&stillOverdue); err != nil {
 		t.Fatal(err)
 	}
 	if stillOverdue != overdue {
-		t.Fatalf("补算不该改动已有的到期日：%s ≠ %s", stillOverdue, overdue)
+		t.Fatalf("改一份合同不该动到另一份：%s ≠ %s", stillOverdue, overdue)
 	}
-	// 补算过后，「未配账期」这一类就空了。
 	rows, _, err = svc.ListReceivableDue(ctx, tenantID, ReceivableFilter{UnsetOnly: true}, 1, 50, opA)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(rows) != 0 {
-		t.Fatalf("补算之后不该还有未配账期的行：%+v", rows)
+		t.Fatalf("填完之后不该还有没填到期日的行：%+v", rows)
+	}
+	// 留痕：从哪天改到哪天、谁改的、为什么。只记新值的话，事后看不出这次
+	// 改动把逾期推走了多远。
+	var oldDue, newDue, why, who string
+	if err := pool.QueryRow(ctx, `
+		SELECT coalesce(old_due_date::text, ''), coalesce(new_due_date::text, ''),
+		       reason, changed_by_name
+		  FROM contract_due_changes WHERE tenant_id=$1 AND contract_id=$2`,
+		tenantID, unsetID).Scan(&oldDue, &newDue, &why, &who); err != nil {
+		t.Fatal(err)
+	}
+	if oldDue != "" || newDue != dueIn30 || why != "客户确认了 30 天账期" {
+		t.Fatalf("留痕对不上：old=%q new=%q why=%q who=%q", oldDue, newDue, why, who)
+	}
+	// 改成同一个日子不该再留一条痕，也不该白清一轮催收提醒。
+	if _, err := svc.SetContractReceivableDue(ctx, tenantID, unsetID,
+		dueIn30, "手滑又点了一次", opA); err != nil {
+		t.Fatal(err)
+	}
+	var traces int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM contract_due_changes WHERE tenant_id=$1 AND contract_id=$2`,
+		tenantID, unsetID).Scan(&traces); err != nil {
+		t.Fatal(err)
+	}
+	if traces != 1 {
+		t.Fatalf("没改动就不该留痕，实际留了 %d 条", traces)
 	}
 }
 

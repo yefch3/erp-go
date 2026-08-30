@@ -659,10 +659,12 @@ service PurchaseOrderService {
   rpc ReversePurchaseOrderPayment(ReversePurchaseOrderPaymentRequest) returns (ReversePurchaseOrderPaymentResponse);
   rpc ClosePurchaseOrderPayment(ClosePurchaseOrderPaymentRequest) returns (ClosePurchaseOrderPaymentResponse);
   rpc ReopenPurchaseOrderPayment(ReopenPurchaseOrderPaymentRequest) returns (ReopenPurchaseOrderPaymentResponse);
-  // 给存量采购单补应付到期日。到期日是从「配了账期之后下的单」才开始
-  // 写入的，在此之前的单一张都没有——不补一次，上线第一天整页都是
-  // 「未配账期」。按供应商当前配的账期算，幂等，跑几遍结果一样。
+  // 已下线。它按「供应商配的账期」推算存量单的到期日，而到期日现在是
+  // 单据自己的字段、由人填，没有可推导的来源了。留着空壳只因为 buf 的
+  // 兼容检查不允许删 RPC；服务端一律拒绝，网关也不再挂路由。
   rpc BackfillPayableDue(BackfillPayableDueRequest) returns (BackfillPayableDueResponse);
+  // 事后改一张采购单的应付到期日。理由必填——这个日子决定它算不算逾期。
+  rpc SetPayableDueDate(SetPayableDueDateRequest) returns (SetPayableDueDateResponse);
   // 挂在一张采购单上的凭证——发票扫描件、水单、退款回执。存的是**纸**，
   // 不是有金额、有明细、参与运算的单据：它不进任何求和，只是「这笔钱是
   // 怎么回事」的证据。一张单可以有好几份。
@@ -826,6 +828,9 @@ message PurchaseOrder {
   string currency = 6;
   string total_amount = 7;
   string expected_date = 8;
+  // 应付到期日。列表和详情都要带上——让员工填一个填完再也看不见的字段，
+  // 是最容易填错而且发现不了的形态。
+  string payable_due_date = 43;
   // DRAFT / PENDING_APPROVAL / REJECTED / ORDERED /
   // PARTIALLY_RECEIVED / RECEIVED / CANCELLED
   string status = 9;
@@ -935,6 +940,9 @@ message CreateOrderRequest {
   string supplier_name = 3;
   string currency = 4;
   string expected_date = 5;
+  // 应付到期日，员工手填，YYYY-MM-DD，可空。**不是从供应商账期推出来的**
+  // ——同一家供应商这批谈 30 天、下批谈预付，都是常事。
+  string payable_due_date = 17;
   string remark = 6;
   repeated CreateOrderLine lines = 7;
   string fulfillment_mode = 8;
@@ -961,6 +969,7 @@ message UpdateOrderRequest {
   string supplier_name = 4;
   string currency = 5;
   string expected_date = 6;
+  string payable_due_date = 18;
   string remark = 7;
   repeated CreateOrderLine lines = 8;
   string fulfillment_mode = 9;
@@ -2150,9 +2159,18 @@ message ReopenPurchaseOrderPaymentRequest {
   string reason = 2;
 }
 
-// 补算不收任何参数：账期只有一个出处，就是供应商详情页上配的那个数。
-// 让员工在这里手填一个天数，等于让同一件事有两个答案。
+// 已下线，见上面 RPC 上的注释。空壳保留是为了 buf 的兼容检查。
 message BackfillPayableDueRequest {}
+
+message SetPayableDueDateRequest {
+  int64 po_id = 1;
+  // YYYY-MM-DD。空串表示清空，回到「没填」——填错了要能撤回。
+  string due_date = 2;
+  string reason = 3;
+}
+message SetPayableDueDateResponse {
+  SupplierReconRow row = 1;
+}
 
 // 报「补了多少」不够——没补上的那部分才是下一步要干的活。跳过的都是没配
 // 账期的供应商，员工看到「还有 5 家没配、涉及 12 张单」才知道回头去哪儿。

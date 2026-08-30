@@ -171,11 +171,49 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND c.contract_no = ANY(sqlc.arg(contract_nos)::text[]);
 
 -- name: SetContractReceivableDue :exec
--- 合同生效那一刻把到期日钉下来（E1）。只在为空时写，和 effective_at
--- 同一个哲学：第一次生效定的日子就是约定，之后客户改账期不再回头改它。
-UPDATE contracts SET receivable_due_date = sqlc.arg(due_date)::text::date
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint
-  AND receivable_due_date IS NULL;
+-- 改一份合同的应收到期日。
+--
+-- 上一版带 `AND receivable_due_date IS NULL`，因为那时唯一的写入者是「生效
+-- 那一刻算一次」，只该算一次。现在写入者是人，改错了要能改回来，所以那道
+-- 守卫撤掉——代价是催收那边要跟着处理，见 ClearContractReminders。
+--
+-- 空串表示清空，回到「没填」。旧值由调用方在同一个事务里先读，这里不用
+-- RETURNING 兜圈子。
+UPDATE contracts SET receivable_due_date = nullif(sqlc.arg(due_date)::text, '')::date
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: ContractReceivableDue :one
+-- 单读一列，给留痕取旧值用。走 GetContract 太重，而且那一句还要联版本表。
+SELECT coalesce(receivable_due_date::text, '')::text AS receivable_due_date
+FROM contracts
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: RecordContractDueChange :exec
+INSERT INTO contract_due_changes
+    (tenant_id, contract_id, old_due_date, new_due_date, reason, changed_by_id, changed_by_name)
+VALUES (
+    sqlc.arg(tenant_id)::bigint,
+    sqlc.arg(contract_id)::bigint,
+    nullif(sqlc.arg(old_due_date)::text, '')::date,
+    nullif(sqlc.arg(new_due_date)::text, '')::date,
+    sqlc.arg(reason)::text,
+    sqlc.arg(changed_by_id)::bigint,
+    sqlc.arg(changed_by_name)::text
+);
+
+-- name: ClearContractReminders :execrows
+-- 改完到期日，把这份合同还没读的催收提醒清掉。
+--
+-- 不清的话会重发一整轮：提醒的幂等键里带着 due_date（00014 的唯一键），
+-- 日子一换，同一档提醒就成了「新的一条」，扫描器下一轮把 SOON / DUE /
+-- OVERDUE 全部再发一遍。那个设计当初是对的——那时唯一能改到期日的是补算，
+-- 日子变了确实该重新提醒；现在人手一改就重发，改错再改回就是两轮。
+--
+-- 只清未读：读过的是历史，销售看见过就是看见过，不该被抹掉。
+UPDATE receivable_reminders SET read_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND contract_id = sqlc.arg(contract_id)::bigint
+  AND read_at IS NULL;
 
 -- name: ListReceivableDue :many
 -- 财务的到期清单：还没收完的生效合同，按该收的日子排，逾期的在最前。
@@ -240,16 +278,6 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
        OR c.customer_name ILIKE '%' || sqlc.arg(keyword)::text || '%')
 ORDER BY c.receivable_due_date ASC NULLS LAST, c.id DESC
 LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
-
--- name: BackfillReceivableDue :execrows
--- 存量补算：已经生效但没有到期日的合同，按传入的（客户 → 账期）补。
--- 幂等，只碰为空的行。
-UPDATE contracts SET receivable_due_date = (effective_at::date + sqlc.arg(payment_days)::int)
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint
-  AND customer_id = sqlc.arg(customer_id)::bigint
-  AND receivable_due_date IS NULL
-  AND effective_at IS NOT NULL
-  AND sqlc.arg(payment_days)::int > 0;
 
 -- name: SweepReceivableReminders :execrows
 -- 一趟扫出所有该提醒而未提醒的合同，直接写成站内信。

@@ -82,7 +82,6 @@ func (s *Suppliers) Get(ctx context.Context, id int64) (app.Supplier, error) {
 	return app.Supplier{
 		ID: supplier.GetId(), Code: supplier.GetCode(), Name: supplier.GetName(),
 		Currency: supplier.GetCurrency(), Status: supplier.GetStatus(),
-		PaymentDays: supplier.GetPaymentDays(),
 	}, nil
 }
 
