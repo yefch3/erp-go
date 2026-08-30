@@ -192,7 +192,7 @@ export default {
   financeNav: {
     fx: 'Tipos de cambio',
     title: 'Finanzas', receivable: 'Por cobrar · clientes', payable: 'Por pagar · proveedores', bank: 'Banco',
-    receivableCases: 'Por conciliar', receivableCasesDone: 'Completados',
+    customerRecon: 'Conciliación de clientes',
     receivableDue: 'Cobros por vencer',
     supplierInvoices: 'Facturas de proveedor', supplierPayments: 'Pagos a proveedores', supplierStatements: 'Conciliación de proveedores', bankTransactions: 'Movimientos bancarios',
   },
@@ -313,6 +313,7 @@ export default {
     empty: 'Nadie usó la conversión inteligente este mes',
   },
   receivableDue: {
+    tabOpen: 'Por conciliar', tabDone: 'Completados',
     entryFee: 'más {n} de complemento',
     addReceipt: 'Registrar cobro', addReceiptTitle: 'Registrar un cobro',
     entryKind: 'Este es un', kindReceipt: 'Cobro', kindRefund: 'Reembolso',
@@ -337,7 +338,7 @@ export default {
     figTotal: 'Total del contrato', figReceived: 'Recibido', figOpen: 'Diferencia (pendiente)',
     reopen: 'Reabrir', reopenWhy: '\u00BFPor qu\u00E9 reabrir {no}? Vuelve a la lista y los avisos se reanudan.',
     reopenReason: 'Motivo', reopened: 'Reabierto: reclamo reanudado',
-    eyebrow: 'COBROS PENDIENTES', title: 'Cobros por vencer', subtitle: 'El plazo cuenta desde la entrada en vigor del contrato',
+    eyebrow: 'CONCILIACIÓN DE CLIENTES', title: 'Conciliación de clientes', subtitle: 'Cuánto ha cobrado cada contrato y cuánto falta; la finalización la confirma una persona y el plazo cuenta desde la entrada en vigor',
     overdueCount: 'Vencidos', overdueHint: 'Pasada la fecha acordada y sin cobrar',
     dueSoonCount: 'Vencen en 30 días', dueSoonHint: 'Saberlo antes de que venza',
     unsetCount: 'Sin plazo definido', unsetHint: 'El maestro de clientes no tiene plazo, no se puede calcular la fecha',
