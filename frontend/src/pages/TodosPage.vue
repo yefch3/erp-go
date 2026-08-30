@@ -16,7 +16,7 @@
     <section class="summary-grid" aria-label="home summary">
       <button class="summary-card active" type="button" @click="activate('pending')">
         <span>{{ t('todos.summaryPending') }}</span>
-        <strong>{{ pendingCountAvailable ? pendingTotal : '—' }}</strong>
+        <strong>{{ combinedPendingAvailable ? combinedPendingTotal : '—' }}</strong>
         <small>{{ t('todos.summaryPendingHint') }}</small>
       </button>
       <button class="summary-card" :class="{ active: activeTab === 'reminders' && reminderTiming === 'UPCOMING' }" type="button" :disabled="!reminderSummaryAvailable" @click="activateReminderFilter('UPCOMING')">
@@ -77,7 +77,19 @@
       </el-alert>
 
       <template v-if="activeTab === 'pending'">
-        <el-table :data="todos" v-loading="loading" class="home-table">
+        <div v-loading="loading" class="pending-content">
+          <section v-if="visibleProcurementTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>{{ t('todos.procurementTasks') }}</h3><p>{{ t('todos.procurementTasksHint') }}</p></div><el-tag type="warning" effect="plain">{{ procurementPendingTotal }} {{ t('todos.items') }}</el-tag></div>
+            <el-table :data="visibleProcurementTasks" class="home-table sourcing-todo-table">
+              <el-table-column :label="t('todos.priority')" width="145"><template #default><el-tag size="small" type="warning" effect="light">{{ t('todos.priorityLevels.HIGH') }}</el-tag><div class="priority-reason">{{ t('todos.procurementActionRequired') }}</div></template></el-table-column>
+              <el-table-column :label="t('todos.workItem')" min-width="360"><template #default="{row}"><div class="item-title">{{ procurementReworkLabel(row.requestType) }} · {{ row.caseNo }}</div><div class="item-meta">{{ row.productName||t('todos.allProducts') }} · {{ row.supplierName||t('todos.newSupplier') }}</div><div class="item-summary">{{ row.reason }}</div></template></el-table-column>
+              <el-table-column :label="t('todos.submittedAt')" width="170"><template #default="{row}">{{ formatTime(row.createdAt) }}</template></el-table-column>
+              <el-table-column :label="t('common.status')" width="120"><template #default><el-tag size="small" type="warning" effect="plain">{{ t('todos.waitingForMe') }}</el-tag></template></el-table-column>
+              <el-table-column :label="t('common.actions')" width="150" fixed="right"><template #default="{row}"><router-link :to="{path:`/procurement/sourcing/${row.caseId}`,query:{tab:'plans',rework:String(row.id)}}" class="doc-link">{{ t('todos.goToSource') }}</router-link></template></el-table-column>
+            </el-table>
+          </section>
+          <div v-if="todos.length" class="todo-source-head approval-source-head"><div><h3>{{ t('todos.approvalTasks') }}</h3></div></div>
+        <el-table v-if="todos.length" :data="todos" class="home-table">
           <el-table-column :label="t('todos.priority')" width="145">
             <template #default="{ row }">
               <el-tag size="small" :type="priorityTagType(row.priority)" effect="light">{{ priorityLabel(row.priority) }}</el-tag>
@@ -99,8 +111,9 @@
               <span v-else class="no-link">{{ t('todos.noSourceLink') }}</span>
             </template>
           </el-table-column>
-          <template #empty><HomeEmpty :description="t('todos.empty')" /></template>
         </el-table>
+          <HomeEmpty v-if="!visibleProcurementTasks.length&&!todos.length" :description="t('todos.empty')" />
+        </div>
       </template>
 
       <template v-else-if="activeTab === 'handled'">
@@ -188,6 +201,8 @@ import {
 interface Task { id: string; nodeSeq: number; nodeName: string; status: string; comment: string; actedAt: string }
 interface Instance { id: string; bizType: string; bizId: string; bizNo: string; bizSummary: string; submitterName: string; status: string; currentSeq: number; submittedAt: string; finishedAt: string }
 interface Todo { task: Task; instance: Instance; dueAt: string; priority: string; remainingMinutes: string | number }
+interface ProcurementTaskCase { id:string; caseNo:string; customerName:string; title:string; updatedAt:string; openReworkCount:number|string; myOpenReworkCount:number|string }
+interface ProcurementReworkTask { id:string; caseId:string; caseNo:string; requestType:string; productName:string; supplierName:string; reason:string; createdAt:string; assignedBuyerId:string|number; status:string }
 type HomeTab = 'pending' | 'submitted' | 'responsible' | 'reminders' | 'handled'
 
 const HomeEmpty = defineComponent({
@@ -208,6 +223,8 @@ const reminderSummary = ref<HomeReminderSummary>({ upcoming: 0, overdue: 0, unre
 const total = ref(0)
 const pendingTotal = ref(0)
 const pendingCountAvailable = ref(true)
+const procurementTasks = ref<ProcurementReworkTask[]>([])
+const procurementTasksAvailable = ref(false)
 const page = ref(1)
 const pageSize = 10
 const keyword = ref('')
@@ -224,6 +241,13 @@ const reminderTiming = ref('')
 const reminderRead = ref('')
 const markingRead = ref(false)
 const updatedAt = ref('')
+const procurementPendingTotal = computed(() => procurementTasks.value.length)
+const combinedPendingTotal = computed(() => (pendingCountAvailable.value ? pendingTotal.value : 0) + (procurementTasksAvailable.value ? procurementPendingTotal.value : 0))
+const combinedPendingAvailable = computed(() => pendingCountAvailable.value || procurementTasksAvailable.value)
+const visibleProcurementTasks = computed(() => {
+  const query = keyword.value.trim().toLocaleLowerCase()
+  return procurementTasks.value.filter(row => !query || [row.caseNo,row.productName,row.supplierName,row.reason].some(value => String(value||'').toLocaleLowerCase().includes(query)))
+})
 
 const bizTypes = ['CONTRACT', 'PURCHASE_ORDER', 'PURCHASE_ORDER_CHANGE', 'PAYMENT', 'LC_AMENDMENT', 'STOCK_ADJUST']
 const hasApprovalSource = computed(() => ['pending', 'submitted', 'handled'].includes(activeTab.value))
@@ -294,6 +318,36 @@ async function loadPendingCount() {
   } finally {
     countLoading.value = false
   }
+}
+
+async function loadProcurementTasks() {
+  if (!auth.can('procurement:sourcing:read')) {
+    procurementTasks.value = []
+    procurementTasksAvailable.value = false
+    return
+  }
+  try {
+    const pageSize = 200
+    const first = await get<{ sourcingCases: ProcurementTaskCase[]; meta?: { total?: number|string } }>('/sourcing-cases', { page: 1, page_size: pageSize }, quietErrors)
+    const pageCount = Math.ceil(Number(first.meta?.total ?? first.sourcingCases?.length ?? 0) / pageSize)
+    const rest = pageCount > 1 ? await Promise.all(Array.from({ length: pageCount - 1 }, (_, index) => get<{ sourcingCases: ProcurementTaskCase[] }>('/sourcing-cases', { page: index + 2, page_size: pageSize }, quietErrors))) : []
+    const cases = [...(first.sourcingCases ?? []), ...rest.flatMap(data => data.sourcingCases ?? [])].filter(row => Number(row.myOpenReworkCount) > 0)
+    const taskGroups = await Promise.all(cases.map(async (item) => {
+      const data = await get<{ reworkRequests?: Array<Omit<ProcurementReworkTask,'caseNo'|'caseId'>> }>(`/sourcing-cases/${item.id}/procurement-reworks`, {}, quietErrors)
+      return (data.reworkRequests ?? [])
+        .filter(task => task.status === 'OPEN' && (!Number(task.assignedBuyerId || 0) || auth.owns(String(task.assignedBuyerId))))
+        .map(task => ({ ...task, caseId: String(item.id), caseNo: item.caseNo }))
+    }))
+    procurementTasks.value = taskGroups.flat()
+    procurementTasksAvailable.value = true
+  } catch {
+    procurementTasks.value = []
+    procurementTasksAvailable.value = false
+  }
+}
+
+function procurementReworkLabel(value: string) {
+  return value === 'ADD_SUPPLIER' ? t('todos.addSupplier') : value === 'REQUOTE' ? t('todos.requote') : t('todos.renegotiate')
 }
 
 function applyReminderResponse(data: { summary?: HomeReminderSummary; sources?: HomeReminderSourceState[] }) {
@@ -395,8 +449,8 @@ async function load() {
 }
 
 async function refreshAll() {
-  if (hasReminderSource.value) await Promise.all([loadPendingCount(), load()])
-  else await Promise.all([loadPendingCount(), loadReminderSummary(), load()])
+  if (hasReminderSource.value) await Promise.all([loadPendingCount(), loadProcurementTasks(), load()])
+  else await Promise.all([loadPendingCount(), loadProcurementTasks(), loadReminderSummary(), load()])
 }
 
 async function markReminderRead(item: HomeReminder) {
@@ -434,10 +488,10 @@ function parseSummary(raw: string): Record<string, string> {
 }
 function summaryText(raw: string): string { return Object.entries(parseSummary(raw)).map(([key, value]) => `${summaryLabel(key)}：${value}`).join(' · ') }
 function summaryLabel(key: string): string { return labelOr(`todos.summaryKeys.${key}`, key) }
-function taskStatusLabel(code: string): string { return labelOr(`todos.task.${code}`, code) }
+function taskStatusLabel(code: string): string { return code ? labelOr(`todos.task.${code}`, code) : '—' }
 function priorityLabel(code: string): string { return labelOr(`todos.priorityLevels.${code}`, code) }
-function instanceStatusLabel(code: string): string { return labelOr(`todos.doc.${code}`, code) }
-function bizTypeLabel(code: string): string { return labelOr(`todos.biz.${code}`, code) }
+function instanceStatusLabel(code: string): string { return code ? labelOr(`todos.doc.${code}`, code) : '—' }
+function bizTypeLabel(code: string): string { return code ? labelOr(`todos.biz.${code}`, code) : '—' }
 function reminderSourceLabel(code?: string): string {
   if (!code) return '—'
   return labelOr(`todos.reminderSources.${code}`, code)
@@ -459,7 +513,7 @@ function formatTime(iso: string): string { return iso ? iso.replace('T', ' ').sl
 
 onMounted(refreshAll)
 const stopListening = onLive((event) => {
-  if (event.type === 'todo.changed' || event.type === 'doc.changed' || event.type === 'shipping.arrival_reminder') void refreshAll()
+  if (event.type === 'todo.changed' || event.type === 'doc.changed' || event.type === 'requirement.changed' || event.type === 'shipping.arrival_reminder') void refreshAll()
 })
 const stopReminderListening = onReminderChanged(() => { void refreshAll() })
 onUnmounted(() => {
@@ -477,6 +531,12 @@ onUnmounted(() => {
 .home-head .employee-context { margin-bottom: 5px; color: var(--el-text-color-regular); font-size: 13px; }
 .head-actions { display: flex; align-items: center; gap: 12px; }
 .updated { color: var(--el-text-color-secondary); font-size: 13px; white-space: nowrap; }
+.pending-content { min-height: 260px; }
+.todo-source-section + .approval-source-head { margin-top: 24px; }
+.todo-source-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 4px 18px 10px; }
+.todo-source-head h3 { margin: 0; font-size: 16px; }
+.todo-source-head p { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: 13px; }
+.approval-source-head { padding-bottom: 0; }
 .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
 .summary-card { min-height: 116px; padding: 18px 20px; text-align: left; border: 1px solid var(--el-border-color-light); border-radius: 12px; background: var(--el-bg-color); color: inherit; }
 .summary-card:not(:disabled) { cursor: pointer; }

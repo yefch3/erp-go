@@ -47,6 +47,13 @@ SELECT id, case_no, title, customer_id, customer_name, contact_id, contact_name,
        requirement_version_no, accepted_by, accepted_by_name, accepted_at,
        returned_by, returned_by_name, returned_at, return_reason, return_fields,
        created_at, updated_at,
+       (SELECT count(*) FROM procurement_rework_requests rr
+        WHERE rr.tenant_id=sourcing_cases.tenant_id AND rr.case_id=sourcing_cases.id
+          AND rr.status='OPEN') AS open_rework_count,
+       (SELECT count(*) FROM procurement_rework_requests rr
+        WHERE rr.tenant_id=sourcing_cases.tenant_id AND rr.case_id=sourcing_cases.id
+          AND rr.status='OPEN'
+          AND (rr.assigned_buyer_id=sqlc.arg(viewer_id)::bigint OR rr.assigned_buyer_id IS NULL)) AS my_open_rework_count,
        count(*) OVER () AS total
 FROM sourcing_cases
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint

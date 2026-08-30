@@ -34,6 +34,10 @@ func TestSalesProcurementProgressPayloadUsesSensitiveFieldWhitelist(t *testing.T
 			{Id: 2, ScenarioNo: "COST-CONFIRMED", VersionNo: 3, RequirementVersionNo: 2, Currency: "USD", Status: "CONFIRMED", ProductTotal: "200", ChargeTotal: "30", LandedTotal: "230", CustomerTotal: "260", CustomerQuotationId: 9, SubmittedToSalesAt: "2026-08-27T12:00:00Z"},
 			{Id: 3, ScenarioNo: "COST-NOT-SUBMITTED", Status: "CONFIRMED", CustomerTotal: "999"},
 		}},
+		&prv1.ListProcurementPlansResponse{ProcurementPlans: []*prv1.ProcurementPlan{
+			{Id: 7, PlanNo: "PP-DRAFT", Status: "CONFIRMED", Items: []*prv1.ProcurementPlanItem{{SupplierName: "未提交供应商"}}},
+			{Id: 8, PlanNo: "PP-SUBMITTED", VersionNo: 2, ManagerNote: "优先采用书面报价", Status: "SUBMITTED_TO_SALES", TargetSalesName: "负责销售", ConfirmedByName: "采购经理", Items: []*prv1.ProcurementPlanItem{{ProductName: "冷轧钢卷", SupplierName: "获选供应商", FactoryName: "获选工厂", BuyerName: "采购甲", SelectionType: "RECOMMENDED", Currency: "USD", UnitPrice: "520", AvailableQty: "20", UomCode: "TON", PaymentTerms: "T/T", Incoterm: "FOB", LeadTime: 15}}},
+		}},
 	)
 
 	raw, err := json.Marshal(payload)
@@ -41,12 +45,12 @@ func TestSalesProcurementProgressPayloadUsesSensitiveFieldWhitelist(t *testing.T
 		t.Fatal(err)
 	}
 	got := string(raw)
-	for _, secret := range []string{"秘密供应商", "秘密工厂", "secret@example.com", "100", "200", "230", "COST-DRAFT", "COST-NOT-SUBMITTED", "999"} {
+	for _, secret := range []string{"秘密供应商", "秘密工厂", "secret@example.com", "100", "200", "230", "COST-DRAFT", "COST-NOT-SUBMITTED", "999", "未提交供应商"} {
 		if strings.Contains(got, secret) {
 			t.Fatalf("sales progress leaked procurement detail %q: %s", secret, got)
 		}
 	}
-	for _, want := range []string{`"rfqCount":2`, `"quotedRfqCount":1`, `"scenarioNo":"COST-CONFIRMED"`, `"requirementVersionNo":2`, `"customerTotal":"260"`} {
+	for _, want := range []string{`"rfqCount":2`, `"quotedRfqCount":1`, `"scenarioNo":"COST-CONFIRMED"`, `"requirementVersionNo":2`, `"customerTotal":"260"`, `"planNo":"PP-SUBMITTED"`, `"versionNo":2`, `"managerNote":"优先采用书面报价"`, `"confirmedByName":"采购经理"`, `"productName":"冷轧钢卷"`, `"supplierName":"获选供应商"`, `"factoryName":"获选工厂"`, `"buyerName":"采购甲"`, `"unitPrice":"520"`, `"availableQty":"20"`, `"paymentTerms":"T/T"`, `"incoterm":"FOB"`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("sales progress missing %s: %s", want, got)
 		}

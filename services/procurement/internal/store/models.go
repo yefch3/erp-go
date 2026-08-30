@@ -244,6 +244,84 @@ type ProcessedEvent struct {
 	ProcessedAt   pgtype.Timestamptz
 }
 
+type ProcurementPlan struct {
+	ID                     int64
+	TenantID               int64
+	CaseID                 int64
+	PlanNo                 string
+	VersionNo              int32
+	RequirementVersionNo   int32
+	Status                 string
+	ManagerNote            string
+	CreatedBy              int64
+	CreatedByName          string
+	ConfirmedBy            int64
+	ConfirmedByName        string
+	ConfirmedAt            pgtype.Timestamptz
+	SubmittedToSalesBy     *int64
+	SubmittedToSalesByName string
+	SubmittedToSalesAt     pgtype.Timestamptz
+	TargetSalesID          int64
+	TargetSalesName        string
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+}
+
+type ProcurementPlanItem struct {
+	ID                  int64
+	TenantID            int64
+	PlanID              int64
+	SourcingLineID      int64
+	SupplierQuoteLineID int64
+	SelectionType       string
+	Priority            int32
+	Reason              string
+	Risk                string
+	SupplierID          int64
+	SupplierName        string
+	FactoryID           *int64
+	FactoryName         string
+	BuyerID             int64
+	BuyerName           string
+	ProductName         string
+	Currency            string
+	UnitPrice           pgtype.Numeric
+	AvailableQty        pgtype.Numeric
+	UomCode             string
+	Moq                 pgtype.Numeric
+	LeadTime            *int32
+	PaymentTerms        string
+	Incoterm            string
+	ValidUntil          pgtype.Date
+	QuoteVersionNo      int32
+	CreatedAt           pgtype.Timestamptz
+}
+
+type ProcurementReworkRequest struct {
+	ID                  int64
+	TenantID            int64
+	CaseID              int64
+	PlanID              *int64
+	SourcingLineID      *int64
+	SupplierQuoteLineID *int64
+	RequestType         string
+	ScopeType           string
+	AssignedBuyerID     *int64
+	AssignedBuyerName   string
+	SupplierID          *int64
+	SupplierName        string
+	ProductName         string
+	Reason              string
+	Status              string
+	CreatedBy           int64
+	CreatedByName       string
+	CreatedAt           pgtype.Timestamptz
+	ResolvedBy          *int64
+	ResolvedByName      string
+	ResolvedAt          pgtype.Timestamptz
+	ResolutionNote      string
+}
+
 type PurchaseInspection struct {
 	ID              int64
 	TenantID        int64

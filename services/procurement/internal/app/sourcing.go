@@ -191,6 +191,7 @@ func (s *Service) ListSourcingCases(ctx context.Context, tenantID int64, f Sourc
 	rows, err := s.q.ListSourcingCases(ctx, store.ListSourcingCasesParams{
 		TenantID: tenantID, Status: f.Status, Keyword: f.Keyword,
 		VisibleAll: visible.All, VisibleIds: visible.EmployeeIDs,
+		ViewerID:  op.ID,
 		RowOffset: (page - 1) * size, RowLimit: size,
 	})
 	if err != nil {

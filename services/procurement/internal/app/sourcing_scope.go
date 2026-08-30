@@ -76,3 +76,14 @@ func (s *Service) AuthorizeCostScenario(ctx context.Context, tenantID, scenarioI
 	}
 	return s.AuthorizeSourcingCase(ctx, tenantID, scenario.CaseID, op)
 }
+
+func (s *Service) AuthorizeProcurementPlan(ctx context.Context, tenantID, planID int64, op Operator) error {
+	plan, err := s.q.GetProcurementPlan(ctx, store.GetProcurementPlanParams{TenantID: tenantID, ID: planID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return apierr.NotFound("SC_PLAN_NOT_FOUND", "统一采购方案不存在")
+	}
+	if err != nil {
+		return err
+	}
+	return s.AuthorizeSourcingCase(ctx, tenantID, plan.CaseID, op)
+}

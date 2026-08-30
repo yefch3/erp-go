@@ -108,8 +108,8 @@ func (s *Server) getSourcingCase(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
-// getSalesProcurementProgress 只返回销售协作所需的采购进度与已确认报价依据。
-// 供应商、工厂、底价和费用明细都不进入响应，避免销售借摘要接口看到采购机密。
+// getSalesProcurementProgress 只返回销售协作所需的采购进度、经理已定向提交的
+// 统一方案和已确认报价依据。未入选供应商、采购比较过程与成本拆分仍不进入响应。
 func (s *Server) getSalesProcurementProgress(w http.ResponseWriter, r *http.Request) {
 	caseID := idFromPath(r)
 	caseResp, err := s.Sourcing.GetCase(r.Context(), &prv1.GetCaseRequest{Id: caseID})
@@ -127,13 +127,18 @@ func (s *Server) getSalesProcurementProgress(w http.ResponseWriter, r *http.Requ
 		s.writeGRPCError(w, err)
 		return
 	}
+	planResp, err := s.Sourcing.ListProcurementPlans(r.Context(), &prv1.ListProcurementPlansRequest{CaseId: caseID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
 
-	s.writeJSON(w, salesProcurementProgressPayload(caseResp, rfqResp, costResp))
+	s.writeJSON(w, salesProcurementProgressPayload(caseResp, rfqResp, costResp, planResp))
 }
 
 // salesProcurementProgressPayload 集中构造销售可见的采购进度摘要。
 // 这里刻意采用字段白名单，新增采购字段时不会自动泄露给销售。
-func salesProcurementProgressPayload(caseResp *prv1.GetCaseResponse, rfqResp *prv1.ListFactoryRfqsResponse, costResp *prv1.ListCostScenariosResponse) map[string]any {
+func salesProcurementProgressPayload(caseResp *prv1.GetCaseResponse, rfqResp *prv1.ListFactoryRfqsResponse, costResp *prv1.ListCostScenariosResponse, planResp *prv1.ListProcurementPlansResponse) map[string]any {
 	quoted := 0
 	for _, rfq := range rfqResp.GetFactoryRfqs() {
 		if rfq.GetStatus() == "QUOTED" || rfq.GetStatus() == "PARTIALLY_QUOTED" || rfq.GetStatus() == "CLOSED" {
@@ -155,10 +160,47 @@ func salesProcurementProgressPayload(caseResp *prv1.GetCaseResponse, rfqResp *pr
 			"customerQuotationId":  scenario.GetCustomerQuotationId(),
 		})
 	}
+	submittedPlans := make([]map[string]any, 0)
+	for _, plan := range planResp.GetProcurementPlans() {
+		if plan.GetStatus() == "SUBMITTED_TO_SALES" {
+			submittedPlans = append(submittedPlans, salesProcurementPlanPayload(plan))
+		}
+	}
 	return map[string]any{
 		"status":   caseResp.GetSourcingCase().GetStatus(),
 		"rfqCount": len(rfqResp.GetFactoryRfqs()), "quotedRfqCount": quoted,
-		"confirmedCosts": confirmed,
+		"confirmedCosts": confirmed, "procurementPlans": submittedPlans,
+	}
+}
+
+// 这条接口使用 encoding/json 包装多个来源，不能直接把 protobuf 结构塞进 map：
+// protobuf 的 Go JSON tag 是 snake_case，而前端统一消费 lowerCamelCase。显式白名单
+// 同时解决字段命名和销售数据边界，避免出现“有两行方案但内容全空”的假成功。
+func salesProcurementPlanPayload(plan *prv1.ProcurementPlan) map[string]any {
+	items := make([]map[string]any, 0, len(plan.GetItems()))
+	for _, item := range plan.GetItems() {
+		items = append(items, map[string]any{
+			"id": item.GetId(), "sourcingLineId": item.GetSourcingLineId(),
+			"selectionType": item.GetSelectionType(), "priority": item.GetPriority(),
+			"reason": item.GetReason(), "risk": item.GetRisk(),
+			"supplierName": item.GetSupplierName(), "factoryName": item.GetFactoryName(),
+			"buyerName": item.GetBuyerName(), "productName": item.GetProductName(),
+			"currency": item.GetCurrency(), "unitPrice": item.GetUnitPrice(),
+			"availableQty": item.GetAvailableQty(), "uomCode": item.GetUomCode(),
+			"moq": item.GetMoq(), "leadTime": item.GetLeadTime(),
+			"paymentTerms": item.GetPaymentTerms(), "incoterm": item.GetIncoterm(),
+			"validUntil": item.GetValidUntil(), "quoteVersionNo": item.GetQuoteVersionNo(),
+		})
+	}
+	return map[string]any{
+		"id": plan.GetId(), "caseId": plan.GetCaseId(), "planNo": plan.GetPlanNo(),
+		"versionNo": plan.GetVersionNo(), "requirementVersionNo": plan.GetRequirementVersionNo(),
+		"status": plan.GetStatus(), "managerNote": plan.GetManagerNote(),
+		"confirmedByName": plan.GetConfirmedByName(), "confirmedAt": plan.GetConfirmedAt(),
+		"submittedToSalesByName": plan.GetSubmittedToSalesByName(),
+		"submittedToSalesAt":     plan.GetSubmittedToSalesAt(),
+		"targetSalesName":        plan.GetTargetSalesName(), "createdAt": plan.GetCreatedAt(),
+		"items": items,
 	}
 }
 
@@ -434,6 +476,84 @@ func (s *Server) listSupplierQuoteComparison(w http.ResponseWriter, r *http.Requ
 	}
 	if !allowed {
 		redactSupplierQuotePrices(resp)
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) listProcurementPlans(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.ListProcurementPlans(r.Context(), &prv1.ListProcurementPlansRequest{CaseId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) createProcurementPlan(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.CreateProcurementPlanRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.CaseId = idFromPath(r)
+	resp, err := s.Sourcing.CreateProcurementPlan(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getProcurementPlan(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.GetProcurementPlan(r.Context(), &prv1.GetProcurementPlanRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) submitProcurementPlanToSales(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.SubmitProcurementPlanToSales(r.Context(), &prv1.SubmitProcurementPlanToSalesRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) listProcurementReworks(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.ListProcurementReworks(r.Context(), &prv1.ListProcurementReworksRequest{CaseId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) createProcurementRework(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.CreateProcurementReworkRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.CaseId = idFromPath(r)
+	resp, err := s.Sourcing.CreateProcurementRework(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) resolveProcurementRework(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.ResolveProcurementReworkRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Sourcing.ResolveProcurementRework(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
 	}
 	s.writeProto(w, resp)
 }
