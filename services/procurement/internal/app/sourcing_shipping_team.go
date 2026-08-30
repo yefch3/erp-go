@@ -66,7 +66,9 @@ func (s *Service) RequestPrimaryShipping(ctx context.Context, tenantID, caseID i
 	request, _ := s.q.GetSourcingShippingRequest(ctx, store.GetSourcingShippingRequestParams{TenantID: tenantID, CaseID: caseID})
 	for _, item := range participants {
 		if item.ParticipantRole == "PRIMARY" {
-			_, err = s.q.RequestPrimaryShipping(ctx, store.RequestPrimaryShippingParams{TenantID: tenantID, RequestID: request.ID, EmployeeID: op.ID})
+			if _, err := s.q.RequestPrimaryShipping(ctx, store.RequestPrimaryShippingParams{TenantID: tenantID, RequestID: request.ID, EmployeeID: op.ID}); err != nil {
+				return nil, err
+			}
 			return s.ListSourcingShippingParticipants(ctx, tenantID, caseID)
 		}
 	}
@@ -198,7 +200,7 @@ func (s *Service) GetSourcingShippingPlan(ctx context.Context, tenantID, id int6
 		return ShippingPlanView{}, err
 	}
 	items, err := s.q.ListSourcingShippingPlanItems(ctx, store.ListSourcingShippingPlanItemsParams{TenantID: tenantID, PlanID: id})
-	listHeader := store.ListSourcingShippingPlansRow{ID: header.ID, RequestID: header.RequestID, PlanNo: header.PlanNo, VersionNo: header.VersionNo, RequirementVersionNo: header.RequirementVersionNo, Status: header.Status, ManagerNote: header.ManagerNote, CreatedBy: header.CreatedBy, CreatedByName: header.CreatedByName, ConfirmedAt: header.ConfirmedAt, SubmittedToSalesBy: header.SubmittedToSalesBy, SubmittedToSalesByName: header.SubmittedToSalesByName, SubmittedToSalesAt: header.SubmittedToSalesAt, TargetSalesID: header.TargetSalesID, TargetSalesName: header.TargetSalesName, CreatedAt: header.CreatedAt}
+	listHeader := store.ListSourcingShippingPlansRow(header)
 	return ShippingPlanView{Header: listHeader, Items: items}, err
 }
 
