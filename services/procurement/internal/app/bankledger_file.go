@@ -64,10 +64,10 @@ func (s *Service) AttachBankTransactionFile(ctx context.Context, tenantID, txnID
 	if key == "" {
 		return BankTransactionView{}, apierr.Invalid("BANK_FILE_KEY_REQUIRED", "文件标识必填")
 	}
-	// **这道前缀检查是唯一的跨租户隔离手段，不是洁癖。** 所有服务共用一个桶，
+	// **这道检查是唯一的跨租户隔离手段，不是洁癖。** 所有服务共用一个桶，
 	// 没有它，任何人都能把别人租户的对象登记到自己的流水行上，然后从自己的
-	// 页面上把它读出来。
-	if !strings.HasPrefix(key, bankTxnKeyPrefix(tenantID, txnID)) {
+	// 页面上把它读出来。前缀相等之外还挡 ".."，理由见 objectkey.go。
+	if !objectKeyBelongsTo(key, bankTxnKeyPrefix(tenantID, txnID)) {
 		return BankTransactionView{}, apierr.Invalid("BANK_FILE_KEY_MISMATCH", "文件标识与流水不匹配")
 	}
 	if _, err := s.GetBankTransaction(ctx, tenantID, txnID, op); err != nil {
