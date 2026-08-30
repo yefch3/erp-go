@@ -583,6 +583,9 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/payments/{allocationId}/reverse", s.reversePurchaseOrderPayment)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/close", s.closePurchaseOrderPayment)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/reopen", s.reopenPurchaseOrderPayment)
+		// 存量单补到期日。静态段排在 {id} 前面才不会被当成一个采购单 id，
+		// chi 本身就是静态优先，这里只是把它写在一起免得看漏。
+		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/backfill-due", s.backfillPayableDue)
 		// 挂在采购单上的凭证——发票扫描件、水单、退款回执。发票页下线之后，
 		// 「留凭证」这件事搬到了这里；一张单可以有好几份。
 		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-recon/{id}/files", s.listReconFiles)

@@ -235,6 +235,7 @@ func TestSupplierReconRoutesAreAllRegistered(t *testing.T) {
 		"POST /api/supplier-recon/{id}/payments/{allocationId}/reverse", // 冲销记错的那一笔
 		"POST /api/supplier-recon/{id}/close",                           // 「确认核销完成」（转到已完成页）
 		"POST /api/supplier-recon/{id}/reopen",                          // 「撤销完成」（回到待核销页）
+		"POST /api/supplier-recon/backfill-due",                         // 「补算存量到期日」（未配账期那张卡上）
 	}
 	for _, w := range want {
 		if !have[w] {

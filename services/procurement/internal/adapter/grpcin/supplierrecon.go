@@ -87,6 +87,17 @@ func (h *OrderHandler) ReopenPurchaseOrderPayment(ctx context.Context, req *prv1
 	return &prv1.ReopenPurchaseOrderPaymentResponse{Row: reconRowProto(row)}, nil
 }
 
+func (h *OrderHandler) BackfillPayableDue(ctx context.Context, _ *prv1.BackfillPayableDueRequest) (*prv1.BackfillPayableDueResponse, error) {
+	res, err := h.svc.BackfillPayableDue(ctx, grpcx.TenantID(ctx), reconOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.BackfillPayableDueResponse{
+		UpdatedOrders: res.UpdatedOrders, AppliedSuppliers: res.AppliedSuppliers,
+		SkippedSuppliers: res.SkippedSuppliers, SkippedOrders: res.SkippedOrders,
+	}, nil
+}
+
 func reconOperator(ctx context.Context) app.Operator {
 	op, _ := grpcx.OperatorFromContext(ctx)
 	return app.Operator{ID: op.EmployeeID, Name: op.Name}

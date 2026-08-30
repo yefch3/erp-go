@@ -1902,6 +1902,7 @@ const (
 	PurchaseOrderService_ReversePurchaseOrderPayment_FullMethodName      = "/erp.procurement.v1.PurchaseOrderService/ReversePurchaseOrderPayment"
 	PurchaseOrderService_ClosePurchaseOrderPayment_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/ClosePurchaseOrderPayment"
 	PurchaseOrderService_ReopenPurchaseOrderPayment_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ReopenPurchaseOrderPayment"
+	PurchaseOrderService_BackfillPayableDue_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/BackfillPayableDue"
 	PurchaseOrderService_PresignReconFile_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/PresignReconFile"
 	PurchaseOrderService_AttachReconFile_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/AttachReconFile"
 	PurchaseOrderService_ListReconFiles_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/ListReconFiles"
@@ -2008,6 +2009,10 @@ type PurchaseOrderServiceClient interface {
 	ReversePurchaseOrderPayment(ctx context.Context, in *ReversePurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ReversePurchaseOrderPaymentResponse, error)
 	ClosePurchaseOrderPayment(ctx context.Context, in *ClosePurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ClosePurchaseOrderPaymentResponse, error)
 	ReopenPurchaseOrderPayment(ctx context.Context, in *ReopenPurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ReopenPurchaseOrderPaymentResponse, error)
+	// 给存量采购单补应付到期日。到期日是从「配了账期之后下的单」才开始
+	// 写入的，在此之前的单一张都没有——不补一次，上线第一天整页都是
+	// 「未配账期」。按供应商当前配的账期算，幂等，跑几遍结果一样。
+	BackfillPayableDue(ctx context.Context, in *BackfillPayableDueRequest, opts ...grpc.CallOption) (*BackfillPayableDueResponse, error)
 	// 挂在一张采购单上的凭证——发票扫描件、水单、退款回执。存的是**纸**，
 	// 不是有金额、有明细、参与运算的单据：它不进任何求和，只是「这笔钱是
 	// 怎么回事」的证据。一张单可以有好几份。
@@ -2484,6 +2489,16 @@ func (c *purchaseOrderServiceClient) ReopenPurchaseOrderPayment(ctx context.Cont
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) BackfillPayableDue(ctx context.Context, in *BackfillPayableDueRequest, opts ...grpc.CallOption) (*BackfillPayableDueResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BackfillPayableDueResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_BackfillPayableDue_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *purchaseOrderServiceClient) PresignReconFile(ctx context.Context, in *PresignReconFileRequest, opts ...grpc.CallOption) (*PresignReconFileResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PresignReconFileResponse)
@@ -2732,6 +2747,10 @@ type PurchaseOrderServiceServer interface {
 	ReversePurchaseOrderPayment(context.Context, *ReversePurchaseOrderPaymentRequest) (*ReversePurchaseOrderPaymentResponse, error)
 	ClosePurchaseOrderPayment(context.Context, *ClosePurchaseOrderPaymentRequest) (*ClosePurchaseOrderPaymentResponse, error)
 	ReopenPurchaseOrderPayment(context.Context, *ReopenPurchaseOrderPaymentRequest) (*ReopenPurchaseOrderPaymentResponse, error)
+	// 给存量采购单补应付到期日。到期日是从「配了账期之后下的单」才开始
+	// 写入的，在此之前的单一张都没有——不补一次，上线第一天整页都是
+	// 「未配账期」。按供应商当前配的账期算，幂等，跑几遍结果一样。
+	BackfillPayableDue(context.Context, *BackfillPayableDueRequest) (*BackfillPayableDueResponse, error)
 	// 挂在一张采购单上的凭证——发票扫描件、水单、退款回执。存的是**纸**，
 	// 不是有金额、有明细、参与运算的单据：它不进任何求和，只是「这笔钱是
 	// 怎么回事」的证据。一张单可以有好几份。
@@ -2906,6 +2925,9 @@ func (UnimplementedPurchaseOrderServiceServer) ClosePurchaseOrderPayment(context
 }
 func (UnimplementedPurchaseOrderServiceServer) ReopenPurchaseOrderPayment(context.Context, *ReopenPurchaseOrderPaymentRequest) (*ReopenPurchaseOrderPaymentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReopenPurchaseOrderPayment not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) BackfillPayableDue(context.Context, *BackfillPayableDueRequest) (*BackfillPayableDueResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BackfillPayableDue not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) PresignReconFile(context.Context, *PresignReconFileRequest) (*PresignReconFileResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PresignReconFile not implemented")
@@ -3750,6 +3772,24 @@ func _PurchaseOrderService_ReopenPurchaseOrderPayment_Handler(srv interface{}, c
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_BackfillPayableDue_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BackfillPayableDueRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).BackfillPayableDue(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_BackfillPayableDue_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).BackfillPayableDue(ctx, req.(*BackfillPayableDueRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PurchaseOrderService_PresignReconFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PresignReconFileRequest)
 	if err := dec(in); err != nil {
@@ -4216,6 +4256,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReopenPurchaseOrderPayment",
 			Handler:    _PurchaseOrderService_ReopenPurchaseOrderPayment_Handler,
+		},
+		{
+			MethodName: "BackfillPayableDue",
+			Handler:    _PurchaseOrderService_BackfillPayableDue_Handler,
 		},
 		{
 			MethodName: "PresignReconFile",

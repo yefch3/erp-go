@@ -25,6 +25,17 @@
         <span class="metric-label">{{ t('supplierRecon.unsetCount') }}</span>
         <strong class="metric-value">{{ unsetCount }}</strong>
         <span class="metric-hint">{{ t('supplierRecon.unsetHint') }}</span>
+        <!-- 这个按钮唯一的作用就是让上面那个数字变小，所以钉在这张卡上，
+             而不是丢进工具栏跟「查询」挤在一起。数字归零它自己消失——
+             没活可干的时候不该留一个能点的按钮。 -->
+        <el-button
+          v-if="canWrite && unsetCount > 0"
+          class="metric-action"
+          link
+          type="primary"
+          :loading="backfilling"
+          @click="backfillDue"
+        >{{ t('supplierRecon.backfill') }}</el-button>
       </div>
     </section>
 
@@ -178,7 +189,10 @@
             </el-tag>
             <template v-else>
               <div class="num-cell">{{ row.dueDate }}</div>
-              <div class="sub" :class="{ overdue: row.overdueDays > 0 }">{{ dueLabel(row) }}</div>
+              <!-- 已完成页只留日子，不留「逾期多少天」——那笔账已经了结了。 -->
+              <div v-if="!isDone" class="sub" :class="{ overdue: row.overdueDays > 0 }">
+                {{ dueLabel(row) }}
+              </div>
             </template>
           </template>
         </el-table-column>
@@ -295,7 +309,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { get, post } from '../api'
+import { backfillRequest, get, post } from '../api'
 import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 import { useAuthStore } from '../stores/auth'
 
@@ -385,12 +399,16 @@ const unsetCount = ref(0)
 const dueSoonDays = 30
 const view = ref('')
 
+// 已完成页上的到期日是历史，不是待办：一张 2023 年就结清的单不该顶着
+// 「逾期 700 天」的红底。催的是没结的账，结了的只剩记录。
 function rowClass({ row }: { row: Row }) {
+  if (isDone.value) return ''
   if (row.dueUnset) return 'row-unset'
   return row.overdueDays > 0 ? 'row-overdue' : ''
 }
 
 function dueLabel(row: Row): string {
+  if (isDone.value) return ''
   if (row.overdueDays > 0) return t('supplierRecon.overdueBy', { n: row.overdueDays })
   if (row.overdueDays === 0) return t('supplierRecon.dueToday')
   return t('supplierRecon.dueIn', { n: -row.overdueDays })
@@ -436,6 +454,55 @@ async function loadMetrics() {
   dueSoonCount.value = (sample.items ?? []).filter(
     (r) => !r.dueUnset && r.overdueDays <= 0 && -r.overdueDays <= dueSoonDays,
   ).length
+}
+
+// ── 补算存量到期日 ────────────────────────────────────────
+//
+// 到期日是从「配了账期之后下的单」那一刻起才写入的，在此之前的单一张都
+// 没有。不补这一次，上线第一天整页都是「未配账期」。
+//
+// 不收任何输入是有意的：账期的唯一出处是供应商详情页上配的那个数，这里
+// 再开一个输入框，同一件事就有了两个答案。
+const backfilling = ref(false)
+
+async function backfillDue() {
+  const ok = await ElMessageBox.confirm(
+    t('supplierRecon.backfillWhy'),
+    t('supplierRecon.backfill'),
+    { type: 'warning', confirmButtonText: t('supplierRecon.backfillGo') },
+  ).catch(() => false)
+  if (ok === false) return
+  backfilling.value = true
+  try {
+    // int64 走 protojson 是字符串，int32 是数字——两种都照原样接。
+    const d = await post<{
+      updatedOrders: string
+      appliedSuppliers: number
+      skippedSuppliers: number
+      skippedOrders: string
+    }>('/supplier-recon/backfill-due', {}, backfillRequest)
+    const updated = Number(d.updatedOrders ?? 0)
+    const skipped = Number(d.skippedOrders ?? 0)
+    // 跳过的那部分才是下一步的活。只报「补了 37 张」，一次补了一半的操作
+    // 看起来就像做完了——员工得知道还要回供应商详情页配几家账期。
+    if (skipped > 0) {
+      ElMessage.warning(t('supplierRecon.backfillPartial', {
+        n: updated, s: d.skippedSuppliers ?? 0, m: skipped,
+      }))
+    } else if (updated === 0) {
+      // 一张也没动、一家也没跳过 = 没有「下过单但缺到期日」的行了。此时
+      // 卡片上的数字如果还不是 0，剩下的就是缺下单日期那一类——没有起算
+      // 点，补不出来。报「补好了 0 张」会让人以为坏了，得说清是哪种情况。
+      ElMessage.info(t('supplierRecon.backfillNothing'))
+    } else {
+      ElMessage.success(t('supplierRecon.backfillDone', { n: updated }))
+    }
+    await Promise.all([load(), loadMetrics()])
+  } catch {
+    // 错误提示由 api 层统一弹
+  } finally {
+    backfilling.value = false
+  }
 }
 
 // ── 记一笔付款 ────────────────────────────────────────────
@@ -714,6 +781,13 @@ onMounted(() => {
 .metric-hint {
   font-size: 12px;
   color: var(--el-text-color-placeholder);
+}
+/* 卡片是 flex column，link 按钮默认撑满一行会让文字居中——按内容宽度
+   靠左收住，和上面三行文字对齐。 */
+.metric-action {
+  align-self: flex-start;
+  margin-top: 2px;
+  font-size: 12px;
 }
 .panel {
   padding: 16px;

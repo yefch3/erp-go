@@ -132,6 +132,17 @@ func (s *Server) presignReconFile(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// backfillPayableDue 不收 body：账期只有一个出处，就是供应商详情页上配
+// 的那个数。这里让浏览器传一个天数进来，等于给同一件事开第二个答案。
+func (s *Server) backfillPayableDue(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.BackfillPayableDue(r.Context(), &prv1.BackfillPayableDueRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) attachReconFile(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.AttachReconFileRequest{}
 	if !s.decodeBody(w, r, req) {

@@ -105,6 +105,7 @@ WHERE tenant_id = $2::bigint
   AND supplier_id = $3::bigint
   AND ordered_at IS NOT NULL
   AND payable_due_date IS NULL
+  AND $1::int > 0
 `
 
 type BackfillPayableDueParams struct {
@@ -118,6 +119,13 @@ type BackfillPayableDueParams struct {
 // 幂等——只碰为空的行，跑几遍结果一样。存在的理由是时间差：到期日从今天
 // 起才在下单时写入，在此之前下的单一张都没有；而供应商的账期也是同一批
 // 改动里才有的字段，迁移当时全是 0。和客户侧 BackfillReceivableDue 同款。
+//
+// payment_days 必须 > 0，这道守卫写在 SQL 里而不是只写在调用方：传 0 会
+// 把到期日写成「下单当天」，而**空表示没配账期，不是当天到期**。这条口径
+// 是整张页面的地基，不该指望每个调用方都记得。
+//
+// ordered_at IS NOT NULL 既是幂等条件也是语义条件：没有下单日就没有起算
+// 点，编一个出来不如老老实实留空。草稿、待审、驳回天然被它挡在外面。
 func (q *Queries) BackfillPayableDue(ctx context.Context, arg BackfillPayableDueParams) (int64, error) {
 	result, err := q.db.Exec(ctx, backfillPayableDue, arg.PaymentDays, arg.TenantID, arg.SupplierID)
 	if err != nil {
@@ -857,6 +865,51 @@ func (q *Queries) ListPurchaseReceipts(ctx context.Context, arg ListPurchaseRece
 			&i.ReceivedAt,
 			&i.TotalQty,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSuppliersMissingPayableDue = `-- name: ListSuppliersMissingPayableDue :many
+SELECT po.supplier_id,
+       count(*)::bigint AS order_count
+  FROM purchase_orders po
+ WHERE po.tenant_id = $1::bigint
+   AND po.ordered_at IS NOT NULL
+   AND po.payable_due_date IS NULL
+ GROUP BY po.supplier_id
+ ORDER BY po.supplier_id
+`
+
+type ListSuppliersMissingPayableDueRow struct {
+	SupplierID int64
+	OrderCount int64
+}
+
+// 补算之前先问一句：还有哪些供应商挂着没有到期日的采购单，各挂几张。
+//
+// 存在的理由是端口太窄——procurement 只能按 id 单查供应商（app.Suppliers
+// 就一个 Get），没法把主数据整表拉过来对着筛。反过来从自己的表里问「谁
+// 需要补」，需要往返的次数就只跟真正欠账期的供应商数挂钩，而不是跟供应
+// 商总数挂钩。
+//
+// 条件和 BackfillPayableDue 逐字一致：这份清单就是那条 UPDATE 的作用域，
+// 两边一旦漂移，页面上报的「跳过 N 张」就会对不上真实剩下的行。
+func (q *Queries) ListSuppliersMissingPayableDue(ctx context.Context, tenantID int64) ([]ListSuppliersMissingPayableDueRow, error) {
+	rows, err := q.db.Query(ctx, listSuppliersMissingPayableDue, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSuppliersMissingPayableDueRow
+	for rows.Next() {
+		var i ListSuppliersMissingPayableDueRow
+		if err := rows.Scan(&i.SupplierID, &i.OrderCount); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
