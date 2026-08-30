@@ -1896,6 +1896,12 @@ const (
 	PurchaseOrderService_ReverseSupplierPaymentAllocation_FullMethodName = "/erp.procurement.v1.PurchaseOrderService/ReverseSupplierPaymentAllocation"
 	PurchaseOrderService_ListSupplierStatements_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/ListSupplierStatements"
 	PurchaseOrderService_GetSupplierStatement_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/GetSupplierStatement"
+	PurchaseOrderService_ListSupplierRecon_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/ListSupplierRecon"
+	PurchaseOrderService_ListPurchaseOrderPayments_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/ListPurchaseOrderPayments"
+	PurchaseOrderService_RecordPurchaseOrderPayment_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/RecordPurchaseOrderPayment"
+	PurchaseOrderService_ReversePurchaseOrderPayment_FullMethodName      = "/erp.procurement.v1.PurchaseOrderService/ReversePurchaseOrderPayment"
+	PurchaseOrderService_ClosePurchaseOrderPayment_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/ClosePurchaseOrderPayment"
+	PurchaseOrderService_ReopenPurchaseOrderPayment_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ReopenPurchaseOrderPayment"
 	PurchaseOrderService_ImportBankStatement_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/ImportBankStatement"
 	PurchaseOrderService_ListBankTransactions_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/ListBankTransactions"
 	PurchaseOrderService_MatchBankTransaction_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/MatchBankTransaction"
@@ -1987,6 +1993,17 @@ type PurchaseOrderServiceClient interface {
 	// derived from the tables above and never stored.
 	ListSupplierStatements(ctx context.Context, in *ListSupplierStatementsRequest, opts ...grpc.CallOption) (*ListSupplierStatementsResponse, error)
 	GetSupplierStatement(ctx context.Context, in *GetSupplierStatementRequest, opts ...grpc.CallOption) (*GetSupplierStatementResponse, error)
+	// Supplier reconciliation, done by hand: one row per purchase order, the
+	// amounts typed in by whoever is doing the reconciling, and "is this
+	// settled" answered by a person rather than by arithmetic. Nothing here
+	// reads an invoice or a bank row — invoices are evidence to attach, and
+	// bank rows are a record of their own.
+	ListSupplierRecon(ctx context.Context, in *ListSupplierReconRequest, opts ...grpc.CallOption) (*ListSupplierReconResponse, error)
+	ListPurchaseOrderPayments(ctx context.Context, in *ListPurchaseOrderPaymentsRequest, opts ...grpc.CallOption) (*ListPurchaseOrderPaymentsResponse, error)
+	RecordPurchaseOrderPayment(ctx context.Context, in *RecordPurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*RecordPurchaseOrderPaymentResponse, error)
+	ReversePurchaseOrderPayment(ctx context.Context, in *ReversePurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ReversePurchaseOrderPaymentResponse, error)
+	ClosePurchaseOrderPayment(ctx context.Context, in *ClosePurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ClosePurchaseOrderPaymentResponse, error)
+	ReopenPurchaseOrderPayment(ctx context.Context, in *ReopenPurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ReopenPurchaseOrderPaymentResponse, error)
 	// Bank statement rows: the fifth voice. Imported verbatim from the CSV
 	// the bank portal exports, deduplicated by the bank's own reference, and
 	// matched to payments — the match lives on the payment and is reversible;
@@ -2396,6 +2413,66 @@ func (c *purchaseOrderServiceClient) GetSupplierStatement(ctx context.Context, i
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) ListSupplierRecon(ctx context.Context, in *ListSupplierReconRequest, opts ...grpc.CallOption) (*ListSupplierReconResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSupplierReconResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListSupplierRecon_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ListPurchaseOrderPayments(ctx context.Context, in *ListPurchaseOrderPaymentsRequest, opts ...grpc.CallOption) (*ListPurchaseOrderPaymentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPurchaseOrderPaymentsResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListPurchaseOrderPayments_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) RecordPurchaseOrderPayment(ctx context.Context, in *RecordPurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*RecordPurchaseOrderPaymentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecordPurchaseOrderPaymentResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_RecordPurchaseOrderPayment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ReversePurchaseOrderPayment(ctx context.Context, in *ReversePurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ReversePurchaseOrderPaymentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReversePurchaseOrderPaymentResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ReversePurchaseOrderPayment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ClosePurchaseOrderPayment(ctx context.Context, in *ClosePurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ClosePurchaseOrderPaymentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClosePurchaseOrderPaymentResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ClosePurchaseOrderPayment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ReopenPurchaseOrderPayment(ctx context.Context, in *ReopenPurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ReopenPurchaseOrderPaymentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReopenPurchaseOrderPaymentResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ReopenPurchaseOrderPayment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *purchaseOrderServiceClient) ImportBankStatement(ctx context.Context, in *ImportBankStatementRequest, opts ...grpc.CallOption) (*ImportBankStatementResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ImportBankStatementResponse)
@@ -2593,6 +2670,17 @@ type PurchaseOrderServiceServer interface {
 	// derived from the tables above and never stored.
 	ListSupplierStatements(context.Context, *ListSupplierStatementsRequest) (*ListSupplierStatementsResponse, error)
 	GetSupplierStatement(context.Context, *GetSupplierStatementRequest) (*GetSupplierStatementResponse, error)
+	// Supplier reconciliation, done by hand: one row per purchase order, the
+	// amounts typed in by whoever is doing the reconciling, and "is this
+	// settled" answered by a person rather than by arithmetic. Nothing here
+	// reads an invoice or a bank row — invoices are evidence to attach, and
+	// bank rows are a record of their own.
+	ListSupplierRecon(context.Context, *ListSupplierReconRequest) (*ListSupplierReconResponse, error)
+	ListPurchaseOrderPayments(context.Context, *ListPurchaseOrderPaymentsRequest) (*ListPurchaseOrderPaymentsResponse, error)
+	RecordPurchaseOrderPayment(context.Context, *RecordPurchaseOrderPaymentRequest) (*RecordPurchaseOrderPaymentResponse, error)
+	ReversePurchaseOrderPayment(context.Context, *ReversePurchaseOrderPaymentRequest) (*ReversePurchaseOrderPaymentResponse, error)
+	ClosePurchaseOrderPayment(context.Context, *ClosePurchaseOrderPaymentRequest) (*ClosePurchaseOrderPaymentResponse, error)
+	ReopenPurchaseOrderPayment(context.Context, *ReopenPurchaseOrderPaymentRequest) (*ReopenPurchaseOrderPaymentResponse, error)
 	// Bank statement rows: the fifth voice. Imported verbatim from the CSV
 	// the bank portal exports, deduplicated by the bank's own reference, and
 	// matched to payments — the match lives on the payment and is reversible;
@@ -2742,6 +2830,24 @@ func (UnimplementedPurchaseOrderServiceServer) ListSupplierStatements(context.Co
 }
 func (UnimplementedPurchaseOrderServiceServer) GetSupplierStatement(context.Context, *GetSupplierStatementRequest) (*GetSupplierStatementResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetSupplierStatement not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ListSupplierRecon(context.Context, *ListSupplierReconRequest) (*ListSupplierReconResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSupplierRecon not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ListPurchaseOrderPayments(context.Context, *ListPurchaseOrderPaymentsRequest) (*ListPurchaseOrderPaymentsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListPurchaseOrderPayments not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) RecordPurchaseOrderPayment(context.Context, *RecordPurchaseOrderPaymentRequest) (*RecordPurchaseOrderPaymentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RecordPurchaseOrderPayment not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ReversePurchaseOrderPayment(context.Context, *ReversePurchaseOrderPaymentRequest) (*ReversePurchaseOrderPaymentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReversePurchaseOrderPayment not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ClosePurchaseOrderPayment(context.Context, *ClosePurchaseOrderPaymentRequest) (*ClosePurchaseOrderPaymentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClosePurchaseOrderPayment not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ReopenPurchaseOrderPayment(context.Context, *ReopenPurchaseOrderPaymentRequest) (*ReopenPurchaseOrderPaymentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReopenPurchaseOrderPayment not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) ImportBankStatement(context.Context, *ImportBankStatementRequest) (*ImportBankStatementResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ImportBankStatement not implemented")
@@ -3466,6 +3572,114 @@ func _PurchaseOrderService_GetSupplierStatement_Handler(srv interface{}, ctx con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_ListSupplierRecon_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSupplierReconRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListSupplierRecon(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListSupplierRecon_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListSupplierRecon(ctx, req.(*ListSupplierReconRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ListPurchaseOrderPayments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPurchaseOrderPaymentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListPurchaseOrderPayments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListPurchaseOrderPayments_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListPurchaseOrderPayments(ctx, req.(*ListPurchaseOrderPaymentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_RecordPurchaseOrderPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordPurchaseOrderPaymentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).RecordPurchaseOrderPayment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_RecordPurchaseOrderPayment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).RecordPurchaseOrderPayment(ctx, req.(*RecordPurchaseOrderPaymentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ReversePurchaseOrderPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReversePurchaseOrderPaymentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ReversePurchaseOrderPayment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ReversePurchaseOrderPayment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ReversePurchaseOrderPayment(ctx, req.(*ReversePurchaseOrderPaymentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ClosePurchaseOrderPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClosePurchaseOrderPaymentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ClosePurchaseOrderPayment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ClosePurchaseOrderPayment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ClosePurchaseOrderPayment(ctx, req.(*ClosePurchaseOrderPaymentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ReopenPurchaseOrderPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReopenPurchaseOrderPaymentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ReopenPurchaseOrderPayment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ReopenPurchaseOrderPayment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ReopenPurchaseOrderPayment(ctx, req.(*ReopenPurchaseOrderPaymentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PurchaseOrderService_ImportBankStatement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ImportBankStatementRequest)
 	if err := dec(in); err != nil {
@@ -3836,6 +4050,30 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetSupplierStatement",
 			Handler:    _PurchaseOrderService_GetSupplierStatement_Handler,
+		},
+		{
+			MethodName: "ListSupplierRecon",
+			Handler:    _PurchaseOrderService_ListSupplierRecon_Handler,
+		},
+		{
+			MethodName: "ListPurchaseOrderPayments",
+			Handler:    _PurchaseOrderService_ListPurchaseOrderPayments_Handler,
+		},
+		{
+			MethodName: "RecordPurchaseOrderPayment",
+			Handler:    _PurchaseOrderService_RecordPurchaseOrderPayment_Handler,
+		},
+		{
+			MethodName: "ReversePurchaseOrderPayment",
+			Handler:    _PurchaseOrderService_ReversePurchaseOrderPayment_Handler,
+		},
+		{
+			MethodName: "ClosePurchaseOrderPayment",
+			Handler:    _PurchaseOrderService_ClosePurchaseOrderPayment_Handler,
+		},
+		{
+			MethodName: "ReopenPurchaseOrderPayment",
+			Handler:    _PurchaseOrderService_ReopenPurchaseOrderPayment_Handler,
 		},
 		{
 			MethodName: "ImportBankStatement",

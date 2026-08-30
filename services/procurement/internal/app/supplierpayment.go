@@ -482,6 +482,10 @@ func (s *Service) AllocateSupplierPayment(ctx context.Context, tenantID, payment
 					advance, seen := advanceByPO[l.POID]
 					if !seen {
 						var advText string
+						// 这个求和**包含供应商对账页手填的核销行**（payment_id 为空），
+						// 因为它只按 po_id 过滤。这是有意的：退款的天花板是「这张
+						// 采购单上实际付出去过多少」，钱是从付款单分配的还是员工手填
+						// 记进来的，对这个问题没有区别。
 						if err := tx.QueryRow(ctx, `
 							SELECT coalesce(sum(amount),0)::text FROM payment_allocations
 							 WHERE tenant_id=$1 AND po_id=$2`,
@@ -548,8 +552,11 @@ func (s *Service) ReverseSupplierPaymentAllocation(ctx context.Context, tenantID
 	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		var invoiceID, poID, reversalOf int64
 		var amountText, feeText, currency string
+		// payment_id 自 00036 起可空：供应商对账页手填的核销行没有付款单抬头。
+		// coalesce 不是为了好看——不加的话手填行的 NULL 扫进 int64 会炸出一句
+		// 驱动层的英文，用户看到 500。翻成 0 之后下面那道闸能说人话。
 		err := tx.QueryRow(ctx, `
-			SELECT payment_id, coalesce(invoice_id,0), coalesce(po_id,0),
+			SELECT coalesce(payment_id,0), coalesce(invoice_id,0), coalesce(po_id,0),
 			       amount::text, fee_amount::text, currency, coalesce(reversal_of,0)
 			  FROM payment_allocations WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,
 			tenantID, allocID).Scan(&paymentID, &invoiceID, &poID,
@@ -562,6 +569,13 @@ func (s *Service) ReverseSupplierPaymentAllocation(ctx context.Context, tenantID
 		}
 		if reversalOf != 0 {
 			return apierr.Invalid("PAY_ALLOC_IS_REVERSAL", "冲销记录本身不能再被冲销")
+		}
+		// 手填行走不了这条路：这里的每一步都以「有一张付款单」为前提——
+		// AuthorizeSupplierPayment 查的是付款单的可见范围，末尾返回的是付款单
+		// 详情。手填行的冲销在 ReversePOPayment 里，那条路不碰付款单。
+		if paymentID == 0 {
+			return apierr.Invalid("PAY_ALLOC_NOT_PAYMENT_BACKED",
+				"这笔核销不挂付款单——请到供应商对账页冲销")
 		}
 		if err := s.AuthorizeSupplierPayment(ctx, tenantID, paymentID, op); err != nil {
 			return err

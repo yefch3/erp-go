@@ -78,10 +78,14 @@ var presetRoles = []presetRole{
 			"export:shipment:read",
 			"masterdata:customer:read", "masterdata:port:read",
 			"procurement:payment:read", "procurement:payment:write",
+			"procurement:recon:read", "procurement:recon:write",
 		},
 		Scopes: []presetScope{
 			{"export", "ALL"}, {"mail", "SELF"},
-			{"procurement_order", "SELF"}, {"procurement_requirement", "SELF"},
+			// 采购单范围必须是 ALL：财务不是任何一张采购单的 buyer，SELF 对它
+			// 就等于零行，供应商对账页会打得开却一张单都没有，且不报错。
+			// 和 00050 给 1 号租户改的那一条是同一件事——这里管的是新开的租户。
+			{"procurement_order", "ALL"}, {"procurement_requirement", "SELF"},
 			{"procurement_sourcing", "SELF"},
 		},
 	},

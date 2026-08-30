@@ -638,6 +638,18 @@ service PurchaseOrderService {
   rpc ListSupplierStatements(ListSupplierStatementsRequest) returns (ListSupplierStatementsResponse);
   rpc GetSupplierStatement(GetSupplierStatementRequest) returns (GetSupplierStatementResponse);
 
+  // Supplier reconciliation, done by hand: one row per purchase order, the
+  // amounts typed in by whoever is doing the reconciling, and "is this
+  // settled" answered by a person rather than by arithmetic. Nothing here
+  // reads an invoice or a bank row — invoices are evidence to attach, and
+  // bank rows are a record of their own.
+  rpc ListSupplierRecon(ListSupplierReconRequest) returns (ListSupplierReconResponse);
+  rpc ListPurchaseOrderPayments(ListPurchaseOrderPaymentsRequest) returns (ListPurchaseOrderPaymentsResponse);
+  rpc RecordPurchaseOrderPayment(RecordPurchaseOrderPaymentRequest) returns (RecordPurchaseOrderPaymentResponse);
+  rpc ReversePurchaseOrderPayment(ReversePurchaseOrderPaymentRequest) returns (ReversePurchaseOrderPaymentResponse);
+  rpc ClosePurchaseOrderPayment(ClosePurchaseOrderPaymentRequest) returns (ClosePurchaseOrderPaymentResponse);
+  rpc ReopenPurchaseOrderPayment(ReopenPurchaseOrderPaymentRequest) returns (ReopenPurchaseOrderPaymentResponse);
+
   // Bank statement rows: the fifth voice. Imported verbatim from the CSV
   // the bank portal exports, deduplicated by the bank's own reference, and
   // matched to payments — the match lives on the payment and is reversible;
@@ -1848,3 +1860,110 @@ message ListProcurementReworksRequest { int64 case_id = 1; }
 message ListProcurementReworksResponse { repeated ProcurementReworkRequest rework_requests = 1; }
 message ResolveProcurementReworkRequest { int64 id = 1; string resolution_note = 2; }
 message ResolveProcurementReworkResponse {}
+// ── 供应商对账（手工核销）─────────────────────────────────────────────
+//
+// SupplierReconRow is one purchase order as it stands on the money side.
+// paid_amount is summed at read time from the allocation rows, so a
+// reversal shows up the moment it is written. open_amount may be negative:
+// overpaying is a real thing, and this view does not pretend otherwise.
+message SupplierReconRow {
+  int64 po_id = 1;
+  string po_no = 2;
+  int64 supplier_id = 3;
+  string supplier_name = 4;
+  string currency = 5;
+  string order_status = 6;
+  string buyer_name = 7;
+  string ordered_date = 8;
+  string expected_date = 9;
+  string ordered_amount = 10;
+  string paid_amount = 11;
+  string open_amount = 12;
+  // Only set on the settled view: why it was called done, and by whom.
+  string closed_category = 13;
+  string closed_note = 14;
+  string closed_by_name = 15;
+  string closed_at = 16;
+  // How much of paid_amount arrived through the older invoice route
+  // (apportioned back to this order by invoice line). Broken out so the
+  // paid figure can be explained: the detail rows on this page only show
+  // hand-entered money, and an unexplained gap gets re-entered by hand.
+  string invoice_paid_amount = 17;
+}
+
+// PurchaseOrderPaymentEntry is one movement of money on one order.
+message PurchaseOrderPaymentEntry {
+  int64 allocation_id = 1;
+  string paid_at = 2;
+  string amount = 3;
+  // Non-zero only on rows that came from a payment voucher before the
+  // by-hand model. Shown separately: it is not part of paid_amount.
+  string fee_amount = 4;
+  string currency = 5;
+  string note = 6;
+  string allocated_at = 7;
+  string allocated_by = 8;
+  int64 reversal_of = 9;
+  string reverse_reason = 10;
+  // Empty on hand-entered rows. Also decides which reversal path applies.
+  string payment_no = 11;
+}
+
+message ListSupplierReconRequest {
+  string keyword = 1;
+  // false = still to reconcile; true = confirmed done.
+  bool closed_only = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+message ListSupplierReconResponse {
+  repeated SupplierReconRow items = 1;
+  int64 total = 2;
+}
+
+message ListPurchaseOrderPaymentsRequest {
+  int64 po_id = 1;
+}
+message ListPurchaseOrderPaymentsResponse {
+  repeated PurchaseOrderPaymentEntry items = 1;
+}
+
+// Every write returns the row as it now stands, so the page never has to
+// guess what changed. Four near-identical envelopes rather than one shared
+// one: buf's lint wants a response type per RPC, and the cost of obeying it
+// is four lines each.
+
+message RecordPurchaseOrderPaymentResponse {
+  SupplierReconRow row = 1;
+}
+message RecordPurchaseOrderPaymentRequest {
+  int64 po_id = 1;
+  // Always positive; a refund is expressed by is_refund, not by a sign.
+  string amount = 2;
+  bool is_refund = 3;
+  string paid_at = 4;
+  string note = 5;
+}
+message ReversePurchaseOrderPaymentResponse {
+  SupplierReconRow row = 1;
+}
+message ReversePurchaseOrderPaymentRequest {
+  int64 allocation_id = 1;
+  string reason = 2;
+}
+message ClosePurchaseOrderPaymentResponse {
+  SupplierReconRow row = 1;
+}
+message ClosePurchaseOrderPaymentRequest {
+  int64 po_id = 1;
+  // SETTLED | LOSS | ROUNDING | CANCELLED | OTHER
+  string category = 2;
+  string note = 3;
+}
+message ReopenPurchaseOrderPaymentResponse {
+  SupplierReconRow row = 1;
+}
+message ReopenPurchaseOrderPaymentRequest {
+  int64 po_id = 1;
+  string reason = 2;
+}

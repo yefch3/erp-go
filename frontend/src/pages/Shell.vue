@@ -565,8 +565,13 @@ const financeGroups = computed(() => [
       ...(auth.can('procurement:payment:read')
         ? [{ path: '/supplier-payments', label: t('financeNav.supplierPayments') }]
         : []),
+      // 对账（一张采购单一行，人工核销）和往来（按供应商汇总，只读）共用
+      // 同一个读权限：都是「看这本账的钱」。写的门在页面里，不在菜单上。
       ...(auth.can('procurement:recon:read')
-        ? [{ path: '/supplier-statements', label: t('financeNav.supplierStatements') }]
+        ? [
+            { path: '/supplier-recon', label: t('financeNav.supplierRecon') },
+            { path: '/supplier-statements', label: t('financeNav.supplierStatements') },
+          ]
         : []),
     ],
   },
