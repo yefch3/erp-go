@@ -266,7 +266,7 @@
             <el-form-item :label="t('bankTransactions.amount')" required>
               <el-input v-model="recordForm.amount" class="amount-input" placeholder="0.00">
                 <template #append>
-                  <el-select v-model="recordForm.currency" style="width: 92px">
+                  <el-select v-model="recordForm.currency" class="currency-select">
                     <el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c" />
                   </el-select>
                 </template>
@@ -896,8 +896,36 @@ onMounted(load)
   font-size: 15px;
   letter-spacing: 0.3px;
 }
+/* 金额和币种是**一个**字段的两半，所以拼成一个输入框组，而不是并排两个
+   控件——并排的话「0.00」和「USD」之间会有一道 gap，读起来像两件事。
+//
+   附加段这三条缺一不可：
+   · width 写死：组的左右两半按它切，不写就由内容撑，撑多宽看币种字数
+   · padding 0 **必须**配 select 的 margin 0。Element 默认给附加段
+     padding: 0 20px，又给里面的 select 配了 margin: -10px -20px 去抵消它。
+     只清 padding 不清 margin，那对负边距就把下拉顶到框外——实测下拉
+     632→724 而附加段只有 652→704，箭头越过整个字段右边界 8px。
+   · 背景透明 + 只留左边一道分隔线：默认那块灰底会让币种看着像另一个
+     控件，而它是这个金额的一部分。 */
 .amount-input :deep(.el-input-group__append) {
+  width: 92px;
   padding: 0;
+  /* **只去灰底，不去边框。** 那圈边是 Element 用一组 inset 阴影画的
+     （上、下、右，外加左边那道分隔线），写 box-shadow: none 会把整段的
+     外框一起抹掉——USD 那一半就没有右边框了，字段像是缺了一角。 */
+  background: transparent;
+}
+.amount-input :deep(.el-input-group__append .el-select) {
+  width: 100%;
+  margin: 0;
+}
+/* 币种就三个字母，居中比左对齐稳——左对齐时文字和右边的箭头之间会空出
+   一大截，看着像没填满。 */
+.amount-input :deep(.el-input-group__append .el-select__wrapper) {
+  box-shadow: none;
+  background: transparent;
+  padding-left: 12px;
+  padding-right: 8px;
 }
 
 .account-select {
