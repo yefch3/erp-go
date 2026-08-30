@@ -255,7 +255,22 @@
             <el-option v-for="k in OWNERSHIP_DETAILS" :key="k" :value="k" :label="t(`bankTransactions.ownershipDetails.${k}`)" />
           </el-select>
         </el-form-item>
+        <!-- 对账单跟着这笔一起交。登记这笔钱的人手里正拿着那张纸，让他当场
+             传完，比事后回列表里找哪几行还缺凭证省一趟。 -->
+        <el-form-item :label="t('bankTransactions.attachment')">
+          <div class="record-file">
+            <el-button @click="recordFileInput?.click()">
+              {{ recordFile ? t('bankTransactions.replaceAttachment') : t('bankTransactions.pickAttachment') }}
+            </el-button>
+            <span v-if="recordFile" class="file-name">{{ recordFile.name }}</span>
+            <el-button v-if="recordFile" link type="danger" @click="clearRecordFile">
+              {{ t('common.cancel') }}
+            </el-button>
+            <span v-else class="sub">{{ t('bankTransactions.pickAttachmentHint') }}</span>
+          </div>
+        </el-form-item>
       </el-form>
+      <input ref="recordFileInput" type="file" accept="application/pdf,image/*" style="display: none" @change="onRecordFilePicked" />
       <p class="sub">{{ t('bankTransactions.recordHint') }}</p>
       <template #footer>
         <el-button @click="recordOpen = false">{{ t('common.cancel') }}</el-button>
@@ -277,6 +292,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post } from '../api'
+import { uploadBankStatement } from '../lib/statementUpload'
 import { CURRENCIES } from '../constants'
 import { noId } from '../lib/protoId'
 import { useAuthStore } from '../stores/auth'
@@ -395,12 +411,30 @@ async function submitAccount() {
   }
 }
 
+// 登记时随手带上的那张对账单。存文件本身而不是先传上去：这一刻还没有
+// 流水行，直传地址是按行的 id 签的（key 前缀里带着它，那也是唯一的跨租户
+// 隔离），所以只能等行落库之后再传。
+const recordFileInput = ref<HTMLInputElement | null>(null)
+const recordFile = ref<File | null>(null)
+
+function onRecordFilePicked(e: Event) {
+  const input = e.target as HTMLInputElement
+  recordFile.value = input.files?.[0] ?? null
+  // 清空 input：同一个文件连选两次，不清的话 change 不会再触发。
+  input.value = ''
+}
+
+function clearRecordFile() {
+  recordFile.value = null
+}
+
 function openRecord() {
   Object.assign(recordForm, {
     direction: 'CREDIT', amount: '', currency: 'USD', txnDate: '',
     bankRef: '', counterparty: '', remittanceInfo: '', ownership: '', detail: '',
     accountId: '',
   })
+  recordFile.value = null
   recordOpen.value = true
   void loadAccounts()
 }
@@ -414,7 +448,7 @@ async function saveRecord() {
   }
   recording.value = true
   try {
-    await post('/bank-transactions', {
+    const created = await post<{ transaction: { id: string } }>('/bank-transactions', {
       transaction: {
         direction: recordForm.direction, amount: recordForm.amount,
         currency: recordForm.currency, txnDate: recordForm.txnDate,
@@ -425,8 +459,22 @@ async function saveRecord() {
         ownershipDetail: recordForm.ownership === 'OTHER' ? recordForm.detail : '',
       },
     })
+    // 钱先落地，纸随后。两步分开成败，是因为它们的分量不一样：这笔钱记住了
+    // 才是要紧的，凭证没传上去是可以回头补的。所以下面那句 catch 不把整个
+    // 登记算失败——只说清楚「行进去了、纸没进去」，让人知道该补哪一步。
+    const txnID = created?.transaction?.id
+    if (recordFile.value && txnID) {
+      try {
+        await uploadStatement(txnID, recordFile.value)
+        ElMessage.success(t('bankTransactions.recordedWithFile'))
+      } catch {
+        ElMessage.warning(t('bankTransactions.recordedFileFailed'))
+      }
+    } else {
+      ElMessage.success(t('bankTransactions.recorded'))
+    }
     recordOpen.value = false
-    ElMessage.success(t('bankTransactions.recorded'))
+    recordFile.value = null
     await load()
   } finally {
     recording.value = false
@@ -559,9 +607,13 @@ async function unmatch(row: TxnRow) {
   void load()
 }
 
-// 对账单那张纸。文件**不经过我们的服务**：先要一个短命的直传地址，浏览器
-// 直接把 PDF 传给对象存储，传完才回来登记 key。几十兆的全月流水也不会把
-// 网关撑爆。
+// 对账单那张纸走 lib/statementUpload 的三步直传，两个入口共用（登记对话框里
+// 随手带的、和列表里事后补的）。那三步漏一步都不报错、只是纸悄悄没上去，
+// 所以放在 lib 里单测，而不是在这里各写一遍。
+function uploadStatement(txnID: string, file: File) {
+  return uploadBankStatement(txnID, file, { post })
+}
+
 function pickFile(row: TxnRow) {
   attachingRow.value = row
   attachInput.value?.click()
@@ -574,11 +626,7 @@ async function onAttachPicked(e: Event) {
   if (!file || !row) return
   uploadingId.value = row.id
   try {
-    const signed = await post<{ key: string; uploadUrl: string }>(
-      `/bank-transactions/${row.id}/attachment/presign`, { fileName: file.name })
-    const put = await fetch(signed.uploadUrl, { method: 'PUT', body: file })
-    if (!put.ok) throw new Error(`upload failed: ${put.status}`)
-    await post(`/bank-transactions/${row.id}/attachment`, { key: signed.key })
+    await uploadStatement(row.id, file)
     ElMessage.success(t('bankTransactions.attachmentUploaded'))
     void load()
   } catch {
@@ -605,6 +653,17 @@ onMounted(load)
   color: var(--el-text-color-secondary);
 }
 .none { color: var(--el-text-color-secondary); }
+.record-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.file-name {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+  word-break: break-all;
+}
 .attach-link { color: var(--el-color-primary); text-decoration: none; }
 .attach-link:hover { text-decoration: underline; }
 .pick-context { margin: 0 0 12px; color: var(--el-text-color-secondary); }
