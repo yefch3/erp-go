@@ -13,7 +13,7 @@
           <el-select
             v-model="defaultCurrency"
             clearable
-            style="width: 150px"
+            style="width: 172px"
             :placeholder="t('bankTransactions.defaultCurrency')"
           >
             <el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c" />
@@ -51,82 +51,109 @@
       </div>
 
       <el-table v-loading="loading" :data="rows" stripe>
-        <el-table-column prop="txnDate" :label="t('bankTransactions.date')" width="110" />
-        <el-table-column :label="t('bankTransactions.direction')" width="90">
+        <!-- 日期和流水号合成一格：两者回答的是同一个问题——「这一行是哪天、
+             哪一笔」。流水号还是搜索和去重的钥匙，所以留全、不截断，只是放小
+             一号压在日期底下。合并之前七列在 1280 的笔记本上装不下，右边那个
+             固定列会压住「对账单」。 -->
+        <el-table-column :label="t('bankTransactions.dateAndRef')" width="176">
           <template #default="{ row }">
-            <el-tag effect="plain" :type="row.direction === 'DEBIT' ? 'warning' : 'success'">
-              {{ row.direction === 'DEBIT' ? t('bankTransactions.debit') : t('bankTransactions.credit') }}
-            </el-tag>
+            <div class="num-cell nowrap">{{ row.txnDate }}</div>
+            <div class="sub num-cell nowrap">{{ row.bankRef }}</div>
           </template>
         </el-table-column>
-        <!-- 归属：这笔钱是谁那条线上的。它决定接下来能被谁核销，所以摆在
-             方向旁边——两者容易被当成一回事，其实不是（供应商退款是进账）。 -->
-        <el-table-column :label="t('bankTransactions.ownership')" width="130">
+        <!-- 方向和金额合成一格。原来九列一共要 1500 多像素，容器只有一千出头，
+             于是右边那个固定的「操作」列压在「对账单」「匹配状态」上面，中间
+             留一道白缝——那不是样式没调好，是列装不下。
+             合并也更贴事实：出账还是入账，说的就是这个数往哪边走。 -->
+        <el-table-column :label="t('bankTransactions.amount')" width="168" align="right">
           <template #default="{ row }">
-            <el-tag v-if="row.ownership" effect="plain" :type="ownershipTone(row.ownership)">
+            <span class="money-cell" :class="row.direction === 'DEBIT' ? 'is-debit' : 'is-credit'">
+              {{ row.direction === 'DEBIT' ? '−' : '+' }}{{ row.currency }} {{ row.amount }}
+            </span>
+            <div class="sub">
+              {{ row.direction === 'DEBIT' ? t('bankTransactions.debit') : t('bankTransactions.credit') }}
+            </div>
+          </template>
+        </el-table-column>
+        <!-- 对方和摘要合成一格：一行里它们回答的是同一个问题——「这笔钱是
+             跟谁、为着什么事」。摘要里通常是单号，紧挨着户名比隔两列好认。 -->
+        <el-table-column :label="t('bankTransactions.counterpartyAndRemark')" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            <div class="cp-name">{{ row.counterparty || '—' }}</div>
+            <div class="sub">{{ row.remark || '—' }}</div>
+          </template>
+        </el-table-column>
+        <!-- 归属：这笔钱是谁那条线上的。它决定接下来能被谁核销——和方向容易
+             被当成一回事，其实不是（供应商退款是进账）。 -->
+        <el-table-column :label="t('bankTransactions.ownership')" width="118">
+          <template #default="{ row }">
+            <el-tag v-if="row.ownership" size="small" effect="plain" :type="ownershipTone(row.ownership)">
               {{ t(`bankTransactions.ownerships.${row.ownership}`) }}
             </el-tag>
-            <el-tag v-else effect="plain" type="info">{{ t('bankTransactions.ownerships.PENDING') }}</el-tag>
+            <el-tag v-else size="small" effect="plain" type="info">{{ t('bankTransactions.ownerships.PENDING') }}</el-tag>
             <div v-if="row.ownershipDetail" class="sub">
               {{ t(`bankTransactions.ownershipDetails.${row.ownershipDetail}`) }}
             </div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('bankTransactions.amount')" width="140" align="right">
-          <template #default="{ row }">{{ row.currency }} {{ row.amount }}</template>
-        </el-table-column>
-        <el-table-column prop="counterparty" :label="t('bankTransactions.counterparty')" min-width="150" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.counterparty || '—' }}</template>
-        </el-table-column>
-        <el-table-column prop="bankRef" :label="t('bankTransactions.bankRef')" width="170" show-overflow-tooltip />
-        <el-table-column prop="remark" :label="t('bankTransactions.remark')" min-width="130" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.remark || '—' }}</template>
-        </el-table-column>
         <!-- 银行给的那份对账单。摆在这一列而不是藏进详情：财务一眼要看出
              哪几行还没把纸传上来。 -->
-        <el-table-column :label="t('bankTransactions.attachment')" width="185">
+        <el-table-column :label="t('bankTransactions.attachment')" width="122">
           <template #default="{ row }">
-            <a v-if="row.attachmentUrl" :href="row.attachmentUrl" target="_blank" rel="noopener" class="attach-link">
-              {{ row.attachmentName || t('bankTransactions.attachment') }}
-            </a>
-            <span v-else class="none">{{ t('bankTransactions.noAttachment') }}</span>
-            <el-button v-if="canWrite" size="small" link type="primary" :loading="uploadingId === row.id" @click="pickFile(row)">
-              {{ row.attachmentKey ? t('bankTransactions.replaceAttachment') : t('bankTransactions.uploadAttachment') }}
-            </el-button>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('bankTransactions.matchState')" min-width="210">
-          <template #default="{ row }">
-            <el-tag v-if="row.matchedPaymentNo" type="success" effect="plain">{{ row.matchedPaymentNo }}</el-tag>
-            <template v-else-if="row.suggestedPaymentNo">
-              <span class="suggest">{{ t('bankTransactions.suggested') }}: {{ row.suggestedPaymentNo }} · {{ row.suggestedPaymentSupplier }}</span>
-              <el-button v-if="canWrite" size="small" link type="primary" @click="match(row, row.suggestedPaymentId)">
-                {{ t('bankTransactions.accept') }}
+            <div class="attach-cell">
+              <a v-if="row.attachmentUrl" :href="row.attachmentUrl" target="_blank" rel="noopener" class="attach-link">
+                {{ row.attachmentName || t('bankTransactions.attachment') }}
+              </a>
+              <span v-else class="none">{{ t('bankTransactions.noAttachment') }}</span>
+              <el-button v-if="canWrite" size="small" link type="primary" :loading="uploadingId === row.id" @click="pickFile(row)">
+                {{ row.attachmentKey ? t('bankTransactions.replaceAttachment') : t('bankTransactions.uploadAttachment') }}
               </el-button>
-            </template>
-            <span v-else class="none">—</span>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="210" fixed="right">
+        <!-- 匹配状态和操作合成一格：状态是「这笔和哪张付款单对上了」，按钮是
+             「去对上 / 拆开」——同一件事的读和写，隔着一条竖线反而要来回看。 -->
+        <el-table-column :label="t('bankTransactions.matchAndActions')" width="214" fixed="right">
           <template #default="{ row }">
-            <!-- 匹配的条件从「是出账」改成「归属是供应商或还没归」。
-                 供应商退款是**进账**却归供应商，按方向拦就永远对不上。 -->
-            <!-- noId 而不是 !row.matchedPaymentId：这个字段是 int64，没值的时候
-                 到浏览器是字符串 "0"，而 "0" 是真值。写成 ! 的那阵子，「改归属」
-                 在任何一行上都不出现，「取消匹配」在任何一行上都出现——哪怕
-                 旁边「匹配状态」那一列写着「—」。见 lib/protoId.ts。 -->
-            <template v-if="canWrite && (!row.ownership || row.ownership === 'SUPPLIER')">
-              <el-button v-if="noId(row.matchedPaymentId)" size="small" @click="openPick(row)">{{ t('bankTransactions.pickPayment') }}</el-button>
-              <el-button v-else size="small" type="danger" link @click="unmatch(row)">{{ t('bankTransactions.unmatch') }}</el-button>
-            </template>
-            <el-button v-if="canWrite && noId(row.matchedPaymentId)" size="small" link @click="openOwnership(row)">
-              {{ t('bankTransactions.setOwnership') }}
-            </el-button>
+            <div class="match-cell">
+              <el-tag v-if="row.matchedPaymentNo" size="small" type="success" effect="plain">{{ row.matchedPaymentNo }}</el-tag>
+              <span v-else-if="row.suggestedPaymentNo" class="suggest">
+                {{ t('bankTransactions.suggested') }}: {{ row.suggestedPaymentNo }}
+              </span>
+              <div class="row-actions">
+                <el-button
+                  v-if="canWrite && row.suggestedPaymentNo && noId(row.matchedPaymentId)"
+                  size="small" link type="primary" @click="match(row, row.suggestedPaymentId)"
+                >{{ t('bankTransactions.accept') }}</el-button>
+                <!-- 匹配的条件从「是出账」改成「归属是供应商或还没归」。
+                     供应商退款是**进账**却归供应商，按方向拦就永远对不上。 -->
+                <!-- noId 而不是 !row.matchedPaymentId：这个字段是 int64，没值的
+                     时候到浏览器是字符串 "0"，而 "0" 是真值。写成 ! 的那阵子，
+                     「改归属」在任何一行上都不出现、「取消匹配」在任何一行上都
+                     出现——哪怕旁边写着「—」。见 lib/protoId.ts。 -->
+                <template v-if="canWrite && (!row.ownership || row.ownership === 'SUPPLIER')">
+                  <el-button v-if="noId(row.matchedPaymentId)" size="small" link type="primary" @click="openPick(row)">
+                    {{ t('bankTransactions.pickPayment') }}
+                  </el-button>
+                  <el-button v-else size="small" type="danger" link @click="unmatch(row)">{{ t('bankTransactions.unmatch') }}</el-button>
+                </template>
+                <el-button v-if="canWrite && noId(row.matchedPaymentId)" size="small" link @click="openOwnership(row)">
+                  {{ t('bankTransactions.setOwnership') }}
+                </el-button>
+              </div>
+            </div>
           </template>
         </el-table-column>
         <template #empty>{{ t('bankTransactions.empty') }}</template>
       </el-table>
-      <el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="load" />
+      <el-pagination
+        class="pager"
+        v-model:current-page="page"
+        :page-size="20"
+        :total="total"
+        layout="total, prev, pager, next"
+        @current-change="load"
+      />
       <input ref="attachInput" type="file" accept="application/pdf,image/*" style="display: none" @change="onAttachPicked" />
     </section>
 
@@ -225,7 +252,7 @@
         <section class="fieldset">
           <h4 class="fieldset-title">{{ t('bankTransactions.sectionMoney') }}</h4>
           <div class="grid">
-            <el-form-item :label="t('bankTransactions.direction')">
+            <el-form-item class="span-2" :label="t('bankTransactions.direction')">
               <!-- 进账绿、出账橙，和列表里那一列同一套颜色。方向选错是最贵的
                    错误之一，让它在选中的那一刻就有颜色。 -->
               <el-radio-group
@@ -259,7 +286,8 @@
           <!-- 钱进/出我们哪个户头。选填——CSV 导进来的行本来也没有这个信息。
                能选也能写：清单里没有的账户，当场写一个就建出来，不用先跳去
                「收款账户」再回来重填一遍这张表。 -->
-          <el-form-item v-if="canReadAccounts" :label="t('bankTransactions.account')">
+          <div class="grid">
+          <el-form-item v-if="canReadAccounts" class="span-2" :label="t('bankTransactions.account')">
             <el-select
               v-model="recordForm.accountId"
               filterable
@@ -296,17 +324,16 @@
               <span v-else-if="canWriteAccounts" class="sub">{{ t('bankTransactions.accountHint') }}</span>
             </div>
           </el-form-item>
-          <div class="grid">
             <el-form-item :label="t('bankTransactions.bankRef')" required>
               <el-input v-model="recordForm.bankRef" :placeholder="t('bankTransactions.bankRefPlaceholder')" />
             </el-form-item>
             <el-form-item :label="t('bankTransactions.counterparty')">
               <el-input v-model="recordForm.counterparty" />
             </el-form-item>
+            <el-form-item class="span-2" :label="t('bankTransactions.remittance')">
+              <el-input v-model="recordForm.remittanceInfo" :placeholder="t('bankTransactions.remittanceHint')" />
+            </el-form-item>
           </div>
-          <el-form-item :label="t('bankTransactions.remittance')">
-            <el-input v-model="recordForm.remittanceInfo" :placeholder="t('bankTransactions.remittanceHint')" />
-          </el-form-item>
         </section>
 
         <section class="fieldset">
@@ -314,7 +341,7 @@
           <div class="grid">
             <!-- 登记的人往往当场就知道这是谁那条线上的钱，让他直接写上；
                  不知道就留「待处理」，两条线的队列都看得见它。 -->
-            <el-form-item :label="t('bankTransactions.ownership')">
+            <el-form-item :class="{ 'span-2': recordForm.ownership !== 'OTHER' }" :label="t('bankTransactions.ownership')">
               <el-select v-model="recordForm.ownership" style="width: 100%">
                 <el-option value="" :label="t('bankTransactions.ownerships.PENDING')" />
                 <el-option v-for="k in OWNERSHIPS" :key="k" :value="k" :label="t(`bankTransactions.ownerships.${k}`)" />
@@ -325,10 +352,9 @@
                 <el-option v-for="k in OWNERSHIP_DETAILS" :key="k" :value="k" :label="t(`bankTransactions.ownershipDetails.${k}`)" />
               </el-select>
             </el-form-item>
-          </div>
-          <!-- 对账单跟着这笔一起交。登记这笔钱的人手里正拿着那张纸，让他当场
-               传完，比事后回列表里找哪几行还缺凭证省一趟。 -->
-          <el-form-item :label="t('bankTransactions.attachment')">
+            <!-- 对账单跟着这笔一起交。登记这笔钱的人手里正拿着那张纸，让他
+                 当场传完，比事后回列表里找哪几行还缺凭证省一趟。 -->
+            <el-form-item class="span-2" :label="t('bankTransactions.attachment')">
             <div v-if="recordFile" class="file-chip">
               <span class="file-name">{{ recordFile.name }}</span>
               <el-button link type="primary" @click="recordFileInput?.click()">
@@ -340,7 +366,8 @@
               <span class="file-drop-main">{{ t('bankTransactions.pickAttachment') }}</span>
               <span class="sub">{{ t('bankTransactions.pickAttachmentHint') }}</span>
             </button>
-          </el-form-item>
+            </el-form-item>
+          </div>
         </section>
       </el-form>
       <input ref="recordFileInput" type="file" accept="application/pdf,image/*" style="display: none" @change="onRecordFilePicked" />
@@ -814,10 +841,40 @@ onMounted(load)
   line-height: 1.6;
   color: var(--el-text-color-secondary);
 }
+/* **固定两列**，不是 auto-fit。
+   原来写的是 repeat(auto-fit, minmax(190px, 1fr))：能塞几列就塞几列，于是
+   「这笔钱」那段三个字段排成三列、下面两段排成两列——每段的列边落在不同
+   位置，整张表看着就是参差的。列数写死，四条边才对得齐。 */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 0 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+/* 通栏的字段（账户、附言、对账单）横跨两列，它们的左右边和上面那两列的
+   最外侧对齐——一整张表只有两条竖直参考线。 */
+.grid > .span-2 {
+  grid-column: 1 / -1;
+}
+/* 窄屏塌成一列，省得把日期挤成一条缝。 */
+@media (max-width: 560px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* 分段控件撑满自己那一格：它原来按内容宽度缩在左边，右边空一大块，
+   而隔壁两个字段是满格的——一眼就看出来没对齐。 */
+.direction-pick {
+  display: flex;
+  width: 100%;
+  /* 通栏那一行里控件本身收到 320：两段的切换器铺满一整行像条横幅，
+     但左边缘仍和其它字段对齐，所以看着是「有意留白」而不是「没对齐」。 */
+  max-width: 320px;
+}
+.direction-pick :deep(.el-radio-button) {
+  flex: 1;
+}
+.direction-pick :deep(.el-radio-button__inner) {
+  width: 100%;
 }
 
 /* 进账绿、出账橙——和列表里那一列同一套颜色。方向选错是最贵的错误之一，
@@ -916,7 +973,114 @@ onMounted(load)
 .attach-link { color: var(--el-color-primary); text-decoration: none; }
 .attach-link:hover { text-decoration: underline; }
 .pick-context { margin: 0 0 12px; color: var(--el-text-color-secondary); }
-.head-actions { display: flex; gap: 8px; align-items: center; }
+
+/* ── 页面外壳 ──────────────────────────────────────────────
+   这一页原来一条布局样式都没有：.page / .page-head / .panel / .filters
+   四个类名在模板里写着，却谁也没定义（同区的客户对账、供应商对账各自带
+   一份，这一页漏了）。结果就是标题和右上角那排按钮堆成上下两行、表格
+   直接贴在页面上、筛选条和表头之间没有一点呼吸。
+   这里补的就是那一份，键值照着同区其它页抄，让财务这几页看着是一套东西。 */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.page-head .eyebrow {
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  color: var(--el-text-color-secondary);
+}
+.page-head h1 {
+  margin: 4px 0 6px;
+  font-size: 28px;
+}
+.page-head p {
+  margin: 0;
+  color: var(--el-text-color-regular);
+}
+.panel {
+  padding: 16px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  background: var(--el-bg-color);
+}
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.pager {
+  margin-top: 14px;
+  justify-content: flex-end;
+}
+/* 金额、流水号、日期都是要竖着比对的数：等宽字形，位数对齐。 */
+.num-cell {
+  font-variant-numeric: tabular-nums;
+}
+.money-cell {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.attach-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.attach-cell .attach-link {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nowrap {
+  white-space: nowrap;
+}
+/* 出账带减号染橙、入账带加号染绿。方向从独立一列并进金额里之后，符号和
+   颜色就是方向本身——扫一列数字比扫一列标签快。 */
+.money-cell.is-debit {
+  color: var(--el-color-warning);
+}
+.money-cell.is-credit {
+  color: var(--el-color-success);
+}
+.cp-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.match-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+/* 一行里最多三个按钮，横排、间距靠 gap 而不是 el-button 自带的 margin
+   ——link 型按钮之间默认没有间距，挤在一起会被读成一个词。 */
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.row-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+.head-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
 </style>
 
 <!-- el-dialog 会被 teleport 到 body，作用域样式够不着它（scoped 的属性只落在
