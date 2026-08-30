@@ -29,8 +29,8 @@ func TestSalesAndProcurementPresetRoleBoundary(t *testing.T) {
 	required := map[string][]string{
 		"SALES":               {"sales:inquiry:write", "export:quotation:write"},
 		"SALES_MANAGER":       {"sales:inquiry:write", "export:quotation:write", "export:contract:approve"},
-		"BUYER":               {"procurement:sourcing:write", "procurement:sourcing:price"},
-		"PROCUREMENT_MANAGER": {"procurement:sourcing:approve", "procurement:order:cancel"},
+		"BUYER":               {"procurement:sourcing:write", "procurement:sourcing:price", "masterdata:factory:read"},
+		"PROCUREMENT_MANAGER": {"procurement:sourcing:approve", "procurement:order:cancel", "masterdata:factory:read"},
 	}
 	for roleCode, wants := range required {
 		var permissions []string

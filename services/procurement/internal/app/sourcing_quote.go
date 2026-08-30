@@ -175,7 +175,7 @@ type SupplierQuoteLineInput struct {
 
 type NewSupplierQuote struct {
 	FactoryRFQID                                                           int64
-	QuotedAt, ValidUntil, Currency, PaymentTerms, Delivery, Remark, Source string
+	QuotedAt, ValidUntil, Currency, PaymentTerms, Delivery, Incoterm, Remark, Source string
 	ConfirmationStatus, EvidenceNote                                       string
 	Lines                                                                  []SupplierQuoteLineInput
 }
@@ -194,15 +194,6 @@ func rfqEligibleSourcingLineIDs(lines []store.ListSourcingLinesRow) []int64 {
 
 // validateFactoryRFQContact 校验对外询价必须具备可投递联系人和明确回复期限。
 func validateFactoryRFQCommunication(channel, contactEmail, contactValue, currency, responseDueAt string, today time.Time) error {
-	if channel == "SYSTEM_EMAIL" {
-		contactEmail = strings.TrimSpace(contactEmail)
-		address, err := mail.ParseAddress(contactEmail)
-		if err != nil || !strings.EqualFold(address.Address, contactEmail) {
-			return apierr.Invalid("SC_RFQ_CONTACT_INVALID", "系统邮件询价必须填写有效的联系人邮箱")
-		}
-	} else if strings.TrimSpace(contactValue) == "" {
-		return apierr.Invalid("SC_RFQ_CONTACT_REQUIRED", "人工询价必须填写电话、账号或联系说明")
-	}
 	currency = strings.ToUpper(strings.TrimSpace(currency))
 	if len(currency) != 3 {
 		return apierr.Invalid("SC_RFQ_CURRENCY_INVALID", "币种必须使用 3 位代码，例如 USD 或 CNY")
@@ -211,6 +202,20 @@ func validateFactoryRFQCommunication(channel, contactEmail, contactValue, curren
 		if char < 'A' || char > 'Z' {
 			return apierr.Invalid("SC_RFQ_CURRENCY_INVALID", "币种必须使用 3 位代码，例如 USD 或 CNY")
 		}
+	}
+	// 采购已在系统外完成人工沟通时，可以直接从产品组录入供应商报价。
+	// 这条技术上的 RFQ 链只用于保存供应商、产品和报价版本，不伪造沟通记录。
+	if channel == "OTHER" && strings.TrimSpace(contactEmail) == "" && strings.TrimSpace(contactValue) == "" && strings.TrimSpace(responseDueAt) == "" {
+		return nil
+	}
+	if channel == "SYSTEM_EMAIL" {
+		contactEmail = strings.TrimSpace(contactEmail)
+		address, err := mail.ParseAddress(contactEmail)
+		if err != nil || !strings.EqualFold(address.Address, contactEmail) {
+			return apierr.Invalid("SC_RFQ_CONTACT_INVALID", "系统邮件询价必须填写有效的联系人邮箱")
+		}
+	} else if strings.TrimSpace(contactValue) == "" {
+		return apierr.Invalid("SC_RFQ_CONTACT_REQUIRED", "人工询价必须填写电话、账号或联系说明")
 	}
 	due, err := time.Parse("2006-01-02", strings.TrimSpace(responseDueAt))
 	if err != nil {
@@ -470,9 +475,6 @@ func (s *Service) CreateSupplierQuote(ctx context.Context, tenantID int64, in Ne
 		for _, line := range rfqLines {
 			allowed[line.SourcingLineID] = true
 		}
-		if len(in.Lines) != len(rfqLines) {
-			return apierr.Invalid("SC_QUOTE_INCOMPLETE", "请填写全部询价明细的报价")
-		}
 		seen := map[int64]bool{}
 		for _, line := range in.Lines {
 			qty, qerr := decimal.NewFromString(line.Qty)
@@ -487,7 +489,7 @@ func (s *Service) CreateSupplierQuote(ctx context.Context, tenantID int64, in Ne
 		}
 		result, err = q.CreateSupplierQuote(ctx, store.CreateSupplierQuoteParams{TenantID: tenantID, FactoryRfqID: in.FactoryRFQID,
 			QuotedAt: in.QuotedAt, ValidUntil: in.ValidUntil, Currency: strings.ToUpper(in.Currency), PaymentTerms: in.PaymentTerms,
-			Delivery: in.Delivery, Remark: in.Remark, Source: in.Source, CreatedBy: op.ID,
+			Delivery: in.Delivery, Incoterm: strings.ToUpper(strings.TrimSpace(in.Incoterm)), Remark: in.Remark, Source: in.Source, CreatedBy: op.ID,
 			ConfirmationStatus: in.ConfirmationStatus, EvidenceNote: strings.TrimSpace(in.EvidenceNote)})
 		if err != nil {
 			return err

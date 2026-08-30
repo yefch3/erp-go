@@ -63,6 +63,9 @@ func TestValidateFactoryRFQCommunicationAllowsManualChannels(t *testing.T) {
 	if err := validateFactoryRFQCommunication("SYSTEM_EMAIL", "invalid", "", "USD", "2026-08-22", today); err == nil {
 		t.Fatal("系统邮件询价必须校验邮箱")
 	}
+	if err := validateFactoryRFQCommunication("OTHER", "", "", "USD", "", today); err != nil {
+		t.Fatalf("产品组直接报价不应伪造沟通记录: %v", err)
+	}
 }
 
 func TestValidateFactoryRFQTargetAllowsSupplierWithoutFactory(t *testing.T) {

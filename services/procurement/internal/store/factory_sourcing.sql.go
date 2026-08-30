@@ -107,13 +107,13 @@ func (q *Queries) CreateFactoryRFQLine(ctx context.Context, arg CreateFactoryRFQ
 
 const createSupplierQuote = `-- name: CreateSupplierQuote :one
 INSERT INTO supplier_quotes (tenant_id,factory_rfq_id,supplier_quote_no,quoted_at,valid_until,currency,
- payment_terms,delivery,remark,source,created_by,version_no,confirmation_status,evidence_note)
+ payment_terms,delivery,incoterm,remark,source,created_by,version_no,confirmation_status,evidence_note)
 VALUES ($1,$2,
  'SQ-' || to_char(current_date,'YYYYMMDD') || '-' || lpad(nextval('supplier_quote_no_seq')::text,6,'0'),
  nullif($3::text,'')::date,nullif($4::text,'')::date,
- $5,$6,$7,$8,$9,$10,
+ $5,$6,$7,$8,$9,$10,$11,
  (SELECT coalesce(max(version_no),0)+1 FROM supplier_quotes WHERE tenant_id=$1 AND factory_rfq_id=$2),
- $11,$12)
+ $12,$13)
 RETURNING id,supplier_quote_no,version_no
 `
 
@@ -125,6 +125,7 @@ type CreateSupplierQuoteParams struct {
 	Currency           string
 	PaymentTerms       string
 	Delivery           string
+	Incoterm           string
 	Remark             string
 	Source             string
 	CreatedBy          int64
@@ -147,6 +148,7 @@ func (q *Queries) CreateSupplierQuote(ctx context.Context, arg CreateSupplierQuo
 		arg.Currency,
 		arg.PaymentTerms,
 		arg.Delivery,
+		arg.Incoterm,
 		arg.Remark,
 		arg.Source,
 		arg.CreatedBy,
@@ -471,7 +473,7 @@ func (q *Queries) ListOverdueFactoryRFQs(ctx context.Context, arg ListOverdueFac
 const listSupplierQuoteComparison = `-- name: ListSupplierQuoteComparison :many
 SELECT q.id AS quote_id,l.id AS quote_line_id,q.supplier_quote_no,q.factory_rfq_id,r.supplier_id,r.supplier_name,q.currency,
  coalesce(q.quoted_at::text,'')::text AS quoted_at,coalesce(q.valid_until::text,'')::text AS valid_until,
- q.payment_terms,q.delivery,q.remark,q.source,q.version_no,q.confirmation_status,q.evidence_note,q.created_by,r.created_by_name,
+ q.payment_terms,q.delivery,q.incoterm,q.remark,q.source,q.version_no,q.confirmation_status,q.evidence_note,q.created_by,r.created_by_name,
  l.sourcing_line_id,l.qty::text,l.unit_price::text,
  l.amount::text,coalesce(l.moq::text,'')::text AS moq,l.lead_time,l.remark AS line_remark
 FROM supplier_quotes q JOIN factory_rfqs r ON r.id=q.factory_rfq_id AND r.tenant_id=q.tenant_id
@@ -497,6 +499,7 @@ type ListSupplierQuoteComparisonRow struct {
 	ValidUntil         string
 	PaymentTerms       string
 	Delivery           string
+	Incoterm           string
 	Remark             string
 	Source             string
 	VersionNo          int32
@@ -534,6 +537,7 @@ func (q *Queries) ListSupplierQuoteComparison(ctx context.Context, arg ListSuppl
 			&i.ValidUntil,
 			&i.PaymentTerms,
 			&i.Delivery,
+			&i.Incoterm,
 			&i.Remark,
 			&i.Source,
 			&i.VersionNo,

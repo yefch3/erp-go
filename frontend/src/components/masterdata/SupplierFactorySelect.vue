@@ -15,7 +15,7 @@ const {t}=useI18n();const suppliers=ref<SupplierOption[]>([]);const factories=re
 async function loadSuppliers(keyword=''){supplierLoading.value=true;try{const data=await get<{suppliers:SupplierOption[]}>('/suppliers',{page:1,page_size:100,keyword,status:'ACTIVE'});suppliers.value=data.suppliers??[]}finally{supplierLoading.value=false}}
 // 新业务只允许选择“合作中”工厂；待评估、暂停和停用工厂都不进入下拉项。
 async function loadFactories(keyword=''){if(!props.supplierId){factories.value=[];return}factoryLoading.value=true;try{const data=await get<{factories:FactoryOption[]}>('/factories',{page:1,page_size:100,keyword,supplier_id:props.supplierId,status:'COOPERATING'});factories.value=data.factories??[]}finally{factoryLoading.value=false}}
-function changeSupplier(value:string|number){emit('update:supplierId',value);emit('update:factoryId','');emit('supplierSelected',suppliers.value.find(item=>String(item.id)===String(value)));factories.value=[];if(value)loadFactories()}
+function changeSupplier(value:string|number){emit('update:supplierId',value);emit('update:factoryId','');emit('supplierSelected',suppliers.value.find(item=>String(item.id)===String(value)));factories.value=[]}
 function changeFactory(value:string|number){emit('update:factoryId',value);emit('factorySelected',factories.value.find(item=>String(item.id)===String(value)))}
 watch(()=>props.supplierId,()=>loadFactories());onMounted(()=>{loadSuppliers();loadFactories()})
 </script>

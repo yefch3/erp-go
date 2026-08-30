@@ -42,6 +42,7 @@ type BankTransaction struct {
 	TrustedRef          string
 	Note                string
 	ClaimedAmount       pgtype.Numeric
+	AttachmentKey       string
 }
 
 type CostCharge struct {
@@ -692,6 +693,7 @@ type SupplierQuote struct {
 	VersionNo          int32
 	ConfirmationStatus string
 	EvidenceNote       string
+	Incoterm           string
 }
 
 type SupplierQuoteLine struct {
