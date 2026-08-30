@@ -25,10 +25,10 @@ import (
 // 付了多少」= sum(amount) WHERE po_id=? 这句话在三处地方一个字都不用改，
 // 老的预付核销行和新的手填行天然一起求和。
 //
-// **这条路和供应商付款页那条路是两条路，不是一条路的两种走法。**
-// 付款页回答的是「一笔电汇怎么拆到几张发票上」，它那 8 道金额守门原样留着；
-// 这里回答的是「这张采购单的账人认不认完」。两者共用一张核销表、各有各的
-// 入口和规矩。
+// **这一页现在是供应商这边唯一的界面。** 供应商发票页、付款页、往来汇总页
+// 都已下线（用户要的是「只留一个和客户对账类似的供应商对账」）。它们的服务
+// 层实现还在原地——历史数据要读得出来、要冲得掉，而 buf 的破坏性检查也不
+// 允许删 RPC——但没有任何界面再走那条路了。
 
 // SupplierReconRow 是一张采购单在核销这件事上的当前样子。
 type SupplierReconRow struct {
@@ -130,8 +130,8 @@ const reconSelect = `
 // **已付要把两条路的钱都算进来。** payment_allocations 上有一条
 // CHECK((invoice_id IS NOT NULL) <> (po_id IS NOT NULL))：挂发票的核销行
 // po_id 必然为空。所以只按 po_id 求和的话，一张通过「录发票 → 付款单核销
-// 到发票」付清的采购单，在这一页上会恒显示「一分未付」——而这条路并没有
-// 被这次改造取消，供应商发票页和供应商付款页都还在。
+// 到发票」付清的采购单，在这一页上会恒显示「一分未付」。发票页和付款页
+// 现在虽然已经下线，但**历史数据全走这条路**，这条腿只会更重要不会更轻。
 //
 // 后果不只是数字难看：员工照着那个 0 再手填一遍，同一笔钱在账上就出现两次；
 // 而「确认完成」会把那个错的差额永久快照进 closure 记录。所以 ip 这条腿是
@@ -404,24 +404,25 @@ func (s *Service) ReversePOPayment(ctx context.Context, tenantID, allocID int64,
 			"这笔核销挂在发票上，不在采购单上——请到供应商付款页冲销")
 	}
 
-	// **挂着付款单的老行不从这道门走。**
+	// **挂着付款单的老行转交给老路。**
 	//
 	// 这张采购单的明细里同时住着两种行：手填行（payment_id 为空）和改造前
-	// 从付款单分配出来的预付行。冲一条老行不只是写个负数——它要动那张付款单
-	// 的未分配余额，那是**付款**这件事，网关上归 procurement:payment:write 管。
-	// 而这道门只要 procurement:recon:write。
+	// 从付款单分配出来的预付行。冲一条老行不只是写个负数——它还要动那张
+	// 付款单的未分配余额，缺了这一步，钱在采购单上已经退回、在付款单上却
+	// 还占着，两本账各说各话且不报错。ReverseSupplierPaymentAllocation
+	// 连同 AuthorizeSupplierPayment 一起做了这些，所以原样转过去，而不是
+	// 在这里复制一遍（复制必然漏，而且下次改只会改一边）。
 	//
-	// 如果在这里代劳，一个只勾了对账权限的角色就能改付款单的账，职责分离
-	// 当场破掉，而且没有任何一行日志说发生过这件事。所以这里明确拒绝，并
-	// 把付款单号说出来，让人知道该去哪儿。冲销老行的正路一直都在，就在
-	// 供应商付款页上，那条路自带 AuthorizeSupplierPayment 和余额回填。
+	// **上一版这里是明确拒绝的**，理由是「冲付款单的账归
+	// procurement:payment:write 管，这道门只要 recon:write」，让人去供应商
+	// 付款页操作。那条理由随着付款页下线一起作废了：现在整个系统里没有
+	// 第二个入口，再拒绝就等于让所有历史 payment-backed 核销行变成谁也
+	// 动不了的死行。职责分离在这里让位给「账必须能改对」。
 	if paymentID != 0 {
-		var paymentNo string
-		_ = s.pool.QueryRow(ctx,
-			`SELECT payment_no FROM supplier_payments WHERE tenant_id=$1 AND id=$2`,
-			tenantID, paymentID).Scan(&paymentNo)
-		return SupplierReconRow{}, apierr.Invalid("PR_POPAY_PAYMENT_BACKED",
-			"这笔核销挂着付款单 "+paymentNo+"——请到供应商付款页冲销，那里才管得了付款单的余额")
+		if _, err := s.ReverseSupplierPaymentAllocation(ctx, tenantID, allocID, reason, op); err != nil {
+			return SupplierReconRow{}, err
+		}
+		return s.reconRowOf(ctx, tenantID, poID)
 	}
 
 	if reversalOf != 0 {

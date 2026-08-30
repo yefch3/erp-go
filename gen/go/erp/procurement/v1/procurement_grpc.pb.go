@@ -1902,6 +1902,10 @@ const (
 	PurchaseOrderService_ReversePurchaseOrderPayment_FullMethodName      = "/erp.procurement.v1.PurchaseOrderService/ReversePurchaseOrderPayment"
 	PurchaseOrderService_ClosePurchaseOrderPayment_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/ClosePurchaseOrderPayment"
 	PurchaseOrderService_ReopenPurchaseOrderPayment_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ReopenPurchaseOrderPayment"
+	PurchaseOrderService_PresignReconFile_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/PresignReconFile"
+	PurchaseOrderService_AttachReconFile_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/AttachReconFile"
+	PurchaseOrderService_ListReconFiles_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/ListReconFiles"
+	PurchaseOrderService_RemoveReconFile_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/RemoveReconFile"
 	PurchaseOrderService_ImportBankStatement_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/ImportBankStatement"
 	PurchaseOrderService_ListBankTransactions_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/ListBankTransactions"
 	PurchaseOrderService_MatchBankTransaction_FullMethodName             = "/erp.procurement.v1.PurchaseOrderService/MatchBankTransaction"
@@ -2004,6 +2008,13 @@ type PurchaseOrderServiceClient interface {
 	ReversePurchaseOrderPayment(ctx context.Context, in *ReversePurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ReversePurchaseOrderPaymentResponse, error)
 	ClosePurchaseOrderPayment(ctx context.Context, in *ClosePurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ClosePurchaseOrderPaymentResponse, error)
 	ReopenPurchaseOrderPayment(ctx context.Context, in *ReopenPurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ReopenPurchaseOrderPaymentResponse, error)
+	// 挂在一张采购单上的凭证——发票扫描件、水单、退款回执。存的是**纸**，
+	// 不是有金额、有明细、参与运算的单据：它不进任何求和，只是「这笔钱是
+	// 怎么回事」的证据。一张单可以有好几份。
+	PresignReconFile(ctx context.Context, in *PresignReconFileRequest, opts ...grpc.CallOption) (*PresignReconFileResponse, error)
+	AttachReconFile(ctx context.Context, in *AttachReconFileRequest, opts ...grpc.CallOption) (*AttachReconFileResponse, error)
+	ListReconFiles(ctx context.Context, in *ListReconFilesRequest, opts ...grpc.CallOption) (*ListReconFilesResponse, error)
+	RemoveReconFile(ctx context.Context, in *RemoveReconFileRequest, opts ...grpc.CallOption) (*RemoveReconFileResponse, error)
 	// Bank statement rows: the fifth voice. Imported verbatim from the CSV
 	// the bank portal exports, deduplicated by the bank's own reference, and
 	// matched to payments — the match lives on the payment and is reversible;
@@ -2473,6 +2484,46 @@ func (c *purchaseOrderServiceClient) ReopenPurchaseOrderPayment(ctx context.Cont
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) PresignReconFile(ctx context.Context, in *PresignReconFileRequest, opts ...grpc.CallOption) (*PresignReconFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PresignReconFileResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_PresignReconFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) AttachReconFile(ctx context.Context, in *AttachReconFileRequest, opts ...grpc.CallOption) (*AttachReconFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AttachReconFileResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_AttachReconFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ListReconFiles(ctx context.Context, in *ListReconFilesRequest, opts ...grpc.CallOption) (*ListReconFilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListReconFilesResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListReconFiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) RemoveReconFile(ctx context.Context, in *RemoveReconFileRequest, opts ...grpc.CallOption) (*RemoveReconFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveReconFileResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_RemoveReconFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *purchaseOrderServiceClient) ImportBankStatement(ctx context.Context, in *ImportBankStatementRequest, opts ...grpc.CallOption) (*ImportBankStatementResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ImportBankStatementResponse)
@@ -2681,6 +2732,13 @@ type PurchaseOrderServiceServer interface {
 	ReversePurchaseOrderPayment(context.Context, *ReversePurchaseOrderPaymentRequest) (*ReversePurchaseOrderPaymentResponse, error)
 	ClosePurchaseOrderPayment(context.Context, *ClosePurchaseOrderPaymentRequest) (*ClosePurchaseOrderPaymentResponse, error)
 	ReopenPurchaseOrderPayment(context.Context, *ReopenPurchaseOrderPaymentRequest) (*ReopenPurchaseOrderPaymentResponse, error)
+	// 挂在一张采购单上的凭证——发票扫描件、水单、退款回执。存的是**纸**，
+	// 不是有金额、有明细、参与运算的单据：它不进任何求和，只是「这笔钱是
+	// 怎么回事」的证据。一张单可以有好几份。
+	PresignReconFile(context.Context, *PresignReconFileRequest) (*PresignReconFileResponse, error)
+	AttachReconFile(context.Context, *AttachReconFileRequest) (*AttachReconFileResponse, error)
+	ListReconFiles(context.Context, *ListReconFilesRequest) (*ListReconFilesResponse, error)
+	RemoveReconFile(context.Context, *RemoveReconFileRequest) (*RemoveReconFileResponse, error)
 	// Bank statement rows: the fifth voice. Imported verbatim from the CSV
 	// the bank portal exports, deduplicated by the bank's own reference, and
 	// matched to payments — the match lives on the payment and is reversible;
@@ -2848,6 +2906,18 @@ func (UnimplementedPurchaseOrderServiceServer) ClosePurchaseOrderPayment(context
 }
 func (UnimplementedPurchaseOrderServiceServer) ReopenPurchaseOrderPayment(context.Context, *ReopenPurchaseOrderPaymentRequest) (*ReopenPurchaseOrderPaymentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReopenPurchaseOrderPayment not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) PresignReconFile(context.Context, *PresignReconFileRequest) (*PresignReconFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PresignReconFile not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) AttachReconFile(context.Context, *AttachReconFileRequest) (*AttachReconFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AttachReconFile not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ListReconFiles(context.Context, *ListReconFilesRequest) (*ListReconFilesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListReconFiles not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) RemoveReconFile(context.Context, *RemoveReconFileRequest) (*RemoveReconFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveReconFile not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) ImportBankStatement(context.Context, *ImportBankStatementRequest) (*ImportBankStatementResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ImportBankStatement not implemented")
@@ -3680,6 +3750,78 @@ func _PurchaseOrderService_ReopenPurchaseOrderPayment_Handler(srv interface{}, c
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_PresignReconFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PresignReconFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).PresignReconFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_PresignReconFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).PresignReconFile(ctx, req.(*PresignReconFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_AttachReconFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AttachReconFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).AttachReconFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_AttachReconFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).AttachReconFile(ctx, req.(*AttachReconFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ListReconFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListReconFilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListReconFiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListReconFiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListReconFiles(ctx, req.(*ListReconFilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_RemoveReconFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveReconFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).RemoveReconFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_RemoveReconFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).RemoveReconFile(ctx, req.(*RemoveReconFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PurchaseOrderService_ImportBankStatement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ImportBankStatementRequest)
 	if err := dec(in); err != nil {
@@ -4074,6 +4216,22 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReopenPurchaseOrderPayment",
 			Handler:    _PurchaseOrderService_ReopenPurchaseOrderPayment_Handler,
+		},
+		{
+			MethodName: "PresignReconFile",
+			Handler:    _PurchaseOrderService_PresignReconFile_Handler,
+		},
+		{
+			MethodName: "AttachReconFile",
+			Handler:    _PurchaseOrderService_AttachReconFile_Handler,
+		},
+		{
+			MethodName: "ListReconFiles",
+			Handler:    _PurchaseOrderService_ListReconFiles_Handler,
+		},
+		{
+			MethodName: "RemoveReconFile",
+			Handler:    _PurchaseOrderService_RemoveReconFile_Handler,
 		},
 		{
 			MethodName: "ImportBankStatement",

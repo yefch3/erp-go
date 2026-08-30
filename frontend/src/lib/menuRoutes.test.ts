@@ -44,19 +44,6 @@ describe('菜单和路由表', () => {
     expect(dangling, `这些菜单项指向不存在的地址：\n${dangling.join('\n')}`).toEqual([])
   })
 
-  // 菜单名和**页面大标题**都要比。只比菜单名的话，改了菜单忘了改页面标题，
-  // 两个页面的 H1 一字不差：工单、截图、口头沟通里说「供应商对账页」谁也
-  // 分不清指哪一个。三种语言各比一遍。
-  it('对账页和往来页的名字不能撞——菜单名和页面标题都算', () => {
-    for (const lang of ['zh', 'en', 'es']) {
-      const text = src(`locales/${lang}.ts`)
-      const navRecon = /financeNav:[\s\S]*?supplierRecon:\s*'([^']*)'/.exec(text)?.[1]
-      const navLedger = /financeNav:[\s\S]*?supplierStatements:\s*'([^']*)'/.exec(text)?.[1]
-      const titleRecon = /supplierRecon:\s*\{[\s\S]*?title:\s*'([^']*)'/.exec(text)?.[1]
-      const titleLedger = /supplierStatements:\s*\{[\s\S]*?title:\s*'([^']*)'/.exec(text)?.[1]
-      for (const v of [navRecon, navLedger, titleRecon, titleLedger]) expect(v, lang).toBeTruthy()
-      expect(navRecon, `${lang} 菜单名撞了`).not.toBe(navLedger)
-      expect(titleRecon, `${lang} 页面标题撞了`).not.toBe(titleLedger)
-    }
-  })
+  // 上一版这里还有一条「对账页和往来页的名字不能撞」——供应商往来汇总页
+  // 已经下线，撞名这件事随之消失，那条断言也就跟着去了。
 })

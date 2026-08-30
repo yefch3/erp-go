@@ -34,10 +34,6 @@
 
     <section class="panel">
       <div class="filters">
-        <el-select v-model="status" clearable :placeholder="t('bankTransactions.statusAll')" style="width: 140px" @change="reload">
-          <el-option value="UNMATCHED" :label="t('bankTransactions.unmatched')" />
-          <el-option value="MATCHED" :label="t('bankTransactions.matched')" />
-        </el-select>
         <el-select v-model="ownership" clearable :placeholder="t('bankTransactions.ownershipAll')" style="width: 150px" @change="reload">
           <el-option value="PENDING" :label="t('bankTransactions.ownerships.PENDING')" />
           <el-option v-for="k in OWNERSHIPS" :key="k" :value="k" :label="t(`bankTransactions.ownerships.${k}`)" />
@@ -111,32 +107,17 @@
             </div>
           </template>
         </el-table-column>
-        <!-- 匹配状态和操作合成一格：状态是「这笔和哪张付款单对上了」，按钮是
-             「去对上 / 拆开」——同一件事的读和写，隔着一条竖线反而要来回看。 -->
-        <el-table-column :label="t('bankTransactions.matchAndActions')" width="214" fixed="right">
+        <!-- 「匹配付款单」已下线：付款单的创建入口随供应商付款页一起没了，
+             而且它和新模型本来就冲突——流水只是记录，不参与核销。存量已经
+             对上的付款单号仍然显示，那是历史留痕，读得出来才对得上账。 -->
+        <el-table-column :label="t('bankTransactions.matchAndActions')" width="190" fixed="right">
           <template #default="{ row }">
             <div class="match-cell">
               <el-tag v-if="row.matchedPaymentNo" size="small" type="success" effect="plain">{{ row.matchedPaymentNo }}</el-tag>
-              <span v-else-if="row.suggestedPaymentNo" class="suggest">
-                {{ t('bankTransactions.suggested') }}: {{ row.suggestedPaymentNo }}
-              </span>
               <div class="row-actions">
-                <el-button
-                  v-if="canWrite && row.suggestedPaymentNo && noId(row.matchedPaymentId)"
-                  size="small" link type="primary" @click="match(row, row.suggestedPaymentId)"
-                >{{ t('bankTransactions.accept') }}</el-button>
-                <!-- 匹配的条件从「是出账」改成「归属是供应商或还没归」。
-                     供应商退款是**进账**却归供应商，按方向拦就永远对不上。 -->
                 <!-- noId 而不是 !row.matchedPaymentId：这个字段是 int64，没值的
                      时候到浏览器是字符串 "0"，而 "0" 是真值。写成 ! 的那阵子，
-                     「改归属」在任何一行上都不出现、「取消匹配」在任何一行上都
-                     出现——哪怕旁边写着「—」。见 lib/protoId.ts。 -->
-                <template v-if="canWrite && (!row.ownership || row.ownership === 'SUPPLIER')">
-                  <el-button v-if="noId(row.matchedPaymentId)" size="small" link type="primary" @click="openPick(row)">
-                    {{ t('bankTransactions.pickPayment') }}
-                  </el-button>
-                  <el-button v-else size="small" type="danger" link @click="unmatch(row)">{{ t('bankTransactions.unmatch') }}</el-button>
-                </template>
+                     「改归属」在任何一行上都不出现。见 lib/protoId.ts。 -->
                 <el-button v-if="canWrite && noId(row.matchedPaymentId)" size="small" link @click="openOwnership(row)">
                   {{ t('bankTransactions.setOwnership') }}
                 </el-button>
@@ -156,22 +137,6 @@
       />
       <input ref="attachInput" type="file" accept="application/pdf,image/*" style="display: none" @change="onAttachPicked" />
     </section>
-
-    <!-- Which payment does the bank confirm? Amounts may differ (fees shave
-         wires) so both numbers stay visible; currency may not. -->
-    <el-dialog v-model="pickOpen" :title="t('bankTransactions.pickTitle')" width="min(680px, 94vw)" destroy-on-close>
-      <p v-if="picking" class="pick-context">
-        {{ picking.txnDate }} · {{ picking.currency }} {{ picking.amount }} · {{ picking.counterparty || picking.bankRef }}
-      </p>
-      <el-select v-model="pickedPayment" filterable style="width: 100%" :placeholder="t('bankTransactions.pickPlaceholder')">
-        <el-option v-for="p in candidatePayments" :key="p.id" :value="String(p.id)"
-          :label="`${p.paymentNo} · ${p.supplierName} · ${p.currency} ${p.amount} · ${p.paidAt}`" />
-      </el-select>
-      <template #footer>
-        <el-button @click="pickOpen = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :disabled="!pickedPayment" :loading="matching" @click="confirmPick">{{ t('common.save') }}</el-button>
-      </template>
-    </el-dialog>
 
     <!-- 归属：这笔钱归哪条线。选完之后它才谈得上被谁核销。 -->
     <el-dialog v-model="ownershipOpen" :title="t('bankTransactions.ownershipTitle')" width="min(560px, 94vw)" destroy-on-close>
@@ -441,7 +406,6 @@ const uploadingId = ref('')
 const loading = ref(false)
 const page = ref(1)
 const total = ref(0)
-const status = ref('')
 const direction = ref('')
 // 归属筛选。'PENDING' 是界面上的第五档「待处理」，发给后端时变成
 // ownership_pending=1——后端那边空串已经是「不筛」的意思，一个值不能同时
@@ -661,17 +625,11 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const importErrors = ref<RowError[]>([])
 const errorsOpen = ref(false)
 
-const pickOpen = ref(false)
-const picking = ref<TxnRow | null>(null)
-const pickedPayment = ref('')
-const candidatePayments = ref<PaymentOpt[]>([])
-const matching = ref(false)
-
 async function load() {
   loading.value = true
   try {
     const resp = await get<{ items: TxnRow[]; total: string }>('/bank-transactions', {
-      page: page.value, page_size: 20, status: status.value, direction: direction.value, keyword: keyword.value,
+      page: page.value, page_size: 20, direction: direction.value, keyword: keyword.value,
       ownership: ownership.value === 'PENDING' ? '' : ownership.value,
       ownership_pending: ownership.value === 'PENDING' ? '1' : '',
     })
@@ -716,40 +674,9 @@ async function onFilePicked(e: Event) {
   }
 }
 
-async function openPick(row: TxnRow) {
-  picking.value = row
-  pickedPayment.value = ''
-  pickOpen.value = true
-  const resp = await get<{ items: PaymentOpt[] }>('/supplier-payments', { page_size: 200 })
-  // Only unclaimed payments in the row's currency are candidates; the
-  // amounts stay visible in the label so a fee-shaved wire is a deliberate
-  // human call, not a surprise.
-  candidatePayments.value = (resp.items || []).filter(
-    (p) => !p.bankRef && p.currency === row.currency)
-}
-
-async function confirmPick() {
-  if (!picking.value || !pickedPayment.value) return
-  matching.value = true
-  try {
-    await match(picking.value, pickedPayment.value)
-    pickOpen.value = false
-  } finally {
-    matching.value = false
-  }
-}
-
-async function match(row: TxnRow, paymentId: string) {
-  await post(`/bank-transactions/${row.id}/match`, { paymentId })
-  ElMessage.success(t('bankTransactions.matchedOk'))
-  void load()
-}
-
-async function unmatch(row: TxnRow) {
-  await post(`/bank-transactions/${row.id}/unmatch`, {})
-  ElMessage.success(t('bankTransactions.unmatchedOk'))
-  void load()
-}
+// 「匹配付款单」整组已下线（选付款单、采纳建议、取消匹配）。理由写在
+// 上面那一列的注释里：付款单没有创建入口了，而且流水按新模型只是记录。
+// 服务端的 Match/Unmatch 还在，存量数据的付款单号照常读得出来。
 
 // 对账单那张纸走 lib/statementUpload 的三步直传，两个入口共用（登记对话框里
 // 随手带的、和列表里事后补的）。那三步漏一步都不报错、只是纸悄悄没上去，

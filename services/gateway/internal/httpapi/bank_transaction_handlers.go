@@ -58,20 +58,6 @@ func (s *Server) listBankTransactions(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
-func (s *Server) matchBankTransaction(w http.ResponseWriter, r *http.Request) {
-	req := &prv1.MatchBankTransactionRequest{}
-	if !s.decodeBody(w, r, req) {
-		return
-	}
-	req.TxnId = idFromPath(r)
-	resp, err := s.Orders.MatchBankTransaction(r.Context(), req)
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
-	s.writeProto(w, resp)
-}
-
 // 对账单那张纸：先要一个直传地址，浏览器把 PDF 直接传给对象存储，
 // 传完再回来登记 key。文件本身一个字节都不经过网关。
 func (s *Server) presignBankTransactionFile(w http.ResponseWriter, r *http.Request) {
@@ -95,15 +81,6 @@ func (s *Server) attachBankTransactionFile(w http.ResponseWriter, r *http.Reques
 	}
 	req.TxnId = idFromPath(r)
 	resp, err := s.Orders.AttachBankTransactionFile(r.Context(), req)
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
-	s.writeProto(w, resp)
-}
-
-func (s *Server) unmatchBankTransaction(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Orders.UnmatchBankTransaction(r.Context(), &prv1.UnmatchBankTransactionRequest{TxnId: idFromPath(r)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

@@ -102,3 +102,52 @@ func reconRowProto(v app.SupplierReconRow) *prv1.SupplierReconRow {
 		ClosedByName: v.ClosedByName, ClosedAt: v.ClosedAt,
 	}
 }
+
+// ── 对账页上的凭证 ────────────────────────────────────────
+
+func (h *OrderHandler) PresignReconFile(ctx context.Context, req *prv1.PresignReconFileRequest) (*prv1.PresignReconFileResponse, error) {
+	p, err := h.svc.PresignReconFile(ctx, grpcx.TenantID(ctx),
+		req.GetPoId(), req.GetFileName(), reconOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.PresignReconFileResponse{
+		Key: p.Key, UploadUrl: p.UploadURL, ExpiresSeconds: p.Expires,
+	}, nil
+}
+
+func (h *OrderHandler) AttachReconFile(ctx context.Context, req *prv1.AttachReconFileRequest) (*prv1.AttachReconFileResponse, error) {
+	files, err := h.svc.AttachReconFile(ctx, grpcx.TenantID(ctx),
+		req.GetPoId(), req.GetKey(), req.GetFileName(), req.GetNote(), reconOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.AttachReconFileResponse{Items: reconFilesProto(files)}, nil
+}
+
+func (h *OrderHandler) ListReconFiles(ctx context.Context, req *prv1.ListReconFilesRequest) (*prv1.ListReconFilesResponse, error) {
+	files, err := h.svc.ListReconFiles(ctx, grpcx.TenantID(ctx), req.GetPoId(), reconOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.ListReconFilesResponse{Items: reconFilesProto(files)}, nil
+}
+
+func (h *OrderHandler) RemoveReconFile(ctx context.Context, req *prv1.RemoveReconFileRequest) (*prv1.RemoveReconFileResponse, error) {
+	files, err := h.svc.RemoveReconFile(ctx, grpcx.TenantID(ctx), req.GetFileId(), reconOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.RemoveReconFileResponse{Items: reconFilesProto(files)}, nil
+}
+
+func reconFilesProto(files []app.ReconFile) []*prv1.ReconFile {
+	out := make([]*prv1.ReconFile, 0, len(files))
+	for _, f := range files {
+		out = append(out, &prv1.ReconFile{
+			Id: f.ID, FileName: f.FileName, Note: f.Note, Url: f.URL,
+			UploadedByName: f.UploadedByName, UploadedAt: f.UploadedAt,
+		})
+	}
+	return out
+}
