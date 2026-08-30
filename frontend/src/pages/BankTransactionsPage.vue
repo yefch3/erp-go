@@ -209,69 +209,141 @@
     <!-- 手工登记。CSV 之外的另一条入口：银行还没出对账单、或者对方先发了
          水单，先把这笔钱记下来。和导入落同一张表、同一套流水号去重——
          之后再导对账单，同号的行自动跳过，不会记重。 -->
-    <el-dialog v-model="recordOpen" :title="t('bankTransactions.recordTitle')" width="min(560px, 94vw)" destroy-on-close>
-      <el-form label-width="96px">
-        <el-form-item :label="t('bankTransactions.direction')">
-          <el-radio-group v-model="recordForm.direction">
-            <el-radio-button value="CREDIT">{{ t('bankTransactions.credit') }}</el-radio-button>
-            <el-radio-button value="DEBIT">{{ t('bankTransactions.debit') }}</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item :label="t('bankTransactions.amount')" required>
-          <el-input v-model="recordForm.amount" style="width: 180px" />
-          <el-select v-model="recordForm.currency" style="width: 110px; margin-left: 12px">
-            <el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('bankTransactions.date')" required>
-          <el-date-picker v-model="recordForm.txnDate" type="date" value-format="YYYY-MM-DD" style="width: 180px" />
-        </el-form-item>
-        <!-- 钱进/出我们哪个户头。选填——CSV 导进来的行本来也没有这个信息。 -->
-        <el-form-item v-if="canReadAccounts" :label="t('bankTransactions.account')">
-          <el-select v-model="recordForm.accountId" clearable style="width: 100%" :placeholder="t('bankTransactions.accountPlaceholder')">
-            <el-option v-for="a in accounts" :key="a.id" :value="String(a.id)"
-              :label="`${a.accountName} · ${a.accountNo} · ${a.currency}`" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('bankTransactions.bankRef')" required>
-          <el-input v-model="recordForm.bankRef" :placeholder="t('bankTransactions.bankRefPlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="t('bankTransactions.counterparty')">
-          <el-input v-model="recordForm.counterparty" />
-        </el-form-item>
-        <el-form-item :label="t('bankTransactions.remittance')">
-          <el-input v-model="recordForm.remittanceInfo" :placeholder="t('bankTransactions.remittanceHint')" />
-        </el-form-item>
-        <!-- 登记的人往往当场就知道这是谁那条线上的钱，让他直接写上；
-             不知道就留「待处理」，两条线的队列都看得见它。 -->
-        <el-form-item :label="t('bankTransactions.ownership')">
-          <el-select v-model="recordForm.ownership" style="width: 100%">
-            <el-option value="" :label="t('bankTransactions.ownerships.PENDING')" />
-            <el-option v-for="k in OWNERSHIPS" :key="k" :value="k" :label="t(`bankTransactions.ownerships.${k}`)" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="recordForm.ownership === 'OTHER'" :label="' '">
-          <el-select v-model="recordForm.detail" style="width: 100%" :placeholder="t('bankTransactions.ownershipDetailPlaceholder')">
-            <el-option v-for="k in OWNERSHIP_DETAILS" :key="k" :value="k" :label="t(`bankTransactions.ownershipDetails.${k}`)" />
-          </el-select>
-        </el-form-item>
-        <!-- 对账单跟着这笔一起交。登记这笔钱的人手里正拿着那张纸，让他当场
-             传完，比事后回列表里找哪几行还缺凭证省一趟。 -->
-        <el-form-item :label="t('bankTransactions.attachment')">
-          <div class="record-file">
-            <el-button @click="recordFileInput?.click()">
-              {{ recordFile ? t('bankTransactions.replaceAttachment') : t('bankTransactions.pickAttachment') }}
-            </el-button>
-            <span v-if="recordFile" class="file-name">{{ recordFile.name }}</span>
-            <el-button v-if="recordFile" link type="danger" @click="clearRecordFile">
-              {{ t('common.cancel') }}
-            </el-button>
-            <span v-else class="sub">{{ t('bankTransactions.pickAttachmentHint') }}</span>
+    <el-dialog
+      v-model="recordOpen"
+      :title="t('bankTransactions.recordTitle')"
+      width="min(680px, 94vw)"
+      class="record-dialog"
+      destroy-on-close
+    >
+      <!-- 标签放在字段上方：十个字段挤在左侧对齐的标签栏后面，读起来是一堵
+           墙；标签在上、字段成两列，一眼能看出「这一段在问什么」。 -->
+      <!-- 「这个对话框是干嘛的」放在最上面，而不是压在页脚。它解释的是来这里
+           的理由，读者需要它的时刻是动手之前，不是按保存之前。 -->
+      <p class="dialog-intro">{{ t('bankTransactions.recordHint') }}</p>
+      <el-form label-position="top" class="record-form">
+        <section class="fieldset">
+          <h4 class="fieldset-title">{{ t('bankTransactions.sectionMoney') }}</h4>
+          <div class="grid">
+            <el-form-item :label="t('bankTransactions.direction')">
+              <!-- 进账绿、出账橙，和列表里那一列同一套颜色。方向选错是最贵的
+                   错误之一，让它在选中的那一刻就有颜色。 -->
+              <el-radio-group
+                v-model="recordForm.direction"
+                :class="['direction-pick', recordForm.direction === 'CREDIT' ? 'is-credit' : 'is-debit']"
+              >
+                <el-radio-button value="CREDIT">{{ t('bankTransactions.credit') }}</el-radio-button>
+                <el-radio-button value="DEBIT">{{ t('bankTransactions.debit') }}</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item :label="t('bankTransactions.amount')" required>
+              <el-input v-model="recordForm.amount" class="amount-input" placeholder="0.00">
+                <template #append>
+                  <el-select v-model="recordForm.currency" style="width: 92px">
+                    <el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c" />
+                  </el-select>
+                </template>
+              </el-input>
+            </el-form-item>
+            <el-form-item :label="t('bankTransactions.date')" required>
+              <el-date-picker
+                v-model="recordForm.txnDate" type="date" value-format="YYYY-MM-DD"
+                style="width: 100%" :placeholder="t('bankTransactions.datePlaceholder')"
+              />
+            </el-form-item>
           </div>
-        </el-form-item>
+        </section>
+
+        <section class="fieldset">
+          <h4 class="fieldset-title">{{ t('bankTransactions.sectionWhere') }}</h4>
+          <!-- 钱进/出我们哪个户头。选填——CSV 导进来的行本来也没有这个信息。
+               能选也能写：清单里没有的账户，当场写一个就建出来，不用先跳去
+               「收款账户」再回来重填一遍这张表。 -->
+          <el-form-item v-if="canReadAccounts" :label="t('bankTransactions.account')">
+            <el-select
+              v-model="recordForm.accountId"
+              filterable
+              clearable
+              :allow-create="canWriteAccounts"
+              :reserve-keyword="false"
+              class="account-select"
+              :placeholder="t('bankTransactions.accountPlaceholder')"
+            >
+              <!-- 收起来时只显示户名和币种；展开的每一行才把账号和开户行摊开。
+                   label 里塞着全部信息是为了让输入能搜到账号——el-select 按
+                   label 过滤。 -->
+              <template #label="{ label }">{{ shortAccountLabel(label) }}</template>
+              <el-option
+                v-for="a in accounts"
+                :key="a.id"
+                :value="String(a.id)"
+                :label="`${a.accountName} · ${a.accountNo} · ${a.bankName} · ${a.currency}`"
+              >
+                <div class="acct-row">
+                  <span class="acct-name">{{ a.accountName }}</span>
+                  <span class="acct-meta">{{ a.accountNo }}<template v-if="a.bankName"> · {{ a.bankName }}</template></span>
+                  <el-tag size="small" effect="plain" class="acct-cur">{{ a.currency }}</el-tag>
+                </div>
+              </el-option>
+            </el-select>
+            <div class="field-note">
+              <span v-if="accountMismatch" class="warn-note">
+                {{ t('bankTransactions.accountCurrencyMismatch', { acct: accountMismatch, txn: recordForm.currency }) }}
+              </span>
+              <span v-else-if="isNewAccount" class="warn-note">
+                {{ t('bankTransactions.accountWillBeCreated', { name: recordForm.accountId }) }}
+              </span>
+              <span v-else-if="canWriteAccounts" class="sub">{{ t('bankTransactions.accountHint') }}</span>
+            </div>
+          </el-form-item>
+          <div class="grid">
+            <el-form-item :label="t('bankTransactions.bankRef')" required>
+              <el-input v-model="recordForm.bankRef" :placeholder="t('bankTransactions.bankRefPlaceholder')" />
+            </el-form-item>
+            <el-form-item :label="t('bankTransactions.counterparty')">
+              <el-input v-model="recordForm.counterparty" />
+            </el-form-item>
+          </div>
+          <el-form-item :label="t('bankTransactions.remittance')">
+            <el-input v-model="recordForm.remittanceInfo" :placeholder="t('bankTransactions.remittanceHint')" />
+          </el-form-item>
+        </section>
+
+        <section class="fieldset">
+          <h4 class="fieldset-title">{{ t('bankTransactions.sectionTag') }}</h4>
+          <div class="grid">
+            <!-- 登记的人往往当场就知道这是谁那条线上的钱，让他直接写上；
+                 不知道就留「待处理」，两条线的队列都看得见它。 -->
+            <el-form-item :label="t('bankTransactions.ownership')">
+              <el-select v-model="recordForm.ownership" style="width: 100%">
+                <el-option value="" :label="t('bankTransactions.ownerships.PENDING')" />
+                <el-option v-for="k in OWNERSHIPS" :key="k" :value="k" :label="t(`bankTransactions.ownerships.${k}`)" />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-if="recordForm.ownership === 'OTHER'" :label="t('bankTransactions.ownershipDetailLabel')">
+              <el-select v-model="recordForm.detail" style="width: 100%" :placeholder="t('bankTransactions.ownershipDetailPlaceholder')">
+                <el-option v-for="k in OWNERSHIP_DETAILS" :key="k" :value="k" :label="t(`bankTransactions.ownershipDetails.${k}`)" />
+              </el-select>
+            </el-form-item>
+          </div>
+          <!-- 对账单跟着这笔一起交。登记这笔钱的人手里正拿着那张纸，让他当场
+               传完，比事后回列表里找哪几行还缺凭证省一趟。 -->
+          <el-form-item :label="t('bankTransactions.attachment')">
+            <div v-if="recordFile" class="file-chip">
+              <span class="file-name">{{ recordFile.name }}</span>
+              <el-button link type="primary" @click="recordFileInput?.click()">
+                {{ t('bankTransactions.replaceAttachment') }}
+              </el-button>
+              <el-button link type="danger" @click="clearRecordFile">{{ t('common.remove') }}</el-button>
+            </div>
+            <button v-else type="button" class="file-drop" @click="recordFileInput?.click()">
+              <span class="file-drop-main">{{ t('bankTransactions.pickAttachment') }}</span>
+              <span class="sub">{{ t('bankTransactions.pickAttachmentHint') }}</span>
+            </button>
+          </el-form-item>
+        </section>
       </el-form>
       <input ref="recordFileInput" type="file" accept="application/pdf,image/*" style="display: none" @change="onRecordFilePicked" />
-      <p class="sub">{{ t('bankTransactions.recordHint') }}</p>
       <template #footer>
         <el-button @click="recordOpen = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="recording" @click="saveRecord">{{ t('common.save') }}</el-button>
@@ -428,6 +500,50 @@ function clearRecordFile() {
   recordFile.value = null
 }
 
+// 收起来时账户只显示户名和币种。option 的 label 里塞着账号和开户行是为了
+// 让输入能搜到它们——el-select 按 label 过滤——但那一整串放在收起的框里
+// 会被截断成一段看不懂的字。
+function shortAccountLabel(label: string): string {
+  const parts = String(label).split(' · ')
+  if (parts.length < 2) return String(label)
+  return `${parts[0]} · ${parts[parts.length - 1]}`
+}
+
+// 选中的是清单里的哪一个。allow-create 之后 accountId 可能是一段用户手写的
+// 文字，那时这里是 undefined。
+const pickedAccount = computed(() =>
+  accounts.value.find((a) => String(a.id) === recordForm.accountId))
+
+// 手写了一个清单里没有的。空串（清空）不算。
+const isNewAccount = computed(() =>
+  !!recordForm.accountId && !pickedAccount.value)
+
+// 币种对不上只提示、不拦。把 USD 的钱记进人民币户是个真错误，但拦住它就等于
+// 说「系统比你清楚」——而临时借个户头收款这种事也真的会发生。
+const accountMismatch = computed(() => {
+  const a = pickedAccount.value
+  return a && a.currency !== recordForm.currency ? `${a.accountName}（${a.currency}）` : ''
+})
+
+// 落库前把账户这一格变成一个 id。
+//
+// **先于建流水行**：手写的账户建失败（比如账号撞了已有的），这一步就断在
+// 这里，一行都没写进去。反过来先建流水再建账户，失败之后流水已经在库里、
+// 户头还没有，用户看到的是一个说不清成没成的错误。
+async function resolveAccountID(): Promise<string> {
+  const raw = recordForm.accountId.trim()
+  if (!raw) return '0'
+  if (pickedAccount.value) return raw
+  // 清单里没有 = 用户当场写的。建一个真账户，而不是把这段文字丢掉：
+  // 流水行上只有 account_id 一列，没有地方存一段无主的账户名。
+  const created = await post<{ id: string }>('/bank-accounts', {
+    account_no: raw, account_name: raw, bank_name: '',
+    currency: recordForm.currency,
+  })
+  await loadAccounts()
+  return String(created.id)
+}
+
 function openRecord() {
   Object.assign(recordForm, {
     direction: 'CREDIT', amount: '', currency: 'USD', txnDate: '',
@@ -448,11 +564,12 @@ async function saveRecord() {
   }
   recording.value = true
   try {
+    const accountId = await resolveAccountID()
     const created = await post<{ transaction: { id: string } }>('/bank-transactions', {
       transaction: {
         direction: recordForm.direction, amount: recordForm.amount,
         currency: recordForm.currency, txnDate: recordForm.txnDate,
-        accountId: recordForm.accountId || '0',
+        accountId,
         bankRef: recordForm.bankRef, counterparty: recordForm.counterparty,
         remittanceInfo: recordForm.remittanceInfo,
         ownership: recordForm.ownership,
@@ -653,13 +770,145 @@ onMounted(load)
   color: var(--el-text-color-secondary);
 }
 .none { color: var(--el-text-color-secondary); }
-.record-file {
+/* ── 登记流水对话框 ────────────────────────────────────────
+   十个字段分成三段，每段一个小标题。字段本身是两列网格，窄的（金额、
+   日期、归属）并排，宽的（附言、账户）通栏——比一律左对齐标签 + 单列
+   少一半高度，而且「这一段在问什么」看得出来。 */
+.record-form :deep(.el-form-item) {
+  margin-bottom: 12px;
+}
+.record-form :deep(.el-form-item__label) {
+  padding-bottom: 2px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+.fieldset + .fieldset {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.fieldset-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+/* 每段标题前一道短竖线。三段是三个问题，有个视觉锚点比纯靠间距分得开。 */
+.fieldset-title::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 12px;
+  margin-right: 8px;
+  vertical-align: -1px;
+  border-radius: 2px;
+  background: var(--el-color-primary);
+  opacity: 0.55;
+}
+.dialog-intro {
+  margin: -4px 0 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--el-fill-color-light);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0 14px;
+}
+
+/* 进账绿、出账橙——和列表里那一列同一套颜色。方向选错是最贵的错误之一，
+   让它在选中的那一刻就有颜色，而不是等保存完回列表才发现。 */
+.direction-pick.is-credit :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  background: var(--el-color-success);
+  border-color: var(--el-color-success);
+  box-shadow: -1px 0 0 0 var(--el-color-success);
+}
+.direction-pick.is-debit :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  background: var(--el-color-warning);
+  border-color: var(--el-color-warning);
+  box-shadow: -1px 0 0 0 var(--el-color-warning);
+}
+
+/* 金额是这张表里唯一要一眼读准的数：等宽字形，位数对齐。 */
+.amount-input :deep(.el-input__inner) {
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  letter-spacing: 0.3px;
+}
+.amount-input :deep(.el-input-group__append) {
+  padding: 0;
+}
+
+.account-select {
+  width: 100%;
+}
+.acct-row {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.acct-name {
+  font-weight: 500;
+}
+.acct-meta {
+  flex: 1;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.acct-cur {
+  flex: none;
+}
+.field-note {
+  margin-top: 2px;
+  line-height: 1.5;
+}
+.warn-note {
+  font-size: 12px;
+  color: var(--el-color-warning);
+}
+
+/* 附件那一格：没选时是一块可点的区域而不是一个孤零零的按钮——它要接住
+   「我手上这张纸放哪」这个念头，按钮太小声。 */
+.file-drop {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  border: 1px dashed var(--el-border-color);
+  border-radius: 8px;
+  background: var(--el-fill-color-blank);
+  cursor: pointer;
+  transition: border-color var(--el-transition-duration), background-color var(--el-transition-duration);
+}
+.file-drop:hover {
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+.file-drop-main {
+  font-size: 14px;
+  color: var(--el-color-primary);
+}
+.file-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-light);
   flex-wrap: wrap;
 }
 .file-name {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   color: var(--el-text-color-regular);
   word-break: break-all;
@@ -668,4 +917,22 @@ onMounted(load)
 .attach-link:hover { text-decoration: underline; }
 .pick-context { margin: 0 0 12px; color: var(--el-text-color-secondary); }
 .head-actions { display: flex; gap: 8px; align-items: center; }
+</style>
+
+<!-- el-dialog 会被 teleport 到 body，作用域样式够不着它（scoped 的属性只落在
+     本组件模板里的元素上，而 .el-dialog 是子组件的内部结构）。这两条必须
+     全局，靠 .record-dialog 这个独一份的类名把范围收住。 -->
+<style>
+/* 十个字段撑到 800 多像素，在 768 高的笔记本上「保存」会掉到折线以下。
+   表单区自己滚、页脚钉住——要按的那个按钮永远在看得见的地方。 */
+.record-dialog {
+  margin-top: 6vh !important;
+}
+.record-dialog .el-dialog__body {
+  /* 用 calc 而不是 vh 百分比：页眉页脚的高度是固定的几十像素，按比例扣
+     在矮屏上扣得太狠、在高屏上又留一大片空。 */
+  max-height: calc(100vh - 210px);
+  overflow-y: auto;
+  padding-right: 16px;
+}
 </style>
