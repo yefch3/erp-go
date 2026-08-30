@@ -580,9 +580,12 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-recon", s.listSupplierRecon)
 		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-recon/{id}/payments", s.listPurchaseOrderPayments)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/payments", s.recordPurchaseOrderPayment)
-		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/payments/{allocationId}/reverse", s.reversePurchaseOrderPayment)
+		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/payments/{allocationId}/reverse", s.reversePurchaseOrderPayment)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/close", s.closePurchaseOrderPayment)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/reopen", s.reopenPurchaseOrderPayment)
+		// 存量单补到期日。静态段排在 {id} 前面才不会被当成一个采购单 id，
+		// chi 本身就是静态优先，这里只是把它写在一起免得看漏。
+		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/backfill-due", s.backfillPayableDue)
 		// 挂在采购单上的凭证——发票扫描件、水单、退款回执。发票页下线之后，
 		// 「留凭证」这件事搬到了这里；一张单可以有好几份。
 		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-recon/{id}/files", s.listReconFiles)
@@ -618,15 +621,23 @@ func (s *Server) Router() http.Handler {
 		// 财务想先把一笔出账记下来的时候，唯一的办法是伪造一行 CSV 导进去。
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions", s.recordBankTransaction)
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/import", s.importBankStatement)
-		// /api/bank-transactions/{id}/match 和 /unmatch 一起下线了。
+		// **只留 unmatch，不留 match。** 匹配这件事下线了（付款单没有创建
+		// 入口，且和「流水只是记录」的新模型冲突），但**解开历史匹配**必须
+		// 留着：SetBankTransactionOwnership 那道闸遇到已匹配的行会拒绝，
+		// 并让人「先取消匹配」——把这条路一起删掉，那句话就成了一个做不到
+		// 的指令，那些行的归属从此谁也改不了。
+		//
+		// 这和别处同一条纪律：新路不再走了，老数据的回退口子留着。
+		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/unmatch", s.unmatchBankTransaction)
+		// /api/bank-transactions/{id}/match 下线了。
 		//
 		// 它们是「把一行流水对上一张供应商付款单」，而付款单的唯一创建入口
 		// 随供应商付款页一起没了——候选池只减不增，留着就是一个会慢慢归零
 		// 的按钮。更要紧的是它和新模型本来就冲突：需求原话是「银行流水这些
 		// 都只是用来记录」，不参与核销。流水页现在回归纯记录 + 凭证。
 		//
-		// MatchBankTransaction / UnmatchBankTransaction 的服务端实现留着：
-		// 存量数据里已经匹配上的那些行还要读得出来（列表上照常显示付款单号）。
+		// MatchBankTransaction 的服务端实现留着：存量数据里已经匹配上的
+		// 那些行还要读得出来（列表上照常显示付款单号）。
 		// 那份对账单（PDF）。挂在登记流水同一个权限下——能记这笔钱的人，
 		// 就该能把银行给的那张纸传上来。
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/attachment/presign", s.presignBankTransactionFile)

@@ -96,9 +96,47 @@ func (q *Queries) AddRequirementReceived(ctx context.Context, arg AddRequirement
 	return i, err
 }
 
+const backfillPayableDue = `-- name: BackfillPayableDue :execrows
+UPDATE purchase_orders SET
+    payment_days = $1::int,
+    payable_due_date = ordered_at::date + $1::int,
+    updated_at = now()
+WHERE tenant_id = $2::bigint
+  AND supplier_id = $3::bigint
+  AND ordered_at IS NOT NULL
+  AND payable_due_date IS NULL
+  AND $1::int > 0
+`
+
+type BackfillPayableDueParams struct {
+	PaymentDays int32
+	TenantID    int64
+	SupplierID  int64
+}
+
+// 给存量采购单补应付到期日：下单了但没有到期日的，按传入的账期补算。
+//
+// 幂等——只碰为空的行，跑几遍结果一样。存在的理由是时间差：到期日从今天
+// 起才在下单时写入，在此之前下的单一张都没有；而供应商的账期也是同一批
+// 改动里才有的字段，迁移当时全是 0。和客户侧 BackfillReceivableDue 同款。
+//
+// payment_days 必须 > 0，这道守卫写在 SQL 里而不是只写在调用方：传 0 会
+// 把到期日写成「下单当天」，而**空表示没配账期，不是当天到期**。这条口径
+// 是整张页面的地基，不该指望每个调用方都记得。
+//
+// ordered_at IS NOT NULL 既是幂等条件也是语义条件：没有下单日就没有起算
+// 点，编一个出来不如老老实实留空。草稿、待审、驳回天然被它挡在外面。
+func (q *Queries) BackfillPayableDue(ctx context.Context, arg BackfillPayableDueParams) (int64, error) {
+	result, err := q.db.Exec(ctx, backfillPayableDue, arg.PaymentDays, arg.TenantID, arg.SupplierID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createPurchaseOrder = `-- name: CreatePurchaseOrder :one
 INSERT INTO purchase_orders (
-    tenant_id, po_no, supplier_id, supplier_code, supplier_name,
+    tenant_id, po_no, supplier_id, supplier_code, supplier_name, payment_days,
     currency, total_amount, expected_date, buyer_id, buyer_name, remark,
     source_quotation_id, source_quotation_no, source_cost_scenario_id,
     factory_id, factory_code, factory_name,
@@ -111,17 +149,18 @@ INSERT INTO purchase_orders (
     $3::bigint,
     $4::text,
     $5::text,
-    $6::text,
-    $7::text::numeric,
-    nullif($8::text, '')::date,
-    $9::bigint,
-    $10::text,
+    $6::int,
+    $7::text,
+    $8::text::numeric,
+    nullif($9::text, '')::date,
+    $10::bigint,
     $11::text,
-    $12, $13, $14,
-    $15, $16, $17,
-    $18, $19,
-    $20, $21, $22,
-    $23, $24, $25, $26
+    $12::text,
+    $13, $14, $15,
+    $16, $17, $18,
+    $19, $20,
+    $21, $22, $23,
+    $24, $25, $26, $27
 )
 RETURNING id, po_no, status, created_at
 `
@@ -132,6 +171,7 @@ type CreatePurchaseOrderParams struct {
 	SupplierID           int64
 	SupplierCode         string
 	SupplierName         string
+	PaymentDays          int32
 	Currency             string
 	TotalAmount          string
 	ExpectedDate         string
@@ -169,6 +209,7 @@ func (q *Queries) CreatePurchaseOrder(ctx context.Context, arg CreatePurchaseOrd
 		arg.SupplierID,
 		arg.SupplierCode,
 		arg.SupplierName,
+		arg.PaymentDays,
 		arg.Currency,
 		arg.TotalAmount,
 		arg.ExpectedDate,
@@ -834,6 +875,51 @@ func (q *Queries) ListPurchaseReceipts(ctx context.Context, arg ListPurchaseRece
 	return items, nil
 }
 
+const listSuppliersMissingPayableDue = `-- name: ListSuppliersMissingPayableDue :many
+SELECT po.supplier_id,
+       count(*)::bigint AS order_count
+  FROM purchase_orders po
+ WHERE po.tenant_id = $1::bigint
+   AND po.ordered_at IS NOT NULL
+   AND po.payable_due_date IS NULL
+ GROUP BY po.supplier_id
+ ORDER BY po.supplier_id
+`
+
+type ListSuppliersMissingPayableDueRow struct {
+	SupplierID int64
+	OrderCount int64
+}
+
+// 补算之前先问一句：还有哪些供应商挂着没有到期日的采购单，各挂几张。
+//
+// 存在的理由是端口太窄——procurement 只能按 id 单查供应商（app.Suppliers
+// 就一个 Get），没法把主数据整表拉过来对着筛。反过来从自己的表里问「谁
+// 需要补」，需要往返的次数就只跟真正欠账期的供应商数挂钩，而不是跟供应
+// 商总数挂钩。
+//
+// 条件和 BackfillPayableDue 逐字一致：这份清单就是那条 UPDATE 的作用域，
+// 两边一旦漂移，页面上报的「跳过 N 张」就会对不上真实剩下的行。
+func (q *Queries) ListSuppliersMissingPayableDue(ctx context.Context, tenantID int64) ([]ListSuppliersMissingPayableDueRow, error) {
+	rows, err := q.db.Query(ctx, listSuppliersMissingPayableDue, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSuppliersMissingPayableDueRow
+	for rows.Next() {
+		var i ListSuppliersMissingPayableDueRow
+		if err := rows.Scan(&i.SupplierID, &i.OrderCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const liveOrdersForQuotationSupplier = `-- name: LiveOrdersForQuotationSupplier :many
 SELECT id, po_no, status
 FROM purchase_orders
@@ -1338,7 +1424,12 @@ func (q *Queries) SetPurchaseOrderCancelled(ctx context.Context, arg SetPurchase
 }
 
 const setPurchaseOrderOrdered = `-- name: SetPurchaseOrderOrdered :exec
-UPDATE purchase_orders SET status = 'ORDERED', ordered_at = now(), updated_at = now()
+UPDATE purchase_orders SET
+    status = 'ORDERED',
+    ordered_at = now(),
+    payable_due_date = CASE WHEN payment_days > 0
+        THEN CURRENT_DATE + payment_days ELSE NULL END,
+    updated_at = now()
 WHERE tenant_id = $1::bigint AND id = $2::bigint
 `
 
@@ -1347,6 +1438,15 @@ type SetPurchaseOrderOrderedParams struct {
 	ID       int64
 }
 
+// 下单那一刻同时把应付到期日算出来：账期从下单那天起算（业务定的口径，
+// 客户侧是从合同生效那天起算）。
+//
+// payment_days 为 0 就把到期日留空——**空表示没配账期，不是今天到期**。
+// 编一个日子会让「今天该付谁」这句话变成假的。
+//
+// 用 CURRENT_DATE 而不是从 ordered_at 反推：这两句在同一条 UPDATE 里，
+// now() 还没落库；而 ordered_at 是 timestamptz，转成日期还要挑时区，
+// 平白多一处会算错一天的地方。
 func (q *Queries) SetPurchaseOrderOrdered(ctx context.Context, arg SetPurchaseOrderOrderedParams) error {
 	_, err := q.db.Exec(ctx, setPurchaseOrderOrdered, arg.TenantID, arg.ID)
 	return err
@@ -1408,29 +1508,32 @@ UPDATE purchase_orders SET
     supplier_id = $1::bigint,
     supplier_code = $2::text,
     supplier_name = $3::text,
-    currency = $4::text,
-    total_amount = $5::text::numeric,
-    expected_date = nullif($6::text, '')::date,
-    buyer_id = $7::bigint,
-    buyer_name = $8::text,
-    remark = $9::text,
-    fulfillment_mode = $10::text,
-    delivery_location_type = $11::text,
-    delivery_port_id = nullif($12::bigint, 0),
-    delivery_port_code = $13::text,
-    delivery_port_name = $14::text,
+    -- 草稿改供应商时账期跟着换：这张单还没下出去，快照的是「最终按谁的
+    -- 条件下的」，不是「第一次选的那家」。
+    payment_days = $4::int,
+    currency = $5::text,
+    total_amount = $6::text::numeric,
+    expected_date = nullif($7::text, '')::date,
+    buyer_id = $8::bigint,
+    buyer_name = $9::text,
+    remark = $10::text,
+    fulfillment_mode = $11::text,
+    delivery_location_type = $12::text,
+    delivery_port_id = nullif($13::bigint, 0),
+    delivery_port_code = $14::text,
+    delivery_port_name = $15::text,
     -- 采购单表为兼容直接发往港口的模式，以 0 表示“不经过仓库”。
     -- 这里不能写成 NULL，否则恢复旧草稿时会违反 warehouse_id 的非空约束。
-    warehouse_id = $15::bigint,
-    warehouse_name = $16::text,
-    delivery_address = $17::text,
-    source_change_reason = $18::text,
+    warehouse_id = $16::bigint,
+    warehouse_name = $17::text,
+    delivery_address = $18::text,
+    source_change_reason = $19::text,
     status = 'DRAFT',
     approval_instance_id = NULL,
     reject_reason = '',
     updated_at = now()
-WHERE tenant_id = $19::bigint
-  AND id = $20::bigint
+WHERE tenant_id = $20::bigint
+  AND id = $21::bigint
   AND status IN ('DRAFT', 'REJECTED')
 RETURNING id, po_no, status, created_at
 `
@@ -1439,6 +1542,7 @@ type UpdatePurchaseOrderDraftParams struct {
 	SupplierID           int64
 	SupplierCode         string
 	SupplierName         string
+	PaymentDays          int32
 	Currency             string
 	TotalAmount          string
 	ExpectedDate         string
@@ -1470,6 +1574,7 @@ func (q *Queries) UpdatePurchaseOrderDraft(ctx context.Context, arg UpdatePurcha
 		arg.SupplierID,
 		arg.SupplierCode,
 		arg.SupplierName,
+		arg.PaymentDays,
 		arg.Currency,
 		arg.TotalAmount,
 		arg.ExpectedDate,

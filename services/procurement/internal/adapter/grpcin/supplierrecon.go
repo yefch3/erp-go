@@ -14,10 +14,12 @@ import (
 func (h *OrderHandler) ListSupplierRecon(ctx context.Context, req *prv1.ListSupplierReconRequest) (*prv1.ListSupplierReconResponse, error) {
 	items, total, err := h.svc.ListSupplierRecon(ctx, grpcx.TenantID(ctx),
 		app.SupplierReconFilter{
-			Keyword:    req.GetKeyword(),
-			ClosedOnly: req.GetClosedOnly(),
-			Page:       req.GetPage(),
-			PageSize:   req.GetPageSize(),
+			Keyword:     req.GetKeyword(),
+			ClosedOnly:  req.GetClosedOnly(),
+			OverdueOnly: req.GetOverdueOnly(),
+			UnsetOnly:   req.GetUnsetOnly(),
+			Page:        req.GetPage(),
+			PageSize:    req.GetPageSize(),
 		}, reconOperator(ctx))
 	if err != nil {
 		return nil, err
@@ -41,7 +43,7 @@ func (h *OrderHandler) ListPurchaseOrderPayments(ctx context.Context, req *prv1.
 			Amount: e.Amount, FeeAmount: e.FeeAmount, Currency: e.Currency,
 			Note: e.Note, AllocatedAt: e.AllocatedAt, AllocatedBy: e.AllocatedBy,
 			ReversalOf: e.ReversalOf, ReverseReason: e.ReverseReason,
-			PaymentNo: e.PaymentNo,
+			PaymentNo: e.PaymentNo, InvoiceNo: e.InvoiceNo,
 		})
 	}
 	return &prv1.ListPurchaseOrderPaymentsResponse{Items: out}, nil
@@ -60,7 +62,7 @@ func (h *OrderHandler) RecordPurchaseOrderPayment(ctx context.Context, req *prv1
 
 func (h *OrderHandler) ReversePurchaseOrderPayment(ctx context.Context, req *prv1.ReversePurchaseOrderPaymentRequest) (*prv1.ReversePurchaseOrderPaymentResponse, error) {
 	row, err := h.svc.ReversePOPayment(ctx, grpcx.TenantID(ctx),
-		req.GetAllocationId(), req.GetReason(), reconOperator(ctx))
+		req.GetPoId(), req.GetAllocationId(), req.GetReason(), reconOperator(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +87,17 @@ func (h *OrderHandler) ReopenPurchaseOrderPayment(ctx context.Context, req *prv1
 	return &prv1.ReopenPurchaseOrderPaymentResponse{Row: reconRowProto(row)}, nil
 }
 
+func (h *OrderHandler) BackfillPayableDue(ctx context.Context, _ *prv1.BackfillPayableDueRequest) (*prv1.BackfillPayableDueResponse, error) {
+	res, err := h.svc.BackfillPayableDue(ctx, grpcx.TenantID(ctx), reconOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.BackfillPayableDueResponse{
+		UpdatedOrders: res.UpdatedOrders, AppliedSuppliers: res.AppliedSuppliers,
+		SkippedSuppliers: res.SkippedSuppliers, SkippedOrders: res.SkippedOrders,
+	}, nil
+}
+
 func reconOperator(ctx context.Context) app.Operator {
 	op, _ := grpcx.OperatorFromContext(ctx)
 	return app.Operator{ID: op.EmployeeID, Name: op.Name}
@@ -96,6 +109,7 @@ func reconRowProto(v app.SupplierReconRow) *prv1.SupplierReconRow {
 		SupplierId: v.SupplierID, SupplierName: v.SupplierName,
 		Currency: v.Currency, OrderStatus: v.OrderStatus, BuyerName: v.BuyerName,
 		OrderedDate: v.OrderedDate, ExpectedDate: v.ExpectedDate,
+		DueDate: v.DueDate, OverdueDays: v.OverdueDays, DueUnset: v.DueUnset,
 		OrderedAmount: v.OrderedAmount, PaidAmount: v.PaidAmount, OpenAmount: v.OpenAmount,
 		InvoicePaidAmount: v.InvoicePaidAmount,
 		ClosedCategory:    v.ClosedCategory, ClosedNote: v.ClosedNote,

@@ -1123,17 +1123,18 @@ func (q *Queries) CreateOption(ctx context.Context, arg CreateOptionParams) (Opt
 const createSupplier = `-- name: CreateSupplier :one
 INSERT INTO suppliers (
   tenant_id, code, name, name_zh, name_en, short_name, country, country_code,
-  address, registered_address, tax_id, currency, payment_term, business_types,
-  contact_name, contact_phone, contact_email, remark, created_by, updated_by
+  address, registered_address, tax_id, currency, payment_term, payment_days,
+  business_types, contact_name, contact_phone, contact_email, remark,
+  created_by, updated_by
 )
 VALUES (
   $1, $2, $3, $4, $5,
   $6, $7, $8, $9,
   $10, $11, $12, $13,
-  $14, $15, $16,
-  $17, $18, $19, $19
+  $14, $15, $16, $17,
+  $18, $19, $20, $20
 )
-RETURNING id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types, credit_grade, credit_graded_at
+RETURNING id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types, credit_grade, credit_graded_at, payment_days
 `
 
 type CreateSupplierParams struct {
@@ -1150,6 +1151,7 @@ type CreateSupplierParams struct {
 	TaxID             string
 	Currency          string
 	PaymentTerm       string
+	PaymentDays       int32
 	BusinessTypes     []string
 	ContactName       string
 	ContactPhone      string
@@ -1173,6 +1175,7 @@ func (q *Queries) CreateSupplier(ctx context.Context, arg CreateSupplierParams) 
 		arg.TaxID,
 		arg.Currency,
 		arg.PaymentTerm,
+		arg.PaymentDays,
 		arg.BusinessTypes,
 		arg.ContactName,
 		arg.ContactPhone,
@@ -1208,6 +1211,7 @@ func (q *Queries) CreateSupplier(ctx context.Context, arg CreateSupplierParams) 
 		&i.BusinessTypes,
 		&i.CreditGrade,
 		&i.CreditGradedAt,
+		&i.PaymentDays,
 	)
 	return i, err
 }
@@ -2060,7 +2064,7 @@ func (q *Queries) GetNumberRule(ctx context.Context, arg GetNumberRuleParams) (N
 }
 
 const getSupplier = `-- name: GetSupplier :one
-SELECT id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types, credit_grade, credit_graded_at FROM suppliers WHERE tenant_id = $1 AND id = $2
+SELECT id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types, credit_grade, credit_graded_at, payment_days FROM suppliers WHERE tenant_id = $1 AND id = $2
 `
 
 type GetSupplierParams struct {
@@ -2098,12 +2102,13 @@ func (q *Queries) GetSupplier(ctx context.Context, arg GetSupplierParams) (Suppl
 		&i.BusinessTypes,
 		&i.CreditGrade,
 		&i.CreditGradedAt,
+		&i.PaymentDays,
 	)
 	return i, err
 }
 
 const getSupplierByCode = `-- name: GetSupplierByCode :one
-SELECT id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types, credit_grade, credit_graded_at FROM suppliers
+SELECT id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types, credit_grade, credit_graded_at, payment_days FROM suppliers
 WHERE tenant_id = $1 AND upper(code) = upper($2)
 LIMIT 1
 `
@@ -2143,6 +2148,7 @@ func (q *Queries) GetSupplierByCode(ctx context.Context, arg GetSupplierByCodePa
 		&i.BusinessTypes,
 		&i.CreditGrade,
 		&i.CreditGradedAt,
+		&i.PaymentDays,
 	)
 	return i, err
 }
@@ -3612,7 +3618,7 @@ func (q *Queries) ListSupplierOwners(ctx context.Context, arg ListSupplierOwners
 }
 
 const listSuppliers = `-- name: ListSuppliers :many
-SELECT s.id, s.tenant_id, s.code, s.name, s.country, s.address, s.currency, s.contact_name, s.contact_phone, s.contact_email, s.remark, s.status, s.created_at, s.created_by, s.updated_at, s.updated_by, s.name_zh, s.name_en, s.short_name, s.country_code, s.tax_id, s.registered_address, s.payment_term, s.business_types, s.credit_grade, s.credit_graded_at,
+SELECT s.id, s.tenant_id, s.code, s.name, s.country, s.address, s.currency, s.contact_name, s.contact_phone, s.contact_email, s.remark, s.status, s.created_at, s.created_by, s.updated_at, s.updated_by, s.name_zh, s.name_en, s.short_name, s.country_code, s.tax_id, s.registered_address, s.payment_term, s.business_types, s.credit_grade, s.credit_graded_at, s.payment_days,
        (SELECT count(*) FROM factories f WHERE f.tenant_id = s.tenant_id AND f.supplier_id = s.id AND f.status <> 'INACTIVE') AS factory_count,
        COALESCE((SELECT string_agg(so.employee_name, '、' ORDER BY so.is_primary DESC, so.id)
           FROM supplier_owners so WHERE so.tenant_id = s.tenant_id AND so.supplier_id = s.id AND so.status = 'ACTIVE'), ''::text)::text AS owner_names,
@@ -3670,6 +3676,7 @@ type ListSuppliersRow struct {
 	BusinessTypes     []string
 	CreditGrade       string
 	CreditGradedAt    pgtype.Timestamptz
+	PaymentDays       int32
 	FactoryCount      int64
 	OwnerNames        string
 	Total             int64
@@ -3720,6 +3727,7 @@ func (q *Queries) ListSuppliers(ctx context.Context, arg ListSuppliersParams) ([
 			&i.BusinessTypes,
 			&i.CreditGrade,
 			&i.CreditGradedAt,
+			&i.PaymentDays,
 			&i.FactoryCount,
 			&i.OwnerNames,
 			&i.Total,
@@ -4531,12 +4539,13 @@ UPDATE suppliers
 SET name = $1, name_zh = $2, name_en = $3,
     short_name = $4, country = $5, country_code = $6,
     address = $7, registered_address = $8, tax_id = $9,
-    currency = $10, payment_term = $11, business_types = $12,
-    contact_name = $13, contact_phone = $14,
-    contact_email = $15, remark = $16,
-    updated_by = $17, updated_at = now()
-WHERE tenant_id = $18 AND id = $19
-RETURNING id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types, credit_grade, credit_graded_at
+    currency = $10, payment_term = $11,
+    payment_days = $12, business_types = $13,
+    contact_name = $14, contact_phone = $15,
+    contact_email = $16, remark = $17,
+    updated_by = $18, updated_at = now()
+WHERE tenant_id = $19 AND id = $20
+RETURNING id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types, credit_grade, credit_graded_at, payment_days
 `
 
 type UpdateSupplierParams struct {
@@ -4551,6 +4560,7 @@ type UpdateSupplierParams struct {
 	TaxID             string
 	Currency          string
 	PaymentTerm       string
+	PaymentDays       int32
 	BusinessTypes     []string
 	ContactName       string
 	ContactPhone      string
@@ -4574,6 +4584,7 @@ func (q *Queries) UpdateSupplier(ctx context.Context, arg UpdateSupplierParams) 
 		arg.TaxID,
 		arg.Currency,
 		arg.PaymentTerm,
+		arg.PaymentDays,
 		arg.BusinessTypes,
 		arg.ContactName,
 		arg.ContactPhone,
@@ -4611,6 +4622,7 @@ func (q *Queries) UpdateSupplier(ctx context.Context, arg UpdateSupplierParams) 
 		&i.BusinessTypes,
 		&i.CreditGrade,
 		&i.CreditGradedAt,
+		&i.PaymentDays,
 	)
 	return i, err
 }

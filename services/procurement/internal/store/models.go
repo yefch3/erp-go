@@ -225,7 +225,7 @@ type OutboxEvent struct {
 type PaymentAllocation struct {
 	ID              int64
 	TenantID        int64
-	PaymentID       int64
+	PaymentID       *int64
 	InvoiceID       *int64
 	PoID            *int64
 	Amount          pgtype.Numeric
@@ -236,6 +236,8 @@ type PaymentAllocation struct {
 	AllocatedBy     int64
 	AllocatedByName string
 	AllocatedAt     pgtype.Timestamptz
+	PaidAt          pgtype.Date
+	Note            string
 }
 
 type ProcessedEvent struct {
@@ -392,6 +394,8 @@ type PurchaseOrder struct {
 	SourceChangeReason   string
 	CloseNote            string
 	ShortfallAction      string
+	PaymentDays          int32
+	PayableDueDate       pgtype.Date
 }
 
 type PurchaseOrderImport struct {
@@ -428,6 +432,37 @@ type PurchaseOrderItem struct {
 	UnitPrice     pgtype.Numeric
 	Amount        pgtype.Numeric
 	ReceivedQty   pgtype.Numeric
+}
+
+type PurchaseOrderPaymentClosure struct {
+	ID            int64
+	TenantID      int64
+	PoID          int64
+	OpenAmount    pgtype.Numeric
+	Category      string
+	Note          string
+	ClosedByID    int64
+	ClosedByName  string
+	CreatedAt     pgtype.Timestamptz
+	RevokedAt     pgtype.Timestamptz
+	RevokedByID   int64
+	RevokedByName string
+	RevokeReason  string
+}
+
+type PurchaseOrderReconFile struct {
+	ID             int64
+	TenantID       int64
+	PoID           int64
+	ObjectKey      string
+	FileName       string
+	Note           string
+	UploadedByID   int64
+	UploadedByName string
+	CreatedAt      pgtype.Timestamptz
+	RemovedAt      pgtype.Timestamptz
+	RemovedByID    int64
+	RemovedByName  string
 }
 
 type PurchaseOrderSendAttempt struct {

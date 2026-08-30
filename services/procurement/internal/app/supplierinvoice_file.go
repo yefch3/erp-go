@@ -59,8 +59,8 @@ func (s *Service) AttachSupplierInvoiceFile(ctx context.Context, tenantID, invoi
 		return SupplierInvoice{}, apierr.Invalid("INV_FILE_KEY_REQUIRED", "文件标识必填")
 	}
 	// A client could otherwise register a key presigned for another invoice —
-	// or for another tenant's.
-	if !strings.HasPrefix(key, fmt.Sprintf("supplier-invoices/%d/%d/", tenantID, invoiceID)) {
+	// or for another tenant's. 前缀相等之外还挡 ".."，理由见 objectkey.go。
+	if !objectKeyBelongsTo(key, fmt.Sprintf("supplier-invoices/%d/%d/", tenantID, invoiceID)) {
 		return SupplierInvoice{}, apierr.Invalid("INV_FILE_KEY_MISMATCH", "文件标识与发票不匹配")
 	}
 	if err := s.AuthorizeSupplierInvoice(ctx, tenantID, invoiceID, op); err != nil {

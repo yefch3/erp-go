@@ -649,6 +649,10 @@ service PurchaseOrderService {
   rpc ReversePurchaseOrderPayment(ReversePurchaseOrderPaymentRequest) returns (ReversePurchaseOrderPaymentResponse);
   rpc ClosePurchaseOrderPayment(ClosePurchaseOrderPaymentRequest) returns (ClosePurchaseOrderPaymentResponse);
   rpc ReopenPurchaseOrderPayment(ReopenPurchaseOrderPaymentRequest) returns (ReopenPurchaseOrderPaymentResponse);
+  // 给存量采购单补应付到期日。到期日是从「配了账期之后下的单」才开始
+  // 写入的，在此之前的单一张都没有——不补一次，上线第一天整页都是
+  // 「未配账期」。按供应商当前配的账期算，幂等，跑几遍结果一样。
+  rpc BackfillPayableDue(BackfillPayableDueRequest) returns (BackfillPayableDueResponse);
   // 挂在一张采购单上的凭证——发票扫描件、水单、退款回执。存的是**纸**，
   // 不是有金额、有明细、参与运算的单据：它不进任何求和，只是「这笔钱是
   // 怎么回事」的证据。一张单可以有好几份。
@@ -1883,6 +1887,12 @@ message SupplierReconRow {
   string buyer_name = 7;
   string ordered_date = 8;
   string expected_date = 9;
+  // Payable due date = the day the order was placed + the supplier's terms.
+  // Empty means no terms configured — not "due today". due_unset says which.
+  string due_date = 18;
+  // Positive = days overdue, negative = days left. Meaningless when due_unset.
+  int32 overdue_days = 19;
+  bool due_unset = 20;
   string ordered_amount = 10;
   string paid_amount = 11;
   string open_amount = 12;
@@ -1914,10 +1924,18 @@ message PurchaseOrderPaymentEntry {
   string reverse_reason = 10;
   // Empty on hand-entered rows. Also decides which reversal path applies.
   string payment_no = 11;
+  // Non-empty when the money was allocated against an invoice that has a
+  // line pointing at this order. It counts toward this order's paid figure,
+  // but it is not money paid *on* this order — reversing it also moves any
+  // other order the invoice touches.
+  string invoice_no = 12;
 }
 
 message ListSupplierReconRequest {
   string keyword = 1;
+  // Two mutually exclusive narrowings; neither set means everything.
+  bool overdue_only = 5;
+  bool unset_only = 6;
   // false = still to reconcile; true = confirmed done.
   bool closed_only = 2;
   int32 page = 3;
@@ -1957,6 +1975,9 @@ message ReversePurchaseOrderPaymentResponse {
 message ReversePurchaseOrderPaymentRequest {
   int64 allocation_id = 1;
   string reason = 2;
+  // Which row to return afterwards. Invoice-backed allocations point at no
+  // purchase order of their own, so the caller has to say.
+  int64 po_id = 3;
 }
 message ClosePurchaseOrderPaymentResponse {
   SupplierReconRow row = 1;
@@ -1973,6 +1994,19 @@ message ReopenPurchaseOrderPaymentResponse {
 message ReopenPurchaseOrderPaymentRequest {
   int64 po_id = 1;
   string reason = 2;
+}
+
+// 补算不收任何参数：账期只有一个出处，就是供应商详情页上配的那个数。
+// 让员工在这里手填一个天数，等于让同一件事有两个答案。
+message BackfillPayableDueRequest {}
+
+// 报「补了多少」不够——没补上的那部分才是下一步要干的活。跳过的都是没配
+// 账期的供应商，员工看到「还有 5 家没配、涉及 12 张单」才知道回头去哪儿。
+message BackfillPayableDueResponse {
+  int64 updated_orders = 1;
+  int32 applied_suppliers = 2;
+  int32 skipped_suppliers = 3;
+  int64 skipped_orders = 4;
 }
 
 // ReconFile is one piece of paper filed against a purchase order.

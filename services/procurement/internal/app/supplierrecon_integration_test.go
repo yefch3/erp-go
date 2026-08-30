@@ -318,7 +318,7 @@ func TestReversingAPaymentBackedEntryGoesThroughTheOldPath(t *testing.T) {
 
 	// 冲销老行：付款单的未分配余额必须弹回 3000。弹不回去 = 没走老路，
 	// 那笔钱会在采购单上已经退回、在付款单上却还占着。
-	if _, err := svc.ReversePOPayment(ctx, tenantID, oldRow.AllocationID, "记错了", op); err != nil {
+	if _, err := svc.ReversePOPayment(ctx, tenantID, poID, oldRow.AllocationID, "记错了", op); err != nil {
 		t.Fatal(err)
 	}
 	after, err := svc.GetSupplierPayment(ctx, tenantID, adv.ID)
@@ -330,7 +330,7 @@ func TestReversingAPaymentBackedEntryGoesThroughTheOldPath(t *testing.T) {
 			"没弹回去说明没有转交给 ReverseSupplierPaymentAllocation", after.Unallocated)
 	}
 	// 冲销手填行：不该去碰任何付款单。
-	if _, err := svc.ReversePOPayment(ctx, tenantID, newRow.AllocationID, "也记错了", op); err != nil {
+	if _, err := svc.ReversePOPayment(ctx, tenantID, poID, newRow.AllocationID, "也记错了", op); err != nil {
 		t.Fatal(err)
 	}
 	row := reconRows(ctx, t, svc, tenantID, false, op)["PO-RC-MIX"]
@@ -599,5 +599,153 @@ func TestHandEnteredMoneyOnACancelledOrderStillShowsInTheLedger(t *testing.T) {
 	if !found {
 		t.Fatal("这家供应商必须出现在往来汇总里——3000 块真的付出去了，" +
 			"不能因为那张单被取消、又没有付款单抬头就整行消失")
+	}
+}
+
+// 挂在发票上的核销行，也得能从这一页冲掉。
+//
+// 供应商付款页下线之后，这一页是唯一的入口。而这类行有两个性质叠在一起：
+//
+//	· 它的钱**算进本页的已付**（reconFrom 的 ip 那条腿按发票行分摊回来）
+//	· payment_allocations 上 CHECK((invoice_id IS NOT NULL) <> (po_id IS NOT
+//	  NULL)) 保证它的 po_id 是空的
+//
+// 所以「明细按 po_id 过滤」会让它一条都不出现——钱算进去了，却既解释不清，
+// 也没有任何冲销入口。一笔记错的发票核销会被永久焊死在已付里，还会被
+// 「确认完成」快照进 closure 记录。
+func TestInvoiceBackedEntriesAreVisibleAndReversibleHere(t *testing.T) {
+	ctx, svc, tenantID, cleanup := reconTestPool(t)
+	defer cleanup()
+	op := Operator{ID: 77, Name: "Finance"}
+	poID := seedReconOrder(ctx, t, svc.pool, tenantID, "PO-RC-INVREV", "5000", "ORDERED")
+
+	var invID int64
+	if err := svc.pool.QueryRow(ctx, `
+		INSERT INTO supplier_invoices
+		  (tenant_id, supplier_id, supplier_name, invoice_no, currency, total_amount, invoice_date)
+		VALUES ($1, 9, 'Mill', 'INV-REV-1', 'USD', 5000, '2026-08-01')
+		RETURNING id`, tenantID).Scan(&invID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.pool.Exec(ctx, `
+		INSERT INTO supplier_invoice_lines (tenant_id, invoice_id, po_id, description, amount)
+		VALUES ($1, $2, $3, '全额', 5000)`, tenantID, invID, poID); err != nil {
+		t.Fatal(err)
+	}
+	pay, err := svc.CreateSupplierPayment(ctx, tenantID, SupplierPaymentInput{
+		SupplierID: 9, SupplierName: "Mill", PaymentType: "SETTLEMENT",
+		Currency: "USD", Amount: "5000", PaidAt: "2026-08-20", Method: "WIRE",
+	}, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AllocateSupplierPayment(ctx, tenantID, pay.ID,
+		[]PaymentAllocationInput{{InvoiceID: invID, Amount: "5000"}}, op); err != nil {
+		t.Fatal(err)
+	}
+
+	// 明细里必须看得见它，而且标着是哪张发票——不然那 5000 从哪来说不清。
+	entries, err := svc.ListPOPayments(ctx, tenantID, poID, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("挂发票的核销行也要出现在明细里（它算进了本单的已付），实际 %d 条", len(entries))
+	}
+	if entries[0].InvoiceNo != "INV-REV-1" {
+		t.Fatalf("要标出它核销在哪张发票上，实际 %q", entries[0].InvoiceNo)
+	}
+
+	// 而且必须冲得掉。冲完之后本单的已付回到 0。
+	row, err := svc.ReversePOPayment(ctx, tenantID, poID, entries[0].AllocationID, "发票选错了", op)
+	if err != nil {
+		t.Fatalf("挂发票的行必须能从这一页冲掉——付款页已经下线，这是唯一入口：%v", err)
+	}
+	if row.PaidAmount != "0.00" && row.PaidAmount != "0" {
+		t.Fatalf("冲销之后本单已付应回到 0，实际 %q", row.PaidAmount)
+	}
+	// 走的是老路，所以付款单的未分配余额也要弹回去。
+	after, err := svc.GetSupplierPayment(ctx, tenantID, pay.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Unallocated != "5000.00" && after.Unallocated != "5000" {
+		t.Fatalf("付款单未分配余额应弹回 5000，实际 %q", after.Unallocated)
+	}
+}
+
+// 应付到期日：**下单当天 + 供应商账期**（业务定的口径，客户侧是从合同生效
+// 那天起算）。这一组钉三件事：
+//
+//	· 账期是**下单那一刻的快照**——供应商事后改账期不动已经下出去的单
+//	· 没配账期 → 到期日留空 → 「未配账期」，**不是「今天到期」**。编一个
+//	  日子会让「今天该付谁」这句话变成假的
+//	· 两个筛子各管一件事：只看逾期的、只看未配账期的（后者是催配置，不是催钱）
+func TestPayableDueComesFromTheDayTheOrderWasPlaced(t *testing.T) {
+	ctx, svc, tenantID, cleanup := reconTestPool(t)
+	defer cleanup()
+	op := Operator{ID: 77, Name: "Finance"}
+
+	// seedReconOrder 直接写库，绕过了下单那条路，所以到期日在这里手工摆布——
+	// 摆的是「已经算出来的结果」，测的是列表怎么读它。
+	overdue := seedReconOrder(ctx, t, svc.pool, tenantID, "PO-DUE-LATE", "1000", "ORDERED")
+	soon := seedReconOrder(ctx, t, svc.pool, tenantID, "PO-DUE-SOON", "1000", "ORDERED")
+	// 这一张什么都不设：账期为 0，到期日留空——「未配账期」。
+	seedReconOrder(ctx, t, svc.pool, tenantID, "PO-DUE-NONE", "1000", "ORDERED")
+	if _, err := svc.pool.Exec(ctx, `
+		UPDATE purchase_orders SET payment_days = 30,
+		       payable_due_date = current_date - 5
+		 WHERE tenant_id=$1 AND id=$2`, tenantID, overdue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.pool.Exec(ctx, `
+		UPDATE purchase_orders SET payment_days = 30,
+		       payable_due_date = current_date + 10
+		 WHERE tenant_id=$1 AND id=$2`, tenantID, soon); err != nil {
+		t.Fatal(err)
+	}
+
+	all := reconRows(ctx, t, svc, tenantID, false, op)
+	if got := all["PO-DUE-LATE"]; got.OverdueDays != 5 || got.DueUnset {
+		t.Fatalf("逾期 5 天的单应为 overdueDays=5、dueUnset=false，实际 %+v", got)
+	}
+	if got := all["PO-DUE-SOON"]; got.OverdueDays != -10 || got.DueUnset {
+		t.Fatalf("还有 10 天到期的单应为 overdueDays=-10，实际 %+v", got)
+	}
+	// **没配账期不是「今天到期」。** 到期日留空、dueUnset 为真，
+	// overdueDays 那个 0 是 coalesce 出来的占位，界面靠 dueUnset 分流。
+	if got := all["PO-DUE-NONE"]; !got.DueUnset || got.DueDate != "" {
+		t.Fatalf("没配账期的单应为 dueUnset=true、到期日空串，实际 %+v", got)
+	}
+
+	// 两个筛子。
+	only := func(f SupplierReconFilter) map[string]SupplierReconRow {
+		t.Helper()
+		f.Page, f.PageSize = 1, 200
+		rows, _, err := svc.ListSupplierRecon(ctx, tenantID, f, op)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]SupplierReconRow{}
+		for _, r := range rows {
+			out[r.PONo] = r
+		}
+		return out
+	}
+	od := only(SupplierReconFilter{OverdueOnly: true})
+	if _, ok := od["PO-DUE-LATE"]; !ok {
+		t.Fatal("「只看逾期」要收进逾期的那张")
+	}
+	for _, no := range []string{"PO-DUE-SOON", "PO-DUE-NONE"} {
+		if _, ok := od[no]; ok {
+			t.Fatalf("「只看逾期」不该收 %s——没到期和没配账期都不是逾期", no)
+		}
+	}
+	un := only(SupplierReconFilter{UnsetOnly: true})
+	if _, ok := un["PO-DUE-NONE"]; !ok {
+		t.Fatal("「只看未配账期」要收进没配的那张")
+	}
+	if _, ok := un["PO-DUE-LATE"]; ok {
+		t.Fatal("「只看未配账期」不该收配了账期的单——那是催钱，不是催配置")
 	}
 }

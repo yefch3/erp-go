@@ -454,10 +454,13 @@ type SupplierInput struct {
 	Code, Name, NameZh, NameEn, ShortName            string
 	Country, CountryCode, Address, RegisteredAddress string
 	TaxID, Currency, PaymentTerm                     string
-	BusinessTypes                                    []string
-	ContactName, ContactPhone, ContactEmail, Remark  string
-	OperatorID                                       int64
-	OperatorName                                     string
+	// 付款账期，单位天。0 = 没配（不是「当天到期」）。payment_term 那一项
+	// 是给人看的自由文本，这一个是应付到期日的算术用的。
+	PaymentDays                                     int32
+	BusinessTypes                                   []string
+	ContactName, ContactPhone, ContactEmail, Remark string
+	OperatorID                                      int64
+	OperatorName                                    string
 }
 
 // normalizeSupplierInput 统一旧调用和 B4 新资料字段，并阻止不认识的业务类型进入主数据。
@@ -531,7 +534,8 @@ func (s *Service) CreateSupplier(ctx context.Context, tenantID int64, in Supplie
 			TenantID: tenantID, Code: code, Name: in.Name, NameZh: in.NameZh, NameEn: in.NameEn,
 			ShortName: in.ShortName, Country: in.Country, CountryCode: in.CountryCode,
 			Address: in.Address, RegisteredAddress: in.RegisteredAddress, TaxID: in.TaxID,
-			Currency: in.Currency, PaymentTerm: in.PaymentTerm, BusinessTypes: in.BusinessTypes,
+			Currency: in.Currency, PaymentTerm: in.PaymentTerm,
+			PaymentDays: in.PaymentDays, BusinessTypes: in.BusinessTypes,
 			ContactName:  in.ContactName,
 			ContactPhone: in.ContactPhone, ContactEmail: in.ContactEmail,
 			Remark: in.Remark, OperatorID: in.OperatorID,
@@ -585,7 +589,8 @@ func (s *Service) UpdateSupplier(ctx context.Context, tenantID, id int64, in Sup
 			TenantID: tenantID, ID: id, Name: in.Name, NameZh: in.NameZh, NameEn: in.NameEn,
 			ShortName: in.ShortName, Country: in.Country, CountryCode: in.CountryCode,
 			Address: in.Address, RegisteredAddress: in.RegisteredAddress, TaxID: in.TaxID,
-			Currency: in.Currency, PaymentTerm: in.PaymentTerm, BusinessTypes: in.BusinessTypes,
+			Currency: in.Currency, PaymentTerm: in.PaymentTerm,
+			PaymentDays: in.PaymentDays, BusinessTypes: in.BusinessTypes,
 			ContactName: in.ContactName, ContactPhone: in.ContactPhone, ContactEmail: in.ContactEmail,
 			Remark: in.Remark, OperatorID: in.OperatorID,
 		})

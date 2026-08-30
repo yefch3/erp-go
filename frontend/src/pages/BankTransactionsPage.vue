@@ -121,6 +121,12 @@
                 <el-button v-if="canWrite && noId(row.matchedPaymentId)" size="small" link @click="openOwnership(row)">
                   {{ t('bankTransactions.setOwnership') }}
                 </el-button>
+                <!-- 已匹配的历史行留一个「取消匹配」。新建匹配下线了，但改归属
+                     那道闸遇到已匹配的行会拒绝并让人「先取消匹配」——不给这个
+                     按钮，那些行的归属从此谁也改不了。 -->
+                <el-button
+                  v-else-if="canWrite" size="small" link type="danger" @click="unmatch(row)"
+                >{{ t('bankTransactions.unmatch') }}</el-button>
               </div>
             </div>
           </template>
@@ -674,9 +680,14 @@ async function onFilePicked(e: Event) {
   }
 }
 
-// 「匹配付款单」整组已下线（选付款单、采纳建议、取消匹配）。理由写在
-// 上面那一列的注释里：付款单没有创建入口了，而且流水按新模型只是记录。
-// 服务端的 Match/Unmatch 还在，存量数据的付款单号照常读得出来。
+// 新建匹配已下线（选付款单、采纳建议）。**解开历史匹配留着**：改归属那道
+// 闸遇到已匹配的行会拒绝并让人「先取消匹配」，没有这条路那句话就是个做不到
+// 的指令，那些行的归属从此谁也改不了。
+async function unmatch(row: TxnRow) {
+  await post(`/bank-transactions/${row.id}/unmatch`, {})
+  ElMessage.success(t('bankTransactions.unmatchedOk'))
+  void load()
+}
 
 // 对账单那张纸走 lib/statementUpload 的三步直传，两个入口共用（登记对话框里
 // 随手带的、和列表里事后补的）。那三步漏一步都不报错、只是纸悄悄没上去，

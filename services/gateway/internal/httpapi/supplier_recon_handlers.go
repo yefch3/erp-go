@@ -21,8 +21,11 @@ func (s *Server) listSupplierRecon(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Orders.ListSupplierRecon(r.Context(), &prv1.ListSupplierReconRequest{
 		Keyword:    q.Get("keyword"),
 		ClosedOnly: q.Get("view") == "done",
-		Page:       int32(page),
-		PageSize:   int32(size),
+		// 两个互斥的筛子，和客户对账页同一套参数名。
+		OverdueOnly: q.Get("overdue") == "1",
+		UnsetOnly:   q.Get("unset") == "1",
+		Page:        int32(page),
+		PageSize:    int32(size),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -61,6 +64,9 @@ func (s *Server) reversePurchaseOrderPayment(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	req.AllocationId, _ = strconv.ParseInt(chi.URLParam(r, "allocationId"), 10, 64)
+	// 冲完之后回哪一行。挂发票的核销行本身不指向任何采购单，地址里这一段
+	// 是唯一的来源。
+	req.PoId = idFromPath(r)
 	resp, err := s.Orders.ReversePurchaseOrderPayment(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -119,6 +125,17 @@ func (s *Server) presignReconFile(w http.ResponseWriter, r *http.Request) {
 	}
 	req.PoId = idFromPath(r)
 	resp, err := s.Orders.PresignReconFile(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// backfillPayableDue 不收 body：账期只有一个出处，就是供应商详情页上配
+// 的那个数。这里让浏览器传一个天数进来，等于给同一件事开第二个答案。
+func (s *Server) backfillPayableDue(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.BackfillPayableDue(r.Context(), &prv1.BackfillPayableDueRequest{})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

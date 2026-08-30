@@ -83,10 +83,10 @@ func (s *Service) AttachReconFile(ctx context.Context, tenantID, poID int64,
 	if key == "" {
 		return nil, apierr.Invalid("PR_FILE_KEY_REQUIRED", "文件标识必填")
 	}
-	// **这道前缀检查是唯一的跨租户隔离手段，不是洁癖。** 所有服务共用一个桶，
+	// **这道检查是唯一的跨租户隔离手段，不是洁癖。** 所有服务共用一个桶，
 	// 没有它，任何人都能把别人租户的对象登记到自己的采购单上，然后从自己的
-	// 页面上把它读出来。
-	if !strings.HasPrefix(key, reconKeyPrefix(tenantID, poID)) {
+	// 页面上把它读出来。前缀相等之外还挡 ".."，理由见 objectkey.go。
+	if !objectKeyBelongsTo(key, reconKeyPrefix(tenantID, poID)) {
 		return nil, apierr.Invalid("PR_FILE_KEY_MISMATCH", "文件标识与采购单不匹配")
 	}
 	if _, err := s.reconRowOf(ctx, tenantID, poID); err != nil {
