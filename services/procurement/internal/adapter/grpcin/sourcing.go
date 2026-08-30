@@ -298,7 +298,7 @@ func (h *SourcingHandler) CreateSupplierQuote(ctx context.Context, req *prv1.Cre
 	for _, line := range req.GetLines() {
 		lines = append(lines, app.SupplierQuoteLineInput{SourcingLineID: line.GetSourcingLineId(), Qty: line.GetQty(), UnitPrice: line.GetUnitPrice(), MOQ: line.GetMoq(), LeadTime: line.GetLeadTime(), Remark: line.GetRemark()})
 	}
-	row, err := h.svc.CreateSupplierQuote(ctx, grpcx.TenantID(ctx), app.NewSupplierQuote{FactoryRFQID: req.GetFactoryRfqId(), QuotedAt: req.GetQuotedAt(), ValidUntil: req.GetValidUntil(), Currency: req.GetCurrency(), PaymentTerms: req.GetPaymentTerms(), Delivery: req.GetDelivery(), Remark: req.GetRemark(), Source: req.GetSource(), ConfirmationStatus: req.GetConfirmationStatus(), EvidenceNote: req.GetEvidenceNote(), Lines: lines}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	row, err := h.svc.CreateSupplierQuote(ctx, grpcx.TenantID(ctx), app.NewSupplierQuote{FactoryRFQID: req.GetFactoryRfqId(), QuotedAt: req.GetQuotedAt(), ValidUntil: req.GetValidUntil(), Currency: req.GetCurrency(), PaymentTerms: req.GetPaymentTerms(), Delivery: req.GetDelivery(), Incoterm: req.GetIncoterm(), Remark: req.GetRemark(), Source: req.GetSource(), ConfirmationStatus: req.GetConfirmationStatus(), EvidenceNote: req.GetEvidenceNote(), Lines: lines}, app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
 		return nil, err
 	}
@@ -324,7 +324,7 @@ func (h *SourcingHandler) ImportSupplierQuoteWorkbook(ctx context.Context, req *
 	op, _ := grpcx.OperatorFromContext(ctx)
 	row, err := h.svc.ImportSupplierQuoteWorkbook(ctx, grpcx.TenantID(ctx), req.GetFileData(), app.NewSupplierQuote{
 		FactoryRFQID: req.GetFactoryRfqId(), QuotedAt: req.GetQuotedAt(), ValidUntil: req.GetValidUntil(), Currency: req.GetCurrency(),
-		PaymentTerms: req.GetPaymentTerms(), Delivery: req.GetDelivery(), Remark: req.GetRemark(),
+		PaymentTerms: req.GetPaymentTerms(), Delivery: req.GetDelivery(), Incoterm: req.GetIncoterm(), Remark: req.GetRemark(),
 	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
 		return nil, err
@@ -357,7 +357,7 @@ func (h *SourcingHandler) ListSupplierQuoteComparison(ctx context.Context, req *
 			QuoteId: row.QuoteID, QuoteLineId: row.QuoteLineID, SupplierQuoteNo: row.SupplierQuoteNo,
 			FactoryRfqId: row.FactoryRfqID, SupplierId: row.SupplierID, SupplierName: row.SupplierName,
 			Currency: row.Currency, QuotedAt: row.QuotedAt, ValidUntil: row.ValidUntil,
-			PaymentTerms: row.PaymentTerms, Delivery: row.Delivery, QuoteRemark: row.Remark,
+			PaymentTerms: row.PaymentTerms, Delivery: row.Delivery, Incoterm: row.Incoterm, QuoteRemark: row.Remark,
 			Source: row.Source, VersionNo: row.VersionNo, ConfirmationStatus: row.ConfirmationStatus,
 			EvidenceNote: row.EvidenceNote, SourcingLineId: row.SourcingLineID, Qty: row.LQty,
 			UnitPrice: row.LUnitPrice, Amount: row.LAmount, Moq: row.Moq,

@@ -252,6 +252,7 @@ message CreateSupplierQuoteRequest {
   string currency = 4; string payment_terms = 5; string delivery = 6;
   string remark = 7; string source = 8; repeated SupplierQuoteLineInput lines = 9;
   string confirmation_status = 10; string evidence_note = 11;
+  string incoterm = 12;
 }
 message CreateSupplierQuoteResponse { int64 id = 1; string supplier_quote_no = 2; int32 version_no = 3; }
 message ImportSupplierQuoteWorkbookRequest {
@@ -263,6 +264,7 @@ message ImportSupplierQuoteWorkbookRequest {
   string payment_terms = 6;
   string delivery = 7;
   string remark = 8;
+  string incoterm = 9;
 }
 message ImportSupplierQuoteWorkbookResponse { int64 id = 1; string supplier_quote_no = 2; }
 message MarkFactoryRfqSentRequest { int64 id = 1; }
@@ -285,6 +287,7 @@ message SupplierQuoteComparisonLine {
   string compare_currency = 25;
   int64 created_by = 26;
   string created_by_name = 27;
+  string incoterm = 28;
 }
 message ListSupplierQuoteComparisonResponse { repeated SupplierQuoteComparisonLine lines = 1; }
 

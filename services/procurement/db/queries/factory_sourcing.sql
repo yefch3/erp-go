@@ -57,11 +57,11 @@ FROM factory_rfqs WHERE tenant_id=$1 AND id=$2;
 
 -- name: CreateSupplierQuote :one
 INSERT INTO supplier_quotes (tenant_id,factory_rfq_id,supplier_quote_no,quoted_at,valid_until,currency,
- payment_terms,delivery,remark,source,created_by,version_no,confirmation_status,evidence_note)
+ payment_terms,delivery,incoterm,remark,source,created_by,version_no,confirmation_status,evidence_note)
 VALUES (sqlc.arg(tenant_id),sqlc.arg(factory_rfq_id),
  'SQ-' || to_char(current_date,'YYYYMMDD') || '-' || lpad(nextval('supplier_quote_no_seq')::text,6,'0'),
  nullif(sqlc.arg(quoted_at)::text,'')::date,nullif(sqlc.arg(valid_until)::text,'')::date,
- sqlc.arg(currency),sqlc.arg(payment_terms),sqlc.arg(delivery),sqlc.arg(remark),sqlc.arg(source),sqlc.arg(created_by),
+ sqlc.arg(currency),sqlc.arg(payment_terms),sqlc.arg(delivery),sqlc.arg(incoterm),sqlc.arg(remark),sqlc.arg(source),sqlc.arg(created_by),
  (SELECT coalesce(max(version_no),0)+1 FROM supplier_quotes WHERE tenant_id=sqlc.arg(tenant_id) AND factory_rfq_id=sqlc.arg(factory_rfq_id)),
  sqlc.arg(confirmation_status),sqlc.arg(evidence_note))
 RETURNING id,supplier_quote_no,version_no;
@@ -89,7 +89,7 @@ WHERE tenant_id=$1 AND id=$2 AND status='REVIEWING';
 -- name: ListSupplierQuoteComparison :many
 SELECT q.id AS quote_id,l.id AS quote_line_id,q.supplier_quote_no,q.factory_rfq_id,r.supplier_id,r.supplier_name,q.currency,
  coalesce(q.quoted_at::text,'')::text AS quoted_at,coalesce(q.valid_until::text,'')::text AS valid_until,
- q.payment_terms,q.delivery,q.remark,q.source,q.version_no,q.confirmation_status,q.evidence_note,q.created_by,r.created_by_name,
+ q.payment_terms,q.delivery,q.incoterm,q.remark,q.source,q.version_no,q.confirmation_status,q.evidence_note,q.created_by,r.created_by_name,
  l.sourcing_line_id,l.qty::text,l.unit_price::text,
  l.amount::text,coalesce(l.moq::text,'')::text AS moq,l.lead_time,l.remark AS line_remark
 FROM supplier_quotes q JOIN factory_rfqs r ON r.id=q.factory_rfq_id AND r.tenant_id=q.tenant_id
