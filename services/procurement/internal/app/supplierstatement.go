@@ -128,6 +128,9 @@ func (s *Service) ListSupplierStatements(ctx context.Context, tenantID int64, ke
 			  coalesce((SELECT sum(a.amount)
 			      FROM payment_allocations a JOIN supplier_invoices si ON si.id=a.invoice_id
 			     WHERE a.tenant_id=$1 AND si.supplier_id=k.supplier_id AND a.currency=k.currency),0)::text AS paid_amount,
+			  -- 这一列**含供应商对账页手填的核销行**：它 JOIN 的是 purchase_orders，
+			  -- 不是 supplier_payments，手填行（payment_id 为空）天然进来。语义上
+			  -- 正确——「付在采购单上的钱」问的就是这个，不问钱是怎么记进来的。
 			  coalesce((SELECT sum(a.amount)
 			      FROM payment_allocations a JOIN purchase_orders po ON po.id=a.po_id
 			     WHERE a.tenant_id=$1 AND po.supplier_id=k.supplier_id AND a.currency=k.currency),0)::text AS advance_amount,
@@ -225,17 +228,21 @@ func (s *Service) GetSupplierStatement(ctx context.Context, tenantID, supplierID
 			UNION ALL
 			SELECT a.allocated_at,
 			       CASE WHEN a.reversal_of IS NOT NULL THEN 'PAYMENT_REVERSAL' ELSE 'PAYMENT' END,
-			       sp.payment_no, si.invoice_no, a.amount::text, a.reverse_reason
+			       coalesce(sp.payment_no, ''), si.invoice_no, a.amount::text, a.reverse_reason
 			  FROM payment_allocations a
-			  JOIN supplier_payments sp ON sp.id=a.payment_id
+			  LEFT JOIN supplier_payments sp ON sp.id=a.payment_id
 			  JOIN supplier_invoices si ON si.id=a.invoice_id
 			 WHERE a.tenant_id=$1 AND si.supplier_id=$2 AND a.currency=$3
 			UNION ALL
+			-- 付款单这一侧是 LEFT JOIN：自 00036 起核销行可以没有付款单
+			-- （供应商对账页手填的），INNER JOIN 会让它们整行消失，而上面
+			-- advance_amount 那一列是算进它们的——合计有这笔钱、明细里找不到，
+			-- 是最难查的那种账。手填行的 ref 留空，界面上就是「无付款单号」。
 			SELECT a.allocated_at,
 			       CASE WHEN a.reversal_of IS NOT NULL THEN 'ADVANCE_REVERSAL' ELSE 'ADVANCE' END,
-			       sp.payment_no, po.po_no, a.amount::text, a.reverse_reason
+			       coalesce(sp.payment_no, ''), po.po_no, a.amount::text, a.reverse_reason
 			  FROM payment_allocations a
-			  JOIN supplier_payments sp ON sp.id=a.payment_id
+			  LEFT JOIN supplier_payments sp ON sp.id=a.payment_id
 			  JOIN purchase_orders po ON po.id=a.po_id
 			 WHERE a.tenant_id=$1 AND po.supplier_id=$2 AND a.currency=$3
 		) t ORDER BY at, typ, ref`,

@@ -594,6 +594,20 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:payment:write")).Post("/api/supplier-payments", s.createSupplierPayment)
 		r.With(s.perm("procurement:payment:write")).Post("/api/supplier-payments/{id}/allocations", s.allocateSupplierPayment)
 		r.With(s.perm("procurement:payment:write")).Post("/api/supplier-payments/allocations/{allocationId}/reverse", s.reverseSupplierPaymentAllocation)
+		// 供应商对账：一张采购单一行，员工手填核销数字、手动确认完成。
+		// 读沿用既有的 recon:read；写是新的一个码——付款页那对码继续管付款
+		// 页。一页一对码，前端 auth.can 和这里逐字对得上，才不会出现
+		// 「看得见按钮、点下去 403」。
+		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-recon", s.listSupplierRecon)
+		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-recon/{id}/payments", s.listPurchaseOrderPayments)
+		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/payments", s.recordPurchaseOrderPayment)
+		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/payments/{allocationId}/reverse", s.reversePurchaseOrderPayment)
+		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/close", s.closePurchaseOrderPayment)
+		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/reopen", s.reopenPurchaseOrderPayment)
+		// 按供应商 × 币种的往来汇总。它和上面那组回答的是两个问题——
+		// 汇总回答「这家供应商总的欠着多少」，对账回答「这一张单认不认完」。
+		// 汇总是只读的，留着；菜单上改叫「供应商往来」，把「对账」这个名字
+		// 让给上面那一组，两个入口不能都叫同一个名字。
 		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-statements", s.listSupplierStatements)
 		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-statements/{id}", s.getSupplierStatement)
 		// Bank rows are payment data: one spend chain, one knob.

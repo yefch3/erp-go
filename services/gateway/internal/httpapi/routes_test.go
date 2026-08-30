@@ -223,3 +223,51 @@ func TestMyProfileIsNotBehindAPermissionButTheAdminAvatarRoutesAre(t *testing.T)
 		}
 	}
 }
+
+// 供应商对账那一组地址必须齐。少一条，页面上就有一个按钮点了没反应。
+func TestSupplierReconRoutesAreAllRegistered(t *testing.T) {
+	have := routeSet(t)
+	// 和 frontend/src/pages/SupplierReconPage.vue（待核销 / 已完成两页）
+	// 一一对应。
+	want := []string{
+		"GET /api/supplier-recon",                                  // 两页共用的列表，view=done 翻面
+		"GET /api/supplier-recon/{id}/payments",                    // 展开行看这张采购单的付款明细
+		"POST /api/supplier-recon/{id}/payments",                   // 「记一笔付款」（手填，不连流水）
+		"POST /api/supplier-recon/payments/{allocationId}/reverse", // 冲销记错的那一笔
+		"POST /api/supplier-recon/{id}/close",                      // 「确认核销完成」（转到已完成页）
+		"POST /api/supplier-recon/{id}/reopen",                     // 「撤销完成」（回到待核销页）
+	}
+	for _, w := range want {
+		if !have[w] {
+			t.Errorf("供应商对账这一组少了这条地址：%s", w)
+		}
+	}
+}
+
+// 这次改造唯一要保证「一动不动」的两组，反过来也要有断言钉着——
+// 供应商发票和供应商付款一直没有路由测试保护，而「不动」如果没人钉，
+// 下一次顺手清理就会把它们清掉。
+func TestSupplierPaymentAndInvoiceRoutesSurviveTheReconRework(t *testing.T) {
+	have := routeSet(t)
+	for _, w := range []string{
+		// 发票：降级成「凭证」是指对账页不读它，不是指这一组功能作废。
+		"GET /api/supplier-invoices",
+		"GET /api/supplier-invoices/{id}",
+		"POST /api/supplier-invoices",
+		"POST /api/supplier-invoices/{id}/attachment/presign",
+		"POST /api/supplier-invoices/{id}/attachment",
+		// 付款：「一笔电汇怎么拆到几张发票上」仍然要用，8 道金额守门都还在。
+		"GET /api/supplier-payments",
+		"GET /api/supplier-payments/{id}",
+		"POST /api/supplier-payments",
+		"POST /api/supplier-payments/{id}/allocations",
+		"POST /api/supplier-payments/allocations/{allocationId}/reverse",
+		// 按供应商 × 币种的往来汇总：只读，回答的是另一个问题，留着。
+		"GET /api/supplier-statements",
+		"GET /api/supplier-statements/{id}",
+	} {
+		if !have[w] {
+			t.Errorf("%s 不见了——这一组在供应商对账改造里是明确不动的", w)
+		}
+	}
+}

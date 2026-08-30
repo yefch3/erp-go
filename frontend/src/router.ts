@@ -91,6 +91,13 @@ export const router = createRouter({
         { path: 'purchase-orders', component: () => import('./pages/PurchaseOrdersPage.vue') },
         { path: 'supplier-invoices', component: () => import('./pages/SupplierInvoicesPage.vue') },
         { path: 'supplier-payments', component: () => import('./pages/SupplierPaymentsPage.vue') },
+        // 供应商对账：待核销 / 已完成是它下面的两个子页，靠 ?view=done 分。
+        // 一个服务一个菜单项——两条路径会在菜单上排成两行，而它们是同一件
+        // 事的两个视图。query 不影响 route.path，所以菜单高亮照常。
+        { path: 'supplier-recon', component: () => import('./pages/SupplierReconPage.vue') },
+        // 按供应商 × 币种的往来汇总。回答的是另一个问题（这家供应商总的
+        // 欠着多少），只读，留着；菜单上改叫「供应商往来」，把「对账」这个
+        // 名字让给上面那一条。
         { path: 'supplier-statements', component: () => import('./pages/SupplierStatementsPage.vue') },
         { path: 'bank-transactions', component: () => import('./pages/BankTransactionsPage.vue') },
         { path: 'emails', component: () => import('./pages/EmailsPage.vue') },
