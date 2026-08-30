@@ -166,6 +166,8 @@ export default {
     entryHint: 'Los importes los escribes tú; el sistema no los contrasta, salvo que una devolución no puede superar lo pagado',
     entryAmountRequired: 'Introduce un importe', entrySaved: 'Pago registrado',
     entrySource: 'Origen', entryByHand: 'Registro manual',
+    viaInvoice: '{n} de ello vía facturas',
+    reverseElsewhere: 'Revertir en pagos',
     entryFee: 'más {n} de comisiones (no cuentan como pagado)',
     entryBy: 'Registrado por', entryNoteEmpty: '—',
     entryReversal: 'Reversión', entryReverse: 'Revertir',

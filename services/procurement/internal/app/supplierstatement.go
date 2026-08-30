@@ -98,6 +98,18 @@ func (s *Service) ListSupplierStatements(ctx context.Context, tenantID int64, ke
 			 WHERE tenant_id=$1 AND status <> 'VOID'
 			UNION
 			SELECT supplier_id, currency FROM supplier_payments WHERE tenant_id=$1
+			UNION
+			-- 挂着钱的采购单，不论什么状态。
+			--
+			-- 上面第一路只收「已下单 / 部分收货 / 已收货」，那在供应商对账
+			-- 页出现之前是够的：钱只能从付款单出去，第三路必然把它捞回来。
+			-- 现在员工可以在**取消掉的**采购单上直接手记一笔（订金付了、单
+			-- 取消了、厂里还没退），那笔钱不产生任何付款单抬头——三路全部
+			-- 落空，这家供应商在往来汇总里整行消失，不是算少，是根本不出现。
+			SELECT po.supplier_id, po.currency FROM purchase_orders po
+			 WHERE po.tenant_id=$1
+			   AND EXISTS (SELECT 1 FROM payment_allocations a
+			                WHERE a.tenant_id=$1 AND a.po_id=po.id)
 		)
 		SELECT * FROM (
 			SELECT k.supplier_id, k.currency,

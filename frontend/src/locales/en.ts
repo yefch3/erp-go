@@ -166,6 +166,8 @@ export default {
     entryHint: 'You type the numbers; nothing is cross-checked — except that a refund cannot exceed what was paid',
     entryAmountRequired: 'Enter an amount', entrySaved: 'Payment recorded',
     entrySource: 'Source', entryByHand: 'Entered by hand',
+    viaInvoice: '{n} of it via invoices',
+    reverseElsewhere: 'Reverse on payments page',
     entryFee: 'plus {n} in fees (not counted as paid)',
     entryBy: 'Recorded by', entryNoteEmpty: '—',
     entryReversal: 'Reversal', entryReverse: 'Reverse',

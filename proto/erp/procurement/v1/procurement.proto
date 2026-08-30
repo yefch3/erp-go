@@ -1884,6 +1884,11 @@ message SupplierReconRow {
   string closed_note = 14;
   string closed_by_name = 15;
   string closed_at = 16;
+  // How much of paid_amount arrived through the older invoice route
+  // (apportioned back to this order by invoice line). Broken out so the
+  // paid figure can be explained: the detail rows on this page only show
+  // hand-entered money, and an unexplained gap gets re-entered by hand.
+  string invoice_paid_amount = 17;
 }
 
 // PurchaseOrderPaymentEntry is one movement of money on one order.

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -100,6 +101,19 @@ func TestSupplierReconIsDrivenByPeopleNotByArithmetic(t *testing.T) {
 	untouched := seedReconOrder(ctx, t, svc.pool, tenantID, "PO-RC-ZERO", "3000", "RECEIVED")
 	// 意向不是承诺：草稿从来没有钱离开过，不该出现在核销页上。
 	seedReconOrder(ctx, t, svc.pool, tenantID, "PO-RC-DRAFT", "99999", "DRAFT")
+	// 取消的单要分两种，因为草稿也能取消。真下出去过的（ordered_at 非空）
+	// 必须收进来——「订金付了、单取消了、那笔订金还没录」正是这时候要有人
+	// 了结它，而如果按「已付非零」筛，那笔钱就永远找不到入口录。
+	// 取消掉的草稿（ordered_at 为空）不收，否则队列里全是没意义的行。
+	// seedReconOrder 写的 ordered_at = now()，所以这张就是「真下出去过、
+	// 后来取消了」；下面那张把 ordered_at 清空，模拟取消掉的草稿。
+	seedReconOrder(ctx, t, svc.pool, tenantID, "PO-RC-CXL", "4000", "CANCELLED")
+	seedReconOrder(ctx, t, svc.pool, tenantID, "PO-RC-CXL-DRAFT", "7000", "CANCELLED")
+	if _, err := svc.pool.Exec(ctx, `
+		UPDATE purchase_orders SET ordered_at = NULL
+		 WHERE tenant_id=$1 AND po_no='PO-RC-CXL-DRAFT'`, tenantID); err != nil {
+		t.Fatal(err)
+	}
 
 	// 手填两笔：一张付得分毫不差，一张只付了个订金。
 	if _, err := svc.RecordPOPayment(ctx, tenantID, POPaymentInput{
@@ -122,6 +136,13 @@ func TestSupplierReconIsDrivenByPeopleNotByArithmetic(t *testing.T) {
 	}
 	if _, ok := pending["PO-RC-DRAFT"]; ok {
 		t.Fatal("草稿单不该出现在核销页上：从来没有钱离开过")
+	}
+	if _, ok := pending["PO-RC-CXL"]; !ok {
+		t.Fatal("真下出去过、后来取消的单必须在待核销页上——" +
+			"订金付了单取消了，那笔钱要有地方录、要有人了结")
+	}
+	if _, ok := pending["PO-RC-CXL-DRAFT"]; ok {
+		t.Fatal("取消掉的草稿不该出现：从来没有钱离开过")
 	}
 	if got := pending["PO-RC-EXACT"].PaidAmount; got != "5000.00" && got != "5000" {
 		t.Fatalf("已付应为 5000，实际 %q", got)
@@ -249,10 +270,17 @@ func TestRefundCannotExceedWhatWasActuallyPaid(t *testing.T) {
 	}
 }
 
-// 明细里同时住着两种行：手填行和改造前从付款单分配出来的预付行。冲销**必须
-// 按行的出身走不同的路**——老行要回填付款单的未分配余额，走错路会留下
-// 「付款单以为钱还占着、采购单上钱已经退回」的烂账，而且不报错。
-func TestReversingAPaymentBackedEntryGoesThroughTheOldPath(t *testing.T) {
+// 明细里同时住着两种行：手填行和改造前从付款单分配出来的预付行。**冲销老行
+// 不走这道门。**
+//
+// 冲一条老行不只是写个负数——它要动那张付款单的未分配余额，那是「付款」这件
+// 事，网关上归 procurement:payment:write 管；而对账页这道门只要
+// procurement:recon:write。在这里代劳，一个只勾了对账权限的角色就能改付款单
+// 的账，职责分离当场破掉，而且没有一行日志说发生过。
+//
+// 所以这条测试钉的是两件事：老行在这道门上被明确拒绝（并说出付款单号），
+// 以及它在自己那道门上照常冲得掉、余额照常弹回去。
+func TestReversingAPaymentBackedEntryIsRefusedHere(t *testing.T) {
 	ctx, svc, tenantID, cleanup := reconTestPool(t)
 	defer cleanup()
 	op := Operator{ID: 77, Name: "Finance"}
@@ -293,8 +321,16 @@ func TestReversingAPaymentBackedEntryGoesThroughTheOldPath(t *testing.T) {
 		t.Fatalf("两种行都该出现在明细里，实际 %+v", entries)
 	}
 
-	// 冲销老行：付款单的未分配余额必须弹回 3000。弹不回去 = 没走老路。
-	if _, err := svc.ReversePOPayment(ctx, tenantID, oldRow.AllocationID, "记错了", op); err != nil {
+	// 老行在对账页这道门上必须被拒，而且要说出付款单号——不说的话，
+	// 用户只知道「不行」，不知道该去哪儿。
+	_, err = svc.ReversePOPayment(ctx, tenantID, oldRow.AllocationID, "记错了", op)
+	wantAllocErr(t, err, "PR_POPAY_PAYMENT_BACKED")
+	if !strings.Contains(err.Error(), adv.PaymentNo) {
+		t.Fatalf("拒绝的时候要说出付款单号 %q，实际 %v", adv.PaymentNo, err)
+	}
+	// 而它在自己那道门上照常冲得掉，付款单的未分配余额跟着弹回 3000。
+	if _, err := svc.ReverseSupplierPaymentAllocation(ctx, tenantID,
+		oldRow.AllocationID, "记错了", op); err != nil {
 		t.Fatal(err)
 	}
 	after, err := svc.GetSupplierPayment(ctx, tenantID, adv.ID)
@@ -302,9 +338,7 @@ func TestReversingAPaymentBackedEntryGoesThroughTheOldPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	if after.Unallocated != "3000.00" && after.Unallocated != "3000" {
-		t.Fatalf("冲销挂付款单的行之后，付款单未分配余额应弹回 3000，实际 %q——"+
-			"没弹回去说明没有转交给 ReverseSupplierPaymentAllocation",
-			after.Unallocated)
+		t.Fatalf("冲销之后付款单未分配余额应弹回 3000，实际 %q", after.Unallocated)
 	}
 	// 冲销手填行：不该去碰任何付款单。
 	if _, err := svc.ReversePOPayment(ctx, tenantID, newRow.AllocationID, "也记错了", op); err != nil {
@@ -418,4 +452,163 @@ func TestSupplierReconRefusesToShrinkQuietly(t *testing.T) {
 		POID: full.POID, Amount: "100", PaidAt: "2026-08-20",
 	}, op)
 	wantAllocErr(t, err, "PR_RECON_SCOPE_LIMITED")
+}
+
+// **走发票那条路的钱也得算进已付。**
+//
+// payment_allocations 上有 CHECK((invoice_id IS NOT NULL) <> (po_id IS NOT NULL))：
+// 挂发票的核销行 po_id 必然为空。只按 po_id 求和的话，一张通过「录发票 →
+// 付款单核销到发票」付清的采购单，在对账页上恒显示「一分未付」。
+//
+// 而这条路并没有被这次改造取消——供应商发票页和供应商付款页都还在，改造前
+// 的存量数据更是全走这条路。后果不只是数字难看：员工照着那个 0 再手填一遍，
+// 同一笔钱在账上出现两次；「确认完成」还会把那个错的差额永久快照进记录。
+func TestInvoicePathMoneyCountsAsPaid(t *testing.T) {
+	ctx, svc, tenantID, cleanup := reconTestPool(t)
+	defer cleanup()
+	op := Operator{ID: 77, Name: "Finance"}
+	poID := seedReconOrder(ctx, t, svc.pool, tenantID, "PO-RC-INV", "5000", "ORDERED")
+
+	// 老路走全程：录一张挂着这张采购单的发票，建付款单，全额核销到发票。
+	var invID int64
+	if err := svc.pool.QueryRow(ctx, `
+		INSERT INTO supplier_invoices
+		  (tenant_id, supplier_id, supplier_name, invoice_no, currency, total_amount, invoice_date)
+		VALUES ($1, 9, 'Mill', 'INV-RC-1', 'USD', 5000, '2026-08-01')
+		RETURNING id`, tenantID).Scan(&invID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.pool.Exec(ctx, `
+		INSERT INTO supplier_invoice_lines (tenant_id, invoice_id, po_id, description, amount)
+		VALUES ($1, $2, $3, '全额', 5000)`, tenantID, invID, poID); err != nil {
+		t.Fatal(err)
+	}
+	settle, err := svc.CreateSupplierPayment(ctx, tenantID, SupplierPaymentInput{
+		SupplierID: 9, SupplierName: "Mill", PaymentType: "SETTLEMENT",
+		Currency: "USD", Amount: "5000", PaidAt: "2026-08-20", Method: "WIRE",
+	}, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AllocateSupplierPayment(ctx, tenantID, settle.ID,
+		[]PaymentAllocationInput{{InvoiceID: invID, Amount: "5000"}}, op); err != nil {
+		t.Fatal(err)
+	}
+
+	row, ok := reconRows(ctx, t, svc, tenantID, false, op)["PO-RC-INV"]
+	if !ok {
+		t.Fatal("这张单该在待核销页上——没人确认过完成")
+	}
+	if got := row.PaidAmount; got != "5000.00" && got != "5000" {
+		t.Fatalf("已付应为 5000（钱走的是发票那条路，但它确实付了），实际 %q——"+
+			"显示 0 的话员工会照着再手填一遍，同一笔钱记两次", got)
+	}
+	if got := row.OpenAmount; got != "0.00" && got != "0" {
+		t.Fatalf("未付应为 0，实际 %q", got)
+	}
+	// 单列出来，让这个数解释得清：员工在明细里只看得见手填行，剩下的差额
+	// 不说明来处就会被当成漏记。
+	if got := row.InvoicePaidAmount; got != "5000.00" && got != "5000" {
+		t.Fatalf("其中走发票的应为 5000，实际 %q", got)
+	}
+
+	// 跨采购单的发票按行的归属分摊，不整笔算给其中一张。
+	poA := seedReconOrder(ctx, t, svc.pool, tenantID, "PO-RC-SPLIT-A", "3000", "ORDERED")
+	poB := seedReconOrder(ctx, t, svc.pool, tenantID, "PO-RC-SPLIT-B", "1000", "ORDERED")
+	var splitInv int64
+	if err := svc.pool.QueryRow(ctx, `
+		INSERT INTO supplier_invoices
+		  (tenant_id, supplier_id, supplier_name, invoice_no, currency, total_amount, invoice_date)
+		VALUES ($1, 9, 'Mill', 'INV-RC-2', 'USD', 4000, '2026-08-02')
+		RETURNING id`, tenantID).Scan(&splitInv); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.pool.Exec(ctx, `
+		INSERT INTO supplier_invoice_lines (tenant_id, invoice_id, po_id, description, amount)
+		VALUES ($1,$2,$3,'A',3000), ($1,$2,$4,'B',1000)`,
+		tenantID, splitInv, poA, poB); err != nil {
+		t.Fatal(err)
+	}
+	part, err := svc.CreateSupplierPayment(ctx, tenantID, SupplierPaymentInput{
+		SupplierID: 9, SupplierName: "Mill", PaymentType: "SETTLEMENT",
+		Currency: "USD", Amount: "2000", PaidAt: "2026-08-21", Method: "WIRE",
+	}, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AllocateSupplierPayment(ctx, tenantID, part.ID,
+		[]PaymentAllocationInput{{InvoiceID: splitInv, Amount: "2000"}}, op); err != nil {
+		t.Fatal(err)
+	}
+	after := reconRows(ctx, t, svc, tenantID, false, op)
+	if got := after["PO-RC-SPLIT-A"].PaidAmount; got != "1500.00" && got != "1500" {
+		t.Fatalf("A 单应分到 2000 × 3000/4000 = 1500，实际 %q", got)
+	}
+	if got := after["PO-RC-SPLIT-B"].PaidAmount; got != "500.00" && got != "500" {
+		t.Fatalf("B 单应分到 2000 × 1000/4000 = 500，实际 %q", got)
+	}
+}
+
+// 金额是员工手打的，两位小数之外的输入不能静默改数，也不能变成一个 500。
+func TestAmountInputIsCheckedBeforeItReachesTheColumn(t *testing.T) {
+	ctx, svc, tenantID, cleanup := reconTestPool(t)
+	defer cleanup()
+	op := Operator{ID: 77, Name: "Finance"}
+	poID := seedReconOrder(ctx, t, svc.pool, tenantID, "PO-RC-PREC", "1000", "ORDERED")
+
+	for _, bad := range []struct{ amount, code string }{
+		// 0.004 舍成 0.00 会撞 CHECK (amount <> 0)，0.006 会被静默存成 0.01。
+		{"0.004", "PR_POPAY_AMOUNT_PRECISION"},
+		{"0.006", "PR_POPAY_AMOUNT_PRECISION"},
+		{"1e20", "PR_POPAY_AMOUNT_TOO_LARGE"},
+		{"0", "PR_POPAY_AMOUNT_INVALID"},
+		{"-5", "PR_POPAY_AMOUNT_INVALID"},
+		{"abc", "PR_POPAY_AMOUNT_INVALID"},
+	} {
+		_, err := svc.RecordPOPayment(ctx, tenantID, POPaymentInput{
+			POID: poID, Amount: bad.amount, PaidAt: "2026-08-20",
+		}, op)
+		wantAllocErr(t, err, bad.code)
+	}
+	// 正好两位小数照常收。
+	if _, err := svc.RecordPOPayment(ctx, tenantID, POPaymentInput{
+		POID: poID, Amount: "12.34", PaidAt: "2026-08-20",
+	}, op); err != nil {
+		t.Fatalf("两位小数应当放行：%v", err)
+	}
+}
+
+// 手填在**取消掉的**采购单上的钱，不能从供应商往来汇总里整行消失。
+//
+// 那张汇总的 keys 原来只从「已下单/部分收货/已收货」的采购单、非作废发票、
+// 付款单三处取键。手填行三处都不产生键——于是这家供应商在汇总里根本不出现，
+// 不是算少，是整行没有。
+func TestHandEnteredMoneyOnACancelledOrderStillShowsInTheLedger(t *testing.T) {
+	ctx, svc, tenantID, cleanup := reconTestPool(t)
+	defer cleanup()
+	op := Operator{ID: 77, Name: "Finance"}
+	poID := seedReconOrder(ctx, t, svc.pool, tenantID, "PO-RC-GHOST", "4000", "CANCELLED")
+	if _, err := svc.RecordPOPayment(ctx, tenantID, POPaymentInput{
+		POID: poID, Amount: "3000", PaidAt: "2026-08-20", Note: "订金，单后来取消了",
+	}, op); err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := svc.ListSupplierStatements(ctx, tenantID, "", op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, v := range all {
+		if v.SupplierID == 9 && v.Currency == "USD" {
+			found = true
+			if v.AdvanceAmount != "3000.00" && v.AdvanceAmount != "3000" {
+				t.Fatalf("预付应为 3000，实际 %q", v.AdvanceAmount)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("这家供应商必须出现在往来汇总里——3000 块真的付出去了，" +
+			"不能因为那张单被取消、又没有付款单抬头就整行消失")
+	}
 }

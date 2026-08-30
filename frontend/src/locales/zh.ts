@@ -166,6 +166,8 @@ export default {
     entryHint: '数字由你填，系统不核对——只有一条：退款不能超过这张单已付出去的钱',
     entryAmountRequired: '请填金额', entrySaved: '已记下这一笔',
     entrySource: '来源', entryByHand: '手工记账',
+    viaInvoice: '其中 {n} 走发票核销',
+    reverseElsewhere: '到付款页冲销',
     entryFee: '另含手续费 {n}（不计入已付）',
     entryBy: '记账人', entryNoteEmpty: '—',
     entryReversal: '冲销', entryReverse: '冲销',
@@ -174,7 +176,7 @@ export default {
     figOrdered: '订单额', figPaid: '已付', figOpen: '未付',
   },
   supplierStatements: {
-    eyebrow: 'RECONCILIATION', title: '供应商对账', subtitle: '订单、收货、发票、付款五组数字并排——差在哪，一屏看清',
+    eyebrow: 'SUPPLIER LEDGER', title: '供应商往来', subtitle: '订单、收货、发票、付款五组数字并排——一家供应商总的欠着多少',
     search: '搜索供应商', supplier: '供应商', currency: '币种',
     ordered: '订单金额', received: '已收金额', exception: '异常扣减', invoiced: '已开票',
     paid: '已付款', advance: '预付未冲抵', unallocated: '未核销付款', balance: '未付余额',

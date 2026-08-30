@@ -81,10 +81,14 @@
                 <el-table-column :label="t('supplierRecon.entryBy')" width="160">
                   <template #default="{ row: e }">{{ e.allocatedBy }}<div class="sub">{{ e.allocatedAt }}</div></template>
                 </el-table-column>
-                <el-table-column width="90">
+                <el-table-column width="120">
                   <template #default="{ row: e }">
+                    <!-- 挂付款单的老行不从这道门冲：那要动付款单的未分配余额，
+                         归 procurement:payment:write 管，而这一页只要 recon:write。
+                         按钮直接不给，比点下去报错好。 -->
+                    <span v-if="e.paymentNo" class="sub">{{ t('supplierRecon.reverseElsewhere') }}</span>
                     <el-button
-                      v-if="canWrite && !Number(e.reversalOf) && !reversedIds(row).has(String(e.allocationId))"
+                      v-else-if="canWrite && !Number(e.reversalOf) && !reversedIds(row).has(String(e.allocationId))"
                       link type="danger" @click="reverseEntry(row, e)"
                     >{{ t('supplierRecon.entryReverse') }}</el-button>
                   </template>
@@ -96,7 +100,11 @@
         </el-table-column>
         <el-table-column :label="t('supplierRecon.order')" min-width="190">
           <template #default="{ row }">
-            <router-link :to="`/purchase-orders?keyword=${row.poNo}`" class="doc-link">{{ row.poNo }}</router-link>
+            <!-- 只有真打得开采购订单页的人才给链接。本页的主要使用者是财务，
+                 而财务没有 procurement:order:read——给所有人挂链接等于每一行
+                 都放了一个点下去必然 403 的入口。 -->
+            <router-link v-if="canOpenOrders" :to="`/purchase-orders?keyword=${row.poNo}`" class="doc-link">{{ row.poNo }}</router-link>
+            <span v-else class="po-no">{{ row.poNo }}</span>
             <div class="sub">{{ row.supplierName }}</div>
           </template>
         </el-table-column>
@@ -109,9 +117,14 @@
             <div v-else class="sub">{{ t('supplierRecon.ofTotal', { total: row.orderedAmount }) }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('supplierRecon.paid')" width="140" align="right">
+        <el-table-column :label="t('supplierRecon.paid')" width="150" align="right">
           <template #default="{ row }">
             <span class="num" :class="{ dim: Number(row.paidAmount) === 0 }">{{ row.paidAmount }}</span>
+            <!-- 走发票那条路的钱在明细里看不见（那些核销行挂在发票上，不挂
+                 采购单）。不说明来处，这段差额会被当成漏记而重填一遍。 -->
+            <div v-if="Number(row.invoicePaidAmount)" class="sub">
+              {{ t('supplierRecon.viaInvoice', { n: row.invoicePaidAmount }) }}
+            </div>
           </template>
         </el-table-column>
         <el-table-column :label="t('supplierRecon.orderStatus')" width="130">
@@ -246,6 +259,8 @@ const auth = useAuthStore()
 // 和网关那行 s.perm("procurement:recon:write") 逐字一致。差一个字就是
 // 「看得见按钮、点下去 403」，或者更糟，反过来。
 const canWrite = auth.can('procurement:recon:write')
+// 采购订单页自己的门。财务通常没有，所以行上的单号对它是纯文本。
+const canOpenOrders = auth.can('procurement:order:read')
 
 interface Row {
   poId: string
@@ -260,6 +275,8 @@ interface Row {
   orderedAmount: string
   paidAmount: string
   openAmount: string
+  // paidAmount 里走「发票 → 付款单核销」那条老路进来的部分。
+  invoicePaidAmount: string
   closedCategory: string
   closedNote: string
   closedByName: string
@@ -323,6 +340,12 @@ async function load() {
     })
     rows.value = d.items ?? []
     total.value = Number(d.total ?? 0)
+  } catch {
+    // 失败时必须清空，不能把上一次的数据留在表上。表头和操作列已经按
+    // 当前页签渲染了——留着旧数据，就会在「已完成」页里列出从没确认过的
+    // 单，每行挂着一个「撤销完成」按钮。错误提示由 api 层统一弹。
+    rows.value = []
+    total.value = 0
   } finally {
     loading.value = false
   }
@@ -376,6 +399,10 @@ function onExpand(row: Row, expanded: Row[]) {
 function openEntry(row: Row) {
   entryRow.value = row
   entryForm.value = { amount: '', isRefund: false, paidAt: '', note: '' }
+  // 换新键：一次对话框就是一次意图。只在成功后 reset 是不够的——上一次
+  // 提交如果响应丢在路上（键还留着），下一笔**真的是新的一笔**付款会被
+  // 网关当成重放静默丢掉，而页面照样弹「已记下」。
+  payIdem.reset()
   entryOpen.value = true
 }
 
@@ -563,6 +590,9 @@ onMounted(() => {
 }
 .num.dim {
   color: var(--el-text-color-placeholder);
+}
+.po-no {
+  font-variant-numeric: tabular-nums;
 }
 .doc-link {
   color: var(--el-color-primary);

@@ -45,6 +45,11 @@ type SupplierReconRow struct {
 	OrderedAmount string
 	PaidAmount    string
 	OpenAmount    string
+	// PaidAmount 里有多少是走「发票 → 付款单核销」那条老路进来的（按发票行
+	// 归属分摊到这张采购单）。单列出来是为了让已付这个数**解释得清**：
+	// 员工在这一页只看得见自己手填的那些行，剩下的差额不说明来处，就会被
+	// 当成漏记而重填一遍，同一笔钱在账上出现两次。
+	InvoicePaidAmount string
 	// 完成确认（只在已完成视图里非空）：为什么算完了、谁说的、什么时候。
 	ClosedCategory string
 	ClosedNote     string
@@ -98,6 +103,10 @@ var poClosureCategories = map[string]bool{
 	"SETTLED": true, "LOSS": true, "ROUNDING": true, "CANCELLED": true, "OTHER": true,
 }
 
+// maxMoney 是 NUMERIC(18,2) 装得下的上限（16 位整数部分）。挡在应用层，
+// 是为了把「多打了几个零」翻成一句人话，而不是一个 22003 加 500。
+var maxMoney = decimal.RequireFromString("9999999999999999.99")
+
 // reconSelect 是清单和单行详情共用的那段 SELECT。两处共用一份，是因为记完
 // 一笔钱之后界面要拿到「这一行现在长什么样」，那必须和列表算的是同一个数。
 const reconSelect = `
@@ -106,8 +115,10 @@ const reconSelect = `
 	       coalesce(po.ordered_at::date::text, '')          AS ordered_date,
 	       coalesce(po.expected_date::text, '')             AS expected_date,
 	       po.total_amount::text                            AS ordered_amount,
-	       coalesce(p.paid, 0)::text                        AS paid_amount,
-	       (po.total_amount - coalesce(p.paid, 0))::text    AS open_amount,
+	       (coalesce(p.paid, 0) + coalesce(ip.paid, 0))::text        AS paid_amount,
+	       (po.total_amount - coalesce(p.paid, 0)
+	                        - coalesce(ip.paid, 0))::text            AS open_amount,
+	       coalesce(ip.paid, 0)::text                       AS invoice_paid_amount,
 	       coalesce(cl.category, '')                        AS closed_category,
 	       coalesce(cl.note, '')                            AS closed_note,
 	       coalesce(cl.closed_by_name, '')                  AS closed_by_name,
@@ -115,6 +126,16 @@ const reconSelect = `
 
 // reconFrom：已付是**算出来的**，不是存的状态——冲销是负行，求和天然反映
 // 当下的真相。只求 amount 不含 fee_amount，和供应商往来汇总的预付列同口径。
+//
+// **已付要把两条路的钱都算进来。** payment_allocations 上有一条
+// CHECK((invoice_id IS NOT NULL) <> (po_id IS NOT NULL))：挂发票的核销行
+// po_id 必然为空。所以只按 po_id 求和的话，一张通过「录发票 → 付款单核销
+// 到发票」付清的采购单，在这一页上会恒显示「一分未付」——而这条路并没有
+// 被这次改造取消，供应商发票页和供应商付款页都还在。
+//
+// 后果不只是数字难看：员工照着那个 0 再手填一遍，同一笔钱在账上就出现两次；
+// 而「确认完成」会把那个错的差额永久快照进 closure 记录。所以 ip 这条腿是
+// 必须的，不是锦上添花。
 const reconFrom = `
 	  FROM purchase_orders po
 	  LEFT JOIN (
@@ -123,16 +144,52 @@ const reconFrom = `
 	       WHERE tenant_id = $1 AND po_id IS NOT NULL
 	       GROUP BY po_id
 	  ) p ON p.po_id = po.id
+	  -- 走发票那条路的钱，按发票行的采购单归属分摊回来。
+	  --
+	  -- 分摊而不是全额算给某一张单：一张发票可以跨几张采购单开（发票行各自
+	  -- 带 po_id），把整笔核销算给其中一张会凭空多出钱。分母用发票**全部**
+	  -- 行的合计，包含 po_id 为空的杂项行——那部分本来就不属于任何采购单，
+	  -- 不该被摊进来。
+	  LEFT JOIN (
+	      SELECT l.po_id, round(sum(a.amount * l.po_amount / l.inv_total), 2) AS paid
+	        FROM payment_allocations a
+	        JOIN (
+	            SELECT il.invoice_id, il.po_id, sum(il.amount) AS po_amount,
+	                   (SELECT sum(x.amount) FROM supplier_invoice_lines x
+	                     WHERE x.tenant_id = il.tenant_id
+	                       AND x.invoice_id = il.invoice_id) AS inv_total
+	              FROM supplier_invoice_lines il
+	             WHERE il.tenant_id = $1 AND il.po_id IS NOT NULL
+	             GROUP BY il.tenant_id, il.invoice_id, il.po_id
+	        ) l ON l.invoice_id = a.invoice_id AND l.inv_total <> 0
+	       WHERE a.tenant_id = $1 AND a.invoice_id IS NOT NULL
+	       GROUP BY l.po_id
+	  ) ip ON ip.po_id = po.id
 	  LEFT JOIN purchase_order_payment_closures cl
 	         ON cl.tenant_id = po.tenant_id AND cl.po_id = po.id
 	        AND cl.revoked_at IS NULL`
 
 // reconOrderScope 挑出「钱真的可能出去过」的单。DRAFT / PENDING_APPROVAL /
-// REJECTED 是意向，从来没有钱离开过；CANCELLED 只有在已经付过钱的时候才需要
-// 有人来了结它（退款、或者认下这笔损失）。
+// REJECTED 是意向，从来没有钱离开过。
+//
+// CANCELLED 要分两种，因为**草稿也能取消**（CancelOrder 接受 DRAFT / ORDERED /
+// REJECTED 三种前置状态）。分界线是 ordered_at：它在采购单真正下出去的那一刻
+// 写一次，此后再没人清过它，取消也不清。
+//
+//	· ordered_at 非空 = 这张单真的下出去过 → 收进来，**哪怕一笔钱都还没录**。
+//	  「订金付了、单取消了、厂里还没退」正是这时候要有人来了结它；如果按
+//	  「已付非零」来筛，那笔还没录进系统的订金就永远找不到入口录——想记一笔
+//	  钱，前提是那张单先出现在页面上。
+//	· ordered_at 为空 = 取消掉的草稿，从来没有钱 → 不收，否则队列里全是
+//	  没意义的行。
+//
+// 后面那句 paid <> 0 是兜底：万一有历史数据 ordered_at 是空的却挂着钱，
+// 它也得有人来了结，不能因为一列元数据缺失就从账上消失。
 const reconOrderScope = `
 	   AND (po.status IN ` + committedOrders + `
-	        OR (po.status = 'CANCELLED' AND coalesce(p.paid, 0) <> 0))`
+	        OR (po.status = 'CANCELLED'
+	            AND (po.ordered_at IS NOT NULL
+	                 OR coalesce(p.paid, 0) <> 0 OR coalesce(ip.paid, 0) <> 0)))`
 
 // ListSupplierRecon 列出采购订单，按有没有人确认完成分成两页。
 //
@@ -174,7 +231,7 @@ func (s *Service) ListSupplierRecon(ctx context.Context, tenantID int64,
 		var r SupplierReconRow
 		if err := rows.Scan(&r.POID, &r.PONo, &r.SupplierID, &r.SupplierName,
 			&r.Currency, &r.OrderStatus, &r.BuyerName, &r.OrderedDate, &r.ExpectedDate,
-			&r.OrderedAmount, &r.PaidAmount, &r.OpenAmount,
+			&r.OrderedAmount, &r.PaidAmount, &r.OpenAmount, &r.InvoicePaidAmount,
 			&r.ClosedCategory, &r.ClosedNote, &r.ClosedByName, &r.ClosedAt,
 			&total); err != nil {
 			return nil, 0, err
@@ -192,7 +249,7 @@ func (s *Service) reconRowOf(ctx context.Context, tenantID, poID int64) (Supplie
 	 WHERE po.tenant_id = $1 AND po.id = $2`, tenantID, poID).
 		Scan(&r.POID, &r.PONo, &r.SupplierID, &r.SupplierName,
 			&r.Currency, &r.OrderStatus, &r.BuyerName, &r.OrderedDate, &r.ExpectedDate,
-			&r.OrderedAmount, &r.PaidAmount, &r.OpenAmount,
+			&r.OrderedAmount, &r.PaidAmount, &r.OpenAmount, &r.InvoicePaidAmount,
 			&r.ClosedCategory, &r.ClosedNote, &r.ClosedByName, &r.ClosedAt)
 	if err == pgx.ErrNoRows {
 		return SupplierReconRow{}, apierr.NotFound("PR_POPAY_PO_NOT_FOUND", "采购单不存在")
@@ -213,6 +270,18 @@ func (s *Service) RecordPOPayment(ctx context.Context, tenantID int64,
 	if err != nil || !amount.IsPositive() {
 		return SupplierReconRow{}, apierr.Invalid("PR_POPAY_AMOUNT_INVALID",
 			"金额必须是大于零的数字——退款也填正数，选「退款」即可")
+	}
+	// 库里那一列是 NUMERIC(18,2)。不在这里挡住的话，两位以外的小数会被
+	// **静默四舍五入**（填 0.006 存成 0.01，员工不知道自己填的数被改了），
+	// 而 0.004 舍成 0.00 会撞 CHECK (amount <> 0)、超长的数会撞
+	// numeric field overflow——两种都是一句驱动层英文加一个 500。
+	if amount.Exponent() < -2 {
+		return SupplierReconRow{}, apierr.Invalid("PR_POPAY_AMOUNT_PRECISION",
+			"金额最多两位小数——多出来的位数会被四舍五入，那是在替你改数字")
+	}
+	if amount.GreaterThan(maxMoney) {
+		return SupplierReconRow{}, apierr.Invalid("PR_POPAY_AMOUNT_TOO_LARGE",
+			"金额超出账本能记的范围——请确认是不是多打了几个零")
 	}
 	paidAt := strings.TrimSpace(in.PaidAt)
 	if paidAt != "" {
@@ -335,23 +404,24 @@ func (s *Service) ReversePOPayment(ctx context.Context, tenantID, allocID int64,
 			"这笔核销挂在发票上，不在采购单上——请到供应商付款页冲销")
 	}
 
-	// **挂着付款单的老行必须走老路。**
+	// **挂着付款单的老行不从这道门走。**
 	//
 	// 这张采购单的明细里同时住着两种行：手填行（payment_id 为空）和改造前
-	// 从付款单分配出来的预付行。界面上它们长得一样、冲销按钮也一样，但老行
-	// 的冲销要多做两件事，缺一件都会留下查不出来的烂账：
+	// 从付款单分配出来的预付行。冲一条老行不只是写个负数——它要动那张付款单
+	// 的未分配余额，那是**付款**这件事，网关上归 procurement:payment:write 管。
+	// 而这道门只要 procurement:recon:write。
 	//
-	//	· AuthorizeSupplierPayment——付款单有它自己的可见范围
-	//	· 冲完之后付款单的未分配余额要跟着弹回去，否则那笔钱在采购单上
-	//	  已经退回、在付款单上却还占着，两本账各说各话且不报错
-	//
-	// 这两件 ReverseSupplierPaymentAllocation 都做了，所以原样转过去，而不是
-	// 在这里复制一遍（复制必然漏，而且下次改只会改一边）。
+	// 如果在这里代劳，一个只勾了对账权限的角色就能改付款单的账，职责分离
+	// 当场破掉，而且没有任何一行日志说发生过这件事。所以这里明确拒绝，并
+	// 把付款单号说出来，让人知道该去哪儿。冲销老行的正路一直都在，就在
+	// 供应商付款页上，那条路自带 AuthorizeSupplierPayment 和余额回填。
 	if paymentID != 0 {
-		if _, err := s.ReverseSupplierPaymentAllocation(ctx, tenantID, allocID, reason, op); err != nil {
-			return SupplierReconRow{}, err
-		}
-		return s.reconRowOf(ctx, tenantID, poID)
+		var paymentNo string
+		_ = s.pool.QueryRow(ctx,
+			`SELECT payment_no FROM supplier_payments WHERE tenant_id=$1 AND id=$2`,
+			tenantID, paymentID).Scan(&paymentNo)
+		return SupplierReconRow{}, apierr.Invalid("PR_POPAY_PAYMENT_BACKED",
+			"这笔核销挂着付款单 "+paymentNo+"——请到供应商付款页冲销，那里才管得了付款单的余额")
 	}
 
 	if reversalOf != 0 {

@@ -97,7 +97,8 @@ func reconRowProto(v app.SupplierReconRow) *prv1.SupplierReconRow {
 		Currency: v.Currency, OrderStatus: v.OrderStatus, BuyerName: v.BuyerName,
 		OrderedDate: v.OrderedDate, ExpectedDate: v.ExpectedDate,
 		OrderedAmount: v.OrderedAmount, PaidAmount: v.PaidAmount, OpenAmount: v.OpenAmount,
-		ClosedCategory: v.ClosedCategory, ClosedNote: v.ClosedNote,
+		InvoicePaidAmount: v.InvoicePaidAmount,
+		ClosedCategory:    v.ClosedCategory, ClosedNote: v.ClosedNote,
 		ClosedByName: v.ClosedByName, ClosedAt: v.ClosedAt,
 	}
 }
