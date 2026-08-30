@@ -10,7 +10,7 @@
     </header>
     <section class="list-card">
       <div class="context-bar">
-        <div><span class="context-dot"></span><strong>{{ isSalesView ? '客户协作台账' : '采购执行台账' }}</strong><span>{{ isSalesView ? '跟踪客户需求到报价反馈的全过程' : '集中处理询价、比价与成本方案' }}</span></div>
+        <div><span class="context-dot"></span><strong>{{ isSalesView ? '客户协作台账' : '采购执行台账' }}</strong><span>{{ isSalesView ? '跟踪客户需求到报价反馈的全过程' : '集中处理询价、比价、经理方案与补充任务' }}</span></div>
         <small>{{ isSalesView ? '采购底价与供应商操作仅在采购侧可见' : '客户沟通与报价反馈由销售侧跟进' }}</small>
       </div>
       <nav v-if="!isSalesView" class="stage-nav" aria-label="寻源阶段筛选">
@@ -23,8 +23,8 @@
       </div>
       <el-table v-if="isSalesView" v-loading="loading" class="sales-table" :data="rows" @row-click="openCase">
         <el-table-column label="客户询盘" min-width="300"><template #default="{ row }"><strong class="customer-name">{{ row.customerName || '未关联客户' }}</strong><small>{{ row.caseNo }} · {{ row.title || '未命名询盘' }}</small></template></el-table-column>
-        <el-table-column label="协作进度" min-width="240"><template #default="{ row }"><el-tag effect="light" :type="stageTagType(row.status)">{{ salesStageLabel(row.status) }}</el-tag><small class="next-action">{{ waitingFor(row.status) }}</small></template></el-table-column>
-        <el-table-column label="销售关注" min-width="190"><template #default="{ row }"><span>{{ salesAttention(row.status) }}</span><el-tag v-if="isStale(row)" size="small" type="warning" class="stale-tag">久未更新</el-tag></template></el-table-column>
+        <el-table-column label="协作进度" min-width="240"><template #default="{ row }"><el-tag effect="light" :type="stageTagType(row.status)">{{ salesStageLabel(row) }}</el-tag><small class="next-action">{{ waitingForRow(row) }}</small></template></el-table-column>
+        <el-table-column label="销售关注" min-width="190"><template #default="{ row }"><span>{{ salesAttention(row) }}</span><el-tag v-if="isStale(row)" size="small" type="warning" class="stale-tag">久未更新</el-tag></template></el-table-column>
         <el-table-column prop="ownerName" label="销售负责人" width="140" />
         <el-table-column label="最近进展" width="185"><template #default="{ row }">{{ formatTime(row.updatedAt) }}</template></el-table-column>
         <el-table-column label="操作" width="112" fixed="right" align="right"><template #default="{ row }"><el-button link type="primary" @click.stop="openCase(row)">查看询盘 →</el-button></template></el-table-column>
@@ -33,8 +33,9 @@
       <el-table v-else v-loading="loading" class="procurement-table" :data="rows" stripe @row-click="openCase">
         <el-table-column label="寻源任务" min-width="245"><template #default="{ row }"><strong>{{ row.caseNo }}</strong><small>{{ row.title || '未命名询盘' }}</small></template></el-table-column>
         <el-table-column label="客户需求" min-width="180"><template #default="{ row }">{{ row.customerName || '—' }}</template></el-table-column>
-        <el-table-column label="寻源阶段" width="155"><template #default="{ row }"><el-tag effect="dark" :type="stageTagType(row.status)">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
-        <el-table-column label="下一步采购动作" min-width="220"><template #default="{ row }"><strong class="procurement-next">{{ waitingFor(row.status) }}</strong></template></el-table-column>
+        <el-table-column label="寻源阶段" width="165"><template #default="{ row }"><el-tag effect="dark" :type="stageTagType(row.status)">{{ procurementStageLabel(row) }}</el-tag></template></el-table-column>
+        <el-table-column label="下一步采购动作" min-width="220"><template #default="{ row }"><strong class="procurement-next">{{ waitingForRow(row) }}</strong></template></el-table-column>
+        <el-table-column label="补充任务" min-width="155"><template #default="{ row }"><el-button v-if="Number(row.myOpenReworkCount)>0" link type="warning" @click.stop="openReworks(row)">待我处理 {{ row.myOpenReworkCount }}</el-button><small v-if="Number(row.openReworkCount)>Number(row.myOpenReworkCount)">团队另有 {{ Number(row.openReworkCount)-Number(row.myOpenReworkCount) }} 项</small><span v-if="!Number(row.openReworkCount)">—</span></template></el-table-column>
         <el-table-column prop="ownerName" label="负责销售" width="140" />
         <el-table-column label="最近更新" width="175"><template #default="{ row }">{{ formatTime(row.updatedAt) }}</template></el-table-column>
         <el-table-column label="异常" width="110"><template #default="{ row }"><el-tag v-if="isStale(row)" type="warning">{{ t('sourcing.stale') }}</el-tag><span v-else>—</span></template></el-table-column>
@@ -47,12 +48,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { get } from '../api'
+import { onLive } from '../live'
 
-interface SourcingCase { id:string; caseNo:string; customerName:string; title:string; ownerName:string; status:string; updatedAt:string }
+interface SourcingCase { id:string; caseNo:string; customerName:string; title:string; ownerName:string; status:string; handoffStatus:string; openReworkCount:number|string; myOpenReworkCount:number|string; updatedAt:string }
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
@@ -83,6 +85,7 @@ function reload(){page.value=1;void load()}
 function setStatus(value:string){status.value=value;reload()}
 function detailPath(caseID:string){return isSalesView.value ? `/sales/inquiries/${caseID}` : `/procurement/sourcing/${caseID}`}
 function openCase(row:SourcingCase){void router.push(detailPath(row.id))}
+function openReworks(row:SourcingCase){void router.push({path:detailPath(row.id),query:{tab:'plans'}})}
 function formatTime(value:string){return value?new Date(value).toLocaleString():'—'}
 function isStale(row:SourcingCase){return Date.now()-new Date(row.updatedAt).getTime()>7*86400000}
 const knownStatuses = new Set(['REVIEWING','SOURCING','QUOTES_RECEIVED','COSTING','CUSTOMER_QUOTE_CREATED','CANCELLED'])
@@ -90,8 +93,10 @@ function normalizedStatus(value?:string){return value && knownStatuses.has(value
 function statusLabel(value?:string){const statusKey=normalizedStatus(value);return statusKey==='UNKNOWN'?t('sourcing.unknownStatus'):t(`sourcing.statuses.${statusKey}`)}
 function waitingFor(value?:string){return t(`sourcing.waiting.${normalizedStatus(value)}`)}
 function stageTagType(value?:string){return ({REVIEWING:'info',SOURCING:'warning',QUOTES_RECEIVED:'primary',COSTING:'success',CUSTOMER_QUOTE_CREATED:'success',CANCELLED:'info'} as Record<string,'primary'|'success'|'warning'|'info'>)[String(value)]||'info'}
-function salesStageLabel(value?:string){return ({REVIEWING:'等待采购接单',SOURCING:'采购询价中',QUOTES_RECEIVED:'采购比价中',COSTING:'采购核算中',CUSTOMER_QUOTE_CREATED:'客户报价中',CANCELLED:'已结束'} as Record<string,string>)[String(value)]||statusLabel(value)}
-function salesAttention(value?:string){return ({REVIEWING:'确认客户需求已提交',SOURCING:'等待采购反馈',QUOTES_RECEIVED:'关注报价进度',COSTING:'准备客户报价',CUSTOMER_QUOTE_CREATED:'跟进客户反馈',CANCELLED:'无需继续跟进'} as Record<string,string>)[String(value)]||'查看项目进展'}
+function salesStageLabel(row:SourcingCase){if(row.handoffStatus==='PROCUREMENT_PLAN_READY')return '采购方案待提交';if(row.handoffStatus==='PROCUREMENT_PLAN_SUBMITTED')return '采购方案已收到';return ({REVIEWING:'等待采购接单',SOURCING:'采购询价中',QUOTES_RECEIVED:'采购比价中',COSTING:'采购核算中',CUSTOMER_QUOTE_CREATED:'客户报价中',CANCELLED:'已结束'} as Record<string,string>)[String(row.status)]||statusLabel(row.status)}
+function procurementStageLabel(row:SourcingCase){if(row.handoffStatus==='PROCUREMENT_PLAN_READY')return '经理方案待提交';if(row.handoffStatus==='PROCUREMENT_PLAN_SUBMITTED')return '经理方案已提交';return statusLabel(row.status)}
+function waitingForRow(row:SourcingCase){if(row.handoffStatus==='PROCUREMENT_PLAN_READY')return isSalesView.value?'等待采购经理提交方案':'将统一方案提交负责销售';if(row.handoffStatus==='PROCUREMENT_PLAN_SUBMITTED')return isSalesView.value?'查看经理统一方案':'补齐船运及其他费用';return waitingFor(row.status)}
+function salesAttention(row:SourcingCase){if(row.handoffStatus==='PROCUREMENT_PLAN_READY')return '等待采购提交方案';if(row.handoffStatus==='PROCUREMENT_PLAN_SUBMITTED')return '查看经理统一方案';return ({REVIEWING:'确认客户需求已提交',SOURCING:'等待采购反馈',QUOTES_RECEIVED:'关注报价进度',COSTING:'准备客户报价',CUSTOMER_QUOTE_CREATED:'跟进客户反馈',CANCELLED:'无需继续跟进'} as Record<string,string>)[String(row.status)]||'查看项目进展'}
 
 // 兼容采购工作台和询盘确认页生成的旧链接，并统一跳转到新的独立详情页。
 const linkedCaseID = String(route.query.case || '')
@@ -103,6 +108,8 @@ watch(() => route.path, () => {
   status.value = isPendingView.value ? 'REVIEWING' : ''
   reload()
 })
+const stopLive = onLive(event => { if (event.type === 'requirement.changed') reload() })
+onUnmounted(stopLive)
 </script>
 
 <style scoped>

@@ -63,6 +63,10 @@ func (h *SourcingHandler) authorizeScenario(ctx context.Context, scenarioID int6
 	return h.svc.AuthorizeCostScenario(ctx, grpcx.TenantID(ctx), scenarioID, sourcingOperator(ctx))
 }
 
+func (h *SourcingHandler) authorizePlan(ctx context.Context, planID int64) error {
+	return h.svc.AuthorizeProcurementPlan(ctx, grpcx.TenantID(ctx), planID, sourcingOperator(ctx))
+}
+
 func (h *SourcingHandler) CreateCase(ctx context.Context, req *prv1.CreateCaseRequest) (*prv1.CreateCaseResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
 	lines := make([]app.SourcingLineInput, 0, len(req.GetLines()))
@@ -369,6 +373,98 @@ func (h *SourcingHandler) ListSupplierQuoteComparison(ctx context.Context, req *
 	return &prv1.ListSupplierQuoteComparisonResponse{Lines: out}, nil
 }
 
+func (h *SourcingHandler) CreateProcurementPlan(ctx context.Context, req *prv1.CreateProcurementPlanRequest) (*prv1.CreateProcurementPlanResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
+	in := app.NewProcurementPlan{CaseID: req.GetCaseId(), ManagerNote: req.GetManagerNote()}
+	for _, selection := range req.GetSelections() {
+		in.Selections = append(in.Selections, app.ProcurementPlanSelectionInput{
+			SourcingLineID: selection.GetSourcingLineId(), SupplierQuoteLineID: selection.GetSupplierQuoteLineId(),
+			SelectionType: selection.GetSelectionType(), Priority: selection.GetPriority(),
+			Reason: selection.GetReason(), Risk: selection.GetRisk(),
+		})
+	}
+	view, err := h.svc.CreateProcurementPlan(ctx, grpcx.TenantID(ctx), in, sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.CreateProcurementPlanResponse{ProcurementPlan: procurementPlanView(view)}, nil
+}
+
+func (h *SourcingHandler) ListProcurementPlans(ctx context.Context, req *prv1.ListProcurementPlansRequest) (*prv1.ListProcurementPlansResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
+	views, err := h.svc.ListProcurementPlans(ctx, grpcx.TenantID(ctx), req.GetCaseId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*prv1.ProcurementPlan, 0, len(views))
+	for _, view := range views {
+		out = append(out, procurementPlanView(view))
+	}
+	return &prv1.ListProcurementPlansResponse{ProcurementPlans: out}, nil
+}
+
+func (h *SourcingHandler) GetProcurementPlan(ctx context.Context, req *prv1.GetProcurementPlanRequest) (*prv1.GetProcurementPlanResponse, error) {
+	if err := h.authorizePlan(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	view, err := h.svc.GetProcurementPlan(ctx, grpcx.TenantID(ctx), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.GetProcurementPlanResponse{ProcurementPlan: procurementPlanView(view)}, nil
+}
+
+func (h *SourcingHandler) SubmitProcurementPlanToSales(ctx context.Context, req *prv1.SubmitProcurementPlanToSalesRequest) (*prv1.SubmitProcurementPlanToSalesResponse, error) {
+	if err := h.authorizePlan(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	view, err := h.svc.SubmitProcurementPlanToSales(ctx, grpcx.TenantID(ctx), req.GetId(), sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.SubmitProcurementPlanToSalesResponse{ProcurementPlan: procurementPlanView(view)}, nil
+}
+
+func (h *SourcingHandler) CreateProcurementRework(ctx context.Context, req *prv1.CreateProcurementReworkRequest) (*prv1.CreateProcurementReworkResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
+	row, err := h.svc.CreateProcurementRework(ctx, grpcx.TenantID(ctx), app.NewProcurementRework{
+		CaseID: req.GetCaseId(), PlanID: req.GetPlanId(), SourcingLineID: req.GetSourcingLineId(),
+		SupplierQuoteLineID: req.GetSupplierQuoteLineId(), RequestType: req.GetRequestType(), Reason: req.GetReason(),
+	}, sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.CreateProcurementReworkResponse{ReworkRequest: procurementRework(row)}, nil
+}
+
+func (h *SourcingHandler) ListProcurementReworks(ctx context.Context, req *prv1.ListProcurementReworksRequest) (*prv1.ListProcurementReworksResponse, error) {
+	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
+		return nil, err
+	}
+	rows, err := h.svc.ListProcurementReworks(ctx, grpcx.TenantID(ctx), req.GetCaseId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*prv1.ProcurementReworkRequest, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, procurementRework(row))
+	}
+	return &prv1.ListProcurementReworksResponse{ReworkRequests: out}, nil
+}
+
+func (h *SourcingHandler) ResolveProcurementRework(ctx context.Context, req *prv1.ResolveProcurementReworkRequest) (*prv1.ResolveProcurementReworkResponse, error) {
+	if err := h.svc.ResolveProcurementRework(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetResolutionNote(), sourcingOperator(ctx)); err != nil {
+		return nil, err
+	}
+	return &prv1.ResolveProcurementReworkResponse{}, nil
+}
+
 func (h *SourcingHandler) CreateCostScenario(ctx context.Context, req *prv1.CreateCostScenarioRequest) (*prv1.CreateCostScenarioResponse, error) {
 	if err := h.authorizeCase(ctx, req.GetCaseId()); err != nil {
 		return nil, err
@@ -480,6 +576,41 @@ func (h *SourcingHandler) LinkCustomerQuotation(ctx context.Context, req *prv1.L
 		return nil, err
 	}
 	return &prv1.LinkCustomerQuotationResponse{QuotationId: req.GetQuotationId(), QuoteNo: req.GetQuoteNo()}, nil
+}
+
+func procurementPlanView(view app.ProcurementPlanView) *prv1.ProcurementPlan {
+	h := view.Header
+	out := &prv1.ProcurementPlan{
+		Id: h.ID, CaseId: h.CaseID, PlanNo: h.PlanNo, VersionNo: h.VersionNo,
+		RequirementVersionNo: h.RequirementVersionNo, Status: h.Status, ManagerNote: h.ManagerNote,
+		CreatedByName: h.CreatedByName, ConfirmedByName: h.ConfirmedByName, ConfirmedAt: h.ConfirmedAt,
+		SubmittedToSalesByName: h.SubmittedToSalesByName, SubmittedToSalesAt: h.SubmittedToSalesAt,
+		TargetSalesId: h.TargetSalesID, TargetSalesName: h.TargetSalesName, CreatedAt: h.CreatedAt,
+	}
+	for _, item := range view.Items {
+		out.Items = append(out.Items, &prv1.ProcurementPlanItem{
+			Id: item.ID, SourcingLineId: item.SourcingLineID, SupplierQuoteLineId: item.SupplierQuoteLineID,
+			SelectionType: item.SelectionType, Priority: item.Priority, Reason: item.Reason, Risk: item.Risk,
+			SupplierId: item.SupplierID, SupplierName: item.SupplierName, FactoryId: item.FactoryID,
+			FactoryName: item.FactoryName, BuyerId: item.BuyerID, BuyerName: item.BuyerName,
+			ProductName: item.ProductName, Currency: item.Currency, UnitPrice: item.UnitPrice,
+			AvailableQty: item.AvailableQty, UomCode: item.UomCode, Moq: item.Moq, LeadTime: item.LeadTime,
+			PaymentTerms: item.PaymentTerms, Incoterm: item.Incoterm, ValidUntil: item.ValidUntil,
+			QuoteVersionNo: item.QuoteVersionNo,
+		})
+	}
+	return out
+}
+
+func procurementRework(row store.ListProcurementReworkRequestsRow) *prv1.ProcurementReworkRequest {
+	return &prv1.ProcurementReworkRequest{
+		Id: row.ID, CaseId: row.CaseID, PlanId: row.PlanID, SourcingLineId: row.SourcingLineID,
+		SupplierQuoteLineId: row.SupplierQuoteLineID, RequestType: row.RequestType, ScopeType: row.ScopeType,
+		AssignedBuyerId: row.AssignedBuyerID, AssignedBuyerName: row.AssignedBuyerName,
+		SupplierId: row.SupplierID, SupplierName: row.SupplierName, ProductName: row.ProductName,
+		Reason: row.Reason, Status: row.Status, CreatedByName: row.CreatedByName, CreatedAt: ts(row.CreatedAt),
+		ResolvedByName: row.ResolvedByName, ResolvedAt: ts(row.ResolvedAt), ResolutionNote: row.ResolutionNote,
+	}
 }
 
 func costScenarioList(row store.ListCostScenariosRow) *prv1.CostScenario {
@@ -636,6 +767,7 @@ func sourcingCaseList(row store.ListSourcingCasesRow) *prv1.SourcingCase {
 		AcceptedBy: acceptedBy, AcceptedByName: row.AcceptedByName, AcceptedAt: ts(row.AcceptedAt),
 		ReturnedBy: returnedBy, ReturnedByName: row.ReturnedByName, ReturnedAt: ts(row.ReturnedAt),
 		ReturnReason: row.ReturnReason, ReturnFields: row.ReturnFields,
+		OpenReworkCount: row.OpenReworkCount, MyOpenReworkCount: row.MyOpenReworkCount,
 	}
 }
 

@@ -19,35 +19,42 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SourcingService_CreateCase_FullMethodName                  = "/erp.procurement.v1.SourcingService/CreateCase"
-	SourcingService_ListCases_FullMethodName                   = "/erp.procurement.v1.SourcingService/ListCases"
-	SourcingService_GetCase_FullMethodName                     = "/erp.procurement.v1.SourcingService/GetCase"
-	SourcingService_AddLine_FullMethodName                     = "/erp.procurement.v1.SourcingService/AddLine"
-	SourcingService_ConfirmLines_FullMethodName                = "/erp.procurement.v1.SourcingService/ConfirmLines"
-	SourcingService_AcceptCase_FullMethodName                  = "/erp.procurement.v1.SourcingService/AcceptCase"
-	SourcingService_ListCaseParticipants_FullMethodName        = "/erp.procurement.v1.SourcingService/ListCaseParticipants"
-	SourcingService_JoinCase_FullMethodName                    = "/erp.procurement.v1.SourcingService/JoinCase"
-	SourcingService_RequestPrimaryBuyer_FullMethodName         = "/erp.procurement.v1.SourcingService/RequestPrimaryBuyer"
-	SourcingService_AssignPrimaryBuyer_FullMethodName          = "/erp.procurement.v1.SourcingService/AssignPrimaryBuyer"
-	SourcingService_ReturnCase_FullMethodName                  = "/erp.procurement.v1.SourcingService/ReturnCase"
-	SourcingService_ReviewLine_FullMethodName                  = "/erp.procurement.v1.SourcingService/ReviewLine"
-	SourcingService_CreateFactoryRfq_FullMethodName            = "/erp.procurement.v1.SourcingService/CreateFactoryRfq"
-	SourcingService_ListFactoryRfqs_FullMethodName             = "/erp.procurement.v1.SourcingService/ListFactoryRfqs"
-	SourcingService_CreateSupplierQuote_FullMethodName         = "/erp.procurement.v1.SourcingService/CreateSupplierQuote"
-	SourcingService_GetFactoryRfqWorkbook_FullMethodName       = "/erp.procurement.v1.SourcingService/GetFactoryRfqWorkbook"
-	SourcingService_ImportSupplierQuoteWorkbook_FullMethodName = "/erp.procurement.v1.SourcingService/ImportSupplierQuoteWorkbook"
-	SourcingService_MarkFactoryRfqSent_FullMethodName          = "/erp.procurement.v1.SourcingService/MarkFactoryRfqSent"
-	SourcingService_ListSupplierQuoteComparison_FullMethodName = "/erp.procurement.v1.SourcingService/ListSupplierQuoteComparison"
-	SourcingService_CreateCostScenario_FullMethodName          = "/erp.procurement.v1.SourcingService/CreateCostScenario"
-	SourcingService_ListCostScenarios_FullMethodName           = "/erp.procurement.v1.SourcingService/ListCostScenarios"
-	SourcingService_GetCostScenario_FullMethodName             = "/erp.procurement.v1.SourcingService/GetCostScenario"
-	SourcingService_ConfirmCostScenario_FullMethodName         = "/erp.procurement.v1.SourcingService/ConfirmCostScenario"
-	SourcingService_SubmitCostToSales_FullMethodName           = "/erp.procurement.v1.SourcingService/SubmitCostToSales"
-	SourcingService_PrepareCustomerQuotation_FullMethodName    = "/erp.procurement.v1.SourcingService/PrepareCustomerQuotation"
-	SourcingService_LinkCustomerQuotation_FullMethodName       = "/erp.procurement.v1.SourcingService/LinkCustomerQuotation"
-	SourcingService_ListCaseChanges_FullMethodName             = "/erp.procurement.v1.SourcingService/ListCaseChanges"
-	SourcingService_UpdateFactoryRfq_FullMethodName            = "/erp.procurement.v1.SourcingService/UpdateFactoryRfq"
-	SourcingService_ListOverdueFactoryRfqs_FullMethodName      = "/erp.procurement.v1.SourcingService/ListOverdueFactoryRfqs"
+	SourcingService_CreateCase_FullMethodName                   = "/erp.procurement.v1.SourcingService/CreateCase"
+	SourcingService_ListCases_FullMethodName                    = "/erp.procurement.v1.SourcingService/ListCases"
+	SourcingService_GetCase_FullMethodName                      = "/erp.procurement.v1.SourcingService/GetCase"
+	SourcingService_AddLine_FullMethodName                      = "/erp.procurement.v1.SourcingService/AddLine"
+	SourcingService_ConfirmLines_FullMethodName                 = "/erp.procurement.v1.SourcingService/ConfirmLines"
+	SourcingService_AcceptCase_FullMethodName                   = "/erp.procurement.v1.SourcingService/AcceptCase"
+	SourcingService_ListCaseParticipants_FullMethodName         = "/erp.procurement.v1.SourcingService/ListCaseParticipants"
+	SourcingService_JoinCase_FullMethodName                     = "/erp.procurement.v1.SourcingService/JoinCase"
+	SourcingService_RequestPrimaryBuyer_FullMethodName          = "/erp.procurement.v1.SourcingService/RequestPrimaryBuyer"
+	SourcingService_AssignPrimaryBuyer_FullMethodName           = "/erp.procurement.v1.SourcingService/AssignPrimaryBuyer"
+	SourcingService_ReturnCase_FullMethodName                   = "/erp.procurement.v1.SourcingService/ReturnCase"
+	SourcingService_ReviewLine_FullMethodName                   = "/erp.procurement.v1.SourcingService/ReviewLine"
+	SourcingService_CreateFactoryRfq_FullMethodName             = "/erp.procurement.v1.SourcingService/CreateFactoryRfq"
+	SourcingService_ListFactoryRfqs_FullMethodName              = "/erp.procurement.v1.SourcingService/ListFactoryRfqs"
+	SourcingService_CreateSupplierQuote_FullMethodName          = "/erp.procurement.v1.SourcingService/CreateSupplierQuote"
+	SourcingService_GetFactoryRfqWorkbook_FullMethodName        = "/erp.procurement.v1.SourcingService/GetFactoryRfqWorkbook"
+	SourcingService_ImportSupplierQuoteWorkbook_FullMethodName  = "/erp.procurement.v1.SourcingService/ImportSupplierQuoteWorkbook"
+	SourcingService_MarkFactoryRfqSent_FullMethodName           = "/erp.procurement.v1.SourcingService/MarkFactoryRfqSent"
+	SourcingService_ListSupplierQuoteComparison_FullMethodName  = "/erp.procurement.v1.SourcingService/ListSupplierQuoteComparison"
+	SourcingService_CreateProcurementPlan_FullMethodName        = "/erp.procurement.v1.SourcingService/CreateProcurementPlan"
+	SourcingService_ListProcurementPlans_FullMethodName         = "/erp.procurement.v1.SourcingService/ListProcurementPlans"
+	SourcingService_GetProcurementPlan_FullMethodName           = "/erp.procurement.v1.SourcingService/GetProcurementPlan"
+	SourcingService_SubmitProcurementPlanToSales_FullMethodName = "/erp.procurement.v1.SourcingService/SubmitProcurementPlanToSales"
+	SourcingService_CreateProcurementRework_FullMethodName      = "/erp.procurement.v1.SourcingService/CreateProcurementRework"
+	SourcingService_ListProcurementReworks_FullMethodName       = "/erp.procurement.v1.SourcingService/ListProcurementReworks"
+	SourcingService_ResolveProcurementRework_FullMethodName     = "/erp.procurement.v1.SourcingService/ResolveProcurementRework"
+	SourcingService_CreateCostScenario_FullMethodName           = "/erp.procurement.v1.SourcingService/CreateCostScenario"
+	SourcingService_ListCostScenarios_FullMethodName            = "/erp.procurement.v1.SourcingService/ListCostScenarios"
+	SourcingService_GetCostScenario_FullMethodName              = "/erp.procurement.v1.SourcingService/GetCostScenario"
+	SourcingService_ConfirmCostScenario_FullMethodName          = "/erp.procurement.v1.SourcingService/ConfirmCostScenario"
+	SourcingService_SubmitCostToSales_FullMethodName            = "/erp.procurement.v1.SourcingService/SubmitCostToSales"
+	SourcingService_PrepareCustomerQuotation_FullMethodName     = "/erp.procurement.v1.SourcingService/PrepareCustomerQuotation"
+	SourcingService_LinkCustomerQuotation_FullMethodName        = "/erp.procurement.v1.SourcingService/LinkCustomerQuotation"
+	SourcingService_ListCaseChanges_FullMethodName              = "/erp.procurement.v1.SourcingService/ListCaseChanges"
+	SourcingService_UpdateFactoryRfq_FullMethodName             = "/erp.procurement.v1.SourcingService/UpdateFactoryRfq"
+	SourcingService_ListOverdueFactoryRfqs_FullMethodName       = "/erp.procurement.v1.SourcingService/ListOverdueFactoryRfqs"
 )
 
 // SourcingServiceClient is the client API for SourcingService service.
@@ -77,6 +84,13 @@ type SourcingServiceClient interface {
 	ImportSupplierQuoteWorkbook(ctx context.Context, in *ImportSupplierQuoteWorkbookRequest, opts ...grpc.CallOption) (*ImportSupplierQuoteWorkbookResponse, error)
 	MarkFactoryRfqSent(ctx context.Context, in *MarkFactoryRfqSentRequest, opts ...grpc.CallOption) (*MarkFactoryRfqSentResponse, error)
 	ListSupplierQuoteComparison(ctx context.Context, in *ListSupplierQuoteComparisonRequest, opts ...grpc.CallOption) (*ListSupplierQuoteComparisonResponse, error)
+	CreateProcurementPlan(ctx context.Context, in *CreateProcurementPlanRequest, opts ...grpc.CallOption) (*CreateProcurementPlanResponse, error)
+	ListProcurementPlans(ctx context.Context, in *ListProcurementPlansRequest, opts ...grpc.CallOption) (*ListProcurementPlansResponse, error)
+	GetProcurementPlan(ctx context.Context, in *GetProcurementPlanRequest, opts ...grpc.CallOption) (*GetProcurementPlanResponse, error)
+	SubmitProcurementPlanToSales(ctx context.Context, in *SubmitProcurementPlanToSalesRequest, opts ...grpc.CallOption) (*SubmitProcurementPlanToSalesResponse, error)
+	CreateProcurementRework(ctx context.Context, in *CreateProcurementReworkRequest, opts ...grpc.CallOption) (*CreateProcurementReworkResponse, error)
+	ListProcurementReworks(ctx context.Context, in *ListProcurementReworksRequest, opts ...grpc.CallOption) (*ListProcurementReworksResponse, error)
+	ResolveProcurementRework(ctx context.Context, in *ResolveProcurementReworkRequest, opts ...grpc.CallOption) (*ResolveProcurementReworkResponse, error)
 	CreateCostScenario(ctx context.Context, in *CreateCostScenarioRequest, opts ...grpc.CallOption) (*CreateCostScenarioResponse, error)
 	ListCostScenarios(ctx context.Context, in *ListCostScenariosRequest, opts ...grpc.CallOption) (*ListCostScenariosResponse, error)
 	GetCostScenario(ctx context.Context, in *GetCostScenarioRequest, opts ...grpc.CallOption) (*GetCostScenarioResponse, error)
@@ -289,6 +303,76 @@ func (c *sourcingServiceClient) ListSupplierQuoteComparison(ctx context.Context,
 	return out, nil
 }
 
+func (c *sourcingServiceClient) CreateProcurementPlan(ctx context.Context, in *CreateProcurementPlanRequest, opts ...grpc.CallOption) (*CreateProcurementPlanResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateProcurementPlanResponse)
+	err := c.cc.Invoke(ctx, SourcingService_CreateProcurementPlan_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ListProcurementPlans(ctx context.Context, in *ListProcurementPlansRequest, opts ...grpc.CallOption) (*ListProcurementPlansResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListProcurementPlansResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListProcurementPlans_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) GetProcurementPlan(ctx context.Context, in *GetProcurementPlanRequest, opts ...grpc.CallOption) (*GetProcurementPlanResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetProcurementPlanResponse)
+	err := c.cc.Invoke(ctx, SourcingService_GetProcurementPlan_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) SubmitProcurementPlanToSales(ctx context.Context, in *SubmitProcurementPlanToSalesRequest, opts ...grpc.CallOption) (*SubmitProcurementPlanToSalesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SubmitProcurementPlanToSalesResponse)
+	err := c.cc.Invoke(ctx, SourcingService_SubmitProcurementPlanToSales_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) CreateProcurementRework(ctx context.Context, in *CreateProcurementReworkRequest, opts ...grpc.CallOption) (*CreateProcurementReworkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateProcurementReworkResponse)
+	err := c.cc.Invoke(ctx, SourcingService_CreateProcurementRework_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ListProcurementReworks(ctx context.Context, in *ListProcurementReworksRequest, opts ...grpc.CallOption) (*ListProcurementReworksResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListProcurementReworksResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListProcurementReworks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ResolveProcurementRework(ctx context.Context, in *ResolveProcurementReworkRequest, opts ...grpc.CallOption) (*ResolveProcurementReworkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveProcurementReworkResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ResolveProcurementRework_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *sourcingServiceClient) CreateCostScenario(ctx context.Context, in *CreateCostScenarioRequest, opts ...grpc.CallOption) (*CreateCostScenarioResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateCostScenarioResponse)
@@ -416,6 +500,13 @@ type SourcingServiceServer interface {
 	ImportSupplierQuoteWorkbook(context.Context, *ImportSupplierQuoteWorkbookRequest) (*ImportSupplierQuoteWorkbookResponse, error)
 	MarkFactoryRfqSent(context.Context, *MarkFactoryRfqSentRequest) (*MarkFactoryRfqSentResponse, error)
 	ListSupplierQuoteComparison(context.Context, *ListSupplierQuoteComparisonRequest) (*ListSupplierQuoteComparisonResponse, error)
+	CreateProcurementPlan(context.Context, *CreateProcurementPlanRequest) (*CreateProcurementPlanResponse, error)
+	ListProcurementPlans(context.Context, *ListProcurementPlansRequest) (*ListProcurementPlansResponse, error)
+	GetProcurementPlan(context.Context, *GetProcurementPlanRequest) (*GetProcurementPlanResponse, error)
+	SubmitProcurementPlanToSales(context.Context, *SubmitProcurementPlanToSalesRequest) (*SubmitProcurementPlanToSalesResponse, error)
+	CreateProcurementRework(context.Context, *CreateProcurementReworkRequest) (*CreateProcurementReworkResponse, error)
+	ListProcurementReworks(context.Context, *ListProcurementReworksRequest) (*ListProcurementReworksResponse, error)
+	ResolveProcurementRework(context.Context, *ResolveProcurementReworkRequest) (*ResolveProcurementReworkResponse, error)
 	CreateCostScenario(context.Context, *CreateCostScenarioRequest) (*CreateCostScenarioResponse, error)
 	ListCostScenarios(context.Context, *ListCostScenariosRequest) (*ListCostScenariosResponse, error)
 	GetCostScenario(context.Context, *GetCostScenarioRequest) (*GetCostScenarioResponse, error)
@@ -494,6 +585,27 @@ func (UnimplementedSourcingServiceServer) MarkFactoryRfqSent(context.Context, *M
 }
 func (UnimplementedSourcingServiceServer) ListSupplierQuoteComparison(context.Context, *ListSupplierQuoteComparisonRequest) (*ListSupplierQuoteComparisonResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListSupplierQuoteComparison not implemented")
+}
+func (UnimplementedSourcingServiceServer) CreateProcurementPlan(context.Context, *CreateProcurementPlanRequest) (*CreateProcurementPlanResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateProcurementPlan not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListProcurementPlans(context.Context, *ListProcurementPlansRequest) (*ListProcurementPlansResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListProcurementPlans not implemented")
+}
+func (UnimplementedSourcingServiceServer) GetProcurementPlan(context.Context, *GetProcurementPlanRequest) (*GetProcurementPlanResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetProcurementPlan not implemented")
+}
+func (UnimplementedSourcingServiceServer) SubmitProcurementPlanToSales(context.Context, *SubmitProcurementPlanToSalesRequest) (*SubmitProcurementPlanToSalesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SubmitProcurementPlanToSales not implemented")
+}
+func (UnimplementedSourcingServiceServer) CreateProcurementRework(context.Context, *CreateProcurementReworkRequest) (*CreateProcurementReworkResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateProcurementRework not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListProcurementReworks(context.Context, *ListProcurementReworksRequest) (*ListProcurementReworksResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListProcurementReworks not implemented")
+}
+func (UnimplementedSourcingServiceServer) ResolveProcurementRework(context.Context, *ResolveProcurementReworkRequest) (*ResolveProcurementReworkResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResolveProcurementRework not implemented")
 }
 func (UnimplementedSourcingServiceServer) CreateCostScenario(context.Context, *CreateCostScenarioRequest) (*CreateCostScenarioResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateCostScenario not implemented")
@@ -888,6 +1000,132 @@ func _SourcingService_ListSupplierQuoteComparison_Handler(srv interface{}, ctx c
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SourcingService_CreateProcurementPlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateProcurementPlanRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).CreateProcurementPlan(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_CreateProcurementPlan_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).CreateProcurementPlan(ctx, req.(*CreateProcurementPlanRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ListProcurementPlans_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListProcurementPlansRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListProcurementPlans(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListProcurementPlans_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListProcurementPlans(ctx, req.(*ListProcurementPlansRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_GetProcurementPlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProcurementPlanRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).GetProcurementPlan(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_GetProcurementPlan_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).GetProcurementPlan(ctx, req.(*GetProcurementPlanRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_SubmitProcurementPlanToSales_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitProcurementPlanToSalesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).SubmitProcurementPlanToSales(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_SubmitProcurementPlanToSales_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).SubmitProcurementPlanToSales(ctx, req.(*SubmitProcurementPlanToSalesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_CreateProcurementRework_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateProcurementReworkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).CreateProcurementRework(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_CreateProcurementRework_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).CreateProcurementRework(ctx, req.(*CreateProcurementReworkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ListProcurementReworks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListProcurementReworksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListProcurementReworks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListProcurementReworks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListProcurementReworks(ctx, req.(*ListProcurementReworksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ResolveProcurementRework_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveProcurementReworkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ResolveProcurementRework(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ResolveProcurementRework_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ResolveProcurementRework(ctx, req.(*ResolveProcurementReworkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SourcingService_CreateCostScenario_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateCostScenarioRequest)
 	if err := dec(in); err != nil {
@@ -1150,6 +1388,34 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListSupplierQuoteComparison",
 			Handler:    _SourcingService_ListSupplierQuoteComparison_Handler,
+		},
+		{
+			MethodName: "CreateProcurementPlan",
+			Handler:    _SourcingService_CreateProcurementPlan_Handler,
+		},
+		{
+			MethodName: "ListProcurementPlans",
+			Handler:    _SourcingService_ListProcurementPlans_Handler,
+		},
+		{
+			MethodName: "GetProcurementPlan",
+			Handler:    _SourcingService_GetProcurementPlan_Handler,
+		},
+		{
+			MethodName: "SubmitProcurementPlanToSales",
+			Handler:    _SourcingService_SubmitProcurementPlanToSales_Handler,
+		},
+		{
+			MethodName: "CreateProcurementRework",
+			Handler:    _SourcingService_CreateProcurementRework_Handler,
+		},
+		{
+			MethodName: "ListProcurementReworks",
+			Handler:    _SourcingService_ListProcurementReworks_Handler,
+		},
+		{
+			MethodName: "ResolveProcurementRework",
+			Handler:    _SourcingService_ResolveProcurementRework_Handler,
 		},
 		{
 			MethodName: "CreateCostScenario",

@@ -371,22 +371,30 @@ SELECT id, case_no, title, customer_id, customer_name, contact_id, contact_name,
        requirement_version_no, accepted_by, accepted_by_name, accepted_at,
        returned_by, returned_by_name, returned_at, return_reason, return_fields,
        created_at, updated_at,
+       (SELECT count(*) FROM procurement_rework_requests rr
+        WHERE rr.tenant_id=sourcing_cases.tenant_id AND rr.case_id=sourcing_cases.id
+          AND rr.status='OPEN') AS open_rework_count,
+       (SELECT count(*) FROM procurement_rework_requests rr
+        WHERE rr.tenant_id=sourcing_cases.tenant_id AND rr.case_id=sourcing_cases.id
+          AND rr.status='OPEN'
+          AND (rr.assigned_buyer_id=$1::bigint OR rr.assigned_buyer_id IS NULL)) AS my_open_rework_count,
        count(*) OVER () AS total
 FROM sourcing_cases
-WHERE tenant_id = $1::bigint
-  AND ($2::bool
-       OR owner_id = ANY($3::bigint[]))
+WHERE tenant_id = $2::bigint
+  AND ($3::bool
+       OR owner_id = ANY($4::bigint[]))
   -- 待复核询盘有独立页面；正式询价列表默认不混入尚未复核的数据。
-  AND (($4::text = '' AND status NOT IN ('INTAKE_PENDING','CANCELLED'))
-       OR status = $4::text)
-  AND ($5::text = '' OR case_no ILIKE '%' || $5::text || '%'
-       OR title ILIKE '%' || $5::text || '%'
-       OR customer_name ILIKE '%' || $5::text || '%')
+  AND (($5::text = '' AND status NOT IN ('INTAKE_PENDING','CANCELLED'))
+       OR status = $5::text)
+  AND ($6::text = '' OR case_no ILIKE '%' || $6::text || '%'
+       OR title ILIKE '%' || $6::text || '%'
+       OR customer_name ILIKE '%' || $6::text || '%')
 ORDER BY updated_at DESC, id DESC
-LIMIT $7::int OFFSET $6::int
+LIMIT $8::int OFFSET $7::int
 `
 
 type ListSourcingCasesParams struct {
+	ViewerID   int64
 	TenantID   int64
 	VisibleAll bool
 	VisibleIds []int64
@@ -426,11 +434,14 @@ type ListSourcingCasesRow struct {
 	ReturnFields           []string
 	CreatedAt              pgtype.Timestamptz
 	UpdatedAt              pgtype.Timestamptz
+	OpenReworkCount        int64
+	MyOpenReworkCount      int64
 	Total                  int64
 }
 
 func (q *Queries) ListSourcingCases(ctx context.Context, arg ListSourcingCasesParams) ([]ListSourcingCasesRow, error) {
 	rows, err := q.db.Query(ctx, listSourcingCases,
+		arg.ViewerID,
 		arg.TenantID,
 		arg.VisibleAll,
 		arg.VisibleIds,
@@ -476,6 +487,8 @@ func (q *Queries) ListSourcingCases(ctx context.Context, arg ListSourcingCasesPa
 			&i.ReturnFields,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.OpenReworkCount,
+			&i.MyOpenReworkCount,
 			&i.Total,
 		); err != nil {
 			return nil, err
