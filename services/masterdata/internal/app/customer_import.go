@@ -100,7 +100,7 @@ func (s *Service) ImportCustomers(ctx context.Context, tenantID int64, rows []Cu
 				ShortName: "", EnglishName: "", CustomerType: customerType, Industry: "", Source: "",
 				Tags: []string{}, Website: "", PrimaryLanguage: "", Timezone: "", RegisteredName: "",
 				RegistrationNo: "", TaxID: "", InvoiceTitle: "", InvoiceTaxNo: "", InvoiceRemark: "",
-				PaymentDays: 0, CreditLimitMinor: 0, CreditCurrency: currency, CreditStatus: "NORMAL",
+				CreditLimitMinor: 0, CreditCurrency: currency, CreditStatus: "NORMAL",
 				BusinessStatus: "PROSPECT", OperatorID: operatorID,
 			})
 			if err != nil {

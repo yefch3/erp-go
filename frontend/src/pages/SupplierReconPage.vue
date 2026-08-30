@@ -25,17 +25,6 @@
         <span class="metric-label">{{ t('supplierRecon.unsetCount') }}</span>
         <strong class="metric-value">{{ unsetCount }}</strong>
         <span class="metric-hint">{{ t('supplierRecon.unsetHint') }}</span>
-        <!-- 这个按钮唯一的作用就是让上面那个数字变小，所以钉在这张卡上，
-             而不是丢进工具栏跟「查询」挤在一起。数字归零它自己消失——
-             没活可干的时候不该留一个能点的按钮。 -->
-        <el-button
-          v-if="canWrite && unsetCount > 0"
-          class="metric-action"
-          link
-          type="primary"
-          :loading="backfilling"
-          @click="backfillDue"
-        >{{ t('supplierRecon.backfill') }}</el-button>
       </div>
     </section>
 
@@ -218,6 +207,11 @@
             <el-button v-else link type="success" @click="openClose(row)">
               {{ t('supplierRecon.close') }}
             </el-button>
+            <!-- 已下单的采购单没有别的编辑入口（表单只对草稿和被驳回的单
+                 开放），所以改到期日这个门只能开在这里。 -->
+            <el-button link type="primary" @click="openDue(row)">
+              {{ t('supplierRecon.dueEdit') }}
+            </el-button>
           </template>
         </el-table-column>
         <template #empty>{{ emptyText }}</template>
@@ -234,6 +228,40 @@
         @current-change="(p: number) => { page = p; load() }"
       />
     </section>
+
+    <!-- 改应付到期日。这个日子决定这张单算不算逾期，所以理由必填，
+         改动会连同旧值新值一起留痕。 -->
+    <el-dialog v-model="dueOpen" :title="t('supplierRecon.dueEdit')" width="min(460px, 94vw)" destroy-on-close>
+      <template v-if="dueRow">
+        <p class="close-target">{{ dueRow.poNo }} · {{ dueRow.supplierName }}</p>
+        <el-form label-position="top">
+          <el-form-item :label="t('supplierRecon.dueDate')">
+            <el-date-picker
+              v-model="dueForm.dueDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              clearable
+              :placeholder="t('supplierRecon.dueEmpty')"
+              style="width: 100%"
+            />
+          </el-form-item>
+          <el-form-item :label="t('supplierRecon.dueWhy')">
+            <el-input
+              v-model="dueForm.reason"
+              type="textarea"
+              :rows="2"
+              :placeholder="t('supplierRecon.dueWhyHint')"
+            />
+          </el-form-item>
+        </el-form>
+      </template>
+      <template #footer>
+        <el-button @click="dueOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="dueBusy" :disabled="!dueForm.reason.trim()" @click="submitDue">
+          {{ t('common.save') }}
+        </el-button>
+      </template>
+    </el-dialog>
 
     <!-- 确认核销完成。三个数并排亮着，员工看着差额自己拿主意——**系统不
          替他判断**：差 7000 也能确认完成，分毫不差也不会自动完成。 -->
@@ -305,11 +333,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { backfillRequest, get, post } from '../api'
+import { get, post } from '../api'
 import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 import { useAuthStore } from '../stores/auth'
 
@@ -456,52 +484,44 @@ async function loadMetrics() {
   ).length
 }
 
-// ── 补算存量到期日 ────────────────────────────────────────
+// ── 改应付到期日 ──────────────────────────────────────────
 //
-// 到期日是从「配了账期之后下的单」那一刻起才写入的，在此之前的单一张都
-// 没有。不补这一次，上线第一天整页都是「未配账期」。
+// 到期日是建单时填的，之后会变：谈判改了付款条件，或者一开始就填错。
+// 而采购单本身**已下单之后没有编辑入口**（表单只对草稿和被驳回的单开放），
+// 所以这个门开在这里。
 //
-// 不收任何输入是有意的：账期的唯一出处是供应商详情页上配的那个数，这里
-// 再开一个输入框，同一件事就有了两个答案。
-const backfilling = ref(false)
+// 理由必填。它直接决定这张单算不算逾期——把日子往后推一个月，页面上的
+// 「已逾期」就少一条，这件事不留痕就查不出来。
+const dueOpen = ref(false)
+const dueRow = ref<Row | null>(null)
+const dueBusy = ref(false)
+const dueForm = reactive({ dueDate: '', reason: '' })
 
-async function backfillDue() {
-  const ok = await ElMessageBox.confirm(
-    t('supplierRecon.backfillWhy'),
-    t('supplierRecon.backfill'),
-    { type: 'warning', confirmButtonText: t('supplierRecon.backfillGo') },
-  ).catch(() => false)
-  if (ok === false) return
-  backfilling.value = true
+function openDue(row: Row) {
+  dueRow.value = row
+  // 带出当前值，改的人看得见自己在改什么。清空也是合法的一次改动。
+  dueForm.dueDate = row.dueDate || ''
+  dueForm.reason = ''
+  dueOpen.value = true
+}
+
+async function submitDue() {
+  if (!dueRow.value || !dueForm.reason.trim()) return
+  dueBusy.value = true
   try {
-    // int64 走 protojson 是字符串，int32 是数字——两种都照原样接。
-    const d = await post<{
-      updatedOrders: string
-      appliedSuppliers: number
-      skippedSuppliers: number
-      skippedOrders: string
-    }>('/supplier-recon/backfill-due', {}, backfillRequest)
-    const updated = Number(d.updatedOrders ?? 0)
-    const skipped = Number(d.skippedOrders ?? 0)
-    // 跳过的那部分才是下一步的活。只报「补了 37 张」，一次补了一半的操作
-    // 看起来就像做完了——员工得知道还要回供应商详情页配几家账期。
-    if (skipped > 0) {
-      ElMessage.warning(t('supplierRecon.backfillPartial', {
-        n: updated, s: d.skippedSuppliers ?? 0, m: skipped,
-      }))
-    } else if (updated === 0) {
-      // 一张也没动、一家也没跳过 = 没有「下过单但缺到期日」的行了。此时
-      // 卡片上的数字如果还不是 0，剩下的就是缺下单日期那一类——没有起算
-      // 点，补不出来。报「补好了 0 张」会让人以为坏了，得说清是哪种情况。
-      ElMessage.info(t('supplierRecon.backfillNothing'))
-    } else {
-      ElMessage.success(t('supplierRecon.backfillDone', { n: updated }))
-    }
+    await post(`/supplier-recon/${dueRow.value.poId}/due-date`, {
+      dueDate: dueForm.dueDate || '',
+      reason: dueForm.reason.trim(),
+    })
+    dueOpen.value = false
+    ElMessage.success(t('supplierRecon.dueSaved'))
+    // 用 load 不用 reload：改完还停在原来那一页。填完之后这一行可能不再
+    // 属于当前筛子（比如刚从「只看未填」里填好），重拉一次自然就对了。
     await Promise.all([load(), loadMetrics()])
   } catch {
     // 错误提示由 api 层统一弹
   } finally {
-    backfilling.value = false
+    dueBusy.value = false
   }
 }
 

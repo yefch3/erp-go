@@ -130,6 +130,24 @@ func (s *Server) closeReceivable(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) setReceivableDueDate(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		DueDate string `json:"dueDate"`
+		Reason  string `json:"reason"`
+	}
+	if !s.decodeJSON(w, r, &body) {
+		return
+	}
+	resp, err := s.Receipts.SetReceivableDueDate(r.Context(), &exv1.SetReceivableDueDateRequest{
+		ContractId: idFromPath(r), DueDate: body.DueDate, Reason: body.Reason,
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) reopenReceivable(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Reason string `json:"reason"`

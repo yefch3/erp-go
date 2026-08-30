@@ -36,6 +36,7 @@ const (
 	ReceiptService_RecordContractReceipt_FullMethodName       = "/erp.export.v1.ReceiptService/RecordContractReceipt"
 	ReceiptService_ReverseContractReceipt_FullMethodName      = "/erp.export.v1.ReceiptService/ReverseContractReceipt"
 	ReceiptService_CloseReceivable_FullMethodName             = "/erp.export.v1.ReceiptService/CloseReceivable"
+	ReceiptService_SetReceivableDueDate_FullMethodName        = "/erp.export.v1.ReceiptService/SetReceivableDueDate"
 	ReceiptService_ReopenReceivable_FullMethodName            = "/erp.export.v1.ReceiptService/ReopenReceivable"
 	ReceiptService_ListReceivableReminders_FullMethodName     = "/erp.export.v1.ReceiptService/ListReceivableReminders"
 	ReceiptService_MarkReceivableRemindersRead_FullMethodName = "/erp.export.v1.ReceiptService/MarkReceivableRemindersRead"
@@ -94,6 +95,8 @@ type ReceiptServiceClient interface {
 	// 确认；确认之后照样能继续记收款，钱真的又来了就撤销完成。
 	// 有一条活着的记录 = 已完成页，没有 = 待核销页。
 	CloseReceivable(ctx context.Context, in *CloseReceivableRequest, opts ...grpc.CallOption) (*CloseReceivableResponse, error)
+	// 事后改一份合同的应收到期日。理由必填——这个日子决定它算不算逾期。
+	SetReceivableDueDate(ctx context.Context, in *SetReceivableDueDateRequest, opts ...grpc.CallOption) (*SetReceivableDueDateResponse, error)
 	ReopenReceivable(ctx context.Context, in *ReopenReceivableRequest, opts ...grpc.CallOption) (*ReopenReceivableResponse, error)
 	// 应收提醒收件箱（E1 第二期）。
 	ListReceivableReminders(ctx context.Context, in *ListReceivableRemindersRequest, opts ...grpc.CallOption) (*ListReceivableRemindersResponse, error)
@@ -278,6 +281,16 @@ func (c *receiptServiceClient) CloseReceivable(ctx context.Context, in *CloseRec
 	return out, nil
 }
 
+func (c *receiptServiceClient) SetReceivableDueDate(ctx context.Context, in *SetReceivableDueDateRequest, opts ...grpc.CallOption) (*SetReceivableDueDateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetReceivableDueDateResponse)
+	err := c.cc.Invoke(ctx, ReceiptService_SetReceivableDueDate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *receiptServiceClient) ReopenReceivable(ctx context.Context, in *ReopenReceivableRequest, opts ...grpc.CallOption) (*ReopenReceivableResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReopenReceivableResponse)
@@ -361,6 +374,8 @@ type ReceiptServiceServer interface {
 	// 确认；确认之后照样能继续记收款，钱真的又来了就撤销完成。
 	// 有一条活着的记录 = 已完成页，没有 = 待核销页。
 	CloseReceivable(context.Context, *CloseReceivableRequest) (*CloseReceivableResponse, error)
+	// 事后改一份合同的应收到期日。理由必填——这个日子决定它算不算逾期。
+	SetReceivableDueDate(context.Context, *SetReceivableDueDateRequest) (*SetReceivableDueDateResponse, error)
 	ReopenReceivable(context.Context, *ReopenReceivableRequest) (*ReopenReceivableResponse, error)
 	// 应收提醒收件箱（E1 第二期）。
 	ListReceivableReminders(context.Context, *ListReceivableRemindersRequest) (*ListReceivableRemindersResponse, error)
@@ -425,6 +440,9 @@ func (UnimplementedReceiptServiceServer) ReverseContractReceipt(context.Context,
 }
 func (UnimplementedReceiptServiceServer) CloseReceivable(context.Context, *CloseReceivableRequest) (*CloseReceivableResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CloseReceivable not implemented")
+}
+func (UnimplementedReceiptServiceServer) SetReceivableDueDate(context.Context, *SetReceivableDueDateRequest) (*SetReceivableDueDateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetReceivableDueDate not implemented")
 }
 func (UnimplementedReceiptServiceServer) ReopenReceivable(context.Context, *ReopenReceivableRequest) (*ReopenReceivableResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReopenReceivable not implemented")
@@ -762,6 +780,24 @@ func _ReceiptService_CloseReceivable_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ReceiptService_SetReceivableDueDate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetReceivableDueDateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReceiptServiceServer).SetReceivableDueDate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReceiptService_SetReceivableDueDate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReceiptServiceServer).SetReceivableDueDate(ctx, req.(*SetReceivableDueDateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ReceiptService_ReopenReceivable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ReopenReceivableRequest)
 	if err := dec(in); err != nil {
@@ -890,6 +926,10 @@ var ReceiptService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CloseReceivable",
 			Handler:    _ReceiptService_CloseReceivable_Handler,
+		},
+		{
+			MethodName: "SetReceivableDueDate",
+			Handler:    _ReceiptService_SetReceivableDueDate_Handler,
 		},
 		{
 			MethodName: "ReopenReceivable",

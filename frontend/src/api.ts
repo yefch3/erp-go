@@ -22,12 +22,6 @@ export const http = axios.create({ baseURL: '/api', timeout: 15000 })
 // finishing on the server after the browser had called it failed.
 export const mailHostRequest: AxiosRequestConfig = { timeout: 120000 }
 
-// 补算存量到期日是一次跨表的批量写：每家欠账期的供应商一次主数据往返
-// 加一条 UPDATE。供应商一多，十五秒就不够了，而超时的后果特别难看——
-// 浏览器报错、服务端其实补了一半。它是幂等的（再点一次安全），但让人
-// 先看见一次假失败没有必要。
-export const backfillRequest: AxiosRequestConfig = { timeout: 120000 }
-
 // The model service itself may use the full two-minute backend deadline.
 // Leave transport time for the gateway and gRPC response instead of having
 // the browser abandon a conversion just before the server can return it.

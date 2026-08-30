@@ -436,6 +436,9 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("export:receipt:write")).Post("/api/contract-receipts/{id}/reverse", s.reverseContractReceipt)
 		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/{id}/close", s.closeReceivable)
 		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/{id}/reopen", s.reopenReceivable)
+		// 事后改一份合同的应收到期日。合同的常规编辑口只对草稿开放、且只放
+		// 销售属主过，所以财务这条路自己开一个门，和「确认完成」并排。
+		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/{id}/due-date", s.setReceivableDueDate)
 		// 应收提醒按登录人隔离，同时要求具备收款读取权限，避免首页或徽标成为权限后门。
 		r.With(s.perm("export:receipt:read")).Get("/api/receivable-reminders", s.listReceivableReminders)
 		r.With(s.perm("export:receipt:read")).Post("/api/receivable-reminders/read", s.markReceivableRemindersRead)
@@ -583,9 +586,9 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/payments/{allocationId}/reverse", s.reversePurchaseOrderPayment)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/close", s.closePurchaseOrderPayment)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/reopen", s.reopenPurchaseOrderPayment)
-		// 存量单补到期日。静态段排在 {id} 前面才不会被当成一个采购单 id，
-		// chi 本身就是静态优先，这里只是把它写在一起免得看漏。
-		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/backfill-due", s.backfillPayableDue)
+		// 事后改一张已下单采购单的应付到期日。采购单本身已下单之后没有编辑
+		// 入口（表单只对草稿和被驳回的单开放），所以这个门开在对账页上。
+		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/due-date", s.setPayableDueDate)
 		// 挂在采购单上的凭证——发票扫描件、水单、退款回执。发票页下线之后，
 		// 「留凭证」这件事搬到了这里；一张单可以有好几份。
 		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-recon/{id}/files", s.listReconFiles)

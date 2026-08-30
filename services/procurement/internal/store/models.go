@@ -394,8 +394,19 @@ type PurchaseOrder struct {
 	SourceChangeReason   string
 	CloseNote            string
 	ShortfallAction      string
-	PaymentDays          int32
 	PayableDueDate       pgtype.Date
+}
+
+type PurchaseOrderDueChange struct {
+	ID            int64
+	TenantID      int64
+	PoID          int64
+	OldDueDate    pgtype.Date
+	NewDueDate    pgtype.Date
+	Reason        string
+	ChangedByID   int64
+	ChangedByName string
+	CreatedAt     pgtype.Timestamptz
 }
 
 type PurchaseOrderImport struct {

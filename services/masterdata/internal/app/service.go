@@ -45,7 +45,6 @@ type CustomerInput struct {
 	InvoiceTitle, InvoiceTaxNo, InvoiceRemark                   string
 	CreditCurrency, CreditStatus, BusinessStatus                string
 	Tags                                                        []string
-	PaymentDays                                                 int32
 	CreditLimitMinor                                            int64
 	// CountryCode is ISO 3166-1 alpha-2, and it is what the system groups by.
 	// Country is the free text that came before it and is on its way out —
@@ -65,7 +64,6 @@ type CustomerProfileInput struct {
 	InvoiceTitle, InvoiceTaxNo, InvoiceRemark              string
 	CreditCurrency, CreditStatus, BusinessStatus           string
 	Tags                                                   []string
-	PaymentDays                                            int32
 	CreditLimitMinor                                       int64
 	OperatorID                                             int64
 	OperatorName                                           string
@@ -96,9 +94,6 @@ func (in CustomerInput) validate() error {
 	}
 	if in.Currency != "" && len(in.Currency) != 3 {
 		return apierr.Invalid("MD_CURRENCY_INVALID", "币种必须是 3 位 ISO 代码")
-	}
-	if in.PaymentDays < 0 {
-		return apierr.Invalid("MD_PAYMENT_DAYS_INVALID", "付款账期不能小于 0 天")
 	}
 	if in.CreditLimitMinor < 0 {
 		return apierr.Invalid("MD_CREDIT_LIMIT_INVALID", "信用额度不能小于 0")
@@ -139,9 +134,6 @@ func (in CustomerProfileInput) validate() error {
 		if _, err := time.LoadLocation(timezone); err != nil {
 			return apierr.Invalid("MD_CUSTOMER_TIMEZONE_INVALID", "所在时区必须是有效的 IANA 时区，例如 Asia/Shanghai")
 		}
-	}
-	if in.PaymentDays < 0 {
-		return apierr.Invalid("MD_PAYMENT_DAYS_INVALID", "付款账期不能小于 0 天")
 	}
 	if in.CreditLimitMinor < 0 {
 		return apierr.Invalid("MD_CREDIT_LIMIT_INVALID", "信用额度不能小于 0")
@@ -254,7 +246,7 @@ func (s *Service) CreateCustomer(ctx context.Context, tenantID int64, in Custome
 			Timezone: in.Timezone, RegisteredName: in.RegisteredName,
 			RegistrationNo: in.RegistrationNo, TaxID: in.TaxID,
 			InvoiceTitle: in.InvoiceTitle, InvoiceTaxNo: in.InvoiceTaxNo,
-			InvoiceRemark: in.InvoiceRemark, PaymentDays: in.PaymentDays,
+			InvoiceRemark: in.InvoiceRemark,
 			CreditLimitMinor: in.CreditLimitMinor, CreditCurrency: in.CreditCurrency,
 			CreditStatus: in.CreditStatus, BusinessStatus: in.BusinessStatus,
 			OperatorID: in.OperatorID,
@@ -380,7 +372,7 @@ func (s *Service) UpdateCustomerProfile(ctx context.Context, tenantID, id int64,
 		Timezone: in.Timezone, RegisteredName: in.RegisteredName,
 		RegistrationNo: in.RegistrationNo, TaxID: in.TaxID,
 		InvoiceTitle: in.InvoiceTitle, InvoiceTaxNo: in.InvoiceTaxNo,
-		InvoiceRemark: in.InvoiceRemark, PaymentDays: in.PaymentDays,
+		InvoiceRemark: in.InvoiceRemark,
 		CreditLimitMinor: in.CreditLimitMinor, CreditCurrency: in.CreditCurrency,
 		CreditStatus: in.CreditStatus, BusinessStatus: in.BusinessStatus,
 		OperatorID: in.OperatorID,
@@ -456,7 +448,6 @@ type SupplierInput struct {
 	TaxID, Currency, PaymentTerm                     string
 	// 付款账期，单位天。0 = 没配（不是「当天到期」）。payment_term 那一项
 	// 是给人看的自由文本，这一个是应付到期日的算术用的。
-	PaymentDays                                     int32
 	BusinessTypes                                   []string
 	ContactName, ContactPhone, ContactEmail, Remark string
 	OperatorID                                      int64
@@ -535,7 +526,7 @@ func (s *Service) CreateSupplier(ctx context.Context, tenantID int64, in Supplie
 			ShortName: in.ShortName, Country: in.Country, CountryCode: in.CountryCode,
 			Address: in.Address, RegisteredAddress: in.RegisteredAddress, TaxID: in.TaxID,
 			Currency: in.Currency, PaymentTerm: in.PaymentTerm,
-			PaymentDays: in.PaymentDays, BusinessTypes: in.BusinessTypes,
+			BusinessTypes: in.BusinessTypes,
 			ContactName:  in.ContactName,
 			ContactPhone: in.ContactPhone, ContactEmail: in.ContactEmail,
 			Remark: in.Remark, OperatorID: in.OperatorID,
@@ -590,7 +581,7 @@ func (s *Service) UpdateSupplier(ctx context.Context, tenantID, id int64, in Sup
 			ShortName: in.ShortName, Country: in.Country, CountryCode: in.CountryCode,
 			Address: in.Address, RegisteredAddress: in.RegisteredAddress, TaxID: in.TaxID,
 			Currency: in.Currency, PaymentTerm: in.PaymentTerm,
-			PaymentDays: in.PaymentDays, BusinessTypes: in.BusinessTypes,
+			BusinessTypes: in.BusinessTypes,
 			ContactName: in.ContactName, ContactPhone: in.ContactPhone, ContactEmail: in.ContactEmail,
 			Remark: in.Remark, OperatorID: in.OperatorID,
 		})

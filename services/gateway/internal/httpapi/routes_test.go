@@ -52,6 +52,7 @@ func TestReceivableRoutesAreAllRegistered(t *testing.T) {
 		"POST /api/contract-receipts/{id}/reverse", // 冲销记错的那一笔
 		"POST /api/receivable-due/{id}/close",      // 「确认核销完成」（转到已完成页）
 		"POST /api/receivable-due/{id}/reopen",     // 「撤销完成」（回到待核销页）
+		"POST /api/receivable-due/{id}/due-date",   // 「改到期日」（合同的常规编辑口只对草稿开放）
 		"GET /api/contracts/{id}/receipts",         // 展开行看这张合同的收款明细
 		"GET /api/bank-accounts",                   // 「收款账户」（现在在银行流水页上）
 		"POST /api/bank-accounts",
@@ -235,7 +236,7 @@ func TestSupplierReconRoutesAreAllRegistered(t *testing.T) {
 		"POST /api/supplier-recon/{id}/payments/{allocationId}/reverse", // 冲销记错的那一笔
 		"POST /api/supplier-recon/{id}/close",                           // 「确认核销完成」（转到已完成页）
 		"POST /api/supplier-recon/{id}/reopen",                          // 「撤销完成」（回到待核销页）
-		"POST /api/supplier-recon/backfill-due",                         // 「补算存量到期日」（未配账期那张卡上）
+		"POST /api/supplier-recon/{id}/due-date",                        // 「改到期日」（已下单的单没有别的编辑入口）
 	}
 	for _, w := range want {
 		if !have[w] {

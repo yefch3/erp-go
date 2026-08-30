@@ -7,7 +7,7 @@
 -- name: CreateContract :one
 INSERT INTO contracts (
     tenant_id, contract_no, quotation_id, quote_no, customer_id, customer_name,
-    sales_employee_id, sales_employee, created_by, updated_by
+    sales_employee_id, sales_employee, receivable_due_date, created_by, updated_by
 ) VALUES (
     sqlc.arg(tenant_id)::bigint,
     sqlc.arg(contract_no)::text,
@@ -17,6 +17,10 @@ INSERT INTO contracts (
     sqlc.arg(customer_name)::text,
     sqlc.arg(sales_employee_id)::bigint,
     sqlc.arg(sales_employee)::text,
+    -- 应收到期日：这份合同的钱什么时候该收回来。**建合同的人填**，可空。
+    -- 不再从客户主数据的账期推——同一个客户这一单谈 60 天、下一单要求
+    -- 预付，都是常事。
+    nullif(sqlc.arg(receivable_due_date)::text, '')::date,
     sqlc.arg(created_by)::bigint,
     sqlc.arg(created_by)::bigint
 )
@@ -27,6 +31,7 @@ SELECT
     id, tenant_id, contract_no, coalesce(quotation_id, 0)::bigint AS quotation_id, quote_no,
     customer_id, customer_name, coalesce(current_version_id, 0)::bigint AS current_version_id,
     status, status_before_approval, sales_employee_id, sales_employee,
+    coalesce(receivable_due_date::text, '')::text AS receivable_due_date,
     signature_source, signed_at, effective_at, completed_at, created_at
 FROM contracts
 WHERE tenant_id = $1 AND id = $2;
@@ -35,6 +40,7 @@ WHERE tenant_id = $1 AND id = $2;
 SELECT
     c.id, c.contract_no, c.quote_no, c.customer_id, c.customer_name, c.status,
     c.sales_employee_id, c.sales_employee, c.signed_at, c.effective_at, c.created_at,
+    coalesce(c.receivable_due_date::text, '')::text AS receivable_due_date,
     coalesce(v.currency, '')::text AS currency,
     coalesce(v.total_amount, 0)::text AS total_amount,
     coalesce(v.base_amount, 0)::text AS base_amount,

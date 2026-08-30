@@ -6,7 +6,7 @@ INSERT INTO customers (
     tenant_id, code, name, country, country_code, address, currency, payment_term, remark,
     short_name, english_name, customer_type, industry, source, tags, website,
     primary_language, timezone, registered_name, registration_no, tax_id,
-    invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor,
+    invoice_title, invoice_tax_no, invoice_remark, credit_limit_minor,
     credit_currency, credit_status, business_status, created_by, updated_by
 )
 VALUES (
@@ -17,7 +17,7 @@ VALUES (
     sqlc.arg(website), sqlc.arg(primary_language), sqlc.arg(timezone),
     sqlc.arg(registered_name), sqlc.arg(registration_no), sqlc.arg(tax_id),
     sqlc.arg(invoice_title), sqlc.arg(invoice_tax_no), sqlc.arg(invoice_remark),
-    sqlc.arg(payment_days), sqlc.arg(credit_limit_minor), sqlc.arg(credit_currency),
+    sqlc.arg(credit_limit_minor), sqlc.arg(credit_currency),
     sqlc.arg(credit_status), sqlc.arg(business_status), sqlc.arg(operator_id), sqlc.arg(operator_id)
 )
 RETURNING *;
@@ -71,7 +71,7 @@ SET short_name = sqlc.arg(short_name), english_name = sqlc.arg(english_name),
     registered_name = sqlc.arg(registered_name), registration_no = sqlc.arg(registration_no),
     tax_id = sqlc.arg(tax_id), invoice_title = sqlc.arg(invoice_title),
     invoice_tax_no = sqlc.arg(invoice_tax_no), invoice_remark = sqlc.arg(invoice_remark),
-    payment_days = sqlc.arg(payment_days), credit_limit_minor = sqlc.arg(credit_limit_minor),
+    credit_limit_minor = sqlc.arg(credit_limit_minor),
     credit_currency = sqlc.arg(credit_currency), credit_status = sqlc.arg(credit_status),
     business_status = sqlc.arg(business_status), updated_by = sqlc.arg(operator_id),
     updated_at = now()
@@ -350,7 +350,7 @@ WHERE tenant_id = sqlc.arg(tenant_id) AND customer_id = sqlc.arg(customer_id)
 -- name: CreateSupplier :one
 INSERT INTO suppliers (
   tenant_id, code, name, name_zh, name_en, short_name, country, country_code,
-  address, registered_address, tax_id, currency, payment_term, payment_days,
+  address, registered_address, tax_id, currency, payment_term,
   business_types, contact_name, contact_phone, contact_email, remark,
   created_by, updated_by
 )
@@ -358,7 +358,7 @@ VALUES (
   sqlc.arg(tenant_id), sqlc.arg(code), sqlc.arg(name), sqlc.arg(name_zh), sqlc.arg(name_en),
   sqlc.arg(short_name), sqlc.arg(country), sqlc.arg(country_code), sqlc.arg(address),
   sqlc.arg(registered_address), sqlc.arg(tax_id), sqlc.arg(currency), sqlc.arg(payment_term),
-  sqlc.arg(payment_days), sqlc.arg(business_types), sqlc.arg(contact_name), sqlc.arg(contact_phone),
+  sqlc.arg(business_types), sqlc.arg(contact_name), sqlc.arg(contact_phone),
   sqlc.arg(contact_email), sqlc.arg(remark), sqlc.arg(operator_id), sqlc.arg(operator_id)
 )
 RETURNING *;
@@ -403,7 +403,7 @@ SET name = sqlc.arg(name), name_zh = sqlc.arg(name_zh), name_en = sqlc.arg(name_
     short_name = sqlc.arg(short_name), country = sqlc.arg(country), country_code = sqlc.arg(country_code),
     address = sqlc.arg(address), registered_address = sqlc.arg(registered_address), tax_id = sqlc.arg(tax_id),
     currency = sqlc.arg(currency), payment_term = sqlc.arg(payment_term),
-    payment_days = sqlc.arg(payment_days), business_types = sqlc.arg(business_types),
+    business_types = sqlc.arg(business_types),
     contact_name = sqlc.arg(contact_name), contact_phone = sqlc.arg(contact_phone),
     contact_email = sqlc.arg(contact_email), remark = sqlc.arg(remark),
     updated_by = sqlc.arg(operator_id), updated_at = now()

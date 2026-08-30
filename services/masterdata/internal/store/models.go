@@ -53,7 +53,6 @@ type Customer struct {
 	InvoiceTitle     string
 	InvoiceTaxNo     string
 	InvoiceRemark    string
-	PaymentDays      int32
 	CreditLimitMinor int64
 	CreditCurrency   string
 	CreditStatus     string
@@ -336,7 +335,6 @@ type Supplier struct {
 	BusinessTypes     []string
 	CreditGrade       string
 	CreditGradedAt    pgtype.Timestamptz
-	PaymentDays       int32
 }
 
 type SupplierChangeLog struct {

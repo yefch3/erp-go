@@ -147,25 +147,28 @@ func (q *Queries) AllocationSumsByTransactions(ctx context.Context, arg Allocati
 	return items, nil
 }
 
-const backfillReceivableDue = `-- name: BackfillReceivableDue :execrows
-UPDATE contracts SET receivable_due_date = (effective_at::date + $1::int)
-WHERE tenant_id = $2::bigint
-  AND customer_id = $3::bigint
-  AND receivable_due_date IS NULL
-  AND effective_at IS NOT NULL
-  AND $1::int > 0
+const clearContractReminders = `-- name: ClearContractReminders :execrows
+UPDATE receivable_reminders SET read_at = now()
+WHERE tenant_id = $1::bigint
+  AND contract_id = $2::bigint
+  AND read_at IS NULL
 `
 
-type BackfillReceivableDueParams struct {
-	PaymentDays int32
-	TenantID    int64
-	CustomerID  int64
+type ClearContractRemindersParams struct {
+	TenantID   int64
+	ContractID int64
 }
 
-// 存量补算：已经生效但没有到期日的合同，按传入的（客户 → 账期）补。
-// 幂等，只碰为空的行。
-func (q *Queries) BackfillReceivableDue(ctx context.Context, arg BackfillReceivableDueParams) (int64, error) {
-	result, err := q.db.Exec(ctx, backfillReceivableDue, arg.PaymentDays, arg.TenantID, arg.CustomerID)
+// 改完到期日，把这份合同还没读的催收提醒清掉。
+//
+// 不清的话会重发一整轮：提醒的幂等键里带着 due_date（00014 的唯一键），
+// 日子一换，同一档提醒就成了「新的一条」，扫描器下一轮把 SOON / DUE /
+// OVERDUE 全部再发一遍。那个设计当初是对的——那时唯一能改到期日的是补算，
+// 日子变了确实该重新提醒；现在人手一改就重发，改错再改回就是两轮。
+//
+// 只清未读：读过的是历史，销售看见过就是看见过，不该被抹掉。
+func (q *Queries) ClearContractReminders(ctx context.Context, arg ClearContractRemindersParams) (int64, error) {
+	result, err := q.db.Exec(ctx, clearContractReminders, arg.TenantID, arg.ContractID)
 	if err != nil {
 		return 0, err
 	}
@@ -221,6 +224,25 @@ func (q *Queries) ContractReceiptProgress(ctx context.Context, arg ContractRecei
 		&i.OpenAmount,
 	)
 	return i, err
+}
+
+const contractReceivableDue = `-- name: ContractReceivableDue :one
+SELECT coalesce(receivable_due_date::text, '')::text AS receivable_due_date
+FROM contracts
+WHERE tenant_id = $1::bigint AND id = $2::bigint
+`
+
+type ContractReceivableDueParams struct {
+	TenantID int64
+	ID       int64
+}
+
+// 单读一列，给留痕取旧值用。走 GetContract 太重，而且那一句还要联版本表。
+func (q *Queries) ContractReceivableDue(ctx context.Context, arg ContractReceivableDueParams) (string, error) {
+	row := q.db.QueryRow(ctx, contractReceivableDue, arg.TenantID, arg.ID)
+	var receivable_due_date string
+	err := row.Scan(&receivable_due_date)
+	return receivable_due_date, err
 }
 
 const findContractsByNo = `-- name: FindContractsByNo :many
@@ -1042,6 +1064,43 @@ func (q *Queries) OpenReceivables(ctx context.Context, arg OpenReceivablesParams
 	return items, nil
 }
 
+const recordContractDueChange = `-- name: RecordContractDueChange :exec
+INSERT INTO contract_due_changes
+    (tenant_id, contract_id, old_due_date, new_due_date, reason, changed_by_id, changed_by_name)
+VALUES (
+    $1::bigint,
+    $2::bigint,
+    nullif($3::text, '')::date,
+    nullif($4::text, '')::date,
+    $5::text,
+    $6::bigint,
+    $7::text
+)
+`
+
+type RecordContractDueChangeParams struct {
+	TenantID      int64
+	ContractID    int64
+	OldDueDate    string
+	NewDueDate    string
+	Reason        string
+	ChangedByID   int64
+	ChangedByName string
+}
+
+func (q *Queries) RecordContractDueChange(ctx context.Context, arg RecordContractDueChangeParams) error {
+	_, err := q.db.Exec(ctx, recordContractDueChange,
+		arg.TenantID,
+		arg.ContractID,
+		arg.OldDueDate,
+		arg.NewDueDate,
+		arg.Reason,
+		arg.ChangedByID,
+		arg.ChangedByName,
+	)
+	return err
+}
+
 const revokeReceiptSettlement = `-- name: RevokeReceiptSettlement :execrows
 UPDATE receipt_line_settlements
 SET revoked_at = now(),
@@ -1110,9 +1169,8 @@ func (q *Queries) RevokeReceivableClosure(ctx context.Context, arg RevokeReceiva
 }
 
 const setContractReceivableDue = `-- name: SetContractReceivableDue :exec
-UPDATE contracts SET receivable_due_date = $1::text::date
+UPDATE contracts SET receivable_due_date = nullif($1::text, '')::date
 WHERE tenant_id = $2::bigint AND id = $3::bigint
-  AND receivable_due_date IS NULL
 `
 
 type SetContractReceivableDueParams struct {
@@ -1121,8 +1179,14 @@ type SetContractReceivableDueParams struct {
 	ID       int64
 }
 
-// 合同生效那一刻把到期日钉下来（E1）。只在为空时写，和 effective_at
-// 同一个哲学：第一次生效定的日子就是约定，之后客户改账期不再回头改它。
+// 改一份合同的应收到期日。
+//
+// 上一版带 `AND receivable_due_date IS NULL`，因为那时唯一的写入者是「生效
+// 那一刻算一次」，只该算一次。现在写入者是人，改错了要能改回来，所以那道
+// 守卫撤掉——代价是催收那边要跟着处理，见 ClearContractReminders。
+//
+// 空串表示清空，回到「没填」。旧值由调用方在同一个事务里先读，这里不用
+// RETURNING 兜圈子。
 func (q *Queries) SetContractReceivableDue(ctx context.Context, arg SetContractReceivableDueParams) error {
 	_, err := q.db.Exec(ctx, setContractReceivableDue, arg.DueDate, arg.TenantID, arg.ID)
 	return err
