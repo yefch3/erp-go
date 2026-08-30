@@ -286,8 +286,9 @@ func supplierToProto(s store.Supplier) *mdv1.Supplier {
 		ContactEmail: s.ContactEmail, Remark: s.Remark, Status: s.Status,
 		NameZh: s.NameZh, NameEn: s.NameEn, ShortName: s.ShortName,
 		CountryCode: s.CountryCode, TaxId: s.TaxID, RegisteredAddress: s.RegisteredAddress,
-		PaymentTerm: s.PaymentTerm, BusinessTypes: s.BusinessTypes,
-		CreditGrade: s.CreditGrade, CreditGradedAt: ts(s.CreditGradedAt),
+		PaymentTerm: s.PaymentTerm, PaymentDays: s.PaymentDays,
+		BusinessTypes: s.BusinessTypes,
+		CreditGrade:   s.CreditGrade, CreditGradedAt: ts(s.CreditGradedAt),
 	}
 }
 
@@ -299,8 +300,9 @@ func (h *Handler) CreateSupplier(ctx context.Context, req *mdv1.CreateSupplierRe
 		ContactEmail: req.GetContactEmail(), Remark: req.GetRemark(),
 		NameZh: req.GetNameZh(), NameEn: req.GetNameEn(), ShortName: req.GetShortName(),
 		CountryCode: req.GetCountryCode(), TaxID: req.GetTaxId(), RegisteredAddress: req.GetRegisteredAddress(),
-		PaymentTerm: req.GetPaymentTerm(), BusinessTypes: req.GetBusinessTypes(),
-		OperatorID: operatorID(ctx), OperatorName: operatorName(ctx),
+		PaymentTerm: req.GetPaymentTerm(), PaymentDays: req.GetPaymentDays(),
+		BusinessTypes: req.GetBusinessTypes(),
+		OperatorID:    operatorID(ctx), OperatorName: operatorName(ctx),
 	})
 	if err != nil {
 		return nil, err
@@ -331,8 +333,9 @@ func (h *Handler) ListSuppliers(ctx context.Context, req *mdv1.ListSuppliersRequ
 			ContactEmail: r.ContactEmail, Remark: r.Remark, Status: r.Status,
 			NameZh: r.NameZh, NameEn: r.NameEn, ShortName: r.ShortName,
 			CountryCode: r.CountryCode, TaxId: r.TaxID, RegisteredAddress: r.RegisteredAddress,
-			PaymentTerm: r.PaymentTerm, BusinessTypes: r.BusinessTypes,
-			CreditGrade: r.CreditGrade, CreditGradedAt: ts(r.CreditGradedAt),
+			PaymentTerm: r.PaymentTerm, PaymentDays: r.PaymentDays,
+			BusinessTypes: r.BusinessTypes,
+			CreditGrade:   r.CreditGrade, CreditGradedAt: ts(r.CreditGradedAt),
 			FactoryCount: r.FactoryCount, OwnerNames: r.OwnerNames,
 		}
 	}
@@ -356,6 +359,7 @@ func (h *Handler) UpdateSupplier(ctx context.Context, req *mdv1.UpdateSupplierRe
 		Remark: req.GetRemark(), NameZh: req.GetNameZh(), NameEn: req.GetNameEn(),
 		ShortName: req.GetShortName(), CountryCode: req.GetCountryCode(), TaxID: req.GetTaxId(),
 		RegisteredAddress: req.GetRegisteredAddress(), PaymentTerm: req.GetPaymentTerm(),
+		PaymentDays:   req.GetPaymentDays(),
 		BusinessTypes: req.GetBusinessTypes(), OperatorID: operatorID(ctx), OperatorName: operatorName(ctx),
 	})
 	if err != nil {

@@ -648,6 +648,29 @@ service PurchaseOrderService {
   rpc ListSupplierStatements(ListSupplierStatementsRequest) returns (ListSupplierStatementsResponse);
   rpc GetSupplierStatement(GetSupplierStatementRequest) returns (GetSupplierStatementResponse);
 
+  // Supplier reconciliation, done by hand: one row per purchase order, the
+  // amounts typed in by whoever is doing the reconciling, and "is this
+  // settled" answered by a person rather than by arithmetic. Nothing here
+  // reads an invoice or a bank row — invoices are evidence to attach, and
+  // bank rows are a record of their own.
+  rpc ListSupplierRecon(ListSupplierReconRequest) returns (ListSupplierReconResponse);
+  rpc ListPurchaseOrderPayments(ListPurchaseOrderPaymentsRequest) returns (ListPurchaseOrderPaymentsResponse);
+  rpc RecordPurchaseOrderPayment(RecordPurchaseOrderPaymentRequest) returns (RecordPurchaseOrderPaymentResponse);
+  rpc ReversePurchaseOrderPayment(ReversePurchaseOrderPaymentRequest) returns (ReversePurchaseOrderPaymentResponse);
+  rpc ClosePurchaseOrderPayment(ClosePurchaseOrderPaymentRequest) returns (ClosePurchaseOrderPaymentResponse);
+  rpc ReopenPurchaseOrderPayment(ReopenPurchaseOrderPaymentRequest) returns (ReopenPurchaseOrderPaymentResponse);
+  // 给存量采购单补应付到期日。到期日是从「配了账期之后下的单」才开始
+  // 写入的，在此之前的单一张都没有——不补一次，上线第一天整页都是
+  // 「未配账期」。按供应商当前配的账期算，幂等，跑几遍结果一样。
+  rpc BackfillPayableDue(BackfillPayableDueRequest) returns (BackfillPayableDueResponse);
+  // 挂在一张采购单上的凭证——发票扫描件、水单、退款回执。存的是**纸**，
+  // 不是有金额、有明细、参与运算的单据：它不进任何求和，只是「这笔钱是
+  // 怎么回事」的证据。一张单可以有好几份。
+  rpc PresignReconFile(PresignReconFileRequest) returns (PresignReconFileResponse);
+  rpc AttachReconFile(AttachReconFileRequest) returns (AttachReconFileResponse);
+  rpc ListReconFiles(ListReconFilesRequest) returns (ListReconFilesResponse);
+  rpc RemoveReconFile(RemoveReconFileRequest) returns (RemoveReconFileResponse);
+
   // Bank statement rows: the fifth voice. Imported verbatim from the CSV
   // the bank portal exports, deduplicated by the bank's own reference, and
   // matched to payments — the match lives on the payment and is reversible;
@@ -1858,7 +1881,6 @@ message ListProcurementReworksRequest { int64 case_id = 1; }
 message ListProcurementReworksResponse { repeated ProcurementReworkRequest rework_requests = 1; }
 message ResolveProcurementReworkRequest { int64 id = 1; string resolution_note = 2; }
 message ResolveProcurementReworkResponse {}
-
 message SourcingShippingRequest {
   int64 id = 1;
   int64 case_id = 2;
@@ -2002,3 +2024,188 @@ message ListSourcingShippingPlansRequest { int64 case_id = 1; }
 message ListSourcingShippingPlansResponse { repeated SourcingShippingPlan plans = 1; }
 message SubmitSourcingShippingPlanToSalesRequest { int64 id = 1; }
 message SubmitSourcingShippingPlanToSalesResponse { SourcingShippingPlan plan = 1; }
+
+// ── 供应商对账（手工核销）─────────────────────────────────────────────
+//
+// SupplierReconRow is one purchase order as it stands on the money side.
+// paid_amount is summed at read time from the allocation rows, so a
+// reversal shows up the moment it is written. open_amount may be negative:
+// overpaying is a real thing, and this view does not pretend otherwise.
+message SupplierReconRow {
+  int64 po_id = 1;
+  string po_no = 2;
+  int64 supplier_id = 3;
+  string supplier_name = 4;
+  string currency = 5;
+  string order_status = 6;
+  string buyer_name = 7;
+  string ordered_date = 8;
+  string expected_date = 9;
+  // Payable due date = the day the order was placed + the supplier's terms.
+  // Empty means no terms configured — not "due today". due_unset says which.
+  string due_date = 18;
+  // Positive = days overdue, negative = days left. Meaningless when due_unset.
+  int32 overdue_days = 19;
+  bool due_unset = 20;
+  string ordered_amount = 10;
+  string paid_amount = 11;
+  string open_amount = 12;
+  // Only set on the settled view: why it was called done, and by whom.
+  string closed_category = 13;
+  string closed_note = 14;
+  string closed_by_name = 15;
+  string closed_at = 16;
+  // How much of paid_amount arrived through the older invoice route
+  // (apportioned back to this order by invoice line). Broken out so the
+  // paid figure can be explained: the detail rows on this page only show
+  // hand-entered money, and an unexplained gap gets re-entered by hand.
+  string invoice_paid_amount = 17;
+}
+
+// PurchaseOrderPaymentEntry is one movement of money on one order.
+message PurchaseOrderPaymentEntry {
+  int64 allocation_id = 1;
+  string paid_at = 2;
+  string amount = 3;
+  // Non-zero only on rows that came from a payment voucher before the
+  // by-hand model. Shown separately: it is not part of paid_amount.
+  string fee_amount = 4;
+  string currency = 5;
+  string note = 6;
+  string allocated_at = 7;
+  string allocated_by = 8;
+  int64 reversal_of = 9;
+  string reverse_reason = 10;
+  // Empty on hand-entered rows. Also decides which reversal path applies.
+  string payment_no = 11;
+  // Non-empty when the money was allocated against an invoice that has a
+  // line pointing at this order. It counts toward this order's paid figure,
+  // but it is not money paid *on* this order — reversing it also moves any
+  // other order the invoice touches.
+  string invoice_no = 12;
+}
+
+message ListSupplierReconRequest {
+  string keyword = 1;
+  // Two mutually exclusive narrowings; neither set means everything.
+  bool overdue_only = 5;
+  bool unset_only = 6;
+  // false = still to reconcile; true = confirmed done.
+  bool closed_only = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+message ListSupplierReconResponse {
+  repeated SupplierReconRow items = 1;
+  int64 total = 2;
+}
+
+message ListPurchaseOrderPaymentsRequest {
+  int64 po_id = 1;
+}
+message ListPurchaseOrderPaymentsResponse {
+  repeated PurchaseOrderPaymentEntry items = 1;
+}
+
+// Every write returns the row as it now stands, so the page never has to
+// guess what changed. Four near-identical envelopes rather than one shared
+// one: buf's lint wants a response type per RPC, and the cost of obeying it
+// is four lines each.
+
+message RecordPurchaseOrderPaymentResponse {
+  SupplierReconRow row = 1;
+}
+message RecordPurchaseOrderPaymentRequest {
+  int64 po_id = 1;
+  // Always positive; a refund is expressed by is_refund, not by a sign.
+  string amount = 2;
+  bool is_refund = 3;
+  string paid_at = 4;
+  string note = 5;
+}
+message ReversePurchaseOrderPaymentResponse {
+  SupplierReconRow row = 1;
+}
+message ReversePurchaseOrderPaymentRequest {
+  int64 allocation_id = 1;
+  string reason = 2;
+  // Which row to return afterwards. Invoice-backed allocations point at no
+  // purchase order of their own, so the caller has to say.
+  int64 po_id = 3;
+}
+message ClosePurchaseOrderPaymentResponse {
+  SupplierReconRow row = 1;
+}
+message ClosePurchaseOrderPaymentRequest {
+  int64 po_id = 1;
+  // SETTLED | LOSS | ROUNDING | CANCELLED | OTHER
+  string category = 2;
+  string note = 3;
+}
+message ReopenPurchaseOrderPaymentResponse {
+  SupplierReconRow row = 1;
+}
+message ReopenPurchaseOrderPaymentRequest {
+  int64 po_id = 1;
+  string reason = 2;
+}
+
+// 补算不收任何参数：账期只有一个出处，就是供应商详情页上配的那个数。
+// 让员工在这里手填一个天数，等于让同一件事有两个答案。
+message BackfillPayableDueRequest {}
+
+// 报「补了多少」不够——没补上的那部分才是下一步要干的活。跳过的都是没配
+// 账期的供应商，员工看到「还有 5 家没配、涉及 12 张单」才知道回头去哪儿。
+message BackfillPayableDueResponse {
+  int64 updated_orders = 1;
+  int32 applied_suppliers = 2;
+  int32 skipped_suppliers = 3;
+  int64 skipped_orders = 4;
+}
+
+// ReconFile is one piece of paper filed against a purchase order.
+message ReconFile {
+  int64 id = 1;
+  string file_name = 2;
+  string note = 3;
+  // Short-lived read URL, signed per request. Empty when signing failed —
+  // one unopenable file must not fail the whole list.
+  string url = 4;
+  string uploaded_by_name = 5;
+  string uploaded_at = 6;
+}
+
+message PresignReconFileRequest {
+  int64 po_id = 1;
+  string file_name = 2;
+}
+message PresignReconFileResponse {
+  string key = 1;
+  string upload_url = 2;
+  int32 expires_seconds = 3;
+}
+
+message AttachReconFileRequest {
+  int64 po_id = 1;
+  string key = 2;
+  string file_name = 3;
+  string note = 4;
+}
+
+message AttachReconFileResponse {
+  repeated ReconFile items = 1;
+}
+
+message ListReconFilesRequest {
+  int64 po_id = 1;
+}
+message ListReconFilesResponse {
+  repeated ReconFile items = 1;
+}
+
+message RemoveReconFileRequest {
+  int64 file_id = 1;
+}
+message RemoveReconFileResponse {
+  repeated ReconFile items = 1;
+}

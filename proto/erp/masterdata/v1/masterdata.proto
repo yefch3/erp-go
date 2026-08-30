@@ -761,6 +761,11 @@ message Supplier {
   // 空串表示还没评过——空和 D 是两回事。
   string credit_grade = 22;
   string credit_graded_at = 23;
+  // 付款账期，单位天。应付到期日 = 下单当天 + 这个数。
+  // **0 表示没配，不是「当天到期」**——采购单上的到期日会留空，对账页
+  // 显示成「未配账期」。payment_term 那一列是给人看的自由文本，算不出
+  // 日子；这一个才是算术用的。
+  int32 payment_days = 24;
 }
 
 message CreateSupplierRequest {
@@ -781,6 +786,7 @@ message CreateSupplierRequest {
   string registered_address = 15;
   string payment_term = 16;
   repeated string business_types = 17;
+  int32 payment_days = 18;
 }
 
 message CreateSupplierResponse {
@@ -827,6 +833,7 @@ message UpdateSupplierRequest {
   string registered_address = 15;
   string payment_term = 16;
   repeated string business_types = 17;
+  int32 payment_days = 18;
 }
 
 message UpdateSupplierResponse {

@@ -98,11 +98,10 @@ func TestBankTransactionRoutesAreAllRegistered(t *testing.T) {
 	have := routeSet(t)
 	// 和 frontend/src/pages/BankTransactionsPage.vue 里调的一一对应。
 	want := []string{
-		"GET /api/bank-transactions",                          // 列表
-		"POST /api/bank-transactions",                         // 「登记流水」（手工，CSV 之外的入口）
-		"POST /api/bank-transactions/import",                  // 「导入对账单 CSV」
-		"POST /api/bank-transactions/{id}/match",              // 「匹配付款单」
-		"POST /api/bank-transactions/{id}/unmatch",            // 「取消匹配」
+		"GET /api/bank-transactions",         // 列表
+		"POST /api/bank-transactions",        // 「登记流水」（手工，CSV 之外的入口）
+		"POST /api/bank-transactions/import", // 「导入对账单 CSV」
+		// match / unmatch 已下线，见 TestRetiredSupplierPageRoutesStayGone。
 		"POST /api/bank-transactions/{id}/attachment/presign", // 传对账单：要直传地址
 		"POST /api/bank-transactions/{id}/attachment",         // 传对账单：传完登记 key
 	}
@@ -220,6 +219,86 @@ func TestMyProfileIsNotBehindAPermissionButTheAdminAvatarRoutesAre(t *testing.T)
 		if got := middlewareCount(t, r.method, r.route); got != gatedBaseline {
 			t.Errorf("%s %s 挂了 %d 层中间件，而带权限门的路由是 %d 层——"+
 				"改别人的头像必须要权限", r.method, r.route, got, gatedBaseline)
+		}
+	}
+}
+
+// 供应商对账那一组地址必须齐。少一条，页面上就有一个按钮点了没反应。
+func TestSupplierReconRoutesAreAllRegistered(t *testing.T) {
+	have := routeSet(t)
+	// 和 frontend/src/pages/SupplierReconPage.vue（待核销 / 已完成两页）
+	// 一一对应。
+	want := []string{
+		"GET /api/supplier-recon",                                       // 两页共用的列表，view=done 翻面
+		"GET /api/supplier-recon/{id}/payments",                         // 展开行看这张采购单的付款明细
+		"POST /api/supplier-recon/{id}/payments",                        // 「记一笔付款」（手填，不连流水）
+		"POST /api/supplier-recon/{id}/payments/{allocationId}/reverse", // 冲销记错的那一笔
+		"POST /api/supplier-recon/{id}/close",                           // 「确认核销完成」（转到已完成页）
+		"POST /api/supplier-recon/{id}/reopen",                          // 「撤销完成」（回到待核销页）
+		"POST /api/supplier-recon/backfill-due",                         // 「补算存量到期日」（未配账期那张卡上）
+	}
+	for _, w := range want {
+		if !have[w] {
+			t.Errorf("供应商对账这一组少了这条地址：%s", w)
+		}
+	}
+}
+
+// 供应商这边只剩「供应商对账」一个界面，别的三组地址必须**保持消失**。
+//
+// 上一版这里是一条反向的测试：「这次改造唯一要保证『一动不动』的两组……
+// 而『不动』如果没人钉，下一次顺手清理就会把它们清掉。」这次就是那个
+// 「下一次」——需求收敛成「只留一个和客户对账类似的供应商对账」，那两组
+// 连同往来汇总一起下线了。断言跟着翻面，理由也跟着换：
+//
+// 没有界面却仍然能写账的入口，是下一次「数据怎么会变成这样」的起点。
+// 服务端实现和 proto 上的 RPC 都还在（历史数据要读得出、要冲得掉），
+// 所以拦住重新挂路由这件事只能靠这条测试。
+func TestRetiredSupplierPageRoutesStayGone(t *testing.T) {
+	have := routeSet(t)
+	for _, gone := range []string{
+		// 发票：录入、作废、三单匹配、扫描件。凭证上传搬到了对账页。
+		"GET /api/supplier-invoices",
+		"GET /api/supplier-invoices/{id}",
+		"POST /api/supplier-invoices",
+		"POST /api/supplier-invoices/{id}/void",
+		"POST /api/supplier-invoices/{id}/match",
+		"POST /api/supplier-invoices/{id}/attachment/presign",
+		"POST /api/supplier-invoices/{id}/attachment",
+		// 付款：建付款单、拆到发票/采购单、冲销。老的核销行改由对账页
+		// 在服务层转交冲销（见 supplierrecon.go 的 ReversePOPayment）。
+		"GET /api/supplier-payments",
+		"GET /api/supplier-payments/{id}",
+		"POST /api/supplier-payments",
+		"POST /api/supplier-payments/{id}/allocations",
+		"POST /api/supplier-payments/allocations/{allocationId}/reverse",
+		// 往来汇总：只读，但入口也一起收了。
+		"GET /api/supplier-statements",
+		"GET /api/supplier-statements/{id}",
+		// 银行流水对上付款单：付款单没有创建入口之后这条就是空按钮，
+		// 而且和「流水只是记录、不参与核销」这个新模型本来就冲突。
+		// **unmatch 不在这里**——解开历史匹配必须留着，否则那些行的归属
+		// 从此谁也改不了（改归属的守门会让人「先取消匹配」）。
+		"POST /api/bank-transactions/{id}/match",
+	} {
+		if have[gone] {
+			t.Errorf("%s 又回来了——供应商这边只留「供应商对账」一个界面，"+
+				"这些地址是有意撤掉的", gone)
+		}
+	}
+}
+
+// 对账页那一组必须齐，凭证那四条也是。少一条，页面上就有一个按钮点了没反应。
+func TestSupplierReconFileRoutesAreAllRegistered(t *testing.T) {
+	have := routeSet(t)
+	for _, want := range []string{
+		"GET /api/supplier-recon/{id}/files",
+		"POST /api/supplier-recon/{id}/files/presign",
+		"POST /api/supplier-recon/{id}/files",
+		"POST /api/supplier-recon/files/{fileId}/remove",
+	} {
+		if !have[want] {
+			t.Errorf("凭证这一组少了这条地址：%s", want)
 		}
 	}
 }

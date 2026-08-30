@@ -42,8 +42,10 @@ type OrderLine struct {
 }
 
 type CreateOrderInput struct {
-	SupplierID           int64
-	SupplierCode         string
+	SupplierID   int64
+	SupplierCode string
+	// 下单时供应商的付款账期（天），从主数据取，不由调用方给。
+	PaymentDays          int32
 	SupplierName         string
 	Currency             string
 	ExpectedDate         string
@@ -129,7 +131,9 @@ func (s *Service) prepareOrder(ctx context.Context, in CreateOrderInput, require
 	}
 	// Supplier code/name are immutable document snapshots, but their source is
 	// master data at write time—not display strings supplied by the browser.
+	// 账期同理：从主数据取，不听浏览器的——它决定这张单什么时候该付钱。
 	in.SupplierCode, in.SupplierName = supplier.Code, supplier.Name
+	in.PaymentDays = supplier.PaymentDays
 	if len(in.Lines) == 0 {
 		return preparedOrder{}, apierr.Invalid("PO_LINES_REQUIRED", "采购单明细不能为空")
 	}
@@ -316,7 +320,10 @@ func (s *Service) createPreparedOrder(ctx context.Context, tx pgx.Tx, tenantID i
 		head, err = store.New(savepoint).CreatePurchaseOrder(ctx, store.CreatePurchaseOrderParams{
 			TenantID: tenantID, PoNo: no, SupplierID: in.SupplierID,
 			SupplierCode: in.SupplierCode, SupplierName: in.SupplierName,
-			Currency: in.Currency, TotalAmount: total.StringFixed(2),
+			// 账期快照。和上面的 supplier_name / currency 同一个理由：这张单
+			// 按当时谈定的条件下的，供应商事后改账期不该动已下出去的单。
+			PaymentDays: in.PaymentDays,
+			Currency:    in.Currency, TotalAmount: total.StringFixed(2),
 			ExpectedDate: in.ExpectedDate, BuyerID: op.ID, BuyerName: op.Name,
 			Remark: in.Remark, SourceQuotationID: quoteID, SourceQuotationNo: quoteNo,
 			SourceCostScenarioID: scenarioID, FactoryID: factoryID, FactoryCode: factoryCode, FactoryName: factoryName,
@@ -456,7 +463,8 @@ func (s *Service) UpdateOrder(
 		updated, reqErr = q.UpdatePurchaseOrderDraft(ctx, store.UpdatePurchaseOrderDraftParams{
 			TenantID: tenantID, ID: id, SupplierID: in.SupplierID,
 			SupplierCode: in.SupplierCode, SupplierName: in.SupplierName,
-			Currency: in.Currency, TotalAmount: total.StringFixed(2),
+			PaymentDays: in.PaymentDays,
+			Currency:    in.Currency, TotalAmount: total.StringFixed(2),
 			ExpectedDate: in.ExpectedDate, BuyerID: op.ID, BuyerName: op.Name,
 			Remark: in.Remark, FulfillmentMode: in.FulfillmentMode,
 			DeliveryLocationType: in.DeliveryLocationType,

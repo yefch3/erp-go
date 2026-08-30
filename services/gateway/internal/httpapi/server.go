@@ -589,27 +589,45 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:production:write")).Post("/api/purchase-orders/{id}/supplier-confirmations", s.recordSupplierConfirmation)
 		r.With(s.perm("procurement:production:write")).Post("/api/purchase-orders/{id}/production-milestones", s.saveProductionMilestone)
 
-		// The factory's claim of what we owe — the third leg of the
-		// three-way match. Its own permission, not the order one: placing
-		// orders and registering invoices for payment are different jobs.
-		r.With(s.perm("procurement:invoice:read")).Get("/api/supplier-invoices", s.listSupplierInvoices)
-		r.With(s.perm("procurement:invoice:read")).Get("/api/supplier-invoices/{id}", s.getSupplierInvoice)
-		r.With(s.perm("procurement:invoice:write")).Post("/api/supplier-invoices", s.createSupplierInvoice)
-		r.With(s.perm("procurement:invoice:write")).Post("/api/supplier-invoices/{id}/void", s.voidSupplierInvoice)
-		r.With(s.perm("procurement:invoice:write")).Post("/api/supplier-invoices/{id}/match", s.matchSupplierInvoice)
-		r.With(s.perm("procurement:invoice:write")).Post("/api/supplier-invoices/{id}/attachment/presign", s.presignSupplierInvoiceFile)
-		r.With(s.perm("procurement:invoice:write")).Post("/api/supplier-invoices/{id}/attachment", s.attachSupplierInvoiceFile)
+		// 供应商这边只剩「供应商对账」一个界面：一张采购单一行，员工手填
+		// 核销数字、手动确认完成。发票页、付款页、往来汇总页都已下线。
+		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-recon", s.listSupplierRecon)
+		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-recon/{id}/payments", s.listPurchaseOrderPayments)
+		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/payments", s.recordPurchaseOrderPayment)
+		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/payments/{allocationId}/reverse", s.reversePurchaseOrderPayment)
+		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/close", s.closePurchaseOrderPayment)
+		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/reopen", s.reopenPurchaseOrderPayment)
+		// 存量单补到期日。静态段排在 {id} 前面才不会被当成一个采购单 id，
+		// chi 本身就是静态优先，这里只是把它写在一起免得看漏。
+		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/backfill-due", s.backfillPayableDue)
+		// 挂在采购单上的凭证——发票扫描件、水单、退款回执。发票页下线之后，
+		// 「留凭证」这件事搬到了这里；一张单可以有好几份。
+		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-recon/{id}/files", s.listReconFiles)
+		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/files/presign", s.presignReconFile)
+		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/files", s.attachReconFile)
+		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/files/{fileId}/remove", s.removeReconFile)
 
-		// Money leaving, and the revisable record of what it settled.
-		// Separate permission from invoices: registering a claim and moving
-		// company money are the two jobs segregation-of-duties keeps apart.
-		r.With(s.perm("procurement:payment:read")).Get("/api/supplier-payments", s.listSupplierPayments)
-		r.With(s.perm("procurement:payment:read")).Get("/api/supplier-payments/{id}", s.getSupplierPayment)
-		r.With(s.perm("procurement:payment:write")).Post("/api/supplier-payments", s.createSupplierPayment)
-		r.With(s.perm("procurement:payment:write")).Post("/api/supplier-payments/{id}/allocations", s.allocateSupplierPayment)
-		r.With(s.perm("procurement:payment:write")).Post("/api/supplier-payments/allocations/{allocationId}/reverse", s.reverseSupplierPaymentAllocation)
-		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-statements", s.listSupplierStatements)
-		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-statements/{id}", s.getSupplierStatement)
+		// ── 下面这三组地址整体下线了 ──────────────────────────
+		//
+		//   /api/supplier-invoices/*    发票录入、作废、三单匹配、扫描件
+		//   /api/supplier-payments/*    建付款单、把它拆到发票/采购单、冲销
+		//   /api/supplier-statements/*  按供应商 × 币种的往来汇总
+		//
+		// 需求收敛成「供应商这边只留一个和客户对账类似的供应商对账」。这三页
+		// 一起下线，它们的写路径也跟着摘掉——没有界面却仍能写账的入口，是
+		// 下一次「数据怎么会变成这样」的起点，客户侧退役收款对账时立的就是
+		// 这条规矩。
+		//
+		// **服务端实现和 proto 上的 RPC 全部留在原地。** 三个理由：
+		//   · 历史数据还要读得出来——对账页的「已付」里有一大块是走发票那条
+		//     路进来的，它读的是 supplier_invoice_lines
+		//   · 历史的 payment-backed 核销行还要冲得掉，对账页在服务层转交给
+		//     ReverseSupplierPaymentAllocation（见 supplierrecon.go）
+		//   · buf 的破坏性检查不允许删 RPC
+		//
+		// 权限码 procurement:invoice:* 从此没有使用者，但**不删**：删码要动
+		// 角色授权，而留着一个没人用的码不会让任何东西出错。
+		// procurement:payment:* 仍在用——银行流水那一组路由挂的就是它。
 		// Bank rows are payment data: one spend chain, one knob.
 		r.With(s.perm("procurement:payment:read")).Get("/api/bank-transactions", s.listBankTransactions)
 		// 手工登记一行流水。CSV 之外的另一条入口，RPC 早就有（收款对账那边
@@ -617,8 +635,23 @@ func (s *Server) Router() http.Handler {
 		// 财务想先把一笔出账记下来的时候，唯一的办法是伪造一行 CSV 导进去。
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions", s.recordBankTransaction)
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/import", s.importBankStatement)
-		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/match", s.matchBankTransaction)
+		// **只留 unmatch，不留 match。** 匹配这件事下线了（付款单没有创建
+		// 入口，且和「流水只是记录」的新模型冲突），但**解开历史匹配**必须
+		// 留着：SetBankTransactionOwnership 那道闸遇到已匹配的行会拒绝，
+		// 并让人「先取消匹配」——把这条路一起删掉，那句话就成了一个做不到
+		// 的指令，那些行的归属从此谁也改不了。
+		//
+		// 这和别处同一条纪律：新路不再走了，老数据的回退口子留着。
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/unmatch", s.unmatchBankTransaction)
+		// /api/bank-transactions/{id}/match 下线了。
+		//
+		// 它们是「把一行流水对上一张供应商付款单」，而付款单的唯一创建入口
+		// 随供应商付款页一起没了——候选池只减不增，留着就是一个会慢慢归零
+		// 的按钮。更要紧的是它和新模型本来就冲突：需求原话是「银行流水这些
+		// 都只是用来记录」，不参与核销。流水页现在回归纯记录 + 凭证。
+		//
+		// MatchBankTransaction 的服务端实现留着：存量数据里已经匹配上的
+		// 那些行还要读得出来（列表上照常显示付款单号）。
 		// 那份对账单（PDF）。挂在登记流水同一个权限下——能记这笔钱的人，
 		// 就该能把银行给的那张纸传上来。
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/attachment/presign", s.presignBankTransactionFile)

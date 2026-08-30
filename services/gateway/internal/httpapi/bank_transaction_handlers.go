@@ -58,20 +58,6 @@ func (s *Server) listBankTransactions(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
-func (s *Server) matchBankTransaction(w http.ResponseWriter, r *http.Request) {
-	req := &prv1.MatchBankTransactionRequest{}
-	if !s.decodeBody(w, r, req) {
-		return
-	}
-	req.TxnId = idFromPath(r)
-	resp, err := s.Orders.MatchBankTransaction(r.Context(), req)
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
-	s.writeProto(w, resp)
-}
-
 // 对账单那张纸：先要一个直传地址，浏览器把 PDF 直接传给对象存储，
 // 传完再回来登记 key。文件本身一个字节都不经过网关。
 func (s *Server) presignBankTransactionFile(w http.ResponseWriter, r *http.Request) {
@@ -102,15 +88,6 @@ func (s *Server) attachBankTransactionFile(w http.ResponseWriter, r *http.Reques
 	s.writeProto(w, resp)
 }
 
-func (s *Server) unmatchBankTransaction(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Orders.UnmatchBankTransaction(r.Context(), &prv1.UnmatchBankTransactionRequest{TxnId: idFromPath(r)})
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
-	s.writeProto(w, resp)
-}
-
 // setBankTransactionOwnership 记下这笔银行流水是谁那条线上的。
 //
 // 客户 / 供应商 / 退税 / 不用核销 / 空=待处理。归属决定它接着能被谁核销，
@@ -122,6 +99,20 @@ func (s *Server) setBankTransactionOwnership(w http.ResponseWriter, r *http.Requ
 	}
 	req.TxnId = idFromPath(r)
 	resp, err := s.Orders.SetBankTransactionOwnership(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// unmatchBankTransaction 解开一条历史匹配。
+//
+// 新建匹配的入口下线了，这一条留着——SetBankTransactionOwnership 遇到已匹配
+// 的行会拒绝并让人「先取消匹配」，没有这条路那句话就是个做不到的指令。
+func (s *Server) unmatchBankTransaction(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.UnmatchBankTransaction(r.Context(),
+		&prv1.UnmatchBankTransactionRequest{TxnId: idFromPath(r)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

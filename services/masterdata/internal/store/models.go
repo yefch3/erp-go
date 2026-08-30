@@ -336,6 +336,7 @@ type Supplier struct {
 	BusinessTypes     []string
 	CreditGrade       string
 	CreditGradedAt    pgtype.Timestamptz
+	PaymentDays       int32
 }
 
 type SupplierChangeLog struct {

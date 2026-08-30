@@ -561,17 +561,11 @@ const financeGroups = computed(() => [
   {
     key: 'payable',
     label: t('financeNav.payable'),
-    items: [
-      ...(auth.can('procurement:invoice:read')
-        ? [{ path: '/supplier-invoices', label: t('financeNav.supplierInvoices') }]
-        : []),
-      ...(auth.can('procurement:payment:read')
-        ? [{ path: '/supplier-payments', label: t('financeNav.supplierPayments') }]
-        : []),
-      ...(auth.can('procurement:recon:read')
-        ? [{ path: '/supplier-statements', label: t('financeNav.supplierStatements') }]
-        : []),
-    ],
+    // 供应商这边只剩一项，和「应收 · 客户」下面只有「客户对账」对称。
+    // 发票页、付款页、往来汇总页都已下线；发票凭证改成在对账页上传。
+    items: auth.can('procurement:recon:read')
+      ? [{ path: '/supplier-recon', label: t('financeNav.supplierRecon') }]
+      : [],
   },
   {
     key: 'bank',

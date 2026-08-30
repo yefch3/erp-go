@@ -93,9 +93,17 @@ export const router = createRouter({
         { path: 'sourcing-cases', redirect: (to) => ({ path: '/procurement/sourcing', query: to.query }) },
         { path: 'sourcing-cases/:id', redirect: (to) => ({ path: `/procurement/sourcing/${String(to.params.id)}`, query: to.query }) },
         { path: 'purchase-orders', component: () => import('./pages/PurchaseOrdersPage.vue') },
-        { path: 'supplier-invoices', component: () => import('./pages/SupplierInvoicesPage.vue') },
-        { path: 'supplier-payments', component: () => import('./pages/SupplierPaymentsPage.vue') },
-        { path: 'supplier-statements', component: () => import('./pages/SupplierStatementsPage.vue') },
+        // 供应商这边只剩这一页。待核销 / 已完成是它下面的两个子页，靠
+        // ?view=done 分——一个服务一个菜单项，query 不影响 route.path，
+        // 所以菜单高亮照常。
+        { path: 'supplier-recon', component: () => import('./pages/SupplierReconPage.vue') },
+        // 三条退役地址一律重定向，不能直接删：路由表没有兜底路由，不匹配的
+        // 地址会让 matched 变成空——连外面那层 Shell 都不渲染，老书签点进去
+        // 是一整块白，没有菜单也没有返回入口。query 一起带过去，老链接里的
+        // ?keyword= 仍然管用。
+        { path: 'supplier-invoices', redirect: (to) => ({ path: '/supplier-recon', query: to.query }) },
+        { path: 'supplier-payments', redirect: (to) => ({ path: '/supplier-recon', query: to.query }) },
+        { path: 'supplier-statements', redirect: (to) => ({ path: '/supplier-recon', query: to.query }) },
         { path: 'bank-transactions', component: () => import('./pages/BankTransactionsPage.vue') },
         { path: 'emails', component: () => import('./pages/EmailsPage.vue') },
         { path: 'team-mail', component: () => import('./pages/TeamMailPage.vue') },
