@@ -385,6 +385,18 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/status", s.getShippingStatus)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/responsible-options", s.listVisibleEmployees)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules", s.listShippingSchedules)
+		// 售前任务列表属于船运操作台，而不是采购/销售的只读案件视图。
+		// 后两者通过各自的 sourcing case collaboration 接口查看结果，
+		// 不能凭普通船期只读权限进入船运人员的工作队列。
+		r.With(s.perm("shipping:sourcing:read")).Get("/api/shipping/sourcing-tasks", s.listSourcingShippingTasks)
+		r.With(s.perm("shipping:sourcing:read")).Get("/api/shipping/sourcing-tasks/{id}", s.getShippingSourcingTask)
+		r.With(s.perm("shipping:sourcing:write")).Post("/api/shipping/sourcing-tasks/{id}/start", s.startSourcingShippingTask)
+		r.With(s.perm("shipping:sourcing:write")).Post("/api/shipping/sourcing-tasks/{id}/join", s.joinSourcingShippingTask)
+		r.With(s.perm("shipping:sourcing:write")).Post("/api/shipping/sourcing-tasks/{id}/primary-request", s.requestPrimaryShipping)
+		r.With(s.perm("shipping:sourcing:write")).Post("/api/shipping/sourcing-tasks/{id}/options", s.addSourcingShippingOption)
+		r.With(s.perm("shipping:sourcing:approve")).Post("/api/shipping/sourcing-tasks/{id}/primary", s.assignPrimaryShipping)
+		r.With(s.perm("shipping:sourcing:approve")).Post("/api/shipping/sourcing-tasks/{id}/plans", s.createSourcingShippingPlan)
+		r.With(s.perm("shipping:sourcing:approve")).Post("/api/shipping/sourcing-plans/{id}/submit-to-sales", s.submitSourcingShippingPlan)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/statistics", s.getShippingStatistics)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/reminders", s.listShippingArrivalNotifications)
 		// 提单签发提醒按登录人隔离，同时要求具备船期读取权限，避免首页或徽标泄露受限业务摘要。
@@ -499,10 +511,12 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("sales:inquiry:read")).Get("/api/sales-inquiries/{id}", s.getSourcingCase)
 		r.With(s.perm("sales:inquiry:read")).Get("/api/sales-inquiries/{id}/changes", s.listSourcingCaseChanges)
 		r.With(s.perm("sales:procurement-progress:read")).Get("/api/sales-inquiries/{id}/procurement-progress", s.getSalesProcurementProgress)
+		r.With(s.perm("sales:inquiry:read")).Get("/api/sales-inquiries/{id}/shipping-collaboration", s.getCaseShippingCollaboration)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases", s.listSourcingCases)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}", s.getSourcingCase)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/changes", s.listSourcingCaseChanges)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/participants", s.listSourcingParticipants)
+		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/shipping-collaboration", s.getCaseShippingCollaboration)
 		r.With(s.perm("sales:inquiry:write")).Post("/api/sourcing-cases", s.createSourcingCase)
 		r.With(s.perm("sales:inquiry:write")).Post("/api/sourcing-intakes/import", s.importSourcingIntake)
 		r.With(s.perm("sales:inquiry:write")).Post("/api/sourcing-cases/{id}/lines", s.addSourcingLine)

@@ -56,8 +56,12 @@ export const router = createRouter({
         { path: 'platform/tenants', component: () => import('./pages/PlatformTenantsPage.vue') },
         { path: 'contract-execution', component: () => import('./pages/ContractExecutionPage.vue') },
         { path: 'shipments', component: () => import('./pages/ShipmentsPage.vue') },
-        { path: 'shipping', component: () => import('./pages/ShippingPage.vue') },
-        { path: 'shipping/:id', component: () => import('./pages/ShippingDetailPage.vue') },
+        // 船运操作台只属于能够维护船期的人员。销售和采购查看售前结果时
+        // 走各自案件详情里的只读“船运协作”，不直接进入这里。
+        { path: 'shipping', redirect: '/shipping/sourcing' },
+        { path: 'shipping/sourcing', component: () => import('./pages/ShippingSourcingPage.vue'), meta: { permission: 'shipping:sourcing:read' } },
+        { path: 'shipping/schedules', component: () => import('./pages/ShippingPage.vue'), meta: { permission: 'shipping:schedule:read' } },
+        { path: 'shipping/:id', component: () => import('./pages/ShippingDetailPage.vue'), meta: { permission: 'shipping:schedule:read' } },
         // 客户对账：待核销 / 已完成是它下面的两个子页，靠 ?view=done 分。
         // **一个服务一个菜单项**——两条路径会在菜单上排成两行，而它们是
         // 同一件事的两个视图。query 不影响 route.path，所以菜单高亮照常。
@@ -131,4 +135,13 @@ router.beforeEach((to) => {
     return { path: '/login', query: to.fullPath === '/' ? {} : { redirect: to.fullPath } }
   }
   if (loggedIn && to.path === '/login') return '/'
+  const required = typeof to.meta.permission === 'string' ? to.meta.permission : ''
+  if (loggedIn && required) {
+    try {
+      const permissions = JSON.parse(localStorage.getItem('permissions') ?? '[]') as string[]
+      if (!permissions.includes(required)) return '/todos'
+    } catch {
+      return '/todos'
+    }
+  }
 })

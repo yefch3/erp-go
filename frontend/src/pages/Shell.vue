@@ -470,8 +470,11 @@ const logisticsItems = computed(() => [
   ...(auth.can('export:shipment:read')
     ? [{ path: '/shipments', label: t('menu.shipments') }]
     : []),
+  ...(auth.can('shipping:sourcing:read')
+    ? [{ path: '/shipping/sourcing', label: t('presalesShipping.workspaceTitle') }]
+    : []),
   ...(auth.can('shipping:schedule:read')
-    ? [{ path: '/shipping', label: t('menu.shipping') }]
+    ? [{ path: '/shipping/schedules', label: t('presalesShipping.scheduleTitle') }]
     : []),
 ])
 const hasLogistics = computed(() => logisticsItems.value.length > 0)
