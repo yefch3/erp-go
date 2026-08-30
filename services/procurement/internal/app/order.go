@@ -136,6 +136,7 @@ func (s *Service) prepareOrder(ctx context.Context, in CreateOrderInput, require
 	}
 	// Supplier code/name are immutable document snapshots, but their source is
 	// master data at write time—not display strings supplied by the browser.
+	// 账期同理：从主数据取，不听浏览器的——它决定这张单什么时候该付钱。
 	in.SupplierCode, in.SupplierName = supplier.Code, supplier.Name
 	// 到期日相反：它没有主数据来源，是员工在这份单上填的。只校验格式——
 	// 不校验它是不是在过去，补录一张上个月就该付的单是正当操作。

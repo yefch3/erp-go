@@ -337,7 +337,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { get, post } from '../api'
+import { backfillRequest, get, post } from '../api'
 import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 import { useAuthStore } from '../stores/auth'
 

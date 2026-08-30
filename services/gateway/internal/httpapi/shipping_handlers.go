@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
+	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
 	"github.com/sgao19/erp-go/pkg/apierr"
 )
@@ -97,6 +98,136 @@ func (s *Server) listShippingSchedules(w http.ResponseWriter, r *http.Request) {
 		Keyword: q.Get("keyword"), Status: q.Get("status"), PortOfLoading: q.Get("port_of_loading"), PortOfDischarge: q.Get("port_of_discharge"),
 		EtdFrom: q.Get("etd_from"), EtdTo: q.Get("etd_to"), EtaFrom: q.Get("eta_from"), EtaTo: q.Get("eta_to"), Page: pageFromQuery(r),
 	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) listSourcingShippingTasks(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	resp, err := s.Sourcing.ListSourcingShippingTasks(r.Context(), &prv1.ListSourcingShippingTasksRequest{
+		Status: q.Get("status"), Keyword: q.Get("keyword"), Page: pageFromQuery(r),
+	})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getShippingSourcingTask(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.GetSourcingShippingCollaboration(r.Context(), &prv1.GetSourcingShippingCollaborationRequest{CaseId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) getCaseShippingCollaboration(w http.ResponseWriter, r *http.Request) {
+	caseID := idFromPath(r)
+	// Reuse the sourcing service's owner/data-scope fence before exposing a
+	// shipping summary through either the sales or procurement case route.
+	if _, err := s.Sourcing.GetCase(r.Context(), &prv1.GetCaseRequest{Id: caseID}); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	resp, err := s.Sourcing.GetSourcingShippingCollaboration(r.Context(), &prv1.GetSourcingShippingCollaborationRequest{CaseId: caseID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	// Sales and procurement receive only the manager-approved handoff. Raw
+	// carrier quotes and shipping-team participation remain inside the shipping
+	// submodule, matching the procurement manager-plan boundary.
+	resp.Options = nil
+	resp.Participants = nil
+	approved := resp.Plans[:0]
+	for _, plan := range resp.Plans {
+		if plan.GetStatus() == "SUBMITTED_TO_SALES" {
+			approved = append(approved, plan)
+		}
+	}
+	resp.Plans = approved
+	s.writeProto(w, resp)
+}
+
+func (s *Server) startSourcingShippingTask(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.StartSourcingShippingTask(r.Context(), &prv1.StartSourcingShippingTaskRequest{CaseId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) addSourcingShippingOption(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.AddSourcingShippingOptionRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.CaseId = idFromPath(r)
+	// 售前询价尚未订舱，不绑定正式船期。船运公司、预计开船时间和逐货物价格
+	// 是本次人工询价的报价快照；客户选择后才进入正式船期管理。
+	resp, err := s.Sourcing.AddSourcingShippingOption(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) joinSourcingShippingTask(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.JoinSourcingShippingTask(r.Context(), &prv1.JoinSourcingShippingTaskRequest{CaseId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) requestPrimaryShipping(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.RequestPrimaryShipping(r.Context(), &prv1.RequestPrimaryShippingRequest{CaseId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) assignPrimaryShipping(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.AssignPrimaryShippingRequest{CaseId: idFromPath(r)}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Sourcing.AssignPrimaryShipping(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) createSourcingShippingPlan(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.CreateSourcingShippingPlanRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	// protojson.Unmarshal resets the target message before decoding. Set values
+	// sourced from the URL only after decoding the request body.
+	req.CaseId = idFromPath(r)
+	resp, err := s.Sourcing.CreateSourcingShippingPlan(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) submitSourcingShippingPlan(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.SubmitSourcingShippingPlanToSales(r.Context(), &prv1.SubmitSourcingShippingPlanToSalesRequest{Id: idFromPath(r)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

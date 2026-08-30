@@ -459,7 +459,7 @@ VALUES (
     $25, $26,
     $27, $28, $29, $29
 )
-RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, credit_limit_minor, credit_currency, credit_status, business_status, credit_grade, credit_graded_at
+RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor, credit_currency, credit_status, business_status, credit_grade, credit_graded_at
 `
 
 type CreateCustomerParams struct {
@@ -561,6 +561,7 @@ func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) 
 		&i.InvoiceTitle,
 		&i.InvoiceTaxNo,
 		&i.InvoiceRemark,
+		&i.PaymentDays,
 		&i.CreditLimitMinor,
 		&i.CreditCurrency,
 		&i.CreditStatus,
@@ -1131,7 +1132,7 @@ VALUES (
   $14, $15, $16,
   $17, $18, $19, $19
 )
-RETURNING id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types, credit_grade, credit_graded_at
+RETURNING id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types, credit_grade, credit_graded_at, payment_days
 `
 
 type CreateSupplierParams struct {
@@ -1206,6 +1207,7 @@ func (q *Queries) CreateSupplier(ctx context.Context, arg CreateSupplierParams) 
 		&i.BusinessTypes,
 		&i.CreditGrade,
 		&i.CreditGradedAt,
+		&i.PaymentDays,
 	)
 	return i, err
 }
@@ -1809,7 +1811,7 @@ func (q *Queries) FactoryDuplicateCandidates(ctx context.Context, arg FactoryDup
 }
 
 const getCustomer = `-- name: GetCustomer :one
-SELECT id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, credit_limit_minor, credit_currency, credit_status, business_status, credit_grade, credit_graded_at FROM customers WHERE tenant_id = $1 AND id = $2
+SELECT id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor, credit_currency, credit_status, business_status, credit_grade, credit_graded_at FROM customers WHERE tenant_id = $1 AND id = $2
 `
 
 type GetCustomerParams struct {
@@ -1851,6 +1853,7 @@ func (q *Queries) GetCustomer(ctx context.Context, arg GetCustomerParams) (Custo
 		&i.InvoiceTitle,
 		&i.InvoiceTaxNo,
 		&i.InvoiceRemark,
+		&i.PaymentDays,
 		&i.CreditLimitMinor,
 		&i.CreditCurrency,
 		&i.CreditStatus,
@@ -2057,7 +2060,7 @@ func (q *Queries) GetNumberRule(ctx context.Context, arg GetNumberRuleParams) (N
 }
 
 const getSupplier = `-- name: GetSupplier :one
-SELECT id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types, credit_grade, credit_graded_at FROM suppliers WHERE tenant_id = $1 AND id = $2
+SELECT id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types, credit_grade, credit_graded_at, payment_days FROM suppliers WHERE tenant_id = $1 AND id = $2
 `
 
 type GetSupplierParams struct {
@@ -2095,12 +2098,13 @@ func (q *Queries) GetSupplier(ctx context.Context, arg GetSupplierParams) (Suppl
 		&i.BusinessTypes,
 		&i.CreditGrade,
 		&i.CreditGradedAt,
+		&i.PaymentDays,
 	)
 	return i, err
 }
 
 const getSupplierByCode = `-- name: GetSupplierByCode :one
-SELECT id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types, credit_grade, credit_graded_at FROM suppliers
+SELECT id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types, credit_grade, credit_graded_at, payment_days FROM suppliers
 WHERE tenant_id = $1 AND upper(code) = upper($2)
 LIMIT 1
 `
@@ -2140,6 +2144,7 @@ func (q *Queries) GetSupplierByCode(ctx context.Context, arg GetSupplierByCodePa
 		&i.BusinessTypes,
 		&i.CreditGrade,
 		&i.CreditGradedAt,
+		&i.PaymentDays,
 	)
 	return i, err
 }
@@ -2713,7 +2718,7 @@ func (q *Queries) ListCustomerOwners(ctx context.Context, arg ListCustomerOwners
 }
 
 const listCustomers = `-- name: ListCustomers :many
-SELECT c.id, c.tenant_id, c.code, c.name, c.country, c.address, c.currency, c.payment_term, c.remark, c.status, c.created_at, c.created_by, c.updated_at, c.updated_by, c.country_code, c.short_name, c.english_name, c.customer_type, c.industry, c.source, c.tags, c.website, c.primary_language, c.timezone, c.registered_name, c.registration_no, c.tax_id, c.invoice_title, c.invoice_tax_no, c.invoice_remark, c.credit_limit_minor, c.credit_currency, c.credit_status, c.business_status, c.credit_grade, c.credit_graded_at,
+SELECT c.id, c.tenant_id, c.code, c.name, c.country, c.address, c.currency, c.payment_term, c.remark, c.status, c.created_at, c.created_by, c.updated_at, c.updated_by, c.country_code, c.short_name, c.english_name, c.customer_type, c.industry, c.source, c.tags, c.website, c.primary_language, c.timezone, c.registered_name, c.registration_no, c.tax_id, c.invoice_title, c.invoice_tax_no, c.invoice_remark, c.payment_days, c.credit_limit_minor, c.credit_currency, c.credit_status, c.business_status, c.credit_grade, c.credit_graded_at,
   COALESCE((SELECT cc.name FROM customer_contacts cc
             WHERE cc.tenant_id = c.tenant_id AND cc.customer_id = c.id AND cc.status = 'ACTIVE'
             ORDER BY cc.is_primary DESC, cc.sort_order, cc.id LIMIT 1), ''::text)::text AS primary_contact_name,
@@ -2784,6 +2789,7 @@ type ListCustomersRow struct {
 	InvoiceTitle       string
 	InvoiceTaxNo       string
 	InvoiceRemark      string
+	PaymentDays        int32
 	CreditLimitMinor   int64
 	CreditCurrency     string
 	CreditStatus       string
@@ -2846,6 +2852,7 @@ func (q *Queries) ListCustomers(ctx context.Context, arg ListCustomersParams) ([
 			&i.InvoiceTitle,
 			&i.InvoiceTaxNo,
 			&i.InvoiceRemark,
+			&i.PaymentDays,
 			&i.CreditLimitMinor,
 			&i.CreditCurrency,
 			&i.CreditStatus,
@@ -3607,7 +3614,7 @@ func (q *Queries) ListSupplierOwners(ctx context.Context, arg ListSupplierOwners
 }
 
 const listSuppliers = `-- name: ListSuppliers :many
-SELECT s.id, s.tenant_id, s.code, s.name, s.country, s.address, s.currency, s.contact_name, s.contact_phone, s.contact_email, s.remark, s.status, s.created_at, s.created_by, s.updated_at, s.updated_by, s.name_zh, s.name_en, s.short_name, s.country_code, s.tax_id, s.registered_address, s.payment_term, s.business_types, s.credit_grade, s.credit_graded_at,
+SELECT s.id, s.tenant_id, s.code, s.name, s.country, s.address, s.currency, s.contact_name, s.contact_phone, s.contact_email, s.remark, s.status, s.created_at, s.created_by, s.updated_at, s.updated_by, s.name_zh, s.name_en, s.short_name, s.country_code, s.tax_id, s.registered_address, s.payment_term, s.business_types, s.credit_grade, s.credit_graded_at, s.payment_days,
        (SELECT count(*) FROM factories f WHERE f.tenant_id = s.tenant_id AND f.supplier_id = s.id AND f.status <> 'INACTIVE') AS factory_count,
        COALESCE((SELECT string_agg(so.employee_name, '、' ORDER BY so.is_primary DESC, so.id)
           FROM supplier_owners so WHERE so.tenant_id = s.tenant_id AND so.supplier_id = s.id AND so.status = 'ACTIVE'), ''::text)::text AS owner_names,
@@ -3665,6 +3672,7 @@ type ListSuppliersRow struct {
 	BusinessTypes     []string
 	CreditGrade       string
 	CreditGradedAt    pgtype.Timestamptz
+	PaymentDays       int32
 	FactoryCount      int64
 	OwnerNames        string
 	Total             int64
@@ -3715,6 +3723,7 @@ func (q *Queries) ListSuppliers(ctx context.Context, arg ListSuppliersParams) ([
 			&i.BusinessTypes,
 			&i.CreditGrade,
 			&i.CreditGradedAt,
+			&i.PaymentDays,
 			&i.FactoryCount,
 			&i.OwnerNames,
 			&i.Total,
@@ -3962,7 +3971,7 @@ SET name = $1, country = $2,
     currency = $5, payment_term = $6,
     remark = $7, updated_by = $8, updated_at = now()
 WHERE tenant_id = $9 AND id = $10
-RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, credit_limit_minor, credit_currency, credit_status, business_status, credit_grade, credit_graded_at
+RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor, credit_currency, credit_status, business_status, credit_grade, credit_graded_at
 `
 
 type UpdateCustomerParams struct {
@@ -4023,6 +4032,7 @@ func (q *Queries) UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) 
 		&i.InvoiceTitle,
 		&i.InvoiceTaxNo,
 		&i.InvoiceRemark,
+		&i.PaymentDays,
 		&i.CreditLimitMinor,
 		&i.CreditCurrency,
 		&i.CreditStatus,
@@ -4245,7 +4255,7 @@ SET short_name = $1, english_name = $2,
     business_status = $19, updated_by = $20,
     updated_at = now()
 WHERE tenant_id = $21 AND id = $22
-RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, credit_limit_minor, credit_currency, credit_status, business_status, credit_grade, credit_graded_at
+RETURNING id, tenant_id, code, name, country, address, currency, payment_term, remark, status, created_at, created_by, updated_at, updated_by, country_code, short_name, english_name, customer_type, industry, source, tags, website, primary_language, timezone, registered_name, registration_no, tax_id, invoice_title, invoice_tax_no, invoice_remark, payment_days, credit_limit_minor, credit_currency, credit_status, business_status, credit_grade, credit_graded_at
 `
 
 type UpdateCustomerProfileParams struct {
@@ -4331,6 +4341,7 @@ func (q *Queries) UpdateCustomerProfile(ctx context.Context, arg UpdateCustomerP
 		&i.InvoiceTitle,
 		&i.InvoiceTaxNo,
 		&i.InvoiceRemark,
+		&i.PaymentDays,
 		&i.CreditLimitMinor,
 		&i.CreditCurrency,
 		&i.CreditStatus,
@@ -4528,7 +4539,7 @@ SET name = $1, name_zh = $2, name_en = $3,
     contact_email = $15, remark = $16,
     updated_by = $17, updated_at = now()
 WHERE tenant_id = $18 AND id = $19
-RETURNING id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types, credit_grade, credit_graded_at
+RETURNING id, tenant_id, code, name, country, address, currency, contact_name, contact_phone, contact_email, remark, status, created_at, created_by, updated_at, updated_by, name_zh, name_en, short_name, country_code, tax_id, registered_address, payment_term, business_types, credit_grade, credit_graded_at, payment_days
 `
 
 type UpdateSupplierParams struct {
@@ -4603,6 +4614,7 @@ func (q *Queries) UpdateSupplier(ctx context.Context, arg UpdateSupplierParams) 
 		&i.BusinessTypes,
 		&i.CreditGrade,
 		&i.CreditGradedAt,
+		&i.PaymentDays,
 	)
 	return i, err
 }

@@ -19,42 +19,52 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SourcingService_CreateCase_FullMethodName                   = "/erp.procurement.v1.SourcingService/CreateCase"
-	SourcingService_ListCases_FullMethodName                    = "/erp.procurement.v1.SourcingService/ListCases"
-	SourcingService_GetCase_FullMethodName                      = "/erp.procurement.v1.SourcingService/GetCase"
-	SourcingService_AddLine_FullMethodName                      = "/erp.procurement.v1.SourcingService/AddLine"
-	SourcingService_ConfirmLines_FullMethodName                 = "/erp.procurement.v1.SourcingService/ConfirmLines"
-	SourcingService_AcceptCase_FullMethodName                   = "/erp.procurement.v1.SourcingService/AcceptCase"
-	SourcingService_ListCaseParticipants_FullMethodName         = "/erp.procurement.v1.SourcingService/ListCaseParticipants"
-	SourcingService_JoinCase_FullMethodName                     = "/erp.procurement.v1.SourcingService/JoinCase"
-	SourcingService_RequestPrimaryBuyer_FullMethodName          = "/erp.procurement.v1.SourcingService/RequestPrimaryBuyer"
-	SourcingService_AssignPrimaryBuyer_FullMethodName           = "/erp.procurement.v1.SourcingService/AssignPrimaryBuyer"
-	SourcingService_ReturnCase_FullMethodName                   = "/erp.procurement.v1.SourcingService/ReturnCase"
-	SourcingService_ReviewLine_FullMethodName                   = "/erp.procurement.v1.SourcingService/ReviewLine"
-	SourcingService_CreateFactoryRfq_FullMethodName             = "/erp.procurement.v1.SourcingService/CreateFactoryRfq"
-	SourcingService_ListFactoryRfqs_FullMethodName              = "/erp.procurement.v1.SourcingService/ListFactoryRfqs"
-	SourcingService_CreateSupplierQuote_FullMethodName          = "/erp.procurement.v1.SourcingService/CreateSupplierQuote"
-	SourcingService_GetFactoryRfqWorkbook_FullMethodName        = "/erp.procurement.v1.SourcingService/GetFactoryRfqWorkbook"
-	SourcingService_ImportSupplierQuoteWorkbook_FullMethodName  = "/erp.procurement.v1.SourcingService/ImportSupplierQuoteWorkbook"
-	SourcingService_MarkFactoryRfqSent_FullMethodName           = "/erp.procurement.v1.SourcingService/MarkFactoryRfqSent"
-	SourcingService_ListSupplierQuoteComparison_FullMethodName  = "/erp.procurement.v1.SourcingService/ListSupplierQuoteComparison"
-	SourcingService_CreateProcurementPlan_FullMethodName        = "/erp.procurement.v1.SourcingService/CreateProcurementPlan"
-	SourcingService_ListProcurementPlans_FullMethodName         = "/erp.procurement.v1.SourcingService/ListProcurementPlans"
-	SourcingService_GetProcurementPlan_FullMethodName           = "/erp.procurement.v1.SourcingService/GetProcurementPlan"
-	SourcingService_SubmitProcurementPlanToSales_FullMethodName = "/erp.procurement.v1.SourcingService/SubmitProcurementPlanToSales"
-	SourcingService_CreateProcurementRework_FullMethodName      = "/erp.procurement.v1.SourcingService/CreateProcurementRework"
-	SourcingService_ListProcurementReworks_FullMethodName       = "/erp.procurement.v1.SourcingService/ListProcurementReworks"
-	SourcingService_ResolveProcurementRework_FullMethodName     = "/erp.procurement.v1.SourcingService/ResolveProcurementRework"
-	SourcingService_CreateCostScenario_FullMethodName           = "/erp.procurement.v1.SourcingService/CreateCostScenario"
-	SourcingService_ListCostScenarios_FullMethodName            = "/erp.procurement.v1.SourcingService/ListCostScenarios"
-	SourcingService_GetCostScenario_FullMethodName              = "/erp.procurement.v1.SourcingService/GetCostScenario"
-	SourcingService_ConfirmCostScenario_FullMethodName          = "/erp.procurement.v1.SourcingService/ConfirmCostScenario"
-	SourcingService_SubmitCostToSales_FullMethodName            = "/erp.procurement.v1.SourcingService/SubmitCostToSales"
-	SourcingService_PrepareCustomerQuotation_FullMethodName     = "/erp.procurement.v1.SourcingService/PrepareCustomerQuotation"
-	SourcingService_LinkCustomerQuotation_FullMethodName        = "/erp.procurement.v1.SourcingService/LinkCustomerQuotation"
-	SourcingService_ListCaseChanges_FullMethodName              = "/erp.procurement.v1.SourcingService/ListCaseChanges"
-	SourcingService_UpdateFactoryRfq_FullMethodName             = "/erp.procurement.v1.SourcingService/UpdateFactoryRfq"
-	SourcingService_ListOverdueFactoryRfqs_FullMethodName       = "/erp.procurement.v1.SourcingService/ListOverdueFactoryRfqs"
+	SourcingService_CreateCase_FullMethodName                        = "/erp.procurement.v1.SourcingService/CreateCase"
+	SourcingService_ListCases_FullMethodName                         = "/erp.procurement.v1.SourcingService/ListCases"
+	SourcingService_GetCase_FullMethodName                           = "/erp.procurement.v1.SourcingService/GetCase"
+	SourcingService_AddLine_FullMethodName                           = "/erp.procurement.v1.SourcingService/AddLine"
+	SourcingService_ConfirmLines_FullMethodName                      = "/erp.procurement.v1.SourcingService/ConfirmLines"
+	SourcingService_AcceptCase_FullMethodName                        = "/erp.procurement.v1.SourcingService/AcceptCase"
+	SourcingService_ListCaseParticipants_FullMethodName              = "/erp.procurement.v1.SourcingService/ListCaseParticipants"
+	SourcingService_JoinCase_FullMethodName                          = "/erp.procurement.v1.SourcingService/JoinCase"
+	SourcingService_RequestPrimaryBuyer_FullMethodName               = "/erp.procurement.v1.SourcingService/RequestPrimaryBuyer"
+	SourcingService_AssignPrimaryBuyer_FullMethodName                = "/erp.procurement.v1.SourcingService/AssignPrimaryBuyer"
+	SourcingService_ReturnCase_FullMethodName                        = "/erp.procurement.v1.SourcingService/ReturnCase"
+	SourcingService_ReviewLine_FullMethodName                        = "/erp.procurement.v1.SourcingService/ReviewLine"
+	SourcingService_CreateFactoryRfq_FullMethodName                  = "/erp.procurement.v1.SourcingService/CreateFactoryRfq"
+	SourcingService_ListFactoryRfqs_FullMethodName                   = "/erp.procurement.v1.SourcingService/ListFactoryRfqs"
+	SourcingService_CreateSupplierQuote_FullMethodName               = "/erp.procurement.v1.SourcingService/CreateSupplierQuote"
+	SourcingService_GetFactoryRfqWorkbook_FullMethodName             = "/erp.procurement.v1.SourcingService/GetFactoryRfqWorkbook"
+	SourcingService_ImportSupplierQuoteWorkbook_FullMethodName       = "/erp.procurement.v1.SourcingService/ImportSupplierQuoteWorkbook"
+	SourcingService_MarkFactoryRfqSent_FullMethodName                = "/erp.procurement.v1.SourcingService/MarkFactoryRfqSent"
+	SourcingService_ListSupplierQuoteComparison_FullMethodName       = "/erp.procurement.v1.SourcingService/ListSupplierQuoteComparison"
+	SourcingService_CreateProcurementPlan_FullMethodName             = "/erp.procurement.v1.SourcingService/CreateProcurementPlan"
+	SourcingService_ListProcurementPlans_FullMethodName              = "/erp.procurement.v1.SourcingService/ListProcurementPlans"
+	SourcingService_GetProcurementPlan_FullMethodName                = "/erp.procurement.v1.SourcingService/GetProcurementPlan"
+	SourcingService_SubmitProcurementPlanToSales_FullMethodName      = "/erp.procurement.v1.SourcingService/SubmitProcurementPlanToSales"
+	SourcingService_CreateProcurementRework_FullMethodName           = "/erp.procurement.v1.SourcingService/CreateProcurementRework"
+	SourcingService_ListProcurementReworks_FullMethodName            = "/erp.procurement.v1.SourcingService/ListProcurementReworks"
+	SourcingService_ResolveProcurementRework_FullMethodName          = "/erp.procurement.v1.SourcingService/ResolveProcurementRework"
+	SourcingService_GetSourcingShippingCollaboration_FullMethodName  = "/erp.procurement.v1.SourcingService/GetSourcingShippingCollaboration"
+	SourcingService_ListSourcingShippingTasks_FullMethodName         = "/erp.procurement.v1.SourcingService/ListSourcingShippingTasks"
+	SourcingService_StartSourcingShippingTask_FullMethodName         = "/erp.procurement.v1.SourcingService/StartSourcingShippingTask"
+	SourcingService_AddSourcingShippingOption_FullMethodName         = "/erp.procurement.v1.SourcingService/AddSourcingShippingOption"
+	SourcingService_JoinSourcingShippingTask_FullMethodName          = "/erp.procurement.v1.SourcingService/JoinSourcingShippingTask"
+	SourcingService_RequestPrimaryShipping_FullMethodName            = "/erp.procurement.v1.SourcingService/RequestPrimaryShipping"
+	SourcingService_AssignPrimaryShipping_FullMethodName             = "/erp.procurement.v1.SourcingService/AssignPrimaryShipping"
+	SourcingService_CreateSourcingShippingPlan_FullMethodName        = "/erp.procurement.v1.SourcingService/CreateSourcingShippingPlan"
+	SourcingService_ListSourcingShippingPlans_FullMethodName         = "/erp.procurement.v1.SourcingService/ListSourcingShippingPlans"
+	SourcingService_SubmitSourcingShippingPlanToSales_FullMethodName = "/erp.procurement.v1.SourcingService/SubmitSourcingShippingPlanToSales"
+	SourcingService_CreateCostScenario_FullMethodName                = "/erp.procurement.v1.SourcingService/CreateCostScenario"
+	SourcingService_ListCostScenarios_FullMethodName                 = "/erp.procurement.v1.SourcingService/ListCostScenarios"
+	SourcingService_GetCostScenario_FullMethodName                   = "/erp.procurement.v1.SourcingService/GetCostScenario"
+	SourcingService_ConfirmCostScenario_FullMethodName               = "/erp.procurement.v1.SourcingService/ConfirmCostScenario"
+	SourcingService_SubmitCostToSales_FullMethodName                 = "/erp.procurement.v1.SourcingService/SubmitCostToSales"
+	SourcingService_PrepareCustomerQuotation_FullMethodName          = "/erp.procurement.v1.SourcingService/PrepareCustomerQuotation"
+	SourcingService_LinkCustomerQuotation_FullMethodName             = "/erp.procurement.v1.SourcingService/LinkCustomerQuotation"
+	SourcingService_ListCaseChanges_FullMethodName                   = "/erp.procurement.v1.SourcingService/ListCaseChanges"
+	SourcingService_UpdateFactoryRfq_FullMethodName                  = "/erp.procurement.v1.SourcingService/UpdateFactoryRfq"
+	SourcingService_ListOverdueFactoryRfqs_FullMethodName            = "/erp.procurement.v1.SourcingService/ListOverdueFactoryRfqs"
 )
 
 // SourcingServiceClient is the client API for SourcingService service.
@@ -91,6 +101,16 @@ type SourcingServiceClient interface {
 	CreateProcurementRework(ctx context.Context, in *CreateProcurementReworkRequest, opts ...grpc.CallOption) (*CreateProcurementReworkResponse, error)
 	ListProcurementReworks(ctx context.Context, in *ListProcurementReworksRequest, opts ...grpc.CallOption) (*ListProcurementReworksResponse, error)
 	ResolveProcurementRework(ctx context.Context, in *ResolveProcurementReworkRequest, opts ...grpc.CallOption) (*ResolveProcurementReworkResponse, error)
+	GetSourcingShippingCollaboration(ctx context.Context, in *GetSourcingShippingCollaborationRequest, opts ...grpc.CallOption) (*GetSourcingShippingCollaborationResponse, error)
+	ListSourcingShippingTasks(ctx context.Context, in *ListSourcingShippingTasksRequest, opts ...grpc.CallOption) (*ListSourcingShippingTasksResponse, error)
+	StartSourcingShippingTask(ctx context.Context, in *StartSourcingShippingTaskRequest, opts ...grpc.CallOption) (*StartSourcingShippingTaskResponse, error)
+	AddSourcingShippingOption(ctx context.Context, in *AddSourcingShippingOptionRequest, opts ...grpc.CallOption) (*AddSourcingShippingOptionResponse, error)
+	JoinSourcingShippingTask(ctx context.Context, in *JoinSourcingShippingTaskRequest, opts ...grpc.CallOption) (*JoinSourcingShippingTaskResponse, error)
+	RequestPrimaryShipping(ctx context.Context, in *RequestPrimaryShippingRequest, opts ...grpc.CallOption) (*RequestPrimaryShippingResponse, error)
+	AssignPrimaryShipping(ctx context.Context, in *AssignPrimaryShippingRequest, opts ...grpc.CallOption) (*AssignPrimaryShippingResponse, error)
+	CreateSourcingShippingPlan(ctx context.Context, in *CreateSourcingShippingPlanRequest, opts ...grpc.CallOption) (*CreateSourcingShippingPlanResponse, error)
+	ListSourcingShippingPlans(ctx context.Context, in *ListSourcingShippingPlansRequest, opts ...grpc.CallOption) (*ListSourcingShippingPlansResponse, error)
+	SubmitSourcingShippingPlanToSales(ctx context.Context, in *SubmitSourcingShippingPlanToSalesRequest, opts ...grpc.CallOption) (*SubmitSourcingShippingPlanToSalesResponse, error)
 	CreateCostScenario(ctx context.Context, in *CreateCostScenarioRequest, opts ...grpc.CallOption) (*CreateCostScenarioResponse, error)
 	ListCostScenarios(ctx context.Context, in *ListCostScenariosRequest, opts ...grpc.CallOption) (*ListCostScenariosResponse, error)
 	GetCostScenario(ctx context.Context, in *GetCostScenarioRequest, opts ...grpc.CallOption) (*GetCostScenarioResponse, error)
@@ -373,6 +393,106 @@ func (c *sourcingServiceClient) ResolveProcurementRework(ctx context.Context, in
 	return out, nil
 }
 
+func (c *sourcingServiceClient) GetSourcingShippingCollaboration(ctx context.Context, in *GetSourcingShippingCollaborationRequest, opts ...grpc.CallOption) (*GetSourcingShippingCollaborationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSourcingShippingCollaborationResponse)
+	err := c.cc.Invoke(ctx, SourcingService_GetSourcingShippingCollaboration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ListSourcingShippingTasks(ctx context.Context, in *ListSourcingShippingTasksRequest, opts ...grpc.CallOption) (*ListSourcingShippingTasksResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSourcingShippingTasksResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListSourcingShippingTasks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) StartSourcingShippingTask(ctx context.Context, in *StartSourcingShippingTaskRequest, opts ...grpc.CallOption) (*StartSourcingShippingTaskResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartSourcingShippingTaskResponse)
+	err := c.cc.Invoke(ctx, SourcingService_StartSourcingShippingTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) AddSourcingShippingOption(ctx context.Context, in *AddSourcingShippingOptionRequest, opts ...grpc.CallOption) (*AddSourcingShippingOptionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AddSourcingShippingOptionResponse)
+	err := c.cc.Invoke(ctx, SourcingService_AddSourcingShippingOption_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) JoinSourcingShippingTask(ctx context.Context, in *JoinSourcingShippingTaskRequest, opts ...grpc.CallOption) (*JoinSourcingShippingTaskResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JoinSourcingShippingTaskResponse)
+	err := c.cc.Invoke(ctx, SourcingService_JoinSourcingShippingTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) RequestPrimaryShipping(ctx context.Context, in *RequestPrimaryShippingRequest, opts ...grpc.CallOption) (*RequestPrimaryShippingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RequestPrimaryShippingResponse)
+	err := c.cc.Invoke(ctx, SourcingService_RequestPrimaryShipping_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) AssignPrimaryShipping(ctx context.Context, in *AssignPrimaryShippingRequest, opts ...grpc.CallOption) (*AssignPrimaryShippingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AssignPrimaryShippingResponse)
+	err := c.cc.Invoke(ctx, SourcingService_AssignPrimaryShipping_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) CreateSourcingShippingPlan(ctx context.Context, in *CreateSourcingShippingPlanRequest, opts ...grpc.CallOption) (*CreateSourcingShippingPlanResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateSourcingShippingPlanResponse)
+	err := c.cc.Invoke(ctx, SourcingService_CreateSourcingShippingPlan_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ListSourcingShippingPlans(ctx context.Context, in *ListSourcingShippingPlansRequest, opts ...grpc.CallOption) (*ListSourcingShippingPlansResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSourcingShippingPlansResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListSourcingShippingPlans_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) SubmitSourcingShippingPlanToSales(ctx context.Context, in *SubmitSourcingShippingPlanToSalesRequest, opts ...grpc.CallOption) (*SubmitSourcingShippingPlanToSalesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SubmitSourcingShippingPlanToSalesResponse)
+	err := c.cc.Invoke(ctx, SourcingService_SubmitSourcingShippingPlanToSales_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *sourcingServiceClient) CreateCostScenario(ctx context.Context, in *CreateCostScenarioRequest, opts ...grpc.CallOption) (*CreateCostScenarioResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateCostScenarioResponse)
@@ -507,6 +627,16 @@ type SourcingServiceServer interface {
 	CreateProcurementRework(context.Context, *CreateProcurementReworkRequest) (*CreateProcurementReworkResponse, error)
 	ListProcurementReworks(context.Context, *ListProcurementReworksRequest) (*ListProcurementReworksResponse, error)
 	ResolveProcurementRework(context.Context, *ResolveProcurementReworkRequest) (*ResolveProcurementReworkResponse, error)
+	GetSourcingShippingCollaboration(context.Context, *GetSourcingShippingCollaborationRequest) (*GetSourcingShippingCollaborationResponse, error)
+	ListSourcingShippingTasks(context.Context, *ListSourcingShippingTasksRequest) (*ListSourcingShippingTasksResponse, error)
+	StartSourcingShippingTask(context.Context, *StartSourcingShippingTaskRequest) (*StartSourcingShippingTaskResponse, error)
+	AddSourcingShippingOption(context.Context, *AddSourcingShippingOptionRequest) (*AddSourcingShippingOptionResponse, error)
+	JoinSourcingShippingTask(context.Context, *JoinSourcingShippingTaskRequest) (*JoinSourcingShippingTaskResponse, error)
+	RequestPrimaryShipping(context.Context, *RequestPrimaryShippingRequest) (*RequestPrimaryShippingResponse, error)
+	AssignPrimaryShipping(context.Context, *AssignPrimaryShippingRequest) (*AssignPrimaryShippingResponse, error)
+	CreateSourcingShippingPlan(context.Context, *CreateSourcingShippingPlanRequest) (*CreateSourcingShippingPlanResponse, error)
+	ListSourcingShippingPlans(context.Context, *ListSourcingShippingPlansRequest) (*ListSourcingShippingPlansResponse, error)
+	SubmitSourcingShippingPlanToSales(context.Context, *SubmitSourcingShippingPlanToSalesRequest) (*SubmitSourcingShippingPlanToSalesResponse, error)
 	CreateCostScenario(context.Context, *CreateCostScenarioRequest) (*CreateCostScenarioResponse, error)
 	ListCostScenarios(context.Context, *ListCostScenariosRequest) (*ListCostScenariosResponse, error)
 	GetCostScenario(context.Context, *GetCostScenarioRequest) (*GetCostScenarioResponse, error)
@@ -606,6 +736,36 @@ func (UnimplementedSourcingServiceServer) ListProcurementReworks(context.Context
 }
 func (UnimplementedSourcingServiceServer) ResolveProcurementRework(context.Context, *ResolveProcurementReworkRequest) (*ResolveProcurementReworkResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ResolveProcurementRework not implemented")
+}
+func (UnimplementedSourcingServiceServer) GetSourcingShippingCollaboration(context.Context, *GetSourcingShippingCollaborationRequest) (*GetSourcingShippingCollaborationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSourcingShippingCollaboration not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListSourcingShippingTasks(context.Context, *ListSourcingShippingTasksRequest) (*ListSourcingShippingTasksResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSourcingShippingTasks not implemented")
+}
+func (UnimplementedSourcingServiceServer) StartSourcingShippingTask(context.Context, *StartSourcingShippingTaskRequest) (*StartSourcingShippingTaskResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartSourcingShippingTask not implemented")
+}
+func (UnimplementedSourcingServiceServer) AddSourcingShippingOption(context.Context, *AddSourcingShippingOptionRequest) (*AddSourcingShippingOptionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddSourcingShippingOption not implemented")
+}
+func (UnimplementedSourcingServiceServer) JoinSourcingShippingTask(context.Context, *JoinSourcingShippingTaskRequest) (*JoinSourcingShippingTaskResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method JoinSourcingShippingTask not implemented")
+}
+func (UnimplementedSourcingServiceServer) RequestPrimaryShipping(context.Context, *RequestPrimaryShippingRequest) (*RequestPrimaryShippingResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RequestPrimaryShipping not implemented")
+}
+func (UnimplementedSourcingServiceServer) AssignPrimaryShipping(context.Context, *AssignPrimaryShippingRequest) (*AssignPrimaryShippingResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AssignPrimaryShipping not implemented")
+}
+func (UnimplementedSourcingServiceServer) CreateSourcingShippingPlan(context.Context, *CreateSourcingShippingPlanRequest) (*CreateSourcingShippingPlanResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateSourcingShippingPlan not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListSourcingShippingPlans(context.Context, *ListSourcingShippingPlansRequest) (*ListSourcingShippingPlansResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSourcingShippingPlans not implemented")
+}
+func (UnimplementedSourcingServiceServer) SubmitSourcingShippingPlanToSales(context.Context, *SubmitSourcingShippingPlanToSalesRequest) (*SubmitSourcingShippingPlanToSalesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SubmitSourcingShippingPlanToSales not implemented")
 }
 func (UnimplementedSourcingServiceServer) CreateCostScenario(context.Context, *CreateCostScenarioRequest) (*CreateCostScenarioResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateCostScenario not implemented")
@@ -1126,6 +1286,186 @@ func _SourcingService_ResolveProcurementRework_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SourcingService_GetSourcingShippingCollaboration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSourcingShippingCollaborationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).GetSourcingShippingCollaboration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_GetSourcingShippingCollaboration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).GetSourcingShippingCollaboration(ctx, req.(*GetSourcingShippingCollaborationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ListSourcingShippingTasks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSourcingShippingTasksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListSourcingShippingTasks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListSourcingShippingTasks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListSourcingShippingTasks(ctx, req.(*ListSourcingShippingTasksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_StartSourcingShippingTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartSourcingShippingTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).StartSourcingShippingTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_StartSourcingShippingTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).StartSourcingShippingTask(ctx, req.(*StartSourcingShippingTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_AddSourcingShippingOption_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddSourcingShippingOptionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).AddSourcingShippingOption(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_AddSourcingShippingOption_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).AddSourcingShippingOption(ctx, req.(*AddSourcingShippingOptionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_JoinSourcingShippingTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JoinSourcingShippingTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).JoinSourcingShippingTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_JoinSourcingShippingTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).JoinSourcingShippingTask(ctx, req.(*JoinSourcingShippingTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_RequestPrimaryShipping_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestPrimaryShippingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).RequestPrimaryShipping(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_RequestPrimaryShipping_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).RequestPrimaryShipping(ctx, req.(*RequestPrimaryShippingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_AssignPrimaryShipping_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AssignPrimaryShippingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).AssignPrimaryShipping(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_AssignPrimaryShipping_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).AssignPrimaryShipping(ctx, req.(*AssignPrimaryShippingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_CreateSourcingShippingPlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateSourcingShippingPlanRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).CreateSourcingShippingPlan(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_CreateSourcingShippingPlan_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).CreateSourcingShippingPlan(ctx, req.(*CreateSourcingShippingPlanRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ListSourcingShippingPlans_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSourcingShippingPlansRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListSourcingShippingPlans(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListSourcingShippingPlans_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListSourcingShippingPlans(ctx, req.(*ListSourcingShippingPlansRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_SubmitSourcingShippingPlanToSales_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitSourcingShippingPlanToSalesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).SubmitSourcingShippingPlanToSales(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_SubmitSourcingShippingPlanToSales_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).SubmitSourcingShippingPlanToSales(ctx, req.(*SubmitSourcingShippingPlanToSalesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SourcingService_CreateCostScenario_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateCostScenarioRequest)
 	if err := dec(in); err != nil {
@@ -1416,6 +1756,46 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveProcurementRework",
 			Handler:    _SourcingService_ResolveProcurementRework_Handler,
+		},
+		{
+			MethodName: "GetSourcingShippingCollaboration",
+			Handler:    _SourcingService_GetSourcingShippingCollaboration_Handler,
+		},
+		{
+			MethodName: "ListSourcingShippingTasks",
+			Handler:    _SourcingService_ListSourcingShippingTasks_Handler,
+		},
+		{
+			MethodName: "StartSourcingShippingTask",
+			Handler:    _SourcingService_StartSourcingShippingTask_Handler,
+		},
+		{
+			MethodName: "AddSourcingShippingOption",
+			Handler:    _SourcingService_AddSourcingShippingOption_Handler,
+		},
+		{
+			MethodName: "JoinSourcingShippingTask",
+			Handler:    _SourcingService_JoinSourcingShippingTask_Handler,
+		},
+		{
+			MethodName: "RequestPrimaryShipping",
+			Handler:    _SourcingService_RequestPrimaryShipping_Handler,
+		},
+		{
+			MethodName: "AssignPrimaryShipping",
+			Handler:    _SourcingService_AssignPrimaryShipping_Handler,
+		},
+		{
+			MethodName: "CreateSourcingShippingPlan",
+			Handler:    _SourcingService_CreateSourcingShippingPlan_Handler,
+		},
+		{
+			MethodName: "ListSourcingShippingPlans",
+			Handler:    _SourcingService_ListSourcingShippingPlans_Handler,
+		},
+		{
+			MethodName: "SubmitSourcingShippingPlanToSales",
+			Handler:    _SourcingService_SubmitSourcingShippingPlanToSales_Handler,
 		},
 		{
 			MethodName: "CreateCostScenario",
