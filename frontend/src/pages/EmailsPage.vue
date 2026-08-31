@@ -1984,7 +1984,13 @@ async function loadThread(mail: InboundMail) {
   expandedThread.value = new Set()
   if (!mail.threadKey) return
   try {
-    const tr = await get<{ items: ThreadItem[] }>('/mail-threads', { key: mail.threadKey })
+    // id 一起带上：一个人可以绑多个信箱，同一条会话可能同时落在两个箱里
+    // （客户抄送了两个地址）。列表按信箱分行，打开时不说明是从哪一封点进
+    // 来的，就会把两个箱的同名会话合起来读——列表写着 (2)，进去是 4 封。
+    const tr = await get<{ items: ThreadItem[] }>('/mail-threads', {
+      key: mail.threadKey,
+      id: mail.id,
+    })
     if ((tr.items ?? []).length > 1) {
       threadItems.value = tr.items
       expandedThread.value = new Set([`IN:${mail.id}`])

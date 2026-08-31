@@ -375,4 +375,5 @@ type MailThreadView struct {
 	AnyUnread     bool
 	AnyStarred    bool
 	AnyAttachment bool
+	AccountID     int64
 }

@@ -164,42 +164,49 @@ func (q *Queries) CountInboundAttachmentWithCID(ctx context.Context, arg CountIn
 }
 
 const countInboundThreads = `-- name: CountInboundThreads :one
-SELECT count(DISTINCT coalesce(nullif(thread_key, ''), 'm:' || id::text))::bigint
+SELECT count(DISTINCT (account_id, coalesce(nullif(thread_key, ''), 'm:' || id::text)))::bigint
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
-  AND CASE $3::text
+  AND ($3::bigint IS NULL
+       OR account_id = $3::bigint)
+  AND CASE $4::text
         WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
         -- The trash holds mail deleted from anywhere, junk included.
         WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
         ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
       END
   AND NOT is_bounce
-  AND CASE $3::text
+  AND CASE $4::text
         WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
         WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
         WHEN 'TRASH'   THEN deleted_at IS NOT NULL
         WHEN 'JUNK'    THEN deleted_at IS NULL
         ELSE archived_at IS NULL AND deleted_at IS NULL
       END
-  AND ($4::text = ''
-       OR subject ILIKE '%' || $4::text || '%'
-       OR from_email ILIKE '%' || $4::text || '%'
-       OR from_name ILIKE '%' || $4::text || '%')
+  AND ($5::text = ''
+       OR subject ILIKE '%' || $5::text || '%'
+       OR from_email ILIKE '%' || $5::text || '%'
+       OR from_name ILIKE '%' || $5::text || '%')
 `
 
 type CountInboundThreadsParams struct {
-	TenantID int64
-	OwnerID  int64
-	View     string
-	Keyword  string
+	TenantID  int64
+	OwnerID   int64
+	AccountID *int64
+	View      string
+	Keyword   string
 }
 
 // Conversations, not messages: the pager has to count what the list shows.
+//
+// DISTINCT 的是 (信箱, 会话) 这一对，不是会话本身——和上面的 PARTITION BY
+// 同一个口径。只按会话数的话，页码会比列表少，翻到最后一页会缺行。
 func (q *Queries) CountInboundThreads(ctx context.Context, arg CountInboundThreadsParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countInboundThreads,
 		arg.TenantID,
 		arg.OwnerID,
+		arg.AccountID,
 		arg.View,
 		arg.Keyword,
 	)
@@ -348,18 +355,26 @@ const countThreadsByView = `-- name: CountThreadsByView :one
 SELECT count(*)::bigint FROM mail_thread_view
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
-  AND view = $3::text
+  AND ($3::bigint IS NULL
+       OR account_id = $3::bigint)
+  AND view = $4::text
 `
 
 type CountThreadsByViewParams struct {
-	TenantID int64
-	OwnerID  int64
-	View     string
+	TenantID  int64
+	OwnerID   int64
+	AccountID *int64
+	View      string
 }
 
 // Conversations, not messages: the pager has to count what the list shows.
 func (q *Queries) CountThreadsByView(ctx context.Context, arg CountThreadsByViewParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countThreadsByView, arg.TenantID, arg.OwnerID, arg.View)
+	row := q.db.QueryRow(ctx, countThreadsByView,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.AccountID,
+		arg.View,
+	)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -1367,38 +1382,41 @@ func (q *Queries) ListInboundNeedingSearchText(ctx context.Context, arg ListInbo
 
 const listInboundThreads = `-- name: ListInboundThreads :many
 WITH visible AS (
-    SELECT id, from_email, from_name, subject, snippet, thread_key,
+    SELECT id, account_id, from_email, from_name, subject, snippet, thread_key,
            is_read, is_starred, has_attachments, received_at, sent_at,
            coalesce(nullif(thread_key, ''), 'm:' || id::text) AS group_key,
            received_at AS at
     FROM email_inbound
     WHERE tenant_id = $4::bigint
       AND owner_id = $5::bigint
-      AND CASE $6::text
+      -- 不传 = 全部信箱。左侧切换器还没上线，前端今天什么都不传。
+      AND ($6::bigint IS NULL
+           OR account_id = $6::bigint)
+      AND CASE $7::text
             WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
             -- The trash holds mail deleted from anywhere, junk included.
             WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
             ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
           END
       AND NOT is_bounce
-      AND CASE $6::text
+      AND CASE $7::text
             WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
             WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
             WHEN 'TRASH'   THEN deleted_at IS NOT NULL
             WHEN 'JUNK'    THEN deleted_at IS NULL
             ELSE archived_at IS NULL AND deleted_at IS NULL
           END
-      AND ($7::text = ''
-           OR subject ILIKE '%' || $7::text || '%'
-           OR from_email ILIKE '%' || $7::text || '%'
-           OR from_name ILIKE '%' || $7::text || '%')
+      AND ($8::text = ''
+           OR subject ILIKE '%' || $8::text || '%'
+           OR from_email ILIKE '%' || $8::text || '%'
+           OR from_name ILIKE '%' || $8::text || '%')
 ), ranked AS (
-    SELECT visible.id, visible.from_email, visible.from_name, visible.subject, visible.snippet, visible.thread_key, visible.is_read, visible.is_starred, visible.has_attachments, visible.received_at, visible.sent_at, visible.group_key, visible.at,
-           row_number() OVER (PARTITION BY group_key ORDER BY at DESC, id DESC) AS rn,
-           count(*)          OVER (PARTITION BY group_key) AS thread_count,
-           bool_or(NOT is_read)      OVER (PARTITION BY group_key) AS any_unread,
-           bool_or(is_starred)       OVER (PARTITION BY group_key) AS any_starred,
-           bool_or(has_attachments)  OVER (PARTITION BY group_key) AS any_attachment
+    SELECT visible.id, visible.account_id, visible.from_email, visible.from_name, visible.subject, visible.snippet, visible.thread_key, visible.is_read, visible.is_starred, visible.has_attachments, visible.received_at, visible.sent_at, visible.group_key, visible.at,
+           row_number() OVER (PARTITION BY account_id, group_key ORDER BY at DESC, id DESC) AS rn,
+           count(*)          OVER (PARTITION BY account_id, group_key) AS thread_count,
+           bool_or(NOT is_read)      OVER (PARTITION BY account_id, group_key) AS any_unread,
+           bool_or(is_starred)       OVER (PARTITION BY account_id, group_key) AS any_starred,
+           bool_or(has_attachments)  OVER (PARTITION BY account_id, group_key) AS any_attachment
     FROM visible
 )
 SELECT id, from_email, from_name, subject, snippet, thread_key,
@@ -1418,13 +1436,14 @@ LIMIT $3::int
 `
 
 type ListInboundThreadsParams struct {
-	CursorAt pgtype.Timestamptz
-	CursorID int64
-	RowLimit int32
-	TenantID int64
-	OwnerID  int64
-	View     string
-	Keyword  string
+	CursorAt  pgtype.Timestamptz
+	CursorID  int64
+	RowLimit  int32
+	TenantID  int64
+	OwnerID   int64
+	AccountID *int64
+	View      string
+	Keyword   string
 }
 
 type ListInboundThreadsRow struct {
@@ -1453,6 +1472,10 @@ type ListInboundThreadsRow struct {
 //
 // A message with no thread key is its own conversation ('m:<id>'), so mail
 // that never got a reply is not silently merged with other loose mail.
+//
+// **会话按信箱分。** PARTITION BY 带 account_id，和 mail_thread_view 的主键
+// 是同一个口径（00044）。少了它，同一条会话落在两个信箱时，列表里是两行、
+// 一搜索变一行——同一封信在两个屏幕上有两种身份，而且哪一种都不报错。
 // The row stands for the whole conversation: the newest message supplies the
 // text and the time, the flags are the conversation's own. Unread if ANY
 // message is unread — a thread with an unanswered question in it must not
@@ -1470,6 +1493,7 @@ func (q *Queries) ListInboundThreads(ctx context.Context, arg ListInboundThreads
 		arg.RowLimit,
 		arg.TenantID,
 		arg.OwnerID,
+		arg.AccountID,
 		arg.View,
 		arg.Keyword,
 	)
@@ -2107,6 +2131,9 @@ SELECT 'IN' AS direction, i.id, i.subject,
 FROM email_inbound i
 WHERE i.tenant_id = $1::bigint
   AND i.owner_id = $2::bigint
+  -- 不传 = 这个人名下所有信箱（旧前端）。见 GetMailThreadRequest.message_id。
+  AND ($4::bigint IS NULL
+       OR i.account_id = $4::bigint)
   AND i.thread_key = $3::text
   AND NOT i.is_bounce
   -- A mail speaks once per conversation. Gmail files a copy of every send
@@ -2140,6 +2167,7 @@ type ListThreadParams struct {
 	TenantID  int64
 	OwnerID   int64
 	ThreadKey string
+	AccountID *int64
 }
 
 type ListThreadRow struct {
@@ -2157,8 +2185,22 @@ type ListThreadRow struct {
 // received come from different tables, so the union is what makes a thread
 // read as a dialogue instead of two separate lists. Owner-scoped on both
 // legs: a thread key is guessable, whose mail it opens must not be.
+//
+// **收到的那一腿还按信箱限定**（00044 的口径）：列表行上的 (2) 说的是
+// 「这个信箱里的两封」，打开时不限定信箱就会把两个箱的同名会话合起来读，
+// 变成列表写 (2)、进去 4 封。
+//
+// 发出去的那一腿（email_messages）**限定不了**：那张表还没有 account_id，
+// 「这封信从哪个信箱发的」今天答不上来，那是第三期的事。所以现在的语义是
+// 「这个信箱收到的 + 我发出去的全部」。会话在两个信箱里时，发出去的那几封
+// 两边都会出现——比把收到的也合起来要好，因为那几封确实是同一批。
 func (q *Queries) ListThread(ctx context.Context, arg ListThreadParams) ([]ListThreadRow, error) {
-	rows, err := q.db.Query(ctx, listThread, arg.TenantID, arg.OwnerID, arg.ThreadKey)
+	rows, err := q.db.Query(ctx, listThread,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.ThreadKey,
+		arg.AccountID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -2194,7 +2236,10 @@ JOIN email_inbound_attachments a
   ON a.tenant_id = i.tenant_id AND a.inbound_id = i.id
 WHERE i.tenant_id = $1::bigint
   AND i.owner_id = $2::bigint
-  AND i.thread_key = $3::text
+  -- 和 ListThread 同一个口径：附件跟着信走，信按信箱分。
+  AND ($3::bigint IS NULL
+       OR i.account_id = $3::bigint)
+  AND i.thread_key = $4::text
 UNION ALL
 SELECT 'OUT'::text AS direction, m.id AS message_id,
        a.id, a.file_name, a.content_type, a.file_size, a.file_key, ''::text AS content_id
@@ -2203,13 +2248,14 @@ JOIN email_attachments a
   ON a.tenant_id = m.tenant_id AND a.campaign_id = m.campaign_id
 WHERE m.tenant_id = $1::bigint
   AND m.sender_id = $2::bigint
-  AND m.thread_key = $3::text
+  AND m.thread_key = $4::text
 ORDER BY 1, 2, 3
 `
 
 type ListThreadAttachmentsParams struct {
 	TenantID  int64
 	OwnerID   int64
+	AccountID *int64
 	ThreadKey string
 }
 
@@ -2239,7 +2285,12 @@ type ListThreadAttachmentsRow struct {
 // 需要正文，所以留给 Go 里的 hideEmbedded 做——GetInbound 一直是这么做的，
 // 这里当初不该另发明一个更粗的代理指标。
 func (q *Queries) ListThreadAttachments(ctx context.Context, arg ListThreadAttachmentsParams) ([]ListThreadAttachmentsRow, error) {
-	rows, err := q.db.Query(ctx, listThreadAttachments, arg.TenantID, arg.OwnerID, arg.ThreadKey)
+	rows, err := q.db.Query(ctx, listThreadAttachments,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.AccountID,
+		arg.ThreadKey,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -2272,7 +2323,8 @@ SELECT id, raw_key, account_id, folder, imap_uid, message_id
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
-  AND thread_key = $3::text
+  AND account_id = $3::bigint
+  AND thread_key = $4::text
   AND thread_key <> ''
   AND deleted_at IS NOT NULL
 ORDER BY id
@@ -2281,6 +2333,7 @@ ORDER BY id
 type ListThreadForPurgeParams struct {
 	TenantID  int64
 	OwnerID   int64
+	AccountID int64
 	ThreadKey string
 }
 
@@ -2297,8 +2350,17 @@ type ListThreadForPurgeRow struct {
 // same conversation semantics as the rest of the list: the trash row stands
 // for the exchange, so confirming deletes the exchange. Only trashed rows —
 // a live message of the same thread is not swept up by this.
+//
+// **按信箱限定**（00044 的口径）。这一句后面接的是**永久删除**加一条发给
+// 邮件服务器的删除指令，所以「同一条会话也落在另一个信箱里」的那份必须
+// 留下。调用方手上有 account_id：进这条路之前先 GetInbound 拿了那一行。
 func (q *Queries) ListThreadForPurge(ctx context.Context, arg ListThreadForPurgeParams) ([]ListThreadForPurgeRow, error) {
-	rows, err := q.db.Query(ctx, listThreadForPurge, arg.TenantID, arg.OwnerID, arg.ThreadKey)
+	rows, err := q.db.Query(ctx, listThreadForPurge,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.AccountID,
+		arg.ThreadKey,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -2335,23 +2397,29 @@ FROM mail_thread_view t
 JOIN email_inbound m ON m.tenant_id = t.tenant_id AND m.id = t.last_id
 WHERE t.tenant_id = $1::bigint
   AND t.owner_id = $2::bigint
-  AND t.view = $3::text
+  -- 不传 = 全部信箱，走 00034 那条旧索引；传了走
+  -- mail_thread_view_account_list_idx（00044）。左侧切换器上线前，前端
+  -- 什么都不传，所以两条索引这一版都还要在。
+  AND ($3::bigint IS NULL
+       OR t.account_id = $3::bigint)
+  AND t.view = $4::text
   -- Row comparison, so ties on the timestamp fall back to the id and no two
   -- conversations can ever occupy the same cursor position.
-  AND ($4::timestamptz IS NULL
-       OR (t.last_at, t.last_id) < ($4::timestamptz,
-                                    $5::bigint))
+  AND ($5::timestamptz IS NULL
+       OR (t.last_at, t.last_id) < ($5::timestamptz,
+                                    $6::bigint))
 ORDER BY t.last_at DESC, t.last_id DESC
-LIMIT $6::int
+LIMIT $7::int
 `
 
 type ListThreadsByViewParams struct {
-	TenantID int64
-	OwnerID  int64
-	View     string
-	CursorAt pgtype.Timestamptz
-	CursorID int64
-	RowLimit int32
+	TenantID  int64
+	OwnerID   int64
+	AccountID *int64
+	View      string
+	CursorAt  pgtype.Timestamptz
+	CursorID  int64
+	RowLimit  int32
 }
 
 type ListThreadsByViewRow struct {
@@ -2389,6 +2457,7 @@ func (q *Queries) ListThreadsByView(ctx context.Context, arg ListThreadsByViewPa
 	rows, err := q.db.Query(ctx, listThreadsByView,
 		arg.TenantID,
 		arg.OwnerID,
+		arg.AccountID,
 		arg.View,
 		arg.CursorAt,
 		arg.CursorID,
@@ -2449,6 +2518,14 @@ type ListTrashForPurgeRow struct {
 }
 
 // Everything in one person's trash, for emptying it in one go.
+//
+// **和列表的信箱筛选是一对，谁先加谁就得把另一个带上。** 今天两边都是
+// 「我全部信箱」，所以「清空回收站」清掉的正是屏幕上列着的那些——一致。
+// 左侧切换器一上线，列表变成「只看这个信箱」，这一句要是没跟着变，
+// 按钮上写着"清空回收站"，清掉的却是另一个信箱里也在回收站的信，而那是
+// **永久删除**，还会连带发一条删除指令给邮件服务器。
+//
+// 同一对的还有 MarkViewRead 和 TrashJunkView（那两个可逆，这一个不可逆）。
 func (q *Queries) ListTrashForPurge(ctx context.Context, arg ListTrashForPurgeParams) ([]ListTrashForPurgeRow, error) {
 	rows, err := q.db.Query(ctx, listTrashForPurge, arg.TenantID, arg.OwnerID)
 	if err != nil {
@@ -2658,6 +2735,15 @@ type MarkViewReadRow struct {
 // never reach into the archive or the trash from either. Every row it changes
 // comes back so the caller can tell the mail host too: reading a mailbox in
 // the ERP has to leave it read in Gmail, one button or one message at a time.
+//
+// **这一版还没有按信箱限定**，是有意的一条线。00044 把会话拆成了按信箱，
+// 而这里是「视图级」操作：需要的信箱来自"当前看的是哪个箱"，那个参数要等
+// 左侧切换器那一版才传得进来。
+//
+// 为什么可以等：会话级的操作（归档、删除、永久删除）已经在同一批里按信箱
+// 限定了，因为它们的调用方手上有那封信、拿得到 account_id——而那几个弄错
+// 会**吃掉另一个信箱的信**。这里弄错只是"标已读标多了"：可逆，不丢信，
+// 而且用户看得见。TrashJunkView 同理。
 func (q *Queries) MarkViewRead(ctx context.Context, arg MarkViewReadParams) ([]MarkViewReadRow, error) {
 	rows, err := q.db.Query(ctx, markViewRead, arg.TenantID, arg.OwnerID, arg.View)
 	if err != nil {
@@ -3163,7 +3249,8 @@ SET is_read    = coalesce($1::boolean, is_read),
         ELSE NULL END
 WHERE tenant_id = $6::bigint
   AND owner_id = $7::bigint
-  AND thread_key = $8::text
+  AND account_id = $8::bigint
+  AND thread_key = $9::text
   AND thread_key <> ''
 RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archived_at, deleted_at, not_junk
 `
@@ -3176,6 +3263,7 @@ type SetThreadFlagsParams struct {
 	Deleted   *bool
 	TenantID  int64
 	OwnerID   int64
+	AccountID int64
 	ThreadKey string
 }
 
@@ -3196,6 +3284,14 @@ type SetThreadFlagsRow struct {
 // thread stays in the inbox one message lighter, which reads as a bug.
 // Owner-scoped: thread keys are guessable, so this must never reach further
 // than the caller's own mail.
+//
+// **也按信箱限定。** 同一条会话可能同时落在 263 和 Gmail 两个信箱里（客户
+// 抄送了两个地址）。不带 account_id 的话，在 263 那边点归档会把 Gmail 那一
+// 份也归档掉，触发器随后把两行都刷新，表里完全自洽——症状是「另一个信箱的
+// 信自己不见了」，没有报错、没有日志。删除也是同一条路，那就不只是不见了。
+//
+// 调用方手上一定有 account_id：这条路是从「用户点了某一封信」进来的，
+// MarkInbound 先 GetInbound 拿到那一行，account_id 就在里面。
 func (q *Queries) SetThreadFlags(ctx context.Context, arg SetThreadFlagsParams) ([]SetThreadFlagsRow, error) {
 	rows, err := q.db.Query(ctx, setThreadFlags,
 		arg.Read,
@@ -3205,6 +3301,7 @@ func (q *Queries) SetThreadFlags(ctx context.Context, arg SetThreadFlagsParams) 
 		arg.Deleted,
 		arg.TenantID,
 		arg.OwnerID,
+		arg.AccountID,
 		arg.ThreadKey,
 	)
 	if err != nil {

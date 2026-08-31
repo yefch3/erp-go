@@ -59,7 +59,7 @@ func TestSentMirrorCopiesSpeakOncePerThread(t *testing.T) {
 	seedInbound(t, ctx, pool, tenantID, owner, "INBOX", "cust-msg-1@example.com", key1, "buyer@example.com", 9101)
 	seedInbound(t, ctx, pool, tenantID, owner, "SENT", sentUUID+"@gmail.com", key1, "us@corp.example", 9102)
 
-	items, err := svc.GetMailThread(ctx, tenantID, owner, key1)
+	items, err := svc.GetMailThread(ctx, tenantID, owner, 0, key1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestSentMirrorCopiesSpeakOncePerThread(t *testing.T) {
 	seedInbound(t, ctx, pool, tenantID, owner, "INBOX", "self-1@gmail.com", key2, "me@corp.example", 9103)
 	seedInbound(t, ctx, pool, tenantID, owner, "SENT", "self-1@gmail.com", key2, "me@corp.example", 9104)
 
-	items, err = svc.GetMailThread(ctx, tenantID, owner, key2)
+	items, err = svc.GetMailThread(ctx, tenantID, owner, 0, key2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestSentMirrorCopiesSpeakOncePerThread(t *testing.T) {
 	seedInbound(t, ctx, pool, tenantID, owner, "SENT", "", key3, "me@corp.example", 9105)
 	seedInbound(t, ctx, pool, tenantID, owner, "SENT", "webmail-sent-1@gmail.com", key3, "me@corp.example", 9106)
 
-	items, err = svc.GetMailThread(ctx, tenantID, owner, key3)
+	items, err = svc.GetMailThread(ctx, tenantID, owner, 0, key3)
 	if err != nil {
 		t.Fatal(err)
 	}

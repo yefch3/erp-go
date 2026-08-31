@@ -650,8 +650,11 @@ func (s *Server) listInbound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getMailThread(w http.ResponseWriter, r *http.Request) {
+	// id 是「从哪一封信点进来的」，决定读哪个信箱那一份。旧前端不发，
+	// 那时 0 表示不限定——部署顺序是后端先发前端后发，这条路必须留着。
+	id, _ := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
 	resp, err := s.Emails.GetMailThread(r.Context(), &mailv1.GetMailThreadRequest{
-		ThreadKey: r.URL.Query().Get("key"),
+		ThreadKey: r.URL.Query().Get("key"), MessageId: id,
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
