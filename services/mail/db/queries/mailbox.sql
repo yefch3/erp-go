@@ -49,11 +49,28 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- 绑定邮箱和 Google 回调当场全挂。
 --
 -- 换成地址之后语义也更贴事实：同一个地址重新填一次授权码是更新，换一个
--- 地址是新增一个信箱。第一个绑的自动成为默认（COALESCE 那一句），之后
+-- 地址是新增一个信箱。第一个绑的自动成为默认（NOT EXISTS 那一句），之后
 -- 加的不动默认——不然每加一个信箱，写信的发件人就被悄悄换掉了。
+--
+-- **收发服务器从 mail_hosts 种进来。** 00042 把主机从「一家公司一份」搬到
+-- 了信箱行上，却漏了这一句：新插的行 smtp_host 是空串，而 ForAccount 见到
+-- 空串就返回 ErrMailHostNotConfigured。结果是**新员工绑完邮箱，发信和收信
+-- 全停**，一直停到管理员碰巧再去「邮件主机设置」里点一次保存为止（那一下
+-- 会触发 SyncAccountHostsFromTenant 把配置刷到所有行）——而这两件事之间
+-- 没有任何提示把它们联系起来。
+--
+-- LEFT JOIN 而不是 JOIN：没配过 mail_hosts 的公司照样要能插进来，只是插出
+-- 来的信箱确实还不能收发，而那正是 ErrMailHostNotConfigured 该说的话。
+-- coalesce 里的默认值和 00042 加列时的 DEFAULT 一致。
+--
+-- mail_hosts 从此就是它注释里写的那个角色：**新建信箱时的默认值模板**，
+-- 不是发信的事实来源。员工自己挑服务商之后，这里种下的值会被覆盖。
 INSERT INTO mail_accounts (
-    tenant_id, employee_id, email, username, secret_enc, key_version, is_default, updated_at
-) VALUES (
+    tenant_id, employee_id, email, username, secret_enc, key_version, is_default,
+    domain, smtp_host, smtp_port, smtp_security,
+    imap_host, imap_port, imap_security, hourly_quota, daily_quota, updated_at
+)
+SELECT
     sqlc.arg(tenant_id)::bigint, sqlc.arg(employee_id)::bigint,
     sqlc.arg(email)::text, sqlc.arg(username)::text, ''::bytea, 0,
     NOT EXISTS (
@@ -61,8 +78,14 @@ INSERT INTO mail_accounts (
          WHERE d.tenant_id = sqlc.arg(tenant_id)::bigint
            AND d.employee_id = sqlc.arg(employee_id)::bigint
     ),
+    coalesce(h.domain, ''), coalesce(h.smtp_host, ''),
+    coalesce(h.smtp_port, 465), coalesce(h.smtp_security, 'SSL'),
+    coalesce(h.imap_host, ''),
+    coalesce(h.imap_port, 993), coalesce(h.imap_security, 'SSL'),
+    coalesce(h.hourly_quota, 100), coalesce(h.daily_quota, 500),
     now()
-)
+FROM (SELECT 1) AS seed
+LEFT JOIN mail_hosts h ON h.tenant_id = sqlc.arg(tenant_id)::bigint
 -- **WHERE 那一行是安全边界，不是优化。** 没有它，DO UPDATE 会把
 -- employee_id 改成新来的那个人——也就是说，B 只要知道 A 的邮箱地址，
 -- 填一次就能把 A 的信箱连同已同步的全部邮件划到自己名下，一声不吭。
