@@ -98,6 +98,9 @@ const (
 func (s *Service) VerifyMailSecret(
 	ctx context.Context, tenantID, employeeID int64, in BindRequest,
 ) (BindResult, error) {
+	// 一律小写，一律去空白。地址存进去的口径必须只有一个：唯一约束和
+	// ON CONFLICT 都是大小写敏感的，规范化少做一次，同一个信箱就裂成两行
+	// （00046 把存量也拉齐了）。
 	email := strings.ToLower(strings.TrimSpace(in.Email))
 	secret := strings.TrimSpace(in.Secret)
 

@@ -65,7 +65,10 @@ func (s *Service) CompleteGoogleOAuth(ctx context.Context, tenantID, employeeID 
 		return "", errors.New("Google 没有返回长期授权（refresh token），请重试一次登录")
 	}
 
-	email := emailFromIDToken(tok.IDToken)
+	// 小写：地址一律以小写存（00046），而 ON CONFLICT (tenant_id, email) 是
+	// 大小写敏感的。Google 通常回小写，但"通常"不是约束——大小写不一的那次
+	// 会让同一个信箱裂成两行，两份凭据两份游标，而且不报错。
+	email := strings.ToLower(strings.TrimSpace(emailFromIDToken(tok.IDToken)))
 	if email == "" {
 		return "", errors.New("无法从 Google 的应答中读出邮箱地址")
 	}

@@ -809,7 +809,7 @@ SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
        imap_host, imap_port, imap_security
 FROM mail_accounts
 WHERE tenant_id = $1::bigint
-  AND lower(email) = lower($2::text)
+  AND email = $2::text
 `
 
 type GetMailAccountByEmailParams struct {
@@ -845,6 +845,13 @@ type GetMailAccountByEmailRow struct {
 // 否则别人已经绑走的地址会显示成「没绑过」，人重填一次还是失败。
 //
 // 和 GetMailAccountByID 选的是同一组列，两边的行类型可以互换。
+//
+// **精确比较，不套 lower()。** 地址一律以小写存（00046 把存量也规范化了），
+// 而调用方在服务层已经 ToLower 过。套 lower() 的话有两个坏处：走不上
+// mail_accounts_tenant_id_email_key 那条索引（实测是 Seq Scan），而且和
+// UpsertMailAccountShell 的 ON CONFLICT (tenant_id, email) **口径不一致**
+// ——查的时候匹配上老行、插的时候对不上，同一个信箱会裂成两行，而唯一约束
+// 一声不吭。
 func (q *Queries) GetMailAccountByEmail(ctx context.Context, arg GetMailAccountByEmailParams) (GetMailAccountByEmailRow, error) {
 	row := q.db.QueryRow(ctx, getMailAccountByEmail, arg.TenantID, arg.Email)
 	var i GetMailAccountByEmailRow

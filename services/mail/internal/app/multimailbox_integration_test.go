@@ -428,6 +428,32 @@ func TestSomebodyAtA263CompanyCanBindTheirGmail(t *testing.T) {
 		t.Error("加了第二个信箱之后默认发件人被换掉了")
 	}
 
+	// 同一个地址换个大小写再绑一次，是**更新同一行**，不是新增。
+	//
+	// 这条钉的是 00046：地址一律以小写存，而 ON CONFLICT (tenant_id, email)
+	// 是大小写敏感的。不规范化的话 'Me@x.com' 和 'me@x.com' 在唯一约束眼里
+	// 是两个值，同一个信箱裂成两行——两份凭据、两份同步游标、两套已收邮件，
+	// 而且一声不吭。
+	again, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "LINA.PERSONAL@GMAIL.COM", Secret: "app-password-2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.AccountID != personal.AccountID {
+		t.Errorf("同一个地址换个大小写又开了一个信箱（%d ≠ %d）——"+
+			"两份凭据两份游标，而唯一约束一声不吭",
+			again.AccountID, personal.AccountID)
+	}
+	var rows int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM mail_accounts
+		WHERE tenant_id=$1 AND employee_id=$2`, tenantID, employeeID).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 2 {
+		t.Errorf("应该只有两个信箱（公司 + Gmail），实际 %d 个", rows)
+	}
+
 	// 两次绑定各留一行痕，记的是落库后的地址。
 	var logged int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM mail_binding_log
