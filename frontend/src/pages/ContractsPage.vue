@@ -96,6 +96,10 @@
             <el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c" />
           </el-select>
         </el-form-item>
+        <el-form-item :label="t('contracts.receivableDue')">
+          <el-date-picker v-model="directForm.receivableDueDate" type="date" value-format="YYYY-MM-DD"
+                          clearable :placeholder="t('contracts.receivableDueHint')" style="width: 200px" />
+        </el-form-item>
         <el-form-item :label="t('contracts.deliveryDate')">
           <el-date-picker v-model="directForm.deliveryDate" type="date" value-format="YYYY-MM-DD" style="width: 200px" />
           <el-input
@@ -189,6 +193,10 @@
           <el-date-picker v-model="generateForm.deliveryDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
           <div class="hint">{{ t('contracts.deliveryHint') }}</div>
         </el-form-item>
+        <el-form-item :label="t('contracts.receivableDue')">
+          <el-date-picker v-model="generateForm.receivableDueDate" type="date" value-format="YYYY-MM-DD"
+                          clearable :placeholder="t('contracts.receivableDueHint')" style="width: 100%" />
+        </el-form-item>
         <el-form-item :label="t('contracts.terms')">
           <el-input v-model="generateForm.terms" type="textarea" :rows="3" />
         </el-form-item>
@@ -255,6 +263,11 @@
           <el-descriptions-item :label="t('contracts.paymentMethod')">{{ detail.version.paymentMethod || '—' }}</el-descriptions-item>
           <el-descriptions-item :label="t('contracts.portOfLoading')">{{ detail.version.portOfLoading || '—' }}</el-descriptions-item>
           <el-descriptions-item :label="t('contracts.portOfDischarge')">{{ detail.version.portOfDischarge || '—' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('contracts.receivableDue')">
+            <span :class="{ missing: !detail.contract.receivableDueDate }">
+              {{ detail.contract.receivableDueDate || t('contracts.notSet') }}
+            </span>
+          </el-descriptions-item>
           <el-descriptions-item :label="t('contracts.deliveryDate')">
             <span :class="{ missing: !detail.version.deliveryDate }">{{ detail.version.deliveryDate || t('contracts.notSet') }}</span>
           </el-descriptions-item>
@@ -608,6 +621,10 @@
           <el-form-item :label="t('contracts.deliveryDate')" required>
             <el-date-picker v-model="termsForm.deliveryDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
           </el-form-item>
+          <el-form-item :label="t('contracts.receivableDue')">
+            <el-date-picker v-model="termsForm.receivableDueDate" type="date" value-format="YYYY-MM-DD"
+                            clearable :placeholder="t('contracts.receivableDueHint')" style="width: 100%" />
+          </el-form-item>
         </div>
         <el-form-item :label="t('contracts.terms')">
           <el-input v-model="termsForm.terms" type="textarea" :rows="4" />
@@ -789,6 +806,7 @@ interface Contract {
   salesEmployee: string
   salesEmployeeId: string
   signatureSource: string
+  receivableDueDate: string
 }
 interface Version {
   id: string
@@ -968,6 +986,10 @@ const directForm = reactive({
   customerId: undefined as number | undefined,
   currency: 'USD',
   deliveryDate: '',
+  // 应收到期日：这份合同的钱什么时候该收回来。**员工填**，可留空。
+  // 不再从客户主数据的账期推——同一个客户这一单谈 60 天、下一单要求预付，
+  // 都是常事。
+  receivableDueDate: '',
   incoterm: 'FOB',
   paymentMethod: '',
   portOfLoading: '',
@@ -1022,6 +1044,7 @@ async function createDirect() {
         portOfLoading: directForm.portOfLoading,
         portOfDischarge: directForm.portOfDischarge,
         deliveryDate: directForm.deliveryDate,
+        receivableDueDate: directForm.receivableDueDate,
         terms: directForm.terms,
       },
       items: items.map((r) => ({
@@ -1043,11 +1066,11 @@ async function createDirect() {
 const termsOpen = ref(false)
 const changeOpen = ref(false)
 
-const generateForm = reactive({ quotationId: '', deliveryDate: '', terms: '' })
+const generateForm = reactive({ quotationId: '', deliveryDate: '', receivableDueDate: '', terms: '' })
 const termsForm = reactive({
   buyerName: '', buyerAddress: '', sellerName: '', sellerAddress: '',
   incoterm: 'FOB', portOfLoading: '', portOfDischarge: '', paymentMethod: '',
-  deliveryDate: '', terms: '', items: [] as ChangeLine[],
+  deliveryDate: '', receivableDueDate: '', terms: '', items: [] as ChangeLine[],
 })
 const changeForm = reactive({ reason: '', deliveryDate: '', items: [] as ChangeLine[] })
 const approvals = ref<ApprovalRound[]>([])
@@ -1173,7 +1196,11 @@ async function generate() {
   try {
     const data = await post<Detail>('/contracts', {
       quotationId: generateForm.quotationId,
-      terms: { deliveryDate: generateForm.deliveryDate, terms: generateForm.terms },
+      terms: {
+        deliveryDate: generateForm.deliveryDate,
+        receivableDueDate: generateForm.receivableDueDate,
+        terms: generateForm.terms,
+      },
     }, withIdempotency(createIdem))
     createIdem.reset()
     ElMessage.success(t('contracts.created'))
@@ -1192,6 +1219,8 @@ function openTerms() {
     sellerName: v.sellerName, sellerAddress: v.sellerAddress,
     incoterm: v.incoterm, portOfLoading: v.portOfLoading, portOfDischarge: v.portOfDischarge,
     paymentMethod: v.paymentMethod, deliveryDate: v.deliveryDate, terms: v.terms,
+    // 到期日在合同主表上，不在版本上——版本审批后冻结，而到期日要能改。
+    receivableDueDate: detail.value!.contract.receivableDueDate || '',
     items: toLines(detail.value!.items),
   })
   termsOpen.value = true

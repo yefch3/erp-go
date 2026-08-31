@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -201,17 +200,19 @@ func (s *Service) SignContract(ctx context.Context, tenantID, id int64, op Opera
 	if err != nil {
 		return "", err
 	}
-	// 应收到期日（E1）：账期从合同生效日起算，而生效就是现在。
+	// 生效**不碰应收到期日**。
 	//
-	// 在事务外问客户主数据，因为那是一次网络调用——放进事务里会让锁
-	// 持有时间取决于另一个服务的响应。账期拿不到不该拦住签署：合同生效
-	// 是业务事实，到期日只是它的推论，留空之后能补（清单页会催）。
-	dueDate := ""
-	if s.customers != nil && view.Contract.CustomerID > 0 {
-		if customer, cerr := s.customers.Get(ctx, view.Contract.CustomerID); cerr == nil && customer.PaymentDays > 0 {
-			dueDate = time.Now().UTC().AddDate(0, 0, int(customer.PaymentDays)).Format("2006-01-02")
-		}
-	}
+	// 上一版这里去客户主数据取账期，算 time.Now().UTC() + 账期。两处都被
+	// 业务推翻或证伪了：
+	//
+	//   * 到期日现在是合同自己的字段，建合同的人填——同一个客户这一单谈
+	//     60 天、下一单要求预付，都是常事；
+	//   * 那个算法本身还差一天。库里的会话时区是 Asia/Shanghai
+	//     （pkg/pgdb），而这里用的是世界时的今天——北京时间凌晨 0 点到
+	//     8 点之间确认签署的合同，写下的日子比「生效日 + 账期」早一天。
+	//
+	// 时区那个 bug 的正确修法就是这一段整个消失：业务日期不该在 Go 的
+	// 时钟上算，那是两个时钟、两个时区。
 
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
@@ -245,14 +246,6 @@ func (s *Service) SignContract(ctx context.Context, tenantID, id int64, op Opera
 			TenantID: tenantID, ID: id, SignatureSource: SourceManual, UpdatedBy: op.ID,
 		}); err != nil {
 			return err
-		}
-		// 只在为空时写入（SQL 里带条件），所以重复生效不会改动已定的到期日。
-		if dueDate != "" {
-			if err := q.SetContractReceivableDue(ctx, store.SetContractReceivableDueParams{
-				TenantID: tenantID, ID: id, DueDate: dueDate,
-			}); err != nil {
-				return err
-			}
 		}
 		return outbox.Append(ctx, tx, outbox.Event{
 			TenantID: tenantID, AggregateType: "contract",

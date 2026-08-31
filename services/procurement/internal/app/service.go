@@ -71,9 +71,6 @@ type Supplier struct {
 	Name     string
 	Currency string
 	Status   string
-	// 付款账期，单位天。下单时快照到采购单上，应付到期日由它算出来。
-	// 0 = 没配（不是「当天到期」）。
-	PaymentDays int32
 }
 
 // Warehouses resolves the custody destination selected for a receipt.

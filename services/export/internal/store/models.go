@@ -48,6 +48,18 @@ type ContractAttachment struct {
 	Source            string
 }
 
+type ContractDueChange struct {
+	ID            int64
+	TenantID      int64
+	ContractID    int64
+	OldDueDate    pgtype.Date
+	NewDueDate    pgtype.Date
+	Reason        string
+	ChangedByID   int64
+	ChangedByName string
+	CreatedAt     pgtype.Timestamptz
+}
+
 type ContractItem struct {
 	ID                int64
 	TenantID          int64

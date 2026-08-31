@@ -35,7 +35,8 @@ func (h *ContractHandler) ListContracts(ctx context.Context, req *exv1.ListContr
 			CustomerId: r.CustomerID, CustomerName: r.CustomerName, Status: r.Status,
 			SalesEmployeeId: r.SalesEmployeeID, SalesEmployee: r.SalesEmployee,
 			SignedAt: ts(r.SignedAt), EffectiveAt: ts(r.EffectiveAt),
-			CreatedAt: ts(r.CreatedAt), Currency: r.Currency,
+			CreatedAt: ts(r.CreatedAt), ReceivableDueDate: r.ReceivableDueDate,
+			Currency:    r.Currency,
 			TotalAmount: r.TotalAmount, BaseAmount: r.BaseAmount, VersionNo: r.VersionNo,
 		})
 	}
@@ -180,6 +181,7 @@ func termsFromProto(t *exv1.ContractTerms) app.Terms {
 		Incoterm: t.GetIncoterm(), PortOfLoading: t.GetPortOfLoading(),
 		PortOfDischarge: t.GetPortOfDischarge(), PaymentMethod: t.GetPaymentMethod(),
 		DeliveryDate: t.GetDeliveryDate(), Text: t.GetTerms(),
+		ReceivableDueDate: t.GetReceivableDueDate(),
 	}
 }
 
@@ -192,8 +194,8 @@ func contractToProto(view app.ContractView) *exv1.Contract {
 		SalesEmployeeId: c.SalesEmployeeID, SalesEmployee: c.SalesEmployee,
 		SignatureSource: c.SignatureSource,
 		SignedAt:        ts(c.SignedAt), EffectiveAt: ts(c.EffectiveAt), CompletedAt: ts(c.CompletedAt),
-		CreatedAt: ts(c.CreatedAt),
-		Currency:  view.Version.Currency, TotalAmount: view.Version.TotalAmount,
+		CreatedAt: ts(c.CreatedAt), ReceivableDueDate: c.ReceivableDueDate,
+		Currency: view.Version.Currency, TotalAmount: view.Version.TotalAmount,
 		BaseAmount: view.Version.BaseAmount, VersionNo: view.Version.VersionNo,
 	}
 }

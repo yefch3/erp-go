@@ -2625,6 +2625,7 @@ const (
 	PurchaseOrderService_ClosePurchaseOrderPayment_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/ClosePurchaseOrderPayment"
 	PurchaseOrderService_ReopenPurchaseOrderPayment_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ReopenPurchaseOrderPayment"
 	PurchaseOrderService_BackfillPayableDue_FullMethodName               = "/erp.procurement.v1.PurchaseOrderService/BackfillPayableDue"
+	PurchaseOrderService_SetPayableDueDate_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/SetPayableDueDate"
 	PurchaseOrderService_PresignReconFile_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/PresignReconFile"
 	PurchaseOrderService_AttachReconFile_FullMethodName                  = "/erp.procurement.v1.PurchaseOrderService/AttachReconFile"
 	PurchaseOrderService_ListReconFiles_FullMethodName                   = "/erp.procurement.v1.PurchaseOrderService/ListReconFiles"
@@ -2731,10 +2732,12 @@ type PurchaseOrderServiceClient interface {
 	ReversePurchaseOrderPayment(ctx context.Context, in *ReversePurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ReversePurchaseOrderPaymentResponse, error)
 	ClosePurchaseOrderPayment(ctx context.Context, in *ClosePurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ClosePurchaseOrderPaymentResponse, error)
 	ReopenPurchaseOrderPayment(ctx context.Context, in *ReopenPurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ReopenPurchaseOrderPaymentResponse, error)
-	// 给存量采购单补应付到期日。到期日是从「配了账期之后下的单」才开始
-	// 写入的，在此之前的单一张都没有——不补一次，上线第一天整页都是
-	// 「未配账期」。按供应商当前配的账期算，幂等，跑几遍结果一样。
+	// 已下线。它按「供应商配的账期」推算存量单的到期日，而到期日现在是
+	// 单据自己的字段、由人填，没有可推导的来源了。留着空壳只因为 buf 的
+	// 兼容检查不允许删 RPC；服务端一律拒绝，网关也不再挂路由。
 	BackfillPayableDue(ctx context.Context, in *BackfillPayableDueRequest, opts ...grpc.CallOption) (*BackfillPayableDueResponse, error)
+	// 事后改一张采购单的应付到期日。理由必填——这个日子决定它算不算逾期。
+	SetPayableDueDate(ctx context.Context, in *SetPayableDueDateRequest, opts ...grpc.CallOption) (*SetPayableDueDateResponse, error)
 	// 挂在一张采购单上的凭证——发票扫描件、水单、退款回执。存的是**纸**，
 	// 不是有金额、有明细、参与运算的单据：它不进任何求和，只是「这笔钱是
 	// 怎么回事」的证据。一张单可以有好几份。
@@ -3221,6 +3224,16 @@ func (c *purchaseOrderServiceClient) BackfillPayableDue(ctx context.Context, in 
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) SetPayableDueDate(ctx context.Context, in *SetPayableDueDateRequest, opts ...grpc.CallOption) (*SetPayableDueDateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetPayableDueDateResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_SetPayableDueDate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *purchaseOrderServiceClient) PresignReconFile(ctx context.Context, in *PresignReconFileRequest, opts ...grpc.CallOption) (*PresignReconFileResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PresignReconFileResponse)
@@ -3469,10 +3482,12 @@ type PurchaseOrderServiceServer interface {
 	ReversePurchaseOrderPayment(context.Context, *ReversePurchaseOrderPaymentRequest) (*ReversePurchaseOrderPaymentResponse, error)
 	ClosePurchaseOrderPayment(context.Context, *ClosePurchaseOrderPaymentRequest) (*ClosePurchaseOrderPaymentResponse, error)
 	ReopenPurchaseOrderPayment(context.Context, *ReopenPurchaseOrderPaymentRequest) (*ReopenPurchaseOrderPaymentResponse, error)
-	// 给存量采购单补应付到期日。到期日是从「配了账期之后下的单」才开始
-	// 写入的，在此之前的单一张都没有——不补一次，上线第一天整页都是
-	// 「未配账期」。按供应商当前配的账期算，幂等，跑几遍结果一样。
+	// 已下线。它按「供应商配的账期」推算存量单的到期日，而到期日现在是
+	// 单据自己的字段、由人填，没有可推导的来源了。留着空壳只因为 buf 的
+	// 兼容检查不允许删 RPC；服务端一律拒绝，网关也不再挂路由。
 	BackfillPayableDue(context.Context, *BackfillPayableDueRequest) (*BackfillPayableDueResponse, error)
+	// 事后改一张采购单的应付到期日。理由必填——这个日子决定它算不算逾期。
+	SetPayableDueDate(context.Context, *SetPayableDueDateRequest) (*SetPayableDueDateResponse, error)
 	// 挂在一张采购单上的凭证——发票扫描件、水单、退款回执。存的是**纸**，
 	// 不是有金额、有明细、参与运算的单据：它不进任何求和，只是「这笔钱是
 	// 怎么回事」的证据。一张单可以有好几份。
@@ -3650,6 +3665,9 @@ func (UnimplementedPurchaseOrderServiceServer) ReopenPurchaseOrderPayment(contex
 }
 func (UnimplementedPurchaseOrderServiceServer) BackfillPayableDue(context.Context, *BackfillPayableDueRequest) (*BackfillPayableDueResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method BackfillPayableDue not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) SetPayableDueDate(context.Context, *SetPayableDueDateRequest) (*SetPayableDueDateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetPayableDueDate not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) PresignReconFile(context.Context, *PresignReconFileRequest) (*PresignReconFileResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PresignReconFile not implemented")
@@ -4512,6 +4530,24 @@ func _PurchaseOrderService_BackfillPayableDue_Handler(srv interface{}, ctx conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_SetPayableDueDate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetPayableDueDateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).SetPayableDueDate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_SetPayableDueDate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).SetPayableDueDate(ctx, req.(*SetPayableDueDateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PurchaseOrderService_PresignReconFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PresignReconFileRequest)
 	if err := dec(in); err != nil {
@@ -4982,6 +5018,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BackfillPayableDue",
 			Handler:    _PurchaseOrderService_BackfillPayableDue_Handler,
+		},
+		{
+			MethodName: "SetPayableDueDate",
+			Handler:    _PurchaseOrderService_SetPayableDueDate_Handler,
 		},
 		{
 			MethodName: "PresignReconFile",

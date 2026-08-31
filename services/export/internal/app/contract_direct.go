@@ -37,6 +37,12 @@ func (s *Service) CreateContract(ctx context.Context, tenantID int64, in DirectC
 	if in.Currency == "" {
 		return ContractView{}, apierr.Invalid("EX_CURRENCY_REQUIRED", "请选择币种")
 	}
+	// 日期一路当字符串传到 SQL，那句是 nullif(...)::date。不校验的话，一个
+	// 打错的月份不会得到「格式不对」，而是 PostgreSQL 的 22007 冒到网关，
+	// 最后变成 500「系统错误」。
+	if err := validBusinessDate(in.Terms.ReceivableDueDate, "EX_DUE_DATE_INVALID", "应收到期日"); err != nil {
+		return ContractView{}, err
+	}
 	// Lines are required even though the agreement itself is an uploaded
 	// file. Nothing downstream can read a PDF: shipping needs to know how
 	// much is still owed, and collection needs an amount to match money
@@ -101,7 +107,11 @@ func (s *Service) CreateContract(ctx context.Context, tenantID int64, in DirectC
 			QuotationID: 0, QuoteNo: "",
 			CustomerID: customer.ID, CustomerName: customer.Name,
 			SalesEmployeeID: op.ID, SalesEmployee: op.Name,
-			CreatedBy: op.ID,
+			// 应收到期日跟着条款一起进来，落在合同主表上。**从报价生成合同
+			// 那条路（contract.go）也有同样一句**——两条建合同的路，谁漏了
+			// 谁那边的到期日就悄悄没了。
+			ReceivableDueDate: in.Terms.ReceivableDueDate,
+			CreatedBy:         op.ID,
 		})
 		if err != nil {
 			return translateUnique(err, "EX_CONTRACT_NO_TAKEN", "合同号已存在")

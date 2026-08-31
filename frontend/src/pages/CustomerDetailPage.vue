@@ -232,14 +232,6 @@
             }}</strong>
           </div>
           <div>
-            <span>付款账期</span
-            ><strong>{{
-              customer.paymentDays
-                ? `${customer.paymentDays} 天`
-                : "现结 / 未设置"
-            }}</strong>
-          </div>
-          <div>
             <span>信用额度</span
             ><strong>{{
               formatCredit(customer.creditLimitMinor, customer.creditCurrency)
@@ -416,9 +408,6 @@
               :value="o.code"
             />
           </el-select>
-        </el-form-item>
-        <el-form-item label="付款账期">
-          <el-input-number v-model="creditForm.paymentDays" :min="0" />
         </el-form-item>
         <el-form-item label="信用额度">
           <el-input-number
@@ -1001,7 +990,6 @@ function profilePayload(overrides: Record<string, unknown> = {}) {
     invoiceTitle: c.invoiceTitle,
     invoiceTaxNo: c.invoiceTaxNo,
     invoiceRemark: c.invoiceRemark,
-    paymentDays: c.paymentDays || 0,
     creditLimitMinor: c.creditLimitMinor || 0,
     creditCurrency: c.creditCurrency || c.currency || "USD",
     creditStatus: c.creditStatus || "NORMAL",
@@ -1025,7 +1013,6 @@ function openCredit() {
   Object.assign(creditForm, {
     currency: c.currency || "USD",
     paymentTerm: c.paymentTerm,
-    paymentDays: c.paymentDays || 0,
     creditAmount: Number(c.creditLimitMinor || 0) / 100,
     creditCurrency: c.creditCurrency || c.currency || "USD",
     creditStatus: c.creditStatus || "NORMAL",
@@ -1046,7 +1033,6 @@ async function saveCredit() {
     await put(
       `/customers/${id}/profile`,
       profilePayload({
-        paymentDays: creditForm.paymentDays || 0,
         creditLimitMinor: Math.round(
           Number(creditForm.creditAmount || 0) * 100,
         ),

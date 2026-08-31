@@ -293,7 +293,12 @@ message Customer {
   string invoice_title = 24;
   string invoice_tax_no = 25;
   string invoice_remark = 26;
-  int32 payment_days = 27;
+  // 已下线，一律为 0，服务端不读也不写。
+  //
+  // 到期日改成单据自己的字段、由建单的人填之后，这个数字没有了用处。
+  // 字段留着不删，是因为 buf 的兼容检查用的是 FILE 档——删字段会被拦，
+  // 而且滚动发布期间新旧两版会同时在线，旧版还认得这个编号。
+  int32 payment_days = 27 [deprecated = true];
   // Credit limit is stored in the currency's minor unit to avoid floating-point rounding.
   int64 credit_limit_minor = 28;
   string credit_currency = 29;
@@ -339,7 +344,12 @@ message CreateCustomerRequest {
   string invoice_title = 22;
   string invoice_tax_no = 23;
   string invoice_remark = 24;
-  int32 payment_days = 25;
+  // 已下线，一律为 0，服务端不读也不写。
+  //
+  // 到期日改成单据自己的字段、由建单的人填之后，这个数字没有了用处。
+  // 字段留着不删，是因为 buf 的兼容检查用的是 FILE 档——删字段会被拦，
+  // 而且滚动发布期间新旧两版会同时在线，旧版还认得这个编号。
+  int32 payment_days = 25 [deprecated = true];
   int64 credit_limit_minor = 26;
   string credit_currency = 27;
   string credit_status = 28;
@@ -479,7 +489,12 @@ message UpdateCustomerProfileRequest {
   string invoice_title = 14;
   string invoice_tax_no = 15;
   string invoice_remark = 16;
-  int32 payment_days = 17;
+  // 已下线，一律为 0，服务端不读也不写。
+  //
+  // 到期日改成单据自己的字段、由建单的人填之后，这个数字没有了用处。
+  // 字段留着不删，是因为 buf 的兼容检查用的是 FILE 档——删字段会被拦，
+  // 而且滚动发布期间新旧两版会同时在线，旧版还认得这个编号。
+  int32 payment_days = 17 [deprecated = true];
   int64 credit_limit_minor = 18;
   string credit_currency = 19;
   string credit_status = 20;
@@ -765,7 +780,12 @@ message Supplier {
   // **0 表示没配，不是「当天到期」**——采购单上的到期日会留空，对账页
   // 显示成「未配账期」。payment_term 那一列是给人看的自由文本，算不出
   // 日子；这一个才是算术用的。
-  int32 payment_days = 24;
+  // 已下线，一律为 0，服务端不读也不写。
+  //
+  // 到期日改成单据自己的字段、由建单的人填之后，这个数字没有了用处。
+  // 字段留着不删，是因为 buf 的兼容检查用的是 FILE 档——删字段会被拦，
+  // 而且滚动发布期间新旧两版会同时在线，旧版还认得这个编号。
+  int32 payment_days = 24 [deprecated = true];
 }
 
 message CreateSupplierRequest {
@@ -786,7 +806,12 @@ message CreateSupplierRequest {
   string registered_address = 15;
   string payment_term = 16;
   repeated string business_types = 17;
-  int32 payment_days = 18;
+  // 已下线，一律为 0，服务端不读也不写。
+  //
+  // 到期日改成单据自己的字段、由建单的人填之后，这个数字没有了用处。
+  // 字段留着不删，是因为 buf 的兼容检查用的是 FILE 档——删字段会被拦，
+  // 而且滚动发布期间新旧两版会同时在线，旧版还认得这个编号。
+  int32 payment_days = 18 [deprecated = true];
 }
 
 message CreateSupplierResponse {
@@ -833,7 +858,12 @@ message UpdateSupplierRequest {
   string registered_address = 15;
   string payment_term = 16;
   repeated string business_types = 17;
-  int32 payment_days = 18;
+  // 已下线，一律为 0，服务端不读也不写。
+  //
+  // 到期日改成单据自己的字段、由建单的人填之后，这个数字没有了用处。
+  // 字段留着不删，是因为 buf 的兼容检查用的是 FILE 档——删字段会被拦，
+  // 而且滚动发布期间新旧两版会同时在线，旧版还认得这个编号。
+  int32 payment_days = 18 [deprecated = true];
 }
 
 message UpdateSupplierResponse {

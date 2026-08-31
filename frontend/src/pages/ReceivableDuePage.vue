@@ -150,6 +150,11 @@
             <el-button v-else link type="success" @click="openClose(row)">
               {{ t('receivableDue.close') }}
             </el-button>
+            <!-- 合同的常规编辑口只对草稿开放、而且只放销售属主过，所以
+                 财务改到期日这个门开在这里。 -->
+            <el-button link type="primary" @click="openDue(row)">
+              {{ t('receivableDue.dueEdit') }}
+            </el-button>
           </template>
         </el-table-column>
         <template #empty>{{ emptyText }}</template>
@@ -168,6 +173,41 @@
     <!-- 收款结清：这张合同的钱「不用再催了」。三个数并排亮着，员工看着差额
          做决定——这正是「完成由人确认」那条原则在合同侧的样子。只关催收的
          口，不关钱的门：结清的合同照样能核销，钱真的又来了就撤销。 -->
+    <!-- 改应收到期日。这个日子决定这份合同算不算逾期，所以理由必填，
+         改动连同旧值新值一起留痕，并把这份合同未读的催收提醒清掉——
+         不清的话扫描器下一轮会按新日子把提醒整轮重发。 -->
+    <el-dialog v-model="dueOpen" :title="t('receivableDue.dueEdit')" width="min(460px, 94vw)" destroy-on-close>
+      <template v-if="dueRow">
+        <p class="close-target">{{ dueRow.contractNo }} · {{ dueRow.customerName }}</p>
+        <el-form label-position="top">
+          <el-form-item :label="t('receivableDue.dueDate')">
+            <el-date-picker
+              v-model="dueForm.dueDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              clearable
+              :placeholder="t('receivableDue.dueEmpty')"
+              style="width: 100%"
+            />
+          </el-form-item>
+          <el-form-item :label="t('receivableDue.dueWhy')">
+            <el-input
+              v-model="dueForm.reason"
+              type="textarea"
+              :rows="2"
+              :placeholder="t('receivableDue.dueWhyHint')"
+            />
+          </el-form-item>
+        </el-form>
+      </template>
+      <template #footer>
+        <el-button @click="dueOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="dueBusy" :disabled="!dueForm.reason.trim()" @click="submitDue">
+          {{ t('common.save') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="closeOpen" :title="t('receivableDue.closeTitle')" width="min(520px, 94vw)" destroy-on-close>
       <template v-if="closing">
         <p class="close-target">{{ closing.contractNo }} · {{ closing.customerName }}</p>
@@ -236,7 +276,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -441,6 +481,41 @@ async function reverseEntry(row: Row, e: Entry) {
 // 「正常收完」排在第一档：新模型下最常见的完成理由。其余四档是「算式说
 // 还欠、人说不欠了」的各种情形。
 const CLOSURE_CATEGORIES = ['SETTLED', 'LOSS', 'ROUNDING', 'CANCELLED', 'OTHER'] as const
+// ── 改应收到期日 ──────────────────────────────────────────
+//
+// 到期日是建合同时填的，之后会变。合同的常规编辑口只对草稿开放、且只放
+// 销售属主过，财务改不了——所以这个门开在这里，和「确认完成」并排，用的
+// 是同一套围栏（租户 + export:receipt:write）。
+const dueOpen = ref(false)
+const dueRow = ref<Row | null>(null)
+const dueBusy = ref(false)
+const dueForm = reactive({ dueDate: '', reason: '' })
+
+function openDue(row: Row) {
+  dueRow.value = row
+  dueForm.dueDate = row.dueDate || ''
+  dueForm.reason = ''
+  dueOpen.value = true
+}
+
+async function submitDue() {
+  if (!dueRow.value || !dueForm.reason.trim()) return
+  dueBusy.value = true
+  try {
+    await post(`/receivable-due/${dueRow.value.contractId}/due-date`, {
+      dueDate: dueForm.dueDate || '',
+      reason: dueForm.reason.trim(),
+    })
+    dueOpen.value = false
+    ElMessage.success(t('receivableDue.dueSaved'))
+    await Promise.all([load(), loadMetrics()])
+  } catch {
+    // 错误提示由 api 层统一弹
+  } finally {
+    dueBusy.value = false
+  }
+}
+
 const closeOpen = ref(false)
 const closingBusy = ref(false)
 const closing = ref<Row | null>(null)

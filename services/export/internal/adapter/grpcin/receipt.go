@@ -238,6 +238,15 @@ func (h *ReceiptHandler) CloseReceivable(ctx context.Context, req *exv1.CloseRec
 	return &exv1.CloseReceivableResponse{}, nil
 }
 
+func (h *ReceiptHandler) SetReceivableDueDate(ctx context.Context, req *exv1.SetReceivableDueDateRequest) (*exv1.SetReceivableDueDateResponse, error) {
+	due, err := h.svc.SetContractReceivableDue(ctx, grpcx.TenantID(ctx),
+		req.GetContractId(), req.GetDueDate(), req.GetReason(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.SetReceivableDueDateResponse{DueDate: due}, nil
+}
+
 func (h *ReceiptHandler) ReopenReceivable(ctx context.Context, req *exv1.ReopenReceivableRequest) (*exv1.ReopenReceivableResponse, error) {
 	if err := h.svc.ReopenReceivable(ctx, grpcx.TenantID(ctx),
 		req.GetContractId(), req.GetReason(), operator(ctx)); err != nil {

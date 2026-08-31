@@ -105,20 +105,6 @@ func (s *Service) ListReceivableDue(ctx context.Context, tenantID int64, f Recei
 	return out, total, nil
 }
 
-// BackfillReceivableDue 给存量合同补到期日：生效了但没有到期日的，按传入
-// 的客户账期补算。幂等——只碰为空的行，跑几遍结果一样。
-//
-// 存在的理由是时间差：到期日从今天起才在签署时写入，而在此之前生效的
-// 合同一张都没有。没有它，E1 上线当天的清单是空的。
-func (s *Service) BackfillReceivableDue(ctx context.Context, tenantID, customerID int64, paymentDays int32) (int64, error) {
-	if paymentDays <= 0 {
-		return 0, nil
-	}
-	return s.q.BackfillReceivableDue(ctx, store.BackfillReceivableDueParams{
-		TenantID: tenantID, CustomerID: customerID, PaymentDays: paymentDays,
-	})
-}
-
 // ── 记一笔收款 ─────────────────────────────────────────────────────
 //
 // 员工在待核销页上选一张合同，把金额和到账日期手填进去。**一根线都不连

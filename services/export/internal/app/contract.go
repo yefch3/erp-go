@@ -24,6 +24,14 @@ type Terms struct {
 	PaymentMethod             string
 	DeliveryDate              string
 	Text                      string
+	// ReceivableDueDate 是这份合同的钱什么时候该收回来（YYYY-MM-DD，可空）。
+	//
+	// 它跟着条款表单一起来，但**落在 contracts 主表，不落版本表**。版本表
+	// 上有冻结触发器：审批通过之后任何一列都改不动。到期日要能事后改（填
+	// 错了、谈判变了），放版本表就意味着改一个日子要走「变更 → 重新审批
+	// → 重新签署」，而重新签署会再发一次 ContractEffective，下游采购、
+	// 物流、库存全部再收一遍。
+	ReceivableDueDate string
 }
 
 // ContractView is one contract with the version being looked at and its lines.
@@ -39,6 +47,12 @@ type ContractView struct {
 // rate promised when the offer was made is the rate the contract is priced at,
 // however far the market has moved since.
 func (s *Service) CreateContractFromQuotation(ctx context.Context, tenantID, quotationID int64, terms Terms, op Operator) (ContractView, error) {
+	// 校在最前面：这个日子一路当字符串传到 SQL，那句是 nullif(...)::date。
+	// 不校验的话，一个打错的月份不会得到「格式不对」，而是 PostgreSQL 的
+	// 22007 一路冒到网关，最后落成 500「系统错误」。
+	if err := validBusinessDate(terms.ReceivableDueDate, "EX_DUE_DATE_INVALID", "应收到期日"); err != nil {
+		return ContractView{}, err
+	}
 	quote, quoteItems, err := s.GetQuotationFor(ctx, tenantID, quotationID, op)
 	if err != nil {
 		return ContractView{}, err
@@ -85,7 +99,8 @@ func (s *Service) CreateContractFromQuotation(ctx context.Context, tenantID, quo
 			QuotationID: quote.ID, QuoteNo: quote.QuoteNo,
 			CustomerID: quote.CustomerID, CustomerName: quote.CustomerName,
 			SalesEmployeeID: quote.SalesEmployeeID, SalesEmployee: quote.SalesEmployee,
-			CreatedBy: op.ID,
+			ReceivableDueDate: terms.ReceivableDueDate,
+			CreatedBy:         op.ID,
 		})
 		if err != nil {
 			if isUniqueViolation(err) {
@@ -247,6 +262,9 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 	if err := s.mustOwnContract(ctx, op, view); err != nil {
 		return ContractView{}, err
 	}
+	if err := validBusinessDate(terms.ReceivableDueDate, "EX_DUE_DATE_INVALID", "应收到期日"); err != nil {
+		return ContractView{}, err
+	}
 	if view.Version.Status != "DRAFT" {
 		return ContractView{}, apierr.Conflict("EX_CONTRACT_NOT_DRAFT",
 			"只有草稿版本可以修改，已提交审批的版本请先撤回或重新变更").
@@ -292,6 +310,13 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 		if rows == 0 {
 			// Someone submitted it between the read and this write.
 			return apierr.Conflict("EX_CONTRACT_NOT_DRAFT", "只有草稿版本可以修改")
+		}
+		// 到期日跟着草稿一起改，不留痕：草稿还不是承诺。生效之后再改才
+		// 需要写理由，那条路走客户对账页上的「改到期日」。
+		if err := q.SetContractReceivableDue(ctx, store.SetContractReceivableDueParams{
+			TenantID: tenantID, ID: id, DueDate: terms.ReceivableDueDate,
+		}); err != nil {
+			return err
 		}
 		if len(lines) == 0 {
 			return nil

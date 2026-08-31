@@ -24,9 +24,6 @@ type Customer struct {
 	Currency string
 	Status   string
 	Contacts []Contact
-	// 约定的账期天数。0 = 主数据里没配——不等于「当天到期」，
-	// 应收到期日（E1）遇到 0 就留空，让清单页去催配置。
-	PaymentDays int32
 }
 
 // Contact is one person at the customer; the quotation records which of them

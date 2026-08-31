@@ -100,7 +100,7 @@ RETURNING received_qty::text AS received_qty, status;
 
 -- name: CreatePurchaseOrder :one
 INSERT INTO purchase_orders (
-    tenant_id, po_no, supplier_id, supplier_code, supplier_name, payment_days,
+    tenant_id, po_no, supplier_id, supplier_code, supplier_name, payable_due_date,
     currency, total_amount, expected_date, buyer_id, buyer_name, remark,
     source_quotation_id, source_quotation_no, source_cost_scenario_id,
     factory_id, factory_code, factory_name,
@@ -113,7 +113,7 @@ INSERT INTO purchase_orders (
     sqlc.arg(supplier_id)::bigint,
     sqlc.arg(supplier_code)::text,
     sqlc.arg(supplier_name)::text,
-    sqlc.arg(payment_days)::int,
+    nullif(sqlc.arg(payable_due_date)::text, '')::date,
     sqlc.arg(currency)::text,
     sqlc.arg(total_amount)::text::numeric,
     nullif(sqlc.arg(expected_date)::text, '')::date,
@@ -133,9 +133,9 @@ UPDATE purchase_orders SET
     supplier_id = sqlc.arg(supplier_id)::bigint,
     supplier_code = sqlc.arg(supplier_code)::text,
     supplier_name = sqlc.arg(supplier_name)::text,
-    -- 草稿改供应商时账期跟着换：这张单还没下出去，快照的是「最终按谁的
-    -- 条件下的」，不是「第一次选的那家」。
-    payment_days = sqlc.arg(payment_days)::int,
+    -- 到期日跟着草稿一起改。它是这份单自己的一部分，不是从供应商推出来
+    -- 的，所以改供应商不会动它——除非员工自己把它改了。
+    payable_due_date = nullif(sqlc.arg(payable_due_date)::text, '')::date,
     currency = sqlc.arg(currency)::text,
     total_amount = sqlc.arg(total_amount)::text::numeric,
     expected_date = nullif(sqlc.arg(expected_date)::text, '')::date,
@@ -211,6 +211,7 @@ SELECT
     coalesce(o.approval_instance_id, 0)::bigint AS approval_instance_id,
     o.reject_reason, o.cancel_reason, o.buyer_id, o.buyer_name, o.remark,
     coalesce(o.expected_date::text, '')::text AS expected_date,
+    coalesce(o.payable_due_date::text, '')::text AS payable_due_date,
     o.send_status, o.sent_to, o.sent_at, o.sent_by_name, o.send_error,
     o.ordered_at, o.created_at,
     coalesce(o.closed_at::text, '')::text AS closed_at, o.closed_by_name,
@@ -248,64 +249,48 @@ UPDATE purchase_orders SET status = sqlc.arg(new_status)::text, updated_at = now
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: SetPurchaseOrderOrdered :exec
--- 下单那一刻同时把应付到期日算出来：账期从下单那天起算（业务定的口径，
--- 客户侧是从合同生效那天起算）。
+-- 下单**不碰应付到期日**。
 --
--- payment_days 为 0 就把到期日留空——**空表示没配账期，不是今天到期**。
--- 编一个日子会让「今天该付谁」这句话变成假的。
+-- 上一版这里有一句 `payable_due_date = CASE WHEN payment_days > 0 THEN
+-- CURRENT_DATE + payment_days ELSE NULL END`，从供应商快照的账期算。业务
+-- 把那条口径推翻了：到期日是这份单自己的一部分，建单时人填。
 --
--- 用 CURRENT_DATE 而不是从 ordered_at 反推：这两句在同一条 UPDATE 里，
--- now() 还没落库；而 ordered_at 是 timestamptz，转成日期还要挑时区，
--- 平白多一处会算错一天的地方。
+-- 那句必须整句删掉，不能只是「不再有账期可用」——它是**无条件赋值**，
+-- 账期一没了就恒走 ELSE 分支，把员工填好的日子在审批通过那一刻抹成空。
+-- 而这条 UPDATE 跑在 Kafka 审批消费里：没有人在场、不报错、页面只会显示
+-- 「未填到期日」。
 UPDATE purchase_orders SET
     status = 'ORDERED',
     ordered_at = now(),
-    payable_due_date = CASE WHEN payment_days > 0
-        THEN CURRENT_DATE + payment_days ELSE NULL END,
     updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
--- name: ListSuppliersMissingPayableDue :many
--- 补算之前先问一句：还有哪些供应商挂着没有到期日的采购单，各挂几张。
+-- name: SetPurchaseOrderPayableDue :one
+-- 事后改一张已下单采购单的应付到期日。
 --
--- 存在的理由是端口太窄——procurement 只能按 id 单查供应商（app.Suppliers
--- 就一个 Get），没法把主数据整表拉过来对着筛。反过来从自己的表里问「谁
--- 需要补」，需要往返的次数就只跟真正欠账期的供应商数挂钩，而不是跟供应
--- 商总数挂钩。
+-- 建单时填的日子有可能谈判之后变了，也有可能一开始就填错。到期日既然是
+-- 单据的一部分，就该能改——但它直接决定这张单算不算逾期，所以改动一律
+-- 留痕（purchase_order_due_changes），理由必填，服务层强制。
 --
--- 条件和 BackfillPayableDue 逐字一致：这份清单就是那条 UPDATE 的作用域，
--- 两边一旦漂移，页面上报的「跳过 N 张」就会对不上真实剩下的行。
-SELECT po.supplier_id,
-       count(*)::bigint AS order_count
-  FROM purchase_orders po
- WHERE po.tenant_id = sqlc.arg(tenant_id)::bigint
-   AND po.ordered_at IS NOT NULL
-   AND po.payable_due_date IS NULL
- GROUP BY po.supplier_id
- ORDER BY po.supplier_id;
-
--- name: BackfillPayableDue :execrows
--- 给存量采购单补应付到期日：下单了但没有到期日的，按传入的账期补算。
---
--- 幂等——只碰为空的行，跑几遍结果一样。存在的理由是时间差：到期日从今天
--- 起才在下单时写入，在此之前下的单一张都没有；而供应商的账期也是同一批
--- 改动里才有的字段，迁移当时全是 0。和客户侧 BackfillReceivableDue 同款。
---
--- payment_days 必须 > 0，这道守卫写在 SQL 里而不是只写在调用方：传 0 会
--- 把到期日写成「下单当天」，而**空表示没配账期，不是当天到期**。这条口径
--- 是整张页面的地基，不该指望每个调用方都记得。
---
--- ordered_at IS NOT NULL 既是幂等条件也是语义条件：没有下单日就没有起算
--- 点，编一个出来不如老老实实留空。草稿、待审、驳回天然被它挡在外面。
+-- 空串合法：把一个填错的日子清空，回到「没填」，是合法的一次改动。
 UPDATE purchase_orders SET
-    payment_days = sqlc.arg(payment_days)::int,
-    payable_due_date = ordered_at::date + sqlc.arg(payment_days)::int,
+    payable_due_date = nullif(sqlc.arg(due_date)::text, '')::date,
     updated_at = now()
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint
-  AND supplier_id = sqlc.arg(supplier_id)::bigint
-  AND ordered_at IS NOT NULL
-  AND payable_due_date IS NULL
-  AND sqlc.arg(payment_days)::int > 0;
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint
+RETURNING coalesce(payable_due_date::text, '')::text AS payable_due_date;
+
+-- name: RecordPayableDueChange :exec
+INSERT INTO purchase_order_due_changes
+    (tenant_id, po_id, old_due_date, new_due_date, reason, changed_by_id, changed_by_name)
+VALUES (
+    sqlc.arg(tenant_id)::bigint,
+    sqlc.arg(po_id)::bigint,
+    nullif(sqlc.arg(old_due_date)::text, '')::date,
+    nullif(sqlc.arg(new_due_date)::text, '')::date,
+    sqlc.arg(reason)::text,
+    sqlc.arg(changed_by_id)::bigint,
+    sqlc.arg(changed_by_name)::text
+);
 
 -- name: SetPurchaseOrderRejected :exec
 UPDATE purchase_orders SET
@@ -388,6 +373,7 @@ SELECT
     o.total_amount::text AS total_amount, o.status, o.buyer_name, o.remark,
     o.reject_reason, o.cancel_reason,
     coalesce(o.expected_date::text, '')::text AS expected_date,
+    coalesce(o.payable_due_date::text, '')::text AS payable_due_date,
     o.send_status, o.sent_to, o.sent_at, o.sent_by_name, o.send_error,
     o.created_at,
     coalesce(o.closed_at::text, '')::text AS closed_at, o.closed_by_name,

@@ -227,6 +227,9 @@ message Contract {
   string effective_at = 12;
   string completed_at = 13;
   string created_at = 14;
+  // 应收到期日。列表和详情都带上——让人填一个填完再也看不见的字段，是最
+  // 容易填错而且发现不了的形态。
+  string receivable_due_date = 20;
   // Denormalized from the newest version so lists need one round trip.
   string currency = 15;
   string total_amount = 16;
@@ -250,6 +253,9 @@ message ContractTerms {
   string port_of_discharge = 7;
   string payment_method = 8;
   string delivery_date = 9;
+  // 应收到期日，员工填，YYYY-MM-DD，可空。跟着条款表单一起来，但**落在
+  // 合同主表，不落版本表**——版本表审批后冻结，到期日要能事后改。
+  string receivable_due_date = 11;
   string terms = 10;
 }
 
