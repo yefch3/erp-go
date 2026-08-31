@@ -167,6 +167,141 @@ func TestTwoMailboxesForOnePersonBothStayAlive(t *testing.T) {
 	}
 }
 
+// 同一条会话落在两个信箱里，是两行，不是一行。
+//
+// 这一条钉的是 00044。客户把同一封询价抄送到公司的 263 和业务员的 Gmail，
+// 两个信箱各收到一封，thread_key 相同（同一个 Message-ID 链）。按 00034 的
+// 老口径，(租户, 人, 会话, 视图) 会把两封合成一行：列表上「客户回了 2 次」，
+// 点进去是两个信箱混在一起的两封，而左侧切到哪个信箱都是同一行。
+//
+// **这个错不会报任何错。** 行数对得上，约束不违反，日志里一个字都没有——
+// 所以只能靠一条断言把口径钉死。
+//
+// 顺带钉住两件同批做的事：
+//
+//	· 归档只归档这个信箱那一份（SetThreadFlags 带 account_id）。不带的话，
+//	  在 263 点归档会把 Gmail 那份也归档，触发器随后把两行都刷新，表里
+//	  完全自洽——症状是「另一个信箱的信自己不见了」。
+//	· 计数按 (信箱, 会话) 去重，和列表同一个口径。
+func TestOneConversationInTwoMailboxesIsTwoRows(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantID := time.Now().UnixNano()
+	employeeID := tenantID%100000 + 830001
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM email_inbound WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_thread_view WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+	}()
+
+	svc := New(pool, Deps{Secrets: box}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	bind := func(email string) int64 {
+		t.Helper()
+		id, err := svc.q.UpsertMailAccountShell(ctx, store.UpsertMailAccountShellParams{
+			TenantID: tenantID, EmployeeID: employeeID, Email: email,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	work, personal := bind("me@sunrise.com"), bind("me@gmail.com")
+
+	// 同一个 thread_key，两个信箱各一封。imap_uid 各自从 1 开始——UID 是
+	// 每信箱独立的，这里刻意撞上，顺便证明唯一约束是按信箱算的。
+	const thread = "thr-same-conversation"
+	insert := func(accountID int64, uid int64, subject string) int64 {
+		t.Helper()
+		var id int64
+		if err := pool.QueryRow(ctx, `INSERT INTO email_inbound
+			(tenant_id, account_id, owner_id, message_id, thread_key, folder,
+			 imap_uid, from_email, subject, body_text, received_at)
+			VALUES ($1,$2,$3,$4,$5,'INBOX',$6,'buyer@overseas.com',$7,'hi',now())
+			RETURNING id`, tenantID, accountID, employeeID,
+			subject+"@overseas.com", thread, uid, subject).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	workMail := insert(work, 1, "询价-发到公司箱")
+	insert(personal, 1, "询价-抄送到私人箱")
+
+	countRows := func() int {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM mail_thread_view
+			WHERE tenant_id=$1 AND owner_id=$2 AND view='INBOX'`,
+			tenantID, employeeID).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if n := countRows(); n != 2 {
+		t.Fatalf("两个信箱收到同一条会话，会话表里应该是 2 行，实际 %d 行——"+
+			"1 行说明还在按 (租户,人,会话,视图) 合并，两个信箱的信被并成了一条", n)
+	}
+	// 每一行只算自己信箱那一封。合并的话这里会是 2。
+	var counts []int32
+	rows, err := pool.Query(ctx, `SELECT msg_count FROM mail_thread_view
+		WHERE tenant_id=$1 AND owner_id=$2 AND view='INBOX' ORDER BY account_id`,
+		tenantID, employeeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var c int32
+		if err := rows.Scan(&c); err != nil {
+			t.Fatal(err)
+		}
+		counts = append(counts, c)
+	}
+	rows.Close()
+	for _, c := range counts {
+		if c != 1 {
+			t.Errorf("每个信箱各收到一封，msg_count 应该是 1，实际 %v——"+
+				"列表上会显示「客户回了 2 次」", counts)
+			break
+		}
+	}
+
+	// 在公司箱归档，私人箱那一份必须原地不动。
+	yes := true
+	if err := svc.MarkInbound(ctx, tenantID, employeeID, workMail,
+		nil, nil, &yes, nil, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	var archivedWork, archivedPersonal int
+	if err := pool.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM email_inbound
+		  WHERE tenant_id=$1 AND account_id=$2 AND archived_at IS NOT NULL),
+		(SELECT count(*) FROM email_inbound
+		  WHERE tenant_id=$1 AND account_id=$3 AND archived_at IS NOT NULL)`,
+		tenantID, work, personal).Scan(&archivedWork, &archivedPersonal); err != nil {
+		t.Fatal(err)
+	}
+	if archivedWork != 1 {
+		t.Errorf("公司箱那封应该归档了，实际归档 %d 封", archivedWork)
+	}
+	if archivedPersonal != 0 {
+		t.Error("在公司箱点归档，把私人箱那封也归档了——两个信箱是两条会话，" +
+			"而这个错不报任何错，用户只会发现「另一个信箱的信自己不见了」")
+	}
+}
+
 // 别人已经绑了的地址，第二个人绑不上——UNIQUE (tenant_id, email) 是 00043
 // 有意留下的那一条，而撞上时要说人话，不是抛 23505。
 func TestOneMailboxCannotBelongToTwoPeople(t *testing.T) {

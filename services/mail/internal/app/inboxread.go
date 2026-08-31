@@ -506,9 +506,15 @@ func (s *Service) MarkInbound(ctx context.Context, tenantID, ownerID, id int64, 
 		// else's mail is not ours to look up — both fall through to marking
 		// the single row, which is owner-scoped in its own right.
 		if err == nil && row.OwnerID == ownerID && row.ThreadKey != "" {
+			// AccountID 跟着这封信走，不是可省的。同一条会话可能同时在
+			// 263 和 Gmail 两个信箱里（客户抄送了两个地址），不带信箱的话，
+			// 在这边点归档会把那边那份也归档、点删除会把那边那份也删掉，
+			// 而且**不会报错**——sqlc 的 params 是个结构体，少填一个字段
+			// 只是默认零值，编译器一个字都不说。
 			touched, err := s.q.SetThreadFlags(ctx, store.SetThreadFlagsParams{
-				TenantID: tenantID, OwnerID: ownerID, ThreadKey: row.ThreadKey,
-				Read: read, Starred: starred, Archived: archived, Deleted: deleted,
+				TenantID: tenantID, OwnerID: ownerID, AccountID: row.AccountID,
+				ThreadKey: row.ThreadKey,
+				Read:      read, Starred: starred, Archived: archived, Deleted: deleted,
 				NotJunk: notJunk,
 			})
 			if err != nil {
@@ -670,8 +676,11 @@ func (s *Service) PurgeInbound(ctx context.Context, tenantID, ownerID, id int64,
 	if wholeThread {
 		full, err := s.q.GetInbound(ctx, store.GetInboundParams{TenantID: tenantID, ID: id})
 		if err == nil && full.OwnerID == ownerID && full.ThreadKey != "" {
+			// 同上，而且这一条更要紧：后面接的是永久删除加一条发给邮件
+			// 服务器的删除指令。另一个信箱里那份同名会话必须留下。
 			rows, err := s.q.ListThreadForPurge(ctx, store.ListThreadForPurgeParams{
-				TenantID: tenantID, OwnerID: ownerID, ThreadKey: full.ThreadKey,
+				TenantID: tenantID, OwnerID: ownerID, AccountID: full.AccountID,
+				ThreadKey: full.ThreadKey,
 			})
 			if err != nil {
 				return err

@@ -339,14 +339,21 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 --
 -- A message with no thread key is its own conversation ('m:<id>'), so mail
 -- that never got a reply is not silently merged with other loose mail.
+--
+-- **会话按信箱分。** PARTITION BY 带 account_id，和 mail_thread_view 的主键
+-- 是同一个口径（00044）。少了它，同一条会话落在两个信箱时，列表里是两行、
+-- 一搜索变一行——同一封信在两个屏幕上有两种身份，而且哪一种都不报错。
 WITH visible AS (
-    SELECT id, from_email, from_name, subject, snippet, thread_key,
+    SELECT id, account_id, from_email, from_name, subject, snippet, thread_key,
            is_read, is_starred, has_attachments, received_at, sent_at,
            coalesce(nullif(thread_key, ''), 'm:' || id::text) AS group_key,
            received_at AS at
     FROM email_inbound
     WHERE tenant_id = sqlc.arg(tenant_id)::bigint
       AND owner_id = sqlc.arg(owner_id)::bigint
+      -- 不传 = 全部信箱。左侧切换器还没上线，前端今天什么都不传。
+      AND (sqlc.narg(account_id)::bigint IS NULL
+           OR account_id = sqlc.narg(account_id)::bigint)
       AND CASE sqlc.arg(view)::text
             WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
             -- The trash holds mail deleted from anywhere, junk included.
@@ -367,11 +374,11 @@ WITH visible AS (
            OR from_name ILIKE '%' || sqlc.arg(keyword)::text || '%')
 ), ranked AS (
     SELECT visible.*,
-           row_number() OVER (PARTITION BY group_key ORDER BY at DESC, id DESC) AS rn,
-           count(*)          OVER (PARTITION BY group_key) AS thread_count,
-           bool_or(NOT is_read)      OVER (PARTITION BY group_key) AS any_unread,
-           bool_or(is_starred)       OVER (PARTITION BY group_key) AS any_starred,
-           bool_or(has_attachments)  OVER (PARTITION BY group_key) AS any_attachment
+           row_number() OVER (PARTITION BY account_id, group_key ORDER BY at DESC, id DESC) AS rn,
+           count(*)          OVER (PARTITION BY account_id, group_key) AS thread_count,
+           bool_or(NOT is_read)      OVER (PARTITION BY account_id, group_key) AS any_unread,
+           bool_or(is_starred)       OVER (PARTITION BY account_id, group_key) AS any_starred,
+           bool_or(has_attachments)  OVER (PARTITION BY account_id, group_key) AS any_attachment
     FROM visible
 )
 -- The row stands for the whole conversation: the newest message supplies the
@@ -401,10 +408,15 @@ LIMIT sqlc.arg(row_limit)::int;
 
 -- name: CountInboundThreads :one
 -- Conversations, not messages: the pager has to count what the list shows.
-SELECT count(DISTINCT coalesce(nullif(thread_key, ''), 'm:' || id::text))::bigint
+--
+-- DISTINCT 的是 (信箱, 会话) 这一对，不是会话本身——和上面的 PARTITION BY
+-- 同一个口径。只按会话数的话，页码会比列表少，翻到最后一页会缺行。
+SELECT count(DISTINCT (account_id, coalesce(nullif(thread_key, ''), 'm:' || id::text)))::bigint
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
+  AND (sqlc.narg(account_id)::bigint IS NULL
+       OR account_id = sqlc.narg(account_id)::bigint)
   AND CASE sqlc.arg(view)::text
         WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
         -- The trash holds mail deleted from anywhere, junk included.
@@ -432,6 +444,15 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- never reach into the archive or the trash from either. Every row it changes
 -- comes back so the caller can tell the mail host too: reading a mailbox in
 -- the ERP has to leave it read in Gmail, one button or one message at a time.
+--
+-- **这一版还没有按信箱限定**，是有意的一条线。00044 把会话拆成了按信箱，
+-- 而这里是「视图级」操作：需要的信箱来自"当前看的是哪个箱"，那个参数要等
+-- 左侧切换器那一版才传得进来。
+--
+-- 为什么可以等：会话级的操作（归档、删除、永久删除）已经在同一批里按信箱
+-- 限定了，因为它们的调用方手上有那封信、拿得到 account_id——而那几个弄错
+-- 会**吃掉另一个信箱的信**。这里弄错只是"标已读标多了"：可逆，不丢信，
+-- 而且用户看得见。TrashJunkView 同理。
 UPDATE email_inbound
 SET is_read = TRUE
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
@@ -459,6 +480,14 @@ RETURNING account_id, folder, imap_uid;
 -- thread stays in the inbox one message lighter, which reads as a bug.
 -- Owner-scoped: thread keys are guessable, so this must never reach further
 -- than the caller's own mail.
+--
+-- **也按信箱限定。** 同一条会话可能同时落在 263 和 Gmail 两个信箱里（客户
+-- 抄送了两个地址）。不带 account_id 的话，在 263 那边点归档会把 Gmail 那一
+-- 份也归档掉，触发器随后把两行都刷新，表里完全自洽——症状是「另一个信箱的
+-- 信自己不见了」，没有报错、没有日志。删除也是同一条路，那就不只是不见了。
+--
+-- 调用方手上一定有 account_id：这条路是从「用户点了某一封信」进来的，
+-- MarkInbound 先 GetInbound 拿到那一行，account_id 就在里面。
 UPDATE email_inbound
 SET is_read    = coalesce(sqlc.narg(read)::boolean, is_read),
     is_starred = coalesce(sqlc.narg(starred)::boolean, is_starred),
@@ -473,6 +502,7 @@ SET is_read    = coalesce(sqlc.narg(read)::boolean, is_read),
         ELSE NULL END
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
   AND thread_key = sqlc.arg(thread_key)::text
   AND thread_key <> ''
 RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archived_at, deleted_at, not_junk;
@@ -842,10 +872,15 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- same conversation semantics as the rest of the list: the trash row stands
 -- for the exchange, so confirming deletes the exchange. Only trashed rows —
 -- a live message of the same thread is not swept up by this.
+--
+-- **按信箱限定**（00044 的口径）。这一句后面接的是**永久删除**加一条发给
+-- 邮件服务器的删除指令，所以「同一条会话也落在另一个信箱里」的那份必须
+-- 留下。调用方手上有 account_id：进这条路之前先 GetInbound 拿了那一行。
 SELECT id, raw_key, account_id, folder, imap_uid, message_id
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
   AND thread_key = sqlc.arg(thread_key)::text
   AND thread_key <> ''
   AND deleted_at IS NOT NULL
@@ -1217,6 +1252,11 @@ FROM mail_thread_view t
 JOIN email_inbound m ON m.tenant_id = t.tenant_id AND m.id = t.last_id
 WHERE t.tenant_id = sqlc.arg(tenant_id)::bigint
   AND t.owner_id = sqlc.arg(owner_id)::bigint
+  -- 不传 = 全部信箱，走 00034 那条旧索引；传了走
+  -- mail_thread_view_account_list_idx（00044）。左侧切换器上线前，前端
+  -- 什么都不传，所以两条索引这一版都还要在。
+  AND (sqlc.narg(account_id)::bigint IS NULL
+       OR t.account_id = sqlc.narg(account_id)::bigint)
   AND t.view = sqlc.arg(view)::text
   -- Row comparison, so ties on the timestamp fall back to the id and no two
   -- conversations can ever occupy the same cursor position.
@@ -1231,6 +1271,8 @@ LIMIT sqlc.arg(row_limit)::int;
 SELECT count(*)::bigint FROM mail_thread_view
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
+  AND (sqlc.narg(account_id)::bigint IS NULL
+       OR account_id = sqlc.narg(account_id)::bigint)
   AND view = sqlc.arg(view)::text;
 
 -- name: ListThreadAttachments :many

@@ -46,23 +46,28 @@ WITH checks AS (
   -- so a mismatch means either a mutation path that slipped past it or a bug
   -- in the refresh itself - and the symptom would be a wrong (3) on a thread
   -- or a conversation in the wrong view, which nobody would report as a bug.
+  --
+  -- account_id 是 00044 加的维度：一条会话落在两个信箱里就是两行。这个
+  -- 对拍的两边必须**同时**带上它——只改表不改这里，这道检查要么永久报红，
+  -- 要么按老口径把正确拆分后的数据判成损坏。两种结果都是把唯一的告警变成
+  -- 噪音，然后被人忽略掉。
   UNION ALL SELECT 'BLOCK', '会话表与邮件不一致',
          (SELECT count(*) FROM (
-            (SELECT tenant_id, owner_id, group_key, view, msg_count, last_id,
+            (SELECT tenant_id, owner_id, account_id, group_key, view, msg_count, last_id,
                     any_unread, any_starred, any_attachment
              FROM mail_thread_view
              EXCEPT
-             SELECT tenant_id, owner_id, group_key, view, count(*)::int,
+             SELECT tenant_id, owner_id, account_id, group_key, view, count(*)::int,
                     (array_agg(id ORDER BY at DESC, id DESC))[1],
                     bool_or(NOT is_read), bool_or(is_starred), bool_or(has_attachments)
              FROM (
-               SELECT tenant_id, owner_id,
+               SELECT tenant_id, owner_id, account_id,
                       coalesce(nullif(thread_key, ''), 'm:' || id::text) AS group_key,
                       mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) AS view,
                       id, received_at AS at, is_read, is_starred, has_attachments
                FROM email_inbound
                UNION ALL
-               SELECT tenant_id, owner_id,
+               SELECT tenant_id, owner_id, account_id,
                       coalesce(nullif(thread_key, ''), 'm:' || id::text), 'STARRED',
                       id, received_at, is_read, is_starred, has_attachments
                FROM email_inbound
@@ -70,19 +75,19 @@ WITH checks AS (
                  AND mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at)
                      IN ('INBOX', 'ARCHIVE')
              ) src WHERE view IS NOT NULL
-             GROUP BY tenant_id, owner_id, group_key, view)
+             GROUP BY tenant_id, owner_id, account_id, group_key, view)
             UNION ALL
-            (SELECT tenant_id, owner_id, group_key, view, count(*)::int,
+            (SELECT tenant_id, owner_id, account_id, group_key, view, count(*)::int,
                     (array_agg(id ORDER BY at DESC, id DESC))[1],
                     bool_or(NOT is_read), bool_or(is_starred), bool_or(has_attachments)
              FROM (
-               SELECT tenant_id, owner_id,
+               SELECT tenant_id, owner_id, account_id,
                       coalesce(nullif(thread_key, ''), 'm:' || id::text) AS group_key,
                       mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) AS view,
                       id, received_at AS at, is_read, is_starred, has_attachments
                FROM email_inbound
                UNION ALL
-               SELECT tenant_id, owner_id,
+               SELECT tenant_id, owner_id, account_id,
                       coalesce(nullif(thread_key, ''), 'm:' || id::text), 'STARRED',
                       id, received_at, is_read, is_starred, has_attachments
                FROM email_inbound
@@ -90,9 +95,9 @@ WITH checks AS (
                  AND mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at)
                      IN ('INBOX', 'ARCHIVE')
              ) src WHERE view IS NOT NULL
-             GROUP BY tenant_id, owner_id, group_key, view
+             GROUP BY tenant_id, owner_id, account_id, group_key, view
              EXCEPT
-             SELECT tenant_id, owner_id, group_key, view, msg_count, last_id,
+             SELECT tenant_id, owner_id, account_id, group_key, view, msg_count, last_id,
                     any_unread, any_starred, any_attachment
              FROM mail_thread_view)
           ) d),
