@@ -1049,6 +1049,8 @@ export default {
     salesPlanStatuses: { presented: '当前沟通版本', historical: '历史版本', rework: '已发起补充报价' },
     quotationStatuses: { notGenerated: '尚未生成', draft: '草稿', sent: '已发送', accepted: '客户已接受', rejected: '客户已拒绝', expired: '已过期', cancelled: '已取消', generated: '已生成' },
     priceSources: { confirmedCost: '已带入采购确认的成本方案建议价（含费用与利润，可修改）', purchaseOnly: '基础参考价：仅采购单价，尚未包含运费、其他费用和利润', currencyMismatch: '基础参考价：采购与船运币种不同（{purchase}/{shipping}），请确认换算与利润', purchaseShipping: '基础参考价：采购单价＋所选船运分摊，尚未包含其他费用和利润' },
+    businessValues: { days: '{n} 天', onHand: '现货', seaPackaging: '海运包装', woodenCrate: '木箱', steelStrap: '钢带捆扎', waterproofStrap: '防水纸+钢带捆扎', moistureproofStrap: '防潮纸+钢带捆扎', hexBundle: '六角捆扎', blackFinish: '黑皮', brightFinish: '光亮', unoiledPassivated: '无油钝化', rustPreventiveOil: '防锈油', cashOnDelivery: '货到付款', prepay30: '预付 30%，发货前付清', monthly30: '月结 30 天', monthly60: '月结 60 天' },
+    productAliases: { galvanizedCoil: '镀锌钢卷', hotRolledPlate: '热轧钢板', coldRolledCoil: '冷轧钢卷', seamlessPipe: '无缝钢管', rectangularTube: '矩形钢管', equalAngle: '等边角钢', roundBar: '圆钢棒', squareBar: '方钢棒' },
     cancel: '取消',
   },
   sourcing: {
