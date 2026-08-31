@@ -760,19 +760,54 @@ type SourcingCustomerSelectionItem struct {
 	PromisedDeliveryDate  pgtype.Date
 	LineNote              string
 	CreatedAt             pgtype.Timestamptz
+	SupplierID            int64
+	SupplierName          string
+	FactoryID             int64
+	FactoryName           string
+	ShipmentGroupKey      string
+}
+
+type SourcingCustomerSelectionShipment struct {
+	ID                    int64
+	TenantID              int64
+	SelectionID           int64
+	ShipmentGroupKey      string
+	SalesShippingOptionID int64
+	ShippingOptionID      int64
+	CarrierForwarder      string
+	ServiceOptionName     string
+	ShippingEmployeeID    int64
+	ShippingEmployeeName  string
+	CustomerCurrency      string
+	CustomerFreightAmount pgtype.Numeric
+	ChargeBasis           string
+	PortOfLoading         string
+	PortOfDischarge       string
+	EstimatedDeparture    pgtype.Date
+	EstimatedArrival      pgtype.Date
+	ValidUntil            pgtype.Date
+	CustomerNote          string
+	CreatedAt             pgtype.Timestamptz
+}
+
+type SourcingCustomerSelectionShipmentItem struct {
+	TenantID            int64
+	SelectionShipmentID int64
+	SelectionItemID     int64
 }
 
 type SourcingFinalRecheckTask struct {
 	ID                  int64
 	TenantID            int64
 	SelectionID         int64
-	SelectionItemID     int64
+	SelectionItemID     *int64
 	TaskDomain          string
 	ProcurementReworkID *int64
 	ShippingReworkID    *int64
 	Status              string
 	CreatedAt           pgtype.Timestamptz
 	ResolvedAt          pgtype.Timestamptz
+	SelectionShipmentID *int64
 }
 
 type SourcingLine struct {
@@ -863,6 +898,39 @@ type SourcingSalesPlanItem struct {
 	PromisedDeliveryDate  pgtype.Date
 	LineNote              string
 	CreatedAt             pgtype.Timestamptz
+}
+
+type SourcingSalesShippingOption struct {
+	ID                    int64
+	TenantID              int64
+	PlanID                int64
+	ShippingOptionID      int64
+	CarrierForwarder      string
+	ServiceOptionName     string
+	ShippingEmployeeID    int64
+	ShippingEmployeeName  string
+	CustomerCurrency      string
+	CustomerFreightAmount pgtype.Numeric
+	ChargeBasis           string
+	PortOfLoading         string
+	PortOfDischarge       string
+	EstimatedDeparture    pgtype.Date
+	EstimatedArrival      pgtype.Date
+	ValidUntil            pgtype.Date
+	CustomerNote          string
+	CreatedAt             pgtype.Timestamptz
+}
+
+type SourcingSalesShippingOptionLine struct {
+	ID                    int64
+	TenantID              int64
+	SalesShippingOptionID int64
+	SourcingLineID        int64
+	ShippingPlanItemID    int64
+	ShippingOptionLineID  int64
+	ProductName           string
+	QuotedQty             pgtype.Numeric
+	UomCode               string
 }
 
 type SourcingShippingOption struct {

@@ -2092,6 +2092,7 @@ message SourcingShippingPlanItem {
   string total_freight = 15; string port_of_loading = 16; string port_of_discharge = 17;
   string estimated_departure = 18; string estimated_arrival = 19; string valid_until = 20; int32 quote_version_no = 21;
   string service_option_name = 22;
+  int64 shipping_option_id = 23;
 }
 message SourcingShippingPlan {
   int64 id = 1; int64 request_id = 2; string plan_no = 3; int32 version_no = 4;
@@ -2134,6 +2135,49 @@ message SalesPlanItem {
   string customer_unit_price = 11;
   string promised_delivery_date = 12;
   string line_note = 13;
+  int64 supplier_id = 14;
+  string supplier_name = 15;
+  int64 factory_id = 16;
+  string factory_name = 17;
+  string payment_terms = 18;
+  string incoterm = 19;
+  string supplier_valid_until = 20;
+  string manager_selection_type = 21;
+  string manager_reason = 22;
+  string manager_risk = 23;
+}
+message SalesShippingOptionInput {
+  repeated int64 shipping_plan_item_ids = 1;
+  string customer_currency = 2;
+  string customer_freight_amount = 3;
+  string customer_note = 4;
+}
+message SalesShippingOptionLine {
+  int64 id = 1;
+  int64 sourcing_line_id = 2;
+  int64 shipping_plan_item_id = 3;
+  int64 shipping_option_line_id = 4;
+  string product_name = 5;
+  string quoted_qty = 6;
+  string uom_code = 7;
+}
+message SalesShippingOption {
+  int64 id = 1;
+  int64 shipping_option_id = 2;
+  string carrier_forwarder = 3;
+  string service_option_name = 4;
+  int64 shipping_employee_id = 5;
+  string shipping_employee_name = 6;
+  string customer_currency = 7;
+  string customer_freight_amount = 8;
+  string charge_basis = 9;
+  string port_of_loading = 10;
+  string port_of_discharge = 11;
+  string estimated_departure = 12;
+  string estimated_arrival = 13;
+  string valid_until = 14;
+  string customer_note = 15;
+  repeated SalesShippingOptionLine lines = 16;
 }
 message SalesPlan {
   int64 id = 1;
@@ -2152,6 +2196,7 @@ message SalesPlan {
   string presented_at = 14;
   string created_at = 15;
   repeated SalesPlanItem items = 16;
+  repeated SalesShippingOption shipping_options = 17;
 }
 message CreateSalesPlanRequest {
   int64 case_id = 1;
@@ -2161,6 +2206,7 @@ message CreateSalesPlanRequest {
   string customer_note = 5;
   string internal_note = 6;
   repeated SalesPlanItemInput items = 7;
+  repeated SalesShippingOptionInput shipping_options = 8;
 }
 message CreateSalesPlanResponse { SalesPlan sales_plan = 1; }
 message ListSalesPlansRequest { int64 case_id = 1; }
@@ -2452,6 +2498,35 @@ message CustomerSelectionItem {
   string customer_unit_price = 12;
   string promised_delivery_date = 13;
   string line_note = 14;
+  int64 supplier_id = 15;
+  string supplier_name = 16;
+  int64 factory_id = 17;
+  string factory_name = 18;
+  string shipment_group_key = 19;
+}
+message CustomerShipmentChoiceInput {
+  string shipment_group_key = 1;
+  int64 sales_shipping_option_id = 2;
+}
+message CustomerSelectionShipment {
+  int64 id = 1;
+  string shipment_group_key = 2;
+  int64 sales_shipping_option_id = 3;
+  int64 shipping_option_id = 4;
+  string carrier_forwarder = 5;
+  string service_option_name = 6;
+  int64 shipping_employee_id = 7;
+  string shipping_employee_name = 8;
+  string customer_currency = 9;
+  string customer_freight_amount = 10;
+  string charge_basis = 11;
+  string port_of_loading = 12;
+  string port_of_discharge = 13;
+  string estimated_departure = 14;
+  string estimated_arrival = 15;
+  string valid_until = 16;
+  string customer_note = 17;
+  repeated int64 selection_item_ids = 18;
 }
 message FinalRecheckTask {
   int64 id = 1;
@@ -2461,6 +2536,7 @@ message FinalRecheckTask {
   int64 shipping_rework_id = 5;
   string status = 6;
   string resolved_at = 7;
+  int64 selection_shipment_id = 8;
 }
 message CustomerSelection {
   int64 id = 1;
@@ -2481,6 +2557,7 @@ message CustomerSelection {
   string invalidated_reason = 16;
   repeated CustomerSelectionItem items = 17;
   repeated FinalRecheckTask recheck_tasks = 18;
+  repeated CustomerSelectionShipment shipments = 19;
 }
 message ConfirmCustomerSelectionRequest {
   int64 case_id = 1;
@@ -2489,6 +2566,7 @@ message ConfirmCustomerSelectionRequest {
   string customer_contact = 4;
   string confirmation_note = 5;
   string customer_confirmed_at = 6;
+  repeated CustomerShipmentChoiceInput shipment_choices = 7;
 }
 message ConfirmCustomerSelectionResponse { CustomerSelection selection = 1; }
 message ListCustomerSelectionsRequest { int64 case_id = 1; }

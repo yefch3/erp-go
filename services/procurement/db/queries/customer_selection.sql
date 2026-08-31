@@ -1,19 +1,35 @@
 -- name: CustomerSelectionCandidate :one
 SELECT spi.id AS sales_plan_item_id,spi.sourcing_line_id,spi.procurement_plan_item_id,
- spi.shipping_plan_item_id,spi.product_name,spi.quoted_qty::text,spi.uom_code,
+ spi.product_name,spi.quoted_qty::text,spi.uom_code,
  spi.customer_currency,spi.customer_unit_price::text,
  coalesce(spi.promised_delivery_date::text,'')::text AS promised_delivery_date,spi.line_note,
  ppi.supplier_quote_line_id,ppi.buyer_id,ppi.buyer_name,ppi.supplier_id,ppi.supplier_name,
- coalesce(sspi.shipping_option_line_id,0)::bigint AS shipping_option_line_id,
- coalesce(sspi.shipping_employee_id,0)::bigint AS shipping_employee_id,
- coalesce(sspi.shipping_employee_name,'')::text AS shipping_employee_name,
- coalesce(sspi.carrier_forwarder,'')::text AS carrier_forwarder
+ coalesce(ppi.factory_id,0)::bigint AS factory_id,ppi.factory_name,sl.port AS required_destination_port
 FROM sourcing_sales_plan_items spi
 JOIN sourcing_sales_plans sp ON sp.id=spi.plan_id AND sp.tenant_id=spi.tenant_id
 JOIN procurement_plan_items ppi ON ppi.id=spi.procurement_plan_item_id AND ppi.tenant_id=spi.tenant_id
-LEFT JOIN sourcing_shipping_plan_items sspi ON sspi.id=spi.shipping_plan_item_id AND sspi.tenant_id=spi.tenant_id
+JOIN sourcing_lines sl ON sl.id=spi.sourcing_line_id AND sl.tenant_id=spi.tenant_id
 WHERE spi.tenant_id=$1 AND sp.case_id=$2 AND sp.id=$3 AND spi.id=$4
   AND sp.status='PRESENTED' AND sp.valid_until>=current_date;
+
+-- name: CustomerShipmentCandidate :one
+SELECT sso.id,sso.shipping_option_id,sso.carrier_forwarder,sso.service_option_name,
+ sso.shipping_employee_id,sso.shipping_employee_name,sso.customer_currency,
+ sso.customer_freight_amount::text,sso.charge_basis,sso.port_of_loading,sso.port_of_discharge,
+ coalesce(sso.estimated_departure::text,'')::text AS estimated_departure,
+ coalesce(sso.estimated_arrival::text,'')::text AS estimated_arrival,
+ coalesce(sso.valid_until::text,'')::text AS valid_until,sso.customer_note
+FROM sourcing_sales_shipping_options sso
+JOIN sourcing_sales_plans sp ON sp.tenant_id=sso.tenant_id AND sp.id=sso.plan_id
+WHERE sso.tenant_id=$1 AND sp.case_id=$2 AND sp.id=$3 AND sso.id=$4
+  AND sp.status='PRESENTED' AND sp.valid_until>=current_date
+  AND (sso.valid_until IS NULL OR sso.valid_until>=current_date);
+
+-- name: CustomerShipmentCandidateLines :many
+SELECT sourcing_line_id,shipping_plan_item_id,shipping_option_line_id,product_name,
+ quoted_qty::text,uom_code
+FROM sourcing_sales_shipping_option_lines
+WHERE tenant_id=$1 AND sales_shipping_option_id=$2 ORDER BY sourcing_line_id;
 
 -- name: InvalidateActiveCustomerSelections :exec
 UPDATE sourcing_customer_selections
@@ -46,14 +62,34 @@ RETURNING id;
 -- name: CreateCustomerSelectionItem :one
 INSERT INTO sourcing_customer_selection_items(tenant_id,selection_id,sales_plan_item_id,sourcing_line_id,
  procurement_plan_item_id,supplier_quote_line_id,shipping_plan_item_id,shipping_option_line_id,
- product_name,confirmed_qty,uom_code,customer_currency,customer_unit_price,promised_delivery_date,line_note)
+ product_name,confirmed_qty,uom_code,customer_currency,customer_unit_price,promised_delivery_date,line_note,
+ supplier_id,supplier_name,factory_id,factory_name,shipment_group_key)
 VALUES(sqlc.arg(tenant_id),sqlc.arg(selection_id),sqlc.arg(sales_plan_item_id),sqlc.arg(sourcing_line_id),
  sqlc.arg(procurement_plan_item_id),sqlc.arg(supplier_quote_line_id),
- nullif(sqlc.arg(shipping_plan_item_id)::bigint,0),nullif(sqlc.arg(shipping_option_line_id)::bigint,0),
+ NULL,NULL,
  sqlc.arg(product_name),sqlc.arg(confirmed_qty)::text::numeric,sqlc.arg(uom_code),
  sqlc.arg(customer_currency),sqlc.arg(customer_unit_price)::text::numeric,
- nullif(sqlc.arg(promised_delivery_date)::text,'')::date,sqlc.arg(line_note))
+ nullif(sqlc.arg(promised_delivery_date)::text,'')::date,sqlc.arg(line_note),
+ sqlc.arg(supplier_id),sqlc.arg(supplier_name),sqlc.arg(factory_id),sqlc.arg(factory_name),
+ sqlc.arg(shipment_group_key))
 RETURNING id;
+
+-- name: CreateCustomerSelectionShipment :one
+INSERT INTO sourcing_customer_selection_shipments(tenant_id,selection_id,shipment_group_key,
+ sales_shipping_option_id,shipping_option_id,carrier_forwarder,service_option_name,
+ shipping_employee_id,shipping_employee_name,customer_currency,customer_freight_amount,charge_basis,
+ port_of_loading,port_of_discharge,estimated_departure,estimated_arrival,valid_until,customer_note)
+VALUES(sqlc.arg(tenant_id),sqlc.arg(selection_id),sqlc.arg(shipment_group_key),
+ sqlc.arg(sales_shipping_option_id),sqlc.arg(shipping_option_id),sqlc.arg(carrier_forwarder),
+ sqlc.arg(service_option_name),sqlc.arg(shipping_employee_id),sqlc.arg(shipping_employee_name),
+ sqlc.arg(customer_currency),sqlc.arg(customer_freight_amount)::text::numeric,sqlc.arg(charge_basis),
+ sqlc.arg(port_of_loading),sqlc.arg(port_of_discharge),nullif(sqlc.arg(estimated_departure)::text,'')::date,
+ nullif(sqlc.arg(estimated_arrival)::text,'')::date,nullif(sqlc.arg(valid_until)::text,'')::date,
+ sqlc.arg(customer_note)) RETURNING id;
+
+-- name: LinkCustomerSelectionShipmentItem :exec
+INSERT INTO sourcing_customer_selection_shipment_items(tenant_id,selection_shipment_id,selection_item_id)
+VALUES($1,$2,$3);
 
 -- name: CreateFinalProcurementRecheckTask :exec
 INSERT INTO sourcing_final_recheck_tasks(tenant_id,selection_id,selection_item_id,task_domain,procurement_rework_id)
@@ -61,6 +97,10 @@ VALUES($1,$2,$3,'PROCUREMENT',$4);
 
 -- name: CreateFinalShippingRecheckTask :exec
 INSERT INTO sourcing_final_recheck_tasks(tenant_id,selection_id,selection_item_id,task_domain,shipping_rework_id)
+VALUES($1,$2,$3,'SHIPPING',$4);
+
+-- name: CreateFinalShipmentRecheckTask :exec
+INSERT INTO sourcing_final_recheck_tasks(tenant_id,selection_id,selection_shipment_id,task_domain,shipping_rework_id)
 VALUES($1,$2,$3,'SHIPPING',$4);
 
 -- name: ListCustomerSelections :many
@@ -75,11 +115,28 @@ SELECT id,sales_plan_item_id,sourcing_line_id,procurement_plan_item_id,supplier_
  coalesce(shipping_plan_item_id,0)::bigint AS shipping_plan_item_id,
  coalesce(shipping_option_line_id,0)::bigint AS shipping_option_line_id,
  product_name,confirmed_qty::text,uom_code,customer_currency,customer_unit_price::text,
- coalesce(promised_delivery_date::text,'')::text AS promised_delivery_date,line_note
+ coalesce(promised_delivery_date::text,'')::text AS promised_delivery_date,line_note,
+ supplier_id,supplier_name,factory_id,factory_name,shipment_group_key
 FROM sourcing_customer_selection_items WHERE tenant_id=$1 AND selection_id=$2 ORDER BY id;
 
+-- name: ListCustomerSelectionShipments :many
+SELECT id,shipment_group_key,sales_shipping_option_id,shipping_option_id,carrier_forwarder,
+ service_option_name,shipping_employee_id,shipping_employee_name,customer_currency,
+ customer_freight_amount::text,charge_basis,port_of_loading,port_of_discharge,
+ coalesce(estimated_departure::text,'')::text AS estimated_departure,
+ coalesce(estimated_arrival::text,'')::text AS estimated_arrival,
+ coalesce(valid_until::text,'')::text AS valid_until,customer_note
+FROM sourcing_customer_selection_shipments
+WHERE tenant_id=$1 AND selection_id=$2 ORDER BY id;
+
+-- name: ListCustomerSelectionShipmentItemIDs :many
+SELECT selection_item_id FROM sourcing_customer_selection_shipment_items
+WHERE tenant_id=$1 AND selection_shipment_id=$2 ORDER BY selection_item_id;
+
 -- name: ListFinalRecheckTasks :many
-SELECT id,selection_item_id,task_domain,coalesce(procurement_rework_id,0)::bigint AS procurement_rework_id,
+SELECT id,coalesce(selection_item_id,0)::bigint AS selection_item_id,
+ coalesce(selection_shipment_id,0)::bigint AS selection_shipment_id,
+ task_domain,coalesce(procurement_rework_id,0)::bigint AS procurement_rework_id,
  coalesce(shipping_rework_id,0)::bigint AS shipping_rework_id,status,
  coalesce(resolved_at::text,'')::text AS resolved_at
 FROM sourcing_final_recheck_tasks WHERE tenant_id=$1 AND selection_id=$2 ORDER BY selection_item_id,task_domain;

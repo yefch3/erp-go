@@ -143,11 +143,11 @@ func (s *Service) CreateSourcingShippingPlan(ctx context.Context, tenantID int64
 	for i := range in.Selections {
 		sel := &in.Selections[i]
 		sel.SelectionType, sel.Reason, sel.Risk = strings.ToUpper(strings.TrimSpace(sel.SelectionType)), strings.TrimSpace(sel.Reason), strings.TrimSpace(sel.Risk)
-		if sel.SelectionType != "RECOMMENDED" && sel.SelectionType != "BACKUP" || sel.Priority <= 0 {
-			return ShippingPlanView{}, apierr.Invalid("SC_SHIPPING_PLAN_SELECTION", "请选择有效的推荐/备选类型和顺序")
+		if sel.SelectionType != "RECOMMENDED" && sel.SelectionType != "BACKUP" && sel.SelectionType != "REJECTED" || sel.Priority <= 0 {
+			return ShippingPlanView{}, apierr.Invalid("SC_SHIPPING_PLAN_SELECTION", "请选择有效的推荐、备选或淘汰类型和顺序")
 		}
-		if sel.SelectionType == "RECOMMENDED" && sel.Reason == "" {
-			return ShippingPlanView{}, apierr.Invalid("SC_SHIPPING_PLAN_REASON", "推荐船运报价必须填写推荐原因")
+		if sel.Reason == "" {
+			return ShippingPlanView{}, apierr.Invalid("SC_SHIPPING_PLAN_REASON", "每项船运经理判断都必须填写原因")
 		}
 		if selected[sel.ShippingOptionLineID] {
 			return ShippingPlanView{}, apierr.Invalid("SC_SHIPPING_PLAN_DUPLICATE", "同一船运报价不能重复选择")

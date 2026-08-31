@@ -69,13 +69,16 @@ func (q *Queries) CreateCustomerSelection(ctx context.Context, arg CreateCustome
 const createCustomerSelectionItem = `-- name: CreateCustomerSelectionItem :one
 INSERT INTO sourcing_customer_selection_items(tenant_id,selection_id,sales_plan_item_id,sourcing_line_id,
  procurement_plan_item_id,supplier_quote_line_id,shipping_plan_item_id,shipping_option_line_id,
- product_name,confirmed_qty,uom_code,customer_currency,customer_unit_price,promised_delivery_date,line_note)
+ product_name,confirmed_qty,uom_code,customer_currency,customer_unit_price,promised_delivery_date,line_note,
+ supplier_id,supplier_name,factory_id,factory_name,shipment_group_key)
 VALUES($1,$2,$3,$4,
  $5,$6,
- nullif($7::bigint,0),nullif($8::bigint,0),
- $9,$10::text::numeric,$11,
- $12,$13::text::numeric,
- nullif($14::text,'')::date,$15)
+ NULL,NULL,
+ $7,$8::text::numeric,$9,
+ $10,$11::text::numeric,
+ nullif($12::text,'')::date,$13,
+ $14,$15,$16,$17,
+ $18)
 RETURNING id
 `
 
@@ -86,8 +89,6 @@ type CreateCustomerSelectionItemParams struct {
 	SourcingLineID        int64
 	ProcurementPlanItemID int64
 	SupplierQuoteLineID   int64
-	ShippingPlanItemID    int64
-	ShippingOptionLineID  int64
 	ProductName           string
 	ConfirmedQty          string
 	UomCode               string
@@ -95,6 +96,11 @@ type CreateCustomerSelectionItemParams struct {
 	CustomerUnitPrice     string
 	PromisedDeliveryDate  string
 	LineNote              string
+	SupplierID            int64
+	SupplierName          string
+	FactoryID             int64
+	FactoryName           string
+	ShipmentGroupKey      string
 }
 
 func (q *Queries) CreateCustomerSelectionItem(ctx context.Context, arg CreateCustomerSelectionItemParams) (int64, error) {
@@ -105,8 +111,6 @@ func (q *Queries) CreateCustomerSelectionItem(ctx context.Context, arg CreateCus
 		arg.SourcingLineID,
 		arg.ProcurementPlanItemID,
 		arg.SupplierQuoteLineID,
-		arg.ShippingPlanItemID,
-		arg.ShippingOptionLineID,
 		arg.ProductName,
 		arg.ConfirmedQty,
 		arg.UomCode,
@@ -114,6 +118,72 @@ func (q *Queries) CreateCustomerSelectionItem(ctx context.Context, arg CreateCus
 		arg.CustomerUnitPrice,
 		arg.PromisedDeliveryDate,
 		arg.LineNote,
+		arg.SupplierID,
+		arg.SupplierName,
+		arg.FactoryID,
+		arg.FactoryName,
+		arg.ShipmentGroupKey,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const createCustomerSelectionShipment = `-- name: CreateCustomerSelectionShipment :one
+INSERT INTO sourcing_customer_selection_shipments(tenant_id,selection_id,shipment_group_key,
+ sales_shipping_option_id,shipping_option_id,carrier_forwarder,service_option_name,
+ shipping_employee_id,shipping_employee_name,customer_currency,customer_freight_amount,charge_basis,
+ port_of_loading,port_of_discharge,estimated_departure,estimated_arrival,valid_until,customer_note)
+VALUES($1,$2,$3,
+ $4,$5,$6,
+ $7,$8,$9,
+ $10,$11::text::numeric,$12,
+ $13,$14,nullif($15::text,'')::date,
+ nullif($16::text,'')::date,nullif($17::text,'')::date,
+ $18) RETURNING id
+`
+
+type CreateCustomerSelectionShipmentParams struct {
+	TenantID              int64
+	SelectionID           int64
+	ShipmentGroupKey      string
+	SalesShippingOptionID int64
+	ShippingOptionID      int64
+	CarrierForwarder      string
+	ServiceOptionName     string
+	ShippingEmployeeID    int64
+	ShippingEmployeeName  string
+	CustomerCurrency      string
+	CustomerFreightAmount string
+	ChargeBasis           string
+	PortOfLoading         string
+	PortOfDischarge       string
+	EstimatedDeparture    string
+	EstimatedArrival      string
+	ValidUntil            string
+	CustomerNote          string
+}
+
+func (q *Queries) CreateCustomerSelectionShipment(ctx context.Context, arg CreateCustomerSelectionShipmentParams) (int64, error) {
+	row := q.db.QueryRow(ctx, createCustomerSelectionShipment,
+		arg.TenantID,
+		arg.SelectionID,
+		arg.ShipmentGroupKey,
+		arg.SalesShippingOptionID,
+		arg.ShippingOptionID,
+		arg.CarrierForwarder,
+		arg.ServiceOptionName,
+		arg.ShippingEmployeeID,
+		arg.ShippingEmployeeName,
+		arg.CustomerCurrency,
+		arg.CustomerFreightAmount,
+		arg.ChargeBasis,
+		arg.PortOfLoading,
+		arg.PortOfDischarge,
+		arg.EstimatedDeparture,
+		arg.EstimatedArrival,
+		arg.ValidUntil,
+		arg.CustomerNote,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -128,7 +198,7 @@ VALUES($1,$2,$3,'PROCUREMENT',$4)
 type CreateFinalProcurementRecheckTaskParams struct {
 	TenantID            int64
 	SelectionID         int64
-	SelectionItemID     int64
+	SelectionItemID     *int64
 	ProcurementReworkID *int64
 }
 
@@ -142,6 +212,28 @@ func (q *Queries) CreateFinalProcurementRecheckTask(ctx context.Context, arg Cre
 	return err
 }
 
+const createFinalShipmentRecheckTask = `-- name: CreateFinalShipmentRecheckTask :exec
+INSERT INTO sourcing_final_recheck_tasks(tenant_id,selection_id,selection_shipment_id,task_domain,shipping_rework_id)
+VALUES($1,$2,$3,'SHIPPING',$4)
+`
+
+type CreateFinalShipmentRecheckTaskParams struct {
+	TenantID            int64
+	SelectionID         int64
+	SelectionShipmentID *int64
+	ShippingReworkID    *int64
+}
+
+func (q *Queries) CreateFinalShipmentRecheckTask(ctx context.Context, arg CreateFinalShipmentRecheckTaskParams) error {
+	_, err := q.db.Exec(ctx, createFinalShipmentRecheckTask,
+		arg.TenantID,
+		arg.SelectionID,
+		arg.SelectionShipmentID,
+		arg.ShippingReworkID,
+	)
+	return err
+}
+
 const createFinalShippingRecheckTask = `-- name: CreateFinalShippingRecheckTask :exec
 INSERT INTO sourcing_final_recheck_tasks(tenant_id,selection_id,selection_item_id,task_domain,shipping_rework_id)
 VALUES($1,$2,$3,'SHIPPING',$4)
@@ -150,7 +242,7 @@ VALUES($1,$2,$3,'SHIPPING',$4)
 type CreateFinalShippingRecheckTaskParams struct {
 	TenantID         int64
 	SelectionID      int64
-	SelectionItemID  int64
+	SelectionItemID  *int64
 	ShippingReworkID *int64
 }
 
@@ -166,18 +258,15 @@ func (q *Queries) CreateFinalShippingRecheckTask(ctx context.Context, arg Create
 
 const customerSelectionCandidate = `-- name: CustomerSelectionCandidate :one
 SELECT spi.id AS sales_plan_item_id,spi.sourcing_line_id,spi.procurement_plan_item_id,
- spi.shipping_plan_item_id,spi.product_name,spi.quoted_qty::text,spi.uom_code,
+ spi.product_name,spi.quoted_qty::text,spi.uom_code,
  spi.customer_currency,spi.customer_unit_price::text,
  coalesce(spi.promised_delivery_date::text,'')::text AS promised_delivery_date,spi.line_note,
  ppi.supplier_quote_line_id,ppi.buyer_id,ppi.buyer_name,ppi.supplier_id,ppi.supplier_name,
- coalesce(sspi.shipping_option_line_id,0)::bigint AS shipping_option_line_id,
- coalesce(sspi.shipping_employee_id,0)::bigint AS shipping_employee_id,
- coalesce(sspi.shipping_employee_name,'')::text AS shipping_employee_name,
- coalesce(sspi.carrier_forwarder,'')::text AS carrier_forwarder
+ coalesce(ppi.factory_id,0)::bigint AS factory_id,ppi.factory_name,sl.port AS required_destination_port
 FROM sourcing_sales_plan_items spi
 JOIN sourcing_sales_plans sp ON sp.id=spi.plan_id AND sp.tenant_id=spi.tenant_id
 JOIN procurement_plan_items ppi ON ppi.id=spi.procurement_plan_item_id AND ppi.tenant_id=spi.tenant_id
-LEFT JOIN sourcing_shipping_plan_items sspi ON sspi.id=spi.shipping_plan_item_id AND sspi.tenant_id=spi.tenant_id
+JOIN sourcing_lines sl ON sl.id=spi.sourcing_line_id AND sl.tenant_id=spi.tenant_id
 WHERE spi.tenant_id=$1 AND sp.case_id=$2 AND sp.id=$3 AND spi.id=$4
   AND sp.status='PRESENTED' AND sp.valid_until>=current_date
 `
@@ -190,26 +279,24 @@ type CustomerSelectionCandidateParams struct {
 }
 
 type CustomerSelectionCandidateRow struct {
-	SalesPlanItemID       int64
-	SourcingLineID        int64
-	ProcurementPlanItemID int64
-	ShippingPlanItemID    *int64
-	ProductName           string
-	SpiQuotedQty          string
-	UomCode               string
-	CustomerCurrency      string
-	SpiCustomerUnitPrice  string
-	PromisedDeliveryDate  string
-	LineNote              string
-	SupplierQuoteLineID   int64
-	BuyerID               int64
-	BuyerName             string
-	SupplierID            int64
-	SupplierName          string
-	ShippingOptionLineID  int64
-	ShippingEmployeeID    int64
-	ShippingEmployeeName  string
-	CarrierForwarder      string
+	SalesPlanItemID         int64
+	SourcingLineID          int64
+	ProcurementPlanItemID   int64
+	ProductName             string
+	SpiQuotedQty            string
+	UomCode                 string
+	CustomerCurrency        string
+	SpiCustomerUnitPrice    string
+	PromisedDeliveryDate    string
+	LineNote                string
+	SupplierQuoteLineID     int64
+	BuyerID                 int64
+	BuyerName               string
+	SupplierID              int64
+	SupplierName            string
+	FactoryID               int64
+	FactoryName             string
+	RequiredDestinationPort string
 }
 
 func (q *Queries) CustomerSelectionCandidate(ctx context.Context, arg CustomerSelectionCandidateParams) (CustomerSelectionCandidateRow, error) {
@@ -224,7 +311,6 @@ func (q *Queries) CustomerSelectionCandidate(ctx context.Context, arg CustomerSe
 		&i.SalesPlanItemID,
 		&i.SourcingLineID,
 		&i.ProcurementPlanItemID,
-		&i.ShippingPlanItemID,
 		&i.ProductName,
 		&i.SpiQuotedQty,
 		&i.UomCode,
@@ -237,12 +323,126 @@ func (q *Queries) CustomerSelectionCandidate(ctx context.Context, arg CustomerSe
 		&i.BuyerName,
 		&i.SupplierID,
 		&i.SupplierName,
-		&i.ShippingOptionLineID,
-		&i.ShippingEmployeeID,
-		&i.ShippingEmployeeName,
-		&i.CarrierForwarder,
+		&i.FactoryID,
+		&i.FactoryName,
+		&i.RequiredDestinationPort,
 	)
 	return i, err
+}
+
+const customerShipmentCandidate = `-- name: CustomerShipmentCandidate :one
+SELECT sso.id,sso.shipping_option_id,sso.carrier_forwarder,sso.service_option_name,
+ sso.shipping_employee_id,sso.shipping_employee_name,sso.customer_currency,
+ sso.customer_freight_amount::text,sso.charge_basis,sso.port_of_loading,sso.port_of_discharge,
+ coalesce(sso.estimated_departure::text,'')::text AS estimated_departure,
+ coalesce(sso.estimated_arrival::text,'')::text AS estimated_arrival,
+ coalesce(sso.valid_until::text,'')::text AS valid_until,sso.customer_note
+FROM sourcing_sales_shipping_options sso
+JOIN sourcing_sales_plans sp ON sp.tenant_id=sso.tenant_id AND sp.id=sso.plan_id
+WHERE sso.tenant_id=$1 AND sp.case_id=$2 AND sp.id=$3 AND sso.id=$4
+  AND sp.status='PRESENTED' AND sp.valid_until>=current_date
+  AND (sso.valid_until IS NULL OR sso.valid_until>=current_date)
+`
+
+type CustomerShipmentCandidateParams struct {
+	TenantID int64
+	CaseID   int64
+	ID       int64
+	ID_2     int64
+}
+
+type CustomerShipmentCandidateRow struct {
+	ID                       int64
+	ShippingOptionID         int64
+	CarrierForwarder         string
+	ServiceOptionName        string
+	ShippingEmployeeID       int64
+	ShippingEmployeeName     string
+	CustomerCurrency         string
+	SsoCustomerFreightAmount string
+	ChargeBasis              string
+	PortOfLoading            string
+	PortOfDischarge          string
+	EstimatedDeparture       string
+	EstimatedArrival         string
+	ValidUntil               string
+	CustomerNote             string
+}
+
+func (q *Queries) CustomerShipmentCandidate(ctx context.Context, arg CustomerShipmentCandidateParams) (CustomerShipmentCandidateRow, error) {
+	row := q.db.QueryRow(ctx, customerShipmentCandidate,
+		arg.TenantID,
+		arg.CaseID,
+		arg.ID,
+		arg.ID_2,
+	)
+	var i CustomerShipmentCandidateRow
+	err := row.Scan(
+		&i.ID,
+		&i.ShippingOptionID,
+		&i.CarrierForwarder,
+		&i.ServiceOptionName,
+		&i.ShippingEmployeeID,
+		&i.ShippingEmployeeName,
+		&i.CustomerCurrency,
+		&i.SsoCustomerFreightAmount,
+		&i.ChargeBasis,
+		&i.PortOfLoading,
+		&i.PortOfDischarge,
+		&i.EstimatedDeparture,
+		&i.EstimatedArrival,
+		&i.ValidUntil,
+		&i.CustomerNote,
+	)
+	return i, err
+}
+
+const customerShipmentCandidateLines = `-- name: CustomerShipmentCandidateLines :many
+SELECT sourcing_line_id,shipping_plan_item_id,shipping_option_line_id,product_name,
+ quoted_qty::text,uom_code
+FROM sourcing_sales_shipping_option_lines
+WHERE tenant_id=$1 AND sales_shipping_option_id=$2 ORDER BY sourcing_line_id
+`
+
+type CustomerShipmentCandidateLinesParams struct {
+	TenantID              int64
+	SalesShippingOptionID int64
+}
+
+type CustomerShipmentCandidateLinesRow struct {
+	SourcingLineID       int64
+	ShippingPlanItemID   int64
+	ShippingOptionLineID int64
+	ProductName          string
+	QuotedQty            string
+	UomCode              string
+}
+
+func (q *Queries) CustomerShipmentCandidateLines(ctx context.Context, arg CustomerShipmentCandidateLinesParams) ([]CustomerShipmentCandidateLinesRow, error) {
+	rows, err := q.db.Query(ctx, customerShipmentCandidateLines, arg.TenantID, arg.SalesShippingOptionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CustomerShipmentCandidateLinesRow
+	for rows.Next() {
+		var i CustomerShipmentCandidateLinesRow
+		if err := rows.Scan(
+			&i.SourcingLineID,
+			&i.ShippingPlanItemID,
+			&i.ShippingOptionLineID,
+			&i.ProductName,
+			&i.QuotedQty,
+			&i.UomCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const invalidateActiveCustomerSelections = `-- name: InvalidateActiveCustomerSelections :exec
@@ -284,12 +484,29 @@ func (q *Queries) InvalidateExpiredCustomerSelections(ctx context.Context, arg I
 	return err
 }
 
+const linkCustomerSelectionShipmentItem = `-- name: LinkCustomerSelectionShipmentItem :exec
+INSERT INTO sourcing_customer_selection_shipment_items(tenant_id,selection_shipment_id,selection_item_id)
+VALUES($1,$2,$3)
+`
+
+type LinkCustomerSelectionShipmentItemParams struct {
+	TenantID            int64
+	SelectionShipmentID int64
+	SelectionItemID     int64
+}
+
+func (q *Queries) LinkCustomerSelectionShipmentItem(ctx context.Context, arg LinkCustomerSelectionShipmentItemParams) error {
+	_, err := q.db.Exec(ctx, linkCustomerSelectionShipmentItem, arg.TenantID, arg.SelectionShipmentID, arg.SelectionItemID)
+	return err
+}
+
 const listCustomerSelectionItems = `-- name: ListCustomerSelectionItems :many
 SELECT id,sales_plan_item_id,sourcing_line_id,procurement_plan_item_id,supplier_quote_line_id,
  coalesce(shipping_plan_item_id,0)::bigint AS shipping_plan_item_id,
  coalesce(shipping_option_line_id,0)::bigint AS shipping_option_line_id,
  product_name,confirmed_qty::text,uom_code,customer_currency,customer_unit_price::text,
- coalesce(promised_delivery_date::text,'')::text AS promised_delivery_date,line_note
+ coalesce(promised_delivery_date::text,'')::text AS promised_delivery_date,line_note,
+ supplier_id,supplier_name,factory_id,factory_name,shipment_group_key
 FROM sourcing_customer_selection_items WHERE tenant_id=$1 AND selection_id=$2 ORDER BY id
 `
 
@@ -313,6 +530,11 @@ type ListCustomerSelectionItemsRow struct {
 	CustomerUnitPrice     string
 	PromisedDeliveryDate  string
 	LineNote              string
+	SupplierID            int64
+	SupplierName          string
+	FactoryID             int64
+	FactoryName           string
+	ShipmentGroupKey      string
 }
 
 func (q *Queries) ListCustomerSelectionItems(ctx context.Context, arg ListCustomerSelectionItemsParams) ([]ListCustomerSelectionItemsRow, error) {
@@ -339,6 +561,115 @@ func (q *Queries) ListCustomerSelectionItems(ctx context.Context, arg ListCustom
 			&i.CustomerUnitPrice,
 			&i.PromisedDeliveryDate,
 			&i.LineNote,
+			&i.SupplierID,
+			&i.SupplierName,
+			&i.FactoryID,
+			&i.FactoryName,
+			&i.ShipmentGroupKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCustomerSelectionShipmentItemIDs = `-- name: ListCustomerSelectionShipmentItemIDs :many
+SELECT selection_item_id FROM sourcing_customer_selection_shipment_items
+WHERE tenant_id=$1 AND selection_shipment_id=$2 ORDER BY selection_item_id
+`
+
+type ListCustomerSelectionShipmentItemIDsParams struct {
+	TenantID            int64
+	SelectionShipmentID int64
+}
+
+func (q *Queries) ListCustomerSelectionShipmentItemIDs(ctx context.Context, arg ListCustomerSelectionShipmentItemIDsParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listCustomerSelectionShipmentItemIDs, arg.TenantID, arg.SelectionShipmentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var selection_item_id int64
+		if err := rows.Scan(&selection_item_id); err != nil {
+			return nil, err
+		}
+		items = append(items, selection_item_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCustomerSelectionShipments = `-- name: ListCustomerSelectionShipments :many
+SELECT id,shipment_group_key,sales_shipping_option_id,shipping_option_id,carrier_forwarder,
+ service_option_name,shipping_employee_id,shipping_employee_name,customer_currency,
+ customer_freight_amount::text,charge_basis,port_of_loading,port_of_discharge,
+ coalesce(estimated_departure::text,'')::text AS estimated_departure,
+ coalesce(estimated_arrival::text,'')::text AS estimated_arrival,
+ coalesce(valid_until::text,'')::text AS valid_until,customer_note
+FROM sourcing_customer_selection_shipments
+WHERE tenant_id=$1 AND selection_id=$2 ORDER BY id
+`
+
+type ListCustomerSelectionShipmentsParams struct {
+	TenantID    int64
+	SelectionID int64
+}
+
+type ListCustomerSelectionShipmentsRow struct {
+	ID                    int64
+	ShipmentGroupKey      string
+	SalesShippingOptionID int64
+	ShippingOptionID      int64
+	CarrierForwarder      string
+	ServiceOptionName     string
+	ShippingEmployeeID    int64
+	ShippingEmployeeName  string
+	CustomerCurrency      string
+	CustomerFreightAmount string
+	ChargeBasis           string
+	PortOfLoading         string
+	PortOfDischarge       string
+	EstimatedDeparture    string
+	EstimatedArrival      string
+	ValidUntil            string
+	CustomerNote          string
+}
+
+func (q *Queries) ListCustomerSelectionShipments(ctx context.Context, arg ListCustomerSelectionShipmentsParams) ([]ListCustomerSelectionShipmentsRow, error) {
+	rows, err := q.db.Query(ctx, listCustomerSelectionShipments, arg.TenantID, arg.SelectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCustomerSelectionShipmentsRow
+	for rows.Next() {
+		var i ListCustomerSelectionShipmentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ShipmentGroupKey,
+			&i.SalesShippingOptionID,
+			&i.ShippingOptionID,
+			&i.CarrierForwarder,
+			&i.ServiceOptionName,
+			&i.ShippingEmployeeID,
+			&i.ShippingEmployeeName,
+			&i.CustomerCurrency,
+			&i.CustomerFreightAmount,
+			&i.ChargeBasis,
+			&i.PortOfLoading,
+			&i.PortOfDischarge,
+			&i.EstimatedDeparture,
+			&i.EstimatedArrival,
+			&i.ValidUntil,
+			&i.CustomerNote,
 		); err != nil {
 			return nil, err
 		}
@@ -420,7 +751,9 @@ func (q *Queries) ListCustomerSelections(ctx context.Context, arg ListCustomerSe
 }
 
 const listFinalRecheckTasks = `-- name: ListFinalRecheckTasks :many
-SELECT id,selection_item_id,task_domain,coalesce(procurement_rework_id,0)::bigint AS procurement_rework_id,
+SELECT id,coalesce(selection_item_id,0)::bigint AS selection_item_id,
+ coalesce(selection_shipment_id,0)::bigint AS selection_shipment_id,
+ task_domain,coalesce(procurement_rework_id,0)::bigint AS procurement_rework_id,
  coalesce(shipping_rework_id,0)::bigint AS shipping_rework_id,status,
  coalesce(resolved_at::text,'')::text AS resolved_at
 FROM sourcing_final_recheck_tasks WHERE tenant_id=$1 AND selection_id=$2 ORDER BY selection_item_id,task_domain
@@ -434,6 +767,7 @@ type ListFinalRecheckTasksParams struct {
 type ListFinalRecheckTasksRow struct {
 	ID                  int64
 	SelectionItemID     int64
+	SelectionShipmentID int64
 	TaskDomain          string
 	ProcurementReworkID int64
 	ShippingReworkID    int64
@@ -453,6 +787,7 @@ func (q *Queries) ListFinalRecheckTasks(ctx context.Context, arg ListFinalRechec
 		if err := rows.Scan(
 			&i.ID,
 			&i.SelectionItemID,
+			&i.SelectionShipmentID,
 			&i.TaskDomain,
 			&i.ProcurementReworkID,
 			&i.ShippingReworkID,

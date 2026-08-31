@@ -23,7 +23,7 @@ func TestT7T8SalesNegotiationCustomerSelectionAndFinalRecheck(t *testing.T) {
 	defer pool.Close()
 	tenantID := time.Now().UnixNano()
 	defer func() {
-		for _, table := range []string{"sourcing_final_recheck_tasks", "sourcing_customer_selection_items", "sourcing_customer_selections", "sourcing_shipping_rework_requests", "sourcing_customer_feedback", "sourcing_sales_plan_items", "sourcing_sales_plans", "sourcing_shipping_plan_items", "sourcing_shipping_plans", "sourcing_shipping_option_lines", "sourcing_shipping_options", "sourcing_shipping_participants", "sourcing_shipping_requests", "procurement_rework_requests", "procurement_plan_items", "procurement_plans", "supplier_quote_lines", "supplier_quotes", "factory_rfq_lines", "factory_rfqs", "sourcing_case_changes", "sourcing_procurement_participants", "sourcing_lines", "sourcing_cases"} {
+		for _, table := range []string{"sourcing_final_recheck_tasks", "sourcing_customer_selection_shipment_items", "sourcing_customer_selection_shipments", "sourcing_customer_selection_items", "sourcing_customer_selections", "sourcing_shipping_rework_requests", "sourcing_customer_feedback", "sourcing_sales_shipping_option_lines", "sourcing_sales_shipping_options", "sourcing_sales_plan_items", "sourcing_sales_plans", "sourcing_shipping_plan_items", "sourcing_shipping_plans", "sourcing_shipping_option_lines", "sourcing_shipping_options", "sourcing_shipping_participants", "sourcing_shipping_requests", "procurement_rework_requests", "procurement_plan_items", "procurement_plans", "supplier_quote_lines", "supplier_quotes", "factory_rfq_lines", "factory_rfqs", "sourcing_case_changes", "sourcing_procurement_participants", "sourcing_lines", "sourcing_cases"} {
 			_, _ = pool.Exec(ctx, `DELETE FROM `+table+` WHERE tenant_id=$1`, tenantID)
 		}
 	}()
@@ -83,7 +83,17 @@ func TestT7T8SalesNegotiationCustomerSelectionAndFinalRecheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	optionLine := shippingView.Options[0].Lines[0]
-	shippingPlan, err := svc.CreateSourcingShippingPlan(ctx, tenantID, NewShippingPlan{CaseID: caseID, ManagerNote: "船运推荐", Selections: []ShippingPlanSelectionInput{{SourcingLineID: lineID, ShippingOptionLineID: optionLine.ID, SelectionType: "RECOMMENDED", Priority: 1, Reason: "到港快"}}}, shippingManager)
+	shippingView, err = svc.AddSourcingShippingOption(ctx, tenantID, NewSourcingShippingOption{CaseID: caseID, CarrierForwarder: "错误目的港船公司", PortOfLoading: "上海", PortOfDischarge: "Long Beach", QuotedAt: "2026-08-30", EstimatedDeparture: "2026-09-11", EstimatedArrival: "2026-10-03", ValidUntil: "2026-09-05", Lines: []NewSourcingShippingOptionLine{{SourcingLineID: lineID, Currency: "USD", ChargeBasis: "PER_TON", UnitRate: "35", TotalFreight: "700"}}}, shipping)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var incompatibleOptionLineID int64
+	for _, option := range shippingView.Options {
+		if option.Option.CarrierForwarder == "错误目的港船公司" {
+			incompatibleOptionLineID = option.Lines[0].ID
+		}
+	}
+	shippingPlan, err := svc.CreateSourcingShippingPlan(ctx, tenantID, NewShippingPlan{CaseID: caseID, ManagerNote: "船运候选", Selections: []ShippingPlanSelectionInput{{SourcingLineID: lineID, ShippingOptionLineID: optionLine.ID, SelectionType: "RECOMMENDED", Priority: 1, Reason: "到港快"}, {SourcingLineID: lineID, ShippingOptionLineID: incompatibleOptionLineID, SelectionType: "BACKUP", Priority: 2, Reason: "价格低"}}}, shippingManager)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +103,11 @@ func TestT7T8SalesNegotiationCustomerSelectionAndFinalRecheck(t *testing.T) {
 	}
 
 	newPlan := func(price string) (SalesPlanView, error) {
-		return svc.CreateSalesPlan(ctx, tenantID, NewSalesPlan{CaseID: caseID, ProcurementPlanID: procurement.Header.ID, ShippingPlanID: shippingPlan.Header.ID, ValidUntil: "2026-09-30", CustomerNote: "含采购与船运方案", Items: []SalesPlanItemInput{{SourcingLineID: lineID, ProcurementPlanItemID: procurement.Items[0].ID, ShippingPlanItemID: shippingPlan.Items[0].ID, OptionType: "PRIMARY", Priority: 1, CustomerCurrency: "USD", CustomerUnitPrice: price, PromisedDeliveryDate: "2026-10-15"}}}, sales)
+		shippingInputs := make([]SalesShippingOptionInput, 0, len(shippingPlan.Items))
+		for _, item := range shippingPlan.Items {
+			shippingInputs = append(shippingInputs, SalesShippingOptionInput{ShippingPlanItemIDs: []int64{item.ID}, CustomerCurrency: "USD", CustomerFreightAmount: item.TotalFreight})
+		}
+		return svc.CreateSalesPlan(ctx, tenantID, NewSalesPlan{CaseID: caseID, ProcurementPlanID: procurement.Header.ID, ShippingPlanID: shippingPlan.Header.ID, ValidUntil: "2026-09-30", CustomerNote: "含独立采购与船运候选", Items: []SalesPlanItemInput{{SourcingLineID: lineID, ProcurementPlanItemID: procurement.Items[0].ID, OptionType: "PRIMARY", Priority: 1, CustomerCurrency: "USD", CustomerUnitPrice: price, PromisedDeliveryDate: "2026-10-15"}}, ShippingOptions: shippingInputs}, sales)
 	}
 	plan1, err := newPlan("720")
 	if err != nil {
@@ -120,8 +134,20 @@ func TestT7T8SalesNegotiationCustomerSelectionAndFinalRecheck(t *testing.T) {
 	// T8: the customer may select only part of the presented products. The
 	// selected combination is frozen and sent back to the original buyer and
 	// shipping owner; only both resolutions complete the final recheck.
-	selection, err := svc.ConfirmCustomerSelection(ctx, tenantID, ConfirmCustomerSelectionInput{CaseID: caseID, SalesPlanID: plan2.Header.ID, SalesPlanItemIDs: []int64{plan2.Items[0].ID}, CustomerContact: "客户联系人", ConfirmationNote: "客户确认该产品", CustomerConfirmedAt: "2026-08-31T10:00:00Z"}, sales)
-	if err != nil || selection.Header.Status != "FINAL_RECHECK_PENDING" || len(selection.Items) != 1 || len(selection.Tasks) != 2 {
+	groupKey := customerShipmentGroupKey(plan2.Items[0].SupplierID, plan2.Items[0].FactoryID)
+	var compatibleSalesShippingID, incompatibleSalesShippingID int64
+	for _, option := range plan2.ShippingOptions {
+		if option.Header.PortOfDischarge == "Los Angeles" {
+			compatibleSalesShippingID = option.Header.ID
+		} else {
+			incompatibleSalesShippingID = option.Header.ID
+		}
+	}
+	if _, badErr := svc.ConfirmCustomerSelection(ctx, tenantID, ConfirmCustomerSelectionInput{CaseID: caseID, SalesPlanID: plan2.Header.ID, SalesPlanItemIDs: []int64{plan2.Items[0].ID}, ShipmentChoices: []CustomerShipmentChoiceInput{{ShipmentGroupKey: groupKey, SalesShippingOptionID: incompatibleSalesShippingID}}, CustomerConfirmedAt: "2026-08-31T09:00:00Z"}, sales); badErr == nil || !strings.Contains(badErr.Error(), "SC_CUSTOMER_SHIPMENT_DESTINATION") {
+		t.Fatalf("incompatible destination error=%v", badErr)
+	}
+	selection, err := svc.ConfirmCustomerSelection(ctx, tenantID, ConfirmCustomerSelectionInput{CaseID: caseID, SalesPlanID: plan2.Header.ID, SalesPlanItemIDs: []int64{plan2.Items[0].ID}, ShipmentChoices: []CustomerShipmentChoiceInput{{ShipmentGroupKey: groupKey, SalesShippingOptionID: compatibleSalesShippingID}}, CustomerContact: "客户联系人", ConfirmationNote: "客户确认该产品和船运", CustomerConfirmedAt: "2026-08-31T10:00:00Z"}, sales)
+	if err != nil || selection.Header.Status != "FINAL_RECHECK_PENDING" || len(selection.Items) != 1 || len(selection.Shipments) != 1 || len(selection.Tasks) != 2 {
 		t.Fatalf("customer selection=%+v err=%v", selection, err)
 	}
 	var finalProcurementReworkID, finalShippingReworkID int64

@@ -115,9 +115,9 @@ INSERT INTO sourcing_sales_plan_items(tenant_id,plan_id,sourcing_line_id,procure
  shipping_plan_item_id,option_type,priority,product_name,quoted_qty,uom_code,customer_currency,
  customer_unit_price,promised_delivery_date,line_note)
 VALUES($1,$2,$3,$4,
- nullif($5::bigint,0),$6,$7,
- $8,$9::text::numeric,$10,$11,
- $12::text::numeric,nullif($13::text,'')::date,$14)
+ NULL,$5,$6,
+ $7,$8::text::numeric,$9,$10,
+ $11::text::numeric,nullif($12::text,'')::date,$13)
 `
 
 type CreateSalesPlanItemParams struct {
@@ -125,7 +125,6 @@ type CreateSalesPlanItemParams struct {
 	PlanID                int64
 	SourcingLineID        int64
 	ProcurementPlanItemID int64
-	ShippingPlanItemID    int64
 	OptionType            string
 	Priority              int32
 	ProductName           string
@@ -143,7 +142,6 @@ func (q *Queries) CreateSalesPlanItem(ctx context.Context, arg CreateSalesPlanIt
 		arg.PlanID,
 		arg.SourcingLineID,
 		arg.ProcurementPlanItemID,
-		arg.ShippingPlanItemID,
 		arg.OptionType,
 		arg.Priority,
 		arg.ProductName,
@@ -153,6 +151,95 @@ func (q *Queries) CreateSalesPlanItem(ctx context.Context, arg CreateSalesPlanIt
 		arg.CustomerUnitPrice,
 		arg.PromisedDeliveryDate,
 		arg.LineNote,
+	)
+	return err
+}
+
+const createSalesShippingOption = `-- name: CreateSalesShippingOption :one
+INSERT INTO sourcing_sales_shipping_options(tenant_id,plan_id,shipping_option_id,carrier_forwarder,
+ service_option_name,shipping_employee_id,shipping_employee_name,customer_currency,
+ customer_freight_amount,charge_basis,port_of_loading,port_of_discharge,estimated_departure,
+ estimated_arrival,valid_until,customer_note)
+VALUES($1,$2,$3,$4,
+ $5,$6,$7,
+ $8,$9::text::numeric,$10,
+ $11,$12,nullif($13::text,'')::date,
+ nullif($14::text,'')::date,nullif($15::text,'')::date,
+ $16) RETURNING id
+`
+
+type CreateSalesShippingOptionParams struct {
+	TenantID              int64
+	PlanID                int64
+	ShippingOptionID      int64
+	CarrierForwarder      string
+	ServiceOptionName     string
+	ShippingEmployeeID    int64
+	ShippingEmployeeName  string
+	CustomerCurrency      string
+	CustomerFreightAmount string
+	ChargeBasis           string
+	PortOfLoading         string
+	PortOfDischarge       string
+	EstimatedDeparture    string
+	EstimatedArrival      string
+	ValidUntil            string
+	CustomerNote          string
+}
+
+func (q *Queries) CreateSalesShippingOption(ctx context.Context, arg CreateSalesShippingOptionParams) (int64, error) {
+	row := q.db.QueryRow(ctx, createSalesShippingOption,
+		arg.TenantID,
+		arg.PlanID,
+		arg.ShippingOptionID,
+		arg.CarrierForwarder,
+		arg.ServiceOptionName,
+		arg.ShippingEmployeeID,
+		arg.ShippingEmployeeName,
+		arg.CustomerCurrency,
+		arg.CustomerFreightAmount,
+		arg.ChargeBasis,
+		arg.PortOfLoading,
+		arg.PortOfDischarge,
+		arg.EstimatedDeparture,
+		arg.EstimatedArrival,
+		arg.ValidUntil,
+		arg.CustomerNote,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const createSalesShippingOptionLine = `-- name: CreateSalesShippingOptionLine :exec
+INSERT INTO sourcing_sales_shipping_option_lines(tenant_id,sales_shipping_option_id,sourcing_line_id,
+ shipping_plan_item_id,shipping_option_line_id,product_name,quoted_qty,uom_code)
+VALUES($1,$2,$3,
+ $4,$5,$6,
+ $7::text::numeric,$8)
+`
+
+type CreateSalesShippingOptionLineParams struct {
+	TenantID              int64
+	SalesShippingOptionID int64
+	SourcingLineID        int64
+	ShippingPlanItemID    int64
+	ShippingOptionLineID  int64
+	ProductName           string
+	QuotedQty             string
+	UomCode               string
+}
+
+func (q *Queries) CreateSalesShippingOptionLine(ctx context.Context, arg CreateSalesShippingOptionLineParams) error {
+	_, err := q.db.Exec(ctx, createSalesShippingOptionLine,
+		arg.TenantID,
+		arg.SalesShippingOptionID,
+		arg.SourcingLineID,
+		arg.ShippingPlanItemID,
+		arg.ShippingOptionLineID,
+		arg.ProductName,
+		arg.QuotedQty,
+		arg.UomCode,
 	)
 	return err
 }
@@ -471,11 +558,16 @@ func (q *Queries) ListMyShippingReworks(ctx context.Context, arg ListMyShippingR
 }
 
 const listSalesPlanItems = `-- name: ListSalesPlanItems :many
-SELECT id,sourcing_line_id,procurement_plan_item_id,coalesce(shipping_plan_item_id,0)::bigint AS shipping_plan_item_id,
- option_type,priority,product_name,quoted_qty::text,uom_code,customer_currency,customer_unit_price::text,
- coalesce(promised_delivery_date::text,'')::text AS promised_delivery_date,line_note
-FROM sourcing_sales_plan_items WHERE tenant_id=$1 AND plan_id=$2
-ORDER BY sourcing_line_id,option_type DESC,priority,id
+SELECT spi.id,spi.sourcing_line_id,spi.procurement_plan_item_id,coalesce(spi.shipping_plan_item_id,0)::bigint AS shipping_plan_item_id,
+ spi.option_type,spi.priority,spi.product_name,spi.quoted_qty::text,spi.uom_code,spi.customer_currency,spi.customer_unit_price::text,
+ coalesce(spi.promised_delivery_date::text,'')::text AS promised_delivery_date,spi.line_note,
+ ppi.supplier_id,ppi.supplier_name,coalesce(ppi.factory_id,0)::bigint AS factory_id,ppi.factory_name,
+ ppi.payment_terms,ppi.incoterm,coalesce(ppi.valid_until::text,'')::text AS supplier_valid_until,
+ ppi.selection_type AS manager_selection_type,ppi.reason AS manager_reason,ppi.risk AS manager_risk
+FROM sourcing_sales_plan_items spi
+JOIN procurement_plan_items ppi ON ppi.tenant_id=spi.tenant_id AND ppi.id=spi.procurement_plan_item_id
+WHERE spi.tenant_id=$1 AND spi.plan_id=$2
+ORDER BY spi.sourcing_line_id,spi.option_type DESC,spi.priority,spi.id
 `
 
 type ListSalesPlanItemsParams struct {
@@ -491,12 +583,22 @@ type ListSalesPlanItemsRow struct {
 	OptionType            string
 	Priority              int32
 	ProductName           string
-	QuotedQty             string
+	SpiQuotedQty          string
 	UomCode               string
 	CustomerCurrency      string
-	CustomerUnitPrice     string
+	SpiCustomerUnitPrice  string
 	PromisedDeliveryDate  string
 	LineNote              string
+	SupplierID            int64
+	SupplierName          string
+	FactoryID             int64
+	FactoryName           string
+	PaymentTerms          string
+	Incoterm              string
+	SupplierValidUntil    string
+	ManagerSelectionType  string
+	ManagerReason         string
+	ManagerRisk           string
 }
 
 func (q *Queries) ListSalesPlanItems(ctx context.Context, arg ListSalesPlanItemsParams) ([]ListSalesPlanItemsRow, error) {
@@ -516,12 +618,22 @@ func (q *Queries) ListSalesPlanItems(ctx context.Context, arg ListSalesPlanItems
 			&i.OptionType,
 			&i.Priority,
 			&i.ProductName,
-			&i.QuotedQty,
+			&i.SpiQuotedQty,
 			&i.UomCode,
 			&i.CustomerCurrency,
-			&i.CustomerUnitPrice,
+			&i.SpiCustomerUnitPrice,
 			&i.PromisedDeliveryDate,
 			&i.LineNote,
+			&i.SupplierID,
+			&i.SupplierName,
+			&i.FactoryID,
+			&i.FactoryName,
+			&i.PaymentTerms,
+			&i.Incoterm,
+			&i.SupplierValidUntil,
+			&i.ManagerSelectionType,
+			&i.ManagerReason,
+			&i.ManagerRisk,
 		); err != nil {
 			return nil, err
 		}
@@ -588,6 +700,124 @@ func (q *Queries) ListSalesPlans(ctx context.Context, arg ListSalesPlansParams) 
 			&i.CreatedByName,
 			&i.PresentedAt,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSalesShippingOptionLines = `-- name: ListSalesShippingOptionLines :many
+SELECT id,sourcing_line_id,shipping_plan_item_id,shipping_option_line_id,product_name,
+ quoted_qty::text,uom_code
+FROM sourcing_sales_shipping_option_lines
+WHERE tenant_id=$1 AND sales_shipping_option_id=$2 ORDER BY sourcing_line_id,id
+`
+
+type ListSalesShippingOptionLinesParams struct {
+	TenantID              int64
+	SalesShippingOptionID int64
+}
+
+type ListSalesShippingOptionLinesRow struct {
+	ID                   int64
+	SourcingLineID       int64
+	ShippingPlanItemID   int64
+	ShippingOptionLineID int64
+	ProductName          string
+	QuotedQty            string
+	UomCode              string
+}
+
+func (q *Queries) ListSalesShippingOptionLines(ctx context.Context, arg ListSalesShippingOptionLinesParams) ([]ListSalesShippingOptionLinesRow, error) {
+	rows, err := q.db.Query(ctx, listSalesShippingOptionLines, arg.TenantID, arg.SalesShippingOptionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSalesShippingOptionLinesRow
+	for rows.Next() {
+		var i ListSalesShippingOptionLinesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourcingLineID,
+			&i.ShippingPlanItemID,
+			&i.ShippingOptionLineID,
+			&i.ProductName,
+			&i.QuotedQty,
+			&i.UomCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSalesShippingOptions = `-- name: ListSalesShippingOptions :many
+SELECT id,shipping_option_id,carrier_forwarder,service_option_name,shipping_employee_id,
+ shipping_employee_name,customer_currency,customer_freight_amount::text,charge_basis,
+ port_of_loading,port_of_discharge,coalesce(estimated_departure::text,'')::text AS estimated_departure,
+ coalesce(estimated_arrival::text,'')::text AS estimated_arrival,
+ coalesce(valid_until::text,'')::text AS valid_until,customer_note
+FROM sourcing_sales_shipping_options WHERE tenant_id=$1 AND plan_id=$2 ORDER BY id
+`
+
+type ListSalesShippingOptionsParams struct {
+	TenantID int64
+	PlanID   int64
+}
+
+type ListSalesShippingOptionsRow struct {
+	ID                    int64
+	ShippingOptionID      int64
+	CarrierForwarder      string
+	ServiceOptionName     string
+	ShippingEmployeeID    int64
+	ShippingEmployeeName  string
+	CustomerCurrency      string
+	CustomerFreightAmount string
+	ChargeBasis           string
+	PortOfLoading         string
+	PortOfDischarge       string
+	EstimatedDeparture    string
+	EstimatedArrival      string
+	ValidUntil            string
+	CustomerNote          string
+}
+
+func (q *Queries) ListSalesShippingOptions(ctx context.Context, arg ListSalesShippingOptionsParams) ([]ListSalesShippingOptionsRow, error) {
+	rows, err := q.db.Query(ctx, listSalesShippingOptions, arg.TenantID, arg.PlanID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSalesShippingOptionsRow
+	for rows.Next() {
+		var i ListSalesShippingOptionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ShippingOptionID,
+			&i.CarrierForwarder,
+			&i.ServiceOptionName,
+			&i.ShippingEmployeeID,
+			&i.ShippingEmployeeName,
+			&i.CustomerCurrency,
+			&i.CustomerFreightAmount,
+			&i.ChargeBasis,
+			&i.PortOfLoading,
+			&i.PortOfDischarge,
+			&i.EstimatedDeparture,
+			&i.EstimatedArrival,
+			&i.ValidUntil,
+			&i.CustomerNote,
 		); err != nil {
 			return nil, err
 		}
@@ -757,7 +987,7 @@ func (q *Queries) SalesNegotiationCase(ctx context.Context, arg SalesNegotiation
 const salesPlanProcurementCandidate = `-- name: SalesPlanProcurementCandidate :one
 SELECT pi.id,pi.sourcing_line_id,pi.product_name,pi.available_qty::text,pi.uom_code
 FROM procurement_plan_items pi
-WHERE pi.tenant_id=$1 AND pi.plan_id=$2 AND pi.id=$3
+WHERE pi.tenant_id=$1 AND pi.plan_id=$2 AND pi.id=$3 AND pi.selection_type<>'REJECTED'
 `
 
 type SalesPlanProcurementCandidateParams struct {
@@ -788,9 +1018,17 @@ func (q *Queries) SalesPlanProcurementCandidate(ctx context.Context, arg SalesPl
 }
 
 const salesPlanShippingCandidate = `-- name: SalesPlanShippingCandidate :one
-SELECT si.id,si.sourcing_line_id
+SELECT si.id,si.sourcing_line_id,si.shipping_option_line_id,ol.option_id,
+ si.carrier_forwarder,si.service_option_name,si.shipping_employee_id,si.shipping_employee_name,
+ si.currency,si.charge_basis,si.total_freight::text,si.port_of_loading,si.port_of_discharge,
+ coalesce(si.estimated_departure::text,'')::text AS estimated_departure,
+ coalesce(si.estimated_arrival::text,'')::text AS estimated_arrival,
+ coalesce(si.valid_until::text,'')::text AS valid_until,si.product_name,
+ sl.quantity::text AS quoted_qty,sl.quantity_unit AS uom_code
 FROM sourcing_shipping_plan_items si
-WHERE si.tenant_id=$1 AND si.plan_id=$2 AND si.id=$3
+JOIN sourcing_shipping_option_lines ol ON ol.tenant_id=si.tenant_id AND ol.id=si.shipping_option_line_id
+JOIN sourcing_lines sl ON sl.tenant_id=si.tenant_id AND sl.id=si.sourcing_line_id
+WHERE si.tenant_id=$1 AND si.plan_id=$2 AND si.id=$3 AND si.selection_type<>'REJECTED'
 `
 
 type SalesPlanShippingCandidateParams struct {
@@ -800,14 +1038,51 @@ type SalesPlanShippingCandidateParams struct {
 }
 
 type SalesPlanShippingCandidateRow struct {
-	ID             int64
-	SourcingLineID int64
+	ID                   int64
+	SourcingLineID       int64
+	ShippingOptionLineID int64
+	OptionID             int64
+	CarrierForwarder     string
+	ServiceOptionName    string
+	ShippingEmployeeID   int64
+	ShippingEmployeeName string
+	Currency             string
+	ChargeBasis          string
+	SiTotalFreight       string
+	PortOfLoading        string
+	PortOfDischarge      string
+	EstimatedDeparture   string
+	EstimatedArrival     string
+	ValidUntil           string
+	ProductName          string
+	QuotedQty            string
+	UomCode              string
 }
 
 func (q *Queries) SalesPlanShippingCandidate(ctx context.Context, arg SalesPlanShippingCandidateParams) (SalesPlanShippingCandidateRow, error) {
 	row := q.db.QueryRow(ctx, salesPlanShippingCandidate, arg.TenantID, arg.PlanID, arg.ID)
 	var i SalesPlanShippingCandidateRow
-	err := row.Scan(&i.ID, &i.SourcingLineID)
+	err := row.Scan(
+		&i.ID,
+		&i.SourcingLineID,
+		&i.ShippingOptionLineID,
+		&i.OptionID,
+		&i.CarrierForwarder,
+		&i.ServiceOptionName,
+		&i.ShippingEmployeeID,
+		&i.ShippingEmployeeName,
+		&i.Currency,
+		&i.ChargeBasis,
+		&i.SiTotalFreight,
+		&i.PortOfLoading,
+		&i.PortOfDischarge,
+		&i.EstimatedDeparture,
+		&i.EstimatedArrival,
+		&i.ValidUntil,
+		&i.ProductName,
+		&i.QuotedQty,
+		&i.UomCode,
+	)
 	return i, err
 }
 

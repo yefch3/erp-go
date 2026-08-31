@@ -109,14 +109,14 @@ func (s *Service) CreateProcurementPlan(ctx context.Context, tenantID int64, in 
 		selection := &in.Selections[i]
 		selection.SelectionType = strings.ToUpper(strings.TrimSpace(selection.SelectionType))
 		selection.Reason, selection.Risk = strings.TrimSpace(selection.Reason), strings.TrimSpace(selection.Risk)
-		if selection.SelectionType != "RECOMMENDED" && selection.SelectionType != "BACKUP" {
-			return ProcurementPlanView{}, apierr.Invalid("SC_PLAN_TYPE_INVALID", "方案只能标记为推荐或备选")
+		if selection.SelectionType != "RECOMMENDED" && selection.SelectionType != "BACKUP" && selection.SelectionType != "REJECTED" {
+			return ProcurementPlanView{}, apierr.Invalid("SC_PLAN_TYPE_INVALID", "报价只能标记为推荐、备选或淘汰")
 		}
 		if selection.Priority <= 0 {
 			return ProcurementPlanView{}, apierr.Invalid("SC_PLAN_PRIORITY_INVALID", "请填写大于 0 的推荐顺序")
 		}
-		if selection.SelectionType == "RECOMMENDED" && selection.Reason == "" {
-			return ProcurementPlanView{}, apierr.Invalid("SC_PLAN_REASON_REQUIRED", "推荐报价必须填写推荐原因")
+		if selection.Reason == "" {
+			return ProcurementPlanView{}, apierr.Invalid("SC_PLAN_REASON_REQUIRED", "每项经理判断都必须填写原因")
 		}
 		if selectedQuotes[selection.SupplierQuoteLineID] {
 			return ProcurementPlanView{}, apierr.Invalid("SC_PLAN_DUPLICATE_QUOTE", "同一报价不能在统一方案中重复选择")

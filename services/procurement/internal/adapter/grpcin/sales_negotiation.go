@@ -16,14 +16,37 @@ func salesPlan(view app.SalesPlanView) *prv1.SalesPlan {
 		items = append(items, &prv1.SalesPlanItem{Id: row.ID, SourcingLineId: row.SourcingLineID,
 			ProcurementPlanItemId: row.ProcurementPlanItemID, ShippingPlanItemId: row.ShippingPlanItemID,
 			OptionType: row.OptionType, Priority: row.Priority, ProductName: row.ProductName,
-			QuotedQty: row.QuotedQty, UomCode: row.UomCode, CustomerCurrency: row.CustomerCurrency,
-			CustomerUnitPrice: row.CustomerUnitPrice, PromisedDeliveryDate: row.PromisedDeliveryDate, LineNote: row.LineNote})
+			QuotedQty: row.SpiQuotedQty, UomCode: row.UomCode, CustomerCurrency: row.CustomerCurrency,
+			CustomerUnitPrice: row.SpiCustomerUnitPrice, PromisedDeliveryDate: row.PromisedDeliveryDate, LineNote: row.LineNote,
+			SupplierId: row.SupplierID, SupplierName: row.SupplierName, FactoryId: row.FactoryID,
+			FactoryName: row.FactoryName, PaymentTerms: row.PaymentTerms, Incoterm: row.Incoterm,
+			SupplierValidUntil: row.SupplierValidUntil, ManagerSelectionType: row.ManagerSelectionType,
+			ManagerReason: row.ManagerReason, ManagerRisk: row.ManagerRisk})
+	}
+	shippingOptions := make([]*prv1.SalesShippingOption, 0, len(view.ShippingOptions))
+	for _, option := range view.ShippingOptions {
+		h := option.Header
+		lines := make([]*prv1.SalesShippingOptionLine, 0, len(option.Lines))
+		for _, line := range option.Lines {
+			lines = append(lines, &prv1.SalesShippingOptionLine{Id: line.ID, SourcingLineId: line.SourcingLineID,
+				ShippingPlanItemId: line.ShippingPlanItemID, ShippingOptionLineId: line.ShippingOptionLineID, ProductName: line.ProductName,
+				QuotedQty: line.QuotedQty, UomCode: line.UomCode})
+		}
+		shippingOptions = append(shippingOptions, &prv1.SalesShippingOption{Id: h.ID,
+			ShippingOptionId: h.ShippingOptionID, CarrierForwarder: h.CarrierForwarder,
+			ServiceOptionName: h.ServiceOptionName, ShippingEmployeeId: h.ShippingEmployeeID,
+			ShippingEmployeeName: h.ShippingEmployeeName, CustomerCurrency: h.CustomerCurrency,
+			CustomerFreightAmount: h.CustomerFreightAmount, ChargeBasis: h.ChargeBasis,
+			PortOfLoading: h.PortOfLoading, PortOfDischarge: h.PortOfDischarge,
+			EstimatedDeparture: h.EstimatedDeparture, EstimatedArrival: h.EstimatedArrival,
+			ValidUntil: h.ValidUntil, CustomerNote: h.CustomerNote, Lines: lines})
 	}
 	return &prv1.SalesPlan{Id: h.ID, CaseId: h.CaseID, PlanNo: h.PlanNo, VersionNo: h.VersionNo,
 		RequirementVersionNo: h.RequirementVersionNo, ProcurementPlanId: h.ProcurementPlanID,
 		ShippingPlanId: h.ShippingPlanID, Status: h.Status, ValidUntil: h.ValidUntil,
 		CustomerNote: h.CustomerNote, InternalNote: h.InternalNote, CreatedBy: h.CreatedBy,
-		CreatedByName: h.CreatedByName, PresentedAt: ts(h.PresentedAt), CreatedAt: ts(h.CreatedAt), Items: items}
+		CreatedByName: h.CreatedByName, PresentedAt: ts(h.PresentedAt), CreatedAt: ts(h.CreatedAt), Items: items,
+		ShippingOptions: shippingOptions}
 }
 
 func customerFeedback(row store.ListCustomerFeedbackRow) *prv1.CustomerFeedback {
@@ -62,12 +85,28 @@ func customerSelection(view app.CustomerSelectionView) *prv1.CustomerSelection {
 			SupplierQuoteLineId: row.SupplierQuoteLineID, ShippingPlanItemId: row.ShippingPlanItemID,
 			ShippingOptionLineId: row.ShippingOptionLineID, ProductName: row.ProductName,
 			ConfirmedQty: row.ConfirmedQty, UomCode: row.UomCode, CustomerCurrency: row.CustomerCurrency,
-			CustomerUnitPrice: row.CustomerUnitPrice, PromisedDeliveryDate: row.PromisedDeliveryDate, LineNote: row.LineNote})
+			CustomerUnitPrice: row.CustomerUnitPrice, PromisedDeliveryDate: row.PromisedDeliveryDate, LineNote: row.LineNote,
+			SupplierId: row.SupplierID, SupplierName: row.SupplierName, FactoryId: row.FactoryID,
+			FactoryName: row.FactoryName, ShipmentGroupKey: row.ShipmentGroupKey})
+	}
+	shipments := make([]*prv1.CustomerSelectionShipment, 0, len(view.Shipments))
+	for _, shipment := range view.Shipments {
+		row := shipment.Header
+		shipments = append(shipments, &prv1.CustomerSelectionShipment{Id: row.ID,
+			SalesShippingOptionId: row.SalesShippingOptionID, ShippingOptionId: row.ShippingOptionID,
+			ShipmentGroupKey: row.ShipmentGroupKey, CarrierForwarder: row.CarrierForwarder,
+			ServiceOptionName: row.ServiceOptionName, ShippingEmployeeId: row.ShippingEmployeeID,
+			ShippingEmployeeName: row.ShippingEmployeeName, CustomerCurrency: row.CustomerCurrency,
+			CustomerFreightAmount: row.CustomerFreightAmount, ChargeBasis: row.ChargeBasis,
+			PortOfLoading: row.PortOfLoading, PortOfDischarge: row.PortOfDischarge,
+			EstimatedDeparture: row.EstimatedDeparture, EstimatedArrival: row.EstimatedArrival,
+			ValidUntil: row.ValidUntil, CustomerNote: row.CustomerNote, SelectionItemIds: shipment.SelectionItemIDs})
 	}
 	tasks := make([]*prv1.FinalRecheckTask, 0, len(view.Tasks))
 	for _, row := range view.Tasks {
 		tasks = append(tasks, &prv1.FinalRecheckTask{Id: row.ID, SelectionItemId: row.SelectionItemID,
-			TaskDomain: row.TaskDomain, ProcurementReworkId: row.ProcurementReworkID,
+			SelectionShipmentId: row.SelectionShipmentID,
+			TaskDomain:          row.TaskDomain, ProcurementReworkId: row.ProcurementReworkID,
 			ShippingReworkId: row.ShippingReworkID, Status: row.Status, ResolvedAt: row.ResolvedAt})
 	}
 	return &prv1.CustomerSelection{Id: h.ID, CaseId: h.CaseID, SalesPlanId: h.SalesPlanID,
@@ -75,7 +114,7 @@ func customerSelection(view app.CustomerSelectionView) *prv1.CustomerSelection {
 		Status: h.Status, CustomerContact: h.CustomerContact, ConfirmationNote: h.ConfirmationNote,
 		CustomerConfirmedAt: ts(h.CustomerConfirmedAt), CreatedBy: h.CreatedBy, CreatedByName: h.CreatedByName,
 		CreatedAt: ts(h.CreatedAt), FinalRecheckedAt: h.FinalRecheckedAt, InvalidatedAt: h.InvalidatedAt,
-		InvalidatedReason: h.InvalidatedReason, Items: items, RecheckTasks: tasks}
+		InvalidatedReason: h.InvalidatedReason, Items: items, Shipments: shipments, RecheckTasks: tasks}
 }
 
 func (h *SourcingHandler) CreateSalesPlan(ctx context.Context, req *prv1.CreateSalesPlanRequest) (*prv1.CreateSalesPlanResponse, error) {
@@ -87,6 +126,11 @@ func (h *SourcingHandler) CreateSalesPlan(ctx context.Context, req *prv1.CreateS
 			ProcurementPlanItemID: row.GetProcurementPlanItemId(), ShippingPlanItemID: row.GetShippingPlanItemId(),
 			OptionType: row.GetOptionType(), Priority: row.GetPriority(), CustomerCurrency: row.GetCustomerCurrency(),
 			CustomerUnitPrice: row.GetCustomerUnitPrice(), PromisedDeliveryDate: row.GetPromisedDeliveryDate(), LineNote: row.GetLineNote()})
+	}
+	for _, row := range req.GetShippingOptions() {
+		in.ShippingOptions = append(in.ShippingOptions, app.SalesShippingOptionInput{
+			ShippingPlanItemIDs: row.GetShippingPlanItemIds(), CustomerCurrency: row.GetCustomerCurrency(),
+			CustomerFreightAmount: row.GetCustomerFreightAmount(), CustomerNote: row.GetCustomerNote()})
 	}
 	view, err := h.svc.CreateSalesPlan(ctx, grpcx.TenantID(ctx), in, sourcingOperator(ctx))
 	if err != nil {
@@ -185,10 +229,15 @@ func (h *SourcingHandler) ResolveShippingRework(ctx context.Context, req *prv1.R
 }
 
 func (h *SourcingHandler) ConfirmCustomerSelection(ctx context.Context, req *prv1.ConfirmCustomerSelectionRequest) (*prv1.ConfirmCustomerSelectionResponse, error) {
-	view, err := h.svc.ConfirmCustomerSelection(ctx, grpcx.TenantID(ctx), app.ConfirmCustomerSelectionInput{
+	in := app.ConfirmCustomerSelectionInput{
 		CaseID: req.GetCaseId(), SalesPlanID: req.GetSalesPlanId(), SalesPlanItemIDs: req.GetSalesPlanItemIds(),
 		CustomerContact: req.GetCustomerContact(), ConfirmationNote: req.GetConfirmationNote(),
-		CustomerConfirmedAt: req.GetCustomerConfirmedAt()}, sourcingOperator(ctx))
+		CustomerConfirmedAt: req.GetCustomerConfirmedAt()}
+	for _, row := range req.GetShipmentChoices() {
+		in.ShipmentChoices = append(in.ShipmentChoices, app.CustomerShipmentChoiceInput{
+			ShipmentGroupKey: row.GetShipmentGroupKey(), SalesShippingOptionID: row.GetSalesShippingOptionId()})
+	}
+	view, err := h.svc.ConfirmCustomerSelection(ctx, grpcx.TenantID(ctx), in, sourcingOperator(ctx))
 	if err != nil {
 		return nil, err
 	}

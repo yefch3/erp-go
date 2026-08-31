@@ -506,7 +506,7 @@ func sourcingShippingPlan(view app.ShippingPlanView) *prv1.SourcingShippingPlan 
 	items := make([]*prv1.SourcingShippingPlanItem, 0, len(view.Items))
 	for _, row := range view.Items {
 		items = append(items, &prv1.SourcingShippingPlanItem{Id: row.ID, SourcingLineId: row.SourcingLineID,
-			ShippingOptionLineId: row.ShippingOptionLineID, SelectionType: row.SelectionType, Priority: row.Priority,
+			ShippingOptionLineId: row.ShippingOptionLineID, ShippingOptionId: row.ShippingOptionID, SelectionType: row.SelectionType, Priority: row.Priority,
 			Reason: row.Reason, Risk: row.Risk, CarrierForwarder: row.CarrierForwarder, ServiceOptionName: row.ServiceOptionName,
 			ShippingEmployeeId: row.ShippingEmployeeID, ShippingEmployeeName: row.ShippingEmployeeName,
 			ProductName: row.ProductName, Currency: row.Currency, ChargeBasis: row.ChargeBasis,
