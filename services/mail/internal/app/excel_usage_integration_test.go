@@ -9,6 +9,8 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/mail/internal/store"
 )
@@ -104,7 +106,14 @@ func TestExcelUsageAccounting(t *testing.T) {
 	}()
 
 	const alice, bob = 501, 502
-	month := time.Now().UTC().Format("2006-01")
+	// 月份问**数据库**，不用 Go 的 UTC 时钟。
+	//
+	// 这些行的 created_at 是数据库的 now()，而查询按数据库的
+	// date_trunc('month', created_at) 分组——两边都活在数据库的时区里。
+	// 拿 Go 的 UTC 当月去筛，只要数据库时区不是 UTC，每个月的最后几个小时
+	// 就会错开一个月：行落在 9 月，筛的是 8 月，一条都命中不了。
+	// 2026-08-31 22:58 UTC 的 CI 就是这么红的。
+	month := dbCurrentMonth(t, ctx, pool)
 
 	// 一次任务：id 和它的归属人。
 	mkJob := func(owner int64, status string) int64 {
@@ -215,4 +224,20 @@ func TestExcelUsageAccounting(t *testing.T) {
 	if cols != 0 {
 		t.Fatal("库里不该存金额：token 是事实，钱是判断，判断会过期")
 	}
+}
+
+// dbCurrentMonth 问数据库「现在是哪个月」。
+//
+// 用它而不是 time.Now().UTC()：这套账目的月份口径**全部**由数据库定
+// （created_at 是 now()，分组是 date_trunc('month', created_at)，
+// ExcelQuota.CurrentMonth 也是数据库算的）。测试里另起一个 Go 的 UTC 时钟，
+// 等于凭空多了一个口径——平时两者恰好相同，月末最后几个小时就分家。
+func dbCurrentMonth(t *testing.T, ctx context.Context, pool *pgxpool.Pool) string {
+	t.Helper()
+	var m string
+	if err := pool.QueryRow(ctx,
+		"SELECT to_char(date_trunc('month', now()), 'YYYY-MM')").Scan(&m); err != nil {
+		t.Fatal(err)
+	}
+	return m
 }
