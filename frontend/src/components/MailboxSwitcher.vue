@@ -9,31 +9,53 @@
   <div v-if="boxes.length > 1 || canAdd" class="rail-scope">
     <div class="rail-label">{{ t('mailGate.emailLabel') }}</div>
 
-    <button
+    <!-- 一行两个动作：切过去，和设为默认。所以是并排两个按钮，不是一个
+         按钮里套另一个——嵌套的可点击元素在 HTML 里是非法的，浏览器会把
+         内层拆出去，而键盘和读屏软件对拆完的结果各有各的理解。 -->
+    <div
       v-for="b in boxes"
       :key="b.id"
-      class="mbox"
+      class="mbox-row"
       :class="{ on: modelValue === b.id }"
-      type="button"
-      :title="b.email"
-      @click="emit('update:modelValue', b.id)"
     >
-      <span class="mbox-dot" :class="{ bad: !!b.lastError }" />
-      <span class="mbox-name">{{ b.email }}</span>
-      <span v-if="b.isDefault" class="mbox-tag">{{ t('mailGate.isDefault') }}</span>
-      <!-- 设为默认只在非默认的那几行上出现，而且要点两次才生效
-           （el-popconfirm）：它改的是"以后写信从哪个地址发出去"，
-           而客户看到的发件人跟着变。 -->
+      <button
+        class="mbox"
+        type="button"
+        :title="b.email"
+        :aria-current="modelValue === b.id ? 'true' : undefined"
+        @click="emit('update:modelValue', b.id)"
+      >
+        <span
+          class="mbox-dot"
+          :class="{ bad: !!b.lastError }"
+          :title="b.lastError || undefined"
+        />
+        <span class="mbox-name">{{ b.email }}</span>
+        <span v-if="b.isDefault" class="mbox-tag">{{ t('mailGate.isDefault') }}</span>
+      </button>
+      <!-- 设为默认只在非默认的那几行上出现，而且要点两次才生效：它改的是
+           「以后写信从哪个地址发出去」，而客户看到的发件人跟着变。
+
+           是 el-button 而不是一个透明的 span：span 上的透明度动画在触屏上
+           没有 hover 这回事，那颗看不见的星星会一直盖在那儿吃掉点击；
+           而且 span 用键盘 tab 不到。 -->
       <el-popconfirm
-        v-else
+        v-if="!b.isDefault"
         :title="t('mailGate.setDefault')"
-        @confirm.stop="setDefault(b)"
+        @confirm="setDefault(b)"
       >
         <template #reference>
-          <span class="mbox-star" @click.stop>☆</span>
+          <el-button
+            link
+            class="mbox-star"
+            :aria-label="t('mailGate.setDefault')"
+            :title="t('mailGate.setDefault')"
+          >
+            ☆
+          </el-button>
         </template>
       </el-popconfirm>
-    </button>
+    </div>
 
     <el-button v-if="canAdd" link class="mbox-add" @click="adding = true">
       ＋ {{ t('mailGate.addMailbox') }}
@@ -115,11 +137,27 @@ defineExpose({ reload: load })
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
+.mbox-row {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+.mbox-row:hover {
+  background: var(--el-fill-color-light);
+}
+.mbox-row.on {
+  background: var(--el-color-primary-light-9);
+}
+.mbox-row.on .mbox {
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
 .mbox {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 6px 8px;
   border: none;
   border-radius: 6px;
@@ -129,13 +167,9 @@ defineExpose({ reload: load })
   cursor: pointer;
   text-align: left;
 }
-.mbox:hover {
-  background: var(--el-fill-color-light);
-}
-.mbox.on {
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
-  font-weight: 600;
+.mbox:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
 }
 .mbox-dot {
   flex: none;
@@ -160,15 +194,18 @@ defineExpose({ reload: load })
   font-size: 11px;
   color: var(--el-text-color-secondary);
 }
+/* 淡出而不是消失：opacity 0 的元素照样占位、照样可点，在触屏上就是一颗
+   看不见的按钮盖在那儿。所以未激活时是浅色而不是透明，指针设备上悬停才
+   变深——键盘 tab 过去也一样看得见。 */
 .mbox-star {
   flex: none;
+  padding: 0 8px;
   font-size: 13px;
   color: var(--el-text-color-placeholder);
-  opacity: 0;
-  transition: opacity 0.15s;
 }
-.mbox:hover .mbox-star {
-  opacity: 1;
+.mbox-row:hover .mbox-star,
+.mbox-star:focus-visible {
+  color: var(--el-color-primary);
 }
 .mbox-add {
   margin-top: 4px;

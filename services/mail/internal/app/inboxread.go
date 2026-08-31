@@ -191,7 +191,7 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 	} else {
 		slow, err := s.q.ListInboundThreads(ctx, store.ListInboundThreadsParams{
 			TenantID: tenantID, OwnerID: ownerID, AccountID: acct,
-			Keyword:  keyword, View: view,
+			Keyword: keyword, View: view,
 			CursorAt: at, CursorID: id, RowLimit: size,
 		})
 		if err != nil {
@@ -203,13 +203,15 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 		// they show.
 		if total, err = s.q.CountInboundThreads(ctx, store.CountInboundThreadsParams{
 			TenantID: tenantID, OwnerID: ownerID, AccountID: acct,
-			Keyword:  keyword, View: view,
+			Keyword: keyword, View: view,
 		}); err != nil {
 			return InboundPage{}, err
 		}
 	}
+	// 徽标和列表是同一个口径：切到哪个箱，数的就是哪个箱。不然切过去看着
+	// 五封信而徽标写 12，那个数字指的是两个箱加起来。
 	unread, err := s.q.CountUnread(ctx, store.CountUnreadParams{
-		TenantID: tenantID, OwnerID: ownerID,
+		TenantID: tenantID, OwnerID: ownerID, AccountID: acct,
 	})
 	if err != nil {
 		unread = 0

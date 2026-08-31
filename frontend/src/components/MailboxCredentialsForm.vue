@@ -13,6 +13,7 @@
       class="cred-field"
       autocomplete="username"
       :placeholder="t('mailGate.emailPlaceholder')"
+      @input="touched = true"
       @blur="guessProvider"
       @keyup.enter="submit"
     />
@@ -69,7 +70,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { http, mailHostRequest, quietErrors } from '../api'
 import {
@@ -89,7 +90,21 @@ const emit = defineEmits<{ bound: [{ token: string; accountId: number; email: st
 const { t } = useI18n()
 const providers = MAIL_PROVIDERS
 
+// props 是异步来的（父组件先渲染、再去取「我的信箱」），所以要 watch，
+// 不能只在初始化时读一次——只读一次的话，取回来的已绑地址会被丢掉，
+// 输入框里留着的是一个空串或者过时的建议值。
+// 人已经开始打字之后就不再覆盖：那是他的输入，不是我们的建议。
 const email = ref(props.initialEmail ?? '')
+const touched = ref(false)
+watch(
+  () => props.initialEmail,
+  (now) => {
+    if (!touched.value && now) {
+      email.value = now
+      guessProvider()
+    }
+  },
+)
 const provider = ref('')
 const secret = ref('')
 const smtpHost = ref('')
@@ -104,17 +119,34 @@ const hint = computed(() => {
   return providerByCode(provider.value)?.hint ?? ''
 })
 
+// 端口决定加密方式，别写死。
+//
+// 587 和 143 是「先明文连上，再 STARTTLS 升级」，465/993/994 是「一上来
+// 就是 TLS」。写死 SSL 的话，选了 587 的人必然连不上，而报出来的是一句
+// 和「授权码错了」长得一样的失败。
+function securityForPort(port: number): string {
+  return port === 587 || port === 143 ? 'STARTTLS' : 'SSL'
+}
+
 // 填完地址就替他挑一家。只对个人邮箱有用——企业邮用公司自己的域名，
 // 从 me@sunrise.com 看不出托管在腾讯还是 263，那种情况留空，服务端会落回
 // 这家公司自己配的那套。
+//
+// **改了域名要跟着改。** 只在 provider 为空时才猜的话，先填 me@163.com
+// （自动选中 163）再改成 me@qq.com，服务商还停在 163——于是拿 QQ 的授权码
+// 去登 imap.163.com，失败信息指向"授权码错了"。所以记住上一次是**猜**出来
+// 的还是人**挑**的：猜出来的可以再猜，人挑的不动。
+const pickedByHand = ref(false)
+
 function guessProvider() {
-  if (provider.value) return
+  if (pickedByHand.value) return
   const p = providerForAddress(email.value.trim().toLowerCase())
-  if (p) provider.value = p.code
+  provider.value = p?.code ?? ''
 }
 
 function onProviderChange(code: string) {
   error.value = ''
+  pickedByHand.value = true
   // 挑到一家已经关掉密码登录的（Outlook），当场说清楚，别让人对着
   // 「授权码错误」猜半天。
   const p = providerByCode(code)
@@ -149,10 +181,10 @@ async function submit() {
           ? {
               smtpHost: smtpHost.value.trim(),
               smtpPort: smtpPort.value,
-              smtpSecurity: 'SSL',
+              smtpSecurity: securityForPort(smtpPort.value),
               imapHost: imapHost.value.trim(),
               imapPort: imapPort.value,
-              imapSecurity: 'SSL',
+              imapSecurity: securityForPort(imapPort.value),
             }
           : {}),
       },

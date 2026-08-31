@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/sgao19/erp-go/services/mail/internal/store"
@@ -104,19 +103,21 @@ func (s *Service) SaveMailHost(ctx context.Context, tenantID int64, in MailHostS
 	}); err != nil {
 		return err
 	}
-	// 刷到该租户所有信箱行上。
+	// **不再刷到已绑定的信箱上。**
 	//
-	// 00042 把收发服务器搬到了 mail_accounts，而这个页面这一版还在写
-	// mail_hosts——不同步的话，管理员改完 SMTP 地址会发现「改了没生效」，
-	// 而且哪儿都不报错，因为发信读的已经是账号行了。
+	// 00042 刚把主机搬到 mail_accounts 那会儿，这里有一句
+	// SyncAccountHostsFromTenant：那时每个人只有一个箱、而且只可能是公司
+	// 那一家，所以"改了公司配置就刷给所有人"和"改了自己的配置"是同一件事。
 	//
-	// 第二期这个页面改成按信箱各自配置之后，这一段连同 SyncAccountHostsFromTenant
-	// 一起删掉。
-	n, err := s.q.SyncAccountHostsFromTenant(ctx, tenantID)
-	if err != nil {
-		return fmt.Errorf("收发服务器已保存，但没能同步到已绑定的信箱上：%w", err)
-	}
-	s.log.Info("mail host settings pushed to bound mailboxes", "tenant", tenantID, "accounts", n)
+	// 一个人能绑别家服务商的信箱之后，那一句就成了**破坏性**的：管理员在
+	// 这个页面点一次保存，全公司每个人的 Gmail、163、QQ 信箱的服务器地址
+	// 会被一起刷成公司那一套。之后那些箱收发全停，报的是认证失败，
+	// 而管理员刚做的事和这个结果之间没有任何提示连着。
+	//
+	// mail_hosts 从此只剩一个角色：**新建信箱时的默认值模板**——认不出
+	// 服务商时 resolveHosts 落回它，UpsertMailAccountShell 插入时种下它。
+	// 改它只影响以后新绑的箱，不动已经绑好的。
+	s.log.Info("mail host settings saved (template for new mailboxes only)", "tenant", tenantID)
 	return nil
 }
 

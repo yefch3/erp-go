@@ -76,7 +76,18 @@ func (s *Server) startGoogleOAuth(w http.ResponseWriter, r *http.Request) {
 	}
 	state := hex.EncodeToString(b)
 	op, _ := grpcx.OperatorFromContext(r.Context())
-	if err := s.Unlock.StoreOAuthState(r.Context(), state, op.TenantID, op.EmployeeID, op.Email); err != nil {
+	// **要绑哪一个 Google 账号，由调用方说，不再默认成 ERP 登录地址。**
+	//
+	// 从前这里存的是 op.Email，回调时拿它比对，对不上就拒——那实现的是
+	// 「绑的必须是登录那个箱」。新口径正相反：ERP 账号是 263 的人，
+	// 邮箱这边可以只绑 Gmail，而他的登录地址永远不会等于任何一个 Gmail
+	// 地址，所以那条比对会把这件事**完全挡死**。
+	//
+	// 参数留着，因为「重新授权某一个已经绑好的箱」仍然需要它：Google 每次
+	// 都弹账号选择器，挑错一个就会把另一个箱的凭据覆盖掉，而两者长得
+	// 一模一样。前端在"这个箱的授权失效了，去续"那条路上会带上它。
+	want := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("email")))
+	if err := s.Unlock.StoreOAuthState(r.Context(), state, op.TenantID, op.EmployeeID, want); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "OAUTH_STATE", "无法保存校验参数")
 		return
 	}
@@ -98,12 +109,13 @@ func (s *Server) startGoogleOAuth(w http.ResponseWriter, r *http.Request) {
 		// something to do by accident, and there is no longer a separate
 		// "switch account" link — this is it.
 		"prompt": {"select_account consent"},
-		// ...and the right account is pre-selected, because only one is
-		// acceptable. The chooser is there so the person sees which mailbox
-		// they are opening, not so they can pick a different one; picking a
-		// different one is refused on the way back.
-		"login_hint": {op.Email},
-		"state":      {state},
+		"state":  {state},
+	}
+	// login_hint 只在"续某一个已绑的箱"时给。给了 ERP 登录地址的话，
+	// 一个想绑私人 Gmail 的人会看到选择器预选着他的公司地址——而那个
+	// 地址根本不是 Google 账号。
+	if want != "" {
+		q.Set("login_hint", want)
 	}
 	writeUnlockJSON(w, map[string]any{
 		"url": "https://accounts.google.com/o/oauth2/v2/auth?" + q.Encode(),

@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/sgao19/erp-go/pkg/pgdb"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/services/mail/internal/store"
@@ -173,38 +176,58 @@ func (s *Service) storeBinding(
 	if s.secrets == nil {
 		return BindResult{}, ErrNoKey
 	}
-	// 冲突键是**地址**：同一个地址重填是更新，换一个地址是新增一个信箱。
-	// 属于别人的地址整句既不插也不更，RETURNING 空手而归。
 	before, beforeErr := s.q.GetMailAccountByEmail(ctx, store.GetMailAccountByEmailParams{
 		TenantID: tenantID, Email: email,
 	})
-	id, err := s.q.UpsertMailAccountShell(ctx, store.UpsertMailAccountShellParams{
-		TenantID: tenantID, EmployeeID: employeeID, Email: email, Username: username,
+
+	// **四句写在一个事务里。**
+	//
+	// 建行、写主机、写密文、盖绿勾——中间任何一句失败，留下的都是一个
+	// 半成品：一个没有密文的信箱（同步每轮都失败）、或者一个没有主机的
+	// 信箱（发信和收信全停）。而这一步是「验证成功之后」，人看到的是
+	// 「登录成功」，不会有人回来重试。
+	var id int64
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		// 冲突键是**地址**：同一个地址重填是更新，换一个地址是新增一个信箱。
+		// 属于别人的地址整句既不插也不更，RETURNING 空手而归。
+		newID, err := q.UpsertMailAccountShell(ctx, store.UpsertMailAccountShellParams{
+			TenantID: tenantID, EmployeeID: employeeID, Email: email, Username: username,
+		})
+		if err != nil {
+			return translateMailboxTaken(err)
+		}
+		id = newID
+		if err := q.SetMailAccountHosts(ctx, store.SetMailAccountHostsParams{
+			TenantID: tenantID, ID: id,
+			Domain:   hosts.Domain,
+			SmtpHost: hosts.SMTPHost, SmtpPort: hosts.SMTPPort, SmtpSecurity: hosts.SMTPSecurity,
+			ImapHost: hosts.IMAPHost, ImapPort: hosts.IMAPPort, ImapSecurity: hosts.IMAPSecurity,
+		}); err != nil {
+			return err
+		}
+		// 密文的 AAD 绑定行 id，所以只能拿到 id 之后再封。
+		blob, err := s.secrets.Seal([]byte(secret), AccountAAD(tenantID, id))
+		if err != nil {
+			return err
+		}
+		if err := q.SetMailAccountSecret(ctx, store.SetMailAccountSecretParams{
+			TenantID: tenantID, ID: id, SecretEnc: blob, KeyVersion: int32(s.secrets.Version()),
+		}); err != nil {
+			return err
+		}
+		return q.MarkMailAccountVerified(ctx, store.MarkMailAccountVerifiedParams{
+			TenantID: tenantID, ID: id,
+		})
 	})
 	if err != nil {
-		err = translateMailboxTaken(err)
+		// 留痕在事务**外面**：事务回滚了，而"有人试过、失败了"这件事必须
+		// 留下来。写在里面的话，失败的那一批痕迹会跟着一起回滚——恰好是
+		// 最该留的那种。
 		s.recordBinding(ctx, tenantID, employeeID, 0, email, provider,
 			bindActionFailed, err.Error())
 		return BindResult{}, err
 	}
-	if err := s.q.SetMailAccountHosts(ctx, store.SetMailAccountHostsParams{
-		TenantID: tenantID, ID: id,
-		Domain:   hosts.Domain,
-		SmtpHost: hosts.SMTPHost, SmtpPort: hosts.SMTPPort, SmtpSecurity: hosts.SMTPSecurity,
-		ImapHost: hosts.IMAPHost, ImapPort: hosts.IMAPPort, ImapSecurity: hosts.IMAPSecurity,
-	}); err != nil {
-		return BindResult{}, err
-	}
-	blob, err := s.secrets.Seal([]byte(secret), AccountAAD(tenantID, id))
-	if err != nil {
-		return BindResult{}, err
-	}
-	if err := s.q.SetMailAccountSecret(ctx, store.SetMailAccountSecretParams{
-		TenantID: tenantID, ID: id, SecretEnc: blob, KeyVersion: int32(s.secrets.Version()),
-	}); err != nil {
-		return BindResult{}, err
-	}
-	s.markVerified(ctx, tenantID, id)
 
 	action := bindActionBind
 	if beforeErr == nil && before.ID == id {
@@ -231,11 +254,19 @@ func (s *Service) resolveHosts(
 	code := strings.ToLower(strings.TrimSpace(in.Provider))
 
 	if code == ProviderCodeOther {
-		if err := validateCustomHost(in.IMAPHost, in.IMAPPort); err != nil {
-			return MailProvider{}, err
-		}
-		if err := validateCustomHost(in.SMTPHost, in.SMTPPort); err != nil {
-			return MailProvider{}, err
+		for _, h := range []struct {
+			host string
+			port int32
+		}{{in.IMAPHost, in.IMAPPort}, {in.SMTPHost, in.SMTPPort}} {
+			if err := validateCustomHost(h.host, h.port); err != nil {
+				return MailProvider{}, err
+			}
+			// 主机必须属于地址那个域。见 hostServesDomain——这一条挡的是
+			// 「填一个别人的地址 + 一台自己控制的服务器」那种冒名，而不是
+			// 内网。
+			if err := hostServesDomain(h.host, email); err != nil {
+				return MailProvider{}, err
+			}
 		}
 		return MailProvider{
 			Domain:   domainOf(email),
@@ -304,36 +335,52 @@ func normalizeSecurity(v string) string {
 // verifyBound 是「不输授权码」那条路：证明一个 Google 授权还活着，或者
 // 干脆告诉一个还没绑过的人没什么可验的。
 //
-// email 为空时验默认信箱。**按地址取，不按人取**——一个人有两个信箱时，
-// 按人取的那句 SQL 是 sqlc 的 :one，pgx 读到第一行就返回、不报错，于是
-// 验的可能是另一个箱，而绿勾会盖到它头上。
+// **「没什么可验的」只有一个合法依据：这个人名下一个信箱都没有。**
+//
+// 这一条是有牙的。地址交还给调用方之后，曾经有一版写成「按地址找，找不到
+// 就答未绑定」——那等于把邮箱门整个拆了：一个已经绑好信箱的人，只要发
+// {email: "随便谁的地址", secret: ""}，就会走到「未绑定，无需验证」，
+// 然后网关照样发一把解锁令牌给他，而那把令牌解的是**他自己的**信箱
+// （令牌的键是 t{租户}.e{员工}，和地址无关）。密码那道门形同虚设。
+//
+// 从前不会这样，因为地址恒等于登录地址，永远找得到他自己那一行。
+//
+// 所以现在先问「他有没有信箱」，再问「验哪一个」。指名了一个不属于他的
+// 地址是**错误**，不是免检。
 func (s *Service) verifyBound(
 	ctx context.Context, tenantID, employeeID int64, email string,
 ) (BindResult, error) {
-	const unbound = "此账号未绑定邮箱，无需验证"
-	var accountID int64
-	if email != "" {
-		got, err := s.q.GetMailAccountByEmail(ctx, store.GetMailAccountByEmailParams{
-			TenantID: tenantID, Email: email,
-		})
-		// 别人绑走的地址在这里也走「没绑过」：复验是只读的，说得再细一点
-		// 就成了「这个地址在这家公司有没有人用」的探测口。
-		if err != nil || got.EmployeeID != employeeID {
-			return BindResult{Detail: unbound}, nil
-		}
-		accountID = got.ID
-	} else {
-		id, err := s.defaultAccountIDFor(ctx, tenantID, employeeID)
-		if err != nil {
-			return BindResult{Detail: unbound}, nil
-		}
-		accountID = id
-	}
-	row, err := s.q.GetMailAccountByID(ctx, store.GetMailAccountByIDParams{
-		TenantID: tenantID, ID: accountID,
+	boxes, err := s.q.ListMailAccountsForEmployee(ctx, store.ListMailAccountsForEmployeeParams{
+		TenantID: tenantID, EmployeeID: employeeID,
 	})
-	if err != nil || row.EmployeeID != employeeID {
-		return BindResult{Detail: unbound}, nil
+	if err != nil {
+		// 读不出来时**不能**当成「没绑过」放行。这是这个函数唯一一处
+		// fail-open 会直接变成"数据库抖一下就人人拿到令牌"的地方。
+		return BindResult{}, fmt.Errorf("读取邮箱账号失败：%w", err)
+	}
+	if len(boxes) == 0 {
+		// 真的一个都没绑。给一句话和一把令牌，好让活动、草稿那几个不碰
+		// 邮件内容的页面仍然进得去——没有邮件可保护，门就不必挡在这儿。
+		return BindResult{Detail: "此账号未绑定邮箱，无需验证"}, nil
+	}
+
+	// 有信箱就必须真的验一个。指名了地址就验那个，没指名就验默认的
+	// （列表按 is_default DESC 排序，第一行就是默认）。
+	row := boxes[0]
+	if email != "" {
+		found := false
+		for _, b := range boxes {
+			if strings.EqualFold(b.Email, email) {
+				row, found = b, true
+				break
+			}
+		}
+		if !found {
+			// 措辞刻意含糊：说「不是你的信箱」而不是「这个地址属于李四」，
+			// 否则这里就成了一个探测口——拿一串地址来问，看哪个回哪句话。
+			return BindResult{}, apierr.NotFound("MAIL_NOT_YOUR_MAILBOX",
+				"这个邮箱不在你名下")
+		}
 	}
 
 	if s.mailbox == nil {
@@ -386,10 +433,12 @@ func (s *Service) recordBinding(
 	ctx context.Context, tenantID, employeeID, accountID int64,
 	email, provider, action, detail string,
 ) {
-	const maxDetail = 500
-	if len(detail) > maxDetail {
-		detail = detail[:maxDetail]
-	}
+	detail = truncateUTF8(detail, 500)
+	// 地址和代号也截：库里是 VARCHAR(320)/VARCHAR(32)，超长会让 INSERT 抛
+	// 22001，而这个函数是「尽力而为」的，抛出来只会被上面那句 Warn 吞掉
+	// ——于是一次超长地址的失败绑定**不进审计表**，而那正是最该留痕的那种。
+	email = truncateUTF8(email, 320)
+	provider = truncateUTF8(provider, 32)
 	var acct *int64
 	if accountID > 0 {
 		acct = &accountID
@@ -401,4 +450,21 @@ func (s *Service) recordBinding(
 	}); err != nil {
 		s.log.Warn("could not record mailbox binding", "employee", employeeID, "err", err)
 	}
+}
+
+// truncateUTF8 按**字符**截断，不按字节。
+//
+// 直接切字节会把一个中文切成两半，留下一个无效的 UTF-8 序列，而 Postgres
+// 的 text 列拒收无效编码（22021）。于是一句超长的中文错误信息不但没被记下，
+// 还让整条 INSERT 失败——最该留痕的那种失败，恰好是最记不下的那种。
+func truncateUTF8(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	// 从 max 往回退到一个字符边界。UTF-8 的续字节都是 10xxxxxx。
+	i := max
+	for i > 0 && !utf8.RuneStart(s[i]) {
+		i--
+	}
+	return s[:i]
 }

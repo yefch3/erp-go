@@ -174,13 +174,14 @@ var mailPorts = map[int32]bool{143: true, 465: true, 587: true, 993: true, 994: 
 
 // validateCustomHost 检查员工手填的主机。
 //
-// 挡两件事：
+// 挡三件事：
 //
 //   - **内网。** 直接写 IP 的一律拒（127.0.0.1、169.254.169.254 这类云元数据
 //     地址、10./172.16./192.168. 的内网段都在内）。只收域名，而域名会在连接
 //     时才解析——解析结果指回内网仍然可能，那一层要靠出网策略挡，这里挡的是
 //     最直接的那条路。
 //   - **非邮件端口。** 见 mailPorts。
+//   - **主机必须属于地址那个域。** 见 hostServesDomain，这一条挡的是冒名。
 func validateCustomHost(host string, port int32) error {
 	host = strings.TrimSpace(host)
 	if host == "" {
@@ -215,4 +216,48 @@ func validateCustomHost(host string, port int32) error {
 			fmt.Sprintf("端口 %d 不是常见的邮件端口，请核对服务商的说明", port))
 	}
 	return nil
+}
+
+// hostServesDomain 要求手填的主机属于要绑的那个地址的域。
+//
+// **这一条挡的是冒名，不是内网。**
+//
+// 绑定的活体证明是「拿这串授权码去登录那台服务器，成功了才算数」。挑预设
+// 服务商时这条证明是硬的：服务器是我们查表定的，能登进 imap.qq.com 就说明
+// 这个 QQ 信箱确实是他的。
+//
+// 「其他」那一档把主机也交给了调用方，于是证明塌了一半——一个人可以填
+// ceo@bigcorp.com 配上自己控制的 imap.evil.example，那台服务器对任何密码都
+// 说 yes，于是 ERP 里就出现了一个"已验证"的 ceo@bigcorp.com，同事看到的是
+// 这个人拥有它，回复会挂到它名下。
+//
+// 要求主机和地址同域，就把这条路堵回去了：他得先控制 bigcorp.com 的 DNS，
+// 而那已经等于控制那个域的邮件了。自建邮箱和小众服务商的常见形态
+// （me@newco.com + imap.newco.com / mail.newco.com）照样过。
+//
+// 比的是最后两段，不查公共后缀列表：newco.com 和 imap.newco.com 是同域，
+// 而 co.uk 那种两段就是后缀的域名会被判得比实际宽松一点点（
+// a.co.uk 和 b.co.uk 会被认成同域）。装一份 PSL 换这点精度不划算，
+// 而放宽的那一档仍然要求攻击者控制一个 co.uk 下的域名并让它的邮件服务器
+// 接受任意密码——比"随便填个主机"高出好几个数量级。
+//
+// 真的托管在别处的公司（Google Workspace、企业邮），走预设那一档，
+// 或者由管理员在「邮件主机设置」里配一次公司自己的服务器。
+func hostServesDomain(host, email string) error {
+	hd := lastTwoLabels(strings.ToLower(strings.TrimSpace(host)))
+	ad := lastTwoLabels(domainOf(email))
+	if hd == "" || ad == "" || hd != ad {
+		return apierr.Invalid("NT_MAIL_HOST_FOREIGN",
+			fmt.Sprintf("服务器地址要和邮箱是同一个域名（%s）。"+
+				"如果你的邮箱托管在别家，请在上面直接选那家服务商。", ad))
+	}
+	return nil
+}
+
+func lastTwoLabels(domain string) string {
+	parts := strings.Split(strings.TrimSuffix(domain, "."), ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[len(parts)-2] + "." + parts[len(parts)-1]
 }

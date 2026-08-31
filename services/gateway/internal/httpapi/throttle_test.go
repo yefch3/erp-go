@@ -3,6 +3,9 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,8 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
+	"github.com/sgao19/erp-go/pkg/grpcx"
 )
 
 // fakeCounter is the storage the throttle would otherwise get from Redis. The
@@ -356,11 +363,17 @@ func TestBindingAnAddressStillHasGuards(t *testing.T) {
 		t.Error("不再从登录令牌取操作人了")
 	}
 
-	// 二、限流带上目标地址。只按人计的话，五次预算可以拿去试五个**不同**
-	// 的地址——那正是地址变成可变字段之后新出现的玩法。
-	if !strings.Contains(fn, `who := fmt.Sprintf("t%d.e%d.%s"`) {
-		t.Error("限流的计费维度不再包含目标地址了——一个人的五次预算" +
-			"会变成可以撞五个不同地址")
+	// 二、**两份预算都得在**：按人的那份和按人+地址的那份。
+	//
+	// 只留按人+地址那一份是错的（第一版就是这么写的）：地址成了可变字段
+	// 之后，它等于把「一个人五次」稀释成「一个人每个地址五次」，换一串
+	// 地址就换一份预算，比原来更弱。这个预算保护的是我们服务器的 IP 在
+	// 邮件服务商那里的信誉，而那个资源是按人花的。
+	if !strings.Contains(fn, `perPerson := fmt.Sprintf("t%d.e%d"`) {
+		t.Error("按人那一份预算没了——换一串地址就能换一份新预算")
+	}
+	if !strings.Contains(fn, `perTarget := fmt.Sprintf("t%d.e%d.%s"`) {
+		t.Error("按目标地址那一份预算没了——对着同一个信箱可以一直试")
 	}
 	if !strings.Contains(fn, "throttleMailVerify") {
 		t.Error("绑定入口没有限流了")
@@ -397,4 +410,61 @@ func TestRunningOutOfAttemptsReachesTheBrowserAsTooManyRequests(t *testing.T) {
 	if !strings.Contains(string(src), "codes.ResourceExhausted: http.StatusTooManyRequests") {
 		t.Fatal("a throttled service error still surfaces as an internal error")
 	}
+}
+
+// 换一串地址换不来新预算。
+//
+// 这条是把一次审查里的探针钉下来：当时限流键只有「人 + 目标地址」，探针
+// 用二十个不同地址各试五次，**一百次真实登录全部打到了邮件服务器上**，
+// 而预算写的是「每 15 分钟五次」。地址是调用方给的，所以它一个人就能把
+// 预算乘以任意倍数——那不是收紧，是取消。
+//
+// 用假的 EmailService：这里要证的是网关的计费，不是邮件服务的判断。
+func TestChangingTheAddressDoesNotBuyMoreAttempts(t *testing.T) {
+	addr := os.Getenv("GATEWAY_TEST_REDIS")
+	if addr == "" {
+		t.Skip("set GATEWAY_TEST_REDIS")
+	}
+	stub := &rejectEveryLogin{}
+	srv := &Server{
+		Throttle: NewFailureThrottle(addr, slog.New(slog.NewTextHandler(io.Discard, nil))),
+		Emails:   stub,
+		Unlock:   NewUnlockStore(addr, time.Hour),
+	}
+	tenant, employee := time.Now().UnixNano(), int64(770001)
+
+	// 二十个不同地址，每个试五次。按人那份预算是五次，所以真正打到邮件
+	// 服务器上的应该远少于一百次。
+	for i := 0; i < 20; i++ {
+		for j := 0; j < 5; j++ {
+			w := httptest.NewRecorder()
+			body := fmt.Sprintf(`{"email":"probe%d@qq.com","secret":"x","provider":"qq"}`, i)
+			r := httptest.NewRequest("POST", "/api/mailbox/verify", strings.NewReader(body))
+			r = r.WithContext(grpcx.WithOperator(r.Context(),
+				grpcx.Operator{TenantID: tenant, EmployeeID: employee, Email: "me@qq.com"}))
+			srv.verifyMailbox(w, r)
+		}
+	}
+	// 允许一点余量：两份预算各自的窗口和计数时机不完全同步。但一百次里
+	// 打出去十次以内，和"全打出去"是两个量级。
+	if stub.calls > 10 {
+		t.Errorf("换地址换来了 %d 次真实登录，预算是每人 %d 次——"+
+			"限流键带上调用方给的地址，等于把上限乘以地址的个数",
+			stub.calls, mailVerifyMaxFailures)
+	}
+	if stub.calls == 0 {
+		t.Error("一次都没打出去，这条测试什么也没证明")
+	}
+}
+
+// rejectEveryLogin 扮演一个总是拒绝的邮件服务器：每一次都是 HostRejected，
+// 也就是"真的花掉了一次登录"，正是该扣预算的那种失败。
+type rejectEveryLogin struct {
+	mailv1.EmailServiceClient
+	calls int
+}
+
+func (v *rejectEveryLogin) VerifyMailAccess(_ context.Context, _ *mailv1.VerifyMailAccessRequest, _ ...grpc.CallOption) (*mailv1.VerifyMailAccessResponse, error) {
+	v.calls++
+	return &mailv1.VerifyMailAccessResponse{Ok: false, HostRejected: true, Detail: "authentication failed"}, nil
 }

@@ -246,10 +246,9 @@ func (s *Service) defaultAccountIDFor(ctx context.Context, tenantID, employeeID 
 // settings page can show it. Best effort: failing to record why a send failed
 // must not turn into a second failure.
 func (s *Service) RecordFailure(ctx context.Context, tenantID, accountID int64, msg string) {
-	const max = 500
-	if len(msg) > max {
-		msg = msg[:max]
-	}
+	// 按字符截，不按字节：切开一个中文会留下无效的 UTF-8，而 Postgres 的
+	// text 列拒收（22021），于是这句"记一下哪里出错了"自己也失败了。
+	msg = truncateUTF8(msg, 500)
 	if err := s.q.MarkMailAccountFailed(ctx, store.MarkMailAccountFailedParams{
 		TenantID: tenantID, ID: accountID, LastError: msg,
 	}); err != nil {
@@ -269,4 +268,3 @@ func (s *Service) clearFailure(ctx context.Context, tenantID, accountID int64) {
 		s.log.Warn("could not clear mailbox failure", "account", accountID, "err", err)
 	}
 }
-

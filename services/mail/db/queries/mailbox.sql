@@ -274,22 +274,6 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- 发信」的答案，不能是随便的 id 序。
 ORDER BY is_default DESC, id;
 
--- name: SyncAccountHostsFromTenant :execrows
--- 把租户级的收发服务器配置刷到该租户所有账号行上。
---
--- 只在这一期存在。00042 把主机搬到了账号上，而设置页这一版还在写
--- mail_hosts——不同步的话，管理员改完 SMTP 地址会发现「改了没生效」，
--- 而且没有任何报错。第二期设置页改成按信箱之后，这句和它的调用点一起删。
-UPDATE mail_accounts a
-   SET domain = h.domain,
-       smtp_host = h.smtp_host, smtp_port = h.smtp_port, smtp_security = h.smtp_security,
-       imap_host = h.imap_host, imap_port = h.imap_port, imap_security = h.imap_security,
-       hourly_quota = h.hourly_quota, daily_quota = h.daily_quota,
-       updated_at = now()
-  FROM mail_hosts h
- WHERE h.tenant_id = a.tenant_id
-   AND a.tenant_id = sqlc.arg(tenant_id)::bigint;
-
 -- name: BumpSendCounter :one
 -- Counts one accepted message into the current hour and returns the new
 -- total. The caller compares it against the quota; going over is possible
@@ -667,9 +651,15 @@ ORDER BY id;
 -- name: CountUnread :one
 -- The badge counts what the inbox proper shows: archived and trashed mail
 -- has been dealt with, so it stops demanding attention.
+--
+-- **也按信箱算。** 徽标就贴在收件箱那一行上，而列表已经按信箱过滤了——
+-- 不带 account_id 的话，切到 A 箱看着五封信，徽标写着 12，那个数字指的是
+-- A+B 两个箱。数字和它旁边的列表说的不是一回事，比没有数字更糟。
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
+  AND (sqlc.narg(account_id)::bigint IS NULL
+       OR account_id = sqlc.narg(account_id)::bigint)
   AND (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
   AND NOT is_bounce AND NOT is_read
   AND archived_at IS NULL AND deleted_at IS NULL;
@@ -707,6 +697,18 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- ever sees one of these.
 
 -- name: ListSentUnified :many
+-- **这一句还没有按信箱分，是有意留到第三期的。**
+--
+-- 它合并两个来源：email_inbound 里 folder='SENT' 的那些（邮件服务器自己
+-- 存的副本，有 account_id），和 email_messages 里我们发出去而服务器没留
+-- 副本的那些（**没有 account_id**——「这封信从哪个信箱发出去的」今天根本
+-- 答不上来，出站队列只记 sender_id）。
+--
+-- 只给前一半加筛选会更糟：切到 Gmail 箱，看到的是 Gmail 的已发送 + 全部
+-- 的 ERP 发送记录，一半对一半不对，而且看不出哪一半。不筛选至少是一句
+-- 说得清的话——「你发出去的信，全部」，和改动之前一样。
+--
+-- 第三期给 email_messages 加上 account_id 之后，两条腿一起加筛选。
 WITH host AS (
     SELECT 'HOST'::text AS kind, i.id, i.to_email, coalesce(m.to_name, '') AS to_name,
            i.subject, i.snippet,

@@ -1350,8 +1350,16 @@ function isOwnMail(it: { direction: string; counterparty: string }) {
 // 信箱清单变了（切换器加载完、新绑了一个、换了默认）。
 function onMailboxesChanged(boxes: { id: number; email: string; isDefault: boolean }[]) {
   myAddresses.value = new Set(boxes.map((b) => b.email.trim().toLowerCase()).filter(Boolean))
+  if (currentAccount.value || !boxes.length) return
   // 还没选过就落在默认那个上——服务端按「默认排最前」返回，所以取第一个。
-  if (!currentAccount.value && boxes.length) currentAccount.value = boxes[0].id
+  //
+  // **必须跟着重新拉一次列表。** 信箱清单是异步来的，而列表在它之前就已经
+  // 带着 accountId=0 发出去了——那一次拉的是"全部信箱合并"。左侧此刻高亮
+  // 着默认箱，右边列着两个箱的信，两者对不上，而且**不会自己纠正**：下面
+  // 那个 watch 要求 before 有值才动，0 → id 这一跳被它跳过了。
+  currentAccount.value = boxes[0].id
+  load()
+  refreshUnread()
 }
 // The mail being read full-page. Set from the URL, never directly: opening a
 // mail is a navigation, so refresh reopens it and back returns to the list.
@@ -1427,6 +1435,12 @@ interface UrlState {
   // Where an inbound list page starts. Opaque server token; empty is the
   // first page. Offset paging (page) still drives sent/attention.
   cursor: string
+  // 在看哪个信箱。空 = 还没选（第一次进来，切换器还没加载完）。
+  //
+  // 放进 URL 而不是只留在内存里：刷新会回到默认箱而人以为自己还在另一个箱
+  // 里；后退更糟——它会退回一个属于**上一个箱**的游标，然后拿它去翻当前
+  // 这个箱，翻出来的东西没有任何报错但也没有任何意义。
+  acct: string
 }
 
 // What the screen currently shows. null until the first applyRoute, so the
@@ -1450,6 +1464,7 @@ function parseQuery(q: LocationQuery): UrlState {
     mail: /^\d+$/.test(one(q.mail)) ? one(q.mail) : '',
     msg: /^\d+$/.test(one(q.msg)) ? one(q.msg) : '',
     cursor: one(q.c),
+    acct: /^\d+$/.test(one(q.acct)) ? one(q.acct) : '',
   }
 }
 
@@ -1463,6 +1478,7 @@ function toQuery(s: UrlState): Record<string, string> {
   if (s.mail) query.mail = s.mail
   if (s.msg) query.msg = s.msg
   if (s.cursor) query.c = s.cursor
+  if (s.acct) query.acct = s.acct
   return query
 }
 
@@ -1566,13 +1582,17 @@ function applyRoute() {
   folder.value = s.folder
   page.value = s.page
   keyword.value = s.q
+  // 地址栏说了在看哪个箱就照做。这是后退/前进/刷新走的那条路：
+  // 不同步的话，URL 里写着 A 箱而列表按 B 箱拉。
+  if (s.acct) currentAccount.value = Number(s.acct)
   if (
     !prev ||
     prev.folder !== s.folder ||
     prev.page !== s.page ||
     prev.q !== s.q ||
     prev.sent !== s.sent ||
-    prev.cursor !== s.cursor
+    prev.cursor !== s.cursor ||
+    prev.acct !== s.acct
   ) {
     load()
   }
@@ -1641,9 +1661,19 @@ onMounted(async () => {
     await router.replace({ query: {} })
     if (oauthResult === 'ok') {
       try {
-        const resp = await http.post('/mailbox/verify', { secret: '' }, mailHostRequest)
-        const data = resp.data.data as { token: string }
+        // 带上刚绑好的那个地址。不带的话，服务端验的是**默认信箱**——
+        // 一个 263 的人刚用 Google 绑了 Gmail，默认箱还是那个 263 的、
+        // 密码绑的，于是这一步必然报「请输入邮箱密码或授权码」：
+        // 绑成功了，门却打不开，两句话都是真的而人看不懂。
+        const resp = await http.post(
+          '/mailbox/verify',
+          { secret: '', email: boundEmail },
+          mailHostRequest,
+        )
+        const data = resp.data.data as { token: string; accountId?: number }
         localStorage.setItem('mailUnlock', data.token)
+        // 刚绑的那个箱直接切过去：人刚在 Google 上挑完账号，想看的就是它。
+        if (data.accountId) currentAccount.value = Number(data.accountId)
         // Said only once the person is actually through. Announcing the
         // binding first meant a green "已绑定" could sit above a red failure,
         // both true and together unreadable — the mailbox was bound and the
@@ -1712,6 +1742,7 @@ function init() {
   applied = null
   applyRoute()
   checkSyncHealth()
+  loadExcelCapability()
   // Opening the mailbox pulls once rather than waiting up to two minutes for
   // the next poll. Somebody who just told a customer "resend it" opens this
   // page to look, and "already up to date" is the answer they need it to be.
@@ -1856,14 +1887,23 @@ function reload() {
   pushState({ page: 1, q: keyword.value, mail: '' })
 }
 
-// 切信箱 = 重新开始翻这个箱。游标必须清掉：它编的是**上一个箱**的排序
-// 位置，带着它翻新箱会从一个毫无意义的地方开始，而且不会报错——只是列表
-// 看起来少了一截。
+// 切信箱 = 重新开始翻这个箱。
+//
+// 游标必须清掉：它编的是**上一个箱**的排序位置，带着它翻新箱会从一个毫无
+// 意义的地方开始，而且不会报错——只是列表看起来少了一截。
+//
+// 也写进地址栏。仓库的习惯是可分享的状态放 URL，而这里还有一层：不写的话
+// 刷新会回到默认箱，而人以为自己还在另一个箱里；浏览器后退更糟——它会退回
+// 一个属于**上一个箱**的游标，然后拿它去翻当前这个箱。
 watch(currentAccount, (now, before) => {
   if (!before || now === before) return
   keyword.value = ''
-  pushState({ page: 1, q: '', mail: '', cursor: '' }, [])
+  pushState({ page: 1, q: '', mail: '', cursor: '', acct: String(now) }, [])
   refreshUnread()
+  // 横幅说的是「当前这个箱」，所以切换时立刻重问一次。它自己是一分钟轮询
+  // 一次的，不问的话最长有一分钟红条在替**上一个箱**说话——而人刚切过来，
+  // 只会以为是这个箱坏了。
+  checkSyncHealth()
 })
 
 // Inbound lists page by cursor: forward hands back the token the server
@@ -2605,11 +2645,20 @@ async function checkSyncHealth() {
     myAddresses.value = new Set(
       mine.map((a) => (a.email ?? '').trim().toLowerCase()).filter(Boolean),
     )
-    const cap = await get<{ excelAvailable: boolean }>('/my-mail-account')
-    excelAvailable.value = cap.excelAvailable === true
+  } catch {
+    /* the banner is a courtesy; its absence must not break the page */
+  }
+}
+
+// 这个部署有没有接模型适配器。**只问一次**：它是部署配置，不会在一个人
+// 开着页面的时候变，而 checkSyncHealth 是一分钟一轮的——顺带问它等于每分钟
+// 多一次往返，一整天几百次，答案永远一样。
+async function loadExcelCapability() {
+  try {
+    const d = await get<{ excelAvailable: boolean }>('/my-mail-account')
+    excelAvailable.value = d.excelAvailable === true
   } catch {
     excelAvailable.value = false
-    /* the banner is a courtesy; its absence must not break the page */
   }
 }
 

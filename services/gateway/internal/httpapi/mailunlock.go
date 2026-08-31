@@ -185,18 +185,25 @@ func (s *Server) verifyMailbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 计费维度是「这个人 + 这个地址」，不再只是「这个人」。
+	// **两个预算，都要过。**
 	//
-	// 只按人计的话，五次预算可以用来试五个**不同**的地址，那正是地址变成
-	// 可变字段之后新出现的玩法——拿一串地址去撞，看哪个的服务器接受哪种
-	// 错误。带上地址之后，每个目标各自有各自的预算。
+	// 一开始只写了「人 + 地址」那一个，那是错的：地址成了可变字段之后，
+	// 按人+地址计费等于把「一个人五次」稀释成「一个人每个地址五次」——
+	// 换一串地址就换一份预算，比原来更弱。
 	//
-	// 花的是这个人的额度，而超支的代价是邮件服务商把全公司发信的那个地址
-	// 拉黑，所以这个预算本来就该按「打向哪个服务器」分开算。
-	who := fmt.Sprintf("t%d.e%d.%s", op.TenantID, op.EmployeeID, email)
-	if wait, blocked := s.Throttle.Blocked(r.Context(), throttleMailVerify, who); blocked {
-		s.writeTooManyAttempts(w, wait)
-		return
+	// 这个预算保护的是**我们服务器的 IP 在邮件服务商那里的信誉**（每一次
+	// 尝试都是一次真的登录，从我们的机器打出去）。那个资源是按人算的，
+	// 换不换地址都一样花。所以按人那一份必须留着。
+	//
+	// 地址那一份是**额外**收紧：对着同一个信箱猛试，五次就该停，不该
+	// 借着"我还有别的地址没试"继续。
+	perPerson := fmt.Sprintf("t%d.e%d", op.TenantID, op.EmployeeID)
+	perTarget := fmt.Sprintf("t%d.e%d.%s", op.TenantID, op.EmployeeID, email)
+	for _, who := range []string{perPerson, perTarget} {
+		if wait, blocked := s.Throttle.Blocked(r.Context(), throttleMailVerify, who); blocked {
+			s.writeTooManyAttempts(w, wait)
+			return
+		}
 	}
 
 	resp, err := s.Emails.VerifyMailAccess(r.Context(), &mailv1.VerifyMailAccessRequest{
@@ -220,8 +227,17 @@ func (s *Server) verifyMailbox(w http.ResponseWriter, r *http.Request) {
 		// internal fault answered their next five attempts with 429 instead of
 		// the real reason.
 		if resp.GetHostRejected() {
-			if wait, spent := s.Throttle.Failed(r.Context(), throttleMailVerify, who); spent {
-				s.writeTooManyAttempts(w, wait)
+			// 两份都扣。只扣一份的话，没扣的那份就是免费的那条路。
+			// 用完的那份里等得最久的决定 Retry-After——报短了，人照着重试
+			// 还是 429，那个数字就成了假消息。
+			var longest time.Duration
+			for _, who := range []string{perPerson, perTarget} {
+				if wait, spent := s.Throttle.Failed(r.Context(), throttleMailVerify, who); spent && wait > longest {
+					longest = wait
+				}
+			}
+			if longest > 0 {
+				s.writeTooManyAttempts(w, longest)
 				return
 			}
 		}
@@ -230,7 +246,15 @@ func (s *Server) verifyMailbox(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusForbidden, "MAIL_VERIFY_FAILED", resp.GetDetail())
 		return
 	}
-	s.Throttle.Passed(r.Context(), throttleMailVerify, who)
+	// 成功才清零，而且只清**这次真的验过**的那两个键。
+	//
+	// 注意这里已经在 resp.Ok 之后：空授权码那条路（「复验已绑的」）也会走到
+	// 这儿。它对应的是一次真实的 OAuth 复验或者"一个信箱都没绑"的放行，
+	// 两者都不是失败，所以清零是对的——而拿别人的地址空手来试的那条路，
+	// 现在在服务层就被拒了，根本到不了这里。
+	for _, who := range []string{perPerson, perTarget} {
+		s.Throttle.Passed(r.Context(), throttleMailVerify, who)
+	}
 	token, expires, err := s.Unlock.Grant(r.Context(), op.TenantID, op.EmployeeID)
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, "MAIL_UNLOCK_STORE", "无法保存验证状态，请重试")
