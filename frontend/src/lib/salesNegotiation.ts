@@ -7,10 +7,14 @@ export interface ProcurementReworkForm {
 }
 
 export function procurementReworkPayload(isSalesView: boolean, form: ProcurementReworkForm) {
+  const hasExistingQuote = Number(form.supplierQuoteLineId || 0) > 0
+  const requestType = hasExistingQuote
+    ? (form.requestType === 'REQUOTE' ? 'REQUOTE' : 'RENEGOTIATE')
+    : 'ADD_SUPPLIER'
   const common = {
     sourcing_line_id: Number(form.sourcingLineId || 0),
     supplier_quote_line_id: Number(form.supplierQuoteLineId || 0),
-    request_type: form.requestType,
+    request_type: requestType,
     reason: String(form.reason || '').trim(),
   }
   return isSalesView

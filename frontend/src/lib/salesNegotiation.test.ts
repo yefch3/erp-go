@@ -32,6 +32,20 @@ describe('sales negotiation helpers', () => {
     expect(payload).not.toHaveProperty('sales_plan_id')
   })
 
+  it('forces add-supplier semantics when no existing quote is selected', () => {
+    const payload = procurementReworkPayload(true, {
+      planId: 19,
+      sourcingLineId: 7,
+      supplierQuoteLineId: 0,
+      requestType: 'RENEGOTIATE',
+      reason: '现有供应商太贵',
+    })
+    expect(payload).toMatchObject({
+      supplier_quote_line_id: 0,
+      request_type: 'ADD_SUPPLIER',
+    })
+  })
+
   it('prefers a confirmed cost-plan selling price', () => {
     expect(suggestCustomerUnitPrice({
       purchaseCurrency: 'USD', purchaseUnitPrice: '2', quantity: '20',
