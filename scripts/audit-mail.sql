@@ -33,6 +33,30 @@ WITH checks AS (
             WHERE raw_key <> '' GROUP BY raw_key HAVING count(*) > 1) t) AS n,
          '原件被互相覆盖。任何重新解析原件的修复都会把别人的邮件写进这一行' AS why
 
+  -- 2026-08-31. 00042 把收发服务器搬到信箱行上，插入新信箱那一句却没跟着
+  -- 种模板，于是新绑的信箱 smtp_host 是空串——ForAccount 见到空串就返回
+  -- ErrMailHostNotConfigured，**发信和 IMAP 同步全停**，而绑定那一步是
+  -- 成功的。人只会觉得"绑了但收不到信"，两件事之间没有任何提示连着。
+  --
+  -- 修好了（种模板 + 两条集成测试），这条留着是因为它便宜、而且它抓的是
+  -- 「有个信箱在那儿但根本不工作」这一整类——下一次谁再加一条写 mail_accounts
+  -- 的路而忘了主机，还是这一条先说话。
+  UNION ALL SELECT 'BLOCK', '信箱没有收发服务器',
+         (SELECT count(*) FROM mail_accounts
+          WHERE is_active AND (smtp_host = '' OR imap_host = '')),
+         '这些信箱发不出也收不到，而绑定当时是成功的，界面上看不出问题'
+
+  -- 00043 起一个人可以有多个信箱，「默认」是写信时预选哪一个。部分唯一索引
+  -- 挡得住两个默认，挡不住零个——一个人的信箱全被停用又重新启用，或者以后
+  -- 加的解绑路径删掉了默认的那个，就会出现零个。那时 defaultAccountIDFor
+  -- 取第一行拿到的是 id 最小的箱，发件人就成了随机的。
+  UNION ALL SELECT 'BLOCK', '有人的默认信箱不是正好一个',
+         (SELECT count(*) FROM (
+            SELECT tenant_id, employee_id FROM mail_accounts
+            GROUP BY tenant_id, employee_id
+            HAVING count(*) FILTER (WHERE is_default) <> 1) d),
+         '这些人写信时的发件人是随机挑的，换个时间点可能换一个箱'
+
   -- 2026-08-11. Any part with a Content-ID was filed as an attachment, and
   -- LinkedIn puts one on its text/plain and text/html alternatives, so the
   -- body was taken away and the message stored with nothing in it.
