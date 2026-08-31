@@ -75,10 +75,23 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 -- name: GetMailAccountSecret :one
 -- The only query that returns ciphertext. Used by the sender and the IMAP
 -- sync, never by anything that answers an HTTP request.
-SELECT id, email, username, auth_kind, secret_enc, oauth_refresh_enc, key_version, is_active
+--
+-- **按账号 id 取，不是按员工。** 从前是按员工的，那在「一人一箱」下等价，
+-- 而这个前提正要被拿掉：一个人绑了两个箱之后，按员工查是 sqlc 的 :one，
+-- 生成 QueryRow，而 pgx 读到第一行就返回、**不报「多行」错误**，这句还
+-- 没有 ORDER BY——于是发信和同步会随机挑一个箱，另一个箱一封信都收不到，
+-- 日志里一个字都没有。
+--
+-- 主机配置一并从这一行读（00042 之前它在 mail_hosts 上，一家公司一份，
+-- 那是跨服务商真正的拦路虎）。
+SELECT id, employee_id, email, username, auth_kind,
+       secret_enc, oauth_refresh_enc, key_version, is_active,
+       domain, smtp_host, smtp_port, smtp_security,
+       imap_host, imap_port, imap_security,
+       hourly_quota, daily_quota
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
-  AND employee_id = sqlc.arg(employee_id)::bigint;
+  AND id = sqlc.arg(id)::bigint;
 
 -- name: MarkMailAccountVerified :exec
 UPDATE mail_accounts
@@ -102,6 +115,37 @@ SELECT id, employee_id, email, username, secret_enc, key_version
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND is_active
 ORDER BY id;
+
+-- name: ListMailAccountsForEmployee :many
+-- 一个人名下的全部信箱。今天唯一约束保证最多一行，下一期放开之后这里才
+-- 会真的返回多行——先把读法改对，免得放开约束那一刻还有地方在按员工取
+-- 单行（那会静默挑中随便一个）。
+--
+-- 和 GetMyMailAccount 一样不选 secret_enc：这是设置页读的，凭据永远不回
+-- 浏览器。
+SELECT id, email, username, auth_kind, verified_at, last_error, is_active, updated_at,
+       domain, smtp_host, smtp_port, smtp_security,
+       imap_host, imap_port, imap_security
+FROM mail_accounts
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND employee_id = sqlc.arg(employee_id)::bigint
+ORDER BY id;
+
+-- name: SyncAccountHostsFromTenant :execrows
+-- 把租户级的收发服务器配置刷到该租户所有账号行上。
+--
+-- 只在这一期存在。00042 把主机搬到了账号上，而设置页这一版还在写
+-- mail_hosts——不同步的话，管理员改完 SMTP 地址会发现「改了没生效」，
+-- 而且没有任何报错。第二期设置页改成按信箱之后，这句和它的调用点一起删。
+UPDATE mail_accounts a
+   SET domain = h.domain,
+       smtp_host = h.smtp_host, smtp_port = h.smtp_port, smtp_security = h.smtp_security,
+       imap_host = h.imap_host, imap_port = h.imap_port, imap_security = h.imap_security,
+       hourly_quota = h.hourly_quota, daily_quota = h.daily_quota,
+       updated_at = now()
+  FROM mail_hosts h
+ WHERE h.tenant_id = a.tenant_id
+   AND a.tenant_id = sqlc.arg(tenant_id)::bigint;
 
 -- name: BumpSendCounter :one
 -- Counts one accepted message into the current hour and returns the new

@@ -257,6 +257,15 @@ type MailAccount struct {
 	UpdatedAt       pgtype.Timestamptz
 	AuthKind        string
 	OauthRefreshEnc []byte
+	Domain          string
+	SmtpHost        string
+	SmtpPort        int32
+	SmtpSecurity    string
+	ImapHost        string
+	ImapPort        int32
+	ImapSecurity    string
+	HourlyQuota     int32
+	DailyQuota      int32
 }
 
 type MailExcelJob struct {

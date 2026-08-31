@@ -61,39 +61,37 @@ var (
 	ErrMailHostNotConfigured = errors.New("还没有配置发件服务器，请先在右侧填写 SMTP 服务器地址并保存")
 )
 
-// ForSender resolves and decrypts one employee's sending credentials.
+// ForAccount resolves and decrypts one **mailbox's** credentials.
 //
 // This is the only path in the service that turns secret_enc back into a
 // usable string, and it is reachable only from the sending worker and the
 // IMAP sync — never from anything that answers an HTTP request.
-func (s *Service) ForSender(ctx context.Context, tenantID, senderID int64) (MailAccount, error) {
+//
+// 参数是账号 id，不是员工 id。从前是员工 id——在「一人一箱」下两者等价，
+// 而那个前提正要被拿掉。按员工查的那一版有个不会报错的坏法：那句 SQL 是
+// sqlc 的 :one，生成 QueryRow，pgx **读到第一行就返回**，一个人有两行时
+// 既不报错也没有 ORDER BY，于是发信随机挑箱、同步只同步被挑中的那个，
+// 另一个箱一封信都收不到，而日志里什么都没有。
+//
+// 主机配置从账号行上读（00042 之前在 mail_hosts 上，一家公司一份）。
+func (s *Service) ForAccount(ctx context.Context, tenantID, accountID int64) (MailAccount, error) {
 	if s.secrets == nil {
 		return MailAccount{}, ErrNoKey
 	}
-	host, err := s.q.GetMailHost(ctx, tenantID)
-	// Only an absent row means "not configured". Any other error is the
-	// database failing, and reporting that as a missing setting sends
-	// somebody to a dialog that is already filled in correctly — which is
-	// exactly what a dropped connection during a restart used to do. What
-	// broke has to be what gets said.
-	if err == pgx.ErrNoRows {
-		return MailAccount{}, ErrMailHostNotConfigured
-	}
-	if err != nil {
-		return MailAccount{}, fmt.Errorf("读取发件服务器配置失败：%w", err)
-	}
-	if host.SmtpHost == "" {
-		return MailAccount{}, ErrMailHostNotConfigured
-	}
-
 	row, err := s.q.GetMailAccountSecret(ctx, store.GetMailAccountSecretParams{
-		TenantID: tenantID, EmployeeID: senderID,
+		TenantID: tenantID, ID: accountID,
 	})
 	if err == pgx.ErrNoRows {
 		return MailAccount{}, ErrNoMailAccount
 	}
 	if err != nil {
 		return MailAccount{}, fmt.Errorf("读取邮箱账号失败：%w", err)
+	}
+	// 主机没配等于这个信箱还不能收发。和从前一样只把「确实没配」说成没配，
+	// 数据库出错要如实报——把连接中断说成「设置没填」，会把人送到一个已经
+	// 填好的对话框前面。
+	if row.SmtpHost == "" {
+		return MailAccount{}, ErrMailHostNotConfigured
 	}
 	if !row.IsActive {
 		return MailAccount{}, errors.New("这个邮箱已被停用")
@@ -124,18 +122,64 @@ func (s *Service) ForSender(ctx context.Context, tenantID, senderID int64) (Mail
 	return MailAccount{
 		AccountID:    row.ID,
 		AuthKind:     row.AuthKind,
-		EmployeeID:   senderID,
+		EmployeeID:   row.EmployeeID,
 		Email:        row.Email,
 		Username:     row.Username,
 		Secret:       string(secret),
-		Domain:       host.Domain,
-		Host:         host.SmtpHost,
-		Port:         int(host.SmtpPort),
-		Security:     host.SmtpSecurity,
-		IMAPHost:     host.ImapHost,
-		IMAPPort:     int(host.ImapPort),
-		IMAPSecurity: host.ImapSecurity,
+		Domain:       row.Domain,
+		Host:         row.SmtpHost,
+		Port:         int(row.SmtpPort),
+		Security:     row.SmtpSecurity,
+		IMAPHost:     row.ImapHost,
+		IMAPPort:     int(row.ImapPort),
+		IMAPSecurity: row.ImapSecurity,
 	}, nil
+}
+
+// ForSender 是发信路径专用的过渡入口：从「谁发的」找到「用哪个信箱」，
+// 再走 ForAccount。
+//
+// 出站队列（email_messages）今天只记 sender_id，不记 account_id，所以这一步
+// 反查躲不掉。第三期给队列加上 account_id 之后，provider.Accounts 接口改成
+// 直接收账号 id，这个方法和 defaultAccountIDFor 一起删。
+//
+// 在那之前它有个必须知道的性质：**它答的是「这个人的默认信箱」，不是「这封
+// 信本来要从哪个信箱发」**。一封排队中的信重试时，如果这个人期间改了默认
+// 信箱，重试会从另一个地址发出去。第三期就是为了消掉这件事。
+func (s *Service) ForSender(ctx context.Context, tenantID, senderID int64) (MailAccount, error) {
+	accountID, err := s.defaultAccountIDFor(ctx, tenantID, senderID)
+	if err != nil {
+		return MailAccount{}, err
+	}
+	return s.ForAccount(ctx, tenantID, accountID)
+}
+
+// defaultAccountIDFor 找这个人「用来发信」的那个信箱。
+//
+// **这是第一期的过渡桥。** 凭据已经改成按账号取了，而出站队列还没有
+// account_id（那是第三期的事），所以发信这一侧暂时还得从人反查回信箱。
+// 今天 mail_accounts 上的 UNIQUE (tenant_id, employee_id) 保证答案唯一。
+//
+// 第二期放开那条约束、而第三期还没给队列加上 account_id 的那段时间里，
+// 这里会真的有多个候选。**那种情况必须吵出来**：从前按员工取单行的写法
+// 在这里是 sqlc 的 :one，pgx 读到第一行就返回、不报错，于是发信随机挑箱，
+// 另一个信箱看起来好好的、其实一封都发不出去，日志里一个字都没有。
+func (s *Service) defaultAccountIDFor(ctx context.Context, tenantID, employeeID int64) (int64, error) {
+	rows, err := s.q.ListMailAccountsForEmployee(ctx, store.ListMailAccountsForEmployeeParams{
+		TenantID: tenantID, EmployeeID: employeeID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("读取邮箱账号失败：%w", err)
+	}
+	if len(rows) == 0 {
+		return 0, ErrNoMailAccount
+	}
+	if len(rows) > 1 {
+		s.log.Warn("这个人名下有多个信箱，而发信路径还没有账号维度——先用 id 最小的那个。"+
+			"出站队列必须在放开一人多箱的同一批改动里带上 account_id",
+			"tenant", tenantID, "employee", employeeID, "accounts", len(rows))
+	}
+	return rows[0].ID, nil
 }
 
 // RecordFailure notes a credential-level problem on the account so the
@@ -340,7 +384,7 @@ func (s *Service) verifyBound(ctx context.Context, tenantID, employeeID int64, r
 	// Google's page when they bound it, and Google can revoke the grant at
 	// any time. Verifying means proving the grant is still alive by
 	// authenticating with it — a revoked one fails and relocks the mailbox.
-	full, err := s.ForSender(ctx, tenantID, employeeID)
+	full, err := s.ForAccount(ctx, tenantID, row.ID)
 	if err != nil {
 		return "", err
 	}

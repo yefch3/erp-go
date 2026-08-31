@@ -344,16 +344,17 @@ func (q *Queries) ListInboundImages(ctx context.Context, arg ListInboundImagesPa
 }
 
 const listInboundMissingRaw = `-- name: ListInboundMissingRaw :many
-SELECT id, owner_id, folder, message_id
+SELECT id, account_id, owner_id, folder, message_id
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND raw_key = ''
   AND message_id <> ''
-ORDER BY owner_id, folder, id
+ORDER BY account_id, folder, id
 `
 
 type ListInboundMissingRawRow struct {
 	ID        int64
+	AccountID int64
 	OwnerID   int64
 	Folder    string
 	MessageID string
@@ -365,6 +366,10 @@ type ListInboundMissingRawRow struct {
 // is this message rather than whatever inherited the UID since. The stored
 // imap_uid is deliberately not selected — trusting a UID across generations
 // is the mistake that lost these originals in the first place.
+//
+// 按 account_id 分组，不是 owner_id：重取要连回**这封信当初进来的那个
+// 信箱**。一个人绑了两个箱之后，按人分组会拿着 A 箱的凭据去 B 箱上搜
+// Message-ID，搜不到就把行判成"对方删了"。
 func (q *Queries) ListInboundMissingRaw(ctx context.Context, tenantID int64) ([]ListInboundMissingRawRow, error) {
 	rows, err := q.db.Query(ctx, listInboundMissingRaw, tenantID)
 	if err != nil {
@@ -376,6 +381,7 @@ func (q *Queries) ListInboundMissingRaw(ctx context.Context, tenantID int64) ([]
 		var i ListInboundMissingRawRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.AccountID,
 			&i.OwnerID,
 			&i.Folder,
 			&i.MessageID,

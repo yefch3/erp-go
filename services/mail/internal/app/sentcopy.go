@@ -22,7 +22,12 @@ func (s *Service) saveSentCopy(ctx context.Context, tenantID, senderID int64, ra
 	if s.mailbox == nil || len(raw) == 0 {
 		return
 	}
-	acct, err := s.ForSender(ctx, tenantID, senderID)
+	accountID, err := s.defaultAccountIDFor(ctx, tenantID, senderID)
+	if err != nil {
+		s.log.Warn("could not file a copy in the sent folder", "sender", senderID, "err", err)
+		return
+	}
+	acct, err := s.ForAccount(ctx, tenantID, accountID)
 	if err != nil {
 		s.log.Warn("could not file a copy in the sent folder", "sender", senderID, "err", err)
 		return

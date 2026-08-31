@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/sgao19/erp-go/services/mail/internal/store"
@@ -85,12 +86,28 @@ func (s *Service) SaveMailHost(ctx context.Context, tenantID int64, in MailHostS
 		return errors.New("发送上限必须大于 0")
 	}
 	in.Domain = normaliseDomain(in.Domain)
-	return s.q.UpsertMailHost(ctx, store.UpsertMailHostParams{
+	if err := s.q.UpsertMailHost(ctx, store.UpsertMailHostParams{
 		TenantID: tenantID, Domain: in.Domain,
 		SmtpHost: in.SMTPHost, SmtpPort: in.SMTPPort, SmtpSecurity: in.SMTPSecurity,
 		ImapHost: in.IMAPHost, ImapPort: in.IMAPPort, ImapSecurity: in.IMAPSecurity,
 		HourlyQuota: in.HourlyQuota, DailyQuota: in.DailyQuota,
-	})
+	}); err != nil {
+		return err
+	}
+	// 刷到该租户所有信箱行上。
+	//
+	// 00042 把收发服务器搬到了 mail_accounts，而这个页面这一版还在写
+	// mail_hosts——不同步的话，管理员改完 SMTP 地址会发现「改了没生效」，
+	// 而且哪儿都不报错，因为发信读的已经是账号行了。
+	//
+	// 第二期这个页面改成按信箱各自配置之后，这一段连同 SyncAccountHostsFromTenant
+	// 一起删掉。
+	n, err := s.q.SyncAccountHostsFromTenant(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("收发服务器已保存，但没能同步到已绑定的信箱上：%w", err)
+	}
+	s.log.Info("mail host settings pushed to bound mailboxes", "tenant", tenantID, "accounts", n)
+	return nil
 }
 
 func (s *Service) GetMyMailAccount(ctx context.Context, tenantID, employeeID int64) (MailAccountView, error) {
@@ -114,7 +131,7 @@ func (s *Service) GetMyMailAccount(ctx context.Context, tenantID, employeeID int
 	// whose mailbox is working.
 	has := false
 	if sec, err := s.q.GetMailAccountSecret(ctx, store.GetMailAccountSecretParams{
-		TenantID: tenantID, EmployeeID: employeeID,
+		TenantID: tenantID, ID: row.ID,
 	}); err == nil {
 		has = len(sec.SecretEnc) > 0 || len(sec.OauthRefreshEnc) > 0
 	}

@@ -20,12 +20,14 @@ import (
 // the send path already fails loudly on a missing account and a counter
 // problem must not become a silent mail outage.
 func (s *Service) overQuota(ctx context.Context, tenantID, senderID int64) (time.Duration, string) {
-	host, err := s.q.GetMailHost(ctx, tenantID)
+	// 限额跟着信箱走，不再读租户那一行：263 的套餐上限和 Gmail 的
+	// 500/天不是一个量纲，一个人同时用两家时一份租户级配额说不出话。
+	accountID, err := s.defaultAccountIDFor(ctx, tenantID, senderID)
 	if err != nil {
 		return 0, ""
 	}
 	acct, err := s.q.GetMailAccountSecret(ctx, store.GetMailAccountSecretParams{
-		TenantID: tenantID, EmployeeID: senderID,
+		TenantID: tenantID, ID: accountID,
 	})
 	if err != nil {
 		return 0, ""
@@ -39,14 +41,14 @@ func (s *Service) overQuota(ctx context.Context, tenantID, senderID int64) (time
 		return 0, ""
 	}
 
-	if counts.ThisHour >= host.HourlyQuota {
+	if counts.ThisHour >= acct.HourlyQuota {
 		// Until the top of the next hour, plus a little, so a fleet of
 		// workers does not all resume on the same second.
 		wait := time.Until(time.Now().Truncate(time.Hour).Add(time.Hour)) + 30*time.Second
-		return wait, fmt.Sprintf("已达本小时发送上限（%d 封），排队等待", host.HourlyQuota)
+		return wait, fmt.Sprintf("已达本小时发送上限（%d 封），排队等待", acct.HourlyQuota)
 	}
-	if counts.Last24h >= host.DailyQuota {
-		return time.Hour, fmt.Sprintf("已达 24 小时发送上限（%d 封），排队等待", host.DailyQuota)
+	if counts.Last24h >= acct.DailyQuota {
+		return time.Hour, fmt.Sprintf("已达 24 小时发送上限（%d 封），排队等待", acct.DailyQuota)
 	}
 	return 0, ""
 }
@@ -58,8 +60,12 @@ func (s *Service) overQuota(ctx context.Context, tenantID, senderID int64) (time
 // undercount is sending slightly over the limit once; the cost of treating
 // it as fatal is a stalled queue.
 func (s *Service) countSend(ctx context.Context, tenantID, senderID int64) {
+	accountID, err := s.defaultAccountIDFor(ctx, tenantID, senderID)
+	if err != nil {
+		return
+	}
 	acct, err := s.q.GetMailAccountSecret(ctx, store.GetMailAccountSecretParams{
-		TenantID: tenantID, EmployeeID: senderID,
+		TenantID: tenantID, ID: accountID,
 	})
 	if err != nil {
 		return

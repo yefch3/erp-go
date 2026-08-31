@@ -216,17 +216,17 @@ func (s *Service) syncAllMailboxes(ctx context.Context, cfg SyncConfig) {
 		default:
 		}
 		wg.Add(1)
-		go func(employeeID int64) {
+		go func(accountID int64) {
 			defer wg.Done()
 			// One mailbox failing must not stop the rest: a single employee's
 			// expired authorisation code should not stop the whole company
 			// receiving mail.
-			if n, err := s.SyncMailboxIfDue(ctx, cfg, employeeID); err != nil {
-				s.log.Warn("mailbox sync failed", "employee", employeeID, "err", err)
+			if n, err := s.SyncMailboxIfDue(ctx, cfg, accountID); err != nil {
+				s.log.Warn("mailbox sync failed", "account", accountID, "err", err)
 			} else if n > 0 {
-				s.log.Info("mailbox synced", "employee", employeeID, "new", n)
+				s.log.Info("mailbox synced", "account", accountID, "new", n)
 			}
-		}(a.EmployeeID)
+		}(a.ID)
 	}
 	// Waited on, so one pass finishes before the next tick starts it again.
 	// Without this a slow cycle would overlap the next and the mailboxes at
@@ -246,14 +246,14 @@ func (s *Service) syncAllMailboxes(ctx context.Context, cfg SyncConfig) {
 
 // SyncMailbox pulls one mailbox — new mail first, then a slice of history —
 // and returns how many new INBOX messages it stored.
-func (s *Service) SyncMailbox(ctx context.Context, cfg SyncConfig, employeeID int64) (int, error) {
+func (s *Service) SyncMailbox(ctx context.Context, cfg SyncConfig, accountID int64) (int, error) {
 	cfg = cfg.withDefaults()
 	// Everything that syncs a mailbox comes through here — the poller, the
 	// idle watcher and a person clicking 立即收信 — so this is where the
 	// fleet's two rules apply: a bounded number at once, and never the same
 	// mailbox twice over.
-	return s.fleet(cfg.Concurrency).do(ctx, employeeID, func() (int, error) {
-		return s.syncMailboxNow(ctx, cfg, employeeID, nil)
+	return s.fleet(cfg.Concurrency).do(ctx, accountID, func() (int, error) {
+		return s.syncMailboxNow(ctx, cfg, accountID, nil)
 	})
 }
 
@@ -320,7 +320,7 @@ type syncOutcome struct {
 // over, and a tail running outside it would let a second click open a second
 // IMAP session on an account that already has one.
 // Returns (收到几封, 是否仍在后台继续, 错误).
-func (s *Service) SyncMailboxInteractive(ctx context.Context, cfg SyncConfig, employeeID int64) (int, bool, error) {
+func (s *Service) SyncMailboxInteractive(ctx context.Context, cfg SyncConfig, accountID int64) (int, bool, error) {
 	cfg = cfg.withDefaults()
 	inbox := make(chan syncOutcome, 1)
 
@@ -329,8 +329,8 @@ func (s *Service) SyncMailboxInteractive(ctx context.Context, cfg SyncConfig, em
 	tail, cancel := context.WithTimeout(context.WithoutCancel(ctx), inboxTail)
 	go func() {
 		defer cancel()
-		n, err := s.fleet(cfg.Concurrency).do(tail, employeeID, func() (int, error) {
-			return s.syncMailboxNow(tail, cfg, employeeID, inbox)
+		n, err := s.fleet(cfg.Concurrency).do(tail, accountID, func() (int, error) {
+			return s.syncMailboxNow(tail, cfg, accountID, inbox)
 		})
 		// Nobody signalled: either the inbox leg failed, or the fleet joined
 		// this caller onto a pass that was already running and belongs to
@@ -352,10 +352,10 @@ func (s *Service) SyncMailboxInteractive(ctx context.Context, cfg SyncConfig, em
 // asked, and gets an attempt whatever the mailbox's history — they may well be
 // clicking *because* they just fixed it. The poller has not been asked by
 // anybody, so it is the one that should hold back.
-func (s *Service) SyncMailboxIfDue(ctx context.Context, cfg SyncConfig, employeeID int64) (int, error) {
+func (s *Service) SyncMailboxIfDue(ctx context.Context, cfg SyncConfig, accountID int64) (int, error) {
 	cfg = cfg.withDefaults()
 	f := s.fleet(cfg.Concurrency)
-	due, failing := f.health.dueAt(employeeID, time.Now())
+	due, failing := f.health.dueAt(accountID, time.Now())
 	if !due {
 		return 0, nil
 	}
@@ -369,15 +369,15 @@ func (s *Service) SyncMailboxIfDue(ctx context.Context, cfg SyncConfig, employee
 		}
 		defer release()
 	}
-	n, err := s.SyncMailbox(ctx, cfg, employeeID)
-	f.health.record(employeeID, time.Now(), err)
+	n, err := s.SyncMailbox(ctx, cfg, accountID)
+	f.health.record(accountID, time.Now(), err)
 	return n, err
 }
 
 // syncMailboxNow runs a full pass. inboxDone, when non-nil, receives the inbox
 // leg's result the moment it is stored and committed, so an interactive caller
 // can be answered without waiting for the five round trips behind it.
-func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, employeeID int64, inboxDone chan<- syncOutcome) (int, error) {
+func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, accountID int64, inboxDone chan<- syncOutcome) (int, error) {
 	// Buffered by every caller, so this never blocks the pass on a reader
 	// that has already gone away.
 	signal := func(n int, err error) {
@@ -390,7 +390,7 @@ func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, employeeID
 		}
 	}
 
-	acct, err := s.ForSender(ctx, cfg.TenantID, employeeID)
+	acct, err := s.ForAccount(ctx, cfg.TenantID, accountID)
 	if err != nil {
 		return 0, err
 	}
@@ -479,7 +479,8 @@ func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, employeeID
 	// The ping goes out only after everything is committed, and only to the
 	// mailbox owner: an inbox is personal.
 	if newInbox > 0 && s.live != nil {
-		s.live.ToEmployees(ctx, cfg.TenantID, []int64{employeeID},
+		// 推给人，不是推给账号：收件箱是个人的，而一个人可能有好几个信箱。
+		s.live.ToEmployees(ctx, cfg.TenantID, []int64{acct.EmployeeID},
 			livefeed.Event{Type: livefeed.MailInbound})
 	}
 	return newInbox, nil
@@ -1026,22 +1027,22 @@ func (s *Service) RunIdleWatchers(ctx context.Context, cfg SyncConfig) {
 			}
 			for _, a := range accounts {
 				mu.Lock()
-				already := running[a.EmployeeID]
+				already := running[a.ID]
 				if !already {
-					running[a.EmployeeID] = true
+					running[a.ID] = true
 				}
 				mu.Unlock()
 				if already {
 					continue
 				}
-				go func(cfg SyncConfig, emp int64) {
+				go func(cfg SyncConfig, accountID int64) {
 					defer func() {
 						mu.Lock()
-						delete(running, emp)
+						delete(running, accountID)
 						mu.Unlock()
 					}()
-					s.watchMailbox(ctx, cfg, waiter, emp)
-				}(watch, a.EmployeeID)
+					s.watchMailbox(ctx, cfg, waiter, accountID)
+				}(watch, a.ID)
 			}
 		}
 		select {
@@ -1052,10 +1053,10 @@ func (s *Service) RunIdleWatchers(ctx context.Context, cfg SyncConfig) {
 	}
 }
 
-func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsWaiter, employeeID int64) {
+func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsWaiter, accountID int64) {
 	backoff := time.Minute
 	for ctx.Err() == nil {
-		acct, err := s.ForSender(ctx, cfg.TenantID, employeeID)
+		acct, err := s.ForAccount(ctx, cfg.TenantID, accountID)
 		if err != nil {
 			// Unbound or paused. The manager restarts the watch if the
 			// account comes back; holding a loop open for it helps nobody.
@@ -1063,7 +1064,7 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 		}
 		news, err := waiter.WaitForNews(ctx, acct, "INBOX", 25*time.Minute)
 		if err != nil {
-			s.log.Warn("idle watch dropped", "employee", employeeID, "err", err)
+			s.log.Warn("idle watch dropped", "account", accountID, "err", err)
 			select {
 			case <-ctx.Done():
 				return
@@ -1078,10 +1079,10 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 		}
 		backoff = time.Minute
 		if news {
-			if n, err := s.SyncMailbox(ctx, cfg, employeeID); err != nil {
-				s.log.Warn("push-triggered sync failed", "employee", employeeID, "err", err)
+			if n, err := s.SyncMailbox(ctx, cfg, accountID); err != nil {
+				s.log.Warn("push-triggered sync failed", "account", accountID, "err", err)
 			} else if n > 0 {
-				s.log.Info("mail arrived by push", "employee", employeeID, "new", n)
+				s.log.Info("mail arrived by push", "account", accountID, "new", n)
 			}
 		}
 	}
