@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -137,45 +138,71 @@ func (s *Server) requireMailUnlock(next http.Handler) http.Handler {
 // mailbox bound. With an email in the body this is also the binding: the
 // service stores the pair only after the login succeeded.
 func (s *Server) verifyMailbox(w http.ResponseWriter, r *http.Request) {
-	// Only the secret. The address is not a field here and must never become
-	// one again: it comes from the token, which means the mailbox somebody
-	// binds is necessarily the one they signed in as.
+	// **地址现在是请求体里的字段。这是一次有意的放宽，不是回退。**
 	//
-	// It used to be in the body, and that allowed the thing this whole design
-	// exists to prevent — signing in as alice@thecompany.com and binding a
-	// personal mailbox. Everything downstream then disagreed: the ERP said one
-	// person sent the mail and the customer saw another address, and mail the
-	// company does not control started flowing through it. Validating the
-	// field would have worked too; removing it is better, because a field that
-	// does not exist cannot be got wrong later.
+	// 从前这里没有 email 字段，注释写着 "must never become one again"，还有
+	// 一条读源码的测试守着（throttle_test.go）。那条约束防的是「以
+	// alice@thecompany.com 登录，却绑一个私人信箱」——下游全都不一致：ERP
+	// 说是这个人发的，客户看到的是另一个地址。
+	//
+	// 业务口径改了：一个人可以绑多个信箱，而且**不必是公司域名的**
+	// （ERP 账号是 263 的人，邮箱这边可以只绑 Gmail）。老约束和这个需求
+	// 直接冲突，所以它退役，同一批换上这几条：
+	//
+	//   - 归属：employeeID 永远来自登录令牌，请求体里没有「绑给谁」这一项，
+	//     所以只能绑到自己名下
+	//   - 唯一：一个地址只能属于一个人（UNIQUE (tenant_id, email)）
+	//   - 活体：必须先真的登录成功才写库，错的授权码覆盖不了能用的凭据
+	//   - 主机：服务器地址由**服务端**按服务商代号查表，不收调用方给的主机名
+	//   - 限流：见下面 who 那一行——现在按「人 + 目标地址」计费
+	//   - 留痕：每一次绑定成功和失败都写 mail_binding_log（00045）
+	//
+	// 换句话说：原来靠「一个字段不存在」保证的事，现在靠一张表和四道检查
+	// 保证，而且比原来问得更细——原来答不出「这个地址是谁绑的」，因为答案
+	// 恒等于「他自己那个」。
 	var body struct {
-		Secret string `json:"secret"`
+		Secret       string `json:"secret"`
+		Email        string `json:"email"`
+		Provider     string `json:"provider"`
+		SMTPHost     string `json:"smtpHost"`
+		SMTPPort     int32  `json:"smtpPort"`
+		SMTPSecurity string `json:"smtpSecurity"`
+		IMAPHost     string `json:"imapHost"`
+		IMAPPort     int32  `json:"imapPort"`
+		IMAPSecurity string `json:"imapSecurity"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
 		s.writeError(w, http.StatusBadRequest, "GATEWAY_BAD_JSON", "请求体不是合法的 JSON")
 		return
 	}
-	// Metered by the employee, who is already authenticated here — a better
-	// identity than the login route gets, and the right one: the budget being
-	// spent is this person's, and the cost of overspending it is that the mail
-	// host blocks the address the whole company sends from.
 	op, _ := grpcx.OperatorFromContext(r.Context())
-	if op.Email == "" {
-		// An employee row with no address. They cannot bind anything until
-		// somebody gives them one, and saying so is better than letting them
-		// type an address that would then be ignored.
-		s.writeError(w, http.StatusForbidden, "MAIL_NO_WORK_ADDRESS",
-			"你的账号还没有公司邮箱地址，请联系管理员")
+	email := strings.ToLower(strings.TrimSpace(body.Email))
+	// 没给地址就是「复验已经绑好的那个」——Google 那扇门没有码可输。
+	// 它不再默认成登录地址：那个默认正是老约束的实现方式，而登录地址现在
+	// 可能一个信箱都不对应。
+	if email == "" && strings.TrimSpace(body.Secret) != "" {
+		s.writeError(w, http.StatusBadRequest, "MAIL_ADDRESS_REQUIRED", "请输入邮箱地址")
 		return
 	}
-	who := fmt.Sprintf("t%d.e%d", op.TenantID, op.EmployeeID)
+
+	// 计费维度是「这个人 + 这个地址」，不再只是「这个人」。
+	//
+	// 只按人计的话，五次预算可以用来试五个**不同**的地址，那正是地址变成
+	// 可变字段之后新出现的玩法——拿一串地址去撞，看哪个的服务器接受哪种
+	// 错误。带上地址之后，每个目标各自有各自的预算。
+	//
+	// 花的是这个人的额度，而超支的代价是邮件服务商把全公司发信的那个地址
+	// 拉黑，所以这个预算本来就该按「打向哪个服务器」分开算。
+	who := fmt.Sprintf("t%d.e%d.%s", op.TenantID, op.EmployeeID, email)
 	if wait, blocked := s.Throttle.Blocked(r.Context(), throttleMailVerify, who); blocked {
 		s.writeTooManyAttempts(w, wait)
 		return
 	}
 
 	resp, err := s.Emails.VerifyMailAccess(r.Context(), &mailv1.VerifyMailAccessRequest{
-		Secret: body.Secret, Email: op.Email,
+		Secret: body.Secret, Email: email, Provider: body.Provider,
+		SmtpHost: body.SMTPHost, SmtpPort: body.SMTPPort, SmtpSecurity: body.SMTPSecurity,
+		ImapHost: body.IMAPHost, ImapPort: body.IMAPPort, ImapSecurity: body.IMAPSecurity,
 	})
 	if err != nil {
 		// Not charged. This is the mail service or the network failing, not
@@ -213,6 +240,10 @@ func (s *Server) verifyMailbox(w http.ResponseWriter, r *http.Request) {
 		"token":     token,
 		"expiresIn": expires,
 		"detail":    resp.GetDetail(),
+		// 真正绑上的是哪一个。地址由调用方给之后，请求里写的和落库的可能
+		// 不同（大小写、首尾空格），界面要说得出「你绑好了哪一个」。
+		"accountId": resp.GetAccountId(),
+		"email":     resp.GetEmail(),
 	})
 }
 

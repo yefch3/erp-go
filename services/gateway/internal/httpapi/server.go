@@ -825,11 +825,15 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:read")).Get("/api/oauth/google/start", s.startGoogleOAuth)
 		r.With(s.perm("mail:email:read")).Get("/api/mailbox/lock-status", s.mailLockStatus)
 		r.With(s.perm("mail:email:read")).Post("/api/mailbox/lock", s.lockMailbox)
-		// Read-only on purpose: there is no API that stores a mailbox
-		// credential directly. The only way in is /api/mailbox/verify with an
-		// address — a live login at the mail host that stores the pair only
-		// after it succeeded.
+		// 读，不写凭据。**存邮箱凭据的路只有一条**：/api/mailbox/verify，
+		// 而它要先拿这一对去邮件服务器真的登录一次，成功了才落库。
+		//
+		// 权限都是 mail:email:read 这一档，不是管理员档：员工写的是**自己
+		// 的**信箱，挂成 iam:role:write 的话普通人点保存会收到一句通用的
+		// 「没有权限」，看不出卡在哪一步。
 		r.With(s.perm("mail:email:read")).Get("/api/my-mail-account", s.getMyMailAccount)
+		r.With(s.perm("mail:email:read")).Get("/api/my-mailboxes", s.listMyMailboxes)
+		r.With(s.perm("mail:email:read")).Post("/api/my-mailboxes/default", s.setDefaultMailbox)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/latest", s.fxLatest)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/rates", s.fxRates)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/anomalies", s.fxAnomalies)

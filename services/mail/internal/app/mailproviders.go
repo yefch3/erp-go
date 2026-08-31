@@ -26,6 +26,9 @@ type MailProvider struct {
 	// （me@sunrise.com 可能托管在腾讯企业邮上），认不出来，所以那几家的
 	// Domains 是空的——只能由员工在表单里挑。
 	Domains []string
+	// Domain 是这次绑定实际用的发信域名，从要绑的地址里取。表里的条目不
+	// 填它——同一家服务商托管着无数个域名。
+	Domain string
 
 	SMTPHost     string
 	SMTPPort     int32

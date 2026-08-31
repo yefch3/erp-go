@@ -320,11 +320,20 @@ func TestOnlyARejectedCredentialCountsAgainstTheBudget(t *testing.T) {
 	}
 }
 
-// The mailbox somebody binds is the one they signed in as. This is a test
-// about a *field*, because that is where the rule lives: the verify handler
-// reads the address from the token, and the request body has no address in it
-// to disagree with. Anybody adding one back should have to delete this.
-func TestTheVerifyRequestCarriesNoAddress(t *testing.T) {
+// 绑定入口放宽了：地址现在是请求体里的字段。这条测试是**替换**上一条，
+// 不是删掉它。
+//
+// 上一条叫 TestTheVerifyRequestCarriesNoAddress，断言 verifyMailbox 的函数体
+// 里没有 json:"email"、有 Email: op.Email。它防的是「以 alice@thecompany.com
+// 登录，却绑一个私人信箱」，而那条规矩本身是修过一次 bug 之后立的。
+//
+// 它退役是因为业务口径变了：一个人可以绑多个信箱，而且**不必是公司域名的**
+// ——ERP 账号是 263 的人，邮箱这边可以只绑 Gmail。老约束和这个需求直接冲突，
+// 不是"忘了"或"绕过"。
+//
+// 换上的四条写在这里。它们和老的那条一样是源码文本断言，理由也一样：这几件
+// 事没有一个运行时的地方能一眼看出来，而删掉其中任何一条都不会让别的测试变红。
+func TestBindingAnAddressStillHasGuards(t *testing.T) {
 	src, err := os.ReadFile("mailunlock.go")
 	if err != nil {
 		t.Fatal(err)
@@ -337,17 +346,39 @@ func TestTheVerifyRequestCarriesNoAddress(t *testing.T) {
 	end := strings.Index(body[start:], "\nfunc ")
 	fn := body[start : start+end]
 
-	if strings.Contains(fn, `json:"email"`) {
-		t.Error("the verify body has an email field again — signing in as one " +
-			"address and binding another is exactly what this must not allow")
+	// 一、绑给谁只能来自登录令牌。请求体里出现「绑给谁」这一项，等于任何
+	// 登录了的人都能把一个信箱挂到别人名下。
+	if strings.Contains(fn, `json:"employeeId"`) || strings.Contains(fn, `json:"employee_id"`) {
+		t.Error("请求体里出现了「绑给谁」——归属必须只来自登录令牌，" +
+			"否则任何人都能把信箱挂到别人名下")
 	}
-	if !strings.Contains(fn, "Email: op.Email") {
-		t.Error("the bound address no longer comes from the session; it must " +
-			"be the address the person logged in with, not one they supplied")
+	if !strings.Contains(fn, "grpcx.OperatorFromContext") {
+		t.Error("不再从登录令牌取操作人了")
 	}
-	if !strings.Contains(fn, `op.Email == ""`) {
-		t.Error("an employee with no company address must be refused rather " +
-			"than binding something unchecked")
+
+	// 二、限流带上目标地址。只按人计的话，五次预算可以拿去试五个**不同**
+	// 的地址——那正是地址变成可变字段之后新出现的玩法。
+	if !strings.Contains(fn, `who := fmt.Sprintf("t%d.e%d.%s"`) {
+		t.Error("限流的计费维度不再包含目标地址了——一个人的五次预算" +
+			"会变成可以撞五个不同地址")
+	}
+	if !strings.Contains(fn, "throttleMailVerify") {
+		t.Error("绑定入口没有限流了")
+	}
+
+	// 三、主机名不能由调用方直接决定。请求体里带 smtpHost/imapHost 是允许
+	// 的（「其他」那一档要它），但它必须经过服务端的校验和服务商表——网关
+	// 只做转发，判断在 mail 服务的 resolveHosts / validateCustomHost。
+	if !strings.Contains(fn, "Provider: body.Provider") {
+		t.Error("服务商代号没有传给服务端——主机名就会变成调用方说了算，" +
+			"那等于任何员工都能让邮件服务带着凭据去连任意 host:port")
+	}
+
+	// 四、不给地址时不能悄悄退回登录地址。那个默认正是老约束的实现方式，
+	// 而登录地址现在可能一个信箱都不对应。
+	if strings.Contains(fn, "Email: op.Email") {
+		t.Error("地址又退回成登录地址了——ERP 账号是 263 的人可以只绑 Gmail，" +
+			"这个默认会把他绑到一个不存在的信箱上")
 	}
 }
 

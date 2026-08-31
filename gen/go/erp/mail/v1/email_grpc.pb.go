@@ -70,6 +70,8 @@ const (
 	EmailService_StartInboundExcelConversion_FullMethodName  = "/erp.mail.v1.EmailService/StartInboundExcelConversion"
 	EmailService_GetInboundExcelConversionJob_FullMethodName = "/erp.mail.v1.EmailService/GetInboundExcelConversionJob"
 	EmailService_GetMailThread_FullMethodName                = "/erp.mail.v1.EmailService/GetMailThread"
+	EmailService_ListMyMailboxes_FullMethodName              = "/erp.mail.v1.EmailService/ListMyMailboxes"
+	EmailService_SetDefaultMailbox_FullMethodName            = "/erp.mail.v1.EmailService/SetDefaultMailbox"
 	EmailService_ExcelUsage_FullMethodName                   = "/erp.mail.v1.EmailService/ExcelUsage"
 	EmailService_ListExcelQuotas_FullMethodName              = "/erp.mail.v1.EmailService/ListExcelQuotas"
 	EmailService_SetExcelQuota_FullMethodName                = "/erp.mail.v1.EmailService/SetExcelQuota"
@@ -210,6 +212,11 @@ type EmailServiceClient interface {
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error)
+	// 我名下的全部信箱，默认的排在最前。取代了「我的邮箱」那个单数答案：
+	// 一个人可以绑多个，而按人取单行的查询会**随机**挑一个且不报错。
+	ListMyMailboxes(ctx context.Context, in *ListMyMailboxesRequest, opts ...grpc.CallOption) (*ListMyMailboxesResponse, error)
+	// 换写信时默认用哪个信箱。清旧设新在一个事务里，中途不会出现零个或两个。
+	SetDefaultMailbox(ctx context.Context, in *SetDefaultMailboxRequest, opts ...grpc.CallOption) (*SetDefaultMailboxResponse, error)
 	// 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
 	// 额度状况。
 	ExcelUsage(ctx context.Context, in *ExcelUsageRequest, opts ...grpc.CallOption) (*ExcelUsageResponse, error)
@@ -770,6 +777,26 @@ func (c *emailServiceClient) GetMailThread(ctx context.Context, in *GetMailThrea
 	return out, nil
 }
 
+func (c *emailServiceClient) ListMyMailboxes(ctx context.Context, in *ListMyMailboxesRequest, opts ...grpc.CallOption) (*ListMyMailboxesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMyMailboxesResponse)
+	err := c.cc.Invoke(ctx, EmailService_ListMyMailboxes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) SetDefaultMailbox(ctx context.Context, in *SetDefaultMailboxRequest, opts ...grpc.CallOption) (*SetDefaultMailboxResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetDefaultMailboxResponse)
+	err := c.cc.Invoke(ctx, EmailService_SetDefaultMailbox_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) ExcelUsage(ctx context.Context, in *ExcelUsageRequest, opts ...grpc.CallOption) (*ExcelUsageResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ExcelUsageResponse)
@@ -1016,6 +1043,11 @@ type EmailServiceServer interface {
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error)
+	// 我名下的全部信箱，默认的排在最前。取代了「我的邮箱」那个单数答案：
+	// 一个人可以绑多个，而按人取单行的查询会**随机**挑一个且不报错。
+	ListMyMailboxes(context.Context, *ListMyMailboxesRequest) (*ListMyMailboxesResponse, error)
+	// 换写信时默认用哪个信箱。清旧设新在一个事务里，中途不会出现零个或两个。
+	SetDefaultMailbox(context.Context, *SetDefaultMailboxRequest) (*SetDefaultMailboxResponse, error)
 	// 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
 	// 额度状况。
 	ExcelUsage(context.Context, *ExcelUsageRequest) (*ExcelUsageResponse, error)
@@ -1218,6 +1250,12 @@ func (UnimplementedEmailServiceServer) GetInboundExcelConversionJob(context.Cont
 }
 func (UnimplementedEmailServiceServer) GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMailThread not implemented")
+}
+func (UnimplementedEmailServiceServer) ListMyMailboxes(context.Context, *ListMyMailboxesRequest) (*ListMyMailboxesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListMyMailboxes not implemented")
+}
+func (UnimplementedEmailServiceServer) SetDefaultMailbox(context.Context, *SetDefaultMailboxRequest) (*SetDefaultMailboxResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetDefaultMailbox not implemented")
 }
 func (UnimplementedEmailServiceServer) ExcelUsage(context.Context, *ExcelUsageRequest) (*ExcelUsageResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ExcelUsage not implemented")
@@ -2194,6 +2232,42 @@ func _EmailService_GetMailThread_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_ListMyMailboxes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMyMailboxesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).ListMyMailboxes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_ListMyMailboxes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).ListMyMailboxes(ctx, req.(*ListMyMailboxesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_SetDefaultMailbox_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetDefaultMailboxRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).SetDefaultMailbox(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_SetDefaultMailbox_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).SetDefaultMailbox(ctx, req.(*SetDefaultMailboxRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_ExcelUsage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ExcelUsageRequest)
 	if err := dec(in); err != nil {
@@ -2620,6 +2694,14 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMailThread",
 			Handler:    _EmailService_GetMailThread_Handler,
+		},
+		{
+			MethodName: "ListMyMailboxes",
+			Handler:    _EmailService_ListMyMailboxes_Handler,
+		},
+		{
+			MethodName: "SetDefaultMailbox",
+			Handler:    _EmailService_SetDefaultMailbox_Handler,
 		},
 		{
 			MethodName: "ExcelUsage",

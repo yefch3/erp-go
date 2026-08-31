@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,7 +61,11 @@ func TestNewlyBoundMailboxInheritsTheCompanyHost(t *testing.T) {
 	}
 
 	svc := New(pool, Deps{Secrets: box}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	if err := svc.SaveMailAccount(ctx, tenantID, employeeID, "newbie@sunrise.com", "", "code"); err != nil {
+	// 不挑服务商：263 企业邮用的是公司自己的域名，从地址看不出托管在哪家。
+	// 这种情况必须落回公司自己配的那套，而那正是 mail_hosts 剩下的用处。
+	if _, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "newbie@sunrise.com", Secret: "code",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	id, err := svc.defaultAccountIDFor(ctx, tenantID, employeeID)
@@ -108,12 +113,73 @@ func TestNewlyBoundMailboxInheritsTheCompanyHost(t *testing.T) {
 	}
 }
 
+// 认不出服务商、公司也没配过收发服务器时，绑定要**当场失败并说清楚**。
+//
+// 这一条是这批改动里换掉的一个旧行为，值得写下来：从前这种情况会绑成功，
+// 绑出来的是一个 smtp_host 为空的信箱——发信和同步全停，而界面上一切正常。
+// 那个洞在生产上出现过（见 #316）。
+//
+// 现在它在绑定那一刻就失败，而且说的是「请在上面选一个服务商」，不是
+// 「还没有配置发件服务器」——后者会把普通员工送到一个他打不开的管理员页面。
+func TestBindingFailsLoudlyWhenNobodyKnowsWhichServerToUse(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantID := time.Now().UnixNano()
+	employeeID := tenantID%100000 + 991001
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_binding_log WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+	}()
+
+	svc := New(pool, Deps{Secrets: box}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	// mail_hosts 里一行都没有，地址后缀也不认得。
+	_, err = svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "first@newco.example", Secret: "code",
+	})
+	if err == nil {
+		t.Fatal("不知道该连哪台服务器，却绑成功了——绑出来的是个不能收发的死箱")
+	}
+	if !strings.Contains(err.Error(), "服务商") {
+		t.Errorf("要说清楚是「没挑服务商」，拿到：%v", err)
+	}
+	var rows int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM mail_accounts WHERE tenant_id=$1`,
+		tenantID).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Errorf("失败的绑定不该留下行，实际留了 %d 行", rows)
+	}
+	// 失败也留痕：只记成功的话，反复试探正好是看不见的那一半。
+	var logged int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM mail_binding_log
+		WHERE tenant_id=$1 AND action='FAILED'`, tenantID).Scan(&logged); err != nil {
+		t.Fatal(err)
+	}
+	if logged != 1 {
+		t.Errorf("失败的绑定应该留一行痕，实际 %d 行", logged)
+	}
+}
+
+// 挑了服务商就不需要公司配置——这是「员工只负责登录」那条路。
 // 没配过 mail_hosts 的公司，绑定本身要能成功。
 //
 // 种模板用的是 LEFT JOIN 而不是 JOIN，就是为了这个：改成 JOIN 的话，
 // 一家新开的公司连插都插不进去，而报出来的会是「绑定失败」这种查不到原因
 // 的话——真正该说的是「还没配收发服务器」，那句 ForAccount 已经会说了。
-func TestBindingWorksBeforeAnybodyConfiguredTheCompanyHost(t *testing.T) {
+func TestPickingAProviderNeedsNoCompanyConfig(t *testing.T) {
 	dsn := os.Getenv("MAIL_TEST_DSN")
 	if dsn == "" {
 		t.Skip("MAIL_TEST_DSN not set")
@@ -135,15 +201,21 @@ func TestBindingWorksBeforeAnybodyConfiguredTheCompanyHost(t *testing.T) {
 	}()
 
 	svc := New(pool, Deps{Secrets: box}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	// mail_hosts 里一行都没有。
-	if err := svc.SaveMailAccount(ctx, tenantID, employeeID, "first@newco.com", "", "code"); err != nil {
-		t.Fatalf("公司还没配收发服务器，绑定就应该失败？%v", err)
+	// mail_hosts 里一行都没有，但员工挑了 QQ 邮箱。
+	if _, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "somebody@qq.com", Provider: "qq", Secret: "code",
+	}); err != nil {
+		t.Fatalf("挑了服务商还要求公司先配？%v", err)
 	}
 	id, err := svc.defaultAccountIDFor(ctx, tenantID, employeeID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ForAccount(ctx, tenantID, id); !errors.Is(err, ErrMailHostNotConfigured) {
-		t.Errorf("这个信箱确实还不能收发，该说的是「没配收发服务器」，拿到：%v", err)
+	acct, err := svc.ForAccount(ctx, tenantID, id)
+	if err != nil {
+		t.Fatalf("挑了服务商就该能收发：%v", err)
+	}
+	if acct.IMAPHost != "imap.qq.com" || acct.Host != "smtp.qq.com" {
+		t.Errorf("服务器该由服务端查表填好，拿到 %s / %s", acct.Host, acct.IMAPHost)
 	}
 }

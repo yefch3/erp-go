@@ -802,6 +802,142 @@ func (q *Queries) GetInboundForPurge(ctx context.Context, arg GetInboundForPurge
 	return i, err
 }
 
+const getMailAccountByEmail = `-- name: GetMailAccountByEmail :one
+SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
+       is_active, is_default, updated_at,
+       domain, smtp_host, smtp_port, smtp_security,
+       imap_host, imap_port, imap_security
+FROM mail_accounts
+WHERE tenant_id = $1::bigint
+  AND lower(email) = lower($2::text)
+`
+
+type GetMailAccountByEmailParams struct {
+	TenantID int64
+	Email    string
+}
+
+type GetMailAccountByEmailRow struct {
+	ID           int64
+	EmployeeID   int64
+	Email        string
+	Username     string
+	AuthKind     string
+	VerifiedAt   pgtype.Timestamptz
+	LastError    string
+	IsActive     bool
+	IsDefault    bool
+	UpdatedAt    pgtype.Timestamptz
+	Domain       string
+	SmtpHost     string
+	SmtpPort     int32
+	SmtpSecurity string
+	ImapHost     string
+	ImapPort     int32
+	ImapSecurity string
+}
+
+// 按**地址**取一个信箱。绑定路径用它回答两个问题：这个地址已经有行了吗，
+// 以及它是不是这个人的。
+//
+// 一并回 employee_id，是因为「已经属于别人」和「不存在」要给出不同的话，
+// 而调用方必须自己比一次——查询按 (tenant, email) 唯一，不带 employee_id，
+// 否则别人已经绑走的地址会显示成「没绑过」，人重填一次还是失败。
+//
+// 和 GetMailAccountByID 选的是同一组列，两边的行类型可以互换。
+func (q *Queries) GetMailAccountByEmail(ctx context.Context, arg GetMailAccountByEmailParams) (GetMailAccountByEmailRow, error) {
+	row := q.db.QueryRow(ctx, getMailAccountByEmail, arg.TenantID, arg.Email)
+	var i GetMailAccountByEmailRow
+	err := row.Scan(
+		&i.ID,
+		&i.EmployeeID,
+		&i.Email,
+		&i.Username,
+		&i.AuthKind,
+		&i.VerifiedAt,
+		&i.LastError,
+		&i.IsActive,
+		&i.IsDefault,
+		&i.UpdatedAt,
+		&i.Domain,
+		&i.SmtpHost,
+		&i.SmtpPort,
+		&i.SmtpSecurity,
+		&i.ImapHost,
+		&i.ImapPort,
+		&i.ImapSecurity,
+	)
+	return i, err
+}
+
+const getMailAccountByID = `-- name: GetMailAccountByID :one
+SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
+       is_active, is_default, updated_at,
+       domain, smtp_host, smtp_port, smtp_security,
+       imap_host, imap_port, imap_security
+FROM mail_accounts
+WHERE tenant_id = $1::bigint
+  AND id = $2::bigint
+`
+
+type GetMailAccountByIDParams struct {
+	TenantID int64
+	ID       int64
+}
+
+type GetMailAccountByIDRow struct {
+	ID           int64
+	EmployeeID   int64
+	Email        string
+	Username     string
+	AuthKind     string
+	VerifiedAt   pgtype.Timestamptz
+	LastError    string
+	IsActive     bool
+	IsDefault    bool
+	UpdatedAt    pgtype.Timestamptz
+	Domain       string
+	SmtpHost     string
+	SmtpPort     int32
+	SmtpSecurity string
+	ImapHost     string
+	ImapPort     int32
+	ImapSecurity string
+}
+
+// 按信箱 id 取一个信箱，不含密文。
+//
+// 取代了从前的 GetMyMailAccount（按 employee_id 的 :one）。那一句在一人一箱
+// 下没问题，放开之后就是这批改动最怕的形状：pgx 的 QueryRow **读到第一行
+// 就返回、不报「多行」错**，而它没有 ORDER BY——于是「我的邮箱」随机指向
+// 两个箱之一，绿勾、同步故障横幅、reauth 跳哪扇门全都跟着随机。
+//
+// 刻意不选 secret_enc：这是设置页读的，凭据永远不回浏览器。
+func (q *Queries) GetMailAccountByID(ctx context.Context, arg GetMailAccountByIDParams) (GetMailAccountByIDRow, error) {
+	row := q.db.QueryRow(ctx, getMailAccountByID, arg.TenantID, arg.ID)
+	var i GetMailAccountByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.EmployeeID,
+		&i.Email,
+		&i.Username,
+		&i.AuthKind,
+		&i.VerifiedAt,
+		&i.LastError,
+		&i.IsActive,
+		&i.IsDefault,
+		&i.UpdatedAt,
+		&i.Domain,
+		&i.SmtpHost,
+		&i.SmtpPort,
+		&i.SmtpSecurity,
+		&i.ImapHost,
+		&i.ImapPort,
+		&i.ImapSecurity,
+	)
+	return i, err
+}
+
 const getMailAccountSecret = `-- name: GetMailAccountSecret :one
 SELECT id, employee_id, email, username, auth_kind,
        secret_enc, oauth_refresh_enc, key_version, is_active,
@@ -909,48 +1045,6 @@ func (q *Queries) GetMailHost(ctx context.Context, tenantID int64) (GetMailHostR
 		&i.ImapSecurity,
 		&i.HourlyQuota,
 		&i.DailyQuota,
-	)
-	return i, err
-}
-
-const getMyMailAccount = `-- name: GetMyMailAccount :one
-SELECT id, email, username, auth_kind, verified_at, last_error, is_active, updated_at
-FROM mail_accounts
-WHERE tenant_id = $1::bigint
-  AND employee_id = $2::bigint
-`
-
-type GetMyMailAccountParams struct {
-	TenantID   int64
-	EmployeeID int64
-}
-
-type GetMyMailAccountRow struct {
-	ID         int64
-	Email      string
-	Username   string
-	AuthKind   string
-	VerifiedAt pgtype.Timestamptz
-	LastError  string
-	IsActive   bool
-	UpdatedAt  pgtype.Timestamptz
-}
-
-// Deliberately does NOT select secret_enc. This is what the settings page
-// reads, and a credential that is never returned to a browser cannot be
-// leaked by one.
-func (q *Queries) GetMyMailAccount(ctx context.Context, arg GetMyMailAccountParams) (GetMyMailAccountRow, error) {
-	row := q.db.QueryRow(ctx, getMyMailAccount, arg.TenantID, arg.EmployeeID)
-	var i GetMyMailAccountRow
-	err := row.Scan(
-		&i.ID,
-		&i.Email,
-		&i.Username,
-		&i.AuthKind,
-		&i.VerifiedAt,
-		&i.LastError,
-		&i.IsActive,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -2854,6 +2948,43 @@ func (q *Queries) PurgeInbound(ctx context.Context, arg PurgeInboundParams) (int
 	return result.RowsAffected(), nil
 }
 
+const recordMailBinding = `-- name: RecordMailBinding :exec
+INSERT INTO mail_binding_log (
+    tenant_id, employee_id, account_id, email, provider, action, detail
+) VALUES (
+    $1::bigint, $2::bigint,
+    $3::bigint, $4::text,
+    $5::text, $6::text, $7::text
+)
+`
+
+type RecordMailBindingParams struct {
+	TenantID   int64
+	EmployeeID int64
+	AccountID  *int64
+	Email      string
+	Provider   string
+	Action     string
+	Detail     string
+}
+
+// 绑定留痕。见 00044 的表注释——地址交还给调用方之后，「谁绑了什么」不再
+// 有一个不言自明的答案。
+//
+// 失败也记：只记成功的话，反复拿别人地址试探正好是看不见的那一半。
+func (q *Queries) RecordMailBinding(ctx context.Context, arg RecordMailBindingParams) error {
+	_, err := q.db.Exec(ctx, recordMailBinding,
+		arg.TenantID,
+		arg.EmployeeID,
+		arg.AccountID,
+		arg.Email,
+		arg.Provider,
+		arg.Action,
+		arg.Detail,
+	)
+	return err
+}
+
 const repointInbound = `-- name: RepointInbound :exec
 UPDATE email_inbound
 SET folder = $1::text,
@@ -3146,6 +3277,52 @@ type SetMailAccountActiveParams struct {
 
 func (q *Queries) SetMailAccountActive(ctx context.Context, arg SetMailAccountActiveParams) error {
 	_, err := q.db.Exec(ctx, setMailAccountActive, arg.IsActive, arg.TenantID, arg.ID)
+	return err
+}
+
+const setMailAccountHosts = `-- name: SetMailAccountHosts :exec
+UPDATE mail_accounts
+SET domain = $1::text,
+    smtp_host = $2::text,
+    smtp_port = $3::int,
+    smtp_security = $4::text,
+    imap_host = $5::text,
+    imap_port = $6::int,
+    imap_security = $7::text,
+    updated_at = now()
+WHERE tenant_id = $8::bigint AND id = $9::bigint
+`
+
+type SetMailAccountHostsParams struct {
+	Domain       string
+	SmtpHost     string
+	SmtpPort     int32
+	SmtpSecurity string
+	ImapHost     string
+	ImapPort     int32
+	ImapSecurity string
+	TenantID     int64
+	ID           int64
+}
+
+// 把这个信箱的收发服务器写上去。
+//
+// 00042 之前主机是一家公司一份（mail_hosts），绑定时不必写——所有箱都用
+// 同一套。跨服务商之后这句是必需的：绑 Gmail 的那一行必须自己带着
+// imap.gmail.com，否则同步会拿着 Gmail 的账号去登公司的 263 服务器，而
+// 那个失败长得和「授权码错了」一模一样。
+func (q *Queries) SetMailAccountHosts(ctx context.Context, arg SetMailAccountHostsParams) error {
+	_, err := q.db.Exec(ctx, setMailAccountHosts,
+		arg.Domain,
+		arg.SmtpHost,
+		arg.SmtpPort,
+		arg.SmtpSecurity,
+		arg.ImapHost,
+		arg.ImapPort,
+		arg.ImapSecurity,
+		arg.TenantID,
+		arg.ID,
+	)
 	return err
 }
 

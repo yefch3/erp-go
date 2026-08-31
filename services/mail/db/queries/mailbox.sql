@@ -27,14 +27,39 @@ ON CONFLICT (tenant_id) DO UPDATE SET
     daily_quota = excluded.daily_quota,
     updated_at = now();
 
--- name: GetMyMailAccount :one
--- Deliberately does NOT select secret_enc. This is what the settings page
--- reads, and a credential that is never returned to a browser cannot be
--- leaked by one.
-SELECT id, email, username, auth_kind, verified_at, last_error, is_active, updated_at
+-- name: GetMailAccountByEmail :one
+-- 按**地址**取一个信箱。绑定路径用它回答两个问题：这个地址已经有行了吗，
+-- 以及它是不是这个人的。
+--
+-- 一并回 employee_id，是因为「已经属于别人」和「不存在」要给出不同的话，
+-- 而调用方必须自己比一次——查询按 (tenant, email) 唯一，不带 employee_id，
+-- 否则别人已经绑走的地址会显示成「没绑过」，人重填一次还是失败。
+--
+-- 和 GetMailAccountByID 选的是同一组列，两边的行类型可以互换。
+SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
+       is_active, is_default, updated_at,
+       domain, smtp_host, smtp_port, smtp_security,
+       imap_host, imap_port, imap_security
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
-  AND employee_id = sqlc.arg(employee_id)::bigint;
+  AND lower(email) = lower(sqlc.arg(email)::text);
+
+-- name: GetMailAccountByID :one
+-- 按信箱 id 取一个信箱，不含密文。
+--
+-- 取代了从前的 GetMyMailAccount（按 employee_id 的 :one）。那一句在一人一箱
+-- 下没问题，放开之后就是这批改动最怕的形状：pgx 的 QueryRow **读到第一行
+-- 就返回、不报「多行」错**，而它没有 ORDER BY——于是「我的邮箱」随机指向
+-- 两个箱之一，绿勾、同步故障横幅、reauth 跳哪扇门全都跟着随机。
+--
+-- 刻意不选 secret_enc：这是设置页读的，凭据永远不回浏览器。
+SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
+       is_active, is_default, updated_at,
+       domain, smtp_host, smtp_port, smtp_security,
+       imap_host, imap_port, imap_security
+FROM mail_accounts
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint;
 
 -- name: UpsertMailAccountShell :one
 -- Creates or updates everything except the secret, and returns the id.

@@ -140,6 +140,11 @@ service EmailService {
   // One conversation, both directions, oldest first. Owner-scoped: the
   // caller sees only their own half of the world.
   rpc GetMailThread(GetMailThreadRequest) returns (GetMailThreadResponse);
+  // 我名下的全部信箱，默认的排在最前。取代了「我的邮箱」那个单数答案：
+  // 一个人可以绑多个，而按人取单行的查询会**随机**挑一个且不报错。
+  rpc ListMyMailboxes(ListMyMailboxesRequest) returns (ListMyMailboxesResponse);
+  // 换写信时默认用哪个信箱。清旧设新在一个事务里，中途不会出现零个或两个。
+  rpc SetDefaultMailbox(SetDefaultMailboxRequest) returns (SetDefaultMailboxResponse);
   // 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
   // 额度状况。
   rpc ExcelUsage(ExcelUsageRequest) returns (ExcelUsageResponse);
@@ -516,11 +521,29 @@ message VerifyMailAccessRequest {
   // must never overwrite a working credential or destroy a Google binding.
   // Empty means "verify what is already bound" (the Google path).
   string email = 2;
+  // 邮件服务商代号（263 / 腾讯企业邮 / Gmail / 163 / …，或 "other"）。
+  //
+  // **服务器地址由服务端按这个代号查表**，不收调用方给的主机名——收了就
+  // 等于任何登录了的员工都能让邮件服务带着凭据去连任意 host:port。
+  // 空表示按地址后缀猜；猜不出来落回这家公司自己配的那套。
+  string provider = 3;
+  // 只有 provider = "other" 时才看这几个：服务商不在表里时员工自己填的
+  // 主机。服务端仍会校验（只放行公网域名和标准邮件端口）。
+  string smtp_host = 4;
+  int32 smtp_port = 5;
+  string smtp_security = 6;
+  string imap_host = 7;
+  int32 imap_port = 8;
+  string imap_security = 9;
 }
 
 message VerifyMailAccessResponse {
   bool ok = 1;
   string detail = 2;
+  // 真正绑上的是哪一个信箱。地址现在由调用方给，请求里写的和落库的可能
+  // 不同（大小写、首尾空格），而界面要说得出「你绑好了哪一个」。
+  int64 account_id = 4;
+  string email = 5;
   // Whether the mail host is the one that said no.
   //
   // Every failure arrives here as ok=false, but they are not the same kind of
@@ -590,9 +613,31 @@ message MailAccount {
   bool is_active = 6;
   // PASSWORD or OAUTH — decides which unlock the gate offers.
   string auth_kind = 7;
+  // 这个信箱本身。一个人可以有好几个，所以界面要能指名道姓地说「切到这个」
+  // 「把这个设成默认」——光有地址不够，地址是可以长得很像的。
+  int64 id = 8;
+  // 写信时预选哪一个。和登录地址无关。
+  bool is_default = 9;
+  // 这个信箱自己的收发服务器。跨服务商时（263 + Gmail）人得看得出哪个是
+  // 哪个，光看地址不一定分得清。
+  string smtp_host = 10;
+  string imap_host = 11;
 }
 
 message GetMyMailAccountRequest {}
+
+message ListMyMailboxesRequest {}
+
+message ListMyMailboxesResponse {
+  // 默认的排在最前。这个顺序就是「用哪个箱发信」的答案，不是随便的 id 序。
+  repeated MailAccount accounts = 1;
+}
+
+message SetDefaultMailboxRequest {
+  int64 account_id = 1;
+}
+
+message SetDefaultMailboxResponse {}
 
 message GetMyMailAccountResponse {
   MailAccount account = 1;
