@@ -293,6 +293,12 @@ message ListInboundRequest {
   // encodes a sort position, so a list that grows at the top cannot shift
   // the boundary underneath somebody who is reading.
   string cursor = 4;
+  // 只看这个信箱。0 = 我全部信箱。
+  //
+  // 产品口径是「按邮箱分，左侧切换」，不做统一收件箱，所以正常情况下这个
+  // 字段总是有值。留着 0 这一档是为了部署顺序：后端先发、前端后发，那几
+  // 分钟里旧前端什么都不传，列表不能空。
+  int64 account_id = 5;
 }
 
 // One message found by a search. It carries the folder because the search

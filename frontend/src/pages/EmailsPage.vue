@@ -27,6 +27,15 @@
            filter here also let a supervisor requeue or abandon a colleague's
            message, which is the salesperson's call, not theirs. -->
 
+      <!-- 但**我自己的**信箱可以有好几个。按邮箱分、左侧切换，不做统一
+           收件箱：两个箱同时收到同一条会话时那是两行，合成一行的话
+           「这封信该从哪个箱回」就答不上来了。 -->
+      <MailboxSwitcher
+        v-model="currentAccount"
+        :can-add="canWrite"
+        @changed="onMailboxesChanged"
+      />
+
       <span class="rail-grow" />
       <!-- Locks the mailbox, not the ERP: the token dies server-side, so the
            next visitor to this workstation faces the gate again. -->
@@ -1070,6 +1079,7 @@ import EmailComposer from '../components/EmailComposer.vue'
 import MailReader, { type Mail } from '../components/MailReader.vue'
 import MailAttachments, { type MailFile } from '../components/MailAttachments.vue'
 import MailboxGate from '../components/MailboxGate.vue'
+import MailboxSwitcher from '../components/MailboxSwitcher.vue'
 import MailHostDialog from '../components/MailHostDialog.vue'
 import MailSignatureDialog from '../components/MailSignatureDialog.vue'
 import MailTemplatesDialog from '../components/MailTemplatesDialog.vue'
@@ -1323,14 +1333,25 @@ const markingAll = ref(false)
 const emptying = ref(false)
 // What the server last said went wrong with this mailbox, empty when healthy.
 const syncError = ref('')
-// The bound mailbox's own address. A thread entry whose sender is this
-// address is our own mail even when it arrived through the inbox (a mail
-// sent to yourself), and must wear the 我发出 tag, not 对方.
-const accountEmail = ref('')
+// 当前在看哪个信箱。0 = 全部（还没绑过，或者只有一个）。
+const currentAccount = ref(0)
+// **我的全部地址**，不是一个。一封信的发件人是其中任何一个，它就是"我发出"
+// 的——哪怕它是从收件箱里进来的（发给自己的信）。
+//
+// 从前这里是单个 accountEmail。一个人绑了两个箱之后，从另一个箱发出去的信
+// 会被认成"对方"发的，标签打反，而且不报任何错。
+const myAddresses = ref<Set<string>>(new Set())
 
 function isOwnMail(it: { direction: string; counterparty: string }) {
   return it.direction === 'OUT'
-    || (accountEmail.value !== '' && it.counterparty.trim().toLowerCase() === accountEmail.value)
+    || myAddresses.value.has(it.counterparty.trim().toLowerCase())
+}
+
+// 信箱清单变了（切换器加载完、新绑了一个、换了默认）。
+function onMailboxesChanged(boxes: { id: number; email: string; isDefault: boolean }[]) {
+  myAddresses.value = new Set(boxes.map((b) => b.email.trim().toLowerCase()).filter(Boolean))
+  // 还没选过就落在默认那个上——服务端按「默认排最前」返回，所以取第一个。
+  if (!currentAccount.value && boxes.length) currentAccount.value = boxes[0].id
 }
 // The mail being read full-page. Set from the URL, never directly: opening a
 // mail is a navigation, so refresh reopens it and back returns to the list.
@@ -1732,7 +1753,11 @@ onUnmounted(
 // own cheap fetch rather than riding on the inbox list load.
 async function refreshUnread() {
   try {
-    const d = await get<{ unreadCount: number }>('/inbound-mails', { page: 1, page_size: 1 })
+    const d = await get<{ unreadCount: number }>('/inbound-mails', {
+      page: 1,
+      page_size: 1,
+      accountId: currentAccount.value,
+    })
     unreadCount.value = Number(d.unreadCount ?? 0)
   } catch {
     /* the badge going stale is not worth an error toast */
@@ -1831,6 +1856,16 @@ function reload() {
   pushState({ page: 1, q: keyword.value, mail: '' })
 }
 
+// 切信箱 = 重新开始翻这个箱。游标必须清掉：它编的是**上一个箱**的排序
+// 位置，带着它翻新箱会从一个毫无意义的地方开始，而且不会报错——只是列表
+// 看起来少了一截。
+watch(currentAccount, (now, before) => {
+  if (!before || now === before) return
+  keyword.value = ''
+  pushState({ page: 1, q: '', mail: '', cursor: '' }, [])
+  refreshUnread()
+})
+
 // Inbound lists page by cursor: forward hands back the token the server
 // returned, back replays the one this page was reached with. Both are
 // navigations, so the address bar and the browser's own buttons stay honest.
@@ -1889,6 +1924,8 @@ async function load() {
         keyword: keyword.value,
         view: INBOUND_VIEWS[folder.value],
         cursor: applied?.cursor ?? '',
+        // 只看当前这个信箱。0 = 全部（还没绑过箱，或者只有一个）。
+        accountId: currentAccount.value,
       })
       inbound.value = d.mails ?? []
       total.value = Number(d.meta?.total ?? 0)
@@ -2553,12 +2590,23 @@ async function markAllRead() {
 // unlock token is still valid — one is "may this browser see the mailbox",
 // the other is "does the mailbox still answer" — so the gate letting somebody
 // in says nothing about whether mail is still arriving.
+//
+// 横幅说的是**当前这个信箱**。一个人有好几个箱时，「我的邮箱出错了」这句
+// 话必须指得出是哪一个——从前它读的是按人取单行的那个答案，两个箱时那个
+// 答案是随机的，横幅可能在说另一个箱的事。左侧每个箱自己还有一个红点。
 async function checkSyncHealth() {
   try {
-    const d = await get<{ account: { lastError: string; email: string }; excelAvailable: boolean }>('/my-mail-account')
-    syncError.value = d.account?.lastError ?? ''
-    accountEmail.value = (d.account?.email ?? '').trim().toLowerCase()
-    excelAvailable.value = d.excelAvailable === true
+    const d = await get<{ accounts?: { id: number; lastError: string; email: string }[] }>(
+      '/my-mailboxes',
+    )
+    const mine = d.accounts ?? []
+    const cur = mine.find((a) => Number(a.id) === currentAccount.value) ?? mine[0]
+    syncError.value = cur?.lastError ?? ''
+    myAddresses.value = new Set(
+      mine.map((a) => (a.email ?? '').trim().toLowerCase()).filter(Boolean),
+    )
+    const cap = await get<{ excelAvailable: boolean }>('/my-mail-account')
+    excelAvailable.value = cap.excelAvailable === true
   } catch {
     excelAvailable.value = false
     /* the banner is a courtesy; its absence must not break the page */

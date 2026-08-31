@@ -825,7 +825,7 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 
 func (h *Handler) ListInbound(ctx context.Context, req *mailv1.ListInboundRequest) (*mailv1.ListInboundResponse, error) {
 	op := operator(ctx)
-	p, err := h.svc.ListInbound(ctx, grpcx.TenantID(ctx), op.ID,
+	p, err := h.svc.ListInbound(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId(),
 		req.GetKeyword(), req.GetView(), req.GetCursor(), req.GetPage().GetPageSize())
 	if err != nil {
 		return nil, err

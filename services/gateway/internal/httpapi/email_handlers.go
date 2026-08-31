@@ -665,11 +665,14 @@ func clientIP(r *http.Request) string {
 }
 
 func (s *Server) listInbound(w http.ResponseWriter, r *http.Request) {
+	// accountId 是「只看这个信箱」，缺省 0 = 我全部信箱。旧前端不发。
+	acct, _ := strconv.ParseInt(r.URL.Query().Get("accountId"), 10, 64)
 	resp, err := s.Emails.ListInbound(r.Context(), &mailv1.ListInboundRequest{
-		Page:    pageFromQuery(r),
-		Keyword: r.URL.Query().Get("keyword"),
-		View:    r.URL.Query().Get("view"),
-		Cursor:  r.URL.Query().Get("cursor"),
+		Page:      pageFromQuery(r),
+		Keyword:   r.URL.Query().Get("keyword"),
+		View:      r.URL.Query().Get("view"),
+		Cursor:    r.URL.Query().Get("cursor"),
+		AccountId: acct,
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
