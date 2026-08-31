@@ -72,8 +72,15 @@ func TestExcelQuota(t *testing.T) {
 	if err := svc.ensureExcelQuota(ctx, tenantID); err != nil {
 		t.Fatalf("不限额度不该拦人：%v", err)
 	}
-	if quota.CurrentMonth != time.Now().UTC().Format("2006-01") {
-		t.Errorf("当前月份 = %q，和本机 UTC 当月对不上", quota.CurrentMonth)
+	// 和**数据库**认定的当月比，不和 Go 的 UTC 时钟比。
+	//
+	// CurrentMonth 的用处是让前端拿它去和用量表里的月份对——而那些月份是
+	// 数据库按 created_at 算的。所以这里真正该成立的是「它等于此刻写进去的
+	// 一行会被归到的那个月」，而不是「它等于本机 UTC 的月份」。
+	// 数据库时区一旦不是 UTC，后者在每个月最后几个小时必然不成立：
+	// 2026-08-31 22:58 UTC 的 CI 就是这么红的。
+	if want := dbCurrentMonth(t, ctx, pool); quota.CurrentMonth != want {
+		t.Errorf("当前月份 = %q，数据库说是 %q", quota.CurrentMonth, want)
 	}
 
 	// ---- 上限比已用高：放行，并且百分比算得出来 ----
