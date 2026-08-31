@@ -31,7 +31,7 @@ func TestSalesProcurementProgressPayloadUsesSensitiveFieldWhitelist(t *testing.T
 		}},
 		&prv1.ListCostScenariosResponse{CostScenarios: []*prv1.CostScenario{
 			{Id: 1, ScenarioNo: "COST-DRAFT", Status: "DRAFT", ProductTotal: "100", ChargeTotal: "20", CustomerTotal: "130"},
-			{Id: 2, ScenarioNo: "COST-CONFIRMED", VersionNo: 3, RequirementVersionNo: 2, Currency: "USD", Status: "CONFIRMED", ProductTotal: "200", ChargeTotal: "30", LandedTotal: "230", CustomerTotal: "260", CustomerQuotationId: 9, SubmittedToSalesAt: "2026-08-27T12:00:00Z"},
+			{Id: 2, ScenarioNo: "COST-CONFIRMED", VersionNo: 3, RequirementVersionNo: 2, Currency: "USD", Status: "CONFIRMED", ProductTotal: "200", ChargeTotal: "30", LandedTotal: "230", CustomerTotal: "260", CustomerQuotationId: 9, SubmittedToSalesAt: "2026-08-27T12:00:00Z", Lines: []*prv1.CostScenarioLine{{SourcingLineId: 22, SupplierName: "成本供应商", SourceUnitPrice: "8", LandedCost: "11", MarginAmount: "2", CustomerUnitPrice: "13"}}},
 			{Id: 3, ScenarioNo: "COST-NOT-SUBMITTED", Status: "CONFIRMED", CustomerTotal: "999"},
 		}},
 		&prv1.ListProcurementPlansResponse{ProcurementPlans: []*prv1.ProcurementPlan{
@@ -45,12 +45,12 @@ func TestSalesProcurementProgressPayloadUsesSensitiveFieldWhitelist(t *testing.T
 		t.Fatal(err)
 	}
 	got := string(raw)
-	for _, secret := range []string{"秘密供应商", "秘密工厂", "secret@example.com", "100", "200", "230", "COST-DRAFT", "COST-NOT-SUBMITTED", "999", "未提交供应商"} {
+	for _, secret := range []string{"秘密供应商", "秘密工厂", "secret@example.com", "成本供应商", `"sourceUnitPrice":"8"`, `"landedCost":"11"`, `"marginAmount":"2"`, "COST-DRAFT", "COST-NOT-SUBMITTED", "999", "未提交供应商"} {
 		if strings.Contains(got, secret) {
 			t.Fatalf("sales progress leaked procurement detail %q: %s", secret, got)
 		}
 	}
-	for _, want := range []string{`"rfqCount":2`, `"quotedRfqCount":1`, `"scenarioNo":"COST-CONFIRMED"`, `"requirementVersionNo":2`, `"customerTotal":"260"`, `"planNo":"PP-SUBMITTED"`, `"versionNo":2`, `"managerNote":"优先采用书面报价"`, `"confirmedByName":"采购经理"`, `"productName":"冷轧钢卷"`, `"supplierName":"获选供应商"`, `"factoryName":"获选工厂"`, `"buyerName":"采购甲"`, `"unitPrice":"520"`, `"availableQty":"20"`, `"paymentTerms":"T/T"`, `"incoterm":"FOB"`} {
+	for _, want := range []string{`"rfqCount":2`, `"quotedRfqCount":1`, `"scenarioNo":"COST-CONFIRMED"`, `"requirementVersionNo":2`, `"customerTotal":"260"`, `"sourcingLineId":22`, `"customerUnitPrice":"13"`, `"planNo":"PP-SUBMITTED"`, `"versionNo":2`, `"managerNote":"优先采用书面报价"`, `"confirmedByName":"采购经理"`, `"productName":"冷轧钢卷"`, `"supplierName":"获选供应商"`, `"factoryName":"获选工厂"`, `"buyerName":"采购甲"`, `"unitPrice":"520"`, `"availableQty":"20"`, `"paymentTerms":"T/T"`, `"incoterm":"FOB"`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("sales progress missing %s: %s", want, got)
 		}

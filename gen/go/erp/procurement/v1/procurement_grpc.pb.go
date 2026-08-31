@@ -55,6 +55,15 @@ const (
 	SourcingService_CreateSourcingShippingPlan_FullMethodName        = "/erp.procurement.v1.SourcingService/CreateSourcingShippingPlan"
 	SourcingService_ListSourcingShippingPlans_FullMethodName         = "/erp.procurement.v1.SourcingService/ListSourcingShippingPlans"
 	SourcingService_SubmitSourcingShippingPlanToSales_FullMethodName = "/erp.procurement.v1.SourcingService/SubmitSourcingShippingPlanToSales"
+	SourcingService_CreateSalesPlan_FullMethodName                   = "/erp.procurement.v1.SourcingService/CreateSalesPlan"
+	SourcingService_ListSalesPlans_FullMethodName                    = "/erp.procurement.v1.SourcingService/ListSalesPlans"
+	SourcingService_AddCustomerFeedback_FullMethodName               = "/erp.procurement.v1.SourcingService/AddCustomerFeedback"
+	SourcingService_ListCustomerFeedback_FullMethodName              = "/erp.procurement.v1.SourcingService/ListCustomerFeedback"
+	SourcingService_CreateSalesProcurementRework_FullMethodName      = "/erp.procurement.v1.SourcingService/CreateSalesProcurementRework"
+	SourcingService_CreateShippingRework_FullMethodName              = "/erp.procurement.v1.SourcingService/CreateShippingRework"
+	SourcingService_ListShippingReworks_FullMethodName               = "/erp.procurement.v1.SourcingService/ListShippingReworks"
+	SourcingService_ListMyShippingReworks_FullMethodName             = "/erp.procurement.v1.SourcingService/ListMyShippingReworks"
+	SourcingService_ResolveShippingRework_FullMethodName             = "/erp.procurement.v1.SourcingService/ResolveShippingRework"
 	SourcingService_CreateCostScenario_FullMethodName                = "/erp.procurement.v1.SourcingService/CreateCostScenario"
 	SourcingService_ListCostScenarios_FullMethodName                 = "/erp.procurement.v1.SourcingService/ListCostScenarios"
 	SourcingService_GetCostScenario_FullMethodName                   = "/erp.procurement.v1.SourcingService/GetCostScenario"
@@ -111,6 +120,15 @@ type SourcingServiceClient interface {
 	CreateSourcingShippingPlan(ctx context.Context, in *CreateSourcingShippingPlanRequest, opts ...grpc.CallOption) (*CreateSourcingShippingPlanResponse, error)
 	ListSourcingShippingPlans(ctx context.Context, in *ListSourcingShippingPlansRequest, opts ...grpc.CallOption) (*ListSourcingShippingPlansResponse, error)
 	SubmitSourcingShippingPlanToSales(ctx context.Context, in *SubmitSourcingShippingPlanToSalesRequest, opts ...grpc.CallOption) (*SubmitSourcingShippingPlanToSalesResponse, error)
+	CreateSalesPlan(ctx context.Context, in *CreateSalesPlanRequest, opts ...grpc.CallOption) (*CreateSalesPlanResponse, error)
+	ListSalesPlans(ctx context.Context, in *ListSalesPlansRequest, opts ...grpc.CallOption) (*ListSalesPlansResponse, error)
+	AddCustomerFeedback(ctx context.Context, in *AddCustomerFeedbackRequest, opts ...grpc.CallOption) (*AddCustomerFeedbackResponse, error)
+	ListCustomerFeedback(ctx context.Context, in *ListCustomerFeedbackRequest, opts ...grpc.CallOption) (*ListCustomerFeedbackResponse, error)
+	CreateSalesProcurementRework(ctx context.Context, in *CreateSalesProcurementReworkRequest, opts ...grpc.CallOption) (*CreateSalesProcurementReworkResponse, error)
+	CreateShippingRework(ctx context.Context, in *CreateShippingReworkRequest, opts ...grpc.CallOption) (*CreateShippingReworkResponse, error)
+	ListShippingReworks(ctx context.Context, in *ListShippingReworksRequest, opts ...grpc.CallOption) (*ListShippingReworksResponse, error)
+	ListMyShippingReworks(ctx context.Context, in *ListMyShippingReworksRequest, opts ...grpc.CallOption) (*ListMyShippingReworksResponse, error)
+	ResolveShippingRework(ctx context.Context, in *ResolveShippingReworkRequest, opts ...grpc.CallOption) (*ResolveShippingReworkResponse, error)
 	CreateCostScenario(ctx context.Context, in *CreateCostScenarioRequest, opts ...grpc.CallOption) (*CreateCostScenarioResponse, error)
 	ListCostScenarios(ctx context.Context, in *ListCostScenariosRequest, opts ...grpc.CallOption) (*ListCostScenariosResponse, error)
 	GetCostScenario(ctx context.Context, in *GetCostScenarioRequest, opts ...grpc.CallOption) (*GetCostScenarioResponse, error)
@@ -493,6 +511,96 @@ func (c *sourcingServiceClient) SubmitSourcingShippingPlanToSales(ctx context.Co
 	return out, nil
 }
 
+func (c *sourcingServiceClient) CreateSalesPlan(ctx context.Context, in *CreateSalesPlanRequest, opts ...grpc.CallOption) (*CreateSalesPlanResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateSalesPlanResponse)
+	err := c.cc.Invoke(ctx, SourcingService_CreateSalesPlan_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ListSalesPlans(ctx context.Context, in *ListSalesPlansRequest, opts ...grpc.CallOption) (*ListSalesPlansResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSalesPlansResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListSalesPlans_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) AddCustomerFeedback(ctx context.Context, in *AddCustomerFeedbackRequest, opts ...grpc.CallOption) (*AddCustomerFeedbackResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AddCustomerFeedbackResponse)
+	err := c.cc.Invoke(ctx, SourcingService_AddCustomerFeedback_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ListCustomerFeedback(ctx context.Context, in *ListCustomerFeedbackRequest, opts ...grpc.CallOption) (*ListCustomerFeedbackResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCustomerFeedbackResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListCustomerFeedback_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) CreateSalesProcurementRework(ctx context.Context, in *CreateSalesProcurementReworkRequest, opts ...grpc.CallOption) (*CreateSalesProcurementReworkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateSalesProcurementReworkResponse)
+	err := c.cc.Invoke(ctx, SourcingService_CreateSalesProcurementRework_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) CreateShippingRework(ctx context.Context, in *CreateShippingReworkRequest, opts ...grpc.CallOption) (*CreateShippingReworkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateShippingReworkResponse)
+	err := c.cc.Invoke(ctx, SourcingService_CreateShippingRework_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ListShippingReworks(ctx context.Context, in *ListShippingReworksRequest, opts ...grpc.CallOption) (*ListShippingReworksResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListShippingReworksResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListShippingReworks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ListMyShippingReworks(ctx context.Context, in *ListMyShippingReworksRequest, opts ...grpc.CallOption) (*ListMyShippingReworksResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMyShippingReworksResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ListMyShippingReworks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sourcingServiceClient) ResolveShippingRework(ctx context.Context, in *ResolveShippingReworkRequest, opts ...grpc.CallOption) (*ResolveShippingReworkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveShippingReworkResponse)
+	err := c.cc.Invoke(ctx, SourcingService_ResolveShippingRework_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *sourcingServiceClient) CreateCostScenario(ctx context.Context, in *CreateCostScenarioRequest, opts ...grpc.CallOption) (*CreateCostScenarioResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateCostScenarioResponse)
@@ -637,6 +745,15 @@ type SourcingServiceServer interface {
 	CreateSourcingShippingPlan(context.Context, *CreateSourcingShippingPlanRequest) (*CreateSourcingShippingPlanResponse, error)
 	ListSourcingShippingPlans(context.Context, *ListSourcingShippingPlansRequest) (*ListSourcingShippingPlansResponse, error)
 	SubmitSourcingShippingPlanToSales(context.Context, *SubmitSourcingShippingPlanToSalesRequest) (*SubmitSourcingShippingPlanToSalesResponse, error)
+	CreateSalesPlan(context.Context, *CreateSalesPlanRequest) (*CreateSalesPlanResponse, error)
+	ListSalesPlans(context.Context, *ListSalesPlansRequest) (*ListSalesPlansResponse, error)
+	AddCustomerFeedback(context.Context, *AddCustomerFeedbackRequest) (*AddCustomerFeedbackResponse, error)
+	ListCustomerFeedback(context.Context, *ListCustomerFeedbackRequest) (*ListCustomerFeedbackResponse, error)
+	CreateSalesProcurementRework(context.Context, *CreateSalesProcurementReworkRequest) (*CreateSalesProcurementReworkResponse, error)
+	CreateShippingRework(context.Context, *CreateShippingReworkRequest) (*CreateShippingReworkResponse, error)
+	ListShippingReworks(context.Context, *ListShippingReworksRequest) (*ListShippingReworksResponse, error)
+	ListMyShippingReworks(context.Context, *ListMyShippingReworksRequest) (*ListMyShippingReworksResponse, error)
+	ResolveShippingRework(context.Context, *ResolveShippingReworkRequest) (*ResolveShippingReworkResponse, error)
 	CreateCostScenario(context.Context, *CreateCostScenarioRequest) (*CreateCostScenarioResponse, error)
 	ListCostScenarios(context.Context, *ListCostScenariosRequest) (*ListCostScenariosResponse, error)
 	GetCostScenario(context.Context, *GetCostScenarioRequest) (*GetCostScenarioResponse, error)
@@ -766,6 +883,33 @@ func (UnimplementedSourcingServiceServer) ListSourcingShippingPlans(context.Cont
 }
 func (UnimplementedSourcingServiceServer) SubmitSourcingShippingPlanToSales(context.Context, *SubmitSourcingShippingPlanToSalesRequest) (*SubmitSourcingShippingPlanToSalesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SubmitSourcingShippingPlanToSales not implemented")
+}
+func (UnimplementedSourcingServiceServer) CreateSalesPlan(context.Context, *CreateSalesPlanRequest) (*CreateSalesPlanResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateSalesPlan not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListSalesPlans(context.Context, *ListSalesPlansRequest) (*ListSalesPlansResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSalesPlans not implemented")
+}
+func (UnimplementedSourcingServiceServer) AddCustomerFeedback(context.Context, *AddCustomerFeedbackRequest) (*AddCustomerFeedbackResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddCustomerFeedback not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListCustomerFeedback(context.Context, *ListCustomerFeedbackRequest) (*ListCustomerFeedbackResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCustomerFeedback not implemented")
+}
+func (UnimplementedSourcingServiceServer) CreateSalesProcurementRework(context.Context, *CreateSalesProcurementReworkRequest) (*CreateSalesProcurementReworkResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateSalesProcurementRework not implemented")
+}
+func (UnimplementedSourcingServiceServer) CreateShippingRework(context.Context, *CreateShippingReworkRequest) (*CreateShippingReworkResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateShippingRework not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListShippingReworks(context.Context, *ListShippingReworksRequest) (*ListShippingReworksResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListShippingReworks not implemented")
+}
+func (UnimplementedSourcingServiceServer) ListMyShippingReworks(context.Context, *ListMyShippingReworksRequest) (*ListMyShippingReworksResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListMyShippingReworks not implemented")
+}
+func (UnimplementedSourcingServiceServer) ResolveShippingRework(context.Context, *ResolveShippingReworkRequest) (*ResolveShippingReworkResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResolveShippingRework not implemented")
 }
 func (UnimplementedSourcingServiceServer) CreateCostScenario(context.Context, *CreateCostScenarioRequest) (*CreateCostScenarioResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateCostScenario not implemented")
@@ -1466,6 +1610,168 @@ func _SourcingService_SubmitSourcingShippingPlanToSales_Handler(srv interface{},
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SourcingService_CreateSalesPlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateSalesPlanRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).CreateSalesPlan(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_CreateSalesPlan_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).CreateSalesPlan(ctx, req.(*CreateSalesPlanRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ListSalesPlans_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSalesPlansRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListSalesPlans(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListSalesPlans_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListSalesPlans(ctx, req.(*ListSalesPlansRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_AddCustomerFeedback_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddCustomerFeedbackRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).AddCustomerFeedback(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_AddCustomerFeedback_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).AddCustomerFeedback(ctx, req.(*AddCustomerFeedbackRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ListCustomerFeedback_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCustomerFeedbackRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListCustomerFeedback(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListCustomerFeedback_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListCustomerFeedback(ctx, req.(*ListCustomerFeedbackRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_CreateSalesProcurementRework_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateSalesProcurementReworkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).CreateSalesProcurementRework(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_CreateSalesProcurementRework_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).CreateSalesProcurementRework(ctx, req.(*CreateSalesProcurementReworkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_CreateShippingRework_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateShippingReworkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).CreateShippingRework(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_CreateShippingRework_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).CreateShippingRework(ctx, req.(*CreateShippingReworkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ListShippingReworks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListShippingReworksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListShippingReworks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListShippingReworks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListShippingReworks(ctx, req.(*ListShippingReworksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ListMyShippingReworks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMyShippingReworksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ListMyShippingReworks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ListMyShippingReworks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ListMyShippingReworks(ctx, req.(*ListMyShippingReworksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SourcingService_ResolveShippingRework_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveShippingReworkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).ResolveShippingRework(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_ResolveShippingRework_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).ResolveShippingRework(ctx, req.(*ResolveShippingReworkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SourcingService_CreateCostScenario_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateCostScenarioRequest)
 	if err := dec(in); err != nil {
@@ -1796,6 +2102,42 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SubmitSourcingShippingPlanToSales",
 			Handler:    _SourcingService_SubmitSourcingShippingPlanToSales_Handler,
+		},
+		{
+			MethodName: "CreateSalesPlan",
+			Handler:    _SourcingService_CreateSalesPlan_Handler,
+		},
+		{
+			MethodName: "ListSalesPlans",
+			Handler:    _SourcingService_ListSalesPlans_Handler,
+		},
+		{
+			MethodName: "AddCustomerFeedback",
+			Handler:    _SourcingService_AddCustomerFeedback_Handler,
+		},
+		{
+			MethodName: "ListCustomerFeedback",
+			Handler:    _SourcingService_ListCustomerFeedback_Handler,
+		},
+		{
+			MethodName: "CreateSalesProcurementRework",
+			Handler:    _SourcingService_CreateSalesProcurementRework_Handler,
+		},
+		{
+			MethodName: "CreateShippingRework",
+			Handler:    _SourcingService_CreateShippingRework_Handler,
+		},
+		{
+			MethodName: "ListShippingReworks",
+			Handler:    _SourcingService_ListShippingReworks_Handler,
+		},
+		{
+			MethodName: "ListMyShippingReworks",
+			Handler:    _SourcingService_ListMyShippingReworks_Handler,
+		},
+		{
+			MethodName: "ResolveShippingRework",
+			Handler:    _SourcingService_ResolveShippingRework_Handler,
 		},
 		{
 			MethodName: "CreateCostScenario",

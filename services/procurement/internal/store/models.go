@@ -689,6 +689,21 @@ type SourcingCaseChange struct {
 	CreatedAt    pgtype.Timestamptz
 }
 
+type SourcingCustomerFeedback struct {
+	ID            int64
+	TenantID      int64
+	CaseID        int64
+	SalesPlanID   int64
+	ContactName   string
+	Channel       string
+	Result        string
+	Summary       string
+	ContactedAt   pgtype.Timestamptz
+	CreatedBy     int64
+	CreatedByName string
+	CreatedAt     pgtype.Timestamptz
+}
+
 type SourcingLine struct {
 	ID                 int64
 	TenantID           int64
@@ -738,6 +753,45 @@ type SourcingProcurementParticipant struct {
 	PrimaryRequestedAt pgtype.Timestamptz
 	JoinedAt           pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
+}
+
+type SourcingSalesPlan struct {
+	ID                   int64
+	TenantID             int64
+	CaseID               int64
+	PlanNo               string
+	VersionNo            int32
+	RequirementVersionNo int32
+	ProcurementPlanID    int64
+	ShippingPlanID       *int64
+	Status               string
+	ValidUntil           pgtype.Date
+	CustomerNote         string
+	InternalNote         string
+	CreatedBy            int64
+	CreatedByName        string
+	PresentedAt          pgtype.Timestamptz
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+}
+
+type SourcingSalesPlanItem struct {
+	ID                    int64
+	TenantID              int64
+	PlanID                int64
+	SourcingLineID        int64
+	ProcurementPlanItemID int64
+	ShippingPlanItemID    *int64
+	OptionType            string
+	Priority              int32
+	ProductName           string
+	QuotedQty             pgtype.Numeric
+	UomCode               string
+	CustomerCurrency      string
+	CustomerUnitPrice     pgtype.Numeric
+	PromisedDeliveryDate  pgtype.Date
+	LineNote              string
+	CreatedAt             pgtype.Timestamptz
 }
 
 type SourcingShippingOption struct {
@@ -858,6 +912,30 @@ type SourcingShippingRequest struct {
 	RequestedByName      string
 	RequestedAt          pgtype.Timestamptz
 	UpdatedAt            pgtype.Timestamptz
+}
+
+type SourcingShippingReworkRequest struct {
+	ID                   int64
+	TenantID             int64
+	CaseID               int64
+	SalesPlanID          *int64
+	SourcingLineID       *int64
+	ShippingOptionLineID *int64
+	RequestType          string
+	ScopeType            string
+	AssignedShippingID   *int64
+	AssignedShippingName string
+	CarrierForwarder     string
+	ProductName          string
+	Reason               string
+	Status               string
+	CreatedBy            int64
+	CreatedByName        string
+	CreatedAt            pgtype.Timestamptz
+	ResolvedBy           *int64
+	ResolvedByName       string
+	ResolvedAt           pgtype.Timestamptz
+	ResolutionNote       string
 }
 
 type SupplierInvoice struct {

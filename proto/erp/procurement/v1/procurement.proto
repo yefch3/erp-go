@@ -47,6 +47,15 @@ service SourcingService {
   rpc CreateSourcingShippingPlan(CreateSourcingShippingPlanRequest) returns (CreateSourcingShippingPlanResponse);
   rpc ListSourcingShippingPlans(ListSourcingShippingPlansRequest) returns (ListSourcingShippingPlansResponse);
   rpc SubmitSourcingShippingPlanToSales(SubmitSourcingShippingPlanToSalesRequest) returns (SubmitSourcingShippingPlanToSalesResponse);
+  rpc CreateSalesPlan(CreateSalesPlanRequest) returns (CreateSalesPlanResponse);
+  rpc ListSalesPlans(ListSalesPlansRequest) returns (ListSalesPlansResponse);
+  rpc AddCustomerFeedback(AddCustomerFeedbackRequest) returns (AddCustomerFeedbackResponse);
+  rpc ListCustomerFeedback(ListCustomerFeedbackRequest) returns (ListCustomerFeedbackResponse);
+  rpc CreateSalesProcurementRework(CreateSalesProcurementReworkRequest) returns (CreateSalesProcurementReworkResponse);
+  rpc CreateShippingRework(CreateShippingReworkRequest) returns (CreateShippingReworkResponse);
+  rpc ListShippingReworks(ListShippingReworksRequest) returns (ListShippingReworksResponse);
+  rpc ListMyShippingReworks(ListMyShippingReworksRequest) returns (ListMyShippingReworksResponse);
+  rpc ResolveShippingRework(ResolveShippingReworkRequest) returns (ResolveShippingReworkResponse);
   rpc CreateCostScenario(CreateCostScenarioRequest) returns (CreateCostScenarioResponse);
   rpc ListCostScenarios(ListCostScenariosRequest) returns (ListCostScenariosResponse);
   rpc GetCostScenario(GetCostScenarioRequest) returns (GetCostScenarioResponse);
@@ -2033,6 +2042,138 @@ message ListSourcingShippingPlansRequest { int64 case_id = 1; }
 message ListSourcingShippingPlansResponse { repeated SourcingShippingPlan plans = 1; }
 message SubmitSourcingShippingPlanToSalesRequest { int64 id = 1; }
 message SubmitSourcingShippingPlanToSalesResponse { SourcingShippingPlan plan = 1; }
+
+message SalesPlanItemInput {
+  int64 sourcing_line_id = 1;
+  int64 procurement_plan_item_id = 2;
+  int64 shipping_plan_item_id = 3;
+  string option_type = 4;
+  int32 priority = 5;
+  string customer_currency = 6;
+  string customer_unit_price = 7;
+  string promised_delivery_date = 8;
+  string line_note = 9;
+}
+message SalesPlanItem {
+  int64 id = 1;
+  int64 sourcing_line_id = 2;
+  int64 procurement_plan_item_id = 3;
+  int64 shipping_plan_item_id = 4;
+  string option_type = 5;
+  int32 priority = 6;
+  string product_name = 7;
+  string quoted_qty = 8;
+  string uom_code = 9;
+  string customer_currency = 10;
+  string customer_unit_price = 11;
+  string promised_delivery_date = 12;
+  string line_note = 13;
+}
+message SalesPlan {
+  int64 id = 1;
+  int64 case_id = 2;
+  string plan_no = 3;
+  int32 version_no = 4;
+  int32 requirement_version_no = 5;
+  int64 procurement_plan_id = 6;
+  int64 shipping_plan_id = 7;
+  string status = 8;
+  string valid_until = 9;
+  string customer_note = 10;
+  string internal_note = 11;
+  int64 created_by = 12;
+  string created_by_name = 13;
+  string presented_at = 14;
+  string created_at = 15;
+  repeated SalesPlanItem items = 16;
+}
+message CreateSalesPlanRequest {
+  int64 case_id = 1;
+  int64 procurement_plan_id = 2;
+  int64 shipping_plan_id = 3;
+  string valid_until = 4;
+  string customer_note = 5;
+  string internal_note = 6;
+  repeated SalesPlanItemInput items = 7;
+}
+message CreateSalesPlanResponse { SalesPlan sales_plan = 1; }
+message ListSalesPlansRequest { int64 case_id = 1; }
+message ListSalesPlansResponse { repeated SalesPlan sales_plans = 1; }
+
+message CustomerFeedback {
+  int64 id = 1;
+  int64 case_id = 2;
+  int64 sales_plan_id = 3;
+  string contact_name = 4;
+  string channel = 5;
+  string result = 6;
+  string summary = 7;
+  string contacted_at = 8;
+  int64 created_by = 9;
+  string created_by_name = 10;
+  string created_at = 11;
+}
+message AddCustomerFeedbackRequest {
+  int64 case_id = 1;
+  int64 sales_plan_id = 2;
+  string contact_name = 3;
+  string channel = 4;
+  string result = 5;
+  string summary = 6;
+  string contacted_at = 7;
+}
+message ListCustomerFeedbackRequest { int64 case_id = 1; }
+message ListCustomerFeedbackResponse { repeated CustomerFeedback feedback = 1; }
+message AddCustomerFeedbackResponse { repeated CustomerFeedback feedback = 1; }
+
+message CreateSalesProcurementReworkRequest {
+  int64 case_id = 1;
+  int64 sales_plan_id = 2;
+  int64 sourcing_line_id = 3;
+  int64 supplier_quote_line_id = 4;
+  string request_type = 5;
+  string reason = 6;
+}
+message CreateSalesProcurementReworkResponse { ProcurementReworkRequest rework_request = 1; }
+message ShippingReworkRequest {
+  int64 id = 1;
+  int64 case_id = 2;
+  int64 sales_plan_id = 3;
+  int64 sourcing_line_id = 4;
+  int64 shipping_option_line_id = 5;
+  string request_type = 6;
+  string scope_type = 7;
+  int64 assigned_shipping_id = 8;
+  string assigned_shipping_name = 9;
+  string carrier_forwarder = 10;
+  string product_name = 11;
+  string reason = 12;
+  string status = 13;
+  int64 created_by = 14;
+  string created_by_name = 15;
+  string created_at = 16;
+  int64 resolved_by = 17;
+  string resolved_by_name = 18;
+  string resolved_at = 19;
+  string resolution_note = 20;
+  string case_no = 21;
+  string case_title = 22;
+}
+message CreateShippingReworkRequest {
+  int64 case_id = 1;
+  int64 sales_plan_id = 2;
+  int64 sourcing_line_id = 3;
+  int64 shipping_option_line_id = 4;
+  string request_type = 5;
+  string reason = 6;
+}
+message CreateShippingReworkResponse { ShippingReworkRequest rework_request = 1; }
+message ListShippingReworksRequest { int64 case_id = 1; }
+message ListShippingReworksResponse { repeated ShippingReworkRequest rework_requests = 1; }
+message ListMyShippingReworksRequest {}
+message ListMyShippingReworksResponse { repeated ShippingReworkRequest rework_requests = 1; }
+message ResolveShippingReworkRequest { int64 id = 1; string resolution_note = 2; }
+message ResolveShippingReworkResponse {}
 
 // ── 供应商对账（手工核销）─────────────────────────────────────────────
 //
