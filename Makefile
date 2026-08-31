@@ -184,7 +184,7 @@ frontend-ci: ## Type-check and build the frontend, and run its unit tests
 # Prerequisites run in the order written, cheapest first, so a stale gen/ or
 # a missed tenant_id fails in seconds, not after the full test suite.
 .PHONY: ci
-ci: proto-check check-tenant check-tenant-seeds check-iam-seeds check-migration-safety check-mail-sandbox check-duplicate-routes frontend-ci test-integration lint ## Everything CI runs (needs `make up` + `make migrate` first)
+ci: proto-check sqlc-check check-tenant check-tenant-seeds check-iam-seeds check-migration-safety check-mail-sandbox check-duplicate-routes frontend-ci test-integration lint ## Everything CI runs (needs `make up` + `make migrate` first)
 	@echo "ci: all checks passed"
 
 .PHONY: sqlc
@@ -194,6 +194,19 @@ sqlc: ## Regenerate sqlc stores for every service that has one
 		echo "==> sqlc $$(dirname $$cfg)"; \
 		(cd "$$(dirname $$cfg)" && go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate) || exit 1; \
 	done
+
+# The sqlc counterpart to proto-check: edit a .sql query, forget to regenerate,
+# and until now nothing said so - the store/ code and the SQL it claims to come
+# from just drifted apart quietly.
+#
+# Like proto-check, this compares against the working tree, so it reports any
+# uncommitted edit under store/ as drift, whether or not sqlc caused it. Locally
+# that means a dirty store/ fails the check; in CI the tree starts clean, so
+# only a genuinely stale store/ can trip it.
+.PHONY: sqlc-check
+sqlc-check: sqlc ## Regenerate sqlc stores and fail if anything drifted
+	git diff --exit-code services/*/internal/store/ \
+		|| (echo "store/ is stale: run 'make sqlc' and commit" && exit 1)
 
 .PHONY: services-up
 services-up: ## Build and start every app service in its own container
