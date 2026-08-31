@@ -51,13 +51,13 @@ describe('sales negotiation helpers', () => {
       purchaseCurrency: 'USD', purchaseUnitPrice: '2', quantity: '20',
       costCurrency: 'USD', confirmedCustomerUnitPrice: '15.5',
       shipping: { currency: 'USD', chargeBasis: 'PER_TON', unitRate: '10', totalFreight: '200' },
-    })).toMatchObject({ currency: 'USD', value: '15.5' })
+    })).toMatchObject({ currency: 'USD', value: '15.5', source: 'CONFIRMED_COST' })
   })
 
   it('falls back to purchase plus allocated shipping when no cost plan exists', () => {
     expect(suggestCustomerUnitPrice({
       purchaseCurrency: 'USD', purchaseUnitPrice: '2', quantity: '20',
       shipping: { currency: 'USD', chargeBasis: 'PER_TON', unitRate: '10', totalFreight: '200' },
-    })).toMatchObject({ currency: 'USD', value: '12' })
+    })).toMatchObject({ currency: 'USD', value: '12', source: 'PURCHASE_SHIPPING' })
   })
 })

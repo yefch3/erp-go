@@ -52,7 +52,7 @@ export function suggestCustomerUnitPrice(input: SuggestedPriceInput): SuggestedP
     return {
       currency: String(input.costCurrency || input.purchaseCurrency || 'USD').toUpperCase(),
       value: decimal(confirmed),
-      source: '已带入采购确认的成本方案建议价（含费用与利润，可修改）',
+      source: 'CONFIRMED_COST',
     }
   }
 
@@ -64,14 +64,14 @@ export function suggestCustomerUnitPrice(input: SuggestedPriceInput): SuggestedP
     return {
       currency,
       value: decimal(purchaseValue),
-      source: '基础参考价：仅采购单价，尚未包含运费、其他费用和利润',
+      source: 'PURCHASE_ONLY',
     }
   }
   if (shippingCurrency !== currency) {
     return {
       currency,
       value: decimal(purchaseValue),
-      source: `基础参考价：采购与船运币种不同（${currency}/${shippingCurrency}），请确认换算与利润`,
+      source: 'CURRENCY_MISMATCH',
     }
   }
 
@@ -87,6 +87,6 @@ export function suggestCustomerUnitPrice(input: SuggestedPriceInput): SuggestedP
   return {
     currency,
     value: decimal(purchaseValue + freightPerUnit),
-    source: '基础参考价：采购单价＋所选船运分摊，尚未包含其他费用和利润',
+    source: 'PURCHASE_SHIPPING',
   }
 }
