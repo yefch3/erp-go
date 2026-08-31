@@ -88,6 +88,10 @@
               <el-table-column :label="t('common.actions')" width="150" fixed="right"><template #default="{row}"><router-link :to="{path:`/procurement/sourcing/${row.caseId}`,query:{tab:'plans',rework:String(row.id)}}" class="doc-link">{{ t('todos.goToSource') }}</router-link></template></el-table-column>
             </el-table>
           </section>
+          <section v-if="visibleShippingTasks.length" class="todo-source-section">
+            <div class="todo-source-head"><div><h3>船运补充任务</h3><p>销售退回指定报价，或向全部船运人员发布新增船运公司任务。</p></div><el-tag type="warning" effect="plain">{{ shippingTasks.length }} 项</el-tag></div>
+            <el-table :data="visibleShippingTasks" class="home-table sourcing-todo-table"><el-table-column label="优先级" width="145"><template #default><el-tag size="small" type="warning">高</el-tag><div class="priority-reason">需要补充船运报价</div></template></el-table-column><el-table-column label="工作事项" min-width="360"><template #default="{row}"><div class="item-title">{{ shippingReworkLabel(row.requestType) }} · {{ row.caseNo }}</div><div class="item-meta">{{ row.productName||'全部货物' }} · {{ row.carrierForwarder||'新增船运公司' }}</div><div class="item-summary">{{ row.reason }}</div></template></el-table-column><el-table-column label="发布于" width="170"><template #default="{row}">{{ formatTime(row.createdAt) }}</template></el-table-column><el-table-column label="状态" width="120"><template #default><el-tag size="small" type="warning" effect="plain">待我处理</el-tag></template></el-table-column><el-table-column label="操作" width="190" fixed="right"><template #default="{row}"><router-link to="/shipping/sourcing" class="doc-link">进入船运询价</router-link><el-button link type="primary" @click="resolveShippingTask(row)">完成任务</el-button></template></el-table-column></el-table>
+          </section>
           <div v-if="todos.length" class="todo-source-head approval-source-head"><div><h3>{{ t('todos.approvalTasks') }}</h3></div></div>
         <el-table v-if="todos.length" :data="todos" class="home-table">
           <el-table-column :label="t('todos.priority')" width="145">
@@ -112,7 +116,7 @@
             </template>
           </el-table-column>
         </el-table>
-          <HomeEmpty v-if="!visibleProcurementTasks.length&&!todos.length" :description="t('todos.empty')" />
+          <HomeEmpty v-if="!visibleProcurementTasks.length&&!visibleShippingTasks.length&&!todos.length" :description="t('todos.empty')" />
         </div>
       </template>
 
@@ -180,7 +184,7 @@
 
 <script setup lang="ts">
 import { computed, defineComponent, h, onMounted, onUnmounted, ref } from 'vue'
-import { ElEmpty, ElMessage } from 'element-plus'
+import { ElEmpty, ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { get, post, quietErrors } from '../api'
@@ -203,6 +207,7 @@ interface Instance { id: string; bizType: string; bizId: string; bizNo: string; 
 interface Todo { task: Task; instance: Instance; dueAt: string; priority: string; remainingMinutes: string | number }
 interface ProcurementTaskCase { id:string; caseNo:string; customerName:string; title:string; updatedAt:string; openReworkCount:number|string; myOpenReworkCount:number|string }
 interface ProcurementReworkTask { id:string; caseId:string; caseNo:string; requestType:string; productName:string; supplierName:string; reason:string; createdAt:string; assignedBuyerId:string|number; status:string }
+interface ShippingReworkTask { id:string; caseId:string; caseNo:string; caseTitle:string; requestType:string; productName:string; carrierForwarder:string; reason:string; createdAt:string; assignedShippingId:string|number; status:string }
 type HomeTab = 'pending' | 'submitted' | 'responsible' | 'reminders' | 'handled'
 
 const HomeEmpty = defineComponent({
@@ -225,6 +230,8 @@ const pendingTotal = ref(0)
 const pendingCountAvailable = ref(true)
 const procurementTasks = ref<ProcurementReworkTask[]>([])
 const procurementTasksAvailable = ref(false)
+const shippingTasks = ref<ShippingReworkTask[]>([])
+const shippingTasksAvailable = ref(false)
 const page = ref(1)
 const pageSize = 10
 const keyword = ref('')
@@ -242,12 +249,13 @@ const reminderRead = ref('')
 const markingRead = ref(false)
 const updatedAt = ref('')
 const procurementPendingTotal = computed(() => procurementTasks.value.length)
-const combinedPendingTotal = computed(() => (pendingCountAvailable.value ? pendingTotal.value : 0) + (procurementTasksAvailable.value ? procurementPendingTotal.value : 0))
-const combinedPendingAvailable = computed(() => pendingCountAvailable.value || procurementTasksAvailable.value)
+const combinedPendingTotal = computed(() => (pendingCountAvailable.value ? pendingTotal.value : 0) + (procurementTasksAvailable.value ? procurementPendingTotal.value : 0) + (shippingTasksAvailable.value ? shippingTasks.value.length : 0))
+const combinedPendingAvailable = computed(() => pendingCountAvailable.value || procurementTasksAvailable.value || shippingTasksAvailable.value)
 const visibleProcurementTasks = computed(() => {
   const query = keyword.value.trim().toLocaleLowerCase()
   return procurementTasks.value.filter(row => !query || [row.caseNo,row.productName,row.supplierName,row.reason].some(value => String(value||'').toLocaleLowerCase().includes(query)))
 })
+const visibleShippingTasks = computed(() => { const query=keyword.value.trim().toLocaleLowerCase();return shippingTasks.value.filter(row=>!query||[row.caseNo,row.caseTitle,row.productName,row.carrierForwarder,row.reason].some(value=>String(value||'').toLocaleLowerCase().includes(query))) })
 
 const bizTypes = ['CONTRACT', 'PURCHASE_ORDER', 'PURCHASE_ORDER_CHANGE', 'PAYMENT', 'LC_AMENDMENT', 'STOCK_ADJUST']
 const hasApprovalSource = computed(() => ['pending', 'submitted', 'handled'].includes(activeTab.value))
@@ -345,6 +353,10 @@ async function loadProcurementTasks() {
     procurementTasksAvailable.value = false
   }
 }
+
+async function loadShippingTasks(){if(!auth.can('shipping:sourcing:read')){shippingTasks.value=[];shippingTasksAvailable.value=false;return}try{const data=await get<{reworkRequests?:ShippingReworkTask[]}>('/shipping/sourcing-reworks',{},quietErrors);shippingTasks.value=data.reworkRequests||[];shippingTasksAvailable.value=true}catch{shippingTasks.value=[];shippingTasksAvailable.value=false}}
+function shippingReworkLabel(value:string){return value==='ADD_CARRIER'?'增加船运公司':value==='REQUOTE'?'更新船运报价/船期':'重新议价'}
+async function resolveShippingTask(row:ShippingReworkTask){const result=await ElMessageBox.prompt('请说明已完成的询价、议价或新增船运公司结果。','完成船运补充任务',{inputPlaceholder:'例如：已录入该船运公司的最新报价版本',inputValidator:(value:string)=>!!value.trim()||'请填写处理结果'}).catch(()=>null);if(!result)return;await post(`/shipping/sourcing-reworks/${row.id}/resolve`,{resolution_note:result.value});await refreshAll();ElMessage.success('船运补充任务已完成')}
 
 function procurementReworkLabel(value: string) {
   return value === 'ADD_SUPPLIER' ? t('todos.addSupplier') : value === 'REQUOTE' ? t('todos.requote') : t('todos.renegotiate')
@@ -449,8 +461,8 @@ async function load() {
 }
 
 async function refreshAll() {
-  if (hasReminderSource.value) await Promise.all([loadPendingCount(), loadProcurementTasks(), load()])
-  else await Promise.all([loadPendingCount(), loadProcurementTasks(), loadReminderSummary(), load()])
+  if (hasReminderSource.value) await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), load()])
+  else await Promise.all([loadPendingCount(), loadProcurementTasks(), loadShippingTasks(), loadReminderSummary(), load()])
 }
 
 async function markReminderRead(item: HomeReminder) {
