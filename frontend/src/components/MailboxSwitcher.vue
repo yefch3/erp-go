@@ -61,7 +61,18 @@
       ＋ {{ t('mailGate.addMailbox') }}
     </el-button>
 
-    <el-dialog v-model="adding" :title="t('mailGate.addMailboxTitle')" width="440px">
+    <!-- append-to-body：这个弹窗开在左侧栏里，而 .rail 是 position: sticky，
+         sticky 自成一个层叠上下文——弹窗生在里面就爬不到右边的邮件列表上面
+         去，表现是「点了添加邮箱，弹窗被列表盖住只露出个标题」。
+
+         同一个栏里的 MailSignatureDialog 和 MailTemplatesDialog 早就带着这个
+         属性，注释里写的就是这件事。 -->
+    <el-dialog
+      v-model="adding"
+      :title="t('mailGate.addMailboxTitle')"
+      width="min(440px, 94vw)"
+      append-to-body
+    >
       <MailboxCredentialsForm
         :submit-label="t('mailGate.addMailbox')"
         @bound="onAdded"
