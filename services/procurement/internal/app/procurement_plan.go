@@ -366,6 +366,12 @@ func (s *Service) ResolveProcurementRework(ctx context.Context, tenantID, id int
 		if count != 1 {
 			return apierr.Conflict("SC_REWORK_ALREADY_RESOLVED", "退回任务已经处理")
 		}
+		if resolveErr = q.ResolveFinalTaskByProcurementRework(ctx, store.ResolveFinalTaskByProcurementReworkParams{TenantID: tenantID, ProcurementReworkID: &id}); resolveErr != nil {
+			return resolveErr
+		}
+		if resolveErr = q.CompleteReadyCustomerSelections(ctx, tenantID); resolveErr != nil {
+			return resolveErr
+		}
 		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{
 			TenantID: tenantID, CaseID: request.CaseID, Section: "PROCUREMENT_REWORK", Action: "RESOLVED", EntityID: id,
 			Summary: "采购专员完成报价补充任务", BeforeJson: []byte(`{"status":"OPEN"}`),

@@ -522,6 +522,8 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("sales:inquiry:write")).Post("/api/sales-inquiries/{id}/procurement-reworks", s.createSalesProcurementRework)
 		r.With(s.perm("sales:inquiry:read")).Get("/api/sales-inquiries/{id}/shipping-reworks", s.listShippingReworks)
 		r.With(s.perm("sales:inquiry:write")).Post("/api/sales-inquiries/{id}/shipping-reworks", s.createShippingRework)
+		r.With(s.perm("sales:inquiry:read")).Get("/api/sales-inquiries/{id}/customer-selections", s.listCustomerSelections)
+		r.With(s.perm("sales:inquiry:write")).Post("/api/sales-inquiries/{id}/customer-selections", s.confirmCustomerSelection)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases", s.listSourcingCases)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}", s.getSourcingCase)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/changes", s.listSourcingCaseChanges)

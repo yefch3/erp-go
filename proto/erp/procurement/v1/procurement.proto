@@ -56,6 +56,8 @@ service SourcingService {
   rpc ListShippingReworks(ListShippingReworksRequest) returns (ListShippingReworksResponse);
   rpc ListMyShippingReworks(ListMyShippingReworksRequest) returns (ListMyShippingReworksResponse);
   rpc ResolveShippingRework(ResolveShippingReworkRequest) returns (ResolveShippingReworkResponse);
+  rpc ConfirmCustomerSelection(ConfirmCustomerSelectionRequest) returns (ConfirmCustomerSelectionResponse);
+  rpc ListCustomerSelections(ListCustomerSelectionsRequest) returns (ListCustomerSelectionsResponse);
   rpc CreateCostScenario(CreateCostScenarioRequest) returns (CreateCostScenarioResponse);
   rpc ListCostScenarios(ListCostScenariosRequest) returns (ListCostScenariosResponse);
   rpc GetCostScenario(GetCostScenarioRequest) returns (GetCostScenarioResponse);
@@ -2432,3 +2434,62 @@ message RemoveReconFileRequest {
 message RemoveReconFileResponse {
   repeated ReconFile items = 1;
 }
+
+// T8: immutable customer selection and final procurement/shipping recheck.
+// Appended so this workflow does not renumber existing generated messages.
+message CustomerSelectionItem {
+  int64 id = 1;
+  int64 sales_plan_item_id = 2;
+  int64 sourcing_line_id = 3;
+  int64 procurement_plan_item_id = 4;
+  int64 supplier_quote_line_id = 5;
+  int64 shipping_plan_item_id = 6;
+  int64 shipping_option_line_id = 7;
+  string product_name = 8;
+  string confirmed_qty = 9;
+  string uom_code = 10;
+  string customer_currency = 11;
+  string customer_unit_price = 12;
+  string promised_delivery_date = 13;
+  string line_note = 14;
+}
+message FinalRecheckTask {
+  int64 id = 1;
+  int64 selection_item_id = 2;
+  string task_domain = 3;
+  int64 procurement_rework_id = 4;
+  int64 shipping_rework_id = 5;
+  string status = 6;
+  string resolved_at = 7;
+}
+message CustomerSelection {
+  int64 id = 1;
+  int64 case_id = 2;
+  int64 sales_plan_id = 3;
+  string selection_no = 4;
+  int32 version_no = 5;
+  int32 requirement_version_no = 6;
+  string status = 7;
+  string customer_contact = 8;
+  string confirmation_note = 9;
+  string customer_confirmed_at = 10;
+  int64 created_by = 11;
+  string created_by_name = 12;
+  string created_at = 13;
+  string final_rechecked_at = 14;
+  string invalidated_at = 15;
+  string invalidated_reason = 16;
+  repeated CustomerSelectionItem items = 17;
+  repeated FinalRecheckTask recheck_tasks = 18;
+}
+message ConfirmCustomerSelectionRequest {
+  int64 case_id = 1;
+  int64 sales_plan_id = 2;
+  repeated int64 sales_plan_item_ids = 3;
+  string customer_contact = 4;
+  string confirmation_note = 5;
+  string customer_confirmed_at = 6;
+}
+message ConfirmCustomerSelectionResponse { CustomerSelection selection = 1; }
+message ListCustomerSelectionsRequest { int64 case_id = 1; }
+message ListCustomerSelectionsResponse { repeated CustomerSelection selections = 1; }

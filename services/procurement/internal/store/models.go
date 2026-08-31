@@ -721,6 +721,60 @@ type SourcingCustomerFeedback struct {
 	CreatedAt     pgtype.Timestamptz
 }
 
+type SourcingCustomerSelection struct {
+	ID                   int64
+	TenantID             int64
+	CaseID               int64
+	SalesPlanID          int64
+	SelectionNo          string
+	VersionNo            int32
+	RequirementVersionNo int32
+	Status               string
+	CustomerContact      string
+	ConfirmationNote     string
+	CustomerConfirmedAt  pgtype.Timestamptz
+	CreatedBy            int64
+	CreatedByName        string
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+	FinalRecheckedAt     pgtype.Timestamptz
+	InvalidatedAt        pgtype.Timestamptz
+	InvalidatedReason    string
+}
+
+type SourcingCustomerSelectionItem struct {
+	ID                    int64
+	TenantID              int64
+	SelectionID           int64
+	SalesPlanItemID       int64
+	SourcingLineID        int64
+	ProcurementPlanItemID int64
+	SupplierQuoteLineID   int64
+	ShippingPlanItemID    *int64
+	ShippingOptionLineID  *int64
+	ProductName           string
+	ConfirmedQty          pgtype.Numeric
+	UomCode               string
+	CustomerCurrency      string
+	CustomerUnitPrice     pgtype.Numeric
+	PromisedDeliveryDate  pgtype.Date
+	LineNote              string
+	CreatedAt             pgtype.Timestamptz
+}
+
+type SourcingFinalRecheckTask struct {
+	ID                  int64
+	TenantID            int64
+	SelectionID         int64
+	SelectionItemID     int64
+	TaskDomain          string
+	ProcurementReworkID *int64
+	ShippingReworkID    *int64
+	Status              string
+	CreatedAt           pgtype.Timestamptz
+	ResolvedAt          pgtype.Timestamptz
+}
+
 type SourcingLine struct {
 	ID                 int64
 	TenantID           int64

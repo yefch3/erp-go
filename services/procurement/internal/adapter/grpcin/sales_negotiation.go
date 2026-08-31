@@ -53,6 +53,31 @@ func myShippingRework(row store.ListMyShippingReworksRow) *prv1.ShippingReworkRe
 		CaseNo: row.CaseNo, CaseTitle: row.CaseTitle}
 }
 
+func customerSelection(view app.CustomerSelectionView) *prv1.CustomerSelection {
+	h := view.Header
+	items := make([]*prv1.CustomerSelectionItem, 0, len(view.Items))
+	for _, row := range view.Items {
+		items = append(items, &prv1.CustomerSelectionItem{Id: row.ID, SalesPlanItemId: row.SalesPlanItemID,
+			SourcingLineId: row.SourcingLineID, ProcurementPlanItemId: row.ProcurementPlanItemID,
+			SupplierQuoteLineId: row.SupplierQuoteLineID, ShippingPlanItemId: row.ShippingPlanItemID,
+			ShippingOptionLineId: row.ShippingOptionLineID, ProductName: row.ProductName,
+			ConfirmedQty: row.ConfirmedQty, UomCode: row.UomCode, CustomerCurrency: row.CustomerCurrency,
+			CustomerUnitPrice: row.CustomerUnitPrice, PromisedDeliveryDate: row.PromisedDeliveryDate, LineNote: row.LineNote})
+	}
+	tasks := make([]*prv1.FinalRecheckTask, 0, len(view.Tasks))
+	for _, row := range view.Tasks {
+		tasks = append(tasks, &prv1.FinalRecheckTask{Id: row.ID, SelectionItemId: row.SelectionItemID,
+			TaskDomain: row.TaskDomain, ProcurementReworkId: row.ProcurementReworkID,
+			ShippingReworkId: row.ShippingReworkID, Status: row.Status, ResolvedAt: row.ResolvedAt})
+	}
+	return &prv1.CustomerSelection{Id: h.ID, CaseId: h.CaseID, SalesPlanId: h.SalesPlanID,
+		SelectionNo: h.SelectionNo, VersionNo: h.VersionNo, RequirementVersionNo: h.RequirementVersionNo,
+		Status: h.Status, CustomerContact: h.CustomerContact, ConfirmationNote: h.ConfirmationNote,
+		CustomerConfirmedAt: ts(h.CustomerConfirmedAt), CreatedBy: h.CreatedBy, CreatedByName: h.CreatedByName,
+		CreatedAt: ts(h.CreatedAt), FinalRecheckedAt: h.FinalRecheckedAt, InvalidatedAt: h.InvalidatedAt,
+		InvalidatedReason: h.InvalidatedReason, Items: items, RecheckTasks: tasks}
+}
+
 func (h *SourcingHandler) CreateSalesPlan(ctx context.Context, req *prv1.CreateSalesPlanRequest) (*prv1.CreateSalesPlanResponse, error) {
 	in := app.NewSalesPlan{CaseID: req.GetCaseId(), ProcurementPlanID: req.GetProcurementPlanId(),
 		ShippingPlanID: req.GetShippingPlanId(), ValidUntil: req.GetValidUntil(),
@@ -157,4 +182,27 @@ func (h *SourcingHandler) ResolveShippingRework(ctx context.Context, req *prv1.R
 		return nil, err
 	}
 	return &prv1.ResolveShippingReworkResponse{}, nil
+}
+
+func (h *SourcingHandler) ConfirmCustomerSelection(ctx context.Context, req *prv1.ConfirmCustomerSelectionRequest) (*prv1.ConfirmCustomerSelectionResponse, error) {
+	view, err := h.svc.ConfirmCustomerSelection(ctx, grpcx.TenantID(ctx), app.ConfirmCustomerSelectionInput{
+		CaseID: req.GetCaseId(), SalesPlanID: req.GetSalesPlanId(), SalesPlanItemIDs: req.GetSalesPlanItemIds(),
+		CustomerContact: req.GetCustomerContact(), ConfirmationNote: req.GetConfirmationNote(),
+		CustomerConfirmedAt: req.GetCustomerConfirmedAt()}, sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.ConfirmCustomerSelectionResponse{Selection: customerSelection(view)}, nil
+}
+
+func (h *SourcingHandler) ListCustomerSelections(ctx context.Context, req *prv1.ListCustomerSelectionsRequest) (*prv1.ListCustomerSelectionsResponse, error) {
+	rows, err := h.svc.ListCustomerSelections(ctx, grpcx.TenantID(ctx), req.GetCaseId(), sourcingOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*prv1.CustomerSelection, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, customerSelection(row))
+	}
+	return &prv1.ListCustomerSelectionsResponse{Selections: out}, nil
 }

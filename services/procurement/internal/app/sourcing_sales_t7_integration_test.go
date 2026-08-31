@@ -10,7 +10,7 @@ import (
 	"github.com/sgao19/erp-go/pkg/pgdb"
 )
 
-func TestT7SalesNegotiationVersionsFeedbackAndTargetedRework(t *testing.T) {
+func TestT7T8SalesNegotiationCustomerSelectionAndFinalRecheck(t *testing.T) {
 	dsn := os.Getenv("PROCUREMENT_TEST_DSN")
 	if dsn == "" {
 		t.Skip("PROCUREMENT_TEST_DSN not set; skipping DB-backed T7 sales negotiation test")
@@ -23,7 +23,7 @@ func TestT7SalesNegotiationVersionsFeedbackAndTargetedRework(t *testing.T) {
 	defer pool.Close()
 	tenantID := time.Now().UnixNano()
 	defer func() {
-		for _, table := range []string{"sourcing_shipping_rework_requests", "sourcing_customer_feedback", "sourcing_sales_plan_items", "sourcing_sales_plans", "sourcing_shipping_plan_items", "sourcing_shipping_plans", "sourcing_shipping_option_lines", "sourcing_shipping_options", "sourcing_shipping_participants", "sourcing_shipping_requests", "procurement_rework_requests", "procurement_plan_items", "procurement_plans", "supplier_quote_lines", "supplier_quotes", "factory_rfq_lines", "factory_rfqs", "sourcing_case_changes", "sourcing_procurement_participants", "sourcing_lines", "sourcing_cases"} {
+		for _, table := range []string{"sourcing_final_recheck_tasks", "sourcing_customer_selection_items", "sourcing_customer_selections", "sourcing_shipping_rework_requests", "sourcing_customer_feedback", "sourcing_sales_plan_items", "sourcing_sales_plans", "sourcing_shipping_plan_items", "sourcing_shipping_plans", "sourcing_shipping_option_lines", "sourcing_shipping_options", "sourcing_shipping_participants", "sourcing_shipping_requests", "procurement_rework_requests", "procurement_plan_items", "procurement_plans", "supplier_quote_lines", "supplier_quotes", "factory_rfq_lines", "factory_rfqs", "sourcing_case_changes", "sourcing_procurement_participants", "sourcing_lines", "sourcing_cases"} {
 			_, _ = pool.Exec(ctx, `DELETE FROM `+table+` WHERE tenant_id=$1`, tenantID)
 		}
 	}()
@@ -115,6 +115,40 @@ func TestT7SalesNegotiationVersionsFeedbackAndTargetedRework(t *testing.T) {
 	old, err := svc.GetSalesPlan(ctx, tenantID, plan1.Header.ID)
 	if err != nil || old.Header.Status != "SUPERSEDED" {
 		t.Fatalf("old sales plan status=%q err=%v", old.Header.Status, err)
+	}
+
+	// T8: the customer may select only part of the presented products. The
+	// selected combination is frozen and sent back to the original buyer and
+	// shipping owner; only both resolutions complete the final recheck.
+	selection, err := svc.ConfirmCustomerSelection(ctx, tenantID, ConfirmCustomerSelectionInput{CaseID: caseID, SalesPlanID: plan2.Header.ID, SalesPlanItemIDs: []int64{plan2.Items[0].ID}, CustomerContact: "客户联系人", ConfirmationNote: "客户确认该产品", CustomerConfirmedAt: "2026-08-31T10:00:00Z"}, sales)
+	if err != nil || selection.Header.Status != "FINAL_RECHECK_PENDING" || len(selection.Items) != 1 || len(selection.Tasks) != 2 {
+		t.Fatalf("customer selection=%+v err=%v", selection, err)
+	}
+	var finalProcurementReworkID, finalShippingReworkID int64
+	for _, task := range selection.Tasks {
+		if task.TaskDomain == "PROCUREMENT" {
+			finalProcurementReworkID = task.ProcurementReworkID
+		}
+		if task.TaskDomain == "SHIPPING" {
+			finalShippingReworkID = task.ShippingReworkID
+		}
+	}
+	if finalProcurementReworkID == 0 || finalShippingReworkID == 0 {
+		t.Fatalf("missing final recheck links: %+v", selection.Tasks)
+	}
+	if err = svc.ResolveProcurementRework(ctx, tenantID, finalProcurementReworkID, "最终价格与交期已确认", buyer); err != nil {
+		t.Fatal(err)
+	}
+	selections, err := svc.ListCustomerSelections(ctx, tenantID, caseID, sales)
+	if err != nil || selections[0].Header.Status != "FINAL_RECHECK_PENDING" {
+		t.Fatalf("selection should wait for shipping: %+v err=%v", selections, err)
+	}
+	if err = svc.ResolveShippingRework(ctx, tenantID, finalShippingReworkID, "最终船期与运费已确认", shipping); err != nil {
+		t.Fatal(err)
+	}
+	selections, err = svc.ListCustomerSelections(ctx, tenantID, caseID, sales)
+	if err != nil || selections[0].Header.Status != "FINAL_RECHECKED" {
+		t.Fatalf("selection should be final rechecked: %+v err=%v", selections, err)
 	}
 
 	feedback, err := svc.AddCustomerFeedback(ctx, tenantID, CustomerFeedbackInput{CaseID: caseID, SalesPlanID: plan2.Header.ID, ContactName: "客户联系人", Channel: "PHONE", Result: "REQUOTE_REQUIRED", Summary: "希望再降低运费", ContactedAt: "2026-08-30T12:00:00Z"}, sales)

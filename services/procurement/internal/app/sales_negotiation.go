@@ -124,6 +124,9 @@ func (s *Service) CreateSalesPlan(ctx context.Context, tenantID int64, in NewSal
 	var planID int64
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		if invalidateErr := q.InvalidateActiveCustomerSelections(ctx, store.InvalidateActiveCustomerSelectionsParams{Reason: "销售生成了新的客户沟通方案", TenantID: tenantID, CaseID: in.CaseID}); invalidateErr != nil {
+			return invalidateErr
+		}
 		if err := q.SupersedePresentedSalesPlans(ctx, store.SupersedePresentedSalesPlansParams{TenantID: tenantID, CaseID: in.CaseID}); err != nil {
 			return err
 		}
@@ -299,13 +302,21 @@ func (s *Service) ResolveShippingRework(ctx context.Context, tenantID, id int64,
 	if row.AssignedShippingID != 0 && row.AssignedShippingID != op.ID {
 		return apierr.Permission("SC_SHIPPING_REWORK_ASSIGNEE", "该任务已指定给原船运报价人")
 	}
-	count, err := s.q.ResolveShippingRework(ctx, store.ResolveShippingReworkParams{OperatorID: &op.ID, OperatorName: op.Name, ResolutionNote: note, TenantID: tenantID, ID: id})
-	if err != nil {
-		return err
-	}
-	if count == 0 {
-		return apierr.Conflict("SC_SHIPPING_REWORK_RESOLVED", "船运退回任务已经处理")
-	}
-	_ = s.q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: row.CaseID, Section: "SALES_NEGOTIATION", Action: "SHIPPING_REWORK_RESOLVED", Summary: "船运人员完成销售退回任务", BeforeJson: []byte(`{}`), AfterJson: []byte(`{}`), Reason: note, OperatorID: op.ID, OperatorName: op.Name})
-	return nil
+	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		count, resolveErr := q.ResolveShippingRework(ctx, store.ResolveShippingReworkParams{OperatorID: &op.ID, OperatorName: op.Name, ResolutionNote: note, TenantID: tenantID, ID: id})
+		if resolveErr != nil {
+			return resolveErr
+		}
+		if count == 0 {
+			return apierr.Conflict("SC_SHIPPING_REWORK_RESOLVED", "船运退回任务已经处理")
+		}
+		if resolveErr = q.ResolveFinalTaskByShippingRework(ctx, store.ResolveFinalTaskByShippingReworkParams{TenantID: tenantID, ShippingReworkID: &id}); resolveErr != nil {
+			return resolveErr
+		}
+		if resolveErr = q.CompleteReadyCustomerSelections(ctx, tenantID); resolveErr != nil {
+			return resolveErr
+		}
+		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: row.CaseID, Section: "SALES_NEGOTIATION", Action: "SHIPPING_REWORK_RESOLVED", Summary: "船运人员完成销售退回任务", BeforeJson: []byte(`{}`), AfterJson: []byte(`{}`), Reason: note, OperatorID: op.ID, OperatorName: op.Name})
+	})
 }
