@@ -384,20 +384,27 @@ const countUnread = `-- name: CountUnread :one
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
+  AND ($3::bigint IS NULL
+       OR account_id = $3::bigint)
   AND (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
   AND NOT is_bounce AND NOT is_read
   AND archived_at IS NULL AND deleted_at IS NULL
 `
 
 type CountUnreadParams struct {
-	TenantID int64
-	OwnerID  int64
+	TenantID  int64
+	OwnerID   int64
+	AccountID *int64
 }
 
 // The badge counts what the inbox proper shows: archived and trashed mail
 // has been dealt with, so it stops demanding attention.
+//
+// **也按信箱算。** 徽标就贴在收件箱那一行上，而列表已经按信箱过滤了——
+// 不带 account_id 的话，切到 A 箱看着五封信，徽标写着 12，那个数字指的是
+// A+B 两个箱。数字和它旁边的列表说的不是一回事，比没有数字更糟。
 func (q *Queries) CountUnread(ctx context.Context, arg CountUnreadParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countUnread, arg.TenantID, arg.OwnerID)
+	row := q.db.QueryRow(ctx, countUnread, arg.TenantID, arg.OwnerID, arg.AccountID)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -802,6 +809,149 @@ func (q *Queries) GetInboundForPurge(ctx context.Context, arg GetInboundForPurge
 	return i, err
 }
 
+const getMailAccountByEmail = `-- name: GetMailAccountByEmail :one
+SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
+       is_active, is_default, updated_at,
+       domain, smtp_host, smtp_port, smtp_security,
+       imap_host, imap_port, imap_security
+FROM mail_accounts
+WHERE tenant_id = $1::bigint
+  AND email = $2::text
+`
+
+type GetMailAccountByEmailParams struct {
+	TenantID int64
+	Email    string
+}
+
+type GetMailAccountByEmailRow struct {
+	ID           int64
+	EmployeeID   int64
+	Email        string
+	Username     string
+	AuthKind     string
+	VerifiedAt   pgtype.Timestamptz
+	LastError    string
+	IsActive     bool
+	IsDefault    bool
+	UpdatedAt    pgtype.Timestamptz
+	Domain       string
+	SmtpHost     string
+	SmtpPort     int32
+	SmtpSecurity string
+	ImapHost     string
+	ImapPort     int32
+	ImapSecurity string
+}
+
+// 按**地址**取一个信箱。绑定路径用它回答两个问题：这个地址已经有行了吗，
+// 以及它是不是这个人的。
+//
+// 一并回 employee_id，是因为「已经属于别人」和「不存在」要给出不同的话，
+// 而调用方必须自己比一次——查询按 (tenant, email) 唯一，不带 employee_id，
+// 否则别人已经绑走的地址会显示成「没绑过」，人重填一次还是失败。
+//
+// 和 GetMailAccountByID 选的是同一组列，两边的行类型可以互换。
+//
+// **精确比较，不套 lower()。** 地址一律以小写存（00046 把存量也规范化了），
+// 而调用方在服务层已经 ToLower 过。套 lower() 的话有两个坏处：走不上
+// mail_accounts_tenant_id_email_key 那条索引（实测是 Seq Scan），而且和
+// UpsertMailAccountShell 的 ON CONFLICT (tenant_id, email) **口径不一致**
+// ——查的时候匹配上老行、插的时候对不上，同一个信箱会裂成两行，而唯一约束
+// 一声不吭。
+func (q *Queries) GetMailAccountByEmail(ctx context.Context, arg GetMailAccountByEmailParams) (GetMailAccountByEmailRow, error) {
+	row := q.db.QueryRow(ctx, getMailAccountByEmail, arg.TenantID, arg.Email)
+	var i GetMailAccountByEmailRow
+	err := row.Scan(
+		&i.ID,
+		&i.EmployeeID,
+		&i.Email,
+		&i.Username,
+		&i.AuthKind,
+		&i.VerifiedAt,
+		&i.LastError,
+		&i.IsActive,
+		&i.IsDefault,
+		&i.UpdatedAt,
+		&i.Domain,
+		&i.SmtpHost,
+		&i.SmtpPort,
+		&i.SmtpSecurity,
+		&i.ImapHost,
+		&i.ImapPort,
+		&i.ImapSecurity,
+	)
+	return i, err
+}
+
+const getMailAccountByID = `-- name: GetMailAccountByID :one
+SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
+       is_active, is_default, updated_at,
+       domain, smtp_host, smtp_port, smtp_security,
+       imap_host, imap_port, imap_security
+FROM mail_accounts
+WHERE tenant_id = $1::bigint
+  AND id = $2::bigint
+`
+
+type GetMailAccountByIDParams struct {
+	TenantID int64
+	ID       int64
+}
+
+type GetMailAccountByIDRow struct {
+	ID           int64
+	EmployeeID   int64
+	Email        string
+	Username     string
+	AuthKind     string
+	VerifiedAt   pgtype.Timestamptz
+	LastError    string
+	IsActive     bool
+	IsDefault    bool
+	UpdatedAt    pgtype.Timestamptz
+	Domain       string
+	SmtpHost     string
+	SmtpPort     int32
+	SmtpSecurity string
+	ImapHost     string
+	ImapPort     int32
+	ImapSecurity string
+}
+
+// 按信箱 id 取一个信箱，不含密文。
+//
+// 取代了从前的 GetMyMailAccount（按 employee_id 的 :one）。那一句在一人一箱
+// 下没问题，放开之后就是这批改动最怕的形状：pgx 的 QueryRow **读到第一行
+// 就返回、不报「多行」错**，而它没有 ORDER BY——于是「我的邮箱」随机指向
+// 两个箱之一，绿勾、同步故障横幅、reauth 跳哪扇门全都跟着随机。
+//
+// 刻意不选 secret_enc：这是设置页读的，凭据永远不回浏览器。
+func (q *Queries) GetMailAccountByID(ctx context.Context, arg GetMailAccountByIDParams) (GetMailAccountByIDRow, error) {
+	row := q.db.QueryRow(ctx, getMailAccountByID, arg.TenantID, arg.ID)
+	var i GetMailAccountByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.EmployeeID,
+		&i.Email,
+		&i.Username,
+		&i.AuthKind,
+		&i.VerifiedAt,
+		&i.LastError,
+		&i.IsActive,
+		&i.IsDefault,
+		&i.UpdatedAt,
+		&i.Domain,
+		&i.SmtpHost,
+		&i.SmtpPort,
+		&i.SmtpSecurity,
+		&i.ImapHost,
+		&i.ImapPort,
+		&i.ImapSecurity,
+	)
+	return i, err
+}
+
 const getMailAccountSecret = `-- name: GetMailAccountSecret :one
 SELECT id, employee_id, email, username, auth_kind,
        secret_enc, oauth_refresh_enc, key_version, is_active,
@@ -909,48 +1059,6 @@ func (q *Queries) GetMailHost(ctx context.Context, tenantID int64) (GetMailHostR
 		&i.ImapSecurity,
 		&i.HourlyQuota,
 		&i.DailyQuota,
-	)
-	return i, err
-}
-
-const getMyMailAccount = `-- name: GetMyMailAccount :one
-SELECT id, email, username, auth_kind, verified_at, last_error, is_active, updated_at
-FROM mail_accounts
-WHERE tenant_id = $1::bigint
-  AND employee_id = $2::bigint
-`
-
-type GetMyMailAccountParams struct {
-	TenantID   int64
-	EmployeeID int64
-}
-
-type GetMyMailAccountRow struct {
-	ID         int64
-	Email      string
-	Username   string
-	AuthKind   string
-	VerifiedAt pgtype.Timestamptz
-	LastError  string
-	IsActive   bool
-	UpdatedAt  pgtype.Timestamptz
-}
-
-// Deliberately does NOT select secret_enc. This is what the settings page
-// reads, and a credential that is never returned to a browser cannot be
-// leaked by one.
-func (q *Queries) GetMyMailAccount(ctx context.Context, arg GetMyMailAccountParams) (GetMyMailAccountRow, error) {
-	row := q.db.QueryRow(ctx, getMyMailAccount, arg.TenantID, arg.EmployeeID)
-	var i GetMyMailAccountRow
-	err := row.Scan(
-		&i.ID,
-		&i.Email,
-		&i.Username,
-		&i.AuthKind,
-		&i.VerifiedAt,
-		&i.LastError,
-		&i.IsActive,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -1912,6 +2020,18 @@ type ListSentUnifiedRow struct {
 // period: within it, the copy is simply on its way and showing a second,
 // weaker row for the same mail would be noise. In normal operation nobody
 // ever sees one of these.
+// **这一句还没有按信箱分，是有意留到第三期的。**
+//
+// 它合并两个来源：email_inbound 里 folder='SENT' 的那些（邮件服务器自己
+// 存的副本，有 account_id），和 email_messages 里我们发出去而服务器没留
+// 副本的那些（**没有 account_id**——「这封信从哪个信箱发出去的」今天根本
+// 答不上来，出站队列只记 sender_id）。
+//
+// 只给前一半加筛选会更糟：切到 Gmail 箱，看到的是 Gmail 的已发送 + 全部
+// 的 ERP 发送记录，一半对一半不对，而且看不出哪一半。不筛选至少是一句
+// 说得清的话——「你发出去的信，全部」，和改动之前一样。
+//
+// 第三期给 email_messages 加上 account_id 之后，两条腿一起加筛选。
 func (q *Queries) ListSentUnified(ctx context.Context, arg ListSentUnifiedParams) ([]ListSentUnifiedRow, error) {
 	rows, err := q.db.Query(ctx, listSentUnified,
 		arg.Keyword,
@@ -2854,6 +2974,43 @@ func (q *Queries) PurgeInbound(ctx context.Context, arg PurgeInboundParams) (int
 	return result.RowsAffected(), nil
 }
 
+const recordMailBinding = `-- name: RecordMailBinding :exec
+INSERT INTO mail_binding_log (
+    tenant_id, employee_id, account_id, email, provider, action, detail
+) VALUES (
+    $1::bigint, $2::bigint,
+    $3::bigint, $4::text,
+    $5::text, $6::text, $7::text
+)
+`
+
+type RecordMailBindingParams struct {
+	TenantID   int64
+	EmployeeID int64
+	AccountID  *int64
+	Email      string
+	Provider   string
+	Action     string
+	Detail     string
+}
+
+// 绑定留痕。见 00044 的表注释——地址交还给调用方之后，「谁绑了什么」不再
+// 有一个不言自明的答案。
+//
+// 失败也记：只记成功的话，反复拿别人地址试探正好是看不见的那一半。
+func (q *Queries) RecordMailBinding(ctx context.Context, arg RecordMailBindingParams) error {
+	_, err := q.db.Exec(ctx, recordMailBinding,
+		arg.TenantID,
+		arg.EmployeeID,
+		arg.AccountID,
+		arg.Email,
+		arg.Provider,
+		arg.Action,
+		arg.Detail,
+	)
+	return err
+}
+
 const repointInbound = `-- name: RepointInbound :exec
 UPDATE email_inbound
 SET folder = $1::text,
@@ -3149,6 +3306,52 @@ func (q *Queries) SetMailAccountActive(ctx context.Context, arg SetMailAccountAc
 	return err
 }
 
+const setMailAccountHosts = `-- name: SetMailAccountHosts :exec
+UPDATE mail_accounts
+SET domain = $1::text,
+    smtp_host = $2::text,
+    smtp_port = $3::int,
+    smtp_security = $4::text,
+    imap_host = $5::text,
+    imap_port = $6::int,
+    imap_security = $7::text,
+    updated_at = now()
+WHERE tenant_id = $8::bigint AND id = $9::bigint
+`
+
+type SetMailAccountHostsParams struct {
+	Domain       string
+	SmtpHost     string
+	SmtpPort     int32
+	SmtpSecurity string
+	ImapHost     string
+	ImapPort     int32
+	ImapSecurity string
+	TenantID     int64
+	ID           int64
+}
+
+// 把这个信箱的收发服务器写上去。
+//
+// 00042 之前主机是一家公司一份（mail_hosts），绑定时不必写——所有箱都用
+// 同一套。跨服务商之后这句是必需的：绑 Gmail 的那一行必须自己带着
+// imap.gmail.com，否则同步会拿着 Gmail 的账号去登公司的 263 服务器，而
+// 那个失败长得和「授权码错了」一模一样。
+func (q *Queries) SetMailAccountHosts(ctx context.Context, arg SetMailAccountHostsParams) error {
+	_, err := q.db.Exec(ctx, setMailAccountHosts,
+		arg.Domain,
+		arg.SmtpHost,
+		arg.SmtpPort,
+		arg.SmtpSecurity,
+		arg.ImapHost,
+		arg.ImapPort,
+		arg.ImapSecurity,
+		arg.TenantID,
+		arg.ID,
+	)
+	return err
+}
+
 const setMailAccountOAuth = `-- name: SetMailAccountOAuth :exec
 UPDATE mail_accounts
 SET auth_kind = 'OAUTH',
@@ -3330,31 +3533,6 @@ func (q *Queries) SetThreadFlags(ctx context.Context, arg SetThreadFlagsParams) 
 		return nil, err
 	}
 	return items, nil
-}
-
-const syncAccountHostsFromTenant = `-- name: SyncAccountHostsFromTenant :execrows
-UPDATE mail_accounts a
-   SET domain = h.domain,
-       smtp_host = h.smtp_host, smtp_port = h.smtp_port, smtp_security = h.smtp_security,
-       imap_host = h.imap_host, imap_port = h.imap_port, imap_security = h.imap_security,
-       hourly_quota = h.hourly_quota, daily_quota = h.daily_quota,
-       updated_at = now()
-  FROM mail_hosts h
- WHERE h.tenant_id = a.tenant_id
-   AND a.tenant_id = $1::bigint
-`
-
-// 把租户级的收发服务器配置刷到该租户所有账号行上。
-//
-// 只在这一期存在。00042 把主机搬到了账号上，而设置页这一版还在写
-// mail_hosts——不同步的话，管理员改完 SMTP 地址会发现「改了没生效」，
-// 而且没有任何报错。第二期设置页改成按信箱之后，这句和它的调用点一起删。
-func (q *Queries) SyncAccountHostsFromTenant(ctx context.Context, tenantID int64) (int64, error) {
-	result, err := q.db.Exec(ctx, syncAccountHostsFromTenant, tenantID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
 }
 
 const syncStarredFromHost = `-- name: SyncStarredFromHost :execrows

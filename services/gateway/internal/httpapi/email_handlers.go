@@ -578,6 +578,35 @@ func (s *Server) getMyMailAccount(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// listMyMailboxes 回这个人名下的全部信箱，默认的排在最前。
+//
+// 请求体和 RPC 里都没有「谁的」：那件事只来自登录令牌。
+func (s *Server) listMyMailboxes(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.ListMyMailboxes(r.Context(), &mailv1.ListMyMailboxesRequest{})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// setDefaultMailbox 换写信时预选哪个信箱。
+//
+// 只带账号 id：改的永远是自己的，而「那个信箱是不是他的」由 SQL 的 WHERE
+// 判定——不是他的就影响零行，服务层翻成 404 而不是默默成功。
+func (s *Server) setDefaultMailbox(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.SetDefaultMailboxRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Emails.SetDefaultMailbox(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 // The request body carries no employee id, and neither does the RPC: whose
 // mailbox this is comes from the token alone.
 // serveOpenPixel answers a recipient's mail client.
@@ -636,11 +665,14 @@ func clientIP(r *http.Request) string {
 }
 
 func (s *Server) listInbound(w http.ResponseWriter, r *http.Request) {
+	// accountId 是「只看这个信箱」，缺省 0 = 我全部信箱。旧前端不发。
+	acct, _ := strconv.ParseInt(r.URL.Query().Get("accountId"), 10, 64)
 	resp, err := s.Emails.ListInbound(r.Context(), &mailv1.ListInboundRequest{
-		Page:    pageFromQuery(r),
-		Keyword: r.URL.Query().Get("keyword"),
-		View:    r.URL.Query().Get("view"),
-		Cursor:  r.URL.Query().Get("cursor"),
+		Page:      pageFromQuery(r),
+		Keyword:   r.URL.Query().Get("keyword"),
+		View:      r.URL.Query().Get("view"),
+		Cursor:    r.URL.Query().Get("cursor"),
+		AccountId: acct,
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)

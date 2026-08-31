@@ -27,14 +27,46 @@ ON CONFLICT (tenant_id) DO UPDATE SET
     daily_quota = excluded.daily_quota,
     updated_at = now();
 
--- name: GetMyMailAccount :one
--- Deliberately does NOT select secret_enc. This is what the settings page
--- reads, and a credential that is never returned to a browser cannot be
--- leaked by one.
-SELECT id, email, username, auth_kind, verified_at, last_error, is_active, updated_at
+-- name: GetMailAccountByEmail :one
+-- 按**地址**取一个信箱。绑定路径用它回答两个问题：这个地址已经有行了吗，
+-- 以及它是不是这个人的。
+--
+-- 一并回 employee_id，是因为「已经属于别人」和「不存在」要给出不同的话，
+-- 而调用方必须自己比一次——查询按 (tenant, email) 唯一，不带 employee_id，
+-- 否则别人已经绑走的地址会显示成「没绑过」，人重填一次还是失败。
+--
+-- 和 GetMailAccountByID 选的是同一组列，两边的行类型可以互换。
+--
+-- **精确比较，不套 lower()。** 地址一律以小写存（00046 把存量也规范化了），
+-- 而调用方在服务层已经 ToLower 过。套 lower() 的话有两个坏处：走不上
+-- mail_accounts_tenant_id_email_key 那条索引（实测是 Seq Scan），而且和
+-- UpsertMailAccountShell 的 ON CONFLICT (tenant_id, email) **口径不一致**
+-- ——查的时候匹配上老行、插的时候对不上，同一个信箱会裂成两行，而唯一约束
+-- 一声不吭。
+SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
+       is_active, is_default, updated_at,
+       domain, smtp_host, smtp_port, smtp_security,
+       imap_host, imap_port, imap_security
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
-  AND employee_id = sqlc.arg(employee_id)::bigint;
+  AND email = sqlc.arg(email)::text;
+
+-- name: GetMailAccountByID :one
+-- 按信箱 id 取一个信箱，不含密文。
+--
+-- 取代了从前的 GetMyMailAccount（按 employee_id 的 :one）。那一句在一人一箱
+-- 下没问题，放开之后就是这批改动最怕的形状：pgx 的 QueryRow **读到第一行
+-- 就返回、不报「多行」错**，而它没有 ORDER BY——于是「我的邮箱」随机指向
+-- 两个箱之一，绿勾、同步故障横幅、reauth 跳哪扇门全都跟着随机。
+--
+-- 刻意不选 secret_enc：这是设置页读的，凭据永远不回浏览器。
+SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
+       is_active, is_default, updated_at,
+       domain, smtp_host, smtp_port, smtp_security,
+       imap_host, imap_port, imap_security
+FROM mail_accounts
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint;
 
 -- name: UpsertMailAccountShell :one
 -- Creates or updates everything except the secret, and returns the id.
@@ -112,6 +144,37 @@ SET email = sqlc.arg(email)::text,
     username = sqlc.arg(username)::text,
     updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: SetMailAccountHosts :exec
+-- 把这个信箱的收发服务器写上去。
+--
+-- 00042 之前主机是一家公司一份（mail_hosts），绑定时不必写——所有箱都用
+-- 同一套。跨服务商之后这句是必需的：绑 Gmail 的那一行必须自己带着
+-- imap.gmail.com，否则同步会拿着 Gmail 的账号去登公司的 263 服务器，而
+-- 那个失败长得和「授权码错了」一模一样。
+UPDATE mail_accounts
+SET domain = sqlc.arg(domain)::text,
+    smtp_host = sqlc.arg(smtp_host)::text,
+    smtp_port = sqlc.arg(smtp_port)::int,
+    smtp_security = sqlc.arg(smtp_security)::text,
+    imap_host = sqlc.arg(imap_host)::text,
+    imap_port = sqlc.arg(imap_port)::int,
+    imap_security = sqlc.arg(imap_security)::text,
+    updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: RecordMailBinding :exec
+-- 绑定留痕。见 00044 的表注释——地址交还给调用方之后，「谁绑了什么」不再
+-- 有一个不言自明的答案。
+--
+-- 失败也记：只记成功的话，反复拿别人地址试探正好是看不见的那一半。
+INSERT INTO mail_binding_log (
+    tenant_id, employee_id, account_id, email, provider, action, detail
+) VALUES (
+    sqlc.arg(tenant_id)::bigint, sqlc.arg(employee_id)::bigint,
+    sqlc.narg(account_id)::bigint, sqlc.arg(email)::text,
+    sqlc.arg(provider)::text, sqlc.arg(action)::text, sqlc.arg(detail)::text
+);
 
 -- name: ClearDefaultMailbox :exec
 -- 换默认信箱的第一步。必须和第二步分成两条语句、放在同一个事务里。
@@ -210,22 +273,6 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- 默认的排在最前：defaultAccountIDFor 取第一行，所以顺序就是「用哪个箱
 -- 发信」的答案，不能是随便的 id 序。
 ORDER BY is_default DESC, id;
-
--- name: SyncAccountHostsFromTenant :execrows
--- 把租户级的收发服务器配置刷到该租户所有账号行上。
---
--- 只在这一期存在。00042 把主机搬到了账号上，而设置页这一版还在写
--- mail_hosts——不同步的话，管理员改完 SMTP 地址会发现「改了没生效」，
--- 而且没有任何报错。第二期设置页改成按信箱之后，这句和它的调用点一起删。
-UPDATE mail_accounts a
-   SET domain = h.domain,
-       smtp_host = h.smtp_host, smtp_port = h.smtp_port, smtp_security = h.smtp_security,
-       imap_host = h.imap_host, imap_port = h.imap_port, imap_security = h.imap_security,
-       hourly_quota = h.hourly_quota, daily_quota = h.daily_quota,
-       updated_at = now()
-  FROM mail_hosts h
- WHERE h.tenant_id = a.tenant_id
-   AND a.tenant_id = sqlc.arg(tenant_id)::bigint;
 
 -- name: BumpSendCounter :one
 -- Counts one accepted message into the current hour and returns the new
@@ -604,9 +651,15 @@ ORDER BY id;
 -- name: CountUnread :one
 -- The badge counts what the inbox proper shows: archived and trashed mail
 -- has been dealt with, so it stops demanding attention.
+--
+-- **也按信箱算。** 徽标就贴在收件箱那一行上，而列表已经按信箱过滤了——
+-- 不带 account_id 的话，切到 A 箱看着五封信，徽标写着 12，那个数字指的是
+-- A+B 两个箱。数字和它旁边的列表说的不是一回事，比没有数字更糟。
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
+  AND (sqlc.narg(account_id)::bigint IS NULL
+       OR account_id = sqlc.narg(account_id)::bigint)
   AND (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
   AND NOT is_bounce AND NOT is_read
   AND archived_at IS NULL AND deleted_at IS NULL;
@@ -644,6 +697,18 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- ever sees one of these.
 
 -- name: ListSentUnified :many
+-- **这一句还没有按信箱分，是有意留到第三期的。**
+--
+-- 它合并两个来源：email_inbound 里 folder='SENT' 的那些（邮件服务器自己
+-- 存的副本，有 account_id），和 email_messages 里我们发出去而服务器没留
+-- 副本的那些（**没有 account_id**——「这封信从哪个信箱发出去的」今天根本
+-- 答不上来，出站队列只记 sender_id）。
+--
+-- 只给前一半加筛选会更糟：切到 Gmail 箱，看到的是 Gmail 的已发送 + 全部
+-- 的 ERP 发送记录，一半对一半不对，而且看不出哪一半。不筛选至少是一句
+-- 说得清的话——「你发出去的信，全部」，和改动之前一样。
+--
+-- 第三期给 email_messages 加上 account_id 之后，两条腿一起加筛选。
 WITH host AS (
     SELECT 'HOST'::text AS kind, i.id, i.to_email, coalesce(m.to_name, '') AS to_name,
            i.subject, i.snippet,

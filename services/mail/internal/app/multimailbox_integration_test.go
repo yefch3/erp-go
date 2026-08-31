@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/mail/internal/store"
 )
@@ -51,13 +53,11 @@ func TestTwoMailboxesForOnePersonBothStayAlive(t *testing.T) {
 	svc := New(pool, Deps{Secrets: box}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 
 	// 同一个人，两个服务商。第一个绑的自动成为默认。
-	if err := svc.SaveMailAccount(ctx, tenantID, employeeID, "me@sunrise.com", "", "code-263"); err != nil {
+	// 挑服务商，服务器由服务端查表填好——这正是「员工只负责登录」那条路。
+	if _, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "me@sunrise.com", Provider: "p263", Secret: "code-263",
+	}); err != nil {
 		t.Fatalf("绑第一个信箱：%v", err)
-	}
-	if _, err := pool.Exec(ctx, `UPDATE mail_accounts
-		SET smtp_host='smtp.263.net', imap_host='imap.263.net'
-		WHERE tenant_id=$1 AND email='me@sunrise.com'`, tenantID); err != nil {
-		t.Fatal(err)
 	}
 	// 第二个走 UpsertMailAccountShell 那条路——冲突键是地址，所以这是新增
 	// 一行，不是把第一个改掉。
@@ -339,6 +339,144 @@ func TestOneConversationInTwoMailboxesIsTwoRows(t *testing.T) {
 	}
 }
 
+// 一家 263 的公司里，员工绑一个 Gmail，绑得上而且能用。
+//
+// 这是整批改动要解锁的那件事，也是从前**做不到**的：地址只能来自登录令牌
+// （所以永远是公司域名的），收发服务器一家公司只有一份（所以拿 Gmail 的
+// 账号去登的是 imap.263.net，报的是「认证失败」，指向的是密码错）。
+//
+// 顺带钉住绑定入口的三条新约束：
+//
+//	· 归属只来自调用方给的 employeeID，绑到自己名下
+//	· 服务器由服务端按服务商代号查表，不是调用方说了算
+//	· 每一次绑定留痕
+func TestSomebodyAtA263CompanyCanBindTheirGmail(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantID := time.Now().UnixNano()
+	employeeID := tenantID%100000 + 840001
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_binding_log WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_hosts WHERE tenant_id=$1", tenantID)
+	}()
+	// 公司是 263 的。
+	if _, err := pool.Exec(ctx, `INSERT INTO mail_hosts
+		(tenant_id, domain, smtp_host, smtp_port, smtp_security, imap_host, imap_port, imap_security)
+		VALUES ($1,'sunrise.com','smtp.263.net',465,'SSL','imap.263.net',993,'SSL')`,
+		tenantID); err != nil {
+		t.Fatal(err)
+	}
+	svc := New(pool, Deps{Secrets: box}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	// 公司信箱：不挑服务商，落回公司配置。
+	work, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "lina@sunrise.com", Secret: "code-263",
+	})
+	if err != nil {
+		t.Fatalf("绑公司信箱：%v", err)
+	}
+	// 私人 Gmail：地址后缀就认得出来，不用挑也不用填服务器。
+	personal, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "Lina.Personal@Gmail.com", Secret: "app-password",
+	})
+	if err != nil {
+		t.Fatalf("在一家 263 的公司里绑 Gmail：%v", err)
+	}
+	if personal.AccountID == work.AccountID {
+		t.Fatal("绑第二个信箱把第一个改掉了——那是「一人一箱」的老语义")
+	}
+	// 地址规范化过：请求里写的是混合大小写，落库的是小写。界面要显示的是
+	// 落库的那个，所以它必须回来。
+	if personal.Email != "lina.personal@gmail.com" {
+		t.Errorf("回来的地址是 %q，应该是规范化之后的那个", personal.Email)
+	}
+
+	a, err := svc.ForAccount(ctx, tenantID, work.AccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := svc.ForAccount(ctx, tenantID, personal.AccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.IMAPHost != "imap.263.net" {
+		t.Errorf("公司信箱该走 imap.263.net，拿到 %s", a.IMAPHost)
+	}
+	if b.IMAPHost != "imap.gmail.com" || b.Host != "smtp.gmail.com" {
+		t.Errorf("Gmail 信箱该走 Gmail 的服务器，拿到 %s / %s——"+
+			"这正是从前做不到的那件事：一家公司只有一份收发服务器配置",
+			b.Host, b.IMAPHost)
+	}
+	if a.Secret != "code-263" || b.Secret != "app-password" {
+		t.Errorf("两个信箱的授权码串了：%q / %q", a.Secret, b.Secret)
+	}
+	// 先绑的仍是默认，加一个信箱不该悄悄换掉发件人。
+	if !boxIsDefault(t, ctx, pool, tenantID, work.AccountID) {
+		t.Error("加了第二个信箱之后默认发件人被换掉了")
+	}
+
+	// 同一个地址换个大小写再绑一次，是**更新同一行**，不是新增。
+	//
+	// 这条钉的是 00046：地址一律以小写存，而 ON CONFLICT (tenant_id, email)
+	// 是大小写敏感的。不规范化的话 'Me@x.com' 和 'me@x.com' 在唯一约束眼里
+	// 是两个值，同一个信箱裂成两行——两份凭据、两份同步游标、两套已收邮件，
+	// 而且一声不吭。
+	again, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "LINA.PERSONAL@GMAIL.COM", Secret: "app-password-2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.AccountID != personal.AccountID {
+		t.Errorf("同一个地址换个大小写又开了一个信箱（%d ≠ %d）——"+
+			"两份凭据两份游标，而唯一约束一声不吭",
+			again.AccountID, personal.AccountID)
+	}
+	var rows int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM mail_accounts
+		WHERE tenant_id=$1 AND employee_id=$2`, tenantID, employeeID).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 2 {
+		t.Errorf("应该只有两个信箱（公司 + Gmail），实际 %d 个", rows)
+	}
+
+	// 两次绑定各留一行痕，记的是落库后的地址。
+	var logged int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM mail_binding_log
+		WHERE tenant_id=$1 AND employee_id=$2 AND action='BIND'`,
+		tenantID, employeeID).Scan(&logged); err != nil {
+		t.Fatal(err)
+	}
+	if logged != 2 {
+		t.Errorf("两次绑定该留两行痕，实际 %d 行——地址交还给调用方之后，"+
+			"「谁绑了什么」不再有一个不言自明的答案", logged)
+	}
+}
+
+func boxIsDefault(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tenantID, accountID int64) bool {
+	t.Helper()
+	var yes bool
+	if err := pool.QueryRow(ctx, `SELECT is_default FROM mail_accounts
+		WHERE tenant_id=$1 AND id=$2`, tenantID, accountID).Scan(&yes); err != nil {
+		t.Fatal(err)
+	}
+	return yes
+}
+
 // 别人已经绑了的地址，第二个人绑不上——UNIQUE (tenant_id, email) 是 00043
 // 有意留下的那一条，而撞上时要说人话，不是抛 23505。
 func TestOneMailboxCannotBelongToTwoPeople(t *testing.T) {
@@ -363,10 +501,14 @@ func TestOneMailboxCannotBelongToTwoPeople(t *testing.T) {
 	svc := New(pool, Deps{Secrets: box}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 
 	empA, empB := tenantID%100000+820001, tenantID%100000+820002
-	if err := svc.SaveMailAccount(ctx, tenantID, empA, "shared@sunrise.com", "", "x"); err != nil {
+	if _, err := svc.VerifyMailSecret(ctx, tenantID, empA, BindRequest{
+		Email: "shared@sunrise.com", Provider: "p263", Secret: "x",
+	}); err != nil {
 		t.Fatal(err)
 	}
-	err = svc.SaveMailAccount(ctx, tenantID, empB, "shared@sunrise.com", "", "y")
+	_, err = svc.VerifyMailSecret(ctx, tenantID, empB, BindRequest{
+		Email: "shared@sunrise.com", Provider: "p263", Secret: "y",
+	})
 	if err == nil {
 		t.Fatal("两个人绑同一个地址竟然成功了——那封信该算谁的？")
 	}

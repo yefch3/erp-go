@@ -3,6 +3,9 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,8 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
+	"github.com/sgao19/erp-go/pkg/grpcx"
 )
 
 // fakeCounter is the storage the throttle would otherwise get from Redis. The
@@ -320,11 +327,20 @@ func TestOnlyARejectedCredentialCountsAgainstTheBudget(t *testing.T) {
 	}
 }
 
-// The mailbox somebody binds is the one they signed in as. This is a test
-// about a *field*, because that is where the rule lives: the verify handler
-// reads the address from the token, and the request body has no address in it
-// to disagree with. Anybody adding one back should have to delete this.
-func TestTheVerifyRequestCarriesNoAddress(t *testing.T) {
+// 绑定入口放宽了：地址现在是请求体里的字段。这条测试是**替换**上一条，
+// 不是删掉它。
+//
+// 上一条叫 TestTheVerifyRequestCarriesNoAddress，断言 verifyMailbox 的函数体
+// 里没有 json:"email"、有 Email: op.Email。它防的是「以 alice@thecompany.com
+// 登录，却绑一个私人信箱」，而那条规矩本身是修过一次 bug 之后立的。
+//
+// 它退役是因为业务口径变了：一个人可以绑多个信箱，而且**不必是公司域名的**
+// ——ERP 账号是 263 的人，邮箱这边可以只绑 Gmail。老约束和这个需求直接冲突，
+// 不是"忘了"或"绕过"。
+//
+// 换上的四条写在这里。它们和老的那条一样是源码文本断言，理由也一样：这几件
+// 事没有一个运行时的地方能一眼看出来，而删掉其中任何一条都不会让别的测试变红。
+func TestBindingAnAddressStillHasGuards(t *testing.T) {
 	src, err := os.ReadFile("mailunlock.go")
 	if err != nil {
 		t.Fatal(err)
@@ -337,17 +353,45 @@ func TestTheVerifyRequestCarriesNoAddress(t *testing.T) {
 	end := strings.Index(body[start:], "\nfunc ")
 	fn := body[start : start+end]
 
-	if strings.Contains(fn, `json:"email"`) {
-		t.Error("the verify body has an email field again — signing in as one " +
-			"address and binding another is exactly what this must not allow")
+	// 一、绑给谁只能来自登录令牌。请求体里出现「绑给谁」这一项，等于任何
+	// 登录了的人都能把一个信箱挂到别人名下。
+	if strings.Contains(fn, `json:"employeeId"`) || strings.Contains(fn, `json:"employee_id"`) {
+		t.Error("请求体里出现了「绑给谁」——归属必须只来自登录令牌，" +
+			"否则任何人都能把信箱挂到别人名下")
 	}
-	if !strings.Contains(fn, "Email: op.Email") {
-		t.Error("the bound address no longer comes from the session; it must " +
-			"be the address the person logged in with, not one they supplied")
+	if !strings.Contains(fn, "grpcx.OperatorFromContext") {
+		t.Error("不再从登录令牌取操作人了")
 	}
-	if !strings.Contains(fn, `op.Email == ""`) {
-		t.Error("an employee with no company address must be refused rather " +
-			"than binding something unchecked")
+
+	// 二、**两份预算都得在**：按人的那份和按人+地址的那份。
+	//
+	// 只留按人+地址那一份是错的（第一版就是这么写的）：地址成了可变字段
+	// 之后，它等于把「一个人五次」稀释成「一个人每个地址五次」，换一串
+	// 地址就换一份预算，比原来更弱。这个预算保护的是我们服务器的 IP 在
+	// 邮件服务商那里的信誉，而那个资源是按人花的。
+	if !strings.Contains(fn, `perPerson := fmt.Sprintf("t%d.e%d"`) {
+		t.Error("按人那一份预算没了——换一串地址就能换一份新预算")
+	}
+	if !strings.Contains(fn, `perTarget := fmt.Sprintf("t%d.e%d.%s"`) {
+		t.Error("按目标地址那一份预算没了——对着同一个信箱可以一直试")
+	}
+	if !strings.Contains(fn, "throttleMailVerify") {
+		t.Error("绑定入口没有限流了")
+	}
+
+	// 三、主机名不能由调用方直接决定。请求体里带 smtpHost/imapHost 是允许
+	// 的（「其他」那一档要它），但它必须经过服务端的校验和服务商表——网关
+	// 只做转发，判断在 mail 服务的 resolveHosts / validateCustomHost。
+	if !strings.Contains(fn, "Provider: body.Provider") {
+		t.Error("服务商代号没有传给服务端——主机名就会变成调用方说了算，" +
+			"那等于任何员工都能让邮件服务带着凭据去连任意 host:port")
+	}
+
+	// 四、不给地址时不能悄悄退回登录地址。那个默认正是老约束的实现方式，
+	// 而登录地址现在可能一个信箱都不对应。
+	if strings.Contains(fn, "Email: op.Email") {
+		t.Error("地址又退回成登录地址了——ERP 账号是 263 的人可以只绑 Gmail，" +
+			"这个默认会把他绑到一个不存在的信箱上")
 	}
 }
 
@@ -366,4 +410,61 @@ func TestRunningOutOfAttemptsReachesTheBrowserAsTooManyRequests(t *testing.T) {
 	if !strings.Contains(string(src), "codes.ResourceExhausted: http.StatusTooManyRequests") {
 		t.Fatal("a throttled service error still surfaces as an internal error")
 	}
+}
+
+// 换一串地址换不来新预算。
+//
+// 这条是把一次审查里的探针钉下来：当时限流键只有「人 + 目标地址」，探针
+// 用二十个不同地址各试五次，**一百次真实登录全部打到了邮件服务器上**，
+// 而预算写的是「每 15 分钟五次」。地址是调用方给的，所以它一个人就能把
+// 预算乘以任意倍数——那不是收紧，是取消。
+//
+// 用假的 EmailService：这里要证的是网关的计费，不是邮件服务的判断。
+func TestChangingTheAddressDoesNotBuyMoreAttempts(t *testing.T) {
+	addr := os.Getenv("GATEWAY_TEST_REDIS")
+	if addr == "" {
+		t.Skip("set GATEWAY_TEST_REDIS")
+	}
+	stub := &rejectEveryLogin{}
+	srv := &Server{
+		Throttle: NewFailureThrottle(addr, slog.New(slog.NewTextHandler(io.Discard, nil))),
+		Emails:   stub,
+		Unlock:   NewUnlockStore(addr, time.Hour),
+	}
+	tenant, employee := time.Now().UnixNano(), int64(770001)
+
+	// 二十个不同地址，每个试五次。按人那份预算是五次，所以真正打到邮件
+	// 服务器上的应该远少于一百次。
+	for i := 0; i < 20; i++ {
+		for j := 0; j < 5; j++ {
+			w := httptest.NewRecorder()
+			body := fmt.Sprintf(`{"email":"probe%d@qq.com","secret":"x","provider":"qq"}`, i)
+			r := httptest.NewRequest("POST", "/api/mailbox/verify", strings.NewReader(body))
+			r = r.WithContext(grpcx.WithOperator(r.Context(),
+				grpcx.Operator{TenantID: tenant, EmployeeID: employee, Email: "me@qq.com"}))
+			srv.verifyMailbox(w, r)
+		}
+	}
+	// 允许一点余量：两份预算各自的窗口和计数时机不完全同步。但一百次里
+	// 打出去十次以内，和"全打出去"是两个量级。
+	if stub.calls > 10 {
+		t.Errorf("换地址换来了 %d 次真实登录，预算是每人 %d 次——"+
+			"限流键带上调用方给的地址，等于把上限乘以地址的个数",
+			stub.calls, mailVerifyMaxFailures)
+	}
+	if stub.calls == 0 {
+		t.Error("一次都没打出去，这条测试什么也没证明")
+	}
+}
+
+// rejectEveryLogin 扮演一个总是拒绝的邮件服务器：每一次都是 HostRejected，
+// 也就是"真的花掉了一次登录"，正是该扣预算的那种失败。
+type rejectEveryLogin struct {
+	mailv1.EmailServiceClient
+	calls int
+}
+
+func (v *rejectEveryLogin) VerifyMailAccess(_ context.Context, _ *mailv1.VerifyMailAccessRequest, _ ...grpc.CallOption) (*mailv1.VerifyMailAccessResponse, error) {
+	v.calls++
+	return &mailv1.VerifyMailAccessResponse{Ok: false, HostRejected: true, Detail: "authentication failed"}, nil
 }

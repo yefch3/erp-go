@@ -41,6 +41,26 @@ func routeSet(t *testing.T) map[string]bool {
 	return out
 }
 
+// 多信箱那一组地址必须齐。少一条，左侧的切换器和「添加邮箱」点了没反应，
+// 而且是**静默**的：前端拿到 404，catch 里只把它当成"加载失败"。
+func TestMultiMailboxRoutesAreAllRegistered(t *testing.T) {
+	have := routeSet(t)
+	for _, want := range []string{
+		// 我名下的全部信箱。取代了按人取单行的「我的邮箱」——那个在一人
+		// 多箱下会随机指向其中一个，而且不报错。
+		"GET /api/my-mailboxes",
+		// 换写信时默认用哪个箱。
+		"POST /api/my-mailboxes/default",
+		// 绑定/登录邮箱。**存邮箱凭据的路只有这一条**，它要先拿这一对去
+		// 邮件服务器真的登录一次，成功了才落库。
+		"POST /api/mailbox/verify",
+	} {
+		if !have[want] {
+			t.Errorf("路由没注册：%s", want)
+		}
+	}
+}
+
 // 应收那一组地址必须齐。少一条，页面上就有一个按钮点了没反应。
 func TestReceivableRoutesAreAllRegistered(t *testing.T) {
 	have := routeSet(t)

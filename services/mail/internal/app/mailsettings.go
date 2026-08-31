@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/sgao19/erp-go/services/mail/internal/store"
@@ -27,6 +26,10 @@ type MailHostSettings struct {
 // mailbox. HasSecret rather than the secret: a value that is never sent to a
 // browser cannot be leaked by one.
 type MailAccountView struct {
+	// ID 是这个信箱本身。一个人可以有好几个（00043），所以界面要能指名
+	// 道姓地说「切到这个」「把这个设成默认」——光有地址不够，地址是可以
+	// 长得很像的。
+	ID         int64
 	Email      string
 	Username   string
 	AuthKind   string
@@ -34,6 +37,12 @@ type MailAccountView struct {
 	VerifiedAt string
 	LastError  string
 	IsActive   bool
+	// IsDefault 是「写信时预选哪一个」。和登录地址无关。
+	IsDefault bool
+	// 这个信箱自己的收发服务器（00042 之后长在信箱行上）。界面上要显示
+	// 「你这个箱走的是 imap.gmail.com」，不然跨服务商时人分不清哪个是哪个。
+	SMTPHost string
+	IMAPHost string
 }
 
 var validSecurity = map[string]bool{"SSL": true, "STARTTLS": true, "NONE": true}
@@ -94,54 +103,79 @@ func (s *Service) SaveMailHost(ctx context.Context, tenantID int64, in MailHostS
 	}); err != nil {
 		return err
 	}
-	// 刷到该租户所有信箱行上。
+	// **不再刷到已绑定的信箱上。**
 	//
-	// 00042 把收发服务器搬到了 mail_accounts，而这个页面这一版还在写
-	// mail_hosts——不同步的话，管理员改完 SMTP 地址会发现「改了没生效」，
-	// 而且哪儿都不报错，因为发信读的已经是账号行了。
+	// 00042 刚把主机搬到 mail_accounts 那会儿，这里有一句
+	// SyncAccountHostsFromTenant：那时每个人只有一个箱、而且只可能是公司
+	// 那一家，所以"改了公司配置就刷给所有人"和"改了自己的配置"是同一件事。
 	//
-	// 第二期这个页面改成按信箱各自配置之后，这一段连同 SyncAccountHostsFromTenant
-	// 一起删掉。
-	n, err := s.q.SyncAccountHostsFromTenant(ctx, tenantID)
-	if err != nil {
-		return fmt.Errorf("收发服务器已保存，但没能同步到已绑定的信箱上：%w", err)
-	}
-	s.log.Info("mail host settings pushed to bound mailboxes", "tenant", tenantID, "accounts", n)
+	// 一个人能绑别家服务商的信箱之后，那一句就成了**破坏性**的：管理员在
+	// 这个页面点一次保存，全公司每个人的 Gmail、163、QQ 信箱的服务器地址
+	// 会被一起刷成公司那一套。之后那些箱收发全停，报的是认证失败，
+	// 而管理员刚做的事和这个结果之间没有任何提示连着。
+	//
+	// mail_hosts 从此只剩一个角色：**新建信箱时的默认值模板**——认不出
+	// 服务商时 resolveHosts 落回它，UpsertMailAccountShell 插入时种下它。
+	// 改它只影响以后新绑的箱，不动已经绑好的。
+	s.log.Info("mail host settings saved (template for new mailboxes only)", "tenant", tenantID)
 	return nil
 }
 
-func (s *Service) GetMyMailAccount(ctx context.Context, tenantID, employeeID int64) (MailAccountView, error) {
-	row, err := s.q.GetMyMailAccount(ctx, store.GetMyMailAccountParams{
+// ListMyMailboxes 是这个人名下的**全部**信箱，默认的排在最前。
+//
+// 取代了从前那个按 employee_id 取单行的 GetMyMailAccount。那一句在一人一箱
+// 下没问题；放开之后它是 sqlc 的 :one，pgx 读到第一行就返回、不报「多行」
+// 错，也没有 ORDER BY——「我的邮箱」会随机指向两个箱之一，绿勾、同步故障
+// 横幅、reauth 跳哪扇门全都跟着随机，而且一个字都不报。
+func (s *Service) ListMyMailboxes(ctx context.Context, tenantID, employeeID int64) ([]MailAccountView, error) {
+	rows, err := s.q.ListMailAccountsForEmployee(ctx, store.ListMailAccountsForEmployeeParams{
 		TenantID: tenantID, EmployeeID: employeeID,
 	})
 	if err != nil {
-		// Not yet configured. Same reasoning as the host above.
+		return nil, err
+	}
+	out := make([]MailAccountView, 0, len(rows))
+	for _, row := range rows {
+		v := MailAccountView{
+			ID: row.ID, Email: row.Email, Username: row.Username,
+			AuthKind: row.AuthKind, LastError: row.LastError,
+			IsActive: row.IsActive, IsDefault: row.IsDefault,
+			SMTPHost: row.SmtpHost, IMAPHost: row.ImapHost,
+			HasSecret: s.hasCredential(ctx, tenantID, row.ID),
+		}
+		if row.VerifiedAt.Valid {
+			v.VerifiedAt = row.VerifiedAt.Time.Format("2006-01-02 15:04")
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+// hasCredential 单独读一次密文列，而不是把它选进上面那句。
+//
+// 让「设置页读的那句查询」**根本没有能力**返回凭据，值得多一次往返。
+//
+// 两列都看：凭据只会在其中一列，不会同时在两列——密码账号填 secret_enc，
+// Google 账号填 oauth_refresh_enc 而 secret_enc 是空的。只看第一列的话，
+// 全公司用 Google 登录的人都会被答成「没有凭据」，而那句话在一个邮箱明明
+// 好用的人看来就是「你还没设置邮箱」。
+func (s *Service) hasCredential(ctx context.Context, tenantID, accountID int64) bool {
+	sec, err := s.q.GetMailAccountSecret(ctx, store.GetMailAccountSecretParams{
+		TenantID: tenantID, ID: accountID,
+	})
+	if err != nil {
+		return false
+	}
+	return len(sec.SecretEnc) > 0 || len(sec.OauthRefreshEnc) > 0
+}
+
+// GetMyMailAccount 回这个人的**默认**信箱，给还没改成多信箱的那几个调用点用。
+//
+// 一个都没有时回一个空壳而不是报错：设置页要能显示「还没绑」。
+func (s *Service) GetMyMailAccount(ctx context.Context, tenantID, employeeID int64) (MailAccountView, error) {
+	boxes, err := s.ListMyMailboxes(ctx, tenantID, employeeID)
+	if err != nil || len(boxes) == 0 {
 		return MailAccountView{IsActive: true}, nil
 	}
-	// HasSecret is derived from a separate read rather than selected above,
-	// because GetMyMailAccount deliberately does not touch the secret column
-	// at all — keeping that query incapable of returning it is worth one
-	// extra round trip on a settings page.
-	//
-	// Both columns, because a credential lives in one or the other and never
-	// both: a password account fills secret_enc, a Google account fills
-	// oauth_refresh_enc and leaves secret_enc empty. Looking only at the first
-	// answers "no credential" for every Google-signed-in employee in the
-	// company — which reads as "you have not set up your mailbox" to somebody
-	// whose mailbox is working.
-	has := false
-	if sec, err := s.q.GetMailAccountSecret(ctx, store.GetMailAccountSecretParams{
-		TenantID: tenantID, ID: row.ID,
-	}); err == nil {
-		has = len(sec.SecretEnc) > 0 || len(sec.OauthRefreshEnc) > 0
-	}
-
-	v := MailAccountView{
-		Email: row.Email, Username: row.Username, AuthKind: row.AuthKind,
-		HasSecret: has, LastError: row.LastError, IsActive: row.IsActive,
-	}
-	if row.VerifiedAt.Valid {
-		v.VerifiedAt = row.VerifiedAt.Time.Format("2006-01-02 15:04")
-	}
-	return v, nil
+	return boxes[0], nil
 }

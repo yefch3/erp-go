@@ -1,22 +1,20 @@
 <template>
-  <!-- The mailbox sign-in, and nothing else.
-       
-       There used to be a notion of "binding" here, with a bound state, an
-       "enter" button for it and a separate "switch account" link beside. All
-       of that described bookkeeping rather than anything the person wanted:
-       which address gets used was settled the moment they logged in to the
-       ERP, so there was never a choice to present. What is left is the only
-       question there ever was — are you signed in to your mailbox or not.
+  <!-- 登录邮箱，兼第一次绑定。
 
-       Two doors, because two kinds of mail host exist. Google's own login
-       page, or the password / client authorisation code that 263 and the rest
-       want. Neither asks for an address: it comes from the session. -->
+       两扇门，因为邮件服务器有两种：Google 自己的登录页，和 263 那一类要
+       密码/授权码的。
+
+       **地址现在是一个字段。** 从前不是——它取自登录令牌，这里连问都不问，
+       组件注释写的是 "it comes from the session"。那条约束防的是「以公司
+       地址登录、却绑一个私人信箱」，而新的业务口径正是要允许这件事：一个人
+       可以绑多个信箱，ERP 账号是 263 的人邮箱这边可以只绑 Gmail。约束换成
+       了服务端的四道检查（归属只来自令牌、地址唯一、必须活体登录成功、
+       服务器由服务端查表），见网关 verifyMailbox 的注释。 -->
   <div class="gate">
     <el-card shadow="never" class="gate-card">
       <div class="gate-icon">✉️</div>
       <h3 class="gate-title">{{ t('mailGate.title') }}</h3>
       <p class="gate-text">{{ t('mailGate.explain') }}</p>
-      <div class="gate-whoami">{{ signedInAs }}</div>
 
       <!-- One Google door, and it always goes to Google.
            
@@ -38,22 +36,11 @@
 
       <el-divider class="gate-or">{{ t('mailGate.or') }}</el-divider>
 
-      <!-- The other door: whatever the host honours in the password slot, the
-           account password or a client authorisation code. One field serves
-           both; the host decides which it accepts. -->
-      <el-input
-        v-model="secret"
-        type="password"
-        show-password
-        autocomplete="current-password"
-        class="gate-field"
-        :placeholder="t('mailGate.codePlaceholder')"
-        @keyup.enter="emailSignIn"
-      />
+      <!-- 另一扇门：地址 + 服务商 + 授权码。和「再加一个信箱」用的是同一
+           套字段，所以它是一个共享组件——两处各写一份表单，改了一处忘了
+           另一处是这类界面最常见的死法。 -->
+      <MailboxCredentialsForm :initial-email="account.email || auth.employeeEmail" @bound="onBound" />
       <div v-if="error" class="gate-error">{{ error }}</div>
-      <el-button type="primary" class="gate-btn" :loading="emailBusy" @click="emailSignIn">
-        {{ t('mailGate.signInEmail') }}
-      </el-button>
 
       <p class="gate-hint">{{ t('mailGate.hint') }}</p>
 
@@ -70,11 +57,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { get, http, mailHostRequest, quietErrors } from '../api'
 import { useAuthStore } from '../stores/auth'
+import MailboxCredentialsForm from './MailboxCredentialsForm.vue'
 
 const emit = defineEmits<{ unlocked: []; hostSettings: [] }>()
 const { t } = useI18n()
@@ -85,16 +72,7 @@ const auth = useAuthStore()
 const canEditHost = auth.can('iam:role:write')
 
 const account = reactive({ email: '', username: '', authKind: '' })
-// Which mailbox this is about. Stated, never asked: the address was settled
-// when they logged in to the ERP, and both doors take it from the session —
-// the password one ignores any address a caller sends, and the Google one
-// refuses a grant for a different account.
-const signedInAs = computed(() =>
-  auth.employeeEmail ? t('mailGate.forMailbox', { email: auth.employeeEmail }) : '',
-)
-const secret = ref('')
 const googleBusy = ref(false)
-const emailBusy = ref(false)
 const error = ref('')
 
 
@@ -127,26 +105,13 @@ async function startOAuth() {
 }
 
 
-// Sign-in with the address and code is also what binds the mailbox. The
-// server verifies the typed pair by a live login FIRST and stores it only on
-// success — so a mistyped code never overwrites a working credential and a
-// failed password attempt never destroys a Google binding. Entering a
-// different address rebinds (the server clears the old mailbox's synced
-// mail); a rotated app password heals itself on the next successful sign-in.
-async function emailSignIn() {
-  if (!secret.value) {
-    error.value = t('mailGate.codeRequired')
-    return
-  }
-  emailBusy.value = true
-  error.value = ''
-  try {
-    await verify(secret.value)
-  } catch (e: unknown) {
-    error.value = (e as { message?: string })?.message || t('mailGate.failed')
-  } finally {
-    emailBusy.value = false
-  }
+// 表单验成功之后拿到的令牌。服务端先真的登录一次，成功了才落库——所以
+// 一次输错的授权码既不会覆盖能用的凭据，也不会毁掉一个 Google 绑定。
+//
+// 填一个**新地址**是新增一个信箱，不是把原来那个改掉：冲突键是地址。
+function onBound(d: { token: string }) {
+  localStorage.setItem('mailUnlock', d.token)
+  emit('unlocked')
 }
 
 // An account with no mailbox bound has nothing to verify; the server answers
@@ -162,32 +127,21 @@ async function skipUnbound() {
 
 // Raw client rather than the helper: a wrong code is an expected answer here,
 // to be shown in place instead of as a floating toast.
+// 「暂不绑定」走的也是这个：不带地址、不带授权码 = 「复验已经绑好的那个」。
+// 一个都没绑过的人拿到的是一句「无需验证」和一把令牌，好让活动和草稿那几
+// 个页面仍然进得去。
 async function verify(code: string) {
-  // Verifying is a live IMAP login against the person's own mail host, which
-  // is nothing like a database call: the default client timeout would give up
-  // on a slow but perfectly good sign-in.
-  // Quiet: a wrong code is an expected answer, shown next to the field that
-  // produced it rather than as a toast over the whole page.
   const resp = await http.post('/mailbox/verify', { secret: code }, {
     ...mailHostRequest,
     ...quietErrors,
   })
   const data = resp.data.data as { token: string }
   localStorage.setItem('mailUnlock', data.token)
-  secret.value = ''
   emit('unlocked')
 }
 </script>
 
 <style scoped>
-.gate-whoami {
-  /* Reads as a statement of fact, not a field: this is the mailbox that will
-     be bound, and there is nothing here to change. */
-  margin-bottom: 10px;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-  text-align: center;
-}
 .gate {
   display: flex;
   justify-content: center;
@@ -251,9 +205,6 @@ async function verify(code: string) {
 .gate-or :deep(.el-divider__text) {
   font-size: 12px;
   color: var(--el-text-color-secondary);
-}
-.gate-field {
-  margin-bottom: 10px;
 }
 .gate-error {
   margin: 2px 0 8px;

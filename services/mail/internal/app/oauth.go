@@ -65,41 +65,55 @@ func (s *Service) CompleteGoogleOAuth(ctx context.Context, tenantID, employeeID 
 		return "", errors.New("Google 没有返回长期授权（refresh token），请重试一次登录")
 	}
 
-	email := emailFromIDToken(tok.IDToken)
+	// 小写：地址一律以小写存（00046），而 ON CONFLICT (tenant_id, email) 是
+	// 大小写敏感的。Google 通常回小写，但"通常"不是约束——大小写不一的那次
+	// 会让同一个信箱裂成两行，两份凭据两份游标，而且不报错。
+	email := strings.ToLower(strings.TrimSpace(emailFromIDToken(tok.IDToken)))
 	if email == "" {
 		return "", errors.New("无法从 Google 的应答中读出邮箱地址")
 	}
-	// The mailbox bound is the one they signed in as, on this door too.
+	// expectEmail 只在调用方**说了**要绑哪一个时才比。
 	//
-	// Checked here rather than at the gateway because by the time the gateway
-	// sees an answer the credential would already be stored — and refusing
-	// after storing is not refusing. Google's account chooser appears on every
-	// sign-in by design, which makes picking the wrong account easy; this is
-	// what makes picking it harmless.
+	// 从前它一定是登录地址，因为那时「绑的必须是登录那个箱」。现在不是了：
+	// ERP 账号是 263 的人，邮箱这边可以只绑 Gmail。留着这个参数是因为
+	// 「重新授权某一个已绑的箱」仍然需要它——Google 每次都弹账号选择器，
+	// 挑错一个就会把另一个箱的凭据覆盖掉，而两者长得一模一样。
+	//
+	// 在这里比而不是在网关比：等网关看到应答时凭据已经存进去了，存完再拒
+	// 不叫拒。
 	if want := strings.ToLower(strings.TrimSpace(expectEmail)); want != "" &&
 		!strings.EqualFold(want, email) {
 		return "", apierr.Invalid("MAIL_OAUTH_WRONG_ACCOUNT",
-			fmt.Sprintf("你在 Google 授权的是 %s，但你登录 ERP 用的是 %s。请用同一个账号授权。", email, want))
+			fmt.Sprintf("你在 Google 授权的是 %s，但这一步要授权的是 %s。请选对账号。", email, want))
 	}
 
-	// Bind. Rebinding to a different address makes every stored message and
-	// UID meaningless, so the old mailbox's data goes with the old binding.
-	prev, prevErr := s.q.GetMyMailAccount(ctx, store.GetMyMailAccountParams{
-		TenantID: tenantID, EmployeeID: employeeID,
-	})
+	// 冲突键是**地址**：这个地址已经有行就是更新，没有就是新增一个信箱。
+	//
+	// 从前这里先按 employee_id 取一行当「上一个绑定」，地址不同就把那一行
+	// 已同步的邮件全删掉——那是「一人一箱、换地址等于换箱」年代的清理。
+	// 放开之后这段是**危险**的：按人取单行是 sqlc 的 :one，pgx 读到第一行
+	// 就返回、不报错，于是绑第二个 Google 信箱时，它会拿「随便哪一行的旧
+	// 地址」和新地址比，不同就删——而删的是本次刚 upsert 出来的那个 id。
+	// 人绑完看到的是一个空信箱，日志里只有一行 Info。
+	//
+	// 现在不需要清理了：换一个地址是**新增一行**，新行本来就没有邮件；
+	// 同一个地址重新授权是更新同一行，那些邮件正是它自己的。
 	id, err := s.q.UpsertMailAccountShell(ctx, store.UpsertMailAccountShellParams{
 		TenantID: tenantID, EmployeeID: employeeID, Email: email, Username: "",
 	})
 	if err != nil {
-		return "", err
+		return "", translateMailboxTaken(err)
 	}
-	if prevErr == nil && prev.Email != "" && !strings.EqualFold(prev.Email, email) {
-		s.log.Info("mailbox rebound to a different address, clearing its synced mail",
-			"employee", employeeID, "was", prev.Email, "now", email)
-		_ = s.q.DeleteInboundForAccount(ctx, store.DeleteInboundForAccountParams{TenantID: tenantID, AccountID: id})
-		_ = s.q.DeleteSyncStateForAccount(ctx, store.DeleteSyncStateForAccountParams{TenantID: tenantID, AccountID: id})
-		s.sentFolders.Delete(fmt.Sprintf("sent:%d", id))
-		s.sentFolders.Delete(fmt.Sprintf("junk:%d", id))
+	// Google 的收发服务器种在行上。没有这一句，新绑的 Gmail 信箱主机是空的
+	// ——发信和同步全停，而绑定这一步是成功的。
+	if p, ok := MailProviderByCode("gmail"); ok {
+		if err := s.q.SetMailAccountHosts(ctx, store.SetMailAccountHostsParams{
+			TenantID: tenantID, ID: id, Domain: domainOf(email),
+			SmtpHost: p.SMTPHost, SmtpPort: p.SMTPPort, SmtpSecurity: p.SMTPSecurity,
+			ImapHost: p.IMAPHost, ImapPort: p.IMAPPort, ImapSecurity: p.IMAPSecurity,
+		}); err != nil {
+			return "", err
+		}
 	}
 
 	blob, err := s.secrets.Seal([]byte(tok.RefreshToken), OAuthAAD(tenantID, id))
@@ -117,6 +131,8 @@ func (s *Service) CompleteGoogleOAuth(ctx context.Context, tenantID, employeeID 
 		token: tok.AccessToken,
 		exp:   time.Now().Add(time.Duration(tok.ExpiresIn-60) * time.Second),
 	})
+	s.markVerified(ctx, tenantID, id)
+	s.recordBinding(ctx, tenantID, employeeID, id, email, "gmail", bindActionBind, "")
 	return email, nil
 }
 

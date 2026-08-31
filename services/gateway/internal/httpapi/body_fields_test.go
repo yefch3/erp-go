@@ -7,6 +7,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
+	mailv1 "github.com/sgao19/erp-go/gen/go/erp/mail/v1"
 	prv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 )
 
@@ -33,6 +34,13 @@ func mustDecode(t *testing.T, body string, msg proto.Message) {
 }
 
 func TestBodiesTheBrowserActuallySendsDecode(t *testing.T) {
+	// frontend/src/components/MailboxSwitcher.vue —— 设为默认发件箱。
+	// accountId 是 lowerCamelCase，proto 里是 account_id；protojson 认前者。
+	mustDecode(t, `{"accountId": 7}`, &mailv1.SetDefaultMailboxRequest{})
+	// 同一个字段前端也可能发成字符串（int64 在 JSON 里超出安全整数时，
+	// proto 的 JSON 映射规定用字符串）。两种都得收得下。
+	mustDecode(t, `{"accountId": "7"}`, &mailv1.SetDefaultMailboxRequest{})
+
 	// frontend/src/pages/ContractsPage.vue —— 直接建合同（submitDirect）。
 	// terms 是整个表单对象展开的，所以少一个 proto 字段就整单保存不了。
 	mustDecode(t, `{

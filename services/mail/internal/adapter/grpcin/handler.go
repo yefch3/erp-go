@@ -736,11 +736,42 @@ func (h *Handler) GetMyMailAccount(ctx context.Context, _ *mailv1.GetMyMailAccou
 	if err != nil {
 		return nil, err
 	}
-	return &mailv1.GetMyMailAccountResponse{Account: &mailv1.MailAccount{
-		Email: v.Email, Username: v.Username, HasSecret: v.HasSecret,
+	return &mailv1.GetMyMailAccountResponse{
+		Account:        mailAccountToProto(v),
+		ExcelAvailable: h.svc.ExcelAvailable(),
+	}, nil
+}
+
+func mailAccountToProto(v app.MailAccountView) *mailv1.MailAccount {
+	return &mailv1.MailAccount{
+		Id: v.ID, Email: v.Email, Username: v.Username, HasSecret: v.HasSecret,
 		VerifiedAt: v.VerifiedAt, LastError: v.LastError, IsActive: v.IsActive,
-		AuthKind: v.AuthKind,
-	}, ExcelAvailable: h.svc.ExcelAvailable()}, nil
+		AuthKind: v.AuthKind, IsDefault: v.IsDefault,
+		SmtpHost: v.SMTPHost, ImapHost: v.IMAPHost,
+	}
+}
+
+func (h *Handler) ListMyMailboxes(ctx context.Context, _ *mailv1.ListMyMailboxesRequest) (*mailv1.ListMyMailboxesResponse, error) {
+	op := operator(ctx)
+	boxes, err := h.svc.ListMyMailboxes(ctx, grpcx.TenantID(ctx), op.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mailv1.MailAccount, 0, len(boxes))
+	for _, b := range boxes {
+		out = append(out, mailAccountToProto(b))
+	}
+	return &mailv1.ListMyMailboxesResponse{Accounts: out}, nil
+}
+
+func (h *Handler) SetDefaultMailbox(ctx context.Context, req *mailv1.SetDefaultMailboxRequest) (*mailv1.SetDefaultMailboxResponse, error) {
+	op := operator(ctx)
+	// op.ID 来自登录令牌，不是请求体：只能改自己的默认信箱，而「那个信箱
+	// 是不是他的」由 SQL 的 WHERE 判定——不是他的就影响零行，翻成 404。
+	if err := h.svc.SetDefaultMailbox(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId()); err != nil {
+		return nil, err
+	}
+	return &mailv1.SetDefaultMailboxResponse{}, nil
 }
 
 func (h *Handler) RecordOpen(ctx context.Context, req *mailv1.RecordOpenRequest) (*mailv1.RecordOpenResponse, error) {
@@ -794,7 +825,7 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 
 func (h *Handler) ListInbound(ctx context.Context, req *mailv1.ListInboundRequest) (*mailv1.ListInboundResponse, error) {
 	op := operator(ctx)
-	p, err := h.svc.ListInbound(ctx, grpcx.TenantID(ctx), op.ID,
+	p, err := h.svc.ListInbound(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId(),
 		req.GetKeyword(), req.GetView(), req.GetCursor(), req.GetPage().GetPageSize())
 	if err != nil {
 		return nil, err
@@ -1055,7 +1086,11 @@ func (h *Handler) ListMailboxSent(ctx context.Context, req *mailv1.ListMailboxSe
 
 func (h *Handler) VerifyMailAccess(ctx context.Context, req *mailv1.VerifyMailAccessRequest) (*mailv1.VerifyMailAccessResponse, error) {
 	op := operator(ctx)
-	detail, err := h.svc.VerifyMailSecret(ctx, grpcx.TenantID(ctx), op.ID, req.GetEmail(), req.GetSecret())
+	res, err := h.svc.VerifyMailSecret(ctx, grpcx.TenantID(ctx), op.ID, app.BindRequest{
+		Email: req.GetEmail(), Provider: req.GetProvider(), Secret: req.GetSecret(),
+		SMTPHost: req.GetSmtpHost(), SMTPPort: req.GetSmtpPort(), SMTPSecurity: req.GetSmtpSecurity(),
+		IMAPHost: req.GetImapHost(), IMAPPort: req.GetImapPort(), IMAPSecurity: req.GetImapSecurity(),
+	})
 	if err != nil {
 		// HostRejected separates "your code is wrong" from "we could not even
 		// try". Only the first cost a real login against the mail host, and
@@ -1064,7 +1099,9 @@ func (h *Handler) VerifyMailAccess(ctx context.Context, req *mailv1.VerifyMailAc
 			Ok: false, Detail: err.Error(), HostRejected: app.FromMailHost(err),
 		}, nil
 	}
-	return &mailv1.VerifyMailAccessResponse{Ok: true, Detail: detail}, nil
+	return &mailv1.VerifyMailAccessResponse{
+		Ok: true, Detail: res.Detail, AccountId: res.AccountID, Email: res.Email,
+	}, nil
 }
 
 func (h *Handler) CompleteGoogleOAuth(ctx context.Context, req *mailv1.CompleteGoogleOAuthRequest) (*mailv1.CompleteGoogleOAuthResponse, error) {

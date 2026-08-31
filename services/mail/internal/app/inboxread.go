@@ -137,7 +137,10 @@ func threadRowsFromSearch(rows []store.ListInboundThreadsRow) []threadRow {
 // arriving while somebody reads therefore cannot shift the boundary and make
 // a conversation show up twice or slip past unseen, which is exactly what
 // OFFSET does on a list that grows at the top.
-func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID int64, keyword, view, cursor string, size int32) (InboundPage, error) {
+// accountID 是「只看这个信箱」，0 表示我全部信箱。产品口径是按邮箱分、
+// 左侧切换，所以正常情况下它总是有值；0 那一档留给还没带这个参数的旧前端
+// （部署顺序是后端先发前端后发，那几分钟里列表不能空）。
+func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID int64, keyword, view, cursor string, size int32) (InboundPage, error) {
 	_, size = normalizePage(1, size)
 	// An unknown view falls back to the inbox proper rather than erroring:
 	// the worst a bad parameter can do is show the default slice.
@@ -150,6 +153,13 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID int64, keyw
 	at, id, err := decodeCursor(cursor)
 	if err != nil {
 		return InboundPage{}, err
+	}
+	// 「不筛选」在 SQL 里是 NULL，不是 0：0 是一个真实存在的 account_id
+	// 取值范围之外的数没错，但用它当哨兵就得在四条查询里各写一次判断，
+	// 而漏写的那一条不会报错、只会安静地一条都不返回。
+	var acct *int64
+	if accountID > 0 {
+		acct = &accountID
 	}
 
 	// One row per conversation, not per message: the newest message speaks
@@ -166,7 +176,7 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID int64, keyw
 	var total int64
 	if keyword == "" {
 		fast, err := s.q.ListThreadsByView(ctx, store.ListThreadsByViewParams{
-			TenantID: tenantID, OwnerID: ownerID, View: view,
+			TenantID: tenantID, OwnerID: ownerID, AccountID: acct, View: view,
 			CursorAt: at, CursorID: id, RowLimit: size,
 		})
 		if err != nil {
@@ -174,13 +184,14 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID int64, keyw
 		}
 		rows = threadRowsFromView(fast)
 		if total, err = s.q.CountThreadsByView(ctx, store.CountThreadsByViewParams{
-			TenantID: tenantID, OwnerID: ownerID, View: view,
+			TenantID: tenantID, OwnerID: ownerID, AccountID: acct, View: view,
 		}); err != nil {
 			return InboundPage{}, err
 		}
 	} else {
 		slow, err := s.q.ListInboundThreads(ctx, store.ListInboundThreadsParams{
-			TenantID: tenantID, OwnerID: ownerID, Keyword: keyword, View: view,
+			TenantID: tenantID, OwnerID: ownerID, AccountID: acct,
+			Keyword: keyword, View: view,
 			CursorAt: at, CursorID: id, RowLimit: size,
 		})
 		if err != nil {
@@ -191,13 +202,16 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID int64, keyw
 		// and keyset paging only replaces how pages are reached, not what
 		// they show.
 		if total, err = s.q.CountInboundThreads(ctx, store.CountInboundThreadsParams{
-			TenantID: tenantID, OwnerID: ownerID, Keyword: keyword, View: view,
+			TenantID: tenantID, OwnerID: ownerID, AccountID: acct,
+			Keyword: keyword, View: view,
 		}); err != nil {
 			return InboundPage{}, err
 		}
 	}
+	// 徽标和列表是同一个口径：切到哪个箱，数的就是哪个箱。不然切过去看着
+	// 五封信而徽标写 12，那个数字指的是两个箱加起来。
 	unread, err := s.q.CountUnread(ctx, store.CountUnreadParams{
-		TenantID: tenantID, OwnerID: ownerID,
+		TenantID: tenantID, OwnerID: ownerID, AccountID: acct,
 	})
 	if err != nil {
 		unread = 0

@@ -269,6 +269,18 @@ type MailAccount struct {
 	IsDefault       bool
 }
 
+type MailBindingLog struct {
+	ID         int64
+	TenantID   int64
+	EmployeeID int64
+	AccountID  *int64
+	Email      string
+	Provider   string
+	Action     string
+	Detail     string
+	CreatedAt  pgtype.Timestamptz
+}
+
 type MailExcelJob struct {
 	ID              int64
 	TenantID        int64
