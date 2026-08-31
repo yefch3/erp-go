@@ -150,6 +150,16 @@ func salesProcurementProgressPayload(caseResp *prv1.GetCaseResponse, rfqResp *pr
 		if scenario.GetStatus() != "CONFIRMED" || scenario.GetSubmittedToSalesAt() == "" {
 			continue
 		}
+		// Sales needs the already-approved customer-facing unit price to build the
+		// negotiation draft.  Keep this a strict allow-list: no supplier price,
+		// landed cost, margin or charge allocation crosses the boundary.
+		lines := make([]map[string]any, 0, len(scenario.GetLines()))
+		for _, line := range scenario.GetLines() {
+			lines = append(lines, map[string]any{
+				"sourcingLineId":    line.GetSourcingLineId(),
+				"customerUnitPrice": line.GetCustomerUnitPrice(),
+			})
+		}
 		confirmed = append(confirmed, map[string]any{
 			"id": scenario.GetId(), "scenarioNo": scenario.GetScenarioNo(),
 			"versionNo": scenario.GetVersionNo(), "currency": scenario.GetCurrency(),
@@ -158,6 +168,7 @@ func salesProcurementProgressPayload(caseResp *prv1.GetCaseResponse, rfqResp *pr
 			"status":               "CONFIRMED",
 			"customerTotal":        scenario.GetCustomerTotal(),
 			"customerQuotationId":  scenario.GetCustomerQuotationId(),
+			"lines":                lines,
 		})
 	}
 	submittedPlans := make([]map[string]any, 0)
