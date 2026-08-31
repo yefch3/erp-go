@@ -2131,6 +2131,9 @@ SELECT 'IN' AS direction, i.id, i.subject,
 FROM email_inbound i
 WHERE i.tenant_id = $1::bigint
   AND i.owner_id = $2::bigint
+  -- 不传 = 这个人名下所有信箱（旧前端）。见 GetMailThreadRequest.message_id。
+  AND ($4::bigint IS NULL
+       OR i.account_id = $4::bigint)
   AND i.thread_key = $3::text
   AND NOT i.is_bounce
   -- A mail speaks once per conversation. Gmail files a copy of every send
@@ -2164,6 +2167,7 @@ type ListThreadParams struct {
 	TenantID  int64
 	OwnerID   int64
 	ThreadKey string
+	AccountID *int64
 }
 
 type ListThreadRow struct {
@@ -2181,8 +2185,22 @@ type ListThreadRow struct {
 // received come from different tables, so the union is what makes a thread
 // read as a dialogue instead of two separate lists. Owner-scoped on both
 // legs: a thread key is guessable, whose mail it opens must not be.
+//
+// **收到的那一腿还按信箱限定**（00044 的口径）：列表行上的 (2) 说的是
+// 「这个信箱里的两封」，打开时不限定信箱就会把两个箱的同名会话合起来读，
+// 变成列表写 (2)、进去 4 封。
+//
+// 发出去的那一腿（email_messages）**限定不了**：那张表还没有 account_id，
+// 「这封信从哪个信箱发的」今天答不上来，那是第三期的事。所以现在的语义是
+// 「这个信箱收到的 + 我发出去的全部」。会话在两个信箱里时，发出去的那几封
+// 两边都会出现——比把收到的也合起来要好，因为那几封确实是同一批。
 func (q *Queries) ListThread(ctx context.Context, arg ListThreadParams) ([]ListThreadRow, error) {
-	rows, err := q.db.Query(ctx, listThread, arg.TenantID, arg.OwnerID, arg.ThreadKey)
+	rows, err := q.db.Query(ctx, listThread,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.ThreadKey,
+		arg.AccountID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -2218,7 +2236,10 @@ JOIN email_inbound_attachments a
   ON a.tenant_id = i.tenant_id AND a.inbound_id = i.id
 WHERE i.tenant_id = $1::bigint
   AND i.owner_id = $2::bigint
-  AND i.thread_key = $3::text
+  -- 和 ListThread 同一个口径：附件跟着信走，信按信箱分。
+  AND ($3::bigint IS NULL
+       OR i.account_id = $3::bigint)
+  AND i.thread_key = $4::text
 UNION ALL
 SELECT 'OUT'::text AS direction, m.id AS message_id,
        a.id, a.file_name, a.content_type, a.file_size, a.file_key, ''::text AS content_id
@@ -2227,13 +2248,14 @@ JOIN email_attachments a
   ON a.tenant_id = m.tenant_id AND a.campaign_id = m.campaign_id
 WHERE m.tenant_id = $1::bigint
   AND m.sender_id = $2::bigint
-  AND m.thread_key = $3::text
+  AND m.thread_key = $4::text
 ORDER BY 1, 2, 3
 `
 
 type ListThreadAttachmentsParams struct {
 	TenantID  int64
 	OwnerID   int64
+	AccountID *int64
 	ThreadKey string
 }
 
@@ -2263,7 +2285,12 @@ type ListThreadAttachmentsRow struct {
 // 需要正文，所以留给 Go 里的 hideEmbedded 做——GetInbound 一直是这么做的，
 // 这里当初不该另发明一个更粗的代理指标。
 func (q *Queries) ListThreadAttachments(ctx context.Context, arg ListThreadAttachmentsParams) ([]ListThreadAttachmentsRow, error) {
-	rows, err := q.db.Query(ctx, listThreadAttachments, arg.TenantID, arg.OwnerID, arg.ThreadKey)
+	rows, err := q.db.Query(ctx, listThreadAttachments,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.AccountID,
+		arg.ThreadKey,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -2491,6 +2518,14 @@ type ListTrashForPurgeRow struct {
 }
 
 // Everything in one person's trash, for emptying it in one go.
+//
+// **和列表的信箱筛选是一对，谁先加谁就得把另一个带上。** 今天两边都是
+// 「我全部信箱」，所以「清空回收站」清掉的正是屏幕上列着的那些——一致。
+// 左侧切换器一上线，列表变成「只看这个信箱」，这一句要是没跟着变，
+// 按钮上写着"清空回收站"，清掉的却是另一个信箱里也在回收站的信，而那是
+// **永久删除**，还会连带发一条删除指令给邮件服务器。
+//
+// 同一对的还有 MarkViewRead 和 TrashJunkView（那两个可逆，这一个不可逆）。
 func (q *Queries) ListTrashForPurge(ctx context.Context, arg ListTrashForPurgeParams) ([]ListTrashForPurgeRow, error) {
 	rows, err := q.db.Query(ctx, listTrashForPurge, arg.TenantID, arg.OwnerID)
 	if err != nil {
@@ -2700,6 +2735,15 @@ type MarkViewReadRow struct {
 // never reach into the archive or the trash from either. Every row it changes
 // comes back so the caller can tell the mail host too: reading a mailbox in
 // the ERP has to leave it read in Gmail, one button or one message at a time.
+//
+// **这一版还没有按信箱限定**，是有意的一条线。00044 把会话拆成了按信箱，
+// 而这里是「视图级」操作：需要的信箱来自"当前看的是哪个箱"，那个参数要等
+// 左侧切换器那一版才传得进来。
+//
+// 为什么可以等：会话级的操作（归档、删除、永久删除）已经在同一批里按信箱
+// 限定了，因为它们的调用方手上有那封信、拿得到 account_id——而那几个弄错
+// 会**吃掉另一个信箱的信**。这里弄错只是"标已读标多了"：可逆，不丢信，
+// 而且用户看得见。TrashJunkView 同理。
 func (q *Queries) MarkViewRead(ctx context.Context, arg MarkViewReadParams) ([]MarkViewReadRow, error) {
 	rows, err := q.db.Query(ctx, markViewRead, arg.TenantID, arg.OwnerID, arg.View)
 	if err != nil {

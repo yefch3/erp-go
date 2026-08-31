@@ -918,7 +918,7 @@ func excelResultToProto(result app.ExcelResult) *mailv1.ConvertInboundToExcelRes
 
 func (h *Handler) GetMailThread(ctx context.Context, req *mailv1.GetMailThreadRequest) (*mailv1.GetMailThreadResponse, error) {
 	op := operator(ctx)
-	items, err := h.svc.GetMailThread(ctx, grpcx.TenantID(ctx), op.ID, req.GetThreadKey())
+	items, err := h.svc.GetMailThread(ctx, grpcx.TenantID(ctx), op.ID, req.GetMessageId(), req.GetThreadKey())
 	if err != nil {
 		return nil, err
 	}

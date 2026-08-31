@@ -748,6 +748,15 @@ WHERE (sqlc.arg(keyword)::text = ''
 -- received come from different tables, so the union is what makes a thread
 -- read as a dialogue instead of two separate lists. Owner-scoped on both
 -- legs: a thread key is guessable, whose mail it opens must not be.
+--
+-- **收到的那一腿还按信箱限定**（00044 的口径）：列表行上的 (2) 说的是
+-- 「这个信箱里的两封」，打开时不限定信箱就会把两个箱的同名会话合起来读，
+-- 变成列表写 (2)、进去 4 封。
+--
+-- 发出去的那一腿（email_messages）**限定不了**：那张表还没有 account_id，
+-- 「这封信从哪个信箱发的」今天答不上来，那是第三期的事。所以现在的语义是
+-- 「这个信箱收到的 + 我发出去的全部」。会话在两个信箱里时，发出去的那几封
+-- 两边都会出现——比把收到的也合起来要好，因为那几封确实是同一批。
 SELECT 'OUT' AS direction, m.id, m.subject, m.body, m.body_format,
        m.to_email AS counterparty, m.sender_name AS who,
        coalesce(m.sent_at, m.queued_at) AS at
@@ -764,6 +773,9 @@ SELECT 'IN' AS direction, i.id, i.subject,
 FROM email_inbound i
 WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
   AND i.owner_id = sqlc.arg(owner_id)::bigint
+  -- 不传 = 这个人名下所有信箱（旧前端）。见 GetMailThreadRequest.message_id。
+  AND (sqlc.narg(account_id)::bigint IS NULL
+       OR i.account_id = sqlc.narg(account_id)::bigint)
   AND i.thread_key = sqlc.arg(thread_key)::text
   AND NOT i.is_bounce
   -- A mail speaks once per conversation. Gmail files a copy of every send
@@ -971,6 +983,14 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 
 -- name: ListTrashForPurge :many
 -- Everything in one person's trash, for emptying it in one go.
+--
+-- **和列表的信箱筛选是一对，谁先加谁就得把另一个带上。** 今天两边都是
+-- 「我全部信箱」，所以「清空回收站」清掉的正是屏幕上列着的那些——一致。
+-- 左侧切换器一上线，列表变成「只看这个信箱」，这一句要是没跟着变，
+-- 按钮上写着"清空回收站"，清掉的却是另一个信箱里也在回收站的信，而那是
+-- **永久删除**，还会连带发一条删除指令给邮件服务器。
+--
+-- 同一对的还有 MarkViewRead 和 TrashJunkView（那两个可逆，这一个不可逆）。
 SELECT id, raw_key, account_id, folder, imap_uid, message_id
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
@@ -1297,6 +1317,9 @@ JOIN email_inbound_attachments a
   ON a.tenant_id = i.tenant_id AND a.inbound_id = i.id
 WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
   AND i.owner_id = sqlc.arg(owner_id)::bigint
+  -- 和 ListThread 同一个口径：附件跟着信走，信按信箱分。
+  AND (sqlc.narg(account_id)::bigint IS NULL
+       OR i.account_id = sqlc.narg(account_id)::bigint)
   AND i.thread_key = sqlc.arg(thread_key)::text
 UNION ALL
 SELECT 'OUT'::text AS direction, m.id AS message_id,

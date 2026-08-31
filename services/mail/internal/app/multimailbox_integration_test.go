@@ -300,6 +300,43 @@ func TestOneConversationInTwoMailboxesIsTwoRows(t *testing.T) {
 		t.Error("在公司箱点归档，把私人箱那封也归档了——两个信箱是两条会话，" +
 			"而这个错不报任何错，用户只会发现「另一个信箱的信自己不见了」")
 	}
+
+	// 点开会话读到的，也只该是这个信箱那一份。
+	//
+	// 列表行上写着 (1)，因为 msg_count 是按信箱算的；打开时若不限定信箱，
+	// 读到的是两封——**列表和详情自相矛盾**，而这个矛盾是 00044 自己造出来
+	// 的，不是历史遗留：加维度只加了一半才会这样。
+	items, err := svc.GetMailThread(ctx, tenantID, employeeID, workMail, thread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := 0
+	for _, it := range items {
+		if it.Direction == "IN" {
+			in++
+		}
+	}
+	if in != 1 {
+		t.Errorf("从公司箱点进去，收到的信应该只有 1 封，实际 %d 封——"+
+			"列表行写着 (1)，点开却是两个信箱的信合在一起", in)
+	}
+
+	// 不说明从哪封点进来（旧前端就是这么发的），仍然读全部——部署顺序是
+	// 后端先发、前端后发，这条路必须留着，否则那几分钟里会话是空的。
+	all, err := svc.GetMailThread(ctx, tenantID, employeeID, 0, thread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inAll := 0
+	for _, it := range all {
+		if it.Direction == "IN" {
+			inAll++
+		}
+	}
+	if inAll != 2 {
+		t.Errorf("旧前端不带信件 id，应该照旧读全部（2 封），实际 %d 封——"+
+			"后端先上线的那几分钟里，会话会是空的", inAll)
+	}
 }
 
 // 别人已经绑了的地址，第二个人绑不上——UNIQUE (tenant_id, email) 是 00043

@@ -406,17 +406,38 @@ type ThreadItem struct {
 	Attachments []Attachment
 }
 
+// accountOfMessage 问「这封信在哪个信箱」，答不上来就返回 nil = 不限定。
+//
+// owner 限定在查询里（GetInbound 只按 tenant+id 取，所以这里要自己比一次
+// owner_id）：会话标识是猜得出来的，凭一个猜来的 id 打开别人的会话不行。
+func (s *Service) accountOfMessage(ctx context.Context, tenantID, ownerID, messageID int64) *int64 {
+	if messageID <= 0 {
+		return nil
+	}
+	row, err := s.q.GetInbound(ctx, store.GetInboundParams{TenantID: tenantID, ID: messageID})
+	if err != nil || row.OwnerID != ownerID {
+		return nil
+	}
+	id := row.AccountID
+	return &id
+}
+
 // GetMailThread returns one conversation, oldest first, both directions.
 //
 // Inbound HTML is sanitised on the way out, same as GetInbound: these bodies
 // came from the wild and are about to be rendered inside our page. Outbound
 // bodies were sanitised when they were composed.
-func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID int64, threadKey string) ([]ThreadItem, error) {
+// fromMessageID 是「从哪一封信点进来的」，用来定位读哪个信箱那一份；
+// 0 表示不限定（旧前端），读这个人名下所有信箱。
+func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMessageID int64, threadKey string) ([]ThreadItem, error) {
 	if strings.TrimSpace(threadKey) == "" {
 		return nil, apierr.Invalid("NT_THREAD_KEY_REQUIRED", "缺少会话标识")
 	}
+	// 那封信属于哪个信箱，就只读那个信箱这一份。查不到（别人的信、已删）
+	// 就退回不限定——比报错好：这是读，读多了看得见，读不到看不见。
+	accountID := s.accountOfMessage(ctx, tenantID, ownerID, fromMessageID)
 	rows, err := s.q.ListThread(ctx, store.ListThreadParams{
-		TenantID: tenantID, OwnerID: ownerID, ThreadKey: threadKey,
+		TenantID: tenantID, OwnerID: ownerID, AccountID: accountID, ThreadKey: threadKey,
 	})
 	if err != nil {
 		return nil, err
@@ -432,7 +453,7 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID int64, th
 	// inbound 7 is not an outbound 7.
 	files := map[string][]Attachment{}
 	if fs, err := s.q.ListThreadAttachments(ctx, store.ListThreadAttachmentsParams{
-		TenantID: tenantID, OwnerID: ownerID, ThreadKey: threadKey,
+		TenantID: tenantID, OwnerID: ownerID, AccountID: accountID, ThreadKey: threadKey,
 	}); err == nil {
 		flat := make([]Attachment, 0, len(fs))
 		for _, f := range fs {

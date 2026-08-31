@@ -24,6 +24,35 @@
 -- 贴个标签，不会把一条跨两个信箱的合并行**拆成两行**：msg_count 仍是两个
 -- 信箱之和，另一个信箱那一行根本不存在，而且行数对得上、约束也不报错。
 -- 整表重建是唯一对的做法。
+--
+--
+-- ── 哪些查询跟着改了，哪些没有 ──────────────────────────────────
+--
+-- 这份清单写在这里，是因为「加了一个维度，只有一半的查询知道」正是这种
+-- 改动最常见的死法，而漏掉的那一半不会报错。
+--
+-- 改了（会毁数据的，以及点开就看得见的）：
+--   · SetThreadFlags        整条会话归档/删除/加星 —— 不带信箱会吃掉另一个
+--                           信箱那一份，而且不报错
+--   · ListThreadForPurge    永久删除 + 通知邮件服务器删
+--   · ListThread            打开会话读正文（前端带上「从哪封点进来的」）
+--   · ListThreadAttachments 同上，附件跟着信走
+--   · ListInboundThreads    搜索慢路径的 PARTITION BY —— 不改的话列表两行、
+--     / CountInboundThreads 一搜索一行
+--   · ListThreadsByView     列表快路径，加了可选的信箱筛选
+--     / CountThreadsByView
+--
+-- 没改，等左侧切换器那一版一起（都需要「当前看的是哪个箱」这个参数，
+-- 而那个参数要有切换器才存在）：
+--   · MarkViewRead      整个视图标已读 —— 弄错只是标多了，可逆
+--   · TrashJunkView     清空垃圾邮件 —— 移到回收站，捞得回来
+--   · ListTrashForPurge 清空回收站 —— **不可逆**，所以切换器那一版必须
+--                       和列表筛选同批改，见那句 SQL 上的注释
+--   · CountUnread       未读角标 —— 现在是「我全部信箱」的总数
+--   · SearchMail / CountSearchMail / ListSentUnified / ListThreadForExport
+--
+-- 出站那边（email_messages）今天没有 account_id，所以「这封信从哪个信箱
+-- 发出去的」根本答不上来。那是第三期。
 TRUNCATE mail_thread_view;
 
 -- 空表，所以 NOT NULL 不必配 DEFAULT。刻意不给默认值：给了的话，将来某个
