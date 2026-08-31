@@ -113,6 +113,37 @@ SET email = sqlc.arg(email)::text,
     updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
+-- name: SetMailAccountHosts :exec
+-- 把这个信箱的收发服务器写上去。
+--
+-- 00042 之前主机是一家公司一份（mail_hosts），绑定时不必写——所有箱都用
+-- 同一套。跨服务商之后这句是必需的：绑 Gmail 的那一行必须自己带着
+-- imap.gmail.com，否则同步会拿着 Gmail 的账号去登公司的 263 服务器，而
+-- 那个失败长得和「授权码错了」一模一样。
+UPDATE mail_accounts
+SET domain = sqlc.arg(domain)::text,
+    smtp_host = sqlc.arg(smtp_host)::text,
+    smtp_port = sqlc.arg(smtp_port)::int,
+    smtp_security = sqlc.arg(smtp_security)::text,
+    imap_host = sqlc.arg(imap_host)::text,
+    imap_port = sqlc.arg(imap_port)::int,
+    imap_security = sqlc.arg(imap_security)::text,
+    updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: RecordMailBinding :exec
+-- 绑定留痕。见 00044 的表注释——地址交还给调用方之后，「谁绑了什么」不再
+-- 有一个不言自明的答案。
+--
+-- 失败也记：只记成功的话，反复拿别人地址试探正好是看不见的那一半。
+INSERT INTO mail_binding_log (
+    tenant_id, employee_id, account_id, email, provider, action, detail
+) VALUES (
+    sqlc.arg(tenant_id)::bigint, sqlc.arg(employee_id)::bigint,
+    sqlc.narg(account_id)::bigint, sqlc.arg(email)::text,
+    sqlc.arg(provider)::text, sqlc.arg(action)::text, sqlc.arg(detail)::text
+);
+
 -- name: ClearDefaultMailbox :exec
 -- 换默认信箱的第一步。必须和第二步分成两条语句、放在同一个事务里。
 --
