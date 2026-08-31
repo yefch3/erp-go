@@ -394,7 +394,6 @@ type PurchaseOrder struct {
 	SourceChangeReason   string
 	CloseNote            string
 	ShortfallAction      string
-	PaymentDays          int32
 	PayableDueDate       pgtype.Date
 }
 
