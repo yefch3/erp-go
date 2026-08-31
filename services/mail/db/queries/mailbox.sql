@@ -43,17 +43,72 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- (see AccountAAD), which does not exist until the row does. Insert first,
 -- seal against the real id, then store — rather than inventing the id
 -- client-side or binding to something weaker.
+--
+-- **冲突键是地址，不再是员工。** 00043 删掉了 UNIQUE (tenant_id, employee_id)，
+-- 而 ON CONFLICT 必须有支撑索引——不同批改的话，这一句会直接抛 42P10，
+-- 绑定邮箱和 Google 回调当场全挂。
+--
+-- 换成地址之后语义也更贴事实：同一个地址重新填一次授权码是更新，换一个
+-- 地址是新增一个信箱。第一个绑的自动成为默认（COALESCE 那一句），之后
+-- 加的不动默认——不然每加一个信箱，写信的发件人就被悄悄换掉了。
 INSERT INTO mail_accounts (
-    tenant_id, employee_id, email, username, secret_enc, key_version, updated_at
+    tenant_id, employee_id, email, username, secret_enc, key_version, is_default, updated_at
 ) VALUES (
     sqlc.arg(tenant_id)::bigint, sqlc.arg(employee_id)::bigint,
-    sqlc.arg(email)::text, sqlc.arg(username)::text, ''::bytea, 0, now()
+    sqlc.arg(email)::text, sqlc.arg(username)::text, ''::bytea, 0,
+    NOT EXISTS (
+        SELECT 1 FROM mail_accounts d
+         WHERE d.tenant_id = sqlc.arg(tenant_id)::bigint
+           AND d.employee_id = sqlc.arg(employee_id)::bigint
+    ),
+    now()
 )
-ON CONFLICT (tenant_id, employee_id) DO UPDATE SET
-    email = excluded.email,
+-- **WHERE 那一行是安全边界，不是优化。** 没有它，DO UPDATE 会把
+-- employee_id 改成新来的那个人——也就是说，B 只要知道 A 的邮箱地址，
+-- 填一次就能把 A 的信箱连同已同步的全部邮件划到自己名下，一声不吭。
+--
+-- 加上之后，行属于别人时 DO UPDATE 不匹配，整句既不插也不更，RETURNING
+-- 没有行——调用方拿到 ErrNoRows，翻成「这个地址已经被别人绑了」。
+ON CONFLICT (tenant_id, email) DO UPDATE SET
     username = excluded.username,
     updated_at = now()
+WHERE mail_accounts.employee_id = excluded.employee_id
 RETURNING id;
+
+-- name: UpdateMailAccountAddress :exec
+-- 把**已有的**这一行改成另一个地址。
+--
+-- 和 UpsertMailAccountShell 的分工：那一句冲突键是地址，所以"填一个新地址"
+-- 会新增一行。设置页上的「改邮箱地址」不是这个意思——它要的是"这一个信箱
+-- 换个地址"，在只有一个信箱的年代那两件事看起来一样，现在不一样了。
+--
+-- 撞上别人已经绑了的地址会违反 UNIQUE (tenant_id, email)，调用方翻译成
+-- 人话。
+UPDATE mail_accounts
+SET email = sqlc.arg(email)::text,
+    username = sqlc.arg(username)::text,
+    updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: ClearDefaultMailbox :exec
+-- 换默认信箱的第一步。必须和第二步分成两条语句、放在同一个事务里。
+--
+-- 一开始写成了带数据修改 CTE 的单句（WITH cleared AS (UPDATE ... FALSE)
+-- 后面跟 UPDATE ... TRUE），当场撞 mail_accounts_one_default_idx：Postgres
+-- 里数据修改 CTE 和主语句**看的是同一个快照**，主语句看不见 CTE 清掉的那
+-- 一行，于是索引在同一条命令里看到两个 TRUE。唯一索引又不能延迟检查
+-- （只有约束能 DEFERRABLE，而约束不支持部分索引）。
+UPDATE mail_accounts SET is_default = FALSE, updated_at = now()
+ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+   AND employee_id = sqlc.arg(employee_id)::bigint
+   AND is_default;
+
+-- name: MarkDefaultMailbox :execrows
+-- 第二步。返回行数，好让调用方分得清「换好了」和「那个信箱不是他的」。
+UPDATE mail_accounts SET is_default = TRUE, updated_at = now()
+ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+   AND employee_id = sqlc.arg(employee_id)::bigint
+   AND id = sqlc.arg(id)::bigint;
 
 -- name: SetMailAccountSecret :exec
 -- Storing a new secret invalidates any previous verification: the code may
@@ -124,12 +179,14 @@ ORDER BY id;
 -- 和 GetMyMailAccount 一样不选 secret_enc：这是设置页读的，凭据永远不回
 -- 浏览器。
 SELECT id, email, username, auth_kind, verified_at, last_error, is_active, updated_at,
-       domain, smtp_host, smtp_port, smtp_security,
+       is_default, domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND employee_id = sqlc.arg(employee_id)::bigint
-ORDER BY id;
+-- 默认的排在最前：defaultAccountIDFor 取第一行，所以顺序就是「用哪个箱
+-- 发信」的答案，不能是随便的 id 序。
+ORDER BY is_default DESC, id;
 
 -- name: SyncAccountHostsFromTenant :execrows
 -- 把租户级的收发服务器配置刷到该租户所有账号行上。
