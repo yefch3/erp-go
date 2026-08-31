@@ -266,6 +266,7 @@ type MailAccount struct {
 	ImapSecurity    string
 	HourlyQuota     int32
 	DailyQuota      int32
+	IsDefault       bool
 }
 
 type MailExcelJob struct {

@@ -7,7 +7,10 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/mail/internal/store"
 )
 
@@ -136,6 +139,60 @@ func (s *Service) ForAccount(ctx context.Context, tenantID, accountID int64) (Ma
 	}, nil
 }
 
+// SetDefaultMailbox 换这个人写信时预选的信箱。
+//
+// 清旧和设新分两条语句，包在一个事务里：部分唯一索引是立即检查的，
+// 一条语句里同时存在两个 TRUE 会被拒（见 ClearDefaultMailbox 的注释）。
+// 事务保证外面看不到「零个默认」那一瞬。
+func (s *Service) SetDefaultMailbox(ctx context.Context, tenantID, employeeID, accountID int64) error {
+	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		if err := q.ClearDefaultMailbox(ctx, store.ClearDefaultMailboxParams{
+			TenantID: tenantID, EmployeeID: employeeID,
+		}); err != nil {
+			return err
+		}
+		n, err := q.MarkDefaultMailbox(ctx, store.MarkDefaultMailboxParams{
+			TenantID: tenantID, EmployeeID: employeeID, ID: accountID,
+		})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			// 事务回滚，所以原来的默认还在——不会因为选错一个 id 就把人
+			// 变成"一个默认都没有"。
+			return apierr.NotFound("MAIL_ACCOUNT_NOT_FOUND", "这个邮箱不在你名下")
+		}
+		return nil
+	})
+}
+
+// translateMailboxTaken 把 UNIQUE (tenant_id, email) 的违反翻成人话。
+//
+// 这条约束在 00043 里被有意留下了：一个信箱只能属于一个人。两个人绑同一个
+// 地址，谁都说不清那封信该算谁的，两边的授权码还会互相覆盖。撞上时给的是
+// 数据库的 23505，对着填表的人说这个等于什么都没说。
+func translateMailboxTaken(err error) error {
+	taken := apierr.Conflict("MAIL_ADDRESS_TAKEN",
+		"这个邮箱地址已经被本公司的另一个人绑定了")
+	// 两种到达方式：
+	//
+	//  · 23505 —— UPDATE 一行去撞别人已经占着的地址；
+	//  · ErrNoRows —— INSERT 撞了地址，而 DO UPDATE 的 WHERE 因为那一行
+	//    属于别人而不匹配，于是既没插也没更，RETURNING 空手而归。
+	//    **这条比看起来重要**：没有那个 WHERE 的话，这里会是"成功"，
+	//    而代价是别人的信箱被划走。
+	if errors.Is(err, pgx.ErrNoRows) {
+		return taken
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" &&
+		strings.Contains(pgErr.ConstraintName, "email") {
+		return taken
+	}
+	return err
+}
+
 // ForSender 是发信路径专用的过渡入口：从「谁发的」找到「用哪个信箱」，
 // 再走 ForAccount。
 //
@@ -175,10 +232,13 @@ func (s *Service) defaultAccountIDFor(ctx context.Context, tenantID, employeeID 
 		return 0, ErrNoMailAccount
 	}
 	if len(rows) > 1 {
-		s.log.Warn("这个人名下有多个信箱，而发信路径还没有账号维度——先用 id 最小的那个。"+
-			"出站队列必须在放开一人多箱的同一批改动里带上 account_id",
+		s.log.Warn("这个人名下有多个信箱，而发信路径还没有账号维度——先用他的默认信箱。"+
+			"出站队列要在第三期带上 account_id，那之前一封排队中的信重试时"+
+			"可能从另一个地址发出去",
 			"tenant", tenantID, "employee", employeeID, "accounts", len(rows))
 	}
+	// 查询按 is_default DESC 排序，所以第一行就是默认信箱——不是"id 最小的
+	// 那个"。这一点是刻意的：默认信箱是人选的，而 id 顺序是随机的历史。
 	return rows[0].ID, nil
 }
 
@@ -223,18 +283,38 @@ func (s *Service) SaveMailAccount(ctx context.Context, tenantID, employeeID int6
 	// Same reasoning as the OAuth rebind: pointing this account at a different
 	// address makes every stored message and UID meaningless, so the old
 	// mailbox's synced data goes with the old binding.
-	prev, prevErr := s.q.GetMyMailAccount(ctx, store.GetMyMailAccountParams{
+	//
+	// 这里必须先问「这个人有没有信箱」再决定改还是加。00043 之后
+	// UpsertMailAccountShell 的冲突键是**地址**，所以直接调它、填一个新地址
+	// 会新增一行；而设置页上的「改邮箱地址」要的是"这一个信箱换个地址"。
+	// 在只有一个信箱的年代这两件事看起来一样，现在不一样了——不分开的话，
+	// 改完地址的人会多出一个信箱，而发信仍然走原来那个（它还是默认）。
+	prev, prevErr := s.q.ListMailAccountsForEmployee(ctx, store.ListMailAccountsForEmployeeParams{
 		TenantID: tenantID, EmployeeID: employeeID,
 	})
-	id, err := s.q.UpsertMailAccountShell(ctx, store.UpsertMailAccountShellParams{
-		TenantID: tenantID, EmployeeID: employeeID, Email: email, Username: username,
-	})
-	if err != nil {
-		return err
+	var id int64
+	var err error
+	switch {
+	case prevErr == nil && len(prev) > 0:
+		id = prev[0].ID
+		if !strings.EqualFold(prev[0].Email, email) {
+			if err := s.q.UpdateMailAccountAddress(ctx, store.UpdateMailAccountAddressParams{
+				TenantID: tenantID, ID: id, Email: email, Username: username,
+			}); err != nil {
+				return translateMailboxTaken(err)
+			}
+		}
+	default:
+		id, err = s.q.UpsertMailAccountShell(ctx, store.UpsertMailAccountShellParams{
+			TenantID: tenantID, EmployeeID: employeeID, Email: email, Username: username,
+		})
+		if err != nil {
+			return translateMailboxTaken(err)
+		}
 	}
-	if prevErr == nil && prev.Email != "" && !strings.EqualFold(prev.Email, email) {
+	if prevErr == nil && len(prev) > 0 && prev[0].Email != "" && !strings.EqualFold(prev[0].Email, email) {
 		s.log.Info("mailbox rebound to a different address, clearing its synced mail",
-			"employee", employeeID, "was", prev.Email, "now", email)
+			"employee", employeeID, "was", prev[0].Email, "now", email)
 		_ = s.q.DeleteInboundForAccount(ctx, store.DeleteInboundForAccountParams{TenantID: tenantID, AccountID: id})
 		_ = s.q.DeleteSyncStateForAccount(ctx, store.DeleteSyncStateForAccountParams{TenantID: tenantID, AccountID: id})
 		s.sentFolders.Delete(fmt.Sprintf("sent:%d", id))
