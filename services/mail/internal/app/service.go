@@ -198,9 +198,9 @@ type Service struct {
 	// 模型单价，只用来把 token 折成钱给人看。零值就不折——不猜价格。
 	pricing ModelPricing
 	mailbox Mailbox
-	secrets   *SecretBox
-	live      *livefeed.Publisher
-	oauth     OAuthConfig
+	secrets *SecretBox
+	live    *livefeed.Publisher
+	oauth   OAuthConfig
 	// Access tokens by account id. They live an hour; caching them keeps the
 	// sender and the sync from asking Google once per message.
 	tokenCache sync.Map

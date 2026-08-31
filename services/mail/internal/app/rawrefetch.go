@@ -50,29 +50,30 @@ func (s *Service) RunRawOriginalRefetch(ctx context.Context, cfg SyncConfig) {
 
 	// Grouped by mailbox owner: credentials are per employee, and one
 	// mailbox that cannot be opened must not stop the others recovering.
-	byOwner := map[int64][]store.ListInboundMissingRawRow{}
-	var owners []int64
+	// 按账号分，不按人分：重取要回到这封信当初进来的那个信箱。
+	byAccount := map[int64][]store.ListInboundMissingRawRow{}
+	var accounts []int64
 	for _, r := range rows {
-		if _, seen := byOwner[r.OwnerID]; !seen {
-			owners = append(owners, r.OwnerID)
+		if _, seen := byAccount[r.AccountID]; !seen {
+			accounts = append(accounts, r.AccountID)
 		}
-		byOwner[r.OwnerID] = append(byOwner[r.OwnerID], r)
+		byAccount[r.AccountID] = append(byAccount[r.AccountID], r)
 	}
-	s.log.Info("raw refetch starting", "messages", len(rows), "mailboxes", len(owners))
+	s.log.Info("raw refetch starting", "messages", len(rows), "mailboxes", len(accounts))
 
 	recovered, gone, failed := 0, 0, 0
-	for _, owner := range owners {
+	for _, accountID := range accounts {
 		if ctx.Err() != nil {
 			return
 		}
-		acct, err := s.ForSender(ctx, cfg.TenantID, owner)
+		acct, err := s.ForAccount(ctx, cfg.TenantID, accountID)
 		if err != nil {
 			s.log.Warn("raw refetch could not open a mailbox, leaving its rows for next time",
-				"owner", owner, "rows", len(byOwner[owner]), "err", err)
-			failed += len(byOwner[owner])
+				"account", accountID, "rows", len(byAccount[accountID]), "err", err)
+			failed += len(byAccount[accountID])
 			continue
 		}
-		r, g, f := s.refetchForAccount(ctx, cfg.TenantID, acct, byOwner[owner])
+		r, g, f := s.refetchForAccount(ctx, cfg.TenantID, acct, byAccount[accountID])
 		recovered, gone, failed = recovered+r, gone+g, failed+f
 	}
 	s.log.Info("raw refetch finished",

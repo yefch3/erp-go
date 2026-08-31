@@ -202,12 +202,16 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 -- is this message rather than whatever inherited the UID since. The stored
 -- imap_uid is deliberately not selected — trusting a UID across generations
 -- is the mistake that lost these originals in the first place.
-SELECT id, owner_id, folder, message_id
+--
+-- 按 account_id 分组，不是 owner_id：重取要连回**这封信当初进来的那个
+-- 信箱**。一个人绑了两个箱之后，按人分组会拿着 A 箱的凭据去 B 箱上搜
+-- Message-ID，搜不到就把行判成"对方删了"。
+SELECT id, account_id, owner_id, folder, message_id
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND raw_key = ''
   AND message_id <> ''
-ORDER BY owner_id, folder, id;
+ORDER BY account_id, folder, id;
 
 -- name: AdoptInboundRawKey :execrows
 -- Claims a re-fetched original, but only for a row still missing one: a key

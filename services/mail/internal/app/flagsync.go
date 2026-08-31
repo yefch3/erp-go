@@ -124,39 +124,39 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 		return
 	}
 
+	// 键里不再有 employeeID：取凭据认的是账号。一个人绑两个箱时，拿 A 箱的
+	// UID 去 B 箱上执行——而下面的 publishMove 是**按 UID 移动**，UID 是每个
+	// 信箱各自独立的小整数——会把 B 箱里一封无关的邮件扔进垃圾箱。
 	type batchKey struct {
-		accountID  int64
-		employeeID int64
-		folder     string
-		flag       string
-		op         string
+		accountID int64
+		folder    string
+		flag      string
+		op        string
 	}
 	batches := map[batchKey][]store.ClaimFlagOpsRow{}
 	// Purges are separated from the other moves because they are the only
 	// kind that arrives in bulk — 清空回收站 queues one per mail — and the only
 	// kind that can be answered for the whole batch at once.
 	purges := map[int64][]store.ClaimFlagOpsRow{}
-	employeeOf := map[int64]int64{}
 	var moves []store.ClaimFlagOpsRow
 	for _, o := range ops {
 		switch {
 		// A flag change is the same command whoever it is for, so those batch.
 		case o.Flag == flagSeen || o.Flag == flagFlagged:
 			k := batchKey{
-				accountID: o.AccountID, employeeID: o.EmployeeID,
-				folder: o.Folder, flag: o.Flag, op: o.Op,
+				accountID: o.AccountID,
+				folder:    o.Folder, flag: o.Flag, op: o.Op,
 			}
 			batches[k] = append(batches[k], o)
 		case o.Flag == flagPurge:
 			purges[o.AccountID] = append(purges[o.AccountID], o)
-			employeeOf[o.AccountID] = o.EmployeeID
 		default:
 			moves = append(moves, o)
 		}
 	}
 
 	for k, rows := range batches {
-		acct, err := s.ForSender(ctx, cfg.TenantID, k.employeeID)
+		acct, err := s.ForAccount(ctx, cfg.TenantID, k.accountID)
 		if err != nil {
 			s.failOps(ctx, rows, err)
 			continue
@@ -194,7 +194,7 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 	}
 
 	for accountID, rows := range purges {
-		acct, err := s.ForSender(ctx, cfg.TenantID, employeeOf[accountID])
+		acct, err := s.ForAccount(ctx, cfg.TenantID, accountID)
 		if err != nil {
 			s.failOps(ctx, rows, err)
 			continue
@@ -203,7 +203,7 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 	}
 
 	for _, row := range moves {
-		acct, err := s.ForSender(ctx, cfg.TenantID, row.EmployeeID)
+		acct, err := s.ForAccount(ctx, cfg.TenantID, row.AccountID)
 		if err != nil {
 			s.failOps(ctx, []store.ClaimFlagOpsRow{row}, err)
 			continue
