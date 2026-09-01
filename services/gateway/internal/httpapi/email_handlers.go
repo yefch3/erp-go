@@ -581,8 +581,16 @@ func (s *Server) saveMailHost(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// 问哪个信箱的门牌。这条路由**没有** requireMailUnlock，也不能有——门本身
+// 就是拿来换令牌的，还没令牌的时候也要能问。
+//
+// 所以这里只能收查询参数，而「这个箱是不是他的」由邮件服务判：不是他的就
+// 回空壳，不回别人的。参数不可信，答案可信。
 func (s *Server) getMyMailAccount(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.GetMyMailAccount(r.Context(), &mailv1.GetMyMailAccountRequest{})
+	acct, _ := strconv.ParseInt(r.URL.Query().Get("accountId"), 10, 64)
+	resp, err := s.Emails.GetMyMailAccount(r.Context(), &mailv1.GetMyMailAccountRequest{
+		AccountId: acct,
+	})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

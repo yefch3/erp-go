@@ -1,5 +1,10 @@
 <template>
-  <MailboxGate v-if="locked === true" @unlocked="onUnlocked" @host-settings="hostOpen = true" />
+  <MailboxGate
+    v-if="locked === true"
+    :account-id="currentAccount"
+    @unlocked="onUnlocked"
+    @host-settings="hostOpen = true"
+  />
   <div v-else-if="locked === false" ref="mailboxEl" class="mailbox">
     <!-- A folder rail, not tabs. The distinction matters: folders say "your
          mail lives in these places", tabs said "here are three reports". -->
@@ -2779,7 +2784,11 @@ async function syncOnOpen() {
 // gate is the place to retype the code, so this locks and shows it.
 async function reauth() {
   try {
-    const d = await get<{ account: { authKind: string } }>('/my-mail-account')
+    // 跟着**当前这个箱**问。不带的话答的是默认箱：263 是密码箱、Gmail 是
+    // Google 箱，问错了就会在密码门前弹去 Google，或者反过来。
+    const d = await get<{ account: { authKind: string } }>('/my-mail-account', {
+      accountId: currentAccount.value,
+    })
     if (d.account?.authKind === 'OAUTH') {
       // Full-page departure, same as the gate: popups get blocked, and
       // Google's page is where the person should see themselves go.

@@ -641,7 +641,14 @@ message MailAccount {
   string imap_host = 11;
 }
 
-message GetMyMailAccountRequest {}
+message GetMyMailAccountRequest {
+  // 问哪个信箱。0 = 默认箱。
+  //
+  // 一个人可以绑好几个，而这个接口有两种用途：解锁门要说清「正在问的是
+  // 哪个箱」（不然人会把授权码填到另一个箱的门上），而「他有没有绑箱」
+  // 这类问题问默认箱就够。
+  int64 account_id = 1;
+}
 
 message ListMyMailboxesRequest {}
 

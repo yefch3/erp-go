@@ -109,6 +109,7 @@ func (s *Server) inviteBatch(w http.ResponseWriter, r *http.Request) {
 // will ever be sent is the expensive kind of lie — and in a batch it is
 // eighty of them.
 func (s *Server) senderIsReady(w http.ResponseWriter, r *http.Request) bool {
+	// 不点名：问的是「他有没有绑箱」，默认箱答得了。
 	acct, err := s.Emails.GetMyMailAccount(r.Context(), &mailv1.GetMyMailAccountRequest{})
 	if err != nil {
 		s.writeGRPCError(w, err)

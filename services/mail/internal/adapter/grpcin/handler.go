@@ -733,9 +733,9 @@ func (h *Handler) SaveMailHost(ctx context.Context, req *mailv1.SaveMailHostRequ
 	return &mailv1.SaveMailHostResponse{Ok: true}, nil
 }
 
-func (h *Handler) GetMyMailAccount(ctx context.Context, _ *mailv1.GetMyMailAccountRequest) (*mailv1.GetMyMailAccountResponse, error) {
+func (h *Handler) GetMyMailAccount(ctx context.Context, req *mailv1.GetMyMailAccountRequest) (*mailv1.GetMyMailAccountResponse, error) {
 	op := operator(ctx)
-	v, err := h.svc.GetMyMailAccount(ctx, grpcx.TenantID(ctx), op.ID)
+	v, err := h.svc.GetMyMailAccount(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId())
 	if err != nil {
 		return nil, err
 	}
