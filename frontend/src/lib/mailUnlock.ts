@@ -97,6 +97,32 @@ export function adoptVerification(d: VerifyResponse): number {
 }
 
 /**
+ * 打开邮箱页时，左侧该高亮哪个箱。
+ *
+ * 三个来源，优先级从高到低：
+ *
+ *  1. 地址栏里的 acct —— 后退/前进/别人分享的链接。它和令牌不一致时，
+ *     切换那个 watch 会去换令牌，所以让它赢是对的。
+ *  2. **此刻这把令牌开的那个箱**（/mailbox/lock-status 的 accountId）。
+ *     这是数据实际来自哪个箱：网关只认令牌，不认参数。
+ *  3. 默认箱。
+ *
+ * 第 2 条从前整个没读。表现是：从菜单点进 邮箱（地址栏没有 acct），高亮
+ * 落到默认箱 A，而请求带的是上次留下的 B 的令牌——**左边高亮 A，右边列的
+ * 是 B 的信**。接着在那儿点回复更糟：写信框的发件人跟着高亮走，于是「读 B
+ * 收到的信、从 A 发出去」，正是按箱发信要消掉的那件事。
+ *
+ * 全是 0 就回 0，交给调用方去落默认箱。
+ */
+export function initialMailbox(from: {
+  url?: number
+  token?: number
+  fallback?: number
+}): number {
+  return Number(from.url) || Number(from.token) || Number(from.fallback) || 0
+}
+
+/**
  * 切到这个信箱：把它那把令牌设成「此刻要发的那一把」。
  *
  * 返回 false 表示手上没有这个箱的令牌——刚退出过它，或者它是验证之后才

@@ -1109,6 +1109,7 @@ import MailboxSwitcher from '../components/MailboxSwitcher.vue'
 import {
   adoptVerification,
   allTokens,
+  initialMailbox,
   clearAll,
   forgetMailbox,
   unlockedMailboxes,
@@ -1748,8 +1749,21 @@ onMounted(async () => {
     }
   }
   try {
-    const d = await get<{ unlocked: boolean }>('/mailbox/lock-status')
+    // accountId 是**这把令牌开的那个箱**，也就是数据实际来自哪个箱。
+    //
+    // 一定要用它来定初始高亮，不能只靠「默认箱」：从菜单点进 邮箱 时地址栏
+    // 里没有 acct，currentAccount 会落到默认箱 A，而请求带的是上次留下的
+    // B 的令牌——网关只认令牌，于是左边高亮 A、右边列的是 B 的信。
+    //
+    // 更糟的是接着回信：写信框的发件人跟着 currentAccount 走，于是「读 B
+    // 收到的信、从 A 发出去」——正是按箱发信要消掉的那件事。
+    const d = await get<{ unlocked: boolean; accountId?: number | string }>(
+      '/mailbox/lock-status',
+    )
     locked.value = !d.unlocked
+    // 0 = 旧令牌或一个箱都没绑，那时交给 onMailboxesChanged 落到默认箱。
+    // 地址栏里的 acct 优先级更高，随后由 applyRoute 覆盖。
+    currentAccount.value = initialMailbox({ token: Number(d.accountId ?? 0) })
   } catch {
     locked.value = true
   }
