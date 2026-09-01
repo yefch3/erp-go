@@ -111,3 +111,40 @@ func (s *Server) resolveShippingRework(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
+
+func (s *Server) confirmCustomerSelection(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.ConfirmCustomerSelectionRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.CaseId = idFromPath(r)
+	resp, err := s.Sourcing.ConfirmCustomerSelection(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) listCustomerSelections(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Sourcing.ListCustomerSelections(r.Context(), &prv1.ListCustomerSelectionsRequest{CaseId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) decideCustomerSelection(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.DecideCustomerSelectionRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.CaseId = idFromPath(r)
+	resp, err := s.Sourcing.DecideCustomerSelection(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}

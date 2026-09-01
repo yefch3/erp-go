@@ -383,6 +383,11 @@ WHERE tenant_id=$1 AND case_id=$2`, tenantID, caseID, ids, op.ID, op.Name); exec
 	idsJSON, _ := json.Marshal(ids)
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		if view.Head.HandoffStatus == "RETURNED_FOR_SUPPLEMENT" {
+			if invalidateErr := q.InvalidateActiveCustomerSelections(ctx, store.InvalidateActiveCustomerSelectionsParams{Reason: "客户需求版本已更新", TenantID: tenantID, CaseID: caseID}); invalidateErr != nil {
+				return invalidateErr
+			}
+		}
 		changed, updateErr := q.ConfirmSourcingLines(ctx, store.ConfirmSourcingLinesParams{TenantID: tenantID, CaseID: caseID, Ids: ids})
 		if updateErr != nil {
 			return updateErr

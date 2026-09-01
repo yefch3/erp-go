@@ -178,12 +178,13 @@
 
       <el-pagination v-if="hasDataSource && total > 0" class="pager" layout="total, prev, pager, next" :total="total" :page-size="pageSize" :current-page="page" @current-change="changePage" />
     </el-card>
+    <el-dialog v-model="finalShippingResolveOpen" title="填写船运最终复询结果" width="720px"><el-alert type="warning" :closable="false" title="这里必须填写船运公司最终确认的运费、开船日、到港日和有效期。"/><el-form label-width="128px" style="margin-top:16px"><el-form-item label="结果说明" required><el-input v-model="finalShippingResolveForm.note"/></el-form-item><el-form-item label="币种 / 最终运费" required><el-input v-model="finalShippingResolveForm.currency" style="width:120px"/><el-input v-model="finalShippingResolveForm.freightAmount" inputmode="decimal" style="width:240px;margin-left:8px"/></el-form-item><el-form-item label="预计开船日" required><el-date-picker v-model="finalShippingResolveForm.estimatedDeparture" value-format="YYYY-MM-DD"/></el-form-item><el-form-item label="预计到港日" required><el-date-picker v-model="finalShippingResolveForm.estimatedArrival" value-format="YYYY-MM-DD"/></el-form-item><el-form-item label="有效期至" required><el-date-picker v-model="finalShippingResolveForm.validUntil" value-format="YYYY-MM-DD"/></el-form-item></el-form><template #footer><el-button @click="finalShippingResolveOpen=false">取消</el-button><el-button type="primary" :loading="finalShippingSaving" @click="submitFinalShippingResolve">保存最终复询</el-button></template></el-dialog>
 
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, onUnmounted, ref } from 'vue'
+import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElEmpty, ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -207,7 +208,7 @@ interface Instance { id: string; bizType: string; bizId: string; bizNo: string; 
 interface Todo { task: Task; instance: Instance; dueAt: string; priority: string; remainingMinutes: string | number }
 interface ProcurementTaskCase { id:string; caseNo:string; customerName:string; title:string; updatedAt:string; openReworkCount:number|string; myOpenReworkCount:number|string }
 interface ProcurementReworkTask { id:string; caseId:string; caseNo:string; requestType:string; productName:string; supplierName:string; reason:string; createdAt:string; assignedBuyerId:string|number; status:string }
-interface ShippingReworkTask { id:string; caseId:string; caseNo:string; caseTitle:string; requestType:string; productName:string; carrierForwarder:string; reason:string; createdAt:string; assignedShippingId:string|number; status:string }
+interface ShippingReworkTask { id:string; caseId:string; caseNo:string; caseTitle:string; requestType:string; productName:string; carrierForwarder:string; reason:string; createdAt:string; assignedShippingId:string|number; status:string; finalRecheckTaskId?:string|number }
 type HomeTab = 'pending' | 'submitted' | 'responsible' | 'reminders' | 'handled'
 
 const HomeEmpty = defineComponent({
@@ -232,6 +233,9 @@ const procurementTasks = ref<ProcurementReworkTask[]>([])
 const procurementTasksAvailable = ref(false)
 const shippingTasks = ref<ShippingReworkTask[]>([])
 const shippingTasksAvailable = ref(false)
+const finalShippingResolveOpen = ref(false)
+const finalShippingSaving = ref(false)
+const finalShippingResolveForm = reactive({id:'',note:'',currency:'USD',freightAmount:'',estimatedDeparture:'',estimatedArrival:'',validUntil:''})
 const page = ref(1)
 const pageSize = 10
 const keyword = ref('')
@@ -357,7 +361,8 @@ async function loadProcurementTasks() {
 async function loadShippingTasks(){if(!auth.can('shipping:sourcing:read')){shippingTasks.value=[];shippingTasksAvailable.value=false;return}try{const data=await get<{reworkRequests?:ShippingReworkTask[]}>('/shipping/sourcing-reworks',{},quietErrors);shippingTasks.value=data.reworkRequests||[];shippingTasksAvailable.value=true}catch{shippingTasks.value=[];shippingTasksAvailable.value=false}}
 function shippingReworkLabel(value:string){return value==='ADD_CARRIER'?'增加船运公司':value==='REQUOTE'?'更新船运报价/船期':'重新议价'}
 function handleShippingTaskAction(command:string,row:ShippingReworkTask){if(command==='open'){void router.push('/shipping/sourcing');return}if(command==='resolve')void resolveShippingTask(row)}
-async function resolveShippingTask(row:ShippingReworkTask){const result=await ElMessageBox.prompt('请说明已完成的询价、议价或新增船运公司结果。','完成船运补充任务',{inputPlaceholder:'例如：已录入该船运公司的最新报价版本',inputValidator:(value:string)=>!!value.trim()||'请填写处理结果'}).catch(()=>null);if(!result)return;await post(`/shipping/sourcing-reworks/${row.id}/resolve`,{resolution_note:result.value});await refreshAll();ElMessage.success('船运补充任务已完成')}
+async function resolveShippingTask(row:ShippingReworkTask){if(Number(row.finalRecheckTaskId||0)>0){Object.assign(finalShippingResolveForm,{id:String(row.id),note:'',currency:'USD',freightAmount:'',estimatedDeparture:'',estimatedArrival:'',validUntil:''});finalShippingResolveOpen.value=true;return}const result=await ElMessageBox.prompt('请说明已完成的询价、议价或新增船运公司结果。','完成船运补充任务',{inputPlaceholder:'例如：已录入该船运公司的最新报价版本',inputValidator:(value:string)=>!!value.trim()||'请填写处理结果'}).catch(()=>null);if(!result)return;await post(`/shipping/sourcing-reworks/${row.id}/resolve`,{resolution_note:result.value});await refreshAll();ElMessage.success('船运补充任务已完成')}
+async function submitFinalShippingResolve(){const f=finalShippingResolveForm;if(!f.note||!f.currency||Number(f.freightAmount)<=0||!f.estimatedDeparture||!f.estimatedArrival||!f.validUntil){ElMessage.warning('请完整填写最终运费、开船日、到港日和有效期');return}if(f.estimatedArrival<f.estimatedDeparture){ElMessage.warning('到港日不能早于开船日');return}finalShippingSaving.value=true;try{await post(`/shipping/sourcing-reworks/${f.id}/resolve`,{resolution_note:f.note,final_currency:f.currency,final_freight_amount:String(f.freightAmount),final_estimated_departure:f.estimatedDeparture,final_estimated_arrival:f.estimatedArrival,final_valid_until:f.validUntil});finalShippingResolveOpen.value=false;await refreshAll();ElMessage.success('船运最终复询结果已保存')}finally{finalShippingSaving.value=false}}
 
 function procurementReworkLabel(value: string) {
   return value === 'ADD_SUPPLIER' ? t('todos.addSupplier') : value === 'REQUOTE' ? t('todos.requote') : t('todos.renegotiate')

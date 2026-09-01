@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/shopspring/decimal"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/pgdb"
@@ -45,6 +46,12 @@ type ProcurementPlanView struct {
 type NewProcurementRework struct {
 	CaseID, PlanID, SourcingLineID, SupplierQuoteLineID int64
 	RequestType, Reason                                 string
+}
+
+type ProcurementReworkResolution struct {
+	Note, Currency, UnitPrice, AvailableQty, DeliveryDate string
+	PaymentTerms, Incoterm, ValidUntil                    string
+	LeadTime                                              int32
 }
 
 func planHeaderFromGet(row store.GetProcurementPlanRow) ProcurementPlanHeader {
@@ -109,14 +116,14 @@ func (s *Service) CreateProcurementPlan(ctx context.Context, tenantID int64, in 
 		selection := &in.Selections[i]
 		selection.SelectionType = strings.ToUpper(strings.TrimSpace(selection.SelectionType))
 		selection.Reason, selection.Risk = strings.TrimSpace(selection.Reason), strings.TrimSpace(selection.Risk)
-		if selection.SelectionType != "RECOMMENDED" && selection.SelectionType != "BACKUP" {
-			return ProcurementPlanView{}, apierr.Invalid("SC_PLAN_TYPE_INVALID", "方案只能标记为推荐或备选")
+		if selection.SelectionType != "RECOMMENDED" && selection.SelectionType != "BACKUP" && selection.SelectionType != "REJECTED" {
+			return ProcurementPlanView{}, apierr.Invalid("SC_PLAN_TYPE_INVALID", "报价只能标记为推荐、备选或淘汰")
 		}
 		if selection.Priority <= 0 {
 			return ProcurementPlanView{}, apierr.Invalid("SC_PLAN_PRIORITY_INVALID", "请填写大于 0 的推荐顺序")
 		}
-		if selection.SelectionType == "RECOMMENDED" && selection.Reason == "" {
-			return ProcurementPlanView{}, apierr.Invalid("SC_PLAN_REASON_REQUIRED", "推荐报价必须填写推荐原因")
+		if selection.Reason == "" {
+			return ProcurementPlanView{}, apierr.Invalid("SC_PLAN_REASON_REQUIRED", "每项经理判断都必须填写原因")
 		}
 		if selectedQuotes[selection.SupplierQuoteLineID] {
 			return ProcurementPlanView{}, apierr.Invalid("SC_PLAN_DUPLICATE_QUOTE", "同一报价不能在统一方案中重复选择")
@@ -125,8 +132,26 @@ func (s *Service) CreateProcurementPlan(ctx context.Context, tenantID int64, in 
 		candidate, candidateErr := s.q.ProcurementPlanCandidate(ctx, store.ProcurementPlanCandidateParams{
 			TenantID: tenantID, CaseID: in.CaseID, ID: selection.SupplierQuoteLineID,
 		})
-		if candidateErr != nil || candidate.SourcingLineID != selection.SourcingLineID {
-			return ProcurementPlanView{}, apierr.Invalid("SC_PLAN_QUOTE_INVALID", "所选报价已过期、不是最新版本或不属于该产品")
+		if errors.Is(candidateErr, pgx.ErrNoRows) {
+			return ProcurementPlanView{}, apierr.Invalid("SC_PLAN_QUOTE_NOT_FOUND", "所选报价不存在或不属于当前案件")
+		}
+		if candidateErr != nil {
+			return ProcurementPlanView{}, candidateErr
+		}
+		if candidate.SourcingLineID != selection.SourcingLineID {
+			return ProcurementPlanView{}, invalidProcurementPlanCandidate(candidate, "SC_PLAN_QUOTE_PRODUCT_MISMATCH", "不属于当前产品")
+		}
+		if candidate.ConfirmationStatus != "WRITTEN_CONFIRMED" {
+			return ProcurementPlanView{}, invalidProcurementPlanCandidate(candidate, "SC_PLAN_QUOTE_UNCONFIRMED", "尚未完成书面确认")
+		}
+		if candidate.QuoteExpired {
+			return ProcurementPlanView{}, invalidProcurementPlanCandidate(candidate, "SC_PLAN_QUOTE_EXPIRED", "已于 "+candidate.ValidUntil+" 过期，请选择有效的新版本")
+		}
+		if candidate.NewerQuoteExists {
+			return ProcurementPlanView{}, invalidProcurementPlanCandidate(candidate, "SC_PLAN_QUOTE_NOT_LATEST", "不是最新版本，请选择最新报价")
+		}
+		if candidate.QuoteReturned {
+			return ProcurementPlanView{}, invalidProcurementPlanCandidate(candidate, "SC_PLAN_QUOTE_RETURNED", "已被退回重新询价，请选择新报价")
 		}
 		priorityKey := strconv.FormatInt(selection.SourcingLineID, 10) + ":" + selection.SelectionType + ":" + strconv.Itoa(int(selection.Priority))
 		if priorities[priorityKey] {
@@ -196,6 +221,16 @@ func (s *Service) CreateProcurementPlan(ctx context.Context, tenantID int64, in 
 	}
 	s.nudge(ctx, tenantID)
 	return s.GetProcurementPlan(ctx, tenantID, planID)
+}
+
+func invalidProcurementPlanCandidate(candidate store.ProcurementPlanCandidateRow, code, reason string) error {
+	label := strings.TrimSpace(candidate.SupplierName)
+	if buyer := strings.TrimSpace(candidate.BuyerName); buyer != "" {
+		label += " · " + buyer
+	}
+	label += " · V" + strconv.Itoa(int(candidate.QuoteVersionNo))
+	return apierr.Invalid(code, "报价“"+label+"”"+reason).
+		WithMeta("quote_line_id", strconv.FormatInt(candidate.QuoteLineID, 10), "valid_until", candidate.ValidUntil)
 }
 
 func (s *Service) GetProcurementPlan(ctx context.Context, tenantID, id int64) (ProcurementPlanView, error) {
@@ -340,9 +375,9 @@ func (s *Service) ListProcurementReworks(ctx context.Context, tenantID, caseID i
 	return s.q.ListProcurementReworkRequests(ctx, store.ListProcurementReworkRequestsParams{TenantID: tenantID, CaseID: caseID})
 }
 
-func (s *Service) ResolveProcurementRework(ctx context.Context, tenantID, id int64, note string, op Operator) error {
-	note = strings.TrimSpace(note)
-	if note == "" {
+func (s *Service) ResolveProcurementRework(ctx context.Context, tenantID, id int64, in ProcurementReworkResolution, op Operator) error {
+	in.Note = strings.TrimSpace(in.Note)
+	if in.Note == "" {
 		return apierr.Invalid("SC_REWORK_NOTE_REQUIRED", "请填写本次处理结果")
 	}
 	request, err := s.q.GetProcurementReworkRequest(ctx, store.GetProcurementReworkRequestParams{TenantID: tenantID, ID: id})
@@ -355,10 +390,28 @@ func (s *Service) ResolveProcurementRework(ctx context.Context, tenantID, id int
 	if request.AssignedBuyerID != 0 && request.AssignedBuyerID != op.ID {
 		return apierr.Permission("SC_REWORK_ASSIGNEE_REQUIRED", "只有被指定的采购专员可以完成该任务")
 	}
+	finalTask, finalErr := s.q.GetFinalTaskByProcurementRework(ctx, store.GetFinalTaskByProcurementReworkParams{TenantID: tenantID, ProcurementReworkID: &id})
+	isFinal := finalErr == nil
+	if finalErr != nil && !errors.Is(finalErr, pgx.ErrNoRows) {
+		return finalErr
+	}
+	if isFinal {
+		in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
+		in.PaymentTerms, in.Incoterm = strings.TrimSpace(in.PaymentTerms), strings.TrimSpace(in.Incoterm)
+		if len(in.Currency) != 3 || in.LeadTime <= 0 || in.PaymentTerms == "" || in.Incoterm == "" ||
+			!positiveDecimal(in.UnitPrice) || !positiveDecimal(in.AvailableQty) || !validDate(in.DeliveryDate) || !validDate(in.ValidUntil) {
+			return apierr.Invalid("SC_FINAL_PROCUREMENT_RESULT_REQUIRED", "请完整填写最终币种、单价、可供量、生产周期、交期、付款条件、贸易条款和有效期")
+		}
+		availableQty, availableErr := decimal.NewFromString(strings.TrimSpace(in.AvailableQty))
+		intentQty, intentErr := decimal.NewFromString(finalTask.CustomerIntentQty)
+		if availableErr != nil || intentErr != nil || availableQty.GreaterThan(intentQty) {
+			return apierr.Invalid("SC_FINAL_AVAILABLE_QTY_LIMIT", "最终可供量不能超过客户本次意向数量 "+finalTask.CustomerIntentQty)
+		}
+	}
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		count, resolveErr := q.ResolveProcurementReworkRequest(ctx, store.ResolveProcurementReworkRequestParams{
-			OperatorID: &op.ID, OperatorName: op.Name, ResolutionNote: note, TenantID: tenantID, ID: id,
+			OperatorID: &op.ID, OperatorName: op.Name, ResolutionNote: in.Note, TenantID: tenantID, ID: id,
 		})
 		if resolveErr != nil {
 			return resolveErr
@@ -366,14 +419,33 @@ func (s *Service) ResolveProcurementRework(ctx context.Context, tenantID, id int
 		if count != 1 {
 			return apierr.Conflict("SC_REWORK_ALREADY_RESOLVED", "退回任务已经处理")
 		}
+		if isFinal {
+			currency, leadTime := in.Currency, in.LeadTime
+			if resolveErr = q.ResolveFinalTaskByProcurementRework(ctx, store.ResolveFinalTaskByProcurementReworkParams{ResultNote: in.Note, ResolvedBy: &op.ID, ResolvedByName: op.Name, FinalCurrency: &currency, FinalUnitPrice: in.UnitPrice, FinalAvailableQty: in.AvailableQty, FinalLeadTime: &leadTime, FinalDeliveryDate: in.DeliveryDate, FinalPaymentTerms: in.PaymentTerms, FinalIncoterm: in.Incoterm, FinalValidUntil: in.ValidUntil, TenantID: tenantID, ProcurementReworkID: &id}); resolveErr != nil {
+				return resolveErr
+			}
+		}
+		if resolveErr = q.CompleteReadyCustomerSelections(ctx, tenantID); resolveErr != nil {
+			return resolveErr
+		}
 		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{
 			TenantID: tenantID, CaseID: request.CaseID, Section: "PROCUREMENT_REWORK", Action: "RESOLVED", EntityID: id,
 			Summary: "采购专员完成报价补充任务", BeforeJson: []byte(`{"status":"OPEN"}`),
-			AfterJson: []byte(`{"status":"RESOLVED"}`), Reason: note, OperatorID: op.ID, OperatorName: op.Name,
+			AfterJson: []byte(`{"status":"RESOLVED"}`), Reason: in.Note, OperatorID: op.ID, OperatorName: op.Name,
 		})
 	})
 	if err == nil {
 		s.nudge(ctx, tenantID)
 	}
 	return err
+}
+
+func positiveDecimal(value string) bool {
+	parsed, err := decimal.NewFromString(strings.TrimSpace(value))
+	return err == nil && parsed.GreaterThan(decimal.Zero)
+}
+
+func validDate(value string) bool {
+	_, err := time.Parse("2006-01-02", strings.TrimSpace(value))
+	return err == nil
 }

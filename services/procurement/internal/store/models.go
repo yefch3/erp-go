@@ -721,6 +721,119 @@ type SourcingCustomerFeedback struct {
 	CreatedAt     pgtype.Timestamptz
 }
 
+type SourcingCustomerSelection struct {
+	ID                   int64
+	TenantID             int64
+	CaseID               int64
+	SalesPlanID          int64
+	SelectionNo          string
+	VersionNo            int32
+	RequirementVersionNo int32
+	Status               string
+	CustomerContact      string
+	ConfirmationNote     string
+	CustomerConfirmedAt  pgtype.Timestamptz
+	CreatedBy            int64
+	CreatedByName        string
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+	FinalRecheckedAt     pgtype.Timestamptz
+	InvalidatedAt        pgtype.Timestamptz
+	InvalidatedReason    string
+	CustomerDecidedAt    pgtype.Timestamptz
+	CustomerDecisionNote string
+}
+
+type SourcingCustomerSelectionItem struct {
+	ID                        int64
+	TenantID                  int64
+	SelectionID               int64
+	SalesPlanItemID           int64
+	SourcingLineID            int64
+	ProcurementPlanItemID     int64
+	SupplierQuoteLineID       int64
+	ShippingPlanItemID        *int64
+	ShippingOptionLineID      *int64
+	ProductName               string
+	ConfirmedQty              pgtype.Numeric
+	UomCode                   string
+	CustomerCurrency          string
+	CustomerUnitPrice         pgtype.Numeric
+	PromisedDeliveryDate      pgtype.Date
+	LineNote                  string
+	CreatedAt                 pgtype.Timestamptz
+	SupplierID                int64
+	SupplierName              string
+	FactoryID                 int64
+	FactoryName               string
+	ShipmentGroupKey          string
+	CustomerManagedShipping   bool
+	FinalCustomerCurrency     *string
+	FinalCustomerUnitPrice    pgtype.Numeric
+	FinalCustomerPaymentTerms string
+	FinalCustomerIncoterm     string
+	FinalCustomerRequiredDate pgtype.Date
+}
+
+type SourcingCustomerSelectionShipment struct {
+	ID                         int64
+	TenantID                   int64
+	SelectionID                int64
+	ShipmentGroupKey           string
+	SalesShippingOptionID      int64
+	ShippingOptionID           int64
+	CarrierForwarder           string
+	ServiceOptionName          string
+	ShippingEmployeeID         int64
+	ShippingEmployeeName       string
+	CustomerCurrency           string
+	CustomerFreightAmount      pgtype.Numeric
+	ChargeBasis                string
+	PortOfLoading              string
+	PortOfDischarge            string
+	EstimatedDeparture         pgtype.Date
+	EstimatedArrival           pgtype.Date
+	ValidUntil                 pgtype.Date
+	CustomerNote               string
+	CreatedAt                  pgtype.Timestamptz
+	FinalCustomerCurrency      *string
+	FinalCustomerFreightAmount pgtype.Numeric
+}
+
+type SourcingCustomerSelectionShipmentItem struct {
+	TenantID            int64
+	SelectionShipmentID int64
+	SelectionItemID     int64
+}
+
+type SourcingFinalRecheckTask struct {
+	ID                      int64
+	TenantID                int64
+	SelectionID             int64
+	SelectionItemID         *int64
+	TaskDomain              string
+	ProcurementReworkID     *int64
+	ShippingReworkID        *int64
+	Status                  string
+	CreatedAt               pgtype.Timestamptz
+	ResolvedAt              pgtype.Timestamptz
+	SelectionShipmentID     *int64
+	ResultNote              string
+	ResolvedBy              *int64
+	ResolvedByName          string
+	FinalCurrency           *string
+	FinalUnitPrice          pgtype.Numeric
+	FinalAvailableQty       pgtype.Numeric
+	FinalLeadTime           *int32
+	FinalDeliveryDate       pgtype.Date
+	FinalPaymentTerms       string
+	FinalIncoterm           string
+	FinalValidUntil         pgtype.Date
+	FinalFreightAmount      pgtype.Numeric
+	FinalEstimatedDeparture pgtype.Date
+	FinalEstimatedArrival   pgtype.Date
+}
+
 type SourcingLine struct {
 	ID                 int64
 	TenantID           int64
@@ -809,6 +922,39 @@ type SourcingSalesPlanItem struct {
 	PromisedDeliveryDate  pgtype.Date
 	LineNote              string
 	CreatedAt             pgtype.Timestamptz
+}
+
+type SourcingSalesShippingOption struct {
+	ID                    int64
+	TenantID              int64
+	PlanID                int64
+	ShippingOptionID      int64
+	CarrierForwarder      string
+	ServiceOptionName     string
+	ShippingEmployeeID    int64
+	ShippingEmployeeName  string
+	CustomerCurrency      string
+	CustomerFreightAmount pgtype.Numeric
+	ChargeBasis           string
+	PortOfLoading         string
+	PortOfDischarge       string
+	EstimatedDeparture    pgtype.Date
+	EstimatedArrival      pgtype.Date
+	ValidUntil            pgtype.Date
+	CustomerNote          string
+	CreatedAt             pgtype.Timestamptz
+}
+
+type SourcingSalesShippingOptionLine struct {
+	ID                    int64
+	TenantID              int64
+	SalesShippingOptionID int64
+	SourcingLineID        int64
+	ShippingPlanItemID    int64
+	ShippingOptionLineID  int64
+	ProductName           string
+	QuotedQty             pgtype.Numeric
+	UomCode               string
 }
 
 type SourcingShippingOption struct {

@@ -434,12 +434,17 @@ func (q *Queries) ListProcurementPlans(ctx context.Context, arg ListProcurementP
 }
 
 const listProcurementReworkRequests = `-- name: ListProcurementReworkRequests :many
-SELECT id,case_id,coalesce(plan_id,0)::bigint AS plan_id,coalesce(sourcing_line_id,0)::bigint AS sourcing_line_id,
- coalesce(supplier_quote_line_id,0)::bigint AS supplier_quote_line_id,request_type,scope_type,
- coalesce(assigned_buyer_id,0)::bigint AS assigned_buyer_id,assigned_buyer_name,
- coalesce(supplier_id,0)::bigint AS supplier_id,supplier_name,product_name,reason,status,
- created_by_name,created_at,resolved_by_name,resolved_at,resolution_note
-FROM procurement_rework_requests WHERE tenant_id=$1 AND case_id=$2 ORDER BY created_at DESC
+SELECT rr.id,rr.case_id,coalesce(rr.plan_id,0)::bigint AS plan_id,coalesce(rr.sourcing_line_id,0)::bigint AS sourcing_line_id,
+ coalesce(rr.supplier_quote_line_id,0)::bigint AS supplier_quote_line_id,rr.request_type,rr.scope_type,
+ coalesce(rr.assigned_buyer_id,0)::bigint AS assigned_buyer_id,rr.assigned_buyer_name,
+ coalesce(rr.supplier_id,0)::bigint AS supplier_id,rr.supplier_name,rr.product_name,rr.reason,rr.status,
+ rr.created_by_name,rr.created_at,rr.resolved_by_name,rr.resolved_at,rr.resolution_note,
+ coalesce(ft.id,0)::bigint AS final_recheck_task_id,
+ coalesce(csi.confirmed_qty::text,'')::text AS customer_intent_qty
+FROM procurement_rework_requests rr
+LEFT JOIN sourcing_final_recheck_tasks ft ON ft.tenant_id=rr.tenant_id AND ft.procurement_rework_id=rr.id
+LEFT JOIN sourcing_customer_selection_items csi ON csi.tenant_id=ft.tenant_id AND csi.id=ft.selection_item_id
+WHERE rr.tenant_id=$1 AND rr.case_id=$2 ORDER BY rr.created_at DESC
 `
 
 type ListProcurementReworkRequestsParams struct {
@@ -467,6 +472,8 @@ type ListProcurementReworkRequestsRow struct {
 	ResolvedByName      string
 	ResolvedAt          pgtype.Timestamptz
 	ResolutionNote      string
+	FinalRecheckTaskID  int64
+	CustomerIntentQty   string
 }
 
 func (q *Queries) ListProcurementReworkRequests(ctx context.Context, arg ListProcurementReworkRequestsParams) ([]ListProcurementReworkRequestsRow, error) {
@@ -498,6 +505,8 @@ func (q *Queries) ListProcurementReworkRequests(ctx context.Context, arg ListPro
 			&i.ResolvedByName,
 			&i.ResolvedAt,
 			&i.ResolutionNote,
+			&i.FinalRecheckTaskID,
+			&i.CustomerIntentQty,
 		); err != nil {
 			return nil, err
 		}
@@ -545,28 +554,27 @@ SELECT ql.id AS quote_line_id,ql.sourcing_line_id,ql.qty::text,ql.unit_price::te
  coalesce(q.valid_until::text,'')::text AS valid_until,q.version_no AS quote_version_no,
  q.created_by AS buyer_id,r.created_by_name AS buyer_name,
  r.supplier_id,r.supplier_name,coalesce(r.factory_id,0)::bigint AS factory_id,r.factory_name,
- sl.product AS product_name,fl.uom_code
+ sl.product AS product_name,fl.uom_code,q.confirmation_status,
+ coalesce(q.valid_until<current_date,false)::boolean AS quote_expired,
+ EXISTS (
+   SELECT 1 FROM supplier_quotes newer
+   JOIN supplier_quote_lines newer_line ON newer_line.supplier_quote_id=newer.id
+     AND newer_line.tenant_id=newer.tenant_id AND newer_line.sourcing_line_id=ql.sourcing_line_id
+   WHERE newer.tenant_id=q.tenant_id AND newer.factory_rfq_id=q.factory_rfq_id
+     AND newer.version_no>q.version_no AND newer.confirmation_status='WRITTEN_CONFIRMED'
+ ) AS newer_quote_exists,
+ EXISTS (
+   SELECT 1 FROM procurement_rework_requests returned
+   WHERE returned.tenant_id=ql.tenant_id
+     AND returned.supplier_quote_line_id=ql.id
+     AND returned.request_type IN ('REQUOTE','RENEGOTIATE')
+ ) AS quote_returned
 FROM supplier_quote_lines ql
 JOIN supplier_quotes q ON q.id=ql.supplier_quote_id AND q.tenant_id=ql.tenant_id
 JOIN factory_rfqs r ON r.id=q.factory_rfq_id AND r.tenant_id=q.tenant_id
 JOIN factory_rfq_lines fl ON fl.factory_rfq_id=r.id AND fl.sourcing_line_id=ql.sourcing_line_id AND fl.tenant_id=ql.tenant_id
 JOIN sourcing_lines sl ON sl.id=ql.sourcing_line_id AND sl.tenant_id=ql.tenant_id
 WHERE ql.tenant_id=$1 AND r.case_id=$2 AND ql.id=$3
-  AND q.confirmation_status='WRITTEN_CONFIRMED'
-  AND (q.valid_until IS NULL OR q.valid_until>=current_date)
-  AND NOT EXISTS (
-    SELECT 1 FROM supplier_quotes newer
-    JOIN supplier_quote_lines newer_line ON newer_line.supplier_quote_id=newer.id
-      AND newer_line.tenant_id=newer.tenant_id AND newer_line.sourcing_line_id=ql.sourcing_line_id
-    WHERE newer.tenant_id=q.tenant_id AND newer.factory_rfq_id=q.factory_rfq_id
-      AND newer.version_no>q.version_no AND newer.confirmation_status='WRITTEN_CONFIRMED'
-  )
-  AND NOT EXISTS (
-    SELECT 1 FROM procurement_rework_requests returned
-    WHERE returned.tenant_id=ql.tenant_id
-      AND returned.supplier_quote_line_id=ql.id
-      AND returned.request_type IN ('REQUOTE','RENEGOTIATE')
-  )
 `
 
 type ProcurementPlanCandidateParams struct {
@@ -576,25 +584,29 @@ type ProcurementPlanCandidateParams struct {
 }
 
 type ProcurementPlanCandidateRow struct {
-	QuoteLineID    int64
-	SourcingLineID int64
-	QlQty          string
-	QlUnitPrice    string
-	Moq            string
-	LeadTime       string
-	Currency       string
-	PaymentTerms   string
-	Incoterm       string
-	ValidUntil     string
-	QuoteVersionNo int32
-	BuyerID        int64
-	BuyerName      string
-	SupplierID     int64
-	SupplierName   string
-	FactoryID      int64
-	FactoryName    string
-	ProductName    string
-	UomCode        string
+	QuoteLineID        int64
+	SourcingLineID     int64
+	QlQty              string
+	QlUnitPrice        string
+	Moq                string
+	LeadTime           string
+	Currency           string
+	PaymentTerms       string
+	Incoterm           string
+	ValidUntil         string
+	QuoteVersionNo     int32
+	BuyerID            int64
+	BuyerName          string
+	SupplierID         int64
+	SupplierName       string
+	FactoryID          int64
+	FactoryName        string
+	ProductName        string
+	UomCode            string
+	ConfirmationStatus string
+	QuoteExpired       bool
+	NewerQuoteExists   bool
+	QuoteReturned      bool
 }
 
 func (q *Queries) ProcurementPlanCandidate(ctx context.Context, arg ProcurementPlanCandidateParams) (ProcurementPlanCandidateRow, error) {
@@ -620,6 +632,10 @@ func (q *Queries) ProcurementPlanCandidate(ctx context.Context, arg ProcurementP
 		&i.FactoryName,
 		&i.ProductName,
 		&i.UomCode,
+		&i.ConfirmationStatus,
+		&i.QuoteExpired,
+		&i.NewerQuoteExists,
+		&i.QuoteReturned,
 	)
 	return i, err
 }

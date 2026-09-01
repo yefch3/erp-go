@@ -56,6 +56,9 @@ service SourcingService {
   rpc ListShippingReworks(ListShippingReworksRequest) returns (ListShippingReworksResponse);
   rpc ListMyShippingReworks(ListMyShippingReworksRequest) returns (ListMyShippingReworksResponse);
   rpc ResolveShippingRework(ResolveShippingReworkRequest) returns (ResolveShippingReworkResponse);
+  rpc ConfirmCustomerSelection(ConfirmCustomerSelectionRequest) returns (ConfirmCustomerSelectionResponse);
+  rpc ListCustomerSelections(ListCustomerSelectionsRequest) returns (ListCustomerSelectionsResponse);
+  rpc DecideCustomerSelection(DecideCustomerSelectionRequest) returns (DecideCustomerSelectionResponse);
   rpc CreateCostScenario(CreateCostScenarioRequest) returns (CreateCostScenarioResponse);
   rpc ListCostScenarios(ListCostScenariosRequest) returns (ListCostScenariosResponse);
   rpc GetCostScenario(GetCostScenarioRequest) returns (GetCostScenarioResponse);
@@ -1949,6 +1952,8 @@ message ProcurementReworkRequest {
   string resolved_by_name = 17;
   string resolved_at = 18;
   string resolution_note = 19;
+  int64 final_recheck_task_id = 20;
+  string customer_intent_qty = 21;
 }
 message CreateProcurementReworkRequest {
   int64 case_id = 1;
@@ -1961,7 +1966,12 @@ message CreateProcurementReworkRequest {
 message CreateProcurementReworkResponse { ProcurementReworkRequest rework_request = 1; }
 message ListProcurementReworksRequest { int64 case_id = 1; }
 message ListProcurementReworksResponse { repeated ProcurementReworkRequest rework_requests = 1; }
-message ResolveProcurementReworkRequest { int64 id = 1; string resolution_note = 2; }
+message ResolveProcurementReworkRequest {
+  int64 id = 1; string resolution_note = 2;
+  string final_currency = 3; string final_unit_price = 4; string final_available_qty = 5;
+  int32 final_lead_time = 6; string final_delivery_date = 7; string final_payment_terms = 8;
+  string final_incoterm = 9; string final_valid_until = 10;
+}
 message ResolveProcurementReworkResponse {}
 message SourcingShippingRequest {
   int64 id = 1;
@@ -2090,6 +2100,7 @@ message SourcingShippingPlanItem {
   string total_freight = 15; string port_of_loading = 16; string port_of_discharge = 17;
   string estimated_departure = 18; string estimated_arrival = 19; string valid_until = 20; int32 quote_version_no = 21;
   string service_option_name = 22;
+  int64 shipping_option_id = 23;
 }
 message SourcingShippingPlan {
   int64 id = 1; int64 request_id = 2; string plan_no = 3; int32 version_no = 4;
@@ -2132,6 +2143,49 @@ message SalesPlanItem {
   string customer_unit_price = 11;
   string promised_delivery_date = 12;
   string line_note = 13;
+  int64 supplier_id = 14;
+  string supplier_name = 15;
+  int64 factory_id = 16;
+  string factory_name = 17;
+  string payment_terms = 18;
+  string incoterm = 19;
+  string supplier_valid_until = 20;
+  string manager_selection_type = 21;
+  string manager_reason = 22;
+  string manager_risk = 23;
+}
+message SalesShippingOptionInput {
+  repeated int64 shipping_plan_item_ids = 1;
+  string customer_currency = 2;
+  string customer_freight_amount = 3;
+  string customer_note = 4;
+}
+message SalesShippingOptionLine {
+  int64 id = 1;
+  int64 sourcing_line_id = 2;
+  int64 shipping_plan_item_id = 3;
+  int64 shipping_option_line_id = 4;
+  string product_name = 5;
+  string quoted_qty = 6;
+  string uom_code = 7;
+}
+message SalesShippingOption {
+  int64 id = 1;
+  int64 shipping_option_id = 2;
+  string carrier_forwarder = 3;
+  string service_option_name = 4;
+  int64 shipping_employee_id = 5;
+  string shipping_employee_name = 6;
+  string customer_currency = 7;
+  string customer_freight_amount = 8;
+  string charge_basis = 9;
+  string port_of_loading = 10;
+  string port_of_discharge = 11;
+  string estimated_departure = 12;
+  string estimated_arrival = 13;
+  string valid_until = 14;
+  string customer_note = 15;
+  repeated SalesShippingOptionLine lines = 16;
 }
 message SalesPlan {
   int64 id = 1;
@@ -2150,6 +2204,7 @@ message SalesPlan {
   string presented_at = 14;
   string created_at = 15;
   repeated SalesPlanItem items = 16;
+  repeated SalesShippingOption shipping_options = 17;
 }
 message CreateSalesPlanRequest {
   int64 case_id = 1;
@@ -2159,6 +2214,7 @@ message CreateSalesPlanRequest {
   string customer_note = 5;
   string internal_note = 6;
   repeated SalesPlanItemInput items = 7;
+  repeated SalesShippingOptionInput shipping_options = 8;
 }
 message CreateSalesPlanResponse { SalesPlan sales_plan = 1; }
 message ListSalesPlansRequest { int64 case_id = 1; }
@@ -2222,6 +2278,7 @@ message ShippingReworkRequest {
   string resolution_note = 20;
   string case_no = 21;
   string case_title = 22;
+  int64 final_recheck_task_id = 23;
 }
 message CreateShippingReworkRequest {
   int64 case_id = 1;
@@ -2236,7 +2293,12 @@ message ListShippingReworksRequest { int64 case_id = 1; }
 message ListShippingReworksResponse { repeated ShippingReworkRequest rework_requests = 1; }
 message ListMyShippingReworksRequest {}
 message ListMyShippingReworksResponse { repeated ShippingReworkRequest rework_requests = 1; }
-message ResolveShippingReworkRequest { int64 id = 1; string resolution_note = 2; }
+message ResolveShippingReworkRequest {
+  int64 id = 1; string resolution_note = 2;
+  string final_currency = 3; string final_freight_amount = 4;
+  string final_estimated_departure = 5; string final_estimated_arrival = 6;
+  string final_valid_until = 7;
+}
 message ResolveShippingReworkResponse {}
 
 // ── 供应商对账（手工核销）─────────────────────────────────────────────
@@ -2432,3 +2494,138 @@ message RemoveReconFileRequest {
 message RemoveReconFileResponse {
   repeated ReconFile items = 1;
 }
+
+// T8: immutable customer selection and final procurement/shipping recheck.
+// Appended so this workflow does not renumber existing generated messages.
+message CustomerSelectionItem {
+  int64 id = 1;
+  int64 sales_plan_item_id = 2;
+  int64 sourcing_line_id = 3;
+  int64 procurement_plan_item_id = 4;
+  int64 supplier_quote_line_id = 5;
+  int64 shipping_plan_item_id = 6;
+  int64 shipping_option_line_id = 7;
+  string product_name = 8;
+  string confirmed_qty = 9;
+  string uom_code = 10;
+  string customer_currency = 11;
+  string customer_unit_price = 12;
+  string promised_delivery_date = 13;
+  string line_note = 14;
+  int64 supplier_id = 15;
+  string supplier_name = 16;
+  int64 factory_id = 17;
+  string factory_name = 18;
+  string shipment_group_key = 19;
+  bool customer_managed_shipping = 20;
+  string final_customer_currency = 21;
+  string final_customer_unit_price = 22;
+  string final_customer_payment_terms = 23;
+  string final_customer_incoterm = 24;
+  string final_customer_required_date = 25;
+}
+message CustomerShipmentChoiceInput {
+  string shipment_group_key = 1;
+  int64 sales_shipping_option_id = 2;
+  bool customer_managed = 3;
+}
+message CustomerSelectionShipment {
+  int64 id = 1;
+  string shipment_group_key = 2;
+  int64 sales_shipping_option_id = 3;
+  int64 shipping_option_id = 4;
+  string carrier_forwarder = 5;
+  string service_option_name = 6;
+  int64 shipping_employee_id = 7;
+  string shipping_employee_name = 8;
+  string customer_currency = 9;
+  string customer_freight_amount = 10;
+  string charge_basis = 11;
+  string port_of_loading = 12;
+  string port_of_discharge = 13;
+  string estimated_departure = 14;
+  string estimated_arrival = 15;
+  string valid_until = 16;
+  string customer_note = 17;
+  repeated int64 selection_item_ids = 18;
+  string final_customer_currency = 19;
+  string final_customer_freight_amount = 20;
+}
+message FinalRecheckTask {
+  int64 id = 1;
+  int64 selection_item_id = 2;
+  string task_domain = 3;
+  int64 procurement_rework_id = 4;
+  int64 shipping_rework_id = 5;
+  string status = 6;
+  string resolved_at = 7;
+  int64 selection_shipment_id = 8;
+  string result_note = 9;
+  int64 resolved_by = 10;
+  string resolved_by_name = 11;
+  string final_currency = 12;
+  string final_unit_price = 13;
+  string final_available_qty = 14;
+  int32 final_lead_time = 15;
+  string final_delivery_date = 16;
+  string final_payment_terms = 17;
+  string final_incoterm = 18;
+  string final_valid_until = 19;
+  string final_freight_amount = 20;
+  string final_estimated_departure = 21;
+  string final_estimated_arrival = 22;
+}
+message CustomerSelection {
+  int64 id = 1;
+  int64 case_id = 2;
+  int64 sales_plan_id = 3;
+  string selection_no = 4;
+  int32 version_no = 5;
+  int32 requirement_version_no = 6;
+  string status = 7;
+  string customer_contact = 8;
+  string confirmation_note = 9;
+  string customer_confirmed_at = 10;
+  int64 created_by = 11;
+  string created_by_name = 12;
+  string created_at = 13;
+  string final_rechecked_at = 14;
+  string invalidated_at = 15;
+  string invalidated_reason = 16;
+  repeated CustomerSelectionItem items = 17;
+  repeated FinalRecheckTask recheck_tasks = 18;
+  repeated CustomerSelectionShipment shipments = 19;
+  string customer_decided_at = 20;
+  string customer_decision_note = 21;
+}
+message ConfirmCustomerSelectionRequest {
+  int64 case_id = 1;
+  int64 sales_plan_id = 2;
+  // Legacy clients sent only IDs and therefore always selected the full demand quantity.
+  repeated int64 sales_plan_item_ids = 3;
+  string customer_contact = 4;
+  string confirmation_note = 5;
+  string customer_confirmed_at = 6;
+  repeated CustomerShipmentChoiceInput shipment_choices = 7;
+  // Aligned by index with sales_plan_item_ids. Empty for legacy clients means full demand quantity.
+  repeated string confirmed_quantities = 8;
+}
+message ConfirmCustomerSelectionResponse { CustomerSelection selection = 1; }
+message ListCustomerSelectionsRequest { int64 case_id = 1; }
+message ListCustomerSelectionsResponse { repeated CustomerSelection selections = 1; }
+message FinalCustomerItemPrice {
+  int64 selection_item_id = 1;
+  string currency = 2;
+  string unit_price = 3;
+  string payment_terms = 4;
+  string incoterm = 5;
+  string required_date = 6;
+}
+message FinalCustomerShipmentPrice { int64 selection_shipment_id = 1; string currency = 2; string freight_amount = 3; }
+message DecideCustomerSelectionRequest {
+  int64 case_id = 1; int64 selection_id = 2; bool accepted = 3;
+  string customer_contact = 4; string decision_note = 5; string customer_decided_at = 6;
+  repeated FinalCustomerItemPrice item_prices = 7;
+  repeated FinalCustomerShipmentPrice shipment_prices = 8;
+}
+message DecideCustomerSelectionResponse { CustomerSelection selection = 1; }

@@ -23,15 +23,28 @@ type SalesPlanItemInput struct {
 	PromisedDeliveryDate, LineNote                            string
 }
 
+type SalesShippingOptionInput struct {
+	ShippingPlanItemIDs                     []int64
+	CustomerCurrency, CustomerFreightAmount string
+	CustomerNote                            string
+}
+
 type NewSalesPlan struct {
 	CaseID, ProcurementPlanID, ShippingPlanID int64
 	ValidUntil, CustomerNote, InternalNote    string
 	Items                                     []SalesPlanItemInput
+	ShippingOptions                           []SalesShippingOptionInput
+}
+
+type SalesShippingOptionView struct {
+	Header store.ListSalesShippingOptionsRow
+	Lines  []store.ListSalesShippingOptionLinesRow
 }
 
 type SalesPlanView struct {
-	Header store.ListSalesPlansRow
-	Items  []store.ListSalesPlanItemsRow
+	Header          store.ListSalesPlansRow
+	Items           []store.ListSalesPlanItemsRow
+	ShippingOptions []SalesShippingOptionView
 }
 
 type CustomerFeedbackInput struct {
@@ -43,6 +56,10 @@ type CustomerFeedbackInput struct {
 type ShippingReworkInput struct {
 	CaseID, SalesPlanID, SourcingLineID, ShippingOptionLineID int64
 	RequestType, Reason                                       string
+}
+
+type ShippingReworkResolution struct {
+	Note, Currency, FreightAmount, EstimatedDeparture, EstimatedArrival, ValidUntil string
 }
 
 func (s *Service) requireResponsibleSales(ctx context.Context, tenantID, caseID int64, op Operator) (store.SalesNegotiationCaseRow, error) {
@@ -76,7 +93,8 @@ func (s *Service) CreateSalesPlan(ctx context.Context, tenantID int64, in NewSal
 	if err != nil {
 		return SalesPlanView{}, err
 	}
-	primary, priorities, seen := map[int64]bool{}, map[string]bool{}, map[string]bool{}
+	primary, priorities, seen := map[int64]bool{}, map[string]bool{}, map[int64]bool{}
+	legacyShippingIDs := map[int64]bool{}
 	type checked struct {
 		input             SalesPlanItemInput
 		product, qty, uom string
@@ -106,13 +124,13 @@ func (s *Service) CreateSalesPlan(ctx context.Context, tenantID int64, in NewSal
 			if shipErr != nil || ship.SourcingLineID != item.SourcingLineID {
 				return SalesPlanView{}, apierr.Invalid("SC_SALES_PLAN_SHIPPING_ITEM", "船运报价不属于所选经理方案或产品")
 			}
+			legacyShippingIDs[item.ShippingPlanItemID] = true
 		}
 		key := strings.Join([]string{strconv.FormatInt(item.SourcingLineID, 10), item.OptionType, strconv.Itoa(int(item.Priority))}, ":")
-		pair := strconv.FormatInt(item.ProcurementPlanItemID, 10) + ":" + strconv.FormatInt(item.ShippingPlanItemID, 10)
-		if priorities[key] || seen[pair] {
-			return SalesPlanView{}, apierr.Invalid("SC_SALES_PLAN_DUPLICATE", "同一产品的方案顺序或采购船运组合不能重复")
+		if priorities[key] || seen[item.ProcurementPlanItemID] {
+			return SalesPlanView{}, apierr.Invalid("SC_SALES_PLAN_DUPLICATE", "同一产品的方案顺序或供应商候选不能重复")
 		}
-		priorities[key], seen[pair] = true, true
+		priorities[key], seen[item.ProcurementPlanItemID] = true, true
 		if item.OptionType == "PRIMARY" {
 			primary[item.SourcingLineID] = true
 		}
@@ -121,9 +139,72 @@ func (s *Service) CreateSalesPlan(ctx context.Context, tenantID int64, in NewSal
 	if int64(len(primary)) != expected {
 		return SalesPlanView{}, apierr.Invalid("SC_SALES_PLAN_INCOMPLETE", "每个有效产品至少需要一个主方案")
 	}
+	// Compatibility for T7 callers: old rows paired a shipping line with every
+	// procurement candidate. Collapse those line IDs into shipment-level
+	// customer options instead of multiplying the freight per product.
+	if len(in.ShippingOptions) == 0 && len(legacyShippingIDs) > 0 {
+		byOption := map[int64]*SalesShippingOptionInput{}
+		for id := range legacyShippingIDs {
+			candidate, candidateErr := s.q.SalesPlanShippingCandidate(ctx, store.SalesPlanShippingCandidateParams{TenantID: tenantID, PlanID: in.ShippingPlanID, ID: id})
+			if candidateErr != nil {
+				return SalesPlanView{}, apierr.Invalid("SC_SALES_PLAN_SHIPPING_ITEM", "船运候选已失效")
+			}
+			group := byOption[candidate.OptionID]
+			if group == nil {
+				group = &SalesShippingOptionInput{CustomerCurrency: candidate.Currency, CustomerFreightAmount: candidate.SiTotalFreight}
+				byOption[candidate.OptionID] = group
+			}
+			group.ShippingPlanItemIDs = append(group.ShippingPlanItemIDs, id)
+		}
+		for _, group := range byOption {
+			in.ShippingOptions = append(in.ShippingOptions, *group)
+		}
+	}
+	type checkedShipping struct {
+		input SalesShippingOptionInput
+		head  store.SalesPlanShippingCandidateRow
+		lines []store.SalesPlanShippingCandidateRow
+	}
+	checkedShippingOptions := make([]checkedShipping, 0, len(in.ShippingOptions))
+	seenShippingOptions := map[int64]bool{}
+	for _, option := range in.ShippingOptions {
+		option.CustomerCurrency = strings.ToUpper(strings.TrimSpace(option.CustomerCurrency))
+		option.CustomerFreightAmount = strings.TrimSpace(option.CustomerFreightAmount)
+		option.CustomerNote = strings.TrimSpace(option.CustomerNote)
+		amount, amountErr := decimal.NewFromString(option.CustomerFreightAmount)
+		if in.ShippingPlanID == 0 || len(option.ShippingPlanItemIDs) == 0 || len(option.CustomerCurrency) != 3 || amountErr != nil || amount.IsNegative() {
+			return SalesPlanView{}, apierr.Invalid("SC_SALES_SHIPPING_OPTION", "请为船运候选填写有效的覆盖货物、币种和对客运费")
+		}
+		checked := checkedShipping{input: option}
+		seenLines := map[int64]bool{}
+		for _, itemID := range option.ShippingPlanItemIDs {
+			candidate, candidateErr := s.q.SalesPlanShippingCandidate(ctx, store.SalesPlanShippingCandidateParams{TenantID: tenantID, PlanID: in.ShippingPlanID, ID: itemID})
+			if candidateErr != nil {
+				return SalesPlanView{}, apierr.Invalid("SC_SALES_PLAN_SHIPPING_ITEM", "船运报价不属于所选经理候选清单")
+			}
+			if checked.head.OptionID == 0 {
+				checked.head = candidate
+			} else if checked.head.OptionID != candidate.OptionID {
+				return SalesPlanView{}, apierr.Invalid("SC_SALES_SHIPPING_MIXED", "一条客户船运候选只能来自同一家公司的同一份整票报价")
+			}
+			if seenLines[candidate.SourcingLineID] {
+				return SalesPlanView{}, apierr.Invalid("SC_SALES_SHIPPING_DUPLICATE_LINE", "船运候选中存在重复货物")
+			}
+			seenLines[candidate.SourcingLineID] = true
+			checked.lines = append(checked.lines, candidate)
+		}
+		if seenShippingOptions[checked.head.OptionID] {
+			return SalesPlanView{}, apierr.Invalid("SC_SALES_SHIPPING_DUPLICATE", "同一整票船运报价只能作为一个客户候选")
+		}
+		seenShippingOptions[checked.head.OptionID] = true
+		checkedShippingOptions = append(checkedShippingOptions, checked)
+	}
 	var planID int64
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		if invalidateErr := q.InvalidateActiveCustomerSelections(ctx, store.InvalidateActiveCustomerSelectionsParams{Reason: "销售生成了新的客户沟通方案", TenantID: tenantID, CaseID: in.CaseID}); invalidateErr != nil {
+			return invalidateErr
+		}
 		if err := q.SupersedePresentedSalesPlans(ctx, store.SupersedePresentedSalesPlansParams{TenantID: tenantID, CaseID: in.CaseID}); err != nil {
 			return err
 		}
@@ -133,8 +214,20 @@ func (s *Service) CreateSalesPlan(ctx context.Context, tenantID int64, in NewSal
 		}
 		planID = id
 		for _, item := range checkedItems {
-			if err := q.CreateSalesPlanItem(ctx, store.CreateSalesPlanItemParams{TenantID: tenantID, PlanID: planID, SourcingLineID: item.input.SourcingLineID, ProcurementPlanItemID: item.input.ProcurementPlanItemID, ShippingPlanItemID: item.input.ShippingPlanItemID, OptionType: item.input.OptionType, Priority: item.input.Priority, ProductName: item.product, QuotedQty: item.qty, UomCode: item.uom, CustomerCurrency: item.input.CustomerCurrency, CustomerUnitPrice: item.input.CustomerUnitPrice, PromisedDeliveryDate: item.input.PromisedDeliveryDate, LineNote: item.input.LineNote}); err != nil {
+			if err := q.CreateSalesPlanItem(ctx, store.CreateSalesPlanItemParams{TenantID: tenantID, PlanID: planID, SourcingLineID: item.input.SourcingLineID, ProcurementPlanItemID: item.input.ProcurementPlanItemID, OptionType: item.input.OptionType, Priority: item.input.Priority, ProductName: item.product, QuotedQty: item.qty, UomCode: item.uom, CustomerCurrency: item.input.CustomerCurrency, CustomerUnitPrice: item.input.CustomerUnitPrice, PromisedDeliveryDate: item.input.PromisedDeliveryDate, LineNote: item.input.LineNote}); err != nil {
 				return err
+			}
+		}
+		for _, option := range checkedShippingOptions {
+			head := option.head
+			shippingOptionID, createShippingErr := q.CreateSalesShippingOption(ctx, store.CreateSalesShippingOptionParams{TenantID: tenantID, PlanID: planID, ShippingOptionID: head.OptionID, CarrierForwarder: head.CarrierForwarder, ServiceOptionName: head.ServiceOptionName, ShippingEmployeeID: head.ShippingEmployeeID, ShippingEmployeeName: head.ShippingEmployeeName, CustomerCurrency: option.input.CustomerCurrency, CustomerFreightAmount: option.input.CustomerFreightAmount, ChargeBasis: head.ChargeBasis, PortOfLoading: head.PortOfLoading, PortOfDischarge: head.PortOfDischarge, EstimatedDeparture: head.EstimatedDeparture, EstimatedArrival: head.EstimatedArrival, ValidUntil: head.ValidUntil, CustomerNote: option.input.CustomerNote})
+			if createShippingErr != nil {
+				return createShippingErr
+			}
+			for _, line := range option.lines {
+				if lineErr := q.CreateSalesShippingOptionLine(ctx, store.CreateSalesShippingOptionLineParams{TenantID: tenantID, SalesShippingOptionID: shippingOptionID, SourcingLineID: line.SourcingLineID, ShippingPlanItemID: line.ID, ShippingOptionLineID: line.ShippingOptionLineID, ProductName: line.ProductName, QuotedQty: line.QuotedQty, UomCode: line.UomCode}); lineErr != nil {
+					return lineErr
+				}
 			}
 		}
 		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: in.CaseID, Section: "SALES_NEGOTIATION", Action: "SALES_PLAN_PRESENTED", Summary: "销售生成客户沟通方案", BeforeJson: []byte(`{}`), AfterJson: []byte(`{}`), OperatorID: op.ID, OperatorName: op.Name})
@@ -151,7 +244,27 @@ func (s *Service) GetSalesPlan(ctx context.Context, tenantID, id int64) (SalesPl
 		return SalesPlanView{}, err
 	}
 	items, err := s.q.ListSalesPlanItems(ctx, store.ListSalesPlanItemsParams{TenantID: tenantID, PlanID: id})
-	return SalesPlanView{Header: store.ListSalesPlansRow(header), Items: items}, err
+	if err != nil {
+		return SalesPlanView{}, err
+	}
+	shippingOptions, err := s.listSalesShippingOptions(ctx, tenantID, id)
+	return SalesPlanView{Header: store.ListSalesPlansRow(header), Items: items, ShippingOptions: shippingOptions}, err
+}
+
+func (s *Service) listSalesShippingOptions(ctx context.Context, tenantID, planID int64) ([]SalesShippingOptionView, error) {
+	headers, err := s.q.ListSalesShippingOptions(ctx, store.ListSalesShippingOptionsParams{TenantID: tenantID, PlanID: planID})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SalesShippingOptionView, 0, len(headers))
+	for _, header := range headers {
+		lines, lineErr := s.q.ListSalesShippingOptionLines(ctx, store.ListSalesShippingOptionLinesParams{TenantID: tenantID, SalesShippingOptionID: header.ID})
+		if lineErr != nil {
+			return nil, lineErr
+		}
+		out = append(out, SalesShippingOptionView{Header: header, Lines: lines})
+	}
+	return out, nil
 }
 
 func (s *Service) ListSalesPlans(ctx context.Context, tenantID, caseID int64, op Operator) ([]SalesPlanView, error) {
@@ -168,7 +281,11 @@ func (s *Service) ListSalesPlans(ctx context.Context, tenantID, caseID int64, op
 		if e != nil {
 			return nil, e
 		}
-		out = append(out, SalesPlanView{Header: h, Items: items})
+		shippingOptions, e := s.listSalesShippingOptions(ctx, tenantID, h.ID)
+		if e != nil {
+			return nil, e
+		}
+		out = append(out, SalesPlanView{Header: h, Items: items, ShippingOptions: shippingOptions})
 	}
 	return out, nil
 }
@@ -287,9 +404,9 @@ func (s *Service) ListMyShippingReworks(ctx context.Context, tenantID int64, op 
 	return s.q.ListMyShippingReworks(ctx, store.ListMyShippingReworksParams{TenantID: tenantID, EmployeeID: &op.ID})
 }
 
-func (s *Service) ResolveShippingRework(ctx context.Context, tenantID, id int64, note string, op Operator) error {
-	note = strings.TrimSpace(note)
-	if note == "" {
+func (s *Service) ResolveShippingRework(ctx context.Context, tenantID, id int64, in ShippingReworkResolution, op Operator) error {
+	in.Note = strings.TrimSpace(in.Note)
+	if in.Note == "" {
 		return apierr.Invalid("SC_SHIPPING_REWORK_RESULT", "请填写处理结果")
 	}
 	row, err := s.q.GetShippingRework(ctx, store.GetShippingReworkParams{TenantID: tenantID, ID: id})
@@ -299,13 +416,38 @@ func (s *Service) ResolveShippingRework(ctx context.Context, tenantID, id int64,
 	if row.AssignedShippingID != 0 && row.AssignedShippingID != op.ID {
 		return apierr.Permission("SC_SHIPPING_REWORK_ASSIGNEE", "该任务已指定给原船运报价人")
 	}
-	count, err := s.q.ResolveShippingRework(ctx, store.ResolveShippingReworkParams{OperatorID: &op.ID, OperatorName: op.Name, ResolutionNote: note, TenantID: tenantID, ID: id})
-	if err != nil {
-		return err
+	_, finalErr := s.q.GetFinalTaskByShippingRework(ctx, store.GetFinalTaskByShippingReworkParams{TenantID: tenantID, ShippingReworkID: &id})
+	isFinal := finalErr == nil
+	if finalErr != nil && !errors.Is(finalErr, pgx.ErrNoRows) {
+		return finalErr
 	}
-	if count == 0 {
-		return apierr.Conflict("SC_SHIPPING_REWORK_RESOLVED", "船运退回任务已经处理")
+	if isFinal {
+		in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
+		if len(in.Currency) != 3 || !positiveDecimal(in.FreightAmount) || !validDate(in.EstimatedDeparture) || !validDate(in.EstimatedArrival) || !validDate(in.ValidUntil) {
+			return apierr.Invalid("SC_FINAL_SHIPPING_RESULT_REQUIRED", "请完整填写最终币种、运费、开船日、到港日和有效期")
+		}
+		if in.EstimatedDeparture > in.EstimatedArrival {
+			return apierr.Invalid("SC_FINAL_SHIPPING_SCHEDULE", "最终开船日不能晚于到港日")
+		}
 	}
-	_ = s.q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: row.CaseID, Section: "SALES_NEGOTIATION", Action: "SHIPPING_REWORK_RESOLVED", Summary: "船运人员完成销售退回任务", BeforeJson: []byte(`{}`), AfterJson: []byte(`{}`), Reason: note, OperatorID: op.ID, OperatorName: op.Name})
-	return nil
+	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		count, resolveErr := q.ResolveShippingRework(ctx, store.ResolveShippingReworkParams{OperatorID: &op.ID, OperatorName: op.Name, ResolutionNote: in.Note, TenantID: tenantID, ID: id})
+		if resolveErr != nil {
+			return resolveErr
+		}
+		if count == 0 {
+			return apierr.Conflict("SC_SHIPPING_REWORK_RESOLVED", "船运退回任务已经处理")
+		}
+		if isFinal {
+			currency := in.Currency
+			if resolveErr = q.ResolveFinalTaskByShippingRework(ctx, store.ResolveFinalTaskByShippingReworkParams{ResultNote: in.Note, ResolvedBy: &op.ID, ResolvedByName: op.Name, FinalCurrency: &currency, FinalFreightAmount: in.FreightAmount, FinalEstimatedDeparture: in.EstimatedDeparture, FinalEstimatedArrival: in.EstimatedArrival, FinalValidUntil: in.ValidUntil, TenantID: tenantID, ShippingReworkID: &id}); resolveErr != nil {
+				return resolveErr
+			}
+		}
+		if resolveErr = q.CompleteReadyCustomerSelections(ctx, tenantID); resolveErr != nil {
+			return resolveErr
+		}
+		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: row.CaseID, Section: "SALES_NEGOTIATION", Action: "SHIPPING_REWORK_RESOLVED", Summary: "船运人员完成销售退回任务", BeforeJson: []byte(`{}`), AfterJson: []byte(`{}`), Reason: in.Note, OperatorID: op.ID, OperatorName: op.Name})
+	})
 }

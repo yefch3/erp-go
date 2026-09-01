@@ -622,12 +622,14 @@ func (q *Queries) ListSourcingShippingParticipants(ctx context.Context, arg List
 }
 
 const listSourcingShippingPlanItems = `-- name: ListSourcingShippingPlanItems :many
-SELECT id,sourcing_line_id,shipping_option_line_id,selection_type,priority,reason,risk,carrier_forwarder,service_option_name,
- shipping_employee_id,shipping_employee_name,product_name,currency,charge_basis,unit_rate::text,total_freight::text,
- port_of_loading,port_of_discharge,coalesce(estimated_departure::text,'')::text AS estimated_departure,
- coalesce(estimated_arrival::text,'')::text AS estimated_arrival,coalesce(valid_until::text,'')::text AS valid_until,quote_version_no
-FROM sourcing_shipping_plan_items WHERE tenant_id=$1 AND plan_id=$2
-ORDER BY sourcing_line_id,selection_type DESC,priority,id
+SELECT spi.id,spi.sourcing_line_id,spi.shipping_option_line_id,ol.option_id AS shipping_option_id,spi.selection_type,spi.priority,spi.reason,spi.risk,spi.carrier_forwarder,spi.service_option_name,
+ spi.shipping_employee_id,spi.shipping_employee_name,spi.product_name,spi.currency,spi.charge_basis,spi.unit_rate::text AS unit_rate,spi.total_freight::text AS total_freight,
+ spi.port_of_loading,spi.port_of_discharge,coalesce(spi.estimated_departure::text,'')::text AS estimated_departure,
+ coalesce(spi.estimated_arrival::text,'')::text AS estimated_arrival,coalesce(spi.valid_until::text,'')::text AS valid_until,spi.quote_version_no
+FROM sourcing_shipping_plan_items spi
+JOIN sourcing_shipping_option_lines ol ON ol.tenant_id=spi.tenant_id AND ol.id=spi.shipping_option_line_id
+WHERE spi.tenant_id=$1 AND spi.plan_id=$2
+ORDER BY spi.sourcing_line_id,spi.selection_type DESC,spi.priority,spi.id
 `
 
 type ListSourcingShippingPlanItemsParams struct {
@@ -639,6 +641,7 @@ type ListSourcingShippingPlanItemsRow struct {
 	ID                   int64
 	SourcingLineID       int64
 	ShippingOptionLineID int64
+	ShippingOptionID     int64
 	SelectionType        string
 	Priority             int32
 	Reason               string
@@ -673,6 +676,7 @@ func (q *Queries) ListSourcingShippingPlanItems(ctx context.Context, arg ListSou
 			&i.ID,
 			&i.SourcingLineID,
 			&i.ShippingOptionLineID,
+			&i.ShippingOptionID,
 			&i.SelectionType,
 			&i.Priority,
 			&i.Reason,

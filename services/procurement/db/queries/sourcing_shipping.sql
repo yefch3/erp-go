@@ -173,12 +173,14 @@ SELECT id,request_id,plan_no,version_no,requirement_version_no,status,manager_no
 FROM sourcing_shipping_plans WHERE tenant_id=$1 AND request_id=$2 ORDER BY version_no DESC;
 
 -- name: ListSourcingShippingPlanItems :many
-SELECT id,sourcing_line_id,shipping_option_line_id,selection_type,priority,reason,risk,carrier_forwarder,service_option_name,
- shipping_employee_id,shipping_employee_name,product_name,currency,charge_basis,unit_rate::text,total_freight::text,
- port_of_loading,port_of_discharge,coalesce(estimated_departure::text,'')::text AS estimated_departure,
- coalesce(estimated_arrival::text,'')::text AS estimated_arrival,coalesce(valid_until::text,'')::text AS valid_until,quote_version_no
-FROM sourcing_shipping_plan_items WHERE tenant_id=$1 AND plan_id=$2
-ORDER BY sourcing_line_id,selection_type DESC,priority,id;
+SELECT spi.id,spi.sourcing_line_id,spi.shipping_option_line_id,ol.option_id AS shipping_option_id,spi.selection_type,spi.priority,spi.reason,spi.risk,spi.carrier_forwarder,spi.service_option_name,
+ spi.shipping_employee_id,spi.shipping_employee_name,spi.product_name,spi.currency,spi.charge_basis,spi.unit_rate::text AS unit_rate,spi.total_freight::text AS total_freight,
+ spi.port_of_loading,spi.port_of_discharge,coalesce(spi.estimated_departure::text,'')::text AS estimated_departure,
+ coalesce(spi.estimated_arrival::text,'')::text AS estimated_arrival,coalesce(spi.valid_until::text,'')::text AS valid_until,spi.quote_version_no
+FROM sourcing_shipping_plan_items spi
+JOIN sourcing_shipping_option_lines ol ON ol.tenant_id=spi.tenant_id AND ol.id=spi.shipping_option_line_id
+WHERE spi.tenant_id=$1 AND spi.plan_id=$2
+ORDER BY spi.sourcing_line_id,spi.selection_type DESC,spi.priority,spi.id;
 
 -- name: GetSourcingShippingPlan :one
 SELECT id,request_id,plan_no,version_no,requirement_version_no,status,manager_note,created_by,created_by_name,

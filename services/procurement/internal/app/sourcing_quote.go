@@ -242,6 +242,20 @@ func validateFactoryRFQTarget(caseID, supplierID int64) error {
 	return nil
 }
 
+// canCreateFactoryRFQForRework keeps supplemental sourcing open after the
+// original manager plan has been submitted. Sales can return a quote for a
+// new supplier, a requote, or renegotiation; in each case the assigned buyer
+// must be able to create another independent RFQ round without reopening the
+// entire initial sourcing handoff.
+func canCreateFactoryRFQForRework(rows []store.ListProcurementReworkRequestsRow, operatorID int64) bool {
+	for _, row := range rows {
+		if row.Status == "OPEN" && (row.AssignedBuyerID == 0 || row.AssignedBuyerID == operatorID) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) CreateFactoryRFQ(ctx context.Context, tenantID int64, in NewFactoryRFQ, op Operator) (store.ListFactoryRFQsRow, error) {
 	if err := validateFactoryRFQTarget(in.CaseID, in.SupplierID); err != nil {
 		return store.ListFactoryRFQsRow{}, err
@@ -250,8 +264,15 @@ func (s *Service) CreateFactoryRFQ(ctx context.Context, tenantID int64, in NewFa
 	if err != nil {
 		return store.ListFactoryRFQsRow{}, err
 	}
-	if caseView.Head.HandoffStatus != "WAITING_ACCEPTANCE" && caseView.Head.HandoffStatus != "IN_PROGRESS" {
-		return store.ListFactoryRFQsRow{}, apierr.Conflict("SC_PARTICIPATION_NOT_OPEN", "当前案件尚未开放采购询价")
+	initialSourcingOpen := caseView.Head.HandoffStatus == "WAITING_ACCEPTANCE" || caseView.Head.HandoffStatus == "IN_PROGRESS"
+	if !initialSourcingOpen {
+		reworks, reworkErr := s.q.ListProcurementReworkRequests(ctx, store.ListProcurementReworkRequestsParams{TenantID: tenantID, CaseID: in.CaseID})
+		if reworkErr != nil {
+			return store.ListFactoryRFQsRow{}, reworkErr
+		}
+		if !canCreateFactoryRFQForRework(reworks, op.ID) {
+			return store.ListFactoryRFQsRow{}, apierr.Conflict("SC_PARTICIPATION_NOT_OPEN", "当前案件没有可由你处理的采购询价或复询任务")
+		}
 	}
 	if err := s.requireSourcingParticipant(ctx, tenantID, in.CaseID, op.ID); err != nil {
 		return store.ListFactoryRFQsRow{}, err
