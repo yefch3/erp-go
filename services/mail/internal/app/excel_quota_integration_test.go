@@ -21,6 +21,8 @@ import (
 //     不拦更糟——客户会在毫无预告的情况下发现功能坏了。
 //  2. **上限 0 = 一次都不许用。** 和「不限」正好相反。如果哪天有人图省事
 //     把「不限」重新表示成 0，这条会当场变红。
+//  3. **额度是每人每月的，不是全公司的**（2026-09-01 改的）。见下面那条
+//     单独的测试。
 //
 // 外加一条：失败的那次也占额度。模型答了钱就花了，不占额度等于给了一条
 // 「一直失败就能无限用」的路。
@@ -44,11 +46,13 @@ func TestExcelQuota(t *testing.T) {
 
 	svc := New(pool, Deps{}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 
+	const alice int64 = 701
+
 	// 本月发起一次转换，不管成没成——成败都花钱，都占额度。
 	run := func(status string) {
 		if _, err := pool.Exec(ctx, `INSERT INTO mail_excel_jobs
 			(tenant_id, owner_id, inbound_id, selected_text, status)
-			VALUES ($1,701,1,'选中的一段',$2)`, tenantID, status); err != nil {
+			VALUES ($1,$3,1,'选中的一段',$2)`, tenantID, status, alice); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -56,7 +60,7 @@ func TestExcelQuota(t *testing.T) {
 	// ---- 没设额度：不限，怎么用都不拦 ----
 	run("COMPLETED")
 	run("FAILED")
-	quota, err := svc.ExcelQuotaFor(ctx, tenantID)
+	quota, err := svc.ExcelQuotaFor(ctx, tenantID, alice)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +73,7 @@ func TestExcelQuota(t *testing.T) {
 	if quota.Exhausted() {
 		t.Fatal("不限额度却报告已用完")
 	}
-	if err := svc.ensureExcelQuota(ctx, tenantID); err != nil {
+	if err := svc.ensureExcelQuota(ctx, tenantID, alice); err != nil {
 		t.Fatalf("不限额度不该拦人：%v", err)
 	}
 	// 和**数据库**认定的当月比，不和 Go 的 UTC 时钟比。
@@ -87,14 +91,14 @@ func TestExcelQuota(t *testing.T) {
 	if err := svc.SetExcelQuota(ctx, tenantID, true, 5, 99); err != nil {
 		t.Fatal(err)
 	}
-	quota, err = svc.ExcelQuotaFor(ctx, tenantID)
+	quota, err = svc.ExcelQuotaFor(ctx, tenantID, alice)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !quota.Limited || quota.MonthlyRuns != 5 || quota.UsedThisMonth != 2 {
 		t.Fatalf("额度状况不对：%+v，该是上限 5、已用 2", quota)
 	}
-	if err := svc.ensureExcelQuota(ctx, tenantID); err != nil {
+	if err := svc.ensureExcelQuota(ctx, tenantID, alice); err != nil {
 		t.Fatalf("2/5 还远没到顶，不该拦：%v", err)
 	}
 
@@ -102,7 +106,7 @@ func TestExcelQuota(t *testing.T) {
 	run("COMPLETED")
 	run("COMPLETED")
 	run("FAILED") // 第 5 次，失败的那次同样占额度
-	err = svc.ensureExcelQuota(ctx, tenantID)
+	err = svc.ensureExcelQuota(ctx, tenantID, alice)
 	if err == nil {
 		t.Fatal("已用 5/5 却仍然放行——额度形同虚设")
 	}
@@ -114,7 +118,7 @@ func TestExcelQuota(t *testing.T) {
 	if err := svc.SetExcelQuota(ctx, tenantID, true, 0, 99); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.ensureExcelQuota(ctx, tenantID); err == nil {
+	if err := svc.ensureExcelQuota(ctx, tenantID, alice); err == nil {
 		t.Fatal("上限设成 0 却还放行——0 被当成了「不限」，而它的意思正好相反")
 	}
 
@@ -122,14 +126,14 @@ func TestExcelQuota(t *testing.T) {
 	if err := svc.SetExcelQuota(ctx, tenantID, false, 0, 99); err != nil {
 		t.Fatal(err)
 	}
-	quota, err = svc.ExcelQuotaFor(ctx, tenantID)
+	quota, err = svc.ExcelQuotaFor(ctx, tenantID, alice)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if quota.Limited {
 		t.Fatal("恢复不限之后仍然报告有上限")
 	}
-	if err := svc.ensureExcelQuota(ctx, tenantID); err != nil {
+	if err := svc.ensureExcelQuota(ctx, tenantID, alice); err != nil {
 		t.Fatalf("恢复不限之后不该再拦：%v", err)
 	}
 }
@@ -157,14 +161,15 @@ func TestExcelQuotaResetsEachMonth(t *testing.T) {
 	})
 
 	svc := New(pool, Deps{}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	const bob int64 = 702
 
 	// 上个月用掉 3 次。日期由数据库自己算，不在 Go 里拼——月初那几个小时
 	// 两个时钟差一点点，这条测试就会莫名其妙地红。
 	for i := 0; i < 3; i++ {
 		if _, err := pool.Exec(ctx, `INSERT INTO mail_excel_jobs
 			(tenant_id, owner_id, inbound_id, selected_text, status, created_at)
-			VALUES ($1,702,1,'上个月的','COMPLETED', date_trunc('month', now()) - interval '5 days')`,
-			tenantID); err != nil {
+			VALUES ($1,$2,1,'上个月的','COMPLETED', date_trunc('month', now()) - interval '5 days')`,
+			tenantID, bob); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -172,14 +177,14 @@ func TestExcelQuotaResetsEachMonth(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	quota, err := svc.ExcelQuotaFor(ctx, tenantID)
+	quota, err := svc.ExcelQuotaFor(ctx, tenantID, bob)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if quota.UsedThisMonth != 0 {
 		t.Fatalf("本月已用 = %d，该是 0——上个月的用量不该算进这个月", quota.UsedThisMonth)
 	}
-	if err := svc.ensureExcelQuota(ctx, tenantID); err != nil {
+	if err := svc.ensureExcelQuota(ctx, tenantID, bob); err != nil {
 		t.Fatalf("上个月用满了不该拖累这个月：%v", err)
 	}
 }
@@ -344,5 +349,81 @@ func TestHalfConfiguredPricingProducesNoCostAtAll(t *testing.T) {
 
 	if (ModelPricing{}).Configured() {
 		t.Fatal("什么都没填却说配好了")
+	}
+}
+
+// 额度是**每人**的，一个人用完不牵连同事。
+//
+// 这是 2026-09-01 那次口径反转的全部内容，也是它唯一会静默做反的地方：
+// CountExcelRunsThisMonth 少带一个 owner_id 就退回「按公司算」，而两个参数
+// 都是 int64，**编译器一声不吭**。
+//
+// 做反了的样子：公司里有人上午跑满了额度，别人下午一点就被挡住，而挡人的
+// 那句话说的是「你本月的额度已用完」——被挡的人自己一次都没用过，既看不出
+// 是谁用掉的，也做不了任何事。
+func TestQuotaIsPerPersonNotPerCompany(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+
+	tenantID := time.Now().UnixNano()
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_excel_jobs WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_excel_quotas WHERE tenant_id=$1", tenantID)
+	})
+
+	svc := New(pool, Deps{}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	// 同一家公司的两个人。
+	const heavy, light int64 = 711, 712
+
+	// 每人每月 2 次。
+	if err := svc.SetExcelQuota(ctx, tenantID, true, 2, 99); err != nil {
+		t.Fatal(err)
+	}
+	// 其中一个人跑满。
+	for i := 0; i < 2; i++ {
+		if _, err := pool.Exec(ctx, `INSERT INTO mail_excel_jobs
+			(tenant_id, owner_id, inbound_id, selected_text, status)
+			VALUES ($1,$2,1,'选中的一段','COMPLETED')`, tenantID, heavy); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 跑满的那个人被挡住。
+	err = svc.ensureExcelQuota(ctx, tenantID, heavy)
+	if err == nil {
+		t.Fatal("用满 2/2 的人还能继续转")
+	}
+	if !strings.Contains(err.Error(), "你本月") {
+		t.Errorf("拦人的话没说清是「你的」额度：%q——按人算的额度说成公司的，"+
+			"会让人去问同事是不是用超了，而那和他没关系", err.Error())
+	}
+
+	// **同事一次都没用过，不该被牵连。**
+	quota, err := svc.ExcelQuotaFor(ctx, tenantID, light)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quota.UsedThisMonth != 0 {
+		t.Fatalf("同事本月已用 = %d，该是 0——他一次都没转过。"+
+			"这个数被算成了全公司的用量", quota.UsedThisMonth)
+	}
+	if quota.Exhausted() {
+		t.Fatal("同事一次都没用过却被判成额度用尽")
+	}
+	if err := svc.ensureExcelQuota(ctx, tenantID, light); err != nil {
+		t.Fatalf("同事被别人的用量挡住了：%v", err)
+	}
+
+	// 上限本身仍然是每人一样的那个数，从公司那一行来。
+	if !quota.Limited || quota.MonthlyRuns != 2 {
+		t.Fatalf("同事看到的上限 = %+v，该是「有上限、每人 2 次」", quota)
 	}
 }

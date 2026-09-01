@@ -1174,7 +1174,9 @@ func (h *Handler) ExcelUsage(ctx context.Context, req *mailv1.ExcelUsageRequest)
 			InputTokens: r.InputTokens, OutputTokens: r.OutputTokens,
 		})
 	}
-	quota, err := h.svc.ExcelQuotaFor(ctx, grpcx.TenantID(ctx))
+	// 额度是**这个人**的（2026-09-01 起），所以要带上他是谁。用 operator
+	// 而不是请求里的字段：那是「我的用量页」，问的只能是自己。
+	quota, err := h.svc.ExcelQuotaFor(ctx, grpcx.TenantID(ctx), operator(ctx).ID)
 	if err != nil {
 		return nil, err
 	}

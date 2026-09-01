@@ -54,7 +54,9 @@ func (s *Service) StartExcelJob(
 	}
 	// 额度在这里拦：点了按钮就该当场知道能不能做，而不是排队十几秒之后
 	// 才被告知本来就不该让你点。见 excel_quota.go。
-	if err := s.ensureExcelQuota(ctx, tenantID); err != nil {
+	//
+	// 按 ownerID 算，不按公司算——额度的单位是每人每月。
+	if err := s.ensureExcelQuota(ctx, tenantID, ownerID); err != nil {
 		return ExcelJob{}, err
 	}
 	if selectedText != nil {

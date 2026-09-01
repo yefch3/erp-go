@@ -36,17 +36,20 @@
           </template>
         </el-table-column>
         <!-- 智能转换是唯一按次花我们钱的功能，所以每家公司用了多少、上限
-             多少，摆在开户表上，不藏在别的页里。 -->
-        <el-table-column :label="t('platform.quota')" width="150">
+             多少，摆在开户表上，不藏在别的页里。
+
+             **上面那个上限和下面那个用量不是一个量纲**（2026-09-01 起）：
+             上限是「每人每月」，用量是「全公司本月加起来」。所以这里不能
+             写成「已用 / 上限」，也不能给百分比——那会被读成一个进度，而
+             它的分子和分母说的不是同一件事。分两行各说各的。 -->
+        <el-table-column :label="t('platform.quota')" width="170">
           <template #default="{ row }">
             <template v-if="!quotasLoaded">
               <div class="sub">—</div>
             </template>
             <template v-else-if="quotaOf(row.id).limited">
-              <div class="num">
-                {{ quotaOf(row.id).usedThisMonth }} / {{ quotaOf(row.id).monthlyRuns }}
-              </div>
-              <div class="sub">{{ quotaPercentOf(row.id) }}%</div>
+              <div class="num">{{ t('platform.quotaPerPerson', { n: quotaOf(row.id).monthlyRuns }) }}</div>
+              <div class="sub">{{ t('platform.quotaUsed', { n: quotaOf(row.id).usedThisMonth }) }}</div>
             </template>
             <template v-else>
               <div class="sub">{{ t('platform.quotaNone') }}</div>
@@ -222,7 +225,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { get, post } from '../api'
-import { excelQuotaPercent, toCount, type ExcelQuotaUsage } from '../lib/excelQuota'
+import { toCount, type ExcelQuotaUsage } from '../lib/excelQuota'
 
 // 平台开户（E7）：给客户公司的第一位管理员发邀请，对方激活后自己邀请员工。
 //
@@ -342,10 +345,6 @@ function formatTokens(n: number): string {
 function quotaOf(id: string): TenantQuota {
   return quotas.value[id] ?? noQuota
 }
-function quotaPercentOf(id: string): number {
-  return excelQuotaPercent(quotaOf(id))
-}
-
 // 额度这份数据到手了没有。没到手的时候整张表必须说「不知道」，不能说
 // 「都不限」——那是一句确凿的假话，而且看起来和「确实一家都没设过」一模一样。
 // 客户那一页专门做了这个「不知道」态（excelQuotaState 的 unknown），这一页

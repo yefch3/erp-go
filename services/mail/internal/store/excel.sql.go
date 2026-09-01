@@ -103,16 +103,26 @@ const countExcelRunsThisMonth = `-- name: CountExcelRunsThisMonth :one
 SELECT count(*)::bigint
 FROM mail_excel_jobs
 WHERE tenant_id = $1::bigint
+  AND owner_id = $2::bigint
   AND created_at >= date_trunc('month', now())
   AND created_at <  date_trunc('month', now()) + interval '1 month'
 `
 
-// 这家公司这个月转了多少次——一个数，给额度用。
+type CountExcelRunsThisMonthParams struct {
+	TenantID int64
+	OwnerID  int64
+}
+
+// **这个人**这个月转了多少次——一个数，给额度用。
+//
+// 2026-09-01 从「这家公司」改成「这个人」：额度的单位是每人每月，不是全公司
+// 每月。改之前一个人跑几十次就把同事全挡在外面，而挡人的那句话说的是「本月
+// 智能转换额度已用完」——被挡的人根本不知道额度被谁用掉了。
 //
 // 写成半开区间而不是 to_char(...) = '2026-08'：前者能走 (tenant_id,
 // created_at) 索引的范围扫描，后者要对每一行算一次函数。
-func (q *Queries) CountExcelRunsThisMonth(ctx context.Context, tenantID int64) (int64, error) {
-	row := q.db.QueryRow(ctx, countExcelRunsThisMonth, tenantID)
+func (q *Queries) CountExcelRunsThisMonth(ctx context.Context, arg CountExcelRunsThisMonthParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countExcelRunsThisMonth, arg.TenantID, arg.OwnerID)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
