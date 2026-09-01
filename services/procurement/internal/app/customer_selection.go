@@ -27,6 +27,23 @@ type ConfirmCustomerSelectionInput struct {
 type CustomerShipmentChoiceInput struct {
 	ShipmentGroupKey      string
 	SalesShippingOptionID int64
+	CustomerManaged       bool
+}
+
+type FinalCustomerItemPriceInput struct {
+	SelectionItemID     int64
+	Currency, UnitPrice string
+}
+type FinalCustomerShipmentPriceInput struct {
+	SelectionShipmentID     int64
+	Currency, FreightAmount string
+}
+type DecideCustomerSelectionInput struct {
+	CaseID, SelectionID                      int64
+	Accepted                                 bool
+	CustomerContact, DecisionNote, DecidedAt string
+	ItemPrices                               []FinalCustomerItemPriceInput
+	ShipmentPrices                           []FinalCustomerShipmentPriceInput
 }
 
 type CustomerSelectionShipmentView struct {
@@ -95,16 +112,27 @@ func (s *Service) ConfirmCustomerSelection(ctx context.Context, tenantID int64, 
 			batchLines[groupKey][candidate.SourcingLineID] = true
 		}
 		shipmentChoices := map[string]store.CustomerShipmentCandidateRow{}
+		customerManagedGroups := map[string]bool{}
 		shipmentChoiceLines := map[string][]store.CustomerShipmentCandidateLinesRow{}
 		seenShippingOption := map[int64]bool{}
 		for _, choice := range in.ShipmentChoices {
 			choice.ShipmentGroupKey = strings.TrimSpace(choice.ShipmentGroupKey)
 			requiredLines := batchLines[choice.ShipmentGroupKey]
-			if choice.ShipmentGroupKey == "" || choice.SalesShippingOptionID == 0 || len(requiredLines) == 0 {
+			if choice.ShipmentGroupKey == "" || len(requiredLines) == 0 {
 				return apierr.Invalid("SC_CUSTOMER_SHIPMENT_GROUP", "船运选择不属于当前已选供应商批次")
 			}
-			if _, duplicate := shipmentChoices[choice.ShipmentGroupKey]; duplicate {
+			if _, duplicate := shipmentChoices[choice.ShipmentGroupKey]; duplicate || customerManagedGroups[choice.ShipmentGroupKey] {
 				return apierr.Invalid("SC_CUSTOMER_SHIPMENT_DUPLICATE", "同一货运批次只能选择一个船运方案")
+			}
+			if choice.CustomerManaged {
+				if choice.SalesShippingOptionID != 0 {
+					return apierr.Invalid("SC_CUSTOMER_SHIPMENT_MODE", "客户自理运输不能同时选择船运方案")
+				}
+				customerManagedGroups[choice.ShipmentGroupKey] = true
+				continue
+			}
+			if choice.SalesShippingOptionID == 0 {
+				return apierr.Invalid("SC_CUSTOMER_SHIPMENT_REQUIRED", "每个货运批次必须选择船运方案或明确客户自理运输")
 			}
 			shipping, shippingErr := q.CustomerShipmentCandidate(ctx, store.CustomerShipmentCandidateParams{TenantID: tenantID, CaseID: in.CaseID, ID: in.SalesPlanID, ID_2: choice.SalesShippingOptionID})
 			if shippingErr != nil {
@@ -146,7 +174,12 @@ func (s *Service) ConfirmCustomerSelection(ctx context.Context, tenantID int64, 
 			shipmentChoices[choice.ShipmentGroupKey] = shipping
 			shipmentChoiceLines[choice.ShipmentGroupKey] = lines
 		}
-		if invalidateErr := q.InvalidateActiveCustomerSelections(ctx, store.InvalidateActiveCustomerSelectionsParams{Reason: "客户提交了新的最终选择", TenantID: tenantID, CaseID: in.CaseID}); invalidateErr != nil {
+		for groupKey := range batchLines {
+			if _, arranged := shipmentChoices[groupKey]; !arranged && !customerManagedGroups[groupKey] {
+				return apierr.Invalid("SC_CUSTOMER_SHIPMENT_REQUIRED", "每个货运批次必须选择船运方案或明确客户自理运输")
+			}
+		}
+		if invalidateErr := q.InvalidateActiveCustomerSelections(ctx, store.InvalidateActiveCustomerSelectionsParams{Reason: "销售登记了新的客户意向选择", TenantID: tenantID, CaseID: in.CaseID}); invalidateErr != nil {
 			return invalidateErr
 		}
 		id, createErr := q.CreateCustomerSelection(ctx, store.CreateCustomerSelectionParams{TenantID: tenantID, CaseID: in.CaseID, SalesPlanID: in.SalesPlanID, RequirementVersionNo: caseRow.RequirementVersionNo, CustomerContact: in.CustomerContact, ConfirmationNote: in.ConfirmationNote, CustomerConfirmedAt: in.CustomerConfirmedAt, CreatedBy: op.ID, CreatedByName: op.Name})
@@ -157,12 +190,12 @@ func (s *Service) ConfirmCustomerSelection(ctx context.Context, tenantID int64, 
 		selectionItemIDsByGroup := map[string][]int64{}
 		for _, candidate := range candidates {
 			groupKey := customerShipmentGroupKey(candidate.SupplierID, candidate.FactoryID)
-			selectionItemID, itemErr := q.CreateCustomerSelectionItem(ctx, store.CreateCustomerSelectionItemParams{TenantID: tenantID, SelectionID: selectionID, SalesPlanItemID: candidate.SalesPlanItemID, SourcingLineID: candidate.SourcingLineID, ProcurementPlanItemID: candidate.ProcurementPlanItemID, SupplierQuoteLineID: candidate.SupplierQuoteLineID, ProductName: candidate.ProductName, ConfirmedQty: candidate.SpiQuotedQty, UomCode: candidate.UomCode, CustomerCurrency: candidate.CustomerCurrency, CustomerUnitPrice: candidate.SpiCustomerUnitPrice, PromisedDeliveryDate: candidate.PromisedDeliveryDate, LineNote: candidate.LineNote, SupplierID: candidate.SupplierID, SupplierName: candidate.SupplierName, FactoryID: candidate.FactoryID, FactoryName: candidate.FactoryName, ShipmentGroupKey: groupKey})
+			selectionItemID, itemErr := q.CreateCustomerSelectionItem(ctx, store.CreateCustomerSelectionItemParams{TenantID: tenantID, SelectionID: selectionID, SalesPlanItemID: candidate.SalesPlanItemID, SourcingLineID: candidate.SourcingLineID, ProcurementPlanItemID: candidate.ProcurementPlanItemID, SupplierQuoteLineID: candidate.SupplierQuoteLineID, ProductName: candidate.ProductName, ConfirmedQty: candidate.SpiQuotedQty, UomCode: candidate.UomCode, CustomerCurrency: candidate.CustomerCurrency, CustomerUnitPrice: candidate.SpiCustomerUnitPrice, PromisedDeliveryDate: candidate.PromisedDeliveryDate, LineNote: candidate.LineNote, SupplierID: candidate.SupplierID, SupplierName: candidate.SupplierName, FactoryID: candidate.FactoryID, FactoryName: candidate.FactoryName, ShipmentGroupKey: groupKey, CustomerManagedShipping: customerManagedGroups[groupKey]})
 			if itemErr != nil {
 				return itemErr
 			}
 			selectionItemIDsByGroup[groupKey] = append(selectionItemIDsByGroup[groupKey], selectionItemID)
-			reason := "客户已确认该方案，请复核最终价格、可供数量与交期"
+			reason := "客户意向选择了该方案，请复核最终价格、可供数量与交期"
 			procurementReworkID, reworkErr := q.CreateProcurementReworkRequest(ctx, store.CreateProcurementReworkRequestParams{TenantID: tenantID, CaseID: in.CaseID, PlanID: plan.ProcurementPlanID, SourcingLineID: candidate.SourcingLineID, SupplierQuoteLineID: candidate.SupplierQuoteLineID, RequestType: "REQUOTE", ScopeType: "QUOTE", AssignedBuyerID: candidate.BuyerID, AssignedBuyerName: candidate.BuyerName, SupplierID: candidate.SupplierID, SupplierName: candidate.SupplierName, ProductName: candidate.ProductName, Reason: reason, CreatedBy: op.ID, CreatedByName: op.Name})
 			if reworkErr != nil {
 				return reworkErr
@@ -198,7 +231,7 @@ func (s *Service) ConfirmCustomerSelection(ctx context.Context, tenantID int64, 
 					productNames = append(productNames, candidate.ProductName)
 				}
 			}
-			shippingReworkID, shippingErr := q.CreateShippingRework(ctx, store.CreateShippingReworkParams{TenantID: tenantID, CaseID: in.CaseID, SalesPlanID: in.SalesPlanID, SourcingLineID: firstLine.SourcingLineID, ShippingOptionLineID: firstLine.ShippingOptionLineID, RequestType: "REQUOTE", ScopeType: "QUOTE", AssignedShippingID: shipping.ShippingEmployeeID, AssignedShippingName: shipping.ShippingEmployeeName, CarrierForwarder: shipping.CarrierForwarder, ProductName: strings.Join(productNames, "、"), Reason: "客户已确认该货运批次，请复核最终运费、开船日与到港日", CreatedBy: op.ID, CreatedByName: op.Name})
+			shippingReworkID, shippingErr := q.CreateShippingRework(ctx, store.CreateShippingReworkParams{TenantID: tenantID, CaseID: in.CaseID, SalesPlanID: in.SalesPlanID, SourcingLineID: firstLine.SourcingLineID, ShippingOptionLineID: firstLine.ShippingOptionLineID, RequestType: "REQUOTE", ScopeType: "QUOTE", AssignedShippingID: shipping.ShippingEmployeeID, AssignedShippingName: shipping.ShippingEmployeeName, CarrierForwarder: shipping.CarrierForwarder, ProductName: strings.Join(productNames, "、"), Reason: "客户意向选择了该货运批次，请复核最终运费、开船日与到港日", CreatedBy: op.ID, CreatedByName: op.Name})
 			if shippingErr != nil {
 				return shippingErr
 			}
@@ -207,7 +240,7 @@ func (s *Service) ConfirmCustomerSelection(ctx context.Context, tenantID int64, 
 			}
 		}
 		after, _ := json.Marshal(map[string]any{"selectionId": selectionID, "salesPlanId": in.SalesPlanID, "selectedProducts": len(candidates)})
-		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: in.CaseID, Section: "CUSTOMER_SELECTION", Action: "FINAL_SELECTION_CONFIRMED", EntityID: selectionID, Summary: "销售登记客户最终选择并发起最终复询", BeforeJson: []byte(`{}`), AfterJson: after, Reason: in.ConfirmationNote, OperatorID: op.ID, OperatorName: op.Name})
+		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: in.CaseID, Section: "CUSTOMER_SELECTION", Action: "CUSTOMER_INTENT_RECORDED", EntityID: selectionID, Summary: "销售登记客户意向并发起最终复询", BeforeJson: []byte(`{}`), AfterJson: after, Reason: in.ConfirmationNote, OperatorID: op.ID, OperatorName: op.Name})
 	})
 	if err != nil {
 		return CustomerSelectionView{}, err
@@ -258,7 +291,131 @@ func (s *Service) ListCustomerSelections(ctx context.Context, tenantID, caseID i
 		if taskErr != nil {
 			return nil, taskErr
 		}
+		// Selections completed before migration 00048 only contain a free-text
+		// resolution. Present them as historical/invalid instead of inviting
+		// Sales to confirm a customer decision from incomplete final data.
+		if header.Status == "AWAITING_CUSTOMER_CONFIRMATION" && !structuredFinalRechecksComplete(tasks) {
+			header.Status = "INVALIDATED"
+			header.InvalidatedReason = "流程升级：原复询缺少结构化最终结果，请重新登记客户意向"
+		}
 		out = append(out, CustomerSelectionView{Header: header, Items: items, Shipments: shipments, Tasks: tasks})
 	}
 	return out, nil
+}
+
+func (s *Service) DecideCustomerSelection(ctx context.Context, tenantID int64, in DecideCustomerSelectionInput, op Operator) (CustomerSelectionView, error) {
+	in.CustomerContact, in.DecisionNote, in.DecidedAt = strings.TrimSpace(in.CustomerContact), strings.TrimSpace(in.DecisionNote), strings.TrimSpace(in.DecidedAt)
+	if in.CaseID == 0 || in.SelectionID == 0 || in.DecisionNote == "" || in.DecidedAt == "" {
+		return CustomerSelectionView{}, apierr.Invalid("SC_CUSTOMER_DECISION_REQUIRED", "请填写客户决定时间和说明")
+	}
+	if _, err := time.Parse(time.RFC3339, in.DecidedAt); err != nil {
+		return CustomerSelectionView{}, apierr.Invalid("SC_CUSTOMER_DECISION_TIME", "客户决定时间格式无效")
+	}
+	if _, err := s.requireResponsibleSales(ctx, tenantID, in.CaseID, op); err != nil {
+		return CustomerSelectionView{}, err
+	}
+	rows, err := s.ListCustomerSelections(ctx, tenantID, in.CaseID, op)
+	if err != nil {
+		return CustomerSelectionView{}, err
+	}
+	var current *CustomerSelectionView
+	for i := range rows {
+		if rows[i].Header.ID == in.SelectionID {
+			current = &rows[i]
+			break
+		}
+	}
+	if current == nil || current.Header.Status != "AWAITING_CUSTOMER_CONFIRMATION" {
+		return CustomerSelectionView{}, apierr.Conflict("SC_CUSTOMER_DECISION_STATE", "最终复询尚未全部完成或该意向已处理")
+	}
+	if !structuredFinalRechecksComplete(current.Tasks) {
+		return CustomerSelectionView{}, apierr.Conflict("SC_CUSTOMER_RECHECK_DATA", "最终复询资料不完整，请由原采购或船运报价人重新完成结构化复询")
+	}
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		if in.Accepted {
+			itemIDs, shipmentIDs := map[int64]bool{}, map[int64]bool{}
+			for _, item := range current.Items {
+				itemIDs[item.ID] = true
+			}
+			for _, shipment := range current.Shipments {
+				shipmentIDs[shipment.Header.ID] = true
+			}
+			if len(in.ItemPrices) != len(itemIDs) || len(in.ShipmentPrices) != len(shipmentIDs) {
+				return apierr.Invalid("SC_CUSTOMER_FINAL_PRICE_REQUIRED", "请填写全部入选产品单价和船运批次运费")
+			}
+			for _, price := range in.ItemPrices {
+				price.Currency = strings.ToUpper(strings.TrimSpace(price.Currency))
+				if !itemIDs[price.SelectionItemID] || len(price.Currency) != 3 || !positiveDecimal(price.UnitPrice) {
+					return apierr.Invalid("SC_CUSTOMER_FINAL_ITEM_PRICE", "最终对客产品价格无效")
+				}
+				if err := q.SetFinalCustomerItemPrice(ctx, store.SetFinalCustomerItemPriceParams{TenantID: tenantID, SelectionID: in.SelectionID, FinalCustomerCurrency: &price.Currency, FinalCustomerUnitPrice: price.UnitPrice, ID: price.SelectionItemID}); err != nil {
+					return err
+				}
+			}
+			for _, price := range in.ShipmentPrices {
+				price.Currency = strings.ToUpper(strings.TrimSpace(price.Currency))
+				if !shipmentIDs[price.SelectionShipmentID] || len(price.Currency) != 3 || !positiveDecimal(price.FreightAmount) {
+					return apierr.Invalid("SC_CUSTOMER_FINAL_SHIPPING_PRICE", "最终对客运费无效")
+				}
+				if err := q.SetFinalCustomerShipmentPrice(ctx, store.SetFinalCustomerShipmentPriceParams{TenantID: tenantID, SelectionID: in.SelectionID, FinalCustomerCurrency: &price.Currency, FinalCustomerFreightAmount: price.FreightAmount, ID: price.SelectionShipmentID}); err != nil {
+					return err
+				}
+			}
+			count, updateErr := q.AcceptCustomerSelection(ctx, store.AcceptCustomerSelectionParams{CustomerContact: in.CustomerContact, CustomerDecidedAt: in.DecidedAt, DecisionNote: in.DecisionNote, TenantID: tenantID, ID: in.SelectionID})
+			if updateErr != nil {
+				return updateErr
+			}
+			if count != 1 {
+				return apierr.Conflict("SC_CUSTOMER_DECISION_STATE", "客户意向状态已经变化")
+			}
+		} else {
+			count, updateErr := q.RejectCustomerSelection(ctx, store.RejectCustomerSelectionParams{CustomerContact: in.CustomerContact, CustomerDecidedAt: in.DecidedAt, DecisionNote: in.DecisionNote, TenantID: tenantID, ID: in.SelectionID})
+			if updateErr != nil {
+				return updateErr
+			}
+			if count != 1 {
+				return apierr.Conflict("SC_CUSTOMER_DECISION_STATE", "客户意向状态已经变化")
+			}
+		}
+		action, summary := "CUSTOMER_FINAL_REJECTED", "销售登记客户不接受最终复询结果"
+		if in.Accepted {
+			action, summary = "CUSTOMER_FINAL_CONFIRMED", "销售登记客户接受最终复询结果"
+		}
+		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: in.CaseID, Section: "CUSTOMER_SELECTION", Action: action, EntityID: in.SelectionID, Summary: summary, BeforeJson: []byte(`{}`), AfterJson: []byte(`{}`), Reason: in.DecisionNote, OperatorID: op.ID, OperatorName: op.Name})
+	})
+	if err != nil {
+		return CustomerSelectionView{}, err
+	}
+	s.nudge(ctx, tenantID)
+	rows, err = s.ListCustomerSelections(ctx, tenantID, in.CaseID, op)
+	if err != nil {
+		return CustomerSelectionView{}, err
+	}
+	for _, row := range rows {
+		if row.Header.ID == in.SelectionID {
+			return row, nil
+		}
+	}
+	return CustomerSelectionView{}, apierr.NotFound("SC_CUSTOMER_SELECTION_NOT_FOUND", "客户意向不存在")
+}
+
+func structuredFinalRechecksComplete(tasks []store.ListFinalRecheckTasksRow) bool {
+	if len(tasks) == 0 {
+		return false
+	}
+	for _, task := range tasks {
+		valid := task.Status == "RESOLVED" && task.ResultNote != "" && task.ResolvedBy != 0 && len(task.FinalCurrency) == 3 && task.FinalValidUntil != ""
+		if task.TaskDomain == "PROCUREMENT" {
+			valid = valid && positiveDecimal(task.FinalUnitPrice) && positiveDecimal(task.FinalAvailableQty) && task.FinalLeadTime > 0 && task.FinalDeliveryDate != "" && task.FinalPaymentTerms != "" && task.FinalIncoterm != ""
+		} else if task.TaskDomain == "SHIPPING" {
+			valid = valid && positiveDecimal(task.FinalFreightAmount) && task.FinalEstimatedDeparture != "" && task.FinalEstimatedArrival != ""
+		} else {
+			valid = false
+		}
+		if !valid {
+			return false
+		}
+	}
+	return true
 }

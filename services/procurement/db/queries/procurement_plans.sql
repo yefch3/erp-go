@@ -119,12 +119,15 @@ VALUES(sqlc.arg(tenant_id),sqlc.arg(case_id),nullif(sqlc.arg(plan_id)::bigint,0)
 RETURNING id;
 
 -- name: ListProcurementReworkRequests :many
-SELECT id,case_id,coalesce(plan_id,0)::bigint AS plan_id,coalesce(sourcing_line_id,0)::bigint AS sourcing_line_id,
- coalesce(supplier_quote_line_id,0)::bigint AS supplier_quote_line_id,request_type,scope_type,
- coalesce(assigned_buyer_id,0)::bigint AS assigned_buyer_id,assigned_buyer_name,
- coalesce(supplier_id,0)::bigint AS supplier_id,supplier_name,product_name,reason,status,
- created_by_name,created_at,resolved_by_name,resolved_at,resolution_note
-FROM procurement_rework_requests WHERE tenant_id=$1 AND case_id=$2 ORDER BY created_at DESC;
+SELECT rr.id,rr.case_id,coalesce(rr.plan_id,0)::bigint AS plan_id,coalesce(rr.sourcing_line_id,0)::bigint AS sourcing_line_id,
+ coalesce(rr.supplier_quote_line_id,0)::bigint AS supplier_quote_line_id,rr.request_type,rr.scope_type,
+ coalesce(rr.assigned_buyer_id,0)::bigint AS assigned_buyer_id,rr.assigned_buyer_name,
+ coalesce(rr.supplier_id,0)::bigint AS supplier_id,rr.supplier_name,rr.product_name,rr.reason,rr.status,
+ rr.created_by_name,rr.created_at,rr.resolved_by_name,rr.resolved_at,rr.resolution_note,
+ coalesce(ft.id,0)::bigint AS final_recheck_task_id
+FROM procurement_rework_requests rr
+LEFT JOIN sourcing_final_recheck_tasks ft ON ft.tenant_id=rr.tenant_id AND ft.procurement_rework_id=rr.id
+WHERE rr.tenant_id=$1 AND rr.case_id=$2 ORDER BY rr.created_at DESC;
 
 -- name: GetProcurementReworkRequest :one
 SELECT id,case_id,coalesce(assigned_buyer_id,0)::bigint AS assigned_buyer_id,status

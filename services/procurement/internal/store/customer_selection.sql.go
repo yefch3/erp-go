@@ -11,10 +11,38 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const acceptCustomerSelection = `-- name: AcceptCustomerSelection :execrows
+UPDATE sourcing_customer_selections SET status='CUSTOMER_CONFIRMED',customer_contact=$1,
+ customer_decided_at=$2::text::timestamptz,customer_decision_note=$3,updated_at=now()
+WHERE tenant_id=$4 AND id=$5 AND status='AWAITING_CUSTOMER_CONFIRMATION'
+`
+
+type AcceptCustomerSelectionParams struct {
+	CustomerContact   string
+	CustomerDecidedAt string
+	DecisionNote      string
+	TenantID          int64
+	ID                int64
+}
+
+func (q *Queries) AcceptCustomerSelection(ctx context.Context, arg AcceptCustomerSelectionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, acceptCustomerSelection,
+		arg.CustomerContact,
+		arg.CustomerDecidedAt,
+		arg.DecisionNote,
+		arg.TenantID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const completeReadyCustomerSelections = `-- name: CompleteReadyCustomerSelections :exec
 UPDATE sourcing_customer_selections s
-SET status='FINAL_RECHECKED',final_rechecked_at=now(),updated_at=now()
-WHERE s.tenant_id=$1 AND s.status='FINAL_RECHECK_PENDING'
+SET status='AWAITING_CUSTOMER_CONFIRMATION',final_rechecked_at=now(),updated_at=now()
+WHERE s.tenant_id=$1 AND s.status='INTENT_RECHECK_PENDING'
   AND NOT EXISTS (SELECT 1 FROM sourcing_final_recheck_tasks t
                   WHERE t.tenant_id=s.tenant_id AND t.selection_id=s.id AND t.status='OPEN')
 `
@@ -31,7 +59,7 @@ VALUES($1,$2,$3,
  'CS-'||to_char(current_date,'YYYYMMDD')||'-'||lpad(nextval('sourcing_customer_selection_no_seq')::text,6,'0'),
  (SELECT coalesce(max(version_no),0)+1 FROM sourcing_customer_selections
   WHERE tenant_id=$1 AND case_id=$2),
- $4,'FINAL_RECHECK_PENDING',$5,
+ $4,'INTENT_RECHECK_PENDING',$5,
  $6,$7::text::timestamptz,
  $8,$9)
 RETURNING id
@@ -70,7 +98,7 @@ const createCustomerSelectionItem = `-- name: CreateCustomerSelectionItem :one
 INSERT INTO sourcing_customer_selection_items(tenant_id,selection_id,sales_plan_item_id,sourcing_line_id,
  procurement_plan_item_id,supplier_quote_line_id,shipping_plan_item_id,shipping_option_line_id,
  product_name,confirmed_qty,uom_code,customer_currency,customer_unit_price,promised_delivery_date,line_note,
- supplier_id,supplier_name,factory_id,factory_name,shipment_group_key)
+ supplier_id,supplier_name,factory_id,factory_name,shipment_group_key,customer_managed_shipping)
 VALUES($1,$2,$3,$4,
  $5,$6,
  NULL,NULL,
@@ -78,29 +106,30 @@ VALUES($1,$2,$3,$4,
  $10,$11::text::numeric,
  nullif($12::text,'')::date,$13,
  $14,$15,$16,$17,
- $18)
+ $18,$19)
 RETURNING id
 `
 
 type CreateCustomerSelectionItemParams struct {
-	TenantID              int64
-	SelectionID           int64
-	SalesPlanItemID       int64
-	SourcingLineID        int64
-	ProcurementPlanItemID int64
-	SupplierQuoteLineID   int64
-	ProductName           string
-	ConfirmedQty          string
-	UomCode               string
-	CustomerCurrency      string
-	CustomerUnitPrice     string
-	PromisedDeliveryDate  string
-	LineNote              string
-	SupplierID            int64
-	SupplierName          string
-	FactoryID             int64
-	FactoryName           string
-	ShipmentGroupKey      string
+	TenantID                int64
+	SelectionID             int64
+	SalesPlanItemID         int64
+	SourcingLineID          int64
+	ProcurementPlanItemID   int64
+	SupplierQuoteLineID     int64
+	ProductName             string
+	ConfirmedQty            string
+	UomCode                 string
+	CustomerCurrency        string
+	CustomerUnitPrice       string
+	PromisedDeliveryDate    string
+	LineNote                string
+	SupplierID              int64
+	SupplierName            string
+	FactoryID               int64
+	FactoryName             string
+	ShipmentGroupKey        string
+	CustomerManagedShipping bool
 }
 
 func (q *Queries) CreateCustomerSelectionItem(ctx context.Context, arg CreateCustomerSelectionItemParams) (int64, error) {
@@ -123,6 +152,7 @@ func (q *Queries) CreateCustomerSelectionItem(ctx context.Context, arg CreateCus
 		arg.FactoryID,
 		arg.FactoryName,
 		arg.ShipmentGroupKey,
+		arg.CustomerManagedShipping,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -445,11 +475,43 @@ func (q *Queries) CustomerShipmentCandidateLines(ctx context.Context, arg Custom
 	return items, nil
 }
 
+const getFinalTaskByProcurementRework = `-- name: GetFinalTaskByProcurementRework :one
+SELECT id FROM sourcing_final_recheck_tasks WHERE tenant_id=$1 AND procurement_rework_id=$2 AND status='OPEN'
+`
+
+type GetFinalTaskByProcurementReworkParams struct {
+	TenantID            int64
+	ProcurementReworkID *int64
+}
+
+func (q *Queries) GetFinalTaskByProcurementRework(ctx context.Context, arg GetFinalTaskByProcurementReworkParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getFinalTaskByProcurementRework, arg.TenantID, arg.ProcurementReworkID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getFinalTaskByShippingRework = `-- name: GetFinalTaskByShippingRework :one
+SELECT id FROM sourcing_final_recheck_tasks WHERE tenant_id=$1 AND shipping_rework_id=$2 AND status='OPEN'
+`
+
+type GetFinalTaskByShippingReworkParams struct {
+	TenantID         int64
+	ShippingReworkID *int64
+}
+
+func (q *Queries) GetFinalTaskByShippingRework(ctx context.Context, arg GetFinalTaskByShippingReworkParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getFinalTaskByShippingRework, arg.TenantID, arg.ShippingReworkID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const invalidateActiveCustomerSelections = `-- name: InvalidateActiveCustomerSelections :exec
 UPDATE sourcing_customer_selections
 SET status='INVALIDATED',invalidated_at=now(),invalidated_reason=$1,updated_at=now()
 WHERE tenant_id=$2 AND case_id=$3
-  AND status IN ('FINAL_RECHECK_PENDING','FINAL_RECHECKED')
+  AND status IN ('INTENT_RECHECK_PENDING','AWAITING_CUSTOMER_CONFIRMATION','CUSTOMER_CONFIRMED')
 `
 
 type InvalidateActiveCustomerSelectionsParams struct {
@@ -470,7 +532,7 @@ SET status='INVALIDATED',invalidated_at=now(),
 FROM sourcing_sales_plans sp
 WHERE s.tenant_id=$1 AND s.case_id=$2
   AND sp.tenant_id=s.tenant_id AND sp.id=s.sales_plan_id
-  AND s.status IN ('FINAL_RECHECK_PENDING','FINAL_RECHECKED')
+  AND s.status IN ('INTENT_RECHECK_PENDING','AWAITING_CUSTOMER_CONFIRMATION','CUSTOMER_CONFIRMED')
   AND sp.valid_until<current_date
 `
 
@@ -506,7 +568,9 @@ SELECT id,sales_plan_item_id,sourcing_line_id,procurement_plan_item_id,supplier_
  coalesce(shipping_option_line_id,0)::bigint AS shipping_option_line_id,
  product_name,confirmed_qty::text,uom_code,customer_currency,customer_unit_price::text,
  coalesce(promised_delivery_date::text,'')::text AS promised_delivery_date,line_note,
- supplier_id,supplier_name,factory_id,factory_name,shipment_group_key
+ supplier_id,supplier_name,factory_id,factory_name,shipment_group_key,customer_managed_shipping,
+ coalesce(final_customer_currency,'')::text AS final_customer_currency,
+ coalesce(final_customer_unit_price::text,'')::text AS final_customer_unit_price
 FROM sourcing_customer_selection_items WHERE tenant_id=$1 AND selection_id=$2 ORDER BY id
 `
 
@@ -516,25 +580,28 @@ type ListCustomerSelectionItemsParams struct {
 }
 
 type ListCustomerSelectionItemsRow struct {
-	ID                    int64
-	SalesPlanItemID       int64
-	SourcingLineID        int64
-	ProcurementPlanItemID int64
-	SupplierQuoteLineID   int64
-	ShippingPlanItemID    int64
-	ShippingOptionLineID  int64
-	ProductName           string
-	ConfirmedQty          string
-	UomCode               string
-	CustomerCurrency      string
-	CustomerUnitPrice     string
-	PromisedDeliveryDate  string
-	LineNote              string
-	SupplierID            int64
-	SupplierName          string
-	FactoryID             int64
-	FactoryName           string
-	ShipmentGroupKey      string
+	ID                      int64
+	SalesPlanItemID         int64
+	SourcingLineID          int64
+	ProcurementPlanItemID   int64
+	SupplierQuoteLineID     int64
+	ShippingPlanItemID      int64
+	ShippingOptionLineID    int64
+	ProductName             string
+	ConfirmedQty            string
+	UomCode                 string
+	CustomerCurrency        string
+	CustomerUnitPrice       string
+	PromisedDeliveryDate    string
+	LineNote                string
+	SupplierID              int64
+	SupplierName            string
+	FactoryID               int64
+	FactoryName             string
+	ShipmentGroupKey        string
+	CustomerManagedShipping bool
+	FinalCustomerCurrency   string
+	FinalCustomerUnitPrice  string
 }
 
 func (q *Queries) ListCustomerSelectionItems(ctx context.Context, arg ListCustomerSelectionItemsParams) ([]ListCustomerSelectionItemsRow, error) {
@@ -566,6 +633,9 @@ func (q *Queries) ListCustomerSelectionItems(ctx context.Context, arg ListCustom
 			&i.FactoryID,
 			&i.FactoryName,
 			&i.ShipmentGroupKey,
+			&i.CustomerManagedShipping,
+			&i.FinalCustomerCurrency,
+			&i.FinalCustomerUnitPrice,
 		); err != nil {
 			return nil, err
 		}
@@ -613,7 +683,9 @@ SELECT id,shipment_group_key,sales_shipping_option_id,shipping_option_id,carrier
  customer_freight_amount::text,charge_basis,port_of_loading,port_of_discharge,
  coalesce(estimated_departure::text,'')::text AS estimated_departure,
  coalesce(estimated_arrival::text,'')::text AS estimated_arrival,
- coalesce(valid_until::text,'')::text AS valid_until,customer_note
+ coalesce(valid_until::text,'')::text AS valid_until,customer_note,
+ coalesce(final_customer_currency,'')::text AS final_customer_currency,
+ coalesce(final_customer_freight_amount::text,'')::text AS final_customer_freight_amount
 FROM sourcing_customer_selection_shipments
 WHERE tenant_id=$1 AND selection_id=$2 ORDER BY id
 `
@@ -624,23 +696,25 @@ type ListCustomerSelectionShipmentsParams struct {
 }
 
 type ListCustomerSelectionShipmentsRow struct {
-	ID                    int64
-	ShipmentGroupKey      string
-	SalesShippingOptionID int64
-	ShippingOptionID      int64
-	CarrierForwarder      string
-	ServiceOptionName     string
-	ShippingEmployeeID    int64
-	ShippingEmployeeName  string
-	CustomerCurrency      string
-	CustomerFreightAmount string
-	ChargeBasis           string
-	PortOfLoading         string
-	PortOfDischarge       string
-	EstimatedDeparture    string
-	EstimatedArrival      string
-	ValidUntil            string
-	CustomerNote          string
+	ID                         int64
+	ShipmentGroupKey           string
+	SalesShippingOptionID      int64
+	ShippingOptionID           int64
+	CarrierForwarder           string
+	ServiceOptionName          string
+	ShippingEmployeeID         int64
+	ShippingEmployeeName       string
+	CustomerCurrency           string
+	CustomerFreightAmount      string
+	ChargeBasis                string
+	PortOfLoading              string
+	PortOfDischarge            string
+	EstimatedDeparture         string
+	EstimatedArrival           string
+	ValidUntil                 string
+	CustomerNote               string
+	FinalCustomerCurrency      string
+	FinalCustomerFreightAmount string
 }
 
 func (q *Queries) ListCustomerSelectionShipments(ctx context.Context, arg ListCustomerSelectionShipmentsParams) ([]ListCustomerSelectionShipmentsRow, error) {
@@ -670,6 +744,8 @@ func (q *Queries) ListCustomerSelectionShipments(ctx context.Context, arg ListCu
 			&i.EstimatedArrival,
 			&i.ValidUntil,
 			&i.CustomerNote,
+			&i.FinalCustomerCurrency,
+			&i.FinalCustomerFreightAmount,
 		); err != nil {
 			return nil, err
 		}
@@ -685,6 +761,7 @@ const listCustomerSelections = `-- name: ListCustomerSelections :many
 SELECT id,case_id,sales_plan_id,selection_no,version_no,requirement_version_no,status,
  customer_contact,confirmation_note,customer_confirmed_at,created_by,created_by_name,created_at,
  coalesce(final_rechecked_at::text,'')::text AS final_rechecked_at,
+ coalesce(customer_decided_at::text,'')::text AS customer_decided_at,customer_decision_note,
  coalesce(invalidated_at::text,'')::text AS invalidated_at,invalidated_reason
 FROM sourcing_customer_selections WHERE tenant_id=$1 AND case_id=$2 ORDER BY version_no DESC
 `
@@ -709,6 +786,8 @@ type ListCustomerSelectionsRow struct {
 	CreatedByName        string
 	CreatedAt            pgtype.Timestamptz
 	FinalRecheckedAt     string
+	CustomerDecidedAt    string
+	CustomerDecisionNote string
 	InvalidatedAt        string
 	InvalidatedReason    string
 }
@@ -737,6 +816,8 @@ func (q *Queries) ListCustomerSelections(ctx context.Context, arg ListCustomerSe
 			&i.CreatedByName,
 			&i.CreatedAt,
 			&i.FinalRecheckedAt,
+			&i.CustomerDecidedAt,
+			&i.CustomerDecisionNote,
 			&i.InvalidatedAt,
 			&i.InvalidatedReason,
 		); err != nil {
@@ -755,7 +836,17 @@ SELECT id,coalesce(selection_item_id,0)::bigint AS selection_item_id,
  coalesce(selection_shipment_id,0)::bigint AS selection_shipment_id,
  task_domain,coalesce(procurement_rework_id,0)::bigint AS procurement_rework_id,
  coalesce(shipping_rework_id,0)::bigint AS shipping_rework_id,status,
- coalesce(resolved_at::text,'')::text AS resolved_at
+ coalesce(resolved_at::text,'')::text AS resolved_at,result_note,
+ coalesce(resolved_by,0)::bigint AS resolved_by,resolved_by_name,
+ coalesce(final_currency,'')::text AS final_currency,
+ coalesce(final_unit_price::text,'')::text AS final_unit_price,
+ coalesce(final_available_qty::text,'')::text AS final_available_qty,
+ coalesce(final_lead_time,0)::int AS final_lead_time,
+ coalesce(final_delivery_date::text,'')::text AS final_delivery_date,
+ final_payment_terms,final_incoterm,coalesce(final_valid_until::text,'')::text AS final_valid_until,
+ coalesce(final_freight_amount::text,'')::text AS final_freight_amount,
+ coalesce(final_estimated_departure::text,'')::text AS final_estimated_departure,
+ coalesce(final_estimated_arrival::text,'')::text AS final_estimated_arrival
 FROM sourcing_final_recheck_tasks WHERE tenant_id=$1 AND selection_id=$2 ORDER BY selection_item_id,task_domain
 `
 
@@ -765,14 +856,28 @@ type ListFinalRecheckTasksParams struct {
 }
 
 type ListFinalRecheckTasksRow struct {
-	ID                  int64
-	SelectionItemID     int64
-	SelectionShipmentID int64
-	TaskDomain          string
-	ProcurementReworkID int64
-	ShippingReworkID    int64
-	Status              string
-	ResolvedAt          string
+	ID                      int64
+	SelectionItemID         int64
+	SelectionShipmentID     int64
+	TaskDomain              string
+	ProcurementReworkID     int64
+	ShippingReworkID        int64
+	Status                  string
+	ResolvedAt              string
+	ResultNote              string
+	ResolvedBy              int64
+	ResolvedByName          string
+	FinalCurrency           string
+	FinalUnitPrice          string
+	FinalAvailableQty       string
+	FinalLeadTime           int32
+	FinalDeliveryDate       string
+	FinalPaymentTerms       string
+	FinalIncoterm           string
+	FinalValidUntil         string
+	FinalFreightAmount      string
+	FinalEstimatedDeparture string
+	FinalEstimatedArrival   string
 }
 
 func (q *Queries) ListFinalRecheckTasks(ctx context.Context, arg ListFinalRecheckTasksParams) ([]ListFinalRecheckTasksRow, error) {
@@ -793,6 +898,20 @@ func (q *Queries) ListFinalRecheckTasks(ctx context.Context, arg ListFinalRechec
 			&i.ShippingReworkID,
 			&i.Status,
 			&i.ResolvedAt,
+			&i.ResultNote,
+			&i.ResolvedBy,
+			&i.ResolvedByName,
+			&i.FinalCurrency,
+			&i.FinalUnitPrice,
+			&i.FinalAvailableQty,
+			&i.FinalLeadTime,
+			&i.FinalDeliveryDate,
+			&i.FinalPaymentTerms,
+			&i.FinalIncoterm,
+			&i.FinalValidUntil,
+			&i.FinalFreightAmount,
+			&i.FinalEstimatedDeparture,
+			&i.FinalEstimatedArrival,
 		); err != nil {
 			return nil, err
 		}
@@ -804,32 +923,162 @@ func (q *Queries) ListFinalRecheckTasks(ctx context.Context, arg ListFinalRechec
 	return items, nil
 }
 
+const rejectCustomerSelection = `-- name: RejectCustomerSelection :execrows
+UPDATE sourcing_customer_selections SET status='CUSTOMER_REJECTED',customer_contact=$1,
+ customer_decided_at=$2::text::timestamptz,customer_decision_note=$3,updated_at=now()
+WHERE tenant_id=$4 AND id=$5 AND status='AWAITING_CUSTOMER_CONFIRMATION'
+`
+
+type RejectCustomerSelectionParams struct {
+	CustomerContact   string
+	CustomerDecidedAt string
+	DecisionNote      string
+	TenantID          int64
+	ID                int64
+}
+
+func (q *Queries) RejectCustomerSelection(ctx context.Context, arg RejectCustomerSelectionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, rejectCustomerSelection,
+		arg.CustomerContact,
+		arg.CustomerDecidedAt,
+		arg.DecisionNote,
+		arg.TenantID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const resolveFinalTaskByProcurementRework = `-- name: ResolveFinalTaskByProcurementRework :exec
-UPDATE sourcing_final_recheck_tasks SET status='RESOLVED',resolved_at=now()
-WHERE tenant_id=$1 AND procurement_rework_id=$2 AND status='OPEN'
+UPDATE sourcing_final_recheck_tasks SET status='RESOLVED',resolved_at=now(),result_note=$1,
+ resolved_by=$2,resolved_by_name=$3,final_currency=$4,
+ final_unit_price=$5::text::numeric,final_available_qty=$6::text::numeric,
+ final_lead_time=$7,final_delivery_date=$8::text::date,
+ final_payment_terms=$9,final_incoterm=$10,
+ final_valid_until=$11::text::date
+WHERE tenant_id=$12 AND procurement_rework_id=$13 AND status='OPEN'
 `
 
 type ResolveFinalTaskByProcurementReworkParams struct {
+	ResultNote          string
+	ResolvedBy          *int64
+	ResolvedByName      string
+	FinalCurrency       *string
+	FinalUnitPrice      string
+	FinalAvailableQty   string
+	FinalLeadTime       *int32
+	FinalDeliveryDate   string
+	FinalPaymentTerms   string
+	FinalIncoterm       string
+	FinalValidUntil     string
 	TenantID            int64
 	ProcurementReworkID *int64
 }
 
 func (q *Queries) ResolveFinalTaskByProcurementRework(ctx context.Context, arg ResolveFinalTaskByProcurementReworkParams) error {
-	_, err := q.db.Exec(ctx, resolveFinalTaskByProcurementRework, arg.TenantID, arg.ProcurementReworkID)
+	_, err := q.db.Exec(ctx, resolveFinalTaskByProcurementRework,
+		arg.ResultNote,
+		arg.ResolvedBy,
+		arg.ResolvedByName,
+		arg.FinalCurrency,
+		arg.FinalUnitPrice,
+		arg.FinalAvailableQty,
+		arg.FinalLeadTime,
+		arg.FinalDeliveryDate,
+		arg.FinalPaymentTerms,
+		arg.FinalIncoterm,
+		arg.FinalValidUntil,
+		arg.TenantID,
+		arg.ProcurementReworkID,
+	)
 	return err
 }
 
 const resolveFinalTaskByShippingRework = `-- name: ResolveFinalTaskByShippingRework :exec
-UPDATE sourcing_final_recheck_tasks SET status='RESOLVED',resolved_at=now()
-WHERE tenant_id=$1 AND shipping_rework_id=$2 AND status='OPEN'
+UPDATE sourcing_final_recheck_tasks SET status='RESOLVED',resolved_at=now(),result_note=$1,
+ resolved_by=$2,resolved_by_name=$3,final_currency=$4,
+ final_freight_amount=$5::text::numeric,
+ final_estimated_departure=$6::text::date,
+ final_estimated_arrival=$7::text::date,
+ final_valid_until=$8::text::date
+WHERE tenant_id=$9 AND shipping_rework_id=$10 AND status='OPEN'
 `
 
 type ResolveFinalTaskByShippingReworkParams struct {
-	TenantID         int64
-	ShippingReworkID *int64
+	ResultNote              string
+	ResolvedBy              *int64
+	ResolvedByName          string
+	FinalCurrency           *string
+	FinalFreightAmount      string
+	FinalEstimatedDeparture string
+	FinalEstimatedArrival   string
+	FinalValidUntil         string
+	TenantID                int64
+	ShippingReworkID        *int64
 }
 
 func (q *Queries) ResolveFinalTaskByShippingRework(ctx context.Context, arg ResolveFinalTaskByShippingReworkParams) error {
-	_, err := q.db.Exec(ctx, resolveFinalTaskByShippingRework, arg.TenantID, arg.ShippingReworkID)
+	_, err := q.db.Exec(ctx, resolveFinalTaskByShippingRework,
+		arg.ResultNote,
+		arg.ResolvedBy,
+		arg.ResolvedByName,
+		arg.FinalCurrency,
+		arg.FinalFreightAmount,
+		arg.FinalEstimatedDeparture,
+		arg.FinalEstimatedArrival,
+		arg.FinalValidUntil,
+		arg.TenantID,
+		arg.ShippingReworkID,
+	)
+	return err
+}
+
+const setFinalCustomerItemPrice = `-- name: SetFinalCustomerItemPrice :exec
+UPDATE sourcing_customer_selection_items SET final_customer_currency=$1,final_customer_unit_price=$2::text::numeric
+WHERE tenant_id=$3 AND selection_id=$4 AND id=$5
+`
+
+type SetFinalCustomerItemPriceParams struct {
+	FinalCustomerCurrency  *string
+	FinalCustomerUnitPrice string
+	TenantID               int64
+	SelectionID            int64
+	ID                     int64
+}
+
+func (q *Queries) SetFinalCustomerItemPrice(ctx context.Context, arg SetFinalCustomerItemPriceParams) error {
+	_, err := q.db.Exec(ctx, setFinalCustomerItemPrice,
+		arg.FinalCustomerCurrency,
+		arg.FinalCustomerUnitPrice,
+		arg.TenantID,
+		arg.SelectionID,
+		arg.ID,
+	)
+	return err
+}
+
+const setFinalCustomerShipmentPrice = `-- name: SetFinalCustomerShipmentPrice :exec
+UPDATE sourcing_customer_selection_shipments SET final_customer_currency=$1,final_customer_freight_amount=$2::text::numeric
+WHERE tenant_id=$3 AND selection_id=$4 AND id=$5
+`
+
+type SetFinalCustomerShipmentPriceParams struct {
+	FinalCustomerCurrency      *string
+	FinalCustomerFreightAmount string
+	TenantID                   int64
+	SelectionID                int64
+	ID                         int64
+}
+
+func (q *Queries) SetFinalCustomerShipmentPrice(ctx context.Context, arg SetFinalCustomerShipmentPriceParams) error {
+	_, err := q.db.Exec(ctx, setFinalCustomerShipmentPrice,
+		arg.FinalCustomerCurrency,
+		arg.FinalCustomerFreightAmount,
+		arg.TenantID,
+		arg.SelectionID,
+		arg.ID,
+	)
 	return err
 }

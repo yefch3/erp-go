@@ -147,7 +147,7 @@ func TestT7T8SalesNegotiationCustomerSelectionAndFinalRecheck(t *testing.T) {
 		t.Fatalf("incompatible destination error=%v", badErr)
 	}
 	selection, err := svc.ConfirmCustomerSelection(ctx, tenantID, ConfirmCustomerSelectionInput{CaseID: caseID, SalesPlanID: plan2.Header.ID, SalesPlanItemIDs: []int64{plan2.Items[0].ID}, ShipmentChoices: []CustomerShipmentChoiceInput{{ShipmentGroupKey: groupKey, SalesShippingOptionID: compatibleSalesShippingID}}, CustomerContact: "客户联系人", ConfirmationNote: "客户确认该产品和船运", CustomerConfirmedAt: "2026-08-31T10:00:00Z"}, sales)
-	if err != nil || selection.Header.Status != "FINAL_RECHECK_PENDING" || len(selection.Items) != 1 || len(selection.Shipments) != 1 || len(selection.Tasks) != 2 {
+	if err != nil || selection.Header.Status != "INTENT_RECHECK_PENDING" || len(selection.Items) != 1 || len(selection.Shipments) != 1 || len(selection.Tasks) != 2 {
 		t.Fatalf("customer selection=%+v err=%v", selection, err)
 	}
 	var finalProcurementReworkID, finalShippingReworkID int64
@@ -162,19 +162,35 @@ func TestT7T8SalesNegotiationCustomerSelectionAndFinalRecheck(t *testing.T) {
 	if finalProcurementReworkID == 0 || finalShippingReworkID == 0 {
 		t.Fatalf("missing final recheck links: %+v", selection.Tasks)
 	}
-	if err = svc.ResolveProcurementRework(ctx, tenantID, finalProcurementReworkID, "最终价格与交期已确认", buyer); err != nil {
+	if err = svc.ResolveProcurementRework(ctx, tenantID, finalProcurementReworkID, ProcurementReworkResolution{
+		Note: "最终价格与交期已确认", Currency: "USD", UnitPrice: "2", AvailableQty: "20",
+		LeadTime: 5, DeliveryDate: "2026-09-05", PaymentTerms: "T/T", Incoterm: "FOB", ValidUntil: "2026-09-03",
+	}, buyer); err != nil {
 		t.Fatal(err)
 	}
 	selections, err := svc.ListCustomerSelections(ctx, tenantID, caseID, sales)
-	if err != nil || selections[0].Header.Status != "FINAL_RECHECK_PENDING" {
+	if err != nil || selections[0].Header.Status != "INTENT_RECHECK_PENDING" {
 		t.Fatalf("selection should wait for shipping: %+v err=%v", selections, err)
 	}
-	if err = svc.ResolveShippingRework(ctx, tenantID, finalShippingReworkID, "最终船期与运费已确认", shipping); err != nil {
+	if err = svc.ResolveShippingRework(ctx, tenantID, finalShippingReworkID, ShippingReworkResolution{
+		Note: "最终船期与运费已确认", Currency: "USD", FreightAmount: "200",
+		EstimatedDeparture: "2026-09-01", EstimatedArrival: "2026-09-20", ValidUntil: "2026-09-03",
+	}, shipping); err != nil {
 		t.Fatal(err)
 	}
 	selections, err = svc.ListCustomerSelections(ctx, tenantID, caseID, sales)
-	if err != nil || selections[0].Header.Status != "FINAL_RECHECKED" {
-		t.Fatalf("selection should be final rechecked: %+v err=%v", selections, err)
+	if err != nil || selections[0].Header.Status != "AWAITING_CUSTOMER_CONFIRMATION" {
+		t.Fatalf("selection should await customer confirmation: %+v err=%v", selections, err)
+	}
+	selection = selections[0]
+	accepted, err := svc.DecideCustomerSelection(ctx, tenantID, DecideCustomerSelectionInput{
+		CaseID: caseID, SelectionID: selection.Header.ID, Accepted: true,
+		CustomerContact: "客户联系人", DecisionNote: "客户接受最终价格和船期", DecidedAt: "2026-09-01T12:00:00Z",
+		ItemPrices:     []FinalCustomerItemPriceInput{{SelectionItemID: selection.Items[0].ID, Currency: "USD", UnitPrice: "12"}},
+		ShipmentPrices: []FinalCustomerShipmentPriceInput{{SelectionShipmentID: selection.Shipments[0].Header.ID, Currency: "USD", FreightAmount: "260"}},
+	}, sales)
+	if err != nil || accepted.Header.Status != "CUSTOMER_CONFIRMED" {
+		t.Fatalf("selection should be customer confirmed: %+v err=%v", accepted, err)
 	}
 
 	feedback, err := svc.AddCustomerFeedback(ctx, tenantID, CustomerFeedbackInput{CaseID: caseID, SalesPlanID: plan2.Header.ID, ContactName: "客户联系人", Channel: "PHONE", Result: "REQUOTE_REQUIRED", Summary: "希望再降低运费", ContactedAt: "2026-08-30T12:00:00Z"}, sales)
@@ -193,10 +209,10 @@ func TestT7T8SalesNegotiationCustomerSelectionAndFinalRecheck(t *testing.T) {
 	if err != nil || len(tasks) != 1 || tasks[0].CaseNo == "" {
 		t.Fatalf("shipping tasks=%+v err=%v", tasks, err)
 	}
-	if err = svc.ResolveShippingRework(ctx, tenantID, shippingRework.ID, "已更新报价", shippingManager); err == nil || !strings.Contains(err.Error(), "SC_SHIPPING_REWORK_ASSIGNEE") {
+	if err = svc.ResolveShippingRework(ctx, tenantID, shippingRework.ID, ShippingReworkResolution{Note: "已更新报价"}, shippingManager); err == nil || !strings.Contains(err.Error(), "SC_SHIPPING_REWORK_ASSIGNEE") {
 		t.Fatalf("wrong shipping assignee error=%v", err)
 	}
-	if err = svc.ResolveShippingRework(ctx, tenantID, shippingRework.ID, "已更新报价", shipping); err != nil {
+	if err = svc.ResolveShippingRework(ctx, tenantID, shippingRework.ID, ShippingReworkResolution{Note: "已更新报价"}, shipping); err != nil {
 		t.Fatal(err)
 	}
 }

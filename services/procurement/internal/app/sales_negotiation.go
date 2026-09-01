@@ -58,6 +58,10 @@ type ShippingReworkInput struct {
 	RequestType, Reason                                       string
 }
 
+type ShippingReworkResolution struct {
+	Note, Currency, FreightAmount, EstimatedDeparture, EstimatedArrival, ValidUntil string
+}
+
 func (s *Service) requireResponsibleSales(ctx context.Context, tenantID, caseID int64, op Operator) (store.SalesNegotiationCaseRow, error) {
 	row, err := s.q.SalesNegotiationCase(ctx, store.SalesNegotiationCaseParams{TenantID: tenantID, ID: caseID})
 	if errors.Is(err, pgx.ErrNoRows) || err == nil && row.OwnerID != op.ID {
@@ -400,9 +404,9 @@ func (s *Service) ListMyShippingReworks(ctx context.Context, tenantID int64, op 
 	return s.q.ListMyShippingReworks(ctx, store.ListMyShippingReworksParams{TenantID: tenantID, EmployeeID: &op.ID})
 }
 
-func (s *Service) ResolveShippingRework(ctx context.Context, tenantID, id int64, note string, op Operator) error {
-	note = strings.TrimSpace(note)
-	if note == "" {
+func (s *Service) ResolveShippingRework(ctx context.Context, tenantID, id int64, in ShippingReworkResolution, op Operator) error {
+	in.Note = strings.TrimSpace(in.Note)
+	if in.Note == "" {
 		return apierr.Invalid("SC_SHIPPING_REWORK_RESULT", "请填写处理结果")
 	}
 	row, err := s.q.GetShippingRework(ctx, store.GetShippingReworkParams{TenantID: tenantID, ID: id})
@@ -412,21 +416,38 @@ func (s *Service) ResolveShippingRework(ctx context.Context, tenantID, id int64,
 	if row.AssignedShippingID != 0 && row.AssignedShippingID != op.ID {
 		return apierr.Permission("SC_SHIPPING_REWORK_ASSIGNEE", "该任务已指定给原船运报价人")
 	}
+	_, finalErr := s.q.GetFinalTaskByShippingRework(ctx, store.GetFinalTaskByShippingReworkParams{TenantID: tenantID, ShippingReworkID: &id})
+	isFinal := finalErr == nil
+	if finalErr != nil && !errors.Is(finalErr, pgx.ErrNoRows) {
+		return finalErr
+	}
+	if isFinal {
+		in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
+		if len(in.Currency) != 3 || !positiveDecimal(in.FreightAmount) || !validDate(in.EstimatedDeparture) || !validDate(in.EstimatedArrival) || !validDate(in.ValidUntil) {
+			return apierr.Invalid("SC_FINAL_SHIPPING_RESULT_REQUIRED", "请完整填写最终币种、运费、开船日、到港日和有效期")
+		}
+		if in.EstimatedDeparture > in.EstimatedArrival {
+			return apierr.Invalid("SC_FINAL_SHIPPING_SCHEDULE", "最终开船日不能晚于到港日")
+		}
+	}
 	return pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
-		count, resolveErr := q.ResolveShippingRework(ctx, store.ResolveShippingReworkParams{OperatorID: &op.ID, OperatorName: op.Name, ResolutionNote: note, TenantID: tenantID, ID: id})
+		count, resolveErr := q.ResolveShippingRework(ctx, store.ResolveShippingReworkParams{OperatorID: &op.ID, OperatorName: op.Name, ResolutionNote: in.Note, TenantID: tenantID, ID: id})
 		if resolveErr != nil {
 			return resolveErr
 		}
 		if count == 0 {
 			return apierr.Conflict("SC_SHIPPING_REWORK_RESOLVED", "船运退回任务已经处理")
 		}
-		if resolveErr = q.ResolveFinalTaskByShippingRework(ctx, store.ResolveFinalTaskByShippingReworkParams{TenantID: tenantID, ShippingReworkID: &id}); resolveErr != nil {
-			return resolveErr
+		if isFinal {
+			currency := in.Currency
+			if resolveErr = q.ResolveFinalTaskByShippingRework(ctx, store.ResolveFinalTaskByShippingReworkParams{ResultNote: in.Note, ResolvedBy: &op.ID, ResolvedByName: op.Name, FinalCurrency: &currency, FinalFreightAmount: in.FreightAmount, FinalEstimatedDeparture: in.EstimatedDeparture, FinalEstimatedArrival: in.EstimatedArrival, FinalValidUntil: in.ValidUntil, TenantID: tenantID, ShippingReworkID: &id}); resolveErr != nil {
+				return resolveErr
+			}
 		}
 		if resolveErr = q.CompleteReadyCustomerSelections(ctx, tenantID); resolveErr != nil {
 			return resolveErr
 		}
-		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: row.CaseID, Section: "SALES_NEGOTIATION", Action: "SHIPPING_REWORK_RESOLVED", Summary: "船运人员完成销售退回任务", BeforeJson: []byte(`{}`), AfterJson: []byte(`{}`), Reason: note, OperatorID: op.ID, OperatorName: op.Name})
+		return q.CreateSourcingChange(ctx, store.CreateSourcingChangeParams{TenantID: tenantID, CaseID: row.CaseID, Section: "SALES_NEGOTIATION", Action: "SHIPPING_REWORK_RESOLVED", Summary: "船运人员完成销售退回任务", BeforeJson: []byte(`{}`), AfterJson: []byte(`{}`), Reason: in.Note, OperatorID: op.ID, OperatorName: op.Name})
 	})
 }

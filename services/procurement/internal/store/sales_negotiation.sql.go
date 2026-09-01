@@ -476,9 +476,10 @@ SELECT rr.id,rr.case_id,coalesce(rr.sales_plan_id,0)::bigint AS sales_plan_id,
  coalesce(rr.assigned_shipping_id,0)::bigint AS assigned_shipping_id,rr.assigned_shipping_name,
  rr.carrier_forwarder,rr.product_name,rr.reason,rr.status,rr.created_by,rr.created_by_name,rr.created_at,
  coalesce(rr.resolved_by,0)::bigint AS resolved_by,rr.resolved_by_name,rr.resolved_at,rr.resolution_note,
- sc.case_no,sc.title AS case_title
+ sc.case_no,sc.title AS case_title,coalesce(ft.id,0)::bigint AS final_recheck_task_id
 FROM sourcing_shipping_rework_requests rr
 JOIN sourcing_cases sc ON sc.tenant_id=rr.tenant_id AND sc.id=rr.case_id
+LEFT JOIN sourcing_final_recheck_tasks ft ON ft.tenant_id=rr.tenant_id AND ft.shipping_rework_id=rr.id
 WHERE rr.tenant_id=$1 AND rr.status='OPEN'
   AND (rr.assigned_shipping_id=$2 OR rr.assigned_shipping_id IS NULL)
 ORDER BY rr.created_at DESC
@@ -512,6 +513,7 @@ type ListMyShippingReworksRow struct {
 	ResolutionNote       string
 	CaseNo               string
 	CaseTitle            string
+	FinalRecheckTaskID   int64
 }
 
 func (q *Queries) ListMyShippingReworks(ctx context.Context, arg ListMyShippingReworksParams) ([]ListMyShippingReworksRow, error) {
@@ -546,6 +548,7 @@ func (q *Queries) ListMyShippingReworks(ctx context.Context, arg ListMyShippingR
 			&i.ResolutionNote,
 			&i.CaseNo,
 			&i.CaseTitle,
+			&i.FinalRecheckTaskID,
 		); err != nil {
 			return nil, err
 		}

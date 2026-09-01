@@ -134,3 +134,17 @@ func (s *Server) listCustomerSelections(w http.ResponseWriter, r *http.Request) 
 	}
 	s.writeProto(w, resp)
 }
+
+func (s *Server) decideCustomerSelection(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.DecideCustomerSelectionRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.CaseId = idFromPath(r)
+	resp, err := s.Sourcing.DecideCustomerSelection(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}

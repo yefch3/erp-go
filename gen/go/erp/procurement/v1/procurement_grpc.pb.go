@@ -66,6 +66,7 @@ const (
 	SourcingService_ResolveShippingRework_FullMethodName             = "/erp.procurement.v1.SourcingService/ResolveShippingRework"
 	SourcingService_ConfirmCustomerSelection_FullMethodName          = "/erp.procurement.v1.SourcingService/ConfirmCustomerSelection"
 	SourcingService_ListCustomerSelections_FullMethodName            = "/erp.procurement.v1.SourcingService/ListCustomerSelections"
+	SourcingService_DecideCustomerSelection_FullMethodName           = "/erp.procurement.v1.SourcingService/DecideCustomerSelection"
 	SourcingService_CreateCostScenario_FullMethodName                = "/erp.procurement.v1.SourcingService/CreateCostScenario"
 	SourcingService_ListCostScenarios_FullMethodName                 = "/erp.procurement.v1.SourcingService/ListCostScenarios"
 	SourcingService_GetCostScenario_FullMethodName                   = "/erp.procurement.v1.SourcingService/GetCostScenario"
@@ -133,6 +134,7 @@ type SourcingServiceClient interface {
 	ResolveShippingRework(ctx context.Context, in *ResolveShippingReworkRequest, opts ...grpc.CallOption) (*ResolveShippingReworkResponse, error)
 	ConfirmCustomerSelection(ctx context.Context, in *ConfirmCustomerSelectionRequest, opts ...grpc.CallOption) (*ConfirmCustomerSelectionResponse, error)
 	ListCustomerSelections(ctx context.Context, in *ListCustomerSelectionsRequest, opts ...grpc.CallOption) (*ListCustomerSelectionsResponse, error)
+	DecideCustomerSelection(ctx context.Context, in *DecideCustomerSelectionRequest, opts ...grpc.CallOption) (*DecideCustomerSelectionResponse, error)
 	CreateCostScenario(ctx context.Context, in *CreateCostScenarioRequest, opts ...grpc.CallOption) (*CreateCostScenarioResponse, error)
 	ListCostScenarios(ctx context.Context, in *ListCostScenariosRequest, opts ...grpc.CallOption) (*ListCostScenariosResponse, error)
 	GetCostScenario(ctx context.Context, in *GetCostScenarioRequest, opts ...grpc.CallOption) (*GetCostScenarioResponse, error)
@@ -625,6 +627,16 @@ func (c *sourcingServiceClient) ListCustomerSelections(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *sourcingServiceClient) DecideCustomerSelection(ctx context.Context, in *DecideCustomerSelectionRequest, opts ...grpc.CallOption) (*DecideCustomerSelectionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DecideCustomerSelectionResponse)
+	err := c.cc.Invoke(ctx, SourcingService_DecideCustomerSelection_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *sourcingServiceClient) CreateCostScenario(ctx context.Context, in *CreateCostScenarioRequest, opts ...grpc.CallOption) (*CreateCostScenarioResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateCostScenarioResponse)
@@ -780,6 +792,7 @@ type SourcingServiceServer interface {
 	ResolveShippingRework(context.Context, *ResolveShippingReworkRequest) (*ResolveShippingReworkResponse, error)
 	ConfirmCustomerSelection(context.Context, *ConfirmCustomerSelectionRequest) (*ConfirmCustomerSelectionResponse, error)
 	ListCustomerSelections(context.Context, *ListCustomerSelectionsRequest) (*ListCustomerSelectionsResponse, error)
+	DecideCustomerSelection(context.Context, *DecideCustomerSelectionRequest) (*DecideCustomerSelectionResponse, error)
 	CreateCostScenario(context.Context, *CreateCostScenarioRequest) (*CreateCostScenarioResponse, error)
 	ListCostScenarios(context.Context, *ListCostScenariosRequest) (*ListCostScenariosResponse, error)
 	GetCostScenario(context.Context, *GetCostScenarioRequest) (*GetCostScenarioResponse, error)
@@ -942,6 +955,9 @@ func (UnimplementedSourcingServiceServer) ConfirmCustomerSelection(context.Conte
 }
 func (UnimplementedSourcingServiceServer) ListCustomerSelections(context.Context, *ListCustomerSelectionsRequest) (*ListCustomerSelectionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListCustomerSelections not implemented")
+}
+func (UnimplementedSourcingServiceServer) DecideCustomerSelection(context.Context, *DecideCustomerSelectionRequest) (*DecideCustomerSelectionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DecideCustomerSelection not implemented")
 }
 func (UnimplementedSourcingServiceServer) CreateCostScenario(context.Context, *CreateCostScenarioRequest) (*CreateCostScenarioResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateCostScenario not implemented")
@@ -1840,6 +1856,24 @@ func _SourcingService_ListCustomerSelections_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SourcingService_DecideCustomerSelection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DecideCustomerSelectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).DecideCustomerSelection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_DecideCustomerSelection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).DecideCustomerSelection(ctx, req.(*DecideCustomerSelectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SourcingService_CreateCostScenario_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateCostScenarioRequest)
 	if err := dec(in); err != nil {
@@ -2214,6 +2248,10 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListCustomerSelections",
 			Handler:    _SourcingService_ListCustomerSelections_Handler,
+		},
+		{
+			MethodName: "DecideCustomerSelection",
+			Handler:    _SourcingService_DecideCustomerSelection_Handler,
 		},
 		{
 			MethodName: "CreateCostScenario",

@@ -124,10 +124,10 @@ VALUES ($1,$2,$3,1,20,'TON')`, tenantID, rfqID, lineID); err != nil {
 	if rework.AssignedBuyerID != buyerB.ID || rework.SupplierName != "供应商乙" || rework.SourcingLineID != lineA {
 		t.Fatalf("rework was not routed to original buyer/supplier/product: %+v", rework)
 	}
-	if err := svc.ResolveProcurementRework(ctx, tenantID, rework.ID, "错误人员处理", buyerA); err == nil || !strings.Contains(err.Error(), "SC_REWORK_ASSIGNEE_REQUIRED") {
+	if err := svc.ResolveProcurementRework(ctx, tenantID, rework.ID, ProcurementReworkResolution{Note: "错误人员处理"}, buyerA); err == nil || !strings.Contains(err.Error(), "SC_REWORK_ASSIGNEE_REQUIRED") {
 		t.Fatalf("wrong buyer resolve error = %v", err)
 	}
-	if err := svc.ResolveProcurementRework(ctx, tenantID, rework.ID, "已取得新价格并上传", buyerB); err != nil {
+	if err := svc.ResolveProcurementRework(ctx, tenantID, rework.ID, ProcurementReworkResolution{Note: "已取得新价格并上传"}, buyerB); err != nil {
 		t.Fatal(err)
 	}
 	_, err = svc.CreateProcurementPlan(ctx, tenantID, NewProcurementPlan{

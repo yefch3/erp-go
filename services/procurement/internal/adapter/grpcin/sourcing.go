@@ -459,7 +459,8 @@ func (h *SourcingHandler) ListProcurementReworks(ctx context.Context, req *prv1.
 }
 
 func (h *SourcingHandler) ResolveProcurementRework(ctx context.Context, req *prv1.ResolveProcurementReworkRequest) (*prv1.ResolveProcurementReworkResponse, error) {
-	if err := h.svc.ResolveProcurementRework(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetResolutionNote(), sourcingOperator(ctx)); err != nil {
+	in := app.ProcurementReworkResolution{Note: req.GetResolutionNote(), Currency: req.GetFinalCurrency(), UnitPrice: req.GetFinalUnitPrice(), AvailableQty: req.GetFinalAvailableQty(), LeadTime: req.GetFinalLeadTime(), DeliveryDate: req.GetFinalDeliveryDate(), PaymentTerms: req.GetFinalPaymentTerms(), Incoterm: req.GetFinalIncoterm(), ValidUntil: req.GetFinalValidUntil()}
+	if err := h.svc.ResolveProcurementRework(ctx, grpcx.TenantID(ctx), req.GetId(), in, sourcingOperator(ctx)); err != nil {
 		return nil, err
 	}
 	return &prv1.ResolveProcurementReworkResponse{}, nil
@@ -807,6 +808,7 @@ func procurementRework(row store.ListProcurementReworkRequestsRow) *prv1.Procure
 		SupplierId: row.SupplierID, SupplierName: row.SupplierName, ProductName: row.ProductName,
 		Reason: row.Reason, Status: row.Status, CreatedByName: row.CreatedByName, CreatedAt: ts(row.CreatedAt),
 		ResolvedByName: row.ResolvedByName, ResolvedAt: ts(row.ResolvedAt), ResolutionNote: row.ResolutionNote,
+		FinalRecheckTaskId: row.FinalRecheckTaskID,
 	}
 }
 
