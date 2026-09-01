@@ -14,46 +14,65 @@ import (
 // 智能转换的每月额度（计量第三步）。
 //
 // 00040 记下了用量，用量页回答了「这个月转了多少」。这里回答下一个问题：
-// **这家公司这个月还能转多少。**
+// **这个人这个月还能转多少。**
 //
 // 为什么需要：每一次转换都是我们真金白银付给模型厂的钱。在此之前一家客户
 // 公司想转多少次就转多少次——一个没有上限的成本口子，只要有人拿脚本循环
 // 点，账单就没有边界。额度不是为了限制客户，是为了让「这家公司一个月最多
 // 花我们多少」有一个能写进合同的数。
 //
-// 三条约定，都写在这一处：
+// 四条约定，都写在这一处：
 //
 //  1. **没设额度 = 不限。** 不给任何公司凭空安一个默认上限——一个我们没
 //     承诺过的数字突然开始拦人，比不拦更糟。
 //  2. **上限 0 = 一次都不许用。** 和「不限」是相反的两件事，所以「有没有
 //     设」和「设成几」分开表达，不用 0 兼职表示「不限」。
 //  3. **月份由数据库说了算。** 见 CurrentUsageMonth 的注释。
+//  4. **单位是「每人每月」，不是「全公司每月」**（2026-09-01 改的）。
+//
+// 第 4 条是一次口径反转，代价要写明白：**公司层面的成本上限没有了**。
+// 上一版那个数是「这家公司一个月最多花我们多少」，能写进合同；现在它是
+// 每人的，公司总量 = 这个数 × 人数，而人数会涨。
+//
+// 换来的是按人公平。改之前一个人跑几十次就把同事全挡在外面，而挡人的那句
+// 话说的是「本月智能转换额度已用完」——被挡的人根本不知道额度被谁用掉了，
+// 也做不了任何事。
 
-// ExcelQuota 是一家公司当下的额度状况，页面上那条百分比条要的就是这些。
+// ExcelQuota 是**一个人**当下的额度状况，页面上那条百分比条要的就是这些。
 type ExcelQuota struct {
 	// Limited 说明有没有上限。false 时 MonthlyRuns 没有意义。
+	//
+	// 上限本身仍然是按公司设的一个数（平台那边一家公司一行），只是那个数
+	// 的意思是「每人每月最多几次」。
 	Limited bool
-	// MonthlyRuns 是每月可以转换的次数上限。
+	// MonthlyRuns 是**每人**每月可以转换的次数上限。
 	MonthlyRuns int64
-	// UsedThisMonth 是本月已经发起的次数（含失败——失败也真的花了钱）。
+	// UsedThisMonth 是**这个人**本月已经发起的次数（含失败——失败也真的
+	// 花了钱）。
 	UsedThisMonth int64
 	// CurrentMonth 是数据库认定的当前月份 YYYY-MM。前端拿它和用户选的月份
 	// 比对：只有看着当月时，「还剩多少」才是一个活的事实。
 	CurrentMonth string
 }
 
-// Exhausted 说明这家公司这个月已经不能再转了。
+// Exhausted 说明这个人这个月已经不能再转了。
 func (q ExcelQuota) Exhausted() bool {
 	return q.Limited && q.UsedThisMonth >= q.MonthlyRuns
 }
 
-// ExcelQuotaFor 出这家公司当下的额度状况。
-func (s *Service) ExcelQuotaFor(ctx context.Context, tenantID int64) (ExcelQuota, error) {
+// ExcelQuotaFor 出**这个人**当下的额度状况。
+//
+// employeeID 不能省。省了的话这个函数就退回「按公司算」，而那正是这次要改
+// 掉的口径——两个参数长得都是 int64，传错了不报错，只是额度又变回全公司共用
+// 一份，然后一个人跑满就挡住所有同事。
+func (s *Service) ExcelQuotaFor(ctx context.Context, tenantID, employeeID int64) (ExcelQuota, error) {
 	month, err := s.q.CurrentUsageMonth(ctx)
 	if err != nil {
 		return ExcelQuota{}, err
 	}
-	used, err := s.q.CountExcelRunsThisMonth(ctx, tenantID)
+	used, err := s.q.CountExcelRunsThisMonth(ctx, store.CountExcelRunsThisMonthParams{
+		TenantID: tenantID, OwnerID: employeeID,
+	})
 	if err != nil {
 		return ExcelQuota{}, err
 	}
@@ -79,16 +98,18 @@ func (s *Service) ExcelQuotaFor(ctx context.Context, tenantID int64) (ExcelQuota
 // 越过上限一次。这是想清楚之后接受的：这套东西一个月几十到几百次，越过一
 // 两次不改变任何成本结论，而把额度判断塞进插入语句会让那条 SQL 变成没人
 // 敢改的样子，还换不回一句能给人看的错误话（「已用 200/200」）。
-func (s *Service) ensureExcelQuota(ctx context.Context, tenantID int64) error {
-	quota, err := s.ExcelQuotaFor(ctx, tenantID)
+func (s *Service) ensureExcelQuota(ctx context.Context, tenantID, employeeID int64) error {
+	quota, err := s.ExcelQuotaFor(ctx, tenantID, employeeID)
 	if err != nil {
 		return err
 	}
 	if !quota.Exhausted() {
 		return nil
 	}
+	// 「你本月」而不是「本月」：额度按人算之后，说成公司的会让被挡住的人
+	// 去问同事是不是用超了——而那和他没关系，他自己用满了。
 	return apierr.Invalid("MAIL_EXCEL_QUOTA_EXHAUSTED", fmt.Sprintf(
-		"本月智能转换额度已用完：已用 %d 次，上限 %d 次。下个月 1 号自动重置，需要提额请联系我们。",
+		"你本月的智能转换额度已用完：已用 %d 次，每人上限 %d 次。下个月 1 号自动重置，需要提额请联系我们。",
 		quota.UsedThisMonth, quota.MonthlyRuns))
 }
 
@@ -98,9 +119,15 @@ func (s *Service) ensureExcelQuota(ctx context.Context, tenantID int64) error {
 // 「还能转几次」，我们要知道的是「这个月花了多少」。两个口径都要，只是给
 // 的人不同。
 type TenantExcelQuota struct {
-	TenantID      int64
-	Limited       bool
-	MonthlyRuns   int64
+	TenantID int64
+	Limited  bool
+	// MonthlyRuns 是**每人**每月的上限（2026-09-01 起）。平台这边仍然一家
+	// 公司设一个数，只是那个数按人生效。
+	MonthlyRuns int64
+	// UsedThisMonth 是**这家公司所有人加起来**本月转了多少次。
+	//
+	// 它和上面那个上限不是一个量纲，所以平台页上别把两者摆成「已用 / 上限」
+	// ——那会被读成一个百分比，而那个百分比没有意义。它在这里的用处是成本。
 	UsedThisMonth int64
 	InputTokens   int64
 	OutputTokens  int64
@@ -164,6 +191,8 @@ func (s *Service) ListExcelQuotas(ctx context.Context) ([]TenantExcelQuota, stri
 }
 
 // SetExcelQuota 给一家公司定上限；limited=false 是恢复不限（删掉那一行）。
+//
+// monthlyRuns 的意思是「**每人**每月最多几次」，不是全公司的总量。
 //
 // 同样跨租户，同样只走平台运营那道门。
 func (s *Service) SetExcelQuota(ctx context.Context, tenantID int64, limited bool, monthlyRuns, operatorID int64) error {

@@ -22,13 +22,6 @@
         <strong class="metric-value">{{ totals.runs }}</strong>
         <span class="metric-hint">{{ t('excelUsage.runsHint', { ok: totals.succeeded, bad: totals.failed }) }}</span>
       </div>
-      <div class="metric">
-        <span class="metric-label">{{ t('excelUsage.tokens') }}</span>
-        <strong class="metric-value">{{ formatTokens(totals.inputTokens + totals.outputTokens) }}</strong>
-        <span class="metric-hint">
-          {{ t('excelUsage.tokensHint', { input: formatTokens(totals.inputTokens), output: formatTokens(totals.outputTokens) }) }}
-        </span>
-      </div>
       <!-- 额度。只在看着当月时给百分比：翻回七月问「还剩多少」是没有意义
            的，那个月已经过完了。当月与否由服务端给的月份说了算，不用浏览
            器的时钟去猜。 -->
@@ -96,12 +89,6 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('excelUsage.inputTokens')" width="140" align="right">
-          <template #default="{ row }"><span class="num">{{ formatTokens(row.inputTokens) }}</span></template>
-        </el-table-column>
-        <el-table-column :label="t('excelUsage.outputTokens')" width="140" align="right">
-          <template #default="{ row }"><span class="num">{{ formatTokens(row.outputTokens) }}</span></template>
-        </el-table-column>
         <template #empty>{{ t('excelUsage.empty') }}</template>
       </el-table>
     </section>
@@ -125,12 +112,20 @@ import {
 
 // 智能转换的用量账（计量）。
 //
-// 这是系统里唯一一处按次花真钱的地方。这一页要回答的就三句话：这个月转了
-// 多少次、烧了多少 token、本月额度还剩多少；以及分到每个人头上各是多少。
+// 这是系统里唯一一处按次花真钱的地方。这一页要回答的就两句话：这个月转了
+// 多少次、我本月的额度还剩多少；以及分到每个人头上各是多少次。
 //
-// **这里不出金额。** 服务端仍然算得出估算金额（token 数是事实，单价是配
-// 置），但那是我们看成本的口径，不是给用客户看的东西——用的人要知道的是
-// 「还能转几次」，不是「你花了我们多少钱」。要看金额去平台那一侧。
+// **这里不出金额，也不出 token。** 服务端两样都算得出（token 数是事实，
+// 单价是配置），接口也还在回 token 字段，但这一页一个都不显示：
+//
+//   · 金额是我们付给模型厂的钱，是平台那一侧的口径
+//   · token 是那笔钱的原料，对用的人同样没有意义——他能决定的是「还要不要
+//     再转一次」，而那个决定只看次数
+//
+// 两样都要看，去平台那一侧的「平台开户」页。
+//
+// 额度是**每人每月**的（2026-09-01 起）：这一页顶上那个百分比说的是你自己
+// 用了多少，不是全公司。
 const { t } = useI18n()
 
 interface Row {
@@ -140,8 +135,6 @@ interface Row {
   runs: string
   succeeded: string
   failed: string
-  inputTokens: string
-  outputTokens: string
 }
 
 const rows = ref<Row[]>([])
@@ -164,22 +157,14 @@ const headline = computed(() => {
 })
 
 const totals = computed(() => {
-  let runs = 0, succeeded = 0, failed = 0, inputTokens = 0, outputTokens = 0
+  let runs = 0, succeeded = 0, failed = 0
   for (const r of rows.value) {
     runs += Number(r.runs)
     succeeded += Number(r.succeeded)
     failed += Number(r.failed)
-    inputTokens += Number(r.inputTokens)
-    outputTokens += Number(r.outputTokens)
   }
-  return { runs, succeeded, failed, inputTokens, outputTokens }
+  return { runs, succeeded, failed }
 })
-
-function formatTokens(n: number | string): string {
-  const v = Number(n)
-  if (!Number.isFinite(v)) return String(n)
-  return v.toLocaleString()
-}
 
 // 首屏那次的月份是浏览器猜的（new Date() 是这台机器的时钟和时区）。服务端
 // 一答话就以它为准——这一页从头到尾的规矩是「月份由数据库说了算」，唯独初值
