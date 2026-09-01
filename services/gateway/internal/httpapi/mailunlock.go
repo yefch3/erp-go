@@ -333,55 +333,46 @@ func (s *Server) verifyMailbox(w http.ResponseWriter, r *http.Request) {
 	}
 	// **一次验证，这个人名下每个箱各发一把。**
 	//
-	// 这是「切过去不用重新输密码」和「退出一个一个退」两条要求的交汇处：
-	// 全发下来，切换就只是换一把令牌；一把一把发，退出才撤得掉一个而不
-	// 动别的。
+	// **一次验证只开一个箱：刚验过的那一个。**
 	//
-	// 有意为之的一点：拿**任何一个**箱的授权码验一次，全部箱都开了。
-	// 也就是说用私人邮箱的密码解锁，同时解开了公司箱的邮件。这条在
-	// 多信箱这套东西定方案时就定了——安全边界是「人」，不是「箱」。
-	boxes, err := s.Emails.ListMyMailboxes(r.Context(), &mailv1.ListMyMailboxesRequest{})
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
-	}
+	// 从前这里给这个人名下的**每个**箱都发一把。那是二期有意选的，为的是
+	// 「切过去不用重新输密码」，代价写在当时的注释里：拿任何一个箱的授权码
+	// 验一次，全部箱都开了——用私人邮箱的密码解锁，同时解开了公司箱的邮件。
+	//
+	// 2026-09-01 那条口径被推翻：安全边界是**箱**，不是人。触发它的场景很
+	// 具体——全部退出之后用 Google 登了私人 Gmail，公司的 263 箱跟着一起
+	// 开了，而那个箱从头到尾没人证明过自己有权限进。
+	//
+	// 代价是切到一个还没解锁过的箱会弹一次门。令牌是 12 小时滑动续期的，
+	// 所以「一个箱一天最多一次」，不是「每次切换都要输」。
 	type minted struct {
 		AccountID int64  `json:"accountId"`
 		Email     string `json:"email"`
 		Token     string `json:"token"`
 	}
-	out := make([]minted, 0, len(boxes.GetAccounts()))
+	out := make([]minted, 0, 1)
 	expires := 0
-	for _, b := range boxes.GetAccounts() {
-		tok, exp, err := s.Unlock.Grant(r.Context(), op.TenantID, op.EmployeeID, b.GetId())
+	token := ""
+	if id := resp.GetAccountId(); id > 0 {
+		tok, exp, err := s.Unlock.Grant(r.Context(), op.TenantID, op.EmployeeID, id)
 		if err != nil {
 			s.writeError(w, http.StatusInternalServerError, "MAIL_UNLOCK_STORE", "无法保存验证状态，请重试")
 			return
 		}
-		out = append(out, minted{AccountID: b.GetId(), Email: b.GetEmail(), Token: tok})
-		expires = exp
-	}
-	// 一个箱都没绑的人也要拿到一把——活动、草稿那几个不碰邮件内容的页面
-	// 要进得去。不限信箱，因为没有信箱可限。
-	token := ""
-	if len(out) == 0 {
+		out = append(out, minted{AccountID: id, Email: resp.GetEmail(), Token: tok})
+		token, expires = tok, exp
+	} else {
+		// 一个箱都没绑的人也要拿到一把——活动、草稿那几个不碰邮件内容的页面
+		// 要进得去。不限信箱，因为没有信箱可限。
+		//
+		// 「复验已绑的那个」（空地址空授权码）也落在这里：服务层答不出是哪个
+		// 箱时，给的就是这把不限箱的通行证，和改动之前一样。
 		tok, exp, err := s.Unlock.Grant(r.Context(), op.TenantID, op.EmployeeID, accountAll)
 		if err != nil {
 			s.writeError(w, http.StatusInternalServerError, "MAIL_UNLOCK_STORE", "无法保存验证状态，请重试")
 			return
 		}
 		token, expires = tok, exp
-	} else {
-		// token 这个字段给还没认识 tokens 的旧前端用：给它刚验过的那个箱
-		// 那一把，实在对不上就给第一把。部署顺序是后端先发前端后发，
-		// 这几分钟里旧前端不能被锁在外面。
-		token = out[0].Token
-		for _, m := range out {
-			if m.AccountID == resp.GetAccountId() {
-				token = m.Token
-				break
-			}
-		}
 	}
 	writeUnlockJSON(w, map[string]any{
 		"token":     token,

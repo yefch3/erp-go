@@ -116,11 +116,16 @@ describe('和网关的响应对得上', () => {
     expect(minted.slice(0, 400)).toContain('`json:"token"`')
   })
 
-  it('服务端是按信箱逐个发的，不是一个人一把', () => {
-    // 这一条钉的是口径本身：改回「一个人一把」的话，tokens 里就只会有一项，
-    // 而切换信箱要重新输密码——那正是这一整批改动要消掉的事。
-    expect(go).toContain('for _, b := range boxes.GetAccounts()')
-    expect(go).toContain('s.Unlock.Grant(r.Context(), op.TenantID, op.EmployeeID, b.GetId())')
+  it('一次验证只开刚验过的那一个箱', () => {
+    // 这一条钉的是 2026-09-01 定的口径：安全边界是**箱**，不是人。
+    //
+    // 从前是「验一次，名下每个箱都发一把」。触发推翻的场景很具体：全部退出
+    // 之后用 Google 登了私人 Gmail，公司的 263 箱跟着一起开了——而那个箱
+    // 从头到尾没人证明过自己有权限进。
+    //
+    // 改回去的样子就是那个循环重新出现，所以直接钉它不在。
+    expect(go).not.toContain('for _, b := range boxes.GetAccounts()')
+    expect(go).toContain('s.Unlock.Grant(r.Context(), op.TenantID, op.EmployeeID, id)')
   })
 })
 
