@@ -747,6 +747,19 @@ async function changePassword() {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* 给滚动条**永久留出**那条槽，即使这一屏不需要滚。
+     
+     auto 的滚动条是「内容长了才出现」，而它一出现就把可用宽度削掉十几像素，
+     右边整块跟着往左跳一下。在邮箱页上最容易撞见：一个箱有几十封信（有
+     滚动条），切到另一个只有七封（没有），列表的宽度就变了。
+     
+     **只在滚动条真的占宽度时有区别。** macOS 默认是覆盖式滚动条，宽度为
+     零，这条属性什么也不改；系统设置里选了「始终显示滚动条」的人（用鼠标
+     的人常这么设）才会看到那一跳。所以它是消掉一类偏移，不是消掉所有偏移。
+     
+     stable 而不是 overflow-y: scroll：后者会画出一条永远在那儿的灰槽，
+     .side 那边的注释专门为此选了 auto。stable 只占位，不画。 */
+  scrollbar-gutter: stable;
 }
 .side-brand {
   display: flex;

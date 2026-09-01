@@ -2859,13 +2859,22 @@ async function reauth() {
   try {
     // 跟着**当前这个箱**问。不带的话答的是默认箱：263 是密码箱、Gmail 是
     // Google 箱，问错了就会在密码门前弹去 Google，或者反过来。
-    const d = await get<{ account: { authKind: string } }>('/my-mail-account', {
-      accountId: currentAccount.value,
-    })
+    const d = await get<{ account: { authKind: string; email: string } }>(
+      '/my-mail-account',
+      { accountId: currentAccount.value },
+    )
     if (d.account?.authKind === 'OAUTH') {
       // Full-page departure, same as the gate: popups get blocked, and
       // Google's page is where the person should see themselves go.
-      const r = await get<{ url: string }>('/oauth/google/start')
+      //
+      // **带上地址。** 这是「某个箱的授权失效了，去续」那条路，网关那边
+      // 专门为它留了这个参数（见 startGoogleOAuth 的注释）。不带的话
+      // Google 弹出的账号选择器没有任何提示，而两个 Google 账号在那个
+      // 列表里长得一模一样——**挑错一个就会把另一个箱的凭据覆盖掉**，
+      // 而且是在人以为自己在修这个箱的时候。
+      const r = await get<{ url: string }>('/oauth/google/start', {
+        email: d.account?.email || '',
+      })
       window.location.href = r.url
       return
     }

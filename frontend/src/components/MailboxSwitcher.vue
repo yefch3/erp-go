@@ -42,47 +42,56 @@
         <span v-if="b.unboundAt" class="mbox-tag mbox-off">{{ t('mailGate.unbound') }}</span>
         <span v-else-if="b.isDefault" class="mbox-tag">{{ t('mailGate.isDefault') }}</span>
       </button>
-      <!-- 设为默认只在非默认的那几行上出现，而且要点两次才生效：它改的是
-           「以后写信从哪个地址发出去」，而客户看到的发件人跟着变。
+      <!-- 两个动作各占一格，**没有那个动作时留空格而不是不占位**。
+           不留的话每行尾部宽度不一样（默认那行没有「设为默认」），名字那一列
+           跟着长短不一，一排信箱看上去是歪的。
 
-           是 el-button 而不是一个透明的 span：span 上的透明度动画在触屏上
-           没有 hover 这回事，那颗看不见的星星会一直盖在那儿吃掉点击；
-           而且 span 用键盘 tab 不到。 -->
-      <!-- 解绑。**说清楚它不删邮件**——不说的话，一个只是想换邮箱的人会
-           因为怕丢记录而不敢点，然后一直留着一个不用的箱。 -->
-      <el-popconfirm
-        v-if="!b.unboundAt"
-        :title="t('mailGate.unbindConfirm', { email: b.email })"
-        width="280"
-        @confirm="unbind(b)"
-      >
-        <template #reference>
-          <el-button
-            link
-            class="mbox-star"
-            :aria-label="t('mailGate.unbind')"
-            :title="t('mailGate.unbind')"
-          >
-            ⏻
-          </el-button>
-        </template>
-      </el-popconfirm>
-      <el-popconfirm
-        v-if="!b.isDefault && !b.unboundAt"
-        :title="t('mailGate.setDefault')"
-        @confirm="setDefault(b)"
-      >
-        <template #reference>
-          <el-button
-            link
-            class="mbox-star"
-            :aria-label="t('mailGate.setDefault')"
-            :title="t('mailGate.setDefault')"
-          >
-            ☆
-          </el-button>
-        </template>
-      </el-popconfirm>
+           空格用 span 不用透明按钮：opacity:0 的按钮照样可点，在触屏上就是
+           一颗看不见的按钮盖在那儿。 -->
+      <span class="mbox-actions">
+        <!-- 解绑。**说清楚它不删邮件**——不说的话，一个只是想换邮箱的人会
+             因为怕丢记录而不敢点，然后一直留着一个不用的箱。 -->
+        <el-popconfirm
+          v-if="!b.unboundAt"
+          :title="t('mailGate.unbindConfirm', { email: b.email })"
+          width="280"
+          @confirm="unbind(b)"
+        >
+          <template #reference>
+            <el-button
+              link
+              class="mbox-act"
+              :aria-label="t('mailGate.unbind')"
+              :title="t('mailGate.unbind')"
+            >
+              <el-icon><SwitchButton /></el-icon>
+            </el-button>
+          </template>
+        </el-popconfirm>
+        <span v-else class="mbox-act" />
+
+        <!-- 设为默认只在非默认的那几行上出现，而且要点两次才生效：它改的是
+             「以后写信从哪个地址发出去」，而客户看到的发件人跟着变。
+
+             是 el-button 而不是一个透明的 span：span 用键盘 tab 不到。 -->
+        <el-popconfirm
+          v-if="!b.isDefault && !b.unboundAt"
+          :title="t('mailGate.setDefault')"
+          @confirm="setDefault(b)"
+        >
+          <template #reference>
+            <el-button
+              link
+              class="mbox-act"
+              :aria-label="t('mailGate.setDefault')"
+              :title="t('mailGate.setDefault')"
+            >
+              <el-icon><Star /></el-icon>
+            </el-button>
+          </template>
+        </el-popconfirm>
+        <span v-else class="mbox-act" />
+      </span>
     </div>
 
     <el-button v-if="canAdd" link class="mbox-add" @click="adding = true">
@@ -114,6 +123,7 @@ import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post } from '../api'
+import { Star, SwitchButton } from '@element-plus/icons-vue'
 import MailboxCredentialsForm from './MailboxCredentialsForm.vue'
 import { adoptVerification, type VerifyResponse } from '../lib/mailUnlock'
 
@@ -280,18 +290,40 @@ defineExpose({ reload: load })
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
+/* 动作区宽度固定，**每行都一样**——里面永远是两格，没有那个动作时是个
+   空的 span。不固定的话，默认那一行少一个「设为默认」，尾部就短一截，
+   名字那一列跟着长短不一，一排信箱看上去是歪的。 */
+.mbox-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
 /* 淡出而不是消失：opacity 0 的元素照样占位、照样可点，在触屏上就是一颗
    看不见的按钮盖在那儿。所以未激活时是浅色而不是透明，指针设备上悬停才
-   变深——键盘 tab 过去也一样看得见。 */
-.mbox-star {
+   变深——键盘 tab 过去也一样看得见。
+
+   宽高写死：图标本身的字形宽度各不相同（星星比电源符号窄），按内容撑的话
+   两格宽度不等，一排下来还是歪的。 */
+.mbox-act {
   flex: none;
-  padding: 0 8px;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 13px;
   color: var(--el-text-color-placeholder);
 }
-.mbox-row:hover .mbox-star,
-.mbox-star:focus-visible {
+.mbox-row:hover .mbox-act,
+.mbox-act:focus-visible {
   color: var(--el-color-primary);
+}
+/* el-button 之间默认有左外边距，两格会被推开而空的 span 不会——那正好又
+   把对齐破坏掉。 */
+.mbox-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 .mbox-add {
   margin-top: 4px;
