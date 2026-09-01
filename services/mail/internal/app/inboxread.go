@@ -814,21 +814,26 @@ func errNotFound() error {
 // Keyset like every other mailbox list. The cursor carries the kind as well as
 // the time and id, because the two halves of the query number their rows in
 // different tables and (at, id) alone is not a unique position.
-func (s *Service) ListMailboxSent(ctx context.Context, tenantID, ownerID int64, keyword, cursor string, size int32) (InboundPage, error) {
+// accountID 是「只看这个信箱发出去的」，0 = 全部。和收件箱一路同一个口径。
+func (s *Service) ListMailboxSent(ctx context.Context, tenantID, ownerID, accountID int64, keyword, cursor string, size int32) (InboundPage, error) {
 	_, size = normalizePage(1, size)
 	at, kind, id, err := decodeSentCursor(cursor)
 	if err != nil {
 		return InboundPage{}, err
 	}
+	var acct *int64
+	if accountID > 0 {
+		acct = &accountID
+	}
 	rows, err := s.q.ListSentUnified(ctx, store.ListSentUnifiedParams{
-		TenantID: tenantID, OwnerID: ownerID, Keyword: keyword,
+		TenantID: tenantID, OwnerID: ownerID, AccountID: acct, Keyword: keyword,
 		CursorAt: at, CursorKind: kind, CursorID: id, RowLimit: size,
 	})
 	if err != nil {
 		return InboundPage{}, err
 	}
 	total, err := s.q.CountSentUnified(ctx, store.CountSentUnifiedParams{
-		TenantID: tenantID, OwnerID: ownerID, Keyword: keyword,
+		TenantID: tenantID, OwnerID: ownerID, AccountID: acct, Keyword: keyword,
 	})
 	if err != nil {
 		return InboundPage{}, err

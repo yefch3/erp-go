@@ -653,6 +653,144 @@ func TestAMessageRemembersWhichMailboxItLeavesFrom(t *testing.T) {
 	}
 }
 
+// 已发送也按信箱分，而且**两条腿一起分**。
+//
+// 已发送这一页是两个来源拼起来的：邮件服务器自己存的 SENT 副本，和 ERP 的
+// 发送记录（服务器没留副本时的兜底）。前者一直带着 account_id，后者到 00047
+// 才有。
+//
+// 这条测试钉的是「一起」。只筛一条腿是这里最容易犯、也最难看出来的错：切到
+// 163 箱，看到的是 163 的已发送**加上**从 QQ 箱发出去的那些——一半对一半不
+// 对，行数不少、不报错，而且两种行长得一模一样。
+//
+// 顺带钉住 00047 之前那些 account_id=0 的历史行：它们只在「不筛」时出现。
+// 把它们塞进任何一个箱都是猜的，猜错的样子是「这封信不是我从这个地址发的」。
+func TestSentIsPerMailboxOnBothLegs(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantID := time.Now().UnixNano()
+	employeeID := tenantID%100000 + 870001
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM email_messages WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM email_inbound WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_binding_log WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+	}()
+	svc := New(pool, Deps{Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	work, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "me@qq.com", Provider: "qq", Secret: "code-qq",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	personal, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "me@163.com", Provider: "netease163", Secret: "code-163",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 第一条腿：服务器留下的 SENT 副本，两个箱各一封。
+	sentCopy := func(acct int64, uid int32, subject string) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, `INSERT INTO email_inbound
+			(tenant_id, account_id, owner_id, message_id, thread_key, folder, imap_uid,
+			 from_email, to_email, subject, snippet, body_text, received_at, sent_at)
+			VALUES ($1,$2,$3,$4,$5,'SENT',$6,'me@x','buyer@overseas.com',$7,'…','…',now(),now())`,
+			tenantID, acct, employeeID, subject+"-mid", subject+"-thr", uid, subject); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sentCopy(work.AccountID, 1, "QQ 发出去的")
+	sentCopy(personal.AccountID, 2, "163 发出去的")
+
+	// 第二条腿：ERP 的发送记录，服务器没留副本（没有对应的 email_inbound 行）。
+	// sent_at 要早于宽限期，否则查询按「副本还在路上」把它藏起来。
+	erpOnly := func(acct int64, from, subject string) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, `INSERT INTO email_messages
+			(tenant_id, message_key, sender_id, account_id, to_email, subject, body,
+			 from_email, status, sent_at)
+			VALUES ($1, gen_random_uuid(), $2, $3, 'buyer@overseas.com', $4, 'hi',
+			        $5, 'DELIVERED', now() - interval '1 hour')`,
+			tenantID, employeeID, acct, subject, from); err != nil {
+			t.Fatal(err)
+		}
+	}
+	erpOnly(work.AccountID, "me@qq.com", "QQ 的发送记录")
+	erpOnly(personal.AccountID, "me@163.com", "163 的发送记录")
+	// 00047 之前入队的：account_id 还是 0。
+	erpOnly(0, "me@qq.com", "上古发送记录")
+
+	subjects := func(accountID int64) []string {
+		t.Helper()
+		page, err := svc.ListMailboxSent(ctx, tenantID, employeeID, accountID, "", "", 50)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// 分页器要和列表说同一件事：数字对不上的话，翻到第二页是空的。
+		if int(page.Total) != len(page.Mails) {
+			t.Errorf("账号 %d：列表 %d 行，计数说 %d——两条 SQL 的筛选口径不一致",
+				accountID, len(page.Mails), page.Total)
+		}
+		out := make([]string, 0, len(page.Mails))
+		for _, m := range page.Mails {
+			out = append(out, m.Subject)
+		}
+		return out
+	}
+	has := func(list []string, want string) bool {
+		for _, s := range list {
+			if s == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	got := subjects(personal.AccountID)
+	if !has(got, "163 发出去的") {
+		t.Errorf("切到 163 箱，看不到 163 的已发送副本：%v", got)
+	}
+	if !has(got, "163 的发送记录") {
+		t.Errorf("切到 163 箱，看不到 163 的 ERP 发送记录：%v", got)
+	}
+	if has(got, "QQ 发出去的") {
+		t.Errorf("切到 163 箱，却看到了 QQ 箱的已发送副本——服务器副本那条腿没筛：%v", got)
+	}
+	if has(got, "QQ 的发送记录") {
+		t.Errorf("切到 163 箱，却看到了从 QQ 发出去的 ERP 记录——"+
+			"ERP 那条腿没筛，这一页就是一半对一半不对：%v", got)
+	}
+	if has(got, "上古发送记录") {
+		t.Errorf("account_id=0 的历史行落进了 163 箱——那是猜的，"+
+			"而猜错的样子是「这封信不是我从这个地址发的」：%v", got)
+	}
+
+	// 不筛（旧令牌、一个箱都没绑的人）：全都在，历史行也在。
+	all := subjects(0)
+	for _, want := range []string{"QQ 发出去的", "163 发出去的",
+		"QQ 的发送记录", "163 的发送记录", "上古发送记录"} {
+		if !has(all, want) {
+			t.Errorf("不筛的时候少了「%s」：%v", want, all)
+		}
+	}
+}
+
 // seqNumbers 是测试用的编号生成器：只保证不重复。
 type seqNumbers struct{ n atomic.Int64 }
 

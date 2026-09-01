@@ -294,6 +294,8 @@ WITH host AS (
     WHERE i.tenant_id = $2::bigint
       AND i.owner_id = $3::bigint
       AND i.folder = 'SENT'
+      AND ($4::bigint IS NULL
+           OR i.account_id = $4::bigint)
       AND i.deleted_at IS NULL
       AND i.archived_at IS NULL
 ), orphan AS (
@@ -302,6 +304,11 @@ WITH host AS (
     WHERE m.tenant_id = $2::bigint
       AND m.sender_id = $3::bigint
       AND m.sent_at IS NOT NULL
+      -- 00047 之前入队的行 account_id 是 0，那些只在「不筛」时出现。
+      -- 把它们塞进任何一个箱都是猜的，而猜错的样子是「这封信不是我从这个
+      -- 地址发的」——比少一行更难解释。
+      AND ($4::bigint IS NULL
+           OR m.account_id = $4::bigint)
       AND m.sent_at < now() - interval '10 minutes'
       AND NOT EXISTS (
           SELECT 1 FROM email_inbound i
@@ -336,16 +343,22 @@ WHERE ($1::text = ''
 `
 
 type CountSentUnifiedParams struct {
-	Keyword  string
-	TenantID int64
-	OwnerID  int64
+	Keyword   string
+	TenantID  int64
+	OwnerID   int64
+	AccountID *int64
 }
 
 // Repeats the shape rather than sharing it, because the pager has to agree
 // with the list: a count that skipped the grace period would promise rows
 // that are not there.
 func (q *Queries) CountSentUnified(ctx context.Context, arg CountSentUnifiedParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countSentUnified, arg.Keyword, arg.TenantID, arg.OwnerID)
+	row := q.db.QueryRow(ctx, countSentUnified,
+		arg.Keyword,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.AccountID,
+	)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -1912,6 +1925,8 @@ WITH host AS (
     WHERE i.tenant_id = $6::bigint
       AND i.owner_id = $7::bigint
       AND i.folder = 'SENT'
+      AND ($8::bigint IS NULL
+           OR i.account_id = $8::bigint)
       AND i.deleted_at IS NULL
       AND i.archived_at IS NULL
 ), orphan AS (
@@ -1927,6 +1942,11 @@ WITH host AS (
     WHERE m.tenant_id = $6::bigint
       AND m.sender_id = $7::bigint
       AND m.sent_at IS NOT NULL
+      -- 00047 之前入队的行 account_id 是 0，那些只在「不筛」时出现。
+      -- 把它们塞进任何一个箱都是猜的，而猜错的样子是「这封信不是我从这个
+      -- 地址发的」——比少一行更难解释。
+      AND ($8::bigint IS NULL
+           OR m.account_id = $8::bigint)
       AND m.sent_at < now() - interval '10 minutes'
       AND NOT EXISTS (
           SELECT 1 FROM email_inbound i
@@ -1979,6 +1999,7 @@ type ListSentUnifiedParams struct {
 	RowLimit   int32
 	TenantID   int64
 	OwnerID    int64
+	AccountID  *int64
 }
 
 type ListSentUnifiedRow struct {
@@ -2020,18 +2041,17 @@ type ListSentUnifiedRow struct {
 // period: within it, the copy is simply on its way and showing a second,
 // weaker row for the same mail would be noise. In normal operation nobody
 // ever sees one of these.
-// **这一句还没有按信箱分，是有意留到第三期的。**
+// **两条腿一起按信箱筛。**
 //
-// 它合并两个来源：email_inbound 里 folder='SENT' 的那些（邮件服务器自己
-// 存的副本，有 account_id），和 email_messages 里我们发出去而服务器没留
-// 副本的那些（**没有 account_id**——「这封信从哪个信箱发出去的」今天根本
-// 答不上来，出站队列只记 sender_id）。
+// 它合并两个来源：email_inbound 里 folder='SENT' 的那些（邮件服务器自己存
+// 的副本），和 email_messages 里我们发出去而服务器没留副本的那些。
 //
-// 只给前一半加筛选会更糟：切到 Gmail 箱，看到的是 Gmail 的已发送 + 全部
-// 的 ERP 发送记录，一半对一半不对，而且看不出哪一半。不筛选至少是一句
-// 说得清的话——「你发出去的信，全部」，和改动之前一样。
+// 前一条一直有 account_id；后一条是 00047 才加上的——在那之前「这封信从
+// 哪个信箱发出去的」根本答不上来，出站队列只记 sender_id。那时**只给一半
+// 加筛选会更糟**：切到 Gmail 箱，看到的是 Gmail 的已发送 + 全部的 ERP
+// 发送记录，一半对一半不对而且看不出哪一半。所以当时两条都不筛。
 //
-// 第三期给 email_messages 加上 account_id 之后，两条腿一起加筛选。
+// 现在两条腿都有了。不传就是全部——旧前端和「一个箱都没绑」的人走这条。
 func (q *Queries) ListSentUnified(ctx context.Context, arg ListSentUnifiedParams) ([]ListSentUnifiedRow, error) {
 	rows, err := q.db.Query(ctx, listSentUnified,
 		arg.Keyword,
@@ -2041,6 +2061,7 @@ func (q *Queries) ListSentUnified(ctx context.Context, arg ListSentUnifiedParams
 		arg.RowLimit,
 		arg.TenantID,
 		arg.OwnerID,
+		arg.AccountID,
 	)
 	if err != nil {
 		return nil, err

@@ -1850,7 +1850,7 @@ async function refreshUnread() {
     const d = await get<{ unreadCount: number }>('/inbound-mails', {
       page: 1,
       page_size: 1,
-      accountId: currentAccount.value,
+      // 同上：算哪个箱的未读由令牌决定。
     })
     unreadCount.value = Number(d.unreadCount ?? 0)
   } catch {
@@ -2036,8 +2036,10 @@ async function load() {
         keyword: keyword.value,
         view: INBOUND_VIEWS[folder.value],
         cursor: applied?.cursor ?? '',
-        // 只看当前这个信箱。0 = 全部（还没绑过箱，或者只有一个）。
-        accountId: currentAccount.value,
+        // 看哪个信箱**不在这里传**：网关只认解锁令牌里的那个箱
+        // （见 requireMailUnlock）。换箱是上面 currentAccount 那个 watch
+        // 换令牌，不是换参数——传参数的话，退出 A 之后拿还活着的 B 的令牌
+        // 配一个 accountId=A 照样读得到 A 的信。
       })
       inbound.value = d.mails ?? []
       total.value = Number(d.meta?.total ?? 0)

@@ -1072,7 +1072,7 @@ func (h *Handler) SyncMailbox(ctx context.Context, _ *mailv1.SyncMailboxRequest)
 
 func (h *Handler) ListMailboxSent(ctx context.Context, req *mailv1.ListMailboxSentRequest) (*mailv1.ListMailboxSentResponse, error) {
 	op := operator(ctx)
-	page, err := h.svc.ListMailboxSent(ctx, grpcx.TenantID(ctx), op.ID,
+	page, err := h.svc.ListMailboxSent(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId(),
 		req.GetKeyword(), req.GetCursor(), req.GetPage().GetPageSize())
 	if err != nil {
 		return nil, err

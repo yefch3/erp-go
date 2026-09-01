@@ -489,6 +489,11 @@ message ListMailboxSentRequest {
   erp.common.v1.PageRequest page = 1;
   string keyword = 2;
   string cursor = 3;
+  // 只看这个信箱发出去的。0 = 全部。
+  //
+  // 和收件箱一路同一个口径——按邮箱分，左侧切换。0 那一档留给旧前端，以及
+  // 一个箱都没绑的人。
+  int64 account_id = 4;
 }
 
 message ListMailboxSentResponse {

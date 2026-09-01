@@ -697,18 +697,17 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- ever sees one of these.
 
 -- name: ListSentUnified :many
--- **这一句还没有按信箱分，是有意留到第三期的。**
+-- **两条腿一起按信箱筛。**
 --
--- 它合并两个来源：email_inbound 里 folder='SENT' 的那些（邮件服务器自己
--- 存的副本，有 account_id），和 email_messages 里我们发出去而服务器没留
--- 副本的那些（**没有 account_id**——「这封信从哪个信箱发出去的」今天根本
--- 答不上来，出站队列只记 sender_id）。
+-- 它合并两个来源：email_inbound 里 folder='SENT' 的那些（邮件服务器自己存
+-- 的副本），和 email_messages 里我们发出去而服务器没留副本的那些。
 --
--- 只给前一半加筛选会更糟：切到 Gmail 箱，看到的是 Gmail 的已发送 + 全部
--- 的 ERP 发送记录，一半对一半不对，而且看不出哪一半。不筛选至少是一句
--- 说得清的话——「你发出去的信，全部」，和改动之前一样。
+-- 前一条一直有 account_id；后一条是 00047 才加上的——在那之前「这封信从
+-- 哪个信箱发出去的」根本答不上来，出站队列只记 sender_id。那时**只给一半
+-- 加筛选会更糟**：切到 Gmail 箱，看到的是 Gmail 的已发送 + 全部的 ERP
+-- 发送记录，一半对一半不对而且看不出哪一半。所以当时两条都不筛。
 --
--- 第三期给 email_messages 加上 account_id 之后，两条腿一起加筛选。
+-- 现在两条腿都有了。不传就是全部——旧前端和「一个箱都没绑」的人走这条。
 WITH host AS (
     SELECT 'HOST'::text AS kind, i.id, i.to_email, coalesce(m.to_name, '') AS to_name,
            i.subject, i.snippet,
@@ -723,6 +722,8 @@ WITH host AS (
     WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
       AND i.owner_id = sqlc.arg(owner_id)::bigint
       AND i.folder = 'SENT'
+      AND (sqlc.narg(account_id)::bigint IS NULL
+           OR i.account_id = sqlc.narg(account_id)::bigint)
       AND i.deleted_at IS NULL
       AND i.archived_at IS NULL
 ), orphan AS (
@@ -738,6 +739,11 @@ WITH host AS (
     WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint
       AND m.sender_id = sqlc.arg(owner_id)::bigint
       AND m.sent_at IS NOT NULL
+      -- 00047 之前入队的行 account_id 是 0，那些只在「不筛」时出现。
+      -- 把它们塞进任何一个箱都是猜的，而猜错的样子是「这封信不是我从这个
+      -- 地址发的」——比少一行更难解释。
+      AND (sqlc.narg(account_id)::bigint IS NULL
+           OR m.account_id = sqlc.narg(account_id)::bigint)
       AND m.sent_at < now() - interval '10 minutes'
       AND NOT EXISTS (
           SELECT 1 FROM email_inbound i
@@ -791,6 +797,8 @@ WITH host AS (
     WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
       AND i.owner_id = sqlc.arg(owner_id)::bigint
       AND i.folder = 'SENT'
+      AND (sqlc.narg(account_id)::bigint IS NULL
+           OR i.account_id = sqlc.narg(account_id)::bigint)
       AND i.deleted_at IS NULL
       AND i.archived_at IS NULL
 ), orphan AS (
@@ -799,6 +807,11 @@ WITH host AS (
     WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint
       AND m.sender_id = sqlc.arg(owner_id)::bigint
       AND m.sent_at IS NOT NULL
+      -- 00047 之前入队的行 account_id 是 0，那些只在「不筛」时出现。
+      -- 把它们塞进任何一个箱都是猜的，而猜错的样子是「这封信不是我从这个
+      -- 地址发的」——比少一行更难解释。
+      AND (sqlc.narg(account_id)::bigint IS NULL
+           OR m.account_id = sqlc.narg(account_id)::bigint)
       AND m.sent_at < now() - interval '10 minutes'
       AND NOT EXISTS (
           SELECT 1 FROM email_inbound i

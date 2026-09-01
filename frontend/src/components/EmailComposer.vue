@@ -522,15 +522,6 @@ const common = (k: string) => t(`common.${k}`)
 // 多信箱之后这件事必须**看得见**：不显示的话，人在 163 那个箱里写信，
 // 信从 QQ 发出去，而他要等客户回信才发现发件人不对。
 const fromAccount = ref(0)
-watch(
-  () => [props.modelValue, props.currentAccount] as const,
-  ([open, cur]) => {
-    // 每次打开写信框都回到「当前这个箱」。上一次改过的发件人不该粘着——
-    // 那是上一封信的事。
-    if (open) fromAccount.value = Number(cur ?? 0)
-  },
-  { immediate: true },
-)
 
 const form = reactive({
   subject: '',
@@ -633,6 +624,10 @@ function signature() {
     replyCtx.replyToInboundId,
     replyCtx.forwardInboundId,
     replyCtx.forwardAsAttachment,
+    // 改了发件箱也算改动。不算的话自动保存不会被触发——人在下拉里挑了
+    // 163、关掉、再打开，还是原来那个箱，而这一次没有任何提示。和上面
+    // forwardAsAttachment 是同一类：字都还在，信变了。
+    fromAccount.value,
   ])
 }
 
@@ -648,6 +643,25 @@ function hasContent() {
 function markClean() {
   baseline = signature()
 }
+
+// 每次打开写信框，发件人回到「当前在看的那个箱」。上一次改过的发件人不该
+// 粘着——那是上一封信的事。openDraft 在这之后跑，所以草稿存的那个箱盖得住。
+//
+// 放在 markClean 下面而不是 fromAccount 旁边：immediate 的回调是同步跑的，
+// 声明在上面的话 hasContent 会读到还没初始化的 form。
+watch(
+  () => [props.modelValue, props.currentAccount] as const,
+  ([open, cur]) => {
+    if (!open) return
+    fromAccount.value = Number(cur ?? 0)
+    // 归位是程序干的，不是人干的，所以不能算成「有未保存的改动」。不重新
+    // 取基准的话：上一封信里改过发件箱、关掉、再打开一个空白写信框，点叉
+    // 就会问「要丢弃吗」——而里面一个字都没有。和 loadSignatures 里套用
+    // 租户默认签名是同一件事，同一个守卫。
+    if (!hasContent()) markClean()
+  },
+  { immediate: true },
+)
 
 const isDirty = () => signature() !== baseline
 
@@ -708,6 +722,15 @@ async function openDraft(id: string) {
   selected.value = draft.recipients ?? []
   ccSelected.value = draft.cc ?? []
   bccSelected.value = draft.bcc ?? []
+  // 从哪个箱发也要还原——「我在 Gmail 里写了一半」正是存它的理由。不还原
+  // 的话，接着写完一发又从当前这个箱出去了，而人根本不会想到去看发件人。
+  //
+  // 两种情况退回当前箱：0（00047 之前存的老草稿），以及那个箱已经解绑了。
+  // 后者不退的话选择器里是个空白项，发出去才知道从哪儿发的。
+  const saved = Number(draft.accountId ?? 0)
+  fromAccount.value = (props.mailboxes ?? []).some((b) => b.id === saved)
+    ? saved
+    : Number(props.currentAccount ?? 0)
   replyCtx.replyToInboundId = draft.replyToInboundId ?? '0'
   replyCtx.forwardInboundId = draft.forwardInboundId ?? '0'
   replyCtx.forwardAsAttachment = draft.forwardAsAttachment ?? false

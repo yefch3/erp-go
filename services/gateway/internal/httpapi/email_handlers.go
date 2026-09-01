@@ -871,10 +871,13 @@ func (s *Server) syncMailbox(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listMailboxSent(w http.ResponseWriter, r *http.Request) {
+	// 看哪个信箱发出去的，**由令牌决定**——和收件箱同一个理由：参数是调用方
+	// 说的，令牌是验过的。退出了 A 之后不该还能拿 B 的令牌翻 A 的已发送。
 	resp, err := s.Emails.ListMailboxSent(r.Context(), &mailv1.ListMailboxSentRequest{
-		Page:    pageFromQuery(r),
-		Keyword: r.URL.Query().Get("keyword"),
-		Cursor:  r.URL.Query().Get("cursor"),
+		Page:      pageFromQuery(r),
+		Keyword:   r.URL.Query().Get("keyword"),
+		Cursor:    r.URL.Query().Get("cursor"),
+		AccountId: unlockedAccount(r.Context()),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
