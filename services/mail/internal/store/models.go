@@ -270,6 +270,7 @@ type MailAccount struct {
 	DailyQuota      int32
 	IsDefault       bool
 	LastReadAt      pgtype.Timestamptz
+	StatusCheckedAt pgtype.Timestamptz
 }
 
 type MailBindingLog struct {

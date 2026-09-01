@@ -687,6 +687,34 @@ func (f *IMAP) FindUIDsByMessageIDs(ctx context.Context, acct app.MailAccount, f
 	return out, nil
 }
 
+// FolderStatus asks the host for a folder's UIDNEXT and unread count.
+//
+// STATUS, not SELECT + SEARCH. The difference is the whole point of this
+// method: STATUS is one command that returns numbers, does not open the
+// mailbox, and transfers nothing else. That is what makes it affordable to
+// ask about every mailbox a person has, often, while only the one they are
+// looking at gets a real sync.
+//
+// **不选中信箱**这一点也是要紧的。这条连接是池里共用的，SELECT 会把它当前
+// 选中的文件夹换掉，而借它的下一个调用可能正指望着原来那个。STATUS 不动
+// 选中状态，所以它能安全地插在别的操作中间。
+func (f *IMAP) FolderStatus(ctx context.Context, acct app.MailAccount, folder string) (_ app.FolderStatus, err error) {
+	if folder == "" {
+		return app.FolderStatus{}, nil
+	}
+	c, err := f.borrow(acct)
+	if err != nil {
+		return app.FolderStatus{}, err
+	}
+	defer func() { f.release(acct, c, err) }()
+
+	st, err := c.Status(folder, []imap.StatusItem{imap.StatusUidNext, imap.StatusUnseen})
+	if err != nil {
+		return app.FolderStatus{}, fmt.Errorf("查询 %s 的状态失败：%w", folder, err)
+	}
+	return app.FolderStatus{UIDNext: st.UidNext, Unseen: st.Unseen}, nil
+}
+
 // SearchFlagged names every starred message in a folder, however old.
 //
 // The counterpart to FetchFlags, which can only answer about UIDs it is handed

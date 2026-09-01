@@ -40,6 +40,21 @@ type FetchResult struct {
 }
 
 // Mailbox is the inbound side of a mail host.
+// FolderStatus is what a cheap poll of a folder returns.
+type FolderStatus struct {
+	// UIDNext 是服务器下一封信会拿到的编号。和我们存的 last_uid 比：
+	// UIDNext > last_uid+1 就说明有没取过的信。精确，不是估计——UID 在一个
+	// UIDVALIDITY 里单调递增，这正是它存在的意义。
+	UIDNext uint32
+	// Unseen 是服务器数的未读数。**它不上屏**：角标一律用我们自己库里的数
+	// （见 CountUnreadByMailbox），两边口径不同（服务器不知道我们归档过什么），
+	// 混着用的症状是「角标写着 3，切过去一封都没有」。
+	//
+	// 它在这里只有一个用途：和我们库里的数不一致时，说明有人在别的客户端
+	// 上读过或删过信，那也是一次值得全量同步的变化。
+	Unseen uint32
+}
+
 type Mailbox interface {
 	// Fetch returns new mail: everything above sinceUID, capped at limit.
 	Fetch(ctx context.Context, acct MailAccount, folder string, sinceUID uint32, limit uint32) (FetchResult, error)
@@ -49,6 +64,16 @@ type Mailbox interface {
 	// current-generation — in practice they come from a Message-ID search
 	// moments earlier over the same connection pool.
 	FetchByUIDs(ctx context.Context, acct MailAccount, folder string, uids []uint32) (FetchResult, error)
+	// FolderStatus asks the host two numbers about a folder and nothing else:
+	// how far its UIDs have advanced, and how many messages are unread.
+	//
+	// 它存在的理由是「这个箱里有没有我们还没取过的信」**不值得一次全量
+	// 同步**。一人多箱之后每轮把每个箱都拉一遍摊不开（600 个箱、8 个
+	// worker、两分钟一轮 = 每个箱 1.6 秒），而绝大多数箱这一轮什么都没发生。
+	//
+	// IMAP 的 STATUS 一条命令就回这两个数：不打开信箱、不动这条连接当前
+	// 选中的文件夹、不传任何正文。
+	FolderStatus(ctx context.Context, acct MailAccount, folder string) (FolderStatus, error)
 	// SentFolder names the folder the host keeps sent mail in.
 	SentFolder(ctx context.Context, acct MailAccount) (string, error)
 	// JunkFolder names the folder the host files spam into.
@@ -119,6 +144,19 @@ type SyncConfig struct {
 	// only: to recognise our own pixel when a customer quotes our mail back
 	// at us, and refuse to fetch it. See imagecache.go.
 	PublicBaseURL string
+	// ActiveWindow 是「多久没人看就算没人看了」。
+	//
+	// 落在窗口里的箱每轮全量同步；其余的只问一次轻状态（见 FolderStatus）。
+	// 分档只改延迟不改对错：轻状态看见有没取过的信就把那个箱提上来。
+	ActiveWindow time.Duration
+	// StatusEvery 是没人看的箱多久问一次轻状态。它就是那类箱的收信延迟上限。
+	StatusEvery time.Duration
+	// StatusBudget 是一轮里最多问多少个轻状态。
+	//
+	// 上限而不是「全问」：600 个箱一起到点会在一轮里堆出一个尖峰，把全量
+	// 那一档挤掉——而那一档才是有人正在等的。到不了的下一轮再说，
+	// status_checked_at 最旧的排最前，所以没有箱会被永远跳过。
+	StatusBudget int
 }
 
 func (c SyncConfig) withDefaults() SyncConfig {
@@ -145,6 +183,22 @@ func (c SyncConfig) withDefaults() SyncConfig {
 	}
 	if c.Concurrency <= 0 {
 		c.Concurrency = 8
+	}
+	if c.ActiveWindow <= 0 {
+		// 半小时。比「页面开着」宽得多是有意的：人去开个会回来，箱不该在
+		// 这期间掉档，因为掉档意味着回来时看到的是十分钟前的收件箱。
+		c.ActiveWindow = 30 * time.Minute
+	}
+	if c.StatusEvery <= 0 {
+		// 十分钟，也就是没人看的箱的收信延迟上限。这个数字的另一面是成本：
+		// 600 个箱、十分钟摊一遍、每次一条 STATUS，大约占 8 个 worker 的
+		// 一成半——剩下的都留给有人在等的那一档。
+		c.StatusEvery = 10 * time.Minute
+	}
+	if c.StatusBudget <= 0 {
+		// 一轮 150 个。按两分钟一轮、十分钟一遍算，600 个箱刚好摊得开
+		// （600 / 5 = 120），留一点余量给新绑的和上一轮没轮到的。
+		c.StatusBudget = 150
 	}
 	return c
 }
@@ -181,6 +235,98 @@ func (s *Service) RunInboundSync(ctx context.Context, cfg SyncConfig) {
 	}
 }
 
+// checkMailboxStatus 问一个没人在看的信箱：有没有我们还没取过的信。
+//
+// 一条 IMAP STATUS。不打开信箱、不拉正文，也**不动屏幕上的任何数字**——
+// 角标一律来自我们自己的库（CountUnreadByMailbox），两边口径不同（服务器
+// 不知道我们归档过什么），混着用的症状是「角标写着 3，切过去一封都没有」。
+//
+// 它只决定一件事：这个箱这一轮要不要被提上来全量同步。
+//
+//	· UIDNext 超过我们存的 last_uid + 1 —— 有没取过的信。精确，不是估计。
+//	· Unseen 和我们库里的数对不上 —— 有人在别的客户端上读过或删过，
+//	  我们的已读状态该跟一次。
+//
+// 提上来之后走的是和有人在看的箱**同一条**全量同步，所以「怎么收信」只有
+// 一套代码；这里只回答「要不要收」。
+func (s *Service) checkMailboxStatus(ctx context.Context, cfg SyncConfig, accountID int64) {
+	acct, err := s.ForAccount(ctx, cfg.TenantID, accountID)
+	if err != nil {
+		// 凭据坏了在这里只记一句：全量那条路上有 RecordFailure 把它写到
+		// 账号行上、让设置页说得出话，重复一遍没有新信息。
+		s.log.Warn("status check could not resolve the mailbox", "account", accountID, "err", err)
+		return
+	}
+	st, err := s.mailbox.FolderStatus(ctx, acct, cfg.Folder)
+	if err != nil {
+		s.log.Warn("status check failed", "account", accountID, "err", err)
+		// 时间戳照记：问失败了也别在下一轮立刻重问，那会让一个连不上的箱
+		// 每两分钟占一个 worker。等它下一次到点。
+		s.markStatusChecked(ctx, cfg.TenantID, accountID)
+		return
+	}
+	s.markStatusChecked(ctx, cfg.TenantID, accountID)
+
+	if !s.worthAFullSync(ctx, cfg, acct, st) {
+		return
+	}
+	if n, err := s.SyncMailboxIfDue(ctx, cfg, accountID); err != nil {
+		s.log.Warn("promoted mailbox sync failed", "account", accountID, "err", err)
+	} else if n > 0 {
+		s.log.Info("idle mailbox had news", "account", accountID, "new", n)
+	}
+}
+
+// worthAFullSync 判断一次轻状态的结果值不值得把这个箱提上来全量同步。
+//
+// 判不准时一律回 true。少收一封信和多同步一次不是一个量级的错：前者是
+// 客户的询价没到，后者是多花几秒。
+func (s *Service) worthAFullSync(ctx context.Context, cfg SyncConfig, acct MailAccount, st FolderStatus) bool {
+	have, err := s.q.HighestSyncedUID(ctx, store.HighestSyncedUIDParams{
+		TenantID: cfg.TenantID, AccountID: acct.AccountID, Folder: cfg.Folder,
+	})
+	if err != nil {
+		s.log.Warn("could not read the sync cursor; syncing anyway",
+			"account", acct.AccountID, "err", err)
+		return true
+	}
+	// 服务器没给 UIDNEXT——STATUS 的返回项不是每台主机都齐全。这时**什么都
+	// 判不出来**，只能全量同步一次。
+	//
+	// 这一条不能省。省了的话，一台不回 UIDNEXT 的主机上所有没人看的箱都会
+	// 被判成「没有新信」，于是永远不被提上来——症状是那些箱安静地不再收信，
+	// 而日志里一个字都没有。分档能成立的全部依据就是「判不准就同步」。
+	if st.UIDNext == 0 {
+		return true
+	}
+	// UIDNext 是「下一封会拿到的号」，所以「已取到 have」意味着下一封应该
+	// 正好是 have+1。大于它就是中间来过我们没取的信。
+	if int64(st.UIDNext) > have+1 {
+		return true
+	}
+	// 没有新信，但未读数对不上：有人在别的客户端上读了或删了。跟一次，
+	// 好让这边的已读状态和角标不再骗人。
+	//
+	// owner 从账号行上来（ForAccount 已经取过），不另查一次——而且它必须是
+	// 这个箱的主人，不是随便一个人：email_inbound 是按 owner_id 存的。
+	id := acct.AccountID
+	unread, err := s.q.CountUnread(ctx, store.CountUnreadParams{
+		TenantID: cfg.TenantID, OwnerID: acct.EmployeeID, AccountID: &id,
+	})
+	if err != nil {
+		return true
+	}
+	return int64(st.Unseen) != unread
+}
+
+func (s *Service) markStatusChecked(ctx context.Context, tenantID, accountID int64) {
+	if err := s.q.MarkStatusChecked(ctx, store.MarkStatusCheckedParams{
+		TenantID: tenantID, ID: accountID,
+	}); err != nil {
+		s.log.Warn("could not record the status check", "account", accountID, "err", err)
+	}
+}
+
 // tenantsToServe 是本轮要处理的公司名单：有活跃邮箱的那些。
 //
 // 每轮现查，不缓存——新开的公司下一轮就被发现，不用等进程重启。
@@ -197,11 +343,44 @@ func (s *Service) tenantsToServe(ctx context.Context) []int64 {
 	return ids
 }
 
+// syncAllMailboxes 走完一家公司的一轮。
+//
+// **两档，不是一遍。**
+//
+// 从前每轮把每个活跃信箱都全量同步一次。一人一箱的年代那没问题；一人两箱
+// 之后，300 人的公司就是 600 个箱，8 个 worker、两分钟一轮，平均每个箱只剩
+// 1.6 秒——跨太平洋一次握手就超了。超了的样子不是报错，是所有人的信一起
+// 晚到，而且越积越晚。
+//
+// 现在：
+//
+//	· 有人在看的箱（last_read_at 新鲜）——照旧全量同步。这一档大约 50 个，
+//	  每个箱有 19 秒，比原来宽得多。
+//	· 其余——只问一条 STATUS，十分钟摊一遍。看见有没取过的信就**当场提上来**
+//	  全量同步。
+//
+// 最后那一句是这个设计的全部依据：**分档改的是延迟，不是对错**。没人看的箱
+// 来了新信，最坏晚十分钟，不会收不到。
 func (s *Service) syncAllMailboxes(ctx context.Context, cfg SyncConfig) {
-	accounts, err := s.q.ListSyncableMailAccounts(ctx, cfg.TenantID)
+	accounts, err := s.q.ListActiveMailAccounts(ctx, store.ListActiveMailAccountsParams{
+		TenantID: cfg.TenantID, ActiveSeconds: int32(cfg.ActiveWindow.Seconds()),
+	})
 	if err != nil {
 		s.log.Error("could not list mailboxes to sync", "err", err)
 		return
+	}
+	// 轻状态那一档先挑出来：它要在同一个 fleet 上跑，和全量那一档共用并发
+	// 上限——受不了并发的是邮件服务商，不是我们，所以上限必须是全局的。
+	due, err := s.q.ListMailboxesDueForStatus(ctx, store.ListMailboxesDueForStatusParams{
+		TenantID:      cfg.TenantID,
+		ActiveSeconds: int32(cfg.ActiveWindow.Seconds()),
+		StatusSeconds: int32(cfg.StatusEvery.Seconds()),
+		RowLimit:      int32(cfg.StatusBudget),
+	})
+	if err != nil {
+		// 轻状态挑不出来不该拖累全量那一档：有人正等着的那些箱照收。
+		s.log.Error("could not list mailboxes due for a status check", "err", err)
+		due = nil
 	}
 	// Fanned out rather than walked. Sequentially, one mailbox that hangs
 	// holds up every mailbox behind it — and a mailbox whose host accepts the
@@ -226,6 +405,20 @@ func (s *Service) syncAllMailboxes(ctx context.Context, cfg SyncConfig) {
 			} else if n > 0 {
 				s.log.Info("mailbox synced", "account", accountID, "new", n)
 			}
+		}(a.ID)
+	}
+	// 轻状态那一档挂在同一个 WaitGroup 上，所以「一轮跑完再开下一轮」这条
+	// 规矩对两档一起成立。
+	for _, a := range due {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		wg.Add(1)
+		go func(accountID int64) {
+			defer wg.Done()
+			s.checkMailboxStatus(ctx, cfg, accountID)
 		}(a.ID)
 	}
 	// Waited on, so one pass finishes before the next tick starts it again.
@@ -1019,7 +1212,16 @@ func (s *Service) RunIdleWatchers(ctx context.Context, cfg SyncConfig) {
 		for _, tenantID := range s.tenantsToServe(ctx) {
 			watch := cfg
 			watch.TenantID = tenantID
-			accounts, err := s.q.ListSyncableMailAccounts(ctx, tenantID)
+			// **只守有人在看的箱。**
+			//
+			// 一个箱一条常开连接是这套东西最贵的一项：300 人一人两箱就是
+			// 600 条 IMAP 连接一直占着，而其中大部分箱当天根本没人打开过。
+			//
+			// IDLE 的用处是「让正在看的那个收件箱像是活的」——没人看的时候，
+			// 两分钟一轮的轮询加十分钟一次的轻状态已经够了。
+			accounts, err := s.q.ListActiveMailAccounts(ctx, store.ListActiveMailAccountsParams{
+				TenantID: tenantID, ActiveSeconds: int32(watch.ActiveWindow.Seconds()),
+			})
 			if err != nil {
 				// 一家公司列不出来不该让别家也停：下面的 continue 只跳过这一家。
 				s.log.Warn("could not list mailboxes to watch", "tenant", tenantID, "err", err)
@@ -1056,6 +1258,18 @@ func (s *Service) RunIdleWatchers(ctx context.Context, cfg SyncConfig) {
 func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsWaiter, accountID int64) {
 	backoff := time.Minute
 	for ctx.Err() == nil {
+		// 没人在看了就收摊。每一圈开头查一次——IDLE 一圈最长 25 分钟，所以
+		// 一个箱从「没人看」到连接真正释放最多隔一圈。管理器每分钟扫一次，
+		// 人一回来它就重新开起来。
+		//
+		// 查不出来当作还在看：这条判断错在「多守一会儿」是浪费，错在
+		// 「早收了」是收件箱不再实时，而人不会知道为什么。
+		if watching, err := s.q.MailboxIsBeingRead(ctx, store.MailboxIsBeingReadParams{
+			TenantID: cfg.TenantID, ID: accountID,
+			ActiveSeconds: int32(cfg.ActiveWindow.Seconds()),
+		}); err == nil && !watching {
+			return
+		}
 		acct, err := s.ForAccount(ctx, cfg.TenantID, accountID)
 		if err != nil {
 			// Unbound or paused. The manager restarts the watch if the

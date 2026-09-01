@@ -1163,6 +1163,35 @@ func (q *Queries) GetSyncState(ctx context.Context, arg GetSyncStateParams) (Get
 	return i, err
 }
 
+const highestSyncedUID = `-- name: HighestSyncedUID :one
+SELECT coalesce(max(last_uid), 0)::bigint
+FROM mail_sync_state
+WHERE tenant_id = $1::bigint
+  AND account_id = $2::bigint
+  AND folder = $3::text
+`
+
+type HighestSyncedUIDParams struct {
+	TenantID  int64
+	AccountID int64
+	Folder    string
+}
+
+// 我们已经取到这个信箱这个文件夹的哪一封了。
+//
+// 拿它和服务器回的 UIDNEXT 比：UIDNEXT 超过 last_uid + 1，就说明有我们
+// 没取过的信。**这是个精确的比较**，不是估计——UID 在一个 UIDVALIDITY 里
+// 单调递增，这正是它存在的意义。
+//
+// 没有这一行（从没同步过）回 0，于是任何 UIDNEXT 都算「有新的」，那也正是
+// 一个新绑的箱该有的待遇。
+func (q *Queries) HighestSyncedUID(ctx context.Context, arg HighestSyncedUIDParams) (int64, error) {
+	row := q.db.QueryRow(ctx, highestSyncedUID, arg.TenantID, arg.AccountID, arg.Folder)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const insertInbound = `-- name: InsertInbound :one
 INSERT INTO email_inbound (
     tenant_id, account_id, owner_id, folder, imap_uid,
@@ -1319,6 +1348,67 @@ func (q *Queries) InsertInboundAttachment(ctx context.Context, arg InsertInbound
 		arg.ContentID,
 	)
 	return err
+}
+
+const listActiveMailAccounts = `-- name: ListActiveMailAccounts :many
+SELECT id, employee_id, email, username, secret_enc, key_version
+FROM mail_accounts
+WHERE tenant_id = $1::bigint
+  AND is_active
+  AND last_read_at IS NOT NULL
+  AND last_read_at > now() - make_interval(secs => $2::int)
+ORDER BY id
+`
+
+type ListActiveMailAccountsParams struct {
+	TenantID      int64
+	ActiveSeconds int32
+}
+
+type ListActiveMailAccountsRow struct {
+	ID         int64
+	EmployeeID int64
+	Email      string
+	Username   string
+	SecretEnc  []byte
+	KeyVersion int32
+}
+
+// 这一轮要**全量同步**的信箱：最近有人在看的那些。
+//
+// 「有人在看」= last_read_at 新鲜（00048 在收件箱那条路上写的）。它是人的
+// 动作，不是我们自己的动作——后者在 mail_sync_state 上，每轮都会更新，拿它
+// 分档等于所有箱永远都算活跃。
+//
+// 从没被看过的箱（last_read_at IS NULL）算不活跃。刚部署时所有行都是空的，
+// 那一段时间里所有箱都走轻状态那条路——**这不影响对错**：轻状态看见新信
+// 就把那个箱提上来全量同步，代价只是最长十分钟的延迟。人一打开邮箱页，
+// last_read_at 就写上了，下一轮它就回到全量这一档。
+func (q *Queries) ListActiveMailAccounts(ctx context.Context, arg ListActiveMailAccountsParams) ([]ListActiveMailAccountsRow, error) {
+	rows, err := q.db.Query(ctx, listActiveMailAccounts, arg.TenantID, arg.ActiveSeconds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveMailAccountsRow
+	for rows.Next() {
+		var i ListActiveMailAccountsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EmployeeID,
+			&i.Email,
+			&i.Username,
+			&i.SecretEnc,
+			&i.KeyVersion,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listCustomerMail = `-- name: ListCustomerMail :many
@@ -1830,6 +1920,77 @@ func (q *Queries) ListMailAccountsForEmployee(ctx context.Context, arg ListMailA
 			&i.ImapPort,
 			&i.ImapSecurity,
 			&i.LastReadAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMailboxesDueForStatus = `-- name: ListMailboxesDueForStatus :many
+SELECT id, employee_id, email, username, secret_enc, key_version
+FROM mail_accounts
+WHERE tenant_id = $1::bigint
+  AND is_active
+  AND (last_read_at IS NULL
+       OR last_read_at <= now() - make_interval(secs => $2::int))
+  AND (status_checked_at IS NULL
+       OR status_checked_at <= now() - make_interval(secs => $3::int))
+ORDER BY status_checked_at NULLS FIRST, id
+LIMIT $4::int
+`
+
+type ListMailboxesDueForStatusParams struct {
+	TenantID      int64
+	ActiveSeconds int32
+	StatusSeconds int32
+	RowLimit      int32
+}
+
+type ListMailboxesDueForStatusRow struct {
+	ID         int64
+	EmployeeID int64
+	Email      string
+	Username   string
+	SecretEnc  []byte
+	KeyVersion int32
+}
+
+// 这一轮要问**轻状态**的信箱：没人在看，而且离上次问过够久了。
+//
+// 和上面那条互斥：有人在看的箱已经在全量同步，再问一次 STATUS 是白问。
+//
+// 靠「离上次够久」自然错开，不是攒一批一起问：600 个箱一起问会在一轮里堆出
+// 一个尖峰，把全量那一档挤掉。每轮只有到点的那些进来，摊平之后大约是总数
+// 的十分之一。
+//
+// NULLS FIRST：从没问过的排最前。刚部署、以及刚绑好的箱属于这一类，它们
+// 最需要先被看一眼。
+func (q *Queries) ListMailboxesDueForStatus(ctx context.Context, arg ListMailboxesDueForStatusParams) ([]ListMailboxesDueForStatusRow, error) {
+	rows, err := q.db.Query(ctx, listMailboxesDueForStatus,
+		arg.TenantID,
+		arg.ActiveSeconds,
+		arg.StatusSeconds,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMailboxesDueForStatusRow
+	for rows.Next() {
+		var i ListMailboxesDueForStatusRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EmployeeID,
+			&i.Email,
+			&i.Username,
+			&i.SecretEnc,
+			&i.KeyVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -2748,6 +2909,34 @@ func (q *Queries) ListTrashForPurge(ctx context.Context, arg ListTrashForPurgePa
 	return items, nil
 }
 
+const mailboxIsBeingRead = `-- name: MailboxIsBeingRead :one
+SELECT (last_read_at IS NOT NULL
+        AND last_read_at > now() - make_interval(secs => $1::int))::bool
+FROM mail_accounts
+WHERE tenant_id = $2::bigint AND id = $3::bigint
+`
+
+type MailboxIsBeingReadParams struct {
+	ActiveSeconds int32
+	TenantID      int64
+	ID            int64
+}
+
+// 这个信箱此刻算不算「有人在看」。
+//
+// 常开连接（IDLE）那一档用它决定要不要继续守着。守着一个没人看的箱，代价
+// 是一条一直占着的 IMAP 连接和一个 goroutine——300 人一人两箱就是 600 条，
+// 而其中大部分箱当天根本没人打开过。
+//
+// IDLE 的用处是「让**正在看**的那个收件箱像是活的」。没人看的时候，两分钟
+// 一轮的轮询加十分钟一次的轻状态已经够了。
+func (q *Queries) MailboxIsBeingRead(ctx context.Context, arg MailboxIsBeingReadParams) (bool, error) {
+	row := q.db.QueryRow(ctx, mailboxIsBeingRead, arg.ActiveSeconds, arg.TenantID, arg.ID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const markDefaultMailbox = `-- name: MarkDefaultMailbox :execrows
 UPDATE mail_accounts SET is_default = TRUE, updated_at = now()
  WHERE tenant_id = $1::bigint
@@ -2860,6 +3049,24 @@ type MarkOpenedParams struct {
 // and Apple Mail's prefetching would otherwise keep moving it forward.
 func (q *Queries) MarkOpened(ctx context.Context, arg MarkOpenedParams) error {
 	_, err := q.db.Exec(ctx, markOpened, arg.TenantID, arg.ID)
+	return err
+}
+
+const markStatusChecked = `-- name: MarkStatusChecked :exec
+UPDATE mail_accounts
+   SET status_checked_at = now()
+ WHERE tenant_id = $1::bigint
+   AND id = $2::bigint
+`
+
+type MarkStatusCheckedParams struct {
+	TenantID int64
+	ID       int64
+}
+
+// 问过了。时间戳只在这里写，所以「到点没」这件事只有一个来源。
+func (q *Queries) MarkStatusChecked(ctx context.Context, arg MarkStatusCheckedParams) error {
+	_, err := q.db.Exec(ctx, markStatusChecked, arg.TenantID, arg.ID)
 	return err
 }
 

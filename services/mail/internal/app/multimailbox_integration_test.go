@@ -1183,3 +1183,247 @@ func TestMailboxReadTimeIsThrottled(t *testing.T) {
 		t.Errorf("过了限频窗口还是没写：%v", after)
 	}
 }
+
+// 分档只改延迟，不改对错。
+//
+// 这是整个分档设计的**唯一支柱**：没人在看的信箱不再每轮全量同步，而是每
+// 十分钟问一条 STATUS；看见有我们没取过的信，那一轮就把它提上来全量同步。
+// 所以最坏是「晚十分钟」，不是「收不到」。
+//
+// worthAFullSync 就是那个判断。它判错的样子是**一个信箱安静地不再收信**——
+// 没有报错、没有日志、页面上一切正常，只是客户的询价再也不来。所以每一条
+// 分支都要钉住，尤其是「判不准」的那几条：它们必须一律回「同步」。
+func TestAnIdleMailboxWithNewMailStillGetsFetched(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantID := time.Now().UnixNano()
+	employeeID := tenantID%100000 + 920001
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM email_inbound WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_sync_state WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_binding_log WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+	}()
+	svc := New(pool, Deps{Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	cfg := SyncConfig{TenantID: tenantID}.withDefaults()
+
+	mine, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "me@qq.com", Provider: "qq", Secret: "code-qq",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	acct, err := svc.ForAccount(ctx, tenantID, mine.AccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 已经取到第 10 封。
+	if _, err := pool.Exec(ctx, `INSERT INTO mail_sync_state
+		(tenant_id, account_id, folder, last_uid) VALUES ($1,$2,'INBOX',10)`,
+		tenantID, mine.AccountID); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		st   FolderStatus
+		want bool
+		why  string
+	}{
+		{
+			name: "服务器说下一封是 11——正好是我们取到的下一封，没有新信",
+			st:   FolderStatus{UIDNext: 11, Unseen: 0},
+			want: false,
+			why:  "没有新信却每轮都全量同步，分档就白做了",
+		},
+		{
+			// 生产里最常见的一格：客户回了**一封**。差一写错的话，恰恰就是
+			// 这一格被判成「没有新信」——多封的情况照常工作，于是这个 bug
+			// 只在最普通的场景下出现。
+			//
+			// Unseen 故意和我们库里的数一致（都是 0），这样这一格**只**由
+			// UIDNext 那条判断决定。不这样的话未读数那条兜底会把差一盖住，
+			// 测试照绿——而 UIDNext 那条其实已经错了。
+			name: "服务器说下一封是 12——正好来了一封，而且未读数看不出差别",
+			st:   FolderStatus{UIDNext: 12, Unseen: 0},
+			want: true,
+			why: "**这一条错了就是信收不到**，错的还是最常见的那一格（客户回了一封）；" +
+				"而且未读数那条兜底在这一格帮不上忙",
+		},
+		{
+			name: "服务器说下一封是 15——中间有四封我们没取过",
+			st:   FolderStatus{UIDNext: 15, Unseen: 0},
+			want: true,
+			why:  "**这一条错了就是信收不到**：有新信而没被提上来同步",
+		},
+		{
+			name: "没有新信，但服务器数出 3 封未读而我们库里是 0",
+			st:   FolderStatus{UIDNext: 11, Unseen: 3},
+			want: true,
+			why:  "有人在别的客户端上动过已读状态，跟一次",
+		},
+		{
+			name: "服务器没回 UIDNEXT——什么都判不出来",
+			st:   FolderStatus{UIDNext: 0, Unseen: 0},
+			want: true,
+			why: "判不准必须同步。省掉这一条的话，一台不回 UIDNEXT 的主机上" +
+				"所有没人看的箱都会安静地不再收信",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := svc.worthAFullSync(ctx, cfg, acct, tc.st); got != tc.want {
+				t.Errorf("判成 %v，应该是 %v——%s", got, tc.want, tc.why)
+			}
+		})
+	}
+
+	// 从没同步过的箱（没有 mail_sync_state 那一行）：空信箱不必同步，
+	// 有信就必须同步。新绑的箱走的正是这条路。
+	if _, err := pool.Exec(ctx, `DELETE FROM mail_sync_state WHERE tenant_id=$1`, tenantID); err != nil {
+		t.Fatal(err)
+	}
+	if svc.worthAFullSync(ctx, cfg, acct, FolderStatus{UIDNext: 1, Unseen: 0}) {
+		t.Error("一个空信箱被判成需要同步")
+	}
+	if !svc.worthAFullSync(ctx, cfg, acct, FolderStatus{UIDNext: 6, Unseen: 5}) {
+		t.Error("新绑的箱里已经有五封信，却被判成不必同步——那五封永远不会进来")
+	}
+}
+
+// 分档挑的是「有人在看的」，不是「所有活着的」。
+//
+// 挑错的后果分两边：全量那一档多挑了，等于没分档（600 个箱每轮全过一遍，
+// 每个箱 1.6 秒）；挑少了，有人正开着邮箱页却掉进了十分钟一次的那一档。
+func TestTheTwoTiersSplitByWhoIsLooking(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantID := time.Now().UnixNano()
+	employeeID := tenantID%100000 + 930001
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_binding_log WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+	}()
+	svc := New(pool, Deps{Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	watching, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "watching@qq.com", Provider: "qq", Secret: "a",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	idle, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "idle@163.com", Provider: "netease163", Secret: "b",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 一个刚被看过，一个两小时前看过。
+	if _, err := pool.Exec(ctx, `UPDATE mail_accounts SET last_read_at = now()
+		WHERE tenant_id=$1 AND id=$2`, tenantID, watching.AccountID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE mail_accounts SET last_read_at = now() - interval '2 hours'
+		WHERE tenant_id=$1 AND id=$2`, tenantID, idle.AccountID); err != nil {
+		t.Fatal(err)
+	}
+
+	const activeSeconds = int32(30 * 60)
+	active, err := svc.q.ListActiveMailAccounts(ctx, store.ListActiveMailAccountsParams{
+		TenantID: tenantID, ActiveSeconds: activeSeconds,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(active) != 1 || active[0].ID != watching.AccountID {
+		t.Fatalf("全量这一档应该只有正在看的那个箱，拿到 %v", idsOf(active))
+	}
+
+	due, err := svc.q.ListMailboxesDueForStatus(ctx, store.ListMailboxesDueForStatusParams{
+		TenantID: tenantID, ActiveSeconds: activeSeconds,
+		StatusSeconds: int32(10 * 60), RowLimit: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 1 || due[0].ID != idle.AccountID {
+		t.Fatalf("轻状态这一档应该只有没人看的那个箱，拿到 %v", dueIDsOf(due))
+	}
+
+	// 两档互斥。重叠的话正在看的箱会被问一次白问的 STATUS，而那笔钱本该
+	// 花在没人看的箱上。
+	svc.markStatusChecked(ctx, tenantID, idle.AccountID)
+	due, err = svc.q.ListMailboxesDueForStatus(ctx, store.ListMailboxesDueForStatusParams{
+		TenantID: tenantID, ActiveSeconds: activeSeconds,
+		StatusSeconds: int32(10 * 60), RowLimit: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 0 {
+		t.Errorf("刚问过的箱又被挑中了——status_checked_at 没起作用，"+
+			"结果是每轮都问一遍，等于没有限频：%v", dueIDsOf(due))
+	}
+
+	// 常开连接跟着同一个信号走。
+	for _, tc := range []struct {
+		name string
+		id   int64
+		want bool
+	}{
+		{"正在看的箱要守着", watching.AccountID, true},
+		{"没人看的箱不守", idle.AccountID, false},
+	} {
+		got, err := svc.q.MailboxIsBeingRead(ctx, store.MailboxIsBeingReadParams{
+			TenantID: tenantID, ID: tc.id, ActiveSeconds: activeSeconds,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != tc.want {
+			t.Errorf("%s：拿到 %v", tc.name, got)
+		}
+	}
+}
+
+func idsOf(rows []store.ListActiveMailAccountsRow) []int64 {
+	out := make([]int64, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r.ID)
+	}
+	return out
+}
+
+func dueIDsOf(rows []store.ListMailboxesDueForStatusRow) []int64 {
+	out := make([]int64, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r.ID)
+	}
+	return out
+}
