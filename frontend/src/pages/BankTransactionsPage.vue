@@ -25,10 +25,19 @@
              按 export:receipt:read 显示：接口挂的是这个权限，采购经理能打开
              本页但没有它，不判断的话按钮点下去就是 403。 -->
         <el-button v-if="canReadAccounts" @click="openAccounts">{{ t('bankTransactions.accounts') }}</el-button>
+        <!-- CSV 对账单导入：**入口先藏起来**（2026-08-31 决定，见
+             docs/开发计划.md 的 F4）。后端整条路原样留着，以后要用把这两行
+             和下面那个错误清单弹窗放回来就行。
+
+             藏起来的理由：现在流水靠手工登记就够；各家银行导出的 CSV 列名、
+             编码、日期格式都不一样，没有真实样本对过就上线，第一次用必然
+             导进来一堆歪的行——而它是这页上唯一一个一次写很多行的按钮，
+             误点的代价最大。
         <el-button v-if="canWrite" type="primary" :loading="importing" @click="fileInput?.click()">
           {{ t('bankTransactions.import') }}
         </el-button>
         <input ref="fileInput" type="file" accept=".csv,text/csv" style="display: none" @change="onFilePicked" />
+        -->
       </div>
     </header>
 
@@ -168,6 +177,12 @@
                 >{{ t('bankTransactions.unmatch') }}</el-button>
                 <!-- 删是归档：行留着，理由和署名跟着行走。已被认领或已匹配
                      付款单的会被后端拒掉并说清楚先做哪一步。 -->
+                <!-- 改一行流水。有了它，「某个字段写错了」不用再走「删掉
+                     重新登记」——而那条路还会撞上流水号的唯一键。 -->
+                <el-button
+                  v-if="canWrite && view === 'live'"
+                  size="small" link type="primary" @click="openEdit(row)"
+                >{{ t('common.edit') }}</el-button>
                 <el-button
                   v-if="canWrite && view === 'live'"
                   size="small" link type="danger" @click="openDelete(row)"
@@ -258,7 +273,7 @@
          之后再导对账单，同号的行自动跳过，不会记重。 -->
     <el-dialog
       v-model="recordOpen"
-      :title="t('bankTransactions.recordTitle')"
+      :title="editingId ? t('bankTransactions.editTitle') : t('bankTransactions.recordTitle')"
       width="min(680px, 94vw)"
       class="record-dialog"
       destroy-on-close
@@ -391,18 +406,35 @@
         </section>
       </el-form>
       <input ref="recordFileInput" type="file" accept="application/pdf,image/*" style="display: none" @change="onRecordFilePicked" />
+      <!-- 只有编辑时才出现。改的是账——金额、日期、流水号改过一次而没人
+           知道，是这种表最难查的问题：报表对不上，谁也说不清是当初录错了
+           还是后来被人改了。所以每处改动都记下谁、什么时候、从什么改成
+           什么、为什么。 -->
+      <div v-if="editingId" class="edit-reason">
+        <div class="edit-reason-label">{{ t('bankTransactions.editReason') }}</div>
+        <el-input
+          v-model="editReason"
+          type="textarea"
+          :rows="2"
+          maxlength="500"
+          show-word-limit
+          :placeholder="t('bankTransactions.editReasonPlaceholder')"
+        />
+      </div>
       <template #footer>
         <el-button @click="recordOpen = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="recording" @click="saveRecord">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
+    <!-- 导入的错误清单，跟着导入入口一起藏（见上面那段和 F4）。
     <el-dialog v-model="errorsOpen" :title="t('bankTransactions.importErrors')" width="min(560px, 94vw)">
       <el-table :data="importErrors" size="small">
         <el-table-column prop="rowNo" :label="t('bankTransactions.rowNo')" width="90" />
         <el-table-column prop="reason" :label="t('bankTransactions.reason')" min-width="200" />
       </el-table>
     </el-dialog>
+    -->
   </div>
 </template>
 
@@ -410,7 +442,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { get, post } from '../api'
+import { get, post, put } from '../api'
 import { uploadBankStatement } from '../lib/statementUpload'
 import { CURRENCIES } from '../constants'
 import { noId } from '../lib/protoId'
@@ -450,6 +482,11 @@ interface TxnRow {
   attachmentKey: string
   attachmentUrl: string
   attachmentName: string
+  // 编辑要把现有值回填进表单，所以这两项也得读出来。原来列表不显示它们，
+  // 类型里就没有——**而缺字段在 TS 里不是错，是 undefined**：回填时账户
+  // 悄悄变成空，一次「只改了金额」的保存会把账户清掉，还留一条痕说你清了。
+  remittanceInfo: string
+  accountId: string
   // 删除留痕。**只在「已删除」那个视图里有值**——活着的行这三个是空的。
   deletedAt: string
   deletedBy: string
@@ -594,7 +631,33 @@ async function resolveAccountID(): Promise<string> {
   return String(created.id)
 }
 
+// 编辑复用登记那个对话框——两件事问的是同一组字段，做成两个长得像的表单，
+// 改了一个忘了另一个是这类界面最常见的死法。
+//
+// editingId 非空 = 这次是编辑。它同时决定标题、按钮文字，和保存时打哪个接口。
+const editingId = ref('')
+const editReason = ref('')
+
+function openEdit(row: TxnRow) {
+  editingId.value = String(row.id)
+  editReason.value = ''
+  Object.assign(recordForm, {
+    direction: row.direction, amount: row.amount, currency: row.currency,
+    txnDate: row.txnDate, bankRef: row.bankRef, counterparty: row.counterparty,
+    remittanceInfo: row.remittanceInfo || '',
+    ownership: row.ownership || '', detail: row.ownershipDetail || '',
+    // 账户在表单里是「名字或 id」的两用输入，回填时给 id：resolveAccountID
+    // 认得出纯数字就是既有账户，不会拿它去新建一个叫「17」的账户。
+    accountId: row.accountId && String(row.accountId) !== '0' ? String(row.accountId) : '',
+  })
+  recordFile.value = null
+  recordOpen.value = true
+  void loadAccounts()
+}
+
 function openRecord() {
+  editingId.value = ''
+  editReason.value = ''
   Object.assign(recordForm, {
     direction: 'CREDIT', amount: '', currency: 'USD', txnDate: '',
     bankRef: '', counterparty: '', remittanceInfo: '', ownership: '', detail: '',
@@ -612,9 +675,32 @@ async function saveRecord() {
     ElMessage.warning(t('bankTransactions.recordIncomplete'))
     return
   }
+  if (editingId.value && !editReason.value.trim()) {
+    ElMessage.warning(t('bankTransactions.editReasonRequired'))
+    return
+  }
   recording.value = true
   try {
     const accountId = await resolveAccountID()
+    if (editingId.value) {
+      // 改的是账，所以理由跟着一起上去，服务端每处改动留一条痕。
+      await put(`/bank-transactions/${editingId.value}`, {
+        fields: {
+          direction: recordForm.direction, amount: recordForm.amount,
+          currency: recordForm.currency, txnDate: recordForm.txnDate,
+          accountId,
+          bankRef: recordForm.bankRef, counterparty: recordForm.counterparty,
+          remittanceInfo: recordForm.remittanceInfo,
+          ownership: recordForm.ownership,
+          ownershipDetail: recordForm.ownership === 'OTHER' ? recordForm.detail : '',
+        },
+        reason: editReason.value.trim(),
+      })
+      ElMessage.success(t('bankTransactions.edited'))
+      recordOpen.value = false
+      await load()
+      return
+    }
     const created = await post<{ transaction: { id: string } }>('/bank-transactions', {
       transaction: {
         direction: recordForm.direction, amount: recordForm.amount,
@@ -824,6 +910,16 @@ onMounted(load)
 <style scoped>
 .view-tabs {
   margin-bottom: 12px;
+}
+.edit-reason {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.edit-reason-label {
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
 }
 .del-hint {
   margin: 0 0 10px;

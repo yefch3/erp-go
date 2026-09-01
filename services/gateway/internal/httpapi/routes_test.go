@@ -73,6 +73,9 @@ func TestBankTransactionDeleteRoutesAreRegistered(t *testing.T) {
 		// 误删之后重新登记同一笔会被流水号的唯一键挡住，而那行在列表里又
 		// 看不见——没有这条路，人只会觉得系统在胡说。
 		"POST /api/bank-transactions/{id}/restore",
+		// 改一行流水，理由必填、每处改动留痕。
+		"PUT /api/bank-transactions/{id}",
+		"GET /api/bank-transactions/{id}/changes",
 	} {
 		if !have[want] {
 			t.Errorf("路由没注册：%s", want)

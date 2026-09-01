@@ -697,6 +697,11 @@ service PurchaseOrderService {
   // 从已删除里放回列表。误删之后重新登记同一笔会被 bank_ref 的唯一键挡住，
   // 而那一行在列表里又看不见——没有这条路，人只会觉得系统在胡说。
   rpc RestoreBankTransaction(RestoreBankTransactionRequest) returns (RestoreBankTransactionResponse);
+  // 改一行流水。要填理由，每处改动留痕。已被认领或已匹配付款单的，改「会
+  // 影响账」的那几项要先取消认领。
+  rpc UpdateBankTransaction(UpdateBankTransactionRequest) returns (UpdateBankTransactionResponse);
+  // 这一行被改过什么，最近的排前面。
+  rpc ListBankTransactionChanges(ListBankTransactionChangesRequest) returns (ListBankTransactionChangesResponse);
   rpc UnmatchBankTransaction(UnmatchBankTransactionRequest) returns (UnmatchBankTransactionResponse);
 
   // 手工登记一行流水。CSV 导入之外的另一条入口：银行还没出对账单、或者
@@ -1768,6 +1773,34 @@ message RestoreBankTransactionRequest {
   int64 txn_id = 1;
 }
 message RestoreBankTransactionResponse {}
+
+message UpdateBankTransactionRequest {
+  int64 txn_id = 1;
+  // 和登记流水同一组字段——编辑就是「把当初填的重填一遍」，两边不该有
+  // 两套字段清单。
+  BankTransactionInput fields = 2;
+  // 为什么改。**必填**：改的是账，一笔钱的金额改过一次而没人知道，是这种
+  // 表最难查的问题。
+  string reason = 3;
+}
+message UpdateBankTransactionResponse {}
+
+message ListBankTransactionChangesRequest {
+  int64 txn_id = 1;
+}
+message BankTransactionChange {
+  // 字段名（txn_date / amount / ...）。中文标签由界面按它翻——标签会跟着
+  // 界面改，字段名不会。
+  string field = 1;
+  string old_value = 2;
+  string new_value = 3;
+  string reason = 4;
+  string changed_by = 5;
+  string created_at = 6;
+}
+message ListBankTransactionChangesResponse {
+  repeated BankTransactionChange items = 1;
+}
 
 message ListBankTransactionsResponse {
   repeated BankTransaction items = 1;

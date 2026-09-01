@@ -152,3 +152,33 @@ func (s *Server) restoreBankTransaction(w http.ResponseWriter, r *http.Request) 
 	}
 	s.writeProto(w, resp)
 }
+
+// updateBankTransaction 改一行流水。理由必填，在请求体里。
+//
+// PUT 而不是 POST /{id}/edit：这是「把整行替换成新的样子」，PUT 就是这个
+// 意思。删除那边用 POST 是因为 DELETE 带 body 不可靠——PUT 带 body 没有
+// 这个问题。
+func (s *Server) updateBankTransaction(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.UpdateBankTransactionRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.TxnId = idFromPath(r)
+	resp, err := s.Orders.UpdateBankTransaction(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// listBankTransactionChanges 这一行被改过什么。
+func (s *Server) listBankTransactionChanges(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.ListBankTransactionChanges(r.Context(),
+		&prv1.ListBankTransactionChangesRequest{TxnId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}

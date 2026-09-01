@@ -186,3 +186,173 @@ func TestAClaimedBankTransactionCannotBeDeleted(t *testing.T) {
 		t.Errorf("取消认领之后该删得掉：%v", err)
 	}
 }
+
+// 改一行流水：留痕、要理由、只记真的变了的那几项。
+//
+// 有了编辑，「某个字段写错了」不用再走「删掉重新登记」——而那条路还会撞上
+// bank_ref 的唯一键（号被归档的那一行占着）。这条测试钉住编辑本身，外加
+// 那个死角的正解：**删错了就恢复出来再改**，不需要把流水号释放掉。
+func TestEditingABankTransactionLeavesATrail(t *testing.T) {
+	dsn := os.Getenv("PROCUREMENT_TEST_DSN")
+	if dsn == "" {
+		t.Skip("PROCUREMENT_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenantID := time.Now().UnixNano()
+	defer func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM bank_transaction_changes WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM bank_transactions WHERE tenant_id=$1`, tenantID)
+	}()
+	svc := New(pool, Deps{})
+	op := Operator{ID: 91, Name: "财务小王"}
+
+	base := BankTransactionInput{
+		BankRef: "REF-EDIT", Direction: "CREDIT", Amount: "1000.00", Currency: "USD",
+		TxnDate: "2026-08-20", Counterparty: "ACME", Ownership: OwnershipOther,
+	}
+	v, err := svc.RecordBankTransaction(ctx, tenantID, base, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 理由必填，和删除同一个规矩。
+	if err := svc.UpdateBankTransaction(ctx, tenantID, v.ID, base, "  ", op); err == nil {
+		t.Fatal("没填理由竟然改成功了")
+	}
+
+	// 金额多打了一个零，改回来。
+	fixed := base
+	fixed.Amount = "100.00"
+	const why = "金额多打了一个零，对账单上是 100"
+	if err := svc.UpdateBankTransaction(ctx, tenantID, v.ID, fixed, why, op); err != nil {
+		t.Fatalf("改金额：%v", err)
+	}
+
+	changes, err := svc.ListBankTransactionChanges(ctx, tenantID, v.ID, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// **只记真的变了的那一项。** 一次「只改了金额」的保存，不该在变更记录里
+	// 堆出十行「对方名称 ACME → ACME」。
+	if len(changes) != 1 {
+		t.Fatalf("只改了金额，该只有一条留痕，实际 %d 条：%+v", len(changes), changes)
+	}
+	c := changes[0]
+	// 留痕存的是规范化之后的形式（decimal 的 String()，去掉末尾的零），
+	// 不是界面上那个带两位小数的样子。1000 → 100 对读账的人一样清楚，
+	// 而且两边同一个形式才比得出「有没有变」。
+	if c.Field != "amount" || c.OldValue != "1000" || c.NewValue != "100" {
+		t.Errorf("留痕要说清楚从什么改成什么，拿到 %+v", c)
+	}
+	if c.Reason != why || c.ChangedBy != op.Name {
+		t.Errorf("理由和署名要留住，拿到 %+v", c)
+	}
+
+	// 一次改好几项 = 好几条留痕，一个字段一行。
+	multi := fixed
+	multi.Counterparty = "ACME CORP"
+	multi.Note = "补了个备注"
+	if err := svc.UpdateBankTransaction(ctx, tenantID, v.ID, multi, "补全对方全称", op); err != nil {
+		t.Fatal(err)
+	}
+	changes, _ = svc.ListBankTransactionChanges(ctx, tenantID, v.ID, op)
+	if len(changes) != 3 {
+		t.Errorf("再改两项，总共该有三条留痕，实际 %d 条", len(changes))
+	}
+
+	// 什么都没改的保存不留痕，也不报错——人点了保存却没动任何东西，
+	// 是个正常动作，不该在变更记录里留一条空白。
+	if err := svc.UpdateBankTransaction(ctx, tenantID, v.ID, multi, "顺手点了保存", op); err != nil {
+		t.Fatal(err)
+	}
+	changes, _ = svc.ListBankTransactionChanges(ctx, tenantID, v.ID, op)
+	if len(changes) != 3 {
+		t.Errorf("什么都没改不该留痕，实际变成 %d 条", len(changes))
+	}
+}
+
+// 流水号被归档的那一行占着时，正解是「恢复出来再改」，不是把号释放掉。
+//
+// 这是用户提的那个死角：某个字段写错了 → 删掉重新登记 → 流水号已经被占了。
+//
+// 释放流水号（软删时改名，或者唯一键改成只对未删除的行生效）会把软删的
+// 第三条理由破坏掉——「重复导入不会让删掉的行自己长回来」。所以号不释放，
+// 而是给两条真正的出路：**直接改**（不用删），或者**恢复出来再改**。
+func TestAnArchivedRefIsFreedByRestoringAndEditing(t *testing.T) {
+	dsn := os.Getenv("PROCUREMENT_TEST_DSN")
+	if dsn == "" {
+		t.Skip("PROCUREMENT_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenantID := time.Now().UnixNano()
+	defer func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM bank_transaction_changes WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM bank_transactions WHERE tenant_id=$1`, tenantID)
+	}()
+	svc := New(pool, Deps{})
+	op := Operator{ID: 92, Name: "财务小王"}
+
+	in := BankTransactionInput{
+		BankRef: "REF-OOPS", Direction: "CREDIT", Amount: "1000.00", Currency: "USD",
+		TxnDate: "2026-08-20", Counterparty: "ACME", Ownership: OwnershipOther,
+	}
+	v, err := svc.RecordBankTransaction(ctx, tenantID, in, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DeleteBankTransaction(ctx, tenantID, v.ID, "以为不能改，先删了", op); err != nil {
+		t.Fatal(err)
+	}
+
+	// 已删除的行不许直接改：它在存档里，改它等于偷偷篡改一份封存的记录。
+	if err := svc.UpdateBankTransaction(ctx, tenantID, v.ID, in, "想直接改", op); err == nil {
+		t.Error("已删除的行被直接改掉了——存档不该能偷偷改")
+	} else if !strings.Contains(err.Error(), "恢复") {
+		t.Errorf("要告诉人先恢复，拿到：%v", err)
+	}
+
+	// 正解：恢复出来，再改。
+	if err := svc.RestoreBankTransaction(ctx, tenantID, v.ID, op); err != nil {
+		t.Fatal(err)
+	}
+	fixed := in
+	fixed.Amount = "100.00"
+	if err := svc.UpdateBankTransaction(ctx, tenantID, v.ID, fixed, "恢复之后改对", op); err != nil {
+		t.Fatalf("恢复之后该改得动：%v", err)
+	}
+
+	// 流水号本身也能改——「号敲错了」这件事直接改就行，不用删。
+	renamed := fixed
+	renamed.BankRef = "REF-CORRECT"
+	if err := svc.UpdateBankTransaction(ctx, tenantID, v.ID, renamed, "流水号敲错了", op); err != nil {
+		t.Fatalf("改流水号：%v", err)
+	}
+	// 改成一个已经被占着的号要被拒——包括被已删除的行占着的。
+	other, err := svc.RecordBankTransaction(ctx, tenantID, BankTransactionInput{
+		BankRef: "REF-TAKEN", Direction: "DEBIT", Amount: "5.00", Currency: "USD",
+		TxnDate: "2026-08-21", Counterparty: "B", Ownership: OwnershipOther,
+	}, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DeleteBankTransaction(ctx, tenantID, other.ID, "不要了", op); err != nil {
+		t.Fatal(err)
+	}
+	clash := renamed
+	clash.BankRef = "REF-TAKEN"
+	if err := svc.UpdateBankTransaction(ctx, tenantID, v.ID, clash, "换个号", op); err == nil {
+		t.Error("改成一个已删除的行占着的号，竟然成功了")
+	} else if !strings.Contains(err.Error(), "已删除") {
+		t.Errorf("要说清楚号在哪儿被占着，拿到：%v", err)
+	}
+}

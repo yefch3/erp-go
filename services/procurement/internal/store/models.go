@@ -49,6 +49,19 @@ type BankTransaction struct {
 	DeleteReason        string
 }
 
+type BankTransactionChange struct {
+	ID            int64
+	TenantID      int64
+	TxnID         int64
+	Field         string
+	OldValue      string
+	NewValue      string
+	Reason        string
+	ChangedByID   int64
+	ChangedByName string
+	CreatedAt     pgtype.Timestamptz
+}
+
 type CostCharge struct {
 	ID              int64
 	TenantID        int64

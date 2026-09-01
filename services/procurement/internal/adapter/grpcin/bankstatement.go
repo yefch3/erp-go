@@ -103,22 +103,9 @@ func (h *OrderHandler) AttachBankTransactionFile(ctx context.Context, req *prv1.
 
 func (h *OrderHandler) RecordBankTransaction(ctx context.Context, req *prv1.RecordBankTransactionRequest) (*prv1.RecordBankTransactionResponse, error) {
 	op, _ := grpcx.OperatorFromContext(ctx)
-	in := req.GetTransaction()
-	v, err := h.svc.RecordBankTransaction(ctx, grpcx.TenantID(ctx), app.BankTransactionInput{
-		AccountID:           in.GetAccountId(),
-		BankRef:             in.GetBankRef(),
-		Direction:           in.GetDirection(),
-		Amount:              in.GetAmount(),
-		Currency:            in.GetCurrency(),
-		TxnDate:             in.GetTxnDate(),
-		Counterparty:        in.GetCounterparty(),
-		CounterpartyAccount: in.GetCounterpartyAccount(),
-		RemittanceInfo:      in.GetRemittanceInfo(),
-		TrustedRef:          in.GetTrustedRef(),
-		Note:                in.GetNote(),
-		Ownership:           in.GetOwnership(),
-		OwnershipDetail:     in.GetOwnershipDetail(),
-	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	v, err := h.svc.RecordBankTransaction(ctx, grpcx.TenantID(ctx),
+		bankTransactionInput(req.GetTransaction()),
+		app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
 		return nil, err
 	}
@@ -223,4 +210,56 @@ func (h *OrderHandler) RestoreBankTransaction(ctx context.Context, req *prv1.Res
 		return nil, err
 	}
 	return &prv1.RestoreBankTransactionResponse{}, nil
+}
+
+// bankTransactionInput 是登记和编辑共用的那一层翻译。
+//
+// 一处写两处用：编辑就是「把当初填的重填一遍」，两边各抄一份字段清单的话，
+// 以后加一个字段只改了一边，另一边会**静默地**把它当成空值——而在编辑那边，
+// 空值意味着「你把它清空了」，还会留一条痕说你清空了它。
+func bankTransactionInput(in *prv1.BankTransactionInput) app.BankTransactionInput {
+	return app.BankTransactionInput{
+		AccountID:           in.GetAccountId(),
+		BankRef:             in.GetBankRef(),
+		Direction:           in.GetDirection(),
+		Amount:              in.GetAmount(),
+		Currency:            in.GetCurrency(),
+		TxnDate:             in.GetTxnDate(),
+		Counterparty:        in.GetCounterparty(),
+		CounterpartyAccount: in.GetCounterpartyAccount(),
+		RemittanceInfo:      in.GetRemittanceInfo(),
+		TrustedRef:          in.GetTrustedRef(),
+		Note:                in.GetNote(),
+		Ownership:           in.GetOwnership(),
+		OwnershipDetail:     in.GetOwnershipDetail(),
+	}
+}
+
+// UpdateBankTransaction 改一行流水。要填理由，每处改动留痕。
+func (h *OrderHandler) UpdateBankTransaction(ctx context.Context, req *prv1.UpdateBankTransactionRequest) (*prv1.UpdateBankTransactionResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	if err := h.svc.UpdateBankTransaction(ctx, grpcx.TenantID(ctx), req.GetTxnId(),
+		bankTransactionInput(req.GetFields()), req.GetReason(),
+		app.Operator{ID: op.EmployeeID, Name: op.Name}); err != nil {
+		return nil, err
+	}
+	return &prv1.UpdateBankTransactionResponse{}, nil
+}
+
+// ListBankTransactionChanges 这一行被改过什么。
+func (h *OrderHandler) ListBankTransactionChanges(ctx context.Context, req *prv1.ListBankTransactionChangesRequest) (*prv1.ListBankTransactionChangesResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	items, err := h.svc.ListBankTransactionChanges(ctx, grpcx.TenantID(ctx), req.GetTxnId(),
+		app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*prv1.BankTransactionChange, 0, len(items))
+	for _, c := range items {
+		out = append(out, &prv1.BankTransactionChange{
+			Field: c.Field, OldValue: c.OldValue, NewValue: c.NewValue,
+			Reason: c.Reason, ChangedBy: c.ChangedBy, CreatedAt: c.CreatedAt,
+		})
+	}
+	return &prv1.ListBankTransactionChangesResponse{Items: out}, nil
 }

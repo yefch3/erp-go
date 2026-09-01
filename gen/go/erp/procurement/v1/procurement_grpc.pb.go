@@ -2636,6 +2636,8 @@ const (
 	PurchaseOrderService_SetBankTransactionOwnership_FullMethodName      = "/erp.procurement.v1.PurchaseOrderService/SetBankTransactionOwnership"
 	PurchaseOrderService_DeleteBankTransaction_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/DeleteBankTransaction"
 	PurchaseOrderService_RestoreBankTransaction_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/RestoreBankTransaction"
+	PurchaseOrderService_UpdateBankTransaction_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/UpdateBankTransaction"
+	PurchaseOrderService_ListBankTransactionChanges_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ListBankTransactionChanges"
 	PurchaseOrderService_UnmatchBankTransaction_FullMethodName           = "/erp.procurement.v1.PurchaseOrderService/UnmatchBankTransaction"
 	PurchaseOrderService_RecordBankTransaction_FullMethodName            = "/erp.procurement.v1.PurchaseOrderService/RecordBankTransaction"
 	PurchaseOrderService_PresignBankTransactionFile_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/PresignBankTransactionFile"
@@ -2762,6 +2764,11 @@ type PurchaseOrderServiceClient interface {
 	// 从已删除里放回列表。误删之后重新登记同一笔会被 bank_ref 的唯一键挡住，
 	// 而那一行在列表里又看不见——没有这条路，人只会觉得系统在胡说。
 	RestoreBankTransaction(ctx context.Context, in *RestoreBankTransactionRequest, opts ...grpc.CallOption) (*RestoreBankTransactionResponse, error)
+	// 改一行流水。要填理由，每处改动留痕。已被认领或已匹配付款单的，改「会
+	// 影响账」的那几项要先取消认领。
+	UpdateBankTransaction(ctx context.Context, in *UpdateBankTransactionRequest, opts ...grpc.CallOption) (*UpdateBankTransactionResponse, error)
+	// 这一行被改过什么，最近的排前面。
+	ListBankTransactionChanges(ctx context.Context, in *ListBankTransactionChangesRequest, opts ...grpc.CallOption) (*ListBankTransactionChangesResponse, error)
 	UnmatchBankTransaction(ctx context.Context, in *UnmatchBankTransactionRequest, opts ...grpc.CallOption) (*UnmatchBankTransactionResponse, error)
 	// 手工登记一行流水。CSV 导入之外的另一条入口：银行还没出对账单、或者
 	// 客户先发了水单，财务要先把这笔钱记下来。出口的收款对账原来自己有一张
@@ -3341,6 +3348,26 @@ func (c *purchaseOrderServiceClient) RestoreBankTransaction(ctx context.Context,
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) UpdateBankTransaction(ctx context.Context, in *UpdateBankTransactionRequest, opts ...grpc.CallOption) (*UpdateBankTransactionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateBankTransactionResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_UpdateBankTransaction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *purchaseOrderServiceClient) ListBankTransactionChanges(ctx context.Context, in *ListBankTransactionChangesRequest, opts ...grpc.CallOption) (*ListBankTransactionChangesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListBankTransactionChangesResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_ListBankTransactionChanges_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *purchaseOrderServiceClient) UnmatchBankTransaction(ctx context.Context, in *UnmatchBankTransactionRequest, opts ...grpc.CallOption) (*UnmatchBankTransactionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UnmatchBankTransactionResponse)
@@ -3537,6 +3564,11 @@ type PurchaseOrderServiceServer interface {
 	// 从已删除里放回列表。误删之后重新登记同一笔会被 bank_ref 的唯一键挡住，
 	// 而那一行在列表里又看不见——没有这条路，人只会觉得系统在胡说。
 	RestoreBankTransaction(context.Context, *RestoreBankTransactionRequest) (*RestoreBankTransactionResponse, error)
+	// 改一行流水。要填理由，每处改动留痕。已被认领或已匹配付款单的，改「会
+	// 影响账」的那几项要先取消认领。
+	UpdateBankTransaction(context.Context, *UpdateBankTransactionRequest) (*UpdateBankTransactionResponse, error)
+	// 这一行被改过什么，最近的排前面。
+	ListBankTransactionChanges(context.Context, *ListBankTransactionChangesRequest) (*ListBankTransactionChangesResponse, error)
 	UnmatchBankTransaction(context.Context, *UnmatchBankTransactionRequest) (*UnmatchBankTransactionResponse, error)
 	// 手工登记一行流水。CSV 导入之外的另一条入口：银行还没出对账单、或者
 	// 客户先发了水单，财务要先把这笔钱记下来。出口的收款对账原来自己有一张
@@ -3730,6 +3762,12 @@ func (UnimplementedPurchaseOrderServiceServer) DeleteBankTransaction(context.Con
 }
 func (UnimplementedPurchaseOrderServiceServer) RestoreBankTransaction(context.Context, *RestoreBankTransactionRequest) (*RestoreBankTransactionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RestoreBankTransaction not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) UpdateBankTransaction(context.Context, *UpdateBankTransactionRequest) (*UpdateBankTransactionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateBankTransaction not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) ListBankTransactionChanges(context.Context, *ListBankTransactionChangesRequest) (*ListBankTransactionChangesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListBankTransactionChanges not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) UnmatchBankTransaction(context.Context, *UnmatchBankTransactionRequest) (*UnmatchBankTransactionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UnmatchBankTransaction not implemented")
@@ -4766,6 +4804,42 @@ func _PurchaseOrderService_RestoreBankTransaction_Handler(srv interface{}, ctx c
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_UpdateBankTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateBankTransactionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).UpdateBankTransaction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_UpdateBankTransaction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).UpdateBankTransaction(ctx, req.(*UpdateBankTransactionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PurchaseOrderService_ListBankTransactionChanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBankTransactionChangesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).ListBankTransactionChanges(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_ListBankTransactionChanges_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).ListBankTransactionChanges(ctx, req.(*ListBankTransactionChangesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PurchaseOrderService_UnmatchBankTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(UnmatchBankTransactionRequest)
 	if err := dec(in); err != nil {
@@ -5136,6 +5210,14 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RestoreBankTransaction",
 			Handler:    _PurchaseOrderService_RestoreBankTransaction_Handler,
+		},
+		{
+			MethodName: "UpdateBankTransaction",
+			Handler:    _PurchaseOrderService_UpdateBankTransaction_Handler,
+		},
+		{
+			MethodName: "ListBankTransactionChanges",
+			Handler:    _PurchaseOrderService_ListBankTransactionChanges_Handler,
 		},
 		{
 			MethodName: "UnmatchBankTransaction",
