@@ -502,7 +502,13 @@ message ListMailboxSentResponse {
   string next_cursor = 3;
 }
 
-message SyncMailboxRequest {}
+message SyncMailboxRequest {
+  // 收哪个信箱。0 = 默认箱（旧前端、只绑了一个箱的人走这条）。
+  //
+  // 网关填的是解锁令牌里那个箱，也就是你正在看的那个。点 立即收信 是在问
+  // 「客户回了没有」，问的当然是眼前这个箱。
+  int64 account_id = 1;
+}
 
 message SyncMailboxResponse {
   int32 fetched = 1;

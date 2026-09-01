@@ -862,7 +862,11 @@ func (s *Server) syncMailbox(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("收信太频繁了，%d 秒后再试", int(wait.Seconds())))
 		return
 	}
-	resp, err := s.Emails.SyncMailbox(r.Context(), &mailv1.SyncMailboxRequest{})
+	// 收哪个箱由令牌决定，和收件箱、已发送同一个口径。点 立即收信 是在问
+	// 「客户回了没有」，问的是眼前这个箱。
+	resp, err := s.Emails.SyncMailbox(r.Context(), &mailv1.SyncMailboxRequest{
+		AccountId: unlockedAccount(r.Context()),
+	})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

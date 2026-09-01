@@ -791,6 +791,87 @@ func TestSentIsPerMailboxOnBothLegs(t *testing.T) {
 	}
 }
 
+// 立即收信 收的是**眼前这个箱**，而且认的是账号号不是员工号。
+//
+// 这一条钉的是一个从第一期漏到现在的真 bug。SyncMailboxInteractive 的第三个
+// 参数在第一期从「员工号」改成了「账号号」，SyncNow 这个调用点没跟着改——
+// 两个都是 int64，**编译器一声不吭**。于是 立即收信 拿员工号去 mail_accounts
+// 里当 id 查：
+//
+//   · 查不到 → 点了没反应，前端一个字都不说
+//   · 查得到 → 收的是**同事的信箱**，花同事的配额、动同事的已读状态
+//
+// 测试靠 id 空间错开来分辨这两个数：员工号是 87xxxx 量级，账号号是小序列。
+// 把解析改回「用员工号」的话，第一条断言会翻成「这个邮箱不在你名下」。
+func TestSyncNowTakesAMailboxNotAnEmployee(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantID := time.Now().UnixNano()
+	employeeID := tenantID%100000 + 880001
+	colleague := tenantID%100000 + 880002
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_binding_log WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+	}()
+	svc := New(pool, Deps{Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	mine, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "mine@qq.com", Provider: "qq", Secret: "code-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs, err := svc.VerifyMailSecret(ctx, tenantID, colleague, BindRequest{
+		Email: "theirs@qq.com", Provider: "qq", Secret: "code-2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mine.AccountID == employeeID {
+		t.Skip("账号号正好撞上员工号，这次分辨不了两者")
+	}
+
+	// 点名收自己的箱：认下来了，走到「没有邮件通道」为止（测试里 mailbox 是
+	// 空的）。这是「解析成功」的信号。
+	//
+	// 漏改的那一版在这里就红：它拿员工号去查 mail_accounts，查不到。
+	if _, _, err := svc.SyncNow(ctx, tenantID, employeeID, mine.AccountID); err != ErrMailHostNotConfigured {
+		t.Fatalf("点名收自己的箱应该认下来，拿到 %v——"+
+			"「不在你名下」说明它查的不是账号号", err)
+	}
+
+	// 不点名：收默认箱。旧前端走这条，行为要和从前一样。
+	if _, _, err := svc.SyncNow(ctx, tenantID, employeeID, 0); err != ErrMailHostNotConfigured {
+		t.Errorf("不点名该退回默认箱，拿到 %v", err)
+	}
+
+	// 同事的箱收不了。不拦的话，点一下就把同事的信箱拉了一遍。
+	if _, _, err := svc.SyncNow(ctx, tenantID, employeeID, theirs.AccountID); err == nil ||
+		err == ErrMailHostNotConfigured {
+		t.Errorf("收了同事的信箱，err=%v", err)
+	}
+
+	// 一个箱都没绑：说「没有邮箱账号」，不是「邮件服务没配」——后者会把人
+	// 送去找管理员，而该做的是先绑一个箱。
+	nobody := tenantID%100000 + 880003
+	if _, _, err := svc.SyncNow(ctx, tenantID, nobody, 0); err != ErrNoMailAccount {
+		t.Errorf("一个箱都没绑时该说没有邮箱账号，拿到 %v", err)
+	}
+}
+
 // seqNumbers 是测试用的编号生成器：只保证不重复。
 type seqNumbers struct{ n atomic.Int64 }
 

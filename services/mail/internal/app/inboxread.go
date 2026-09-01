@@ -795,11 +795,33 @@ func (s *Service) purgeOne(ctx context.Context, tenantID, ownerID, id int64, raw
 // folder and the read-state reconciliation carry on behind it. Somebody who
 // clicks 立即收信 is asking whether the customer has replied, and waiting out
 // five further round trips to be told so is the button feeling broken.
-func (s *Service) SyncNow(ctx context.Context, tenantID, employeeID int64) (int, bool, error) {
+//
+// accountID 是「收哪个箱」，0 = 默认箱。
+//
+// **这里从前传的是 employeeID。** 一人一箱的年代 SyncMailboxInteractive 收的
+// 就是员工号；第一期把它换成了账号号，而这个调用点漏了——两个都是 int64，
+// 编译器一声不吭。于是 立即收信 拿员工号当账号号去查 mail_accounts：查不到
+// 就是「邮箱账号不存在」（点了没反应），查得到就是**同事的信箱**——花的是
+// 同事的配额，动的是同事的已读状态。
+func (s *Service) SyncNow(ctx context.Context, tenantID, employeeID, accountID int64) (int, bool, error) {
+	// 先认箱再看有没有邮件通道：「这个箱不是你的」和「你一个箱都没绑」都比
+	// 「邮件服务没配」更具体，也更该先说。
+	if accountID > 0 {
+		if _, err := s.mailboxOfMine(ctx, tenantID, employeeID, accountID); err != nil {
+			return 0, false, err
+		}
+	} else {
+		// 没点名：收默认箱。旧前端和只绑了一个箱的人走这条。
+		id, err := s.defaultAccountIDFor(ctx, tenantID, employeeID)
+		if err != nil {
+			return 0, false, ErrNoMailAccount
+		}
+		accountID = id
+	}
 	if s.mailbox == nil {
 		return 0, false, ErrMailHostNotConfigured
 	}
-	return s.SyncMailboxInteractive(ctx, SyncConfig{TenantID: tenantID}, employeeID)
+	return s.SyncMailboxInteractive(ctx, SyncConfig{TenantID: tenantID}, accountID)
 }
 
 func errNotFound() error {

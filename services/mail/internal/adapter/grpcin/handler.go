@@ -1059,9 +1059,9 @@ func (h *Handler) EmptyJunk(ctx context.Context, _ *mailv1.EmptyJunkRequest) (*m
 	return &mailv1.EmptyJunkResponse{Deleted: int32(n)}, nil
 }
 
-func (h *Handler) SyncMailbox(ctx context.Context, _ *mailv1.SyncMailboxRequest) (*mailv1.SyncMailboxResponse, error) {
+func (h *Handler) SyncMailbox(ctx context.Context, req *mailv1.SyncMailboxRequest) (*mailv1.SyncMailboxResponse, error) {
 	op := operator(ctx)
-	n, pending, err := h.svc.SyncNow(ctx, grpcx.TenantID(ctx), op.ID)
+	n, pending, err := h.svc.SyncNow(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId())
 	if err != nil {
 		return &mailv1.SyncMailboxResponse{Fetched: 0, Detail: err.Error()}, nil
 	}

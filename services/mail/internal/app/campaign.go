@@ -432,15 +432,7 @@ func textToHTML(s string) string {
 // 绑好箱之后队列会自己排出去。
 func (s *Service) sendingMailbox(ctx context.Context, tenantID, employeeID, requested, replyToInboundID int64) (int64, error) {
 	if requested > 0 {
-		row, err := s.q.GetMailAccountByID(ctx, store.GetMailAccountByIDParams{
-			TenantID: tenantID, ID: requested,
-		})
-		if err != nil || row.EmployeeID != employeeID {
-			// 措辞含糊：说「这个信箱不是你的」而不是「它属于张三」，
-			// 否则这里就成了一个拿 id 探测别人信箱的口子。
-			return 0, apierr.Invalid("MAIL_NOT_YOUR_MAILBOX", "这个邮箱不在你名下")
-		}
-		return requested, nil
+		return s.mailboxOfMine(ctx, tenantID, employeeID, requested)
 	}
 	if replyToInboundID > 0 {
 		var acct, owner int64
@@ -455,6 +447,24 @@ func (s *Service) sendingMailbox(ctx context.Context, tenantID, employeeID, requ
 	if err != nil {
 		// 一个箱都没绑。入队不拦——绑好之后队列会自己排出去。
 		return 0, nil
+	}
+	return id, nil
+}
+
+// mailboxOfMine 把「调用方点名的那个信箱」翻成 id，顺便确认它确实在他名下。
+//
+// **这条必须在服务层判，不能只靠调用方。** 网关传过来的是解锁令牌里那个箱
+// （验过的），但服务层是最后一道；这里放过去的后果，在发信是「以同事的地址
+// 给客户写信」，在收信是「点一下就把同事的信箱拉了一遍」——花的是同事的
+// 配额，动的是同事的已读状态。
+func (s *Service) mailboxOfMine(ctx context.Context, tenantID, employeeID, id int64) (int64, error) {
+	row, err := s.q.GetMailAccountByID(ctx, store.GetMailAccountByIDParams{
+		TenantID: tenantID, ID: id,
+	})
+	if err != nil || row.EmployeeID != employeeID {
+		// 措辞含糊：说「这个信箱不是你的」而不是「它属于张三」，
+		// 否则这里就成了一个拿 id 探测别人信箱的口子。
+		return 0, apierr.Invalid("MAIL_NOT_YOUR_MAILBOX", "这个邮箱不在你名下")
 	}
 	return id, nil
 }
