@@ -33,6 +33,14 @@
     </header>
 
     <section class="panel">
+      <!-- 两个并列的入口，不是筛选项上多勾一个框。
+           删掉的行留着是为了事后查账，混在日常列表里只会让每天要清队列的人
+           多筛一道；而查账的人要的是「只看删掉的那些」。 -->
+      <el-radio-group v-model="view" class="view-tabs" @change="reload">
+        <el-radio-button value="live">{{ t('bankTransactions.viewLive') }}</el-radio-button>
+        <el-radio-button value="deleted">{{ t('bankTransactions.viewDeleted') }}</el-radio-button>
+      </el-radio-group>
+
       <div class="filters">
         <el-select v-model="ownership" clearable :placeholder="t('bankTransactions.ownershipAll')" style="width: 150px" @change="reload">
           <el-option value="PENDING" :label="t('bankTransactions.ownerships.PENDING')" />
@@ -46,7 +54,38 @@
         <el-button type="primary" @click="reload">{{ t('common.query') }}</el-button>
       </div>
 
+      <el-dialog v-model="deleteOpen" :title="t('bankTransactions.deleteTitle')" width="440px">
+        <p class="del-hint">{{ t('bankTransactions.deleteHint') }}</p>
+        <el-input
+          v-model="deleteReason"
+          type="textarea"
+          :rows="3"
+          maxlength="500"
+          show-word-limit
+          :placeholder="t('bankTransactions.deleteReasonPlaceholder')"
+        />
+        <template #footer>
+          <el-button @click="deleteOpen = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="danger" :loading="deleting" @click="confirmDelete">
+            {{ t('common.delete') }}
+          </el-button>
+        </template>
+      </el-dialog>
+
       <el-table v-loading="loading" :data="rows" stripe>
+        <!-- 只在「已删除」里出现：谁删的、什么时候、为什么。这三样就是
+             「作为存档」的全部意思——行还在，理由还在，署名还在。 -->
+        <el-table-column
+          v-if="view === 'deleted'"
+          :label="t('bankTransactions.deletedInfo')"
+          width="240"
+        >
+          <template #default="{ row }">
+            <div class="num-cell nowrap">{{ row.deletedAt }}</div>
+            <div class="sub">{{ row.deletedBy }}</div>
+            <div class="sub del-reason">{{ row.deleteReason }}</div>
+          </template>
+        </el-table-column>
         <!-- 日期和流水号合成一格：两者回答的是同一个问题——「这一行是哪天、
              哪一笔」。流水号还是搜索和去重的钥匙，所以留全、不截断，只是放小
              一号压在日期底下。合并之前七列在 1280 的笔记本上装不下，右边那个
@@ -127,6 +166,16 @@
                 <el-button
                   v-else-if="canWrite" size="small" link type="danger" @click="unmatch(row)"
                 >{{ t('bankTransactions.unmatch') }}</el-button>
+                <!-- 删是归档：行留着，理由和署名跟着行走。已被认领或已匹配
+                     付款单的会被后端拒掉并说清楚先做哪一步。 -->
+                <el-button
+                  v-if="canWrite && view === 'live'"
+                  size="small" link type="danger" @click="openDelete(row)"
+                >{{ t('common.delete') }}</el-button>
+                <el-button
+                  v-if="canWrite && view === 'deleted'"
+                  size="small" link type="primary" @click="restore(row)"
+                >{{ t('bankTransactions.restore') }}</el-button>
               </div>
             </div>
           </template>
@@ -359,7 +408,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post } from '../api'
 import { uploadBankStatement } from '../lib/statementUpload'
@@ -401,6 +450,10 @@ interface TxnRow {
   attachmentKey: string
   attachmentUrl: string
   attachmentName: string
+  // 删除留痕。**只在「已删除」那个视图里有值**——活着的行这三个是空的。
+  deletedAt: string
+  deletedBy: string
+  deleteReason: string
 }
 interface PaymentOpt { id: string; paymentNo: string; supplierName: string; currency: string; amount: string; paidAt: string; bankRef: string }
 interface RowError { rowNo: number; reason: string }
@@ -600,6 +653,48 @@ const ownershipSaving = ref(false)
 const ownershipRow = ref<TxnRow | null>(null)
 const ownershipForm = reactive({ ownership: '', detail: '' })
 
+// 删除对话框。理由必填——前端也拦一道，省得人写完一堆字才被后端退回来。
+const deleteRow = ref<TxnRow | null>(null)
+const deleteOpen = ref(false)
+const deleteReason = ref('')
+const deleting = ref(false)
+
+function openDelete(row: TxnRow) {
+  deleteRow.value = row
+  deleteReason.value = ''
+  deleteOpen.value = true
+}
+
+async function confirmDelete() {
+  const row = deleteRow.value
+  if (!row) return
+  if (!deleteReason.value.trim()) {
+    ElMessage.warning(t('bankTransactions.deleteReasonRequired'))
+    return
+  }
+  deleting.value = true
+  try {
+    await post(`/bank-transactions/${row.id}/delete`, { reason: deleteReason.value.trim() })
+    ElMessage.success(t('bankTransactions.deleted'))
+    deleteOpen.value = false
+    await load()
+  } finally {
+    deleting.value = false
+  }
+}
+
+// 从已删除放回列表。误删之后重新登记同一笔会被流水号的唯一键挡住，而那一行
+// 在列表里又看不见——没有这条路，人只会觉得系统在胡说。
+async function restore(row: TxnRow) {
+  await ElMessageBox.confirm(
+    t('bankTransactions.restoreConfirm', { ref: row.bankRef }),
+    t('bankTransactions.restore'),
+  )
+  await post(`/bank-transactions/${row.id}/restore`, {})
+  ElMessage.success(t('bankTransactions.restored'))
+  await load()
+}
+
 function openOwnership(row: TxnRow) {
   ownershipRow.value = row
   ownershipForm.ownership = row.ownership || ''
@@ -627,6 +722,8 @@ async function saveOwnership() {
 }
 const defaultCurrency = ref('')
 const importing = ref(false)
+// 看活着的还是看已删除的。两者互斥——见模板上那段注释。
+const view = ref<'live' | 'deleted'>('live')
 const fileInput = ref<HTMLInputElement | null>(null)
 const importErrors = ref<RowError[]>([])
 const errorsOpen = ref(false)
@@ -638,6 +735,7 @@ async function load() {
       page: page.value, page_size: 20, direction: direction.value, keyword: keyword.value,
       ownership: ownership.value === 'PENDING' ? '' : ownership.value,
       ownership_pending: ownership.value === 'PENDING' ? '1' : '',
+      deleted: view.value === 'deleted' ? '1' : '',
     })
     rows.value = resp.items || []
     total.value = Number(resp.total || 0)
@@ -724,6 +822,19 @@ onMounted(load)
 </script>
 
 <style scoped>
+.view-tabs {
+  margin-bottom: 12px;
+}
+.del-hint {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
+}
+.del-reason {
+  white-space: normal;
+  word-break: break-word;
+}
 .suggest { color: var(--el-color-primary); font-size: 13px; }
 .ownership-pick {
   display: flex;

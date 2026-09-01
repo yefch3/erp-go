@@ -34,6 +34,13 @@ func mustDecode(t *testing.T, body string, msg proto.Message) {
 }
 
 func TestBodiesTheBrowserActuallySendsDecode(t *testing.T) {
+	// frontend/src/pages/BankTransactionsPage.vue —— 删一条流水，理由必填。
+	mustDecode(t, `{"reason": "同一笔录了两遍，这条是重复的"}`,
+		&prv1.DeleteBankTransactionRequest{})
+	// 恢复：请求体是空的，路径里带 id。空体也得收得下，否则点「恢复」
+	// 直接 400。
+	mustDecode(t, `{}`, &prv1.RestoreBankTransactionRequest{})
+
 	// frontend/src/components/MailboxSwitcher.vue —— 设为默认发件箱。
 	// accountId 是 lowerCamelCase，proto 里是 account_id；protojson 认前者。
 	mustDecode(t, `{"accountId": 7}`, &mailv1.SetDefaultMailboxRequest{})

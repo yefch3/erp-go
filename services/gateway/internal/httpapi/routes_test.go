@@ -61,6 +61,25 @@ func TestMultiMailboxRoutesAreAllRegistered(t *testing.T) {
 	}
 }
 
+// 流水删除那一组。少一条，页面上「删除」或「恢复」点了没反应——而且是
+// 静默的：前端拿到 404，catch 里只当成一次失败。
+func TestBankTransactionDeleteRoutesAreRegistered(t *testing.T) {
+	have := routeSet(t)
+	for _, want := range []string{
+		// 删是归档不是抹掉，理由必填。POST 而不是 DELETE：带 body 的 DELETE
+		// 在代理和客户端那层各家实现不一，丢掉 body 的后果是「你明明填了
+		// 理由，它说你没填」。
+		"POST /api/bank-transactions/{id}/delete",
+		// 误删之后重新登记同一笔会被流水号的唯一键挡住，而那行在列表里又
+		// 看不见——没有这条路，人只会觉得系统在胡说。
+		"POST /api/bank-transactions/{id}/restore",
+	} {
+		if !have[want] {
+			t.Errorf("路由没注册：%s", want)
+		}
+	}
+}
+
 // 应收那一组地址必须齐。少一条，页面上就有一个按钮点了没反应。
 func TestReceivableRoutesAreAllRegistered(t *testing.T) {
 	have := routeSet(t)

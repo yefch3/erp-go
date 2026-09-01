@@ -670,6 +670,11 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/attachment", s.attachBankTransactionFile)
 		// 归属：这笔钱是谁那条线上的。见 docs/开发计划.md F2。
 		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/ownership", s.setBankTransactionOwnership)
+		// 删一条流水——归档，不是抹掉。理由必填，所以是 POST 带 body 而不是
+		// DELETE：带 body 的 DELETE 在代理和客户端那层各家实现不一，丢掉
+		// body 的后果是「你明明填了理由，它说你没填」。
+		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/delete", s.deleteBankTransaction)
+		r.With(s.perm("procurement:payment:write")).Post("/api/bank-transactions/{id}/restore", s.restoreBankTransaction)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/exceptions", s.reportReceiptException)
 		r.With(s.perm("procurement:exception:write")).Post("/api/purchase-orders/{id}/exceptions/{exceptionId}/resolve", s.resolveReceiptException)
 		// 质检与到货异常同一职责同一旋钮；结案是生命周期决定，单独的码。

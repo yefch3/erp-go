@@ -43,6 +43,10 @@ type BankTransaction struct {
 	Note                string
 	ClaimedAmount       pgtype.Numeric
 	AttachmentKey       string
+	DeletedAt           pgtype.Timestamptz
+	DeletedByID         int64
+	DeletedByName       string
+	DeleteReason        string
 }
 
 type CostCharge struct {

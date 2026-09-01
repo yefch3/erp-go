@@ -35,6 +35,7 @@ func (h *OrderHandler) ListBankTransactions(ctx context.Context, req *prv1.ListB
 			Status: req.GetStatus(), Direction: req.GetDirection(), Keyword: req.GetKeyword(),
 			Ownership: req.GetOwnership(), OwnershipPending: req.GetOwnershipPending(),
 			ClaimStatus: req.GetClaimStatus(), OwnershipIn: req.GetOwnershipIn(),
+			Deleted: req.GetDeleted(),
 		}, req.GetPage().GetPage(), req.GetPage().GetPageSize(),
 		app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
@@ -61,6 +62,9 @@ func bankTransactionPB(v app.BankTransactionView) *prv1.BankTransaction {
 		Ownership:                v.Ownership,
 		OwnershipDetail:          v.OwnershipDetail,
 		ClaimedAmount:            v.ClaimedAmount,
+		DeletedAt:                v.DeletedAt,
+		DeletedBy:                v.DeletedBy,
+		DeleteReason:             v.DeleteReason,
 		AccountId:                v.AccountID,
 		AccountName:              v.AccountName,
 		CounterpartyAccount:      v.CounterpartyAccount,
@@ -198,4 +202,25 @@ func (h *OrderHandler) SetBankTransactionOwnership(ctx context.Context, req *prv
 		return nil, err
 	}
 	return &prv1.SetBankTransactionOwnershipResponse{}, nil
+}
+
+// DeleteBankTransaction 归档一条流水。要填理由；已被认领或已匹配付款单的
+// 会被服务层拒掉。
+func (h *OrderHandler) DeleteBankTransaction(ctx context.Context, req *prv1.DeleteBankTransactionRequest) (*prv1.DeleteBankTransactionResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	if err := h.svc.DeleteBankTransaction(ctx, grpcx.TenantID(ctx), req.GetTxnId(),
+		req.GetReason(), app.Operator{ID: op.EmployeeID, Name: op.Name}); err != nil {
+		return nil, err
+	}
+	return &prv1.DeleteBankTransactionResponse{}, nil
+}
+
+// RestoreBankTransaction 把归档的那一行放回列表。
+func (h *OrderHandler) RestoreBankTransaction(ctx context.Context, req *prv1.RestoreBankTransactionRequest) (*prv1.RestoreBankTransactionResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	if err := h.svc.RestoreBankTransaction(ctx, grpcx.TenantID(ctx), req.GetTxnId(),
+		app.Operator{ID: op.EmployeeID, Name: op.Name}); err != nil {
+		return nil, err
+	}
+	return &prv1.RestoreBankTransactionResponse{}, nil
 }
