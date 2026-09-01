@@ -9,27 +9,31 @@ import (
 )
 
 type Contract struct {
-	ID                   int64
-	TenantID             int64
-	ContractNo           string
-	QuotationID          *int64
-	QuoteNo              string
-	CustomerID           int64
-	CustomerName         string
-	CurrentVersionID     *int64
-	Status               string
-	StatusBeforeApproval string
-	SalesEmployeeID      int64
-	SalesEmployee        string
-	SignedAt             pgtype.Timestamptz
-	EffectiveAt          pgtype.Timestamptz
-	CompletedAt          pgtype.Timestamptz
-	CreatedAt            pgtype.Timestamptz
-	CreatedBy            int64
-	UpdatedAt            pgtype.Timestamptz
-	UpdatedBy            int64
-	SignatureSource      string
-	ReceivableDueDate    pgtype.Date
+	ID                        int64
+	TenantID                  int64
+	ContractNo                string
+	QuotationID               *int64
+	QuoteNo                   string
+	CustomerID                int64
+	CustomerName              string
+	CurrentVersionID          *int64
+	Status                    string
+	StatusBeforeApproval      string
+	SalesEmployeeID           int64
+	SalesEmployee             string
+	SignedAt                  pgtype.Timestamptz
+	EffectiveAt               pgtype.Timestamptz
+	CompletedAt               pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
+	CreatedBy                 int64
+	UpdatedAt                 pgtype.Timestamptz
+	UpdatedBy                 int64
+	SignatureSource           string
+	ReceivableDueDate         pgtype.Date
+	ConditionConfirmedAt      pgtype.Timestamptz
+	ConditionConfirmationNote string
+	ConditionConfirmedBy      *int64
+	ConditionConfirmedByName  string
 }
 
 type ContractAttachment struct {
@@ -185,40 +189,43 @@ type ProcessedEvent struct {
 }
 
 type Quotation struct {
-	ID                   int64
-	TenantID             int64
-	QuoteNo              string
-	CustomerID           int64
-	CustomerName         string
-	Currency             string
-	Incoterm             string
-	PortOfLoading        string
-	PortOfDischarge      string
-	PaymentMethod        string
-	ValidUntil           pgtype.Date
-	FxRate               pgtype.Numeric
-	FxRateAt             pgtype.Timestamptz
-	FxSource             string
-	FxBaseCurrency       string
-	TotalAmount          pgtype.Numeric
-	BaseAmount           pgtype.Numeric
-	Remark               string
-	Status               string
-	SalesEmployeeID      int64
-	SalesEmployee        string
-	SentAt               pgtype.Timestamptz
-	RespondedAt          pgtype.Timestamptz
-	CreatedAt            pgtype.Timestamptz
-	CreatedBy            int64
-	UpdatedAt            pgtype.Timestamptz
-	UpdatedBy            int64
-	ContactID            *int64
-	ContactName          string
-	ContactEmail         string
-	SourceCostScenarioID *int64
-	SourceCostScenarioNo string
-	SourceSourcingCaseID *int64
-	RespondNote          string
+	ID                             int64
+	TenantID                       int64
+	QuoteNo                        string
+	CustomerID                     int64
+	CustomerName                   string
+	Currency                       string
+	Incoterm                       string
+	PortOfLoading                  string
+	PortOfDischarge                string
+	PaymentMethod                  string
+	ValidUntil                     pgtype.Date
+	FxRate                         pgtype.Numeric
+	FxRateAt                       pgtype.Timestamptz
+	FxSource                       string
+	FxBaseCurrency                 string
+	TotalAmount                    pgtype.Numeric
+	BaseAmount                     pgtype.Numeric
+	Remark                         string
+	Status                         string
+	SalesEmployeeID                int64
+	SalesEmployee                  string
+	SentAt                         pgtype.Timestamptz
+	RespondedAt                    pgtype.Timestamptz
+	CreatedAt                      pgtype.Timestamptz
+	CreatedBy                      int64
+	UpdatedAt                      pgtype.Timestamptz
+	UpdatedBy                      int64
+	ContactID                      *int64
+	ContactName                    string
+	ContactEmail                   string
+	SourceCostScenarioID           *int64
+	SourceCostScenarioNo           string
+	SourceSourcingCaseID           *int64
+	RespondNote                    string
+	SourceCustomerSelectionID      *int64
+	SourceCustomerSelectionNo      string
+	SourceCustomerSelectionVersion int32
 }
 
 type QuotationItem struct {
@@ -238,6 +245,27 @@ type QuotationItem struct {
 	Amount                   pgtype.Numeric
 	Remark                   string
 	SourceCostScenarioLineID *int64
+}
+
+type QuotationShipment struct {
+	ID                                int64
+	TenantID                          int64
+	QuotationID                       int64
+	BatchNo                           int32
+	SourceCustomerSelectionShipmentID *int64
+	ShipmentGroupKey                  string
+	CarrierForwarder                  string
+	ServiceOptionName                 string
+	CustomerManaged                   bool
+	Currency                          string
+	FreightAmount                     pgtype.Numeric
+	ChargeBasis                       string
+	PortOfLoading                     string
+	PortOfDischarge                   string
+	EstimatedDeparture                pgtype.Date
+	EstimatedArrival                  pgtype.Date
+	ValidUntil                        pgtype.Date
+	Remark                            string
 }
 
 type ReceiptAllocation struct {

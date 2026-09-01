@@ -259,6 +259,9 @@ services:
     environment:
       INTERNAL_SIGNING_KEY: ${INTERNAL_SIGNING_KEY:?set it in deploy/.env — openssl rand -hex 32}
       DB_DSN: postgres://erp_shipping:erp_shipping_pw@postgres:5432/erp_shipping?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      CONTRACT_TOPIC: erp.export.contract.v1
+      CONTRACT_CONSUMER_GROUP: shipping.contract.v1
       GRPC_PORT: "9009"
       IAM_ADDR: iam:9001
       MASTERDATA_ADDR: masterdata:9002

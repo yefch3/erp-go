@@ -98,7 +98,7 @@ const createCustomerSelectionItem = `-- name: CreateCustomerSelectionItem :one
 INSERT INTO sourcing_customer_selection_items(tenant_id,selection_id,sales_plan_item_id,sourcing_line_id,
  procurement_plan_item_id,supplier_quote_line_id,shipping_plan_item_id,shipping_option_line_id,
  product_name,confirmed_qty,uom_code,customer_currency,customer_unit_price,promised_delivery_date,line_note,
- supplier_id,supplier_name,factory_id,factory_name,shipment_group_key,customer_managed_shipping)
+ supplier_id,supplier_name,factory_id,factory_name,shipment_group_key,customer_managed_shipping,product_spec)
 VALUES($1,$2,$3,$4,
  $5,$6,
  NULL,NULL,
@@ -106,7 +106,7 @@ VALUES($1,$2,$3,$4,
  $10,$11::text::numeric,
  nullif($12::text,'')::date,$13,
  $14,$15,$16,$17,
- $18,$19)
+ $18,$19,$20)
 RETURNING id
 `
 
@@ -130,6 +130,7 @@ type CreateCustomerSelectionItemParams struct {
 	FactoryName             string
 	ShipmentGroupKey        string
 	CustomerManagedShipping bool
+	ProductSpec             string
 }
 
 func (q *Queries) CreateCustomerSelectionItem(ctx context.Context, arg CreateCustomerSelectionItemParams) (int64, error) {
@@ -153,6 +154,7 @@ func (q *Queries) CreateCustomerSelectionItem(ctx context.Context, arg CreateCus
 		arg.FactoryName,
 		arg.ShipmentGroupKey,
 		arg.CustomerManagedShipping,
+		arg.ProductSpec,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -288,7 +290,7 @@ func (q *Queries) CreateFinalShippingRecheckTask(ctx context.Context, arg Create
 
 const customerSelectionCandidate = `-- name: CustomerSelectionCandidate :one
 SELECT spi.id AS sales_plan_item_id,spi.sourcing_line_id,spi.procurement_plan_item_id,
- spi.product_name,spi.quoted_qty::text,spi.uom_code,
+ spi.product_name,trim(concat_ws(' · ',nullif(sl.material_standard,''),nullif(sl.grade,''),nullif(sl.thickness,''),nullif(sl.width,''),nullif(sl.length_or_form,''),nullif(sl.surface_requirement,''),nullif(sl.packaging,''),nullif(sl.remarks,'')))::text AS product_spec,spi.quoted_qty::text,spi.uom_code,
  spi.customer_currency,spi.customer_unit_price::text,
  coalesce(spi.promised_delivery_date::text,'')::text AS promised_delivery_date,spi.line_note,
  ppi.supplier_quote_line_id,ppi.buyer_id,ppi.buyer_name,ppi.supplier_id,ppi.supplier_name,
@@ -314,6 +316,7 @@ type CustomerSelectionCandidateRow struct {
 	SourcingLineID          int64
 	ProcurementPlanItemID   int64
 	ProductName             string
+	ProductSpec             string
 	SpiQuotedQty            string
 	UomCode                 string
 	CustomerCurrency        string
@@ -344,6 +347,7 @@ func (q *Queries) CustomerSelectionCandidate(ctx context.Context, arg CustomerSe
 		&i.SourcingLineID,
 		&i.ProcurementPlanItemID,
 		&i.ProductName,
+		&i.ProductSpec,
 		&i.SpiQuotedQty,
 		&i.UomCode,
 		&i.CustomerCurrency,
@@ -573,13 +577,108 @@ func (q *Queries) LinkCustomerSelectionShipmentItem(ctx context.Context, arg Lin
 	return err
 }
 
+const listContractProcurementSnapshots = `-- name: ListContractProcurementSnapshots :many
+SELECT i.id AS selection_item_id,i.sourcing_line_id,i.supplier_quote_line_id,
+ i.product_name,i.product_spec,i.confirmed_qty::text AS confirmed_qty,i.uom_code,
+ i.supplier_id,i.supplier_name,coalesce(i.factory_id,0)::bigint AS factory_id,i.factory_name,
+ s.case_id,pi.buyer_id,pi.buyer_name,coalesce(pi.moq::text,'')::text AS moq,
+ coalesce(t.final_currency,'')::text AS final_currency,t.final_unit_price::text AS final_unit_price,
+ t.final_available_qty::text AS final_available_qty,coalesce(t.final_lead_time,0)::int AS final_lead_time,
+ t.final_delivery_date::text AS final_delivery_date,t.final_payment_terms,t.final_incoterm,
+ t.final_valid_until::text AS final_valid_until
+FROM sourcing_customer_selection_items i
+JOIN sourcing_customer_selections s ON s.tenant_id=i.tenant_id AND s.id=i.selection_id
+JOIN procurement_plan_items pi ON pi.tenant_id=i.tenant_id AND pi.id=i.procurement_plan_item_id
+JOIN sourcing_final_recheck_tasks t ON t.tenant_id=i.tenant_id
+ AND t.selection_item_id=i.id AND t.task_domain='PROCUREMENT' AND t.status='RESOLVED'
+WHERE i.tenant_id=$1 AND i.selection_id=$2
+ORDER BY i.id
+`
+
+type ListContractProcurementSnapshotsParams struct {
+	TenantID    int64
+	SelectionID int64
+}
+
+type ListContractProcurementSnapshotsRow struct {
+	SelectionItemID     int64
+	SourcingLineID      int64
+	SupplierQuoteLineID int64
+	ProductName         string
+	ProductSpec         string
+	ConfirmedQty        string
+	UomCode             string
+	SupplierID          int64
+	SupplierName        string
+	FactoryID           int64
+	FactoryName         string
+	CaseID              int64
+	BuyerID             int64
+	BuyerName           string
+	Moq                 string
+	FinalCurrency       string
+	FinalUnitPrice      string
+	FinalAvailableQty   string
+	FinalLeadTime       int32
+	FinalDeliveryDate   string
+	FinalPaymentTerms   string
+	FinalIncoterm       string
+	FinalValidUntil     string
+}
+
+// 合同生效时交给原报价采购员的冻结执行资料。客户选择和最终复询都已经
+// 完成，不能再退回经理方案或重新猜供应商。
+func (q *Queries) ListContractProcurementSnapshots(ctx context.Context, arg ListContractProcurementSnapshotsParams) ([]ListContractProcurementSnapshotsRow, error) {
+	rows, err := q.db.Query(ctx, listContractProcurementSnapshots, arg.TenantID, arg.SelectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListContractProcurementSnapshotsRow
+	for rows.Next() {
+		var i ListContractProcurementSnapshotsRow
+		if err := rows.Scan(
+			&i.SelectionItemID,
+			&i.SourcingLineID,
+			&i.SupplierQuoteLineID,
+			&i.ProductName,
+			&i.ProductSpec,
+			&i.ConfirmedQty,
+			&i.UomCode,
+			&i.SupplierID,
+			&i.SupplierName,
+			&i.FactoryID,
+			&i.FactoryName,
+			&i.CaseID,
+			&i.BuyerID,
+			&i.BuyerName,
+			&i.Moq,
+			&i.FinalCurrency,
+			&i.FinalUnitPrice,
+			&i.FinalAvailableQty,
+			&i.FinalLeadTime,
+			&i.FinalDeliveryDate,
+			&i.FinalPaymentTerms,
+			&i.FinalIncoterm,
+			&i.FinalValidUntil,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCustomerSelectionItems = `-- name: ListCustomerSelectionItems :many
 SELECT id,sales_plan_item_id,sourcing_line_id,procurement_plan_item_id,supplier_quote_line_id,
  coalesce(shipping_plan_item_id,0)::bigint AS shipping_plan_item_id,
  coalesce(shipping_option_line_id,0)::bigint AS shipping_option_line_id,
  product_name,confirmed_qty::text,uom_code,customer_currency,customer_unit_price::text,
  coalesce(promised_delivery_date::text,'')::text AS promised_delivery_date,line_note,
- supplier_id,supplier_name,factory_id,factory_name,shipment_group_key,customer_managed_shipping,
+ supplier_id,supplier_name,factory_id,factory_name,shipment_group_key,customer_managed_shipping,product_spec,
  coalesce(final_customer_currency,'')::text AS final_customer_currency,
  coalesce(final_customer_unit_price::text,'')::text AS final_customer_unit_price,
  final_customer_payment_terms,final_customer_incoterm,
@@ -613,6 +712,7 @@ type ListCustomerSelectionItemsRow struct {
 	FactoryName               string
 	ShipmentGroupKey          string
 	CustomerManagedShipping   bool
+	ProductSpec               string
 	FinalCustomerCurrency     string
 	FinalCustomerUnitPrice    string
 	FinalCustomerPaymentTerms string
@@ -650,6 +750,7 @@ func (q *Queries) ListCustomerSelectionItems(ctx context.Context, arg ListCustom
 			&i.FactoryName,
 			&i.ShipmentGroupKey,
 			&i.CustomerManagedShipping,
+			&i.ProductSpec,
 			&i.FinalCustomerCurrency,
 			&i.FinalCustomerUnitPrice,
 			&i.FinalCustomerPaymentTerms,

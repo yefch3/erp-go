@@ -47,10 +47,11 @@ export const router = createRouter({
         { path: 'sales/intakes', component: () => import('./pages/ProcurementIntakesPage.vue') },
         { path: 'sales/inquiries', component: () => import('./pages/SourcingCasesListPage.vue') },
         { path: 'sales/inquiries/:id', component: () => import('./pages/SourcingCaseDetailPage.vue') },
-        { path: 'sales/quotations', component: () => import('./pages/QuotationsPage.vue') },
+        // 报价属于询盘上下文；旧书签回到询盘列表，报价数据仍由案件页和合同引用。
+        { path: 'sales/quotations', redirect: '/sales/inquiries' },
         { path: 'sales/settings/inquiry-templates', component: () => import('./pages/InquiryTemplatesPage.vue') },
         // 旧书签保留一个兼容版本，并把查询条件一并带到新入口。
-        { path: 'quotations', redirect: (to) => ({ path: '/sales/quotations', query: to.query }) },
+        { path: 'quotations', redirect: '/sales/inquiries' },
         { path: 'contracts', component: () => import('./pages/ContractsPage.vue') },
         { path: 'basic/excel-usage', component: () => import('./pages/ExcelUsagePage.vue') },
         { path: 'platform/tenants', component: () => import('./pages/PlatformTenantsPage.vue') },

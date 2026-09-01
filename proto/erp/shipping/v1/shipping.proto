@@ -36,6 +36,7 @@ service ShippingService {
   rpc UpdateArrivalReminderRules(UpdateArrivalReminderRulesRequest) returns (UpdateArrivalReminderRulesResponse);
   // 一页合同各自最新一班船的状态，一次问完（D2 合同执行一览表）。
   rpc ContractShippingSnapshot(ContractShippingSnapshotRequest) returns (ContractShippingSnapshotResponse);
+  rpc ListContractShippingHandoffs(ListContractShippingHandoffsRequest) returns (ListContractShippingHandoffsResponse);
 }
 
 message GetModuleStatusRequest {}
@@ -166,7 +167,37 @@ message ScheduleInput {
   int64 discharge_port_id = 21;
   string discharge_port_code = 22;
   string discharge_port_timezone = 23;
+  int64 contract_handoff_id = 24;
 }
+
+message ContractShippingHandoff {
+  int64 id = 1;
+  int64 contract_id = 2;
+  string contract_no = 3;
+  int64 contract_version_id = 4;
+  int32 version_no = 5;
+  int64 customer_id = 6;
+  string customer_name = 7;
+  int32 batch_no = 8;
+  string shipment_group_key = 9;
+  string carrier_forwarder = 10;
+  string service_option_name = 11;
+  bool customer_managed = 12;
+  string currency = 13;
+  string freight_amount = 14;
+  string charge_basis = 15;
+  string port_of_loading = 16;
+  string port_of_discharge = 17;
+  string estimated_departure = 18;
+  string estimated_arrival = 19;
+  string valid_until = 20;
+  string remark = 21;
+  string status = 22;
+  int64 schedule_id = 23;
+  string created_at = 24;
+}
+message ListContractShippingHandoffsRequest { string status = 1; }
+message ListContractShippingHandoffsResponse { repeated ContractShippingHandoff handoffs = 1; }
 
 message ScheduleChange {
   int64 id = 1;

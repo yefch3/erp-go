@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"os"
@@ -15,11 +16,15 @@ import (
 
 	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
 	"github.com/sgao19/erp-go/pkg/blobstore"
+	"github.com/sgao19/erp-go/pkg/deadletter"
 	"github.com/sgao19/erp-go/pkg/grpcx"
+	"github.com/sgao19/erp-go/pkg/idempotency"
+	"github.com/sgao19/erp-go/pkg/kafkax"
 	"github.com/sgao19/erp-go/pkg/livefeed"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/shipping/internal/adapter/grpcin"
 	"github.com/sgao19/erp-go/services/shipping/internal/adapter/grpcout"
+	"github.com/sgao19/erp-go/services/shipping/internal/adapter/kafkain"
 	"github.com/sgao19/erp-go/services/shipping/internal/app"
 	"github.com/sgao19/erp-go/services/shipping/internal/config"
 )
@@ -83,6 +88,19 @@ func run(log *slog.Logger) error {
 	go svc.RunArrivalReminderWorker(ctx, cfg.ReminderInterval, cfg.ReminderBatchSize)
 	// 提单签发提醒（E2）：每天扫一趟，船开了正本还没上传就催船务这批人。
 	go svc.RunBLReminderWorker(ctx, 24*time.Hour, log)
+
+	// A signed and manually confirmed contract creates booking preparation
+	// handoffs. It never creates an active sailing automatically: Shipping must
+	// still provide the real vessel/voyage and confirm the schedule.
+	contractHandler := kafkain.ContractEvents(svc, log)
+	dlContract := deadletter.New(pool, cfg.ContractConsumerGroup)
+	contracts := kafkax.NewConsumer(cfg.KafkaBrokers, cfg.ContractConsumerGroup, cfg.ContractTopic,
+		idempotency.New(pool, cfg.ContractConsumerGroup), dlContract, contractHandler, log)
+	go func() {
+		if err := contracts.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Error("contract consumer stopped", "err", err)
+		}
+	}()
 
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))
 	shippingv1.RegisterShippingServiceServer(srv, grpcin.New(svc))

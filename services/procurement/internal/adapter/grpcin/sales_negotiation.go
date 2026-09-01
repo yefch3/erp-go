@@ -90,7 +90,8 @@ func customerSelection(view app.CustomerSelectionView) *prv1.CustomerSelection {
 			FactoryName: row.FactoryName, ShipmentGroupKey: row.ShipmentGroupKey,
 			CustomerManagedShipping: row.CustomerManagedShipping, FinalCustomerCurrency: row.FinalCustomerCurrency,
 			FinalCustomerUnitPrice: row.FinalCustomerUnitPrice, FinalCustomerPaymentTerms: row.FinalCustomerPaymentTerms,
-			FinalCustomerIncoterm: row.FinalCustomerIncoterm, FinalCustomerRequiredDate: row.FinalCustomerRequiredDate})
+			FinalCustomerIncoterm: row.FinalCustomerIncoterm, FinalCustomerRequiredDate: row.FinalCustomerRequiredDate,
+			ProductSpec: row.ProductSpec})
 	}
 	shipments := make([]*prv1.CustomerSelectionShipment, 0, len(view.Shipments))
 	for _, shipment := range view.Shipments {

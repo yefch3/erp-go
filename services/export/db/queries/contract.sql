@@ -32,9 +32,18 @@ SELECT
     customer_id, customer_name, coalesce(current_version_id, 0)::bigint AS current_version_id,
     status, status_before_approval, sales_employee_id, sales_employee,
     coalesce(receivable_due_date::text, '')::text AS receivable_due_date,
-    signature_source, signed_at, effective_at, completed_at, created_at
+    signature_source, signed_at, effective_at, completed_at, created_at,
+    coalesce(condition_confirmed_at::text,'')::text AS condition_confirmed_at,
+    condition_confirmation_note, coalesce(condition_confirmed_by,0)::bigint AS condition_confirmed_by,
+    condition_confirmed_by_name
 FROM contracts
 WHERE tenant_id = $1 AND id = $2;
+
+-- name: RecordContractConditionConfirmation :exec
+UPDATE contracts SET condition_confirmed_at=sqlc.arg(confirmed_at)::text::timestamptz,
+ condition_confirmation_note=sqlc.arg(note), condition_confirmed_by=sqlc.arg(confirmed_by),
+ condition_confirmed_by_name=sqlc.arg(confirmed_by_name), updated_at=now(),updated_by=sqlc.arg(confirmed_by)
+WHERE tenant_id=sqlc.arg(tenant_id) AND id=sqlc.arg(id);
 
 -- name: ListContracts :many
 SELECT

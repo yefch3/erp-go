@@ -238,6 +238,10 @@ message Contract {
   // How the signature was established: MANUAL or PLATFORM. Empty until
   // signed.
   string signature_source = 19;
+  string condition_confirmed_at = 21;
+  string condition_confirmation_note = 22;
+  int64 condition_confirmed_by = 23;
+  string condition_confirmed_by_name = 24;
 }
 
 // ContractTerms is the editable part of a version. Prices and lines come from
@@ -370,6 +374,8 @@ message ChangeContractResponse {
 
 message SignContractRequest {
   int64 id = 1;
+  string condition_confirmed_at = 2;
+  string condition_confirmation_note = 3;
 }
 
 message SignContractResponse {

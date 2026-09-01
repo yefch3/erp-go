@@ -115,7 +115,12 @@ func (s *Server) changeContract(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) signContract(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Contracts.SignContract(r.Context(), &exv1.SignContractRequest{Id: idFromPath(r)})
+	req := &exv1.SignContractRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id = idFromPath(r)
+	resp, err := s.Contracts.SignContract(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

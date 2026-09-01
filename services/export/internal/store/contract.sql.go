@@ -332,7 +332,10 @@ SELECT
     customer_id, customer_name, coalesce(current_version_id, 0)::bigint AS current_version_id,
     status, status_before_approval, sales_employee_id, sales_employee,
     coalesce(receivable_due_date::text, '')::text AS receivable_due_date,
-    signature_source, signed_at, effective_at, completed_at, created_at
+    signature_source, signed_at, effective_at, completed_at, created_at,
+    coalesce(condition_confirmed_at::text,'')::text AS condition_confirmed_at,
+    condition_confirmation_note, coalesce(condition_confirmed_by,0)::bigint AS condition_confirmed_by,
+    condition_confirmed_by_name
 FROM contracts
 WHERE tenant_id = $1 AND id = $2
 `
@@ -343,24 +346,28 @@ type GetContractParams struct {
 }
 
 type GetContractRow struct {
-	ID                   int64
-	TenantID             int64
-	ContractNo           string
-	QuotationID          int64
-	QuoteNo              string
-	CustomerID           int64
-	CustomerName         string
-	CurrentVersionID     int64
-	Status               string
-	StatusBeforeApproval string
-	SalesEmployeeID      int64
-	SalesEmployee        string
-	ReceivableDueDate    string
-	SignatureSource      string
-	SignedAt             pgtype.Timestamptz
-	EffectiveAt          pgtype.Timestamptz
-	CompletedAt          pgtype.Timestamptz
-	CreatedAt            pgtype.Timestamptz
+	ID                        int64
+	TenantID                  int64
+	ContractNo                string
+	QuotationID               int64
+	QuoteNo                   string
+	CustomerID                int64
+	CustomerName              string
+	CurrentVersionID          int64
+	Status                    string
+	StatusBeforeApproval      string
+	SalesEmployeeID           int64
+	SalesEmployee             string
+	ReceivableDueDate         string
+	SignatureSource           string
+	SignedAt                  pgtype.Timestamptz
+	EffectiveAt               pgtype.Timestamptz
+	CompletedAt               pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
+	ConditionConfirmedAt      string
+	ConditionConfirmationNote string
+	ConditionConfirmedBy      int64
+	ConditionConfirmedByName  string
 }
 
 func (q *Queries) GetContract(ctx context.Context, arg GetContractParams) (GetContractRow, error) {
@@ -385,6 +392,10 @@ func (q *Queries) GetContract(ctx context.Context, arg GetContractParams) (GetCo
 		&i.EffectiveAt,
 		&i.CompletedAt,
 		&i.CreatedAt,
+		&i.ConditionConfirmedAt,
+		&i.ConditionConfirmationNote,
+		&i.ConditionConfirmedBy,
+		&i.ConditionConfirmedByName,
 	)
 	return i, err
 }
@@ -1175,6 +1186,34 @@ func (q *Queries) MarkContractSigned(ctx context.Context, arg MarkContractSigned
 		arg.TenantID,
 		arg.SignatureSource,
 		arg.UpdatedBy,
+		arg.ID,
+	)
+	return err
+}
+
+const recordContractConditionConfirmation = `-- name: RecordContractConditionConfirmation :exec
+UPDATE contracts SET condition_confirmed_at=$1::text::timestamptz,
+ condition_confirmation_note=$2, condition_confirmed_by=$3,
+ condition_confirmed_by_name=$4, updated_at=now(),updated_by=$3
+WHERE tenant_id=$5 AND id=$6
+`
+
+type RecordContractConditionConfirmationParams struct {
+	ConfirmedAt     string
+	Note            string
+	ConfirmedBy     *int64
+	ConfirmedByName string
+	TenantID        int64
+	ID              int64
+}
+
+func (q *Queries) RecordContractConditionConfirmation(ctx context.Context, arg RecordContractConditionConfirmationParams) error {
+	_, err := q.db.Exec(ctx, recordContractConditionConfirmation,
+		arg.ConfirmedAt,
+		arg.Note,
+		arg.ConfirmedBy,
+		arg.ConfirmedByName,
+		arg.TenantID,
 		arg.ID,
 	)
 	return err

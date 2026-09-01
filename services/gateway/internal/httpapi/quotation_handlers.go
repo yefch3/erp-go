@@ -10,12 +10,14 @@ import (
 
 func (s *Server) listQuotations(w http.ResponseWriter, r *http.Request) {
 	customerID, _ := strconv.ParseInt(r.URL.Query().Get("customer_id"), 10, 64)
+	sourcingCaseID, _ := strconv.ParseInt(r.URL.Query().Get("source_sourcing_case_id"), 10, 64)
 	resp, err := s.Quotations.ListQuotations(r.Context(), &exv1.ListQuotationsRequest{
-		Page:            pageFromQuery(r),
-		Keyword:         r.URL.Query().Get("keyword"),
-		CustomerId:      customerID,
-		Status:          r.URL.Query().Get("status"),
-		WithoutContract: r.URL.Query().Get("without_contract") == "true",
+		Page:                 pageFromQuery(r),
+		Keyword:              r.URL.Query().Get("keyword"),
+		CustomerId:           customerID,
+		Status:               r.URL.Query().Get("status"),
+		WithoutContract:      r.URL.Query().Get("without_contract") == "true",
+		SourceSourcingCaseId: sourcingCaseID,
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)

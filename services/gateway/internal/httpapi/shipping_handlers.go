@@ -105,6 +105,15 @@ func (s *Server) listShippingSchedules(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) listContractShippingHandoffs(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Shipping.ListContractShippingHandoffs(r.Context(), &shippingv1.ListContractShippingHandoffsRequest{Status: r.URL.Query().Get("status")})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) listSourcingShippingTasks(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	resp, err := s.Sourcing.ListSourcingShippingTasks(r.Context(), &prv1.ListSourcingShippingTasksRequest{

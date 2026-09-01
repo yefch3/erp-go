@@ -48,6 +48,46 @@ message QuotationItem {
   int64 source_cost_scenario_line_id = 14;
 }
 
+// Customer-facing freight is a quoted shipment batch, not a purchasable
+// product line. Keeping it separate prevents ContractEffective from creating
+// a bogus procurement requirement for freight while preserving the promised
+// carrier, route, sailing and customer price.
+message QuotationShipment {
+  int64 id = 1;
+  int32 batch_no = 2;
+  int64 source_customer_selection_shipment_id = 3;
+  string shipment_group_key = 4;
+  string carrier_forwarder = 5;
+  string service_option_name = 6;
+  bool customer_managed = 7;
+  string currency = 8;
+  string freight_amount = 9;
+  string charge_basis = 10;
+  string port_of_loading = 11;
+  string port_of_discharge = 12;
+  string estimated_departure = 13;
+  string estimated_arrival = 14;
+  string valid_until = 15;
+  string remark = 16;
+}
+
+message QuotationShipmentInput {
+  int64 source_customer_selection_shipment_id = 1;
+  string shipment_group_key = 2;
+  string carrier_forwarder = 3;
+  string service_option_name = 4;
+  bool customer_managed = 5;
+  string currency = 6;
+  string freight_amount = 7;
+  string charge_basis = 8;
+  string port_of_loading = 9;
+  string port_of_discharge = 10;
+  string estimated_departure = 11;
+  string estimated_arrival = 12;
+  string valid_until = 13;
+  string remark = 14;
+}
+
 message Quotation {
   int64 id = 1;
   string quote_no = 2;
@@ -80,6 +120,9 @@ message Quotation {
   int64 source_sourcing_case_id = 26;
   // What the customer said when accepting or rejecting.
   string respond_note = 27;
+  int64 source_customer_selection_id = 28;
+  string source_customer_selection_no = 29;
+  int32 source_customer_selection_version = 30;
 }
 
 // 客户报价明细可以选择关联产品主数据；未关联时保留已审核询盘的名称和单位快照。
@@ -104,6 +147,9 @@ message ListQuotationsRequest {
   // Hide quotations that already have a contract; used by the picker that
   // generates one.
   bool without_contract = 5;
+  // Keep sourced quotations inside their inquiry workspace. This is also
+  // used by the embedded quotation panel; it does not expose cost data.
+  int64 source_sourcing_case_id = 6;
 }
 
 message ListQuotationsResponse {
@@ -118,6 +164,7 @@ message GetQuotationRequest {
 message GetQuotationResponse {
   Quotation quotation = 1;
   repeated QuotationItem items = 2;
+  repeated QuotationShipment shipments = 3;
 }
 
 message CreateQuotationRequest {
@@ -134,11 +181,16 @@ message CreateQuotationRequest {
   int64 source_cost_scenario_id = 11;
   string source_cost_scenario_no = 12;
   int64 source_sourcing_case_id = 13;
+  int64 source_customer_selection_id = 14;
+  string source_customer_selection_no = 15;
+  int32 source_customer_selection_version = 16;
+  repeated QuotationShipmentInput shipments = 17;
 }
 
 message CreateQuotationResponse {
   Quotation quotation = 1;
   repeated QuotationItem items = 2;
+  repeated QuotationShipment shipments = 3;
 }
 
 message UpdateQuotationRequest {

@@ -60,14 +60,19 @@ import CustomerSelect from './masterdata/CustomerSelect.vue'
 import EmployeeSelect from './masterdata/EmployeeSelect.vue'
 import PortSelect, { type PortOption } from './masterdata/PortSelect.vue'
 
-const props = defineProps<{ modelValue:boolean; schedule?:ShippingSchedule }>()
+export interface ContractShippingHandoff {
+  id:string;contractId:string;contractNo:string;customerId:string;customerName:string;batchNo:number;
+  carrierForwarder:string;serviceOptionName:string;customerManaged:boolean;currency:string;freightAmount:string;
+  portOfLoading:string;portOfDischarge:string;estimatedDeparture:string;estimatedArrival:string;validUntil:string;remark:string;status:string;scheduleId:string
+}
+const props = defineProps<{ modelValue:boolean; schedule?:ShippingSchedule; handoff?:ContractShippingHandoff }>()
 const emit = defineEmits<{ 'update:modelValue':[value:boolean]; saved:[schedule:ShippingSchedule] }>()
 const { t, locale }=useI18n(); const auth=useAuthStore()
 const formRef=ref<FormInstance>(); const saving=ref(false); const loading=ref(false)
 const newReminderDay=ref(7)
 const carriers=ref<{id:string;name:string}[]>([])
 const open=computed({get:()=>props.modelValue,set:(v)=>emit('update:modelValue',v)})
-const empty=()=>({contractNo:'',customerId:'',customerName:'',carrierId:'',carrierForwarder:'',vesselName:'',voyageNo:'',portOfLoading:'',portOfDischarge:'',loadingPortId:'',loadingPortCode:'',loadingPortTimezone:'',dischargePortId:'',dischargePortCode:'',dischargePortTimezone:'',etd:'',eta:'',responsibleEmployeeId:auth.employeeId,responsibleName:auth.employeeName,remark:'',dateChangeReason:'',reminderDays:[7] as number[]})
+const empty=()=>({contractHandoffId:'',contractNo:'',customerId:'',customerName:'',carrierId:'',carrierForwarder:'',vesselName:'',voyageNo:'',portOfLoading:'',portOfDischarge:'',loadingPortId:'',loadingPortCode:'',loadingPortTimezone:'',dischargePortId:'',dischargePortCode:'',dischargePortTimezone:'',etd:'',eta:'',responsibleEmployeeId:auth.employeeId,responsibleName:auth.employeeName,remark:'',dateChangeReason:'',reminderDays:[7] as number[]})
 const form=reactive(empty())
 const datesChanged=computed(()=>!!props.schedule&&(form.etd!==props.schedule.etd||form.eta!==props.schedule.eta))
 const rules:FormRules={
@@ -88,6 +93,11 @@ watch(()=>props.modelValue,async visible=>{
     dischargePortId:props.schedule.dischargePortId,dischargePortCode:props.schedule.dischargePortCode,dischargePortTimezone:props.schedule.dischargePortTimezone,
     etd:props.schedule.etd,eta:props.schedule.eta,responsibleEmployeeId:props.schedule.responsibleEmployeeId,
     responsibleName:props.schedule.responsibleName,remark:props.schedule.remark,dateChangeReason:'',
+  }:props.handoff?{
+    contractHandoffId:props.handoff.id,contractNo:props.handoff.contractNo,customerId:props.handoff.customerId,customerName:props.handoff.customerName,
+    carrierForwarder:props.handoff.carrierForwarder,portOfLoading:props.handoff.portOfLoading,portOfDischarge:props.handoff.portOfDischarge,
+    etd:props.handoff.estimatedDeparture,eta:props.handoff.estimatedArrival,
+    remark:[`合同批次 ${props.handoff.batchNo}`,props.handoff.serviceOptionName,props.handoff.remark].filter(Boolean).join('；'),
   }:{})
   carriers.value=form.carrierForwarder?[{id:form.carrierId||'0',name:form.carrierForwarder}]:[]
   loading.value=true
@@ -100,6 +110,10 @@ watch(()=>props.modelValue,async visible=>{
     get<{suppliers:{id:string;name:string}[]}>('/suppliers',{page_size:200,status:'ACTIVE',business_type:'FORWARDER'}),
   ]).then(([carrierList,forwarderList])=>{const seen=new Map<string,{id:string;name:string}>();for(const item of[...(carrierList.suppliers??[]),...(forwarderList.suppliers??[])])seen.set(String(item.id),item);carriers.value=[...seen.values()]}))
   await Promise.allSettled(requests)
+  if(props.handoff&&!form.carrierId){
+    const matched=carriers.value.find(item=>item.name===props.handoff?.carrierForwarder)
+    if(matched)form.carrierId=matched.id
+  }
   loading.value=false
 })
 

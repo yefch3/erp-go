@@ -379,12 +379,14 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("export:shipment:write")).Post("/api/shipments/{id}/confirm", s.confirmSailing)
 		r.With(s.perm("export:shipment:write")).Post("/api/shipments/{id}/arrive", s.markShipmentArrived)
 		r.With(s.perm("export:shipment:write")).Post("/api/shipments/{id}/cancel", s.cancelShipment)
-		// Which boats one contract's goods are on. Gated on reading shipments,
-		// not contracts: it is shipping information reached from the other end.
-		r.With(s.perm("export:shipment:read")).Get("/api/contracts/{id}/vessels", s.listContractVessels)
+		// Which boats one contract's goods are on is part of the contract detail.
+		// Sales owners need it to follow the contract they can already read, but
+		// must not gain access to the shipment module's lists or write actions.
+		r.With(s.perm("export:contract:read")).Get("/api/contracts/{id}/vessels", s.listContractVessels)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/status", s.getShippingStatus)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/responsible-options", s.listVisibleEmployees)
 		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/schedules", s.listShippingSchedules)
+		r.With(s.perm("shipping:schedule:read")).Get("/api/shipping/contract-handoffs", s.listContractShippingHandoffs)
 		// 售前任务列表属于船运操作台，而不是采购/销售的只读案件视图。
 		// 后两者通过各自的 sourcing case collaboration 接口查看结果，
 		// 不能凭普通船期只读权限进入船运人员的工作队列。
@@ -525,6 +527,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("sales:inquiry:read")).Get("/api/sales-inquiries/{id}/customer-selections", s.listCustomerSelections)
 		r.With(s.perm("sales:inquiry:write")).Post("/api/sales-inquiries/{id}/customer-selections", s.confirmCustomerSelection)
 		r.With(s.perm("sales:inquiry:write")).Post("/api/sales-inquiries/{id}/customer-selections/decision", s.decideCustomerSelection)
+		r.With(s.perm("export:quotation:write")).Post("/api/sales-inquiries/{id}/customer-selections/{selectionId}/formal-quotation", s.createFormalQuotationFromSelection)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases", s.listSourcingCases)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}", s.getSourcingCase)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/changes", s.listSourcingCaseChanges)

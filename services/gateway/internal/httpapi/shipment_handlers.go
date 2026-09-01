@@ -86,8 +86,17 @@ func (s *Server) cancelShipment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listContractVessels(w http.ResponseWriter, r *http.Request) {
+	contractID := idFromPath(r)
+	// This endpoint is reached from the contract drawer and now uses the
+	// contract-read permission. Re-run the contract service's ownership/data
+	// scope check before returning shipment facts, otherwise knowing a contract
+	// id would be enough to read another sales owner's vessel information.
+	if _, err := s.Contracts.GetContract(r.Context(), &exv1.GetContractRequest{Id: contractID}); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
 	resp, err := s.Shipments.ListContractVessels(r.Context(),
-		&exv1.ListContractVesselsRequest{ContractId: idFromPath(r)})
+		&exv1.ListContractVesselsRequest{ContractId: contractID})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

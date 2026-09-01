@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -163,7 +165,14 @@ func (s *Service) ApplyApprovalDecision(ctx context.Context, tenantID, contractI
 // SignContract records the customer's signature, which is the moment the
 // version in hand becomes the one in force. Everything downstream — purchase
 // demand, shipment plans, receivables — hangs off the event this appends.
-func (s *Service) SignContract(ctx context.Context, tenantID, id int64, op Operator) (string, error) {
+func (s *Service) SignContract(ctx context.Context, tenantID, id int64, conditionConfirmedAt, conditionNote string, op Operator) (string, error) {
+	conditionConfirmedAt, conditionNote = strings.TrimSpace(conditionConfirmedAt), strings.TrimSpace(conditionNote)
+	if conditionConfirmedAt == "" || conditionNote == "" {
+		return "", apierr.Invalid("EX_CONTRACT_CONDITION_CONFIRMATION_REQUIRED", "请由销售填写商务条件人工确认时间和说明")
+	}
+	if _, err := time.Parse(time.RFC3339, conditionConfirmedAt); err != nil {
+		return "", apierr.Invalid("EX_CONTRACT_CONDITION_CONFIRMATION_TIME", "商务条件确认时间格式无效")
+	}
 	view, err := s.GetContract(ctx, tenantID, id, 0)
 	if err != nil {
 		return "", err
@@ -196,7 +205,31 @@ func (s *Service) SignContract(ctx context.Context, tenantID, id int64, op Opera
 			"请先上传客户签署件（文件类型选「客户签回」），再确认签署").
 			WithMeta("version_no", strconv.Itoa(int(view.Version.VersionNo)))
 	}
-	payload, err := json.Marshal(effectiveEvent(view))
+	event := effectiveEvent(view)
+	if view.Contract.QuotationID != 0 {
+		quotation, _, quotationErr := s.GetQuotation(ctx, tenantID, view.Contract.QuotationID)
+		if quotationErr != nil {
+			return "", quotationErr
+		}
+		event.QuotationID = quotation.ID
+		event.QuotationNo = quotation.QuoteNo
+		event.SourceCustomerSelectionID = quotation.SourceCustomerSelectionID
+		shipments, shipmentErr := s.ListQuotationShipments(ctx, tenantID, view.Contract.QuotationID)
+		if shipmentErr != nil {
+			return "", shipmentErr
+		}
+		for _, shipment := range shipments {
+			event.Shipments = append(event.Shipments, effectiveEventShipment{
+				BatchNo: shipment.BatchNo, ShipmentGroupKey: shipment.ShipmentGroupKey,
+				CarrierForwarder: shipment.CarrierForwarder, ServiceOptionName: shipment.ServiceOptionName,
+				CustomerManaged: shipment.CustomerManaged, Currency: shipment.Currency, FreightAmount: shipment.FreightAmount,
+				ChargeBasis: shipment.ChargeBasis, PortOfLoading: shipment.PortOfLoading, PortOfDischarge: shipment.PortOfDischarge,
+				EstimatedDeparture: shipment.EstimatedDeparture, EstimatedArrival: shipment.EstimatedArrival,
+				ValidUntil: shipment.ValidUntil, Remark: shipment.Remark,
+			})
+		}
+	}
+	payload, err := json.Marshal(event)
 	if err != nil {
 		return "", err
 	}
@@ -222,6 +255,9 @@ func (s *Service) SignContract(ctx context.Context, tenantID, id int64, op Opera
 		}
 		if locked.Status != "PENDING_SIGN" {
 			return apierr.Conflict("EX_CONTRACT_NOT_PENDING_SIGN", "只有待签署的合同可以签署")
+		}
+		if err := q.RecordContractConditionConfirmation(ctx, store.RecordContractConditionConfirmationParams{TenantID: tenantID, ID: id, ConfirmedAt: conditionConfirmedAt, Note: conditionNote, ConfirmedBy: &op.ID, ConfirmedByName: op.Name}); err != nil {
+			return err
 		}
 		// The version that just took over retires the one it replaces.
 		if err := q.SupersedeOtherVersions(ctx, store.SupersedeOtherVersionsParams{
@@ -298,21 +334,42 @@ func (s *Service) CancelContract(ctx context.Context, tenantID, id int64, op Ope
 // It carries the lines, so no consumer has to call export back to find out
 // what was actually sold.
 type contractEffectiveEvent struct {
-	ContractID   int64  `json:"contract_id"`
-	ContractNo   string `json:"contract_no"`
-	VersionID    int64  `json:"version_id"`
-	VersionNo    int32  `json:"version_no"`
-	CustomerID   int64  `json:"customer_id"`
-	CustomerName string `json:"customer_name"`
-	Currency     string `json:"currency"`
-	TotalAmount  string `json:"total_amount"`
-	DeliveryDate string `json:"delivery_date"`
-	Incoterm     string `json:"incoterm"`
+	ContractID                int64  `json:"contract_id"`
+	ContractNo                string `json:"contract_no"`
+	VersionID                 int64  `json:"version_id"`
+	VersionNo                 int32  `json:"version_no"`
+	CustomerID                int64  `json:"customer_id"`
+	CustomerName              string `json:"customer_name"`
+	Currency                  string `json:"currency"`
+	TotalAmount               string `json:"total_amount"`
+	DeliveryDate              string `json:"delivery_date"`
+	Incoterm                  string `json:"incoterm"`
+	QuotationID               int64  `json:"quotation_id"`
+	QuotationNo               string `json:"quotation_no"`
+	SourceCustomerSelectionID int64  `json:"source_customer_selection_id"`
 	// 合同负责人（A1）：采购需求生而继承它作为属主——合同是谁谈的，
 	// 拆出来的采购动向就归谁看。
-	SalesEmployeeID int64                `json:"sales_employee_id"`
-	SalesEmployee   string               `json:"sales_employee"`
-	Items           []effectiveEventItem `json:"items"`
+	SalesEmployeeID int64                    `json:"sales_employee_id"`
+	SalesEmployee   string                   `json:"sales_employee"`
+	Items           []effectiveEventItem     `json:"items"`
+	Shipments       []effectiveEventShipment `json:"shipments"`
+}
+
+type effectiveEventShipment struct {
+	BatchNo            int32  `json:"batch_no"`
+	ShipmentGroupKey   string `json:"shipment_group_key"`
+	CarrierForwarder   string `json:"carrier_forwarder"`
+	ServiceOptionName  string `json:"service_option_name"`
+	CustomerManaged    bool   `json:"customer_managed"`
+	Currency           string `json:"currency"`
+	FreightAmount      string `json:"freight_amount"`
+	ChargeBasis        string `json:"charge_basis"`
+	PortOfLoading      string `json:"port_of_loading"`
+	PortOfDischarge    string `json:"port_of_discharge"`
+	EstimatedDeparture string `json:"estimated_departure"`
+	EstimatedArrival   string `json:"estimated_arrival"`
+	ValidUntil         string `json:"valid_until"`
+	Remark             string `json:"remark"`
 }
 
 type effectiveEventItem struct {

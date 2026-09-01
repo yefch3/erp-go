@@ -165,6 +165,25 @@
             </template>
           </el-table-column>
         </el-table>
+        <template v-if="quotationShipments.length">
+          <el-divider content-position="left">{{ t('quotations.freightBatches') }}</el-divider>
+          <el-table :data="quotationShipments" size="small">
+            <el-table-column prop="batchNo" :label="t('quotations.batchNo')" width="76" />
+            <el-table-column :label="t('quotations.carrierForwarder')" min-width="150">
+              <template #default="{ row }">{{ row.customerManaged ? t('quotations.customerManagedShipping') : (row.carrierForwarder || '—') }}</template>
+            </el-table-column>
+            <el-table-column prop="serviceOptionName" :label="t('quotations.serviceOption')" min-width="130" />
+            <el-table-column :label="t('quotations.freightAmount')" width="150">
+              <template #default="{ row }">{{ row.currency }} {{ row.freightAmount }}</template>
+            </el-table-column>
+            <el-table-column :label="t('quotations.routeAndSailing')" min-width="260">
+              <template #default="{ row }">
+                {{ row.portOfLoading || '—' }} → {{ row.portOfDischarge || '—' }}<br />
+                <span class="sub">{{ row.estimatedDeparture || '—' }} → {{ row.estimatedArrival || '—' }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+        </template>
         <div class="items-foot">
           <el-button :disabled="readOnly" @click="addItem">{{ t('quotations.addItem') }}</el-button>
           <div class="totals">
@@ -237,6 +256,9 @@ interface Quotation {
   status: string
   sourceCostScenarioId: string
   sourceCostScenarioNo: string
+  sourceCustomerSelectionId?: string
+  sourceCustomerSelectionNo?: string
+  sourceCustomerSelectionVersion?: number
 }
 interface Item {
   productId: string
@@ -247,6 +269,18 @@ interface Item {
   qty: string
   unitPrice: string
   remark: string
+}
+interface QuotationShipment {
+  batchNo: number
+  carrierForwarder: string
+  serviceOptionName: string
+  customerManaged: boolean
+  currency: string
+  freightAmount: string
+  portOfLoading: string
+  portOfDischarge: string
+  estimatedDeparture: string
+  estimatedArrival: string
 }
 
 const STATUSES = ['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'CANCELLED']
@@ -261,9 +295,13 @@ const { t } = useI18n()
 const props = withDefaults(defineProps<{
   embedded?: boolean
   quotationIds?: Array<string | number>
+  sourceSourcingCaseId?: string | number
+  refreshToken?: number
 }>(), {
   embedded: false,
   quotationIds: () => [],
+  sourceSourcingCaseId: '',
+  refreshToken: 0,
 })
 const embedded = computed(() => props.embedded)
 const auth = useAuthStore()
@@ -275,6 +313,7 @@ const customers = ref<Customer[]>([])
 const products = ref<Product[]>([])
 const paymentOptions = ref<OptionItem[]>([])
 const detail = ref<Quotation | null>(null)
+const quotationShipments = ref<QuotationShipment[]>([])
 const contacts = ref<Contact[]>([])
 const total = ref(0)
 const page = ref(1)
@@ -328,12 +367,19 @@ async function load() {
   try {
     if (embedded.value) {
       const ids = [...new Set(props.quotationIds.map(String).filter(Boolean))]
-      const results = await Promise.all(ids.map(async quotationID => {
+      const explicitResults = await Promise.all(ids.map(async quotationID => {
         const data = await get<{ quotation: Quotation }>(`/quotations/${quotationID}`)
         return data.quotation
       }))
-      quotations.value = results
-      total.value = results.length
+      const sourced = props.sourceSourcingCaseId
+        ? (await get<{ quotations: Quotation[] }>('/quotations', {
+            page: 1, page_size: 200, source_sourcing_case_id: props.sourceSourcingCaseId,
+          })).quotations ?? []
+        : []
+      const merged = new Map<string, Quotation>()
+      for (const quotation of [...sourced, ...explicitResults]) merged.set(String(quotation.id), quotation)
+      quotations.value = [...merged.values()].sort((a, b) => Number(b.id) - Number(a.id))
+      total.value = quotations.value.length
       return
     }
     const data = await get<{ quotations: Quotation[]; meta: { total: string } }>('/quotations', {
@@ -355,6 +401,7 @@ function openCreate() {
   editingId.value = null
   readOnly.value = false
   detail.value = null
+  quotationShipments.value = []
   Object.assign(form, { ...EMPTY_FORM, items: [{ productId: '', productCode: '', productName: '', uomCode: '', spec: '', qty: '', unitPrice: '', remark: '' }] })
   dialogOpen.value = true
 }
@@ -366,9 +413,10 @@ async function openEdit(row: Quotation) {
   dialogOpen.value = true
   loadingDetail.value = true
   try {
-    const data = await get<{ quotation: Quotation; items: any[] }>(`/quotations/${row.id}`)
+    const data = await get<{ quotation: Quotation; items: any[]; shipments?: QuotationShipment[] }>(`/quotations/${row.id}`)
     detail.value = data.quotation
-    readOnly.value = readOnly.value || !!data.quotation.sourceCostScenarioId
+    quotationShipments.value = data.shipments ?? []
+    readOnly.value = readOnly.value || !!data.quotation.sourceCostScenarioId || !!data.quotation.sourceCustomerSelectionId
     Object.assign(form, {
       customerId: data.quotation.customerId, contactId: data.quotation.contactId || '',
       currency: data.quotation.currency,
@@ -476,7 +524,7 @@ onMounted(async () => {
 })
 
 watch(
-  () => props.quotationIds.map(String).join(','),
+  () => [props.quotationIds.map(String).join(','), String(props.sourceSourcingCaseId), String(props.refreshToken)].join('|'),
   () => { if (embedded.value) void load() },
 )
 </script>

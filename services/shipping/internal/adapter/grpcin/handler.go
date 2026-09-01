@@ -190,7 +190,28 @@ func inputFromProto(in *shippingv1.ScheduleInput) app.ScheduleInput {
 		ResponsibleEmployeeID: in.GetResponsibleEmployeeId(), ResponsibleName: in.GetResponsibleName(), Remark: in.GetRemark(),
 		LoadingPortID: in.GetLoadingPortId(), LoadingPortCode: in.GetLoadingPortCode(), LoadingPortTimezone: in.GetLoadingPortTimezone(),
 		DischargePortID: in.GetDischargePortId(), DischargePortCode: in.GetDischargePortCode(), DischargePortTimezone: in.GetDischargePortTimezone(),
+		ContractHandoffID: in.GetContractHandoffId(),
 	}
+}
+
+func (h *Handler) ListContractShippingHandoffs(ctx context.Context, req *shippingv1.ListContractShippingHandoffsRequest) (*shippingv1.ListContractShippingHandoffsResponse, error) {
+	rows, err := h.svc.ListContractShippingHandoffs(ctx, grpcx.TenantID(ctx), req.GetStatus())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*shippingv1.ContractShippingHandoff, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, &shippingv1.ContractShippingHandoff{
+			Id: row.ID, ContractId: row.ContractID, ContractNo: row.ContractNo, ContractVersionId: row.ContractVersionID,
+			VersionNo: row.VersionNo, CustomerId: row.CustomerID, CustomerName: row.CustomerName, BatchNo: row.BatchNo,
+			ShipmentGroupKey: row.ShipmentGroupKey, CarrierForwarder: row.CarrierForwarder, ServiceOptionName: row.ServiceOptionName,
+			CustomerManaged: row.CustomerManaged, Currency: row.Currency, FreightAmount: row.FreightAmount, ChargeBasis: row.ChargeBasis,
+			PortOfLoading: row.PortOfLoading, PortOfDischarge: row.PortOfDischarge, EstimatedDeparture: row.EstimatedDeparture,
+			EstimatedArrival: row.EstimatedArrival, ValidUntil: row.ValidUntil, Remark: row.Remark, Status: row.Status,
+			ScheduleId: row.ScheduleID, CreatedAt: timeValue(row.CreatedAt),
+		})
+	}
+	return &shippingv1.ListContractShippingHandoffsResponse{Handoffs: out}, nil
 }
 
 func listRowToProto(r store.ListSchedulesRow) *shippingv1.Schedule {

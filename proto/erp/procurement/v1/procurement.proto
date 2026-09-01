@@ -527,6 +527,9 @@ message Requirement {
   string reserved_qty = 42;
   // 当前还能建立采购单的数量：需求 - 已下单 - 草稿预占。
   string available_qty = 43;
+  string source_payment_terms = 44;
+  string source_incoterm = 45;
+  string source_valid_until = 46;
 }
 
 message ListRequirementsRequest {
@@ -2523,6 +2526,7 @@ message CustomerSelectionItem {
   string final_customer_payment_terms = 23;
   string final_customer_incoterm = 24;
   string final_customer_required_date = 25;
+  string product_spec = 26;
 }
 message CustomerShipmentChoiceInput {
   string shipment_group_key = 1;

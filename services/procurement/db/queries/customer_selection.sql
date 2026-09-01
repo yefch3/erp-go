@@ -1,6 +1,6 @@
 -- name: CustomerSelectionCandidate :one
 SELECT spi.id AS sales_plan_item_id,spi.sourcing_line_id,spi.procurement_plan_item_id,
- spi.product_name,spi.quoted_qty::text,spi.uom_code,
+ spi.product_name,trim(concat_ws(' · ',nullif(sl.material_standard,''),nullif(sl.grade,''),nullif(sl.thickness,''),nullif(sl.width,''),nullif(sl.length_or_form,''),nullif(sl.surface_requirement,''),nullif(sl.packaging,''),nullif(sl.remarks,'')))::text AS product_spec,spi.quoted_qty::text,spi.uom_code,
  spi.customer_currency,spi.customer_unit_price::text,
  coalesce(spi.promised_delivery_date::text,'')::text AS promised_delivery_date,spi.line_note,
  ppi.supplier_quote_line_id,ppi.buyer_id,ppi.buyer_name,ppi.supplier_id,ppi.supplier_name,
@@ -64,7 +64,7 @@ RETURNING id;
 INSERT INTO sourcing_customer_selection_items(tenant_id,selection_id,sales_plan_item_id,sourcing_line_id,
  procurement_plan_item_id,supplier_quote_line_id,shipping_plan_item_id,shipping_option_line_id,
  product_name,confirmed_qty,uom_code,customer_currency,customer_unit_price,promised_delivery_date,line_note,
- supplier_id,supplier_name,factory_id,factory_name,shipment_group_key,customer_managed_shipping)
+ supplier_id,supplier_name,factory_id,factory_name,shipment_group_key,customer_managed_shipping,product_spec)
 VALUES(sqlc.arg(tenant_id),sqlc.arg(selection_id),sqlc.arg(sales_plan_item_id),sqlc.arg(sourcing_line_id),
  sqlc.arg(procurement_plan_item_id),sqlc.arg(supplier_quote_line_id),
  NULL,NULL,
@@ -72,7 +72,7 @@ VALUES(sqlc.arg(tenant_id),sqlc.arg(selection_id),sqlc.arg(sales_plan_item_id),s
  sqlc.arg(customer_currency),sqlc.arg(customer_unit_price)::text::numeric,
  nullif(sqlc.arg(promised_delivery_date)::text,'')::date,sqlc.arg(line_note),
  sqlc.arg(supplier_id),sqlc.arg(supplier_name),sqlc.arg(factory_id),sqlc.arg(factory_name),
- sqlc.arg(shipment_group_key),sqlc.arg(customer_managed_shipping))
+ sqlc.arg(shipment_group_key),sqlc.arg(customer_managed_shipping),sqlc.arg(product_spec))
 RETURNING id;
 
 -- name: CreateCustomerSelectionShipment :one
@@ -118,7 +118,7 @@ SELECT id,sales_plan_item_id,sourcing_line_id,procurement_plan_item_id,supplier_
  coalesce(shipping_option_line_id,0)::bigint AS shipping_option_line_id,
  product_name,confirmed_qty::text,uom_code,customer_currency,customer_unit_price::text,
  coalesce(promised_delivery_date::text,'')::text AS promised_delivery_date,line_note,
- supplier_id,supplier_name,factory_id,factory_name,shipment_group_key,customer_managed_shipping,
+ supplier_id,supplier_name,factory_id,factory_name,shipment_group_key,customer_managed_shipping,product_spec,
  coalesce(final_customer_currency,'')::text AS final_customer_currency,
  coalesce(final_customer_unit_price::text,'')::text AS final_customer_unit_price,
  final_customer_payment_terms,final_customer_incoterm,
@@ -158,6 +158,25 @@ SELECT id,coalesce(selection_item_id,0)::bigint AS selection_item_id,
  coalesce(final_estimated_departure::text,'')::text AS final_estimated_departure,
  coalesce(final_estimated_arrival::text,'')::text AS final_estimated_arrival
 FROM sourcing_final_recheck_tasks WHERE tenant_id=$1 AND selection_id=$2 ORDER BY selection_item_id,task_domain;
+
+-- name: ListContractProcurementSnapshots :many
+-- 合同生效时交给原报价采购员的冻结执行资料。客户选择和最终复询都已经
+-- 完成，不能再退回经理方案或重新猜供应商。
+SELECT i.id AS selection_item_id,i.sourcing_line_id,i.supplier_quote_line_id,
+ i.product_name,i.product_spec,i.confirmed_qty::text AS confirmed_qty,i.uom_code,
+ i.supplier_id,i.supplier_name,coalesce(i.factory_id,0)::bigint AS factory_id,i.factory_name,
+ s.case_id,pi.buyer_id,pi.buyer_name,coalesce(pi.moq::text,'')::text AS moq,
+ coalesce(t.final_currency,'')::text AS final_currency,t.final_unit_price::text AS final_unit_price,
+ t.final_available_qty::text AS final_available_qty,coalesce(t.final_lead_time,0)::int AS final_lead_time,
+ t.final_delivery_date::text AS final_delivery_date,t.final_payment_terms,t.final_incoterm,
+ t.final_valid_until::text AS final_valid_until
+FROM sourcing_customer_selection_items i
+JOIN sourcing_customer_selections s ON s.tenant_id=i.tenant_id AND s.id=i.selection_id
+JOIN procurement_plan_items pi ON pi.tenant_id=i.tenant_id AND pi.id=i.procurement_plan_item_id
+JOIN sourcing_final_recheck_tasks t ON t.tenant_id=i.tenant_id
+ AND t.selection_item_id=i.id AND t.task_domain='PROCUREMENT' AND t.status='RESOLVED'
+WHERE i.tenant_id=$1 AND i.selection_id=$2
+ORDER BY i.id;
 
 -- name: GetFinalTaskByProcurementRework :one
 SELECT t.id,i.confirmed_qty::text AS customer_intent_qty

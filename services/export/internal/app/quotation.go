@@ -73,6 +73,21 @@ type ItemInput struct {
 	Remark                                     string
 }
 
+type QuotationShipmentInput struct {
+	SourceCustomerSelectionShipmentID int64
+	ShipmentGroupKey                  string
+	CarrierForwarder                  string
+	ServiceOptionName                 string
+	CustomerManaged                   bool
+	Currency, FreightAmount           string
+	ChargeBasis                       string
+	PortOfLoading, PortOfDischarge    string
+	EstimatedDeparture                string
+	EstimatedArrival                  string
+	ValidUntil                        string
+	Remark                            string
+}
+
 type QuotationInput struct {
 	CustomerID                     int64
 	ContactID                      int64
@@ -81,11 +96,33 @@ type QuotationInput struct {
 	PaymentMethod, ValidUntil      string
 	Remark                         string
 	Items                          []ItemInput
+	Shipments                      []QuotationShipmentInput
 	OperatorID                     int64
 	OperatorName                   string
 	SourceCostScenarioID           int64
 	SourceCostScenarioNo           string
 	SourceSourcingCaseID           int64
+	SourceCustomerSelectionID      int64
+	SourceCustomerSelectionNo      string
+	SourceCustomerSelectionVersion int32
+}
+
+func resolveQuotationShipments(in QuotationInput) (decimal.Decimal, error) {
+	total := decimal.Zero
+	for i, shipment := range in.Shipments {
+		if shipment.Currency == "" || shipment.Currency != in.Currency {
+			return decimal.Zero, apierr.Invalid("EX_SHIPMENT_CURRENCY_INVALID", "货运批次币种必须与正式报价一致").WithMeta("batch", itoa(i+1))
+		}
+		amount, err := decimal.NewFromString(shipment.FreightAmount)
+		if err != nil || amount.IsNegative() || (!shipment.CustomerManaged && amount.IsZero()) {
+			return decimal.Zero, apierr.Invalid("EX_SHIPMENT_FREIGHT_INVALID", "船运方案运费必须大于 0").WithMeta("batch", itoa(i+1))
+		}
+		if !shipment.CustomerManaged && strings.TrimSpace(shipment.CarrierForwarder) == "" {
+			return decimal.Zero, apierr.Invalid("EX_SHIPMENT_CARRIER_REQUIRED", "船运方案必须保留承运人或货代").WithMeta("batch", itoa(i+1))
+		}
+		total = total.Add(amount.Round(2))
+	}
+	return total, nil
 }
 
 // priced is one resolved line: client input plus the product facts and the
@@ -177,6 +214,11 @@ func (s *Service) CreateQuotation(ctx context.Context, tenantID int64, in Quotat
 	} else if found {
 		return quotation, items, nil
 	}
+	if quotation, items, found, err := s.quotationForCustomerSelection(ctx, tenantID, in.SourceCustomerSelectionID); err != nil {
+		return store.GetQuotationRow{}, nil, err
+	} else if found {
+		return quotation, items, nil
+	}
 	if in.Currency == "" {
 		return store.GetQuotationRow{}, nil, apierr.Invalid("EX_CURRENCY_REQUIRED", "币种必选")
 	}
@@ -184,6 +226,11 @@ func (s *Service) CreateQuotation(ctx context.Context, tenantID int64, in Quotat
 	if err != nil {
 		return store.GetQuotationRow{}, nil, err
 	}
+	shipmentTotal, err := resolveQuotationShipments(in)
+	if err != nil {
+		return store.GetQuotationRow{}, nil, err
+	}
+	total = total.Add(shipmentTotal)
 	contact, err := pickContact(customer, in.ContactID)
 	if err != nil {
 		return store.GetQuotationRow{}, nil, err
@@ -216,12 +263,32 @@ func (s *Service) CreateQuotation(ctx context.Context, tenantID int64, in Quotat
 			Remark: in.Remark, SalesEmployeeID: in.OperatorID, SalesEmployee: in.OperatorName,
 			CreatedBy:            in.OperatorID,
 			SourceCostScenarioID: in.SourceCostScenarioID, SourceCostScenarioNo: in.SourceCostScenarioNo,
-			SourceSourcingCaseID: in.SourceSourcingCaseID,
+			SourceSourcingCaseID:           in.SourceSourcingCaseID,
+			SourceCustomerSelectionID:      in.SourceCustomerSelectionID,
+			SourceCustomerSelectionNo:      in.SourceCustomerSelectionNo,
+			SourceCustomerSelectionVersion: in.SourceCustomerSelectionVersion,
 		})
 		if err != nil {
 			return translateUnique(err, "EX_QUOTE_NO_TAKEN", "报价单号已存在")
 		}
-		return writeItems(ctx, q, tenantID, id, lines)
+		if err := writeItems(ctx, q, tenantID, id, lines); err != nil {
+			return err
+		}
+		for index, shipment := range in.Shipments {
+			if err := q.AddQuotationShipment(ctx, store.AddQuotationShipmentParams{
+				TenantID: tenantID, QuotationID: id, BatchNo: int32(index + 1),
+				SourceCustomerSelectionShipmentID: shipment.SourceCustomerSelectionShipmentID,
+				ShipmentGroupKey:                  shipment.ShipmentGroupKey, CarrierForwarder: shipment.CarrierForwarder,
+				ServiceOptionName: shipment.ServiceOptionName, CustomerManaged: shipment.CustomerManaged,
+				Currency: shipment.Currency, FreightAmount: shipment.FreightAmount, ChargeBasis: shipment.ChargeBasis,
+				PortOfLoading: shipment.PortOfLoading, PortOfDischarge: shipment.PortOfDischarge,
+				EstimatedDeparture: shipment.EstimatedDeparture, EstimatedArrival: shipment.EstimatedArrival,
+				ValidUntil: shipment.ValidUntil, Remark: shipment.Remark,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		// Close the concurrent-retry window as well: if another request created
@@ -232,6 +299,25 @@ func (s *Service) CreateQuotation(ctx context.Context, tenantID int64, in Quotat
 		return store.GetQuotationRow{}, nil, err
 	}
 	return s.GetQuotation(ctx, tenantID, id)
+}
+
+func (s *Service) ListQuotationShipments(ctx context.Context, tenantID, quotationID int64) ([]store.ListQuotationShipmentsRow, error) {
+	return s.q.ListQuotationShipments(ctx, store.ListQuotationShipmentsParams{TenantID: tenantID, QuotationID: quotationID})
+}
+
+func (s *Service) quotationForCustomerSelection(ctx context.Context, tenantID, selectionID int64) (store.GetQuotationRow, []store.ListQuotationItemsRow, bool, error) {
+	if selectionID == 0 {
+		return store.GetQuotationRow{}, nil, false, nil
+	}
+	id, err := s.q.GetQuotationIDByCustomerSelection(ctx, store.GetQuotationIDByCustomerSelectionParams{TenantID: tenantID, SourceCustomerSelectionID: &selectionID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return store.GetQuotationRow{}, nil, false, nil
+	}
+	if err != nil {
+		return store.GetQuotationRow{}, nil, false, err
+	}
+	quotation, items, err := s.GetQuotation(ctx, tenantID, id)
+	return quotation, items, err == nil, err
 }
 
 func (s *Service) quotationForCostScenario(ctx context.Context, tenantID, sourceCostScenarioID int64) (store.GetQuotationRow, []store.ListQuotationItemsRow, bool, error) {
@@ -388,9 +474,10 @@ func (s *Service) GetQuotation(ctx context.Context, tenantID, id int64) (store.G
 
 // QuotationFilter is the set of narrowing options a quotation list accepts.
 type QuotationFilter struct {
-	Keyword    string
-	CustomerID int64
-	Status     string
+	Keyword              string
+	CustomerID           int64
+	Status               string
+	SourceSourcingCaseID int64
 	// WithoutContract hides offers that have already been written up.
 	WithoutContract bool
 }
@@ -403,8 +490,9 @@ func (s *Service) ListQuotations(ctx context.Context, tenantID int64, f Quotatio
 	}
 	rows, err := s.q.ListQuotations(ctx, store.ListQuotationsParams{
 		TenantID: tenantID, Keyword: f.Keyword, CustomerID: f.CustomerID, Status: f.Status,
-		WithoutContract: f.WithoutContract,
-		VisibleAll:      visible.All, VisibleIds: visible.EmployeeIDs,
+		SourceSourcingCaseID: f.SourceSourcingCaseID,
+		WithoutContract:      f.WithoutContract,
+		VisibleAll:           visible.All, VisibleIds: visible.EmployeeIDs,
 		RowLimit: size, RowOffset: (page - 1) * size,
 	})
 	if err != nil {

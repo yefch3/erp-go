@@ -101,6 +101,7 @@
             <template #default="{ row }">
               {{ row.sourceCurrency }} {{ row.sourceUnitPrice }} / {{ row.uomCode }}
               <div class="sub">MOQ {{ row.moq || '—' }} · {{ row.leadTime || '—' }}</div>
+              <div class="sub">{{ row.sourcePaymentTerms || '—' }} · {{ row.sourceIncoterm || '—' }} · {{ row.sourceValidUntil || '—' }}</div>
             </template>
           </el-table-column>
           <el-table-column :label="t('requirements.requiredDate')" width="130">
@@ -293,6 +294,9 @@ interface Requirement {
   sourceUnitPrice: string
   moq: string
   leadTime: string
+  sourcePaymentTerms: string
+  sourceIncoterm: string
+  sourceValidUntil: string
 }
 
 interface CoveringOrder {

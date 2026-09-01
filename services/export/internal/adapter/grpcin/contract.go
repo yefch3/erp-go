@@ -152,7 +152,7 @@ func (h *ContractHandler) ChangeContract(ctx context.Context, req *exv1.ChangeCo
 }
 
 func (h *ContractHandler) SignContract(ctx context.Context, req *exv1.SignContractRequest) (*exv1.SignContractResponse, error) {
-	status, err := h.svc.SignContract(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx))
+	status, err := h.svc.SignContract(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetConditionConfirmedAt(), req.GetConditionConfirmationNote(), operator(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -192,8 +192,10 @@ func contractToProto(view app.ContractView) *exv1.Contract {
 		CustomerId: c.CustomerID, CustomerName: c.CustomerName,
 		CurrentVersionId: c.CurrentVersionID, Status: c.Status,
 		SalesEmployeeId: c.SalesEmployeeID, SalesEmployee: c.SalesEmployee,
-		SignatureSource: c.SignatureSource,
-		SignedAt:        ts(c.SignedAt), EffectiveAt: ts(c.EffectiveAt), CompletedAt: ts(c.CompletedAt),
+		SignatureSource:      c.SignatureSource,
+		ConditionConfirmedAt: c.ConditionConfirmedAt, ConditionConfirmationNote: c.ConditionConfirmationNote,
+		ConditionConfirmedBy: c.ConditionConfirmedBy, ConditionConfirmedByName: c.ConditionConfirmedByName,
+		SignedAt: ts(c.SignedAt), EffectiveAt: ts(c.EffectiveAt), CompletedAt: ts(c.CompletedAt),
 		CreatedAt: ts(c.CreatedAt), ReceivableDueDate: c.ReceivableDueDate,
 		Currency: view.Version.Currency, TotalAmount: view.Version.TotalAmount,
 		BaseAmount: view.Version.BaseAmount, VersionNo: view.Version.VersionNo,
