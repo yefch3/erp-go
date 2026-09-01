@@ -222,8 +222,11 @@ func (s *Server) createFormalQuotationFromSelection(w http.ResponseWriter, r *ht
 		}
 		incoterms[item.GetFinalCustomerIncoterm()] = true
 		payments[item.GetFinalCustomerPaymentTerms()] = true
-		remark := fmt.Sprintf("供应商：%s；付款条件：%s；贸易条款：%s；客户要求日期：%s", item.GetSupplierName(), item.GetFinalCustomerPaymentTerms(), item.GetFinalCustomerIncoterm(), item.GetFinalCustomerRequiredDate())
-		spec := strings.Trim(strings.Join([]string{"供应商 " + item.GetSupplierName(), item.GetProductSpec(), "付款 " + item.GetFinalCustomerPaymentTerms(), "贸易条款 " + item.GetFinalCustomerIncoterm(), "要求日期 " + item.GetFinalCustomerRequiredDate()}, "；"), "；")
+		// The formal quotation is customer-facing. Supplier identity and internal
+		// sourcing decisions belong to the frozen procurement snapshot, not to
+		// the document sent to the customer. Use language-neutral separators and
+		// English/Spanish labels so an EN/ES UI cannot inherit fixed Chinese text.
+		spec, remark := formalQuotationItemText(item)
 		items = append(items, &exv1.ItemInput{ProductName: item.GetProductName(), Spec: spec, UomCode: item.GetUomCode(), Qty: item.GetConfirmedQty(), UnitPrice: item.GetFinalCustomerUnitPrice(), Remark: remark})
 		if item.GetCustomerManagedShipping() {
 			customerManagedGroups[item.GetShipmentGroupKey()] = true
@@ -257,7 +260,7 @@ func (s *Server) createFormalQuotationFromSelection(w http.ResponseWriter, r *ht
 		})
 	}
 	for group := range customerManagedGroups {
-		shipments = append(shipments, &exv1.QuotationShipmentInput{ShipmentGroupKey: group, CustomerManaged: true, Currency: currency, FreightAmount: "0", Remark: "客户自理运输 / Customer managed shipping"})
+		shipments = append(shipments, &exv1.QuotationShipmentInput{ShipmentGroupKey: group, CustomerManaged: true, Currency: currency, FreightAmount: "0", Remark: "Customer managed shipping / Transporte gestionado por el cliente"})
 	}
 	if currency == "" || len(items) == 0 {
 		s.writeError(w, http.StatusConflict, "SC_FORMAL_QUOTE_EMPTY", "客户选择没有可生成报价的内容")
@@ -266,9 +269,9 @@ func (s *Server) createFormalQuotationFromSelection(w http.ResponseWriter, r *ht
 	caseRow := caseResp.GetSourcingCase()
 	created, err := s.Quotations.CreateQuotation(r.Context(), &exv1.CreateQuotationRequest{
 		CustomerId: caseRow.GetCustomerId(), ContactId: caseRow.GetContactId(), Currency: currency,
-		Incoterm: singleValue(incoterms, "按产品明细 / Per line"), PaymentMethod: singleValue(payments, "按产品明细 / Per line"),
-		PortOfLoading: singleValue(portsFrom, "多个起运港 / Multiple"), PortOfDischarge: singleValue(portsTo, "多个目的港 / Multiple"),
-		ValidUntil: validUntil, Remark: fmt.Sprintf("来源询价 %s；客户选择 %s V%d；销售线下确认于 %s", caseRow.GetCaseNo(), selected.GetSelectionNo(), selected.GetVersionNo(), selected.GetCustomerDecidedAt()), Items: items,
+		Incoterm: singleValue(incoterms, "Per line / Por línea"), PaymentMethod: singleValue(payments, "Per line / Por línea"),
+		PortOfLoading: singleValue(portsFrom, "Multiple"), PortOfDischarge: singleValue(portsTo, "Multiple"),
+		ValidUntil: validUntil, Remark: fmt.Sprintf("Source inquiry / Consulta de origen: %s; Customer selection / Selección del cliente: %s V%d; Confirmed by Sales / Confirmado por Ventas: %s", caseRow.GetCaseNo(), selected.GetSelectionNo(), selected.GetVersionNo(), selected.GetCustomerDecidedAt()), Items: items,
 		Shipments:            shipments,
 		SourceSourcingCaseId: caseID, SourceCustomerSelectionId: selectionID, SourceCustomerSelectionNo: selected.GetSelectionNo(), SourceCustomerSelectionVersion: selected.GetVersionNo(),
 	})
@@ -289,4 +292,10 @@ func singleValue(values map[string]bool, fallback string) string {
 		}
 	}
 	return fallback
+}
+
+func formalQuotationItemText(item *prv1.CustomerSelectionItem) (string, string) {
+	remark := fmt.Sprintf("Payment terms / Condiciones de pago: %s; Incoterm: %s; Required date / Fecha requerida: %s", item.GetFinalCustomerPaymentTerms(), item.GetFinalCustomerIncoterm(), item.GetFinalCustomerRequiredDate())
+	spec := strings.Trim(strings.Join([]string{item.GetProductSpec(), remark}, "; "), "; ")
+	return spec, remark
 }

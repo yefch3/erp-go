@@ -1222,7 +1222,7 @@ export default {
   },
   contracts: {
     conditionConfirmation: 'Confirmación manual de condiciones antes de firmar',
-    conditionConfirmationPrompt: 'Confirme manualmente que los precios, plazos, flete y fechas siguen vigentes. Si algo cambió, cancele y vuelva al abastecimiento.', conditionConfirmationPlaceholder: 'Ejemplo: Compras y Transporte confirmaron hoy que las condiciones siguen vigentes', conditionConfirmationRequired: 'Escriba la nota de confirmación manual', confirmConditionsAndSign: 'Condiciones vigentes — activar contrato',
+    conditionStatusPrompt: '¿Siguen vigentes los precios de compra, plazos, flete y fechas?', conditionsNeedUpdate: 'Las condiciones requieren actualización', conditionsNeedUpdateBlocked: 'El contrato anterior no se activará. Vuelva a las reverificaciones afectadas y genere una nueva cotización y contrato.', conditionConfirmationPrompt: 'Confirme manualmente que los precios, plazos, flete y fechas siguen vigentes. Si algo cambió, cancele y vuelva al abastecimiento.', conditionConfirmationPlaceholder: 'Ejemplo: Compras y Transporte confirmaron hoy que las condiciones siguen vigentes', conditionConfirmationRequired: 'Escriba la nota de confirmación manual', confirmConditionsAndSign: 'Condiciones vigentes — activar contrato',
     fxFixedOnCreate: 'Fijado al crear el contrato; no sigue al mercado después',
     pickCustomer: 'Elegir cliente',
     pickProduct: 'Elegir producto',

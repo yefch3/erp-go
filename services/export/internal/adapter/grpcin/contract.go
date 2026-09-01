@@ -152,7 +152,7 @@ func (h *ContractHandler) ChangeContract(ctx context.Context, req *exv1.ChangeCo
 }
 
 func (h *ContractHandler) SignContract(ctx context.Context, req *exv1.SignContractRequest) (*exv1.SignContractResponse, error) {
-	status, err := h.svc.SignContract(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetConditionConfirmedAt(), req.GetConditionConfirmationNote(), operator(ctx))
+	status, err := h.svc.SignContract(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetConditionStatus(), req.GetConditionConfirmedAt(), req.GetConditionConfirmationNote(), operator(ctx))
 	if err != nil {
 		return nil, err
 	}

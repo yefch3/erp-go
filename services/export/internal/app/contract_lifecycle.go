@@ -165,8 +165,15 @@ func (s *Service) ApplyApprovalDecision(ctx context.Context, tenantID, contractI
 // SignContract records the customer's signature, which is the moment the
 // version in hand becomes the one in force. Everything downstream — purchase
 // demand, shipment plans, receivables — hangs off the event this appends.
-func (s *Service) SignContract(ctx context.Context, tenantID, id int64, conditionConfirmedAt, conditionNote string, op Operator) (string, error) {
+func (s *Service) SignContract(ctx context.Context, tenantID, id int64, conditionStatus, conditionConfirmedAt, conditionNote string, op Operator) (string, error) {
+	conditionStatus = strings.ToUpper(strings.TrimSpace(conditionStatus))
 	conditionConfirmedAt, conditionNote = strings.TrimSpace(conditionConfirmedAt), strings.TrimSpace(conditionNote)
+	if conditionStatus == "NEEDS_UPDATE" {
+		return "", apierr.Conflict("EX_CONTRACT_CONDITIONS_NEED_UPDATE", "合同条件需要更新，旧合同不能直接生效；请返回受影响的最终复询并生成新版报价和合同")
+	}
+	if conditionStatus != "VALID" {
+		return "", apierr.Invalid("EX_CONTRACT_CONDITION_STATUS_REQUIRED", "请选择合同条件仍有效或需要更新")
+	}
 	if conditionConfirmedAt == "" || conditionNote == "" {
 		return "", apierr.Invalid("EX_CONTRACT_CONDITION_CONFIRMATION_REQUIRED", "请由销售填写商务条件人工确认时间和说明")
 	}

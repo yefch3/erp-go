@@ -1214,7 +1214,7 @@ export default {
   },
   contracts: {
     conditionConfirmation: '签署前商务条件人工确认',
-    conditionConfirmationPrompt: '请先人工确认采购价格、交期、运价和船期仍然有效，再填写确认说明。若条件已变化，请取消并返回询价案件重新复询。', conditionConfirmationPlaceholder: '例如：已于今天联系采购和船运，确认本合同条件仍有效', conditionConfirmationRequired: '请填写人工确认说明', confirmConditionsAndSign: '条件仍有效并使合同生效',
+    conditionStatusPrompt: '采购价格、交期、运价和船期是否仍然有效？', conditionsNeedUpdate: '条件需要更新', conditionsNeedUpdateBlocked: '旧合同不会生效。请返回受影响的最终复询，完成新版报价和合同。', conditionConfirmationPrompt: '请先人工确认采购价格、交期、运价和船期仍然有效，再填写确认说明。若条件已变化，请取消并返回询价案件重新复询。', conditionConfirmationPlaceholder: '例如：已于今天联系采购和船运，确认本合同条件仍有效', conditionConfirmationRequired: '请填写人工确认说明', confirmConditionsAndSign: '条件仍有效并使合同生效',
     fxFixedOnCreate: '新建时锁定的汇率，之后不再随市场变化',
     pickCustomer: '选择客户',
     pickProduct: '选择产品',

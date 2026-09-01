@@ -376,6 +376,9 @@ message SignContractRequest {
   int64 id = 1;
   string condition_confirmed_at = 2;
   string condition_confirmation_note = 3;
+  // VALID activates the approved version. NEEDS_UPDATE must never activate
+  // the old version and sends the user back to re-check commercial terms.
+  string condition_status = 4;
 }
 
 message SignContractResponse {

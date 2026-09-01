@@ -1213,7 +1213,7 @@ export default {
   },
   contracts: {
     conditionConfirmation: 'Manual commercial-term confirmation before signing',
-    conditionConfirmationPrompt: 'Manually confirm that procurement prices, lead times, freight and schedules remain valid, then record the confirmation. Cancel and return to sourcing when any term changed.', conditionConfirmationPlaceholder: 'Example: Procurement and Shipping confirmed today that these terms remain valid', conditionConfirmationRequired: 'Enter the manual confirmation note', confirmConditionsAndSign: 'Terms valid — activate contract',
+    conditionStatusPrompt: 'Are the procurement prices, lead times, freight and schedules still valid?', conditionsNeedUpdate: 'Terms need an update', conditionsNeedUpdateBlocked: 'The old contract will not be activated. Return to the affected final rechecks, then create a new quotation and contract.', conditionConfirmationPrompt: 'Manually confirm that procurement prices, lead times, freight and schedules remain valid, then record the confirmation. Cancel and return to sourcing when any term changed.', conditionConfirmationPlaceholder: 'Example: Procurement and Shipping confirmed today that these terms remain valid', conditionConfirmationRequired: 'Enter the manual confirmation note', confirmConditionsAndSign: 'Terms valid — activate contract',
     fxFixedOnCreate: 'Locked when the contract was written up; it does not follow the market afterwards',
     pickCustomer: 'Choose a customer',
     pickProduct: 'Choose a product',
