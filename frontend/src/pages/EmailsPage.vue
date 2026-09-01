@@ -2156,7 +2156,9 @@ async function load() {
         cursor: applied?.cursor ?? '',
         // 排序只在没有关键词时带：有关键词走的是搜索查询，服务端会拒绝
         // 在它上面排序（排序栏那时也不显示）。
-        ...(keyword.value ? {} : { sort_by: listSort.value.by, sort_dir: listSort.value.dir }),
+        // 和 sortFields 用同一个判断（trim 过的）：只有空格的搜索框不算有
+        // 关键词，否则排序栏显示着、参数却没带，点了「没反应」。
+        ...(keyword.value.trim() ? {} : { sort_by: listSort.value.by, sort_dir: listSort.value.dir }),
         // 看哪个信箱**不在这里传**：网关只认解锁令牌里的那个箱
         // （见 requireMailUnlock）。换箱是上面 currentAccount 那个 watch
         // 换令牌，不是换参数——传参数的话，退出 A 之后拿还活着的 B 的令牌

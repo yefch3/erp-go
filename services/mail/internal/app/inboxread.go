@@ -176,6 +176,9 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 	if err != nil {
 		return InboundPage{}, err
 	}
+	// 只有空格的关键词不算关键词。前端的排序栏用的也是 trim 过的判断；
+	// 两边不一致的样子是排序栏显示着、请求却被这里拒掉。
+	keyword = strings.TrimSpace(keyword)
 	if keyword != "" && !sort.isDefault() {
 		return InboundPage{}, errSortNotWithKeyword()
 	}
@@ -913,6 +916,7 @@ func (s *Service) ListMailboxSent(ctx context.Context, tenantID, ownerID, accoun
 	if err != nil {
 		return InboundPage{}, err
 	}
+	keyword = strings.TrimSpace(keyword)
 	key, kind, id, err := decodeSentSortCursor(cursor, sort)
 	if err != nil {
 		return InboundPage{}, err

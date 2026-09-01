@@ -139,6 +139,11 @@ func TestInboxSortsByTheColumnClickedAndPagesWithoutRepeating(t *testing.T) {
 	if apierr.CodeFromError(err) != "MAIL_SORT_NOT_WITH_KEYWORD" {
 		t.Fatalf("keyword + sort should be refused, got %v", err)
 	}
+	// 只有空格的关键词不算关键词：前端排序栏用的是 trim 过的判断，这里得
+	// 跟它一致，否则排序栏显示着、请求却被拒。
+	if _, err := svc.ListInbound(ctx, tenantID, employeeID, acct, "  ", "INBOX", "", 20, ListSort{By: "size"}); err != nil {
+		t.Fatalf("whitespace keyword must not block sorting: %v", err)
+	}
 	// 拼错的列名同样报错。
 	_, err = svc.ListInbound(ctx, tenantID, employeeID, acct, "", "INBOX", "", 20, ListSort{By: "sender"})
 	if apierr.CodeFromError(err) != "MAIL_SORT_INVALID" {
