@@ -791,7 +791,14 @@
       </template>
     </section>
 
-    <EmailComposer ref="composer" v-model="composing" @sent="onSent" @saved="onDraftSaved" />
+    <EmailComposer
+      ref="composer"
+      v-model="composing"
+      :mailboxes="mailboxes"
+      :current-account="currentAccount"
+      @sent="onSent"
+      @saved="onDraftSaved"
+    />
 
     <el-dialog v-model="requeueOpen" :title="t('emails.requeueTitle')" width="480px">
       <p class="hint">{{ t('emails.requeueHint') }}</p>

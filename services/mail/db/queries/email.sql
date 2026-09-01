@@ -155,7 +155,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint
 -- thread_key falls back to the message's own key: a fresh mail is the root
 -- of whatever conversation follows, a reply passes the thread it belongs to.
 INSERT INTO email_messages (
-    tenant_id, campaign_id, message_key, kind, sender_id, sender_name,
+    tenant_id, campaign_id, message_key, kind, sender_id, account_id, sender_name,
     to_email, to_name, customer_id, customer_name, contact_id,
     subject, body, body_text, body_format, status, attention_reason,
     send_mode, thread_key, in_reply_to, references_ids, scheduled_at,
@@ -166,6 +166,12 @@ INSERT INTO email_messages (
     sqlc.arg(message_key)::text::uuid,
     sqlc.arg(kind)::text,
     sqlc.arg(sender_id)::bigint,
+    -- 从**哪个信箱**发。0 = 不知道，发信那边退回「按人查默认箱」。
+    --
+    -- 入队时定死，不是发信时才反查——反查的那一版有个不报错的坏法：一封
+    -- 排队中的信重试时，如果这期间换过默认箱，重试会从另一个地址发出去，
+    -- 同一封信两次尝试两个发件人。
+    sqlc.arg(account_id)::bigint,
     sqlc.arg(sender_name)::text,
     sqlc.arg(to_email)::text,
     sqlc.arg(to_name)::text,
@@ -232,7 +238,7 @@ SET status = 'SENDING', attempt_count = m.attempt_count + 1
 FROM due
 WHERE m.id = due.id
 RETURNING m.id, m.message_key::text AS message_key, m.kind, m.to_email, m.to_name,
-          m.sender_id, m.sender_name, m.subject, m.body, m.body_text, m.body_format,
+          m.sender_id, m.account_id, m.sender_name, m.subject, m.body, m.body_text, m.body_format,
           coalesce(m.campaign_id, 0)::bigint AS campaign_id, m.attempt_count,
           m.send_mode, m.in_reply_to, m.references_ids, m.track_opens;
 
@@ -515,7 +521,7 @@ ORDER BY max(queued_at) DESC;
 INSERT INTO email_drafts (
     id, tenant_id, owner_id, subject, body, body_format,
     signature_id, kind, recipients, attachments,
-    send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id,
+    send_mode, cc, bcc, account_id, reply_to_inbound_id, forward_inbound_id,
     forward_as_attachment, track_opens
 ) VALUES (
     coalesce(nullif(sqlc.arg(id)::bigint, 0), nextval('email_drafts_id_seq')),
@@ -531,6 +537,8 @@ INSERT INTO email_drafts (
     sqlc.arg(send_mode)::text,
     sqlc.arg(cc)::jsonb,
     sqlc.arg(bcc)::jsonb,
+    -- 打算从哪个信箱发。0 = 打开草稿时按「当前在看的箱」。
+    sqlc.arg(account_id)::bigint,
     sqlc.arg(reply_to_inbound_id)::bigint,
     sqlc.arg(forward_inbound_id)::bigint,
     sqlc.arg(forward_as_attachment)::boolean,
@@ -548,6 +556,7 @@ ON CONFLICT (id) DO UPDATE SET
     send_mode = excluded.send_mode,
     track_opens = excluded.track_opens,
     cc = excluded.cc,
+    account_id = excluded.account_id,
     reply_to_inbound_id = excluded.reply_to_inbound_id,
     forward_inbound_id = excluded.forward_inbound_id,
     forward_as_attachment = excluded.forward_as_attachment,
@@ -573,7 +582,7 @@ LIMIT 200;
 -- name: GetDraft :one
 SELECT id, subject, body, body_format, signature_id, kind,
        recipients, attachments, updated_at,
-       send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id,
+       send_mode, cc, bcc, account_id, reply_to_inbound_id, forward_inbound_id,
        forward_as_attachment, track_opens
 FROM email_drafts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint

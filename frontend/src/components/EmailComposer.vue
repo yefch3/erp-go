@@ -38,6 +38,21 @@
     </el-alert>
 
     <el-form label-width="88px" class="compose-form">
+      <!-- 发件人。只在绑了不止一个信箱时出现——一个选项的选择器是噪音。
+
+           **必须看得见。** 不显示的话，人在 163 那个箱里写信、信从 QQ 发
+           出去，而他要等客户回信才发现发件人不对。默认跟着「当前在看的箱」
+           走；改了只影响这一封，关掉再开又回到当前箱。 -->
+      <el-form-item v-if="(mailboxes?.length ?? 0) > 1" :label="t('emails.fromLabel')">
+        <el-select v-model="fromAccount" style="width: 100%">
+          <el-option
+            v-for="b in mailboxes"
+            :key="b.id"
+            :value="b.id"
+            :label="b.email"
+          />
+        </el-select>
+      </el-form-item>
       <el-form-item :label="t('emails.sendModeLabel')">
         <div class="body-box">
           <el-radio-group v-model="form.sendMode">
@@ -490,11 +505,32 @@ interface ComposeTemplate {
   bodyFormat: string
 }
 
-const props = defineProps<{ modelValue: boolean }>()
+const props = defineProps<{
+  modelValue: boolean
+  /** 这个人名下的信箱。只有一个时不显示发件人那一行——一个选项的选择器是噪音。 */
+  mailboxes?: { id: number; email: string }[]
+  /** 当前在看哪个箱。发件人默认跟着它走：你在哪个箱里写信，就从哪个箱发。 */
+  currentAccount?: number
+}>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; sent: []; saved: [] }>()
 
 const { t, locale } = useI18n()
 const common = (k: string) => t(`common.${k}`)
+
+// 从哪个信箱发。0 = 跟着当前在看的那个箱（网关会填）。
+//
+// 多信箱之后这件事必须**看得见**：不显示的话，人在 163 那个箱里写信，
+// 信从 QQ 发出去，而他要等客户回信才发现发件人不对。
+const fromAccount = ref(0)
+watch(
+  () => [props.modelValue, props.currentAccount] as const,
+  ([open, cur]) => {
+    // 每次打开写信框都回到「当前这个箱」。上一次改过的发件人不该粘着——
+    // 那是上一封信的事。
+    if (open) fromAccount.value = Number(cur ?? 0)
+  },
+  { immediate: true },
+)
 
 const form = reactive({
   subject: '',
@@ -792,6 +828,9 @@ function draftPayload() {
     sendMode: form.sendMode,
     cc: form.sendMode === 'MERGED' ? ccSelected.value.map(asProto) : [],
     bcc: form.sendMode === 'MERGED' ? bccSelected.value.map(asProto) : [],
+    // 从哪个信箱发。不传的话网关会填「此刻解锁的那个箱」——也就是你正在看
+    // 的那个。这里传是因为发件人可以在下拉里改成别的箱。
+    accountId: String(fromAccount.value || 0),
     replyToInboundId: replyCtx.replyToInboundId,
     forwardInboundId: replyCtx.forwardInboundId,
     forwardAsAttachment: replyCtx.forwardAsAttachment,
@@ -1308,6 +1347,7 @@ async function submitSend(at: string) {
       sendMode: form.sendMode,
       cc: form.sendMode === 'MERGED' ? ccSelected.value.map(asProto) : [],
       bcc: form.sendMode === 'MERGED' ? bccSelected.value.map(asProto) : [],
+      accountId: String(fromAccount.value || 0),
       replyToInboundId: replyCtx.replyToInboundId,
       forwardInboundId: replyCtx.forwardInboundId,
       forwardAsAttachment: replyCtx.forwardAsAttachment,

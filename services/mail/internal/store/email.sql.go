@@ -263,7 +263,7 @@ SET status = 'SENDING', attempt_count = m.attempt_count + 1
 FROM due
 WHERE m.id = due.id
 RETURNING m.id, m.message_key::text AS message_key, m.kind, m.to_email, m.to_name,
-          m.sender_id, m.sender_name, m.subject, m.body, m.body_text, m.body_format,
+          m.sender_id, m.account_id, m.sender_name, m.subject, m.body, m.body_text, m.body_format,
           coalesce(m.campaign_id, 0)::bigint AS campaign_id, m.attempt_count,
           m.send_mode, m.in_reply_to, m.references_ids, m.track_opens
 `
@@ -280,6 +280,7 @@ type ClaimMessagesRow struct {
 	ToEmail       string
 	ToName        string
 	SenderID      int64
+	AccountID     int64
 	SenderName    string
 	Subject       string
 	Body          string
@@ -314,6 +315,7 @@ func (q *Queries) ClaimMessages(ctx context.Context, arg ClaimMessagesParams) ([
 			&i.ToEmail,
 			&i.ToName,
 			&i.SenderID,
+			&i.AccountID,
 			&i.SenderName,
 			&i.Subject,
 			&i.Body,
@@ -614,7 +616,7 @@ func (q *Queries) GetCampaign(ctx context.Context, arg GetCampaignParams) (GetCa
 const getDraft = `-- name: GetDraft :one
 SELECT id, subject, body, body_format, signature_id, kind,
        recipients, attachments, updated_at,
-       send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id,
+       send_mode, cc, bcc, account_id, reply_to_inbound_id, forward_inbound_id,
        forward_as_attachment, track_opens
 FROM email_drafts
 WHERE tenant_id = $1::bigint
@@ -641,6 +643,7 @@ type GetDraftRow struct {
 	SendMode            string
 	Cc                  []byte
 	Bcc                 []byte
+	AccountID           int64
 	ReplyToInboundID    int64
 	ForwardInboundID    int64
 	ForwardAsAttachment bool
@@ -663,6 +666,7 @@ func (q *Queries) GetDraft(ctx context.Context, arg GetDraftParams) (GetDraftRow
 		&i.SendMode,
 		&i.Cc,
 		&i.Bcc,
+		&i.AccountID,
 		&i.ReplyToInboundID,
 		&i.ForwardInboundID,
 		&i.ForwardAsAttachment,
@@ -1771,7 +1775,7 @@ func (q *Queries) MarkTerminal(ctx context.Context, arg MarkTerminalParams) erro
 
 const queueMessage = `-- name: QueueMessage :one
 INSERT INTO email_messages (
-    tenant_id, campaign_id, message_key, kind, sender_id, sender_name,
+    tenant_id, campaign_id, message_key, kind, sender_id, account_id, sender_name,
     to_email, to_name, customer_id, customer_name, contact_id,
     subject, body, body_text, body_format, status, attention_reason,
     send_mode, thread_key, in_reply_to, references_ids, scheduled_at,
@@ -1782,24 +1786,30 @@ INSERT INTO email_messages (
     $3::text::uuid,
     $4::text,
     $5::bigint,
-    $6::text,
+    -- 从**哪个信箱**发。0 = 不知道，发信那边退回「按人查默认箱」。
+    --
+    -- 入队时定死，不是发信时才反查——反查的那一版有个不报错的坏法：一封
+    -- 排队中的信重试时，如果这期间换过默认箱，重试会从另一个地址发出去，
+    -- 同一封信两次尝试两个发件人。
+    $6::bigint,
     $7::text,
     $8::text,
-    $9::bigint,
-    $10::text,
-    $11::bigint,
-    $12::text,
+    $9::text,
+    $10::bigint,
+    $11::text,
+    $12::bigint,
     $13::text,
     $14::text,
     $15::text,
     $16::text,
     $17::text,
     $18::text,
-    coalesce(nullif($19::text, ''), $3::text),
-    $20::text,
+    $19::text,
+    coalesce(nullif($20::text, ''), $3::text),
     $21::text,
-    $22::timestamptz,
-    $23::boolean
+    $22::text,
+    $23::timestamptz,
+    $24::boolean
 )
 RETURNING id
 `
@@ -1810,6 +1820,7 @@ type QueueMessageParams struct {
 	MessageKey      string
 	Kind            string
 	SenderID        int64
+	AccountID       int64
 	SenderName      string
 	ToEmail         string
 	ToName          string
@@ -1839,6 +1850,7 @@ func (q *Queries) QueueMessage(ctx context.Context, arg QueueMessageParams) (int
 		arg.MessageKey,
 		arg.Kind,
 		arg.SenderID,
+		arg.AccountID,
 		arg.SenderName,
 		arg.ToEmail,
 		arg.ToName,
@@ -1981,7 +1993,7 @@ const saveDraft = `-- name: SaveDraft :one
 INSERT INTO email_drafts (
     id, tenant_id, owner_id, subject, body, body_format,
     signature_id, kind, recipients, attachments,
-    send_mode, cc, bcc, reply_to_inbound_id, forward_inbound_id,
+    send_mode, cc, bcc, account_id, reply_to_inbound_id, forward_inbound_id,
     forward_as_attachment, track_opens
 ) VALUES (
     coalesce(nullif($1::bigint, 0), nextval('email_drafts_id_seq')),
@@ -1997,10 +2009,12 @@ INSERT INTO email_drafts (
     $11::text,
     $12::jsonb,
     $13::jsonb,
+    -- 打算从哪个信箱发。0 = 打开草稿时按「当前在看的箱」。
     $14::bigint,
     $15::bigint,
-    $16::boolean,
-    $17::boolean
+    $16::bigint,
+    $17::boolean,
+    $18::boolean
 )
 ON CONFLICT (id) DO UPDATE SET
     subject = excluded.subject,
@@ -2014,6 +2028,7 @@ ON CONFLICT (id) DO UPDATE SET
     send_mode = excluded.send_mode,
     track_opens = excluded.track_opens,
     cc = excluded.cc,
+    account_id = excluded.account_id,
     reply_to_inbound_id = excluded.reply_to_inbound_id,
     forward_inbound_id = excluded.forward_inbound_id,
     forward_as_attachment = excluded.forward_as_attachment,
@@ -2037,6 +2052,7 @@ type SaveDraftParams struct {
 	SendMode            string
 	Cc                  []byte
 	Bcc                 []byte
+	AccountID           int64
 	ReplyToInboundID    int64
 	ForwardInboundID    int64
 	ForwardAsAttachment bool
@@ -2063,6 +2079,7 @@ func (q *Queries) SaveDraft(ctx context.Context, arg SaveDraftParams) (int64, er
 		arg.SendMode,
 		arg.Cc,
 		arg.Bcc,
+		arg.AccountID,
 		arg.ReplyToInboundID,
 		arg.ForwardInboundID,
 		arg.ForwardAsAttachment,

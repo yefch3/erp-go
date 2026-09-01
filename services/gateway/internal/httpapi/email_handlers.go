@@ -60,6 +60,14 @@ func (s *Server) createCampaign(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, req) {
 		return
 	}
+	// 没点名从哪个信箱发，就用**此刻解锁的那个箱**——你在哪个箱里，信就从
+	// 那个箱出去。这是最符合直觉的默认，也让前端在绝大多数情况下不用操心。
+	//
+	// 令牌里那个箱比请求参数可信：它是验证过的（见 mailunlock.go），而参数
+	// 是调用方说的。服务层还会再验一次「这个箱是不是他的」。
+	if req.GetAccountId() == 0 {
+		req.AccountId = unlockedAccount(r.Context())
+	}
 	resp, err := s.Emails.CreateCampaign(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -465,6 +473,10 @@ func (s *Server) saveDraft(w http.ResponseWriter, r *http.Request) {
 	req := &mailv1.SaveDraftRequest{}
 	if !s.decodeBody(w, r, req) {
 		return
+	}
+	// 同 createCampaign：草稿也记住「我在哪个箱里写的」。
+	if req.GetAccountId() == 0 {
+		req.AccountId = unlockedAccount(r.Context())
 	}
 	resp, err := s.Emails.SaveDraft(r.Context(), req)
 	if err != nil {

@@ -1706,6 +1706,7 @@ export default {
     },
     privacyNote: 'Cada destinatario recibe su propio mensaje. Nadie ve la dirección de los demás.',
     privacyNoteMerged: 'Envío combinado: todos reciben el MISMO mensaje y las listas Para/CC son visibles para todos.',
+    fromLabel: 'De',
     sendModeLabel: 'Modo de envío',
     modeSeparate: 'Por separado (uno a cada uno)',
     modeMerged: 'Un solo correo (visible)',

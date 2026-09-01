@@ -233,6 +233,7 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 		MessageKey:   m.MessageKey,
 		TenantID:     cfg.TenantID,
 		SenderID:     m.SenderID,
+		AccountID:    m.AccountID,
 		FromName:     m.SenderName,
 		ToEmail:      m.ToEmail,
 		ToName:       m.ToName,

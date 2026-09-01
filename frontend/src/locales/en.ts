@@ -1697,6 +1697,7 @@ export default {
     },
     privacyNote: 'Each recipient receives their own separate message. Nobody sees anyone else’s address.',
     privacyNoteMerged: 'Merged send: everybody receives the SAME message, and the To/CC lists are visible to all of them.',
+    fromLabel: 'From',
     sendModeLabel: 'Send mode',
     modeSeparate: 'Separately (one each)',
     modeMerged: 'One shared mail (visible)',

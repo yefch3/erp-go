@@ -5,7 +5,9 @@ import (
 	"encoding/base64"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -515,4 +517,145 @@ func TestOneMailboxCannotBelongToTwoPeople(t *testing.T) {
 	if !strings.Contains(err.Error(), "已经被") {
 		t.Errorf("撞上时要说人话，拿到：%v", err)
 	}
+}
+
+// 在哪个箱里写信，就从哪个箱发出去。
+//
+// 这是「我视图在 263，默认发件箱是 Gmail，点发送从哪个发出去」那个问题的
+// 答案。改动之前答案是 **Gmail**——出站队列只记 sender_id，发信那一刻拿它
+// 反查回这个人的默认箱。
+//
+// 跟着一起错的还有三样：用哪台 SMTP 服务器、已发送副本存进哪个箱，以及
+// 最阴的那条——一封排队中的信**重试时才反查**，这期间换过默认箱的话，
+// 重试会从另一个地址发出去，同一封信两次尝试两个发件人。
+//
+// 所以从哪个箱发是**入队时定死**的，不是发信时算的。这条测试钉的就是那个
+// 「定死」：入队之后把默认箱换掉，队列里那封信的归属一动不动。
+func TestAMessageRemembersWhichMailboxItLeavesFrom(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantID := time.Now().UnixNano()
+	employeeID := tenantID%100000 + 860001
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM email_messages WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM email_campaigns WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM email_inbound WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_binding_log WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+	}()
+	// 发活动要编号生成器。这里只要它给出一个不重复的串，不测编号规则本身。
+	svc := New(pool, Deps{Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	work, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "me@qq.com", Provider: "qq", Secret: "code-qq",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	personal, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "me@163.com", Provider: "netease163", Secret: "code-163",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 默认是先绑的那个（QQ）。下面要证的正是「默认是什么不影响这封信」。
+	if def, _ := svc.defaultAccountIDFor(ctx, tenantID, employeeID); def != work.AccountID {
+		t.Fatalf("默认该是先绑的 QQ，拿到 %d", def)
+	}
+
+	// 点名从 163 那个箱发。
+	if _, err := svc.CreateCampaign(ctx, tenantID, CampaignInput{
+		Subject: "报价", Body: "hi", Format: FormatText, Kind: "TRANSACTIONAL",
+		AccountID:  personal.AccountID,
+		Recipients: []Recipient{{Email: "buyer@overseas.com", Name: "Buyer"}},
+	}, Operator{ID: employeeID, Name: "业务员"}); err != nil {
+		t.Fatalf("发信：%v", err)
+	}
+	var got int64
+	if err := pool.QueryRow(ctx, `SELECT account_id FROM email_messages
+		WHERE tenant_id=$1 ORDER BY id DESC LIMIT 1`, tenantID).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != personal.AccountID {
+		t.Fatalf("点名从 163 发，队列里记的却是 %d（163 是 %d，QQ 是 %d）——"+
+			"这就是「视图在 A、默认在 B，结果从 B 发出去」那个毛病",
+			got, personal.AccountID, work.AccountID)
+	}
+
+	// **入队之后把默认箱换掉，这封信一动不动。**
+	//
+	// 反查那一版在这里就变了：重试时才算，算出来的是新的默认箱。
+	if err := svc.SetDefaultMailbox(ctx, tenantID, employeeID, personal.AccountID); err != nil {
+		t.Fatal(err)
+	}
+	var still int64
+	if err := pool.QueryRow(ctx, `SELECT account_id FROM email_messages
+		WHERE tenant_id=$1 ORDER BY id DESC LIMIT 1`, tenantID).Scan(&still); err != nil {
+		t.Fatal(err)
+	}
+	if still != personal.AccountID {
+		t.Error("换了默认箱之后，排队中那封信的发件箱跟着变了")
+	}
+
+	// 不点名时：回复继承**收到原信的那个箱**。对方写到哪个地址，回信就该从
+	// 哪个地址出去，否则会话在客户那边会断成两条。
+	var inboundID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO email_inbound
+		(tenant_id, account_id, owner_id, message_id, thread_key, folder, imap_uid,
+		 from_email, subject, body_text, received_at)
+		VALUES ($1,$2,$3,'ask@overseas.com','thr-1','INBOX',1,'buyer@overseas.com','询价','hi',now())
+		RETURNING id`, tenantID, work.AccountID, employeeID).Scan(&inboundID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateCampaign(ctx, tenantID, CampaignInput{
+		Subject: "Re: 询价", Body: "hi", Format: FormatText, Kind: "TRANSACTIONAL",
+		ReplyToInboundID: inboundID,
+		Recipients:       []Recipient{{Email: "buyer@overseas.com", Name: "Buyer"}},
+	}, Operator{ID: employeeID, Name: "业务员"}); err != nil {
+		t.Fatalf("回复：%v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT account_id FROM email_messages
+		WHERE tenant_id=$1 ORDER BY id DESC LIMIT 1`, tenantID).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != work.AccountID {
+		t.Errorf("回复该从收到原信的那个箱（QQ=%d）发，拿到 %d——"+
+			"此刻默认箱是 163，说明它又去查默认箱了", work.AccountID, got)
+	}
+
+	// 别人的信箱借不到：填一个不属于自己的 account_id 要被拒。
+	other := tenantID%100000 + 860002
+	stranger, err := svc.VerifyMailSecret(ctx, tenantID, other, BindRequest{
+		Email: "someone@qq.com", Provider: "qq", Secret: "x",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateCampaign(ctx, tenantID, CampaignInput{
+		Subject: "冒名", Body: "hi", Format: FormatText, Kind: "TRANSACTIONAL",
+		AccountID:  stranger.AccountID,
+		Recipients: []Recipient{{Email: "buyer@overseas.com", Name: "Buyer"}},
+	}, Operator{ID: employeeID, Name: "业务员"}); err == nil {
+		t.Error("拿别人的信箱 id 发信成功了——那等于以同事的地址给客户写信")
+	}
+}
+
+// seqNumbers 是测试用的编号生成器：只保证不重复。
+type seqNumbers struct{ n atomic.Int64 }
+
+func (s *seqNumbers) Next(context.Context, string) (string, error) {
+	return "T-" + strconv.FormatInt(s.n.Add(1), 10), nil
 }

@@ -29,9 +29,12 @@ type DraftInput struct {
 	// The rest of what a compose is: how it goes out, who is copied, and
 	// what it answers. Without these a saved reply reopened as a plain new
 	// mail — same words, different message.
-	SendMode         string
-	CC               []Recipient
-	BCC              []Recipient
+	SendMode string
+	CC       []Recipient
+	BCC      []Recipient
+	// 这封草稿打算从哪个信箱发。存下来是因为「我在 Gmail 里写了一半」这件
+	// 事，下次打开草稿得还原出来——不然接着写完一发，又从默认箱出去了。
+	AccountID        int64
 	ReplyToInboundID int64
 	ForwardInboundID int64
 	// How the forward goes out, not just what it forwards. A draft that
@@ -43,18 +46,21 @@ type DraftInput struct {
 
 // DraftView is one saved draft, restored into the composer.
 type DraftView struct {
-	ID               int64
-	Subject          string
-	Body             string
-	Format           string
-	SignatureID      int64
-	Kind             string
-	Recipients       []Recipient
-	Attachments      []PendingAttachment
-	UpdatedAt        string
-	SendMode         string
-	CC               []Recipient
-	BCC              []Recipient
+	ID          int64
+	Subject     string
+	Body        string
+	Format      string
+	SignatureID int64
+	Kind        string
+	Recipients  []Recipient
+	Attachments []PendingAttachment
+	UpdatedAt   string
+	SendMode    string
+	CC          []Recipient
+	BCC         []Recipient
+	// 这封草稿打算从哪个信箱发。存下来是因为「我在 Gmail 里写了一半」这件
+	// 事，下次打开草稿得还原出来——不然接着写完一发，又从默认箱出去了。
+	AccountID        int64
 	ReplyToInboundID int64
 	ForwardInboundID int64
 	// How the forward goes out, not just what it forwards. A draft that
@@ -113,6 +119,7 @@ func (s *Service) SaveDraft(ctx context.Context, tenantID int64, in DraftInput, 
 		SignatureID: in.SignatureID, Kind: kind,
 		Recipients: recipients, Attachments: files,
 		SendMode: mode, Cc: cc, Bcc: bcc,
+		AccountID:           in.AccountID,
 		ReplyToInboundID:    in.ReplyToInboundID,
 		ForwardInboundID:    in.ForwardInboundID,
 		ForwardAsAttachment: in.ForwardAsAttachment,
@@ -147,6 +154,7 @@ func (s *Service) GetDraft(ctx context.Context, tenantID, id int64, op Operator)
 	out := DraftView{
 		ID: d.ID, Subject: d.Subject, Body: d.Body, Format: d.BodyFormat,
 		SignatureID: d.SignatureID, Kind: d.Kind, SendMode: d.SendMode,
+		AccountID:           d.AccountID,
 		ReplyToInboundID:    d.ReplyToInboundID,
 		ForwardInboundID:    d.ForwardInboundID,
 		ForwardAsAttachment: d.ForwardAsAttachment,
@@ -197,6 +205,7 @@ func (s *Service) SendDraft(ctx context.Context, tenantID, id int64, at time.Tim
 		SignatureID: d.SignatureID, Kind: d.Kind,
 		Recipients: d.Recipients, Attachments: d.Attachments,
 		SendMode: d.SendMode, CC: d.CC, BCC: d.BCC,
+		AccountID:        d.AccountID,
 		ReplyToInboundID: d.ReplyToInboundID,
 		ForwardInboundID: d.ForwardInboundID,
 		DisableTracking:  d.DisableTracking,

@@ -941,6 +941,14 @@ message CreateCampaignRequest {
   // zero value keeps today's behaviour: an old client that never heard of
   // the field still gets tracked mail, not silently untracked mail.
   bool disable_tracking = 15;
+  // 从**哪个信箱**发。0 = 服务端挑（回复继承收到那封信的箱，否则默认箱）。
+  //
+  // 一个人可以绑多个信箱，而「你此刻在哪个箱里」只有浏览器知道。不传的话
+  // 服务端只能猜，而它猜的永远是默认箱——于是你在 Gmail 里点回复，信从
+  // 263 发出去，客户看到的发件人不是刚才跟他写信的那个人。
+  //
+  // 服务端会验：这个信箱必须是发信人自己的。
+  int64 account_id = 16;
 }
 
 message CreateCampaignResponse {
@@ -1285,6 +1293,9 @@ message Draft {
   repeated Recipient bcc = 15;
   bool forward_as_attachment = 16;
   bool disable_tracking = 17;
+  // 这封草稿打算从哪个信箱发。存进草稿是因为「我在 Gmail 里写了一半」
+  // 这件事，下次打开草稿得还原出来。
+  int64 account_id = 18;
 }
 
 message SaveDraftRequest {
@@ -1307,6 +1318,8 @@ message SaveDraftRequest {
   repeated Recipient bcc = 13;
   bool forward_as_attachment = 14;
   bool disable_tracking = 15;
+  // 同 Draft.account_id。
+  int64 account_id = 16;
 }
 
 message SaveDraftResponse {
