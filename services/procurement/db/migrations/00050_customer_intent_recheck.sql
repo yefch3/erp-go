@@ -1,6 +1,7 @@
 -- +goose Up
 -- 客户先通过销售登记意向；采购/船运提交结构化复询结果后，再由销售登记
 -- 客户是否接受。复询完成不再等同于客户最终确认。
+-- migration-safety: ALTER COLUMN sourcing_customer_selections.status TYPE VARCHAR(40) — 仅从 VARCHAR(28) 扩宽；旧值、旧容器的读取和写入均兼容，2026-09-01 T8 迁移验证确认
 ALTER TABLE sourcing_customer_selections DROP CONSTRAINT sourcing_customer_selections_status_check;
 ALTER TABLE sourcing_customer_selections ALTER COLUMN status TYPE VARCHAR(40);
 UPDATE sourcing_customer_selections
