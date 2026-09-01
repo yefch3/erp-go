@@ -62,6 +62,7 @@ import { useI18n } from 'vue-i18n'
 import { get, http, mailHostRequest, quietErrors } from '../api'
 import { useAuthStore } from '../stores/auth'
 import MailboxCredentialsForm from './MailboxCredentialsForm.vue'
+import { type MintedToken, saveTokens, useMailbox } from '../lib/mailUnlock'
 
 const emit = defineEmits<{ unlocked: []; hostSettings: [] }>()
 const { t } = useI18n()
@@ -109,8 +110,13 @@ async function startOAuth() {
 // 一次输错的授权码既不会覆盖能用的凭据，也不会毁掉一个 Google 绑定。
 //
 // 填一个**新地址**是新增一个信箱，不是把原来那个改掉：冲突键是地址。
-function onBound(d: { token: string }) {
-  localStorage.setItem('mailUnlock', d.token)
+function onBound(d: { token: string; tokens?: MintedToken[]; accountId?: number }) {
+  // 服务端把这个人**每个箱**的令牌都发下来了，全存着——切换箱只是换一把，
+  // 不用重新输密码。token 那个单数字段是给还没认识 tokens 的旧后端留的。
+  saveTokens(d.tokens ?? [])
+  if (!(d.accountId && useMailbox(d.accountId))) {
+    localStorage.setItem('mailUnlock', d.token)
+  }
   emit('unlocked')
 }
 
@@ -135,7 +141,8 @@ async function verify(code: string) {
     ...mailHostRequest,
     ...quietErrors,
   })
-  const data = resp.data.data as { token: string }
+  const data = resp.data.data as { token: string; tokens?: MintedToken[] }
+  saveTokens(data.tokens ?? [])
   localStorage.setItem('mailUnlock', data.token)
   emit('unlocked')
 }

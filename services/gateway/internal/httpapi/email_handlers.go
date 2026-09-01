@@ -665,8 +665,15 @@ func clientIP(r *http.Request) string {
 }
 
 func (s *Server) listInbound(w http.ResponseWriter, r *http.Request) {
-	// accountId 是「只看这个信箱」，缺省 0 = 我全部信箱。旧前端不发。
-	acct, _ := strconv.ParseInt(r.URL.Query().Get("accountId"), 10, 64)
+	// 看哪个信箱，**由令牌决定，不由调用方的参数决定**。
+	//
+	// 令牌现在是一个箱一把（见 mailunlock.go）。用参数的话，退出 A 之后，
+	// 拿还活着的 B 的令牌配一个 accountId=A 照样读得到 A 的信——退出就
+	// 白退了。
+	//
+	// 0 表示不限：换版本之前发出去、还没到期的旧令牌，以及一个箱都没绑的
+	// 人。那时回全部，和改动之前一样。
+	acct := unlockedAccount(r.Context())
 	resp, err := s.Emails.ListInbound(r.Context(), &mailv1.ListInboundRequest{
 		Page:      pageFromQuery(r),
 		Keyword:   r.URL.Query().Get("keyword"),
@@ -684,6 +691,10 @@ func (s *Server) listInbound(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getMailThread(w http.ResponseWriter, r *http.Request) {
 	// id 是「从哪一封信点进来的」，决定读哪个信箱那一份。旧前端不发，
 	// 那时 0 表示不限定——部署顺序是后端先发前端后发，这条路必须留着。
+	//
+	// 这里可以留参数：它指的是**具体某一封信**，而那封信本来就要属于
+	// 调用者（服务层按 owner_id 卡）。和 accountId 不同——后者是"给我看
+	// 这个箱的全部信"，那句话必须由令牌说了算。
 	id, _ := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
 	resp, err := s.Emails.GetMailThread(r.Context(), &mailv1.GetMailThreadRequest{
 		ThreadKey: r.URL.Query().Get("key"), MessageId: id,

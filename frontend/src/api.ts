@@ -1,4 +1,5 @@
 import axios, { type AxiosRequestConfig } from 'axios'
+import { UNLOCK_STORAGE_KEYS } from './lib/mailUnlock'
 import { ElMessage } from 'element-plus'
 import { i18n } from './i18n'
 import { router } from './router'
@@ -157,7 +158,7 @@ function expired() {
   // cookie this code cannot touch, already refused server-side. What must go
   // is everything that makes the router and the pages believe a session
   // still exists.
-  for (const k of ['employeeId', 'employeeName', 'employeeEmail', 'permissions', 'mailUnlock']) {
+  for (const k of ['employeeId', 'employeeName', 'employeeEmail', 'permissions', ...UNLOCK_STORAGE_KEYS]) {
     localStorage.removeItem(k)
   }
   if (redirecting || location.pathname === '/login') return
