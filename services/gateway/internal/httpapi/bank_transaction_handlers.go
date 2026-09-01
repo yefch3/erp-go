@@ -50,6 +50,9 @@ func (s *Server) listBankTransactions(w http.ResponseWriter, r *http.Request) {
 		// ?ownership_pending=1 只出「还没人认领的」。单独一个开关而不是让
 		// ownership="" 兼职：空串已经是「不筛」的意思了。
 		OwnershipPending: r.URL.Query().Get("ownership_pending") == "1",
+		// ?deleted=1 只出已删除的那些。和上面几个筛选项不同，它是个**开关**：
+		// 已删除是和日常列表并列的一个入口，不是在同一张表上多勾一个框。
+		Deleted: r.URL.Query().Get("deleted") == "1",
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -113,6 +116,66 @@ func (s *Server) setBankTransactionOwnership(w http.ResponseWriter, r *http.Requ
 func (s *Server) unmatchBankTransaction(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Orders.UnmatchBankTransaction(r.Context(),
 		&prv1.UnmatchBankTransactionRequest{TxnId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// deleteBankTransaction 归档一条流水。理由必填，在请求体里。
+//
+// 用 POST 而不是 DELETE：这一下要带着理由，而带 body 的 DELETE 在代理和
+// 客户端那一层各家实现不一，有的直接把 body 丢掉——丢掉的后果是理由为空、
+// 服务层拒绝，而人看到的是一句「请填写删除原因」，尽管他确实填了。
+func (s *Server) deleteBankTransaction(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.DeleteBankTransactionRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.TxnId = idFromPath(r)
+	resp, err := s.Orders.DeleteBankTransaction(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// restoreBankTransaction 把归档的那一行放回列表。
+func (s *Server) restoreBankTransaction(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.RestoreBankTransaction(r.Context(),
+		&prv1.RestoreBankTransactionRequest{TxnId: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// updateBankTransaction 改一行流水。理由必填，在请求体里。
+//
+// PUT 而不是 POST /{id}/edit：这是「把整行替换成新的样子」，PUT 就是这个
+// 意思。删除那边用 POST 是因为 DELETE 带 body 不可靠——PUT 带 body 没有
+// 这个问题。
+func (s *Server) updateBankTransaction(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.UpdateBankTransactionRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.TxnId = idFromPath(r)
+	resp, err := s.Orders.UpdateBankTransaction(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+// listBankTransactionChanges 这一行被改过什么。
+func (s *Server) listBankTransactionChanges(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Orders.ListBankTransactionChanges(r.Context(),
+		&prv1.ListBankTransactionChangesRequest{TxnId: idFromPath(r)})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

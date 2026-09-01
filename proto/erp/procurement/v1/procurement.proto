@@ -692,6 +692,16 @@ service PurchaseOrderService {
   // 记下这笔钱是谁那条线上的（客户 / 供应商 / 退税 / 不用核销 / 待处理）。
   // 银行那一行本身一个字不改——归属是我们的判断，可改可撤。
   rpc SetBankTransactionOwnership(SetBankTransactionOwnershipRequest) returns (SetBankTransactionOwnershipResponse);
+  // 删一条流水——归档，不是抹掉。要填理由。已被认领或已匹配付款单的不许删。
+  rpc DeleteBankTransaction(DeleteBankTransactionRequest) returns (DeleteBankTransactionResponse);
+  // 从已删除里放回列表。误删之后重新登记同一笔会被 bank_ref 的唯一键挡住，
+  // 而那一行在列表里又看不见——没有这条路，人只会觉得系统在胡说。
+  rpc RestoreBankTransaction(RestoreBankTransactionRequest) returns (RestoreBankTransactionResponse);
+  // 改一行流水。要填理由，每处改动留痕。已被认领或已匹配付款单的，改「会
+  // 影响账」的那几项要先取消认领。
+  rpc UpdateBankTransaction(UpdateBankTransactionRequest) returns (UpdateBankTransactionResponse);
+  // 这一行被改过什么，最近的排前面。
+  rpc ListBankTransactionChanges(ListBankTransactionChangesRequest) returns (ListBankTransactionChangesResponse);
   rpc UnmatchBankTransaction(UnmatchBankTransactionRequest) returns (UnmatchBankTransactionResponse);
 
   // 手工登记一行流水。CSV 导入之外的另一条入口：银行还没出对账单、或者
@@ -1597,6 +1607,13 @@ message BankTransaction {
   // claimed_amount < amount 就是还没完。供应商那条线由匹配写（匹配即全额），
   // 客户那条线由出口服务核销之后写回来。
   string claimed_amount = 25;
+  // 删除留痕。**只在「已删除」那个列表上有值**——活着的行这三个都是空的。
+  //
+  // 删是归档不是抹掉：银行流水是账，一行进过账又凭空消失，事后没人说得清
+  // 它是错录的还是被谁抹掉的。
+  string deleted_at = 29;
+  string deleted_by = 30;
+  string delete_reason = 31;
 
   // 银行给的那份对账单（PDF）。key 是存下来的；url 每次读的时候现签、
   // 一会儿就过期，所以**不落库**；name 是从 key 还原的原始文件名。
@@ -1728,6 +1745,12 @@ message ListBankTransactionsRequest {
   // 的并集，单值的 ownership 表达不了。空串在这里是一个正常的元素，表示
   // 「还没人认过的那一档」。
   repeated string ownership_in = 8;
+  // 看已删除的那些，而不是活着的那些。
+  //
+  // 这是个开关不是筛选项：两者互斥。「已删除」是和现有列表**并列**的入口，
+  // 点进去只看删掉的——不是在同一张表上多勾一个框。删掉的行混在日常列表里，
+  // 只会让每天要清队列的人多筛一道。
+  bool deleted = 9;
 }
 message SetBankTransactionOwnershipRequest {
   int64 txn_id = 1;
@@ -1737,6 +1760,47 @@ message SetBankTransactionOwnershipRequest {
   string ownership_detail = 3;
 }
 message SetBankTransactionOwnershipResponse {}
+
+message DeleteBankTransactionRequest {
+  int64 txn_id = 1;
+  // 为什么删。**必填**——一条没有理由的删除记录，和真删了差不多：事后翻到
+  // 它，还是不知道当时发生了什么。
+  string reason = 2;
+}
+message DeleteBankTransactionResponse {}
+
+message RestoreBankTransactionRequest {
+  int64 txn_id = 1;
+}
+message RestoreBankTransactionResponse {}
+
+message UpdateBankTransactionRequest {
+  int64 txn_id = 1;
+  // 和登记流水同一组字段——编辑就是「把当初填的重填一遍」，两边不该有
+  // 两套字段清单。
+  BankTransactionInput fields = 2;
+  // 为什么改。**必填**：改的是账，一笔钱的金额改过一次而没人知道，是这种
+  // 表最难查的问题。
+  string reason = 3;
+}
+message UpdateBankTransactionResponse {}
+
+message ListBankTransactionChangesRequest {
+  int64 txn_id = 1;
+}
+message BankTransactionChange {
+  // 字段名（txn_date / amount / ...）。中文标签由界面按它翻——标签会跟着
+  // 界面改，字段名不会。
+  string field = 1;
+  string old_value = 2;
+  string new_value = 3;
+  string reason = 4;
+  string changed_by = 5;
+  string created_at = 6;
+}
+message ListBankTransactionChangesResponse {
+  repeated BankTransactionChange items = 1;
+}
 
 message ListBankTransactionsResponse {
   repeated BankTransaction items = 1;

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -85,6 +86,13 @@ type BankTransactionView struct {
 	// ClaimedAmount < Amount 就是还没完。供应商那条线由匹配写（匹配即全额），
 	// 客户那条线由出口服务核销之后写回来。
 	ClaimedAmount string
+	// 删除留痕。**只在「已删除」那个页面上有值**——活着的行这三个字段是空的。
+	//
+	// 删是归档不是抹掉：银行流水是账，一行进过账又凭空消失，事后没人说得清
+	// 它是错录的还是被谁抹掉的。所以谁删的、什么时候、为什么，跟着行一起留。
+	DeletedAt    string
+	DeletedBy    string
+	DeleteReason string
 	// Set when a payment claims this row.
 	MatchedPaymentID int64
 	MatchedPaymentNo string
@@ -109,6 +117,12 @@ type BankTransactionFilter struct {
 	// 一次筛好几档归属。非空时**压过** Ownership 和 OwnershipPending。
 	// 空串在这里是正常元素，表示「还没人认过的那一档」。
 	OwnershipIn []string
+	// 看已删除的那些，而不是活着的那些。
+	//
+	// 这是个开关不是筛选项：两者互斥。「已删除」是和现有列表**并列**的一个
+	// 入口，点进去只看删掉的——不是在同一张表上多勾一个框。删掉的行留着
+	// 是为了事后查账，混在日常列表里只会让每天要清队列的人多筛一道。
+	Deleted bool
 }
 
 // 认领状态的两档。
@@ -169,6 +183,106 @@ func (s *Service) ImportBankStatement(ctx context.Context, tenantID int64, fileN
 	return summary, nil
 }
 
+// DeleteBankTransaction 把一行流水归档——**不是抹掉**。
+//
+// 登记流水这一步原来没有回头路：填错一行（日期打错、金额多个零、同一笔录了
+// 两遍）就一直挂在列表里，只能在备注里写一句「作废」。
+//
+// 归档而不是真删，理由见 00046 的迁移注释，最硬的一条是：
+// UNIQUE (tenant_id, bank_ref) 还在，真删之后重新导入同一份对账单，那一行
+// 会自己长回来——「删除」在下一次导入时被静默撤销。
+//
+// **已经被认领或已经匹配付款单的行不许删。**
+//
+// 需求上说的是「核销和流水不强绑定」，那句话对着一半：核销那几张表里确实
+// 没有任何一列指向流水。但反过来有——claimed_amount 这一列记着「这一行被
+// 认领了多少」，由客户核销那条线写回来（bankledger.go:183）。删掉一行已认领
+// 的流水，合同那边照样算收到了钱，而钱的来源进了已删除。
+//
+// 这和 SetBankTransactionOwnership 上那道闸是同一个形状，那里的注释记着它是
+// 怎么被发现的：「两步就能把一笔已核销的钱变成孤儿」。所以这里照同一个规矩
+// 办——拒绝，并说清楚先做哪一步。
+func (s *Service) DeleteBankTransaction(ctx context.Context, tenantID, txnID int64, reason string, op Operator) error {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		// 必填。一条没有理由的删除记录，和真删了差不多——事后翻到它，
+		// 还是不知道当时发生了什么。
+		return apierr.Invalid("BANK_TXN_DELETE_REASON", "请填写删除原因")
+	}
+	if len([]rune(reason)) > 500 {
+		return apierr.Invalid("BANK_TXN_DELETE_REASON", "删除原因不要超过 500 字")
+	}
+
+	var claimed string
+	var deletedAt *time.Time
+	err := s.pool.QueryRow(ctx, `
+		SELECT claimed_amount::text, deleted_at FROM bank_transactions
+		 WHERE tenant_id=$1 AND id=$2`, tenantID, txnID).Scan(&claimed, &deletedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return apierr.NotFound("BANK_TXN_NOT_FOUND", "银行流水不存在")
+	}
+	if err != nil {
+		return err
+	}
+	if deletedAt != nil {
+		return apierr.Conflict("BANK_TXN_ALREADY_DELETED", "这条流水已经在已删除里了")
+	}
+	if amt, ok := normalizeBankAmount(claimed); ok && amt.IsPositive() {
+		return apierr.Conflict("BANK_TXN_DELETE_CLAIMED",
+			"这条流水已经被认领了 "+amt.String()+"，要删请先在收款对账里取消认领")
+	}
+	var matched int64
+	if err := s.pool.QueryRow(ctx, `
+		SELECT count(*) FROM supplier_payments
+		 WHERE tenant_id=$1 AND bank_txn_id=$2`, tenantID, txnID).Scan(&matched); err != nil {
+		return err
+	}
+	if matched > 0 {
+		return apierr.Conflict("BANK_TXN_DELETE_MATCHED",
+			"这条流水已经匹配了供应商付款单，要删请先取消匹配")
+	}
+
+	// deleted_at IS NULL 写进 WHERE，不只靠上面查出来的那一下：两个人同时
+	// 点删除时，第二个人的 UPDATE 影响零行，理由和署名不会覆盖第一个人的。
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE bank_transactions
+		   SET deleted_at = now(), deleted_by_id = $3, deleted_by_name = $4,
+		       delete_reason = $5
+		 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+		tenantID, txnID, op.ID, op.Name, reason)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return apierr.Conflict("BANK_TXN_ALREADY_DELETED", "这条流水已经在已删除里了")
+	}
+	s.nudge(ctx, tenantID)
+	return nil
+}
+
+// RestoreBankTransaction 把归档的那一行放回列表。
+//
+// 需求里没点名要它，加上是因为不加会有一个说不通的死角：bank_ref 上有唯一键，
+// 所以误删一行之后**重新登记同一笔会被拒**（「流水号已存在」），而那一行在
+// 列表里又看不见——人只会觉得系统在胡说。
+//
+// 而且「存档」这个词本身就含着能取回来的意思。取回来也留痕：理由和删的人
+// 都留在行上，不清空。
+func (s *Service) RestoreBankTransaction(ctx context.Context, tenantID, txnID int64, op Operator) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE bank_transactions SET deleted_at = NULL
+		 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NOT NULL`,
+		tenantID, txnID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return apierr.NotFound("BANK_TXN_NOT_DELETED", "这条流水不在已删除里")
+	}
+	s.nudge(ctx, tenantID)
+	return nil
+}
+
 // ListBankTransactions pages the bank's story next to ours: each row with
 // the payment that claims it, or the closest unclaimed candidate.
 func (s *Service) ListBankTransactions(ctx context.Context, tenantID int64, f BankTransactionFilter, page, size int32, op Operator) ([]BankTransactionView, int64, error) {
@@ -181,6 +295,7 @@ func (s *Service) ListBankTransactions(ctx context.Context, tenantID int64, f Ba
 		       t.remittance_info, t.source, t.trusted_ref, t.note,
 		       t.attachment_key,
 		       t.claimed_amount::text,
+		       coalesce(t.deleted_at::text, ''), t.deleted_by_name, t.delete_reason,
 		       coalesce(p.id, 0), coalesce(p.payment_no, ''),
 		       coalesce(sg.id, 0), coalesce(sg.payment_no, ''), coalesce(sg.supplier_name, ''),
 		       count(*) OVER () AS total
@@ -218,11 +333,13 @@ func (s *Service) ListBankTransactions(ctx context.Context, tenantID int64, f Ba
 		   AND (coalesce(cardinality($10::text[]), 0) > 0 OR NOT $6 OR t.ownership = '')
 		   -- 认领状态：财务每天要清的队列。空串不筛。
 		   AND ($7 = '' OR ($7 = 'OPEN') = (t.claimed_amount < t.amount))
+		   -- 活着的 / 已删除的，二选一，没有「两个都要」。
+		   AND (t.deleted_at IS NOT NULL) = $11
 		 ORDER BY t.txn_date DESC, t.id DESC
 		 LIMIT $8 OFFSET $9`,
 		tenantID, f.Status, f.Direction, strings.TrimSpace(f.Keyword),
 		f.Ownership, f.OwnershipPending, f.ClaimStatus,
-		size, (page-1)*size, f.OwnershipIn)
+		size, (page-1)*size, f.OwnershipIn, f.Deleted)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -238,6 +355,7 @@ func (s *Service) ListBankTransactions(ctx context.Context, tenantID int64, f Ba
 			&v.RemittanceInfo, &v.Source, &v.TrustedRef, &v.Note,
 			&v.AttachmentKey,
 			&v.ClaimedAmount,
+			&v.DeletedAt, &v.DeletedBy, &v.DeleteReason,
 			&v.MatchedPaymentID, &v.MatchedPaymentNo,
 			&v.SuggestedPaymentID, &v.SuggestedPaymentNo, &v.SuggestedPaymentSupplier,
 			&total); err != nil {
@@ -339,7 +457,15 @@ func (s *Service) MatchBankTransaction(ctx context.Context, tenantID, txnID, pay
 //
 // 银行那一行本身一个字不改——归属是**我们的判断**，和匹配一样可以改、可以
 // 改回空（重新变成待处理）。同「付款是事实、核销是判断」。
-func (s *Service) SetBankTransactionOwnership(ctx context.Context, tenantID, txnID int64, ownership, detail string, op Operator) error {
+// validateOwnershipChange 是「这条流水的归属能不能改成这个」的全部规则。
+//
+// 抽出来是因为它有**两个**调用方：单独改归属那条路，和编辑表单（归属就在
+// 那个表单里）。抄一遍的后果是两套规则各长各的——比如一边查了核销、另一边
+// 没查，而走哪条路取决于用户点了哪个按钮。
+//
+// 全是只读检查，所以调用方可以在事务外先问一遍，再把写和别的改动放进同一个
+// 事务里。
+func (s *Service) validateOwnershipChange(ctx context.Context, tenantID, txnID int64, ownership, detail string) error {
 	ownership = strings.TrimSpace(ownership)
 	detail = strings.TrimSpace(detail)
 	if !validOwnership(ownership) {
@@ -391,6 +517,16 @@ func (s *Service) SetBankTransactionOwnership(ctx context.Context, tenantID, txn
 		matched == 0 && ownership != OwnershipCustomer {
 		return apierr.Conflict("BANK_TXN_OWNERSHIP_ALLOCATED",
 			"这条流水已经核销到出口合同（已核 "+amt.String()+"），要改归属请先在收款对账里冲销")
+	}
+	return nil
+}
+
+func (s *Service) SetBankTransactionOwnership(ctx context.Context, tenantID, txnID int64, ownership, detail string, op Operator) error {
+	ownership = strings.TrimSpace(ownership)
+	detail = strings.TrimSpace(detail)
+	// 规则全在 validateOwnershipChange 里，编辑表单那条路走的是同一份。
+	if err := s.validateOwnershipChange(ctx, tenantID, txnID, ownership, detail); err != nil {
+		return err
 	}
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE bank_transactions SET ownership=$3, ownership_detail=$4

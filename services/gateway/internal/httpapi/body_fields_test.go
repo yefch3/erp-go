@@ -34,6 +34,25 @@ func mustDecode(t *testing.T, body string, msg proto.Message) {
 }
 
 func TestBodiesTheBrowserActuallySendsDecode(t *testing.T) {
+	// frontend/src/pages/BankTransactionsPage.vue —— 改一条流水。
+	// fields 是整个表单对象展开的，少一个 proto 字段就整单保存不了。
+	mustDecode(t, `{
+		"fields": {
+			"direction": "CREDIT", "amount": "100.00", "currency": "USD",
+			"txnDate": "2026-08-20", "accountId": "17", "bankRef": "REF-1",
+			"counterparty": "ACME", "remittanceInfo": "for EXP-2026-0031",
+			"ownership": "OTHER", "ownershipDetail": "运费"
+		},
+		"reason": "金额多打了一个零"
+	}`, &prv1.UpdateBankTransactionRequest{})
+
+	// frontend/src/pages/BankTransactionsPage.vue —— 删一条流水，理由必填。
+	mustDecode(t, `{"reason": "同一笔录了两遍，这条是重复的"}`,
+		&prv1.DeleteBankTransactionRequest{})
+	// 恢复：请求体是空的，路径里带 id。空体也得收得下，否则点「恢复」
+	// 直接 400。
+	mustDecode(t, `{}`, &prv1.RestoreBankTransactionRequest{})
+
 	// frontend/src/components/MailboxSwitcher.vue —— 设为默认发件箱。
 	// accountId 是 lowerCamelCase，proto 里是 account_id；protojson 认前者。
 	mustDecode(t, `{"accountId": 7}`, &mailv1.SetDefaultMailboxRequest{})

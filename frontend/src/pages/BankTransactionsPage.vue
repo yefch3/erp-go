@@ -25,14 +25,31 @@
              按 export:receipt:read 显示：接口挂的是这个权限，采购经理能打开
              本页但没有它，不判断的话按钮点下去就是 403。 -->
         <el-button v-if="canReadAccounts" @click="openAccounts">{{ t('bankTransactions.accounts') }}</el-button>
+        <!-- CSV 对账单导入：**入口先藏起来**（2026-08-31 决定，见
+             docs/开发计划.md 的 F4）。后端整条路原样留着，以后要用把这两行
+             和下面那个错误清单弹窗放回来就行。
+
+             藏起来的理由：现在流水靠手工登记就够；各家银行导出的 CSV 列名、
+             编码、日期格式都不一样，没有真实样本对过就上线，第一次用必然
+             导进来一堆歪的行——而它是这页上唯一一个一次写很多行的按钮，
+             误点的代价最大。
         <el-button v-if="canWrite" type="primary" :loading="importing" @click="fileInput?.click()">
           {{ t('bankTransactions.import') }}
         </el-button>
         <input ref="fileInput" type="file" accept=".csv,text/csv" style="display: none" @change="onFilePicked" />
+        -->
       </div>
     </header>
 
     <section class="panel">
+      <!-- 两个并列的入口，不是筛选项上多勾一个框。
+           删掉的行留着是为了事后查账，混在日常列表里只会让每天要清队列的人
+           多筛一道；而查账的人要的是「只看删掉的那些」。 -->
+      <el-radio-group v-model="view" class="view-tabs" @change="reload">
+        <el-radio-button value="live">{{ t('bankTransactions.viewLive') }}</el-radio-button>
+        <el-radio-button value="deleted">{{ t('bankTransactions.viewDeleted') }}</el-radio-button>
+      </el-radio-group>
+
       <div class="filters">
         <el-select v-model="ownership" clearable :placeholder="t('bankTransactions.ownershipAll')" style="width: 150px" @change="reload">
           <el-option value="PENDING" :label="t('bankTransactions.ownerships.PENDING')" />
@@ -46,7 +63,38 @@
         <el-button type="primary" @click="reload">{{ t('common.query') }}</el-button>
       </div>
 
+      <el-dialog v-model="deleteOpen" :title="t('bankTransactions.deleteTitle')" width="440px">
+        <p class="del-hint">{{ t('bankTransactions.deleteHint') }}</p>
+        <el-input
+          v-model="deleteReason"
+          type="textarea"
+          :rows="3"
+          maxlength="500"
+          show-word-limit
+          :placeholder="t('bankTransactions.deleteReasonPlaceholder')"
+        />
+        <template #footer>
+          <el-button @click="deleteOpen = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="danger" :loading="deleting" @click="confirmDelete">
+            {{ t('common.delete') }}
+          </el-button>
+        </template>
+      </el-dialog>
+
       <el-table v-loading="loading" :data="rows" stripe>
+        <!-- 只在「已删除」里出现：谁删的、什么时候、为什么。这三样就是
+             「作为存档」的全部意思——行还在，理由还在，署名还在。 -->
+        <el-table-column
+          v-if="view === 'deleted'"
+          :label="t('bankTransactions.deletedInfo')"
+          width="240"
+        >
+          <template #default="{ row }">
+            <div class="num-cell nowrap">{{ row.deletedAt }}</div>
+            <div class="sub">{{ row.deletedBy }}</div>
+            <div class="sub del-reason">{{ row.deleteReason }}</div>
+          </template>
+        </el-table-column>
         <!-- 日期和流水号合成一格：两者回答的是同一个问题——「这一行是哪天、
              哪一笔」。流水号还是搜索和去重的钥匙，所以留全、不截断，只是放小
              一号压在日期底下。合并之前七列在 1280 的笔记本上装不下，右边那个
@@ -101,9 +149,10 @@
                 {{ row.attachmentName || t('bankTransactions.attachment') }}
               </a>
               <span v-else class="none">{{ t('bankTransactions.noAttachment') }}</span>
-              <el-button v-if="canWrite" size="small" link type="primary" :loading="uploadingId === row.id" @click="pickFile(row)">
-                {{ row.attachmentKey ? t('bankTransactions.replaceAttachment') : t('bankTransactions.uploadAttachment') }}
-              </el-button>
+              <!-- 传/换对账单走「编辑」，这里只显示传没传。
+                   编辑那个表单里本来就有附件和归属两项，再在行上各挂一个
+                   按钮，同一件事就有了两个入口——两个入口迟早各自长出一套
+                   规矩（比如一个查了认领状态、另一个没查）。 -->
             </div>
           </template>
         </el-table-column>
@@ -115,18 +164,33 @@
             <div class="match-cell">
               <el-tag v-if="row.matchedPaymentNo" size="small" type="success" effect="plain">{{ row.matchedPaymentNo }}</el-tag>
               <div class="row-actions">
-                <!-- noId 而不是 !row.matchedPaymentId：这个字段是 int64，没值的
-                     时候到浏览器是字符串 "0"，而 "0" 是真值。写成 ! 的那阵子，
-                     「改归属」在任何一行上都不出现。见 lib/protoId.ts。 -->
-                <el-button v-if="canWrite && noId(row.matchedPaymentId)" size="small" link @click="openOwnership(row)">
-                  {{ t('bankTransactions.setOwnership') }}
-                </el-button>
-                <!-- 已匹配的历史行留一个「取消匹配」。新建匹配下线了，但改归属
-                     那道闸遇到已匹配的行会拒绝并让人「先取消匹配」——不给这个
-                     按钮，那些行的归属从此谁也改不了。 -->
+                <!-- 「改归属」并进了编辑——那个表单里本来就有归属这一项。
+                     noId 而不是 !row.matchedPaymentId：这个字段是 int64，没值
+                     时到浏览器是字符串 "0"，而 "0" 是真值。见 lib/protoId.ts。
+
+                     已匹配的历史行留一个「取消匹配」。新建匹配下线了，但改
+                     归属那道闸遇到已匹配的行会拒绝并让人「先取消匹配」——
+                     不给这个按钮，那些行的归属从此谁也改不了。 -->
                 <el-button
-                  v-else-if="canWrite" size="small" link type="danger" @click="unmatch(row)"
+                  v-if="canWrite && !noId(row.matchedPaymentId)"
+                  size="small" link type="danger" @click="unmatch(row)"
                 >{{ t('bankTransactions.unmatch') }}</el-button>
+                <!-- 删是归档：行留着，理由和署名跟着行走。已被认领或已匹配
+                     付款单的会被后端拒掉并说清楚先做哪一步。 -->
+                <!-- 改一行流水。有了它，「某个字段写错了」不用再走「删掉
+                     重新登记」——而那条路还会撞上流水号的唯一键。 -->
+                <el-button
+                  v-if="canWrite && view === 'live'"
+                  size="small" link type="primary" @click="openEdit(row)"
+                >{{ t('common.edit') }}</el-button>
+                <el-button
+                  v-if="canWrite && view === 'live'"
+                  size="small" link type="danger" @click="openDelete(row)"
+                >{{ t('common.delete') }}</el-button>
+                <el-button
+                  v-if="canWrite && view === 'deleted'"
+                  size="small" link type="primary" @click="restore(row)"
+                >{{ t('bankTransactions.restore') }}</el-button>
               </div>
             </div>
           </template>
@@ -141,35 +205,9 @@
         layout="total, prev, pager, next"
         @current-change="load"
       />
-      <input ref="attachInput" type="file" accept="application/pdf,image/*" style="display: none" @change="onAttachPicked" />
     </section>
 
     <!-- 归属：这笔钱归哪条线。选完之后它才谈得上被谁核销。 -->
-    <el-dialog v-model="ownershipOpen" :title="t('bankTransactions.ownershipTitle')" width="min(560px, 94vw)" destroy-on-close>
-      <p v-if="ownershipRow" class="pick-context">
-        {{ ownershipRow.txnDate }} · {{ ownershipRow.currency }} {{ ownershipRow.amount }} ·
-        {{ ownershipRow.counterparty || ownershipRow.bankRef }}
-      </p>
-      <el-radio-group v-model="ownershipForm.ownership" class="ownership-pick">
-        <el-radio value="">{{ t('bankTransactions.ownerships.PENDING') }}</el-radio>
-        <el-radio v-for="k in OWNERSHIPS" :key="k" :value="k">{{ t(`bankTransactions.ownerships.${k}`) }}</el-radio>
-      </el-radio-group>
-      <!-- 二级分类只跟着「不用核销」出现 -->
-      <el-select
-        v-if="ownershipForm.ownership === 'OTHER'"
-        v-model="ownershipForm.detail"
-        style="width: 100%; margin-top: 10px"
-        :placeholder="t('bankTransactions.ownershipDetailPlaceholder')"
-      >
-        <el-option v-for="k in OWNERSHIP_DETAILS" :key="k" :value="k" :label="t(`bankTransactions.ownershipDetails.${k}`)" />
-      </el-select>
-      <el-alert type="info" :closable="false" show-icon style="margin-top: 12px"
-        :title="t('bankTransactions.ownershipHint')" />
-      <template #footer>
-        <el-button @click="ownershipOpen = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="ownershipSaving" @click="saveOwnership">{{ t('common.save') }}</el-button>
-      </template>
-    </el-dialog>
 
     <!-- 我们自己的账户：一张清单加一个新增表单。收款对账页撤掉之后搬来
          这里——账户回答的是「钱进/出我们哪个户头」，是这本账的一部分。 -->
@@ -209,7 +247,7 @@
          之后再导对账单，同号的行自动跳过，不会记重。 -->
     <el-dialog
       v-model="recordOpen"
-      :title="t('bankTransactions.recordTitle')"
+      :title="editingId ? t('bankTransactions.editTitle') : t('bankTransactions.recordTitle')"
       width="min(680px, 94vw)"
       class="record-dialog"
       destroy-on-close
@@ -342,26 +380,43 @@
         </section>
       </el-form>
       <input ref="recordFileInput" type="file" accept="application/pdf,image/*" style="display: none" @change="onRecordFilePicked" />
+      <!-- 只有编辑时才出现。改的是账——金额、日期、流水号改过一次而没人
+           知道，是这种表最难查的问题：报表对不上，谁也说不清是当初录错了
+           还是后来被人改了。所以每处改动都记下谁、什么时候、从什么改成
+           什么、为什么。 -->
+      <div v-if="editingId" class="edit-reason">
+        <div class="edit-reason-label">{{ t('bankTransactions.editReason') }}</div>
+        <el-input
+          v-model="editReason"
+          type="textarea"
+          :rows="2"
+          maxlength="500"
+          show-word-limit
+          :placeholder="t('bankTransactions.editReasonPlaceholder')"
+        />
+      </div>
       <template #footer>
         <el-button @click="recordOpen = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="recording" @click="saveRecord">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
+    <!-- 导入的错误清单，跟着导入入口一起藏（见上面那段和 F4）。
     <el-dialog v-model="errorsOpen" :title="t('bankTransactions.importErrors')" width="min(560px, 94vw)">
       <el-table :data="importErrors" size="small">
         <el-table-column prop="rowNo" :label="t('bankTransactions.rowNo')" width="90" />
         <el-table-column prop="reason" :label="t('bankTransactions.reason')" min-width="200" />
       </el-table>
     </el-dialog>
+    -->
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { get, post } from '../api'
+import { get, post, put } from '../api'
 import { uploadBankStatement } from '../lib/statementUpload'
 import { CURRENCIES } from '../constants'
 import { noId } from '../lib/protoId'
@@ -401,14 +456,20 @@ interface TxnRow {
   attachmentKey: string
   attachmentUrl: string
   attachmentName: string
+  // 编辑要把现有值回填进表单，所以这两项也得读出来。原来列表不显示它们，
+  // 类型里就没有——**而缺字段在 TS 里不是错，是 undefined**：回填时账户
+  // 悄悄变成空，一次「只改了金额」的保存会把账户清掉，还留一条痕说你清了。
+  remittanceInfo: string
+  accountId: string
+  // 删除留痕。**只在「已删除」那个视图里有值**——活着的行这三个是空的。
+  deletedAt: string
+  deletedBy: string
+  deleteReason: string
 }
 interface PaymentOpt { id: string; paymentNo: string; supplierName: string; currency: string; amount: string; paidAt: string; bankRef: string }
 interface RowError { rowNo: number; reason: string }
 
 const rows = ref<TxnRow[]>([])
-const attachInput = ref<HTMLInputElement | null>(null)
-const attachingRow = ref<TxnRow | null>(null)
-const uploadingId = ref('')
 const loading = ref(false)
 const page = ref(1)
 const total = ref(0)
@@ -541,7 +602,33 @@ async function resolveAccountID(): Promise<string> {
   return String(created.id)
 }
 
+// 编辑复用登记那个对话框——两件事问的是同一组字段，做成两个长得像的表单，
+// 改了一个忘了另一个是这类界面最常见的死法。
+//
+// editingId 非空 = 这次是编辑。它同时决定标题、按钮文字，和保存时打哪个接口。
+const editingId = ref('')
+const editReason = ref('')
+
+function openEdit(row: TxnRow) {
+  editingId.value = String(row.id)
+  editReason.value = ''
+  Object.assign(recordForm, {
+    direction: row.direction, amount: row.amount, currency: row.currency,
+    txnDate: row.txnDate, bankRef: row.bankRef, counterparty: row.counterparty,
+    remittanceInfo: row.remittanceInfo || '',
+    ownership: row.ownership || '', detail: row.ownershipDetail || '',
+    // 账户在表单里是「名字或 id」的两用输入，回填时给 id：resolveAccountID
+    // 认得出纯数字就是既有账户，不会拿它去新建一个叫「17」的账户。
+    accountId: row.accountId && String(row.accountId) !== '0' ? String(row.accountId) : '',
+  })
+  recordFile.value = null
+  recordOpen.value = true
+  void loadAccounts()
+}
+
 function openRecord() {
+  editingId.value = ''
+  editReason.value = ''
   Object.assign(recordForm, {
     direction: 'CREDIT', amount: '', currency: 'USD', txnDate: '',
     bankRef: '', counterparty: '', remittanceInfo: '', ownership: '', detail: '',
@@ -559,9 +646,47 @@ async function saveRecord() {
     ElMessage.warning(t('bankTransactions.recordIncomplete'))
     return
   }
+  if (editingId.value && !editReason.value.trim()) {
+    ElMessage.warning(t('bankTransactions.editReasonRequired'))
+    return
+  }
   recording.value = true
   try {
     const accountId = await resolveAccountID()
+    if (editingId.value) {
+      // 改的是账，所以理由跟着一起上去，服务端每处改动留一条痕。
+      await put(`/bank-transactions/${editingId.value}`, {
+        fields: {
+          direction: recordForm.direction, amount: recordForm.amount,
+          currency: recordForm.currency, txnDate: recordForm.txnDate,
+          accountId,
+          bankRef: recordForm.bankRef, counterparty: recordForm.counterparty,
+          remittanceInfo: recordForm.remittanceInfo,
+          ownership: recordForm.ownership,
+          ownershipDetail: recordForm.ownership === 'OTHER' ? recordForm.detail : '',
+        },
+        reason: editReason.value.trim(),
+      })
+      // 附件也在这个表单里，所以编辑同样要处理它——原来这里直接 return，
+      // 编辑时选的文件一声不吭地丢了。
+      //
+      // 和登记那边同一个规矩：改动先落地，纸随后，两步分开成败。改对了才
+      // 是要紧的；凭证没传上去可以回头补，不该把整次修改算失败。
+      if (recordFile.value) {
+        try {
+          await uploadStatement(editingId.value, recordFile.value)
+          ElMessage.success(t('bankTransactions.editedWithFile'))
+        } catch {
+          ElMessage.warning(t('bankTransactions.editedFileFailed'))
+        }
+      } else {
+        ElMessage.success(t('bankTransactions.edited'))
+      }
+      recordOpen.value = false
+      recordFile.value = null
+      await load()
+      return
+    }
     const created = await post<{ transaction: { id: string } }>('/bank-transactions', {
       transaction: {
         direction: recordForm.direction, amount: recordForm.amount,
@@ -595,38 +720,53 @@ async function saveRecord() {
   }
 }
 
-const ownershipOpen = ref(false)
-const ownershipSaving = ref(false)
-const ownershipRow = ref<TxnRow | null>(null)
-const ownershipForm = reactive({ ownership: '', detail: '' })
 
-function openOwnership(row: TxnRow) {
-  ownershipRow.value = row
-  ownershipForm.ownership = row.ownership || ''
-  ownershipForm.detail = row.ownershipDetail || ''
-  ownershipOpen.value = true
+// 删除对话框。理由必填——前端也拦一道，省得人写完一堆字才被后端退回来。
+const deleteRow = ref<TxnRow | null>(null)
+const deleteOpen = ref(false)
+const deleteReason = ref('')
+const deleting = ref(false)
+
+function openDelete(row: TxnRow) {
+  deleteRow.value = row
+  deleteReason.value = ''
+  deleteOpen.value = true
 }
 
-async function saveOwnership() {
-  const row = ownershipRow.value
+async function confirmDelete() {
+  const row = deleteRow.value
   if (!row) return
-  ownershipSaving.value = true
+  if (!deleteReason.value.trim()) {
+    ElMessage.warning(t('bankTransactions.deleteReasonRequired'))
+    return
+  }
+  deleting.value = true
   try {
-    await post(`/bank-transactions/${row.id}/ownership`, {
-      ownership: ownershipForm.ownership,
-      // 二级分类只跟着「不用核销」走。别的档带着它，后端会拒绝——这里先
-      // 清掉，免得用户切换归属之后被一个看不见的旧值挡住。
-      ownership_detail: ownershipForm.ownership === 'OTHER' ? ownershipForm.detail : '',
-    })
-    ownershipOpen.value = false
-    ElMessage.success(t('bankTransactions.ownershipSaved'))
+    await post(`/bank-transactions/${row.id}/delete`, { reason: deleteReason.value.trim() })
+    ElMessage.success(t('bankTransactions.deleted'))
+    deleteOpen.value = false
     await load()
   } finally {
-    ownershipSaving.value = false
+    deleting.value = false
   }
 }
+
+// 从已删除放回列表。误删之后重新登记同一笔会被流水号的唯一键挡住，而那一行
+// 在列表里又看不见——没有这条路，人只会觉得系统在胡说。
+async function restore(row: TxnRow) {
+  await ElMessageBox.confirm(
+    t('bankTransactions.restoreConfirm', { ref: row.bankRef }),
+    t('bankTransactions.restore'),
+  )
+  await post(`/bank-transactions/${row.id}/restore`, {})
+  ElMessage.success(t('bankTransactions.restored'))
+  await load()
+}
+
 const defaultCurrency = ref('')
 const importing = ref(false)
+// 看活着的还是看已删除的。两者互斥——见模板上那段注释。
+const view = ref<'live' | 'deleted'>('live')
 const fileInput = ref<HTMLInputElement | null>(null)
 const importErrors = ref<RowError[]>([])
 const errorsOpen = ref(false)
@@ -638,6 +778,7 @@ async function load() {
       page: page.value, page_size: 20, direction: direction.value, keyword: keyword.value,
       ownership: ownership.value === 'PENDING' ? '' : ownership.value,
       ownership_pending: ownership.value === 'PENDING' ? '1' : '',
+      deleted: view.value === 'deleted' ? '1' : '',
     })
     rows.value = resp.items || []
     total.value = Number(resp.total || 0)
@@ -696,34 +837,34 @@ function uploadStatement(txnID: string, file: File) {
   return uploadBankStatement(txnID, file, { post })
 }
 
-function pickFile(row: TxnRow) {
-  attachingRow.value = row
-  attachInput.value?.click()
-}
-
-async function onAttachPicked(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  const row = attachingRow.value
-  if (!file || !row) return
-  uploadingId.value = row.id
-  try {
-    await uploadStatement(row.id, file)
-    ElMessage.success(t('bankTransactions.attachmentUploaded'))
-    void load()
-  } catch {
-    ElMessage.error(t('bankTransactions.attachmentFailed'))
-  } finally {
-    uploadingId.value = ''
-    attachingRow.value = null
-    input.value = ''
-  }
-}
 
 onMounted(load)
 </script>
 
 <style scoped>
+.view-tabs {
+  margin-bottom: 12px;
+}
+.edit-reason {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.edit-reason-label {
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+.del-hint {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
+}
+.del-reason {
+  white-space: normal;
+  word-break: break-word;
+}
 .suggest { color: var(--el-color-primary); font-size: 13px; }
 .ownership-pick {
   display: flex;
