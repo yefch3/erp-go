@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
@@ -19,12 +21,15 @@ import (
 // a custody ledger for goods that have reached a port terminal, but that
 // ledger must never reduce what is sent to the mill.
 type ContractEffective struct {
-	ContractID   int64  `json:"contract_id"`
-	ContractNo   string `json:"contract_no"`
-	VersionID    int64  `json:"version_id"`
-	VersionNo    int32  `json:"version_no"`
-	CustomerName string `json:"customer_name"`
-	DeliveryDate string `json:"delivery_date"`
+	ContractID                int64  `json:"contract_id"`
+	ContractNo                string `json:"contract_no"`
+	VersionID                 int64  `json:"version_id"`
+	VersionNo                 int32  `json:"version_no"`
+	CustomerName              string `json:"customer_name"`
+	DeliveryDate              string `json:"delivery_date"`
+	QuotationID               int64  `json:"quotation_id"`
+	QuotationNo               string `json:"quotation_no"`
+	SourceCustomerSelectionID int64  `json:"source_customer_selection_id"`
 	// 合同负责人：拆出的需求生而继承它作为属主（A1）。旧事件不带这
 	// 两个字段时归 0——属主未知，只有「全部」范围能看见。
 	SalesEmployeeID int64          `json:"sales_employee_id"`
@@ -33,6 +38,7 @@ type ContractEffective struct {
 }
 
 type ContractLine struct {
+	LineNo      int32  `json:"line_no"`
 	ItemID      int64  `json:"contract_item_id"`
 	ProductID   int64  `json:"product_id"`
 	SkuID       int64  `json:"sku_id"`
@@ -53,6 +59,17 @@ func (s *Service) RequirementsFromContract(ctx context.Context, tenantID int64, 
 		return nil
 	}
 
+	var snapshots []store.ListContractProcurementSnapshotsRow
+	if e.SourceCustomerSelectionID != 0 {
+		var err error
+		snapshots, err = s.q.ListContractProcurementSnapshots(ctx, store.ListContractProcurementSnapshotsParams{TenantID: tenantID, SelectionID: e.SourceCustomerSelectionID})
+		if err != nil {
+			return err
+		}
+		if len(snapshots) != len(e.Items) {
+			return fmt.Errorf("contract %s selection %d has %d procurement snapshots for %d lines", e.ContractNo, e.SourceCustomerSelectionID, len(snapshots), len(e.Items))
+		}
+	}
 	var superseded []store.SupersedeRequirementsBeforeRow
 	var strandedOrders int64
 	sourced := 0
@@ -63,23 +80,30 @@ func (s *Service) RequirementsFromContract(ctx context.Context, tenantID int64, 
 			return err
 		}
 		q := s.q.WithTx(tx)
-		for _, line := range e.Items {
+		for index, line := range e.Items {
 			qty, err := decimal.NewFromString(line.Qty)
 			if err != nil || qty.LessThanOrEqual(decimal.Zero) {
 				log.Warn("contract line with unusable quantity, skipped",
 					"contract_no", e.ContractNo, "item", line.ItemID, "qty", line.Qty)
 				continue
 			}
-			if _, err := q.UpsertRequirement(ctx, store.UpsertRequirementParams{
+			params := store.UpsertRequirementParams{
 				TenantID: tenantID, ContractID: e.ContractID, ContractNo: e.ContractNo,
 				ContractVersionID: e.VersionID, VersionNo: e.VersionNo,
 				ContractItemID: line.ItemID, CustomerName: e.CustomerName,
 				ProductID: line.ProductID, SkuID: line.SkuID,
 				ProductCode: line.ProductCode, ProductName: line.ProductName,
 				UomID: line.UomID, UomCode: line.UomCode,
-				RequiredQty: qty.String(), RequiredDate: e.DeliveryDate,
+				RequiredQty: qty.String(), RequiredDate: e.DeliveryDate, Source: "CONTRACT",
 				OwnerID: e.SalesEmployeeID, OwnerName: e.SalesEmployee,
-			}); err != nil {
+				SourceUnitPrice: "0",
+			}
+			if len(snapshots) > 0 {
+				if err := applyContractProcurementSnapshot(e, line, qty.String(), snapshots[index], &params); err != nil {
+					return err
+				}
+			}
+			if _, err := q.UpsertRequirement(ctx, params); err != nil {
 				return err
 			}
 			sourced++
@@ -111,5 +135,25 @@ func (s *Service) RequirementsFromContract(ctx context.Context, tenantID int64, 
 			"contract_id", e.ContractID, "contract_no", e.ContractNo,
 			"ordered_requirements_on_old_versions", strandedOrders)
 	}
+	return nil
+}
+
+func applyContractProcurementSnapshot(e ContractEffective, line ContractLine, qty string, snapshot store.ListContractProcurementSnapshotsRow, params *store.UpsertRequirementParams) error {
+	if snapshot.ProductName != line.ProductName || snapshot.ConfirmedQty != qty || snapshot.UomCode != line.UomCode {
+		return fmt.Errorf("contract %s line %d does not match frozen customer selection item %d", e.ContractNo, line.LineNo, snapshot.SelectionItemID)
+	}
+	params.Source = "CUSTOMER_QUOTATION"
+	params.Spec = snapshot.ProductSpec
+	params.RequiredDate = snapshot.FinalDeliveryDate
+	params.OwnerID, params.OwnerName = snapshot.BuyerID, snapshot.BuyerName
+	params.QuotationID, params.QuotationNo = e.QuotationID, e.QuotationNo
+	params.SourcingCaseID, params.SourcingLineID = snapshot.CaseID, snapshot.SourcingLineID
+	params.SupplierQuoteLineID = snapshot.SupplierQuoteLineID
+	params.SupplierID, params.SupplierName = snapshot.SupplierID, snapshot.SupplierName
+	params.FactoryID, params.FactoryName = snapshot.FactoryID, snapshot.FactoryName
+	params.SourceCurrency, params.SourceUnitPrice = snapshot.FinalCurrency, snapshot.FinalUnitPrice
+	params.Moq, params.LeadTime = snapshot.Moq, strconv.Itoa(int(snapshot.FinalLeadTime))+" 天"
+	params.SourcePaymentTerms, params.SourceIncoterm = snapshot.FinalPaymentTerms, snapshot.FinalIncoterm
+	params.SourceValidUntil = snapshot.FinalValidUntil
 	return nil
 }

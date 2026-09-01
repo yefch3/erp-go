@@ -230,7 +230,8 @@ SELECT
     supplier_id, supplier_code, supplier_name,
     factory_id, factory_code, factory_name,
     source_currency, source_unit_price::text AS source_unit_price,
-    coalesce(moq::text,'')::text AS moq, lead_time
+    coalesce(moq::text,'')::text AS moq, lead_time,
+    source_payment_terms,source_incoterm,coalesce(source_valid_until::text,'')::text AS source_valid_until
 FROM purchase_requirements
 WHERE tenant_id = $1 AND id = $2
 `
@@ -282,6 +283,9 @@ type GetRequirementRow struct {
 	SourceUnitPrice     string
 	Moq                 string
 	LeadTime            string
+	SourcePaymentTerms  string
+	SourceIncoterm      string
+	SourceValidUntil    string
 }
 
 func (q *Queries) GetRequirement(ctx context.Context, arg GetRequirementParams) (GetRequirementRow, error) {
@@ -329,6 +333,9 @@ func (q *Queries) GetRequirement(ctx context.Context, arg GetRequirementParams) 
 		&i.SourceUnitPrice,
 		&i.Moq,
 		&i.LeadTime,
+		&i.SourcePaymentTerms,
+		&i.SourceIncoterm,
+		&i.SourceValidUntil,
 	)
 	return i, err
 }
@@ -353,6 +360,7 @@ SELECT
     factory_id, factory_code, factory_name,
     source_currency, source_unit_price::text AS source_unit_price,
     coalesce(moq::text,'')::text AS moq, lead_time,
+    source_payment_terms,source_incoterm,coalesce(source_valid_until::text,'')::text AS source_valid_until,
     count(*) OVER () AS total
 FROM purchase_requirements
 LEFT JOIN LATERAL (
@@ -437,6 +445,9 @@ type ListRequirementsRow struct {
 	SourceUnitPrice     string
 	Moq                 string
 	LeadTime            string
+	SourcePaymentTerms  string
+	SourceIncoterm      string
+	SourceValidUntil    string
 	Total               int64
 }
 
@@ -502,6 +513,9 @@ func (q *Queries) ListRequirements(ctx context.Context, arg ListRequirementsPara
 			&i.SourceUnitPrice,
 			&i.Moq,
 			&i.LeadTime,
+			&i.SourcePaymentTerms,
+			&i.SourceIncoterm,
+			&i.SourceValidUntil,
 			&i.Total,
 		); err != nil {
 			return nil, err
@@ -685,7 +699,10 @@ INSERT INTO purchase_requirements (
     tenant_id, contract_id, contract_no, contract_version_id, version_no,
     contract_item_id, customer_name, product_id, sku_id, product_code,
     product_name, spec, uom_id, uom_code, required_qty, required_date, source,
-    owner_id, owner_name
+    owner_id, owner_name, quotation_id, quotation_no, sourcing_case_id,
+    sourcing_line_id, supplier_quote_line_id, supplier_id, supplier_name,
+    factory_id, factory_name, source_currency, source_unit_price, moq, lead_time,
+    source_payment_terms, source_incoterm, source_valid_until
 ) VALUES (
     $1::bigint,
     $2::bigint,
@@ -703,9 +720,17 @@ INSERT INTO purchase_requirements (
     $14::text,
     $15::text::numeric,
     nullif($16::text, '')::date,
-    'CONTRACT',
-    $17::bigint,
-    $18::text
+    $17::text,
+    $18::bigint,
+    $19::text,
+    $20::bigint, $21::text,
+    $22::bigint, $23::bigint,
+    $24::bigint, $25::bigint,
+    $26::text, $27::bigint, $28::text,
+    $29::text, $30::text::numeric,
+    nullif($31::text,'')::numeric, $32::text,
+    $33::text, $34::text,
+    nullif($35::text,'')::date
 )
 ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
     required_qty        = excluded.required_qty,
@@ -714,6 +739,23 @@ ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
     contract_version_id = excluded.contract_version_id,
     version_no          = excluded.version_no,
     product_name        = excluded.product_name,
+    source              = excluded.source,
+    quotation_id        = excluded.quotation_id,
+    quotation_no        = excluded.quotation_no,
+    sourcing_case_id    = excluded.sourcing_case_id,
+    sourcing_line_id    = excluded.sourcing_line_id,
+    supplier_quote_line_id = excluded.supplier_quote_line_id,
+    supplier_id         = excluded.supplier_id,
+    supplier_name       = excluded.supplier_name,
+    factory_id          = excluded.factory_id,
+    factory_name        = excluded.factory_name,
+    source_currency     = excluded.source_currency,
+    source_unit_price   = excluded.source_unit_price,
+    moq                 = excluded.moq,
+    lead_time           = excluded.lead_time,
+    source_payment_terms = excluded.source_payment_terms,
+    source_incoterm     = excluded.source_incoterm,
+    source_valid_until  = excluded.source_valid_until,
     -- 合同重发或换版时刷新属主：负责人转手后，新版本生效即改归属。
     -- 事件不带属主（0）则保留原值，别把已知的抹成未知。
     owner_id   = CASE WHEN excluded.owner_id <> 0 THEN excluded.owner_id
@@ -741,24 +783,41 @@ RETURNING id
 `
 
 type UpsertRequirementParams struct {
-	TenantID          int64
-	ContractID        int64
-	ContractNo        string
-	ContractVersionID int64
-	VersionNo         int32
-	ContractItemID    int64
-	CustomerName      string
-	ProductID         int64
-	SkuID             int64
-	ProductCode       string
-	ProductName       string
-	Spec              string
-	UomID             int64
-	UomCode           string
-	RequiredQty       string
-	RequiredDate      string
-	OwnerID           int64
-	OwnerName         string
+	TenantID            int64
+	ContractID          int64
+	ContractNo          string
+	ContractVersionID   int64
+	VersionNo           int32
+	ContractItemID      int64
+	CustomerName        string
+	ProductID           int64
+	SkuID               int64
+	ProductCode         string
+	ProductName         string
+	Spec                string
+	UomID               int64
+	UomCode             string
+	RequiredQty         string
+	RequiredDate        string
+	Source              string
+	OwnerID             int64
+	OwnerName           string
+	QuotationID         int64
+	QuotationNo         string
+	SourcingCaseID      int64
+	SourcingLineID      int64
+	SupplierQuoteLineID int64
+	SupplierID          int64
+	SupplierName        string
+	FactoryID           int64
+	FactoryName         string
+	SourceCurrency      string
+	SourceUnitPrice     string
+	Moq                 string
+	LeadTime            string
+	SourcePaymentTerms  string
+	SourceIncoterm      string
+	SourceValidUntil    string
 }
 
 // Money and quantities cross this boundary as text, same rule as export: Go
@@ -790,8 +849,25 @@ func (q *Queries) UpsertRequirement(ctx context.Context, arg UpsertRequirementPa
 		arg.UomCode,
 		arg.RequiredQty,
 		arg.RequiredDate,
+		arg.Source,
 		arg.OwnerID,
 		arg.OwnerName,
+		arg.QuotationID,
+		arg.QuotationNo,
+		arg.SourcingCaseID,
+		arg.SourcingLineID,
+		arg.SupplierQuoteLineID,
+		arg.SupplierID,
+		arg.SupplierName,
+		arg.FactoryID,
+		arg.FactoryName,
+		arg.SourceCurrency,
+		arg.SourceUnitPrice,
+		arg.Moq,
+		arg.LeadTime,
+		arg.SourcePaymentTerms,
+		arg.SourceIncoterm,
+		arg.SourceValidUntil,
 	)
 	var id int64
 	err := row.Scan(&id)

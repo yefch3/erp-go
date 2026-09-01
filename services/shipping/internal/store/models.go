@@ -8,6 +8,34 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type ContractShippingHandoff struct {
+	ID                 int64
+	TenantID           int64
+	ContractID         int64
+	ContractNo         string
+	ContractVersionID  int64
+	VersionNo          int32
+	CustomerID         int64
+	CustomerName       string
+	BatchNo            int32
+	ShipmentGroupKey   string
+	CarrierForwarder   string
+	ServiceOptionName  string
+	CustomerManaged    bool
+	Currency           string
+	FreightAmount      pgtype.Numeric
+	ChargeBasis        string
+	PortOfLoading      string
+	PortOfDischarge    string
+	EstimatedDeparture pgtype.Date
+	EstimatedArrival   pgtype.Date
+	ValidUntil         pgtype.Date
+	Remark             string
+	Status             string
+	ScheduleID         *int64
+	CreatedAt          pgtype.Timestamptz
+}
+
 type OutboxEvent struct {
 	ID            int64
 	TenantID      int64
@@ -20,6 +48,12 @@ type OutboxEvent struct {
 	PublishedAt   pgtype.Timestamptz
 	Attempts      int32
 	LastError     *string
+}
+
+type ProcessedEvent struct {
+	EventID       string
+	ConsumerGroup string
+	ProcessedAt   pgtype.Timestamptz
 }
 
 type ShippingArrivalReminder struct {
@@ -187,6 +221,7 @@ type ShippingSchedule struct {
 	DischargePortID       *int64
 	DischargePortCode     string
 	DischargePortTimezone string
+	ContractHandoffID     *int64
 }
 
 type ShippingScheduleChange struct {

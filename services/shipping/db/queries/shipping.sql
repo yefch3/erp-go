@@ -5,12 +5,13 @@ INSERT INTO shipping_schedules (
     etd, atd, eta, original_eta, ata, responsible_employee_id, responsible_name, status, remark,
     created_by, created_by_name, updated_by, updated_by_name, carrier_id,
     loading_port_id, loading_port_code, loading_port_timezone,
-    discharge_port_id, discharge_port_code, discharge_port_timezone
+    discharge_port_id, discharge_port_code, discharge_port_timezone, contract_handoff_id
 ) VALUES (
     $1,
     'SCH-' || to_char(CURRENT_DATE, 'YYYYMMDD') || '-' || lpad(nextval('shipping_schedule_no_seq')::text, 6, '0'),
     $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13, $14, $15, $16,
-    'PLANNED', $17, $18, $19, $18, $19, $20, $21, $22, $23, $24, $25, $26
+    'PLANNED', $17, $18, $19, $18, $19, $20, $21, $22, $23, $24, $25, $26,
+    nullif(sqlc.arg(contract_handoff_id)::bigint, 0)
 )
 RETURNING *;
 

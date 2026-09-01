@@ -447,9 +447,6 @@ const salesItems = computed(() => [
         { path: '/sales/settings/inquiry-templates', label: t('salesNav.inquiryTemplates') },
       ]
     : []),
-  ...(auth.can('export:quotation:read')
-    ? [{ path: '/sales/quotations', label: t('salesNav.quotations') }]
-    : []),
   ...(auth.can('export:contract:read')
     ? [
         { path: '/contracts', label: t('menu.contracts') },

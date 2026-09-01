@@ -278,6 +278,9 @@
               {{ t(`contracts.fileSources.${detail.contract.signatureSource}`) }}
             </el-tag>
           </el-descriptions-item>
+          <el-descriptions-item v-if="detail.contract.conditionConfirmedAt" :label="t('contracts.conditionConfirmation')" :span="2">
+            {{ detail.contract.conditionConfirmedByName }} · {{ formatTime(detail.contract.conditionConfirmedAt) }}<div class="sub">{{ detail.contract.conditionConfirmationNote }}</div>
+          </el-descriptions-item>
           <el-descriptions-item :label="t('contracts.terms')" :span="2">
             <div class="terms">{{ detail.version.terms || '—' }}</div>
           </el-descriptions-item>
@@ -806,6 +809,9 @@ interface Contract {
   salesEmployee: string
   salesEmployeeId: string
   signatureSource: string
+  conditionConfirmedAt: string
+  conditionConfirmationNote: string
+  conditionConfirmedByName: string
   receivableDueDate: string
 }
 interface Version {
@@ -1479,8 +1485,15 @@ async function submit(row: { id: string }) {
 }
 
 async function sign(row: { id: string }) {
-  await ElMessageBox.confirm(t('contracts.signConfirm'), t('contracts.sign'), { type: 'warning' })
-  await post(`/contracts/${row.id}/sign`)
+  const confirmation = await ElMessageBox.prompt(t('contracts.conditionConfirmationPrompt'), t('contracts.sign'), {
+    type: 'warning', inputPlaceholder: t('contracts.conditionConfirmationPlaceholder'),
+    inputValidator: (value: string) => !!value.trim() || t('contracts.conditionConfirmationRequired'),
+    confirmButtonText: t('contracts.confirmConditionsAndSign'), cancelButtonText: t('common.cancel'),
+  })
+  await post(`/contracts/${row.id}/sign`, {
+    condition_confirmed_at: new Date().toISOString(),
+    condition_confirmation_note: confirmation.value.trim(),
+  })
   ElMessage.success(t('contracts.signed'))
   if (detailOpen.value) await openDetail(row.id)
   load()

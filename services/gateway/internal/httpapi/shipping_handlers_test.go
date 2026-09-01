@@ -9,12 +9,59 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
+	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
 	mdv1 "github.com/sgao19/erp-go/gen/go/erp/masterdata/v1"
 	procurementv1 "github.com/sgao19/erp-go/gen/go/erp/procurement/v1"
 	shippingv1 "github.com/sgao19/erp-go/gen/go/erp/shipping/v1"
 )
+
+type contractVesselVisibilityStub struct {
+	exv1.ContractServiceClient
+	err error
+}
+
+func (s contractVesselVisibilityStub) GetContract(context.Context, *exv1.GetContractRequest, ...grpc.CallOption) (*exv1.GetContractResponse, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &exv1.GetContractResponse{}, nil
+}
+
+type contractVesselShipmentStub struct {
+	exv1.ShipmentServiceClient
+	called bool
+}
+
+func (s *contractVesselShipmentStub) ListContractVessels(_ context.Context, req *exv1.ListContractVesselsRequest, _ ...grpc.CallOption) (*exv1.ListContractVesselsResponse, error) {
+	s.called = true
+	return &exv1.ListContractVesselsResponse{Vessels: []*exv1.Vessel{{ShipmentId: req.GetContractId()}}}, nil
+}
+
+func TestContractVesselsChecksContractVisibilityBeforeReadingShippingFacts(t *testing.T) {
+	shipments := &contractVesselShipmentStub{}
+	s := &Server{
+		Contracts: contractVesselVisibilityStub{err: status.Error(codes.PermissionDenied, "not visible")},
+		Shipments: shipments,
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/contracts/3/vessels", nil)
+	routeContext := chi.NewRouteContext()
+	routeContext.URLParams.Add("id", "3")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeContext))
+	recorder := httptest.NewRecorder()
+
+	s.listContractVessels(recorder, req)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if shipments.called {
+		t.Fatal("shipment facts were read after the contract scope check failed")
+	}
+}
 
 type shippingClientStub struct {
 	shippingv1.ShippingServiceClient

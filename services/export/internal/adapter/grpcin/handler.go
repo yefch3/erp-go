@@ -24,7 +24,7 @@ func New(svc *app.Service) *Handler { return &Handler{svc: svc} }
 func (h *Handler) ListQuotations(ctx context.Context, req *exv1.ListQuotationsRequest) (*exv1.ListQuotationsResponse, error) {
 	rows, total, err := h.svc.ListQuotations(ctx, grpcx.TenantID(ctx), app.QuotationFilter{
 		Keyword: req.GetKeyword(), CustomerID: req.GetCustomerId(), Status: req.GetStatus(),
-		WithoutContract: req.GetWithoutContract(),
+		WithoutContract: req.GetWithoutContract(), SourceSourcingCaseID: req.GetSourceSourcingCaseId(),
 	}, req.GetPage().GetPage(), req.GetPage().GetPageSize(), operator(ctx))
 	if err != nil {
 		return nil, err
@@ -38,8 +38,10 @@ func (h *Handler) ListQuotations(ctx context.Context, req *exv1.ListQuotationsRe
 			ValidUntil:           r.ValidUntil,
 			CreatedAt:            ts(r.CreatedAt),
 			SourceCostScenarioId: r.SourceCostScenarioID, SourceCostScenarioNo: r.SourceCostScenarioNo,
-			SourceSourcingCaseId: r.SourceSourcingCaseID,
-			RespondNote:          r.RespondNote,
+			SourceCustomerSelectionId: r.SourceCustomerSelectionID, SourceCustomerSelectionNo: r.SourceCustomerSelectionNo,
+			SourceCustomerSelectionVersion: r.SourceCustomerSelectionVersion,
+			SourceSourcingCaseId:           r.SourceSourcingCaseID,
+			RespondNote:                    r.RespondNote,
 		})
 	}
 	return &exv1.ListQuotationsResponse{Quotations: out, Meta: &commonv1.PageMeta{Total: total}}, nil
@@ -50,7 +52,11 @@ func (h *Handler) GetQuotation(ctx context.Context, req *exv1.GetQuotationReques
 	if err != nil {
 		return nil, err
 	}
-	return &exv1.GetQuotationResponse{Quotation: quotationToProto(q), Items: itemsToProto(items)}, nil
+	shipments, err := h.svc.ListQuotationShipments(ctx, grpcx.TenantID(ctx), req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.GetQuotationResponse{Quotation: quotationToProto(q), Items: itemsToProto(items), Shipments: shipmentsToProto(shipments)}, nil
 }
 
 func (h *Handler) CreateQuotation(ctx context.Context, req *exv1.CreateQuotationRequest) (*exv1.CreateQuotationResponse, error) {
@@ -60,15 +66,49 @@ func (h *Handler) CreateQuotation(ctx context.Context, req *exv1.CreateQuotation
 		Currency: req.GetCurrency(), Incoterm: req.GetIncoterm(),
 		PortOfLoading: req.GetPortOfLoading(), PortOfDischarge: req.GetPortOfDischarge(),
 		PaymentMethod: req.GetPaymentMethod(), ValidUntil: req.GetValidUntil(),
-		Remark: req.GetRemark(), Items: itemsFromProto(req.GetItems()),
+		Remark: req.GetRemark(), Items: itemsFromProto(req.GetItems()), Shipments: shipmentsFromProto(req.GetShipments()),
 		OperatorID: op.EmployeeID, OperatorName: op.Name,
 		SourceCostScenarioID: req.GetSourceCostScenarioId(), SourceCostScenarioNo: req.GetSourceCostScenarioNo(),
-		SourceSourcingCaseID: req.GetSourceSourcingCaseId(),
+		SourceCustomerSelectionID: req.GetSourceCustomerSelectionId(), SourceCustomerSelectionNo: req.GetSourceCustomerSelectionNo(),
+		SourceCustomerSelectionVersion: req.GetSourceCustomerSelectionVersion(),
+		SourceSourcingCaseID:           req.GetSourceSourcingCaseId(),
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &exv1.CreateQuotationResponse{Quotation: quotationToProto(q), Items: itemsToProto(items)}, nil
+	shipments, err := h.svc.ListQuotationShipments(ctx, grpcx.TenantID(ctx), q.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.CreateQuotationResponse{Quotation: quotationToProto(q), Items: itemsToProto(items), Shipments: shipmentsToProto(shipments)}, nil
+}
+
+func shipmentsFromProto(rows []*exv1.QuotationShipmentInput) []app.QuotationShipmentInput {
+	out := make([]app.QuotationShipmentInput, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, app.QuotationShipmentInput{
+			SourceCustomerSelectionShipmentID: row.GetSourceCustomerSelectionShipmentId(), ShipmentGroupKey: row.GetShipmentGroupKey(),
+			CarrierForwarder: row.GetCarrierForwarder(), ServiceOptionName: row.GetServiceOptionName(), CustomerManaged: row.GetCustomerManaged(),
+			Currency: row.GetCurrency(), FreightAmount: row.GetFreightAmount(), ChargeBasis: row.GetChargeBasis(),
+			PortOfLoading: row.GetPortOfLoading(), PortOfDischarge: row.GetPortOfDischarge(),
+			EstimatedDeparture: row.GetEstimatedDeparture(), EstimatedArrival: row.GetEstimatedArrival(), ValidUntil: row.GetValidUntil(), Remark: row.GetRemark(),
+		})
+	}
+	return out
+}
+
+func shipmentsToProto(rows []store.ListQuotationShipmentsRow) []*exv1.QuotationShipment {
+	out := make([]*exv1.QuotationShipment, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, &exv1.QuotationShipment{
+			Id: row.ID, BatchNo: row.BatchNo, SourceCustomerSelectionShipmentId: row.SourceCustomerSelectionShipmentID,
+			ShipmentGroupKey: row.ShipmentGroupKey, CarrierForwarder: row.CarrierForwarder, ServiceOptionName: row.ServiceOptionName,
+			CustomerManaged: row.CustomerManaged, Currency: row.Currency, FreightAmount: row.FreightAmount, ChargeBasis: row.ChargeBasis,
+			PortOfLoading: row.PortOfLoading, PortOfDischarge: row.PortOfDischarge, EstimatedDeparture: row.EstimatedDeparture,
+			EstimatedArrival: row.EstimatedArrival, ValidUntil: row.ValidUntil, Remark: row.Remark,
+		})
+	}
+	return out
 }
 
 func (h *Handler) UpdateQuotation(ctx context.Context, req *exv1.UpdateQuotationRequest) (*exv1.UpdateQuotationResponse, error) {
@@ -166,8 +206,10 @@ func quotationToProto(q store.GetQuotationRow) *exv1.Quotation {
 		Status: q.Status, SalesEmployeeId: q.SalesEmployeeID, SalesEmployee: q.SalesEmployee,
 		SentAt: ts(q.SentAt), RespondedAt: ts(q.RespondedAt), CreatedAt: ts(q.CreatedAt),
 		SourceCostScenarioId: q.SourceCostScenarioID, SourceCostScenarioNo: q.SourceCostScenarioNo,
-		SourceSourcingCaseId: q.SourceSourcingCaseID,
-		RespondNote:          q.RespondNote,
+		SourceCustomerSelectionId: q.SourceCustomerSelectionID, SourceCustomerSelectionNo: q.SourceCustomerSelectionNo,
+		SourceCustomerSelectionVersion: q.SourceCustomerSelectionVersion,
+		SourceSourcingCaseId:           q.SourceSourcingCaseID,
+		RespondNote:                    q.RespondNote,
 	}
 }
 

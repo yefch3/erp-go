@@ -618,6 +618,9 @@ interface Requirement {
   supplierName: string
   sourceCurrency: string
   sourceUnitPrice: string
+  sourcePaymentTerms: string
+  sourceIncoterm: string
+  sourceValidUntil: string
 }
 interface Supplier { id: string; code: string; name: string }
 interface ApiFailure { code?: string; message?: string }
@@ -1035,6 +1038,10 @@ async function openCreate(preselect?: string[]) {
     })
     const requiredDates = pending.value.map((r) => r.requiredDate).filter(Boolean).sort()
     form.expectedDate = requiredDates[0] || ''
+    const commercialTerms = pending.value
+      .filter((r) => r.source === 'CUSTOMER_QUOTATION')
+      .map((r) => `${r.productName}: ${r.sourcePaymentTerms || '—'} / ${r.sourceIncoterm || '—'} / ${r.sourceValidUntil || '—'}`)
+    form.remark = commercialTerms.join('\n')
   }
   createOpen.value = true
 }

@@ -15,7 +15,10 @@ INSERT INTO purchase_requirements (
     tenant_id, contract_id, contract_no, contract_version_id, version_no,
     contract_item_id, customer_name, product_id, sku_id, product_code,
     product_name, spec, uom_id, uom_code, required_qty, required_date, source,
-    owner_id, owner_name
+    owner_id, owner_name, quotation_id, quotation_no, sourcing_case_id,
+    sourcing_line_id, supplier_quote_line_id, supplier_id, supplier_name,
+    factory_id, factory_name, source_currency, source_unit_price, moq, lead_time,
+    source_payment_terms, source_incoterm, source_valid_until
 ) VALUES (
     sqlc.arg(tenant_id)::bigint,
     sqlc.arg(contract_id)::bigint,
@@ -33,9 +36,17 @@ INSERT INTO purchase_requirements (
     sqlc.arg(uom_code)::text,
     sqlc.arg(required_qty)::text::numeric,
     nullif(sqlc.arg(required_date)::text, '')::date,
-    'CONTRACT',
+    sqlc.arg(source)::text,
     sqlc.arg(owner_id)::bigint,
-    sqlc.arg(owner_name)::text
+    sqlc.arg(owner_name)::text,
+    sqlc.arg(quotation_id)::bigint, sqlc.arg(quotation_no)::text,
+    sqlc.arg(sourcing_case_id)::bigint, sqlc.arg(sourcing_line_id)::bigint,
+    sqlc.arg(supplier_quote_line_id)::bigint, sqlc.arg(supplier_id)::bigint,
+    sqlc.arg(supplier_name)::text, sqlc.arg(factory_id)::bigint, sqlc.arg(factory_name)::text,
+    sqlc.arg(source_currency)::text, sqlc.arg(source_unit_price)::text::numeric,
+    nullif(sqlc.arg(moq)::text,'')::numeric, sqlc.arg(lead_time)::text,
+    sqlc.arg(source_payment_terms)::text, sqlc.arg(source_incoterm)::text,
+    nullif(sqlc.arg(source_valid_until)::text,'')::date
 )
 ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
     required_qty        = excluded.required_qty,
@@ -44,6 +55,23 @@ ON CONFLICT (tenant_id, contract_item_id) DO UPDATE SET
     contract_version_id = excluded.contract_version_id,
     version_no          = excluded.version_no,
     product_name        = excluded.product_name,
+    source              = excluded.source,
+    quotation_id        = excluded.quotation_id,
+    quotation_no        = excluded.quotation_no,
+    sourcing_case_id    = excluded.sourcing_case_id,
+    sourcing_line_id    = excluded.sourcing_line_id,
+    supplier_quote_line_id = excluded.supplier_quote_line_id,
+    supplier_id         = excluded.supplier_id,
+    supplier_name       = excluded.supplier_name,
+    factory_id          = excluded.factory_id,
+    factory_name        = excluded.factory_name,
+    source_currency     = excluded.source_currency,
+    source_unit_price   = excluded.source_unit_price,
+    moq                 = excluded.moq,
+    lead_time           = excluded.lead_time,
+    source_payment_terms = excluded.source_payment_terms,
+    source_incoterm     = excluded.source_incoterm,
+    source_valid_until  = excluded.source_valid_until,
     -- 合同重发或换版时刷新属主：负责人转手后，新版本生效即改归属。
     -- 事件不带属主（0）则保留原值，别把已知的抹成未知。
     owner_id   = CASE WHEN excluded.owner_id <> 0 THEN excluded.owner_id
@@ -115,6 +143,7 @@ SELECT
     factory_id, factory_code, factory_name,
     source_currency, source_unit_price::text AS source_unit_price,
     coalesce(moq::text,'')::text AS moq, lead_time,
+    source_payment_terms,source_incoterm,coalesce(source_valid_until::text,'')::text AS source_valid_until,
     count(*) OVER () AS total
 FROM purchase_requirements
 LEFT JOIN LATERAL (
@@ -160,7 +189,8 @@ SELECT
     supplier_id, supplier_code, supplier_name,
     factory_id, factory_code, factory_name,
     source_currency, source_unit_price::text AS source_unit_price,
-    coalesce(moq::text,'')::text AS moq, lead_time
+    coalesce(moq::text,'')::text AS moq, lead_time,
+    source_payment_terms,source_incoterm,coalesce(source_valid_until::text,'')::text AS source_valid_until
 FROM purchase_requirements
 WHERE tenant_id = $1 AND id = $2;
 

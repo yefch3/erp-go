@@ -91,6 +91,9 @@ services:
     image: ghcr.io/yefch3/erp-go/shipping:${ERP_SHA}
     environment:
       DB_DSN: ${SHIPPING_DB_DSN:?set in deploy/.env}
+      KAFKA_BROKERS: ${KAFKA_BROKERS:?set in deploy/.env}
+      CONTRACT_TOPIC: ${CONTRACT_TOPIC:-erp.export.contract.v1}
+      CONTRACT_CONSUMER_GROUP: ${SHIPPING_CONTRACT_CONSUMER_GROUP:-shipping.contract.v1}
       # shipping stores files too (拖车单等) — missed on the first pass and
       # found the honest way: the container crash-looping on minio:9000.
       MINIO_ENDPOINT: ${MINIO_ENDPOINT}

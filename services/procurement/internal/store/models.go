@@ -627,6 +627,9 @@ type PurchaseRequirement struct {
 	SourceUnitPrice     pgtype.Numeric
 	Moq                 pgtype.Numeric
 	LeadTime            string
+	SourcePaymentTerms  string
+	SourceIncoterm      string
+	SourceValidUntil    pgtype.Date
 }
 
 type PurchaseSupplierConfirmation struct {
@@ -773,6 +776,7 @@ type SourcingCustomerSelectionItem struct {
 	FinalCustomerPaymentTerms string
 	FinalCustomerIncoterm     string
 	FinalCustomerRequiredDate pgtype.Date
+	ProductSpec               string
 }
 
 type SourcingCustomerSelectionShipment struct {

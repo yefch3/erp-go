@@ -19,11 +19,19 @@ func (s *Service) GetQuotationWorkbook(ctx context.Context, tenantID, id int64, 
 	if err != nil {
 		return "", nil, err
 	}
-	data, err := buildQuotationWorkbook(q, items)
+	shipments, err := s.ListQuotationShipments(ctx, tenantID, id)
+	if err != nil {
+		return "", nil, err
+	}
+	data, err := buildQuotationWorkbookWithShipments(q, items, shipments)
 	return q.QuoteNo + ".xlsx", data, err
 }
 
 func buildQuotationWorkbook(q store.GetQuotationRow, items []store.ListQuotationItemsRow) ([]byte, error) {
+	return buildQuotationWorkbookWithShipments(q, items, nil)
+}
+
+func buildQuotationWorkbookWithShipments(q store.GetQuotationRow, items []store.ListQuotationItemsRow, shipments []store.ListQuotationShipmentsRow) ([]byte, error) {
 	rows := [][]string{
 		{"Quotation No", "Customer", "Currency", "Incoterm", "Port of Loading", "Port of Discharge", "Payment Terms", "Valid Until"},
 		{q.QuoteNo, q.CustomerName, q.Currency, q.Incoterm, q.PortOfLoading, q.PortOfDischarge, q.PaymentMethod, q.ValidUntil},
@@ -41,13 +49,19 @@ func buildQuotationWorkbook(q store.GetQuotationRow, items []store.ListQuotation
 			Expression: fmt.Sprintf("E%d*G%d", rowNumber, rowNumber), CachedValue: item.Amount,
 		}
 	}
-	totalRow := len(rows) + 1
-	rows = append(rows, []string{"", "", "", "", "", "", "Total", q.TotalAmount, ""})
-	if len(items) > 0 {
-		formulas[fmt.Sprintf("H%d", totalRow)] = xlsx.Formula{
-			Expression: fmt.Sprintf("SUM(H5:H%d)", totalRow-1), CachedValue: q.TotalAmount,
+	if len(shipments) > 0 {
+		rows = append(rows, []string{}, []string{"Freight batches"}, []string{"Batch", "Carrier / Forwarder", "Service", "Freight", "Charge basis", "Port of loading", "Port of discharge", "ETD", "ETA", "Valid until", "Remark"})
+		for _, shipment := range shipments {
+			carrier := shipment.CarrierForwarder
+			if shipment.CustomerManaged {
+				carrier = "Customer managed"
+			}
+			rows = append(rows, []string{strconv.Itoa(int(shipment.BatchNo)), carrier, shipment.ServiceOptionName, shipment.FreightAmount,
+				shipment.ChargeBasis, shipment.PortOfLoading, shipment.PortOfDischarge, shipment.EstimatedDeparture,
+				shipment.EstimatedArrival, shipment.ValidUntil, shipment.Remark})
 		}
 	}
+	rows = append(rows, []string{"", "", "", "", "", "", "Total", q.TotalAmount, ""})
 	return xlsx.BuildWithFormulas("Customer Quotation", rows, formulas)
 }
 
@@ -56,11 +70,19 @@ func (s *Service) GetQuotationPDF(ctx context.Context, tenantID, id int64, op Op
 	if err != nil {
 		return "", nil, err
 	}
-	data, err := buildQuotationPDF(q, items)
+	shipments, err := s.ListQuotationShipments(ctx, tenantID, id)
+	if err != nil {
+		return "", nil, err
+	}
+	data, err := buildQuotationPDFWithShipments(q, items, shipments)
 	return q.QuoteNo + ".pdf", data, err
 }
 
 func buildQuotationPDF(q store.GetQuotationRow, items []store.ListQuotationItemsRow) ([]byte, error) {
+	return buildQuotationPDFWithShipments(q, items, nil)
+}
+
+func buildQuotationPDFWithShipments(q store.GetQuotationRow, items []store.ListQuotationItemsRow, shipments []store.ListQuotationShipmentsRow) ([]byte, error) {
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetMargins(12, 12, 12)
 	pdf.SetAutoPageBreak(true, 12)
@@ -101,6 +123,31 @@ func buildQuotationPDF(q store.GetQuotationRow, items []store.ListQuotationItems
 			pdf.SetFont(pdffont.Name, "", 8)
 		}
 		drawQuotationPDFRow(pdf, values, widths, false)
+	}
+	if len(shipments) > 0 {
+		pdf.Ln(4)
+		pdf.SetFont(pdffont.Name, "B", 10)
+		pdf.CellFormat(0, 7, "货运批次 / FREIGHT BATCHES", "", 1, "L", false, 0, "")
+		shipWidths := []float64{10, 31, 25, 24, 30, 26, 20, 20}
+		shipHeaders := []string{"批次", "承运人/货代", "服务", "运费", "航线", "ETD / ETA", "有效期", "备注"}
+		drawQuotationPDFRow(pdf, shipHeaders, shipWidths, true)
+		pdf.SetFont(pdffont.Name, "", 8)
+		for _, shipment := range shipments {
+			carrier := shipment.CarrierForwarder
+			if shipment.CustomerManaged {
+				carrier = "客户自理运输"
+			}
+			values := []string{strconv.Itoa(int(shipment.BatchNo)), carrier, shipment.ServiceOptionName,
+				shipment.Currency + " " + shipment.FreightAmount, shipment.PortOfLoading + " → " + shipment.PortOfDischarge,
+				shipment.EstimatedDeparture + " / " + shipment.EstimatedArrival, shipment.ValidUntil, shipment.Remark}
+			rowHeight := quotationPDFRowHeight(pdf, values, shipWidths, 4.5)
+			if pdf.GetY()+rowHeight > 285 {
+				pdf.AddPage()
+				drawQuotationPDFRow(pdf, shipHeaders, shipWidths, true)
+				pdf.SetFont(pdffont.Name, "", 8)
+			}
+			drawQuotationPDFRow(pdf, values, shipWidths, false)
+		}
 	}
 	pdf.SetFont(pdffont.Name, "B", 9)
 	pdf.CellFormat(154, 8, "合计 "+q.Currency, "1", 0, "R", false, 0, "")

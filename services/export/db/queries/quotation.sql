@@ -8,7 +8,8 @@ INSERT INTO quotations (
     port_of_loading, port_of_discharge, payment_method, valid_until,
     fx_rate, fx_rate_at, fx_source, fx_base_currency,
     total_amount, base_amount, remark, sales_employee_id, sales_employee,
-    created_by, updated_by, source_cost_scenario_id, source_cost_scenario_no, source_sourcing_case_id
+    created_by, updated_by, source_cost_scenario_id, source_cost_scenario_no, source_sourcing_case_id,
+    source_customer_selection_id, source_customer_selection_no, source_customer_selection_version
 ) VALUES (
     $1, $2, $3, $4,
     nullif(sqlc.arg(contact_id)::bigint, 0), sqlc.arg(contact_name)::text, sqlc.arg(contact_email)::text,
@@ -19,7 +20,9 @@ INSERT INTO quotations (
     sqlc.arg(total_amount)::text::numeric, sqlc.arg(base_amount)::text::numeric,
     $12, $13, $14, $15, $15,
     nullif(sqlc.arg(source_cost_scenario_id)::bigint, 0), sqlc.arg(source_cost_scenario_no)::text,
-    nullif(sqlc.arg(source_sourcing_case_id)::bigint, 0)
+    nullif(sqlc.arg(source_sourcing_case_id)::bigint, 0),
+    nullif(sqlc.arg(source_customer_selection_id)::bigint, 0), sqlc.arg(source_customer_selection_no)::text,
+    sqlc.arg(source_customer_selection_version)::int
 )
 RETURNING id;
 
@@ -48,9 +51,16 @@ SELECT
     total_amount::text AS total_amount, base_amount::text AS base_amount,
     remark, status, respond_note, sales_employee_id, sales_employee, sent_at, responded_at, created_at,
     coalesce(source_cost_scenario_id, 0)::bigint AS source_cost_scenario_id,
-    source_cost_scenario_no, coalesce(source_sourcing_case_id, 0)::bigint AS source_sourcing_case_id
+    source_cost_scenario_no, coalesce(source_sourcing_case_id, 0)::bigint AS source_sourcing_case_id,
+    coalesce(source_customer_selection_id, 0)::bigint AS source_customer_selection_id,
+    source_customer_selection_no, source_customer_selection_version
 FROM quotations
 WHERE tenant_id = $1 AND id = $2;
+
+-- name: GetQuotationIDByCustomerSelection :one
+SELECT id FROM quotations
+WHERE tenant_id=sqlc.arg(tenant_id) AND source_customer_selection_id=sqlc.arg(source_customer_selection_id)
+  AND status <> 'CANCELLED';
 
 -- name: GetQuotationIDByCostScenario :one
 SELECT id
@@ -65,6 +75,8 @@ SELECT
     q.status, q.respond_note, q.sales_employee_id, q.sales_employee, coalesce(q.valid_until::text, '')::text AS valid_until,
     q.created_at, coalesce(q.source_cost_scenario_id, 0)::bigint AS source_cost_scenario_id,
     q.source_cost_scenario_no, coalesce(q.source_sourcing_case_id, 0)::bigint AS source_sourcing_case_id,
+    coalesce(q.source_customer_selection_id, 0)::bigint AS source_customer_selection_id,
+    q.source_customer_selection_no, q.source_customer_selection_version,
     count(*) OVER () AS total
 -- Aliased because the correlated subquery below brings a second table into
 -- scope, and an unqualified tenant_id would then be ambiguous.
@@ -75,6 +87,8 @@ WHERE q.tenant_id = sqlc.arg(tenant_id)::bigint
        OR q.sales_employee_id = ANY(sqlc.arg(visible_ids)::bigint[]))
   AND (sqlc.arg(status)::text = '' OR q.status = sqlc.arg(status)::text)
   AND (sqlc.arg(customer_id)::bigint = 0 OR q.customer_id = sqlc.arg(customer_id)::bigint)
+  AND (sqlc.arg(source_sourcing_case_id)::bigint = 0
+       OR q.source_sourcing_case_id = sqlc.arg(source_sourcing_case_id)::bigint)
   AND (sqlc.arg(keyword)::text = ''
        OR q.quote_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR q.customer_name ILIKE '%' || sqlc.arg(keyword)::text || '%')
@@ -125,6 +139,36 @@ SELECT
 FROM quotation_items
 WHERE tenant_id = $1 AND quotation_id = $2
 ORDER BY line_no;
+
+-- name: AddQuotationShipment :exec
+INSERT INTO quotation_shipments (
+    tenant_id, quotation_id, batch_no, source_customer_selection_shipment_id,
+    shipment_group_key, carrier_forwarder, service_option_name, customer_managed,
+    currency, freight_amount, charge_basis, port_of_loading, port_of_discharge,
+    estimated_departure, estimated_arrival, valid_until, remark
+) VALUES (
+    sqlc.arg(tenant_id), sqlc.arg(quotation_id), sqlc.arg(batch_no),
+    nullif(sqlc.arg(source_customer_selection_shipment_id)::bigint, 0),
+    sqlc.arg(shipment_group_key), sqlc.arg(carrier_forwarder), sqlc.arg(service_option_name),
+    sqlc.arg(customer_managed), sqlc.arg(currency), sqlc.arg(freight_amount)::text::numeric,
+    sqlc.arg(charge_basis), sqlc.arg(port_of_loading), sqlc.arg(port_of_discharge),
+    nullif(sqlc.arg(estimated_departure)::text, '')::date,
+    nullif(sqlc.arg(estimated_arrival)::text, '')::date,
+    nullif(sqlc.arg(valid_until)::text, '')::date, sqlc.arg(remark)
+);
+
+-- name: ListQuotationShipments :many
+SELECT id, quotation_id, batch_no,
+    coalesce(source_customer_selection_shipment_id, 0)::bigint AS source_customer_selection_shipment_id,
+    shipment_group_key, carrier_forwarder, service_option_name, customer_managed,
+    currency, freight_amount::text AS freight_amount, charge_basis,
+    port_of_loading, port_of_discharge,
+    coalesce(estimated_departure::text, '')::text AS estimated_departure,
+    coalesce(estimated_arrival::text, '')::text AS estimated_arrival,
+    coalesce(valid_until::text, '')::text AS valid_until, remark
+FROM quotation_shipments
+WHERE tenant_id = sqlc.arg(tenant_id) AND quotation_id = sqlc.arg(quotation_id)
+ORDER BY batch_no;
 
 -- name: SetQuotationOwner :execrows
 UPDATE quotations SET

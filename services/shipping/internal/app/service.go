@@ -18,7 +18,7 @@ import (
 	"github.com/sgao19/erp-go/services/shipping/internal/store"
 )
 
-const SchemaVersion int32 = 9
+const SchemaVersion int32 = 11
 
 type databasePinger interface{ Ping(context.Context) error }
 
@@ -63,7 +63,7 @@ type Operator struct {
 }
 
 type ScheduleInput struct {
-	ContractID, CustomerID, CarrierID                    int64
+	ContractID, CustomerID, CarrierID, ContractHandoffID int64
 	LoadingPortID, DischargePortID                       int64
 	ContractNo, CustomerName, CarrierForwarder           string
 	VesselName, VoyageNo, PortOfLoading, PortOfDischarge string
@@ -179,6 +179,25 @@ func (s *Service) rejectDuplicate(ctx context.Context, q *store.Queries, tenantI
 }
 
 func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in ScheduleInput, op Operator, confirmed bool) (store.ShippingSchedule, error) {
+	if in.ContractHandoffID != 0 {
+		handoff, err := s.q.GetContractShippingHandoffForUpdate(ctx, store.GetContractShippingHandoffForUpdateParams{TenantID: tenantID, ID: in.ContractHandoffID})
+		if err != nil {
+			return store.ShippingSchedule{}, err
+		}
+		if handoff.Status != "PENDING" || handoff.CustomerManaged {
+			return store.ShippingSchedule{}, apierr.Conflict("SHIPPING_HANDOFF_NOT_PENDING", "该合同货运批次已处理或由客户自理")
+		}
+		in.ContractID, in.ContractNo = handoff.ContractID, handoff.ContractNo
+		in.CustomerID, in.CustomerName = handoff.CustomerID, handoff.CustomerName
+		in.CarrierForwarder = handoff.CarrierForwarder
+		in.PortOfLoading, in.PortOfDischarge = handoff.PortOfLoading, handoff.PortOfDischarge
+		if in.ETD == "" && handoff.EstimatedDeparture.Valid {
+			in.ETD = handoff.EstimatedDeparture.Time.Format("2006-01-02")
+		}
+		if in.ETA == "" && handoff.EstimatedArrival.Valid {
+			in.ETA = handoff.EstimatedArrival.Time.Format("2006-01-02")
+		}
+	}
 	if err := s.authorizeAssignment(ctx, in.ResponsibleEmployeeID, op); err != nil {
 		return store.ShippingSchedule{}, err
 	}
@@ -190,15 +209,37 @@ func (s *Service) CreateSchedule(ctx context.Context, tenantID int64, in Schedul
 		return store.ShippingSchedule{}, err
 	}
 	p.TenantID, p.CreatedBy, p.CreatedByName = tenantID, op.ID, op.Name
+	if in.ContractHandoffID != 0 {
+		p.ContractHandoffID = in.ContractHandoffID
+	}
 	var out store.ShippingSchedule
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		// Re-read and lock the handoff in the same transaction that creates the
+		// schedule. The earlier read is only used to prefill and validate input;
+		// it cannot serialize two operators clicking the action together.
+		if in.ContractHandoffID != 0 {
+			handoff, lockErr := q.GetContractShippingHandoffForUpdate(ctx, store.GetContractShippingHandoffForUpdateParams{
+				TenantID: tenantID, ID: in.ContractHandoffID,
+			})
+			if lockErr != nil {
+				return lockErr
+			}
+			if handoff.Status != "PENDING" || handoff.CustomerManaged {
+				return apierr.Conflict("SHIPPING_HANDOFF_NOT_PENDING", "该合同货运批次已处理或由客户自理")
+			}
+		}
 		out, err = q.CreateSchedule(ctx, p)
 		if err != nil {
 			return err
 		}
 		if err = createInitialRoute(ctx, q, out, op); err != nil {
 			return err
+		}
+		if in.ContractHandoffID != 0 {
+			if err = q.MarkContractShippingHandoffScheduled(ctx, store.MarkContractShippingHandoffScheduledParams{TenantID: tenantID, ID: in.ContractHandoffID, ScheduleID: &out.ID}); err != nil {
+				return err
+			}
 		}
 		out, err = q.GetSchedule(ctx, store.GetScheduleParams{TenantID: tenantID, ID: out.ID})
 		return err

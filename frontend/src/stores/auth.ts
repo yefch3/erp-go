@@ -8,6 +8,10 @@ interface Employee {
   departmentName: string
 }
 
+interface SessionProfile extends Employee {
+  avatarUrl?: string
+}
+
 interface LoginData {
   accessToken: string
   expiresInSeconds: string
@@ -47,7 +51,10 @@ export const useAuthStore = defineStore('auth', {
     isLoggedIn: (s) => s.employeeName !== '',
     can: (s) => (code: string) => s.permissions.includes(code),
     /** True when this person owns the document, i.e. may act on it. */
-    owns: (s) => (ownerId: string) => ownerId !== '' && ownerId === s.employeeId,
+    owns: (s) => (ownerId: string | number) => {
+      const normalizedOwner = String(ownerId ?? '')
+      return normalizedOwner !== '' && normalizedOwner === String(s.employeeId)
+    },
   },
   actions: {
     async login(email: string, password: string) {
@@ -80,21 +87,32 @@ export const useAuthStore = defineStore('auth', {
       this.mustChangePassword = false
       localStorage.removeItem('mustChangePassword')
     },
-    // Permission codes are cached in localStorage so the first paint is not
-    // gated on a round trip, but a cache that only refills at login goes
-    // stale the moment an administrator changes a role — or the moment codes
-    // are renamed, as mail:* were. Refreshing on boot means a permission
-    // change takes effect on the next page load instead of the next login.
-    // Failure is silent on purpose: the cached list still works, and the API
-    // is the real gate either way.
+    // Permissions and the harmless identity cache are both refreshed on boot.
+    // The cookie is the real session; localStorage may outlive an older login
+    // and must never be trusted for an ownership decision such as who may sign
+    // a contract. Each request fails independently so one unavailable endpoint
+    // does not prevent the other cache from being repaired.
     async refreshPermissions() {
       if (!this.isLoggedIn) return
-      try {
-        const data = await get<{ permissionCodes: string[] }>('/me/permissions')
-        this.permissions = data.permissionCodes ?? []
+      const [permissionsResult, profileResult] = await Promise.allSettled([
+        get<{ permissionCodes: string[] }>('/me/permissions'),
+        get<{ profile: SessionProfile }>('/me/profile'),
+      ])
+      if (permissionsResult.status === 'fulfilled') {
+        this.permissions = permissionsResult.value.permissionCodes ?? []
         localStorage.setItem('permissions', JSON.stringify(this.permissions))
-      } catch {
-        /* keep what we have; every API call is still checked server-side */
+      }
+      if (profileResult.status === 'fulfilled' && profileResult.value.profile?.id) {
+        const profile = profileResult.value.profile
+        this.employeeId = String(profile.id)
+        this.employeeName = profile.name ?? ''
+        this.employeeEmail = profile.email ?? ''
+        this.employeeDepartment = profile.departmentName ?? ''
+        this.avatarUrl = profile.avatarUrl ?? ''
+        localStorage.setItem('employeeId', this.employeeId)
+        localStorage.setItem('employeeName', this.employeeName)
+        localStorage.setItem('employeeEmail', this.employeeEmail)
+        localStorage.setItem('employeeDepartment', this.employeeDepartment)
       }
     },
     logout() {
