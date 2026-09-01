@@ -629,6 +629,24 @@ func (s *Server) setDefaultMailbox(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// unbindMailbox 断开一个信箱：凭据清掉、不再收发，**历史邮件原样留着**。
+//
+// 归属同上，由 SQL 的 WHERE 判。这里也不加 requireMailUnlock——解绑是「我不
+// 想再连这个箱了」，而要求先解锁它才能解绑，恰好把想断开的人挡在门外。
+// 能证明自己是这个 ERP 账号的主人就够了：解绑毁不掉任何邮件。
+func (s *Server) unbindMailbox(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.UnbindMailboxRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Emails.UnbindMailbox(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 // The request body carries no employee id, and neither does the RPC: whose
 // mailbox this is comes from the token alone.
 // serveOpenPixel answers a recipient's mail client.

@@ -37,7 +37,10 @@
         <span v-if="b.unread > 0 && modelValue !== b.id" class="mbox-unread">
           {{ b.unread > 99 ? '99+' : b.unread }}
         </span>
-        <span v-if="b.isDefault" class="mbox-tag">{{ t('mailGate.isDefault') }}</span>
+        <!-- 已解绑：还在列表里，因为历史邮件的入口就是这一行。标出来是为了
+             人点进去看到「不能写信」时知道为什么。 -->
+        <span v-if="b.unboundAt" class="mbox-tag mbox-off">{{ t('mailGate.unbound') }}</span>
+        <span v-else-if="b.isDefault" class="mbox-tag">{{ t('mailGate.isDefault') }}</span>
       </button>
       <!-- 设为默认只在非默认的那几行上出现，而且要点两次才生效：它改的是
            「以后写信从哪个地址发出去」，而客户看到的发件人跟着变。
@@ -45,8 +48,27 @@
            是 el-button 而不是一个透明的 span：span 上的透明度动画在触屏上
            没有 hover 这回事，那颗看不见的星星会一直盖在那儿吃掉点击；
            而且 span 用键盘 tab 不到。 -->
+      <!-- 解绑。**说清楚它不删邮件**——不说的话，一个只是想换邮箱的人会
+           因为怕丢记录而不敢点，然后一直留着一个不用的箱。 -->
       <el-popconfirm
-        v-if="!b.isDefault"
+        v-if="!b.unboundAt"
+        :title="t('mailGate.unbindConfirm', { email: b.email })"
+        width="280"
+        @confirm="unbind(b)"
+      >
+        <template #reference>
+          <el-button
+            link
+            class="mbox-star"
+            :aria-label="t('mailGate.unbind')"
+            :title="t('mailGate.unbind')"
+          >
+            ⏻
+          </el-button>
+        </template>
+      </el-popconfirm>
+      <el-popconfirm
+        v-if="!b.isDefault && !b.unboundAt"
         :title="t('mailGate.setDefault')"
         @confirm="setDefault(b)"
       >
@@ -102,9 +124,11 @@ export interface Mailbox {
   lastError: string
   /** 这个箱里有多少封没读。切换的理由就是它。 */
   unread: number
+  /** 解绑时间，空表示还绑着。解绑的箱只能看历史，不能收发。 */
+  unboundAt: string
 }
 
-defineProps<{ modelValue: number; canAdd: boolean }>()
+const props = defineProps<{ modelValue: number; canAdd: boolean }>()
 const emit = defineEmits<{
   'update:modelValue': [number]
   /** 信箱清单变了（新绑了一个、换了默认），页面要跟着重新取列表。 */
@@ -129,11 +153,24 @@ async function load() {
     // protojson 把 int64 打成字符串，普通 JSON 打成数字。两条路都过一遍
     // Number——这个仓库为同一件事已经踩过一次（见 excelQuota.test.ts）。
     unread: Number(a.unread ?? 0),
+    unboundAt: a.unboundAt ?? '',
   }))
   emit('changed', boxes.value)
 }
 
 onMounted(load)
+
+async function unbind(b: Mailbox) {
+  await post('/my-mailboxes/unbind', { accountId: b.id })
+  ElMessage.success(t('mailGate.unbindDone', { email: b.email }))
+  await load()
+  // 解的是当前正看着的那个：切到剩下的第一个。留在原地的话，右边列的是一个
+  // 不能写信的箱，而左边看不出为什么。
+  if (b.id === props.modelValue) {
+    const rest = boxes.value.filter((x) => !x.unboundAt)
+    if (rest.length) emit('update:modelValue', rest[0].id)
+  }
+}
 
 async function setDefault(b: Mailbox) {
   await post('/my-mailboxes/default', { accountId: b.id })
@@ -223,6 +260,10 @@ defineExpose({ reload: load })
   flex: none;
   font-size: 11px;
   color: var(--el-text-color-secondary);
+}
+/* 已解绑：比「默认」那个标签更灰，因为它说的是「这一行不能做事了」。 */
+.mbox-off {
+  color: var(--el-text-color-placeholder);
 }
 /* 数字，不是一个红点：红点只说「有东西」，而这里要回答的是「值不值得现在
    切过去」——3 封和 40 封是两个决定。min-width 让一位数和两位数的行宽一样，

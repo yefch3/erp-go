@@ -271,6 +271,7 @@ type MailAccount struct {
 	IsDefault       bool
 	LastReadAt      pgtype.Timestamptz
 	StatusCheckedAt pgtype.Timestamptz
+	UnboundAt       pgtype.Timestamptz
 }
 
 type MailBindingLog struct {

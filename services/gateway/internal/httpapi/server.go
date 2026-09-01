@@ -854,6 +854,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:read")).Get("/api/my-mail-account", s.getMyMailAccount)
 		r.With(s.perm("mail:email:read")).Get("/api/my-mailboxes", s.listMyMailboxes)
 		r.With(s.perm("mail:email:read")).Post("/api/my-mailboxes/default", s.setDefaultMailbox)
+		r.With(s.perm("mail:email:read")).Post("/api/my-mailboxes/unbind", s.unbindMailbox)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/latest", s.fxLatest)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/rates", s.fxRates)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/anomalies", s.fxAnomalies)

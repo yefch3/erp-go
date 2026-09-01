@@ -226,10 +226,16 @@ func (s *Service) defaultAccountIDFor(ctx context.Context, tenantID, employeeID 
 	if err != nil {
 		return 0, fmt.Errorf("读取邮箱账号失败：%w", err)
 	}
-	if len(rows) == 0 {
-		return 0, ErrNoMailAccount
+	// **跳过解绑的。** 列表要把它们带回来（左栏还得显示那一行），而「用哪个
+	// 箱发信」不能落在一个已经没有凭据的箱上——那样发信会在最后一步失败，
+	// 而失败的样子是「信发不出去」，跟发件人选错了长得一模一样。
+	for _, r := range rows {
+		if !r.UnboundAt.Valid {
+			return r.ID, nil
+		}
 	}
-	return rows[0].ID, nil
+	// 全解绑了，等于一个能用的箱都没有。
+	return 0, ErrNoMailAccount
 }
 
 // RecordFailure notes a credential-level problem on the account so the

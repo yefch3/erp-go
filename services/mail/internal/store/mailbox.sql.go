@@ -951,7 +951,7 @@ func (q *Queries) GetMailAccountByEmail(ctx context.Context, arg GetMailAccountB
 
 const getMailAccountByID = `-- name: GetMailAccountByID :one
 SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
-       is_active, is_default, updated_at,
+       is_active, is_default, unbound_at, updated_at,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security
 FROM mail_accounts
@@ -974,6 +974,7 @@ type GetMailAccountByIDRow struct {
 	LastError    string
 	IsActive     bool
 	IsDefault    bool
+	UnboundAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 	Domain       string
 	SmtpHost     string
@@ -1005,6 +1006,7 @@ func (q *Queries) GetMailAccountByID(ctx context.Context, arg GetMailAccountByID
 		&i.LastError,
 		&i.IsActive,
 		&i.IsDefault,
+		&i.UnboundAt,
 		&i.UpdatedAt,
 		&i.Domain,
 		&i.SmtpHost,
@@ -1355,6 +1357,10 @@ SELECT id, employee_id, email, username, secret_enc, key_version
 FROM mail_accounts
 WHERE tenant_id = $1::bigint
   AND is_active
+  -- 解绑了的箱没有凭据，登不上去。这里不挡的话，每轮都会为它跑一次注定
+  -- 失败的登录，然后把「认证失败」写到那一行上——而那句话在一个主动解绑
+  -- 的人看来毫无道理。
+  AND unbound_at IS NULL
   AND last_read_at IS NOT NULL
   AND last_read_at > now() - make_interval(secs => $2::int)
 ORDER BY id
@@ -1853,7 +1859,7 @@ func (q *Queries) ListInboundWithUnresolvedCID(ctx context.Context, arg ListInbo
 const listMailAccountsForEmployee = `-- name: ListMailAccountsForEmployee :many
 SELECT id, email, username, auth_kind, verified_at, last_error, is_active, updated_at,
        is_default, domain, smtp_host, smtp_port, smtp_security,
-       imap_host, imap_port, imap_security, last_read_at
+       imap_host, imap_port, imap_security, last_read_at, unbound_at
 FROM mail_accounts
 WHERE tenant_id = $1::bigint
   AND employee_id = $2::bigint
@@ -1883,6 +1889,7 @@ type ListMailAccountsForEmployeeRow struct {
 	ImapPort     int32
 	ImapSecurity string
 	LastReadAt   pgtype.Timestamptz
+	UnboundAt    pgtype.Timestamptz
 }
 
 // 一个人名下的全部信箱。今天唯一约束保证最多一行，下一期放开之后这里才
@@ -1920,6 +1927,7 @@ func (q *Queries) ListMailAccountsForEmployee(ctx context.Context, arg ListMailA
 			&i.ImapPort,
 			&i.ImapSecurity,
 			&i.LastReadAt,
+			&i.UnboundAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1936,6 +1944,7 @@ SELECT id, employee_id, email, username, secret_enc, key_version
 FROM mail_accounts
 WHERE tenant_id = $1::bigint
   AND is_active
+  AND unbound_at IS NULL
   AND (last_read_at IS NULL
        OR last_read_at <= now() - make_interval(secs => $2::int))
   AND (status_checked_at IS NULL
@@ -2391,7 +2400,7 @@ func (q *Queries) ListSentWithEngagement(ctx context.Context, arg ListSentWithEn
 const listSyncableMailAccounts = `-- name: ListSyncableMailAccounts :many
 SELECT id, employee_id, email, username, secret_enc, key_version
 FROM mail_accounts
-WHERE tenant_id = $1::bigint AND is_active
+WHERE tenant_id = $1::bigint AND is_active AND unbound_at IS NULL
 ORDER BY id
 `
 
@@ -2434,7 +2443,7 @@ func (q *Queries) ListSyncableMailAccounts(ctx context.Context, tenantID int64) 
 }
 
 const listTenantsWithMailboxes = `-- name: ListTenantsWithMailboxes :many
-SELECT DISTINCT tenant_id FROM mail_accounts WHERE is_active ORDER BY tenant_id
+SELECT DISTINCT tenant_id FROM mail_accounts WHERE is_active AND unbound_at IS NULL ORDER BY tenant_id
 `
 
 // 后台三个循环（收信轮询、IDLE 长连接、发信 worker）要服务的公司名单。
@@ -2911,7 +2920,8 @@ func (q *Queries) ListTrashForPurge(ctx context.Context, arg ListTrashForPurgePa
 
 const mailboxIsBeingRead = `-- name: MailboxIsBeingRead :one
 SELECT (last_read_at IS NOT NULL
-        AND last_read_at > now() - make_interval(secs => $1::int))::bool
+        AND last_read_at > now() - make_interval(secs => $1::int)
+        AND unbound_at IS NULL)::bool
 FROM mail_accounts
 WHERE tenant_id = $2::bigint AND id = $3::bigint
 `
@@ -3643,6 +3653,8 @@ SET auth_kind = 'OAUTH',
     verified_at = now(),
     last_error = '',
     is_active = TRUE,
+    -- 同 SetMailAccountSecret：重新授权就是重新绑上。
+    unbound_at = NULL,
     updated_at = now()
 WHERE tenant_id = $3::bigint AND id = $4::bigint
 `
@@ -3675,6 +3687,11 @@ SET secret_enc = $1::bytea,
     oauth_refresh_enc = ''::bytea,
     verified_at = NULL,
     last_error = '',
+    -- 重新填一次授权码就是重新绑上：解绑那一刻停掉的收发在这里恢复。
+    -- 漏掉这两行的症状是「重新绑了，页面上说绑好了，但信永远不来」——
+    -- 因为所有挑信箱的查询都还在按 unbound_at 跳过它。
+    is_active = TRUE,
+    unbound_at = NULL,
     updated_at = now()
 WHERE tenant_id = $3::bigint AND id = $4::bigint
 `
@@ -3944,6 +3961,51 @@ func (q *Queries) TrashJunkView(ctx context.Context, arg TrashJunkViewParams) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const unbindMailAccount = `-- name: UnbindMailAccount :execrows
+UPDATE mail_accounts
+   SET secret_enc = ''::bytea,
+       oauth_refresh_enc = ''::bytea,
+       key_version = 0,
+       verified_at = NULL,
+       last_error = '',
+       is_active = FALSE,
+       is_default = FALSE,
+       unbound_at = now(),
+       updated_at = now()
+ WHERE tenant_id = $1::bigint
+   AND id = $2::bigint
+   AND employee_id = $3::bigint
+   AND unbound_at IS NULL
+`
+
+type UnbindMailAccountParams struct {
+	TenantID   int64
+	ID         int64
+	EmployeeID int64
+}
+
+// 解绑：断连接，留历史。
+//
+// 清掉的是**凭据**——密码密文和 Google 的 refresh token 一起清，不留任何
+// 一把还能登上去的钥匙。verified_at 也清掉：那个绿勾说的是「这个箱现在能
+// 用」，而它现在不能。
+//
+// 不动的是 email、email_inbound、附件、对象存储里的原始 MIME。左栏那一行
+// 还在，点进去照样读得到历史。
+//
+// WHERE 带 employee_id：只能解自己的。不是他的就影响零行，调用方翻成 404，
+// 而不是「解成功了」——后者会让一个探测 id 的人拿到「这个 id 存在」。
+//
+// 已经解过的再解一次影响零行（unbound_at IS NULL），所以重复点不会把时间戳
+// 往后推——留痕里那个「什么时候解的」要是第一次。
+func (q *Queries) UnbindMailAccount(ctx context.Context, arg UnbindMailAccountParams) (int64, error) {
+	result, err := q.db.Exec(ctx, unbindMailAccount, arg.TenantID, arg.ID, arg.EmployeeID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateMailAccountAddress = `-- name: UpdateMailAccountAddress :exec

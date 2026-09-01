@@ -466,6 +466,12 @@ func (s *Service) mailboxOfMine(ctx context.Context, tenantID, employeeID, id in
 		// 否则这里就成了一个拿 id 探测别人信箱的口子。
 		return 0, apierr.Invalid("MAIL_NOT_YOUR_MAILBOX", "这个邮箱不在你名下")
 	}
+	// 解绑了的箱能读历史，但不能收发——凭据已经清掉了。这里说清楚是哪一种
+	// 拒绝：「不在你名下」会让人去找管理员，而该做的是重新填一次授权码。
+	if row.UnboundAt.Valid {
+		return 0, apierr.Invalid("MAIL_MAILBOX_UNBOUND",
+			"这个邮箱已解绑，只能查看历史邮件。要重新收发，请重新登录这个邮箱")
+	}
 	return id, nil
 }
 

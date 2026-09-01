@@ -61,7 +61,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 --
 -- 刻意不选 secret_enc：这是设置页读的，凭据永远不回浏览器。
 SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
-       is_active, is_default, updated_at,
+       is_active, is_default, unbound_at, updated_at,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security
 FROM mail_accounts
@@ -210,6 +210,11 @@ SET secret_enc = sqlc.arg(secret_enc)::bytea,
     oauth_refresh_enc = ''::bytea,
     verified_at = NULL,
     last_error = '',
+    -- 重新填一次授权码就是重新绑上：解绑那一刻停掉的收发在这里恢复。
+    -- 漏掉这两行的症状是「重新绑了，页面上说绑好了，但信永远不来」——
+    -- 因为所有挑信箱的查询都还在按 unbound_at 跳过它。
+    is_active = TRUE,
+    unbound_at = NULL,
     updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
@@ -254,7 +259,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 -- mailbox cannot starve another.
 SELECT id, employee_id, email, username, secret_enc, key_version
 FROM mail_accounts
-WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND is_active
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND is_active AND unbound_at IS NULL
 ORDER BY id;
 
 -- name: ListMailAccountsForEmployee :many
@@ -266,7 +271,7 @@ ORDER BY id;
 -- 浏览器。
 SELECT id, email, username, auth_kind, verified_at, last_error, is_active, updated_at,
        is_default, domain, smtp_host, smtp_port, smtp_security,
-       imap_host, imap_port, imap_security, last_read_at
+       imap_host, imap_port, imap_security, last_read_at, unbound_at
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND employee_id = sqlc.arg(employee_id)::bigint
@@ -957,6 +962,8 @@ SET auth_kind = 'OAUTH',
     verified_at = now(),
     last_error = '',
     is_active = TRUE,
+    -- 同 SetMailAccountSecret：重新授权就是重新绑上。
+    unbound_at = NULL,
     updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
@@ -1447,7 +1454,7 @@ ORDER BY 1, 2, 3;
 -- 也刻意不做「按公司开关」：Frappe 每个站点要单独 enable-scheduler，最常见的
 -- 故障就是有人忘了开，然后邮件安静地堆在队列里没人发。绑了邮箱就该被服务，
 -- 不该再有第二个开关。
-SELECT DISTINCT tenant_id FROM mail_accounts WHERE is_active ORDER BY tenant_id;
+SELECT DISTINCT tenant_id FROM mail_accounts WHERE is_active AND unbound_at IS NULL ORDER BY tenant_id;
 
 -- name: GetInboundByFolderUID :one
 -- 挪信收尾（repoint）先问一句：目的位置是不是已经被人占了。占位的几乎总是
@@ -1510,6 +1517,10 @@ SELECT id, employee_id, email, username, secret_enc, key_version
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND is_active
+  -- 解绑了的箱没有凭据，登不上去。这里不挡的话，每轮都会为它跑一次注定
+  -- 失败的登录，然后把「认证失败」写到那一行上——而那句话在一个主动解绑
+  -- 的人看来毫无道理。
+  AND unbound_at IS NULL
   AND last_read_at IS NOT NULL
   AND last_read_at > now() - make_interval(secs => sqlc.arg(active_seconds)::int)
 ORDER BY id;
@@ -1529,6 +1540,7 @@ SELECT id, employee_id, email, username, secret_enc, key_version
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND is_active
+  AND unbound_at IS NULL
   AND (last_read_at IS NULL
        OR last_read_at <= now() - make_interval(secs => sqlc.arg(active_seconds)::int))
   AND (status_checked_at IS NULL
@@ -1568,6 +1580,37 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- IDLE 的用处是「让**正在看**的那个收件箱像是活的」。没人看的时候，两分钟
 -- 一轮的轮询加十分钟一次的轻状态已经够了。
 SELECT (last_read_at IS NOT NULL
-        AND last_read_at > now() - make_interval(secs => sqlc.arg(active_seconds)::int))::bool
+        AND last_read_at > now() - make_interval(secs => sqlc.arg(active_seconds)::int)
+        AND unbound_at IS NULL)::bool
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: UnbindMailAccount :execrows
+-- 解绑：断连接，留历史。
+--
+-- 清掉的是**凭据**——密码密文和 Google 的 refresh token 一起清，不留任何
+-- 一把还能登上去的钥匙。verified_at 也清掉：那个绿勾说的是「这个箱现在能
+-- 用」，而它现在不能。
+--
+-- 不动的是 email、email_inbound、附件、对象存储里的原始 MIME。左栏那一行
+-- 还在，点进去照样读得到历史。
+--
+-- WHERE 带 employee_id：只能解自己的。不是他的就影响零行，调用方翻成 404，
+-- 而不是「解成功了」——后者会让一个探测 id 的人拿到「这个 id 存在」。
+--
+-- 已经解过的再解一次影响零行（unbound_at IS NULL），所以重复点不会把时间戳
+-- 往后推——留痕里那个「什么时候解的」要是第一次。
+UPDATE mail_accounts
+   SET secret_enc = ''::bytea,
+       oauth_refresh_enc = ''::bytea,
+       key_version = 0,
+       verified_at = NULL,
+       last_error = '',
+       is_active = FALSE,
+       is_default = FALSE,
+       unbound_at = now(),
+       updated_at = now()
+ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+   AND id = sqlc.arg(id)::bigint
+   AND employee_id = sqlc.arg(employee_id)::bigint
+   AND unbound_at IS NULL;
