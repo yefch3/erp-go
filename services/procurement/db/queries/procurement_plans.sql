@@ -12,28 +12,27 @@ SELECT ql.id AS quote_line_id,ql.sourcing_line_id,ql.qty::text,ql.unit_price::te
  coalesce(q.valid_until::text,'')::text AS valid_until,q.version_no AS quote_version_no,
  q.created_by AS buyer_id,r.created_by_name AS buyer_name,
  r.supplier_id,r.supplier_name,coalesce(r.factory_id,0)::bigint AS factory_id,r.factory_name,
- sl.product AS product_name,fl.uom_code
+ sl.product AS product_name,fl.uom_code,q.confirmation_status,
+ coalesce(q.valid_until<current_date,false)::boolean AS quote_expired,
+ EXISTS (
+   SELECT 1 FROM supplier_quotes newer
+   JOIN supplier_quote_lines newer_line ON newer_line.supplier_quote_id=newer.id
+     AND newer_line.tenant_id=newer.tenant_id AND newer_line.sourcing_line_id=ql.sourcing_line_id
+   WHERE newer.tenant_id=q.tenant_id AND newer.factory_rfq_id=q.factory_rfq_id
+     AND newer.version_no>q.version_no AND newer.confirmation_status='WRITTEN_CONFIRMED'
+ ) AS newer_quote_exists,
+ EXISTS (
+   SELECT 1 FROM procurement_rework_requests returned
+   WHERE returned.tenant_id=ql.tenant_id
+     AND returned.supplier_quote_line_id=ql.id
+     AND returned.request_type IN ('REQUOTE','RENEGOTIATE')
+ ) AS quote_returned
 FROM supplier_quote_lines ql
 JOIN supplier_quotes q ON q.id=ql.supplier_quote_id AND q.tenant_id=ql.tenant_id
 JOIN factory_rfqs r ON r.id=q.factory_rfq_id AND r.tenant_id=q.tenant_id
 JOIN factory_rfq_lines fl ON fl.factory_rfq_id=r.id AND fl.sourcing_line_id=ql.sourcing_line_id AND fl.tenant_id=ql.tenant_id
 JOIN sourcing_lines sl ON sl.id=ql.sourcing_line_id AND sl.tenant_id=ql.tenant_id
-WHERE ql.tenant_id=sqlc.arg(tenant_id) AND r.case_id=sqlc.arg(case_id) AND ql.id=sqlc.arg(id)
-  AND q.confirmation_status='WRITTEN_CONFIRMED'
-  AND (q.valid_until IS NULL OR q.valid_until>=current_date)
-  AND NOT EXISTS (
-    SELECT 1 FROM supplier_quotes newer
-    JOIN supplier_quote_lines newer_line ON newer_line.supplier_quote_id=newer.id
-      AND newer_line.tenant_id=newer.tenant_id AND newer_line.sourcing_line_id=ql.sourcing_line_id
-    WHERE newer.tenant_id=q.tenant_id AND newer.factory_rfq_id=q.factory_rfq_id
-      AND newer.version_no>q.version_no AND newer.confirmation_status='WRITTEN_CONFIRMED'
-  )
-  AND NOT EXISTS (
-    SELECT 1 FROM procurement_rework_requests returned
-    WHERE returned.tenant_id=ql.tenant_id
-      AND returned.supplier_quote_line_id=ql.id
-      AND returned.request_type IN ('REQUOTE','RENEGOTIATE')
-  );
+WHERE ql.tenant_id=sqlc.arg(tenant_id) AND r.case_id=sqlc.arg(case_id) AND ql.id=sqlc.arg(id);
 
 -- name: CreateProcurementPlan :one
 INSERT INTO procurement_plans(tenant_id,case_id,plan_no,version_no,requirement_version_no,status,manager_note,

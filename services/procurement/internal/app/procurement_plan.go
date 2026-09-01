@@ -125,8 +125,26 @@ func (s *Service) CreateProcurementPlan(ctx context.Context, tenantID int64, in 
 		candidate, candidateErr := s.q.ProcurementPlanCandidate(ctx, store.ProcurementPlanCandidateParams{
 			TenantID: tenantID, CaseID: in.CaseID, ID: selection.SupplierQuoteLineID,
 		})
-		if candidateErr != nil || candidate.SourcingLineID != selection.SourcingLineID {
-			return ProcurementPlanView{}, apierr.Invalid("SC_PLAN_QUOTE_INVALID", "所选报价已过期、不是最新版本或不属于该产品")
+		if errors.Is(candidateErr, pgx.ErrNoRows) {
+			return ProcurementPlanView{}, apierr.Invalid("SC_PLAN_QUOTE_NOT_FOUND", "所选报价不存在或不属于当前案件")
+		}
+		if candidateErr != nil {
+			return ProcurementPlanView{}, candidateErr
+		}
+		if candidate.SourcingLineID != selection.SourcingLineID {
+			return ProcurementPlanView{}, invalidProcurementPlanCandidate(candidate, "SC_PLAN_QUOTE_PRODUCT_MISMATCH", "不属于当前产品")
+		}
+		if candidate.ConfirmationStatus != "WRITTEN_CONFIRMED" {
+			return ProcurementPlanView{}, invalidProcurementPlanCandidate(candidate, "SC_PLAN_QUOTE_UNCONFIRMED", "尚未完成书面确认")
+		}
+		if candidate.QuoteExpired {
+			return ProcurementPlanView{}, invalidProcurementPlanCandidate(candidate, "SC_PLAN_QUOTE_EXPIRED", "已于 "+candidate.ValidUntil+" 过期，请选择有效的新版本")
+		}
+		if candidate.NewerQuoteExists {
+			return ProcurementPlanView{}, invalidProcurementPlanCandidate(candidate, "SC_PLAN_QUOTE_NOT_LATEST", "不是最新版本，请选择最新报价")
+		}
+		if candidate.QuoteReturned {
+			return ProcurementPlanView{}, invalidProcurementPlanCandidate(candidate, "SC_PLAN_QUOTE_RETURNED", "已被退回重新询价，请选择新报价")
 		}
 		priorityKey := strconv.FormatInt(selection.SourcingLineID, 10) + ":" + selection.SelectionType + ":" + strconv.Itoa(int(selection.Priority))
 		if priorities[priorityKey] {
@@ -196,6 +214,16 @@ func (s *Service) CreateProcurementPlan(ctx context.Context, tenantID int64, in 
 	}
 	s.nudge(ctx, tenantID)
 	return s.GetProcurementPlan(ctx, tenantID, planID)
+}
+
+func invalidProcurementPlanCandidate(candidate store.ProcurementPlanCandidateRow, code, reason string) error {
+	label := strings.TrimSpace(candidate.SupplierName)
+	if buyer := strings.TrimSpace(candidate.BuyerName); buyer != "" {
+		label += " · " + buyer
+	}
+	label += " · V" + strconv.Itoa(int(candidate.QuoteVersionNo))
+	return apierr.Invalid(code, "报价“"+label+"”"+reason).
+		WithMeta("quote_line_id", strconv.FormatInt(candidate.QuoteLineID, 10), "valid_until", candidate.ValidUntil)
 }
 
 func (s *Service) GetProcurementPlan(ctx context.Context, tenantID, id int64) (ProcurementPlanView, error) {

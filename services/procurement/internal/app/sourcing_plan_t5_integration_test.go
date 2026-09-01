@@ -137,7 +137,7 @@ VALUES ($1,$2,$3,1,20,'TON')`, tenantID, rfqID, lineID); err != nil {
 			{SourcingLineID: lineB, SupplierQuoteLineID: quoteB1, SelectionType: "RECOMMENDED", Priority: 1, Reason: "继续采用"},
 		},
 	}, manager)
-	if err == nil || !strings.Contains(err.Error(), "SC_PLAN_QUOTE_INVALID") {
+	if err == nil || !strings.Contains(err.Error(), "SC_PLAN_QUOTE_RETURNED") || !strings.Contains(err.Error(), "供应商乙 · 采购乙 · V1") {
 		t.Fatalf("returned quote must not be selectable, got %v", err)
 	}
 
