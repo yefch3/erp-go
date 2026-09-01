@@ -88,7 +88,9 @@ func customerSelection(view app.CustomerSelectionView) *prv1.CustomerSelection {
 			CustomerUnitPrice: row.CustomerUnitPrice, PromisedDeliveryDate: row.PromisedDeliveryDate, LineNote: row.LineNote,
 			SupplierId: row.SupplierID, SupplierName: row.SupplierName, FactoryId: row.FactoryID,
 			FactoryName: row.FactoryName, ShipmentGroupKey: row.ShipmentGroupKey,
-			CustomerManagedShipping: row.CustomerManagedShipping, FinalCustomerCurrency: row.FinalCustomerCurrency, FinalCustomerUnitPrice: row.FinalCustomerUnitPrice})
+			CustomerManagedShipping: row.CustomerManagedShipping, FinalCustomerCurrency: row.FinalCustomerCurrency,
+			FinalCustomerUnitPrice: row.FinalCustomerUnitPrice, FinalCustomerPaymentTerms: row.FinalCustomerPaymentTerms,
+			FinalCustomerIncoterm: row.FinalCustomerIncoterm, FinalCustomerRequiredDate: row.FinalCustomerRequiredDate})
 	}
 	shipments := make([]*prv1.CustomerSelectionShipment, 0, len(view.Shipments))
 	for _, shipment := range view.Shipments {
@@ -262,7 +264,7 @@ func (h *SourcingHandler) ConfirmCustomerSelection(ctx context.Context, req *prv
 func (h *SourcingHandler) DecideCustomerSelection(ctx context.Context, req *prv1.DecideCustomerSelectionRequest) (*prv1.DecideCustomerSelectionResponse, error) {
 	in := app.DecideCustomerSelectionInput{CaseID: req.GetCaseId(), SelectionID: req.GetSelectionId(), Accepted: req.GetAccepted(), CustomerContact: req.GetCustomerContact(), DecisionNote: req.GetDecisionNote(), DecidedAt: req.GetCustomerDecidedAt()}
 	for _, row := range req.GetItemPrices() {
-		in.ItemPrices = append(in.ItemPrices, app.FinalCustomerItemPriceInput{SelectionItemID: row.GetSelectionItemId(), Currency: row.GetCurrency(), UnitPrice: row.GetUnitPrice()})
+		in.ItemPrices = append(in.ItemPrices, app.FinalCustomerItemPriceInput{SelectionItemID: row.GetSelectionItemId(), Currency: row.GetCurrency(), UnitPrice: row.GetUnitPrice(), PaymentTerms: row.GetPaymentTerms(), Incoterm: row.GetIncoterm(), RequiredDate: row.GetRequiredDate()})
 	}
 	for _, row := range req.GetShipmentPrices() {
 		in.ShipmentPrices = append(in.ShipmentPrices, app.FinalCustomerShipmentPriceInput{SelectionShipmentID: row.GetSelectionShipmentId(), Currency: row.GetCurrency(), FreightAmount: row.GetFreightAmount()})

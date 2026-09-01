@@ -120,7 +120,9 @@ SELECT id,sales_plan_item_id,sourcing_line_id,procurement_plan_item_id,supplier_
  coalesce(promised_delivery_date::text,'')::text AS promised_delivery_date,line_note,
  supplier_id,supplier_name,factory_id,factory_name,shipment_group_key,customer_managed_shipping,
  coalesce(final_customer_currency,'')::text AS final_customer_currency,
- coalesce(final_customer_unit_price::text,'')::text AS final_customer_unit_price
+ coalesce(final_customer_unit_price::text,'')::text AS final_customer_unit_price,
+ final_customer_payment_terms,final_customer_incoterm,
+ coalesce(final_customer_required_date::text,'')::text AS final_customer_required_date
 FROM sourcing_customer_selection_items WHERE tenant_id=$1 AND selection_id=$2 ORDER BY id;
 
 -- name: ListCustomerSelectionShipments :many
@@ -158,7 +160,10 @@ SELECT id,coalesce(selection_item_id,0)::bigint AS selection_item_id,
 FROM sourcing_final_recheck_tasks WHERE tenant_id=$1 AND selection_id=$2 ORDER BY selection_item_id,task_domain;
 
 -- name: GetFinalTaskByProcurementRework :one
-SELECT id FROM sourcing_final_recheck_tasks WHERE tenant_id=$1 AND procurement_rework_id=$2 AND status='OPEN';
+SELECT t.id,i.confirmed_qty::text AS customer_intent_qty
+FROM sourcing_final_recheck_tasks t
+JOIN sourcing_customer_selection_items i ON i.tenant_id=t.tenant_id AND i.id=t.selection_item_id
+WHERE t.tenant_id=$1 AND t.procurement_rework_id=$2 AND t.status='OPEN';
 
 -- name: ResolveFinalTaskByProcurementRework :exec
 UPDATE sourcing_final_recheck_tasks SET status='RESOLVED',resolved_at=now(),result_note=sqlc.arg(result_note),
@@ -199,7 +204,11 @@ UPDATE sourcing_customer_selections SET status='CUSTOMER_REJECTED',customer_cont
 WHERE tenant_id=sqlc.arg(tenant_id) AND id=sqlc.arg(id) AND status='AWAITING_CUSTOMER_CONFIRMATION';
 
 -- name: SetFinalCustomerItemPrice :exec
-UPDATE sourcing_customer_selection_items SET final_customer_currency=sqlc.arg(final_customer_currency),final_customer_unit_price=sqlc.arg(final_customer_unit_price)::text::numeric
+UPDATE sourcing_customer_selection_items SET final_customer_currency=sqlc.arg(final_customer_currency),
+ final_customer_unit_price=sqlc.arg(final_customer_unit_price)::text::numeric,
+ final_customer_payment_terms=sqlc.arg(final_customer_payment_terms),
+ final_customer_incoterm=sqlc.arg(final_customer_incoterm),
+ final_customer_required_date=sqlc.arg(final_customer_required_date)::text::date
 WHERE tenant_id=sqlc.arg(tenant_id) AND selection_id=sqlc.arg(selection_id) AND id=sqlc.arg(id);
 
 -- name: SetFinalCustomerShipmentPrice :exec

@@ -390,7 +390,7 @@ func (s *Service) ResolveProcurementRework(ctx context.Context, tenantID, id int
 	if request.AssignedBuyerID != 0 && request.AssignedBuyerID != op.ID {
 		return apierr.Permission("SC_REWORK_ASSIGNEE_REQUIRED", "只有被指定的采购专员可以完成该任务")
 	}
-	_, finalErr := s.q.GetFinalTaskByProcurementRework(ctx, store.GetFinalTaskByProcurementReworkParams{TenantID: tenantID, ProcurementReworkID: &id})
+	finalTask, finalErr := s.q.GetFinalTaskByProcurementRework(ctx, store.GetFinalTaskByProcurementReworkParams{TenantID: tenantID, ProcurementReworkID: &id})
 	isFinal := finalErr == nil
 	if finalErr != nil && !errors.Is(finalErr, pgx.ErrNoRows) {
 		return finalErr
@@ -401,6 +401,11 @@ func (s *Service) ResolveProcurementRework(ctx context.Context, tenantID, id int
 		if len(in.Currency) != 3 || in.LeadTime <= 0 || in.PaymentTerms == "" || in.Incoterm == "" ||
 			!positiveDecimal(in.UnitPrice) || !positiveDecimal(in.AvailableQty) || !validDate(in.DeliveryDate) || !validDate(in.ValidUntil) {
 			return apierr.Invalid("SC_FINAL_PROCUREMENT_RESULT_REQUIRED", "请完整填写最终币种、单价、可供量、生产周期、交期、付款条件、贸易条款和有效期")
+		}
+		availableQty, availableErr := decimal.NewFromString(strings.TrimSpace(in.AvailableQty))
+		intentQty, intentErr := decimal.NewFromString(finalTask.CustomerIntentQty)
+		if availableErr != nil || intentErr != nil || availableQty.GreaterThan(intentQty) {
+			return apierr.Invalid("SC_FINAL_AVAILABLE_QTY_LIMIT", "最终可供量不能超过客户本次意向数量 "+finalTask.CustomerIntentQty)
 		}
 	}
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {

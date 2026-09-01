@@ -37,8 +37,9 @@ type CustomerShipmentChoiceInput struct {
 }
 
 type FinalCustomerItemPriceInput struct {
-	SelectionItemID     int64
-	Currency, UnitPrice string
+	SelectionItemID                             int64
+	Currency, UnitPrice, PaymentTerms, Incoterm string
+	RequiredDate                                string
 }
 type FinalCustomerShipmentPriceInput struct {
 	SelectionShipmentID     int64
@@ -374,10 +375,11 @@ func (s *Service) DecideCustomerSelection(ctx context.Context, tenantID int64, i
 			}
 			for _, price := range in.ItemPrices {
 				price.Currency = strings.ToUpper(strings.TrimSpace(price.Currency))
-				if !itemIDs[price.SelectionItemID] || len(price.Currency) != 3 || !positiveDecimal(price.UnitPrice) {
-					return apierr.Invalid("SC_CUSTOMER_FINAL_ITEM_PRICE", "最终对客产品价格无效")
+				price.PaymentTerms, price.Incoterm = strings.TrimSpace(price.PaymentTerms), strings.TrimSpace(price.Incoterm)
+				if !itemIDs[price.SelectionItemID] || len(price.Currency) != 3 || !positiveDecimal(price.UnitPrice) || price.PaymentTerms == "" || price.Incoterm == "" || !validDate(price.RequiredDate) {
+					return apierr.Invalid("SC_CUSTOMER_FINAL_ITEM_TERMS", "请完整填写最终对客产品价格、付款条件、贸易条款和客户要求日期")
 				}
-				if err := q.SetFinalCustomerItemPrice(ctx, store.SetFinalCustomerItemPriceParams{TenantID: tenantID, SelectionID: in.SelectionID, FinalCustomerCurrency: &price.Currency, FinalCustomerUnitPrice: price.UnitPrice, ID: price.SelectionItemID}); err != nil {
+				if err := q.SetFinalCustomerItemPrice(ctx, store.SetFinalCustomerItemPriceParams{TenantID: tenantID, SelectionID: in.SelectionID, FinalCustomerCurrency: &price.Currency, FinalCustomerUnitPrice: price.UnitPrice, FinalCustomerPaymentTerms: price.PaymentTerms, FinalCustomerIncoterm: price.Incoterm, FinalCustomerRequiredDate: price.RequiredDate, ID: price.SelectionItemID}); err != nil {
 					return err
 				}
 			}

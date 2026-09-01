@@ -1953,6 +1953,7 @@ message ProcurementReworkRequest {
   string resolved_at = 18;
   string resolution_note = 19;
   int64 final_recheck_task_id = 20;
+  string customer_intent_qty = 21;
 }
 message CreateProcurementReworkRequest {
   int64 case_id = 1;
@@ -2519,6 +2520,9 @@ message CustomerSelectionItem {
   bool customer_managed_shipping = 20;
   string final_customer_currency = 21;
   string final_customer_unit_price = 22;
+  string final_customer_payment_terms = 23;
+  string final_customer_incoterm = 24;
+  string final_customer_required_date = 25;
 }
 message CustomerShipmentChoiceInput {
   string shipment_group_key = 1;
@@ -2609,7 +2613,14 @@ message ConfirmCustomerSelectionRequest {
 message ConfirmCustomerSelectionResponse { CustomerSelection selection = 1; }
 message ListCustomerSelectionsRequest { int64 case_id = 1; }
 message ListCustomerSelectionsResponse { repeated CustomerSelection selections = 1; }
-message FinalCustomerItemPrice { int64 selection_item_id = 1; string currency = 2; string unit_price = 3; }
+message FinalCustomerItemPrice {
+  int64 selection_item_id = 1;
+  string currency = 2;
+  string unit_price = 3;
+  string payment_terms = 4;
+  string incoterm = 5;
+  string required_date = 6;
+}
 message FinalCustomerShipmentPrice { int64 selection_shipment_id = 1; string currency = 2; string freight_amount = 3; }
 message DecideCustomerSelectionRequest {
   int64 case_id = 1; int64 selection_id = 2; bool accepted = 3;

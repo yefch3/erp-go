@@ -745,31 +745,34 @@ type SourcingCustomerSelection struct {
 }
 
 type SourcingCustomerSelectionItem struct {
-	ID                      int64
-	TenantID                int64
-	SelectionID             int64
-	SalesPlanItemID         int64
-	SourcingLineID          int64
-	ProcurementPlanItemID   int64
-	SupplierQuoteLineID     int64
-	ShippingPlanItemID      *int64
-	ShippingOptionLineID    *int64
-	ProductName             string
-	ConfirmedQty            pgtype.Numeric
-	UomCode                 string
-	CustomerCurrency        string
-	CustomerUnitPrice       pgtype.Numeric
-	PromisedDeliveryDate    pgtype.Date
-	LineNote                string
-	CreatedAt               pgtype.Timestamptz
-	SupplierID              int64
-	SupplierName            string
-	FactoryID               int64
-	FactoryName             string
-	ShipmentGroupKey        string
-	CustomerManagedShipping bool
-	FinalCustomerCurrency   *string
-	FinalCustomerUnitPrice  pgtype.Numeric
+	ID                        int64
+	TenantID                  int64
+	SelectionID               int64
+	SalesPlanItemID           int64
+	SourcingLineID            int64
+	ProcurementPlanItemID     int64
+	SupplierQuoteLineID       int64
+	ShippingPlanItemID        *int64
+	ShippingOptionLineID      *int64
+	ProductName               string
+	ConfirmedQty              pgtype.Numeric
+	UomCode                   string
+	CustomerCurrency          string
+	CustomerUnitPrice         pgtype.Numeric
+	PromisedDeliveryDate      pgtype.Date
+	LineNote                  string
+	CreatedAt                 pgtype.Timestamptz
+	SupplierID                int64
+	SupplierName              string
+	FactoryID                 int64
+	FactoryName               string
+	ShipmentGroupKey          string
+	CustomerManagedShipping   bool
+	FinalCustomerCurrency     *string
+	FinalCustomerUnitPrice    pgtype.Numeric
+	FinalCustomerPaymentTerms string
+	FinalCustomerIncoterm     string
+	FinalCustomerRequiredDate pgtype.Date
 }
 
 type SourcingCustomerSelectionShipment struct {

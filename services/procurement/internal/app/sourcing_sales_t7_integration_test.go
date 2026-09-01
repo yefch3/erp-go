@@ -168,8 +168,14 @@ func TestT7T8SalesNegotiationCustomerSelectionAndFinalRecheck(t *testing.T) {
 	if finalProcurementReworkID == 0 || finalShippingReworkID == 0 {
 		t.Fatalf("missing final recheck links: %+v", selection.Tasks)
 	}
+	if limitErr := svc.ResolveProcurementRework(ctx, tenantID, finalProcurementReworkID, ProcurementReworkResolution{
+		Note: "超过客户意向数量", Currency: "USD", UnitPrice: "2", AvailableQty: "13",
+		LeadTime: 5, DeliveryDate: "2026-09-05", PaymentTerms: "T/T", Incoterm: "FOB", ValidUntil: "2026-09-03",
+	}, buyer); limitErr == nil || !strings.Contains(limitErr.Error(), "SC_FINAL_AVAILABLE_QTY_LIMIT") {
+		t.Fatalf("final quantity limit error=%v", limitErr)
+	}
 	if err = svc.ResolveProcurementRework(ctx, tenantID, finalProcurementReworkID, ProcurementReworkResolution{
-		Note: "最终价格与交期已确认", Currency: "USD", UnitPrice: "2", AvailableQty: "20",
+		Note: "最终价格与交期已确认", Currency: "USD", UnitPrice: "2", AvailableQty: "10",
 		LeadTime: 5, DeliveryDate: "2026-09-05", PaymentTerms: "T/T", Incoterm: "FOB", ValidUntil: "2026-09-03",
 	}, buyer); err != nil {
 		t.Fatal(err)
@@ -192,11 +198,14 @@ func TestT7T8SalesNegotiationCustomerSelectionAndFinalRecheck(t *testing.T) {
 	accepted, err := svc.DecideCustomerSelection(ctx, tenantID, DecideCustomerSelectionInput{
 		CaseID: caseID, SelectionID: selection.Header.ID, Accepted: true,
 		CustomerContact: "客户联系人", DecisionNote: "客户接受最终价格和船期", DecidedAt: "2026-09-01T12:00:00Z",
-		ItemPrices:     []FinalCustomerItemPriceInput{{SelectionItemID: selection.Items[0].ID, Currency: "USD", UnitPrice: "12"}},
+		ItemPrices:     []FinalCustomerItemPriceInput{{SelectionItemID: selection.Items[0].ID, Currency: "USD", UnitPrice: "12", PaymentTerms: "T/T", Incoterm: "FOB", RequiredDate: "2026-09-12"}},
 		ShipmentPrices: []FinalCustomerShipmentPriceInput{{SelectionShipmentID: selection.Shipments[0].Header.ID, Currency: "USD", FreightAmount: "260"}},
 	}, sales)
 	if err != nil || accepted.Header.Status != "CUSTOMER_CONFIRMED" {
 		t.Fatalf("selection should be customer confirmed: %+v err=%v", accepted, err)
+	}
+	if accepted.Items[0].FinalCustomerPaymentTerms != "T/T" || accepted.Items[0].FinalCustomerIncoterm != "FOB" || accepted.Items[0].FinalCustomerRequiredDate != "2026-09-12" {
+		t.Fatalf("final customer terms not frozen: %+v", accepted.Items[0])
 	}
 
 	feedback, err := svc.AddCustomerFeedback(ctx, tenantID, CustomerFeedbackInput{CaseID: caseID, SalesPlanID: plan2.Header.ID, ContactName: "客户联系人", Channel: "PHONE", Result: "REQUOTE_REQUIRED", Summary: "希望再降低运费", ContactedAt: "2026-08-30T12:00:00Z"}, sales)

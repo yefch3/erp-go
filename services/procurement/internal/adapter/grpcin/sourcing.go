@@ -808,7 +808,7 @@ func procurementRework(row store.ListProcurementReworkRequestsRow) *prv1.Procure
 		SupplierId: row.SupplierID, SupplierName: row.SupplierName, ProductName: row.ProductName,
 		Reason: row.Reason, Status: row.Status, CreatedByName: row.CreatedByName, CreatedAt: ts(row.CreatedAt),
 		ResolvedByName: row.ResolvedByName, ResolvedAt: ts(row.ResolvedAt), ResolutionNote: row.ResolutionNote,
-		FinalRecheckTaskId: row.FinalRecheckTaskID,
+		FinalRecheckTaskId: row.FinalRecheckTaskID, CustomerIntentQty: row.CustomerIntentQty,
 	}
 }
 

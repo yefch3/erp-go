@@ -124,9 +124,11 @@ SELECT rr.id,rr.case_id,coalesce(rr.plan_id,0)::bigint AS plan_id,coalesce(rr.so
  coalesce(rr.assigned_buyer_id,0)::bigint AS assigned_buyer_id,rr.assigned_buyer_name,
  coalesce(rr.supplier_id,0)::bigint AS supplier_id,rr.supplier_name,rr.product_name,rr.reason,rr.status,
  rr.created_by_name,rr.created_at,rr.resolved_by_name,rr.resolved_at,rr.resolution_note,
- coalesce(ft.id,0)::bigint AS final_recheck_task_id
+ coalesce(ft.id,0)::bigint AS final_recheck_task_id,
+ coalesce(csi.confirmed_qty::text,'')::text AS customer_intent_qty
 FROM procurement_rework_requests rr
 LEFT JOIN sourcing_final_recheck_tasks ft ON ft.tenant_id=rr.tenant_id AND ft.procurement_rework_id=rr.id
+LEFT JOIN sourcing_customer_selection_items csi ON csi.tenant_id=ft.tenant_id AND csi.id=ft.selection_item_id
 WHERE rr.tenant_id=$1 AND rr.case_id=$2 ORDER BY rr.created_at DESC;
 
 -- name: GetProcurementReworkRequest :one
