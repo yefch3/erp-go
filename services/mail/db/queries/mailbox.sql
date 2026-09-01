@@ -1494,3 +1494,80 @@ UPDATE mail_accounts
  WHERE tenant_id = sqlc.arg(tenant_id)::bigint
    AND id = sqlc.arg(id)::bigint
    AND (last_read_at IS NULL OR last_read_at < now() - interval '30 seconds');
+
+-- name: ListActiveMailAccounts :many
+-- 这一轮要**全量同步**的信箱：最近有人在看的那些。
+--
+-- 「有人在看」= last_read_at 新鲜（00048 在收件箱那条路上写的）。它是人的
+-- 动作，不是我们自己的动作——后者在 mail_sync_state 上，每轮都会更新，拿它
+-- 分档等于所有箱永远都算活跃。
+--
+-- 从没被看过的箱（last_read_at IS NULL）算不活跃。刚部署时所有行都是空的，
+-- 那一段时间里所有箱都走轻状态那条路——**这不影响对错**：轻状态看见新信
+-- 就把那个箱提上来全量同步，代价只是最长十分钟的延迟。人一打开邮箱页，
+-- last_read_at 就写上了，下一轮它就回到全量这一档。
+SELECT id, employee_id, email, username, secret_enc, key_version
+FROM mail_accounts
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND is_active
+  AND last_read_at IS NOT NULL
+  AND last_read_at > now() - make_interval(secs => sqlc.arg(active_seconds)::int)
+ORDER BY id;
+
+-- name: ListMailboxesDueForStatus :many
+-- 这一轮要问**轻状态**的信箱：没人在看，而且离上次问过够久了。
+--
+-- 和上面那条互斥：有人在看的箱已经在全量同步，再问一次 STATUS 是白问。
+--
+-- 靠「离上次够久」自然错开，不是攒一批一起问：600 个箱一起问会在一轮里堆出
+-- 一个尖峰，把全量那一档挤掉。每轮只有到点的那些进来，摊平之后大约是总数
+-- 的十分之一。
+--
+-- NULLS FIRST：从没问过的排最前。刚部署、以及刚绑好的箱属于这一类，它们
+-- 最需要先被看一眼。
+SELECT id, employee_id, email, username, secret_enc, key_version
+FROM mail_accounts
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND is_active
+  AND (last_read_at IS NULL
+       OR last_read_at <= now() - make_interval(secs => sqlc.arg(active_seconds)::int))
+  AND (status_checked_at IS NULL
+       OR status_checked_at <= now() - make_interval(secs => sqlc.arg(status_seconds)::int))
+ORDER BY status_checked_at NULLS FIRST, id
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: MarkStatusChecked :exec
+-- 问过了。时间戳只在这里写，所以「到点没」这件事只有一个来源。
+UPDATE mail_accounts
+   SET status_checked_at = now()
+ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+   AND id = sqlc.arg(id)::bigint;
+
+-- name: HighestSyncedUID :one
+-- 我们已经取到这个信箱这个文件夹的哪一封了。
+--
+-- 拿它和服务器回的 UIDNEXT 比：UIDNEXT 超过 last_uid + 1，就说明有我们
+-- 没取过的信。**这是个精确的比较**，不是估计——UID 在一个 UIDVALIDITY 里
+-- 单调递增，这正是它存在的意义。
+--
+-- 没有这一行（从没同步过）回 0，于是任何 UIDNEXT 都算「有新的」，那也正是
+-- 一个新绑的箱该有的待遇。
+SELECT coalesce(max(last_uid), 0)::bigint
+FROM mail_sync_state
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder = sqlc.arg(folder)::text;
+
+-- name: MailboxIsBeingRead :one
+-- 这个信箱此刻算不算「有人在看」。
+--
+-- 常开连接（IDLE）那一档用它决定要不要继续守着。守着一个没人看的箱，代价
+-- 是一条一直占着的 IMAP 连接和一个 goroutine——300 人一人两箱就是 600 条，
+-- 而其中大部分箱当天根本没人打开过。
+--
+-- IDLE 的用处是「让**正在看**的那个收件箱像是活的」。没人看的时候，两分钟
+-- 一轮的轮询加十分钟一次的轻状态已经够了。
+SELECT (last_read_at IS NOT NULL
+        AND last_read_at > now() - make_interval(secs => sqlc.arg(active_seconds)::int))::bool
+FROM mail_accounts
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;

@@ -49,6 +49,14 @@ type Config struct {
 	// our CPU — a goroutine waiting on a socket costs nothing — but the mail
 	// host's patience and its connection allowances.
 	SyncConcurrency int
+	// 多久没人看就算没人看了。落在窗口里的信箱全量同步、并且享受常开连接；
+	// 其余的只按 SyncStatusEvery 问一条 STATUS。
+	SyncActiveWindow time.Duration
+	// 没人看的信箱多久问一次轻状态。它就是那一档的收信延迟上限。
+	SyncStatusEvery time.Duration
+	// 一轮里最多问多少条轻状态。上限而不是「全问」：到点的箱一起涌进来会
+	// 把有人在等的那一档挤掉。
+	SyncStatusBudget int
 	// Establishing a TCP connection is a different kind of wait from running
 	// a command, and giving them one number means the sync waits a command's
 	// worth of patience for a host that is simply not answering.
@@ -108,6 +116,9 @@ func Load() Config {
 		SyncTimeout:         envDuration("MAIL_SYNC_TIMEOUT", 90*time.Second),
 		SyncBatch:           envInt("MAIL_SYNC_BATCH", 50),
 		SyncConcurrency:     envInt("MAIL_SYNC_CONCURRENCY", 8),
+		SyncActiveWindow:    envDuration("MAIL_SYNC_ACTIVE_WINDOW", 30*time.Minute),
+		SyncStatusEvery:     envDuration("MAIL_SYNC_STATUS_EVERY", 10*time.Minute),
+		SyncStatusBudget:    envInt("MAIL_SYNC_STATUS_BUDGET", 150),
 		DialTimeout:         envDuration("MAIL_DIAL_TIMEOUT", 10*time.Second),
 		SyncHistory:         envInt("MAIL_SYNC_HISTORY", 500),
 		RedisAddr:           os.Getenv("REDIS_ADDR"),

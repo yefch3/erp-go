@@ -179,6 +179,9 @@ func run(log *slog.Logger) error {
 			HistoryCap:    int64(cfg.SyncHistory),
 			Concurrency:   cfg.SyncConcurrency,
 			PublicBaseURL: cfg.PublicBaseURL,
+			ActiveWindow:  cfg.SyncActiveWindow,
+			StatusEvery:   cfg.SyncStatusEvery,
+			StatusBudget:  cfg.SyncStatusBudget,
 		}
 		// The poller is the historian and the safety net; the idle watchers
 		// are what make new mail arrive in seconds instead of minutes.
