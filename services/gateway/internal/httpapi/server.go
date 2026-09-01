@@ -824,7 +824,10 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:read")).Post("/api/mailbox/verify", s.verifyMailbox)
 		r.With(s.perm("mail:email:read")).Get("/api/oauth/google/start", s.startGoogleOAuth)
 		r.With(s.perm("mail:email:read")).Get("/api/mailbox/lock-status", s.mailLockStatus)
+		// 退出**当前这一个**信箱：撤掉请求头里那把令牌，别的箱照开。
 		r.With(s.perm("mail:email:read")).Post("/api/mailbox/lock", s.lockMailbox)
+		// 全部退出：共用电脑走人时用。浏览器把手上所有令牌报上来一起撤。
+		r.With(s.perm("mail:email:read")).Post("/api/mailbox/lock-all", s.lockAllMailboxes)
 		// 读，不写凭据。**存邮箱凭据的路只有一条**：/api/mailbox/verify，
 		// 而它要先拿这一对去邮件服务器真的登录一次，成功了才落库。
 		//

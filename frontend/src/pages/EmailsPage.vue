@@ -31,16 +31,29 @@
            收件箱：两个箱同时收到同一条会话时那是两行，合成一行的话
            「这封信该从哪个箱回」就答不上来了。 -->
       <MailboxSwitcher
+        ref="switcher"
         v-model="currentAccount"
         :can-add="canWrite"
         @changed="onMailboxesChanged"
       />
 
       <span class="rail-grow" />
-      <!-- Locks the mailbox, not the ERP: the token dies server-side, so the
-           next visitor to this workstation faces the gate again. -->
+      <!-- 退出的是邮箱，不是 ERP：令牌在服务端就死了，所以下一个坐到这台
+           机器前的人会重新遇到那道门。
+
+           **一个一个退。** 从前只有一个按钮而且是全退——那时令牌一个人只有
+           一把，撤了就什么都没了。现在退掉当前这个箱，别的箱照开；走人时
+           用旁边那个「全部退出」。 -->
       <el-button link class="rail-lock" @click="lockMailbox">
         🔒 {{ t('mailGate.signOut') }}
+      </el-button>
+      <el-button
+        v-if="mailboxes.length > 1"
+        link
+        class="rail-lock"
+        @click="lockAllMailboxes"
+      >
+        🔒 {{ t('mailGate.signOutAll') }}
       </el-button>
       <!-- Beside 退出邮箱 and 邮箱设置 rather than in a settings page of its
            own: a signature is part of writing mail, not a system setting. -->
@@ -1080,6 +1093,14 @@ import MailReader, { type Mail } from '../components/MailReader.vue'
 import MailAttachments, { type MailFile } from '../components/MailAttachments.vue'
 import MailboxGate from '../components/MailboxGate.vue'
 import MailboxSwitcher from '../components/MailboxSwitcher.vue'
+import {
+  allTokens,
+  clearAll,
+  forgetMailbox,
+  type MintedToken,
+  saveTokens,
+  useMailbox,
+} from '../lib/mailUnlock'
 import MailHostDialog from '../components/MailHostDialog.vue'
 import MailSignatureDialog from '../components/MailSignatureDialog.vue'
 import MailTemplatesDialog from '../components/MailTemplatesDialog.vue'
@@ -1335,6 +1356,9 @@ const emptying = ref(false)
 const syncError = ref('')
 // 当前在看哪个信箱。0 = 全部（还没绑过，或者只有一个）。
 const currentAccount = ref(0)
+// 这个人名下的信箱清单。退出一个之后要知道还剩哪些，好切过去。
+const mailboxes = ref<{ id: number; email: string; isDefault: boolean }[]>([])
+const switcher = ref<{ reload: () => Promise<void> } | null>(null)
 // **我的全部地址**，不是一个。一封信的发件人是其中任何一个，它就是"我发出"
 // 的——哪怕它是从收件箱里进来的（发给自己的信）。
 //
@@ -1349,6 +1373,7 @@ function isOwnMail(it: { direction: string; counterparty: string }) {
 
 // 信箱清单变了（切换器加载完、新绑了一个、换了默认）。
 function onMailboxesChanged(boxes: { id: number; email: string; isDefault: boolean }[]) {
+  mailboxes.value = boxes
   myAddresses.value = new Set(boxes.map((b) => b.email.trim().toLowerCase()).filter(Boolean))
   if (currentAccount.value || !boxes.length) return
   // 还没选过就落在默认那个上——服务端按「默认排最前」返回，所以取第一个。
@@ -1670,8 +1695,15 @@ onMounted(async () => {
           { secret: '', email: boundEmail },
           mailHostRequest,
         )
-        const data = resp.data.data as { token: string; accountId?: number }
-        localStorage.setItem('mailUnlock', data.token)
+        const data = resp.data.data as {
+          token: string
+          accountId?: number
+          tokens?: MintedToken[]
+        }
+        saveTokens(data.tokens ?? [])
+        if (!(data.accountId && useMailbox(data.accountId))) {
+          localStorage.setItem('mailUnlock', data.token)
+        }
         // 刚绑的那个箱直接切过去：人刚在 Google 上挑完账号，想看的就是它。
         if (data.accountId) currentAccount.value = Number(data.accountId)
         // Said only once the person is actually through. Announcing the
@@ -1727,13 +1759,37 @@ function onMailLocked() {
 window.addEventListener('mail-locked', onMailLocked)
 onUnmounted(() => window.removeEventListener('mail-locked', onMailLocked))
 
+// 退出**当前这一个**信箱。别的箱照开。
+//
+// 从前是全退，因为令牌一个人只有一把。现在一个箱一把，撤掉当前这把之后
+// 手上还有别的箱的——所以退完不是弹登录门，而是切到剩下的任意一个箱。
+// 一把都不剩了才是真的退出，那时门才该出来。
 async function lockMailbox() {
+  const leaving = currentAccount.value
   try {
     await post('/mailbox/lock')
   } finally {
-    // Locked locally regardless: a failed revoke call must not leave the
-    // screen open while the person walks away believing it is shut.
-    localStorage.removeItem('mailUnlock')
+    // 不管服务端那一下成没成，本地都当它退了：撤销失败却把屏幕开着，
+    // 而人已经以为关掉走开了，是这两者里更糟的那个。
+    forgetMailbox(leaving)
+    const rest = mailboxes.value.filter((b) => b.id !== leaving)
+    if (rest.length && useMailbox(rest[0].id)) {
+      currentAccount.value = rest[0].id
+      ElMessage.success(t('mailGate.signedOutOne'))
+      switcher.value?.reload()
+      load()
+    } else {
+      locked.value = true
+    }
+  }
+}
+
+// 全部退出：手上每一把都报给服务端撤掉。共用电脑走人时用的那一个。
+async function lockAllMailboxes() {
+  try {
+    await post('/mailbox/lock-all', { tokens: allTokens() })
+  } finally {
+    clearAll()
     locked.value = true
   }
 }
@@ -1897,6 +1953,15 @@ function reload() {
 // 一个属于**上一个箱**的游标，然后拿它去翻当前这个箱。
 watch(currentAccount, (now, before) => {
   if (!before || now === before) return
+  // 换一把令牌。**必须在发请求之前**——令牌决定服务端给你看哪个箱
+  // （见网关 requireMailUnlock），带着旧箱那把去拉新箱的列表，拿回来的
+  // 还是旧箱的信。
+  //
+  // 没有这个箱的令牌 = 刚把它退出过。那时门要重新出来，只针对这个箱。
+  if (!useMailbox(now)) {
+    locked.value = true
+    return
+  }
   keyword.value = ''
   pushState({ page: 1, q: '', mail: '', cursor: '', acct: String(now) }, [])
   refreshUnread()
