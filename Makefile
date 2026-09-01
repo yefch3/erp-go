@@ -132,6 +132,10 @@ lint: ## golangci-lint over every module
 		(cd "$$mod" && go run github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT) run ./...) || exit 1; \
 	done
 
+.PHONY: check-compose-env
+check-compose-env: ## 生产 compose 的必填变量清单不能悄悄变长
+	sh scripts/check-compose-env.sh
+
 .PHONY: check-tenant
 check-tenant: ## Verify every migration table carries tenant_id
 	sh scripts/check-tenant-id.sh
@@ -185,7 +189,7 @@ frontend-ci: ## Type-check and build the frontend, and run its unit tests
 # Prerequisites run in the order written, cheapest first, so a stale gen/ or
 # a missed tenant_id fails in seconds, not after the full test suite.
 .PHONY: ci
-ci: proto-check sqlc-check check-tenant check-tenant-seeds check-iam-seeds check-migration-safety check-mail-sandbox check-duplicate-routes frontend-ci test-integration lint ## Everything CI runs (needs `make up` + `make migrate` first)
+ci: proto-check sqlc-check check-tenant check-tenant-seeds check-iam-seeds check-migration-safety check-mail-sandbox check-duplicate-routes check-compose-env frontend-ci test-integration lint ## Everything CI runs (needs `make up` + `make migrate` first)
 	@echo "ci: all checks passed"
 
 .PHONY: sqlc

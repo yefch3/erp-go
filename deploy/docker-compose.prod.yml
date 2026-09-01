@@ -10,8 +10,16 @@
 #
 # The base file keeps its build: sections and its hardcoded dev values for
 # development; this overlay replaces exactly the set a production box may
-# not run with. Everything here is ${VAR:?} on purpose: a production deploy
-# missing one of these must fail loudly at compose time, not at runtime.
+# not run with.
+#
+# ${VAR:?} 是给「部署那台机器才知道的值」用的：数据库连接串、对象存储的
+# 密钥、镜像 SHA。少一个必须在 compose 阶段就大声失败，而不是等到运行时。
+#
+# **但它只该用在那一类值上。** 一个 compose 网络里的服务名（kafka:9092）
+# 标成必填，换来的是部署停在插值那一步——早于拉镜像、早于迁库，什么都没
+# 换，而 healthz 照常回上一个好版本。外面看一切正常，只是从那一刻起再也
+# 发不上去。2026-09-01 就是这么连着四次没人发现的。
+# scripts/check-compose-env.sh 现在盯着这份清单。
 # See docs/DEPLOY-PIPELINE.md and docs/DEPLOY.md 三.
 #
 # MINIO_USE_SSL is the string "true", not "1" — the services compare
@@ -91,7 +99,17 @@ services:
     image: ghcr.io/yefch3/erp-go/shipping:${ERP_SHA}
     environment:
       DB_DSN: ${SHIPPING_DB_DSN:?set in deploy/.env}
-      KAFKA_BROKERS: ${KAFKA_BROKERS:?set in deploy/.env}
+      # KAFKA_BROKERS **刻意不在这里覆盖**。
+      #
+      # 基础的 services.yml 已经给五个用 Kafka 的服务都写死了 kafka:9092——
+      # 那是 compose 网络里的服务名，不是一个部署时才知道的值，所以它不属于
+      # .env。另外四个（approval / inventory / procurement / export）都是这么
+      # 拿的，shipping 也一样。
+      #
+      # 曾经这里有一行把 KAFKA_BROKERS 标成必填的覆盖。它让 compose 在
+      # **插值阶段**就失败——早于拉镜像、早于迁库，所以整条部署停在第一步，
+      # 而 healthz 照常回旧版本：线上一切正常，只是从那一刻起再也发不上去。
+      # 连着四次部署都是这么失败的，没人发现，因为「没上线」不长在任何页面上。
       CONTRACT_TOPIC: ${CONTRACT_TOPIC:-erp.export.contract.v1}
       CONTRACT_CONSUMER_GROUP: ${SHIPPING_CONTRACT_CONSUMER_GROUP:-shipping.contract.v1}
       # shipping stores files too (拖车单等) — missed on the first pass and
