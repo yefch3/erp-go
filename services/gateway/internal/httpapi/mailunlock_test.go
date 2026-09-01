@@ -110,8 +110,11 @@ func checkOK(_ int64, ok bool) bool { return ok }
 // 拆到箱这一级之后，两件事要同时成立：
 //
 //	· 退出 A，B 不受影响（这条测试的主张）
-//	· 切到 B 不用重新输密码（靠验证时一次性把每个箱的令牌都发下来，
-//	  见 verifyMailbox；这里验的是"发下来的这些互相独立"）
+//	· 每把令牌只开自己那个箱（这里验的是"两把互相独立"）
+//
+// 2026-09-01 之前这里还写着「切到 B 不用重新输密码，靠验证时一次性把每个箱
+// 的令牌都发下来」。那条口径被推翻了：一次验证只开刚验过的那一个箱，切到
+// 没解锁过的箱会弹一次门。见 verifyMailbox 里那段注释。
 func TestSigningOutOfOneMailboxLeavesTheOthersOpen(t *testing.T) {
 	addr := os.Getenv("GATEWAY_TEST_REDIS")
 	if addr == "" {

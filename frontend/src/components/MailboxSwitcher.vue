@@ -205,9 +205,21 @@ defineExpose({ reload: load })
 </script>
 
 <style scoped>
+/* **左边界和上面的文件夹列表对齐。**
+
+   从前这一块外面套着 padding: 0 12px，而里面每行的 .mbox 又有自己的 8px，
+   于是那排信箱的圆点落在 20px 上，而文件夹的图标在 12px——一条栏里三个
+   左边界（写邮件 0 / 文件夹 12 / 信箱 20），看着就是没对齐。
+
+   现在外层不缩进，由 .mbox 自己给 12px，和 .folder 一样；行的高亮底色也
+   因此和文件夹的胶囊一样通栏，而不是缩在里面窄一圈。 */
 .rail-scope {
   margin-top: 22px;
-  padding: 0 12px;
+}
+/* 标题和「添加邮箱」不是行，没有自己的内边距，单独补齐这 12px。 */
+.rail-scope > .rail-label,
+.rail-scope > .mbox-add {
+  padding-left: 12px;
 }
 .rail-label {
   margin-bottom: 6px;
@@ -235,7 +247,8 @@ defineExpose({ reload: load })
   gap: 6px;
   flex: 1;
   min-width: 0;
-  padding: 6px 8px;
+  /* 左 12px 和 .folder 对齐；右边留 4px，动作区自己有 26px 的格子。 */
+  padding: 6px 4px 6px 12px;
   border: none;
   border-radius: 6px;
   background: transparent;

@@ -4358,6 +4358,9 @@ async function doUnsuppress(row: Suppression) {
   display: flex;
   width: fit-content;
   margin: 8px 0 0;
+  /* 和文件夹、信箱那两块同一条左边界（12px）。不补的话它们贴着栏的最左边，
+     而上面所有东西都缩进 12px——一条栏里两个左边界。 */
+  padding-left: 12px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }

@@ -57,7 +57,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { get, http, mailHostRequest, quietErrors } from '../api'
 import { useAuthStore } from '../stores/auth'
@@ -87,21 +87,40 @@ const googleBusy = ref(false)
 const error = ref('')
 
 
-onMounted(async () => {
-  // Show whose mailbox is being asked about — typing a code into an
-  // anonymous prompt is how people type it into the wrong place.
-  try {
-    const d = await get<{ account: { email: string; username: string; authKind: string } }>(
-      '/my-mail-account',
-      props.accountId ? { accountId: props.accountId } : undefined,
-    )
-    account.email = d.account?.email ?? ''
-    account.username = d.account?.username ?? ''
-    account.authKind = d.account?.authKind ?? ''
-  } catch {
-    /* the gate still works without the label */
-  }
-})
+// 门上写的是**此刻要开的那个箱**，而不是这道门刚出现时的那个。
+//
+// 从前这里是 onMounted：门一挂上就问一次，之后再也不问。而门在锁着的时候
+// **一直挂着不重建**——全部退出之后点左栏另一个箱，currentAccount 变了，
+// 门上的地址纹丝不动。
+//
+// 后果不只是标签不对：那个地址会被当成「要授权哪个 Google 账号」的提示，
+// 于是人在 Google 上挑了自己真正要开的那个，回来被一句
+// 「你授权的是 A，但这一步要授权的是 B」挡下来——而 B 正是门上那个过期的名字。
+//
+// watch + immediate 而不是 onMounted：挂上时问一次，之后每次换箱再问。
+watch(
+  () => props.accountId,
+  async () => {
+    // 先清空。上一个箱的地址留在屏幕上直到新的回来，比空着更糟——那几百
+    // 毫秒里门上写着一个错的名字，而人正要往里填授权码。
+    account.email = ''
+    account.username = ''
+    account.authKind = ''
+    error.value = ''
+    try {
+      const d = await get<{ account: { email: string; username: string; authKind: string } }>(
+        '/my-mail-account',
+        props.accountId ? { accountId: props.accountId } : undefined,
+      )
+      account.email = d.account?.email ?? ''
+      account.username = d.account?.username ?? ''
+      account.authKind = d.account?.authKind ?? ''
+    } catch {
+      /* the gate still works without the label */
+    }
+  },
+  { immediate: true },
+)
 
 
 // A full-page departure, not a popup: popups get blocked, and Google's page
