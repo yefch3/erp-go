@@ -139,7 +139,10 @@ func (s *Service) RequirementsFromContract(ctx context.Context, tenantID int64, 
 }
 
 func applyContractProcurementSnapshot(e ContractEffective, line ContractLine, qty string, snapshot store.ListContractProcurementSnapshotsRow, params *store.UpsertRequirementParams) error {
-	if snapshot.ProductName != line.ProductName || snapshot.ConfirmedQty != qty || snapshot.UomCode != line.UomCode {
+	confirmedQty, confirmedQtyErr := decimal.NewFromString(snapshot.ConfirmedQty)
+	contractQty, contractQtyErr := decimal.NewFromString(qty)
+	quantityMatches := confirmedQtyErr == nil && contractQtyErr == nil && confirmedQty.Equal(contractQty)
+	if snapshot.ProductName != line.ProductName || !quantityMatches || snapshot.UomCode != line.UomCode {
 		return fmt.Errorf("contract %s line %d does not match frozen customer selection item %d", e.ContractNo, line.LineNo, snapshot.SelectionItemID)
 	}
 	params.Source = "CUSTOMER_QUOTATION"

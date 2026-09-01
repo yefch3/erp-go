@@ -26,6 +26,29 @@ func TestApplyContractProcurementSnapshotAssignsOriginalBuyerAndFinalTerms(t *te
 	}
 }
 
+func TestApplyContractProcurementSnapshotAcceptsEquivalentDecimalScales(t *testing.T) {
+	event := ContractEffective{ContractNo: "CT-1"}
+	line := ContractLine{LineNo: 1, ProductName: "冷轧钢卷", UomCode: "TON"}
+	snapshot := store.ListContractProcurementSnapshotsRow{
+		SelectionItemID: 7, ProductName: "冷轧钢卷", ConfirmedQty: "200.0000", UomCode: "TON",
+	}
+
+	if err := applyContractProcurementSnapshot(event, line, "200", snapshot, &store.UpsertRequirementParams{}); err != nil {
+		t.Fatalf("equivalent decimal quantities must match: %v", err)
+	}
+}
+
+func TestApplyContractProcurementSnapshotRejectsNumericallyDifferentQuantity(t *testing.T) {
+	err := applyContractProcurementSnapshot(
+		ContractEffective{ContractNo: "CT-1"}, ContractLine{LineNo: 1, ProductName: "冷轧钢卷", UomCode: "TON"}, "200.0001",
+		store.ListContractProcurementSnapshotsRow{SelectionItemID: 7, ProductName: "冷轧钢卷", ConfirmedQty: "200.0000", UomCode: "TON"},
+		&store.UpsertRequirementParams{},
+	)
+	if err == nil {
+		t.Fatal("expected numerically different quantities to be rejected")
+	}
+}
+
 func TestApplyContractProcurementSnapshotRejectsMismatchedLine(t *testing.T) {
 	err := applyContractProcurementSnapshot(
 		ContractEffective{ContractNo: "CT-1"}, ContractLine{LineNo: 1, ProductName: "A", UomCode: "TON"}, "10",

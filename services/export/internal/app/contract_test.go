@@ -1,12 +1,21 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/services/export/internal/store"
 )
+
+func TestSignContractRejectsConditionsThatNeedUpdateBeforeActivation(t *testing.T) {
+	service := &Service{}
+	_, err := service.SignContract(context.Background(), 1, 7, "NEEDS_UPDATE", "2026-09-01T13:00:00Z", "price expired", Operator{})
+	if got := apierr.CodeFromError(err); got != "EX_CONTRACT_CONDITIONS_NEED_UPDATE" {
+		t.Fatalf("code = %q, want EX_CONTRACT_CONDITIONS_NEED_UPDATE (err=%v)", got, err)
+	}
+}
 
 func view(contractStatus, versionStatus, deliveryDate string, lines int) ContractView {
 	items := make([]store.ListContractItemsRow, lines)

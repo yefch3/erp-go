@@ -1485,12 +1485,26 @@ async function submit(row: { id: string }) {
 }
 
 async function sign(row: { id: string }) {
+	try {
+		await ElMessageBox.confirm(t('contracts.conditionStatusPrompt'), t('contracts.sign'), {
+			type: 'warning', distinguishCancelAndClose: true,
+			confirmButtonText: t('contracts.confirmConditionsAndSign'),
+			cancelButtonText: t('contracts.conditionsNeedUpdate'),
+		})
+	} catch (action) {
+		if (action === 'cancel') {
+			ElMessage.warning(t('contracts.conditionsNeedUpdateBlocked'))
+			return
+		}
+		throw action
+	}
   const confirmation = await ElMessageBox.prompt(t('contracts.conditionConfirmationPrompt'), t('contracts.sign'), {
     type: 'warning', inputPlaceholder: t('contracts.conditionConfirmationPlaceholder'),
     inputValidator: (value: string) => !!value.trim() || t('contracts.conditionConfirmationRequired'),
     confirmButtonText: t('contracts.confirmConditionsAndSign'), cancelButtonText: t('common.cancel'),
   })
   await post(`/contracts/${row.id}/sign`, {
+		condition_status: 'VALID',
     condition_confirmed_at: new Date().toISOString(),
     condition_confirmation_note: confirmation.value.trim(),
   })

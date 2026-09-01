@@ -370,6 +370,27 @@ ON CONFLICT (tenant_id, outbound_no, contract_item_id) DO NOTHING;
 -- produces: it means the contract was reduced after goods had already
 -- shipped. No automatic rule gets that right, so it is surfaced rather than
 -- clamped to zero and quietly forgotten.
+WITH current_items AS (
+    SELECT i.*,
+           CASE WHEN i.product_id = 0 THEN i.product_name ELSE '' END AS fallback_product_name,
+           CASE WHEN i.product_id = 0 THEN i.uom_code ELSE '' END AS fallback_uom_code
+    FROM contract_items i
+    WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
+      AND i.contract_version_id = sqlc.arg(contract_version_id)::bigint
+), shipped AS (
+    SELECT cs.product_id, coalesce(cs.sku_id, 0) AS sku_id,
+           CASE WHEN cs.product_id = 0 THEN ci.product_name ELSE '' END AS fallback_product_name,
+           CASE WHEN cs.product_id = 0 THEN ci.uom_code ELSE '' END AS fallback_uom_code,
+           sum(cs.qty) AS shipped
+    FROM contract_shipments cs
+    LEFT JOIN contract_items ci
+      ON ci.tenant_id = cs.tenant_id AND ci.id = cs.contract_item_id
+    WHERE cs.tenant_id = sqlc.arg(tenant_id)::bigint
+      AND cs.contract_id = sqlc.arg(contract_id)::bigint
+    GROUP BY cs.product_id, coalesce(cs.sku_id, 0),
+             CASE WHEN cs.product_id = 0 THEN ci.product_name ELSE '' END,
+             CASE WHEN cs.product_id = 0 THEN ci.uom_code ELSE '' END
+)
 SELECT
     min(i.line_no)::int         AS line_no,
     i.product_id,
@@ -380,17 +401,13 @@ SELECT
     sum(i.qty)::text            AS qty,
     coalesce(max(sh.shipped), 0)::text AS shipped_qty,
     (sum(i.qty) - coalesce(max(sh.shipped), 0))::text AS remaining_qty
-FROM contract_items i
-LEFT JOIN (
-    SELECT product_id, coalesce(sku_id, 0) AS sku_id, sum(qty) AS shipped
-    FROM contract_shipments
-    WHERE tenant_id = sqlc.arg(tenant_id)::bigint
-      AND contract_id = sqlc.arg(contract_id)::bigint
-    GROUP BY product_id, coalesce(sku_id, 0)
-) sh ON sh.product_id = i.product_id AND sh.sku_id = coalesce(i.sku_id, 0)
-WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
-  AND i.contract_version_id = sqlc.arg(contract_version_id)::bigint
-GROUP BY i.product_id, coalesce(i.sku_id, 0)
+FROM current_items i
+LEFT JOIN shipped sh
+  ON sh.product_id = i.product_id
+ AND sh.sku_id = coalesce(i.sku_id, 0)
+ AND sh.fallback_product_name = i.fallback_product_name
+ AND sh.fallback_uom_code = i.fallback_uom_code
+GROUP BY i.product_id, coalesce(i.sku_id, 0), i.fallback_product_name, i.fallback_uom_code
 ORDER BY min(i.line_no);
 
 -- name: ShipmentsOfContract :many
@@ -440,18 +457,32 @@ LEFT JOIN LATERAL (
     -- 25000.00000000000000000000；两位与合同金额、已收款同一个刻度。
     SELECT round(sum(sh.shipped * li.unit_price), 2) AS shipped_amount
     FROM (
-        SELECT product_id, coalesce(sku_id, 0) AS sku_id, sum(qty) AS shipped
-        FROM contract_shipments
-        WHERE tenant_id = c.tenant_id AND contract_id = c.id
-        GROUP BY product_id, coalesce(sku_id, 0)
+        SELECT cs.product_id, coalesce(cs.sku_id, 0) AS sku_id,
+               CASE WHEN cs.product_id = 0 THEN ci.product_name ELSE '' END AS fallback_product_name,
+               CASE WHEN cs.product_id = 0 THEN ci.uom_code ELSE '' END AS fallback_uom_code,
+               sum(cs.qty) AS shipped
+        FROM contract_shipments cs
+        LEFT JOIN contract_items ci
+          ON ci.tenant_id = cs.tenant_id AND ci.id = cs.contract_item_id
+        WHERE cs.tenant_id = c.tenant_id AND cs.contract_id = c.id
+        GROUP BY cs.product_id, coalesce(cs.sku_id, 0),
+                 CASE WHEN cs.product_id = 0 THEN ci.product_name ELSE '' END,
+                 CASE WHEN cs.product_id = 0 THEN ci.uom_code ELSE '' END
     ) sh
     JOIN (
         SELECT product_id, coalesce(sku_id, 0) AS sku_id,
+               CASE WHEN product_id = 0 THEN product_name ELSE '' END AS fallback_product_name,
+               CASE WHEN product_id = 0 THEN uom_code ELSE '' END AS fallback_uom_code,
                CASE WHEN sum(qty) > 0 THEN sum(amount) / sum(qty) ELSE 0 END AS unit_price
         FROM contract_items
         WHERE tenant_id = c.tenant_id AND contract_version_id = c.current_version_id
-        GROUP BY product_id, coalesce(sku_id, 0)
-    ) li ON li.product_id = sh.product_id AND li.sku_id = sh.sku_id
+        GROUP BY product_id, coalesce(sku_id, 0),
+                 CASE WHEN product_id = 0 THEN product_name ELSE '' END,
+                 CASE WHEN product_id = 0 THEN uom_code ELSE '' END
+    ) li ON li.product_id = sh.product_id
+        AND li.sku_id = sh.sku_id
+        AND li.fallback_product_name = sh.fallback_product_name
+        AND li.fallback_uom_code = sh.fallback_uom_code
 ) s ON true
 LEFT JOIN (
     SELECT contract_id, sum(amount + fee_amount) AS received

@@ -648,18 +648,32 @@ LEFT JOIN LATERAL (
     -- 25000.00000000000000000000；两位与合同金额、已收款同一个刻度。
     SELECT round(sum(sh.shipped * li.unit_price), 2) AS shipped_amount
     FROM (
-        SELECT product_id, coalesce(sku_id, 0) AS sku_id, sum(qty) AS shipped
-        FROM contract_shipments
-        WHERE tenant_id = c.tenant_id AND contract_id = c.id
-        GROUP BY product_id, coalesce(sku_id, 0)
+        SELECT cs.product_id, coalesce(cs.sku_id, 0) AS sku_id,
+               CASE WHEN cs.product_id = 0 THEN ci.product_name ELSE '' END AS fallback_product_name,
+               CASE WHEN cs.product_id = 0 THEN ci.uom_code ELSE '' END AS fallback_uom_code,
+               sum(cs.qty) AS shipped
+        FROM contract_shipments cs
+        LEFT JOIN contract_items ci
+          ON ci.tenant_id = cs.tenant_id AND ci.id = cs.contract_item_id
+        WHERE cs.tenant_id = c.tenant_id AND cs.contract_id = c.id
+        GROUP BY cs.product_id, coalesce(cs.sku_id, 0),
+                 CASE WHEN cs.product_id = 0 THEN ci.product_name ELSE '' END,
+                 CASE WHEN cs.product_id = 0 THEN ci.uom_code ELSE '' END
     ) sh
     JOIN (
         SELECT product_id, coalesce(sku_id, 0) AS sku_id,
+               CASE WHEN product_id = 0 THEN product_name ELSE '' END AS fallback_product_name,
+               CASE WHEN product_id = 0 THEN uom_code ELSE '' END AS fallback_uom_code,
                CASE WHEN sum(qty) > 0 THEN sum(amount) / sum(qty) ELSE 0 END AS unit_price
         FROM contract_items
         WHERE tenant_id = c.tenant_id AND contract_version_id = c.current_version_id
-        GROUP BY product_id, coalesce(sku_id, 0)
-    ) li ON li.product_id = sh.product_id AND li.sku_id = sh.sku_id
+        GROUP BY product_id, coalesce(sku_id, 0),
+                 CASE WHEN product_id = 0 THEN product_name ELSE '' END,
+                 CASE WHEN product_id = 0 THEN uom_code ELSE '' END
+    ) li ON li.product_id = sh.product_id
+        AND li.sku_id = sh.sku_id
+        AND li.fallback_product_name = sh.fallback_product_name
+        AND li.fallback_uom_code = sh.fallback_uom_code
 ) s ON true
 LEFT JOIN (
     SELECT contract_id, sum(amount + fee_amount) AS received
@@ -1446,6 +1460,27 @@ func (q *Queries) SetContractVersionStatus(ctx context.Context, arg SetContractV
 }
 
 const shipmentProgressOf = `-- name: ShipmentProgressOf :many
+WITH current_items AS (
+    SELECT i.id, i.tenant_id, i.contract_version_id, i.line_no, i.product_id, i.sku_id, i.product_code, i.product_name, i.spec, i.qty, i.uom_id, i.uom_code, i.unit_price, i.amount, i.hs_code, i.remark,
+           CASE WHEN i.product_id = 0 THEN i.product_name ELSE '' END AS fallback_product_name,
+           CASE WHEN i.product_id = 0 THEN i.uom_code ELSE '' END AS fallback_uom_code
+    FROM contract_items i
+    WHERE i.tenant_id = $1::bigint
+      AND i.contract_version_id = $2::bigint
+), shipped AS (
+    SELECT cs.product_id, coalesce(cs.sku_id, 0) AS sku_id,
+           CASE WHEN cs.product_id = 0 THEN ci.product_name ELSE '' END AS fallback_product_name,
+           CASE WHEN cs.product_id = 0 THEN ci.uom_code ELSE '' END AS fallback_uom_code,
+           sum(cs.qty) AS shipped
+    FROM contract_shipments cs
+    LEFT JOIN contract_items ci
+      ON ci.tenant_id = cs.tenant_id AND ci.id = cs.contract_item_id
+    WHERE cs.tenant_id = $1::bigint
+      AND cs.contract_id = $3::bigint
+    GROUP BY cs.product_id, coalesce(cs.sku_id, 0),
+             CASE WHEN cs.product_id = 0 THEN ci.product_name ELSE '' END,
+             CASE WHEN cs.product_id = 0 THEN ci.uom_code ELSE '' END
+)
 SELECT
     min(i.line_no)::int         AS line_no,
     i.product_id,
@@ -1456,24 +1491,20 @@ SELECT
     sum(i.qty)::text            AS qty,
     coalesce(max(sh.shipped), 0)::text AS shipped_qty,
     (sum(i.qty) - coalesce(max(sh.shipped), 0))::text AS remaining_qty
-FROM contract_items i
-LEFT JOIN (
-    SELECT product_id, coalesce(sku_id, 0) AS sku_id, sum(qty) AS shipped
-    FROM contract_shipments
-    WHERE tenant_id = $1::bigint
-      AND contract_id = $2::bigint
-    GROUP BY product_id, coalesce(sku_id, 0)
-) sh ON sh.product_id = i.product_id AND sh.sku_id = coalesce(i.sku_id, 0)
-WHERE i.tenant_id = $1::bigint
-  AND i.contract_version_id = $3::bigint
-GROUP BY i.product_id, coalesce(i.sku_id, 0)
+FROM current_items i
+LEFT JOIN shipped sh
+  ON sh.product_id = i.product_id
+ AND sh.sku_id = coalesce(i.sku_id, 0)
+ AND sh.fallback_product_name = i.fallback_product_name
+ AND sh.fallback_uom_code = i.fallback_uom_code
+GROUP BY i.product_id, coalesce(i.sku_id, 0), i.fallback_product_name, i.fallback_uom_code
 ORDER BY min(i.line_no)
 `
 
 type ShipmentProgressOfParams struct {
 	TenantID          int64
-	ContractID        int64
 	ContractVersionID int64
+	ContractID        int64
 }
 
 type ShipmentProgressOfRow struct {
@@ -1501,7 +1532,7 @@ type ShipmentProgressOfRow struct {
 // shipped. No automatic rule gets that right, so it is surfaced rather than
 // clamped to zero and quietly forgotten.
 func (q *Queries) ShipmentProgressOf(ctx context.Context, arg ShipmentProgressOfParams) ([]ShipmentProgressOfRow, error) {
-	rows, err := q.db.Query(ctx, shipmentProgressOf, arg.TenantID, arg.ContractID, arg.ContractVersionID)
+	rows, err := q.db.Query(ctx, shipmentProgressOf, arg.TenantID, arg.ContractVersionID, arg.ContractID)
 	if err != nil {
 		return nil, err
 	}
