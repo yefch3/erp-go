@@ -3,6 +3,31 @@
        separate fact worth comparing down the page; a mail row is one sentence
        — who, about what, when — and reading it as a sentence is what lets the
        eye take forty of them in one pass. -->
+  <div class="mail-list-wrap">
+    <!-- 排序栏。不是表头——上面说了这不是表格——只是一行「按什么排」的开关，
+         照着 263 网页邮箱表头上那几个箭头做的：点一列按它排，再点一下反过来。
+         没给 sortFields 的地方（搜索结果）不出现，因为服务端在那儿不接排序。 -->
+    <div
+      v-if="sortFields && sortFields.length"
+      class="sort-bar"
+      role="toolbar"
+      :aria-label="t('emails.sortBar.label')"
+    >
+      <span class="sort-label">{{ t('emails.sortBar.label') }}</span>
+      <button
+        v-for="f in sortFields"
+        :key="f"
+        type="button"
+        class="sort-key"
+        :class="{ on: sort?.by === f }"
+        :aria-pressed="sort?.by === f"
+        :aria-label="sortAria(f)"
+        :title="t('emails.sortBar.hint')"
+        @click="emit('sort', f)"
+      >
+        {{ t(`emails.sortBar.${f}`) }}<span v-if="sort?.by === f" class="dir" aria-hidden="true">{{ sort?.dir === 'asc' ? '↑' : '↓' }}</span>
+      </button>
+    </div>
   <ul v-loading="loading" class="mail-list" role="list">
     <li
       v-for="m in mails"
@@ -123,7 +148,9 @@
       <!-- Time and actions share one cell: the actions appear where the date
            was, so the row does not reflow under the cursor and the next row
            down stays where the eye left it. -->
-      <div class="tail">
+      <div class="tail" :class="{ wide: showSize }">
+        <!-- 按大小排的时候把大小摆出来——否则排了也看不出排了什么。 -->
+        <span v-if="showSize" class="size">{{ humanSize(m.rawSize) }}</span>
         <time class="when" :datetime="m.receivedAt" :title="zonedStamp(m.receivedAt)">{{ listTime(m.receivedAt) }}</time>
         <div class="acts">
           <el-tooltip
@@ -150,11 +177,15 @@
       </div>
     </li>
   </ul>
+  </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { listTime, zonedStamp } from '../lib/zonedtime'
+import { humanSize } from '../lib/humanSize'
+import type { MailSort, SortField } from '../lib/mailSort'
 import {
   Box,
   CircleCheck,
@@ -190,6 +221,8 @@ export interface MailRow {
   // tell "nobody opened it" from "nobody was watching".
   openedAt?: string
   tracked?: boolean
+  // 原件的字节数。只在按大小排的时候显示；服务器没留原件的投递记录是 0。
+  rawSize?: number | string
 }
 
 const props = defineProps<{
@@ -203,6 +236,9 @@ const props = defineProps<{
   // what acts on a selection, and it also has to survive this component being
   // re-rendered by a reload.
   selected?: string[]
+  // 现在按哪一列排，以及这份列表允许按哪几列排。两个都不给就没有排序栏。
+  sort?: MailSort
+  sortFields?: SortField[]
 }>()
 
 const emit = defineEmits<{
@@ -210,10 +246,20 @@ const emit = defineEmits<{
   star: [MailRow]
   mark: [MailRow, Record<string, boolean>]
   purge: [MailRow]
+  sort: [SortField]
   'update:selected': [string[]]
 }>()
 
 const { t } = useI18n()
+
+const showSize = computed(() => props.sort?.by === 'size')
+
+// 读屏器听到的是「大小，降序」，而不是一个箭头。
+function sortAria(f: SortField): string {
+  const name = t(`emails.sortBar.${f}`)
+  if (props.sort?.by !== f) return name
+  return `${name}，${t(props.sort.dir === 'asc' ? 'emails.sortBar.asc' : 'emails.sortBar.desc')}`
+}
 
 function isRecordOnly(m: MailRow) {
   return m.kind === 'ERP'
@@ -505,6 +551,61 @@ function ariaFor(m: MailRow) {
   display: flex;
   justify-content: flex-end;
   align-items: center;
+  gap: 10px;
+}
+/* 带着大小的时候让它宽一点，但别把主题那一列挤没了。 */
+.tail.wide {
+  width: auto;
+  min-width: var(--mail-when-w);
+}
+.size {
+  font-size: var(--mail-meta);
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.unread .size {
+  color: var(--el-text-color-primary);
+}
+
+.sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: var(--mail-row-pad);
+  padding-top: 4px;
+  padding-bottom: 4px;
+  font-size: var(--mail-meta);
+  color: var(--el-text-color-secondary);
+}
+.sort-label {
+  margin-right: 6px;
+}
+.sort-key {
+  border: 0;
+  background: transparent;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: background var(--mail-fast) var(--mail-ease), color var(--mail-fast) var(--mail-ease);
+}
+.sort-key:hover {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+}
+.sort-key:focus-visible {
+  outline: 2px solid var(--el-color-primary-light-5);
+  outline-offset: 1px;
+}
+.sort-key.on {
+  color: var(--el-color-primary);
+  font-weight: 600;
+  background: var(--el-color-primary-light-9);
+}
+.dir {
+  margin-left: 2px;
 }
 .when {
   font-size: var(--mail-meta);
@@ -523,7 +624,9 @@ function ariaFor(m: MailRow) {
   gap: 2px;
 }
 .row:hover .when,
-.row:focus-within .when {
+.row:focus-within .when,
+.row:hover .size,
+.row:focus-within .size {
   display: none;
 }
 .row:hover .acts,

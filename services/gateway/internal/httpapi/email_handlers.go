@@ -720,6 +720,8 @@ func (s *Server) listInbound(w http.ResponseWriter, r *http.Request) {
 		View:      r.URL.Query().Get("view"),
 		Cursor:    r.URL.Query().Get("cursor"),
 		AccountId: acct,
+		SortBy:    r.URL.Query().Get("sort_by"),
+		SortDir:   r.URL.Query().Get("sort_dir"),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -910,6 +912,8 @@ func (s *Server) listMailboxSent(w http.ResponseWriter, r *http.Request) {
 		Keyword:   r.URL.Query().Get("keyword"),
 		Cursor:    r.URL.Query().Get("cursor"),
 		AccountId: unlockedAccount(r.Context()),
+		SortBy:    r.URL.Query().Get("sort_by"),
+		SortDir:   r.URL.Query().Get("sort_dir"),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)

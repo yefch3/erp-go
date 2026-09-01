@@ -840,7 +840,8 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 func (h *Handler) ListInbound(ctx context.Context, req *mailv1.ListInboundRequest) (*mailv1.ListInboundResponse, error) {
 	op := operator(ctx)
 	p, err := h.svc.ListInbound(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId(),
-		req.GetKeyword(), req.GetView(), req.GetCursor(), req.GetPage().GetPageSize())
+		req.GetKeyword(), req.GetView(), req.GetCursor(), req.GetPage().GetPageSize(),
+		app.ListSort{By: req.GetSortBy(), Dir: req.GetSortDir()})
 	if err != nil {
 		return nil, err
 	}
@@ -1084,7 +1085,8 @@ func (h *Handler) SyncMailbox(ctx context.Context, req *mailv1.SyncMailboxReques
 func (h *Handler) ListMailboxSent(ctx context.Context, req *mailv1.ListMailboxSentRequest) (*mailv1.ListMailboxSentResponse, error) {
 	op := operator(ctx)
 	page, err := h.svc.ListMailboxSent(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId(),
-		req.GetKeyword(), req.GetCursor(), req.GetPage().GetPageSize())
+		req.GetKeyword(), req.GetCursor(), req.GetPage().GetPageSize(),
+		app.ListSort{By: req.GetSortBy(), Dir: req.GetSortDir()})
 	if err != nil {
 		return nil, err
 	}
