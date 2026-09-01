@@ -356,3 +356,82 @@ func TestAnArchivedRefIsFreedByRestoringAndEditing(t *testing.T) {
 		t.Errorf("要说清楚号在哪儿被占着，拿到：%v", err)
 	}
 }
+
+// 编辑表单里的归属和附件是真的会保存的。
+//
+// 界面上「改归属」和「传对账单」两个独立按钮撤掉了——那两件事本来就在编辑
+// 表单里。撤按钮之前先得确认表单真的管用：**第一版不管用**，UPDATE 语句里
+// 压根没写 ownership，表单送上去了后端忽略；附件那一路更明显，编辑分支在
+// 上传之前就 return 了。两个都是「送上去了、没生效、不报错」。
+//
+// 归属的规则不走这里的通用比对，走 validateOwnershipChange——和单独改归属
+// 那条路**同一份**。抄一遍的话两套迟早各长各的（比如一边查了核销另一边没查），
+// 而走哪条取决于用户点了哪个按钮。
+func TestEditingSavesOwnershipToo(t *testing.T) {
+	dsn := os.Getenv("PROCUREMENT_TEST_DSN")
+	if dsn == "" {
+		t.Skip("PROCUREMENT_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenantID := time.Now().UnixNano()
+	defer func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM bank_transaction_changes WHERE tenant_id=$1`, tenantID)
+		_, _ = pool.Exec(ctx, `DELETE FROM bank_transactions WHERE tenant_id=$1`, tenantID)
+	}()
+	svc := New(pool, Deps{})
+	op := Operator{ID: 93, Name: "财务小王"}
+
+	in := BankTransactionInput{
+		BankRef: "REF-OWN", Direction: "CREDIT", Amount: "1000.00", Currency: "USD",
+		TxnDate: "2026-08-20", Counterparty: "BUYER",
+	}
+	v, err := svc.RecordBankTransaction(ctx, tenantID, in, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Ownership != "" {
+		t.Fatalf("刚登记时归属该是空的（待处理），拿到 %q", v.Ownership)
+	}
+
+	// 在编辑表单里把归属改成「客户往来」。
+	withOwner := in
+	withOwner.Ownership = OwnershipCustomer
+	if err := svc.UpdateBankTransaction(ctx, tenantID, v.ID, withOwner, "认出来是客户回款", op); err != nil {
+		t.Fatalf("改归属：%v", err)
+	}
+	got, _, err := svc.ListBankTransactions(ctx, tenantID, BankTransactionFilter{}, 1, 10, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Ownership != OwnershipCustomer {
+		t.Fatalf("编辑表单里的归属没保存下来——表单送上去了，后端忽略了，"+
+			"而且不报错。拿到 %+v", got)
+	}
+
+	// 二级分类只跟着「不用核销」走。这条规则住在 validateOwnershipChange
+	// 里，编辑这条路必须也过它——不过的话，同一份数据从两个按钮进来会得到
+	// 两种结果。
+	bad := withOwner
+	bad.OwnershipDetail = "运费"
+	if err := svc.UpdateBankTransaction(ctx, tenantID, v.ID, bad, "试试", op); err == nil {
+		t.Error("归属不是「不用核销」却带着二级分类，编辑这条路放行了——" +
+			"说明它没走和改归属同一份规则")
+	}
+
+	// 已核销到合同的行，编辑表单里也不能把归属改走。同一道闸。
+	if err := svc.SetBankTransactionClaim(ctx, tenantID, v.ID, "500.00", op); err != nil {
+		t.Fatal(err)
+	}
+	moved := in
+	moved.Ownership = OwnershipOther
+	moved.OwnershipDetail = "运费"
+	if err := svc.UpdateBankTransaction(ctx, tenantID, v.ID, moved, "改成不用核销", op); err == nil {
+		t.Error("已核销到合同的行，从编辑表单里把归属改走了——" +
+			"合同上那笔钱就指着一条写着「我不是你那条线上的」的流水")
+	}
+}

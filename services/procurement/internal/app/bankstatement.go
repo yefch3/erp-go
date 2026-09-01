@@ -457,7 +457,15 @@ func (s *Service) MatchBankTransaction(ctx context.Context, tenantID, txnID, pay
 //
 // 银行那一行本身一个字不改——归属是**我们的判断**，和匹配一样可以改、可以
 // 改回空（重新变成待处理）。同「付款是事实、核销是判断」。
-func (s *Service) SetBankTransactionOwnership(ctx context.Context, tenantID, txnID int64, ownership, detail string, op Operator) error {
+// validateOwnershipChange 是「这条流水的归属能不能改成这个」的全部规则。
+//
+// 抽出来是因为它有**两个**调用方：单独改归属那条路，和编辑表单（归属就在
+// 那个表单里）。抄一遍的后果是两套规则各长各的——比如一边查了核销、另一边
+// 没查，而走哪条路取决于用户点了哪个按钮。
+//
+// 全是只读检查，所以调用方可以在事务外先问一遍，再把写和别的改动放进同一个
+// 事务里。
+func (s *Service) validateOwnershipChange(ctx context.Context, tenantID, txnID int64, ownership, detail string) error {
 	ownership = strings.TrimSpace(ownership)
 	detail = strings.TrimSpace(detail)
 	if !validOwnership(ownership) {
@@ -509,6 +517,16 @@ func (s *Service) SetBankTransactionOwnership(ctx context.Context, tenantID, txn
 		matched == 0 && ownership != OwnershipCustomer {
 		return apierr.Conflict("BANK_TXN_OWNERSHIP_ALLOCATED",
 			"这条流水已经核销到出口合同（已核 "+amt.String()+"），要改归属请先在收款对账里冲销")
+	}
+	return nil
+}
+
+func (s *Service) SetBankTransactionOwnership(ctx context.Context, tenantID, txnID int64, ownership, detail string, op Operator) error {
+	ownership = strings.TrimSpace(ownership)
+	detail = strings.TrimSpace(detail)
+	// 规则全在 validateOwnershipChange 里，编辑表单那条路走的是同一份。
+	if err := s.validateOwnershipChange(ctx, tenantID, txnID, ownership, detail); err != nil {
+		return err
 	}
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE bank_transactions SET ownership=$3, ownership_detail=$4

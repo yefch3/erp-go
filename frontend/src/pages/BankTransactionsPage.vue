@@ -149,9 +149,10 @@
                 {{ row.attachmentName || t('bankTransactions.attachment') }}
               </a>
               <span v-else class="none">{{ t('bankTransactions.noAttachment') }}</span>
-              <el-button v-if="canWrite" size="small" link type="primary" :loading="uploadingId === row.id" @click="pickFile(row)">
-                {{ row.attachmentKey ? t('bankTransactions.replaceAttachment') : t('bankTransactions.uploadAttachment') }}
-              </el-button>
+              <!-- 传/换对账单走「编辑」，这里只显示传没传。
+                   编辑那个表单里本来就有附件和归属两项，再在行上各挂一个
+                   按钮，同一件事就有了两个入口——两个入口迟早各自长出一套
+                   规矩（比如一个查了认领状态、另一个没查）。 -->
             </div>
           </template>
         </el-table-column>
@@ -163,17 +164,16 @@
             <div class="match-cell">
               <el-tag v-if="row.matchedPaymentNo" size="small" type="success" effect="plain">{{ row.matchedPaymentNo }}</el-tag>
               <div class="row-actions">
-                <!-- noId 而不是 !row.matchedPaymentId：这个字段是 int64，没值的
-                     时候到浏览器是字符串 "0"，而 "0" 是真值。写成 ! 的那阵子，
-                     「改归属」在任何一行上都不出现。见 lib/protoId.ts。 -->
-                <el-button v-if="canWrite && noId(row.matchedPaymentId)" size="small" link @click="openOwnership(row)">
-                  {{ t('bankTransactions.setOwnership') }}
-                </el-button>
-                <!-- 已匹配的历史行留一个「取消匹配」。新建匹配下线了，但改归属
-                     那道闸遇到已匹配的行会拒绝并让人「先取消匹配」——不给这个
-                     按钮，那些行的归属从此谁也改不了。 -->
+                <!-- 「改归属」并进了编辑——那个表单里本来就有归属这一项。
+                     noId 而不是 !row.matchedPaymentId：这个字段是 int64，没值
+                     时到浏览器是字符串 "0"，而 "0" 是真值。见 lib/protoId.ts。
+
+                     已匹配的历史行留一个「取消匹配」。新建匹配下线了，但改
+                     归属那道闸遇到已匹配的行会拒绝并让人「先取消匹配」——
+                     不给这个按钮，那些行的归属从此谁也改不了。 -->
                 <el-button
-                  v-else-if="canWrite" size="small" link type="danger" @click="unmatch(row)"
+                  v-if="canWrite && !noId(row.matchedPaymentId)"
+                  size="small" link type="danger" @click="unmatch(row)"
                 >{{ t('bankTransactions.unmatch') }}</el-button>
                 <!-- 删是归档：行留着，理由和署名跟着行走。已被认领或已匹配
                      付款单的会被后端拒掉并说清楚先做哪一步。 -->
@@ -205,35 +205,9 @@
         layout="total, prev, pager, next"
         @current-change="load"
       />
-      <input ref="attachInput" type="file" accept="application/pdf,image/*" style="display: none" @change="onAttachPicked" />
     </section>
 
     <!-- 归属：这笔钱归哪条线。选完之后它才谈得上被谁核销。 -->
-    <el-dialog v-model="ownershipOpen" :title="t('bankTransactions.ownershipTitle')" width="min(560px, 94vw)" destroy-on-close>
-      <p v-if="ownershipRow" class="pick-context">
-        {{ ownershipRow.txnDate }} · {{ ownershipRow.currency }} {{ ownershipRow.amount }} ·
-        {{ ownershipRow.counterparty || ownershipRow.bankRef }}
-      </p>
-      <el-radio-group v-model="ownershipForm.ownership" class="ownership-pick">
-        <el-radio value="">{{ t('bankTransactions.ownerships.PENDING') }}</el-radio>
-        <el-radio v-for="k in OWNERSHIPS" :key="k" :value="k">{{ t(`bankTransactions.ownerships.${k}`) }}</el-radio>
-      </el-radio-group>
-      <!-- 二级分类只跟着「不用核销」出现 -->
-      <el-select
-        v-if="ownershipForm.ownership === 'OTHER'"
-        v-model="ownershipForm.detail"
-        style="width: 100%; margin-top: 10px"
-        :placeholder="t('bankTransactions.ownershipDetailPlaceholder')"
-      >
-        <el-option v-for="k in OWNERSHIP_DETAILS" :key="k" :value="k" :label="t(`bankTransactions.ownershipDetails.${k}`)" />
-      </el-select>
-      <el-alert type="info" :closable="false" show-icon style="margin-top: 12px"
-        :title="t('bankTransactions.ownershipHint')" />
-      <template #footer>
-        <el-button @click="ownershipOpen = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="ownershipSaving" @click="saveOwnership">{{ t('common.save') }}</el-button>
-      </template>
-    </el-dialog>
 
     <!-- 我们自己的账户：一张清单加一个新增表单。收款对账页撤掉之后搬来
          这里——账户回答的是「钱进/出我们哪个户头」，是这本账的一部分。 -->
@@ -496,9 +470,6 @@ interface PaymentOpt { id: string; paymentNo: string; supplierName: string; curr
 interface RowError { rowNo: number; reason: string }
 
 const rows = ref<TxnRow[]>([])
-const attachInput = ref<HTMLInputElement | null>(null)
-const attachingRow = ref<TxnRow | null>(null)
-const uploadingId = ref('')
 const loading = ref(false)
 const page = ref(1)
 const total = ref(0)
@@ -696,8 +667,23 @@ async function saveRecord() {
         },
         reason: editReason.value.trim(),
       })
-      ElMessage.success(t('bankTransactions.edited'))
+      // 附件也在这个表单里，所以编辑同样要处理它——原来这里直接 return，
+      // 编辑时选的文件一声不吭地丢了。
+      //
+      // 和登记那边同一个规矩：改动先落地，纸随后，两步分开成败。改对了才
+      // 是要紧的；凭证没传上去可以回头补，不该把整次修改算失败。
+      if (recordFile.value) {
+        try {
+          await uploadStatement(editingId.value, recordFile.value)
+          ElMessage.success(t('bankTransactions.editedWithFile'))
+        } catch {
+          ElMessage.warning(t('bankTransactions.editedFileFailed'))
+        }
+      } else {
+        ElMessage.success(t('bankTransactions.edited'))
+      }
       recordOpen.value = false
+      recordFile.value = null
       await load()
       return
     }
@@ -734,10 +720,6 @@ async function saveRecord() {
   }
 }
 
-const ownershipOpen = ref(false)
-const ownershipSaving = ref(false)
-const ownershipRow = ref<TxnRow | null>(null)
-const ownershipForm = reactive({ ownership: '', detail: '' })
 
 // 删除对话框。理由必填——前端也拦一道，省得人写完一堆字才被后端退回来。
 const deleteRow = ref<TxnRow | null>(null)
@@ -781,31 +763,6 @@ async function restore(row: TxnRow) {
   await load()
 }
 
-function openOwnership(row: TxnRow) {
-  ownershipRow.value = row
-  ownershipForm.ownership = row.ownership || ''
-  ownershipForm.detail = row.ownershipDetail || ''
-  ownershipOpen.value = true
-}
-
-async function saveOwnership() {
-  const row = ownershipRow.value
-  if (!row) return
-  ownershipSaving.value = true
-  try {
-    await post(`/bank-transactions/${row.id}/ownership`, {
-      ownership: ownershipForm.ownership,
-      // 二级分类只跟着「不用核销」走。别的档带着它，后端会拒绝——这里先
-      // 清掉，免得用户切换归属之后被一个看不见的旧值挡住。
-      ownership_detail: ownershipForm.ownership === 'OTHER' ? ownershipForm.detail : '',
-    })
-    ownershipOpen.value = false
-    ElMessage.success(t('bankTransactions.ownershipSaved'))
-    await load()
-  } finally {
-    ownershipSaving.value = false
-  }
-}
 const defaultCurrency = ref('')
 const importing = ref(false)
 // 看活着的还是看已删除的。两者互斥——见模板上那段注释。
@@ -880,29 +837,6 @@ function uploadStatement(txnID: string, file: File) {
   return uploadBankStatement(txnID, file, { post })
 }
 
-function pickFile(row: TxnRow) {
-  attachingRow.value = row
-  attachInput.value?.click()
-}
-
-async function onAttachPicked(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  const row = attachingRow.value
-  if (!file || !row) return
-  uploadingId.value = row.id
-  try {
-    await uploadStatement(row.id, file)
-    ElMessage.success(t('bankTransactions.attachmentUploaded'))
-    void load()
-  } catch {
-    ElMessage.error(t('bankTransactions.attachmentFailed'))
-  } finally {
-    uploadingId.value = ''
-    attachingRow.value = null
-    input.value = ''
-  }
-}
 
 onMounted(load)
 </script>

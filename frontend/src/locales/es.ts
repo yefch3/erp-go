@@ -192,6 +192,8 @@ export default {
     editReasonPlaceholder: 'p. ej. un cero de más; el extracto dice 100',
     editReasonRequired: 'Indica el motivo del cambio',
     edited: 'Guardado; el cambio queda registrado',
+    editedWithFile: 'Guardado; extracto subido',
+    editedFileFailed: 'Cambio guardado, pero el extracto no se subió: vuelve a Editar para reintentar',
     setOwnership: 'Reasignar', ownershipTitle: '¿A qué lado pertenece este dinero?',
     ownershipDetailPlaceholder: 'Elige una categoría',
     ownershipHint: 'No es lo mismo que cargo/abono: la devolución de un proveedor es dinero que ENTRA pero pertenece a Proveedor y se concilia contra un pago de compras. Lo que elijas aquí decide quién puede conciliarlo después.',

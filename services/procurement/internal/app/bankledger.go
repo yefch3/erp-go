@@ -138,8 +138,27 @@ func (s *Service) UpdateBankTransaction(ctx context.Context, tenantID, txnID int
 	if normalized, err := validateBankTransactionInput(before); err == nil {
 		before = normalized
 	}
+	// 归属也在这个表单里。它的规则和别的字段不一样（已匹配的、已核销到
+	// 合同的，各有各的说法），所以走 validateOwnershipChange——**同一份**
+	// 规则，单独改归属那条路走的也是它。抄一遍的话两套迟早各长各的。
+	var beforeOwnership, beforeDetail string
+	if err := s.pool.QueryRow(ctx, `
+		SELECT ownership, ownership_detail FROM bank_transactions
+		 WHERE tenant_id=$1 AND id=$2`, tenantID, txnID).
+		Scan(&beforeOwnership, &beforeDetail); err != nil {
+		return err
+	}
+	newOwnership := strings.TrimSpace(in.Ownership)
+	newDetail := strings.TrimSpace(in.OwnershipDetail)
+	ownershipMoved := newOwnership != beforeOwnership || newDetail != beforeDetail
+	if ownershipMoved {
+		if err := s.validateOwnershipChange(ctx, tenantID, txnID, newOwnership, newDetail); err != nil {
+			return err
+		}
+	}
+
 	changes := bankFieldChanges(before, in)
-	if len(changes) == 0 {
+	if len(changes) == 0 && !ownershipMoved {
 		return nil
 	}
 	// 只要动了会影响账的那几项，就要过认领那道闸。只改备注不受影响。
@@ -168,11 +187,13 @@ func (s *Service) UpdateBankTransaction(ctx context.Context, tenantID, txnID int
 			   SET txn_date=$3::date, direction=$4, amount=$5::numeric, currency=$6,
 			       counterparty=$7, bank_ref=$8, account_id=$9,
 			       counterparty_account=$10, remittance_info=$11,
-			       trusted_ref=$12, note=$13
+			       trusted_ref=$12, note=$13,
+			       ownership=$14, ownership_detail=$15
 			 WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`,
 			tenantID, txnID, in.TxnDate, in.Direction, in.Amount, in.Currency,
 			in.Counterparty, in.BankRef, in.AccountID,
-			in.CounterpartyAccount, in.RemittanceInfo, in.TrustedRef, in.Note)
+			in.CounterpartyAccount, in.RemittanceInfo, in.TrustedRef, in.Note,
+			newOwnership, newDetail)
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
