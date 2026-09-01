@@ -87,6 +87,7 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post } from '../api'
 import MailboxCredentialsForm from './MailboxCredentialsForm.vue'
+import { adoptVerification, type VerifyResponse } from '../lib/mailUnlock'
 
 export interface Mailbox {
   id: number
@@ -100,6 +101,8 @@ const emit = defineEmits<{
   'update:modelValue': [number]
   /** 信箱清单变了（新绑了一个、换了默认），页面要跟着重新取列表。 */
   changed: [Mailbox[]]
+  /** 刚收下一批新令牌。页面据此重算「哪些箱还开着」。 */
+  added: []
 }>()
 
 const { t } = useI18n()
@@ -127,12 +130,17 @@ async function setDefault(b: Mailbox) {
   await load()
 }
 
-async function onAdded(d: { accountId: number; email: string }) {
+async function onAdded(d: VerifyResponse) {
   adding.value = false
+  // **先收令牌，再切过去。** 漏了这一步的表现是：刚添加成功的那个箱，
+  // 一点就弹回邮箱登录页——它确实绑上了，只是浏览器手上没有它那把令牌，
+  // 而切换恰恰是拿令牌换的。
+  const acct = adoptVerification(d)
   ElMessage.success(t('mailGate.addMailboxDone', { email: d.email }))
   await load()
+  emit('added')
   // 绑完直接切过去：人刚填完一个地址，想看的就是它。
-  if (d.accountId) emit('update:modelValue', d.accountId)
+  if (acct) emit('update:modelValue', acct)
 }
 
 defineExpose({ reload: load })

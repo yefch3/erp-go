@@ -58,6 +58,45 @@ export function saveTokens(list: MintedToken[]) {
 }
 
 /**
+ * /api/mailbox/verify 回来的东西。字段名要和网关那边一字不差——
+ * 见 services/gateway/internal/httpapi/mailunlock.go 里 writeUnlockJSON 的
+ * 那张 map，以及 minted 结构体上的 json 标签。verifyResponse.test.ts
+ * 拿 Go 源码对着这份类型逐个核，改名字会红。
+ */
+export interface VerifyResponse {
+  /** 刚验的那个箱那一把。一个箱都没绑的人拿到的是「不限信箱」的通行证。 */
+  token: string
+  /** 这个人**每个箱**各一把。切换靠它，没有它切换就等于重新登录。 */
+  tokens?: MintedToken[]
+  /** 真正绑上/验过的是哪一个。 */
+  accountId?: number | string
+  email?: string
+}
+
+/**
+ * 收下一次验证的结果。
+ *
+ * **必须走这一个函数。** 从前三个调用点各写各的：门那两处存了 tokens，
+ * 而「填授权码」那一处（正式员工唯一走的那条）把 tokens 整个丢了——于是
+ * mailUnlockTokens 那张表一直是空的，切换信箱时 useMailbox 一律返回 false，
+ * 表现是「刚登录成功的第二个箱，一点就弹回登录页」。
+ *
+ * 一件事写在三个地方，坏掉的总是没人看的那一个。
+ *
+ * 返回刚验的那个箱 id，0 表示服务端没说（复验、或者一个箱都没绑）。
+ */
+export function adoptVerification(d: VerifyResponse): number {
+  saveTokens(d.tokens ?? [])
+  const acct = Number(d.accountId ?? 0)
+  // 指向刚验的那个箱。它不在表里（旧后端还没发 tokens）就退回单数那一把，
+  // 那正是换版本之前的行为。
+  if (!(acct && useMailbox(acct)) && d.token) {
+    localStorage.setItem(CURRENT, d.token)
+  }
+  return acct
+}
+
+/**
  * 切到这个信箱：把它那把令牌设成「此刻要发的那一把」。
  *
  * 返回 false 表示手上没有这个箱的令牌——刚退出过它，或者它是验证之后才

@@ -40,6 +40,7 @@
         v-model="currentAccount"
         :can-add="canWrite"
         @changed="onMailboxesChanged"
+        @added="tokensChanged++"
       />
 
       <span class="rail-grow" />
@@ -1106,13 +1107,13 @@ import MailAttachments, { type MailFile } from '../components/MailAttachments.vu
 import MailboxGate from '../components/MailboxGate.vue'
 import MailboxSwitcher from '../components/MailboxSwitcher.vue'
 import {
+  adoptVerification,
   allTokens,
   clearAll,
   forgetMailbox,
   unlockedMailboxes,
-  type MintedToken,
-  saveTokens,
   useMailbox,
+  type VerifyResponse,
 } from '../lib/mailUnlock'
 import MailHostDialog from '../components/MailHostDialog.vue'
 import MailSignatureDialog from '../components/MailSignatureDialog.vue'
@@ -1720,18 +1721,10 @@ onMounted(async () => {
           { secret: '', email: boundEmail },
           mailHostRequest,
         )
-        const data = resp.data.data as {
-          token: string
-          accountId?: number
-          tokens?: MintedToken[]
-        }
-        saveTokens(data.tokens ?? [])
+        const acct = adoptVerification(resp.data.data as VerifyResponse)
         tokensChanged.value++
-        if (!(data.accountId && useMailbox(data.accountId))) {
-          localStorage.setItem('mailUnlock', data.token)
-        }
         // 刚绑的那个箱直接切过去：人刚在 Google 上挑完账号，想看的就是它。
-        if (data.accountId) currentAccount.value = Number(data.accountId)
+        if (acct) currentAccount.value = acct
         // Said only once the person is actually through. Announcing the
         // binding first meant a green "已绑定" could sit above a red failure,
         // both true and together unreadable — the mailbox was bound and the
@@ -1765,7 +1758,7 @@ onMounted(async () => {
 
 function onUnlocked() {
   locked.value = false
-  // 门里刚存下一批令牌（MailboxGate 调 saveTokens），发件人下拉要跟着更新。
+  // 门里刚收下一批令牌（adoptVerification），发件人下拉要跟着更新。
   tokensChanged.value++
   init()
 }
