@@ -646,7 +646,7 @@ func (h *Handler) ListScheduled(ctx context.Context, req *mailv1.ListScheduledRe
 	if size < 1 {
 		size = 20
 	}
-	sends, total, next, err := h.svc.ListScheduled(ctx, grpcx.TenantID(ctx), operator(ctx), size, req.GetCursor())
+	sends, total, next, err := h.svc.ListScheduled(ctx, grpcx.TenantID(ctx), operator(ctx), req.GetAccountId(), size, req.GetCursor())
 	if err != nil {
 		return nil, err
 	}

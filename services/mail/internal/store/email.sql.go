@@ -1366,26 +1366,31 @@ JOIN (
       AND status = 'QUEUED'
       AND scheduled_at IS NOT NULL
       AND scheduled_at > now()
+      -- 和 已发送 同一个口径：切到哪个箱就只看那个箱定时要发的。
+      -- 00047 之前入队的行 account_id 是 0，只在「不筛」时出现。
+      AND ($2::bigint IS NULL
+           OR account_id = $2::bigint)
     GROUP BY campaign_id
 ) m ON m.campaign_id = c.id
 WHERE c.tenant_id = $1::bigint
   -- Own sends only. Unlike the sent list this carries no data scope: a
   -- scheduled mail is still the sender's to change, and nobody else's.
-  AND c.sender_id = $2::bigint
+  AND c.sender_id = $3::bigint
   -- Keyset, ascending: this list is ordered by when each send is due, so it
   -- reads soonest-first and the cursor walks forward rather than back.
-  AND ($3::timestamptz IS NULL
-       OR (m.due_at, c.id) > ($3::timestamptz, $4::bigint))
+  AND ($4::timestamptz IS NULL
+       OR (m.due_at, c.id) > ($4::timestamptz, $5::bigint))
 ORDER BY m.due_at, c.id
-LIMIT $5::int
+LIMIT $6::int
 `
 
 type ListScheduledParams struct {
-	TenantID int64
-	SenderID int64
-	CursorAt pgtype.Timestamptz
-	CursorID int64
-	RowLimit int32
+	TenantID  int64
+	AccountID *int64
+	SenderID  int64
+	CursorAt  pgtype.Timestamptz
+	CursorID  int64
+	RowLimit  int32
 }
 
 type ListScheduledRow struct {
@@ -1411,6 +1416,7 @@ type ListScheduledRow struct {
 func (q *Queries) ListScheduled(ctx context.Context, arg ListScheduledParams) ([]ListScheduledRow, error) {
 	rows, err := q.db.Query(ctx, listScheduled,
 		arg.TenantID,
+		arg.AccountID,
 		arg.SenderID,
 		arg.CursorAt,
 		arg.CursorID,
@@ -1446,7 +1452,8 @@ func (q *Queries) ListScheduled(ctx context.Context, arg ListScheduledParams) ([
 }
 
 const listScheduledRecipients = `-- name: ListScheduledRecipients :many
-SELECT id, to_email, to_name, customer_id, customer_name, contact_id, send_mode
+SELECT id, to_email, to_name, customer_id, customer_name, contact_id, send_mode,
+       account_id
 FROM email_messages
 WHERE tenant_id = $1::bigint
   AND campaign_id = $2::bigint
@@ -1466,11 +1473,16 @@ type ListScheduledRecipientsRow struct {
 	CustomerName string
 	ContactID    int64
 	SendMode     string
+	AccountID    int64
 }
 
 // Who a scheduled send was going to, from the message rows themselves. For a
 // merged send there is one message and the cast lives in the recipients
 // table, so that side is read separately.
+//
+// account_id 一起取：撤回定时发送会把它还原成草稿，而草稿要记得原来打算从
+// 哪个箱发。不取的话还原出来是 0，人接着写完一发就从当前这个箱出去了。
+// 一次定时发送的所有收件人共用一个箱（入队时只算一次），所以取第一行就够。
 func (q *Queries) ListScheduledRecipients(ctx context.Context, arg ListScheduledRecipientsParams) ([]ListScheduledRecipientsRow, error) {
 	rows, err := q.db.Query(ctx, listScheduledRecipients, arg.TenantID, arg.CampaignID)
 	if err != nil {
@@ -1488,6 +1500,7 @@ func (q *Queries) ListScheduledRecipients(ctx context.Context, arg ListScheduled
 			&i.CustomerName,
 			&i.ContactID,
 			&i.SendMode,
+			&i.AccountID,
 		); err != nil {
 			return nil, err
 		}

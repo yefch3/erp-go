@@ -113,6 +113,14 @@ func (s *Service) SaveDraft(ctx context.Context, tenantID int64, in DraftInput, 
 	if err != nil {
 		return 0, err
 	}
+	// 存进草稿的信箱也要是他自己的。发信那边验（sendingMailbox），这边从前
+	// 不验——写不出邮件泄露，但会留下一份发不出去的草稿：写完点发送才被
+	// 「这个邮箱不在你名下」挡下来，而那时字已经写完了。当场说比事后说好。
+	if in.AccountID > 0 {
+		if _, err := s.mailboxOfMine(ctx, tenantID, op.ID, in.AccountID); err != nil {
+			return 0, err
+		}
+	}
 	id, err := s.q.SaveDraft(ctx, store.SaveDraftParams{
 		ID: in.ID, TenantID: tenantID, OwnerID: op.ID,
 		Subject: in.Subject, Body: body, BodyFormat: format,

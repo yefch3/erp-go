@@ -6,6 +6,7 @@ import {
   forgetMailbox,
   saveTokens,
   useMailbox,
+  unlockedMailboxes,
 } from './mailUnlock'
 
 // 这个仓库的前端测试跑在纯 node 里（没装 jsdom / happy-dom），所以自己
@@ -94,6 +95,23 @@ describe('mailUnlock', () => {
     expect(allTokens()).toEqual([])
     localStorage.setItem('mailUnlockTokens', '[1,2,3]')
     expect(useMailbox(1)).toBe(false)
+  })
+
+  it('退出一个箱之后，它就不在「还开着」的名单里了', () => {
+    saveTokens([
+      { accountId: 1, email: 'a@x.com', token: 'tok-a' },
+      { accountId: 2, email: 'b@x.com', token: 'tok-b' },
+    ])
+    expect(unlockedMailboxes().sort()).toEqual([1, 2])
+    forgetMailbox(1)
+    // 写信框的发件人下拉读的就是这个。1 还留在里面的话，「一个一个退出」
+    // 只退了一半：读不到它的信，却还能以它的地址给客户写信。
+    expect(unlockedMailboxes()).toEqual([2])
+  })
+
+  it('垃圾键不会变成一个假信箱', () => {
+    localStorage.setItem('mailUnlockTokens', '{"abc":"tok","0":"tok","3":"tok"}')
+    expect(unlockedMailboxes()).toEqual([3])
   })
 
   it('全清之后什么都不剩', () => {

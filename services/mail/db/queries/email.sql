@@ -623,6 +623,10 @@ JOIN (
       AND status = 'QUEUED'
       AND scheduled_at IS NOT NULL
       AND scheduled_at > now()
+      -- 和 已发送 同一个口径：切到哪个箱就只看那个箱定时要发的。
+      -- 00047 之前入队的行 account_id 是 0，只在「不筛」时出现。
+      AND (sqlc.narg(account_id)::bigint IS NULL
+           OR account_id = sqlc.narg(account_id)::bigint)
     GROUP BY campaign_id
 ) m ON m.campaign_id = c.id
 WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
@@ -673,7 +677,12 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint AND c.id = sqlc.arg(id)::bigint;
 -- Who a scheduled send was going to, from the message rows themselves. For a
 -- merged send there is one message and the cast lives in the recipients
 -- table, so that side is read separately.
-SELECT id, to_email, to_name, customer_id, customer_name, contact_id, send_mode
+--
+-- account_id 一起取：撤回定时发送会把它还原成草稿，而草稿要记得原来打算从
+-- 哪个箱发。不取的话还原出来是 0，人接着写完一发就从当前这个箱出去了。
+-- 一次定时发送的所有收件人共用一个箱（入队时只算一次），所以取第一行就够。
+SELECT id, to_email, to_name, customer_id, customer_name, contact_id, send_mode,
+       account_id
 FROM email_messages
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND campaign_id = sqlc.arg(campaign_id)::bigint

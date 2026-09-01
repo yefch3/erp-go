@@ -799,7 +799,7 @@
     <EmailComposer
       ref="composer"
       v-model="composing"
-      :mailboxes="mailboxes"
+      :mailboxes="composableMailboxes"
       :current-account="currentAccount"
       @sent="onSent"
       @saved="onDraftSaved"
@@ -1109,6 +1109,7 @@ import {
   allTokens,
   clearAll,
   forgetMailbox,
+  unlockedMailboxes,
   type MintedToken,
   saveTokens,
   useMailbox,
@@ -1370,6 +1371,18 @@ const syncError = ref('')
 const currentAccount = ref(0)
 // 这个人名下的信箱清单。退出一个之后要知道还剩哪些，好切过去。
 const mailboxes = ref<{ id: number; email: string; isDefault: boolean }[]>([])
+// 发件人下拉只列**还开着**的箱。退出了 163 之后它不该还在里面——留着的话
+// 「一个一个退出」只退了一半：读不到 163 的信，却还能以 163 的地址给客户
+// 写信，而那正是退出想停掉的事。
+//
+// 令牌存在 localStorage 里，Vue 看不见它变。tokensChanged 是那一下的信号：
+// 解锁、退出、全部退出都拨一次。
+const tokensChanged = ref(0)
+const composableMailboxes = computed(() => {
+  void tokensChanged.value
+  const open = new Set(unlockedMailboxes())
+  return mailboxes.value.filter((b) => open.has(b.id))
+})
 const switcher = ref<{ reload: () => Promise<void> } | null>(null)
 // **我的全部地址**，不是一个。一封信的发件人是其中任何一个，它就是"我发出"
 // 的——哪怕它是从收件箱里进来的（发给自己的信）。
@@ -1713,6 +1726,7 @@ onMounted(async () => {
           tokens?: MintedToken[]
         }
         saveTokens(data.tokens ?? [])
+        tokensChanged.value++
         if (!(data.accountId && useMailbox(data.accountId))) {
           localStorage.setItem('mailUnlock', data.token)
         }
@@ -1751,6 +1765,8 @@ onMounted(async () => {
 
 function onUnlocked() {
   locked.value = false
+  // 门里刚存下一批令牌（MailboxGate 调 saveTokens），发件人下拉要跟着更新。
+  tokensChanged.value++
   init()
 }
 
@@ -1784,6 +1800,7 @@ async function lockMailbox() {
     // 不管服务端那一下成没成，本地都当它退了：撤销失败却把屏幕开着，
     // 而人已经以为关掉走开了，是这两者里更糟的那个。
     forgetMailbox(leaving)
+    tokensChanged.value++
     const rest = mailboxes.value.filter((b) => b.id !== leaving)
     if (rest.length && useMailbox(rest[0].id)) {
       currentAccount.value = rest[0].id
@@ -1802,6 +1819,7 @@ async function lockAllMailboxes() {
     await post('/mailbox/lock-all', { tokens: allTokens() })
   } finally {
     clearAll()
+    tokensChanged.value++
     locked.value = true
   }
 }

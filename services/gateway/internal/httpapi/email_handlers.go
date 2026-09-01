@@ -529,6 +529,8 @@ func (s *Server) listScheduled(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Emails.ListScheduled(r.Context(), &mailv1.ListScheduledRequest{
 		Page:   pageFromQuery(r),
 		Cursor: r.URL.Query().Get("cursor"),
+		// 看哪个箱由令牌决定，和收件箱、已发送同一条理由。
+		AccountId: unlockedAccount(r.Context()),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)

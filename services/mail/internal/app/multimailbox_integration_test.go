@@ -872,6 +872,101 @@ func TestSyncNowTakesAMailboxNotAnEmployee(t *testing.T) {
 	}
 }
 
+// 配额记在这封信真正用的那个箱上，不是默认箱。
+//
+// 限额是每家服务商自己的：263 的套餐上限和 Gmail 的 500/天不是一个量纲。
+// 记错箱之后两头都坏，而且都不报错：
+//
+//   - 从 163 发的一百封全记在 QQ 的计数上 → 163 自己的上限一辈子不生效，
+//     等于拿默认箱的额度往严格的那家灌，直到服务商自己动手
+//   - 第 101 封被 QQ 的上限拦下来，而提示里写的是一个 QQ 从没达到过的数字
+//
+// 这条测试的红验证是把解析改回 defaultAccountIDFor：第一段断言会看到计数
+// 落在 QQ 上。
+func TestQuotaCountsAgainstTheMailboxTheMailActuallyLeft(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantID := time.Now().UnixNano()
+	employeeID := tenantID%100000 + 890001
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_send_counters WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_binding_log WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+	}()
+	svc := New(pool, Deps{Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	// QQ 先绑 → 它是默认箱。下面证明「默认是哪个」不影响这件事。
+	work, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "me@qq.com", Provider: "qq", Secret: "code-qq",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	personal, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "me@163.com", Provider: "netease163", Secret: "code-163",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	counted := func(accountID int64) int32 {
+		t.Helper()
+		var n int32
+		if err := pool.QueryRow(ctx, `SELECT coalesce(sum(sent_count),0)::int
+			FROM mail_send_counters WHERE tenant_id=$1 AND account_id=$2`,
+			tenantID, accountID).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	// 从 163 发三封。记在 163 上，QQ 一封都不该有。
+	for i := 0; i < 3; i++ {
+		svc.countSend(ctx, tenantID, employeeID, personal.AccountID)
+	}
+	if got := counted(personal.AccountID); got != 3 {
+		t.Errorf("163 上该记 3 封，实际 %d", got)
+	}
+	if got := counted(work.AccountID); got != 0 {
+		t.Errorf("从 163 发的信记到了默认的 QQ 上（%d 封）——"+
+			"163 自己的上限就永远不会生效", got)
+	}
+
+	// 163 的上限设成 3。到顶的是 163，不是默认箱。
+	if _, err := pool.Exec(ctx, `UPDATE mail_accounts SET hourly_quota=3
+		WHERE tenant_id=$1 AND id=$2`, tenantID, personal.AccountID); err != nil {
+		t.Fatal(err)
+	}
+	if wait, reason := svc.overQuota(ctx, tenantID, employeeID, personal.AccountID); wait <= 0 {
+		t.Error("163 已经到上限了，还放行——限额没跟着信箱走")
+	} else if !strings.Contains(reason, "3") {
+		t.Errorf("提示里该是 163 自己的上限 3，实际说的是 %q", reason)
+	}
+	// 同一个人、同一时刻，从 QQ 发不受影响：两个箱两本账。
+	if wait, _ := svc.overQuota(ctx, tenantID, employeeID, work.AccountID); wait > 0 {
+		t.Error("163 到上限把 QQ 也一起拦住了——两个箱共用了一本账")
+	}
+
+	// 0 = 00047 之前入队的行，退回默认箱（QQ）。行为和不做这次改动时一样。
+	svc.countSend(ctx, tenantID, employeeID, 0)
+	if got := counted(work.AccountID); got != 1 {
+		t.Errorf("account_id=0 的老行该退回默认箱，QQ 上拿到 %d", got)
+	}
+}
+
 // seqNumbers 是测试用的编号生成器：只保证不重复。
 type seqNumbers struct{ n atomic.Int64 }
 

@@ -1394,7 +1394,8 @@ message ScheduledSend {
 message ListScheduledRequest {
   erp.common.v1.PageRequest page = 1;  // Where the previous page ended. Keyset, like every other mailbox list.
   string cursor = 2;
-
+  // 只看这个信箱要发的。0 = 全部。和收件箱、已发送同一个口径。
+  int64 account_id = 3;
 }
 
 message ListScheduledResponse {
