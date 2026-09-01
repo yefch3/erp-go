@@ -79,13 +79,14 @@ import {
   providerByCode,
   providerForAddress,
 } from '../lib/mailProviders'
+import type { VerifyResponse } from '../lib/mailUnlock'
 
 const props = defineProps<{
   /** 预填的地址。第一次登录时是这个人的公司邮箱，加信箱时是空的。 */
   initialEmail?: string
   submitLabel?: string
 }>()
-const emit = defineEmits<{ bound: [{ token: string; accountId: number; email: string }] }>()
+const emit = defineEmits<{ bound: [VerifyResponse] }>()
 
 const { t } = useI18n()
 const providers = MAIL_PROVIDERS
@@ -190,15 +191,17 @@ async function submit() {
       },
       { ...mailHostRequest, ...quietErrors },
     )
-    const data = resp.data.data as { token: string; accountId?: number; email?: string }
+    const data = resp.data.data as VerifyResponse
     secret.value = ''
+    // **整个响应原样交出去**，不在这里挑字段。
+    //
+    // 从前这里挑了 token/accountId/email 三个，把 tokens 那个数组丢了——
+    // 而那正是「一个箱一把令牌」的全部内容。丢了之后 mailUnlockTokens 一直
+    // 是空表，切到第二个箱一律弹回登录页。挑字段的地方就是丢字段的地方。
+    //
     // 回来的地址是**落库后**那个（规范化过大小写和空格），显示它才不会
-    // 和列表里那一行对不上。
-    emit('bound', {
-      token: data.token,
-      accountId: Number(data.accountId ?? 0),
-      email: data.email || addr,
-    })
+    // 和列表里那一行对不上，所以补一个兜底。
+    emit('bound', { ...data, email: data.email || addr })
   } catch (e: unknown) {
     error.value = (e as { message?: string })?.message || t('mailGate.failed')
   } finally {
