@@ -109,7 +109,12 @@ onMounted(async () => {
 async function startOAuth() {
   googleBusy.value = true
   try {
-    const d = await get<{ url: string }>('/oauth/google/start')
+    // 门知道自己在问哪个箱时（account.email 由上面那次探测填的），把地址
+    // 带给 Google 当提示。**只在续一个已经绑好的箱时有值**：第一次绑还没有
+    // 箱可指，那时不带才对——带上会把选择器预选成一个还不存在的绑定。
+    const d = await get<{ url: string }>('/oauth/google/start', {
+      email: account.email || '',
+    })
     window.location.href = d.url
   } finally {
     googleBusy.value = false
