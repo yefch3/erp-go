@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { adoptVerification, currentToken, useMailbox } from './mailUnlock'
+import { adoptVerification, currentToken, initialMailbox, useMailbox } from './mailUnlock'
 
 // vitest 在 node 环境跑，没有 localStorage。八行够用，不为此装 jsdom。
 class MemoryStorage {
@@ -121,5 +121,46 @@ describe('和网关的响应对得上', () => {
     // 而切换信箱要重新输密码——那正是这一整批改动要消掉的事。
     expect(go).toContain('for _, b := range boxes.GetAccounts()')
     expect(go).toContain('s.Unlock.Grant(r.Context(), op.TenantID, op.EmployeeID, b.GetId())')
+  })
+})
+
+// 打开邮箱页时左侧高亮哪个箱。
+//
+// 这一条钉的是「令牌那个箱」必须参与决定。漏掉它的表现是：从菜单点进 邮箱，
+// 高亮落在默认箱 A，而请求带的是上次留下的 B 的令牌——网关只认令牌，于是
+// 左边高亮 A、右边列的是 B 的信。而且**不会自己纠正**：切换那个 watch 要求
+// 前一个值非空，0 → A 这一跳被它跳过了。
+describe('initialMailbox', () => {
+  it('地址栏说了算——后退/前进/分享的链接', () => {
+    expect(initialMailbox({ url: 4, token: 7, fallback: 9 })).toBe(4)
+  })
+
+  it('地址栏没说时，用**令牌那个箱**，不是默认箱', () => {
+    // 漏掉 token 这一路的话这里会回 9（默认箱），而信是从 7 那个箱拉的。
+    expect(initialMailbox({ token: 7, fallback: 9 })).toBe(7)
+  })
+
+  it('两个都没有才落默认箱', () => {
+    expect(initialMailbox({ fallback: 9 })).toBe(9)
+  })
+
+  it('全没有回 0，让调用方自己兜底', () => {
+    expect(initialMailbox({})).toBe(0)
+    // 旧令牌和「一个箱都没绑」的人，accountId 就是 0。
+    expect(initialMailbox({ url: 0, token: 0, fallback: 0 })).toBe(0)
+  })
+})
+
+describe('lock-status 也要带上是哪个箱', () => {
+  const go = readFileSync(
+    resolve(__dirname, '../../../services/gateway/internal/httpapi/mailunlock.go'),
+    'utf8',
+  )
+
+  it('mailLockStatus 回的是 unlocked + accountId', () => {
+    const body = go.slice(go.indexOf('func (s *Server) mailLockStatus'))
+    expect(body.slice(0, 800)).toContain('"unlocked"')
+    // 少了这个键，页面就只能靠默认箱猜自己站在哪儿。
+    expect(body.slice(0, 800)).toContain('"accountId"')
   })
 })
