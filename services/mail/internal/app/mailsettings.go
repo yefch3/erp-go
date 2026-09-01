@@ -52,6 +52,11 @@ type MailAccountView struct {
 	Unread int64
 	// LastReadAt 是上次有人看这个箱的时间，空表示从没看过。
 	LastReadAt string
+	// UnboundAt 是解绑时间，空表示还绑着。
+	//
+	// 解绑 ≠ 删除：这一行还在，历史邮件照样读得到，只是不再收发。界面据此
+	// 标成「已解绑」并收起收发相关的动作。
+	UnboundAt string
 }
 
 var validSecurity = map[string]bool{"SSL": true, "STARTTLS": true, "NONE": true}
@@ -172,6 +177,9 @@ func (s *Service) ListMyMailboxes(ctx context.Context, tenantID, employeeID int6
 		}
 		if row.LastReadAt.Valid {
 			v.LastReadAt = row.LastReadAt.Time.Format("2006-01-02 15:04")
+		}
+		if row.UnboundAt.Valid {
+			v.UnboundAt = row.UnboundAt.Time.Format("2006-01-02 15:04")
 		}
 		out = append(out, v)
 	}

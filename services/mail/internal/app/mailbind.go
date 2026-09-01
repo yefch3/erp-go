@@ -94,6 +94,7 @@ const (
 	bindActionRebind  = "REBIND"
 	bindActionFailed  = "FAILED"
 	bindActionDefault = "DEFAULT"
+	bindActionUnbind  = "UNBIND"
 )
 
 // VerifyMailSecret 证明键盘前的人控制着这个信箱——办法是拿他刚输入的东西
@@ -467,4 +468,60 @@ func truncateUTF8(s string, max int) string {
 		i--
 	}
 	return s[:i]
+}
+
+// UnbindMailbox 断开一个信箱：凭据清掉、不再收发，**历史邮件原样留着**。
+//
+// 「解绑」和「删掉」是两件事，这里只做前一件。左栏那一行还在，标着已解绑，
+// 点进去照样读得到、搜得到已经收下来的邮件——一个业务员离职、或者他不想
+// 再让 ERP 连自己的私人 Gmail，客户的往来记录不该跟着消失，那是公司的业务
+// 记录。「连历史一起彻底删掉」是另一个更响的动作。
+//
+// 幂等：已经解过的再解一次影响零行，答「这个邮箱不在你名下」——它确实已经
+// 不是一个绑着的箱了。留痕里那个「什么时候解的」因此永远是第一次。
+func (s *Service) UnbindMailbox(ctx context.Context, tenantID, employeeID, accountID int64) error {
+	// 先读一次地址，为了留痕能写下解的是哪个。读不到就让下面那句去判——
+	// 不在这里提前拒，是因为「不是你的」这个结论只该由一处给出。
+	email := ""
+	if row, err := s.q.GetMailAccountByID(ctx, store.GetMailAccountByIDParams{
+		TenantID: tenantID, ID: accountID,
+	}); err == nil && row.EmployeeID == employeeID {
+		email = row.Email
+	}
+
+	n, err := s.q.UnbindMailAccount(ctx, store.UnbindMailAccountParams{
+		TenantID: tenantID, ID: accountID, EmployeeID: employeeID,
+	})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return apierr.NotFound("MAIL_ACCOUNT_NOT_FOUND", "这个邮箱不在你名下")
+	}
+	// 留痕写在事务外：写失败不该把已经断开的连接接回去。见 storeBinding
+	// 里同一条理由——留痕是为了事后能问，不是这次操作成立的条件。
+	s.recordBinding(ctx, tenantID, employeeID, accountID, email, "", bindActionUnbind, "")
+
+	// 解绑的那个可能正是默认发件箱（UnbindMailAccount 会把 is_default 清掉）。
+	// 清掉之后这个人可能一个默认都没有了，而「默认」是写信时预选哪一个——
+	// 没有默认时 ListMailAccountsForEmployee 的排序会退化成按 id，那也能用，
+	// 但不是人选的那个。把剩下的第一个扶正，比留着一个没人选过的顺序好。
+	s.promoteAnyRemainingDefault(ctx, tenantID, employeeID)
+	return nil
+}
+
+// promoteAnyRemainingDefault 在解绑之后保证还剩下的箱里有一个默认。
+//
+// 尽力而为：扶不正最多是写信时预选了另一个箱，而那个箱仍然是他自己的。
+func (s *Service) promoteAnyRemainingDefault(ctx context.Context, tenantID, employeeID int64) {
+	id, err := s.defaultAccountIDFor(ctx, tenantID, employeeID)
+	if err != nil {
+		// 一个箱都不剩了。没有默认可设，也不该报错——把最后一个箱解绑
+		// 是完全正常的事。
+		return
+	}
+	if err := s.SetDefaultMailbox(ctx, tenantID, employeeID, id); err != nil {
+		s.log.Warn("could not promote a new default mailbox after unbinding",
+			"employee", employeeID, "err", err)
+	}
 }

@@ -145,6 +145,8 @@ service EmailService {
   rpc ListMyMailboxes(ListMyMailboxesRequest) returns (ListMyMailboxesResponse);
   // 换写信时默认用哪个信箱。清旧设新在一个事务里，中途不会出现零个或两个。
   rpc SetDefaultMailbox(SetDefaultMailboxRequest) returns (SetDefaultMailboxResponse);
+  // 断开一个信箱：凭据清掉、不再收发，历史邮件原样留着。
+  rpc UnbindMailbox(UnbindMailboxRequest) returns (UnbindMailboxResponse);
   // 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
   // 额度状况。
   rpc ExcelUsage(ExcelUsageRequest) returns (ExcelUsageResponse);
@@ -647,6 +649,11 @@ message MailAccount {
   int64 unread = 12;
   // 上次有人看这个箱是什么时候，空表示从没看过。
   string last_read_at = 13;
+  // 什么时候解绑的，空表示还绑着。
+  //
+  // 解绑 ≠ 删除：这一行还在，历史邮件照样读得到、搜得到，只是不再收发。
+  // 界面据此把它标成「已解绑」并收起收发相关的动作。
+  string unbound_at = 14;
 }
 
 message GetMyMailAccountRequest {
@@ -664,6 +671,13 @@ message ListMyMailboxesResponse {
   // 默认的排在最前。这个顺序就是「用哪个箱发信」的答案，不是随便的 id 序。
   repeated MailAccount accounts = 1;
 }
+
+message UnbindMailboxRequest {
+  // 解哪个。只能解自己的——归属由登录令牌判，请求体里没有「谁的」。
+  int64 account_id = 1;
+}
+
+message UnbindMailboxResponse {}
 
 message SetDefaultMailboxRequest {
   int64 account_id = 1;

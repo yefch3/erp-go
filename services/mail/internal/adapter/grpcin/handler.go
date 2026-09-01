@@ -751,7 +751,7 @@ func mailAccountToProto(v app.MailAccountView) *mailv1.MailAccount {
 		VerifiedAt: v.VerifiedAt, LastError: v.LastError, IsActive: v.IsActive,
 		AuthKind: v.AuthKind, IsDefault: v.IsDefault,
 		SmtpHost: v.SMTPHost, ImapHost: v.IMAPHost,
-		Unread: v.Unread, LastReadAt: v.LastReadAt,
+		Unread: v.Unread, LastReadAt: v.LastReadAt, UnboundAt: v.UnboundAt,
 	}
 }
 
@@ -766,6 +766,16 @@ func (h *Handler) ListMyMailboxes(ctx context.Context, _ *mailv1.ListMyMailboxes
 		out = append(out, mailAccountToProto(b))
 	}
 	return &mailv1.ListMyMailboxesResponse{Accounts: out}, nil
+}
+
+func (h *Handler) UnbindMailbox(ctx context.Context, req *mailv1.UnbindMailboxRequest) (*mailv1.UnbindMailboxResponse, error) {
+	op := operator(ctx)
+	// op.ID 来自登录令牌，不是请求体：只能解自己的。「那个信箱是不是他的」
+	// 由 SQL 的 WHERE 判定——不是他的就影响零行，翻成 404。
+	if err := h.svc.UnbindMailbox(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId()); err != nil {
+		return nil, err
+	}
+	return &mailv1.UnbindMailboxResponse{}, nil
 }
 
 func (h *Handler) SetDefaultMailbox(ctx context.Context, req *mailv1.SetDefaultMailboxRequest) (*mailv1.SetDefaultMailboxResponse, error) {

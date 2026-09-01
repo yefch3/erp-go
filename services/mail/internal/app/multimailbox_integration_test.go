@@ -1427,3 +1427,253 @@ func dueIDsOf(rows []store.ListMailboxesDueForStatusRow) []int64 {
 	}
 	return out
 }
+
+// 解绑 = 断连接，不是删邮件。
+//
+// 这一条钉的是解绑之后**哪些事必须停、哪些事必须照常**。分不清的两个方向
+// 各有各的坏法：
+//
+//	停多了 —— 历史邮件跟着消失。一个业务员离职、或者不想再让 ERP 连自己的
+//	          私人 Gmail，客户的往来记录不该跟着没，那是公司的业务记录。
+//	停少了 —— 一个没有凭据的箱还留在同步名单和发件人候选里。同步那边每轮
+//	          跑一次注定失败的登录，把「认证失败」写到那一行上（而人是主动
+//	          解绑的，那句话毫无道理）；发信那边更糟，信卡在队列里发不出去。
+func TestUnbindingKeepsTheMailAndStopsEverythingElse(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantID := time.Now().UnixNano()
+	employeeID := tenantID%100000 + 940001
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM email_inbound WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_binding_log WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+	}()
+	svc := New(pool, Deps{Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	gone, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "leaving@qq.com", Provider: "qq", Secret: "code-qq",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "staying@163.com", Provider: "netease163", Secret: "code-163",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 先绑的是默认发件箱——下面要解的正是它，好证明默认会被扶到另一个箱上。
+	if def, _ := svc.defaultAccountIDFor(ctx, tenantID, employeeID); def != gone.AccountID {
+		t.Fatalf("默认该是先绑的那个，拿到 %d", def)
+	}
+	// 这个箱里已经收过一封信。解绑之后它必须还在。
+	if _, err := pool.Exec(ctx, `INSERT INTO email_inbound
+		(tenant_id, account_id, owner_id, message_id, thread_key, folder, imap_uid,
+		 from_email, subject, body_text, received_at)
+		VALUES ($1,$2,$3,'kept@x','thr-kept','INBOX',1,'buyer@overseas.com','去年的询价','hi',now())`,
+		tenantID, gone.AccountID, employeeID); err != nil {
+		t.Fatal(err)
+	}
+	// 让它落进「有人在看」那一档，好证明解绑之后它会掉出同步名单。
+	if _, err := pool.Exec(ctx, `UPDATE mail_accounts SET last_read_at = now()
+		WHERE tenant_id=$1`, tenantID); err != nil {
+		t.Fatal(err)
+	}
+	// **两把钥匙都得放上去。**
+	//
+	// 这个箱是用授权码绑的，所以 Google 那一列本来就是空的——只测密码那一列
+	// 的话，「Google 的 refresh token 清了没」根本没被验到，而那是一把能一直
+	// 登进人家 Gmail 的钥匙。手动塞一个进去，让下面那条断言对两列都有牙。
+	if _, err := pool.Exec(ctx, `UPDATE mail_accounts
+		SET oauth_refresh_enc = $3 WHERE tenant_id=$1 AND id=$2`,
+		tenantID, gone.AccountID, []byte("pretend-google-refresh-token")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.UnbindMailbox(ctx, tenantID, employeeID, gone.AccountID); err != nil {
+		t.Fatalf("解绑：%v", err)
+	}
+
+	// ---- 必须照常的 ----
+
+	// 历史邮件还在。
+	var kept1 int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM email_inbound
+		WHERE tenant_id=$1 AND account_id=$2`, tenantID, gone.AccountID).Scan(&kept1); err != nil {
+		t.Fatal(err)
+	}
+	if kept1 != 1 {
+		t.Errorf("解绑把历史邮件也带走了：还剩 %d 封。解绑断的是连接，不是记录", kept1)
+	}
+	// 左栏那一行还在，而且标着解绑时间。
+	boxes, err := svc.ListMyMailboxes(ctx, tenantID, employeeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shown *MailAccountView
+	for i := range boxes {
+		if boxes[i].ID == gone.AccountID {
+			shown = &boxes[i]
+		}
+	}
+	if shown == nil {
+		t.Fatal("解绑之后这个箱从列表里消失了——那样历史邮件就没有入口了")
+	}
+	if shown.UnboundAt == "" {
+		t.Error("列表里没标出它已经解绑，界面分不出「还能收发」和「只能看」")
+	}
+
+	// ---- 必须停的 ----
+
+	// 凭据清干净了，两列都要清——只清一列等于留了一把还能登上去的钥匙。
+	var sec, oauth []byte
+	if err := pool.QueryRow(ctx, `SELECT secret_enc, oauth_refresh_enc FROM mail_accounts
+		WHERE tenant_id=$1 AND id=$2`, tenantID, gone.AccountID).Scan(&sec, &oauth); err != nil {
+		t.Fatal(err)
+	}
+	if len(sec) > 0 || len(oauth) > 0 {
+		t.Errorf("解绑之后还留着凭据（密码 %d 字节 / Google %d 字节）", len(sec), len(oauth))
+	}
+	// 不再是发件人候选。
+	if _, err := svc.mailboxOfMine(ctx, tenantID, employeeID, gone.AccountID); err == nil {
+		t.Error("解绑的箱还能被点名当发件人——信会卡在队列里发不出去")
+	}
+	// 默认发件箱扶到了还绑着的那个。
+	def, err := svc.defaultAccountIDFor(ctx, tenantID, employeeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if def != kept.AccountID {
+		t.Errorf("默认发件箱是 %d，应该扶到还绑着的 %d——落在解绑的箱上就发不出信",
+			def, kept.AccountID)
+	}
+	// 掉出同步名单和常开连接名单。
+	active, err := svc.q.ListActiveMailAccounts(ctx, store.ListActiveMailAccountsParams{
+		TenantID: tenantID, ActiveSeconds: 1800,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range active {
+		if a.ID == gone.AccountID {
+			t.Error("解绑的箱还在同步名单里——每轮跑一次注定失败的登录，" +
+				"然后把「认证失败」写到那一行上")
+		}
+	}
+	watching, err := svc.q.MailboxIsBeingRead(ctx, store.MailboxIsBeingReadParams{
+		TenantID: tenantID, ID: gone.AccountID, ActiveSeconds: 1800,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if watching {
+		t.Error("解绑的箱还占着一条常开连接")
+	}
+
+	// ---- 留痕 ----
+	var action string
+	if err := pool.QueryRow(ctx, `SELECT action FROM mail_binding_log
+		WHERE tenant_id=$1 AND account_id=$2 ORDER BY id DESC LIMIT 1`,
+		tenantID, gone.AccountID).Scan(&action); err != nil {
+		t.Fatal(err)
+	}
+	if action != "UNBIND" {
+		t.Errorf("留痕里最后一条是 %q，应该是 UNBIND", action)
+	}
+
+	// ---- 别人的箱解不了，解过的再解一次也不成 ----
+	other := tenantID%100000 + 940002
+	stranger, err := svc.VerifyMailSecret(ctx, tenantID, other, BindRequest{
+		Email: "someone@qq.com", Provider: "qq", Secret: "x",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.UnbindMailbox(ctx, tenantID, employeeID, stranger.AccountID); err == nil {
+		t.Error("解掉了同事的信箱")
+	}
+	if err := svc.UnbindMailbox(ctx, tenantID, employeeID, gone.AccountID); err == nil {
+		t.Error("同一个箱解了两次都说成功——留痕里「什么时候解的」会被推到第二次")
+	}
+}
+
+// 重新填一次授权码就是重新绑上。
+//
+// 漏掉这一步的症状最难查：页面说「绑好了」，绿勾也回来了，**但信永远不来**
+// ——因为所有挑信箱的查询都还在按 unbound_at 跳过它。
+func TestRebindingAnUnboundMailboxBringsItBack(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantID := time.Now().UnixNano()
+	employeeID := tenantID%100000 + 950001
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_binding_log WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+	}()
+	svc := New(pool, Deps{Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	first, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "me@qq.com", Provider: "qq", Secret: "code-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.UnbindMailbox(ctx, tenantID, employeeID, first.AccountID); err != nil {
+		t.Fatal(err)
+	}
+
+	// 同一个地址重新填一次授权码。冲突键是地址，所以这是**同一行**复活，
+	// 不是新增——历史邮件挂在这个 id 上，新增一行会把它们孤儿化。
+	again, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "me@qq.com", Provider: "qq", Secret: "code-2",
+	})
+	if err != nil {
+		t.Fatalf("重新绑：%v", err)
+	}
+	if again.AccountID != first.AccountID {
+		t.Fatalf("重新绑出了一行新的（%d ≠ %d）——历史邮件还挂在旧的那一行上，"+
+			"从此看不到了", again.AccountID, first.AccountID)
+	}
+
+	var unbound *time.Time
+	var active bool
+	if err := pool.QueryRow(ctx, `SELECT unbound_at, is_active FROM mail_accounts
+		WHERE tenant_id=$1 AND id=$2`, tenantID, first.AccountID).Scan(&unbound, &active); err != nil {
+		t.Fatal(err)
+	}
+	if unbound != nil || !active {
+		t.Errorf("重新绑之后还留着解绑标记（unbound_at=%v, is_active=%v）——"+
+			"页面会说绑好了，而所有挑信箱的查询都还在跳过它，于是信永远不来",
+			unbound, active)
+	}
+	// 能发信了。
+	if _, err := svc.mailboxOfMine(ctx, tenantID, employeeID, first.AccountID); err != nil {
+		t.Errorf("重新绑之后还不能当发件人：%v", err)
+	}
+}
