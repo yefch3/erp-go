@@ -751,6 +751,7 @@ func mailAccountToProto(v app.MailAccountView) *mailv1.MailAccount {
 		VerifiedAt: v.VerifiedAt, LastError: v.LastError, IsActive: v.IsActive,
 		AuthKind: v.AuthKind, IsDefault: v.IsDefault,
 		SmtpHost: v.SMTPHost, ImapHost: v.IMAPHost,
+		Unread: v.Unread, LastReadAt: v.LastReadAt,
 	}
 }
 

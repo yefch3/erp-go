@@ -639,6 +639,14 @@ message MailAccount {
   // 哪个，光看地址不一定分得清。
   string smtp_host = 10;
   string imap_host = 11;
+  // 这个箱里有多少封没读。左侧那排角标读的就是它。
+  //
+  // 多信箱之后这个数字是**切换的理由**：不显示的话，另一个箱里躺着客户的
+  // 回信，人没有任何提示会切过去。收件箱顶上那个总数不顶用——它只算当前
+  // 这个箱，说的正好是你已经在看的那一个。
+  int64 unread = 12;
+  // 上次有人看这个箱是什么时候，空表示从没看过。
+  string last_read_at = 13;
 }
 
 message GetMyMailAccountRequest {

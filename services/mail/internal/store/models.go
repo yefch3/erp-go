@@ -269,6 +269,7 @@ type MailAccount struct {
 	HourlyQuota     int32
 	DailyQuota      int32
 	IsDefault       bool
+	LastReadAt      pgtype.Timestamptz
 }
 
 type MailBindingLog struct {

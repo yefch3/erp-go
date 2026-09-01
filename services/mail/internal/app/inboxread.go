@@ -160,6 +160,13 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 	var acct *int64
 	if accountID > 0 {
 		acct = &accountID
+		// 有人在看这个箱。写在列表这一条路上，因为它是「打开邮箱」的必经
+		// 之处——开一封信、翻一页都会先经过它。
+		//
+		// 下一批按这个值分档：有人看的箱全量同步，没人看的只刷未读数。
+		// 现在就开始写，是因为分档那一刻需要的是**历史**——列是空的话，
+		// 改完之后第一个小时里所有箱都算「没人看」，于是谁都收不到信。
+		s.touchMailboxRead(ctx, tenantID, accountID)
 	}
 
 	// One row per conversation, not per message: the newest message speaks
@@ -1039,4 +1046,16 @@ func (s *Service) sweepTrashOnce(ctx context.Context, tenantID int64) {
 		done++
 	}
 	s.log.Info("trash swept", "deleted", done, "older_than", trashRetention)
+}
+
+// touchMailboxRead 记一笔「有人在看这个箱」。
+//
+// 尽力而为：这是排班用的时间戳，不是账。写不上最多让这个箱下一轮排得靠后，
+// 而让收件箱因此打不开是荒唐的。半分钟内只落一次，限频在 SQL 的 WHERE 里。
+func (s *Service) touchMailboxRead(ctx context.Context, tenantID, accountID int64) {
+	if err := s.q.TouchMailboxRead(ctx, store.TouchMailboxReadParams{
+		TenantID: tenantID, ID: accountID,
+	}); err != nil {
+		s.log.Warn("could not record mailbox read time", "account", accountID, "err", err)
+	}
 }

@@ -1875,7 +1875,15 @@ onUnmounted(
 
 // The rail badge has to be current whichever folder is open, so it has its
 // own cheap fetch rather than riding on the inbox list load.
+//
+// 顺带刷一次左侧那排信箱角标。它们和顶上这个数字一样会过期，而且过期得
+// **更难看出来**：顶上那个说的是眼前这个箱，看着列表就知道对不对；角标说
+// 的是另一个箱，除非切过去，否则没有任何东西能拆穿它。
+//
+// 每次收到新信都会走到这里，所以两个数字总是一起更新的——挂在同一个函数
+// 上而不是各自找时机，正是为了不出现「一个新了一个没新」。
 async function refreshUnread() {
+  void switcher.value?.reload()
   try {
     const d = await get<{ unreadCount: number }>('/inbound-mails', {
       page: 1,

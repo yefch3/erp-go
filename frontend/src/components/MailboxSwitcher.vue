@@ -31,6 +31,12 @@
           :title="b.lastError || undefined"
         />
         <span class="mbox-name">{{ b.email }}</span>
+        <!-- 未读角标。**当前这个箱不显示**：你正看着它，顶上那个列表已经
+             把未读说清楚了，再挂一个数字只是重复。它的用处是「另一个箱里
+             有东西」——那才是需要一眼看见的。 -->
+        <span v-if="b.unread > 0 && modelValue !== b.id" class="mbox-unread">
+          {{ b.unread > 99 ? '99+' : b.unread }}
+        </span>
         <span v-if="b.isDefault" class="mbox-tag">{{ t('mailGate.isDefault') }}</span>
       </button>
       <!-- 设为默认只在非默认的那几行上出现，而且要点两次才生效：它改的是
@@ -94,6 +100,8 @@ export interface Mailbox {
   email: string
   isDefault: boolean
   lastError: string
+  /** 这个箱里有多少封没读。切换的理由就是它。 */
+  unread: number
 }
 
 defineProps<{ modelValue: number; canAdd: boolean }>()
@@ -118,6 +126,9 @@ async function load() {
     email: a.email ?? '',
     isDefault: !!a.isDefault,
     lastError: a.lastError ?? '',
+    // protojson 把 int64 打成字符串，普通 JSON 打成数字。两条路都过一遍
+    // Number——这个仓库为同一件事已经踩过一次（见 excelQuota.test.ts）。
+    unread: Number(a.unread ?? 0),
   }))
   emit('changed', boxes.value)
 }
@@ -212,6 +223,21 @@ defineExpose({ reload: load })
   flex: none;
   font-size: 11px;
   color: var(--el-text-color-secondary);
+}
+/* 数字，不是一个红点：红点只说「有东西」，而这里要回答的是「值不值得现在
+   切过去」——3 封和 40 封是两个决定。min-width 让一位数和两位数的行宽一样，
+   否则一排信箱的右边缘会随未读数跳动。 */
+.mbox-unread {
+  flex: none;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--el-color-danger);
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 /* 淡出而不是消失：opacity 0 的元素照样占位、照样可点，在触屏上就是一颗
    看不见的按钮盖在那儿。所以未激活时是浅色而不是透明，指针设备上悬停才

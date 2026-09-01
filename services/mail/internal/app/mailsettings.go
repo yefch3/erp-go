@@ -43,6 +43,15 @@ type MailAccountView struct {
 	// 「你这个箱走的是 imap.gmail.com」，不然跨服务商时人分不清哪个是哪个。
 	SMTPHost string
 	IMAPHost string
+	// Unread 是左侧那个角标：这个箱里有多少封没读。
+	//
+	// 多信箱之后这个数字是**切换的理由**——不显示的话，另一个箱里躺着客户
+	// 的回信，人没有任何提示会切过去，直到下次偶然点开。收件箱那个总数不
+	// 顶用：它现在只算当前这个箱（00043 之后按箱筛），说的正好是你已经在
+	// 看的那一个。
+	Unread int64
+	// LastReadAt 是上次有人看这个箱的时间，空表示从没看过。
+	LastReadAt string
 }
 
 var validSecurity = map[string]bool{"SSL": true, "STARTTLS": true, "NONE": true}
@@ -134,6 +143,20 @@ func (s *Service) ListMyMailboxes(ctx context.Context, tenantID, employeeID int6
 	if err != nil {
 		return nil, err
 	}
+	// 每个箱的未读数一次问完，不是一个箱一次。这三个数字总是一起显示的。
+	//
+	// 读不到就当全是 0：角标少一个数字，比整块信箱列表打不开好——而列表
+	// 打不开的话左边那排就没了，人连切换都做不到。
+	unread := make(map[int64]int64, len(rows))
+	counts, err := s.q.CountUnreadByMailbox(ctx, store.CountUnreadByMailboxParams{
+		TenantID: tenantID, OwnerID: employeeID,
+	})
+	if err != nil {
+		s.log.Warn("could not count unread per mailbox", "employee", employeeID, "err", err)
+	}
+	for _, c := range counts {
+		unread[c.AccountID] = c.Unread
+	}
 	out := make([]MailAccountView, 0, len(rows))
 	for _, row := range rows {
 		v := MailAccountView{
@@ -142,9 +165,13 @@ func (s *Service) ListMyMailboxes(ctx context.Context, tenantID, employeeID int6
 			IsActive: row.IsActive, IsDefault: row.IsDefault,
 			SMTPHost: row.SmtpHost, IMAPHost: row.ImapHost,
 			HasSecret: s.hasCredential(ctx, tenantID, row.ID),
+			Unread:    unread[row.ID],
 		}
 		if row.VerifiedAt.Valid {
 			v.VerifiedAt = row.VerifiedAt.Time.Format("2006-01-02 15:04")
+		}
+		if row.LastReadAt.Valid {
+			v.LastReadAt = row.LastReadAt.Time.Format("2006-01-02 15:04")
 		}
 		out = append(out, v)
 	}
