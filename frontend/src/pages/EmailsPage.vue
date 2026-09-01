@@ -1,5 +1,10 @@
 <template>
-  <MailboxGate v-if="locked === true" @unlocked="onUnlocked" @host-settings="hostOpen = true" />
+  <MailboxGate
+    v-if="locked === true"
+    :account-id="currentAccount"
+    @unlocked="onUnlocked"
+    @host-settings="hostOpen = true"
+  />
   <div v-else-if="locked === false" ref="mailboxEl" class="mailbox">
     <!-- A folder rail, not tabs. The distinction matters: folders say "your
          mail lives in these places", tabs said "here are three reports". -->
@@ -791,7 +796,14 @@
       </template>
     </section>
 
-    <EmailComposer ref="composer" v-model="composing" @sent="onSent" @saved="onDraftSaved" />
+    <EmailComposer
+      ref="composer"
+      v-model="composing"
+      :mailboxes="composableMailboxes"
+      :current-account="currentAccount"
+      @sent="onSent"
+      @saved="onDraftSaved"
+    />
 
     <el-dialog v-model="requeueOpen" :title="t('emails.requeueTitle')" width="480px">
       <p class="hint">{{ t('emails.requeueHint') }}</p>
@@ -1097,6 +1109,7 @@ import {
   allTokens,
   clearAll,
   forgetMailbox,
+  unlockedMailboxes,
   type MintedToken,
   saveTokens,
   useMailbox,
@@ -1358,6 +1371,18 @@ const syncError = ref('')
 const currentAccount = ref(0)
 // 这个人名下的信箱清单。退出一个之后要知道还剩哪些，好切过去。
 const mailboxes = ref<{ id: number; email: string; isDefault: boolean }[]>([])
+// 发件人下拉只列**还开着**的箱。退出了 163 之后它不该还在里面——留着的话
+// 「一个一个退出」只退了一半：读不到 163 的信，却还能以 163 的地址给客户
+// 写信，而那正是退出想停掉的事。
+//
+// 令牌存在 localStorage 里，Vue 看不见它变。tokensChanged 是那一下的信号：
+// 解锁、退出、全部退出都拨一次。
+const tokensChanged = ref(0)
+const composableMailboxes = computed(() => {
+  void tokensChanged.value
+  const open = new Set(unlockedMailboxes())
+  return mailboxes.value.filter((b) => open.has(b.id))
+})
 const switcher = ref<{ reload: () => Promise<void> } | null>(null)
 // **我的全部地址**，不是一个。一封信的发件人是其中任何一个，它就是"我发出"
 // 的——哪怕它是从收件箱里进来的（发给自己的信）。
@@ -1701,6 +1726,7 @@ onMounted(async () => {
           tokens?: MintedToken[]
         }
         saveTokens(data.tokens ?? [])
+        tokensChanged.value++
         if (!(data.accountId && useMailbox(data.accountId))) {
           localStorage.setItem('mailUnlock', data.token)
         }
@@ -1739,6 +1765,8 @@ onMounted(async () => {
 
 function onUnlocked() {
   locked.value = false
+  // 门里刚存下一批令牌（MailboxGate 调 saveTokens），发件人下拉要跟着更新。
+  tokensChanged.value++
   init()
 }
 
@@ -1772,6 +1800,7 @@ async function lockMailbox() {
     // 不管服务端那一下成没成，本地都当它退了：撤销失败却把屏幕开着，
     // 而人已经以为关掉走开了，是这两者里更糟的那个。
     forgetMailbox(leaving)
+    tokensChanged.value++
     const rest = mailboxes.value.filter((b) => b.id !== leaving)
     if (rest.length && useMailbox(rest[0].id)) {
       currentAccount.value = rest[0].id
@@ -1790,6 +1819,7 @@ async function lockAllMailboxes() {
     await post('/mailbox/lock-all', { tokens: allTokens() })
   } finally {
     clearAll()
+    tokensChanged.value++
     locked.value = true
   }
 }
@@ -1843,7 +1873,7 @@ async function refreshUnread() {
     const d = await get<{ unreadCount: number }>('/inbound-mails', {
       page: 1,
       page_size: 1,
-      accountId: currentAccount.value,
+      // 同上：算哪个箱的未读由令牌决定。
     })
     unreadCount.value = Number(d.unreadCount ?? 0)
   } catch {
@@ -2029,8 +2059,10 @@ async function load() {
         keyword: keyword.value,
         view: INBOUND_VIEWS[folder.value],
         cursor: applied?.cursor ?? '',
-        // 只看当前这个信箱。0 = 全部（还没绑过箱，或者只有一个）。
-        accountId: currentAccount.value,
+        // 看哪个信箱**不在这里传**：网关只认解锁令牌里的那个箱
+        // （见 requireMailUnlock）。换箱是上面 currentAccount 那个 watch
+        // 换令牌，不是换参数——传参数的话，退出 A 之后拿还活着的 B 的令牌
+        // 配一个 accountId=A 照样读得到 A 的信。
       })
       inbound.value = d.mails ?? []
       total.value = Number(d.meta?.total ?? 0)
@@ -2770,7 +2802,11 @@ async function syncOnOpen() {
 // gate is the place to retype the code, so this locks and shows it.
 async function reauth() {
   try {
-    const d = await get<{ account: { authKind: string } }>('/my-mail-account')
+    // 跟着**当前这个箱**问。不带的话答的是默认箱：263 是密码箱、Gmail 是
+    // Google 箱，问错了就会在密码门前弹去 Google，或者反过来。
+    const d = await get<{ account: { authKind: string } }>('/my-mail-account', {
+      accountId: currentAccount.value,
+    })
     if (d.account?.authKind === 'OAUTH') {
       // Full-page departure, same as the gate: popups get blocked, and
       // Google's page is where the person should see themselves go.

@@ -62,6 +62,7 @@ type EmailDraft struct {
 	Bcc                 []byte
 	ForwardAsAttachment bool
 	TrackOpens          bool
+	AccountID           int64
 }
 
 type EmailEvent struct {
@@ -192,6 +193,7 @@ type EmailMessage struct {
 	Tracked         bool
 	FromEmail       string
 	TrackOpens      bool
+	AccountID       int64
 }
 
 type EmailMessageRecipient struct {

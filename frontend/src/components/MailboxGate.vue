@@ -64,6 +64,16 @@ import { useAuthStore } from '../stores/auth'
 import MailboxCredentialsForm from './MailboxCredentialsForm.vue'
 import { type MintedToken, saveTokens, useMailbox } from '../lib/mailUnlock'
 
+const props = defineProps<{
+  /**
+   * 正在问哪个信箱。0 = 默认箱（还没绑过、或者只绑了一个）。
+   *
+   * 门上必须写对名字。绑了两个箱的人被挡在 163 那个门前、门上却写着默认的
+   * QQ 地址，人就会把 163 的授权码填进去——而那是「在一个没写名字的框里输
+   * 密码」那条注释本来要防的事，多信箱之后它反倒成了错的名字。
+   */
+  accountId?: number
+}>()
 const emit = defineEmits<{ unlocked: []; hostSettings: [] }>()
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -83,6 +93,7 @@ onMounted(async () => {
   try {
     const d = await get<{ account: { email: string; username: string; authKind: string } }>(
       '/my-mail-account',
+      props.accountId ? { accountId: props.accountId } : undefined,
     )
     account.email = d.account?.email ?? ''
     account.username = d.account?.username ?? ''

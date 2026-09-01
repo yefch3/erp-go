@@ -1694,6 +1694,7 @@ export default {
     },
     privacyNote: '每位收件人单独收到一封邮件，彼此看不到对方的地址。',
     privacyNoteMerged: '合并发送：所有收件人收到同一封邮件，收件人和抄送名单互相可见。',
+    fromLabel: '发件人',
     sendModeLabel: '发送方式',
     modeSeparate: '分别发送（每人一封）',
     modeMerged: '合并一封（互相可见）',

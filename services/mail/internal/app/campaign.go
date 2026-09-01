@@ -40,6 +40,12 @@ type CampaignInput struct {
 	// whole point: these addresses reach the envelope and never a header, so
 	// nobody on To or Cc learns they were included.
 	BCC []Recipient
+	// 从**哪个信箱**发。0 = 由服务端挑（回复继承收到那封信的箱，否则用默认箱）。
+	//
+	// 一个人可以绑多个信箱，而「你在哪个箱里」是浏览器才知道的事。不传的话
+	// 服务端只能猜，而它以前猜的永远是默认箱——于是你在 Gmail 里点回复，
+	// 信从 263 发出去，客户看到的发件人不是刚才跟他写信的那个人。
+	AccountID int64
 	// Set when this send answers a mail in the caller's inbox: the threading
 	// headers and thread key are taken from that message, so both sides'
 	// clients stack the answer under the question.
@@ -205,8 +211,16 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID int64, in Campaig
 		suppressed[b.Email] = b.Reason
 	}
 
+	// 从哪个信箱发，**在入队之前定死**。发信时才反查的那一版有个不报错的
+	// 坏法：一封排队中的信重试时，如果这期间换过默认箱，重试会从另一个
+	// 地址发出去——同一封信，两次尝试两个发件人。
+	accountID, err := s.sendingMailbox(ctx, tenantID, op.ID, in.AccountID, in.ReplyToInboundID)
+	if err != nil {
+		return CampaignResult{}, err
+	}
+
 	if mode == "MERGED" {
-		return s.createMerged(ctx, tenantID, in, kind, sender, body, textBody, format, thread, suppressed, due)
+		return s.createMerged(ctx, tenantID, in, kind, sender, accountID, body, textBody, format, thread, suppressed, due)
 	}
 
 	result := CampaignResult{}
@@ -288,8 +302,9 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID int64, in Campaig
 			}
 			if _, err := q.QueueMessage(ctx, store.QueueMessageParams{
 				TenantID: tenantID, CampaignID: campaignID, MessageKey: key,
-				Kind: kind, SenderID: sender.ID, SenderName: sender.Name,
-				ToEmail: addr, ToName: r.Name,
+				Kind: kind, SenderID: sender.ID, AccountID: accountID,
+				SenderName: sender.Name,
+				ToEmail:    addr, ToName: r.Name,
 				CustomerID: r.CustomerID, CustomerName: r.CustomerName,
 				ContactID: r.ContactID,
 				Subject:   subject, Body: rendered, BodyText: renderedText,
@@ -400,6 +415,58 @@ func joinSignature(body, sig, bodyFormat, sigFormat string) string {
 // textToHTML lifts plain text into the HTML body without letting it inject.
 func textToHTML(s string) string {
 	return strings.ReplaceAll(escapeForHTML(s), "\n", "<br>")
+}
+
+// sendingMailbox 决定这封信从哪个信箱发出去。
+//
+// 三层，从最明确到最兜底：
+//
+//  1. 调用方点名了（写信框里的发件人下拉）——但必须是**他自己的**箱。
+//     不验的话，任何人填一个别人的 account_id 就能以别人的地址发信。
+//  2. 这是一封回复：用收到原信的那个箱。这几乎总是对的——对方写到哪个
+//     地址，回信就该从哪个地址出去，否则会话在客户那边会断成两条。
+//  3. 都没有：默认箱。和改动之前一样。
+//
+// 返回 0 表示这个人一个箱都没绑。那种情况照旧交给发信那边处理（它会答
+// 「没有可用的信箱」并让这封信可重试），这里不提前报错——入队本身没问题，
+// 绑好箱之后队列会自己排出去。
+func (s *Service) sendingMailbox(ctx context.Context, tenantID, employeeID, requested, replyToInboundID int64) (int64, error) {
+	if requested > 0 {
+		return s.mailboxOfMine(ctx, tenantID, employeeID, requested)
+	}
+	if replyToInboundID > 0 {
+		var acct, owner int64
+		if err := s.pool.QueryRow(ctx, `
+			SELECT account_id, owner_id FROM email_inbound
+			 WHERE tenant_id=$1 AND id=$2`, tenantID, replyToInboundID).Scan(&acct, &owner); err == nil &&
+			owner == employeeID && acct > 0 {
+			return acct, nil
+		}
+	}
+	id, err := s.defaultAccountIDFor(ctx, tenantID, employeeID)
+	if err != nil {
+		// 一个箱都没绑。入队不拦——绑好之后队列会自己排出去。
+		return 0, nil
+	}
+	return id, nil
+}
+
+// mailboxOfMine 把「调用方点名的那个信箱」翻成 id，顺便确认它确实在他名下。
+//
+// **这条必须在服务层判，不能只靠调用方。** 网关传过来的是解锁令牌里那个箱
+// （验过的），但服务层是最后一道；这里放过去的后果，在发信是「以同事的地址
+// 给客户写信」，在收信是「点一下就把同事的信箱拉了一遍」——花的是同事的
+// 配额，动的是同事的已读状态。
+func (s *Service) mailboxOfMine(ctx context.Context, tenantID, employeeID, id int64) (int64, error) {
+	row, err := s.q.GetMailAccountByID(ctx, store.GetMailAccountByIDParams{
+		TenantID: tenantID, ID: id,
+	})
+	if err != nil || row.EmployeeID != employeeID {
+		// 措辞含糊：说「这个信箱不是你的」而不是「它属于张三」，
+		// 否则这里就成了一个拿 id 探测别人信箱的口子。
+		return 0, apierr.Invalid("MAIL_NOT_YOUR_MAILBOX", "这个邮箱不在你名下")
+	}
+	return id, nil
 }
 
 func (s *Service) senderOf(ctx context.Context, op Operator) (Sender, error) {
@@ -566,7 +633,7 @@ func (s *Service) composeContext(ctx context.Context, tenantID int64, in *Campai
 // refused rather than rendered against an arbitrary person.
 func (s *Service) createMerged(
 	ctx context.Context, tenantID int64, in CampaignInput, kind string,
-	sender Sender, body, textBody, format string, thread composeThread,
+	sender Sender, accountID int64, body, textBody, format string, thread composeThread,
 	suppressed map[string]string, due pgtype.Timestamptz,
 ) (CampaignResult, error) {
 	result := CampaignResult{}
@@ -649,7 +716,8 @@ func (s *Service) createMerged(
 		}
 		msgID, err := q.QueueMessage(ctx, store.QueueMessageParams{
 			TenantID: tenantID, CampaignID: campaignID, MessageKey: key,
-			Kind: kind, SenderID: sender.ID, SenderName: sender.Name,
+			Kind: kind, SenderID: sender.ID, AccountID: accountID,
+			SenderName: sender.Name,
 			// The first To recipient stands for the message in list views;
 			// the full cast lives in the recipients table.
 			ToEmail: tos[0].Email, ToName: tos[0].Name,

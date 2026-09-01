@@ -98,10 +98,15 @@ type Outbound struct {
 	// shared account — these two fields are what it resolves credentials by.
 	TenantID int64
 	SenderID int64
-	FromName string
-	ToEmail  string
-	ToName   string
-	Subject  string
+	// AccountID 是这封信从哪个信箱发。入队时定死（00047），发信时按它取
+	// 凭据——不是发信那一刻才拿 SenderID 反查默认箱。
+	//
+	// 0 = 这次改动之前入队的行，那些退回反查。
+	AccountID int64
+	FromName  string
+	ToEmail   string
+	ToName    string
+	Subject   string
 	// Body is the HTML when Format is HTML, otherwise the whole message.
 	Body string
 	// BodyText is the plain-text alternative, set only for HTML mail. Both

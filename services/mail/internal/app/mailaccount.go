@@ -193,16 +193,14 @@ func translateMailboxTaken(err error) error {
 	return err
 }
 
-// ForSender 是发信路径专用的过渡入口：从「谁发的」找到「用哪个信箱」，
-// 再走 ForAccount。
+// ForSender 从「谁发的」找到「用哪个信箱」，再走 ForAccount。
 //
-// 出站队列（email_messages）今天只记 sender_id，不记 account_id，所以这一步
-// 反查躲不掉。第三期给队列加上 account_id 之后，provider.Accounts 接口改成
-// 直接收账号 id，这个方法和 defaultAccountIDFor 一起删。
+// 00047 之后发信路径不再走它：队列自己记着 account_id，smtp.go 直接
+// ForAccount。剩下的唯一用处是那条兜底——00047 之前入队、account_id 还是 0
+// 的那些行（见 smtp.go 里的分支）。队列排空之后它就没人调了。
 //
-// 在那之前它有个必须知道的性质：**它答的是「这个人的默认信箱」，不是「这封
-// 信本来要从哪个信箱发」**。一封排队中的信重试时，如果这个人期间改了默认
-// 信箱，重试会从另一个地址发出去。第三期就是为了消掉这件事。
+// 用它的时候要知道它答的是什么：**「这个人的默认信箱」，不是「这封信本来
+// 要从哪个信箱发」**。所以只有在后者确实答不上来时才该用它。
 func (s *Service) ForSender(ctx context.Context, tenantID, senderID int64) (MailAccount, error) {
 	accountID, err := s.defaultAccountIDFor(ctx, tenantID, senderID)
 	if err != nil {
@@ -213,14 +211,14 @@ func (s *Service) ForSender(ctx context.Context, tenantID, senderID int64) (Mail
 
 // defaultAccountIDFor 找这个人「用来发信」的那个信箱。
 //
-// **这是第一期的过渡桥。** 凭据已经改成按账号取了，而出站队列还没有
-// account_id（那是第三期的事），所以发信这一侧暂时还得从人反查回信箱。
-// 今天 mail_accounts 上的 UNIQUE (tenant_id, employee_id) 保证答案唯一。
+// 「多个候选」曾经是要吵出来的事——第一期到第三期之间，出站队列还没有
+// account_id，绑了两个箱的人发信会随机挑一个，而那不会报任何错。00047 之后
+// 队列自己记着从哪个箱发，这里退回它本来的意思：**没点名时用哪一个**。
+// 那是个正常问题，不是警告，所以不再打日志。
 //
-// 第二期放开那条约束、而第三期还没给队列加上 account_id 的那段时间里，
-// 这里会真的有多个候选。**那种情况必须吵出来**：从前按员工取单行的写法
-// 在这里是 sqlc 的 :one，pgx 读到第一行就返回、不报错，于是发信随机挑箱，
-// 另一个信箱看起来好好的、其实一封都发不出去，日志里一个字都没有。
+// 排序按 is_default DESC——默认箱是人选的，id 顺序是随机的历史。回填
+// （00047:47）用的是同一个排序，两处必须一致，否则回填填的和运行时算的
+// 不是一个箱。
 func (s *Service) defaultAccountIDFor(ctx context.Context, tenantID, employeeID int64) (int64, error) {
 	rows, err := s.q.ListMailAccountsForEmployee(ctx, store.ListMailAccountsForEmployeeParams{
 		TenantID: tenantID, EmployeeID: employeeID,
@@ -231,14 +229,6 @@ func (s *Service) defaultAccountIDFor(ctx context.Context, tenantID, employeeID 
 	if len(rows) == 0 {
 		return 0, ErrNoMailAccount
 	}
-	if len(rows) > 1 {
-		s.log.Warn("这个人名下有多个信箱，而发信路径还没有账号维度——先用他的默认信箱。"+
-			"出站队列要在第三期带上 account_id，那之前一封排队中的信重试时"+
-			"可能从另一个地址发出去",
-			"tenant", tenantID, "employee", employeeID, "accounts", len(rows))
-	}
-	// 查询按 is_default DESC 排序，所以第一行就是默认信箱——不是"id 最小的
-	// 那个"。这一点是刻意的：默认信箱是人选的，而 id 顺序是随机的历史。
 	return rows[0].ID, nil
 }
 

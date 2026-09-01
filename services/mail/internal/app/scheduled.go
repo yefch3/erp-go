@@ -51,7 +51,9 @@ type ScheduledSend struct {
 }
 
 // ListScheduled reports what the caller has booked and not yet sent.
-func (s *Service) ListScheduled(ctx context.Context, tenantID int64, op Operator, limit int32, cursor string) ([]ScheduledSend, int64, string, error) {
+//
+// accountID 是「只看这个信箱要发的」，0 = 全部。和收件箱、已发送同一个口径。
+func (s *Service) ListScheduled(ctx context.Context, tenantID int64, op Operator, accountID int64, limit int32, cursor string) ([]ScheduledSend, int64, string, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
@@ -59,8 +61,12 @@ func (s *Service) ListScheduled(ctx context.Context, tenantID int64, op Operator
 	if err != nil {
 		return nil, 0, "", err
 	}
+	var acct *int64
+	if accountID > 0 {
+		acct = &accountID
+	}
 	rows, err := s.q.ListScheduled(ctx, store.ListScheduledParams{
-		TenantID: tenantID, SenderID: op.ID, RowLimit: limit,
+		TenantID: tenantID, SenderID: op.ID, AccountID: acct, RowLimit: limit,
 		CursorAt: at, CursorID: id,
 	})
 	if err != nil {
@@ -177,6 +183,14 @@ func (s *Service) restoreDraft(ctx context.Context, tenantID int64, c store.GetS
 	in := DraftInput{
 		Subject: c.SubjectTpl, Body: c.BodyTpl, Format: c.BodyFormat,
 		Kind: c.Kind, SendMode: "SEPARATE", ReplyToInboundID: c.ReplyToInboundID,
+	}
+	// 原来打算从哪个箱发，还原回草稿里。漏掉的话它是 0，写信框打开时退回
+	// 「当前在看的箱」——人在 QQ 里撤回一封本来要从 163 发的信，接着写完
+	// 一发就从 QQ 出去了，而他并没有改过发件人。
+	//
+	// 一次定时发送的所有收件人共用一个箱（入队时只算一次），取第一行即可。
+	if len(msgs) > 0 {
+		in.AccountID = msgs[0].AccountID
 	}
 	if len(msgs) > 0 && msgs[0].SendMode == "MERGED" {
 		// One message, and the cast lives beside it. To and CC are separate

@@ -141,6 +141,7 @@ func (h *Handler) CreateCampaign(ctx context.Context, req *mailv1.CreateCampaign
 		SignatureID: req.GetSignatureId(), Kind: req.GetKind(),
 		Format: req.GetBodyFormat(), Recipients: recipients,
 		SendMode: req.GetSendMode(), CC: cc, BCC: recipientsFromProto(req.GetBcc()),
+		AccountID:           req.GetAccountId(),
 		ReplyToInboundID:    req.GetReplyToInboundId(),
 		ForwardInboundID:    req.GetForwardInboundId(),
 		ForwardAsAttachment: req.GetForwardAsAttachment(),
@@ -555,6 +556,7 @@ func (h *Handler) SaveDraft(ctx context.Context, req *mailv1.SaveDraftRequest) (
 		SendMode:            req.GetSendMode(),
 		CC:                  recipientsFromProto(req.GetCc()),
 		BCC:                 recipientsFromProto(req.GetBcc()),
+		AccountID:           req.GetAccountId(),
 		ReplyToInboundID:    req.GetReplyToInboundId(),
 		ForwardInboundID:    req.GetForwardInboundId(),
 		ForwardAsAttachment: req.GetForwardAsAttachment(),
@@ -594,6 +596,7 @@ func (h *Handler) GetDraft(ctx context.Context, req *mailv1.GetDraftRequest) (*m
 		SendMode:            d.SendMode,
 		Cc:                  recipientsToProto(d.CC),
 		Bcc:                 recipientsToProto(d.BCC),
+		AccountId:           d.AccountID,
 		ReplyToInboundId:    d.ReplyToInboundID,
 		ForwardInboundId:    d.ForwardInboundID,
 		ForwardAsAttachment: d.ForwardAsAttachment,
@@ -643,7 +646,7 @@ func (h *Handler) ListScheduled(ctx context.Context, req *mailv1.ListScheduledRe
 	if size < 1 {
 		size = 20
 	}
-	sends, total, next, err := h.svc.ListScheduled(ctx, grpcx.TenantID(ctx), operator(ctx), size, req.GetCursor())
+	sends, total, next, err := h.svc.ListScheduled(ctx, grpcx.TenantID(ctx), operator(ctx), req.GetAccountId(), size, req.GetCursor())
 	if err != nil {
 		return nil, err
 	}
@@ -730,9 +733,9 @@ func (h *Handler) SaveMailHost(ctx context.Context, req *mailv1.SaveMailHostRequ
 	return &mailv1.SaveMailHostResponse{Ok: true}, nil
 }
 
-func (h *Handler) GetMyMailAccount(ctx context.Context, _ *mailv1.GetMyMailAccountRequest) (*mailv1.GetMyMailAccountResponse, error) {
+func (h *Handler) GetMyMailAccount(ctx context.Context, req *mailv1.GetMyMailAccountRequest) (*mailv1.GetMyMailAccountResponse, error) {
 	op := operator(ctx)
-	v, err := h.svc.GetMyMailAccount(ctx, grpcx.TenantID(ctx), op.ID)
+	v, err := h.svc.GetMyMailAccount(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId())
 	if err != nil {
 		return nil, err
 	}
@@ -1056,9 +1059,9 @@ func (h *Handler) EmptyJunk(ctx context.Context, _ *mailv1.EmptyJunkRequest) (*m
 	return &mailv1.EmptyJunkResponse{Deleted: int32(n)}, nil
 }
 
-func (h *Handler) SyncMailbox(ctx context.Context, _ *mailv1.SyncMailboxRequest) (*mailv1.SyncMailboxResponse, error) {
+func (h *Handler) SyncMailbox(ctx context.Context, req *mailv1.SyncMailboxRequest) (*mailv1.SyncMailboxResponse, error) {
 	op := operator(ctx)
-	n, pending, err := h.svc.SyncNow(ctx, grpcx.TenantID(ctx), op.ID)
+	n, pending, err := h.svc.SyncNow(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId())
 	if err != nil {
 		return &mailv1.SyncMailboxResponse{Fetched: 0, Detail: err.Error()}, nil
 	}
@@ -1069,7 +1072,7 @@ func (h *Handler) SyncMailbox(ctx context.Context, _ *mailv1.SyncMailboxRequest)
 
 func (h *Handler) ListMailboxSent(ctx context.Context, req *mailv1.ListMailboxSentRequest) (*mailv1.ListMailboxSentResponse, error) {
 	op := operator(ctx)
-	page, err := h.svc.ListMailboxSent(ctx, grpcx.TenantID(ctx), op.ID,
+	page, err := h.svc.ListMailboxSent(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId(),
 		req.GetKeyword(), req.GetCursor(), req.GetPage().GetPageSize())
 	if err != nil {
 		return nil, err

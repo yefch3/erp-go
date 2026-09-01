@@ -34,6 +34,16 @@ func mustDecode(t *testing.T, body string, msg proto.Message) {
 }
 
 func TestBodiesTheBrowserActuallySendsDecode(t *testing.T) {
+	// frontend/src/components/EmailComposer.vue —— 写信/回复。
+	// accountId 决定这封信从哪个信箱发出去；少了它，proto 收不下整单 400。
+	// 前端把它当字符串发（int64 的 JSON 映射），两种形式都得收得下。
+	mustDecode(t, `{
+		"subject": "报价", "body": "hi", "bodyFormat": "TEXT", "kind": "MARKETING",
+		"sendMode": "SEPARATE", "accountId": "17", "replyToInboundId": "0",
+		"recipients": [{"email": "buyer@overseas.com", "name": "Buyer"}]
+	}`, &mailv1.CreateCampaignRequest{})
+	mustDecode(t, `{"subject": "草稿", "accountId": 17}`, &mailv1.SaveDraftRequest{})
+
 	// frontend/src/pages/BankTransactionsPage.vue —— 改一条流水。
 	// fields 是整个表单对象展开的，少一个 proto 字段就整单保存不了。
 	mustDecode(t, `{

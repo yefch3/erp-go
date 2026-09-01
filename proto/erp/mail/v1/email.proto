@@ -489,6 +489,11 @@ message ListMailboxSentRequest {
   erp.common.v1.PageRequest page = 1;
   string keyword = 2;
   string cursor = 3;
+  // 只看这个信箱发出去的。0 = 全部。
+  //
+  // 和收件箱一路同一个口径——按邮箱分，左侧切换。0 那一档留给旧前端，以及
+  // 一个箱都没绑的人。
+  int64 account_id = 4;
 }
 
 message ListMailboxSentResponse {
@@ -497,7 +502,13 @@ message ListMailboxSentResponse {
   string next_cursor = 3;
 }
 
-message SyncMailboxRequest {}
+message SyncMailboxRequest {
+  // 收哪个信箱。0 = 默认箱（旧前端、只绑了一个箱的人走这条）。
+  //
+  // 网关填的是解锁令牌里那个箱，也就是你正在看的那个。点 立即收信 是在问
+  // 「客户回了没有」，问的当然是眼前这个箱。
+  int64 account_id = 1;
+}
 
 message SyncMailboxResponse {
   int32 fetched = 1;
@@ -630,7 +641,14 @@ message MailAccount {
   string imap_host = 11;
 }
 
-message GetMyMailAccountRequest {}
+message GetMyMailAccountRequest {
+  // 问哪个信箱。0 = 默认箱。
+  //
+  // 一个人可以绑好几个，而这个接口有两种用途：解锁门要说清「正在问的是
+  // 哪个箱」（不然人会把授权码填到另一个箱的门上），而「他有没有绑箱」
+  // 这类问题问默认箱就够。
+  int64 account_id = 1;
+}
 
 message ListMyMailboxesRequest {}
 
@@ -941,6 +959,14 @@ message CreateCampaignRequest {
   // zero value keeps today's behaviour: an old client that never heard of
   // the field still gets tracked mail, not silently untracked mail.
   bool disable_tracking = 15;
+  // 从**哪个信箱**发。0 = 服务端挑（回复继承收到那封信的箱，否则默认箱）。
+  //
+  // 一个人可以绑多个信箱，而「你此刻在哪个箱里」只有浏览器知道。不传的话
+  // 服务端只能猜，而它猜的永远是默认箱——于是你在 Gmail 里点回复，信从
+  // 263 发出去，客户看到的发件人不是刚才跟他写信的那个人。
+  //
+  // 服务端会验：这个信箱必须是发信人自己的。
+  int64 account_id = 16;
 }
 
 message CreateCampaignResponse {
@@ -1285,6 +1311,9 @@ message Draft {
   repeated Recipient bcc = 15;
   bool forward_as_attachment = 16;
   bool disable_tracking = 17;
+  // 这封草稿打算从哪个信箱发。存进草稿是因为「我在 Gmail 里写了一半」
+  // 这件事，下次打开草稿得还原出来。
+  int64 account_id = 18;
 }
 
 message SaveDraftRequest {
@@ -1307,6 +1336,8 @@ message SaveDraftRequest {
   repeated Recipient bcc = 13;
   bool forward_as_attachment = 14;
   bool disable_tracking = 15;
+  // 同 Draft.account_id。
+  int64 account_id = 16;
 }
 
 message SaveDraftResponse {
@@ -1363,7 +1394,8 @@ message ScheduledSend {
 message ListScheduledRequest {
   erp.common.v1.PageRequest page = 1;  // Where the previous page ended. Keyset, like every other mailbox list.
   string cursor = 2;
-
+  // 只看这个信箱要发的。0 = 全部。和收件箱、已发送同一个口径。
+  int64 account_id = 3;
 }
 
 message ListScheduledResponse {

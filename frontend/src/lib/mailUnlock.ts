@@ -93,6 +93,21 @@ export function forgetMailbox(accountId: number) {
   }
 }
 
+/**
+ * 手上还开着的那些信箱。
+ *
+ * 写信框的发件人下拉用它筛：退出了 163 之后，163 不该还留在下拉里。留着的
+ * 话「一个一个退出」只退了一半——读不到它的信，却还能以它的地址给客户写信。
+ *
+ * 服务端只能验「请求带的这把令牌开的是不是这个箱」，一个请求只带一把，所以
+ * 这条口径落在浏览器这边。它挡的是日常路径，不是攻击者。
+ */
+export function unlockedMailboxes(): number[] {
+  return Object.keys(readMap())
+    .map(Number)
+    .filter((n) => Number.isFinite(n) && n > 0)
+}
+
 /** 手上所有令牌，「全部退出」要把它们一起报给服务端撤掉。 */
 export function allTokens(): string[] {
   const m = readMap()

@@ -18,11 +18,23 @@ import (
 // Best-effort on purpose. By the time this runs the message has been accepted
 // by the relay and is on its way; failing the send because the copy could not
 // be filed would turn a bookkeeping problem into a lost message.
-func (s *Service) saveSentCopy(ctx context.Context, tenantID, senderID int64, raw []byte) {
+// accountID 是这封信真正从哪个箱发出去的；0 = 00047 之前入队的行，退回按人
+// 查默认箱。
+//
+// **这一条从前查的就是默认箱，而那正是 00047 说要修的那个毛病。** 默认 QQ、
+// 从 163 发：副本被 APPEND 进 QQ 的 已发送，同步回来时带的是 QQ 的
+// account_id，于是这封信在 163 的 已发送 里**一行都没有**——两条腿都筛掉了
+// 它（服务器副本那条算 QQ 的，ERP 那条被「已经有副本了」的去重干掉）。
+//
+// 还有两个变种，因为 hostFilesItsOwnSentCopy 是按账号上的 SMTP 主机判的：
+// 默认 Gmail、从 163 发 → 提前返回，**一份副本都不存**，163 自己的网页版
+// 已发送 也是空的；默认 163、从 Gmail 发 → 往一个根本没发过这封信的箱里
+// 塞一份副本。
+func (s *Service) saveSentCopy(ctx context.Context, tenantID, senderID, accountID int64, raw []byte) {
 	if s.mailbox == nil || len(raw) == 0 {
 		return
 	}
-	accountID, err := s.defaultAccountIDFor(ctx, tenantID, senderID)
+	accountID, err := s.sendingAccount(ctx, tenantID, senderID, accountID)
 	if err != nil {
 		s.log.Warn("could not file a copy in the sent folder", "sender", senderID, "err", err)
 		return

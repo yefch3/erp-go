@@ -177,7 +177,7 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 	// refuses us for exceeding a limit does lasting damage to the mailbox's
 	// standing; waiting an hour costs nothing but an hour, so the check
 	// happens here rather than being discovered from a 4xx.
-	if wait, reason := s.overQuota(ctx, cfg.TenantID, m.SenderID); wait > 0 {
+	if wait, reason := s.overQuota(ctx, cfg.TenantID, m.SenderID, m.AccountID); wait > 0 {
 		// Not counted as an attempt against the backoff budget: being paced is
 		// not a delivery failure, and letting it burn retries would push a
 		// perfectly good message into the attention queue just for being sent
@@ -233,6 +233,7 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 		MessageKey:   m.MessageKey,
 		TenantID:     cfg.TenantID,
 		SenderID:     m.SenderID,
+		AccountID:    m.AccountID,
 		FromName:     m.SenderName,
 		ToEmail:      m.ToEmail,
 		ToName:       m.ToName,
@@ -291,10 +292,10 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 			s.log.Warn("邮件已发出，但时间线没记上", "message", m.ID, "kind", "SENT", "err", err)
 		}
 		s.recordRecipientResults(ctx, cfg, m.ID, recips, res.Rejected)
-		s.countSend(ctx, cfg.TenantID, m.SenderID)
+		s.countSend(ctx, cfg.TenantID, m.SenderID, m.AccountID)
 		// Last, and never fatal: the ERP's own books are closed above, and a
 		// mail host that will not take the copy must not undo any of it.
-		s.saveSentCopy(ctx, cfg.TenantID, m.SenderID, res.Raw)
+		s.saveSentCopy(ctx, cfg.TenantID, m.SenderID, m.AccountID, res.Raw)
 
 	case Retryable:
 		if int(m.AttemptCount) >= len(backoff) {

@@ -60,6 +60,14 @@ func (s *Server) createCampaign(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, req) {
 		return
 	}
+	// 没点名从哪个信箱发，就用**此刻解锁的那个箱**——你在哪个箱里，信就从
+	// 那个箱出去。这是最符合直觉的默认，也让前端在绝大多数情况下不用操心。
+	//
+	// 令牌里那个箱比请求参数可信：它是验证过的（见 mailunlock.go），而参数
+	// 是调用方说的。服务层还会再验一次「这个箱是不是他的」。
+	if req.GetAccountId() == 0 {
+		req.AccountId = unlockedAccount(r.Context())
+	}
 	resp, err := s.Emails.CreateCampaign(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -466,6 +474,10 @@ func (s *Server) saveDraft(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, req) {
 		return
 	}
+	// 同 createCampaign：草稿也记住「我在哪个箱里写的」。
+	if req.GetAccountId() == 0 {
+		req.AccountId = unlockedAccount(r.Context())
+	}
 	resp, err := s.Emails.SaveDraft(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -517,6 +529,8 @@ func (s *Server) listScheduled(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Emails.ListScheduled(r.Context(), &mailv1.ListScheduledRequest{
 		Page:   pageFromQuery(r),
 		Cursor: r.URL.Query().Get("cursor"),
+		// 看哪个箱由令牌决定，和收件箱、已发送同一条理由。
+		AccountId: unlockedAccount(r.Context()),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -569,8 +583,16 @@ func (s *Server) saveMailHost(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// 问哪个信箱的门牌。这条路由**没有** requireMailUnlock，也不能有——门本身
+// 就是拿来换令牌的，还没令牌的时候也要能问。
+//
+// 所以这里只能收查询参数，而「这个箱是不是他的」由邮件服务判：不是他的就
+// 回空壳，不回别人的。参数不可信，答案可信。
 func (s *Server) getMyMailAccount(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.GetMyMailAccount(r.Context(), &mailv1.GetMyMailAccountRequest{})
+	acct, _ := strconv.ParseInt(r.URL.Query().Get("accountId"), 10, 64)
+	resp, err := s.Emails.GetMyMailAccount(r.Context(), &mailv1.GetMyMailAccountRequest{
+		AccountId: acct,
+	})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -850,7 +872,11 @@ func (s *Server) syncMailbox(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("收信太频繁了，%d 秒后再试", int(wait.Seconds())))
 		return
 	}
-	resp, err := s.Emails.SyncMailbox(r.Context(), &mailv1.SyncMailboxRequest{})
+	// 收哪个箱由令牌决定，和收件箱、已发送同一个口径。点 立即收信 是在问
+	// 「客户回了没有」，问的是眼前这个箱。
+	resp, err := s.Emails.SyncMailbox(r.Context(), &mailv1.SyncMailboxRequest{
+		AccountId: unlockedAccount(r.Context()),
+	})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -859,10 +885,13 @@ func (s *Server) syncMailbox(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listMailboxSent(w http.ResponseWriter, r *http.Request) {
+	// 看哪个信箱发出去的，**由令牌决定**——和收件箱同一个理由：参数是调用方
+	// 说的，令牌是验过的。退出了 A 之后不该还能拿 B 的令牌翻 A 的已发送。
 	resp, err := s.Emails.ListMailboxSent(r.Context(), &mailv1.ListMailboxSentRequest{
-		Page:    pageFromQuery(r),
-		Keyword: r.URL.Query().Get("keyword"),
-		Cursor:  r.URL.Query().Get("cursor"),
+		Page:      pageFromQuery(r),
+		Keyword:   r.URL.Query().Get("keyword"),
+		Cursor:    r.URL.Query().Get("cursor"),
+		AccountId: unlockedAccount(r.Context()),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)

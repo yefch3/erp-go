@@ -38,6 +38,21 @@
     </el-alert>
 
     <el-form label-width="88px" class="compose-form">
+      <!-- 发件人。只在绑了不止一个信箱时出现——一个选项的选择器是噪音。
+
+           **必须看得见。** 不显示的话，人在 163 那个箱里写信、信从 QQ 发
+           出去，而他要等客户回信才发现发件人不对。默认跟着「当前在看的箱」
+           走；改了只影响这一封，关掉再开又回到当前箱。 -->
+      <el-form-item v-if="(mailboxes?.length ?? 0) > 1" :label="t('emails.fromLabel')">
+        <el-select v-model="fromAccount" style="width: 100%">
+          <el-option
+            v-for="b in mailboxes"
+            :key="b.id"
+            :value="b.id"
+            :label="b.email"
+          />
+        </el-select>
+      </el-form-item>
       <el-form-item :label="t('emails.sendModeLabel')">
         <div class="body-box">
           <el-radio-group v-model="form.sendMode">
@@ -490,11 +505,23 @@ interface ComposeTemplate {
   bodyFormat: string
 }
 
-const props = defineProps<{ modelValue: boolean }>()
+const props = defineProps<{
+  modelValue: boolean
+  /** 这个人名下的信箱。只有一个时不显示发件人那一行——一个选项的选择器是噪音。 */
+  mailboxes?: { id: number; email: string }[]
+  /** 当前在看哪个箱。发件人默认跟着它走：你在哪个箱里写信，就从哪个箱发。 */
+  currentAccount?: number
+}>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; sent: []; saved: [] }>()
 
 const { t, locale } = useI18n()
 const common = (k: string) => t(`common.${k}`)
+
+// 从哪个信箱发。0 = 跟着当前在看的那个箱（网关会填）。
+//
+// 多信箱之后这件事必须**看得见**：不显示的话，人在 163 那个箱里写信，
+// 信从 QQ 发出去，而他要等客户回信才发现发件人不对。
+const fromAccount = ref(0)
 
 const form = reactive({
   subject: '',
@@ -597,6 +624,10 @@ function signature() {
     replyCtx.replyToInboundId,
     replyCtx.forwardInboundId,
     replyCtx.forwardAsAttachment,
+    // 改了发件箱也算改动。不算的话自动保存不会被触发——人在下拉里挑了
+    // 163、关掉、再打开，还是原来那个箱，而这一次没有任何提示。和上面
+    // forwardAsAttachment 是同一类：字都还在，信变了。
+    fromAccount.value,
   ])
 }
 
@@ -612,6 +643,25 @@ function hasContent() {
 function markClean() {
   baseline = signature()
 }
+
+// 每次打开写信框，发件人回到「当前在看的那个箱」。上一次改过的发件人不该
+// 粘着——那是上一封信的事。openDraft 在这之后跑，所以草稿存的那个箱盖得住。
+//
+// 放在 markClean 下面而不是 fromAccount 旁边：immediate 的回调是同步跑的，
+// 声明在上面的话 hasContent 会读到还没初始化的 form。
+watch(
+  () => [props.modelValue, props.currentAccount] as const,
+  ([open, cur]) => {
+    if (!open) return
+    fromAccount.value = Number(cur ?? 0)
+    // 归位是程序干的，不是人干的，所以不能算成「有未保存的改动」。不重新
+    // 取基准的话：上一封信里改过发件箱、关掉、再打开一个空白写信框，点叉
+    // 就会问「要丢弃吗」——而里面一个字都没有。和 loadSignatures 里套用
+    // 租户默认签名是同一件事，同一个守卫。
+    if (!hasContent()) markClean()
+  },
+  { immediate: true },
+)
 
 const isDirty = () => signature() !== baseline
 
@@ -672,6 +722,15 @@ async function openDraft(id: string) {
   selected.value = draft.recipients ?? []
   ccSelected.value = draft.cc ?? []
   bccSelected.value = draft.bcc ?? []
+  // 从哪个箱发也要还原——「我在 Gmail 里写了一半」正是存它的理由。不还原
+  // 的话，接着写完一发又从当前这个箱出去了，而人根本不会想到去看发件人。
+  //
+  // 两种情况退回当前箱：0（00047 之前存的老草稿），以及那个箱已经解绑了。
+  // 后者不退的话选择器里是个空白项，发出去才知道从哪儿发的。
+  const saved = Number(draft.accountId ?? 0)
+  fromAccount.value = (props.mailboxes ?? []).some((b) => b.id === saved)
+    ? saved
+    : Number(props.currentAccount ?? 0)
   replyCtx.replyToInboundId = draft.replyToInboundId ?? '0'
   replyCtx.forwardInboundId = draft.forwardInboundId ?? '0'
   replyCtx.forwardAsAttachment = draft.forwardAsAttachment ?? false
@@ -792,6 +851,9 @@ function draftPayload() {
     sendMode: form.sendMode,
     cc: form.sendMode === 'MERGED' ? ccSelected.value.map(asProto) : [],
     bcc: form.sendMode === 'MERGED' ? bccSelected.value.map(asProto) : [],
+    // 从哪个信箱发。不传的话网关会填「此刻解锁的那个箱」——也就是你正在看
+    // 的那个。这里传是因为发件人可以在下拉里改成别的箱。
+    accountId: String(fromAccount.value || 0),
     replyToInboundId: replyCtx.replyToInboundId,
     forwardInboundId: replyCtx.forwardInboundId,
     forwardAsAttachment: replyCtx.forwardAsAttachment,
@@ -1308,6 +1370,7 @@ async function submitSend(at: string) {
       sendMode: form.sendMode,
       cc: form.sendMode === 'MERGED' ? ccSelected.value.map(asProto) : [],
       bcc: form.sendMode === 'MERGED' ? bccSelected.value.map(asProto) : [],
+      accountId: String(fromAccount.value || 0),
       replyToInboundId: replyCtx.replyToInboundId,
       forwardInboundId: replyCtx.forwardInboundId,
       forwardAsAttachment: replyCtx.forwardAsAttachment,

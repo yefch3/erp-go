@@ -169,12 +169,30 @@ func (s *Service) hasCredential(ctx context.Context, tenantID, accountID int64) 
 	return len(sec.SecretEnc) > 0 || len(sec.OauthRefreshEnc) > 0
 }
 
-// GetMyMailAccount 回这个人的**默认**信箱，给还没改成多信箱的那几个调用点用。
+// GetMyMailAccount 回一个信箱的门牌：地址、登录名、用密码还是用 Google。
 //
-// 一个都没有时回一个空壳而不是报错：设置页要能显示「还没绑」。
-func (s *Service) GetMyMailAccount(ctx context.Context, tenantID, employeeID int64) (MailAccountView, error) {
+// accountID = 0 回默认箱。「他有没有绑箱」这类问题问默认箱就够。
+//
+// 点了名就回那一个——解锁门要用它。绑了两个箱的人被挡在 163 那个门前，
+// 门上却写着默认的 QQ 地址，人就会把 163 的授权码填进去；而那句注释
+// （「在一个没写名字的框里输密码，正是把密码输错地方的方式」）本来就是
+// 为了防这件事，多信箱之后它反倒成了错的名字。
+//
+// 点了名但不是他的箱：回空壳，不是别人的箱，也不报错。门上什么都不写，
+// 好过写错一个名字；报错则会变成一个拿 id 探别人信箱的口子。
+//
+// 一个都没有时也回空壳而不是报错：设置页要能显示「还没绑」。
+func (s *Service) GetMyMailAccount(ctx context.Context, tenantID, employeeID, accountID int64) (MailAccountView, error) {
 	boxes, err := s.ListMyMailboxes(ctx, tenantID, employeeID)
 	if err != nil || len(boxes) == 0 {
+		return MailAccountView{IsActive: true}, nil
+	}
+	if accountID > 0 {
+		for _, b := range boxes {
+			if b.ID == accountID {
+				return b, nil
+			}
+		}
 		return MailAccountView{IsActive: true}, nil
 	}
 	return boxes[0], nil

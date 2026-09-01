@@ -22,6 +22,11 @@ import (
 // why it is an interface at all: the adapter gets a secret to use for one
 // dial and has no way to enumerate, log or return them.
 type Accounts interface {
+	// ForAccount 是正路：出站队列上记着这封信从哪个信箱发（00047），
+	// 直接按那个信箱取凭据。
+	ForAccount(ctx context.Context, tenantID, accountID int64) (app.MailAccount, error)
+	// ForSender 是退路，给 account_id 为 0 的行用——这次改动之前入队、
+	// 还没发出去的那些。它答的是「这个人的默认箱」，也就是改动之前的行为。
 	ForSender(ctx context.Context, tenantID, senderID int64) (app.MailAccount, error)
 	// RecordFailure surfaces a connection or authentication problem on the
 	// account itself. A wrong authorisation code otherwise shows up only as
@@ -61,7 +66,21 @@ func NewSMTP(accounts Accounts, blobs Blobs, timeout time.Duration, log *slog.Lo
 func (s *SMTP) Name() string { return "smtp" }
 
 func (s *SMTP) Send(ctx context.Context, m app.Outbound) app.SendResult {
-	acct, err := s.accounts.ForSender(ctx, m.TenantID, m.SenderID)
+	// 这封信记着自己从哪个信箱发（00047），按它取凭据。
+	//
+	// **不再按 sender_id 反查默认箱。** 反查有个不报错的坏法：一封排队中的
+	// 信重试时才查，而这期间这个人可能换过默认箱——同一封信，两次尝试两个
+	// 发件人，客户那边的会话就断了。
+	//
+	// 0 = 这次改动之前入队、还没发出去的行。那些退回老办法，行为和改动之前
+	// 一模一样，所以部署那一刻队列里积着的信不会卡住。
+	var acct app.MailAccount
+	var err error
+	if m.AccountID > 0 {
+		acct, err = s.accounts.ForAccount(ctx, m.TenantID, m.AccountID)
+	} else {
+		acct, err = s.accounts.ForSender(ctx, m.TenantID, m.SenderID)
+	}
 	if err != nil {
 		// Not the recipient's fault and not permanent: somebody has to enter
 		// a code. Retryable means the queue drains itself once they do,

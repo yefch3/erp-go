@@ -19,10 +19,15 @@ import (
 // no account, no host row, a database error — also means "go ahead", because
 // the send path already fails loudly on a missing account and a counter
 // problem must not become a silent mail outage.
-func (s *Service) overQuota(ctx context.Context, tenantID, senderID int64) (time.Duration, string) {
+func (s *Service) overQuota(ctx context.Context, tenantID, senderID, accountID int64) (time.Duration, string) {
 	// 限额跟着信箱走，不再读租户那一行：263 的套餐上限和 Gmail 的
 	// 500/天不是一个量纲，一个人同时用两家时一份租户级配额说不出话。
-	accountID, err := s.defaultAccountIDFor(ctx, tenantID, senderID)
+	//
+	// 而「跟着信箱走」要求认的是**这封信的那个箱**。从前这里查的是默认箱，
+	// 于是从 163 发的一百封全记在 QQ 的计数上：163 自己的上限一辈子不生效
+	// （拿默认箱的额度往严格的那家灌），而第 101 封会被 QQ 的上限拦下来，
+	// 提示里写着一个 QQ 从没达到过的数字。
+	accountID, err := s.sendingAccount(ctx, tenantID, senderID, accountID)
 	if err != nil {
 		return 0, ""
 	}
@@ -59,8 +64,8 @@ func (s *Service) overQuota(ctx context.Context, tenantID, senderID int64) (time
 // increment must never stop mail going out. The cost of an occasional
 // undercount is sending slightly over the limit once; the cost of treating
 // it as fatal is a stalled queue.
-func (s *Service) countSend(ctx context.Context, tenantID, senderID int64) {
-	accountID, err := s.defaultAccountIDFor(ctx, tenantID, senderID)
+func (s *Service) countSend(ctx context.Context, tenantID, senderID, accountID int64) {
+	accountID, err := s.sendingAccount(ctx, tenantID, senderID, accountID)
 	if err != nil {
 		return
 	}
@@ -75,4 +80,18 @@ func (s *Service) countSend(ctx context.Context, tenantID, senderID int64) {
 	}); err != nil {
 		s.log.Warn("could not count a send against the quota", "account", acct.ID, "err", err)
 	}
+}
+
+// sendingAccount 认这封信是从哪个信箱发出去的。
+//
+// accountID = 0 只有一种来源：00047 之前入队、还没发出去的那些行。对它们退回
+// 老办法（按人查默认箱）——那正是不做这次改动时会反查到的那一个，所以部署
+// 那一刻队列里积着的信不会换发件人，也不会卡住。
+//
+// 队列排空之后这条分支就不再有人走。留着是因为「排空」没有一个能断言的时刻。
+func (s *Service) sendingAccount(ctx context.Context, tenantID, senderID, accountID int64) (int64, error) {
+	if accountID > 0 {
+		return accountID, nil
+	}
+	return s.defaultAccountIDFor(ctx, tenantID, senderID)
 }
