@@ -242,6 +242,12 @@ func (h *SourcingHandler) ConfirmCustomerSelection(ctx context.Context, req *prv
 		CaseID: req.GetCaseId(), SalesPlanID: req.GetSalesPlanId(), SalesPlanItemIDs: req.GetSalesPlanItemIds(),
 		CustomerContact: req.GetCustomerContact(), ConfirmationNote: req.GetConfirmationNote(),
 		CustomerConfirmedAt: req.GetCustomerConfirmedAt()}
+	for index, quantity := range req.GetConfirmedQuantities() {
+		if index >= len(in.SalesPlanItemIDs) {
+			break
+		}
+		in.ItemChoices = append(in.ItemChoices, app.CustomerSelectionItemChoiceInput{SalesPlanItemID: in.SalesPlanItemIDs[index], ConfirmedQty: quantity})
+	}
 	for _, row := range req.GetShipmentChoices() {
 		in.ShipmentChoices = append(in.ShipmentChoices, app.CustomerShipmentChoiceInput{
 			ShipmentGroupKey: row.GetShipmentGroupKey(), SalesShippingOptionID: row.GetSalesShippingOptionId(), CustomerManaged: row.GetCustomerManaged()})

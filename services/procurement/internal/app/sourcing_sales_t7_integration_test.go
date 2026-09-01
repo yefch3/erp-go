@@ -143,12 +143,18 @@ func TestT7T8SalesNegotiationCustomerSelectionAndFinalRecheck(t *testing.T) {
 			incompatibleSalesShippingID = option.Header.ID
 		}
 	}
-	if _, badErr := svc.ConfirmCustomerSelection(ctx, tenantID, ConfirmCustomerSelectionInput{CaseID: caseID, SalesPlanID: plan2.Header.ID, SalesPlanItemIDs: []int64{plan2.Items[0].ID}, ShipmentChoices: []CustomerShipmentChoiceInput{{ShipmentGroupKey: groupKey, SalesShippingOptionID: incompatibleSalesShippingID}}, CustomerConfirmedAt: "2026-08-31T09:00:00Z"}, sales); badErr == nil || !strings.Contains(badErr.Error(), "SC_CUSTOMER_SHIPMENT_DESTINATION") {
+	if _, badErr := svc.ConfirmCustomerSelection(ctx, tenantID, ConfirmCustomerSelectionInput{CaseID: caseID, SalesPlanID: plan2.Header.ID, ItemChoices: []CustomerSelectionItemChoiceInput{{SalesPlanItemID: plan2.Items[0].ID, ConfirmedQty: "12"}}, ShipmentChoices: []CustomerShipmentChoiceInput{{ShipmentGroupKey: groupKey, SalesShippingOptionID: incompatibleSalesShippingID}}, CustomerConfirmedAt: "2026-08-31T09:00:00Z"}, sales); badErr == nil || !strings.Contains(badErr.Error(), "SC_CUSTOMER_SHIPMENT_DESTINATION") {
 		t.Fatalf("incompatible destination error=%v", badErr)
 	}
-	selection, err := svc.ConfirmCustomerSelection(ctx, tenantID, ConfirmCustomerSelectionInput{CaseID: caseID, SalesPlanID: plan2.Header.ID, SalesPlanItemIDs: []int64{plan2.Items[0].ID}, ShipmentChoices: []CustomerShipmentChoiceInput{{ShipmentGroupKey: groupKey, SalesShippingOptionID: compatibleSalesShippingID}}, CustomerContact: "客户联系人", ConfirmationNote: "客户确认该产品和船运", CustomerConfirmedAt: "2026-08-31T10:00:00Z"}, sales)
+	if _, badErr := svc.ConfirmCustomerSelection(ctx, tenantID, ConfirmCustomerSelectionInput{CaseID: caseID, SalesPlanID: plan2.Header.ID, ItemChoices: []CustomerSelectionItemChoiceInput{{SalesPlanItemID: plan2.Items[0].ID, ConfirmedQty: "21"}}, ShipmentChoices: []CustomerShipmentChoiceInput{{ShipmentGroupKey: groupKey, SalesShippingOptionID: compatibleSalesShippingID}}, CustomerConfirmedAt: "2026-08-31T09:30:00Z"}, sales); badErr == nil || !strings.Contains(badErr.Error(), "SC_CUSTOMER_SELECTION_QUANTITY_EXCEEDS_AVAILABLE") {
+		t.Fatalf("quantity availability error=%v", badErr)
+	}
+	selection, err := svc.ConfirmCustomerSelection(ctx, tenantID, ConfirmCustomerSelectionInput{CaseID: caseID, SalesPlanID: plan2.Header.ID, ItemChoices: []CustomerSelectionItemChoiceInput{{SalesPlanItemID: plan2.Items[0].ID, ConfirmedQty: "12"}}, ShipmentChoices: []CustomerShipmentChoiceInput{{ShipmentGroupKey: groupKey, SalesShippingOptionID: compatibleSalesShippingID}}, CustomerContact: "客户联系人", ConfirmationNote: "客户确认该产品和船运", CustomerConfirmedAt: "2026-08-31T10:00:00Z"}, sales)
 	if err != nil || selection.Header.Status != "INTENT_RECHECK_PENDING" || len(selection.Items) != 1 || len(selection.Shipments) != 1 || len(selection.Tasks) != 2 {
 		t.Fatalf("customer selection=%+v err=%v", selection, err)
+	}
+	if selection.Items[0].ConfirmedQty != "12.0000" {
+		t.Fatalf("customer intended quantity=%s want 12.0000", selection.Items[0].ConfirmedQty)
 	}
 	var finalProcurementReworkID, finalShippingReworkID int64
 	for _, task := range selection.Tasks {

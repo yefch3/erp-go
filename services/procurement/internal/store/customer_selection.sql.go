@@ -292,6 +292,7 @@ SELECT spi.id AS sales_plan_item_id,spi.sourcing_line_id,spi.procurement_plan_it
  spi.customer_currency,spi.customer_unit_price::text,
  coalesce(spi.promised_delivery_date::text,'')::text AS promised_delivery_date,spi.line_note,
  ppi.supplier_quote_line_id,ppi.buyer_id,ppi.buyer_name,ppi.supplier_id,ppi.supplier_name,
+ ppi.available_qty::text AS available_qty,
  coalesce(ppi.factory_id,0)::bigint AS factory_id,ppi.factory_name,sl.port AS required_destination_port
 FROM sourcing_sales_plan_items spi
 JOIN sourcing_sales_plans sp ON sp.id=spi.plan_id AND sp.tenant_id=spi.tenant_id
@@ -324,6 +325,7 @@ type CustomerSelectionCandidateRow struct {
 	BuyerName               string
 	SupplierID              int64
 	SupplierName            string
+	AvailableQty            string
 	FactoryID               int64
 	FactoryName             string
 	RequiredDestinationPort string
@@ -353,6 +355,7 @@ func (q *Queries) CustomerSelectionCandidate(ctx context.Context, arg CustomerSe
 		&i.BuyerName,
 		&i.SupplierID,
 		&i.SupplierName,
+		&i.AvailableQty,
 		&i.FactoryID,
 		&i.FactoryName,
 		&i.RequiredDestinationPort,

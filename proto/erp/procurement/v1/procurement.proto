@@ -2597,11 +2597,14 @@ message CustomerSelection {
 message ConfirmCustomerSelectionRequest {
   int64 case_id = 1;
   int64 sales_plan_id = 2;
+  // Legacy clients sent only IDs and therefore always selected the full demand quantity.
   repeated int64 sales_plan_item_ids = 3;
   string customer_contact = 4;
   string confirmation_note = 5;
   string customer_confirmed_at = 6;
   repeated CustomerShipmentChoiceInput shipment_choices = 7;
+  // Aligned by index with sales_plan_item_ids. Empty for legacy clients means full demand quantity.
+  repeated string confirmed_quantities = 8;
 }
 message ConfirmCustomerSelectionResponse { CustomerSelection selection = 1; }
 message ListCustomerSelectionsRequest { int64 case_id = 1; }

@@ -19,9 +19,15 @@ import (
 type ConfirmCustomerSelectionInput struct {
 	CaseID, SalesPlanID               int64
 	SalesPlanItemIDs                  []int64
+	ItemChoices                       []CustomerSelectionItemChoiceInput
 	CustomerContact, ConfirmationNote string
 	CustomerConfirmedAt               string
 	ShipmentChoices                   []CustomerShipmentChoiceInput
+}
+
+type CustomerSelectionItemChoiceInput struct {
+	SalesPlanItemID int64
+	ConfirmedQty    string
 }
 
 type CustomerShipmentChoiceInput struct {
@@ -66,8 +72,8 @@ func (s *Service) ConfirmCustomerSelection(ctx context.Context, tenantID int64, 
 	in.CustomerContact = strings.TrimSpace(in.CustomerContact)
 	in.ConfirmationNote = strings.TrimSpace(in.ConfirmationNote)
 	in.CustomerConfirmedAt = strings.TrimSpace(in.CustomerConfirmedAt)
-	if in.CaseID == 0 || in.SalesPlanID == 0 || len(in.SalesPlanItemIDs) == 0 || in.CustomerConfirmedAt == "" {
-		return CustomerSelectionView{}, apierr.Invalid("SC_CUSTOMER_SELECTION_REQUIRED", "请选择客户最终接受的产品方案并填写确认时间")
+	if in.CaseID == 0 || in.SalesPlanID == 0 || (len(in.SalesPlanItemIDs) == 0 && len(in.ItemChoices) == 0) || in.CustomerConfirmedAt == "" {
+		return CustomerSelectionView{}, apierr.Invalid("SC_CUSTOMER_SELECTION_REQUIRED", "请选择客户意向产品方案、填写意向数量和沟通时间")
 	}
 	if _, err := time.Parse(time.RFC3339, in.CustomerConfirmedAt); err != nil {
 		return CustomerSelectionView{}, apierr.Invalid("SC_CUSTOMER_SELECTION_TIME", "客户确认时间格式无效")
@@ -88,10 +94,19 @@ func (s *Service) ConfirmCustomerSelection(ctx context.Context, tenantID int64, 
 	var selectionID int64
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
-		candidates := make([]store.CustomerSelectionCandidateRow, 0, len(in.SalesPlanItemIDs))
+		choices := in.ItemChoices
+		if len(choices) == 0 {
+			choices = make([]CustomerSelectionItemChoiceInput, 0, len(in.SalesPlanItemIDs))
+			for _, itemID := range in.SalesPlanItemIDs {
+				choices = append(choices, CustomerSelectionItemChoiceInput{SalesPlanItemID: itemID})
+			}
+		}
+		candidates := make([]store.CustomerSelectionCandidateRow, 0, len(choices))
+		confirmedQtyByItem := make(map[int64]string, len(choices))
 		batchLines := map[string]map[int64]bool{}
 		selectedByLine := map[int64]store.CustomerSelectionCandidateRow{}
-		for _, itemID := range in.SalesPlanItemIDs {
+		for _, choice := range choices {
+			itemID := choice.SalesPlanItemID
 			if itemID == 0 || seenItems[itemID] {
 				return apierr.Invalid("SC_CUSTOMER_SELECTION_DUPLICATE", "客户选择中存在重复方案")
 			}
@@ -102,6 +117,19 @@ func (s *Service) ConfirmCustomerSelection(ctx context.Context, tenantID int64, 
 			if seenLines[candidate.SourcingLineID] {
 				return apierr.Invalid("SC_CUSTOMER_SELECTION_ONE_PER_PRODUCT", "同一产品只能确认一个最终方案")
 			}
+			confirmedQty := strings.TrimSpace(choice.ConfirmedQty)
+			if confirmedQty == "" {
+				confirmedQty = candidate.SpiQuotedQty
+			}
+			quantity, quantityErr := decimal.NewFromString(confirmedQty)
+			available, availableErr := decimal.NewFromString(candidate.AvailableQty)
+			if quantityErr != nil || !quantity.IsPositive() {
+				return apierr.Invalid("SC_CUSTOMER_SELECTION_QUANTITY", "客户意向数量必须大于 0")
+			}
+			if availableErr != nil || quantity.GreaterThan(available) {
+				return apierr.Invalid("SC_CUSTOMER_SELECTION_QUANTITY_EXCEEDS_AVAILABLE", "客户意向数量不能超过供应商可供数量")
+			}
+			confirmedQtyByItem[candidate.SalesPlanItemID] = quantity.String()
 			seenItems[itemID], seenLines[candidate.SourcingLineID] = true, true
 			candidates = append(candidates, candidate)
 			selectedByLine[candidate.SourcingLineID] = candidate
@@ -150,7 +178,7 @@ func (s *Service) ConfirmCustomerSelection(ctx context.Context, tenantID int64, 
 				covered[line.SourcingLineID] = true
 				if selected, required := selectedByLine[line.SourcingLineID]; required {
 					quoted, quotedErr := decimal.NewFromString(line.QuotedQty)
-					needed, neededErr := decimal.NewFromString(selected.SpiQuotedQty)
+					needed, neededErr := decimal.NewFromString(confirmedQtyByItem[selected.SalesPlanItemID])
 					if quotedErr != nil || neededErr != nil || quoted.LessThan(needed) {
 						return apierr.Invalid("SC_CUSTOMER_SHIPMENT_QUANTITY", "所选船运方案的承运数量不足")
 					}
@@ -190,12 +218,12 @@ func (s *Service) ConfirmCustomerSelection(ctx context.Context, tenantID int64, 
 		selectionItemIDsByGroup := map[string][]int64{}
 		for _, candidate := range candidates {
 			groupKey := customerShipmentGroupKey(candidate.SupplierID, candidate.FactoryID)
-			selectionItemID, itemErr := q.CreateCustomerSelectionItem(ctx, store.CreateCustomerSelectionItemParams{TenantID: tenantID, SelectionID: selectionID, SalesPlanItemID: candidate.SalesPlanItemID, SourcingLineID: candidate.SourcingLineID, ProcurementPlanItemID: candidate.ProcurementPlanItemID, SupplierQuoteLineID: candidate.SupplierQuoteLineID, ProductName: candidate.ProductName, ConfirmedQty: candidate.SpiQuotedQty, UomCode: candidate.UomCode, CustomerCurrency: candidate.CustomerCurrency, CustomerUnitPrice: candidate.SpiCustomerUnitPrice, PromisedDeliveryDate: candidate.PromisedDeliveryDate, LineNote: candidate.LineNote, SupplierID: candidate.SupplierID, SupplierName: candidate.SupplierName, FactoryID: candidate.FactoryID, FactoryName: candidate.FactoryName, ShipmentGroupKey: groupKey, CustomerManagedShipping: customerManagedGroups[groupKey]})
+			selectionItemID, itemErr := q.CreateCustomerSelectionItem(ctx, store.CreateCustomerSelectionItemParams{TenantID: tenantID, SelectionID: selectionID, SalesPlanItemID: candidate.SalesPlanItemID, SourcingLineID: candidate.SourcingLineID, ProcurementPlanItemID: candidate.ProcurementPlanItemID, SupplierQuoteLineID: candidate.SupplierQuoteLineID, ProductName: candidate.ProductName, ConfirmedQty: confirmedQtyByItem[candidate.SalesPlanItemID], UomCode: candidate.UomCode, CustomerCurrency: candidate.CustomerCurrency, CustomerUnitPrice: candidate.SpiCustomerUnitPrice, PromisedDeliveryDate: candidate.PromisedDeliveryDate, LineNote: candidate.LineNote, SupplierID: candidate.SupplierID, SupplierName: candidate.SupplierName, FactoryID: candidate.FactoryID, FactoryName: candidate.FactoryName, ShipmentGroupKey: groupKey, CustomerManagedShipping: customerManagedGroups[groupKey]})
 			if itemErr != nil {
 				return itemErr
 			}
 			selectionItemIDsByGroup[groupKey] = append(selectionItemIDsByGroup[groupKey], selectionItemID)
-			reason := "客户意向选择了该方案，请复核最终价格、可供数量与交期"
+			reason := fmt.Sprintf("客户意向选择了该方案，意向数量 %s %s；请按该数量复核最终价格、可供数量与交期", confirmedQtyByItem[candidate.SalesPlanItemID], candidate.UomCode)
 			procurementReworkID, reworkErr := q.CreateProcurementReworkRequest(ctx, store.CreateProcurementReworkRequestParams{TenantID: tenantID, CaseID: in.CaseID, PlanID: plan.ProcurementPlanID, SourcingLineID: candidate.SourcingLineID, SupplierQuoteLineID: candidate.SupplierQuoteLineID, RequestType: "REQUOTE", ScopeType: "QUOTE", AssignedBuyerID: candidate.BuyerID, AssignedBuyerName: candidate.BuyerName, SupplierID: candidate.SupplierID, SupplierName: candidate.SupplierName, ProductName: candidate.ProductName, Reason: reason, CreatedBy: op.ID, CreatedByName: op.Name})
 			if reworkErr != nil {
 				return reworkErr
