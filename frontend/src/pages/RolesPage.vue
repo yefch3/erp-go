@@ -16,22 +16,22 @@
             :class="{ active: r.id === selected?.id }"
             @click="select(r)"
           >
-            <div class="role-name">
-              {{ r.name }}
+            <div class="role-name" :title="r.code">
+              {{ displayRoleName(r) }}
               <!-- 停用的仍然列出来，否则停掉之后没有任何入口能把它启用回来。 -->
               <el-tag v-if="r.status === 'INACTIVE'" type="info" size="small" effect="plain">
                 {{ t('roles.inactive') }}
               </el-tag>
             </div>
-            <div class="role-code">{{ r.code }} · {{ r.permissionCodes.length }} {{ t('roles.permissionCount') }}</div>
+            <div class="role-code">{{ r.permissionCodes.length }} {{ t('roles.permissionCount') }}</div>
           </div>
         </div>
 
         <div class="matrix" v-if="selected">
           <div class="matrix-head">
             <div>
-              <span class="matrix-title">{{ selected.name }}</span>
-              <span class="hint">{{ selected.description || t('roles.noDescription') }}</span>
+              <span class="matrix-title" :title="selected.code">{{ displayRoleName(selected) }}</span>
+              <span class="hint">{{ displayRoleDescription(selected) }}</span>
             </div>
             <div class="head-actions">
               <!-- 超管不给这个按钮：停掉之后没有人能把它启用回来。服务端也拦，
@@ -55,9 +55,8 @@
           <div v-for="(items, module) in grouped" :key="module" class="module">
             <div class="module-name">{{ moduleLabel(module) }}</div>
             <el-checkbox-group v-model="checked" :disabled="!canWrite" class="perm-list">
-              <el-checkbox v-for="p in items" :key="p.code" :value="p.code">
-                {{ p.name }}
-                <span class="perm-code">{{ p.code }}</span>
+              <el-checkbox v-for="p in items" :key="p.code" :value="p.code" :title="p.code">
+                {{ displayPermissionName(p) }}
               </el-checkbox>
             </el-checkbox-group>
           </div>
@@ -145,11 +144,12 @@ import { useI18n } from 'vue-i18n'
 import { get, post, put } from '../api'
 import { useAuthStore } from '../stores/auth'
 import BasicDataEmployeeNav from '../components/BasicDataEmployeeNav.vue'
+import { permissionDisplayName, roleDisplayDescription, roleDisplayName } from '../lib/roleDisplay'
 
 interface Role { id: string; code: string; name: string; description: string; permissionCodes: string[]; status: string }
 interface Permission { id: string; code: string; name: string; module: string }
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const auth = useAuthStore()
 const canWrite = auth.can('iam:role:write')
 
@@ -352,6 +352,18 @@ function moduleLabel(module: string): string {
   return label === key ? module : label
 }
 
+function displayRoleName(role: Role): string {
+  return roleDisplayName(role.code, role.name, String(locale.value))
+}
+
+function displayRoleDescription(role: Role): string {
+  return roleDisplayDescription(role.code, role.description, String(locale.value)) || t('roles.noDescription')
+}
+
+function displayPermissionName(permission: Permission): string {
+  return permissionDisplayName(permission.code, permission.name, String(locale.value))
+}
+
 onMounted(async () => {
   permissions.value = (await get<{ permissions: Permission[] }>('/permissions')).permissions ?? []
   await load()
@@ -441,11 +453,6 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 2px 16px;
-}
-.perm-code {
-  margin-left: 6px;
-  font-size: 12px;
-  color: var(--el-text-color-placeholder);
 }
 .hint {
   margin-left: 10px;
