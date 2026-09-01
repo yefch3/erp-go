@@ -1,19 +1,26 @@
 <template>
-  <MailboxGate
-    v-if="locked === true"
-    :account-id="currentAccount"
-    @unlocked="onUnlocked"
-    @host-settings="hostOpen = true"
-  />
-  <div v-else-if="locked === false" ref="mailboxEl" class="mailbox">
+  <!-- 锁着的时候**左栏照样在**，门开在右边的内容区里。
+
+       从前门是整页的：退出一个箱、或者点一下已经退出的那个箱，整个布局被
+       门换掉，左边那排信箱跟着消失——于是人被钉在一扇门前，想切到另一个
+       还开着的箱都做不到，只能输密码或者离开这一页。
+
+       锁着时左栏只留还能做的那几件：切信箱、加信箱、全部退出。文件夹和
+       写信按钮收起来——它们要的正是这个箱的令牌。 -->
+  <div v-if="locked !== null" ref="mailboxEl" class="mailbox">
     <!-- A folder rail, not tabs. The distinction matters: folders say "your
          mail lives in these places", tabs said "here are three reports". -->
     <aside class="rail">
-      <el-button v-if="canWrite" type="primary" class="compose" @click="composing = true">
+      <el-button
+        v-if="canWrite && !locked"
+        type="primary"
+        class="compose"
+        @click="composing = true"
+      >
         {{ t('emails.compose') }}
       </el-button>
       <button
-        v-for="f in folders"
+        v-for="f in (locked ? [] : folders)"
         :key="f.key"
         class="folder"
         :class="{ on: folder === f.key }"
@@ -50,7 +57,7 @@
            **一个一个退。** 从前只有一个按钮而且是全退——那时令牌一个人只有
            一把，撤了就什么都没了。现在退掉当前这个箱，别的箱照开；走人时
            用旁边那个「全部退出」。 -->
-      <el-button link class="rail-lock" @click="lockMailbox">
+      <el-button v-if="!locked" link class="rail-lock" @click="lockMailbox">
         🔒 {{ t('mailGate.signOut') }}
       </el-button>
       <el-button
@@ -64,7 +71,7 @@
       <!-- Beside 退出邮箱 and 邮箱设置 rather than in a settings page of its
            own: a signature is part of writing mail, not a system setting. -->
       <el-button
-        v-if="auth.can('mail:email:write')"
+        v-if="auth.can('mail:email:write') && !locked"
         link
         class="rail-lock"
         @click="signaturesOpen = true"
@@ -72,7 +79,7 @@
         ✍️ {{ t('menu.signatures') }}
       </el-button>
       <el-button
-        v-if="auth.can('mail:email:write')"
+        v-if="auth.can('mail:email:write') && !locked"
         link
         class="rail-lock"
         @click="templatesOpen = true"
@@ -84,7 +91,18 @@
       </el-button>
     </aside>
 
-    <section class="pane">
+    <!-- 门。开在内容区里而不是整页，左栏那排信箱才留得住——见上面那段。
+         单独一个 section 而不是塞进下面那个：pane 里已经有一条按文件夹分的
+         v-if/v-else 链，插进去会把它拆散。 -->
+    <section v-if="locked" class="pane">
+      <MailboxGate
+        :account-id="currentAccount"
+        @unlocked="onUnlocked"
+        @host-settings="hostOpen = true"
+      />
+    </section>
+
+    <section v-else class="pane">
       <!-- The mailbox saying it is not receiving. Without this, a revoked
            authorisation fails every poll in silence while the page goes on
            showing the last successful sync as though it were current. -->
@@ -1410,6 +1428,9 @@ function onMailboxesChanged(boxes: { id: number; email: string; isDefault: boole
   // 着默认箱，右边列着两个箱的信，两者对不上，而且**不会自己纠正**：下面
   // 那个 watch 要求 before 有值才动，0 → id 这一跳被它跳过了。
   currentAccount.value = boxes[0].id
+  // 锁着的时候别去拉列表：那些接口全要解锁令牌，拉出来的只有一串 403 弹窗
+  // 盖在门上。左栏现在锁着也在（门开在内容区里），所以这条路会在锁着时走到。
+  if (locked.value !== false) return
   load()
   refreshUnread()
 }
@@ -1808,15 +1829,19 @@ async function lockMailbox() {
     // 而人已经以为关掉走开了，是这两者里更糟的那个。
     forgetMailbox(leaving)
     tokensChanged.value++
+    switcher.value?.reload()
     const rest = mailboxes.value.filter((b) => b.id !== leaving)
-    if (rest.length && useMailbox(rest[0].id)) {
-      currentAccount.value = rest[0].id
-      ElMessage.success(t('mailGate.signedOutOne'))
-      switcher.value?.reload()
-      load()
-    } else {
+    if (!rest.length) {
       locked.value = true
+      return
     }
+    ElMessage.success(t('mailGate.signedOutOne'))
+    // 切到剩下的第一个，**开着没开着都切**——决定交给上面那个 watch：
+    // 手上有令牌就进去，没有就把门摆出来。
+    //
+    // 从前这里是「有令牌才切，否则原地弹门」，那会把门指向**刚退掉的那个
+    // 箱**——人刚点了退出，屏幕立刻问他要那个箱的密码，看着像是没退成功。
+    currentAccount.value = rest[0].id
   }
 }
 
@@ -2007,8 +2032,23 @@ watch(currentAccount, (now, before) => {
     locked.value = true
     return
   }
+  // **切回一个还开着的箱，门要收起来。**
+  //
+  // 漏掉这一句的后果和门占整页是同一个毛病的另一半：点了一个退出过的箱，
+  // 门出来；再点回一个开着的箱，令牌换好了、列表也能拉了，而门还杵在那儿。
+  //
+  // 必须在 pushState 之前：applyRoute 开头有 `if (locked !== false) return`，
+  // 还锁着的话这次导航会被它整个吞掉，于是列表停在上一个箱。
+  const wasLocked = locked.value
+  locked.value = false
   keyword.value = ''
   pushState({ page: 1, q: '', mail: '', cursor: '', acct: String(now) }, [])
+  // 从锁着的状态回来时，页面上那些只在解锁后才拉的东西（草稿数、待处理数、
+  // 同步健康）都还是空的或者过期的。init 会把它们一起补上。
+  if (wasLocked) {
+    init()
+    return
+  }
   refreshUnread()
   // 横幅说的是「当前这个箱」，所以切换时立刻重问一次。它自己是一分钟轮询
   // 一次的，不问的话最长有一分钟红条在替**上一个箱**说话——而人刚切过来，
