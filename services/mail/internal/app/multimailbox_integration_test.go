@@ -973,3 +973,213 @@ type seqNumbers struct{ n atomic.Int64 }
 func (s *seqNumbers) Next(context.Context, string) (string, error) {
 	return "T-" + strconv.FormatInt(s.n.Add(1), 10), nil
 }
+
+// 左侧那排角标，每个箱一个数，口径必须和收件箱顶上那个总数**一模一样**。
+//
+// 两条查询回答的是同一个问题（这个箱有多少封没读），只是一条按箱分组、
+// 一条只算一个箱。口径一旦分家，症状是「角标写着 3，切过去一封都没有」——
+// 而人会以为信丢了，比没有角标糟得多。
+//
+// 所以这条测试不去断言具体数字，它断言**两条查询对每个箱都给出同一个数**，
+// 而且是在各种该排除的行都摆好之后：归档过的、删掉的、退信、垃圾箱里没被
+// 捞回来的、以及已经读过的。
+func TestPerMailboxUnreadAgreesWithTheInboxCount(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantID := time.Now().UnixNano()
+	employeeID := tenantID%100000 + 900001
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM email_inbound WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_binding_log WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+	}()
+	svc := New(pool, Deps{Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	work, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "me@qq.com", Provider: "qq", Secret: "code-qq",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	personal, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "me@163.com", Provider: "netease163", Secret: "code-163",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 每一封只在「普通的那封」之外多带一列，那一列就是它该被排除的理由。
+	// 列名和它的值绑在一起（valuesFor），免得加一列时忘了加对应的字面量——
+	// 那种错插进去不报错，只是这封信算进了不该算的那一档。
+	uid := int64(0)
+	add := func(acct int64, folder, extraCol string) {
+		t.Helper()
+		uid++
+		_, err := pool.Exec(ctx, `INSERT INTO email_inbound
+			(tenant_id, account_id, owner_id, message_id, thread_key, folder, imap_uid,
+			 from_email, subject, body_text, received_at`+extraCol+`)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,'buyer@overseas.com','询价','hi',now()`+
+			valuesFor(extraCol)+`)`,
+			tenantID, acct, employeeID,
+			"m"+strconv.FormatInt(uid, 10)+"@x", "thr"+strconv.FormatInt(uid, 10),
+			folder, uid)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// QQ：两封该算，其余每一封都该被排除掉一条规则。
+	add(work.AccountID, "INBOX", "")
+	add(work.AccountID, "INBOX", "")
+	add(work.AccountID, "INBOX", ", is_read")     // 读过了
+	add(work.AccountID, "INBOX", ", is_bounce")   // 退信
+	add(work.AccountID, "INBOX", ", archived_at") // 归档过
+	add(work.AccountID, "INBOX", ", deleted_at")  // 删掉了
+	add(work.AccountID, "JUNK", "")               // 垃圾箱，没捞回来
+	add(work.AccountID, "SENT", "")               // 已发送不算未读
+	// 163：一封普通的，加一封从垃圾箱捞回来的——那一封**要算**。
+	add(personal.AccountID, "INBOX", "")
+	add(personal.AccountID, "JUNK", ", not_junk")
+
+	perBox, err := svc.q.CountUnreadByMailbox(ctx, store.CountUnreadByMailboxParams{
+		TenantID: tenantID, OwnerID: employeeID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[int64]int64{}
+	for _, r := range perBox {
+		got[r.AccountID] = r.Unread
+	}
+
+	for _, acct := range []int64{work.AccountID, personal.AccountID} {
+		one, err := svc.q.CountUnread(ctx, store.CountUnreadParams{
+			TenantID: tenantID, OwnerID: employeeID, AccountID: &acct,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got[acct] != one {
+			t.Errorf("信箱 %d：角标那条查询说 %d，收件箱那条说 %d——"+
+				"两个口径分家了，症状是「角标写着 N，切过去一封都没有」",
+				acct, got[acct], one)
+		}
+	}
+	// 顺带把数字本身钉住，免得两条查询一起错还互相印证。
+	if got[work.AccountID] != 2 {
+		t.Errorf("QQ 该有 2 封未读，拿到 %d", got[work.AccountID])
+	}
+	if got[personal.AccountID] != 2 {
+		t.Errorf("163 该有 2 封未读（含一封从垃圾箱捞回来的），拿到 %d", got[personal.AccountID])
+	}
+}
+
+// valuesFor 给上面那个 add 拼出和列名对应的字面量。
+//
+// 只认它用到的那几列——测试里的辅助函数不需要通用，需要的是看一眼就知道
+// 它在插什么。
+func valuesFor(cols string) string {
+	switch cols {
+	case "":
+		return ""
+	case ", is_read", ", is_bounce", ", not_junk":
+		return ", TRUE"
+	case ", archived_at", ", deleted_at":
+		return ", now()"
+	}
+	panic("valuesFor: 不认识的列 " + cols)
+}
+
+// 「有人在看这个箱」这个时间戳，半分钟内只落一次。
+//
+// 邮件页每次翻页、每次开信都会打到那条路径上。逐次写等于把一次读变成一次
+// 写，而这个值是拿来排班的（下一批按它分档：有人看的箱全量同步，没人看的
+// 只刷未读数），半分钟的粒度绰绰有余。
+func TestMailboxReadTimeIsThrottled(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantID := time.Now().UnixNano()
+	employeeID := tenantID%100000 + 910001
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_binding_log WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+	}()
+	svc := New(pool, Deps{Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	mine, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "me@qq.com", Provider: "qq", Secret: "code-qq",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	readAt := func() (time.Time, bool) {
+		t.Helper()
+		var at *time.Time
+		if err := pool.QueryRow(ctx, `SELECT last_read_at FROM mail_accounts
+			WHERE tenant_id=$1 AND id=$2`, tenantID, mine.AccountID).Scan(&at); err != nil {
+			t.Fatal(err)
+		}
+		if at == nil {
+			return time.Time{}, false
+		}
+		return *at, true
+	}
+
+	// 绑定时还没人看过。
+	if _, ok := readAt(); ok {
+		t.Fatal("刚绑好的箱就有「上次查看」时间")
+	}
+
+	svc.touchMailboxRead(ctx, tenantID, mine.AccountID)
+	first, ok := readAt()
+	if !ok {
+		t.Fatal("看了一次之后仍然没有时间戳")
+	}
+
+	// 紧接着再看十次——一次都不该再写。
+	for i := 0; i < 10; i++ {
+		svc.touchMailboxRead(ctx, tenantID, mine.AccountID)
+	}
+	again, _ := readAt()
+	if !again.Equal(first) {
+		t.Errorf("半分钟内又写了：%v → %v。翻一页写一次的话，"+
+			"这张表会被读操作按写操作的频率打", first, again)
+	}
+
+	// 把时间拨回一分钟前，下一次就该写了——证明限的是频率，不是「只写一次」。
+	if _, err := pool.Exec(ctx, `UPDATE mail_accounts SET last_read_at = now() - interval '1 minute'
+		WHERE tenant_id=$1 AND id=$2`, tenantID, mine.AccountID); err != nil {
+		t.Fatal(err)
+	}
+	svc.touchMailboxRead(ctx, tenantID, mine.AccountID)
+	after, _ := readAt()
+	if !after.After(first.Add(-time.Second)) || after.Before(first) {
+		t.Errorf("过了限频窗口还是没写：%v", after)
+	}
+}

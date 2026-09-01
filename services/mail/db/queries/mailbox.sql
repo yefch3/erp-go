@@ -266,7 +266,7 @@ ORDER BY id;
 -- 浏览器。
 SELECT id, email, username, auth_kind, verified_at, last_error, is_active, updated_at,
        is_default, domain, smtp_host, smtp_port, smtp_security,
-       imap_host, imap_port, imap_security
+       imap_host, imap_port, imap_security, last_read_at
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND employee_id = sqlc.arg(employee_id)::bigint
@@ -1458,3 +1458,39 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND account_id = sqlc.arg(account_id)::bigint
   AND folder = sqlc.arg(folder)::text
   AND imap_uid = sqlc.arg(imap_uid)::bigint;
+
+-- name: CountUnreadByMailbox :many
+-- 这个人**每个信箱**各有多少封没读，一次问完。
+--
+-- 左侧那排角标读的就是它。一个箱一次 CountUnread 的话，绑三个箱就是三次
+-- 往返，而这三个数字总是一起显示的。
+--
+-- 口径必须和 CountUnread 一模一样，否则切过去之后角标和列表对不上——
+-- 那比没有角标更糟：数字说有 3 封，点进去一封都没有，人会以为信丢了。
+-- 归档过、删掉的、退信、以及垃圾箱里没被捞回来的都不算。
+--
+-- 只回有未读的箱。一个都没有的箱不出现在结果里，调用方按 0 处理——
+-- 让 SQL 回一堆 0 再让调用方过滤，两边都要记住这件事。
+SELECT account_id, count(*)::bigint AS unread
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND owner_id = sqlc.arg(owner_id)::bigint
+  AND (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
+  AND NOT is_bounce AND NOT is_read
+  AND archived_at IS NULL AND deleted_at IS NULL
+GROUP BY account_id;
+
+-- name: TouchMailboxRead :exec
+-- 有人在看这个箱。
+--
+-- **限了频**：邮件页每次翻页、每次开信都会打到这条路径，逐次写等于把一次读
+-- 变成一次写。半分钟内只落一次——这个值是拿来分档的（有人看的全量同步、
+-- 没人看的只刷未读数），半分钟的粒度绰绰有余。
+--
+-- 条件写进 WHERE 而不是先读后判：并发的两个请求都读到「该写了」再各写一次，
+-- 是这类计数最常见的写法，也是最常见的浪费。
+UPDATE mail_accounts
+   SET last_read_at = now()
+ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+   AND id = sqlc.arg(id)::bigint
+   AND (last_read_at IS NULL OR last_read_at < now() - interval '30 seconds');
