@@ -1932,6 +1932,7 @@ export default {
     applyTemplate: 'Aplicar plantilla',
     noTemplates: 'Aún no hay plantillas — cree una desde la barra del buzón',
     templateApplied: 'Plantilla aplicada; las variables se rellenan por destinatario al enviar',
+    templateAlreadyApplied: 'Esta plantilla ya está aplicada; no se añadió nada más',
     templateMergedVars: 'El envío combinado es un mismo correo para todos — las variables no se rellenarán',
     vars: {
       contact_name: 'Nombre completo del contacto',
