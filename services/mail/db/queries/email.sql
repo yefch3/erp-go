@@ -338,6 +338,19 @@ FROM email_messages
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND (sqlc.arg(visible_all)::bool OR sender_id = ANY(sqlc.arg(visible_ids)::bigint[]))
   AND (sqlc.arg(sender_id)::bigint = 0 OR sender_id = sqlc.arg(sender_id)::bigint)
+  -- 「待处理」按信箱分：我在读哪个箱，看到的就是从哪个箱发出去出了问题的信。
+  --
+  -- 三个例外写在同一句里，每一个都有理由：
+  --   * 不传 account_id = 不筛（旧令牌、一个箱都没绑的人）。
+  --   * **别人的信不受我的信箱影响。** 这一条列表还兼着数据范围那一层——
+  --     范围放宽的角色能看到下属的信。拿我的 account_id 去筛他们的信，
+  --     结果是一条都不剩，而那不是「按邮箱分」想表达的意思。
+  --   * account_id = 0 是 00047 之前入队的行，它真的不知道自己从哪个箱走的。
+  --     藏起来等于让一封需要处理的失败信从眼前消失，那是这一栏最不该发生的事。
+  AND (sqlc.narg(account_id)::bigint IS NULL
+       OR sender_id <> sqlc.arg(self_id)::bigint
+       OR account_id = 0
+       OR account_id = sqlc.narg(account_id)::bigint)
   AND (sqlc.arg(campaign_id)::bigint = 0 OR campaign_id = sqlc.arg(campaign_id)::bigint)
   AND (sqlc.arg(status)::text = '' OR status = sqlc.arg(status)::text)
   -- The single filter the failure page needs: everything still waiting on a

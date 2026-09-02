@@ -23,11 +23,15 @@ describe('哪些文件夹跟着信箱走', () => {
     expect(perMailbox.length + shared.length).toBe(ALL.length)
   })
 
-  it('待处理和拒收名单不挂在信箱底下——后端那两条查询根本不按信箱筛', () => {
+  it('只有拒收名单不挂在信箱底下——它整家公司一份，发信时也是按公司拦的', () => {
     const { shared } = splitFolders(ALL)
-    expect(shared.map((f) => f.key)).toEqual(['attention', 'suppressions'])
-    expect(isMailboxFolder('attention')).toBe(false)
+    expect(shared.map((f) => f.key)).toEqual(['suppressions'])
     expect(isMailboxFolder('suppressions')).toBe(false)
+  })
+
+  it('待处理跟着信箱走：失败的信记着自己从哪个箱发的', () => {
+    expect(isMailboxFolder('attention')).toBe(true)
+    expect(MAILBOX_FOLDER_KEYS).toContain('attention')
   })
 
   it('草稿箱跟着信箱走', () => {
@@ -39,7 +43,7 @@ describe('哪些文件夹跟着信箱走', () => {
   it('顺序照清单里的，不重排', () => {
     const { perMailbox } = splitFolders(ALL)
     expect(perMailbox.map((f) => f.key)).toEqual([...MAILBOX_FOLDER_KEYS])
-    expect(SHARED_FOLDER_KEYS).toEqual(['attention', 'suppressions'])
+    expect(SHARED_FOLDER_KEYS).toEqual(['suppressions'])
   })
 
   it('清单里没有的键不会凭空造出来', () => {
