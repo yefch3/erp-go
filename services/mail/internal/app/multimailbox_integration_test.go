@@ -738,7 +738,7 @@ func TestSentIsPerMailboxOnBothLegs(t *testing.T) {
 
 	subjects := func(accountID int64) []string {
 		t.Helper()
-		page, err := svc.ListMailboxSent(ctx, tenantID, employeeID, accountID, "", "", 50)
+		page, err := svc.ListMailboxSent(ctx, tenantID, employeeID, accountID, "", "", 50, ListSort{})
 		if err != nil {
 			t.Fatal(err)
 		}

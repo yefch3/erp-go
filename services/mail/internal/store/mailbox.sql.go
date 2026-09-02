@@ -238,22 +238,30 @@ SELECT count(*)::bigint
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
+  AND ($3::bigint IS NULL
+       OR account_id = $3::bigint)
   AND deleted_at IS NULL
   AND (folder <> 'JUNK' OR not_junk)
-  AND search_text ILIKE '%' || $3::text || '%'
+  AND search_text ILIKE '%' || $4::text || '%'
 `
 
 type CountSearchMailParams struct {
-	TenantID int64
-	OwnerID  int64
-	Keyword  string
+	TenantID  int64
+	OwnerID   int64
+	AccountID *int64
+	Keyword   string
 }
 
 // Repeats the predicate rather than sharing it: the count and the list have
 // to agree, and a count that searched a different set would promise rows that
 // are not there.
 func (q *Queries) CountSearchMail(ctx context.Context, arg CountSearchMailParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countSearchMail, arg.TenantID, arg.OwnerID, arg.Keyword)
+	row := q.db.QueryRow(ctx, countSearchMail,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.AccountID,
+		arg.Keyword,
+	)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -2142,15 +2150,16 @@ WITH host AS (
            coalesce(m.status, '') AS status,
            m.opened_at,
            coalesce(m.tracked, FALSE) AS tracked,
-           i.has_attachments, i.is_starred, i.thread_key
+           i.has_attachments, i.is_starred, i.thread_key,
+           i.raw_size
     FROM email_inbound i
     LEFT JOIN email_messages m
            ON m.id = i.sent_message_id AND m.tenant_id = i.tenant_id
-    WHERE i.tenant_id = $6::bigint
-      AND i.owner_id = $7::bigint
+    WHERE i.tenant_id = $8::bigint
+      AND i.owner_id = $9::bigint
       AND i.folder = 'SENT'
-      AND ($8::bigint IS NULL
-           OR i.account_id = $8::bigint)
+      AND ($10::bigint IS NULL
+           OR i.account_id = $10::bigint)
       AND i.deleted_at IS NULL
       AND i.archived_at IS NULL
 ), orphan AS (
@@ -2161,16 +2170,19 @@ WITH host AS (
            EXISTS (SELECT 1 FROM email_attachments a
                    WHERE a.tenant_id = m.tenant_id AND a.campaign_id = m.campaign_id) AS has_attachments,
            FALSE AS is_starred,
-           '' AS thread_key
+           '' AS thread_key,
+           -- 投递记录没有原件，也就没有大小。按大小排时它们沉在最底下，
+           -- 而不是拿正文长度冒充一个数。
+           0::bigint AS raw_size
     FROM email_messages m
-    WHERE m.tenant_id = $6::bigint
-      AND m.sender_id = $7::bigint
+    WHERE m.tenant_id = $8::bigint
+      AND m.sender_id = $9::bigint
       AND m.sent_at IS NOT NULL
       -- 00047 之前入队的行 account_id 是 0，那些只在「不筛」时出现。
       -- 把它们塞进任何一个箱都是猜的，而猜错的样子是「这封信不是我从这个
       -- 地址发的」——比少一行更难解释。
-      AND ($8::bigint IS NULL
-           OR m.account_id = $8::bigint)
+      AND ($10::bigint IS NULL
+           OR m.account_id = $10::bigint)
       AND m.sent_at < now() - interval '10 minutes'
       AND NOT EXISTS (
           SELECT 1 FROM email_inbound i
@@ -2199,25 +2211,46 @@ WITH host AS (
       )
 )
 SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at,
-       tracked, has_attachments, is_starred, thread_key
-FROM (SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at, tracked, has_attachments, is_starred, thread_key FROM host UNION ALL SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at, tracked, has_attachments, is_starred, thread_key FROM orphan) u
-WHERE ($1::text = ''
-       OR subject ILIKE '%' || $1::text || '%'
-       OR to_email ILIKE '%' || $1::text || '%')
+       tracked, has_attachments, is_starred, thread_key, raw_size, sort_key
+FROM (
+    -- 排序键统一成一段文本，理由见 ListThreadsByViewSorted。日期那一档是
+    -- 默认，也是从前唯一的一档：UTC 的 20 位数字串，字典序即时间序。
+    SELECT u.kind, u.id, u.to_email, u.to_name, u.subject, u.snippet, u.at, u.status, u.opened_at, u.tracked, u.has_attachments, u.is_starred, u.thread_key, u.raw_size,
+           (CASE $1::text
+              WHEN 'to'      THEN lower(u.to_email)
+              WHEN 'subject' THEN lower(u.subject)
+              WHEN 'size'    THEN lpad(u.raw_size::text, 20, '0')
+              ELSE to_char(u.at AT TIME ZONE 'UTC', 'YYYYMMDDHH24MISSUS')
+            END)::text AS sort_key
+    FROM (SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at, tracked, has_attachments, is_starred, thread_key, raw_size FROM host UNION ALL SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at, tracked, has_attachments, is_starred, thread_key, raw_size FROM orphan) u
+) s
+WHERE ($2::text = ''
+       OR subject ILIKE '%' || $2::text || '%'
+       OR to_email ILIKE '%' || $2::text || '%')
   -- Keyset, like every other mailbox list. kind joins the sort key because
-  -- the two halves number their rows independently, so (at, id) alone is not
-  -- a unique position.
-  AND ($2::timestamptz IS NULL
-       OR (at, kind, id) < ($2::timestamptz,
-                            $3::text,
-                            $4::bigint))
-ORDER BY at DESC, kind DESC, id DESC
-LIMIT $5::int
+  -- the two halves number their rows independently, so (sort_key, id) alone
+  -- is not a unique position.
+  AND ($3::text IS NULL
+       OR CASE WHEN $4::text = 'asc'
+               THEN (sort_key, kind, id) > ($3::text,
+                                            $5::text,
+                                            $6::bigint)
+               ELSE (sort_key, kind, id) < ($3::text,
+                                            $5::text,
+                                            $6::bigint)
+          END)
+ORDER BY CASE WHEN $4::text = 'asc' THEN sort_key END ASC,
+         CASE WHEN $4::text = 'asc' THEN kind END ASC,
+         CASE WHEN $4::text = 'asc' THEN id END ASC,
+         sort_key DESC, kind DESC, id DESC
+LIMIT $7::int
 `
 
 type ListSentUnifiedParams struct {
+	SortBy     string
 	Keyword    string
-	CursorAt   pgtype.Timestamptz
+	CursorKey  *string
+	SortDir    string
 	CursorKind string
 	CursorID   int64
 	RowLimit   int32
@@ -2240,6 +2273,8 @@ type ListSentUnifiedRow struct {
 	HasAttachments bool
 	IsStarred      bool
 	ThreadKey      string
+	RawSize        int64
+	SortKey        string
 }
 
 // The host's Sent folder alone used to be the answer here. It is not: see
@@ -2278,8 +2313,10 @@ type ListSentUnifiedRow struct {
 // 现在两条腿都有了。不传就是全部——旧前端和「一个箱都没绑」的人走这条。
 func (q *Queries) ListSentUnified(ctx context.Context, arg ListSentUnifiedParams) ([]ListSentUnifiedRow, error) {
 	rows, err := q.db.Query(ctx, listSentUnified,
+		arg.SortBy,
 		arg.Keyword,
-		arg.CursorAt,
+		arg.CursorKey,
+		arg.SortDir,
 		arg.CursorKind,
 		arg.CursorID,
 		arg.RowLimit,
@@ -2308,6 +2345,8 @@ func (q *Queries) ListSentUnified(ctx context.Context, arg ListSentUnifiedParams
 			&i.HasAttachments,
 			&i.IsStarred,
 			&i.ThreadKey,
+			&i.RawSize,
+			&i.SortKey,
 		); err != nil {
 			return nil, err
 		}
@@ -2859,6 +2898,137 @@ func (q *Queries) ListThreadsByView(ctx context.Context, arg ListThreadsByViewPa
 	return items, nil
 }
 
+const listThreadsByViewSorted = `-- name: ListThreadsByViewSorted :many
+SELECT x.id, x.from_email, x.from_name, x.subject, x.snippet, x.thread_key,
+       x.is_read, x.is_starred, x.has_attachments, x.received_at, x.sent_at,
+       x.thread_count, x.raw_size, x.sort_key
+FROM (
+    SELECT m.id, m.from_email, m.from_name, m.subject, m.snippet, m.thread_key,
+           (NOT t.any_unread)::boolean     AS is_read,
+           t.any_starred::boolean          AS is_starred,
+           t.any_attachment::boolean       AS has_attachments,
+           m.received_at, m.sent_at,
+           t.msg_count::int                AS thread_count,
+           m.raw_size,
+           (CASE $1::text
+              WHEN 'from'    THEN lower(coalesce(nullif(m.from_name, ''), m.from_email))
+              WHEN 'subject' THEN lower(m.subject)
+              WHEN 'size'    THEN lpad(m.raw_size::text, 20, '0')
+              ELSE to_char(t.last_at AT TIME ZONE 'UTC', 'YYYYMMDDHH24MISSUS')
+            END)::text                    AS sort_key
+    FROM mail_thread_view t
+    JOIN email_inbound m ON m.tenant_id = t.tenant_id AND m.id = t.last_id
+    WHERE t.tenant_id = $2::bigint
+      AND t.owner_id = $3::bigint
+      AND ($4::bigint IS NULL
+           OR t.account_id = $4::bigint)
+      AND t.view = $5::text
+) x
+WHERE ($6::text IS NULL
+       OR CASE WHEN $7::text = 'asc'
+               THEN (x.sort_key, x.id) > ($6::text, $8::bigint)
+               ELSE (x.sort_key, x.id) < ($6::text, $8::bigint)
+          END)
+ORDER BY CASE WHEN $7::text = 'asc' THEN x.sort_key END ASC,
+         CASE WHEN $7::text = 'asc' THEN x.id END ASC,
+         x.sort_key DESC, x.id DESC
+LIMIT $9::int
+`
+
+type ListThreadsByViewSortedParams struct {
+	SortBy    string
+	TenantID  int64
+	OwnerID   int64
+	AccountID *int64
+	View      string
+	CursorKey *string
+	SortDir   string
+	CursorID  int64
+	RowLimit  int32
+}
+
+type ListThreadsByViewSortedRow struct {
+	ID             int64
+	FromEmail      string
+	FromName       string
+	Subject        string
+	Snippet        string
+	ThreadKey      string
+	IsRead         bool
+	IsStarred      bool
+	HasAttachments bool
+	ReceivedAt     pgtype.Timestamptz
+	SentAt         pgtype.Timestamptz
+	ThreadCount    int32
+	RawSize        int64
+	SortKey        string
+}
+
+// 同一份列表，按人点的那一列排。
+//
+// 和 ListThreadsByView 分成两条而不是合成一条：上面那条靠索引顺序直接读出
+// 前二十五行，是一天到晚都在走的路；这一条要把整个箱的会话拿出来排一遍，
+// 只在有人点了排序栏时才走。把 CASE 塞进上面那条的 ORDER BY 会让索引顺序
+// 用不上，等于为一个偶尔用的功能给常走的路加税。
+//
+// **排序键统一成一段文本。** 发件人和主题本来就是文本；大小补零到 20 位，
+// 时间格式化成 UTC 的 20 位数字串——两者按字典序比就是按数值比。这样做的
+// 好处是游标只有一种形状：(sort_key, id)，不用给每一列各写一套「上一页
+// 停在哪」的比较。lower() 是为了让大小写不同的同一个名字排在一起，而不是
+// 看数据库的排序规则脸色。
+//
+// 会话的「发件人」「主题」「大小」都是**最后一封**的——列表上那一行显示的
+// 就是它，排的也是它。一条会话里有十封信，大小按最后那封算。
+//
+// 方向靠两组 CASE：asc 时前两个键生效、后两个键在完全相同的 (sort_key, id)
+// 上才轮得到（不可能相同，所以无害）；desc 时前两个键全是 NULL，等价于
+// 只按后两个排。
+// 上一页停在哪：asc 往大了走，desc 往小了走。id 兜底，两条会话不可能占同一个位置。
+func (q *Queries) ListThreadsByViewSorted(ctx context.Context, arg ListThreadsByViewSortedParams) ([]ListThreadsByViewSortedRow, error) {
+	rows, err := q.db.Query(ctx, listThreadsByViewSorted,
+		arg.SortBy,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.AccountID,
+		arg.View,
+		arg.CursorKey,
+		arg.SortDir,
+		arg.CursorID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListThreadsByViewSortedRow
+	for rows.Next() {
+		var i ListThreadsByViewSortedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FromEmail,
+			&i.FromName,
+			&i.Subject,
+			&i.Snippet,
+			&i.ThreadKey,
+			&i.IsRead,
+			&i.IsStarred,
+			&i.HasAttachments,
+			&i.ReceivedAt,
+			&i.SentAt,
+			&i.ThreadCount,
+			&i.RawSize,
+			&i.SortKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTrashForPurge = `-- name: ListTrashForPurge :many
 SELECT id, raw_key, account_id, folder, imap_uid, message_id
 FROM email_inbound
@@ -3347,6 +3517,9 @@ WITH hits AS (
     FROM email_inbound
     WHERE tenant_id = $2::bigint
       AND owner_id = $3::bigint
+      -- 只搜这个箱。不传 = 全部，留给旧令牌和一个箱都没绑的人。
+      AND ($4::bigint IS NULL
+           OR account_id = $4::bigint)
       AND deleted_at IS NULL
       AND (folder <> 'JUNK' OR not_junk)
       -- One column, not five ORed together. The subject and the addresses
@@ -3355,11 +3528,11 @@ WITH hits AS (
       -- and the planner falls back to a scan — 100 ms against 1.6 ms,
       -- measured on this mailbox.
       AND search_text ILIKE '%' || $1::text || '%'
-      AND ($4::timestamptz IS NULL
-           OR (received_at, id) < ($4::timestamptz,
-                                   $5::bigint))
+      AND ($5::timestamptz IS NULL
+           OR (received_at, id) < ($5::timestamptz,
+                                   $6::bigint))
     ORDER BY received_at DESC, id DESC
-    LIMIT $6::int
+    LIMIT $7::int
 )
 SELECT id, folder, thread_key, from_email, from_name, to_email, subject,
        is_read, is_starred, has_attachments, received_at, sent_at,
@@ -3380,12 +3553,13 @@ ORDER BY received_at DESC, id DESC
 `
 
 type SearchMailParams struct {
-	Keyword  string
-	TenantID int64
-	OwnerID  int64
-	CursorAt pgtype.Timestamptz
-	CursorID int64
-	RowLimit int32
+	Keyword   string
+	TenantID  int64
+	OwnerID   int64
+	AccountID *int64
+	CursorAt  pgtype.Timestamptz
+	CursorID  int64
+	RowLimit  int32
 }
 
 type SearchMailRow struct {
@@ -3425,6 +3599,7 @@ func (q *Queries) SearchMail(ctx context.Context, arg SearchMailParams) ([]Searc
 		arg.Keyword,
 		arg.TenantID,
 		arg.OwnerID,
+		arg.AccountID,
 		arg.CursorAt,
 		arg.CursorID,
 		arg.RowLimit,

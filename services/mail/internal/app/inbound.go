@@ -903,7 +903,7 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 		CustomerID: owner.CustomerID, ContactID: owner.ContactID,
 		CustomerName: owner.CustomerName,
 		RawKey:       rawKey, RawSize: int64(len(m.Raw)),
-		IsBounce: parsed.IsBounce, HasAttachments: len(parsed.Attachments) > 0,
+		IsBounce: parsed.IsBounce, HasAttachments: hasListedAttachments(parsed),
 		IsRead: m.Seen,
 		SentAt: pgtype.Timestamptz{Time: sentAt, Valid: !sentAt.IsZero()},
 		ReceivedAt: pgtype.Timestamptz{

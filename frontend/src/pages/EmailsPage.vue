@@ -606,6 +606,9 @@
           :folder="folder"
           :loading="loading"
           :highlight="isSearching ? keyword : ''"
+          :sort="listSort"
+          :sort-fields="sortFields"
+          @sort="changeSort"
           @open="openInbound"
           @star="toggleStar"
           @mark="markRow"
@@ -714,6 +717,9 @@
           :mails="mailboxSent"
           folder="sent"
           :loading="loading"
+          :sort="listSort"
+          :sort-fields="sortFields"
+          @sort="changeSort"
           @open="openSentRow"
           @star="toggleStar"
           @mark="markRow"
@@ -1108,6 +1114,17 @@ import {
   saveBlob,
 } from '../api'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
+import { humanSize } from '../lib/humanSize'
+import {
+  DEFAULT_SORT,
+  nextSort,
+  parseSort,
+  sortFieldsFor,
+  sortFor,
+  sortParam,
+  type MailSort,
+  type SortField,
+} from '../lib/mailSort'
 import { isDirectTableFile, parseTableFile } from '../lib/attachmentExcel'
 import {
   isListFolder,
@@ -1191,7 +1208,6 @@ interface InboundMail {
   openedAt?: string
   tracked?: boolean
   // The details panel.
-  messageIdHeader?: string
   rawSize?: number
   // 真正的回信地址，以及收信服务器验过的两个身份。
   replyTo?: string
@@ -1360,6 +1376,20 @@ const keyword = ref('')
 const isSearching = computed(
   () => isInboundView.value && [...keyword.value.trim()].length >= 2,
 )
+// 列表按哪一列排。地址栏说了算（applyRoute 写它），这里只是镜像。
+const sort = ref<MailSort>(DEFAULT_SORT)
+const sortSide = computed(() => (folder.value === 'sent' ? 'sent' : 'inbox'))
+const listSort = computed(() => sortFor(sortSide.value, sort.value))
+// 排序栏给哪几列。收件箱带着关键词时不给：搜索走的是另一条按会话匹配的
+// 查询，服务端拒绝在它上面再排序——一条点了会报错的排序栏比没有更糟。
+const sortFields = computed<SortField[]>(() => {
+  if (folder.value === 'sent') return sortFieldsFor('sent')
+  if (!isInboundView.value || keyword.value.trim()) return []
+  return sortFieldsFor('inbox')
+})
+function changeSort(by: SortField) {
+  pushState({ sort: sortParam(nextSort(listSort.value, by)) })
+}
 const page = ref(1)
 const pageSize = 20
 const total = ref(0)
@@ -1482,9 +1512,9 @@ const detailRows = computed(() => {
   if (m.receivedAt) add(t('emails.detail.receivedAt'), zonedStamp(m.receivedAt))
   add(t('emails.detail.folder'), m.folder)
   add(t('emails.detail.size'), m.rawSize ? humanSize(m.rawSize) : '')
-  // Last, and unabbreviated: it is the identifier somebody quotes to a mail
-  // administrator when a message has to be traced through somebody else's logs.
-  add(t('emails.detail.messageId'), m.messageIdHeader)
+  // Message-ID 不列。它只在追着邮件管理员查日志时有用，而摆在这儿的样子
+  // 像一串谁都看不懂的乱码——用的人问过「这是不是出错了」。后端照样返回，
+  // 要查的时候导出原件里有。
   return rows
 })
 
@@ -1508,6 +1538,10 @@ interface UrlState {
   // Where an inbound list page starts. Opaque server token; empty is the
   // first page. Offset paging (page) still drives sent/attention.
   cursor: string
+  // 按哪一列排：`size:desc` 这种，见 lib/mailSort。空 = 日期倒序。
+  // 放进地址栏是为了刷新和后退都保得住——排到一半刷新一下回到按日期排，
+  // 人会以为自己看错了。
+  sort: string
   // 在看哪个信箱。空 = 还没选（第一次进来，切换器还没加载完）。
   //
   // 放进 URL 而不是只留在内存里：刷新会回到默认箱而人以为自己还在另一个箱
@@ -1538,6 +1572,7 @@ function parseQuery(q: LocationQuery): UrlState {
     msg: /^\d+$/.test(one(q.msg)) ? one(q.msg) : '',
     cursor: one(q.c),
     acct: /^\d+$/.test(one(q.acct)) ? one(q.acct) : '',
+    sort: sortParam(parseSort(one(q.sort))),
   }
 }
 
@@ -1552,6 +1587,7 @@ function toQuery(s: UrlState): Record<string, string> {
   if (s.msg) query.msg = s.msg
   if (s.cursor) query.c = s.cursor
   if (s.acct) query.acct = s.acct
+  if (s.sort) query.sort = s.sort
   return query
 }
 
@@ -1613,7 +1649,9 @@ function pushState(over: Partial<UrlState>, stack?: string[]) {
   const next = { ...cur, ...over }
   // A page number and a cursor are two answers to the same question; setting
   // one has to clear the other or a stale cursor would survive a search.
-  if (over.cursor === undefined && (over.folder !== undefined || over.q !== undefined || over.sent !== undefined || over.page !== undefined)) {
+  // 换排序也一样：游标记的是「按上一种顺序翻到哪」，换了顺序它就指向
+  // 一个不存在的位置，服务端会直接拒收。
+  if (over.cursor === undefined && (over.folder !== undefined || over.q !== undefined || over.sent !== undefined || over.page !== undefined || over.sort !== undefined)) {
     next.cursor = ''
   }
   // "Back to the list" is one intent however it is spelled, and inbound and
@@ -1655,6 +1693,7 @@ function applyRoute() {
   folder.value = s.folder
   page.value = s.page
   keyword.value = s.q
+  sort.value = parseSort(s.sort)
   // 地址栏说了在看哪个箱就照做。这是后退/前进/刷新走的那条路：
   // 不同步的话，URL 里写着 A 箱而列表按 B 箱拉。
   if (s.acct) currentAccount.value = Number(s.acct)
@@ -1665,7 +1704,8 @@ function applyRoute() {
     prev.q !== s.q ||
     prev.sent !== s.sent ||
     prev.cursor !== s.cursor ||
-    prev.acct !== s.acct
+    prev.acct !== s.acct ||
+    prev.sort !== s.sort
   ) {
     load()
   }
@@ -2006,7 +2046,7 @@ function switchFolder(key: string) {
   // Clear the box too, or clicking the current folder with an unsearched
   // keyword sitting in it would silently search for it.
   keyword.value = ''
-  pushState({ folder: key, page: 1, q: '', mail: '' })
+  pushState({ folder: key, page: 1, q: '', mail: '', sort: '' })
 }
 
 function reload() {
@@ -2114,6 +2154,11 @@ async function load() {
         keyword: keyword.value,
         view: INBOUND_VIEWS[folder.value],
         cursor: applied?.cursor ?? '',
+        // 排序只在没有关键词时带：有关键词走的是搜索查询，服务端会拒绝
+        // 在它上面排序（排序栏那时也不显示）。
+        // 和 sortFields 用同一个判断（trim 过的）：只有空格的搜索框不算有
+        // 关键词，否则排序栏显示着、参数却没带，点了「没反应」。
+        ...(keyword.value.trim() ? {} : { sort_by: listSort.value.by, sort_dir: listSort.value.dir }),
         // 看哪个信箱**不在这里传**：网关只认解锁令牌里的那个箱
         // （见 requireMailUnlock）。换箱是上面 currentAccount 那个 watch
         // 换令牌，不是换参数——传参数的话，退出 A 之后拿还活着的 B 的令牌
@@ -2147,6 +2192,8 @@ async function load() {
         page_size: pageSize,
         keyword: keyword.value,
         cursor: applied?.cursor ?? '',
+        sort_by: listSort.value.by,
+        sort_dir: listSort.value.dir,
       })
       mailboxSent.value = d.mails ?? []
       total.value = Number(d.meta?.total ?? 0)
@@ -2926,13 +2973,6 @@ async function syncNow() {
   }
 }
 
-function humanSize(bytes: number) {
-  if (!bytes) return '0 B'
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
-
 // The badge is what tells somebody there is work waiting, so it refreshes
 // independently of whichever folder happens to be open.
 async function refreshAttentionCount() {
@@ -2959,7 +2999,7 @@ function onSent() {
     loadThread(openedInbound.value)
     return
   }
-  pushState({ folder: 'sent', page: 1, q: '', sent: 'erp', mail: '' })
+  pushState({ folder: 'sent', page: 1, q: '', sent: 'erp', mail: '', sort: '' })
 }
 
 function statusType(s: string): 'success' | 'warning' | 'danger' | 'info' {

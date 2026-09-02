@@ -301,6 +301,16 @@ message ListInboundRequest {
   // 字段总是有值。留着 0 这一档是为了部署顺序：后端先发、前端后发，那几
   // 分钟里旧前端什么都不传，列表不能空。
   int64 account_id = 5;
+  // 按哪一列排、往哪个方向排。空 = 日期倒序，也就是一直以来的样子。
+  //
+  // sort_by：from | subject | date | size；sort_dir：asc | desc。不认识的值
+  // 报错而不是退回默认——排序「没生效」和「按日期排」在屏幕上长得一样，
+  // 静默退回等于把一个拼错的参数藏起来。
+  //
+  // 带 keyword 时不能排序：搜索走的是另一条按会话匹配的查询，那条查询按
+  // 时间给结果；同一个词按两种口径给两份结果，比不支持更糟。
+  string sort_by = 6;
+  string sort_dir = 7;
 }
 
 // One message found by a search. It carries the folder because the search
@@ -319,6 +329,11 @@ message SearchMailRequest {
   string keyword = 1;
   string cursor = 2;
   erp.common.v1.PageRequest page = 3;
+  // 只搜这个信箱。0 = 我全部信箱（旧令牌和一个箱都没绑的人）。
+  //
+  // 网关从解锁令牌里取，不认调用方传的：站在 A 箱里搜出 B 箱的信，是
+  // 「按邮箱分」这条口径从搜索这个门绕回来了——切到 B 才能搜 B。
+  int64 account_id = 4;
 }
 
 message SearchMailResponse {
@@ -496,6 +511,10 @@ message ListMailboxSentRequest {
   // 和收件箱一路同一个口径——按邮箱分，左侧切换。0 那一档留给旧前端，以及
   // 一个箱都没绑的人。
   int64 account_id = 4;
+  // 同 ListInboundRequest；这一侧的列是 to | subject | date | size。
+  // 已发送的搜索和排序可以同时用：它们是同一条查询。
+  string sort_by = 5;
+  string sort_dir = 6;
 }
 
 message ListMailboxSentResponse {

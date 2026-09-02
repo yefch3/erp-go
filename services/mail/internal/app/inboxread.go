@@ -98,6 +98,10 @@ type threadRow struct {
 	HasAttachments              bool
 	ThreadCount                 int32
 	ReceivedAt, SentAt          pgtype.Timestamptz
+	// 只有排序版查询带这两个：RawSize 是按大小排时列表要显示的数，SortKey
+	// 是下一页游标的位置。其余两条查询留零值。
+	RawSize int64
+	SortKey string
 }
 
 func threadRowsFromView(rows []store.ListThreadsByViewRow) []threadRow {
@@ -108,6 +112,20 @@ func threadRowsFromView(rows []store.ListThreadsByViewRow) []threadRow {
 			Subject: r.Subject, Snippet: r.Snippet, ThreadKey: r.ThreadKey,
 			IsRead: r.IsRead, IsStarred: r.IsStarred, HasAttachments: r.HasAttachments,
 			ThreadCount: r.ThreadCount, ReceivedAt: r.ReceivedAt, SentAt: r.SentAt,
+		})
+	}
+	return out
+}
+
+func threadRowsFromSorted(rows []store.ListThreadsByViewSortedRow) []threadRow {
+	out := make([]threadRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, threadRow{
+			ID: r.ID, FromEmail: r.FromEmail, FromName: r.FromName,
+			Subject: r.Subject, Snippet: r.Snippet, ThreadKey: r.ThreadKey,
+			IsRead: r.IsRead, IsStarred: r.IsStarred, HasAttachments: r.HasAttachments,
+			ThreadCount: r.ThreadCount, ReceivedAt: r.ReceivedAt, SentAt: r.SentAt,
+			RawSize: r.RawSize, SortKey: r.SortKey,
 		})
 	}
 	return out
@@ -140,7 +158,12 @@ func threadRowsFromSearch(rows []store.ListInboundThreadsRow) []threadRow {
 // accountID 是「只看这个信箱」，0 表示我全部信箱。产品口径是按邮箱分、
 // 左侧切换，所以正常情况下它总是有值；0 那一档留给还没带这个参数的旧前端
 // （部署顺序是后端先发前端后发，那几分钟里列表不能空）。
-func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID int64, keyword, view, cursor string, size int32) (InboundPage, error) {
+//
+// sort 是按哪一列排（见 ListSort）。默认的日期倒序走靠索引的那条查询；其余
+// 任何一档走 ListThreadsByViewSorted。**带关键词时不能排序**：关键词走的是
+// 按会话匹配的搜索查询，那条按时间给结果——同一个词按两种口径给两份结果，
+// 比不支持更糟，所以直接报错而不是悄悄按日期排。
+func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID int64, keyword, view, cursor string, size int32, sort ListSort) (InboundPage, error) {
 	_, size = normalizePage(1, size)
 	// An unknown view falls back to the inbox proper rather than erroring:
 	// the worst a bad parameter can do is show the default slice.
@@ -149,10 +172,15 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 	default:
 		view = "INBOX"
 	}
-
-	at, id, err := decodeCursor(cursor)
+	sort, err := normalizeListSort(sort, inboundSortColumns)
 	if err != nil {
 		return InboundPage{}, err
+	}
+	// 只有空格的关键词不算关键词。前端的排序栏用的也是 trim 过的判断；
+	// 两边不一致的样子是排序栏显示着、请求却被这里拒掉。
+	keyword = strings.TrimSpace(keyword)
+	if keyword != "" && !sort.isDefault() {
+		return InboundPage{}, errSortNotWithKeyword()
 	}
 	// 「不筛选」在 SQL 里是 NULL，不是 0：0 是一个真实存在的 account_id
 	// 取值范围之外的数没错，但用它当哨兵就得在四条查询里各写一次判断，
@@ -181,7 +209,12 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 	// is rare and its own screen; the plain list is loaded all day.
 	var rows []threadRow
 	var total int64
-	if keyword == "" {
+	switch {
+	case keyword == "" && sort.isDefault():
+		at, id, err := decodeCursor(cursor)
+		if err != nil {
+			return InboundPage{}, err
+		}
 		fast, err := s.q.ListThreadsByView(ctx, store.ListThreadsByViewParams{
 			TenantID: tenantID, OwnerID: ownerID, AccountID: acct, View: view,
 			CursorAt: at, CursorID: id, RowLimit: size,
@@ -195,7 +228,33 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 		}); err != nil {
 			return InboundPage{}, err
 		}
-	} else {
+	case keyword == "":
+		// 排序版。游标的形状和上面那条不同（带着列、方向和排序键），
+		// 所以解法也不同；前端换排序时清游标，两种形状不会串。
+		key, id, err := decodeSortCursor(cursor, sort)
+		if err != nil {
+			return InboundPage{}, err
+		}
+		sorted, err := s.q.ListThreadsByViewSorted(ctx, store.ListThreadsByViewSortedParams{
+			TenantID: tenantID, OwnerID: ownerID, AccountID: acct, View: view,
+			SortBy: sort.By, SortDir: sort.Dir,
+			CursorKey: key, CursorID: id, RowLimit: size,
+		})
+		if err != nil {
+			return InboundPage{}, err
+		}
+		rows = threadRowsFromSorted(sorted)
+		// 总数和排序无关，和不排序那条用同一个数。
+		if total, err = s.q.CountThreadsByView(ctx, store.CountThreadsByViewParams{
+			TenantID: tenantID, OwnerID: ownerID, AccountID: acct, View: view,
+		}); err != nil {
+			return InboundPage{}, err
+		}
+	default:
+		at, id, err := decodeCursor(cursor)
+		if err != nil {
+			return InboundPage{}, err
+		}
 		slow, err := s.q.ListInboundThreads(ctx, store.ListInboundThreadsParams{
 			TenantID: tenantID, OwnerID: ownerID, AccountID: acct,
 			Keyword: keyword, View: view,
@@ -230,7 +289,7 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 			ID: r.ID, FromEmail: r.FromEmail, FromName: r.FromName,
 			Subject: r.Subject, Snippet: r.Snippet, ThreadKey: r.ThreadKey,
 			IsRead: r.IsRead, IsStarred: r.IsStarred, HasAttachments: r.HasAttachments,
-			ThreadCount: r.ThreadCount,
+			ThreadCount: r.ThreadCount, RawSize: r.RawSize,
 		}
 		if r.ReceivedAt.Valid {
 			v.ReceivedAt = r.ReceivedAt.Time
@@ -246,7 +305,11 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 	// a next page that turns out empty is a smaller sin than hiding mail.
 	if int32(len(out)) == size && size > 0 {
 		last := out[len(out)-1]
-		page.NextCursor = encodeCursor(sortTime(last), last.ID)
+		if keyword == "" && !sort.isDefault() {
+			page.NextCursor = encodeSortCursor(sort, rows[len(rows)-1].SortKey, last.ID)
+		} else {
+			page.NextCursor = encodeCursor(sortTime(last), last.ID)
+		}
 	}
 	return page, nil
 }
@@ -844,9 +907,17 @@ func errNotFound() error {
 // the time and id, because the two halves of the query number their rows in
 // different tables and (at, id) alone is not a unique position.
 // accountID 是「只看这个信箱发出去的」，0 = 全部。和收件箱一路同一个口径。
-func (s *Service) ListMailboxSent(ctx context.Context, tenantID, ownerID, accountID int64, keyword, cursor string, size int32) (InboundPage, error) {
+//
+// sort 见 ListSort；这一侧的列是收件人、主题、日期、大小。和收件箱不同，
+// 已发送的搜索和排序可以同时用——它们是同一条查询，不存在两种口径。
+func (s *Service) ListMailboxSent(ctx context.Context, tenantID, ownerID, accountID int64, keyword, cursor string, size int32, sort ListSort) (InboundPage, error) {
 	_, size = normalizePage(1, size)
-	at, kind, id, err := decodeSentCursor(cursor)
+	sort, err := normalizeListSort(sort, sentSortColumns)
+	if err != nil {
+		return InboundPage{}, err
+	}
+	keyword = strings.TrimSpace(keyword)
+	key, kind, id, err := decodeSentSortCursor(cursor, sort)
 	if err != nil {
 		return InboundPage{}, err
 	}
@@ -856,7 +927,8 @@ func (s *Service) ListMailboxSent(ctx context.Context, tenantID, ownerID, accoun
 	}
 	rows, err := s.q.ListSentUnified(ctx, store.ListSentUnifiedParams{
 		TenantID: tenantID, OwnerID: ownerID, AccountID: acct, Keyword: keyword,
-		CursorAt: at, CursorKind: kind, CursorID: id, RowLimit: size,
+		SortBy: sort.By, SortDir: sort.Dir,
+		CursorKey: key, CursorKind: kind, CursorID: id, RowLimit: size,
 	})
 	if err != nil {
 		return InboundPage{}, err
@@ -879,6 +951,7 @@ func (s *Service) ListMailboxSent(ctx context.Context, tenantID, ownerID, accoun
 			// 原来漏拷——于是列表行上「没人打开」和「没在看」分不出来，
 			// 三态在详情页齐全、在列表上塌成两态。
 			Tracked: r.Tracked,
+			RawSize: r.RawSize,
 		}
 		// One timestamp in both fields: the list sorts and displays on "when it
 		// went out", and the two halves name that differently.
@@ -893,13 +966,15 @@ func (s *Service) ListMailboxSent(ctx context.Context, tenantID, ownerID, accoun
 	}
 	page := InboundPage{Mails: out, Total: total}
 	if int32(len(out)) == size && size > 0 {
-		last := out[len(out)-1]
-		page.NextCursor = encodeSentCursor(last.SentAt, last.Kind, last.ID)
+		last := rows[len(rows)-1]
+		page.NextCursor = encodeSentSortCursor(sort, last.SortKey, last.Kind, last.ID)
 	}
 	return page, nil
 }
 
-// The Sent cursor is (time, kind, id) — the sort key of the last row shown.
+// The Sent cursor used to be (time, kind, id). It is now (sort, kind, id,
+// sort key) — see encodeSentSortCursor — and this pair is kept only so the
+// old shape still decodes; decodeSentSortCursor converts it.
 // Opaque on purpose: nothing downstream should do arithmetic on it.
 func encodeSentCursor(at time.Time, kind string, id int64) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(

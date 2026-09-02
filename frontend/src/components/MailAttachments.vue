@@ -19,6 +19,8 @@
       <span class="sub">{{ humanSize(Number(a.fileSize)) }}</span>
       <!-- 看和拿是两件事，所以是两个按钮。预览只对真能显示的东西出现；
            .pptx 或 .zip 的全部交互就是下载。 -->
+      <!-- 带字、带底色，不是两个灰图标。原来那两个灰图标和文件名、大小混在
+           一起，用的人说找不到；绿的是看、蓝的是拿，隔着半个屏幕也分得清。 -->
       <el-tooltip
         v-if="a.previewUrl"
         :content="t('emails.previewFile')"
@@ -26,8 +28,9 @@
         :show-after="0"
         :hide-after="0"
       >
-        <button type="button" class="fbtn" @click="emit('preview', a)">
+        <button type="button" class="fbtn preview" @click="emit('preview', a)">
           <el-icon><View /></el-icon>
+          <span>{{ t('emails.previewFile') }}</span>
         </button>
       </el-tooltip>
       <el-tooltip
@@ -37,8 +40,9 @@
         :show-after="0"
         :hide-after="0"
       >
-        <a class="fbtn" :href="a.downloadUrl" :download="a.fileName">
+        <a class="fbtn download" :href="a.downloadUrl" :download="a.fileName">
           <el-icon><Download /></el-icon>
+          <span>{{ t('emails.download') }}</span>
         </a>
       </el-tooltip>
     </div>
@@ -48,6 +52,7 @@
 <script setup lang="ts">
 import { Download, Paperclip, View } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { humanSize } from '../lib/humanSize'
 
 export interface MailFile {
   id: string
@@ -67,13 +72,6 @@ const emit = defineEmits<{
   excelLeave: []
 }>()
 const { t } = useI18n()
-
-function humanSize(bytes: number) {
-  if (!bytes) return '0 B'
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
 
 // 三种说法，不能合成两种。
 //
@@ -120,15 +118,34 @@ function hint(a: MailFile) {
 .fbtn {
   display: inline-flex;
   align-items: center;
-  padding: 2px;
+  gap: 4px;
+  padding: 3px 9px;
   border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--el-text-color-secondary);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: #fff;
   cursor: pointer;
+  text-decoration: none;
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+.fbtn.preview {
+  background: var(--el-color-success);
+}
+.fbtn.download {
+  background: var(--el-color-primary);
 }
 .fbtn:hover {
-  color: var(--el-color-primary);
-  background: var(--el-fill-color);
+  color: #fff;
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+.fbtn:active {
+  transform: none;
+}
+.fbtn:focus-visible {
+  outline: 2px solid var(--el-color-primary-light-5);
+  outline-offset: 2px;
 }
 </style>

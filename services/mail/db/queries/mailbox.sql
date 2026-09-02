@@ -720,7 +720,8 @@ WITH host AS (
            coalesce(m.status, '') AS status,
            m.opened_at,
            coalesce(m.tracked, FALSE) AS tracked,
-           i.has_attachments, i.is_starred, i.thread_key
+           i.has_attachments, i.is_starred, i.thread_key,
+           i.raw_size
     FROM email_inbound i
     LEFT JOIN email_messages m
            ON m.id = i.sent_message_id AND m.tenant_id = i.tenant_id
@@ -739,7 +740,10 @@ WITH host AS (
            EXISTS (SELECT 1 FROM email_attachments a
                    WHERE a.tenant_id = m.tenant_id AND a.campaign_id = m.campaign_id) AS has_attachments,
            FALSE AS is_starred,
-           '' AS thread_key
+           '' AS thread_key,
+           -- 投递记录没有原件，也就没有大小。按大小排时它们沉在最底下，
+           -- 而不是拿正文长度冒充一个数。
+           0::bigint AS raw_size
     FROM email_messages m
     WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint
       AND m.sender_id = sqlc.arg(owner_id)::bigint
@@ -777,19 +781,38 @@ WITH host AS (
       )
 )
 SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at,
-       tracked, has_attachments, is_starred, thread_key
-FROM (SELECT * FROM host UNION ALL SELECT * FROM orphan) u
+       tracked, has_attachments, is_starred, thread_key, raw_size, sort_key
+FROM (
+    -- 排序键统一成一段文本，理由见 ListThreadsByViewSorted。日期那一档是
+    -- 默认，也是从前唯一的一档：UTC 的 20 位数字串，字典序即时间序。
+    SELECT u.*,
+           (CASE sqlc.arg(sort_by)::text
+              WHEN 'to'      THEN lower(u.to_email)
+              WHEN 'subject' THEN lower(u.subject)
+              WHEN 'size'    THEN lpad(u.raw_size::text, 20, '0')
+              ELSE to_char(u.at AT TIME ZONE 'UTC', 'YYYYMMDDHH24MISSUS')
+            END)::text AS sort_key
+    FROM (SELECT * FROM host UNION ALL SELECT * FROM orphan) u
+) s
 WHERE (sqlc.arg(keyword)::text = ''
        OR subject ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR to_email ILIKE '%' || sqlc.arg(keyword)::text || '%')
   -- Keyset, like every other mailbox list. kind joins the sort key because
-  -- the two halves number their rows independently, so (at, id) alone is not
-  -- a unique position.
-  AND (sqlc.narg(cursor_at)::timestamptz IS NULL
-       OR (at, kind, id) < (sqlc.narg(cursor_at)::timestamptz,
-                            sqlc.arg(cursor_kind)::text,
-                            sqlc.arg(cursor_id)::bigint))
-ORDER BY at DESC, kind DESC, id DESC
+  -- the two halves number their rows independently, so (sort_key, id) alone
+  -- is not a unique position.
+  AND (sqlc.narg(cursor_key)::text IS NULL
+       OR CASE WHEN sqlc.arg(sort_dir)::text = 'asc'
+               THEN (sort_key, kind, id) > (sqlc.narg(cursor_key)::text,
+                                            sqlc.arg(cursor_kind)::text,
+                                            sqlc.arg(cursor_id)::bigint)
+               ELSE (sort_key, kind, id) < (sqlc.narg(cursor_key)::text,
+                                            sqlc.arg(cursor_kind)::text,
+                                            sqlc.arg(cursor_id)::bigint)
+          END)
+ORDER BY CASE WHEN sqlc.arg(sort_dir)::text = 'asc' THEN sort_key END ASC,
+         CASE WHEN sqlc.arg(sort_dir)::text = 'asc' THEN kind END ASC,
+         CASE WHEN sqlc.arg(sort_dir)::text = 'asc' THEN id END ASC,
+         sort_key DESC, kind DESC, id DESC
 LIMIT sqlc.arg(row_limit)::int;
 
 -- name: CountSentUnified :one
@@ -1229,6 +1252,9 @@ WITH hits AS (
     FROM email_inbound
     WHERE tenant_id = sqlc.arg(tenant_id)::bigint
       AND owner_id = sqlc.arg(owner_id)::bigint
+      -- 只搜这个箱。不传 = 全部，留给旧令牌和一个箱都没绑的人。
+      AND (sqlc.narg(account_id)::bigint IS NULL
+           OR account_id = sqlc.narg(account_id)::bigint)
       AND deleted_at IS NULL
       AND (folder <> 'JUNK' OR not_junk)
       -- One column, not five ORed together. The subject and the addresses
@@ -1271,6 +1297,8 @@ SELECT count(*)::bigint
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
+  AND (sqlc.narg(account_id)::bigint IS NULL
+       OR account_id = sqlc.narg(account_id)::bigint)
   AND deleted_at IS NULL
   AND (folder <> 'JUNK' OR not_junk)
   AND search_text ILIKE '%' || sqlc.arg(keyword)::text || '%';
@@ -1392,6 +1420,62 @@ WHERE t.tenant_id = sqlc.arg(tenant_id)::bigint
        OR (t.last_at, t.last_id) < (sqlc.narg(cursor_at)::timestamptz,
                                     sqlc.arg(cursor_id)::bigint))
 ORDER BY t.last_at DESC, t.last_id DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: ListThreadsByViewSorted :many
+-- 同一份列表，按人点的那一列排。
+--
+-- 和 ListThreadsByView 分成两条而不是合成一条：上面那条靠索引顺序直接读出
+-- 前二十五行，是一天到晚都在走的路；这一条要把整个箱的会话拿出来排一遍，
+-- 只在有人点了排序栏时才走。把 CASE 塞进上面那条的 ORDER BY 会让索引顺序
+-- 用不上，等于为一个偶尔用的功能给常走的路加税。
+--
+-- **排序键统一成一段文本。** 发件人和主题本来就是文本；大小补零到 20 位，
+-- 时间格式化成 UTC 的 20 位数字串——两者按字典序比就是按数值比。这样做的
+-- 好处是游标只有一种形状：(sort_key, id)，不用给每一列各写一套「上一页
+-- 停在哪」的比较。lower() 是为了让大小写不同的同一个名字排在一起，而不是
+-- 看数据库的排序规则脸色。
+--
+-- 会话的「发件人」「主题」「大小」都是**最后一封**的——列表上那一行显示的
+-- 就是它，排的也是它。一条会话里有十封信，大小按最后那封算。
+--
+-- 方向靠两组 CASE：asc 时前两个键生效、后两个键在完全相同的 (sort_key, id)
+-- 上才轮得到（不可能相同，所以无害）；desc 时前两个键全是 NULL，等价于
+-- 只按后两个排。
+SELECT x.id, x.from_email, x.from_name, x.subject, x.snippet, x.thread_key,
+       x.is_read, x.is_starred, x.has_attachments, x.received_at, x.sent_at,
+       x.thread_count, x.raw_size, x.sort_key
+FROM (
+    SELECT m.id, m.from_email, m.from_name, m.subject, m.snippet, m.thread_key,
+           (NOT t.any_unread)::boolean     AS is_read,
+           t.any_starred::boolean          AS is_starred,
+           t.any_attachment::boolean       AS has_attachments,
+           m.received_at, m.sent_at,
+           t.msg_count::int                AS thread_count,
+           m.raw_size,
+           (CASE sqlc.arg(sort_by)::text
+              WHEN 'from'    THEN lower(coalesce(nullif(m.from_name, ''), m.from_email))
+              WHEN 'subject' THEN lower(m.subject)
+              WHEN 'size'    THEN lpad(m.raw_size::text, 20, '0')
+              ELSE to_char(t.last_at AT TIME ZONE 'UTC', 'YYYYMMDDHH24MISSUS')
+            END)::text                    AS sort_key
+    FROM mail_thread_view t
+    JOIN email_inbound m ON m.tenant_id = t.tenant_id AND m.id = t.last_id
+    WHERE t.tenant_id = sqlc.arg(tenant_id)::bigint
+      AND t.owner_id = sqlc.arg(owner_id)::bigint
+      AND (sqlc.narg(account_id)::bigint IS NULL
+           OR t.account_id = sqlc.narg(account_id)::bigint)
+      AND t.view = sqlc.arg(view)::text
+) x
+-- 上一页停在哪：asc 往大了走，desc 往小了走。id 兜底，两条会话不可能占同一个位置。
+WHERE (sqlc.narg(cursor_key)::text IS NULL
+       OR CASE WHEN sqlc.arg(sort_dir)::text = 'asc'
+               THEN (x.sort_key, x.id) > (sqlc.narg(cursor_key)::text, sqlc.arg(cursor_id)::bigint)
+               ELSE (x.sort_key, x.id) < (sqlc.narg(cursor_key)::text, sqlc.arg(cursor_id)::bigint)
+          END)
+ORDER BY CASE WHEN sqlc.arg(sort_dir)::text = 'asc' THEN x.sort_key END ASC,
+         CASE WHEN sqlc.arg(sort_dir)::text = 'asc' THEN x.id END ASC,
+         x.sort_key DESC, x.id DESC
 LIMIT sqlc.arg(row_limit)::int;
 
 -- name: CountThreadsByView :one

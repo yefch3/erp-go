@@ -127,6 +127,30 @@ func bodyCIDs(html string) map[string]bool {
 	return out
 }
 
+// hasListedAttachments 是列表上那枚回形针该不该亮。
+//
+// 和 hideEmbedded 同一条规矩：正文里 <img src="cid:X"> 指着的那个部件是
+// 签名的 logo，不是附件——它在读信页上会被藏起来，列表上再亮一枚回形针
+// 等于告诉人「有附件」，点进去却什么都没有。用的人问过「明明没有附件，
+// 为什么有图标」。
+//
+// 只看「正文指没指着它」，不看发件方标的 inline：客户端给真附件标 inline
+// 的事天天发生，按那个标记算会把合同算没。
+//
+// 少 hideEmbedded 那一条「换出 URL 才藏」的条件，是有意的：入库时还不知道
+// 存储那边会不会成功；存储失败时读信页会把它列出来（能下载总比不见了
+// 强），而列表上没有回形针——这是那条失败路径上可以接受的一点不一致。
+func hasListedAttachments(parsed ParsedMail) bool {
+	shown := bodyCIDs(parsed.BodyHTML)
+	for _, a := range parsed.Attachments {
+		if a.ContentID != "" && shown[a.ContentID] {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 // hideEmbedded drops the parts the body has already shown inline.
 //
 // A signature logo listed beside the signed contract is noise, and it is the
