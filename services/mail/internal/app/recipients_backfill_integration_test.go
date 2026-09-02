@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,6 +71,10 @@ func TestRecipientsBackfillRestoresEveryRecipientFromTheArchivedOriginal(t *test
 	missing := insert("raw/gone", "a@co.com", "原件丢了")
 	noRaw := insert("", "a@co.com", "从没存过原件")
 
+	// 一批只取一行，而 id 最大的那几行正好是补不了的（原件丢了）。从前那道
+	// 「整批没进展就停」的闸会在第一批就停下，群发那封永远补不上。
+	toAllBatch, toAllInterval = 1, 0
+	defer func() { toAllBatch, toAllInterval = 50, 2 * time.Second }()
 	svc.RunToAllBackfill(ctx, SyncConfig{TenantID: tenantID})
 
 	toAll := func(id int64) string {
@@ -93,6 +98,15 @@ func TestRecipientsBackfillRestoresEveryRecipientFromTheArchivedOriginal(t *test
 	}
 	if got := toAll(noRaw); got != "" {
 		t.Errorf("没有 raw_key 的行不在队列里：%q", got)
+	}
+
+	// 搜索文本跟着重算：搜第三个同事的地址要能搜到这封群发。
+	var searchText string
+	if err := pool.QueryRow(ctx, `SELECT search_text FROM email_inbound WHERE tenant_id=$1 AND id=$2`, tenantID, group).Scan(&searchText); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(searchText, "c@co.com") {
+		t.Errorf("search_text 没跟着补：%q", searchText)
 	}
 
 	// 读的那一侧：补过的信，收件人拆成三个人；没补的退回第一个。

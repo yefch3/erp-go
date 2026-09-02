@@ -723,7 +723,10 @@ WITH host AS (
            m.opened_at,
            coalesce(m.tracked, FALSE) AS tracked,
            i.has_attachments, i.is_starred, i.thread_key,
-           i.raw_size
+           i.raw_size,
+           -- 整段收件人（00052）。列表那一列从前只写第一个，详情却列全部，
+           -- 同一封信两个地方两个说法。
+           i.to_all
     FROM email_inbound i
     LEFT JOIN email_messages m
            ON m.id = i.sent_message_id AND m.tenant_id = i.tenant_id
@@ -745,7 +748,8 @@ WITH host AS (
            '' AS thread_key,
            -- 投递记录没有原件，也就没有大小。按大小排时它们沉在最底下，
            -- 而不是拿正文长度冒充一个数。
-           0::bigint AS raw_size
+           0::bigint AS raw_size,
+           ''::text AS to_all
     FROM email_messages m
     WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint
       AND m.sender_id = sqlc.arg(owner_id)::bigint
@@ -783,7 +787,7 @@ WITH host AS (
       )
 )
 SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at,
-       tracked, has_attachments, is_starred, thread_key, raw_size, sort_key
+       tracked, has_attachments, is_starred, thread_key, raw_size, to_all, sort_key
 FROM (
     -- 排序键统一成一段文本，理由见 ListThreadsByViewSorted。日期那一档是
     -- 默认，也是从前唯一的一档：UTC 的 20 位数字串，字典序即时间序。
@@ -1322,17 +1326,26 @@ LIMIT sqlc.arg(row_limit)::int;
 -- 队列由问题本身定义（to_all 空），补一行它就离开队列，不用标记列。
 -- 补不回来的（原件读不到、To 头本来就空）靠调用方那道「整批没进展就停」
 -- 的闸，不然它们会一直排在这里。
+--
+-- before_id 是游标：每批从上一批最后一行往下走，补不了的行留在身后而不是
+-- 堵在最前面——不然前 50 行恰好都是补不了的（原件读不到、只有密送），
+-- 后面几千行永远轮不到。
 SELECT id, raw_key, to_email
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND to_all = ''
   AND raw_key <> ''
+  AND (sqlc.narg(before_id)::bigint IS NULL OR id < sqlc.narg(before_id)::bigint)
 ORDER BY id DESC
 LIMIT sqlc.arg(row_limit)::int;
 
 -- name: SetInboundToAll :exec
+-- 搜索文本一起重算：入库那一步现在把整段收件人放进 search_text（搜同事
+-- 的名字要能搜到发给他的群发），存量只补 to_all 不补 search_text 的话，
+-- 老信照样搜不到——而且 ListInboundNeedingSearchText 只补空的，不会再来。
 UPDATE email_inbound
-SET to_all = sqlc.arg(to_all)::text
+SET to_all = sqlc.arg(to_all)::text,
+    search_text = sqlc.arg(search_text)::text
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: SetSearchText :exec

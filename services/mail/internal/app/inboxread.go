@@ -962,6 +962,7 @@ func (s *Service) ListMailboxSent(ctx context.Context, tenantID, ownerID, accoun
 			// 三态在详情页齐全、在列表上塌成两态。
 			Tracked: r.Tracked,
 			RawSize: r.RawSize,
+			ToAll:   r.ToAll,
 		}
 		// One timestamp in both fields: the list sorts and displays on "when it
 		// went out", and the two halves name that differently.

@@ -1669,12 +1669,14 @@ FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND to_all = ''
   AND raw_key <> ''
+  AND ($2::bigint IS NULL OR id < $2::bigint)
 ORDER BY id DESC
-LIMIT $2::int
+LIMIT $3::int
 `
 
 type ListInboundNeedingToAllParams struct {
 	TenantID int64
+	BeforeID *int64
 	RowLimit int32
 }
 
@@ -1689,8 +1691,12 @@ type ListInboundNeedingToAllRow struct {
 // 队列由问题本身定义（to_all 空），补一行它就离开队列，不用标记列。
 // 补不回来的（原件读不到、To 头本来就空）靠调用方那道「整批没进展就停」
 // 的闸，不然它们会一直排在这里。
+//
+// before_id 是游标：每批从上一批最后一行往下走，补不了的行留在身后而不是
+// 堵在最前面——不然前 50 行恰好都是补不了的（原件读不到、只有密送），
+// 后面几千行永远轮不到。
 func (q *Queries) ListInboundNeedingToAll(ctx context.Context, arg ListInboundNeedingToAllParams) ([]ListInboundNeedingToAllRow, error) {
-	rows, err := q.db.Query(ctx, listInboundNeedingToAll, arg.TenantID, arg.RowLimit)
+	rows, err := q.db.Query(ctx, listInboundNeedingToAll, arg.TenantID, arg.BeforeID, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -2203,7 +2209,10 @@ WITH host AS (
            m.opened_at,
            coalesce(m.tracked, FALSE) AS tracked,
            i.has_attachments, i.is_starred, i.thread_key,
-           i.raw_size
+           i.raw_size,
+           -- 整段收件人（00052）。列表那一列从前只写第一个，详情却列全部，
+           -- 同一封信两个地方两个说法。
+           i.to_all
     FROM email_inbound i
     LEFT JOIN email_messages m
            ON m.id = i.sent_message_id AND m.tenant_id = i.tenant_id
@@ -2225,7 +2234,8 @@ WITH host AS (
            '' AS thread_key,
            -- 投递记录没有原件，也就没有大小。按大小排时它们沉在最底下，
            -- 而不是拿正文长度冒充一个数。
-           0::bigint AS raw_size
+           0::bigint AS raw_size,
+           ''::text AS to_all
     FROM email_messages m
     WHERE m.tenant_id = $8::bigint
       AND m.sender_id = $9::bigint
@@ -2263,18 +2273,18 @@ WITH host AS (
       )
 )
 SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at,
-       tracked, has_attachments, is_starred, thread_key, raw_size, sort_key
+       tracked, has_attachments, is_starred, thread_key, raw_size, to_all, sort_key
 FROM (
     -- 排序键统一成一段文本，理由见 ListThreadsByViewSorted。日期那一档是
     -- 默认，也是从前唯一的一档：UTC 的 20 位数字串，字典序即时间序。
-    SELECT u.kind, u.id, u.to_email, u.to_name, u.subject, u.snippet, u.at, u.status, u.opened_at, u.tracked, u.has_attachments, u.is_starred, u.thread_key, u.raw_size,
+    SELECT u.kind, u.id, u.to_email, u.to_name, u.subject, u.snippet, u.at, u.status, u.opened_at, u.tracked, u.has_attachments, u.is_starred, u.thread_key, u.raw_size, u.to_all,
            (CASE $1::text
               WHEN 'to'      THEN lower(u.to_email)
               WHEN 'subject' THEN lower(u.subject)
               WHEN 'size'    THEN lpad(u.raw_size::text, 20, '0')
               ELSE to_char(u.at AT TIME ZONE 'UTC', 'YYYYMMDDHH24MISSUS')
             END)::text AS sort_key
-    FROM (SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at, tracked, has_attachments, is_starred, thread_key, raw_size FROM host UNION ALL SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at, tracked, has_attachments, is_starred, thread_key, raw_size FROM orphan) u
+    FROM (SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at, tracked, has_attachments, is_starred, thread_key, raw_size, to_all FROM host UNION ALL SELECT kind, id, to_email, to_name, subject, snippet, at, status, opened_at, tracked, has_attachments, is_starred, thread_key, raw_size, to_all FROM orphan) u
 ) s
 WHERE ($2::text = ''
        OR subject ILIKE '%' || $2::text || '%'
@@ -2326,6 +2336,7 @@ type ListSentUnifiedRow struct {
 	IsStarred      bool
 	ThreadKey      string
 	RawSize        int64
+	ToAll          string
 	SortKey        string
 }
 
@@ -2398,6 +2409,7 @@ func (q *Queries) ListSentUnified(ctx context.Context, arg ListSentUnifiedParams
 			&i.IsStarred,
 			&i.ThreadKey,
 			&i.RawSize,
+			&i.ToAll,
 			&i.SortKey,
 		); err != nil {
 			return nil, err
@@ -3810,18 +3822,28 @@ func (q *Queries) SetInboundReadByUID(ctx context.Context, arg SetInboundReadByU
 
 const setInboundToAll = `-- name: SetInboundToAll :exec
 UPDATE email_inbound
-SET to_all = $1::text
-WHERE tenant_id = $2::bigint AND id = $3::bigint
+SET to_all = $1::text,
+    search_text = $2::text
+WHERE tenant_id = $3::bigint AND id = $4::bigint
 `
 
 type SetInboundToAllParams struct {
-	ToAll    string
-	TenantID int64
-	ID       int64
+	ToAll      string
+	SearchText string
+	TenantID   int64
+	ID         int64
 }
 
+// 搜索文本一起重算：入库那一步现在把整段收件人放进 search_text（搜同事
+// 的名字要能搜到发给他的群发），存量只补 to_all 不补 search_text 的话，
+// 老信照样搜不到——而且 ListInboundNeedingSearchText 只补空的，不会再来。
 func (q *Queries) SetInboundToAll(ctx context.Context, arg SetInboundToAllParams) error {
-	_, err := q.db.Exec(ctx, setInboundToAll, arg.ToAll, arg.TenantID, arg.ID)
+	_, err := q.db.Exec(ctx, setInboundToAll,
+		arg.ToAll,
+		arg.SearchText,
+		arg.TenantID,
+		arg.ID,
+	)
 	return err
 }
 

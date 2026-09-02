@@ -95,7 +95,7 @@
         <span class="who">
           <!-- A sent mail is about who it went to; a received one about who
                it came from. Same column, different question. -->
-          {{ folder === 'sent' ? (m.toName || m.toEmail) : (m.fromName || m.fromEmail) }}
+          {{ folder === 'sent' ? sentWho(m) : (m.fromName || m.fromEmail) }}
           <!-- One row per conversation; this is how many messages it holds. -->
           <span v-if="Number(m.threadCount) > 1" class="tcount">{{ m.threadCount }}</span>
         </span>
@@ -213,6 +213,8 @@ export interface MailRow {
   kind?: string
   toName?: string
   toEmail?: string
+  // 已发送：整段收件人（多个人时和 toEmail 不同）。
+  toAll?: string
   // Search results only. The search crossed folders, so a result that does not
   // say where it was found leaves the person to open it to find out.
   matchFolder?: string
@@ -263,6 +265,13 @@ function sortAria(f: SortField): string {
 
 function isRecordOnly(m: MailRow) {
   return m.kind === 'ERP'
+}
+
+// 已发送那一列写给谁。发给一个人时是名字（或地址）；发给好几个人时是整段
+// ——列表说「一个人」而详情列三个，同一封信两个说法，比长一点更坏。
+function sentWho(m: MailRow): string {
+  if (m.toAll && m.toAll.toLowerCase() !== (m.toEmail || '').toLowerCase()) return m.toAll
+  return m.toName || m.toEmail || ''
 }
 
 // 对方是否已读的三态。判断顺序即优先级：真加载过 > 带着像素但没动静 > 根本没在看。
