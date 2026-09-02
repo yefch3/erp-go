@@ -1029,13 +1029,17 @@ SELECT id, subject, body_format, kind, recipients, attachments, updated_at,
 FROM email_drafts
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
+  AND ($3::bigint IS NULL
+       OR account_id = 0
+       OR account_id = $3::bigint)
 ORDER BY updated_at DESC, id DESC
 LIMIT 200
 `
 
 type ListDraftsParams struct {
-	TenantID int64
-	OwnerID  int64
+	TenantID  int64
+	OwnerID   int64
+	AccountID *int64
 }
 
 type ListDraftsRow struct {
@@ -1051,9 +1055,17 @@ type ListDraftsRow struct {
 
 // Scoped to the caller, always. Drafts are not correspondence and no data
 // scope widens this.
+//
+// **也按信箱筛。** 草稿行从 00047 起记着 account_id（写信框选的发件人，
+// 存的时候还验过那个箱是不是他的），而列表一直没读它——于是左栏切到哪个
+// 箱，草稿箱里都是同一堆，包括从别的地址写了一半的信。
+//
+// account_id = 0 的行**每个箱都列**：那是 00047 之前存的草稿，它真的不知道
+// 自己属于哪个箱。塞进任何一个箱都是猜的，而藏起来就是让人写了一半的东西
+// 凭空消失——两害相权，宁可多列一行。
 // id 收口：同一秒保存的两份草稿 updated_at 打平，top-200 边界上取谁不确定。
 func (q *Queries) ListDrafts(ctx context.Context, arg ListDraftsParams) ([]ListDraftsRow, error) {
-	rows, err := q.db.Query(ctx, listDrafts, arg.TenantID, arg.OwnerID)
+	rows, err := q.db.Query(ctx, listDrafts, arg.TenantID, arg.OwnerID, arg.AccountID)
 	if err != nil {
 		return nil, err
 	}

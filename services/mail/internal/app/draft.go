@@ -145,8 +145,18 @@ func (s *Service) SaveDraft(ctx context.Context, tenantID int64, in DraftInput, 
 	return id, nil
 }
 
-func (s *Service) ListDrafts(ctx context.Context, tenantID int64, op Operator) ([]store.ListDraftsRow, error) {
-	return s.q.ListDrafts(ctx, store.ListDraftsParams{TenantID: tenantID, OwnerID: op.ID})
+// ListDrafts 出这个人在**这个信箱**里写了一半的信。
+//
+// accountID = 0 是全部，留给旧令牌和一个箱都没绑的人。00047 之前存的草稿
+// （account_id = 0）每个箱都列——见查询里的注释。
+func (s *Service) ListDrafts(ctx context.Context, tenantID, accountID int64, op Operator) ([]store.ListDraftsRow, error) {
+	var acct *int64
+	if accountID > 0 {
+		acct = &accountID
+	}
+	return s.q.ListDrafts(ctx, store.ListDraftsParams{
+		TenantID: tenantID, OwnerID: op.ID, AccountID: acct,
+	})
 }
 
 func (s *Service) GetDraft(ctx context.Context, tenantID, id int64, op Operator) (DraftView, error) {

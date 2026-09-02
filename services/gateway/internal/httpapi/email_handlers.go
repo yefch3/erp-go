@@ -487,7 +487,11 @@ func (s *Server) saveDraft(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listDrafts(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.Emails.ListDrafts(r.Context(), &mailv1.ListDraftsRequest{})
+	// 草稿箱也按信箱分，和收件箱、已发送、搜索同一条理由：看哪个箱由令牌
+	// 决定，不由调用方的参数决定。
+	resp, err := s.Emails.ListDrafts(r.Context(), &mailv1.ListDraftsRequest{
+		AccountId: unlockedAccount(r.Context()),
+	})
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return

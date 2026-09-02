@@ -19,57 +19,35 @@
       >
         {{ t('emails.compose') }}
       </el-button>
-      <button
-        v-for="f in (locked ? [] : folders)"
-        :key="f.key"
-        class="folder"
-        :class="{ on: folder === f.key }"
-        type="button"
-        @click="switchFolder(f.key)"
-      >
-        <el-icon class="ficon"><component :is="f.icon" /></el-icon>
-        <span class="fname">{{ t(`emails.folders.${f.key}`) }}</span>
-        <el-badge v-if="f.key === 'attention' && attentionCount > 0" :value="attentionCount" />
-        <el-badge v-else-if="f.key === 'inbox' && unreadCount > 0" :value="unreadCount" />
-        <span v-else-if="f.key === 'drafts' && drafts.length" class="cnt">{{ drafts.length }}</span>
-      </button>
-
       <!-- No colleague picker here. This page is "my mail" and stays that
            way; reading somebody else's is a separate, read-only surface. A
            filter here also let a supervisor requeue or abandon a colleague's
            message, which is the salesperson's call, not theirs. -->
 
-      <!-- 但**我自己的**信箱可以有好几个。按邮箱分、左侧切换，不做统一
-           收件箱：两个箱同时收到同一条会话时那是两行，合成一行的话
-           「这封信该从哪个箱回」就答不上来了。 -->
-      <MailboxSwitcher
+      <!-- 但**我自己的**信箱可以有好几个，而文件夹长在信箱底下——「已发送」
+           问的是"从这个地址发出去的"，没有主语它就不是一个完整的问题。
+           展开/收起的树，照 Foxmail 那个样子。 -->
+      <MailboxTree
         ref="switcher"
         v-model="currentAccount"
         :can-add="canWrite"
+        :folder="folder"
+        :folders="folders"
+        :counts="folderCounts"
+        :tokens-version="tokensChanged"
+        :locked="locked === true"
+        @select="pickFolder"
         @changed="onMailboxesChanged"
         @added="tokensChanged++"
       />
 
       <span class="rail-grow" />
-      <!-- 退出的是邮箱，不是 ERP：令牌在服务端就死了，所以下一个坐到这台
-           机器前的人会重新遇到那道门。
+      <!-- 三个工具排在退出上面，中间隔一条线。
 
-           **一个一个退。** 从前只有一个按钮而且是全退——那时令牌一个人只有
-           一把，撤了就什么都没了。现在退掉当前这个箱，别的箱照开；走人时
-           用旁边那个「全部退出」。 -->
-      <el-button v-if="!locked" link class="rail-lock" @click="lockMailbox">
-        🔒 {{ t('mailGate.signOut') }}
-      </el-button>
-      <el-button
-        v-if="mailboxes.length > 1"
-        link
-        class="rail-lock"
-        @click="lockAllMailboxes"
-      >
-        🔒 {{ t('mailGate.signOutAll') }}
-      </el-button>
-      <!-- Beside 退出邮箱 and 邮箱设置 rather than in a settings page of its
-           own: a signature is part of writing mail, not a system setting. -->
+           **顺序是有意的**：从前「退出当前邮箱」和「全部退出」并排贴在一起，
+           而正下方就是「邮件模板」——想点模板点成全部退出，想退一个退成全退，
+           两种误触都发生过。现在退出只剩一个入口、收进下拉里，第一下点开
+           什么都不会发生。 -->
       <el-button
         v-if="auth.can('mail:email:write') && !locked"
         link
@@ -89,6 +67,36 @@
       <el-button v-if="isAdmin" link class="rail-lock" @click="hostOpen = true">
         ⚙️ {{ t('mailGate.hostSettings') }}
       </el-button>
+
+      <!-- 退出的是邮箱，不是 ERP：令牌在服务端就死了，所以下一个坐到这台
+           机器前的人会重新遇到那道门。
+
+           **一个一个退。** 从前只有一个按钮而且是全退——那时令牌一个人只有
+           一把，撤了就什么都没了。现在退掉当前这个箱，别的箱照开；走人时
+           用「全部退出」，而它还要再确认一次：它把所有箱一起关掉，是这一栏里
+           唯一一个点错了要重新输好几次密码的动作。 -->
+      <!-- 一个能做的都没有时整块不出现：只绑了一个箱又已经退出了，
+           点开一个空菜单比没有这个按钮更让人疑惑。 -->
+      <template v-if="!locked || mailboxes.length > 1">
+        <div class="rail-sep" />
+        <el-dropdown trigger="click" class="rail-signout" @command="onSignOut">
+          <el-button link class="rail-lock">
+            🔒 {{ t('mailGate.signOutMenu') }}
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-if="!locked" command="one">
+                {{ t('mailGate.signOut') }}
+              </el-dropdown-item>
+              <!-- 只有一个箱时不给「全部退出」：它和上面那条做的是同一件事，
+                   而两条一样的选项挨在一起正是误触的温床。 -->
+              <el-dropdown-item v-if="mailboxes.length > 1" command="all" :divided="!locked">
+                {{ t('mailGate.signOutAll') }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </template>
     </aside>
 
     <!-- 门。开在内容区里而不是整页，左栏那排信箱才留得住——见上面那段。
@@ -1140,7 +1148,7 @@ import EmailComposer from '../components/EmailComposer.vue'
 import MailReader, { type Mail } from '../components/MailReader.vue'
 import MailAttachments, { type MailFile } from '../components/MailAttachments.vue'
 import MailboxGate from '../components/MailboxGate.vue'
-import MailboxSwitcher from '../components/MailboxSwitcher.vue'
+import MailboxTree from '../components/MailboxTree.vue'
 import {
   adoptVerification,
   allTokens,
@@ -2049,6 +2057,46 @@ function switchFolder(key: string) {
   pushState({ folder: key, page: 1, q: '', mail: '', sort: '' })
 }
 
+// 左栏点的是「某个信箱的某个文件夹」——一下回答了两件事。
+//
+// 同一个箱里换文件夹走上面那条；换箱则要**先换令牌再导航**，那件事归
+// currentAccount 那个 watch 管，所以这里只是把想去的文件夹交给它。
+// 两条各自 pushState 的话会连着导航两次，中间那一次拉的是「新箱 + 旧文件夹」，
+// 白花一趟请求，还在历史里留下一个谁都没到过的位置。
+let pendingFolder: string | null = null
+function pickFolder(accountId: number, key: string) {
+  // accountId = 0 是不跟信箱走的那两个（待处理、拒收名单）。
+  if (accountId && accountId !== currentAccount.value) {
+    pendingFolder = key
+    currentAccount.value = accountId
+    return
+  }
+  switchFolder(key)
+}
+
+// 左栏那几个数字。**只有当前这个箱有**：别的箱服务端只给了未读总数，
+// 分文件夹的计数没有，编一个出来比空着坏得多。
+const folderCounts = computed<Record<string, number>>(() => ({
+  inbox: unreadCount.value,
+  drafts: drafts.value.length,
+  attention: attentionCount.value,
+}))
+
+// 退出那个下拉。**全部退出还要再确认一次**：它把所有箱一起关掉，是这一栏里
+// 唯一一个点错了要重新输好几次密码的动作。
+async function onSignOut(cmd: string) {
+  if (cmd === 'one') {
+    await lockMailbox()
+    return
+  }
+  await ElMessageBox.confirm(
+    t('mailGate.signOutAllAsk', { n: mailboxes.value.length }),
+    t('mailGate.signOutAll'),
+    { type: 'warning' },
+  )
+  await lockAllMailboxes()
+}
+
 function reload() {
   pushState({ page: 1, q: keyword.value, mail: '' })
 }
@@ -2069,6 +2117,7 @@ watch(currentAccount, (now, before) => {
   //
   // 没有这个箱的令牌 = 刚把它退出过。那时门要重新出来，只针对这个箱。
   if (!useMailbox(now)) {
+    pendingFolder = null
     locked.value = true
     return
   }
@@ -2082,7 +2131,14 @@ watch(currentAccount, (now, before) => {
   const wasLocked = locked.value
   locked.value = false
   keyword.value = ''
-  pushState({ page: 1, q: '', mail: '', cursor: '', acct: String(now) }, [])
+  // 左栏点的是「哪个箱的哪个文件夹」，两件事一次导航说完。没点文件夹时
+  // （解绑后自动切、新绑一个箱）留在原来那个文件夹，和从前一样。
+  const goto = pendingFolder
+  pendingFolder = null
+  pushState(
+    { page: 1, q: '', mail: '', cursor: '', acct: String(now), sort: '', ...(goto ? { folder: goto } : {}) },
+    [],
+  )
   // 从锁着的状态回来时，页面上那些只在解锁后才拉的东西（草稿数、待处理数、
   // 同步健康）都还是空的或者过期的。init 会把它们一起补上。
   if (wasLocked) {
@@ -3732,7 +3788,10 @@ async function doUnsuppress(row: Suppression) {
 }
 .rail {
   flex: none;
-  width: 178px;
+  /* 比从前宽 30px：文件夹缩进到信箱底下之后，178px 里再去掉一层缩进，
+     「拒收名单」这种四个字的名字就要被截断了。右边是 flex:1 的列表，
+     它自己会让出来。 */
+  width: 208px;
   /* Back to its own height, which stretch had just taken away — a sticky
      element as tall as its container has nowhere to stick to. */
   align-self: flex-start;
@@ -3742,68 +3801,6 @@ async function doUnsuppress(row: Suppression) {
 .compose {
   width: 100%;
   margin-bottom: 14px;
-}
-.folder {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  height: var(--mail-row-h);
-  padding: 0 12px;
-  margin-bottom: 2px;
-  background: none;
-  border: none;
-  /* The capsule, cut flat against the rail's edge — the shape says "this
-     column continues off-screen" rather than "here is a floating chip". */
-  border-radius: var(--mail-pill);
-  font-size: var(--mail-text);
-  color: var(--el-text-color-regular);
-  cursor: pointer;
-  text-align: left;
-  transition: background var(--mail-fast) var(--mail-ease);
-}
-.folder .fname {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ficon {
-  flex: none;
-  font-size: 16px;
-  color: var(--el-text-color-secondary);
-}
-.folder.on .ficon {
-  color: inherit;
-}
-.folder:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: -2px;
-}
-/* Grey under the cursor — a plain "you are pointing at this", distinct from
-   the blue capsule that means "you are here". Two different statements should
-   not be made in the same colour. */
-.folder:hover {
-  background: var(--mail-hover);
-}
-.folder.on {
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
-  font-weight: 600;
-}
-/* The current folder keeps its own colour when pointed at: greying it would
-   read as if the selection had been lost. */
-.folder.on:hover {
-  background: var(--el-color-primary-light-8);
-}
-.rail-scope {
-  margin-top: 22px;
-  padding: 0 12px;
-}
-.rail-label {
-  margin-bottom: 6px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
 }
 .pane {
   flex: 1;
@@ -3903,10 +3900,6 @@ async function doUnsuppress(row: Suppression) {
 }
 .clickable :deep(.el-table__row) {
   cursor: pointer;
-}
-.cnt {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
 }
 .notyet {
   padding: 30px 0;
@@ -4389,8 +4382,23 @@ async function doUnsuppress(row: Suppression) {
 }
 
 
+/* **这里从前写的是 flex: 1，而它一直什么都没做**：.rail 不是 flex 容器
+   （它自己是 .mailbox 的 flex item），所以这个 span 只是个不占地方的空标签。
+   于是「退出」离上面那排只隔着下面那条 16px——想点模板点成退出，根子在这儿。
+   改成一段实打实的间距。 */
 .rail-grow {
-  flex: 1;
+  display: block;
+  height: 18px;
+}
+/* 工具和退出之间的那条线。它不是装饰：上面是「做点什么」，下面是「离开」，
+   两类动作贴在一起正是误触的来源。 */
+.rail-sep {
+  height: 1px;
+  margin: 14px 12px 4px;
+  background: var(--el-border-color-lighter);
+}
+.rail-signout {
+  display: block;
 }
 .rail-lock {
   /* One function per line. These are inline-flex buttons by default, and
@@ -4411,6 +4419,6 @@ async function doUnsuppress(row: Suppression) {
 }
 /* The group keeps its distance from the folder list above it. */
 .rail-grow + .rail-lock {
-  margin-top: 16px;
+  margin-top: 4px;
 }
 </style>

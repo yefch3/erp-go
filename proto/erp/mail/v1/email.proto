@@ -1385,7 +1385,13 @@ message SaveDraftResponse {
   int64 id = 1;
 }
 
-message ListDraftsRequest {}
+message ListDraftsRequest {
+  // 只列这个信箱写的草稿。0 = 全部。
+  //
+  // 网关从解锁令牌里取，不认调用方传的——和收件箱、已发送、搜索同一条理由。
+  // 草稿行上从 00047 起就记着是从哪个箱写的，只是列表一直没照着筛。
+  int64 account_id = 1;
+}
 
 message ListDraftsResponse {
   repeated Draft drafts = 1;
