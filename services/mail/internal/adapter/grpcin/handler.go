@@ -857,7 +857,7 @@ func (h *Handler) ListInbound(ctx context.Context, req *mailv1.ListInboundReques
 
 func (h *Handler) SearchMail(ctx context.Context, req *mailv1.SearchMailRequest) (*mailv1.SearchMailResponse, error) {
 	op := operator(ctx)
-	p, err := h.svc.SearchMail(ctx, grpcx.TenantID(ctx), op.ID,
+	p, err := h.svc.SearchMail(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId(),
 		req.GetKeyword(), req.GetCursor(), req.GetPage().GetPageSize())
 	if err != nil {
 		return nil, err

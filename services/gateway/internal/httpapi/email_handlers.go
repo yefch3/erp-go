@@ -935,6 +935,8 @@ func (s *Server) searchMail(w http.ResponseWriter, r *http.Request) {
 		Keyword: q.Get("keyword"),
 		Cursor:  q.Get("cursor"),
 		Page:    pageFromQuery(r),
+		// 搜哪个箱由令牌决定，和收件箱、已发送同一条理由。
+		AccountId: unlockedAccount(r.Context()),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)

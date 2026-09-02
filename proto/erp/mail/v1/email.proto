@@ -329,6 +329,11 @@ message SearchMailRequest {
   string keyword = 1;
   string cursor = 2;
   erp.common.v1.PageRequest page = 3;
+  // 只搜这个信箱。0 = 我全部信箱（旧令牌和一个箱都没绑的人）。
+  //
+  // 网关从解锁令牌里取，不认调用方传的：站在 A 箱里搜出 B 箱的信，是
+  // 「按邮箱分」这条口径从搜索这个门绕回来了——切到 B 才能搜 B。
+  int64 account_id = 4;
 }
 
 message SearchMailResponse {

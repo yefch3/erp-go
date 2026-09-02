@@ -23,3 +23,15 @@ func TestBothMailboxListsForwardTheirSort(t *testing.T) {
 		t.Fatalf("已发送: sort_by=%q sort_dir=%q", rec.sent.GetSortBy(), rec.sent.GetSortDir())
 	}
 }
+
+// 搜索也只搜令牌里那个箱：网关得把它递到服务层，和收件箱、已发送一样。
+func TestSearchForwardsTheUnlockedMailbox(t *testing.T) {
+	rec := &recorder{}
+	s := &Server{Emails: rec}
+	req := httptest.NewRequest("GET", "/api/mail-search?keyword=steel", nil)
+	req = req.WithContext(withUnlockedAccount(req.Context(), 7))
+	s.searchMail(httptest.NewRecorder(), req)
+	if rec.search.GetAccountId() != 7 {
+		t.Fatalf("搜索没带上解锁的信箱：account_id=%d，于是站在 A 箱里能搜出 B 箱的信", rec.search.GetAccountId())
+	}
+}

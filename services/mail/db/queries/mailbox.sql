@@ -1252,6 +1252,9 @@ WITH hits AS (
     FROM email_inbound
     WHERE tenant_id = sqlc.arg(tenant_id)::bigint
       AND owner_id = sqlc.arg(owner_id)::bigint
+      -- 只搜这个箱。不传 = 全部，留给旧令牌和一个箱都没绑的人。
+      AND (sqlc.narg(account_id)::bigint IS NULL
+           OR account_id = sqlc.narg(account_id)::bigint)
       AND deleted_at IS NULL
       AND (folder <> 'JUNK' OR not_junk)
       -- One column, not five ORed together. The subject and the addresses
@@ -1294,6 +1297,8 @@ SELECT count(*)::bigint
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
+  AND (sqlc.narg(account_id)::bigint IS NULL
+       OR account_id = sqlc.narg(account_id)::bigint)
   AND deleted_at IS NULL
   AND (folder <> 'JUNK' OR not_junk)
   AND search_text ILIKE '%' || sqlc.arg(keyword)::text || '%';

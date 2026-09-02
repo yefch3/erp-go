@@ -109,7 +109,7 @@ func (s *Service) recoverBody(ctx context.Context, tenantID, inboundID int64, ra
 		// Recomputed rather than left as it was: the flag was set by the same
 		// mistake that stored the body as files, and the re-parse is the only
 		// thing that knows whether real attachments remain.
-		HasAttachments: len(parsed.Attachments) > 0,
+		HasAttachments: hasListedAttachments(parsed),
 	})
 	if err != nil {
 		s.log.Warn("body recovery could not write the body back", "id", inboundID, "err", err)

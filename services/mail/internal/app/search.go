@@ -35,12 +35,17 @@ type SearchPage struct {
 // bytes, and counting bytes would let 三 through while refusing "ab".
 const SearchMailMinKeyword = 2
 
-// SearchMail looks through everything the caller can see, in every folder.
+// SearchMail looks through everything the caller can see in one mailbox, in
+// every folder of it.
 //
 // Junk and trash are left out, as Gmail leaves them out: both hold mail the
 // person already decided against, and mixing it into results makes every
 // search something to be double-checked. See the query for the exception.
-func (s *Service) SearchMail(ctx context.Context, tenantID, ownerID int64, keyword, cursor string, size int32) (SearchPage, error) {
+//
+// accountID 是「只搜这个箱」，0 = 全部信箱。**按邮箱分**这条口径从前在搜索
+// 这个门上漏了：站在 Gmail 箱里搜一个词，263 箱的信也混在结果里——而列表
+// 明明只列 Gmail 的。切到哪个箱，搜的就是哪个箱。
+func (s *Service) SearchMail(ctx context.Context, tenantID, ownerID, accountID int64, keyword, cursor string, size int32) (SearchPage, error) {
 	keyword = strings.TrimSpace(keyword)
 	if len([]rune(keyword)) < SearchMailMinKeyword {
 		// Not an error: the box is being typed into. An empty page with a
@@ -54,16 +59,20 @@ func (s *Service) SearchMail(ctx context.Context, tenantID, ownerID int64, keywo
 	if err != nil {
 		return SearchPage{}, err
 	}
+	var acct *int64
+	if accountID > 0 {
+		acct = &accountID
+	}
 
 	rows, err := s.q.SearchMail(ctx, store.SearchMailParams{
-		TenantID: tenantID, OwnerID: ownerID, Keyword: keyword,
+		TenantID: tenantID, OwnerID: ownerID, AccountID: acct, Keyword: keyword,
 		CursorAt: at, CursorID: id, RowLimit: size,
 	})
 	if err != nil {
 		return SearchPage{}, err
 	}
 	total, err := s.q.CountSearchMail(ctx, store.CountSearchMailParams{
-		TenantID: tenantID, OwnerID: ownerID, Keyword: keyword,
+		TenantID: tenantID, OwnerID: ownerID, AccountID: acct, Keyword: keyword,
 	})
 	if err != nil {
 		return SearchPage{}, err

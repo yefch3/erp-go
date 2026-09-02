@@ -238,22 +238,30 @@ SELECT count(*)::bigint
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
+  AND ($3::bigint IS NULL
+       OR account_id = $3::bigint)
   AND deleted_at IS NULL
   AND (folder <> 'JUNK' OR not_junk)
-  AND search_text ILIKE '%' || $3::text || '%'
+  AND search_text ILIKE '%' || $4::text || '%'
 `
 
 type CountSearchMailParams struct {
-	TenantID int64
-	OwnerID  int64
-	Keyword  string
+	TenantID  int64
+	OwnerID   int64
+	AccountID *int64
+	Keyword   string
 }
 
 // Repeats the predicate rather than sharing it: the count and the list have
 // to agree, and a count that searched a different set would promise rows that
 // are not there.
 func (q *Queries) CountSearchMail(ctx context.Context, arg CountSearchMailParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countSearchMail, arg.TenantID, arg.OwnerID, arg.Keyword)
+	row := q.db.QueryRow(ctx, countSearchMail,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.AccountID,
+		arg.Keyword,
+	)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -3509,6 +3517,9 @@ WITH hits AS (
     FROM email_inbound
     WHERE tenant_id = $2::bigint
       AND owner_id = $3::bigint
+      -- 只搜这个箱。不传 = 全部，留给旧令牌和一个箱都没绑的人。
+      AND ($4::bigint IS NULL
+           OR account_id = $4::bigint)
       AND deleted_at IS NULL
       AND (folder <> 'JUNK' OR not_junk)
       -- One column, not five ORed together. The subject and the addresses
@@ -3517,11 +3528,11 @@ WITH hits AS (
       -- and the planner falls back to a scan — 100 ms against 1.6 ms,
       -- measured on this mailbox.
       AND search_text ILIKE '%' || $1::text || '%'
-      AND ($4::timestamptz IS NULL
-           OR (received_at, id) < ($4::timestamptz,
-                                   $5::bigint))
+      AND ($5::timestamptz IS NULL
+           OR (received_at, id) < ($5::timestamptz,
+                                   $6::bigint))
     ORDER BY received_at DESC, id DESC
-    LIMIT $6::int
+    LIMIT $7::int
 )
 SELECT id, folder, thread_key, from_email, from_name, to_email, subject,
        is_read, is_starred, has_attachments, received_at, sent_at,
@@ -3542,12 +3553,13 @@ ORDER BY received_at DESC, id DESC
 `
 
 type SearchMailParams struct {
-	Keyword  string
-	TenantID int64
-	OwnerID  int64
-	CursorAt pgtype.Timestamptz
-	CursorID int64
-	RowLimit int32
+	Keyword   string
+	TenantID  int64
+	OwnerID   int64
+	AccountID *int64
+	CursorAt  pgtype.Timestamptz
+	CursorID  int64
+	RowLimit  int32
 }
 
 type SearchMailRow struct {
@@ -3587,6 +3599,7 @@ func (q *Queries) SearchMail(ctx context.Context, arg SearchMailParams) ([]Searc
 		arg.Keyword,
 		arg.TenantID,
 		arg.OwnerID,
+		arg.AccountID,
 		arg.CursorAt,
 		arg.CursorID,
 		arg.RowLimit,
