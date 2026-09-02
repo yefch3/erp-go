@@ -83,6 +83,8 @@ type MessageQuery struct {
 	// Keyset rather than a page number, like every other mailbox list.
 	Cursor string
 	Size   int32
+	// 只看这个信箱发出去的，0 = 不筛。别人的信不受它影响——见查询里的注释。
+	AccountID int64
 }
 
 // ListMessages is what both the campaign detail and the failure queue read.
@@ -100,11 +102,16 @@ func (s *Service) ListMessages(ctx context.Context, tenantID int64, qy MessageQu
 	if err != nil {
 		return nil, 0, "", err
 	}
+	var acct *int64
+	if qy.AccountID > 0 {
+		acct = &qy.AccountID
+	}
 	rows, err := s.q.ListMessages(ctx, store.ListMessagesParams{
 		TenantID: tenantID, VisibleAll: visible.All, VisibleIds: visible.EmployeeIDs,
 		CampaignID: qy.CampaignID, SenderID: qy.SenderID,
 		Status: qy.Status, AttentionOnly: qy.AttentionOnly,
 		Keyword: qy.Keyword, RowLimit: size, CursorID: cursorID,
+		AccountID: acct, SelfID: op.ID,
 	})
 	if err != nil {
 		return nil, 0, "", err

@@ -219,6 +219,7 @@ func (h *Handler) ListMessages(ctx context.Context, req *mailv1.ListMessagesRequ
 		Status:        req.GetStatus(),
 		AttentionOnly: req.GetAttentionOnly(), Keyword: req.GetKeyword(),
 		Cursor: req.GetCursor(), Size: size,
+		AccountID:     req.GetAccountId(),
 	}, operator(ctx))
 	if err != nil {
 		return nil, err

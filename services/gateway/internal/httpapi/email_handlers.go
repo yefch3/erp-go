@@ -88,6 +88,8 @@ func (s *Server) listEmailMessages(w http.ResponseWriter, r *http.Request) {
 		AttentionOnly: q.Get("attention_only") == "true",
 		Keyword:       q.Get("keyword"),
 		Cursor:        q.Get("cursor"),
+		// 「待处理」按信箱分：看哪个箱由令牌决定，不由调用方的参数决定。
+		AccountId: unlockedAccount(r.Context()),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)

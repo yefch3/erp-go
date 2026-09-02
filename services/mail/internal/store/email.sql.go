@@ -1250,27 +1250,40 @@ FROM email_messages
 WHERE tenant_id = $1::bigint
   AND ($2::bool OR sender_id = ANY($3::bigint[]))
   AND ($4::bigint = 0 OR sender_id = $4::bigint)
-  AND ($5::bigint = 0 OR campaign_id = $5::bigint)
-  AND ($6::text = '' OR status = $6::text)
+  -- 「待处理」按信箱分：我在读哪个箱，看到的就是从哪个箱发出去出了问题的信。
+  --
+  -- 三个例外写在同一句里，每一个都有理由：
+  --   * 不传 account_id = 不筛（旧令牌、一个箱都没绑的人）。
+  --   * **别人的信不受我的信箱影响。** 这一条列表还兼着数据范围那一层——
+  --     范围放宽的角色能看到下属的信。拿我的 account_id 去筛他们的信，
+  --     结果是一条都不剩，而那不是「按邮箱分」想表达的意思。
+  --   * account_id = 0 是 00047 之前入队的行，它真的不知道自己从哪个箱走的。
+  --     藏起来等于让一封需要处理的失败信从眼前消失，那是这一栏最不该发生的事。
+  AND ($5::bigint IS NULL
+       OR sender_id <> $6::bigint
+       OR account_id = 0
+       OR account_id = $5::bigint)
+  AND ($7::bigint = 0 OR campaign_id = $7::bigint)
+  AND ($8::text = '' OR status = $8::text)
   -- The single filter the failure page needs: everything still waiting on a
   -- person. FAILED is deliberately absent — that is the status abandoning
   -- sets, so including it meant dealing with an item never removed it from
   -- the queue and the badge could only ever count up. SOFT_BOUNCED is here
   -- because a mailbox that stayed full through every retry needs somebody to
   -- chase the contact, not another attempt.
-  AND (NOT $7::bool
+  AND (NOT $9::bool
        OR status IN ('NEEDS_ATTENTION','SEND_UNKNOWN','HARD_BOUNCED','SOFT_BOUNCED','COMPLAINED'))
-  AND ($8::text = ''
-       OR to_email ILIKE '%' || $8::text || '%'
-       OR to_name  ILIKE '%' || $8::text || '%'
-       OR subject  ILIKE '%' || $8::text || '%')
+  AND ($10::text = ''
+       OR to_email ILIKE '%' || $10::text || '%'
+       OR to_name  ILIKE '%' || $10::text || '%'
+       OR subject  ILIKE '%' || $10::text || '%')
   -- Keyset. The order is by id alone, so the cursor is one: the id of the
   -- last row shown. 0 is the first page. Offset used to do this, and on a
   -- list that grows at the top it meant a message arriving mid-read could
   -- push a row across the boundary and show it twice, or hide it.
-  AND ($9::bigint = 0 OR id < $9::bigint)
+  AND ($11::bigint = 0 OR id < $11::bigint)
 ORDER BY id DESC
-LIMIT $10::int
+LIMIT $12::int
 `
 
 type ListMessagesParams struct {
@@ -1278,6 +1291,8 @@ type ListMessagesParams struct {
 	VisibleAll    bool
 	VisibleIds    []int64
 	SenderID      int64
+	AccountID     *int64
+	SelfID        int64
 	CampaignID    int64
 	Status        string
 	AttentionOnly bool
@@ -1313,6 +1328,8 @@ func (q *Queries) ListMessages(ctx context.Context, arg ListMessagesParams) ([]L
 		arg.VisibleAll,
 		arg.VisibleIds,
 		arg.SenderID,
+		arg.AccountID,
+		arg.SelfID,
 		arg.CampaignID,
 		arg.Status,
 		arg.AttentionOnly,
