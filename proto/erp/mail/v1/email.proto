@@ -1064,7 +1064,11 @@ message ListMessagesRequest {
   string keyword = 5;
   int64 sender_id = 6;  // Where the previous page ended. Keyset, like every other mailbox list.
   string cursor = 7;
-
+  // 只看这个信箱发出去的。0 = 全部。
+  //
+  // 网关从解锁令牌里取，和收件箱、已发送、搜索、草稿同一条理由。**别人的信
+  // 不受它影响**：这条列表兼着数据范围那一层，见查询里的注释。
+  int64 account_id = 8;
 }
 
 message ListMessagesResponse {

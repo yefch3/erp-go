@@ -2,13 +2,16 @@
 //
 // 这个分法不是排版偏好，是**后端的事实**：
 //
-//   - 收件箱 / 星标 / 已定时 / 已发送 / 归档 / 垃圾邮件 / 回收站 / 草稿箱
-//     的查询都带 account_id，切到哪个箱看到的就是哪个箱的。
-//   - 待处理（ListMessages）按人取，不按箱；拒收名单是整家公司一份。
+//   - 收件箱 / 星标 / 已定时 / 已发送 / 归档 / 垃圾邮件 / 回收站 / 草稿箱 /
+//     待处理 的查询都带 account_id，切到哪个箱看到的就是哪个箱的。
+//   - **拒收名单是整家公司一份**：`email_suppressions` 上是
+//     `UNIQUE (tenant_id, email)`，发信时按公司拦。客户说过「别再发给我了」，
+//     那句话对公司里每一个信箱都算数——挂到某个信箱底下，等于说换个地址发
+//     就可以，而代码根本不是那么拦的。
 //
-// 所以后两个**不能挂在某个信箱底下**。挂了的话，三个信箱底下会各有一个
-// 「待处理」，点开是同一份列表却各自声称是那个箱的——这比没有这一栏更坏，
-// 和「一个会给出错误答案的表格比没有这张表格更糟」是同一条。
+// 所以拒收名单**不能挂在某个信箱底下**。挂了的话，三个信箱底下各有一个，
+// 点开是同一份却各自声称是那个箱的——这比没有这一栏更坏，和「一个会给出
+// 错误答案的表格比没有这张表格更糟」是同一条。
 
 /** 跟着信箱走的，按左栏从上到下的顺序。 */
 export const MAILBOX_FOLDER_KEYS = [
@@ -17,13 +20,14 @@ export const MAILBOX_FOLDER_KEYS = [
   'drafts',
   'scheduled',
   'sent',
+  'attention',
   'archive',
   'junk',
   'trash',
 ] as const
 
 /** 不跟信箱走的，单独一栏。 */
-export const SHARED_FOLDER_KEYS = ['attention', 'suppressions'] as const
+export const SHARED_FOLDER_KEYS = ['suppressions'] as const
 
 export function isMailboxFolder(key: string): boolean {
   return (MAILBOX_FOLDER_KEYS as readonly string[]).includes(key)

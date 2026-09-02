@@ -36,31 +36,23 @@
            一个按钮里套另一个——嵌套的可点击元素在 HTML 里是非法的，浏览器会
            把内层拆出去，而键盘和读屏软件对拆完的结果各有各的理解。 -->
       <div class="mbox-row" :class="{ on: modelValue === b.id }">
-        <!-- **三角和名字是两颗按钮，做两件事。**
-             点名字 = 切到这个箱（左栏从前就是这么用的，不该让人重新学）；
-             点三角 = 只开合，不动右边。分开的理由是「想看看这个箱里有哪些
-             文件夹」和「我要去这个箱」是两个意图，合成一颗按钮就总有一个
-             要迁就另一个。
+        <!-- **整行都能开合**，不是只有那颗三角。
+             一颗 12px 的三角是个太小的靶子，而「点这一行」是人看到一棵树时
+             的第一反应；把开合塞进箭头里，等于让人先瞄准再点。
 
-             并排而不是嵌套：嵌套的可点击元素在 HTML 里是非法的，浏览器会把
-             内层拆出去，而键盘和读屏软件对拆完的结果各有各的理解。 -->
-        <button
-          class="caret-btn"
-          type="button"
-          :aria-expanded="isOpen(b.id)"
-          :aria-label="t(isOpen(b.id) ? 'mailGate.collapse' : 'mailGate.expand')"
-          :title="t(isOpen(b.id) ? 'mailGate.collapse' : 'mailGate.expand')"
-          @click="toggle(b.id)"
-        >
-          <el-icon class="caret" :class="{ open: isOpen(b.id) }"><CaretRight /></el-icon>
-        </button>
+             那切换信箱靠什么？靠点下面某个文件夹——那一下同时回答了「哪个箱」
+             和「看什么」，比单点箱名多说了一半。右边那两颗（解绑、设为默认）
+             是并排的兄弟按钮，不是套在里面的：嵌套的可点击元素在 HTML 里非法，
+             浏览器会把内层拆出去，而键盘和读屏软件对拆完的结果各有各的理解。 -->
         <button
           class="mbox"
           type="button"
           :title="b.email"
+          :aria-expanded="isOpen(b.id)"
           :aria-current="modelValue === b.id ? 'true' : undefined"
-          @click="emit('update:modelValue', b.id)"
+          @click="toggle(b.id)"
         >
+          <el-icon class="caret" :class="{ open: isOpen(b.id) }"><CaretRight /></el-icon>
           <span
             class="mbox-dot"
             :class="{ bad: !!b.lastError, off: isLocked(b.id) }"
@@ -166,8 +158,8 @@
       ＋ {{ t('mailGate.addMailbox') }}
     </el-button>
 
-    <!-- 不跟信箱走的那两个。单独一栏并且**说明白为什么**——不说的话，
-         「待处理」从信箱底下挪出来看着像是漏了。 -->
+    <!-- 不跟信箱走的那一个。单独一栏并且**说明白为什么**——不说的话，
+         拒收名单孤零零挂在树外面看着像是漏了。 -->
     <div v-if="boxes.length && shared.length && !locked" class="shared">
       <div class="rail-label" :title="t('mailGate.sharedFoldersHint')">
         {{ t('mailGate.sharedFolders') }}
@@ -395,32 +387,14 @@ defineExpose({ reload: load })
   color: var(--el-color-primary);
   font-weight: 600;
 }
-/* 三角自己一颗按钮。20px 宽，加上 .mbox 的 0 左内边距，正好让名字落在
-   和 .folder 的 12px 缩进差不多的位置。 */
-.caret-btn {
-  flex: none;
-  width: 20px;
-  height: 26px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-}
-.caret-btn:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: -2px;
-  border-radius: 4px;
-}
 .mbox {
   display: flex;
   align-items: center;
   gap: 6px;
   flex: 1;
   min-width: 0;
-  padding: 6px 4px;
+  /* 左 6px：三角自己占 12px 宽，加起来和 .folder 的 12px 缩进对得上。 */
+  padding: 6px 4px 6px 6px;
   border: none;
   border-radius: var(--mail-pill, 6px);
   background: transparent;
