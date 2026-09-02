@@ -154,6 +154,15 @@
               </button>
             </div>
           </div>
+          <el-button
+            v-if="canCreateCustomerFromSender"
+            class="sender-customer-action"
+            link
+            type="primary"
+            @click.stop="openCustomerFromSender"
+          >
+            {{ t('emails.createCustomerFromSender') }}
+          </el-button>
           <span class="grow" />
           <span class="sub in-when" :title="zonedStamp(openedInbound.sentAt || openedInbound.receivedAt)">
             {{ shortTime(openedInbound.sentAt || openedInbound.receivedAt) }}
@@ -906,6 +915,43 @@
   </div>
 
   <el-dialog
+    v-model="customerCreateOpen"
+    :title="t('emails.createCustomerTitle')"
+    width="min(520px, 92vw)"
+    append-to-body
+  >
+    <el-form label-position="top">
+      <el-form-item :label="t('customers.name')" required>
+        <el-input v-model="customerCreateForm.name" maxlength="200" />
+      </el-form-item>
+      <el-form-item :label="t('customers.contactEmail')" required>
+        <el-input v-model="customerCreateForm.email" />
+      </el-form-item>
+      <el-form-item :label="t('customers.country')">
+        <el-input :model-value="t('emails.unassignedCountry')" disabled />
+      </el-form-item>
+      <el-form-item :label="t('customers.timezone')">
+        <el-select
+          v-model="customerCreateForm.timezone"
+          filterable
+          clearable
+          :placeholder="t('customers.timezonePick')"
+          style="width: 100%"
+        >
+          <el-option v-for="zone in customerTimezoneOptions" :key="zone" :label="zone" :value="zone" />
+        </el-select>
+        <p class="customer-create-help">{{ t('emails.customerTimezoneHelp') }}</p>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="customerCreateOpen = false">{{ common('cancel') }}</el-button>
+      <el-button type="primary" :loading="customerCreating" @click="createCustomerFromMail">
+        {{ common('save') }}
+      </el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog
     v-model="excelTemplateOpen"
     :title="t('emails.selectExcelTemplate')"
     width="min(520px, 92vw)"
@@ -1134,6 +1180,10 @@ import {
   toggleAll,
 } from '../lib/mailSelection'
 import type { InquiryTemplate } from '../lib/inquiryTemplates'
+import { customerDraftFromSender } from '../lib/mailCustomerDraft'
+import { validateCustomerContact, validateCustomerProfile } from '../lib/customerForms'
+import { confirmPossibleDuplicates } from '../lib/masterDataDuplicates'
+import { portTimezoneOptions } from '../lib/portOptions'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import EmailComposer from '../components/EmailComposer.vue'
@@ -1318,6 +1368,7 @@ const canWrite = computed(() => auth.can('mail:email:write'))
 const canSuppress = computed(() => auth.can('mail:suppression:write'))
 const isAdmin = computed(() => auth.can('iam:role:write'))
 const canExport = computed(() => auth.can('mail:email:export'))
+const canCreateCustomer = computed(() => auth.can('masterdata:customer:write'))
 
 // An icon per folder. Text alone made the rail a list of similar-length words
 // that had to be read; the icon is what the eye actually navigates by once the
@@ -1467,6 +1518,11 @@ function onMailboxesChanged(boxes: { id: number; email: string; isDefault: boole
 // The mail being read full-page. Set from the URL, never directly: opening a
 // mail is a navigation, so refresh reopens it and back returns to the list.
 const openedInbound = ref<InboundMail | null>(null)
+const canCreateCustomerFromSender = computed(() => {
+  const mail = openedInbound.value
+  if (!canCreateCustomer.value || !mail?.fromEmail || mail.folder === 'SENT') return false
+  return !myAddresses.value.has(mail.fromEmail.trim().toLowerCase())
+})
 
 // Folded by default, and folded again on every open: the details are for the
 // one mail somebody is questioning, not a preference to carry into the next.
@@ -3063,6 +3119,10 @@ type ExcelSource =
 const excelMenu = reactive({
   open: false, x: 0, y: 0, source: null as ExcelSource | null, disabledReason: '',
 })
+const customerCreateOpen = ref(false)
+const customerCreating = ref(false)
+const customerCreateForm = reactive({ name: '', email: '', timezone: '' })
+const customerTimezoneOptions = portTimezoneOptions('')
 const excelOpen = ref(false)
 const excelTemplateOpen = ref(false)
 const excelTemplatesBusy = ref(false)
@@ -3248,6 +3308,61 @@ function openAttachmentExcelMenu(event: MouseEvent, file: MailFile) {
 
 function closeExcelMenu() {
   excelMenu.open = false
+}
+
+function openCustomerFromSender() {
+  const mail = openedInbound.value
+  if (!canCreateCustomerFromSender.value || !mail) return
+  Object.assign(
+    customerCreateForm,
+    customerDraftFromSender(mail.fromName, mail.fromEmail),
+    { timezone: '' },
+  )
+  customerCreateOpen.value = true
+}
+
+async function createCustomerFromMail() {
+  const name = customerCreateForm.name.trim()
+  const email = customerCreateForm.email.trim()
+  if (!name) {
+    ElMessage.warning(t('customers.required'))
+    return
+  }
+  const contactError = validateCustomerContact({ name, email })
+  if (contactError) {
+    ElMessage.warning(t(`customers.${contactError}`))
+    return
+  }
+  if (validateCustomerProfile({ timezone: customerCreateForm.timezone })) {
+    ElMessage.warning(t('customers.timezoneInvalid'))
+    return
+  }
+  customerCreating.value = true
+  try {
+    const duplicates = await get<{ candidates?: Array<{ id: string; code: string; name: string; matchFields?: string[] }> }>(
+      '/customers/duplicates', { name, email },
+    )
+    const candidates = duplicates.candidates ?? []
+    const emailOwner = candidates.find((candidate) => candidate.matchFields?.includes('EMAIL'))
+    if (emailOwner) {
+      ElMessage.warning(t('emails.customerEmailExists', { code: emailOwner.code, name: emailOwner.name }))
+      return
+    }
+    await confirmPossibleDuplicates(candidates, t)
+    const { customer } = await post<{ customer: { id: string; code: string; name: string } }>('/customers', {
+      name,
+      country: '',
+      countryCode: '',
+      currency: 'USD',
+      source: 'EMAIL',
+      timezone: customerCreateForm.timezone,
+      contacts: [{ name, email, isPrimary: true }],
+    })
+    customerCreateOpen.value = false
+    ElMessage.success(t('emails.customerCreated', { code: customer.code }))
+  } finally {
+    customerCreating.value = false
+  }
 }
 window.addEventListener('click', closeExcelMenu)
 window.addEventListener('blur', closeExcelMenu)
@@ -3991,6 +4106,16 @@ async function doUnsuppress(row: Suppression) {
   align-items: center;
   gap: 12px;
 }
+.sender-customer-action {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.in-from:hover .sender-customer-action,
+.in-from:focus-within .sender-customer-action {
+  opacity: 1;
+  pointer-events: auto;
+}
 .avatar {
   flex: none;
   display: grid;
@@ -4304,6 +4429,12 @@ async function doUnsuppress(row: Suppression) {
 .excel-context-reason {
   max-width: 240px;
   margin: 3px 8px 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.customer-create-help {
+  margin: 5px 0 0;
   color: var(--el-text-color-secondary);
   font-size: 12px;
   line-height: 1.45;

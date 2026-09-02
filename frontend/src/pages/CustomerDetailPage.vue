@@ -477,9 +477,16 @@
           ><el-input v-model="profileForm.primaryLanguage"
         /></el-form-item>
         <el-form-item label="所在时区"
-          ><el-input
+          ><el-select
             v-model="profileForm.timezone"
-            placeholder="Asia/Shanghai" /></el-form-item
+            filterable
+            clearable
+            placeholder="选择标准 IANA 时区"
+            ><el-option
+              v-for="zone in profileTimezoneOptions"
+              :key="zone"
+              :label="zone"
+              :value="zone" /></el-select></el-form-item
         ><el-form-item label="标签"
         ><el-select
             v-model="profileForm.tags"
@@ -679,6 +686,7 @@ import { useRoute, useRouter } from "vue-router";
 import { del, get, post, put } from "../api";
 import { CURRENCIES } from "../constants";
 import { countryName, countryOptions } from "../lib/countries";
+import { portTimezoneOptions } from "../lib/portOptions";
 import {
   validateCustomerContact,
   validateCustomerProfile,
@@ -760,6 +768,7 @@ const customer = ref<any>(null),
   owners = ref<any[]>([]),
   changes = ref<any[]>([]),
   changeTotal = ref(0);
+const profileTimezoneOptions = computed(() => portTimezoneOptions(customer.value?.countryCode ?? ""));
 const types = ref<any[]>([]),
   sources = ref<any[]>([]),
   paymentOptions = ref<any[]>([]),
@@ -791,7 +800,7 @@ const addressTypes = [
 ];
 
 function displayCountry(code: string) {
-  return code ? countryName(code, "zh-CN") : "未设置国家";
+  return code ? countryName(code, "zh-CN") : "未分配国家";
 }
 function optionLabel(list: any[], code: string) {
   return list.find((o) => o.code === code)?.label || code || "—";

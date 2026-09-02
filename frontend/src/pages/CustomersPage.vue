@@ -144,6 +144,18 @@
             <el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c" />
           </el-select>
         </el-form-item>
+        <el-form-item :label="t('customers.timezone')">
+          <el-select
+            v-model="form.timezone"
+            filterable
+            clearable
+            :placeholder="t('customers.timezonePick')"
+            style="width: 100%"
+          >
+            <el-option v-for="zone in timezoneOptions" :key="zone" :label="zone" :value="zone" />
+          </el-select>
+          <div class="timezone-help">{{ t('customers.timezoneHelp') }}</div>
+        </el-form-item>
         <el-form-item :label="t('customers.paymentTerm')">
           <el-select v-model="form.paymentTerm" style="width: 200px" clearable>
             <el-option v-for="o in paymentOptions" :key="o.code" :value="o.code" :label="o.label" />
@@ -210,7 +222,8 @@ import { del, get, post, put } from '../api'
 import { CURRENCIES } from '../constants'
 import { DIAL_CODES, dialCodeOfCode, splitPhone } from '../constants'
 import { countryName, countryOptions } from '../lib/countries'
-import { validateCustomerContact } from '../lib/customerForms'
+import { validateCustomerContact, validateCustomerProfile } from '../lib/customerForms'
+import { portTimezoneOptions } from '../lib/portOptions'
 import { useAuthStore } from '../stores/auth'
 import { confirmPossibleDuplicates } from '../lib/masterDataDuplicates'
 import { confirmDeactivation, promptActivationReason } from '../lib/masterDataLifecycle'
@@ -239,6 +252,7 @@ interface Customer {
   englishName?: string
   customerType?: string
   businessStatus?: string
+  timezone?: string
   primaryContactName?: string
   owners?: { employeeName: string }[]
 }
@@ -248,7 +262,7 @@ interface CountryGroup { code: string; customerCount: string }
 const EMPTY_FORM = {
   code: '', name: '', country: '', countryCode: '', currency: 'USD', paymentTerm: '',
   address: '', remark: '',
-  contactName: '', contactDial: '', contactPhone: '', contactEmail: '',
+  contactName: '', contactDial: '', contactPhone: '', contactEmail: '', timezone: '',
 }
 
 const { t, locale } = useI18n()
@@ -290,6 +304,7 @@ const displayedCountryGroups = computed(() => [...countryGroups.value].sort((a, 
   if (!b.code) return -1
   return countryName(a.code, locale.value).localeCompare(countryName(b.code, locale.value), locale.value)
 }))
+const timezoneOptions = computed(() => portTimezoneOptions(form.countryCode))
 
 // Picking a country pre-fills the matching calling code. A code the user chose
 // themselves is never overwritten — only an empty one, or one that still
@@ -381,6 +396,7 @@ async function openEdit(row: Customer) {
       countryCode: customer.countryCode ?? '',
       currency: customer.currency, paymentTerm: customer.paymentTerm,
       address: customer.address, remark: customer.remark,
+      timezone: customer.timezone ?? '',
       contactName: primary?.name ?? '',
       contactDial: phone.dial, contactPhone: phone.number,
       contactEmail: primary?.email ?? '',
@@ -410,6 +426,10 @@ async function save() {
       return
     }
   }
+  if (validateCustomerProfile({ timezone: form.timezone })) {
+    ElMessage.warning(t('customers.timezoneInvalid'))
+    return
+  }
   saving.value = true
   const primary = form.contactName
     ? [{ name: form.contactName, phone, email: form.contactEmail, isPrimary: true }]
@@ -418,6 +438,7 @@ async function save() {
     name: form.name, country: form.country, countryCode: form.countryCode,
     address: form.address,
     currency: form.currency, paymentTerm: form.paymentTerm, remark: form.remark,
+    timezone: form.timezone,
     contacts: [...primary, ...otherContacts.value],
   }
   try {
@@ -573,5 +594,12 @@ onMounted(async () => {
 .dial-country {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.timezone-help {
+  width: 100%;
+  margin-top: 4px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.4;
 }
 </style>
