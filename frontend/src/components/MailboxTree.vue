@@ -158,18 +158,18 @@
       ＋ {{ t('mailGate.addMailbox') }}
     </el-button>
 
-    <!-- 不跟信箱走的那一个。单独一栏并且**说明白为什么**——不说的话，
-         拒收名单孤零零挂在树外面看着像是漏了。 -->
+    <!-- 不跟信箱走的那一个（拒收名单）。**不给它一行标题**：那行字比它
+         要解释的东西还长，而它到底为什么在树外面，说明留在 title 里——
+         鼠标停上去看得到，平时不占地方。位置本身已经在说这件事了：它没有
+         缩进到任何一个信箱底下，和上面隔着一条线。 -->
     <div v-if="boxes.length && shared.length && !locked" class="shared">
-      <div class="rail-label" :title="t('mailGate.sharedFoldersHint')">
-        {{ t('mailGate.sharedFolders') }}
-      </div>
       <button
         v-for="f in shared"
         :key="f.key"
         type="button"
         class="folder"
         :class="{ on: folder === f.key }"
+        :title="t('mailGate.sharedFoldersHint')"
         @click="emit('select', 0, f.key)"
       >
         <el-icon class="ficon"><component :is="f.icon" /></el-icon>
@@ -359,12 +359,6 @@ defineExpose({ reload: load })
 <style scoped>
 .rail-tree {
   display: block;
-}
-.rail-label {
-  margin: 18px 0 6px;
-  padding-left: 12px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
 }
 
 /* ------------------------------------------------------------- 信箱那一行 */
@@ -593,7 +587,11 @@ defineExpose({ reload: load })
   margin-left: 12px;
   font-size: 12px;
 }
+/* 一条线代替那行标题：把「它不属于上面任何一个信箱」这件事说清楚，
+   而不占一整行的高度。 */
 .shared {
-  margin-top: 4px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 </style>

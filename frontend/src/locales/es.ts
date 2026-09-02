@@ -2082,7 +2082,6 @@ export default {
     signOutMenu: 'Cerrar sesión',
     signOutAllAsk: '¿Cerrar sesión en los {n} buzones? Cada uno volverá a pedir su contraseña.',
     signInToRead: 'Inicia sesión para ver',
-    sharedFolders: 'No por buzón',
     sharedFoldersHint: 'La lista de exclusión es común a toda la empresa: si un cliente pide no recibir más correos, eso vale para todos los buzones, y el envío lo aplica así',
     signedOutOne: 'Sesión cerrada en ese buzón; los demás siguen abiertos',
     reauth: 'La autorización de Google ya no es válida (un cambio de contraseña o su caducidad lo provocan). Redirigiendo a Google para iniciar sesión de nuevo…',

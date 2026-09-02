@@ -2073,7 +2073,6 @@ export default {
     signOutMenu: 'Sign out',
     signOutAllAsk: 'Sign out of all {n} mailboxes? Each will ask for its password again.',
     signInToRead: 'Sign in to read',
-    sharedFolders: 'Not per mailbox',
     sharedFoldersHint: 'The suppression list is company-wide: when a customer asks not to be emailed again, that holds for every mailbox, and sending enforces it company-wide',
     signedOutOne: 'Signed out of that mailbox; the others are still open',
     reauth: 'The Google grant is no longer valid (a password change or expiry does this). Heading to Google to sign in again…',
