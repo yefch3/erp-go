@@ -339,6 +339,20 @@ func (s *Server) returnSourcingCase(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) withdrawSourcingCase(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.WithdrawCaseRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.CaseId = idFromPath(r)
+	resp, err := s.Sourcing.WithdrawCase(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) reviewSourcingLine(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.ReviewLineRequest{}
 	if !s.decodeBody(w, r, req) {

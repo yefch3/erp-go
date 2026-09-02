@@ -22,6 +22,7 @@ service SourcingService {
   rpc RequestPrimaryBuyer(RequestPrimaryBuyerRequest) returns (RequestPrimaryBuyerResponse);
   rpc AssignPrimaryBuyer(AssignPrimaryBuyerRequest) returns (AssignPrimaryBuyerResponse);
   rpc ReturnCase(ReturnCaseRequest) returns (ReturnCaseResponse);
+  rpc WithdrawCase(WithdrawCaseRequest) returns (WithdrawCaseResponse);
   rpc ReviewLine(ReviewLineRequest) returns (ReviewLineResponse);
   rpc CreateFactoryRfq(CreateFactoryRfqRequest) returns (CreateFactoryRfqResponse);
   rpc ListFactoryRfqs(ListFactoryRfqsRequest) returns (ListFactoryRfqsResponse);
@@ -223,6 +224,7 @@ message ReviewLineRequest {
   string decision = 7;
   string reason = 8;
 }
+
 message ReviewLineResponse { SourcingCase sourcing_case = 1; }
 
 message FactoryRfq {
@@ -2633,3 +2635,9 @@ message DecideCustomerSelectionRequest {
   repeated FinalCustomerShipmentPrice shipment_prices = 8;
 }
 message DecideCustomerSelectionResponse { CustomerSelection selection = 1; }
+
+message WithdrawCaseRequest {
+  int64 case_id = 1;
+  string reason = 2;
+}
+message WithdrawCaseResponse { SourcingCase sourcing_case = 1; }

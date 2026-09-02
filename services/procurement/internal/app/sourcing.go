@@ -332,7 +332,7 @@ func (s *Service) ConfirmSourcingLines(ctx context.Context, tenantID, caseID int
 			result, execErr := tx.Exec(ctx,
 				`UPDATE sourcing_cases SET status='REVIEWING', handoff_status='WAITING_ACCEPTANCE',
  requirement_version_no=CASE WHEN handoff_status='RETURNED_FOR_SUPPLEMENT' THEN requirement_version_no+1 ELSE greatest(requirement_version_no,1) END,
- return_reason='', return_fields='{}',
+ returned_by=NULL,returned_by_name='',returned_at=NULL,return_reason='',return_fields='{}',
  updated_at=now() WHERE tenant_id=$1 AND id=$2 AND status='INTAKE_PENDING'`,
 				tenantID, caseID)
 			if execErr != nil {
