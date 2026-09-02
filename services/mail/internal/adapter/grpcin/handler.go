@@ -568,8 +568,8 @@ func (h *Handler) SaveDraft(ctx context.Context, req *mailv1.SaveDraftRequest) (
 	return &mailv1.SaveDraftResponse{Id: id}, nil
 }
 
-func (h *Handler) ListDrafts(ctx context.Context, _ *mailv1.ListDraftsRequest) (*mailv1.ListDraftsResponse, error) {
-	rows, err := h.svc.ListDrafts(ctx, grpcx.TenantID(ctx), operator(ctx))
+func (h *Handler) ListDrafts(ctx context.Context, req *mailv1.ListDraftsRequest) (*mailv1.ListDraftsResponse, error) {
+	rows, err := h.svc.ListDrafts(ctx, grpcx.TenantID(ctx), req.GetAccountId(), operator(ctx))
 	if err != nil {
 		return nil, err
 	}
