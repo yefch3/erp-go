@@ -2073,6 +2073,8 @@ export default {
     signOutMenu: 'Sign out',
     signOutAllAsk: 'Sign out of all {n} mailboxes? Each will ask for its password again.',
     signInToRead: 'Sign in to read',
+    expand: 'Expand',
+    collapse: 'Collapse',
     sharedFolders: 'Not per mailbox',
     sharedFoldersHint: 'These two are not per mailbox: attention lists your own sends that need a look, and the suppression list is shared company-wide',
     signedOutOne: 'Signed out of that mailbox; the others are still open',

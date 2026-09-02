@@ -2082,6 +2082,8 @@ export default {
     signOutMenu: 'Cerrar sesión',
     signOutAllAsk: '¿Cerrar sesión en los {n} buzones? Cada uno volverá a pedir su contraseña.',
     signInToRead: 'Inicia sesión para ver',
+    expand: 'Expandir',
+    collapse: 'Contraer',
     sharedFolders: 'No por buzón',
     sharedFoldersHint: 'Estos dos no se separan por buzón: pendientes son tus propios envíos que requieren atención, y la lista de exclusión es común a toda la empresa',
     signedOutOne: 'Sesión cerrada en ese buzón; los demás siguen abiertos',

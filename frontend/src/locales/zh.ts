@@ -2070,6 +2070,8 @@ export default {
     signOutMenu: '退出邮箱',
     signOutAllAsk: '把手上 {n} 个邮箱全部退出？下次每个都要重新登录一次。',
     signInToRead: '登录后查看',
+    expand: '展开',
+    collapse: '收起',
     sharedFolders: '不分邮箱',
     sharedFoldersHint: '这两项不按邮箱分：待处理是你发出的信里需要处理的，拒收名单整家公司共用一份',
     signedOutOne: '已退出这个邮箱，其他邮箱还开着',
