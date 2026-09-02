@@ -1920,6 +1920,7 @@ export default {
     applyTemplate: '套用模板',
     noTemplates: '还没有模板，去邮箱侧栏「邮件模板」创建',
     templateApplied: '已套用模板，变量将在发送时按收件人填充',
+    templateAlreadyApplied: '已经是这个模板了，正文没有再加一遍',
     templateMergedVars: '合并发送对所有人是同一封信，模板里的变量不会被填充',
     vars: {
       contact_name: '联系人全名',

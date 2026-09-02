@@ -402,6 +402,7 @@
 </template>
 
 <script setup lang="ts">
+import { applyTemplateToBody, type AppliedTemplate } from '../lib/mailTemplateApply'
 import { computed, h, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Clock } from '@element-plus/icons-vue'
@@ -991,13 +992,15 @@ async function loadSignatures() {
 // ---------------------------------------------------------------- templates
 
 const templates = ref<ComposeTemplate[]>([])
-const templatesLoaded = ref(false)
 
+// 每次点开下拉都重新拉，不缓存。
+//
+// 从前拉一次就记住了，而这个写信框在页面上是常驻的：第一次点开时还没有模板，
+// 人照着提示去侧栏建了七个，回来一点还是「还没有模板」——直到刷新整页。
+// 客户就是这么撞上的。一次请求几毫秒，换一个永远是真的列表。
 async function loadTemplates() {
-  if (templatesLoaded.value) return
   const d = await get<{ templates: ComposeTemplate[] }>('/email-templates')
   templates.value = d.templates ?? []
-  templatesLoaded.value = true
 }
 
 // Same conversions the dialogs use, for the same reasons: a plain-text
@@ -1022,6 +1025,10 @@ function bodyIsBlank(): boolean {
   return form.body.trim() === ''
 }
 
+// 上一次套进正文的是哪个模板、套之前正文是什么。有了它，同一个模板点几次
+// 正文都只有一份，换模板是换掉而不是叠上去——规则和测试都在 lib/mailTemplateApply。
+const lastTemplate = ref<AppliedTemplate | null>(null)
+
 function applyTemplate(tp: ComposeTemplate) {
   // The subject fills only when blank: a reply's "Re: ..." is the thread's
   // identity and must survive a template.
@@ -1034,11 +1041,17 @@ function applyTemplate(tp: ComposeTemplate) {
   } else if (form.format !== 'HTML' && tp.bodyFormat === 'HTML') {
     content = tplHTMLToText(content)
   }
-  if (bodyIsBlank()) {
-    form.body = content
-  } else {
-    // Appended, never replacing: half-written prose outranks any template.
-    form.body = form.format === 'HTML' ? `${form.body}<br>${content}` : `${form.body}\n\n${content}`
+  const r = applyTemplateToBody({
+    body: form.body, format: form.format, isBlank: bodyIsBlank(),
+    templateId: tp.id, content, last: lastTemplate.value,
+  })
+  form.body = r.body
+  lastTemplate.value = r.last
+  if (r.kind === 'unchanged') {
+    // 点了第二次。说一声「已经是它了」，而不是再弹一次「已套用」——那会让人
+    // 以为又加了一遍。
+    ElMessage.info(t('emails.templateAlreadyApplied'))
+    return
   }
   if (form.sendMode === 'MERGED' && /\{\{\s*[a-z_]/.test(tp.content + tp.subject)) {
     // Merged mode sends one identical mail to everyone, so per-recipient

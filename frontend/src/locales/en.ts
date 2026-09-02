@@ -1923,6 +1923,7 @@ export default {
     applyTemplate: 'Apply template',
     noTemplates: 'No templates yet — create one from the mailbox rail',
     templateApplied: 'Template applied; variables fill per recipient at send time',
+    templateAlreadyApplied: 'This template is already in place; nothing was added again',
     templateMergedVars: 'Merged send is one identical mail for everyone — template variables will not fill',
     vars: {
       contact_name: 'Contact full name',
