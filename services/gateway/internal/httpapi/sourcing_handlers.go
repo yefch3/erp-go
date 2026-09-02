@@ -340,7 +340,7 @@ func (s *Server) returnSourcingCase(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) withdrawSourcingCase(w http.ResponseWriter, r *http.Request) {
-	req := &prv1.ReturnCaseRequest{}
+	req := &prv1.WithdrawCaseRequest{}
 	if !s.decodeBody(w, r, req) {
 		return
 	}

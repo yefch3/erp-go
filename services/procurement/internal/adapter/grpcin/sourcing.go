@@ -201,12 +201,12 @@ func (h *SourcingHandler) ReturnCase(ctx context.Context, req *prv1.ReturnCaseRe
 	return &prv1.ReturnCaseResponse{SourcingCase: sourcingCaseView(view)}, nil
 }
 
-func (h *SourcingHandler) WithdrawCase(ctx context.Context, req *prv1.ReturnCaseRequest) (*prv1.ReturnCaseResponse, error) {
+func (h *SourcingHandler) WithdrawCase(ctx context.Context, req *prv1.WithdrawCaseRequest) (*prv1.WithdrawCaseResponse, error) {
 	view, err := h.svc.WithdrawSourcingCase(ctx, grpcx.TenantID(ctx), req.GetCaseId(), req.GetReason(), sourcingOperator(ctx))
 	if err != nil {
 		return nil, err
 	}
-	return &prv1.ReturnCaseResponse{SourcingCase: sourcingCaseView(view)}, nil
+	return &prv1.WithdrawCaseResponse{SourcingCase: sourcingCaseView(view)}, nil
 }
 
 func (h *SourcingHandler) ReviewLine(ctx context.Context, req *prv1.ReviewLineRequest) (*prv1.ReviewLineResponse, error) {

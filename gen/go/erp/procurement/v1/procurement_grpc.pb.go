@@ -99,7 +99,7 @@ type SourcingServiceClient interface {
 	RequestPrimaryBuyer(ctx context.Context, in *RequestPrimaryBuyerRequest, opts ...grpc.CallOption) (*RequestPrimaryBuyerResponse, error)
 	AssignPrimaryBuyer(ctx context.Context, in *AssignPrimaryBuyerRequest, opts ...grpc.CallOption) (*AssignPrimaryBuyerResponse, error)
 	ReturnCase(ctx context.Context, in *ReturnCaseRequest, opts ...grpc.CallOption) (*ReturnCaseResponse, error)
-	WithdrawCase(ctx context.Context, in *ReturnCaseRequest, opts ...grpc.CallOption) (*ReturnCaseResponse, error)
+	WithdrawCase(ctx context.Context, in *WithdrawCaseRequest, opts ...grpc.CallOption) (*WithdrawCaseResponse, error)
 	ReviewLine(ctx context.Context, in *ReviewLineRequest, opts ...grpc.CallOption) (*ReviewLineResponse, error)
 	CreateFactoryRfq(ctx context.Context, in *CreateFactoryRfqRequest, opts ...grpc.CallOption) (*CreateFactoryRfqResponse, error)
 	ListFactoryRfqs(ctx context.Context, in *ListFactoryRfqsRequest, opts ...grpc.CallOption) (*ListFactoryRfqsResponse, error)
@@ -269,9 +269,9 @@ func (c *sourcingServiceClient) ReturnCase(ctx context.Context, in *ReturnCaseRe
 	return out, nil
 }
 
-func (c *sourcingServiceClient) WithdrawCase(ctx context.Context, in *ReturnCaseRequest, opts ...grpc.CallOption) (*ReturnCaseResponse, error) {
+func (c *sourcingServiceClient) WithdrawCase(ctx context.Context, in *WithdrawCaseRequest, opts ...grpc.CallOption) (*WithdrawCaseResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ReturnCaseResponse)
+	out := new(WithdrawCaseResponse)
 	err := c.cc.Invoke(ctx, SourcingService_WithdrawCase_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -768,7 +768,7 @@ type SourcingServiceServer interface {
 	RequestPrimaryBuyer(context.Context, *RequestPrimaryBuyerRequest) (*RequestPrimaryBuyerResponse, error)
 	AssignPrimaryBuyer(context.Context, *AssignPrimaryBuyerRequest) (*AssignPrimaryBuyerResponse, error)
 	ReturnCase(context.Context, *ReturnCaseRequest) (*ReturnCaseResponse, error)
-	WithdrawCase(context.Context, *ReturnCaseRequest) (*ReturnCaseResponse, error)
+	WithdrawCase(context.Context, *WithdrawCaseRequest) (*WithdrawCaseResponse, error)
 	ReviewLine(context.Context, *ReviewLineRequest) (*ReviewLineResponse, error)
 	CreateFactoryRfq(context.Context, *CreateFactoryRfqRequest) (*CreateFactoryRfqResponse, error)
 	ListFactoryRfqs(context.Context, *ListFactoryRfqsRequest) (*ListFactoryRfqsResponse, error)
@@ -861,7 +861,7 @@ func (UnimplementedSourcingServiceServer) AssignPrimaryBuyer(context.Context, *A
 func (UnimplementedSourcingServiceServer) ReturnCase(context.Context, *ReturnCaseRequest) (*ReturnCaseResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReturnCase not implemented")
 }
-func (UnimplementedSourcingServiceServer) WithdrawCase(context.Context, *ReturnCaseRequest) (*ReturnCaseResponse, error) {
+func (UnimplementedSourcingServiceServer) WithdrawCase(context.Context, *WithdrawCaseRequest) (*WithdrawCaseResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method WithdrawCase not implemented")
 }
 func (UnimplementedSourcingServiceServer) ReviewLine(context.Context, *ReviewLineRequest) (*ReviewLineResponse, error) {
@@ -1225,7 +1225,7 @@ func _SourcingService_ReturnCase_Handler(srv interface{}, ctx context.Context, d
 }
 
 func _SourcingService_WithdrawCase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ReturnCaseRequest)
+	in := new(WithdrawCaseRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -1237,7 +1237,7 @@ func _SourcingService_WithdrawCase_Handler(srv interface{}, ctx context.Context,
 		FullMethod: SourcingService_WithdrawCase_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SourcingServiceServer).WithdrawCase(ctx, req.(*ReturnCaseRequest))
+		return srv.(SourcingServiceServer).WithdrawCase(ctx, req.(*WithdrawCaseRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
