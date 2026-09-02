@@ -347,7 +347,7 @@ INSERT INTO email_inbound (
     raw_key, raw_size, is_bounce, has_attachments, is_read, sent_at, received_at,
     sent_message_id, search_text,
     customer_id, contact_id, customer_name,
-    reply_to, cc, auth_spf, auth_dkim
+    reply_to, cc, auth_spf, auth_dkim, to_all
 ) VALUES (
     sqlc.arg(tenant_id)::bigint, sqlc.arg(account_id)::bigint, sqlc.arg(owner_id)::bigint,
     sqlc.arg(folder)::text, sqlc.arg(imap_uid)::bigint,
@@ -379,7 +379,9 @@ INSERT INTO email_inbound (
     sqlc.arg(reply_to)::text,
     sqlc.arg(cc)::text,
     sqlc.arg(auth_spf)::text,
-    sqlc.arg(auth_dkim)::text
+    sqlc.arg(auth_dkim)::text,
+    -- 整段 To 头。见 00052。
+    sqlc.arg(to_all)::text
 )
 ON CONFLICT (tenant_id, account_id, folder, imap_uid) DO NOTHING
 RETURNING id;
@@ -615,7 +617,7 @@ RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archive
 SELECT i.id, i.account_id, i.owner_id, i.message_id, i.thread_key, i.reply_to_id,
        i.from_email, i.from_name, i.to_email, i.subject, i.body_html, i.body_text,
        i.raw_key, i.raw_size, i.is_read, i.has_attachments, i.received_at, i.sent_at,
-       i.folder, i.reply_to, i.cc, i.auth_spf, i.auth_dkim,
+       i.folder, i.reply_to, i.cc, i.auth_spf, i.auth_dkim, i.to_all,
        coalesce(m.status, '') AS sent_status,
        m.opened_at AS sent_opened_at,
        coalesce(m.tracked, FALSE) AS sent_tracked
@@ -1313,6 +1315,25 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND (body_text <> '' OR body_html <> '')
 ORDER BY id DESC
 LIMIT sqlc.arg(row_limit)::int;
+
+-- name: ListInboundNeedingToAll :many
+-- 收件人清单还没补的：00052 之前入库、原件还在的行。
+--
+-- 队列由问题本身定义（to_all 空），补一行它就离开队列，不用标记列。
+-- 补不回来的（原件读不到、To 头本来就空）靠调用方那道「整批没进展就停」
+-- 的闸，不然它们会一直排在这里。
+SELECT id, raw_key, to_email
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND to_all = ''
+  AND raw_key <> ''
+ORDER BY id DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: SetInboundToAll :exec
+UPDATE email_inbound
+SET to_all = sqlc.arg(to_all)::text
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: SetSearchText :exec
 UPDATE email_inbound

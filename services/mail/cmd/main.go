@@ -221,6 +221,9 @@ func run(log *slog.Logger) error {
 			// pictures are in storage but nothing joins them to the body that
 			// points at them.
 			svc.RunContentIDBackfill(ctx, syncCfg)
+			// 00052 之前入库的信只留了 To 里的第一个地址，其余收件人要从
+			// 原件里补回来——「回复全部」和详情页的「收件人」都靠它。
+			svc.RunToAllBackfill(ctx, syncCfg)
 			// The other half of the same damage: parts ingest never stored at
 			// all because they carried a Content-ID but no filename — which is
 			// exactly how an image pasted into Gmail's composer arrives. The

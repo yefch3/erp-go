@@ -63,6 +63,11 @@ type InboundView struct {
 	// 骗货款最常用的一手。
 	ReplyTo string
 	CC      string
+	// 整段 To 头，给人看的。ToEmail 只是其中第一个。存量还没补时退回 ToEmail。
+	ToAll string
+	// 从 ToAll 和 CC 里拆出来的人，给「回复全部」用。
+	ToParties []MailParty
+	CcParties []MailParty
 	// 收信服务器验过的身份，只在验证通过时有值。空表示「未验证」，不是
 	// 「验证失败」——老邮件在这两列存在之前就入库了。
 	AuthSPF  string
@@ -395,6 +400,11 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 		Folder: row.Folder, MessageIDHeader: row.MessageID, RawSize: row.RawSize,
 		ReplyTo: row.ReplyTo, CC: row.Cc,
 		AuthSPF: row.AuthSpf, AuthDKIM: row.AuthDkim,
+		// 存量还没补回来的行 to_all 是空的：退回第一个收件人，至少和从前一样，
+		// 而不是显示一个空的「收件人」。
+		ToAll:     firstNonEmpty(row.ToAll, row.ToEmail),
+		ToParties: parseParties(firstNonEmpty(row.ToAll, row.ToEmail)),
+		CcParties: parseParties(row.Cc),
 		// Null for anything the inbox reads: an inbound mail has no delivery
 		// record, and coalesce already turned "no row" into the empty answer.
 		Status: row.SentStatus, Tracked: row.SentTracked,

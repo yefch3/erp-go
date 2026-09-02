@@ -1806,6 +1806,7 @@ export default {
     syncBroken: 'This mailbox is not receiving: {e}. The list shows the last successful sync.',
     reauth: 'Sign in again',
     reply: 'Reply',
+    replyAll: 'Reply all',
     forward: 'Forward',
     forwardCarries: 'The original message’s attachments travel along with this mail.',
     forwardAsAttachment: 'Forward as attachment',

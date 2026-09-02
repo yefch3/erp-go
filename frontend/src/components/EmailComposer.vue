@@ -797,6 +797,25 @@ function openReply(mail: QuotedMail) {
   markClean()
 }
 
+// 回复全部。收件人和抄送由页面算好传进来（规则在 lib/replyAll：发信人为
+// 收件人，原信其余的人进抄送，去掉我自己的地址）。
+//
+// **切到「合并一封」。** 抄送只在那个模式下存在——「分别发送」是每人一封、
+// 互相看不见，而回复全部的本意恰恰是所有人看到同一封、知道彼此都收到了。
+// 客户群发给七个同事的信，回一封让七个人和客户都在同一条线上，这才叫回复全部。
+function openReplyAll(mail: QuotedMail, who: { to: { name?: string; email: string }; cc: { name?: string; email: string }[] }) {
+  reset()
+  replyCtx.replyToInboundId = mail.id
+  form.sendMode = 'MERGED'
+  selected.value = [{ name: who.to.name || mail.fromName || '', email: who.to.email, customerName: '' }]
+  ccSelected.value = who.cc.map((p) => ({ name: p.name || '', email: p.email, customerName: '' }))
+  form.subject = prefixSubject(mail.subject || '', 'Re:')
+  form.format = 'HTML'
+  form.body = '<p><br></p>'
+  quoted.value = quotedBlock(mail)
+  markClean()
+}
+
 // Prefills a forward: no recipient yet, subject gains Fwd:, the original is
 // quoted (collapsed) and its attachments travel along server-side.
 function openForward(mail: QuotedMail) {
@@ -823,7 +842,7 @@ function openForwardAsAttachment(mail: QuotedMail) {
   markClean()
 }
 
-defineExpose({ openDraft, openReply, openForward, openForwardAsAttachment })
+defineExpose({ openDraft, openReply, openReplyAll, openForward, openForwardAsAttachment })
 
 // Contacts arrive from the address book with more on them than the wire
 // message declares, and protojson refuses unknown fields outright. Every path

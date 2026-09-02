@@ -1815,6 +1815,7 @@ export default {
     syncBroken: 'Este buzón no está recibiendo: {e}. La lista muestra la última sincronización correcta.',
     reauth: 'Volver a iniciar sesión',
     reply: 'Responder',
+    replyAll: 'Responder a todos',
     forward: 'Reenviar',
     forwardCarries: 'Los adjuntos del mensaje original se reenvían junto con este correo.',
     forwardAsAttachment: 'Reenviar como adjunto',

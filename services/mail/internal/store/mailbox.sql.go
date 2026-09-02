@@ -669,7 +669,7 @@ const getInbound = `-- name: GetInbound :one
 SELECT i.id, i.account_id, i.owner_id, i.message_id, i.thread_key, i.reply_to_id,
        i.from_email, i.from_name, i.to_email, i.subject, i.body_html, i.body_text,
        i.raw_key, i.raw_size, i.is_read, i.has_attachments, i.received_at, i.sent_at,
-       i.folder, i.reply_to, i.cc, i.auth_spf, i.auth_dkim,
+       i.folder, i.reply_to, i.cc, i.auth_spf, i.auth_dkim, i.to_all,
        coalesce(m.status, '') AS sent_status,
        m.opened_at AS sent_opened_at,
        coalesce(m.tracked, FALSE) AS sent_tracked
@@ -708,6 +708,7 @@ type GetInboundRow struct {
 	Cc             string
 	AuthSpf        string
 	AuthDkim       string
+	ToAll          string
 	SentStatus     string
 	SentOpenedAt   pgtype.Timestamptz
 	SentTracked    bool
@@ -748,6 +749,7 @@ func (q *Queries) GetInbound(ctx context.Context, arg GetInboundParams) (GetInbo
 		&i.Cc,
 		&i.AuthSpf,
 		&i.AuthDkim,
+		&i.ToAll,
 		&i.SentStatus,
 		&i.SentOpenedAt,
 		&i.SentTracked,
@@ -1210,7 +1212,7 @@ INSERT INTO email_inbound (
     raw_key, raw_size, is_bounce, has_attachments, is_read, sent_at, received_at,
     sent_message_id, search_text,
     customer_id, contact_id, customer_name,
-    reply_to, cc, auth_spf, auth_dkim
+    reply_to, cc, auth_spf, auth_dkim, to_all
 ) VALUES (
     $1::bigint, $2::bigint, $3::bigint,
     $4::text, $5::bigint,
@@ -1242,7 +1244,9 @@ INSERT INTO email_inbound (
     $30::text,
     $31::text,
     $32::text,
-    $33::text
+    $33::text,
+    -- 整段 To 头。见 00052。
+    $34::text
 )
 ON CONFLICT (tenant_id, account_id, folder, imap_uid) DO NOTHING
 RETURNING id
@@ -1282,6 +1286,7 @@ type InsertInboundParams struct {
 	Cc             string
 	AuthSpf        string
 	AuthDkim       string
+	ToAll          string
 }
 
 // ON CONFLICT DO NOTHING plus a returned id of 0 is how a repeated fetch of
@@ -1321,6 +1326,7 @@ func (q *Queries) InsertInbound(ctx context.Context, arg InsertInboundParams) (i
 		arg.Cc,
 		arg.AuthSpf,
 		arg.AuthDkim,
+		arg.ToAll,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -1647,6 +1653,52 @@ func (q *Queries) ListInboundNeedingSearchText(ctx context.Context, arg ListInbo
 			&i.BodyText,
 			&i.BodyHtml,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInboundNeedingToAll = `-- name: ListInboundNeedingToAll :many
+SELECT id, raw_key, to_email
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND to_all = ''
+  AND raw_key <> ''
+ORDER BY id DESC
+LIMIT $2::int
+`
+
+type ListInboundNeedingToAllParams struct {
+	TenantID int64
+	RowLimit int32
+}
+
+type ListInboundNeedingToAllRow struct {
+	ID      int64
+	RawKey  string
+	ToEmail string
+}
+
+// 收件人清单还没补的：00052 之前入库、原件还在的行。
+//
+// 队列由问题本身定义（to_all 空），补一行它就离开队列，不用标记列。
+// 补不回来的（原件读不到、To 头本来就空）靠调用方那道「整批没进展就停」
+// 的闸，不然它们会一直排在这里。
+func (q *Queries) ListInboundNeedingToAll(ctx context.Context, arg ListInboundNeedingToAllParams) ([]ListInboundNeedingToAllRow, error) {
+	rows, err := q.db.Query(ctx, listInboundNeedingToAll, arg.TenantID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInboundNeedingToAllRow
+	for rows.Next() {
+		var i ListInboundNeedingToAllRow
+		if err := rows.Scan(&i.ID, &i.RawKey, &i.ToEmail); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -3753,6 +3805,23 @@ func (q *Queries) SetInboundReadByUID(ctx context.Context, arg SetInboundReadByU
 		arg.Folder,
 		arg.ImapUid,
 	)
+	return err
+}
+
+const setInboundToAll = `-- name: SetInboundToAll :exec
+UPDATE email_inbound
+SET to_all = $1::text
+WHERE tenant_id = $2::bigint AND id = $3::bigint
+`
+
+type SetInboundToAllParams struct {
+	ToAll    string
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) SetInboundToAll(ctx context.Context, arg SetInboundToAllParams) error {
+	_, err := q.db.Exec(ctx, setInboundToAll, arg.ToAll, arg.TenantID, arg.ID)
 	return err
 }
 
