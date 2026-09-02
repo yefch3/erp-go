@@ -1,0 +1,15 @@
+-- +goose Up
+ALTER TABLE sourcing_cases DROP CONSTRAINT sourcing_cases_handoff_status_check;
+ALTER TABLE sourcing_cases ADD CONSTRAINT sourcing_cases_handoff_status_check CHECK (
+  handoff_status IN ('DRAFT','WAITING_ACCEPTANCE','IN_PROGRESS','RETURNED_FOR_SUPPLEMENT',
+    'SALES_WITHDRAWN','PROCUREMENT_PLAN_READY','PROCUREMENT_PLAN_SUBMITTED','COST_CONFIRMED',
+    'SUBMITTED_TO_SALES','QUOTE_IN_PROGRESS','CANCELLED')
+);
+
+-- +goose Down
+ALTER TABLE sourcing_cases DROP CONSTRAINT sourcing_cases_handoff_status_check;
+ALTER TABLE sourcing_cases ADD CONSTRAINT sourcing_cases_handoff_status_check CHECK (
+  handoff_status IN ('DRAFT','WAITING_ACCEPTANCE','IN_PROGRESS','RETURNED_FOR_SUPPLEMENT',
+    'PROCUREMENT_PLAN_READY','PROCUREMENT_PLAN_SUBMITTED','COST_CONFIRMED','SUBMITTED_TO_SALES',
+    'QUOTE_IN_PROGRESS','CANCELLED')
+);

@@ -1087,6 +1087,7 @@ export default {
     cancel: '取消',
   },
   sourcing: {
+    withdraw: { view: '查看询盘', action: '撤回修改', title: '撤回询盘修改', warning: '撤回后，本轮采购询价、船运询价、报价和经理方案将被清理；询盘编号保留并回到待复核。已经私下发出的询价请另行通知相关人员停止处理。', reason: '撤回原因', placeholder: '请说明哪里有误、需要修改什么', confirm: '确认撤回', success: '询盘已撤回，可在待复核询盘中修改后重新提交', reviewBanner: '销售已撤回本询盘。原因：{reason}。请修改后重新提交采购寻源。' },
     listEyebrow: 'SOURCING PROJECTS', activeProjects: '全部询价项目', customerAndTitle: '客户 / 项目', currentStage: '当前阶段', currentWaiting: '当前等待', recentUpdate: '最近更新', exception: '异常', stale: '超过 7 天未更新',
     waiting: { REVIEWING: '采购接单或退回补充', SOURCING: '工厂回复 RFQ', QUOTES_RECEIVED: '采购人员比较报价', COSTING: '负责人确认并提交成本', CUSTOMER_QUOTE_CREATED: '客户确认报价', CANCELLED: '已结束', UNKNOWN: '确认当前业务阶段' },
     unknownStatus: '待确认',

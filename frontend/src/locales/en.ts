@@ -1085,6 +1085,7 @@ export default {
     cancel: 'Cancel',
   },
   sourcing: {
+    withdraw: { view: 'View inquiry', action: 'Withdraw for correction', title: 'Withdraw inquiry', warning: 'This removes the current purchasing and shipping RFQs, quotations, and manager plans. The inquiry number remains and the inquiry returns to review. Notify anyone contacted outside the system separately.', reason: 'Reason for withdrawal', placeholder: 'Describe the error and what needs to be corrected', confirm: 'Withdraw inquiry', success: 'Inquiry withdrawn. Correct it in Pending Inquiry Review and submit it again.', reviewBanner: 'Sales withdrew this inquiry. Reason: {reason}. Correct it and submit it to sourcing again.' },
     listEyebrow: 'SOURCING PROJECTS', activeProjects: 'All sourcing projects', customerAndTitle: 'Customer / project', currentStage: 'Current stage', currentWaiting: 'Waiting for', recentUpdate: 'Last update', exception: 'Exception', stale: 'No update for 7+ days',
     waiting: { REVIEWING: 'Product specification review', SOURCING: 'Factory RFQ response', QUOTES_RECEIVED: 'Quote comparison', COSTING: 'Cost approval', CUSTOMER_QUOTE_CREATED: 'Customer decision', CANCELLED: 'Closed', UNKNOWN: 'Confirm the current workflow stage' },
     unknownStatus: 'Needs review',

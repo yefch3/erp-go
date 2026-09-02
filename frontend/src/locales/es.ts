@@ -1094,6 +1094,7 @@ export default {
     cancel: 'Cancelar',
   },
   sourcing: {
+    withdraw: { view: 'Ver consulta', action: 'Retirar para corregir', title: 'Retirar consulta', warning: 'Se eliminarán las solicitudes de compra y transporte, cotizaciones y planes de gerencia de esta ronda. Se conserva el número y la consulta vuelve a revisión. Avise por separado a quienes fueron contactados fuera del sistema.', reason: 'Motivo del retiro', placeholder: 'Describa el error y lo que debe corregirse', confirm: 'Retirar consulta', success: 'Consulta retirada. Corríjala en Consultas pendientes y vuelva a enviarla.', reviewBanner: 'Ventas retiró esta consulta. Motivo: {reason}. Corríjala y vuelva a enviarla a compras.' },
     listEyebrow: 'PROYECTOS DE COMPRAS', activeProjects: 'Proyectos activos', customerAndTitle: 'Cliente / proyecto', currentStage: 'Etapa actual', currentWaiting: 'En espera de', recentUpdate: 'Última actualización', exception: 'Excepción', stale: 'Sin actualizar por más de 7 días',
     waiting: { REVIEWING: 'Revisión de especificaciones', SOURCING: 'Respuesta RFQ de fábrica', QUOTES_RECEIVED: 'Comparación de ofertas', COSTING: 'Aprobación de costes', CUSTOMER_QUOTE_CREATED: 'Decisión del cliente', CANCELLED: 'Cerrado', UNKNOWN: 'Confirmar la etapa actual' },
     unknownStatus: 'Por confirmar',

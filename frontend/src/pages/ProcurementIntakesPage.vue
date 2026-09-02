@@ -83,6 +83,7 @@
         <div><small>{{ t('procurementIntakes.boundFormat') }}</small><strong>{{ resolvedTemplate ? `${resolvedTemplate.name} · v${resolvedTemplate.version}` : t('procurementIntakes.historicalFormat') }}</strong></div>
       </div>
       <el-alert :title="t('procurementIntakes.dynamicReviewHint')" type="warning" :closable="false" show-icon class="review-alert" />
+      <el-alert v-if="isSalesWithdrawn" type="warning" :closable="false" show-icon class="review-alert" :title="t('sourcing.withdraw.reviewBanner',{reason:detail?.returnReason||'—'})" />
       <div v-if="isReturned" class="resubmit-box">
         <el-alert type="error" :closable="false" show-icon>
           <template #title>采购退回：{{ detail?.returnReason || '请根据退回要求补充资料' }}</template>
@@ -189,6 +190,7 @@ const displayFields = computed(() => templateFields.value.length
   ? templateFields.value.filter((field) => !['unit_price', 'total_price'].includes(field.fieldKey)).sort((a, b) => Number(a.sortOrder) - Number(b.sortOrder)).map((field) => ({ key: field.fieldKey, label: field.displayName, required: field.isRequired }))
   : fallbackFields.map((key) => ({ key, label: fallbackLabels[key] ?? key, required: ['product', 'quantity', 'quantity_unit'].includes(key) })))
 const isReturned = computed(() => detail.value?.handoffStatus === 'RETURNED_FOR_SUPPLEMENT')
+const isSalesWithdrawn = computed(() => detail.value?.handoffStatus === 'SALES_WITHDRAWN')
 
 function readTemplateField(extracted: Record<string, any>, key: string) {
   if (key.startsWith('custom.')) return extracted.customFields?.[key] ?? ''
