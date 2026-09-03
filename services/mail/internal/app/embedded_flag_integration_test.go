@@ -105,9 +105,9 @@ func TestBackfillTurnsOffTheClipForSignatureLogosOnly(t *testing.T) {
 		id   int64
 		want bool
 	}{
-		"只有签名 logo：关掉":               {onlyLogo, false},
-		"签名加合同：留着":                  {logoAndFile, true},
-		"标了 inline 但正文没指：留着":       {unreferenced, true},
+		"只有签名 logo：关掉":            {onlyLogo, false},
+		"签名加合同：留着":                {logoAndFile, true},
+		"标了 inline 但正文没指：留着":      {unreferenced, true},
 		"content_id 还空着的老行：留着，等补": {legacy, true},
 		"一个部件都没有：关掉":              {nothing, false},
 	}
