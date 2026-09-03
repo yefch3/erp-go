@@ -23,18 +23,34 @@ import (
 //
 // Safe to run repeatedly, and self-clearing: the queue is defined as "no body
 // at all", so a message that gets its text back stops matching.
+//
+// One tenant at a time. The SyncConfig main.go passes carries no tenant — the
+// service has served every company from one process since #216 — and this
+// pass used to query with whatever it held, which was 0: no rows, no log, a
+// silent no-op in production. See tenantsToRepair.
 func (s *Service) RunEmptyBodyRecovery(ctx context.Context, cfg SyncConfig) {
 	cfg = cfg.withDefaults()
 	if s.files == nil {
 		return
 	}
+	for _, tenantID := range s.tenantsToRepair(ctx, cfg) {
+		if ctx.Err() != nil {
+			return
+		}
+		s.recoverTenantBodies(ctx, tenantID)
+	}
+}
+
+// recoverTenantBodies works through one company's queue. Every return here
+// ends this company only; the next one still gets its turn.
+func (s *Service) recoverTenantBodies(ctx context.Context, tenantID int64) {
 	repaired, examined := 0, 0
 	for {
 		rows, err := s.q.ListInboundWithNoBody(ctx, store.ListInboundWithNoBodyParams{
-			TenantID: cfg.TenantID, RowLimit: recoveryBatch,
+			TenantID: tenantID, RowLimit: recoveryBatch,
 		})
 		if err != nil {
-			s.log.Warn("body recovery could not read a batch", "err", err)
+			s.log.Warn("body recovery could not read a batch", "tenant", tenantID, "err", err)
 			return
 		}
 		if len(rows) == 0 {
@@ -46,7 +62,7 @@ func (s *Service) RunEmptyBodyRecovery(ctx context.Context, cfg SyncConfig) {
 				return
 			}
 			examined++
-			if s.recoverBody(ctx, cfg.TenantID, r.ID, r.RawKey) {
+			if s.recoverBody(ctx, tenantID, r.ID, r.RawKey) {
 				repaired++
 			}
 		}
@@ -57,7 +73,7 @@ func (s *Service) RunEmptyBodyRecovery(ctx context.Context, cfg SyncConfig) {
 			// exist: a message whose original really is empty, or one whose
 			// raw copy has been lifecycled out of the bucket.
 			s.log.Info("body recovery stopping: the remaining messages cannot be repaired",
-				"repaired", repaired, "examined", examined)
+				"tenant", tenantID, "repaired", repaired, "examined", examined)
 			return
 		}
 		select {
@@ -67,7 +83,7 @@ func (s *Service) RunEmptyBodyRecovery(ctx context.Context, cfg SyncConfig) {
 		}
 	}
 	if repaired > 0 {
-		s.log.Info("body recovery finished", "messages", repaired, "examined", examined)
+		s.log.Info("body recovery finished", "tenant", tenantID, "messages", repaired, "examined", examined)
 	}
 }
 

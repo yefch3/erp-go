@@ -2,11 +2,15 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"testing"
+	"time"
+
+	"github.com/sgao19/erp-go/pkg/pgdb"
 )
 
 // The raw-key collision left messages with no original (raw_key = ''). The
@@ -245,5 +249,83 @@ func TestRawOriginalRefetchIsIdempotent(t *testing.T) {
 	}
 	if len(rows) != 0 {
 		t.Fatalf("second pass was offered %d rows, want 0", len(rows))
+	}
+}
+
+// 上面两条直接调 refetchForAccount，这条走 main.go 那条路：RunRawOriginalRefetch，
+// **不带租户号**。启动配置里没有租户，从前这里拿着 0 去查 `WHERE tenant_id = 0`：
+// 一行都查不到，静默退出——从多租户那天起在生产上一直是这么空跑的。
+//
+// 这家公司先绑一个信箱，让 tenantsToServe 列到它。重取要拿这个信箱的凭据回主机
+// （ForAccount 要读得到账号），所以信箱是真绑的，主机还是假的。
+func TestRawOriginalRefetchRunsForEveryTenantWithAMailbox(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenantID := time.Now().UnixNano()
+	employeeID := tenantID%100000 + 990001
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM email_inbound WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_binding_log WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+	}()
+
+	files := &recordingFiles{puts: map[string][]byte{}}
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := New(pool, Deps{Files: files, Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	// 先绑再挂假主机：没有邮件通道时绑定直接落库，不去验登录。
+	work, err := svc.VerifyMailSecret(ctx, tenantID, employeeID, BindRequest{
+		Email: "me@qq.com", Provider: "qq", Secret: "code-qq",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rawA := refetchRaw("lost@example.com")
+	host := &refetchHost{
+		sent: "Sent Messages", junk: "Junk", validity: 777,
+		// 行里存的 UID 是 614，主机今天说它是 101：取回来的键得按主机今天的说法。
+		found:  map[string]map[string]uint32{"Sent Messages": {"lost@example.com": 101}},
+		serves: map[string][]RawMessage{"Sent Messages": {{UID: 101, Raw: rawA}}},
+	}
+	svc.UseMailbox(host)
+
+	// raw_key 空着、Message-ID 在：正是撞车修复放掉之后的样子。
+	var inboundID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO email_inbound
+		(tenant_id, account_id, owner_id, folder, imap_uid, message_id, raw_key, subject)
+		VALUES ($1, $2, $3, 'SENT', 614, 'lost@example.com', '', 'refetch')
+		RETURNING id`, tenantID, work.AccountID, employeeID).Scan(&inboundID); err != nil {
+		t.Fatal(err)
+	}
+
+	svc.RunRawOriginalRefetch(ctx, SyncConfig{})
+
+	wantKey := rawKeyFor(tenantID, work.AccountID, "SENT", 777, 101)
+	var gotKey string
+	var gotSize int64
+	if err := pool.QueryRow(ctx, `SELECT raw_key, raw_size FROM email_inbound WHERE tenant_id=$1 AND id=$2`,
+		tenantID, inboundID).Scan(&gotKey, &gotSize); err != nil {
+		t.Fatal(err)
+	}
+	if gotKey != wantKey {
+		t.Errorf("原件应该从主机取回来、按今天的代次和 UID 取键：%q，想要 %q", gotKey, wantKey)
+	}
+	if gotSize != int64(len(rawA)) {
+		t.Errorf("raw_size = %d，想要 %d", gotSize, len(rawA))
+	}
+	if got := string(files.puts[wantKey]); got != string(rawA) {
+		t.Errorf("对象存储里应该是主机上取回来的那封：%q", got)
 	}
 }
