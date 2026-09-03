@@ -25,16 +25,35 @@ var toAllInterval = 2 * time.Second
 // 往下走**，不会堵住后面的——RunContentIDBackfill 那道「整批没进展就停」的
 // 闸在这里会出事：前 50 行恰好都补不了，后面几千行就永远轮不到。补不了的
 // 下次服务重启再试一遍，反正读一次原件很便宜。
+//
+// **每家公司各补一遍。** 启动时传进来的 SyncConfig 没有租户号（邮件服务早已
+// 是多家公司共用一个进程），拿着 0 去查一行都查不到——上线那天它就是这么
+// 静默空跑的：日志一个字没有，to_all 一行没填。cfg.TenantID 指定了就只补
+// 那一家（测试用），没指定就按 tenantsToServe 挨家来，和 BackfillSearchText
+// 同一个样子。
 func (s *Service) RunToAllBackfill(ctx context.Context, cfg SyncConfig) {
 	cfg = cfg.withDefaults()
 	if s.files == nil {
 		return
 	}
+	tenants := []int64{cfg.TenantID}
+	if cfg.TenantID <= 0 {
+		tenants = s.tenantsToServe(ctx)
+	}
+	for _, tenantID := range tenants {
+		if ctx.Err() != nil {
+			return
+		}
+		s.backfillTenantToAll(ctx, tenantID)
+	}
+}
+
+func (s *Service) backfillTenantToAll(ctx context.Context, tenantID int64) {
 	repaired, skipped := 0, 0
 	var before *int64
 	for {
 		rows, err := s.q.ListInboundNeedingToAll(ctx, store.ListInboundNeedingToAllParams{
-			TenantID: cfg.TenantID, RowLimit: toAllBatch, BeforeID: before,
+			TenantID: tenantID, RowLimit: toAllBatch, BeforeID: before,
 		})
 		if err != nil {
 			s.log.Warn("recipients backfill could not read a batch", "err", err)
@@ -47,7 +66,7 @@ func (s *Service) RunToAllBackfill(ctx context.Context, cfg SyncConfig) {
 			if ctx.Err() != nil {
 				return
 			}
-			if s.repairToAll(ctx, cfg.TenantID, r.ID, r.RawKey, r.ToEmail) {
+			if s.repairToAll(ctx, tenantID, r.ID, r.RawKey, r.ToEmail) {
 				repaired++
 			} else {
 				skipped++
@@ -62,7 +81,7 @@ func (s *Service) RunToAllBackfill(ctx context.Context, cfg SyncConfig) {
 		}
 	}
 	if repaired > 0 || skipped > 0 {
-		s.log.Info("recipients backfill finished", "repaired", repaired, "unrepairable", skipped)
+		s.log.Info("recipients backfill finished", "tenant", tenantID, "repaired", repaired, "unrepairable", skipped)
 	}
 }
 

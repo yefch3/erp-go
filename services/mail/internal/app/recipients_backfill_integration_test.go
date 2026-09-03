@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"io"
 	"log/slog"
 	"os"
@@ -41,7 +42,11 @@ func TestRecipientsBackfillRestoresEveryRecipientFromTheArchivedOriginal(t *test
 	}
 	defer pool.Close()
 	tenantID := time.Now().UnixNano()
-	defer func() { _, _ = pool.Exec(ctx, "DELETE FROM email_inbound WHERE tenant_id=$1", tenantID) }()
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM email_inbound WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_binding_log WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+	}()
 
 	files := &rawStore{objects: map[string][]byte{
 		"raw/group": []byte("From: client@buyer.com\r\n" +
@@ -50,7 +55,19 @@ func TestRecipientsBackfillRestoresEveryRecipientFromTheArchivedOriginal(t *test
 		"raw/bcc-only": []byte("From: client@buyer.com\r\n" +
 			"Subject: no to header\r\n\r\nhi\r\n"),
 	}}
-	svc := New(pool, Deps{Files: files}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	box, err := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := New(pool, Deps{Files: files, Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	// 这家公司得有一个绑着的信箱，tenantsToServe 才会把它列进来——生产上
+	// 补全任务正是这样挨家跑的。
+	if _, err := svc.VerifyMailSecret(ctx, tenantID, tenantID%100000+990001, BindRequest{
+		Email: "me@qq.com", Provider: "qq", Secret: "code-qq",
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	uid := int64(0)
 	insert := func(rawKey, toEmail, subject string) int64 {
@@ -75,7 +92,9 @@ func TestRecipientsBackfillRestoresEveryRecipientFromTheArchivedOriginal(t *test
 	// 「整批没进展就停」的闸会在第一批就停下，群发那封永远补不上。
 	toAllBatch, toAllInterval = 1, 0
 	defer func() { toAllBatch, toAllInterval = 50, 2 * time.Second }()
-	svc.RunToAllBackfill(ctx, SyncConfig{TenantID: tenantID})
+	// **不带租户号**，和 main.go 里那次调用一模一样。上线那天它就是这么静默
+	// 空跑的：SyncConfig 里没有租户，拿着 0 去查一行都查不到。
+	svc.RunToAllBackfill(ctx, SyncConfig{})
 
 	toAll := func(id int64) string {
 		t.Helper()
