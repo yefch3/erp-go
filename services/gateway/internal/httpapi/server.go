@@ -792,6 +792,10 @@ func (s *Server) Router() http.Handler {
 		// different shape.
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-search", s.searchMail)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/inbound-mails/{id}", s.getInbound)
+		// Word / Excel / PPT 的预览：转成 PDF 再看。POST 因为第一次真的会
+		// 干活（转换并写进对象存储），之后是缓存命中。
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).
+			Post("/api/inbound-mails/{id}/attachments/{attachmentId}/preview", s.previewInboundAttachment)
 		// 邮箱转换也要能选择询盘模板；这里复用同一个只读 handler，但权限按
 		// 邮箱场景收口，用户无需先获得采购模块权限或跳到采购页面。
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-inquiry-templates", s.listInquiryTemplates)

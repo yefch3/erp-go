@@ -337,9 +337,13 @@ services:
       # Google OAuth application credentials, from deploy/.env (gitignored).
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      # Word / Excel / PPT 附件转成 PDF 才能在页面上预览。留空就关掉预览：
+      # 那些附件照样列得出来、下载得下来，只是预览按钮说没配。
+      GOTENBERG_URL: ${GOTENBERG_URL:-http://gotenberg:3000}
+      GOTENBERG_TIMEOUT: ${GOTENBERG_TIMEOUT:-60s}
     ports:
       - "127.0.0.1:9010:9010"
-    networks: [infra]
+    networks: [infra, convert]
     depends_on: [masterdata, iam]
     restart: unless-stopped
 
@@ -387,6 +391,24 @@ services:
     depends_on: [iam, masterdata, fx, approval, product, export, shipping, mail]
     restart: unless-stopped
 
+  # 把 Word / Excel / PPT 转成 PDF，好让人在页面上扫一眼再决定要不要下载。
+  #
+  # 里面是 LibreOffice —— 一个几百万行、历年出过远程执行漏洞的桌面软件，
+  # 而喂给它的是客户发来的、谁都没检查过的文件。所以：
+  #
+  #   * **只在 convert 这一张网上，而 convert 是 internal 的。** 它连不上
+  #     公网，也连不上宿主机的元数据地址（169.254.169.254）。一份构造过的
+  #     文档能让 LibreOffice 去取「链接的图片」，那就是一次 SSRF；这张网
+  #     就是为了让那次请求无处可去。mail 同时在两张网上，所以调得到它。
+  #   * 不发布任何端口。除了 mail，没有别的东西需要找到它。
+  #
+  # 镜像 2.4 GB（自带 LibreOffice 和 Noto CJK 字体，中文不会变方块），空闲
+  # 内存约 10 MB，转一个文件几百毫秒。
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    networks: [convert]
+    restart: unless-stopped
+
   # The one door that may face outwards, and it is a very narrow one.
   #
   # An open-tracking pixel has to be fetchable by a stranger's mail client, so
@@ -412,3 +434,7 @@ networks:
   infra:
     external: true
     name: erp-go-infra_default
+  # 转换器专用，而且不通外网（internal: true 就是这个意思：Docker 不给这张
+  # 网加默认路由）。见 gotenberg 那一段为什么必须这样。
+  convert:
+    internal: true

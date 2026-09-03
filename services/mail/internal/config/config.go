@@ -65,6 +65,14 @@ type Config struct {
 	SyncHistory int
 	// Redis, for pushing "new mail" hints to open browser tabs.
 	RedisAddr string
+
+	// Where the document converter listens. Empty turns off preview of Word
+	// and Excel attachments and nothing else: those files stay listed and
+	// stay downloadable, the preview button just says it is not configured.
+	GotenbergURL string
+	// How long to wait for one conversion. A document can keep LibreOffice
+	// busy indefinitely, and this request is hanging off somebody's click.
+	GotenbergTimeout time.Duration
 	// Google OAuth application credentials. The secret identifies our app to
 	// Google, never a user to anything.
 	GoogleClientID     string
@@ -122,6 +130,8 @@ func Load() Config {
 		DialTimeout:         envDuration("MAIL_DIAL_TIMEOUT", 10*time.Second),
 		SyncHistory:         envInt("MAIL_SYNC_HISTORY", 500),
 		RedisAddr:           os.Getenv("REDIS_ADDR"),
+		GotenbergURL:        os.Getenv("GOTENBERG_URL"),
+		GotenbergTimeout:    envDuration("GOTENBERG_TIMEOUT", 60*time.Second),
 		GoogleClientID:      os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
 		GoogleClientSecret:  os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
 		PublicBaseURL:       os.Getenv("MAIL_PUBLIC_BASE_URL"),

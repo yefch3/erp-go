@@ -219,7 +219,7 @@ func (h *Handler) ListMessages(ctx context.Context, req *mailv1.ListMessagesRequ
 		Status:        req.GetStatus(),
 		AttentionOnly: req.GetAttentionOnly(), Keyword: req.GetKeyword(),
 		Cursor: req.GetCursor(), Size: size,
-		AccountID:     req.GetAccountId(),
+		AccountID: req.GetAccountId(),
 	}, operator(ctx))
 	if err != nil {
 		return nil, err
@@ -846,7 +846,8 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 		m.Attachments = append(m.Attachments, &mailv1.InboundAttachment{
 			Id: a.ID, FileName: a.FileName, ContentType: a.ContentType,
 			FileSize: a.FileSize, DownloadUrl: a.DownloadURL,
-			PreviewUrl: a.PreviewURL, Stored: a.FileKey != "",
+			PreviewUrl: a.PreviewURL, PreviewKind: a.PreviewKind,
+			Stored: a.FileKey != "",
 		})
 	}
 	return m
@@ -898,6 +899,16 @@ func (h *Handler) GetInbound(ctx context.Context, req *mailv1.GetInboundRequest)
 		return nil, err
 	}
 	return &mailv1.GetInboundResponse{Mail: inboundToProto(v)}, nil
+}
+
+func (h *Handler) PreviewInboundAttachment(ctx context.Context, req *mailv1.PreviewInboundAttachmentRequest) (*mailv1.PreviewInboundAttachmentResponse, error) {
+	op := operator(ctx)
+	url, err := h.svc.PreviewInboundAttachment(ctx, grpcx.TenantID(ctx), op.ID,
+		req.GetInboundId(), req.GetAttachmentId())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.PreviewInboundAttachmentResponse{PreviewUrl: url}, nil
 }
 
 func (h *Handler) StartInboundExcelConversion(ctx context.Context, req *mailv1.StartInboundExcelConversionRequest) (*mailv1.StartInboundExcelConversionResponse, error) {
@@ -997,7 +1008,8 @@ func (h *Handler) GetMailThread(ctx context.Context, req *mailv1.GetMailThreadRe
 			it.Attachments = append(it.Attachments, &mailv1.InboundAttachment{
 				Id: a.ID, FileName: a.FileName, ContentType: a.ContentType,
 				FileSize: a.FileSize, DownloadUrl: a.DownloadURL,
-				PreviewUrl: a.PreviewURL, Stored: a.FileKey != "",
+				PreviewUrl: a.PreviewURL, PreviewKind: a.PreviewKind,
+				Stored: a.FileKey != "",
 			})
 		}
 		out = append(out, it)

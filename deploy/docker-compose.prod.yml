@@ -132,6 +132,9 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET}
       MINIO_USE_SSL: ${MINIO_USE_SSL:-true}
       MINIO_REGION: ${MINIO_REGION:-us-west-2}
+  # 转换器在生产上用的是同一个公开镜像，不跟着 ERP_SHA 走：它不是我们的代码。
+  gotenberg:
+    image: gotenberg/gotenberg:8
   gateway:
     image: ghcr.io/yefch3/erp-go/gateway:${ERP_SHA}
     environment:

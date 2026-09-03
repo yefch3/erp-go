@@ -30,6 +30,7 @@ import (
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/pkg/livefeed"
 	"github.com/sgao19/erp-go/pkg/pgdb"
+	"github.com/sgao19/erp-go/services/mail/internal/adapter/gotenberg"
 	"github.com/sgao19/erp-go/services/mail/internal/adapter/grpcin"
 	"github.com/sgao19/erp-go/services/mail/internal/adapter/grpcout"
 	"github.com/sgao19/erp-go/services/mail/internal/adapter/mailfetch"
@@ -132,6 +133,20 @@ func run(log *slog.Logger) error {
 			"cost needs both, so usage will be reported without a cost")
 	}
 
+	// 文档转换器。没配地址就没有转换器：Word/Excel 的预览按钮会说没配，别的
+	// 一切照常——附件仍然列得出来、下载得下来。
+	//
+	// **一定要显式判空再赋值。** 直接写 `Converter: gotenberg.New(...)`，
+	// 没配地址时塞进去的是一个「装着空指针的非空接口」：app 那边
+	// `s.converter == nil` 判假，一路走到空指针上。测试
+	// TestANilClientDoesNotPanic 钉的是同一件事的另一半。
+	var converter app.Converter
+	if c := gotenberg.New(cfg.GotenbergURL, cfg.GotenbergTimeout); c != nil {
+		converter = c
+	} else {
+		log.Warn("GOTENBERG_URL is not set — Word and Excel attachments cannot be previewed")
+	}
+
 	svc := app.New(pool, app.Deps{
 		Numbering: grpcout.NewNumbering(mdConn),
 		Directory: grpcout.NewDirectory(iamConn),
@@ -141,6 +156,7 @@ func run(log *slog.Logger) error {
 		Pricing:   pricing,
 		Secrets:   secrets,
 		Live:      live,
+		Converter: converter,
 	}, log)
 	if cfg.OpenAIAPIKey == "" {
 		log.Warn("OPENAI_API_KEY is not set — mail-to-Excel conversion is unavailable")

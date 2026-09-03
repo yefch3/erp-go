@@ -69,6 +69,7 @@ const (
 	EmailService_GetInbound_FullMethodName                   = "/erp.mail.v1.EmailService/GetInbound"
 	EmailService_StartInboundExcelConversion_FullMethodName  = "/erp.mail.v1.EmailService/StartInboundExcelConversion"
 	EmailService_GetInboundExcelConversionJob_FullMethodName = "/erp.mail.v1.EmailService/GetInboundExcelConversionJob"
+	EmailService_PreviewInboundAttachment_FullMethodName     = "/erp.mail.v1.EmailService/PreviewInboundAttachment"
 	EmailService_GetMailThread_FullMethodName                = "/erp.mail.v1.EmailService/GetMailThread"
 	EmailService_ListMyMailboxes_FullMethodName              = "/erp.mail.v1.EmailService/ListMyMailboxes"
 	EmailService_SetDefaultMailbox_FullMethodName            = "/erp.mail.v1.EmailService/SetDefaultMailbox"
@@ -210,6 +211,9 @@ type EmailServiceClient interface {
 	// model succeeds or fails.
 	StartInboundExcelConversion(ctx context.Context, in *StartInboundExcelConversionRequest, opts ...grpc.CallOption) (*StartInboundExcelConversionResponse, error)
 	GetInboundExcelConversionJob(ctx context.Context, in *GetInboundExcelConversionJobRequest, opts ...grpc.CallOption) (*GetInboundExcelConversionJobResponse, error)
+	// 把一个办公文档附件转成 PDF 并返回可以直接显示的地址。第二次调用命中
+	// 缓存，不再转换。
+	PreviewInboundAttachment(ctx context.Context, in *PreviewInboundAttachmentRequest, opts ...grpc.CallOption) (*PreviewInboundAttachmentResponse, error)
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error)
@@ -770,6 +774,16 @@ func (c *emailServiceClient) GetInboundExcelConversionJob(ctx context.Context, i
 	return out, nil
 }
 
+func (c *emailServiceClient) PreviewInboundAttachment(ctx context.Context, in *PreviewInboundAttachmentRequest, opts ...grpc.CallOption) (*PreviewInboundAttachmentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewInboundAttachmentResponse)
+	err := c.cc.Invoke(ctx, EmailService_PreviewInboundAttachment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetMailThreadResponse)
@@ -1053,6 +1067,9 @@ type EmailServiceServer interface {
 	// model succeeds or fails.
 	StartInboundExcelConversion(context.Context, *StartInboundExcelConversionRequest) (*StartInboundExcelConversionResponse, error)
 	GetInboundExcelConversionJob(context.Context, *GetInboundExcelConversionJobRequest) (*GetInboundExcelConversionJobResponse, error)
+	// 把一个办公文档附件转成 PDF 并返回可以直接显示的地址。第二次调用命中
+	// 缓存，不再转换。
+	PreviewInboundAttachment(context.Context, *PreviewInboundAttachmentRequest) (*PreviewInboundAttachmentResponse, error)
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error)
@@ -1262,6 +1279,9 @@ func (UnimplementedEmailServiceServer) StartInboundExcelConversion(context.Conte
 }
 func (UnimplementedEmailServiceServer) GetInboundExcelConversionJob(context.Context, *GetInboundExcelConversionJobRequest) (*GetInboundExcelConversionJobResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetInboundExcelConversionJob not implemented")
+}
+func (UnimplementedEmailServiceServer) PreviewInboundAttachment(context.Context, *PreviewInboundAttachmentRequest) (*PreviewInboundAttachmentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PreviewInboundAttachment not implemented")
 }
 func (UnimplementedEmailServiceServer) GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMailThread not implemented")
@@ -2232,6 +2252,24 @@ func _EmailService_GetInboundExcelConversionJob_Handler(srv interface{}, ctx con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_PreviewInboundAttachment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewInboundAttachmentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).PreviewInboundAttachment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_PreviewInboundAttachment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).PreviewInboundAttachment(ctx, req.(*PreviewInboundAttachmentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_GetMailThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetMailThreadRequest)
 	if err := dec(in); err != nil {
@@ -2726,6 +2764,10 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetInboundExcelConversionJob",
 			Handler:    _EmailService_GetInboundExcelConversionJob_Handler,
+		},
+		{
+			MethodName: "PreviewInboundAttachment",
+			Handler:    _EmailService_PreviewInboundAttachment_Handler,
 		},
 		{
 			MethodName: "GetMailThread",
