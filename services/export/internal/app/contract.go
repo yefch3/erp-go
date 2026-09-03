@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
@@ -32,6 +33,14 @@ type Terms struct {
 	// → 重新签署」，而重新签署会再发一次 ContractEffective，下游采购、
 	// 物流、库存全部再收一遍。
 	ReceivableDueDate string
+}
+
+// ContractEditMeta is header data outside a version. It is populated by the
+// correction form for an existing contract and ignored by ordinary drafts.
+type ContractEditMeta struct {
+	ExternalContractNo string
+	SignedDate         string
+	EffectiveDate      string
 }
 
 // ContractView is one contract with the version being looked at and its lines.
@@ -254,13 +263,16 @@ func (s *Service) prefetchProducts(ctx context.Context, ids []int64) (func(produ
 // Lines are editable here because "the price is wrong" is the most common
 // reason a contract comes back; sending it round again unchanged would be the
 // only other option.
-func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms Terms, items []ItemInput, op Operator) (ContractView, error) {
+func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms Terms, items []ItemInput, meta ContractEditMeta, op Operator) (ContractView, error) {
 	view, err := s.GetContract(ctx, tenantID, id, 0)
 	if err != nil {
 		return ContractView{}, err
 	}
 	if err := s.mustOwnContract(ctx, op, view); err != nil {
 		return ContractView{}, err
+	}
+	if view.Contract.EntrySource == "EXISTING_CONTRACT" {
+		return s.correctExistingContract(ctx, tenantID, view, terms, items, meta, op)
 	}
 	if err := validBusinessDate(terms.ReceivableDueDate, "EX_DUE_DATE_INVALID", "应收到期日"); err != nil {
 		return ContractView{}, err
@@ -337,13 +349,18 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 // writeContractItems is shared by every path that lays down a version's lines.
 func writeContractItems(ctx context.Context, q *store.Queries, tenantID, versionID int64, lines []store.ListContractItemsRow) error {
 	for _, line := range lines {
-		if err := q.AddContractItem(ctx, store.AddContractItemParams{
+		// Ordinary contracts carry zero opening values. Imported contracts keep
+		// their opening snapshot when a terms-only change creates a new version.
+		if _, err := q.AddExistingContractItem(ctx, store.AddExistingContractItemParams{
 			TenantID: tenantID, ContractVersionID: versionID, LineNo: line.LineNo,
 			ProductID: line.ProductID, SkuID: line.SkuID,
 			ProductCode: line.ProductCode, ProductName: line.ProductName, Spec: line.Spec,
 			Qty: line.Qty, UomID: line.UomID, UomCode: line.UomCode,
 			UnitPrice: line.UnitPrice, Amount: line.Amount,
 			HsCode: line.HsCode, Remark: line.Remark,
+			OpeningProcuredQty: line.OpeningProcuredQty,
+			OpeningArrivedQty:  line.OpeningArrivedQty,
+			OpeningShippedQty:  line.OpeningShippedQty,
 		}); err != nil {
 			return err
 		}
@@ -397,6 +414,12 @@ func (s *Service) ChangeContract(ctx context.Context, tenantID, id int64, terms 
 			return ContractView{}, err
 		}
 		lines, total = pricedToItems(priced), sum
+		if base.Contract.EntrySource == "EXISTING_CONTRACT" {
+			lines, err = carryOpeningSnapshot(base.Items, lines)
+			if err != nil {
+				return ContractView{}, err
+			}
+		}
 	}
 	rate := Rate{Source: base.Version.FxSource, Base: base.Version.FxBaseCurrency}
 	if rate.Rate, err = decimal.NewFromString(base.Version.FxRate); err != nil {
@@ -492,6 +515,66 @@ func pricedToItems(lines []priced) []store.ListContractItemsRow {
 		})
 	}
 	return out
+}
+
+// carryOpeningSnapshot moves historical opening balances to a replacement
+// version. A line that already has execution history cannot be removed or
+// reduced below that history, because doing so would rewrite the past.
+func carryOpeningSnapshot(oldLines, newLines []store.ListContractItemsRow) ([]store.ListContractItemsRow, error) {
+	used := make([]bool, len(oldLines))
+	for i := range newLines {
+		for j := range oldLines {
+			if used[j] || oldLines[j].ProductID != newLines[i].ProductID ||
+				normalizedSKU(oldLines[j].SkuID) != normalizedSKU(newLines[i].SkuID) ||
+				oldLines[j].Spec != newLines[i].Spec ||
+				(oldLines[j].ProductID == 0 && (oldLines[j].ProductName != newLines[i].ProductName ||
+					oldLines[j].UomCode != newLines[i].UomCode)) {
+				continue
+			}
+			newQty, _ := decimal.NewFromString(newLines[i].Qty)
+			for value, label := range map[string]string{
+				oldLines[j].OpeningProcuredQty: "已落实采购数量",
+				oldLines[j].OpeningArrivedQty:  "已到货数量",
+				oldLines[j].OpeningShippedQty:  "已发运数量",
+			} {
+				opening, parseErr := decimal.NewFromString(value)
+				if parseErr == nil && opening.GreaterThan(newQty) {
+					return nil, apierr.Invalid("EX_CHANGE_BELOW_OPENING", "变更后的合同数量不能小于"+label).
+						WithMeta("line", strconv.Itoa(i+1))
+				}
+			}
+			newLines[i].OpeningProcuredQty = oldLines[j].OpeningProcuredQty
+			newLines[i].OpeningArrivedQty = oldLines[j].OpeningArrivedQty
+			newLines[i].OpeningShippedQty = oldLines[j].OpeningShippedQty
+			used[j] = true
+			break
+		}
+	}
+	for i, old := range oldLines {
+		if used[i] || !hasOpeningBalance(old) {
+			continue
+		}
+		return nil, apierr.Invalid("EX_CHANGE_REMOVES_OPENING_LINE", "已有执行记录的合同明细不能删除").
+			WithMeta("line", strconv.Itoa(int(old.LineNo)))
+	}
+	return newLines, nil
+}
+
+func normalizedSKU(id *int64) int64 {
+	if id == nil {
+		return 0
+	}
+	return *id
+}
+
+func hasOpeningBalance(line store.ListContractItemsRow) bool {
+	for _, value := range []string{line.OpeningProcuredQty, line.OpeningArrivedQty, line.OpeningShippedQty} {
+		parsed, err := decimal.NewFromString(value)
+		if err == nil && parsed.GreaterThan(decimal.Zero) {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------------------------------------------------------------- reads

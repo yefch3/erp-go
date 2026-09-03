@@ -26,6 +26,7 @@ const (
 	ContractService_GetContract_FullMethodName                 = "/erp.export.v1.ContractService/GetContract"
 	ContractService_CreateContractFromQuotation_FullMethodName = "/erp.export.v1.ContractService/CreateContractFromQuotation"
 	ContractService_CreateContract_FullMethodName              = "/erp.export.v1.ContractService/CreateContract"
+	ContractService_ImportExistingContract_FullMethodName      = "/erp.export.v1.ContractService/ImportExistingContract"
 	ContractService_UpdateContract_FullMethodName              = "/erp.export.v1.ContractService/UpdateContract"
 	ContractService_SubmitContract_FullMethodName              = "/erp.export.v1.ContractService/SubmitContract"
 	ContractService_ChangeContract_FullMethodName              = "/erp.export.v1.ContractService/ChangeContract"
@@ -63,7 +64,12 @@ type ContractServiceClient interface {
 	// signed paper uploaded as an attachment. Lines are still required: nothing
 	// downstream can read a PDF.
 	CreateContract(ctx context.Context, in *CreateContractRequest, opts ...grpc.CallOption) (*CreateContractResponse, error)
-	// Edit the draft version in place. Refused once the version is submitted.
+	// Import a contract already signed outside the ERP and start only the work
+	// that remains at the hand-over point.
+	ImportExistingContract(ctx context.Context, in *ImportExistingContractRequest, opts ...grpc.CallOption) (*ImportExistingContractResponse, error)
+	// Edit a draft, or correct the non-financial header/terms of a manually
+	// imported existing contract. Executed quantities and priced lines remain
+	// immutable once execution has started.
 	UpdateContract(ctx context.Context, in *UpdateContractRequest, opts ...grpc.CallOption) (*UpdateContractResponse, error)
 	// Hand the current draft version to the approval engine.
 	SubmitContract(ctx context.Context, in *SubmitContractRequest, opts ...grpc.CallOption) (*SubmitContractResponse, error)
@@ -158,6 +164,16 @@ func (c *contractServiceClient) CreateContract(ctx context.Context, in *CreateCo
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateContractResponse)
 	err := c.cc.Invoke(ctx, ContractService_CreateContract_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *contractServiceClient) ImportExistingContract(ctx context.Context, in *ImportExistingContractRequest, opts ...grpc.CallOption) (*ImportExistingContractResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ImportExistingContractResponse)
+	err := c.cc.Invoke(ctx, ContractService_ImportExistingContract_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +314,12 @@ type ContractServiceServer interface {
 	// signed paper uploaded as an attachment. Lines are still required: nothing
 	// downstream can read a PDF.
 	CreateContract(context.Context, *CreateContractRequest) (*CreateContractResponse, error)
-	// Edit the draft version in place. Refused once the version is submitted.
+	// Import a contract already signed outside the ERP and start only the work
+	// that remains at the hand-over point.
+	ImportExistingContract(context.Context, *ImportExistingContractRequest) (*ImportExistingContractResponse, error)
+	// Edit a draft, or correct the non-financial header/terms of a manually
+	// imported existing contract. Executed quantities and priced lines remain
+	// immutable once execution has started.
 	UpdateContract(context.Context, *UpdateContractRequest) (*UpdateContractResponse, error)
 	// Hand the current draft version to the approval engine.
 	SubmitContract(context.Context, *SubmitContractRequest) (*SubmitContractResponse, error)
@@ -349,6 +370,9 @@ func (UnimplementedContractServiceServer) CreateContractFromQuotation(context.Co
 }
 func (UnimplementedContractServiceServer) CreateContract(context.Context, *CreateContractRequest) (*CreateContractResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateContract not implemented")
+}
+func (UnimplementedContractServiceServer) ImportExistingContract(context.Context, *ImportExistingContractRequest) (*ImportExistingContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ImportExistingContract not implemented")
 }
 func (UnimplementedContractServiceServer) UpdateContract(context.Context, *UpdateContractRequest) (*UpdateContractResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateContract not implemented")
@@ -526,6 +550,24 @@ func _ContractService_CreateContract_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ContractServiceServer).CreateContract(ctx, req.(*CreateContractRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ContractService_ImportExistingContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ImportExistingContractRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ContractServiceServer).ImportExistingContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ContractService_ImportExistingContract_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ContractServiceServer).ImportExistingContract(ctx, req.(*ImportExistingContractRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -762,6 +804,10 @@ var ContractService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateContract",
 			Handler:    _ContractService_CreateContract_Handler,
+		},
+		{
+			MethodName: "ImportExistingContract",
+			Handler:    _ContractService_ImportExistingContract_Handler,
 		},
 		{
 			MethodName: "UpdateContract",

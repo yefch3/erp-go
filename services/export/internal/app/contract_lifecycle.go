@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/shopspring/decimal"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
 	"github.com/sgao19/erp-go/pkg/outbox"
@@ -351,15 +352,20 @@ type contractEffectiveEvent struct {
 	TotalAmount               string `json:"total_amount"`
 	DeliveryDate              string `json:"delivery_date"`
 	Incoterm                  string `json:"incoterm"`
+	PortOfDischarge           string `json:"port_of_discharge,omitempty"`
 	QuotationID               int64  `json:"quotation_id"`
 	QuotationNo               string `json:"quotation_no"`
 	SourceCustomerSelectionID int64  `json:"source_customer_selection_id"`
 	// 合同负责人（A1）：采购需求生而继承它作为属主——合同是谁谈的，
 	// 拆出来的采购动向就归谁看。
-	SalesEmployeeID int64                    `json:"sales_employee_id"`
-	SalesEmployee   string                   `json:"sales_employee"`
-	Items           []effectiveEventItem     `json:"items"`
-	Shipments       []effectiveEventShipment `json:"shipments"`
+	SalesEmployeeID       int64                    `json:"sales_employee_id"`
+	SalesEmployee         string                   `json:"sales_employee"`
+	ExistingContract      bool                     `json:"existing_contract,omitempty"`
+	ProcurementEmployeeID int64                    `json:"procurement_employee_id,omitempty"`
+	ProcurementEmployee   string                   `json:"procurement_employee,omitempty"`
+	SupplierID            int64                    `json:"supplier_id,omitempty"`
+	Items                 []effectiveEventItem     `json:"items"`
+	Shipments             []effectiveEventShipment `json:"shipments"`
 }
 
 type effectiveEventShipment struct {
@@ -386,12 +392,18 @@ type effectiveEventItem struct {
 	SkuID       int64  `json:"sku_id,omitempty"`
 	ProductCode string `json:"product_code"`
 	ProductName string `json:"product_name"`
+	Spec        string `json:"spec,omitempty"`
 	Qty         string `json:"qty"`
-	UomID       int64  `json:"uom_id"`
-	UomCode     string `json:"uom_code"`
-	UnitPrice   string `json:"unit_price"`
-	Amount      string `json:"amount"`
-	HsCode      string `json:"hs_code,omitempty"`
+	// RequiredQty is the part this ERP must still procure. Empty on events
+	// produced by older versions and therefore interpreted as Qty.
+	RequiredQty       string `json:"required_qty,omitempty"`
+	UomID             int64  `json:"uom_id"`
+	UomCode           string `json:"uom_code"`
+	UnitPrice         string `json:"unit_price"`
+	Amount            string `json:"amount"`
+	HsCode            string `json:"hs_code,omitempty"`
+	PurchaseUnitPrice string `json:"purchase_unit_price,omitempty"`
+	OpeningArrivedQty string `json:"opening_arrived_qty,omitempty"`
 }
 
 func effectiveEvent(view ContractView) contractEffectiveEvent {
@@ -403,8 +415,9 @@ func effectiveEvent(view ContractView) contractEffectiveEvent {
 		}
 		items = append(items, effectiveEventItem{
 			LineNo: i.LineNo, ItemID: i.ID, ProductID: i.ProductID, SkuID: sku,
-			ProductCode: i.ProductCode, ProductName: i.ProductName,
-			Qty: i.Qty, UomID: i.UomID, UomCode: i.UomCode,
+			ProductCode: i.ProductCode, ProductName: i.ProductName, Spec: i.Spec,
+			Qty: i.Qty, RequiredQty: remainingProcurementQty(i.Qty, i.OpeningProcuredQty),
+			UomID: i.UomID, UomCode: i.UomCode,
 			UnitPrice: i.UnitPrice, Amount: i.Amount, HsCode: i.HsCode,
 		})
 	}
@@ -414,7 +427,21 @@ func effectiveEvent(view ContractView) contractEffectiveEvent {
 		CustomerID: view.Contract.CustomerID, CustomerName: view.Contract.CustomerName,
 		Currency: view.Version.Currency, TotalAmount: view.Version.TotalAmount,
 		DeliveryDate: view.Version.DeliveryDate, Incoterm: view.Version.Incoterm,
+		PortOfDischarge: view.Version.PortOfDischarge,
 		SalesEmployeeID: view.Contract.SalesEmployeeID, SalesEmployee: view.Contract.SalesEmployee,
 		Items: items,
 	}
+}
+
+func remainingProcurementQty(total, opening string) string {
+	totalQty, totalErr := decimal.NewFromString(total)
+	openingQty, openingErr := decimal.NewFromString(opening)
+	if totalErr != nil || openingErr != nil {
+		return total
+	}
+	remaining := totalQty.Sub(openingQty)
+	if remaining.IsNegative() {
+		return "0"
+	}
+	return remaining.String()
 }

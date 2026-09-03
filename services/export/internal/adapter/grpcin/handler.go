@@ -187,6 +187,9 @@ func itemsFromProto(in []*exv1.ItemInput) []app.ItemInput {
 			Qty: i.GetQty(), UnitPrice: i.GetUnitPrice(), Remark: i.GetRemark(),
 			SourceCostScenarioLineID: i.GetSourceCostScenarioLineId(),
 			ProductCode:              i.GetProductCode(), ProductName: i.GetProductName(), UomCode: i.GetUomCode(),
+			OpeningProcuredQty: i.GetOpeningProcuredQty(), OpeningArrivedQty: i.GetOpeningArrivedQty(),
+			OpeningShippedQty: i.GetOpeningShippedQty(),
+			PurchaseUnitPrice: i.GetPurchaseUnitPrice(),
 		})
 	}
 	return out

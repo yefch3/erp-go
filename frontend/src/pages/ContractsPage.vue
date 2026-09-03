@@ -38,8 +38,8 @@
         <el-table-column :label="t('contracts.owner')" width="90">
           <template #default="{ row }">{{ row.salesEmployee || '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('contracts.fromQuote')" width="130">
-          <template #default="{ row }"><span class="sub">{{ row.quoteNo || '—' }}</span></template>
+        <el-table-column :label="t('contracts.sourceDocument')" width="155">
+          <template #default="{ row }"><span class="sub">{{ row.quoteNo || row.externalContractNo || '—' }}</span></template>
         </el-table-column>
         <el-table-column :label="t('common.status')" width="100">
           <template #default="{ row }">
@@ -49,6 +49,13 @@
         <el-table-column :label="t('common.actions')" width="200" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row.id)">{{ t('contracts.detail') }}</el-button>
+            <el-button
+              v-if="canCorrectExisting(row)"
+              link type="primary"
+              @click="openExistingEdit(row.id)"
+            >
+              {{ t('common.edit') }}
+            </el-button>
             <!-- Gated on ownership, not just on the permission code. The list
                  also carries documents this person only approves, and offering
                  them an action the server will refuse is a lie in the UI. -->
@@ -73,15 +80,17 @@
       />
     </el-card>
 
-    <!-- Generate from an accepted quotation -->
-    <el-dialog v-model="directOpen" :title="t('contracts.createDirect')" width="860px">
+    <!-- A signed contract that existed before it reached this ERP. -->
+    <el-dialog v-model="directOpen" :title="t('contracts.createDirect')" width="1180px" top="4vh">
       <el-alert :title="t('contracts.directHint')" type="info" :closable="false" show-icon class="alert" />
-      <el-form label-width="110px" class="head-form">
+      <el-form label-width="120px" class="head-form">
         <el-form-item :label="t('contracts.customer')" required>
           <el-select
             v-model="directForm.customerId"
             filterable
             clearable
+            remote
+            :remote-method="searchCustomers"
             style="width: 320px"
             :placeholder="t('contracts.pickCustomer')"
           >
@@ -96,29 +105,68 @@
             <el-option v-for="c in CURRENCIES" :key="c" :value="c" :label="c" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('contracts.receivableDue')">
-          <el-date-picker v-model="directForm.receivableDueDate" type="date" value-format="YYYY-MM-DD"
-                          clearable :placeholder="t('contracts.receivableDueHint')" style="width: 200px" />
+        <el-form-item :label="t('contracts.responsibleSales')" required>
+          <el-select v-model="directForm.salesEmployeeId" :disabled="!canPickContractOwner" filterable style="width: 320px">
+            <el-option v-for="e in contractOwners" :key="e.id" :value="Number(e.id)" :label="e.name" />
+          </el-select>
+          <span class="hint">{{ t('contracts.ownerHint') }}</span>
         </el-form-item>
-        <el-form-item :label="t('contracts.deliveryDate')">
-          <el-date-picker v-model="directForm.deliveryDate" type="date" value-format="YYYY-MM-DD" style="width: 200px" />
-          <el-input
-            v-model="directForm.incoterm"
-            style="width: 110px; margin-left: 12px"
-            :placeholder="t('contracts.incoterm')"
-          />
-          <el-input
-            v-model="directForm.paymentMethod"
-            style="width: 130px; margin-left: 12px"
-            :placeholder="t('contracts.payment')"
-          />
+        <el-form-item :label="t('contracts.originalBuyer')" required>
+          <el-select v-model="directForm.procurementEmployeeId" filterable style="width: 320px">
+            <el-option v-for="e in contractOwners" :key="e.id" :value="Number(e.id)" :label="e.name" />
+          </el-select>
+          <span class="hint">{{ t('contracts.originalBuyerHint') }}</span>
+        </el-form-item>
+        <el-form-item :label="t('contracts.originalSupplier')" required>
+          <el-select v-model="directForm.supplierId" filterable style="width: 420px">
+            <el-option v-for="s in directSuppliers" :key="s.id" :value="Number(s.id)" :label="`${s.code} · ${s.nameZh || s.nameEn || s.name}`" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('contracts.externalContractNo')">
+          <el-input v-model="directForm.externalContractNo" clearable style="width: 320px" :placeholder="t('contracts.externalContractNoHint')" />
+        </el-form-item>
+        <el-form-item :label="t('contracts.contractDates')" required>
+          <el-date-picker v-model="directForm.signedDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('contracts.signedDate')" style="width: 190px" />
+          <el-date-picker v-model="directForm.effectiveDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('contracts.effectiveDate')" style="width: 190px; margin-left: 12px" />
+          <el-date-picker v-model="directForm.deliveryDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('contracts.deliveryDate')" style="width: 190px; margin-left: 12px" />
+          <el-date-picker v-model="directForm.receivableDueDate" type="date" value-format="YYYY-MM-DD" clearable :placeholder="t('contracts.receivableDue')" style="width: 190px; margin-left: 12px" />
+        </el-form-item>
+        <el-form-item :label="t('contracts.commercialTerms')">
+          <el-select v-model="directForm.incoterm" filterable allow-create default-first-option style="width: 150px" :placeholder="t('contracts.incoterm')">
+            <el-option v-for="i in INCOTERMS" :key="i" :value="i" :label="i" />
+          </el-select>
+          <el-select v-model="directForm.paymentMethod" filterable allow-create default-first-option clearable style="width: 240px; margin-left: 12px" :placeholder="t('contracts.payment')">
+            <el-option v-for="o in paymentOptions" :key="o.code" :value="o.code" :label="o.label" />
+          </el-select>
         </el-form-item>
         <el-form-item :label="t('contracts.ports')">
-          <el-input v-model="directForm.portOfLoading" style="width: 190px" :placeholder="t('contracts.pol')" />
-          <el-input v-model="directForm.portOfDischarge" style="width: 190px; margin-left: 12px" :placeholder="t('contracts.pod')" />
+          <el-select
+            v-model="directForm.portOfLoading"
+            filterable allow-create default-first-option clearable remote
+            :remote-method="searchContractPorts"
+            style="width: 260px"
+            :placeholder="t('contracts.pickOrEnterPol')"
+          >
+            <el-option v-for="p in contractPorts" :key="`pol-${p.id}`" :value="portContractValue(p)" :label="portOptionLabel(p)" />
+          </el-select>
+          <el-select
+            v-model="directForm.portOfDischarge"
+            filterable allow-create default-first-option clearable remote
+            :remote-method="searchContractPorts"
+            style="width: 260px; margin-left: 12px"
+            :placeholder="t('contracts.pickOrEnterPod')"
+          >
+            <el-option v-for="p in contractPorts" :key="`pod-${p.id}`" :value="portContractValue(p)" :label="portOptionLabel(p)" />
+          </el-select>
         </el-form-item>
         <el-form-item :label="t('contracts.terms')">
           <el-input v-model="directForm.terms" type="textarea" :rows="2" />
+        </el-form-item>
+        <el-form-item :label="t('contracts.executionState')">
+          <el-radio-group v-model="directForm.partiallyExecuted">
+            <el-radio-button :value="false">{{ t('contracts.notStarted') }}</el-radio-button>
+            <el-radio-button :value="true">{{ t('contracts.partiallyExecuted') }}</el-radio-button>
+          </el-radio-group>
         </el-form-item>
       </el-form>
 
@@ -127,15 +175,20 @@
         <span class="hint">{{ t('contracts.linesHint') }}</span>
         <el-button link type="primary" @click="addDirectLine">{{ t('contracts.addLine') }}</el-button>
       </div>
-      <el-table :data="directForm.items" size="small">
-        <el-table-column :label="t('contracts.product')" min-width="230">
+      <el-table :data="directForm.items" size="small" border>
+        <el-table-column :label="t('contracts.product')" min-width="210">
           <template #default="{ row }">
             <el-select
               v-model="row.productId"
               filterable
+              allow-create
+              default-first-option
               clearable
+              remote
+              :remote-method="searchProducts"
               style="width: 100%"
-              :placeholder="t('contracts.pickProduct')"
+              :placeholder="t('contracts.pickOrEnterProduct')"
+              @change="syncDirectProductUnit(row)"
             >
               <el-option
                 v-for="p in products"
@@ -145,6 +198,19 @@
               />
             </el-select>
           </template>
+        </el-table-column>
+        <el-table-column :label="t('contracts.uom')" width="105">
+          <template #default="{ row }">
+            <el-input
+              v-model="row.uomCode"
+              size="small"
+              :disabled="isCatalogDirectProduct(row)"
+              :placeholder="t('contracts.uomHint')"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('contracts.spec')" min-width="150">
+          <template #default="{ row }"><el-input v-model="row.spec" size="small" /></template>
         </el-table-column>
         <el-table-column :label="t('contracts.qty')" width="120">
           <template #default="{ row }"><el-input v-model="row.qty" size="small" /></template>
@@ -157,6 +223,14 @@
             <span class="num">{{ lineAmount(row) }}</span>
           </template>
         </el-table-column>
+        <template v-if="directForm.partiallyExecuted">
+          <el-table-column :label="t('contracts.openingArrived')" width="125">
+            <template #default="{ row }"><el-input v-model="row.openingArrivedQty" size="small" /></template>
+          </el-table-column>
+          <el-table-column :label="t('contracts.openingShipped')" width="125">
+            <template #default="{ row }"><el-input v-model="row.openingShippedQty" size="small" /></template>
+          </el-table-column>
+        </template>
         <el-table-column width="60">
           <template #default="{ $index }">
             <el-button link type="danger" @click="directForm.items.splice($index, 1)">
@@ -169,10 +243,63 @@
       <div class="total-row">
         {{ t('contracts.total') }}<span class="num money">{{ directTotal }} {{ directForm.currency }}</span>
       </div>
+      <el-form label-width="120px" class="head-form direct-tail">
+        <el-form-item v-if="directForm.partiallyExecuted" :label="t('contracts.openingReceived')">
+          <el-input v-model="directForm.openingReceivedAmount" inputmode="decimal" style="width: 240px">
+            <template #prepend>{{ directForm.currency }}</template>
+          </el-input>
+        </el-form-item>
+        <el-form-item :label="t('contracts.contractFile')">
+          <input ref="directFileInput" type="file" accept="application/pdf,.pdf" @change="pickDirectFile" />
+          <el-checkbox v-model="directForm.filePending" style="margin-left: 16px">{{ t('contracts.uploadLater') }}</el-checkbox>
+        </el-form-item>
+      </el-form>
 
       <template #footer>
         <el-button @click="directOpen = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="createDirect">{{ t('common.save') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="createDirect">{{ t('contracts.saveAndExecute') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Fast correction for a signed contract imported from outside ERP.
+         Financial lines and execution openings intentionally stay read-only. -->
+    <el-dialog v-model="existingEditOpen" :title="t('contracts.editExisting')" width="820px">
+      <el-alert :title="t('contracts.editExistingHint')" type="info" :closable="false" show-icon class="alert" />
+      <el-form label-width="125px">
+        <el-form-item :label="t('contracts.externalContractNo')">
+          <el-input v-model="existingEditForm.externalContractNo" clearable :placeholder="t('contracts.externalContractNoHint')" />
+        </el-form-item>
+        <el-form-item :label="t('contracts.contractDates')" required>
+          <el-date-picker v-model="existingEditForm.signedDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('contracts.signedDate')" style="width: 200px" />
+          <el-date-picker v-model="existingEditForm.effectiveDate" type="date" value-format="YYYY-MM-DD" :placeholder="t('contracts.effectiveDate')" style="width: 200px; margin-left: 12px" />
+          <el-date-picker v-model="existingEditForm.deliveryDate" type="date" value-format="YYYY-MM-DD" clearable :placeholder="t('contracts.deliveryDate')" style="width: 200px; margin-left: 12px" />
+        </el-form-item>
+        <el-form-item :label="t('contracts.receivableDue')">
+          <el-date-picker v-model="existingEditForm.receivableDueDate" type="date" value-format="YYYY-MM-DD" clearable style="width: 200px" />
+        </el-form-item>
+        <el-form-item :label="t('contracts.commercialTerms')">
+          <el-select v-model="existingEditForm.incoterm" filterable allow-create default-first-option style="width: 180px">
+            <el-option v-for="i in INCOTERMS" :key="i" :value="i" :label="i" />
+          </el-select>
+          <el-select v-model="existingEditForm.paymentMethod" filterable allow-create default-first-option clearable style="width: 260px; margin-left: 12px">
+            <el-option v-for="o in paymentOptions" :key="o.code" :value="o.code" :label="o.label" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('contracts.ports')">
+          <el-select v-model="existingEditForm.portOfLoading" filterable allow-create default-first-option clearable remote :remote-method="searchContractPorts" style="width: 290px" :placeholder="t('contracts.pickOrEnterPol')">
+            <el-option v-for="p in contractPorts" :key="`edit-pol-${p.id}`" :value="portContractValue(p)" :label="portOptionLabel(p)" />
+          </el-select>
+          <el-select v-model="existingEditForm.portOfDischarge" filterable allow-create default-first-option clearable remote :remote-method="searchContractPorts" style="width: 290px; margin-left: 12px" :placeholder="t('contracts.pickOrEnterPod')">
+            <el-option v-for="p in contractPorts" :key="`edit-pod-${p.id}`" :value="portContractValue(p)" :label="portOptionLabel(p)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('contracts.terms')">
+          <el-input v-model="existingEditForm.terms" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="existingEditOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="saveExistingEdit">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -273,6 +400,12 @@
           </el-descriptions-item>
           <el-descriptions-item :label="t('contracts.fromQuote')">{{ detail.contract.quoteNo || '—' }}</el-descriptions-item>
           <el-descriptions-item :label="t('contracts.owner')">{{ detail.contract.salesEmployee || '—' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.contract.entrySource === 'EXISTING_CONTRACT'" :label="t('contracts.externalContractNo')">
+            {{ detail.contract.externalContractNo || '—' }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="detail.contract.entrySource === 'EXISTING_CONTRACT'" :label="t('contracts.contractSource')">
+            <el-tag size="small" type="warning" effect="plain">{{ t('contracts.existingContract') }}</el-tag>
+          </el-descriptions-item>
           <el-descriptions-item v-if="detail.contract.signatureSource" :label="t('contracts.signedVia')">
             <el-tag size="small" :type="detail.contract.signatureSource === 'PLATFORM' ? 'success' : 'warning'" effect="plain">
               {{ t(`contracts.fileSources.${detail.contract.signatureSource}`) }}
@@ -310,12 +443,40 @@
           <el-table-column :label="t('contracts.lineAmount')" width="110" align="right">
             <template #default="{ row }">{{ row.amount }}</template>
           </el-table-column>
+          <template v-if="detail.contract.entrySource === 'EXISTING_CONTRACT'">
+            <el-table-column :label="t('contracts.takeoverProgress')" min-width="360">
+              <template #default="{ row }">
+                <div class="sub">
+                  {{ t('contracts.completed') }}：
+                  {{ t('contracts.openingProcured') }} {{ trimZeros(row.openingProcuredQty) }} /
+                  {{ t('contracts.openingArrived') }} {{ trimZeros(row.openingArrivedQty) }} /
+                  {{ t('contracts.openingShipped') }} {{ trimZeros(row.openingShippedQty) }} {{ row.uomCode }}
+                </div>
+                <div>
+                  {{ t('contracts.remaining') }}：
+                  {{ t('contracts.pendingPurchase') }} {{ remainingQty(row.qty, row.openingProcuredQty) }} /
+                  {{ t('contracts.pendingArrival') }} {{ remainingQty(row.openingProcuredQty, row.openingArrivedQty) }} /
+                  {{ t('contracts.pendingShipment') }} {{ remainingQty(row.qty, row.openingShippedQty) }} {{ row.uomCode }}
+                </div>
+              </template>
+            </el-table-column>
+          </template>
         </el-table>
         <div class="totals">
           <span>{{ t('contracts.total') }}</span>
           <strong>{{ detail.version.totalAmount }} {{ detail.version.currency }}</strong>
           <span class="sub">≈ {{ detail.version.baseAmount }} {{ detail.version.fx.baseCurrency }}</span>
         </div>
+        <div v-if="detail.contract.entrySource === 'EXISTING_CONTRACT'" class="totals opening-money">
+          <span>{{ t('contracts.openingReceived') }}</span>
+          <strong>{{ moneyValue(detail.contract.openingReceivedAmount) }} {{ detail.version.currency }}</strong>
+          <span>{{ t('contracts.remainingReceivable') }}</span>
+          <strong>{{ remainingMoney(detail.version.totalAmount, detail.contract.openingReceivedAmount) }} {{ detail.version.currency }}</strong>
+        </div>
+        <el-alert
+          v-if="detail.contract.entrySource === 'EXISTING_CONTRACT' && detail.contract.filePending"
+          :title="t('contracts.filePendingWarning')" type="warning" :closable="false" show-icon class="alert"
+        />
         <div class="snapshot">
           {{ t('contracts.fxSnapshot') }}:
           1 {{ detail.version.fx.baseCurrency }} = {{ detail.version.fx.rate }} {{ detail.version.currency }}
@@ -809,10 +970,16 @@ interface Contract {
   salesEmployee: string
   salesEmployeeId: string
   signatureSource: string
+  signedAt: string
+  effectiveAt: string
   conditionConfirmedAt: string
   conditionConfirmationNote: string
   conditionConfirmedByName: string
   receivableDueDate: string
+  externalContractNo: string
+  entrySource: string
+  openingReceivedAmount: string
+  filePending: boolean
 }
 interface Version {
   id: string
@@ -846,6 +1013,9 @@ interface Item {
   unitPrice: string
   amount: string
   hsCode: string
+  openingProcuredQty: string
+  openingArrivedQty: string
+  openingShippedQty: string
 }
 interface ReceiptProgress {
   currency: string
@@ -927,7 +1097,8 @@ interface Transfer {
   transferredAt: string
 }
 interface Quote { id: string; quoteNo: string; customerName: string; currency: string; totalAmount: string }
-interface Product { id: string; code: string; name: string }
+interface Product { id: string; code: string; name: string; uomCode?: string }
+interface ContractPort { id: string; unlocode: string; nameZh: string; nameEn: string; countryCode: string }
 interface OptionItem { code: string; label: string }
 interface ChangeLine { productId: string; spec: string; qty: string; unitPrice: string }
 
@@ -936,7 +1107,7 @@ const INCOTERMS = ['FOB', 'CIF', 'CFR', 'EXW', 'DDP']
 // DRAFT is what we sent out, SIGNED is what came back with a signature on it.
 const FILE_KINDS = ['DRAFT', 'SIGNED', 'OTHER']
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 // 直接下单那张明细表上的「删除」用的就是它，而这一行一直没定义——那颗按钮
 // 在浏览器里会当场炸掉。类型检查一开就抓住了，说明那个弹窗少有人点到底。
 const common = (k: string) => t(`common.${k}`)
@@ -983,14 +1154,34 @@ const saving = ref(false)
 const detailOpen = ref(false)
 const generateOpen = ref(false)
 const directOpen = ref(false)
+const existingEditOpen = ref(false)
 const customers = ref<{ id: string; code: string; name: string }[]>([])
+const contractPorts = ref<ContractPort[]>([])
+const canReadPorts = auth.can('masterdata:port:read')
 
-// productId is undefined rather than 0 while unset: el-select shows its
-// placeholder for undefined, but renders a literal "0" for zero.
-interface DirectLine { productId?: number; qty: string; unitPrice: string }
+// A number means a selected Product Master row; a string means the exact
+// product wording typed from the paper contract.  Keeping those types
+// distinct also lets a legitimate product name such as "304" stay manual.
+interface DirectLine {
+  productId?: number | string
+  catalogProductId?: number
+  uomCode: string
+  spec: string
+  qty: string
+  unitPrice: string
+  openingProcuredQty: string
+  openingArrivedQty: string
+  openingShippedQty: string
+}
 const directForm = reactive({
   customerId: undefined as number | undefined,
+  salesEmployeeId: undefined as number | undefined,
+  procurementEmployeeId: undefined as number | undefined,
+  supplierId: undefined as number | undefined,
+  externalContractNo: '',
   currency: 'USD',
+  signedDate: '',
+  effectiveDate: '',
   deliveryDate: '',
   // 应收到期日：这份合同的钱什么时候该收回来。**员工填**，可留空。
   // 不再从客户主数据的账期推——同一个客户这一单谈 60 天、下一单要求预付，
@@ -1001,8 +1192,21 @@ const directForm = reactive({
   portOfLoading: '',
   portOfDischarge: '',
   terms: '',
+  partiallyExecuted: false,
+  openingReceivedAmount: '0',
+  filePending: false,
   items: [] as DirectLine[],
 })
+const existingEditForm = reactive({
+  id: '', externalContractNo: '', signedDate: '', effectiveDate: '', deliveryDate: '', receivableDueDate: '',
+  buyerName: '', buyerAddress: '', sellerName: '', sellerAddress: '',
+  incoterm: '', paymentMethod: '', portOfLoading: '', portOfDischarge: '', terms: '',
+})
+const contractOwners = ref<{ id: string; name: string; status: string }[]>([])
+const directSuppliers = ref<{ id: string; code: string; name: string; nameZh: string; nameEn: string }[]>([])
+const canPickContractOwner = auth.can('iam:employee:read')
+const directFileInput = ref<HTMLInputElement | null>(null)
+const directFile = ref<File | null>(null)
 
 // Recomputed as the user types. The server prices it again and is the
 // authority; this is so nobody signs off a total they have not seen.
@@ -1011,39 +1215,225 @@ const directTotal = computed(() =>
 )
 
 function addDirectLine() {
-  directForm.items.push({ productId: undefined, qty: '', unitPrice: '' })
+	directForm.items.push({
+		productId: undefined, catalogProductId: undefined, uomCode: '', spec: '', qty: '', unitPrice: '',
+    openingProcuredQty: '0', openingArrivedQty: '0', openingShippedQty: '0',
+  })
 }
 
 async function openDirect() {
   Object.assign(directForm, {
-    customerId: undefined, currency: 'USD', deliveryDate: '', incoterm: 'FOB',
-    paymentMethod: '', portOfLoading: '', portOfDischarge: '', terms: '', items: [],
+    customerId: undefined, salesEmployeeId: Number(auth.employeeId), externalContractNo: '',
+    procurementEmployeeId: undefined, supplierId: undefined,
+    currency: 'USD', signedDate: '', effectiveDate: '', deliveryDate: '', receivableDueDate: '', incoterm: 'FOB',
+    paymentMethod: '', portOfLoading: '', portOfDischarge: '', terms: '', partiallyExecuted: false,
+    openingReceivedAmount: '0', filePending: false, items: [],
   })
+  directFile.value = null
+  if (directFileInput.value) directFileInput.value.value = ''
   addDirectLine()
-  if (!customers.value.length) {
-    customers.value = (await get<{ customers: typeof customers.value }>('/customers', { page_size: 200 })).customers ?? []
-  }
-  if (!products.value.length) {
-    products.value = (await get<{ products: Product[] }>('/products', { page_size: 200 })).products ?? []
-  }
+  await Promise.all([searchCustomers(''), searchProducts(''), searchContractPorts(''), loadContractOwners(), loadDirectSuppliers()])
   directOpen.value = true
 }
 
-async function createDirect() {
-  const items = directForm.items.filter((r) => r.productId && Number(r.qty) > 0)
-  if (!directForm.customerId) {
-    ElMessage.warning(t('contracts.customerRequired'))
-    return
-  }
-  if (!items.length) {
-    ElMessage.warning(t('contracts.linesRequired'))
+function canCorrectExisting(row: Contract): boolean {
+  return canWrite && row.entrySource === 'EXISTING_CONTRACT' && row.status !== 'CANCELLED'
+}
+
+function businessDate(value: string): string {
+  return value ? value.slice(0, 10) : ''
+}
+
+async function openExistingEdit(id: string) {
+  const data = await get<Detail>(`/contracts/${id}`)
+  const c = data.contract
+  const v = data.version
+  Object.assign(existingEditForm, {
+    id: c.id, externalContractNo: c.externalContractNo || '',
+    signedDate: businessDate(c.signedAt), effectiveDate: businessDate(c.effectiveAt),
+    deliveryDate: v.deliveryDate || '', receivableDueDate: c.receivableDueDate || '',
+    buyerName: v.buyerName, buyerAddress: v.buyerAddress, sellerName: v.sellerName, sellerAddress: v.sellerAddress,
+    incoterm: v.incoterm, paymentMethod: v.paymentMethod, portOfLoading: v.portOfLoading,
+    portOfDischarge: v.portOfDischarge, terms: v.terms,
+  })
+  await searchContractPorts('')
+  existingEditOpen.value = true
+}
+
+async function saveExistingEdit() {
+  if (!existingEditForm.signedDate || !existingEditForm.effectiveDate) {
+    ElMessage.warning(t('contracts.contractDatesRequired'))
     return
   }
   saving.value = true
   try {
-    const data = await post<Detail>('/contracts/direct', {
+    await put(`/contracts/${existingEditForm.id}`, {
+      externalContractNo: existingEditForm.externalContractNo.trim(),
+      signedDate: existingEditForm.signedDate,
+      effectiveDate: existingEditForm.effectiveDate,
+      terms: {
+        buyerName: existingEditForm.buyerName, buyerAddress: existingEditForm.buyerAddress,
+        sellerName: existingEditForm.sellerName, sellerAddress: existingEditForm.sellerAddress,
+        incoterm: existingEditForm.incoterm, paymentMethod: existingEditForm.paymentMethod,
+        portOfLoading: existingEditForm.portOfLoading, portOfDischarge: existingEditForm.portOfDischarge,
+        deliveryDate: existingEditForm.deliveryDate, receivableDueDate: existingEditForm.receivableDueDate,
+        terms: existingEditForm.terms,
+      },
+    })
+    ElMessage.success(t('contracts.existingUpdated'))
+    existingEditOpen.value = false
+    await load()
+    if (detailOpen.value && detail.value?.contract.id === existingEditForm.id) await openDetail(existingEditForm.id)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function searchCustomers(keyword: string) {
+  customers.value = (await get<{ customers: typeof customers.value }>('/customers', { keyword, page_size: 50 })).customers ?? []
+}
+
+async function searchProducts(keyword: string) {
+  products.value = (await get<{ products: Product[] }>('/products', { keyword, page_size: 50, status: 'ACTIVE' })).products ?? []
+}
+
+async function searchContractPorts(keyword: string) {
+  if (!canReadPorts) {
+    contractPorts.value = []
+    return
+  }
+  contractPorts.value = (await get<{ ports: ContractPort[] }>('/ports', {
+    keyword, page: 1, page_size: 100, status: 'ACTIVE',
+  })).ports ?? []
+}
+
+function portContractValue(port: ContractPort): string {
+  return (locale.value === 'zh' ? port.nameZh || port.nameEn : port.nameEn || port.nameZh) || port.unlocode
+}
+
+function portOptionLabel(port: ContractPort): string {
+  return [port.unlocode, port.nameZh || port.nameEn, port.countryCode].filter(Boolean).join(' · ')
+}
+
+function catalogDirectProduct(row: DirectLine): Product | undefined {
+  if (!row.catalogProductId) return undefined
+  return products.value.find((p) => Number(p.id) === row.catalogProductId)
+}
+
+function isCatalogDirectProduct(row: DirectLine): boolean {
+  return Boolean(row.catalogProductId)
+}
+
+function syncDirectProductUnit(row: DirectLine) {
+  const product = typeof row.productId === 'number'
+    ? products.value.find((p) => Number(p.id) === row.productId)
+    : undefined
+  row.catalogProductId = product ? Number(product.id) : undefined
+  row.uomCode = product?.uomCode ?? ''
+}
+
+async function loadContractOwners() {
+  const mine = { id: String(auth.employeeId), name: auth.employeeName, status: 'ACTIVE' }
+  if (!canPickContractOwner) {
+    contractOwners.value = [mine]
+    return
+  }
+  const data = await get<{ employees: { id: string; name: string; status: string }[] }>('/employees', { page_size: 200, status: 'ACTIVE' })
+  contractOwners.value = data.employees?.length ? data.employees : [mine]
+}
+
+async function loadDirectSuppliers() {
+  const data = await get<{ suppliers: typeof directSuppliers.value }>('/suppliers', { page_size: 200, status: 'ACTIVE' })
+  directSuppliers.value = data.suppliers ?? []
+}
+
+function pickDirectFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  directFile.value = input.files?.[0] ?? null
+  if (directFile.value) directForm.filePending = false
+}
+
+async function uploadExistingContractFile(contractId: string, versionId: string, file: File) {
+  const signed = await post<{ fileKey: string; uploadUrl: string }>(`/contracts/${contractId}/files/presign`, {
+    fileName: file.name, contentType: file.type || 'application/pdf',
+  })
+  const putResult = await fetch(signed.uploadUrl, { method: 'PUT', body: file })
+  if (!putResult.ok) throw new Error(`upload failed: ${putResult.status}`)
+  await post(`/contracts/${contractId}/files`, {
+    fileKey: signed.fileKey, fileName: file.name, contentType: file.type || 'application/pdf',
+    sizeBytes: String(file.size), kind: 'SIGNED', contractVersionId: versionId,
+  })
+}
+
+async function createDirect() {
+  if (!directForm.customerId) {
+    ElMessage.warning(t('contracts.customerRequired'))
+    return
+  }
+  if (!directForm.salesEmployeeId) {
+    ElMessage.warning(t('contracts.ownerRequired'))
+    return
+  }
+  if (!directForm.procurementEmployeeId) {
+    ElMessage.warning(t('contracts.originalBuyerRequired'))
+    return
+  }
+  if (!directForm.supplierId) {
+    ElMessage.warning(t('contracts.originalSupplierRequired'))
+    return
+  }
+  if (!directForm.signedDate || !directForm.effectiveDate) {
+    ElMessage.warning(t('contracts.contractDatesRequired'))
+    return
+  }
+  if (!directFile.value && !directForm.filePending) {
+    ElMessage.warning(t('contracts.fileOrLaterRequired'))
+    return
+  }
+  const items = directForm.items.filter((r) => r.productId || r.qty || r.unitPrice)
+  if (!items.length || items.some((r) => !String(r.productId ?? '').trim() || Number(r.qty) <= 0 || Number(r.unitPrice) < 0)) {
+    ElMessage.warning(t('contracts.linesRequired'))
+    return
+  }
+  if (items.some((r) => !r.uomCode.trim())) {
+    ElMessage.warning(t('contracts.uomRequired'))
+    return
+  }
+  for (const row of items) {
+    const total = Number(row.qty)
+    const openings = directForm.partiallyExecuted
+      ? [row.openingArrivedQty, row.openingShippedQty].map(Number)
+      : [0, 0, 0]
+    if (openings.some((value) => !Number.isFinite(value) || value < 0 || value > total)) {
+      ElMessage.warning(t('contracts.openingQtyInvalid'))
+      return
+    }
+  }
+  const openingReceived = directForm.partiallyExecuted ? Number(directForm.openingReceivedAmount || 0) : 0
+  if (!Number.isFinite(openingReceived) || openingReceived < 0 || openingReceived > Number(directTotal.value)) {
+    ElMessage.warning(t('contracts.openingReceivedInvalid'))
+    return
+  }
+  try {
+    await ElMessageBox.confirm(t('contracts.executeConfirm'), t('contracts.createDirect'), { type: 'warning' })
+  } catch {
+    return
+  }
+  saving.value = true
+  try {
+    const data = await post<Detail>('/contracts/existing', {
       customerId: directForm.customerId!,
+      salesEmployeeId: directForm.salesEmployeeId,
+      procurementEmployeeId: directForm.procurementEmployeeId,
+      supplierId: directForm.supplierId,
+      externalContractNo: directForm.externalContractNo.trim(),
       currency: directForm.currency,
+      signedDate: directForm.signedDate,
+      effectiveDate: directForm.effectiveDate,
+      openingReceivedAmount: String(openingReceived),
+      // Creation and object-store upload cannot be one transaction. Keep the
+      // flag true until a successful SIGNED-file registration clears it.
+      filePending: true,
       terms: {
         incoterm: directForm.incoterm,
         paymentMethod: directForm.paymentMethod,
@@ -1053,17 +1443,38 @@ async function createDirect() {
         receivableDueDate: directForm.receivableDueDate,
         terms: directForm.terms,
       },
-      items: items.map((r) => ({
-        productId: r.productId,
-        qty: r.qty,
-        unitPrice: r.unitPrice || '0',
-      })),
-    })
-    ElMessage.success(t('contracts.created'))
+      items: items.map((r) => {
+        const catalog = catalogDirectProduct(r)
+        return {
+          productId: r.catalogProductId ? String(r.catalogProductId) : '0',
+          productName: catalog ? '' : String(r.productId).trim(),
+          uomCode: r.uomCode.trim().toUpperCase(),
+          spec: r.spec,
+          qty: r.qty,
+          unitPrice: r.unitPrice || '0',
+          openingProcuredQty: r.qty,
+          openingArrivedQty: directForm.partiallyExecuted ? r.openingArrivedQty || '0' : '0',
+          openingShippedQty: directForm.partiallyExecuted ? r.openingShippedQty || '0' : '0',
+        }
+      }),
+    }, withIdempotency(createIdem))
+    createIdem.reset()
+    if (directFile.value) {
+      try {
+        await uploadExistingContractFile(data.contract.id, data.version.id, directFile.value)
+      } catch {
+        // The contract itself is already committed. Close this form so a
+        // retry cannot create a duplicate; details retain the pending warning.
+        ElMessage.warning(t('contracts.contractSavedFilePending'))
+        directOpen.value = false
+        await load()
+        await openDetail(data.contract.id)
+        return
+      }
+    }
+    ElMessage.success(t('contracts.existingImported'))
     directOpen.value = false
     load()
-    // Straight into the drawer, because the next thing to do is attach the
-    // signed contract pages.
     openDetail(data.contract.id)
   } finally {
     saving.value = false
@@ -1445,6 +1856,20 @@ function lineAmount(row: { qty: string; unitPrice: string }): string {
   const price = Number(row.unitPrice)
   if (!Number.isFinite(qty) || !Number.isFinite(price)) return '—'
   return (Math.round(qty * price * 100) / 100).toFixed(2)
+}
+
+function remainingQty(total: string, completed: string): string {
+  const left = Math.max(0, Number(total || 0) - Number(completed || 0))
+  return trimZeros(left.toFixed(4))
+}
+
+function moneyValue(value: string): string {
+  const number = Number(value || 0)
+  return Number.isFinite(number) ? number.toFixed(2) : '0.00'
+}
+
+function remainingMoney(total: string, received: string): string {
+  return Math.max(0, Number(total || 0) - Number(received || 0)).toFixed(2)
 }
 
 function previewTotal(lines: ChangeLine[]): string {

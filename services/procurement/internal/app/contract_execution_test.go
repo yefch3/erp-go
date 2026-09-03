@@ -6,6 +6,33 @@ import (
 	"github.com/sgao19/erp-go/services/procurement/internal/store"
 )
 
+func TestProcurementRequiredQtyUsesOpeningBalanceAndKeepsOldEventsCompatible(t *testing.T) {
+	if got := procurementRequiredQty(ContractLine{Qty: "100", RequiredQty: "35"}); got != "35" {
+		t.Fatalf("new event required qty = %s, want 35", got)
+	}
+	if got := procurementRequiredQty(ContractLine{Qty: "100"}); got != "100" {
+		t.Fatalf("old event fallback = %s, want 100", got)
+	}
+}
+
+func TestExistingContractOrderStatusComesFromOpeningArrival(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		any, all bool
+		want     string
+	}{
+		{"nothing arrived", false, false, poOrdered},
+		{"part arrived", true, false, poPartial},
+		{"everything arrived", true, true, poReceived},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := existingContractOrderStatus(tc.any, tc.all); got != tc.want {
+				t.Fatalf("status = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestApplyContractProcurementSnapshotAssignsOriginalBuyerAndFinalTerms(t *testing.T) {
 	event := ContractEffective{ContractNo: "CT-1", QuotationID: 91, QuotationNo: "QT-1"}
 	line := ContractLine{LineNo: 1, ProductName: "冷轧钢卷", UomCode: "TON"}

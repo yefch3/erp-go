@@ -73,6 +73,227 @@ func (q *Queries) AddContractItem(ctx context.Context, arg AddContractItemParams
 	return err
 }
 
+const addExistingContractCorrection = `-- name: AddExistingContractCorrection :exec
+INSERT INTO contract_corrections (
+    tenant_id, contract_id, contract_version_id, before_data, after_data,
+    corrected_by, corrected_by_name
+) VALUES (
+    $1::bigint, $2::bigint,
+    $3::bigint, $4::jsonb,
+    $5::jsonb, $6::bigint,
+    $7::text
+)
+`
+
+type AddExistingContractCorrectionParams struct {
+	TenantID          int64
+	ContractID        int64
+	ContractVersionID int64
+	BeforeData        []byte
+	AfterData         []byte
+	CorrectedBy       int64
+	CorrectedByName   string
+}
+
+func (q *Queries) AddExistingContractCorrection(ctx context.Context, arg AddExistingContractCorrectionParams) error {
+	_, err := q.db.Exec(ctx, addExistingContractCorrection,
+		arg.TenantID,
+		arg.ContractID,
+		arg.ContractVersionID,
+		arg.BeforeData,
+		arg.AfterData,
+		arg.CorrectedBy,
+		arg.CorrectedByName,
+	)
+	return err
+}
+
+const addExistingContractItem = `-- name: AddExistingContractItem :one
+INSERT INTO contract_items (
+    tenant_id, contract_version_id, line_no, product_id, sku_id, product_code,
+    product_name, spec, qty, uom_id, uom_code, unit_price, amount, hs_code, remark,
+    opening_procured_qty, opening_arrived_qty, opening_shipped_qty
+) VALUES (
+    $1::bigint,
+    $2::bigint,
+    $3::int,
+    $4::bigint,
+    $5::bigint,
+    $6::text,
+    $7::text,
+    $8::text,
+    $9::text::numeric,
+    $10::bigint,
+    $11::text,
+    $12::text::numeric,
+    $13::text::numeric,
+    $14::text,
+    $15::text,
+    $16::text::numeric,
+    $17::text::numeric,
+    $18::text::numeric
+)
+RETURNING id
+`
+
+type AddExistingContractItemParams struct {
+	TenantID           int64
+	ContractVersionID  int64
+	LineNo             int32
+	ProductID          int64
+	SkuID              *int64
+	ProductCode        string
+	ProductName        string
+	Spec               string
+	Qty                string
+	UomID              int64
+	UomCode            string
+	UnitPrice          string
+	Amount             string
+	HsCode             string
+	Remark             string
+	OpeningProcuredQty string
+	OpeningArrivedQty  string
+	OpeningShippedQty  string
+}
+
+func (q *Queries) AddExistingContractItem(ctx context.Context, arg AddExistingContractItemParams) (int64, error) {
+	row := q.db.QueryRow(ctx, addExistingContractItem,
+		arg.TenantID,
+		arg.ContractVersionID,
+		arg.LineNo,
+		arg.ProductID,
+		arg.SkuID,
+		arg.ProductCode,
+		arg.ProductName,
+		arg.Spec,
+		arg.Qty,
+		arg.UomID,
+		arg.UomCode,
+		arg.UnitPrice,
+		arg.Amount,
+		arg.HsCode,
+		arg.Remark,
+		arg.OpeningProcuredQty,
+		arg.OpeningArrivedQty,
+		arg.OpeningShippedQty,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const clearContractFilePending = `-- name: ClearContractFilePending :exec
+UPDATE contracts SET file_pending = FALSE, updated_at = now()
+WHERE tenant_id = $1::bigint AND id = $2::bigint
+`
+
+type ClearContractFilePendingParams struct {
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) ClearContractFilePending(ctx context.Context, arg ClearContractFilePendingParams) error {
+	_, err := q.db.Exec(ctx, clearContractFilePending, arg.TenantID, arg.ID)
+	return err
+}
+
+const correctExistingContractHeader = `-- name: CorrectExistingContractHeader :execrows
+UPDATE contracts SET
+    external_contract_no = $1::text,
+    signed_at = $2::text::date,
+    effective_at = $3::text::date,
+    receivable_due_date = nullif($4::text, '')::date,
+    updated_at = now(), updated_by = $5::bigint
+WHERE tenant_id = $6::bigint
+  AND id = $7::bigint
+  AND entry_source = 'EXISTING_CONTRACT'
+  AND status <> 'CANCELLED'
+`
+
+type CorrectExistingContractHeaderParams struct {
+	ExternalContractNo string
+	SignedDate         string
+	EffectiveDate      string
+	ReceivableDueDate  string
+	UpdatedBy          int64
+	TenantID           int64
+	ID                 int64
+}
+
+func (q *Queries) CorrectExistingContractHeader(ctx context.Context, arg CorrectExistingContractHeaderParams) (int64, error) {
+	result, err := q.db.Exec(ctx, correctExistingContractHeader,
+		arg.ExternalContractNo,
+		arg.SignedDate,
+		arg.EffectiveDate,
+		arg.ReceivableDueDate,
+		arg.UpdatedBy,
+		arg.TenantID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const correctExistingContractVersion = `-- name: CorrectExistingContractVersion :execrows
+WITH correction_enabled AS (
+    SELECT set_config('erp.contract_correction', 'on', true)
+)
+UPDATE contract_versions SET
+    buyer_name = $1::text,
+    buyer_address = $2::text,
+    seller_name = $3::text,
+    seller_address = $4::text,
+    incoterm = $5::text,
+    port_of_loading = $6::text,
+    port_of_discharge = $7::text,
+    payment_method = $8::text,
+    delivery_date = nullif($9::text, '')::date,
+    terms = $10::text
+FROM correction_enabled
+WHERE tenant_id = $11::bigint
+  AND id = $12::bigint
+  AND status = 'APPROVED'
+`
+
+type CorrectExistingContractVersionParams struct {
+	BuyerName       string
+	BuyerAddress    string
+	SellerName      string
+	SellerAddress   string
+	Incoterm        string
+	PortOfLoading   string
+	PortOfDischarge string
+	PaymentMethod   string
+	DeliveryDate    string
+	Terms           string
+	TenantID        int64
+	ID              int64
+}
+
+func (q *Queries) CorrectExistingContractVersion(ctx context.Context, arg CorrectExistingContractVersionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, correctExistingContractVersion,
+		arg.BuyerName,
+		arg.BuyerAddress,
+		arg.SellerName,
+		arg.SellerAddress,
+		arg.Incoterm,
+		arg.PortOfLoading,
+		arg.PortOfDischarge,
+		arg.PaymentMethod,
+		arg.DeliveryDate,
+		arg.Terms,
+		arg.TenantID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countSignedAttachments = `-- name: CountSignedAttachments :one
 SELECT count(*) FROM contract_attachments
 WHERE tenant_id = $1 AND contract_version_id = $2
@@ -295,6 +516,71 @@ func (q *Queries) CreateContractVersion(ctx context.Context, arg CreateContractV
 	return id, err
 }
 
+const createExistingContract = `-- name: CreateExistingContract :one
+INSERT INTO contracts (
+    tenant_id, contract_no, external_contract_no, entry_source,
+    customer_id, customer_name, status, sales_employee_id, sales_employee,
+    receivable_due_date, opening_received_amount, file_pending,
+    signed_at, effective_at, signature_source, created_by, updated_by
+) VALUES (
+    $1::bigint,
+    $2::text,
+    $3::text,
+    'EXISTING_CONTRACT',
+    $4::bigint,
+    $5::text,
+    'EXECUTING',
+    $6::bigint,
+    $7::text,
+    nullif($8::text, '')::date,
+    $9::text::numeric,
+    $10::bool,
+    $11::text::date,
+    $12::text::date,
+    'MANUAL',
+    $13::bigint,
+    $13::bigint
+)
+RETURNING id
+`
+
+type CreateExistingContractParams struct {
+	TenantID              int64
+	ContractNo            string
+	ExternalContractNo    string
+	CustomerID            int64
+	CustomerName          string
+	SalesEmployeeID       int64
+	SalesEmployee         string
+	ReceivableDueDate     string
+	OpeningReceivedAmount string
+	FilePending           bool
+	SignedDate            string
+	EffectiveDate         string
+	CreatedBy             int64
+}
+
+func (q *Queries) CreateExistingContract(ctx context.Context, arg CreateExistingContractParams) (int64, error) {
+	row := q.db.QueryRow(ctx, createExistingContract,
+		arg.TenantID,
+		arg.ContractNo,
+		arg.ExternalContractNo,
+		arg.CustomerID,
+		arg.CustomerName,
+		arg.SalesEmployeeID,
+		arg.SalesEmployee,
+		arg.ReceivableDueDate,
+		arg.OpeningReceivedAmount,
+		arg.FilePending,
+		arg.SignedDate,
+		arg.EffectiveDate,
+		arg.CreatedBy,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const deleteContractAttachment = `-- name: DeleteContractAttachment :execrows
 DELETE FROM contract_attachments WHERE tenant_id = $1 AND id = $2
 `
@@ -326,6 +612,29 @@ func (q *Queries) DeleteContractItems(ctx context.Context, arg DeleteContractIte
 	return err
 }
 
+const finalizeExistingContract = `-- name: FinalizeExistingContract :exec
+UPDATE contracts SET current_version_id = $1::bigint,
+    updated_at = now(), updated_by = $2::bigint
+WHERE tenant_id = $3::bigint AND id = $4::bigint
+`
+
+type FinalizeExistingContractParams struct {
+	VersionID int64
+	UpdatedBy int64
+	TenantID  int64
+	ID        int64
+}
+
+func (q *Queries) FinalizeExistingContract(ctx context.Context, arg FinalizeExistingContractParams) error {
+	_, err := q.db.Exec(ctx, finalizeExistingContract,
+		arg.VersionID,
+		arg.UpdatedBy,
+		arg.TenantID,
+		arg.ID,
+	)
+	return err
+}
+
 const getContract = `-- name: GetContract :one
 SELECT
     id, tenant_id, contract_no, coalesce(quotation_id, 0)::bigint AS quotation_id, quote_no,
@@ -335,7 +644,8 @@ SELECT
     signature_source, signed_at, effective_at, completed_at, created_at,
     coalesce(condition_confirmed_at::text,'')::text AS condition_confirmed_at,
     condition_confirmation_note, coalesce(condition_confirmed_by,0)::bigint AS condition_confirmed_by,
-    condition_confirmed_by_name
+    condition_confirmed_by_name, external_contract_no, entry_source,
+    opening_received_amount::text AS opening_received_amount, file_pending
 FROM contracts
 WHERE tenant_id = $1 AND id = $2
 `
@@ -368,6 +678,10 @@ type GetContractRow struct {
 	ConditionConfirmationNote string
 	ConditionConfirmedBy      int64
 	ConditionConfirmedByName  string
+	ExternalContractNo        string
+	EntrySource               string
+	OpeningReceivedAmount     string
+	FilePending               bool
 }
 
 func (q *Queries) GetContract(ctx context.Context, arg GetContractParams) (GetContractRow, error) {
@@ -396,6 +710,10 @@ func (q *Queries) GetContract(ctx context.Context, arg GetContractParams) (GetCo
 		&i.ConditionConfirmationNote,
 		&i.ConditionConfirmedBy,
 		&i.ConditionConfirmedByName,
+		&i.ExternalContractNo,
+		&i.EntrySource,
+		&i.OpeningReceivedAmount,
+		&i.FilePending,
 	)
 	return i, err
 }
@@ -629,11 +947,20 @@ SELECT
     (c.receivable_due_date IS NULL)::bool            AS due_unset,
     coalesce(v.currency, '')::text                   AS currency,
     coalesce(v.total_amount, 0)::text                AS total_amount,
-    coalesce(s.shipped_amount, 0)::text              AS shipped_amount,
-    coalesce(r.received, 0)::text                    AS received_amount,
+    (coalesce(o.opening_shipped_amount, 0) + coalesce(s.shipped_amount, 0))::text AS shipped_amount,
+    (CASE WHEN c.opening_received_amount = 0 THEN coalesce(r.received, 0)
+          ELSE c.opening_received_amount + coalesce(r.received, 0) END)::text AS received_amount,
     count(*) OVER () AS total
 FROM contracts c
 JOIN contract_versions v ON v.id = c.current_version_id
+LEFT JOIN LATERAL (
+    -- Imported contracts may already have shipped goods. Value the opening
+    -- snapshot without fabricating historical outbound documents.
+    SELECT round(sum(i.opening_shipped_qty * i.unit_price), 2) AS opening_shipped_amount
+    FROM contract_items i
+    WHERE i.tenant_id = c.tenant_id
+      AND i.contract_version_id = c.current_version_id
+) o ON true
 LEFT JOIN LATERAL (
     -- 已出运折成金额，按产品配对——和 ShipmentProgressOf 同一个口径，理由
     -- 也一样：改版会重写明细行的 id，按行配对会让改版前发出去的货凭空消失。
@@ -690,6 +1017,7 @@ WHERE c.tenant_id = $1::bigint
   AND ($5::bigint = 0 OR c.customer_id = $5::bigint)
   AND ($6::text = ''
        OR c.contract_no ILIKE '%' || $6::text || '%'
+       OR c.external_contract_no ILIKE '%' || $6::text || '%'
        OR c.customer_name ILIKE '%' || $6::text || '%')
 ORDER BY c.effective_at DESC NULLS LAST, c.id DESC
 LIMIT $8::int OFFSET $7::int
@@ -787,7 +1115,10 @@ const listContractItems = `-- name: ListContractItems :many
 SELECT
     id, contract_version_id, line_no, product_id, sku_id, product_code, product_name,
     spec, qty::text AS qty, uom_id, uom_code,
-    unit_price::text AS unit_price, amount::text AS amount, hs_code, remark
+    unit_price::text AS unit_price, amount::text AS amount, hs_code, remark,
+    opening_procured_qty::text AS opening_procured_qty,
+    opening_arrived_qty::text AS opening_arrived_qty,
+    opening_shipped_qty::text AS opening_shipped_qty
 FROM contract_items
 WHERE tenant_id = $1 AND contract_version_id = $2
 ORDER BY line_no
@@ -799,21 +1130,24 @@ type ListContractItemsParams struct {
 }
 
 type ListContractItemsRow struct {
-	ID                int64
-	ContractVersionID int64
-	LineNo            int32
-	ProductID         int64
-	SkuID             *int64
-	ProductCode       string
-	ProductName       string
-	Spec              string
-	Qty               string
-	UomID             int64
-	UomCode           string
-	UnitPrice         string
-	Amount            string
-	HsCode            string
-	Remark            string
+	ID                 int64
+	ContractVersionID  int64
+	LineNo             int32
+	ProductID          int64
+	SkuID              *int64
+	ProductCode        string
+	ProductName        string
+	Spec               string
+	Qty                string
+	UomID              int64
+	UomCode            string
+	UnitPrice          string
+	Amount             string
+	HsCode             string
+	Remark             string
+	OpeningProcuredQty string
+	OpeningArrivedQty  string
+	OpeningShippedQty  string
 }
 
 func (q *Queries) ListContractItems(ctx context.Context, arg ListContractItemsParams) ([]ListContractItemsRow, error) {
@@ -841,6 +1175,9 @@ func (q *Queries) ListContractItems(ctx context.Context, arg ListContractItemsPa
 			&i.Amount,
 			&i.HsCode,
 			&i.Remark,
+			&i.OpeningProcuredQty,
+			&i.OpeningArrivedQty,
+			&i.OpeningShippedQty,
 		); err != nil {
 			return nil, err
 		}
@@ -918,6 +1255,7 @@ const listContracts = `-- name: ListContracts :many
 SELECT
     c.id, c.contract_no, c.quote_no, c.customer_id, c.customer_name, c.status,
     c.sales_employee_id, c.sales_employee, c.signed_at, c.effective_at, c.created_at,
+    c.external_contract_no, c.entry_source,
     coalesce(c.receivable_due_date::text, '')::text AS receivable_due_date,
     coalesce(v.currency, '')::text AS currency,
     coalesce(v.total_amount, 0)::text AS total_amount,
@@ -945,6 +1283,7 @@ WHERE c.tenant_id = $1::bigint
   AND ($6::bigint = 0 OR c.customer_id = $6::bigint)
   AND ($7::text = ''
        OR c.contract_no ILIKE '%' || $7::text || '%'
+       OR c.external_contract_no ILIKE '%' || $7::text || '%'
        OR c.customer_name ILIKE '%' || $7::text || '%')
 ORDER BY c.id DESC
 LIMIT $9::int OFFSET $8::int
@@ -963,23 +1302,25 @@ type ListContractsParams struct {
 }
 
 type ListContractsRow struct {
-	ID                int64
-	ContractNo        string
-	QuoteNo           string
-	CustomerID        int64
-	CustomerName      string
-	Status            string
-	SalesEmployeeID   int64
-	SalesEmployee     string
-	SignedAt          pgtype.Timestamptz
-	EffectiveAt       pgtype.Timestamptz
-	CreatedAt         pgtype.Timestamptz
-	ReceivableDueDate string
-	Currency          string
-	TotalAmount       string
-	BaseAmount        string
-	VersionNo         int32
-	Total             int64
+	ID                 int64
+	ContractNo         string
+	QuoteNo            string
+	CustomerID         int64
+	CustomerName       string
+	Status             string
+	SalesEmployeeID    int64
+	SalesEmployee      string
+	SignedAt           pgtype.Timestamptz
+	EffectiveAt        pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	ExternalContractNo string
+	EntrySource        string
+	ReceivableDueDate  string
+	Currency           string
+	TotalAmount        string
+	BaseAmount         string
+	VersionNo          int32
+	Total              int64
 }
 
 // The newest version, not the in-force one: a list must still show a contract
@@ -1015,6 +1356,8 @@ func (q *Queries) ListContracts(ctx context.Context, arg ListContractsParams) ([
 			&i.SignedAt,
 			&i.EffectiveAt,
 			&i.CreatedAt,
+			&i.ExternalContractNo,
+			&i.EntrySource,
 			&i.ReceivableDueDate,
 			&i.Currency,
 			&i.TotalAmount,
@@ -1461,7 +1804,7 @@ func (q *Queries) SetContractVersionStatus(ctx context.Context, arg SetContractV
 
 const shipmentProgressOf = `-- name: ShipmentProgressOf :many
 WITH current_items AS (
-    SELECT i.id, i.tenant_id, i.contract_version_id, i.line_no, i.product_id, i.sku_id, i.product_code, i.product_name, i.spec, i.qty, i.uom_id, i.uom_code, i.unit_price, i.amount, i.hs_code, i.remark,
+    SELECT i.id, i.tenant_id, i.contract_version_id, i.line_no, i.product_id, i.sku_id, i.product_code, i.product_name, i.spec, i.qty, i.uom_id, i.uom_code, i.unit_price, i.amount, i.hs_code, i.remark, i.opening_procured_qty, i.opening_arrived_qty, i.opening_shipped_qty,
            CASE WHEN i.product_id = 0 THEN i.product_name ELSE '' END AS fallback_product_name,
            CASE WHEN i.product_id = 0 THEN i.uom_code ELSE '' END AS fallback_uom_code
     FROM contract_items i
@@ -1489,8 +1832,8 @@ SELECT
     max(i.product_name)::text   AS product_name,
     max(i.uom_code)::text       AS uom_code,
     sum(i.qty)::text            AS qty,
-    coalesce(max(sh.shipped), 0)::text AS shipped_qty,
-    (sum(i.qty) - coalesce(max(sh.shipped), 0))::text AS remaining_qty
+    (sum(i.opening_shipped_qty) + coalesce(max(sh.shipped), 0))::text AS shipped_qty,
+    (sum(i.qty) - sum(i.opening_shipped_qty) - coalesce(max(sh.shipped), 0))::text AS remaining_qty
 FROM current_items i
 LEFT JOIN shipped sh
   ON sh.product_id = i.product_id

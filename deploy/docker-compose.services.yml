@@ -382,7 +382,7 @@ services:
     # reverse proxy holding 443, with TRUST_PROXY_HEADERS turned on so the
     # per-source login limit meters the caller rather than the proxy.
     ports:
-      - "8080:8080"
+      - "${GATEWAY_PORT:-8080}:8080"
     networks: [infra]
     depends_on: [iam, masterdata, fx, approval, product, export, shipping, mail]
     restart: unless-stopped

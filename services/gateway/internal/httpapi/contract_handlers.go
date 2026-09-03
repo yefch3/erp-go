@@ -77,6 +77,23 @@ func (s *Server) createDirectContract(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+func (s *Server) importExistingContract(w http.ResponseWriter, r *http.Request) {
+	req := &exv1.ImportExistingContractRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	if _, err := s.resolveActiveCustomer(r.Context(), req.GetCustomerId()); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	resp, err := s.Contracts.ImportExistingContract(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) updateContract(w http.ResponseWriter, r *http.Request) {
 	req := &exv1.UpdateContractRequest{}
 	if !s.decodeBody(w, r, req) {

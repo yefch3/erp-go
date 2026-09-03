@@ -20,9 +20,10 @@ func (s *scopeStub) VisibleEmployees(_ context.Context, employeeID int64, _ stri
 	return Visibility{EmployeeIDs: []int64{employeeID}, ScopeType: "SELF"}, nil
 }
 
-// What this pins down: with a scope in force, another buyer's order neither
-// lists nor resolves — and "does not resolve" means not-found, because
-// confirming that the order exists is itself information.
+// What this pins down: anyone with purchase-order read permission shares the
+// tenant-wide order list, while mutations remain fenced by buyer scope. A
+// cross-buyer mutation still answers not-found because confirming that the
+// order exists is itself information.
 func TestPurchaseOrderDataScope(t *testing.T) {
 	dsn := os.Getenv("PROCUREMENT_TEST_DSN")
 	if dsn == "" {
@@ -60,10 +61,17 @@ func TestPurchaseOrderDataScope(t *testing.T) {
 	opA := Operator{ID: buyerA, Name: "A"}
 	opB := Operator{ID: buyerB, Name: "B"}
 
-	// SELF sees one; ALL sees both.
+	// The purchase-order list is shared tenant-wide, even when IAM reports SELF.
 	rows, total, err := svc.ListOrders(ctx, tenantID, OrderFilter{}, 1, 20, opA)
-	if err != nil || total != 1 || len(rows) != 1 || rows[0].ID != orderA {
-		t.Fatalf("SELF list: want exactly own order, got total=%d rows=%d (%v)", total, len(rows), err)
+	if err != nil || total != 2 || len(rows) != 2 {
+		t.Fatalf("shared list: want 2 orders, got total=%d rows=%d (%v)", total, len(rows), err)
+	}
+	seen := map[int64]bool{}
+	for _, row := range rows {
+		seen[row.ID] = true
+	}
+	if !seen[orderA] || !seen[orderB] {
+		t.Fatalf("shared list: want order ids %d and %d, got %+v", orderA, orderB, seen)
 	}
 	if _, total, err = svc.ListOrders(ctx, tenantID, OrderFilter{}, 1, 20, opB); err != nil || total != 2 {
 		t.Fatalf("ALL list: want 2, got %d (%v)", total, err)

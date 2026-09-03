@@ -75,8 +75,9 @@ SELECT
     c.id, c.contract_no, c.customer_name,
     coalesce(v.currency, '')::text        AS currency,
     coalesce(v.total_amount, 0)::text     AS total_amount,
-    coalesce(r.received, 0)::text         AS received_amount,
-    (coalesce(v.total_amount, 0) - coalesce(r.received, 0))::text AS open_amount
+    (CASE WHEN c.opening_received_amount = 0 THEN coalesce(r.received, 0)
+          ELSE c.opening_received_amount + coalesce(r.received, 0) END)::text AS received_amount,
+    (coalesce(v.total_amount, 0) - c.opening_received_amount - coalesce(r.received, 0))::text AS open_amount
 FROM contracts c
 LEFT JOIN contract_versions v ON v.id = c.current_version_id
 LEFT JOIN (
@@ -119,8 +120,9 @@ SELECT
     c.id, c.contract_no, c.customer_id, c.customer_name,
     v.currency,
     v.total_amount::text              AS total_amount,
-    coalesce(r.received, 0)::text     AS received_amount,
-    (v.total_amount - coalesce(r.received, 0))::text AS open_amount
+    (CASE WHEN c.opening_received_amount = 0 THEN coalesce(r.received, 0)
+          ELSE c.opening_received_amount + coalesce(r.received, 0) END)::text AS received_amount,
+    (v.total_amount - c.opening_received_amount - coalesce(r.received, 0))::text AS open_amount
 FROM contracts c
 JOIN contract_versions v ON v.id = c.current_version_id
 LEFT JOIN (
@@ -138,8 +140,8 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   -- "did this one get paid".
   -- 两种候选：核销要「还欠钱的」，退款要「收过钱的」（退的上限就是已收）。
   AND (CASE WHEN sqlc.arg(for_refund)::bool
-        THEN coalesce(r.received, 0) > 0
-        ELSE (v.total_amount - coalesce(r.received, 0)) > 0
+        THEN (c.opening_received_amount + coalesce(r.received, 0)) > 0
+        ELSE (v.total_amount - c.opening_received_amount - coalesce(r.received, 0)) > 0
        END OR sqlc.arg(keyword)::text <> '')
   -- 结清的合同默认也不出现——它已经宣布「不用再核了」。钱真的又来了，
   -- 搜合同号还能找到它（和上面那条「搜索能到已收满的」同一个道理）。
@@ -151,14 +153,14 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND (sqlc.arg(keyword)::text = ''
        OR c.contract_no   ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR c.customer_name ILIKE '%' || sqlc.arg(keyword)::text || '%')
-ORDER BY (v.total_amount - coalesce(r.received, 0)) DESC, c.id DESC
+ORDER BY (v.total_amount - c.opening_received_amount - coalesce(r.received, 0)) DESC, c.id DESC
 LIMIT sqlc.arg(row_limit)::int;
 
 -- name: FindContractsByNo :many
 -- Resolves contract numbers scraped out of a remittance line into real
 -- contracts, so the queue can pre-fill a suggestion.
 SELECT c.id, c.contract_no, c.customer_name, v.currency,
-       (v.total_amount - coalesce(r.received, 0))::text AS open_amount
+       (v.total_amount - c.opening_received_amount - coalesce(r.received, 0))::text AS open_amount
 FROM contracts c
 JOIN contract_versions v ON v.id = c.current_version_id
 LEFT JOIN (
@@ -230,8 +232,9 @@ SELECT
     coalesce(c.effective_at::date::text, '')::text  AS effective_date,
     coalesce(v.currency, '')::text                  AS currency,
     coalesce(v.total_amount, 0)::text               AS total_amount,
-    coalesce(r.received, 0)::text                   AS received_amount,
-    (coalesce(v.total_amount, 0) - coalesce(r.received, 0))::text AS open_amount,
+    (CASE WHEN c.opening_received_amount = 0 THEN coalesce(r.received, 0)
+          ELSE c.opening_received_amount + coalesce(r.received, 0) END)::text AS received_amount,
+    (coalesce(v.total_amount, 0) - c.opening_received_amount - coalesce(r.received, 0))::text AS open_amount,
     coalesce((current_date - c.receivable_due_date), 0)::int       AS overdue_days,
     (c.receivable_due_date IS NULL)::bool                          AS due_unset,
     coalesce(cl.category, '')::text        AS closed_category,
@@ -298,7 +301,7 @@ INSERT INTO receivable_reminders (
 SELECT
     c.tenant_id, c.id, c.contract_no, c.customer_name, c.sales_employee_id,
     d.reminder_type, d.period_no, c.receivable_due_date,
-    (v.total_amount - coalesce(r.received, 0)), v.currency,
+    (v.total_amount - c.opening_received_amount - coalesce(r.received, 0)), v.currency,
     -- 提醒点进去落在「客户对账」的待核销那一档。老行里存的是历史地址
     -- （/receivable-due、/receivable-cases），那几条都保留成带 query 的
     -- 重定向，所以旧提醒照样点得开。
@@ -329,7 +332,7 @@ CROSS JOIN LATERAL (
             ELSE c.contract_no || ' 还有 ' || (c.receivable_due_date - current_date) || ' 天到期'
         END AS title,
         c.customer_name || ' · 未收 ' || v.currency || ' ' ||
-            to_char(v.total_amount - coalesce(r.received, 0), 'FM999999999990.00') ||
+            to_char(v.total_amount - c.opening_received_amount - coalesce(r.received, 0), 'FM999999999990.00') ||
             ' · 应收日 ' || c.receivable_due_date AS content
 ) d
 -- 跨租户扫描：worker 没有租户上下文，新租户也不该需要额外配置才被覆盖。
@@ -350,7 +353,7 @@ WHERE c.status IN ('EFFECTIVE', 'EXECUTING')
   -- 的，别再"改一致"**：清单页回答「财务确认过没有」（看有没有活着的结清），
   -- 这里回答「客户还欠钱吗」。钱收齐了但还没人点确认的合同，留在待核销页
   -- 上等人处理是对的，给销售发一封「应收逾期」催客户要钱就是错的。
-  AND (v.total_amount - coalesce(r.received, 0)) > 0.01
+  AND (v.total_amount - c.opening_received_amount - coalesce(r.received, 0)) > 0.01
   -- 只在进入视野之后才提醒：30 天以外的不打扰。
   AND c.receivable_due_date - current_date <= 30
 ON CONFLICT (tenant_id, contract_id, recipient_employee_id, reminder_type, period_no, due_date)

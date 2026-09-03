@@ -53,6 +53,12 @@ func (dueProductStub) GetMany(_ context.Context, ids []int64) (map[int64]Product
 
 type dueRateStub struct{}
 
+type dueDirectoryStub struct{}
+
+func (dueDirectoryStub) Get(_ context.Context, employeeID int64) (Employee, error) {
+	return Employee{ID: employeeID, Name: "Original Buyer", Status: "ACTIVE"}, nil
+}
+
 func (dueRateStub) Latest(context.Context, string) (Rate, error) {
 	return Rate{Rate: decimal.RequireFromString("7.1"), At: time.Now(), Source: "test", Base: "CNY"}, nil
 }
@@ -82,7 +88,7 @@ func TestTheDueDateSomebodyTypedActuallyReachesTheDatabase(t *testing.T) {
 	defer pool.Close()
 	tenantID := time.Now().UnixNano()
 	defer func() {
-		for _, tbl := range []string{"contract_items", "contract_versions", "contracts"} {
+		for _, tbl := range []string{"contract_corrections", "contract_items", "contract_versions", "contracts"} {
 			_, _ = pool.Exec(ctx, `DELETE FROM `+tbl+` WHERE tenant_id=$1`, tenantID)
 		}
 	}()
@@ -150,5 +156,75 @@ func TestTheDueDateSomebodyTypedActuallyReachesTheDatabase(t *testing.T) {
 		Items: []ItemInput{{ProductID: 1, ProductName: "x", UomCode: "MT", Qty: "1", UnitPrice: "1"}},
 	}, op); err == nil {
 		t.Error("月份越界的日期应该被服务层拒掉")
+	}
+}
+
+func TestImportExistingContractAcceptsBlankOpeningAmountAndManualProduct(t *testing.T) {
+	dsn := os.Getenv("EXPORT_TEST_DSN")
+	if dsn == "" {
+		t.Skip("EXPORT_TEST_DSN not set; skipping DB-backed existing contract test")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenantID := time.Now().UnixNano()
+	defer func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM outbox_events WHERE tenant_id=$1`, tenantID)
+		for _, tbl := range []string{"contract_items", "contract_versions", "contracts"} {
+			_, _ = pool.Exec(ctx, `DELETE FROM `+tbl+` WHERE tenant_id=$1`, tenantID)
+		}
+	}()
+
+	svc := New(pool, Deps{
+		Customers: dueCustomerStub{}, Products: dueProductStub{}, Rates: dueRateStub{}, Numbering: &dueNumberingStub{},
+		Directory: dueDirectoryStub{},
+	})
+	today := dbToday(ctx, t, pool).Format("2006-01-02")
+	view, err := svc.ImportExistingContract(ctx, tenantID, ExistingContractInput{
+		CustomerID: 7, Currency: "USD", SignedDate: today, EffectiveDate: today, FilePending: true,
+		ProcurementEmployeeID: 23, SupplierID: 11,
+		Terms: Terms{PortOfLoading: "宁波", PortOfDischarge: "客户指定内河港", DeliveryDate: today},
+		Items: []ItemInput{{ProductName: "线下定制合金板", UomCode: "KG", Qty: "10", UnitPrice: "2", PurchaseUnitPrice: "1.2"}},
+		// OpeningReceivedAmount intentionally blank: this is the normal
+		// "not started" form and the regression case for the former panic.
+	}, Operator{ID: 5, Name: "Sales"})
+	if err != nil {
+		t.Fatalf("录入已有合同：%v", err)
+	}
+	if view.Contract.Status != "EXECUTING" || len(view.Items) != 1 {
+		t.Fatalf("unexpected imported contract: %+v", view)
+	}
+	if view.Items[0].ProductID != 0 || view.Items[0].ProductName != "线下定制合金板" || view.Items[0].UomCode != "KG" {
+		t.Fatalf("manual product snapshot was not stored: %+v", view.Items[0])
+	}
+	if view.Version.PortOfLoading != "宁波" || view.Version.PortOfDischarge != "客户指定内河港" {
+		t.Fatalf("port snapshots were not stored: %+v", view.Version)
+	}
+
+	corrected, err := svc.UpdateContract(ctx, tenantID, view.Contract.ID, Terms{
+		BuyerName: view.Version.BuyerName, BuyerAddress: view.Version.BuyerAddress,
+		SellerName: view.Version.SellerName, SellerAddress: view.Version.SellerAddress,
+		Incoterm: "CIF", PaymentMethod: "T/T", PortOfLoading: "上海",
+		PortOfDischarge: "客户新指定港", DeliveryDate: today, ReceivableDueDate: today,
+		Text: "补录后的线下合同条款",
+	}, nil, ContractEditMeta{ExternalContractNo: "OFFLINE-" + strconv.FormatInt(tenantID, 10), SignedDate: today, EffectiveDate: today}, Operator{ID: 5, Name: "Sales"})
+	if err != nil {
+		t.Fatalf("纠正已有合同：%v", err)
+	}
+	if corrected.Contract.Status != "EXECUTING" || corrected.Version.ID != view.Version.ID {
+		t.Fatalf("correction changed execution/version identity: %+v", corrected)
+	}
+	if corrected.Contract.ExternalContractNo == "" || corrected.Version.Incoterm != "CIF" || corrected.Version.PortOfDischarge != "客户新指定港" {
+		t.Fatalf("correction was not stored: %+v", corrected)
+	}
+	var corrections int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM contract_corrections WHERE tenant_id=$1 AND contract_id=$2`, tenantID, view.Contract.ID).Scan(&corrections); err != nil {
+		t.Fatal(err)
+	}
+	if corrections != 1 {
+		t.Fatalf("correction audit rows = %d, want 1", corrections)
 	}
 }

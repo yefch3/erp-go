@@ -34,6 +34,10 @@ type Contract struct {
 	ConditionConfirmationNote string
 	ConditionConfirmedBy      *int64
 	ConditionConfirmedByName  string
+	ExternalContractNo        string
+	EntrySource               string
+	OpeningReceivedAmount     pgtype.Numeric
+	FilePending               bool
 }
 
 type ContractAttachment struct {
@@ -52,6 +56,18 @@ type ContractAttachment struct {
 	Source            string
 }
 
+type ContractCorrection struct {
+	ID                int64
+	TenantID          int64
+	ContractID        int64
+	ContractVersionID int64
+	BeforeData        []byte
+	AfterData         []byte
+	CorrectedBy       int64
+	CorrectedByName   string
+	CorrectedAt       pgtype.Timestamptz
+}
+
 type ContractDueChange struct {
 	ID            int64
 	TenantID      int64
@@ -65,22 +81,25 @@ type ContractDueChange struct {
 }
 
 type ContractItem struct {
-	ID                int64
-	TenantID          int64
-	ContractVersionID int64
-	LineNo            int32
-	ProductID         int64
-	SkuID             *int64
-	ProductCode       string
-	ProductName       string
-	Spec              string
-	Qty               pgtype.Numeric
-	UomID             int64
-	UomCode           string
-	UnitPrice         pgtype.Numeric
-	Amount            pgtype.Numeric
-	HsCode            string
-	Remark            string
+	ID                 int64
+	TenantID           int64
+	ContractVersionID  int64
+	LineNo             int32
+	ProductID          int64
+	SkuID              *int64
+	ProductCode        string
+	ProductName        string
+	Spec               string
+	Qty                pgtype.Numeric
+	UomID              int64
+	UomCode            string
+	UnitPrice          pgtype.Numeric
+	Amount             pgtype.Numeric
+	HsCode             string
+	Remark             string
+	OpeningProcuredQty pgtype.Numeric
+	OpeningArrivedQty  pgtype.Numeric
+	OpeningShippedQty  pgtype.Numeric
 }
 
 type ContractReceivableClosure struct {

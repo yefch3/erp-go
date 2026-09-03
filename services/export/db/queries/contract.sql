@@ -26,6 +26,33 @@ INSERT INTO contracts (
 )
 RETURNING id;
 
+-- name: CreateExistingContract :one
+INSERT INTO contracts (
+    tenant_id, contract_no, external_contract_no, entry_source,
+    customer_id, customer_name, status, sales_employee_id, sales_employee,
+    receivable_due_date, opening_received_amount, file_pending,
+    signed_at, effective_at, signature_source, created_by, updated_by
+) VALUES (
+    sqlc.arg(tenant_id)::bigint,
+    sqlc.arg(contract_no)::text,
+    sqlc.arg(external_contract_no)::text,
+    'EXISTING_CONTRACT',
+    sqlc.arg(customer_id)::bigint,
+    sqlc.arg(customer_name)::text,
+    'EXECUTING',
+    sqlc.arg(sales_employee_id)::bigint,
+    sqlc.arg(sales_employee)::text,
+    nullif(sqlc.arg(receivable_due_date)::text, '')::date,
+    sqlc.arg(opening_received_amount)::text::numeric,
+    sqlc.arg(file_pending)::bool,
+    sqlc.arg(signed_date)::text::date,
+    sqlc.arg(effective_date)::text::date,
+    'MANUAL',
+    sqlc.arg(created_by)::bigint,
+    sqlc.arg(created_by)::bigint
+)
+RETURNING id;
+
 -- name: GetContract :one
 SELECT
     id, tenant_id, contract_no, coalesce(quotation_id, 0)::bigint AS quotation_id, quote_no,
@@ -35,7 +62,8 @@ SELECT
     signature_source, signed_at, effective_at, completed_at, created_at,
     coalesce(condition_confirmed_at::text,'')::text AS condition_confirmed_at,
     condition_confirmation_note, coalesce(condition_confirmed_by,0)::bigint AS condition_confirmed_by,
-    condition_confirmed_by_name
+    condition_confirmed_by_name, external_contract_no, entry_source,
+    opening_received_amount::text AS opening_received_amount, file_pending
 FROM contracts
 WHERE tenant_id = $1 AND id = $2;
 
@@ -49,6 +77,7 @@ WHERE tenant_id=sqlc.arg(tenant_id) AND id=sqlc.arg(id);
 SELECT
     c.id, c.contract_no, c.quote_no, c.customer_id, c.customer_name, c.status,
     c.sales_employee_id, c.sales_employee, c.signed_at, c.effective_at, c.created_at,
+    c.external_contract_no, c.entry_source,
     coalesce(c.receivable_due_date::text, '')::text AS receivable_due_date,
     coalesce(v.currency, '')::text AS currency,
     coalesce(v.total_amount, 0)::text AS total_amount,
@@ -78,6 +107,7 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND (sqlc.arg(customer_id)::bigint = 0 OR c.customer_id = sqlc.arg(customer_id)::bigint)
   AND (sqlc.arg(keyword)::text = ''
        OR c.contract_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
+       OR c.external_contract_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR c.customer_name ILIKE '%' || sqlc.arg(keyword)::text || '%')
 ORDER BY c.id DESC
 LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
@@ -168,6 +198,49 @@ UPDATE contract_versions SET
     base_amount = sqlc.arg(base_amount)::text::numeric
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint AND status = 'DRAFT';
 
+-- name: CorrectExistingContractHeader :execrows
+UPDATE contracts SET
+    external_contract_no = sqlc.arg(external_contract_no)::text,
+    signed_at = sqlc.arg(signed_date)::text::date,
+    effective_at = sqlc.arg(effective_date)::text::date,
+    receivable_due_date = nullif(sqlc.arg(receivable_due_date)::text, '')::date,
+    updated_at = now(), updated_by = sqlc.arg(updated_by)::bigint
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+  AND entry_source = 'EXISTING_CONTRACT'
+  AND status <> 'CANCELLED';
+
+-- name: CorrectExistingContractVersion :execrows
+WITH correction_enabled AS (
+    SELECT set_config('erp.contract_correction', 'on', true)
+)
+UPDATE contract_versions SET
+    buyer_name = sqlc.arg(buyer_name)::text,
+    buyer_address = sqlc.arg(buyer_address)::text,
+    seller_name = sqlc.arg(seller_name)::text,
+    seller_address = sqlc.arg(seller_address)::text,
+    incoterm = sqlc.arg(incoterm)::text,
+    port_of_loading = sqlc.arg(port_of_loading)::text,
+    port_of_discharge = sqlc.arg(port_of_discharge)::text,
+    payment_method = sqlc.arg(payment_method)::text,
+    delivery_date = nullif(sqlc.arg(delivery_date)::text, '')::date,
+    terms = sqlc.arg(terms)::text
+FROM correction_enabled
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+  AND status = 'APPROVED';
+
+-- name: AddExistingContractCorrection :exec
+INSERT INTO contract_corrections (
+    tenant_id, contract_id, contract_version_id, before_data, after_data,
+    corrected_by, corrected_by_name
+) VALUES (
+    sqlc.arg(tenant_id)::bigint, sqlc.arg(contract_id)::bigint,
+    sqlc.arg(contract_version_id)::bigint, sqlc.arg(before_data)::jsonb,
+    sqlc.arg(after_data)::jsonb, sqlc.arg(corrected_by)::bigint,
+    sqlc.arg(corrected_by_name)::text
+);
+
 -- name: GetContractVersion :one
 SELECT
     id, contract_id, version_no, buyer_name, buyer_address, seller_name, seller_address,
@@ -233,11 +306,50 @@ INSERT INTO contract_items (
     sqlc.arg(remark)::text
 );
 
+-- name: AddExistingContractItem :one
+INSERT INTO contract_items (
+    tenant_id, contract_version_id, line_no, product_id, sku_id, product_code,
+    product_name, spec, qty, uom_id, uom_code, unit_price, amount, hs_code, remark,
+    opening_procured_qty, opening_arrived_qty, opening_shipped_qty
+) VALUES (
+    sqlc.arg(tenant_id)::bigint,
+    sqlc.arg(contract_version_id)::bigint,
+    sqlc.arg(line_no)::int,
+    sqlc.arg(product_id)::bigint,
+    sqlc.narg(sku_id)::bigint,
+    sqlc.arg(product_code)::text,
+    sqlc.arg(product_name)::text,
+    sqlc.arg(spec)::text,
+    sqlc.arg(qty)::text::numeric,
+    sqlc.arg(uom_id)::bigint,
+    sqlc.arg(uom_code)::text,
+    sqlc.arg(unit_price)::text::numeric,
+    sqlc.arg(amount)::text::numeric,
+    sqlc.arg(hs_code)::text,
+    sqlc.arg(remark)::text,
+    sqlc.arg(opening_procured_qty)::text::numeric,
+    sqlc.arg(opening_arrived_qty)::text::numeric,
+    sqlc.arg(opening_shipped_qty)::text::numeric
+)
+RETURNING id;
+
+-- name: FinalizeExistingContract :exec
+UPDATE contracts SET current_version_id = sqlc.arg(version_id)::bigint,
+    updated_at = now(), updated_by = sqlc.arg(updated_by)::bigint
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: ClearContractFilePending :exec
+UPDATE contracts SET file_pending = FALSE, updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
 -- name: ListContractItems :many
 SELECT
     id, contract_version_id, line_no, product_id, sku_id, product_code, product_name,
     spec, qty::text AS qty, uom_id, uom_code,
-    unit_price::text AS unit_price, amount::text AS amount, hs_code, remark
+    unit_price::text AS unit_price, amount::text AS amount, hs_code, remark,
+    opening_procured_qty::text AS opening_procured_qty,
+    opening_arrived_qty::text AS opening_arrived_qty,
+    opening_shipped_qty::text AS opening_shipped_qty
 FROM contract_items
 WHERE tenant_id = $1 AND contract_version_id = $2
 ORDER BY line_no;
@@ -399,8 +511,8 @@ SELECT
     max(i.product_name)::text   AS product_name,
     max(i.uom_code)::text       AS uom_code,
     sum(i.qty)::text            AS qty,
-    coalesce(max(sh.shipped), 0)::text AS shipped_qty,
-    (sum(i.qty) - coalesce(max(sh.shipped), 0))::text AS remaining_qty
+    (sum(i.opening_shipped_qty) + coalesce(max(sh.shipped), 0))::text AS shipped_qty,
+    (sum(i.qty) - sum(i.opening_shipped_qty) - coalesce(max(sh.shipped), 0))::text AS remaining_qty
 FROM current_items i
 LEFT JOIN shipped sh
   ON sh.product_id = i.product_id
@@ -438,11 +550,20 @@ SELECT
     (c.receivable_due_date IS NULL)::bool            AS due_unset,
     coalesce(v.currency, '')::text                   AS currency,
     coalesce(v.total_amount, 0)::text                AS total_amount,
-    coalesce(s.shipped_amount, 0)::text              AS shipped_amount,
-    coalesce(r.received, 0)::text                    AS received_amount,
+    (coalesce(o.opening_shipped_amount, 0) + coalesce(s.shipped_amount, 0))::text AS shipped_amount,
+    (CASE WHEN c.opening_received_amount = 0 THEN coalesce(r.received, 0)
+          ELSE c.opening_received_amount + coalesce(r.received, 0) END)::text AS received_amount,
     count(*) OVER () AS total
 FROM contracts c
 JOIN contract_versions v ON v.id = c.current_version_id
+LEFT JOIN LATERAL (
+    -- Imported contracts may already have shipped goods. Value the opening
+    -- snapshot without fabricating historical outbound documents.
+    SELECT round(sum(i.opening_shipped_qty * i.unit_price), 2) AS opening_shipped_amount
+    FROM contract_items i
+    WHERE i.tenant_id = c.tenant_id
+      AND i.contract_version_id = c.current_version_id
+) o ON true
 LEFT JOIN LATERAL (
     -- 已出运折成金额，按产品配对——和 ShipmentProgressOf 同一个口径，理由
     -- 也一样：改版会重写明细行的 id，按行配对会让改版前发出去的货凭空消失。
@@ -499,6 +620,7 @@ WHERE c.tenant_id = sqlc.arg(tenant_id)::bigint
   AND (sqlc.arg(customer_id)::bigint = 0 OR c.customer_id = sqlc.arg(customer_id)::bigint)
   AND (sqlc.arg(keyword)::text = ''
        OR c.contract_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
+       OR c.external_contract_no ILIKE '%' || sqlc.arg(keyword)::text || '%'
        OR c.customer_name ILIKE '%' || sqlc.arg(keyword)::text || '%')
 ORDER BY c.effective_at DESC NULLS LAST, c.id DESC
 LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;

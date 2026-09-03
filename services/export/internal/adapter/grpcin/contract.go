@@ -36,6 +36,7 @@ func (h *ContractHandler) ListContracts(ctx context.Context, req *exv1.ListContr
 			SalesEmployeeId: r.SalesEmployeeID, SalesEmployee: r.SalesEmployee,
 			SignedAt: ts(r.SignedAt), EffectiveAt: ts(r.EffectiveAt),
 			CreatedAt: ts(r.CreatedAt), ReceivableDueDate: r.ReceivableDueDate,
+			ExternalContractNo: r.ExternalContractNo, EntrySource: r.EntrySource,
 			Currency:    r.Currency,
 			TotalAmount: r.TotalAmount, BaseAmount: r.BaseAmount, VersionNo: r.VersionNo,
 		})
@@ -119,9 +120,27 @@ func (h *ContractHandler) CreateContract(ctx context.Context, req *exv1.CreateCo
 	}, nil
 }
 
+func (h *ContractHandler) ImportExistingContract(ctx context.Context, req *exv1.ImportExistingContractRequest) (*exv1.ImportExistingContractResponse, error) {
+	view, err := h.svc.ImportExistingContract(ctx, grpcx.TenantID(ctx), app.ExistingContractInput{
+		CustomerID: req.GetCustomerId(), Currency: req.GetCurrency(), Terms: termsFromProto(req.GetTerms()),
+		Items: itemsFromProto(req.GetItems()), ExternalContractNo: req.GetExternalContractNo(),
+		SalesEmployeeID: req.GetSalesEmployeeId(), SignedDate: req.GetSignedDate(), EffectiveDate: req.GetEffectiveDate(),
+		OpeningReceivedAmount: req.GetOpeningReceivedAmount(), FilePending: req.GetFilePending(),
+		ProcurementEmployeeID: req.GetProcurementEmployeeId(), SupplierID: req.GetSupplierId(),
+	}, operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.ImportExistingContractResponse{
+		Contract: contractToProto(view), Version: versionToProto(view.Version), Items: contractItemsToProto(view.Items),
+	}, nil
+}
+
 func (h *ContractHandler) UpdateContract(ctx context.Context, req *exv1.UpdateContractRequest) (*exv1.UpdateContractResponse, error) {
 	view, err := h.svc.UpdateContract(ctx, grpcx.TenantID(ctx), req.GetId(),
-		termsFromProto(req.GetTerms()), itemsFromProto(req.GetItems()), operator(ctx))
+		termsFromProto(req.GetTerms()), itemsFromProto(req.GetItems()), app.ContractEditMeta{
+			ExternalContractNo: req.GetExternalContractNo(), SignedDate: req.GetSignedDate(), EffectiveDate: req.GetEffectiveDate(),
+		}, operator(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -195,6 +214,8 @@ func contractToProto(view app.ContractView) *exv1.Contract {
 		SignatureSource:      c.SignatureSource,
 		ConditionConfirmedAt: c.ConditionConfirmedAt, ConditionConfirmationNote: c.ConditionConfirmationNote,
 		ConditionConfirmedBy: c.ConditionConfirmedBy, ConditionConfirmedByName: c.ConditionConfirmedByName,
+		ExternalContractNo: c.ExternalContractNo, EntrySource: c.EntrySource,
+		OpeningReceivedAmount: c.OpeningReceivedAmount, FilePending: c.FilePending,
 		SignedAt: ts(c.SignedAt), EffectiveAt: ts(c.EffectiveAt), CompletedAt: ts(c.CompletedAt),
 		CreatedAt: ts(c.CreatedAt), ReceivableDueDate: c.ReceivableDueDate,
 		Currency: view.Version.Currency, TotalAmount: view.Version.TotalAmount,
@@ -244,6 +265,8 @@ func contractItemsToProto(items []store.ListContractItemsRow) []*exv1.ContractIt
 			ProductCode: i.ProductCode, ProductName: i.ProductName, Spec: i.Spec,
 			Qty: i.Qty, UomId: i.UomID, UomCode: i.UomCode,
 			UnitPrice: i.UnitPrice, Amount: i.Amount, HsCode: i.HsCode, Remark: i.Remark,
+			OpeningProcuredQty: i.OpeningProcuredQty, OpeningArrivedQty: i.OpeningArrivedQty,
+			OpeningShippedQty: i.OpeningShippedQty,
 		})
 	}
 	return out

@@ -50,6 +50,21 @@ func TestUnknownErrorsDoNotLeak(t *testing.T) {
 	}
 }
 
+func TestTypedNilBusinessErrorDoesNotPanic(t *testing.T) {
+	var businessErr *Error
+	var err error = businessErr
+
+	if got := status.Code(ToStatus(err)); got != codes.Internal {
+		t.Fatalf("typed nil mapped to %s, want Internal", got)
+	}
+	if got := CodeFromError(err); got != "" {
+		t.Fatalf("typed nil returned business code %q", got)
+	}
+	if got := errors.Unwrap(err); got != nil {
+		t.Fatalf("typed nil unwrapped to %v, want nil", got)
+	}
+}
+
 // A kind that maps to Internal is a kind nobody wired up: the caller sees a
 // 500 and a generic message instead of whatever the service actually said.
 // Adding one is easy to do and invisible until somebody hits that path, so

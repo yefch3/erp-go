@@ -137,6 +137,13 @@ message ItemInput {
   string product_name = 8;
   string uom_code = 9;
   string product_code = 10;
+  // Work already completed before an existing contract was entered into the
+  // ERP. Ordinary quotations and contract changes leave these as zero.
+  string opening_procured_qty = 11;
+  string opening_arrived_qty = 12;
+  string opening_shipped_qty = 13;
+  // Supplier-side unit price on a paper contract imported after ordering.
+  string purchase_unit_price = 14;
 }
 
 message ListQuotationsRequest {
