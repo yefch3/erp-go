@@ -140,6 +140,9 @@ service EmailService {
   // 把一个办公文档附件转成 PDF 并返回可以直接显示的地址。第二次调用命中
   // 缓存，不再转换。
   rpc PreviewInboundAttachment(PreviewInboundAttachmentRequest) returns (PreviewInboundAttachmentResponse);
+  // 把一封信的所有附件打成一个压缩包。响应里带着整个包的字节，所以网关那边
+  // 的 gRPC 接收上限要跟着 MaxZipBytes 一起放宽。
+  rpc DownloadInboundAttachments(DownloadInboundAttachmentsRequest) returns (DownloadInboundAttachmentsResponse);
   // One conversation, both directions, oldest first. Owner-scoped: the
   // caller sees only their own half of the world.
   rpc GetMailThread(GetMailThreadRequest) returns (GetMailThreadResponse);
@@ -386,6 +389,17 @@ message PreviewInboundAttachmentRequest {
 message PreviewInboundAttachmentResponse {
   // 签过名的、有时限的地址，内容是转好的 PDF。
   string preview_url = 1;
+}
+
+message DownloadInboundAttachmentsRequest {
+  int64 inbound_id = 1;
+}
+
+message DownloadInboundAttachmentsResponse {
+  bytes content = 1;
+  // 下载下来叫什么。用邮件主题，不用邮件号：桌面上一堆 zip 里，
+  // 「附件-17312.zip」谁也认不出来。
+  string file_name = 2;
 }
 
 message GetMailThreadRequest {

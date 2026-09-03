@@ -1751,6 +1751,7 @@ export default {
     bccHint: 'Quienes están en CCO reciben el correo; nadie en Para o CC ve que lo recibieron.',
     previewFile: 'Vista previa',
     converting: 'Convirtiendo…',
+    downloadAll: 'Descargar todo ({n})',
     sortBar: {
       label: 'Ordenar',
       from: 'Remitente',

@@ -984,3 +984,24 @@ func (s *Server) previewInboundAttachment(w http.ResponseWriter, r *http.Request
 	}
 	s.writeProto(w, resp)
 }
+
+// downloadInboundAttachments 把一封信的附件打成压缩包送下去。
+//
+// 响应体照搬 exportMailThread 的写法：同样是「一个文件，直接存盘，不缓存、
+// 不猜类型」。GET 而不是 POST，因为它不改任何状态，浏览器也能直接当链接用。
+func (s *Server) downloadInboundAttachments(w http.ResponseWriter, r *http.Request) {
+	inboundID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	resp, err := s.Emails.DownloadInboundAttachments(r.Context(),
+		&mailv1.DownloadInboundAttachmentsRequest{InboundId: inboundID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", attachmentDisposition(resp.GetFileName()))
+	w.Header().Set("Content-Length", strconv.Itoa(len(resp.GetContent())))
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(resp.GetContent())
+}

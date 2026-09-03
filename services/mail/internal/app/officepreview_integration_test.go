@@ -51,6 +51,12 @@ func (f *previewStore) PresignGetInline(_ context.Context, key, ct string) (stri
 	return "https://files.example/" + key + "?ct=" + ct, nil
 }
 
+// 嵌进来的 Files 是个 nil 接口：**没实现的方法一旦被调到就是空指针崩溃**，
+// 不是编译错误。GetInbound 会走 signDownloads，所以这个也得有。
+func (f *previewStore) PresignGet(_ context.Context, key, saveAs string) (string, error) {
+	return "https://files.example/" + key + "?as=" + saveAs, nil
+}
+
 // 记账的假转换器：调了几次、每次拿到什么名字。
 type countingConverter struct {
 	calls atomic.Int32
