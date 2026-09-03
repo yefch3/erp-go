@@ -34,14 +34,32 @@ const refetchBatch = 8
 // disowning: a row must be known to have no original before it is worth
 // going back to the host for one. Safe to run repeatedly — recovery fills
 // raw_key, and the query stops offering the row.
+//
+// One tenant at a time. The SyncConfig main.go passes carries no tenant — the
+// service has served every company from one process since #216 — and this
+// pass used to query with whatever it held, which was 0: no rows, no log, a
+// silent no-op in production. See tenantsToRepair.
 func (s *Service) RunRawOriginalRefetch(ctx context.Context, cfg SyncConfig) {
 	cfg = cfg.withDefaults()
 	if s.mailbox == nil || s.files == nil {
 		return
 	}
-	rows, err := s.q.ListInboundMissingRaw(ctx, cfg.TenantID)
+	for _, tenantID := range s.tenantsToRepair(ctx, cfg) {
+		if ctx.Err() != nil {
+			return
+		}
+		s.refetchTenantOriginals(ctx, tenantID)
+	}
+}
+
+// refetchTenantOriginals goes back to the host for one company's lost
+// originals. Every return here ends this company only; the next one still
+// gets its turn.
+func (s *Service) refetchTenantOriginals(ctx context.Context, tenantID int64) {
+	rows, err := s.q.ListInboundMissingRaw(ctx, tenantID)
 	if err != nil {
-		s.log.Warn("raw refetch could not list the rows missing an original", "err", err)
+		s.log.Warn("raw refetch could not list the rows missing an original",
+			"tenant", tenantID, "err", err)
 		return
 	}
 	if len(rows) == 0 {
@@ -59,25 +77,26 @@ func (s *Service) RunRawOriginalRefetch(ctx context.Context, cfg SyncConfig) {
 		}
 		byAccount[r.AccountID] = append(byAccount[r.AccountID], r)
 	}
-	s.log.Info("raw refetch starting", "messages", len(rows), "mailboxes", len(accounts))
+	s.log.Info("raw refetch starting",
+		"tenant", tenantID, "messages", len(rows), "mailboxes", len(accounts))
 
 	recovered, gone, failed := 0, 0, 0
 	for _, accountID := range accounts {
 		if ctx.Err() != nil {
 			return
 		}
-		acct, err := s.ForAccount(ctx, cfg.TenantID, accountID)
+		acct, err := s.ForAccount(ctx, tenantID, accountID)
 		if err != nil {
 			s.log.Warn("raw refetch could not open a mailbox, leaving its rows for next time",
-				"account", accountID, "rows", len(byAccount[accountID]), "err", err)
+				"tenant", tenantID, "account", accountID, "rows", len(byAccount[accountID]), "err", err)
 			failed += len(byAccount[accountID])
 			continue
 		}
-		r, g, f := s.refetchForAccount(ctx, cfg.TenantID, acct, byAccount[accountID])
+		r, g, f := s.refetchForAccount(ctx, tenantID, acct, byAccount[accountID])
 		recovered, gone, failed = recovered+r, gone+g, failed+f
 	}
 	s.log.Info("raw refetch finished",
-		"recovered", recovered, "no longer on host", gone, "failed", failed)
+		"tenant", tenantID, "recovered", recovered, "no longer on host", gone, "failed", failed)
 }
 
 // refetchForAccount recovers one mailbox's lost originals. Every row lands
