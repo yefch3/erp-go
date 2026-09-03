@@ -980,21 +980,15 @@ type OrderFilter struct {
 }
 
 func (s *Service) ListOrders(ctx context.Context, tenantID int64, f OrderFilter, page, size int32, operators ...Operator) ([]store.ListPurchaseOrdersRow, int64, error) {
-	// Variadic for the same reason shipping's ListSchedules is: internal
-	// callers and old tests carry no operator and keep the unscoped view,
-	// while every request that represents a person passes one and is fenced.
-	var op Operator
-	if len(operators) > 0 {
-		op = operators[0]
-	}
-	visible, err := s.visibleOrdersTo(ctx, op)
-	if err != nil {
-		return nil, 0, err
-	}
+	// Purchase orders are the shared execution ledger of the procurement
+	// team. Anyone who passed the endpoint's procurement:order:read permission
+	// sees every order in the tenant; buyer_id remains ownership information,
+	// not a list-visibility fence. Write actions keep their own authorization.
+	_ = operators
 	page, size = normalizePage(page, size)
 	rows, err := s.q.ListPurchaseOrders(ctx, store.ListPurchaseOrdersParams{
 		TenantID: tenantID, Status: f.Status, Keyword: f.Keyword, Unsent: f.Unsent,
-		ScopeAll: visible.All, BuyerIds: visible.EmployeeIDs,
+		ScopeAll: true,
 		RowLimit: size, RowOffset: (page - 1) * size,
 	})
 	if err != nil {

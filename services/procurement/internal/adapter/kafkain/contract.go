@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log/slog"
 
+	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/pkg/kafkax"
 	"github.com/sgao19/erp-go/services/procurement/internal/app"
 )
@@ -20,6 +21,11 @@ const (
 // contract. Inventory allocation is intentionally not consulted.
 func ContractEvents(svc *app.Service, log *slog.Logger) kafkax.Handler {
 	return func(ctx context.Context, e kafkax.Envelope, claim kafkax.Claim) error {
+		// Kafka work has no logged-in browser user, but every downstream gRPC
+		// call still needs a signed tenant identity. Without this, supplier and
+		// numbering lookups are rejected as unauthenticated and the contract is
+		// parked without a purchase order.
+		ctx = grpcx.WithOperator(ctx, grpcx.Operator{TenantID: e.TenantID, Name: "procurement contract consumer"})
 		if e.EventType == eventQuotationRejected {
 			var rejected app.QuotationRejected
 			if err := json.Unmarshal(e.Payload, &rejected); err != nil {

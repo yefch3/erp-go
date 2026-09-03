@@ -83,10 +83,26 @@ func TestBodiesTheBrowserActuallySendsDecode(t *testing.T) {
 		"items": []
 	}`, &exv1.CreateContractRequest{})
 
+	// Existing signed contract takeover: opening quantities are a historical
+	// snapshot and must survive the JSON -> proto boundary.
+	mustDecode(t, `{
+		"customerId": "1", "salesEmployeeId": "9", "externalContractNo": "OLD-2026-18",
+		"currency": "USD", "signedDate": "2026-08-01", "effectiveDate": "2026-08-02",
+		"openingReceivedAmount": "1200.00", "filePending": true,
+		"terms": {"incoterm": "FOB", "paymentMethod": "T/T", "deliveryDate": "2026-10-01", "receivableDueDate": "2026-11-30"},
+		"items": [{"productId": "0", "productName": "Non-catalog steel coil", "uomCode": "TON", "spec": "1mm", "qty": "100", "unitPrice": "50", "openingProcuredQty": "65", "openingArrivedQty": "40", "openingShippedQty": "20"}]
+	}`, &exv1.ImportExistingContractRequest{})
+
 	// 同一页的「保存条款」（saveTerms）走 UpdateContract，terms 同一个形状。
 	mustDecode(t, `{
 		"terms": {"deliveryDate": "2026-10-01", "receivableDueDate": "", "terms": ""},
 		"items": []
+	}`, &exv1.UpdateContractRequest{})
+	// The same endpoint corrects header omissions on an imported existing
+	// contract. These three fields sit outside version terms.
+	mustDecode(t, `{
+		"externalContractNo": "PAPER-2026-01", "signedDate": "2026-08-01",
+		"effectiveDate": "2026-08-02", "terms": {"incoterm": "CIF"}
 	}`, &exv1.UpdateContractRequest{})
 
 	// frontend/src/pages/PurchaseOrdersPage.vue —— 建单和改草稿共用一个

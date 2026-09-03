@@ -29,8 +29,9 @@ var presetRoles = []presetRole{
 		Description: "维护本人客户询盘、客户报价和出口合同",
 		Permissions: []string{
 			"export:contract:read", "export:contract:write",
+			"iam:employee:read", "masterdata:supplier:read",
 			"export:quotation:read", "export:quotation:write",
-			"masterdata:customer:read", "product:product:read",
+			"masterdata:customer:read", "masterdata:port:read", "product:product:read",
 			"sales:inquiry:read", "sales:inquiry:submit", "sales:inquiry:write",
 			"sales:procurement-progress:read",
 		},
@@ -43,8 +44,9 @@ var presetRoles = []presetRole{
 		Description: "管理团队客户询盘、客户报价、合同审批和负责人转移",
 		Permissions: []string{
 			"export:contract:approve", "export:contract:read", "export:contract:write",
+			"iam:employee:read", "masterdata:supplier:read",
 			"export:ownership:transfer", "export:quotation:read", "export:quotation:write",
-			"masterdata:customer:read", "product:product:read",
+			"masterdata:customer:read", "masterdata:port:read", "product:product:read",
 			"sales:inquiry:read", "sales:inquiry:submit", "sales:inquiry:write",
 			"sales:procurement-progress:read",
 		},

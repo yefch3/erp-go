@@ -354,6 +354,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("export:contract:read")).Get("/api/contracts/{id}", s.getContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts", s.createContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/direct", s.createDirectContract)
+		r.With(s.perm("export:contract:write")).Post("/api/contracts/existing", s.importExistingContract)
 		r.With(s.perm("export:contract:write")).Put("/api/contracts/{id}", s.updateContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/submit", s.submitContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/change", s.changeContract)

@@ -126,6 +126,11 @@ func (s *Service) RegisterContractFile(ctx context.Context, tenantID, contractID
 		}
 		return FileView{}, err
 	}
+	if kind == "SIGNED" && view.Contract.EntrySource == "EXISTING_CONTRACT" {
+		if err := s.q.ClearContractFilePending(ctx, store.ClearContractFilePendingParams{TenantID: tenantID, ID: contractID}); err != nil {
+			return FileView{}, err
+		}
+	}
 	row, err := s.q.GetContractAttachment(ctx, store.GetContractAttachmentParams{TenantID: tenantID, ID: id})
 	if err != nil {
 		return FileView{}, err

@@ -124,3 +124,99 @@ func TestEffectiveEventCarriesTheLines(t *testing.T) {
 		t.Errorf("header not copied: %+v", e)
 	}
 }
+
+func TestEffectiveEventOnlyRequestsUnprocuredOpeningBalance(t *testing.T) {
+	v := view("EXECUTING", "APPROVED", "2026-09-30", 0)
+	v.Items = []store.ListContractItemsRow{{
+		ID: 11, LineNo: 1, ProductID: 5, ProductName: "冷轧钢卷",
+		Qty: "100", OpeningProcuredQty: "65", UomID: 1, UomCode: "TON",
+		UnitPrice: "5", Amount: "500.00",
+	}}
+	e := effectiveEvent(v)
+	if got := e.Items[0].RequiredQty; got != "35" {
+		t.Fatalf("required qty = %s, want 35", got)
+	}
+}
+
+func TestCarryOpeningSnapshotPreservesHistory(t *testing.T) {
+	old := []store.ListContractItemsRow{{
+		LineNo: 1, ProductID: 5, Spec: "1mm", Qty: "100",
+		OpeningProcuredQty: "65", OpeningArrivedQty: "40", OpeningShippedQty: "20",
+	}}
+	lines, err := carryOpeningSnapshot(old, []store.ListContractItemsRow{{
+		LineNo: 1, ProductID: 5, Spec: "1mm", Qty: "120",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines[0].OpeningProcuredQty != "65" || lines[0].OpeningArrivedQty != "40" || lines[0].OpeningShippedQty != "20" {
+		t.Fatalf("opening history was not preserved: %+v", lines[0])
+	}
+}
+
+func TestCarryOpeningSnapshotRejectsRewritingHistory(t *testing.T) {
+	old := []store.ListContractItemsRow{{
+		LineNo: 1, ProductID: 5, Spec: "1mm", Qty: "100", OpeningShippedQty: "20",
+	}}
+	if _, err := carryOpeningSnapshot(old, []store.ListContractItemsRow{{
+		LineNo: 1, ProductID: 5, Spec: "1mm", Qty: "10",
+	}}); apierr.CodeFromError(err) != "EX_CHANGE_BELOW_OPENING" {
+		t.Fatalf("wrong error for quantity below history: %v", err)
+	}
+	if _, err := carryOpeningSnapshot(old, nil); apierr.CodeFromError(err) != "EX_CHANGE_REMOVES_OPENING_LINE" {
+		t.Fatalf("wrong error for removing historical line: %v", err)
+	}
+}
+
+func TestPriceExistingLinesAcceptsManualProductSnapshot(t *testing.T) {
+	svc := &Service{}
+	lines, total, err := svc.priceExistingLines(context.Background(), []ItemInput{{
+		ProductName: "  Contract-only alloy  ", UomCode: " ton ", Spec: "A-17",
+		Qty: "12.5", UnitPrice: "8",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 1 || lines[0].product.ID != 0 {
+		t.Fatalf("manual snapshot was not retained: %+v", lines)
+	}
+	if lines[0].product.Name != "Contract-only alloy" || lines[0].product.UomCode != "TON" {
+		t.Fatalf("manual snapshot was not normalized: %+v", lines[0].product)
+	}
+	if total.StringFixed(2) != "100.00" {
+		t.Fatalf("total = %s, want 100.00", total)
+	}
+}
+
+func TestPriceExistingLinesRequiresManualProductUnit(t *testing.T) {
+	svc := &Service{}
+	_, _, err := svc.priceExistingLines(context.Background(), []ItemInput{{
+		ProductName: "Contract-only alloy", Qty: "1", UnitPrice: "1",
+	}})
+	if apierr.CodeFromError(err) != "EX_UOM_REQUIRED" {
+		t.Fatalf("error = %v, want EX_UOM_REQUIRED", err)
+	}
+}
+
+func TestOpeningDecimalBlankIsNotAnError(t *testing.T) {
+	value, err := openingDecimal("", "EX_OPENING_RECEIVED_INVALID", "已收款金额")
+	if err != nil {
+		t.Fatalf("blank opening amount returned an error: %v", err)
+	}
+	if !value.IsZero() {
+		t.Fatalf("blank opening amount = %s, want zero", value)
+	}
+}
+
+func TestCarryOpeningSnapshotDistinguishesManualProducts(t *testing.T) {
+	old := []store.ListContractItemsRow{{
+		LineNo: 1, ProductID: 0, ProductName: "Alloy A", UomCode: "TON", Spec: "1mm",
+		Qty: "10", OpeningShippedQty: "2",
+	}}
+	_, err := carryOpeningSnapshot(old, []store.ListContractItemsRow{{
+		LineNo: 1, ProductID: 0, ProductName: "Alloy B", UomCode: "TON", Spec: "1mm", Qty: "10",
+	}})
+	if apierr.CodeFromError(err) != "EX_CHANGE_REMOVES_OPENING_LINE" {
+		t.Fatalf("error = %v, want EX_CHANGE_REMOVES_OPENING_LINE", err)
+	}
+}

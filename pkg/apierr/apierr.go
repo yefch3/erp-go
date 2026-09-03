@@ -45,13 +45,21 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
+	if e == nil {
+		return "<nil api error>"
+	}
 	if e.err != nil {
 		return fmt.Sprintf("%s: %s: %v", e.Code, e.Msg, e.err)
 	}
 	return fmt.Sprintf("%s: %s", e.Code, e.Msg)
 }
 
-func (e *Error) Unwrap() error { return e.err }
+func (e *Error) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
 
 // Wrap attaches an underlying cause while keeping the business identity.
 func (e *Error) Wrap(err error) *Error {
@@ -102,7 +110,7 @@ func ToStatus(err error) error {
 		return nil
 	}
 	var e *Error
-	if !errors.As(err, &e) {
+	if !errors.As(err, &e) || e == nil {
 		return status.Error(codes.Internal, "internal error")
 	}
 	st := status.New(kindToGRPC[e.Kind], e.Msg)
@@ -118,7 +126,7 @@ func ToStatus(err error) error {
 // application service. Returns "" for anything that is not a business error.
 func CodeFromError(err error) string {
 	var e *Error
-	if errors.As(err, &e) {
+	if errors.As(err, &e) && e != nil {
 		return e.Code
 	}
 	return ""

@@ -71,6 +71,10 @@ type ItemInput struct {
 	Qty                                        string
 	UnitPrice                                  string
 	Remark                                     string
+	OpeningProcuredQty                         string
+	OpeningArrivedQty                          string
+	OpeningShippedQty                          string
+	PurchaseUnitPrice                          string
 }
 
 type QuotationShipmentInput struct {

@@ -62,6 +62,12 @@ func TestMultiMailboxRoutesAreAllRegistered(t *testing.T) {
 	}
 }
 
+func TestExistingContractTakeoverRouteIsRegistered(t *testing.T) {
+	if !routeSet(t)["POST /api/contracts/existing"] {
+		t.Fatal("录入已有合同的地址没有注册")
+	}
+}
+
 // 流水删除那一组。少一条，页面上「删除」或「恢复」点了没反应——而且是
 // 静默的：前端拿到 404，catch 里只当成一次失败。
 func TestBankTransactionDeleteRoutesAreRegistered(t *testing.T) {

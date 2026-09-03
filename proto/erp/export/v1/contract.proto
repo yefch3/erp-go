@@ -29,7 +29,12 @@ service ContractService {
   // signed paper uploaded as an attachment. Lines are still required: nothing
   // downstream can read a PDF.
   rpc CreateContract(CreateContractRequest) returns (CreateContractResponse);
-  // Edit the draft version in place. Refused once the version is submitted.
+  // Import a contract already signed outside the ERP and start only the work
+  // that remains at the hand-over point.
+  rpc ImportExistingContract(ImportExistingContractRequest) returns (ImportExistingContractResponse);
+  // Edit a draft, or correct the non-financial header/terms of a manually
+  // imported existing contract. Executed quantities and priced lines remain
+  // immutable once execution has started.
   rpc UpdateContract(UpdateContractRequest) returns (UpdateContractResponse);
   // Hand the current draft version to the approval engine.
   rpc SubmitContract(SubmitContractRequest) returns (SubmitContractResponse);
@@ -179,6 +184,9 @@ message ContractItem {
   string amount = 12;
   string hs_code = 13;
   string remark = 14;
+  string opening_procured_qty = 15;
+  string opening_arrived_qty = 16;
+  string opening_shipped_qty = 17;
 }
 
 // ContractVersion is one immutable set of terms.
@@ -242,6 +250,10 @@ message Contract {
   string condition_confirmation_note = 22;
   int64 condition_confirmed_by = 23;
   string condition_confirmed_by_name = 24;
+  string external_contract_no = 25;
+  string entry_source = 26;
+  string opening_received_amount = 27;
+  bool file_pending = 28;
 }
 
 // ContractTerms is the editable part of a version. Prices and lines come from
@@ -327,6 +339,27 @@ message CreateContractRequest {
   repeated ItemInput items = 4;
 }
 
+message ImportExistingContractRequest {
+  int64 customer_id = 1;
+  string currency = 2;
+  ContractTerms terms = 3;
+  repeated ItemInput items = 4;
+  string external_contract_no = 5;
+  int64 sales_employee_id = 6;
+  string signed_date = 7;
+  string effective_date = 8;
+  string opening_received_amount = 9;
+  bool file_pending = 10;
+  int64 procurement_employee_id = 11;
+  int64 supplier_id = 12;
+}
+
+message ImportExistingContractResponse {
+  Contract contract = 1;
+  ContractVersion version = 2;
+  repeated ContractItem items = 3;
+}
+
 message CreateContractResponse {
   Contract contract = 1;
   ContractVersion version = 2;
@@ -340,6 +373,10 @@ message UpdateContractRequest {
   // only the terms need not send them back. A rejected contract is fixed
   // through here: the lines are usually what the approver objected to.
   repeated ItemInput items = 3;
+  // Only used when correcting a manually imported existing contract.
+  string external_contract_no = 4;
+  string signed_date = 5;
+  string effective_date = 6;
 }
 
 message UpdateContractResponse {
