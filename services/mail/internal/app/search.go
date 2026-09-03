@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/sgao19/erp-go/services/mail/internal/store"
 )
@@ -105,73 +104,4 @@ func (s *Service) SearchMail(ctx context.Context, tenantID, ownerID, accountID i
 		page.NextCursor = encodeCursor(last.ReceivedAt, last.ID)
 	}
 	return page, nil
-}
-
-// searchBackfillBatch is how many bodies are pulled into memory at once. Small
-// because a body can be megabytes and there is no hurry: nothing waits on
-// this, and a mailbox that takes a minute to become searchable is not a
-// mailbox anybody is searching in that minute.
-const searchBackfillBatch = 200
-
-// BackfillSearchText fills the column for mail stored before it existed.
-//
-// In Go rather than in the migration, using the same function ingest uses.
-// The rows that need it are precisely the HTML-only ones, which is where a
-// regexp approximation of HTMLToText would differ from the real thing — and
-// two implementations of "what does this mail say" drifting apart is how a
-// search comes to find a message by one route and not another.
-//
-// Idempotent, and safe to run on every start: it selects only rows that are
-// still empty and have a body to derive from. Once done, the query matches
-// nothing and costs one indexless-but-tiny scan per boot.
-// 不再收 SyncConfig：批大小是本文件的常量，公司名单现查，配置一项都不读。
-func (s *Service) BackfillSearchText(ctx context.Context) {
-	// 每家公司各补一遍。一家补不动就换下一家——backfillTenant 里的每条 return
-	// 都只结束当前这家，不该让别家的旧邮件跟着搜不到。
-	for _, tenantID := range s.tenantsToServe(ctx) {
-		s.backfillTenantSearchText(ctx, tenantID)
-	}
-}
-
-func (s *Service) backfillTenantSearchText(ctx context.Context, tenantID int64) {
-	started := time.Now()
-	filled := 0
-	for {
-		rows, err := s.q.ListInboundNeedingSearchText(ctx, store.ListInboundNeedingSearchTextParams{
-			TenantID: tenantID, RowLimit: searchBackfillBatch,
-		})
-		if err != nil {
-			s.log.Warn("search backfill could not read a batch", "err", err)
-			return
-		}
-		if len(rows) == 0 {
-			break
-		}
-		before := filled
-		for _, r := range rows {
-			text := searchTextOf(r.Subject, r.FromName, r.FromEmail, r.ToEmail, r.BodyText, r.BodyHtml)
-			if text == "" {
-				// A body that renders to nothing — an image-only mail. Storing
-				// a single space stops this row coming back every batch and
-				// spinning the loop for ever; it is not searchable either way.
-				text = " "
-			}
-			if err := s.q.SetSearchText(ctx, store.SetSearchTextParams{
-				TenantID: tenantID, ID: r.ID, SearchText: text,
-			}); err != nil {
-				s.log.Warn("search backfill could not write a row", "id", r.ID, "err", err)
-				continue
-			}
-			filled++
-		}
-		if filled == before {
-			// Every row in the batch failed to write. Without this the outer
-			// loop would fetch the same batch for ever.
-			s.log.Warn("search backfill made no progress, stopping", "tenant", tenantID, "remaining", len(rows))
-			return
-		}
-	}
-	if filled > 0 {
-		s.log.Info("search text backfilled", "tenant", tenantID, "rows", filled, "took", time.Since(started).String())
-	}
 }

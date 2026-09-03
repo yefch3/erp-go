@@ -143,26 +143,6 @@ func (q *Queries) CountFolder(ctx context.Context, arg CountFolderParams) (int64
 	return column_1, err
 }
 
-const countInboundAttachmentWithCID = `-- name: CountInboundAttachmentWithCID :one
-SELECT count(*) FROM email_inbound_attachments
-WHERE tenant_id = $1::bigint
-  AND inbound_id = $2::bigint
-  AND content_id = $3::text
-`
-
-type CountInboundAttachmentWithCIDParams struct {
-	TenantID  int64
-	InboundID int64
-	ContentID string
-}
-
-func (q *Queries) CountInboundAttachmentWithCID(ctx context.Context, arg CountInboundAttachmentWithCIDParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countInboundAttachmentWithCID, arg.TenantID, arg.InboundID, arg.ContentID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const countInboundThreads = `-- name: CountInboundThreads :one
 SELECT count(DISTINCT (account_id, coalesce(nullif(thread_key, ''), 'm:' || id::text)))::bigint
 FROM email_inbound
@@ -1469,12 +1449,6 @@ type ListCustomerMailRow struct {
 	At           pgtype.Timestamptz
 }
 
-// Everything said to and by one customer, newest first.
-//
-// The question the whole link exists to answer. Both directions in one list:
-// what we sent lives in email_messages, what came back in email_inbound, and
-// a person asking "what have we said to ACME" means both halves — a list of
-// only our own side would read as if the customer never answered.
 func (q *Queries) ListCustomerMail(ctx context.Context, arg ListCustomerMailParams) ([]ListCustomerMailRow, error) {
 	rows, err := q.db.Query(ctx, listCustomerMail, arg.RowLimit, arg.TenantID, arg.CustomerID)
 	if err != nil {
@@ -1598,172 +1572,6 @@ func (q *Queries) ListInboundAttachments(ctx context.Context, arg ListInboundAtt
 			&i.FileKey,
 			&i.ContentID,
 		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listInboundEncodedFromName = `-- name: ListInboundEncodedFromName :many
-SELECT id, subject, from_name, from_email, to_email, to_all, body_text, body_html
-FROM email_inbound
-WHERE tenant_id = $1::bigint
-  AND from_name LIKE '%=?%?=%'
-  AND ($2::bigint IS NULL OR id < $2::bigint)
-ORDER BY id DESC
-LIMIT $3::int
-`
-
-type ListInboundEncodedFromNameParams struct {
-	TenantID int64
-	BeforeID *int64
-	RowLimit int32
-}
-
-type ListInboundEncodedFromNameRow struct {
-	ID        int64
-	Subject   string
-	FromName  string
-	FromEmail string
-	ToEmail   string
-	ToAll     string
-	BodyText  string
-	BodyHtml  string
-}
-
-// 发件人名字还是一串 =?utf-8?B?…?= 的行：QQ 邮箱把编码过的显示名套在引号里
-// 发出来，改解析之前 net/mail 原样保留了它。队列由问题本身定义，解开一行它
-// 就离开队列；解不开的靠 before_id 游标留在身后，不堵后面的。
-func (q *Queries) ListInboundEncodedFromName(ctx context.Context, arg ListInboundEncodedFromNameParams) ([]ListInboundEncodedFromNameRow, error) {
-	rows, err := q.db.Query(ctx, listInboundEncodedFromName, arg.TenantID, arg.BeforeID, arg.RowLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListInboundEncodedFromNameRow
-	for rows.Next() {
-		var i ListInboundEncodedFromNameRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Subject,
-			&i.FromName,
-			&i.FromEmail,
-			&i.ToEmail,
-			&i.ToAll,
-			&i.BodyText,
-			&i.BodyHtml,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listInboundNeedingSearchText = `-- name: ListInboundNeedingSearchText :many
-SELECT id, subject, from_name, from_email, to_email, body_text, body_html
-FROM email_inbound
-WHERE tenant_id = $1::bigint
-  AND search_text = ''
-  AND (body_text <> '' OR body_html <> '')
-ORDER BY id DESC
-LIMIT $2::int
-`
-
-type ListInboundNeedingSearchTextParams struct {
-	TenantID int64
-	RowLimit int32
-}
-
-type ListInboundNeedingSearchTextRow struct {
-	ID        int64
-	Subject   string
-	FromName  string
-	FromEmail string
-	ToEmail   string
-	BodyText  string
-	BodyHtml  string
-}
-
-// Rows stored before the column existed. Bounded per call so the backfill
-// runs in batches instead of loading every body at once.
-func (q *Queries) ListInboundNeedingSearchText(ctx context.Context, arg ListInboundNeedingSearchTextParams) ([]ListInboundNeedingSearchTextRow, error) {
-	rows, err := q.db.Query(ctx, listInboundNeedingSearchText, arg.TenantID, arg.RowLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListInboundNeedingSearchTextRow
-	for rows.Next() {
-		var i ListInboundNeedingSearchTextRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Subject,
-			&i.FromName,
-			&i.FromEmail,
-			&i.ToEmail,
-			&i.BodyText,
-			&i.BodyHtml,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listInboundNeedingToAll = `-- name: ListInboundNeedingToAll :many
-SELECT id, raw_key, to_email
-FROM email_inbound
-WHERE tenant_id = $1::bigint
-  AND to_all = ''
-  AND raw_key <> ''
-  AND ($2::bigint IS NULL OR id < $2::bigint)
-ORDER BY id DESC
-LIMIT $3::int
-`
-
-type ListInboundNeedingToAllParams struct {
-	TenantID int64
-	BeforeID *int64
-	RowLimit int32
-}
-
-type ListInboundNeedingToAllRow struct {
-	ID      int64
-	RawKey  string
-	ToEmail string
-}
-
-// 收件人清单还没补的：00052 之前入库、原件还在的行。
-//
-// 队列由问题本身定义（to_all 空），补一行它就离开队列，不用标记列。
-// 补不回来的（原件读不到、To 头本来就空）靠调用方那道「整批没进展就停」
-// 的闸，不然它们会一直排在这里。
-//
-// before_id 是游标：每批从上一批最后一行往下走，补不了的行留在身后而不是
-// 堵在最前面——不然前 50 行恰好都是补不了的（原件读不到、只有密送），
-// 后面几千行永远轮不到。
-func (q *Queries) ListInboundNeedingToAll(ctx context.Context, arg ListInboundNeedingToAllParams) ([]ListInboundNeedingToAllRow, error) {
-	rows, err := q.db.Query(ctx, listInboundNeedingToAll, arg.TenantID, arg.BeforeID, arg.RowLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListInboundNeedingToAllRow
-	for rows.Next() {
-		var i ListInboundNeedingToAllRow
-		if err := rows.Scan(&i.ID, &i.RawKey, &i.ToEmail); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1912,65 +1720,6 @@ func (q *Queries) ListInboundThreads(ctx context.Context, arg ListInboundThreads
 			&i.SentAt,
 			&i.ThreadCount,
 		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listInboundWithUnresolvedCID = `-- name: ListInboundWithUnresolvedCID :many
-SELECT i.id, i.raw_key, i.account_id
-FROM email_inbound i
-WHERE i.tenant_id = $1::bigint
-  AND i.raw_key <> ''
-  AND i.body_html LIKE '%cid:%'
-  AND EXISTS (
-      SELECT 1 FROM regexp_matches(i.body_html, 'cid:([^"'']+)', 'g') AS m(cid)
-      WHERE NOT EXISTS (
-          SELECT 1 FROM email_inbound_attachments a
-          WHERE a.inbound_id = i.id AND a.content_id = m.cid[1]
-      )
-  )
-ORDER BY i.id DESC
-LIMIT $2::int
-`
-
-type ListInboundWithUnresolvedCIDParams struct {
-	TenantID int64
-	RowLimit int32
-}
-
-type ListInboundWithUnresolvedCIDRow struct {
-	ID        int64
-	RawKey    string
-	AccountID int64
-}
-
-// Messages whose body points at a part by Content-ID that no stored row
-// satisfies.
-//
-// These are not a curiosity: until 2026-08-10 the parser only kept a part that
-// carried a filename, and an image pasted into Gmail's composer carries none —
-// only a Content-ID. Those parts were read past and dropped, so the body was
-// left citing something that does not exist and the reader drew an empty box.
-//
-// The raw message is required, because recovery means parsing it again; a row
-// whose original was never stored cannot be helped and is left out rather than
-// returned for ever.
-func (q *Queries) ListInboundWithUnresolvedCID(ctx context.Context, arg ListInboundWithUnresolvedCIDParams) ([]ListInboundWithUnresolvedCIDRow, error) {
-	rows, err := q.db.Query(ctx, listInboundWithUnresolvedCID, arg.TenantID, arg.RowLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListInboundWithUnresolvedCIDRow
-	for rows.Next() {
-		var i ListInboundWithUnresolvedCIDRow
-		if err := rows.Scan(&i.ID, &i.RawKey, &i.AccountID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -3843,31 +3592,6 @@ func (q *Queries) SetInboundFlags(ctx context.Context, arg SetInboundFlagsParams
 	return items, nil
 }
 
-const setInboundFromName = `-- name: SetInboundFromName :exec
-UPDATE email_inbound
-SET from_name = $1::text,
-    search_text = $2::text
-WHERE tenant_id = $3::bigint AND id = $4::bigint
-`
-
-type SetInboundFromNameParams struct {
-	FromName   string
-	SearchText string
-	TenantID   int64
-	ID         int64
-}
-
-// search_text 是从 from_name 算出来的，一起重算，不然按人名搜不到这封信。
-func (q *Queries) SetInboundFromName(ctx context.Context, arg SetInboundFromNameParams) error {
-	_, err := q.db.Exec(ctx, setInboundFromName,
-		arg.FromName,
-		arg.SearchText,
-		arg.TenantID,
-		arg.ID,
-	)
-	return err
-}
-
 const setInboundReadByUID = `-- name: SetInboundReadByUID :exec
 
 UPDATE email_inbound
@@ -3900,33 +3624,6 @@ func (q *Queries) SetInboundReadByUID(ctx context.Context, arg SetInboundReadByU
 		arg.AccountID,
 		arg.Folder,
 		arg.ImapUid,
-	)
-	return err
-}
-
-const setInboundToAll = `-- name: SetInboundToAll :exec
-UPDATE email_inbound
-SET to_all = $1::text,
-    search_text = $2::text
-WHERE tenant_id = $3::bigint AND id = $4::bigint
-`
-
-type SetInboundToAllParams struct {
-	ToAll      string
-	SearchText string
-	TenantID   int64
-	ID         int64
-}
-
-// 搜索文本一起重算：入库那一步现在把整段收件人放进 search_text（搜同事
-// 的名字要能搜到发给他的群发），存量只补 to_all 不补 search_text 的话，
-// 老信照样搜不到——而且 ListInboundNeedingSearchText 只补空的，不会再来。
-func (q *Queries) SetInboundToAll(ctx context.Context, arg SetInboundToAllParams) error {
-	_, err := q.db.Exec(ctx, setInboundToAll,
-		arg.ToAll,
-		arg.SearchText,
-		arg.TenantID,
-		arg.ID,
 	)
 	return err
 }
@@ -4066,23 +3763,6 @@ func (q *Queries) SetMailAccountSecret(ctx context.Context, arg SetMailAccountSe
 		arg.TenantID,
 		arg.ID,
 	)
-	return err
-}
-
-const setSearchText = `-- name: SetSearchText :exec
-UPDATE email_inbound
-SET search_text = $1::text
-WHERE tenant_id = $2::bigint AND id = $3::bigint
-`
-
-type SetSearchTextParams struct {
-	SearchText string
-	TenantID   int64
-	ID         int64
-}
-
-func (q *Queries) SetSearchText(ctx context.Context, arg SetSearchTextParams) error {
-	_, err := q.db.Exec(ctx, setSearchText, arg.SearchText, arg.TenantID, arg.ID)
 	return err
 }
 

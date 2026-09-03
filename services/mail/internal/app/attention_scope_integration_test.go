@@ -78,7 +78,7 @@ func TestAttentionIsPerMailboxButDoesNotHideColleagues(t *testing.T) {
 	}
 	stuck(me, work.AccountID, "QQ 发失败了")
 	stuck(me, personal.AccountID, "163 发失败了")
-	stuck(me, 0, "上古失败记录")     // 00047 之前入队的，不知道从哪个箱走的
+	stuck(me, 0, "上古失败记录")                       // 00047 之前入队的，不知道从哪个箱走的
 	stuck(colleague, theirs.AccountID, "同事发失败了") // 别人的箱，别人的信
 
 	subjects := func(acct int64) []string {

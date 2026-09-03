@@ -210,58 +210,31 @@ func run(log *slog.Logger) error {
 		// Trash that clears itself, so "deleted" eventually means deleted
 		// without anybody having to remember to empty it.
 		go svc.RunTrashSweeper(ctx)
-		// Mail stored before search_text existed has none. Derived here with
-		// the same function ingest uses rather than by a regexp in the
-		// migration, so old and new mail are searched by the same text.
-		go svc.BackfillSearchText(ctx)
 		// Received mail's pictures, fetched by us at delivery instead of by
 		// the reader's browser at reading time — so opening a mail stops
 		// being an event the sender observes. Its own loop for the same
 		// reason as the write-back: one slow marketing server must not hold
-		// up mail arriving. Doubles as the backfill for everything already
-		// stored, which has no stamp yet.
+		// up mail arriving.
+		//
+		// 这一条是**常驻队列**，不是一次性修补：新到的每一封信都会进来一次，
+		// 走的是 00029 那条局部索引（images_cached_at IS NULL），补完就不在
+		// 索引里了。所以它和下面那些「修历史」的东西不是一回事。
 		go svc.RunImageCache(ctx, syncCfg)
-		// Repairs that re-read the archived MIME, in one goroutine and in this
-		// order. The order is the point: each of them fixes a row by parsing
-		// the object its raw_key names, so all three are only as trustworthy
-		// as the claim that the object is this message. Run concurrently, one
-		// of them could re-parse a shared original before the collision repair
-		// had disowned it, and write a stranger's mail into the row.
-		go func() {
-			// Originals that more than one message claims. The key was
-			// tenant/account/uid, and a UID is unique within a folder rather
-			// than within an account, so INBOX/SENT/JUNK messages sharing a
-			// number shared an object and the last one written won.
-			svc.RunRawKeyCollisionRepair(ctx, syncCfg)
-			// Messages stored before ingest kept Content-ID: their embedded
-			// pictures are in storage but nothing joins them to the body that
-			// points at them.
-			svc.RunContentIDBackfill(ctx, syncCfg)
-			// 00052 之前入库的信只留了 To 里的第一个地址，其余收件人要从
-			// 原件里补回来——「回复全部」和详情页的「收件人」都靠它。
-			svc.RunToAllBackfill(ctx, syncCfg)
-			// 引号里的编码词：QQ 邮箱把 "=?utf-8?B?…?=" 套着引号发出来，改
-			// 解析之前入库的信 from_name 就是那串。只改这一列，不读原件。
-			svc.RunFromNameRepair(ctx, syncCfg)
-			// The other half of the same damage: parts ingest never stored at
-			// all because they carried a Content-ID but no filename — which is
-			// exactly how an image pasted into Gmail's composer arrives. The
-			// backfill above cannot help those; it patches rows, and for these
-			// there is no row.
-			svc.RunEmbeddedRecovery(ctx, syncCfg)
-			// And the third variant: not a picture filed wrongly but the body
-			// itself. A part with a Content-ID was always taken for an
-			// attachment, and LinkedIn puts one on its text/plain and text/html
-			// alternatives, so those messages were stored with no text at all.
-			// The poller will not revisit them — it advances a UID watermark —
-			// so the archived MIME is the only way back.
-			svc.RunEmptyBodyRecovery(ctx, syncCfg)
-			// Last, and the only one that talks to the host: originals the
-			// collision destroyed are re-fetched, found by Message-ID. After
-			// the collision repair on purpose — a row must have been disowned
-			// before it is worth going back to the host for its original.
-			svc.RunRawOriginalRefetch(ctx, syncCfg)
-		}()
+		// 入库时原件没存进对象存储的信（写对象失败但行照样入库，见 inbound.go），
+		// 回原服务器按 Message-ID 把原件补拉回来。
+		//
+		// **这里从前还有七条一次性的历史修补**：搜索文本、原件撞键、Content-ID
+		// 补全、贴图找回、空正文找回、收件人清单、编码的发件人名。它们各自
+		// 修的是某一次解析口径改动之前入库的信，到 2026-09-03 全部跑完，能修的
+		// 都修了。留着它们的代价不是「跑一次」，是**每次重启都把整张表扫一遍**：
+		// 那几条查询用 LIKE、正则、正文比对，一条索引都用不上；而且每条都拖着
+		// 一小撮永远修不好的行（原件没了、本来就没有 To 头），每次重启重试、
+		// 每次失败、下次再来。邮件只会越来越多，这个成本只会越来越大。
+		//
+		// 所以删掉了，不是关掉。新来的信由改好的解析直接写对，不需要事后补。
+		// 日后再遇到要修历史的事，就为那件事写一条，修完再删——修补是一次性的，
+		// 代码不该越攒越多。
+		go svc.RunRawOriginalRefetch(ctx, syncCfg)
 	}
 
 	// The worker runs in-process. The database is the queue, so a second
