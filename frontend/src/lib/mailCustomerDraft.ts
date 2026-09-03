@@ -3,6 +3,13 @@ export interface MailCustomerDraft {
   email: string
 }
 
+export interface MailCustomerHeaders {
+  fromName?: string
+  fromEmail?: string
+  toName?: string
+  toEmail?: string
+}
+
 function fallbackName(email: string): string {
   const local = email.split('@')[0]?.trim() ?? ''
   return local || email
@@ -17,4 +24,29 @@ export function customerDraftFromSender(
   const email = fromEmail.trim()
   const name = fromName.trim() || fallbackName(email)
   return { name, email }
+}
+
+function normalized(address?: string): string {
+  return address?.trim().toLowerCase() ?? ''
+}
+
+// A conversation row can reopen its newest copy. After we answer a customer,
+// that newest copy is often the one in Sent: its From is us and the customer is
+// in To. Looking only at From made "Create customer" disappear after the first
+// reply even though the same external correspondent was still on screen.
+export function customerDraftFromMail(
+  mail: MailCustomerHeaders,
+  ownAddresses: Iterable<string>,
+): MailCustomerDraft | null {
+  const own = new Set(Array.from(ownAddresses, normalized).filter(Boolean))
+  const fromEmail = mail.fromEmail?.trim() ?? ''
+  if (fromEmail && !own.has(normalized(fromEmail))) {
+    return customerDraftFromSender(mail.fromName ?? '', fromEmail)
+  }
+
+  const toEmail = mail.toEmail?.trim() ?? ''
+  if (toEmail && !own.has(normalized(toEmail))) {
+    return customerDraftFromSender(mail.toName ?? '', toEmail)
+  }
+  return null
 }
