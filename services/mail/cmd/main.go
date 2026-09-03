@@ -224,6 +224,9 @@ func run(log *slog.Logger) error {
 			// 00052 之前入库的信只留了 To 里的第一个地址，其余收件人要从
 			// 原件里补回来——「回复全部」和详情页的「收件人」都靠它。
 			svc.RunToAllBackfill(ctx, syncCfg)
+			// 引号里的编码词：QQ 邮箱把 "=?utf-8?B?…?=" 套着引号发出来，改
+			// 解析之前入库的信 from_name 就是那串。只改这一列，不读原件。
+			svc.RunFromNameRepair(ctx, syncCfg)
 			// The other half of the same damage: parts ingest never stored at
 			// all because they carried a Content-ID but no filename — which is
 			// exactly how an image pasted into Gmail's composer arrives. The

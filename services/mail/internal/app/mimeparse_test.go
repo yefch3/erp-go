@@ -325,3 +325,25 @@ func TestToKeepsEveryRecipientNotJustTheFirst(t *testing.T) {
 		t.Fatalf("四个收件人应该拆出四个人：%+v", parseParties(got.ToAll))
 	}
 }
+
+// QQ 邮箱（以及不少群发平台）把编码过的显示名再套一层引号发出来：
+//
+//	From: "=?utf-8?B?RnVuY3Rpb24gWWU=?=" <875172387@qq.com>
+//
+// RFC 2047 说引号里不该有编码词，net/mail 于是对引号里的内容原样保留，
+// 列表和详情上的发件人就是那串 =?utf-8?B?…?=。
+func TestQuotedEncodedWordInFromNameIsStillDecoded(t *testing.T) {
+	for _, from := range []string{
+		`"=?utf-8?B?RnVuY3Rpb24gWWU=?=" <875172387@qq.com>`, // QQ 的写法：套着引号
+		`=?utf-8?B?RnVuY3Rpb24gWWU=?= <875172387@qq.com>`,   // 标准写法，本来就好
+	} {
+		p, err := ParseMail([]byte("From: " + from + "\r\nTo: erptest@263.net\r\n" +
+			"Subject: x\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nhi\r\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p.FromName != "Function Ye" || p.FromEmail != "875172387@qq.com" {
+			t.Errorf("From %q: got %q <%s>, want Function Ye <875172387@qq.com>", from, p.FromName, p.FromEmail)
+		}
+	}
+}

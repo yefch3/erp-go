@@ -85,7 +85,11 @@ func ParseMail(raw []byte) (ParsedMail, error) {
 
 	if addrs, err := h.AddressList("From"); err == nil && len(addrs) > 0 {
 		out.FromEmail = strings.ToLower(addrs[0].Address)
-		out.FromName = addrs[0].Name
+		// 再解一次。QQ 邮箱把编码过的显示名套在引号里发出来：
+		// "=?utf-8?B?…?=" <x@qq.com>。RFC 2047 不允许引号里有编码词，net/mail
+		// 因此原样保留，列表上就是一串 =?utf-8?B?…?=。解过的名字里不会再有
+		// 编码词，所以对正常的头这一步是空操作。
+		out.FromName = decodeHeader(addrs[0].Name)
 	} else {
 		out.FromEmail, out.FromName = looseAddress(firstHeader(ent, "From"))
 	}
