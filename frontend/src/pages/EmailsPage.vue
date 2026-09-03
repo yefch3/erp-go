@@ -221,6 +221,17 @@
             <el-button size="small" type="primary" plain @click="replyToInbound">
               ↩ {{ t('emails.reply') }}
             </el-button>
+            <!-- 只在原信不止发给我一个人时出现：一封只发给我的信，「回复」和
+                 「回复全部」是同一件事，两颗一样的按钮只会让人挑。 -->
+            <el-button
+              v-if="hasOtherRecipients"
+              size="small"
+              type="primary"
+              plain
+              @click="replyAllToInbound"
+            >
+              ↩↩ {{ t('emails.replyAll') }}
+            </el-button>
             <!-- A split button rather than a third one in the row: forwarding
                  as an attachment is the same intent taken further, not a
                  separate errand, and it is rare enough that giving it equal
@@ -1169,6 +1180,7 @@ import {
 } from '../api'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
 import { humanSize } from '../lib/humanSize'
+import { replyAllRecipients } from '../lib/replyAll'
 import {
   DEFAULT_SORT,
   nextSort,
@@ -1270,6 +1282,11 @@ interface InboundMail {
   // 真正的回信地址，以及收信服务器验过的两个身份。
   replyTo?: string
   cc?: string
+  // 整段 To 头（给人看的）和拆好的人（给「回复全部」用）。老信还没补时
+  // toAll 是第一个收件人，toParties 只有一个人。
+  toAll?: string
+  toParties?: { name?: string; email: string }[]
+  ccParties?: { name?: string; email: string }[]
   authSpf?: string
   authDkim?: string
   // Messages in this conversation; the list shows one row per conversation.
@@ -1563,7 +1580,8 @@ const detailRows = computed(() => {
     if (v !== undefined && v !== null && v !== '' && v !== 0) rows.push({ k, v: String(v) })
   }
   add(t('emails.detail.from'), `${m.fromName ? m.fromName + ' ' : ''}<${m.fromEmail}>`)
-  add(t('emails.detail.to'), m.toEmail)
+  // 整段，不是第一个：客户群发给七个人的信，这里要看到七个。
+  add(t('emails.detail.to'), m.toAll || m.toEmail)
   add(t('emails.detail.cc'), m.cc)
   // 只在与 From 不同时才列：一样的时候它不是信息，是一行要读过去的字。
   if (replyToMismatch.value) add(t('emails.detail.replyTo'), m.replyTo)
@@ -2853,6 +2871,23 @@ async function replyToInbound() {
   composing.value = true
   await nextTick()
   composer.value?.openReply(openedInbound.value)
+}
+
+// 原信除了我还发给了谁——决定「回复全部」这颗按钮出不出现。
+const hasOtherRecipients = computed(() => {
+  const m = openedInbound.value
+  if (!m) return false
+  return replyAllRecipients({ ...m, mine: myAddresses.value }).cc.length > 0
+})
+
+// 回复全部：收件人是发信人（有 Reply-To 用它），原信 To 和 Cc 里其余的人进
+// 抄送，去掉我名下全部信箱的地址。规则和测试在 lib/replyAll。
+async function replyAllToInbound() {
+  if (!openedInbound.value) return
+  composing.value = true
+  await nextTick()
+  const m = openedInbound.value
+  composer.value?.openReplyAll(m, replyAllRecipients({ ...m, mine: myAddresses.value }))
 }
 
 async function forwardInbound() {

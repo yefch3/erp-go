@@ -23,7 +23,10 @@ type ParsedMail struct {
 	References []string
 	FromEmail  string
 	FromName   string
-	ToEmail    string
+	// ToEmail 是 To 里的**第一个**地址；ToAll 是整段 To 头（解码后，原样）。
+	// 一封群发给七个人的信，前者是「第一个收件人」，后者才是「发给了谁」。
+	ToEmail string
+	ToAll   string
 	// 真正的回信地址。与 From 不同时，「点回复会发给谁」和「谁写的」就是两个
 	// 答案 —— 商业邮件诈骗最常用的一手正是改这里。
 	ReplyTo string
@@ -91,6 +94,9 @@ func ParseMail(raw []byte) (ParsedMail, error) {
 	} else {
 		out.ToEmail, _ = looseAddress(firstHeader(ent, "To"))
 	}
+	// 整段留着，和 Cc 一个存法。只留第一个的年代，客户群发给七个同事的信在
+	// 这里变成了「发给一个人」，而剩下六个再也找不回来——除非回到原件。
+	out.ToAll = decodeHeader(firstHeader(ent, "To"))
 	if addrs, err := h.AddressList("Reply-To"); err == nil && len(addrs) > 0 {
 		out.ReplyTo = strings.ToLower(addrs[0].Address)
 	} else {

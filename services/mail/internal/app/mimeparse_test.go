@@ -291,3 +291,37 @@ func TestAPlainBodyPartIsStillNotAnAttachment(t *testing.T) {
 		t.Fatalf("a body part was collected as an attachment: %+v", got.Attachments)
 	}
 }
+
+// 客户群发给公司七个人：第一个是 ToEmail，七个都在 ToAll 里。
+// 从前只留第一个，其余六个在库里根本不存在——这条钉的就是那个洞。
+func TestToKeepsEveryRecipientNotJustTheFirst(t *testing.T) {
+	raw := "From: MARILIN =?utf-8?q?LUDE=C3=91A?= <importaciones@acerosinka.com>\r\n" +
+		"To: Ana Maria Gomez <agomez@acerosinka.com>, jgomez@acerosinka.com,\r\n" +
+		" allosa@acerosinka.com, administracion@acerosinka.com\r\n" +
+		"Cc: logistica@acerosinka.com\r\n" +
+		"Subject: NEW RFQ\r\n" +
+		"Message-ID: <rfq@acerosinka.com>\r\n" +
+		"Content-Type: text/plain; charset=utf-8\r\n\r\n" +
+		"hola\r\n"
+	got, err := ParseMail([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ToEmail != "agomez@acerosinka.com" {
+		t.Fatalf("第一个收件人：%q", got.ToEmail)
+	}
+	for _, want := range []string{"agomez@", "jgomez@", "allosa@", "administracion@"} {
+		if !strings.Contains(got.ToAll, want) {
+			t.Fatalf("ToAll 少了 %s：%q", want, got.ToAll)
+		}
+	}
+	if strings.Contains(got.ToAll, "logistica@") {
+		t.Fatalf("Cc 不该混进 To：%q", got.ToAll)
+	}
+	if got.FromName != "MARILIN LUDEÑA" {
+		t.Fatalf("发信人显示名没解码：%q", got.FromName)
+	}
+	if len(parseParties(got.ToAll)) != 4 {
+		t.Fatalf("四个收件人应该拆出四个人：%+v", parseParties(got.ToAll))
+	}
+}

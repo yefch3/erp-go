@@ -131,6 +131,7 @@ type EmailInbound struct {
 	Cc             string
 	AuthSpf        string
 	AuthDkim       string
+	ToAll          string
 }
 
 type EmailInboundAttachment struct {

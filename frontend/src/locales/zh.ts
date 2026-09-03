@@ -1822,6 +1822,7 @@ export default {
     syncBroken: '邮箱当前收不到新邮件：{e}。列表里是最后一次成功同步的内容。',
     reauth: '重新登录邮箱',
     reply: '回复',
+    replyAll: '回复全部',
     forward: '转发',
     forwardCarries: '原邮件的附件会随这封信一并转发。',
     forwardAsAttachment: '作为附件转发',

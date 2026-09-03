@@ -690,6 +690,17 @@ func recipientsFromProto(in []*mailv1.Recipient) []app.Recipient {
 	return out
 }
 
+func partiesToProto(in []app.MailParty) []*mailv1.MailParty {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]*mailv1.MailParty, 0, len(in))
+	for _, p := range in {
+		out = append(out, &mailv1.MailParty{Name: p.Name, Email: p.Email})
+	}
+	return out
+}
+
 func recipientsToProto(in []app.Recipient) []*mailv1.Recipient {
 	out := make([]*mailv1.Recipient, 0, len(in))
 	for _, r := range in {
@@ -816,6 +827,9 @@ func inboundToProto(v app.InboundView) *mailv1.InboundMail {
 		RawSize:         v.RawSize,
 		ReplyTo:         v.ReplyTo,
 		Cc:              v.CC,
+		ToAll:           v.ToAll,
+		ToParties:       partiesToProto(v.ToParties),
+		CcParties:       partiesToProto(v.CcParties),
 		AuthSpf:         v.AuthSPF,
 		AuthDkim:        v.AuthDKIM,
 	}

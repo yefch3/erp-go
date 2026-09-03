@@ -893,10 +893,11 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 		ReplyTo: parsed.ReplyTo, Cc: parsed.CC,
 		AuthSpf: parsed.AuthSPF, AuthDkim: parsed.AuthDKIM,
 		FromEmail: parsed.FromEmail, FromName: parsed.FromName,
-		ToEmail: parsed.ToEmail, Subject: parsed.Subject,
+		ToEmail: parsed.ToEmail, ToAll: parsed.ToAll, Subject: parsed.Subject,
 		BodyHtml: parsed.BodyHTML, BodyText: parsed.BodyText,
+		// 搜索文本里放整段收件人：搜同事的名字要能搜到发给他的那封群发。
 		Snippet: snippetOf(parsed), SearchText: searchTextOf(parsed.Subject, parsed.FromName, parsed.FromEmail,
-			parsed.ToEmail, parsed.BodyText, parsed.BodyHTML),
+			firstNonEmpty(parsed.ToAll, parsed.ToEmail), parsed.BodyText, parsed.BodyHTML),
 		// Which customer this belongs to, inherited from the message it
 		// answers. Zero when it answers nothing of ours, which is the
 		// ordinary case.
