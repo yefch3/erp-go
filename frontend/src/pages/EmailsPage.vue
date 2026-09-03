@@ -933,42 +933,7 @@
     </p>
   </div>
 
-  <el-dialog
-    v-model="customerCreateOpen"
-    :title="t('emails.createCustomerTitle')"
-    width="min(520px, 92vw)"
-    append-to-body
-  >
-    <el-form label-position="top">
-      <el-form-item :label="t('customers.name')" required>
-        <el-input v-model="customerCreateForm.name" maxlength="200" />
-      </el-form-item>
-      <el-form-item :label="t('customers.contactEmail')" required>
-        <el-input v-model="customerCreateForm.email" />
-      </el-form-item>
-      <el-form-item :label="t('customers.country')">
-        <el-input :model-value="t('emails.unassignedCountry')" disabled />
-      </el-form-item>
-      <el-form-item :label="t('customers.timezone')">
-        <el-select
-          v-model="customerCreateForm.timezone"
-          filterable
-          clearable
-          :placeholder="t('customers.timezonePick')"
-          style="width: 100%"
-        >
-          <el-option v-for="zone in customerTimezoneOptions" :key="zone" :label="zone" :value="zone" />
-        </el-select>
-        <p class="customer-create-help">{{ t('emails.customerTimezoneHelp') }}</p>
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="customerCreateOpen = false">{{ common('cancel') }}</el-button>
-      <el-button type="primary" :loading="customerCreating" @click="createCustomerFromMail">
-        {{ common('save') }}
-      </el-button>
-    </template>
-  </el-dialog>
+  <CustomerFromMailDialog v-model:open="customerCreateOpen" :draft="customerCreateDraft" />
 
   <el-dialog
     v-model="excelTemplateOpen"
@@ -1200,10 +1165,7 @@ import {
   toggleAll,
 } from '../lib/mailSelection'
 import type { InquiryTemplate } from '../lib/inquiryTemplates'
-import { customerDraftFromSender } from '../lib/mailCustomerDraft'
-import { validateCustomerContact, validateCustomerProfile } from '../lib/customerForms'
-import { confirmPossibleDuplicates } from '../lib/masterDataDuplicates'
-import { portTimezoneOptions } from '../lib/portOptions'
+import { customerDraftFromMail } from '../lib/mailCustomerDraft'
 import { onLive } from '../live'
 import { useAuthStore } from '../stores/auth'
 import EmailComposer from '../components/EmailComposer.vue'
@@ -1225,6 +1187,7 @@ import MailHostDialog from '../components/MailHostDialog.vue'
 import MailSignatureDialog from '../components/MailSignatureDialog.vue'
 import MailTemplatesDialog from '../components/MailTemplatesDialog.vue'
 import MailList, { type MailRow } from '../components/MailList.vue'
+import CustomerFromMailDialog from '../components/CustomerFromMailDialog.vue'
 // Received mail renders inside a sandboxed frame. It carries the sender's own
 // stylesheet now, and a stylesheet injected into this page would be a stranger
 // styling the ERP — which is exactly what happened when these two sites were
@@ -1256,6 +1219,7 @@ interface InboundMail {
   fromEmail: string
   fromName: string
   toEmail: string
+  toName?: string
   subject: string
   snippet: string
   threadKey: string
@@ -1543,10 +1507,11 @@ function onMailboxesChanged(boxes: { id: number; email: string; isDefault: boole
 // The mail being read full-page. Set from the URL, never directly: opening a
 // mail is a navigation, so refresh reopens it and back returns to the list.
 const openedInbound = ref<InboundMail | null>(null)
+const customerCreateDraft = computed(() => openedInbound.value
+  ? customerDraftFromMail(openedInbound.value, myAddresses.value)
+  : null)
 const canCreateCustomerFromSender = computed(() => {
-  const mail = openedInbound.value
-  if (!canCreateCustomer.value || !mail?.fromEmail || mail.folder === 'SENT') return false
-  return !myAddresses.value.has(mail.fromEmail.trim().toLowerCase())
+  return canCreateCustomer.value && customerCreateDraft.value !== null
 })
 
 // Folded by default, and folded again on every open: the details are for the
@@ -3211,9 +3176,6 @@ const excelMenu = reactive({
   open: false, x: 0, y: 0, source: null as ExcelSource | null, disabledReason: '',
 })
 const customerCreateOpen = ref(false)
-const customerCreating = ref(false)
-const customerCreateForm = reactive({ name: '', email: '', timezone: '' })
-const customerTimezoneOptions = portTimezoneOptions('')
 const excelOpen = ref(false)
 const excelTemplateOpen = ref(false)
 const excelTemplatesBusy = ref(false)
@@ -3402,58 +3364,8 @@ function closeExcelMenu() {
 }
 
 function openCustomerFromSender() {
-  const mail = openedInbound.value
-  if (!canCreateCustomerFromSender.value || !mail) return
-  Object.assign(
-    customerCreateForm,
-    customerDraftFromSender(mail.fromName, mail.fromEmail),
-    { timezone: '' },
-  )
+  if (!canCreateCustomerFromSender.value) return
   customerCreateOpen.value = true
-}
-
-async function createCustomerFromMail() {
-  const name = customerCreateForm.name.trim()
-  const email = customerCreateForm.email.trim()
-  if (!name) {
-    ElMessage.warning(t('customers.required'))
-    return
-  }
-  const contactError = validateCustomerContact({ name, email })
-  if (contactError) {
-    ElMessage.warning(t(`customers.${contactError}`))
-    return
-  }
-  if (validateCustomerProfile({ timezone: customerCreateForm.timezone })) {
-    ElMessage.warning(t('customers.timezoneInvalid'))
-    return
-  }
-  customerCreating.value = true
-  try {
-    const duplicates = await get<{ candidates?: Array<{ id: string; code: string; name: string; matchFields?: string[] }> }>(
-      '/customers/duplicates', { name, email },
-    )
-    const candidates = duplicates.candidates ?? []
-    const emailOwner = candidates.find((candidate) => candidate.matchFields?.includes('EMAIL'))
-    if (emailOwner) {
-      ElMessage.warning(t('emails.customerEmailExists', { code: emailOwner.code, name: emailOwner.name }))
-      return
-    }
-    await confirmPossibleDuplicates(candidates, t)
-    const { customer } = await post<{ customer: { id: string; code: string; name: string } }>('/customers', {
-      name,
-      country: '',
-      countryCode: '',
-      currency: 'USD',
-      source: 'EMAIL',
-      timezone: customerCreateForm.timezone,
-      contacts: [{ name, email, isPrimary: true }],
-    })
-    customerCreateOpen.value = false
-    ElMessage.success(t('emails.customerCreated', { code: customer.code }))
-  } finally {
-    customerCreating.value = false
-  }
 }
 window.addEventListener('click', closeExcelMenu)
 window.addEventListener('blur', closeExcelMenu)
@@ -4457,12 +4369,6 @@ async function doUnsuppress(row: Suppression) {
 .excel-context-reason {
   max-width: 240px;
   margin: 3px 8px 6px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  line-height: 1.45;
-}
-.customer-create-help {
-  margin: 5px 0 0;
   color: var(--el-text-color-secondary);
   font-size: 12px;
   line-height: 1.45;
