@@ -1348,6 +1348,25 @@ SET to_all = sqlc.arg(to_all)::text,
     search_text = sqlc.arg(search_text)::text
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
+-- name: ListInboundEncodedFromName :many
+-- 发件人名字还是一串 =?utf-8?B?…?= 的行：QQ 邮箱把编码过的显示名套在引号里
+-- 发出来，改解析之前 net/mail 原样保留了它。队列由问题本身定义，解开一行它
+-- 就离开队列；解不开的靠 before_id 游标留在身后，不堵后面的。
+SELECT id, subject, from_name, from_email, to_email, to_all, body_text, body_html
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND from_name LIKE '%=?%?=%'
+  AND (sqlc.narg(before_id)::bigint IS NULL OR id < sqlc.narg(before_id)::bigint)
+ORDER BY id DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: SetInboundFromName :exec
+-- search_text 是从 from_name 算出来的，一起重算，不然按人名搜不到这封信。
+UPDATE email_inbound
+SET from_name = sqlc.arg(from_name)::text,
+    search_text = sqlc.arg(search_text)::text
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
 -- name: SetSearchText :exec
 UPDATE email_inbound
 SET search_text = sqlc.arg(search_text)::text

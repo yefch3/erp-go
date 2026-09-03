@@ -1608,6 +1608,65 @@ func (q *Queries) ListInboundAttachments(ctx context.Context, arg ListInboundAtt
 	return items, nil
 }
 
+const listInboundEncodedFromName = `-- name: ListInboundEncodedFromName :many
+SELECT id, subject, from_name, from_email, to_email, to_all, body_text, body_html
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND from_name LIKE '%=?%?=%'
+  AND ($2::bigint IS NULL OR id < $2::bigint)
+ORDER BY id DESC
+LIMIT $3::int
+`
+
+type ListInboundEncodedFromNameParams struct {
+	TenantID int64
+	BeforeID *int64
+	RowLimit int32
+}
+
+type ListInboundEncodedFromNameRow struct {
+	ID        int64
+	Subject   string
+	FromName  string
+	FromEmail string
+	ToEmail   string
+	ToAll     string
+	BodyText  string
+	BodyHtml  string
+}
+
+// 发件人名字还是一串 =?utf-8?B?…?= 的行：QQ 邮箱把编码过的显示名套在引号里
+// 发出来，改解析之前 net/mail 原样保留了它。队列由问题本身定义，解开一行它
+// 就离开队列；解不开的靠 before_id 游标留在身后，不堵后面的。
+func (q *Queries) ListInboundEncodedFromName(ctx context.Context, arg ListInboundEncodedFromNameParams) ([]ListInboundEncodedFromNameRow, error) {
+	rows, err := q.db.Query(ctx, listInboundEncodedFromName, arg.TenantID, arg.BeforeID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInboundEncodedFromNameRow
+	for rows.Next() {
+		var i ListInboundEncodedFromNameRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Subject,
+			&i.FromName,
+			&i.FromEmail,
+			&i.ToEmail,
+			&i.ToAll,
+			&i.BodyText,
+			&i.BodyHtml,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listInboundNeedingSearchText = `-- name: ListInboundNeedingSearchText :many
 SELECT id, subject, from_name, from_email, to_email, body_text, body_html
 FROM email_inbound
@@ -3782,6 +3841,31 @@ func (q *Queries) SetInboundFlags(ctx context.Context, arg SetInboundFlagsParams
 		return nil, err
 	}
 	return items, nil
+}
+
+const setInboundFromName = `-- name: SetInboundFromName :exec
+UPDATE email_inbound
+SET from_name = $1::text,
+    search_text = $2::text
+WHERE tenant_id = $3::bigint AND id = $4::bigint
+`
+
+type SetInboundFromNameParams struct {
+	FromName   string
+	SearchText string
+	TenantID   int64
+	ID         int64
+}
+
+// search_text 是从 from_name 算出来的，一起重算，不然按人名搜不到这封信。
+func (q *Queries) SetInboundFromName(ctx context.Context, arg SetInboundFromNameParams) error {
+	_, err := q.db.Exec(ctx, setInboundFromName,
+		arg.FromName,
+		arg.SearchText,
+		arg.TenantID,
+		arg.ID,
+	)
+	return err
 }
 
 const setInboundReadByUID = `-- name: SetInboundReadByUID :exec
