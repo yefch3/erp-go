@@ -3735,7 +3735,7 @@ async function openPreview(a: MailFile, mailID: string) {
   convertingAttachment.value = a.id
   try {
     const resp = await post<{ previewUrl?: string }>(
-      `/api/inbound-mails/${mailID}/attachments/${a.id}/preview`,
+      `/inbound-mails/${mailID}/attachments/${a.id}/preview`,
     )
     if (!resp?.previewUrl) throw new Error('no url')
     a.previewUrl = resp.previewUrl
