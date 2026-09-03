@@ -137,6 +137,9 @@ service EmailService {
   // model succeeds or fails.
   rpc StartInboundExcelConversion(StartInboundExcelConversionRequest) returns (StartInboundExcelConversionResponse);
   rpc GetInboundExcelConversionJob(GetInboundExcelConversionJobRequest) returns (GetInboundExcelConversionJobResponse);
+  // 把一个办公文档附件转成 PDF 并返回可以直接显示的地址。第二次调用命中
+  // 缓存，不再转换。
+  rpc PreviewInboundAttachment(PreviewInboundAttachmentRequest) returns (PreviewInboundAttachmentResponse);
   // One conversation, both directions, oldest first. Owner-scoped: the
   // caller sees only their own half of the world.
   rpc GetMailThread(GetMailThreadRequest) returns (GetMailThreadResponse);
@@ -295,6 +298,12 @@ message InboundAttachment {
   // render from the storage origin: images and PDF. Empty means "download it
   // to look at it", which is the honest answer for everything else.
   string preview_url = 7;
+  // 怎么预览这个附件。空 = 不能预览，只能下载。
+  //
+  // "direct"  preview_url 已经填好，直接显示（图片、PDF）。
+  // "convert" 要先转成 PDF：调 PreviewInboundAttachment 拿地址。转换在服务器
+  //           上做，第一次几百毫秒，之后有缓存。Word / Excel / PPT 走这条。
+  string preview_kind = 8;
 }
 
 message ListInboundRequest {
@@ -366,6 +375,17 @@ message ListInboundResponse {
 
 message GetInboundRequest {
   int64 id = 1;
+}
+
+message PreviewInboundAttachmentRequest {
+  // 附件所属的那封信。权限跟着信走，不跟着附件走：附件 id 是猜得出来的。
+  int64 inbound_id = 1;
+  int64 attachment_id = 2;
+}
+
+message PreviewInboundAttachmentResponse {
+  // 签过名的、有时限的地址，内容是转好的 PDF。
+  string preview_url = 1;
 }
 
 message GetMailThreadRequest {

@@ -595,6 +595,17 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 				files[r.Direction+":"+strconv.FormatInt(r.ID, 10)],
 				r.Body, embedded[r.ID]),
 		}
+		// 会话里「我们发出去的」那些附件是发件附件，不在 email_inbound_attachments
+		// 里，PreviewInboundAttachment 按定义找不到它们。留着 "convert" 标记
+		// 只会让界面上多一个点了必然失败的按钮，所以在这里摘掉——下载不受
+		// 影响，那条路对两个方向都是通的。
+		if r.Direction != "IN" {
+			for i := range v.Attachments {
+				if v.Attachments[i].PreviewKind == PreviewConvert {
+					v.Attachments[i].PreviewKind = ""
+				}
+			}
+		}
 		if r.At.Valid {
 			v.At = r.At.Time
 		}

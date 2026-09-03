@@ -1749,6 +1749,7 @@ export default {
     bccLabel: 'CCO',
     bccHint: 'Quienes están en CCO reciben el correo; nadie en Para o CC ve que lo recibieron.',
     previewFile: 'Vista previa',
+    converting: 'Convirtiendo…',
     sortBar: {
       label: 'Ordenar',
       from: 'Remitente',

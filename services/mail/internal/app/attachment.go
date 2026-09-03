@@ -61,6 +61,13 @@ type Attachment struct {
 	// page, and safe to render from the storage origin. Empty otherwise, which
 	// is how the UI knows not to offer a preview it cannot honour.
 	PreviewURL string
+	// 怎么预览：""（不能）、"direct"（PreviewURL 已经能用）、"convert"
+	// （办公文档，要先调 PreviewInboundAttachment 转一次）。
+	//
+	// 分成两个字段而不是「URL 空就是不能预览」：办公文档能预览，但它的地址
+	// 要等有人真的点了才生成——列表里给每个 .xlsx 都转一遍 PDF，是把没人看的
+	// 附件也转了。
+	PreviewKind string
 	// The name the body points at when it embeds this part inline. Not sent to
 	// the client: it exists so the reader can drop the parts the body has
 	// already shown, which is how a signature logo stops being listed beside
@@ -111,12 +118,17 @@ func (s *Service) signDownloads(ctx context.Context, atts []Attachment) []Attach
 		// A preview is a nicety; failing to sign one must not cost the file
 		// its download link, so it is attempted separately and last.
 		if ct := previewable(a.ContentType); ct != "" {
+			atts[i].PreviewKind = PreviewDirect
 			if pv, err := s.files.PresignGetInline(ctx, a.FileKey, ct); err == nil {
 				atts[i].PreviewURL = pv
 			} else {
 				s.log.Warn("could not sign an attachment preview",
 					"file", a.FileName, "err", err)
 			}
+		} else if convertibleToPDF(a.FileName) {
+			// 地址留空：办公文档要转一趟才有得看，而转换只在有人点「预览」
+			// 的时候做。见 PreviewInboundAttachment。
+			atts[i].PreviewKind = PreviewConvert
 		}
 	}
 	return atts

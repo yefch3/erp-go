@@ -352,3 +352,12 @@ func TestSupplierReconFileRoutesAreAllRegistered(t *testing.T) {
 		}
 	}
 }
+
+// Word / Excel 预览是一条新地址。少了它，前端点「预览」拿到 404，而 catch
+// 里只会说一句「预览失败」——看不出是路由没注册还是文件转不了。
+func TestOfficeAttachmentPreviewRouteIsRegistered(t *testing.T) {
+	const want = "POST /api/inbound-mails/{id}/attachments/{attachmentId}/preview"
+	if !routeSet(t)[want] {
+		t.Fatalf("缺少路由：%s", want)
+	}
+}

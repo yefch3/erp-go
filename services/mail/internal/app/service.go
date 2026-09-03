@@ -184,6 +184,11 @@ type Deps struct {
 	// Live pushes "go and re-read" hints to open browser tabs. Nil disables
 	// pushing; the page still refreshes on the next manual or timed load.
 	Live *livefeed.Publisher
+	// Converter turns an office document into a PDF so it can be looked at
+	// without leaving the page. Nil keeps everything else working and makes
+	// only the preview of a .docx/.xls say it is not configured — the file is
+	// still listed and still downloadable.
+	Converter Converter
 }
 
 type Service struct {
@@ -199,6 +204,7 @@ type Service struct {
 	scopes    Scopes
 	provider  Provider
 	files     Files
+	converter Converter
 	tables    TableExtractor
 	// 模型单价，只用来把 token 折成钱给人看。零值就不折——不猜价格。
 	pricing ModelPricing
@@ -233,7 +239,7 @@ func New(pool *pgxpool.Pool, d Deps, log *slog.Logger) *Service {
 	return &Service{
 		pool: pool, q: store.New(pool),
 		number: d.Numbering, directory: d.Directory, scopes: d.Scopes,
-		provider: d.Provider, files: d.Files, tables: d.Tables,
+		provider: d.Provider, files: d.Files, converter: d.Converter, tables: d.Tables,
 		pricing: d.Pricing,
 		secrets: d.Secrets, live: d.Live, log: log,
 	}

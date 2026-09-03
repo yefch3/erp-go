@@ -369,6 +369,8 @@
               <MailAttachments
                 v-if="it.attachments?.length"
                 :files="it.attachments"
+                :converting="convertingAttachment"
+                :mail-id="it.direction === 'IN' ? String(it.id) : ''"
                 class="thread-files"
                 @preview="openPreview"
                 @excel-menu="openAttachmentExcelMenu"
@@ -398,6 +400,8 @@
           <h4 class="side-title">{{ t('emails.attachments') }}</h4>
           <MailAttachments
             :files="openedInbound.attachments"
+            :converting="convertingAttachment"
+            :mail-id="String(openedInbound.id)"
             @preview="openPreview"
             @excel-menu="openAttachmentExcelMenu"
             @excel-hover="hoverAttachmentExcelMenu"
@@ -1180,6 +1184,7 @@ import {
 } from '../api'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
 import { humanSize } from '../lib/humanSize'
+import { needsConversion } from '../lib/attachmentPreview'
 import { replyAllRecipients } from '../lib/replyAll'
 import {
   DEFAULT_SORT,
@@ -1308,6 +1313,7 @@ interface InboundMail {
     stored?: boolean
     // Present only for what can be shown inline: images and PDF.
     previewUrl?: string
+    previewKind?: string
   }[]
 }
 
@@ -2423,6 +2429,7 @@ interface ThreadItem {
     contentType?: string
     downloadUrl?: string
     previewUrl?: string
+    previewKind?: string
     stored?: boolean
   }[]
 }
@@ -3794,9 +3801,40 @@ function downloadExcel() {
 const previewOpen = ref(false)
 const previewing = ref<MailFile | null>(null)
 
-function openPreview(a: MailFile) {
-  previewing.value = a
-  previewOpen.value = true
+const convertingAttachment = ref('')
+
+/**
+ * 打开预览。
+ *
+ * 图片和 PDF 直接开。Word / Excel / PPT 要先请服务器转成 PDF——转换是按需的，
+ * 不是每封信一到就把所有附件都转一遍：绝大多数附件没人点开。
+ *
+ * 转出来的地址写回这个附件对象，所以同一份文件第二次点是直接开的，连请求
+ * 都不发。服务器那边也有缓存，换个人点同样不会重转。
+ */
+async function openPreview(a: MailFile, mailID: string) {
+  if (!needsConversion(a)) {
+    previewing.value = a
+    previewOpen.value = true
+    return
+  }
+  if (convertingAttachment.value) return
+  if (!mailID) return
+  convertingAttachment.value = a.id
+  try {
+    const resp = await post<{ previewUrl?: string }>(
+      `/api/inbound-mails/${mailID}/attachments/${a.id}/preview`,
+    )
+    if (!resp?.previewUrl) throw new Error('no url')
+    a.previewUrl = resp.previewUrl
+    previewing.value = a
+    previewOpen.value = true
+  } catch {
+    // 具体原因（类型不支持、文件太大、转换失败）后端已经用消息说了，
+    // 拦截器会弹出来；这里不再叠一层。
+  } finally {
+    convertingAttachment.value = ''
+  }
 }
 
 function isImage(a: MailFile) {

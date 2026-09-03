@@ -1737,6 +1737,7 @@ export default {
     bccLabel: '密送',
     bccHint: '密送的人也会收到这封信，但收件人和抄送人看不到他们。',
     previewFile: '预览',
+    converting: '转换中…',
     sortBar: {
       label: '排序',
       from: '发件人',

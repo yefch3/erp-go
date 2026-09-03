@@ -966,3 +966,21 @@ func (s *Server) excelUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
+
+// previewInboundAttachment 把一个办公文档附件转成 PDF 并返回可显示的地址。
+//
+// 两个 id 都从路径里取：附件必须属于路径里那封信，而那封信必须属于调用的人。
+// 这一条在邮件服务里判，不在这里——网关只转发身份。
+func (s *Server) previewInboundAttachment(w http.ResponseWriter, r *http.Request) {
+	inboundID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	attachmentID, _ := strconv.ParseInt(chi.URLParam(r, "attachmentId"), 10, 64)
+	resp, err := s.Emails.PreviewInboundAttachment(r.Context(),
+		&mailv1.PreviewInboundAttachmentRequest{
+			InboundId: inboundID, AttachmentId: attachmentID,
+		})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
