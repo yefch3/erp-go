@@ -34,19 +34,35 @@ const (
 // Safe to run repeatedly. Recovery is keyed on the body still citing a
 // Content-ID that nothing satisfies, so a message fixed once drops out of the
 // queue on its own.
+//
+// One tenant at a time. The SyncConfig main.go passes carries no tenant — the
+// service has served every company from one process since #216 — and this
+// pass used to query with whatever it held, which was 0: no rows, no log, a
+// silent no-op in production. See tenantsToRepair.
 func (s *Service) RunEmbeddedRecovery(ctx context.Context, cfg SyncConfig) {
 	cfg = cfg.withDefaults()
 	if s.files == nil {
 		return
 	}
+	for _, tenantID := range s.tenantsToRepair(ctx, cfg) {
+		if ctx.Err() != nil {
+			return
+		}
+		s.recoverTenantEmbedded(ctx, tenantID)
+	}
+}
+
+// recoverTenantEmbedded works through one company's queue. Every return here
+// ends this company only; the next one still gets its turn.
+func (s *Service) recoverTenantEmbedded(ctx context.Context, tenantID int64) {
 	recovered, examined := 0, 0
 	for {
 		rows, err := s.q.ListInboundWithUnresolvedCID(ctx,
 			store.ListInboundWithUnresolvedCIDParams{
-				TenantID: cfg.TenantID, RowLimit: recoveryBatch,
+				TenantID: tenantID, RowLimit: recoveryBatch,
 			})
 		if err != nil {
-			s.log.Warn("embedded recovery could not read a batch", "err", err)
+			s.log.Warn("embedded recovery could not read a batch", "tenant", tenantID, "err", err)
 			return
 		}
 		if len(rows) == 0 {
@@ -58,7 +74,7 @@ func (s *Service) RunEmbeddedRecovery(ctx context.Context, cfg SyncConfig) {
 				return
 			}
 			examined++
-			if n := s.recoverEmbedded(ctx, cfg.TenantID, r.ID, r.AccountID, r.RawKey); n > 0 {
+			if n := s.recoverEmbedded(ctx, tenantID, r.ID, r.AccountID, r.RawKey); n > 0 {
 				recovered += n
 			}
 		}
@@ -68,7 +84,7 @@ func (s *Service) RunEmbeddedRecovery(ctx context.Context, cfg SyncConfig) {
 			// it — without this the same twenty come back for ever. Genuine
 			// cases exist: a body citing a part the sender really did omit.
 			s.log.Info("embedded recovery stopping: the remaining messages cannot be repaired",
-				"recovered", recovered, "examined", examined)
+				"tenant", tenantID, "recovered", recovered, "examined", examined)
 			return
 		}
 		select {
@@ -78,7 +94,7 @@ func (s *Service) RunEmbeddedRecovery(ctx context.Context, cfg SyncConfig) {
 		}
 	}
 	if recovered > 0 {
-		s.log.Info("embedded recovery finished", "pictures", recovered, "messages", examined)
+		s.log.Info("embedded recovery finished", "tenant", tenantID, "pictures", recovered, "messages", examined)
 	}
 }
 

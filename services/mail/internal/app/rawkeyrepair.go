@@ -32,14 +32,30 @@ import (
 //
 // Safe to run repeatedly: a group whose losers have been blanked no longer has
 // more than one row per key, so it stops being selected.
+//
+// One tenant at a time. The SyncConfig main.go passes carries no tenant — the
+// service has served every company from one process since #216 — and this
+// pass used to query with whatever it held, which was 0: no rows, no log, a
+// silent no-op in production. See tenantsToRepair.
 func (s *Service) RunRawKeyCollisionRepair(ctx context.Context, cfg SyncConfig) {
 	cfg = cfg.withDefaults()
 	if s.files == nil {
 		return
 	}
-	rows, err := s.q.ListCollidingRawMessages(ctx, cfg.TenantID)
+	for _, tenantID := range s.tenantsToRepair(ctx, cfg) {
+		if ctx.Err() != nil {
+			return
+		}
+		s.repairTenantRawKeyCollisions(ctx, tenantID)
+	}
+}
+
+// repairTenantRawKeyCollisions settles one company's shared originals. Every
+// return here ends this company only; the next one still gets its turn.
+func (s *Service) repairTenantRawKeyCollisions(ctx context.Context, tenantID int64) {
+	rows, err := s.q.ListCollidingRawMessages(ctx, tenantID)
 	if err != nil {
-		s.log.Warn("raw-key repair could not read the collisions", "err", err)
+		s.log.Warn("raw-key repair could not read the collisions", "tenant", tenantID, "err", err)
 		return
 	}
 	if len(rows) == 0 {
@@ -47,14 +63,15 @@ func (s *Service) RunRawKeyCollisionRepair(ctx context.Context, cfg SyncConfig) 
 	}
 
 	groups, order := groupByRawKey(rows)
-	s.log.Info("raw-key repair starting", "messages", len(rows), "shared originals", len(order))
+	s.log.Info("raw-key repair starting",
+		"tenant", tenantID, "messages", len(rows), "shared originals", len(order))
 
 	disowned, unresolved := 0, 0
 	for _, key := range order {
 		if ctx.Err() != nil {
 			return
 		}
-		n, ok := s.settleRawKeyGroup(ctx, cfg.TenantID, key, groups[key])
+		n, ok := s.settleRawKeyGroup(ctx, tenantID, key, groups[key])
 		disowned += n
 		if !ok {
 			unresolved++
@@ -68,7 +85,7 @@ func (s *Service) RunRawKeyCollisionRepair(ctx context.Context, cfg SyncConfig) 
 		}
 	}
 	s.log.Info("raw-key repair finished",
-		"originals disowned", disowned, "groups nobody claimed", unresolved)
+		"tenant", tenantID, "originals disowned", disowned, "groups nobody claimed", unresolved)
 }
 
 func groupByRawKey(rows []store.ListCollidingRawMessagesRow) (map[string][]store.ListCollidingRawMessagesRow, []string) {

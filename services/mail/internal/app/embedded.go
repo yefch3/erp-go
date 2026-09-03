@@ -208,18 +208,34 @@ const (
 // its body names a cid: that none of its attachments answers to, so repairing
 // one takes it out of the queue. That also means the pass cannot loop for ever
 // on a message it fails to fix — see the guard below.
+//
+// One tenant at a time. The SyncConfig main.go passes carries no tenant — the
+// service has served every company from one process since #216 — and this
+// pass used to query with whatever it held, which was 0: no rows, no log, a
+// silent no-op in production. See tenantsToRepair.
 func (s *Service) RunContentIDBackfill(ctx context.Context, cfg SyncConfig) {
 	cfg = cfg.withDefaults()
 	if s.files == nil {
 		return
 	}
+	for _, tenantID := range s.tenantsToRepair(ctx, cfg) {
+		if ctx.Err() != nil {
+			return
+		}
+		s.backfillTenantContentIDs(ctx, tenantID)
+	}
+}
+
+// backfillTenantContentIDs works through one company's queue. Every return
+// here ends this company only; the next one still gets its turn.
+func (s *Service) backfillTenantContentIDs(ctx context.Context, tenantID int64) {
 	repaired, skipped := 0, 0
 	for {
 		rows, err := s.q.ListInboundNeedingContentIDs(ctx, store.ListInboundNeedingContentIDsParams{
-			TenantID: cfg.TenantID, RowLimit: contentIDBatch,
+			TenantID: tenantID, RowLimit: contentIDBatch,
 		})
 		if err != nil {
-			s.log.Warn("content-id backfill could not read a batch", "err", err)
+			s.log.Warn("content-id backfill could not read a batch", "tenant", tenantID, "err", err)
 			return
 		}
 		if len(rows) == 0 {
@@ -230,7 +246,7 @@ func (s *Service) RunContentIDBackfill(ctx context.Context, cfg SyncConfig) {
 			if ctx.Err() != nil {
 				return
 			}
-			if s.repairContentIDs(ctx, cfg.TenantID, r.ID, r.RawKey) {
+			if s.repairContentIDs(ctx, tenantID, r.ID, r.RawKey) {
 				repaired++
 			}
 		}
@@ -243,7 +259,7 @@ func (s *Service) RunContentIDBackfill(ctx context.Context, cfg SyncConfig) {
 			// pretending otherwise would spin a loop.
 			skipped += len(rows)
 			s.log.Info("content-id backfill stopping: the remaining messages cannot be repaired",
-				"repaired", repaired, "unrepairable", skipped)
+				"tenant", tenantID, "repaired", repaired, "unrepairable", skipped)
 			return
 		}
 		select {
@@ -253,7 +269,7 @@ func (s *Service) RunContentIDBackfill(ctx context.Context, cfg SyncConfig) {
 		}
 	}
 	if repaired > 0 {
-		s.log.Info("content-id backfill finished", "repaired", repaired)
+		s.log.Info("content-id backfill finished", "tenant", tenantID, "repaired", repaired)
 	}
 }
 
