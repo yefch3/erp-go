@@ -55,3 +55,37 @@ describe('回复全部', () => {
     expect(r.cc).toEqual([])
   })
 })
+
+// 一个人绑了两个信箱，一封信正好发给这两个箱。
+//
+// 这是线上真发生过的：抄送要去掉本人名下**全部**信箱的地址，于是算出来是空的。
+// 从前按钮的存在绑在这个结果上，人看到的就是「明明发给了多个人，却没有回复
+// 全部」。规则本身是对的（不该抄送自己），错的是拿它决定按钮在不在——按钮
+// 现在常驻，抄送为空时退化成一次普通回复。
+describe('全部收件人都是我自己名下的信箱', () => {
+  it('抄送为空，但这不该被当成「不能回复全部」', () => {
+    const r = replyAllRecipients({
+      fromEmail: 'client@buyer.com',
+      fromName: 'Ana',
+      toParties: [
+        { name: '', email: 'me@co.com' },
+        { name: 'Me', email: 'me2@gmail.com' },
+      ],
+      mine: new Set(['me@co.com', 'me2@gmail.com']),
+    })
+    expect(r.to).toEqual({ name: 'Ana', email: 'client@buyer.com' })
+    expect(r.cc).toEqual([])
+  })
+
+  it('只有一个箱是我的时候，另一个人照常进抄送', () => {
+    const r = replyAllRecipients({
+      fromEmail: 'client@buyer.com',
+      toParties: [
+        { name: '', email: 'me@co.com' },
+        { name: '同事', email: 'colleague@co.com' },
+      ],
+      mine: new Set(['me@co.com']),
+    })
+    expect(r.cc).toEqual([{ name: '同事', email: 'colleague@co.com' }])
+  })
+})
