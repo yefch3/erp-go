@@ -55,6 +55,7 @@ func bankTransactionPB(v app.BankTransactionView) *prv1.BankTransaction {
 		Id: v.ID, TxnDate: v.TxnDate, Direction: v.Direction,
 		Amount: v.Amount, Currency: v.Currency, Counterparty: v.Counterparty,
 		BankRef: v.BankRef, Remark: v.Remark,
+		DocumentNo: v.DocumentNo,
 		ImportedBy: v.ImportedBy, CreatedAt: v.CreatedAt,
 		MatchedPaymentId: v.MatchedPaymentID, MatchedPaymentNo: v.MatchedPaymentNo,
 		SuggestedPaymentId: v.SuggestedPaymentID, SuggestedPaymentNo: v.SuggestedPaymentNo,
@@ -232,6 +233,7 @@ func bankTransactionInput(in *prv1.BankTransactionInput) app.BankTransactionInpu
 		Note:                in.GetNote(),
 		Ownership:           in.GetOwnership(),
 		OwnershipDetail:     in.GetOwnershipDetail(),
+		DocumentNo:          in.GetDocumentNo(),
 	}
 }
 

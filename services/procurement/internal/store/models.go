@@ -47,6 +47,7 @@ type BankTransaction struct {
 	DeletedByID         int64
 	DeletedByName       string
 	DeleteReason        string
+	DocumentNo          string
 }
 
 type BankTransactionChange struct {

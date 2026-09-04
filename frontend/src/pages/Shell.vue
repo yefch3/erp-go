@@ -191,19 +191,16 @@
           </template>
           <nav class="module-flyout" :aria-label="t('menu.finance')">
             <div class="module-flyout-title">{{ t('menu.finance') }}</div>
-            <template v-for="group in financeGroups" :key="group.key">
-              <div class="module-flyout-group">{{ group.label }}</div>
-              <button
-                v-for="item in group.items"
-                :key="item.path"
-                type="button"
-                class="module-flyout-item"
-                :class="{ 'is-active': route.path === item.path }"
-                @click="goFinance(item.path)"
-              >
-                {{ item.label }}
-              </button>
-            </template>
+            <button
+              v-for="item in financeItems"
+              :key="item.path"
+              type="button"
+              class="module-flyout-item"
+              :class="{ 'is-active': route.path === item.path }"
+              @click="goFinance(item.path)"
+            >
+              {{ item.label }}
+            </button>
           </nav>
         </el-popover>
         <el-popover
@@ -542,48 +539,15 @@ function isProcurementItemActive(path: string) {
   return route.path === path
 }
 
-// 财务对账集中一处：应收看客户、应付看供应商、银行流水居中对照两边。
-// 数据仍住在各自的服务里（应收在出口、应付在采购），这里只是把入口
-// 摆到财务的动线上——同一个人对账不用在两个业务模块之间来回找。
-const financeGroups = computed(() => [
-  {
-    key: 'receivable',
-    label: t('financeNav.receivable'),
-    items: auth.can('export:receipt:read')
-      ? [
-          { path: '/customer-recon', label: t('financeNav.customerRecon') },
-        ]
-      : [],
-  },
-  {
-    key: 'payable',
-    label: t('financeNav.payable'),
-    // 供应商这边只剩一项，和「应收 · 客户」下面只有「客户对账」对称。
-    // 发票页、付款页、往来汇总页都已下线；发票凭证改成在对账页上传。
-    items: auth.can('procurement:recon:read')
-      ? [{ path: '/supplier-recon', label: t('financeNav.supplierRecon') }]
-      : [],
-  },
-  {
-    key: 'bank',
-    label: t('financeNav.bank'),
-    items: auth.can('procurement:payment:read')
-      ? [{ path: '/bank-transactions', label: t('financeNav.bankTransactions') }]
-      : [],
-  },
-  // 汇率原本挂在「系统设置」下，那是放错了：它不是一次配好就不用管的开关，
-  // 是每天都在变、且直接决定报价和对账金额的业务数据。用它的人是财务和
-  // 报价的人，不是管系统的人。
-  {
-    key: 'fx',
-    label: t('financeNav.fx'),
-    items: auth.can('fx:rate:read') ? [{ path: '/fx', label: t('menu.fx') }] : [],
-  },
-].filter((group) => group.items.length > 0))
-const hasFinance = computed(() => financeGroups.value.length > 0)
-const financeActive = computed(() =>
-  financeGroups.value.some((group) => group.items.some((item) => route.path === item.path)),
-)
+// 财务只有四个直接入口，不再为单个入口套一层同名分组。
+const financeItems = computed(() => [
+  { path: '/bank-transactions', label: t('financeNav.bankTransactions'), allowed: auth.can('procurement:payment:read') },
+  { path: '/customer-recon', label: t('financeNav.customerRecon'), allowed: auth.can('export:receipt:read') },
+  { path: '/supplier-recon', label: t('financeNav.supplierRecon'), allowed: auth.can('procurement:recon:read') },
+  { path: '/fx', label: t('financeNav.fx'), allowed: auth.can('fx:rate:read') },
+].filter((item) => item.allowed))
+const hasFinance = computed(() => financeItems.value.length > 0)
+const financeActive = computed(() => financeItems.value.some((item) => route.path === item.path))
 
 function goBasicData(path: string) {
   basicDataOpen.value = false
@@ -874,13 +838,6 @@ async function changePassword() {
 .module-flyout-badge {
   color: #fbbf24;
   font-size: 11px;
-}
-.module-flyout-group {
-  padding: 10px 10px 4px;
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.4px;
 }
 .topbar {
   display: flex;

@@ -89,6 +89,7 @@ var presetRoles = []presetRole{
 		Permissions: []string{
 			"export:contract:read", "export:receipt:read", "export:receipt:write",
 			"export:shipment:read",
+			"fx:rate:read",
 			"masterdata:customer:read", "masterdata:port:read",
 			"procurement:payment:read", "procurement:payment:write",
 			"procurement:recon:read", "procurement:recon:write",

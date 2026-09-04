@@ -448,6 +448,7 @@ func (s *Server) Router() http.Handler {
 		// 待核销页上的两个动作：记一笔收款、冲销记错的那笔。
 		// {id} 一个是合同、一个是收款记录，所以地址前缀故意不同。
 		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/{id}/receipts", s.recordContractReceipt)
+		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/manual", s.createManualReceivable)
 		r.With(s.perm("export:receipt:write")).Post("/api/contract-receipts/{id}/reverse", s.reverseContractReceipt)
 		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/{id}/close", s.closeReceivable)
 		r.With(s.perm("export:receipt:write")).Post("/api/receivable-due/{id}/reopen", s.reopenReceivable)
@@ -614,6 +615,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-recon", s.listSupplierRecon)
 		r.With(s.perm("procurement:recon:read")).Get("/api/supplier-recon/{id}/payments", s.listPurchaseOrderPayments)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/payments", s.recordPurchaseOrderPayment)
+		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/manual", s.createManualPayable)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/payments/{allocationId}/reverse", s.reversePurchaseOrderPayment)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/close", s.closePurchaseOrderPayment)
 		r.With(s.perm("procurement:recon:write")).Post("/api/supplier-recon/{id}/reopen", s.reopenPurchaseOrderPayment)

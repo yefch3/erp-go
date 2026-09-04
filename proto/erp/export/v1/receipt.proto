@@ -45,6 +45,9 @@ service ReceiptService {
   rpc ListReceivableDue(ListReceivableDueRequest) returns (ListReceivableDueResponse);
   // 记一笔收款到合同上：员工手填金额和到账日期，**不连银行流水**。
   rpc RecordContractReceipt(RecordContractReceiptRequest) returns (RecordContractReceiptResponse);
+  // Add a receivable that existed before the company started using ERP.
+  // It enters the same list immediately; there is no approval workflow.
+  rpc CreateManualReceivable(CreateManualReceivableRequest) returns (CreateManualReceivableResponse);
   // 冲销一笔记错的收款：写一条相反的记录，不删原记录。
   rpc ReverseContractReceipt(ReverseContractReceiptRequest) returns (ReverseContractReceiptResponse);
   // 确认核销完成：这张合同的收款「说清了」，由人说出来。
@@ -404,6 +407,17 @@ message RecordContractReceiptRequest {
   string note = 5;
 }
 message RecordContractReceiptResponse { ReceiptProgress progress = 1; }
+
+message CreateManualReceivableRequest {
+  string customer_name = 1;
+  string contract_no = 2;
+  string currency = 3;
+  string total_amount = 4;
+  string received_amount = 5;
+  string received_at = 6;
+  string note = 7;
+}
+message CreateManualReceivableResponse { ReceiptProgress progress = 1; }
 
 message ReverseContractReceiptRequest {
   int64 entry_id = 1;

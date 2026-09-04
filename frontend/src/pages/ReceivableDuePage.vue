@@ -6,7 +6,30 @@
         <h1>{{ t('receivableDue.title') }}</h1>
         <p>{{ t('receivableDue.subtitle') }}</p>
       </div>
+      <el-button v-if="canWrite" type="primary" @click="openManual">{{ t('receivableDue.addManual') }}</el-button>
     </header>
+
+    <el-dialog v-model="manualOpen" :title="t('receivableDue.addManual')" width="min(560px, 94vw)" destroy-on-close>
+      <el-form label-position="top">
+        <el-form-item :label="t('receivableDue.manualCustomer')" required>
+          <el-select v-model="manualForm.customerName" filterable allow-create default-first-option clearable :placeholder="t('receivableDue.manualPickOrEnter')" style="width: 100%">
+            <el-option v-for="name in manualCustomerOptions" :key="name" :label="name" :value="name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('receivableDue.manualContract')" required>
+          <el-select v-model="manualForm.contractNo" filterable allow-create default-first-option clearable :placeholder="t('receivableDue.manualPickOrEnter')" style="width: 100%" @change="applyManualContract">
+            <el-option v-for="item in manualContractOptions" :key="item.contractNo" :label="`${item.contractNo} · ${item.customerName}`" :value="item.contractNo" />
+          </el-select>
+        </el-form-item>
+        <div class="manual-grid">
+          <el-form-item :label="t('receivableDue.manualTotal')" required><el-input v-model="manualForm.totalAmount"><template #prepend><el-select v-model="manualForm.currency" filterable allow-create default-first-option :placeholder="t('receivableDue.manualCurrencyHint')" style="width: 110px"><el-option v-for="c in ['USD','CNY','EUR','GBP','JPY','CAD','AUD','HKD']" :key="c" :value="c" /></el-select></template></el-input></el-form-item>
+          <el-form-item :label="t('receivableDue.manualReceived')"><el-input v-model="manualForm.receivedAmount" /></el-form-item>
+        </div>
+        <el-form-item :label="t('receivableDue.manualDate')"><el-date-picker v-model="manualForm.receivedAt" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item>
+        <el-form-item :label="t('receivableDue.entryNote')"><el-input v-model="manualForm.note" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="manualOpen = false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="manualBusy" @click="saveManual">{{ t('common.save') }}</el-button></template>
+    </el-dialog>
 
     <!-- 三个数字，回答财务开门第一句话：现在有多少钱该收而没收到。
          逾期额单独一栏并染红——总额里混着还没到期的，那个数字安慰人，
@@ -138,8 +161,9 @@
             <div class="sub">{{ row.closedByName }}<template v-if="row.closedNote"> · {{ row.closedNote }}</template></div>
           </template>
         </el-table-column>
-        <el-table-column v-if="canWrite" :label="t('common.actions')" width="230" fixed="right">
+        <el-table-column v-if="canWrite" :label="t('common.actions')" width="300" fixed="right">
           <template #default="{ row }">
+            <div class="row-actions">
             <!-- 已完成的合同照样能记钱：钱真的又来了，先记上再撤销完成。 -->
             <el-button link type="primary" @click="openEntry(row)">
               {{ t('receivableDue.addReceipt') }}
@@ -155,6 +179,7 @@
             <el-button link type="primary" @click="openDue(row)">
               {{ t('receivableDue.dueEdit') }}
             </el-button>
+            </div>
           </template>
         </el-table-column>
         <template #empty>{{ emptyText }}</template>
@@ -288,6 +313,23 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const canWrite = auth.can('export:receipt:write')
+const manualOpen = ref(false)
+const manualBusy = ref(false)
+const manualForm = reactive({ customerName: '', contractNo: '', currency: 'USD', totalAmount: '', receivedAmount: '', receivedAt: '', note: '' })
+
+async function saveManual() {
+  if (!manualForm.customerName.trim() || !manualForm.contractNo.trim() || !manualForm.totalAmount.trim()) {
+    ElMessage.warning(t('receivableDue.manualRequired')); return
+  }
+  manualBusy.value = true
+  try {
+    await post('/receivable-due/manual', manualForm)
+    manualOpen.value = false
+    Object.assign(manualForm, { customerName: '', contractNo: '', currency: 'USD', totalAmount: '', receivedAmount: '', receivedAt: '', note: '' })
+    ElMessage.success(t('receivableDue.manualSaved'))
+    reload()
+  } finally { manualBusy.value = false }
+}
 
 interface Row {
   contractId: string
@@ -308,6 +350,24 @@ interface Row {
   closedNote: string
   closedByName: string
   closedAt: string
+}
+
+const manualSuggestionRows = ref<Row[]>([])
+const manualCustomerOptions = computed(() => [...new Set(manualSuggestionRows.value.map((row) => row.customerName).filter(Boolean))])
+const manualContractOptions = computed(() => {
+  const customer = manualForm.customerName.trim()
+  return customer ? manualSuggestionRows.value.filter((row) => row.customerName === customer) : manualSuggestionRows.value
+})
+
+function applyManualContract(contractNo: string) {
+  const row = manualSuggestionRows.value.find((item) => item.contractNo === contractNo)
+  if (!row) return
+  Object.assign(manualForm, {
+    customerName: row.customerName,
+    currency: row.currency,
+    totalAmount: row.totalAmount,
+    receivedAmount: row.receivedAmount,
+  })
 }
 
 interface Entry {
@@ -359,7 +419,8 @@ const unsetCount = ref(0)
 const dueSoonDays = 30
 
 function rowClass({ row }: { row: Row }) {
-  if (row.dueUnset) return 'row-unset'
+  // 未填日期已有橙色标签提示，不再把整行染黄。
+  if (row.dueUnset) return ''
   return row.overdueDays > 0 ? 'row-overdue' : ''
 }
 
@@ -371,6 +432,20 @@ function dueLabel(row: Row): string {
 
 async function fetchPage(params: Record<string, string | number>) {
   return get<{ items: Row[]; meta: { total: string } }>('/receivable-due', params)
+}
+
+async function openManual() {
+  manualOpen.value = true
+  try {
+    const [open, done] = await Promise.all([
+      fetchPage({ page: 1, page_size: 200 }),
+      fetchPage({ page: 1, page_size: 200, closed: '1' }),
+    ])
+    manualSuggestionRows.value = [...(open.items ?? []), ...(done.items ?? [])]
+  } catch {
+    // 建议加载失败不影响手工录入；所有字段始终允许直接输入。
+    manualSuggestionRows.value = [...rows.value]
+  }
 }
 
 async function load() {
@@ -586,8 +661,11 @@ onMounted(() => {
 .page {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.manual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 640px) { .manual-grid { grid-template-columns: 1fr; } }
 .page-head .eyebrow {
   font-size: 12px;
   letter-spacing: 1.5px;
@@ -595,7 +673,7 @@ onMounted(() => {
 }
 .page-head h1 {
   margin: 4px 0 6px;
-  font-size: 28px;
+  font-size: 26px;
 }
 .page-head p {
   margin: 0;
@@ -604,13 +682,14 @@ onMounted(() => {
 .metrics {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 .metric {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 14px 16px;
+  min-height: 86px;
+  padding: 12px 16px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 10px;
   background: var(--el-bg-color);
@@ -636,7 +715,7 @@ onMounted(() => {
   color: var(--el-text-color-placeholder);
 }
 .panel {
-  padding: 16px;
+  padding: 14px 16px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 10px;
   background: var(--el-bg-color);
@@ -645,7 +724,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
   flex-wrap: wrap;
 }
 .sub {
@@ -677,11 +756,9 @@ onMounted(() => {
   justify-content: flex-end;
 }
 :deep(.row-overdue) {
-  background: var(--el-color-danger-light-9);
+  background: rgba(245, 108, 108, 0.055);
 }
-:deep(.row-unset) {
-  background: var(--el-color-warning-light-9);
-}
+.row-actions { display: flex; align-items: center; white-space: nowrap; }
 .close-target {
   margin: 0 0 10px;
   font-weight: 600;

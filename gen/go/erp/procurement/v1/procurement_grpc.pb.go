@@ -2773,6 +2773,7 @@ const (
 	PurchaseOrderService_ListSupplierRecon_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/ListSupplierRecon"
 	PurchaseOrderService_ListPurchaseOrderPayments_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/ListPurchaseOrderPayments"
 	PurchaseOrderService_RecordPurchaseOrderPayment_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/RecordPurchaseOrderPayment"
+	PurchaseOrderService_CreateManualPayable_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/CreateManualPayable"
 	PurchaseOrderService_ReversePurchaseOrderPayment_FullMethodName      = "/erp.procurement.v1.PurchaseOrderService/ReversePurchaseOrderPayment"
 	PurchaseOrderService_ClosePurchaseOrderPayment_FullMethodName        = "/erp.procurement.v1.PurchaseOrderService/ClosePurchaseOrderPayment"
 	PurchaseOrderService_ReopenPurchaseOrderPayment_FullMethodName       = "/erp.procurement.v1.PurchaseOrderService/ReopenPurchaseOrderPayment"
@@ -2885,6 +2886,9 @@ type PurchaseOrderServiceClient interface {
 	ListSupplierRecon(ctx context.Context, in *ListSupplierReconRequest, opts ...grpc.CallOption) (*ListSupplierReconResponse, error)
 	ListPurchaseOrderPayments(ctx context.Context, in *ListPurchaseOrderPaymentsRequest, opts ...grpc.CallOption) (*ListPurchaseOrderPaymentsResponse, error)
 	RecordPurchaseOrderPayment(ctx context.Context, in *RecordPurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*RecordPurchaseOrderPaymentResponse, error)
+	// Add a payable that existed before the company started using ERP.
+	// It enters the outgoing-payment list immediately; there is no approval.
+	CreateManualPayable(ctx context.Context, in *CreateManualPayableRequest, opts ...grpc.CallOption) (*CreateManualPayableResponse, error)
 	ReversePurchaseOrderPayment(ctx context.Context, in *ReversePurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ReversePurchaseOrderPaymentResponse, error)
 	ClosePurchaseOrderPayment(ctx context.Context, in *ClosePurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ClosePurchaseOrderPaymentResponse, error)
 	ReopenPurchaseOrderPayment(ctx context.Context, in *ReopenPurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ReopenPurchaseOrderPaymentResponse, error)
@@ -3350,6 +3354,16 @@ func (c *purchaseOrderServiceClient) RecordPurchaseOrderPayment(ctx context.Cont
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) CreateManualPayable(ctx context.Context, in *CreateManualPayableRequest, opts ...grpc.CallOption) (*CreateManualPayableResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateManualPayableResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_CreateManualPayable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *purchaseOrderServiceClient) ReversePurchaseOrderPayment(ctx context.Context, in *ReversePurchaseOrderPaymentRequest, opts ...grpc.CallOption) (*ReversePurchaseOrderPaymentResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReversePurchaseOrderPaymentResponse)
@@ -3685,6 +3699,9 @@ type PurchaseOrderServiceServer interface {
 	ListSupplierRecon(context.Context, *ListSupplierReconRequest) (*ListSupplierReconResponse, error)
 	ListPurchaseOrderPayments(context.Context, *ListPurchaseOrderPaymentsRequest) (*ListPurchaseOrderPaymentsResponse, error)
 	RecordPurchaseOrderPayment(context.Context, *RecordPurchaseOrderPaymentRequest) (*RecordPurchaseOrderPaymentResponse, error)
+	// Add a payable that existed before the company started using ERP.
+	// It enters the outgoing-payment list immediately; there is no approval.
+	CreateManualPayable(context.Context, *CreateManualPayableRequest) (*CreateManualPayableResponse, error)
 	ReversePurchaseOrderPayment(context.Context, *ReversePurchaseOrderPaymentRequest) (*ReversePurchaseOrderPaymentResponse, error)
 	ClosePurchaseOrderPayment(context.Context, *ClosePurchaseOrderPaymentRequest) (*ClosePurchaseOrderPaymentResponse, error)
 	ReopenPurchaseOrderPayment(context.Context, *ReopenPurchaseOrderPaymentRequest) (*ReopenPurchaseOrderPaymentResponse, error)
@@ -3869,6 +3886,9 @@ func (UnimplementedPurchaseOrderServiceServer) ListPurchaseOrderPayments(context
 }
 func (UnimplementedPurchaseOrderServiceServer) RecordPurchaseOrderPayment(context.Context, *RecordPurchaseOrderPaymentRequest) (*RecordPurchaseOrderPaymentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RecordPurchaseOrderPayment not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) CreateManualPayable(context.Context, *CreateManualPayableRequest) (*CreateManualPayableResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateManualPayable not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) ReversePurchaseOrderPayment(context.Context, *ReversePurchaseOrderPaymentRequest) (*ReversePurchaseOrderPaymentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReversePurchaseOrderPayment not implemented")
@@ -4686,6 +4706,24 @@ func _PurchaseOrderService_RecordPurchaseOrderPayment_Handler(srv interface{}, c
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_CreateManualPayable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateManualPayableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).CreateManualPayable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_CreateManualPayable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).CreateManualPayable(ctx, req.(*CreateManualPayableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PurchaseOrderService_ReversePurchaseOrderPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ReversePurchaseOrderPaymentRequest)
 	if err := dec(in); err != nil {
@@ -5302,6 +5340,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RecordPurchaseOrderPayment",
 			Handler:    _PurchaseOrderService_RecordPurchaseOrderPayment_Handler,
+		},
+		{
+			MethodName: "CreateManualPayable",
+			Handler:    _PurchaseOrderService_CreateManualPayable_Handler,
 		},
 		{
 			MethodName: "ReversePurchaseOrderPayment",

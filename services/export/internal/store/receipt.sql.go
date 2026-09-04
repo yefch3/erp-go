@@ -177,7 +177,7 @@ func (q *Queries) ClearContractReminders(ctx context.Context, arg ClearContractR
 
 const contractReceiptProgress = `-- name: ContractReceiptProgress :one
 SELECT
-    c.id, c.contract_no, c.customer_name,
+    c.id, coalesce(nullif(c.external_contract_no, ''), c.contract_no)::text AS contract_no, c.customer_name,
     coalesce(v.currency, '')::text        AS currency,
     coalesce(v.total_amount, 0)::text     AS total_amount,
     (CASE WHEN c.opening_received_amount = 0 THEN coalesce(r.received, 0)
@@ -247,7 +247,7 @@ func (q *Queries) ContractReceivableDue(ctx context.Context, arg ContractReceiva
 }
 
 const findContractsByNo = `-- name: FindContractsByNo :many
-SELECT c.id, c.contract_no, c.customer_name, v.currency,
+SELECT c.id, coalesce(nullif(c.external_contract_no, ''), c.contract_no)::text AS contract_no, c.customer_name, v.currency,
        (v.total_amount - c.opening_received_amount - coalesce(r.received, 0))::text AS open_amount
 FROM contracts c
 JOIN contract_versions v ON v.id = c.current_version_id
@@ -711,7 +711,7 @@ func (q *Queries) ListLiveReceiptSettlements(ctx context.Context, arg ListLiveRe
 
 const listReceivableDue = `-- name: ListReceivableDue :many
 SELECT
-    c.id, c.contract_no, c.customer_id, c.customer_name,
+    c.id, coalesce(nullif(c.external_contract_no, ''), c.contract_no)::text AS contract_no, c.customer_id, c.customer_name,
     c.sales_employee_id, c.sales_employee,
     coalesce(c.receivable_due_date::text, '')::text AS due_date,
     coalesce(c.effective_at::date::text, '')::text  AS effective_date,
@@ -968,7 +968,7 @@ func (q *Queries) MarkReceivableRemindersRead(ctx context.Context, arg MarkRecei
 
 const openReceivables = `-- name: OpenReceivables :many
 SELECT
-    c.id, c.contract_no, c.customer_id, c.customer_name,
+    c.id, coalesce(nullif(c.external_contract_no, ''), c.contract_no)::text AS contract_no, c.customer_id, c.customer_name,
     v.currency,
     v.total_amount::text              AS total_amount,
     (CASE WHEN c.opening_received_amount = 0 THEN coalesce(r.received, 0)
