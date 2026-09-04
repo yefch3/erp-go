@@ -416,6 +416,7 @@ message CreateManualReceivableRequest {
   string received_amount = 5;
   string received_at = 6;
   string note = 7;
+  string due_date = 8;
 }
 message CreateManualReceivableResponse { ReceiptProgress progress = 1; }
 

@@ -26,6 +26,7 @@
           <el-form-item :label="t('supplierRecon.manualPaid')"><el-input v-model="manualForm.paidAmount" /></el-form-item>
         </div>
         <el-form-item :label="t('supplierRecon.manualDate')"><el-date-picker v-model="manualForm.paidAt" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item>
+        <el-form-item :label="t('supplierRecon.manualDueDate')"><el-date-picker v-model="manualForm.dueDate" type="date" value-format="YYYY-MM-DD" clearable style="width: 100%" /></el-form-item>
         <el-form-item :label="t('supplierRecon.entryNote')"><el-input v-model="manualForm.note" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="manualOpen = false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="manualBusy" @click="saveManual">{{ t('common.save') }}</el-button></template>
@@ -218,25 +219,19 @@
             <div class="sub">{{ row.closedByName }}<template v-if="row.closedNote"> · {{ row.closedNote }}</template></div>
           </template>
         </el-table-column>
-        <el-table-column v-if="canWrite" :label="t('common.actions')" width="300" fixed="right">
+        <el-table-column :label="t('common.actions')" width="150" fixed="right">
           <template #default="{ row }">
-            <div class="row-actions">
-            <!-- 已完成的单照样能记钱：钱真的又付了，先记上再撤销完成。 -->
-            <el-button link type="primary" @click="openEntry(row)">
-              {{ t('supplierRecon.addPayment') }}
-            </el-button>
-            <el-button v-if="isDone" link type="warning" @click="reopenRow(row)">
-              {{ t('supplierRecon.reopen') }}
-            </el-button>
-            <el-button v-else link type="success" @click="openClose(row)">
-              {{ t('supplierRecon.close') }}
-            </el-button>
-            <!-- 已下单的采购单没有别的编辑入口（表单只对草稿和被驳回的单
-                 开放），所以改到期日这个门只能开在这里。 -->
-            <el-button link type="primary" @click="openDue(row)">
-              {{ t('supplierRecon.dueEdit') }}
-            </el-button>
-            </div>
+            <el-dropdown trigger="click" @command="(command: string) => handleRowCommand(row, command)">
+              <el-button type="primary" plain>{{ t('supplierRecon.moreActions') }}<span class="drop-arrow">▼</span></el-button>
+              <template #dropdown><el-dropdown-menu>
+                <el-dropdown-item command="detail">{{ t('supplierRecon.viewDetails') }}</el-dropdown-item>
+                <template v-if="canWrite">
+                  <el-dropdown-item divided command="payment">{{ t('supplierRecon.addPayment') }}</el-dropdown-item>
+                  <el-dropdown-item :command="isDone ? 'reopen' : 'close'">{{ isDone ? t('supplierRecon.reopen') : t('supplierRecon.close') }}</el-dropdown-item>
+                  <el-dropdown-item command="due">{{ t('supplierRecon.dueEdit') }}</el-dropdown-item>
+                </template>
+              </el-dropdown-menu></template>
+            </el-dropdown>
           </template>
         </el-table-column>
         <template #empty>{{ emptyText }}</template>
@@ -253,6 +248,28 @@
         @current-change="(p: number) => { page = p; load() }"
       />
     </section>
+
+    <el-dialog v-model="detailOpen" :title="t('supplierRecon.detailTitle')" width="min(860px, 96vw)">
+      <template v-if="detailRow">
+        <p class="close-target">{{ detailRow.poNo }} · {{ detailRow.supplierName }}</p>
+        <el-descriptions :column="3" border class="detail-summary">
+          <el-descriptions-item :label="t('supplierRecon.manualTotal')">{{ detailRow.currency }} {{ detailRow.orderedAmount }}</el-descriptions-item>
+          <el-descriptions-item :label="t('supplierRecon.manualPaid')">{{ detailRow.paidAmount }}</el-descriptions-item>
+          <el-descriptions-item :label="t('supplierRecon.openAmount')">{{ detailRow.openAmount }}</el-descriptions-item>
+          <el-descriptions-item :label="t('supplierRecon.dueDate')">{{ detailRow.dueDate || t('supplierRecon.unsetTag') }}</el-descriptions-item>
+          <el-descriptions-item :label="t('supplierRecon.buyer')">{{ detailRow.buyerName || '—' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('supplierRecon.detailStatus')">{{ isDone ? t('supplierRecon.tabDone') : t('supplierRecon.tabOpen') }}</el-descriptions-item>
+        </el-descriptions>
+        <h3 class="detail-heading">{{ t('supplierRecon.detailHistory') }}</h3>
+        <el-table v-loading="detailLoading" :data="entriesOf(detailRow)" size="small">
+          <el-table-column :label="t('supplierRecon.entryDate')" prop="paidAt" width="120" />
+          <el-table-column :label="t('supplierRecon.entryAmount')" width="150"><template #default="{ row: e }">{{ e.currency }} {{ e.amount }}</template></el-table-column>
+          <el-table-column :label="t('supplierRecon.entryNote')" min-width="180"><template #default="{ row: e }">{{ Number(e.reversalOf) ? `${t('supplierRecon.entryReversal')} · ${e.reverseReason}` : (e.note || '—') }}</template></el-table-column>
+          <el-table-column :label="t('supplierRecon.entryBy')" min-width="180"><template #default="{ row: e }">{{ e.allocatedBy || '—' }}<div class="sub">{{ e.allocatedAt }}</div></template></el-table-column>
+          <template #empty>{{ t('supplierRecon.entriesEmpty') }}</template>
+        </el-table>
+      </template>
+    </el-dialog>
 
     <!-- 改应付到期日。这个日子决定这张单算不算逾期，所以理由必填，
          改动会连同旧值新值一起留痕。 -->
@@ -375,7 +392,7 @@ const auth = useAuthStore()
 const canWrite = auth.can('procurement:recon:write')
 const manualOpen = ref(false)
 const manualBusy = ref(false)
-const manualForm = reactive({ supplierName: '', orderNo: '', currency: 'CNY', totalAmount: '', paidAmount: '', paidAt: '', note: '' })
+const manualForm = reactive({ supplierName: '', orderNo: '', currency: 'CNY', totalAmount: '', paidAmount: '', paidAt: '', dueDate: '', note: '' })
 
 async function saveManual() {
   if (!manualForm.supplierName.trim() || !manualForm.orderNo.trim() || !manualForm.totalAmount.trim()) {
@@ -385,7 +402,7 @@ async function saveManual() {
   try {
     await post('/supplier-recon/manual', manualForm)
     manualOpen.value = false
-    Object.assign(manualForm, { supplierName: '', orderNo: '', currency: 'CNY', totalAmount: '', paidAmount: '', paidAt: '', note: '' })
+    Object.assign(manualForm, { supplierName: '', orderNo: '', currency: 'CNY', totalAmount: '', paidAmount: '', paidAt: '', dueDate: '', note: '' })
     ElMessage.success(t('supplierRecon.manualSaved'))
     reload()
   } finally { manualBusy.value = false }
@@ -434,6 +451,7 @@ function applyManualOrder(orderNo: string) {
     currency: row.currency,
     totalAmount: row.orderedAmount,
     paidAmount: row.paidAmount,
+    dueDate: row.dueDate || '',
   })
 }
 
@@ -612,6 +630,9 @@ const entryForm = ref({ amount: '', isRefund: false, paidAt: '', note: '' })
 const payIdem = newIdempotencySession()
 // 展开行的明细，按采购单缓存——展开一次拉一次，不预先拉。
 const entries = ref<Record<string, Entry[]>>({})
+const detailOpen = ref(false)
+const detailLoading = ref(false)
+const detailRow = ref<Row | null>(null)
 
 function entriesOf(row: Row): Entry[] {
   return entries.value[String(row.poId)] ?? []
@@ -625,6 +646,21 @@ function reversedIds(row: Row): Set<string> {
 async function loadEntries(row: Row) {
   const d = await get<{ items: Entry[] }>(`/supplier-recon/${row.poId}/payments`)
   entries.value = { ...entries.value, [String(row.poId)]: d.items ?? [] }
+}
+
+async function openDetails(row: Row) {
+  detailRow.value = row
+  detailOpen.value = true
+  detailLoading.value = true
+  try { await loadEntries(row) } finally { detailLoading.value = false }
+}
+
+function handleRowCommand(row: Row, command: string) {
+  if (command === 'detail') void openDetails(row)
+  else if (command === 'payment') openEntry(row)
+  else if (command === 'close') openClose(row)
+  else if (command === 'reopen') void reopenRow(row)
+  else if (command === 'due') openDue(row)
 }
 
 function onExpand(row: Row, expanded: Row[]) {
@@ -952,6 +988,9 @@ onMounted(() => {
   background: rgba(245, 108, 108, 0.055);
 }
 .row-actions { display: flex; align-items: center; white-space: nowrap; }
+.drop-arrow { margin-left: 7px; font-size: 10px; }
+.detail-summary { margin-bottom: 18px; }
+.detail-heading { margin: 0 0 10px; font-size: 15px; }
 .metric.is-alarm {
   border-color: var(--el-color-danger-light-5);
   background: var(--el-color-danger-light-9);

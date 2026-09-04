@@ -26,6 +26,7 @@
           <el-form-item :label="t('receivableDue.manualReceived')"><el-input v-model="manualForm.receivedAmount" /></el-form-item>
         </div>
         <el-form-item :label="t('receivableDue.manualDate')"><el-date-picker v-model="manualForm.receivedAt" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item>
+        <el-form-item :label="t('receivableDue.manualDueDate')"><el-date-picker v-model="manualForm.dueDate" type="date" value-format="YYYY-MM-DD" clearable style="width: 100%" /></el-form-item>
         <el-form-item :label="t('receivableDue.entryNote')"><el-input v-model="manualForm.note" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="manualOpen = false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="manualBusy" @click="saveManual">{{ t('common.save') }}</el-button></template>
@@ -161,25 +162,19 @@
             <div class="sub">{{ row.closedByName }}<template v-if="row.closedNote"> · {{ row.closedNote }}</template></div>
           </template>
         </el-table-column>
-        <el-table-column v-if="canWrite" :label="t('common.actions')" width="300" fixed="right">
+        <el-table-column :label="t('common.actions')" width="150" fixed="right">
           <template #default="{ row }">
-            <div class="row-actions">
-            <!-- 已完成的合同照样能记钱：钱真的又来了，先记上再撤销完成。 -->
-            <el-button link type="primary" @click="openEntry(row)">
-              {{ t('receivableDue.addReceipt') }}
-            </el-button>
-            <el-button v-if="isDone" link type="warning" @click="reopenRow(row)">
-              {{ t('receivableDue.reopen') }}
-            </el-button>
-            <el-button v-else link type="success" @click="openClose(row)">
-              {{ t('receivableDue.close') }}
-            </el-button>
-            <!-- 合同的常规编辑口只对草稿开放、而且只放销售属主过，所以
-                 财务改到期日这个门开在这里。 -->
-            <el-button link type="primary" @click="openDue(row)">
-              {{ t('receivableDue.dueEdit') }}
-            </el-button>
-            </div>
+            <el-dropdown trigger="click" @command="(command: string) => handleRowCommand(row, command)">
+              <el-button type="primary" plain>{{ t('receivableDue.moreActions') }}<span class="drop-arrow">▼</span></el-button>
+              <template #dropdown><el-dropdown-menu>
+                <el-dropdown-item command="detail">{{ t('receivableDue.viewDetails') }}</el-dropdown-item>
+                <template v-if="canWrite">
+                  <el-dropdown-item divided command="receipt">{{ t('receivableDue.addReceipt') }}</el-dropdown-item>
+                  <el-dropdown-item :command="isDone ? 'reopen' : 'close'">{{ isDone ? t('receivableDue.reopen') : t('receivableDue.close') }}</el-dropdown-item>
+                  <el-dropdown-item command="due">{{ t('receivableDue.dueEdit') }}</el-dropdown-item>
+                </template>
+              </el-dropdown-menu></template>
+            </el-dropdown>
           </template>
         </el-table-column>
         <template #empty>{{ emptyText }}</template>
@@ -194,6 +189,28 @@
         @current-change="(p: number) => { page = p; load() }"
       />
     </section>
+
+    <el-dialog v-model="detailOpen" :title="t('receivableDue.detailTitle')" width="min(820px, 96vw)">
+      <template v-if="detailRow">
+        <p class="close-target">{{ detailRow.contractNo }} · {{ detailRow.customerName }}</p>
+        <el-descriptions :column="3" border class="detail-summary">
+          <el-descriptions-item :label="t('receivableDue.manualTotal')">{{ detailRow.currency }} {{ detailRow.totalAmount }}</el-descriptions-item>
+          <el-descriptions-item :label="t('receivableDue.manualReceived')">{{ detailRow.receivedAmount }}</el-descriptions-item>
+          <el-descriptions-item :label="t('receivableDue.openAmount')">{{ detailRow.openAmount }}</el-descriptions-item>
+          <el-descriptions-item :label="t('receivableDue.dueDate')">{{ detailRow.dueDate || t('receivableDue.unsetTag') }}</el-descriptions-item>
+          <el-descriptions-item :label="t('receivableDue.owner')">{{ detailRow.salesEmployee || '—' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('receivableDue.detailStatus')">{{ isDone ? t('receivableDue.tabDone') : t('receivableDue.tabOpen') }}</el-descriptions-item>
+        </el-descriptions>
+        <h3 class="detail-heading">{{ t('receivableDue.detailHistory') }}</h3>
+        <el-table v-loading="detailLoading" :data="entriesOf(detailRow)" size="small">
+          <el-table-column :label="t('receivableDue.entryDate')" prop="receivedAt" width="120" />
+          <el-table-column :label="t('receivableDue.entryAmount')" width="150"><template #default="{ row: e }">{{ e.currency }} {{ e.amount }}</template></el-table-column>
+          <el-table-column :label="t('receivableDue.entryNote')" min-width="180"><template #default="{ row: e }">{{ Number(e.reversalOf) ? `${t('receivableDue.entryReversal')} · ${e.reverseReason}` : (e.note || '—') }}</template></el-table-column>
+          <el-table-column :label="t('receivableDue.entryBy')" min-width="170"><template #default="{ row: e }">{{ e.allocatedByName || '—' }}<div class="sub">{{ e.allocatedAt }}</div></template></el-table-column>
+          <template #empty>{{ t('receivableDue.entriesEmpty') }}</template>
+        </el-table>
+      </template>
+    </el-dialog>
 
     <!-- 收款结清：这张合同的钱「不用再催了」。三个数并排亮着，员工看着差额
          做决定——这正是「完成由人确认」那条原则在合同侧的样子。只关催收的
@@ -315,7 +332,7 @@ const auth = useAuthStore()
 const canWrite = auth.can('export:receipt:write')
 const manualOpen = ref(false)
 const manualBusy = ref(false)
-const manualForm = reactive({ customerName: '', contractNo: '', currency: 'USD', totalAmount: '', receivedAmount: '', receivedAt: '', note: '' })
+const manualForm = reactive({ customerName: '', contractNo: '', currency: 'USD', totalAmount: '', receivedAmount: '', receivedAt: '', dueDate: '', note: '' })
 
 async function saveManual() {
   if (!manualForm.customerName.trim() || !manualForm.contractNo.trim() || !manualForm.totalAmount.trim()) {
@@ -325,7 +342,7 @@ async function saveManual() {
   try {
     await post('/receivable-due/manual', manualForm)
     manualOpen.value = false
-    Object.assign(manualForm, { customerName: '', contractNo: '', currency: 'USD', totalAmount: '', receivedAmount: '', receivedAt: '', note: '' })
+    Object.assign(manualForm, { customerName: '', contractNo: '', currency: 'USD', totalAmount: '', receivedAmount: '', receivedAt: '', dueDate: '', note: '' })
     ElMessage.success(t('receivableDue.manualSaved'))
     reload()
   } finally { manualBusy.value = false }
@@ -367,6 +384,7 @@ function applyManualContract(contractNo: string) {
     currency: row.currency,
     totalAmount: row.totalAmount,
     receivedAmount: row.receivedAmount,
+    dueDate: row.dueDate || '',
   })
 }
 
@@ -490,6 +508,9 @@ const entryRow = ref<Row | null>(null)
 const entryForm = ref({ amount: '', isRefund: false, receivedAt: '', note: '' })
 // 展开行的明细，按合同缓存——展开一次拉一次，不预先拉。
 const entries = ref<Record<string, Entry[]>>({})
+const detailOpen = ref(false)
+const detailLoading = ref(false)
+const detailRow = ref<Row | null>(null)
 
 function entriesOf(row: Row): Entry[] {
   return entries.value[String(row.contractId)] ?? []
@@ -503,6 +524,21 @@ function reversedIds(row: Row): Set<string> {
 async function loadEntries(row: Row) {
   const d = await get<{ receipts: Entry[] }>(`/contracts/${row.contractId}/receipts`)
   entries.value = { ...entries.value, [String(row.contractId)]: d.receipts ?? [] }
+}
+
+async function openDetails(row: Row) {
+  detailRow.value = row
+  detailOpen.value = true
+  detailLoading.value = true
+  try { await loadEntries(row) } finally { detailLoading.value = false }
+}
+
+function handleRowCommand(row: Row, command: string) {
+  if (command === 'detail') void openDetails(row)
+  else if (command === 'receipt') openEntry(row)
+  else if (command === 'close') openClose(row)
+  else if (command === 'reopen') void reopenRow(row)
+  else if (command === 'due') openDue(row)
 }
 
 function onExpand(row: Row, expanded: Row[]) {
@@ -759,6 +795,9 @@ onMounted(() => {
   background: rgba(245, 108, 108, 0.055);
 }
 .row-actions { display: flex; align-items: center; white-space: nowrap; }
+.drop-arrow { margin-left: 7px; font-size: 10px; }
+.detail-summary { margin-bottom: 18px; }
+.detail-heading { margin: 0 0 10px; font-size: 15px; }
 .close-target {
   margin: 0 0 10px;
   font-weight: 600;

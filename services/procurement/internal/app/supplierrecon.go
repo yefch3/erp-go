@@ -66,7 +66,7 @@ type SupplierReconRow struct {
 type ManualPayableInput struct {
 	SupplierName, OrderNo, Currency string
 	TotalAmount, PaidAmount         string
-	PaidAt, Note                    string
+	PaidAt, DueDate, Note           string
 }
 
 // CreateManualPayable records an opening supplier balance without creating a
@@ -105,13 +105,16 @@ func (s *Service) CreateManualPayable(ctx context.Context, tenantID int64, in Ma
 	if err := validBusinessDate(in.PaidAt, "PR_MANUAL_PAYABLE_DATE", "付款日期"); err != nil {
 		return SupplierReconRow{}, err
 	}
+	if err := validBusinessDate(in.DueDate, "PR_MANUAL_PAYABLE_DUE_DATE", "应付到期日"); err != nil {
+		return SupplierReconRow{}, err
+	}
 	var poID int64
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		err := tx.QueryRow(ctx, `INSERT INTO purchase_orders
 			(tenant_id, po_no, supplier_id, supplier_code, supplier_name, currency,
-			 total_amount, status, buyer_id, buyer_name, remark, ordered_at)
-			VALUES ($1,$2,0,'',$3,$4,$5::numeric,'ORDERED',$6,$7,$8,now()) RETURNING id`,
-			tenantID, in.OrderNo, in.SupplierName, in.Currency, total.StringFixed(2), op.ID, op.Name, strings.TrimSpace(in.Note)).Scan(&poID)
+			 total_amount, status, buyer_id, buyer_name, remark, ordered_at, payable_due_date)
+			VALUES ($1,$2,0,'',$3,$4,$5::numeric,'ORDERED',$6,$7,$8,now(),nullif($9::text,'')::date) RETURNING id`,
+			tenantID, in.OrderNo, in.SupplierName, in.Currency, total.StringFixed(2), op.ID, op.Name, strings.TrimSpace(in.Note), strings.TrimSpace(in.DueDate)).Scan(&poID)
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {

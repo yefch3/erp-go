@@ -92,7 +92,8 @@ export default {
   supplierRecon: {
     eyebrow: 'SALIDAS DE DINERO', title: 'Salidas',
     subtitle: 'Ver y registrar pagos a proveedores', pendingHint: 'Órdenes que nadie ha confirmado como saldadas', doneHint: 'Alguien confirmó que la parte del dinero está cerrada', unpaidHint: 'Órdenes por conciliar sin ningún pago registrado (muestra de 200)',
-    addManual: 'Agregar pago', manualSupplier: 'Proveedor', manualOrder: 'N.º de contrato / orden', manualTotal: 'Total del contrato / orden', manualPickOrEnter: 'Elegir existente o escribir', manualCurrencyHint: 'Elegir o escribir', manualPaid: 'Ya pagado', manualDate: 'Fecha de pago', manualRequired: 'Ingrese proveedor, número y total', manualSaved: 'Pago agregado',
+    addManual: 'Agregar pago', manualSupplier: 'Proveedor', manualOrder: 'N.º de contrato / orden', manualTotal: 'Total del contrato / orden', manualPickOrEnter: 'Elegir existente o escribir', manualCurrencyHint: 'Elegir o escribir', manualPaid: 'Ya pagado', manualDate: 'Fecha de pago', manualDueDate: 'Fecha de vencimiento', manualRequired: 'Ingrese proveedor, número y total', manualSaved: 'Pago agregado',
+    moreActions: 'Más acciones', viewDetails: 'Ver detalles', detailTitle: 'Detalle de pagos', detailHistory: 'Historial de pagos', detailStatus: 'Estado actual',
     overdueCount: 'Vencido', overdueHint: 'Pasada la fecha de pago acordada y aún sin pagar',
     dueSoonCount: 'Vence en 30 días', dueSoonHint: 'Toca programar el pago según las condiciones del proveedor',
     unsetCount: 'Sin vencimiento', unsetHint: 'Nadie escribió la fecha de vencimiento al crear el pedido. Pertenece al pedido: complétala aquí',
@@ -346,7 +347,8 @@ export default {
     empty: 'Nadie usó la conversión inteligente este mes',
   },
   receivableDue: {
-    addManual: 'Agregar cobro', manualCustomer: 'Cliente', manualContract: 'N.º de contrato', manualTotal: 'Total del contrato', manualPickOrEnter: 'Elegir existente o escribir', manualCurrencyHint: 'Elegir o escribir', manualReceived: 'Ya cobrado', manualDate: 'Fecha de cobro', manualRequired: 'Ingrese cliente, contrato y total', manualSaved: 'Cobro agregado',
+    addManual: 'Agregar cobro', manualCustomer: 'Cliente', manualContract: 'N.º de contrato', manualTotal: 'Total del contrato', manualPickOrEnter: 'Elegir existente o escribir', manualCurrencyHint: 'Elegir o escribir', manualReceived: 'Ya cobrado', manualDate: 'Fecha de cobro', manualDueDate: 'Fecha de vencimiento', manualRequired: 'Ingrese cliente, contrato y total', manualSaved: 'Cobro agregado',
+    moreActions: 'Más acciones', viewDetails: 'Ver detalles', detailTitle: 'Detalle de cobros', detailHistory: 'Historial de cobros', detailStatus: 'Estado actual',
     tabOpen: 'Pendientes', tabDone: 'Completados',
     entryFee: 'más {n} de complemento',
     addReceipt: 'Registrar cobro', addReceiptTitle: 'Registrar un cobro',

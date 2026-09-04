@@ -2418,6 +2418,7 @@ message CreateManualPayableRequest {
   string paid_amount = 5;
   string paid_at = 6;
   string note = 7;
+  string due_date = 8;
 }
 message CreateManualPayableResponse { SupplierReconRow row = 1; }
 message ReversePurchaseOrderPaymentResponse {
