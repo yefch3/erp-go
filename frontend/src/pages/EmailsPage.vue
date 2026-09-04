@@ -397,7 +397,20 @@
         </template>
         <template v-if="openedInbound.attachments?.length">
           <el-divider />
-          <h4 class="side-title">{{ t('emails.attachments') }}</h4>
+          <div class="att-head">
+            <h4 class="side-title">{{ t('emails.attachments') }}</h4>
+            <!-- 两个以上才给这颗按钮：只有一个附件时它和旁边的「下载」是
+                 同一件事，多一颗只会让人挑。 -->
+            <el-button
+              v-if="openedInbound.attachments.length > 1"
+              size="small"
+              plain
+              :loading="bundling"
+              @click="downloadAllAttachments"
+            >
+              {{ t('emails.downloadAll', { n: openedInbound.attachments.length }) }}
+            </el-button>
+          </div>
           <MailAttachments
             :files="openedInbound.attachments"
             :converting="convertingAttachment"
@@ -2345,6 +2358,8 @@ async function openDetail(id: string) {
       unreadCount.value = Math.max(0, unreadCount.value - 1)
     }
     loadThread(d.mail)
+    // 后台把办公文档先转好。不 await：正文和会话该立刻显示，预热是顺带的。
+    void warmAttachmentPreviews(openedInbound.value)
   } catch {
     // A dead link — deleted mail, somebody else's id — falls back to the
     // list rather than a blank page.
@@ -3714,6 +3729,59 @@ const previewOpen = ref(false)
 const previewing = ref<MailFile | null>(null)
 
 const convertingAttachment = ref('')
+const bundling = ref(false)
+
+/** 把这封信的附件打成一个压缩包下载。 */
+async function downloadAllAttachments() {
+  const id = openedInbound.value?.id
+  if (!id || bundling.value) return
+  bundling.value = true
+  try {
+    const file = await download(`/inbound-mails/${id}/attachments/download`)
+    saveBlob(file.blob, file.fileName)
+  } catch {
+    // 具体原因（太大、原件读不到）后端已经用消息说了，拦截器会弹出来。
+  } finally {
+    bundling.value = false
+  }
+}
+
+/**
+ * 打开一封信之后，悄悄把要转换的附件先转好。
+ *
+ * 转换本身在服务器上只要 0.3 秒左右，但一次完整的往返（读原件、转换、写回
+ * 对象存储、签地址）实测 1 到 1.8 秒——挂在「预览」这颗按钮上，人是等得到的。
+ * 而人打开一封信到点开附件之间，通常有好几秒在读正文。这段时间白白空着。
+ *
+ * 所以在这里预热：转好的地址写回附件对象，等真点下去时 needsConversion 已经
+ * 是 false，弹窗直接开。没点的那些就当白转了一次——服务器那边有缓存，下次
+ * 谁点都是秒开，不算浪费。
+ *
+ * **一个一个来，不并发**：一封信可能带四十个附件，四十个请求同时压给转换器
+ * 只会让每一个都变慢。也不抢在用户手动点的前面——那一次有人在等。
+ */
+async function warmAttachmentPreviews(mail: { id: string; attachments?: MailFile[] } | null) {
+  if (!mail?.attachments?.length) return
+  const opened = mail.id
+  for (const a of mail.attachments) {
+    // 用户已经自己点了某个附件，把转换器让给他。
+    if (convertingAttachment.value) return
+    // 翻到别的信上去了，这封就不用预热了。
+    if (openedInbound.value?.id !== opened) return
+    if (!needsConversion(a)) continue
+    try {
+      const resp = await post<{ previewUrl?: string }>(
+        `/inbound-mails/${opened}/attachments/${a.id}/preview`,
+        undefined,
+        // 预热失败不该在页面上弹一句话——没人请求过它。
+        quietErrors,
+      )
+      if (resp?.previewUrl) a.previewUrl = resp.previewUrl
+    } catch {
+      // 转不了的（坏文件、太大）等用户真点的时候再如实报错。
+    }
+  }
+}
 
 /**
  * 打开预览。
@@ -4353,6 +4421,15 @@ async function doUnsuppress(row: Suppression) {
   outline-offset: 1px;
 }
 
+.att-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.att-head .side-title {
+  margin: 0;
+}
 .preview-img {
   display: block;
   max-width: 100%;

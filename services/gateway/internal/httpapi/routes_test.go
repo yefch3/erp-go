@@ -361,3 +361,12 @@ func TestOfficeAttachmentPreviewRouteIsRegistered(t *testing.T) {
 		t.Fatalf("缺少路由：%s", want)
 	}
 }
+
+// 附件打包下载。少了这条，页面上那颗「下载全部」点了拿到 404，而 catch 里
+// 只会说一句「下载失败」。
+func TestAttachmentBundleDownloadRouteIsRegistered(t *testing.T) {
+	const want = "GET /api/inbound-mails/{id}/attachments/download"
+	if !routeSet(t)[want] {
+		t.Fatalf("缺少路由：%s", want)
+	}
+}

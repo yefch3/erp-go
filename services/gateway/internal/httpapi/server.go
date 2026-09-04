@@ -798,6 +798,10 @@ func (s *Server) Router() http.Handler {
 		// 干活（转换并写进对象存储），之后是缓存命中。
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).
 			Post("/api/inbound-mails/{id}/attachments/{attachmentId}/preview", s.previewInboundAttachment)
+		// 一次把这封信的附件全下载下来。生产上 835 封信带 3 个以上附件，
+		// 最多的一封 40 个，一个一个点不是办法。
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).
+			Get("/api/inbound-mails/{id}/attachments/download", s.downloadInboundAttachments)
 		// 邮箱转换也要能选择询盘模板；这里复用同一个只读 handler，但权限按
 		// 邮箱场景收口，用户无需先获得采购模块权限或跳到采购页面。
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-inquiry-templates", s.listInquiryTemplates)

@@ -1747,6 +1747,7 @@ export default {
     bccHint: 'People on BCC receive the mail; nobody on To or CC can see that they did.',
     previewFile: 'Preview',
     converting: 'Converting…',
+    downloadAll: 'Download all ({n})',
     sortBar: {
       label: 'Sort',
       from: 'Sender',

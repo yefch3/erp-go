@@ -911,6 +911,17 @@ func (h *Handler) PreviewInboundAttachment(ctx context.Context, req *mailv1.Prev
 	return &mailv1.PreviewInboundAttachmentResponse{PreviewUrl: url}, nil
 }
 
+func (h *Handler) DownloadInboundAttachments(ctx context.Context, req *mailv1.DownloadInboundAttachmentsRequest) (*mailv1.DownloadInboundAttachmentsResponse, error) {
+	op := operator(ctx)
+	bundle, err := h.svc.ZipInboundAttachments(ctx, grpcx.TenantID(ctx), op.ID, req.GetInboundId())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.DownloadInboundAttachmentsResponse{
+		Content: bundle.Content, FileName: bundle.FileName,
+	}, nil
+}
+
 func (h *Handler) StartInboundExcelConversion(ctx context.Context, req *mailv1.StartInboundExcelConversionRequest) (*mailv1.StartInboundExcelConversionResponse, error) {
 	op := operator(ctx)
 	columns := make([]app.InquiryColumn, 0, len(req.GetTemplateColumns()))

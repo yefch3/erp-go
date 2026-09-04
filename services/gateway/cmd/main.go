@@ -39,10 +39,21 @@ func main() {
 	}
 }
 
+// maxServiceResponseBytes 是网关愿意从内部服务收下的单条响应上限。
+//
+// gRPC 默认只肯收 4 MB，而**附件打包下载是整个包一条消息传过来的**
+// （app.MaxZipBytes = 40 MB）。默认值下，一封带 5 MB 附件的信点「下载全部」
+// 会在这里失败，而且错误消息是传输层的，跟附件、跟大小都不沾边——
+// 「grpc: received message larger than max」，看不出该去改哪个数。
+//
+// 留了余量装 zip 的头尾和 protobuf 的封装。改 MaxZipBytes 就要跟着改这里。
+const maxServiceResponseBytes = 48 << 20
+
 func dial(addr string) (*grpc.ClientConn, error) {
 	return grpc.NewClient(addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainUnaryInterceptor(grpcx.UnaryClientPropagator()),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxServiceResponseBytes)),
 	)
 }
 
