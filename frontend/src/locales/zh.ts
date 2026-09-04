@@ -151,6 +151,7 @@ export default {
     figOrdered: '订单额', figPaid: '已付', figOpen: '未付',
   },
   bankTransactions: {
+    moreActions: '更多操作',
     accounts: '收款账户',
     accountsHint: '维护本公司的账户，是为了识别内部划转——外币户结汇到人民币户，看起来就是一笔大额货款。',
     accountName: '户名', accountNo: '账号', bankName: '开户行', currency: '币种',

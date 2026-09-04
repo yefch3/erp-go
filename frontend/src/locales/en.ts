@@ -151,6 +151,7 @@ export default {
     figOrdered: 'Order total', figPaid: 'Paid', figOpen: 'Unpaid',
   },
   bankTransactions: {
+    moreActions: 'More actions',
     accounts: 'Our accounts',
     accountsHint: 'Keeping our own accounts on file is what makes internal transfers recognisable — moving money from the FX account to the CNY one otherwise looks like a large customer payment.',
     accountName: 'Account name', accountNo: 'Account no.', bankName: 'Bank', currency: 'Currency',

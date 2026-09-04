@@ -221,15 +221,16 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="150" fixed="right">
           <template #default="{ row }">
-            <el-dropdown trigger="click" @command="(command: string) => handleRowCommand(row, command)">
+            <el-button v-if="isDone || !canWrite" type="primary" plain @click="handleRowCommand(row, 'detail')">
+              {{ t('supplierRecon.viewDetails') }}
+            </el-button>
+            <el-dropdown v-else trigger="click" @command="(command: string) => handleRowCommand(row, command)">
               <el-button type="primary" plain>{{ t('supplierRecon.moreActions') }}<span class="drop-arrow">▼</span></el-button>
               <template #dropdown><el-dropdown-menu>
                 <el-dropdown-item command="detail">{{ t('supplierRecon.viewDetails') }}</el-dropdown-item>
-                <template v-if="canWrite">
-                  <el-dropdown-item divided command="payment">{{ t('supplierRecon.addPayment') }}</el-dropdown-item>
-                  <el-dropdown-item :command="isDone ? 'reopen' : 'close'">{{ isDone ? t('supplierRecon.reopen') : t('supplierRecon.close') }}</el-dropdown-item>
-                  <el-dropdown-item command="due">{{ t('supplierRecon.dueEdit') }}</el-dropdown-item>
-                </template>
+                <el-dropdown-item divided command="payment">{{ t('supplierRecon.addPayment') }}</el-dropdown-item>
+                <el-dropdown-item command="close">{{ t('supplierRecon.close') }}</el-dropdown-item>
+                <el-dropdown-item command="due">{{ t('supplierRecon.dueEdit') }}</el-dropdown-item>
               </el-dropdown-menu></template>
             </el-dropdown>
           </template>
@@ -869,6 +870,10 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  width: 100%;
+  max-width: 1680px;
+  min-width: 0;
+  margin: 0 auto;
 }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .manual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -925,6 +930,7 @@ onMounted(() => {
   font-size: 12px;
 }
 .panel {
+  min-width: 0;
   padding: 14px 16px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 10px;
@@ -1025,5 +1031,14 @@ onMounted(() => {
 }
 .close-figures .warn {
   color: var(--el-color-warning);
+}
+@media (max-width: 768px) {
+  .page-head { flex-direction: column; align-items: stretch; }
+  .page-head > :deep(.el-button) { align-self: flex-start; }
+  .metrics { grid-template-columns: 1fr; }
+  .panel { padding: 12px; }
+  .filters { align-items: stretch; }
+  .filters :deep(.el-input) { width: 100%; max-width: none !important; }
+  .pager { justify-content: flex-start; overflow-x: auto; }
 }
 </style>

@@ -151,6 +151,7 @@ export default {
     figOrdered: 'Total de la orden', figPaid: 'Pagado', figOpen: 'Pendiente',
   },
   bankTransactions: {
+    moreActions: 'Más acciones',
     accounts: 'Nuestras cuentas',
     accountsHint: 'Tener nuestras cuentas registradas es lo que hace reconocibles los traspasos internos: pasar dinero de la cuenta en divisas a la de CNY parece un cobro grande de cliente.',
     accountName: 'Titular', accountNo: 'N.º de cuenta', bankName: 'Banco', currency: 'Moneda',
