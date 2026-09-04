@@ -93,7 +93,7 @@ export default {
     eyebrow: 'OUTGOING PAYMENTS', title: 'Money out',
     subtitle: 'View and record money paid to suppliers', pendingHint: 'Orders nobody has confirmed as settled', doneHint: 'Somebody confirmed the money side is done', unpaidHint: 'To-reconcile orders with no payment recorded (first 200 sampled)',
     addManual: 'Add payment', manualSupplier: 'Supplier', manualOrder: 'Contract / PO number', manualTotal: 'Contract / PO total', manualPickOrEnter: 'Select existing or type', manualCurrencyHint: 'Select or type', manualPaid: 'Already paid', manualDate: 'Payment date', manualDueDate: 'Payment due date', manualRequired: 'Enter supplier, number and total', manualSaved: 'Payment added',
-    moreActions: 'More actions', viewDetails: 'View details', detailTitle: 'Payment details', detailHistory: 'Payment history', detailStatus: 'Current status',
+    moreActions: 'More actions', viewDetails: 'Details / reverse', detailTitle: 'Payment details', detailHistory: 'Payment history', detailStatus: 'Current status', editManual: 'Edit details', editManualHint: 'Only basic details of manually added records can be edited. Reverse and re-enter an incorrect amount.', editManualSaved: 'Payment details updated',
     overdueCount: 'Overdue', overdueHint: 'Past the agreed payment date and still unpaid',
     dueSoonCount: 'Due in 30 days', dueSoonHint: 'Time to schedule payment under the supplier terms',
     unsetCount: 'No due date', unsetHint: 'Nobody entered a payable due date when the order was raised. It belongs to the order — fill it in here',
@@ -349,7 +349,7 @@ export default {
   },
   receivableDue: {
     addManual: 'Add receipt', manualCustomer: 'Customer', manualContract: 'Contract number', manualTotal: 'Contract total', manualPickOrEnter: 'Select existing or type', manualCurrencyHint: 'Select or type', manualReceived: 'Already received', manualDate: 'Receipt date', manualDueDate: 'Receivable due date', manualRequired: 'Enter customer, contract number and total', manualSaved: 'Receipt added',
-    moreActions: 'More actions', viewDetails: 'View details', detailTitle: 'Receipt details', detailHistory: 'Receipt history', detailStatus: 'Current status',
+    moreActions: 'More actions', viewDetails: 'Details / reverse', detailTitle: 'Receipt details', detailHistory: 'Receipt history', detailStatus: 'Current status', editManual: 'Edit details', editManualHint: 'Only basic details of manually added records can be edited. Reverse and re-enter an incorrect amount.', editManualSaved: 'Receipt details updated',
     tabOpen: 'Not finished', tabDone: 'Completed',
     entryFee: 'plus {n} top-up',
     addReceipt: 'Record receipt', addReceiptTitle: 'Record a receipt',

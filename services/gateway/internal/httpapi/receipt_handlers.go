@@ -107,6 +107,20 @@ func (s *Server) createManualReceivable(w http.ResponseWriter, r *http.Request) 
 	s.writeProto(w, resp)
 }
 
+func (s *Server) updateManualReceivable(w http.ResponseWriter, r *http.Request) {
+	req := &exv1.UpdateManualReceivableRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.ContractId = idFromPath(r)
+	resp, err := s.Receipts.UpdateManualReceivable(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 // reverseContractReceipt 冲销一笔记错的收款。写反向记录，不删原记录。
 func (s *Server) reverseContractReceipt(w http.ResponseWriter, r *http.Request) {
 	var body struct {

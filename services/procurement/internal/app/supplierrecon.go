@@ -57,10 +57,11 @@ type SupplierReconRow struct {
 	// 当成漏记而重填一遍，同一笔钱在账上出现两次。
 	InvoicePaidAmount string
 	// 完成确认（只在已完成视图里非空）：为什么算完了、谁说的、什么时候。
-	ClosedCategory string
-	ClosedNote     string
-	ClosedByName   string
-	ClosedAt       string
+	ClosedCategory  string
+	ClosedNote      string
+	ClosedByName    string
+	ClosedAt        string
+	ManuallyEntered bool
 }
 
 type ManualPayableInput struct {
@@ -130,6 +131,60 @@ func (s *Service) CreateManualPayable(ctx context.Context, tenantID int64, in Ma
 			 paid_at, note, allocated_by, allocated_by_name)
 			VALUES ($1,NULL,NULL,$2,$3::numeric,0,$4,nullif($5::text,'')::date,$6,$7,$8)`,
 			tenantID, poID, paid.StringFixed(2), in.Currency, strings.TrimSpace(in.PaidAt), strings.TrimSpace(in.Note), op.ID, op.Name)
+		return err
+	})
+	if err != nil {
+		return SupplierReconRow{}, err
+	}
+	s.nudge(ctx, tenantID)
+	return s.reconRowOf(ctx, tenantID, poID)
+}
+
+// UpdateManualPayable corrects a finance-only opening record without touching
+// its append-only payment history.
+func (s *Service) UpdateManualPayable(ctx context.Context, tenantID, poID int64,
+	supplierName, orderNo, dueDate string, op Operator) (SupplierReconRow, error) {
+	if err := s.requireFullScope(ctx, op); err != nil {
+		return SupplierReconRow{}, err
+	}
+	supplierName, orderNo, dueDate = strings.TrimSpace(supplierName), strings.TrimSpace(orderNo), strings.TrimSpace(dueDate)
+	if supplierName == "" || orderNo == "" {
+		return SupplierReconRow{}, apierr.Invalid("PR_MANUAL_PAYABLE_REQUIRED", "请填写供应商和合同号/采购单号")
+	}
+	if err := validBusinessDate(dueDate, "PR_MANUAL_PAYABLE_DUE_DATE", "应付到期日"); err != nil {
+		return SupplierReconRow{}, err
+	}
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		var supplierID int64
+		var oldSupplier, oldNo, oldDue string
+		err := tx.QueryRow(ctx, `SELECT supplier_id,supplier_name,po_no,coalesce(payable_due_date::text,'')
+			FROM purchase_orders WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, poID).
+			Scan(&supplierID, &oldSupplier, &oldNo, &oldDue)
+		if err == pgx.ErrNoRows {
+			return apierr.NotFound("PR_POPAY_PO_NOT_FOUND", "采购单不存在")
+		}
+		if err != nil {
+			return err
+		}
+		if supplierID != 0 {
+			return apierr.Conflict("PR_MANUAL_PAYABLE_ONLY", "系统生成的采购单请在采购订单中修改")
+		}
+		if oldSupplier == supplierName && oldNo == orderNo && oldDue == dueDate {
+			return nil
+		}
+		if _, err = tx.Exec(ctx, `UPDATE purchase_orders SET supplier_name=$3,po_no=$4,
+			payable_due_date=nullif($5,'')::date WHERE tenant_id=$1 AND id=$2`, tenantID, poID, supplierName, orderNo, dueDate); err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				return apierr.Conflict("PR_MANUAL_PAYABLE_NO_TAKEN", "该合同号/采购单号已存在")
+			}
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO manual_payable_corrections
+			(tenant_id,po_id,before_data,after_data,corrected_by,corrected_by_name)
+			VALUES ($1,$2,jsonb_build_object('supplierName',$3,'orderNo',$4,'dueDate',$5),
+			jsonb_build_object('supplierName',$6,'orderNo',$7,'dueDate',$8),$9,$10)`,
+			tenantID, poID, oldSupplier, oldNo, oldDue, supplierName, orderNo, dueDate, op.ID, op.Name)
 		return err
 	})
 	if err != nil {
@@ -337,6 +392,7 @@ func (s *Service) ListSupplierRecon(ctx context.Context, tenantID int64,
 			return nil, 0, err
 		}
 		out = append(out, r)
+		out[len(out)-1].ManuallyEntered = r.SupplierID == 0
 	}
 	return out, total, rows.Err()
 }
@@ -355,6 +411,7 @@ func (s *Service) reconRowOf(ctx context.Context, tenantID, poID int64) (Supplie
 	if err == pgx.ErrNoRows {
 		return SupplierReconRow{}, apierr.NotFound("PR_POPAY_PO_NOT_FOUND", "采购单不存在")
 	}
+	r.ManuallyEntered = r.SupplierID == 0
 	return r, err
 }
 

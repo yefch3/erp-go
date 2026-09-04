@@ -106,14 +106,6 @@
                 <el-table-column :label="t('receivableDue.entryBy')" width="160">
                   <template #default="{ row: e }">{{ e.allocatedByName }}<div class="sub">{{ e.allocatedAt }}</div></template>
                 </el-table-column>
-                <el-table-column width="90">
-                  <template #default="{ row: e }">
-                    <el-button
-                      v-if="canWrite && !Number(e.reversalOf) && !reversedIds(row).has(String(e.allocationId))"
-                      link type="danger" @click="reverseEntry(row, e)"
-                    >{{ t('receivableDue.entryReverse') }}</el-button>
-                  </template>
-                </el-table-column>
               </el-table>
               <p v-else class="sub">{{ t('receivableDue.entriesEmpty') }}</p>
             </div>
@@ -171,6 +163,7 @@
               <el-button type="primary" plain>{{ t('receivableDue.moreActions') }}<span class="drop-arrow">▼</span></el-button>
               <template #dropdown><el-dropdown-menu>
                 <el-dropdown-item command="detail">{{ t('receivableDue.viewDetails') }}</el-dropdown-item>
+                <el-dropdown-item v-if="row.manuallyEntered" command="edit">{{ t('receivableDue.editManual') }}</el-dropdown-item>
                 <el-dropdown-item divided command="receipt">{{ t('receivableDue.addReceipt') }}</el-dropdown-item>
                 <el-dropdown-item command="close">{{ t('receivableDue.close') }}</el-dropdown-item>
                 <el-dropdown-item command="due">{{ t('receivableDue.dueEdit') }}</el-dropdown-item>
@@ -208,9 +201,22 @@
           <el-table-column :label="t('receivableDue.entryAmount')" width="150"><template #default="{ row: e }">{{ e.currency }} {{ e.amount }}</template></el-table-column>
           <el-table-column :label="t('receivableDue.entryNote')" min-width="180"><template #default="{ row: e }">{{ Number(e.reversalOf) ? `${t('receivableDue.entryReversal')} · ${e.reverseReason}` : (e.note || '—') }}</template></el-table-column>
           <el-table-column :label="t('receivableDue.entryBy')" min-width="170"><template #default="{ row: e }">{{ e.allocatedByName || '—' }}<div class="sub">{{ e.allocatedAt }}</div></template></el-table-column>
+          <el-table-column v-if="canWrite && !isDone" :label="t('common.actions')" width="90">
+            <template #default="{ row: e }"><el-button v-if="!Number(e.reversalOf) && !reversedIds(detailRow).has(String(e.allocationId))" link type="danger" @click="reverseEntry(detailRow, e)">{{ t('receivableDue.entryReverse') }}</el-button></template>
+          </el-table-column>
           <template #empty>{{ t('receivableDue.entriesEmpty') }}</template>
         </el-table>
       </template>
+    </el-dialog>
+
+    <el-dialog v-model="editOpen" :title="t('receivableDue.editManual')" width="min(520px, 94vw)" destroy-on-close>
+      <el-form label-position="top">
+        <el-form-item :label="t('receivableDue.manualCustomer')" required><el-input v-model="editForm.customerName" /></el-form-item>
+        <el-form-item :label="t('receivableDue.manualContract')" required><el-input v-model="editForm.contractNo" /></el-form-item>
+        <el-form-item :label="t('receivableDue.manualDueDate')"><el-date-picker v-model="editForm.dueDate" type="date" value-format="YYYY-MM-DD" clearable style="width:100%" /></el-form-item>
+        <el-alert :closable="false" type="info" :title="t('receivableDue.editManualHint')" />
+      </el-form>
+      <template #footer><el-button @click="editOpen=false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="editBusy" @click="saveEdit">{{ t('common.save') }}</el-button></template>
     </el-dialog>
 
     <!-- 收款结清：这张合同的钱「不用再催了」。三个数并排亮着，员工看着差额
@@ -323,7 +329,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { get, post } from '../api'
+import { get, patch, post } from '../api'
 import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
@@ -368,6 +374,7 @@ interface Row {
   closedNote: string
   closedByName: string
   closedAt: string
+  manuallyEntered: boolean
 }
 
 const manualSuggestionRows = ref<Row[]>([])
@@ -540,6 +547,27 @@ function handleRowCommand(row: Row, command: string) {
   else if (command === 'close') openClose(row)
   else if (command === 'reopen') void reopenRow(row)
   else if (command === 'due') openDue(row)
+  else if (command === 'edit') openEdit(row)
+}
+
+const editOpen = ref(false)
+const editBusy = ref(false)
+const editRow = ref<Row | null>(null)
+const editForm = reactive({ customerName: '', contractNo: '', dueDate: '' })
+function openEdit(row: Row) {
+  editRow.value = row
+  Object.assign(editForm, { customerName: row.customerName, contractNo: row.contractNo, dueDate: row.dueDate || '' })
+  editOpen.value = true
+}
+async function saveEdit() {
+  if (!editRow.value || !editForm.customerName.trim() || !editForm.contractNo.trim()) return
+  editBusy.value = true
+  try {
+    await patch(`/receivable-due/${editRow.value.contractId}/manual`, editForm)
+    editOpen.value = false
+    ElMessage.success(t('receivableDue.editManualSaved'))
+    reload()
+  } finally { editBusy.value = false }
 }
 
 function onExpand(row: Row, expanded: Row[]) {

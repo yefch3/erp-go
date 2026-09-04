@@ -2799,6 +2799,7 @@ const (
 	PurchaseOrderService_ListBankAccounts_FullMethodName                 = "/erp.procurement.v1.PurchaseOrderService/ListBankAccounts"
 	PurchaseOrderService_CreateBankAccount_FullMethodName                = "/erp.procurement.v1.PurchaseOrderService/CreateBankAccount"
 	PurchaseOrderService_SetBankTransactionClaim_FullMethodName          = "/erp.procurement.v1.PurchaseOrderService/SetBankTransactionClaim"
+	PurchaseOrderService_UpdateManualPayable_FullMethodName              = "/erp.procurement.v1.PurchaseOrderService/UpdateManualPayable"
 )
 
 // PurchaseOrderServiceClient is the client API for PurchaseOrderService service.
@@ -2944,6 +2945,8 @@ type PurchaseOrderServiceClient interface {
 	// 结果写回来——账本自己算不出来，但账本必须知道，否则「还没处理完」那个
 	// 队列就筛不准。
 	SetBankTransactionClaim(ctx context.Context, in *SetBankTransactionClaimRequest, opts ...grpc.CallOption) (*SetBankTransactionClaimResponse, error)
+	// Correct identifying information on a finance-only opening record.
+	UpdateManualPayable(ctx context.Context, in *UpdateManualPayableRequest, opts ...grpc.CallOption) (*UpdateManualPayableResponse, error)
 }
 
 type purchaseOrderServiceClient struct {
@@ -3614,6 +3617,16 @@ func (c *purchaseOrderServiceClient) SetBankTransactionClaim(ctx context.Context
 	return out, nil
 }
 
+func (c *purchaseOrderServiceClient) UpdateManualPayable(ctx context.Context, in *UpdateManualPayableRequest, opts ...grpc.CallOption) (*UpdateManualPayableResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateManualPayableResponse)
+	err := c.cc.Invoke(ctx, PurchaseOrderService_UpdateManualPayable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PurchaseOrderServiceServer is the server API for PurchaseOrderService service.
 // All implementations must embed UnimplementedPurchaseOrderServiceServer
 // for forward compatibility.
@@ -3757,6 +3770,8 @@ type PurchaseOrderServiceServer interface {
 	// 结果写回来——账本自己算不出来，但账本必须知道，否则「还没处理完」那个
 	// 队列就筛不准。
 	SetBankTransactionClaim(context.Context, *SetBankTransactionClaimRequest) (*SetBankTransactionClaimResponse, error)
+	// Correct identifying information on a finance-only opening record.
+	UpdateManualPayable(context.Context, *UpdateManualPayableRequest) (*UpdateManualPayableResponse, error)
 	mustEmbedUnimplementedPurchaseOrderServiceServer()
 }
 
@@ -3964,6 +3979,9 @@ func (UnimplementedPurchaseOrderServiceServer) CreateBankAccount(context.Context
 }
 func (UnimplementedPurchaseOrderServiceServer) SetBankTransactionClaim(context.Context, *SetBankTransactionClaimRequest) (*SetBankTransactionClaimResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetBankTransactionClaim not implemented")
+}
+func (UnimplementedPurchaseOrderServiceServer) UpdateManualPayable(context.Context, *UpdateManualPayableRequest) (*UpdateManualPayableResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateManualPayable not implemented")
 }
 func (UnimplementedPurchaseOrderServiceServer) mustEmbedUnimplementedPurchaseOrderServiceServer() {}
 func (UnimplementedPurchaseOrderServiceServer) testEmbeddedByValue()                              {}
@@ -5174,6 +5192,24 @@ func _PurchaseOrderService_SetBankTransactionClaim_Handler(srv interface{}, ctx 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PurchaseOrderService_UpdateManualPayable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateManualPayableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PurchaseOrderServiceServer).UpdateManualPayable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PurchaseOrderService_UpdateManualPayable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PurchaseOrderServiceServer).UpdateManualPayable(ctx, req.(*UpdateManualPayableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PurchaseOrderService_ServiceDesc is the grpc.ServiceDesc for PurchaseOrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -5444,6 +5480,10 @@ var PurchaseOrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetBankTransactionClaim",
 			Handler:    _PurchaseOrderService_SetBankTransactionClaim_Handler,
+		},
+		{
+			MethodName: "UpdateManualPayable",
+			Handler:    _PurchaseOrderService_UpdateManualPayable_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

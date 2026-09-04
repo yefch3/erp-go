@@ -692,7 +692,6 @@ service PurchaseOrderService {
   rpc AttachReconFile(AttachReconFileRequest) returns (AttachReconFileResponse);
   rpc ListReconFiles(ListReconFilesRequest) returns (ListReconFilesResponse);
   rpc RemoveReconFile(RemoveReconFileRequest) returns (RemoveReconFileResponse);
-
   // Bank statement rows: the fifth voice. Imported verbatim from the CSV
   // the bank portal exports, deduplicated by the bank's own reference, and
   // matched to payments — the match lives on the payment and is reversible;
@@ -735,6 +734,8 @@ service PurchaseOrderService {
   // 结果写回来——账本自己算不出来，但账本必须知道，否则「还没处理完」那个
   // 队列就筛不准。
   rpc SetBankTransactionClaim(SetBankTransactionClaimRequest) returns (SetBankTransactionClaimResponse);
+  // Correct identifying information on a finance-only opening record.
+  rpc UpdateManualPayable(UpdateManualPayableRequest) returns (UpdateManualPayableResponse);
 }
 
 message OrderImportRow {
@@ -2347,6 +2348,8 @@ message SupplierReconRow {
   // paid figure can be explained: the detail rows on this page only show
   // hand-entered money, and an unexplained gap gets re-entered by hand.
   string invoice_paid_amount = 17;
+  // True only for an opening record entered directly by Finance.
+  bool manually_entered = 21;
 }
 
 // PurchaseOrderPaymentEntry is one movement of money on one order.
@@ -2658,3 +2661,12 @@ message WithdrawCaseRequest {
   string reason = 2;
 }
 message WithdrawCaseResponse { SourcingCase sourcing_case = 1; }
+
+// Appended to preserve message indexes for existing generated clients.
+message UpdateManualPayableRequest {
+  int64 po_id = 1;
+  string supplier_name = 2;
+  string order_no = 3;
+  string due_date = 4;
+}
+message UpdateManualPayableResponse { SupplierReconRow row = 1; }

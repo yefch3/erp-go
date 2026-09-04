@@ -195,9 +195,19 @@ func (h *ReceiptHandler) ListReceivableDue(ctx context.Context, req *exv1.ListRe
 			OverdueDays: r.OverdueDays, DueUnset: r.DueUnset,
 			ClosedCategory: r.ClosedCategory, ClosedNote: r.ClosedNote,
 			ClosedByName: r.ClosedByName, ClosedAt: r.ClosedAt,
+			ManuallyEntered: r.ManuallyEntered,
 		})
 	}
 	return &exv1.ListReceivableDueResponse{Items: out, Meta: &commonv1.PageMeta{Total: total}}, nil
+}
+
+func (h *ReceiptHandler) UpdateManualReceivable(ctx context.Context, req *exv1.UpdateManualReceivableRequest) (*exv1.UpdateManualReceivableResponse, error) {
+	p, err := h.svc.UpdateManualReceivable(ctx, grpcx.TenantID(ctx), req.GetContractId(),
+		req.GetCustomerName(), req.GetContractNo(), req.GetDueDate(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.UpdateManualReceivableResponse{Progress: progressPB(p)}, nil
 }
 
 // progressPB 是「这张合同收了多少」的那一小块，三个地方共用。

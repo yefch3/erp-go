@@ -93,7 +93,7 @@ export default {
     eyebrow: 'OUTGOING PAYMENTS', title: '出账',
     subtitle: '查看和登记付给供应商的钱', pendingHint: '还没有人确认完成的采购单', doneHint: '有人确认过「这张单的账完了」', unpaidHint: '待核销里一笔钱都还没记的（取样前 200 张）',
     addManual: '添加付款', manualSupplier: '供应商', manualOrder: '合同号 / 采购单号', manualTotal: '合同 / 采购单金额', manualPickOrEnter: '选择已有数据或直接输入', manualCurrencyHint: '选择或输入', manualPaid: '已付金额', manualDate: '付款日期', manualDueDate: '应付到期日', manualRequired: '请填写供应商、单号和金额', manualSaved: '付款已添加',
-    moreActions: '更多操作', viewDetails: '查看详情', detailTitle: '付款详情', detailHistory: '付款记录', detailStatus: '当前状态',
+    moreActions: '更多操作', viewDetails: '查看详情 / 冲销', detailTitle: '付款详情', detailHistory: '付款记录', detailStatus: '当前状态', editManual: '编辑资料', editManualHint: '只能编辑手工添加的基本资料；金额错误请冲销后重新登记。', editManualSaved: '付款资料已更新',
     overdueCount: '已逾期', overdueHint: '过了约定的付款日还没付清',
     dueSoonCount: '30 天内到期', dueSoonHint: '按供应商账期该安排付款了',
     unsetCount: '未填到期日', unsetHint: '建单时没填应付到期日。到期日是采购单自己的一部分，在这里补上',
@@ -349,7 +349,7 @@ export default {
   },
   receivableDue: {
     addManual: '添加收款', manualCustomer: '客户', manualContract: '合同号', manualTotal: '合同金额', manualPickOrEnter: '选择已有数据或直接输入', manualCurrencyHint: '选择或输入', manualReceived: '已收金额', manualDate: '收款日期', manualDueDate: '应收到期日', manualRequired: '请填写客户、合同号和金额', manualSaved: '收款已添加',
-    moreActions: '更多操作', viewDetails: '查看详情', detailTitle: '收款详情', detailHistory: '收款记录', detailStatus: '当前状态',
+    moreActions: '更多操作', viewDetails: '查看详情 / 冲销', detailTitle: '收款详情', detailHistory: '收款记录', detailStatus: '当前状态', editManual: '编辑资料', editManualHint: '只能编辑手工添加的基本资料；金额错误请冲销后重新登记。', editManualSaved: '收款资料已更新',
     tabOpen: '未完成', tabDone: '已完成',
     entryFee: '另含补足 {n}',
     addReceipt: '记一笔收款', addReceiptTitle: '记一笔收款',

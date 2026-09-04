@@ -116,16 +116,6 @@
                 <el-table-column :label="t('supplierRecon.entryBy')" width="160">
                   <template #default="{ row: e }">{{ e.allocatedBy }}<div class="sub">{{ e.allocatedAt }}</div></template>
                 </el-table-column>
-                <el-table-column width="90">
-                  <template #default="{ row: e }">
-                    <!-- 挂付款单的老行也从这里冲。供应商付款页下线之后这是
-                         唯一入口，服务层会把它转交给带余额回填的老路。 -->
-                    <el-button
-                      v-if="canWrite && !Number(e.reversalOf) && !reversedIds(row).has(String(e.allocationId))"
-                      link type="danger" @click="reverseEntry(row, e)"
-                    >{{ t('supplierRecon.entryReverse') }}</el-button>
-                  </template>
-                </el-table-column>
               </el-table>
               <p v-else class="sub">{{ t('supplierRecon.entriesEmpty') }}</p>
 
@@ -136,11 +126,6 @@
                 <div class="files-head">
                   <span class="files-title">{{ t('supplierRecon.files') }}</span>
                   <span class="sub">{{ t('supplierRecon.filesHint') }}</span>
-                  <el-button
-                    v-if="canWrite" size="small" type="primary" plain
-                    :loading="uploadingPO === String(row.poId)"
-                    @click="pickFile(row)"
-                  >{{ t('supplierRecon.fileUpload') }}</el-button>
                 </div>
                 <ul v-if="filesOf(row).length" class="file-list">
                   <li v-for="f in filesOf(row)" :key="f.id">
@@ -228,7 +213,9 @@
               <el-button type="primary" plain>{{ t('supplierRecon.moreActions') }}<span class="drop-arrow">▼</span></el-button>
               <template #dropdown><el-dropdown-menu>
                 <el-dropdown-item command="detail">{{ t('supplierRecon.viewDetails') }}</el-dropdown-item>
+                <el-dropdown-item v-if="row.manuallyEntered" command="edit">{{ t('supplierRecon.editManual') }}</el-dropdown-item>
                 <el-dropdown-item divided command="payment">{{ t('supplierRecon.addPayment') }}</el-dropdown-item>
+                <el-dropdown-item command="upload">{{ t('supplierRecon.fileUpload') }}</el-dropdown-item>
                 <el-dropdown-item command="close">{{ t('supplierRecon.close') }}</el-dropdown-item>
                 <el-dropdown-item command="due">{{ t('supplierRecon.dueEdit') }}</el-dropdown-item>
               </el-dropdown-menu></template>
@@ -267,9 +254,22 @@
           <el-table-column :label="t('supplierRecon.entryAmount')" width="150"><template #default="{ row: e }">{{ e.currency }} {{ e.amount }}</template></el-table-column>
           <el-table-column :label="t('supplierRecon.entryNote')" min-width="180"><template #default="{ row: e }">{{ Number(e.reversalOf) ? `${t('supplierRecon.entryReversal')} · ${e.reverseReason}` : (e.note || '—') }}</template></el-table-column>
           <el-table-column :label="t('supplierRecon.entryBy')" min-width="180"><template #default="{ row: e }">{{ e.allocatedBy || '—' }}<div class="sub">{{ e.allocatedAt }}</div></template></el-table-column>
+          <el-table-column v-if="canWrite && !isDone" :label="t('common.actions')" width="90">
+            <template #default="{ row: e }"><el-button v-if="!Number(e.reversalOf) && !reversedIds(detailRow).has(String(e.allocationId))" link type="danger" @click="reverseEntry(detailRow, e)">{{ t('supplierRecon.entryReverse') }}</el-button></template>
+          </el-table-column>
           <template #empty>{{ t('supplierRecon.entriesEmpty') }}</template>
         </el-table>
       </template>
+    </el-dialog>
+
+    <el-dialog v-model="editOpen" :title="t('supplierRecon.editManual')" width="min(520px, 94vw)" destroy-on-close>
+      <el-form label-position="top">
+        <el-form-item :label="t('supplierRecon.manualSupplier')" required><el-input v-model="editForm.supplierName" /></el-form-item>
+        <el-form-item :label="t('supplierRecon.manualOrder')" required><el-input v-model="editForm.orderNo" /></el-form-item>
+        <el-form-item :label="t('supplierRecon.manualDueDate')"><el-date-picker v-model="editForm.dueDate" type="date" value-format="YYYY-MM-DD" clearable style="width:100%" /></el-form-item>
+        <el-alert :closable="false" type="info" :title="t('supplierRecon.editManualHint')" />
+      </el-form>
+      <template #footer><el-button @click="editOpen=false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="editBusy" @click="saveEdit">{{ t('common.save') }}</el-button></template>
     </el-dialog>
 
     <!-- 改应付到期日。这个日子决定这张单算不算逾期，所以理由必填，
@@ -380,7 +380,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { backfillRequest, get, post } from '../api'
+import { backfillRequest, get, patch, post } from '../api'
 import { newIdempotencySession, withIdempotency } from '../lib/idempotency'
 import { useAuthStore } from '../stores/auth'
 
@@ -435,6 +435,7 @@ interface Row {
   closedNote: string
   closedByName: string
   closedAt: string
+  manuallyEntered: boolean
 }
 
 const manualSuggestionRows = ref<Row[]>([])
@@ -662,6 +663,28 @@ function handleRowCommand(row: Row, command: string) {
   else if (command === 'close') openClose(row)
   else if (command === 'reopen') void reopenRow(row)
   else if (command === 'due') openDue(row)
+  else if (command === 'upload') pickFile(row)
+  else if (command === 'edit') openEdit(row)
+}
+
+const editOpen = ref(false)
+const editBusy = ref(false)
+const editRow = ref<Row | null>(null)
+const editForm = reactive({ supplierName: '', orderNo: '', dueDate: '' })
+function openEdit(row: Row) {
+  editRow.value = row
+  Object.assign(editForm, { supplierName: row.supplierName, orderNo: row.poNo, dueDate: row.dueDate || '' })
+  editOpen.value = true
+}
+async function saveEdit() {
+  if (!editRow.value || !editForm.supplierName.trim() || !editForm.orderNo.trim()) return
+  editBusy.value = true
+  try {
+    await patch(`/supplier-recon/${editRow.value.poId}/manual`, editForm)
+    editOpen.value = false
+    ElMessage.success(t('supplierRecon.editManualSaved'))
+    reload()
+  } finally { editBusy.value = false }
 }
 
 function onExpand(row: Row, expanded: Row[]) {

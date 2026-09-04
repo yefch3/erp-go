@@ -41,6 +41,7 @@ const (
 	ReceiptService_ReopenReceivable_FullMethodName            = "/erp.export.v1.ReceiptService/ReopenReceivable"
 	ReceiptService_ListReceivableReminders_FullMethodName     = "/erp.export.v1.ReceiptService/ListReceivableReminders"
 	ReceiptService_MarkReceivableRemindersRead_FullMethodName = "/erp.export.v1.ReceiptService/MarkReceivableRemindersRead"
+	ReceiptService_UpdateManualReceivable_FullMethodName      = "/erp.export.v1.ReceiptService/UpdateManualReceivable"
 )
 
 // ReceiptServiceClient is the client API for ReceiptService service.
@@ -105,6 +106,8 @@ type ReceiptServiceClient interface {
 	// 应收提醒收件箱（E1 第二期）。
 	ListReceivableReminders(ctx context.Context, in *ListReceivableRemindersRequest, opts ...grpc.CallOption) (*ListReceivableRemindersResponse, error)
 	MarkReceivableRemindersRead(ctx context.Context, in *MarkReceivableRemindersReadRequest, opts ...grpc.CallOption) (*MarkReceivableRemindersReadResponse, error)
+	// Correct identifying information on a finance-only opening record.
+	UpdateManualReceivable(ctx context.Context, in *UpdateManualReceivableRequest, opts ...grpc.CallOption) (*UpdateManualReceivableResponse, error)
 }
 
 type receiptServiceClient struct {
@@ -335,6 +338,16 @@ func (c *receiptServiceClient) MarkReceivableRemindersRead(ctx context.Context, 
 	return out, nil
 }
 
+func (c *receiptServiceClient) UpdateManualReceivable(ctx context.Context, in *UpdateManualReceivableRequest, opts ...grpc.CallOption) (*UpdateManualReceivableResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateManualReceivableResponse)
+	err := c.cc.Invoke(ctx, ReceiptService_UpdateManualReceivable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ReceiptServiceServer is the server API for ReceiptService service.
 // All implementations must embed UnimplementedReceiptServiceServer
 // for forward compatibility.
@@ -397,6 +410,8 @@ type ReceiptServiceServer interface {
 	// 应收提醒收件箱（E1 第二期）。
 	ListReceivableReminders(context.Context, *ListReceivableRemindersRequest) (*ListReceivableRemindersResponse, error)
 	MarkReceivableRemindersRead(context.Context, *MarkReceivableRemindersReadRequest) (*MarkReceivableRemindersReadResponse, error)
+	// Correct identifying information on a finance-only opening record.
+	UpdateManualReceivable(context.Context, *UpdateManualReceivableRequest) (*UpdateManualReceivableResponse, error)
 	mustEmbedUnimplementedReceiptServiceServer()
 }
 
@@ -472,6 +487,9 @@ func (UnimplementedReceiptServiceServer) ListReceivableReminders(context.Context
 }
 func (UnimplementedReceiptServiceServer) MarkReceivableRemindersRead(context.Context, *MarkReceivableRemindersReadRequest) (*MarkReceivableRemindersReadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MarkReceivableRemindersRead not implemented")
+}
+func (UnimplementedReceiptServiceServer) UpdateManualReceivable(context.Context, *UpdateManualReceivableRequest) (*UpdateManualReceivableResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateManualReceivable not implemented")
 }
 func (UnimplementedReceiptServiceServer) mustEmbedUnimplementedReceiptServiceServer() {}
 func (UnimplementedReceiptServiceServer) testEmbeddedByValue()                        {}
@@ -890,6 +908,24 @@ func _ReceiptService_MarkReceivableRemindersRead_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ReceiptService_UpdateManualReceivable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateManualReceivableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReceiptServiceServer).UpdateManualReceivable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReceiptService_UpdateManualReceivable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReceiptServiceServer).UpdateManualReceivable(ctx, req.(*UpdateManualReceivableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ReceiptService_ServiceDesc is the grpc.ServiceDesc for ReceiptService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -984,6 +1020,10 @@ var ReceiptService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MarkReceivableRemindersRead",
 			Handler:    _ReceiptService_MarkReceivableRemindersRead_Handler,
+		},
+		{
+			MethodName: "UpdateManualReceivable",
+			Handler:    _ReceiptService_UpdateManualReceivable_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

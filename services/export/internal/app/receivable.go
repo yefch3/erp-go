@@ -46,10 +46,11 @@ type ReceivableRow struct {
 	OverdueDays int32
 	DueUnset    bool
 	// 收款结清（只在 ClosedOnly 视图里非空）：为什么不催了、谁定的。
-	ClosedCategory string
-	ClosedNote     string
-	ClosedByName   string
-	ClosedAt       string
+	ClosedCategory  string
+	ClosedNote      string
+	ClosedByName    string
+	ClosedAt        string
+	ManuallyEntered bool
 }
 
 // ReceivableFilter 收窄清单。两个开关互斥地各管一件事：只看逾期的，
@@ -101,9 +102,72 @@ func (s *Service) ListReceivableDue(ctx context.Context, tenantID int64, f Recei
 			OverdueDays: r.OverdueDays, DueUnset: r.DueUnset,
 			ClosedCategory: r.ClosedCategory, ClosedNote: r.ClosedNote,
 			ClosedByName: r.ClosedByName, ClosedAt: r.ClosedAt,
+			ManuallyEntered: r.CustomerID == 0,
 		})
 	}
 	return out, total, nil
+}
+
+// UpdateManualReceivable corrects the identifying fields of a finance-only
+// opening record. Money movements remain append-only and are corrected through
+// reversal, so this operation cannot rewrite received amounts.
+func (s *Service) UpdateManualReceivable(ctx context.Context, tenantID, contractID int64,
+	customerName, contractNo, dueDate string, op Operator) (store.ContractReceiptProgressRow, error) {
+	customerName = strings.TrimSpace(customerName)
+	contractNo = strings.TrimSpace(contractNo)
+	dueDate = strings.TrimSpace(dueDate)
+	if customerName == "" || contractNo == "" {
+		return store.ContractReceiptProgressRow{}, apierr.Invalid("EX_MANUAL_RECEIVABLE_REQUIRED", "请填写客户和合同号")
+	}
+	if err := validBusinessDate(dueDate, "EX_MANUAL_RECEIVABLE_DUE_DATE", "应收到期日"); err != nil {
+		return store.ContractReceiptProgressRow{}, err
+	}
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		var versionID int64
+		var source, oldCustomer, oldNo, oldDue string
+		err := tx.QueryRow(ctx, `SELECT entry_source, current_version_id, customer_name,
+			coalesce(nullif(external_contract_no,''), contract_no), coalesce(receivable_due_date::text,'')
+			FROM contracts WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, contractID).
+			Scan(&source, &versionID, &oldCustomer, &oldNo, &oldDue)
+		if err == pgx.ErrNoRows {
+			return apierr.NotFound("EX_CONTRACT_NOT_FOUND", "合同不存在")
+		}
+		if err != nil {
+			return err
+		}
+		if source != "EXISTING_CONTRACT" {
+			return apierr.Conflict("EX_MANUAL_RECEIVABLE_ONLY", "系统生成的合同请在出口合同中修改")
+		}
+		if oldCustomer == customerName && oldNo == contractNo && oldDue == dueDate {
+			return nil
+		}
+		if _, err = tx.Exec(ctx, `SELECT set_config('erp.contract_correction','on',true)`); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `UPDATE contracts SET customer_name=$3, external_contract_no=$4,
+			receivable_due_date=nullif($5,'')::date, updated_by=$6, updated_at=now()
+			WHERE tenant_id=$1 AND id=$2`, tenantID, contractID, customerName, contractNo, dueDate, op.ID); err != nil {
+			return translateUnique(err, "EX_EXTERNAL_CONTRACT_NO_TAKEN", "该合同号已存在")
+		}
+		if _, err = tx.Exec(ctx, `UPDATE contract_versions SET buyer_name=$3 WHERE tenant_id=$1 AND id=$2`, tenantID, versionID, customerName); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO contract_corrections
+			(tenant_id,contract_id,contract_version_id,before_data,after_data,corrected_by,corrected_by_name)
+			VALUES ($1,$2,$3,jsonb_build_object('customerName',$4,'contractNo',$5,'dueDate',$6),
+			jsonb_build_object('customerName',$7,'contractNo',$8,'dueDate',$9),$10,$11)`,
+			tenantID, contractID, versionID, oldCustomer, oldNo, oldDue, customerName, contractNo, dueDate, op.ID, op.Name)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE receivable_reminders SET read_at=now()
+			WHERE tenant_id=$1 AND contract_id=$2 AND read_at IS NULL`, tenantID, contractID)
+		return err
+	})
+	if err != nil {
+		return store.ContractReceiptProgressRow{}, err
+	}
+	return s.q.ContractReceiptProgress(ctx, store.ContractReceiptProgressParams{TenantID: tenantID, ContractID: contractID})
 }
 
 // ── 记一笔收款 ─────────────────────────────────────────────────────

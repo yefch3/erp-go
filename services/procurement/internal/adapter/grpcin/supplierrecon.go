@@ -72,6 +72,15 @@ func (h *OrderHandler) CreateManualPayable(ctx context.Context, req *prv1.Create
 	return &prv1.CreateManualPayableResponse{Row: reconRowProto(row)}, nil
 }
 
+func (h *OrderHandler) UpdateManualPayable(ctx context.Context, req *prv1.UpdateManualPayableRequest) (*prv1.UpdateManualPayableResponse, error) {
+	row, err := h.svc.UpdateManualPayable(ctx, grpcx.TenantID(ctx), req.GetPoId(),
+		req.GetSupplierName(), req.GetOrderNo(), req.GetDueDate(), reconOperator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &prv1.UpdateManualPayableResponse{Row: reconRowProto(row)}, nil
+}
+
 func (h *OrderHandler) ReversePurchaseOrderPayment(ctx context.Context, req *prv1.ReversePurchaseOrderPaymentRequest) (*prv1.ReversePurchaseOrderPaymentResponse, error) {
 	row, err := h.svc.ReversePOPayment(ctx, grpcx.TenantID(ctx),
 		req.GetPoId(), req.GetAllocationId(), req.GetReason(), reconOperator(ctx))
@@ -135,6 +144,7 @@ func reconRowProto(v app.SupplierReconRow) *prv1.SupplierReconRow {
 		InvoicePaidAmount: v.InvoicePaidAmount,
 		ClosedCategory:    v.ClosedCategory, ClosedNote: v.ClosedNote,
 		ClosedByName: v.ClosedByName, ClosedAt: v.ClosedAt,
+		ManuallyEntered: v.ManuallyEntered,
 	}
 }
 
