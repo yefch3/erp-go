@@ -342,16 +342,21 @@ func (f *IMAP) VerifyLogin(ctx context.Context, acct app.MailAccount) error {
 
 // login authenticates by whichever door the account was bound through: a
 // bearer token over XOAUTH2 for OAuth bindings, LOGIN for everything else.
+//
+// 登录成功之后紧接着自报家门（见 imapid.go）。这里是唯一的登录入口——
+// 同步、绑定校验、IDLE 三条路都走它——所以放在这儿才能保证每一条连接都报过。
 func (f *IMAP) login(c *client.Client, acct app.MailAccount) error {
 	if acct.AuthKind == "OAUTH" {
 		if err := c.Authenticate(xoauth2.NewSASL(acct.Email, acct.Secret)); err != nil {
 			return fmt.Errorf("Google 拒绝了访问令牌：%w", err)
 		}
+		announceID(c, f.log)
 		return nil
 	}
 	if err := c.Login(acct.Login(), acct.Secret); err != nil {
 		return fmt.Errorf("邮箱拒绝了这个授权码：%w", err)
 	}
+	announceID(c, f.log)
 	return nil
 }
 

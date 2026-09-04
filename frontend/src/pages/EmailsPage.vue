@@ -221,10 +221,17 @@
             <el-button size="small" type="primary" plain @click="replyToInbound">
               ↩ {{ t('emails.reply') }}
             </el-button>
-            <!-- 只在原信不止发给我一个人时出现：一封只发给我的信，「回复」和
-                 「回复全部」是同一件事，两颗一样的按钮只会让人挑。 -->
+            <!-- 常驻，不按「原信有没有别人」来显示。
+                 
+                 从前它只在算出来的抄送非空时才出现，看着聪明，实际上把一颗
+                 按钮的存在和一条业务规则绑死了：抄送要去掉**本人名下全部
+                 信箱**的地址，而一个人绑了两个箱、一封信正好发给这两个箱时，
+                 抄送就是空的——于是「明明发给了多个人却没有回复全部」。真实
+                 发生过。而且按钮时有时无本身就难用：人记不住它什么时候在。
+                 
+                 现在照所有邮件客户端的做法：回复 / 回复全部 / 转发三颗都在。
+                 抄送为空时它退化成一次普通回复，这是对的结果，不是缺陷。 -->
             <el-button
-              v-if="hasOtherRecipients"
               size="small"
               type="primary"
               plain
@@ -2859,13 +2866,6 @@ async function replyToInbound() {
   await nextTick()
   composer.value?.openReply(openedInbound.value)
 }
-
-// 原信除了我还发给了谁——决定「回复全部」这颗按钮出不出现。
-const hasOtherRecipients = computed(() => {
-  const m = openedInbound.value
-  if (!m) return false
-  return replyAllRecipients({ ...m, mine: myAddresses.value }).cc.length > 0
-})
 
 // 回复全部：收件人是发信人（有 Reply-To 用它），原信 To 和 Cc 里其余的人进
 // 抄送，去掉我名下全部信箱的地址。规则和测试在 lib/replyAll。
