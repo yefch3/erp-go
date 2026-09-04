@@ -133,7 +133,7 @@ type ContractReceiptInput struct {
 type ManualReceivableInput struct {
 	CustomerName, ContractNo, Currency string
 	TotalAmount, ReceivedAmount        string
-	ReceivedAt, Note                   string
+	ReceivedAt, DueDate, Note          string
 }
 
 var manualReceivableMaxMoney = decimal.RequireFromString("9999999999999999.99")
@@ -168,6 +168,9 @@ func (s *Service) CreateManualReceivable(ctx context.Context, tenantID int64, in
 	if err := validBusinessDate(in.ReceivedAt, "EX_MANUAL_RECEIVABLE_DATE", "收款日期"); err != nil {
 		return store.ContractReceiptProgressRow{}, err
 	}
+	if err := validBusinessDate(in.DueDate, "EX_MANUAL_RECEIVABLE_DUE_DATE", "应收到期日"); err != nil {
+		return store.ContractReceiptProgressRow{}, err
+	}
 	rate, err := s.rates.Latest(ctx, in.Currency)
 	if err != nil {
 		return store.ContractReceiptProgressRow{}, err
@@ -181,10 +184,10 @@ func (s *Service) CreateManualReceivable(ctx context.Context, tenantID int64, in
 		q := s.q.WithTx(tx)
 		err := tx.QueryRow(ctx, `INSERT INTO contracts
 			(tenant_id, contract_no, external_contract_no, entry_source, customer_id, customer_name,
-			 status, sales_employee_id, sales_employee, opening_received_amount, signed_at, effective_at,
+			 status, sales_employee_id, sales_employee, opening_received_amount, signed_at, effective_at, receivable_due_date,
 			 signature_source, created_by, updated_by)
-			VALUES ($1,$2,$3,'EXISTING_CONTRACT',0,$4,'EXECUTING',$5,$6,0,now(),now(),'MANUAL',$5,$5)
-			RETURNING id`, tenantID, internalNo, in.ContractNo, in.CustomerName, op.ID, op.Name).Scan(&contractID)
+			VALUES ($1,$2,$3,'EXISTING_CONTRACT',0,$4,'EXECUTING',$5,$6,0,now(),now(),nullif($7::text,'')::date,'MANUAL',$5,$5)
+			RETURNING id`, tenantID, internalNo, in.ContractNo, in.CustomerName, op.ID, op.Name, strings.TrimSpace(in.DueDate)).Scan(&contractID)
 		if err != nil {
 			return translateUnique(err, "EX_EXTERNAL_CONTRACT_NO_TAKEN", "该合同号已存在")
 		}

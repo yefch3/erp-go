@@ -226,7 +226,7 @@ func (h *ReceiptHandler) CreateManualReceivable(ctx context.Context, req *exv1.C
 	p, err := h.svc.CreateManualReceivable(ctx, grpcx.TenantID(ctx), app.ManualReceivableInput{
 		CustomerName: req.GetCustomerName(), ContractNo: req.GetContractNo(), Currency: req.GetCurrency(),
 		TotalAmount: req.GetTotalAmount(), ReceivedAmount: req.GetReceivedAmount(),
-		ReceivedAt: req.GetReceivedAt(), Note: req.GetNote(),
+		ReceivedAt: req.GetReceivedAt(), DueDate: req.GetDueDate(), Note: req.GetNote(),
 	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
 	if err != nil {
 		return nil, err
