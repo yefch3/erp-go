@@ -72,7 +72,7 @@ SELECT EXISTS (
 -- version: a contract that was amended is owed what the amendment says, and
 -- money received against the old figure still counts.
 SELECT
-    c.id, c.contract_no, c.customer_name,
+    c.id, coalesce(nullif(c.external_contract_no, ''), c.contract_no)::text AS contract_no, c.customer_name,
     coalesce(v.currency, '')::text        AS currency,
     coalesce(v.total_amount, 0)::text     AS total_amount,
     (CASE WHEN c.opening_received_amount = 0 THEN coalesce(r.received, 0)
@@ -117,7 +117,7 @@ ORDER BY a.allocated_at DESC, a.id DESC;
 -- only the same currency: cross-currency settlement creates an exchange gain
 -- or loss, which belongs in a general ledger this system does not yet have.
 SELECT
-    c.id, c.contract_no, c.customer_id, c.customer_name,
+    c.id, coalesce(nullif(c.external_contract_no, ''), c.contract_no)::text AS contract_no, c.customer_id, c.customer_name,
     v.currency,
     v.total_amount::text              AS total_amount,
     (CASE WHEN c.opening_received_amount = 0 THEN coalesce(r.received, 0)
@@ -159,7 +159,7 @@ LIMIT sqlc.arg(row_limit)::int;
 -- name: FindContractsByNo :many
 -- Resolves contract numbers scraped out of a remittance line into real
 -- contracts, so the queue can pre-fill a suggestion.
-SELECT c.id, c.contract_no, c.customer_name, v.currency,
+SELECT c.id, coalesce(nullif(c.external_contract_no, ''), c.contract_no)::text AS contract_no, c.customer_name, v.currency,
        (v.total_amount - c.opening_received_amount - coalesce(r.received, 0))::text AS open_amount
 FROM contracts c
 JOIN contract_versions v ON v.id = c.current_version_id
@@ -226,7 +226,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- overdue_days 正数表示已逾期，负数表示还有几天到期；到期日为空的合同
 -- 排在最后，它们缺的是客户账期配置，不是钱。
 SELECT
-    c.id, c.contract_no, c.customer_id, c.customer_name,
+    c.id, coalesce(nullif(c.external_contract_no, ''), c.contract_no)::text AS contract_no, c.customer_id, c.customer_name,
     c.sales_employee_id, c.sales_employee,
     coalesce(c.receivable_due_date::text, '')::text AS due_date,
     coalesce(c.effective_at::date::text, '')::text  AS effective_date,

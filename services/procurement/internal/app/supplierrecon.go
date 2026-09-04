@@ -63,6 +63,79 @@ type SupplierReconRow struct {
 	ClosedAt       string
 }
 
+type ManualPayableInput struct {
+	SupplierName, OrderNo, Currency string
+	TotalAmount, PaidAmount         string
+	PaidAt, Note                    string
+}
+
+// CreateManualPayable records an opening supplier balance without creating a
+// draft or approval task. It is intentionally a money-only purchase order:
+// no stock, receiving or procurement event is emitted.
+func (s *Service) CreateManualPayable(ctx context.Context, tenantID int64, in ManualPayableInput, op Operator) (SupplierReconRow, error) {
+	if err := s.requireFullScope(ctx, op); err != nil {
+		return SupplierReconRow{}, err
+	}
+	in.SupplierName = strings.TrimSpace(in.SupplierName)
+	in.OrderNo = strings.TrimSpace(in.OrderNo)
+	in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
+	if in.SupplierName == "" || in.OrderNo == "" || in.Currency == "" {
+		return SupplierReconRow{}, apierr.Invalid("PR_MANUAL_PAYABLE_REQUIRED", "请填写供应商、合同号/采购单号和币种")
+	}
+	total, err := decimal.NewFromString(strings.TrimSpace(in.TotalAmount))
+	if err != nil || !total.IsPositive() || total.GreaterThan(maxMoney) {
+		return SupplierReconRow{}, apierr.Invalid("PR_MANUAL_PAYABLE_TOTAL", "合同/采购单金额必须大于 0")
+	}
+	if total.Exponent() < -2 {
+		return SupplierReconRow{}, apierr.Invalid("PR_MANUAL_PAYABLE_TOTAL_PRECISION", "合同/采购单金额最多两位小数")
+	}
+	paid := decimal.Zero
+	if strings.TrimSpace(in.PaidAmount) != "" {
+		paid, err = decimal.NewFromString(strings.TrimSpace(in.PaidAmount))
+		if err != nil || paid.IsNegative() || paid.GreaterThan(maxMoney) {
+			return SupplierReconRow{}, apierr.Invalid("PR_MANUAL_PAYABLE_PAID", "已付金额不能小于 0")
+		}
+		if paid.Exponent() < -2 {
+			return SupplierReconRow{}, apierr.Invalid("PR_MANUAL_PAYABLE_PAID_PRECISION", "已付金额最多两位小数")
+		}
+	}
+	if paid.GreaterThan(total) {
+		return SupplierReconRow{}, apierr.Invalid("PR_MANUAL_PAYABLE_EXCEEDS", "已付金额不能超过合同/采购单金额")
+	}
+	if err := validBusinessDate(in.PaidAt, "PR_MANUAL_PAYABLE_DATE", "付款日期"); err != nil {
+		return SupplierReconRow{}, err
+	}
+	var poID int64
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		err := tx.QueryRow(ctx, `INSERT INTO purchase_orders
+			(tenant_id, po_no, supplier_id, supplier_code, supplier_name, currency,
+			 total_amount, status, buyer_id, buyer_name, remark, ordered_at)
+			VALUES ($1,$2,0,'',$3,$4,$5::numeric,'ORDERED',$6,$7,$8,now()) RETURNING id`,
+			tenantID, in.OrderNo, in.SupplierName, in.Currency, total.StringFixed(2), op.ID, op.Name, strings.TrimSpace(in.Note)).Scan(&poID)
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				return apierr.Conflict("PR_MANUAL_PAYABLE_NO_TAKEN", "该合同号/采购单号已存在")
+			}
+			return err
+		}
+		if paid.IsZero() {
+			return nil
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO payment_allocations
+			(tenant_id, payment_id, invoice_id, po_id, amount, fee_amount, currency,
+			 paid_at, note, allocated_by, allocated_by_name)
+			VALUES ($1,NULL,NULL,$2,$3::numeric,0,$4,nullif($5::text,'')::date,$6,$7,$8)`,
+			tenantID, poID, paid.StringFixed(2), in.Currency, strings.TrimSpace(in.PaidAt), strings.TrimSpace(in.Note), op.ID, op.Name)
+		return err
+	})
+	if err != nil {
+		return SupplierReconRow{}, err
+	}
+	s.nudge(ctx, tenantID)
+	return s.reconRowOf(ctx, tenantID, poID)
+}
+
 // SupplierReconFilter 收窄清单。
 type SupplierReconFilter struct {
 	Keyword string

@@ -103,6 +103,7 @@
           <template #default="{ row }">
             <div class="num-cell nowrap">{{ row.txnDate }}</div>
             <div class="sub num-cell nowrap">{{ row.bankRef }}</div>
+            <div v-if="row.documentNo" class="sub num-cell nowrap">{{ row.documentNo }}</div>
           </template>
         </el-table-column>
         <!-- 方向和金额合成一格。原来九列一共要 1500 多像素，容器只有一千出头，
@@ -339,6 +340,9 @@
             <el-form-item :label="t('bankTransactions.counterparty')">
               <el-input v-model="recordForm.counterparty" />
             </el-form-item>
+            <el-form-item class="span-2" :label="t('bankTransactions.documentNo')">
+              <el-input v-model="recordForm.documentNo" :placeholder="t('bankTransactions.documentNoHint')" />
+            </el-form-item>
             <el-form-item class="span-2" :label="t('bankTransactions.remittance')">
               <el-input v-model="recordForm.remittanceInfo" :placeholder="t('bankTransactions.remittanceHint')" />
             </el-form-item>
@@ -442,6 +446,7 @@ interface TxnRow {
   currency: string
   counterparty: string
   bankRef: string
+  documentNo: string
   remark: string
   matchedPaymentId: string
   matchedPaymentNo: string
@@ -496,7 +501,7 @@ const recordOpen = ref(false)
 const recording = ref(false)
 const recordForm = reactive({
   direction: 'CREDIT', amount: '', currency: 'USD', txnDate: '',
-  bankRef: '', counterparty: '', remittanceInfo: '', ownership: '', detail: '',
+  bankRef: '', documentNo: '', counterparty: '', remittanceInfo: '', ownership: '', detail: '',
   accountId: '',
 })
 
@@ -614,7 +619,7 @@ function openEdit(row: TxnRow) {
   editReason.value = ''
   Object.assign(recordForm, {
     direction: row.direction, amount: row.amount, currency: row.currency,
-    txnDate: row.txnDate, bankRef: row.bankRef, counterparty: row.counterparty,
+    txnDate: row.txnDate, bankRef: row.bankRef, documentNo: row.documentNo || '', counterparty: row.counterparty,
     remittanceInfo: row.remittanceInfo || '',
     ownership: row.ownership || '', detail: row.ownershipDetail || '',
     // 账户在表单里是「名字或 id」的两用输入，回填时给 id：resolveAccountID
@@ -631,7 +636,7 @@ function openRecord() {
   editReason.value = ''
   Object.assign(recordForm, {
     direction: 'CREDIT', amount: '', currency: 'USD', txnDate: '',
-    bankRef: '', counterparty: '', remittanceInfo: '', ownership: '', detail: '',
+    bankRef: '', documentNo: '', counterparty: '', remittanceInfo: '', ownership: '', detail: '',
     accountId: '',
   })
   recordFile.value = null
@@ -661,6 +666,7 @@ async function saveRecord() {
           currency: recordForm.currency, txnDate: recordForm.txnDate,
           accountId,
           bankRef: recordForm.bankRef, counterparty: recordForm.counterparty,
+          documentNo: recordForm.documentNo,
           remittanceInfo: recordForm.remittanceInfo,
           ownership: recordForm.ownership,
           ownershipDetail: recordForm.ownership === 'OTHER' ? recordForm.detail : '',
@@ -693,6 +699,7 @@ async function saveRecord() {
         currency: recordForm.currency, txnDate: recordForm.txnDate,
         accountId,
         bankRef: recordForm.bankRef, counterparty: recordForm.counterparty,
+        documentNo: recordForm.documentNo,
         remittanceInfo: recordForm.remittanceInfo,
         ownership: recordForm.ownership,
         ownershipDetail: recordForm.ownership === 'OTHER' ? recordForm.detail : '',

@@ -54,6 +54,7 @@ type BankTransactionInput struct {
 	Note                string
 	Ownership           string
 	OwnershipDetail     string
+	DocumentNo          string
 }
 
 // UpdateBankTransaction 改一行已经登记的流水。
@@ -106,12 +107,12 @@ func (s *Service) UpdateBankTransaction(ctx context.Context, tenantID, txnID int
 	err = s.pool.QueryRow(ctx, `
 		SELECT txn_date::text, direction, amount::text, currency, counterparty,
 		       bank_ref, account_id, counterparty_account, remittance_info,
-		       trusted_ref, note, claimed_amount::text, deleted_at
+		       trusted_ref, note, document_no, claimed_amount::text, deleted_at
 		  FROM bank_transactions WHERE tenant_id=$1 AND id=$2`, tenantID, txnID).
 		Scan(&before.TxnDate, &before.Direction, &before.Amount, &before.Currency,
 			&before.Counterparty, &before.BankRef, &before.AccountID,
 			&before.CounterpartyAccount, &before.RemittanceInfo,
-			&before.TrustedRef, &before.Note, &claimed, &deletedAt)
+			&before.TrustedRef, &before.Note, &before.DocumentNo, &claimed, &deletedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return apierr.NotFound("BANK_TXN_NOT_FOUND", "银行流水不存在")
 	}
@@ -188,12 +189,12 @@ func (s *Service) UpdateBankTransaction(ctx context.Context, tenantID, txnID int
 			       counterparty=$7, bank_ref=$8, account_id=$9,
 			       counterparty_account=$10, remittance_info=$11,
 			       trusted_ref=$12, note=$13,
-			       ownership=$14, ownership_detail=$15
+			       ownership=$14, ownership_detail=$15, document_no=$16
 			 WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`,
 			tenantID, txnID, in.TxnDate, in.Direction, in.Amount, in.Currency,
 			in.Counterparty, in.BankRef, in.AccountID,
 			in.CounterpartyAccount, in.RemittanceInfo, in.TrustedRef, in.Note,
-			newOwnership, newDetail)
+			newOwnership, newDetail, in.DocumentNo)
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -263,6 +264,7 @@ func bankFieldChanges(before, after BankTransactionInput) []bankFieldChange {
 		{"remittance_info", before.RemittanceInfo, after.RemittanceInfo},
 		{"trusted_ref", before.TrustedRef, after.TrustedRef},
 		{"note", before.Note, after.Note},
+		{"document_no", before.DocumentNo, after.DocumentNo},
 	}
 	var out []bankFieldChange
 	for _, p := range pairs {
@@ -341,14 +343,14 @@ func (s *Service) RecordBankTransaction(ctx context.Context, tenantID int64, in 
 		  (tenant_id, txn_date, direction, amount, currency, counterparty,
 		   bank_ref, remark, source_file, imported_by_id, imported_by_name,
 		   account_id, counterparty_account, remittance_info, source,
-		   trusted_ref, note, ownership, ownership_detail)
+		   trusted_ref, note, ownership, ownership_detail, document_no)
 		VALUES ($1,$2::date,$3,$4::numeric,$5,$6,$7,'','',$8,$9,
-		        $10,$11,$12,'MANUAL',$13,$14,$15,$16)
+		        $10,$11,$12,'MANUAL',$13,$14,$15,$16,$17)
 		RETURNING id`,
 		tenantID, in.TxnDate, in.Direction, in.Amount, in.Currency, in.Counterparty,
 		in.BankRef, op.ID, op.Name,
 		in.AccountID, in.CounterpartyAccount, in.RemittanceInfo,
-		in.TrustedRef, in.Note, in.Ownership, in.OwnershipDetail).Scan(&id)
+		in.TrustedRef, in.Note, in.Ownership, in.OwnershipDetail, in.DocumentNo).Scan(&id)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -372,7 +374,7 @@ func (s *Service) GetBankTransaction(ctx context.Context, tenantID, txnID int64,
 		       t.counterparty, t.bank_ref, t.remark, t.imported_by_name, t.created_at::text,
 		       t.ownership, t.ownership_detail,
 		       t.account_id, coalesce(a.account_name, ''), t.counterparty_account,
-		       t.remittance_info, t.source, t.trusted_ref, t.note,
+		       t.remittance_info, t.source, t.trusted_ref, t.note, t.document_no,
 		       t.attachment_key,
 		       t.claimed_amount::text,
 		       coalesce(p.id, 0), coalesce(p.payment_no, '')
@@ -384,7 +386,7 @@ func (s *Service) GetBankTransaction(ctx context.Context, tenantID, txnID int64,
 		&v.Counterparty, &v.BankRef, &v.Remark, &v.ImportedBy, &v.CreatedAt,
 		&v.Ownership, &v.OwnershipDetail,
 		&v.AccountID, &v.AccountName, &v.CounterpartyAccount,
-		&v.RemittanceInfo, &v.Source, &v.TrustedRef, &v.Note,
+		&v.RemittanceInfo, &v.Source, &v.TrustedRef, &v.Note, &v.DocumentNo,
 		&v.AttachmentKey,
 		&v.ClaimedAmount,
 		&v.MatchedPaymentID, &v.MatchedPaymentNo)
@@ -507,6 +509,7 @@ func validateBankTransactionInput(in BankTransactionInput) (BankTransactionInput
 	in.TrustedRef = strings.TrimSpace(in.TrustedRef)
 	in.Ownership = strings.TrimSpace(in.Ownership)
 	in.OwnershipDetail = strings.TrimSpace(in.OwnershipDetail)
+	in.DocumentNo = strings.TrimSpace(in.DocumentNo)
 
 	// 流水号是去重的依据。没有它，同一笔钱记两遍就没有任何东西拦得住。
 	if in.BankRef == "" {

@@ -673,6 +673,9 @@ service PurchaseOrderService {
   rpc ListSupplierRecon(ListSupplierReconRequest) returns (ListSupplierReconResponse);
   rpc ListPurchaseOrderPayments(ListPurchaseOrderPaymentsRequest) returns (ListPurchaseOrderPaymentsResponse);
   rpc RecordPurchaseOrderPayment(RecordPurchaseOrderPaymentRequest) returns (RecordPurchaseOrderPaymentResponse);
+  // Add a payable that existed before the company started using ERP.
+  // It enters the outgoing-payment list immediately; there is no approval.
+  rpc CreateManualPayable(CreateManualPayableRequest) returns (CreateManualPayableResponse);
   rpc ReversePurchaseOrderPayment(ReversePurchaseOrderPaymentRequest) returns (ReversePurchaseOrderPaymentResponse);
   rpc ClosePurchaseOrderPayment(ClosePurchaseOrderPaymentRequest) returns (ClosePurchaseOrderPaymentResponse);
   rpc ReopenPurchaseOrderPayment(ReopenPurchaseOrderPaymentRequest) returns (ReopenPurchaseOrderPaymentResponse);
@@ -1628,6 +1631,8 @@ message BankTransaction {
   string attachment_key = 26;
   string attachment_url = 27;
   string attachment_name = 28;
+  // Optional human-entered contract or order number. Display/search only.
+  string document_no = 32;
 }
 
 message PresignBankTransactionFileRequest {
@@ -1667,6 +1672,7 @@ message BankTransactionInput {
   // 落到「待处理」。
   string ownership = 12;
   string ownership_detail = 13;
+  string document_no = 14;
 }
 
 message RecordBankTransactionRequest {
@@ -2404,6 +2410,16 @@ message RecordPurchaseOrderPaymentRequest {
   string paid_at = 4;
   string note = 5;
 }
+message CreateManualPayableRequest {
+  string supplier_name = 1;
+  string order_no = 2;
+  string currency = 3;
+  string total_amount = 4;
+  string paid_amount = 5;
+  string paid_at = 6;
+  string note = 7;
+}
+message CreateManualPayableResponse { SupplierReconRow row = 1; }
 message ReversePurchaseOrderPaymentResponse {
   SupplierReconRow row = 1;
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
+	"github.com/sgao19/erp-go/pkg/pgdb"
 
 	"github.com/sgao19/erp-go/services/export/internal/store"
 )
@@ -124,6 +125,101 @@ type ContractReceiptInput struct {
 	IsRefund   bool
 	ReceivedAt string // YYYY-MM-DD，钱哪天到的；空表示不记
 	Note       string
+}
+
+// ManualReceivableInput is a historical balance entered directly by Finance.
+// It deliberately skips contract approval and operational events: this is an
+// opening money record, not a new sale to procure or ship.
+type ManualReceivableInput struct {
+	CustomerName, ContractNo, Currency string
+	TotalAmount, ReceivedAmount        string
+	ReceivedAt, Note                   string
+}
+
+var manualReceivableMaxMoney = decimal.RequireFromString("9999999999999999.99")
+
+func (s *Service) CreateManualReceivable(ctx context.Context, tenantID int64, in ManualReceivableInput, op Operator) (store.ContractReceiptProgressRow, error) {
+	in.CustomerName = strings.TrimSpace(in.CustomerName)
+	in.ContractNo = strings.TrimSpace(in.ContractNo)
+	in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
+	if in.CustomerName == "" || in.ContractNo == "" || in.Currency == "" {
+		return store.ContractReceiptProgressRow{}, apierr.Invalid("EX_MANUAL_RECEIVABLE_REQUIRED", "请填写客户、合同号和币种")
+	}
+	total, err := decimal.NewFromString(strings.TrimSpace(in.TotalAmount))
+	if err != nil || !total.IsPositive() || total.GreaterThan(manualReceivableMaxMoney) {
+		return store.ContractReceiptProgressRow{}, apierr.Invalid("EX_MANUAL_RECEIVABLE_TOTAL", "合同金额必须大于 0")
+	}
+	if total.Exponent() < -2 {
+		return store.ContractReceiptProgressRow{}, apierr.Invalid("EX_MANUAL_RECEIVABLE_TOTAL_PRECISION", "合同金额最多两位小数")
+	}
+	received := decimal.Zero
+	if strings.TrimSpace(in.ReceivedAmount) != "" {
+		received, err = decimal.NewFromString(strings.TrimSpace(in.ReceivedAmount))
+		if err != nil || received.IsNegative() || received.GreaterThan(manualReceivableMaxMoney) {
+			return store.ContractReceiptProgressRow{}, apierr.Invalid("EX_MANUAL_RECEIVABLE_RECEIVED", "已收金额不能小于 0")
+		}
+		if received.Exponent() < -2 {
+			return store.ContractReceiptProgressRow{}, apierr.Invalid("EX_MANUAL_RECEIVABLE_RECEIVED_PRECISION", "已收金额最多两位小数")
+		}
+	}
+	if received.GreaterThan(total) {
+		return store.ContractReceiptProgressRow{}, apierr.Invalid("EX_MANUAL_RECEIVABLE_EXCEEDS", "已收金额不能超过合同金额")
+	}
+	if err := validBusinessDate(in.ReceivedAt, "EX_MANUAL_RECEIVABLE_DATE", "收款日期"); err != nil {
+		return store.ContractReceiptProgressRow{}, err
+	}
+	rate, err := s.rates.Latest(ctx, in.Currency)
+	if err != nil {
+		return store.ContractReceiptProgressRow{}, err
+	}
+	internalNo, err := s.number.Next(ctx, "CONTRACT")
+	if err != nil {
+		return store.ContractReceiptProgressRow{}, err
+	}
+	var contractID int64
+	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		err := tx.QueryRow(ctx, `INSERT INTO contracts
+			(tenant_id, contract_no, external_contract_no, entry_source, customer_id, customer_name,
+			 status, sales_employee_id, sales_employee, opening_received_amount, signed_at, effective_at,
+			 signature_source, created_by, updated_by)
+			VALUES ($1,$2,$3,'EXISTING_CONTRACT',0,$4,'EXECUTING',$5,$6,0,now(),now(),'MANUAL',$5,$5)
+			RETURNING id`, tenantID, internalNo, in.ContractNo, in.CustomerName, op.ID, op.Name).Scan(&contractID)
+		if err != nil {
+			return translateUnique(err, "EX_EXTERNAL_CONTRACT_NO_TAKEN", "该合同号已存在")
+		}
+		versionID, err := q.CreateContractVersion(ctx, store.CreateContractVersionParams{
+			TenantID: tenantID, ContractID: contractID, VersionNo: 1,
+			BuyerName: in.CustomerName, SellerName: s.seller.Name, SellerAddress: s.seller.Address,
+			Currency: in.Currency, Incoterm: "", TotalAmount: total.StringFixed(2),
+			BaseAmount: baseAmount(total, rate).StringFixed(2), FxRate: rate.Rate.String(),
+			FxRateAt: tsFrom(rate.At), FxSource: rate.Source, FxBaseCurrency: rate.Base,
+			CreatedBy: op.ID,
+		})
+		if err != nil {
+			return err
+		}
+		if err := q.SetContractVersionStatus(ctx, store.SetContractVersionStatusParams{TenantID: tenantID, ID: versionID, NewStatus: "APPROVED"}); err != nil {
+			return err
+		}
+		if err := q.FinalizeExistingContract(ctx, store.FinalizeExistingContractParams{TenantID: tenantID, ID: contractID, VersionID: versionID, UpdatedBy: op.ID}); err != nil {
+			return err
+		}
+		if received.IsZero() {
+			return nil
+		}
+		_, err = q.AddReceiptAllocation(ctx, store.AddReceiptAllocationParams{
+			TenantID: tenantID, ContractID: contractID, ContractNo: in.ContractNo,
+			CustomerName: in.CustomerName, Amount: received.StringFixed(2), FeeAmount: "0",
+			FeeCategory: "OTHER", Currency: in.Currency, AllocatedBy: op.ID,
+			AllocatedByName: op.Name, ReceivedAt: strings.TrimSpace(in.ReceivedAt), Note: strings.TrimSpace(in.Note),
+		})
+		return err
+	})
+	if err != nil {
+		return store.ContractReceiptProgressRow{}, err
+	}
+	return s.q.ContractReceiptProgress(ctx, store.ContractReceiptProgressParams{TenantID: tenantID, ContractID: contractID})
 }
 
 // RecordContractReceipt 记一笔收款（或退款）到一张合同上。

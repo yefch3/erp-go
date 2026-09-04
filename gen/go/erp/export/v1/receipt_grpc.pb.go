@@ -34,6 +34,7 @@ const (
 	ReceiptService_GetContractReceipts_FullMethodName         = "/erp.export.v1.ReceiptService/GetContractReceipts"
 	ReceiptService_ListReceivableDue_FullMethodName           = "/erp.export.v1.ReceiptService/ListReceivableDue"
 	ReceiptService_RecordContractReceipt_FullMethodName       = "/erp.export.v1.ReceiptService/RecordContractReceipt"
+	ReceiptService_CreateManualReceivable_FullMethodName      = "/erp.export.v1.ReceiptService/CreateManualReceivable"
 	ReceiptService_ReverseContractReceipt_FullMethodName      = "/erp.export.v1.ReceiptService/ReverseContractReceipt"
 	ReceiptService_CloseReceivable_FullMethodName             = "/erp.export.v1.ReceiptService/CloseReceivable"
 	ReceiptService_SetReceivableDueDate_FullMethodName        = "/erp.export.v1.ReceiptService/SetReceivableDueDate"
@@ -87,6 +88,9 @@ type ReceiptServiceClient interface {
 	ListReceivableDue(ctx context.Context, in *ListReceivableDueRequest, opts ...grpc.CallOption) (*ListReceivableDueResponse, error)
 	// 记一笔收款到合同上：员工手填金额和到账日期，**不连银行流水**。
 	RecordContractReceipt(ctx context.Context, in *RecordContractReceiptRequest, opts ...grpc.CallOption) (*RecordContractReceiptResponse, error)
+	// Add a receivable that existed before the company started using ERP.
+	// It enters the same list immediately; there is no approval workflow.
+	CreateManualReceivable(ctx context.Context, in *CreateManualReceivableRequest, opts ...grpc.CallOption) (*CreateManualReceivableResponse, error)
 	// 冲销一笔记错的收款：写一条相反的记录，不删原记录。
 	ReverseContractReceipt(ctx context.Context, in *ReverseContractReceiptRequest, opts ...grpc.CallOption) (*ReverseContractReceiptResponse, error)
 	// 确认核销完成：这张合同的收款「说清了」，由人说出来。
@@ -261,6 +265,16 @@ func (c *receiptServiceClient) RecordContractReceipt(ctx context.Context, in *Re
 	return out, nil
 }
 
+func (c *receiptServiceClient) CreateManualReceivable(ctx context.Context, in *CreateManualReceivableRequest, opts ...grpc.CallOption) (*CreateManualReceivableResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateManualReceivableResponse)
+	err := c.cc.Invoke(ctx, ReceiptService_CreateManualReceivable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *receiptServiceClient) ReverseContractReceipt(ctx context.Context, in *ReverseContractReceiptRequest, opts ...grpc.CallOption) (*ReverseContractReceiptResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReverseContractReceiptResponse)
@@ -366,6 +380,9 @@ type ReceiptServiceServer interface {
 	ListReceivableDue(context.Context, *ListReceivableDueRequest) (*ListReceivableDueResponse, error)
 	// 记一笔收款到合同上：员工手填金额和到账日期，**不连银行流水**。
 	RecordContractReceipt(context.Context, *RecordContractReceiptRequest) (*RecordContractReceiptResponse, error)
+	// Add a receivable that existed before the company started using ERP.
+	// It enters the same list immediately; there is no approval workflow.
+	CreateManualReceivable(context.Context, *CreateManualReceivableRequest) (*CreateManualReceivableResponse, error)
 	// 冲销一笔记错的收款：写一条相反的记录，不删原记录。
 	ReverseContractReceipt(context.Context, *ReverseContractReceiptRequest) (*ReverseContractReceiptResponse, error)
 	// 确认核销完成：这张合同的收款「说清了」，由人说出来。
@@ -434,6 +451,9 @@ func (UnimplementedReceiptServiceServer) ListReceivableDue(context.Context, *Lis
 }
 func (UnimplementedReceiptServiceServer) RecordContractReceipt(context.Context, *RecordContractReceiptRequest) (*RecordContractReceiptResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RecordContractReceipt not implemented")
+}
+func (UnimplementedReceiptServiceServer) CreateManualReceivable(context.Context, *CreateManualReceivableRequest) (*CreateManualReceivableResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateManualReceivable not implemented")
 }
 func (UnimplementedReceiptServiceServer) ReverseContractReceipt(context.Context, *ReverseContractReceiptRequest) (*ReverseContractReceiptResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReverseContractReceipt not implemented")
@@ -744,6 +764,24 @@ func _ReceiptService_RecordContractReceipt_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ReceiptService_CreateManualReceivable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateManualReceivableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReceiptServiceServer).CreateManualReceivable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ReceiptService_CreateManualReceivable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReceiptServiceServer).CreateManualReceivable(ctx, req.(*CreateManualReceivableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ReceiptService_ReverseContractReceipt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ReverseContractReceiptRequest)
 	if err := dec(in); err != nil {
@@ -918,6 +956,10 @@ var ReceiptService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RecordContractReceipt",
 			Handler:    _ReceiptService_RecordContractReceipt_Handler,
+		},
+		{
+			MethodName: "CreateManualReceivable",
+			Handler:    _ReceiptService_CreateManualReceivable_Handler,
 		},
 		{
 			MethodName: "ReverseContractReceipt",

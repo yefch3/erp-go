@@ -58,6 +58,19 @@ func (s *Server) recordPurchaseOrderPayment(w http.ResponseWriter, r *http.Reque
 	s.writeProto(w, resp)
 }
 
+func (s *Server) createManualPayable(w http.ResponseWriter, r *http.Request) {
+	req := &prv1.CreateManualPayableRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Orders.CreateManualPayable(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) reversePurchaseOrderPayment(w http.ResponseWriter, r *http.Request) {
 	req := &prv1.ReversePurchaseOrderPaymentRequest{}
 	if !s.decodeBody(w, r, req) {

@@ -221,6 +221,19 @@ func (h *ReceiptHandler) RecordContractReceipt(ctx context.Context, req *exv1.Re
 	return &exv1.RecordContractReceiptResponse{Progress: progressPB(p)}, nil
 }
 
+func (h *ReceiptHandler) CreateManualReceivable(ctx context.Context, req *exv1.CreateManualReceivableRequest) (*exv1.CreateManualReceivableResponse, error) {
+	op, _ := grpcx.OperatorFromContext(ctx)
+	p, err := h.svc.CreateManualReceivable(ctx, grpcx.TenantID(ctx), app.ManualReceivableInput{
+		CustomerName: req.GetCustomerName(), ContractNo: req.GetContractNo(), Currency: req.GetCurrency(),
+		TotalAmount: req.GetTotalAmount(), ReceivedAmount: req.GetReceivedAmount(),
+		ReceivedAt: req.GetReceivedAt(), Note: req.GetNote(),
+	}, app.Operator{ID: op.EmployeeID, Name: op.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.CreateManualReceivableResponse{Progress: progressPB(p)}, nil
+}
+
 func (h *ReceiptHandler) ReverseContractReceipt(ctx context.Context, req *exv1.ReverseContractReceiptRequest) (*exv1.ReverseContractReceiptResponse, error) {
 	p, err := h.svc.ReverseContractReceipt(ctx, grpcx.TenantID(ctx),
 		req.GetEntryId(), req.GetReason(), operator(ctx))

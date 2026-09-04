@@ -58,6 +58,7 @@ type BankTransactionView struct {
 	Currency     string
 	Counterparty string
 	BankRef      string
+	DocumentNo   string
 	Remark       string
 	ImportedBy   string
 	CreatedAt    string
@@ -292,7 +293,7 @@ func (s *Service) ListBankTransactions(ctx context.Context, tenantID int64, f Ba
 		       t.counterparty, t.bank_ref, t.remark, t.imported_by_name, t.created_at::text,
 		       t.ownership, t.ownership_detail,
 		       t.account_id, coalesce(a.account_name, ''), t.counterparty_account,
-		       t.remittance_info, t.source, t.trusted_ref, t.note,
+		       t.remittance_info, t.source, t.trusted_ref, t.note, t.document_no,
 		       t.attachment_key,
 		       t.claimed_amount::text,
 		       coalesce(t.deleted_at::text, ''), t.deleted_by_name, t.delete_reason,
@@ -321,7 +322,8 @@ func (s *Service) ListBankTransactions(ctx context.Context, tenantID int64, f Ba
 		   AND ($2 = '' OR ($2 = 'MATCHED') = (p.id IS NOT NULL))
 		   AND ($3 = '' OR t.direction = $3)
 		   AND ($4 = '' OR t.counterparty ILIKE '%'||$4||'%' OR t.bank_ref ILIKE '%'||$4||'%'
-		        OR t.remark ILIKE '%'||$4||'%' OR t.remittance_info ILIKE '%'||$4||'%')
+		        OR t.remark ILIKE '%'||$4||'%' OR t.remittance_info ILIKE '%'||$4||'%'
+		        OR t.document_no ILIKE '%'||$4||'%')
 		   -- 归属：$10 给一组时按组筛（压过下面两个）；否则 $5 指定某一档，
 		   -- $6 为真时单出「待处理」（ownership='')。
 		   --
@@ -352,7 +354,7 @@ func (s *Service) ListBankTransactions(ctx context.Context, tenantID int64, f Ba
 			&v.Counterparty, &v.BankRef, &v.Remark, &v.ImportedBy, &v.CreatedAt,
 			&v.Ownership, &v.OwnershipDetail,
 			&v.AccountID, &v.AccountName, &v.CounterpartyAccount,
-			&v.RemittanceInfo, &v.Source, &v.TrustedRef, &v.Note,
+			&v.RemittanceInfo, &v.Source, &v.TrustedRef, &v.Note, &v.DocumentNo,
 			&v.AttachmentKey,
 			&v.ClaimedAmount,
 			&v.DeletedAt, &v.DeletedBy, &v.DeleteReason,

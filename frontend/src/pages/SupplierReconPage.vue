@@ -6,7 +6,30 @@
         <h1>{{ t('supplierRecon.title') }}</h1>
         <p>{{ t('supplierRecon.subtitle') }}</p>
       </div>
+      <el-button v-if="canWrite" type="primary" @click="openManual">{{ t('supplierRecon.addManual') }}</el-button>
     </header>
+
+    <el-dialog v-model="manualOpen" :title="t('supplierRecon.addManual')" width="min(560px, 94vw)" destroy-on-close>
+      <el-form label-position="top">
+        <el-form-item :label="t('supplierRecon.manualSupplier')" required>
+          <el-select v-model="manualForm.supplierName" filterable allow-create default-first-option clearable :placeholder="t('supplierRecon.manualPickOrEnter')" style="width: 100%">
+            <el-option v-for="name in manualSupplierOptions" :key="name" :label="name" :value="name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('supplierRecon.manualOrder')" required>
+          <el-select v-model="manualForm.orderNo" filterable allow-create default-first-option clearable :placeholder="t('supplierRecon.manualPickOrEnter')" style="width: 100%" @change="applyManualOrder">
+            <el-option v-for="item in manualOrderOptions" :key="item.poNo" :label="`${item.poNo} · ${item.supplierName}`" :value="item.poNo" />
+          </el-select>
+        </el-form-item>
+        <div class="manual-grid">
+          <el-form-item :label="t('supplierRecon.manualTotal')" required><el-input v-model="manualForm.totalAmount"><template #prepend><el-select v-model="manualForm.currency" filterable allow-create default-first-option :placeholder="t('supplierRecon.manualCurrencyHint')" style="width: 110px"><el-option v-for="c in ['CNY','USD','EUR','GBP','JPY','CAD','AUD','HKD']" :key="c" :value="c" /></el-select></template></el-input></el-form-item>
+          <el-form-item :label="t('supplierRecon.manualPaid')"><el-input v-model="manualForm.paidAmount" /></el-form-item>
+        </div>
+        <el-form-item :label="t('supplierRecon.manualDate')"><el-date-picker v-model="manualForm.paidAt" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item>
+        <el-form-item :label="t('supplierRecon.entryNote')"><el-input v-model="manualForm.note" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="manualOpen = false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="manualBusy" @click="saveManual">{{ t('common.save') }}</el-button></template>
+    </el-dialog>
 
     <!-- 三个数字回答「今天还有多少活」。全是全局合计，不是当前页——
          页面上的合计如果跟着翻页变，那就不是合计了。 -->
@@ -195,8 +218,9 @@
             <div class="sub">{{ row.closedByName }}<template v-if="row.closedNote"> · {{ row.closedNote }}</template></div>
           </template>
         </el-table-column>
-        <el-table-column v-if="canWrite" :label="t('common.actions')" width="230" fixed="right">
+        <el-table-column v-if="canWrite" :label="t('common.actions')" width="300" fixed="right">
           <template #default="{ row }">
+            <div class="row-actions">
             <!-- 已完成的单照样能记钱：钱真的又付了，先记上再撤销完成。 -->
             <el-button link type="primary" @click="openEntry(row)">
               {{ t('supplierRecon.addPayment') }}
@@ -212,6 +236,7 @@
             <el-button link type="primary" @click="openDue(row)">
               {{ t('supplierRecon.dueEdit') }}
             </el-button>
+            </div>
           </template>
         </el-table-column>
         <template #empty>{{ emptyText }}</template>
@@ -348,6 +373,23 @@ const auth = useAuthStore()
 // 和网关那行 s.perm("procurement:recon:write") 逐字一致。差一个字就是
 // 「看得见按钮、点下去 403」，或者更糟，反过来。
 const canWrite = auth.can('procurement:recon:write')
+const manualOpen = ref(false)
+const manualBusy = ref(false)
+const manualForm = reactive({ supplierName: '', orderNo: '', currency: 'CNY', totalAmount: '', paidAmount: '', paidAt: '', note: '' })
+
+async function saveManual() {
+  if (!manualForm.supplierName.trim() || !manualForm.orderNo.trim() || !manualForm.totalAmount.trim()) {
+    ElMessage.warning(t('supplierRecon.manualRequired')); return
+  }
+  manualBusy.value = true
+  try {
+    await post('/supplier-recon/manual', manualForm)
+    manualOpen.value = false
+    Object.assign(manualForm, { supplierName: '', orderNo: '', currency: 'CNY', totalAmount: '', paidAmount: '', paidAt: '', note: '' })
+    ElMessage.success(t('supplierRecon.manualSaved'))
+    reload()
+  } finally { manualBusy.value = false }
+}
 // 采购订单页自己的门。财务通常没有，所以行上的单号对它是纯文本。
 const canOpenOrders = auth.can('procurement:order:read')
 
@@ -375,6 +417,24 @@ interface Row {
   closedNote: string
   closedByName: string
   closedAt: string
+}
+
+const manualSuggestionRows = ref<Row[]>([])
+const manualSupplierOptions = computed(() => [...new Set(manualSuggestionRows.value.map((row) => row.supplierName).filter(Boolean))])
+const manualOrderOptions = computed(() => {
+  const supplier = manualForm.supplierName.trim()
+  return supplier ? manualSuggestionRows.value.filter((row) => row.supplierName === supplier) : manualSuggestionRows.value
+})
+
+function applyManualOrder(orderNo: string) {
+  const row = manualSuggestionRows.value.find((item) => item.poNo === orderNo)
+  if (!row) return
+  Object.assign(manualForm, {
+    supplierName: row.supplierName,
+    currency: row.currency,
+    totalAmount: row.orderedAmount,
+    paidAmount: row.paidAmount,
+  })
 }
 
 interface Entry {
@@ -431,7 +491,8 @@ const view = ref('')
 // 「逾期 700 天」的红底。催的是没结的账，结了的只剩记录。
 function rowClass({ row }: { row: Row }) {
   if (isDone.value) return ''
-  if (row.dueUnset) return 'row-unset'
+  // 未填日期已有橙色标签提示，不再把整行染黄，避免大量旧单铺满警告色。
+  if (row.dueUnset) return ''
   return row.overdueDays > 0 ? 'row-overdue' : ''
 }
 
@@ -444,6 +505,20 @@ function dueLabel(row: Row): string {
 
 async function fetchPage(params: Record<string, string | number>) {
   return get<{ items: Row[]; total: string }>('/supplier-recon', params)
+}
+
+async function openManual() {
+  manualOpen.value = true
+  try {
+    const [open, done] = await Promise.all([
+      fetchPage({ page: 1, page_size: 200 }),
+      fetchPage({ page: 1, page_size: 200, view: 'done' }),
+    ])
+    manualSuggestionRows.value = [...(open.items ?? []), ...(done.items ?? [])]
+  } catch {
+    // 建议加载失败不影响手工录入；所有字段始终允许直接输入。
+    manualSuggestionRows.value = [...rows.value]
+  }
 }
 
 async function load() {
@@ -757,8 +832,11 @@ onMounted(() => {
 .page {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.manual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 640px) { .manual-grid { grid-template-columns: 1fr; } }
 .page-head .eyebrow {
   font-size: 12px;
   letter-spacing: 1.5px;
@@ -766,7 +844,7 @@ onMounted(() => {
 }
 .page-head h1 {
   margin: 4px 0 6px;
-  font-size: 28px;
+  font-size: 26px;
 }
 .page-head p {
   margin: 0;
@@ -775,13 +853,14 @@ onMounted(() => {
 .metrics {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 .metric {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 14px 16px;
+  min-height: 86px;
+  padding: 12px 16px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 10px;
   background: var(--el-bg-color);
@@ -810,7 +889,7 @@ onMounted(() => {
   font-size: 12px;
 }
 .panel {
-  padding: 16px;
+  padding: 14px 16px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 10px;
   background: var(--el-bg-color);
@@ -819,7 +898,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
   flex-wrap: wrap;
 }
 .sub {
@@ -870,11 +949,9 @@ onMounted(() => {
   color: var(--el-color-danger);
 }
 :deep(.row-overdue) {
-  background: var(--el-color-danger-light-9);
+  background: rgba(245, 108, 108, 0.055);
 }
-:deep(.row-unset) {
-  background: var(--el-color-warning-light-9);
-}
+.row-actions { display: flex; align-items: center; white-space: nowrap; }
 .metric.is-alarm {
   border-color: var(--el-color-danger-light-5);
   background: var(--el-color-danger-light-9);
