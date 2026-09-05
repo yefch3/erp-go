@@ -1005,3 +1005,66 @@ func (s *Server) downloadInboundAttachments(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(resp.GetContent())
 }
+
+// ---------------------------------------------------------- 自建文件夹
+
+func (s *Server) listMailFolders(w http.ResponseWriter, r *http.Request) {
+	accountID, _ := strconv.ParseInt(r.URL.Query().Get("account_id"), 10, 64)
+	resp, err := s.Emails.ListMailFolders(r.Context(), &mailv1.ListMailFoldersRequest{AccountId: accountID})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) createMailFolder(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.CreateMailFolderRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Emails.CreateMailFolder(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) renameMailFolder(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.RenameMailFolderRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	resp, err := s.Emails.RenameMailFolder(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) deleteMailFolder(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	resp, err := s.Emails.DeleteMailFolder(r.Context(), &mailv1.DeleteMailFolderRequest{Id: id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
+func (s *Server) moveInbound(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.MoveInboundRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	req.Id, _ = strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	resp, err := s.Emails.MoveInbound(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}

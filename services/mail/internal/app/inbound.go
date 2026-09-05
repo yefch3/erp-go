@@ -69,6 +69,14 @@ type Mailbox interface {
 	// current-generation — in practice they come from a Message-ID search
 	// moments earlier over the same connection pool.
 	FetchByUIDs(ctx context.Context, acct MailAccount, folder string, uids []uint32) (FetchResult, error)
+	// ListFolders 列出服务器上所有文件夹的名字（不含特殊属性的判断，那是
+	// SentFolder 那一组的事）。
+	ListFolders(ctx context.Context, acct MailAccount) ([]string, error)
+	// CreateFolder / RenameFolder / DeleteFolder 在服务器上真的建、改、删一个
+	// 文件夹。名字是人写的（中文也行），UTF-7 编码由适配器负责。
+	CreateFolder(ctx context.Context, acct MailAccount, name string) error
+	RenameFolder(ctx context.Context, acct MailAccount, oldName, newName string) error
+	DeleteFolder(ctx context.Context, acct MailAccount, name string) error
 	// FolderStatus asks the host two numbers about a folder and nothing else:
 	// how far its UIDs have advanced, and how many messages are unread.
 	//

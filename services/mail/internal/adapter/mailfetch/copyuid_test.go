@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/emersion/go-imap/utf7"
 )
 
 // 一台会答 COPYUID 的假服务器。hasMove 决定它声明不声明 MOVE；
@@ -72,6 +74,13 @@ func startMoveFake(t *testing.T, hasMove bool, copyuid string) *moveFake {
 				} else {
 					say(tag + " OK done")
 				}
+			case "CREATE", "RENAME", "DELETE":
+				say(tag + " OK done")
+			case "LIST":
+				say(`* LIST (\HasNoChildren) "/" "INBOX"`)
+				enc, _ := utf7.Encoding.NewEncoder().String("客户")
+				say(`* LIST (\\HasNoChildren) "/" "` + enc + `"`)
+				say(tag + " OK done")
 			case "UID STORE":
 				say("* 1 FETCH (FLAGS (\\Deleted))")
 				say(tag + " OK done")
@@ -163,5 +172,35 @@ func TestAMoveWithoutCopyUIDStillSucceeds(t *testing.T) {
 	}
 	if len(moved) != 0 {
 		t.Errorf("没有 COPYUID 应该返回空 map，实际 %v", moved)
+	}
+}
+
+// 建/改/删/列目录：命令真的发出去了，中文名用 UTF-7 编码，列回来时解回中文。
+func TestFolderCommandsGoOverTheWireWithUTF7Names(t *testing.T) {
+	srv := startMoveFake(t, true, "")
+	f := NewIMAP(5*time.Second, 2*time.Second, nil)
+	acct := acctFor(srv.addr)
+	ctx := context.Background()
+	if err := f.CreateFolder(ctx, acct, "客户"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.RenameFolder(ctx, acct, "客户", "客户2026"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.DeleteFolder(ctx, acct, "客户2026"); err != nil {
+		t.Fatal(err)
+	}
+	names, err := f.ListFolders(ctx, acct)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, must := range []string{"CREATE", "RENAME", "DELETE", "LIST"} {
+		if !srv.saw(must) {
+			t.Errorf("没发 %s：%v", must, srv.cmds)
+		}
+	}
+	joined := strings.Join(names, ",")
+	if !strings.Contains(joined, "客户") {
+		t.Errorf("LIST 回来的 UTF-7 名字应该解成中文，实际 %v", names)
 	}
 }
