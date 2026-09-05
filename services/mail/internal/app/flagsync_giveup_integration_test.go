@@ -24,12 +24,17 @@ type refusingHost struct {
 	// validity 是每个文件夹此刻的 UIDVALIDITY；0 表示"服务器答不出来"。
 	validity map[string]uint32
 	purges   int
+	// searchBroken 模拟 263：HEADER Message-Id 的 SEARCH 直接被拒。
+	searchBroken bool
 }
 
 func (h *refusingHost) FolderStatus(_ context.Context, _ MailAccount, folder string) (FolderStatus, error) {
 	return FolderStatus{UIDValidity: h.validity[folder]}, nil
 }
 func (h *refusingHost) FindUIDsByMessageIDs(_ context.Context, _ MailAccount, _ string, ids []string) (map[string]uint32, error) {
+	if h.searchBroken {
+		return nil, errors.New("UID SEARCH search error: can't search that criteria")
+	}
 	out := map[string]uint32{}
 	for i, id := range ids {
 		out[id] = uint32(1000 + i) // 都"找得到"，好让批量清理那条路被走到
@@ -311,5 +316,56 @@ func TestAFailingBulkPurgeIsAlsoGivenUpAtTheCap(t *testing.T) {
 	_ = pool.QueryRow(ctx, "SELECT count(*) FROM mail_flag_ops WHERE tenant_id=$1", tenantID).Scan(&n)
 	if n != 0 {
 		t.Fatalf("到上限还失败的批量清理应该被放弃，队列里还剩 %d 条", n)
+	}
+}
+
+// 263 不认按 Message-Id 的 SEARCH。走到这一支的 PURGE 永远到不了 MOVE，也就
+// 碰不到 MOVE 那边的上限——生产上账号 13 的两条就这样重试了一千多次。这一支
+// 同样要有上限。
+func TestAPurgeWhoseLookupTheHostRejectsIsAlsoGivenUp(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenantID := time.Now().UnixNano()
+	const me = int64(8005)
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_flag_ops WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_binding_log WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+	}()
+	box, _ := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	svc := New(pool, Deps{Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	res, err := svc.VerifyMailSecret(ctx, tenantID, me, BindRequest{
+		Email: "me@263.net", Provider: "p263", Secret: "pw",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.UseMailbox(&refusingHost{present: map[string]map[uint32]bool{}, validity: map[string]uint32{}, searchBroken: true})
+	if err := svc.q.EnqueueFlagOp(ctx, store.EnqueueFlagOpParams{
+		TenantID: tenantID, AccountID: res.AccountID, EmployeeID: me,
+		Folder: "INBOX", ImapUid: 1, Flag: flagPurge, Op: opAdd, MessageID: "gone@x",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE mail_flag_ops SET attempts=$2, next_try_at=now() WHERE tenant_id=$1",
+		tenantID, maxFlagOpAttempts-1); err != nil {
+		t.Fatal(err)
+	}
+
+	svc.publishFlagOps(ctx, SyncConfig{TenantID: tenantID})
+
+	var n int
+	_ = pool.QueryRow(ctx, "SELECT count(*) FROM mail_flag_ops WHERE tenant_id=$1", tenantID).Scan(&n)
+	if n != 0 {
+		t.Fatalf("SEARCH 被拒、到上限的 PURGE 应该被放弃，队列里还剩 %d 条", n)
 	}
 }
