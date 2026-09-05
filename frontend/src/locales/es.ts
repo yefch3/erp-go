@@ -1857,6 +1857,7 @@ export default {
     junkNoteRescue: '«No es spam» devuelve el correo a la bandeja de entrada de su proveedor y le indica que juzgó mal al remitente.',
     syncBroken: 'Este buzón no está recibiendo: {e}. La lista muestra la última sincronización correcta.',
     reauth: 'Volver a iniciar sesión',
+    syncRetrying: 'El servidor de correo no responde por ahora; se reintentará solo. No hace falta volver a iniciar sesión.',
     reply: 'Responder',
     replyAll: 'Responder a todos',
     forward: 'Reenviar',

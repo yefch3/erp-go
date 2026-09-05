@@ -35,6 +35,8 @@ type MailAccountView struct {
 	AuthKind   string
 	HasSecret  bool
 	VerifiedAt string
+	// AuthFailed 说 LastError 是不是凭据问题——横幅上「重新登录」只认它。
+	AuthFailed bool
 	LastError  string
 	IsActive   bool
 	// IsDefault 是「写信时预选哪一个」。和登录地址无关。
@@ -166,7 +168,7 @@ func (s *Service) ListMyMailboxes(ctx context.Context, tenantID, employeeID int6
 	for _, row := range rows {
 		v := MailAccountView{
 			ID: row.ID, Email: row.Email, Username: row.Username,
-			AuthKind: row.AuthKind, LastError: row.LastError,
+			AuthKind: row.AuthKind, LastError: row.LastError, AuthFailed: row.AuthFailed,
 			IsActive: row.IsActive, IsDefault: row.IsDefault,
 			SMTPHost: row.SmtpHost, IMAPHost: row.ImapHost,
 			HasSecret: s.hasCredential(ctx, tenantID, row.ID),

@@ -273,6 +273,7 @@ type MailAccount struct {
 	LastReadAt      pgtype.Timestamptz
 	StatusCheckedAt pgtype.Timestamptz
 	UnboundAt       pgtype.Timestamptz
+	AuthFailed      bool
 }
 
 type MailBindingLog struct {

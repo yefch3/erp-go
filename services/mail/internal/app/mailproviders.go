@@ -36,11 +36,6 @@ type MailProvider struct {
 	IMAPHost     string
 	IMAPPort     int32
 	IMAPSecurity string
-
-	// NeedsOAuth 的服务商不能用密码绑：它们已经关掉了 IMAP 的基本认证，
-	// 拿密码去登只会得到一句和「密码错了」长得一模一样的拒绝。与其让员工
-	// 反复试，不如在绑之前就说清楚该走哪扇门。
-	NeedsOAuth bool
 }
 
 // mailProviders 是全部认得的服务商。顺序就是前端下拉框的顺序：企业邮在前
@@ -101,17 +96,6 @@ var mailProviders = []MailProvider{
 		Domains:  []string{"sina.com", "sina.cn"},
 		SMTPHost: "smtp.sina.com", SMTPPort: 465, SMTPSecurity: "SSL",
 		IMAPHost: "imap.sina.com", IMAPPort: 993, IMAPSecurity: "SSL",
-	},
-	{
-		Code:    "outlook",
-		Domains: []string{"outlook.com", "hotmail.com", "live.com", "msn.com"},
-		// 微软 2024 年起关掉了个人账号的 IMAP 基本认证，密码和应用专用
-		// 密码**都不行**，只剩 OAuth。主机配置照留，等哪天接上微软的
-		// OAuth 就能用；在那之前 NeedsOAuth 让绑定入口把话说在前面，
-		// 而不是让员工对着一句「授权码错误」猜半天。
-		SMTPHost: "smtp-mail.outlook.com", SMTPPort: 587, SMTPSecurity: "STARTTLS",
-		IMAPHost: "outlook.office365.com", IMAPPort: 993, IMAPSecurity: "SSL",
-		NeedsOAuth: true,
 	},
 }
 

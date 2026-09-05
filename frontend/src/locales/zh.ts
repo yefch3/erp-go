@@ -1845,6 +1845,7 @@ export default {
     junkNoteRescue: '点「这不是垃圾」会把邮件移回邮箱服务商的收件箱，并告诉它这个发件人判错了。',
     syncBroken: '邮箱当前收不到新邮件：{e}。列表里是最后一次成功同步的内容。',
     reauth: '重新登录邮箱',
+    syncRetrying: '服务器暂时连不上，会自动重试，不用重新登录',
     reply: '回复',
     replyAll: '回复全部',
     forward: '转发',

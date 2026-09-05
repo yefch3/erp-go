@@ -55,7 +55,7 @@
           <el-icon class="caret" :class="{ open: isOpen(b.id) }"><CaretRight /></el-icon>
           <span
             class="mbox-dot"
-            :class="{ bad: !!b.lastError, off: isLocked(b.id) }"
+            :class="{ bad: b.needsReauth, warn: !!b.lastError && !b.needsReauth, off: isLocked(b.id) }"
             :title="b.lastError || undefined"
           />
           <span class="mbox-name">{{ b.email }}</span>
@@ -221,6 +221,7 @@ export interface Mailbox {
   email: string
   isDefault: boolean
   lastError: string
+  needsReauth: boolean
   /** 这个箱里有多少封没读。切换的理由就是它。 */
   unread: number
   /** 解绑时间，空表示还绑着。解绑的箱只能看历史，不能收发。 */
@@ -312,6 +313,7 @@ async function load() {
     email: a.email ?? '',
     isDefault: !!a.isDefault,
     lastError: a.lastError ?? '',
+    needsReauth: !!a.needsReauth,
     // protojson 把 int64 打成字符串，普通 JSON 打成数字。两条路都过一遍
     // Number——这个仓库为同一件事已经踩过一次（见 excelQuota.test.ts）。
     unread: Number(a.unread ?? 0),
@@ -421,9 +423,14 @@ defineExpose({ reload: load })
   background: var(--el-color-success);
 }
 /* 这个箱最近一次收发出过错。红点比一句横幅省地方，鼠标停上去看得到地址，
-   点进去才是完整的错误——多信箱之后横幅说不清是哪个箱在报错。 */
+   点进去才是完整的错误——多信箱之后横幅说不清是哪个箱在报错。
+   红 = 授权码被拒，得重新登录；黄 = 服务器暂时连不上，会自己重试。
+   和横幅的规矩一致（lib/syncBanner）：不能横幅说"不用重登"、旁边却亮着红点。 */
 .mbox-dot.bad {
   background: var(--el-color-danger);
+}
+.mbox-dot.warn {
+  background: var(--el-color-warning);
 }
 /* 还没登录这个箱：灰点。绿点说的是"在收信"，而没登录的箱确实没在收。 */
 .mbox-dot.off {

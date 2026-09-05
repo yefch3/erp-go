@@ -23,7 +23,6 @@ export interface MailProvider {
   /** 认得出来的地址后缀，只用来在员工输入地址后自动选中。 */
   domains?: readonly string[]
   /** true = 这家已经关掉了密码登录，只能走它自己的授权。 */
-  needsOAuth?: boolean
 }
 
 export const MAIL_PROVIDERS: readonly MailProvider[] = [
@@ -76,13 +75,6 @@ export const MAIL_PROVIDERS: readonly MailProvider[] = [
     label: '新浪邮箱',
     hint: '在新浪邮箱「设置 → 客户端 POP/IMAP/SMTP」里开启 IMAP，并生成独立密码',
     domains: ['sina.com', 'sina.cn'],
-  },
-  {
-    code: 'outlook',
-    label: 'Outlook / Hotmail',
-    hint: '微软已经不允许用密码登录个人邮箱的 IMAP 了，这一档暂时绑不上',
-    domains: ['outlook.com', 'hotmail.com', 'live.com', 'msn.com'],
-    needsOAuth: true,
   },
 ] as const
 

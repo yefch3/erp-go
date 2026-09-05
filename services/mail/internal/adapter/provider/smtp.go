@@ -31,7 +31,7 @@ type Accounts interface {
 	// RecordFailure surfaces a connection or authentication problem on the
 	// account itself. A wrong authorisation code otherwise shows up only as
 	// every message failing, with nothing on screen saying why.
-	RecordFailure(ctx context.Context, tenantID, accountID int64, msg string)
+	RecordFailure(ctx context.Context, tenantID, accountID int64, msg string, authProblem bool)
 }
 
 // Blobs fetches attachment bytes.
@@ -137,7 +137,8 @@ func (s *SMTP) Send(ctx context.Context, m app.Outbound) app.SendResult {
 		res.Raw = raw
 	}
 	if res.Outcome != app.Accepted && res.authProblem {
-		s.accounts.RecordFailure(ctx, m.TenantID, acct.AccountID, res.Err)
+		// 这个分支本来就只在认证失败时进来（authProblem），所以一定是凭据问题。
+		s.accounts.RecordFailure(ctx, m.TenantID, acct.AccountID, res.Err, true)
 	}
 	return res.SendResult
 }

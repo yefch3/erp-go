@@ -865,7 +865,7 @@ func (q *Queries) GetInboundForPurge(ctx context.Context, arg GetInboundForPurge
 }
 
 const getMailAccountByEmail = `-- name: GetMailAccountByEmail :one
-SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
+SELECT id, employee_id, email, username, auth_kind, verified_at, last_error, auth_failed,
        is_active, is_default, updated_at,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security
@@ -887,6 +887,7 @@ type GetMailAccountByEmailRow struct {
 	AuthKind     string
 	VerifiedAt   pgtype.Timestamptz
 	LastError    string
+	AuthFailed   bool
 	IsActive     bool
 	IsDefault    bool
 	UpdatedAt    pgtype.Timestamptz
@@ -925,6 +926,7 @@ func (q *Queries) GetMailAccountByEmail(ctx context.Context, arg GetMailAccountB
 		&i.AuthKind,
 		&i.VerifiedAt,
 		&i.LastError,
+		&i.AuthFailed,
 		&i.IsActive,
 		&i.IsDefault,
 		&i.UpdatedAt,
@@ -940,7 +942,7 @@ func (q *Queries) GetMailAccountByEmail(ctx context.Context, arg GetMailAccountB
 }
 
 const getMailAccountByID = `-- name: GetMailAccountByID :one
-SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
+SELECT id, employee_id, email, username, auth_kind, verified_at, last_error, auth_failed,
        is_active, is_default, unbound_at, updated_at,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security
@@ -962,6 +964,7 @@ type GetMailAccountByIDRow struct {
 	AuthKind     string
 	VerifiedAt   pgtype.Timestamptz
 	LastError    string
+	AuthFailed   bool
 	IsActive     bool
 	IsDefault    bool
 	UnboundAt    pgtype.Timestamptz
@@ -994,6 +997,7 @@ func (q *Queries) GetMailAccountByID(ctx context.Context, arg GetMailAccountByID
 		&i.AuthKind,
 		&i.VerifiedAt,
 		&i.LastError,
+		&i.AuthFailed,
 		&i.IsActive,
 		&i.IsDefault,
 		&i.UnboundAt,
@@ -1731,7 +1735,7 @@ func (q *Queries) ListInboundThreads(ctx context.Context, arg ListInboundThreads
 }
 
 const listMailAccountsForEmployee = `-- name: ListMailAccountsForEmployee :many
-SELECT id, email, username, auth_kind, verified_at, last_error, is_active, updated_at,
+SELECT id, email, username, auth_kind, verified_at, last_error, auth_failed, is_active, updated_at,
        is_default, domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security, last_read_at, unbound_at
 FROM mail_accounts
@@ -1752,6 +1756,7 @@ type ListMailAccountsForEmployeeRow struct {
 	AuthKind     string
 	VerifiedAt   pgtype.Timestamptz
 	LastError    string
+	AuthFailed   bool
 	IsActive     bool
 	UpdatedAt    pgtype.Timestamptz
 	IsDefault    bool
@@ -1790,6 +1795,7 @@ func (q *Queries) ListMailAccountsForEmployee(ctx context.Context, arg ListMailA
 			&i.AuthKind,
 			&i.VerifiedAt,
 			&i.LastError,
+			&i.AuthFailed,
 			&i.IsActive,
 			&i.UpdatedAt,
 			&i.IsDefault,
@@ -3054,18 +3060,27 @@ func (q *Queries) MarkInboundRead(ctx context.Context, arg MarkInboundReadParams
 
 const markMailAccountFailed = `-- name: MarkMailAccountFailed :exec
 UPDATE mail_accounts
-SET last_error = $1::text, updated_at = now()
-WHERE tenant_id = $2::bigint AND id = $3::bigint
+SET last_error = $1::text,
+    auth_failed = $2::boolean,
+    updated_at = now()
+WHERE tenant_id = $3::bigint AND id = $4::bigint
 `
 
 type MarkMailAccountFailedParams struct {
-	LastError string
-	TenantID  int64
-	ID        int64
+	LastError  string
+	AuthFailed bool
+	TenantID   int64
+	ID         int64
 }
 
+// auth_failed 和 last_error 一起写：文本给人看，位给程序判。
 func (q *Queries) MarkMailAccountFailed(ctx context.Context, arg MarkMailAccountFailedParams) error {
-	_, err := q.db.Exec(ctx, markMailAccountFailed, arg.LastError, arg.TenantID, arg.ID)
+	_, err := q.db.Exec(ctx, markMailAccountFailed,
+		arg.LastError,
+		arg.AuthFailed,
+		arg.TenantID,
+		arg.ID,
+	)
 	return err
 }
 
