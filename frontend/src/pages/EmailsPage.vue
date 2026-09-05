@@ -999,14 +999,14 @@
     </template>
   </el-dialog>
 
-  <el-dialog
-    v-model="excelOpen"
+  <MailExcelWindow
+    v-model:open="excelOpen"
+    v-model:minimized="excelMinimized"
     :title="excelResult?.fileName || t('emails.excelPreview')"
-    width="min(1100px, 94vw)"
-    top="4vh"
-    append-to-body
-    :close-on-click-modal="false"
-    :close-on-press-escape="false"
+    :minimize-label="t('emails.minimizeExcel')"
+    :restore-label="t('emails.restoreExcel')"
+    :close-label="t('emails.close')"
+    :resize-label="t('emails.resizeExcel')"
   >
     <div v-loading="excelBusy" class="excel-preview">
       <el-empty v-if="!excelBusy && !excelResult" :description="t('emails.excelWaiting')" />
@@ -1056,7 +1056,7 @@
         {{ t('emails.downloadExcel') }}
       </el-button>
     </template>
-  </el-dialog>
+  </MailExcelWindow>
 
   <!-- 客户和联系人都来自基础数据。联系人按客户联动，邮箱只显示主数据快照。 -->
   <el-dialog
@@ -1213,6 +1213,7 @@ import MailSignatureDialog from '../components/MailSignatureDialog.vue'
 import MailTemplatesDialog from '../components/MailTemplatesDialog.vue'
 import MailList, { type MailRow } from '../components/MailList.vue'
 import CustomerFromMailDialog from '../components/CustomerFromMailDialog.vue'
+import MailExcelWindow from '../components/MailExcelWindow.vue'
 // Received mail renders inside a sandboxed frame. It carries the sender's own
 // stylesheet now, and a stylesheet injected into this page would be a stranger
 // styling the ERP — which is exactly what happened when these two sites were
@@ -3199,6 +3200,7 @@ const excelMenu = reactive({
 })
 const customerCreateOpen = ref(false)
 const excelOpen = ref(false)
+const excelMinimized = ref(false)
 const excelTemplateOpen = ref(false)
 const excelTemplatesBusy = ref(false)
 const excelTemplates = ref<InquiryTemplate[]>([])
@@ -3454,6 +3456,7 @@ async function confirmExcelTemplate() {
     convertedExcelSource.value = source
     excelResult.value = cached
     excelSheet.value = cached.sheets[0]?.name ?? ''
+    excelMinimized.value = false
     excelOpen.value = true
     return
   }
@@ -3478,6 +3481,7 @@ async function openAttachmentDirect(file: MailFile): Promise<boolean> {
   excelResult.value = null
   convertedExcelSource.value = source
   excelSheet.value = ''
+  excelMinimized.value = false
   excelOpen.value = true
   excelBusy.value = true
   try {
@@ -3522,6 +3526,7 @@ async function startExcelConversion(source: ExcelSource, templateId = selectedIn
   excelResult.value = null
   convertedExcelSource.value = source
   excelSheet.value = ''
+  excelMinimized.value = false
   excelOpen.value = true
   excelBusy.value = true
   try {
@@ -3554,6 +3559,7 @@ function resumeExcelJob() {
   excelJobId.value = id
   excelResult.value = null
   excelBusy.value = true
+  excelMinimized.value = false
   excelOpen.value = true
   scheduleExcelJobPoll(0)
 }
