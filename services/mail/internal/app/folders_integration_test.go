@@ -293,3 +293,50 @@ func TestMoveInboundRepointsTheRowAndTheView(t *testing.T) {
 		t.Errorf("已发送不该能挪：%v", err)
 	}
 }
+
+// 「全部已读」只动当前视图。自建文件夹视图下它以前会落到收件箱那档，把真正
+// 收件箱的未读全标掉；认不得的视图（前端传错键时是 "undefined"）一封都不该动。
+func TestMarkViewReadStaysInsideTheCustomFolder(t *testing.T) {
+	f := newFolderFixture(t, 9106)
+	ctx := context.Background()
+	fd, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, "项目A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inbox := f.insertMail(t, "INBOX", 51, "留在收件箱的")
+	filed := f.insertMail(t, "INBOX", 52, "归到项目A的")
+	if err := f.svc.MoveInbound(ctx, f.tenantID, f.me, filed, fd.ID); err != nil {
+		t.Fatal(err)
+	}
+	isRead := func(id int64) bool {
+		var r bool
+		if err := f.pool.QueryRow(ctx, `SELECT is_read FROM email_inbound WHERE id=$1`, id).Scan(&r); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+
+	if _, err := f.svc.MarkViewRead(ctx, f.tenantID, f.me, "undefined"); err == nil || !strings.Contains(err.Error(), "MAIL_VIEW_UNKNOWN") {
+		t.Errorf("认不得的视图应该拒绝：%v", err)
+	}
+	if isRead(inbox) || isRead(filed) {
+		t.Fatal("认不得的视图不该动任何一封")
+	}
+
+	n, err := f.svc.MarkViewRead(ctx, f.tenantID, f.me, "F:项目A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || !isRead(filed) || isRead(inbox) {
+		t.Errorf("F:项目A 应该只标文件夹里那一封：n=%d filed=%v inbox=%v", n, isRead(filed), isRead(inbox))
+	}
+
+	// 关键词搜索走的是同一套视图过滤：在文件夹里搜只该看到文件夹里的。
+	page, err := f.svc.ListInbound(ctx, f.tenantID, f.me, f.account, "的", "F:项目A", "", 20, ListSort{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Mails) != 1 || page.Mails[0].Subject != "归到项目A的" {
+		t.Errorf("文件夹里搜索应该只有那一封，实际 %d 封", len(page.Mails))
+	}
+}

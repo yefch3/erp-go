@@ -747,7 +747,10 @@ func publishMoves(ctx context.Context, s *Service, tenantID, ownerID int64, rows
 // sits above a list, and it should do what the list shows. Marking the junk
 // view read must not silently clear the inbox.
 func (s *Service) MarkViewRead(ctx context.Context, tenantID, ownerID int64, view string) (int64, error) {
-	view = normalizeView(view)
+	view, err := knownView(view)
+	if err != nil {
+		return 0, err
+	}
 	touched, err := s.q.MarkViewRead(ctx, store.MarkViewReadParams{
 		TenantID: tenantID, OwnerID: ownerID, View: view,
 	})
@@ -1161,4 +1164,15 @@ func normalizeView(view string) string {
 	default:
 		return "INBOX"
 	}
+}
+
+// knownView 是 normalizeView 的严格版，给写操作用。列表认不得视图回落到
+// 收件箱，最多让人看到默认那一片；「全部已读」要是也回落，就会把真正收件箱
+// 的未读全标掉——前端传错一个键（比如 undefined）就是这个后果。所以这里
+// 认不得就拒绝，一封都不动。
+func knownView(view string) (string, error) {
+	if normalizeView(view) == view {
+		return view, nil
+	}
+	return "", apierr.Invalid("MAIL_VIEW_UNKNOWN", "不认识的视图："+view)
 }
