@@ -107,12 +107,17 @@ func TestProviderLookup(t *testing.T) {
 		{"me@126.com", "netease126"},
 		{"me@qq.com", "qq"},
 		{"me@FOXMAIL.COM", "qq"},
-		{"me@outlook.com", "outlook"},
 	} {
 		p, ok := MailProviderForAddress(strings.ToLower(c.email))
 		if !ok || p.Code != c.want {
 			t.Errorf("%s 该认出 %s，拿到 %q/%v", c.email, c.want, p.Code, ok)
 		}
+	}
+	// 微软个人邮箱不再有预设：它的 IMAP 服务器声明了 LOGINDISABLED，密码和
+	// 应用专用密码都进不去，只剩我们没接的 OAuth。列一个绑不上的选项比没有
+	// 选项更糟——员工会对着「授权码错误」猜半天。
+	if p, ok := MailProviderForAddress("me@outlook.com"); ok {
+		t.Errorf("outlook.com 不该再有预设，拿到 %q", p.Code)
 	}
 	// 企业邮的域名认不出来，这是对的：sunrise.com 可能托管在任何一家。
 	if p, ok := MailProviderForAddress("me@sunrise.com"); ok {

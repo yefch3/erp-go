@@ -43,7 +43,7 @@ ON CONFLICT (tenant_id) DO UPDATE SET
 -- UpsertMailAccountShell 的 ON CONFLICT (tenant_id, email) **口径不一致**
 -- ——查的时候匹配上老行、插的时候对不上，同一个信箱会裂成两行，而唯一约束
 -- 一声不吭。
-SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
+SELECT id, employee_id, email, username, auth_kind, verified_at, last_error, auth_failed,
        is_active, is_default, updated_at,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security
@@ -60,7 +60,7 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- 两个箱之一，绿勾、同步故障横幅、reauth 跳哪扇门全都跟着随机。
 --
 -- 刻意不选 secret_enc：这是设置页读的，凭据永远不回浏览器。
-SELECT id, employee_id, email, username, auth_kind, verified_at, last_error,
+SELECT id, employee_id, email, username, auth_kind, verified_at, last_error, auth_failed,
        is_active, is_default, unbound_at, updated_at,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security
@@ -245,8 +245,11 @@ SET verified_at = now(), last_error = '', updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: MarkMailAccountFailed :exec
+-- auth_failed 和 last_error 一起写：文本给人看，位给程序判。
 UPDATE mail_accounts
-SET last_error = sqlc.arg(last_error)::text, updated_at = now()
+SET last_error = sqlc.arg(last_error)::text,
+    auth_failed = sqlc.arg(auth_failed)::boolean,
+    updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
 
 -- name: SetMailAccountActive :exec
@@ -269,7 +272,7 @@ ORDER BY id;
 --
 -- 和 GetMyMailAccount 一样不选 secret_enc：这是设置页读的，凭据永远不回
 -- 浏览器。
-SELECT id, email, username, auth_kind, verified_at, last_error, is_active, updated_at,
+SELECT id, email, username, auth_kind, verified_at, last_error, auth_failed, is_active, updated_at,
        is_default, domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security, last_read_at, unbound_at
 FROM mail_accounts

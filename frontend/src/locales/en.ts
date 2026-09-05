@@ -1848,6 +1848,7 @@ export default {
     junkNoteRescue: '“Not spam” moves the mail back to your provider’s inbox and tells its filter it misjudged the sender.',
     syncBroken: 'This mailbox is not receiving: {e}. The list shows the last successful sync.',
     reauth: 'Sign in again',
+    syncRetrying: 'The mail server is temporarily unreachable; it will retry on its own. No need to sign in again.',
     reply: 'Reply',
     replyAll: 'Reply all',
     forward: 'Forward',

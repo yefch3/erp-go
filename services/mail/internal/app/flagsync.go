@@ -205,13 +205,25 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 	for _, row := range moves {
 		acct, err := s.ForAccount(ctx, cfg.TenantID, row.AccountID)
 		if err != nil {
-			s.failOps(ctx, []store.ClaimFlagOpsRow{row}, err)
+			s.failOrRetire(ctx, row, err)
 			continue
 		}
 		if err := s.publishMove(ctx, acct, row); err != nil {
+			if s.moveIsMoot(ctx, acct, row) {
+				// 信已经不在原文件夹里了——别的客户端先动了手。要的结果（它不
+				// 在收件箱里）已经达到，这条操作没有意义了，作废。生产上真发生
+				// 过：员工在 Foxmail 里删了，我们拿着一个不存在的 UID 重试到
+				// 1265 次，期间这个账号的读状态对账一直被它挡着。
+				s.log.Info("folder move retired: message already gone from the host",
+					"account", row.AccountID, "flag", row.Flag, "uid", row.ImapUid)
+				if err := s.q.DeleteFlagOp(ctx, row.ID); err != nil {
+					s.log.Warn("could not clear a moot move", "id", row.ID, "err", err)
+				}
+				continue
+			}
 			s.log.Warn("folder move failed", "account", row.AccountID,
 				"flag", row.Flag, "op", row.Op, "uid", row.ImapUid, "err", err)
-			s.failOps(ctx, []store.ClaimFlagOpsRow{row}, err)
+			s.failOrRetire(ctx, row, err)
 			continue
 		}
 		if err := s.q.DeleteFlagOp(ctx, row.ID); err != nil {
@@ -289,13 +301,59 @@ func (s *Service) publishPurges(ctx context.Context, acct MailAccount, rows []st
 		if err := s.publishMove(ctx, acct, r); err != nil {
 			s.log.Warn("folder move failed", "account", r.AccountID,
 				"flag", r.Flag, "op", r.Op, "uid", r.ImapUid, "err", err)
-			s.failOps(ctx, []store.ClaimFlagOpsRow{r}, err)
+			s.failOrRetire(ctx, r, err)
 			continue
 		}
 		if err := s.q.DeleteFlagOp(ctx, r.ID); err != nil {
 			s.log.Warn("could not clear a published move", "id", r.ID, "err", err)
 		}
 	}
+}
+
+// maxFlagOpAttempts 是一条写回操作最多试几次。
+//
+// 退避只是让失败变慢，不让它停：一条永远失败的操作按最长 12 分钟一次，一天
+// 仍然是 120 次连接，而且只要它还在队列里，CountPendingFlagOps 就大于零，这个
+// 账号的读状态对账（ReconcileFlags）就一直不跑。生产上有三条操作分别重试了
+// 992、993、1265 次，对应的账号从 8 月 25 日起就没再和 Foxmail 对过已读。
+//
+// 20 次按现在的退避约合三四个小时：一次真正的临时故障（服务器抖一下、网络
+// 断一会儿）早就过去了；还在失败的，就不是临时的。
+const maxFlagOpAttempts = 20
+
+// failOrRetire 记一次失败；到了上限就放弃，而不是永远重试。
+func (s *Service) failOrRetire(ctx context.Context, row store.ClaimFlagOpsRow, cause error) {
+	if row.Attempts+1 >= maxFlagOpAttempts {
+		s.log.Warn("folder move given up after repeated failures",
+			"account", row.AccountID, "flag", row.Flag, "op", row.Op,
+			"uid", row.ImapUid, "attempts", row.Attempts+1, "err", cause)
+		if err := s.q.DeleteFlagOp(ctx, row.ID); err != nil {
+			s.log.Warn("could not retire a failed move", "id", row.ID, "err", err)
+		}
+		return
+	}
+	s.failOps(ctx, []store.ClaimFlagOpsRow{row}, cause)
+}
+
+// moveIsMoot 问服务器：这封信还在原文件夹里吗。
+//
+// 只对「挪出去」的操作有意义（删除、归档）。挪回来（恢复）走 Message-ID
+// 查找，本来就不依赖旧 UID。问不到时按「还在」处理——宁可多重试，也不
+// 因为一次网络抖动把一条正当的删除作废掉。
+func (s *Service) moveIsMoot(ctx context.Context, acct MailAccount, row store.ClaimFlagOpsRow) bool {
+	if row.Op != opAdd || (row.Flag != flagTrash && row.Flag != flagArchive) {
+		return false
+	}
+	home, err := s.hostFolder(ctx, acct, row.Folder)
+	if err != nil {
+		return false
+	}
+	live, err := s.mailbox.FetchFlags(ctx, acct, home, []uint32{uint32(row.ImapUid)})
+	if err != nil {
+		return false
+	}
+	_, stillThere := live[uint32(row.ImapUid)]
+	return !stillThere
 }
 
 func (s *Service) failOps(ctx context.Context, rows []store.ClaimFlagOpsRow, cause error) {

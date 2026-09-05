@@ -599,7 +599,7 @@ func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, accountID 
 		// long as it took somebody to notice, while the page went on showing
 		// the last successful sync as though it were current. Silence is the
 		// bug: the mailbox has to be able to say it is not receiving.
-		s.RecordFailure(ctx, cfg.TenantID, acct.AccountID, err.Error())
+		s.RecordFailure(ctx, cfg.TenantID, acct.AccountID, err.Error(), IsCredentialRejected(err))
 		return 0, err
 	}
 	// Cleared on the way back up, so a recovered mailbox stops complaining
@@ -1277,8 +1277,16 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 			// account comes back; holding a loop open for it helps nobody.
 			return
 		}
-		news, err := waiter.WaitForNews(ctx, acct, "INBOX", 25*time.Minute)
+		// 比 IDLE 的续命间隔略长：正常情况下是续命先到，这个只是兜底。
+		news, err := waiter.WaitForNews(ctx, acct, "INBOX", IdleRestartEvery+time.Minute)
 		if err != nil {
+			if BenignIdleDrop(err) {
+				// 对方挂了电话。263 几分钟就来一次，不是故障：记一条 Info 留
+				// 个脚印，然后立刻重连——不退避。退避是留给拒绝我们的服务器的。
+				s.log.Info("idle connection closed by host, reconnecting", "account", accountID)
+				backoff = time.Minute
+				continue
+			}
 			s.log.Warn("idle watch dropped", "account", accountID, "err", err)
 			select {
 			case <-ctx.Done():

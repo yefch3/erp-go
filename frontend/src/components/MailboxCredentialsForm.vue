@@ -151,7 +151,6 @@ function onProviderChange(code: string) {
   // 挑到一家已经关掉密码登录的（Outlook），当场说清楚，别让人对着
   // 「授权码错误」猜半天。
   const p = providerByCode(code)
-  if (p?.needsOAuth) error.value = p.hint
 }
 
 async function submit() {

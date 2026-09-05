@@ -241,12 +241,15 @@ func (s *Service) defaultAccountIDFor(ctx context.Context, tenantID, employeeID 
 // RecordFailure notes a credential-level problem on the account so the
 // settings page can show it. Best effort: failing to record why a send failed
 // must not turn into a second failure.
-func (s *Service) RecordFailure(ctx context.Context, tenantID, accountID int64, msg string) {
+//
+// authProblem 说这次失败是不是凭据的问题。它决定页面上那颗「重新登录邮箱」
+// 出不出现，所以由知道原因的调用方给，不从 msg 的文字里猜。
+func (s *Service) RecordFailure(ctx context.Context, tenantID, accountID int64, msg string, authProblem bool) {
 	// 按字符截，不按字节：切开一个中文会留下无效的 UTF-8，而 Postgres 的
 	// text 列拒收（22021），于是这句"记一下哪里出错了"自己也失败了。
 	msg = truncateUTF8(msg, 500)
 	if err := s.q.MarkMailAccountFailed(ctx, store.MarkMailAccountFailedParams{
-		TenantID: tenantID, ID: accountID, LastError: msg,
+		TenantID: tenantID, ID: accountID, LastError: msg, AuthFailed: authProblem,
 	}); err != nil {
 		s.log.Warn("could not record mailbox failure", "account", accountID, "err", err)
 	}
@@ -259,7 +262,7 @@ func (s *Service) RecordFailure(ctx context.Context, tenantID, accountID int64, 
 // conflating them would let a working poll masquerade as a fresh sign-in.
 func (s *Service) clearFailure(ctx context.Context, tenantID, accountID int64) {
 	if err := s.q.MarkMailAccountFailed(ctx, store.MarkMailAccountFailedParams{
-		TenantID: tenantID, ID: accountID, LastError: "",
+		TenantID: tenantID, ID: accountID, LastError: "", AuthFailed: false,
 	}); err != nil {
 		s.log.Warn("could not clear mailbox failure", "account", accountID, "err", err)
 	}

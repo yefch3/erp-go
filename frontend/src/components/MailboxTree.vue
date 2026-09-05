@@ -221,6 +221,7 @@ export interface Mailbox {
   email: string
   isDefault: boolean
   lastError: string
+  needsReauth: boolean
   /** 这个箱里有多少封没读。切换的理由就是它。 */
   unread: number
   /** 解绑时间，空表示还绑着。解绑的箱只能看历史，不能收发。 */
@@ -312,6 +313,7 @@ async function load() {
     email: a.email ?? '',
     isDefault: !!a.isDefault,
     lastError: a.lastError ?? '',
+    needsReauth: !!a.needsReauth,
     // protojson 把 int64 打成字符串，普通 JSON 打成数字。两条路都过一遍
     // Number——这个仓库为同一件事已经踩过一次（见 excelQuota.test.ts）。
     unread: Number(a.unread ?? 0),

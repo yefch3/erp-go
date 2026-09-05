@@ -584,6 +584,9 @@ message SyncMailboxResponse {
   // 收件箱这一程还没跑完，但后台仍在继续。不是错误：一个九千封的邮箱首次
   // 同步本来就要几分钟，而调用方（浏览器、以及它前面的 nginx）等不了那么久。
   bool pending = 3;
+  // 这次失败是授权码被拒，重新登录才修得好。为 false 时前端不该劝人重登：
+  // 服务器掐线、网络超时之类，自己会重试。
+  bool needs_reauth = 4;
 }
 
 message RecordOpenRequest {
@@ -720,6 +723,8 @@ message MailAccount {
   // 解绑 ≠ 删除：这一行还在，历史邮件照样读得到、搜得到，只是不再收发。
   // 界面据此把它标成「已解绑」并收起收发相关的动作。
   string unbound_at = 14;
+  // last_error 是不是凭据问题。横幅上那颗「重新登录邮箱」只认它。
+  bool needs_reauth = 15;
 }
 
 message GetMyMailAccountRequest {

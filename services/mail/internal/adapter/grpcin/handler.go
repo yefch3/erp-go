@@ -760,7 +760,7 @@ func (h *Handler) GetMyMailAccount(ctx context.Context, req *mailv1.GetMyMailAcc
 func mailAccountToProto(v app.MailAccountView) *mailv1.MailAccount {
 	return &mailv1.MailAccount{
 		Id: v.ID, Email: v.Email, Username: v.Username, HasSecret: v.HasSecret,
-		VerifiedAt: v.VerifiedAt, LastError: v.LastError, IsActive: v.IsActive,
+		VerifiedAt: v.VerifiedAt, LastError: v.LastError, NeedsReauth: v.AuthFailed, IsActive: v.IsActive,
 		AuthKind: v.AuthKind, IsDefault: v.IsDefault,
 		SmtpHost: v.SMTPHost, ImapHost: v.IMAPHost,
 		Unread: v.Unread, LastReadAt: v.LastReadAt, UnboundAt: v.UnboundAt,
@@ -1113,7 +1113,12 @@ func (h *Handler) SyncMailbox(ctx context.Context, req *mailv1.SyncMailboxReques
 	op := operator(ctx)
 	n, pending, err := h.svc.SyncNow(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId())
 	if err != nil {
-		return &mailv1.SyncMailboxResponse{Fetched: 0, Detail: err.Error()}, nil
+		return &mailv1.SyncMailboxResponse{
+			Fetched: 0, Detail: err.Error(),
+			// 只有授权码被拒才劝人重登。服务器掐线、超时之类自己会重试，
+			// 劝人重输授权码只会让他反复做一件修不好任何东西的事。
+			NeedsReauth: app.IsCredentialRejected(err),
+		}, nil
 	}
 	// pending 不填 Detail：Detail 是给错误用的，前端见到它就弹红字。还在收
 	// 不是错误。

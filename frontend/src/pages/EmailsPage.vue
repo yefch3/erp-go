@@ -114,18 +114,23 @@
       <!-- The mailbox saying it is not receiving. Without this, a revoked
            authorisation fails every poll in silence while the page goes on
            showing the last successful sync as though it were current. -->
+      <!-- 那颗「重新登录邮箱」只在授权码真被拒时出现（后端的 needsReauth）。
+           从前只要有错误就显示它：263 隔几分钟掐一次空闲连接，每掐一次员工
+           就被劝去重输一遍授权码，而重输从来没修好过任何东西。规则和测试在
+           lib/syncBanner。 -->
       <el-alert
-        v-if="syncError"
-        type="error"
+        v-if="syncBanner.text"
+        :type="syncBanner.offerReauth ? 'error' : 'warning'"
         :closable="false"
         show-icon
         class="sync-error"
       >
         <div class="sync-error-body">
-          <span>{{ t('emails.syncBroken', { e: syncError }) }}</span>
-          <el-button size="small" type="primary" plain @click="reauth">
+          <span>{{ t('emails.syncBroken', { e: syncBanner.text }) }}</span>
+          <el-button v-if="syncBanner.offerReauth" size="small" type="primary" plain @click="reauth">
             {{ t('emails.reauth') }}
           </el-button>
+          <span v-else class="sync-retrying">{{ t('emails.syncRetrying') }}</span>
         </div>
       </el-alert>
 
@@ -1171,6 +1176,7 @@ import { shortTime, zonedStamp } from '../lib/zonedtime'
 import { humanSize } from '../lib/humanSize'
 import { needsConversion } from '../lib/attachmentPreview'
 import { replyAllRecipients } from '../lib/replyAll'
+import { syncBanner as buildSyncBanner, type SyncBanner } from '../lib/syncBanner'
 import {
   DEFAULT_SORT,
   nextSort,
@@ -1482,7 +1488,7 @@ const syncing = ref(false)
 const markingAll = ref(false)
 const emptying = ref(false)
 // What the server last said went wrong with this mailbox, empty when healthy.
-const syncError = ref('')
+const syncBanner = ref<SyncBanner>({ text: '', offerReauth: false })
 // 当前在看哪个信箱。0 = 全部（还没绑过，或者只有一个）。
 const currentAccount = ref(0)
 // 这个人名下的信箱清单。退出一个之后要知道还剩哪些，好切过去。
@@ -2969,12 +2975,12 @@ async function markAllRead() {
 // 答案是随机的，横幅可能在说另一个箱的事。左侧每个箱自己还有一个红点。
 async function checkSyncHealth() {
   try {
-    const d = await get<{ accounts?: { id: number; lastError: string; email: string }[] }>(
+    const d = await get<{ accounts?: { id: number; lastError: string; needsReauth?: boolean; email: string }[] }>(
       '/my-mailboxes',
     )
     const mine = d.accounts ?? []
     const cur = mine.find((a) => Number(a.id) === currentAccount.value) ?? mine[0]
-    syncError.value = cur?.lastError ?? ''
+    syncBanner.value = buildSyncBanner({ lastError: cur?.lastError, needsReauth: cur?.needsReauth })
     myAddresses.value = new Set(
       mine.map((a) => (a.email ?? '').trim().toLowerCase()).filter(Boolean),
     )
@@ -3017,16 +3023,16 @@ onUnmounted(() => window.clearInterval(healthTimer))
 // disappears before it is read.
 async function syncOnOpen() {
   try {
-    const d = await post<{ fetched: number; detail: string }>(
+    const d = await post<{ fetched: number; detail: string; needsReauth?: boolean }>(
       '/mailbox/sync',
       undefined,
       mailHostRequest,
     )
     if (d.detail) {
-      syncError.value = d.detail
+      syncBanner.value = buildSyncBanner({ detail: d.detail, needsReauth: d.needsReauth })
       return
     }
-    syncError.value = ''
+    syncBanner.value = { text: '', offerReauth: false }
     if ((d.fetched ?? 0) > 0 && !openedInbound.value) load()
   } catch {
     /* the poller keeps trying; checkSyncHealth reports what it finds */
@@ -3079,17 +3085,17 @@ async function reauth() {
 async function syncNow() {
   syncing.value = true
   try {
-    const d = await post<{ fetched: number; detail: string; pending?: boolean }>(
+    const d = await post<{ fetched: number; detail: string; pending?: boolean; needsReauth?: boolean }>(
       '/mailbox/sync',
       undefined,
       mailHostRequest,
     )
     if (d.detail) {
-      syncError.value = d.detail
+      syncBanner.value = buildSyncBanner({ detail: d.detail, needsReauth: d.needsReauth })
       ElMessage({ type: 'error', message: d.detail, duration: 0, showClose: true })
       return
     }
-    syncError.value = ''
+    syncBanner.value = { text: '', offerReauth: false }
     // 还在收，不是出错。一个从没同步过的邮箱首次要收几分钟，而请求前面的 nginx
     // 只等 60 秒 —— 服务端到点就先答话，这里要把它说成"进行中"而不是红字报错，
     // 否则用户会以为坏了，然后反复点，反复排队。
@@ -4308,6 +4314,11 @@ async function doUnsuppress(row: Suppression) {
 }
 .sync-error {
   margin-bottom: 14px;
+}
+.sync-retrying {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  white-space: nowrap;
 }
 .sync-error-body {
   display: flex;

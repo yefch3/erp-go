@@ -348,13 +348,14 @@ func (f *IMAP) VerifyLogin(ctx context.Context, acct app.MailAccount) error {
 func (f *IMAP) login(c *client.Client, acct app.MailAccount) error {
 	if acct.AuthKind == "OAUTH" {
 		if err := c.Authenticate(xoauth2.NewSASL(acct.Email, acct.Secret)); err != nil {
-			return fmt.Errorf("Google 拒绝了访问令牌：%w", err)
+			return app.NewCredentialRejected(fmt.Errorf("Google 拒绝了访问令牌：%w", err))
 		}
 		announceID(c, f.log)
 		return nil
 	}
 	if err := c.Login(acct.Login(), acct.Secret); err != nil {
-		return fmt.Errorf("邮箱拒绝了这个授权码：%w", err)
+		// 类型化：这是整条同步链上唯一一种"重新登录能修好"的失败。
+		return app.NewCredentialRejected(fmt.Errorf("邮箱拒绝了这个授权码：%w", err))
 	}
 	announceID(c, f.log)
 	return nil
@@ -428,9 +429,7 @@ func (f *IMAP) WaitForNews(ctx context.Context, acct app.MailAccount, folder str
 
 	done := make(chan error, 1)
 	go func() {
-		// Restarting IDLE every 24 minutes stays under the RFC's 29-minute
-		// server logout allowance with room to spare.
-		done <- c.Idle(stop, &client.IdleOptions{LogoutTimeout: 24 * time.Minute})
+		done <- c.Idle(stop, &client.IdleOptions{LogoutTimeout: app.IdleRestartEvery})
 	}()
 
 	timer := time.NewTimer(maxWait)
