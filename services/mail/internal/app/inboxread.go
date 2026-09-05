@@ -172,11 +172,7 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 	_, size = normalizePage(1, size)
 	// An unknown view falls back to the inbox proper rather than erroring:
 	// the worst a bad parameter can do is show the default slice.
-	switch view {
-	case "STARRED", "ARCHIVE", "TRASH", "JUNK":
-	default:
-		view = "INBOX"
-	}
+	view = normalizeView(view)
 	sort, err := normalizeListSort(sort, inboundSortColumns)
 	if err != nil {
 		return InboundPage{}, err
@@ -751,11 +747,7 @@ func publishMoves(ctx context.Context, s *Service, tenantID, ownerID int64, rows
 // sits above a list, and it should do what the list shows. Marking the junk
 // view read must not silently clear the inbox.
 func (s *Service) MarkViewRead(ctx context.Context, tenantID, ownerID int64, view string) (int64, error) {
-	switch view {
-	case "STARRED", "ARCHIVE", "TRASH", "JUNK":
-	default:
-		view = "INBOX"
-	}
+	view = normalizeView(view)
 	touched, err := s.q.MarkViewRead(ctx, store.MarkViewReadParams{
 		TenantID: tenantID, OwnerID: ownerID, View: view,
 	})
@@ -1154,5 +1146,19 @@ func (s *Service) touchMailboxRead(ctx context.Context, tenantID, accountID int6
 		TenantID: tenantID, ID: accountID,
 	}); err != nil {
 		s.log.Warn("could not record mailbox read time", "account", accountID, "err", err)
+	}
+}
+
+// normalizeView 把请求里的 view 收口到已知的几档。认不得的回落到收件箱：
+// 一个坏参数最多只能让人看到默认那一片。自建文件夹是 'F:' 加服务器名，
+// 由 mail_view_of 生成、前端原样传回，这里放行。
+func normalizeView(view string) string {
+	switch {
+	case view == "STARRED", view == "ARCHIVE", view == "TRASH", view == "JUNK":
+		return view
+	case strings.HasPrefix(view, "F:") && len(view) > 2:
+		return view
+	default:
+		return "INBOX"
 	}
 }

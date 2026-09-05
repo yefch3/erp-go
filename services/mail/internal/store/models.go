@@ -353,6 +353,16 @@ type MailFlagOp struct {
 	MessageID  string
 }
 
+type MailFolder struct {
+	ID        int64
+	TenantID  int64
+	AccountID int64
+	Name      string
+	HostName  string
+	CreatedBy int64
+	CreatedAt pgtype.Timestamptz
+}
+
 type MailHost struct {
 	TenantID     int64
 	Domain       string

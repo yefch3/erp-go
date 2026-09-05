@@ -621,6 +621,7 @@ SELECT i.id, i.account_id, i.owner_id, i.message_id, i.thread_key, i.reply_to_id
        i.from_email, i.from_name, i.to_email, i.subject, i.body_html, i.body_text,
        i.raw_key, i.raw_size, i.is_read, i.has_attachments, i.received_at, i.sent_at,
        i.folder, i.reply_to, i.cc, i.auth_spf, i.auth_dkim, i.to_all,
+       i.imap_uid, i.archived_at,
        coalesce(m.status, '') AS sent_status,
        m.opened_at AS sent_opened_at,
        coalesce(m.tracked, FALSE) AS sent_tracked
@@ -1665,3 +1666,54 @@ UPDATE mail_accounts
    AND id = sqlc.arg(id)::bigint
    AND employee_id = sqlc.arg(employee_id)::bigint
    AND unbound_at IS NULL;
+
+-- ============================================================ 自建文件夹
+
+-- name: ListMailFolders :many
+SELECT id, account_id, name, host_name, created_by, created_at
+FROM mail_folders
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+ORDER BY name;
+
+-- name: GetMailFolder :one
+SELECT id, account_id, name, host_name, created_by, created_at
+FROM mail_folders
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: CreateMailFolder :one
+INSERT INTO mail_folders (tenant_id, account_id, name, host_name, created_by)
+VALUES (sqlc.arg(tenant_id)::bigint, sqlc.arg(account_id)::bigint,
+        sqlc.arg(name)::text, sqlc.arg(host_name)::text, sqlc.arg(created_by)::bigint)
+RETURNING id, account_id, name, host_name, created_by, created_at;
+
+-- name: RenameMailFolder :exec
+UPDATE mail_folders
+SET name = sqlc.arg(name)::text, host_name = sqlc.arg(host_name)::text
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: DeleteMailFolder :exec
+DELETE FROM mail_folders
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+-- name: CountInboundInFolder :one
+-- 文件夹里还有没有信（没被删除的）。删文件夹之前问一句：有信就不删，
+-- 让人先把信挪走——静默把信一起删掉是最坏的结果。
+SELECT count(*)::bigint FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder = sqlc.arg(folder)::text
+  AND deleted_at IS NULL;
+
+-- name: RenameInboundFolder :execrows
+-- 文件夹在服务器上改了名，行里存的名字跟着改。触发器会重算视图。
+UPDATE email_inbound
+SET folder = sqlc.arg(new_folder)::text
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder = sqlc.arg(old_folder)::text;
+
+-- name: ClearInboundArchived :exec
+-- 挪回收件箱：归档标记去掉，不然它落在归档视图里。
+UPDATE email_inbound SET archived_at = NULL
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;

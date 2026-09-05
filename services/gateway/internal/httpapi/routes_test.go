@@ -370,3 +370,20 @@ func TestAttachmentBundleDownloadRouteIsRegistered(t *testing.T) {
 		t.Fatalf("缺少路由：%s", want)
 	}
 }
+
+// 自建文件夹那一组地址。少一条，左栏的「新建文件夹」或详情页的「移动到」
+// 点了拿到 404，catch 里只会说一句失败。
+func TestCustomFolderRoutesAreRegistered(t *testing.T) {
+	routes := routeSet(t)
+	for _, want := range []string{
+		"GET /api/mail-folders",
+		"POST /api/mail-folders",
+		"PUT /api/mail-folders/{id}",
+		"DELETE /api/mail-folders/{id}",
+		"POST /api/inbound-mails/{id}/move",
+	} {
+		if !routes[want] {
+			t.Errorf("缺少路由：%s", want)
+		}
+	}
+}

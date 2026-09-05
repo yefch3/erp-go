@@ -802,6 +802,12 @@ func (s *Server) Router() http.Handler {
 		// 最多的一封 40 个，一个一个点不是办法。
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).
 			Get("/api/inbound-mails/{id}/attachments/download", s.downloadInboundAttachments)
+		// 自建文件夹（Issue #362）：建在邮件服务器上，Foxmail 里也看得到。
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-folders", s.listMailFolders)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/mail-folders", s.createMailFolder)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Put("/api/mail-folders/{id}", s.renameMailFolder)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Delete("/api/mail-folders/{id}", s.deleteMailFolder)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/move", s.moveInbound)
 		// 邮箱转换也要能选择询盘模板；这里复用同一个只读 handler，但权限按
 		// 邮箱场景收口，用户无需先获得采购模块权限或跳到采购页面。
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-inquiry-templates", s.listInquiryTemplates)
