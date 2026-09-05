@@ -250,7 +250,9 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 func (s *Service) publishPurges(ctx context.Context, acct MailAccount, rows []store.ClaimFlagOpsRow) {
 	trash, err := s.specialFolderOf(ctx, acct, "trash")
 	if err != nil {
-		s.failOps(ctx, rows, err)
+		for _, r := range rows {
+			s.failOrRetire(ctx, r, err)
+		}
 		return
 	}
 	ids := make([]string, 0, len(rows))
@@ -261,7 +263,13 @@ func (s *Service) publishPurges(ctx context.Context, acct MailAccount, rows []st
 	}
 	found, err := s.mailbox.FindUIDsByMessageIDs(ctx, acct, trash, ids)
 	if err != nil {
-		s.failOps(ctx, rows, err)
+		// 这一支也要走带上限的版本。263 不认 HEADER Message-Id 的 SEARCH
+		// （"can't search that criteria"），走到这里的操作永远到不了 MOVE、也就
+		// 永远碰不到别处的上限：生产上账号 13 的两条 PURGE 就是这样重试了
+		// 一千多次，一直封着它的读状态对账。
+		for _, r := range rows {
+			s.failOrRetire(ctx, r, err)
+		}
 		return
 	}
 
