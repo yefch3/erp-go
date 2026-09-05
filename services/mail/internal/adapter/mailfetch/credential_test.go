@@ -39,6 +39,10 @@ func startLoginFake(t *testing.T, loginReply, selectReply string) string {
 			verb, _, _ := strings.Cut(rest, " ")
 			switch strings.ToUpper(verb) {
 			case "LOGIN":
+				if loginReply == "hangup" {
+					// 263 在握手中途掐线就是这样：收到 LOGIN，一声不吭把连接关了。
+					return
+				}
 				say(tag + " " + loginReply)
 			case "CAPABILITY":
 				say("* CAPABILITY IMAP4rev1")
@@ -103,5 +107,19 @@ func TestCredentialTypeSurvivesWrapping(t *testing.T) {
 	}
 	if app.IsCredentialRejected(fmt.Errorf("收取邮件失败：imap: connection closed")) {
 		t.Fatal("普通错误不该被当成凭据错误")
+	}
+}
+
+// 263 在 LOGIN 中途掐线：go-imap 返回的也是一个普通错误，而这**不是**授权码
+// 错。误判的后果就是这个 PR 要消灭的假横幅在另一个入口重新出现。
+func TestAConnectionDroppedDuringLoginIsNotACredentialProblem(t *testing.T) {
+	addr := startLoginFake(t, "hangup", "OK")
+	f := NewIMAP(5*time.Second, 2*time.Second, nil)
+	err := f.VerifyLogin(context.Background(), acctFor(addr))
+	if err == nil {
+		t.Fatal("应该失败")
+	}
+	if app.IsCredentialRejected(err) {
+		t.Fatalf("登录中途断线被当成了授权码错：%v", err)
 	}
 }

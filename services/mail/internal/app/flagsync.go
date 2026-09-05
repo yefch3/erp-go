@@ -209,7 +209,7 @@ func (s *Service) publishFlagOps(ctx context.Context, cfg SyncConfig) {
 			continue
 		}
 		if err := s.publishMove(ctx, acct, row); err != nil {
-			if s.moveIsMoot(ctx, acct, row) {
+			if s.moveIsMoot(ctx, cfg.TenantID, acct, row) {
 				// 信已经不在原文件夹里了——别的客户端先动了手。要的结果（它不
 				// 在收件箱里）已经达到，这条操作没有意义了，作废。生产上真发生
 				// 过：员工在 Foxmail 里删了，我们拿着一个不存在的 UID 重试到
@@ -285,7 +285,11 @@ func (s *Service) publishPurges(ctx context.Context, acct MailAccount, rows []st
 		if err := s.mailbox.PurgeMessages(ctx, acct, trash, uids); err != nil {
 			s.log.Warn("batch purge failed", "account", acct.AccountID,
 				"n", len(uids), "err", err)
-			s.failOps(ctx, inTrash, err)
+			// 逐条走带上限的版本：一次总是失败的批量清理，不能像从前那样
+			// 把整批操作永远留在队列里，顺带封死这个账号的读状态对账。
+			for _, r := range inTrash {
+				s.failOrRetire(ctx, r, err)
+			}
 		} else {
 			for _, r := range inTrash {
 				if err := s.q.DeleteFlagOp(ctx, r.ID); err != nil {
@@ -340,12 +344,26 @@ func (s *Service) failOrRetire(ctx context.Context, row store.ClaimFlagOpsRow, c
 // 只对「挪出去」的操作有意义（删除、归档）。挪回来（恢复）走 Message-ID
 // 查找，本来就不依赖旧 UID。问不到时按「还在」处理——宁可多重试，也不
 // 因为一次网络抖动把一条正当的删除作废掉。
-func (s *Service) moveIsMoot(ctx context.Context, acct MailAccount, row store.ClaimFlagOpsRow) bool {
+//
+// **先看 UIDVALIDITY。** 文件夹换代之后我们手里的 UID 全部作废，按 UID 去查
+// 每一封都"不在"——不是信没了，是编号没意义了。这时不能作废操作；让它按
+// 退避走到上限、留一条告警，人还能看见。静默作废是所有结果里最坏的一种。
+func (s *Service) moveIsMoot(ctx context.Context, tenantID int64, acct MailAccount, row store.ClaimFlagOpsRow) bool {
 	if row.Op != opAdd || (row.Flag != flagTrash && row.Flag != flagArchive) {
 		return false
 	}
 	home, err := s.hostFolder(ctx, acct, row.Folder)
 	if err != nil {
+		return false
+	}
+	state, err := s.q.GetSyncState(ctx, store.GetSyncStateParams{
+		TenantID: tenantID, AccountID: acct.AccountID, Folder: row.Folder,
+	})
+	if err != nil {
+		return false
+	}
+	st, err := s.mailbox.FolderStatus(ctx, acct, home)
+	if err != nil || st.UIDValidity == 0 || int64(st.UIDValidity) != state.UidValidity {
 		return false
 	}
 	live, err := s.mailbox.FetchFlags(ctx, acct, home, []uint32{uint32(row.ImapUid)})

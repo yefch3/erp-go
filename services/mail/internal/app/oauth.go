@@ -169,7 +169,13 @@ func (s *Service) accessTokenFor(ctx context.Context, tenantID, accountID int64,
 	if err != nil {
 		// The grant itself may have been revoked from the Google account's
 		// security page. Say what to do, not just what failed.
-		return "", fmt.Errorf("Google 授权已失效，请重新用 Google 登录绑定：%w", err)
+		wrapped := fmt.Errorf("Google 授权已失效，请重新用 Google 登录绑定：%w", err)
+		// 只有 invalid_grant 是"重新登录能修好"的：授权被撤销或过期。网络
+		// 连不上、我们自己的 client_id 配错，重登都修不好，不打这个类型。
+		if googleGrantRevoked(err) {
+			return "", NewCredentialRejected(wrapped)
+		}
+		return "", wrapped
 	}
 	s.tokenCache.Store(accountID, cachedToken{
 		token: tok.AccessToken,
@@ -202,7 +208,7 @@ func (s *Service) googleToken(ctx context.Context, form url.Values) (*googleToke
 		return nil, fmt.Errorf("Google 应答无法解析：%w", err)
 	}
 	if tok.Error != "" {
-		return nil, fmt.Errorf("Google 拒绝了请求：%s（%s）", tok.Error, tok.ErrorDesc)
+		return nil, googleOAuthError{code: tok.Error, desc: tok.ErrorDesc}
 	}
 	if tok.AccessToken == "" {
 		return nil, errors.New("Google 没有返回访问令牌")
@@ -232,4 +238,22 @@ func emailFromIDToken(idToken string) string {
 		return ""
 	}
 	return strings.ToLower(strings.TrimSpace(claims.Email))
+}
+
+// googleOAuthError 是 Google 令牌接口明确说"不行"的那种应答，带着它的错误码。
+// 和网络连不上、应答解析不了是两回事：后两种没有码。
+type googleOAuthError struct{ code, desc string }
+
+func (e googleOAuthError) Error() string {
+	return fmt.Sprintf("Google 拒绝了请求：%s（%s）", e.code, e.desc)
+}
+
+// googleGrantRevoked 说这次失败是不是"授权本身没了"。
+//
+// Google 用 invalid_grant 表示 refresh token 被撤销、过期或已经换过密码。
+// 这是唯一一种用户重新走一遍 Google 登录就能修好的情况；invalid_client
+// 之类是我们自己的配置问题，劝用户重登只会让他白跑。
+func googleGrantRevoked(err error) bool {
+	var g googleOAuthError
+	return errors.As(err, &g) && g.code == "invalid_grant"
 }

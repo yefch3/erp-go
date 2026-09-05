@@ -53,6 +53,11 @@ type FolderStatus struct {
 	// 它在这里只有一个用途：和我们库里的数不一致时，说明有人在别的客户端
 	// 上读过或删过信，那也是一次值得全量同步的变化。
 	Unseen uint32
+	// UIDValidity 是这个文件夹此刻的编号世代。和 mail_sync_state 里存的比：
+	// 不一样，我们手里所有 UID 都作废——它们指向别的信，或者什么都不指。
+	// 写回操作在判断「这封信还在不在」之前必须先看它，不然换代之后每个
+	// 旧 UID 都"不在"，会把一堆没做成的删除当成已完成静默作废掉。
+	UIDValidity uint32
 }
 
 type Mailbox interface {
@@ -585,6 +590,13 @@ func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, accountID 
 
 	acct, err := s.ForAccount(ctx, cfg.TenantID, accountID)
 	if err != nil {
+		// 只记凭据类的失败。ForAccount 也会因为"已解绑 / 已暂停"而失败，那些
+		// 不该往一个不存在或休眠的账号上写错误；而 Google 授权被撤销（换过
+		// 密码、在安全页里撤了）正是这里失败，不记的话页面永远不会给那颗
+		// "重新登录"——它是唯一修得好这件事的按钮。
+		if IsCredentialRejected(err) {
+			s.RecordFailure(ctx, cfg.TenantID, accountID, err.Error(), true)
+		}
 		return 0, err
 	}
 
@@ -1282,9 +1294,17 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 		if err != nil {
 			if BenignIdleDrop(err) {
 				// 对方挂了电话。263 几分钟就来一次，不是故障：记一条 Info 留
-				// 个脚印，然后立刻重连——不退避。退避是留给拒绝我们的服务器的。
+				// 个脚印，然后重连——不退避。退避是留给拒绝我们的服务器的。
+				//
+				// 但要有个最小间隔：一台连上就挂的服务器会让这个循环以握手
+				// 的速度空转。几秒钟，和推送的时效性比不算什么。
 				s.log.Info("idle connection closed by host, reconnecting", "account", accountID)
 				backoff = time.Minute
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(benignReconnectDelay):
+				}
 				continue
 			}
 			s.log.Warn("idle watch dropped", "account", accountID, "err", err)

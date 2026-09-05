@@ -348,17 +348,29 @@ func (f *IMAP) VerifyLogin(ctx context.Context, acct app.MailAccount) error {
 func (f *IMAP) login(c *client.Client, acct app.MailAccount) error {
 	if acct.AuthKind == "OAUTH" {
 		if err := c.Authenticate(xoauth2.NewSASL(acct.Email, acct.Secret)); err != nil {
-			return app.NewCredentialRejected(fmt.Errorf("Google 拒绝了访问令牌：%w", err))
+			return credentialOrTransport(fmt.Errorf("Google 拒绝了访问令牌：%w", err))
 		}
 		announceID(c, f.log)
 		return nil
 	}
 	if err := c.Login(acct.Login(), acct.Secret); err != nil {
-		// 类型化：这是整条同步链上唯一一种"重新登录能修好"的失败。
-		return app.NewCredentialRejected(fmt.Errorf("邮箱拒绝了这个授权码：%w", err))
+		return credentialOrTransport(fmt.Errorf("邮箱拒绝了这个授权码：%w", err))
 	}
 	announceID(c, f.log)
 	return nil
+}
+
+// credentialOrTransport 给登录失败定性。
+//
+// go-imap 的 Login 把「服务器说 NO」和「连接中途断了」返回成同一种普通错误，
+// 所以先问一句是不是线路问题：是就原样返回（横幅只会说"暂时连不上"），
+// 不是才打上 CredentialRejected——那是整条同步链上唯一一种"重新登录能修好"
+// 的失败。263 在握手中途掐线是真会发生的事，不能被记成授权码错。
+func credentialOrTransport(err error) error {
+	if app.TransportFailure(err) {
+		return err
+	}
+	return app.NewCredentialRejected(err)
 }
 
 func (f *IMAP) dial(acct app.MailAccount) (*client.Client, error) {
@@ -712,11 +724,11 @@ func (f *IMAP) FolderStatus(ctx context.Context, acct app.MailAccount, folder st
 	}
 	defer func() { f.release(acct, c, err) }()
 
-	st, err := c.Status(folder, []imap.StatusItem{imap.StatusUidNext, imap.StatusUnseen})
+	st, err := c.Status(folder, []imap.StatusItem{imap.StatusUidNext, imap.StatusUnseen, imap.StatusUidValidity})
 	if err != nil {
 		return app.FolderStatus{}, fmt.Errorf("查询 %s 的状态失败：%w", folder, err)
 	}
-	return app.FolderStatus{UIDNext: st.UidNext, Unseen: st.Unseen}, nil
+	return app.FolderStatus{UIDNext: st.UidNext, Unseen: st.Unseen, UIDValidity: st.UidValidity}, nil
 }
 
 // SearchFlagged names every starred message in a folder, however old.

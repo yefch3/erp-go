@@ -1,6 +1,10 @@
 package app
 
 import (
+	"context"
+	"errors"
+	"io"
+	"net"
 	"strings"
 	"time"
 )
@@ -16,6 +20,9 @@ import (
 // 5 分钟一续，比所有已知服务商的掐线阈值都短，而一次续命只是一条 DONE 加一
 // 条 IDLE，不是重新握手。代价可以忽略，换来的是推送不再断断续续。
 const IdleRestartEvery = 5 * time.Minute
+
+// benignReconnectDelay 是对方挂断后重连前至少等多久。见 watchMailbox。
+const benignReconnectDelay = 5 * time.Second
 
 // BenignIdleDrop 说这次 IDLE 结束是不是「对方挂了电话」。
 //
@@ -36,6 +43,44 @@ func BenignIdleDrop(err error) bool {
 		"imap: connection closed",
 		"connection closed during command execution",
 	} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// TransportFailure 说这个错误是「线路的问题」，不是「对方拒绝了我们」。
+//
+// 它和 CredentialRejected 是一对：IMAP 登录失败时，go-imap 给的错误没有类型
+// ——服务器说 NO 是 errors.New(原文)，连接在 LOGIN 中途断掉也是一个普通错误。
+// 从错误值上分不出「密码错」和「线断了」，只能把线路错误逐一列出来排除掉：
+// 网络层的超时/重置、EOF、连接已关闭、上下文取消，以及 go-imap 自己那几句
+// 挂断原文（见 BenignIdleDrop）。
+//
+// 分不清的代价是这个 PR 要消灭的东西反过来：263 在握手中途掐一次线，就会被
+// 记成「授权码被拒」，横幅劝人重登。宁可漏判（少一颗按钮），不可误判。
+func TransportFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	if BenignIdleDrop(err) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	for _, sentinel := range []error{
+		io.EOF, io.ErrUnexpectedEOF, net.ErrClosed,
+		context.DeadlineExceeded, context.Canceled,
+	} {
+		if errors.Is(err, sentinel) {
+			return true
+		}
+	}
+	msg := err.Error()
+	for _, s := range []string{"i/o timeout", "connection reset", "broken pipe", "EOF"} {
 		if strings.Contains(msg, s) {
 			return true
 		}
