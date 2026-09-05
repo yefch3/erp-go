@@ -3086,7 +3086,7 @@ async function markAllRead() {
   markingAll.value = true
   try {
     const d = await post<{ marked: number }>(
-      `/inbound-mails/mark-view-read?view=${INBOUND_VIEWS[folder.value]}`,
+      `/inbound-mails/mark-view-read?view=${encodeURIComponent(currentView.value)}`,
     )
     ElMessage.success(t('emails.markedAllRead', { n: d.marked ?? 0 }))
     load()

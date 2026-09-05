@@ -434,19 +434,18 @@ WITH visible AS (
       -- 不传 = 全部信箱。左侧切换器还没上线，前端今天什么都不传。
       AND (sqlc.narg(account_id)::bigint IS NULL
            OR account_id = sqlc.narg(account_id)::bigint)
-      AND CASE sqlc.arg(view)::text
-            WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
-            -- The trash holds mail deleted from anywhere, junk included.
-            WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
-            ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
-          END
+      -- 和主列表同一个真理来源：一封信属于哪个视图由 mail_view_of 说了算（00034/00056），
+      -- 自建文件夹（'F:' 开头）、从自建文件夹删掉的信进回收站，这里自然就对。
+      -- 以前这里自己写了一套 CASE，不认 'F:'，任何自建文件夹视图都落到收件箱那档——
+      -- 在自建文件夹里点「全部已读」会把真正收件箱的未读全标掉。
+      -- 星标那档照抄 mail_thread_view_refresh 的叠层：收件箱、归档和所有自建文件夹里的星。
       AND NOT is_bounce
-      AND CASE sqlc.arg(view)::text
-            WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
-            WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
-            WHEN 'TRASH'   THEN deleted_at IS NOT NULL
-            WHEN 'JUNK'    THEN deleted_at IS NULL
-            ELSE archived_at IS NULL AND deleted_at IS NULL
+      AND CASE
+            WHEN sqlc.arg(view)::text = 'STARRED'
+              THEN is_starred
+               AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                    OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+            ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = sqlc.arg(view)::text
           END
       AND (sqlc.arg(keyword)::text = ''
            OR subject ILIKE '%' || sqlc.arg(keyword)::text || '%'
@@ -497,19 +496,18 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND (sqlc.narg(account_id)::bigint IS NULL
        OR account_id = sqlc.narg(account_id)::bigint)
-  AND CASE sqlc.arg(view)::text
-        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
-        -- The trash holds mail deleted from anywhere, junk included.
-        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
-        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
-      END
+  -- 和主列表同一个真理来源：一封信属于哪个视图由 mail_view_of 说了算（00034/00056），
+  -- 自建文件夹（'F:' 开头）、从自建文件夹删掉的信进回收站，这里自然就对。
+  -- 以前这里自己写了一套 CASE，不认 'F:'，任何自建文件夹视图都落到收件箱那档——
+  -- 在自建文件夹里点「全部已读」会把真正收件箱的未读全标掉。
+  -- 星标那档照抄 mail_thread_view_refresh 的叠层：收件箱、归档和所有自建文件夹里的星。
   AND NOT is_bounce
-  AND CASE sqlc.arg(view)::text
-        WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
-        WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
-        WHEN 'TRASH'   THEN deleted_at IS NOT NULL
-        WHEN 'JUNK'    THEN deleted_at IS NULL
-        ELSE archived_at IS NULL AND deleted_at IS NULL
+  AND CASE
+        WHEN sqlc.arg(view)::text = 'STARRED'
+          THEN is_starred
+           AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+        ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = sqlc.arg(view)::text
       END
   AND (sqlc.arg(keyword)::text = ''
        OR subject ILIKE '%' || sqlc.arg(keyword)::text || '%'
@@ -538,19 +536,18 @@ SET is_read = TRUE
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND owner_id = sqlc.arg(owner_id)::bigint
   AND NOT is_read
-  AND CASE sqlc.arg(view)::text
-        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
-        -- The trash holds mail deleted from anywhere, junk included.
-        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
-        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
-      END
+  -- 和主列表同一个真理来源：一封信属于哪个视图由 mail_view_of 说了算（00034/00056），
+  -- 自建文件夹（'F:' 开头）、从自建文件夹删掉的信进回收站，这里自然就对。
+  -- 以前这里自己写了一套 CASE，不认 'F:'，任何自建文件夹视图都落到收件箱那档——
+  -- 在自建文件夹里点「全部已读」会把真正收件箱的未读全标掉。
+  -- 星标那档照抄 mail_thread_view_refresh 的叠层：收件箱、归档和所有自建文件夹里的星。
   AND NOT is_bounce
-  AND CASE sqlc.arg(view)::text
-        WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
-        WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
-        WHEN 'TRASH'   THEN deleted_at IS NOT NULL
-        WHEN 'JUNK'    THEN deleted_at IS NULL
-        ELSE archived_at IS NULL AND deleted_at IS NULL
+  AND CASE
+        WHEN sqlc.arg(view)::text = 'STARRED'
+          THEN is_starred
+           AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+        ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = sqlc.arg(view)::text
       END
 RETURNING account_id, folder, imap_uid;
 
