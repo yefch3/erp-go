@@ -20,6 +20,7 @@ import (
 
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
+	"github.com/emersion/go-imap/commands"
 
 	"github.com/sgao19/erp-go/services/mail/internal/adapter/xoauth2"
 	"github.com/sgao19/erp-go/services/mail/internal/app"
@@ -566,28 +567,121 @@ func (f *IMAP) FetchFlags(ctx context.Context, acct app.MailAccount, folder stri
 // The UIDs change in the destination and the host does not reliably say what
 // they became, which is why nothing here tries to track them: anything that
 // needs to find a moved message afterwards looks it up by Message-ID.
-func (f *IMAP) MoveMessages(ctx context.Context, acct app.MailAccount, from string, uids []uint32, to string) (err error) {
+func (f *IMAP) MoveMessages(ctx context.Context, acct app.MailAccount, from string, uids []uint32, to string) (_ map[uint32]uint32, err error) {
 	if len(uids) == 0 || to == "" {
-		return nil
+		return nil, nil
 	}
 	c, err := f.borrow(acct)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// Released rather than logged out: the next command on this
 	// mailbox reuses it. A failed command discards it instead.
 	defer func() { f.release(acct, c, err) }()
 	if _, err := c.Select(from, false); err != nil {
-		return fmt.Errorf("打开 %s 失败：%w", from, err)
+		return nil, fmt.Errorf("打开 %s 失败：%w", from, err)
 	}
 	set := new(imap.SeqSet)
 	for _, u := range uids {
 		set.AddNum(u)
 	}
-	if err := c.UidMove(set, to); err != nil {
-		return fmt.Errorf("移动到 %s 失败：%w", to, err)
+	moved, err := moveKeepingCopyUID(c, set, to)
+	if err != nil {
+		return nil, fmt.Errorf("移动到 %s 失败：%w", to, err)
 	}
-	return nil
+	return moved, nil
+}
+
+// moveKeepingCopyUID 是 go-imap 的 UidMove，但把应答留下来。
+//
+// go-imap 的 move() 执行完就只看 status.Err()，把 [COPYUID 世代 旧 新] 这条
+// 应答码整个扔掉了——而那正是「挪过去之后它叫什么号」唯一的来源。这里照
+// 它的路子走一遍（有 MOVE 用 MOVE，没有就 COPY + 标删除 + EXPUNGE，163 就是
+// 后一种），只是自己拿着 status。
+func moveKeepingCopyUID(c *client.Client, set *imap.SeqSet, dest string) (map[uint32]uint32, error) {
+	hasMove, err := c.Support("MOVE")
+	if err != nil {
+		return nil, err
+	}
+	var cmd imap.Commander
+	if hasMove {
+		cmd = &commands.Uid{Cmd: &commands.Move{SeqSet: set, Mailbox: dest}}
+	} else {
+		cmd = &commands.Uid{Cmd: &commands.Copy{SeqSet: set, Mailbox: dest}}
+	}
+	status, err := c.Execute(cmd, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := status.Err(); err != nil {
+		return nil, err
+	}
+	moved := copyUIDMap(status)
+	if !hasMove {
+		// COPY 只是复制，原件还在源文件夹里：标删除再清掉，这才是"挪"。
+		// 和 go-imap 的 moveFallback 一样，只是 COPYUID 已经先接住了。
+		item := imap.FormatFlagsOp(imap.AddFlags, true)
+		if err := c.UidStore(set, item, []interface{}{imap.DeletedFlag}, nil); err != nil {
+			return moved, err
+		}
+		if err := c.Expunge(nil); err != nil {
+			return moved, err
+		}
+	}
+	return moved, nil
+}
+
+// copyUIDMap 把 [COPYUID 世代 旧集合 新集合] 解成「旧 UID → 新 UID」。
+//
+// 两个集合按位置一一对应（RFC 4315）。任何一步解不出来就返回空 map：这条
+// 应答是锦上添花，解不出来的后果只是回到按 Message-ID 搜索的老路。
+func copyUIDMap(status *imap.StatusResp) map[uint32]uint32 {
+	if status == nil || status.Code != "COPYUID" || len(status.Arguments) < 3 {
+		return nil
+	}
+	src, err1 := imap.ParseSeqSet(respArg(status.Arguments[1]))
+	dst, err2 := imap.ParseSeqSet(respArg(status.Arguments[2]))
+	if err1 != nil || err2 != nil {
+		return nil
+	}
+	from, to := expandSet(src), expandSet(dst)
+	if len(from) == 0 || len(from) != len(to) {
+		return nil
+	}
+	out := make(map[uint32]uint32, len(from))
+	for i := range from {
+		out[from[i]] = to[i]
+	}
+	return out
+}
+
+// respArg 把应答码里的一个参数变成字符串。go-imap 解出来的类型不固定
+// （atom 是 string 或 RawString，数字可能已经是 uint32），这里一律收。
+func respArg(v interface{}) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case imap.RawString:
+		return string(x)
+	case []byte:
+		return string(x)
+	default:
+		return fmt.Sprint(x)
+	}
+}
+
+// expandSet 把 1:3,7 展开成 [1 2 3 7]。COPYUID 里的集合都是有限的，不会有 *。
+func expandSet(set *imap.SeqSet) []uint32 {
+	var out []uint32
+	for _, r := range set.Set {
+		if r.Stop == 0 || r.Stop < r.Start {
+			return nil
+		}
+		for u := r.Start; u <= r.Stop; u++ {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 // AppendMessage files an already-sent message into a folder on the host.

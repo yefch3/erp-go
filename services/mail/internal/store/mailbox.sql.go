@@ -738,7 +738,7 @@ func (q *Queries) GetInbound(ctx context.Context, arg GetInboundParams) (GetInbo
 }
 
 const getInboundByFolderUID = `-- name: GetInboundByFolderUID :one
-SELECT id, owner_id, raw_key, message_id
+SELECT id, owner_id, raw_key, message_id, host_folder, host_uid
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND account_id = $2::bigint
@@ -754,10 +754,12 @@ type GetInboundByFolderUIDParams struct {
 }
 
 type GetInboundByFolderUIDRow struct {
-	ID        int64
-	OwnerID   int64
-	RawKey    string
-	MessageID string
+	ID         int64
+	OwnerID    int64
+	RawKey     string
+	MessageID  string
+	HostFolder string
+	HostUid    int64
 }
 
 // 挪信收尾（repoint）先问一句：目的位置是不是已经被人占了。占位的几乎总是
@@ -775,6 +777,8 @@ func (q *Queries) GetInboundByFolderUID(ctx context.Context, arg GetInboundByFol
 		&i.OwnerID,
 		&i.RawKey,
 		&i.MessageID,
+		&i.HostFolder,
+		&i.HostUid,
 	)
 	return i, err
 }
@@ -1892,7 +1896,8 @@ func (q *Queries) ListMailboxesDueForStatus(ctx context.Context, arg ListMailbox
 }
 
 const listRecentForReconcile = `-- name: ListRecentForReconcile :many
-SELECT id, owner_id, imap_uid, message_id, raw_key, is_read, is_starred, archived_at, deleted_at
+SELECT id, owner_id, imap_uid, message_id, raw_key, is_read, is_starred, archived_at, deleted_at,
+       host_folder, host_uid
 FROM email_inbound
 WHERE tenant_id = $1::bigint
   AND account_id = $2::bigint
@@ -1918,6 +1923,8 @@ type ListRecentForReconcileRow struct {
 	IsStarred  bool
 	ArchivedAt pgtype.Timestamptz
 	DeletedAt  pgtype.Timestamptz
+	HostFolder string
+	HostUid    int64
 }
 
 // The newest slice of one folder with everything the reconcile pass needs to
@@ -1950,6 +1957,8 @@ func (q *Queries) ListRecentForReconcile(ctx context.Context, arg ListRecentForR
 			&i.IsStarred,
 			&i.ArchivedAt,
 			&i.DeletedAt,
+			&i.HostFolder,
+			&i.HostUid,
 		); err != nil {
 			return nil, err
 		}
@@ -3364,6 +3373,9 @@ const repointInbound = `-- name: RepointInbound :exec
 UPDATE email_inbound
 SET folder = $1::text,
     imap_uid = $2::bigint,
+    -- 回到了正位，「挪去了哪里」这条记录作废。
+    host_folder = '',
+    host_uid = 0,
     not_junk = FALSE
 WHERE tenant_id = $3::bigint
   AND account_id = $4::bigint
@@ -3605,6 +3617,38 @@ func (q *Queries) SetInboundFlags(ctx context.Context, arg SetInboundFlagsParams
 		return nil, err
 	}
 	return items, nil
+}
+
+const setInboundHostLocation = `-- name: SetInboundHostLocation :exec
+UPDATE email_inbound
+SET host_folder = $1::text,
+    host_uid = $2::bigint
+WHERE tenant_id = $3::bigint
+  AND account_id = $4::bigint
+  AND folder = $5::text
+  AND imap_uid = $6::bigint
+`
+
+type SetInboundHostLocationParams struct {
+	HostFolder string
+	HostUid    int64
+	TenantID   int64
+	AccountID  int64
+	Folder     string
+	ImapUid    int64
+}
+
+// 信在服务器上被挪去了哪里（从 MOVE/COPY 的 COPYUID 里接到的）。
+func (q *Queries) SetInboundHostLocation(ctx context.Context, arg SetInboundHostLocationParams) error {
+	_, err := q.db.Exec(ctx, setInboundHostLocation,
+		arg.HostFolder,
+		arg.HostUid,
+		arg.TenantID,
+		arg.AccountID,
+		arg.Folder,
+		arg.ImapUid,
+	)
+	return err
 }
 
 const setInboundReadByUID = `-- name: SetInboundReadByUID :exec

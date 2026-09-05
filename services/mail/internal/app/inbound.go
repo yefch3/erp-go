@@ -94,7 +94,13 @@ type Mailbox interface {
 	// no such place — a plain IMAP server has no archive concept at all.
 	ArchiveFolder(ctx context.Context, acct MailAccount) (string, error)
 	// MoveMessages moves mail between folders on the host.
-	MoveMessages(ctx context.Context, acct MailAccount, from string, uids []uint32, to string) error
+	// MoveMessages 把信挪到另一个文件夹，返回「旧 UID → 新 UID」。
+	//
+	// 新 UID 来自服务器应答里的 COPYUID（UIDPLUS 扩展，我们接的每一家都
+	// 支持）。拿到它，之后彻底删除、恢复就直接按 UID 操作，不用再按
+	// Message-ID 搜——263 不认那种搜索。服务器没给时返回空 map，调用方回退
+	// 到搜索。
+	MoveMessages(ctx context.Context, acct MailAccount, from string, uids []uint32, to string) (map[uint32]uint32, error)
 	// FindUIDByMessageID follows a message that has moved: its UID changed,
 	// its Message-ID did not.
 	FindUIDByMessageID(ctx context.Context, acct MailAccount, folder, messageID string) (uint32, bool, error)
