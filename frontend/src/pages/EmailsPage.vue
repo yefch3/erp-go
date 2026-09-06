@@ -36,9 +36,13 @@
         :counts="folderCounts"
         :tokens-version="tokensChanged"
         :locked="locked === true"
+        :custom-folders="customFolders"
         @select="pickFolder"
         @changed="onMailboxesChanged"
         @added="tokensChanged++"
+        @create-folder="createFolder"
+        @rename-folder="renameFolder"
+        @delete-folder="deleteFolder"
       />
 
       <span class="rail-grow" />
@@ -301,6 +305,36 @@
             <el-button v-else-if="folder !== 'trash'" size="small" plain @click="markOpened({ archived: true })">
               {{ t('emails.archive') }}
             </el-button>
+            <!-- 挪进自建文件夹（Issue #362）。真的 MOVE，同步做：成了才回来。 -->
+            <el-dropdown
+              v-if="folder !== 'trash' && folder !== 'junk' && openedInbound.folder !== 'SENT'"
+              size="small"
+              trigger="click"
+              :disabled="moving"
+              @command="moveOpenedTo"
+            >
+              <el-button size="small" plain :loading="moving">
+                {{ t('emails.moveTo') }} <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-if="isCustomFolderKey(folder)" :command="0">
+                    {{ t('emails.moveToInbox') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item
+                    v-for="cf in currentCustomFolders"
+                    :key="cf.id"
+                    :command="cf.id"
+                    :disabled="folder === cf.viewKey"
+                  >
+                    {{ cf.name }}
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="!currentCustomFolders.length" disabled>
+                    {{ t('emails.noFoldersYet') }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
             <el-button v-if="folder === 'trash'" size="small" plain @click="markOpened({ deleted: false })">
               {{ t('emails.restore') }}
             </el-button>
@@ -1171,10 +1205,12 @@ import {
   post,
   quietErrors,
   saveBlob,
+  put,
 } from '../api'
 import { shortTime, zonedStamp } from '../lib/zonedtime'
 import { humanSize } from '../lib/humanSize'
 import { needsConversion } from '../lib/attachmentPreview'
+import { folderNameProblem, isCustomFolderKey, viewForFolderKey, type CustomFolder } from '../lib/mailFolders'
 import { replyAllRecipients } from '../lib/replyAll'
 import { syncBanner as buildSyncBanner, type SyncBanner } from '../lib/syncBanner'
 import {
@@ -1240,6 +1276,7 @@ import {
   Star,
   Warning,
   WarningFilled,
+  ArrowDown,
 } from '@element-plus/icons-vue'
 // Shared mail-surface tokens. Global rather than scoped: the list is its own
 // component, and the two have to agree on density or it reads as accidental.
@@ -1417,7 +1454,9 @@ const INBOUND_VIEWS: Record<string, string> = {
   junk: 'JUNK',
   trash: 'TRASH',
 }
-const isInboundView = computed(() => folder.value in INBOUND_VIEWS)
+const isInboundView = computed(() => folder.value in INBOUND_VIEWS || isCustomFolderKey(folder.value))
+/** 发给列表接口的 view：固定文件夹走映射，自建的原样传。规则在 lib/mailFolders。 */
+const currentView = computed(() => viewForFolderKey(folder.value, INBOUND_VIEWS))
 // Every mailbox folder pages by cursor. A page number is meaningless on a
 // list that grows at the top, and 已发送 grows at the top like the rest.
 const isKeysetView = computed(
@@ -1643,7 +1682,7 @@ function parseQuery(q: LocationQuery): UrlState {
   const f = one(q.folder)
   const p = Number(one(q.page))
   return {
-    folder: FOLDER_KEYS.has(f) ? f : 'inbox',
+    folder: FOLDER_KEYS.has(f) || isCustomFolderKey(f) ? f : 'inbox',
     page: Number.isInteger(p) && p > 1 ? p : 1,
     q: one(q.q),
     sent: one(q.sent) === 'mailbox' ? 'mailbox' : 'erp',
@@ -2134,6 +2173,98 @@ function switchFolder(key: string) {
 // currentAccount 那个 watch 管，所以这里只是把想去的文件夹交给它。
 // 两条各自 pushState 的话会连着导航两次，中间那一次拉的是「新箱 + 旧文件夹」，
 // 白花一趟请求，还在历史里留下一个谁都没到过的位置。
+// ---------------------------------------------------------------- 自建文件夹
+
+const customFolders = ref<Record<number, CustomFolder[]>>({})
+const moving = ref(false)
+const currentCustomFolders = computed(() => customFolders.value[currentAccount.value] ?? [])
+
+/** 拉一个信箱的自建文件夹。失败就当没有：左栏少一截，比弹一句错强。 */
+async function loadCustomFolders(accountId: number) {
+  if (!accountId) return
+  try {
+    const d = await get<{ folders?: CustomFolder[] }>('/mail-folders', { account_id: accountId }, quietErrors)
+    customFolders.value = { ...customFolders.value, [accountId]: (d.folders ?? []).map((f) => ({
+      id: Number(f.id), accountId: Number(f.accountId), name: f.name, viewKey: f.viewKey,
+    })) }
+  } catch {
+    // 锁着、或者服务器暂时连不上：留着上一次的
+  }
+}
+
+async function askFolderName(title: string, initial = ''): Promise<string | null> {
+  try {
+    const { value } = await ElMessageBox.prompt(t('mailGate.newFolderAsk'), title, {
+      inputValue: initial,
+      inputValidator: (v: string) => {
+        const p = folderNameProblem(v)
+        return p ? t(`mailGate.folderName.${p}`) : true
+      },
+    })
+    return value.trim()
+  } catch {
+    return null
+  }
+}
+
+async function createFolder(accountId: number) {
+  const name = await askFolderName(t('mailGate.newFolder'))
+  if (!name) return
+  try {
+    await post('/mail-folders', { accountId: String(accountId), name })
+    await loadCustomFolders(accountId)
+  } catch {
+    // 拦截器已经弹了后端的原因（重名、服务器拒绝）
+  }
+}
+
+async function renameFolder(cf: CustomFolder) {
+  const name = await askFolderName(t('mailGate.renameFolder'), cf.name)
+  if (!name || name === cf.name) return
+  try {
+    await put(`/mail-folders/${cf.id}`, { name })
+    await loadCustomFolders(cf.accountId)
+    // 正停在这个文件夹里：它的 key 变了，跟过去
+    if (folder.value === cf.viewKey) switchFolder(`F:${name}`)
+  } catch {
+    // 同上
+  }
+}
+
+async function deleteFolder(cf: CustomFolder) {
+  try {
+    await ElMessageBox.confirm(t('mailGate.deleteFolderAsk', { name: cf.name }), t('mailGate.deleteFolder'), { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await del(`/mail-folders/${cf.id}`)
+    await loadCustomFolders(cf.accountId)
+    if (folder.value === cf.viewKey) switchFolder('inbox')
+  } catch {
+    // 里面还有信之类的原因，后端说了
+  }
+}
+
+/** 把打开的这封信挪进某个文件夹（0 = 收件箱）。成了就回到列表。 */
+async function moveOpenedTo(folderId: number) {
+  const id = openedInbound.value?.id
+  if (!id || moving.value) return
+  moving.value = true
+  try {
+    await post(`/inbound-mails/${id}/move`, { folderId: String(folderId) })
+    ElMessage.success(t('emails.moved'))
+    pushState({ mail: '' })
+    load()
+  } catch {
+    // 后端的原因拦截器已经弹了
+  } finally {
+    moving.value = false
+  }
+}
+
+watch(currentAccount, (id) => { void loadCustomFolders(id) }, { immediate: true })
+
 let pendingFolder: string | null = null
 function pickFolder(accountId: number, key: string) {
   // accountId = 0 是不跟信箱走的那两个（待处理、拒收名单）。
@@ -2279,7 +2410,7 @@ async function load() {
       }>('/inbound-mails', {
         page_size: pageSize,
         keyword: keyword.value,
-        view: INBOUND_VIEWS[folder.value],
+        view: currentView.value,
         cursor: applied?.cursor ?? '',
         // 排序只在没有关键词时带：有关键词走的是搜索查询，服务端会拒绝
         // 在它上面排序（排序栏那时也不显示）。
@@ -2955,7 +3086,7 @@ async function markAllRead() {
   markingAll.value = true
   try {
     const d = await post<{ marked: number }>(
-      `/inbound-mails/mark-view-read?view=${INBOUND_VIEWS[folder.value]}`,
+      `/inbound-mails/mark-view-read?view=${encodeURIComponent(currentView.value)}`,
     )
     ElMessage.success(t('emails.markedAllRead', { n: d.marked ?? 0 }))
     load()

@@ -172,11 +172,7 @@ func (s *Service) ListInbound(ctx context.Context, tenantID, ownerID, accountID 
 	_, size = normalizePage(1, size)
 	// An unknown view falls back to the inbox proper rather than erroring:
 	// the worst a bad parameter can do is show the default slice.
-	switch view {
-	case "STARRED", "ARCHIVE", "TRASH", "JUNK":
-	default:
-		view = "INBOX"
-	}
+	view = normalizeView(view)
 	sort, err := normalizeListSort(sort, inboundSortColumns)
 	if err != nil {
 		return InboundPage{}, err
@@ -751,10 +747,9 @@ func publishMoves(ctx context.Context, s *Service, tenantID, ownerID int64, rows
 // sits above a list, and it should do what the list shows. Marking the junk
 // view read must not silently clear the inbox.
 func (s *Service) MarkViewRead(ctx context.Context, tenantID, ownerID int64, view string) (int64, error) {
-	switch view {
-	case "STARRED", "ARCHIVE", "TRASH", "JUNK":
-	default:
-		view = "INBOX"
+	view, err := knownView(view)
+	if err != nil {
+		return 0, err
 	}
 	touched, err := s.q.MarkViewRead(ctx, store.MarkViewReadParams{
 		TenantID: tenantID, OwnerID: ownerID, View: view,
@@ -1155,4 +1150,29 @@ func (s *Service) touchMailboxRead(ctx context.Context, tenantID, accountID int6
 	}); err != nil {
 		s.log.Warn("could not record mailbox read time", "account", accountID, "err", err)
 	}
+}
+
+// normalizeView 把请求里的 view 收口到已知的几档。认不得的回落到收件箱：
+// 一个坏参数最多只能让人看到默认那一片。自建文件夹是 'F:' 加服务器名，
+// 由 mail_view_of 生成、前端原样传回，这里放行。
+func normalizeView(view string) string {
+	switch {
+	case view == "STARRED", view == "ARCHIVE", view == "TRASH", view == "JUNK":
+		return view
+	case strings.HasPrefix(view, "F:") && len(view) > 2:
+		return view
+	default:
+		return "INBOX"
+	}
+}
+
+// knownView 是 normalizeView 的严格版，给写操作用。列表认不得视图回落到
+// 收件箱，最多让人看到默认那一片；「全部已读」要是也回落，就会把真正收件箱
+// 的未读全标掉——前端传错一个键（比如 undefined）就是这个后果。所以这里
+// 认不得就拒绝，一封都不动。
+func knownView(view string) (string, error) {
+	if normalizeView(view) == view {
+		return view, nil
+	}
+	return "", apierr.Invalid("MAIL_VIEW_UNKNOWN", "不认识的视图："+view)
 }

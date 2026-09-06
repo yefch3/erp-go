@@ -1275,3 +1275,56 @@ func ownerIDsOf(rows []app.ExcelUsageRow) []int64 {
 	}
 	return out
 }
+
+// ---------------------------------------------------------- 自建文件夹
+
+func folderToProto(f app.MailFolder) *mailv1.MailFolder {
+	return &mailv1.MailFolder{Id: f.ID, AccountId: f.AccountID, Name: f.Name, ViewKey: f.ViewKey()}
+}
+
+func (h *Handler) ListMailFolders(ctx context.Context, req *mailv1.ListMailFoldersRequest) (*mailv1.ListMailFoldersResponse, error) {
+	op := operator(ctx)
+	fs, err := h.svc.ListMailFolders(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mailv1.MailFolder, 0, len(fs))
+	for _, f := range fs {
+		out = append(out, folderToProto(f))
+	}
+	return &mailv1.ListMailFoldersResponse{Folders: out}, nil
+}
+
+func (h *Handler) CreateMailFolder(ctx context.Context, req *mailv1.CreateMailFolderRequest) (*mailv1.CreateMailFolderResponse, error) {
+	op := operator(ctx)
+	f, err := h.svc.CreateMailFolder(ctx, grpcx.TenantID(ctx), op.ID, req.GetAccountId(), req.GetName())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.CreateMailFolderResponse{Folder: folderToProto(f)}, nil
+}
+
+func (h *Handler) RenameMailFolder(ctx context.Context, req *mailv1.RenameMailFolderRequest) (*mailv1.RenameMailFolderResponse, error) {
+	op := operator(ctx)
+	f, err := h.svc.RenameMailFolder(ctx, grpcx.TenantID(ctx), op.ID, req.GetId(), req.GetName())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.RenameMailFolderResponse{Folder: folderToProto(f)}, nil
+}
+
+func (h *Handler) DeleteMailFolder(ctx context.Context, req *mailv1.DeleteMailFolderRequest) (*mailv1.DeleteMailFolderResponse, error) {
+	op := operator(ctx)
+	if err := h.svc.DeleteMailFolder(ctx, grpcx.TenantID(ctx), op.ID, req.GetId()); err != nil {
+		return nil, err
+	}
+	return &mailv1.DeleteMailFolderResponse{}, nil
+}
+
+func (h *Handler) MoveInbound(ctx context.Context, req *mailv1.MoveInboundRequest) (*mailv1.MoveInboundResponse, error) {
+	op := operator(ctx)
+	if err := h.svc.MoveInbound(ctx, grpcx.TenantID(ctx), op.ID, req.GetId(), req.GetFolderId()); err != nil {
+		return nil, err
+	}
+	return &mailv1.MoveInboundResponse{}, nil
+}

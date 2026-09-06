@@ -151,6 +151,29 @@
             {{ countOf(f.key) > 99 ? '99+' : countOf(f.key) }}
           </span>
         </button>
+        <!-- 自建文件夹（Issue #362）：名字来自数据，不来自文案。它们真的建在
+             邮件服务器上，Foxmail 里也看得到。 -->
+        <template v-if="!isLocked(b.id)">
+          <div
+            v-for="cf in customFolders[b.id] ?? []"
+            :key="cf.viewKey"
+            class="folder sub custom"
+            :class="{ on: modelValue === b.id && folder === cf.viewKey }"
+          >
+            <button type="button" class="custom-main" @click="emit('select', b.id, cf.viewKey)">
+              <el-icon class="ficon"><Folder /></el-icon>
+              <span class="fname">{{ cf.name }}</span>
+            </button>
+            <span class="custom-acts">
+              <button type="button" class="custom-act" :title="t('mailGate.renameFolder')" @click.stop="emit('renameFolder', cf)">✎</button>
+              <button type="button" class="custom-act" :title="t('mailGate.deleteFolder')" @click.stop="emit('deleteFolder', cf)">✕</button>
+            </span>
+          </div>
+          <button type="button" class="folder sub new-folder" @click="emit('createFolder', b.id)">
+            <span class="ficon">＋</span>
+            <span class="fname">{{ t('mailGate.newFolder') }}</span>
+          </button>
+        </template>
       </div>
     </div>
 
@@ -205,7 +228,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { get, post } from '../api'
-import { CaretRight, Star, SwitchButton } from '@element-plus/icons-vue'
+import { CaretRight, Star, SwitchButton, Folder } from '@element-plus/icons-vue'
 import MailboxCredentialsForm from './MailboxCredentialsForm.vue'
 import { adoptVerification, unlockedMailboxes, type VerifyResponse } from '../lib/mailUnlock'
 import {
@@ -215,6 +238,7 @@ import {
   toggleExpanded,
   type FolderDef,
 } from '../lib/mailFolders'
+import type { CustomFolder } from '../lib/mailFolders'
 
 export interface Mailbox {
   id: number
@@ -241,6 +265,8 @@ const props = defineProps<{
   tokensVersion: number
   /** 当前这个箱锁着没有。锁着时不画点不动的文件夹。 */
   locked: boolean
+  /** 每个信箱的自建文件夹。由页面拉取，这里只画。 */
+  customFolders: Record<number, CustomFolder[]>
 }>()
 const emit = defineEmits<{
   'update:modelValue': [number]
@@ -250,6 +276,10 @@ const emit = defineEmits<{
   changed: [Mailbox[]]
   /** 刚收下一批新令牌。页面据此重算「哪些箱还开着」。 */
   added: []
+  /** 自建文件夹的增删改：输入框和确认框都在页面那边，这里只发信号。 */
+  createFolder: [accountId: number]
+  renameFolder: [folder: CustomFolder]
+  deleteFolder: [folder: CustomFolder]
 }>()
 
 const { t } = useI18n()
@@ -431,6 +461,52 @@ defineExpose({ reload: load })
 }
 .mbox-dot.warn {
   background: var(--el-color-warning);
+}
+/* 自建文件夹那一行：主体是按钮，右边两个小动作只在悬停时露出来。 */
+.folder.custom {
+  display: flex;
+  align-items: center;
+  padding: 0;
+}
+.custom-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 8px 5px 22px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.custom-acts {
+  display: none;
+  gap: 2px;
+  padding-right: 6px;
+}
+.folder.custom:hover .custom-acts,
+.folder.custom.on .custom-acts {
+  display: inline-flex;
+}
+.custom-act {
+  border: 0;
+  background: none;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.custom-act:hover {
+  color: var(--el-color-primary);
+  background: var(--el-fill-color);
+}
+.new-folder {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 /* 还没登录这个箱：灰点。绿点说的是"在收信"，而没登录的箱确实没在收。 */
 .mbox-dot.off {

@@ -946,3 +946,65 @@ func (f *IMAP) RecentMessageIDs(ctx context.Context, acct app.MailAccount, folde
 	}
 	return out, nil
 }
+
+// ---------------------------------------------------------- 自建文件夹
+
+// ListFolders 列出服务器上所有文件夹的名字（已经解过 UTF-7，是人看的样子）。
+func (f *IMAP) ListFolders(ctx context.Context, acct app.MailAccount) (_ []string, err error) {
+	c, err := f.borrow(acct)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { f.release(acct, c, err) }()
+	boxes := make(chan *imap.MailboxInfo, 64)
+	done := make(chan error, 1)
+	go func() { done <- c.List("", "*", boxes) }()
+	var out []string
+	for b := range boxes {
+		out = append(out, b.Name)
+	}
+	if err := <-done; err != nil {
+		return nil, fmt.Errorf("列出文件夹失败：%w", err)
+	}
+	return out, nil
+}
+
+// CreateFolder 在服务器上建一个文件夹。go-imap 会把名字编成 UTF-7，中文名
+// 在 Foxmail 里显示正常。
+func (f *IMAP) CreateFolder(ctx context.Context, acct app.MailAccount, name string) (err error) {
+	c, err := f.borrow(acct)
+	if err != nil {
+		return err
+	}
+	defer func() { f.release(acct, c, err) }()
+	if err := c.Create(name); err != nil {
+		return fmt.Errorf("新建文件夹 %s 失败：%w", name, err)
+	}
+	return nil
+}
+
+// RenameFolder 改名。服务器上信的 UID 不变（RFC 3501：RENAME 保留内容）。
+func (f *IMAP) RenameFolder(ctx context.Context, acct app.MailAccount, oldName, newName string) (err error) {
+	c, err := f.borrow(acct)
+	if err != nil {
+		return err
+	}
+	defer func() { f.release(acct, c, err) }()
+	if err := c.Rename(oldName, newName); err != nil {
+		return fmt.Errorf("重命名文件夹 %s 失败：%w", oldName, err)
+	}
+	return nil
+}
+
+// DeleteFolder 删文件夹。调用方先确认里面没信——服务器会连信一起删。
+func (f *IMAP) DeleteFolder(ctx context.Context, acct app.MailAccount, name string) (err error) {
+	c, err := f.borrow(acct)
+	if err != nil {
+		return err
+	}
+	defer func() { f.release(acct, c, err) }()
+	if err := c.Delete(name); err != nil {
+		return fmt.Errorf("删除文件夹 %s 失败：%w", name, err)
+	}
+	return nil
+}

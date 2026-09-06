@@ -71,6 +71,11 @@ const (
 	EmailService_GetInboundExcelConversionJob_FullMethodName = "/erp.mail.v1.EmailService/GetInboundExcelConversionJob"
 	EmailService_PreviewInboundAttachment_FullMethodName     = "/erp.mail.v1.EmailService/PreviewInboundAttachment"
 	EmailService_DownloadInboundAttachments_FullMethodName   = "/erp.mail.v1.EmailService/DownloadInboundAttachments"
+	EmailService_ListMailFolders_FullMethodName              = "/erp.mail.v1.EmailService/ListMailFolders"
+	EmailService_CreateMailFolder_FullMethodName             = "/erp.mail.v1.EmailService/CreateMailFolder"
+	EmailService_RenameMailFolder_FullMethodName             = "/erp.mail.v1.EmailService/RenameMailFolder"
+	EmailService_DeleteMailFolder_FullMethodName             = "/erp.mail.v1.EmailService/DeleteMailFolder"
+	EmailService_MoveInbound_FullMethodName                  = "/erp.mail.v1.EmailService/MoveInbound"
 	EmailService_GetMailThread_FullMethodName                = "/erp.mail.v1.EmailService/GetMailThread"
 	EmailService_ListMyMailboxes_FullMethodName              = "/erp.mail.v1.EmailService/ListMyMailboxes"
 	EmailService_SetDefaultMailbox_FullMethodName            = "/erp.mail.v1.EmailService/SetDefaultMailbox"
@@ -218,6 +223,13 @@ type EmailServiceClient interface {
 	// 把一封信的所有附件打成一个压缩包。响应里带着整个包的字节，所以网关那边
 	// 的 gRPC 接收上限要跟着 MaxZipBytes 一起放宽。
 	DownloadInboundAttachments(ctx context.Context, in *DownloadInboundAttachmentsRequest, opts ...grpc.CallOption) (*DownloadInboundAttachmentsResponse, error)
+	// ---- 自建文件夹（Issue #362）。文件夹真的建在邮件服务器上。 ----
+	ListMailFolders(ctx context.Context, in *ListMailFoldersRequest, opts ...grpc.CallOption) (*ListMailFoldersResponse, error)
+	CreateMailFolder(ctx context.Context, in *CreateMailFolderRequest, opts ...grpc.CallOption) (*CreateMailFolderResponse, error)
+	RenameMailFolder(ctx context.Context, in *RenameMailFolderRequest, opts ...grpc.CallOption) (*RenameMailFolderResponse, error)
+	DeleteMailFolder(ctx context.Context, in *DeleteMailFolderRequest, opts ...grpc.CallOption) (*DeleteMailFolderResponse, error)
+	// 把一封信挪进某个自建文件夹；folder_id = 0 表示挪回收件箱。同步执行。
+	MoveInbound(ctx context.Context, in *MoveInboundRequest, opts ...grpc.CallOption) (*MoveInboundResponse, error)
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error)
@@ -798,6 +810,56 @@ func (c *emailServiceClient) DownloadInboundAttachments(ctx context.Context, in 
 	return out, nil
 }
 
+func (c *emailServiceClient) ListMailFolders(ctx context.Context, in *ListMailFoldersRequest, opts ...grpc.CallOption) (*ListMailFoldersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMailFoldersResponse)
+	err := c.cc.Invoke(ctx, EmailService_ListMailFolders_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) CreateMailFolder(ctx context.Context, in *CreateMailFolderRequest, opts ...grpc.CallOption) (*CreateMailFolderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateMailFolderResponse)
+	err := c.cc.Invoke(ctx, EmailService_CreateMailFolder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) RenameMailFolder(ctx context.Context, in *RenameMailFolderRequest, opts ...grpc.CallOption) (*RenameMailFolderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RenameMailFolderResponse)
+	err := c.cc.Invoke(ctx, EmailService_RenameMailFolder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) DeleteMailFolder(ctx context.Context, in *DeleteMailFolderRequest, opts ...grpc.CallOption) (*DeleteMailFolderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteMailFolderResponse)
+	err := c.cc.Invoke(ctx, EmailService_DeleteMailFolder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) MoveInbound(ctx context.Context, in *MoveInboundRequest, opts ...grpc.CallOption) (*MoveInboundResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MoveInboundResponse)
+	err := c.cc.Invoke(ctx, EmailService_MoveInbound_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetMailThreadResponse)
@@ -1087,6 +1149,13 @@ type EmailServiceServer interface {
 	// 把一封信的所有附件打成一个压缩包。响应里带着整个包的字节，所以网关那边
 	// 的 gRPC 接收上限要跟着 MaxZipBytes 一起放宽。
 	DownloadInboundAttachments(context.Context, *DownloadInboundAttachmentsRequest) (*DownloadInboundAttachmentsResponse, error)
+	// ---- 自建文件夹（Issue #362）。文件夹真的建在邮件服务器上。 ----
+	ListMailFolders(context.Context, *ListMailFoldersRequest) (*ListMailFoldersResponse, error)
+	CreateMailFolder(context.Context, *CreateMailFolderRequest) (*CreateMailFolderResponse, error)
+	RenameMailFolder(context.Context, *RenameMailFolderRequest) (*RenameMailFolderResponse, error)
+	DeleteMailFolder(context.Context, *DeleteMailFolderRequest) (*DeleteMailFolderResponse, error)
+	// 把一封信挪进某个自建文件夹；folder_id = 0 表示挪回收件箱。同步执行。
+	MoveInbound(context.Context, *MoveInboundRequest) (*MoveInboundResponse, error)
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error)
@@ -1302,6 +1371,21 @@ func (UnimplementedEmailServiceServer) PreviewInboundAttachment(context.Context,
 }
 func (UnimplementedEmailServiceServer) DownloadInboundAttachments(context.Context, *DownloadInboundAttachmentsRequest) (*DownloadInboundAttachmentsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DownloadInboundAttachments not implemented")
+}
+func (UnimplementedEmailServiceServer) ListMailFolders(context.Context, *ListMailFoldersRequest) (*ListMailFoldersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListMailFolders not implemented")
+}
+func (UnimplementedEmailServiceServer) CreateMailFolder(context.Context, *CreateMailFolderRequest) (*CreateMailFolderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateMailFolder not implemented")
+}
+func (UnimplementedEmailServiceServer) RenameMailFolder(context.Context, *RenameMailFolderRequest) (*RenameMailFolderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RenameMailFolder not implemented")
+}
+func (UnimplementedEmailServiceServer) DeleteMailFolder(context.Context, *DeleteMailFolderRequest) (*DeleteMailFolderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteMailFolder not implemented")
+}
+func (UnimplementedEmailServiceServer) MoveInbound(context.Context, *MoveInboundRequest) (*MoveInboundResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MoveInbound not implemented")
 }
 func (UnimplementedEmailServiceServer) GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMailThread not implemented")
@@ -2308,6 +2392,96 @@ func _EmailService_DownloadInboundAttachments_Handler(srv interface{}, ctx conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_ListMailFolders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMailFoldersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).ListMailFolders(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_ListMailFolders_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).ListMailFolders(ctx, req.(*ListMailFoldersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_CreateMailFolder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateMailFolderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).CreateMailFolder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_CreateMailFolder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).CreateMailFolder(ctx, req.(*CreateMailFolderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_RenameMailFolder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RenameMailFolderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).RenameMailFolder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_RenameMailFolder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).RenameMailFolder(ctx, req.(*RenameMailFolderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_DeleteMailFolder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteMailFolderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).DeleteMailFolder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_DeleteMailFolder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).DeleteMailFolder(ctx, req.(*DeleteMailFolderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_MoveInbound_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MoveInboundRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).MoveInbound(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_MoveInbound_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).MoveInbound(ctx, req.(*MoveInboundRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_GetMailThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetMailThreadRequest)
 	if err := dec(in); err != nil {
@@ -2810,6 +2984,26 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DownloadInboundAttachments",
 			Handler:    _EmailService_DownloadInboundAttachments_Handler,
+		},
+		{
+			MethodName: "ListMailFolders",
+			Handler:    _EmailService_ListMailFolders_Handler,
+		},
+		{
+			MethodName: "CreateMailFolder",
+			Handler:    _EmailService_CreateMailFolder_Handler,
+		},
+		{
+			MethodName: "RenameMailFolder",
+			Handler:    _EmailService_RenameMailFolder_Handler,
+		},
+		{
+			MethodName: "DeleteMailFolder",
+			Handler:    _EmailService_DeleteMailFolder_Handler,
+		},
+		{
+			MethodName: "MoveInbound",
+			Handler:    _EmailService_MoveInbound_Handler,
 		},
 		{
 			MethodName: "GetMailThread",

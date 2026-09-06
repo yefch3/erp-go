@@ -122,6 +122,22 @@ func (q *Queries) ClearDefaultMailbox(ctx context.Context, arg ClearDefaultMailb
 	return err
 }
 
+const clearInboundArchived = `-- name: ClearInboundArchived :exec
+UPDATE email_inbound SET archived_at = NULL
+WHERE tenant_id = $1::bigint AND id = $2::bigint
+`
+
+type ClearInboundArchivedParams struct {
+	TenantID int64
+	ID       int64
+}
+
+// 挪回收件箱：归档标记去掉，不然它落在归档视图里。
+func (q *Queries) ClearInboundArchived(ctx context.Context, arg ClearInboundArchivedParams) error {
+	_, err := q.db.Exec(ctx, clearInboundArchived, arg.TenantID, arg.ID)
+	return err
+}
+
 const countFolder = `-- name: CountFolder :one
 SELECT count(*)::bigint FROM email_inbound
 WHERE tenant_id = $1::bigint
@@ -143,6 +159,29 @@ func (q *Queries) CountFolder(ctx context.Context, arg CountFolderParams) (int64
 	return column_1, err
 }
 
+const countInboundInFolder = `-- name: CountInboundInFolder :one
+SELECT count(*)::bigint FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND account_id = $2::bigint
+  AND folder = $3::text
+  AND deleted_at IS NULL
+`
+
+type CountInboundInFolderParams struct {
+	TenantID  int64
+	AccountID int64
+	Folder    string
+}
+
+// 文件夹里还有没有信（没被删除的）。删文件夹之前问一句：有信就不删，
+// 让人先把信挪走——静默把信一起删掉是最坏的结果。
+func (q *Queries) CountInboundInFolder(ctx context.Context, arg CountInboundInFolderParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countInboundInFolder, arg.TenantID, arg.AccountID, arg.Folder)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countInboundThreads = `-- name: CountInboundThreads :one
 SELECT count(DISTINCT (account_id, coalesce(nullif(thread_key, ''), 'm:' || id::text)))::bigint
 FROM email_inbound
@@ -150,19 +189,18 @@ WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
   AND ($3::bigint IS NULL
        OR account_id = $3::bigint)
-  AND CASE $4::text
-        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
-        -- The trash holds mail deleted from anywhere, junk included.
-        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
-        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
-      END
+  -- 和主列表同一个真理来源：一封信属于哪个视图由 mail_view_of 说了算（00034/00056），
+  -- 自建文件夹（'F:' 开头）、从自建文件夹删掉的信进回收站，这里自然就对。
+  -- 以前这里自己写了一套 CASE，不认 'F:'，任何自建文件夹视图都落到收件箱那档——
+  -- 在自建文件夹里点「全部已读」会把真正收件箱的未读全标掉。
+  -- 星标那档照抄 mail_thread_view_refresh 的叠层：收件箱、归档和所有自建文件夹里的星。
   AND NOT is_bounce
-  AND CASE $4::text
-        WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
-        WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
-        WHEN 'TRASH'   THEN deleted_at IS NOT NULL
-        WHEN 'JUNK'    THEN deleted_at IS NULL
-        ELSE archived_at IS NULL AND deleted_at IS NULL
+  AND CASE
+        WHEN $4::text = 'STARRED'
+          THEN is_starred
+           AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+        ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = $4::text
       END
   AND ($5::text = ''
        OR subject ILIKE '%' || $5::text || '%'
@@ -463,6 +501,50 @@ func (q *Queries) CountUnreadByMailbox(ctx context.Context, arg CountUnreadByMai
 	return items, nil
 }
 
+const createMailFolder = `-- name: CreateMailFolder :one
+INSERT INTO mail_folders (tenant_id, account_id, name, host_name, created_by)
+VALUES ($1::bigint, $2::bigint,
+        $3::text, $4::text, $5::bigint)
+RETURNING id, account_id, name, host_name, created_by, created_at
+`
+
+type CreateMailFolderParams struct {
+	TenantID  int64
+	AccountID int64
+	Name      string
+	HostName  string
+	CreatedBy int64
+}
+
+type CreateMailFolderRow struct {
+	ID        int64
+	AccountID int64
+	Name      string
+	HostName  string
+	CreatedBy int64
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) CreateMailFolder(ctx context.Context, arg CreateMailFolderParams) (CreateMailFolderRow, error) {
+	row := q.db.QueryRow(ctx, createMailFolder,
+		arg.TenantID,
+		arg.AccountID,
+		arg.Name,
+		arg.HostName,
+		arg.CreatedBy,
+	)
+	var i CreateMailFolderRow
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Name,
+		&i.HostName,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const deleteFlagOp = `-- name: DeleteFlagOp :exec
 DELETE FROM mail_flag_ops WHERE id = $1::bigint
 `
@@ -486,6 +568,21 @@ type DeleteInboundForAccountParams struct {
 // meaningless; attachments go with their messages via the cascade.
 func (q *Queries) DeleteInboundForAccount(ctx context.Context, arg DeleteInboundForAccountParams) error {
 	_, err := q.db.Exec(ctx, deleteInboundForAccount, arg.TenantID, arg.AccountID)
+	return err
+}
+
+const deleteMailFolder = `-- name: DeleteMailFolder :exec
+DELETE FROM mail_folders
+WHERE tenant_id = $1::bigint AND id = $2::bigint
+`
+
+type DeleteMailFolderParams struct {
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) DeleteMailFolder(ctx context.Context, arg DeleteMailFolderParams) error {
+	_, err := q.db.Exec(ctx, deleteMailFolder, arg.TenantID, arg.ID)
 	return err
 }
 
@@ -650,6 +747,7 @@ SELECT i.id, i.account_id, i.owner_id, i.message_id, i.thread_key, i.reply_to_id
        i.from_email, i.from_name, i.to_email, i.subject, i.body_html, i.body_text,
        i.raw_key, i.raw_size, i.is_read, i.has_attachments, i.received_at, i.sent_at,
        i.folder, i.reply_to, i.cc, i.auth_spf, i.auth_dkim, i.to_all,
+       i.imap_uid, i.archived_at,
        coalesce(m.status, '') AS sent_status,
        m.opened_at AS sent_opened_at,
        coalesce(m.tracked, FALSE) AS sent_tracked
@@ -689,6 +787,8 @@ type GetInboundRow struct {
 	AuthSpf        string
 	AuthDkim       string
 	ToAll          string
+	ImapUid        int64
+	ArchivedAt     pgtype.Timestamptz
 	SentStatus     string
 	SentOpenedAt   pgtype.Timestamptz
 	SentTracked    bool
@@ -730,6 +830,8 @@ func (q *Queries) GetInbound(ctx context.Context, arg GetInboundParams) (GetInbo
 		&i.AuthSpf,
 		&i.AuthDkim,
 		&i.ToAll,
+		&i.ImapUid,
+		&i.ArchivedAt,
 		&i.SentStatus,
 		&i.SentOpenedAt,
 		&i.SentTracked,
@@ -1087,6 +1189,40 @@ func (q *Queries) GetMailAccountSecret(ctx context.Context, arg GetMailAccountSe
 		&i.ImapSecurity,
 		&i.HourlyQuota,
 		&i.DailyQuota,
+	)
+	return i, err
+}
+
+const getMailFolder = `-- name: GetMailFolder :one
+SELECT id, account_id, name, host_name, created_by, created_at
+FROM mail_folders
+WHERE tenant_id = $1::bigint AND id = $2::bigint
+`
+
+type GetMailFolderParams struct {
+	TenantID int64
+	ID       int64
+}
+
+type GetMailFolderRow struct {
+	ID        int64
+	AccountID int64
+	Name      string
+	HostName  string
+	CreatedBy int64
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetMailFolder(ctx context.Context, arg GetMailFolderParams) (GetMailFolderRow, error) {
+	row := q.db.QueryRow(ctx, getMailFolder, arg.TenantID, arg.ID)
+	var i GetMailFolderRow
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Name,
+		&i.HostName,
+		&i.CreatedBy,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -1602,19 +1738,18 @@ WITH visible AS (
       -- 不传 = 全部信箱。左侧切换器还没上线，前端今天什么都不传。
       AND ($6::bigint IS NULL
            OR account_id = $6::bigint)
-      AND CASE $7::text
-            WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
-            -- The trash holds mail deleted from anywhere, junk included.
-            WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
-            ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
-          END
+      -- 和主列表同一个真理来源：一封信属于哪个视图由 mail_view_of 说了算（00034/00056），
+      -- 自建文件夹（'F:' 开头）、从自建文件夹删掉的信进回收站，这里自然就对。
+      -- 以前这里自己写了一套 CASE，不认 'F:'，任何自建文件夹视图都落到收件箱那档——
+      -- 在自建文件夹里点「全部已读」会把真正收件箱的未读全标掉。
+      -- 星标那档照抄 mail_thread_view_refresh 的叠层：收件箱、归档和所有自建文件夹里的星。
       AND NOT is_bounce
-      AND CASE $7::text
-            WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
-            WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
-            WHEN 'TRASH'   THEN deleted_at IS NOT NULL
-            WHEN 'JUNK'    THEN deleted_at IS NULL
-            ELSE archived_at IS NULL AND deleted_at IS NULL
+      AND CASE
+            WHEN $7::text = 'STARRED'
+              THEN is_starred
+               AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                    OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+            ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = $7::text
           END
       AND ($8::text = ''
            OR subject ILIKE '%' || $8::text || '%'
@@ -1812,6 +1947,57 @@ func (q *Queries) ListMailAccountsForEmployee(ctx context.Context, arg ListMailA
 			&i.ImapSecurity,
 			&i.LastReadAt,
 			&i.UnboundAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMailFolders = `-- name: ListMailFolders :many
+
+SELECT id, account_id, name, host_name, created_by, created_at
+FROM mail_folders
+WHERE tenant_id = $1::bigint
+  AND account_id = $2::bigint
+ORDER BY name
+`
+
+type ListMailFoldersParams struct {
+	TenantID  int64
+	AccountID int64
+}
+
+type ListMailFoldersRow struct {
+	ID        int64
+	AccountID int64
+	Name      string
+	HostName  string
+	CreatedBy int64
+	CreatedAt pgtype.Timestamptz
+}
+
+// ============================================================ 自建文件夹
+func (q *Queries) ListMailFolders(ctx context.Context, arg ListMailFoldersParams) ([]ListMailFoldersRow, error) {
+	rows, err := q.db.Query(ctx, listMailFolders, arg.TenantID, arg.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMailFoldersRow
+	for rows.Next() {
+		var i ListMailFoldersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.Name,
+			&i.HostName,
+			&i.CreatedBy,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -3177,19 +3363,18 @@ SET is_read = TRUE
 WHERE tenant_id = $1::bigint
   AND owner_id = $2::bigint
   AND NOT is_read
-  AND CASE $3::text
-        WHEN 'JUNK'  THEN folder = 'JUNK' AND NOT not_junk
-        -- The trash holds mail deleted from anywhere, junk included.
-        WHEN 'TRASH' THEN folder IN ('INBOX', 'JUNK')
-        ELSE (folder = 'INBOX' OR (folder = 'JUNK' AND not_junk))
-      END
+  -- 和主列表同一个真理来源：一封信属于哪个视图由 mail_view_of 说了算（00034/00056），
+  -- 自建文件夹（'F:' 开头）、从自建文件夹删掉的信进回收站，这里自然就对。
+  -- 以前这里自己写了一套 CASE，不认 'F:'，任何自建文件夹视图都落到收件箱那档——
+  -- 在自建文件夹里点「全部已读」会把真正收件箱的未读全标掉。
+  -- 星标那档照抄 mail_thread_view_refresh 的叠层：收件箱、归档和所有自建文件夹里的星。
   AND NOT is_bounce
-  AND CASE $3::text
-        WHEN 'STARRED' THEN is_starred AND deleted_at IS NULL
-        WHEN 'ARCHIVE' THEN archived_at IS NOT NULL AND deleted_at IS NULL
-        WHEN 'TRASH'   THEN deleted_at IS NOT NULL
-        WHEN 'JUNK'    THEN deleted_at IS NULL
-        ELSE archived_at IS NULL AND deleted_at IS NULL
+  AND CASE
+        WHEN $3::text = 'STARRED'
+          THEN is_starred
+           AND (mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) IN ('INBOX', 'ARCHIVE')
+                OR mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) LIKE 'F:%')
+        ELSE mail_view_of(folder, not_junk, is_bounce, archived_at, deleted_at) = $3::text
       END
 RETURNING account_id, folder, imap_uid
 `
@@ -3365,6 +3550,58 @@ func (q *Queries) RecordMailBinding(ctx context.Context, arg RecordMailBindingPa
 		arg.Provider,
 		arg.Action,
 		arg.Detail,
+	)
+	return err
+}
+
+const renameInboundFolder = `-- name: RenameInboundFolder :execrows
+UPDATE email_inbound
+SET folder = $1::text
+WHERE tenant_id = $2::bigint
+  AND account_id = $3::bigint
+  AND folder = $4::text
+`
+
+type RenameInboundFolderParams struct {
+	NewFolder string
+	TenantID  int64
+	AccountID int64
+	OldFolder string
+}
+
+// 文件夹在服务器上改了名，行里存的名字跟着改。触发器会重算视图。
+func (q *Queries) RenameInboundFolder(ctx context.Context, arg RenameInboundFolderParams) (int64, error) {
+	result, err := q.db.Exec(ctx, renameInboundFolder,
+		arg.NewFolder,
+		arg.TenantID,
+		arg.AccountID,
+		arg.OldFolder,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const renameMailFolder = `-- name: RenameMailFolder :exec
+UPDATE mail_folders
+SET name = $1::text, host_name = $2::text
+WHERE tenant_id = $3::bigint AND id = $4::bigint
+`
+
+type RenameMailFolderParams struct {
+	Name     string
+	HostName string
+	TenantID int64
+	ID       int64
+}
+
+func (q *Queries) RenameMailFolder(ctx context.Context, arg RenameMailFolderParams) error {
+	_, err := q.db.Exec(ctx, renameMailFolder,
+		arg.Name,
+		arg.HostName,
+		arg.TenantID,
+		arg.ID,
 	)
 	return err
 }

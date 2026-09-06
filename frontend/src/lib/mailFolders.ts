@@ -83,3 +83,40 @@ export function parseExpanded(raw: string | null): number[] {
     return []
   }
 }
+
+/**
+ * 自建文件夹（Issue #362）。
+ *
+ * 它们的 key 就是后端的 view 参数：'F:' 加服务器上的名字。和上面那些固定
+ * key 走同一条路（URL 的 folder、列表的 view），只是名字来自数据不来自文案。
+ */
+export const CUSTOM_FOLDER_PREFIX = 'F:'
+
+export interface CustomFolder {
+  id: number
+  accountId: number
+  name: string
+  /** 后端给的 view 参数，形如 F:供应商。 */
+  viewKey: string
+}
+
+export function isCustomFolderKey(key: string): boolean {
+  return key.startsWith(CUSTOM_FOLDER_PREFIX) && key.length > CUSTOM_FOLDER_PREFIX.length
+}
+
+/** 一个 folder key 该发给列表接口的 view。认不得的一律收件箱，和后端一致。 */
+export function viewForFolderKey(key: string, fixed: Record<string, string>): string {
+  if (key in fixed) return fixed[key]
+  if (isCustomFolderKey(key)) return key
+  return 'INBOX'
+}
+
+/** 和后端 validFolderName 同一套规矩，好让人在输入框里就看到原因。 */
+export function folderNameProblem(name: string): string {
+  const n = name.trim()
+  if (!n) return 'empty'
+  if ([...n].length > 120) return 'tooLong'
+  if (/[/\\*%"]/.test(n) || /[\x00-\x1f\x7f]/.test(n)) return 'badChars'
+  if (['INBOX', 'SENT', 'JUNK', 'TRASH', 'DRAFTS', 'SPAM', 'ARCHIVE'].includes(n.toUpperCase()) || n.startsWith('[Gmail]')) return 'reserved'
+  return ''
+}
