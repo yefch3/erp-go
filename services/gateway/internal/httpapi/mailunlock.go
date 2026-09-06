@@ -197,7 +197,7 @@ func withUnlockedAccount(ctx context.Context, accountID int64) context.Context {
 
 // unlockedAccount 取出这次请求解开的是哪个信箱。
 //
-// 返回 accountAll（0）表示不限——旧令牌，或者一个箱都没绑的人。调用方拿到
+// 返回 accountAll（0）表示不限——一个箱都没绑的人。调用方拿到
 // 0 时照旧行为走（默认箱 / 全部），这样换版本那一刻不会有人被挡在外面。
 func unlockedAccount(ctx context.Context) int64 {
 	if v, ok := ctx.Value(unlockedAccountKey{}).(int64); ok {
