@@ -1249,6 +1249,7 @@ import {
   unlockedMailboxes,
   useMailbox,
   type VerifyResponse,
+  settleMailbox,
 } from '../lib/mailUnlock'
 import MailHostDialog from '../components/MailHostDialog.vue'
 import MailSignatureDialog from '../components/MailSignatureDialog.vue'
@@ -1561,14 +1562,21 @@ function isOwnMail(it: { direction: string; counterparty: string }) {
 function onMailboxesChanged(boxes: { id: number; email: string; isDefault: boolean }[]) {
   mailboxes.value = boxes
   myAddresses.value = new Set(boxes.map((b) => b.email.trim().toLowerCase()).filter(Boolean))
-  if (currentAccount.value || !boxes.length) return
+  const next = settleMailbox(currentAccount.value, boxes)
+  if (!next || next === currentAccount.value) return
+  const wasUnset = !currentAccount.value
   // 还没选过就落在默认那个上——服务端按「默认排最前」返回，所以取第一个。
+  // 选了一个**不是自己的**箱也落回默认箱：令牌里记的箱号来自服务端，改版前
+  // 的旧令牌现在会被读成 1 号箱，不落回去的话人会卡在一个空视图上。
+  currentAccount.value = next
+  // 从一个不是自己的箱落回来，下面那个 watch（before 有值）会换令牌、重新
+  // 导航、拉列表，这里不用再拉。
+  if (!wasUnset) return
+  // **0 → id 这一跳必须跟着重新拉一次列表。** 信箱清单是异步来的，而列表在
+  // 它之前就已经带着 accountId=0 发出去了——那一次拉的是"全部信箱合并"。
+  // 左侧此刻高亮着默认箱，右边列着两个箱的信，两者对不上，而且**不会自己
+  // 纠正**：下面那个 watch 要求 before 有值才动，这一跳被它跳过了。
   //
-  // **必须跟着重新拉一次列表。** 信箱清单是异步来的，而列表在它之前就已经
-  // 带着 accountId=0 发出去了——那一次拉的是"全部信箱合并"。左侧此刻高亮
-  // 着默认箱，右边列着两个箱的信，两者对不上，而且**不会自己纠正**：下面
-  // 那个 watch 要求 before 有值才动，0 → id 这一跳被它跳过了。
-  currentAccount.value = boxes[0].id
   // 锁着的时候别去拉列表：那些接口全要解锁令牌，拉出来的只有一串 403 弹窗
   // 盖在门上。左栏现在锁着也在（门开在内容区里），所以这条路会在锁着时走到。
   if (locked.value !== false) return
@@ -1940,7 +1948,8 @@ onMounted(async () => {
       '/mailbox/lock-status',
     )
     locked.value = !d.unlocked
-    // 0 = 旧令牌或一个箱都没绑，那时交给 onMailboxesChanged 落到默认箱。
+    // 0 = 一个箱都没绑，那时交给 onMailboxesChanged 落到默认箱；令牌里记的箱
+  // 不是自己的（改版前的旧令牌现在会被读成 1 号箱）也在那里落回默认箱。
     // 地址栏里的 acct 优先级更高，随后由 applyRoute 覆盖。
     currentAccount.value = initialMailbox({ token: Number(d.accountId ?? 0) })
   } catch {

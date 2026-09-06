@@ -188,3 +188,19 @@ export function clearAll() {
   localStorage.removeItem(CURRENT)
   localStorage.removeItem(MAP)
 }
+
+/**
+ * 信箱清单到了之后，当前该站在哪个箱上。
+ *
+ * 已选的箱在清单里就不动；没选过、或者选的箱**不是这个人的**，落到默认箱
+ * （服务端按「默认排最前」返回，所以取第一个）。第二种情况是真会发生的：
+ * 令牌里记的箱号来自服务端，8 月 31 日改版前的旧令牌现在会被读成 1 号箱，
+ * 而 1 号箱多半不是他的——不落回去的话，他会卡在一个既不属于自己、也不在
+ * 左栏里的空视图上，只能手动退出重进。
+ *
+ * 清单为空回 0。
+ */
+export function settleMailbox(current: number, boxes: { id: number }[]): number {
+  if (!boxes.length) return 0
+  return boxes.some((b) => b.id === current) ? current : boxes[0].id
+}
