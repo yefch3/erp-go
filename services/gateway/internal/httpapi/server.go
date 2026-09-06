@@ -808,6 +808,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Put("/api/mail-folders/{id}", s.renameMailFolder)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Delete("/api/mail-folders/{id}", s.deleteMailFolder)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/{id}/move", s.moveInbound)
+		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Post("/api/inbound-mails/move", s.moveInboundBatch)
 		// 邮箱转换也要能选择询盘模板；这里复用同一个只读 handler，但权限按
 		// 邮箱场景收口，用户无需先获得采购模块权限或跳到采购页面。
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/mail-inquiry-templates", s.listInquiryTemplates)

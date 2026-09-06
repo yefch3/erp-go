@@ -1864,6 +1864,8 @@ export default {
     moveToInbox: 'Bandeja de entrada',
     noFoldersYet: 'Aún no hay carpetas; crea una en la barra izquierda',
     moved: 'Movido',
+    bulkMoved: 'Movidos {n}',
+    bulkMovedPartial: 'Movidos {n}, {failed} fallaron',
     forward: 'Reenviar',
     forwardCarries: 'Los adjuntos del mensaje original se reenvían junto con este correo.',
     forwardAsAttachment: 'Reenviar como adjunto',

@@ -1852,6 +1852,8 @@ export default {
     moveToInbox: '收件箱',
     noFoldersYet: '还没有文件夹，在左栏新建一个',
     moved: '已移动',
+    bulkMoved: '已移动 {n} 封',
+    bulkMovedPartial: '移动了 {n} 封，{failed} 封没成功',
     forward: '转发',
     forwardCarries: '原邮件的附件会随这封信一并转发。',
     forwardAsAttachment: '作为附件转发',

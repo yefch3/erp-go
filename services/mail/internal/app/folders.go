@@ -292,3 +292,178 @@ func (s *Service) MoveInbound(ctx context.Context, tenantID, ownerID, mailID, fo
 	}
 	return nil
 }
+
+// maxBatchMove 一次最多挪多少封。列表一页几十条，勾满一页也远不到这个数；
+// 上限挡的是脚本或页面错误一次塞几千个 id 进来。
+const maxBatchMove = 200
+
+// moveTarget 是「挪到哪」：folderID = 0 是收件箱，任何信箱都有；自建文件夹
+// 属于某一个信箱，别的信箱的信挪不进去。
+type moveTarget struct {
+	accountID int64
+	host, erp string
+}
+
+func (s *Service) resolveMoveTarget(ctx context.Context, tenantID, folderID int64) (moveTarget, error) {
+	if folderID <= 0 {
+		return moveTarget{host: "INBOX", erp: "INBOX"}, nil
+	}
+	f, err := s.q.GetMailFolder(ctx, store.GetMailFolderParams{TenantID: tenantID, ID: folderID})
+	if err != nil {
+		return moveTarget{}, apierr.NotFound("MAIL_FOLDER_NOT_FOUND", "文件夹不存在")
+	}
+	return moveTarget{accountID: f.AccountID, host: f.HostName, erp: f.HostName}, nil
+}
+
+// batchMoveItem 是待挪的一封信在库里的身份。
+type batchMoveItem struct {
+	id, accountID, uid int64
+	folder, messageID  string
+	archived           bool
+}
+
+// moveGroup 是同一个信箱、同一个来源文件夹里的一批：服务器上一次 MOVE 挪完。
+type moveGroup struct {
+	accountID int64
+	folder    string
+}
+
+// MoveInboundBatch 把一批信挪进同一个文件夹（folderID = 0 是收件箱）。
+//
+// 从列表来的批量操作。列表一行是一条会话，wholeThread 时整条会话一起挪——
+// 只挪最新那封会把行留在原地、少一封（MarkInbound 的归档同一个道理）。
+//
+// **按来源文件夹分组，每组一次 MOVE。** 一次登录挪一批，而不是每封信各登录
+// 一次：网易对频繁登录会限流，二十封信挪二十次登录就是二十次被掐的机会，
+// 而且慢二十倍。一组里服务器拒了就整组失败；服务器挪成了但个别信拿不到
+// 新号的，那几封单独算失败（行还指着旧位置，下次同步会当成"信没了"，所以
+// 宁可报出来）。
+//
+// 返回挪成功的封数和失败的 id。一封失败不影响其他封。
+func (s *Service) MoveInboundBatch(ctx context.Context, tenantID, ownerID int64, ids []int64, folderID int64, wholeThread bool) (int, []int64, error) {
+	if len(ids) == 0 {
+		return 0, nil, apierr.Invalid("MAIL_MOVE_EMPTY", "没有选中任何邮件")
+	}
+	if len(ids) > maxBatchMove {
+		return 0, nil, apierr.Invalid("MAIL_MOVE_TOO_MANY", fmt.Sprintf("一次最多移动 %d 封", maxBatchMove))
+	}
+	target, err := s.resolveMoveTarget(ctx, tenantID, folderID)
+	if err != nil {
+		return 0, nil, err
+	}
+	items, failed := s.collectMoveItems(ctx, tenantID, ownerID, ids, wholeThread)
+	moved := 0
+	groups := map[moveGroup][]batchMoveItem{}
+	var order []moveGroup
+	for _, it := range items {
+		switch {
+		case target.accountID != 0 && it.accountID != target.accountID:
+			failed = append(failed, it.id) // 别的信箱的信挪不进这个信箱的文件夹
+		case it.folder == "SENT":
+			failed = append(failed, it.id)
+		case it.folder == target.erp:
+			moved++ // 已经在那里了
+		default:
+			g := moveGroup{it.accountID, it.folder}
+			if _, ok := groups[g]; !ok {
+				order = append(order, g)
+			}
+			groups[g] = append(groups[g], it)
+		}
+	}
+	for _, g := range order {
+		n, bad := s.moveGroup(ctx, tenantID, ownerID, g, groups[g], target)
+		moved += n
+		failed = append(failed, bad...)
+	}
+	return moved, failed, nil
+}
+
+// collectMoveItems 把 id 换成库里的行；wholeThread 时展开成整条会话。
+// 不是自己的、不存在的，直接算失败。
+func (s *Service) collectMoveItems(ctx context.Context, tenantID, ownerID int64, ids []int64, wholeThread bool) ([]batchMoveItem, []int64) {
+	seen := map[int64]bool{}
+	var items []batchMoveItem
+	var failed []int64
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		row, err := s.q.GetInbound(ctx, store.GetInboundParams{TenantID: tenantID, ID: id})
+		if err != nil || row.OwnerID != ownerID {
+			failed = append(failed, id)
+			continue
+		}
+		if wholeThread && row.ThreadKey != "" {
+			members, err := s.q.ListInboundThreadMembers(ctx, store.ListInboundThreadMembersParams{
+				TenantID: tenantID, OwnerID: ownerID, AccountID: row.AccountID, ThreadKey: row.ThreadKey,
+			})
+			if err == nil && len(members) > 0 {
+				for _, m := range members {
+					if m.ID != id && seen[m.ID] {
+						continue
+					}
+					seen[m.ID] = true
+					items = append(items, batchMoveItem{id: m.ID, accountID: row.AccountID, uid: m.ImapUid, folder: m.Folder, messageID: m.MessageID, archived: m.ArchivedAt.Valid})
+				}
+				continue
+			}
+		}
+		items = append(items, batchMoveItem{id: id, accountID: row.AccountID, uid: row.ImapUid, folder: row.Folder, messageID: row.MessageID, archived: row.ArchivedAt.Valid})
+	}
+	return items, failed
+}
+
+// moveGroup 在服务器上一次 MOVE 挪一组，然后逐封改行的身份。
+func (s *Service) moveGroup(ctx context.Context, tenantID, ownerID int64, g moveGroup, items []batchMoveItem, target moveTarget) (int, []int64) {
+	allFailed := func() []int64 {
+		out := make([]int64, 0, len(items))
+		for _, it := range items {
+			out = append(out, it.id)
+		}
+		return out
+	}
+	acct, err := s.ownedAccount(ctx, tenantID, ownerID, g.accountID)
+	if err != nil {
+		return 0, allFailed()
+	}
+	source, err := s.hostFolder(ctx, acct, g.folder)
+	if err != nil {
+		return 0, allFailed()
+	}
+	uids := make([]uint32, 0, len(items))
+	for _, it := range items {
+		uids = append(uids, uint32(it.uid))
+	}
+	movedUIDs, err := s.mailbox.MoveMessages(ctx, acct, source, uids, target.host)
+	if err != nil {
+		s.log.Warn("batch move rejected by host", "account", g.accountID, "from", source, "to", target.host, "n", len(uids), "err", err)
+		return 0, allFailed()
+	}
+	moved := 0
+	var failed []int64
+	for _, it := range items {
+		newUID, ok := movedUIDs[uint32(it.uid)]
+		if !ok {
+			u, found, err := s.mailbox.FindUIDByMessageID(ctx, acct, target.host, it.messageID)
+			if err != nil || !found {
+				s.log.Warn("moved on host but lost track of the new uid", "id", it.id, "to", target.host, "err", err)
+				failed = append(failed, it.id)
+				continue
+			}
+			newUID = u
+		}
+		if err := s.mergeRepoint(ctx, tenantID, it.accountID, it.folder, it.uid, target.erp, int64(newUID), it.messageID); err != nil {
+			failed = append(failed, it.id)
+			continue
+		}
+		if target.erp == "INBOX" && it.archived {
+			if err := s.q.ClearInboundArchived(ctx, store.ClearInboundArchivedParams{TenantID: tenantID, ID: it.id}); err != nil {
+				s.log.Warn("moved to inbox but could not clear archived_at", "id", it.id, "err", err)
+			}
+		}
+		moved++
+	}
+	return moved, failed
+}

@@ -23,6 +23,7 @@ type folderHost struct {
 	renamed  []string // "old→new"
 	deleted  []string
 	moves    []string // "from→to:uid"
+	calls    int      // MoveMessages 被叫了几次：批量要一次挪一批
 	searches int
 }
 
@@ -53,6 +54,7 @@ func (h *folderHost) DeleteFolder(_ context.Context, _ MailAccount, name string)
 	return nil
 }
 func (h *folderHost) MoveMessages(_ context.Context, _ MailAccount, from string, uids []uint32, to string) (map[uint32]uint32, error) {
+	h.calls++
 	out := map[uint32]uint32{}
 	for _, u := range uids {
 		h.moves = append(h.moves, from+"→"+to)
@@ -108,12 +110,18 @@ func newFolderFixture(t *testing.T, me int64) *folderFixture {
 
 func (f *folderFixture) insertMail(t *testing.T, folder string, uid int64, subject string) int64 {
 	t.Helper()
+	return f.insertThreadMail(t, folder, uid, subject, subject+"-thr")
+}
+
+// insertThreadMail 插一封指定会话的信：同一个 thread 的几封就是一条会话。
+func (f *folderFixture) insertThreadMail(t *testing.T, folder string, uid int64, subject, thread string) int64 {
+	t.Helper()
 	var id int64
 	if err := f.pool.QueryRow(context.Background(), `INSERT INTO email_inbound
 		(tenant_id, account_id, owner_id, message_id, thread_key, folder, imap_uid,
 		 from_email, to_email, subject, received_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, 'c@x', 'me@263.net', $8, now()) RETURNING id`,
-		f.tenantID, f.account, f.me, subject+"@mid", subject+"-thr", folder, uid, subject).Scan(&id); err != nil {
+		f.tenantID, f.account, f.me, subject+"@mid", thread, folder, uid, subject).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
 	return id
@@ -338,5 +346,80 @@ func TestMarkViewReadStaysInsideTheCustomFolder(t *testing.T) {
 	}
 	if len(page.Mails) != 1 || page.Mails[0].Subject != "归到项目A的" {
 		t.Errorf("文件夹里搜索应该只有那一封，实际 %d 封", len(page.Mails))
+	}
+}
+
+// 一键移动：列表一行是一条会话，整条会话一起挪；同一来源文件夹的信一次 MOVE
+// 挪完，不是一封一次登录。已发送的、不存在的算失败，不拖累其他封。
+func TestMoveInboundBatchMovesWholeThreadsInOneHostCall(t *testing.T) {
+	f := newFolderFixture(t, 9107)
+	ctx := context.Background()
+	fd, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, "项目B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a1 := f.insertThreadMail(t, "INBOX", 61, "会话A 第一封", "thr-A")
+	a2 := f.insertThreadMail(t, "INBOX", 62, "会话A 第二封", "thr-A")
+	b := f.insertThreadMail(t, "INBOX", 63, "单独一封", "thr-B")
+	sent := f.insertMail(t, "SENT", 64, "已发送的")
+	stay := f.insertMail(t, "INBOX", 65, "没勾的")
+	where := func(id int64) (string, int64) {
+		var folder string
+		var uid int64
+		if err := f.pool.QueryRow(ctx, `SELECT folder, imap_uid FROM email_inbound WHERE id=$1`, id).Scan(&folder, &uid); err != nil {
+			t.Fatal(err)
+		}
+		return folder, uid
+	}
+
+	// 勾了会话A 的最新一封和单独一封，外加一封已发送、一个不存在的 id。
+	f.host.calls = 0
+	moved, failed, err := f.svc.MoveInboundBatch(ctx, f.tenantID, f.me, []int64{a2, b, sent, 424242}, fd.ID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved != 3 {
+		t.Errorf("应该挪 3 封（会话A 两封 + 单独一封），实际 %d", moved)
+	}
+	if len(failed) != 2 {
+		t.Errorf("已发送的和不存在的应该算失败，失败清单 %v", failed)
+	}
+	if f.host.calls != 1 {
+		t.Errorf("同一来源文件夹应该一次 MOVE 挪完，服务器被叫了 %d 次", f.host.calls)
+	}
+	if f.host.searches != 0 {
+		t.Errorf("有 COPYUID 就不该搜索，搜了 %d 次", f.host.searches)
+	}
+	for _, id := range []int64{a1, a2, b} {
+		if folder, uid := where(id); folder != "项目B" || uid < 1061 || uid > 1063 {
+			t.Errorf("信 %d 应该在 (项目B, 106x)，实际 (%s, %d)", id, folder, uid)
+		}
+	}
+	if folder, _ := where(stay); folder != "INBOX" {
+		t.Errorf("没勾的那封不该动，实际在 %s", folder)
+	}
+	if folder, _ := where(sent); folder != "SENT" {
+		t.Errorf("已发送的不该动，实际在 %s", folder)
+	}
+	if v := f.viewsOf(t, a2); len(v) != 1 || v[0] != "F:项目B" {
+		t.Errorf("会话A 的视图应该是 F:项目B，实际 %v", v)
+	}
+
+	// 挪回收件箱：勾会话A 的第一封和单独一封，整条会话跟着回来，仍然一次 MOVE。
+	f.host.calls = 0
+	moved, failed, err = f.svc.MoveInboundBatch(ctx, f.tenantID, f.me, []int64{a1, b}, 0, true)
+	if err != nil || moved != 3 || len(failed) != 0 || f.host.calls != 1 {
+		t.Errorf("挪回收件箱：moved=%d failed=%v calls=%d err=%v", moved, failed, f.host.calls, err)
+	}
+	if folder, _ := where(a2); folder != "INBOX" {
+		t.Errorf("会话A 的第二封应该跟着回收件箱，实际在 %s", folder)
+	}
+
+	// 别人的信挪不了；空清单直接拒绝。
+	if _, failed, err := f.svc.MoveInboundBatch(ctx, f.tenantID, f.me+1, []int64{a1}, fd.ID, true); err != nil || len(failed) != 1 {
+		t.Errorf("别人的信应该算失败：failed=%v err=%v", failed, err)
+	}
+	if _, _, err := f.svc.MoveInboundBatch(ctx, f.tenantID, f.me, nil, fd.ID, true); err == nil {
+		t.Error("空清单应该拒绝")
 	}
 }

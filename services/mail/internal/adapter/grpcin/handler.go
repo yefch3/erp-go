@@ -1328,3 +1328,12 @@ func (h *Handler) MoveInbound(ctx context.Context, req *mailv1.MoveInboundReques
 	}
 	return &mailv1.MoveInboundResponse{}, nil
 }
+
+func (h *Handler) MoveInboundBatch(ctx context.Context, req *mailv1.MoveInboundBatchRequest) (*mailv1.MoveInboundBatchResponse, error) {
+	op := operator(ctx)
+	moved, failed, err := h.svc.MoveInboundBatch(ctx, grpcx.TenantID(ctx), op.ID, req.GetIds(), req.GetFolderId(), req.GetWholeThread())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.MoveInboundBatchResponse{Moved: int32(moved), FailedIds: failed}, nil
+}

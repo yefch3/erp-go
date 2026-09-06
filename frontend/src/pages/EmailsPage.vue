@@ -520,6 +520,36 @@
           <el-button v-if="folder === 'junk'" size="small" @click="bulkMark({ notJunk: true })">
             {{ t('emails.notJunk') }}
           </el-button>
+          <!-- 一键移动（勾选多封）。整条会话一起挪；同一来源文件夹的一次 MOVE 挪完。 -->
+          <el-dropdown
+            v-if="canBulkMove"
+            size="small"
+            trigger="click"
+            :disabled="bulkBusy"
+            @command="bulkMoveTo"
+          >
+            <el-button size="small" :loading="bulkBusy">
+              {{ t('emails.moveTo') }} <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-if="isCustomFolderKey(folder)" :command="0">
+                  {{ t('emails.moveToInbox') }}
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-for="cf in currentCustomFolders"
+                  :key="cf.id"
+                  :command="cf.id"
+                  :disabled="folder === cf.viewKey"
+                >
+                  {{ cf.name }}
+                </el-dropdown-item>
+                <el-dropdown-item v-if="!currentCustomFolders.length && !isCustomFolderKey(folder)" disabled>
+                  {{ t('emails.noFoldersYet') }}
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-button
             v-if="folder === 'inbox' || folder === 'starred' || folder === 'sent'"
             size="small"
@@ -2686,6 +2716,10 @@ const picked = ref<string[]>([])
 const bulkBusy = ref(false)
 // 废纸篓里标记已读没有意义，已发送里也没有——见工具条上那两个按钮的注释。
 const canBulkRead = computed(() => folder.value !== 'trash' && folder.value !== 'sent')
+// 能挪的和单封那个「移动到」同一口径：收件箱、星标、归档和自建文件夹里的信。
+const canBulkMove = computed(
+  () => folder.value === 'inbox' || folder.value === 'starred' || folder.value === 'archive' || isCustomFolderKey(folder.value),
+)
 
 // 屏幕上这一批能勾的行。哪个文件夹取哪份数据由 mailSelection 决定，不在这里
 // 各算各的——「已选 N 封」拿 inbound 算、而已发送用的是 mailboxSent，正是原来
@@ -2853,6 +2887,34 @@ async function bulkUnsuppress() {
 // a single IMAP STORE — so a batch endpoint would save round trips to our own
 // gateway and nothing at the mail host. Sent a few at a time so twenty
 // selected mails do not open twenty connections at once.
+// 勾选多封后的「移动到」。一次请求，服务端按来源文件夹分组、一组一次 MOVE，
+// 而不是像 bulkMark 那样逐封打接口：每封信各登录一次邮箱服务器，网易会限流。
+// 整条会话一起挪（wholeThread）——列表一行就是一条会话，只挪最新那封会把
+// 行留在原地、少一封。
+async function bulkMoveTo(folderId: number) {
+  const rows = pickedRows.value
+  if (!rows.length || bulkBusy.value) return
+  bulkBusy.value = true
+  try {
+    const d = await post<{ moved?: number | string; failedIds?: string[] }>('/inbound-mails/move', {
+      ids: rows.map((r) => r.id),
+      folderId: String(folderId),
+      wholeThread: true,
+    })
+    const moved = Number(d.moved ?? 0)
+    const failed = d.failedIds?.length ?? 0
+    if (failed === 0) ElMessage.success(t('emails.bulkMoved', { n: moved }))
+    else ElMessage.warning(t('emails.bulkMovedPartial', { n: moved, failed }))
+  } catch {
+    // 后端的原因拦截器已经弹了
+  } finally {
+    picked.value = []
+    bulkBusy.value = false
+    load()
+    refreshUnread()
+  }
+}
+
 async function bulkMark(flags: Record<string, boolean>) {
   const rows = pickedRows.value
   if (!rows.length) return

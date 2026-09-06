@@ -151,6 +151,8 @@ service EmailService {
   rpc DeleteMailFolder(DeleteMailFolderRequest) returns (DeleteMailFolderResponse);
   // 把一封信挪进某个自建文件夹；folder_id = 0 表示挪回收件箱。同步执行。
   rpc MoveInbound(MoveInboundRequest) returns (MoveInboundResponse);
+  // 批量移动：从列表勾选来的。整条会话一起挪；同一来源文件夹一次 MOVE。
+  rpc MoveInboundBatch(MoveInboundBatchRequest) returns (MoveInboundBatchResponse);
   // One conversation, both directions, oldest first. Owner-scoped: the
   // caller sees only their own half of the world.
   rpc GetMailThread(GetMailThreadRequest) returns (GetMailThreadResponse);
@@ -420,6 +422,17 @@ message DeleteMailFolderRequest { int64 id = 1; }
 message DeleteMailFolderResponse {}
 message MoveInboundRequest { int64 id = 1; int64 folder_id = 2; }
 message MoveInboundResponse {}
+message MoveInboundBatchRequest {
+  repeated int64 ids = 1;
+  int64 folder_id = 2;
+  // 列表一行是一条会话：勾的是行，挪的是整条会话。
+  bool whole_thread = 3;
+}
+message MoveInboundBatchResponse {
+  // 实际挪成功的封数（整条会话一起挪时比勾选的行数多）。
+  int32 moved = 1;
+  repeated int64 failed_ids = 2;
+}
 
 message DownloadInboundAttachmentsResponse {
   bytes content = 1;

@@ -70,6 +70,9 @@ func TestBodiesTheBrowserActuallySendsDecode(t *testing.T) {
 	mustDecode(t, `{"name": "供应商 2026"}`, &mailv1.RenameMailFolderRequest{})
 	mustDecode(t, `{"folderId": "3"}`, &mailv1.MoveInboundRequest{})
 	mustDecode(t, `{"folderId": 0}`, &mailv1.MoveInboundRequest{})
+	// 一键移动：勾选的行 id 是字符串（int64 走 protojson），folderId 两种写法。
+	mustDecode(t, `{"ids": ["3", "4"], "folderId": "0", "wholeThread": true}`, &mailv1.MoveInboundBatchRequest{})
+	mustDecode(t, `{"ids": [3], "folderId": 7}`, &mailv1.MoveInboundBatchRequest{})
 
 	mustDecode(t, `{"accountId": 7}`, &mailv1.SetDefaultMailboxRequest{})
 	// 同一个字段前端也可能发成字符串（int64 在 JSON 里超出安全整数时，

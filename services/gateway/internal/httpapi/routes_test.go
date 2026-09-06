@@ -381,6 +381,7 @@ func TestCustomFolderRoutesAreRegistered(t *testing.T) {
 		"PUT /api/mail-folders/{id}",
 		"DELETE /api/mail-folders/{id}",
 		"POST /api/inbound-mails/{id}/move",
+		"POST /api/inbound-mails/move",
 	} {
 		if !routes[want] {
 			t.Errorf("缺少路由：%s", want)
