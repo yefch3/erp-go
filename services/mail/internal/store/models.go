@@ -132,6 +132,8 @@ type EmailInbound struct {
 	AuthSpf        string
 	AuthDkim       string
 	ToAll          string
+	HostFolder     string
+	HostUid        int64
 }
 
 type EmailInboundAttachment struct {

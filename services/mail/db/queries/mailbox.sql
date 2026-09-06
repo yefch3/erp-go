@@ -1158,6 +1158,9 @@ LIMIT sqlc.arg(row_limit)::int;
 UPDATE email_inbound
 SET folder = sqlc.arg(new_folder)::text,
     imap_uid = sqlc.arg(new_uid)::bigint,
+    -- 回到了正位，「挪去了哪里」这条记录作废。
+    host_folder = '',
+    host_uid = 0,
     not_junk = FALSE
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND account_id = sqlc.arg(account_id)::bigint
@@ -1171,7 +1174,8 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- owner_id and raw_key are here for the one outcome that destroys something:
 -- a message already in our recycle bin that the host has now purged is purged
 -- here too, and that means removing its objects before its row.
-SELECT id, owner_id, imap_uid, message_id, raw_key, is_read, is_starred, archived_at, deleted_at
+SELECT id, owner_id, imap_uid, message_id, raw_key, is_read, is_starred, archived_at, deleted_at,
+       host_folder, host_uid
 FROM email_inbound
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND account_id = sqlc.arg(account_id)::bigint
@@ -1496,8 +1500,18 @@ SELECT DISTINCT tenant_id FROM mail_accounts WHERE is_active AND unbound_at IS N
 -- name: GetInboundByFolderUID :one
 -- 挪信收尾（repoint）先问一句：目的位置是不是已经被人占了。占位的几乎总是
 -- 同一封信——IDLE 推送让同步抢在收尾之前把挪过去的信当新邮件下载了一遍。
-SELECT id, owner_id, raw_key, message_id
+SELECT id, owner_id, raw_key, message_id, host_folder, host_uid
 FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder = sqlc.arg(folder)::text
+  AND imap_uid = sqlc.arg(imap_uid)::bigint;
+
+-- name: SetInboundHostLocation :exec
+-- 信在服务器上被挪去了哪里（从 MOVE/COPY 的 COPYUID 里接到的）。
+UPDATE email_inbound
+SET host_folder = sqlc.arg(host_folder)::text,
+    host_uid = sqlc.arg(host_uid)::bigint
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND account_id = sqlc.arg(account_id)::bigint
   AND folder = sqlc.arg(folder)::text

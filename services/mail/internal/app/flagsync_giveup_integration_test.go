@@ -56,9 +56,9 @@ func (h *refusingHost) SentFolder(context.Context, MailAccount) (string, error) 
 	return "已发送", nil
 }
 func (h *refusingHost) ArchiveFolder(context.Context, MailAccount) (string, error) { return "", nil }
-func (h *refusingHost) MoveMessages(context.Context, MailAccount, string, []uint32, string) error {
+func (h *refusingHost) MoveMessages(context.Context, MailAccount, string, []uint32, string) (map[uint32]uint32, error) {
 	h.moves++
-	return errors.New("UID MOVE can't move those messages or to that name")
+	return nil, errors.New("UID MOVE can't move those messages or to that name")
 }
 func (h *refusingHost) FetchFlags(_ context.Context, _ MailAccount, folder string, uids []uint32) (map[uint32]MessageFlags, error) {
 	out := map[uint32]MessageFlags{}
