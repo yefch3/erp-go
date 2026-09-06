@@ -156,11 +156,13 @@ func TestSigningOutOfOneMailboxLeavesTheOthersOpen(t *testing.T) {
 	}
 }
 
-// 换版本之前发出去、还没到期的旧令牌仍然通行，并且被当成「不限信箱」。
+// 值为 "1" 的令牌开的是 1 号信箱，不是「不限信箱」。
 //
-// 不留这条的话，部署那一刻全公司手上的令牌集体失效，所有人被弹回登录框
-// 重新输一次授权码——而这次改动本身跟他们的凭据没有半点关系。
-func TestTokensMintedBeforeThisChangeStillWork(t *testing.T) {
+// 8 月 31 日改版前的旧令牌值写死 "1"，改版后这里曾把 "1" 当成旧令牌放行成
+// 不限箱——可 1 号信箱的新令牌值也是 "1"。那个箱的主人从那天起收件箱里
+// 列的一直是他全部信箱的信，左边高亮 Gmail、右边混着 163 的提醒，没有任何
+// 报错。这条钉住：值是几就是几号箱，"1" 没有第二种读法。
+func TestValueOneMeansMailboxOneNotAllMailboxes(t *testing.T) {
 	addr := os.Getenv("GATEWAY_TEST_REDIS")
 	if addr == "" {
 		t.Skip("set GATEWAY_TEST_REDIS")
@@ -171,19 +173,26 @@ func TestTokensMintedBeforeThisChangeStillWork(t *testing.T) {
 	store := NewUnlockStore(addr, time.Minute)
 	tenantID, employeeID := time.Now().UnixNano(), int64(660002)
 
-	// 旧版本写下的样子：值是写死的 "1"，没有信箱这一维。
-	const oldToken = "legacy-token-from-before-the-change"
-	key := store.key(tenantID, employeeID, oldToken)
-	if err := rdb.Set(ctx, key, "1", time.Minute).Err(); err != nil {
+	tok, _, err := store.Grant(ctx, tenantID, employeeID, 1)
+	if err != nil {
 		t.Fatal(err)
 	}
-	defer rdb.Del(ctx, key)
+	defer store.Revoke(ctx, tenantID, employeeID, tok)
 
-	acct, ok := store.Check(ctx, tenantID, employeeID, oldToken)
+	acct, ok := store.Check(ctx, tenantID, employeeID, tok)
 	if !ok {
-		t.Fatal("旧令牌被判成无效——部署那一刻全公司会被弹回去重输授权码")
+		t.Fatal("1 号箱的令牌被判成无效")
 	}
-	if acct != accountAll {
-		t.Errorf("旧令牌该被当成「不限信箱」，拿到 %d", acct)
+	if acct != 1 {
+		t.Errorf("1 号箱的令牌该开 1 号箱，拿到 %d（0 = 不限箱，就是那个把全部信箱混在一起的毛病）", acct)
+	}
+	// 一个箱都没绑的人那把「不限箱」通行证仍然是 0。
+	none, _, err := store.Grant(ctx, tenantID, employeeID, accountAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Revoke(ctx, tenantID, employeeID, none)
+	if acct, ok := store.Check(ctx, tenantID, employeeID, none); !ok || acct != accountAll {
+		t.Errorf("不限箱通行证应该是 0，拿到 %d ok=%v", acct, ok)
 	}
 }

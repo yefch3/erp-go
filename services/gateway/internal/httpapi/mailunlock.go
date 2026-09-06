@@ -59,8 +59,8 @@ func (u *UnlockStore) key(tenantID, employeeID int64, token string) string {
 // a derived token could be reconstructed by anything that knows the inputs,
 // and the whole point is that only this browser session holds it.
 //
-// accountID 存在值里。accountAll 表示「这个人的全部箱」——那是**旧令牌**
-// 的语义，见 legacyAllMailboxes。
+// accountID 存在值里。accountAll（0）表示「这个人的全部箱」——只发给一个箱
+// 都没绑的人。
 func (u *UnlockStore) Grant(ctx context.Context, tenantID, employeeID, accountID int64) (string, int, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -74,19 +74,22 @@ func (u *UnlockStore) Grant(ctx context.Context, tenantID, employeeID, accountID
 	return token, int(u.ttl.Seconds()), nil
 }
 
-// accountAll 是「这把令牌不限信箱」。
-//
-// 只有两种情况会出现：换版本之前发出去、还没到期的那些旧令牌（值是 "1"），
-// 以及一个箱都没绑的人拿到的那把通行证。
+// accountAll 是「这把令牌不限信箱」：一个箱都没绑的人拿到的那把通行证，
+// 好让活动、草稿那几个不碰邮件内容的页面进得去。
 const accountAll int64 = 0
 
-// legacyAllMailboxes 认出换版本之前发出去的旧令牌。
+// 值就是信箱 id，"0" 是不限箱（accountAll）。
 //
-// 旧令牌的值写死是 "1"，而新令牌的值是信箱 id。这两者会撞：id 恰好是 1 的
-// 那个信箱，它的新令牌看起来和旧令牌一模一样。撞了的后果只是「这把令牌
-// 被当成不限信箱」——比让全公司在部署那一刻集体重新输一次授权码轻，而且
-// 12 小时之内旧令牌就全过期了，这个歧义跟着一起消失。
-func legacyAllMailboxes(v string) bool { return v == "1" }
+// 从前这里还认 8 月 31 日改版前的旧令牌（值写死 "1"，没有信箱这一维），把它
+// 当成不限箱。那条兼容是个自撞：id 恰好是 1 的信箱，新令牌的值也是 "1"——
+// 于是那个箱一直被当成「不限箱」，收件箱里列的是这个人**全部**信箱的信，
+// 左边高亮着它、右边混着别的箱的信，而且没有任何报错。当时以为 12 小时后
+// 旧令牌过期歧义就消失，可令牌是 30 天滑动续期，而且 1 号箱的新令牌会一直
+// 签成 "1"，歧义永远在。
+//
+// 现在 "1" 就是 1 号箱。改版前的旧令牌若还活着，会被当成 1 号箱的：不是
+// 自己的箱就什么都列不出来，退出再进一次就好——比 1 号箱的主人永远看着
+// 一锅粥强。
 
 // Check reports whether this token is currently good for this person, and
 // extends it while it is being used. The token is bound to the identity in
@@ -112,13 +115,9 @@ func (u *UnlockStore) Check(ctx context.Context, tenantID, employeeID int64, tok
 	if err != nil {
 		return 0, false
 	}
-	acct := accountAll
-	if !legacyAllMailboxes(v) {
-		n, err := strconv.ParseInt(v, 10, 64)
-		if err != nil {
-			return 0, false
-		}
-		acct = n
+	acct, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return 0, false
 	}
 	left, err := u.rdb.TTL(ctx, key).Result()
 	if err != nil {
