@@ -605,6 +605,19 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND id = sqlc.arg(id)::bigint
 RETURNING account_id, folder, imap_uid, is_read, is_starred, message_id, archived_at, deleted_at, not_junk;
 
+-- name: ListInboundThreadMembers :many
+-- 一条会话在一个信箱里的全部成员（没删的）。批量移动从列表来，列表一行是
+-- 一条会话，挪就得整条会话一起挪；只挪最新那封会把行留在原地、少一封。
+-- AccountID 不可省：同一条会话可能同时在两个信箱里（客户抄送了两个地址）。
+SELECT id, folder, imap_uid, message_id, archived_at
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND owner_id = sqlc.arg(owner_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND thread_key = sqlc.arg(thread_key)::text
+  AND deleted_at IS NULL
+ORDER BY id;
+
 -- name: GetInbound :one
 -- The ERP's delivery record is joined on for the same reason ListSentUnified
 -- joins it: 对方是否已读 is knowable only there, and 已发送 opens this row

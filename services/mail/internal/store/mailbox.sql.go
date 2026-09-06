@@ -1726,6 +1726,66 @@ func (q *Queries) ListInboundAttachments(ctx context.Context, arg ListInboundAtt
 	return items, nil
 }
 
+const listInboundThreadMembers = `-- name: ListInboundThreadMembers :many
+SELECT id, folder, imap_uid, message_id, archived_at
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND owner_id = $2::bigint
+  AND account_id = $3::bigint
+  AND thread_key = $4::text
+  AND deleted_at IS NULL
+ORDER BY id
+`
+
+type ListInboundThreadMembersParams struct {
+	TenantID  int64
+	OwnerID   int64
+	AccountID int64
+	ThreadKey string
+}
+
+type ListInboundThreadMembersRow struct {
+	ID         int64
+	Folder     string
+	ImapUid    int64
+	MessageID  string
+	ArchivedAt pgtype.Timestamptz
+}
+
+// 一条会话在一个信箱里的全部成员（没删的）。批量移动从列表来，列表一行是
+// 一条会话，挪就得整条会话一起挪；只挪最新那封会把行留在原地、少一封。
+// AccountID 不可省：同一条会话可能同时在两个信箱里（客户抄送了两个地址）。
+func (q *Queries) ListInboundThreadMembers(ctx context.Context, arg ListInboundThreadMembersParams) ([]ListInboundThreadMembersRow, error) {
+	rows, err := q.db.Query(ctx, listInboundThreadMembers,
+		arg.TenantID,
+		arg.OwnerID,
+		arg.AccountID,
+		arg.ThreadKey,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInboundThreadMembersRow
+	for rows.Next() {
+		var i ListInboundThreadMembersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Folder,
+			&i.ImapUid,
+			&i.MessageID,
+			&i.ArchivedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listInboundThreads = `-- name: ListInboundThreads :many
 WITH visible AS (
     SELECT id, account_id, from_email, from_name, subject, snippet, thread_key,

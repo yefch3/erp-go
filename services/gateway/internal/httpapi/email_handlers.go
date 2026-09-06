@@ -1068,3 +1068,17 @@ func (s *Server) moveInbound(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeProto(w, resp)
 }
+
+// moveInboundBatch 是列表里勾选多封之后的「移动到」。
+func (s *Server) moveInboundBatch(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.MoveInboundBatchRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Emails.MoveInboundBatch(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}

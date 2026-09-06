@@ -1855,6 +1855,8 @@ export default {
     moveToInbox: 'Inbox',
     noFoldersYet: 'No folders yet; create one in the left rail',
     moved: 'Moved',
+    bulkMoved: 'Moved {n}',
+    bulkMovedPartial: 'Moved {n}, {failed} failed',
     forward: 'Forward',
     forwardCarries: 'The original message’s attachments travel along with this mail.',
     forwardAsAttachment: 'Forward as attachment',

@@ -76,6 +76,7 @@ const (
 	EmailService_RenameMailFolder_FullMethodName             = "/erp.mail.v1.EmailService/RenameMailFolder"
 	EmailService_DeleteMailFolder_FullMethodName             = "/erp.mail.v1.EmailService/DeleteMailFolder"
 	EmailService_MoveInbound_FullMethodName                  = "/erp.mail.v1.EmailService/MoveInbound"
+	EmailService_MoveInboundBatch_FullMethodName             = "/erp.mail.v1.EmailService/MoveInboundBatch"
 	EmailService_GetMailThread_FullMethodName                = "/erp.mail.v1.EmailService/GetMailThread"
 	EmailService_ListMyMailboxes_FullMethodName              = "/erp.mail.v1.EmailService/ListMyMailboxes"
 	EmailService_SetDefaultMailbox_FullMethodName            = "/erp.mail.v1.EmailService/SetDefaultMailbox"
@@ -230,6 +231,8 @@ type EmailServiceClient interface {
 	DeleteMailFolder(ctx context.Context, in *DeleteMailFolderRequest, opts ...grpc.CallOption) (*DeleteMailFolderResponse, error)
 	// 把一封信挪进某个自建文件夹；folder_id = 0 表示挪回收件箱。同步执行。
 	MoveInbound(ctx context.Context, in *MoveInboundRequest, opts ...grpc.CallOption) (*MoveInboundResponse, error)
+	// 批量移动：从列表勾选来的。整条会话一起挪；同一来源文件夹一次 MOVE。
+	MoveInboundBatch(ctx context.Context, in *MoveInboundBatchRequest, opts ...grpc.CallOption) (*MoveInboundBatchResponse, error)
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error)
@@ -860,6 +863,16 @@ func (c *emailServiceClient) MoveInbound(ctx context.Context, in *MoveInboundReq
 	return out, nil
 }
 
+func (c *emailServiceClient) MoveInboundBatch(ctx context.Context, in *MoveInboundBatchRequest, opts ...grpc.CallOption) (*MoveInboundBatchResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MoveInboundBatchResponse)
+	err := c.cc.Invoke(ctx, EmailService_MoveInboundBatch_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) GetMailThread(ctx context.Context, in *GetMailThreadRequest, opts ...grpc.CallOption) (*GetMailThreadResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetMailThreadResponse)
@@ -1156,6 +1169,8 @@ type EmailServiceServer interface {
 	DeleteMailFolder(context.Context, *DeleteMailFolderRequest) (*DeleteMailFolderResponse, error)
 	// 把一封信挪进某个自建文件夹；folder_id = 0 表示挪回收件箱。同步执行。
 	MoveInbound(context.Context, *MoveInboundRequest) (*MoveInboundResponse, error)
+	// 批量移动：从列表勾选来的。整条会话一起挪；同一来源文件夹一次 MOVE。
+	MoveInboundBatch(context.Context, *MoveInboundBatchRequest) (*MoveInboundBatchResponse, error)
 	// One conversation, both directions, oldest first. Owner-scoped: the
 	// caller sees only their own half of the world.
 	GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error)
@@ -1386,6 +1401,9 @@ func (UnimplementedEmailServiceServer) DeleteMailFolder(context.Context, *Delete
 }
 func (UnimplementedEmailServiceServer) MoveInbound(context.Context, *MoveInboundRequest) (*MoveInboundResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MoveInbound not implemented")
+}
+func (UnimplementedEmailServiceServer) MoveInboundBatch(context.Context, *MoveInboundBatchRequest) (*MoveInboundBatchResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MoveInboundBatch not implemented")
 }
 func (UnimplementedEmailServiceServer) GetMailThread(context.Context, *GetMailThreadRequest) (*GetMailThreadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMailThread not implemented")
@@ -2482,6 +2500,24 @@ func _EmailService_MoveInbound_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_MoveInboundBatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MoveInboundBatchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).MoveInboundBatch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_MoveInboundBatch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).MoveInboundBatch(ctx, req.(*MoveInboundBatchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_GetMailThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetMailThreadRequest)
 	if err := dec(in); err != nil {
@@ -3004,6 +3040,10 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MoveInbound",
 			Handler:    _EmailService_MoveInbound_Handler,
+		},
+		{
+			MethodName: "MoveInboundBatch",
+			Handler:    _EmailService_MoveInboundBatch_Handler,
 		},
 		{
 			MethodName: "GetMailThread",
