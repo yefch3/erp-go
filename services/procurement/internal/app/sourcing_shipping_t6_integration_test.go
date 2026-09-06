@@ -65,7 +65,7 @@ func TestSourcingShippingTaskAndRepeatedCurrentQuotes(t *testing.T) {
 	base := NewSourcingShippingOption{
 		CaseID: caseID, CarrierForwarder: "测试船公司 A", PortOfLoading: "上海", PortOfDischarge: "鹿特丹",
 		QuotedAt: "2026-08-30", EstimatedDeparture: "2026-09-10", EstimatedArrival: "2026-10-10",
-		ValidUntil: "2026-09-05",
+		ValidUntil: validFor(30),
 		Lines: []NewSourcingShippingOptionLine{
 			{SourcingLineID: created.Lines[0].ID, Currency: "USD", ChargeBasis: "PER_TON", UnitRate: "42", TotalFreight: "840"},
 			{SourcingLineID: created.Lines[1].ID, Currency: "USD", ChargeBasis: "PER_TON", UnitRate: "46", TotalFreight: "552"},
