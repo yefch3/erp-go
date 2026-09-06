@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -421,5 +422,39 @@ func TestMoveInboundBatchMovesWholeThreadsInOneHostCall(t *testing.T) {
 	}
 	if _, _, err := f.svc.MoveInboundBatch(ctx, f.tenantID, f.me, nil, fd.ID, true); err == nil {
 		t.Error("空清单应该拒绝")
+	}
+}
+
+// 上限卡的是整条会话展开之后的封数，不是勾选的行数；而且卡在碰服务器之前。
+func TestMoveInboundBatchCapsTheExpandedCountBeforeTouchingTheHost(t *testing.T) {
+	f := newFolderFixture(t, 9108)
+	ctx := context.Background()
+	fd, err := f.svc.CreateMailFolder(ctx, f.tenantID, f.me, f.account, "项目C")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var newest int64
+	for i := int64(0); i < 4; i++ {
+		newest = f.insertThreadMail(t, "INBOX", 71+i, fmt.Sprintf("长会话 第%d封", i+1), "thr-long")
+	}
+	was := maxBatchMove
+	maxBatchMove = 3
+	t.Cleanup(func() { maxBatchMove = was })
+
+	f.host.calls = 0
+	_, _, err = f.svc.MoveInboundBatch(ctx, f.tenantID, f.me, []int64{newest}, fd.ID, true)
+	if err == nil || !strings.Contains(err.Error(), "MAIL_MOVE_TOO_MANY") {
+		t.Fatalf("勾 1 行、展开 4 封、上限 3：应该拒绝，实际 %v", err)
+	}
+	if f.host.calls != 0 {
+		t.Errorf("拒绝之前不该碰服务器，碰了 %d 次", f.host.calls)
+	}
+	var folder string
+	if err := f.pool.QueryRow(ctx, `SELECT folder FROM email_inbound WHERE id=$1`, newest).Scan(&folder); err != nil || folder != "INBOX" {
+		t.Errorf("拒绝了就一封都不该动，实际在 %s（err=%v）", folder, err)
+	}
+	// 不展开会话时只有 1 封，放行。
+	if moved, failed, err := f.svc.MoveInboundBatch(ctx, f.tenantID, f.me, []int64{newest}, fd.ID, false); err != nil || moved != 1 || len(failed) != 0 {
+		t.Errorf("不展开时 1 封应该放行：moved=%d failed=%v err=%v", moved, failed, err)
 	}
 }

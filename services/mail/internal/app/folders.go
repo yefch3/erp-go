@@ -293,9 +293,11 @@ func (s *Service) MoveInbound(ctx context.Context, tenantID, ownerID, mailID, fo
 	return nil
 }
 
-// maxBatchMove 一次最多挪多少封。列表一页几十条，勾满一页也远不到这个数；
-// 上限挡的是脚本或页面错误一次塞几千个 id 进来。
-const maxBatchMove = 200
+// maxBatchMove 一次最多挪多少封——**展开整条会话之后**的封数，不是勾选的
+// 行数。列表一页几十行，勾满一页也远不到这个数；上限挡的是勾了一页长会话
+// （客户拉锯几十个来回的那种）一次要挪几千封，以及脚本一次塞几千个 id。
+// 是变量不是常量：测试把它调小来钉住「卡的是展开后的数」。
+var maxBatchMove = 200
 
 // moveTarget 是「挪到哪」：folderID = 0 是收件箱，任何信箱都有；自建文件夹
 // 属于某一个信箱，别的信箱的信挪不进去。
@@ -352,6 +354,10 @@ func (s *Service) MoveInboundBatch(ctx context.Context, tenantID, ownerID int64,
 		return 0, nil, err
 	}
 	items, failed := s.collectMoveItems(ctx, tenantID, ownerID, ids, wholeThread)
+	if len(items) > maxBatchMove {
+		// 卡在碰服务器之前：挪了一半再说「太多」，另一半还留在原地，比不挪更糟。
+		return 0, nil, apierr.Invalid("MAIL_MOVE_TOO_MANY", fmt.Sprintf("这些会话展开后共 %d 封，一次最多移动 %d 封，请少勾几行", len(items), maxBatchMove))
+	}
 	moved := 0
 	groups := map[moveGroup][]batchMoveItem{}
 	var order []moveGroup
