@@ -134,41 +134,42 @@
           <span class="ficon">🔒</span>
           <span class="fname">{{ t('mailGate.signInToRead') }}</span>
         </button>
-        <button
-          v-for="f in perMailbox"
-          v-else
-          :key="f.key"
-          type="button"
-          class="folder sub"
-          :class="{ on: modelValue === b.id && folder === f.key }"
-          @click="emit('select', b.id, f.key)"
-        >
-          <el-icon class="ficon"><component :is="f.icon" /></el-icon>
-          <span class="fname">{{ t(`emails.folders.${f.key}`) }}</span>
-          <!-- 数字只给当前这个箱：别的箱的分文件夹计数服务端没给，
-               编一个出来比空着坏得多。 -->
-          <span v-if="modelValue === b.id && countOf(f.key) > 0" class="cnt">
-            {{ countOf(f.key) > 99 ? '99+' : countOf(f.key) }}
-          </span>
-        </button>
-        <!-- 自建文件夹（Issue #362）：名字来自数据，不来自文案。它们真的建在
-             邮件服务器上，Foxmail 里也看得到。 -->
-        <template v-if="!isLocked(b.id)">
-          <div
-            v-for="cf in customFolders[b.id] ?? []"
-            :key="cf.viewKey"
-            class="folder sub custom"
-            :class="{ on: modelValue === b.id && folder === cf.viewKey }"
+        <!-- 同一级别：固定视图和自建文件夹一个列表，顺序和取舍在 lib/mailFolders
+             的 mailboxRail 里。固定视图用文案，自建的用服务器上的名字；能改名
+             删除的只有自建的。 -->
+        <template v-for="item in railFor(b.id)" v-else :key="item.key">
+          <button
+            v-if="!item.custom"
+            type="button"
+            class="folder sub"
+            :class="{ on: modelValue === b.id && folder === item.key }"
+            :title="item.hostName"
+            @click="emit('select', b.id, item.key)"
           >
-            <button type="button" class="custom-main" @click="emit('select', b.id, cf.viewKey)">
+            <el-icon class="ficon"><component :is="item.icon" /></el-icon>
+            <span class="fname">{{ t(`emails.folders.${item.key}`) }}</span>
+            <!-- 数字只给当前这个箱：别的箱的分文件夹计数服务端没给，
+                 编一个出来比空着坏得多。 -->
+            <span v-if="modelValue === b.id && countOf(item.key) > 0" class="cnt">
+              {{ countOf(item.key) > 99 ? '99+' : countOf(item.key) }}
+            </span>
+          </button>
+          <div
+            v-else
+            class="folder sub custom"
+            :class="{ on: modelValue === b.id && folder === item.key }"
+          >
+            <button type="button" class="custom-main" @click="emit('select', b.id, item.key)">
               <el-icon class="ficon"><Folder /></el-icon>
-              <span class="fname">{{ cf.name }}</span>
+              <span class="fname">{{ item.name }}</span>
             </button>
             <span class="custom-acts">
-              <button type="button" class="custom-act" :title="t('mailGate.renameFolder')" @click.stop="emit('renameFolder', cf)">✎</button>
-              <button type="button" class="custom-act" :title="t('mailGate.deleteFolder')" @click.stop="emit('deleteFolder', cf)">✕</button>
+              <button type="button" class="custom-act" :title="t('mailGate.renameFolder')" @click.stop="emit('renameFolder', item.folder!)">✎</button>
+              <button type="button" class="custom-act" :title="t('mailGate.deleteFolder')" @click.stop="emit('deleteFolder', item.folder!)">✕</button>
             </span>
           </div>
+        </template>
+        <template v-if="!isLocked(b.id)">
           <button type="button" class="folder sub new-folder" @click="emit('createFolder', b.id)">
             <span class="ficon">＋</span>
             <span class="fname">{{ t('mailGate.newFolder') }}</span>
@@ -236,8 +237,7 @@ import {
   parseExpanded,
   splitFolders,
   toggleExpanded,
-  type FolderDef,
-} from '../lib/mailFolders'
+  type FolderDef, mailboxRail } from '../lib/mailFolders'
 import type { CustomFolder } from '../lib/mailFolders'
 
 export interface Mailbox {
@@ -265,8 +265,8 @@ const props = defineProps<{
   tokensVersion: number
   /** 当前这个箱锁着没有。锁着时不画点不动的文件夹。 */
   locked: boolean
-  /** 每个信箱的自建文件夹。由页面拉取，这里只画。 */
-  customFolders: Record<number, CustomFolder[]>
+  /** 每个信箱在服务器上的全部文件夹（带角色）。由页面拉取，这里只画。 */
+  hostFolders: Record<number, CustomFolder[]>
 }>()
 const emit = defineEmits<{
   'update:modelValue': [number]
@@ -288,6 +288,9 @@ const adding = ref(false)
 
 const split = computed(() => splitFolders(props.folders))
 const perMailbox = computed(() => split.value.perMailbox)
+function railFor(accountId: number) {
+  return mailboxRail(perMailbox.value, props.hostFolders[accountId] ?? [])
+}
 const shared = computed(() => split.value.shared)
 
 function countOf(key: string): number {

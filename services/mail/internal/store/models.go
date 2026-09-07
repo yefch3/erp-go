@@ -361,6 +361,7 @@ type MailFolder struct {
 	HostName  string
 	CreatedBy int64
 	CreatedAt pgtype.Timestamptz
+	Role      string
 }
 
 type MailHost struct {

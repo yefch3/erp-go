@@ -96,8 +96,58 @@ export interface CustomFolder {
   id: number
   accountId: number
   name: string
-  /** 后端给的 view 参数，形如 F:供应商。 */
+  /** 后端给的 view 参数，形如 F:供应商。只有自建的（CUSTOM）有。 */
   viewKey: string
+  /** INBOX / SENT / JUNK / TRASH / ARCHIVE / DRAFTS / SYSTEM / CUSTOM。 */
+  role: string
+}
+
+/** 服务器上带角色的系统文件夹对应左栏哪个固定 key。 */
+export const ROLE_FOLDER_KEY: Record<string, string> = {
+  INBOX: 'inbox',
+  SENT: 'sent',
+  JUNK: 'junk',
+  TRASH: 'trash',
+  ARCHIVE: 'archive',
+}
+
+/** 左栏一个信箱下面的一行：固定视图或自建文件夹，同一级别。 */
+export interface RailItem {
+  key: string
+  icon?: unknown
+  /** 自建文件夹的名字（固定视图没有，用文案）。 */
+  name?: string
+  custom: boolean
+  /** 自建文件夹本身，改名/删除要用。 */
+  folder?: CustomFolder
+  /** 服务器上的实际名字，鼠标停上去看得到。 */
+  hostName?: string
+}
+
+/**
+ * 一个信箱下面按同一级别摆哪些行、什么顺序。
+ *
+ * 固定视图照 MAILBOX_FOLDER_KEYS 的顺序；「归档」只在服务器真有归档文件夹时
+ * 出现（263、Gmail 有，163、126、QQ 没有）——服务器上没有就没有。然后是自建
+ * 文件夹，按名字排。服务器自带而 ERP 不认得的（病毒文件夹、广告邮件）和服务器
+ * 的草稿箱这一期不显示：内容还没同步，显示出来是空壳。
+ */
+export function mailboxRail(fixed: readonly FolderDef[], hostFolders: readonly CustomFolder[]): RailItem[] {
+  const byKey = new Map(fixed.map((f) => [f.key, f]))
+  const hostByRole = new Map(hostFolders.map((f) => [f.role, f]))
+  const out: RailItem[] = []
+  for (const key of MAILBOX_FOLDER_KEYS) {
+    const def = byKey.get(key)
+    if (!def) continue
+    if (key === 'archive' && !hostByRole.has('ARCHIVE')) continue
+    const role = Object.entries(ROLE_FOLDER_KEY).find(([, k]) => k === key)?.[0]
+    out.push({ key, icon: def.icon, custom: false, hostName: role ? hostByRole.get(role)?.name : undefined })
+  }
+  const custom = hostFolders.filter((f) => f.role === 'CUSTOM').slice().sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+  for (const f of custom) {
+    out.push({ key: f.viewKey, name: f.name, custom: true, folder: f, hostName: f.name })
+  }
+  return out
 }
 
 export function isCustomFolderKey(key: string): boolean {

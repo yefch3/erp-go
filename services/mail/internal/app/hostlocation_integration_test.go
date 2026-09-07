@@ -16,6 +16,7 @@ import (
 // 会给 COPYUID 的假服务器：每次挪都把 UID 加 1000，并记下所有调用。
 type locatingHost struct {
 	Mailbox
+	archive  string   // 服务器的归档文件夹；空 = 没有（163、126、QQ）
 	moves    []string // "from→to:uid"
 	searches int      // 按 Message-ID 搜了几次（263 上这一步会失败）
 	purged   []uint32
@@ -30,7 +31,9 @@ func (h *locatingHost) JunkFolder(context.Context, MailAccount) (string, error) 
 func (h *locatingHost) SentFolder(context.Context, MailAccount) (string, error) {
 	return "已发送", nil
 }
-func (h *locatingHost) ArchiveFolder(context.Context, MailAccount) (string, error) { return "", nil }
+func (h *locatingHost) ArchiveFolder(context.Context, MailAccount) (string, error) {
+	return h.archive, nil
+}
 func (h *locatingHost) FolderStatus(context.Context, MailAccount, string) (FolderStatus, error) {
 	return FolderStatus{UIDValidity: 7}, nil
 }
@@ -260,5 +263,116 @@ func TestWithoutARecordPurgeFallsBackToSearch(t *testing.T) {
 	svc.publishFlagOps(ctx, SyncConfig{TenantID: tenantID})
 	if host.searches == 0 {
 		t.Fatal("没有记录时应该退回按 Message-ID 搜索")
+	}
+}
+
+// 归档以服务器为准：服务器有归档文件夹（263 的「已归档」、Gmail）就真的挪进去、
+// 记下新位置；没有（163、126、QQ）就只在 ERP 侧标记，服务器上原地不动。
+// 263 的「已归档」不声明属性，靠猜名字认出来（适配器那边有测试）；这里钉住
+// 认出来之后写回真的会走。
+func TestArchiveMovesIntoTheHostArchiveFolderOnlyWhenItHasOne(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenantID := time.Now().UnixNano()
+	const me = int64(9004)
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_flag_ops WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM email_inbound WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_sync_state WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_binding_log WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+	}()
+	box, _ := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	svc := New(pool, Deps{Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	res, err := svc.VerifyMailSecret(ctx, tenantID, me, BindRequest{
+		Email: "me@263.net", Provider: "p263", Secret: "pw",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 第二个账号给「没有归档文件夹」那一段用：归档文件夹的定位结果按账号缓存。
+	// 两次绑定都要在换上假服务器之前做，假服务器不会验证登录。
+	res2, err := svc.VerifyMailSecret(ctx, tenantID, me, BindRequest{
+		Email: "me2@163.com", Provider: "p263", Secret: "pw",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	insert := func(uid int64, mid string) int64 {
+		t.Helper()
+		var id int64
+		if err := pool.QueryRow(ctx, `INSERT INTO email_inbound
+			(tenant_id, account_id, owner_id, message_id, thread_key, folder, imap_uid,
+			 from_email, to_email, subject, received_at)
+			VALUES ($1, $2, $3, $4::text, $4::text, 'INBOX', $5, 'c@x', 'me@263.net', '归档', now())
+			RETURNING id`, tenantID, res.AccountID, me, mid, uid).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	hostLoc := func(id int64) (string, int64) {
+		t.Helper()
+		var f string
+		var u int64
+		if err := pool.QueryRow(ctx, `SELECT host_folder, host_uid FROM email_inbound WHERE id=$1`, id).Scan(&f, &u); err != nil {
+			t.Fatal(err)
+		}
+		return f, u
+	}
+	enqueue := func(uid int64, mid string) {
+		t.Helper()
+		if err := svc.q.EnqueueFlagOp(ctx, store.EnqueueFlagOpParams{
+			TenantID: tenantID, AccountID: res.AccountID, EmployeeID: me,
+			Folder: "INBOX", ImapUid: uid, Flag: flagArchive, Op: opAdd, MessageID: mid,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 263：有「已归档」→ 真挪，COPYUID 说新号 1005，记下来。
+	host := &locatingHost{archive: "已归档"}
+	svc.UseMailbox(host)
+	a := insert(5, "arch-a@mid")
+	enqueue(5, "arch-a@mid")
+	svc.publishFlagOps(ctx, SyncConfig{TenantID: tenantID})
+	if len(host.moves) != 1 || host.moves[0] != "INBOX→已归档:5" {
+		t.Errorf("有归档文件夹应该真挪过去：%v", host.moves)
+	}
+	if f, u := hostLoc(a); f != "已归档" || u != 1005 {
+		t.Errorf("挪走之后应该记着 (已归档, 1005)，实际 (%q, %d)", f, u)
+	}
+
+	// 163：没有 → 服务器原地不动，ERP 侧标记就是全部。
+	none := &locatingHost{}
+	svc.UseMailbox(none)
+	var b int64
+	if err := pool.QueryRow(ctx, `INSERT INTO email_inbound
+		(tenant_id, account_id, owner_id, message_id, thread_key, folder, imap_uid,
+		 from_email, to_email, subject, received_at)
+		VALUES ($1, $2, $3, 'arch-b@mid', 'arch-b@mid', 'INBOX', 6, 'c@x', 'me2@163.com', '归档', now())
+		RETURNING id`, tenantID, res2.AccountID, me).Scan(&b); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.q.EnqueueFlagOp(ctx, store.EnqueueFlagOpParams{
+		TenantID: tenantID, AccountID: res2.AccountID, EmployeeID: me,
+		Folder: "INBOX", ImapUid: 6, Flag: flagArchive, Op: opAdd, MessageID: "arch-b@mid",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc.publishFlagOps(ctx, SyncConfig{TenantID: tenantID})
+	if len(none.moves) != 0 {
+		t.Errorf("没有归档文件夹不该碰服务器：%v", none.moves)
+	}
+	if f, u := hostLoc(b); f != "" || u != 0 {
+		t.Errorf("没挪就不该记位置，实际 (%q, %d)", f, u)
 	}
 }
