@@ -21,6 +21,7 @@ import (
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
 	"github.com/emersion/go-imap/commands"
+	"github.com/emersion/go-imap/responses"
 
 	"github.com/sgao19/erp-go/services/mail/internal/adapter/xoauth2"
 	"github.com/sgao19/erp-go/services/mail/internal/app"
@@ -611,7 +612,18 @@ func moveKeepingCopyUID(c *client.Client, set *imap.SeqSet, dest string) (map[ui
 	} else {
 		cmd = &commands.Uid{Cmd: &commands.Copy{SeqSet: set, Mailbox: dest}}
 	}
-	status, err := c.Execute(cmd, nil)
+	// **应答码在两个不同的地方**，这是这段代码的全部要点：
+	//
+	//   · COPY（RFC 4315）把 [COPYUID …] 放在**加标签的完成响应**里。
+	//   · MOVE（RFC 6851 §4.3）放在**未加标签的 OK** 里，在 EXPUNGE 之前发，
+	//     因为加标签的那条要等挪完才发。
+	//
+	// c.Execute 的返回值只有加标签的那条。传 nil 当处理器的话，MOVE 的
+	// COPYUID 根本到不了我们手上——每次挪信都退回按 Message-ID 搜索，而 263
+	// 不认那种搜索，于是「信已移动，但没能确认它的新位置」。163 反倒是对的：
+	// 它不声明 MOVE，走 COPY，码在加标签的那条里。
+	seen := &copyUIDSeen{}
+	status, err := c.Execute(cmd, seen)
 	if err != nil {
 		return nil, err
 	}
@@ -619,6 +631,9 @@ func moveKeepingCopyUID(c *client.Client, set *imap.SeqSet, dest string) (map[ui
 		return nil, err
 	}
 	moved := copyUIDMap(status)
+	if len(moved) == 0 {
+		moved = copyUIDMap(seen.status)
+	}
 	if !hasMove {
 		// COPY 只是复制，原件还在源文件夹里：标删除再清掉，这才是"挪"。
 		// 和 go-imap 的 moveFallback 一样，只是 COPYUID 已经先接住了。
@@ -631,6 +646,20 @@ func moveKeepingCopyUID(c *client.Client, set *imap.SeqSet, dest string) (map[ui
 		}
 	}
 	return moved, nil
+}
+
+// copyUIDSeen 接住命令执行过程中未加标签的 [COPYUID …]。
+//
+// 只认这一个码，其余一律交还（ErrUnhandled），免得挡了 go-imap 自己要处理的
+// 那些未加标签的响应（EXPUNGE、EXISTS、CAPABILITY 之类）。
+type copyUIDSeen struct{ status *imap.StatusResp }
+
+func (u *copyUIDSeen) Handle(resp imap.Resp) error {
+	if s, ok := resp.(*imap.StatusResp); ok && s.Code == "COPYUID" {
+		u.status = s
+		return nil
+	}
+	return responses.ErrUnhandled
 }
 
 // copyUIDMap 把 [COPYUID 世代 旧集合 新集合] 解成「旧 UID → 新 UID」。
