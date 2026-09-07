@@ -55,19 +55,18 @@ type HostFolder struct {
 // 属性是权威的，可 263、网易这些老服务器不声明属性，只有名字——263 的
 // 草稿箱、已归档，网易的病毒文件夹，都是这样漏进「自建文件夹」列表的：
 // 列表里多出一个「草稿箱」，改名时服务器答 "can't rename default folder"。
-// 名单永远不可能完整，所以它是最后一道，不是唯一一道。大小写不分。
+//
+// 只收各家**真实的默认名**，不收「像系统文件夹的词」：Gmail 这类靠属性认的
+// 服务器上，用户建一个 Templates 或 Notes 是正当需求，挡了还说它是系统文件夹
+// 就是误导。名单永远不可能完整，所以它是最后一道，不是唯一一道。大小写不分。
 var providerSystemFolders = []string{
-	// 中文（263 / 网易 163、126 / QQ / 腾讯企业 / 阿里）
-	"收件箱", "草稿箱", "草稿", "已发送", "已发送邮件", "发件箱",
-	"已删除", "已删除邮件", "已删除的邮件", "垃圾邮件", "垃圾箱", "邮件回收站",
-	"已归档", "归档", "归档邮件", "已存档",
-	"病毒文件夹", "病毒邮件", "广告邮件", "订阅邮件", "通知邮件", "待办邮件",
-	"星标邮件", "其他文件夹", "记事本", "便签",
-	// 英文
-	"INBOX", "Drafts", "Draft", "Sent", "Sent Messages", "Sent Items", "Sent Mail", "Outbox",
-	"Deleted", "Deleted Messages", "Deleted Items", "Trash", "Junk", "Junk E-mail", "Junk Email",
-	"Spam", "Bulk Mail", "Archive", "Archives", "Notes", "Templates", "All Mail",
-	"Important", "Starred", "Flagged", "Virus",
+	// 263 / 网易 163、126 / 新浪
+	"收件箱", "草稿箱", "草稿夹", "已发送", "已发送邮件", "发件箱",
+	"已删除", "已删除邮件", "垃圾邮件", "垃圾箱", "已归档",
+	"病毒文件夹", "病毒邮件", "广告邮件", "订阅邮件",
+	// QQ / 腾讯企业 / 阿里 / 通用英文
+	"INBOX", "Drafts", "Sent", "Sent Messages", "Sent Items",
+	"Deleted Messages", "Deleted Items", "Trash", "Junk", "Spam", "Archive",
 }
 
 // isProviderSystemFolder 判断一个名字是不是某家服务器的系统文件夹。
@@ -216,10 +215,6 @@ func (s *Service) CreateMailFolder(ctx context.Context, tenantID, employeeID, ac
 // RenameMailFolder 改名：服务器上 RENAME，登记改名，行里存的名字跟着改。
 // RENAME 不改信的 UID（RFC 3501），所以行只改 folder 一列，视图由触发器重算。
 func (s *Service) RenameMailFolder(ctx context.Context, tenantID, employeeID, folderID int64, name string) (MailFolder, error) {
-	name, err := validFolderName(name)
-	if err != nil {
-		return MailFolder{}, err
-	}
 	f, err := s.q.GetMailFolder(ctx, store.GetMailFolderParams{TenantID: tenantID, ID: folderID})
 	if err != nil {
 		return MailFolder{}, apierr.NotFound("MAIL_FOLDER_NOT_FOUND", "文件夹不存在")
@@ -228,8 +223,14 @@ func (s *Service) RenameMailFolder(ctx context.Context, tenantID, employeeID, fo
 	if err != nil {
 		return MailFolder{}, err
 	}
-	if name == f.HostName {
+	// 改成同名 = 不动。放在校验前面：名单扩了之后，一个改版前就叫「已归档」
+	// 的正当文件夹，改成同名本该是无操作，先校验会把它拒掉。
+	if strings.TrimSpace(name) == f.HostName {
 		return MailFolder{ID: f.ID, AccountID: f.AccountID, Name: f.Name, HostName: f.HostName}, nil
+	}
+	name, err = validFolderName(name)
+	if err != nil {
+		return MailFolder{}, err
 	}
 	if err := s.mailbox.RenameFolder(ctx, acct, f.HostName, name); err != nil {
 		return MailFolder{}, apierr.Invalid("MAIL_FOLDER_RENAME_FAILED", "邮箱服务器拒绝重命名："+err.Error())

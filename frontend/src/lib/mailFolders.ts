@@ -123,19 +123,15 @@ export function folderNameProblem(name: string): string {
 
 /**
  * 各家邮箱服务器自带的系统文件夹名，和后端 providerSystemFolders 同一份：
- * 这些名字不能拿来建自建文件夹（263 会答 "can't rename default folder"，
- * 网易会建出第二个同名的）。大小写不分。
+ * 只收各家真实的默认名，不收「像系统文件夹的词」——Gmail 上建个 Templates 是正当的。
+ * 这些名字不能拿来建自建文件夹（263 会拒，网易会建出第二个同名的）。大小写不分。
  */
 export const PROVIDER_SYSTEM_FOLDERS = [
-  '收件箱', '草稿箱', '草稿', '已发送', '已发送邮件', '发件箱',
-  '已删除', '已删除邮件', '已删除的邮件', '垃圾邮件', '垃圾箱', '邮件回收站',
-  '已归档', '归档', '归档邮件', '已存档',
-  '病毒文件夹', '病毒邮件', '广告邮件', '订阅邮件', '通知邮件', '待办邮件',
-  '星标邮件', '其他文件夹', '记事本', '便签',
-  'INBOX', 'Drafts', 'Draft', 'Sent', 'Sent Messages', 'Sent Items', 'Sent Mail', 'Outbox',
-  'Deleted', 'Deleted Messages', 'Deleted Items', 'Trash', 'Junk', 'Junk E-mail', 'Junk Email',
-  'Spam', 'Bulk Mail', 'Archive', 'Archives', 'Notes', 'Templates', 'All Mail',
-  'Important', 'Starred', 'Flagged', 'Virus',
+  '收件箱', '草稿箱', '草稿夹', '已发送', '已发送邮件', '发件箱',
+  '已删除', '已删除邮件', '垃圾邮件', '垃圾箱', '已归档',
+  '病毒文件夹', '病毒邮件', '广告邮件', '订阅邮件',
+  'INBOX', 'Drafts', 'Sent', 'Sent Messages', 'Sent Items',
+  'Deleted Messages', 'Deleted Items', 'Trash', 'Junk', 'Spam', 'Archive',
 ]
 
 export function isProviderSystemFolder(name: string): boolean {

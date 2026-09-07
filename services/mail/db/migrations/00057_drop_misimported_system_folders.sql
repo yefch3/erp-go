@@ -6,18 +6,12 @@
 --
 -- 代码已经按各家系统名单跳过它们；这里把已经登记进去的清掉。只删里面没有
 -- ERP 信的：真有信在里面的（用户挪进去过），留着比让信失去文件夹强。
+-- 只删生产库里实际观察到的那四个名字（2026-09-06 查过：六条登记全是它们，都在
+-- 首次列文件夹的同一分钟登记的，没有用户自建的撞名）。不按整份名单删：一个
+-- 用户改版前正当建的同名文件夹一旦被删，导入不会再把它捡回来、同名又不让
+-- 重建，它就从 ERP 里静默消失了。
 DELETE FROM mail_folders f
-WHERE lower(f.host_name) IN (
-    '收件箱', '草稿箱', '草稿', '已发送', '已发送邮件', '发件箱',
-    '已删除', '已删除邮件', '已删除的邮件', '垃圾邮件', '垃圾箱', '邮件回收站',
-    '已归档', '归档', '归档邮件', '已存档',
-    '病毒文件夹', '病毒邮件', '广告邮件', '订阅邮件', '通知邮件', '待办邮件',
-    '星标邮件', '其他文件夹', '记事本', '便签',
-    'inbox', 'drafts', 'draft', 'sent', 'sent messages', 'sent items', 'sent mail', 'outbox',
-    'deleted', 'deleted messages', 'deleted items', 'trash', 'junk', 'junk e-mail', 'junk email',
-    'spam', 'bulk mail', 'archive', 'archives', 'notes', 'templates', 'all mail',
-    'important', 'starred', 'flagged', 'virus'
-)
+WHERE f.host_name IN ('草稿箱', '已归档', '病毒文件夹', '病毒邮件')
 AND NOT EXISTS (
     SELECT 1 FROM email_inbound i
     WHERE i.tenant_id = f.tenant_id AND i.account_id = f.account_id
