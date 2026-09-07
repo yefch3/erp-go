@@ -927,29 +927,29 @@ WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
        OR i.account_id = sqlc.narg(account_id)::bigint)
   AND i.thread_key = sqlc.arg(thread_key)::text
   AND NOT i.is_bounce
-  -- A mail speaks once per conversation. Gmail files a copy of every send
-  -- into the SENT folder, and the host mirror syncs that copy in as one more
-  -- inbound row — the same physical mail under a second id. Unguarded, a
-  -- reply sent from the ERP appears twice (its OUT row and its mirror), and
-  -- a self-addressed mail twice (its INBOX copy and its SENT copy). A SENT
-  -- copy is therefore silenced when the mail it duplicates is already in the
-  -- thread; one without a Message-ID cannot be proven a duplicate and stays.
-  AND NOT (i.folder = 'SENT' AND i.message_id <> '' AND (
-    -- the mirror of a mail this service sent: its Message-ID was minted
-    -- from the outbound row's message_key
-    EXISTS (
-      SELECT 1 FROM email_messages sent
-      WHERE sent.tenant_id = i.tenant_id AND sent.sender_id = i.owner_id
-        AND sent.message_key::text = split_part(i.message_id, '@', 1)
-    )
-    -- the SENT copy of a mail another folder already shows (a mail sent to
-    -- yourself from any client: the INBOX copy is the one that stays)
-    OR EXISTS (
-      SELECT 1 FROM email_inbound twin
-      WHERE twin.tenant_id = i.tenant_id AND twin.owner_id = i.owner_id
-        AND twin.thread_key = i.thread_key AND twin.message_id = i.message_id
-        AND twin.id <> i.id AND twin.folder <> 'SENT' AND NOT twin.is_bounce
-    )
+  -- A mail speaks once per conversation. 两条规则，各挡一种重复。
+  --
+  -- 一、**这封信就是我们自己发出去的那一封**：它的 Message-ID 是从 OUT 那一行
+  -- 的 message_key 生成的。上面那一腿已经把它作为「我发出」列过一次了，这里
+  -- 再列一次就是同一封信出现两遍。
+  --
+  -- 不限文件夹是有意的。原来只挡 SENT，因为当时想到的只有「Gmail 把每封发出
+  -- 的信也塞进已发送」。可**发给自己名下另一个信箱**时，那封信会落进那个箱的
+  -- 收件箱——照样是同一封信的第二次出现，界面上一条写着收件人、一条写着发件人，
+  -- 看着像是重复发了两遍。测试时几乎必然撞上，因为测试就是发给自己。
+  AND NOT (i.message_id <> '' AND EXISTS (
+    SELECT 1 FROM email_messages sent
+    WHERE sent.tenant_id = i.tenant_id AND sent.sender_id = i.owner_id
+      AND sent.message_key::text = split_part(i.message_id, '@', 1)
+  ))
+  -- 二、别的客户端发的信，在已发送里留了一份，而同一封信在别的文件夹里也有
+  -- （给自己发的信：收件箱那份是留下的那一份）。这一条只对已发送成立——
+  -- 反过来会把收件箱那份也挡掉，两份都没了。
+  AND NOT (i.folder = 'SENT' AND i.message_id <> '' AND EXISTS (
+    SELECT 1 FROM email_inbound twin
+    WHERE twin.tenant_id = i.tenant_id AND twin.owner_id = i.owner_id
+      AND twin.thread_key = i.thread_key AND twin.message_id = i.message_id
+      AND twin.id <> i.id AND twin.folder <> 'SENT' AND NOT twin.is_bounce
   ))
 ORDER BY at;
 

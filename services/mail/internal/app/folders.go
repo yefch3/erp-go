@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/sgao19/erp-go/pkg/apierr"
@@ -166,20 +167,32 @@ func (s *Service) ownedAccount(ctx context.Context, tenantID, employeeID, accoun
 	return acct, nil
 }
 
-// ListMailFolders 列出一个信箱的自建文件夹。
+// ListMailFolders 列出一个信箱的文件夹。
 //
-// 顺手把服务器上有、我们还没登记的文件夹登记进来：员工在 Foxmail 里建的
-// 文件夹也该在 ERP 里看得到。登记失败或服务器连不上都不影响返回——列表
-// 以库里为准，服务器只是补充。
+// **答案来自库，不等服务器。** 顺手对一遍服务器上有哪些（员工在 Foxmail 里
+// 建的文件夹也该看得到），但那一步放到后台去：它要发一条 IMAP LIST，连接是
+// 冷的时候还要重新握手加登录，人在页面上要等好几秒才看见左栏——而绝大多数
+// 时候答案和库里的一模一样。
+//
+// 只有一种情况非等不可：库里一条都没有。那时候直接返回等于给一个空左栏，
+// 而空左栏和"这个箱没有文件夹"分不出来。
 func (s *Service) ListMailFolders(ctx context.Context, tenantID, employeeID, accountID int64) ([]MailFolder, error) {
 	acct, err := s.ownedAccount(ctx, tenantID, employeeID, accountID)
 	if err != nil {
 		return nil, err
 	}
-	s.syncHostFolders(ctx, tenantID, employeeID, acct)
 	rows, err := s.q.ListMailFolders(ctx, store.ListMailFoldersParams{TenantID: tenantID, AccountID: accountID})
 	if err != nil {
 		return nil, err
+	}
+	if len(rows) == 0 {
+		s.syncHostFolders(ctx, tenantID, employeeID, acct)
+		rows, err = s.q.ListMailFolders(ctx, store.ListMailFoldersParams{TenantID: tenantID, AccountID: accountID})
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		s.refreshHostFoldersInBackground(tenantID, employeeID, acct)
 	}
 	out := make([]MailFolder, 0, len(rows))
 	for _, r := range rows {
@@ -243,6 +256,29 @@ func roleOf(hf HostFolder, specials map[string]string) string {
 		return roleCustom
 	}
 }
+
+// refreshHostFoldersInBackground 在请求答完之后再去和服务器对一遍。
+//
+// 脱开请求的上下文：浏览器拿到列表就走了，请求的 ctx 随即取消，而这一步还
+// 没发出去。同一个信箱同时只跑一个——三个页签一起刷新不该变成三条 LIST。
+//
+// 代价说清楚：在 Foxmail 里新建的文件夹，要到**下一次**打开这个信箱才出现。
+// 拿这个换掉每次进邮箱都等几秒，值。
+func (s *Service) refreshHostFoldersInBackground(tenantID, employeeID int64, acct MailAccount) {
+	if _, busy := s.folderRefresh.LoadOrStore(acct.AccountID, true); busy {
+		return
+	}
+	go func() {
+		defer s.folderRefresh.Delete(acct.AccountID)
+		ctx, cancel := context.WithTimeout(context.Background(), folderRefreshTimeout)
+		defer cancel()
+		s.syncHostFolders(ctx, tenantID, employeeID, acct)
+	}()
+}
+
+// folderRefreshTimeout 给后台那一趟对账封顶：一台连上就挂的服务器不该留下
+// 一个永远跑不完的 goroutine，也不该把「同时只跑一个」这个锁永远占着。
+const folderRefreshTimeout = 30 * time.Second
 
 // syncHostFolders 把服务器 LIST 回来的全部文件夹登记进来（或刷新角色），
 // 服务器上已经没有、库里又没有信的登记清掉。LIST 失败就什么都不动，列表

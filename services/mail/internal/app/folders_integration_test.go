@@ -260,6 +260,14 @@ func TestListingRegistersEveryHostFolderWithItsRole(t *testing.T) {
 	_ = kept
 	f.host.folders = []string{"[Gmail]/All Mail", "Drafts", "草稿箱", "已归档", "病毒文件夹"}
 	f.host.special = nil
+	// 直接叫对账那一步：登记表非空时 ListMailFolders 是把对账放到后台去的
+	// （见 refreshHostFoldersInBackground），在测试里等它落地只会让这条断言
+	// 看运气。清理这件事本身在下面照常验。
+	acct, err := f.svc.ForAccount(context.Background(), f.tenantID, f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.svc.syncHostFolders(context.Background(), f.tenantID, f.me, acct)
 	got, err = f.svc.ListMailFolders(context.Background(), f.tenantID, f.me, f.account)
 	if err != nil {
 		t.Fatal(err)
@@ -906,5 +914,64 @@ func TestVirtualStaysVirtualEvenIfTheNextListLooksOrdinary(t *testing.T) {
 	}
 	if r := roleOfName(got, "全部邮件"); r != roleVirtual {
 		t.Errorf("VIRTUAL 不该被降回去，实际 %q", r)
+	}
+}
+
+// 打开邮箱页不该等服务器。
+//
+// 列文件夹要发一条 IMAP LIST，连接冷的时候还要重新握手加登录——人在页面上
+// 要等好几秒才看见左栏，而绝大多数时候答案和库里的一模一样。所以：库里有就
+// 立刻回，顺手在后台对一遍；库里一条都没有才非等不可，不然给的是个空左栏，
+// 和「这个箱没有文件夹」分不出来。
+func TestFolderListAnswersFromTheDatabaseAndRefreshesBehind(t *testing.T) {
+	f := newFolderFixture(t, 9116)
+	ctx := context.Background()
+	f.host.folders = []string{"重要客户"}
+	lists := 0
+	f.host.onList = func() { lists++ }
+
+	// 第一次：登记表是空的，非等不可，回来就得有内容。
+	got, err := f.svc.ListMailFolders(ctx, f.tenantID, f.me, f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lists != 1 {
+		t.Errorf("登记表空时应该当场问一次服务器，问了 %d 次", lists)
+	}
+	found := false
+	for _, g := range got {
+		if g.Name == "重要客户" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("第一次就该看得到服务器上的文件夹：%+v", got)
+	}
+
+	// 之后：立刻从库里回，服务器那一趟在后台。
+	f.host.folders = append(f.host.folders, "项目B")
+	if _, err := f.svc.ListMailFolders(ctx, f.tenantID, f.me, f.account); err != nil {
+		t.Fatal(err)
+	}
+	// 后台那一趟总会落地——只是不在这次请求里。
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		got, err = f.svc.ListMailFolders(ctx, f.tenantID, f.me, f.account)
+		if err != nil {
+			t.Fatal(err)
+		}
+		has := false
+		for _, g := range got {
+			if g.Name == "项目B" {
+				has = true
+			}
+		}
+		if has {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("后台那一趟没落地，项目B 一直没出现：%+v", got)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
