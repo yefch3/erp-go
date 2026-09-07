@@ -119,6 +119,13 @@ const (
 	idleRetryAfter = 30 * time.Minute
 )
 
+// ErrPushUnsupported 说这台服务器根本不支持 IDLE，别再为它挂连接。
+//
+// 这不是失败，是一个事实：263 就是这样（能力列表里没有 IDLE）。适配器不能
+// 让 go-imap 悄悄退化成「挂着连接每 60 秒 NOOP」——那比普通轮询更贵，连接
+// 一断就要重新握手加登录。收到这个就把这个箱交给两分钟一轮的轮询。
+var ErrPushUnsupported = errors.New("mail: host does not support IMAP push")
+
 // idleHealth 记着每个账号的 IDLE 撑得住撑不住。
 type idleHealth struct {
 	shortRuns int

@@ -3,6 +3,7 @@ package mailfetch
 import (
 	"bufio"
 	"context"
+	"errors"
 	"net"
 	"strings"
 	"sync"
@@ -10,6 +11,8 @@ import (
 	"time"
 
 	"github.com/emersion/go-imap/utf7"
+
+	"github.com/sgao19/erp-go/services/mail/internal/app"
 )
 
 // 一台会答 COPYUID 的假服务器。hasMove 决定它声明不声明 MOVE；
@@ -241,5 +244,23 @@ func TestArchiveFolderIsGuessedByItsChineseName(t *testing.T) {
 	}
 	if name != "已归档" {
 		t.Errorf("应该猜出 263 的「已归档」，实际 %q", name)
+	}
+}
+
+// 服务器不支持 IDLE 时，必须明说，不能让 go-imap 悄悄退化成「挂着连接每 60
+// 秒发一个 NOOP」。
+//
+// 263 就是这种：能力列表里没有 IDLE。那种伪装成推送的轮询比普通轮询更贵——
+// 连接一断就要重新握手加登录，而普通轮询用的是连接池里的连接。生产上那个
+// 每 66 秒一次的"掉线"，就是这个 60 秒 NOOP 节奏加一次往返。
+func TestAHostWithoutIdleSaysSoInsteadOfPollingOnAHeldConnection(t *testing.T) {
+	srv := startMoveFake(t, true, "") // 这台假服务器的能力里没有 IDLE
+	f := NewIMAP(5*time.Second, 2*time.Second, nil)
+	_, err := f.WaitForNews(context.Background(), acctFor(srv.addr), "INBOX", 3*time.Second)
+	if !errors.Is(err, app.ErrPushUnsupported) {
+		t.Fatalf("不支持 IDLE 的服务器应该明确说出来，拿到 %v", err)
+	}
+	if srv.saw("NOOP") {
+		t.Error("不该退化成挂着连接发 NOOP——那比普通轮询还贵")
 	}
 }

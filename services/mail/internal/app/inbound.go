@@ -1329,6 +1329,15 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 		startedAt := time.Now()
 		news, err := waiter.WaitForNews(ctx, acct, "INBOX", IdleRestartEvery+time.Minute)
 		if err != nil {
+			if errors.Is(err, ErrPushUnsupported) {
+				// 这台服务器没有推送这回事。别再为它挂连接——两分钟一轮的
+				// 轮询本来就在跑，而且用的是连接池里的连接，比挂着一条自己
+				// 的便宜。隔一阵再问一次：服务商会升级。
+				s.log.Info("host has no IMAP push; leaving this mailbox to the poller",
+					"account", accountID, "retry_in", idleRetryAfter)
+				health.quietUntil = time.Now().Add(idleRetryAfter)
+				continue
+			}
 			if BenignIdleDrop(err) {
 				if !health.noteIdleRun(time.Now(), time.Since(startedAt), true) {
 					// 连着几圈都撑不到一分半。再重连下去只是每分钟登录一次。
