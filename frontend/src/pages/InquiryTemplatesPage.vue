@@ -7,7 +7,7 @@
         <p>{{ t('inquiryTemplates.subtitle') }}</p>
       </div>
       <div class="head-actions">
-        <el-button @click="router.push('/sales/intakes')">← {{ t('salesNav.intakes') }}</el-button>
+        <el-button @click="router.push('/sales/inquiries')">← {{ t('salesNav.inquiries') }}</el-button>
         <el-button v-if="canWrite" type="primary" @click="openCreate()">{{ t('inquiryTemplates.create') }}</el-button>
       </div>
     </header>

@@ -44,7 +44,7 @@ const roleDescriptions: Record<string, Record<Locale, string>> = {
     es: 'Gestionar abastecimiento, necesidades excepcionales, aprobación y cancelación de órdenes',
   },
   SALES: {
-    zh: '维护本人客户询盘、客户报价和出口合同',
+    zh: '维护本人客户询盘、客户报价和外销合同',
     en: 'Maintain own customer inquiries, quotations and export contracts',
     es: 'Mantener sus consultas, cotizaciones y contratos de exportación',
   },

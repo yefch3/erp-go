@@ -1,0 +1,2 @@
+87d73c4993382e881a53d593c3c42c6cb102c02c feat(finance): centralize record actions and edit manual entries
+2fc65f6a578fe277f0033651905d1f09ee58482a fix(finance): simplify actions and responsive layout

@@ -512,6 +512,8 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("inventory:stock:write")).Post("/api/outbounds/{id}/cancel", s.cancelOutbound)
 		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements", s.listRequirements)
 		r.With(s.perm("procurement:requirement:read"), s.perm("procurement:order:write")).Post("/api/requirements/purchase-template/export", s.exportPurchaseTemplate)
+		r.Post("/api/inquiry-workspace", s.inquiryWorkspace)
+		r.Get("/api/inquiry-files", s.inquiryFile)
 		// 客户询盘由销售维护；客户选择项不因此开放完整客户档案菜单。
 		r.With(s.perm("sales:inquiry:write")).Get("/api/sourcing-customer-options", s.listSourcingCustomerOptions)
 		r.With(s.perm("sales:inquiry:write")).Get("/api/sourcing-customer-options/{id}/contacts", s.listSourcingCustomerContacts)
@@ -538,7 +540,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/participants", s.listSourcingParticipants)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/sourcing-cases/{id}/shipping-collaboration", s.getCaseShippingCollaboration)
 		r.With(s.perm("sales:inquiry:write")).Post("/api/sourcing-cases", s.createSourcingCase)
-		r.With(s.perm("sales:inquiry:write")).Post("/api/sourcing-intakes/import", s.importSourcingIntake)
+		r.With(s.perm("sales:inquiry:write")).Post("/api/sourcing-intakes/import", s.retiredInquiryAction)
 		r.With(s.perm("sales:inquiry:write")).Post("/api/sourcing-cases/{id}/lines", s.addSourcingLine)
 		// 标准询盘模板属于销售接收客户需求的工具。
 		r.With(s.perm("sales:inquiry:read")).Get("/api/inquiry-templates", s.listInquiryTemplates)
@@ -575,11 +577,11 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("procurement:sourcing:approve")).Post("/api/cost-scenarios/{id}/confirm", s.confirmCostScenario)
 		r.With(s.perm("procurement:sourcing:approve")).Post("/api/cost-scenarios/{id}/submit-to-sales", s.submitCostToSales)
 		// 采购经理确认成本，到此采购责任结束；生成客户报价只由销售报价权限控制。
-		r.With(s.perm("export:quotation:write")).Post("/api/cost-scenarios/{id}/create-customer-quotation", s.createCustomerQuotationFromCost)
+		r.With(s.perm("export:quotation:write")).Post("/api/cost-scenarios/{id}/create-customer-quotation", s.retiredInquiryAction)
 		r.With(s.perm("procurement:sourcing:price")).Post("/api/factory-rfqs/{id}/supplier-quotes", s.createSupplierQuote)
 		r.With(s.perm("procurement:sourcing:read")).Get("/api/factory-rfqs/{id}/workbook", s.getFactoryRFQWorkbook)
 		r.With(s.perm("procurement:sourcing:price")).Post("/api/factory-rfqs/{id}/supplier-quotes/import", s.importSupplierQuoteWorkbook)
-		r.With(s.perm("procurement:sourcing:send")).Post("/api/factory-rfqs/{id}/send", s.sendFactoryRFQ)
+		r.With(s.perm("procurement:sourcing:send")).Post("/api/factory-rfqs/{id}/send", s.retiredInquiryAction)
 		r.With(s.perm("procurement:requirement:read")).Get("/api/requirements/{id}", s.getRequirement)
 		r.With(s.perm("procurement:requirement:exception")).Post("/api/requirements", s.createRequirement)
 		r.With(s.perm("procurement:requirement:write")).Post("/api/requirements/{id}/cancel", s.cancelRequirement)

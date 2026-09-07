@@ -8,6 +8,9 @@ import "erp/common/v1/pagination.proto";
 // prices, under which exchange rate. Once sent, a quotation is a promise, so
 // the rate it used is frozen into the document rather than looked up again.
 service QuotationService {
+  // Internal sourcing coordination: serialize withdrawal against quotations
+  // and contracts without introducing a business approval/status.
+  rpc SetInquiryAvailability(SetInquiryAvailabilityRequest) returns (SetInquiryAvailabilityResponse);
   rpc ListQuotations(ListQuotationsRequest) returns (ListQuotationsResponse);
   rpc GetQuotation(GetQuotationRequest) returns (GetQuotationResponse);
   rpc CreateQuotation(CreateQuotationRequest) returns (CreateQuotationResponse);
@@ -20,6 +23,7 @@ service QuotationService {
   rpc GetQuotationWorkbook(GetQuotationWorkbookRequest) returns (GetQuotationWorkbookResponse);
   rpc GetQuotationPdf(GetQuotationPdfRequest) returns (GetQuotationPdfResponse);
 }
+
 
 // FxSnapshot is the rate as it stood when the document was created. It is
 // embedded, never a reference: later rate moves must not rewrite history.
@@ -252,3 +256,6 @@ message GetQuotationWorkbookRequest { int64 id = 1; }
 message GetQuotationWorkbookResponse { string file_name = 1; bytes file_data = 2; }
 message GetQuotationPdfRequest { int64 id = 1; }
 message GetQuotationPdfResponse { string file_name = 1; bytes file_data = 2; }
+
+message SetInquiryAvailabilityRequest { int64 case_id = 1; bool available = 2; }
+message SetInquiryAvailabilityResponse {}

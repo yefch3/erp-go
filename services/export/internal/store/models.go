@@ -171,6 +171,11 @@ type FailedEvent struct {
 	ParkedAt      pgtype.Timestamptz
 }
 
+type InquiryWithdrawalFence struct {
+	TenantID int64
+	CaseID   int64
+}
+
 type OutboxEvent struct {
 	ID            int64
 	TenantID      int64

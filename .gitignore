@@ -34,3 +34,5 @@ coverage.out
 
 # Requirements and planning documents — local working material, never pushed
 /docs/requirements/
+# D1 generated local isolation configuration and runtime evidence
+.d1-environment/

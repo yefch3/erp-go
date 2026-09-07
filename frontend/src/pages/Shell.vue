@@ -1,6 +1,6 @@
 <template>
   <el-container class="shell">
-    <el-aside width="220px" class="side">
+    <el-aside width="220px" class="side" :class="{ 'side-open': navigationOpen }">
       <div class="side-brand">
         <span class="mark">ERP</span>
         <span class="txt">{{ t('login.title') }}</span>
@@ -22,7 +22,8 @@
         <el-menu-item index="/basic/employees/me">
           {{ t('menu.myProfile') }}
         </el-menu-item>
-        <el-menu-item v-if="auth.can('mail:email:read')" index="/emails">
+        <!-- 邮箱是每位在职 ERP 用户的个人工作入口，访问范围仍由服务端固定为本人。 -->
+        <el-menu-item index="/emails">
           {{ t('menu.emails') }}
         </el-menu-item>
         <!-- 一张订单的走向：签合同 → 采购 → 出货 → 收钱。四个分组按这个
@@ -281,7 +282,7 @@
     </el-aside>
     <el-container class="pane-col">
       <el-header class="topbar">
-        <span />
+        <button class="navigation-toggle" type="button" :aria-expanded="navigationOpen" aria-label="展开或收起导航" @click="navigationOpen = !navigationOpen">☰ 导航</button>
         <div class="topbar-right">
           <ShippingArrivalNotifications
             v-if="auth.can('shipping:schedule:read')"
@@ -359,7 +360,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -378,6 +379,8 @@ const pw = reactive({ oldPassword: '', newPassword: '', confirm: '' })
 const { t } = useI18n()
 const auth = useAuthStore()
 const route = useRoute()
+const navigationOpen = ref(false)
+watch(() => route.path, () => { navigationOpen.value = false })
 const router = useRouter()
 const shippingNotifications = ref<InstanceType<typeof ShippingArrivalNotifications> | null>(null)
 const basicDataOpen = ref(false)
@@ -439,10 +442,10 @@ const warehouseActive = computed(() =>
 const salesItems = computed(() => [
   ...(auth.can('sales:inquiry:read')
     ? [
-        { path: '/sales/intakes', label: t('salesNav.intakes') },
-        { path: '/sales/inquiries', label: t('salesNav.inquiries') },
-        { path: '/sales/settings/inquiry-templates', label: t('salesNav.inquiryTemplates') },
-      ]
+         { path: '/sales/inquiries', label: t('salesNav.inquiries') },
+         { path: '/sales/quotations', label: '客户报价' },
+         { path: '/sales/settings/inquiry-templates', label: t('salesNav.inquiryTemplates') },
+       ]
     : []),
   ...(auth.can('export:contract:read')
     ? [
@@ -521,8 +524,6 @@ const basicDataItems = computed(() => [
 
 // 采购管理与基础数据使用同一种浮层导航，子页面不再各自重复一排按钮。
 const procurementItems = computed(() => [
-  { path: '/procurement', label: t('procurementNav.workbench'), allowed: true },
-  { path: '/procurement/sourcing/pending', label: t('procurementNav.pendingSourcing'), allowed: auth.can('procurement:sourcing:read') },
   { path: '/procurement/sourcing', label: t('procurementNav.sourcing'), allowed: auth.can('procurement:sourcing:read') },
   { path: '/requirements', label: t('procurementNav.requirements'), allowed: auth.can('procurement:requirement:read') },
   { path: '/purchase-orders', label: t('procurementNav.orders'), allowed: auth.can('procurement:order:read') },
@@ -856,4 +857,18 @@ async function changePassword() {
   color: #334155;
   font-size: 14px;
 }
+
+.side { flex-shrink: 0; }
+.navigation-toggle { display: none; border: 1px solid #dbe2ea; border-radius: 8px; padding: 8px 12px; background: white; color: #334155; cursor: pointer; white-space: nowrap; }
+.topbar { justify-content: flex-end; }
+.content { background: #f3f6fa; }
+@media (max-width: 1000px) {
+  .shell { position: relative; }
+  .side { display: none; }
+  .side.side-open { display: block; position: absolute; top: 60px; bottom: 0; left: 0; height: calc(100% - 60px); z-index: 100; box-shadow: 8px 0 24px #0f172a26; }
+  .navigation-toggle { display: block; margin-right: auto; }
+  .content { padding: 16px; }
+  .topbar { padding: 0 16px; gap: 12px; }
+}
+
 </style>

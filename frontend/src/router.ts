@@ -43,15 +43,15 @@ export const router = createRouter({
         { path: 'basic/suppliers/factories/:id', component: () => import('./pages/FactoryDetailPage.vue') },
         { path: 'basic/suppliers/:id', component: () => import('./pages/SupplierDetailPage.vue') },
         { path: 'products', component: () => import('./pages/ProductsPage.vue') },
-        // SP1 只调整模块入口与页面视角：底层仍复用同一套询盘、寻源和报价数据。
-        { path: 'sales/intakes', component: () => import('./pages/ProcurementIntakesPage.vue') },
-        { path: 'sales/inquiries', component: () => import('./pages/SourcingCasesListPage.vue') },
-        { path: 'sales/inquiries/:id', component: () => import('./pages/SourcingCaseDetailPage.vue') },
-        // 报价属于询盘上下文；旧书签回到询盘列表，报价数据仍由案件页和合同引用。
-        { path: 'sales/quotations', redirect: '/sales/inquiries' },
+        // 客户询盘、报价接收与部门报价使用独立页面视角。
+        { path: 'sales/intakes', redirect: (to) => ({ path: '/sales/inquiries', query: to.query }) },
+        { path: 'sales/inquiries', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'SALES' } },
+        { path: 'sales/inquiries/:id', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'SALES' } },
+        // 客户报价直接接收已提交源报价。
+        { path: 'sales/quotations', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'QUOTATIONS' } },
         { path: 'sales/settings/inquiry-templates', component: () => import('./pages/InquiryTemplatesPage.vue') },
         // 旧书签保留一个兼容版本，并把查询条件一并带到新入口。
-        { path: 'quotations', redirect: '/sales/inquiries' },
+        { path: 'quotations', redirect: '/sales/quotations' },
         { path: 'contracts', component: () => import('./pages/ContractsPage.vue') },
         { path: 'basic/excel-usage', component: () => import('./pages/ExcelUsagePage.vue') },
         { path: 'platform/tenants', component: () => import('./pages/PlatformTenantsPage.vue') },
@@ -60,7 +60,7 @@ export const router = createRouter({
         // 船运操作台只属于能够维护船期的人员。销售和采购查看售前结果时
         // 走各自案件详情里的只读“船运协作”，不直接进入这里。
         { path: 'shipping', redirect: '/shipping/sourcing' },
-        { path: 'shipping/sourcing', component: () => import('./pages/ShippingSourcingPage.vue'), meta: { permission: 'shipping:sourcing:read' } },
+        { path: 'shipping/sourcing', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'LOGISTICS' } },
         { path: 'shipping/schedules', component: () => import('./pages/ShippingPage.vue'), meta: { permission: 'shipping:schedule:read' } },
         { path: 'shipping/:id', component: () => import('./pages/ShippingDetailPage.vue'), meta: { permission: 'shipping:schedule:read' } },
         // 客户对账：待核销 / 已完成是它下面的两个子页，靠 ?view=done 分。
@@ -84,12 +84,12 @@ export const router = createRouter({
         { path: 'warehouses/receipts', component: () => import('./pages/WarehouseReceiptsPage.vue') },
         { path: 'warehouses/imports', component: () => import('./pages/WarehouseImportsPage.vue') },
         { path: 'warehouses/settings', component: () => import('./pages/WarehouseSettingsPage.vue') },
-        { path: 'procurement', component: () => import('./pages/ProcurementPage.vue') },
+        { path: 'procurement', redirect: '/procurement/sourcing' },
         { path: 'procurement/intakes', redirect: (to) => ({ path: '/sales/intakes', query: to.query }) },
         { path: 'procurement/settings/inquiry-templates', redirect: (to) => ({ path: '/sales/settings/inquiry-templates', query: to.query }) },
-        { path: 'procurement/sourcing/pending', component: () => import('./pages/SourcingCasesListPage.vue') },
-        { path: 'procurement/sourcing', component: () => import('./pages/SourcingCasesListPage.vue') },
-        { path: 'procurement/sourcing/:id', component: () => import('./pages/SourcingCaseDetailPage.vue') },
+        { path: 'procurement/sourcing/pending', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'PROCUREMENT' } },
+        { path: 'procurement/sourcing', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'PROCUREMENT' } },
+        { path: 'procurement/sourcing/:id', component: () => import('./pages/InquiryWorkspacePage.vue'), props: { view: 'PROCUREMENT' } },
         { path: 'requirements', component: () => import('./pages/RequirementsPage.vue') },
         { path: 'sourcing-cases', redirect: (to) => ({ path: '/procurement/sourcing', query: to.query }) },
         { path: 'sourcing-cases/:id', redirect: (to) => ({ path: `/procurement/sourcing/${String(to.params.id)}`, query: to.query }) },

@@ -483,13 +483,20 @@ func (q *Queries) DomainClaimed(ctx context.Context, dollar_1 string) (bool, err
 const employeeHasPermission = `-- name: EmployeeHasPermission :one
 SELECT EXISTS (
     SELECT 1
-    FROM employee_roles er
-    JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
-    JOIN roles r ON r.id = er.role_id AND r.tenant_id = er.tenant_id
-    JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
-    JOIN permissions p ON p.id = rp.permission_id
-    WHERE er.tenant_id = $1 AND er.employee_id = $2 AND p.code = $3
-      AND e.status = 'ACTIVE' AND r.status = 'ACTIVE'
+    FROM employees e
+    WHERE e.tenant_id = $1 AND e.id = $2 AND e.status = 'ACTIVE'
+      AND (
+        $3 IN ('mail:email:read', 'mail:email:write')
+        OR EXISTS (
+          SELECT 1
+          FROM employee_roles er
+          JOIN roles r ON r.id = er.role_id AND r.tenant_id = er.tenant_id
+          JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
+          JOIN permissions p ON p.id = rp.permission_id
+          WHERE er.tenant_id = e.tenant_id AND er.employee_id = e.id
+            AND p.code = $3 AND r.status = 'ACTIVE'
+        )
+      )
 ) AS allowed
 `
 
@@ -1280,15 +1287,24 @@ func (q *Queries) ListEmployeeIdentity(ctx context.Context, tenantID int64) ([]L
 }
 
 const listEmployeePermissionCodes = `-- name: ListEmployeePermissionCodes :many
-SELECT DISTINCT p.code
-FROM employee_roles er
-JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
-JOIN roles r ON r.id = er.role_id AND r.tenant_id = er.tenant_id
-JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
-JOIN permissions p ON p.id = rp.permission_id
-WHERE er.tenant_id = $1 AND er.employee_id = $2
-  AND e.status = 'ACTIVE' AND r.status = 'ACTIVE'
-ORDER BY p.code
+SELECT DISTINCT granted.code
+FROM (
+    SELECT p.code
+    FROM employee_roles er
+    JOIN employees e ON e.id = er.employee_id AND e.tenant_id = er.tenant_id
+    JOIN roles r ON r.id = er.role_id AND r.tenant_id = er.tenant_id
+    JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
+    JOIN permissions p ON p.id = rp.permission_id
+    WHERE er.tenant_id = $1 AND er.employee_id = $2
+      AND e.status = 'ACTIVE' AND r.status = 'ACTIVE'
+    UNION ALL
+    SELECT p.code
+    FROM employees e
+    CROSS JOIN permissions p
+    WHERE e.tenant_id = $1 AND e.id = $2 AND e.status = 'ACTIVE'
+      AND p.code IN ('mail:email:read', 'mail:email:write')
+) AS granted
+ORDER BY granted.code
 `
 
 type ListEmployeePermissionCodesParams struct {

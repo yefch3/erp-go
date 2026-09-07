@@ -1,0 +1,22 @@
+ frontend/src/api.ts                                |    5 +
+ frontend/src/locales/en.ts                         |    5 +-
+ frontend/src/locales/es.ts                         |    5 +-
+ frontend/src/locales/zh.ts                         |    5 +-
+ frontend/src/pages/BankTransactionsPage.vue        |   66 +-
+ frontend/src/pages/ReceivableDuePage.vue           |   73 +-
+ frontend/src/pages/SupplierReconPage.vue           |   82 +-
+ gen/go/erp/export/v1/receipt.pb.go                 |  862 +++--
+ gen/go/erp/export/v1/receipt_grpc.pb.go            |   40 +
+ gen/go/erp/procurement/v1/procurement.pb.go        | 3878 ++++++++++----------
+ gen/go/erp/procurement/v1/procurement_grpc.pb.go   |   40 +
+ proto/erp/export/v1/receipt.proto                  |   13 +
+ proto/erp/procurement/v1/procurement.proto         |   14 +-
+ services/export/internal/adapter/grpcin/receipt.go |   10 +
+ services/export/internal/app/receivable.go         |   72 +-
+ .../gateway/internal/httpapi/receipt_handlers.go   |   14 +
+ services/gateway/internal/httpapi/server.go        |    2 +
+ .../internal/httpapi/supplier_recon_handlers.go    |   14 +
+ .../00058_manual_payable_corrections.sql           |   18 +
+ .../internal/adapter/grpcin/supplierrecon.go       |   10 +
+ services/procurement/internal/app/supplierrecon.go |   65 +-
+ 21 files changed, 3005 insertions(+), 2288 deletions(-)

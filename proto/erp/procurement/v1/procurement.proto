@@ -11,6 +11,9 @@ option go_package = "github.com/sgao19/erp-go/gen/go/erp/procurement/v1;procurem
 // bounded context but is deliberately separate from committed requirements
 // and purchase orders.
 service SourcingService {
+  // D1 uses a validated JSON document for the full-width inquiry/quote editor.
+  // The server decodes a closed command schema and independently checks IAM.
+  rpc InquiryWorkspace(InquiryWorkspaceRequest) returns (InquiryWorkspaceResponse);
   rpc CreateCase(CreateCaseRequest) returns (CreateCaseResponse);
   rpc ListCases(ListCasesRequest) returns (ListCasesResponse);
   rpc GetCase(GetCaseRequest) returns (GetCaseResponse);
@@ -73,6 +76,7 @@ service SourcingService {
   // most overdue first, fenced like the case list it derives from.
   rpc ListOverdueFactoryRfqs(ListOverdueFactoryRfqsRequest) returns (ListOverdueFactoryRfqsResponse);
 }
+
 
 message ListOverdueFactoryRfqsRequest { int32 limit = 1; }
 message OverdueFactoryRfq {
@@ -2670,3 +2674,6 @@ message UpdateManualPayableRequest {
   string due_date = 4;
 }
 message UpdateManualPayableResponse { SupplierReconRow row = 1; }
+
+message InquiryWorkspaceRequest { string command_json = 1; }
+message InquiryWorkspaceResponse { string result_json = 1; }

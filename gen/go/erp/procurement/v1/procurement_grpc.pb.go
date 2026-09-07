@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	SourcingService_InquiryWorkspace_FullMethodName                  = "/erp.procurement.v1.SourcingService/InquiryWorkspace"
 	SourcingService_CreateCase_FullMethodName                        = "/erp.procurement.v1.SourcingService/CreateCase"
 	SourcingService_ListCases_FullMethodName                         = "/erp.procurement.v1.SourcingService/ListCases"
 	SourcingService_GetCase_FullMethodName                           = "/erp.procurement.v1.SourcingService/GetCase"
@@ -88,6 +89,9 @@ const (
 // bounded context but is deliberately separate from committed requirements
 // and purchase orders.
 type SourcingServiceClient interface {
+	// D1 uses a validated JSON document for the full-width inquiry/quote editor.
+	// The server decodes a closed command schema and independently checks IAM.
+	InquiryWorkspace(ctx context.Context, in *InquiryWorkspaceRequest, opts ...grpc.CallOption) (*InquiryWorkspaceResponse, error)
 	CreateCase(ctx context.Context, in *CreateCaseRequest, opts ...grpc.CallOption) (*CreateCaseResponse, error)
 	ListCases(ctx context.Context, in *ListCasesRequest, opts ...grpc.CallOption) (*ListCasesResponse, error)
 	GetCase(ctx context.Context, in *GetCaseRequest, opts ...grpc.CallOption) (*GetCaseResponse, error)
@@ -157,6 +161,16 @@ type sourcingServiceClient struct {
 
 func NewSourcingServiceClient(cc grpc.ClientConnInterface) SourcingServiceClient {
 	return &sourcingServiceClient{cc}
+}
+
+func (c *sourcingServiceClient) InquiryWorkspace(ctx context.Context, in *InquiryWorkspaceRequest, opts ...grpc.CallOption) (*InquiryWorkspaceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InquiryWorkspaceResponse)
+	err := c.cc.Invoke(ctx, SourcingService_InquiryWorkspace_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *sourcingServiceClient) CreateCase(ctx context.Context, in *CreateCaseRequest, opts ...grpc.CallOption) (*CreateCaseResponse, error) {
@@ -757,6 +771,9 @@ func (c *sourcingServiceClient) ListOverdueFactoryRfqs(ctx context.Context, in *
 // bounded context but is deliberately separate from committed requirements
 // and purchase orders.
 type SourcingServiceServer interface {
+	// D1 uses a validated JSON document for the full-width inquiry/quote editor.
+	// The server decodes a closed command schema and independently checks IAM.
+	InquiryWorkspace(context.Context, *InquiryWorkspaceRequest) (*InquiryWorkspaceResponse, error)
 	CreateCase(context.Context, *CreateCaseRequest) (*CreateCaseResponse, error)
 	ListCases(context.Context, *ListCasesRequest) (*ListCasesResponse, error)
 	GetCase(context.Context, *GetCaseRequest) (*GetCaseResponse, error)
@@ -828,6 +845,9 @@ type SourcingServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedSourcingServiceServer struct{}
 
+func (UnimplementedSourcingServiceServer) InquiryWorkspace(context.Context, *InquiryWorkspaceRequest) (*InquiryWorkspaceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InquiryWorkspace not implemented")
+}
 func (UnimplementedSourcingServiceServer) CreateCase(context.Context, *CreateCaseRequest) (*CreateCaseResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateCase not implemented")
 }
@@ -1024,6 +1044,24 @@ func RegisterSourcingServiceServer(s grpc.ServiceRegistrar, srv SourcingServiceS
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&SourcingService_ServiceDesc, srv)
+}
+
+func _SourcingService_InquiryWorkspace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InquiryWorkspaceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SourcingServiceServer).InquiryWorkspace(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SourcingService_InquiryWorkspace_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SourcingServiceServer).InquiryWorkspace(ctx, req.(*InquiryWorkspaceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _SourcingService_CreateCase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -2095,6 +2133,10 @@ var SourcingService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "erp.procurement.v1.SourcingService",
 	HandlerType: (*SourcingServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "InquiryWorkspace",
+			Handler:    _SourcingService_InquiryWorkspace_Handler,
+		},
 		{
 			MethodName: "CreateCase",
 			Handler:    _SourcingService_CreateCase_Handler,

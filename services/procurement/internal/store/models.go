@@ -198,6 +198,35 @@ type FailedEvent struct {
 	ParkedAt      pgtype.Timestamptz
 }
 
+type InquiryAttachment struct {
+	TenantID  int64
+	CaseID    int64
+	Revision  int64
+	Kind      string
+	ObjectKey string
+	Name      string
+	CreatedBy int64
+	CreatedAt pgtype.Timestamptz
+}
+
+type InquiryQuote struct {
+	ID              int64
+	TenantID        int64
+	CaseID          int64
+	InquiryRevision int64
+	Kind            string
+	Body            []byte
+	CreatedBy       int64
+	CreatedByName   string
+	CreatedAt       pgtype.Timestamptz
+	SubmittedAt     pgtype.Timestamptz
+	SubmittedBy     *int64
+	UpdatedBy       int64
+	UpdatedByName   string
+	UpdatedAt       pgtype.Timestamptz
+	Version         int64
+}
+
 type InquiryTemplate struct {
 	ID            int64
 	TenantID      int64
@@ -224,6 +253,17 @@ type InquiryTemplateField struct {
 	DefaultValue string
 	DataType     string
 	IsCustom     bool
+}
+
+type ManualPayableCorrection struct {
+	ID              int64
+	TenantID        int64
+	PoID            int64
+	BeforeData      []byte
+	AfterData       []byte
+	CorrectedBy     int64
+	CorrectedByName string
+	CorrectedAt     pgtype.Timestamptz
 }
 
 type OutboxEvent struct {
@@ -692,6 +732,9 @@ type SourcingCase struct {
 	ReturnReason           string
 	ReturnFields           []string
 	ContactID              int64
+	InquiryBody            []byte
+	InquiryRevision        int64
+	InquirySubmittedAt     pgtype.Timestamptz
 }
 
 type SourcingCaseChange struct {

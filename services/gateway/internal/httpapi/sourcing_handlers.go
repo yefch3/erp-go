@@ -229,16 +229,56 @@ func (s *Server) createSourcingCase(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, req) {
 		return
 	}
-	customer, contact, err := s.resolveActiveCustomerContact(r.Context(), req.GetCustomerId(), req.GetContactId())
-	if err != nil {
-		s.writeGRPCError(w, err)
-		return
+	if req.GetSourceMailId() > 0 {
+		authorized := false
+		s.requireMailUnlock(http.HandlerFunc(func(_ http.ResponseWriter, unlocked *http.Request) { r = unlocked; authorized = true })).ServeHTTP(w, r)
+		if !authorized {
+			return
+		}
+		source, e := s.Emails.GetInbound(r.Context(), &mailv1.GetInboundRequest{Id: req.GetSourceMailId()})
+		if e != nil {
+			s.writeGRPCError(w, e)
+			return
+		}
+		if req.GetSourceAttachmentId() > 0 {
+			found := false
+			for _, a := range source.GetMail().GetAttachments() {
+				found = found || a.GetId() == req.GetSourceAttachmentId()
+			}
+			if !found {
+				s.writeError(w, 404, "INQUIRY_MAIL_ATTACHMENT", "来源附件不存在")
+				return
+			}
+		}
+		req.ContactName = source.GetMail().GetFromName()
+		if len(source.GetMail().GetAttachments()) > 0 {
+			attachments, e := s.Emails.DownloadInboundAttachments(r.Context(), &mailv1.DownloadInboundAttachmentsRequest{InboundId: req.GetSourceMailId()})
+			if e != nil {
+				s.writeGRPCError(w, e)
+				return
+			}
+			req.SourceFileData = attachments.GetContent()
+			req.SourceFileName = attachments.GetFileName()
+			req.SourceContentType = "application/zip"
+		}
 	}
-	// 客户和联系人快照都以主数据为准，不信任浏览器传来的姓名和邮箱。
-	// 这样既不会把甲客户的联系人挂到乙客户，也不会保存已经过期的邮箱。
-	req.CustomerName = customer.GetName()
-	req.ContactName = contact.GetName()
-	req.ContactEmail = contact.GetEmail()
+	if req.GetCustomerId() > 0 {
+		customer, e := s.resolveActiveCustomer(r.Context(), req.GetCustomerId())
+		if e != nil {
+			s.writeGRPCError(w, e)
+			return
+		}
+		req.CustomerName = customer.GetName()
+		if req.GetContactId() > 0 {
+			_, contact, e := s.resolveActiveCustomerContact(r.Context(), req.GetCustomerId(), req.GetContactId())
+			if e != nil {
+				s.writeGRPCError(w, e)
+				return
+			}
+			req.ContactName = contact.GetName()
+			req.ContactEmail = contact.GetEmail()
+		}
+	}
 	resp, err := s.Sourcing.CreateCase(r.Context(), req)
 	if err != nil {
 		s.writeGRPCError(w, err)

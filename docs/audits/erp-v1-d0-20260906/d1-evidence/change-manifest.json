@@ -1,0 +1,199 @@
+{
+  "base": "87d73c4993382e881a53d593c3c42c6cb102c02c",
+  "files": [
+    {
+      "path": ".gitignore",
+      "sha256": "A8D83201B2FEF3252FD6C66AB88141AD62028F4C21C0FE78DBEE7420ED2C4B71"
+    },
+    {
+      "path": "frontend/src/components/InquiryProducts.vue",
+      "sha256": "CACDE701675D80743B11AAEBA46DA3D78ED8EFA63340EA85B3C0939B8E1F882B"
+    },
+    {
+      "path": "frontend/src/components/InquiryTodos.vue",
+      "sha256": "E38D8EA397F8AFF41EBE2D0D331D189A3E1E95BC5C48F7812A00EF31E2B917C7"
+    },
+    {
+      "path": "frontend/src/lib/inquiryWorkspace.test.ts",
+      "sha256": "B73513B207DE6FBC24159D61BF4D2C5A3F5C7F4B3F721B12B20B70C81A14D44B"
+    },
+    {
+      "path": "frontend/src/lib/inquiryWorkspace.ts",
+      "sha256": "F26B5A59DA9D73F01876F9AEF2F808D878A325BD43EEA70D85D74B4F6D4079FE"
+    },
+    {
+      "path": "frontend/src/pages/EmailsPage.vue",
+      "sha256": "A480AB6F6C43412F08F9348EC171AEC0783EC6F640E9B6C5BF796D3D308F98C0"
+    },
+    {
+      "path": "frontend/src/pages/InquiryWorkspacePage.vue",
+      "sha256": "17268AEBC2BA4006D7EF7E4C446EFC0773A3580FA92D0B7AEC2B4F794F4E014A"
+    },
+    {
+      "path": "frontend/src/pages/Shell.vue",
+      "sha256": "D2B15F1BA088A161AA646C2DA9C4F2C7B0FBD8B00F3E28FD19F45D3ECA144533"
+    },
+    {
+      "path": "frontend/src/pages/TodosPage.vue",
+      "sha256": "519D2C4BAD964B718366FE44A7FC3EB7033CE34F22884C74EBA9B952B26A1CE8"
+    },
+    {
+      "path": "frontend/src/router.ts",
+      "sha256": "BF50019826DCE63B35D455D25B0AABD5B1520E7A381E21F45E3FEEC100D7E197"
+    },
+    {
+      "path": "gen/go/erp/export/v1/quotation_grpc.pb.go",
+      "sha256": "1FD6978D0529AED68A04FE72400325B0C0DBBDF9E01519A49AB93DD5A6A91383"
+    },
+    {
+      "path": "gen/go/erp/export/v1/quotation.pb.go",
+      "sha256": "7D04A0B744949A0D64100584C649F75AB843B928212D158E20B1675199B7209A"
+    },
+    {
+      "path": "gen/go/erp/procurement/v1/procurement_grpc.pb.go",
+      "sha256": "AE784FC620922620EC00882E9A13F5CAE42E00A80527C019B78E9A4A02443D1F"
+    },
+    {
+      "path": "gen/go/erp/procurement/v1/procurement.pb.go",
+      "sha256": "56787A972C825F39599C8D4AF3402908096965E14ADC27E89CADFD3A776EC234"
+    },
+    {
+      "path": "pkg/inquiryproof/proof.go",
+      "sha256": "8A9D4C8D636B21917DA9D1C7D35C819C4AF2831F3354FCA03E803115DD1B512D"
+    },
+    {
+      "path": "proto/erp/export/v1/quotation.proto",
+      "sha256": "FB8F7DA0EB866F4F8B64C6EEFC5BD7EFD69275685EB7487AEE9A989987DA82C2"
+    },
+    {
+      "path": "proto/erp/procurement/v1/procurement.proto",
+      "sha256": "3AB4524EBD320FC52F4C1DA4FAB2410D093B833D1A30CBD03A11444D1F5260C6"
+    },
+    {
+      "path": "scripts/d1-environment.ps1",
+      "sha256": "1A9E9A839711EF9ACA9B445331138ABA93B96F2A96BBF96DF3FC10FC69839CA3"
+    },
+    {
+      "path": "services/export/db/migrations/00028_inquiry_withdrawal_fence.sql",
+      "sha256": "A020E204878E64FC2783EB323992D4692EC0398350A15ABBCACB11F8B5C996B9"
+    },
+    {
+      "path": "services/export/internal/adapter/grpcin/inquiry_availability.go",
+      "sha256": "132F4879A61FDCEAD639280BF87DC050C725E9BD0445BBF1323DBDA15BC85F57"
+    },
+    {
+      "path": "services/export/internal/app/inquiry_availability_integration_test.go",
+      "sha256": "7F60AF88D6CD9BD2C4F1261E8004D774EEBBE7B998EFF0D7348976149239F2BB"
+    },
+    {
+      "path": "services/export/internal/app/inquiry_availability.go",
+      "sha256": "3810CF94742C34E7C55E384B1BFF493E87F407CFF921092560C1EF9BA1EA1DF8"
+    },
+    {
+      "path": "services/export/internal/store/models.go",
+      "sha256": "189C596F813DF265C03CB4D3554B4CA6BE201B13536504EDDE0CA649A341CBE1"
+    },
+    {
+      "path": "services/gateway/internal/httpapi/inquiry_workspace_test.go",
+      "sha256": "8AEB1CC780285D2C35C9D0427F62911488B91D0ACFA31B38F78093DF312309A9"
+    },
+    {
+      "path": "services/gateway/internal/httpapi/inquiry_workspace.go",
+      "sha256": "DBFC09ADFF8E22F6D5705A3EA197183841B0FF0050E390885E778A67FC73F3D6"
+    },
+    {
+      "path": "services/gateway/internal/httpapi/masterdata_validation_test.go",
+      "sha256": "AD01D053A9F29D5ABB08467006F20C2466F5841AB9307CB29839AFAA00FA2DB7"
+    },
+    {
+      "path": "services/gateway/internal/httpapi/server.go",
+      "sha256": "1F391C410910DFBC18FBE0B8ED2369DE41173D2BE06015DF2B42CD62C984D2C4"
+    },
+    {
+      "path": "services/gateway/internal/httpapi/sourcing_handlers.go",
+      "sha256": "7832874F9C2815739859E4EA3AC6A96801A28960745C399D45277B0575A00CBA"
+    },
+    {
+      "path": "services/iam/db/migrations/00059_d1_boss_inquiry_read.sql",
+      "sha256": "A598FCBCC8F96FA5785CDEB32FBEEA26161E888472FD56A21006953F10C61823"
+    },
+    {
+      "path": "services/iam/internal/app/presetroles.go",
+      "sha256": "1356E9527D46D42EDBBD0C1FBF87E340BAF921E378273ED2023F6E508A57C911"
+    },
+    {
+      "path": "services/procurement/cmd/main.go",
+      "sha256": "AACF91A1D7AD3B55DB1FEEBB086E210AB7005462C00786BA6D428B4D7551B0E8"
+    },
+    {
+      "path": "services/procurement/db/migrations/00059_inquiry_workspace.sql",
+      "sha256": "EB93ECB767F4900EEFF5FE6D157D4EF4493E3A895F116BB68E0C5B2E32B0F9E7"
+    },
+    {
+      "path": "services/procurement/db/migrations/00060_inquiry_attachments.sql",
+      "sha256": "CFCB72EDAE90F99B15E7A197B4EF97C3C464454220708D092315461601C2EB9A"
+    },
+    {
+      "path": "services/procurement/db/migrations/00061_inquiry_confirmation_guard.sql",
+      "sha256": "8450F0840C0A193FFA997E66C6EFFD5FC0EE702B054E3FAFA0F118E773CD43E2"
+    },
+    {
+      "path": "services/procurement/internal/adapter/grpcin/inquiry_workspace.go",
+      "sha256": "840F8C4407A4378A7CB4034DC73D972106D7E175BAC51BC31D6DACEF5B8D734E"
+    },
+    {
+      "path": "services/procurement/internal/adapter/grpcin/sales_negotiation.go",
+      "sha256": "3068793116DF3283A751C11E7C27A916CB51AA7D6820B0DFCBA431466452E5BB"
+    },
+    {
+      "path": "services/procurement/internal/adapter/grpcin/sourcing.go",
+      "sha256": "A3067BF6F461AD9C854892325EC6C8BFB198B1CB24BDDED4E5951E22C5BFAB09"
+    },
+    {
+      "path": "services/procurement/internal/adapter/grpcout/files.go",
+      "sha256": "481DB6BA988185551F863C5F6DA8DA2A988BE101F53D4690635BD65E841CF199"
+    },
+    {
+      "path": "services/procurement/internal/adapter/grpcout/inquiry.go",
+      "sha256": "FEB74B4563564D43BBE72550594FDF898B3249FE31BC43656E541771A9132381"
+    },
+    {
+      "path": "services/procurement/internal/app/inquiry_files.go",
+      "sha256": "C61EEA1C5C3DF383653B2DFA7418E1F606CFFCD8160A202F8A82F3BE8AF1ABE6"
+    },
+    {
+      "path": "services/procurement/internal/app/inquiry_history_integration_test.go",
+      "sha256": "48B9F4505F9D065A4A5F840AFD16DC91CB3FB5438E922055823486604F9AD8B0"
+    },
+    {
+      "path": "services/procurement/internal/app/inquiry_history.go",
+      "sha256": "20ACA1AF9690C7324604AC817BFA039646557E741729A05F2EBC296FA80D4EB6"
+    },
+    {
+      "path": "services/procurement/internal/app/inquiry_workspace_integration_test.go",
+      "sha256": "91284217D1C7984FB154F2651FCF192819EB7004C20F80A334FB570D348CBFDC"
+    },
+    {
+      "path": "services/procurement/internal/app/inquiry_workspace.go",
+      "sha256": "94F045A09A68DDDC9D1012B722B9AF7CAFD2BD7246D53CBFA8DFED514439B9B7"
+    },
+    {
+      "path": "services/procurement/internal/app/service.go",
+      "sha256": "C0F6E9E124BD08E3B9C356ACB7D106B99D994F999DB46F113099CBC4FDE99166"
+    },
+    {
+      "path": "services/procurement/internal/app/sourcing_scope.go",
+      "sha256": "B54B8767881866067BB2E8000F9D718FA3588AB1880F81E57475FCFFE474DBC8"
+    },
+    {
+      "path": "services/procurement/internal/config/config.go",
+      "sha256": "BC8203056F0439FA321771E9FB17DC38082059FEE2F9924130DBE7B30FDE9E31"
+    },
+    {
+      "path": "services/procurement/internal/store/models.go",
+      "sha256": "D1A9362905AE2F1F18914EA71944F902F8ECB1EA3310CE72D1969644A4C26FCA"
+    }
+  ],
+  "timestamp": "2026-09-06T22:50:52.2866029-04:00",
+  "branch": "codex/erp-v1-d0-20260906"
+}

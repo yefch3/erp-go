@@ -1,0 +1,5 @@
+ok  	github.com/sgao19/erp-go/services/gateway/internal/httpapi	2.462s
+?   	github.com/sgao19/erp-go/services/procurement/internal/adapter/grpcin	[no test files]
+?   	github.com/sgao19/erp-go/services/procurement/internal/adapter/grpcout	[no test files]
+?   	github.com/sgao19/erp-go/services/export/internal/adapter/grpcin	[no test files]
+?   	github.com/sgao19/erp-go/pkg/inquiryproof	[no test files]

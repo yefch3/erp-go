@@ -1,0 +1,59 @@
+{
+  "checked_at": "2026-09-06T20:19:41.1926680-04:00",
+  "head": "87d73c4993382e881a53d593c3c42c6cb102c02c",
+  "main": "cc797854286aebb5e20344bf363facf0325611aa",
+  "original_head": "87d73c4993382e881a53d593c3c42c6cb102c02c",
+  "original_status": [],
+  "tracked_diff": [],
+  "staged_diff": [],
+  "temporary_worktree_absent": true,
+  "source_checks": [
+    {
+      "source": "C:/Users/16789/Desktop/文档/最终修订/外贸ERP_正式需求_V1.0_准确恢复版_重新询价修订版_修改标注版.md",
+      "source_unchanged": true,
+      "snapshot_identical": true
+    },
+    {
+      "source": "C:/Users/16789/Desktop/文档/最终修订/外贸ERP_实施依赖与跨模块验收清单_V1.0_修改标注版.md",
+      "source_unchanged": true,
+      "snapshot_identical": true
+    }
+  ],
+  "section_count": 234,
+  "business_tests": "NOT RUN - D0 static review only",
+  "database_writes": "NONE",
+  "new_commit": "NONE",
+  "existing_worktrees_preserved": [
+    {
+      "path": "C:/Users/16789/Documents/erp-go/source",
+      "head_unchanged": true,
+      "status_unchanged": true
+    },
+    {
+      "path": "C:/Users/16789/Documents/erp-go/.worktrees/erp-v1-audit-20260906",
+      "head_unchanged": true,
+      "status_unchanged": true
+    },
+    {
+      "path": "C:/Users/16789/Documents/erp-go/.worktrees/main-latest-test",
+      "head_unchanged": true,
+      "status_unchanged": true
+    },
+    {
+      "path": "C:/Users/16789/Documents/erp-go/.worktrees/sourcing-t7",
+      "head_unchanged": true,
+      "status_unchanged": true
+    },
+    {
+      "path": "C:/Users/16789/Documents/erp-go/.worktrees/sourcing-t8",
+      "head_unchanged": true,
+      "status_unchanged": true
+    },
+    {
+      "path": "C:/Users/16789/Documents/erp-go/.worktrees/sourcing-workflow",
+      "head_unchanged": true,
+      "status_unchanged": true
+    }
+  ],
+  "only_audit_untracked_files": true
+}

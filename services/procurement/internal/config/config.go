@@ -24,6 +24,7 @@ type Config struct {
 	InventoryAddr  string
 	FxAddr         string
 	IAMAddr        string
+	ExportAddr     string
 	// Live hints to open pages. Optional: without Redis the pages still work,
 	// they just need a manual refresh.
 	RedisAddr string
@@ -52,6 +53,7 @@ func Load() Config {
 		InventoryAddr:         env("INVENTORY_ADDR", "localhost:9008"),
 		FxAddr:                env("FX_ADDR", "localhost:9003"),
 		IAMAddr:               env("IAM_ADDR", "localhost:9001"),
+		ExportAddr:            env("EXPORT_ADDR", "localhost:9006"),
 		RedisAddr:             env("REDIS_ADDR", "localhost:6379"),
 		MinioEndpoint:         env("MINIO_ENDPOINT", "localhost:19000"),
 		MinioPublicEndpoint:   env("MINIO_PUBLIC_ENDPOINT", ""),

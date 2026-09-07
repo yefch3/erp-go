@@ -84,7 +84,7 @@ const auth = useAuthStore()
 const isSalesView = computed(() => route.path.startsWith('/sales/'))
 const isPendingView = computed(() => route.path === '/procurement/sourcing/pending')
 const pageEyebrow = computed(() => isSalesView.value ? 'CUSTOMER INQUIRIES' : 'PROCUREMENT SOURCING')
-const pageTitle = computed(() => isSalesView.value ? '客户询盘项目' : isPendingView.value ? '待接单任务' : '全部寻源项目')
+const pageTitle = computed(() => isSalesView.value ? '客户询盘' : isPendingView.value ? '待接单任务' : '全部寻源项目')
 const pageSubtitle = computed(() => isSalesView.value
   ? '查看客户需求、采购进度和客户报价；供应商询价与成本操作由采购侧完成。'
   : isPendingView.value

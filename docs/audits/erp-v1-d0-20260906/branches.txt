@@ -1,0 +1,14 @@
++ codex/erp-v1-audit-20260906          cc797854 (C:/Users/16789/Documents/erp-go/.worktrees/erp-v1-audit-20260906) fix(masterdata): whitelist supplier profile fields (#360)
+* codex/erp-v1-d0-20260906             87d73c49 feat(finance): centralize record actions and edit manual entries
++ codex/fix-finance-actions-responsive 87d73c49 (C:/Users/16789/Documents/erp-go/source) feat(finance): centralize record actions and edit manual entries
++ codex/role-permission-i18n           4ae9149c (C:/Users/16789/Documents/erp-go/.worktrees/main-latest-test) [origin/codex/role-permission-i18n: ahead 9] docs: 退役三份已全部落地的实现方案和一份 28 行的规则文档 (#340)
+  codex/sourcing-t3                    91544208 [origin/codex/sourcing-t3] feat(sourcing): support collaborative procurement ownership
+  codex/sourcing-t4                    ee426808 [origin/codex/sourcing-t4: gone] feat(sourcing): complete T4 product quote groups
+  codex/sourcing-t5                    d64f080b [origin/codex/sourcing-t5] feat(sourcing): complete T5 manager plan workflow
++ codex/sourcing-t6                    e56dd278 (C:/Users/16789/Documents/erp-go/.worktrees/sourcing-workflow) [origin/codex/sourcing-t6] fix(procurement): satisfy T6 shipping plan lint
++ codex/sourcing-t7                    6db9ec71 (C:/Users/16789/Documents/erp-go/.worktrees/sourcing-t7) [origin/codex/sourcing-t7: gone] Merge remote-tracking branch 'origin/main' into codex/sourcing-t7
+  codex/sourcing-t8                    24ae2e85 [origin/codex/sourcing-t8: gone] chore: document safe status width migration
++ codex/sourcing-t9                    edb8ea9f (C:/Users/16789/Documents/erp-go/.worktrees/sourcing-t8) [origin/codex/sourcing-t9: gone] feat: complete T9 quotation and contract execution
+  codex/sourcing-workflow              1ab3a1a7 [origin/codex/sourcing-workflow] feat(sourcing): confirm sales ownership boundary
+  codex/t3-ci-fix                      e4bc4a56 [origin/codex/t3-ci-fix] test(procurement): fix ineffectual assignment
+  main                                 cc797854 [origin/main] fix(masterdata): whitelist supplier profile fields (#360)

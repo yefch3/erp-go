@@ -1,0 +1,14 @@
+=== RUN   TestExistingContractCreatesOrderedPOAndOpeningReceipt
+2026/09/07 02:40:09 INFO existing contract reconstructed as ordered purchase order contract_no=CT-EXISTING-1 po_no=PO-TEST-0001
+--- PASS: TestExistingContractCreatesOrderedPOAndOpeningReceipt (0.65s)
+=== RUN   TestD1HistoricalProjection
+    inquiry_history_integration_test.go:140: tenant=1788748809752004150 historical case=20: unsubmitted hidden; submitted immutable plan price retained; no new quote rows; tenant isolated
+--- PASS: TestD1HistoricalProjection (0.92s)
+=== RUN   TestD1InquiryLifecycle
+    inquiry_workspace_integration_test.go:130: isolated tenant=1788748810683199026 inquiry=21: source identity, visibility, author/co-worker edit, exact multi-currency totals, withdrawal/resubmit passed; export dependency simulated
+--- PASS: TestD1InquiryLifecycle (1.13s)
+=== RUN   TestSourcingCaseSourceFile
+--- PASS: TestSourcingCaseSourceFile (0.67s)
+=== RUN   TestReconFileLifecycle
+--- PASS: TestReconFileLifecycle (0.25s)
+PASS

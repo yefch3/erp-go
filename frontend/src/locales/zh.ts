@@ -65,7 +65,7 @@ export default {
     fx: '汇率中心',
     suppliers: '供应商',
     quotations: '报价单',
-    contracts: '出口合同',
+    contracts: '外销合同',
     contractExecution: '执行一览',
     excelUsage: '智能转换用量', platformTenants: '平台开户',
     shipments: '出运单',
@@ -223,7 +223,7 @@ export default {
     requirements: '待采购', orders: '采购订单', backToWorkbench: '返回采购工作台',
   },
   salesNav: {
-    intakes: '待复核询盘', inquiries: '客户询盘项目', inquiryTemplates: '询盘模板', quotations: '客户报价', backToInquiries: '返回客户询盘项目',
+    intakes: '待复核询盘', inquiries: '客户询盘', inquiryTemplates: '询盘模板', quotations: '客户报价', backToInquiries: '返回客户询盘',
   },
   financeNav: {
     fx: '汇率',
@@ -425,7 +425,7 @@ export default {
   },
   inquiryTemplates: {
     eyebrow: 'COMPANY INQUIRY FORMAT', title: '询盘模板管理',
-    subtitle: '维护邮件标准化与待复核共用的标准列：表头、顺序、必填与默认值；当前默认模板驱动 LLM 识别与上传校验',
+    subtitle: '维护邮件识别与客户询盘导入使用的标准列：表头、顺序、必填与默认值；当前默认模板驱动识别与上传校验',
     create: '新建公司模板', systemTag: '系统内置', inUse: '使用中',
     colName: '模板名称', colCode: '模板编码', colVersion: '版本', colFields: '列数', colDefault: '默认模板', colStatus: '状态',
     statuses: { ACTIVE: '生效中', DISABLED: '已停用', SUPERSEDED: '历史版本' },
@@ -1060,7 +1060,7 @@ export default {
   },
   sourcingDetail: {
     createFormalQuotation: '生成正式报价', formalQuotationCreated: '正式报价 {no} 已生成',
-    backSales: '返回客户询盘项目', backProcurement: '返回采购寻源项目', salesPerspective: '销售 · 客户协作', procurementPerspective: '采购 · 寻源执行', customerInquiry: '客户询盘', sourcingTask: '寻源任务', untitled: '未命名询盘项目', customer: '客户', unlinked: '未关联', contact: '联系人', owner: '负责人', source: '来源', mailSource: '邮件转入', manualSource: '员工录入', viewProcurement: '查看采购寻源', viewSales: '查看客户询盘', viewSourceMail: '查看来源邮件', downloadOriginal: '下载原始询盘', currentTodo: '当前待办', handoff: '销售 ↔ 采购交接', requirement: '需求', returnReason: '退回原因', needsSupplement: '需补充：{fields}',
+    backSales: '返回客户询盘', backProcurement: '返回采购寻源项目', salesPerspective: '销售 · 客户协作', procurementPerspective: '采购 · 寻源执行', customerInquiry: '客户询盘', sourcingTask: '寻源任务', untitled: '未命名客户询盘', customer: '客户', unlinked: '未关联', contact: '联系人', owner: '负责人', source: '来源', mailSource: '邮件转入', manualSource: '员工录入', viewProcurement: '查看采购寻源', viewSales: '查看客户询盘', viewSourceMail: '查看来源邮件', downloadOriginal: '下载原始询盘', currentTodo: '当前待办', handoff: '销售 ↔ 采购交接', requirement: '需求', returnReason: '退回原因', needsSupplement: '需补充：{fields}',
     tabs: { products: '客户需求', procurementProgress: '采购进度', quotationBasis: '成本报价依据', shipping: '船运协作', plans: '经理统一方案', negotiation: '客户议价', customerQuote: '客户报价', changes: '变更记录' },
     needsTitle: '客户需求', needsSnapshot: '采购需求快照', needsSalesHint: '保留销售复核后的客户需求，采购与销售查看的是同一份数据。', needsProcurementHint: '销售已完成需求复核；采购据此联系供应商并形成成本方案。', productAndStandard: '产品与标准', templateSpec: '模板规格', quantity: '数量', sourceLabel: '来源', reviewed: '询盘复核通过', lineLabel: '行号', groupedSpecs: '{count} 个规格', clickForDetails: '点击左侧箭头展开规格明细', groupTotal: '同单位合计', specDetails: '规格明细', groupedLines: '共 {count} 行',
     progressTitle: '采购进度摘要', progressHint: '这里只展示协同进度，不展示供应商底价和采购操作。', openProcurement: '进入采购寻源视角', currentStage: '当前阶段', startedRfqs: '已发起询价', receivedQuotes: '已收到报价', confirmedBasis: '已确认报价依据',
@@ -1274,7 +1274,7 @@ export default {
     sold: '已售',
     shipped: '已发货',
     toShip: '待发货',
-    title: '出口合同',
+    title: '外销合同',
     generate: '由报价生成',
     generateHint: '合同的价格、明细和汇率快照全部继承自报价单，签订后不再随市场汇率变化',
     quotation: '报价单',
@@ -1389,7 +1389,7 @@ export default {
     removeBandConfirm: '删除后该金额段将回落到下一档更低的流程，确认删除？',
     bandRemoved: '区间已删除',
     createdBy: '修改人',
-    biz: { PURCHASE_ORDER: '采购单', PURCHASE_ORDER_CHANGE: '采购单供应商差异确认', CONTRACT: '出口合同' },
+    biz: { PURCHASE_ORDER: '采购单', PURCHASE_ORDER_CHANGE: '采购单供应商差异确认', CONTRACT: '外销合同' },
     activeVersion: '生效中 v{v}',
     none: '未配置',
     running: '（{n} 个实例进行中）',
@@ -1521,7 +1521,7 @@ export default {
     commentOptional: '审批意见（选填）',
     commentRequired: '请填写理由',
     biz: {
-      CONTRACT: '出口合同',
+      CONTRACT: '外销合同',
       PURCHASE_ORDER: '采购单',
       PURCHASE_ORDER_CHANGE: '采购单供应商差异确认',
       PAYMENT: '付款',

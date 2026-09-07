@@ -3656,10 +3656,7 @@ async function createSourcingCaseFromExcel() {
     ElMessage.warning(t('emails.sourcingCustomerRequired'))
     return
   }
-  if (!sourcingForm.contactId) {
-    ElMessage.warning(t('emails.sourcingContactRequired'))
-    return
-  }
+
   const fieldByColumn: Record<string, string> = {
     '产品': 'product', '材质/标准': 'materialStandard', '牌号/等级': 'grade',
     '厚度': 'thickness', '宽度': 'width', '长度/形式': 'lengthOrForm',
@@ -3703,7 +3700,7 @@ async function createSourcingCaseFromExcel() {
     ElMessage.success(t('procurementIntakes.autoTransferred', { no: response.sourcingCase.caseNo }))
     sourcingOpen.value = false
     excelOpen.value = false
-    router.push(`/sales/intakes?intake=${response.sourcingCase.id}`)
+    router.push(`/sales/inquiries?id=${response.sourcingCase.id}`)
   } finally {
     creatingSourcingCase.value = false
   }
@@ -4608,4 +4605,14 @@ async function doUnsuppress(row: Suppression) {
 .rail-grow + .rail-lock {
   margin-top: 4px;
 }
+
+.mailbox { border: 1px solid #e2e8f0; border-radius: 14px; gap: 0; overflow: clip; }
+.rail { padding: 18px 14px; box-sizing: border-box; }
+.pane { border-left: 1px solid #e2e8f0; padding: 24px; }
+@media (max-width: 760px) {
+  .mailbox { flex-direction: column; }
+  .rail { position: static; width: 100%; max-height: 240px; overflow-y: auto; border-bottom: 1px solid #e2e8f0; }
+  .pane { border-left: 0; padding: 16px; }
+}
+
 </style>

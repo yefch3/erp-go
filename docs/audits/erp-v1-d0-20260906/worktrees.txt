@@ -1,0 +1,28 @@
+worktree C:/Users/16789/Documents/erp-go/source
+HEAD 87d73c4993382e881a53d593c3c42c6cb102c02c
+branch refs/heads/codex/fix-finance-actions-responsive
+
+worktree C:/Users/16789/Documents/erp-go/.worktrees/erp-v1-audit-20260906
+HEAD cc797854286aebb5e20344bf363facf0325611aa
+branch refs/heads/codex/erp-v1-audit-20260906
+
+worktree C:/Users/16789/Documents/erp-go/.worktrees/erp-v1-d0-20260906
+HEAD 87d73c4993382e881a53d593c3c42c6cb102c02c
+branch refs/heads/codex/erp-v1-d0-20260906
+
+worktree C:/Users/16789/Documents/erp-go/.worktrees/main-latest-test
+HEAD 4ae9149c653416e9778a19716754dd9076944024
+branch refs/heads/codex/role-permission-i18n
+
+worktree C:/Users/16789/Documents/erp-go/.worktrees/sourcing-t7
+HEAD 6db9ec71019bbe4fa83464aa8c9df6314a8acdcb
+branch refs/heads/codex/sourcing-t7
+
+worktree C:/Users/16789/Documents/erp-go/.worktrees/sourcing-t8
+HEAD edb8ea9fb5c3ae4d9cac2d7317f21bbffd50c1ec
+branch refs/heads/codex/sourcing-t9
+
+worktree C:/Users/16789/Documents/erp-go/.worktrees/sourcing-workflow
+HEAD e56dd278ba7934d7c77d1431e88af3946987fc75
+branch refs/heads/codex/sourcing-t6
+
