@@ -21,6 +21,7 @@ type folderHost struct {
 	Mailbox
 	folders  []string
 	special  []string                // 带 special-use 属性的（服务器自带）
+	virtual  []string                // 带 \All / \Flagged 一类属性的（内容是别处的信的映射）
 	refuse   error                   // 设了之后 RENAME/DELETE 一律用它拒绝（模拟 263 的 default folder）
 	onList   func()                  // LIST 算完结果、还没返回时叫一下：模拟 LIST 进行中别处建了文件夹
 	archive  string                  // 服务器的归档文件夹；空 = 没有
@@ -52,6 +53,9 @@ func (h *folderHost) ListFolders(context.Context, MailAccount) ([]HostFolder, er
 	}
 	for _, n := range h.special {
 		out = append(out, HostFolder{Name: n, Special: true, Role: "SYSTEM"})
+	}
+	for _, n := range h.virtual {
+		out = append(out, HostFolder{Name: n, Special: true, Role: "VIRTUAL"})
 	}
 	if h.onList != nil {
 		h.onList()
@@ -634,12 +638,21 @@ func (h *folderHost) FetchBelow(context.Context, MailAccount, string, uint32, ui
 func (h *folderHost) SearchFlagged(context.Context, MailAccount, string) ([]uint32, error) {
 	return nil, nil
 }
-func (h *folderHost) FetchFlags(_ context.Context, _ MailAccount, _ string, uids []uint32) (map[uint32]MessageFlags, error) {
+func (h *folderHost) FetchFlags(_ context.Context, _ MailAccount, folder string, uids []uint32) (map[uint32]MessageFlags, error) {
+	have := map[uint32]bool{}
+	for _, m := range h.serves[folder] {
+		have[m.UID] = true
+	}
 	out := map[uint32]MessageFlags{}
 	for _, u := range uids {
-		out[u] = MessageFlags{}
+		if have[u] {
+			out[u] = MessageFlags{}
+		}
 	}
 	return out, nil
+}
+func (h *folderHost) RecentMessageIDs(context.Context, MailAccount, string, uint32) (map[string]bool, error) {
+	return map[string]bool{}, nil
 }
 
 // rawMail 是一封最简单的、能被解析的信。
@@ -757,5 +770,141 @@ func TestALongFolderNameStillWorksEndToEnd(t *testing.T) {
 	}
 	if n != 2 { // 挪进来的那封 + 同步进来的那封
 		t.Errorf("长名字文件夹里应该有 2 封，实际 %d", n)
+	}
+}
+
+// 员工在 Foxmail 里把信从收件箱拖进「重要客户」。
+//
+// 同步这一趟会先从「重要客户」把它收进来，紧接着对账发现收件箱里那封不见了。
+// 不跟过去的话，一封信就成了两行：一行在回收站里挂着"消失了"，一行在文件夹里
+// 正常显示。垃圾箱那条路上踩过同一个坑，这里是同步自建文件夹之后新开的入口。
+func TestMailFiledIntoAFolderElsewhereFollowsInsteadOfDoubling(t *testing.T) {
+	f := newFolderFixture(t, 9113)
+	ctx := context.Background()
+	f.host.folders = []string{"重要客户"}
+	mail := f.insertMail(t, "INBOX", 5, "搬走的")
+	// 服务器上：收件箱里没有它了，「重要客户」里有，UID 换了。
+	f.host.serves = map[string][]RawMessage{
+		"INBOX": {},
+		"重要客户":  {{UID: 105, Raw: rawMail("搬走的@mid", "搬走的")}},
+	}
+	// 文件夹是打开邮箱页那一下登记的（前端每次切信箱都会列一次），同步读的是
+	// 登记表。真实里两件事一起发生：页面一开，列文件夹和拉列表都会打上来。
+	if _, err := f.svc.ListMailFolders(ctx, f.tenantID, f.me, f.account); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.SyncMailbox(ctx, SyncConfig{TenantID: f.tenantID, BatchSize: 50, HistoryCap: 500}, f.account); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := f.pool.Query(ctx, `SELECT id, folder, imap_uid, deleted_at IS NOT NULL
+		FROM email_inbound WHERE tenant_id=$1 AND message_id='搬走的@mid' ORDER BY id`, f.tenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	type row struct {
+		id      int64
+		folder  string
+		uid     int64
+		deleted bool
+	}
+	var got []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.folder, &r.uid, &r.deleted); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, r)
+	}
+	if len(got) != 1 {
+		t.Fatalf("一封信应该只有一行，实际 %d 行：%+v", len(got), got)
+	}
+	if got[0].folder != "重要客户" || got[0].uid != 105 || got[0].deleted {
+		t.Errorf("行应该跟到 (重要客户, 105) 且没被删，实际 %+v", got[0])
+	}
+	if got[0].id != mail {
+		t.Errorf("跟过去的该是原来那一行（带着已读、客户关联这些），实际换了新行 %d != %d", got[0].id, mail)
+	}
+	if v := f.viewsOf(t, got[0].id); len(v) != 1 || v[0] != "F:重要客户" {
+		t.Errorf("视图应该是 F:重要客户，实际 %v", v)
+	}
+}
+
+// 一趟同步最多碰这么多个文件夹，剩下的下一趟排在最前面。
+//
+// 没有上限的话，建了几十个文件夹的账号会把自己那一格时间片吃光，挤到同一批里
+// 别人的箱——分档算出来的余量是按「一个箱多零到三个文件夹」估的。
+func TestFolderSyncIsCappedPerPassAndRotates(t *testing.T) {
+	f := newFolderFixture(t, 9114)
+	ctx := context.Background()
+	total := maxFoldersPerPass + 3
+	f.host.serves = map[string][]RawMessage{"INBOX": {}}
+	for i := 0; i < total; i++ {
+		name := fmt.Sprintf("客户%02d", i)
+		f.host.folders = append(f.host.folders, name)
+		f.host.serves[name] = nil
+	}
+	if _, err := f.svc.ListMailFolders(ctx, f.tenantID, f.me, f.account); err != nil {
+		t.Fatal(err)
+	}
+	cfg := SyncConfig{TenantID: f.tenantID, BatchSize: 50, HistoryCap: 500}
+	synced := func() int {
+		t.Helper()
+		var n int
+		if err := f.pool.QueryRow(ctx, `SELECT count(*) FROM mail_sync_state
+			WHERE tenant_id=$1 AND account_id=$2 AND folder LIKE '客户%'`, f.tenantID, f.account).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	if _, err := f.svc.SyncMailbox(ctx, cfg, f.account); err != nil {
+		t.Fatal(err)
+	}
+	if n := synced(); n != maxFoldersPerPass {
+		t.Errorf("一趟最多 %d 个，实际碰了 %d 个", maxFoldersPerPass, n)
+	}
+	// 第二趟：这一轮没轮到的排在最前面，所以全都轮到了。
+	if _, err := f.svc.SyncMailbox(ctx, cfg, f.account); err != nil {
+		t.Fatal(err)
+	}
+	if n := synced(); n != total {
+		t.Errorf("两趟之后应该全都同步过一次（%d），实际 %d", total, n)
+	}
+}
+
+// 虚拟文件夹的角色不能被后来的一次 LIST 降回去。
+//
+// 降成 SYSTEM 或 CUSTOM 都会让它开始被同步，而它的内容是别处的信的映射——
+// 每封信会按标签存好几遍。判错的代价不对称：反过来只是少列一个文件夹。
+func TestVirtualStaysVirtualEvenIfTheNextListLooksOrdinary(t *testing.T) {
+	f := newFolderFixture(t, 9115)
+	ctx := context.Background()
+	f.host.virtual = []string{"全部邮件"}
+	got, err := f.svc.ListMailFolders(ctx, f.tenantID, f.me, f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roleOfName := func(list []MailFolder, name string) string {
+		for _, g := range list {
+			if g.Name == name {
+				return g.Role
+			}
+		}
+		return ""
+	}
+	if r := roleOfName(got, "全部邮件"); r != roleVirtual {
+		t.Fatalf("带属性时应该是 VIRTUAL，实际 %q", r)
+	}
+	// 下一次 LIST 服务器没带属性了，名字又不在名单里 —— 算出来会是 CUSTOM。
+	f.host.virtual = nil
+	f.host.folders = []string{"全部邮件"}
+	got, err = f.svc.ListMailFolders(ctx, f.tenantID, f.me, f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := roleOfName(got, "全部邮件"); r != roleVirtual {
+		t.Errorf("VIRTUAL 不该被降回去，实际 %q", r)
 	}
 }

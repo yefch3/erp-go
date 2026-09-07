@@ -1359,23 +1359,26 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 // 只在全量那一档跑（有人在看的箱），跟着 syncOne 走。一个箱通常只多零到
 // 三个文件夹，代价可控；真多到几十个的，每轮多花的时间也只落在那一个箱上。
 //
+// 收哪些文件夹**读的是登记表**，不是当场问服务器：登记发生在打开邮箱页那
+// 一下（前端每次切信箱都会列一次文件夹）。两件事在现实里一起发生——页面一开，
+// 列文件夹和拉列表都会打上来，而"有人在看"正是全量同步这一档的条件。这样
+// 每轮同步省掉一次 LIST 往返。
+//
 // 每个文件夹自己一条同步游标（mail_sync_state 的主键带 folder），所以第一次
 // 会把整个文件夹拉一遍，之后增量。ERP 自己挪进去的信 UID 已经在库里，
 // InsertInbound 是 ON CONFLICT DO NOTHING，重复拉到只是空转。
 //
 // 一个文件夹失败不影响别的，也不影响收件箱——收件箱早在上面就已经交差了。
 func (s *Service) syncExtraFolders(ctx context.Context, cfg SyncConfig, acct MailAccount) {
-	rows, err := s.q.ListMailFolders(ctx, store.ListMailFoldersParams{
+	rows, err := s.q.ListFoldersToSync(ctx, store.ListFoldersToSyncParams{
 		TenantID: cfg.TenantID, AccountID: acct.AccountID,
+		Roles: []string{roleCustom, roleSystem}, RowLimit: maxFoldersPerPass,
 	})
 	if err != nil {
 		s.log.Warn("could not list folders to sync", "account", acct.AccountID, "err", err)
 		return
 	}
 	for _, r := range rows {
-		if !syncableRole(r.Role) {
-			continue
-		}
 		fcfg := cfg
 		if r.Role == roleSystem && fcfg.HistoryCap > extraFolderHistoryCap {
 			// 服务器自带、我们不认得的那些（病毒、广告、订阅）：留一层浅的
@@ -1391,3 +1394,13 @@ func (s *Service) syncExtraFolders(ctx context.Context, cfg SyncConfig, acct Mai
 // extraFolderHistoryCap 是服务器自带、ERP 不认得的那些文件夹留多少历史。
 // 和垃圾邮件同一个数：旧的广告和病毒邮件是价值最低的信。
 const extraFolderHistoryCap = 100
+
+// maxFoldersPerPass 是一趟同步最多碰几个额外文件夹。
+//
+// 一个人能建的文件夹没有上限，每个文件夹至少一次 IMAP 往返；建了几十个的
+// 账号会把自己那一格时间片吃光，挤到同一批里别人的箱。查询按「最久没同步的
+// 排前面」轮着给，所以有上限也不会漏，只是最坏多等几轮。
+//
+// 12 是照分档的余量取的：有人在看的那一档每个箱大约 19 秒，收件箱/已发送/
+// 垃圾邮件之外还剩得下十来次往返。
+const maxFoldersPerPass = 12

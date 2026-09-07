@@ -601,7 +601,34 @@ func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct Mai
 		}
 	}
 
-	deleted, archived, vanished, saved, junked, purged := 0, 0, 0, 0, 0, 0
+	// 挪进了我们现在也同步的文件夹（员工在 Foxmail 里把信拖进「重要客户」）。
+	// 同一趟同步已经先把那封信从新文件夹收了进来——syncExtraFolders 排在对账
+	// 前面，这个顺序是有意的——所以查库就够，不用再问一次服务器。
+	//
+	// 不跟过去的话，一封信会变成两行：一行在回收站里挂着"消失了"，一行在
+	// 文件夹里正常显示。垃圾箱那条路上踩过同一个坑，见上面那个 case。
+	movedTo := map[string]store.FindInboundMovedElsewhereRow{}
+	ids := make([]string, 0, len(missing))
+	for _, r := range missing {
+		if r.MessageID != "" {
+			ids = append(ids, r.MessageID)
+		}
+	}
+	if len(ids) > 0 {
+		found, err := s.q.FindInboundMovedElsewhere(ctx, store.FindInboundMovedElsewhereParams{
+			TenantID: tenantID, AccountID: acct.AccountID, MessageIds: ids,
+		})
+		if err != nil {
+			s.log.Warn("could not check whether the mail was filed elsewhere", "err", err)
+		}
+		for _, f := range found {
+			if _, seen := movedTo[f.MessageID]; !seen {
+				movedTo[f.MessageID] = f
+			}
+		}
+	}
+
+	deleted, archived, vanished, saved, junked, moved, purged := 0, 0, 0, 0, 0, 0, 0
 	for _, r := range missing {
 		switch {
 		// Checked before the trash, because it is the case that must never be
@@ -639,6 +666,18 @@ func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct Mai
 				}
 			}
 			junked++
+
+		// 挪进了自建 / 服务器自带的文件夹。跟过去合并：行还是带着历史的那一
+		// 行，只是换了文件夹；新文件夹那趟同步先落下的年轻副本被清掉。
+		case r.MessageID != "" && movedTo[r.MessageID].Folder != "":
+			m := movedTo[r.MessageID]
+			if err := s.mergeRepoint(ctx, tenantID, acct.AccountID,
+				folder, r.ImapUid, m.Folder, m.ImapUid, r.MessageID); err != nil {
+				s.log.Warn("could not follow mail filed into another folder",
+					"account", acct.AccountID, "message_id", r.MessageID, "to", m.Folder, "err", err)
+				continue
+			}
+			moved++
 
 		case r.MessageID != "" && inTrash[r.MessageID]:
 			if r.DeletedAt.Valid {
@@ -717,10 +756,10 @@ func (s *Service) mirrorDepartures(ctx context.Context, tenantID int64, acct Mai
 			vanished++
 		}
 	}
-	if deleted > 0 || archived > 0 || vanished > 0 || saved > 0 || junked > 0 || purged > 0 {
+	if deleted > 0 || archived > 0 || vanished > 0 || saved > 0 || junked > 0 || moved > 0 || purged > 0 {
 		s.log.Info("mail followed from the host",
 			"account", acct.AccountID, "folder", folder,
-			"in_trash", deleted, "archived", archived, "vanished", vanished,
+			"in_trash", deleted, "archived", archived, "vanished", vanished, "filed_elsewhere", moved,
 			"rescued", saved, "junked", junked, "purged", purged)
 	}
 }
