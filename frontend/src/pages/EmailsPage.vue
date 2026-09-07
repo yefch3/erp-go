@@ -36,7 +36,7 @@
         :counts="folderCounts"
         :tokens-version="tokensChanged"
         :locked="locked === true"
-        :custom-folders="customFolders"
+        :host-folders="hostFolders"
         @select="pickFolder"
         @changed="onMailboxesChanged"
         @added="tokensChanged++"
@@ -2214,17 +2214,19 @@ function switchFolder(key: string) {
 // 白花一趟请求，还在历史里留下一个谁都没到过的位置。
 // ---------------------------------------------------------------- 自建文件夹
 
-const customFolders = ref<Record<number, CustomFolder[]>>({})
+// 每个信箱在服务器上的全部文件夹，带角色。左栏按同一级别画；「移动到」只列
+// 角色为 CUSTOM 的。
+const hostFolders = ref<Record<number, CustomFolder[]>>({})
 const moving = ref(false)
-const currentCustomFolders = computed(() => customFolders.value[currentAccount.value] ?? [])
+const currentCustomFolders = computed(() => (hostFolders.value[currentAccount.value] ?? []).filter((f) => f.role === 'CUSTOM'))
 
-/** 拉一个信箱的自建文件夹。失败就当没有：左栏少一截，比弹一句错强。 */
+/** 拉一个信箱的文件夹清单。失败就当没有：左栏少一截，比弹一句错强。 */
 async function loadCustomFolders(accountId: number) {
   if (!accountId) return
   try {
     const d = await get<{ folders?: CustomFolder[] }>('/mail-folders', { account_id: accountId }, quietErrors)
-    customFolders.value = { ...customFolders.value, [accountId]: (d.folders ?? []).map((f) => ({
-      id: Number(f.id), accountId: Number(f.accountId), name: f.name, viewKey: f.viewKey,
+    hostFolders.value = { ...hostFolders.value, [accountId]: (d.folders ?? []).map((f) => ({
+      id: Number(f.id), accountId: Number(f.accountId), name: f.name, viewKey: f.viewKey, role: f.role,
     })) }
   } catch {
     // 锁着、或者服务器暂时连不上：留着上一次的

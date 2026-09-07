@@ -1279,7 +1279,7 @@ func ownerIDsOf(rows []app.ExcelUsageRow) []int64 {
 // ---------------------------------------------------------- 自建文件夹
 
 func folderToProto(f app.MailFolder) *mailv1.MailFolder {
-	return &mailv1.MailFolder{Id: f.ID, AccountId: f.AccountID, Name: f.Name, ViewKey: f.ViewKey()}
+	return &mailv1.MailFolder{Id: f.ID, AccountId: f.AccountID, Name: f.Name, ViewKey: f.ViewKey(), Role: f.Role}
 }
 
 func (h *Handler) ListMailFolders(ctx context.Context, req *mailv1.ListMailFoldersRequest) (*mailv1.ListMailFoldersResponse, error) {

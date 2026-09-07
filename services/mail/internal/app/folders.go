@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -24,7 +25,27 @@ import (
 // v1 的边界：员工在 Foxmail 里直接往自建文件夹收的新信，ERP 不回拉；在 ERP
 // 里建、在 ERP 里挪、两边都看得到，先把这条做稳。
 
-// MailFolder 是一个自建文件夹。
+// 文件夹的角色。左栏按同一级别显示服务器上的全部文件夹，角色决定图标、
+// 位置、能不能改名删除：只有 CUSTOM 能。角色按可信度定，见 roleOf。
+const (
+	roleInbox   = "INBOX"
+	roleSent    = "SENT"
+	roleJunk    = "JUNK"
+	roleTrash   = "TRASH"
+	roleArchive = "ARCHIVE"
+	roleDrafts  = "DRAFTS"
+	// roleSystem 是服务器自带、ERP 不认得的：病毒文件夹、广告邮件、其他文件夹。
+	roleSystem = "SYSTEM"
+	roleCustom = "CUSTOM"
+)
+
+// roleRank 是左栏的顺序：认得的系统文件夹在前，自建的在后，同角色按名字。
+var roleRank = map[string]int{
+	roleInbox: 0, roleSent: 1, roleArchive: 2, roleJunk: 3, roleTrash: 4,
+	roleDrafts: 5, roleSystem: 6, roleCustom: 7,
+}
+
+// MailFolder 是服务器上的一个文件夹在 ERP 里的登记。
 type MailFolder struct {
 	ID        int64
 	AccountID int64
@@ -33,10 +54,17 @@ type MailFolder struct {
 	// "显示名和服务器名不同"留的路（比如层级）。
 	Name     string
 	HostName string
+	Role     string
 }
 
-// ViewKey 是这个文件夹在列表接口里的 view 参数。
-func (f MailFolder) ViewKey() string { return "F:" + f.HostName }
+// ViewKey 是这个文件夹在列表接口里的 view 参数。只有自建的走 'F:' 视图；
+// 系统文件夹各有各的视图（INBOX、TRASH……），由前端按角色映射。
+func (f MailFolder) ViewKey() string {
+	if f.Role == roleCustom {
+		return "F:" + f.HostName
+	}
+	return ""
+}
 
 // maxFolderNameRunes 是文件夹名的长度上限。服务器各有各的限制，120 个字符
 // 在所有已知服务商里都安全。
@@ -48,6 +76,9 @@ const maxFolderNameRunes = 120
 type HostFolder struct {
 	Name    string
 	Special bool
+	// Role 是属性翻出来的角色提示（DRAFTS/SENT/JUNK/TRASH/ARCHIVE/SYSTEM），
+	// 没有属性就是空串。属性是权威的，所以它在 roleOf 里排在猜名字前面。
+	Role string
 }
 
 // providerSystemFolders 是各家邮箱服务器自带的系统文件夹名。
@@ -63,7 +94,7 @@ var providerSystemFolders = []string{
 	// 263 / 网易 163、126 / 新浪
 	"收件箱", "草稿箱", "草稿夹", "已发送", "已发送邮件", "发件箱",
 	"已删除", "已删除邮件", "垃圾邮件", "垃圾箱", "已归档",
-	"病毒文件夹", "病毒邮件", "广告邮件", "订阅邮件",
+	"病毒文件夹", "病毒邮件", "广告邮件", "订阅邮件", "其他文件夹",
 	// QQ / 腾讯企业 / 阿里 / 通用英文
 	"INBOX", "Drafts", "Sent", "Sent Messages", "Sent Items",
 	"Deleted Messages", "Deleted Items", "Trash", "Junk", "Spam", "Archive",
@@ -127,22 +158,76 @@ func (s *Service) ListMailFolders(ctx context.Context, tenantID, employeeID, acc
 	if err != nil {
 		return nil, err
 	}
-	s.importHostFolders(ctx, tenantID, employeeID, acct)
+	s.syncHostFolders(ctx, tenantID, employeeID, acct)
 	rows, err := s.q.ListMailFolders(ctx, store.ListMailFoldersParams{TenantID: tenantID, AccountID: accountID})
 	if err != nil {
 		return nil, err
 	}
 	out := make([]MailFolder, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, MailFolder{ID: r.ID, AccountID: r.AccountID, Name: r.Name, HostName: r.HostName})
+		out = append(out, MailFolder{ID: r.ID, AccountID: r.AccountID, Name: r.Name, HostName: r.HostName, Role: r.Role})
 	}
+	sort.SliceStable(out, func(a, b int) bool {
+		ra, rb := roleRank[out[a].Role], roleRank[out[b].Role]
+		if ra != rb {
+			return ra < rb
+		}
+		return out[a].Name < out[b].Name
+	})
 	return out, nil
 }
 
-// importHostFolders 把服务器上有、库里没有的普通文件夹登记进来。
-// 系统文件夹（INBOX、已发送、垃圾、回收站、归档、草稿，以及 Gmail 的
-// [Gmail]/…）不算。
-func (s *Service) importHostFolders(ctx context.Context, tenantID, employeeID int64, acct MailAccount) {
+// isDraftsName 认各家草稿箱的名字：属性缺席时的兜底。
+func isDraftsName(name string) bool {
+	for _, d := range []string{"Drafts", "Draft", "草稿箱", "草稿夹", "草稿"} {
+		if strings.EqualFold(strings.TrimSpace(name), d) {
+			return true
+		}
+	}
+	return false
+}
+
+// roleOf 给服务器上的一个文件夹定角色，按可信度从高到低：
+//
+//  1. INBOX 就是 INBOX。
+//  2. 我们定位到的已发送 / 垃圾邮件 / 已删除 / 归档（定位本身先看属性再猜名字）。
+//  3. 服务器声明的属性（Gmail、新服务器）。
+//  4. Gmail 的 [Gmail]/… 一律系统。
+//  5. 各家默认名：草稿箱一类是 DRAFTS，其余是 SYSTEM。
+//  6. 都不是，才算用户建的。
+//
+// 名单永远不可能完整，所以漏网的会成为 CUSTOM；服务器对它的改名/删除答
+// 「默认文件夹」时再改成 SYSTEM（见 hostSaysDefaultFolder）。
+func roleOf(hf HostFolder, specials map[string]string) string {
+	n := hf.Name
+	switch {
+	case n == "INBOX":
+		return roleInbox
+	case n != "" && n == specials["sent"]:
+		return roleSent
+	case n != "" && n == specials["junk"]:
+		return roleJunk
+	case n != "" && n == specials["trash"]:
+		return roleTrash
+	case n != "" && n == specials["archive"]:
+		return roleArchive
+	case hf.Role != "":
+		return hf.Role
+	case strings.HasPrefix(n, "[Gmail]"):
+		return roleSystem
+	case isDraftsName(n):
+		return roleDrafts
+	case isProviderSystemFolder(n):
+		return roleSystem
+	default:
+		return roleCustom
+	}
+}
+
+// syncHostFolders 把服务器 LIST 回来的全部文件夹登记进来（或刷新角色），
+// 服务器上已经没有、库里又没有信的登记清掉。LIST 失败就什么都不动，列表
+// 以库里为准——服务器暂时连不上不该让左栏少一截。
+func (s *Service) syncHostFolders(ctx context.Context, tenantID, employeeID int64, acct MailAccount) {
 	if s.mailbox == nil {
 		return
 	}
@@ -152,35 +237,59 @@ func (s *Service) importHostFolders(ctx context.Context, tenantID, employeeID in
 			"account", acct.AccountID, "err", err)
 		return
 	}
-	system := map[string]bool{"INBOX": true}
+	specials := map[string]string{}
 	for _, kind := range []string{"sent", "junk", "trash", "archive"} {
 		if n, err := s.specialFolderOf(ctx, acct, kind); err == nil && n != "" {
-			system[n] = true
+			specials[kind] = n
 		}
 	}
-	known := map[string]bool{}
-	if rows, err := s.q.ListMailFolders(ctx, store.ListMailFoldersParams{TenantID: tenantID, AccountID: acct.AccountID}); err == nil {
-		for _, r := range rows {
-			known[r.HostName] = true
-		}
-	}
+	onHost := map[string]bool{}
 	for _, hf := range names {
-		n := hf.Name
-		// 三道筛子，缺一道都会把服务器自带的文件夹当成用户建的登记进来：
-		// 属性（Gmail、新服务器声明）、我们认出来的特殊文件夹（sent/junk/
-		// trash/archive）、各家的系统名单（263、网易这些不声明属性的）。
-		if hf.Special || system[n] || known[n] || strings.HasPrefix(n, "[Gmail]") || isProviderSystemFolder(n) {
+		if _, err := validFolderName(hf.Name); err != nil && roleOf(hf, specials) == roleCustom {
+			continue // 带层级或奇怪字符的自建文件夹，v1 不接；系统的名字不受这条限制
+		}
+		onHost[hf.Name] = true
+		if _, err := s.q.UpsertHostFolder(ctx, store.UpsertHostFolderParams{
+			TenantID: tenantID, AccountID: acct.AccountID, HostName: hf.Name,
+			Role: roleOf(hf, specials), CreatedBy: employeeID,
+		}); err != nil {
+			s.log.Warn("could not register a host folder", "account", acct.AccountID, "folder", hf.Name, "err", err)
+		}
+	}
+	rows, err := s.q.ListMailFolders(ctx, store.ListMailFoldersParams{TenantID: tenantID, AccountID: acct.AccountID})
+	if err != nil {
+		return
+	}
+	for _, r := range rows {
+		if onHost[r.HostName] {
 			continue
 		}
-		if _, err := validFolderName(n); err != nil {
-			continue // 带层级或奇怪字符的，v1 不接
+		// 服务器上没了（在 Foxmail 里删的）。里面还有 ERP 的信就留着：
+		// 让信失去文件夹比左栏多一行更糟。
+		n, err := s.q.CountInboundInFolder(ctx, store.CountInboundInFolderParams{TenantID: tenantID, AccountID: acct.AccountID, Folder: r.HostName})
+		if err != nil || n > 0 {
+			continue
 		}
-		if _, err := s.q.CreateMailFolder(ctx, store.CreateMailFolderParams{
-			TenantID: tenantID, AccountID: acct.AccountID, Name: n, HostName: n, CreatedBy: employeeID,
-		}); err != nil {
-			s.log.Warn("could not register a host folder", "account", acct.AccountID, "folder", n, "err", err)
+		if err := s.q.DeleteMailFolder(ctx, store.DeleteMailFolderParams{TenantID: tenantID, ID: r.ID}); err != nil {
+			s.log.Warn("could not drop a folder gone from the host", "account", acct.AccountID, "folder", r.HostName, "err", err)
 		}
 	}
+}
+
+// hostSaysDefaultFolder 认出服务器「这是默认文件夹，不能改/删」的答复：
+// 263 答 "can't rename default folder"，Gmail 答 "System folder cannot be
+// renamed"。认出来就把角色改成 SYSTEM——服务器的拒绝是最后的裁判。
+func hostSaysDefaultFolder(err error) bool {
+	if err == nil {
+		return false
+	}
+	m := strings.ToLower(err.Error())
+	for _, hint := range []string{"default folder", "system folder", "cannot be renamed", "cannot be deleted", "can't rename", "can't delete", "系统文件夹"} {
+		if strings.Contains(m, hint) {
+			return true
+		}
+	}
+	return false
 }
 
 // CreateMailFolder 建一个文件夹：先在服务器上建，成了再登记。
@@ -204,12 +313,12 @@ func (s *Service) CreateMailFolder(ctx context.Context, tenantID, employeeID, ac
 		return MailFolder{}, apierr.Invalid("MAIL_FOLDER_CREATE_FAILED", "邮箱服务器拒绝新建这个文件夹："+err.Error())
 	}
 	row, err := s.q.CreateMailFolder(ctx, store.CreateMailFolderParams{
-		TenantID: tenantID, AccountID: accountID, Name: name, HostName: name, CreatedBy: employeeID,
+		TenantID: tenantID, AccountID: accountID, Name: name, HostName: name, Role: roleCustom, CreatedBy: employeeID,
 	})
 	if err != nil {
 		return MailFolder{}, apierr.Invalid("MAIL_FOLDER_EXISTS", "已经有同名的文件夹了")
 	}
-	return MailFolder{ID: row.ID, AccountID: row.AccountID, Name: row.Name, HostName: row.HostName}, nil
+	return MailFolder{ID: row.ID, AccountID: row.AccountID, Name: row.Name, HostName: row.HostName, Role: row.Role}, nil
 }
 
 // RenameMailFolder 改名：服务器上 RENAME，登记改名，行里存的名字跟着改。
@@ -223,16 +332,23 @@ func (s *Service) RenameMailFolder(ctx context.Context, tenantID, employeeID, fo
 	if err != nil {
 		return MailFolder{}, err
 	}
+	if f.Role != roleCustom {
+		return MailFolder{}, apierr.Invalid("MAIL_FOLDER_SYSTEM", "这是邮箱服务器自带的文件夹，不能改名")
+	}
 	// 改成同名 = 不动。放在校验前面：名单扩了之后，一个改版前就叫「已归档」
 	// 的正当文件夹，改成同名本该是无操作，先校验会把它拒掉。
 	if strings.TrimSpace(name) == f.HostName {
-		return MailFolder{ID: f.ID, AccountID: f.AccountID, Name: f.Name, HostName: f.HostName}, nil
+		return MailFolder{ID: f.ID, AccountID: f.AccountID, Name: f.Name, HostName: f.HostName, Role: f.Role}, nil
 	}
 	name, err = validFolderName(name)
 	if err != nil {
 		return MailFolder{}, err
 	}
 	if err := s.mailbox.RenameFolder(ctx, acct, f.HostName, name); err != nil {
+		if hostSaysDefaultFolder(err) {
+			_ = s.q.SetMailFolderRole(ctx, store.SetMailFolderRoleParams{TenantID: tenantID, ID: f.ID, Role: roleSystem})
+			return MailFolder{}, apierr.Invalid("MAIL_FOLDER_SYSTEM", "邮箱服务器说这是它自带的文件夹，不能改名；已按系统文件夹处理")
+		}
 		return MailFolder{}, apierr.Invalid("MAIL_FOLDER_RENAME_FAILED", "邮箱服务器拒绝重命名："+err.Error())
 	}
 	if err := s.q.RenameMailFolder(ctx, store.RenameMailFolderParams{
@@ -247,7 +363,7 @@ func (s *Service) RenameMailFolder(ctx context.Context, tenantID, employeeID, fo
 		// 记下来，人能查；不回滚——服务器那边已经改了，回滚只会更乱。
 		s.log.Warn("renamed a folder but could not relabel its mail", "folder", f.HostName, "err", err)
 	}
-	return MailFolder{ID: f.ID, AccountID: f.AccountID, Name: name, HostName: name}, nil
+	return MailFolder{ID: f.ID, AccountID: f.AccountID, Name: name, HostName: name, Role: f.Role}, nil
 }
 
 // DeleteMailFolder 删文件夹。**里面还有信就不删**：服务器的 DELETE 会连信一起
@@ -262,6 +378,9 @@ func (s *Service) DeleteMailFolder(ctx context.Context, tenantID, employeeID, fo
 	if err != nil {
 		return err
 	}
+	if f.Role != roleCustom {
+		return apierr.Invalid("MAIL_FOLDER_SYSTEM", "这是邮箱服务器自带的文件夹，不能删除")
+	}
 	n, err := s.q.CountInboundInFolder(ctx, store.CountInboundInFolderParams{
 		TenantID: tenantID, AccountID: f.AccountID, Folder: f.HostName,
 	})
@@ -272,6 +391,10 @@ func (s *Service) DeleteMailFolder(ctx context.Context, tenantID, employeeID, fo
 		return apierr.Invalid("MAIL_FOLDER_NOT_EMPTY", fmt.Sprintf("文件夹里还有 %d 封信，先把它们移走再删", n))
 	}
 	if err := s.mailbox.DeleteFolder(ctx, acct, f.HostName); err != nil {
+		if hostSaysDefaultFolder(err) {
+			_ = s.q.SetMailFolderRole(ctx, store.SetMailFolderRoleParams{TenantID: tenantID, ID: f.ID, Role: roleSystem})
+			return apierr.Invalid("MAIL_FOLDER_SYSTEM", "邮箱服务器说这是它自带的文件夹，不能删除；已按系统文件夹处理")
+		}
 		return apierr.Invalid("MAIL_FOLDER_DELETE_FAILED", "邮箱服务器拒绝删除："+err.Error())
 	}
 	return s.q.DeleteMailFolder(ctx, store.DeleteMailFolderParams{TenantID: tenantID, ID: folderID})
@@ -295,6 +418,9 @@ func (s *Service) MoveInbound(ctx context.Context, tenantID, ownerID, mailID, fo
 		f, err := s.q.GetMailFolder(ctx, store.GetMailFolderParams{TenantID: tenantID, ID: folderID})
 		if err != nil || f.AccountID != row.AccountID {
 			return apierr.NotFound("MAIL_FOLDER_NOT_FOUND", "文件夹不存在")
+		}
+		if f.Role != roleCustom {
+			return apierr.Invalid("MAIL_FOLDER_SYSTEM", "只能挪进自建文件夹或收件箱")
 		}
 		target, erpFolder = f.HostName, f.HostName
 	}
@@ -354,6 +480,9 @@ func (s *Service) resolveMoveTarget(ctx context.Context, tenantID, folderID int6
 	f, err := s.q.GetMailFolder(ctx, store.GetMailFolderParams{TenantID: tenantID, ID: folderID})
 	if err != nil {
 		return moveTarget{}, apierr.NotFound("MAIL_FOLDER_NOT_FOUND", "文件夹不存在")
+	}
+	if f.Role != roleCustom {
+		return moveTarget{}, apierr.Invalid("MAIL_FOLDER_SYSTEM", "只能挪进自建文件夹或收件箱")
 	}
 	return moveTarget{accountID: f.AccountID, host: f.HostName, erp: f.HostName}, nil
 }

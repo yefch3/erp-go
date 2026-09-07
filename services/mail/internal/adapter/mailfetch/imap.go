@@ -221,7 +221,9 @@ func (f *IMAP) TrashFolder(ctx context.Context, acct app.MailAccount) (string, e
 // keeps the archive on the ERP side.
 func (f *IMAP) ArchiveFolder(ctx context.Context, acct app.MailAccount) (string, error) {
 	name, err := f.specialFolderOrEmpty(acct, imap.ArchiveAttr,
-		[]string{"Archive", "Archives", "归档"})
+		// 263 的归档叫「已归档」，不声明属性：不猜这个名字的话 263 的归档一直
+		// 留在 ERP 侧，服务器上那个文件夹空着。
+		[]string{"Archive", "Archives", "归档", "已归档"})
 	if err != nil || name != "" {
 		return name, err
 	}
@@ -961,7 +963,8 @@ func (f *IMAP) ListFolders(ctx context.Context, acct app.MailAccount) (_ []app.H
 	go func() { done <- c.List("", "*", boxes) }()
 	var out []app.HostFolder
 	for b := range boxes {
-		out = append(out, app.HostFolder{Name: b.Name, Special: notUserMade(b.Attributes)})
+		role := roleHint(b.Attributes)
+		out = append(out, app.HostFolder{Name: b.Name, Special: role != "", Role: role})
 	}
 	if err := <-done; err != nil {
 		return nil, fmt.Errorf("列出文件夹失败：%w", err)
@@ -969,18 +972,27 @@ func (f *IMAP) ListFolders(ctx context.Context, acct app.MailAccount) (_ []app.H
 	return out, nil
 }
 
-// notUserMade 看 LIST 给的属性：special-use（RFC 6154）说明这是服务器自带的
-// 草稿/已发送/垃圾/回收站/归档，\Noselect 说明它只是个层级容器。两种都不是
-// 用户建的文件夹。
-func notUserMade(attrs []string) bool {
+// roleHint 把 LIST 给的属性翻成角色：special-use（RFC 6154）说明这是服务器
+// 自带的草稿/已发送/垃圾/回收站/归档；\All \Flagged \Important 和 \Noselect
+// 也都不是用户建的，归为系统。没有属性回空串，交给服务层猜名字。
+func roleHint(attrs []string) string {
 	for _, a := range attrs {
 		switch a {
-		case imap.NoSelectAttr, imap.AllAttr, imap.ArchiveAttr, imap.DraftsAttr, imap.FlaggedAttr,
-			imap.JunkAttr, imap.SentAttr, imap.TrashAttr, imap.ImportantAttr:
-			return true
+		case imap.DraftsAttr:
+			return "DRAFTS"
+		case imap.SentAttr:
+			return "SENT"
+		case imap.JunkAttr:
+			return "JUNK"
+		case imap.TrashAttr:
+			return "TRASH"
+		case imap.ArchiveAttr:
+			return "ARCHIVE"
+		case imap.NoSelectAttr, imap.AllAttr, imap.FlaggedAttr, imap.ImportantAttr:
+			return "SYSTEM"
 		}
 	}
-	return false
+	return ""
 }
 
 // CreateFolder 在服务器上建一个文件夹。go-imap 会把名字编成 UTF-7，中文名

@@ -211,4 +211,9 @@ func TestFolderCommandsGoOverTheWireWithUTF7Names(t *testing.T) {
 	if special, ok := byName["Drafts"]; !ok || !special {
 		t.Errorf("带 \\Drafts 属性的应该标成「不是用户建的」：%+v", names)
 	}
+	for _, n := range names {
+		if n.Name == "Drafts" && n.Role != "DRAFTS" {
+			t.Errorf("\\Drafts 属性应该翻成角色提示 DRAFTS，实际 %q", n.Role)
+		}
+	}
 }

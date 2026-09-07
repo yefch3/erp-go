@@ -502,10 +502,10 @@ func (q *Queries) CountUnreadByMailbox(ctx context.Context, arg CountUnreadByMai
 }
 
 const createMailFolder = `-- name: CreateMailFolder :one
-INSERT INTO mail_folders (tenant_id, account_id, name, host_name, created_by)
+INSERT INTO mail_folders (tenant_id, account_id, name, host_name, role, created_by)
 VALUES ($1::bigint, $2::bigint,
-        $3::text, $4::text, $5::bigint)
-RETURNING id, account_id, name, host_name, created_by, created_at
+        $3::text, $4::text, $5::text, $6::bigint)
+RETURNING id, account_id, name, host_name, role, created_by, created_at
 `
 
 type CreateMailFolderParams struct {
@@ -513,6 +513,7 @@ type CreateMailFolderParams struct {
 	AccountID int64
 	Name      string
 	HostName  string
+	Role      string
 	CreatedBy int64
 }
 
@@ -521,6 +522,7 @@ type CreateMailFolderRow struct {
 	AccountID int64
 	Name      string
 	HostName  string
+	Role      string
 	CreatedBy int64
 	CreatedAt pgtype.Timestamptz
 }
@@ -531,6 +533,7 @@ func (q *Queries) CreateMailFolder(ctx context.Context, arg CreateMailFolderPara
 		arg.AccountID,
 		arg.Name,
 		arg.HostName,
+		arg.Role,
 		arg.CreatedBy,
 	)
 	var i CreateMailFolderRow
@@ -539,6 +542,7 @@ func (q *Queries) CreateMailFolder(ctx context.Context, arg CreateMailFolderPara
 		&i.AccountID,
 		&i.Name,
 		&i.HostName,
+		&i.Role,
 		&i.CreatedBy,
 		&i.CreatedAt,
 	)
@@ -1194,7 +1198,7 @@ func (q *Queries) GetMailAccountSecret(ctx context.Context, arg GetMailAccountSe
 }
 
 const getMailFolder = `-- name: GetMailFolder :one
-SELECT id, account_id, name, host_name, created_by, created_at
+SELECT id, account_id, name, host_name, role, created_by, created_at
 FROM mail_folders
 WHERE tenant_id = $1::bigint AND id = $2::bigint
 `
@@ -1209,6 +1213,7 @@ type GetMailFolderRow struct {
 	AccountID int64
 	Name      string
 	HostName  string
+	Role      string
 	CreatedBy int64
 	CreatedAt pgtype.Timestamptz
 }
@@ -1221,6 +1226,7 @@ func (q *Queries) GetMailFolder(ctx context.Context, arg GetMailFolderParams) (G
 		&i.AccountID,
 		&i.Name,
 		&i.HostName,
+		&i.Role,
 		&i.CreatedBy,
 		&i.CreatedAt,
 	)
@@ -2020,7 +2026,7 @@ func (q *Queries) ListMailAccountsForEmployee(ctx context.Context, arg ListMailA
 
 const listMailFolders = `-- name: ListMailFolders :many
 
-SELECT id, account_id, name, host_name, created_by, created_at
+SELECT id, account_id, name, host_name, role, created_by, created_at
 FROM mail_folders
 WHERE tenant_id = $1::bigint
   AND account_id = $2::bigint
@@ -2037,6 +2043,7 @@ type ListMailFoldersRow struct {
 	AccountID int64
 	Name      string
 	HostName  string
+	Role      string
 	CreatedBy int64
 	CreatedAt pgtype.Timestamptz
 }
@@ -2056,6 +2063,7 @@ func (q *Queries) ListMailFolders(ctx context.Context, arg ListMailFoldersParams
 			&i.AccountID,
 			&i.Name,
 			&i.HostName,
+			&i.Role,
 			&i.CreatedBy,
 			&i.CreatedAt,
 		); err != nil {
@@ -4122,6 +4130,23 @@ func (q *Queries) SetMailAccountSecret(ctx context.Context, arg SetMailAccountSe
 	return err
 }
 
+const setMailFolderRole = `-- name: SetMailFolderRole :exec
+UPDATE mail_folders SET role = $1::text
+WHERE tenant_id = $2::bigint AND id = $3::bigint
+`
+
+type SetMailFolderRoleParams struct {
+	Role     string
+	TenantID int64
+	ID       int64
+}
+
+// 服务器对改名/删除答「默认文件夹」时把它标成系统：服务器的拒绝是最后的裁判。
+func (q *Queries) SetMailFolderRole(ctx context.Context, arg SetMailFolderRoleParams) error {
+	_, err := q.db.Exec(ctx, setMailFolderRole, arg.Role, arg.TenantID, arg.ID)
+	return err
+}
+
 const setThreadFlags = `-- name: SetThreadFlags :many
 UPDATE email_inbound
 SET is_read    = coalesce($1::boolean, is_read),
@@ -4425,6 +4450,62 @@ func (q *Queries) UpdateMailAccountAddress(ctx context.Context, arg UpdateMailAc
 		arg.ID,
 	)
 	return err
+}
+
+const upsertHostFolder = `-- name: UpsertHostFolder :one
+INSERT INTO mail_folders (tenant_id, account_id, name, host_name, role, created_by)
+VALUES ($1::bigint, $2::bigint,
+        $3::text, $3::text, $4::text, $5::bigint)
+ON CONFLICT (tenant_id, account_id, host_name) DO UPDATE
+SET role = CASE
+             WHEN mail_folders.role = 'SYSTEM' AND EXCLUDED.role = 'CUSTOM' THEN mail_folders.role
+             ELSE EXCLUDED.role
+           END
+RETURNING id, account_id, name, host_name, role, created_by, created_at
+`
+
+type UpsertHostFolderParams struct {
+	TenantID  int64
+	AccountID int64
+	HostName  string
+	Role      string
+	CreatedBy int64
+}
+
+type UpsertHostFolderRow struct {
+	ID        int64
+	AccountID int64
+	Name      string
+	HostName  string
+	Role      string
+	CreatedBy int64
+	CreatedAt pgtype.Timestamptz
+}
+
+// 每次列文件夹，把服务器 LIST 回来的每一个登记进来（或刷新角色）。角色由
+// 调用方按可信度算好传进来；名字对系统文件夹就是服务器名。
+// 服务器对改名/删除答过「默认文件夹」的，已经被标成 SYSTEM（SetMailFolderRole）；
+// 名单认不出它、按名字又算成 CUSTOM 时不能把这个判断盖掉——服务器的话比名单
+// 可信。其余情况角色跟着最新的判断走（比如猜名单补全后从 SYSTEM 变 ARCHIVE）。
+func (q *Queries) UpsertHostFolder(ctx context.Context, arg UpsertHostFolderParams) (UpsertHostFolderRow, error) {
+	row := q.db.QueryRow(ctx, upsertHostFolder,
+		arg.TenantID,
+		arg.AccountID,
+		arg.HostName,
+		arg.Role,
+		arg.CreatedBy,
+	)
+	var i UpsertHostFolderRow
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Name,
+		&i.HostName,
+		&i.Role,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const upsertMailAccountShell = `-- name: UpsertMailAccountShell :one

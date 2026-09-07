@@ -409,8 +409,11 @@ message MailFolder {
   int64 id = 1;
   int64 account_id = 2;
   string name = 3;
-  // 列表接口的 view 参数用它：'F:' + 服务器上的名字。
+  // 列表接口的 view 参数用它：'F:' + 服务器上的名字。只有自建的（CUSTOM）有。
   string view_key = 4;
+  // INBOX / SENT / JUNK / TRASH / ARCHIVE / DRAFTS / SYSTEM / CUSTOM。左栏按它定
+  // 图标、位置和能不能改名删除；只有 CUSTOM 能。
+  string role = 5;
 }
 message ListMailFoldersRequest { int64 account_id = 1; }
 message ListMailFoldersResponse { repeated MailFolder folders = 1; }

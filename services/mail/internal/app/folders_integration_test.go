@@ -21,6 +21,7 @@ type folderHost struct {
 	Mailbox
 	folders  []string
 	special  []string // 带 special-use 属性的（服务器自带）
+	refuse   error    // 设了之后 RENAME/DELETE 一律用它拒绝（模拟 263 的 default folder）
 	created  []string
 	renamed  []string // "old→new"
 	deleted  []string
@@ -45,7 +46,7 @@ func (h *folderHost) ListFolders(context.Context, MailAccount) ([]HostFolder, er
 		out = append(out, HostFolder{Name: n})
 	}
 	for _, n := range h.special {
-		out = append(out, HostFolder{Name: n, Special: true})
+		out = append(out, HostFolder{Name: n, Special: true, Role: "SYSTEM"})
 	}
 	return out, nil
 }
@@ -55,10 +56,16 @@ func (h *folderHost) CreateFolder(_ context.Context, _ MailAccount, name string)
 	return nil
 }
 func (h *folderHost) RenameFolder(_ context.Context, _ MailAccount, oldName, newName string) error {
+	if h.refuse != nil {
+		return h.refuse
+	}
 	h.renamed = append(h.renamed, oldName+"→"+newName)
 	return nil
 }
 func (h *folderHost) DeleteFolder(_ context.Context, _ MailAccount, name string) error {
+	if h.refuse != nil {
+		return h.refuse
+	}
 	h.deleted = append(h.deleted, name)
 	return nil
 }
@@ -187,11 +194,10 @@ func TestCreateFolderMakesItOnTheHostThenRegistersIt(t *testing.T) {
 	}
 }
 
-// 列：服务器上有、我们没登记的普通文件夹自动登记进来（Foxmail 里建的）；
-// 系统文件夹不算——不管它是靠属性认出来的（Gmail 的 Drafts），还是只有名字
-// 的（263 的草稿箱、已归档，网易的病毒文件夹）。漏掉后者的表现就是左栏多出
-// 一个「草稿箱」，改名时服务器答 "can't rename default folder"。
-func TestListImportsFoldersMadeElsewhere(t *testing.T) {
+// 列：服务器 LIST 回来的**全部**文件夹都登记，各带角色；顺序是认得的系统
+// 文件夹在前、自建在后。角色按可信度：定位到的已发送/垃圾/已删除 → 属性 →
+// [Gmail]/ → 各家默认名（草稿箱是 DRAFTS，其余 SYSTEM）→ 都不是才算自建。
+func TestListingRegistersEveryHostFolderWithItsRole(t *testing.T) {
 	f := newFolderFixture(t, 9102)
 	f.host.folders = []string{"客户跟进", "[Gmail]/All Mail", "Drafts", "草稿箱", "已归档", "病毒文件夹", "Sent Messages"}
 	f.host.special = []string{"Archive2"}
@@ -199,8 +205,100 @@ func TestListImportsFoldersMadeElsewhere(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0].Name != "客户跟进" {
-		t.Fatalf("应该只导入「客户跟进」，实际 %+v", got)
+	roles := map[string]string{}
+	for _, g := range got {
+		roles[g.Name] = g.Role
+	}
+	want := map[string]string{
+		"INBOX": roleInbox, "已发送": roleSent, "垃圾邮件": roleJunk, "已删除": roleTrash,
+		"Drafts": roleDrafts, "草稿箱": roleDrafts,
+		"[Gmail]/All Mail": roleSystem, "已归档": roleSystem, "病毒文件夹": roleSystem, "Sent Messages": roleSystem, "Archive2": roleSystem,
+		"客户跟进": roleCustom,
+	}
+	for name, role := range want {
+		if roles[name] != role {
+			t.Errorf("%s 的角色应该是 %s，实际 %q", name, role, roles[name])
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("应该登记 %d 个，实际 %d：%+v", len(want), len(got), got)
+	}
+	if got[0].Name != "INBOX" || got[len(got)-1].Name != "客户跟进" {
+		t.Errorf("顺序应该是 INBOX 在前、自建在后，实际 %s … %s", got[0].Name, got[len(got)-1].Name)
+	}
+	if got[len(got)-1].ViewKey() != "F:客户跟进" || got[0].ViewKey() != "" {
+		t.Errorf("只有自建的有 F: 视图：%q / %q", got[len(got)-1].ViewKey(), got[0].ViewKey())
+	}
+
+	// 服务器上没了（Foxmail 里删的）：没信就清掉；有信的留着。
+	kept := f.insertMail(t, "客户跟进", 81, "留在里面的")
+	_ = kept
+	f.host.folders = []string{"[Gmail]/All Mail", "Drafts", "草稿箱", "已归档", "病毒文件夹"}
+	f.host.special = nil
+	got, err = f.svc.ListMailFolders(context.Background(), f.tenantID, f.me, f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, g := range got {
+		names[g.Name] = true
+	}
+	if names["Sent Messages"] || names["Archive2"] {
+		t.Errorf("服务器上没了、里面又没信的应该清掉：%+v", got)
+	}
+	if !names["客户跟进"] {
+		t.Error("服务器上没了但里面还有信的要留着，不然信失去文件夹")
+	}
+}
+
+// 系统文件夹不能改名删除：ERP 自己拦，根本不往服务器发。漏网成 CUSTOM 的，
+// 服务器答「默认文件夹」时自动改成 SYSTEM——服务器的拒绝是最后的裁判。
+func TestSystemFoldersCannotBeRenamedOrDeleted(t *testing.T) {
+	f := newFolderFixture(t, 9109)
+	ctx := context.Background()
+	f.host.folders = []string{"草稿箱", "临时"}
+	got, err := f.svc.ListMailFolders(ctx, f.tenantID, f.me, f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var drafts, tmp MailFolder
+	for _, g := range got {
+		switch g.Name {
+		case "草稿箱":
+			drafts = g
+		case "临时":
+			tmp = g
+		}
+	}
+	if drafts.Role != roleDrafts || tmp.Role != roleCustom {
+		t.Fatalf("角色不对：草稿箱=%s 临时=%s", drafts.Role, tmp.Role)
+	}
+	if _, err := f.svc.RenameMailFolder(ctx, f.tenantID, f.me, drafts.ID, "草稿2"); err == nil || !strings.Contains(err.Error(), "MAIL_FOLDER_SYSTEM") {
+		t.Errorf("系统文件夹改名应该被拒：%v", err)
+	}
+	if err := f.svc.DeleteMailFolder(ctx, f.tenantID, f.me, drafts.ID); err == nil || !strings.Contains(err.Error(), "MAIL_FOLDER_SYSTEM") {
+		t.Errorf("系统文件夹删除应该被拒：%v", err)
+	}
+	if len(f.host.renamed) != 0 || len(f.host.deleted) != 0 {
+		t.Errorf("被拒的不该碰服务器：renamed=%v deleted=%v", f.host.renamed, f.host.deleted)
+	}
+
+	// 漏网的：服务器说它是默认文件夹 → 改成 SYSTEM，下次列表不再是 CUSTOM。
+	f.host.refuse = errors.New("RENAME can't rename default folder or Invalid folder name")
+	if _, err := f.svc.RenameMailFolder(ctx, f.tenantID, f.me, tmp.ID, "临时2"); err == nil || !strings.Contains(err.Error(), "MAIL_FOLDER_SYSTEM") {
+		t.Errorf("服务器答默认文件夹时应该报 MAIL_FOLDER_SYSTEM：%v", err)
+	}
+	f.host.refuse = nil
+	got, _ = f.svc.ListMailFolders(ctx, f.tenantID, f.me, f.account)
+	for _, g := range got {
+		if g.Name == "临时" && g.Role != roleSystem {
+			t.Errorf("服务器拒绝之后角色应该改成 SYSTEM，实际 %s", g.Role)
+		}
+	}
+	// 从此挪信也挪不进去了。
+	m := f.insertMail(t, "INBOX", 91, "想挪进去的")
+	if err := f.svc.MoveInbound(ctx, f.tenantID, f.me, m, tmp.ID); err == nil || !strings.Contains(err.Error(), "MAIL_FOLDER_SYSTEM") {
+		t.Errorf("系统文件夹不该能当挪信目标：%v", err)
 	}
 }
 
