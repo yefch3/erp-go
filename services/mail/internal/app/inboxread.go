@@ -569,17 +569,24 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 	out := make([]ThreadItem, 0, len(rows))
 	for _, r := range rows {
 		body, quoted := r.Body, ""
-		if r.Direction == "IN" && r.BodyFormat == "HTML" {
+		if r.BodyFormat == "HTML" {
 			// The fold matters most here and for the reason this view exists:
 			// turn sixteen of a conversation is turns one to fifteen stacked
 			// up, and the thread already shows those separately.
-			// Embedded before the sanitiser, remote after — see GetInbound.
-			body, quoted = SplitQuotedHistory(
-				stripOwnPixel(
+			//
+			// **两个方向都折。** 原来只折收到的，理由大概是"我们自己写的还要
+			// 折什么"——可回复带的引用恰恰是最长的那一段：写的两行在最上面，
+			// 底下是整条往来。不折的话，会话里我们发出的每一条都把历史再摊
+			// 一遍，正是这个视图要消灭的东西。
+			if r.Direction == "IN" {
+				// Embedded before the sanitiser, remote after — see GetInbound.
+				body = stripOwnPixel(
 					s.localiseImages(ctx,
 						SanitizeForReading(s.localiseImages(ctx, body, embedded[r.ID])),
 						swaps[r.ID]),
-					s.selfHost))
+					s.selfHost)
+			}
+			body, quoted = SplitQuotedHistory(body)
 		}
 		v := ThreadItem{
 			Direction: r.Direction, ID: r.ID, Subject: r.Subject,

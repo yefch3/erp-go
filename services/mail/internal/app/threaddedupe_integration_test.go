@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -153,5 +154,63 @@ func TestOurOwnSendIsNotShownTwiceWhenItLandsInOurOtherMailbox(t *testing.T) {
 	}
 	if items[0].Direction != "IN" {
 		t.Errorf("客户来信该是「收到」，实际 %s", items[0].Direction)
+	}
+}
+
+// 我们自己发出去的那一条，引用也要折起来。
+//
+// 原来只折收到的信。可回复带的引用恰恰是最长的那一段：写的两行在最上面，底下
+// 是整条往来。不折的话，会话里我们发出的每一条都把历史再摊一遍——正是这个
+// 视图要消灭的东西。
+func TestOurOwnRepliesFoldTheirQuotedHistoryToo(t *testing.T) {
+	pool, ctx := exportTestPool(t)
+	tenantID := scratchTenant(t, ctx, pool)
+	svc := New(pool, Deps{}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	const owner = int64(8004)
+	const key = "fold-our-own"
+
+	// 客户的原信，和我们带引用的回复——引用那段用写信框的写法。
+	seedInbound(t, ctx, pool, tenantID, owner, "INBOX", "buyer-1@example.com", key, "buyer@example.com", 9301)
+	reply := `<p>好的，周一发货。</p>` +
+		`<p>Ana Costa &lt;ana@buyer.com&gt; 写道：</p>` +
+		`<blockquote><p>` + strings.Repeat("请确认这批货的交期和包装方式。", 40) + `</p></blockquote>`
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO email_messages
+		  (tenant_id, message_key, sender_id, sender_name, to_email, subject,
+		   body, body_format, status, thread_key, sent_at)
+		VALUES ($1, gen_random_uuid(), $2, '李娜', 'ana@buyer.com', 'Re: 询价',
+		        $3, 'HTML', 'ACCEPTED', $4, '2026-03-02 11:00:00+00')`,
+		tenantID, owner, reply, key); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := svc.GetMailThread(ctx, tenantID, owner, 0, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out *ThreadItem
+	for i := range items {
+		if items[i].Direction == "OUT" {
+			out = &items[i]
+		}
+	}
+	if out == nil {
+		t.Fatal("会话里应该有我们发出的那一条")
+	}
+	if out.Quoted == "" {
+		t.Fatalf("我们自己发的回复也该把引用折起来，Body=%s", out.Body)
+	}
+	if !strings.Contains(out.Body, "周一发货") {
+		t.Errorf("写的那句话不该被折进去：%s", out.Body)
+	}
+	if strings.Contains(out.Body, "交期和包装") {
+		t.Errorf("引用的内容不该留在正文里：%s", out.Body)
+	}
+	if !strings.Contains(out.Quoted, "交期和包装") {
+		t.Errorf("引用的内容应该在折叠那半边：%s", out.Quoted)
+	}
+	// 「XXX <a@b> 写道：」那一行跟着引用一起折，不能孤零零留在上面。
+	if strings.Contains(out.Body, "写道") {
+		t.Errorf("引用的起始行也该折进去：%s", out.Body)
 	}
 }

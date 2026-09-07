@@ -44,6 +44,12 @@ func TestTheQuoteIsFoundInEveryClientsShape(t *testing.T) {
 			longQuote(`<p>在 2026年3月1日，Ana Costa 写道：</p>`),
 		"中文 发件人块": `<div>好的，周一发货。</div>` +
 			longQuote(`<p>发件人：Ana Costa 发送时间：2026年3月1日 收件人：李娜</p>`),
+		// ERP 自己的写信框加的那一行：没有日期，只有一个人和一个地址。
+		// 折不掉的话，我们发出的每一条回复都在会话里把历史再摊一遍。
+		"ERP 自己的回复": `<div>好的，周一发货。</div>` +
+			longQuote(`<p>李娜 &lt;lina@corp.example&gt; 写道：</p>`),
+		"ERP 自己的回复 英文": `<div>Confirmed, please ship Monday.</div>` +
+			longQuote(`<p>Li Na &lt;lina@corp.example&gt; wrote:</p>`),
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -247,5 +253,17 @@ func TestALongReplyChainFoldsToItsNewestTurn(t *testing.T) {
 	}
 	if !strings.Contains(fresh, "hold the price until Friday") {
 		t.Fatal("the newest turn did not survive above the fold")
+	}
+}
+
+// 正文里出现「他写道：」这种句子不能当成引用的开头——那一行得带个尖括号
+// 地址才算数。否则一封讲述别人说了什么的信会被拦腰折断。
+func TestASentenceThatMerelySaysWroteIsNotAQuoteHeader(t *testing.T) {
+	body := `<p>客户在电话里写道：这批货要提前。</p>` +
+		`<p>他写道：下周一之前必须发出。</p>` +
+		`<p>` + strings.Repeat("以上是今天沟通的全部内容。", 20) + `</p>`
+	fresh, quoted := SplitQuotedHistory(body)
+	if quoted != "" {
+		t.Errorf("不该折：这几句都是正文\nfresh=%s\nquoted=%s", fresh, quoted)
 	}
 }
