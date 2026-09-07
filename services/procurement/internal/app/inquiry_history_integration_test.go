@@ -102,7 +102,7 @@ func TestD1HistoricalProjection(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	if _, e = tx.Exec(ctx, `UPDATE sourcing_customer_selections SET status='CUSTOMER_CONFIRMED' WHERE tenant_id=$1 AND id=$2`, tenant, selectionID); e != nil {
 		t.Fatal(e)
 	}

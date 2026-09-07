@@ -68,7 +68,7 @@ func TestD1WithdrawalFence(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	if _, e = tx.Exec(ctx, `UPDATE quotations SET status='ACCEPTED' WHERE id=$1`, id); e != nil {
 		t.Fatal(e)
 	}
