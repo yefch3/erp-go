@@ -87,3 +87,68 @@ func TransportFailure(err error) bool {
 	}
 	return false
 }
+
+// 一台服务器把 IDLE 掐得太勤时，就别再跟它用 IDLE 了。
+//
+// 实测（生产，11 小时）：
+//
+//	263    4 个账号   116 次掉线   最短 66 秒一次
+//	163    1 个账号     5 次
+//	126    1 个账号     0 次
+//	Gmail  2 个账号     0 次
+//
+// 263 每 66 秒掐一次，而我们 5 分钟才主动续一次——那个闹钟永远轮不到响，
+// 每一圈都是「对方先挂断、我们再重拨」。功能上没坏（掉了就重连，收信照常），
+// 代价是那个信箱每分钟重新登录一次，一天一千多次。QQ 明确会限制登录频率，
+// 别的服务商也没有理由喜欢这个。
+//
+// 所以：连续几圈都撑不过一分钟，就认定这台服务器的 IDLE 没有意义，停掉推送，
+// 交给两分钟一轮的轮询。**代价是新信最多晚两分钟到**，换掉每分钟一次的重新
+// 登录——而那两分钟本来就是没人在看的箱的待遇。
+//
+// 判断按账号存在内存里：重启就忘，重新学一遍，最多白连几次。不落库是有意的
+// ——这是一台服务器此刻的脾气，不是一条需要长期记住的事实。
+const (
+	// idleTooShort 是「这一圈根本没撑住」的界线。263 实测 66 秒，留一点余量。
+	idleTooShort = 90 * time.Second
+	// idleGiveUpAfter 是连续几圈都太短就放弃。三圈≈三分钟，足够把「偶尔一次
+	// 网络抖动」和「这台服务器就是这样」分开。
+	idleGiveUpAfter = 3
+	// idleRetryAfter 是放弃之后隔多久再试一次 IDLE。服务器会改配置，网络会
+	// 变好；一直不试就等于永远回不去推送。
+	idleRetryAfter = 30 * time.Minute
+)
+
+// idleHealth 记着每个账号的 IDLE 撑得住撑不住。
+type idleHealth struct {
+	shortRuns int
+	// 放弃推送到什么时候为止；零值表示没放弃。
+	quietUntil time.Time
+}
+
+// noteIdleRun 记一圈 IDLE 的结果，并回答「下一圈还用不用 IDLE」。
+//
+// lasted 是这一圈从开始到结束的时长，benign 是不是被对方挂断的。只有「被挂断
+// 且撑得太短」才算一次不合格：正常收到新信而结束的一圈，哪怕很短也是成功。
+func (h *idleHealth) noteIdleRun(now time.Time, lasted time.Duration, benign bool) (useIdle bool) {
+	if !benign || lasted >= idleTooShort {
+		h.shortRuns = 0
+		return true
+	}
+	h.shortRuns++
+	if h.shortRuns < idleGiveUpAfter {
+		return true
+	}
+	h.quietUntil = now.Add(idleRetryAfter)
+	h.shortRuns = 0
+	return false
+}
+
+// idleWorthTrying 说现在该不该再开一圈 IDLE。
+func (h *idleHealth) idleWorthTrying(now time.Time) bool {
+	return h.quietUntil.IsZero() || !now.Before(h.quietUntil)
+}
+
+// idlePauseCheckEvery 是冷静期里多久醒一次看看该不该回去用 IDLE。
+// 醒来只看一眼时钟，不碰网络。
+const idlePauseCheckEvery = time.Minute
