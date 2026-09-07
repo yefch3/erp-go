@@ -369,3 +369,97 @@ func TestAPurgeWhoseLookupTheHostRejectsIsAlsoGivenUp(t *testing.T) {
 		t.Fatalf("SEARCH 被拒、到上限的 PURGE 应该被放弃，队列里还剩 %d 条", n)
 	}
 }
+
+func (h *refusingHost) FindUIDByMessageID(context.Context, MailAccount, string, string) (uint32, bool, error) {
+	if h.searchBroken {
+		return 0, false, errors.New("UID SEARCH search error: can't search that criteria")
+	}
+	return 1001, true, nil
+}
+
+// 服务器根本不会按 Message-ID 搜的时候，当场退役，不重试到上限。
+//
+// 生产上真发生的：三封信在 263 上已经被挪进「测试文件夹1」，ERP 的收件箱里
+// 还挂着——因为一条恢复操作卡在 "can't search that criteria" 上反复重试，而
+// **队列非空时读状态对账整个不跑**，于是"这几封已经不在收件箱了"这件事一直
+// 传不回来。重试二十次也是同样的答复，占着队列的每一分钟都在挡对账。
+func TestAnOpTheHostCannotLookUpIsRetiredAtOnceInsteadOfBlockingReconcile(t *testing.T) {
+	dsn := os.Getenv("MAIL_TEST_DSN")
+	if dsn == "" {
+		t.Skip("MAIL_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	pool, err := pgdb.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenantID := time.Now().UnixNano()
+	const me = int64(8006)
+	defer func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_flag_ops WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM email_inbound WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_binding_log WHERE tenant_id=$1", tenantID)
+		_, _ = pool.Exec(ctx, "DELETE FROM mail_accounts WHERE tenant_id=$1", tenantID)
+	}()
+	box, _ := NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)), 1)
+	svc := New(pool, Deps{Secrets: box, Numbering: &seqNumbers{}},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	res, err := svc.VerifyMailSecret(ctx, tenantID, me, BindRequest{
+		Email: "me@263.net", Provider: "p263", Secret: "pw",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.UseMailbox(&refusingHost{present: map[string]map[uint32]bool{}, validity: map[string]uint32{}, searchBroken: true})
+
+	// 一条恢复操作（把信从回收站挪回收件箱）。没有记下来的服务器位置，
+	// 只能按 Message-ID 找——而这台服务器不会。
+	if err := svc.q.EnqueueFlagOp(ctx, store.EnqueueFlagOpParams{
+		TenantID: tenantID, AccountID: res.AccountID, EmployeeID: me,
+		Folder: "INBOX", ImapUid: 3, Flag: flagTrash, Op: opRemove, MessageID: "stuck@263.net",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// **第一次就退役**，不是重试到二十次。
+	svc.publishFlagOps(ctx, SyncConfig{TenantID: tenantID})
+
+	var n int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM mail_flag_ops WHERE tenant_id=$1", tenantID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		var attempts int32
+		var lastErr string
+		_ = pool.QueryRow(ctx, "SELECT attempts, coalesce(last_error,'') FROM mail_flag_ops WHERE tenant_id=$1", tenantID).Scan(&attempts, &lastErr)
+		t.Fatalf("服务器答「搜不了」时应该当场放弃，队列里还剩 %d 条（attempts=%d err=%q）——"+
+			"占着队列就是挡着这个信箱的读状态对账", n, attempts, lastErr)
+	}
+}
+
+// 认得出「搜不了」，认不出的一律当成暂时失败：错判会把一条本来能成功的写回扔掉。
+func TestOnlyTheSearchCapabilityWordingCountsAsPermanent(t *testing.T) {
+	for _, m := range []string{
+		"UID SEARCH search error: can't search that criteria",
+		"在 已删除 中查找失败：UID SEARCH search error: Can't search that criteria",
+	} {
+		if !hostCannotSearch(errors.New(m)) {
+			t.Errorf("应该认出是「这台服务器搜不了」：%q", m)
+		}
+	}
+	for _, m := range []string{
+		"UID MOVE can't move those messages or to that name",
+		"read tcp 10.0.0.1:993: connection reset by peer",
+		"imap: connection closed",
+		"EXPUNGE failed: mailbox is read-only",
+		"",
+	} {
+		if hostCannotSearch(errors.New(m)) {
+			t.Errorf("不该当成永久失败：%q", m)
+		}
+	}
+	if hostCannotSearch(nil) {
+		t.Error("nil 不是失败")
+	}
+}

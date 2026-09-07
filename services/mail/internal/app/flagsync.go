@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -342,12 +343,37 @@ func (s *Service) publishPurges(ctx context.Context, acct MailAccount, rows []st
 // 断一会儿）早就过去了；还在失败的，就不是临时的。
 const maxFlagOpAttempts = 20
 
+// hostCannotSearch 认出「这台服务器根本不会按 Message-ID 搜」。
+//
+// 263 答 "UID SEARCH search error: can't search that criteria"。这不是抖动，
+// 是能力缺失：同一条操作重试二十次也是同样的答复。
+//
+// 为什么要单独认出来：**队列非空时对账整个不跑**（见 ReconcileFlags 开头，
+// 那是为了不让服务器的状态盖掉还没写回去的本地改动）。于是一条永远做不成的
+// 操作会把这个信箱的读状态对账挡上好几个小时——挡住的时间里，在别处挪走、
+// 删掉的信，ERP 这边一直不知道。实测就是这个后果：263 的收件箱里已经没有的
+// 三封信，在 ERP 里还挂着。
+//
+// 认得出就当场退役，不占着队列。代价是这一条写回没做成——ERP 和服务器在这
+// 一封信上不一致，日志里记着。比起挡住整个信箱的对账，这是小的那一边。
+//
+// **只认这一种说法**，不认泛泛的失败：错判会把一条本来能成功的写回扔掉。
+func hostCannotSearch(err error) bool {
+	if err == nil {
+		return false
+	}
+	m := strings.ToLower(err.Error())
+	return strings.Contains(m, "can't search that criteria") ||
+		strings.Contains(m, "cannot search that criteria")
+}
+
 // failOrRetire 记一次失败；到了上限就放弃，而不是永远重试。
 func (s *Service) failOrRetire(ctx context.Context, row store.ClaimFlagOpsRow, cause error) {
-	if row.Attempts+1 >= maxFlagOpAttempts {
-		s.log.Warn("folder move given up after repeated failures",
+	if row.Attempts+1 >= maxFlagOpAttempts || hostCannotSearch(cause) {
+		s.log.Warn("folder move given up",
 			"account", row.AccountID, "flag", row.Flag, "op", row.Op,
-			"uid", row.ImapUid, "attempts", row.Attempts+1, "err", cause)
+			"uid", row.ImapUid, "attempts", row.Attempts+1,
+			"permanent", hostCannotSearch(cause), "err", cause)
 		if err := s.q.DeleteFlagOp(ctx, row.ID); err != nil {
 			s.log.Warn("could not retire a failed move", "id", row.ID, "err", err)
 		}
