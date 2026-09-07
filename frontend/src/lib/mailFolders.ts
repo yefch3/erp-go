@@ -117,6 +117,24 @@ export function folderNameProblem(name: string): string {
   if (!n) return 'empty'
   if ([...n].length > 120) return 'tooLong'
   if (/[/\\*%"]/.test(n) || /[\x00-\x1f\x7f]/.test(n)) return 'badChars'
-  if (['INBOX', 'SENT', 'JUNK', 'TRASH', 'DRAFTS', 'SPAM', 'ARCHIVE'].includes(n.toUpperCase()) || n.startsWith('[Gmail]')) return 'reserved'
+  if (isProviderSystemFolder(n) || n.startsWith('[Gmail]')) return 'reserved'
   return ''
+}
+
+/**
+ * 各家邮箱服务器自带的系统文件夹名，和后端 providerSystemFolders 同一份：
+ * 只收各家真实的默认名，不收「像系统文件夹的词」——Gmail 上建个 Templates 是正当的。
+ * 这些名字不能拿来建自建文件夹（263 会拒，网易会建出第二个同名的）。大小写不分。
+ */
+export const PROVIDER_SYSTEM_FOLDERS = [
+  '收件箱', '草稿箱', '草稿夹', '已发送', '已发送邮件', '发件箱',
+  '已删除', '已删除邮件', '垃圾邮件', '垃圾箱', '已归档',
+  '病毒文件夹', '病毒邮件', '广告邮件', '订阅邮件',
+  'INBOX', 'Drafts', 'Sent', 'Sent Messages', 'Sent Items',
+  'Deleted Messages', 'Deleted Items', 'Trash', 'Junk', 'Spam', 'Archive',
+]
+
+export function isProviderSystemFolder(name: string): boolean {
+  const n = name.trim().toLowerCase()
+  return PROVIDER_SYSTEM_FOLDERS.some((s) => s.toLowerCase() === n)
 }
