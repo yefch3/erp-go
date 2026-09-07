@@ -425,13 +425,16 @@ FROM (
     JOIN roles r ON r.id = er.role_id AND r.tenant_id = er.tenant_id
     JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
     JOIN permissions p ON p.id = rp.permission_id
-    WHERE er.tenant_id = $1 AND er.employee_id = $2
+    WHERE er.tenant_id = sqlc.arg(tenant_id)::bigint
+      AND er.employee_id = sqlc.arg(employee_id)::bigint
       AND e.status = 'ACTIVE' AND r.status = 'ACTIVE'
     UNION ALL
     SELECT p.code
     FROM employees e
     CROSS JOIN permissions p
-    WHERE e.tenant_id = $1 AND e.id = $2 AND e.status = 'ACTIVE'
+    WHERE e.tenant_id = sqlc.arg(tenant_id)::bigint
+      AND e.id = sqlc.arg(employee_id)::bigint
+      AND e.status = 'ACTIVE'
       AND p.code IN ('mail:email:read', 'mail:email:write')
 ) AS granted
 ORDER BY granted.code;
@@ -449,9 +452,11 @@ ORDER BY granted.code;
 SELECT EXISTS (
     SELECT 1
     FROM employees e
-    WHERE e.tenant_id = $1 AND e.id = $2 AND e.status = 'ACTIVE'
+    WHERE e.tenant_id = sqlc.arg(tenant_id)::bigint
+      AND e.id = sqlc.arg(employee_id)::bigint
+      AND e.status = 'ACTIVE'
       AND (
-        $3 IN ('mail:email:read', 'mail:email:write')
+        sqlc.arg(code)::text IN ('mail:email:read', 'mail:email:write')
         OR EXISTS (
           SELECT 1
           FROM employee_roles er
@@ -459,7 +464,7 @@ SELECT EXISTS (
           JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
           JOIN permissions p ON p.id = rp.permission_id
           WHERE er.tenant_id = e.tenant_id AND er.employee_id = e.id
-            AND p.code = $3 AND r.status = 'ACTIVE'
+            AND p.code = sqlc.arg(code)::text AND r.status = 'ACTIVE'
         )
       )
 ) AS allowed;

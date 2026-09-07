@@ -484,9 +484,11 @@ const employeeHasPermission = `-- name: EmployeeHasPermission :one
 SELECT EXISTS (
     SELECT 1
     FROM employees e
-    WHERE e.tenant_id = $1 AND e.id = $2 AND e.status = 'ACTIVE'
+    WHERE e.tenant_id = $1::bigint
+      AND e.id = $2::bigint
+      AND e.status = 'ACTIVE'
       AND (
-        $3 IN ('mail:email:read', 'mail:email:write')
+        $3::text IN ('mail:email:read', 'mail:email:write')
         OR EXISTS (
           SELECT 1
           FROM employee_roles er
@@ -494,7 +496,7 @@ SELECT EXISTS (
           JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
           JOIN permissions p ON p.id = rp.permission_id
           WHERE er.tenant_id = e.tenant_id AND er.employee_id = e.id
-            AND p.code = $3 AND r.status = 'ACTIVE'
+            AND p.code = $3::text AND r.status = 'ACTIVE'
         )
       )
 ) AS allowed
@@ -1295,13 +1297,16 @@ FROM (
     JOIN roles r ON r.id = er.role_id AND r.tenant_id = er.tenant_id
     JOIN role_permissions rp ON rp.tenant_id = er.tenant_id AND rp.role_id = er.role_id
     JOIN permissions p ON p.id = rp.permission_id
-    WHERE er.tenant_id = $1 AND er.employee_id = $2
+    WHERE er.tenant_id = $1::bigint
+      AND er.employee_id = $2::bigint
       AND e.status = 'ACTIVE' AND r.status = 'ACTIVE'
     UNION ALL
     SELECT p.code
     FROM employees e
     CROSS JOIN permissions p
-    WHERE e.tenant_id = $1 AND e.id = $2 AND e.status = 'ACTIVE'
+    WHERE e.tenant_id = $1::bigint
+      AND e.id = $2::bigint
+      AND e.status = 'ACTIVE'
       AND p.code IN ('mail:email:read', 'mail:email:write')
 ) AS granted
 ORDER BY granted.code
@@ -1314,6 +1319,8 @@ type ListEmployeePermissionCodesParams struct {
 
 // 同 EmployeeHasPermission：停用的角色不再给人任何权限。这条是登录时算
 // 菜单用的，两处必须同口径——否则菜单亮着、点进去 403。
+// 个人邮箱是所有在职 ERP 用户的基础能力，不能因为角色漏配而从导航消失。
+// 其他权限仍完全由启用角色授予；邮箱数据范围由 mail 模块固定为本人。
 func (q *Queries) ListEmployeePermissionCodes(ctx context.Context, arg ListEmployeePermissionCodesParams) ([]string, error) {
 	rows, err := q.db.Query(ctx, listEmployeePermissionCodes, arg.TenantID, arg.EmployeeID)
 	if err != nil {
