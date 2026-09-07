@@ -82,6 +82,9 @@ func startMoveFake(t *testing.T, hasMove bool, copyuid string) *moveFake {
 				say(`* LIST (\\HasNoChildren) "/" "` + enc + `"`)
 				// 服务器自带的草稿箱：带 special-use 属性，不是用户建的
 				say(`* LIST (\HasNoChildren \Drafts) "/" "Drafts"`)
+				// 263 的归档：中文名、不声明属性，只能靠猜名字
+				arch, _ := utf7.Encoding.NewEncoder().String("已归档")
+				say(`* LIST (\\HasNoChildren) "/" "` + arch + `"`)
 				say(tag + " OK done")
 			case "UID STORE":
 				say("* 1 FETCH (FLAGS (\\Deleted))")
@@ -215,5 +218,19 @@ func TestFolderCommandsGoOverTheWireWithUTF7Names(t *testing.T) {
 		if n.Name == "Drafts" && n.Role != "DRAFTS" {
 			t.Errorf("\\Drafts 属性应该翻成角色提示 DRAFTS，实际 %q", n.Role)
 		}
+	}
+}
+
+// 263 的归档叫「已归档」、不声明 \Archive 属性。猜不到这个名字的话，263 的
+// 归档一直留在 ERP 侧、服务器上那个文件夹空着。
+func TestArchiveFolderIsGuessedByItsChineseName(t *testing.T) {
+	srv := startMoveFake(t, true, "")
+	f := NewIMAP(5*time.Second, 2*time.Second, nil)
+	name, err := f.ArchiveFolder(context.Background(), acctFor(srv.addr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "已归档" {
+		t.Errorf("应该猜出 263 的「已归档」，实际 %q", name)
 	}
 }

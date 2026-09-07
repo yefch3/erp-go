@@ -22,6 +22,7 @@ type folderHost struct {
 	folders  []string
 	special  []string // 带 special-use 属性的（服务器自带）
 	refuse   error    // 设了之后 RENAME/DELETE 一律用它拒绝（模拟 263 的 default folder）
+	onList   func()   // LIST 算完结果、还没返回时叫一下：模拟 LIST 进行中别处建了文件夹
 	created  []string
 	renamed  []string // "old→new"
 	deleted  []string
@@ -47,6 +48,9 @@ func (h *folderHost) ListFolders(context.Context, MailAccount) ([]HostFolder, er
 	}
 	for _, n := range h.special {
 		out = append(out, HostFolder{Name: n, Special: true, Role: "SYSTEM"})
+	}
+	if h.onList != nil {
+		h.onList()
 	}
 	return out, nil
 }
@@ -565,5 +569,34 @@ func TestMoveInboundBatchCapsTheExpandedCountBeforeTouchingTheHost(t *testing.T)
 	// 不展开会话时只有 1 封，放行。
 	if moved, failed, err := f.svc.MoveInboundBatch(ctx, f.tenantID, f.me, []int64{newest}, fd.ID, false); err != nil || moved != 1 || len(failed) != 0 {
 		t.Errorf("不展开时 1 封应该放行：moved=%d failed=%v err=%v", moved, failed, err)
+	}
+}
+
+// LIST 进行中另一个页面刚建的文件夹（服务器上有、库里刚登记、里面还没信）
+// 不能被当成"服务器上没了"清掉——否则刚建的文件夹一刷新就消失一次。
+func TestAFolderCreatedDuringTheListIsNotSweptAway(t *testing.T) {
+	f := newFolderFixture(t, 9110)
+	ctx := context.Background()
+	f.host.onList = func() {
+		// LIST 的结果已经算好（里面没有「新建的」），这时另一个页面建成了它。
+		f.host.onList = nil
+		f.host.folders = append(f.host.folders, "新建的")
+		if _, err := f.pool.Exec(ctx, `INSERT INTO mail_folders (tenant_id, account_id, name, host_name, role, created_by)
+			VALUES ($1, $2, '新建的', '新建的', 'CUSTOM', $3)`, f.tenantID, f.account, f.me); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := f.svc.ListMailFolders(ctx, f.tenantID, f.me, f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, g := range got {
+		if g.Name == "新建的" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("LIST 进行中建的文件夹被清掉了：%+v", got)
 	}
 }

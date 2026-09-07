@@ -231,6 +231,13 @@ func (s *Service) syncHostFolders(ctx context.Context, tenantID, employeeID int6
 	if s.mailbox == nil {
 		return
 	}
+	// 先记下 LIST 之前库里有哪些，再去问服务器。清理只针对这一批：LIST 进行
+	// 中另一个页面刚建的文件夹（服务器上有、库里刚登记）不在这批里，不会被
+	// 当成"服务器上没了"清掉——否则刚建的文件夹一刷新就消失一次。
+	before, err := s.q.ListMailFolders(ctx, store.ListMailFoldersParams{TenantID: tenantID, AccountID: acct.AccountID})
+	if err != nil {
+		return
+	}
 	names, err := s.mailbox.ListFolders(ctx, acct)
 	if err != nil {
 		s.log.Info("could not list host folders; showing registered ones only",
@@ -256,11 +263,7 @@ func (s *Service) syncHostFolders(ctx context.Context, tenantID, employeeID int6
 			s.log.Warn("could not register a host folder", "account", acct.AccountID, "folder", hf.Name, "err", err)
 		}
 	}
-	rows, err := s.q.ListMailFolders(ctx, store.ListMailFoldersParams{TenantID: tenantID, AccountID: acct.AccountID})
-	if err != nil {
-		return
-	}
-	for _, r := range rows {
+	for _, r := range before {
 		if onHost[r.HostName] {
 			continue
 		}
@@ -277,14 +280,22 @@ func (s *Service) syncHostFolders(ctx context.Context, tenantID, employeeID int6
 }
 
 // hostSaysDefaultFolder 认出服务器「这是默认文件夹，不能改/删」的答复：
-// 263 答 "can't rename default folder"，Gmail 答 "System folder cannot be
-// renamed"。认出来就把角色改成 SYSTEM——服务器的拒绝是最后的裁判。
+// 263 答 "can't rename default folder or Invalid folder name"，Gmail 答
+// "System folder cannot be renamed"。认出来就把角色改成 SYSTEM——服务器的
+// 拒绝是最后的裁判，而且之后列文件夹不会再把它盖回 CUSTOM。
+//
+// 正因为改了就不回头，这里**只认明确说「默认/系统文件夹」的话**，不认泛泛的
+// "can't rename"：Dovecot 类服务器改名撞到已存在的名字也答 "Can't rename
+// mailbox to X: already exists"，那是名字的问题，不是文件夹的身份，误判会把
+// 一个正当的自建文件夹永久锁死。宁可漏判（用户看到服务器原话、再点一次），
+// 不可误判。真误判了的恢复路：在 Foxmail 里改个名，旧登记因服务器上没了
+// 而被清掉，下次以新名字重新登记成 CUSTOM。
 func hostSaysDefaultFolder(err error) bool {
 	if err == nil {
 		return false
 	}
 	m := strings.ToLower(err.Error())
-	for _, hint := range []string{"default folder", "system folder", "cannot be renamed", "cannot be deleted", "can't rename", "can't delete", "系统文件夹"} {
+	for _, hint := range []string{"default folder", "system folder", "cannot be renamed", "cannot be deleted", "系统文件夹"} {
 		if strings.Contains(m, hint) {
 			return true
 		}
