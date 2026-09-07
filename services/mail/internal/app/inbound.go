@@ -658,6 +658,15 @@ func (s *Service) syncMailboxNow(ctx context.Context, cfg SyncConfig, accountID 
 		s.log.Warn("junk-folder sync failed", "account", acct.AccountID, "err", err)
 	}
 
+	// 自建文件夹和服务器自带、ERP 也认得是真文件夹的那些（163 的病毒文件夹、
+	// QQ 的其他文件夹），内容一起收进来。员工在 Foxmail 里把信拖进「重要客户」
+	// 之后 ERP 也看得到，就是靠这一段——那条 v1 边界到此为止。
+	//
+	// 不收的：归档和回收站（ERP 的归档/删除是"行留在收件箱加个标记、服务器
+	// 那份挪走"，收进来同一封信会多出一行）、草稿箱（下一期）、虚拟文件夹
+	// （Gmail 的标签，收进来会把每封信存好几遍）。判断在 syncableRole。
+	s.syncExtraFolders(ctx, cfg, acct)
+
 	// The host's own read state, taken back over the newest slice of the
 	// inbox. This is the half of two-way sync that carries somebody else's
 	// Gmail session into the ERP; it no-ops while local changes are still
@@ -1344,3 +1353,41 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 		}
 	}
 }
+
+// syncExtraFolders 把自建文件夹和服务器自带的真文件夹里的信也收进来。
+//
+// 只在全量那一档跑（有人在看的箱），跟着 syncOne 走。一个箱通常只多零到
+// 三个文件夹，代价可控；真多到几十个的，每轮多花的时间也只落在那一个箱上。
+//
+// 每个文件夹自己一条同步游标（mail_sync_state 的主键带 folder），所以第一次
+// 会把整个文件夹拉一遍，之后增量。ERP 自己挪进去的信 UID 已经在库里，
+// InsertInbound 是 ON CONFLICT DO NOTHING，重复拉到只是空转。
+//
+// 一个文件夹失败不影响别的，也不影响收件箱——收件箱早在上面就已经交差了。
+func (s *Service) syncExtraFolders(ctx context.Context, cfg SyncConfig, acct MailAccount) {
+	rows, err := s.q.ListMailFolders(ctx, store.ListMailFoldersParams{
+		TenantID: cfg.TenantID, AccountID: acct.AccountID,
+	})
+	if err != nil {
+		s.log.Warn("could not list folders to sync", "account", acct.AccountID, "err", err)
+		return
+	}
+	for _, r := range rows {
+		if !syncableRole(r.Role) {
+			continue
+		}
+		fcfg := cfg
+		if r.Role == roleSystem && fcfg.HistoryCap > extraFolderHistoryCap {
+			// 服务器自带、我们不认得的那些（病毒、广告、订阅）：留一层浅的
+			// 就够。自建文件夹是员工自己归的类，按收件箱的深度留。
+			fcfg.HistoryCap = extraFolderHistoryCap
+		}
+		if _, err := s.syncFolder(ctx, fcfg, acct, r.HostName, r.HostName); err != nil {
+			s.log.Warn("folder sync failed", "account", acct.AccountID, "folder", r.HostName, "err", err)
+		}
+	}
+}
+
+// extraFolderHistoryCap 是服务器自带、ERP 不认得的那些文件夹留多少历史。
+// 和垃圾邮件同一个数：旧的广告和病毒邮件是价值最低的信。
+const extraFolderHistoryCap = 100

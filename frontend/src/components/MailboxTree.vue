@@ -139,7 +139,7 @@
              删除的只有自建的。 -->
         <template v-for="item in railFor(b.id)" v-else :key="item.key">
           <button
-            v-if="!item.custom"
+            v-if="!item.name"
             type="button"
             class="folder sub"
             :class="{ on: modelValue === b.id && folder === item.key }"
@@ -153,6 +153,19 @@
             <span v-if="modelValue === b.id && countOf(item.key) > 0" class="cnt">
               {{ countOf(item.key) > 99 ? '99+' : countOf(item.key) }}
             </span>
+          </button>
+          <!-- 服务器自带、ERP 不认得的（病毒文件夹、其他文件夹）：能点进去看信，
+               但它不是用户建的，没有改名删除。 -->
+          <button
+            v-else-if="!item.custom"
+            type="button"
+            class="folder sub"
+            :class="{ on: modelValue === b.id && folder === item.key }"
+            :title="item.hostName"
+            @click="emit('select', b.id, item.key)"
+          >
+            <el-icon class="ficon"><Folder /></el-icon>
+            <span class="fname">{{ item.name }}</span>
           </button>
           <div
             v-else
