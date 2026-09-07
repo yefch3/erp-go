@@ -218,6 +218,9 @@ type Service struct {
 	// Where each account's special folders live, keyed "sent:<id>" and
 	// "junk:<id>"; found once, never changes.
 	sentFolders sync.Map
+	// 哪些信箱正在后台对文件夹清单。同一个箱同时只跑一个，见
+	// refreshHostFoldersInBackground。
+	folderRefresh sync.Map
 	// 我们自己的公网主机名。读信时用来认出自家的追踪像素并拆掉它——不拆，
 	// 本公司的人打开自己发出的信就会把对方标成已读。空表示没配公网地址，
 	// 那种情况下在外面也不存在我们的像素。见 ownpixel.go。

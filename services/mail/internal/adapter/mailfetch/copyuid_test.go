@@ -68,7 +68,16 @@ func startMoveFake(t *testing.T, hasMove bool, copyuid string) *moveFake {
 				say("* 3 EXISTS")
 				say("* OK [UIDVALIDITY 7] ok")
 				say(tag + " OK [READ-WRITE] done")
-			case "UID MOVE", "UID COPY":
+			// **两条命令把 COPYUID 放在不同的地方**，照真服务器的样子发：
+			// COPY 在加标签的完成响应里（RFC 4315），MOVE 在未加标签的 OK 里
+			// （RFC 6851 §4.3）。这个假服务器以前两条都发成加标签的，于是
+			// 「MOVE 的 COPYUID 接不住」这个真 bug 一直是绿的。
+			case "UID MOVE":
+				if copyuid != "" {
+					say("* OK [COPYUID " + copyuid + "] Moved")
+				}
+				say(tag + " OK done")
+			case "UID COPY":
 				if copyuid != "" {
 					say(tag + " OK [COPYUID " + copyuid + "] done")
 				} else {
