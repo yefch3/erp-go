@@ -1003,7 +1003,8 @@ func (f *IMAP) ListFolders(ctx context.Context, acct app.MailAccount) (_ []app.H
 
 // roleHint 把 LIST 给的属性翻成角色：special-use（RFC 6154）说明这是服务器
 // 自带的草稿/已发送/垃圾/回收站/归档；\All \Flagged \Important 和 \Noselect
-// 也都不是用户建的，归为系统。没有属性回空串，交给服务层猜名字。
+// 是虚拟的（内容是别处的信的映射，或只是层级容器）。没有属性回空串，交给
+// 服务层猜名字。
 func roleHint(attrs []string) string {
 	for _, a := range attrs {
 		switch a {
@@ -1018,7 +1019,9 @@ func roleHint(attrs []string) string {
 		case imap.ArchiveAttr:
 			return "ARCHIVE"
 		case imap.NoSelectAttr, imap.AllAttr, imap.FlaggedAttr, imap.ImportantAttr:
-			return "SYSTEM"
+			// 内容是别处的信的映射（Gmail 的全部邮件/已加星标/重要），或者根本
+			// 选不进去的层级容器。当文件夹同步下来会把同一封信存好几遍。
+			return "VIRTUAL"
 		}
 	}
 	return ""

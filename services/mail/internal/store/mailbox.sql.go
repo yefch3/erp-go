@@ -668,6 +668,58 @@ func (q *Queries) FailFlagOp(ctx context.Context, arg FailFlagOpParams) error {
 	return err
 }
 
+const findInboundMovedElsewhere = `-- name: FindInboundMovedElsewhere :many
+SELECT message_id, folder, imap_uid
+FROM email_inbound
+WHERE tenant_id = $1::bigint
+  AND account_id = $2::bigint
+  AND folder NOT IN ('INBOX', 'SENT', 'JUNK')
+  AND deleted_at IS NULL
+  AND message_id = ANY($3::text[])
+ORDER BY id DESC
+`
+
+type FindInboundMovedElsewhereParams struct {
+	TenantID   int64
+	AccountID  int64
+	MessageIds []string
+}
+
+type FindInboundMovedElsewhereRow struct {
+	MessageID string
+	Folder    string
+	ImapUid   int64
+}
+
+// 这些信现在是不是躺在**别的**文件夹里。
+//
+// 对账发现收件箱里一封信不见了，要判断它去哪了。挪进自建文件夹这一种，同一趟
+// 同步已经先把它从新文件夹收了进来（syncExtraFolders 排在对账前面），所以查库
+// 就够，不用再问一次服务器。
+//
+// 只看自建和服务器自带的那些：收件箱/已发送/垃圾邮件三个逻辑名排除掉，不然
+// 一封发给自己的信（收件箱和已发送各一份、同一个 Message-ID）会被当成「从
+// 收件箱挪进了已发送」。
+func (q *Queries) FindInboundMovedElsewhere(ctx context.Context, arg FindInboundMovedElsewhereParams) ([]FindInboundMovedElsewhereRow, error) {
+	rows, err := q.db.Query(ctx, findInboundMovedElsewhere, arg.TenantID, arg.AccountID, arg.MessageIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FindInboundMovedElsewhereRow
+	for rows.Next() {
+		var i FindInboundMovedElsewhereRow
+		if err := rows.Scan(&i.MessageID, &i.Folder, &i.ImapUid); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const findMessageByKey = `-- name: FindMessageByKey :one
 SELECT id, message_key::text AS message_key, thread_key, to_email, campaign_id, sender_id,
        customer_id, contact_id, customer_name
@@ -1673,6 +1725,63 @@ func (q *Queries) ListExpiredTrash(ctx context.Context, arg ListExpiredTrashPara
 			&i.ImapUid,
 			&i.MessageID,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFoldersToSync = `-- name: ListFoldersToSync :many
+SELECT f.host_name, f.role
+FROM mail_folders f
+LEFT JOIN mail_sync_state s
+       ON s.tenant_id = f.tenant_id AND s.account_id = f.account_id AND s.folder = f.host_name
+WHERE f.tenant_id = $1::bigint
+  AND f.account_id = $2::bigint
+  AND f.role = ANY($3::text[])
+ORDER BY s.last_synced_at ASC NULLS FIRST, f.host_name
+LIMIT $4::int
+`
+
+type ListFoldersToSyncParams struct {
+	TenantID  int64
+	AccountID int64
+	Roles     []string
+	RowLimit  int32
+}
+
+type ListFoldersToSyncRow struct {
+	HostName string
+	Role     string
+}
+
+// 这一轮同步哪几个文件夹：只挑能装信的（自建、服务器自带的真文件夹），
+// 最久没同步的排前面，一次最多这么多个。
+//
+// **有上限**是因为一个人能建的文件夹没有上限，而每个文件夹至少一次 IMAP
+// 往返。建了几十个文件夹的账号会把自己那一格时间片吃光，挤到同一批里别人的
+// 箱——分档算出来的余量是按「一个箱多零到三个文件夹」估的。
+//
+// 轮着来，所以有上限也不会漏：这一轮没轮到的，下一轮排在最前面。
+func (q *Queries) ListFoldersToSync(ctx context.Context, arg ListFoldersToSyncParams) ([]ListFoldersToSyncRow, error) {
+	rows, err := q.db.Query(ctx, listFoldersToSync,
+		arg.TenantID,
+		arg.AccountID,
+		arg.Roles,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListFoldersToSyncRow
+	for rows.Next() {
+		var i ListFoldersToSyncRow
+		if err := rows.Scan(&i.HostName, &i.Role); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -4458,7 +4567,15 @@ VALUES ($1::bigint, $2::bigint,
         $3::text, $3::text, $4::text, $5::bigint)
 ON CONFLICT (tenant_id, account_id, host_name) DO UPDATE
 SET role = CASE
-             WHEN mail_folders.role = 'SYSTEM' AND EXCLUDED.role = 'CUSTOM' THEN mail_folders.role
+             -- 服务器答过「默认文件夹」的已经是 SYSTEM，名单认不出它、按名字
+             -- 算成 CUSTOM 时不能盖掉：服务器的话比名单可信。
+             WHEN mail_folders.role IN ('SYSTEM', 'VIRTUAL') AND EXCLUDED.role = 'CUSTOM'
+               THEN mail_folders.role
+             -- VIRTUAL 也不能降成 SYSTEM。两者的区别只在「同步不同步」，而
+             -- 判错的代价不对称：把 Gmail 的标签当成真文件夹同步，每封信会
+             -- 按标签存好几遍；反过来只是少列一个文件夹。
+             WHEN mail_folders.role = 'VIRTUAL' AND EXCLUDED.role = 'SYSTEM'
+               THEN mail_folders.role
              ELSE EXCLUDED.role
            END
 RETURNING id, account_id, name, host_name, role, created_by, created_at

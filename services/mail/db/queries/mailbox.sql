@@ -1708,10 +1708,56 @@ VALUES (sqlc.arg(tenant_id)::bigint, sqlc.arg(account_id)::bigint,
 -- 可信。其余情况角色跟着最新的判断走（比如猜名单补全后从 SYSTEM 变 ARCHIVE）。
 ON CONFLICT (tenant_id, account_id, host_name) DO UPDATE
 SET role = CASE
-             WHEN mail_folders.role = 'SYSTEM' AND EXCLUDED.role = 'CUSTOM' THEN mail_folders.role
+             -- 服务器答过「默认文件夹」的已经是 SYSTEM，名单认不出它、按名字
+             -- 算成 CUSTOM 时不能盖掉：服务器的话比名单可信。
+             WHEN mail_folders.role IN ('SYSTEM', 'VIRTUAL') AND EXCLUDED.role = 'CUSTOM'
+               THEN mail_folders.role
+             -- VIRTUAL 也不能降成 SYSTEM。两者的区别只在「同步不同步」，而
+             -- 判错的代价不对称：把 Gmail 的标签当成真文件夹同步，每封信会
+             -- 按标签存好几遍；反过来只是少列一个文件夹。
+             WHEN mail_folders.role = 'VIRTUAL' AND EXCLUDED.role = 'SYSTEM'
+               THEN mail_folders.role
              ELSE EXCLUDED.role
            END
 RETURNING id, account_id, name, host_name, role, created_by, created_at;
+
+-- name: ListFoldersToSync :many
+-- 这一轮同步哪几个文件夹：只挑能装信的（自建、服务器自带的真文件夹），
+-- 最久没同步的排前面，一次最多这么多个。
+--
+-- **有上限**是因为一个人能建的文件夹没有上限，而每个文件夹至少一次 IMAP
+-- 往返。建了几十个文件夹的账号会把自己那一格时间片吃光，挤到同一批里别人的
+-- 箱——分档算出来的余量是按「一个箱多零到三个文件夹」估的。
+--
+-- 轮着来，所以有上限也不会漏：这一轮没轮到的，下一轮排在最前面。
+SELECT f.host_name, f.role
+FROM mail_folders f
+LEFT JOIN mail_sync_state s
+       ON s.tenant_id = f.tenant_id AND s.account_id = f.account_id AND s.folder = f.host_name
+WHERE f.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND f.account_id = sqlc.arg(account_id)::bigint
+  AND f.role = ANY(sqlc.arg(roles)::text[])
+ORDER BY s.last_synced_at ASC NULLS FIRST, f.host_name
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: FindInboundMovedElsewhere :many
+-- 这些信现在是不是躺在**别的**文件夹里。
+--
+-- 对账发现收件箱里一封信不见了，要判断它去哪了。挪进自建文件夹这一种，同一趟
+-- 同步已经先把它从新文件夹收了进来（syncExtraFolders 排在对账前面），所以查库
+-- 就够，不用再问一次服务器。
+--
+-- 只看自建和服务器自带的那些：收件箱/已发送/垃圾邮件三个逻辑名排除掉，不然
+-- 一封发给自己的信（收件箱和已发送各一份、同一个 Message-ID）会被当成「从
+-- 收件箱挪进了已发送」。
+SELECT message_id, folder, imap_uid
+FROM email_inbound
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND account_id = sqlc.arg(account_id)::bigint
+  AND folder NOT IN ('INBOX', 'SENT', 'JUNK')
+  AND deleted_at IS NULL
+  AND message_id = ANY(sqlc.arg(message_ids)::text[])
+ORDER BY id DESC;
 
 -- name: SetMailFolderRole :exec
 -- 服务器对改名/删除答「默认文件夹」时把它标成系统：服务器的拒绝是最后的裁判。

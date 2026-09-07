@@ -98,7 +98,7 @@ export interface CustomFolder {
   name: string
   /** 后端给的 view 参数，形如 F:供应商。只有自建的（CUSTOM）有。 */
   viewKey: string
-  /** INBOX / SENT / JUNK / TRASH / ARCHIVE / DRAFTS / SYSTEM / CUSTOM。 */
+  /** INBOX / SENT / JUNK / TRASH / ARCHIVE / DRAFTS / SYSTEM / VIRTUAL / CUSTOM。 */
   role: string
 }
 
@@ -115,10 +115,11 @@ export const ROLE_FOLDER_KEY: Record<string, string> = {
 export interface RailItem {
   key: string
   icon?: unknown
-  /** 自建文件夹的名字（固定视图没有，用文案）。 */
+  /** 服务器上那个文件夹的名字（固定视图没有，用文案）。 */
   name?: string
+  /** 用户自己建的：只有它有改名和删除。服务器自带的（SYSTEM）没有。 */
   custom: boolean
-  /** 自建文件夹本身，改名/删除要用。 */
+  /** 文件夹本身，改名/删除要用。 */
   folder?: CustomFolder
   /** 服务器上的实际名字，鼠标停上去看得到。 */
   hostName?: string
@@ -128,9 +129,14 @@ export interface RailItem {
  * 一个信箱下面按同一级别摆哪些行、什么顺序。
  *
  * 固定视图照 MAILBOX_FOLDER_KEYS 的顺序；「归档」只在服务器真有归档文件夹时
- * 出现（263、Gmail 有，163、126、QQ 没有）——服务器上没有就没有。然后是自建
- * 文件夹，按名字排。服务器自带而 ERP 不认得的（病毒文件夹、广告邮件）和服务器
- * 的草稿箱这一期不显示：内容还没同步，显示出来是空壳。
+ * 出现（263、Gmail 有，163、126、QQ 没有）——服务器上没有就没有。
+ *
+ * 然后是**装着信的**那些服务器文件夹：先是服务器自带、ERP 不认得的
+ * （163 的病毒文件夹、QQ 的其他文件夹），再是自建的，各自按名字排。两者都能
+ * 点进去看信，只有自建的能改名删除。
+ *
+ * 不列的：服务器的草稿箱（下一期）、虚拟文件夹（Gmail 的标签，内容是别处的
+ * 信的映射），以及已经有固定视图代表的收件箱/已发送/垃圾/回收站/归档。
  */
 export function mailboxRail(fixed: readonly FolderDef[], hostFolders: readonly CustomFolder[]): RailItem[] {
   const byKey = new Map(fixed.map((f) => [f.key, f]))
@@ -143,8 +149,12 @@ export function mailboxRail(fixed: readonly FolderDef[], hostFolders: readonly C
     const role = Object.entries(ROLE_FOLDER_KEY).find(([, k]) => k === key)?.[0]
     out.push({ key, icon: def.icon, custom: false, hostName: role ? hostByRole.get(role)?.name : undefined })
   }
-  const custom = hostFolders.filter((f) => f.role === 'CUSTOM').slice().sort((a, b) => a.name.localeCompare(b.name, 'zh'))
-  for (const f of custom) {
+  const byName = (a: CustomFolder, b: CustomFolder) => a.name.localeCompare(b.name, 'zh')
+  const listed = (role: string) => hostFolders.filter((f) => f.role === role && f.viewKey).slice().sort(byName)
+  for (const f of listed('SYSTEM')) {
+    out.push({ key: f.viewKey, name: f.name, custom: false, folder: f, hostName: f.name })
+  }
+  for (const f of listed('CUSTOM')) {
     out.push({ key: f.viewKey, name: f.name, custom: true, folder: f, hostName: f.name })
   }
   return out

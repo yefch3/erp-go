@@ -35,15 +35,33 @@ const (
 	roleTrash   = "TRASH"
 	roleArchive = "ARCHIVE"
 	roleDrafts  = "DRAFTS"
-	// roleSystem 是服务器自带、ERP 不认得的：病毒文件夹、广告邮件、其他文件夹。
+	// roleSystem 是服务器自带、ERP 不认得的真文件夹：病毒文件夹、广告邮件、
+	// 其他文件夹。里面是真的信，同步、显示，只是不能改名删除。
 	roleSystem = "SYSTEM"
-	roleCustom = "CUSTOM"
+	// roleVirtual 是「内容是别处的信的映射」：Gmail 的「重要」「已加星标」
+	// 「全部邮件」，以及只作层级容器、选都选不进去的 [Gmail]。
+	//
+	// 和 SYSTEM 分开是因为**同步**：一封收件箱的信同时挂着这些标签，把它们
+	// 当文件夹同步下来，同一封信会按 (租户, 信箱, 文件夹, UID) 存好几行。
+	// 不同步，也不显示。
+	roleVirtual = "VIRTUAL"
+	roleCustom  = "CUSTOM"
 )
 
 // roleRank 是左栏的顺序：认得的系统文件夹在前，自建的在后，同角色按名字。
 var roleRank = map[string]int{
 	roleInbox: 0, roleSent: 1, roleArchive: 2, roleJunk: 3, roleTrash: 4,
-	roleDrafts: 5, roleSystem: 6, roleCustom: 7,
+	roleDrafts: 5, roleSystem: 6, roleCustom: 7, roleVirtual: 8,
+}
+
+// syncableRole 说这个角色的文件夹要不要把里面的信收进 ERP。
+//
+// 收件箱、已发送、垃圾邮件走各自专门的那条路（syncOne 里），不在这里。
+// 归档和回收站**不能**收：ERP 归档/删除是「行留在收件箱、加个标记，服务器
+// 那份挪去归档/回收站」，把那两个文件夹收进来，同一封信会多出一行。
+// 草稿箱留给下一期（草稿分两层）。虚拟的见 roleVirtual。
+func syncableRole(role string) bool {
+	return role == roleCustom || role == roleSystem
 }
 
 // MailFolder 是服务器上的一个文件夹在 ERP 里的登记。
@@ -61,7 +79,7 @@ type MailFolder struct {
 // ViewKey 是这个文件夹在列表接口里的 view 参数。只有自建的走 'F:' 视图；
 // 系统文件夹各有各的视图（INBOX、TRASH……），由前端按角色映射。
 func (f MailFolder) ViewKey() string {
-	if f.Role == roleCustom {
+	if syncableRole(f.Role) {
 		return "F:" + f.HostName
 	}
 	return ""
@@ -227,7 +245,9 @@ func roleOf(hf HostFolder, specials map[string]string) string {
 	case hf.Role != "":
 		return hf.Role
 	case strings.HasPrefix(n, "[Gmail]"):
-		return roleSystem
+		// Gmail 的系统标签。属性没说是哪一种就当虚拟的：宁可少同步一个，
+		// 不可把整个邮箱按标签存好几遍。
+		return roleVirtual
 	case isDraftsName(n):
 		return roleDrafts
 	case isProviderSystemFolder(n):

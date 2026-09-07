@@ -20,9 +20,17 @@ describe('mailboxRail：一个信箱下面同一级别摆哪些行', () => {
     const host163 = host263.filter((f) => f.role !== 'ARCHIVE')
     expect(mailboxRail(fixed, host163).map((r) => r.key)).not.toContain('archive')
   })
-  it('服务器自带而 ERP 不认得的（病毒文件夹）和服务器草稿箱这一期不显示', () => {
-    const keys = mailboxRail(fixed, [...host263, hf('病毒文件夹', 'SYSTEM')]).map((r) => r.key)
-    expect(keys).not.toContain('F:病毒文件夹')
+  it('服务器自带而 ERP 不认得的也列出来，排在自建之前，但没有改名删除', () => {
+    const rail = mailboxRail(fixed, [...host263, { ...hf('病毒文件夹', 'SYSTEM', 9), viewKey: 'F:病毒文件夹' }])
+    const keys = rail.map((r) => r.key)
+    expect(keys).toContain('F:病毒文件夹')
+    expect(keys.indexOf('F:病毒文件夹')).toBeLessThan(keys.indexOf('F:项目A'))
+    expect(rail.find((r) => r.key === 'F:病毒文件夹')).toMatchObject({ custom: false, name: '病毒文件夹' })
+  })
+  it('服务器的草稿箱和虚拟文件夹不列：前者下一期，后者内容是别处的信的映射', () => {
+    const keys = mailboxRail(fixed, [...host263, hf('[Gmail]/Important', 'VIRTUAL')]).map((r) => r.key)
+    expect(keys).not.toContain('F:[Gmail]/Important')
+    expect(keys).not.toContain('F:草稿箱')
     expect(keys.filter((k) => k === 'drafts')).toHaveLength(1)
   })
   it('自建的能改名删除，固定的不能；固定行带服务器上的实际名字', () => {
