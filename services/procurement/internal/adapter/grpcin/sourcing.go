@@ -697,29 +697,6 @@ func sourcingCaseHead(row store.GetSourcingCaseRow) *prv1.SourcingCase {
 	}
 }
 
-func sourcingCaseList(row store.ListSourcingCasesRow) *prv1.SourcingCase {
-	acceptedBy, returnedBy := int64(0), int64(0)
-	if row.AcceptedBy != nil {
-		acceptedBy = *row.AcceptedBy
-	}
-	if row.ReturnedBy != nil {
-		returnedBy = *row.ReturnedBy
-	}
-	return &prv1.SourcingCase{
-		Id: row.ID, CaseNo: row.CaseNo, Title: row.Title, CustomerId: row.CustomerID,
-		CustomerName: row.CustomerName, ContactId: row.ContactID, ContactName: row.ContactName, ContactEmail: row.ContactEmail,
-		SourceMailId: row.SourceMailID, SourceAttachmentId: row.SourceAttachmentID,
-		Status: row.Status, OwnerId: row.OwnerID, OwnerName: row.OwnerName,
-		CreatedAt: ts(row.CreatedAt), UpdatedAt: ts(row.UpdatedAt),
-		SourceFileName: row.SourceFileName,
-		HandoffStatus:  row.HandoffStatus, RequirementVersionNo: row.RequirementVersionNo,
-		AcceptedBy: acceptedBy, AcceptedByName: row.AcceptedByName, AcceptedAt: ts(row.AcceptedAt),
-		ReturnedBy: returnedBy, ReturnedByName: row.ReturnedByName, ReturnedAt: ts(row.ReturnedAt),
-		ReturnReason: row.ReturnReason, ReturnFields: row.ReturnFields,
-		OpenReworkCount: row.OpenReworkCount, MyOpenReworkCount: row.MyOpenReworkCount,
-	}
-}
-
 func sourcingLine(row store.ListSourcingLinesRow) *prv1.SourcingLine {
 	customFields := map[string]string{}
 	_ = json.Unmarshal(row.CustomFields, &customFields)
