@@ -104,3 +104,54 @@ func TestSentMirrorCopiesSpeakOncePerThread(t *testing.T) {
 		t.Fatalf("unprovable duplicates: want both SENT rows kept, got %d entries", len(items))
 	}
 }
+
+// 发给自己名下另一个信箱：那封信落进那个箱的**收件箱**，不是已发送。
+//
+// 原来的去重只挡已发送，因为当时想到的只有「Gmail 把每封发出的信也塞进已
+// 发送」。于是会话里一条写着收件人、一条写着发件人，看着像是同一封信发了
+// 两遍——测试时几乎必然撞上，因为测试就是发给自己。
+func TestOurOwnSendIsNotShownTwiceWhenItLandsInOurOtherMailbox(t *testing.T) {
+	pool, ctx := exportTestPool(t)
+	tenantID := scratchTenant(t, ctx, pool)
+	svc := New(pool, Deps{}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	const owner = int64(8003)
+
+	const key = "self-across-mailboxes"
+	const sentUUID = "aaaaaaaa-bbbb-cccc-dddd-eeeeffff0002"
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO email_messages
+		  (tenant_id, message_key, sender_id, sender_name, to_email, subject,
+		   body, body_format, status, thread_key, sent_at)
+		VALUES ($1, $2::uuid, $3, 'CEO', 'erptest@263.net', '测试邮件',
+		        'body', 'TEXT', 'ACCEPTED', $4, '2026-03-02 11:00:00+00')`,
+		tenantID, sentUUID, owner, key); err != nil {
+		t.Fatal(err)
+	}
+	// 从 Gmail 发出，落进 263 那个箱的收件箱：同一封信，Message-ID 一样。
+	seedInbound(t, ctx, pool, tenantID, owner, "INBOX", sentUUID+"@gmail.com", key, "fangchen1101@gmail.com", 9201)
+
+	items, err := svc.GetMailThread(ctx, tenantID, owner, 0, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("同一封信应该只说一次，实际 %d 条：%+v", len(items), items)
+	}
+	if items[0].Direction != "OUT" {
+		t.Errorf("留下的该是「我发出」那一条，实际 %s", items[0].Direction)
+	}
+
+	// 别人发来的信，Message-ID 和我们发出去的任何一封都对不上——不能被挡掉。
+	const key2 = "customer-reply"
+	seedInbound(t, ctx, pool, tenantID, owner, "INBOX", "buyer-reply-1@example.com", key2, "buyer@example.com", 9202)
+	items, err = svc.GetMailThread(ctx, tenantID, owner, 0, key2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("客户来信不该被挡掉，实际 %d 条", len(items))
+	}
+	if items[0].Direction != "IN" {
+		t.Errorf("客户来信该是「收到」，实际 %s", items[0].Direction)
+	}
+}
