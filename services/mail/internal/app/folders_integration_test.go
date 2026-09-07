@@ -20,6 +20,7 @@ import (
 type folderHost struct {
 	Mailbox
 	folders  []string
+	special  []string // 带 special-use 属性的（服务器自带）
 	created  []string
 	renamed  []string // "old→new"
 	deleted  []string
@@ -38,8 +39,15 @@ func (h *folderHost) SentFolder(context.Context, MailAccount) (string, error) {
 	return "已发送", nil
 }
 func (h *folderHost) ArchiveFolder(context.Context, MailAccount) (string, error) { return "", nil }
-func (h *folderHost) ListFolders(context.Context, MailAccount) ([]string, error) {
-	return append([]string{"INBOX", "已发送", "垃圾邮件", "已删除"}, h.folders...), nil
+func (h *folderHost) ListFolders(context.Context, MailAccount) ([]HostFolder, error) {
+	var out []HostFolder
+	for _, n := range append([]string{"INBOX", "已发送", "垃圾邮件", "已删除"}, h.folders...) {
+		out = append(out, HostFolder{Name: n})
+	}
+	for _, n := range h.special {
+		out = append(out, HostFolder{Name: n, Special: true})
+	}
+	return out, nil
 }
 func (h *folderHost) CreateFolder(_ context.Context, _ MailAccount, name string) error {
 	h.created = append(h.created, name)
@@ -180,10 +188,13 @@ func TestCreateFolderMakesItOnTheHostThenRegistersIt(t *testing.T) {
 }
 
 // 列：服务器上有、我们没登记的普通文件夹自动登记进来（Foxmail 里建的）；
-// 系统文件夹不算。
+// 系统文件夹不算——不管它是靠属性认出来的（Gmail 的 Drafts），还是只有名字
+// 的（263 的草稿箱、已归档，网易的病毒文件夹）。漏掉后者的表现就是左栏多出
+// 一个「草稿箱」，改名时服务器答 "can't rename default folder"。
 func TestListImportsFoldersMadeElsewhere(t *testing.T) {
 	f := newFolderFixture(t, 9102)
-	f.host.folders = []string{"客户跟进", "[Gmail]/All Mail", "Drafts"}
+	f.host.folders = []string{"客户跟进", "[Gmail]/All Mail", "Drafts", "草稿箱", "已归档", "病毒文件夹", "Sent Messages"}
+	f.host.special = []string{"Archive2"}
 	got, err := f.svc.ListMailFolders(context.Background(), f.tenantID, f.me, f.account)
 	if err != nil {
 		t.Fatal(err)

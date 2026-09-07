@@ -950,7 +950,7 @@ func (f *IMAP) RecentMessageIDs(ctx context.Context, acct app.MailAccount, folde
 // ---------------------------------------------------------- 自建文件夹
 
 // ListFolders 列出服务器上所有文件夹的名字（已经解过 UTF-7，是人看的样子）。
-func (f *IMAP) ListFolders(ctx context.Context, acct app.MailAccount) (_ []string, err error) {
+func (f *IMAP) ListFolders(ctx context.Context, acct app.MailAccount) (_ []app.HostFolder, err error) {
 	c, err := f.borrow(acct)
 	if err != nil {
 		return nil, err
@@ -959,14 +959,28 @@ func (f *IMAP) ListFolders(ctx context.Context, acct app.MailAccount) (_ []strin
 	boxes := make(chan *imap.MailboxInfo, 64)
 	done := make(chan error, 1)
 	go func() { done <- c.List("", "*", boxes) }()
-	var out []string
+	var out []app.HostFolder
 	for b := range boxes {
-		out = append(out, b.Name)
+		out = append(out, app.HostFolder{Name: b.Name, Special: notUserMade(b.Attributes)})
 	}
 	if err := <-done; err != nil {
 		return nil, fmt.Errorf("列出文件夹失败：%w", err)
 	}
 	return out, nil
+}
+
+// notUserMade 看 LIST 给的属性：special-use（RFC 6154）说明这是服务器自带的
+// 草稿/已发送/垃圾/回收站/归档，\Noselect 说明它只是个层级容器。两种都不是
+// 用户建的文件夹。
+func notUserMade(attrs []string) bool {
+	for _, a := range attrs {
+		switch a {
+		case imap.NoSelectAttr, imap.AllAttr, imap.ArchiveAttr, imap.DraftsAttr, imap.FlaggedAttr,
+			imap.JunkAttr, imap.SentAttr, imap.TrashAttr, imap.ImportantAttr:
+			return true
+		}
+	}
+	return false
 }
 
 // CreateFolder 在服务器上建一个文件夹。go-imap 会把名字编成 UTF-7，中文名

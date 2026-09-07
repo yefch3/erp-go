@@ -35,6 +35,12 @@ describe('文件夹名的校验（和后端同一套规矩）', () => {
     // 斜杠先被拦（和后端 validFolderName 的顺序一致），保留名单独试
     expect(folderNameProblem('[Gmail]/x')).toBe('badChars')
     expect(folderNameProblem('[Gmail]All Mail')).toBe('reserved')
+    // 各家服务器自带的：263 的草稿箱/已归档、网易的病毒文件夹，中英文、大小写都挡
+    expect(folderNameProblem('草稿箱')).toBe('reserved')
+    expect(folderNameProblem('已归档')).toBe('reserved')
+    expect(folderNameProblem('病毒文件夹')).toBe('reserved')
+    expect(folderNameProblem('sent messages')).toBe('reserved')
+    expect(folderNameProblem('客户A')).toBe('')
     expect(folderNameProblem('长'.repeat(121))).toBe('tooLong')
   })
 })

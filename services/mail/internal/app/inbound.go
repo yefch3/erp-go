@@ -71,7 +71,7 @@ type Mailbox interface {
 	FetchByUIDs(ctx context.Context, acct MailAccount, folder string, uids []uint32) (FetchResult, error)
 	// ListFolders 列出服务器上所有文件夹的名字（不含特殊属性的判断，那是
 	// SentFolder 那一组的事）。
-	ListFolders(ctx context.Context, acct MailAccount) ([]string, error)
+	ListFolders(ctx context.Context, acct MailAccount) ([]HostFolder, error)
 	// CreateFolder / RenameFolder / DeleteFolder 在服务器上真的建、改、删一个
 	// 文件夹。名字是人写的（中文也行），UTF-7 编码由适配器负责。
 	CreateFolder(ctx context.Context, acct MailAccount, name string) error

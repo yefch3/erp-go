@@ -80,6 +80,8 @@ func startMoveFake(t *testing.T, hasMove bool, copyuid string) *moveFake {
 				say(`* LIST (\HasNoChildren) "/" "INBOX"`)
 				enc, _ := utf7.Encoding.NewEncoder().String("客户")
 				say(`* LIST (\\HasNoChildren) "/" "` + enc + `"`)
+				// 服务器自带的草稿箱：带 special-use 属性，不是用户建的
+				say(`* LIST (\HasNoChildren \Drafts) "/" "Drafts"`)
 				say(tag + " OK done")
 			case "UID STORE":
 				say("* 1 FETCH (FLAGS (\\Deleted))")
@@ -199,8 +201,14 @@ func TestFolderCommandsGoOverTheWireWithUTF7Names(t *testing.T) {
 			t.Errorf("没发 %s：%v", must, srv.cmds)
 		}
 	}
-	joined := strings.Join(names, ",")
-	if !strings.Contains(joined, "客户") {
-		t.Errorf("LIST 回来的 UTF-7 名字应该解成中文，实际 %v", names)
+	byName := map[string]bool{}
+	for _, n := range names {
+		byName[n.Name] = n.Special
+	}
+	if special, ok := byName["客户"]; !ok || special {
+		t.Errorf("LIST 回来的 UTF-7 名字应该解成中文、且是用户建的：%+v", names)
+	}
+	if special, ok := byName["Drafts"]; !ok || !special {
+		t.Errorf("带 \\Drafts 属性的应该标成「不是用户建的」：%+v", names)
 	}
 }

@@ -42,6 +42,45 @@ func (f MailFolder) ViewKey() string { return "F:" + f.HostName }
 // 在所有已知服务商里都安全。
 const maxFolderNameRunes = 120
 
+// HostFolder 是服务器 LIST 回来的一个文件夹。Special 是「这不是用户建的」：
+// 带 RFC 6154 的 special-use 属性（\Drafts \Sent \Junk \Trash \Archive
+// \All \Flagged \Important）或者 \Noselect（只是个层级容器，选不进去）。
+type HostFolder struct {
+	Name    string
+	Special bool
+}
+
+// providerSystemFolders 是各家邮箱服务器自带的系统文件夹名。
+//
+// 属性是权威的，可 263、网易这些老服务器不声明属性，只有名字——263 的
+// 草稿箱、已归档，网易的病毒文件夹，都是这样漏进「自建文件夹」列表的：
+// 列表里多出一个「草稿箱」，改名时服务器答 "can't rename default folder"。
+// 名单永远不可能完整，所以它是最后一道，不是唯一一道。大小写不分。
+var providerSystemFolders = []string{
+	// 中文（263 / 网易 163、126 / QQ / 腾讯企业 / 阿里）
+	"收件箱", "草稿箱", "草稿", "已发送", "已发送邮件", "发件箱",
+	"已删除", "已删除邮件", "已删除的邮件", "垃圾邮件", "垃圾箱", "邮件回收站",
+	"已归档", "归档", "归档邮件", "已存档",
+	"病毒文件夹", "病毒邮件", "广告邮件", "订阅邮件", "通知邮件", "待办邮件",
+	"星标邮件", "其他文件夹", "记事本", "便签",
+	// 英文
+	"INBOX", "Drafts", "Draft", "Sent", "Sent Messages", "Sent Items", "Sent Mail", "Outbox",
+	"Deleted", "Deleted Messages", "Deleted Items", "Trash", "Junk", "Junk E-mail", "Junk Email",
+	"Spam", "Bulk Mail", "Archive", "Archives", "Notes", "Templates", "All Mail",
+	"Important", "Starred", "Flagged", "Virus",
+}
+
+// isProviderSystemFolder 判断一个名字是不是某家服务器的系统文件夹。
+func isProviderSystemFolder(name string) bool {
+	name = strings.TrimSpace(name)
+	for _, sys := range providerSystemFolders {
+		if strings.EqualFold(name, sys) {
+			return true
+		}
+	}
+	return false
+}
+
 // validFolderName 检查一个人写的文件夹名能不能安全地送到服务器上。
 //
 // 斜杠是大多数服务器的层级分隔符（Gmail 用 /，263 用 /，部分用 .），v1 只做
@@ -61,11 +100,8 @@ func validFolderName(name string) (string, error) {
 			return "", apierr.Invalid("MAIL_FOLDER_NAME_INVALID", `文件夹名不能包含 / \ * % " 或控制字符`)
 		}
 	}
-	upper := strings.ToUpper(name)
-	for _, reserved := range []string{"INBOX", "SENT", "JUNK", "TRASH", "DRAFTS", "SPAM", "ARCHIVE"} {
-		if upper == reserved {
-			return "", apierr.Invalid("MAIL_FOLDER_NAME_RESERVED", "这个名字是系统文件夹，换一个")
-		}
+	if isProviderSystemFolder(name) {
+		return "", apierr.Invalid("MAIL_FOLDER_NAME_RESERVED", "这个名字是系统文件夹，换一个")
 	}
 	if strings.HasPrefix(name, "[Gmail]") {
 		return "", apierr.Invalid("MAIL_FOLDER_NAME_RESERVED", "这个名字是系统文件夹，换一个")
@@ -129,8 +165,12 @@ func (s *Service) importHostFolders(ctx context.Context, tenantID, employeeID in
 			known[r.HostName] = true
 		}
 	}
-	for _, n := range names {
-		if system[n] || known[n] || strings.HasPrefix(n, "[Gmail]") || strings.EqualFold(n, "Drafts") {
+	for _, hf := range names {
+		n := hf.Name
+		// 三道筛子，缺一道都会把服务器自带的文件夹当成用户建的登记进来：
+		// 属性（Gmail、新服务器声明）、我们认出来的特殊文件夹（sent/junk/
+		// trash/archive）、各家的系统名单（263、网易这些不声明属性的）。
+		if hf.Special || system[n] || known[n] || strings.HasPrefix(n, "[Gmail]") || isProviderSystemFolder(n) {
 			continue
 		}
 		if _, err := validFolderName(n); err != nil {
