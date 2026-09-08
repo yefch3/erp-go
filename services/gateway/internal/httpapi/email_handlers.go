@@ -635,6 +635,24 @@ func (s *Server) setDefaultMailbox(w http.ResponseWriter, r *http.Request) {
 	s.writeProto(w, resp)
 }
 
+// setKeepSentCopy 换这个信箱「发完信我们自己留不留副本」。
+//
+// 归属同 setDefaultMailbox，由 SQL 的 WHERE 判。不要 requireMailUnlock：
+// 这是一条设置，不读任何邮件内容，而要求先解锁才能改，等于让「已发送里
+// 有两封」的人先去输一遍授权码才能把它关掉。
+func (s *Server) setKeepSentCopy(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.SetKeepSentCopyRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Emails.SetKeepSentCopy(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 // unbindMailbox 断开一个信箱：凭据清掉、不再收发，**历史邮件原样留着**。
 //
 // 归属同上，由 SQL 的 WHERE 判。这里也不加 requireMailUnlock——解绑是「我不

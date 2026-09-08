@@ -48,8 +48,13 @@ func (s *Service) saveSentCopy(ctx context.Context, tenantID, senderID, accountI
 }
 
 // fileSentCopy is saveSentCopy once the mailbox is known.
+//
+// 读这个箱上的开关，不再当场按主机名猜。猜法生产上被证伪了：同一个
+// smtp.263.net，yy@aaaindustryinc.com 发 36 封重 36 封、erptest@263.net 发
+// 11 封一封没重——263 把「保存客户端发信」做成了每个信箱各自的后台开关。
+// hostFilesItsOwnSentCopy 还在，但只用来定这一列的默认值（见 00061）。
 func (s *Service) fileSentCopy(ctx context.Context, acct MailAccount, raw []byte) {
-	if s.mailbox == nil || len(raw) == 0 || hostFilesItsOwnSentCopy(acct) {
+	if s.mailbox == nil || len(raw) == 0 || !acct.ShouldKeepSentCopy() {
 		return
 	}
 	folder, err := s.specialFolderOf(ctx, acct, "sent")

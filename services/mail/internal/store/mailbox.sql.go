@@ -1180,7 +1180,7 @@ SELECT id, employee_id, email, username, auth_kind,
        secret_enc, oauth_refresh_enc, key_version, is_active,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security,
-       hourly_quota, daily_quota
+       hourly_quota, daily_quota, keep_sent_copy
 FROM mail_accounts
 WHERE tenant_id = $1::bigint
   AND id = $2::bigint
@@ -1210,6 +1210,7 @@ type GetMailAccountSecretRow struct {
 	ImapSecurity    string
 	HourlyQuota     int32
 	DailyQuota      int32
+	KeepSentCopy    *bool
 }
 
 // The only query that returns ciphertext. Used by the sender and the IMAP
@@ -1245,6 +1246,7 @@ func (q *Queries) GetMailAccountSecret(ctx context.Context, arg GetMailAccountSe
 		&i.ImapSecurity,
 		&i.HourlyQuota,
 		&i.DailyQuota,
+		&i.KeepSentCopy,
 	)
 	return i, err
 }
@@ -2051,7 +2053,7 @@ func (q *Queries) ListInboundThreads(ctx context.Context, arg ListInboundThreads
 const listMailAccountsForEmployee = `-- name: ListMailAccountsForEmployee :many
 SELECT id, email, username, auth_kind, verified_at, last_error, auth_failed, is_active, updated_at,
        is_default, domain, smtp_host, smtp_port, smtp_security,
-       imap_host, imap_port, imap_security, last_read_at, unbound_at
+       imap_host, imap_port, imap_security, last_read_at, unbound_at, keep_sent_copy
 FROM mail_accounts
 WHERE tenant_id = $1::bigint
   AND employee_id = $2::bigint
@@ -2083,6 +2085,7 @@ type ListMailAccountsForEmployeeRow struct {
 	ImapSecurity string
 	LastReadAt   pgtype.Timestamptz
 	UnboundAt    pgtype.Timestamptz
+	KeepSentCopy *bool
 }
 
 // 一个人名下的全部信箱。今天唯一约束保证最多一行，下一期放开之后这里才
@@ -2122,6 +2125,7 @@ func (q *Queries) ListMailAccountsForEmployee(ctx context.Context, arg ListMailA
 			&i.ImapSecurity,
 			&i.LastReadAt,
 			&i.UnboundAt,
+			&i.KeepSentCopy,
 		); err != nil {
 			return nil, err
 		}
@@ -4117,6 +4121,39 @@ func (q *Queries) SetInboundReadByUID(ctx context.Context, arg SetInboundReadByU
 		arg.ImapUid,
 	)
 	return err
+}
+
+const setKeepSentCopy = `-- name: SetKeepSentCopy :execrows
+UPDATE mail_accounts
+SET keep_sent_copy = $1::boolean, updated_at = now()
+WHERE tenant_id = $2::bigint
+  AND employee_id = $3::bigint
+  AND id = $4::bigint
+`
+
+type SetKeepSentCopyParams struct {
+	KeepSentCopy bool
+	TenantID     int64
+	EmployeeID   int64
+	ID           int64
+}
+
+// 「发送后自己往已发送里留一份副本」这个开关。
+//
+// 按 (tenant, employee, id) 三个一起限定，不是只按 id：id 是从浏览器来的，
+// 只按它更新等于谁都能改别人信箱的设置。返回改了几行，调用方据此分辨
+// 「关掉了」和「这个箱不在你名下」——两者都不该静默成功。
+func (q *Queries) SetKeepSentCopy(ctx context.Context, arg SetKeepSentCopyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setKeepSentCopy,
+		arg.KeepSentCopy,
+		arg.TenantID,
+		arg.EmployeeID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setMailAccountActive = `-- name: SetMailAccountActive :exec

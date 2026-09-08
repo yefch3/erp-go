@@ -75,6 +75,8 @@ func TestBodiesTheBrowserActuallySendsDecode(t *testing.T) {
 	mustDecode(t, `{"ids": [3], "folderId": 7}`, &mailv1.MoveInboundBatchRequest{})
 
 	mustDecode(t, `{"accountId": 7}`, &mailv1.SetDefaultMailboxRequest{})
+	// 前端发的是 protoId 串号 + 一个布尔，两种都得认。
+	mustDecode(t, `{"accountId": "7", "keep": false}`, &mailv1.SetKeepSentCopyRequest{})
 	// 同一个字段前端也可能发成字符串（int64 在 JSON 里超出安全整数时，
 	// proto 的 JSON 映射规定用字符串）。两种都得收得下。
 	mustDecode(t, `{"accountId": "7"}`, &mailv1.SetDefaultMailboxRequest{})

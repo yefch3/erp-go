@@ -51,6 +51,7 @@ func TestMultiMailboxRoutesAreAllRegistered(t *testing.T) {
 		"GET /api/my-mailboxes",
 		// 换写信时默认用哪个箱。
 		"POST /api/my-mailboxes/default",
+		"POST /api/my-mailboxes/keep-sent-copy",
 		"POST /api/my-mailboxes/unbind",
 		// 绑定/登录邮箱。**存邮箱凭据的路只有这一条**，它要先拿这一对去
 		// 邮件服务器真的登录一次，成功了才落库。

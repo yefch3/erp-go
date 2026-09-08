@@ -161,6 +161,9 @@ service EmailService {
   rpc ListMyMailboxes(ListMyMailboxesRequest) returns (ListMyMailboxesResponse);
   // 换写信时默认用哪个信箱。清旧设新在一个事务里，中途不会出现零个或两个。
   rpc SetDefaultMailbox(SetDefaultMailboxRequest) returns (SetDefaultMailboxResponse);
+  // 发完信要不要自己往这个箱的已发送里留一份。有些服务器自己会存，两边都存
+  // 就是客户邮箱里两封一模一样的信；而这件事协议里问不出来，只能由用户说。
+  rpc SetKeepSentCopy(SetKeepSentCopyRequest) returns (SetKeepSentCopyResponse);
   // 断开一个信箱：凭据清掉、不再收发，历史邮件原样留着。
   rpc UnbindMailbox(UnbindMailboxRequest) returns (UnbindMailboxResponse);
   // 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
@@ -766,6 +769,10 @@ message MailAccount {
   // 哪个，光看地址不一定分得清。
   string smtp_host = 10;
   string imap_host = 11;
+  // 发完信我们要不要自己往这个箱的已发送里留一份。**这是解析后的结果**，
+  // 不是数据库里那个可空列：没人表过态时它等于按主机猜出来的那个值，所以
+  // 界面上永远显示的是「实际会发生什么」，而不是一个空。
+  bool keep_sent_copy = 16;
   // 这个箱里有多少封没读。左侧那排角标读的就是它。
   //
   // 多信箱之后这个数字是**切换的理由**：不显示的话，另一个箱里躺着客户的
@@ -811,6 +818,13 @@ message SetDefaultMailboxRequest {
 }
 
 message SetDefaultMailboxResponse {}
+
+message SetKeepSentCopyRequest {
+  int64 account_id = 1;
+  bool keep = 2;
+}
+
+message SetKeepSentCopyResponse {}
 
 message GetMyMailAccountResponse {
   MailAccount account = 1;

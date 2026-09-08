@@ -234,7 +234,7 @@ SELECT id, employee_id, email, username, auth_kind,
        secret_enc, oauth_refresh_enc, key_version, is_active,
        domain, smtp_host, smtp_port, smtp_security,
        imap_host, imap_port, imap_security,
-       hourly_quota, daily_quota
+       hourly_quota, daily_quota, keep_sent_copy
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND id = sqlc.arg(id)::bigint;
@@ -274,7 +274,7 @@ ORDER BY id;
 -- 浏览器。
 SELECT id, email, username, auth_kind, verified_at, last_error, auth_failed, is_active, updated_at,
        is_default, domain, smtp_host, smtp_port, smtp_security,
-       imap_host, imap_port, imap_security, last_read_at, unbound_at
+       imap_host, imap_port, imap_security, last_read_at, unbound_at, keep_sent_copy
 FROM mail_accounts
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND employee_id = sqlc.arg(employee_id)::bigint
@@ -1804,3 +1804,16 @@ WHERE tenant_id = sqlc.arg(tenant_id)::bigint
 -- 挪回收件箱：归档标记去掉，不然它落在归档视图里。
 UPDATE email_inbound SET archived_at = NULL
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint AND id = sqlc.arg(id)::bigint;
+
+
+-- name: SetKeepSentCopy :execrows
+-- 「发送后自己往已发送里留一份副本」这个开关。
+--
+-- 按 (tenant, employee, id) 三个一起限定，不是只按 id：id 是从浏览器来的，
+-- 只按它更新等于谁都能改别人信箱的设置。返回改了几行，调用方据此分辨
+-- 「关掉了」和「这个箱不在你名下」——两者都不该静默成功。
+UPDATE mail_accounts
+SET keep_sent_copy = sqlc.arg(keep_sent_copy)::boolean, updated_at = now()
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND employee_id = sqlc.arg(employee_id)::bigint
+  AND id = sqlc.arg(id)::bigint;

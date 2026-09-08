@@ -45,6 +45,10 @@ type MailAccountView struct {
 	// 「你这个箱走的是 imap.gmail.com」，不然跨服务商时人分不清哪个是哪个。
 	SMTPHost string
 	IMAPHost string
+	// 发完信我们要不要自己往这个箱的已发送里留一份。**解析后的结果**：没人
+	// 表过态时等于按主机猜出来的那个值，所以界面显示的永远是「实际会发生
+	// 什么」，而不是一个空。见 MailAccount.ShouldKeepSentCopy。
+	KeepSentCopy bool
 	// Unread 是左侧那个角标：这个箱里有多少封没读。
 	//
 	// 多信箱之后这个数字是**切换的理由**——不显示的话，另一个箱里躺着客户
@@ -173,6 +177,11 @@ func (s *Service) ListMyMailboxes(ctx context.Context, tenantID, employeeID int6
 			SMTPHost: row.SmtpHost, IMAPHost: row.ImapHost,
 			HasSecret: s.hasCredential(ctx, tenantID, row.ID),
 			Unread:    unread[row.ID],
+			// 解析后的值，不是库里那个可空列：没人表过态时显示按主机猜出来
+			// 的那个，所以界面上永远是「实际会发生什么」，不是一个空。
+			KeepSentCopy: MailAccount{
+				Host: row.SmtpHost, KeepSentCopy: row.KeepSentCopy,
+			}.ShouldKeepSentCopy(),
 		}
 		if row.VerifiedAt.Valid {
 			v.VerifiedAt = row.VerifiedAt.Time.Format("2006-01-02 15:04")
