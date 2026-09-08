@@ -15,6 +15,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -117,7 +118,7 @@ func (f *IMAP) Fetch(ctx context.Context, acct app.MailAccount, folder string, s
 		uids = uids[:limit]
 	}
 
-	out.Messages, err = f.fetchUIDs(c, uids)
+	out.Messages, err = f.fetchSized(c, uids)
 	return out, err
 }
 
@@ -160,7 +161,7 @@ func (f *IMAP) FetchBelow(ctx context.Context, acct app.MailAccount, folder stri
 		uids = uids[uint32(len(uids))-limit:]
 	}
 
-	out.Messages, err = f.fetchUIDs(c, uids)
+	out.Messages, err = f.fetchSized(c, uids)
 	return out, err
 }
 
@@ -185,7 +186,7 @@ func (f *IMAP) FetchByUIDs(ctx context.Context, acct app.MailAccount, folder str
 		return out, fmt.Errorf("打开 %s 失败：%w", folder, err)
 	}
 	out.UIDValidity = mbox.UidValidity
-	out.Messages, err = f.fetchUIDs(c, uids)
+	out.Messages, err = f.fetchSized(c, uids)
 	return out, err
 }
 
@@ -288,6 +289,156 @@ func (f *IMAP) specialFolderOrEmpty(acct app.MailAccount, attr string, guesses [
 		return "", nil
 	}
 	return name, err
+}
+
+// 按字节数切批，而不是按封数。
+//
+// **限流用错了单位是这段代码存在的理由。** 原来一次要 50 封的完整内容，压在
+// 一条 90 秒的命令里——那等于假设每封信一样大。50 封普通信几 MB，绰绰有余；
+// 里面混进一封 55 MB 的，90 秒内就要跑出 5 Mbit/s 以上的持续速度，跨太平洋
+// 做不到。而这一批下不完，收信游标就不前进：下一轮还是同一批、同一封、同样
+// 超时。那个信箱从此不再收新信，而在 #370 之前这个卡死还会被显示成「请重新
+// 登录」——员工重输授权码，当然修不好。
+//
+// 现在：先问一句每封多大（RFC822.SIZE 只回数字，不回内容），按累计字节切批，
+// 每批的期限跟着它的字节数走。
+const (
+	// maxFetchBytes 是一批最多下多少。20 MB 在 90 秒里要 227 KB/s，跨太平洋
+	// 的常见速度够得着；再大就该让它自己一批、自己一个更长的期限。
+	maxFetchBytes = 20 << 20
+	// minFetchRate 是给大批算期限时假设的最低速度。取得很保守：宁可等，
+	// 不可因为估高了速度而在半路超时——超时的代价是这一批白下，重来。
+	minFetchRate = 200 << 10 // 200 KB/s
+	// maxFetchTimeoutFactor 是单批期限最多放大到基准的几倍。基准是
+	// MAIL_SYNC_TIMEOUT（默认 90 秒），所以默认封顶 15 分钟。有个顶是因为
+	// 一条永远下不完的命令会把一个 worker 永久占住。
+	maxFetchTimeoutFactor = 10
+)
+
+// fetchSized 把一串 UID 按字节数分成几批下下来。
+//
+// **严格按 UID 从小到大，一批彻底失败就停在那里。** 已经下到的交出去，收信
+// 游标只前进到那一批之前；失败那封下一轮从头再来，那时它排在最前面、独占
+// 一批、拿到自己的期限，多半就成了。
+//
+// 不跳过是有意的：允许「跳过失败的、继续下后面的」，游标就会越过那封信，它
+// 从此永远收不到，而且没有人会发现。宁可这个信箱慢一轮，不能悄悄丢信。
+func (f *IMAP) fetchSized(c *client.Client, uids []uint32) ([]app.RawMessage, error) {
+	if len(uids) == 0 {
+		return nil, nil
+	}
+	sizes, err := f.fetchSizes(c, uids)
+	if err != nil {
+		// 问不到大小不该让收信停摆：退回原来的做法，一批下完。
+		f.log.Warn("could not read message sizes, falling back to one batch", "err", err)
+		return f.fetchUIDs(c, uids)
+	}
+
+	base := f.timeout
+	defer func() { c.Timeout = base }()
+
+	var out []app.RawMessage
+	for _, batch := range splitBySize(uids, sizes, maxFetchBytes) {
+		bytes := int64(0)
+		for _, u := range batch {
+			bytes += sizes[u]
+		}
+		c.Timeout = fetchTimeoutFor(base, bytes)
+		started := time.Now()
+		msgs, err := f.fetchUIDs(c, batch)
+		took := time.Since(started)
+		if err != nil {
+			// 这一批一封都没下来。把之前批次的交出去，游标停在这里。
+			f.log.Warn("fetch failed; the mailbox stops here until next pass",
+				"uids", len(batch), "first_uid", batch[0], "bytes", bytes,
+				"took", took.Round(time.Second), "deadline", c.Timeout, "err", err)
+			if len(out) == 0 {
+				return nil, err
+			}
+			return out, nil
+		}
+		if took > base {
+			f.log.Info("slow fetch", "uids", len(batch), "first_uid", batch[0],
+				"bytes", bytes, "took", took.Round(time.Second),
+				"rate_kbps", ratePerSecond(bytes, took)/1024)
+		}
+		out = append(out, msgs...)
+	}
+	return out, nil
+}
+
+// fetchSizes 问每封信多大。RFC822.SIZE 只回一个数字，不回内容——和上面问
+// 「有哪些 UID」是同一类的廉价查询，一次往返。
+func (f *IMAP) fetchSizes(c *client.Client, uids []uint32) (map[uint32]int64, error) {
+	seq := new(imap.SeqSet)
+	for _, u := range uids {
+		seq.AddNum(u)
+	}
+	msgs := make(chan *imap.Message, 16)
+	done := make(chan error, 1)
+	go func() { done <- c.UidFetch(seq, []imap.FetchItem{imap.FetchUid, imap.FetchRFC822Size}, msgs) }()
+	sizes := make(map[uint32]int64, len(uids))
+	for m := range msgs {
+		sizes[m.Uid] = int64(m.Size)
+	}
+	if err := <-done; err != nil {
+		return nil, err
+	}
+	return sizes, nil
+}
+
+// splitBySize 按累计字节切批，保持 UID 从小到大。
+//
+// 单封就超过上限的自成一批：它挡不住别人，别人也不必陪它等。大小不明的
+// （服务器没报）按上限算，宁可把它单独拎出来，也不要让它混在一批里把整批
+// 的期限估低。
+func splitBySize(uids []uint32, sizes map[uint32]int64, limit int64) [][]uint32 {
+	ordered := append([]uint32(nil), uids...)
+	sort.Slice(ordered, func(a, b int) bool { return ordered[a] < ordered[b] })
+
+	var out [][]uint32
+	var cur []uint32
+	var curBytes int64
+	for _, u := range ordered {
+		size, ok := sizes[u]
+		if !ok || size <= 0 {
+			size = limit
+		}
+		if len(cur) > 0 && curBytes+size > limit {
+			out = append(out, cur)
+			cur, curBytes = nil, 0
+		}
+		cur = append(cur, u)
+		curBytes += size
+		if curBytes >= limit {
+			out = append(out, cur)
+			cur, curBytes = nil, 0
+		}
+	}
+	if len(cur) > 0 {
+		out = append(out, cur)
+	}
+	return out
+}
+
+// fetchTimeoutFor 给一批算期限：基准打底，再按字节数折算，封顶。
+func fetchTimeoutFor(base time.Duration, bytes int64) time.Duration {
+	if base <= 0 {
+		base = 90 * time.Second
+	}
+	need := base + time.Duration(bytes/minFetchRate)*time.Second
+	if max := base * maxFetchTimeoutFactor; need > max {
+		return max
+	}
+	return need
+}
+
+// ratePerSecond 是每秒多少字节，给日志用。
+func ratePerSecond(bytes int64, took time.Duration) int64 {
+	if took <= 0 {
+		return 0
+	}
+	return int64(float64(bytes) / took.Seconds())
 }
 
 // fetchUIDs downloads exactly these messages over an already-selected mailbox.
