@@ -195,3 +195,77 @@ func TestOurOwnSentMailGetsAFreshPictureAddressOnRead(t *testing.T) {
 		t.Errorf("换了一个不在白名单里的 key：\n%s", got)
 	}
 }
+
+// 会话里每一行的「谁写的、写给谁的」，两个方向必须是同一个意思。
+//
+// 原来界面上那一列是 counterparty，而它在两腿上说的不是同一件事：我发出的
+// 那行它是收件人，收到的那行它是发件人。于是一条会话里上下两行的地址，一个
+// 是「发给谁」、一个是「谁发的」，两行还都标着「我发出」（发信地址是自己名下
+// 的箱时就会这样）——看的人无从分辨。这条钉住新的四个字段两腿含义一致。
+func TestEveryTurnSaysWhoWroteItAndWhoItWentTo(t *testing.T) {
+	f := newFolderFixture(t, 9511)
+	ctx := context.Background()
+	const thread = "who-wrote-what"
+
+	// 收到的一封：客户发给我们，还抄送了一个人。
+	if _, err := f.pool.Exec(ctx, `INSERT INTO email_inbound
+		(tenant_id, account_id, owner_id, message_id, thread_key, folder, imap_uid,
+		 from_email, from_name, to_email, to_all, cc, subject, body_text, received_at)
+		VALUES ($1, $2, $3, 'in@mid', $4, 'INBOX', 901,
+		        'ana@buyer.example', 'Ana Costa', 'me@263.net',
+		        'me@263.net, colleague@263.net', 'boss@buyer.example',
+		        '报价', '正文', now())`,
+		f.tenantID, f.account, f.me, thread); err != nil {
+		t.Fatal(err)
+	}
+	// 我们发出的一封。
+	if _, err := f.pool.Exec(ctx, `INSERT INTO email_messages
+		(tenant_id, message_key, sender_id, sender_name, from_email, to_email,
+		 subject, body, body_format, thread_key, status, queued_at, sent_at)
+		VALUES ($1, gen_random_uuid(), $2, '我', 'me@263.net', 'ana@buyer.example',
+		        '回复：报价', '好的', 'TEXT', $3, 'ACCEPTED', now(), now())`,
+		f.tenantID, f.me, thread); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := f.svc.GetMailThread(ctx, f.tenantID, f.me, 0, thread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("会话里应该是两封，拿到 %d 封", len(items))
+	}
+
+	byDir := map[string]ThreadItem{}
+	for _, it := range items {
+		byDir[it.Direction] = it
+	}
+
+	in, out := byDir["IN"], byDir["OUT"]
+	if in.FromEmail != "ana@buyer.example" {
+		t.Errorf("收到的那封，发件人应该是客户，拿到 %q", in.FromEmail)
+	}
+	if in.FromName != "Ana Costa" {
+		t.Errorf("收到的那封，发件人名字丢了：%q", in.FromName)
+	}
+	// 整段，不是第一个：抄了同事的那封信要看得出同事也在收件人里。
+	if !strings.Contains(in.ToAll, "colleague@263.net") {
+		t.Errorf("收到的那封只给了第一个收件人：%q", in.ToAll)
+	}
+	if in.Cc != "boss@buyer.example" {
+		t.Errorf("收到的那封抄送丢了：%q", in.Cc)
+	}
+
+	if out.FromEmail != "me@263.net" {
+		t.Errorf("发出的那封，发件人应该是我们自己，拿到 %q", out.FromEmail)
+	}
+	if out.ToAll != "ana@buyer.example" {
+		t.Errorf("发出的那封，收件人不对：%q", out.ToAll)
+	}
+
+	// 关键的一条：两腿的 FromEmail 都是「写这封信的人」，所以它们必然不同。
+	// 如果哪天有人把某一腿填反了，这里会变成相等。
+	if in.FromEmail == out.FromEmail {
+		t.Errorf("两个方向的发件人一样（%q），说明有一腿填的不是发件人", in.FromEmail)
+	}
+}

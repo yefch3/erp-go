@@ -908,7 +908,13 @@ WHERE (sqlc.arg(keyword)::text = ''
 -- 两边都会出现——比把收到的也合起来要好，因为那几封确实是同一批。
 SELECT 'OUT' AS direction, m.id, m.subject, m.body, m.body_format,
        m.to_email AS counterparty, m.sender_name AS who,
-       coalesce(m.sent_at, m.queued_at) AS at
+       coalesce(m.sent_at, m.queued_at) AS at,
+       -- 谁写的、写给谁的，两腿填同一个意思。counterparty 在两腿上说的不是
+       -- 同一件事（这腿是收件人，下面那腿是发件人），界面上却是同一列。
+       m.from_email, m.sender_name AS from_name,
+       m.to_email AS to_all,
+       -- 发出的这一腿没有抄送可给：email_messages 上没有 cc 这一列。
+       '' AS cc
 FROM email_messages m
 WHERE m.tenant_id = sqlc.arg(tenant_id)::bigint
   AND m.sender_id = sqlc.arg(owner_id)::bigint
@@ -918,7 +924,11 @@ SELECT 'IN' AS direction, i.id, i.subject,
        CASE WHEN i.body_html <> '' THEN i.body_html ELSE i.body_text END AS body,
        CASE WHEN i.body_html <> '' THEN 'HTML' ELSE 'TEXT' END AS body_format,
        i.from_email AS counterparty, i.from_name AS who,
-       coalesce(i.sent_at, i.received_at) AS at
+       coalesce(i.sent_at, i.received_at) AS at,
+       i.from_email, i.from_name,
+       -- 原头优先：群发给七个人的信要看到七个，只有没存下原头时才退回第一个。
+       CASE WHEN i.to_all <> '' THEN i.to_all ELSE i.to_email END AS to_all,
+       i.cc
 FROM email_inbound i
 WHERE i.tenant_id = sqlc.arg(tenant_id)::bigint
   AND i.owner_id = sqlc.arg(owner_id)::bigint

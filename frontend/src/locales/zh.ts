@@ -1906,6 +1906,7 @@ export default {
     threadCount: '此会话共 {n} 封往来，点击任意一封展开',
     threadOut: '我发出',
     threadIn: '对方',
+    threadTo: '发给 {to}',
     notifTitle: '收到新邮件',
     notifBody: '你的邮箱有新邮件，点击查看。',
     junkNote: '这里是邮件服务商判定的垃圾邮件。偶尔扫一眼：误判的客户来信可以直接回复，或点开后选「这不是垃圾」移回收件箱。',

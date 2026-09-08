@@ -1011,6 +1011,8 @@ func (h *Handler) GetMailThread(ctx context.Context, req *mailv1.GetMailThreadRe
 			Direction: v.Direction, Id: v.ID, Subject: v.Subject,
 			Body: v.Body, Quoted: v.Quoted, BodyFormat: v.BodyFormat,
 			Counterparty: v.Counterparty, Who: v.Who,
+			FromEmail: v.FromEmail, FromName: v.FromName,
+			ToAll: v.ToAll, Cc: v.Cc,
 		}
 		if !v.At.IsZero() {
 			it.At = v.At.Format(time.RFC3339)
