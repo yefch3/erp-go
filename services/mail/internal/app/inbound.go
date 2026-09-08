@@ -1293,6 +1293,8 @@ func (s *Service) RunIdleWatchers(ctx context.Context, cfg SyncConfig) {
 
 func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsWaiter, accountID int64) {
 	backoff := time.Minute
+	// 这台服务器的 IDLE 撑不撑得住。掐得太勤就停掉推送、交给轮询，见 idledrop.go。
+	var health idleHealth
 	for ctx.Err() == nil {
 		// 没人在看了就收摊。每一圈开头查一次——IDLE 一圈最长 25 分钟，所以
 		// 一个箱从「没人看」到连接真正释放最多隔一圈。管理器每分钟扫一次，
@@ -1312,10 +1314,37 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 			// account comes back; holding a loop open for it helps nobody.
 			return
 		}
+		// 这台服务器的 IDLE 被判定为没用，正在冷静期：不开连接，睡到期满
+		// 再试。这段时间里收信全靠两分钟一轮的轮询——新信最多晚两分钟，
+		// 换掉每分钟一次的重新登录。
+		if !health.idleWorthTrying(time.Now()) {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(idlePauseCheckEvery):
+			}
+			continue
+		}
 		// 比 IDLE 的续命间隔略长：正常情况下是续命先到，这个只是兜底。
+		startedAt := time.Now()
 		news, err := waiter.WaitForNews(ctx, acct, "INBOX", IdleRestartEvery+time.Minute)
 		if err != nil {
+			if errors.Is(err, ErrPushUnsupported) {
+				// 这台服务器没有推送这回事。别再为它挂连接——两分钟一轮的
+				// 轮询本来就在跑，而且用的是连接池里的连接，比挂着一条自己
+				// 的便宜。隔一阵再问一次：服务商会升级。
+				s.log.Info("host has no IMAP push; leaving this mailbox to the poller",
+					"account", accountID, "retry_in", idleRetryAfter)
+				health.quietUntil = time.Now().Add(idleRetryAfter)
+				continue
+			}
 			if BenignIdleDrop(err) {
+				if !health.noteIdleRun(time.Now(), time.Since(startedAt), true) {
+					// 连着几圈都撑不到一分半。再重连下去只是每分钟登录一次。
+					s.log.Info("host keeps cutting idle connections; falling back to polling",
+						"account", accountID, "quiet_for", idleRetryAfter)
+					continue
+				}
 				// 对方挂了电话。263 几分钟就来一次，不是故障：记一条 Info 留
 				// 个脚印，然后重连——不退避。退避是留给拒绝我们的服务器的。
 				//
@@ -1344,6 +1373,7 @@ func (s *Service) watchMailbox(ctx context.Context, cfg SyncConfig, waiter NewsW
 			continue
 		}
 		backoff = time.Minute
+		health.noteIdleRun(time.Now(), time.Since(startedAt), false)
 		if news {
 			if n, err := s.SyncMailbox(ctx, cfg, accountID); err != nil {
 				s.log.Warn("push-triggered sync failed", "account", accountID, "err", err)

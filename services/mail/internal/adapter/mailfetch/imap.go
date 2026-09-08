@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -445,7 +446,21 @@ func (f *IMAP) WaitForNews(ctx context.Context, acct app.MailAccount, folder str
 
 	done := make(chan error, 1)
 	go func() {
-		done <- c.Idle(stop, &client.IdleOptions{LogoutTimeout: app.IdleRestartEvery})
+		// PollInterval: -1 是关键的一行。**服务器不支持 IDLE 时，go-imap 会
+		// 悄悄退化成「挂着这条连接、每 60 秒发一个 NOOP」**——那不是推送，
+		// 是把轮询伪装成推送，而且比普通轮询更贵：连接一断就要重新握手加
+		// 登录，而普通轮询用的是连接池里的连接。
+		//
+		// 263 实测就是这种：它声明的能力里没有 IDLE（AUTH=PLAIN ID IMAP4
+		// IMAP4rev1 MOVE UIDPLUS XLIST），生产上那个每 66 秒一次的"掉线"，
+		// 正是这个 60 秒 NOOP 节奏加一次往返。
+		//
+		// 负数让 go-imap 直接答 ErrExtensionUnsupported，我们据此把这个箱
+		// 交给轮询，一条连接都不占。
+		done <- c.Idle(stop, &client.IdleOptions{
+			LogoutTimeout: app.IdleRestartEvery,
+			PollInterval:  -1,
+		})
 	}()
 
 	timer := time.NewTimer(maxWait)
@@ -467,6 +482,9 @@ func (f *IMAP) WaitForNews(ctx context.Context, acct app.MailAccount, folder str
 		case err := <-done:
 			if news {
 				return true, nil
+			}
+			if errors.Is(err, client.ErrExtensionUnsupported) {
+				return false, app.ErrPushUnsupported
 			}
 			return false, err
 		}
