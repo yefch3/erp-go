@@ -2554,7 +2554,7 @@ async function openDetail(id: string) {
 
 // The conversation around it, fetched after the mail itself is already on
 // screen. Only a real exchange (more than this one message) switches the
-// page into thread mode; the opened mail arrives expanded, history
+// page into thread mode; the newest turn arrives expanded, the rest
 // collapsed to one line each.
 async function loadThread(mail: InboundMail) {
   threadItems.value = []
@@ -2570,7 +2570,14 @@ async function loadThread(mail: InboundMail) {
     })
     if ((tr.items ?? []).length > 1) {
       threadItems.value = tr.items
-      expandedThread.value = new Set([`IN:${mail.id}`])
+      // **只展开最新的那一条**，不是"点进来的那一条"。
+      //
+      // 绝大多数时候两者是同一条：列表一行代表一条会话，显示的就是最新那封。
+      // 但从搜索结果、从附件条、从别处跳进来时点的可能是中间某一封，那时
+      // 展开的是它，而人想先看的是最后发生了什么。会话按时间正序，所以是
+      // 最后一条。
+      const newest = tr.items[tr.items.length - 1]
+      expandedThread.value = new Set([`${newest.direction}:${newest.id}`])
     }
   } catch {
     /* the single-mail view already covers the failure */

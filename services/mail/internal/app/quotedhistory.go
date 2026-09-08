@@ -80,6 +80,11 @@ var quoteOpeners = []*regexp.Regexp{
 	// 中文客户端。QQ 邮箱、Foxmail、263 各写一种，分隔线的横杠数量不固定。
 	regexp.MustCompile(`^-{2,}\s*(原始邮件|原邮件|以下为引用内容)\s*-{2,}`),
 	regexp.MustCompile(`^在\s?\d{4}.{0,80}(写道|寫道)[:：]`),
+	// "CEO <ceo@corp.example> 写道：" —— ERP 自己的写信框加的那一行，Foxmail
+	// 和几家网页版也是这个写法。上面那几条都要求以「在 + 年份」开头，这一条
+	// 不要求：这个格式里没有日期，只有一个人和一个地址。带尖括号的地址是
+	// 它和普通句子的分界，不至于把正文里一句「他写道：」当成引用的开头。
+	regexp.MustCompile(`(?i)^\S.{0,120}<[^<>@\s]+@[^<>@\s]+>\s*(写道|寫道|wrote)\s*[:：]\s*$`),
 	regexp.MustCompile(`^发件人[:：].{0,200}(发送时间|收件人)[:：]`),
 	regexp.MustCompile(`^寄件者[:：]`),
 }
