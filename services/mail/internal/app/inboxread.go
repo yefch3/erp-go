@@ -542,6 +542,10 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 	// because the two legs number their rows in different tables and an
 	// inbound 7 is not an outbound 7.
 	files := map[string][]Attachment{}
+	// 我们自己发出去的那几条，正文里可能带着一条**当时**签发的存储地址：写信框
+	// 把阅读视图那段 HTML 抄进了引用（见 quotedimages.go）。那条地址早过期了，
+	// 回头看已发送就是一个裂开的图标。这张表按对象 key 给出刚签的一条。
+	freshImages := map[string]string{}
 	if fs, err := s.q.ListThreadAttachments(ctx, store.ListThreadAttachmentsParams{
 		TenantID: tenantID, OwnerID: ownerID, AccountID: accountID, ThreadKey: threadKey,
 	}); err == nil {
@@ -556,6 +560,13 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 		// ingest: a URL minted when the mail arrived would have expired long
 		// before anybody opened the thread.
 		flat = s.signDownloads(ctx, flat)
+		// PreviewURL 而不是 DownloadURL：前者是「浏览器就地渲染」那一条，后者
+		// 带下载附件的处置头，塞进 <img> 只会让浏览器去下载一个文件。
+		for _, a := range flat {
+			if a.FileKey != "" && a.PreviewURL != "" {
+				freshImages[a.FileKey] = a.PreviewURL
+			}
+		}
 		for i, f := range fs {
 			k := f.Direction + ":" + strconv.FormatInt(f.MessageID, 10)
 			files[k] = append(files[k], flat[i])
@@ -585,6 +596,10 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 						SanitizeForReading(s.localiseImages(ctx, body, embedded[r.ID])),
 						swaps[r.ID]),
 					s.selfHost)
+			} else {
+				// 我们自己发出去的：引用里借来的那张图，地址是发信当天签的，
+				// 现在早过期了。按 key 换成刚签的一条。
+				body = refreshStorageImageLinks(body, freshImages)
 			}
 			body, quoted = SplitQuotedHistory(body)
 		}

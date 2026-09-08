@@ -39,6 +39,58 @@ func (q *Queries) AdoptInboundRawKey(ctx context.Context, arg AdoptInboundRawKey
 	return result.RowsAffected(), nil
 }
 
+const attachmentsByKeys = `-- name: AttachmentsByKeys :many
+SELECT a.file_key, a.content_type
+FROM email_inbound_attachments a
+JOIN email_inbound i ON i.id = a.inbound_id AND i.tenant_id = a.tenant_id
+WHERE a.tenant_id = $1::bigint
+  AND i.owner_id = $2::bigint
+  AND a.file_key = ANY($3::text[])
+`
+
+type AttachmentsByKeysParams struct {
+	TenantID int64
+	OwnerID  int64
+	FileKeys []string
+}
+
+type AttachmentsByKeysRow struct {
+	FileKey     string
+	ContentType string
+}
+
+// The attachments behind a set of storage keys, scoped to one person's own mail.
+//
+// Used when an outgoing mail quotes a picture that arrived on an earlier turn.
+// The key is read out of the body, and the body is not a source of authority:
+// an <img src> is something a person can type. So the key is a *question* asked
+// here, and only a key that comes back is ever opened. Without this, "inline
+// whatever the body points at" would be an instruction from outside to read an
+// arbitrary object out of storage.
+//
+// Scoped to the sender's own mail rather than to the tenant, because that is
+// the body they could legitimately have built: the composer quotes a message
+// they can already read.
+func (q *Queries) AttachmentsByKeys(ctx context.Context, arg AttachmentsByKeysParams) ([]AttachmentsByKeysRow, error) {
+	rows, err := q.db.Query(ctx, attachmentsByKeys, arg.TenantID, arg.OwnerID, arg.FileKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AttachmentsByKeysRow
+	for rows.Next() {
+		var i AttachmentsByKeysRow
+		if err := rows.Scan(&i.FileKey, &i.ContentType); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteInboundBodyMisfiledAsAttachment = `-- name: DeleteInboundBodyMisfiledAsAttachment :execrows
 DELETE FROM email_inbound_attachments
 WHERE tenant_id = $1::bigint

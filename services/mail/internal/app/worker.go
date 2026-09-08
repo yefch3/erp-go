@@ -208,7 +208,7 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 		// all, so whatever this converts is beyond the reach of the public-URL
 		// problem entirely. Whatever it cannot carry falls through to the
 		// rewrite below and goes out as a link, as before.
-		body, inline = s.InlineMailImages(ctx, body)
+		body, inline = s.InlineMailImages(ctx, cfg.TenantID, m.SenderID, body)
 		body = AbsolutiseMailImages(body, cfg.PublicBaseURL)
 		withoutPixel := body
 		// The sender chose per message. Off means the mail goes out clean —
