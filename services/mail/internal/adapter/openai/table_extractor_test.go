@@ -398,6 +398,47 @@ func TestImageAuditRejectsMissingRowsWrongTotalsAndSharedFacts(t *testing.T) {
 	}
 }
 
+func TestImageAuditDoesNotRequireSectionRemarksToBeRepeatedVerbatim(t *testing.T) {
+	columns := app.SystemInquiryColumns()
+	extracted := app.ExtractedInquiry{
+		Items: []map[string]string{
+			{"section_ref": "GIC", "source_row": "1", "product": "GIC", "quantity": "56", "remarks": "0.12 x 800 x 1800"},
+			{"section_ref": "GIC", "source_row": "2", "product": "GIC", "quantity": "117.6", "remarks": "0.12 x 800 x 3600"},
+		},
+		ImageAudit: &app.ImageExtractionAudit{DetailRowCount: 2, Sections: []app.ImageAuditSection{{
+			SectionRef: "GIC", DetailRowCount: 2, StatedTotal: "173.6",
+			SharedValues: map[string]string{
+				"product": "GIC",
+				"remarks": "BASED ON ACTUAL WEIGHT; STAMPED AND MARKED IN TOP SIDE",
+			},
+		}}},
+	}
+	if err := validateImageAudit(extracted, columns); err != nil {
+		t.Fatalf("section remarks are contextual, not a verbatim row invariant: %v", err)
+	}
+}
+
+func TestImageAuditAcceptsGrandTotalAttachedToLastSection(t *testing.T) {
+	columns := app.SystemInquiryColumns()
+	extracted := app.ExtractedInquiry{
+		Items: []map[string]string{
+			{"section_ref": "GIC", "source_row": "1", "product": "GIC", "quantity": "100"},
+			{"section_ref": "PPGL", "source_row": "1", "product": "PPGL", "quantity": "40"},
+			{"section_ref": "PPGL", "source_row": "2", "product": "PPGL", "quantity": "10"},
+		},
+		ImageAudit: &app.ImageExtractionAudit{DetailRowCount: 3, Sections: []app.ImageAuditSection{
+			{SectionRef: "GIC", DetailRowCount: 1, SharedValues: map[string]string{"product": "GIC"}},
+			{
+				SectionRef: "PPGL", DetailRowCount: 2, StatedTotal: "150",
+				SharedValues: map[string]string{"product": "PPGL"},
+			},
+		}},
+	}
+	if err := validateImageAudit(extracted, columns); err != nil {
+		t.Fatalf("grand total attached to final visual section should reconcile against all rows: %v", err)
+	}
+}
+
 func TestImageCellAnchorsPreventCrossSectionWidthLeak(t *testing.T) {
 	items := []map[string]string{
 		{"source_size": "1.10", "source_quantity": "100", "thickness": "1.10", "width": "1200"},
