@@ -167,3 +167,23 @@ SET raw_key = sqlc.arg(raw_key)::varchar, raw_size = sqlc.arg(raw_size)::bigint
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND id = sqlc.arg(id)::bigint
   AND raw_key = '';
+
+-- name: AttachmentsByKeys :many
+-- The attachments behind a set of storage keys, scoped to one person's own mail.
+--
+-- Used when an outgoing mail quotes a picture that arrived on an earlier turn.
+-- The key is read out of the body, and the body is not a source of authority:
+-- an <img src> is something a person can type. So the key is a *question* asked
+-- here, and only a key that comes back is ever opened. Without this, "inline
+-- whatever the body points at" would be an instruction from outside to read an
+-- arbitrary object out of storage.
+--
+-- Scoped to the sender's own mail rather than to the tenant, because that is
+-- the body they could legitimately have built: the composer quotes a message
+-- they can already read.
+SELECT a.file_key, a.content_type
+FROM email_inbound_attachments a
+JOIN email_inbound i ON i.id = a.inbound_id AND i.tenant_id = a.tenant_id
+WHERE a.tenant_id = sqlc.arg(tenant_id)::bigint
+  AND i.owner_id = sqlc.arg(owner_id)::bigint
+  AND a.file_key = ANY(sqlc.arg(file_keys)::text[]);
