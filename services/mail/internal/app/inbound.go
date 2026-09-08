@@ -725,7 +725,16 @@ func (s *Service) syncFolder(ctx context.Context, cfg SyncConfig, acct MailAccou
 		state = store.GetSyncStateRow{} // never synced
 	}
 
+	// 计时分两段。fetchTook 只算「从服务器上把信搬下来」那几段，started 算
+	// 整趟。分开是因为合在一起量出来的不是下载速度：解析、入库、存原件都在
+	// 本机，快得多，混进去会把速度报得高出一个数量级。#389 第一版就把计时
+	// 起点放在 Fetch 之后，那个 rate_kbps 量的其实是入库速度。
+	started := time.Now()
+	var fetchTook time.Duration
+
+	fetchAt := time.Now()
 	res, err := s.mailbox.Fetch(ctx, acct, actual, uint32(state.LastUid), cfg.BatchSize)
+	fetchTook += time.Since(fetchAt)
 	if err != nil {
 		return 0, err
 	}
@@ -738,7 +747,9 @@ func (s *Service) syncFolder(ctx context.Context, cfg SyncConfig, acct MailAccou
 			"account", acct.AccountID, "folder", logical,
 			"was", state.UidValidity, "now", res.UIDValidity)
 		state = store.GetSyncStateRow{}
+		fetchAt = time.Now()
 		res, err = s.mailbox.Fetch(ctx, acct, actual, 0, cfg.BatchSize)
+		fetchTook += time.Since(fetchAt)
 		if err != nil {
 			return 0, err
 		}
@@ -747,7 +758,6 @@ func (s *Service) syncFolder(ctx context.Context, cfg SyncConfig, acct MailAccou
 	stored := 0
 	// 收了多少字节、花了多久：没有这两个数，「这个信箱为什么慢」只能靠翻
 	// 日志算时间差，而一封大信卡住整个信箱那次，正是因为没人看得见它。
-	started := time.Now()
 	var bytes int64
 	highest := uint32(state.LastUid)
 	lowest := uint32(state.LowUid)
@@ -783,7 +793,9 @@ func (s *Service) syncFolder(ctx context.Context, cfg SyncConfig, acct MailAccou
 			TenantID: cfg.TenantID, AccountID: acct.AccountID, Folder: logical,
 		})
 		if err == nil && held < cfg.HistoryCap {
+			fetchAt = time.Now()
 			old, err := s.mailbox.FetchBelow(ctx, acct, actual, lowest, cfg.BatchSize)
+			fetchTook += time.Since(fetchAt)
 			if err != nil {
 				s.log.Warn("history backfill failed",
 					"account", acct.AccountID, "folder", logical, "err", err)
@@ -802,10 +814,13 @@ func (s *Service) syncFolder(ctx context.Context, cfg SyncConfig, acct MailAccou
 		s.log.Error("could not record sync progress", "account", acct.AccountID, "err", err)
 	}
 	if stored > 0 {
-		took := time.Since(started)
+		// rate_kbps 按 fetch 算，不按 took 算：它要回答的是「这个信箱的线路
+		// 有多快」，而 took 里还含着本机的解析和入库。
 		s.log.Info("folder synced", "account", acct.AccountID, "folder", logical,
-			"new", stored, "bytes", bytes, "took", took.Round(time.Millisecond),
-			"rate_kbps", bytesPerSecond(bytes, took)/1024)
+			"new", stored, "bytes", bytes,
+			"fetch", fetchTook.Round(time.Millisecond),
+			"took", time.Since(started).Round(time.Millisecond),
+			"rate_kbps", bytesPerSecond(bytes, fetchTook)/1024)
 	}
 	return stored, nil
 }
