@@ -36,3 +36,6 @@ coverage.out
 /docs/requirements/
 # D1 generated local isolation configuration and runtime evidence
 .d1-environment/
+
+# D2 local isolated runtime
+.d2-environment/

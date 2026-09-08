@@ -1,6 +1,9 @@
 package httpapi
 
 import (
+	"encoding/json"
+	apv1 "github.com/sgao19/erp-go/gen/go/erp/approval/v1"
+	"google.golang.org/protobuf/encoding/protojson"
 	"net/http"
 	"strconv"
 
@@ -8,12 +11,13 @@ import (
 )
 
 func (s *Server) listContracts(w http.ResponseWriter, r *http.Request) {
+	ownerID, _ := strconv.ParseInt(r.URL.Query().Get("sales_employee_id"), 10, 64)
 	customerID, _ := strconv.ParseInt(r.URL.Query().Get("customer_id"), 10, 64)
 	resp, err := s.Contracts.ListContracts(r.Context(), &exv1.ListContractsRequest{
-		Page:       pageFromQuery(r),
-		Keyword:    r.URL.Query().Get("keyword"),
-		CustomerId: customerID,
-		Status:     r.URL.Query().Get("status"),
+		Page:            pageFromQuery(r),
+		Keyword:         r.URL.Query().Get("keyword"),
+		SalesEmployeeId: ownerID, CustomerId: customerID,
+		Status: r.URL.Query().Get("status"),
 	})
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -227,4 +231,58 @@ func (s *Server) listOwnershipTransfers(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.writeProto(w, resp)
+}
+
+func (s *Server) completeContract(w http.ResponseWriter, r *http.Request) {
+	response, err := s.Contracts.CompleteContract(r.Context(), &exv1.CompleteContractRequest{Id: idFromPath(r)})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, response)
+}
+
+func (s *Server) presignExistingContractFile(w http.ResponseWriter, r *http.Request) {
+	req := &exv1.PresignExistingContractFileRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	response, err := s.Contracts.PresignExistingContractFile(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, response)
+}
+
+// Contract confirmation history is authorized through the contract's own scope,
+// so a sales user can see a return reason without global approval-history access.
+func (s *Server) contractApprovals(w http.ResponseWriter, r *http.Request) {
+	id := idFromPath(r)
+	if _, err := s.Contracts.GetContract(r.Context(), &exv1.GetContractRequest{Id: id}); err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	listed, err := s.Approval.ListInstances(r.Context(), &apv1.ListInstancesRequest{BizType: "CONTRACT", BizId: id})
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	rounds := make([]json.RawMessage, 0, len(listed.GetInstances()))
+	for _, instance := range listed.GetInstances() {
+		round, err := s.Approval.GetInstance(r.Context(), &apv1.GetInstanceRequest{Id: instance.GetId()})
+		if err != nil {
+			s.writeGRPCError(w, err)
+			return
+		}
+		data, err := protojson.Marshal(round)
+		if err != nil {
+			s.writeError(w, 500, "CONTRACT_HISTORY", "合同确认记录读取失败")
+			return
+		}
+		rounds = append(rounds, json.RawMessage(data))
+	}
+	w.Header().Set("Content-Type", "application/json")
+	data, _ := json.Marshal(map[string]any{"rounds": rounds})
+	_ = json.NewEncoder(w).Encode(envelope{Success: true, Data: data})
 }

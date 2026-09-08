@@ -38,6 +38,8 @@ type Contract struct {
 	EntrySource               string
 	OpeningReceivedAmount     pgtype.Numeric
 	FilePending               bool
+	ApprovalRequestKey        string
+	ApprovalInstanceID        int64
 }
 
 type ContractAttachment struct {
@@ -156,6 +158,19 @@ type ContractVersion struct {
 	Status          string
 	CreatedAt       pgtype.Timestamptz
 	CreatedBy       int64
+}
+
+type CustomerOffer struct {
+	TenantID       int64
+	CaseID         int64
+	Revision       int64
+	Body           []byte
+	SourceSnapshot []byte
+	QuotationID    *int64
+	ContractID     *int64
+	UpdatedBy      int64
+	UpdatedAt      pgtype.Timestamptz
+	ConfirmedAt    pgtype.Timestamptz
 }
 
 type FailedEvent struct {

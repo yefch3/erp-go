@@ -36,3 +36,7 @@ func (f *Files) PresignGet(ctx context.Context, key string) (string, error) {
 	}
 	return u.String(), nil
 }
+
+func (f *Files) Stat(ctx context.Context, key string) (int64, string, error) {
+	return f.store.Stat(ctx, key)
+}

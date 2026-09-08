@@ -1,7 +1,7 @@
 <template>
   <section v-if="rows.length || error || mode==='handled'" class="inquiry-todos">
     <div class="section-head">
-      <div><h3>{{mode==='handled'?'询盘与报价处理记录':'询盘与报价'}}</h3><p>{{mode==='handled'?'查看当前 D1 询盘与报价流程中已经完成的业务动作。':'需要你处理的客户询盘、采购报价和物流报价。'}}</p></div>
+      <div><h3>{{mode==='handled'?'询盘与报价处理记录':'询盘与报价'}}</h3><p>{{mode==='handled'?'查看询盘、报价与合同流程中已经完成的业务动作。':'需要你处理的客户询盘、采购报价和物流报价。'}}</p></div>
       <el-tag type="primary" effect="plain">{{ displayedRows.length }} 项</el-tag>
     </div>
     <div class="filters"><el-input v-model="keyword" clearable placeholder="搜索编号、客户或事项"/><el-select v-model="taskFilter" clearable placeholder="全部询盘类型"><el-option v-for="task in taskOptions" :key="task" :label="task" :value="task"/></el-select></div>
@@ -21,7 +21,7 @@
 </template>
 <script setup lang="ts">
 import {computed,onMounted,onUnmounted,ref} from 'vue'
-import {post} from '../api'
+import {get,post} from '../api'
 import {onLive} from '../live'
 import {useAuthStore} from '../stores/auth'
 import type {Result} from '../lib/inquiryWorkspace'
@@ -33,17 +33,23 @@ const auth=useAuthStore(),rows=ref<InquiryTodoRow[]>([]),error=ref(''),keyword=r
 const taskOptions=computed(()=>[...new Set(rows.value.map(row=>row.task))])
 const displayedRows=computed(()=>{const needle=keyword.value.trim().toLowerCase();return rows.value.filter(row=>(!taskFilter.value||row.task===taskFilter.value)&&(!needle||`${row.number} ${row.customer} ${row.task}`.toLowerCase().includes(needle)))})
 function displayTime(value:string){if(!value)return '—';const date=new Date(value);return Number.isNaN(date.getTime())?value:date.toLocaleString('zh-CN',{hour12:false})}
+let refreshing=false
 async function refresh(){
+ if(refreshing)return;refreshing=true
  const out:InquiryTodoRow[]=[]
  try{
+ const offerStates=auth.can('export:quotation:read')?(await post<{summaries:Record<string,{status:string;confirmedAt:string}>}>('/customer-offer',{action:'summaries'})).summaries:{}
  const pending=[['PROCUREMENT','procurement:sourcing:read','/procurement/sourcing','新询盘待工厂报价','WAITING'],['LOGISTICS','shipping:sourcing:read','/shipping/sourcing','新询盘待货代报价','WAITING'],['SALES','sales:inquiry:read','/sales/inquiries','客户询盘待提交','UNSUBMITTED'],['SALES','sales:inquiry:read','/sales/inquiries','客户询盘待重新提交','WITHDRAWN'],['QUOTATIONS','sales:inquiry:read','/sales/quotations','客户报价待处理','']]
- const handled=[['PROCUREMENT','procurement:sourcing:read','/procurement/sourcing','工厂报价已提交','QUOTED'],['LOGISTICS','shipping:sourcing:read','/shipping/sourcing','货代报价已提交','QUOTED'],['SALES','sales:inquiry:read','/sales/inquiries','客户询盘已提交','INQUIRING']]
+ const handled=[['QUOTATIONS','export:quotation:read','/sales/quotations','客户报价已确认',''],['PROCUREMENT','procurement:sourcing:read','/procurement/sourcing','工厂报价已提交','QUOTED'],['LOGISTICS','shipping:sourcing:read','/shipping/sourcing','货代报价已提交','QUOTED'],['SALES','sales:inquiry:read','/sales/inquiries','客户询盘已提交','INQUIRING']]
  for(const [view,permission,path,task,state] of (mode.value==='handled'?handled:pending)){
  if(!auth.can(permission))continue
- let page=1,total=0;do{const r=await post<Result>('/inquiry-workspace',{action:'list',view,state,page,size:100});total=r.total;for(const i of r.items){if((view==='SALES'||view==='QUOTATIONS')&&!auth.owns(i.ownerId))continue;if(view==='QUOTATIONS'&&i.procurementCount+i.logisticsCount===0)continue;out.push({id:i.id,number:i.number,customer:i.body.customer,task,path,completedAt:i.submittedAt})}page++}while((page-1)*100<total)
+ let page=1,total=0;do{const r=await post<Result>('/inquiry-workspace',{action:'list',view,state,page,size:100});total=r.total;for(const i of r.items){if((view==='SALES'||view==='QUOTATIONS')&&!auth.owns(i.ownerId))continue;if(view==='QUOTATIONS'&&(mode.value==='handled'?offerStates[i.id]?.status!=='CONFIRMED':offerStates[i.id]?.status==='CONFIRMED'))continue;out.push({id:i.id,number:i.number,customer:i.body.customer,task,path,completedAt:view==='QUOTATIONS'?offerStates[i.id]?.confirmedAt||'':i.submittedAt})}page++}while((page-1)*100<total)
+ }
+ if(mode.value==='pending'&&auth.can('export:contract:write')){
+  for(const status of ['DRAFT','PENDING_SIGN']){let contractPage=1,contractTotal=0;do{const r=await get<{contracts:{id:string;contractNo:string;customerName:string;salesEmployeeId:string}[];meta:{total:number}}>('/contracts',{status,page:contractPage,page_size:100});contractTotal=Number(r.meta?.total||0);for(const c of r.contracts||[]){if(auth.owns(c.salesEmployeeId))out.push({id:c.id,number:c.contractNo,customer:c.customerName,task:status==='DRAFT'?'外销合同待提交或退回修改':'外销合同待签署上传并开始执行',path:'/contracts',completedAt:''})}contractPage++}while((contractPage-1)*100<contractTotal)}
  }
  rows.value=out;emit('count',out.length);error.value=''
- }catch{error.value='询盘待办暂时无法读取，请刷新重试'}
+ }catch{error.value='询盘待办暂时无法读取，请刷新重试'}finally{refreshing=false}
 }
 const stopLive=onLive(e=>{if(e.type==='requirement.changed')void refresh()})
 let timer:ReturnType<typeof setInterval>|undefined

@@ -112,6 +112,7 @@ func run(log *slog.Logger) error {
 	approvals := grpcout.NewApprovals(apConn)
 
 	svc := app.New(pool, app.Deps{
+		OfferSource: grpcout.NewOfferSource(prConn),
 		Customers:   grpcout.NewCustomers(mdConn),
 		Products:    grpcout.NewProducts(pdConn),
 		Rates:       grpcout.NewRates(fxConn),

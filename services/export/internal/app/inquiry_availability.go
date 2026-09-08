@@ -29,6 +29,9 @@ func (s *Service) SetInquiryAvailability(ctx context.Context, tenantID, caseID i
 		if _, err := tx.Exec(ctx, `INSERT INTO inquiry_withdrawal_fences(tenant_id,case_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, tenantID, caseID); err != nil {
 			return err
 		}
+		if _, err := tx.Exec(ctx, `DELETE FROM customer_offers WHERE tenant_id=$1 AND case_id=$2 AND confirmed_at IS NULL`, tenantID, caseID); err != nil {
+			return err
+		}
 		_, err := tx.Exec(ctx, `DELETE FROM quotations WHERE tenant_id=$1 AND source_sourcing_case_id=$2`, tenantID, caseID)
 		return err
 	})

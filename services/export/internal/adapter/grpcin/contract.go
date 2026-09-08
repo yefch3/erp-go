@@ -2,6 +2,7 @@ package grpcin
 
 import (
 	"context"
+	"github.com/sgao19/erp-go/pkg/apierr"
 
 	commonv1 "github.com/sgao19/erp-go/gen/go/erp/common/v1"
 	exv1 "github.com/sgao19/erp-go/gen/go/erp/export/v1"
@@ -22,9 +23,12 @@ type ContractHandler struct {
 func NewContracts(svc *app.Service) *ContractHandler { return &ContractHandler{svc: svc} }
 
 func (h *ContractHandler) ListContracts(ctx context.Context, req *exv1.ListContractsRequest) (*exv1.ListContractsResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:quotation:read", "export:receipt:read"); err != nil {
+		return nil, err
+	}
 	rows, total, err := h.svc.ListContracts(ctx, grpcx.TenantID(ctx), req.GetKeyword(),
 		req.GetCustomerId(), req.GetStatus(), req.GetPage().GetPage(), req.GetPage().GetPageSize(),
-		operator(ctx))
+		operator(ctx), req.GetSalesEmployeeId())
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +39,7 @@ func (h *ContractHandler) ListContracts(ctx context.Context, req *exv1.ListContr
 			CustomerId: r.CustomerID, CustomerName: r.CustomerName, Status: r.Status,
 			SalesEmployeeId: r.SalesEmployeeID, SalesEmployee: r.SalesEmployee,
 			SignedAt: ts(r.SignedAt), EffectiveAt: ts(r.EffectiveAt),
-			CreatedAt: ts(r.CreatedAt), ReceivableDueDate: r.ReceivableDueDate,
+			UpdatedAt: ts(r.UpdatedAt), CreatedAt: ts(r.CreatedAt), ReceivableDueDate: r.ReceivableDueDate,
 			ExternalContractNo: r.ExternalContractNo, EntrySource: r.EntrySource,
 			Currency:    r.Currency,
 			TotalAmount: r.TotalAmount, BaseAmount: r.BaseAmount, VersionNo: r.VersionNo,
@@ -46,6 +50,10 @@ func (h *ContractHandler) ListContracts(ctx context.Context, req *exv1.ListContr
 
 // ListContractExecution 出一览表的出口半边（D2）。
 func (h *ContractHandler) ListContractExecution(ctx context.Context, req *exv1.ListContractExecutionRequest) (*exv1.ListContractExecutionResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:quotation:read", "export:receipt:read"); err != nil {
+		return nil, err
+	}
+	canReadReceipts := h.svc.RequireAnyPermission(ctx, "export:receipt:read") == nil
 	rows, total, err := h.svc.ListContractExecution(ctx, grpcx.TenantID(ctx), app.ExecutionFilter{
 		Status: req.GetStatus(), CustomerID: req.GetCustomerId(), Keyword: req.GetKeyword(),
 	}, req.GetPage().GetPage(), req.GetPage().GetPageSize(), operator(ctx))
@@ -54,6 +62,9 @@ func (h *ContractHandler) ListContractExecution(ctx context.Context, req *exv1.L
 	}
 	out := make([]*exv1.ContractExecutionRow, 0, len(rows))
 	for _, r := range rows {
+		if !canReadReceipts {
+			r.ReceivedAmount = ""
+		}
 		out = append(out, &exv1.ContractExecutionRow{
 			ContractId: r.ContractID, ContractNo: r.ContractNo,
 			CustomerId: r.CustomerID, CustomerName: r.CustomerName,
@@ -68,10 +79,17 @@ func (h *ContractHandler) ListContractExecution(ctx context.Context, req *exv1.L
 }
 
 func (h *ContractHandler) GetContract(ctx context.Context, req *exv1.GetContractRequest) (*exv1.GetContractResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:quotation:read", "export:receipt:read"); err != nil {
+		return nil, err
+	}
 	view, err := h.svc.GetContractFor(ctx, grpcx.TenantID(ctx), req.GetId(), req.GetVersionId(), operator(ctx))
 	if err != nil {
 		return nil, err
 	}
+	if h.svc.RequireAnyPermission(ctx, "export:receipt:read") != nil {
+		view.Contract.OpeningReceivedAmount = ""
+	}
+
 	// Shipment progress is looked up separately: it lives beside the contract
 	// rather than inside it, because an approved version is frozen and what
 	// has shipped since keeps moving.
@@ -87,41 +105,27 @@ func (h *ContractHandler) GetContract(ctx context.Context, req *exv1.GetContract
 			Qty: p.Qty, ShippedQty: p.ShippedQty, RemainingQty: p.RemainingQty,
 		})
 	}
+	accepted, err := h.svc.AcceptedContractOffer(ctx, grpcx.TenantID(ctx), view.Contract.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	return &exv1.GetContractResponse{
-		Contract: contractToProto(view), Version: versionToProto(view.Version),
+		AcceptedOfferJson: accepted, Contract: contractToProto(view), Version: versionToProto(view.Version),
 		Items: contractItemsToProto(view.Items), Versions: versionListToProto(view.Versions),
 		Shipments: shipments,
 	}, nil
 }
 
-func (h *ContractHandler) CreateContractFromQuotation(ctx context.Context, req *exv1.CreateContractFromQuotationRequest) (*exv1.CreateContractFromQuotationResponse, error) {
-	view, err := h.svc.CreateContractFromQuotation(ctx, grpcx.TenantID(ctx),
-		req.GetQuotationId(), termsFromProto(req.GetTerms()), operator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &exv1.CreateContractFromQuotationResponse{
-		Contract: contractToProto(view), Version: versionToProto(view.Version),
-		Items: contractItemsToProto(view.Items),
-	}, nil
+func (h *ContractHandler) CreateContractFromQuotation(context.Context, *exv1.CreateContractFromQuotationRequest) (*exv1.CreateContractFromQuotationResponse, error) {
+	return nil, apierr.Conflict("CONTRACT_ENTRY_REPLACED", "请在客户报价点击客户已确认，系统自动创建或打开外销合同")
 }
-
-func (h *ContractHandler) CreateContract(ctx context.Context, req *exv1.CreateContractRequest) (*exv1.CreateContractResponse, error) {
-	view, err := h.svc.CreateContract(ctx, grpcx.TenantID(ctx), app.DirectContractInput{
-		CustomerID: req.GetCustomerId(), Currency: req.GetCurrency(),
-		Terms: termsFromProto(req.GetTerms()), Items: itemsFromProto(req.GetItems()),
-	}, operator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &exv1.CreateContractResponse{
-		Contract: contractToProto(view), Version: versionToProto(view.Version),
-		Items: contractItemsToProto(view.Items),
-	}, nil
+func (h *ContractHandler) CreateContract(context.Context, *exv1.CreateContractRequest) (*exv1.CreateContractResponse, error) {
+	return nil, apierr.Conflict("CONTRACT_ENTRY_REPLACED", "新合同从客户报价确认后自动创建；历史合同请使用录入执行中合同")
 }
-
 func (h *ContractHandler) ImportExistingContract(ctx context.Context, req *exv1.ImportExistingContractRequest) (*exv1.ImportExistingContractResponse, error) {
 	view, err := h.svc.ImportExistingContract(ctx, grpcx.TenantID(ctx), app.ExistingContractInput{
+		SignedFileKey: req.GetSignedFileKey(), SignedFileName: req.GetSignedFileName(),
 		CustomerID: req.GetCustomerId(), Currency: req.GetCurrency(), Terms: termsFromProto(req.GetTerms()),
 		Items: itemsFromProto(req.GetItems()), ExternalContractNo: req.GetExternalContractNo(),
 		SalesEmployeeID: req.GetSalesEmployeeId(), SignedDate: req.GetSignedDate(), EffectiveDate: req.GetEffectiveDate(),
@@ -158,16 +162,7 @@ func (h *ContractHandler) SubmitContract(ctx context.Context, req *exv1.SubmitCo
 }
 
 func (h *ContractHandler) ChangeContract(ctx context.Context, req *exv1.ChangeContractRequest) (*exv1.ChangeContractResponse, error) {
-	view, err := h.svc.ChangeContract(ctx, grpcx.TenantID(ctx), req.GetId(),
-		termsFromProto(req.GetTerms()), req.GetChangeReason(),
-		itemsFromProto(req.GetItems()), operator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &exv1.ChangeContractResponse{
-		Contract: contractToProto(view), Version: versionToProto(view.Version),
-		Items: contractItemsToProto(view.Items),
-	}, nil
+	return nil, apierr.Conflict("EX_CONTRACT_FLOW_RETIRED", "当前合同流程不提供此操作")
 }
 
 func (h *ContractHandler) SignContract(ctx context.Context, req *exv1.SignContractRequest) (*exv1.SignContractResponse, error) {
@@ -179,11 +174,7 @@ func (h *ContractHandler) SignContract(ctx context.Context, req *exv1.SignContra
 }
 
 func (h *ContractHandler) CancelContract(ctx context.Context, req *exv1.CancelContractRequest) (*exv1.CancelContractResponse, error) {
-	status, err := h.svc.CancelContract(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return &exv1.CancelContractResponse{Status: status}, nil
+	return nil, apierr.Conflict("EX_CONTRACT_FLOW_RETIRED", "当前合同流程不提供此操作")
 }
 
 // ---------------------------------------------------------------- mapping
@@ -295,6 +286,9 @@ func (h *ContractHandler) RegisterContractFile(ctx context.Context, req *exv1.Re
 }
 
 func (h *ContractHandler) ListContractFiles(ctx context.Context, req *exv1.ListContractFilesRequest) (*exv1.ListContractFilesResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:quotation:read", "export:receipt:read"); err != nil {
+		return nil, err
+	}
 	views, err := h.svc.ListContractFiles(ctx, grpcx.TenantID(ctx), req.GetContractId(), operator(ctx))
 	if err != nil {
 		return nil, err
@@ -357,4 +351,20 @@ func transfersToProto(rows []store.ListOwnershipTransfersRow) []*exv1.OwnershipT
 		})
 	}
 	return out
+}
+
+func (h *ContractHandler) CompleteContract(ctx context.Context, req *exv1.CompleteContractRequest) (*exv1.CompleteContractResponse, error) {
+	state, err := h.svc.CompleteContract(ctx, grpcx.TenantID(ctx), req.GetId(), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.CompleteContractResponse{Status: state}, nil
+}
+
+func (h *ContractHandler) PresignExistingContractFile(ctx context.Context, req *exv1.PresignExistingContractFileRequest) (*exv1.PresignExistingContractFileResponse, error) {
+	key, url, expires, err := h.svc.PresignExistingContractFile(ctx, grpcx.TenantID(ctx), req.GetFileName())
+	if err != nil {
+		return nil, err
+	}
+	return &exv1.PresignExistingContractFileResponse{FileKey: key, UploadUrl: url, ExpiresInSeconds: expires}, nil
 }

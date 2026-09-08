@@ -9,6 +9,7 @@ import (
 )
 
 type Config struct {
+	IAMAddr       string
 	DSN           string
 	GRPCPort      string
 	FetchURL      string
@@ -21,6 +22,7 @@ type Config struct {
 
 func Load() Config {
 	return Config{
+		IAMAddr:  env("IAM_ADDR", "iam:9001"),
 		DSN:      env("DB_DSN", "postgres://erp_fx:erp_fx_pw@localhost:5433/erp_fx?sslmode=disable"),
 		GRPCPort: env("GRPC_PORT", "9003"),
 		// frankfurter.app republishes ECB reference rates, working days only.

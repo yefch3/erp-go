@@ -164,6 +164,33 @@ func (s *Service) Submit(ctx context.Context, tenantID int64, in SubmitInput) (s
 	if err != nil {
 		return store.ApprovalInstance{}, nil, err
 	}
+	if in.BizType == "CONTRACT" {
+		// A contract always needs an actual superior's decision, never self-approval.
+		filtered := make([]int64, 0, len(assignees))
+		for _, person := range assignees {
+			if person != in.SubmitterID {
+				filtered = append(filtered, person)
+			}
+		}
+		assignees = filtered
+		if len(assignees) == 0 {
+			bosses, _, err := s.dir.RoleMembersByCode(ctx, "BOSS")
+			if err != nil {
+				return store.ApprovalInstance{}, nil, err
+			}
+			for _, person := range bosses {
+				if person != in.SubmitterID {
+					assignees = append(assignees, person)
+				}
+			}
+			if len(assignees) == 0 {
+				return store.ApprovalInstance{}, nil, apierr.Invalid("AP_CONTRACT_SUPERIOR_REQUIRED", "请为销售设置上级负责人，或配置本公司的老板审批人")
+			}
+			node := nodes[0]
+			node.Name = "老板确认"
+			firstNode = &node
+		}
+	}
 	// 采购单会形成真实的付款承诺。组织架构没有上级时，转交配置的
 	// 采购审批角色，仍然生成待办，不能自动通过或停在草稿之外。
 	if firstNode == nil && usesPurchaseOrderFallback(in.BizType) {
@@ -214,6 +241,31 @@ func (s *Service) Submit(ctx context.Context, tenantID int64, in SubmitInput) (s
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		var err error
+		if in.BizType == "CONTRACT" {
+			var meta struct {
+				Key string `json:"approval_request_key"`
+			}
+			_ = json.Unmarshal([]byte(summary), &meta)
+			if meta.Key != "" {
+				if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, fmt.Sprintf("contract-approval:%d:%d", tenantID, in.BizID)); err != nil {
+					return err
+				}
+				var existing int64
+				lookup := tx.QueryRow(ctx, `SELECT id FROM approval_instances WHERE tenant_id=$1 AND biz_type='CONTRACT' AND biz_id=$2 AND biz_summary->>'approval_request_key'=$3 ORDER BY id DESC LIMIT 1`, tenantID, in.BizID, meta.Key).Scan(&existing)
+				if lookup == nil {
+					inst, err = q.GetInstance(ctx, store.GetInstanceParams{TenantID: tenantID, ID: existing})
+					if err != nil {
+						return err
+					}
+					tasks, err = q.ListTasksByInstance(ctx, store.ListTasksByInstanceParams{TenantID: tenantID, InstanceID: existing})
+					return err
+				}
+				if !errors.Is(lookup, pgx.ErrNoRows) {
+					return lookup
+				}
+			}
+		}
+
 		inst, err = q.CreateInstance(ctx, store.CreateInstanceParams{
 			TenantID: tenantID, DefinitionID: def.ID, BizType: in.BizType, BizID: in.BizID,
 			BizNo: in.BizNo, BizSummary: []byte(summary),

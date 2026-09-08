@@ -88,7 +88,7 @@ func TestTheDueDateSomebodyTypedActuallyReachesTheDatabase(t *testing.T) {
 	defer pool.Close()
 	tenantID := time.Now().UnixNano()
 	defer func() {
-		for _, tbl := range []string{"contract_corrections", "contract_items", "contract_versions", "contracts"} {
+		for _, tbl := range []string{"contract_corrections", "contract_corrections", "contract_attachments", "contract_items", "contract_versions", "contracts"} {
 			_, _ = pool.Exec(ctx, `DELETE FROM `+tbl+` WHERE tenant_id=$1`, tenantID)
 		}
 	}()
@@ -173,19 +173,20 @@ func TestImportExistingContractAcceptsBlankOpeningAmountAndManualProduct(t *test
 	tenantID := time.Now().UnixNano()
 	defer func() {
 		_, _ = pool.Exec(ctx, `DELETE FROM outbox_events WHERE tenant_id=$1`, tenantID)
-		for _, tbl := range []string{"contract_items", "contract_versions", "contracts"} {
+		for _, tbl := range []string{"contract_corrections", "contract_attachments", "contract_items", "contract_versions", "contracts"} {
 			_, _ = pool.Exec(ctx, `DELETE FROM `+tbl+` WHERE tenant_id=$1`, tenantID)
 		}
 	}()
 
 	svc := New(pool, Deps{
-		Customers: dueCustomerStub{}, Products: dueProductStub{}, Rates: dueRateStub{}, Numbering: &dueNumberingStub{},
-		Directory: dueDirectoryStub{},
+		Customers: dueCustomerStub{}, Products: dueProductStub{}, Rates: d2OfferRates{}, Numbering: &dueNumberingStub{},
+		Directory: dueDirectoryStub{}, Files: d2Files{},
 	})
 	today := dbToday(ctx, t, pool).Format("2006-01-02")
 	view, err := svc.ImportExistingContract(ctx, tenantID, ExistingContractInput{
-		CustomerID: 7, Currency: "USD", SignedDate: today, EffectiveDate: today, FilePending: true,
-		ProcurementEmployeeID: 23, SupplierID: 11,
+		CustomerID: 7, Currency: "USD", SignedDate: today, EffectiveDate: today,
+		SignedFileKey: "contract-imports/" + strconv.FormatInt(tenantID, 10) + "/signed.pdf", SignedFileName: "signed.pdf",
+		// A historical contract must not require a supplier or procurement owner.
 		Terms: Terms{PortOfLoading: "宁波", PortOfDischarge: "客户指定内河港", DeliveryDate: today},
 		Items: []ItemInput{{ProductName: "线下定制合金板", UomCode: "KG", Qty: "10", UnitPrice: "2", PurchaseUnitPrice: "1.2"}},
 		// OpeningReceivedAmount intentionally blank: this is the normal

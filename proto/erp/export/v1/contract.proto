@@ -31,6 +31,7 @@ service ContractService {
   rpc CreateContract(CreateContractRequest) returns (CreateContractResponse);
   // Import a contract already signed outside the ERP and start only the work
   // that remains at the hand-over point.
+  rpc PresignExistingContractFile(PresignExistingContractFileRequest) returns (PresignExistingContractFileResponse);
   rpc ImportExistingContract(ImportExistingContractRequest) returns (ImportExistingContractResponse);
   // Edit a draft, or correct the non-financial header/terms of a manually
   // imported existing contract. Executed quantities and priced lines remain
@@ -42,6 +43,7 @@ service ContractService {
   rpc ChangeContract(ChangeContractRequest) returns (ChangeContractResponse);
   // Record the customer's signature; this is what makes a version effective.
   rpc SignContract(SignContractRequest) returns (SignContractResponse);
+  rpc CompleteContract(CompleteContractRequest) returns (CompleteContractResponse);
   rpc CancelContract(CancelContractRequest) returns (CancelContractResponse);
   // Files: the drafted PDF and the copy the customer signed and sent back.
   // Uploads go straight to object storage; the service only signs the URL
@@ -254,6 +256,7 @@ message Contract {
   string entry_source = 26;
   string opening_received_amount = 27;
   bool file_pending = 28;
+  string updated_at = 29;
 }
 
 // ContractTerms is the editable part of a version. Prices and lines come from
@@ -280,6 +283,7 @@ message ListContractsRequest {
   string keyword = 2;
   int64 customer_id = 3;
   string status = 4;
+  int64 sales_employee_id = 5;
 }
 
 message ListContractsResponse {
@@ -304,6 +308,7 @@ message GetContractResponse {
   // itself - an approved version is frozen because it records what was
   // agreed, and what has left the warehouse since is a different fact.
   repeated ShipmentProgress shipments = 5;
+  string accepted_offer_json = 6;
 }
 
 // Progress for one product on a contract, summed across its lines. Grouped
@@ -352,6 +357,8 @@ message ImportExistingContractRequest {
   bool file_pending = 10;
   int64 procurement_employee_id = 11;
   int64 supplier_id = 12;
+  string signed_file_key = 13;
+  string signed_file_name = 14;
 }
 
 message ImportExistingContractResponse {
@@ -479,3 +486,16 @@ message ReplayFailedEventRequest {
 // 重放是同步的：成功即事件已被处理并离开死信表；失败则原地不动，错误原样
 // 带回给操作的人——他正看着屏幕，这是把原因交到人手上的唯一时机。
 message ReplayFailedEventResponse {}
+
+message CompleteContractRequest { int64 id = 1; }
+message CompleteContractResponse { string status = 1; }
+
+message PresignExistingContractFileRequest {
+  string file_name = 2;
+  string content_type = 3;
+}
+message PresignExistingContractFileResponse {
+  string file_key = 1;
+  string upload_url = 2;
+  int32 expires_in_seconds = 3;
+}

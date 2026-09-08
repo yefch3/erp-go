@@ -9,12 +9,14 @@ import (
 	"syscall"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 
 	fxv1 "github.com/sgao19/erp-go/gen/go/erp/fx/v1"
 	"github.com/sgao19/erp-go/pkg/grpcx"
 	"github.com/sgao19/erp-go/pkg/pgdb"
 	"github.com/sgao19/erp-go/services/fx/internal/adapter/grpcin"
+	"github.com/sgao19/erp-go/services/fx/internal/adapter/grpcout"
 	"github.com/sgao19/erp-go/services/fx/internal/app"
 	"github.com/sgao19/erp-go/services/fx/internal/config"
 )
@@ -39,6 +41,12 @@ func run(log *slog.Logger) error {
 	defer pool.Close()
 
 	svc := app.New(pool, log)
+	iamConn, err := grpc.NewClient(cfg.IAMAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithUnaryInterceptor(grpcx.UnaryClientPropagator()))
+	if err != nil {
+		return err
+	}
+	defer iamConn.Close()
+	svc.SetAccess(grpcout.NewAccess(iamConn))
 	go svc.RunFetcher(ctx, cfg.FetchURL, cfg.FetchSymbols, cfg.FetchInterval, cfg.BackfillDays)
 
 	srv := grpc.NewServer(grpcx.ServerInterceptors(log))

@@ -271,6 +271,13 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 	if err := s.mustOwnContract(ctx, op, view); err != nil {
 		return ContractView{}, err
 	}
+	if view.Contract.Status == "COMPLETED" {
+		return ContractView{}, apierr.Conflict("EX_CONTRACT_COMPLETED", "已完成合同仅可查看")
+	}
+	if (view.Contract.Status == "EXECUTING" || view.Contract.Status == "EFFECTIVE") && view.Contract.EntrySource != "EXISTING_CONTRACT" {
+		return s.supplementContract(ctx, tenantID, id, terms, items, meta, op)
+	}
+
 	if view.Contract.EntrySource == "EXISTING_CONTRACT" {
 		return s.correctExistingContract(ctx, tenantID, view, terms, items, meta, op)
 	}
@@ -289,7 +296,7 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 	}
 	var lines []store.ListContractItemsRow
 	if len(items) > 0 {
-		priced, sum, err := s.priceLines(ctx, items)
+		priced, sum, err := s.priceExistingLines(ctx, items)
 		if err != nil {
 			return ContractView{}, err
 		}
@@ -304,6 +311,12 @@ func (s *Service) UpdateContract(ctx context.Context, tenantID, id int64, terms 
 
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		if _, err := q.LockContract(ctx, store.LockContractParams{TenantID: tenantID, ID: id}); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE contracts SET external_contract_no=$3,updated_at=now(),updated_by=$4 WHERE tenant_id=$1 AND id=$2`, tenantID, id, meta.ExternalContractNo, op.ID); err != nil {
+			return err
+		}
 		rows, err := q.UpdateContractVersion(ctx, store.UpdateContractVersionParams{
 			TenantID: tenantID, ID: view.Version.ID,
 			BuyerName:     orDefault(terms.BuyerName, view.Version.BuyerName),
@@ -608,8 +621,10 @@ func (s *Service) GetContractFor(ctx context.Context, tenantID, id, versionID in
 // not, because being asked to sign off on a contract is precisely not
 // permission to rewrite it first.
 func (s *Service) mustOwnContract(ctx context.Context, op Operator, view ContractView) error {
-	return s.mayWrite(ctx, op, view.Contract.SalesEmployeeID,
-		"EX_CONTRACT_NOT_OWNER", "只能操作自己负责的合同")
+	if op.ID <= 0 || op.ID != view.Contract.SalesEmployeeID {
+		return apierr.Permission("EX_CONTRACT_NOT_OWNER", "只有负责销售可以修改或执行合同")
+	}
+	return nil
 }
 
 func contains(ids []int64, id int64) bool {
@@ -674,14 +689,18 @@ func (s *Service) GetContract(ctx context.Context, tenantID, id, versionID int64
 	return ContractView{Contract: contract, Version: version, Items: items, Versions: versions}, nil
 }
 
-func (s *Service) ListContracts(ctx context.Context, tenantID int64, keyword string, customerID int64, status string, page, size int32, op Operator) ([]store.ListContractsRow, int64, error) {
+func (s *Service) ListContracts(ctx context.Context, tenantID int64, keyword string, customerID int64, status string, page, size int32, op Operator, owners ...int64) ([]store.ListContractsRow, int64, error) {
 	page, size = normalizePage(page, size)
 	visible, err := s.visibleTo(ctx, op)
 	if err != nil {
 		return nil, 0, err
 	}
+	var ownerID int64
+	if len(owners) > 0 {
+		ownerID = owners[0]
+	}
 	rows, err := s.q.ListContracts(ctx, store.ListContractsParams{
-		TenantID: tenantID, Keyword: keyword, CustomerID: customerID, Status: status,
+		SalesEmployeeID: ownerID, TenantID: tenantID, Keyword: keyword, CustomerID: customerID, Status: status,
 		VisibleAll: visible.All, VisibleIds: visible.EmployeeIDs,
 		InvolvedIds: s.involvedIn(ctx, op, BizTypeContract),
 		RowLimit:    size, RowOffset: (page - 1) * size,

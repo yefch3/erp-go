@@ -309,6 +309,9 @@ func (h *ReceiptHandler) MarkReceivableRemindersRead(ctx context.Context, req *e
 }
 
 func (h *ReceiptHandler) GetContractReceipts(ctx context.Context, req *exv1.GetContractReceiptsRequest) (*exv1.GetContractReceiptsResponse, error) {
+	if err := h.svc.RequireAnyPermission(ctx, "export:receipt:read"); err != nil {
+		return nil, err
+	}
 	progress, rows, err := h.svc.ContractReceipts(ctx, grpcx.TenantID(ctx), req.GetContractId())
 	if err != nil {
 		return nil, err

@@ -355,14 +355,17 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("export:contract:write")).Post("/api/contracts", s.createContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/direct", s.createDirectContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/existing", s.importExistingContract)
+		r.With(s.perm("export:contract:write")).Post("/api/contracts/existing/files/presign", s.presignExistingContractFile)
 		r.With(s.perm("export:contract:write")).Put("/api/contracts/{id}", s.updateContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/submit", s.submitContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/change", s.changeContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/sign", s.signContract)
+		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/complete", s.completeContract)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/cancel", s.cancelContract)
 		// Contract paperwork. The bytes never pass through here: the browser
 		// uploads straight to object storage with a signed URL.
 		r.With(s.perm("export:contract:read")).Get("/api/contracts/{id}/files", s.listContractFiles)
+		r.With(s.perm("export:contract:read")).Get("/api/contracts/{id}/approvals", s.contractApprovals)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/files/presign", s.presignContractFile)
 		r.With(s.perm("export:contract:write")).Post("/api/contracts/{id}/files", s.registerContractFile)
 		r.With(s.perm("export:contract:write")).Delete("/api/contract-files/{id}", s.removeContractFile)
@@ -474,7 +477,7 @@ func (s *Server) Router() http.Handler {
 		// How much of one contract has been collected. Gated on reading
 		// contracts rather than receipts: this is the salesperson's view of
 		// their own deal, not the finance queue.
-		r.With(s.perm("export:contract:read")).Get("/api/contracts/{id}/receipts", s.getContractReceipts)
+		r.With(s.perm("export:receipt:read")).Get("/api/contracts/{id}/receipts", s.getContractReceipts)
 		// Handing a deal to somebody else is a supervisor's act, so it gets its
 		// own permission rather than riding on :write — the people who may edit
 		// their own documents are exactly the people who may not reassign them.
@@ -871,6 +874,9 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:read")).Get("/api/my-mailboxes", s.listMyMailboxes)
 		r.With(s.perm("mail:email:read")).Post("/api/my-mailboxes/default", s.setDefaultMailbox)
 		r.With(s.perm("mail:email:read")).Post("/api/my-mailboxes/unbind", s.unbindMailbox)
+		r.Post("/api/customer-offer", s.customerOffer)
+		r.Get("/api/fx/effective", s.fxEffective)
+		r.With(s.perm("fx:rate:write")).Post("/api/fx/effective", s.fxConfirm)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/latest", s.fxLatest)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/rates", s.fxRates)
 		r.With(s.perm("fx:rate:read")).Get("/api/fx/anomalies", s.fxAnomalies)

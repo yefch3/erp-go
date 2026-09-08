@@ -98,6 +98,7 @@ func buildQuotationPDFWithShipments(q store.GetQuotationRow, items []store.ListQ
 	meta := []string{
 		"报价单号: " + q.QuoteNo,
 		"客户: " + pdfText(q.CustomerName),
+		"联系人: " + pdfText(q.ContactName),
 		"币种: " + q.Currency + "    贸易术语: " + q.Incoterm,
 		"装运港: " + pdfText(q.PortOfLoading) + "    目的港: " + pdfText(q.PortOfDischarge),
 		"付款方式: " + pdfText(q.PaymentMethod) + "    有效期至: " + q.ValidUntil,
@@ -107,7 +108,7 @@ func buildQuotationPDFWithShipments(q store.GetQuotationRow, items []store.ListQ
 	}
 	pdf.Ln(3)
 	// 所有列宽之和严格等于 A4 可用宽度 186mm，避免数量和金额互相覆盖。
-	widths := []float64{8, 17, 30, 45, 17, 12, 25, 32}
+	widths := []float64{11, 14, 30, 45, 17, 12, 25, 32}
 	headers := []string{"#", "编码", "产品", "规格", "数量", "单位", "单价", "金额"}
 	drawQuotationPDFRow(pdf, headers, widths, true)
 	pdf.SetFont(pdffont.Name, "", 8)
@@ -127,9 +128,9 @@ func buildQuotationPDFWithShipments(q store.GetQuotationRow, items []store.ListQ
 	if len(shipments) > 0 {
 		pdf.Ln(4)
 		pdf.SetFont(pdffont.Name, "B", 10)
-		pdf.CellFormat(0, 7, "货运批次 / FREIGHT BATCHES", "", 1, "L", false, 0, "")
+		pdf.CellFormat(0, 7, "运输方案 / TRANSPORT OPTIONS", "", 1, "L", false, 0, "")
 		shipWidths := []float64{10, 31, 25, 24, 30, 26, 20, 20}
-		shipHeaders := []string{"批次", "承运人/货代", "服务", "运费", "航线", "ETD / ETA", "有效期", "备注"}
+		shipHeaders := []string{"方案", "承运人/货代", "服务", "运费", "航线", "ETD / ETA", "有效期", "备注"}
 		drawQuotationPDFRow(pdf, shipHeaders, shipWidths, true)
 		pdf.SetFont(pdffont.Name, "", 8)
 		for _, shipment := range shipments {
@@ -152,6 +153,10 @@ func buildQuotationPDFWithShipments(q store.GetQuotationRow, items []store.ListQ
 	pdf.SetFont(pdffont.Name, "B", 9)
 	pdf.CellFormat(154, 8, "合计 "+q.Currency, "1", 0, "R", false, 0, "")
 	pdf.CellFormat(32, 8, q.TotalAmount, "1", 1, "R", false, 0, "")
+	if strings.TrimSpace(q.Remark) != "" {
+		pdf.SetFont(pdffont.Name, "", 9)
+		pdf.MultiCell(0, 5, pdfText(q.Remark), "", "L", false)
+	}
 	var out bytes.Buffer
 	if err := pdf.Output(&out); err != nil {
 		return nil, err
