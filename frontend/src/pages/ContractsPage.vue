@@ -23,7 +23,7 @@
         <el-select v-model="status" :placeholder="t('contracts.allStatus')" clearable style="width: 170px" @change="reload">
           <el-option v-for="s in STATUSES" :key="s" :value="s" :label="contractStatusLabel(s)" />
         </el-select>
-        <el-select v-model="ownerFilter" clearable filterable placeholder="负责销售" @change="reload"><el-option v-for="e in contractOwners" :key="e.id" :value="e.id" :label="e.name"/></el-select>
+        <el-select v-model="ownerFilter" clearable filterable placeholder="负责销售" @change="reload"><el-option v-for="e in filterOwners" :key="e.id" :value="e.id" :label="e.name"/></el-select>
         <el-button @click="reload">{{ t('common.query') }}</el-button>
       </div>
 
@@ -1058,6 +1058,7 @@ interface ChangeLine { productName?:string;uomCode?:string; productId: string; s
 
 const STATUSES = ['PENDING_APPROVAL', 'PENDING_SIGN', 'EXECUTING', 'COMPLETED']
 const ownerFilter=ref('')
+const filterOwners=ref<{id:string;name:string}[]>([])
 function contractStatusLabel(s:string){return ({DRAFT:'待上级确认',PENDING_APPROVAL:'待上级确认',PENDING_SIGN:'待签字',EFFECTIVE:'执行中',EXECUTING:'执行中',COMPLETED:'已完成'} as Record<string,string>)[s]||s}
 const INCOTERMS = ['FOB', 'CIF', 'CFR', 'EXW', 'DDP']
 // DRAFT is what we sent out, SIGNED is what came back with a signature on it.
@@ -1494,10 +1495,11 @@ const isInForce = computed(() => detail.value?.contract.currentVersionId === det
 async function load() {
   loading.value = true
   try {
-    const data = await get<{ contracts: Contract[]; meta: { total: string } }>('/contracts', {
+    const data = await get<{ contracts: Contract[]; owners: {id:string;name:string}[]; meta: { total: string } }>('/contracts', {
       page: page.value, page_size: pageSize, keyword: keyword.value, status: status.value, sales_employee_id: ownerFilter.value,
     })
     contracts.value = data.contracts ?? []
+    filterOwners.value = data.owners ?? []
     total.value = Number(data.meta.total)
   } finally {
     loading.value = false

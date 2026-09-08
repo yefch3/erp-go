@@ -45,7 +45,15 @@ func (h *ContractHandler) ListContracts(ctx context.Context, req *exv1.ListContr
 			TotalAmount: r.TotalAmount, BaseAmount: r.BaseAmount, VersionNo: r.VersionNo,
 		})
 	}
-	return &exv1.ListContractsResponse{Contracts: out, Meta: &commonv1.PageMeta{Total: total}}, nil
+	owners, err := h.svc.ContractOwners(ctx, grpcx.TenantID(ctx), operator(ctx))
+	if err != nil {
+		return nil, err
+	}
+	options := make([]*exv1.ContractOwnerOption, 0, len(owners))
+	for _, owner := range owners {
+		options = append(options, &exv1.ContractOwnerOption{Id: owner.ID, Name: owner.Name})
+	}
+	return &exv1.ListContractsResponse{Contracts: out, Owners: options, Meta: &commonv1.PageMeta{Total: total}}, nil
 }
 
 // ListContractExecution 出一览表的出口半边（D2）。

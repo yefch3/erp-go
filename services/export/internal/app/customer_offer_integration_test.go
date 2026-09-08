@@ -24,6 +24,12 @@ func (d2OfferScopes) HasPermission(_ context.Context, id int64, code string) (bo
 	return id == 1 || id == 2 && code == "export:quotation:read", nil
 }
 
+type d2OwnerScope struct{}
+
+func (d2OwnerScope) VisibleEmployees(_ context.Context, id int64, _ string) (Visibility, error) {
+	return Visibility{EmployeeIDs: []int64{id}}, nil
+}
+
 type d2OfferSource struct{ inquiry OfferInquiry }
 
 func (s *d2OfferSource) ReadInquiry(context.Context, int64) (OfferInquiry, error) {
@@ -146,6 +152,16 @@ func TestD2OfferNegotiationConfirmationAndWithdrawal(t *testing.T) {
 		t.Fatal("confirmed source snapshot overwritten", err)
 	}
 	contractID := offerID(confirmed.ContractID)
+	svc.scopes = d2OwnerScope{}
+	owners, err := svc.ContractOwners(actor(1), tenant, Operator{ID: 1})
+	if err != nil || len(owners) != 1 || owners[0].ID != 1 {
+		t.Fatal("visible contract owners", owners, err)
+	}
+	hidden, err := svc.ContractOwners(actor(2), tenant, Operator{ID: 2})
+	if err != nil || len(hidden) != 0 {
+		t.Fatal("owner filter crossed sales scope", hidden, err)
+	}
+	svc.scopes = d2OfferScopes{}
 	owner := Operator{ID: 1, Name: "D2 Sales"}
 	if _, err := svc.SignContract(actor(1), tenant, contractID, "", "", "", owner); err == nil {
 		t.Fatal("started before approval")

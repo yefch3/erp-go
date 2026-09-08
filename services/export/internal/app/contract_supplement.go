@@ -84,3 +84,29 @@ func (s *Service) AcceptedContractOffer(ctx context.Context, tenant, id int64) (
 	out, err := json.Marshal(map[string]any{"customer": body.Customer, "contact": body.Contact, "transports": body.Transports, "lines": lines})
 	return string(out), err
 }
+
+type ContractOwnerOption struct {
+	ID   int64
+	Name string
+}
+
+func (s *Service) ContractOwners(ctx context.Context, tenant int64, op Operator) ([]ContractOwnerOption, error) {
+	visible, err := s.visibleTo(ctx, op)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, `SELECT sales_employee_id,max(sales_employee) FROM contracts WHERE tenant_id=$1 AND sales_employee_id>0 AND ($2 OR sales_employee_id=ANY($3::bigint[]) OR id=ANY($4::bigint[])) GROUP BY sales_employee_id ORDER BY sales_employee_id`, tenant, visible.All, visible.EmployeeIDs, s.involvedIn(ctx, op, BizTypeContract))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []ContractOwnerOption{}
+	for rows.Next() {
+		var item ContractOwnerOption
+		if err := rows.Scan(&item.ID, &item.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}

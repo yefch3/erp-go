@@ -289,6 +289,11 @@ message ListContractsRequest {
 message ListContractsResponse {
   repeated Contract contracts = 1;
   erp.common.v1.PageMeta meta = 2;
+  repeated ContractOwnerOption owners = 3;
+}
+message ContractOwnerOption {
+  int64 id = 1;
+  string name = 2;
 }
 
 message GetContractRequest {
