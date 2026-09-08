@@ -1265,6 +1265,7 @@ import { humanSize } from '../lib/humanSize'
 import { needsConversion } from '../lib/attachmentPreview'
 import { folderNameProblem, isCustomFolderKey, viewForFolderKey, type CustomFolder } from '../lib/mailFolders'
 import { turnRecipients, turnSenderEmail, turnSenderLabel } from '../lib/threadTurn'
+import { attachmentHintKey } from '../lib/attachmentHint'
 import { replyAllRecipients } from '../lib/replyAll'
 import { syncBanner as buildSyncBanner, type SyncBanner } from '../lib/syncBanner'
 import {
@@ -4119,9 +4120,10 @@ function isImage(a: MailFile) {
 // These two were one message once, and it told somebody their 8 MB deck had
 // no copy kept when the file was fine and a stale service was dropping the
 // field. A message that confident about somebody's data has to be earned.
-function fileHint(a: { fileName: string; downloadUrl?: string; stored?: boolean }) {
-  if (a.downloadUrl) return t('emails.downloadFile', { f: a.fileName })
-  return a.stored ? t('emails.fileUnavailable') : t('emails.fileGone')
+// 和 MailAttachments 里那一句同源：判断在 lib/attachmentHint，这里只翻译。
+// 原来这两处各写了一遍，改一处忘另一处就会出现「同一个附件两个地方说法不同」。
+function fileHint(a: { fileName: string; downloadUrl?: string; stored?: boolean; fileSize?: number | string }) {
+  return t(`emails.${attachmentHintKey(a)}`, { f: a.fileName })
 }
 
 function avatarStyle(email: string) {
