@@ -57,6 +57,9 @@ func (s *Service) GetDefinition(ctx context.Context, tenantID, id int64) (store.
 // are looking at has moved or vanished. A new version leaves them alone,
 // because every instance records the definition id it started with.
 func (s *Service) SaveDefinition(ctx context.Context, tenantID int64, bizType, name, minAmount string, nodes []NodeInput, actorID int64) (store.GetDefinitionRow, []store.ApprovalNode, error) {
+	if bizType == "CONTRACT" && (len(nodes) != 1 || nodes[0].ApproverType != "MANAGER" || nodes[0].ApproverRef != 1 || nodes[0].ApproveMode != "ANY") {
+		return store.GetDefinitionRow{}, nil, apierr.Invalid("AP_CONTRACT_SINGLE_CONFIRMATION", "外销合同只需要一次上级确认")
+	}
 	floor, err := normalizeAmount(minAmount)
 	if err != nil {
 		return store.GetDefinitionRow{}, nil, err

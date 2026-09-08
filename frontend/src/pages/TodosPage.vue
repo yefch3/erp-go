@@ -484,7 +484,7 @@ function parseSummary(raw: string): Record<string, string> {
   if (!raw) return {}
   try { const parsed = JSON.parse(raw); return typeof parsed === 'object' && parsed !== null ? parsed : {} } catch { return {} }
 }
-function summaryText(raw: string): string { return Object.entries(parseSummary(raw)).map(([key, value]) => `${summaryLabel(key)}：${value}`).join(' · ') }
+function summaryText(raw: string): string { return Object.entries(parseSummary(raw)).filter(([key])=>key!=='approval_request_key').map(([key, value]) => `${summaryLabel(key)}：${value}`).join(' · ') }
 function summaryLabel(key: string): string { return labelOr(`todos.summaryKeys.${key}`, key) }
 function taskStatusLabel(code: string): string { return code ? labelOr(`todos.task.${code}`, code) : '—' }
 function priorityLabel(code: string): string { return labelOr(`todos.priorityLevels.${code}`, code) }

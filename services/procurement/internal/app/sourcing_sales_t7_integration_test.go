@@ -78,12 +78,12 @@ func TestT7T8SalesNegotiationCustomerSelectionAndFinalRecheck(t *testing.T) {
 	if _, err = svc.StartSourcingShippingTask(ctx, tenantID, caseID, shipping); err != nil {
 		t.Fatal(err)
 	}
-	shippingView, err := svc.AddSourcingShippingOption(ctx, tenantID, NewSourcingShippingOption{CaseID: caseID, CarrierForwarder: "T7 船公司", PortOfLoading: "上海", PortOfDischarge: "Los Angeles", QuotedAt: "2026-08-30", EstimatedDeparture: "2026-09-10", EstimatedArrival: "2026-10-02", ValidUntil: "2026-09-05", Lines: []NewSourcingShippingOptionLine{{SourcingLineID: lineID, Currency: "USD", ChargeBasis: "PER_TON", UnitRate: "40", TotalFreight: "800"}}}, shipping)
+	shippingView, err := svc.AddSourcingShippingOption(ctx, tenantID, NewSourcingShippingOption{CaseID: caseID, CarrierForwarder: "T7 船公司", PortOfLoading: "上海", PortOfDischarge: "Los Angeles", QuotedAt: "2026-08-30", EstimatedDeparture: "2026-09-10", EstimatedArrival: "2026-10-02", ValidUntil: validFor(30), Lines: []NewSourcingShippingOptionLine{{SourcingLineID: lineID, Currency: "USD", ChargeBasis: "PER_TON", UnitRate: "40", TotalFreight: "800"}}}, shipping)
 	if err != nil {
 		t.Fatal(err)
 	}
 	optionLine := shippingView.Options[0].Lines[0]
-	shippingView, err = svc.AddSourcingShippingOption(ctx, tenantID, NewSourcingShippingOption{CaseID: caseID, CarrierForwarder: "错误目的港船公司", PortOfLoading: "上海", PortOfDischarge: "Long Beach", QuotedAt: "2026-08-30", EstimatedDeparture: "2026-09-11", EstimatedArrival: "2026-10-03", ValidUntil: "2026-09-05", Lines: []NewSourcingShippingOptionLine{{SourcingLineID: lineID, Currency: "USD", ChargeBasis: "PER_TON", UnitRate: "35", TotalFreight: "700"}}}, shipping)
+	shippingView, err = svc.AddSourcingShippingOption(ctx, tenantID, NewSourcingShippingOption{CaseID: caseID, CarrierForwarder: "错误目的港船公司", PortOfLoading: "上海", PortOfDischarge: "Long Beach", QuotedAt: "2026-08-30", EstimatedDeparture: "2026-09-11", EstimatedArrival: "2026-10-03", ValidUntil: validFor(30), Lines: []NewSourcingShippingOptionLine{{SourcingLineID: lineID, Currency: "USD", ChargeBasis: "PER_TON", UnitRate: "35", TotalFreight: "700"}}}, shipping)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestT7T8SalesNegotiationCustomerSelectionAndFinalRecheck(t *testing.T) {
 		for _, item := range shippingPlan.Items {
 			shippingInputs = append(shippingInputs, SalesShippingOptionInput{ShippingPlanItemIDs: []int64{item.ID}, CustomerCurrency: "USD", CustomerFreightAmount: item.TotalFreight})
 		}
-		return svc.CreateSalesPlan(ctx, tenantID, NewSalesPlan{CaseID: caseID, ProcurementPlanID: procurement.Header.ID, ShippingPlanID: shippingPlan.Header.ID, ValidUntil: "2026-09-30", CustomerNote: "含独立采购与船运候选", Items: []SalesPlanItemInput{{SourcingLineID: lineID, ProcurementPlanItemID: procurement.Items[0].ID, OptionType: "PRIMARY", Priority: 1, CustomerCurrency: "USD", CustomerUnitPrice: price, PromisedDeliveryDate: "2026-10-15"}}, ShippingOptions: shippingInputs}, sales)
+		return svc.CreateSalesPlan(ctx, tenantID, NewSalesPlan{CaseID: caseID, ProcurementPlanID: procurement.Header.ID, ShippingPlanID: shippingPlan.Header.ID, ValidUntil: validFor(30), CustomerNote: "含独立采购与船运候选", Items: []SalesPlanItemInput{{SourcingLineID: lineID, ProcurementPlanItemID: procurement.Items[0].ID, OptionType: "PRIMARY", Priority: 1, CustomerCurrency: "USD", CustomerUnitPrice: price, PromisedDeliveryDate: "2026-10-15"}}, ShippingOptions: shippingInputs}, sales)
 	}
 	plan1, err := newPlan("720")
 	if err != nil {
@@ -116,7 +116,7 @@ func TestT7T8SalesNegotiationCustomerSelectionAndFinalRecheck(t *testing.T) {
 	if plan1.Header.VersionNo != 1 || len(plan1.Items) != 1 {
 		t.Fatalf("unexpected first sales plan: %+v", plan1)
 	}
-	if _, err = svc.CreateSalesPlan(ctx, tenantID, NewSalesPlan{CaseID: caseID, ProcurementPlanID: procurement.Header.ID, ValidUntil: "2026-09-30", Items: []SalesPlanItemInput{{SourcingLineID: lineID, ProcurementPlanItemID: procurement.Items[0].ID, OptionType: "PRIMARY", Priority: 1, CustomerCurrency: "USD", CustomerUnitPrice: "725"}}}, otherSales); err == nil || !strings.Contains(err.Error(), "SC_CASE_NOT_FOUND") {
+	if _, err = svc.CreateSalesPlan(ctx, tenantID, NewSalesPlan{CaseID: caseID, ProcurementPlanID: procurement.Header.ID, ValidUntil: validFor(30), Items: []SalesPlanItemInput{{SourcingLineID: lineID, ProcurementPlanItemID: procurement.Items[0].ID, OptionType: "PRIMARY", Priority: 1, CustomerCurrency: "USD", CustomerUnitPrice: "725"}}}, otherSales); err == nil || !strings.Contains(err.Error(), "SC_CASE_NOT_FOUND") {
 		t.Fatalf("other sales ownership error = %v", err)
 	}
 	plan2, err := newPlan("715")

@@ -24,7 +24,7 @@ import (
 // 采购单就停在一句「请先创建该角色」上。四个一起补，是因为它们本来就是第一家
 // 公司开箱即有的东西——第二家没理由从零开始。
 var presetRoles = []presetRole{
-	{Code: "BOSS", Name: "老板", Description: "查看本公司客户询盘和已提交源报价", Permissions: []string{"sales:inquiry:read"}, Scopes: []presetScope{{"procurement_sourcing", "ALL"}}},
+	{Code: "BOSS", Name: "老板", Description: "查看本公司客户询盘和已提交源报价", Permissions: []string{"sales:inquiry:read", "export:quotation:read", "export:contract:read", "export:contract:approve", "approval:task:act"}, Scopes: []presetScope{{"procurement_sourcing", "ALL"}, {"export", "ALL"}}},
 	{
 		Code: "SALES", Name: "销售专员",
 		Description: "维护本人客户询盘、客户报价和外销合同",
@@ -44,7 +44,7 @@ var presetRoles = []presetRole{
 		Code: "SALES_MANAGER", Name: "销售经理",
 		Description: "管理团队客户询盘、客户报价、合同审批和负责人转移",
 		Permissions: []string{
-			"export:contract:approve", "export:contract:read", "export:contract:write",
+			"approval:task:act", "export:contract:approve", "export:contract:read", "export:contract:write",
 			"iam:employee:read", "masterdata:supplier:read",
 			"export:ownership:transfer", "export:quotation:read", "export:quotation:write",
 			"masterdata:customer:read", "masterdata:port:read", "product:product:read",
@@ -90,7 +90,7 @@ var presetRoles = []presetRole{
 		Permissions: []string{
 			"export:contract:read", "export:receipt:read", "export:receipt:write",
 			"export:shipment:read",
-			"fx:rate:read",
+			"fx:rate:read", "fx:rate:write",
 			"masterdata:customer:read", "masterdata:port:read",
 			"procurement:payment:read", "procurement:payment:write",
 			"procurement:recon:read", "procurement:recon:write",

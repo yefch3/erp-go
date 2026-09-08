@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	QuotationService_CustomerOffer_FullMethodName          = "/erp.export.v1.QuotationService/CustomerOffer"
 	QuotationService_SetInquiryAvailability_FullMethodName = "/erp.export.v1.QuotationService/SetInquiryAvailability"
 	QuotationService_ListQuotations_FullMethodName         = "/erp.export.v1.QuotationService/ListQuotations"
 	QuotationService_GetQuotation_FullMethodName           = "/erp.export.v1.QuotationService/GetQuotation"
@@ -39,6 +40,7 @@ const (
 // prices, under which exchange rate. Once sent, a quotation is a promise, so
 // the rate it used is frozen into the document rather than looked up again.
 type QuotationServiceClient interface {
+	CustomerOffer(ctx context.Context, in *CustomerOfferRequest, opts ...grpc.CallOption) (*CustomerOfferResponse, error)
 	// Internal sourcing coordination: serialize withdrawal against quotations
 	// and contracts without introducing a business approval/status.
 	SetInquiryAvailability(ctx context.Context, in *SetInquiryAvailabilityRequest, opts ...grpc.CallOption) (*SetInquiryAvailabilityResponse, error)
@@ -61,6 +63,16 @@ type quotationServiceClient struct {
 
 func NewQuotationServiceClient(cc grpc.ClientConnInterface) QuotationServiceClient {
 	return &quotationServiceClient{cc}
+}
+
+func (c *quotationServiceClient) CustomerOffer(ctx context.Context, in *CustomerOfferRequest, opts ...grpc.CallOption) (*CustomerOfferResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CustomerOfferResponse)
+	err := c.cc.Invoke(ctx, QuotationService_CustomerOffer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *quotationServiceClient) SetInquiryAvailability(ctx context.Context, in *SetInquiryAvailabilityRequest, opts ...grpc.CallOption) (*SetInquiryAvailabilityResponse, error) {
@@ -171,6 +183,7 @@ func (c *quotationServiceClient) GetQuotationPdf(ctx context.Context, in *GetQuo
 // prices, under which exchange rate. Once sent, a quotation is a promise, so
 // the rate it used is frozen into the document rather than looked up again.
 type QuotationServiceServer interface {
+	CustomerOffer(context.Context, *CustomerOfferRequest) (*CustomerOfferResponse, error)
 	// Internal sourcing coordination: serialize withdrawal against quotations
 	// and contracts without introducing a business approval/status.
 	SetInquiryAvailability(context.Context, *SetInquiryAvailabilityRequest) (*SetInquiryAvailabilityResponse, error)
@@ -195,6 +208,9 @@ type QuotationServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedQuotationServiceServer struct{}
 
+func (UnimplementedQuotationServiceServer) CustomerOffer(context.Context, *CustomerOfferRequest) (*CustomerOfferResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CustomerOffer not implemented")
+}
 func (UnimplementedQuotationServiceServer) SetInquiryAvailability(context.Context, *SetInquiryAvailabilityRequest) (*SetInquiryAvailabilityResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetInquiryAvailability not implemented")
 }
@@ -244,6 +260,24 @@ func RegisterQuotationServiceServer(s grpc.ServiceRegistrar, srv QuotationServic
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&QuotationService_ServiceDesc, srv)
+}
+
+func _QuotationService_CustomerOffer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CustomerOfferRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QuotationServiceServer).CustomerOffer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: QuotationService_CustomerOffer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QuotationServiceServer).CustomerOffer(ctx, req.(*CustomerOfferRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _QuotationService_SetInquiryAvailability_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -433,6 +467,10 @@ var QuotationService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "erp.export.v1.QuotationService",
 	HandlerType: (*QuotationServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CustomerOffer",
+			Handler:    _QuotationService_CustomerOffer_Handler,
+		},
 		{
 			MethodName: "SetInquiryAvailability",
 			Handler:    _QuotationService_SetInquiryAvailability_Handler,

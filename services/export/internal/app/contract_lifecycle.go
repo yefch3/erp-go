@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -38,14 +38,21 @@ func (s *Service) SubmitContract(ctx context.Context, tenantID, id int64, op Ope
 		return "", 0, err
 	}
 
-	instanceID, err := s.approvals.Submit(ctx, ApprovalSubmission{
-		BizType: BizTypeContract, BizID: view.Contract.ID, BizNo: view.Contract.ContractNo,
-		Summary: summaryJSON(view), SubmitterID: op.ID, SubmitterName: op.Name,
-		Amount: view.Version.BaseAmount,
-	})
-	if err != nil {
+	// Persist the attempt before the remote call; all network retries reuse it.
+	candidate := fmt.Sprintf("%d:%d:%d", tenantID, id, time.Now().UnixNano())
+	if _, err := s.pool.Exec(ctx, `UPDATE contracts SET approval_request_key=$3 WHERE tenant_id=$1 AND id=$2 AND approval_request_key='' AND status='DRAFT'`, tenantID, id, candidate); err != nil {
 		return "", 0, err
 	}
+	var requestKey string
+	if err := s.pool.QueryRow(ctx, `SELECT approval_request_key FROM contracts WHERE tenant_id=$1 AND id=$2`, tenantID, id).Scan(&requestKey); err != nil {
+		return "", 0, err
+	}
+	var summary map[string]any
+	_ = json.Unmarshal([]byte(summaryJSON(view)), &summary)
+	summary["approval_request_key"] = requestKey
+	summaryBytes, _ := json.Marshal(summary)
+
+	var instanceID int64
 
 	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
@@ -59,6 +66,19 @@ func (s *Service) SubmitContract(ctx context.Context, tenantID, id int64, op Ope
 		if locked.Status != view.Contract.Status {
 			return apierr.Conflict("EX_CONTRACT_STATUS_CHANGED", "合同状态已变化，请刷新后重试")
 		}
+		instanceID, err = s.approvals.Submit(ctx, ApprovalSubmission{
+			BizType: BizTypeContract, BizID: view.Contract.ID, BizNo: view.Contract.ContractNo,
+			Summary: string(summaryBytes), SubmitterID: op.ID, SubmitterName: op.Name,
+			Amount: view.Version.BaseAmount,
+		})
+		if err != nil {
+			return err
+		}
+
+		if _, err := tx.Exec(ctx, `UPDATE contracts SET approval_instance_id=$3 WHERE tenant_id=$1 AND id=$2`, tenantID, id, instanceID); err != nil {
+			return err
+		}
+
 		if _, err := q.MarkContractPendingApproval(ctx, store.MarkContractPendingApprovalParams{
 			TenantID: tenantID, ID: id, UpdatedBy: op.ID,
 		}); err != nil {
@@ -99,43 +119,9 @@ func readyToSubmit(view ContractView) error {
 // ApplyApprovalDecision advances a contract on the strength of an approval
 // event. It is idempotent: the same event delivered twice leaves the same
 // state, because a contract that is no longer waiting on approval is skipped.
-func (s *Service) ApplyApprovalDecision(ctx context.Context, tenantID, contractID int64, result string, claim EventClaim) (string, error) {
-	view, err := s.GetContract(ctx, tenantID, contractID, 0)
-	if err != nil {
-		return "", err
-	}
-	if view.Contract.Status != "PENDING_APPROVAL" {
-		return view.Contract.Status, nil
-	}
-
-	// Where a decision sends the contract. The three outcomes are genuinely
-	// different: approval moves it forward, a return hands it back to be
-	// fixed, and a rejection ends it.
-	contractTo, versionTo := "PENDING_SIGN", "APPROVED"
-	// Where "back" is depends on whether this was the first approval or a
-	// change to a contract already running, which is what
-	// status_before_approval remembers.
-	before := view.Contract.StatusBeforeApproval
-	if before == "" || before == "PENDING_APPROVAL" {
-		before = "DRAFT"
-	}
-	switch result {
-	case "APPROVED":
-	case "RETURNED":
-		contractTo, versionTo = before, "DRAFT"
-	default: // REJECTED
-		versionTo = "REJECTED"
-		// A contract already in force keeps running under its old version;
-		// only the rejected change dies. One that never took effect is over.
-		contractTo = before
-		if before == "DRAFT" {
-			contractTo = "REJECTED"
-		}
-	}
-
-	err = pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
-		// 认领与这一笔业务写入同生共死：崩溃一起回滚，提交一起落库。
-		// 见 eventclaim.go。
+func (s *Service) ApplyApprovalDecision(ctx context.Context, tenantID, contractID int64, result string, claim EventClaim, proofs ...ApprovalProof) (string, error) {
+	contractTo := ""
+	err := pgdb.InTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		if err := claim(ctx, tx); err != nil {
 			return err
 		}
@@ -144,9 +130,56 @@ func (s *Service) ApplyApprovalDecision(ctx context.Context, tenantID, contractI
 		if err != nil {
 			return err
 		}
-		if locked.Status != "PENDING_APPROVAL" {
+		recovered := false
+		if len(proofs) > 0 {
+			proof := proofs[0]
+			var key string
+			var instance int64
+			if err := tx.QueryRow(ctx, `SELECT approval_request_key,approval_instance_id FROM contracts WHERE tenant_id=$1 AND id=$2`, tenantID, contractID).Scan(&key, &instance); err != nil {
+				return err
+			}
+			if proof.RequestKey != "" {
+				if key != proof.RequestKey {
+					contractTo = locked.Status
+					return nil
+				}
+				recovered = locked.Status == "DRAFT"
+				if _, err := tx.Exec(ctx, `UPDATE contracts SET approval_instance_id=$3 WHERE tenant_id=$1 AND id=$2`, tenantID, contractID, proof.InstanceID); err != nil {
+					return err
+				}
+			} else if instance > 0 && instance != proof.InstanceID {
+				contractTo = locked.Status
+				return nil
+			}
+		}
+
+		// Submit holds this same lock until the approval instance and local
+		// pending state are linked. A fast decision must wait for that commit.
+		if locked.Status == "DRAFT" && !recovered {
+			return apierr.Conflict("EX_APPROVAL_SUBMIT_PENDING", "合同提交尚未完成，审批事件稍后重试")
+		}
+		if locked.Status != "PENDING_APPROVAL" && !recovered {
+			contractTo = locked.Status
 			return nil
 		}
+		view, err := s.GetContract(ctx, tenantID, contractID, 0)
+		if err != nil {
+			return err
+		}
+		contractTo, versionTo := "PENDING_SIGN", "APPROVED"
+		switch result {
+		case "APPROVED":
+		case "RETURNED", "REJECTED":
+			contractTo, versionTo = "DRAFT", "DRAFT"
+		default:
+			return apierr.Invalid("EX_APPROVAL_RESULT", "审批结果无效")
+		}
+		if versionTo == "DRAFT" {
+			if _, err := tx.Exec(ctx, `UPDATE contracts SET approval_request_key='' WHERE tenant_id=$1 AND id=$2`, tenantID, contractID); err != nil {
+				return err
+			}
+		}
+
 		if err := q.SetContractVersionStatus(ctx, store.SetContractVersionStatusParams{
 			TenantID: tenantID, ID: view.Version.ID, NewStatus: versionTo,
 		}); err != nil {
@@ -160,33 +193,26 @@ func (s *Service) ApplyApprovalDecision(ctx context.Context, tenantID, contractI
 	if err != nil {
 		return "", err
 	}
+	current, err := s.GetContract(ctx, tenantID, contractID, 0)
+	if err != nil {
+		return "", err
+	}
+	contractTo = current.Contract.Status
 	return contractTo, nil
 }
 
 // SignContract records the customer's signature, which is the moment the
-// version in hand becomes the one in force. Everything downstream — purchase
-// demand, shipment plans, receivables — hangs off the event this appends.
-func (s *Service) SignContract(ctx context.Context, tenantID, id int64, conditionStatus, conditionConfirmedAt, conditionNote string, op Operator) (string, error) {
-	conditionStatus = strings.ToUpper(strings.TrimSpace(conditionStatus))
-	conditionConfirmedAt, conditionNote = strings.TrimSpace(conditionConfirmedAt), strings.TrimSpace(conditionNote)
-	if conditionStatus == "NEEDS_UPDATE" {
-		return "", apierr.Conflict("EX_CONTRACT_CONDITIONS_NEED_UPDATE", "合同条件需要更新，旧合同不能直接生效；请返回受影响的最终复询并生成新版报价和合同")
-	}
-	if conditionStatus != "VALID" {
-		return "", apierr.Invalid("EX_CONTRACT_CONDITION_STATUS_REQUIRED", "请选择合同条件仍有效或需要更新")
-	}
-	if conditionConfirmedAt == "" || conditionNote == "" {
-		return "", apierr.Invalid("EX_CONTRACT_CONDITION_CONFIRMATION_REQUIRED", "请由销售填写商务条件人工确认时间和说明")
-	}
-	if _, err := time.Parse(time.RFC3339, conditionConfirmedAt); err != nil {
-		return "", apierr.Invalid("EX_CONTRACT_CONDITION_CONFIRMATION_TIME", "商务条件确认时间格式无效")
-	}
+// version in hand becomes the one in force. The ContractStarted event records the handoff to finance; it does not release procurement or shipping.
+func (s *Service) SignContract(ctx context.Context, tenantID, id int64, _, _, _ string, op Operator) (string, error) {
 	view, err := s.GetContract(ctx, tenantID, id, 0)
 	if err != nil {
 		return "", err
 	}
 	if err := s.mustOwnContract(ctx, op, view); err != nil {
 		return "", err
+	}
+	if view.Contract.Status == "EXECUTING" {
+		return "EXECUTING", nil
 	}
 	if view.Contract.Status != "PENDING_SIGN" {
 		return "", apierr.Conflict("EX_CONTRACT_NOT_PENDING_SIGN", "只有待签署的合同可以签署").
@@ -261,11 +287,18 @@ func (s *Service) SignContract(ctx context.Context, tenantID, id int64, conditio
 		if err != nil {
 			return err
 		}
+		if locked.Status == "EXECUTING" {
+			return nil
+		}
 		if locked.Status != "PENDING_SIGN" {
 			return apierr.Conflict("EX_CONTRACT_NOT_PENDING_SIGN", "只有待签署的合同可以签署")
 		}
-		if err := q.RecordContractConditionConfirmation(ctx, store.RecordContractConditionConfirmationParams{TenantID: tenantID, ID: id, ConfirmedAt: conditionConfirmedAt, Note: conditionNote, ConfirmedBy: &op.ID, ConfirmedByName: op.Name}); err != nil {
+		signedCount, err := q.CountSignedAttachments(ctx, store.CountSignedAttachmentsParams{TenantID: tenantID, ContractVersionID: &view.Version.ID})
+		if err != nil {
 			return err
+		}
+		if signedCount == 0 {
+			return apierr.Invalid("EX_SIGNED_COPY_REQUIRED", "请先上传签署合同")
 		}
 		// The version that just took over retires the one it replaces.
 		if err := q.SupersedeOtherVersions(ctx, store.SupersedeOtherVersionsParams{
@@ -279,8 +312,11 @@ func (s *Service) SignContract(ctx context.Context, tenantID, id int64, conditio
 			return err
 		}
 		if _, err := q.SetContractStatus(ctx, store.SetContractStatusParams{
-			TenantID: tenantID, ID: id, NewStatus: "EFFECTIVE", UpdatedBy: op.ID,
+			TenantID: tenantID, ID: id, NewStatus: "EXECUTING", UpdatedBy: op.ID,
 		}); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE contracts SET signed_at=COALESCE(signed_at,now()),effective_at=COALESCE(effective_at,now()) WHERE tenant_id=$1 AND id=$2`, tenantID, id); err != nil {
 			return err
 		}
 		// How the signature was established, recorded on the contract rather
@@ -293,14 +329,14 @@ func (s *Service) SignContract(ctx context.Context, tenantID, id int64, conditio
 		}
 		return outbox.Append(ctx, tx, outbox.Event{
 			TenantID: tenantID, AggregateType: "contract",
-			AggregateID: strconv.FormatInt(id, 10), EventType: "ContractEffective",
+			AggregateID: strconv.FormatInt(id, 10), EventType: "ContractStarted",
 			Payload: payload,
 		})
 	})
 	if err != nil {
 		return "", err
 	}
-	return "EFFECTIVE", nil
+	return "EXECUTING", nil
 }
 
 // cancellableFrom are the states a contract can be written off from: not yet
@@ -444,4 +480,9 @@ func remainingProcurementQty(total, opening string) string {
 		return "0"
 	}
 	return remaining.String()
+}
+
+type ApprovalProof struct {
+	InstanceID int64
+	RequestKey string
 }

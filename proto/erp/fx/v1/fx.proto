@@ -2,11 +2,8 @@ syntax = "proto3";
 
 package erp.fx.v1;
 
-// FxService is the platform exchange-rate provider. Rates come exclusively
-// from the API feed (business decision 2026-07-27: manual entry removed);
-// anomaly detection now runs on fetch, comparing against the previous rate.
-// Rates are global market facts (deliberately tenant-free); every document
-// freezes its own snapshot at business time.
+// FxService provides global market reference rates and tenant-specific,
+// manually confirmed effective rates. Documents freeze their own snapshots.
 //
 // Rate semantics: units_per_usd is "how many units of the quote currency one
 // USD buys" (1 USD = 7.24 CNY); usd_per_unit is the inverse used when
@@ -15,6 +12,8 @@ service FxService {
   rpc GetLatestRate(GetLatestRateRequest) returns (GetLatestRateResponse);
   rpc ListRates(ListRatesRequest) returns (ListRatesResponse);
   rpc ListAnomalies(ListAnomaliesRequest) returns (ListAnomaliesResponse);
+  rpc ListEffectiveRates(ListEffectiveRatesRequest) returns (ListEffectiveRatesResponse);
+  rpc ConfirmEffectiveRate(ConfirmEffectiveRateRequest) returns (ConfirmEffectiveRateResponse);
 }
 
 message Rate {
@@ -61,3 +60,23 @@ message ListAnomaliesRequest {}
 message ListAnomaliesResponse {
   repeated Anomaly anomalies = 1;
 }
+
+message EffectiveRate {
+  string base_currency = 1;
+  string quote_currency = 2;
+  string rate = 3;
+  string confirmed_by = 4;
+  string confirmed_at = 5;
+  string remark = 6;
+  string system_rate = 7;
+  string system_updated_at = 8;
+}
+message ListEffectiveRatesRequest {}
+message ListEffectiveRatesResponse { repeated EffectiveRate rates = 1; }
+message ConfirmEffectiveRateRequest {
+  string base_currency = 1;
+  string quote_currency = 2;
+  string rate = 3;
+  string remark = 4;
+}
+message ConfirmEffectiveRateResponse { EffectiveRate rate = 1; }

@@ -47,6 +47,14 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 	if err != nil {
 		return store.ApprovalInstance{}, nil, err
 	}
+	if inst.BizType == "CONTRACT" {
+		if actorID == inst.SubmitterID {
+			return store.ApprovalInstance{}, nil, apierr.Permission("AP_CONTRACT_SELF", "合同需要上级负责人确认，不能本人审批")
+		}
+		if action == ActionReject {
+			action = ActionReturn
+		}
+	}
 	// Normally only the assignee may decide. Purchase orders are the one
 	// exception: a tenant's highest-privilege administrator must be able to
 	// unblock a pending purchase even when its historical task belongs to a
@@ -65,7 +73,7 @@ func (s *Service) Act(ctx context.Context, tenantID, actorID, taskID int64, acti
 
 	var nextNode *store.ApprovalNode
 	var nextAssignees []int64
-	if action == ActionApprove {
+	if action == ActionApprove && inst.BizType != "CONTRACT" {
 		nodes, err := s.q.ListNodes(ctx, store.ListNodesParams{
 			TenantID: tenantID, DefinitionID: inst.DefinitionID,
 		})

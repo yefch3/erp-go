@@ -6,8 +6,8 @@
       <!-- Most deals here are negotiated by email and come back as a signed
            PDF, so writing one up directly is the primary action; generating
            from a quotation is the secondary one. -->
-      <el-button v-if="canWrite" type="primary" @click="openDirect">{{ t('contracts.createDirect') }}</el-button>
-      <el-button v-if="canWrite" @click="openGenerate">{{ t('contracts.generate') }}</el-button>
+      <el-button v-if="canWrite" type="primary" @click="openDirect">录入执行中合同</el-button>
+
     </div>
 
     <el-card shadow="never">
@@ -21,53 +21,29 @@
           @clear="reload"
         />
         <el-select v-model="status" :placeholder="t('contracts.allStatus')" clearable style="width: 170px" @change="reload">
-          <el-option v-for="s in STATUSES" :key="s" :value="s" :label="t(`contracts.statuses.${s}`)" />
+          <el-option v-for="s in STATUSES" :key="s" :value="s" :label="contractStatusLabel(s)" />
         </el-select>
+        <el-select v-model="ownerFilter" clearable filterable placeholder="负责销售" @change="reload"><el-option v-for="e in filterOwners" :key="e.id" :value="e.id" :label="e.name"/></el-select>
         <el-button @click="reload">{{ t('common.query') }}</el-button>
       </div>
 
       <el-table :data="contracts" v-loading="loading">
-        <el-table-column prop="contractNo" :label="t('contracts.contractNo')" width="145" />
+        <el-table-column prop="contractNo" label="系统合同号" min-width="175"><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{row.contractNo}}</el-button></template></el-table-column>
+        <el-table-column label="原合同号" min-width="140"><template #default="{row}">{{row.externalContractNo||'—'}}</template></el-table-column>
         <el-table-column prop="customerName" :label="t('contracts.customer')" min-width="150" />
         <el-table-column :label="t('contracts.amount')" width="140" align="right">
           <template #default="{ row }">{{ row.totalAmount }} {{ row.currency }}</template>
         </el-table-column>
-        <el-table-column :label="t('contracts.version')" width="70" align="center">
-          <template #default="{ row }">v{{ row.versionNo }}</template>
-        </el-table-column>
         <el-table-column :label="t('contracts.owner')" width="90">
           <template #default="{ row }">{{ row.salesEmployee || '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('contracts.sourceDocument')" width="155">
-          <template #default="{ row }"><span class="sub">{{ row.quoteNo || row.externalContractNo || '—' }}</span></template>
-        </el-table-column>
         <el-table-column :label="t('common.status')" width="100">
           <template #default="{ row }">
-            <el-tag size="small" :type="statusType(row.status)">{{ t(`contracts.statuses.${row.status}`) }}</el-tag>
+            <el-tag size="small" :type="statusType(row.status)">{{ contractStatusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="200" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="openDetail(row.id)">{{ t('contracts.detail') }}</el-button>
-            <el-button
-              v-if="canCorrectExisting(row)"
-              link type="primary"
-              @click="openExistingEdit(row.id)"
-            >
-              {{ t('common.edit') }}
-            </el-button>
-            <!-- Gated on ownership, not just on the permission code. The list
-                 also carries documents this person only approves, and offering
-                 them an action the server will refuse is a lie in the UI. -->
-            <template v-if="canWrite && auth.owns(row.salesEmployeeId)">
-              <!-- No sign shortcut here on purpose: signing requires the
-                   countersigned copy, and that is only visible in the drawer. -->
-              <el-button v-if="row.status === 'DRAFT'" link type="primary" @click="submit(row)">
-                {{ t('contracts.submit') }}
-              </el-button>
-            </template>
-          </template>
-        </el-table-column>
+        <el-table-column label="更新时间" width="170"><template #default="{row}">{{row.updatedAt?new Date(row.updatedAt).toLocaleString():'—'}}</template></el-table-column>
+        <el-table-column label="操作" width="130" fixed="right"><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{['DRAFT','PENDING_APPROVAL','PENDING_SIGN'].includes(row.status)?'继续处理':'查看'}}</el-button></template></el-table-column>
       </el-table>
 
       <el-pagination
@@ -80,8 +56,9 @@
       />
     </el-card>
 
+    <el-dialog v-model="supplementOpen" title="补充合同信息" width="min(520px,94vw)"><el-form label-position="top"><el-form-item label="原合同号"><el-input v-model="supplementForm.externalContractNo"/></el-form-item><el-form-item label="应收日期"><el-date-picker v-model="supplementForm.due" type="date" value-format="YYYY-MM-DD"/></el-form-item></el-form><template #footer><el-button @click="supplementOpen=false">取消</el-button><el-button type="primary" @click="saveSupplement">保存</el-button></template></el-dialog>
     <!-- A signed contract that existed before it reached this ERP. -->
-    <el-dialog v-model="directOpen" :title="t('contracts.createDirect')" width="1180px" top="4vh">
+    <el-dialog v-model="directOpen" :title="t('contracts.createDirect')" width="min(1180px,94vw)" top="4vh">
       <el-alert :title="t('contracts.directHint')" type="info" :closable="false" show-icon class="alert" />
       <el-form label-width="120px" class="head-form">
         <el-form-item :label="t('contracts.customer')" required>
@@ -111,13 +88,13 @@
           </el-select>
           <span class="hint">{{ t('contracts.ownerHint') }}</span>
         </el-form-item>
-        <el-form-item :label="t('contracts.originalBuyer')" required>
+        <el-form-item :label="t('contracts.originalBuyer')">
           <el-select v-model="directForm.procurementEmployeeId" filterable style="width: 320px">
             <el-option v-for="e in contractOwners" :key="e.id" :value="Number(e.id)" :label="e.name" />
           </el-select>
           <span class="hint">{{ t('contracts.originalBuyerHint') }}</span>
         </el-form-item>
-        <el-form-item :label="t('contracts.originalSupplier')" required>
+        <el-form-item :label="t('contracts.originalSupplier')">
           <el-select v-model="directForm.supplierId" filterable style="width: 420px">
             <el-option v-for="s in directSuppliers" :key="s.id" :value="Number(s.id)" :label="`${s.code} · ${s.nameZh || s.nameEn || s.name}`" />
           </el-select>
@@ -175,7 +152,7 @@
         <span class="hint">{{ t('contracts.linesHint') }}</span>
         <el-button link type="primary" @click="addDirectLine">{{ t('contracts.addLine') }}</el-button>
       </div>
-      <el-table :data="directForm.items" size="small" border>
+      <el-table :data="directForm.items" size="small" border max-height="440">
         <el-table-column :label="t('contracts.product')" min-width="210">
           <template #default="{ row }">
             <el-select
@@ -223,7 +200,7 @@
             <span class="num">{{ lineAmount(row) }}</span>
           </template>
         </el-table-column>
-        <template v-if="directForm.partiallyExecuted">
+        <template v-if="directForm.partiallyExecuted"><el-table-column label="已落实采购数量" width="125"><template #default="{row}"><el-input v-model="row.openingProcuredQty" size="small"/></template></el-table-column>
           <el-table-column :label="t('contracts.openingArrived')" width="125">
             <template #default="{ row }"><el-input v-model="row.openingArrivedQty" size="small" /></template>
           </el-table-column>
@@ -251,7 +228,7 @@
         </el-form-item>
         <el-form-item :label="t('contracts.contractFile')">
           <input ref="directFileInput" type="file" accept="application/pdf,.pdf" @change="pickDirectFile" />
-          <el-checkbox v-model="directForm.filePending" style="margin-left: 16px">{{ t('contracts.uploadLater') }}</el-checkbox>
+          <span class="hint">保存前上传已签署文件</span>
         </el-form-item>
       </el-form>
 
@@ -263,7 +240,7 @@
 
     <!-- Fast correction for a signed contract imported from outside ERP.
          Financial lines and execution openings intentionally stay read-only. -->
-    <el-dialog v-model="existingEditOpen" :title="t('contracts.editExisting')" width="820px">
+    <el-dialog v-model="existingEditOpen" :title="t('contracts.editExisting')" width="min(820px,94vw)">
       <el-alert :title="t('contracts.editExistingHint')" type="info" :closable="false" show-icon class="alert" />
       <el-form label-width="125px">
         <el-form-item :label="t('contracts.externalContractNo')">
@@ -303,44 +280,15 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="generateOpen" :title="t('contracts.generate')" width="620px">
-      <el-alert :title="t('contracts.generateHint')" type="info" :closable="false" show-icon class="alert" />
-      <el-form label-width="110px">
-        <el-form-item :label="t('contracts.quotation')" required>
-          <el-select v-model="generateForm.quotationId" filterable style="width: 100%" :placeholder="t('contracts.pickQuotation')">
-            <el-option
-              v-for="q in acceptedQuotes"
-              :key="q.id"
-              :value="q.id"
-              :label="`${q.quoteNo} · ${q.customerName} · ${q.totalAmount} ${q.currency}`"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('contracts.deliveryDate')">
-          <el-date-picker v-model="generateForm.deliveryDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-          <div class="hint">{{ t('contracts.deliveryHint') }}</div>
-        </el-form-item>
-        <el-form-item :label="t('contracts.receivableDue')">
-          <el-date-picker v-model="generateForm.receivableDueDate" type="date" value-format="YYYY-MM-DD"
-                          clearable :placeholder="t('contracts.receivableDueHint')" style="width: 100%" />
-        </el-form-item>
-        <el-form-item :label="t('contracts.terms')">
-          <el-input v-model="generateForm.terms" type="textarea" :rows="3" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="generateOpen = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="generate">{{ t('common.save') }}</el-button>
-      </template>
-    </el-dialog>
+
 
     <!-- Detail: terms, lines, version history -->
-    <el-drawer v-model="detailOpen" :size="880" :title="detail?.contract.contractNo ?? ''">
+    <el-drawer v-model="detailOpen" size="min(880px,100vw)" :title="detail?.contract.contractNo ?? ''">
       <div v-if="detail" v-loading="loadingDetail">
         <div class="detail-head">
           <div>
             <el-tag :type="statusType(detail.contract.status)">
-              {{ t(`contracts.statuses.${detail.contract.status}`) }}
+              {{ contractStatusLabel(detail.contract.status) }}
             </el-tag>
             <span class="version-chip">
               v{{ detail.version.versionNo }} · {{ t(`contracts.versionStatuses.${detail.version.status}`) }}
@@ -348,13 +296,15 @@
             <span v-if="isInForce" class="in-force">{{ t('contracts.inForce') }}</span>
           </div>
           <div class="detail-actions">
+            <template v-if="myConfirmationTask"><el-button type="success" @click="confirmContract('APPROVE')">同意</el-button><el-button type="warning" @click="confirmContract('RETURN')">退回修改</el-button></template>
             <el-button v-if="canTransfer" size="small" plain @click="openTransfer">
               {{ t('ownership.transfer') }}
             </el-button>
             <template v-if="canWrite && isMine">
+            <template v-if="['EXECUTING','EFFECTIVE'].includes(detail.contract.status)"><el-button @click="detail.contract.entrySource==='EXISTING_CONTRACT'?openExistingEdit(detail.contract.id):openSupplement()">补充信息</el-button><el-button type="success" @click="completeContract">完成合同</el-button></template>
             <el-button v-if="editable" size="small" @click="openTerms">{{ t('contracts.editDraft') }}</el-button>
             <el-button v-if="editable" size="small" type="primary" @click="submit(detail.contract)">
-              {{ t('contracts.submit') }}
+              {{ '提交上级确认' }}
             </el-button>
             <el-tooltip
               v-if="detail.contract.status === 'PENDING_SIGN'"
@@ -364,20 +314,19 @@
             >
               <span>
                 <el-button size="small" type="success" :disabled="!hasSignedCopy" @click="sign(detail.contract)">
-                  {{ t('contracts.sign') }}
+                  开始执行
                 </el-button>
               </span>
             </el-tooltip>
-            <el-button v-if="changeable" size="small" @click="openChange">{{ t('contracts.change') }}</el-button>
-            <el-button v-if="cancellable" size="small" type="danger" plain @click="cancel(detail.contract)">
-              {{ t('contracts.cancel') }}
-            </el-button>
+
             </template>
             <span v-else-if="canWrite" class="not-mine">{{ t('contracts.notOwner') }}</span>
           </div>
         </div>
 
         <el-descriptions :column="2" border size="small" class="desc">
+          <el-descriptions-item label="客户联系人">{{acceptedOffer?.contact||'—'}}</el-descriptions-item>
+          <el-descriptions-item label="原合同号">{{detail.contract.externalContractNo||'—'}}</el-descriptions-item>
           <el-descriptions-item :label="t('contracts.buyer')">
             {{ detail.version.buyerName }}
             <div class="sub">{{ detail.version.buyerAddress || '—' }}</div>
@@ -423,7 +372,7 @@
         </el-descriptions>
 
         <el-divider content-position="left">{{ t('contracts.items') }}</el-divider>
-        <el-table :data="detail.items" size="small">
+        <el-table max-height="440" :data="detail.items" size="small">
           <el-table-column prop="lineNo" label="#" width="45" />
           <el-table-column :label="t('contracts.product')" min-width="200">
             <template #default="{ row }">
@@ -486,14 +435,14 @@
                the quotation" on a contract that never had one is the kind of
                small lie that makes people stop trusting the rest. -->
           <span class="hint">
-            {{ detail?.contract.quoteNo ? t('contracts.fxInherited') : t('contracts.fxFixedOnCreate') }}
+            创建合同后保留当时的有效汇率
           </span>
         </div>
 
         <template v-if="canSeeApproval && approvals.length">
           <el-divider content-position="left">
             {{ t('contracts.approval') }}
-            <span class="hint">{{ t('contracts.approvalHint') }}</span>
+            <span class="hint">上级确认及退回修改意见</span>
           </el-divider>
           <div v-for="(inst, i) in approvals" :key="inst.instance.id" class="approval-round">
             <div class="round-head">
@@ -530,16 +479,17 @@
 
         <el-divider content-position="left">
           {{ t('contracts.files') }}
-          <span class="hint">{{ t('contracts.filesHint') }}</span>
+          <span class="hint">保存合同拟稿、签署件及补充资料</span>
         </el-divider>
-        <div v-if="canWrite" class="upload-bar">
+        <div v-if="canWrite && isMine && detail.contract.status!=='COMPLETED'" class="upload-bar">
           <el-select v-model="uploadKind" style="width: 150px">
             <el-option v-for="k in FILE_KINDS" :key="k" :value="k" :label="t(`contracts.fileKinds.${k}`)" />
           </el-select>
           <input ref="fileInput" type="file" hidden @change="upload" />
           <el-button :loading="uploading" @click="fileInput?.click()">{{ t('contracts.upload') }}</el-button>
-          <span class="hint">{{ t('contracts.uploadHint', { version: detail.version.versionNo }) }}</span>
+          <span class="hint">签署件归属当前合同；开始执行后保留签署记录</span>
         </div>
+        <template v-if="acceptedOffer?.transports.length"><h3>客户选择的运输方案</h3><el-table :data="acceptedOffer.transports" max-height="300"><el-table-column prop="title" label="方案"/><el-table-column label="对客费用"><template #default="{row}">{{row.currency}} {{row.price||'—'}}</template></el-table-column><el-table-column label="客户选择"><template #default="{row}">{{row.accepted?'已接受':'未选候选'}}</template></el-table-column><el-table-column label="对应产品数量" min-width="220"><template #default="{row}">{{allocatedProducts(row.quantities)||'—'}}</template></el-table-column></el-table></template>
         <el-table :data="files" size="small">
           <el-table-column :label="t('contracts.fileKind')" width="170">
             <template #default="{ row }">
@@ -577,9 +527,9 @@
           <el-table-column :label="t('contracts.uploader')" width="90">
             <template #default="{ row }">{{ row.uploaderName || '—' }}</template>
           </el-table-column>
-          <el-table-column v-if="canWrite" width="70">
+          <el-table-column v-if="canWrite && isMine && detail.contract.status!=='COMPLETED'" width="70">
             <template #default="{ row }">
-              <el-button link type="danger" @click="removeFile(row)">{{ t('common.delete') }}</el-button>
+              <el-button v-if="row.kind!=='SIGNED'||!detail.contract.currentVersionId||detail.contract.currentVersionId==='0'" link type="danger" @click="removeFile(row)">{{ t('common.delete') }}</el-button>
             </template>
           </el-table-column>
           <template #empty>{{ t('contracts.noFiles') }}</template>
@@ -615,12 +565,12 @@
         <template v-if="detail.shipments?.length">
           <el-divider content-position="left">
             {{ t('contracts.shipping') }}
-            <span class="hint">{{ t('contracts.shippingHint') }}</span>
+            <span class="hint">查看各产品已发货和待发货数量</span>
           </el-divider>
           <el-alert v-if="overShipped" type="warning" :closable="false" show-icon class="alert">
             {{ t('contracts.overShipped') }}
           </el-alert>
-          <el-table :data="detail.shipments" size="small">
+          <el-table :data="detail.shipments" size="small" max-height="360">
             <el-table-column :label="t('contracts.product')" min-width="200">
               <template #default="{ row }">{{ row.productName }}</template>
             </el-table-column>
@@ -685,7 +635,7 @@
         <!-- Collection. The salesperson's question is not "did finance file
              it" but "has my customer paid", so the answer belongs on the
              contract, not only in the finance queue. -->
-        <template v-if="receiptProgress">
+        <template v-if="receiptProgress && auth.can('export:receipt:read')">
           <el-divider content-position="left">{{ t('contracts.receipts') }}</el-divider>
           <div class="recv">
             <span>{{ t('contracts.contracted') }} <b class="num">{{ receiptProgress.totalAmount }}</b></span>
@@ -724,7 +674,7 @@
 
         <el-divider content-position="left">
           {{ t('contracts.versions') }}
-          <span class="hint">{{ t('contracts.versionsHint') }}</span>
+          <span class="hint">查看已保存的历史合同记录</span>
         </el-divider>
         <el-table :data="detail.versions" size="small" @row-click="(row: VersionRow) => openDetail(detail!.contract.id, row.id)">
           <el-table-column :label="t('contracts.version')" width="70">
@@ -751,10 +701,11 @@
     </el-drawer>
 
     <!-- Edit the working draft: terms and lines -->
-    <el-dialog v-model="termsOpen" :title="t('contracts.editDraft')" width="860px">
+    <el-dialog v-model="termsOpen" :title="t('contracts.editDraft')" width="min(860px,94vw)">
       <el-form label-width="110px">
         <div class="grid">
-          <el-form-item :label="t('contracts.buyer')">
+          <el-form-item label="原合同号"><el-input v-model="termsForm.externalContractNo"/></el-form-item>
+        <el-form-item :label="t('contracts.buyer')">
             <el-input v-model="termsForm.buyerName" />
           </el-form-item>
           <el-form-item :label="t('contracts.seller')">
@@ -799,7 +750,7 @@
         {{ t('contracts.items') }}
         <span class="hint">{{ t('contracts.editItemsHint') }}</span>
       </el-divider>
-      <el-table :data="termsForm.items" size="small">
+      <el-table :data="termsForm.items" size="small" max-height="440">
         <el-table-column :label="t('contracts.product')" min-width="220">
           <template #default="{ row }">
             <el-select
@@ -810,7 +761,7 @@
               :placeholder="t('contracts.pickProduct')"
             >
               <el-option v-for="p in products" :key="p.id" :value="p.id" :label="`${p.code} · ${p.name}`" />
-            </el-select>
+            </el-select><el-input v-if="!row.productId||row.productId==='0'" v-model="row.productName" placeholder="手动输入产品名称"/>
           </template>
         </el-table-column>
         <el-table-column :label="t('contracts.spec')" width="150">
@@ -819,6 +770,7 @@
         <el-table-column :label="t('contracts.qty')" width="110">
           <template #default="{ row }"><el-input v-model="row.qty" /></template>
         </el-table-column>
+        <el-table-column label="单位" width="100"><template #default="{row}"><el-input v-model="row.uomCode"/></template></el-table-column>
         <el-table-column :label="t('contracts.unitPrice')" width="110">
           <template #default="{ row }"><el-input v-model="row.unitPrice" /></template>
         </el-table-column>
@@ -849,7 +801,7 @@
     </el-dialog>
 
     <!-- Open a change version -->
-    <el-dialog v-model="changeOpen" :title="t('contracts.change')" width="820px">
+    <el-dialog v-model="changeOpen" :title="t('contracts.change')" width="min(820px,94vw)">
       <el-alert :title="t('contracts.changeHint')" type="warning" :closable="false" show-icon class="alert" />
       <el-form label-width="110px">
         <el-form-item :label="t('contracts.changeReason')" required>
@@ -958,6 +910,7 @@ import { useAuthStore } from '../stores/auth'
 
 interface Fx { rate: string; rateAt: string; source: string; baseCurrency: string }
 interface Contract {
+ updatedAt:string
   id: string
   contractNo: string
   quoteNo: string
@@ -1052,6 +1005,7 @@ interface Shipment {
   remainingQty: string
 }
 interface Detail {
+ acceptedOfferJson?:string
   contract: Contract
   version: Version
   items: Item[]
@@ -1100,9 +1054,12 @@ interface Quote { id: string; quoteNo: string; customerName: string; currency: s
 interface Product { id: string; code: string; name: string; uomCode?: string }
 interface ContractPort { id: string; unlocode: string; nameZh: string; nameEn: string; countryCode: string }
 interface OptionItem { code: string; label: string }
-interface ChangeLine { productId: string; spec: string; qty: string; unitPrice: string }
+interface ChangeLine { productName?:string;uomCode?:string; productId: string; spec: string; qty: string; unitPrice: string }
 
-const STATUSES = ['DRAFT', 'PENDING_APPROVAL', 'PENDING_SIGN', 'EFFECTIVE', 'EXECUTING', 'COMPLETED', 'CANCELLED']
+const STATUSES = ['PENDING_APPROVAL', 'PENDING_SIGN', 'EXECUTING', 'COMPLETED']
+const ownerFilter=ref('')
+const filterOwners=ref<{id:string;name:string}[]>([])
+function contractStatusLabel(s:string){return ({DRAFT:'待上级确认',PENDING_APPROVAL:'待上级确认',PENDING_SIGN:'待签字',EFFECTIVE:'执行中',EXECUTING:'执行中',COMPLETED:'已完成'} as Record<string,string>)[s]||s}
 const INCOTERMS = ['FOB', 'CIF', 'CFR', 'EXW', 'DDP']
 // DRAFT is what we sent out, SIGNED is what came back with a signature on it.
 const FILE_KINDS = ['DRAFT', 'SIGNED', 'OTHER']
@@ -1117,7 +1074,6 @@ const auth = useAuthStore()
 const canWrite = auth.can('export:contract:write')
 
 const contracts = ref<Contract[]>([])
-const acceptedQuotes = ref<Quote[]>([])
 const products = ref<Product[]>([])
 const paymentOptions = ref<OptionItem[]>([])
 const detail = ref<Detail | null>(null)
@@ -1152,7 +1108,6 @@ const loading = ref(false)
 const loadingDetail = ref(false)
 const saving = ref(false)
 const detailOpen = ref(false)
-const generateOpen = ref(false)
 const directOpen = ref(false)
 const existingEditOpen = ref(false)
 const customers = ref<{ id: string; code: string; name: string }[]>([])
@@ -1374,19 +1329,12 @@ async function createDirect() {
     ElMessage.warning(t('contracts.ownerRequired'))
     return
   }
-  if (!directForm.procurementEmployeeId) {
-    ElMessage.warning(t('contracts.originalBuyerRequired'))
-    return
-  }
-  if (!directForm.supplierId) {
-    ElMessage.warning(t('contracts.originalSupplierRequired'))
-    return
-  }
+
   if (!directForm.signedDate || !directForm.effectiveDate) {
     ElMessage.warning(t('contracts.contractDatesRequired'))
     return
   }
-  if (!directFile.value && !directForm.filePending) {
+  if (!directFile.value) {
     ElMessage.warning(t('contracts.fileOrLaterRequired'))
     return
   }
@@ -1402,7 +1350,7 @@ async function createDirect() {
   for (const row of items) {
     const total = Number(row.qty)
     const openings = directForm.partiallyExecuted
-      ? [row.openingArrivedQty, row.openingShippedQty].map(Number)
+      ? [row.openingProcuredQty,row.openingArrivedQty, row.openingShippedQty].map(Number)
       : [0, 0, 0]
     if (openings.some((value) => !Number.isFinite(value) || value < 0 || value > total)) {
       ElMessage.warning(t('contracts.openingQtyInvalid'))
@@ -1421,7 +1369,12 @@ async function createDirect() {
   }
   saving.value = true
   try {
+    const sourceFile=directFile.value!
+    const signed=await post<{fileKey:string;uploadUrl:string}>('/contracts/existing/files/presign',{fileName:sourceFile.name,contentType:sourceFile.type||'application/pdf'})
+    const uploaded=await fetch(signed.uploadUrl,{method:'PUT',headers:{'Content-Type':sourceFile.type||'application/pdf'},body:sourceFile})
+    if(!uploaded.ok)throw new Error('签署文件上传失败，请重试')
     const data = await post<Detail>('/contracts/existing', {
+      signedFileKey:signed.fileKey,signedFileName:sourceFile.name,
       customerId: directForm.customerId!,
       salesEmployeeId: directForm.salesEmployeeId,
       procurementEmployeeId: directForm.procurementEmployeeId,
@@ -1431,9 +1384,6 @@ async function createDirect() {
       signedDate: directForm.signedDate,
       effectiveDate: directForm.effectiveDate,
       openingReceivedAmount: String(openingReceived),
-      // Creation and object-store upload cannot be one transaction. Keep the
-      // flag true until a successful SIGNED-file registration clears it.
-      filePending: true,
       terms: {
         incoterm: directForm.incoterm,
         paymentMethod: directForm.paymentMethod,
@@ -1452,26 +1402,13 @@ async function createDirect() {
           spec: r.spec,
           qty: r.qty,
           unitPrice: r.unitPrice || '0',
-          openingProcuredQty: r.qty,
+          openingProcuredQty: directForm.partiallyExecuted ? r.openingProcuredQty || '0' : '0',
           openingArrivedQty: directForm.partiallyExecuted ? r.openingArrivedQty || '0' : '0',
           openingShippedQty: directForm.partiallyExecuted ? r.openingShippedQty || '0' : '0',
         }
       }),
     }, withIdempotency(createIdem))
     createIdem.reset()
-    if (directFile.value) {
-      try {
-        await uploadExistingContractFile(data.contract.id, data.version.id, directFile.value)
-      } catch {
-        // The contract itself is already committed. Close this form so a
-        // retry cannot create a duplicate; details retain the pending warning.
-        ElMessage.warning(t('contracts.contractSavedFilePending'))
-        directOpen.value = false
-        await load()
-        await openDetail(data.contract.id)
-        return
-      }
-    }
     ElMessage.success(t('contracts.existingImported'))
     directOpen.value = false
     load()
@@ -1480,19 +1417,33 @@ async function createDirect() {
     saving.value = false
   }
 }
+const acceptedOffer=computed(()=>{try{return JSON.parse(detail.value?.acceptedOfferJson||'null') as {contact:string;transports:{quoteId:string;title:string;currency:string;price:string;accepted:boolean;quantities:Record<string,string>}[];lines:{id:string;product:string;unit:string}[]}|null}catch{return null}})
+function allocatedProducts(quantities:Record<string,string>){return Object.entries(quantities||{}).map(([id,qty])=>{const line=acceptedOffer.value?.lines.find(l=>l.id===id);return `${line?.product||id}: ${qty} ${line?.unit||''}`}).join('；')}
+const myConfirmationTask=ref(''),supplementOpen=ref(false),supplementForm=reactive({externalContractNo:'',due:''})
+async function loadMyConfirmation(id:string){
+ myConfirmationTask.value='';if(!auth.can('approval:task:act'))return
+ let page=1,total=0;do{const data=await get<{todos:{task:{id:string};instance:{bizId:string}}[];meta:{total:string}}>('/approvals/todos',{biz_type:'CONTRACT',page,page_size:100});total=Number(data.meta.total);myConfirmationTask.value=data.todos.find(t=>t.instance.bizId===id)?.task.id||'';page++}while(!myConfirmationTask.value&&(page-1)*100<total)
+}
+async function confirmContract(action:'APPROVE'|'RETURN'){
+ if(!detail.value||!myConfirmationTask.value)return
+ let comment='';if(action==='RETURN'){const r=await ElMessageBox.prompt('请说明需要修改的内容','退回修改',{inputValidator:v=>!!v?.trim()||'请填写退回原因'});comment=r.value}else{await ElMessageBox.confirm('同意这份合同，进入双方签署阶段？','上级确认')}
+ await post(`/approvals/tasks/${myConfirmationTask.value}/act`,{action,comment});myConfirmationTask.value='';ElMessage.success(action==='RETURN'?'已退回负责销售':'已同意，合同状态正在更新');const id=detail.value.contract.id;for(let i=0;i<8;i++){await openDetail(id);if(detail.value?.contract.status!=='PENDING_APPROVAL')break;await new Promise(r=>setTimeout(r,500))}await load()
+}
+function openSupplement(){if(!detail.value)return;supplementForm.externalContractNo=detail.value.contract.externalContractNo||'';supplementForm.due=detail.value.contract.receivableDueDate||'';supplementOpen.value=true}
+async function saveSupplement(){if(!detail.value)return;await put(`/contracts/${detail.value.contract.id}`,{externalContractNo:supplementForm.externalContractNo,terms:{receivableDueDate:supplementForm.due}});supplementOpen.value=false;await openDetail(detail.value.contract.id);await load()}
+async function completeContract(){if(!detail.value)return;await ElMessageBox.confirm('确认这份合同已完成？完成后仅可查看。','完成合同',{confirmButtonText:'确认完成',cancelButtonText:'取消'});await post(`/contracts/${detail.value.contract.id}/complete`,{});await openDetail(detail.value.contract.id);await load()}
 const termsOpen = ref(false)
 const changeOpen = ref(false)
 
-const generateForm = reactive({ quotationId: '', deliveryDate: '', receivableDueDate: '', terms: '' })
 const termsForm = reactive({
   buyerName: '', buyerAddress: '', sellerName: '', sellerAddress: '',
   incoterm: 'FOB', portOfLoading: '', portOfDischarge: '', paymentMethod: '',
-  deliveryDate: '', receivableDueDate: '', terms: '', items: [] as ChangeLine[],
+  externalContractNo:'', deliveryDate: '', receivableDueDate: '', terms: '', items: [] as ChangeLine[],
 })
 const changeForm = reactive({ reason: '', deliveryDate: '', items: [] as ChangeLine[] })
 const approvals = ref<ApprovalRound[]>([])
 const employees = ref<Record<string, string>>({})
-const canSeeApproval = auth.can('approval:instance:read')
+const canSeeApproval = auth.can('export:contract:read')
 const canTransfer = auth.can('export:ownership:transfer')
 // Being able to open a contract and being able to change it are different
 // questions: approvers and supervisors read documents they do not own.
@@ -1544,10 +1495,11 @@ const isInForce = computed(() => detail.value?.contract.currentVersionId === det
 async function load() {
   loading.value = true
   try {
-    const data = await get<{ contracts: Contract[]; meta: { total: string } }>('/contracts', {
-      page: page.value, page_size: pageSize, keyword: keyword.value, status: status.value,
+    const data = await get<{ contracts: Contract[]; owners: {id:string;name:string}[]; meta: { total: string } }>('/contracts', {
+      page: page.value, page_size: pageSize, keyword: keyword.value, status: status.value, sales_employee_id: ownerFilter.value,
     })
     contracts.value = data.contracts ?? []
+    filterOwners.value = data.owners ?? []
     total.value = Number(data.meta.total)
   } finally {
     loading.value = false
@@ -1568,7 +1520,7 @@ async function openDetail(id: string, versionId?: string) {
   try {
     detail.value = await get<Detail>(`/contracts/${id}`, versionId ? { version_id: versionId } : undefined)
     detailOpen.value = true
-    await Promise.all([loadFiles(id), loadApprovals(id), loadTransfers(id), loadVessels(id), loadReceipts(id)])
+    await Promise.all([loadMyConfirmation(id), loadFiles(id), loadApprovals(id), loadTransfers(id), loadVessels(id), loadReceipts(id)])
   } catch {
     // The interceptor has already told the user why.
     detail.value = null
@@ -1593,45 +1545,10 @@ watch(detailOpen, (open) => {
   if (!open && route.query.id) router.replace({ path: route.path })
 })
 
-async function openGenerate() {
-  Object.assign(generateForm, { quotationId: '', deliveryDate: '', terms: '' })
-  generateOpen.value = true
-  // Offers that already have a live contract are excluded server-side; the
-  // database refuses a second one anyway, and offering it would be a trap.
-  acceptedQuotes.value =
-    (await get<{ quotations: Quote[] }>('/quotations', {
-      status: 'ACCEPTED', without_contract: true, page_size: 100,
-    })).quotations ?? []
-}
-
-async function generate() {
-  if (!generateForm.quotationId) {
-    ElMessage.warning(t('contracts.quotationRequired'))
-    return
-  }
-  saving.value = true
-  try {
-    const data = await post<Detail>('/contracts', {
-      quotationId: generateForm.quotationId,
-      terms: {
-        deliveryDate: generateForm.deliveryDate,
-        receivableDueDate: generateForm.receivableDueDate,
-        terms: generateForm.terms,
-      },
-    }, withIdempotency(createIdem))
-    createIdem.reset()
-    ElMessage.success(t('contracts.created'))
-    generateOpen.value = false
-    load()
-    openDetail(data.contract.id)
-  } finally {
-    saving.value = false
-  }
-}
-
 function openTerms() {
   const v = detail.value!.version
   Object.assign(termsForm, {
+    externalContractNo:detail.value!.contract.externalContractNo||'',
     buyerName: v.buyerName, buyerAddress: v.buyerAddress,
     sellerName: v.sellerName, sellerAddress: v.sellerAddress,
     incoterm: v.incoterm, portOfLoading: v.portOfLoading, portOfDischarge: v.portOfDischarge,
@@ -1648,10 +1565,10 @@ async function saveTerms() {
     ElMessage.warning(t('contracts.itemsRequired'))
     return
   }
-  const { items, ...terms } = termsForm
+  const { items, externalContractNo, ...terms } = termsForm
   saving.value = true
   try {
-    await put(`/contracts/${detail.value!.contract.id}`, { terms, items })
+    await put(`/contracts/${detail.value!.contract.id}`, { terms, items, externalContractNo })
     ElMessage.success(t('contracts.updated'))
     termsOpen.value = false
     await openDetail(detail.value!.contract.id)
@@ -1678,16 +1595,8 @@ function openChange() {
 async function loadApprovals(contractId: string) {
   approvals.value = []
   if (!canSeeApproval) return
-  const listed = await get<{ instances: ApprovalInstance[] }>('/approvals/instances', {
-    biz_type: 'CONTRACT', biz_id: contractId,
-  })
-  const rounds = await Promise.all(
-    (listed.instances ?? [])
-      .slice()
-      .sort((a, b) => Number(a.id) - Number(b.id))
-      .map((i) => get<ApprovalRound>(`/approvals/instances/${i.id}`)),
-  )
-  approvals.value = rounds
+  const result = await get<{ rounds: ApprovalRound[] }>(`/contracts/${contractId}/approvals`)
+  approvals.value = (result.rounds ?? []).sort((a,b)=>Number(a.instance.id)-Number(b.instance.id))
 }
 
 // el-steps counts completed steps; a finished round has them all behind it.
@@ -1722,6 +1631,7 @@ function employeeName(id: string): string {
 // data can still be absent for a contract with no version; a failure here
 // hides the section rather than breaking the drawer.
 async function loadReceipts(contractId: string) {
+if(!auth.can('export:receipt:read')){receiptProgress.value=null;receipts.value=[];return}
   try {
     const d = await get<{ progress: ReceiptProgress; receipts: ContractReceipt[] }>(
       `/contracts/${contractId}/receipts`,
@@ -1843,7 +1753,7 @@ function humanSize(bytes: string): string {
 
 function toLines(items: Item[]): ChangeLine[] {
   return items.map((i) => ({
-    productId: i.productId, spec: i.spec, qty: trimZeros(i.qty), unitPrice: i.unitPrice,
+    productName:i.productName,uomCode:i.uomCode,productId: i.productId, spec: i.spec, qty: trimZeros(i.qty), unitPrice: i.unitPrice,
   }))
 }
 
@@ -1910,34 +1820,14 @@ async function submit(row: { id: string }) {
 }
 
 async function sign(row: { id: string }) {
-	try {
-		await ElMessageBox.confirm(t('contracts.conditionStatusPrompt'), t('contracts.sign'), {
-			type: 'warning', distinguishCancelAndClose: true,
-			confirmButtonText: t('contracts.confirmConditionsAndSign'),
-			cancelButtonText: t('contracts.conditionsNeedUpdate'),
-		})
-	} catch (action) {
-		if (action === 'cancel') {
-			ElMessage.warning(t('contracts.conditionsNeedUpdateBlocked'))
-			return
-		}
-		throw action
-	}
-  const confirmation = await ElMessageBox.prompt(t('contracts.conditionConfirmationPrompt'), t('contracts.sign'), {
-    type: 'warning', inputPlaceholder: t('contracts.conditionConfirmationPlaceholder'),
-    inputValidator: (value: string) => !!value.trim() || t('contracts.conditionConfirmationRequired'),
-    confirmButtonText: t('contracts.confirmConditionsAndSign'), cancelButtonText: t('common.cancel'),
-  })
-  await post(`/contracts/${row.id}/sign`, {
-		condition_status: 'VALID',
-    condition_confirmed_at: new Date().toISOString(),
-    condition_confirmation_note: confirmation.value.trim(),
-  })
-  ElMessage.success(t('contracts.signed'))
+ try {
+  await ElMessageBox.confirm('确认双方已签署且签署合同已上传，开始执行后进入财务入账。采购和物流仍须等待财务确认执行条件。','开始执行',{confirmButtonText:'开始执行',cancelButtonText:'返回检查'})
+  await post(`/contracts/${row.id}/sign`, {})
+  ElMessage.success('合同已开始执行')
   if (detailOpen.value) await openDetail(row.id)
-  load()
+  await load()
+ } catch { /* Keep the contract open for correction or retry. */ }
 }
-
 async function cancel(row: { id: string }) {
   await ElMessageBox.confirm(t('contracts.cancelConfirm'), t('contracts.cancel'), { type: 'warning' })
   await post(`/contracts/${row.id}/cancel`)
@@ -1967,6 +1857,7 @@ function formatTime(iso: string): string {
 }
 
 onMounted(async () => {
+  await loadContractOwners()
   load()
   products.value = (await get<{ products: Product[] }>('/products', { page_size: 200 })).products ?? []
   paymentOptions.value = (await get<{ options: OptionItem[] }>('/options', { category: 'PAYMENT_METHOD' })).options ?? []

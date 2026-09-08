@@ -32,12 +32,14 @@ type Rate struct {
 }
 
 type Service struct {
-	q   *store.Queries
-	log *slog.Logger
+	pool   *pgxpool.Pool
+	access Access
+	q      *store.Queries
+	log    *slog.Logger
 }
 
 func New(pool *pgxpool.Pool, log *slog.Logger) *Service {
-	return &Service{q: store.New(pool), log: log}
+	return &Service{pool: pool, q: store.New(pool), log: log}
 }
 
 func (s *Service) GetLatest(ctx context.Context, quote string) (Rate, error) {
@@ -80,7 +82,6 @@ func (s *Service) ListRates(ctx context.Context, quote string, days int32) ([]Ra
 	}
 	return out, nil
 }
-
 
 type AnomalyRow = store.ListAnomaliesRow
 
