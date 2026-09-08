@@ -505,6 +505,8 @@ func validateImageAudit(extracted app.ExtractedInquiry, columns []app.InquiryCol
 	for ref := range sections {
 		states[ref] = &sectionState{rows: map[int]bool{}, qty: new(big.Rat)}
 	}
+	allQty := new(big.Rat)
+	allQtyValid := true
 	columnSet := make(map[string]bool, len(columns))
 	for _, column := range columns {
 		columnSet[column.FieldKey] = true
@@ -520,12 +522,17 @@ func validateImageAudit(extracted app.ExtractedInquiry, columns []app.InquiryCol
 			return fmt.Errorf("image section %q has invalid or duplicate source row %q", ref, item["source_row"])
 		}
 		states[ref].rows[rowNo] = true
+		itemQty, itemQtyOK := new(big.Rat).SetString(strings.TrimSpace(item["quantity"]))
+		if itemQtyOK {
+			allQty.Add(allQty, itemQty)
+		} else {
+			allQtyValid = false
+		}
 		if section.StatedTotal != "" {
-			qty, ok := new(big.Rat).SetString(strings.TrimSpace(item["quantity"]))
-			if !ok {
+			if !itemQtyOK {
 				return fmt.Errorf("image section %q has a stated total but row %d quantity is not a decimal", ref, rowNo)
 			}
-			states[ref].qty.Add(states[ref].qty, qty)
+			states[ref].qty.Add(states[ref].qty, itemQty)
 		}
 		for key, shared := range section.SharedValues {
 			if !columnSet[key] || strings.TrimSpace(shared) == "" || isImageRowScopedField(key) {
@@ -547,7 +554,13 @@ func validateImageAudit(extracted app.ExtractedInquiry, columns []app.InquiryCol
 		}
 		if strings.TrimSpace(section.StatedTotal) != "" {
 			want, ok := new(big.Rat).SetString(strings.TrimSpace(section.StatedTotal))
-			if !ok || states[ref].qty.Cmp(want) != 0 {
+			sectionMatches := ok && states[ref].qty.Cmp(want) == 0
+			// A GRAND TOTAL is visually placed after the last product group, so
+			// vision models often attach it to that final section. Accept it only
+			// when it reconciles exactly against every extracted row; this keeps
+			// the coverage guarantee without pretending it is a section subtotal.
+			grandTotalMatches := ok && allQtyValid && section.DetailRowCount < len(extracted.Items) && allQty.Cmp(want) == 0
+			if !sectionMatches && !grandTotalMatches {
 				return fmt.Errorf("image section %q quantity total does not reconcile", ref)
 			}
 		}
@@ -558,6 +571,7 @@ func validateImageAudit(extracted app.ExtractedInquiry, columns []app.InquiryCol
 func isImageRowScopedField(key string) bool {
 	switch key {
 	case "quantity", "unit_price", "total_price", "thickness", "width", "length_or_form",
+		"remarks",
 		"custom.thickness_mm", "custom.wall_thickness_mm", "custom.width_mm", "custom.height_mm",
 		"custom.diameter_mm", "custom.leg1_mm", "custom.leg2_mm", "custom.height_or_leg2":
 		return true
