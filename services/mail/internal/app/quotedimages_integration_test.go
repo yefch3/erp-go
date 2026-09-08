@@ -269,3 +269,58 @@ func TestEveryTurnSaysWhoWroteItAndWhoItWentTo(t *testing.T) {
 		t.Errorf("两个方向的发件人一样（%q），说明有一腿填的不是发件人", in.FromEmail)
 	}
 }
+
+// 「发完信自己留不留副本」这个开关，决定的是我们会不会往服务器上塞一份。
+//
+// 生产上的毛病：263 把「保存客户端发信」做成了每个信箱各自的后台开关，
+// yy@aaaindustryinc.com 开着、erptest@263.net 关着——同一个 smtp.263.net。
+// 我们按主机名猜，于是前者每发一封，客户真实的邮箱里就多一封一模一样的信
+// （36 发 36 重）。开关把这件事交给用户。
+func TestTheSentCopySwitchDecidesWhetherWeAppend(t *testing.T) {
+	no := false
+	yes := true
+	cases := []struct {
+		name string
+		acct MailAccount
+		want bool
+	}{
+		// 没人表过态 → 按主机猜，也就是今天的行为。这两条钉的是「装上开关
+		// 之后，不动它的信箱一封都不会变」。
+		{"没表态的 263，照旧我们存", MailAccount{Host: "smtp.263.net"}, true},
+		{"没表态的 Gmail，照旧不存", MailAccount{Host: "smtp.gmail.com"}, false},
+		// 表过态就听用户的，主机名不再有发言权。
+		{"263 上关掉（服务器自己会存）", MailAccount{Host: "smtp.263.net", KeepSentCopy: &no}, false},
+		{"Gmail 上打开", MailAccount{Host: "smtp.gmail.com", KeepSentCopy: &yes}, true},
+	}
+	for _, c := range cases {
+		if got := c.acct.ShouldKeepSentCopy(); got != c.want {
+			t.Errorf("%s：拿到 %v，想要 %v", c.name, got, c.want)
+		}
+	}
+}
+
+// 开关只能改自己名下的信箱。
+func TestTheSentCopySwitchOnlyReachesYourOwnMailbox(t *testing.T) {
+	f := newFolderFixture(t, 9611)
+	ctx := context.Background()
+
+	if err := f.svc.SetKeepSentCopy(ctx, f.tenantID, f.me, f.account, false); err != nil {
+		t.Fatalf("关掉自己的信箱失败：%v", err)
+	}
+	acct, err := f.svc.ForAccount(ctx, f.tenantID, f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acct.ShouldKeepSentCopy() {
+		t.Error("关掉了，发信时却仍然会自己塞一份")
+	}
+
+	// 别人的信箱：SQL 的 WHERE 判不到，影响零行，翻成 404 而不是静默成功。
+	err = f.svc.SetKeepSentCopy(ctx, f.tenantID, f.me+1, f.account, true)
+	if err == nil {
+		t.Fatal("改了不属于这个人的信箱，而且没报错")
+	}
+	if !strings.Contains(err.Error(), "不在你名下") {
+		t.Errorf("报的不是「不在你名下」：%v", err)
+	}
+}

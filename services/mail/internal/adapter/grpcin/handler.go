@@ -764,6 +764,7 @@ func mailAccountToProto(v app.MailAccountView) *mailv1.MailAccount {
 		AuthKind: v.AuthKind, IsDefault: v.IsDefault,
 		SmtpHost: v.SMTPHost, ImapHost: v.IMAPHost,
 		Unread: v.Unread, LastReadAt: v.LastReadAt, UnboundAt: v.UnboundAt,
+		KeepSentCopy: v.KeepSentCopy,
 	}
 }
 
@@ -798,6 +799,17 @@ func (h *Handler) SetDefaultMailbox(ctx context.Context, req *mailv1.SetDefaultM
 		return nil, err
 	}
 	return &mailv1.SetDefaultMailboxResponse{}, nil
+}
+
+func (h *Handler) SetKeepSentCopy(ctx context.Context, req *mailv1.SetKeepSentCopyRequest) (*mailv1.SetKeepSentCopyResponse, error) {
+	op := operator(ctx)
+	// 同 SetDefaultMailbox：op.ID 来自登录令牌，「那个信箱是不是他的」由
+	// SQL 的 WHERE 判定，不是他的就影响零行、翻成 404。
+	if err := h.svc.SetKeepSentCopy(ctx, grpcx.TenantID(ctx), op.ID,
+		req.GetAccountId(), req.GetKeep()); err != nil {
+		return nil, err
+	}
+	return &mailv1.SetKeepSentCopyResponse{}, nil
 }
 
 func (h *Handler) RecordOpen(ctx context.Context, req *mailv1.RecordOpenRequest) (*mailv1.RecordOpenResponse, error) {

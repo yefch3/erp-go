@@ -187,6 +187,18 @@
             <span class="ficon">＋</span>
             <span class="fname">{{ t('mailGate.newFolder') }}</span>
           </button>
+          <!-- 发完信要不要我们自己往这个箱的已发送里留一份。
+               有些服务器自己会存（263 后台那个「保存客户端发信」、Gmail 一直
+               会），两边都存就是客户邮箱里两封一模一样的信。这件事协议里问不
+               出来，只能让用的人说——Outlook / Foxmail / Apple Mail 也都是给
+               一个开关，不是替人猜。 -->
+          <label class="folder sub keep-copy" :title="t('mailGate.keepSentCopyHint')">
+            <el-checkbox
+              :model-value="b.keepSentCopy"
+              @change="setKeepSentCopy(b, $event as boolean)"
+            />
+            <span class="fname">{{ t('mailGate.keepSentCopy') }}</span>
+          </label>
         </template>
       </div>
     </div>
@@ -263,6 +275,13 @@ export interface Mailbox {
   unread: number
   /** 解绑时间，空表示还绑着。解绑的箱只能看历史，不能收发。 */
   unboundAt: string
+  /**
+   * 发完信我们要不要自己往这个箱的已发送里留一份。
+   *
+   * 服务端给的是**解析后的结果**：没人表过态时它等于按主机猜出来的那个值，
+   * 所以这个勾显示的永远是「实际会发生什么」，而不是一个空。
+   */
+  keepSentCopy: boolean
 }
 
 const props = defineProps<{
@@ -364,6 +383,10 @@ async function load() {
     // Number——这个仓库为同一件事已经踩过一次（见 excelQuota.test.ts）。
     unread: Number(a.unread ?? 0),
     unboundAt: a.unboundAt ?? '',
+    // 服务端给的是解析后的结果，没表过态时它已经等于按主机猜出来的值。
+    // 缺字段时退回 true：这是「我们自己存一份」，也就是安全的那一侧——
+    // 猜错这边是多一封能删掉的信，猜错另一边是已发送空掉。
+    keepSentCopy: a.keepSentCopy ?? true,
   }))
   emit('changed', boxes.value)
 }
@@ -385,6 +408,16 @@ async function unbind(b: Mailbox) {
 async function setDefault(b: Mailbox) {
   await post('/my-mailboxes/default', { accountId: b.id })
   ElMessage.success(t('mailGate.setDefaultDone', { email: b.email }))
+  await load()
+}
+
+// 关掉 = 「这个箱的服务器自己会存，你别再存一份」。
+//
+// 不做二次确认：两个方向都是正当选择，而且都能立刻改回来。关错了的代价
+// （已发送空掉）由发信后那条空副本检查兜着，不靠一个弹窗拦。
+async function setKeepSentCopy(b: Mailbox, keep: boolean) {
+  await post('/my-mailboxes/keep-sent-copy', { accountId: String(b.id), keep })
+  ElMessage.success(t(keep ? 'mailGate.keepSentCopyOn' : 'mailGate.keepSentCopyOff', { email: b.email }))
   await load()
 }
 
@@ -523,6 +556,22 @@ defineExpose({ reload: load })
 .new-folder {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+/* 设置，不是文件夹。跟着文件夹的缩进走（它属于这个箱），但不给悬停高亮，
+   免得看着像又一个能点进去的文件夹。 */
+.keep-copy {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.keep-copy:hover {
+  background: transparent;
+}
+.keep-copy .fname {
+  white-space: normal;
 }
 /* 还没登录这个箱：灰点。绿点说的是"在收信"，而没登录的箱确实没在收。 */
 .mbox-dot.off {

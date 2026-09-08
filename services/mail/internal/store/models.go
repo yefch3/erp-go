@@ -276,6 +276,7 @@ type MailAccount struct {
 	StatusCheckedAt pgtype.Timestamptz
 	UnboundAt       pgtype.Timestamptz
 	AuthFailed      bool
+	KeepSentCopy    *bool
 }
 
 type MailBindingLog struct {

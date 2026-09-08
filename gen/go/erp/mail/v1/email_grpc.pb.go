@@ -80,6 +80,7 @@ const (
 	EmailService_GetMailThread_FullMethodName                = "/erp.mail.v1.EmailService/GetMailThread"
 	EmailService_ListMyMailboxes_FullMethodName              = "/erp.mail.v1.EmailService/ListMyMailboxes"
 	EmailService_SetDefaultMailbox_FullMethodName            = "/erp.mail.v1.EmailService/SetDefaultMailbox"
+	EmailService_SetKeepSentCopy_FullMethodName              = "/erp.mail.v1.EmailService/SetKeepSentCopy"
 	EmailService_UnbindMailbox_FullMethodName                = "/erp.mail.v1.EmailService/UnbindMailbox"
 	EmailService_ExcelUsage_FullMethodName                   = "/erp.mail.v1.EmailService/ExcelUsage"
 	EmailService_ListExcelQuotas_FullMethodName              = "/erp.mail.v1.EmailService/ListExcelQuotas"
@@ -241,6 +242,9 @@ type EmailServiceClient interface {
 	ListMyMailboxes(ctx context.Context, in *ListMyMailboxesRequest, opts ...grpc.CallOption) (*ListMyMailboxesResponse, error)
 	// 换写信时默认用哪个信箱。清旧设新在一个事务里，中途不会出现零个或两个。
 	SetDefaultMailbox(ctx context.Context, in *SetDefaultMailboxRequest, opts ...grpc.CallOption) (*SetDefaultMailboxResponse, error)
+	// 发完信要不要自己往这个箱的已发送里留一份。有些服务器自己会存，两边都存
+	// 就是客户邮箱里两封一模一样的信；而这件事协议里问不出来，只能由用户说。
+	SetKeepSentCopy(ctx context.Context, in *SetKeepSentCopyRequest, opts ...grpc.CallOption) (*SetKeepSentCopyResponse, error)
 	// 断开一个信箱：凭据清掉、不再收发，历史邮件原样留着。
 	UnbindMailbox(ctx context.Context, in *UnbindMailboxRequest, opts ...grpc.CallOption) (*UnbindMailboxResponse, error)
 	// 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
@@ -903,6 +907,16 @@ func (c *emailServiceClient) SetDefaultMailbox(ctx context.Context, in *SetDefau
 	return out, nil
 }
 
+func (c *emailServiceClient) SetKeepSentCopy(ctx context.Context, in *SetKeepSentCopyRequest, opts ...grpc.CallOption) (*SetKeepSentCopyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetKeepSentCopyResponse)
+	err := c.cc.Invoke(ctx, EmailService_SetKeepSentCopy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) UnbindMailbox(ctx context.Context, in *UnbindMailboxRequest, opts ...grpc.CallOption) (*UnbindMailboxResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UnbindMailboxResponse)
@@ -1179,6 +1193,9 @@ type EmailServiceServer interface {
 	ListMyMailboxes(context.Context, *ListMyMailboxesRequest) (*ListMyMailboxesResponse, error)
 	// 换写信时默认用哪个信箱。清旧设新在一个事务里，中途不会出现零个或两个。
 	SetDefaultMailbox(context.Context, *SetDefaultMailboxRequest) (*SetDefaultMailboxResponse, error)
+	// 发完信要不要自己往这个箱的已发送里留一份。有些服务器自己会存，两边都存
+	// 就是客户邮箱里两封一模一样的信；而这件事协议里问不出来，只能由用户说。
+	SetKeepSentCopy(context.Context, *SetKeepSentCopyRequest) (*SetKeepSentCopyResponse, error)
 	// 断开一个信箱：凭据清掉、不再收发，历史邮件原样留着。
 	UnbindMailbox(context.Context, *UnbindMailboxRequest) (*UnbindMailboxResponse, error)
 	// 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
@@ -1413,6 +1430,9 @@ func (UnimplementedEmailServiceServer) ListMyMailboxes(context.Context, *ListMyM
 }
 func (UnimplementedEmailServiceServer) SetDefaultMailbox(context.Context, *SetDefaultMailboxRequest) (*SetDefaultMailboxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetDefaultMailbox not implemented")
+}
+func (UnimplementedEmailServiceServer) SetKeepSentCopy(context.Context, *SetKeepSentCopyRequest) (*SetKeepSentCopyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetKeepSentCopy not implemented")
 }
 func (UnimplementedEmailServiceServer) UnbindMailbox(context.Context, *UnbindMailboxRequest) (*UnbindMailboxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UnbindMailbox not implemented")
@@ -2572,6 +2592,24 @@ func _EmailService_SetDefaultMailbox_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_SetKeepSentCopy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetKeepSentCopyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).SetKeepSentCopy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_SetKeepSentCopy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).SetKeepSentCopy(ctx, req.(*SetKeepSentCopyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_UnbindMailbox_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(UnbindMailboxRequest)
 	if err := dec(in); err != nil {
@@ -3056,6 +3094,10 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetDefaultMailbox",
 			Handler:    _EmailService_SetDefaultMailbox_Handler,
+		},
+		{
+			MethodName: "SetKeepSentCopy",
+			Handler:    _EmailService_SetKeepSentCopy_Handler,
 		},
 		{
 			MethodName: "UnbindMailbox",
