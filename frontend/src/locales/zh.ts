@@ -1869,6 +1869,8 @@ export default {
     attachments: '附件',
     addAttachment: '添加附件',
     noAttachments: '暂无附件（单个不超过 10 MB，合计不超过 20 MB）',
+    asDownloadLink: '改为下载链接',
+    bigFilesHint: '有 {n} 个文件较大，将改为下载链接发送（正文附链接，长期有效）。部分企业邮箱可能拦截外部链接。',
     attachmentTotal: '{n} 个附件，共 {s}',
     uploadFailed: '{n} 上传失败',
     egressWarning: '提醒：附件会随每一封信各发一份，{n} 位收件人合计约 {s} 流量。量大时建议改成放链接。',

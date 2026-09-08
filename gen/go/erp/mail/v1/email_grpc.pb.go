@@ -81,6 +81,8 @@ const (
 	EmailService_ListMyMailboxes_FullMethodName              = "/erp.mail.v1.EmailService/ListMyMailboxes"
 	EmailService_SetDefaultMailbox_FullMethodName            = "/erp.mail.v1.EmailService/SetDefaultMailbox"
 	EmailService_SetKeepSentCopy_FullMethodName              = "/erp.mail.v1.EmailService/SetKeepSentCopy"
+	EmailService_FetchAttachmentLink_FullMethodName          = "/erp.mail.v1.EmailService/FetchAttachmentLink"
+	EmailService_WithdrawAttachmentLink_FullMethodName       = "/erp.mail.v1.EmailService/WithdrawAttachmentLink"
 	EmailService_UnbindMailbox_FullMethodName                = "/erp.mail.v1.EmailService/UnbindMailbox"
 	EmailService_ExcelUsage_FullMethodName                   = "/erp.mail.v1.EmailService/ExcelUsage"
 	EmailService_ListExcelQuotas_FullMethodName              = "/erp.mail.v1.EmailService/ListExcelQuotas"
@@ -245,6 +247,12 @@ type EmailServiceClient interface {
 	// 发完信要不要自己往这个箱的已发送里留一份。有些服务器自己会存，两边都存
 	// 就是客户邮箱里两封一模一样的信；而这件事协议里问不出来，只能由用户说。
 	SetKeepSentCopy(ctx context.Context, in *SetKeepSentCopyRequest, opts ...grpc.CallOption) (*SetKeepSentCopyResponse, error)
+	// 超大附件的公开取件口。和 FetchImage 一样从公开路由进来，token 就是全部
+	// 凭据——但**回的是地址不是内容**：走这条路的偏偏是大文件，让它穿过我们
+	// 的进程，一个人点两下就能把内存吃光。
+	FetchAttachmentLink(ctx context.Context, in *FetchAttachmentLinkRequest, opts ...grpc.CallOption) (*FetchAttachmentLinkResponse, error)
+	// 撤回一条已经发出去的下载链接。已送达的正文改不了，能停掉的是我们这一侧。
+	WithdrawAttachmentLink(ctx context.Context, in *WithdrawAttachmentLinkRequest, opts ...grpc.CallOption) (*WithdrawAttachmentLinkResponse, error)
 	// 断开一个信箱：凭据清掉、不再收发，历史邮件原样留着。
 	UnbindMailbox(ctx context.Context, in *UnbindMailboxRequest, opts ...grpc.CallOption) (*UnbindMailboxResponse, error)
 	// 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
@@ -917,6 +925,26 @@ func (c *emailServiceClient) SetKeepSentCopy(ctx context.Context, in *SetKeepSen
 	return out, nil
 }
 
+func (c *emailServiceClient) FetchAttachmentLink(ctx context.Context, in *FetchAttachmentLinkRequest, opts ...grpc.CallOption) (*FetchAttachmentLinkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FetchAttachmentLinkResponse)
+	err := c.cc.Invoke(ctx, EmailService_FetchAttachmentLink_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *emailServiceClient) WithdrawAttachmentLink(ctx context.Context, in *WithdrawAttachmentLinkRequest, opts ...grpc.CallOption) (*WithdrawAttachmentLinkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WithdrawAttachmentLinkResponse)
+	err := c.cc.Invoke(ctx, EmailService_WithdrawAttachmentLink_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *emailServiceClient) UnbindMailbox(ctx context.Context, in *UnbindMailboxRequest, opts ...grpc.CallOption) (*UnbindMailboxResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UnbindMailboxResponse)
@@ -1196,6 +1224,12 @@ type EmailServiceServer interface {
 	// 发完信要不要自己往这个箱的已发送里留一份。有些服务器自己会存，两边都存
 	// 就是客户邮箱里两封一模一样的信；而这件事协议里问不出来，只能由用户说。
 	SetKeepSentCopy(context.Context, *SetKeepSentCopyRequest) (*SetKeepSentCopyResponse, error)
+	// 超大附件的公开取件口。和 FetchImage 一样从公开路由进来，token 就是全部
+	// 凭据——但**回的是地址不是内容**：走这条路的偏偏是大文件，让它穿过我们
+	// 的进程，一个人点两下就能把内存吃光。
+	FetchAttachmentLink(context.Context, *FetchAttachmentLinkRequest) (*FetchAttachmentLinkResponse, error)
+	// 撤回一条已经发出去的下载链接。已送达的正文改不了，能停掉的是我们这一侧。
+	WithdrawAttachmentLink(context.Context, *WithdrawAttachmentLinkRequest) (*WithdrawAttachmentLinkResponse, error)
 	// 断开一个信箱：凭据清掉、不再收发，历史邮件原样留着。
 	UnbindMailbox(context.Context, *UnbindMailboxRequest) (*UnbindMailboxResponse, error)
 	// 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
@@ -1433,6 +1467,12 @@ func (UnimplementedEmailServiceServer) SetDefaultMailbox(context.Context, *SetDe
 }
 func (UnimplementedEmailServiceServer) SetKeepSentCopy(context.Context, *SetKeepSentCopyRequest) (*SetKeepSentCopyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetKeepSentCopy not implemented")
+}
+func (UnimplementedEmailServiceServer) FetchAttachmentLink(context.Context, *FetchAttachmentLinkRequest) (*FetchAttachmentLinkResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FetchAttachmentLink not implemented")
+}
+func (UnimplementedEmailServiceServer) WithdrawAttachmentLink(context.Context, *WithdrawAttachmentLinkRequest) (*WithdrawAttachmentLinkResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method WithdrawAttachmentLink not implemented")
 }
 func (UnimplementedEmailServiceServer) UnbindMailbox(context.Context, *UnbindMailboxRequest) (*UnbindMailboxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UnbindMailbox not implemented")
@@ -2610,6 +2650,42 @@ func _EmailService_SetKeepSentCopy_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmailService_FetchAttachmentLink_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FetchAttachmentLinkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).FetchAttachmentLink(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_FetchAttachmentLink_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).FetchAttachmentLink(ctx, req.(*FetchAttachmentLinkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EmailService_WithdrawAttachmentLink_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WithdrawAttachmentLinkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmailServiceServer).WithdrawAttachmentLink(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmailService_WithdrawAttachmentLink_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmailServiceServer).WithdrawAttachmentLink(ctx, req.(*WithdrawAttachmentLinkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EmailService_UnbindMailbox_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(UnbindMailboxRequest)
 	if err := dec(in); err != nil {
@@ -3098,6 +3174,14 @@ var EmailService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetKeepSentCopy",
 			Handler:    _EmailService_SetKeepSentCopy_Handler,
+		},
+		{
+			MethodName: "FetchAttachmentLink",
+			Handler:    _EmailService_FetchAttachmentLink_Handler,
+		},
+		{
+			MethodName: "WithdrawAttachmentLink",
+			Handler:    _EmailService_WithdrawAttachmentLink_Handler,
 		},
 		{
 			MethodName: "UnbindMailbox",

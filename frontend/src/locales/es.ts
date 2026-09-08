@@ -1881,6 +1881,8 @@ export default {
     attachments: 'Adjuntos',
     addAttachment: 'Añadir adjunto',
     noAttachments: 'Ninguno todavía (10 MB por archivo, 20 MB en total)',
+    asDownloadLink: 'como enlace de descarga',
+    bigFilesHint: '{n} archivo(s) son grandes y se enviarán como enlaces de descarga en el cuerpo (sin caducidad). Algunas pasarelas corporativas bloquean enlaces externos.',
     attachmentTotal: '{n} archivo(s), {s} en total',
     uploadFailed: 'No se pudo subir {n}',
     egressWarning: 'Nota: los adjuntos se envían una vez por destinatario: unos {s} entre {n} destinatarios. Para listas grandes, enlace el archivo.',
