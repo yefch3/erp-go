@@ -1899,6 +1899,7 @@ export default {
     markRead: 'Mark read',
     downloadFile: 'Download {f}',
     fileGone: 'No copy of this attachment was kept, so it cannot be downloaded',
+    fileTooLarge: 'Over 25 MB, so no copy was kept \u2014 use "Forward as attachment" to get the original',
     fileUnavailable: 'The download link could not be issued just now — refresh and try again',
     unreadOne: 'Unread',
     archive: 'Archive',

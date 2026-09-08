@@ -59,6 +59,7 @@ import { Download, Loading, Paperclip, View } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { humanSize } from '../lib/humanSize'
 import { canPreview } from '../lib/attachmentPreview'
+import { attachmentHintKey } from '../lib/attachmentHint'
 
 export interface MailFile {
   id: string
@@ -90,14 +91,10 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 
-// 三种说法，不能合成两种。
-//
-// 这两句原本是同一条消息，结果在文件其实好端端、只是某个过期服务没返回那个
-// 字段的时候，告诉了人家他那份 8MB 的材料没有留底。对别人的数据这么笃定的
-// 一句话，是要有依据才配说的。
+// 说哪一句由 lib/attachmentHint 判（那里写着四种说法各自的依据，并且单独
+// 测过）；这里只负责把 key 翻成话。
 function hint(a: MailFile) {
-  if (a.downloadUrl) return t('emails.downloadFile', { f: a.fileName })
-  return a.stored ? t('emails.fileUnavailable') : t('emails.fileGone')
+  return t(`emails.${attachmentHintKey(a)}`, { f: a.fileName })
 }
 </script>
 

@@ -1908,6 +1908,7 @@ export default {
     markRead: 'Marcar como leído',
     downloadFile: 'Descargar {f}',
     fileGone: 'No se guardó copia de este adjunto, no se puede descargar',
+    fileTooLarge: 'Supera 25 MB, no se guardó copia; use \u00abReenviar como adjunto\u00bb para obtener el original',
     fileUnavailable: 'No se pudo generar el enlace ahora mismo — recarga e inténtalo de nuevo',
     unreadOne: 'No leído',
     archive: 'Archivar',

@@ -984,8 +984,18 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 	}
 
 	for _, a := range parsed.Attachments {
-		key := fmt.Sprintf("mail/inbound/%d/%d/att/%d-%s", tenantID, acct.AccountID, id, safeName(a.FileName))
-		if s.files != nil {
+		key := ""
+		switch {
+		case a.Oversized:
+			// 太大，内容没留。**这一行照样登记**：名字、类型、真实大小都在，
+			// 只是没有文件可下。空的 file_key 一路下去就是「从来没存过」，
+			// 界面据此说实话（见 MailAttachments 的 hint）。原件在对象存储里
+			// 完整留着，「转发为附件」取得回来。
+			s.log.Warn("an incoming attachment was too large to keep, recording it without the file",
+				"account", acct.AccountID, "file", a.FileName,
+				"size", a.TrueSize, "limit", maxAttachmentBytes)
+		case s.files != nil:
+			key = fmt.Sprintf("mail/inbound/%d/%d/att/%d-%s", tenantID, acct.AccountID, id, safeName(a.FileName))
 			if err := s.putRaw(ctx, key, a.Data); err != nil {
 				s.log.Warn("could not store an incoming attachment", "file", a.FileName, "err", err)
 				key = ""
@@ -993,7 +1003,9 @@ func (s *Service) ingest(ctx context.Context, tenantID int64, acct MailAccount, 
 		}
 		if err := s.q.InsertInboundAttachment(ctx, store.InsertInboundAttachmentParams{
 			TenantID: tenantID, InboundID: id, FileName: a.FileName,
-			ContentType: a.ContentType, FileSize: int64(len(a.Data)), FileKey: key,
+			// 真实大小，不是我们读下来多少。原来这里记的是截断后的长度，
+			// 于是那一行连「它其实多大」都查不到了。
+			ContentType: a.ContentType, FileSize: a.TrueSize, FileKey: key,
 			// What the body points at when it embeds this part. Empty for an
 			// ordinary attachment, which is most of them.
 			ContentID: a.ContentID,

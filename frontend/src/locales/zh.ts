@@ -1896,6 +1896,7 @@ export default {
     markRead: '标为已读',
     downloadFile: '下载 {f}',
     fileGone: '这个附件没有留存副本，无法下载',
+    fileTooLarge: '附件超过 25 MB 未保存副本，可用「转发为附件」取回完整原件',
     fileUnavailable: '暂时取不到下载链接，请刷新页面重试',
     unreadOne: '未读',
     archive: '归档',
