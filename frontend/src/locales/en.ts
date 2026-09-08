@@ -1909,6 +1909,7 @@ export default {
     threadCount: '{n} messages in this conversation — click any to expand',
     threadOut: 'Sent',
     threadIn: 'Received',
+    threadTo: 'to {to}',
     notifTitle: 'New mail',
     notifBody: 'Your mailbox has new mail. Click to open.',
     junkNote: 'What the mail host judged to be spam. Worth a glance now and then: reply to a mis-flagged inquiry directly, or open it and choose Not spam to move it to the inbox.',

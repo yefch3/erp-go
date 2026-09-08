@@ -1918,6 +1918,7 @@ export default {
     threadCount: '{n} mensajes en esta conversación; haga clic para expandir',
     threadOut: 'Enviado',
     threadIn: 'Recibido',
+    threadTo: 'para {to}',
     notifTitle: 'Correo nuevo',
     notifBody: 'Su buzón tiene correo nuevo. Haga clic para abrirlo.',
     junkNote: 'Lo que el proveedor de correo consideró spam. Conviene echar un vistazo de vez en cuando: responda directamente a una consulta mal clasificada, o ábrala y elija No es spam para moverla a la entrada.',

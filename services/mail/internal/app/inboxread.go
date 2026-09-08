@@ -489,9 +489,19 @@ type ThreadItem struct {
 	Body         string
 	Quoted       string
 	BodyFormat   string
+	// Counterparty 在两个方向上说的**不是同一件事**：我发出的那行它是收件人，
+	// 收到的那行它是发件人。界面上却是同一列，于是一条会话里上下两行的地址
+	// 一个是「发给谁」一个是「谁发的」，看的人无从分辨。留着不动是因为别处
+	// 在用；下面四个才是两腿含义一致的。
 	Counterparty string
 	Who          string
 	At           time.Time
+	FromEmail    string
+	FromName     string
+	// 整段收件人，不是第一个：群发给七个人的信这里要看到七个。
+	ToAll string
+	// 只有收到的那一腿有：email_messages 上没有存抄送。
+	Cc string
 	// 这一封自己带的附件。内嵌图片不在其中——那是正文的一部分，已经渲染过了。
 	Attachments []Attachment
 }
@@ -607,6 +617,8 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 			Direction: r.Direction, ID: r.ID, Subject: r.Subject,
 			Body: body, Quoted: quoted, BodyFormat: r.BodyFormat,
 			Counterparty: r.Counterparty, Who: r.Who,
+			FromEmail: r.FromEmail, FromName: r.FromName,
+			ToAll: r.ToAll, Cc: r.Cc,
 			// 内嵌图片在这里剔除，而不是在 SQL 里：判断的依据是「正文有没有
 			// 真的引用那个 cid」，而正文只有到这一步才拿得到。同 GetInbound。
 			Attachments: hideEmbedded(

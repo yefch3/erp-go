@@ -476,6 +476,20 @@ message ThreadItem {
   // 这一封自己带的附件。内嵌图片不在其中——那是正文的一部分，已经渲染过了，
   // 再在下面列一遍只会让每封信都挂着一堆看不懂的 image001.png。
   repeated InboundAttachment attachments = 10;
+
+  // 谁写的、写给谁的，两个方向都按同一个意思填。
+  //
+  // counterparty（上面第 6 个）在两个方向上说的**不是同一件事**：我发出的那
+  // 行它是收件人，收到的那行它是发件人。界面上却是同一列，于是同一条会话里
+  // 上下两行的地址一个是「发给谁」一个是「谁发的」，看的人无从分辨——这正是
+  // 它被报上来的原因。它保留着不动（别处在用），新的四个字段才是有确定含义的。
+  string from_email = 11;
+  string from_name = 12;
+  // 整段收件人，不是第一个：群发给七个人的信这里要看到七个。收到的那一腿
+  // 有原头（to_all），没有就退回 to_email；发出的那一腿一行就是一个收件人。
+  string to_all = 13;
+  // 只有收到的那一腿有。发出的那一腿没有存抄送——email_messages 上没有这一列。
+  string cc = 14;
 }
 
 message GetMailThreadResponse {

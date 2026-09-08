@@ -391,12 +391,35 @@
               <el-tag size="small" :type="isOwnMail(it) ? 'info' : 'success'" effect="plain">
                 {{ isOwnMail(it) ? t('emails.threadOut') : t('emails.threadIn') }}
               </el-tag>
-              <span class="strong">{{ it.who || it.counterparty }}</span>
-              <span class="sub ellipsis">{{ it.counterparty }}</span>
+              <!-- 谁写的，然后「发给谁」。原来这里是 who 加一个光秃秃的地址，
+                   而那个地址在「我发出」的行上是收件人、在「收到」的行上是
+                   发件人——同一列两个意思，看的人分不出来。现在两行都读作
+                   「某某 发给 某某」。 -->
+              <span class="strong">{{ turnSenderLabel(it) || it.who }}</span>
+              <span v-if="turnRecipients(it)" class="sub ellipsis">
+                {{ t('emails.threadTo', { to: turnRecipients(it) }) }}
+              </span>
               <span class="grow" />
               <span class="sub" :title="zonedStamp(it.at)">{{ shortTime(it.at) }}</span>
             </button>
             <div v-show="isThreadOpen(it)" class="thread-body">
+              <!-- 每一封自己的详情，和单封阅读页那个「详情」同一套内容。
+                   放在展开的正文里而不是标题行上：标题行整行就是展开按钮，
+                   按钮里不能再套一个按钮。 -->
+              <div class="turn-meta">
+                <span class="sub">
+                  {{ it.fromName ? it.fromName + ' ' : '' }}&lt;{{ turnSenderEmail(it) }}&gt;
+                </span>
+                <button class="details-toggle" @click="toggleTurnDetails(it)">
+                  {{ isTurnDetailsOpen(it) ? t('emails.hideDetails') : t('emails.showDetails') }}
+                </button>
+              </div>
+              <dl v-if="isTurnDetailsOpen(it)" class="mail-details">
+                <template v-for="row in turnDetailRows(it)" :key="row.k">
+                  <dt>{{ row.k }}</dt>
+                  <dd>{{ row.v }}</dd>
+                </template>
+              </dl>
               <MailBody
                 v-if="it.bodyFormat === 'HTML'"
                 :html="it.body"
@@ -1241,6 +1264,7 @@ import { shortTime, zonedStamp } from '../lib/zonedtime'
 import { humanSize } from '../lib/humanSize'
 import { needsConversion } from '../lib/attachmentPreview'
 import { folderNameProblem, isCustomFolderKey, viewForFolderKey, type CustomFolder } from '../lib/mailFolders'
+import { turnRecipients, turnSenderEmail, turnSenderLabel } from '../lib/threadTurn'
 import { replyAllRecipients } from '../lib/replyAll'
 import { syncBanner as buildSyncBanner, type SyncBanner } from '../lib/syncBanner'
 import {
@@ -2559,6 +2583,7 @@ async function openDetail(id: string) {
 async function loadThread(mail: InboundMail) {
   threadItems.value = []
   expandedThread.value = new Set()
+  expandedTurnDetails.value = new Set()
   if (!mail.threadKey) return
   try {
     // id 一起带上：一个人可以绑多个信箱，同一条会话可能同时落在两个箱里
@@ -2591,9 +2616,15 @@ interface ThreadItem {
   body: string
   quoted?: string
   bodyFormat: string
+  // counterparty 在两个方向上不是同一件事（我发出的那行是收件人，收到的那行
+  // 是发件人），所以界面上不再直接显示它。下面四个两腿含义一致。
   counterparty: string
   who: string
   at: string
+  fromEmail?: string
+  fromName?: string
+  toAll?: string
+  cc?: string
   attachments?: {
     id: string
     fileName: string
@@ -2645,6 +2676,41 @@ function toggleThreadItem(it: ThreadItem) {
     next.add(k)
   }
   expandedThread.value = next
+}
+
+// 每一封自己记着详情开没开。一个 Set 而不是一个布尔：会话里同时摊开两封、
+// 对着看发件人，正是要查这个的时候会做的事。
+const expandedTurnDetails = ref<Set<string>>(new Set())
+
+function isTurnDetailsOpen(it: ThreadItem) {
+  return expandedTurnDetails.value.has(threadItemKey(it))
+}
+
+function toggleTurnDetails(it: ThreadItem) {
+  const k = threadItemKey(it)
+  const next = new Set(expandedTurnDetails.value)
+  if (next.has(k)) next.delete(k)
+  else next.add(k)
+  expandedTurnDetails.value = next
+}
+
+// 一封信的详情，和单封阅读页那份是同一套说法。
+//
+// 这里能给的比单封那页少：会话的两腿来自两张表，我们发出去的那张表上没有
+// 抄送、没有 SPF/DKIM、没有原件大小。少的就不列——列一个空行等于说「这封信
+// 没有抄送」，而实际是「我们没存」，那是在替这封信断言一件不知道的事。
+function turnDetailRows(it: ThreadItem) {
+  const rows: { k: string; v: string }[] = []
+  const add = (k: string, v?: string) => {
+    if (v) rows.push({ k, v })
+  }
+  const from = turnSenderEmail(it)
+  if (from) add(t('emails.detail.from'), `${it.fromName ? it.fromName + ' ' : ''}<${from}>`)
+  add(t('emails.detail.to'), turnRecipients(it))
+  add(t('emails.detail.cc'), it.cc)
+  add(t('emails.detail.subject'), it.subject)
+  if (it.at) add(t('emails.detail.sentAt'), zonedStamp(it.at))
+  return rows
 }
 
 // ------------------------------------------------------------------- export
@@ -4567,6 +4633,20 @@ async function doUnsuppress(row: Suppression) {
 }
 .thread-body {
   padding: 4px 12px 12px;
+}
+/* 展开的那一封，正文之上的一行：完整发件地址 + 详情。和单封阅读页的头部
+   同一个读法，只是窄一档。 */
+.turn-meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.turn-meta .sub {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .star {
   font-size: 15px;
