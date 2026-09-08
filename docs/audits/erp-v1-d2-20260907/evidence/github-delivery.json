@@ -1,0 +1,14 @@
+{
+  "manualAcceptance": "PENDING",
+  "trackingPR": 383,
+  "sourceHead": "87d73c4993382e881a53d593c3c42c6cb102c02c",
+  "localMain": "cc797854286aebb5e20344bf363facf0325611aa",
+  "mergedAt": "2026-09-08T02:19:55Z",
+  "pullRequest": 386,
+  "codeCommit": "848263980086dc03e793fb04b6ecdb1bc8f5de26",
+  "ciConclusion": "SUCCESS",
+  "mergeCommit": "ac5ced12c2598ed57bdee1a0c0d9426a4d04d198",
+  "ciRun": "34178967370",
+  "trackingDraft": true,
+  "targetBranch": "codex/erp-v1-rebuild-20260906"
+}

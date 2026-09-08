@@ -1,12 +1,12 @@
 {
-  "checkedAt": "2026-09-07T18:20:55.0549565-04:00",
+  "checkedAt": "2026-09-07T22:10:03.2511891-04:00",
   "project": "erp-d2-20260907",
   "gatewayHealth": 200,
   "containers": [
     {
-      "service": "procurement",
-      "container": "/erp-d2-20260907-procurement-1",
-      "image": "erp-d2-20260907/procurement:worktree",
+      "service": "export",
+      "container": "/erp-d2-20260907-export-1",
+      "image": "erp-d2-20260907/export:worktree",
       "running": true,
       "networks": [
         "erp-d2-20260907_isolated"
@@ -27,9 +27,9 @@
       "databaseTarget": null
     },
     {
-      "service": "inventory",
-      "container": "/erp-d2-20260907-inventory-1",
-      "image": "erp-d2-20260907/inventory:worktree",
+      "service": "approval",
+      "container": "/erp-d2-20260907-approval-1",
+      "image": "erp-d2-20260907/approval:worktree",
       "running": true,
       "networks": [
         "erp-d2-20260907_isolated"
@@ -38,9 +38,42 @@
       "databaseTarget": "postgres:5432 (D2 network)"
     },
     {
-      "service": "export",
-      "container": "/erp-d2-20260907-export-1",
-      "image": "erp-d2-20260907/export:worktree",
+      "service": "iam",
+      "container": "/erp-d2-20260907-iam-1",
+      "image": "erp-d2-20260907/iam:worktree",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [],
+      "databaseTarget": "postgres:5432 (D2 network)"
+    },
+    {
+      "service": "fx",
+      "container": "/erp-d2-20260907-fx-1",
+      "image": "erp-d2-20260907/fx:worktree",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [],
+      "databaseTarget": "postgres:5432 (D2 network)"
+    },
+    {
+      "service": "procurement",
+      "container": "/erp-d2-20260907-procurement-1",
+      "image": "erp-d2-20260907/procurement:worktree",
+      "running": true,
+      "networks": [
+        "erp-d2-20260907_isolated"
+      ],
+      "volumes": [],
+      "databaseTarget": "postgres:5432 (D2 network)"
+    },
+    {
+      "service": "inventory",
+      "container": "/erp-d2-20260907-inventory-1",
+      "image": "erp-d2-20260907/inventory:worktree",
       "running": true,
       "networks": [
         "erp-d2-20260907_isolated"
@@ -72,42 +105,9 @@
       "databaseTarget": "postgres:5432 (D2 network)"
     },
     {
-      "service": "approval",
-      "container": "/erp-d2-20260907-approval-1",
-      "image": "erp-d2-20260907/approval:worktree",
-      "running": true,
-      "networks": [
-        "erp-d2-20260907_isolated"
-      ],
-      "volumes": [],
-      "databaseTarget": "postgres:5432 (D2 network)"
-    },
-    {
       "service": "product",
       "container": "/erp-d2-20260907-product-1",
       "image": "erp-d2-20260907/product:worktree",
-      "running": true,
-      "networks": [
-        "erp-d2-20260907_isolated"
-      ],
-      "volumes": [],
-      "databaseTarget": "postgres:5432 (D2 network)"
-    },
-    {
-      "service": "iam",
-      "container": "/erp-d2-20260907-iam-1",
-      "image": "erp-d2-20260907/iam:worktree",
-      "running": true,
-      "networks": [
-        "erp-d2-20260907_isolated"
-      ],
-      "volumes": [],
-      "databaseTarget": "postgres:5432 (D2 network)"
-    },
-    {
-      "service": "fx",
-      "container": "/erp-d2-20260907-fx-1",
-      "image": "erp-d2-20260907/fx:worktree",
       "running": true,
       "networks": [
         "erp-d2-20260907_isolated"
