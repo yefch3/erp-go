@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// A body long enough to clear minQuotedChars without the test being a wall of
-// prose. Real quoted history is far longer than this.
+// 一段有点长度的引用历史，用来试真实形状——长短本身已经不影响折不折了，但
+// 一行字的假引用读起来不像真的往来。
 func longQuote(lead string) string {
 	return lead + strings.Repeat("<p>Previous message text carried forward. </p>", 12)
 }
@@ -102,13 +102,26 @@ func TestARuleCountsOnlyWhenAQuoteFollowsIt(t *testing.T) {
 
 // ----------------------------------------------------------- when not to fold
 
-// Folding is not free: it costs a click and it hides something. Below a
-// certain size the quote is context rather than clutter.
-func TestAShortQuoteIsLeftWhereItIs(t *testing.T) {
+// 短引用也折。
+//
+// 这条原来是反过来的：引用不到 400 个字符就不折，理由是「短引用是上下文，不是
+// 杂物」。那条规则按字符数算，而中文一个字顶一个词——同一段引用英文过线、中文
+// 不过线，于是中文用户看到的引用从来不折。退役的原因写在 quotedhistory.go 里。
+//
+// 现在跟 Gmail 一样：认出引用就折，不看长短。换来的是可预测——那个按钮什么时候
+// 出现有了规律，而不是「有时候有，有时候没有」。
+func TestAShortQuoteIsFoldedToo(t *testing.T) {
 	body := `<div>Confirmed, please ship Monday.</div>` +
 		`<blockquote><p>Can you ship Monday?</p></blockquote>`
-	if fresh, quoted := SplitQuotedHistory(body); quoted != "" || fresh != body {
-		t.Fatalf("a four-word quote was folded:\n%s", quoted)
+	fresh, quoted := SplitQuotedHistory(body)
+	if quoted == "" {
+		t.Fatalf("四个词的引用没折：\n%s", body)
+	}
+	if !strings.Contains(fresh, "please ship Monday") {
+		t.Errorf("写的那句话没留在上半截：\n%s", fresh)
+	}
+	if !strings.Contains(quoted, "Can you ship Monday") {
+		t.Errorf("引用没进折叠：\n%s", quoted)
 	}
 }
 
@@ -265,5 +278,43 @@ func TestASentenceThatMerelySaysWroteIsNotAQuoteHeader(t *testing.T) {
 	fresh, quoted := SplitQuotedHistory(body)
 	if quoted != "" {
 		t.Errorf("不该折：这几句都是正文\nfresh=%s\nquoted=%s", fresh, quoted)
+	}
+}
+
+// 我们自己写信框发出的回复，也要折。
+//
+// 这条来自生产上一封真信（email_messages 78）的形状：写的正文两个字，底下是
+// 写信框加的「某某 <地址> 写道：」和一个 blockquote，引用里是上一轮的正文加
+// 签名。整封 1006 字节，引用的可读文字只有三十来个字符。
+//
+// 它当时不折，因为折叠有一条 400 字符的下限。那条下限是按字符数算的，而这个
+// 产品的用户写中文——三十个汉字是一整段话，四百个汉字是一篇文章。这跟
+// freshEnoughToStandAlone 上面记着的是同一个错：拿字符数当分量的尺子，在一个
+// 字顶一个词的语言里量不准。
+//
+// 现在的规则只有一条：认出了引用的开头，上面又确实有人写的东西，就折。
+func TestOurOwnComposersReplyFoldsEvenWhenTheQuoteIsShort(t *testing.T) {
+	body := `回复抄送<p>CEO &lt;ceo@corp.example&gt; 写道：</p>` +
+		`<blockquote>这封邮件合并了多人回复的。<br><br>` +
+		`<span style="font-weight: bold;">Best regards,<br>CEO</span>` +
+		`<div><img src="https://example.invalid/logo.png" alt="image" width="160"></div>` +
+		`</blockquote>`
+
+	fresh, quoted := SplitQuotedHistory(body)
+	if quoted == "" {
+		t.Fatalf("我们自己发出的回复没有折叠，引用原样摊在正文下面：\n%s", body)
+	}
+	if !strings.Contains(fresh, "回复抄送") {
+		t.Errorf("写的那两个字没留在上半截：\n%s", fresh)
+	}
+	if strings.Contains(fresh, "合并了多人回复") {
+		t.Errorf("引用的内容漏在了上半截：\n%s", fresh)
+	}
+	// 「写道：」那一行属于引用，不能留在上面当孤零零的一句。
+	if strings.Contains(fresh, "写道") {
+		t.Errorf("「写道：」被留在了折叠之外：\n%s", fresh)
+	}
+	if !strings.Contains(quoted, "合并了多人回复") {
+		t.Errorf("引用的正文没进折叠：\n%s", quoted)
 	}
 }
