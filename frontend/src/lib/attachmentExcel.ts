@@ -150,7 +150,7 @@ async function xlsxWorkbook(bytes: Uint8Array<ArrayBuffer>, rowLimit: number): P
 
   const rels = new Map<string, string>()
   const relsXml = (await memberText(bytes, members, 'xl/_rels/workbook.xml.rels')) ?? ''
-  for (const match of relsXml.matchAll(/<Relationship\b[^>]*>/g)) {
+  for (const match of relsXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?Relationship\b[^>]*>/g)) {
     const id = xmlAttr(match[0], 'Id')
     const target = xmlAttr(match[0], 'Target')
     if (id && target) rels.set(id, target.startsWith('/') ? target.slice(1) : `xl/${target}`)
@@ -159,13 +159,13 @@ async function xlsxWorkbook(bytes: Uint8Array<ArrayBuffer>, rowLimit: number): P
   const shared: string[] = []
   const sharedXml = await memberText(bytes, members, 'xl/sharedStrings.xml')
   if (sharedXml !== undefined) {
-    for (const si of sharedXml.matchAll(/<si>([\s\S]*?)<\/si>/g)) {
+    for (const si of sharedXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?si\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?si>/g)) {
       shared.push(collectText(si[1]))
     }
   }
 
   const sheets: DirectSheet[] = []
-  for (const match of workbookXml.matchAll(/<sheet\b[^>]*>/g)) {
+  for (const match of workbookXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?sheet\b[^>]*>/g)) {
     if (sheets.length >= maxSheets) break
     const name = xmlAttr(match[0], 'name') || `Sheet${sheets.length + 1}`
     const rid = xmlAttr(match[0], 'r:id')
@@ -182,9 +182,9 @@ async function xlsxWorkbook(bytes: Uint8Array<ArrayBuffer>, rowLimit: number): P
 
 function worksheetRows(xml: string, shared: string[]): string[][] {
   const rows: string[][] = []
-  for (const rowMatch of xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
+  for (const rowMatch of xml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?row\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?row>/g)) {
     const cells: string[] = []
-    for (const cellMatch of rowMatch[1].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+    for (const cellMatch of rowMatch[1].matchAll(/<(?:[A-Za-z_][\w.-]*:)?c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?c>)/g)) {
       const attrs = cellMatch[1]
       const body = cellMatch[2] ?? ''
       const ref = xmlAttr(attrs, 'r')
@@ -216,7 +216,8 @@ function columnIndex(ref: string): number {
 }
 
 function firstTagText(xml: string, tag: string): string {
-  const match = xml.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`))
+  const qualified = `(?:[A-Za-z_][\\w.-]*:)?${tag}`
+  const match = xml.match(new RegExp(`<${qualified}(?:\\s[^>]*)?>([\\s\\S]*?)</${qualified}>`))
   return match ? xmlUnescape(match[1]) : ''
 }
 
@@ -224,7 +225,7 @@ function firstTagText(xml: string, tag: string): string {
 // the text is the concatenation either way.
 function collectText(xml: string): string {
   let out = ''
-  for (const t of xml.matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)) {
+  for (const t of xml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t(?:\s[^>]*)?>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)) {
     out += t[1]
   }
   return xmlUnescape(out)
