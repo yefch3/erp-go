@@ -70,20 +70,6 @@ func (h *Handler) CreateQuotation(ctx context.Context, req *exv1.CreateQuotation
 	return nil, apierr.Conflict("OFFER_ENTRY_REPLACED", "请在询盘对应的客户报价页面保存、导出或确认成交")
 }
 
-func shipmentsFromProto(rows []*exv1.QuotationShipmentInput) []app.QuotationShipmentInput {
-	out := make([]app.QuotationShipmentInput, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, app.QuotationShipmentInput{
-			SourceCustomerSelectionShipmentID: row.GetSourceCustomerSelectionShipmentId(), ShipmentGroupKey: row.GetShipmentGroupKey(),
-			CarrierForwarder: row.GetCarrierForwarder(), ServiceOptionName: row.GetServiceOptionName(), CustomerManaged: row.GetCustomerManaged(),
-			Currency: row.GetCurrency(), FreightAmount: row.GetFreightAmount(), ChargeBasis: row.GetChargeBasis(),
-			PortOfLoading: row.GetPortOfLoading(), PortOfDischarge: row.GetPortOfDischarge(),
-			EstimatedDeparture: row.GetEstimatedDeparture(), EstimatedArrival: row.GetEstimatedArrival(), ValidUntil: row.GetValidUntil(), Remark: row.GetRemark(),
-		})
-	}
-	return out
-}
-
 func shipmentsToProto(rows []store.ListQuotationShipmentsRow) []*exv1.QuotationShipment {
 	out := make([]*exv1.QuotationShipment, 0, len(rows))
 	for _, row := range rows {
