@@ -3152,12 +3152,22 @@ async function replyToInbound() {
 
 // 回复全部：收件人是发信人（有 Reply-To 用它），原信 To 和 Cc 里其余的人进
 // 抄送，去掉我名下全部信箱的地址。规则和测试在 lib/replyAll。
+// 这次回信会从哪个地址发出去。写信框的发件人默认就是「当前在看的那个箱」
+// （见 EmailComposer 的 fromAccount），所以这里同源取，两边不会各说各的。
+// 合并视图（currentAccount = 0）下没有「当前的箱」，退回默认箱——那也正是
+// 那种情况下发信会用的箱。
+function replyingAddress(): string {
+  const boxes = mailboxes.value
+  const cur = boxes.find((b) => b.id === currentAccount.value)
+  return (cur ?? boxes.find((b) => b.isDefault) ?? boxes[0])?.email ?? ''
+}
+
 async function replyAllToInbound() {
   if (!openedInbound.value) return
   composing.value = true
   await nextTick()
   const m = openedInbound.value
-  composer.value?.openReplyAll(m, replyAllRecipients({ ...m, mine: myAddresses.value }))
+  composer.value?.openReplyAll(m, replyAllRecipients({ ...m, self: replyingAddress() }))
 }
 
 async function forwardInbound() {
