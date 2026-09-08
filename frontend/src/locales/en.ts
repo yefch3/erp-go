@@ -1872,6 +1872,8 @@ export default {
     attachments: 'Attachments',
     addAttachment: 'Add attachment',
     noAttachments: 'None yet (10 MB per file, 20 MB in total)',
+    asDownloadLink: 'as download link',
+    bigFilesHint: '{n} file(s) are large and will be sent as download links in the body (no expiry). Some corporate mail gateways block external links.',
     attachmentTotal: '{n} file(s), {s} in total',
     uploadFailed: '{n} failed to upload',
     egressWarning: 'Note: attachments are sent once per recipient — about {s} across {n} recipients. For large lists, link to the file instead.',

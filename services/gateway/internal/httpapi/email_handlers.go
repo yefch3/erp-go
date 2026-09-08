@@ -460,6 +460,41 @@ func (s *Server) serveMailImage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(resp.GetContent())
 }
 
+// serveMailFile 是超大附件的公开取件口。
+//
+// **重定向，不代理。** 走这条路的偏偏是大文件；把几百 MB 穿过网关，一个人
+// 点两下就能把内存吃光。所以这里只把浏览器指到存储那条短期地址上去。
+// serveMailImage 那条是读进内存再吐出来的，因为图片有 2 MB 的硬上限。
+func (s *Server) serveMailFile(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.Emails.FetchAttachmentLink(r.Context(), &mailv1.FetchAttachmentLinkRequest{
+		Token: chi.URLParam(r, "token"),
+	})
+	if err != nil || resp.GetUrl() == "" {
+		// 一个中性的答案，对应服务层那个统一的错：把「没这个 token」「被
+		// 撤回了」「文件没了」分开说，等于告诉试探的人哪些 token 存在过。
+		http.NotFound(w, r)
+		return
+	}
+	// 不缓存这一跳：它每次都要重新签，而签出来的地址是有期限的。被缓存住的
+	// 302 会在过期之后把人送到一个 403 上去。
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.Redirect(w, r, resp.GetUrl(), http.StatusFound)
+}
+
+func (s *Server) withdrawMailFileLink(w http.ResponseWriter, r *http.Request) {
+	req := &mailv1.WithdrawAttachmentLinkRequest{}
+	if !s.decodeBody(w, r, req) {
+		return
+	}
+	resp, err := s.Emails.WithdrawAttachmentLink(r.Context(), req)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
+	}
+	s.writeProto(w, resp)
+}
+
 func (s *Server) listMailSenders(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.Emails.ListSenders(r.Context(), &mailv1.ListSendersRequest{})
 	if err != nil {

@@ -1817,3 +1817,38 @@ SET keep_sent_copy = sqlc.arg(keep_sent_copy)::boolean, updated_at = now()
 WHERE tenant_id = sqlc.arg(tenant_id)::bigint
   AND employee_id = sqlc.arg(employee_id)::bigint
   AND id = sqlc.arg(id)::bigint;
+
+-- name: EnsureAttachmentToken :one
+-- 给一个附件配公开取件口，已经有的就复用。
+--
+-- 复用是要紧的：同一封信重试时不能每次换一个地址，否则先收到的那个人手上
+-- 那条链接就废了，而他不会知道为什么。
+--
+-- 按 (tenant, id) 限定：id 来自我们自己的附件表，但仍然带上租户——发链接
+-- 这件事跨租户一次就够糟了。
+UPDATE email_attachments
+SET token = coalesce(token, sqlc.arg(token)::text)
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+RETURNING coalesce(token, '')::text;
+
+-- name: ResolveAttachmentToken :one
+-- 公开下载路由用：token → 这个文件是什么、在哪。
+--
+-- **不带租户**，因为调用方是收件人的浏览器，没有会话也就没有租户。token 是
+-- 随机不可猜的，知道一个也只能换来它自己那个文件。同 ResolveImage。
+--
+-- 撤回的查不出来：status 一变，链接立刻失效，而行还留着——客户问「你发我的
+-- 链接打不开」时答得上来是被撤回了，而不是一句查无此物。
+SELECT file_name, file_key, file_size, content_type
+FROM email_attachments
+WHERE token = sqlc.arg(token)::text
+  AND status = 'ACTIVE';
+
+-- name: WithdrawAttachmentLink :execrows
+-- 撤回一个已经发出去的下载链接。行留着，只是不再服务。
+UPDATE email_attachments
+SET status = 'WITHDRAWN'
+WHERE tenant_id = sqlc.arg(tenant_id)::bigint
+  AND id = sqlc.arg(id)::bigint
+  AND token IS NOT NULL;

@@ -133,6 +133,10 @@ func (s *Server) Router() http.Handler {
 		s.limitPublic("img", publicImageBudget, s.serveMailImage))
 	// The open-tracking pixel. Also login-free, and also deliberately
 	// indistinguishable between a real key and a made-up one.
+	// 超大附件的公开取件口。和图片那条同样的三件事：限流、统一 404、
+	// 不带会话——收件人是外面的人，token 就是全部凭据。
+	r.Get("/api/public/mail-files/{token}",
+		s.limitPublic("file", publicImageBudget, s.serveMailFile))
 	r.Get("/api/public/mail-open/{key}",
 		s.limitPublic("pixel", publicPixelBudget, s.serveOpenPixel))
 	// Google sends the browser back here after its own login page. State is
@@ -775,6 +779,7 @@ func (s *Server) Router() http.Handler {
 		r.With(s.perm("mail:email:write")).Post("/api/email-images/from-url", s.importMailImage)
 		r.With(s.perm("mail:email:read")).Get("/api/email-images", s.listMailImages)
 		r.With(s.perm("mail:email:write")).Delete("/api/email-images/{id}", s.withdrawMailImage)
+		r.With(s.perm("mail:email:write")).Post("/api/mail-file-links/withdraw", s.withdrawMailFileLink)
 		r.With(s.perm("mail:email:read"), s.requireMailUnlock).Get("/api/email-suppressions", s.listSuppressions)
 		r.With(s.perm("mail:suppression:write")).Post("/api/email-suppressions", s.addSuppression)
 		r.With(s.perm("mail:suppression:write")).Delete("/api/email-suppressions", s.removeSuppression)

@@ -529,6 +529,23 @@ func (h *Handler) FetchImage(ctx context.Context, req *mailv1.FetchImageRequest)
 	return &mailv1.FetchImageResponse{Content: b, ContentType: contentType}, nil
 }
 
+// FetchAttachmentLink 同 FetchImage：从公开路由进来，token 就是全部凭据。
+// 回的是地址不是内容——理由见 OpenAttachmentLink。
+func (h *Handler) FetchAttachmentLink(ctx context.Context, req *mailv1.FetchAttachmentLinkRequest) (*mailv1.FetchAttachmentLinkResponse, error) {
+	url, name, err := h.svc.OpenAttachmentLink(ctx, req.GetToken())
+	if err != nil {
+		return nil, err
+	}
+	return &mailv1.FetchAttachmentLinkResponse{Url: url, FileName: name}, nil
+}
+
+func (h *Handler) WithdrawAttachmentLink(ctx context.Context, req *mailv1.WithdrawAttachmentLinkRequest) (*mailv1.WithdrawAttachmentLinkResponse, error) {
+	if err := h.svc.WithdrawAttachmentLink(ctx, grpcx.TenantID(ctx), req.GetAttachmentId()); err != nil {
+		return nil, err
+	}
+	return &mailv1.WithdrawAttachmentLinkResponse{}, nil
+}
+
 func (h *Handler) ListSenders(ctx context.Context, _ *mailv1.ListSendersRequest) (*mailv1.ListSendersResponse, error) {
 	rows, err := h.svc.ListSenders(ctx, grpcx.TenantID(ctx), operator(ctx))
 	if err != nil {

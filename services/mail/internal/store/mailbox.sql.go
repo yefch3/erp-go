@@ -648,6 +648,34 @@ func (q *Queries) EnqueueFlagOp(ctx context.Context, arg EnqueueFlagOpParams) er
 	return err
 }
 
+const ensureAttachmentToken = `-- name: EnsureAttachmentToken :one
+UPDATE email_attachments
+SET token = coalesce(token, $1::text)
+WHERE tenant_id = $2::bigint
+  AND id = $3::bigint
+RETURNING coalesce(token, '')::text
+`
+
+type EnsureAttachmentTokenParams struct {
+	Token    string
+	TenantID int64
+	ID       int64
+}
+
+// 给一个附件配公开取件口，已经有的就复用。
+//
+// 复用是要紧的：同一封信重试时不能每次换一个地址，否则先收到的那个人手上
+// 那条链接就废了，而他不会知道为什么。
+//
+// 按 (tenant, id) 限定：id 来自我们自己的附件表，但仍然带上租户——发链接
+// 这件事跨租户一次就够糟了。
+func (q *Queries) EnsureAttachmentToken(ctx context.Context, arg EnsureAttachmentTokenParams) (string, error) {
+	row := q.db.QueryRow(ctx, ensureAttachmentToken, arg.Token, arg.TenantID, arg.ID)
+	var column_1 string
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const failFlagOp = `-- name: FailFlagOp :exec
 UPDATE mail_flag_ops
 SET attempts = attempts + 1,
@@ -3844,6 +3872,39 @@ func (q *Queries) RepointInbound(ctx context.Context, arg RepointInboundParams) 
 	return err
 }
 
+const resolveAttachmentToken = `-- name: ResolveAttachmentToken :one
+SELECT file_name, file_key, file_size, content_type
+FROM email_attachments
+WHERE token = $1::text
+  AND status = 'ACTIVE'
+`
+
+type ResolveAttachmentTokenRow struct {
+	FileName    string
+	FileKey     string
+	FileSize    int64
+	ContentType string
+}
+
+// 公开下载路由用：token → 这个文件是什么、在哪。
+//
+// **不带租户**，因为调用方是收件人的浏览器，没有会话也就没有租户。token 是
+// 随机不可猜的，知道一个也只能换来它自己那个文件。同 ResolveImage。
+//
+// 撤回的查不出来：status 一变，链接立刻失效，而行还留着——客户问「你发我的
+// 链接打不开」时答得上来是被撤回了，而不是一句查无此物。
+func (q *Queries) ResolveAttachmentToken(ctx context.Context, token string) (ResolveAttachmentTokenRow, error) {
+	row := q.db.QueryRow(ctx, resolveAttachmentToken, token)
+	var i ResolveAttachmentTokenRow
+	err := row.Scan(
+		&i.FileName,
+		&i.FileKey,
+		&i.FileSize,
+		&i.ContentType,
+	)
+	return i, err
+}
+
 const searchMail = `-- name: SearchMail :many
 WITH hits AS (
     SELECT id, folder, thread_key, from_email, from_name, to_email, subject,
@@ -4851,4 +4912,26 @@ func (q *Queries) UpsertSyncState(ctx context.Context, arg UpsertSyncStateParams
 		arg.LowUid,
 	)
 	return err
+}
+
+const withdrawAttachmentLink = `-- name: WithdrawAttachmentLink :execrows
+UPDATE email_attachments
+SET status = 'WITHDRAWN'
+WHERE tenant_id = $1::bigint
+  AND id = $2::bigint
+  AND token IS NOT NULL
+`
+
+type WithdrawAttachmentLinkParams struct {
+	TenantID int64
+	ID       int64
+}
+
+// 撤回一个已经发出去的下载链接。行留着，只是不再服务。
+func (q *Queries) WithdrawAttachmentLink(ctx context.Context, arg WithdrawAttachmentLinkParams) (int64, error) {
+	result, err := q.db.Exec(ctx, withdrawAttachmentLink, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

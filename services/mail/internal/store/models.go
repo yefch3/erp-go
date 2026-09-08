@@ -20,6 +20,8 @@ type EmailAttachment struct {
 	ContentType string
 	UploadedBy  int64
 	UploadedAt  pgtype.Timestamptz
+	Token       *string
+	Status      string
 }
 
 type EmailCampaign struct {

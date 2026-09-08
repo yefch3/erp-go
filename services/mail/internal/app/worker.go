@@ -194,6 +194,27 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 		return
 	}
 
+	// 太大的附件转成下载链接，剩下的随信带。分界见 MaxCarriedAttachmentBytes。
+	//
+	// 在这里而不是入队时：入队时还不知道公网地址（MAIL_PUBLIC_BASE_URL 是
+	// 部署配的），而且草稿改来改去、附件加了又删，提前发 token 只会发出一
+	// 堆没人用的公开地址。
+	//
+	// 没配公网地址就整批照旧随信带——发一条 localhost 开头的链接给客户，比
+	// 让服务器拒收这封信更糟：前者对方看得见、点了打不开，后者我们看得见。
+	// 这和 AbsolutiseMailImages / InjectOpenPixel 在没有公网地址时的取舍一致。
+	var linkedFiles []Attachment
+	if cfg.PublicBaseURL != "" {
+		carried, tooBig := splitCarriedAndLinked(files, MaxCarriedAttachmentBytes)
+		if len(tooBig) > 0 {
+			ok, failed := s.linkableAttachments(ctx, cfg.TenantID, tooBig, cfg.PublicBaseURL)
+			// 配不上取件口的原样退回去随信带：宁可这封信因为太大被拒收
+			// （当场看得见的错），也不要发出去一个点开是 404 的链接。
+			files = append(carried, failed...)
+			linkedFiles = ok
+		}
+	}
+
 	// The open pixel goes in here rather than at compose time, so what is
 	// stored is what the person wrote and what goes out is what the person
 	// wrote plus one image. A draft reopened later is not polluted by it.
@@ -228,6 +249,9 @@ func (s *Service) deliver(ctx context.Context, cfg WorkerConfig, m store.ClaimMe
 		// link corrected would report itself as tracked.
 		tracked = body != withoutPixel
 	}
+	// 链接块最后接上，正文和像素都处理完之后：它是给收件人看的一段附言，
+	// 不该被当成正文参与「有没有插进像素」的比较。
+	body = AppendBigFileLinks(body, m.BodyFormat, linkedFiles)
 
 	out := Outbound{
 		MessageKey:   m.MessageKey,

@@ -195,15 +195,22 @@
             <span v-else class="var-hint">{{ t('emails.noAttachments') }}</span>
           </div>
           <div v-if="attachments.length" class="chips">
+            <!-- 会变成下载链接的标出来。发之前就得看见：收件人拿到的东西
+                 变了——不是附件而是一个链接，有些企业安全网关会拦外链。
+                 Outlook 和 Gmail 同样会当面说清楚，不是悄悄换掉。 -->
             <el-tag
               v-for="(a, i) in attachments"
               :key="a.fileKey"
               closable
-              type="info"
+              :type="linkedFlags[i] ? 'warning' : 'info'"
               @close="attachments.splice(i, 1)"
             >
               {{ a.fileName }} · {{ humanSize(a.size) }}
+              <span v-if="linkedFlags[i]"> · {{ t('emails.asDownloadLink') }}</span>
             </el-tag>
+          </div>
+          <div v-if="linkedCount" class="var-hint big-files">
+            {{ t('emails.bigFilesHint', { n: linkedCount }) }}
           </div>
           <!-- The cost that is invisible while composing: a file is sent once
                per recipient, so it multiplies by the size of the list. -->
@@ -403,6 +410,7 @@
 
 <script setup lang="ts">
 import { applyTemplateToBody, type AppliedTemplate } from '../lib/mailTemplateApply'
+import { linkedAttachmentFlags } from '../lib/bigAttachments'
 import { computed, h, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Clock } from '@element-plus/icons-vue'
@@ -676,6 +684,10 @@ const previewName = computed(() =>
 // Any edit invalidates the preview: a stale one would vouch for text that is
 // no longer what would be sent.
 const totalBytes = computed(() => attachments.value.reduce((n, a) => n + a.size, 0))
+// 哪几个会变成下载链接。规则和服务端 splitCarriedAndLinked 同源，见
+// lib/bigAttachments 顶上关于「为什么两边各写一遍」的说明。
+const linkedFlags = computed(() => linkedAttachmentFlags(attachments.value))
+const linkedCount = computed(() => linkedFlags.value.filter(Boolean).length)
 
 // 500 recipients x 5 MB is 2.5 GB through the provider. Nothing on this
 // screen otherwise hints at that, so it is spelled out once it matters.

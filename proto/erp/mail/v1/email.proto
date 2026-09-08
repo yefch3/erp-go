@@ -164,6 +164,12 @@ service EmailService {
   // 发完信要不要自己往这个箱的已发送里留一份。有些服务器自己会存，两边都存
   // 就是客户邮箱里两封一模一样的信；而这件事协议里问不出来，只能由用户说。
   rpc SetKeepSentCopy(SetKeepSentCopyRequest) returns (SetKeepSentCopyResponse);
+  // 超大附件的公开取件口。和 FetchImage 一样从公开路由进来，token 就是全部
+  // 凭据——但**回的是地址不是内容**：走这条路的偏偏是大文件，让它穿过我们
+  // 的进程，一个人点两下就能把内存吃光。
+  rpc FetchAttachmentLink(FetchAttachmentLinkRequest) returns (FetchAttachmentLinkResponse);
+  // 撤回一条已经发出去的下载链接。已送达的正文改不了，能停掉的是我们这一侧。
+  rpc WithdrawAttachmentLink(WithdrawAttachmentLinkRequest) returns (WithdrawAttachmentLinkResponse);
   // 断开一个信箱：凭据清掉、不再收发，历史邮件原样留着。
   rpc UnbindMailbox(UnbindMailboxRequest) returns (UnbindMailboxResponse);
   // 智能转换的用量账（计量）：一个月一行，按人拆开，外加这家公司当下的
@@ -825,6 +831,22 @@ message SetKeepSentCopyRequest {
 }
 
 message SetKeepSentCopyResponse {}
+
+message FetchAttachmentLinkRequest {
+  string token = 1;
+}
+
+message FetchAttachmentLinkResponse {
+  // 短期有效的存储地址，网关拿它把浏览器重定向过去。
+  string url = 1;
+  string file_name = 2;
+}
+
+message WithdrawAttachmentLinkRequest {
+  int64 attachment_id = 1;
+}
+
+message WithdrawAttachmentLinkResponse {}
 
 message GetMyMailAccountResponse {
   MailAccount account = 1;
