@@ -219,8 +219,8 @@ export default {
     empty: 'Aún no hay movimientos importados',
   },
   procurementNav: {
-    title: 'Navegación de compras', workbench: 'Panel', pendingSourcing: 'Por iniciar cotización', sourcing: 'Todos los proyectos de abastecimiento',
-    requirements: 'Por pedir', orders: 'Órdenes de compra', backToWorkbench: 'Volver al panel de compras',
+    title: 'Navegación de compras', workbench: 'Panel', pendingSourcing: 'Por iniciar cotización', sourcing: 'Cotización de preventa',
+    requirements: 'Recotización de contrato', orders: 'Órdenes de compra', backToWorkbench: 'Volver al panel de compras',
   },
   salesNav: {
     intakes: 'Consultas por revisar', inquiries: 'Consultas de clientes', inquiryTemplates: 'Plantillas de consulta', quotations: 'Cotizaciones a clientes', backToInquiries: 'Volver a consultas de clientes',
@@ -1152,7 +1152,7 @@ export default {
     expected: 'Prevista',
     noOrders: 'Aún no se ha pedido nada para esta línea',
     source: 'Origen',
-    title: 'Tareas de ejecución de compra',
+    title: 'Recotización de contrato',
     readOnlyHint: 'Se crea cuando Finanzas confirma la condición de ejecución; las cotizaciones de preventa son solo referencia para recotizar y D3 no permite crear órdenes de compra',
     businessSource: 'Origen comercial',
     purchaseBatch: 'Lote de compra',

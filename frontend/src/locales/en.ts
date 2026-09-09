@@ -219,8 +219,8 @@ export default {
     empty: 'No bank transactions imported yet',
   },
   procurementNav: {
-    title: 'Procurement navigation', workbench: 'Workbench', pendingSourcing: 'To start RFQ', sourcing: 'All sourcing projects',
-    requirements: 'To order', orders: 'Purchase orders', backToWorkbench: 'Back to procurement workbench',
+    title: 'Procurement navigation', workbench: 'Workbench', pendingSourcing: 'To start RFQ', sourcing: 'Pre-sales RFQ',
+    requirements: 'Contract re-quotation', orders: 'Purchase orders', backToWorkbench: 'Back to procurement workbench',
   },
   salesNav: {
     intakes: 'Inquiries to review', inquiries: 'Customer inquiries', inquiryTemplates: 'Inquiry templates', quotations: 'Customer quotations', backToInquiries: 'Back to customer inquiries',
@@ -1142,7 +1142,7 @@ export default {
     expected: 'Expected',
     noOrders: 'Nothing has been ordered for this line yet',
     source: 'Source',
-    title: 'Purchasing execution tasks',
+    title: 'Contract re-quotation',
     readOnlyHint: 'Created after Finance confirms the execution condition; pre-sales quotes are reference only for re-quotation, and D3 cannot create a purchase order',
     businessSource: 'Business source',
     purchaseBatch: 'Purchase batch',
