@@ -29,27 +29,39 @@
       </button>
     </div>
   <ul v-loading="loading" class="mail-list" role="list">
+    <!-- 拖一行到左栏的文件夹上就是「挪进去」。
+         整行可拖，不是只有某个把手：一列邮件里每一行本身就是那封信，拖它
+         是最直白的说法。勾选框和星标各自 @click.stop，所以拖动不会误触。 -->
     <li
       v-for="m in mails"
       :key="m.id"
       class="row"
-      :class="{ unread: !m.isRead, picked: isPicked(m) }"
+      :class="{ unread: !m.isRead, picked: isPicked(m), dragging: isDragging(m) }"
+      :draggable="canDrag"
+      @dragstart="onDragStart(m, $event)"
+      @dragend="onDragEnd"
     >
-      <!-- The box comes before the star because it is the outer decision:
-           "this one" precedes anything you might then do to it. Its own hit
-           area, kept off the row's, so ticking a box never opens a mail. -->
-      <!-- 投递记录不给勾，理由和它没有星标、没有行内按钮是同一个：邮件服务器上
-           没有这封信的正本，标记和删除都无处可写。留一个空位而不是一个勾了会
-           失败的框——否则「全选」之后它会是唯一没勾上的那行，看着像页面坏了。 -->
-      <el-checkbox
-        v-if="!isRecordOnly(m)"
-        class="pick"
-        :model-value="isPicked(m)"
-        :aria-label="t('emails.selectOne')"
-        @click.stop
-        @change="togglePick(m)"
-      />
-      <span v-else class="pick pick-gap" aria-hidden="true" />
+      <!-- 头像和勾选框**共用一个位置**，照 Gmail。
+           这一列只有 280–400px 宽，左边每多一个控件，主题就少一截；而头像和
+           勾选框恰好可以合并：平时是头像（一列信里最快认出「谁」的东西），
+           鼠标压上来或者已经勾上时变成勾选框。多选是低频动作，不值得为它
+           长期占一格。
+
+           投递记录不给勾，理由和它没有星标是同一个：邮件服务器上没有这封信
+           的正本，标记无处可写。它只显示头像。 -->
+      <span class="face">
+        <el-checkbox
+          v-if="!isRecordOnly(m)"
+          class="pick"
+          :model-value="isPicked(m)"
+          :aria-label="t('emails.selectOne')"
+          @click.stop
+          @change="togglePick(m)"
+        />
+        <span class="avatar" :style="{ background: avatarColor(m) }" aria-hidden="true">
+          {{ initial(m) }}
+        </span>
+      </span>
 
       <!-- el-tooltip rather than a title attribute. The browser's own tooltip
            takes about a second to appear, which is far too slow for a row of
@@ -58,7 +70,7 @@
            name under the cursor the moment it lands, which is what Gmail
            does and the only reason its icon-only toolbar is usable. -->
       <!-- No star on a delivery record: there is no message on the host to
-           write the flag to. See actionsFor. -->
+           write the flag to. Same reason it gets no checkbox. -->
       <el-tooltip
         v-if="folder !== 'junk' && !isRecordOnly(m)"
         :content="t(m.isStarred ? 'emails.unstar' : 'emails.star')"
@@ -166,54 +178,30 @@
         </span>
       </div>
 
-      <!-- 行内按钮浮在右边，不占布局宽度。
-           从前它们和日期共用一格（悬停时替换日期），那是一行式布局里为了
-           「行不要在光标下重排」；三行之后日期在第一行，按钮再挤进去就要
-           和日期抢那 46px。浮起来是同一个目的的另一种做法：布局不动，
-           而且窄列里也不会把主题挤掉。 -->
-      <div class="acts">
-          <el-tooltip
-            v-for="a in actionsFor(m)"
-            :key="a.key"
-            :content="a.label"
-            placement="top"
-            :show-after="0"
-            :hide-after="0"
-          >
-            <!-- run() 不收参数：actionsFor(m) 生成它的时候已经把这一行闭包
-                 进去了。之前这里写的是 a.run(m)，多传的那个参数被直接丢掉
-                 ——不会出错，但读的人会以为这一行是靠参数传进去的。 -->
-            <button
-              type="button"
-              class="act"
-              :aria-label="a.label"
-              @click.stop="a.run()"
-            >
-              <el-icon><component :is="a.icon" /></el-icon>
-            </button>
-          </el-tooltip>
-      </div>
+      <!-- 这里从前有一组悬停才出现的行内按钮（归档/删除/标为已读）。
+           **删掉了**，两个理由：
+
+           一、它们浮在行的右边，正好压住第一行的日期——三行式之前它们和
+           日期共用一格（悬停时替换），三行之后日期在第一行而按钮竖向居中，
+           两者重叠。
+           二、同样的动作在右边阅读区的工具条上都有，而且那里是在**看着这封
+           信**的时候做决定，比在列表上凭一行摘要决定要靠谱。Foxmail 的列表
+           里也没有这一组。
+
+           要批量处理仍然走勾选框 + 上方那条批量工具条。 -->
     </li>
   </ul>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { listTime, zonedStamp } from '../lib/zonedtime'
 import { humanSize } from '../lib/humanSize'
+import { draggedRows } from '../lib/dragMails'
 import type { MailSort, SortField } from '../lib/mailSort'
-import {
-  Box,
-  CircleCheck,
-  Delete,
-  DeleteFilled,
-  FolderOpened,
-  Message,
-  Paperclip,
-  RefreshLeft,
-} from '@element-plus/icons-vue'
+import { Paperclip } from '@element-plus/icons-vue'
 
 export interface MailRow {
   id: string
@@ -271,13 +259,17 @@ const props = defineProps<{
   sortFields?: SortField[]
 }>()
 
+// mark / purge 两个事件随行内按钮一起去掉了：现在列表上没有任何单封操作，
+// 那些动作都在右边阅读区的工具条上。
 const emit = defineEmits<{
   open: [MailRow]
   star: [MailRow]
-  mark: [MailRow, Record<string, boolean>]
-  purge: [MailRow]
   sort: [SortField]
   'update:selected': [string[]]
+  // 拖起来了：带上拖的是哪几封、它们分别属于哪个信箱。页面拿着这两样去
+  // 决定左栏哪些文件夹可以接（别的箱的文件夹接不了）。
+  dragmails: [{ ids: string[]; accounts: number[] }]
+  dragend: []
 }>()
 
 const { t } = useI18n()
@@ -381,47 +373,72 @@ function otherMailbox(m: MailRow): string {
   return props.accounts?.[id] ?? ''
 }
 
-function actionsFor(m: MailRow) {
-  const mark = (flags: Record<string, boolean>) => () => emit('mark', m, flags)
-  const readToggle = {
-    key: 'read',
-    icon: Message,
-    label: t(m.isRead ? 'emails.markUnread' : 'emails.markRead'),
-    run: mark({ read: !m.isRead }),
+// ------------------------------------------------------------------ 拖拽
+
+// 正在被拖的那几封，用来把它们画淡一点。空数组 = 没在拖。
+const dragged = ref<string[]>([])
+const isDragging = (m: MailRow) => dragged.value.includes(m.id)
+
+// 投递记录拖不动：邮箱服务器上没有这封信的正本，挪无处可挪。整份列表里
+// 只要有一封能拖就开着 draggable，具体那一行能不能拖在 dragstart 里挡。
+const canDrag = computed(() => props.folder !== 'scheduled' && props.folder !== 'drafts')
+
+function onDragStart(m: MailRow, ev: DragEvent) {
+  // 拖整批还是拖一行，规则和它为什么是这样见 lib/dragMails。
+  const rows = draggedRows(m, props.mails, props.selected ?? [], (r) => !isRecordOnly(r))
+  if (!rows.length) {
+    ev.preventDefault()
+    return
   }
-  // A row the host kept no copy of is a delivery record, not a message: no
-  // folder, no UID, nothing for archive or delete to act on. Better an honest
-  // gap than buttons that fail.
-  if (isRecordOnly(m)) return []
-  switch (props.folder) {
-    case 'sent':
-      return [
-        { key: 'archive', icon: Box, label: t('emails.archive'), run: mark({ archived: true }) },
-        { key: 'trash', icon: Delete, label: t('emails.toTrash'), run: mark({ deleted: true }) },
-      ]
-    case 'trash':
-      return [
-        { key: 'restore', icon: RefreshLeft, label: t('emails.restore'), run: mark({ deleted: false }) },
-        { key: 'purge', icon: DeleteFilled, label: t('emails.purge'), run: () => emit('purge', m) },
-      ]
-    case 'junk':
-      return [
-        { key: 'notjunk', icon: CircleCheck, label: t('emails.notJunk'), run: mark({ notJunk: true }) },
-        { key: 'trash', icon: Delete, label: t('emails.toTrash'), run: mark({ deleted: true }) },
-      ]
-    case 'archive':
-      return [
-        { key: 'unarchive', icon: FolderOpened, label: t('emails.unarchive'), run: mark({ archived: false }) },
-        { key: 'trash', icon: Delete, label: t('emails.toTrash'), run: mark({ deleted: true }) },
-        readToggle,
-      ]
-    default:
-      return [
-        { key: 'archive', icon: Box, label: t('emails.archive'), run: mark({ archived: true }) },
-        { key: 'trash', icon: Delete, label: t('emails.toTrash'), run: mark({ deleted: true }) },
-        readToggle,
-      ]
+  const ids = rows.map((r) => r.id)
+  const accounts = [...new Set(rows.map((r) => r.matchAccount || props.currentAccount || 0))]
+  dragged.value = ids
+  emit('dragmails', { ids, accounts })
+  if (!ev.dataTransfer) return
+  ev.dataTransfer.effectAllowed = 'move'
+  // 必须写点什么进去，否则 Firefox 根本不认这是一次拖拽。内容本身不用：
+  // 放下时读的是页面自己记着的那份（dragover 里读不到 dataTransfer）。
+  ev.dataTransfer.setData('text/plain', ids.join(','))
+  // 拖多封时默认的拖影是被按住的那一行，看不出在拖几封。换成一个数字牌。
+  if (ids.length > 1) {
+    const chip = document.createElement('div')
+    chip.className = 'drag-chip'
+    chip.textContent = t('emails.pickedN', { n: ids.length })
+    document.body.appendChild(chip)
+    ev.dataTransfer.setDragImage(chip, 12, 12)
+    // 下一帧再删：setDragImage 是同步截图的，这一帧之内不能从文档里拿走。
+    requestAnimationFrame(() => chip.remove())
   }
+}
+
+function onDragEnd() {
+  dragged.value = []
+  emit('dragend')
+}
+
+// 头像上那个字。
+//
+// 取显示名的第一个字，没有名字就取地址的第一个字母。中文取一个字就够认
+// （"腾"、"李"），英文取首字母并大写。
+//
+// 取不到就回一个圆点而不是空白：一个空的彩色圆圈看着像没加载完。
+function initial(m: MailRow): string {
+  const src = (props.folder === 'sent' ? sentWho(m) : (m.fromName || m.fromEmail)) || ''
+  const ch = [...src.trim()].find((c) => /[\p{L}\p{N}]/u.test(c))
+  return ch ? ch.toUpperCase() : '·'
+}
+
+// 头像底色。同一个地址永远同一个颜色——颜色在这里的用处正是「这一列里又是
+// 他」，随机就没有意义了。
+//
+// 用 oklch 而不是 hsl：hsl 里同一个亮度值在黄色和蓝色上看起来差一大截，
+// 一排头像会有几个亮得刺眼、几个暗得发糊。oklch 的亮度是感知亮度，固定
+// 62% 就是每一个都一样深，白字压在上面都读得清。
+function avatarColor(m: MailRow): string {
+  const key = (props.folder === 'sent' ? (m.toEmail || '') : (m.fromEmail || '')).toLowerCase()
+  let h = 0
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) % 360
+  return `oklch(62% 0.13 ${h})`
 }
 
 // Screen readers get the sentence the row is: who, about what, and whether it
@@ -480,19 +497,53 @@ function ariaFor(m: MailRow) {
 .row.picked {
   background: var(--el-color-primary-light-9);
 }
-
-/* 宽度写死，是为了让下面那个空位能对得上：一个靠内容撑开的宽度没法复制。
-   高度对齐第一行（发件人那一行），不是整行：三行高的行里居中会让它飘到
-   主题旁边，看着像在标记主题。 */
-.pick {
-  flex: none;
-  width: 22px;
-  margin-right: 2px;
-  height: 21px;
+/* 正在被拖走的那几行画淡：手上拿着的东西和还留在原地的东西要分得开，
+   否则拖多封时看不出到底拿起了哪几封。 */
+.row.dragging {
+  opacity: 0.45;
 }
-/* 投递记录那一行的空位——列要对齐，哪怕这一行没有框可以勾。 */
-.pick-gap {
+
+/* 头像和勾选框叠在同一格里，靠 grid 把两者放进同一个单元格——用绝对定位
+   的话这一格就撑不开，左边距离得另外写死一次。
+   32px 而不是 Foxmail 的 36：那一列最窄只有 280px，左边每省 4px 主题就多
+   4px。对齐第一行，不是整行居中：三行高的行里居中会让它飘到主题旁边。 */
+.face {
+  flex: none;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  margin-right: 2px;
+}
+.face > * {
+  grid-area: 1 / 1;
+  place-self: center;
+}
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+/* 平时看头像，压上来或已经勾上时看勾选框。两者永远只有一个可见，所以这
+   一格的宽度不会变，行也不会在光标下重排。 */
+.pick {
+  display: none;
+}
+.row:hover .pick,
+.row:focus-within .pick,
+.row.picked .pick {
   display: block;
+}
+.row:hover .avatar,
+.row:focus-within .avatar,
+.row.picked .avatar {
+  visibility: hidden;
 }
 /* Element Plus reserves room for a label this checkbox does not have. */
 .pick :deep(.el-checkbox__label) {
@@ -690,46 +741,6 @@ function ariaFor(m: MailRow) {
    reading, and three icons on every line would make it a control panel.
    浮在右边，不占布局宽度：三行之后日期在第一行，按钮再挤进那一行就要和它
    抢那 46px，而这一列总共也就 300 出头。自带底色，好让下面的文字不透上来。 */
-.acts {
-  display: none;
-  gap: 2px;
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  padding: 2px 4px;
-  border-radius: 999px;
-  background: var(--mail-row-hover);
-  box-shadow: 0 0 0 4px var(--mail-row-hover);
-}
-.row:hover .acts,
-.row:focus-within .acts {
-  display: flex;
-}
-
-.act {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: none;
-  color: var(--el-text-color-secondary);
-  cursor: pointer;
-  transition: background var(--mail-fast) var(--mail-ease),
-    color var(--mail-fast) var(--mail-ease);
-}
-.act:hover {
-  background: var(--el-fill-color);
-  color: var(--el-text-color-primary);
-}
-.act:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: -2px;
-}
-
 /* 这里从前有三条 @container：宽度不够时先让发件人变窄、再藏摘要、再整个
    藏掉发件人。**它们全部删掉了**，因为三行式布局不需要它们，而它们上一版
    造成的正是那次文字叠在一起的事故：

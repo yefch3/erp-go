@@ -55,12 +55,14 @@
         :tokens-version="tokensChanged"
         :locked="locked === true"
         :host-folders="hostFolders"
+        :drag-accounts="dragging?.accounts ?? []"
         @select="pickFolder"
         @changed="onMailboxesChanged"
         @added="tokensChanged++"
         @create-folder="createFolder"
         @rename-folder="renameFolder"
         @delete-folder="deleteFolder"
+        @drop-mails="onDropMails"
       />
 
       <span class="rail-grow" />
@@ -245,143 +247,130 @@
             <span class="rb-off">{{ t('reader.noTracking') }}</span>
           </el-tooltip>
         </div>
+        <!-- 图标条，照 Foxmail：常用的四件事各一颗图标，其余全收进「⋯」。
+             从前这里是六到八颗**带文字**的按钮，阅读区窄一点就换行成两排，
+             而第二排的起点和第一排对齐，看着像两组不相干的东西。图标不换行
+             ——它们加起来不到 160px，怎么窄都放得下。
+
+             图标没有文字，所以每一颗都挂 tooltip，show-after 0：浏览器自带
+             的 title 要等将近一秒，等它出来光标早走了，图标就成了猜谜。 -->
         <div class="in-actions">
           <template v-if="canWrite">
-            <el-button size="small" type="primary" plain @click="replyToInbound">
-              ↩ {{ t('emails.reply') }}
-            </el-button>
+            <el-tooltip :content="t('emails.reply')" placement="bottom" :show-after="0" :hide-after="0">
+              <button type="button" class="tb" :aria-label="t('emails.reply')" @click="replyToInbound">↩</button>
+            </el-tooltip>
             <!-- 常驻，不按「原信有没有别人」来显示。
-                 
+
                  从前它只在算出来的抄送非空时才出现，看着聪明，实际上把一颗
                  按钮的存在和一条业务规则绑死了：抄送要去掉**本人名下全部
                  信箱**的地址，而一个人绑了两个箱、一封信正好发给这两个箱时，
                  抄送就是空的——于是「明明发给了多个人却没有回复全部」。真实
-                 发生过。而且按钮时有时无本身就难用：人记不住它什么时候在。
-                 
-                 现在照所有邮件客户端的做法：回复 / 回复全部 / 转发三颗都在。
-                 抄送为空时它退化成一次普通回复，这是对的结果，不是缺陷。 -->
-            <el-button
-              size="small"
-              type="primary"
-              plain
-              @click="replyAllToInbound"
-            >
-              ↩↩ {{ t('emails.replyAll') }}
-            </el-button>
-            <!-- A split button rather than a third one in the row: forwarding
-                 as an attachment is the same intent taken further, not a
-                 separate errand, and it is rare enough that giving it equal
-                 width would misstate how often it is wanted. -->
-            <el-dropdown size="small" split-button @click="forwardInbound">
-              ↪ {{ t('emails.forward') }}
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item
-                    :disabled="!openedInbound.hasRaw"
-                    @click="forwardInboundAsAttachment"
-                  >
-                    {{ t('emails.forwardAsAttachment') }}
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+                 发生过。而且按钮时有时无本身就难用：人记不住它什么时候在。 -->
+            <el-tooltip :content="t('emails.replyAll')" placement="bottom" :show-after="0" :hide-after="0">
+              <button type="button" class="tb" :aria-label="t('emails.replyAll')" @click="replyAllToInbound">↩↩</button>
+            </el-tooltip>
+            <el-tooltip :content="t('emails.forward')" placement="bottom" :show-after="0" :hide-after="0">
+              <button type="button" class="tb" :aria-label="t('emails.forward')" @click="forwardInbound">↪</button>
+            </el-tooltip>
           </template>
-          <!-- Taking the exchange out of the system. A split button because
-               there are two errands behind one intent: print it now for the
-               person standing next to you, or save the file to attach to
-               something. Both go through the same audited endpoint. -->
-          <el-button
-            v-if="folder === 'junk'"
-            size="small"
-            type="warning"
-            plain
-            @click="markOpened({ notJunk: true })"
+          <!-- 删除在最右，和前三颗隔一条线：前三颗是「继续这封信」，它是
+               「结束这封信」，误触的代价也不一样。 -->
+          <span v-if="deleteAction" class="tb-sep" aria-hidden="true" />
+          <el-tooltip
+            v-if="deleteAction"
+            :content="deleteAction.label"
+            placement="bottom"
+            :show-after="0"
+            :hide-after="0"
           >
-            {{ t('emails.notJunk') }}
-          </el-button>
-          <!-- 低频动作收进「更多」。阅读区变窄之后八颗按钮排不下，换行成两排
-               而第二排的起点又和第一排对齐，看着像两组不相干的东西。
+            <button
+              type="button"
+              class="tb tb-danger"
+              :aria-label="deleteAction.label"
+              @click="deleteAction.run()"
+            ><el-icon><Delete /></el-icon></button>
+          </el-tooltip>
 
-               收哪几颗按使用频率分：回复/回复全部/转发/移动到/删除 是每天点的，
-               导出、标为未读、归档是偶尔点的。Foxmail 和 Gmail 也是这么分的，
-               它们主行上只留四颗。
+          <span class="grow" />
 
-               导出那颗原来是个 split-button，自己带一个「保存」子项；这里把
-               两项**摊平**成兄弟，而不是在下拉里再套一层下拉——嵌套下拉在
-               Element Plus 里不好用，而且多一层对使用者没有任何好处。 -->
-          <el-dropdown
-            v-if="moreActionsAvailable"
-            size="small"
-            trigger="click"
-          >
-            <el-button size="small" plain>
-              {{ t('emails.moreActions') }}<el-icon class="el-icon--right"><ArrowDown /></el-icon>
-            </el-button>
+          <!-- 「⋯」里是其余全部动作。分组用分隔线，顺序按「和这封信的关系
+               有多近」：转发存档 → 标记 → 挪去哪儿 → 带出系统。 -->
+          <el-dropdown trigger="click" placement="bottom-end" @command="onReaderCommand">
+            <button type="button" class="tb" :aria-label="t('emails.moreActions')">
+              <el-icon><MoreFilled /></el-icon>
+            </button>
             <template #dropdown>
               <el-dropdown-menu>
-                <template v-if="canExport && openedInbound.threadKey">
-                  <el-dropdown-item :disabled="exporting" @click="printThread">
-                    {{ t('emails.exportPrint') }}
+                <el-dropdown-item
+                  v-if="canWrite"
+                  command="forwardAttachment"
+                  :disabled="!openedInbound.hasRaw"
+                >
+                  {{ t('emails.forwardAsAttachment') }}
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-if="isInboundView && folder !== 'junk' && folder !== 'trash'"
+                  command="unread"
+                  :divided="canWrite"
+                >
+                  {{ t('emails.markUnread') }}
+                </el-dropdown-item>
+                <el-dropdown-item v-if="folder === 'junk'" command="notJunk" :divided="canWrite">
+                  {{ t('emails.notJunk') }}
+                </el-dropdown-item>
+                <el-dropdown-item v-if="isInboundView && folder === 'archive'" command="unarchive">
+                  {{ t('emails.unarchive') }}
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-else-if="isInboundView && folder !== 'junk' && folder !== 'trash'"
+                  command="archive"
+                >
+                  {{ t('emails.archive') }}
+                </el-dropdown-item>
+                <el-dropdown-item v-if="folder === 'trash'" command="restore" :divided="canWrite">
+                  {{ t('emails.restore') }}
+                </el-dropdown-item>
+
+                <!-- 挪进自建文件夹（Issue #362）。真的 MOVE，同步做：成了才回来。
+
+                     文件夹**平铺**在这里，没有再套一层子菜单：Element Plus 的
+                     嵌套下拉不好用，而多一层对使用者也没有好处——一个人手上
+                     的自建文件夹通常就那么几个。 -->
+                <template v-if="canMoveOpened">
+                  <el-dropdown-item disabled divided class="menu-head">
+                    {{ t('emails.moveTo') }}
                   </el-dropdown-item>
-                  <el-dropdown-item :disabled="exporting" @click="saveThread">
-                    {{ t('emails.exportSave') }}
-                  </el-dropdown-item>
-                </template>
-                <template v-if="isInboundView && folder !== 'junk'">
-                  <el-dropdown-item v-if="folder !== 'trash'" @click="markOpened({ read: false })">
-                    {{ t('emails.markUnread') }}
-                  </el-dropdown-item>
-                  <el-dropdown-item v-if="folder === 'archive'" @click="markOpened({ archived: false })">
-                    {{ t('emails.unarchive') }}
-                  </el-dropdown-item>
-                  <el-dropdown-item v-else-if="folder !== 'trash'" @click="markOpened({ archived: true })">
-                    {{ t('emails.archive') }}
-                  </el-dropdown-item>
-                </template>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <template v-if="isInboundView && folder !== 'junk'">
-            <!-- 挪进自建文件夹（Issue #362）。真的 MOVE，同步做：成了才回来。 -->
-            <el-dropdown
-              v-if="folder !== 'trash' && folder !== 'junk' && openedInbound.folder !== 'SENT'"
-              size="small"
-              trigger="click"
-              :disabled="moving"
-              @command="moveOpenedTo"
-            >
-              <el-button size="small" plain :loading="moving">
-                {{ t('emails.moveTo') }} <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-              </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item v-if="isCustomFolderKey(folder)" :command="0">
+                  <el-dropdown-item v-if="isCustomFolderKey(folder)" command="move:0">
                     {{ t('emails.moveToInbox') }}
                   </el-dropdown-item>
                   <el-dropdown-item
                     v-for="cf in currentCustomFolders"
                     :key="cf.id"
-                    :command="cf.id"
-                    :disabled="folder === cf.viewKey"
+                    :command="`move:${cf.id}`"
+                    :disabled="folder === cf.viewKey || moving"
                   >
                     {{ cf.name }}
                   </el-dropdown-item>
                   <el-dropdown-item v-if="!currentCustomFolders.length" disabled>
                     {{ t('emails.noFoldersYet') }}
                   </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-            <el-button v-if="folder === 'trash'" size="small" plain @click="markOpened({ deleted: false })">
-              {{ t('emails.restore') }}
-            </el-button>
-            <el-button v-if="folder === 'trash'" size="small" type="danger" plain @click="purgeOpened">
-              {{ t('emails.purge') }}
-            </el-button>
-            <el-button v-if="folder !== 'trash'" size="small" type="danger" plain @click="markOpened({ deleted: true })">
-              {{ t('emails.toTrash') }}
-            </el-button>
-          </template>
+                </template>
+
+                <!-- Taking the exchange out of the system. Two errands behind
+                     one intent: print it now for the person standing next to
+                     you, or save the file to attach to something. Both go
+                     through the same audited endpoint. -->
+                <template v-if="canExport && openedInbound.threadKey">
+                  <el-dropdown-item command="print" divided :disabled="exporting">
+                    {{ t('emails.exportPrint') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="save" :disabled="exporting">
+                    {{ t('emails.exportSave') }}
+                  </el-dropdown-item>
+                </template>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
         <el-divider />
         <!-- The whole exchange when there is one, the single mail otherwise.
@@ -821,8 +810,8 @@
           @sort="changeSort"
           @open="openInbound"
           @star="toggleStar"
-          @mark="markRow"
-          @purge="purgeRow"
+          @dragmails="onDragMails"
+          @dragend="dragging = null"
         />
         <el-empty
           v-if="!loading && inbound.length === 0"
@@ -932,7 +921,8 @@
           @sort="changeSort"
           @open="openSentRow"
           @star="toggleStar"
-          @mark="markRow"
+          @dragmails="onDragMails"
+          @dragend="dragging = null"
         />
         <el-empty v-if="!loading && mailboxSent.length === 0" :description="t('emails.emptyFolder')" />
       </template>
@@ -1402,6 +1392,7 @@ import {
   Warning,
   WarningFilled,
   ArrowDown,
+  MoreFilled,
 } from '@element-plus/icons-vue'
 // Shared mail-surface tokens. Global rather than scoped: the list is its own
 // component, and the two have to agree on density or it reads as accidental.
@@ -1794,14 +1785,50 @@ const replyToMismatch = computed(() => {
   return m.replyTo.trim().toLowerCase() !== m.fromEmail.trim().toLowerCase()
 })
 
-// 「更多」里到底有没有东西。一个点开是空的菜单比没有这颗按钮更糟。
-const moreActionsAvailable = computed(() => {
+// 工具条最右那颗垃圾桶到底做哪件事。
+//
+// 回收站里它是**彻底删除**（那里的「删除」只能是这个意思，再挪一次没地方
+// 可挪），别处是挪进回收站。两件事共用一颗按钮但绝不能共用一个措辞——
+// tooltip 说的就是按下去会发生什么，因为图标本身分不出这两者。
+//
+// 已发送里那封是邮箱服务器上的正本，删得掉；ERP 自己的投递记录（kind=ERP）
+// 没有正本可删，那时不给这颗按钮。
+const deleteAction = computed(() => {
   const m = openedInbound.value
-  if (!m) return false
-  const canExportThis = canExport.value && !!m.threadKey
-  const canMarkOrArchive = isInboundView.value && folder.value !== 'junk' && folder.value !== 'trash'
-  return canExportThis || canMarkOrArchive
+  if (!m || !isInboundView.value) return null
+  if (m.kind === 'ERP') return null
+  if (folder.value === 'trash') {
+    return { label: t('emails.purge'), run: purgeOpened }
+  }
+  return { label: t('emails.toTrash'), run: () => markOpened({ deleted: true }) }
 })
+
+// 「移动到」那一组给不给。和从前那颗按钮同一个条件。
+const canMoveOpened = computed(
+  () => isInboundView.value
+    && folder.value !== 'trash'
+    && folder.value !== 'junk'
+    && openedInbound.value?.folder !== 'SENT',
+)
+
+// 「⋯」菜单只有一个出口，省得每一项各写一个 @click——它们本来就是一组
+// 「对这封信做点什么」，一个 command 串把它们摊在一处，加一项也只改一处。
+function onReaderCommand(cmd: string) {
+  if (cmd.startsWith('move:')) {
+    void moveOpenedTo(Number(cmd.slice(5)))
+    return
+  }
+  switch (cmd) {
+    case 'forwardAttachment': return void forwardInboundAsAttachment()
+    case 'unread': return void markOpened({ read: false })
+    case 'notJunk': return void markOpened({ notJunk: true })
+    case 'archive': return void markOpened({ archived: true })
+    case 'unarchive': return void markOpened({ archived: false })
+    case 'restore': return void markOpened({ deleted: false })
+    case 'print': return void printThread()
+    case 'save': return void saveThread()
+  }
+}
 
 const detailRows = computed(() => {
   const m = openedInbound.value
@@ -3135,6 +3162,48 @@ async function bulkUnsuppress() {
 // 而不是像 bulkMark 那样逐封打接口：每封信各登录一次邮箱服务器，网易会限流。
 // 整条会话一起挪（wholeThread）——列表一行就是一条会话，只挪最新那封会把
 // 行留在原地、少一封。
+// ---------------------------------------------------- 拖邮件到文件夹
+
+// 手上正拖着的那几封，以及它们属于哪些信箱。左栏据此决定哪些文件夹亮起来。
+//
+// 放在页面这一层而不是靠 dataTransfer 传：dragover 里**读不到**
+// dataTransfer 的内容（浏览器只在 drop 那一刻才交出来），而「这一格能不能
+// 接」正是要在 dragover 里回答的。
+const dragging = ref<{ ids: string[]; accounts: number[] } | null>(null)
+
+function onDragMails(payload: { ids: string[]; accounts: number[] }) {
+  dragging.value = payload
+}
+
+// 放下了。走的是和「移动到」下拉、批量工具条同一个接口——拖拽只是同一件事
+// 的第三个入口，不是另一条路径。
+async function onDropMails(_accountId: number, folderId: number) {
+  const ids = dragging.value?.ids ?? []
+  dragging.value = null
+  if (!ids.length || bulkBusy.value) return
+  bulkBusy.value = true
+  try {
+    const d = await post<{ moved?: number | string; failedIds?: string[] }>('/inbound-mails/move', {
+      ids,
+      folderId: String(folderId),
+      wholeThread: true,
+    })
+    const moved = Number(d.moved ?? 0)
+    const failed = d.failedIds?.length ?? 0
+    if (failed === 0) ElMessage.success(t('emails.bulkMoved', { n: moved }))
+    else ElMessage.warning(t('emails.bulkMovedPartial', { n: moved, failed }))
+  } catch {
+    // 后端的原因拦截器已经弹了
+  } finally {
+    // 只清掉刚挪走的那几封，不清整份勾选：拖的可能是一封没勾的，那时勾选
+    // 里还留着别的信，替人清掉是替人做决定。
+    picked.value = picked.value.filter((id) => !ids.includes(id))
+    bulkBusy.value = false
+    load()
+    refreshUnread()
+  }
+}
+
 async function bulkMoveTo(folderId: number) {
   const rows = pickedRows.value
   if (!rows.length || bulkBusy.value) return
@@ -3228,26 +3297,9 @@ function reportBulk(total: number, failed: number, doneMsg: string) {
   ElMessage.warning(t('emails.bulkPartial', { done: total - failed, failed }))
 }
 
-async function markRow(row: MailRow, flags: Record<string, boolean>) {
-  await post(`/inbound-mails/${row.id}/mark`, { ...flags, wholeThread: true })
-  if ('read' in flags) {
-    row.isRead = flags.read
-    refreshUnread()
-    return
-  }
-  load()
-  refreshUnread()
-}
-
-async function purgeRow(row: MailRow) {
-  await ElMessageBox.confirm(t('emails.purgeHint'), t('emails.purge'), {
-    type: 'warning',
-    confirmButtonText: t('emails.purge'),
-  })
-  await del(`/inbound-mails/${row.id}?whole_thread=true`)
-  ElMessage.success(t('emails.purged'))
-  load()
-}
+// markRow / purgeRow 随列表行内按钮一起去掉了：现在列表上没有单封操作，
+// 那些动作在右边阅读区的工具条上（markOpened / purgeOpened），批量的走
+// 勾选框加上面那条工具条（bulkMark / bulkPurge）。
 
 async function toggleStar(row: MailRow) {
   // Optimistic: a star that waits for the network feels broken.
@@ -4719,11 +4771,60 @@ async function doUnsuppress(row: Suppression) {
   color: var(--el-text-color-secondary);
   cursor: help;
 }
+/* 阅读区的图标工具条。
+   nowrap：整条加起来不到 160px，任何宽度都放得下——从前那排带文字的按钮
+   会换行，第二排又和第一排左对齐，看着像两组不相干的东西。 */
 .in-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 2px;
   margin-top: 14px;
+}
+.tb {
+  display: grid;
+  place-items: center;
+  flex: none;
+  min-width: 34px;
+  height: 32px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--el-text-color-regular);
+  /* 箭头和垃圾桶是字形，不是图标字体：字号大一档才和一行 14px 的正文
+     视觉上等重。 */
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--mail-fast) var(--mail-ease),
+    color var(--mail-fast) var(--mail-ease);
+}
+.tb:hover {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+}
+.tb:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
+}
+.tb-danger:hover {
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
+}
+.tb-sep {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 6px;
+  background: var(--el-border-color-lighter);
+}
+/* 菜单里那条「移动到」是组标题，不是可点的一项：压淡、去掉禁用态那种
+   「本来能点、现在不能」的观感。 */
+.menu-head {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  cursor: default;
 }
 /* 汇总条：默认展开，但可以折起来。一条十六轮的往来可能挂着九个文件，
    而有时使用者只是想读信。 */

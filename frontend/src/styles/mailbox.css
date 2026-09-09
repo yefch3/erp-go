@@ -71,3 +71,22 @@
     --mail-fast: 1ms;
   }
 }
+
+/* 拖多封邮件时手上跟着的那个数字牌。
+   写在全局而不是组件里：setDragImage 要一个**已经在文档里**的元素，所以它
+   是 append 到 body 上的，组件的 scoped 样式够不着它。
+   拖影是同步截的一张图，所以它必须在这一帧里就已经是最终样子——不能靠
+   过渡或者异步加载的字体。 */
+.drag-chip {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--el-color-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
+}
