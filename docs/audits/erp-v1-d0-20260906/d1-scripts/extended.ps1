@@ -24,7 +24,7 @@ try{Invoke-WebRequest ($base+$download.url) -WebSession $people.S2.session|Out-N
 Denied $people.S2.session @{action='download';view='SALES';id=$r.id;fileKey=$upload.key}
 'Attachments: submitted source downloadable by procurement; unrelated sales denied'
 $prices=$r.body.products|ForEach-Object {@{productId=$_.id;price='12.34';delivery='2026-10-01';remark='126 roundtrip'}}
-$q=@{company='D1 Factory';currency='USD';prices=@($prices);attachments=@()}
+$q=@{company='D1 Factory';currency='USD';incoterm='FOB';prices=@($prices);attachments=@()}
 $b=(Api $p POST '/inquiry-workspace' @{action='quote';view='PROCUREMENT';id=$r.id;revision=$r.revision;quote=$q}).item
 $quote=$b.quotes[0]
 Denied $p2 @{action='quote';view='PROCUREMENT';id=$r.id;revision=$r.revision;quoteId=$quote.id;quoteVersion=$quote.version;quote=$q}
@@ -34,7 +34,7 @@ $b=(Api $p2 POST '/inquiry-workspace' @{action='quote';view='PROCUREMENT';id=$r.
 $received=(Api $s POST '/inquiry-workspace' @{action='get';view='QUOTATIONS';id=$r.id}).item
 if($received.quotes[0].body.prices.Count -ne 126 -or $received.quotes[0].body.prices[125].price -ne '98.76' -or $received.quotes[0].updatedBy -ne 'P2'){throw '126 products/co-worker update mismatch'}
 'A06 126 prices saved, submitted and updated by P2; S1 receives exact last-row price'
-$logq=@{company='D1 Forwarder';carrier='D1 Carrier';route='Plan A';cargoIds=@($r.body.products[0].id);charges=@(@{name='Ocean';amount='10.05';quantity='3';currency='USD';unit='container'},@{name='Port';amount='21.11';quantity='2';currency='CNY';unit='shipment'})}
+$logq=@{company='D1 Forwarder';carrier='D1 Carrier';route='Plan A';incoterm='CFR';cargoIds=@($r.body.products[0].id);charges=@(@{name='Ocean';amount='10.05';quantity='3';currency='USD';unit='container'},@{name='Port';amount='21.11';quantity='2';currency='CNY';unit='shipment'})}
 $lr=(Api $l POST '/inquiry-workspace' @{action='quote';view='LOGISTICS';id=$r.id;revision=$r.revision;quote=$logq}).item
 $lq=$lr.quotes[0]
 $received=(Api $s POST '/inquiry-workspace' @{action='get';view='QUOTATIONS';id=$r.id}).item

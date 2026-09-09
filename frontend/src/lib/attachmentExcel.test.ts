@@ -140,6 +140,27 @@ function xlsx(parts: { shared?: string; sheet1: string; sheet2?: string }, defla
   return zipped.buffer.slice(zipped.byteOffset, zipped.byteOffset + zipped.byteLength)
 }
 
+function prefixedXlsx(): ArrayBuffer {
+  const zipped = buildZip([
+    {
+      name: 'xl/workbook.xml',
+      body: '<x:workbook xmlns:x="urn:sheet" xmlns:r="urn:rels"><x:sheets><x:sheet name="询盘明细" sheetId="1" r:id="rId1" /></x:sheets></x:workbook>',
+    },
+    {
+      name: 'xl/_rels/workbook.xml.rels',
+      body: '<Relationships><Relationship Id="rId1" Type="worksheet" Target="/xl/worksheets/sheet1.xml" /></Relationships>',
+    },
+    {
+      name: 'xl/worksheets/sheet1.xml',
+      body: `<x:worksheet xmlns:x="urn:sheet"><x:sheetData>
+        <x:row r="1"><x:c r="A1" t="inlineStr"><x:is><x:t>产品</x:t></x:is></x:c><x:c r="B1" t="inlineStr"><x:is><x:t>数量</x:t></x:is></x:c></x:row>
+        <x:row r="2"><x:c r="A2" t="inlineStr"><x:is><x:t>冷轧卷</x:t></x:is></x:c><x:c r="B2"><x:v>10</x:v></x:c></x:row>
+      </x:sheetData></x:worksheet>`,
+    },
+  ])
+  return zipped.buffer.slice(zipped.byteOffset, zipped.byteOffset + zipped.byteLength)
+}
+
 // ------------------------------------------------------------------ tests
 
 describe('isDirectTableFile', () => {
@@ -177,6 +198,13 @@ describe('parseTableFile csv', () => {
 })
 
 describe('parseTableFile xlsx', () => {
+  it('reads valid OOXML whose spreadsheet elements use namespace prefixes', async () => {
+    const book = await parseTableFile('prefixed.xlsx', prefixedXlsx())
+    expect(book.sheets[0].name).toBe('询盘明细')
+    expect(book.sheets[0].columns).toEqual(['产品', '数量'])
+    expect(book.sheets[0].rows).toEqual([['冷轧卷', '10']])
+  })
+
   it('reads shared strings, inline strings, numbers and sparse cells', async () => {
     const book = await parseTableFile('quote.xlsx', xlsx({
       shared: '<sst><si><t>产品</t></si><si><r><t>镀</t></r><r><t>锌卷</t></r></si><si><t xml:space="preserve">A&amp;B</t></si></sst>',

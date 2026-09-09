@@ -283,8 +283,8 @@
 
 
     <!-- Detail: terms, lines, version history -->
-    <el-drawer v-model="detailOpen" size="min(880px,100vw)" :title="detail?.contract.contractNo ?? ''">
-      <div v-if="detail" v-loading="loadingDetail">
+    <el-drawer v-model="detailOpen" size="min(1040px,100vw)" :title="detail?.contract.contractNo ?? ''">
+      <div v-if="detail" v-loading="loadingDetail" class="contract-detail">
         <div class="detail-head">
           <div>
             <el-tag :type="statusType(detail.contract.status)">
@@ -301,7 +301,7 @@
               {{ t('ownership.transfer') }}
             </el-button>
             <template v-if="canWrite && isMine">
-            <template v-if="['EXECUTING','EFFECTIVE'].includes(detail.contract.status)"><el-button @click="detail.contract.entrySource==='EXISTING_CONTRACT'?openExistingEdit(detail.contract.id):openSupplement()">补充信息</el-button><el-button type="success" @click="completeContract">完成合同</el-button></template>
+            <template v-if="['EXECUTING','EFFECTIVE'].includes(detail.contract.status)"><el-button @click="detail.contract.entrySource==='EXISTING_CONTRACT'?openExistingEdit(detail.contract.id):openSupplement()">补充信息</el-button></template>
             <el-button v-if="editable" size="small" @click="openTerms">{{ t('contracts.editDraft') }}</el-button>
             <el-button v-if="editable" size="small" type="primary" @click="submit(detail.contract)">
               {{ '提交上级确认' }}
@@ -371,13 +371,18 @@
           </el-descriptions-item>
         </el-descriptions>
 
-        <el-divider content-position="left">{{ t('contracts.items') }}</el-divider>
+        <details class="detail-section" open>
+          <summary class="detail-section-summary">
+            <span class="section-summary-title">{{ t('contracts.items') }}</span>
+            <span class="section-summary-meta">{{ detail.items.length }} 项 · {{ detail.version.totalAmount }} {{ detail.version.currency }}</span>
+          </summary>
+        <div class="detail-section-body">
         <el-table max-height="440" :data="detail.items" size="small">
           <el-table-column prop="lineNo" label="#" width="45" />
           <el-table-column :label="t('contracts.product')" min-width="200">
             <template #default="{ row }">
-              {{ row.productName }}
-              <div class="sub">{{ row.productCode }}<template v-if="row.spec"> · {{ row.spec }}</template></div>
+              <div class="product-name">{{ row.productName }}</div>
+              <div class="product-spec">{{ row.productCode }}<template v-if="row.spec"> · {{ row.spec }}</template></div>
             </template>
           </el-table-column>
           <el-table-column :label="t('contracts.hsCode')" width="110">
@@ -412,8 +417,8 @@
           </template>
         </el-table>
         <div class="totals">
-          <span>{{ t('contracts.total') }}</span>
-          <strong>{{ detail.version.totalAmount }} {{ detail.version.currency }}</strong>
+          <span class="total-label">{{ t('contracts.total') }}</span>
+          <strong class="total-value">{{ detail.version.totalAmount }} {{ detail.version.currency }}</strong>
           <span class="sub">≈ {{ detail.version.baseAmount }} {{ detail.version.fx.baseCurrency }}</span>
         </div>
         <div v-if="detail.contract.entrySource === 'EXISTING_CONTRACT'" class="totals opening-money">
@@ -438,49 +443,30 @@
             创建合同后保留当时的有效汇率
           </span>
         </div>
+        </div>
+        </details>
 
-        <template v-if="canSeeApproval && approvals.length">
-          <el-divider content-position="left">
-            {{ t('contracts.approval') }}
-            <span class="hint">上级确认及退回修改意见</span>
-          </el-divider>
-          <div v-for="(inst, i) in approvals" :key="inst.instance.id" class="approval-round">
-            <div class="round-head">
-              <span class="round-no">{{ t('contracts.round', { n: i + 1 }) }}</span>
-              <el-tag size="small" :type="instanceTagType(inst.instance.status)" effect="plain">
-                {{ t(`todos.doc.${inst.instance.status}`) }}
-              </el-tag>
-              <span class="sub">{{ inst.instance.submitterName }} · {{ formatTime(inst.instance.submittedAt) }}</span>
-            </div>
-            <el-steps
-              :active="activeStep(inst)"
-              align-center
-              finish-status="success"
-              :process-status="inst.instance.status === 'RUNNING' ? 'process' : 'wait'"
-            >
-              <el-step
-                v-for="task in inst.tasks"
-                :key="task.id"
-                :title="task.nodeName"
-                :status="stepStatus(task.status)"
-              >
-                <template #description>
-                  <div class="step-desc">
-                    <div>{{ employeeName(task.assigneeId) }}</div>
-                    <div class="sub">{{ t(`todos.task.${task.status}`) }}</div>
-                    <div v-if="task.comment" class="sub comment-line">{{ task.comment }}</div>
-                    <div v-if="task.actedAt" class="sub">{{ formatTime(task.actedAt) }}</div>
-                  </div>
-                </template>
-              </el-step>
-            </el-steps>
+        <details v-if="acceptedOffer?.transports.length" class="detail-section" open>
+          <summary class="detail-section-summary">
+            <span class="section-summary-title">客户运输方案</span>
+            <span class="section-summary-meta">{{ acceptedOffer.transports.length }} 个方案 · 查看客户选择及对应货物</span>
+          </summary>
+          <div class="detail-section-body">
+          <el-table :data="acceptedOffer.transports" max-height="300" stripe>
+            <el-table-column prop="title" label="方案" min-width="120"/>
+            <el-table-column label="对客费用" min-width="150"><template #default="{row}">{{row.currency}} {{row.price||'—'}}</template></el-table-column>
+            <el-table-column label="客户选择" width="110"><template #default="{row}"><el-tag :type="row.accepted?'success':'info'" effect="light">{{row.accepted?'已接受':'未选候选'}}</el-tag></template></el-table-column>
+            <el-table-column label="对应产品数量" min-width="220"><template #default="{row}"><span class="cargo-summary">{{allocatedProducts(row.quantities)||'—'}}</span></template></el-table-column>
+          </el-table>
           </div>
-        </template>
+        </details>
 
-        <el-divider content-position="left">
-          {{ t('contracts.files') }}
-          <span class="hint">保存合同拟稿、签署件及补充资料</span>
-        </el-divider>
+        <details class="detail-section">
+          <summary class="detail-section-summary">
+            <span class="section-summary-title">{{ t('contracts.files') }}</span>
+            <span class="section-summary-meta">{{ files.length }} 个文件 · 保存合同拟稿、签署件及补充资料</span>
+          </summary>
+          <div class="detail-section-body">
         <div v-if="canWrite && isMine && detail.contract.status!=='COMPLETED'" class="upload-bar">
           <el-select v-model="uploadKind" style="width: 150px">
             <el-option v-for="k in FILE_KINDS" :key="k" :value="k" :label="t(`contracts.fileKinds.${k}`)" />
@@ -489,8 +475,7 @@
           <el-button :loading="uploading" @click="fileInput?.click()">{{ t('contracts.upload') }}</el-button>
           <span class="hint">签署件归属当前合同；开始执行后保留签署记录</span>
         </div>
-        <template v-if="acceptedOffer?.transports.length"><h3>客户选择的运输方案</h3><el-table :data="acceptedOffer.transports" max-height="300"><el-table-column prop="title" label="方案"/><el-table-column label="对客费用"><template #default="{row}">{{row.currency}} {{row.price||'—'}}</template></el-table-column><el-table-column label="客户选择"><template #default="{row}">{{row.accepted?'已接受':'未选候选'}}</template></el-table-column><el-table-column label="对应产品数量" min-width="220"><template #default="{row}">{{allocatedProducts(row.quantities)||'—'}}</template></el-table-column></el-table></template>
-        <el-table :data="files" size="small">
+        <el-table :data="files" size="small" max-height="320" stripe>
           <el-table-column :label="t('contracts.fileKind')" width="170">
             <template #default="{ row }">
               <el-tag size="small" :type="row.kind === 'SIGNED' ? 'success' : 'info'" effect="plain">
@@ -534,12 +519,16 @@
           </el-table-column>
           <template #empty>{{ t('contracts.noFiles') }}</template>
         </el-table>
+          </div>
+        </details>
 
         <template v-if="transfers.length">
-          <el-divider content-position="left">
-            {{ t('ownership.history') }}
-            <span class="hint">{{ t('ownership.historyHint') }}</span>
-          </el-divider>
+          <details class="detail-section">
+            <summary class="detail-section-summary">
+              <span class="section-summary-title">{{ t('ownership.history') }}</span>
+              <span class="section-summary-meta">{{ transfers.length }} 条 · {{ t('ownership.historyHint') }}</span>
+            </summary>
+            <div class="detail-section-body">
           <el-table :data="transfers" size="small">
             <el-table-column :label="t('ownership.at')" width="130">
               <template #default="{ row }">{{ formatTime(row.transferredAt) }}</template>
@@ -557,16 +546,20 @@
               <template #default="{ row }"><span class="sub">{{ row.reason || '—' }}</span></template>
             </el-table-column>
           </el-table>
+            </div>
+          </details>
         </template>
 
         <!-- What has physically left the warehouse. Kept beside the contract
              rather than inside it: an approved version is frozen because it
              records what was agreed, and shipping keeps moving afterwards. -->
         <template v-if="detail.shipments?.length">
-          <el-divider content-position="left">
-            {{ t('contracts.shipping') }}
-            <span class="hint">查看各产品已发货和待发货数量</span>
-          </el-divider>
+          <details class="detail-section">
+            <summary class="detail-section-summary">
+              <span class="section-summary-title">{{ t('contracts.shipping') }}</span>
+              <span class="section-summary-meta">{{ detail.shipments.length }} 项 · 查看各产品已发货和待发货数量</span>
+            </summary>
+            <div class="detail-section-body">
           <el-alert v-if="overShipped" type="warning" :closable="false" show-icon class="alert">
             {{ t('contracts.overShipped') }}
           </el-alert>
@@ -595,6 +588,8 @@
               </template>
             </el-table-column>
           </el-table>
+            </div>
+          </details>
         </template>
 
         <!-- Which boat the goods are on. "Where is my customer's order" is the
@@ -602,7 +597,12 @@
              different document, so it is fetched and shown here rather than
              leaving sales to ring the forwarder. -->
         <template v-if="vessels.length">
-          <el-divider content-position="left">{{ t('contracts.vessels') }}</el-divider>
+          <details class="detail-section">
+            <summary class="detail-section-summary">
+              <span class="section-summary-title">{{ t('contracts.vessels') }}</span>
+              <span class="section-summary-meta">{{ vessels.length }} 条船期</span>
+            </summary>
+            <div class="detail-section-body">
           <el-table :data="vessels" size="small">
             <el-table-column :label="t('contracts.vessel')" min-width="190">
               <template #default="{ row }">
@@ -630,13 +630,20 @@
               </template>
             </el-table-column>
           </el-table>
+            </div>
+          </details>
         </template>
 
         <!-- Collection. The salesperson's question is not "did finance file
              it" but "has my customer paid", so the answer belongs on the
              contract, not only in the finance queue. -->
         <template v-if="receiptProgress && auth.can('export:receipt:read')">
-          <el-divider content-position="left">{{ t('contracts.receipts') }}</el-divider>
+          <details class="detail-section">
+            <summary class="detail-section-summary">
+              <span class="section-summary-title">{{ t('contracts.receipts') }}</span>
+              <span class="section-summary-meta">已收 {{ receiptProgress.receivedAmount }} / 合同 {{ receiptProgress.totalAmount }} {{ receiptProgress.currency }}</span>
+            </summary>
+            <div class="detail-section-body">
           <div class="recv">
             <span>{{ t('contracts.contracted') }} <b class="num">{{ receiptProgress.totalAmount }}</b></span>
             <span>{{ t('contracts.received') }} <b class="num">{{ receiptProgress.receivedAmount }}</b></span>
@@ -670,12 +677,51 @@
               <template #default="{ row }"><span class="sub">{{ row.allocatedByName }}</span></template>
             </el-table-column>
           </el-table>
+            </div>
+          </details>
         </template>
 
-        <el-divider content-position="left">
-          {{ t('contracts.versions') }}
-          <span class="hint">查看已保存的历史合同记录</span>
-        </el-divider>
+        <details v-if="canSeeApproval && approvals.length" class="detail-section approval-panel">
+          <summary class="detail-section-summary">
+            <span class="section-summary-title">审批进度</span>
+            <span class="section-summary-meta">{{ approvals.length }} 轮 · 上级确认及退回修改意见</span>
+          </summary>
+          <div class="detail-section-body approval-body">
+          <div class="approval-history">
+            <div v-for="(inst,i) in approvals" :key="inst.instance.id" class="approval-round">
+              <div class="round-head">
+                <div class="round-title">
+                  <strong>{{ t('contracts.round', {n:i+1}) }}</strong>
+                  <el-tag size="small" :type="instanceTagType(inst.instance.status)" effect="light">{{ t(`todos.doc.${inst.instance.status}`) }}</el-tag>
+                </div>
+                <div class="round-submission">
+                  <span>提交人 {{inst.instance.submitterName}}</span>
+                  <time>{{formatTime(inst.instance.submittedAt)}}</time>
+                </div>
+              </div>
+              <div v-for="task in inst.tasks" :key="task.id" class="approval-entry" :class="'status-'+task.status.toLowerCase()">
+                <span class="approval-marker">{{task.status==='APPROVED'?'✓':task.status==='RETURNED'||task.status==='REJECTED'?'!':'·'}}</span>
+                <div class="approval-content">
+                  <div class="approval-entry-head">
+                    <strong>{{task.nodeName}}</strong>
+                    <el-tag size="small" :type="task.status==='APPROVED'?'success':task.status==='RETURNED'||task.status==='REJECTED'?'danger':'info'" effect="light">{{t(`todos.task.${task.status}`)}}</el-tag>
+                    <time>{{task.actedAt?formatTime(task.actedAt):'待处理'}}</time>
+                  </div>
+                  <div class="approval-person">审批人：{{employeeName(task.assigneeId)}}</div>
+                  <div v-if="task.comment" class="approval-comment"><span>审批意见</span>{{task.comment}}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          </div>
+        </details>
+
+        <details class="detail-section">
+          <summary class="detail-section-summary">
+            <span class="section-summary-title">{{ t('contracts.versions') }}</span>
+            <span class="section-summary-meta">{{ detail.versions.length }} 个版本 · 查看已保存的历史合同记录</span>
+          </summary>
+          <div class="detail-section-body">
         <el-table :data="detail.versions" size="small" @row-click="(row: VersionRow) => openDetail(detail!.contract.id, row.id)">
           <el-table-column :label="t('contracts.version')" width="70">
             <template #default="{ row }">v{{ row.versionNo }}</template>
@@ -697,6 +743,8 @@
             <template #default="{ row }"><span class="sub">{{ row.changeReason || '—' }}</span></template>
           </el-table-column>
         </el-table>
+          </div>
+        </details>
       </div>
     </el-drawer>
 
@@ -753,15 +801,14 @@
       <el-table :data="termsForm.items" size="small" max-height="440">
         <el-table-column :label="t('contracts.product')" min-width="220">
           <template #default="{ row }">
-            <el-select
-              v-model="row.productId"
-              filterable
-              clearable
-              style="width: 100%"
-              :placeholder="t('contracts.pickProduct')"
-            >
-              <el-option v-for="p in products" :key="p.id" :value="p.id" :label="`${p.code} · ${p.name}`" />
-            </el-select><el-input v-if="!row.productId||row.productId==='0'" v-model="row.productName" placeholder="手动输入产品名称"/>
+            <el-autocomplete
+              v-model="row.productName"
+              :fetch-suggestions="suggestContractProducts"
+              placeholder="输入产品名称，或搜索已有产品"
+              style="width:100%"
+              @input="row.productId='0'"
+              @select="selectContractProduct(row,$event)"
+            />
           </template>
         </el-table-column>
         <el-table-column :label="t('contracts.spec')" width="150">
@@ -895,6 +942,7 @@
 </template>
 
 <script setup lang="ts">
+import {contractItemPayload} from '../lib/contractItem'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -1249,6 +1297,10 @@ async function searchCustomers(keyword: string) {
 }
 
 async function searchProducts(keyword: string) {
+  if (!auth.can('product:product:read')) {
+    products.value = []
+    return
+  }
   products.value = (await get<{ products: Product[] }>('/products', { keyword, page_size: 50, status: 'ACTIVE' })).products ?? []
 }
 
@@ -1431,7 +1483,6 @@ async function confirmContract(action:'APPROVE'|'RETURN'){
 }
 function openSupplement(){if(!detail.value)return;supplementForm.externalContractNo=detail.value.contract.externalContractNo||'';supplementForm.due=detail.value.contract.receivableDueDate||'';supplementOpen.value=true}
 async function saveSupplement(){if(!detail.value)return;await put(`/contracts/${detail.value.contract.id}`,{externalContractNo:supplementForm.externalContractNo,terms:{receivableDueDate:supplementForm.due}});supplementOpen.value=false;await openDetail(detail.value.contract.id);await load()}
-async function completeContract(){if(!detail.value)return;await ElMessageBox.confirm('确认这份合同已完成？完成后仅可查看。','完成合同',{confirmButtonText:'确认完成',cancelButtonText:'取消'});await post(`/contracts/${detail.value.contract.id}/complete`,{});await openDetail(detail.value.contract.id);await load()}
 const termsOpen = ref(false)
 const changeOpen = ref(false)
 
@@ -1545,6 +1596,13 @@ watch(detailOpen, (open) => {
   if (!open && route.query.id) router.replace({ path: route.path })
 })
 
+async function suggestContractProducts(query:string,done:(rows:(Product & {value:string})[])=>void){
+  try{await searchProducts(query);done(products.value.map(p=>({...p,value:p.name})))}catch{done([])}
+}
+function selectContractProduct(row:ChangeLine,product:Product){
+  row.productId=String(product.id);row.productName=product.name
+  if(product.uomCode)row.uomCode=product.uomCode
+}
 function openTerms() {
   const v = detail.value!.version
   Object.assign(termsForm, {
@@ -1568,11 +1626,13 @@ async function saveTerms() {
   const { items, externalContractNo, ...terms } = termsForm
   saving.value = true
   try {
-    await put(`/contracts/${detail.value!.contract.id}`, { terms, items, externalContractNo })
+    await put(`/contracts/${detail.value!.contract.id}`, { terms, items: items.map(contractItemPayload), externalContractNo })
     ElMessage.success(t('contracts.updated'))
     termsOpen.value = false
     await openDetail(detail.value!.contract.id)
     load()
+  } catch {
+    // The API interceptor displays the error; retain the form for retry.
   } finally {
     saving.value = false
   }
@@ -1801,7 +1861,7 @@ async function saveChange() {
     await post(`/contracts/${detail.value!.contract.id}/change`, {
       changeReason: changeForm.reason,
       terms: { deliveryDate: changeForm.deliveryDate },
-      items: changeForm.items,
+      items: changeForm.items.map(contractItemPayload),
     })
     ElMessage.success(t('contracts.changeCreated'))
     changeOpen.value = false
@@ -1859,7 +1919,10 @@ function formatTime(iso: string): string {
 onMounted(async () => {
   await loadContractOwners()
   load()
-  products.value = (await get<{ products: Product[] }>('/products', { page_size: 200 })).products ?? []
+  // Approval reads the contract's product snapshot; catalog access is optional.
+  if (auth.can('product:product:read')) {
+    products.value = (await get<{ products: Product[] }>('/products', { page_size: 200 })).products ?? []
+  }
   paymentOptions.value = (await get<{ options: OptionItem[] }>('/options', { category: 'PAYMENT_METHOD' })).options ?? []
   // Names for the approval timeline. Skipped when the user cannot read the
   // directory: the timeline then shows ids, which is worse than names but
@@ -1892,6 +1955,86 @@ onUnmounted(stopListening)
 </script>
 
 <style scoped>
+.contract-detail{
+  --detail-title:#173f54;
+  --detail-text:#2d4554;
+  --detail-muted:#718391;
+  color:var(--detail-text);
+  font-size:14px;
+  line-height:1.55;
+}
+.contract-detail :deep(.el-descriptions__label.el-descriptions__cell){
+  width:132px;
+  background:#f5f8fa;
+  color:#526876;
+  font-size:13px;
+  font-weight:500;
+}
+.contract-detail :deep(.el-descriptions__content.el-descriptions__cell){
+  color:var(--detail-text);
+  font-size:14px;
+  font-weight:400;
+}
+.contract-detail :deep(.el-table th.el-table__cell){
+  background:#f6f9fb;
+  color:#506775;
+  font-size:13px;
+  font-weight:600;
+}
+.contract-detail :deep(.el-table td.el-table__cell){
+  color:#334e5e;
+  font-size:14px;
+}
+.contract-detail :deep(.el-divider__text){
+  color:var(--detail-title);
+  font-size:16px;
+  font-weight:600;
+}
+.product-name{color:#203f51;font-size:14px;font-weight:500}
+.product-spec{
+  margin-top:4px;
+  max-width:520px;
+  color:var(--detail-muted);
+  font-size:13px;
+  font-weight:400;
+  line-height:1.6;
+  display:-webkit-box;
+  -webkit-line-clamp:3;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+}
+.detail-section{margin:14px 0;border:1px solid #dce7ee;border-radius:10px;background:#fff;overflow:hidden}
+.detail-section-summary{display:flex;align-items:center;gap:12px;min-height:48px;padding:0 16px;cursor:pointer;list-style:none;background:#f7fafb;transition:background-color .18s ease}
+.detail-section-summary::-webkit-details-marker{display:none}
+.detail-section-summary::before{content:'›';flex:0 0 auto;color:#6d8593;font-size:20px;line-height:1;transform:rotate(0);transition:transform .18s ease}
+.detail-section[open]>.detail-section-summary::before{transform:rotate(90deg)}
+.detail-section-summary:hover{background:#f1f7f9}
+.section-summary-title{color:var(--detail-title);font-size:15px;font-weight:600}
+.section-summary-meta{margin-left:auto;color:var(--detail-muted);font-size:12px;font-weight:400;text-align:right}
+.detail-section-body{padding:14px 16px 16px;border-top:1px solid #e8eef2}
+.approval-panel{margin-top:14px}
+.approval-body{padding-top:6px;padding-bottom:8px}
+.approval-history{max-height:440px;overflow:auto}
+.approval-panel .approval-round{margin:0;padding:0 0 4px}
+.approval-panel .approval-round+.approval-round{margin-top:10px;padding-top:10px;border-top:1px solid #e3eaf0}
+.round-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:6px 0 8px;border-bottom:1px solid #e8eef2}
+.round-title,.round-submission{display:flex;align-items:center;gap:10px}
+.round-title strong{color:#24485b;font-size:14px;font-weight:600}
+.round-submission{color:#718391;font-size:12px}
+.round-submission time{font-variant-numeric:tabular-nums}
+.approval-entry{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;padding:10px 0 4px}
+.approval-marker{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#eaf4f7;color:#17728a;font-size:13px;font-weight:600}
+.status-approved .approval-marker{background:#edf8e9;color:#4e982f}
+.status-returned .approval-marker,.status-rejected .approval-marker{background:#fff0ed;color:#d75a48}
+.approval-entry-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#34556a;font-size:13px}
+.approval-entry-head strong{font-size:14px;font-weight:600}
+.approval-entry-head time{margin-left:auto;color:#718391;font-size:12px;font-variant-numeric:tabular-nums}
+.approval-person{margin-top:3px;color:#718391;font-size:12px}
+.approval-comment{display:grid;grid-template-columns:60px minmax(0,1fr);gap:8px;margin:7px 0 0;padding:8px 10px;background:#fff7f3;color:#7e4331;border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere}
+.approval-comment span{color:#a56a58;font-size:12px}
+.cargo-summary{display:block;max-height:76px;overflow:auto;line-height:1.6}
+.detail-head{padding:16px;border:1px solid #dce7ee;border-radius:10px;background:#f3f8fb}
+@media(max-width:600px){.detail-section-summary{align-items:flex-start;flex-wrap:wrap;gap:6px;padding:10px 12px}.section-summary-meta{width:100%;margin-left:30px;text-align:left}.detail-section-body{padding:10px 12px}.round-head,.round-submission{align-items:flex-start;flex-direction:column}.round-head{gap:6px}.approval-entry-head time{width:100%;margin-left:0}.approval-comment{grid-template-columns:1fr}}
 .recv {
   display: flex;
   gap: 22px;
@@ -1906,28 +2049,6 @@ onUnmounted(stopListening)
 .src-tag {
   margin-left: 6px;
 }
-.approval-round {
-  margin-bottom: 18px;
-}
-.round-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-.round-no {
-  font-size: 13px;
-  color: var(--el-text-color-regular);
-}
-.step-desc {
-  font-size: 12px;
-  line-height: 1.6;
-}
-.comment-line {
-  max-width: 180px;
-  margin: 0 auto;
-}
-
 .page-head {
   display: flex;
   align-items: center;
@@ -1954,8 +2075,9 @@ onUnmounted(stopListening)
   column-gap: 16px;
 }
 .sub {
-  color: var(--el-text-color-secondary);
+  color: var(--detail-muted, var(--el-text-color-secondary));
   font-size: 12px;
+  font-weight: 400;
 }
 .hint {
   margin-left: 8px;
@@ -2003,15 +2125,16 @@ onUnmounted(stopListening)
   gap: 8px;
   margin-top: 12px;
 }
-.totals strong {
-  font-size: 16px;
-}
+.total-label{color:#5d7280;font-size:13px;font-weight:500}
+.totals .total-value{color:#153f55;font-size:20px;font-weight:600;letter-spacing:.1px}
 .snapshot {
   margin-top: 12px;
   padding: 8px 12px;
   border-radius: 6px;
   background: var(--el-fill-color-light);
-  font-size: 13px;
+  color:#536b79;
+  font-size:12px;
+  font-weight:400;
 }
 .items-foot {
   margin-top: 10px;

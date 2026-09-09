@@ -61,7 +61,7 @@ func TestD1InquiryLifecycle(t *testing.T) {
 	}
 	current = call(101, InquiryCommand{Action: "submit", View: "SALES", ID: current.ID, Revision: current.Revision})
 	rev := current.Revision
-	q := InquiryQuoteBody{Company: "Factory A", Currency: "USD", Prices: []InquiryPrice{{ProductID: originalLine, Price: "12.34"}}}
+	q := InquiryQuoteBody{Company: "Factory A", Currency: "USD", Incoterm: "FOB", Prices: []InquiryPrice{{ProductID: originalLine, Price: "12.34"}}}
 	buyer := call(201, InquiryCommand{Action: "quote", View: "PROCUREMENT", ID: current.ID, Revision: rev, Quote: q})
 	if len(buyer.Quotes) != 1 {
 		t.Fatal("saved quote missing")
@@ -82,7 +82,7 @@ func TestD1InquiryLifecycle(t *testing.T) {
 	if len(sales.Quotes) != 1 || sales.Quotes[0].Body.Prices[0].Price != "15.67" {
 		t.Fatal("submitted edit not synchronized")
 	}
-	logistics := InquiryQuoteBody{Company: "Forwarder", Charges: []InquiryCharge{{Name: "Ocean", Amount: "10.05", Quantity: "3", Currency: "USD"}, {Name: "Port", Amount: "21.11", Quantity: "2", Currency: "CNY"}}}
+	logistics := InquiryQuoteBody{Company: "Forwarder", Incoterm: "CFR", Charges: []InquiryCharge{{Name: "Ocean", Amount: "10.05", Quantity: "3", Currency: "USD"}, {Name: "Port", Amount: "21.11", Quantity: "2", Currency: "CNY"}}}
 	call(301, InquiryCommand{Action: "quote", View: "LOGISTICS", ID: current.ID, Revision: rev, Quote: logistics, Submit: true})
 	sales = call(101, InquiryCommand{Action: "get", View: "QUOTATIONS", ID: current.ID})
 	if len(sales.Quotes) != 2 || sales.Quotes[1].Body.Totals["USD"] != "30.15" || sales.Quotes[1].Body.Totals["CNY"] != "42.22" {

@@ -1,0 +1,26 @@
+{
+  "inquiryId": "36",
+  "inquiryNumber": "SC-20260909-000035",
+  "url": "http://127.0.0.1:25174/sales/quotations?id=36",
+  "factoryPrices": [
+    "CNY 700",
+    "CNY 805",
+    "CNY 920"
+  ],
+  "logisticsPlans": [
+    "方案 A：USD 10/MT，18 天",
+    "方案 B：USD 12/MT，24 天"
+  ],
+  "formulaOneExample": "产品 1 选择公式 1：700 ÷ (7.05 - 0.05) + 10 + 5 ÷ 30 × 30 = USD 115.00/MT",
+  "calculatedPrices": [
+    "115.00",
+    "130.00",
+    "146.43"
+  ],
+  "usdFormulaPrices": [
+    "110.96",
+    "125.85",
+    "142.16"
+  ],
+  "checkedAt": "2026-09-08T23:10:15.5899681-04:00"
+}

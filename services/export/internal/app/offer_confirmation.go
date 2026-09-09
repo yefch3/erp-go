@@ -128,7 +128,7 @@ func offerPDF(view OfferView) ([]byte, error) {
 	}
 	// Only explicit customer-facing fields are passed to the PDF renderer.
 	// Source prices, internal formulas and effective-rate snapshots stay internal.
-	return buildQuotationPDFWithShipments(q, items, shipments)
+	return buildQuotationPDFLayout(q, items, shipments, true)
 }
 
 // Flatten the frozen template's customer-facing specifications deterministically

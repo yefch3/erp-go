@@ -57,10 +57,12 @@ type OfferProduct struct {
 	CustomFields    map[string]string `json:"customFields"`
 }
 type OfferSourceQuote struct {
-	ID      string          `json:"id"`
-	Kind    string          `json:"kind"`
-	Version int64           `json:"version"`
-	Body    json.RawMessage `json:"body"`
+	ID          string          `json:"id"`
+	Kind        string          `json:"kind"`
+	Version     int64           `json:"version"`
+	Body        json.RawMessage `json:"body"`
+	Author      string          `json:"author"`
+	SubmittedAt string          `json:"submittedAt"`
 }
 type OfferLine struct {
 	OfferProduct

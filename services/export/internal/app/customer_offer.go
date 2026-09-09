@@ -54,7 +54,7 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 	if !ok || s.offerSource == nil {
 		return "", apierr.Permission("OFFER_ACCESS", "报价权限校验不可用")
 	}
-	write := cmd.Action == "save" || cmd.Action == "calculate" || cmd.Action == "confirm"
+	write := cmd.Action == "save" || cmd.Action == "calculate" || cmd.Action == "calculate_all" || cmd.Action == "confirm"
 	if cmd.Action != "get" && cmd.Action != "pdf" && cmd.Action != "summaries" && !write {
 		return "", apierr.Invalid("OFFER_ACTION", "不支持的报价操作")
 	}
@@ -117,7 +117,7 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 			return "", err
 		}
 		view.CanEdit = false
-	case "save", "calculate":
+	case "save", "calculate", "calculate_all":
 		if !view.CanEdit {
 			return "", apierr.Conflict("OFFER_CONFIRMED", "客户已确认，不能覆盖成交报价")
 		}
@@ -132,11 +132,16 @@ func (s *Service) CustomerOffer(ctx context.Context, raw string) (string, error)
 		if err != nil {
 			return "", err
 		}
-		body, err := prepareOffer(cmd.Body, source, confirmed, cmd.Action == "calculate", cmd.LineID)
+		calculate := cmd.Action == "calculate" || cmd.Action == "calculate_all"
+		target := cmd.LineID
+		if cmd.Action == "calculate_all" {
+			target = "*"
+		}
+		body, err := prepareOffer(cmd.Body, source, confirmed, calculate, target)
 		if err != nil {
 			return "", err
 		}
-		if cmd.Action == "calculate" {
+		if calculate {
 			view.Body = body
 			break
 		}
@@ -278,7 +283,7 @@ func prepareOffer(b OfferBody, source OfferInquiry, rates []OfferRate, calculate
 						if p.ProductID == line.ID {
 							found = true
 							line.Calculation.Factory = p.Price
-							if line.Calculation.Formula > 0 && (!calculate || line.ID == target) {
+							if line.Calculation.Formula > 0 && (!calculate || target == "*" || line.ID == target) {
 								expected := "CNY"
 								if line.Calculation.Formula == 2 {
 									expected = "USD"
@@ -291,7 +296,10 @@ func prepareOffer(b OfferBody, source OfferInquiry, rates []OfferRate, calculate
 								if e != nil {
 									return b, e
 								}
-								line.Calculation.Factory = price.Mul(conversion).String()
+								// Currency conversion can produce a repeating decimal. Keep the
+								// internal value within the same eight-decimal precision accepted
+								// for user-entered calculation inputs.
+								line.Calculation.Factory = price.Mul(conversion).Round(8).String()
 							}
 						}
 					}
@@ -301,7 +309,7 @@ func prepareOffer(b OfferBody, source OfferInquiry, rates []OfferRate, calculate
 				return b, apierr.Invalid("OFFER_SOURCE", "所选工厂报价不包含该产品，请刷新后选择")
 			}
 		}
-		if line.Calculation.Formula > 0 && (!calculate || line.ID == target) {
+		if line.Calculation.Formula > 0 && (!calculate || target == "*" || line.ID == target) {
 			rate := ""
 			if line.Calculation.Formula != 2 {
 				v, _, e := effectivePair(rates, "USD", "CNY")
@@ -319,13 +327,13 @@ func prepareOffer(b OfferBody, source OfferInquiry, rates []OfferRate, calculate
 				return b, e
 			}
 			line.CalculatedPrice = computed.Mul(conversion).StringFixed(2)
-			if calculate && line.ID == target {
+			if calculate && (target == "*" || line.ID == target) {
 				line.UnitPrice = line.CalculatedPrice
 			}
 		}
 		amount, e := offerLineAmount(line.Quantity, line.UnitPrice)
 		if e != nil {
-			if calculate && line.ID != target {
+			if calculate && target != "*" && line.ID != target {
 				continue
 			}
 			return b, e

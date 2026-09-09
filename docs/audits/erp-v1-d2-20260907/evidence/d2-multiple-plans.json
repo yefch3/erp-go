@@ -1,9 +1,9 @@
 {
-  "contractId": "196",
-  "factoryQuotes": 2,
-  "acceptedOptions": 1,
-  "checkedAt": "2026-09-08T00:53:05.8447374Z",
+  "contractId": "255",
+  "inquiryId": "32",
   "total": "7200.00",
-  "inquiryId": "10",
-  "transportOptions": 2
+  "transportOptions": 2,
+  "acceptedOptions": 1,
+  "factoryQuotes": 2,
+  "checkedAt": "2026-09-09T02:04:43.9160086Z"
 }

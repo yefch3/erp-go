@@ -371,9 +371,9 @@ func writeContractItems(ctx context.Context, q *store.Queries, tenantID, version
 			Qty: line.Qty, UomID: line.UomID, UomCode: line.UomCode,
 			UnitPrice: line.UnitPrice, Amount: line.Amount,
 			HsCode: line.HsCode, Remark: line.Remark,
-			OpeningProcuredQty: line.OpeningProcuredQty,
-			OpeningArrivedQty:  line.OpeningArrivedQty,
-			OpeningShippedQty:  line.OpeningShippedQty,
+			OpeningProcuredQty: orDefault(line.OpeningProcuredQty, "0"),
+			OpeningArrivedQty:  orDefault(line.OpeningArrivedQty, "0"),
+			OpeningShippedQty:  orDefault(line.OpeningShippedQty, "0"),
 		}); err != nil {
 			return err
 		}
