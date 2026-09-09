@@ -428,12 +428,15 @@
                 @selection-context="openTextExcelMenu($event, it.direction === 'IN' ? it.id : '')"
                 @selection-clear="closeExcelMenu"
               />
+              <!-- v-html 而不是插值：里面的内容先转义、再只由我们自己加锚点，
+                   除了 <a> 一个来自正文的标签都不会有。见 lib/linkifyText。 -->
               <pre
                 v-else
                 class="in-text"
                 :data-mail-id="it.direction === 'IN' ? it.id : ''"
                 @mouseover="onPlainTextHover"
-              >{{ it.body }}</pre>
+                v-html="linkifyText(it.body)"
+              />
               <QuotedHistory v-if="it.quoted" :html="it.quoted" />
               <!-- 这一封自己带的附件。放在正文下面、引用历史之后，和阅读单封
                    时的顺序一致。 -->
@@ -463,7 +466,8 @@
             class="in-text"
             :data-mail-id="openedInbound.id"
             @mouseover="onPlainTextHover"
-          >{{ openedInbound.bodyText }}</pre>
+            v-html="linkifyText(openedInbound.bodyText)"
+          />
           <QuotedHistory v-if="openedInbound.quotedHtml" :html="openedInbound.quotedHtml" />
         </template>
         <template v-if="openedInbound.attachments?.length">
@@ -1276,6 +1280,7 @@ import { needsConversion } from '../lib/attachmentPreview'
 import { folderNameProblem, isCustomFolderKey, viewForFolderKey, type CustomFolder } from '../lib/mailFolders'
 import { turnRecipients, turnSenderEmail, turnSenderLabel } from '../lib/threadTurn'
 import { attachmentHintKey } from '../lib/attachmentHint'
+import { linkifyText } from '../lib/linkifyText'
 import { replyAllRecipients } from '../lib/replyAll'
 import { syncBanner as buildSyncBanner, type SyncBanner } from '../lib/syncBanner'
 import {
@@ -4896,6 +4901,15 @@ async function doUnsuppress(row: Suppression) {
   word-break: break-word;
   font-family: inherit;
   margin: 0;
+}
+/* 纯文本信里的网址。看起来要像链接——不然人还是不会去点它，而这正是
+   这次要修的那件事。见 lib/linkifyText。 */
+.in-text a {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+.in-text a:hover {
+  text-decoration: underline;
 }
 
 .opened {
