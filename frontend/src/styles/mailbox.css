@@ -49,10 +49,9 @@
   --mail-text: 14px;
   --mail-sub: 13px;
   --mail-meta: 12px;
-  --mail-who-w: 184px;
-  /* Wide enough for the date, and for the three round action buttons that
-     take its place on hover without the row twitching. */
-  --mail-when-w: 108px;
+  /* 从前这里还有 --mail-who-w（发件人列宽）和 --mail-when-w（日期列宽）。
+     邮件行改成三行式之后没有"列"了：每一行自己占满整列，谁长谁省略号，
+     没有需要提前分配的宽度。 */
 
   /* Shape. The rail's capsule and the list's rounded ends are the same idea
      applied at two scales. */
