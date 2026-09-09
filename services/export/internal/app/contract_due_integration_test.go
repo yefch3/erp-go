@@ -132,6 +132,24 @@ func TestTheDueDateSomebodyTypedActuallyReachesTheDatabase(t *testing.T) {
 			view.Contract.ReceivableDueDate, due)
 	}
 
+	// A normal draft has no opening execution quantities. Replacing its lines
+	// must write numeric zero, not empty strings (SQLSTATE 22P02).
+	updated, err := svc.UpdateContract(ctx, tenantID, view.Contract.ID,
+		Terms{DeliveryDate: due, ReceivableDueDate: due},
+		[]ItemInput{{ProductName: "手工钢卷", UomCode: "MT", Spec: "1.2 x 1450", Qty: "3", UnitPrice: "12.5"}},
+		ContractEditMeta{}, op)
+	if err != nil {
+		t.Fatalf("保存手工产品合同草稿：%v", err)
+	}
+	if len(updated.Items) != 1 || updated.Items[0].ProductName != "手工钢卷" || updated.Items[0].Amount != "37.50" {
+		t.Fatalf("updated draft items: %+v", updated.Items)
+	}
+	for _, value := range []string{updated.Items[0].OpeningProcuredQty, updated.Items[0].OpeningArrivedQty, updated.Items[0].OpeningShippedQty} {
+		if n, err := decimal.NewFromString(value); err != nil || !n.IsZero() {
+			t.Fatalf("opening quantity = %q", value)
+		}
+	}
+
 	// 生效**不许动**这个日子。上一版这里会去客户主数据取账期重算一遍；
 	// 那条口径已经推翻，留着的话人填的日子会在生效那一刻被覆盖。
 	if _, err := pool.Exec(ctx, `

@@ -14,7 +14,7 @@ foreach($kind in @('ACCEPTED','CONTRACT')){
  "A12 real gateway/export $kind protected inquiry=$($r.id) quotation=$qid"
 }
 $r=NewInquiry 'D1 post-export rollback'
-$q=@{company='Retry factory';currency='USD';prices=@(@{productId=$r.body.products[0].id;price='10.05'})}
+$q=@{company='Retry factory';currency='USD';incoterm='FOB';prices=@(@{productId=$r.body.products[0].id;price='10.05'})}
 $attachment=(Api $people.P1.session POST '/inquiry-workspace' @{action='upload';view='PROCUREMENT';id=$r.id;revision=$r.revision;fileName='old-quote.txt';fileData=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('old round quote'))}).attachment
 $q.attachments=@($attachment)
 Api $people.P1.session POST '/inquiry-workspace' @{action='quote';view='PROCUREMENT';id=$r.id;revision=$r.revision;quote=$q;submit=$true}|Out-Null

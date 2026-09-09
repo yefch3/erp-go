@@ -7,7 +7,7 @@ if($items.total -ne 0){throw 'Cross-tenant list exposed'}
 $s=$people.S1.session
 $r=(Api $s POST '/inquiry-workspace' @{action='save';view='SALES';body=@{customer='D1 failure retry';products=@(@{product='Steel';quantity='1';unit='MT'})}}).item
 $r=(Api $s POST '/inquiry-workspace' @{action='submit';view='SALES';id=$r.id;revision=$r.revision}).item
-Api $people.P1.session POST '/inquiry-workspace' @{action='quote';view='PROCUREMENT';id=$r.id;revision=$r.revision;submit=$true;quote=@{company='Retry factory';currency='USD';prices=@(@{productId=$r.body.products[0].id;price='2.34'})}}|Out-Null
+Api $people.P1.session POST '/inquiry-workspace' @{action='quote';view='PROCUREMENT';id=$r.id;revision=$r.revision;submit=$true;quote=@{company='Retry factory';currency='USD';incoterm='FOB';prices=@(@{productId=$r.body.products[0].id;price='2.34'})}}|Out-Null
 docker stop erp-d1-20260906-export-1|Out-Null
 try{
  try{Api $s POST '/inquiry-workspace' @{action='withdraw';view='SALES';id=$r.id;revision=$r.revision}|Out-Null;throw 'Export failure reported success'}catch [Microsoft.PowerShell.Commands.HttpResponseException]{if([int]$_.Exception.Response.StatusCode -notin @(500,503,504)){throw}}

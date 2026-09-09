@@ -9,14 +9,14 @@ Api $admin POST '/fx/effective' @{base_currency='USD';quote_currency='CNY';rate=
 Denied $s POST '/fx/effective' @{base_currency='USD';quote_currency='CNY';rate='7.10'}
 $r=(Api $s POST '/inquiry-workspace' @{action='save';view='SALES';body=@{customer='D2 multiple plans';contact='Test contact';delivery='2026-10-01';products=@(@{product='Steel';specification='Q235';quantity='100';unit='MT'})}}).item
 $r=(Api $s POST '/inquiry-workspace' @{action='submit';view='SALES';id=$r.id;revision=$r.revision}).item
-foreach($factory in @('Factory A','Factory B')){Api $p POST '/inquiry-workspace' @{action='quote';view='PROCUREMENT';id=$r.id;revision=$r.revision;submit=$true;quote=@{company=$factory;currency='CNY';prices=@(@{productId=$r.body.products[0].id;price='700'})}}|Out-Null}
-foreach($carrier in @('Plan A','Plan B')){Api $l POST '/inquiry-workspace' @{action='quote';view='LOGISTICS';id=$r.id;revision=$r.revision;submit=$true;quote=@{company=$carrier;carrier=$carrier;currency='USD';charges=@(@{name='Ocean';currency='USD';amount='10';quantity='100';unit='MT'})}}|Out-Null}
+foreach($factory in @('Factory A','Factory B')){Api $p POST '/inquiry-workspace' @{action='quote';view='PROCUREMENT';id=$r.id;revision=$r.revision;submit=$true;quote=@{company=$factory;currency='CNY';incoterm='FOB';prices=@(@{productId=$r.body.products[0].id;price='700'})}}|Out-Null}
+foreach($carrier in @('Plan A','Plan B')){Api $l POST '/inquiry-workspace' @{action='quote';view='LOGISTICS';id=$r.id;revision=$r.revision;submit=$true;quote=@{company=$carrier;carrier=$carrier;currency='USD';incoterm='CFR';charges=@(@{name='Ocean';currency='USD';amount='10';quantity='100';unit='MT'})}}|Out-Null}
 $o=Api $s POST '/customer-offer' @{action='get';caseId=$r.id}
 Assert ($o.source.quotes.Count -eq 4) 'Two factories and two forwarders received'
 $line=$o.body.lines[0];$line.quantity='60';$line.factoryQuoteId=($o.source.quotes|Where-Object kind -eq 'PROCUREMENT'|Select-Object -First 1).id
 $line.calculation=@{formula=1;factory='1';ocean='10';days='30';mtPerUnit='1'}
 $o=Api $s POST '/customer-offer' @{action='calculate';caseId=$r.id;revision=$o.revision;lineId=$line.id;body=$o.body}
-Assert ($o.body.lines[0].unitPrice -eq '115.00') 'Formula uses submitted 700 CNY and effective 7.05, ignoring forged factory cost'
+Assert ($o.body.lines[0].unitPrice -eq '115.00') 'Sales-selected formula uses factory quote, logistics fee and effective rate'
 $o.body.lines[0].unitPrice='120'
 $o.body.transports=@($o.source.quotes|Where-Object kind -eq 'LOGISTICS'|ForEach-Object {@{quoteId=$_.id;title=$_.body.company;currency='USD';price='1000';accepted=$false;quantities=@{}}})
 Assert ($o.body.transports.Count -eq 2) 'Two customer-facing candidate plans'

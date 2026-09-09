@@ -831,6 +831,10 @@ func validateInquiryQuote(b *InquiryQuoteBody, products []InquiryProduct, kind s
 	if strings.TrimSpace(b.Company) == "" {
 		return apierr.Invalid("INQUIRY_COMPANY", "请选择或输入工厂/货代")
 	}
+	b.Incoterm = strings.ToUpper(strings.TrimSpace(b.Incoterm))
+	if submit && b.Incoterm == "" {
+		return apierr.Invalid("INQUIRY_INCOTERM", "请填写报价贸易条款")
+	}
 	allowed := map[string]bool{}
 	for _, p := range products {
 		allowed[p.ID] = true

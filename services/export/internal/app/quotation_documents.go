@@ -83,6 +83,10 @@ func buildQuotationPDF(q store.GetQuotationRow, items []store.ListQuotationItems
 }
 
 func buildQuotationPDFWithShipments(q store.GetQuotationRow, items []store.ListQuotationItemsRow, shipments []store.ListQuotationShipmentsRow) ([]byte, error) {
+	return buildQuotationPDFLayout(q, items, shipments, false)
+}
+
+func buildQuotationPDFLayout(q store.GetQuotationRow, items []store.ListQuotationItemsRow, shipments []store.ListQuotationShipmentsRow, productSubtotal bool) ([]byte, error) {
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetMargins(12, 12, 12)
 	pdf.SetAutoPageBreak(true, 12)
@@ -125,6 +129,14 @@ func buildQuotationPDFWithShipments(q store.GetQuotationRow, items []store.ListQ
 		}
 		drawQuotationPDFRow(pdf, values, widths, false)
 	}
+	if productSubtotal {
+		if pdf.GetY()+8 > 285 {
+			pdf.AddPage()
+		}
+		pdf.SetFont(pdffont.Name, "B", 9)
+		pdf.CellFormat(154, 8, "产品合计 "+q.Currency, "1", 0, "R", false, 0, "")
+		pdf.CellFormat(32, 8, q.TotalAmount, "1", 1, "R", false, 0, "")
+	}
 	if len(shipments) > 0 {
 		pdf.Ln(4)
 		pdf.SetFont(pdffont.Name, "B", 10)
@@ -150,9 +162,11 @@ func buildQuotationPDFWithShipments(q store.GetQuotationRow, items []store.ListQ
 			drawQuotationPDFRow(pdf, values, shipWidths, false)
 		}
 	}
-	pdf.SetFont(pdffont.Name, "B", 9)
-	pdf.CellFormat(154, 8, "合计 "+q.Currency, "1", 0, "R", false, 0, "")
-	pdf.CellFormat(32, 8, q.TotalAmount, "1", 1, "R", false, 0, "")
+	if !productSubtotal {
+		pdf.SetFont(pdffont.Name, "B", 9)
+		pdf.CellFormat(154, 8, "合计 "+q.Currency, "1", 0, "R", false, 0, "")
+		pdf.CellFormat(32, 8, q.TotalAmount, "1", 1, "R", false, 0, "")
+	}
 	if strings.TrimSpace(q.Remark) != "" {
 		pdf.SetFont(pdffont.Name, "", 9)
 		pdf.MultiCell(0, 5, pdfText(q.Remark), "", "L", false)

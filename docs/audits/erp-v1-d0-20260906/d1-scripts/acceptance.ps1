@@ -34,7 +34,7 @@ $r=(Api $s POST '/inquiry-workspace' @{action='save';view='SALES';body=$body}).i
 $r=(Api $s POST '/inquiry-workspace' @{action='submit';view='SALES';id=$r.id;revision=$r.revision}).item
 "A03 submitted state=$($r.state)"
 foreach($v in @(@($p,'PROCUREMENT'),@($l,'LOGISTICS'),@($s,'QUOTATIONS'))){$received=(Api $v[0] POST '/inquiry-workspace' @{action='get';view=$v[1];id=$r.id}).item;if($received.body.products.Count -ne 3){throw 'Cross-module product mismatch'};"A03 receiver=$($v[1]) products=3"}
-$q=@{company='Factory API';currency='USD';prices=@(@{productId=$r.body.products[0].id;price='12.34'})}
+$q=@{company='Factory API';currency='USD';incoterm='FOB';prices=@(@{productId=$r.body.products[0].id;price='12.34'})}
 $buyer=(Api $p POST '/inquiry-workspace' @{action='quote';view='PROCUREMENT';id=$r.id;revision=$r.revision;quote=$q}).item
 $sales=(Api $s POST '/inquiry-workspace' @{action='get';view='QUOTATIONS';id=$r.id}).item
 if($sales.quotes.Count -ne 0){throw 'Saved quote leaked'};'A04 saved quote invisible to sales'
