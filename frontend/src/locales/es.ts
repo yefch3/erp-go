@@ -1919,6 +1919,7 @@ export default {
     restore: 'Restaurar',
     emptyFolder: 'Nada por aquí',
     pickAMail: 'Elija un mensaje a la izquierda',
+    moreActions: 'Más',
     threadCount: '{n} mensajes en esta conversación; haga clic para expandir',
     threadOut: 'Enviado',
     threadIn: 'Recibido',

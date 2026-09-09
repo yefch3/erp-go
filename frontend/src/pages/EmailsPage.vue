@@ -272,22 +272,6 @@
                there are two errands behind one intent: print it now for the
                person standing next to you, or save the file to attach to
                something. Both go through the same audited endpoint. -->
-          <el-dropdown
-            v-if="canExport && openedInbound.threadKey"
-            size="small"
-            split-button
-            :disabled="exporting"
-            @click="printThread"
-          >
-            {{ t('emails.exportPrint') }}
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item @click="saveThread">
-                  {{ t('emails.exportSave') }}
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
           <el-button
             v-if="folder === 'junk'"
             size="small"
@@ -297,16 +281,49 @@
           >
             {{ t('emails.notJunk') }}
           </el-button>
+          <!-- 低频动作收进「更多」。阅读区变窄之后八颗按钮排不下，换行成两排
+               而第二排的起点又和第一排对齐，看着像两组不相干的东西。
+
+               收哪几颗按使用频率分：回复/回复全部/转发/移动到/删除 是每天点的，
+               导出、标为未读、归档是偶尔点的。Foxmail 和 Gmail 也是这么分的，
+               它们主行上只留四颗。
+
+               导出那颗原来是个 split-button，自己带一个「保存」子项；这里把
+               两项**摊平**成兄弟，而不是在下拉里再套一层下拉——嵌套下拉在
+               Element Plus 里不好用，而且多一层对使用者没有任何好处。 -->
+          <el-dropdown
+            v-if="moreActionsAvailable"
+            size="small"
+            trigger="click"
+          >
+            <el-button size="small" plain>
+              {{ t('emails.moreActions') }}<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <template v-if="canExport && openedInbound.threadKey">
+                  <el-dropdown-item :disabled="exporting" @click="printThread">
+                    {{ t('emails.exportPrint') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item :disabled="exporting" @click="saveThread">
+                    {{ t('emails.exportSave') }}
+                  </el-dropdown-item>
+                </template>
+                <template v-if="isInboundView && folder !== 'junk'">
+                  <el-dropdown-item v-if="folder !== 'trash'" @click="markOpened({ read: false })">
+                    {{ t('emails.markUnread') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="folder === 'archive'" @click="markOpened({ archived: false })">
+                    {{ t('emails.unarchive') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item v-else-if="folder !== 'trash'" @click="markOpened({ archived: true })">
+                    {{ t('emails.archive') }}
+                  </el-dropdown-item>
+                </template>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <template v-if="isInboundView && folder !== 'junk'">
-            <el-button v-if="folder !== 'trash'" size="small" plain @click="markOpened({ read: false })">
-              {{ t('emails.markUnread') }}
-            </el-button>
-            <el-button v-if="folder === 'archive'" size="small" plain @click="markOpened({ archived: false })">
-              {{ t('emails.unarchive') }}
-            </el-button>
-            <el-button v-else-if="folder !== 'trash'" size="small" plain @click="markOpened({ archived: true })">
-              {{ t('emails.archive') }}
-            </el-button>
             <!-- 挪进自建文件夹（Issue #362）。真的 MOVE，同步做：成了才回来。 -->
             <el-dropdown
               v-if="folder !== 'trash' && folder !== 'junk' && openedInbound.folder !== 'SENT'"
@@ -1687,6 +1704,15 @@ const replyToMismatch = computed(() => {
   const m = openedInbound.value
   if (!m?.replyTo || !m.fromEmail) return false
   return m.replyTo.trim().toLowerCase() !== m.fromEmail.trim().toLowerCase()
+})
+
+// 「更多」里到底有没有东西。一个点开是空的菜单比没有这颗按钮更糟。
+const moreActionsAvailable = computed(() => {
+  const m = openedInbound.value
+  if (!m) return false
+  const canExportThis = canExport.value && !!m.threadKey
+  const canMarkOrArchive = isInboundView.value && folder.value !== 'junk' && folder.value !== 'trash'
+  return canExportThis || canMarkOrArchive
 })
 
 const detailRows = computed(() => {
@@ -4285,6 +4311,10 @@ async function doUnsuppress(row: Suppression) {
   align-self: flex-start;
   position: sticky;
   top: 12px;
+  /* 自己滚。信箱多、文件夹多的时候这一栏会比一屏长，而它 sticky 在顶上，
+     长出去的部分原来只能靠整页滚动才够得着——那时候右边两栏也跟着走了。 */
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
 }
 .compose {
   width: 100%;
@@ -4977,6 +5007,12 @@ async function doUnsuppress(row: Suppression) {
   order: 1;
   flex: 0 0 clamp(280px, 34%, 400px);
   min-width: 0;
+  /* 三栏各滚各的。原来只有阅读区自己滚，列表跟着整页走——读一封长信时
+     往下滚，左边的列表就被顶出视野，那正是三栏要避免的事。 */
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
 }
 .reader-col {
   order: 2;

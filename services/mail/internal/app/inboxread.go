@@ -440,7 +440,10 @@ func (s *Service) GetInbound(ctx context.Context, tenantID, ownerID, id int64) (
 	// sanitiser produces — it percent-encodes spaces in URLs on the way
 	// through, and matching the raw form would miss those.
 	embedded := s.embeddedSwap(ctx, tenantID, id)
-	sanitised := SanitizeForReading(s.localiseImages(ctx, row.BodyHtml, embedded))
+	// 补链接放在净化之后：只加锚点，不做任何净化，输入必须是已经过滤干净的。
+	// 发信方把地址写成光秃秃的文字是常事（事务性邮件尤其多），净化器不管这个
+	// ——它只负责把危险的东西去掉，不负责把不是链接的变成链接。
+	sanitised := LinkifyBareURLs(SanitizeForReading(s.localiseImages(ctx, row.BodyHtml, embedded)))
 	// 自家像素在这里拆掉，拆在本地化之后：图片缓存刻意不缓存我们自己的主机，
 	// 于是那条地址会原样留到浏览器手里，由浏览器去把它拉一次 —— 那正是它要
 	// 记录的「打开」。见 ownpixel.go。
@@ -601,11 +604,11 @@ func (s *Service) GetMailThread(ctx context.Context, tenantID, ownerID, fromMess
 			// 一遍，正是这个视图要消灭的东西。
 			if r.Direction == "IN" {
 				// Embedded before the sanitiser, remote after — see GetInbound.
-				body = stripOwnPixel(
+				body = LinkifyBareURLs(stripOwnPixel(
 					s.localiseImages(ctx,
 						SanitizeForReading(s.localiseImages(ctx, body, embedded[r.ID])),
 						swaps[r.ID]),
-					s.selfHost)
+					s.selfHost))
 			} else {
 				// 我们自己发出去的：引用里借来的那张图，地址是发信当天签的，
 				// 现在早过期了。按 key 换成刚签的一条。

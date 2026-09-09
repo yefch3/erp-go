@@ -1910,6 +1910,7 @@ export default {
     restore: 'Restore',
     emptyFolder: 'Nothing here',
     pickAMail: 'Pick a message on the left',
+    moreActions: 'More',
     threadCount: '{n} messages in this conversation — click any to expand',
     threadOut: 'Sent',
     threadIn: 'Received',
