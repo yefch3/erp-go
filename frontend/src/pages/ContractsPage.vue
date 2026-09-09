@@ -1,7 +1,7 @@
 <template>
   <div class="contracts-page">
-    <WorkflowPageHeader :title="t('contracts.title')" description="查看客户合同、审批状态与执行进度。">
-      <template #actions><el-button v-if="canWrite" type="primary" @click="openDirect">录入执行中合同</el-button></template>
+    <WorkflowPageHeader :title="t('contracts.title')" :description="t('contracts.listSubtitle')">
+      <template #actions><el-button v-if="canWrite" type="primary" @click="openDirect">{{t('contracts.enterExecuting')}}</el-button></template>
     </WorkflowPageHeader>
 
     <el-card shadow="never">
@@ -17,13 +17,13 @@
         <el-select v-model="status" :placeholder="t('contracts.allStatus')" clearable style="width: 170px" @change="reload">
           <el-option v-for="s in STATUSES" :key="s" :value="s" :label="contractStatusLabel(s)" />
         </el-select>
-        <el-select v-model="ownerFilter" clearable filterable placeholder="负责销售" style="width: 220px" @change="reload"><el-option v-for="e in filterOwners" :key="e.id" :value="e.id" :label="e.name"/></el-select>
+        <el-select v-model="ownerFilter" clearable filterable :placeholder="t('contracts.responsibleSales')" style="width: 220px" @change="reload"><el-option v-for="e in filterOwners" :key="e.id" :value="e.id" :label="e.name"/></el-select>
         <el-button @click="reload">{{ t('common.query') }}</el-button>
       </div>
 
       <el-table :data="contracts" v-loading="loading">
-        <el-table-column prop="contractNo" label="系统合同号" min-width="175"><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{row.contractNo}}</el-button></template></el-table-column>
-        <el-table-column label="原合同号" min-width="140"><template #default="{row}">{{row.externalContractNo||'—'}}</template></el-table-column>
+        <el-table-column prop="contractNo" :label="t('contracts.systemContractNo')" min-width="175"><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{row.contractNo}}</el-button></template></el-table-column>
+        <el-table-column :label="t('contracts.externalContractNo')" min-width="140"><template #default="{row}">{{row.externalContractNo||'—'}}</template></el-table-column>
         <el-table-column prop="customerName" :label="t('contracts.customer')" min-width="150" />
         <el-table-column :label="t('contracts.amount')" width="140" align="right">
           <template #default="{ row }">{{ row.totalAmount }} {{ row.currency }}</template>
@@ -36,8 +36,8 @@
             <el-tag size="small" :type="statusType(row.status)">{{ contractStatusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="更新时间" width="170"><template #default="{row}">{{row.updatedAt?new Date(row.updatedAt).toLocaleString():'—'}}</template></el-table-column>
-        <el-table-column label="操作" width="130" fixed="right"><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{['DRAFT','PENDING_APPROVAL','PENDING_SIGN'].includes(row.status)?'继续处理':'查看'}}</el-button></template></el-table-column>
+        <el-table-column :label="t('contracts.updatedAt')" width="170"><template #default="{row}">{{row.updatedAt?new Date(row.updatedAt).toLocaleString():'—'}}</template></el-table-column>
+        <el-table-column :label="t('common.actions')" width="130" fixed="right"><template #default="{row}"><el-button link type="primary" @click="openDetail(row.id)">{{t(['DRAFT','PENDING_APPROVAL','PENDING_SIGN'].includes(row.status)?'contracts.continue':'contracts.view')}}</el-button></template></el-table-column>
       </el-table>
 
       <el-pagination
@@ -1104,7 +1104,7 @@ interface ChangeLine { productName?:string;uomCode?:string; productId: string; s
 const STATUSES = ['PENDING_APPROVAL', 'PENDING_SIGN', 'EXECUTING', 'COMPLETED']
 const ownerFilter=ref('')
 const filterOwners=ref<{id:string;name:string}[]>([])
-function contractStatusLabel(s:string){return ({DRAFT:'待上级确认',PENDING_APPROVAL:'待上级确认',PENDING_SIGN:'待签字',EFFECTIVE:'执行中',EXECUTING:'执行中',COMPLETED:'已完成'} as Record<string,string>)[s]||s}
+function contractStatusLabel(s:string){return t(`contracts.statuses.${s}`)}
 const INCOTERMS = ['FOB', 'CIF', 'CFR', 'EXW', 'DDP']
 // DRAFT is what we sent out, SIGNED is what came back with a signature on it.
 const FILE_KINDS = ['DRAFT', 'SIGNED', 'OTHER']

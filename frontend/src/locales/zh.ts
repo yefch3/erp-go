@@ -225,6 +225,14 @@ export default {
   salesNav: {
     intakes: '待复核询盘', inquiries: '客户询盘', inquiryTemplates: '询盘模板', quotations: '客户报价', backToInquiries: '返回客户询盘',
   },
+  inquiryWorkspace: {
+    inquiryTitle: '客户询盘', inquirySubtitle: '整理客户需求，提交询价并跟进处理进度。', quotationTitle: '客户报价', quotationSubtitle: '查看采购与物流已提交的报价。',
+    templates: '询盘模板', fromMailbox: '从邮箱转入询盘', uploadOrCreate: '上传或新建客户询盘', manualEntry: '少量产品手工录入', search: '搜索编号、客户、产品或规格', departmentSearch: '搜索询盘编号、客户、产品或规格', allStatuses: '全部状态',
+    number: '询盘编号', customer: '客户', owner: '负责销售', productCount: '产品项数', totalQuantity: '总需求数量', weightVolume: '总重量 / 总体积', delivery: '交货要求', loadingPort: '装货港', destinationPort: '目的港', incoterm: '贸易条件', submittedFactoryQuotes: '已提交工厂报价', submittedLogisticsQuotes: '已提交物流报价', submittedAt: '提交时间',
+    statuses: { waiting: '待报价', quoted: '已报价', hasQuote: '已有报价', unsubmitted: '未提交', inquiring: '询价中', withdrawn: '已撤回', confirmed: '客户已确认' },
+    actions: { open: '打开详情 →', factoryNew: '录入工厂报价', factoryContinue: '查看 / 继续报价', logisticsNew: '录入物流报价', logisticsContinue: '查看 / 继续报价' },
+    detail: { inquiryNo: '询盘编号', creating: '正在新建', newInquiry: '新建客户询盘', owner: '负责销售：{name}', products: '{count} 项产品', quotes: '{count} 份报价', submit: '提交询价', resubmit: '重新提交询价', addFactoryQuote: '添加工厂报价', addLogisticsQuote: '添加货代报价', more: '更多操作', back: '返回列表', reload: '刷新最新数据', saveDraft: '保存草稿', withdraw: '撤回询价', overview: '概览与附件', productRequirements: '产品需求 ({count})', submittedQuotes: '已提交报价 ({count})', customerOffer: '给客户的报价', customerDelivery: '客户与交付信息', customerDeliveryHint: '可从客户资料中选择，也可直接输入临时客户或联系人。', contact: '联系人', customerSearch: '搜索客户编码或名称，也可直接输入', contactSearch: '选择客户联系人，也可直接输入', remark: '备注', attachments: '客户附件', attachmentCount: '共 {count} 个原始文件', noAttachments: '暂无附件', attachmentEmpty: '客户原始文件会显示在这里', requirementsTitle: '产品需求', requirementsHint: '表格列按询盘选用的模板显示；保存后固定为当时的模板版本。', selectTemplate: '选择模板', historical: '（历史版本）', addProduct: '添加产品', viewRequirements: '查看客户产品需求' },
+  },
   financeNav: {
     fx: '汇率',
     title: '财务', receivable: '入账', payable: '出账', bank: '银行流水',
@@ -1283,6 +1291,7 @@ export default {
     shipped: '已发货',
     toShip: '待发货',
     title: '外销合同',
+    listSubtitle: '查看客户合同、审批状态与执行进度。', enterExecuting: '录入执行中合同', systemContractNo: '系统合同号', updatedAt: '更新时间', continue: '继续处理', view: '查看',
     generate: '由报价生成',
     generateHint: '合同的价格、明细和汇率快照全部继承自报价单，签订后不再随市场汇率变化',
     quotation: '报价单',

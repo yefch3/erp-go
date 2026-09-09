@@ -225,6 +225,14 @@ export default {
   salesNav: {
     intakes: 'Inquiries to review', inquiries: 'Customer inquiries', inquiryTemplates: 'Inquiry templates', quotations: 'Customer quotations', backToInquiries: 'Back to customer inquiries',
   },
+  inquiryWorkspace: {
+    inquiryTitle: 'Customer inquiries', inquirySubtitle: 'Organize customer requirements, submit RFQs, and track progress.', quotationTitle: 'Customer quotations', quotationSubtitle: 'Review quotations submitted by Procurement and Shipping.',
+    templates: 'Inquiry templates', fromMailbox: 'Create from mailbox', uploadOrCreate: 'Upload or create inquiry', manualEntry: 'Enter a few products manually', search: 'Search number, customer, product, or specification', departmentSearch: 'Search inquiry number, customer, product, or specification', allStatuses: 'All statuses',
+    number: 'Inquiry no.', customer: 'Customer', owner: 'Sales owner', productCount: 'Products', totalQuantity: 'Total quantity', weightVolume: 'Weight / volume', delivery: 'Delivery', loadingPort: 'Loading port', destinationPort: 'Destination port', incoterm: 'Incoterm', submittedFactoryQuotes: 'Factory quotes', submittedLogisticsQuotes: 'Shipping quotes', submittedAt: 'Submitted',
+    statuses: { waiting: 'Waiting', quoted: 'Quoted', hasQuote: 'Quote received', unsubmitted: 'Draft', inquiring: 'RFQ in progress', withdrawn: 'Withdrawn', confirmed: 'Customer confirmed' },
+    actions: { open: 'Open details →', factoryNew: 'Enter factory quote', factoryContinue: 'View / continue', logisticsNew: 'Enter shipping quote', logisticsContinue: 'View / continue' },
+    detail: { inquiryNo: 'Inquiry no.', creating: 'Creating', newInquiry: 'New customer inquiry', owner: 'Sales owner: {name}', products: '{count} products', quotes: '{count} quotes', submit: 'Submit RFQ', resubmit: 'Resubmit RFQ', addFactoryQuote: 'Add factory quote', addLogisticsQuote: 'Add shipping quote', more: 'More actions', back: 'Back to list', reload: 'Refresh data', saveDraft: 'Save draft', withdraw: 'Withdraw inquiry', overview: 'Overview & attachments', productRequirements: 'Product requirements ({count})', submittedQuotes: 'Submitted quotes ({count})', customerOffer: 'Customer offer', customerDelivery: 'Customer & delivery', customerDeliveryHint: 'Select customer records or enter a temporary customer and contact.', contact: 'Contact', customerSearch: 'Search customer code or name, or type one', contactSearch: 'Select a customer contact, or type one', remark: 'Notes', attachments: 'Customer attachments', attachmentCount: '{count} original files', noAttachments: 'No attachments', attachmentEmpty: 'Original customer files appear here', requirementsTitle: 'Product requirements', requirementsHint: 'Columns follow the inquiry template and are frozen at the saved template version.', selectTemplate: 'Select template', historical: ' (historical)', addProduct: 'Add product', viewRequirements: 'View customer product requirements' },
+  },
   financeNav: {
     fx: 'Exchange rates',
     title: 'Finance', receivable: 'Money in', payable: 'Money out', bank: 'Bank transactions',
@@ -1282,6 +1290,7 @@ export default {
     shipped: 'Shipped',
     toShip: 'To ship',
     title: 'Export contracts',
+    listSubtitle: 'Review customer contracts, approval status, and execution progress.', enterExecuting: 'Enter executing contract', systemContractNo: 'System contract no.', updatedAt: 'Updated', continue: 'Continue', view: 'View',
     generate: 'From quotation',
     generateHint:
       'Prices, lines and the exchange-rate snapshot are inherited from the quotation and no longer follow the market once signed',

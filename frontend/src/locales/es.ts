@@ -225,6 +225,14 @@ export default {
   salesNav: {
     intakes: 'Consultas por revisar', inquiries: 'Consultas de clientes', inquiryTemplates: 'Plantillas de consulta', quotations: 'Cotizaciones a clientes', backToInquiries: 'Volver a consultas de clientes',
   },
+  inquiryWorkspace: {
+    inquiryTitle: 'Consultas de clientes', inquirySubtitle: 'Organice los requisitos, envíe solicitudes de cotización y siga el avance.', quotationTitle: 'Cotizaciones a clientes', quotationSubtitle: 'Revise las cotizaciones enviadas por Compras y Logística.',
+    templates: 'Plantillas de consulta', fromMailbox: 'Crear desde el buzón', uploadOrCreate: 'Subir o crear consulta', manualEntry: 'Introducir pocos productos', search: 'Buscar número, cliente, producto o especificación', departmentSearch: 'Buscar consulta, cliente, producto o especificación', allStatuses: 'Todos los estados',
+    number: 'N.º de consulta', customer: 'Cliente', owner: 'Vendedor', productCount: 'Productos', totalQuantity: 'Cantidad total', weightVolume: 'Peso / volumen', delivery: 'Entrega', loadingPort: 'Puerto de carga', destinationPort: 'Puerto de destino', incoterm: 'Incoterm', submittedFactoryQuotes: 'Ofertas de fábrica', submittedLogisticsQuotes: 'Ofertas logísticas', submittedAt: 'Enviado',
+    statuses: { waiting: 'Pendiente', quoted: 'Cotizado', hasQuote: 'Oferta recibida', unsubmitted: 'Borrador', inquiring: 'Cotización en curso', withdrawn: 'Retirada', confirmed: 'Confirmada por el cliente' },
+    actions: { open: 'Abrir detalle →', factoryNew: 'Registrar oferta de fábrica', factoryContinue: 'Ver / continuar', logisticsNew: 'Registrar oferta logística', logisticsContinue: 'Ver / continuar' },
+    detail: { inquiryNo: 'N.º de consulta', creating: 'Creando', newInquiry: 'Nueva consulta de cliente', owner: 'Vendedor: {name}', products: '{count} productos', quotes: '{count} ofertas', submit: 'Enviar solicitud', resubmit: 'Reenviar solicitud', addFactoryQuote: 'Añadir oferta de fábrica', addLogisticsQuote: 'Añadir oferta logística', more: 'Más acciones', back: 'Volver a la lista', reload: 'Actualizar datos', saveDraft: 'Guardar borrador', withdraw: 'Retirar consulta', overview: 'Resumen y adjuntos', productRequirements: 'Requisitos de producto ({count})', submittedQuotes: 'Ofertas enviadas ({count})', customerOffer: 'Oferta al cliente', customerDelivery: 'Cliente y entrega', customerDeliveryHint: 'Seleccione los datos del cliente o introduzca un cliente y contacto temporal.', contact: 'Contacto', customerSearch: 'Buscar código o nombre del cliente, o escribir uno', contactSearch: 'Elegir contacto del cliente, o escribir uno', remark: 'Notas', attachments: 'Adjuntos del cliente', attachmentCount: '{count} archivos originales', noAttachments: 'Sin adjuntos', attachmentEmpty: 'Los archivos originales del cliente aparecerán aquí', requirementsTitle: 'Requisitos de producto', requirementsHint: 'Las columnas siguen la plantilla y quedan fijadas en la versión guardada.', selectTemplate: 'Elegir plantilla', historical: ' (histórica)', addProduct: 'Añadir producto', viewRequirements: 'Ver requisitos de productos del cliente' },
+  },
   financeNav: {
     fx: 'Tipos de cambio',
     title: 'Finanzas', receivable: 'Entradas', payable: 'Salidas', bank: 'Movimientos bancarios',
@@ -1291,6 +1299,7 @@ export default {
     shipped: 'Enviado',
     toShip: 'Por enviar',
     title: 'Contratos de exportación',
+    listSubtitle: 'Revise los contratos, el estado de aprobación y el avance de ejecución.', enterExecuting: 'Registrar contrato en ejecución', systemContractNo: 'N.º interno', updatedAt: 'Actualizado', continue: 'Continuar', view: 'Ver',
     generate: 'Desde cotización',
     generateHint:
       'Los precios, las líneas y el tipo de cambio se heredan de la cotización y ya no siguen al mercado una vez firmado',

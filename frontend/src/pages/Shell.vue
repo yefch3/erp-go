@@ -443,7 +443,7 @@ const salesItems = computed(() => [
   ...(auth.can('sales:inquiry:read')
     ? [
          { path: '/sales/inquiries', label: t('salesNav.inquiries') },
-         { path: '/sales/quotations', label: '客户报价' },
+         { path: '/sales/quotations', label: t('salesNav.quotations') },
          { path: '/sales/settings/inquiry-templates', label: t('salesNav.inquiryTemplates') },
        ]
     : []),
